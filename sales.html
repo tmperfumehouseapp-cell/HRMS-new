@@ -2444,6 +2444,10 @@
         ['month', 'Performance', 'performance.html', 'performance'],
         ['sheet', 'Day-by-day sheet', 'detailed_report.html', 'detailed_report'],
       ]],
+      // These three open the Total Budgeting menu item (one page, one place): a 'go:' tab is a link, not a second copy
+      ['budgeting', 'Total Budgeting', 'go:hub.html?w=budget&t=bt_total', 'commission'],
+      ['commission', 'Commission', 'go:hub.html?w=budget&t=bt_commission', 'commission'],
+      ['leaders', 'Leaders', 'go:hub.html?w=budget&t=bt_leaders', 'commission'],
       ['allrules', 'Commission rules', 'commission_rules.html', 'commission_rules'],   // every commission rule in one page: slab rates, order codes, fixed / panel / rating rules, ML price slab and the Target bonus
     ] },
     { k: 'retail', t: 'Shops (wholesale)', tabs: [
@@ -2517,6 +2521,7 @@
   let slStarted = false;   // the first tab replaces the entry; each tab opened after it is one Back step
   function show(noPush) {
     if (!cur) return;
+    if (cur.src && cur.src.indexOf('go:') === 0) { location.href = cur.src.slice(3); return; }   // a link to the page's one real home
     try { localStorage.setItem('hrms_sales_last', cur.sec.k + '/' + cur.tab[0] + (cur.kid ? '/' + cur.kid[0] : '')); } catch (e) {}
     const hash = '#' + cur.sec.k + '/' + cur.tab[0] + (cur.kid ? '/' + cur.kid[0] : ''); if (location.hash !== hash) { if (!slStarted || noPush) history.replaceState(history.state, '', hash); else history.pushState({ slTab: hash }, '', hash); } slStarted = true;
     const isCt = cur.src.indexOf(CT) === 0;

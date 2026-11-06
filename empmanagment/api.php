@@ -15682,7 +15682,10 @@ function penalty_employee(PDO $pdo, int $id): ?array
 /** Sales employees are paid on commission, everyone else on salary. */
 function penalty_pays_from(array $emp): string
 {
-    return stripos((string)($emp['department_name'] ?? ''), 'sales') !== false ? 'commission' : 'salary';
+    // Sales people, and anyone with no monthly salary (commission-based), pay a penalty out of their commission
+    if (stripos((string)($emp['department_name'] ?? ''), 'sales') !== false) return 'commission';
+    if (array_key_exists('monthly_salary', $emp) && (float)$emp['monthly_salary'] <= 0) return 'commission';
+    return 'salary';
 }
 
 /** Tell the employee: kept in the in-app list now, sent to their phone just after the response is out. */
@@ -15792,11 +15795,16 @@ function penalties_auto_pass(PDO $pdo, bool $force = false): array
 
     $rules = $pdo->query("SELECT * FROM penalty_rules WHERE active = 1 AND trigger_type IN ('late_punch','short_hours','no_punch_out')")->fetchAll();
     if (!$rules) return $out;
-    $emps = $pdo->query(
-        "SELECT e.employee_id, e.full_name, e.employee_code, e.monthly_salary, d.department_name
-         FROM employees e LEFT JOIN departments d ON d.department_id = e.department_id
-         WHERE e.status != 'ex' AND e.monthly_salary > 0 AND (d.department_name IS NULL OR d.department_name NOT LIKE '%sales%')"
-    )->fetchAll();
+    // Salaried non-sales staff as before, PLUS anyone (a commission-based sales person too) whose timing was set on the person card /
+    // "Who punches how": setting timing is what switches the late / short-hours penalties on for them. No timing set = no penalty.
+    $baseSql = "SELECT e.employee_id, e.full_name, e.employee_code, e.monthly_salary, d.department_name
+         FROM employees e LEFT JOIN departments d ON d.department_id = e.department_id WHERE e.status != 'ex' AND ";
+    try {
+        $emps = $pdo->query($baseSql . "((e.monthly_salary > 0 AND (d.department_name IS NULL OR d.department_name NOT LIKE '%sales%'))
+            OR EXISTS (SELECT 1 FROM employee_shifts sh WHERE sh.employee_id = e.employee_id AND sh.punch_mode IN ('fixed', 'hours')))")->fetchAll();
+    } catch (Throwable $x) {
+        $emps = $pdo->query($baseSql . "e.monthly_salary > 0 AND (d.department_name IS NULL OR d.department_name NOT LIKE '%sales%')")->fetchAll();
+    }
     if (!$emps) return $out;
 
     $today = biz_today($pdo);
@@ -18374,7 +18382,8 @@ if (strpos((string)$action, 'fi.') === 0) { require_once __DIR__ . '/finance_in.
 if (strpos((string)$action, 'st_') === 0) { require __DIR__ . '/store_pos.php'; }      // Store inventory + billing (short per-bottle barcodes, total-ml price, commission like online)
 if (strpos((string)$action, 'cp.') === 0) { require __DIR__ . '/ct_people.php'; }
 if (strpos((string)$action, 'lr.') === 0) { require __DIR__ . '/leader_roas.php'; }
-if (strpos((string)$action, 'budget.') === 0) { require __DIR__ . '/budget.php'; }   // Sales → Total Budgeting: target, lump sum, fixed expenses
+if (strpos((string)$action, 'budget.') === 0) { require __DIR__ . '/budget.php'; }
+if (strpos((string)$action, 'person.') === 0) { require __DIR__ . '/person.php'; }   // the one person card (timing, penalties, Claude summary), shared by Total Budgeting and the Boss Engine   // Sales → Total Budgeting: target, lump sum, fixed expenses
 if (strpos((string)$action, 'ph.') === 0) { require __DIR__ . '/wa_photos.php'; }
 if (strpos((string)$action, 'lb.') === 0) { require_once __DIR__ . '/learn_backup.php'; }
 
