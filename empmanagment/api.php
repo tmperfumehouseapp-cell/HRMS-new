@@ -514,6 +514,7 @@ function action_permission(string $action): ?string
         'report_detail.' => 'detailed_report',
         'penalties.' => 'penalties',
         'commission_page.' => 'commission',
+        'budget.' => 'commission',            // Total Budgeting uses the Commission permission
         'commission.' => 'targets',
         'agreement' => 'agreements',
         'departments.' => 'departments',
@@ -18373,6 +18374,7 @@ if (strpos((string)$action, 'fi.') === 0) { require_once __DIR__ . '/finance_in.
 if (strpos((string)$action, 'st_') === 0) { require __DIR__ . '/store_pos.php'; }      // Store inventory + billing (short per-bottle barcodes, total-ml price, commission like online)
 if (strpos((string)$action, 'cp.') === 0) { require __DIR__ . '/ct_people.php'; }
 if (strpos((string)$action, 'lr.') === 0) { require __DIR__ . '/leader_roas.php'; }
+if (strpos((string)$action, 'budget.') === 0) { require __DIR__ . '/budget.php'; }   // Sales → Total Budgeting: target, lump sum, fixed expenses
 if (strpos((string)$action, 'ph.') === 0) { require __DIR__ . '/wa_photos.php'; }
 if (strpos((string)$action, 'lb.') === 0) { require_once __DIR__ . '/learn_backup.php'; }
 

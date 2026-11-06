@@ -2444,13 +2444,16 @@
         ['month', 'Performance', 'performance.html', 'performance'],
         ['sheet', 'Day-by-day sheet', 'detailed_report.html', 'detailed_report'],
       ]],
-      ['commission', 'Commission', null, null, [
+      ['allrules', 'Commission rules', 'commission_rules.html', 'commission_rules'],   // every commission rule in one page: slab rates, order codes, fixed / panel / rating rules, ML price slab and the Target bonus
+    ] },
+    { k: 'budget', t: 'Total Budgeting', tabs: [
+      ['budget', 'Total Budgeting', 'total_budgeting.html', 'commission'],   // target, lump sum, fixed expenses + the employee / leader / penalty sheets, day by day
+      ['commission', 'Commission', null, null, [      // moved here from Team: the budget reads the commission result
         ['result', 'Result & rules', 'commission_new.html', 'commission'],
         ['old', 'Old result (pays today)', 'commission.html', 'commission'],
         // old Rules page hidden (commission_rules.html and its data are kept): Pricing, Offers and Boosts now live in "Result & rules"
       ]],
-      ['leaders', 'Leaders', 'leaders.html', 'commission'],
-      ['allrules', 'Commission rules', 'commission_rules.html', 'commission_rules'],   // every commission rule in one page: slab rates, order codes, fixed / panel / rating rules, ML price slab and the Target bonus
+      ['leaders', 'Leaders', 'leaders.html', 'commission'],   // moved here from Team: the amounts you Set here are the leader figures in the budget
     ] },
     { k: 'retail', t: 'Shops (wholesale)', tabs: [
       ['shops', 'Shops', 'retail_shops.html', 'retail'],
@@ -2475,7 +2478,7 @@
     ] },
   ];
   // Old links and bookmarks (#people/ordertargets, #learn/doctor ...) still land on the right page.
-  const OLD = { ordertargets: ['people', 'targets', 'orders'], report: ['people', 'performance', 'sheet'], rules: ['people', 'commission', 'result'],
+  const OLD = { ordertargets: ['people', 'targets', 'orders'], report: ['people', 'performance', 'sheet'], rules: ['budget', 'commission', 'result'], commission: ['budget', 'commission', ''], leaders: ['budget', 'leaders', ''],
     doctor: ['tools', 'messages', 'doctor'], bench: ['tools', 'messages', 'bench'], library: ['learn', 'library', ''], conv: ['tools', 'conv', ''] };
   // bookmarks from before the Learn & Setup clean-up (#learn/messages, #learn/proof/conv, #learn/photos ...)
   const LEARN_MOVED = { messages: ['tools', 'messages'], backups: ['tools', 'backups'], settings: ['tools', 'settings'], photos: ['learn', 'botdata', 'photos'], products: ['learn', 'botdata', 'products'] };
