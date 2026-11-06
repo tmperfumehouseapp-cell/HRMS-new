@@ -15795,16 +15795,11 @@ function penalties_auto_pass(PDO $pdo, bool $force = false): array
 
     $rules = $pdo->query("SELECT * FROM penalty_rules WHERE active = 1 AND trigger_type IN ('late_punch','short_hours','no_punch_out')")->fetchAll();
     if (!$rules) return $out;
-    // Salaried non-sales staff as before, PLUS anyone (a commission-based sales person too) whose timing was set on the person card /
-    // "Who punches how": setting timing is what switches the late / short-hours penalties on for them. No timing set = no penalty.
-    $baseSql = "SELECT e.employee_id, e.full_name, e.employee_code, e.monthly_salary, d.department_name
-         FROM employees e LEFT JOIN departments d ON d.department_id = e.department_id WHERE e.status != 'ex' AND ";
-    try {
-        $emps = $pdo->query($baseSql . "((e.monthly_salary > 0 AND (d.department_name IS NULL OR d.department_name NOT LIKE '%sales%'))
-            OR EXISTS (SELECT 1 FROM employee_shifts sh WHERE sh.employee_id = e.employee_id AND sh.punch_mode IN ('fixed', 'hours')))")->fetchAll();
-    } catch (Throwable $x) {
-        $emps = $pdo->query($baseSql . "e.monthly_salary > 0 AND (d.department_name IS NULL OR d.department_name NOT LIKE '%sales%')")->fetchAll();
-    }
+    $emps = $pdo->query(
+        "SELECT e.employee_id, e.full_name, e.employee_code, e.monthly_salary, d.department_name
+         FROM employees e LEFT JOIN departments d ON d.department_id = e.department_id
+         WHERE e.status != 'ex' AND e.monthly_salary > 0 AND (d.department_name IS NULL OR d.department_name NOT LIKE '%sales%')"
+    )->fetchAll();
     if (!$emps) return $out;
 
     $today = biz_today($pdo);

@@ -45,7 +45,7 @@ window.PersonCard = (function () {
     const one = list.length === 1 ? list[0] : null; let mode = one ? one.mode : 'fixed';
     const v = (x, d) => esc(one ? (x === undefined || x === null || x === '' ? d : x) : d);
     const first = one ? esc(String(one.name || '').split(' ')[0] || 'this person') : '';
-    const ov = overlay('<div class="pc"><h2>' + (one ? esc(one.name) + ': how does ' + first + ' punch?' : list.length + ' people: set one rule for all') + '</h2><div class="sub">Pick one rule. Lateness, "away" checks, reminders and late penalties follow it. A commission-based person gets late penalties only after you set a rule here.</div>'
+    const ov = overlay('<div class="pc"><h2>' + (one ? esc(one.name) + ': how does ' + first + ' punch?' : list.length + ' people: set one rule for all') + '</h2><div class="sub">Pick one rule. Lateness, "away" checks and reminders follow it. Penalties are never added by themselves: you assign them.</div>'
       + '<div class="pc-modes" id="pcModes"></div>'
       + '<div id="pcFix" class="pc-f"><div class="two"><div><label>Shift starts</label><input type="time" id="pxS" value="' + v(one && one.fx_start, '') + '"></div><div><label>Shift ends</label><input type="time" id="pxE" value="' + v(one && one.fx_end, '') + '"></div></div>'
       + '<div><label>Late after (min)</label><input type="number" id="pxL" min="0" max="240" value="' + v(one && one.fx_late, '15') + '"></div>' + (one ? '' : '<div class="sub">Leave the start empty to keep each person\'s own times.</div>') + '</div>'
@@ -53,7 +53,7 @@ window.PersonCard = (function () {
       + '<div class="two"><div><label>Earliest punch in (empty = any time)</label><input type="time" id="phA" value="' + v(one && one.win_from, '') + '"></div><div><label>Latest punch in (empty = any time)</label><input type="time" id="phB" value="' + v(one && one.win_to, '') + '"></div></div></div>'
       + '<div class="pc-note" id="pcNote" style="margin-top:10px"></div><div id="pcOut"></div>'
       + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="pc-btn" id="pcNo" type="button">Cancel</button><button class="pc-btn go" id="pcOk" type="button">Save</button></div></div>');
-    const notes = { fixed: '<b>What happens:</b> in at the set time, out at the set time. Late after the grace minutes.', hours: '<b>What happens:</b> they can come any time (inside the window, if you set one) but must complete the hours. A short day is marked short.', free: '<b>What happens:</b> punching is optional. Never late, never marked away, no late penalty.' };
+    const notes = { fixed: '<b>What happens:</b> in at the set time, out at the set time. Late after the grace minutes.', hours: '<b>What happens:</b> they can come any time (inside the window, if you set one) but must complete the hours. A short day is marked short.', free: '<b>What happens:</b> punching is optional. Never late and never marked away.' };
     const paint = () => {
       ov.querySelector('#pcModes').innerHTML = Object.keys(MODES).map((k) => '<div class="pc-mode' + (mode === k ? ' on' : '') + '" data-m="' + k + '"><b>' + MODES[k][0] + '</b><span>' + MODES[k][1] + '</span></div>').join('');
       ov.querySelectorAll('.pc-mode').forEach((c) => { c.onclick = () => { mode = c.dataset.m; paint(); }; });
@@ -81,7 +81,7 @@ window.PersonCard = (function () {
     h += '<h4>Pay</h4>';
     if (p.type === 'salary') h += '<div class="pc-row"><span>Fixed salary</span><b>' + (p.monthly != null ? inr(p.monthly) + ' a month · ' + inr(p.per_day) + ' a day (÷ 30)' : 'Fixed salary') + '</b></div>'
       + (c.salary ? '<div class="pc-row"><span>This month so far</span><b>' + inr(c.salary.earned) + ' earned − ' + inr(c.salary.penalty_total) + ' penalties = ' + inr(c.salary.net_pay) + '</b></div>' : '');
-    else h += '<div class="pc-row"><span>Commission-based</span><b>The day\'s commission is the day\'s pay</b></div><div class="pc-note">Penalties come out of the commission. Late and short-hours penalties apply only if timing is set below.</div>';
+    else h += '<div class="pc-row"><span>Commission-based</span><b>The day\'s commission is the day\'s pay</b></div><div class="pc-note">Penalties are assigned by you and come out of the commission. Set timing below to see who was late.</div>';
 
     h += '<h4>Timing</h4><div class="pc-row"><span><span class="pc-chip ' + (t.penalised ? 'ok' : '') + '">' + (p.type === 'commission' && !t.own ? 'Not set' : MODES[t.mode][0]) + '</span> ' + esc(t.label) + '</span>'
       + (c.is_admin ? '<button class="pc-btn" data-a="timing" type="button">Change timing</button>' : '') + '</div>';

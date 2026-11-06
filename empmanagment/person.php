@@ -39,9 +39,9 @@ if (!function_exists('person_can')) {
         $timing = ['own' => $own, 'mode' => $mode, 'shift_start' => (string)($s['shift_start'] ?? ''), 'shift_end' => (string)($s['shift_end'] ?? ''), 'late_after' => (int)($s['late_after'] ?? 15),
             'hours_target' => (float)($s['hours_target'] ?? 0), 'hours_full' => (float)($s['hours_full'] ?? 0), 'win_from' => (string)($s['win_from'] ?? ''), 'win_to' => (string)($s['win_to'] ?? ''),
             'fx_start' => (string)($raw['shift_start'] ?? ''), 'fx_end' => (string)($raw['shift_end'] ?? ''), 'fx_late' => isset($raw['late_after']) ? (int)$raw['late_after'] : 15];
-        // a commission-based person with no timing set is never late: penalties only start once you set timing
+        // a commission-based person with no timing set is never checked for lateness (penalties are always assigned by hand)
         $timing['penalised'] = $mode !== 'free' && ($own || $pay['type'] === 'salary');
-        if ($pay['type'] === 'commission' && !$own) $timing['label'] = 'Not set: no late penalties';
+        if ($pay['type'] === 'commission' && !$own) $timing['label'] = 'Not set: lateness is not checked';
         elseif ($mode === 'free') $timing['label'] = 'No rule: punch is optional, never late';
         elseif ($mode === 'hours') $timing['label'] = rtrim(rtrim(number_format($timing['hours_target'], 2, '.', ''), '0'), '.') . ' hours a day' . ($timing['win_from'] !== '' || $timing['win_to'] !== '' ? ', start ' . ($timing['win_from'] ?: 'any time') . ' to ' . ($timing['win_to'] ?: 'any time') : '');
         else $timing['label'] = 'Strict timing: in ' . $timing['shift_start'] . ($timing['shift_end'] !== '' ? ', out ' . $timing['shift_end'] : '') . ', late after ' . $timing['late_after'] . ' min' . ($own ? '' : ' (default day start)');
@@ -94,9 +94,10 @@ if ($__pc === 'person.card' || $__pc === 'person.summary') {
     if (!$e) json_response(['error' => 'Employee not found.'], 404);
     $card = person_build($pdo, $e);
     if ($__pc === 'person.card') {
-        $card['can_edit'] = convo_is_admin($auth) || in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true);   // change / waive / add penalties
-        $card['is_admin'] = convo_is_admin($auth);                                                                       // change timing (the Boss Engine save is Admin only)
-        if (!$card['can_edit']) { $card['salary'] = null; $card['pay']['monthly'] = null; $card['pay']['per_day'] = null; }   // house rule: salary figures are for Admin and HR only
+        $card['can_edit'] = convo_is_admin($auth);   // only Admin changes anything on the card: add / change / waive penalties and timing
+        $card['is_admin'] = $card['can_edit'];
+        $isHr = in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true);
+        if (!$isHr && !$card['can_edit']) { $card['salary'] = null; $card['pay']['monthly'] = null; $card['pay']['per_day'] = null; }   // house rule: salary figures are for Admin and HR only
         json_response($card);
     }
 
@@ -105,7 +106,7 @@ if ($__pc === 'person.card' || $__pc === 'person.summary') {
     $facts = json_encode($f, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     $fallback = []; $t = $card['timing']; $st = $card['stats']; $pn = $card['pay']['type'] === 'commission' ? 'commission-based' : 'on a fixed salary';
     $sum = $e['full_name'] . ' is ' . $pn . '. ' . $t['label'] . '. This month: ' . $st['present'] . ' days punched in' . ($st['late'] ? ', ' . $st['late'] . ' late' : '') . ($st['short'] ? ', ' . $st['short'] . ' short on hours' : '') . ', penalties ₹' . number_format($st['penalties_month']) . '.';
-    if ($card['pay']['type'] === 'commission' && !$t['own']) $fallback[] = 'No timing is set, so late and short-hours penalties do not apply. Set timing if this person should be held to it.';
+    if ($card['pay']['type'] === 'commission' && !$t['own']) $fallback[] = 'No timing is set, so lateness cannot be checked. Set timing if this person should be held to it.';
     foreach ($card['penalties'] as $p) if ($p['pending']) { $fallback[] = 'A penalty of ₹' . number_format($p['amount']) . ' (' . $p['title'] . ') is cut on ' . $p['cut_on'] . '.'; break; }
     if ($st['late'] >= 3) $fallback[] = 'Late ' . $st['late'] . ' times this month. Check whether the start time is right for this person.';
     $by = 'auto';
@@ -121,7 +122,7 @@ if ($__pc === 'person.card' || $__pc === 'person.summary') {
 }
 if ($__pc === 'person.penalty_edit') {
     $auth = require_auth();
-    if (!(convo_is_admin($auth) || in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true))) json_response(['error' => 'Only Admin or HR can change a penalty.'], 403);
+    if (!convo_is_admin($auth)) json_response(['error' => 'Only Admin can change a penalty.'], 403);
     if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
     ensure_penalty_tables($pdo);
     $in = json_input(); $pid = (int)($in['penalty_id'] ?? 0); $amt = round((float)($in['amount'] ?? 0), 2);

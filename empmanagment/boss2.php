@@ -2832,8 +2832,9 @@ function cm_day(PDO $pdo, $day, array $ch = null, array $offers = null, array $b
     return ['rows' => $rows, 'error' => ''];
 }
 /** the last N days with the new rules next to the old figures. Preview only. */
-function cm_recount(PDO $pdo, $days = 10) {
+function cm_recount(PDO $pdo, $days = 10, $end = '') {
     $ch = cm_chart($pdo); $offers = cm_offers($pdo); $boosts = cm_boosts($pdo); $by = []; $err = ''; $today = function_exists('biz_today') ? biz_today($pdo) : date('Y-m-d');
+    if (preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$end) && $end <= $today) $today = $end;   // the window ends on this day (a past month for Total Budgeting) instead of today
     for ($i = 0; $i < $days; $i++) {
         $d = date('Y-m-d', strtotime($today . ' -' . $i . ' day')); $r = cm_day($pdo, $d, $ch, $offers, $boosts); if ($r['error']) { $err = $r['error']; break; }
         foreach ($r['rows'] as $x) {
@@ -3618,7 +3619,7 @@ function b2_dispatch(PDO $pdo, $action, array $auth, array $w, $by, array $in, $
     case 'bd.b2_cm_view': { $adm(); $ch = cm_chart($pdo); $off = cm_offers($pdo); $bo = cm_boosts($pdo); $day = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($_GET['day'] ?? '')) ? (string)$_GET['day'] : b2_day();
         $dr = cm_day($pdo, $day, $ch, $off, $bo); $ppl = []; foreach (cm_emps($pdo) as $id => $e) $ppl[] = ['id' => $id, 'name' => trim((string)$e['full_name'])];
         json_response(['day' => $day, 'chart' => $ch, 'offers' => $off, 'boosts' => $bo, 'people' => $ppl, 'result' => $dr, 'needs' => cm_needs($pdo, $ch, $off, $dr)]); }
-    case 'bd.b2_cm_recount': { $adm(); json_response(cm_recount($pdo, max(1, min(31, (int)($_GET['days'] ?? $in['days'] ?? 10))))); }
+    case 'bd.b2_cm_recount': { $adm(); json_response(cm_recount($pdo, max(1, min(31, (int)($_GET['days'] ?? $in['days'] ?? 10))), (string)($_GET['end'] ?? $in['end'] ?? ''))); }
     case 'bd.b2_cm_chart_save': { $adm(); $post(); $cur = cm_chart($pdo); $r = cm_chart_clean((array)($in['chart'] ?? $in), $cur); if (!$r[0]) json_response(['error' => $r[1]], 422);
         $c = $r[0]; $c['reviewed'] = !empty($in['reviewed']) ? 1 : (int)($cur['reviewed'] ?? 0); $c['updated_at'] = bd_now(); $c['updated_by'] = $by; setting_set($pdo, 'cm_chart', json_encode($c)); b2_log('commission', 'chart', 'pricing chart saved', $by);
         json_response(['ok' => true, 'message' => 'Pricing saved.', 'chart' => $c]); }
