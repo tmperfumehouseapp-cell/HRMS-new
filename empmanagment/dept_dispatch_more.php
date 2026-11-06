@@ -445,6 +445,46 @@ function dp_dsp_rep_where(array $f, array &$par) {
     if ($f['q'] !== '') { $l = '%' . str_replace(['%', '_'], ['\\%', '\\_'], ltrim($f['q'], '#')) . '%'; $w[] = "(order_name LIKE ? OR tracking_no LIKE ? OR customer LIKE ? OR phone LIKE ? OR pend_track LIKE ?)"; array_push($par, $l, $l, $l, $l, $l); }
     return implode(' AND ', $w);
 }
+/**
+ * 👤 Who sold each parcel's order and ⚠ whether its customer has an open complaint — for Shopify and Manual (WM-) orders alike.
+ * Salesperson: the order's allocation (Order allocation page), else the salesperson holding the customer's WhatsApp chat.
+ * Complaint: an open / reopened ticket for this order number or this customer's number. One query each for the whole list.
+ * Returns [parcel id => ['sp' => name, 'sp_type' => query|campaign|'', 'chat' => 10-digit phone, 'cx' => [id, code, label] | null]].
+ */
+function dp_dsp_who(PDO $pdo, array $list): array
+{
+    $out = []; if (!$list) return $out;
+    $p10 = function ($p) { $d = preg_replace('/\D+/', '', (string)$p) ?? ''; return strlen($d) >= 10 ? substr($d, -10) : ''; };
+    $names = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : [];
+    $alloc = []; $chatEmp = []; $cxP = []; $cxO = [];
+    $ids = []; $phones = []; $ords = [];
+    foreach ($list as $r) { $ids[] = [(string)$r['store_key'], (string)$r['shopify_id']]; $ph = $p10($r['phone'] ?? ''); if ($ph !== '') $phones[$ph] = 1; $on = strtolower(ltrim((string)$r['order_name'], '#')); if ($on !== '') $ords[$on] = 1; }
+    try {
+        $w = implode(' OR ', array_fill(0, count($ids), '(source = ? AND order_id = ?)')); $par = []; foreach ($ids as $x) { $par[] = $x[0]; $par[] = $x[1]; }
+        $q = $pdo->prepare("SELECT source, order_id, employee_id, order_type FROM order_allocations WHERE is_direct = 0 AND ($w)"); $q->execute($par);
+        foreach ($q->fetchAll() as $a) $alloc[$a['source'] . '|' . $a['order_id']] = $a;
+    } catch (Throwable $e) { }
+    if ($phones) {
+        $in = implode(',', array_fill(0, count($phones), '?'));
+        try { $q = $pdo->prepare("SELECT phone, assigned_emp FROM wa_contacts WHERE phone IN ($in)"); $q->execute(array_keys($phones)); foreach ($q->fetchAll() as $c) $chatEmp[(string)$c['phone']] = (int)$c['assigned_emp']; } catch (Throwable $e) { }
+    }
+    try {
+        $par = array_keys($phones); $w = $par ? 'phone IN (' . implode(',', array_fill(0, count($par), '?')) . ')' : '0';
+        if ($ords) { $w .= ' OR LOWER(TRIM(LEADING \'#\' FROM order_name)) IN (' . implode(',', array_fill(0, count($ords), '?')) . ')'; $par = array_merge($par, array_keys($ords)); }
+        $q = $pdo->prepare("SELECT id, phone, order_name, problem, status FROM cx_cases WHERE status IN ('open','reopened') AND ($w) ORDER BY id DESC"); $q->execute($par);
+        foreach ($q->fetchAll() as $c) {
+            $cx = ['id' => (int)$c['id'], 'code' => 'C-' . str_pad((string)(int)$c['id'], 4, '0', STR_PAD_LEFT), 'label' => function_exists('cx_problems') ? ((cx_problems()[(string)$c['problem']][0] ?? '') ?: ucfirst((string)$c['problem'])) : ucfirst((string)$c['problem']), 'status' => (string)$c['status']];
+            if ((string)$c['phone'] !== '' && !isset($cxP[(string)$c['phone']])) $cxP[(string)$c['phone']] = $cx;
+            $on = strtolower(ltrim((string)$c['order_name'], '#')); if ($on !== '' && !isset($cxO[$on])) $cxO[$on] = $cx;
+        }
+    } catch (Throwable $e) { }   // no complaint tables on this install
+    foreach ($list as $r) {
+        $a = $alloc[$r['store_key'] . '|' . $r['shopify_id']] ?? null; $ph = $p10($r['phone'] ?? ''); $on = strtolower(ltrim((string)$r['order_name'], '#'));
+        $emp = $a ? (int)$a['employee_id'] : (int)($chatEmp[$ph] ?? 0);
+        $out[(int)$r['id']] = ['sp' => $emp ? ($names[$emp] ?? ('#' . $emp)) : '', 'sp_type' => $a ? (string)$a['order_type'] : '', 'chat' => $ph, 'cx' => $cxO[$on] ?? ($ph !== '' ? ($cxP[$ph] ?? null) : null)];
+    }
+    return $out;
+}
 function dp_dsp_rep_row(array $r, $now, array $cm = [], array $un = []) {
     $c = strtotime($r['created_at']); $grp = (int)($r['grp'] ?? 0);
     $open = in_array($grp, [1, 2, 3, 4, 5, 9], true);
@@ -524,7 +564,8 @@ function dp_dsp_report(PDO $pdo, array $g, $now) {
     $mk = function (array $list) use ($pdo, $now, $cm) {
         $un = dp_dsp_untr_info($pdo, array_values(array_filter($list, function ($r) { return (int)$r['grp'] === 1; })), $now);
         $ce = dp_dsp_untr_ended($pdo, array_map(function ($r) { return (int)$r['id']; }, array_filter($list, function ($r) { return (int)$r['grp'] === 8 && in_array($r['status'], ['tracked', 'transit'], true); })));
-        return array_map(function ($r) use ($now, $cm, $un, $ce) { $x = dp_dsp_rep_row($r, $now, $cm, $un); if (isset($ce[(int)$r['id']])) $x['case_end'] = $ce[(int)$r['id']]; return $x; }, $list);
+        $who = dp_dsp_who($pdo, $list);   // 👤 salesperson + ⚠ open complaint of each order
+        return array_map(function ($r) use ($now, $cm, $un, $ce, $who) { $x = dp_dsp_rep_row($r, $now, $cm, $un); if (isset($ce[(int)$r['id']])) $x['case_end'] = $ce[(int)$r['id']]; return $x + ($who[(int)$r['id']] ?? []); }, $list);
     };
     $ordG = "(CASE WHEN grp IN (6,7,8,10) THEN -UNIX_TIMESTAMP(created_at) WHEN grp = 3 THEN UNIX_TIMESTAMP(COALESCE(tracked_at, created_at)) WHEN grp = 9 THEN UNIX_TIMESTAMP(COALESCE(pend_at, created_at)) ELSE UNIX_TIMESTAMP(created_at) END), id";
     $rows = []; $total = 0; $sf = (string)($g['status'] ?? 'all'); $per = 100; $page = 1; $groups = null;

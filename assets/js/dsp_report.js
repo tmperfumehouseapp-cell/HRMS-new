@@ -62,6 +62,10 @@ const DSP = (() => {
       '.dr-go{border:0;background:#12a150;color:#fff;border-radius:99px;padding:0 11px;height:21px;font:inherit;font-size:11px;font-weight:800;cursor:pointer;} .dr-go:hover{background:#0d8a43;} .dr-go.dk{background:#111827;} .dr-go[disabled]{opacity:.55;cursor:default;} .dr-no{border:1px solid #cfd5dd;background:#fff;color:#14161a;border-radius:99px;padding:0 9px;height:20px;font:inherit;font-size:11px;font-weight:800;cursor:pointer;}',
       '.dr-sel{height:22px;padding:0 4px;font:inherit;font-size:11.5px;border:1px solid #cfd5dd;border-radius:7px;background:#fff;max-width:130px;} .dr-tx{height:22px;padding:0 7px;font:inherit;font-size:11.5px;border:1px solid #cfd5dd;border-radius:7px;background:#fff;}',
       '.dr-f{display:flex;flex-direction:column;gap:5px;padding:3px 0;} .dr-f .dr-sel{max-width:82px;} .dr-f .l{gap:4px;} .dr-f .l{display:inline-flex;gap:5px;align-items:center;} .dr-f .tn{border:1.5px solid #111827;width:78px;font-family:ui-monospace,Menlo,Consolas,monospace;} .dr-f .lk2{width:160px;font-size:11px;color:#1d4ed8;font-family:ui-monospace,Menlo,Consolas,monospace;}',
+      '.dr-ord{border:0;background:none;padding:0;font:inherit;font-weight:800;color:#1d4ed8;cursor:pointer;text-decoration:underline;text-underline-offset:2px;} .dr-ord:hover{color:#0b3aa8;}',
+      '.dr-sp{font-size:11.5px;color:#4a505c;margin-top:2px;white-space:nowrap;} td a.dr-pill{text-decoration:none;margin-top:3px;}',
+      '#dsChat{display:none;} #dsChat.on{display:block;} #dsChat .dsc-bg{position:fixed;inset:0;background:rgba(20,22,26,.35);z-index:200;} #dsChat .dsc-p{position:fixed;top:0;right:0;bottom:0;width:min(520px,100%);background:#fff;z-index:201;display:flex;flex-direction:column;box-shadow:-8px 0 30px rgba(0,0,0,.15);}',
+      '#dsChat .dsc-h{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid #e6e8ec;font-size:13.5px;} #dsChat .dsc-h b{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;} #dsChat .dsc-x{border:0;background:#f1f3f6;border-radius:99px;width:32px;height:32px;cursor:pointer;font-size:14px;} #dsChat iframe{flex:1;border:0;width:100%;}',
       '.dr-pill{display:inline-flex;align-items:center;height:18px;padding:0 8px;border-radius:99px;font-size:11px;font-weight:800;background:#f1f3f6;color:#3a3f4a;} .dr-pill.ok{background:#dff5e8;color:#16794a;} .dr-pill.am{background:#fff3cd;color:#8a5a00;} .dr-pill.pu{background:#f0ebff;color:#5b3fd6;} .dr-pill.bad{background:#fdecea;color:#a02b25;}',
       '.dr-rm{border:1px solid #b7d9d4;background:#fff;color:#0f766e;border-radius:99px;padding:0 9px;height:17px;line-height:15px;font:inherit;font-size:11px;font-weight:800;cursor:pointer;white-space:nowrap;} .dr-rm:hover{background:#0f766e;color:#fff;} .dr-rm.on{background:#0f766e;color:#fff;border-color:#0f766e;} .dr-rm:disabled{opacity:.6;cursor:default;} .dr-cod{font-size:11px;color:#6b7280;margin-left:5px;}',
       '.dr-15{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:7px;margin-top:8px;} .dr-d{border:1px solid #dfe3e8;background:#fff;border-radius:14px;padding:7px 9px 8px;cursor:pointer;text-align:left;font:inherit;color:#14161a;} .dr-d:hover{background:#faf8f3;} .dr-d.on{background:#111827;color:#fff;border-color:#111827;} .dr-d.zero{opacity:.5;}',
@@ -365,7 +369,7 @@ const DSP = (() => {
       const c = rowColors(r), u = r.u;
       const dn = r.done_at ? '<button type="button" class="dr-dn on" data-dn="' + r.id + '" data-v="0"' + (can() ? '' : ' disabled') + ' title="Done by ' + esc(r.done_by) + ' · ' + esc(fdt(r.done_at)) + (can() ? ' — click to undo' : '') + '">✓ Done</button>' : (can() ? '<button type="button" class="dr-dn" data-dn="' + r.id + '" data-v="1" title="Mark this parcel as dealt with">Done</button>' : '<span style="color:#c3c8d1">—</span>');
       const lab = u.today ? '<b style="color:#16945a">' + esc(u.today.label) + '</b>' : (yMissed(r) ? '<b style="color:#d9423b">Yesterday missed</b>' : '<b style="color:#c2410c">Untraceable</b>');
-      return '<tr class="rw" data-id="' + r.id + '" style="--c:' + c[0] + ';background:' + c[1] + manEdge(r) + '" title="' + esc(r.customer + (r.phone ? ' · ' + r.phone : '')) + '"><td>' + (i + 1) + '</td><td>' + dn + '</td><td><b>' + esc(r.order) + '</b>' + manPill(r) + kwikTag(r) + '</td><td>' + esc(fd(r.created)) + '</td><td>day ' + u.days + (u.assigned ? ' <span class="dr-pill am" title="This parcel is with ' + esc(u.owner) + '">' + esc(String(u.owner).split(' ')[0]) + '</span>' : '') + '</td><td>' + esc(r.customer) + '</td><td>' + esc(sShort(r.store)) + '</td><td class="mono" style="overflow:visible;max-width:none">' + tnCell(r) + '</td><td>' + esc(r.courier) + '</td><td class="st" style="overflow:visible">' + lab + ' ' + dotsHtml(r) + '</td><td class="ac uc">' + todayCell(r) + '</td></tr>' + (S.hist[r.id] ? histPanel(r) : '');
+      return '<tr class="rw" data-id="' + r.id + '" style="--c:' + c[0] + ';background:' + c[1] + manEdge(r) + '" title="' + esc(r.customer + (r.phone ? ' · ' + r.phone : '')) + '"><td>' + (i + 1) + '</td><td>' + dn + '</td><td>' + ordCell(r) + '</td><td>' + esc(fd(r.created)) + '</td><td>day ' + u.days + (u.assigned ? ' <span class="dr-pill am" title="This parcel is with ' + esc(u.owner) + '">' + esc(String(u.owner).split(' ')[0]) + '</span>' : '') + '</td><td>' + custCell(r) + '</td><td>' + esc(sShort(r.store)) + '</td><td class="mono" style="overflow:visible;max-width:none">' + tnCell(r) + '</td><td>' + esc(r.courier) + '</td><td class="st" style="overflow:visible">' + lab + ' ' + dotsHtml(r) + '</td><td class="ac uc">' + todayCell(r) + '</td></tr>' + (S.hist[r.id] ? histPanel(r) : '');
     }
     function statusCell(r) {
       const g = r.grp;
@@ -382,6 +386,25 @@ const DSP = (() => {
     }
     // orders made by hand in the WhatsApp chat (Manual order, name WM-00001) carry a purple edge and a MANUAL pill, so they are easy to tell from website orders
     const isMan = (r) => /^WM-\d+/i.test(String(r.order || '')), kwikTag = (r) => r.kwik ? '<div class="mono" style="font-size:11px;color:#64748b;font-weight:600" title="Payment gateway (KWIK) id: Finance matches the settlement file with it">' + esc(String(r.kwik).split(',')[0]) + '</div>' : '', manPill = (r) => isMan(r) ? ' <span class="dr-pill" style="background:#ede7ff;color:#5b34c4" title="Made by hand in the WhatsApp chat (QR / UPI / COD), not on the website">MANUAL</span>' : '', manEdge = (r) => isMan(r) ? ';box-shadow:inset 5px 0 0 #7c3aed' : '';
+    // 💬 the order number opens the customer's WhatsApp chat right here; 👤 who sold it and ⚠ an open complaint sit under the customer (Shopify and Manual orders alike)
+    const ordCell = (r) => (r.chat ? '<button type="button" class="dr-ord" data-chat="' + esc(r.chat) + '" data-oname="' + esc(r.order) + '" data-cust="' + esc(r.customer) + '" title="Open ' + esc(r.customer || 'the customer') + '’s WhatsApp chat">' + esc(r.order) + '</button>' : '<b>' + esc(r.order) + '</b>') + manPill(r) + kwikTag(r);
+    const custCell = (r) => esc(r.customer)
+      + (r.sp ? '<div class="dr-sp" title="Salesperson of this order">👤 ' + esc(r.sp) + (r.sp_type ? ' · ' + (r.sp_type === 'campaign' ? 'Campaign' : 'Query') : '') + '</div>' : '')
+      + (r.cx ? '<div><a class="dr-pill bad" href="complaints.html?case=' + (+r.cx.id) + '" target="_top" title="Open complaint ticket ' + esc(r.cx.code) + '">⚠ ' + esc(r.cx.code) + ' · ' + esc(r.cx.label) + '</a></div>' : '');
+    function openChat(ph, oname, cust) {
+      let d = document.getElementById('dsChat');
+      if (!d) {
+        d = document.createElement('div'); d.id = 'dsChat';
+        d.innerHTML = '<div class="dsc-bg"></div><div class="dsc-p"><div class="dsc-h"><b id="dscT"></b><button type="button" class="dsc-x" aria-label="Close">✕</button></div><iframe id="dscI" title="Customer chat"></iframe></div>';
+        document.body.appendChild(d);
+        const close = () => { d.classList.remove('on'); try { document.getElementById('dscI').src = 'about:blank'; } catch (e) {} };
+        d.querySelector('.dsc-bg').onclick = close; d.querySelector('.dsc-x').onclick = close;
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && d.classList.contains('on')) close(); });
+      }
+      document.getElementById('dscT').textContent = oname + (cust ? ' · ' + cust : '') + ' · ' + ph;
+      document.getElementById('dscI').src = 'wa_one.html?phone=' + encodeURIComponent(ph);
+      d.classList.add('on');
+    }
     function rowColors(r) {
       const g = r.grp;
       if (g === 1 && r.u) return r.u.today ? ['#16945a', '#f1faf5'] : (yMissed(r) ? ['#d9423b', '#fff1f1'] : ['#d97706', '#fff7e6']);
@@ -393,7 +416,7 @@ const DSP = (() => {
       const can_ = can(), c = rowColors(r), g = r.grp;
       const dn = r.done_at ? '<button type="button" class="dr-dn on" data-dn="' + r.id + '" data-v="0"' + (can_ ? '' : ' disabled') + ' title="Done by ' + esc(r.done_by) + ' · ' + esc(fdt(r.done_at)) + (can_ ? ' — click to undo' : '') + '">✓ Done</button>' : (can_ ? '<button type="button" class="dr-dn" data-dn="' + r.id + '" data-v="1" title="Mark this parcel as dealt with">Done</button>' : '<span style="color:#c3c8d1">—</span>');
       const courier = g === 9 && r.pend ? r.pend.courier : r.courier;
-      return '<tr class="rw' + (r.done_at ? ' dn' : '') + '" data-id="' + r.id + '" style="--c:' + c[0] + ';background:' + c[1] + manEdge(r) + '" title="' + esc(r.customer + (r.phone ? ' · ' + r.phone : '')) + '"><td>' + (i + 1) + '</td><td>' + dn + '</td><td><b>' + esc(r.order) + '</b>' + manPill(r) + kwikTag(r) + '</td><td>' + esc(fd(r.created)) + '</td><td>' + esc(ageTxt(r.age_h)) + '</td><td>' + esc(r.customer) + '</td><td>' + esc(sShort(r.store)) + '</td><td class="mono" style="overflow:visible;max-width:none">' + tnCell(r) + '</td><td>' + esc(courier) + '</td><td class="st">' + statusCell(r) + '</td><td class="ac">' + actionCell(r) + payChip(r) + '</td></tr>';
+      return '<tr class="rw' + (r.done_at ? ' dn' : '') + '" data-id="' + r.id + '" style="--c:' + c[0] + ';background:' + c[1] + manEdge(r) + '" title="' + esc(r.customer + (r.phone ? ' · ' + r.phone : '')) + '"><td>' + (i + 1) + '</td><td>' + dn + '</td><td>' + ordCell(r) + '</td><td>' + esc(fd(r.created)) + '</td><td>' + esc(ageTxt(r.age_h)) + '</td><td>' + custCell(r) + '</td><td>' + esc(sShort(r.store)) + '</td><td class="mono" style="overflow:visible;max-width:none">' + tnCell(r) + '</td><td>' + esc(courier) + '</td><td class="st">' + statusCell(r) + '</td><td class="ac">' + actionCell(r) + payChip(r) + '</td></tr>';
     }
     function table() {
       const head = ['#', 'Done', 'Order', 'Ordered', 'Waiting', 'Customer', 'Store', 'Tracking no.', 'Courier', 'Status', 'Action'];
@@ -673,6 +696,7 @@ const DSP = (() => {
       const b = e.target.closest('button,a,tr[data-band]'); if (!b || !el.contains(b)) return;
       if (b.tagName === 'A') return;
       const d = b.dataset;
+      if (d.chat) return openChat(d.chat, d.oname || '', d.cust || '');
       if (d.trk) return openLive(d.trk);
       if (d.lvinfo) return liveInfo(b);
       if (d.cp) { try { await navigator.clipboard.writeText(d.cp); BD.toast('Copied.'); } catch (er) { BD.toast('Select it and copy by hand.', true); } return; }
