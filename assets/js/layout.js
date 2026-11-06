@@ -257,6 +257,7 @@ window.WS = (function () {
   const W = [
     { key: 'home', label: 'Home', icon: 'dashboard', sub: 'What needs you today', tabs: [['dashboard', 'Dashboard', 'dashboard.html', '']] },
     { key: 'sales', label: 'Sales', icon: 'sales', direct: 'sales.html', sub: '', tabs: [] },
+    { key: 'budget', label: 'Budgeting', icon: 'commission', sub: 'Commission, leaders, salaries, fixed expenses and penalties, day by day', tabs: [['bt_total', 'Total Budgeting', 'total_budgeting.html', ''], ['bt_commission', 'Commission', 'commission_new.html', ''], ['bt_old', 'Old commission (pays today)', 'commission.html', ''], ['bt_leaders', 'Leaders', 'leaders.html', '']] },   // own menu item; the same pages are no longer listed inside Sales
     { key: 'whatsapp', label: 'WhatsApp', icon: 'whatsapp', sub: 'Chats, campaigns and groups', tabs: [['whatsapp', 'WhatsApp', 'whatsapp.html', 'wa'], ['whatsapp_groups', 'Groups', 'whatsapp_groups.html', '']] },
     { key: 'wasales', label: 'WhatsApp Sales', icon: 'wasales', sub: 'Every customer query: who holds it, who is behind, what works', tabs: [['wasales', 'WhatsApp Sales', 'wa_sales_live.html', 'wa']] },
     { key: 'complaints', label: 'Complaints', icon: 'complaints', sub: 'Every customer problem is a ticket — Tracking and Complaint desks', tabs: [['complaints', 'Tickets', 'complaints.html', 'cx'], ['my_complaints', 'My complaints', 'my_complaints.html', 'cxm']] },
@@ -278,6 +279,7 @@ window.WS = (function () {
     'people.html': 'employees', 'employees.html': 'employees', 'ex_employees.html': 'employees', 'attendance_admin.html': 'attendance', 'leave_requests.html': 'leave_requests', 'salary.html': 'salary',
     'approvals.html': 'approvals', 'documents.html': 'documents', 'agreements.html': 'agreements', 'history.html': 'decline_history', 'users.html': 'users', 'roles.html': 'users', 'changes.html': 'users',
     'inventory.html': 'inventory', 'finance_in.html': 'finance', 'finance_sum.html': 'finance', 'finance_parcels.html': 'finance', 'analytics.html': 'analytics', 'departments.html': 'departments', 'offices.html': 'offices', 'excel_files.html': 'excel_files', 'doc_check.html': 'documents', 'handover.html': 'employees',
+    'total_budgeting.html': 'commission', 'commission_new.html': 'commission', 'commission.html': 'commission', 'leaders.html': 'commission',
   };
   const ICON_OF = {};  W.forEach((w) => { ICON_OF[w.key] = w.icon; });
   const byKey = (k) => W.find((w) => w.key === k);
