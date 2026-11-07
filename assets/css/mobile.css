@@ -122,3 +122,12 @@
   html:not(.wa-skip) .stat-card .value, html:not(.wa-skip) .kpi .v{font-size:17px !important;}
   html:not(.wa-skip) .stat-card .label, html:not(.wa-skip) .kpi .l, html:not(.wa-skip) .kpi .k{font-size:9.5px !important;}
 }
+
+/* My Sales: the big numbers and headings, smaller on phones (WhatsApp pages marked wa-skip are not touched) */
+@media (max-width:820px){
+  html:not(.wa-skip) .qc .qn{font-size:19px !important;} html:not(.wa-skip) .ot-big{font-size:25px !important;}
+  html:not(.wa-skip) .sh-cbig b{font-size:24px !important;} html:not(.wa-skip) .sh-res .big{font-size:15px !important;} html:not(.wa-skip) .sh-out .big{font-size:21px !important;}
+  html:not(.wa-skip) .sh-emoji{font-size:20px !important;} html:not(.wa-skip) .sh-head{font-size:14px !important;}
+  html:not(.wa-skip) .cch .kp b{font-size:14px !important;} html:not(.wa-skip) .rtc .rg span{width:52px !important;height:52px !important;font-size:17px !important;}
+  html:not(.wa-skip) .sh-pop h3{font-size:15px !important;} html:not(.wa-skip) .sh-pop p{font-size:12px !important;}
+}
