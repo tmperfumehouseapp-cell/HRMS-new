@@ -174,6 +174,22 @@ details summary{cursor:pointer;font-weight:800;font-size:13px}
 .ftp ul{margin:8px 0 0;padding-left:18px;font-size:13px}.ftp li{margin:3px 0}.ftp li i{font-style:normal;color:var(--mut)}
 .ftr{display:flex;gap:8px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px}.ftr:last-child{border:0}.ftr>div{flex:1;min-width:0}.ftr small{display:block;color:var(--mut)}
 .ftreq{display:flex;gap:8px;margin:8px 0}.ftreq textarea{flex:1;min-height:44px;font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:12px}
+/* UI/UX polish (layout only; no logic changed) */
+.top{position:sticky;top:0;z-index:30;margin:-14px -14px 14px;padding:12px 14px;background:rgba(238,240,243,.92);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.card{border-radius:20px;box-shadow:0 1px 2px rgba(20,22,26,.05),0 6px 18px rgba(20,22,26,.04)}
+.hero{background:linear-gradient(135deg,#fff 0%,#fff6ef 100%)}
+.sechead h2{display:flex;align-items:center;gap:8px}
+.sechead h2:before{content:"";width:4px;height:16px;border-radius:3px;background:var(--or)}
+.pill{transition:transform .12s,box-shadow .12s}
+.pill:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 3px 10px rgba(20,22,26,.12)}
+.pill:focus-visible,.askbox input:focus-visible{outline:2px solid var(--or);outline-offset:2px}
+.sc,.rd{transition:transform .12s}.sc:hover,.rd:hover{transform:translateY(-2px)}
+@media(max-width:620px){
+  .top{margin:-10px -10px 12px;padding:10px}
+  .top .btns{flex-wrap:nowrap;overflow-x:auto;width:100%;padding-bottom:2px;-webkit-overflow-scrolling:touch}
+  .top .btns .pill{flex:0 0 auto}
+  h1{font-size:18px}
+}
 </style>
 </head>
 <body>
