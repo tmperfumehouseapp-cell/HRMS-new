@@ -5,7 +5,7 @@
    play.dino_score / play.dino_board). Pauses when the tab is hidden. Honours "reduce motion" (no shake). */
 (function () {
   if (window.TMDino) return;
-  var W = 640, H = 296, GROUND = 240, rm = false;
+  var W = 640, H = 296, GROUND = 240, rm = false, running = 0;
   try { rm = window.matchMedia('(prefers-reduced-motion:reduce)').matches; } catch (e) {}
   var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
 
@@ -165,7 +165,7 @@
 
     /* ---------- flow + company board ---------- */
     function loop(now) { if (state !== 'run') return; var f = Math.min(3, (now - last) / 16.67); last = now; step(f); fx(f); paint(); if (s.dead) return over(); raf = requestAnimationFrame(loop); }
-    function begin() { lock(true); s = fresh(); parts = []; state = 'run'; start.style.display = 'none'; goov.style.display = 'none'; startAt = performance.now(); last = startAt; jumpQ = true; cancelAnimationFrame(raf); raf = requestAnimationFrame(loop); }
+    function begin() { running = 1; lock(true); s = fresh(); parts = []; state = 'run'; start.style.display = 'none'; goov.style.display = 'none'; startAt = performance.now(); last = startAt; jumpQ = true; cancelAnimationFrame(raf); raf = requestAnimationFrame(loop); }
     function press() { if (state === 'run') { jumpQ = true; return; } begin(); }
     function cell(ic, lbl, r) { return '<div' + (r.mine ? ' class="me"' : '') + '><small>' + ic + ' ' + lbl + '</small><b>' + esc(r.who) + (r.mine ? ' (you)' : '') + '</b><i>' + r.best + '</i></div>'; }
     function board(showResult, sc, ms) {
@@ -190,7 +190,7 @@
       q('.tmd-rp').innerHTML = h;
     }
     function over() {
-      lock(false); state = 'dead'; if (!rm) { tShake = 10; (function sh() { if (tShake > 0 && state === 'dead') { tShake = Math.max(0, tShake - 1.2); paint(); requestAnimationFrame(sh); } else { tShake = 0; if (state === 'dead') paint(); } })(); }
+      running = 0; lock(false); state = 'dead'; if (!rm) { tShake = 10; (function sh() { if (tShake > 0 && state === 'dead') { tShake = Math.max(0, tShake - 1.2); paint(); requestAnimationFrame(sh); } else { tShake = 0; if (state === 'dead') paint(); } })(); }
       try { navigator.vibrate && navigator.vibrate(40); } catch (e) {}
       var sc = score(), ms = Math.round(performance.now() - startAt), nb = sc > best;
       q('.best').dataset.nb = nb ? '1' : '0';
@@ -209,9 +209,9 @@
       var r = cv.getBoundingClientRect(); if (r.bottom < 0 || r.top > innerHeight) return;
       e.preventDefault(); press();
     });
-    document.addEventListener('visibilitychange', function () { if (document.hidden && state === 'run') { state = 'idle'; lock(false); start.style.display = ''; cancelAnimationFrame(raf); } });
+    document.addEventListener('visibilitychange', function () { if (document.hidden && state === 'run') { state = 'idle'; running = 0; lock(false); start.style.display = ''; cancelAnimationFrame(raf); } });
     setWorld(world); s = fresh(); paint(); board(false);
     return { state: function () { return { s: s, st: state, score: score() }; }, press: press };
   }
-  window.TMDino = { mount: mount };
+  window.TMDino = { mount: mount, playing: function () { return !!running; } };
 })();
