@@ -57,7 +57,7 @@ const LAYOUT_BUILD = '261102.2';   // shown under your name in the sidebar
     }
     if (!window.TMWin && !document.getElementById('tmWinJs')) { const w = document.createElement('script'); w.id = 'tmWinJs'; w.src = 'assets/js/win.js?v=1'; w.defer = true; (document.head || document.documentElement).appendChild(w); }
     if (!document.getElementById('sxTheme')) {
-      const t = document.createElement('link'); t.id = 'sxTheme'; t.rel = 'stylesheet'; t.href = 'assets/css/sales_theme.css?v=3'; document.head.appendChild(t);
+      const t = document.createElement('link'); t.id = 'sxTheme'; t.rel = 'stylesheet'; t.href = 'assets/css/sales_theme.css?v=4'; document.head.appendChild(t);
     }
   } catch (e) { /* the page keeps its own look */ }
 })();
@@ -740,7 +740,20 @@ window.WS = (function () {
     } catch (e) { /* the old menu still works */ }
   }
 
-  return { on: true, v: 2, W, adminCats, customNav, iconKey, redirect, hub, wsOf, loadCtx, employeeNav };
+  // Department colour: every page (and every page inside a frame) gets <html data-dept="..."> so the soft department tint in sales_theme.css follows it.
+  // A page knows its department from the workspace that lists it; hub.html uses ?w=; the employee pages (My Day, My Sales ...) are "home".
+  function deptKey() {
+    try {
+      const q = new URLSearchParams(location.search), f = pageOf(location.pathname);
+      if (f === 'hub.html' && q.get('w')) return q.get('w');
+      const t = tabByPage(f); if (t) return t.w.key;
+      if (/^(my_|leave|attendance\.html|tracker|office_care|my-)/.test(f)) return 'home';
+    } catch (e) { /* no colour: the page keeps the plain look */ }
+    return '';
+  }
+  try { const d = deptKey(); if (d) document.documentElement.setAttribute('data-dept', d); } catch (e) { /* ignore */ }
+
+  return { on: true, v: 2, W, adminCats, customNav, iconKey, redirect, hub, wsOf, loadCtx, employeeNav, deptKey };
 })();
 /*WS-END*/
 
