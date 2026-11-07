@@ -109,7 +109,7 @@ function dp_dsp_sr_page(PDO $pdo, $from, $to, $page, array $ix, array &$r) {
 }
 function dp_dsp_sr_blank() { return ['ok' => false, 'seen' => 0, 'updated' => 0, 'same' => 0, 'unmatched' => 0, 'examples' => [], 'error' => '', 'pages' => 0]; }
 /** read the newest Shiprocket orders of the last $days days (at most $maxPages x 100 orders) and copy AWB / courier / status onto our parcels.
- *  This is the quick 15-minute read. The deep read that has no order limit is dp_dsp_reconcile(). */
+ *  This is the quick read, every 10 minutes (same beat as the Shopify order read). The deep read that has no order limit is dp_dsp_reconcile(). */
 function dp_dsp_sr_sync(PDO $pdo, $days = 30, $maxPages = 40) {
     $r = dp_dsp_sr_blank();
     $c = dp_dsp_sr_cfg(); if (!$c['ok']) { $r['error'] = 'Shiprocket email and password are not saved.'; return $r; }
