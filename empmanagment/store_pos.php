@@ -146,13 +146,28 @@ function st_punch_map(PDO $pdo, array $ids): array
 function st_staff_day(PDO $pdo, int $empId, ?array $punch): array
 {
     $day = st_day(); $bills = []; $sum = 0.0; $ml = 0; $com = 0.0;
-    $q = $pdo->prepare("SELECT bill_id, bill_no, created_at, total_ml, total, order_code FROM st_bills WHERE emp_id = ? AND biz_date = ? AND status = 'ok' ORDER BY bill_id DESC");
-    $q->execute([$empId, $day]);
-    foreach ($q->fetchAll() as $b) {
-        $pc = st_pct_for($pdo, (int)$b['total_ml'], (float)$b['total'], $empId, trim((string)$b['order_code']) !== '');
-        $c = $pc['pct'] === null ? 0.0 : round((float)$b['total'] * $pc['pct'] / 100, 2);
-        $bills[] = ['bill_no' => $b['bill_no'], 'time' => substr((string)$b['created_at'], 11, 5), 'ml' => (int)$b['total_ml'], 'total' => (float)$b['total'], 'pct' => $pc['pct'], 'commission' => $c, 'code' => $b['order_code']];
-        $sum += (float)$b['total']; $ml += (int)$b['total_ml']; $com += $c;
+    // Commission = what the ONLINE sales commission rules pay for each bill (price chart, offers, order-code rule), no over-target extra: the same figures as
+    // Total Budgeting → Store. If the commission engine is not available on this server, fall back to the older per-bill chart estimate.
+    $eng = function_exists('budget_engine_ready') && budget_engine_ready();
+    if ($eng) {
+        try {
+            $r = budget_store_calc($pdo, $day, $day); $times = [];
+            foreach (array_reverse($r['bills']) as $b) {
+                if ((int)$b['emp_id'] !== $empId) continue;
+                $bills[] = ['bill_no' => $b['bill_no'], 'time' => $b['time'], 'ml' => (int)$b['ml'], 'total' => (float)$b['total'], 'pct' => $b['pct'], 'commission' => (float)$b['com'], 'code' => $b['code'] ? 'yes' : '', 'rule' => $b['rule'] . ($b['reduced'] ? ' (no code: reduced)' : '')];
+                $sum += (float)$b['total']; $ml += (int)$b['ml']; $com += (float)$b['com'];
+            }
+        } catch (Throwable $e) { error_log('st_staff_day engine: ' . $e->getMessage()); $eng = false; $bills = []; $sum = 0.0; $ml = 0; $com = 0.0; }
+    }
+    if (!$eng) {
+        $q = $pdo->prepare("SELECT bill_id, bill_no, created_at, total_ml, total, order_code FROM st_bills WHERE emp_id = ? AND biz_date = ? AND status = 'ok' ORDER BY bill_id DESC");
+        $q->execute([$empId, $day]);
+        foreach ($q->fetchAll() as $b) {
+            $pc = st_pct_for($pdo, (int)$b['total_ml'], (float)$b['total'], $empId, trim((string)$b['order_code']) !== '');
+            $c = $pc['pct'] === null ? 0.0 : round((float)$b['total'] * $pc['pct'] / 100, 2);
+            $bills[] = ['bill_no' => $b['bill_no'], 'time' => substr((string)$b['created_at'], 11, 5), 'ml' => (int)$b['total_ml'], 'total' => (float)$b['total'], 'pct' => $pc['pct'], 'commission' => $c, 'code' => $b['order_code']];
+            $sum += (float)$b['total']; $ml += (int)$b['total_ml']; $com += $c;
+        }
     }
     $pay = null;
     try {

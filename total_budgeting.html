@@ -108,6 +108,34 @@
 #tb .lines small{display:block; color:var(--muted); font-weight:400; font-size:10.5px;}
 #tb .dp{position:relative; display:inline-flex; width:20px; height:20px; border-radius:50%; overflow:hidden; margin-right:7px; vertical-align:-5px; align-items:center; justify-content:center; font-size:10px; font-weight:800; color:#fff; flex:none;}
 #tb .dp img{position:absolute; inset:0; width:100%; height:100%; object-fit:cover;}
+#tb tr.gap td{height:14px; padding:0; background:#e9ecef; border-right:0; position:static;}
+#tb tr.sec td{background:#dbe8e0; font-weight:800; border-top:2px solid #b9c9bf;} #tb tr.sec td.n{background:#dbe8e0; font-weight:800;}
+#tb .dock{position:sticky; bottom:0; z-index:20; background:#fff; border:1.5px solid var(--ink); border-radius:14px; padding:8px 10px; margin-top:12px; box-shadow:0 -8px 24px -12px rgba(0,0,0,.35); max-height:38vh; overflow:auto;}
+#tb .dock-h{display:flex; flex-wrap:wrap; gap:6px 12px; align-items:center; margin-bottom:6px;} #tb .dock-h b{font-size:13px;}
+#tb .dock-h button{font:inherit; font-size:12px; font-weight:700; border:1px solid var(--line); background:#fff; border-radius:99px; padding:3px 12px; cursor:pointer;} #tb .dock-h button.on{background:var(--ink); color:#fff; border-color:var(--ink);}
+#tb .dz{display:inline-flex; align-items:center; gap:6px; border:1.5px dashed #b8bfc7; border-radius:99px; padding:4px 11px; margin:0 6px 6px 0; font-size:12px; font-weight:600; cursor:pointer; background:#f8f9fb;}
+#tb .dz i{font-style:normal; background:var(--ink); color:#fff; border-radius:99px; padding:0 7px; font-size:11px; font-weight:800;}
+#tb .dz.over,#tb .dz:hover{border-color:#ea580c; background:#fff7ed;} #tb .dz.over{box-shadow:0 0 0 3px #fed7aa;}
+#tb .st{position:relative;} #tb .st.sel .ring{box-shadow:0 0 0 3px #2563eb;} #tb .st.sel::after{content:'✓'; position:absolute; top:-2px; right:6px; background:#2563eb; color:#fff; border-radius:50%; width:18px; height:18px; font-size:12px; line-height:18px; font-weight:800;}
+#tb .grp-h .acts{margin-left:auto; display:flex; gap:6px;} #tb .grp-h .acts button{font:inherit; font-size:11.5px; font-weight:700; border:1px solid var(--line); background:#fff; border-radius:99px; padding:2px 10px; cursor:pointer; color:var(--ink);} #tb .grp-h .acts button:hover{border-color:#ea580c; background:#fff7ed;}
+.pk-ov{position:fixed; inset:0; background:rgba(17,24,39,.45); z-index:9990; display:flex; align-items:center; justify-content:center; padding:12px;}
+.pk{background:#fff; border-radius:16px; width:min(560px,100%); max-height:86vh; display:flex; flex-direction:column; padding:14px 14px 12px; color:#14161a; font-size:13px;}
+.pk-h{display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;} .pk-h b{font-size:15px;} .pk-h button{border:0; background:#f1f2f5; border-radius:50%; width:28px; height:28px; font-size:18px; cursor:pointer; line-height:1;}
+.pk input[type=search]{font:inherit; border:1px solid #d9dde3; border-radius:10px; padding:7px 10px; width:100%;}
+.pk-l{overflow:auto; flex:1; margin:8px 0; min-height:120px;}
+.pk-r{display:flex; align-items:center; gap:8px; padding:6px 4px; border-bottom:1px solid #f0f1f4; cursor:pointer;} .pk-r i{font-style:normal; color:#6b7280; font-size:11.5px; margin-left:4px;} .pk-r em{margin-left:auto; font-style:normal; color:#6b7280; font-size:11.5px; text-align:right;}
+.pk-r .dp{position:relative; display:inline-flex; width:24px; height:24px; border-radius:50%; overflow:hidden; align-items:center; justify-content:center; font-size:11px; font-weight:800; color:#fff; flex:none;} .pk-r .dp img{position:absolute; inset:0; width:100%; height:100%; object-fit:cover;}
+.pk-f{display:flex; justify-content:space-between; align-items:center; gap:10px;} .pk-go{font:inherit; font-weight:800; font-size:13px; background:#14161a; color:#fff; border:0; border-radius:10px; padding:8px 18px; cursor:pointer;} .pk-go:disabled{opacity:.4; cursor:default;}
+#tb .pay{display:inline-block; font-size:9.5px; font-weight:700; line-height:1.15; border-radius:8px; padding:2px 6px; margin-top:3px; cursor:pointer; max-width:100%;} #tb .pay.ok{background:#e3f6ec; color:#16784a;} #tb .pay.no{background:#fff1e6; color:#b45309;} #tb .pay:hover{outline:2px solid #fed7aa;}
+#tb b.gl{cursor:pointer;} #tb b.gl:hover{text-decoration:underline; color:#1d4ed8;}
+#tb td[data-pc]{cursor:pointer;} #tb td[data-pc]:hover{outline:2px solid #fed7aa; outline-offset:-2px;}
+#tb .todo{background:#fff7ed; border:1.5px solid #fed7aa; border-radius:14px; padding:10px 12px; margin-bottom:12px;} #tb .todo b{font-size:13px;} #tb .todo .chips{margin-top:6px; display:flex; flex-wrap:wrap; gap:6px;} #tb .todo .pay{font-size:11px; padding:3px 9px;}
+.su{display:grid; gap:8px; margin:4px 0 8px; overflow:auto;} .su label{font-size:11.5px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#6b7280;} .su select,.su input[type=text],.su input:not([type]){font:inherit; border:1px solid #d9dde3; border-radius:10px; padding:7px 10px; width:100%; text-transform:none; letter-spacing:0; font-weight:400; color:#14161a;}
+.su .opts{display:grid; grid-template-columns:repeat(3,1fr); gap:6px;} .su .opts label{display:flex; gap:6px; align-items:center; text-transform:none; letter-spacing:0; font-size:12.5px; font-weight:600; color:#14161a; border:1.5px solid #e1e4ea; border-radius:12px; padding:8px; cursor:pointer;} .su .opts label.on{border-color:#16945a; background:#f1f8f4;}
+.su .note{background:#f6f7f9; border-radius:10px; padding:8px 10px; font-size:12px; color:#4b5563; text-transform:none; letter-spacing:0; font-weight:400;} .su .err{background:#fde8e6; color:#b3261e; border-radius:10px; padding:8px 10px; font-size:12.5px; text-transform:none; letter-spacing:0;}
+.pn{border:1px solid #eceef1; border-radius:12px; padding:8px 10px; margin-bottom:6px;} .pn .pk-s{color:#6b7280; font-size:12px; margin-top:2px;} .pn .pn-b{margin-top:6px; display:flex; gap:6px;} .pn button,.pn-f button.alt{font:inherit; font-size:12px; font-weight:700; border:1px solid #d9dde3; background:#fff; border-radius:99px; padding:3px 12px; cursor:pointer;}
+.pk-chip{display:inline-block; border-radius:99px; padding:1px 8px; font-size:11px; font-weight:800; background:#eef0f4; color:#4b5563;} .pk-chip.applied{background:#fde8e6; color:#b3261e;} .pk-chip.removed{background:#e3f6ec; color:#16784a;}
+.pn-f{display:grid; gap:6px; border-top:1px solid #eceef1; padding-top:8px; overflow:auto;} .pn-f input,.pn-f select{font:inherit; border:1px solid #d9dde3; border-radius:10px; padding:7px 10px; width:100%;} .pn-f .two{display:grid; grid-template-columns:1fr 1fr; gap:6px;} .pk-err{background:#fde8e6; color:#b3261e; border-radius:10px; padding:8px 10px; margin-bottom:6px;} .pk-ok{background:#e3f6ec; color:#16784a; border-radius:10px; padding:8px 10px; margin-bottom:6px;}
 </style>
 </head>
 <body>
@@ -141,7 +169,7 @@
   const WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const PAYDAYS = 30;                                   // salary and fixed expenses are split by 30, the same as the Salary page
 
-  const S = { tg: 'dept', q: '', msg: '', msgBad: false, tab: 'budget', emp: 'comm', ea: 'pay', eg: 'all', lead: 'fin', M: null, warn: [], edit: null };
+  const S = { bd: '', bp: '', bq: '', bn: 300, bills: null, billsFor: '', mm: false, sel: new Set(), tg: 'dept', q: '', msg: '', msgBad: false, tab: 'budget', emp: 'comm', ea: 'pay', eg: 'all', lead: 'fin', M: null, warn: [], edit: null };
   const ymd = (y, m, d) => y + '-' + pad(m) + '-' + pad(d);
   const addDay = (iso, n) => { const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() + n); return ymd(d.getFullYear(), d.getMonth() + 1, d.getDate()); };
   const wdOf = (iso) => WD[new Date(iso + 'T12:00:00').getDay()];
@@ -164,7 +192,7 @@
       api.get('penalties.list', { month: prev, status: 'applied' }),
       api.get('budget.get', { month }),
       api.get('departments.list'),
-      api.get('st_team.month', { date_from: from, date_to: last < clientToday ? last : clientToday }),
+      api.get('budget.store_comm', { date_from: from, date_to: last < clientToday ? last : clientToday }),
       api.get('budget.retail', { date_from: from, date_to: last < clientToday ? last : clientToday }),
     ]);
     const ok = (i) => R[i].status === 'fulfilled' ? R[i].value : null;
@@ -188,16 +216,19 @@
     const byName = {}; empAll.forEach(e => { byName[nk(e.full_name)] = e; });
     const leadSet = new Set(((lr.rules || {}).leaders || []).map(nk));
     const rows = {}, add = (name, e) => { const k = e ? 'e' + e.employee_id : 'n' + nk(name); if (!rows[k]) rows[k] = { key: k, name: e ? e.full_name : name, empId: e ? Number(e.employee_id) : 0, role: e ? String(e.designation || '') : '', photo: e ? (e.photo || '') : '', dept: e ? String(e.department_name || '') : '', monthly: e ? Number(e.monthly_salary) || 0 : 0, inTeam: false, comm: {}, scomm: {}, rs: {}, pen: {}, why: {} }; return rows[k]; };
-    empAll.forEach(e => { const r = add(e.full_name, e); if (/sales/i.test(r.dept)) r.inTeam = true; });          // every employee is a row; the sales ones are also the Sales Employees list
+    const pplOv = ((ok(5) || {}).people) || {}, ovOf = (id) => pplOv[id] || {}, retailRx = /wholesale|retailer|dealer|retail field/i;
+    const offline = (id, txt) => ovOf(id).grp ? ['store', 'retail'].indexOf(ovOf(id).grp) >= 0 : retailRx.test(txt || '');   // assigned to Retail or Store here (or a retail wholesale person by name): paid by their own rule, no online commission, no target
+    empAll.forEach(e => { const r = add(e.full_name, e); if (/sales/i.test(r.dept) && !offline(r.empId, r.dept + ' ' + r.role)) r.inTeam = true; });          // every employee is a row; the sales ones are also the Sales Employees list
     (cm.people || []).forEach(p => { const e = byName[nk(p.name)]; const r = add(p.name, e); r.inTeam = true; (p.perday || []).forEach(x => { r.comm[x.day] = (r.comm[x.day] || 0) + (Number(x.new) || 0); }); });
     const byEmp = {}; Object.values(rows).forEach(r => { if (r.empId) byEmp[r.empId] = r; });
     [ok(3), ok(4)].forEach(p => ((p || {}).rows || []).forEach(x => { const r = byEmp[Number(x.employee_id)]; if (!r) return; r.pen[x.penalty_date] = (r.pen[x.penalty_date] || 0) + Number(x.amount || 0); r.why[x.penalty_date] = (r.why[x.penalty_date] ? r.why[x.penalty_date] + '; ' : '') + (x.title || x.category || 'Penalty'); }));
     const all = Object.values(rows).sort((a, b) => a.name.localeCompare(b.name));
     // group: a leader is paid by the leader commission, so their fixed salary on the employee card is NOT counted (no double pay)
-    all.forEach(r => { r.leader = leadSet.has(nk(r.name)); r.grp = r.leader ? 'leader' : /wholesale|retailer|dealer|retail field/i.test(r.dept + ' ' + r.role) ? 'retail' : r.inTeam ? 'sales' : /store|retail|shop|counter|showroom/i.test(r.dept + ' ' + r.role) ? 'store' : 'other'; r.perDay = !r.leader && r.monthly > 0 ? r.monthly / PAYDAYS : 0; });
+    all.forEach(r => { const og = ovOf(r.empId); r.rpct = og.rpct == null || og.rpct === '' ? null : Number(og.rpct); r.sc = og.sc === 0 ? 0 : 1; r.leader = leadSet.has(nk(r.name)); r.grp = r.leader ? 'leader' : og.grp ? og.grp : /wholesale|retailer|dealer|retail field/i.test(r.dept + ' ' + r.role) ? 'retail' : r.inTeam ? 'sales' : /store|retail|shop|counter|showroom/i.test(r.dept + ' ' + r.role) ? 'store' : 'other'; r.perDay = !r.leader && r.monthly > 0 ? r.monthly / PAYDAYS : 0; });
     // store commission: same price-by-ML chart as online, but a store has no sales limit, so no over-target extra. People in the Sales department already get their store bills inside the online commission, so they are skipped here (never counted twice).
     const byEmpAll = {}; all.forEach(r => { if (r.empId) byEmpAll[r.empId] = r; });
-    ((ok(7) || {}).people || []).forEach(p => { const r = byEmpAll[Number(p.employee_id)]; if (!r || r.inTeam || r.leader) return; (p.perday || []).forEach(x => { r.scomm[x.day] = (r.scomm[x.day] || 0) + (Number(x.commission) || 0); }); });
+    ((ok(7) || {}).people || []).forEach(p => { const r = byEmpAll[Number(p.employee_id)]; if (!r || r.inTeam || r.leader || r.sc === 0 || r.grp === 'retail') return;   // retail wholesale is paid salary + collections %, never the store / online rules
+       (p.perday || []).forEach(x => { r.scomm[x.day] = (r.scomm[x.day] || 0) + (Number(x.commission) || 0); r.ssales = (r.ssales || 0) + (Number(x.sales) || 0); (r.ssd = r.ssd || {})[x.day] = (Number(x.sales) || 0); (r.sbd = r.sbd || {})[x.day] = (Number(x.bills) || 0); r.sbills = (r.sbills || 0) + (Number(x.bills) || 0); }); });
     // retail wholesale sales per person per day (the % is applied below, so it moves as you type it). Nothing else counts retail orders, so any non-leader who created them is paid on them here.
     ((ok(8) || {}).people || []).forEach(p => { const r = byEmpAll[Number(p.employee_id)]; if (!r || r.leader) return; (p.perday || []).forEach(x => { r.rs[x.day] = { billed: Number(x.billed) || 0, paid: Number(x.paid) || 0 }; }); });
     const team = all.filter(r => r.inTeam);
@@ -210,15 +241,16 @@
     empAll.forEach(e => { const id = Number(e.department_id) || 0; if (id && !deptMap[id]) deptMap[id] = String(e.department_name || 'Department ' + id); });
     const depts = Object.keys(deptMap).map(id => ({ id: Number(id), name: deptMap[id] })).sort((a, b) => a.name.localeCompare(b.name));
     const people = empAll.map(e => ({ id: Number(e.employee_id), name: String(e.full_name || ''), code: String(e.employee_code || ''), role: String(e.designation || ''), deptId: Number(e.department_id) || 0, monthly: Number(e.monthly_salary) || 0, photo: e.photo || '', joined: String(e.joining_date || ''), pending: e.status && e.status !== 'approved' })).sort((a, b) => a.name.localeCompare(b.name));
-    S.M = { all, depts, people, month, from, last, dim, today, shown, days, team, leaders, lrRow, bud, roasKind: lr.rules };
-    S.warn = warn; S.edit = JSON.parse(JSON.stringify({ target: bud.target, lump: bud.lump, expenses: bud.expenses, goals: Object.assign({ sales: 0, leader: 0, retail: 0, store: 0, other: 0 }, bud.goals || {}), retail: Object.assign({ pct: 0, basis: 'billed' }, bud.retail || {}) }));
+    S.M = { all, rowBy: byEmpAll, duty: new Set(((ok(5) || {}).duty || []).map(Number)), depts, people, month, from, last, dim, today, shown, days, team, leaders, lrRow, bud, roasKind: lr.rules };
+    if (S.billsFor !== month) { S.bills = null; }
+    S.warn = warn; S.edit = JSON.parse(JSON.stringify({ target: bud.target, lump: bud.lump, expenses: bud.expenses, goals: Object.assign({ sales: 0, leader: 0, retail: 0, store: 0, other: 0 }, bud.goals || {}), retail: Object.assign({ pct: 0, basis: 'paid' }, bud.retail || {}) }));
     S.claudeFor = '';
     render(); askClaude();
   }
 
   /* ---------- the one set of numbers every tab reads ---------- */
   const penCut = (r, d) => r.pen[addDay(d, -1)] || 0;          // a penalty logged on a day is cut the next day
-  const rc = (r, d) => { const x = r.rs && r.rs[d]; return x ? (x[S.edit.retail.basis === 'paid' ? 'paid' : 'billed'] || 0) * (Number(S.edit.retail.pct) || 0) / 100 : 0; };   // retail wholesale commission: the % on that day's retail sales
+  const rc = (r, d) => { const x = r.rs && r.rs[d]; return x ? (x[S.edit.retail.basis === 'billed' ? 'billed' : 'paid'] || 0) * (r.rpct != null ? r.rpct : (Number(S.edit.retail.pct) || 0)) / 100 : 0; };   // retail wholesale commission: the % on that day's retail sales
   const dayPay = (r, d) => (Number(d.slice(8)) <= PAYDAYS ? r.perDay : 0) + (r.comm[d] || 0) + (r.scomm[d] || 0) + rc(r, d) - penCut(r, d);
   const GK = ['sales', 'leader', 'retail', 'store', 'other'];
   const GL = { sales: 'Sales', leader: 'Leader', retail: 'Retail', store: 'Store', other: 'Other' };
@@ -254,29 +286,40 @@
   const grid = (head, rows, foot) => '<div class="sheet" tabindex="0"><table><thead><tr><th class="i">#</th><th class="n">Name</th><th>Role</th>' + head + S.M.days.map(thd).join('') + '</tr></thead><tbody>' + rows + '</tbody><tfoot>' + foot + '</tfoot></table></div>';
   const tc = (d) => d === S.M.today ? 'tod' : '';
 
-  function empView(all) {
+  function empView(all, forced) {
     const M = S.M, key = all ? 'ea' : 'emp', m = S[key], D = M.days;
     const val = (r, d) => m === 'comm' ? (r.comm[d] || 0) + (r.scomm[d] || 0) + rc(r, d) : m === 'pen' ? (r.pen[d] || 0) : dayPay(r, d);
     const cell = (r, d) => {
       const v = val(r, d);
-      if (m === 'pen') return v ? '<td class="neg ' + (d === M.today ? 'pend' : '') + '" title="' + esc(r.why[d] || '') + (d === M.today ? ' · cut tomorrow' : ' · cut next day') + '">−' + f(v) + '</td>' : '<td class="z ' + tc(d) + '">–</td>';
+      if (m === 'pen') return v ? '<td class="neg ' + (d === M.today ? 'pend' : '') + '"' + (r.empId ? ' data-pc="' + r.empId + '|' + d + '"' : '') + ' title="' + esc(r.why[d] || '') + (d === M.today ? ' · cut tomorrow' : ' · cut next day') + ' · click to apply or remove">−' + f(v) + '</td>' : '<td class="z ' + tc(d) + '"' + (r.empId ? ' data-pc="' + r.empId + '|' + d + '" title="Add a penalty"' : '') + '>–</td>';
       if (m === 'comm') return v ? '<td class="' + tc(d) + '">' + f(v) + '</td>' : '<td class="z ' + tc(d) + '">–</td>';
       const c = penCut(r, d);
       return '<td class="' + tc(d) + '" title="' + f(Number(d.slice(8)) <= PAYDAYS ? r.perDay : 0) + ' day salary + ' + f(r.comm[d] || 0) + ' commission + ' + f(r.scomm[d] || 0) + ' store commission + ' + f(rc(r, d)) + ' retail commission − ' + f(c) + ' penalty">' + f(v) + (c ? '<sup style="color:#b3261e">*</sup>' : '') + '</td>';
     };
     const tot = (r) => D.reduce((a, d) => a + val(r, d), 0);
-    const base = all ? M.all.filter(r => S.eg === 'all' || r.grp === S.eg) : M.team;
+    const base = all ? M.all.filter(r => forced ? r.grp === forced : (S.eg === 'all' || r.grp === S.eg)) : M.team;
+    const comTot = (r) => forced === 'store' ? D.reduce((a, d) => a + (r.scomm[d] || 0), 0) : D.reduce((a, d) => a + rc(r, d), 0);
+    const salesOf = (r) => forced === 'store' ? (r.ssales || 0) : Object.keys(r.rs || {}).reduce((a, d) => a + ((r.rs[d] || {})[S.edit.retail.basis === 'billed' ? 'billed' : 'paid'] || 0), 0);
+    const ex = (r) => forced ? '<td class="t">' + f(salesOf(r)) + '</td><td class="t">' + f(comTot(r)) + '</td>' : '';
     const list = m === 'pen' ? base.filter(r => D.some(d => r.pen[d])) : base;
-    const body = list.map((r, i) => '<tr><td class="i">' + (i + 1) + '</td><td class="n"' + (r.empId ? ' data-emp="' + r.empId + '" title="Open ' + esc(r.name) + '"' : '') + '>' + dp(r) + esc(r.name) + '</td><td class="role" title="' + (r.leader ? 'Leader: paid by the leader commission, so the fixed salary on the card is not counted' : '') + '">' + esc(r.role) + (all ? ' · <b>' + GL[r.grp] + '</b>' : '') + '</td><td class="t">' + (r.leader ? '<span title="Leader: not counted">–</span>' : r.monthly ? f(r.monthly) : '–') + '</td><td class="t">' + (r.perDay ? f(r.perDay) : '–') + '</td><td class="t">' + f(tot(r)) + '</td>' + D.map(d => cell(r, d)).join('') + '</tr>').join('')
+    const rowH = (r, i) => '<tr><td class="i">' + (i + 1) + '</td><td class="n"' + (r.empId ? ' data-emp="' + r.empId + '" title="Open ' + esc(r.name) + '"' : '') + '>' + dp(r) + esc(r.name) + '</td><td class="role" title="' + (r.leader ? 'Leader: paid by the leader commission, so the fixed salary on the card is not counted' : '') + '">' + esc(r.role) + (all ? ' · <b class="gl" data-setup="' + r.empId + '" title="Pay setup">' + GL[r.grp] + '</b>' : '') + '</td><td class="t">' + (r.leader ? '<span title="Leader: not counted">–</span>' : r.monthly ? f(r.monthly) : '–') + '</td><td class="t">' + (r.perDay ? f(r.perDay) : '–') + '</td><td class="t">' + f(tot(r)) + '</td>' + ex(r) + D.map(d => cell(r, d)).join('') + '</tr>';
+    // "All" is cut into spaced sections: the sales leaders first, then the sales team, then retail wholesale, store and the rest, each with its own subtotal
+    const secs = all && !forced && S.eg === 'all' ? [
+      ['Sales · leaders first, then the sales team', list.filter(r => r.grp === 'leader').concat(list.filter(r => r.grp === 'sales'))],
+      ['Retail wholesale', list.filter(r => r.grp === 'retail')], ['Store', list.filter(r => r.grp === 'store')], ['Other employees', list.filter(r => r.grp === 'other')]].filter(x => x[1].length) : null;
+    const subt = (title, rs2) => '<tr class="sec"><td class="i"></td><td class="n">' + esc(title) + ' · ' + rs2.length + '</td><td></td><td>' + f(rs2.reduce((a, r) => a + (r.leader ? 0 : r.monthly), 0)) + '</td><td>' + f(rs2.reduce((a, r) => a + r.perDay, 0)) + '</td><td>' + f(rs2.reduce((a, r) => a + tot(r), 0)) + '</td>' + D.map(d => '<td>' + f(rs2.reduce((a, r) => a + val(r, d), 0)) + '</td>').join('') + '</tr>';
+    let n0 = 0;
+    const body = secs ? secs.map(x => '<tr class="gap"><td colspan="60"></td></tr>' + subt(x[0], x[1]) + x[1].map(r => rowH(r, n0++)).join('')).join('')
+      : list.map(rowH).join('')
       || '<tr><td colspan="20" style="text-align:left;padding:14px">Nobody to show for this month.</td></tr>';
-    const foot = '<tr><td class="i"></td><td class="n">Total · ' + list.length + '</td><td></td><td>' + f(list.reduce((a, r) => a + (r.leader ? 0 : r.monthly), 0)) + '</td><td>' + f(list.reduce((a, r) => a + r.perDay, 0)) + '</td><td>' + f(list.reduce((a, r) => a + tot(r), 0)) + '</td>' + D.map(d => '<td>' + f(list.reduce((a, r) => a + val(r, d), 0)) + '</td>').join('') + '</tr>';
-    const note = m === 'comm' ? 'Commission comes in automatically from the new <b>Commission → Result &amp; rules</b> engine. Store people show their <b>store commission</b>: the same price chart, but no sales limit and no extra. The newest day is next to the name.'
+    const foot = '<tr><td class="i"></td><td class="n">' + (secs ? 'All sections' : 'Total') + ' · ' + list.length + '</td><td></td><td>' + f(list.reduce((a, r) => a + (r.leader ? 0 : r.monthly), 0)) + '</td><td>' + f(list.reduce((a, r) => a + r.perDay, 0)) + '</td><td>' + f(list.reduce((a, r) => a + tot(r), 0)) + '</td>' + (forced ? '<td>' + f(list.reduce((a, r) => a + salesOf(r), 0)) + '</td><td>' + f(list.reduce((a, r) => a + comTot(r), 0)) + '</td>' : '') + D.map(d => '<td>' + f(list.reduce((a, r) => a + val(r, d), 0)) + '</td>').join('') + '</tr>';
+    const note = m === 'comm' ? 'Commission comes in automatically from the new <b>Commission → Result &amp; rules</b> engine. Store people show their <b>store commission</b>: the same rules as online sales, but no over-target extra. The newest day is next to the name.'
       : m === 'pen' ? 'Red cells are penalties logged that day. The dashed one is today and is cut tomorrow. The same penalties show on the Penalties tab and in the budget.'
       : '<b>Day pay = fixed salary ÷ 30 + commission − the penalty cut that day.</b> * marks a day with a penalty cut. Leaders show – because they are paid by the leader commission.';
     const modes = [['pay', 'Day pay'], ['comm', 'Commission'], ['pen', 'Penalty']];
-    const grp = all ? '<div class="seg">' + [['all', 'All']].concat(GK.map(k => [k, GL[k]])).map(x => '<button data-s="eg" data-v="' + x[0] + '" class="' + (S.eg === x[0] ? 'on' : '') + '">' + x[1] + ' (' + (x[0] === 'all' ? M.all.length : M.all.filter(r => r.grp === x[0]).length) + ')</button>').join('') + '</div>' : '';
+    const grp = all && !forced ? '<div class="seg">' + [['all', 'All']].concat(GK.map(k => [k, GL[k]])).map(x => '<button data-s="eg" data-v="' + x[0] + '" class="' + (S.eg === x[0] ? 'on' : '') + '">' + x[1] + ' (' + (x[0] === 'all' ? M.all.length : M.all.filter(r => r.grp === x[0]).length) + ')</button>').join('') + '</div>' : '';
     return '<div class="bar"><div style="display:flex;gap:8px;flex-wrap:wrap"><div class="seg">' + modes.map(x => '<button data-s="' + key + '" data-v="' + x[0] + '" class="' + (m === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</div>' + grp + '</div><span class="hint">' + note + '</span></div>'
-      + grid('<th class="t">Fixed</th><th class="t">Per day</th><th class="t">Month total</th>', body, foot);
+      + grid('<th class="t">Fixed</th><th class="t">Per day</th><th class="t">Month total</th>' + (forced ? '<th class="t">' + (forced === 'store' ? 'Store sales' : 'Collected') + '</th><th class="t">Commission</th>' : ''), body, foot);
   }
 
   function leadView() {
@@ -297,12 +340,69 @@
   function penView() {
     const M = S.M, D = M.days, list = M.all.filter(r => D.some(d => r.pen[d]));
     const logged = (r) => D.reduce((a, d) => a + (r.pen[d] || 0), 0), cut = (r) => D.reduce((a, d) => a + penCut(r, d), 0);
-    const body = list.map((r, i) => '<tr><td class="i">' + (i + 1) + '</td><td class="n"' + (r.empId ? ' data-emp="' + r.empId + '" title="Open ' + esc(r.name) + '"' : '') + '>' + dp(r) + esc(r.name) + '</td><td class="role">' + esc(r.role) + '</td><td class="t">' + f(logged(r)) + '</td><td class="t">' + f(cut(r)) + '</td>' + D.map(d => r.pen[d] ? '<td class="neg ' + (d === M.today ? 'pend' : '') + '" title="' + esc(r.why[d] || '') + (d === M.today ? ' · pending, cut tomorrow' : ' · cut next day') + '">−' + f(r.pen[d]) + '</td>' : '<td class="z ' + tc(d) + '">–</td>').join('') + '</tr>').join('')
+    const body = list.map((r, i) => '<tr><td class="i">' + (i + 1) + '</td><td class="n"' + (r.empId ? ' data-emp="' + r.empId + '" title="Open ' + esc(r.name) + '"' : '') + '>' + dp(r) + esc(r.name) + '</td><td class="role">' + esc(r.role) + '</td><td class="t">' + f(logged(r)) + '</td><td class="t">' + f(cut(r)) + '</td>' + D.map(d => r.pen[d] ? '<td class="neg ' + (d === M.today ? 'pend' : '') + '"' + (r.empId ? ' data-pc="' + r.empId + '|' + d + '"' : '') + ' title="' + esc(r.why[d] || '') + (d === M.today ? ' · pending, cut tomorrow' : ' · cut next day') + ' · click to apply or remove">−' + f(r.pen[d]) + '</td>' : '<td class="z ' + tc(d) + '"' + (r.empId ? ' data-pc="' + r.empId + '|' + d + '" title="Add a penalty"' : '') + '>–</td>').join('') + '</tr>').join('')
       || '<tr><td colspan="20" style="text-align:left;padding:14px">No applied penalties this month.</td></tr>';
     const foot = '<tr><td class="i"></td><td class="n">Total · ' + list.length + ' people</td><td></td><td>' + f(list.reduce((a, r) => a + logged(r), 0)) + '</td><td>' + f(list.reduce((a, r) => a + cut(r), 0)) + '</td>' + D.map(d => '<td>' + f(list.reduce((a, r) => a + (r.pen[d] || 0), 0)) + '</td>').join('') + '</tr>';
     const pending = M.all.reduce((a, r) => a + (r.pen[M.today] || 0), 0);
-    return '<div class="bar"><span class="hint"><b>Rule:</b> a penalty logged on a day is cut from that person the next day, and the budget refreshes. Pending for tomorrow: <b>' + rs(pending) + '</b>. Add or waive penalties on the People → Penalties page.</span></div>'
+    return '<div class="bar"><span class="hint"><b>Rule:</b> a penalty logged on a day is cut from that person the next day, and the budget refreshes. Pending for tomorrow: <b>' + rs(pending) + '</b>. <b>Click a red amount</b> to remove or apply it, or press Add penalty. It changes the budget at once.</span><button class="tbtn" type="button" data-do="penadd">+ Add penalty</button></div>'
       + grid('<th class="t">Logged</th><th class="t">Cut so far</th>', body, foot);
+  }
+
+  /* Store and Retail Wholesale each get their own salary section: the people, their fixed salary, their commission, penalties, and how the group is running against its goal */
+  function groupView(k) {
+    const M = S.M, F = figures(), x = F.L[k], rows = M.all.filter(r => r.grp === k), D = M.days;
+    const com = rows.reduce((a, r) => a + D.reduce((b, d) => b + (k === 'store' ? (r.scomm[d] || 0) : rc(r, d)), 0), 0);
+    const kp = (l, v, n, bad) => '<div class="kpi' + (bad ? ' bad' : '') + '"><span>' + l + '</span><b>' + v + '</b><em>' + n + '</em></div>';
+    const over = x.goal ? x.proj - x.goal : 0, none = rows.filter(r => payInfo(r).t === 'Not assigned').length;
+    const strip = '<div class="kpis te-k">' + kp('People', rows.length, none ? none + ' not assigned yet (count as ₹0)' : 'everybody has a pay rule', none > 0)
+      + kp('Fixed salary a month', lakh(rows.reduce((a, r) => a + r.monthly, 0)), 'official, before penalties')
+      + kp(k === 'store' ? 'Store commission so far' : 'Commission so far', rs(com), k === 'store' ? 'same rules as online, no over-target extra' : (Number(S.edit.retail.pct) || 0) + '% of ' + (S.edit.retail.basis === 'billed' ? 'billed sales' : 'collections') + ' (shared rate)')
+      + kp('Penalties taken off', rs(x.pen), x.pendCut ? '−' + rs(x.pendCut) + ' more tomorrow' : 'click a red amount to change')
+      + kp('Paid so far', rs(x.net), x.goal ? (x.gap > 0 ? '<span class="ov">' + rs(x.gap) + ' over</span>' : '<span class="un">' + rs(-x.gap) + ' under</span>') + ' plan for ' + F.elapsed + ' days' : 'no goal set (Total Budgeting)')
+      + kp('Month end (projected)', rs(x.proj), x.goal ? (over > 0 ? '<span class="ov">' + rs(over) + ' over</span>' : '<span class="un">' + rs(-over) + ' under</span>') + ' the ' + lakh(x.goal) + ' goal' : '', x.goal && over > 0) + '</div>';
+    const how = k === 'store' ? 'Pay = fixed salary + store commission. A store bill pays by the same rules as online sales (price chart, offers, order-code rule) to the person written as “Billed by”, with no over-target extra. Fix the person on a bill below.'
+      : 'Pay = fixed salary + a % of collections (the money received from the shops they sold to). Set the % per person with Pay setup, or the shared rate in the box on the Total Budgeting tab.';
+    return strip + (k === 'store' ? last7() : '') + '<div class="hint" style="margin-bottom:8px">' + how + ' Click a name to open the person, a pay label to set how they are paid.</div>' + empView(true, k) + (k === 'store' ? billsView() : '');
+  }
+  /* the last 7 days of store sales and the commission they earn by the online rules, per person per day */
+  function last7() {
+    const M = S.M, D = M.days.slice(0, 7), rows = M.all.filter(r => r.grp === 'store' && D.some(d => (r.ssd || {})[d] || r.scomm[d]));
+    if (!rows.length) return '<div class="hint" style="margin-bottom:8px">No store sales in the last 7 days.</div>';
+    const c = (r, d) => { const sl = (r.ssd || {})[d] || 0, cm = r.scomm[d] || 0; return '<td class="' + (d === M.today ? 'tod' : '') + '">' + (sl || cm ? '<b>' + rs(cm) + '</b><small style="display:block;color:var(--muted);font-size:10px">' + rs(sl) + ' · ' + ((r.sbd || {})[d] || 0) + ' bills</small>' : '–') + '</td>'; };
+    const tot = (d) => rows.reduce((a, r) => a + (r.scomm[d] || 0), 0), tSales = (d) => rows.reduce((a, r) => a + ((r.ssd || {})[d] || 0), 0);
+    return '<h3 style="margin-top:12px">Last 7 days · store sales and commission (online rules)</h3><div class="sheet plain" style="max-height:none"><table><thead><tr><th style="text-align:left">Person</th>' + D.map(d => '<th class="' + (d === M.today ? 'tod' : '') + '">' + dnice(d) + '</th>').join('') + '<th class="t">7 days</th></tr></thead><tbody>'
+      + rows.map(r => '<tr><td class="n" style="text-align:left" data-emp="' + r.empId + '">' + dp(r) + esc(r.name) + '</td>' + D.map(d => c(r, d)).join('') + '<td class="t"><b>' + rs(D.reduce((a, d) => a + (r.scomm[d] || 0), 0)) + '</b><small style="display:block;color:var(--muted);font-size:10px">' + rs(D.reduce((a, d) => a + ((r.ssd || {})[d] || 0), 0)) + '</small></td></tr>').join('')
+      + '</tbody><tfoot><tr class="sum"><td style="text-align:left">All store people</td>' + D.map(d => '<td><b>' + rs(tot(d)) + '</b><small style="display:block;font-weight:400;font-size:10px">' + rs(tSales(d)) + '</small></td>').join('') + '<td><b>' + rs(D.reduce((a, d) => a + tot(d), 0)) + '</b></td></tr></tfoot></table></div><div class="hint" style="margin:4px 0 10px">Commission in bold, sales and bills under it. Counted live from the store bills with the same rules as online (price chart, offers, order-code rule), no over-target extra. Change “Billed by” below and this recounts.</div>';
+  }
+  /* every store bill of the month (all days) with the commission it pays; Admin can change who billed it, and everything recounts */
+  const MON3 = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'], dnice = (d) => Number(d.slice(8)) + ' ' + MON3[Number(d.slice(5, 7)) - 1];
+  function billsView() {
+    const M = S.M;
+    if (!S.bills) { loadBills(); return '<h3 style="margin-top:14px">Store orders · all days · who billed</h3><div class="hint">Loading the bills and their commission…</div>'; }
+    const all = S.bills, days = [...new Set(all.map(b => b.day))].sort().reverse(), who = {}; all.forEach(b => { const k = b.employee_id || 'un'; who[k] = (who[k] || 0) + 1; });
+    const ed = M.bud.can_edit, sel = (v, o) => ' value="' + o + '"' + (String(v) === String(o) ? ' selected' : '');
+    return '<h3 style="margin-top:16px">Store orders · all days · who billed</h3><div class="bar"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
+      + '<select data-bf="bd" style="font:inherit;font-size:12.5px;padding:5px 8px;border:1px solid var(--line);border-radius:8px"><option' + sel(S.bd, '') + '>All days (' + all.length + ')</option>' + days.map(d => '<option' + sel(S.bd, d) + '>' + dnice(d) + ' (' + all.filter(b => b.day === d).length + ')</option>').join('').replace(/<option value="(\d{4}-\d\d-\d\d)">/g, '<option value="$1">') + '</select>'
+      + '<select data-bf="bp" style="font:inherit;font-size:12.5px;padding:5px 8px;border:1px solid var(--line);border-radius:8px"><option' + sel(S.bp, '') + '>Everybody</option>' + (who.un ? '<option' + sel(S.bp, 'un') + '>Not assigned (' + who.un + ')</option>' : '') + M.people.filter(p => who[p.id]).map(p => '<option' + sel(S.bp, p.id) + '>' + esc(p.name) + ' (' + who[p.id] + ')</option>').join('') + '</select>'
+      + '<input id="bq" type="search" placeholder="Find a bill number…" value="' + esc(S.bq) + '" autocomplete="off" style="font:inherit;font-size:12.5px;padding:5px 12px;border:1px solid var(--line);border-radius:99px;min-width:180px">'
+      + '<button class="tbtn" type="button" data-recount="1" style="padding:5px 12px">↻ Recount</button></div><span class="hint">' + (ed ? 'Change “Billed by” on any bill: the commission moves to that person and the budget recounts.' : 'Only Admin can change who billed.') + '</span></div><div id="billsBox">' + billsInner() + '</div>';
+  }
+  function billsInner() {
+    const M = S.M, ed = M.bud.can_edit, q = nk(S.bq);
+    const list = S.bills.filter(b => (!S.bd || b.day === S.bd) && (S.bp === '' || (S.bp === 'un' ? !b.employee_id : b.employee_id === Number(S.bp))) && (!q || nk(b.bill_no).includes(q)));
+    const sum = (k) => list.reduce((a, b) => a + (Number(b[k]) || 0), 0), shown = list.slice(0, S.bn);
+    const opts = (sel) => '<option value="">Not assigned</option>' + M.people.map(p => '<option value="' + p.id + '"' + (p.id === sel ? ' selected' : '') + '>' + esc(p.name) + '</option>').join('');
+    const rule = (b) => b.com == null ? '–' : b.rule === 'chart' || b.rule === 'offer' ? (b.pct != null ? b.pct + '%' : '') + ' <small style="display:inline;color:var(--muted)">' + b.rule + (b.reduced ? ' · no code, reduced' : '') + '</small>' : '<small class="ov" style="display:inline">' + esc(b.rule) + '</small>';
+    const rows = shown.map(b => '<tr class="' + (b.employee_id ? '' : 'bad') + '"><td style="text-align:left">' + esc(b.bill_no) + '</td><td style="text-align:left">' + dnice(b.day) + ' ' + esc(b.time) + '</td><td>' + b.ml + ' ml</td><td>' + rs(b.total) + '</td><td>' + (b.code ? 'yes' : '–') + '</td><td>' + rule(b) + '</td><td><b>' + (b.com == null ? '–' : rs(b.com)) + '</b></td><td style="text-align:left"><select data-bill="' + b.bill_id + '" ' + (ed ? '' : 'disabled ') + 'style="font:inherit;font-size:12px;padding:2px 4px;max-width:210px">' + opts(b.employee_id) + '</select>' + (b.employee_id ? '' : ' <span class="ov">written: ' + esc(b.name || '—') + '</span>') + '</td></tr>').join('')
+      || '<tr><td colspan="8" style="text-align:left;padding:12px">No bills match.</td></tr>';
+    return '<div class="sheet plain" style="max-height:min(70vh,720px);overflow:auto"><table><thead><tr><th style="text-align:left">Bill</th><th style="text-align:left">When</th><th>Size</th><th>Amount</th><th>Code</th><th>Rule</th><th>Commission</th><th style="text-align:left">Billed by</th></tr></thead><tbody>' + rows + '</tbody><tfoot><tr class="sum"><td style="text-align:left">' + list.length + ' bills</td><td></td><td>' + f(sum('ml')) + ' ml</td><td>' + rs(sum('total')) + '</td><td></td><td></td><td>' + rs(sum('com')) + '</td><td></td></tr></tfoot></table></div>'
+      + (list.length > shown.length ? '<div style="margin-top:8px"><button class="tbtn" type="button" data-more="1">Show 300 more (' + (list.length - shown.length) + ' left)</button></div>' : '');
+  }
+  async function loadBills() {
+    if (S.billsBusy) return; S.billsBusy = true;
+    try { const M = S.M, to = M.today < M.last ? M.today : M.last, r = await api.get('budget.store_bills', { date_from: M.from, date_to: to }); S.bills = r.bills || []; S.billsFor = M.month; }
+    catch (e) { S.bills = []; say((e && e.message) || 'Could not read the store bills.', true); }
+    S.billsBusy = false; if (S.tab === 'store') render();
   }
 
   function chart(F) {
@@ -355,7 +455,7 @@
     const sg = (n) => n === 0 ? '<span>on goal</span>' : n > 0 ? '<span class="ov">' + rs(n) + ' over</span>' : '<span class="un">' + rs(-n) + ' under</span>';
     const rows = GK.map(k => {
       const x = F.L[k], goal = x.goal;
-      return '<tr class="' + (goal ? (x.proj > goal ? 'bad' : 'good') : '') + '"><td>' + GN[k] + '<small>' + (k === 'leader' ? 'Set leader commission. Their fixed salary on the card is not counted.' : k === 'sales' ? 'Commission plus fixed salaries of the sales team' : k === 'store' ? 'Store commission (same chart, no limit, no extra) plus fixed salaries' : k === 'retail' ? 'Fixed salary plus commission on retail wholesale sales (rate on the right)' : 'Fixed salaries ÷ 30 a day') + '</small></td>'
+      return '<tr class="' + (goal ? (x.proj > goal ? 'bad' : 'good') : '') + '"><td>' + GN[k] + '<small>' + (k === 'leader' ? 'Set leader commission. Their fixed salary on the card is not counted.' : k === 'sales' ? 'Commission plus fixed salaries of the sales team' : k === 'store' ? 'Store commission (same rules as online, no extra) plus fixed salaries' : k === 'retail' ? 'Fixed salary plus commission on retail wholesale sales (rate on the right)' : 'Fixed salaries ÷ 30 a day') + '</small></td>'
         + '<td>' + g(k, E.goals[k]) + '</td><td>' + f(x.official) + '<small>before penalties</small></td><td class="' + (x.pen + x.pendCut ? 'ov' : '') + '">' + (x.pen + x.pendCut ? '−' + f(x.pen) : '–') + (x.pendCut ? '<small>and −' + f(x.pendCut) + ' tomorrow</small>' : '') + '</td>'
         + '<td>' + f(x.net) + '<small>' + (goal ? sg(Math.round(x.gap)) + ' for ' + F.elapsed + ' days' : 'no goal set') + '</small></td><td><b>' + f(x.proj) + '</b></td><td>' + (goal ? sg(Math.round(x.projGap)) : '–') + '</td></tr>';
     }).join('');
@@ -395,13 +495,13 @@
       + (E.target ? '<div class="alert ' + (over > 0 ? '' : 'good') + '">' + (over > 0 ? 'Projected ' + lakh(F.projected) + ' against a ' + lakh(E.target) + ' target. ' + lakh(over) + ' to cut, or raise the target.' : 'On track to finish inside the target.') + '</div>' : '<div class="warn">Type this month\'s target below and press Save to see the over / under figure.</div>')
       + '<div class="meter"><i style="width:' + pct + '%"></i><u style="left:' + mark + '%" title="Projected"></u></div><div class="meter-l"><span>Spent ' + pct.toFixed(0) + '% of target</span><span>Black marker: projected month end</span></div>'
       + '<div class="cols"><section><h3>Day by day</h3><div class="sheet plain"><table><thead><tr><th>Item</th><th class="tod">Today</th><th>Yesterday</th><th>Month so far</th><th style="text-align:left">Comes from</th></tr></thead><tbody>'
-      + line('Leaders commission (set amounts)', 'leaders', 'Leaders page') + line('Salespeople commission', 'comm', 'Commission → Result &amp; rules') + line('Store commission (no limit, no extra)', 'scomm', 'Store bills, same price chart') + line('Retail wholesale commission', 'rcomm', 'Retail orders × the % on the right')
+      + line('Leaders commission (set amounts)', 'leaders', 'Leaders page') + line('Salespeople commission', 'comm', 'Commission → Result &amp; rules') + line('Store commission (same rules as online, no over-target extra)', 'scomm', 'Store bills × the online commission rules') + line('Retail wholesale commission', 'rcomm', 'Retail orders × the % on the right')
       + line('Fixed salaries (÷ 30 a day)', 'salary', 'Employee salary') + line('Fixed expenses (÷ 30 a day)', 'fixed', 'List on the right') + line('Penalties cut', 'pen', 'Penalties', true)
       + '<tr class="sum"><td>Net spend</td><td>' + f(t.net) + '</td><td>' + f(yd.net) + '</td><td>' + f(F.spent) + '</td><td class="src"></td></tr></tbody></table></div></section>'
       + '<section><h3>Target, lump sum and fixed expenses (Save also saves the goals)</h3><div class="sheet plain ed"><table><thead><tr><th>Item</th><th>Amount</th><th>Per day</th>' + (ed ? '<th></th>' : '') + '</tr></thead><tbody>'
       + '<tr class="ed"><td>Target for ' + esc(M.month) + '</td><td colspan="2"><input class="a" data-top="target" value="' + esc(E.target || '') + '" inputmode="decimal" ' + (ed ? '' : 'disabled') + '></td>' + (ed ? '<td></td>' : '') + '</tr>'
       + '<tr class="ed"><td>Lump sum added</td><td colspan="2"><input class="a" data-top="lump" value="' + esc(E.lump || '') + '" inputmode="decimal" ' + (ed ? '' : 'disabled') + '></td>' + (ed ? '<td></td>' : '') + '</tr>'
-      + '<tr class="ed"><td>Retail wholesale commission %<small style="display:block;color:var(--muted);font-weight:400">of each retail person\'s sales (returns taken off)</small></td><td colspan="2"><input class="a" data-rpct="1" value="' + esc(E.retail.pct || '') + '" inputmode="decimal" placeholder="0" ' + (ed ? '' : 'disabled') + '> <select data-rbasis="1" ' + (ed ? '' : 'disabled') + ' style="font:inherit;font-size:12px;padding:2px 4px"><option value="billed"' + (E.retail.basis === 'paid' ? '' : ' selected') + '>on billed amount</option><option value="paid"' + (E.retail.basis === 'paid' ? ' selected' : '') + '>on money received</option></select></td>' + (ed ? '<td></td>' : '') + '</tr>'
+      + '<tr class="ed"><td>Retail wholesale commission %<small style="display:block;color:var(--muted);font-weight:400">default for retail people, on top of their fixed salary. Each person can have their own in Pay setup.</small></td><td colspan="2"><input class="a" data-rpct="1" value="' + esc(E.retail.pct || '') + '" inputmode="decimal" placeholder="0" ' + (ed ? '' : 'disabled') + '> <select data-rbasis="1" ' + (ed ? '' : 'disabled') + ' style="font:inherit;font-size:12px;padding:2px 4px"><option value="paid"' + (E.retail.basis === 'billed' ? '' : ' selected') + '>of collections (money received)</option><option value="billed"' + (E.retail.basis === 'billed' ? ' selected' : '') + '>of billed sales</option></select></td>' + (ed ? '<td></td>' : '') + '</tr>'
       + ex + '<tr class="sum"><td>Fixed expenses</td><td>' + f(F.exp) + '</td><td>' + f(F.exp / PAYDAYS) + '</td>' + (ed ? '<td></td>' : '') + '</tr></tbody></table></div>'
       + (ed ? '<div style="margin-top:8px; display:flex; gap:8px"><button class="tbtn" id="addEx" type="button" style="background:#fff;color:var(--ink);border:1px solid var(--line)">+ Add expense</button><button class="tbtn" id="saveBud" type="button">Save</button></div>' : '<div class="hint" style="margin-top:6px">Only Admin can change these.</div>') + '</section></div>'
       + planView(F) + '<h3 style="margin-top:12px">Daily net spend against the daily allowance</h3><div class="chart">' + chart(F) + '</div>'
@@ -411,20 +511,34 @@
   /* ---------- Total Employees: one row of round photos (like story bubbles) per department ---------- */
   const photoUrl = (p) => { try { return p ? API_BASE_URL.replace('/api.php', '') + '/' + String(p).replace(/^\/+/, '') : ''; } catch (e) { return ''; } };
   const hue = (s) => { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
+  /* how a person is paid, from what is defined: fixed salary, commission based, fixed + commission, or not assigned (counts as nothing until defined) */
+  const payInfo = (r) => {
+    if (!r) return { t: 'Not assigned', c: 'no' };
+    if (r.leader) return { t: 'Leader commission', c: 'ok' };
+    const gp = Number(S.edit.retail.pct) || 0, sal = r.monthly > 0;
+    const comm = r.grp === 'sales' ? true : r.grp === 'retail' ? (r.rpct != null ? r.rpct > 0 : gp > 0) : r.grp === 'store' ? r.sc !== 0 : false;
+    if (sal && comm) return { t: 'Fixed + commission', c: 'ok', sub: rs(r.monthly) };
+    if (sal) return { t: 'Fixed salary', c: 'ok', sub: rs(r.monthly) };
+    if (comm) return { t: 'Commission based', c: 'ok' };
+    return { t: 'Not assigned', c: 'no' };
+  };
+  const penMonth = (r) => r ? Object.keys(r.pen).filter(d => d.slice(0, 7) === S.M.month).reduce((a, d) => a + (r.pen[d] || 0), 0) : 0;   // applied this month, till today
   const bubble = (p, drag) => {
     const u = photoUrl(p.photo), ini = esc((p.name.trim()[0] || '?').toUpperCase());
-    return '<div class="st' + (p.pending ? ' pend' : '') + '"' + (drag ? ' draggable="true"' : '') + ' data-emp="' + p.id + '" title="' + esc(p.name + (p.role ? ' · ' + p.role : '')) + (drag ? ' — click to open, drag to another department' : ' — click to open') + '"><div class="ring"><div class="av" style="background:hsl(' + hue(p.name) + ',45%,48%)">'
-      + (u ? '<img src="' + esc(u) + '" alt="" loading="lazy" onerror="this.remove()">' : '') + '<span style="position:absolute;z-index:0">' + ini + '</span></div></div><div class="nm">' + esc(p.name) + '</div><div class="rl">' + esc(p.role || '—') + '</div></div>';
+    return '<div class="st' + (p.pending ? ' pend' : '') + (S.sel.has(p.id) ? ' sel' : '') + '"' + (drag ? ' draggable="true"' : '') + ' data-emp="' + p.id + '" title="' + esc(p.name + (p.role ? ' · ' + p.role : '')) + (drag ? ' — click to open, drag to another department' : ' — click to open') + '"><div class="ring"><div class="av" style="background:hsl(' + hue(p.name) + ',45%,48%)">'
+      + (u ? '<img src="' + esc(u) + '" alt="" loading="lazy" onerror="this.remove()">' : '') + '<span>' + ini + '</span></div></div><div class="nm">' + esc(p.name) + '</div><div class="rl">' + esc(p.role || '—') + '</div>' + (pi => '<div class="pay ' + pi.c + '" data-setup="' + p.id + '" title="Click to set how ' + esc(p.name) + ' is paid">' + pi.t + (pi.sub ? '<br>' + pi.sub : '') + '</div>')(payInfo(S.M.rowBy[p.id])) + (pn => '<div class="pay ' + (pn ? 'no' : 'ok') + '" data-pen="' + p.id + '" title="Penalties applied this month. Click to add or remove.">' + (pn ? 'Penalty −' + rs(pn) : 'No penalty') + '</div>')(penMonth(S.M.rowBy[p.id])) + '</div>';
   };
   /* the same people grouped by how they are paid: sales, leaders, retail wholesale, store, other, with what each group costs */
   function payGroups() {
     const M = S.M, q = nk(S.q), F = figures(), pp = {}; M.people.forEach(p => { pp[p.id] = p; });
-    const sec = GK.map(k => {
-      const rows = M.all.filter(r => r.grp === k && r.empId && pp[r.empId]), list = rows.filter(r => !q || nk(r.name + ' ' + r.role).includes(q)), x = F.L[k];
-      return { k, rows, list, x, fixed: rows.reduce((a, r) => a + (r.leader ? 0 : r.monthly), 0) };
-    }).filter(g => g.rows.length && (!q || g.list.length));
-    return sec.map(g => '<section class="grp"><div class="grp-h"><b>' + esc(GL[g.k] === 'Leader' ? 'Leaders' : GN[g.k]) + '</b><span class="cnt">' + g.rows.length + '</span><span>' + (g.k === 'leader' ? 'paid by the leader commission (their card salary is not counted)' : rs(g.fixed) + ' fixed salary a month') + ' · paid so far ' + rs(g.x.net) + ' · month end ' + rs(g.x.proj) + '</span></div>'
-      + '<div class="strip">' + g.list.map(r => bubble(pp[r.empId], false)).join('') + '</div></section>').join('') || '<div class="card"><div class="empty">Nobody matches “' + esc(S.q) + '”.</div></div>';
+    const rule = { sales: 'Online commission engine (+ fixed salary if set)', leader: 'paid by the leader commission (their card salary is not counted)', retail: 'Fixed salary + % of collections (set per person or the shared rate)', store: 'Fixed salary + store commission (same rules as online, no over-target extra) when their name is on a store bill', other: 'Fixed salary only' };
+    const order = ['sales', 'leader', 'retail', 'store', 'other'];
+    return order.map(k => {
+      const rows = M.all.filter(r => r.grp === k && r.empId && pp[r.empId]), list = rows.filter(r => !q || nk(r.name + ' ' + r.role).includes(q)), x = F.L[k], drop = k !== 'leader';
+      if (q && !list.length) return '';
+      return '<section class="grp"' + (drop ? ' data-pg="' + k + '"' : '') + '><div class="grp-h"><b>' + esc(GL[k] === 'Leader' ? 'Leaders' : GN[k]) + '</b><span class="cnt">' + rows.length + '</span><span>' + esc(rule[k]) + ' · ' + (k === 'leader' ? '' : rs(rows.reduce((a, r) => a + (r.leader ? 0 : r.monthly), 0)) + ' fixed a month · ') + 'paid so far ' + rs(x.net) + ' · month end ' + rs(x.proj) + '</span></div>'
+        + '<div class="strip">' + (list.length ? list.map(r => bubble(pp[r.empId], drop)).join('') : '<div class="none">Nobody here. Drag a person onto this box' + (k === 'retail' ? ' to make them retail wholesale (salary + commission on collections).' : k === 'store' ? ' to put them in the store: they can then bill in the store POS and earn store commission.' : '.') + '</div>') + '</div></section>';
+    }).join('') || '<div class="card"><div class="empty">Nobody matches “' + esc(S.q) + '”.</div></div>';
   }
   function teamGroups() {
     if (S.tg === 'grp') return payGroups();
@@ -435,9 +549,154 @@
     const shown = gs.filter(g => !q || g.list.length);
     return shown.map(g => {
       const pay = g.all.reduce((a, p) => a + p.monthly, 0);
-      return '<section class="grp" data-dept="' + g.id + '"><div class="grp-h"><b>' + esc(g.name) + '</b><span class="cnt">' + g.all.length + '</span><span>' + (pay ? rs(pay) + ' fixed salary a month' : 'No fixed salary (commission-based)') + '</span></div>'
-        + '<div class="strip">' + (g.list.length ? g.list.map(p => bubble(p, true)).join('') : '<div class="none">Nobody here yet. Drag a person onto this box.</div>') + '</div></section>';
+      return '<section class="grp" data-dept="' + g.id + '"><div class="grp-h"><b>' + esc(g.name) + '</b><span class="cnt">' + g.all.length + '</span><span>' + (pay ? rs(pay) + ' fixed salary a month' : 'No fixed salary (commission-based)') + '</span><span class="acts"><button type="button" data-do="add" data-did="' + g.id + '">+ Add people</button>' + (g.id ? '<button type="button" data-do="ren" data-did="' + g.id + '">Rename</button>' + (g.all.length ? '' : '<button type="button" data-do="del" data-did="' + g.id + '">Delete</button>') : '') + '</span></div>'
+        + '<div class="strip">' + (g.list.length ? g.list.map(p => bubble(p, true)).join('') : '<div class="none">Nobody here yet. Drag a person onto this box, or press + Add people.</div>') + '</div></section>';
     }).join('') || '<div class="card"><div class="empty">Nobody matches “' + esc(S.q) + '”.</div></div>';
+  }
+  /* the dock stays on screen: drop a person on a department name (no scrolling), or switch on Move mode, tick many people and press a department once */
+  function dockInner() {
+    const M = S.M, n = S.sel.size, pg = S.tg === 'grp', cnt = (id) => M.people.filter(p => p.deptId === id).length;
+    const chip = (id, name) => '<span class="dz" data-dept="' + id + '" title="' + (n ? 'Move the ' + n + ' selected here' : 'Drop a person here') + '">' + esc(name) + '<i>' + cnt(id) + '</i></span>';
+    const gchip = (k, name) => '<span class="dz" data-pg="' + k + '" title="' + (n ? 'Assign the ' + n + ' selected here' : 'Drop a person here') + '">' + esc(name) + '<i>' + M.all.filter(r => r.grp === k).length + '</i></span>';
+    return '<div class="dock-h"><b>' + (n ? (pg ? 'Assign ' : 'Move ') + n + ' selected to:' : S.mm ? 'Move mode: tick people above, then press a ' + (pg ? 'pay group' : 'department') : 'Drop a person on a ' + (pg ? 'pay group' : 'department')) + '</b>'
+      + '<button type="button" data-mm="1" class="' + (S.mm ? 'on' : '') + '">' + (S.mm ? 'Move mode ON' : 'Move mode (pick many)') + '</button>' + (n ? '<button type="button" data-clr="1">Clear ' + n + '</button>' : '') + '</div>'
+      + (pg ? gchip('sales', 'Sales (online)') + gchip('retail', 'Retail wholesale') + gchip('store', 'Store (offline)') + gchip('other', 'Other') : M.depts.map(d => chip(d.id, d.name)).join('') + chip(0, 'No department'));
+  }
+  /* move people between pay groups: Sales (online) / Retail wholesale / Store (offline) / Other. Store also lets them bill in the store POS. */
+  async function regroup(ids, g) {
+    const M = S.M, rows = ids.map(id => M.rowBy[id]).filter(Boolean), lead = rows.filter(r => r.leader), rs2 = rows.filter(r => !r.leader && (r.grp !== g || !(M.bud.people[r.empId] || {}).grp));
+    if (lead.length && !rs2.length) { say('Leaders are set on the Leaders rule, so they stay leaders.', true); S.sel.clear(); render(); return; }
+    if (!rs2.length) return;
+    say('Assigning ' + (rs2.length === 1 ? rs2[0].name : rs2.length + ' people') + '…'); let bad = 0, why = '';
+    for (const r of rs2) { try { await api.post('budget.person_save', { employee_id: r.empId, grp: g }); } catch (err) { bad++; why = (err && err.message) || 'Could not assign.'; } }
+    S.sel.clear(); S.msg = bad ? bad + ' could not be assigned: ' + why : (rs2.length === 1 ? rs2[0].name : rs2.length + ' people') + ' assigned to ' + GL[g] + (g === 'store' ? ' (they can now bill in the store POS)' : g === 'retail' ? ' (salary + commission on collections)' : '') + '.'; S.msgBad = !!bad;
+    await load();
+  }
+  async function moveMany(ids, to) {
+    const M = S.M, nameOf = (id) => id ? (M.depts.find(d => d.id === id) || {}).name || 'that department' : 'No department';
+    const ps = ids.map(id => M.people.find(x => x.id === id)).filter(p => p && p.deptId !== to); if (!ps.length) return;
+    const prev = ps.map(p => p.deptId); ps.forEach(p => { p.deptId = to; }); S.msg = 'Moving ' + (ps.length === 1 ? ps[0].name : ps.length + ' people') + '…'; S.msgBad = false; render();
+    let bad = 0, why = '';
+    for (let i = 0; i < ps.length; i++) { try { await api.post('employees.set_department', { employee_id: ps[i].id, department_id: to }); } catch (err) { ps[i].deptId = prev[i]; bad++; why = (err && err.message) || 'Could not move.'; } }
+    S.msg = bad ? bad + ' could not be moved: ' + why : (ps.length === 1 ? ps[0].name : ps.length + ' people') + ' moved to ' + nameOf(to) + '.'; S.msgBad = !!bad; S.sel.clear(); render();
+  }
+  const deptName = (id) => id ? ((S.M.depts.find(d => d.id === id) || {}).name || '') : 'No department';
+  const say = (t, bad) => { S.msg = t; S.msgBad = !!bad; const m = $('teMsg') || $('tbMsg'); if (m) { m.textContent = t; m.className = 'te-msg' + (bad ? ' bad' : ''); } };
+  /* pick people from the whole company and add them to one section */
+  function pickPeople(to) {
+    const sel = new Set(), ov = document.createElement('div'); ov.className = 'pk-ov';
+    ov.innerHTML = '<div class="pk" role="dialog"><div class="pk-h"><b>Add people to ' + esc(deptName(to)) + '</b><button type="button" data-x="1" aria-label="Close">×</button></div><input type="search" id="pkQ" placeholder="Find a person by name, role or department…" autocomplete="off"><div class="pk-l" id="pkL"></div><div class="pk-f"><span id="pkN">Nobody picked yet</span><button type="button" class="pk-go" id="pkGo" disabled>Add</button></div></div>';
+    document.body.appendChild(ov);
+    const close = () => ov.remove(), q = ov.querySelector('#pkQ'), L = ov.querySelector('#pkL'), N = ov.querySelector('#pkN'), G = ov.querySelector('#pkGo');
+    const list = () => { const k = nk(q.value), P = S.M.people.filter(p => p.deptId !== to && (!k || nk(p.name + ' ' + p.role + ' ' + p.code + ' ' + deptName(p.deptId)).includes(k)));
+      L.innerHTML = P.slice(0, 300).map(p => '<label class="pk-r"><input type="checkbox" data-id="' + p.id + '"' + (sel.has(p.id) ? ' checked' : '') + '>' + dp({ name: p.name, photo: p.photo }) + '<span><b>' + esc(p.name) + '</b><i>' + esc(p.role || '') + '</i></span><em>' + esc(deptName(p.deptId) || 'No department') + '</em></label>').join('') || '<div class="none" style="padding:16px;color:#6b7280">Nobody to show.</div>'; };
+    ov.addEventListener('click', (e) => { if (e.target === ov || e.target.closest('[data-x]')) close(); });
+    ov.addEventListener('change', (e) => { const c = e.target.closest('input[data-id]'); if (!c) return; const id = Number(c.dataset.id); c.checked ? sel.add(id) : sel.delete(id); N.textContent = sel.size ? sel.size + ' picked' : 'Nobody picked yet'; G.disabled = !sel.size; G.textContent = sel.size ? 'Add ' + sel.size : 'Add'; });
+    q.addEventListener('input', list); G.addEventListener('click', () => { const ids = [...sel]; close(); moveMany(ids, to); });
+    list(); q.focus();
+  }
+  async function deptAction(what, id) {
+    try {
+      if (what === 'new') {
+        const name = (prompt('Name of the new section (department):') || '').trim(); if (!name) return;
+        if (S.M.depts.some(d => nk(d.name) === nk(name))) { say('A section called “' + name + '” already exists.', true); return; }
+        const r = await api.post('departments.save', { department_name: name }); const nid = Number(r.department_id);
+        S.M.depts.push({ id: nid, name }); S.M.depts.sort((a, b) => a.name.localeCompare(b.name)); say('Section “' + name + '” created. Add people to it.'); render(); pickPeople(nid);
+      } else if (what === 'ren') {
+        const d = S.M.depts.find(x => x.id === id); const name = (prompt('New name for this section:', d.name) || '').trim(); if (!name || name === d.name) return;
+        await api.post('departments.save', { department_id: id, department_name: name }); d.name = name; S.M.depts.sort((a, b) => a.name.localeCompare(b.name)); S.M.people.forEach(p => { if (p.deptId === id) p.dept = name; }); say('Renamed to “' + name + '”.'); render();
+      } else if (what === 'del') {
+        const d = S.M.depts.find(x => x.id === id); if (!confirm('Delete the empty section “' + d.name + '”?')) return;
+        await api.post('departments.delete', { department_id: id }); S.M.depts = S.M.depts.filter(x => x.id !== id); say('Section “' + d.name + '” deleted.'); render();
+      } else if (what === 'add') pickPeople(id);
+    } catch (err) { say((err && err.message) || 'Could not do that.', true); }
+  }
+  /* people whose pay is still undefined: they count as nothing until somebody defines it here */
+  function pendingCard() {
+    const M = S.M, todo = M.all.filter(r => r.empId && !r.leader && payInfo(r).t === 'Not assigned');
+    if (!todo.length) return '<div class="alert good" style="margin-bottom:10px">Everybody has a pay rule: a fixed salary, commission, or both.</div>';
+    return '<div class="todo"><b>Still to define: ' + todo.length + ' ' + (todo.length === 1 ? 'person has' : 'people have') + ' no salary or commission yet</b> <span class="hint">They count as ₹0 until you define them. Click a name to set how they are paid.</span><div class="chips">'
+      + todo.slice(0, 40).map(r => '<span class="pay no" data-setup="' + r.empId + '">' + esc(r.name) + ' · ' + GL[r.grp] + '</span>').join('') + (todo.length > 40 ? '<span class="hint">+ ' + (todo.length - 40) + ' more (use the search box)</span>' : '') + '</div></div>';
+  }
+  /* Pay setup: group, how they are paid (fixed / commission / both), the salary, and the rule of that group */
+  function setupPopup(empId) {
+    const M = S.M, r = M.rowBy[empId], p = M.people.find(x => x.id === empId); if (!r || !p) return;
+    if (r.leader) { say('Leaders are paid by the leader commission set on the Leaders tab. Their card salary is not counted.'); return; }
+    const gp = Number(S.edit.retail.pct) || 0, pi = payInfo(r);
+    let pt = pi.t === 'Fixed salary' ? 'fixed' : pi.t === 'Fixed + commission' ? 'both' : 'comm';
+    const ov = document.createElement('div'); ov.className = 'pk-ov'; document.body.appendChild(ov);
+    const close = () => ov.remove(), draw = (g, keepSal, keepR, keepD) => {
+      const sal = keepSal != null ? keepSal : (r.monthly || ''), rp = keepR != null ? keepR : (r.rpct != null ? r.rpct : ''), du = keepD != null ? keepD : (M.duty.has(empId) || g === 'store');
+      const opt = (v, t) => '<label class="' + (pt === v ? 'on' : '') + '"><input type="radio" name="pt" value="' + v + '"' + (pt === v ? ' checked' : '') + '>' + t + '</label>';
+      const comm = g === 'sales' ? '<div class="note">Commission comes from the online sales engine (Commission → Result &amp; rules).</div>'
+        : g === 'retail' ? (pt === 'fixed' ? '<div class="note">No commission: only the fixed salary.</div>' : '<label>Commission % of collections (money received)</label><input type="text" id="suR" inputmode="decimal" value="' + esc(rp) + '" placeholder="Blank = the shared rate (' + gp + '%)"><div class="note">Pay = fixed salary + this % of the money collected from the shops this person sold to. Returns are taken off.</div>')
+        : g === 'store' ? (pt === 'fixed' ? '<div class="note">No store commission: only the fixed salary.</div>' : '<div class="note">Store commission follows the same rules as the online sales commission: the price-by-ML chart, offers and the order-code rule. The only difference is that a store has no sales limit, so there is no over-target extra. It is earned by the name written as “Billed by” on a store bill.</div>') + '<label style="display:flex;gap:8px;align-items:center;text-transform:none;letter-spacing:0;font-size:13px;color:#14161a"><input type="checkbox" id="suD"' + (du ? ' checked' : '') + '> Can bill in the store POS (shows in “Billed by”)</label>'
+        : '<div class="note">“Other” has no commission rule. For commission choose Sales, Retail wholesale or Store.</div>';
+      ov.innerHTML = '<div class="pk" role="dialog"><div class="pk-h"><b>Pay setup · ' + esc(p.name) + '</b><button type="button" data-x="1" aria-label="Close">×</button></div><div class="su">'
+        + '<label>Pay group</label><select id="suG">' + [['sales', 'Sales (online)'], ['retail', 'Retail wholesale'], ['store', 'Store (offline)'], ['other', 'Other']].map(x => '<option value="' + x[0] + '"' + (g === x[0] ? ' selected' : '') + '>' + x[1] + '</option>').join('') + '</select>'
+        + '<label>How is this person paid?</label><div class="opts">' + opt('fixed', 'Fixed salary') + opt('comm', 'Commission based') + opt('both', 'Fixed + commission') + '</div>'
+        + (pt === 'comm' ? '' : '<label>Fixed monthly salary (₹)</label><input type="text" id="suSal" inputmode="decimal" value="' + esc(sal) + '" placeholder="e.g. 20000">') + comm
+        + '<div id="suE"></div></div><div class="pk-f"><span class="hint">Today: ' + esc(pi.t) + '</span><button type="button" class="pk-go" id="suGo">Save</button></div></div>';
+    };
+    let g0 = r.grp === 'leader' ? 'other' : r.grp; draw(g0);
+    const cur = () => ({ sal: (ov.querySelector('#suSal') || {}).value, rp: (ov.querySelector('#suR') || {}).value, du: (ov.querySelector('#suD') || {}).checked });
+    ov.addEventListener('click', (e) => { if (e.target === ov || e.target.closest('[data-x]')) close(); });
+    ov.addEventListener('change', (e) => {
+      const c = cur();
+      if (e.target.name === 'pt') { pt = e.target.value; draw(ov.querySelector('#suG').value, c.sal, c.rp, c.du); }
+      else if (e.target.id === 'suG') { g0 = e.target.value; draw(g0, c.sal, c.rp, g0 === 'store' ? true : c.du); }
+    });
+    ov.addEventListener('click', async (e) => {
+      if (e.target.id !== 'suGo') return; const g = ov.querySelector('#suG').value, c = cur(), E = ov.querySelector('#suE'), btn = e.target;
+      const sal = pt === 'comm' ? 0 : Number(String(c.sal || '').replace(/,/g, ''));
+      if (pt !== 'comm' && !(sal > 0)) { E.innerHTML = '<div class="err">Type the fixed monthly salary, or choose “Commission based”.</div>'; return; }
+      if (pt !== 'fixed' && g === 'other') { E.innerHTML = '<div class="err">“Other” has no commission rule. Choose Sales, Retail wholesale or Store, or pick “Fixed salary”.</div>'; return; }
+      const body = { employee_id: empId, grp: g };
+      if (g === 'retail') body.rpct = pt === 'fixed' ? 0 : String(c.rp || '').replace(/,/g, '');
+      else body.rpct = '';
+      body.sc = g === 'store' && pt === 'fixed' ? 0 : 1;
+      if (g === 'store') body.duty = !!c.du;
+      btn.disabled = true;
+      try {
+        if (sal !== r.monthly) await api.post('employees.set_salary', { employee_id: empId, monthly_salary: sal });
+        await api.post('budget.person_save', body);
+        close(); S.msg = p.name + ': pay saved (' + (pt === 'fixed' ? 'fixed salary' : pt === 'comm' ? 'commission based' : 'fixed + commission') + ', ' + GL[g] + ').'; S.msgBad = false; await load();
+      } catch (err) { btn.disabled = false; E.innerHTML = '<div class="err">' + esc((err && err.message) || 'Could not save.') + '</div>'; }
+    });
+  }
+  /* Penalties: see what is on a day (or the month), remove one, put one back, or add a new one. Same list as the Penalties page. */
+  async function penPopup(empId, date) {
+    const M = S.M; let changed = false, rules = [], byId = {};
+    const ov = document.createElement('div'); ov.className = 'pk-ov'; document.body.appendChild(ov);
+    const close = () => { ov.remove(); if (changed) load().catch(() => {}); };
+    const nice = (d) => d ? Number(d.slice(8)) + ' ' + ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][Number(d.slice(5, 7)) - 1] : 'this month';
+    try { const rr = await api.get('penalties.rules'); rules = (rr.rules || []).filter(x => x.active).map(x => x.name); } catch (e) {}
+    const draw = async (flash, bad) => {
+      let rows = [], err = '';
+      if (empId) { try { const r = await api.get('penalties.list', { month: (date || M.today).slice(0, 7), employee_id: empId }); rows = (r.rows || []).filter(x => !date || x.penalty_date === date); } catch (e) { err = e.message || 'Could not read the penalties.'; } }
+      byId = {}; rows.forEach(x => { byId[x.penalty_id] = x; });
+      const who = empId && M.rowBy[empId] ? M.rowBy[empId].name : '';
+      ov.innerHTML = '<div class="pk" role="dialog"><div class="pk-h"><b>Penalties' + (who ? ' · ' + esc(who) : '') + (date ? ' · ' + nice(date) : empId ? ' · this month' : '') + '</b><button type="button" data-x="1" aria-label="Close">×</button></div>'
+        + (flash ? '<div class="' + (bad ? 'pk-err' : 'pk-ok') + '">' + esc(flash) + '</div>' : '') + (err ? '<div class="pk-err">' + esc(err) + '</div>' : '')
+        + '<div class="pk-l" style="min-height:0">' + (empId ? (rows.map(x => '<div class="pn"><div><b>' + esc(x.title) + '</b> · ₹' + f(x.amount) + ' <span class="pk-chip ' + (x.status === 'applied' ? 'applied' : 'removed') + '">' + (x.status === 'applied' ? 'applied' : 'removed') + '</span></div><div class="pk-s">' + nice(x.penalty_date) + (x.penalty_date === M.today && x.status === 'applied' ? ' · logged today, cut from pay tomorrow' : x.status === 'applied' ? ' · cut next day' : '') + (x.note ? ' · ' + esc(x.note) : '') + (x.created_by ? ' · by ' + esc(x.created_by) : '') + '</div><div class="pn-b">' + (x.status === 'applied' ? '<button type="button" data-a="rm" data-id="' + x.penalty_id + '">Remove</button>' : '<button type="button" data-a="again" data-id="' + x.penalty_id + '">Apply again</button>') + '</div></div>').join('') || '<div class="hint" style="padding:6px 2px">No penalty ' + (date ? 'on this day' : 'this month') + '.</div>') : '<div class="hint" style="padding:6px 2px">Choose who and write the penalty below.</div>') + '</div>'
+        + '<div class="pn-f"><b>Add a penalty</b>' + (empId ? '' : '<select id="pnE"><option value="">Choose the employee…</option>' + M.all.filter(r => r.empId && !r.leader).map(r => '<option value="' + r.empId + '">' + esc(r.name) + (r.role ? ' · ' + esc(r.role) : '') + '</option>').join('') + '</select>')
+        + '<div class="two"><input type="date" id="pnD" value="' + (date || M.today) + '"><input id="pnA" inputmode="decimal" placeholder="Amount ₹"></div><input id="pnT" list="pnR" placeholder="What is it for? (late, absent, mistake…)"><datalist id="pnR">' + rules.map(n => '<option value="' + esc(n) + '">').join('') + '</datalist><input id="pnN" placeholder="Note (optional)">'
+        + '<label style="display:flex;gap:6px;align-items:center;font-size:12.5px"><input type="checkbox" id="pnY" checked style="width:auto"> Tell the employee</label><div class="pk-f"><span class="hint">A penalty logged today is cut from pay tomorrow.</span><button type="button" class="pk-go" id="pnGo">Add penalty</button></div></div></div>';
+    };
+    const run = async (fn, okMsg) => { changed = true; try { await fn(); await draw(okMsg, false); } catch (e) { await draw((e && e.message) || 'Could not do that.', true); } };
+    ov.addEventListener('click', async (e) => {
+      if (e.target === ov || e.target.closest('[data-x]')) { close(); return; }
+      const b = e.target.closest('button[data-a]'), g = e.target.id === 'pnGo';
+      if (b) { const x = byId[b.dataset.id]; if (!x) return;
+        if (b.dataset.a === 'rm') { if (!confirm('Remove this penalty of ₹' + f(x.amount) + '?')) return; await run(() => api.post('penalties.waive', { penalty_id: x.penalty_id, reason: 'Removed in Total Budgeting' }), 'Penalty removed. It is no longer deducted.'); }
+        else await run(() => api.post('penalties.apply', { employee_id: empId, title: x.title, amount: x.amount, date: x.penalty_date, note: 'Applied again', notify: false }), 'Penalty applied again. It is deducted.'); return; }
+      if (g) { const id = empId || Number((ov.querySelector('#pnE') || {}).value || 0), v = (i) => (ov.querySelector(i) || {}).value || '';
+        if (!id) { await draw('Choose the employee first.', true); return; }
+        const body = { employee_id: id, title: v('#pnT').trim(), amount: Number(v('#pnA').replace(/,/g, '')) || 0, date: v('#pnD'), note: v('#pnN').trim(), notify: !!(ov.querySelector('#pnY') || {}).checked };
+        if (!body.title) { await draw('Write what the penalty is for.', true); return; } if (!(body.amount > 0)) { await draw('Type the amount in rupees.', true); return; }
+        if (!empId) { empId = id; } await run(() => api.post('penalties.apply', body), 'Penalty added. It is deducted from the pay.'); }
+    });
+    await draw();
   }
   function teamView() {
     const M = S.M, P = M.people, d30 = addDay(M.today, -30);
@@ -449,18 +708,29 @@
       + kp('Fixed salary a month', lakh(pay), P.filter(p => !p.monthly).length + ' are commission-only')
       + kp('Joined last 30 days', fresh.length, fresh.slice(0, 3).map(p => esc(p.name.split(' ')[0])).join(', ') || 'no new joiners')
       + kp('No photo / no department', P.filter(p => !p.photo).length + ' / ' + P.filter(p => !p.deptId).length, 'worth completing') + '</div>'
-      + '<div class="te-bar"><div class="seg">' + [['dept', 'By department'], ['grp', 'By pay: sales · leaders · retail · store']].map(x => '<button data-s="tg" data-v="' + x[0] + '" class="' + (S.tg === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</div><input id="teQ" type="search" placeholder="Find a person…" value="' + esc(S.q) + '" autocomplete="off"><span class="hint">Click a photo to open the person. ' + (S.tg === 'dept' ? '<b>Drag a photo onto another department</b> to move them.' : 'Everybody is here: sales, leaders, retail wholesale, store and the rest.') + '</span><span class="te-msg' + (S.msgBad ? ' bad' : '') + '" id="teMsg">' + esc(S.msg) + '</span></div>'
-      + '<div id="teGroups">' + teamGroups() + '</div>';
+      + '<div class="te-bar">' + (S.tg === 'dept' ? '<button class="tbtn" type="button" data-do="new">+ New section</button>' : '') + '<div class="seg">' + [['dept', 'By department'], ['grp', 'By pay: sales · leaders · retail · store']].map(x => '<button data-s="tg" data-v="' + x[0] + '" class="' + (S.tg === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</div><input id="teQ" type="search" placeholder="Find a person…" value="' + esc(S.q) + '" autocomplete="off"><span class="hint">Click a photo to open the person. ' + (S.tg === 'dept' ? '<b>Drag a photo onto another department</b> to move them.' : 'Everybody is here: sales, leaders, retail wholesale, store and the rest.') + '</span><span class="te-msg' + (S.msgBad ? ' bad' : '') + '" id="teMsg">' + esc(S.msg) + '</span></div>'
+      + pendingCard() + '<div id="teGroups">' + teamGroups() + '</div>'
+      + '<div class="dock" id="teDock">' + dockInner() + '</div>';
   }
 
   function render() {
-    const tabs = [['budget', 'Total Budgeting'], ['emps', 'Employees'], ['emp', 'Sales Employees'], ['lead', 'Leaders'], ['pen', 'Penalties'], ['team', 'Total Employees']];
-    const body = S.tab === 'budget' ? budView() : S.tab === 'emps' ? empView(true) : S.tab === 'emp' ? empView(false) : S.tab === 'lead' ? leadView() : S.tab === 'team' ? teamView() : penView();
+    const tabs = [['budget', 'Total Budgeting'], ['emps', 'Employees'], ['emp', 'Sales Employees'], ['retail', 'Retail Wholesale'], ['store', 'Store'], ['lead', 'Leaders'], ['pen', 'Penalties'], ['team', 'Total Employees']];
+    const body = S.tab === 'budget' ? budView() : S.tab === 'emps' ? empView(true) : S.tab === 'emp' ? empView(false) : S.tab === 'retail' ? groupView('retail') : S.tab === 'store' ? groupView('store') : S.tab === 'lead' ? leadView() : S.tab === 'team' ? teamView() : penView();
     $('tb').innerHTML = (S.warn.length ? '<div class="warn">' + S.warn.map(esc).join('<br>') + '</div>' : '')
-      + '<div class="tabs" role="tablist">' + tabs.map(t => '<button role="tab" data-t="' + t[0] + '" class="' + (S.tab === t[0] ? 'on' : '') + '">' + t[1] + '</button>').join('') + '</div>' + body;
+      + '<div class="tabs" role="tablist">' + tabs.map(t => '<button role="tab" data-t="' + t[0] + '" class="' + (S.tab === t[0] ? 'on' : '') + '">' + t[1] + '</button>').join('') + '</div>' + (S.msg && S.tab !== 'team' ? '<div class="te-msg' + (S.msgBad ? ' bad' : '') + '" id="tbMsg" style="margin-bottom:8px">' + esc(S.msg) + '</div>' : '') + body;
   }
 
   $('tb').addEventListener('click', async (e) => {
+    const su = e.target.closest('[data-setup]'); if (su) { e.stopPropagation(); setupPopup(Number(su.dataset.setup)); return; }
+    const pnb = e.target.closest('[data-pen]'); if (pnb) { e.stopPropagation(); penPopup(Number(pnb.dataset.pen), ''); return; }
+    const pc = e.target.closest('td[data-pc]'); if (pc) { const x = pc.dataset.pc.split('|'); penPopup(Number(x[0]), x[1]); return; }
+    if (e.target.closest('[data-more]')) { S.bn += 300; const bx = $('billsBox'); if (bx) bx.innerHTML = billsInner(); return; }
+    if (e.target.closest('[data-recount]')) { S.bills = null; render(); return; }
+    const act = e.target.closest('button[data-do]'); if (act) { if (act.dataset.do === 'penadd') { penPopup(0, ''); return; } deptAction(act.dataset.do, Number(act.dataset.did || 0)); return; }
+    const dz = e.target.closest('.dz[data-dept], .dz[data-pg]'); if (dz) { if (S.sel.size) { if (dz.dataset.pg) regroup([...S.sel], dz.dataset.pg); else moveMany([...S.sel], Number(dz.dataset.dept)); } else { const m = $('teMsg'); if (m) { m.textContent = 'Drag a person here, or turn on Move mode and tick people first.'; m.className = 'te-msg'; } } return; }
+    const dm = e.target.closest('button[data-mm]'); if (dm) { S.mm = !S.mm; if (!S.mm) S.sel.clear(); render(); return; }
+    if (e.target.closest('button[data-clr]')) { S.sel.clear(); render(); return; }
+    const pk = e.target.closest('.st[data-emp]'); if (pk && S.mm) { const id = Number(pk.dataset.emp); S.sel.has(id) ? S.sel.delete(id) : S.sel.add(id); pk.classList.toggle('sel', S.sel.has(id)); const dk = $('teDock'); if (dk) dk.innerHTML = dockInner(); return; }
     const nm = e.target.closest('td.n[data-emp], .st[data-emp]'); if (nm && window.PersonCard) { PersonCard.open(Number(nm.dataset.emp), { onChange: () => load().catch(() => {}) }); return; }
     const b = e.target.closest('button'); if (!b) return;
     if (b.dataset.t) { S.tab = b.dataset.t; render(); return; }
@@ -474,6 +744,13 @@
     }
   });
   $('tb').addEventListener('change', (e) => {
+    const bf = e.target; if (bf.dataset && bf.dataset.bf) { S[bf.dataset.bf] = bf.value; S.bn = 300; render(); return; }
+    const sb = e.target; if (sb.dataset && sb.dataset.bill) {
+      const b = (S.bills || []).find(x => x.bill_id === Number(sb.dataset.bill)), to = Number(sb.value);
+      if (!b || !to) { render(); return; }
+      api.post('budget.bill_assign', { bill_id: b.bill_id, employee_id: to }).then(() => { const p = S.M.people.find(x => x.id === to); b.employee_id = to; b.name = p ? p.name : b.name; S.msg = 'Bill ' + b.bill_no + ' now belongs to ' + (p ? p.name : 'them') + '. Commission recounted.'; S.msgBad = false; S.bills = null; return load(); }).catch(err => { S.msg = (err && err.message) || 'Could not change the person.'; S.msgBad = true; render(); });
+      return;
+    }
     const i = e.target; if (i.dataset && i.dataset.rbasis) { S.edit.retail.basis = i.value; render(); return; }
     if (i.tagName !== 'INPUT') return;
     if (i.dataset.rpct) { S.edit.retail.pct = Math.max(0, Math.min(50, Number(String(i.value).replace(/,/g, '')) || 0)); render(); return; }
@@ -485,22 +762,16 @@
   });
   /* drag a person onto another department */
   let dragId = 0;
-  const tb = $('tb'), grpOf = (e) => e.target.closest && e.target.closest('.grp[data-dept]');
+  const tb = $('tb'), grpOf = (e) => e.target.closest && e.target.closest('[data-dept],[data-pg]');
   tb.addEventListener('dragstart', (e) => { const st = e.target.closest && e.target.closest('.st[data-emp]'); if (!st) return; dragId = Number(st.dataset.emp); st.classList.add('drag'); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', String(dragId)); } catch (x) {} });
   tb.addEventListener('dragend', () => { dragId = 0; tb.querySelectorAll('.drag,.over').forEach(x => x.classList.remove('drag', 'over')); });
-  tb.addEventListener('dragover', (e) => { const g = grpOf(e); if (!g || !dragId) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move'; tb.querySelectorAll('.grp.over').forEach(x => { if (x !== g) x.classList.remove('over'); }); g.classList.add('over'); });
+  tb.addEventListener('dragover', (e) => { const g = grpOf(e); if (!g || !dragId) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move'; tb.querySelectorAll('.over').forEach(x => { if (x !== g) x.classList.remove('over'); }); g.classList.add('over'); });
   tb.addEventListener('dragleave', (e) => { const g = grpOf(e); if (g && !g.contains(e.relatedTarget)) g.classList.remove('over'); });
-  tb.addEventListener('drop', async (e) => {
+  tb.addEventListener('drop', (e) => {
     const g = grpOf(e); if (!g || !dragId) return; e.preventDefault(); g.classList.remove('over');
-    const p = S.M.people.find(x => x.id === dragId), to = Number(g.dataset.dept); dragId = 0;
-    if (!p || p.deptId === to) return;
-    const nameOf = (id) => id ? (S.M.depts.find(d => d.id === id) || {}).name || 'that department' : 'No department';
-    const from = p.deptId; p.deptId = to; S.msg = 'Moving ' + p.name + '…'; S.msgBad = false; render();
-    try { await api.post('employees.set_department', { employee_id: p.id, department_id: to }); S.msg = p.name + ' moved from ' + nameOf(from) + ' to ' + nameOf(to) + '.'; }
-    catch (err) { p.deptId = from; S.msg = (err && err.message) || 'Could not move.'; S.msgBad = true; }
-    render();
+    const ids = S.sel.has(dragId) ? [...S.sel] : [dragId]; dragId = 0; if (g.dataset.pg) regroup(ids, g.dataset.pg); else moveMany(ids, Number(g.dataset.dept));
   });
-  tb.addEventListener('input', (e) => { if (e.target.id !== 'teQ') return; S.q = e.target.value; $('teGroups').innerHTML = teamGroups(); });
+  tb.addEventListener('input', (e) => { if (e.target.id === 'bq') { S.bq = e.target.value; S.bn = 300; const bx = $('billsBox'); if (bx) bx.innerHTML = billsInner(); return; } if (e.target.id !== 'teQ') return; S.q = e.target.value; $('teGroups').innerHTML = teamGroups(); });
   $('mon').value = new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 7);
   $('mon').onchange = () => load().catch(err => { $('tb').innerHTML = '<div class="card"><div class="empty">' + esc(err.message) + '</div></div>'; });
   $('btnReload').onclick = () => $('mon').onchange();

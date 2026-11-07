@@ -427,6 +427,8 @@ function action_page_perms(string $action): array
         'addons.' => ['allocation'],                    // Order Allocation: add-ons
         'employees.list' => ['dashboard', 'leave_requests', 'documents', 'agreements', 'approvals', 'targets', 'performance', 'commission', 'allocation'],
         'st_team.month' => ['commission'],               // Total Budgeting reads each store person's daily commission (same chart, no over-target extra)
+        'employees.set_salary' => ['commission'], 'penalties.apply' => ['commission'], 'penalties.waive' => ['commission'], 'penalties.rules' => ['commission'],   // Total Budgeting: set a salary, add / remove a penalty (still Admin / HR only)
+        'departments.save' => ['commission'], 'departments.delete' => ['commission'],   // create / rename / delete a section from Total Employees (still Admin / HR only)
         'departments.list' => ['commission'],            // Total Budgeting → Total Employees lists every department
         'employees.set_department' => ['commission'],    // ...and moves a person between them by drag and drop (still Admin / HR only)
         'document_types.list' => ['dashboard', 'approvals'],
@@ -7768,9 +7770,25 @@ function ct_recon(PDO $pdo, string $day): array
  *   4. otherwise the profile daily target, lifted by the Sales Executive ladder
  * $emps = rows with basic_salary / joining_date / designation. Returns fn(int $employeeId, string $day): float.
  */
+/** People paid by their own rule, not by the online sales commission: assigned to Retail wholesale or Store in Total Budgeting, or (when not assigned) a retail wholesale / retailer / dealer by
+ *  department or designation. They have NO sales target and no over-target extra. [employee_id => 'retail'|'store'] */
+function pay_offline_ids(PDO $pdo): array
+{
+    static $memo = null; if ($memo !== null) return $memo;
+    $memo = [];
+    try {
+        $j = json_decode((string)setting_get($pdo, 'budget_cfg', ''), true); $ov = is_array($j['people'] ?? null) ? $j['people'] : [];
+        foreach ($ov as $id => $v) if (is_array($v) && in_array((string)($v['grp'] ?? ''), ['retail', 'store'], true)) $memo[(int)$id] = (string)$v['grp'];
+        foreach ($pdo->query("SELECT e.employee_id, e.designation, d.department_name FROM employees e LEFT JOIN departments d ON d.department_id = e.department_id WHERE e.status != 'ex'")->fetchAll() as $e) {
+            $id = (int)$e['employee_id']; if (!empty($ov[$id]['grp']) || isset($memo[$id])) continue;
+            if (preg_match('/wholesale|retailer|dealer|retail field/i', (string)$e['department_name'] . ' ' . (string)$e['designation'])) $memo[$id] = 'retail';
+        }
+    } catch (Throwable $e) { error_log('pay_offline_ids: ' . $e->getMessage()); }
+    return $memo;
+}
 function sales_target_fn(PDO $pdo, array $emps, string $from, string $to, array $marks, bool $zeroOff = false): callable
 {
-    $over = [];
+    $over = []; $noTarget = pay_offline_ids($pdo);
     try {
         ensure_group_key_column($pdo, 'daily_targets', ['target_date', 'employee_id']);
         $dt = $pdo->prepare("SELECT d.target_date, d.employee_id, SUM(d.amount) AS a FROM daily_targets d WHERE d.target_date BETWEEN ? AND ? AND NOT (d.group_key = '' AND EXISTS (SELECT 1 FROM daily_targets x WHERE x.target_date = d.target_date AND x.employee_id = d.employee_id AND x.group_key = 'tmph')) GROUP BY d.target_date, d.employee_id");
@@ -7784,7 +7802,8 @@ function sales_target_fn(PDO $pdo, array $emps, string $from, string $to, array 
         $mm->execute([substr($from, 0, 7), substr($to, 0, 7)]);
         foreach ($mm->fetchAll() as $r) $monMan[(int)$r['employee_id'] . '|' . $r['month']] = (float)$r['m'];
     } catch (Throwable $e) {}
-    return function (int $id, string $d) use ($emps, $over, $marks, $monMan, $zeroOff): float {
+    return function (int $id, string $d) use ($emps, $over, $marks, $monMan, $zeroOff, $noTarget): float {
+        if (isset($noTarget[$id])) return 0.0;      // retail wholesale and store people have no sales target
         $mk = $marks[$d . '|' . $id] ?? '';
         if (isset($over[$d . '|' . $id])) return $over[$d . '|' . $id];      // a target typed by hand for the day wins, even on a Leave / off-marked day
         if ($mk === 'leave' || ($zeroOff && $mk === 'off')) return 0.0;
@@ -19228,6 +19247,21 @@ switch ($action) {
             }
             json_response(['error' => 'Could not save employee.'], 500);
         }
+        break;
+    }
+
+    case 'employees.set_salary': {
+        // Total Budgeting → Total Employees: define a person's fixed monthly salary right there (0 = no fixed salary, commission only).
+        $auth = require_auth();
+        require_role(['Admin', 'HR'], $auth);
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
+        $input = json_input();
+        $id = (int)($input['employee_id'] ?? 0);
+        $sal = $input['monthly_salary'] ?? null;
+        if (!$id) json_response(['error' => 'employee_id is required.'], 422);
+        if (!is_numeric($sal) || (float)$sal < 0 || (float)$sal > 10000000) json_response(['error' => 'Type the monthly salary as an amount in rupees (0 for none).'], 422);
+        $pdo->prepare("UPDATE employees SET monthly_salary = ? WHERE employee_id = ?")->execute([round((float)$sal, 2), $id]);
+        json_response(['message' => 'Saved.', 'employee_id' => $id, 'monthly_salary' => round((float)$sal, 2)]);
         break;
     }
 
