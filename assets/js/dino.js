@@ -19,20 +19,14 @@
     + '.tmd-ov{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;pointer-events:none;text-align:center;padding:8px}'
     + '.tmd-start{background:linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,.28))}.tmd-ov .big{font-weight:800;font-size:clamp(17px,4.6vw,24px);color:#fff;text-shadow:0 2px 10px rgba(0,0,0,.5)}.tmd-ov small{color:#fff;font-weight:700;font-size:11.5px;text-shadow:0 1px 6px rgba(0,0,0,.5)}'
     + '.tmd-goov{background:rgba(8,10,22,.66)}.tmd-pulse{animation:tmdPu 1.4s ease-in-out infinite}@keyframes tmdPu{50%{transform:scale(1.06)}}'
-    + '.tmd-rep{width:100%;max-width:520px;display:flex;flex-direction:column;gap:5px;color:#fff;text-align:left;padding:2px 8px;animation:tmdIn .35s cubic-bezier(.2,1.2,.4,1)}@keyframes tmdIn{from{opacity:0;transform:translateY(8px)}}'
-    + '.tmd-rh{display:flex;justify-content:space-between;align-items:baseline;gap:8px}.tmd-rh b{font-size:clamp(15px,4.4vw,19px);font-weight:800}.tmd-rh span{font-size:11.5px;font-weight:800;color:#fdba74}'
+    + '.tmd-rep{width:calc(100% - 76px);align-self:flex-start;max-width:520px;display:flex;flex-direction:column;gap:5px;color:#fff;text-align:left;padding:2px 8px;animation:tmdIn .35s cubic-bezier(.2,1.2,.4,1)}@keyframes tmdIn{from{opacity:0;transform:translateY(8px)}}'
+    + '.tmd.sjl .tmd-rep{align-self:flex-end}'
     + '.tmd-rs{display:flex;gap:8px;align-items:center}.tmd-rs b{font-size:clamp(20px,6vw,28px);font-variant-numeric:tabular-nums;font-weight:800;line-height:1}.tmd-rs small{font-size:11px;font-weight:700;opacity:.85}'
-    + '.tmd-tag{display:inline-block;background:var(--gacc);color:#fff;font-size:9.5px;font-weight:800;padding:2px 7px;border-radius:999px;letter-spacing:.05em}.tmd[data-w="neon"] .tmd-tag{color:#04121a}'
-    + '.tmd-rp{display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:5px}.tmd-rp div{background:rgba(255,255,255,.14);border-radius:10px;padding:4px 7px;min-width:0}.tmd-rp small{display:block;font-size:9.5px;font-weight:800;opacity:.85;white-space:nowrap}.tmd-rp b{display:block;font-size:12px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.tmd-rp i{font-style:normal;font-size:12px;font-weight:800;color:#fde68a;font-variant-numeric:tabular-nums}.tmd-rp .me{outline:2px solid var(--gacc)}'
+    + '.tmd-me{display:flex;justify-content:space-between;align-items:center;gap:8px;background:rgba(255,255,255,.16);border-radius:11px;padding:5px 9px;font-size:12px;font-weight:800;color:#fff}.tmd-me b{font-size:13px}.tmd-me i{font-style:normal;font-variant-numeric:tabular-nums;font-size:15px;color:#fde68a}'
     + '.tmd-top{display:flex;justify-content:space-between;align-items:center;gap:8px;background:linear-gradient(90deg,#f59e0b,#f97316);color:#fff;border-radius:11px;padding:5px 9px;font-size:12px;font-weight:800}.tmd-top b{font-size:13px}.tmd-top i{font-style:normal;font-variant-numeric:tabular-nums;font-size:15px}'
-    + '.tmd-rb{font-size:10.5px;font-weight:700;opacity:.85;text-align:center}'
     + '.tmd-sj{position:absolute;right:9px;bottom:9px;width:54px;height:54px;border-radius:50%;border:0;cursor:pointer;color:#fff;font:800 9.5px Manrope,system-ui,sans-serif;letter-spacing:.06em;display:flex;flex-direction:column;align-items:center;justify-content:center;touch-action:manipulation;z-index:3;opacity:.82;transition:transform .08s,opacity .15s}.tmd-sj.left{right:auto;left:9px}.tmd-sj::before{content:"";position:absolute;inset:-14px}.tmd-sj span{font-size:18px;line-height:1}'
     + '.tmd-sj:active,.tmd-sj.on{transform:scale(.9);opacity:1}.tmd-sj::after{content:"";position:absolute;inset:0;border-radius:50%;border:2px solid #fff;opacity:0;pointer-events:none}.tmd-sj.on::after{animation:tmdRing .35s ease-out}@keyframes tmdRing{from{opacity:.9;transform:scale(1)}to{opacity:0;transform:scale(1.7)}}'
     + '.tmd-sw{position:absolute;right:20px;bottom:66px;width:24px;height:24px;border-radius:50%;border:0;background:rgba(255,255,255,.7);color:#111827;font-size:12px;line-height:1;cursor:pointer;z-index:3;display:grid;place-items:center;opacity:.8}.tmd-sw.left{right:auto;left:20px}'
-    + '.tmd-allv{position:absolute;inset:0;background:var(--gbg);color:var(--gfg);z-index:4;display:none;flex-direction:column;padding:8px 10px;gap:6px}.tmd-allv.on{display:flex}.tmd-allh{display:flex;justify-content:space-between;align-items:center;gap:8px}.tmd-allh b{font-size:13px;font-weight:800}'
-    + '.tmd-tabs{display:flex;gap:4px}.tmd-tabs button,.tmd-back{border:0;border-radius:999px;background:var(--gchip);color:inherit;font:800 11px Manrope,system-ui,sans-serif;padding:4px 10px;cursor:pointer}.tmd-tabs button.on{background:var(--gacc);color:#fff}.tmd[data-w="neon"] .tmd-tabs button.on{color:#04121a}'
-    + '.tmd-list{overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:3px;-webkit-overflow-scrolling:touch}.tmd-list div{display:flex;gap:8px;align-items:center;background:var(--gchip);border-radius:9px;padding:4px 9px;font-size:12px;font-weight:700}.tmd-list div.me{outline:2px solid var(--gacc)}.tmd-list i{font-style:normal;width:22px;color:var(--gmut);font-variant-numeric:tabular-nums}.tmd-list span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.tmd-list b{font-variant-numeric:tabular-nums}.tmd-list em{font-style:normal;color:var(--gmut);font-size:11px;padding:6px}'
-    + '.tmd-all{border:0;border-radius:999px;background:rgba(255,255,255,.2);color:#fff;font:800 10.5px Manrope,system-ui,sans-serif;padding:4px 10px;cursor:pointer;pointer-events:auto;align-self:center}'
     + '.tmd[data-w="candy"] .tmd-sj{background:radial-gradient(circle at 35% 28%,#fdba74,#f97316 60%,#c2410c);box-shadow:0 4px 0 #9a3412,0 8px 14px rgba(0,0,0,.3)}.tmd[data-w="neon"] .tmd-sj{background:radial-gradient(circle at 35% 28%,#67e8f9,#0891b2 60%,#164e63);box-shadow:0 0 0 2px #22d3ee,0 0 18px rgba(34,211,238,.7)}'
     + '.tmd-ctl{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 11px 10px}.tmd-champ{display:flex;flex-wrap:wrap;gap:5px;min-width:0}.tmd-chip{font-size:11px;font-weight:800;padding:4px 9px;border-radius:999px;background:var(--gchip);white-space:nowrap}'
     + '@media (prefers-reduced-motion:reduce){.tmd-pulse{animation:none}.tmd-rep{animation:none}.tmd-sj.on::after{animation:none}}';
@@ -50,8 +44,7 @@
     host.innerHTML = '<div class="tmd" data-w="' + world + '"><div class="tmd-gh"><div class="tmd-t"><b>🦖 Dino Run</b><small>Collect coins · jump the cacti</small></div>'
       + '<div class="tmd-sc"><div><small>Score</small><b class="sc">0</b></div><div><small>Best</small><b class="best">0</b></div><button type="button" class="tmd-wb" aria-label="Switch look"></button></div></div>'
       + '<div class="tmd-stage"><canvas aria-label="Dino game: tap to jump"></canvas><div class="tmd-ov tmd-start"><div class="big tmd-pulse">Tap to run ▶</div><small>Jump the cacti · grab the coins · the screen stays still while you play</small></div>'
-      + '<div class="tmd-ov tmd-goov" style="display:none"><div class="tmd-rep"><div class="tmd-rh"><b>Game over</b><span class="gr-r"></span></div><div class="tmd-rs"></div><div class="tmd-top" style="display:none"></div><div class="tmd-rp"></div><div class="tmd-rb">Tap the game or JUMP to play again</div><button type="button" class="tmd-all">👥 Everyone\'s best scores</button></div></div>'
-      + '<div class="tmd-allv"><div class="tmd-allh"><div class="tmd-tabs"><button type="button" data-k="today" class="on">Today</button><button type="button" data-k="month">This month</button></div><button type="button" class="tmd-back">Back</button></div><div class="tmd-list"></div></div>'
+      + '<div class="tmd-ov tmd-goov" style="display:none"><div class="tmd-rep"><div class="tmd-rs"></div><div class="tmd-top" style="display:none"></div><div class="tmd-me"></div></div></div>'
       + '<button type="button" class="tmd-sw" aria-label="Move the jump button to the other side" title="Move the jump button">↔</button>'
       + '<button type="button" class="tmd-sj" aria-label="Jump"><span>⬆</span>JUMP</button></div>'
       + '<div class="tmd-ctl"><div class="tmd-champ"><span class="tmd-chip">Loading the company board…</span></div></div></div>';
@@ -63,7 +56,7 @@
     function setWorld(w) { world = w; root.dataset.w = w; wb.textContent = w === 'candy' ? '🌙' : '☀️'; wb.title = w === 'candy' ? 'Night look' : 'Day look'; try { localStorage.setItem('tm_dino_world', w); } catch (e) {} if (state !== 'run') paint(); }
 
     /* ---------- rules ---------- */
-    var s, state = 'idle', last = 0, raf = 0, jumpQ = false, jumpBuf = 0, lastBoard = null, parts = [], tShake = 0, startAt = 0, locked = false;
+    var s, state = 'idle', last = 0, raf = 0, jumpQ = false, jumpBuf = 0, parts = [], tShake = 0, startAt = 0, locked = false;
     function lock(on) {   // the page is stuck while you play, so a tap or swipe on the game never scrolls it; it is free again when the run ends
       if (on === locked) return; locked = on; document.documentElement.classList.toggle('tmd-lock', on);
       if (on) { try { cv.scrollIntoView({ block: 'center' }); } catch (e) {} }
@@ -173,29 +166,23 @@
 
     /* ---------- flow + company board ---------- */
     function loop(now) { if (state !== 'run') return; var f = Math.min(3, (now - last) / 16.67); last = now; step(f); fx(f); paint(); if (s.dead) return over(); raf = requestAnimationFrame(loop); }
-    function begin() { running = 1; allv.classList.remove('on'); lock(true); s = fresh(); parts = []; state = 'run'; start.style.display = 'none'; goov.style.display = 'none'; startAt = performance.now(); last = startAt; jumpQ = true; cancelAnimationFrame(raf); raf = requestAnimationFrame(loop); }
+    function begin() { running = 1; lock(true); s = fresh(); parts = []; state = 'run'; start.style.display = 'none'; goov.style.display = 'none'; startAt = performance.now(); last = startAt; jumpQ = true; cancelAnimationFrame(raf); raf = requestAnimationFrame(loop); }
     function press() { if (state === 'run') { jumpQ = true; return; } begin(); }
-    function cell(ic, lbl, r) { return '<div' + (r.mine ? ' class="me"' : '') + '><small>' + ic + ' ' + lbl + '</small><b>' + esc(r.who) + (r.mine ? ' (you)' : '') + '</b><i>' + r.best + '</i></div>'; }
     function board(showResult, sc, ms) {
       if (!window.api || !api.get) { q('.tmd-champ').innerHTML = ''; if (showResult) showReport(sc, null); return; }
       api.get('play.dino_board').then(function (d) {
-        lastBoard = d; var l = [];
-        l.push(d.champion ? '<span class="tmd-chip">🏆 Today <b>' + esc(d.champion.who) + '</b> ' + d.champion.best + (d.champion.mine ? ' (you!)' : '') + '</span>' : '<span class="tmd-chip">🏆 Be today\'s first champion</span>');
-        if (d.month_top) l.push('<span class="tmd-chip">👑 Month <b>' + esc(d.month_top.who) + '</b> ' + d.month_top.best + (d.month_top.mine ? ' (you!)' : '') + '</span>');
-        q('.tmd-champ').innerHTML = l.join('');
+        q('.tmd-champ').innerHTML = d.champion ? '<span class="tmd-chip">🏆 Today <b>' + esc(d.champion.who) + '</b> ' + d.champion.best + (d.champion.mine ? ' (you!)' : '') + '</span>' : '<span class="tmd-chip">🏆 Be today\'s first champion</span>';
         if (showResult) showReport(sc, d);
       }).catch(function () { q('.tmd-champ').innerHTML = ''; if (showResult) showReport(sc, null); });
     }
-    function showReport(sc, d) {   // the report lives on the game screen itself; the top scorer of today (all employees, every panel) is always on it
-      q('.gr-r').textContent = sc < 20 ? 'Score 20+ joins the board' : (d && d.mine_rank ? 'You: #' + d.mine_rank + ' of ' + d.players : '');
-      var top = q('.tmd-top');
-      if (d && d.top && d.top[0]) { var t = d.top[0]; top.style.display = 'flex'; top.innerHTML = '<span>🏆 Top scorer today · <b>' + esc(t.who) + (t.mine ? ' (you!)' : '') + '</b></span><i>' + t.best + '</i>'; if (t.mine && window.TMWin && sc >= 50) TMWin.win({ title: "You are today's top scorer!", ms: 2600 }); }
-      else top.style.display = 'none';
-      var h = '';
-      if (d && d.month_top) h += cell('👑', 'Top of month', d.month_top);
-      if (d && d.last) h += cell('🐢', 'Last today', d.last);
-      if (d && d.mine_rank) h += '<div class="me"><small>🎯 Your rank</small><b>#' + d.mine_rank + ' of ' + d.players + '</b><i>' + (d.mine_today || sc) + '</i></div>';
-      q('.tmd-rp').innerHTML = h;
+    function showReport(sc, d) {   // the result: your score (already shown), today's top player, and where you are
+      var top = q('.tmd-top'), me = q('.tmd-me');
+      if (d && d.top && d.top[0]) {
+        var t = d.top[0]; top.style.display = 'flex';
+        top.innerHTML = t.mine ? '<span>🏆 You are today\'s top player!</span><i>' + t.best + '</i>' : '<span>🏆 Today\'s top player · <b>' + esc(t.who) + '</b></span><i>' + t.best + '</i>';
+        if (t.mine && window.TMWin && sc >= 50) TMWin.win({ title: "You are today's top player!", ms: 2600 });
+      }
+      me.innerHTML = d && d.mine_rank ? '<span>📍 Where you are · <b>#' + d.mine_rank + ' of ' + d.players + '</b></span><i>' + d.mine_today + '</i>' : (sc < 20 ? '<span>Score 20 or more to get on the board</span>' : '');
     }
     function over() {
       running = 0; lock(false); state = 'dead'; if (!rm) { tShake = 10; (function sh() { if (tShake > 0 && state === 'dead') { tShake = Math.max(0, tShake - 1.2); paint(); requestAnimationFrame(sh); } else { tShake = 0; if (state === 'dead') paint(); } })(); }
@@ -203,27 +190,15 @@
       var sc = score(), ms = Math.round(performance.now() - startAt), nb = sc > best;
       q('.best').dataset.nb = nb ? '1' : '0';
       if (nb) { best = sc; q('.best').textContent = best; try { localStorage.setItem('tm_dino_best', String(best)); } catch (e) {} if (window.TMWin && sc >= 50) TMWin.win({ title: 'New best: ' + sc, ms: 2200, from: cv }); }
-      q('.tmd-rs').innerHTML = '<b>' + sc + '</b>' + (nb ? '<span class="tmd-tag">NEW BEST</span>' : '') + '<small>' + s.coins + ' coins</small>'; q('.tmd-rp').innerHTML = ''; q('.tmd-top').style.display = 'none'; q('.gr-r').textContent = ''; goov.style.display = 'flex';
+      q('.tmd-rs').innerHTML = '<small>Your score</small><b>' + sc + '</b>'; q('.tmd-top').style.display = 'none'; q('.tmd-me').innerHTML = ''; goov.style.display = 'flex';
       var after = function () { board(true, sc, ms); };
       if (sc >= 20 && window.api && api.post) api.post('play.dino_score', { score: sc, ms: ms }).then(after).catch(after); else after();
     }
     // jump button side (left or right thumb), saved on the phone
     var sw = q('.tmd-sw');
-    function setSide(side) { sj.classList.toggle('left', side === 'left'); sw.classList.toggle('left', side === 'left'); try { localStorage.setItem('tm_dino_side', side); } catch (e) {} }
+    function setSide(side) { root.classList.toggle('sjl', side === 'left'); sj.classList.toggle('left', side === 'left'); sw.classList.toggle('left', side === 'left'); try { localStorage.setItem('tm_dino_side', side); } catch (e) {} }
     try { if (localStorage.getItem('tm_dino_side') === 'left') setSide('left'); } catch (e) {}
     sw.addEventListener('pointerdown', function (e) { e.preventDefault(); e.stopPropagation(); setSide(sj.classList.contains('left') ? 'right' : 'left'); });
-    // everyone's best scores (today / this month), all employees, first names
-    var allv = q('.tmd-allv'), list = q('.tmd-list'), tabsEl = q('.tmd-tabs'), curTab = 'today';
-    function drawAll() {
-      var d = lastBoard, rows = d ? (curTab === 'today' ? d.today_all : d.month_all) : null;
-      tabsEl.querySelectorAll('button').forEach(function (b) { b.classList.toggle('on', b.dataset.k === curTab); });
-      if (!rows || !rows.length) { list.innerHTML = '<em>' + (d ? 'No scores yet.' : 'The board is not available right now.') + '</em>'; return; }
-      list.innerHTML = rows.map(function (r) { return '<div' + (r.mine ? ' class="me"' : '') + '><i>' + r.rank + '</i><span>' + esc(r.who) + (r.mine ? ' (you)' : '') + '</span><b>' + r.best + '</b></div>'; }).join('');
-    }
-    ['pointerdown', 'touchstart'].forEach(function (n) { allv.addEventListener(n, function (e) { e.stopPropagation(); }, { passive: true }); });
-    q('.tmd-all').addEventListener('pointerdown', function (e) { e.preventDefault(); e.stopPropagation(); curTab = 'today'; drawAll(); allv.classList.add('on'); });
-    q('.tmd-back').addEventListener('click', function () { allv.classList.remove('on'); });
-    tabsEl.addEventListener('click', function (e) { var b = e.target.closest('button'); if (b) { curTab = b.dataset.k; drawAll(); } });
     wb.addEventListener('click', function () { setWorld(world === 'candy' ? 'neon' : 'candy'); });
     q('.tmd-stage').addEventListener('pointerdown', function (e) { e.preventDefault(); press(); });
     sj.addEventListener('pointerdown', function (e) { e.preventDefault(); e.stopPropagation(); sj.classList.add('on'); press(); });
