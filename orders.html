@@ -1036,7 +1036,7 @@
     try {
       const data = await api.get('shopify.stores');
       STORE_OPTS = (data.stores || []).map(s => [s.key, s.label]).concat([
-        ['tm4u', 'TM4U (orders tagged tm4u)'], ['tmsg', 'TM Shower Gel'], ['manual', 'Manual']]);
+        ['tmsg', 'TM Shower Gel'], ['manual', 'Manual']]);
       renderStorePanel();
     } catch (err) {
       showAlert(err.message, 'error');
@@ -1250,12 +1250,12 @@
   // ---------- Panels ----------
   // The five panels (businesses), each with its own block, its own button and its own daily target.
   // "No panel" holds MySales / manual orders that were not moved to a panel on the Order Allocation page.
-  const PANELS = [['tmph', 'TM Perfume House', '#1d4ed8'], ['tm4u', 'TM4U', '#7e22ce'], ['tmsg', 'TM Shower Gel', '#15803d'], ['none', 'No panel', '#475569']];
+  const PANELS = [['tmph', 'TM Perfume House', '#1d4ed8'], ['tmsg', 'TM Shower Gel', '#15803d'], ['none', 'No panel', '#475569']];
   const PANEL_NAME = {}; PANELS.forEach(p => { PANEL_NAME[p[0]] = p[1]; });
-  const PANEL_GK = { tmph: 'tmph', tm4u: 'tm4u', tmsg: 'tmsg' };       // every panel has a target → the key its daily target is saved under
+  const PANEL_GK = { tmph: 'tmph', tmsg: 'tmsg' };       // every panel has a target → the key its daily target is saved under
   const panelOfHouse = (h) => PANEL_GK[h] !== undefined ? h : 'none';
   const panelOf = (o) => panelOfHouse(o.house || STORE_HOUSE_MAP[o.store_key] || '');
-  const STORE_PANEL = { tmperfumehouse: 'tmph', tm4u: 'tm4u', tmsg: 'tmsg' };   // any other store (MySales, Manual) = no panel
+  const STORE_PANEL = { tmperfumehouse: 'tmph', tmsg: 'tmsg' };   // any other store (MySales, Manual) = no panel
   let panelPick = '';       // the panel button picked above the sheet ('' = all panels)
   const panelAllowed = (k) => !storeSel.size || [...storeSel].some(s => (STORE_PANEL[s] || 'none') === k);   // the Store picker can hide panels
 
@@ -1373,7 +1373,7 @@
   // One column per platform (house). A platform is the house tag first,
   // then the store — the same rule the server uses (o.house). Query counts
   // come from Assign Queries for the same dates.
-  const PLATFORMS = [['tmph', 'TM Perfume House', 'ph'], ['tm4u', 'TM4U', 'fu'], ['tmsg', 'TM Shower Gel', 'sg']];
+  const PLATFORMS = [['tmph', 'TM Perfume House', 'ph'], ['tmsg', 'TM Shower Gel', 'sg']];
   const QUERY_TAGS = ['query', 's'], CAMPAIGN_TAGS = ['campaign', 'c'];
   const STORE_HOUSE_MAP = { tmperfumehouse: 'tmph' };
   function orderTagType(tags) {
@@ -1411,7 +1411,7 @@
   }
   // ---- "Queries by hour" (o_details): the day's Query / Campaign counts per hour for each panel, from Assign Queries ----
   let hourData = {}, hourFor = '', hourReq = 0;      // panel key -> queries.hourly reply, for the single day picked
-  const HOUR_KEYS = ['tmph', 'tm4u', 'tmsg'];
+  const HOUR_KEYS = ['tmph', 'tmsg'];
   const qhOpen = new Set();                          // boxes whose hour list is open (kept across redraws)
   async function loadHourly(from, to, force) {
     if (EMP_VIEW) return;
@@ -1724,7 +1724,7 @@
     if (ev.key === 'Escape') { rsEdit = ''; renderSummary(); }
   });
 
-  const TOP_ORDER = ['tmph', 'tm4u', 'tmsg'];     // order of the panel boxes in the top boxes
+  const TOP_ORDER = ['tmph', 'tmsg'];     // order of the panel boxes in the top boxes
   // ---------- Extra ML row (All Orders & Revenue box) ----------
   // Extra ML given by price (ML in the box − ML the customer paid for, see the Extra ML column), for the orders in the boxes.
   // Tap it → the same per employee. Hidden until the ML price chart is loaded / when no order has product sizes.
@@ -1782,7 +1782,7 @@
   // 10 AM – 12 AM hour by hour, then "Overnight" = 12 AM – 10 AM. Same orders as the boxes (allocated, not cancelled, the panel picked).
   // Panel buttons narrow it to one panel. Tap a number → that hour's orders; tap an order number → its details.
   let ohPanel = '';                       // '' = all panels
-  const OH_SHORT = { tmph: 'TMPH', tm4u: 'TM4U', tmsg: 'TMSG', none: 'Other' };
+  const OH_SHORT = { tmph: 'TMPH', tmsg: 'TMSG', none: 'Other' };
   const OH_ROWS = [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 'night'];
   const ohHr = (h) => { const f = (x) => ((x % 12) || 12), ap = (x) => (x % 24) < 12 ? 'AM' : 'PM'; return f(h) + (ap(h) === ap(h + 1) ? '' : ' ' + ap(h)) + '–' + f(h + 1) + ' ' + ap(h + 1); };
   const ohSlot = (o) => { const h = new Date(o.created_at).getHours(); return h >= 10 ? h : 'night'; };
@@ -2551,8 +2551,8 @@
 
   // Which house the order counts under, and why — same rule as the server:
   // a house tag (tmph / tm4u) beats the store; two house tags = store.
-  const HOUSE_TAG = { tm4u: 'tm4u', tmforu: 'tm4u', tmph: 'tmph', 'tm perfume house': 'tmph', tmsg: 'tmsg', 'tm shower gel': 'tmsg' };
-  const HOUSE_LABEL = { tmph: 'TM Perfume House', tm4u: 'TM4U', tmsg: 'TM Shower Gel' };
+  const HOUSE_TAG = { tmph: 'tmph', 'tm perfume house': 'tmph', tmsg: 'tmsg', 'tm shower gel': 'tmsg' };
+  const HOUSE_LABEL = { tmph: 'TM Perfume House', tmsg: 'TM Shower Gel' };
   const STORE_HOUSE = { tmperfumehouse: 'tmph' };
   function houseReason(o, tags) {
     if (!STORE_HOUSE[o.store_key]) return '—';
@@ -3376,7 +3376,7 @@
   // ---- ONE ROW PER PERSON. Somebody who sells for two houses (TM Perfume House + TM Shower Gel …) is one row with everything added up.
   // The row keeps its `parts` (the house by house numbers) so the target of each house can still be changed, and the house chips show under the name.
   const ES_SUM = ['coll', 'ord', 'qo', 'qc', 'ko', 'kc', 'cod', 'codPaid', 'pre', 'pon', 'pot', 'pobn', 'pobt', 'poan', 'poat', 'cy', 'cmd', 't1n', 't1t', 't2n', 't2t', 't3n', 't3t', 'q', 'k', 'tot', 'tg'];
-  const PANEL_SHORT = { tmph: 'TM Perfume', tm4u: 'TM4U', tmsg: 'Shower Gel', none: 'No panel' };
+  const PANEL_SHORT = { tmph: 'TM Perfume', tmsg: 'Shower Gel', none: 'No panel' };
   const PANEL_COLOR = {}; PANELS.forEach(p => { PANEL_COLOR[p[0]] = p[2]; });
   const esPb = (e) => e.b === 'all' ? '' : e.b;                  // the panel a click should narrow the order list to ('' = every panel)
   function esMerge(rows) {

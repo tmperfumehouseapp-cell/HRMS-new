@@ -797,14 +797,14 @@ function sync_employee_excel_files(PDO $pdo, int $employeeId, $fileIds): void
  */
 function store_group_options(): array
 {
-    return ['tmph' => 'TM Perfume House', 'tm4u' => 'TM4U', 'tmsg' => 'TM Shower Gel'];
+    return ['tmph' => 'TM Perfume House', 'tmsg' => 'TM Shower Gel'];   // TM4U was removed: only these two panels are used
 }
 
 function ensure_store_groups_table(PDO $pdo): bool
 {
     static $done = null;
     if ($done !== null) return $done;
-    $flag = sys_get_temp_dir() . '/hrms_storegroups_ok_v2';
+    $flag = sys_get_temp_dir() . '/hrms_storegroups_ok_v3';
     if (is_file($flag)) return $done = true;
     try {
         $pdo->exec(
@@ -817,6 +817,11 @@ function ensure_store_groups_table(PDO $pdo): bool
         // Older installs created group_key as ENUM('tmph','tm4u'):
         // widen it so the new panel (TM Shower Gel) fits.
         try { $pdo->exec("ALTER TABLE employee_store_groups MODIFY group_key VARCHAR(10) NOT NULL"); } catch (PDOException $e) {}
+        // TM4U was removed (one-time clean-up): everyone who was in TM4U is now in TM Perfume House, and the TM4U assignment is deleted.
+        try {
+            $pdo->exec("INSERT IGNORE INTO employee_store_groups (employee_id, group_key) SELECT employee_id, 'tmph' FROM employee_store_groups WHERE group_key = 'tm4u'");
+            $pdo->exec("DELETE FROM employee_store_groups WHERE group_key = 'tm4u'");
+        } catch (PDOException $e) {}
         @file_put_contents($flag, '1');
         return $done = true;
     } catch (PDOException $e) {
@@ -14231,7 +14236,6 @@ function target_houses(): array
 function house_tag_map(): array
 {
     return [
-        'tm4u' => 'tm4u', 'tmforu' => 'tm4u',
         'tmph' => 'tmph', 'tm perfume house' => 'tmph',
         'tmsg' => 'tmsg', 'tm shower gel' => 'tmsg',
     ];
@@ -14352,7 +14356,7 @@ function target_rule_get(PDO $pdo): array
  */
 function sheet_panels(): array
 {
-    return ['tmph', 'tm4u', 'tmsg'];
+    return ['tmph', 'tmsg'];
 }
 function sheet_panel(string $gk): string
 {
@@ -18059,7 +18063,7 @@ function tmph_media_send(array $row, bool $download): void
 //   Prepaid Account                                                                    <- typed by hand (no system holds it)
 // Typed values live in report_manual (day + house + field) and win over the automatic figure until cleared.
 // Never typed: Ticket Size = Collection / Order · Query Ratio = Query Order / Query · ROAS = Collection / Ad Spend.
-function report_houses(): array { return ['tmph', 'tm4u', 'tmsg']; }
+function report_houses(): array { return ['tmph', 'tmsg']; }
 function report_num_fields(): array { return ['order', 'qty', 'coll', 'pre', 'cod', 'chain', 'perf', 'comm', 'q', 'qo', 'camp', 'ccomm']; }
 
 function ensure_report_manual_table(PDO $pdo): bool
@@ -24316,7 +24320,7 @@ switch ($action) {
         if (!ensure_commission_manual_tables($pdo)) json_response(['error' => 'Could not create the manual rules table.'], 500);
         $in = json_input();
         $id = (int)($in['rule_id'] ?? 0);
-        $allowed = ['tmph', 'tm4u', 'tmsg'];
+        $allowed = ['tmph', 'tmsg'];
         $panels = array_values(array_unique(array_filter(array_map('strval', (array)($in['panels'] ?? [])), fn($x) => in_array($x, $allowed, true))));
         if (!$panels) json_response(['error' => 'Choose at least one panel.'], 422);
         [$df, $dt, $dErr] = commission_rule_dates($in);
@@ -24574,7 +24578,7 @@ switch ($action) {
         $in = json_input();
         $month = (string)($in['month'] ?? ($in['day'] ?? '')); $empId = (int)($in['employee_id'] ?? 0); $rk = (string)($in['row_key'] ?? '');
         if (!preg_match('/^\d{4}-\d{2}(-\d{2}(_\d{4}-\d{2}-\d{2})?)?$/', $month) || !$empId) json_response(['error' => 'month (or day) and employee_id required.'], 422);
-        if (!in_array($rk, ['', 'tm4u', 'tmsg'], true)) json_response(['error' => 'Unknown panel row.'], 422);
+        if (!in_array($rk, ['', 'tmsg'], true)) json_response(['error' => 'Unknown panel row.'], 422);
         if (!isset($in['amount']) || !is_numeric($in['amount']) || !isset($in['rate']) || !is_numeric($in['rate'])) json_response(['error' => 'Enter the rate or the amount.'], 422);
         $amount = round((float)$in['amount'], 2); $rate = round((float)$in['rate'], 2);
         if ($amount < 0 || $amount > 99999999) json_response(['error' => 'The amount must be between ₹0 and ₹9,99,99,999.'], 422);

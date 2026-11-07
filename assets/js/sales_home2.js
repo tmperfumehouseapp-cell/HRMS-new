@@ -348,7 +348,7 @@ body.sh-lock{overflow:hidden;} body.sh-lock #menuToggle{display:none !important;
     // 3) ONE total (mixed) target
     let track = '';
     if (T > 0) {
-      const P = m.target_parts || {}, parts = [['perfume', 'Perfume'], ['gel', 'Shower gel'], ['tm4u', 'TM4U']].filter((k) => Number(P[k[0]]) > 0);
+      const P = m.target_parts || {}, parts = [['perfume', 'Perfume'], ['gel', 'Shower gel']].filter((k) => Number(P[k[0]]) > 0);
       const chips = parts.length > 1 ? `<div class="pp">${parts.map((k) => `<i>${k[1]} ${rs(P[k[0]])}</i>`).join('')}</div>` : '';
       const done = sales >= T, first = L[0] || null, rest = L.slice(1);
       const head = `<div class="tt"><div class="th">🎯 Total target <b>${rs(T)}</b> <span>(one target, all products)</span></div>${chips}</div>`;

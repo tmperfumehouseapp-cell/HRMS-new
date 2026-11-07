@@ -66,7 +66,6 @@
         <select id="groupPick" style="padding:8px 10px; border:1px solid var(--line); border-radius:6px; font-size:13px;">
           <option value="">All groups</option>
           <option value="tmph">TM Perfume House</option>
-          <option value="tm4u">TM4U</option>
         </select>
         <input type="date" id="dayPick" title="Daily view (10 AM to next day 10 AM)" style="padding:8px 10px; border:1px solid var(--line); border-radius:6px; font-size:13px;">
         <input type="month" id="monthPick" style="padding:8px 10px; border:1px solid var(--line); border-radius:6px; font-size:13px;">
@@ -462,7 +461,7 @@
   // A house tag on the order beats the store it came from — same rule as
   // the server. tmph keeps the order in the person's combined row;
   // tm4u sends it to their TM4U row. Two house tags = store's house.
-  const HOUSE_TAGS = { tm4u: 'tm4u', tmph: 'tmph', 'tm perfume house': 'tmph' };
+  const HOUSE_TAGS = { tmph: 'tmph', 'tm perfume house': 'tmph' };
   function orderHouse(o) {
     if (o.house) return o.house;                       // the server already decided
     const ht = [...new Set(String(o.tags || '').split(',').map(t => HOUSE_TAGS[t.trim().toLowerCase()]).filter(Boolean))];
@@ -526,7 +525,7 @@
         if (!o.salesman) return;
         // One key per person for the TM Perfume House
         // row ('|' + ''); orders tagged tm4u go to the person's TM4U row.
-        const nk = o.salesman + '|' + (orderHouse(o) === 'tm4u' ? 'tm4u' : '');
+        const nk = o.salesman + '|' + '';
         const amt = Number(o.total || 0);
         const od = histDays.length ? orderDay(o) : day;
         if (od !== day) {                 // an earlier day: only feeds the average

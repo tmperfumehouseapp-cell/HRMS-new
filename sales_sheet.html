@@ -67,7 +67,6 @@
         <select id="panelPick" aria-label="Panel">
           <option value="all">All panels</option>
           <option value="tmph">TM Perfume House</option>
-          <option value="tm4u">TM4U</option>
           <option value="tmsg">TM Shower Gel</option>
           <option value="none">No panel</option>
         </select>
@@ -107,7 +106,7 @@
   renderSidebar('orders');
 
   const NDAYS = 30;
-  const PANEL_KEYS = { tmph: 1, tm4u: 1, tmsg: 1 };
+  const PANEL_KEYS = { tmph: 1, tmsg: 1 };
   const STORE_HOUSE_MAP = { tmperfumehouse: 'tmph' };
 
   const $ = (id) => document.getElementById(id);
