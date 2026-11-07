@@ -427,7 +427,6 @@ function action_page_perms(string $action): array
         'commission_rules.manual_list' => ['commission'],
         'addons.' => ['allocation'],                    // Order Allocation: add-ons
         'employees.list' => ['dashboard', 'leave_requests', 'documents', 'agreements', 'approvals', 'targets', 'performance', 'commission', 'allocation'],
-        'st_team.month' => ['commission'],               // Total Budgeting reads each store person's daily commission (same chart, no over-target extra)
         'employees.rejoin' => ['commission'],   // Rejoin from the Ex-Employees tab in Total Budgeting (still Admin / HR only)
         'employees.delete' => ['commission'],   // make an ex-employee from Total Budgeting / the person card (still Admin / HR only)
         'employees.set_salary' => ['commission'], 'penalties.apply' => ['commission'], 'penalties.waive' => ['commission'], 'penalties.rules' => ['commission'],   // Total Budgeting: set a salary, add / remove a penalty (still Admin / HR only)
