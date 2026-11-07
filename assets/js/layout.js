@@ -84,7 +84,7 @@ const LAYOUT_BUILD = '261102.2';   // shown under your name in the sidebar
   try {
     const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = 'assets/css/mobile.css?v=9';
     document.head.appendChild(l);
-    const ph = document.createElement('link'); ph.rel = 'stylesheet'; ph.href = 'assets/css/phone.css?v=1'; document.head.appendChild(ph);   // the one compact phone style (html.ph)
+    const ph = document.createElement('link'); ph.rel = 'stylesheet'; ph.href = 'assets/css/phone.css?v=2'; document.head.appendChild(ph);   // the one compact phone style (html.ph)
     const mq = window.matchMedia('(max-width:820px)');
     const wrap = () => {
       if (!mq.matches) return;

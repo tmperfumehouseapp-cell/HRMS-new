@@ -73,16 +73,18 @@
       if (s.gap <= 0) {
         var w = 22 + Math.floor(Math.random() * 3) * 10, h = 40 + Math.floor(Math.random() * 3) * 10;
         s.obs.push({ x: W + 20, w: w, h: h });
-        if (Math.random() < .7) for (var c = 0; c < 3; c++) s.gold.push({ x: W + 20 + w + 90 + c * 34, y: 70 + Math.sin(c / 2 * Math.PI) * 38, got: false });
-        s.gap = 250 + s.speed * 18 + Math.random() * 190;
+        for (var c = 0; c < 6; c++) s.gold.push({ x: W + 20 + w / 2 + (c - 2.5) * 30, y: 58 + Math.sin(c / 5 * Math.PI) * 52, got: false });   // an arc over the cactus: jump to collect
+        for (var c2 = 0; c2 < 5; c2++) s.gold.push({ x: W + 20 + w + 120 + c2 * 34, y: 24, got: false });                                         // a line on the ground after it: run through to collect
+        if (Math.random() < .5) for (var c3 = 0; c3 < 4; c3++) s.gold.push({ x: W + 20 + w + 330 + c3 * 34, y: 30 + c3 * 14, got: false });       // sometimes a rising stair of coins
+        s.gap = 330 + s.speed * 18 + Math.random() * 150;
       }
       s.obs.forEach(function (o) { o.x -= s.speed * f; }); s.gold.forEach(function (g) { g.x -= s.speed * f; });
       s.obs = s.obs.filter(function (o) { return o.x + o.w > -20; }); s.gold = s.gold.filter(function (g) { return g.x > -20 && !g.got; });
       var dx = 70, dw = 40;
       s.obs.forEach(function (o) { if (dx + dw - 6 > o.x + 4 && dx + 6 < o.x + o.w - 4 && s.y < o.h - 6) s.dead = true; });
-      s.gold.forEach(function (g) { if (!g.got && g.x > dx - 6 && g.x < dx + dw + 10 && Math.abs((GROUND - g.y) - (s.y + 24)) < 34) { g.got = true; s.coins++; for (var i = 0; i < 6; i++) parts.push({ x: g.x, y: g.y, vx: (Math.random() - .5) * 3, vy: (Math.random() - .5) * 3, a: 1, r: 2.5, k: 'spark' }); } });
+      s.gold.forEach(function (g) { if (!g.got && g.x > dx - 6 && g.x < dx + dw + 10 && Math.abs(g.y - (s.y + 24)) < 30) { g.got = true; s.coins++; for (var i = 0; i < 6; i++) parts.push({ x: g.x, y: g.y, vx: (Math.random() - .5) * 3, vy: (Math.random() - .5) * 3, a: 1, r: 2.5, k: 'spark' }); } });
     }
-    var score = function () { return Math.floor(s.dist / 10) + s.coins * 10; };
+    var score = function () { return s.coins * 10; };   // the score is the coins you collect (10 each), not the time you survive
 
     /* ---------- drawing ---------- */
     function rr(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
