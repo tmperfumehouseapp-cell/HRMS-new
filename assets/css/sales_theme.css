@@ -1,10 +1,9 @@
-/* sales_theme.css — ONE look for the whole Sales area.
+/* sales_theme.css — ONE look for the whole HRMS (Sales pages via html.sx, every other page via html.tm set by layout.js).
    Loaded by sales.html itself and pushed into every page it shows in a frame (orders, targets, commission, retail …),
    so cards, tables, buttons, pills and boxes look the same everywhere. Only shapes, colours and type are set here —
    never sizes of layouts — so no page breaks. Change a value here and every Sales page follows. */
-@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
 
-html.sx, html.sx{
+html:is(.sx,.tm){
   --sx-card-r:18px;      /* cards and tiles */
   --sx-ctl-r:12px;       /* inputs, selects */
   --sx-pill-r:999px;     /* buttons, pills, chips */
@@ -19,43 +18,98 @@ html.sx, html.sx{
   --ink:var(--sx-ink); --muted:var(--sx-muted); --line:var(--sx-line); --accent:var(--sx-accent);
   --ok-bg:var(--sx-ok-bg); --ok-fg:var(--sx-ok-fg); --bad-bg:var(--sx-bad-bg); --bad-fg:var(--sx-bad-fg);
 }
-html.sx body, html.sx body{ font-family:'Manrope','Inter','Segoe UI',system-ui,-apple-system,sans-serif; color:var(--sx-ink); -webkit-font-smoothing:antialiased; }
+html:is(.sx,.tm) body{ font-family:'Manrope','Inter','Segoe UI',system-ui,-apple-system,sans-serif; color:var(--sx-ink); -webkit-font-smoothing:antialiased; }
 
 /* cards and tiles */
-html.sx .card, html.sx .card, html.sx .stat-card, html.sx .kpi, html.sx .panel{
+html:is(.sx,.tm) .card, html:is(.sx,.tm) .stat-card, html:is(.sx,.tm) .kpi, html:is(.sx,.tm) .panel{
   border-radius:var(--sx-card-r); border:1px solid var(--sx-line); background:#fff; box-shadow:none; }
-html.sx .card h2, html.sx .card h2, html.sx .card > h3:first-child{ font-weight:800; letter-spacing:-.01em; }
-html.sx .sub, html.sx .sub{ color:var(--sx-muted); }
-html.sx .stat-card .label, html.sx .kpi .l, html.sx .kpi .k{ font-size:11px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:var(--sx-muted); }
-html.sx .stat-card .value, html.sx .kpi .v{ font-weight:800; }
+html:is(.sx,.tm) .card h2, html:is(.sx,.tm) .card > h3:first-child{ font-weight:800; letter-spacing:-.01em; }
+html:is(.sx,.tm) .sub{ color:var(--sx-muted); }
+html:is(.sx,.tm) .stat-card .label, html:is(.sx,.tm) .kpi .l, html:is(.sx,.tm) .kpi .k{ font-size:11px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:var(--sx-muted); }
+html:is(.sx,.tm) .stat-card .value, html:is(.sx,.tm) .kpi .v{ font-weight:800; }
 
 /* tables */
-html.sx table th, html.sx table th{ font-size:11px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:var(--sx-muted); }
-html.sx table td, html.sx table td{ border-color:#f0f1f4; }
-html.sx table th{ border-color:var(--sx-line); }
+html:is(.sx,.tm) table th{ font-size:11px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:var(--sx-muted); }
+html:is(.sx,.tm) table td{ border-color:#f0f1f4; }
+html:is(.sx,.tm) table th{ border-color:var(--sx-line); }
 
 /* buttons */
-html.sx .btn, html.sx .btn{ border-radius:var(--sx-pill-r); font-weight:700; }
-html.sx .btn:not(.secondary):not(.green):not(.wa):not(.danger):not(.red){ background:var(--sx-accent); border-color:var(--sx-accent); color:#fff; }
-html.sx .btn.secondary{ background:#fff; color:var(--sx-ink); border:1px solid var(--sx-line); }
-html.sx .btn.secondary:hover{ background:#f4f5f7; }
+html:is(.sx,.tm) .btn{ border-radius:var(--sx-pill-r); font-weight:700; }
+html:is(.sx,.tm) .btn:not(.secondary):not(.green):not(.wa):not(.danger):not(.red){ background:var(--sx-accent); border-color:var(--sx-accent); color:#fff; }
+html:is(.sx,.tm) .btn.secondary{ background:#fff; color:var(--sx-ink); border:1px solid var(--sx-line); }
+html:is(.sx,.tm) .btn.secondary:hover{ background:#f4f5f7; }
 
 /* pills, chips, badges — one shape */
-html.sx .pill, html.sx .pill, html.sx .tgt-pill, html.sx .tgt-chip, html.sx .chip, html.sx .badge{
+html:is(.sx,.tm) .pill, html:is(.sx,.tm) .tgt-pill, html:is(.sx,.tm) .tgt-chip, html:is(.sx,.tm) .chip, html:is(.sx,.tm) .badge{
   border-radius:var(--sx-pill-r); font-weight:700; }
-html.sx .pill.on, html.sx .tgt-pill.on{ background:var(--sx-ink); color:#fff; border-color:var(--sx-ink); }
+html:is(.sx,.tm) .pill.on, html:is(.sx,.tm) .tgt-pill.on{ background:var(--sx-ink); color:#fff; border-color:var(--sx-ink); }
 
 /* form controls */
-html.sx .field input, html.sx .field select, html.sx .field textarea,
-html.sx input[type=text], html.sx input[type=number], html.sx input[type=date], html.sx input[type=search], html.sx select, html.sx textarea{
+html:is(.sx,.tm) .field input, html:is(.sx,.tm) .field select, html:is(.sx,.tm) .field textarea,
+html:is(.sx,.tm) input[type=text], html:is(.sx,.tm) input[type=number], html:is(.sx,.tm) input[type=date], html:is(.sx,.tm) input[type=search], html:is(.sx,.tm) select, html:is(.sx,.tm) textarea{
   border-radius:var(--sx-ctl-r); border-color:var(--sx-line); font-family:inherit; }
-html.sx .field input:focus, html.sx .field select:focus, html.sx .field textarea:focus,
-html.sx input:focus, html.sx select:focus, html.sx textarea:focus{ outline:2px solid rgba(249,115,22,.30); outline-offset:0; border-color:var(--sx-accent); }
-html.sx .field label{ font-weight:700; color:var(--sx-muted); }
+html:is(.sx,.tm) .field input:focus, html:is(.sx,.tm) .field select:focus, html:is(.sx,.tm) .field textarea:focus,
+html:is(.sx,.tm) input:focus, html:is(.sx,.tm) select:focus, html:is(.sx,.tm) textarea:focus{ outline:2px solid color-mix(in srgb, var(--sx-accent) 30%, transparent); outline-offset:0; border-color:var(--sx-accent); }
+html:is(.sx,.tm) .field label{ font-weight:700; color:var(--sx-muted); }
 
 /* messages, pop-ups, empty states */
-html.sx .alert, html.sx .alert{ border-radius:14px; font-weight:600; }
-html.sx .alert.error{ background:var(--sx-bad-bg); color:var(--sx-bad-fg); }
-html.sx .alert.success{ background:var(--sx-ok-bg); color:var(--sx-ok-fg); }
-html.sx .modal{ border-radius:20px; }
-html.sx .empty, html.sx .empty, html.sx .empty-state, html.sx .loading{ color:var(--sx-muted); text-align:center; padding:26px 14px; font-size:13px; }
+html:is(.sx,.tm) .alert{ border-radius:14px; font-weight:600; }
+html:is(.sx,.tm) .alert.error{ background:var(--sx-bad-bg); color:var(--sx-bad-fg); }
+html:is(.sx,.tm) .alert.success{ background:var(--sx-ok-bg); color:var(--sx-ok-fg); }
+html:is(.sx,.tm) .modal{ border-radius:20px; }
+html:is(.sx,.tm) .empty, html:is(.sx,.tm) .empty-state, html:is(.sx,.tm) .loading{ color:var(--sx-muted); text-align:center; padding:26px 14px; font-size:13px; }
+
+/* ---- role accents: same shape for everyone, one colour per area (layout.js sets <html data-role>) ---- */
+html.tm[data-role="admin"]{ --sx-accent:#334155; }
+html.tm[data-role="hr"]{ --sx-accent:#0d9488; }
+html.tm[data-role="employee"], html.tm[data-role="sales"]{ --sx-accent:#f97316; }
+
+/* ---- small joys shared by every page ---- */
+html:is(.sx,.tm) :focus-visible{ outline:2px solid var(--sx-accent); outline-offset:2px; }
+html:is(.sx,.tm) .btn, html:is(.sx,.tm) .card{ transition:transform .12s ease, box-shadow .15s ease, background .15s ease; }
+html:is(.sx,.tm) .btn:active{ transform:scale(.97); }
+@media (hover:hover){ html:is(.sx,.tm) .card:hover{ box-shadow:0 6px 20px rgba(17,24,39,.06); } }
+@keyframes tmShimmer{ from{ background-position:200% 0 } to{ background-position:-200% 0 } }
+.tm-skel{ border-radius:12px; min-height:14px; background:linear-gradient(90deg,#eef0f3 25%,#f7f8fa 37%,#eef0f3 63%); background-size:200% 100%; animation:tmShimmer 1.4s linear infinite; }
+@media (prefers-reduced-motion:reduce){ html:is(.sx,.tm) *{ transition:none !important; animation:none !important; } }
+
+/* ---- win moments (win.js) ---- */
+.tm-win{ position:fixed; left:50%; bottom:calc(24px + env(safe-area-inset-bottom,0px)); transform:translate(-50%,30px); opacity:0; pointer-events:none; z-index:100000;
+  display:flex; align-items:center; gap:8px; padding:10px 16px; border-radius:999px; background:#111827; color:#fff; font:700 14px 'Manrope',system-ui,sans-serif; box-shadow:0 10px 30px rgba(0,0,0,.25); transition:transform .35s cubic-bezier(.2,1.3,.4,1), opacity .2s; max-width:calc(100vw - 32px); }
+.tm-win.on{ transform:translate(-50%,0); opacity:1; }
+.tm-win-ic{ display:grid; place-items:center; width:22px; height:22px; border-radius:50%; background:#16a34a; font-size:13px; flex:none; }
+.tm-win-amt{ color:#fbbf24; font-variant-numeric:tabular-nums; }
+.tm-coin{ position:fixed; z-index:100000; pointer-events:none; color:#f59e0b; font:800 14px system-ui; transform:translate(-50%,-50%); animation:tmCoin .9s cubic-bezier(.2,.7,.3,1) forwards; }
+@keyframes tmCoin{ 0%{opacity:1; transform:translate(-50%,-50%) scale(.6)} 70%{opacity:1} 100%{opacity:0; transform:translate(calc(-50% + var(--dx)), calc(-50% + var(--dy) + 60px)) scale(1.1)} }
+.tm-pop{ animation:tmPop .5s cubic-bezier(.2,1.5,.4,1); }
+@keyframes tmPop{ 0%{transform:scale(.94); opacity:.4} 100%{transform:scale(1); opacity:1} }
+.tm-clear{ display:flex; flex-direction:column; align-items:center; gap:6px; padding:34px 16px; text-align:center; color:var(--sx-muted,#6b7280); }
+.tm-clear b{ color:var(--sx-ink,#111827); font-size:16px; font-weight:800; }
+.tm-clear-ic{ width:48px; height:48px; border-radius:50%; display:grid; place-items:center; background:var(--sx-ok-bg,#e4f6ec); color:var(--sx-ok-fg,#16945a); font-size:24px; font-weight:800; }
+@media (prefers-reduced-motion:reduce){ .tm-win{ transition:opacity .2s; transform:translate(-50%,0); } .tm-coin{ display:none; } .tm-pop{ animation:none; } }
+
+/* ---- department colour, soft: layout.js sets <html data-dept="..."> from the workspace a page belongs to. One light touch per department: a faint tint at the top of the page,
+   the active tab, the main buttons, a soft line on cards and a light tint on table headers. WhatsApp pages (data-dept="whatsapp" / wa-skip) are left alone. ---- */
+html.tm[data-dept]{ --dc:#f97316; }
+html.tm[data-dept="people"]{ --dc:#0d9488; }
+html.tm[data-dept="budget"]{ --dc:#16a34a; }
+html.tm[data-dept="finance"]{ --dc:#059669; }
+html.tm[data-dept="store"]{ --dc:#2563eb; }
+html.tm[data-dept="inventory"]{ --dc:#0891b2; }
+html.tm[data-dept="dispatch"]{ --dc:#d97706; }
+html.tm[data-dept="boss"]{ --dc:#7c3aed; }
+html.tm[data-dept="complaints"]{ --dc:#e11d48; }
+html.tm[data-dept="inbox"]{ --dc:#0284c7; }
+html.tm[data-dept="analytics"]{ --dc:#4f46e5; }
+html.tm[data-dept="admin"]{ --dc:#475569; }
+html.tm[data-dept="offices"]{ --dc:#a16207; }
+html.tm[data-dept="home"], html.tm[data-dept="sales"], html.tm[data-dept="help"]{ --dc:#f97316; }
+html.tm[data-dept]:not([data-dept="whatsapp"]):not(.wa-skip){
+  --dcs:color-mix(in srgb,var(--dc) 8%,#fff);
+  --sx-accent:color-mix(in srgb,var(--dc) 82%,#334155);
+}
+html.tm[data-dept="home"]:not(.wa-skip), html.tm[data-dept="sales"]:not(.wa-skip){ --sx-accent:#f97316; }
+html.tm[data-dept]:not([data-dept="whatsapp"]):not(.wa-skip) body{ background:linear-gradient(180deg,color-mix(in srgb,var(--dc) 5%,#eef0f3) 0,#eef0f3 240px) fixed; }
+html.tm[data-dept]:not([data-dept="whatsapp"]):not(.wa-skip) .ws-pill.on{ background:var(--dc); color:#fff; }
+html.tm[data-dept]:not([data-dept="whatsapp"]):not(.wa-skip) :is(.card,.bd-card,.panel){ border-top:2px solid color-mix(in srgb,var(--dc) 38%,#fff); }
+html.tm[data-dept]:not([data-dept="whatsapp"]):not(.wa-skip) table th{ background:var(--dcs); }

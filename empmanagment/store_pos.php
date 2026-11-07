@@ -994,32 +994,6 @@ try {
             break;
         }
 
-        // Total Budgeting: what each store person earned on every day of a range. The SAME price-by-ML chart (or a running Flash Offer) the online sales use,
-        // but a store has no sales limit, so there is NO over-target extra (+30 / +40 / +60 %) and no order-code rule. Commission = bill total x the chart % of the bill's ML and price.
-        case 'st_team.month': {
-            require_auth();
-            $from = (string)($_GET['date_from'] ?? ''); $to = (string)($_GET['date_to'] ?? '');
-            if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $from) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $to) || $to < $from || (strtotime($to) - strtotime($from)) > 62 * 86400) json_response(['error' => 'date_from and date_to must be YYYY-MM-DD, at most 62 days apart.'], 422);
-            $slab = ml_slab_get($pdo); $flash = flash_offer_list_get($pdo); $memo = []; $by = []; $unpriced = 0;
-            $q = $pdo->prepare("SELECT emp_id, emp_name, biz_date, created_at, total_ml, total FROM st_bills WHERE status = 'ok' AND biz_date BETWEEN ? AND ? ORDER BY biz_date, bill_id");
-            $q->execute([$from, $to]);
-            foreach ($q->fetchAll() as $b) {
-                $emp = (int)$b['emp_id']; $day = (string)$b['biz_date']; $ml = (int)$b['total_ml']; $amt = (float)$b['total'];
-                $mk = $day . '|' . $emp; if (!isset($memo[$mk])) $memo[$mk] = ml_slab_for($slab, $day, $emp); $chart = $memo[$mk];
-                $fl = flash_offer_pct_for($flash, $ml, $amt, strtotime((string)$b['created_at']) ?: time());
-                if ($fl !== null) $pct = (float)$fl['pct']; else { $pc = !empty($chart['on']) ? coach_slab_pct($chart, $ml, $amt, false) : null; $pct = $pc === null ? null : (float)$pc; }
-                if ($pct === null) $unpriced++;
-                $c = $pct === null ? 0.0 : round($amt * $pct / 100, 2);
-                if (!isset($by[$emp])) $by[$emp] = ['employee_id' => $emp, 'name' => (string)$b['emp_name'], 'sales' => 0.0, 'commission' => 0.0, 'bills' => 0, 'perday' => []];
-                if (!isset($by[$emp]['perday'][$day])) $by[$emp]['perday'][$day] = ['day' => $day, 'sales' => 0.0, 'commission' => 0.0, 'bills' => 0];
-                $by[$emp]['perday'][$day]['sales'] += $amt; $by[$emp]['perday'][$day]['commission'] += $c; $by[$emp]['perday'][$day]['bills']++;
-                $by[$emp]['sales'] += $amt; $by[$emp]['commission'] += $c; $by[$emp]['bills']++;
-            }
-            foreach ($by as &$x) { $x['sales'] = round($x['sales'], 2); $x['commission'] = round($x['commission'], 2); $x['perday'] = array_values(array_map(function ($d) { $d['sales'] = round($d['sales'], 2); $d['commission'] = round($d['commission'], 2); return $d; }, $x['perday'])); } unset($x);
-            json_response(['from' => $from, 'to' => $to, 'people' => array_values($by), 'unpriced_bills' => $unpriced]);
-            break;
-        }
-
         case 'st_team.save': {
             require_auth();
             $in = json_input();

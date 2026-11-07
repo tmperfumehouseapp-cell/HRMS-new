@@ -1,10 +1,11 @@
 /**
- * HRMS service worker — ALWAYS-FRESH + phone notifications. (v260930.4)
+ * HRMS service worker — ALWAYS-FRESH, but cheap: every file is revalidated, so an unchanged file costs a tiny "304 not modified" instead of a full download. + phone notifications. (v261108.1)
  *
  * It stores NOTHING. Its jobs:
- *   - every HRMS page / script / style is fetched straight from the server,
- *     skipping the browser's own HTTP cache — so whatever you upload is what
- *     every device loads, with no version stamps and no hard refresh;
+ *   - every HRMS page / script / style is checked with the server on every load
+ *     (cache:'no-cache' = "has it changed?"): changed files download at once, unchanged ones
+ *     answer 304 with no body — so whatever you upload is what every device loads (no hard
+ *     refresh), and repeat visits download almost nothing;
  *   - remove any cache an older worker left behind;
  *   - show the punch-in reminder the server pushes;
  *   - open the punch page when the notification is tapped.
@@ -23,17 +24,12 @@ self.addEventListener('fetch', (event) => {
   const fresh = req.mode === 'navigate' || /\.(html|js|css)$/i.test(url.pathname) || url.pathname.endsWith('/');
   if (!fresh) return;
   event.respondWith(
-    // A one-off query value makes every request a brand-new URL, so no
-    // cache anywhere (browser, hosting CDN, proxy) can answer it.
-    fetch(req.url + (req.url.indexOf('?') === -1 ? '?' : '&') + '_fresh=' + Date.now(), { cache: 'no-store', credentials: 'same-origin' })
-      .then((r) => {
-        // Hand the page a copy marked "do not keep", so neither the HTTP
-        // cache nor the tab's memory cache reuses it on the next page.
-        const h = new Headers(r.headers);
-        h.set('Cache-Control', 'no-store'); h.delete('Expires'); h.delete('ETag'); h.delete('Last-Modified');
-        return new Response(r.body, { status: r.status, statusText: r.statusText, headers: h });
-      })
-      .catch(() => fetch(req))
+    // Always ask the server "has this changed?" (cache:'no-cache' = revalidate): the server answers 304 with no body when it has not,
+    // so a repeat visit downloads almost nothing, and an uploaded change still shows on the very next load.
+    fetch(req.url, { cache: 'no-cache', credentials: 'same-origin' })
+      .then((r) => (r.status >= 500 ? Promise.reject(new Error('server ' + r.status)) : r))
+      // one quiet retry after a moment: a file replaced mid-deploy or a flaky mobile connection no longer shows a failed page that "works on the second refresh"
+      .catch(() => new Promise((ok) => setTimeout(ok, 350)).then(() => fetch(req.url, { cache: 'no-cache', credentials: 'same-origin' })).catch(() => fetch(req)))
   );
 });
 

@@ -427,7 +427,6 @@ function action_page_perms(string $action): array
         'commission_rules.manual_list' => ['commission'],
         'addons.' => ['allocation'],                    // Order Allocation: add-ons
         'employees.list' => ['dashboard', 'leave_requests', 'documents', 'agreements', 'approvals', 'targets', 'performance', 'commission', 'allocation'],
-        'st_team.month' => ['commission'],               // Total Budgeting reads each store person's daily commission (same chart, no over-target extra)
         'employees.rejoin' => ['commission'],   // Rejoin from the Ex-Employees tab in Total Budgeting (still Admin / HR only)
         'employees.delete' => ['commission'],   // make an ex-employee from Total Budgeting / the person card (still Admin / HR only)
         'employees.set_salary' => ['commission'], 'penalties.apply' => ['commission'], 'penalties.waive' => ['commission'], 'penalties.rules' => ['commission'],   // Total Budgeting: set a salary, add / remove a penalty (still Admin / HR only)
@@ -7519,9 +7518,11 @@ function ml_slab_clean(array $in): array
         $seen[$ml] = 1;
         $p = array_values(array_map(fn($v) => round((float)$v, 2), (array)($r['p'] ?? [])));
         if (count($p) !== $n) return [null, $ml . ' ml: fill a price in every column.'];
+        $lastP = 0.0;
         for ($i = 0; $i < $n; $i++) {
-            if ($p[$i] <= 0) return [null, $ml . ' ml: every price must be more than 0.'];
-            if ($i && $p[$i] > $p[$i - 1]) return [null, $ml . ' ml: prices must go down from left to right (₹' . $p[$i - 1] . ' → ₹' . $p[$i] . ').'];
+            if ($p[$i] <= 0) { if (abs($cols[$i] - 5.0) < 0.001) continue; return [null, $ml . ' ml: every price must be more than 0 (only the 5% column may stay blank).']; }
+            if ($lastP > 0 && $p[$i] > $lastP) return [null, $ml . ' ml: prices must go down from left to right (₹' . $lastP . ' → ₹' . $p[$i] . ').'];
+            $lastP = $p[$i];
         }
         $rows[] = ['ml' => $ml, 'p' => $p];
     }
@@ -7596,11 +7597,14 @@ function coach_slab_pct(array $ch, $ml, float $price, bool $pre): ?float
     foreach ($rows as $i => $a) {
         if ((float)$a['ml'] === $ml) { $p = array_map('floatval', $a['p']); break; }
         $b = $rows[$i + 1] ?? null;
-        if ($b && $ml > $a['ml'] && $ml < $b['ml']) { $f = ($ml - $a['ml']) / ($b['ml'] - $a['ml']); $p = []; foreach ($a['p'] as $j => $v) $p[] = (float)$v + ((float)$b['p'][$j] - (float)$v) * $f; break; }
+        if ($b && $ml > $a['ml'] && $ml < $b['ml']) { $f = ($ml - $a['ml']) / ($b['ml'] - $a['ml']); $p = []; foreach ($a['p'] as $j => $v) $p[] = ((float)$v > 0 && (float)$b['p'][$j] > 0) ? (float)$v + ((float)$b['p'][$j] - (float)$v) * $f : 0.0; break; }
     }
     if ($p === null) return null;
     if ($pre && (float)($ch['prepaid'] ?? 0) > 0) $price = $price / (1 - (float)$ch['prepaid'] / 100);
     $cols = array_map('floatval', $ch['cols']);
+    $pp = []; $cc = []; foreach ($p as $j => $v) if ((float)$v > 0 && isset($cols[$j])) { $pp[] = (float)$v; $cc[] = $cols[$j]; }      // a blank price column (for example the new 5% column nobody priced yet) is skipped
+    if (!$pp) return (float)($ch['floor'] ?? 0);
+    $p = $pp; $cols = $cc;
     if ($price >= $p[0]) return $cols[0];
     for ($j = 0; $j < count($p) - 1; $j++) {
         if ($price <= $p[$j] && $price >= $p[$j + 1]) {
@@ -7687,7 +7691,7 @@ function coach_sales_load(PDO $pdo, array $emps, string $from, string $to): arra
             // Orders that only carry a salesperson's tag wait in ct_recon() ("waiting for allocation") instead of silently adding to the tower.
             if (!$who || !isset($emps[$who])) continue;
             $ts = strtotime(str_replace('T', ' ', substr((string)$o['created_at'], 0, 19)));
-            $sale[biz_day_of($pdo, $ts) . '|' . $who][] = ['key' => $storeKey . '|' . (string)$o['id'], 'amt' => (float)$o['total'], 'ts' => $ts, 'ml' => $o['ml'] ?? null, 'ml10' => (int)($o['ml10'] ?? 0),
+            $sale[biz_day_of($pdo, $ts) . '|' . $who][] = ['key' => $storeKey . '|' . (string)$o['id'], 'amt' => (float)$o['total'], 'ts' => $ts, 'ml' => $o['ml'] ?? null, 'ml10' => (int)($o['ml10'] ?? 0), 'xcom' => (function () use ($pdo, $o) { $x = order_x_com($pdo, is_array($o['xparts'] ?? null) ? $o['xparts'] : (isset($o['xparts']) ? (array)$o['xparts'] : null), (int)($o['ml'] ?? 0), (float)$o['total']); return (float)$x['x_com']; })(), 'xall' => (function () use ($pdo, $o) { $x = order_x_com($pdo, is_array($o['xparts'] ?? null) ? $o['xparts'] : (isset($o['xparts']) ? (array)$o['xparts'] : null), (int)($o['ml'] ?? 0), (float)$o['total']); return !empty($x['x_all']); })(),
                 'pre' => $isPre(strtolower((string)($o['financial_status'] ?? ''))), 'paid' => order_paid_amt((float)$o['total'], (string)($o['financial_status'] ?? ''), $o['outstanding'] ?? null), 'code' => order_code_for($pdo, $storeKey, $o['id'], (string)($o['tags'] ?? '')), 'name' => (string)$o['order_name'],
                 'col' => is_array($o['colors'] ?? null) ? $o['colors'] : null, 'type' => (string)($a['type'] ?? '')];
         }
@@ -7797,6 +7801,14 @@ function pay_day_assign(PDO $pdo): array
     try { $j = json_decode((string)setting_get($pdo, 'budget_cfg', ''), true); foreach ((array)($j['days'] ?? []) as $d => $x) if (is_array($x)) foreach ($x as $id => $g) if (in_array($g, ['store', 'retail'], true)) $m[(string)$d][(int)$id] = (string)$g; } catch (Throwable $e) { error_log('pay_day_assign: ' . $e->getMessage()); }
     return $m;
 }
+/** True when this person was paid by the retail / store rule ON THAT DAY (the dated pay setup in Total Budgeting; before any dated setup: the current assignment or retail by name). */
+function pay_off_at(PDO $pdo, int $id, string $day): bool
+{
+    static $cfg = null; if ($cfg === null) { $cfg = []; try { $j = json_decode((string)setting_get($pdo, 'budget_cfg', ''), true); $cfg = is_array($j['people'] ?? null) ? $j['people'] : []; } catch (Throwable $e) {} }
+    $pp = $cfg[$id] ?? $cfg[(string)$id] ?? null;
+    if (is_array($pp) && !empty($pp['hist'])) { $g = null; foreach ($pp['hist'] as $h) if (($h['from'] ?? '9999') <= $day) $g = (string)($h['grp'] ?? ''); if ($g !== null) return in_array($g, ['retail', 'store'], true); }
+    $off = pay_offline_ids($pdo); return isset($off[$id]);
+}
 function sales_target_fn(PDO $pdo, array $emps, string $from, string $to, array $marks, bool $zeroOff = false): callable
 {
     $over = []; $noTarget = pay_offline_ids($pdo); $dayOff = pay_day_assign($pdo);
@@ -7813,8 +7825,8 @@ function sales_target_fn(PDO $pdo, array $emps, string $from, string $to, array 
         $mm->execute([substr($from, 0, 7), substr($to, 0, 7)]);
         foreach ($mm->fetchAll() as $r) $monMan[(int)$r['employee_id'] . '|' . $r['month']] = (float)$r['m'];
     } catch (Throwable $e) {}
-    return function (int $id, string $d) use ($emps, $over, $marks, $monMan, $zeroOff, $noTarget, $dayOff): float {
-        if (isset($noTarget[$id]) || isset($dayOff[$d][$id])) return 0.0;      // no sales target for retail / store people, nor on a day they were moved to the store      // retail wholesale and store people have no sales target
+    return function (int $id, string $d) use ($pdo, $emps, $over, $marks, $monMan, $zeroOff, $noTarget, $dayOff): float {
+        if (pay_off_at($pdo, $id, $d) || isset($dayOff[$d][$id])) return 0.0;      // no sales target for retail / store people, nor on a day they were moved to the store      // retail wholesale and store people have no sales target
         $mk = $marks[$d . '|' . $id] ?? '';
         if (isset($over[$d . '|' . $id])) return $over[$d . '|' . $id];      // a target typed by hand for the day wins, even on a Leave / off-marked day
         if ($mk === 'leave' || ($zeroOff && $mk === 'off')) return 0.0;
@@ -7825,10 +7837,24 @@ function sales_target_fn(PDO $pdo, array $emps, string $from, string $to, array 
     };
 }
 
-function coach_day(PDO $pdo, string $day, bool $hist = true): array
+/** The new commission engine (Commission → Result & rules) PAYS (live) unless an Admin switched it off in Total Budgeting (setting cm_live = '0'). Default: live. It reads the prices from the one Price Chart. */
+function cm_is_live(PDO $pdo): bool
+{
+    static $v = null; if ($v === null) { try { $v = (string)setting_get($pdo, 'cm_live', '1') !== '0'; } catch (Throwable $e) { $v = false; } } return $v;
+}
+/** One person's commission for one day when the new engine is live. No row (retail / store people, or moved to the store that day) = 0, they are paid by their own rule;
+ *  a day with orders the new engine could not price (no ML, size not in the chart) keeps the old figure, so nobody is paid less because of a gap in the chart. */
+function cm_live_pick(?array $row, float $old, bool $offline): float
+{
+    if ($row === null) return $offline ? 0.0 : $old;
+    if ((int)($row['no_ml'] ?? 0) + (int)($row['not_priced'] ?? 0) > 0) return $old;
+    return (float)($row['total'] ?? 0);
+}
+function coach_day(PDO $pdo, string $day, bool $hist = true, bool $raw = false): array
 {
     static $memo = [];
-    if (isset($memo[$day . (int)$hist])) return $memo[$day . (int)$hist];
+    $mk = $day . (int)$hist . ($raw ? 'r' : '');
+    if (isset($memo[$mk])) return $memo[$mk];
     $today = biz_today($pdo); $now = $day === $today ? time() : strtotime($day . ' 23:59:59');
     $emps = [];
     foreach ($pdo->query("SELECT e.employee_id, e.full_name, e.sales_tag, e.basic_salary, e.joining_date, e.designation, d.department_name
@@ -7866,6 +7892,13 @@ function coach_day(PDO $pdo, string $day, bool $hist = true): array
     $month1 = substr($day, 0, 8) . '01';
     $bonusPct = !empty($chart['on']) ? (float)($chart['bonus'] ?? 0) : 0.0;
     $out = [];
+    $cmMap = null;      // the new engine is live: its figure is what is paid (see cm_is_live)
+    if (!$raw && cm_is_live($pdo)) {
+        try {
+            if (!function_exists('cm_day') && is_file(__DIR__ . '/boss.php')) require_once __DIR__ . '/boss.php';
+            if (function_exists('cm_day')) { $cr = cm_day($pdo, $day); if (empty($cr['error'])) { $cmMap = []; foreach ((array)$cr['rows'] as $x) $cmMap[(int)$x['id']] = $x; } }
+        } catch (Throwable $e) { error_log('coach_day live engine: ' . $e->getMessage()); $cmMap = null; }
+    }
     foreach ($emps as $id => $e) {
         $list = $sale[$day . '|' . $id] ?? [];
         usort($list, fn($a, $b) => $a['ts'] <=> $b['ts']);
@@ -7947,6 +7980,7 @@ function coach_day(PDO $pdo, string $day, bool $hist = true): array
         foreach ($ds as $i => $d) { $w = 0.0; for ($j = $i; $j < min(count($ds), $i + 7); $j++) $w += $mDaySales[$ds[$j]]; if ($w > $bw) { $bw = $w; $bwFrom = $d; } }
         $ySame = 0.0;
         foreach ($sale[$yday . '|' . $id] ?? [] as $o) if ($o['ts'] - $yStart <= $elapsed) $ySame += $o['amt'];
+        if ($cmMap !== null) $com = cm_live_pick($cmMap[(int)$id] ?? null, $com, pay_off_at($pdo, (int)$id, $day) || isset(pay_day_assign($pdo)[$day][(int)$id]));
         $pct = $target > 0 ? $sales / $target : null;
         $should = $target > 0 ? $target * $exp : null;
         $out[$id] = ['id' => $id, 'name' => trim((string)$e['full_name']), 'role_kind' => sales_role_kind($e['department_name'] ?? '', $e['designation'] ?? ''), 'target' => round($target, 2), 'target_parts' => (object)array_map(fn($v) => round($v), $tparts[$id] ?? []), 'sales' => round($sales, 2), 'orders' => $n,
@@ -7987,7 +8021,7 @@ function coach_day(PDO $pdo, string $day, bool $hist = true): array
         'should_pct' => round($exp * 100, 1), 'ranked' => $cnt,
         'top' => ['ids' => array_column($top, 'id'), 'names' => array_map(fn($x) => trim(explode(' ', $x['name'])[0]), $top), 'code_rate' => $avgOf('code_rate'), 'add10_rate' => $avgOf('add10_rate'), 'ticket' => $avgOf('ticket')]];
     $GLOBALS['coach_sale_memo'][$day . (int)$hist] = $sale;      // the Control Tower reads the same orders (colours, type) without loading them again
-    return $memo[$day . (int)$hist] = ['day' => $day, 'now' => date('Y-m-d H:i:s', $now), 'bonus' => $bonusPct, 'floor' => (float)(ml_slab_for($chart0, $day, 0)['floor'] ?? 0), 'emps' => $out, 'team' => $team];
+    return $memo[$mk] = ['day' => $day, 'now' => date('Y-m-d H:i:s', $now), 'bonus' => $bonusPct, 'floor' => (float)(ml_slab_for($chart0, $day, 0)['floor'] ?? 0), 'emps' => $out, 'team' => $team];
 }
 
 /**
@@ -18420,6 +18454,7 @@ function retail_display_pending(PDO $pdo, string $city): array
 $action = $_GET['action'] ?? '';
 if (is_file(__DIR__ . '/brain.php')) { require_once __DIR__ . '/brain.php'; }
 if (is_file(__DIR__ . '/price_charts.php')) { require_once __DIR__ . '/price_charts.php'; }   // ONE price chart section (perfume / attar / shower gel / others by total ml) for the cart, the bot and commission; answers pc.* itself   // the company brain: ONE Claude door + scopes (company / customer / internal); every module below can use it
+if (is_file(__DIR__ . '/play.php')) { require_once __DIR__ . '/play.php'; }   // streaks + the Wins feed on the salesperson home; answers play.* itself
 if (strpos((string)$action, 'leader.') === 0) { require __DIR__ . '/leader_pay.php'; }
 if (strpos((string)$action, 'lh.') === 0) { require __DIR__ . '/leader_helper.php'; }   // 👥 Leaders Helper: fixed salary, daily checklist, daily payout
        if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo)\./', (string)$action)) { require __DIR__ . '/wa.php'; }          // wq. = WhatsApp Sales (wq.php, loaded by wa.php → wa_more.php)
@@ -30246,6 +30281,10 @@ switch ($action) {
             "INSERT INTO order_allocations (source, order_id, house, order_type, employee_id, is_direct, allocated_by) VALUES (?, ?, ?, ?, ?, ?, ?)
              ON DUPLICATE KEY UPDATE house = VALUES(house), order_type = VALUES(order_type), employee_id = VALUES(employee_id), is_direct = VALUES(is_direct), allocated_by = VALUES(allocated_by), allocated_at = CURRENT_TIMESTAMP"
         )->execute([$source, $orderId, $house, $type, $empId, $direct ? 1 : 0, $who]);
+        if (!$direct && $empId > 0 && function_exists('play_record_win')) {      // the Wins feed: a real allocation is a win for that salesperson
+            $amt = 0.0; try { $ot = $pdo->prepare("SELECT total FROM shop_orders WHERE store_key = ? AND shopify_id = ? LIMIT 1"); $ot->execute([$source, $orderId]); $amt = (float)$ot->fetchColumn(); } catch (Throwable $e) { $amt = 0.0; }
+            play_record_win($pdo, $empId, 'order', 'closed order #' . $orderId . ($amt > 0 ? ' · ₹' . number_format($amt, 0) : ''), $amt, 'alloc:' . $source . ':' . $orderId);
+        }
         json_response([
             'message' => 'Order #' . $orderId . ' → ' . $empName . ' · ' . house_labels()[$house] . ($type ? ' · ' . ucfirst($type) : '') . '.',
             'allocated_by' => $who, 'allocated_at' => date('Y-m-d H:i:s'), 'employee_name' => $empName, 'direct' => $direct ? 1 : 0,

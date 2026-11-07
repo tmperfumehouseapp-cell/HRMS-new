@@ -32,6 +32,7 @@
 .cm-t td.pos{color:#16945a;font-weight:700}.cm-t td.neg{color:#d9423b;font-weight:700}
 .cm-t input{width:78px;padding:6px 8px;border:1px solid var(--line);border-radius:10px;font:inherit;text-align:right}
 .cm-t input.ml{width:64px}
+.cm-t input.cm-auto{background:#fef9c3;border-color:#facc15}
 .cm-sc{overflow-x:auto}
 .cm-g{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px}
 .cm-g label{display:block;font-size:12px;font-weight:700;color:#6a7280;margin-bottom:4px}
@@ -145,7 +146,8 @@
     const rows = c.rows.map((r, i) => '<tr data-i="' + i + '"><td><input class="ml" data-k="ml" value="' + r.ml + '"> ml</td>' + r.p.map((v, j) => '<td><input data-j="' + j + '" value="' + (v || '') + '" inputmode="decimal"></td>').join('') + '<td><button class="bd-btn sm bad" data-del="' + i + '" type="button">✕</button></td></tr>').join('');
     const tiers = (c.tiers || []).concat([[0, 0], [0, 0], [0, 0]]).slice(0, Math.max(3, (c.tiers || []).length));
     let h = card('Price → commission %, ML by ML', 'Type the selling price for each % column. An order pays the % of the nearest price column: at or above the midpoint of two prices = the higher %, below it = the lower %. Above the 7% price = 7%, below the 3% price = ' + c.floor + '%.',
-      '<div class="cm-sc"><table class="cm-t" id="cmTbl"><thead><tr><th>ML</th>' + COLS.map((x) => '<th>' + x + '% price</th>').join('') + '<th></th></tr></thead><tbody>' + rows + '</tbody></table></div><div style="margin-top:10px"><button class="bd-btn sm" id="cmAddRow" type="button">+ Add ML row</button></div>');
+      '<div class="cm-note" id="cmAutoNote" style="display:none;background:#fef9c3;border:1px solid #facc15;border-radius:12px;padding:10px 12px;margin-bottom:10px"><b>The empty 5% prices are filled in yellow</b> with the middle of the 6% and 4% price (rounded to ₹10). Check them, change any you like, then press <b>Save pricing</b> — nothing is saved until you do.</div><div class="cm-sc"><table class="cm-t" id="cmTbl"><thead><tr><th>ML</th>' + COLS.map((x) => '<th>' + x + '% price</th>').join('') + '<th></th></tr></thead><tbody>' + rows + '</tbody></table></div><div style="margin-top:10px"><button class="bd-btn sm" id="cmAddRow" type="button">+ Add ML row</button> <button class="bd-btn sm" id="cmFill5" type="button">Fill the empty 5% prices</button></div>');
+    if (D.unified) h = card('Prices · one price chart', 'These are the prices from <a href="price_charts.html">Learn &amp; Setup → Pricing</a>: <b>one chart for the whole app</b> (the Teach bot, the cart, the customer photo and commission all read it). Change a price there and it changes here, in the bot and in commission at once. A blank 5% price changes nothing until you set it. What you set on this page are the commission <b>rules</b> below.', '<div id="pcAll" class="cm-note">Loading the prices…</div><div style="margin-top:8px"><a class="bd-btn pri" href="price_charts.html" style="text-decoration:none;display:inline-block">Edit the prices (Learn &amp; Setup → Pricing)</a></div>');
     h += card('Rules', '', '<div class="cm-g">'
       + '<div><label>Floor % (below the 3% price)</label><input id="cmFloor" value="' + c.floor + '"></div>'
       + '<div><label>Code limit (share of orders with a code)</label><select id="cmCode">' + [60, 70, 80].map((x) => '<option value="' + x + '"' + (Number(c.codepct) === x ? ' selected' : '') + '>' + x + '%</option>').join('') + '</select></div>'
@@ -156,21 +158,21 @@
       + '<div class="cm-g" id="cmTiers">' + tiers.map((t, i) => '<div><label>Step ' + (i + 1) + ': over target by % → extra %</label><div style="display:flex;gap:6px"><input data-t="' + i + '" data-s="0" value="' + (t[0] || '') + '" placeholder="over %"><input data-t="' + i + '" data-s="1" value="' + (t[1] || '') + '" placeholder="extra %"></div></div>').join('')
       + '<div><label>Maximum extra %</label><input id="cmMax" value="' + c.bonus_max + '"></div></div>'
       + '<label style="display:flex;gap:8px;align-items:center;margin:16px 0 8px;font-weight:700"><input type="checkbox" id="cmRev"' + (c.reviewed ? ' checked' : '') + '> I checked these prices</label>'
-      + '<button class="bd-btn pri" id="cmSave" type="button">Save pricing</button>');
-    h += card('Shower gel, attar, others and combos', 'The same prices as <a href="price_charts.html">Learn &amp; Setup → Pricing</a>: one set of data, shown here and edited there. Perfume sizes above are kept the same in both places (same ML, same % column; the commission price wins where a size is in both). A change on either page reaches the other.', '<div id="pcOne" class="cm-note">Loading the prices…</div>');
+      + '<button class="bd-btn pri" id="cmSave" type="button">' + (D.unified ? 'Save the rules' : 'Save pricing') + '</button>');
+    if (!D.unified) h += card('Shower gel, attar, others and combos', 'The same prices as <a href="price_charts.html">Learn &amp; Setup → Pricing</a>: one set of data, shown here and edited there. Perfume sizes above are kept the same in both places (same ML, same % column; the commission price wins where a size is in both). A change on either page reaches the other.', '<div id="pcOne" class="cm-note">Loading the prices…</div>');
     return h;
   }
   /* the non-perfume prices live in ONE place (Price Chart page): show them here, read from the same data */
   async function loadPcOne() {
-    const box = $('pcOne'); if (!box) return;
+    const box = $('pcAll') || $('pcOne'); if (!box) return; const all = box.id === 'pcAll';
     try {
       const r = await api.get('pc.get'), ch = r.charts || {}, fmt = (v) => v ? Number(v).toLocaleString('en-IN') : '–';
       const head = (c, first) => '<thead><tr><th>' + first + '</th>' + (c.cols || []).map((x, i) => '<th>' + x + '% price' + (c.names && c.names[i] ? '<small style="display:block;font-weight:400">' + c.names[i] + '</small>' : '') + '</th>').join('') + '</tr></thead>';
       const lab = (m) => [m.perf ? m.perf + ' ml perfume' : '', m.gel ? m.gel + ' shower gel' : '', m.attar ? m.attar + ' attar' : '', m.other ? m.other + ' other' : ''].filter(Boolean).join(' + ');
       const seg = (k, title, first, unit) => { const c = ch[k]; if (!c || !(c.rows || []).length) return '<h3 style="margin:12px 0 4px;font-size:14px">' + title + '</h3><div class="cm-note">No prices yet. Add them in Learn &amp; Setup → Pricing.</div>';
         return '<h3 style="margin:12px 0 4px;font-size:14px">' + title + ' (' + c.rows.length + ')</h3><div class="cm-sc"><table class="cm-t">' + head(c, first) + '<tbody>' + c.rows.map((x) => '<tr><td>' + (k === 'mix' ? lab(x) : x.ml + ' ' + unit) + '</td>' + (x.p || []).map((v) => '<td>' + fmt(v) + '</td>').join('') + '</tr>').join('') + '</tbody></table></div>'; };
-      box.className = ''; box.innerHTML = seg('gel', 'Shower gel', 'Pieces', 'pc') + seg('attar', 'Attar', 'Pieces', 'pc') + seg('other', 'Others', 'Pieces', 'pc') + seg('mix', 'Combos', 'Combo', '')
-        + '<div class="cm-note" style="margin-top:8px">Today the commission engine pays perfume by ML. These prices are shown here so both pricing pages are one; edit them in <a href="price_charts.html">Learn &amp; Setup → Pricing</a>.</div>';
+      box.className = ''; box.innerHTML = (all ? seg('perfume', 'Perfume (by total ml)', 'Total ml', 'ml') : '') + seg('gel', 'Shower gel', 'Pieces', 'pc') + seg('attar', 'Attar', 'Pieces', 'pc') + seg('other', 'Others', 'Pieces', 'pc') + seg('mix', 'Combos', 'Combo', '')
+        + '<div class="cm-note" style="margin-top:8px">' + (all ? 'Perfume is paid by its total ml; shower gel, attar, others and combos are paid by their own rows (a combo prices the whole order). A combo that is not in the chart earns nothing until you add its price. Edit every price in <a href="price_charts.html">Learn &amp; Setup → Pricing</a>.' : 'These prices are shown here so both pricing pages are one; edit them in <a href="price_charts.html">Learn &amp; Setup → Pricing</a>.') + '</div>';
     } catch (e) { box.textContent = 'Could not read the other prices: ' + ((e && e.message) || 'try again'); }
   }
 
@@ -201,6 +203,12 @@
     document.querySelectorAll('[data-ddn]').forEach((b) => b.onclick = () => { DDN = Number(b.dataset.ddn); DD = null; render(); });
     if ($('cmRc')) $('cmRc').onclick = async () => { $('cmRc').disabled = true; $('cmRc').textContent = 'Counting…'; try { RC = await B2.get('bd.b2_cm_recount', { days: 10 }); } catch (e) { RC = { error: e.message || 'Could not recount.', people: [] }; } render(); };
     document.querySelectorAll('tr[data-p]').forEach((r) => r.onclick = () => { OPEN[r.dataset.p] = !OPEN[r.dataset.p]; render(); });
+    if ($('cmTbl')) {   // the 5% column: every empty cell gets the middle of the 6% and the 4% price (yellow until saved)
+      const fill5 = () => { let n = 0; document.querySelectorAll('#cmTbl tbody tr').forEach((tr) => { const g = (j) => parseFloat(String(tr.querySelector('[data-j="' + j + '"]').value).replace(',', '.')) || 0, c5 = tr.querySelector('[data-j="3"]'), a = g(2), b = g(4);
+          if (!String(c5.value).trim() && a > 0 && b > 0) { c5.value = Math.round((a + b) / 2 / 10) * 10; c5.classList.add('cm-auto'); n++; } }); return n; };
+      const n0 = fill5(); if ($('cmAutoNote')) $('cmAutoNote').style.display = n0 ? '' : 'none';
+      if ($('cmFill5')) $('cmFill5').onclick = () => { const n = fill5(); if ($('cmAutoNote')) $('cmAutoNote').style.display = n ? '' : 'none'; if (!n) alert('No empty 5% price has a 6% and a 4% price next to it.'); };
+    }
     if ($('cmAddRow')) $('cmAddRow').onclick = () => { D.chart.rows = readRows(); D.chart.rows.push({ ml: 0, p: [0, 0, 0, 0, 0, 0] }); render(); };
     document.querySelectorAll('[data-del]').forEach((b) => b.onclick = () => { D.chart.rows = readRows(); D.chart.rows.splice(Number(b.dataset.del), 1); render(); });
     if ($('cmSave')) $('cmSave').onclick = () => act('bd.b2_cm_chart_save', { rows: readRows(), floor: val('cmFloor'), codepct: val('cmCode'), nocode: val('cmNo'), prepaid: val('cmPre'), bonus_max: val('cmMax'), tiers: tiersFrom('#cmTiers'), reviewed: $('cmRev').checked ? 1 : 0 }, 'Pricing saved.');

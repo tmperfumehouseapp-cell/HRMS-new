@@ -2666,8 +2666,10 @@ function cm_default_chart(PDO $pdo) {
 function cm_chart(PDO $pdo) {
     $d = cm_default_chart($pdo);
     $s = function_exists('setting_get') ? json_decode((string)setting_get($pdo, 'cm_chart', ''), true) : null;
-    if (!is_array($s) || empty($s['rows'])) return $d;
-    return array_merge($d, $s);
+    $c = (!is_array($s) || empty($s['rows'])) ? $d : array_merge($d, $s);      // the commission RULES (code limit, no-code share, prepaid, over-target steps, floor) live here
+    // the PRICES live only in the Price Chart (Learn & Setup → Pricing): once it is unified, the engine reads its columns and rows from there, there is no second price table
+    if (function_exists('pc_perfume') && function_exists('setting_get') && (string)setting_get($pdo, 'price_unify_v1', '') === '1') { $pc = pc_perfume($pdo); if (!empty($pc['rows'])) { $c['cols'] = array_map('floatval', $pc['cols']); $c['rows'] = $pc['rows']; } }
+    return $c;
 }
 /** the chart sent from the Pricing tab -> [clean chart | null, error] */
 function cm_chart_clean(array $in, array $cur) {
@@ -2695,7 +2697,7 @@ function cm_row_prices(array $ch, $ml) {
     foreach ($rows as $i => $a) {
         if ((float)$a['ml'] === $ml) return array_map('floatval', $a['p']);
         $b = $rows[$i + 1] ?? null;
-        if ($b && $ml > $a['ml'] && $ml < $b['ml']) { $f = ($ml - $a['ml']) / ($b['ml'] - $a['ml']); $p = []; foreach ($a['p'] as $j => $v) $p[] = (float)$v + ((float)$b['p'][$j] - (float)$v) * $f; return $p; }
+        if ($b && $ml > $a['ml'] && $ml < $b['ml']) { $f = ($ml - $a['ml']) / ($b['ml'] - $a['ml']); $p = []; foreach ($a['p'] as $j => $v) $p[] = ((float)$v > 0 && (float)$b['p'][$j] > 0) ? (float)$v + ((float)$b['p'][$j] - (float)$v) * $f : 0.0; return $p; }   // never invent a price next to a blank one
     }
     return null;
 }
@@ -2797,7 +2799,7 @@ function cm_emps(PDO $pdo, $day = null) {
     $emps = []; $off = cm_offline_ids($pdo); $dayOff = ($day && function_exists('pay_day_assign')) ? (pay_day_assign($pdo)[$day] ?? []) : [];   // on a day moved to the store, no online commission
     foreach ($pdo->query("SELECT e.employee_id, e.full_name, e.sales_tag, e.basic_salary, e.joining_date, e.designation, d.department_name
         FROM employees e LEFT JOIN departments d ON d.department_id = e.department_id WHERE e.status != 'ex'")->fetchAll() as $e) {
-        if (stripos((string)$e['department_name'], 'sales') === false || isset($off[(int)$e['employee_id']]) || isset($dayOff[(int)$e['employee_id']])) continue; $emps[(int)$e['employee_id']] = $e;
+        if (stripos((string)$e['department_name'], 'sales') === false || ($day && function_exists('pay_off_at') ? pay_off_at($pdo, (int)$e['employee_id'], (string)$day) : isset($off[(int)$e['employee_id']])) || isset($dayOff[(int)$e['employee_id']])) continue; $emps[(int)$e['employee_id']] = $e;
     }
     return $emps;
 }
@@ -2813,26 +2815,30 @@ function cm_day(PDO $pdo, $day, array $ch = null, array $offers = null, array $b
     $pre = (float)$ch['prepaid']; $rows = [];
     foreach ($emps as $id => $e) {
         $list = $sale[$day . '|' . $id] ?? []; $target = (float)$targetOf($id, $day);
-        $n = count($list); $sales = 0.0; $nCode = 0; $noMl = 0; $noPrice = 0; $chartCom = 0.0; $offerCom = 0.0; $lines = [];
+        $n = count($list); $sales = 0.0; $nCode = 0; $noMl = 0; $noPrice = 0; $chartCom = 0.0; $offerCom = 0.0; $xcomTotal = 0.0; $lines = [];
         foreach ($list as $o) { if ($o['code'] !== '') $nCode++; }
         $need = cm_code_need($n, (float)$ch['codepct']); $codeOk = $need > 0 && $nCode >= $need; $nocodeF = (float)$ch['nocode'] / 100;
         foreach ($list as $o) {
             $amt = (float)$o['amt']; $sales += $amt;
             $gross = (!empty($o['pre']) && $pre > 0) ? $amt / (1 - $pre / 100) : $amt;           // the prepaid discount is the company's cost
             $f = ($o['code'] !== '' || $codeOk) ? 1.0 : $nocodeF; $ml = $o['ml'] ?? null;
+            // shower gel / attar / others / combos are priced on their own price charts (Learn & Setup → Pricing, shared): a combo prices the WHOLE order (its price already includes the perfume),
+            // otherwise that part is paid on top of the perfume commission. The code rule applies to it like to every order.
+            $xc = (float)($o['xcom'] ?? 0) * $f; $xcomTotal += $xc;
+            if (!empty($o['xall'])) { $lines[] = ['order' => $o['name'], 'ml' => (int)($ml ?: 0), 'price' => round($gross), 'rule' => 'combo', 'pct' => 0, 'code' => $o['code'] !== '', 'com' => round($xc, 2)]; continue; }
             $of = $ml ? cm_offer_match($offers, $ml, $gross, $day, (float)$ch['window']) : null;
             if ($of) { $v = $gross * (float)$of['pct'] / 100 * $f; $offerCom += $v; $lines[] = ['order' => $o['name'], 'ml' => (int)$ml, 'price' => round($gross), 'rule' => 'offer #' . $of['id'], 'pct' => (float)$of['pct'], 'code' => $o['code'] !== '', 'com' => round($v, 2)]; continue; }
-            if (!$ml) { $noMl++; $lines[] = ['order' => $o['name'], 'ml' => 0, 'price' => round($gross), 'rule' => 'no ML', 'pct' => 0, 'code' => $o['code'] !== '', 'com' => 0]; continue; }
+            if (!$ml) { if ($xc <= 0) $noMl++; $lines[] = ['order' => $o['name'], 'ml' => 0, 'price' => round($gross), 'rule' => $xc > 0 ? 'gel / attar / others' : 'no ML', 'pct' => 0, 'code' => $o['code'] !== '', 'com' => round($xc, 2)]; continue; }
             $pc = cm_pct($ch, $ml, $gross);
             if ($pc === null) { $noPrice++; $lines[] = ['order' => $o['name'], 'ml' => (int)$ml, 'price' => round($gross), 'rule' => 'ML not priced', 'pct' => 0, 'code' => $o['code'] !== '', 'com' => 0]; continue; }
             $v = $gross * $pc / 100 * $f; $chartCom += $v; $lines[] = ['order' => $o['name'], 'ml' => (int)$ml, 'price' => round($gross), 'rule' => 'chart', 'pct' => $pc, 'code' => $o['code'] !== '', 'com' => round($v, 2)];
         }
         $bo = cm_boost_for($boosts, $id, $day); $bonus = cm_bonus($ch, $sales, $target, $bo); $extra = $chartCom * $bonus / 100;
         $old = null;
-        if (function_exists('coach_day')) { try { $cd = coach_day($pdo, $day, false); $old = isset($cd[$id]) ? (float)$cd[$id]['com_today'] : null; } catch (Throwable $e) {} }
-        $total = round($chartCom + $offerCom + $extra, 2);
+        if (function_exists('coach_day')) { try { $cd = coach_day($pdo, $day, false, true); $old = isset($cd[$id]) ? (float)$cd[$id]['com_today'] : null; } catch (Throwable $e) {} }
+        $total = round($chartCom + $offerCom + $extra + $xcomTotal, 2);
         $rows[] = ['id' => $id, 'name' => trim((string)$e['full_name']), 'target' => round($target), 'sales' => round($sales), 'pct' => $target > 0 ? round($sales / $target * 100, 1) : null, 'orders' => $n,
-            'codes' => $nCode, 'code_pct' => $n ? round($nCode / $n * 100) : null, 'code_ok' => $codeOk, 'code_need' => $need, 'chart_com' => round($chartCom, 2), 'offer_com' => round($offerCom, 2),
+            'codes' => $nCode, 'code_pct' => $n ? round($nCode / $n * 100) : null, 'code_ok' => $codeOk, 'code_need' => $need, 'chart_com' => round($chartCom, 2), 'offer_com' => round($offerCom, 2), 'x_com' => round($xcomTotal, 2),
             'bonus' => $bonus, 'boost' => $bo ? $bo['name'] : '', 'extra' => round($extra, 2), 'total' => $total, 'old' => $old, 'diff' => $old === null ? null : round($total - $old, 2), 'no_ml' => $noMl, 'not_priced' => $noPrice, 'lines' => $lines];
     }
     usort($rows, function ($a, $b) { return $b['sales'] <=> $a['sales']; });
@@ -3623,14 +3629,24 @@ function b2_dispatch(PDO $pdo, $action, array $auth, array $w, $by, array $in, $
     case 'bd.b2_strip': { json_response(b2_strip($pdo, $w, (string)($in['page'] ?? $_GET['page'] ?? ''), $me)); }
     case 'bd.b2_tick': { $adm(); json_response(['ok' => true, 'result' => b2_tick($pdo, time(), true)]); }
     /* ----- Commission 2 (preview only; admin) ----- */
-    case 'bd.b2_cm_view': { $adm(); if (function_exists('price_sync_once')) price_sync_once($pdo); $ch = cm_chart($pdo); $off = cm_offers($pdo); $bo = cm_boosts($pdo); $day = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($_GET['day'] ?? '')) ? (string)$_GET['day'] : b2_day();
+    case 'bd.b2_cm_view': { $adm(); if (function_exists('price_unify_once')) price_unify_once($pdo); $ch = cm_chart($pdo); $off = cm_offers($pdo); $bo = cm_boosts($pdo); $day = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($_GET['day'] ?? '')) ? (string)$_GET['day'] : b2_day();
         $dr = cm_day($pdo, $day, $ch, $off, $bo); $ppl = []; foreach (cm_emps($pdo) as $id => $e) $ppl[] = ['id' => $id, 'name' => trim((string)$e['full_name'])];
-        json_response(['day' => $day, 'chart' => $ch, 'offers' => $off, 'boosts' => $bo, 'people' => $ppl, 'result' => $dr, 'needs' => cm_needs($pdo, $ch, $off, $dr)]); }
+        json_response(['unified' => (string)setting_get($pdo, 'price_unify_v1', '') === '1', 'day' => $day, 'chart' => $ch, 'offers' => $off, 'boosts' => $bo, 'people' => $ppl, 'result' => $dr, 'needs' => cm_needs($pdo, $ch, $off, $dr)]); }
     case 'bd.b2_cm_recount': { $adm(); json_response(cm_recount($pdo, max(1, min(31, (int)($_GET['days'] ?? $in['days'] ?? 10))), (string)($_GET['end'] ?? $in['end'] ?? ''))); }
-    case 'bd.b2_cm_chart_save': { $adm(); $post(); $cur = cm_chart($pdo); $r = cm_chart_clean((array)($in['chart'] ?? $in), $cur); if (!$r[0]) json_response(['error' => $r[1]], 422);
+    case 'bd.b2_cm_chart_save': {   // ONE price chart: prices are edited only in Learn & Setup → Pricing; this saves the commission RULES (and the "I checked" tick)
+        $adm(); $post(); $cur = cm_chart($pdo);
+        if ((string)setting_get($pdo, 'price_unify_v1', '') === '1') {
+            $raw = json_decode((string)setting_get($pdo, 'cm_chart', ''), true); if (!is_array($raw)) $raw = [];
+            $n = function ($k, $lo, $hi, $def) use ($in, $cur) { $v = $in[$k] ?? ($cur[$k] ?? $def); return max($lo, min($hi, round((float)$v, 2))); };
+            $tiers = []; foreach ((array)($in['tiers'] ?? $cur['tiers'] ?? []) as $t) { $o = (float)($t[0] ?? 0); $x = (float)($t[1] ?? 0); if ($o > 0 && $x > 0) $tiers[] = [$o, $x]; } usort($tiers, function ($a2, $b2) { return $a2[0] <=> $b2[0]; });
+            $c = $raw; $c['floor'] = $n('floor', 0, 10, 2.8); $c['codepct'] = $n('codepct', 0, 100, 70); $c['nocode'] = $n('nocode', 0, 100, 50); $c['prepaid'] = $n('prepaid', 0, 20, 2); $c['bonus_max'] = $n('bonus_max', 1, 100, 50); $c['tiers'] = $tiers ?: [[30, 30], [40, 40], [60, 50]];
+            $c['reviewed'] = !empty($in['reviewed']) ? 1 : (int)($cur['reviewed'] ?? 0); $c['updated_at'] = bd_now(); $c['updated_by'] = $by; setting_set($pdo, 'cm_chart', json_encode($c));
+            b2_log('commission', 'chart', 'commission rules saved', $by); if (function_exists('kb_touch')) kb_touch($pdo, 'Commission rules');
+            json_response(['ok' => true, 'message' => 'Commission rules saved. The prices come from the Price Chart (Learn & Setup → Pricing).', 'chart' => cm_chart($pdo)]);
+        }
+        $r = cm_chart_clean((array)($in['chart'] ?? $in), $cur); if (!$r[0]) json_response(['error' => $r[1]], 422);
         $c = $r[0]; $c['reviewed'] = !empty($in['reviewed']) ? 1 : (int)($cur['reviewed'] ?? 0); $c['updated_at'] = bd_now(); $c['updated_by'] = $by; setting_set($pdo, 'cm_chart', json_encode($c)); b2_log('commission', 'chart', 'pricing chart saved', $by);
-        $sy = function_exists('price_sync') ? price_sync($pdo, 'cm', (string)$by) : null;   // one pricing: the same prices go to Learn & Setup → Pricing (same ML, same % column)
-        json_response(['ok' => true, 'message' => 'Pricing saved.' . ($sy && ($sy['changed'] || $sy['added']) ? ' The Price Chart (Learn & Setup → Pricing) now has the same prices (' . ($sy['changed'] + $sy['added']) . ' size' . (($sy['changed'] + $sy['added']) === 1 ? '' : 's') . ').' : '') . ($sy && $sy['error'] ? ' ' . $sy['error'] : ''), 'chart' => $c]); }
+        json_response(['ok' => true, 'message' => 'Pricing saved.', 'chart' => $c]); }
     case 'bd.b2_cm_offer_add': { $adm(); $post(); $out(cm_offer_save($pdo, $in, $by)); }
     case 'bd.b2_cm_offer_stop': { $adm(); $post(); $out(cm_offer_stop($pdo, $gid(), $by)); }
     case 'bd.b2_cm_boost_add': { $adm(); $post(); $out(cm_boost_save($pdo, $in, $by)); }

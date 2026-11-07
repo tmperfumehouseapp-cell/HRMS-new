@@ -2041,6 +2041,7 @@
       throw new Error(data.error || 'Punch failed.');
     }
     showAlert(data.message);
+    try { if (window.TMWin) TMWin.win({ title: data.message || 'Done', ms: 3200 }); } catch (e) { /* the celebration is optional */ }
     setMsg('');
     loadToday();
   }

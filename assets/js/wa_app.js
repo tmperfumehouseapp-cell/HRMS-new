@@ -228,6 +228,7 @@
   function start(root) {
     if (!document.getElementById('wxCss')) { const s = document.createElement('style'); s.id = 'wxCss'; s.textContent = CSS; document.head.appendChild(s); }
     themeApply();
+    try { if (!window.WaNotices) { const sc = document.createElement('script'); sc.src = 'assets/js/wa_notices.js?v=1'; document.head.appendChild(sc); } } catch (e) { }   // 🔔 "X took over your chat" bar (your own chats only)
     root.innerHTML = ''; const R = document.createElement('div'); R.className = 'wx'; root.appendChild(R);
     const EMB = new URLSearchParams(location.search).get('embed') === '1'; if (EMB) { R.classList.add('emb'); document.documentElement.classList.add('wx-emb'); }
     const CXID = EMB ? (Number(new URLSearchParams(location.search).get('cx')) || 0) : 0; if (CXID) R.classList.add('cxm');   // 🎫 inside a complaint ticket: voice + attach + ✨ Replies (Claude's suggestion + the complaint pre-made messages); no sales tools   // 🎫 ONE chat inside another page (the complaint ticket): the same chat box — voice notes, photos, videos, "/" quick replies, pre-made messages — no list
@@ -400,6 +401,21 @@
       return `<div class="wx-t ${cls}" data-s="${c.wait_sec}">${mmss(s)}</div>`;
     }
     // ---- 👥 Team (WhatsApp managers only): every live chat of the team, filter by salesperson or search; open one → "Take over"
+    // 🔎 a salesperson picker with a SEARCH box (replaces the plain "Everyone" dropdown): type a name, tap the person → only that person's chats
+    function ppName(people, id, extra) { if (!id) return 'Everyone'; const a = (extra || []).concat(people || []).find((x) => x.emp_id === id); return a ? a.name : 'Everyone'; }
+    function ppClose() { const d = document.getElementById('wxPp'); if (d) d.remove(); holdUntil = Date.now() + 300; }
+    function ppOpen(btn, people, cur, extra, onPick) {
+      ppClose(); holdFor(120000);
+      if (!document.getElementById('wxPpCss')) { const st = document.createElement('style'); st.id = 'wxPpCss'; st.textContent = '.wx-ppb{flex:0 0 40%;min-width:0;border:1px solid #d0d5dd;border-radius:10px;padding:8px 10px;font-size:14px;background:#fff;text-align:left;display:flex;align-items:center;gap:6px;cursor:pointer;font-family:inherit}.wx-ppb span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.wx-ppb i{font-style:normal;color:#667781;font-size:11px}#wxPp{position:fixed;z-index:9500;background:#fff;border:1px solid #d0d5dd;border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,.28);padding:8px;display:flex;flex-direction:column;gap:6px;max-height:64vh}#wxPp .wx-in{margin:0 !important;width:100%;box-sizing:border-box}#wxPp .l{overflow:auto;flex:1}#wxPp .it{display:flex;align-items:center;gap:8px;padding:10px 10px;border-radius:10px;font-size:15px;cursor:pointer}#wxPp .it:hover,#wxPp .it:active{background:#f0f2f5}#wxPp .it.on{background:#e7f8ef;font-weight:800}#wxPp .it small{margin-left:auto;color:#667781;font-size:11.5px}#wxPp .it em{font-style:normal;color:#16a34a;margin-left:auto}'; document.head.appendChild(st); }
+      const all = [{ emp_id: 0, name: 'Everyone' }].concat(extra || []).concat((people || []).map((p) => ({ emp_id: p.emp_id, name: p.name, away: !p.present })));
+      const d = document.createElement('div'); d.id = 'wxPp'; d.innerHTML = '<input class="wx-in" id="wxPpQ" type="search" placeholder="Search a salesperson…" autocomplete="off"><div class="l" id="wxPpL"></div>'; document.body.appendChild(d);
+      const r = btn.getBoundingClientRect(), w = Math.min(340, window.innerWidth - 16); d.style.width = w + 'px'; d.style.left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8)) + 'px'; d.style.top = (r.bottom + 4) + 'px';
+      const L = d.querySelector('#wxPpL'), draw = (q) => { q = (q || '').toLowerCase().trim(); const rows = all.filter((x) => !q || x.name.toLowerCase().includes(q));
+        L.innerHTML = rows.map((x) => `<div class="it ${x.emp_id === cur ? 'on' : ''}" data-e="${x.emp_id}">${esc(x.name)}${x.away ? '<small>away</small>' : ''}${x.emp_id === cur ? '<em>✓</em>' : ''}</div>`).join('') || '<div class="wx-empty" style="padding:14px">Nobody found.</div>';
+        L.querySelectorAll('[data-e]').forEach((it) => { it.onclick = () => { const id = +it.dataset.e; ppClose(); document.removeEventListener('mousedown', out, true); onPick(id); }; }); };
+      const out = (e) => { if (!d.contains(e.target) && e.target !== btn && !btn.contains(e.target)) { ppClose(); document.removeEventListener('mousedown', out, true); } };
+      setTimeout(() => document.addEventListener('mousedown', out, true), 0); draw(''); const qi = d.querySelector('#wxPpQ'); qi.oninput = () => draw(qi.value); qi.focus();
+    }
     async function loadTeam() {
       if (!(S.me && S.me.team)) return; S.tm = S.tm || { emp: 0, q: '', rows: null, people: null };
       try { const d = await api.get('wa.g_inbox', S.tm.emp ? { all: 1, emp: S.tm.emp } : { all: 1 }); S.tm.rows = d.chats || []; } catch (e) { S.tm.err = e.message; }
@@ -409,12 +425,11 @@
     function drawTeam() {
       const M = $('#wxM'), T = S.tm || {}; if (!T.rows) { M.innerHTML = '<div class="wx-sk"></div><div class="wx-sk"></div>'; return; }
       const q = (T.q || '').toLowerCase().trim(), rows = T.rows.filter((c) => !q || (c.name || '').toLowerCase().includes(q) || String(c.phone).includes(q.replace(/\D/g, '').slice(-10) || '@'));
-      const opts = '<option value="0">Everyone</option>' + (T.people || []).map((p) => `<option value="${p.emp_id}" ${T.emp === p.emp_id ? 'selected' : ''}>${esc(p.name)}${p.present ? '' : ' (away)'}</option>`).join('');
       const keep = document.activeElement && document.activeElement.id === 'wxTq';
-      M.innerHTML = `<div class="wx-tm"><select id="wxTe" aria-label="Salesperson">${opts}</select><input id="wxTq" class="wx-in" type="search" placeholder="Search name or number" value="${esc(T.q || '')}"></div>
+      M.innerHTML = `<div class="wx-tm"><button type="button" id="wxTe" class="wx-ppb" aria-label="Salesperson"><span>${esc(ppName(T.people, T.emp))}</span><i>▾</i></button><input id="wxTq" class="wx-in" type="search" placeholder="Search name or number" value="${esc(T.q || '')}"></div>
         <div class="wx-h">Team live chats · ${rows.length}${T.emp ? ' · ' + esc(((T.people || []).find((p) => p.emp_id === T.emp) || {}).name || '') : ''}</div>`
         + (rows.length ? `<div class="wx-card wx-lst">${rows.map((c) => row(Object.assign({}, c, { team: 1 }))).join('')}</div>` : '<div class="wx-empty"><b>👥</b>No live chats here.</div>');
-      $('#wxTe').onchange = function () { T.emp = +this.value; T.rows = null; drawTeam(); loadTeam(); };
+      $('#wxTe').onclick = function () { ppOpen(this, T.people, T.emp, [], (id) => { T.emp = id; T.rows = null; drawTeam(); loadTeam(); }); };
       const ti = $('#wxTq'); ti.oninput = () => { const p = ti.selectionStart; T.q = ti.value; drawTeam(); const n = $('#wxTq'); n.focus(); n.setSelectionRange(p, p); }; if (keep) { ti.focus(); ti.setSelectionRange(ti.value.length, ti.value.length); }
       M.querySelectorAll('.wx-row[data-p]').forEach((r) => { r.onclick = () => openChat(r.dataset.p); });
     }
@@ -542,10 +557,10 @@
       const rows = H.rows.map((c) => `<div class="wx-row" data-p="${c.phone}"><div class="wx-av" style="background:hsl(${hue(c.phone)} 40% 55%)">${esc(initials(c.name, c.phone))}</div><div class="wx-mid"><div class="wx-nm">${esc(c.name || pretty(c.phone))}</div><div class="wx-sub">${esc(c.preview)}</div>
         <div style="margin-top:2px">${c.result ? `<span class="wx-chip g">${c.result_i} ${esc(c.result_t)}</span>` : '<span class="wx-chip m">no result</span>'}${c.unanswered ? '<span class="wx-chip r">never answered</span>' : ''}${c.orders_n ? `<span class="wx-chip p">${c.orders_n} orders</span>` : ''}</div></div><div class="wx-tm">${ago(c.ago_days)}</div></div>`).join('');
       const team = !!(S.me && S.me.team); if (team && !S.tmP) { S.tmP = 1; api.get('wa.people').then((d) => { S.tm = S.tm || { emp: 0, q: '', rows: null, people: null }; S.tm.people = d.people || []; if (S.tab === 'history') drawHistory(false); }).catch(() => { }); }
-      const hOpts = team ? '<select id="wxHe" aria-label="Salesperson" style="margin:0 0 8px;width:100%;min-height:42px;border:1px solid var(--line);border-radius:12px;padding:0 10px;font-size:15px;background:#fff"><option value="0">Everyone</option><option value="-1"' + (H.emp === -1 ? ' selected' : '') + '>Nobody (not given)</option>' + ((S.tm && S.tm.people) || []).map((x) => `<option value="${x.emp_id}" ${H.emp === x.emp_id ? 'selected' : ''}>${esc(x.name)}</option>`).join('') + '</select>' : '';
+      const hOpts = team ? '<button type="button" id="wxHe" class="wx-ppb" aria-label="Salesperson" style="margin:0 0 8px;width:100%;min-height:42px;border-radius:12px;font-size:15px;flex:none"><span>' + esc(H.emp === -1 ? 'Nobody (not given)' : ppName((S.tm && S.tm.people) || [], H.emp)) + '</span><i>▾ search</i></button>' : '';
       M.innerHTML = `<div style="padding:0 14px 8px">${hOpts}<input class="wx-in" id="wxHq" placeholder="Search name or number" value="${esc(H.q)}" style="margin:0"></div><div class="wx-h">Chats older than 24 hours · ${H.total}${H.emp > 0 && S.tm && S.tm.people ? ' · ' + esc((S.tm.people.find((x) => x.emp_id === H.emp) || {}).name || '') : ''}</div>` +
         (rows ? `<div class="wx-card wx-lst">${rows}</div>` : (H.loading ? '<div class="wx-sk"></div><div class="wx-sk"></div>' : '<div class="wx-empty"><b>🕘</b>Nothing here yet.<br>A chat moves here 24 hours after the customer\'s last message, and comes back when they write again.</div>')) + (H.more ? '<div style="text-align:center;padding:4px 0 12px"><button class="wx-btn gh" id="wxHm">Load more</button></div>' : '');
-      const he = $('#wxHe'); if (he) he.onchange = function () { H.emp = +this.value || 0; loadHist(true); drawHistory(false); };   // 👤 one person's history
+      const he = $('#wxHe'); if (he) he.onclick = function () { ppOpen(this, (S.tm && S.tm.people) || [], H.emp, [{ emp_id: -1, name: 'Nobody (not given)' }], (id) => { H.emp = id; loadHist(true); drawHistory(false); }); };   // 👤 one person's history
       let t; $('#wxHq').oninput = function () { clearTimeout(t); const v = this.value; t = setTimeout(() => { H.q = v.trim(); loadHist(true); }, 350); }; const hm = $('#wxHm'); if (hm) hm.onclick = () => loadHist(false);
       M.onclick = (e) => { const p = e.target.closest('.wx-row[data-p]'); if (p) openChat(p.dataset.p); };
     }

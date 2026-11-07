@@ -65,6 +65,7 @@
   .md-recp button{flex:none;white-space:nowrap;font:inherit;font-size:13px;font-weight:800;padding:9px 16px;border-radius:999px;background:#fff;border:1px solid var(--line,#dfe3e8);color:#4a4f5c;cursor:pointer;} .md-recp button.on{background:linear-gradient(135deg,#111827,#1f2937);color:#fff;border-color:#111827;}
   .md-recf{position:relative;margin-top:8px;} .md-recf iframe{display:block;width:100%;border:0;background:transparent;height:calc(100vh - 150px);min-height:520px;} .md-recl[hidden]{display:none;} .md-recf iframe[hidden]{display:none;} .md-recl{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:13px;pointer-events:none;}
   @media (max-width:420px){.md-hero h1{font-size:26px;} .md-perf b{font-size:21px;}}
+  /* phone sizes for every My Day card: assets/css/phone.css (html.ph) */
 </style>
 </head>
 <body>
@@ -82,6 +83,8 @@
 <script src="assets/js/b2_common.js?v=t7"></script>
 <script src="assets/js/b2_my.js?v=1"></script>
 <script src="assets/js/of_place_ui.js?v=p2"></script>
+<script src="assets/js/dino.js?v=11"></script>
+<script>try { window.DINO = document.createElement("div"); DINO.id = "dinoHost"; if (window.TMDino) TMDino.mount(DINO); } catch (e) { window.DINO = null; /* the game is a bonus */ }</script>
 <script>
   guardPage();
   renderSidebar('my_day');
@@ -294,10 +297,11 @@
     const pin = punchedIn(), redo = !!(PF && PF.redo);
     // Before punch in the day is only the punch-in steps and the Punch In button. Work, penalties and the rest open after it.
     let body = pin && !redo
-      ? dayCard() + lhCard() + salaryCard() + perfCard() + tasks() + '<div id="b2MyBox"></div>' + reportCard() + tellCard() + penalties()
+      ? dayCard() + lhCard() + '<div id="dinoSlot" style="margin-top:6px"></div>' + salaryCard() + perfCard() + tasks() + '<div id="b2MyBox"></div>' + reportCard() + tellCard() + penalties()
       : punchCard() + '<div class="md-wait">Your work for today opens after you punch in.</div>' + (pin ? dayCard() + tasks() : '');
     body = body.replace('class="md-card', 'class="md-card pull');   // the first card slides up over the orange header
     $('root').innerHTML = hero() + body;
+    if (window.DINO && $('dinoSlot')) $('dinoSlot').appendChild(window.DINO);   // Dino Run sits above Salary so far, only here
     if (typeof B2MY !== 'undefined' && $('b2MyBox')) B2MY.mount($('b2MyBox'));
     if ($('b2Rep')) $('b2Rep').onclick = () => B2MY.report();
     document.querySelectorAll('img[data-ex]').forEach((im) => { const it = PF.items.find((x) => x.rule_id === Number(im.dataset.ex)); if (it && it.example) im.src = api.buildUrl('example.image', { kind: 'proof', id: it.rule_id, token: api.token() }); });
@@ -444,8 +448,8 @@
     start();
   }
   const typing = () => { const a = document.activeElement; if (a && a.closest && a.closest('#b2MyBox') && /INPUT|TEXTAREA/.test(a.tagName)) return true; return Array.from(document.querySelectorAll('#b2MyBox input')).some((i) => (i.type === 'file' ? i.files && i.files.length : (i.type !== 'range' && i.value))); };
-  load(); setInterval(() => { if (!document.hidden && !$('bdModal') && !$('ofpOv') && !typing()) load(); }, 300000); setInterval(() => { if (!document.hidden && !$('bdModal')) pollPO(); }, 60000);   // lighter: the punch-out check every minute, the full day every 5 minutes (it reloads at once when you come back to the app)   // paused while the page is hidden; 7 requests every 2 min (was every 1 min), punch-out check every 30 s (was 20 s, even when hidden)
-  document.addEventListener('visibilitychange', () => { if (!document.hidden && !$('bdModal') && !$('ofpOv') && !typing()) load(); });
+  load(); setInterval(() => { if (!document.hidden && !$('bdModal') && !$('ofpOv') && !typing() && !(window.TMDino && TMDino.playing && TMDino.playing())) load(); }, 300000); setInterval(() => { if (!document.hidden && !$('bdModal')) pollPO(); }, 60000);   // lighter: the punch-out check every minute, the full day every 5 minutes (it reloads at once when you come back to the app)   // paused while the page is hidden; 7 requests every 2 min (was every 1 min), punch-out check every 30 s (was 20 s, even when hidden)
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && !$('bdModal') && !$('ofpOv') && !typing() && !(window.TMDino && TMDino.playing && TMDino.playing())) load(); });
 </script>
 </body>
 </html>

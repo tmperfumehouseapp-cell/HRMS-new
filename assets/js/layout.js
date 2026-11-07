@@ -42,11 +42,49 @@ const LAYOUT_BUILD = '261102.2';   // shown under your name in the sidebar
   } catch (e) { /* voice is optional */ }
 })();
 
+// One look for every panel: shared theme (cards, tables, buttons, inputs), font, and a per-role accent colour (data-role on <html>).
+(function () {
+  try {
+    const h = document.documentElement;
+    if (h.classList.contains('no-theme')) return;
+    let role = '';
+    try { role = String((JSON.parse(localStorage.getItem('hrms_user') || '{}') || {}).role || '').toLowerCase().replace(/[^a-z]/g, ''); } catch (e) {}
+    if (role) h.setAttribute('data-role', role);
+    h.classList.add('tm');
+    if (!document.getElementById('tmFont')) {
+      const pc = document.createElement('link'); pc.rel = 'preconnect'; pc.href = 'https://fonts.gstatic.com'; pc.crossOrigin = ''; document.head.appendChild(pc);
+      const f = document.createElement('link'); f.id = 'tmFont'; f.rel = 'stylesheet'; f.href = 'https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap'; document.head.appendChild(f);
+    }
+    if (!window.TMWin && !document.getElementById('tmWinJs')) { const w = document.createElement('script'); w.id = 'tmWinJs'; w.src = 'assets/js/win.js?v=1'; w.defer = true; (document.head || document.documentElement).appendChild(w); }
+    if (!document.getElementById('sxTheme')) {
+      const t = document.createElement('link'); t.id = 'sxTheme'; t.rel = 'stylesheet'; t.href = 'assets/css/sales_theme.css?v=4'; document.head.appendChild(t);
+    }
+  } catch (e) { /* the page keeps its own look */ }
+})();
+
+// Smaller on phones: the page is laid out at 90% size (one viewport setting, so every screen shrinks together). WhatsApp pages and frames are left alone.
+(function () {
+  try {
+    if (/whatsapp|\/wa_|wa_chats|wa_one|my_chats/i.test(location.pathname + location.search)) { document.documentElement.classList.add('wa-skip'); return; }   // WhatsApp: not touched (no "ph" class, so phone.css never applies)
+    var mqp = window.matchMedia('(max-width:820px)'), setPh = function () { document.documentElement.classList.toggle('ph', mqp.matches); };
+    setPh(); if (mqp.addEventListener) mqp.addEventListener('change', setPh);                  // html.ph = the phone layout (phone.css)
+    if (window.self !== window.top) return;                                  // a frame follows its top page
+    if (!window.matchMedia('(max-width:820px)').matches) return;
+    var m = document.querySelector('meta[name="viewport"]'); if (!m) return;
+    var c = m.getAttribute('content') || 'width=device-width';
+    if (/initial-scale=0\.9/.test(c)) return;
+    c = c.replace(/,?\s*(initial-scale|minimum-scale|maximum-scale|user-scalable)=[^,]*/g, '');
+    m.setAttribute('content', c + ', initial-scale=0.9, minimum-scale=0.5');
+    document.documentElement.classList.add('tm-compact');
+  } catch (e) { /* the page keeps its normal size */ }
+})();
+
 // Compact phone layout: one shared stylesheet for every page, and every table gets its own sideways-scroll box on small screens.
 (function () {
   try {
-    const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = 'assets/css/mobile.css?v=5';
+    const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = 'assets/css/mobile.css?v=9';
     document.head.appendChild(l);
+    const ph = document.createElement('link'); ph.rel = 'stylesheet'; ph.href = 'assets/css/phone.css?v=3'; document.head.appendChild(ph);   // the one compact phone style (html.ph)
     const mq = window.matchMedia('(max-width:820px)');
     const wrap = () => {
       if (!mq.matches) return;
@@ -164,7 +202,7 @@ function startPunchReminder() {
     } catch (e) {}
   }
   poll();
-  setInterval(poll, 60000);
+  setInterval(() => { if (!document.hidden) poll(); }, 60000);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') poll(); });
 }
 
@@ -209,7 +247,7 @@ function startPenaltyNotice() {
     } catch (e) {}
   }
   poll();
-  setInterval(poll, 90000);
+  setInterval(() => { if (!document.hidden) poll(); }, 90000);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') poll(); });
 }
 
@@ -226,7 +264,7 @@ function startChatBadge() {
       if (a && !em && n > 0) a.insertAdjacentHTML('beforeend', '<em>' + (n > 99 ? '99+' : n) + '</em>'); else if (em) { em.textContent = n > 99 ? '99+' : String(n); em.style.display = n > 0 ? '' : 'none'; }
     } catch (e) { /* the badge is optional */ }
   };
-  tick(); setInterval(tick, 45000);
+  tick(); setInterval(() => { if (!document.hidden) tick(); }, 45000);
 }
 
 /*BD-START bossMenu: adds the Boss Engine links to a menu. Managers see Board, Inbox, Duties and Setup; staff with duties see My Day. */
@@ -257,12 +295,12 @@ window.WS = (function () {
   const W = [
     { key: 'home', label: 'Home', icon: 'dashboard', sub: 'What needs you today', tabs: [['dashboard', 'Dashboard', 'dashboard.html', '']] },
     { key: 'sales', label: 'Sales', icon: 'sales', direct: 'sales.html', sub: '', tabs: [] },
-    { key: 'budget', label: 'Budgeting', icon: 'commission', sub: 'Commission, leaders, salaries, fixed expenses and penalties, day by day', tabs: [['bt_total', 'Total Budgeting', 'total_budgeting.html', ''], ['bt_commission', 'Commission', 'commission_new.html', ''], ['bt_old', 'Old commission (pays today)', 'commission.html', ''], ['bt_leaders', 'Leaders', 'leaders.html', ''], ['bt_helpers', 'Leaders Helper', 'leaders_helper.html', '']] },   // own menu item; the same pages are no longer listed inside Sales
+    { key: 'budget', label: 'Budgeting', icon: 'commission', sub: 'Commission, leaders, salaries, fixed expenses and penalties, day by day', tabs: [['bt_total', 'Total Budgeting', 'total_budgeting.html', ''], ['bt_commission', 'Commission', 'commission_new.html', ''], ['bt_leaders', 'Leaders', 'leaders.html', ''], ['bt_helpers', 'Leaders Helper', 'leaders_helper.html', '']] },   // own menu item; the same pages are no longer listed inside Sales
     { key: 'whatsapp', label: 'WhatsApp', icon: 'whatsapp', sub: 'Chats, campaigns and groups', tabs: [['whatsapp', 'WhatsApp', 'whatsapp.html', 'wa'], ['whatsapp_groups', 'Groups', 'whatsapp_groups.html', '']] },
     { key: 'wasales', label: 'WhatsApp Sales', icon: 'wasales', sub: 'Every customer query: who holds it, who is behind, what works', tabs: [['wasales', 'WhatsApp Sales', 'wa_sales_live.html', 'wa']] },
     { key: 'complaints', label: 'Complaints', icon: 'complaints', sub: 'Every customer problem is a ticket — Tracking and Complaint desks', tabs: [['complaints', 'Tickets', 'complaints.html', 'cx'], ['my_complaints', 'My complaints', 'my_complaints.html', 'cxm']] },
     { key: 'inbox', label: 'Inbox', icon: 'inbox', sub: 'Instagram, Facebook, email and reviews — answered in one place', tabs: [['social_inbox', 'Inbox hub', 'social_inbox.html', 'sx']] },
-    { key: 'boss', label: 'Boss', icon: 'approvals', sub: 'Tasks, numbers, problems and penalties', tabs: [['boss_engine', 'Today', 'boss_engine.html', 'boss', 'today'], ['be_sections', 'Sections', 'boss_engine.html', 'boss', 'sections'], ['be_work', 'All work', 'boss_engine.html', 'boss', 'work'], ['people', 'People', 'people.html', 'pp'], ['staff_progress', 'Staff progress', 'staff_progress.html', 'cxr'], ['be_pens', 'Penalties', 'boss_engine.html', 'boss', 'pens'], ['be_problems', 'Problems', 'boss_engine.html', 'boss', 'problems'], ['boss_questions', 'Questions', 'boss_questions.html', 'boss'], ['dept_hub', 'Workbenches', 'dept_hub.html', 'boss'], ['daily_summary', 'Summary', 'daily_summary.html', 'boss'], ['tracker', 'Daily tracker', 'tracker.html', 'boss'], ['brain', 'Brain', 'brain.html', 'boss'], ['be_setup', 'Setup & health', 'boss_engine.html', 'boss', 'setup'], ['commission_new', 'Commission', 'commission_new.html', 'admin'], ['boss_rules', 'Rules in sync', 'boss_rules.html', 'admin']] },
+    { key: 'boss', label: 'Boss', icon: 'approvals', sub: 'Tasks, numbers, problems and penalties (people, pay and commission live in Budgeting)', tabs: [['boss_engine', 'Today', 'boss_engine.html', 'boss', 'today'], ['be_sections', 'Sections', 'boss_engine.html', 'boss', 'sections'], ['be_work', 'All work', 'boss_engine.html', 'boss', 'work'], ['staff_progress', 'Staff progress', 'staff_progress.html', 'cxr'], ['be_pens', 'Penalties', 'boss_engine.html', 'boss', 'pens'], ['be_problems', 'Problems', 'boss_engine.html', 'boss', 'problems'], ['boss_questions', 'Questions', 'boss_questions.html', 'boss'], ['dept_hub', 'Workbenches', 'dept_hub.html', 'boss'], ['daily_summary', 'Summary', 'daily_summary.html', 'boss'], ['tracker', 'Daily tracker', 'tracker.html', 'boss'], ['brain', 'Brain', 'brain.html', 'boss'], ['be_setup', 'Setup & health', 'boss_engine.html', 'boss', 'setup'], ['boss_rules', 'Rules in sync', 'boss_rules.html', 'admin']] },
     { key: 'dispatch', label: 'Dispatch', icon: 'dispatch', sub: 'Parcels, tracking numbers and Shiprocket', tabs: [['dept_dispatch', 'Parcels and tracking', 'dept_dispatch.html', 'boss'], ['customers', 'Customers', 'customers.html', 'boss'], ['dept_restock', 'Store orders', 'dept_restock.html', 'rsd'], ['dispatch_logins', 'Dispatch logins', 'dispatch_logins.html', 'admin']] },
     { key: 'store', label: 'Store', icon: 'retail_store', sub: 'Everything about the store', tabs: [['store_dashboard', 'Dashboard', 'store_dashboard.html', 'rsm'], ['store_billing', 'Billing', 'store_billing.html', 'rs'], ['store_team', 'Team', 'store_team.html', 'rsm'], ['store_inventory', 'Inventory', 'store_inventory.html', 'rs'], ['store_cleaning', 'Cleaning & Pantry', 'store_cleaning.html', 'boss'], ['store_contacts', 'Customer follow-up', 'store_contacts.html', 'rsm'], ['flyers', 'Flyers', 'flyers.html', 'fl'], ['flyer_map', 'Flyer Map', 'flyer_map.html', 'flm'], ['store_logins', 'Store logins', 'store_logins.html', 'admin']] },
     { key: 'inventory', label: 'Inventory', icon: 'inventory', sub: 'Oils, perfumes, orders and dealers: what you have, what you need, what will be late', tabs: [['iv_dash', 'Dashboard', 'inventory.html', '', 'dashboard'], ['iv_oils', 'Oil stock', 'inventory.html', '', 'oils'], ['iv_perf', 'Perfumes', 'inventory.html', '', 'perfumes'], ['iv_calc', 'Oil calculator', 'inventory.html', '', 'calc'], ['iv_orders', 'Orders', 'inventory.html', '', 'orders'], ['iv_sup', 'Dealers', 'inventory.html', '', 'dealers'], ['iv_alerts', 'Alerts', 'inventory.html', '', 'alerts'], ['iv_rep', 'Reports', 'inventory.html', '', 'reports']] },
@@ -684,7 +722,7 @@ window.WS = (function () {
       st.textContent = '#wsEmpNav{display:none;}@media (max-width:820px){#wsEmpNav{display:flex; position:fixed; left:0; right:0; bottom:0; z-index:90; background:#fffdf8; border-top:1px solid #ece7dc; padding:6px 8px calc(6px + env(safe-area-inset-bottom)); gap:4px;}'
         + '#wsEmpNav a{flex:1; display:flex; flex-direction:column; align-items:center; gap:2px; padding:7px 2px; border-radius:16px; text-decoration:none; color:#4b5563; font-size:11px; font-weight:600; position:relative;}'
         + '#wsEmpNav a .i{font-size:20px; line-height:1;} #wsEmpNav a.on{background:#111; color:#fff;} #wsEmpNav a em{position:absolute; top:2px; right:18%; background:#e02424; color:#fff; border-radius:9px; font-style:normal; font-size:11px; padding:0 5px; line-height:15px;}'
-        + 'body{padding-bottom:78px;}}';
+        + 'html.tm-compact #wsEmpNav{zoom:1.111;}body{padding-bottom:78px;}}';   /* zoom 1/0.9: the page is drawn at 90%, the bar keeps its normal size */
       document.head.appendChild(st);
       const nav = document.createElement('nav'); nav.id = 'wsEmpNav';
       const link = (b) => '<a href="' + b[0] + '" class="' + (on(b[0]) ? 'on' : '') + '"><span class="i">' + b[2] + '</span>' + esc(b[1]) + (b[3] > 0 ? '<em>' + b[3] + '</em>' : '') + '</a>';
@@ -702,7 +740,20 @@ window.WS = (function () {
     } catch (e) { /* the old menu still works */ }
   }
 
-  return { on: true, v: 2, W, adminCats, customNav, iconKey, redirect, hub, wsOf, loadCtx, employeeNav };
+  // Department colour: every page (and every page inside a frame) gets <html data-dept="..."> so the soft department tint in sales_theme.css follows it.
+  // A page knows its department from the workspace that lists it; hub.html uses ?w=; the employee pages (My Day, My Sales ...) are "home".
+  function deptKey() {
+    try {
+      const q = new URLSearchParams(location.search), f = pageOf(location.pathname);
+      if (f === 'hub.html' && q.get('w')) return q.get('w');
+      const t = tabByPage(f); if (t) return t.w.key;
+      if (/^(my_|leave|attendance\.html|tracker|office_care|my-)/.test(f)) return 'home';
+    } catch (e) { /* no colour: the page keeps the plain look */ }
+    return '';
+  }
+  try { const d = deptKey(); if (d) document.documentElement.setAttribute('data-dept', d); } catch (e) { /* ignore */ }
+
+  return { on: true, v: 2, W, adminCats, customNav, iconKey, redirect, hub, wsOf, loadCtx, employeeNav, deptKey };
 })();
 /*WS-END*/
 
@@ -797,10 +848,15 @@ function renderSidebarCore(active) {
     // Custom role: sidebar built from its granted permissions. The page
     // stays hidden until me.flags confirms this role may open it, so a
     // refused page never flashes its "no permission" errors.
-    document.documentElement.style.visibility = 'hidden';
-    // Safety net: a slow or stuck server reply must never leave the page
-    // invisible — after 6 s the page shows regardless.
-    setTimeout(() => { document.documentElement.style.visibility = ''; }, 6000);
+    // A page this person was already allowed to open in the last 12 hours shows AT ONCE (the check still runs in the background and sends them away
+    // if the permission was taken back). Only a page never confirmed before waits hidden — and never longer than 2.5 s.
+    const okKey = 'hrms_pok:' + user.username + ':' + user.role + ':' + active;
+    const seenOk = (() => { try { return Date.now() - Number(localStorage.getItem(okKey) || 0) < 43200000; } catch (e) { return false; } })();
+    if (!seenOk) {
+      document.documentElement.style.visibility = 'hidden';
+      // Safety net: a slow or stuck server reply must never leave the page invisible.
+      setTimeout(() => { document.documentElement.style.visibility = ''; }, 2500);
+    }
     document.getElementById('sidebar').outerHTML = `
     <aside class="sidebar">
       <div class="brand">HR<span>MS</span></div>
@@ -824,6 +880,7 @@ function renderSidebarCore(active) {
       const nav = document.getElementById('customNav');
       if (!nav) return;
       if (activePerm && !perms.includes(activePerm)) {
+        try { localStorage.removeItem(okKey); } catch (e) { /* ignore */ }
         // Not allowed here (e.g. login sent them to the Dashboard): go to
         // the first page this role IS allowed, instead of showing an error.
         const home = perms.map(p => (PAGES_FOR_PERM[p] || [])[0]).find(Boolean);
@@ -832,6 +889,7 @@ function renderSidebarCore(active) {
         nav.insertAdjacentHTML('beforeend', `<span style="display:block; padding:8px 20px; font-size:12px; color:#fca5a5; line-height:1.5;">Your role "${user.role}" doesn't include <b>${label}</b>. Ask an Admin to tick it on the Roles page.</span>`);
       }
       document.documentElement.style.visibility = '';
+      try { localStorage.setItem(okKey, String(Date.now())); } catch (e) { /* ignore */ }   // remembered: next time this page opens with no wait
       if (window.WS) { WS.customNav(nav, perms, d, active, { PAGES_FOR_PERM, SALES_PERMS, SALES_PAGE_KEYS }); return; } /*ws*/
       // The sales pages (Control Tower, Orders, Allocation, Codes, Targets, Performance, Commission, Retail ...) live inside ONE Sales item.
       const inSales = perms.some(p => SALES_PERMS.includes(p));
@@ -867,7 +925,9 @@ function renderSidebarCore(active) {
     // the Employee role was granted that module on the Roles page.
     const EMPLOYEE_PAGES = ['social_inbox', 'attendance', 'leave', 'my_salary', 'my_penalties', 'my_agreements', 'my_sales', 'orders', 'my_chats', 'wasales', 'my_space', 'my_orders', 'my_day', 'boss_engine', 'boss_inbox', 'daily_summary', 'tracker', 'brain', 'office_care', 'boss_questions', 'boss_penalties', 'dept_hub', 'dept_dispatch', 'customers', 'dept_restock', 'dept_shops', 'dept_supplies', 'dept_work', 'dept_fix', 'people_admin' /*bd-arr*/, 'flyers', 'complaints', 'my_complaints'];
     const needsCheck = !EMPLOYEE_PAGES.includes(active);
-    if (needsCheck) { document.documentElement.style.visibility = 'hidden'; setTimeout(() => { document.documentElement.style.visibility = ''; }, 6000); }
+    const empOkKey = 'hrms_pok:' + user.username + ':Employee:' + active;
+    const empSeenOk = (() => { try { return Date.now() - Number(localStorage.getItem(empOkKey) || 0) < 43200000; } catch (e) { return false; } })();   // already confirmed in the last 12 h: no waiting
+    if (needsCheck && !empSeenOk) { document.documentElement.style.visibility = 'hidden'; setTimeout(() => { document.documentElement.style.visibility = ''; }, 2500); }
 
     document.getElementById('sidebar').outerHTML = `
     <aside class="sidebar">
@@ -899,9 +959,9 @@ function renderSidebarCore(active) {
       try { localStorage.setItem('hrms_home', 'my_day.html'); } catch (e) { /* private mode */ }
       // replace(): the refused page never enters the history, so the back
       // button goes to the previous employee page, not back to this one.
-      if (!allowed.includes(active)) { window.location.replace('my_day.html'); return; }
+      if (!allowed.includes(active)) { try { localStorage.removeItem(empOkKey); } catch (e) { /* ignore */ } window.location.replace('my_day.html'); return; }
       if (!d.has_salary && active === 'my_salary') { window.location.replace('my_day.html'); return; }
-      if (needsCheck) document.documentElement.style.visibility = '';
+      if (needsCheck) { document.documentElement.style.visibility = ''; try { localStorage.setItem(empOkKey, String(Date.now())); } catch (e) { /* ignore */ } }
 
       const holder = document.getElementById('empSalesNav');
       if (holder) {

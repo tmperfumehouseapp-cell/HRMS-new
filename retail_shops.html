@@ -534,6 +534,7 @@
         <button class="btn secondary" id="btnCash">💰 Cash box</button>
         <button class="btn secondary" id="btnDisplay">🧴 Display</button>
         <button class="btn secondary" id="btnTotals">📊 Totals</button>
+        <button class="btn secondary" id="btnBudgetPay">💵 Wholesale pay</button>
         <button class="btn secondary" id="btnMapView">📍 Map view</button>
         <button class="btn secondary" id="btnSets">🧴 Perfume sets</button>
         <a class="btn secondary" href="retail_control.html" style="text-decoration:none;" title="Checker, immediate payments, scorecard, 12-day guide">🧭 Field control</a>
@@ -867,6 +868,18 @@
       <button type="button" class="btn secondary" id="vpMClose" style="width:auto;">Cancel</button>
       <button type="button" class="btn" id="vpSave" style="width:auto;">Save plan</button>
     </div>
+  </div>
+</div>
+
+<!-- Retail wholesale pay: the same Retail Wholesale view as Total Budgeting, so a change here is a change there -->
+<div class="modal-overlay" id="bpModal">
+  <div class="modal" style="max-width:1200px; padding:14px;">
+    <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+      <h3 style="margin:0; margin-right:auto;">Retail wholesale · pay &amp; commission <small style="font-weight:400; color:var(--muted);">same as Total Budgeting → Retail Wholesale</small></h3>
+      <a class="btn secondary" href="total_budgeting.html" style="width:auto; text-decoration:none;">Open Total Budgeting →</a>
+      <button type="button" class="btn secondary" id="bpClose" style="width:auto;">Close</button>
+    </div>
+    <iframe id="bpFrame" title="Retail wholesale pay" style="width:100%; height:78vh; border:1px solid var(--line); border-radius:10px; background:#fff;"></iframe>
   </div>
 </div>
 
@@ -1499,6 +1512,13 @@
     if (v === 'list' && typeof loadDue === 'function') { loadDue(); if (typeof loadHome === 'function') loadHome(); }
   }
   document.getElementById('btnMapView').addEventListener('click', () => { if (view === 'map') showView('list'); else { showView('map'); renderAllMap(); } });
+  (function () {   // Wholesale pay: open the Retail Wholesale view of Total Budgeting (loaded fresh each time, so it always shows the latest)
+    const m = document.getElementById('bpModal'), fr = document.getElementById('bpFrame');
+    const close = () => { m.classList.remove('open'); fr.removeAttribute('src'); };
+    document.getElementById('btnBudgetPay').addEventListener('click', () => { fr.src = 'total_budgeting.html?embed=retail'; m.classList.add('open'); });
+    document.getElementById('bpClose').addEventListener('click', close);
+    m.addEventListener('click', (e) => { if (e.target === m) close(); });
+  })();
   document.getElementById('btnTotals').addEventListener('click', () => { if (view === 'totals') showView('list'); else { showView('totals'); loadTotals(); } });
   document.getElementById('btnCash').addEventListener('click', () => { if (view === 'cash') showView('list'); else { showView('cash'); cbLoad(); } });
   document.getElementById('btnDisplay').addEventListener('click', () => { if (view === 'display') showView('list'); else { showView('display'); dpLoad(); } });
