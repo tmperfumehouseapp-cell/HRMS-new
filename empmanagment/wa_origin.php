@@ -9,7 +9,7 @@
  *   What   one WhatsApp list message ("Choose one") with 5 options. Free: it is sent inside the 24-hour window the customer just opened.
  *   Answer a tap on an option, or the customer's own words within 24 hours ("insta", "community se", "offer dekha", "ad", "friend" …):
  *            community → source Community (+ tag)   → the query is Community, the order is allocated as Campaign
- *            campaign  → source Campaign  (+ tag)   → the query is Campaign,  the order is allocated as Campaign
+ *            campaign  → source Query (our offer message: they wrote first) → the query is New, the order is allocated as Query
  *            ad        → source Query (from an ad)  → the query is Meta,      the order is allocated as Query
  *            instagram / friend → their own tag     → the order is allocated as Query
  *          The answer is written into the chat as a line ("📍 Came from: Instagram") and shown as a chip in the salesperson's list.
@@ -89,7 +89,7 @@ function wa_origin_apply(PDO $pdo, string $key, string $ans, string $how): void
     $pdo->prepare("INSERT INTO wa_origin (phone, answer, answered_at, how) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE answer = VALUES(answer), answered_at = VALUES(answered_at), how = VALUES(how)")->execute([$key, $ans, $now, $how]);
     $tag = function (string $t) use ($pdo, $key, $now) { try { $pdo->prepare("INSERT IGNORE INTO wa_ctags (phone, tag, src, at) VALUES (?, ?, 'auto', ?)")->execute([$key, $t, $now]); $pdo->prepare("INSERT IGNORE INTO wa_tagidx (phone, tag) VALUES (?, ?)")->execute([$key, $t]); } catch (Throwable $e) { } };
     $wq = '';
-    if ($ans === 'campaign') { if (function_exists('wa_camp_mark')) wa_camp_mark($pdo, $key, $now); else $pdo->prepare("UPDATE wa_contacts SET source = 'campaign' WHERE phone = ?")->execute([$key]); $wq = 'campaign'; }
+    if ($ans === 'campaign') { $pdo->prepare("UPDATE wa_contacts SET source = 'query' WHERE phone = ? AND source <> 'community'")->execute([$key]); $wq = 'new'; }   // "came from our offer message" = a NEW QUERY (the customer wrote first), never a Campaign reply
     elseif ($ans === 'community') { $pdo->prepare("UPDATE wa_contacts SET source = 'community' WHERE phone = ?")->execute([$key]); $tag('community'); $wq = 'community'; }
     elseif ($ans === 'ad') { $pdo->prepare("UPDATE wa_contacts SET source = 'query' WHERE phone = ? AND source NOT IN ('campaign', 'community')")->execute([$key]); $tag('meta_ad'); $wq = 'meta'; }
     else $tag($ans);   // instagram / friend
