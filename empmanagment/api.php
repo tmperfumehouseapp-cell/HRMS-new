@@ -337,7 +337,7 @@ function refresh_auth(array $payload): array
     if ($uid <= 0) return $payload;
     if (!array_key_exists($uid, $cache)) {
         try {
-            $st = $pdo->prepare("SELECT username, role, employee_id FROM users WHERE user_id = ? LIMIT 1");
+            $st = $pdo->prepare("SELECT u.username, u.role, u.employee_id, e.status AS emp_status FROM users u LEFT JOIN employees e ON e.employee_id = u.employee_id WHERE u.user_id = ? LIMIT 1");
             $st->execute([$uid]);
             $cache[$uid] = $st->fetch() ?: null;
         } catch (PDOException $e) {
@@ -346,6 +346,7 @@ function refresh_auth(array $payload): array
     }
     $row = $cache[$uid];
     if ($row === null) json_response(['error' => 'This login no longer exists. Please log in again.'], 401);
+    if ($row && (string)($row['emp_status'] ?? '') === 'ex' && (string)$row['role'] !== 'Admin') json_response(['error' => 'This account is no longer active: the employee has left.'], 401);
     if ($row) {
         $payload['role'] = (string)$row['role'];
         $payload['employee_id'] = $row['employee_id'];
@@ -426,6 +427,13 @@ function action_page_perms(string $action): array
         'commission_rules.manual_list' => ['commission'],
         'addons.' => ['allocation'],                    // Order Allocation: add-ons
         'employees.list' => ['dashboard', 'leave_requests', 'documents', 'agreements', 'approvals', 'targets', 'performance', 'commission', 'allocation'],
+        'st_team.month' => ['commission'],               // Total Budgeting reads each store person's daily commission (same chart, no over-target extra)
+        'employees.rejoin' => ['commission'],   // Rejoin from the Ex-Employees tab in Total Budgeting (still Admin / HR only)
+        'employees.delete' => ['commission'],   // make an ex-employee from Total Budgeting / the person card (still Admin / HR only)
+        'employees.set_salary' => ['commission'], 'penalties.apply' => ['commission'], 'penalties.waive' => ['commission'], 'penalties.rules' => ['commission'],   // Total Budgeting: set a salary, add / remove a penalty (still Admin / HR only)
+        'departments.save' => ['commission'], 'departments.delete' => ['commission'],   // create / rename / delete a section from Total Employees (still Admin / HR only)
+        'departments.list' => ['commission'],            // Total Budgeting → Total Employees lists every department
+        'employees.set_department' => ['commission'],    // ...and moves a person between them by drag and drop (still Admin / HR only)
         'document_types.list' => ['dashboard', 'approvals'],
         'employee_documents.list' => ['dashboard', 'approvals'],
         'employee_documents.approve' => ['approvals'],
@@ -1147,15 +1155,22 @@ function orders_upsert(PDO $pdo, string $storeKey, array $orders): int
 /** 🤖 AUTO-ALLOCATION of ONE order — runs by itself the moment an order reaches HRMS (Shopify webhook / order sync → orders_upsert), when the Allocation
  *  page loads, and every few minutes from the WhatsApp engine (wa_auto_alloc), so nobody ever has to press anything.
  *  The order goes to the salesperson who holds the customer's WhatsApp chat (order mobile or the extra mobile), when the customer wrote to us in the
- *  7 days before the order. Type: chat source campaign / community → Campaign, everything else → Query. Panel: TM Perfume House for its own store.
+ *  7 days before the order. Type: chat source campaign / community, or a customer who ordered before (a repeat order) → Campaign, everything else → Query. Panel: TM Perfume House for its own store.
  *  Left PENDING (with the reason, shown on the Allocation page): no mobile, no chat, chat not given to a salesperson, last message too old, ₹0 order,
  *  older than 2 days. Never touches an order a person allocated, nor one the robot did once (a person's Undo / change is never redone).
  *  Returns ['emp','type','house','by','at'] when it allocated, the reason (string) when it left it, '' when there was nothing to do. */
 /** 📢 Query or Campaign for an order of this WhatsApp chat (one rule for the automatic allocation and the Manual order): the chat came on the
  *  campaign number, is marked Campaign / Community, or our campaign was sent to the customer in the 7 days before the order. $c = the wa_contacts row (+ camp_tag). */
+/** True when this phone already placed an order more than 2 minutes before $t (a repeat customer). Last 10 digits are compared; money-less (₹0) orders do not count. */
+function order_is_repeat_customer(PDO $pdo, string $phone, int $t): bool
+{
+    $d = preg_replace('/\D+/', '', $phone) ?? ''; if (strlen($d) < 10) return false; $k = substr($d, -10); $before = date('Y-m-d H:i:s', ($t ?: time()) - 120);
+    try { $q = $pdo->prepare("SELECT 1 FROM shop_orders WHERE phone LIKE ? AND created_at < ? AND total > 0 AND (tags IS NULL OR tags NOT LIKE '%cancel%') LIMIT 1"); $q->execute(['%' . $k, $before]); return (bool)$q->fetchColumn(); } catch (Throwable $e) { return false; }
+}
 function order_chat_type(PDO $pdo, array $c, int $t = 0): string
 {
-    return ((int)($c['camp_tag'] ?? 0) === 1 || in_array((string)($c['source'] ?? ''), ['campaign', 'community'], true) || (function_exists('wa_got_campaign') && wa_got_campaign($pdo, (string)($c['phone'] ?? ''), date('Y-m-d H:i:s', $t ?: time()), 7))) ? 'campaign' : 'query';
+    if (order_is_repeat_customer($pdo, (string)($c['phone'] ?? ''), $t)) return 'campaign';   // owner (7 Nov): a customer who ordered before and orders again counts as Campaign
+    return (in_array((string)($c['source'] ?? ''), ['campaign', 'community'], true) || (function_exists('wa_got_campaign') && wa_got_campaign($pdo, (string)($c['phone'] ?? ''), date('Y-m-d H:i:s', $t ?: time()), 7))) ? 'campaign' : 'query';
 }
 function order_auto_alloc(PDO $pdo, string $sk, array $o)
 {
@@ -7758,9 +7773,33 @@ function ct_recon(PDO $pdo, string $day): array
  *   4. otherwise the profile daily target, lifted by the Sales Executive ladder
  * $emps = rows with basic_salary / joining_date / designation. Returns fn(int $employeeId, string $day): float.
  */
+/** People paid by their own rule, not by the online sales commission: assigned to Retail wholesale or Store in Total Budgeting, or (when not assigned) a retail wholesale / retailer / dealer by
+ *  department or designation. They have NO sales target and no over-target extra. [employee_id => 'retail'|'store'] */
+function pay_offline_ids(PDO $pdo): array
+{
+    static $memo = null; if ($memo !== null) return $memo;
+    $memo = [];
+    try {
+        $j = json_decode((string)setting_get($pdo, 'budget_cfg', ''), true); $ov = is_array($j['people'] ?? null) ? $j['people'] : [];
+        foreach ($ov as $id => $v) if (is_array($v) && in_array((string)($v['grp'] ?? ''), ['retail', 'store'], true)) $memo[(int)$id] = (string)$v['grp'];
+        foreach ($pdo->query("SELECT e.employee_id, e.designation, d.department_name FROM employees e LEFT JOIN departments d ON d.department_id = e.department_id WHERE e.status != 'ex'")->fetchAll() as $e) {
+            $id = (int)$e['employee_id']; if (!empty($ov[$id]['grp']) || isset($memo[$id])) continue;
+            if (preg_match('/wholesale|retailer|dealer|retail field/i', (string)$e['department_name'] . ' ' . (string)$e['designation'])) $memo[$id] = 'retail';
+        }
+    } catch (Throwable $e) { error_log('pay_offline_ids: ' . $e->getMessage()); }
+    return $memo;
+}
+/** One-day moves from online to the store (or retail) set in Total Budgeting → Total Employees: [Y-m-d => [employee_id => 'store'|'retail']]. On that day the person is paid by that rule (store commission, no online commission, no target); the next day they are back. */
+function pay_day_assign(PDO $pdo): array
+{
+    static $m = null; if ($m !== null) return $m;
+    $m = [];
+    try { $j = json_decode((string)setting_get($pdo, 'budget_cfg', ''), true); foreach ((array)($j['days'] ?? []) as $d => $x) if (is_array($x)) foreach ($x as $id => $g) if (in_array($g, ['store', 'retail'], true)) $m[(string)$d][(int)$id] = (string)$g; } catch (Throwable $e) { error_log('pay_day_assign: ' . $e->getMessage()); }
+    return $m;
+}
 function sales_target_fn(PDO $pdo, array $emps, string $from, string $to, array $marks, bool $zeroOff = false): callable
 {
-    $over = [];
+    $over = []; $noTarget = pay_offline_ids($pdo); $dayOff = pay_day_assign($pdo);
     try {
         ensure_group_key_column($pdo, 'daily_targets', ['target_date', 'employee_id']);
         $dt = $pdo->prepare("SELECT d.target_date, d.employee_id, SUM(d.amount) AS a FROM daily_targets d WHERE d.target_date BETWEEN ? AND ? AND NOT (d.group_key = '' AND EXISTS (SELECT 1 FROM daily_targets x WHERE x.target_date = d.target_date AND x.employee_id = d.employee_id AND x.group_key = 'tmph')) GROUP BY d.target_date, d.employee_id");
@@ -7774,7 +7813,8 @@ function sales_target_fn(PDO $pdo, array $emps, string $from, string $to, array 
         $mm->execute([substr($from, 0, 7), substr($to, 0, 7)]);
         foreach ($mm->fetchAll() as $r) $monMan[(int)$r['employee_id'] . '|' . $r['month']] = (float)$r['m'];
     } catch (Throwable $e) {}
-    return function (int $id, string $d) use ($emps, $over, $marks, $monMan, $zeroOff): float {
+    return function (int $id, string $d) use ($emps, $over, $marks, $monMan, $zeroOff, $noTarget, $dayOff): float {
+        if (isset($noTarget[$id]) || isset($dayOff[$d][$id])) return 0.0;      // no sales target for retail / store people, nor on a day they were moved to the store      // retail wholesale and store people have no sales target
         $mk = $marks[$d . '|' . $id] ?? '';
         if (isset($over[$d . '|' . $id])) return $over[$d . '|' . $id];      // a target typed by hand for the day wins, even on a Leave / off-marked day
         if ($mk === 'leave' || ($zeroOff && $mk === 'off')) return 0.0;
@@ -18381,6 +18421,7 @@ $action = $_GET['action'] ?? '';
 if (is_file(__DIR__ . '/brain.php')) { require_once __DIR__ . '/brain.php'; }
 if (is_file(__DIR__ . '/price_charts.php')) { require_once __DIR__ . '/price_charts.php'; }   // ONE price chart section (perfume / attar / shower gel / others by total ml) for the cart, the bot and commission; answers pc.* itself   // the company brain: ONE Claude door + scopes (company / customer / internal); every module below can use it
 if (strpos((string)$action, 'leader.') === 0) { require __DIR__ . '/leader_pay.php'; }
+if (strpos((string)$action, 'lh.') === 0) { require __DIR__ . '/leader_helper.php'; }   // 👥 Leaders Helper: fixed salary, daily checklist, daily payout
        if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo)\./', (string)$action)) { require __DIR__ . '/wa.php'; }          // wq. = WhatsApp Sales (wq.php, loaded by wa.php → wa_more.php)
 
 // Phone reminders need no cron: once a minute, whichever request comes in
@@ -18640,6 +18681,10 @@ switch ($action) {
         $ok = $user && ($isHash ? password_verify($password, $stored) : ($stored !== '' && hash_equals($stored, (string)$password)));
         if (!$ok) {
             json_response(['error' => 'Invalid username or password.'], 401);
+        }
+        if (!empty($user['employee_id']) && (string)$user['role'] !== 'Admin') {      // an ex-employee cannot log in
+            $es = $pdo->prepare("SELECT status FROM employees WHERE employee_id = ?"); $es->execute([(int)$user['employee_id']]);
+            if ((string)$es->fetchColumn() === 'ex') json_response(['error' => 'This account is no longer active: the employee has left.'], 401);
         }
         if (!$isHash) {
             try { $pdo->prepare("UPDATE users SET password_hash = ? WHERE user_id = ?")->execute([password_hash((string)$password, PASSWORD_BCRYPT), $user['user_id']]); } catch (PDOException $e) {}
@@ -19221,6 +19266,40 @@ switch ($action) {
         break;
     }
 
+    case 'employees.set_salary': {
+        // Total Budgeting → Total Employees: define a person's fixed monthly salary right there (0 = no fixed salary, commission only).
+        $auth = require_auth();
+        require_role(['Admin', 'HR'], $auth);
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
+        $input = json_input();
+        $id = (int)($input['employee_id'] ?? 0);
+        $sal = $input['monthly_salary'] ?? null;
+        if (!$id) json_response(['error' => 'employee_id is required.'], 422);
+        if (!is_numeric($sal) || (float)$sal < 0 || (float)$sal > 10000000) json_response(['error' => 'Type the monthly salary as an amount in rupees (0 for none).'], 422);
+        $pdo->prepare("UPDATE employees SET monthly_salary = ? WHERE employee_id = ?")->execute([round((float)$sal, 2), $id]);
+        json_response(['message' => 'Saved.', 'employee_id' => $id, 'monthly_salary' => round((float)$sal, 2)]);
+        break;
+    }
+
+    case 'employees.set_department': {
+        // Total Budgeting → Total Employees: drag a person onto another department. Only the department changes (department_id 0 / '' = no department).
+        $auth = require_auth();
+        require_role(['Admin', 'HR'], $auth);
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
+        $input = json_input();
+        $id = (int)($input['employee_id'] ?? 0);
+        $dept = (int)($input['department_id'] ?? 0);
+        if (!$id) json_response(['error' => 'employee_id is required.'], 422);
+        if ($dept) {
+            $chk = $pdo->prepare("SELECT department_name FROM departments WHERE department_id = ?");
+            $chk->execute([$dept]);
+            if ($chk->fetchColumn() === false) json_response(['error' => 'That department does not exist.'], 422);
+        }
+        $pdo->prepare("UPDATE employees SET department_id = ? WHERE employee_id = ?")->execute([$dept ?: null, $id]);
+        json_response(['message' => 'Moved.', 'employee_id' => $id, 'department_id' => $dept ?: null]);
+        break;
+    }
+
     case 'employees.set_gender': {
         // Employees list: change one person's gender right in the list (M / F / '' = not set).
         $auth = require_auth();
@@ -19371,11 +19450,25 @@ switch ($action) {
         require_role(['Admin', 'HR'], $auth);
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
         $input = json_input();
-        $id = $input['employee_id'] ?? null;
+        $id = (int)($input['employee_id'] ?? 0);
         if (!$id) json_response(['error' => 'employee_id is required.'], 422);
-        $stmt = $pdo->prepare("UPDATE employees SET status = 'ex', left_at = NOW() WHERE employee_id = ?");
-        $stmt->execute([$id]);
-        json_response(['message' => 'Employee moved to Ex-Employees.']);
+        $q = $pdo->prepare("SELECT full_name FROM employees WHERE employee_id = ? AND status != 'ex'"); $q->execute([$id]); $nm = $q->fetchColumn();
+        if ($nm === false) json_response(['error' => 'This employee is already an ex-employee, or was not found.'], 404);
+        $pdo->prepare("UPDATE employees SET status = 'ex', left_at = NOW() WHERE employee_id = ?")->execute([$id]);
+        // What belongs to a CURRENT employee only goes with them. Their login stops working at once (see refresh_auth / login). Nothing is deleted from the database.
+        try { $pdo->prepare("DELETE FROM st_duty WHERE emp_id = ?")->execute([$id]); } catch (Throwable $e) {}        // no longer in the store POS "Billed by" list
+        try {                                                                                                        // Total Budgeting: pay setup and leader link
+            $c = json_decode((string)setting_get($pdo, 'budget_cfg', ''), true);
+            if (is_array($c)) { $ch = false;
+                if (isset($c['people'][(string)$id])) { unset($c['people'][(string)$id]); $ch = true; }
+                foreach ((array)($c['leader_map'] ?? []) as $ln => $eid) if ((int)$eid === $id) { unset($c['leader_map'][$ln]); $ch = true; }
+                if ($ch) setting_set($pdo, 'budget_cfg', json_encode($c)); }
+        } catch (Throwable $e) {}
+        $seats = 0; $tasks = 0;                                                                                      // seats and open work are NOT deleted: they go to the Handover list for a new owner
+        try { $s = $pdo->prepare("SELECT COUNT(*) FROM bd_holders WHERE emp_id = ?"); $s->execute([$id]); $seats = (int)$s->fetchColumn();
+              $s = $pdo->prepare("SELECT COUNT(*) FROM bd_tasks WHERE owner_emp = ? AND status IN ('open','unowned') AND task_date >= CURDATE()"); $s->execute([$id]); $tasks = (int)$s->fetchColumn(); } catch (Throwable $e) {}
+        json_response(['message' => $nm . ' moved to Ex-Employees. Their login is switched off and they are out of Total Budgeting, the store and every list.'
+            . ($seats || $tasks ? ' They still hold ' . $seats . ' seat' . ($seats === 1 ? '' : 's') . ' and ' . $tasks . ' open task' . ($tasks === 1 ? '' : 's') . ': give them to someone in Handover.' : ''), 'seats' => $seats, 'tasks' => $tasks]);
         break;
     }
 

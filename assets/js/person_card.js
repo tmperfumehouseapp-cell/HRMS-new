@@ -153,7 +153,8 @@ window.PersonCard = (function () {
         + '<div class="n">' + when(q.date) + ' · ' + (q.source === 'auto' ? 'automatic' : 'by hand') + ' · from ' + esc(q.from) + ' ' + chip + (q.note ? '<br>' + esc(q.note) : '') + (q.resolve_note ? '<br>' + esc(q.resolve_note) : '') + '</div>'
         + (c.can_edit && q.status === 'applied' ? '<div class="a"><button class="pc-btn" data-a="pedit" type="button">Change amount</button><button class="pc-btn red" data-a="pwaive" type="button">Waive</button></div><div class="pc-f" data-slot hidden></div>' : '') + '</div>';
     }).join('') : '<div class="sub">No penalties in the last two months.</div>') + '</div>'
-      + (c.can_edit ? '<div style="margin-top:8px"><button class="pc-btn go" data-a="padd" type="button">+ Add a penalty</button></div><div class="pc-f" id="pcAdd" hidden></div>' : '') + '<div id="pcMsg"></div></div>';
+      + (c.can_edit ? '<div style="margin-top:8px"><button class="pc-btn go" data-a="padd" type="button">+ Add a penalty</button></div><div class="pc-f" id="pcAdd" hidden></div>' : '')
+      + (c.can_edit ? '<h4>Employment</h4><div class="pc-note">No longer working here? Make them an ex-employee. Their login stops, and they leave Total Budgeting, the store and every list. Nothing is deleted: Rejoin them any time from Ex-Employees.</div><button class="pc-btn red" data-a="exit" type="button" style="margin-top:6px">Make ex-employee…</button>' : '') + '<div id="pcMsg"></div></div>';
     return h;
   }
 
@@ -170,6 +171,14 @@ window.PersonCard = (function () {
     const t = c.timing;
     el.onclick = async (ev) => {
       const b = ev.target.closest('button[data-a]'); if (!b) return; const a = b.dataset.a, pen = b.closest('.pc-pen');
+      if (a === 'exit') {
+        const nm = (el.querySelector('h2') || {}).textContent || 'this person';
+        if (!confirm('Make ' + nm + ' an ex-employee?\n\nTheir login stops working, and they are removed from Total Budgeting, the store and every list. Their seats and open tasks go to Handover so you can give them to someone. Nothing is deleted: you can Rejoin them from Ex-Employees.')) return;
+        b.disabled = true;
+        try { const r = await api.post('employees.delete', { employee_id: id }); const ov = el.closest('.pc-ov'); if (ov) ov.remove(); alert(r.message || 'Moved to Ex-Employees.'); if (opts.onChange) opts.onChange(); }
+        catch (er) { b.disabled = false; msg((er && er.message) || 'Could not do that.', true); }
+        return;
+      }
       if (a === 'comm') {
         const box = el.querySelector('#pcComm'); box.innerHTML = '<div class="pc-load">Reading the commission…</div>'; let out = '<table class="pc-tbl"><tr><th>Month</th><th>Commission</th><th>Days</th></tr>';
         for (const k of [0, 1, 2]) {

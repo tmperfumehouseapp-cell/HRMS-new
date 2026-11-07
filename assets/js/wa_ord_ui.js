@@ -196,8 +196,9 @@ window.WaOrd = (function () {
     if (c.note) h += '<div class="wor-note">' + esc(c.note) + '</div>';
     h += '<div class="wor-sm">Raised by ' + esc(c.raised_by || 'someone') + ' · ' + esc(fmt(c.created_at)) + ' · ' + (c.owner ? 'Owner: <b>' + esc(c.owner) + '</b>' : '<b>Nobody has it yet</b>') + (c.status === 'done' && c.done_note ? '<br>Result: ' + esc(c.done_note) : '') + '</div>';
     if ((c.notes || []).length > 1) h += '<details class="wor-hist"><summary>History (' + c.notes.length + ')</summary>' + c.notes.map((n) => '<div><b>' + esc(n.who || 'System') + '</b> · ' + esc(fmt(n.at)) + '<br>' + esc(n.text) + '</div>').join('') + '</details>';
-    if (c.status === 'open') h += '<div class="wor-act"><button class="wor-b pri" data-take="' + c.id + '">' + (c.owner ? 'Take over' : 'Take it') + '</button><button class="wor-b" data-note="' + c.id + '">Add note</button><button class="wor-b go" data-done="' + c.id + '">Done</button>' + (chat ? '<a class="wor-b" href="' + esc(chat) + '">Open chat</a>' : '') + '</div>';
-    else if (chat) h += '<div class="wor-act"><a class="wor-b" href="' + esc(chat) + '">Open chat</a></div>';
+    const hubBtn = window.OrderHub ? '<button class="wor-b" data-hub="' + c.id + '">🔎 Full details</button>' : '';   // the one big popup: order + customer + chat (order_hub.js)
+    if (c.status === 'open') h += '<div class="wor-act">' + hubBtn + '<button class="wor-b pri" data-take="' + c.id + '">' + (c.owner ? 'Take over' : 'Take it') + '</button><button class="wor-b" data-note="' + c.id + '">Add note</button><button class="wor-b go" data-done="' + c.id + '">Done</button>' + (chat ? '<a class="wor-b" href="' + esc(chat) + '">Open chat</a>' : '') + '</div>';
+    else if (chat) h += '<div class="wor-act">' + hubBtn + '<a class="wor-b" href="' + esc(chat) + '">Open chat</a></div>';
     return h + '</div>';
   }
   function attention(el, o) {
@@ -215,6 +216,7 @@ window.WaOrd = (function () {
       if (d.is_admin) settings(el.querySelector('[data-settings]'));
     }
     el.addEventListener('click', async (e) => {
+      const hb = e.target.closest('[data-hub]'); if (hb && window.OrderHub) { OrderHub.onClose = () => load(true); OrderHub.open({ case: +hb.getAttribute('data-hub') }); return; }
       const tb = e.target.closest('[data-tab]'); if (tb) { S.tab = tb.getAttribute('data-tab'); load(); return; }
       const tk = e.target.closest('[data-take]'), dn = e.target.closest('[data-done]'), nt = e.target.closest('[data-note]');
       const act = async (action, body) => { try { await api.post(action, body); await load(true); } catch (x) { toast(errMsg(x), true); } };

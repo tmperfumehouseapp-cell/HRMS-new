@@ -798,9 +798,10 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo)\./', $__wa)) {
             $ord = ['new' => 'COALESCE(c.last_in_at, c.last_out_at) DESC', 'old' => 'COALESCE(c.last_in_at, c.last_out_at) ASC', 'az' => "(c.name = '') ASC, c.name ASC, c.phone ASC", 'za' => "(c.name = '') ASC, c.name DESC, c.phone DESC"][$sort] ?? null;
             $sql = "SELECT c.*, (SELECT body FROM wa_messages m WHERE m.phone = c.phone AND m.dir != 'sys' ORDER BY m.id DESC LIMIT 1) AS last_body,
                     (SELECT COUNT(*) FROM wa_messages u WHERE u.phone = c.phone AND u.dir = 'in' AND u.id > c.seen_msg_id) AS unread
-                    FROM wa_contacts c WHERE " . implode(' AND ', $w) . " ORDER BY " . ($ord ? $ord . ', ' : '') . "CASE WHEN c.last_in_at IS NOT NULL AND (c.last_out_at IS NULL OR c.last_out_at < c.last_in_at) AND c.last_in_at >= '" . date('Y-m-d H:i:s', time() - 86400) . "' THEN 0 ELSE 1 END, COALESCE(c.last_in_at, c.last_out_at) DESC LIMIT " . ($flt || $ord ? 400 : 150);   // a customer waiting for a reply first; our own sends / campaigns never move a chat
+                    FROM wa_contacts c WHERE " . implode(' AND ', $w) . " ORDER BY " . ($ord ? $ord . ', ' : '') . "CASE WHEN c.last_in_at IS NOT NULL AND (c.last_out_at IS NULL OR c.last_out_at < c.last_in_at) AND c.last_in_at >= '" . date('Y-m-d H:i:s', time() - 86400) . "' THEN 0 ELSE 1 END, COALESCE(c.last_in_at, c.last_out_at) DESC LIMIT " . (!empty($_GET['ids']) ? 3000 : ($flt || $ord ? 400 : 150));   // a customer waiting for a reply first; our own sends / campaigns never move a chat
             $st = $pdo->prepare($sql); $st->execute($p); $rows = $st->fetchAll(); $names = employee_names_by_id($pdo);
             $fl = wa_heat_flags($pdo, array_column($rows, 'phone')); $lm = function_exists('wa_team_cfg') ? max(1, (int)(wa_team_cfg($pdo)['unans_min'] ?? 5)) : 5;
+            if (!empty($_GET['ids'])) json_response(['ids' => array_map(fn($r) => ['phone' => (string)$r['phone'], 'name' => (string)($r['name'] ?? '')], $rows)]);   // ☑ "Select all" in the bulk bar: just the phones of the whole view
             $ot = wa_owner_tags($pdo, array_column($rows, 'phone'));
             $out = array_map(function ($r) use ($names, $fl, $lm, $ot) { $x = wa_contact_row($r, $names); $f = (int)($ot[(string)$r['phone']]['first'] ?? 0); $x['first_emp'] = $f; $x['first_name'] = $f ? ($names[$f] ?? '') : ''; $x['preview'] = mb_substr((string)$r['last_body'], 0, 90); $x['heat'] = wa_heat($r, $fl[(string)$r['phone']] ?? [], $lm); $x['biz'] = !empty($fl[(string)$r['phone']]['biz']); return $x; }, $rows);
             $cn = wa_counts($pdo, $adm, $emp); $cn['src'] = wa_src_counts($pdo, $adm, $emp);
@@ -819,7 +820,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo)\./', $__wa)) {
             $sig = md5(json_encode([$sg, $c['assigned_emp'] ?? 0, $c['status'] ?? '', $c['tag'] ?? '', $c['optout'] ?? 0, $c['cx_id'] ?? 0, $c['hot'] ?? 0, $c['summary'] ?? '', $c['last_in_at'] ?? '', $c['state'] ?? '', $c['remind_at'] ?? '']));
             if (empty($_GET['before']) && (string)($_GET['sig'] ?? '') === $sig) json_response(['same' => 1, 'sig' => $sig]);
             $lim = max(1, min(300, (int)($_GET['limit'] ?? 100))); $before = (int)($_GET['before'] ?? 0);
-            $st = $pdo->prepare("SELECT m.id, m.dir, m.mtype, m.body, m.media_id, m.media_mime, m.status, m.who, m.emp_id, m.ts, m.number_id, m.reply_to FROM wa_messages m WHERE m.phone = ?" . ($before ? ' AND (m.ts < ? OR (m.ts = ? AND m.id < ?))' : '') . " ORDER BY m.ts DESC, m.id DESC LIMIT " . ($lim + 1));   // by time: past chats Meta shares later (📱 phone app history) sit in their right place
+            $st = $pdo->prepare("SELECT m.id, m.dir, m.mtype, m.body, m.media_id, m.media_mime, m.status, m.who, m.emp_id, m.ts, m.number_id, m.reply_to, m.err, m.err_code FROM wa_messages m WHERE m.phone = ?" . ($before ? ' AND (m.ts < ? OR (m.ts = ? AND m.id < ?))' : '') . " ORDER BY m.ts DESC, m.id DESC LIMIT " . ($lim + 1));   // by time: past chats Meta shares later (📱 phone app history) sit in their right place
             $bts = ''; if ($before) { $bq = $pdo->prepare("SELECT ts FROM wa_messages WHERE id = ? AND phone = ?"); $bq->execute([$before, $key]); $bts = (string)$bq->fetchColumn(); }   // page by (time, id) — the same order the chat is shown in, so old messages Meta shared later are not skipped
             $st->execute($before ? [$key, $bts, $bts, $before] : [$key]); $msgs = $st->fetchAll(); $more = count($msgs) > $lim; if ($more) array_pop($msgs); $msgs = array_reverse($msgs);   // one extra row tells the page that older messages exist ("Load older messages")
             $nums = []; foreach ($pdo->query("SELECT id, display, label, panel FROM wa_numbers")->fetchAll() as $n) $nums[(int)$n['id']] = $n['label'] !== '' ? $n['label'] : ($n['display'] !== '' ? $n['display'] : 'Number ' . $n['id']);
@@ -889,6 +890,21 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo)\./', $__wa)) {
             $ids = array_column(wa_people($pdo), 'emp_id'); if (!in_array($to, $ids, true)) json_response(['error' => 'Pick a salesperson from the list.'], 422);
             if ($to === (int)$c['assigned_emp']) json_response(['error' => 'The chat is already with this person.'], 422);
             wa_assign_to($pdo, $key, $to, $me, 'transfer'); json_response(['ok' => true]);
+        }
+        case 'wa.bulk_assign': {   // ☑ many chats at once → one person. Admin: any chat. A salesperson: only the chats they hold (same rule as Transfer). Max 1500 per call.
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
+            $in = json_input(); $to = (int)($in['emp_id'] ?? 0); $me = (int)($auth['employee_id'] ?? 0); $adm = wa_is_admin($pdo, $auth);
+            $ids = array_column(wa_people($pdo), 'emp_id'); if ($adm) $ids = array_merge($ids, array_column(wa_people_others($pdo, $ids), 'emp_id'));
+            if (!in_array($to, array_map('intval', $ids), true)) json_response(['error' => 'Pick a person from the list.'], 422);
+            $phones = array_slice(array_values(array_unique(array_filter(array_map(fn($p) => wa_key($p), (array)($in['phones'] ?? []))))), 0, 1500); if (!$phones) json_response(['error' => 'Select at least one chat.'], 422);
+            $moved = 0; $skipped = []; $nm = employee_names_by_id($pdo);
+            foreach ($phones as $key) {
+                $c = wa_contact($pdo, $key); if (!$c) { $skipped[] = ['phone' => $key, 'why' => 'chat not found']; continue; }
+                if (!$adm && (int)$c['assigned_emp'] !== $me) { $skipped[] = ['phone' => $key, 'why' => 'not your chat']; continue; }
+                if ((int)$c['assigned_emp'] === $to) { $skipped[] = ['phone' => $key, 'why' => 'already with ' . ($nm[$to] ?? 'them')]; continue; }
+                try { wa_assign_to($pdo, $key, $to, $me, $adm ? 'manual' : 'transfer'); $moved++; } catch (Throwable $e) { $skipped[] = ['phone' => $key, 'why' => 'could not move']; }
+            }
+            json_response(['ok' => true, 'moved' => $moved, 'skipped' => array_slice($skipped, 0, 30), 'skipped_n' => count($skipped), 'to' => $nm[$to] ?? '']);
         }
         case 'wa.takeover': {   // a manager (or admin) takes a chat from whoever has it — at any time, no waiting rule. The salesperson's app locks that chat at once.
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);

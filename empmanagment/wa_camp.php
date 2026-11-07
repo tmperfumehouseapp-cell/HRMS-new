@@ -427,7 +427,7 @@ function wa_camp_pause(PDO $pdo, int $id, string $why): void { $pdo->prepare("UP
 /** What to do with a failed message: ['final'|'retry'|'skip'|'pause', why]. $attempt = how many tries were made so far (the one that just failed included). */
 function wa_camp_fail_plan(int $ec, int $attempt, bool $retryOn, int $maxTries = 3): array
 {
-    if ($ec === 131049) return $attempt < 2 ? ['held', ''] : ['skip', 'Held by Meta again on the extra try — stopped'];   // Meta's marketing limit for this customer: ONE more try 3 days later (owner's rule), then stop
+    if ($ec === 131049) return $attempt < 2 ? ['held', ''] : ['skip', 'Held by Meta again on the extra try — stopped'];   // Meta's marketing limit for this customer: ONE more try 1 day later (owner's rule, 7 Nov), then stop
     if ($ec === 131048) return ['pause', 'Meta flagged these messages as spam (code 131048) — pause and check the message and the audience.'];
     if (in_array($ec, [131050, 131047, 131021, 130472, 131051, 100, 131008, 131009], true)) return ['final', 'Meta will not deliver this one — not retried'];   // the customer stopped marketing / 24-hour rule / own number / test group / type not supported / the request itself is wrong (retrying cannot help)
     if (!$retryOn) return ['final', 'Retry is off for this campaign'];
@@ -435,11 +435,11 @@ function wa_camp_fail_plan(int $ec, int $attempt, bool $retryOn, int $maxTries =
     if ($attempt >= max(1, min(3, $maxTries))) return ['final', 'Failed after ' . max(1, min(3, $maxTries)) . ' ' . (max(1, min(3, $maxTries)) === 1 ? 'try' : 'tries')];   // the owner may lower it (extra.retries)
     return ['retry', ''];
 }
-/** 🛑 Held by Meta (131049): the one extra try goes 3 days later at the customer's own hour (Meta's marketing limit for a person has reset by then). */
+/** 🛑 Held by Meta (131049): the one extra try goes 1 day later at the customer's own hour (Meta's marketing limit for a person has reset by then). */
 function wa_camp_held_try(PDO $pdo, string $phone, int $defHour, int $nowTs): int
 {
     $h = wa_camp_user_hours($pdo, [$phone])[$phone] ?? ($defHour ?: 19);
-    return wa_camp_send_at($pdo, mktime(0, 0, 0, (int)date('n', $nowTs), (int)date('j', $nowTs) + 3, (int)date('Y', $nowTs)), $h, $phone);
+    return wa_camp_send_at($pdo, mktime(0, 0, 0, (int)date('n', $nowTs), (int)date('j', $nowTs) + 1, (int)date('Y', $nowTs)), $h, $phone);   // owner (7 Nov): 1 day, was 3
 }
 /** Once: people skipped by the two rules the owner removed (Meta held them lately · business number) in campaigns of the last 3 days go back in the queue. */
 function wa_camp_rules_backfill(PDO $pdo, int $nowTs): void
@@ -552,9 +552,12 @@ function wa_camp_tick(PDO $pdo): array
     try { wa_camp_rules_backfill($pdo, $nowTs); } catch (Throwable $e) { }
     try { wa_camp_retry_scan($pdo, $nowTs); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'campaign retries: ' . $e->getMessage()); }
     $inWin = wa_camp_in_window($pdo, $nowTs); $due = "((status = 'queued' AND (send_at IS NULL OR send_at <= '$now')) OR (status = 'retry' AND next_try <= '$now'))";
+    // a campaign is FINISHED as soon as everyone has had their first try (owner, 7 Nov: not "Sending" for 3 days while Meta-held people wait for their one extra try).
+    // The waiting retries stay in the queue: the moment one is due, the campaign is reopened for it and finishes again.
+    try { $pdo->exec("UPDATE wa_campaigns SET status = 'running', finished_at = NULL WHERE status = 'done' AND id IN (SELECT camp_id FROM wa_camp_items WHERE status = 'retry' AND next_try <= '$now')"); } catch (Throwable $e) { }
     foreach ($pdo->query("SELECT id FROM wa_campaigns WHERE status = 'running' ORDER BY id")->fetchAll() as $row) {
         $c = wa_camp_row($pdo, (int)$row['id']); if (!$c) continue; $id = (int)$c['id'];
-        $rem = (int)$pdo->query("SELECT COUNT(*) FROM wa_camp_items WHERE camp_id = $id AND status IN ('queued', 'retry')")->fetchColumn();
+        $rem = (int)$pdo->query("SELECT COUNT(*) FROM wa_camp_items WHERE camp_id = $id AND (status = 'queued' OR (status = 'retry' AND next_try <= '$now'))")->fetchColumn();
         if ($rem === 0) { if ((int)$pdo->query("SELECT COUNT(*) FROM wa_camp_items WHERE camp_id = $id AND status = 'sending'")->fetchColumn() === 0) $pdo->prepare("UPDATE wa_campaigns SET status = 'done', finished_at = ?, note = '' WHERE id = ?")->execute([$now, $id]); continue; }
         $t = wa_camp_tpl($pdo, (int)$c['tpl_id'], true, (int)$c['media_lib_id']);
         if (!$t) { foreach (wa_fam_members($pdo, wa_fam_root(wa_mix_trow($pdo, (int)$c['tpl_id']))) as $fm) if ($fm['line'] === 'M' && (int)$fm['id'] !== (int)$c['tpl_id'] && !$fm['relabelled_at'] && ($t = wa_camp_tpl($pdo, (int)$fm['id'], true, (int)$c['media_lib_id']))) break; }   // the first version is not available anywhere: an alternative version of the same message takes over
@@ -698,7 +701,7 @@ function wa_camp_tick(PDO $pdo): array
         if ($stop !== '' && !empty($hard)) wa_camp_pause($pdo, $id, $stop);
         elseif ($stop !== '') $pdo->prepare("UPDATE wa_campaigns SET note = ? WHERE id = ?")->execute([mb_substr($stop, 0, 200), $id]);
         else $pdo->prepare("UPDATE wa_campaigns SET note = '' WHERE id = ? AND status = 'running'")->execute([$id]);
-        if ($stop === '' && (int)$pdo->query("SELECT COUNT(*) FROM wa_camp_items WHERE camp_id = $id AND status IN ('queued', 'sending', 'retry')")->fetchColumn() === 0) $pdo->prepare("UPDATE wa_campaigns SET status = 'done', finished_at = ?, note = '' WHERE id = ? AND status = 'running'")->execute([date('Y-m-d H:i:s', $nowTs), $id]);
+        if ($stop === '' && (int)$pdo->query("SELECT COUNT(*) FROM wa_camp_items WHERE camp_id = $id AND (status IN ('queued', 'sending') OR (status = 'retry' AND next_try <= '" . date('Y-m-d H:i:s', $nowTs) . "'))")->fetchColumn() === 0) $pdo->prepare("UPDATE wa_campaigns SET status = 'done', finished_at = ?, note = '' WHERE id = ? AND status = 'running'")->execute([date('Y-m-d H:i:s', $nowTs), $id]);
         $hard = false; $res[$id] = ['sent' => $sent, 'failed' => $failed, 'skipped' => $skipped, 'stop' => $stop];
         if ($plan) $res[$id]['mix'] = ['u_status' => $plan['u_status'], 'target' => $plan['target'], 'achieved' => $plan['achieved'], 'per_number' => array_map(fn($p) => ['share' => $p['share'], 'state' => $p['u_state'], 'u_given' => $p['u_given'], 'elig' => $p['elig']], $plan['per_number'])];
     }

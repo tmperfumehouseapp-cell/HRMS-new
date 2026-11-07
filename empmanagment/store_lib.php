@@ -1430,3 +1430,44 @@ function st_bday_voucher_for(PDO $pdo, string $phone, int $year): ?array
 {
     try { $q = $pdo->prepare("SELECT * FROM st_bday_vouchers WHERE phone = ? AND bday_year = ?"); $q->execute([$phone, $year]); $v = $q->fetch(); return $v ? st_bday_public($v) : null; } catch (Throwable $e) { return null; }
 }
+
+/** Every store bill of a range with the commission the ONLINE engine's rules pay for it (price chart, a matching offer, the order-code rule), no over-target extra.
+ *  The code rule works per person per day, so changing who billed one bill recounts the other bills of both people. Returns [] rows + counters. */
+if (!function_exists('budget_store_calc')) {
+    /** the online commission engine (boss.php → boss2.php cm_*) is loaded and ready */
+    function budget_engine_ready(): bool
+    {
+        try { if (!function_exists('cm_chart') && is_file(__DIR__ . '/boss.php')) require_once __DIR__ . '/boss.php'; } catch (Throwable $e) { error_log('commission engine: ' . $e->getMessage()); }
+        return function_exists('cm_chart') && function_exists('cm_pct') && function_exists('cm_offers') && function_exists('cm_offer_match') && function_exists('cm_code_need');
+    }
+    function budget_store_calc(PDO $pdo, string $from, string $to): array
+    {
+        static $memo = []; $mk = $from . '|' . $to; if (isset($memo[$mk])) return $memo[$mk];
+        $ch = cm_chart($pdo); $offers = cm_offers($pdo); $rows = []; $groups = []; $noMl = 0; $unpriced = 0;
+        if (function_exists('ensure_st_tables')) ensure_st_tables($pdo);
+        $q = $pdo->prepare("SELECT b.bill_id, b.bill_no, b.biz_date, b.created_at, b.emp_id, b.emp_name, b.order_code, b.total_ml, b.total, e.employee_id AS real_id
+            FROM st_bills b LEFT JOIN employees e ON e.employee_id = b.emp_id AND e.status != 'ex' WHERE b.status = 'ok' AND b.biz_date BETWEEN ? AND ? ORDER BY b.bill_id");
+        $q->execute([$from, $to]);
+        foreach ($q->fetchAll() as $i => $b) { $rows[$i] = $b; $groups[(int)$b['emp_id'] . '|' . $b['biz_date']][] = $i; }
+        $out = [];
+        foreach ($groups as $k => $idx) {
+            $n = count($idx); $nCode = 0;
+            foreach ($idx as $i) if (trim((string)$rows[$i]['order_code']) !== '') $nCode++;
+            $need = cm_code_need($n, (float)$ch['codepct']); $codeOk = $need > 0 && $nCode >= $need; $nocodeF = (float)$ch['nocode'] / 100;
+            foreach ($idx as $i) {
+                $b = $rows[$i]; $day = (string)$b['biz_date']; $gross = (float)$b['total']; $ml = (int)$b['total_ml']; $hasCode = trim((string)$b['order_code']) !== '';
+                $f = ($hasCode || $codeOk) ? 1.0 : $nocodeF; $com = 0.0; $pct = null; $rule = '';
+                $of = $ml ? cm_offer_match($offers, $ml, $gross, $day, (float)$ch['window']) : null;
+                if ($of) { $pct = (float)$of['pct']; $rule = 'offer'; $com = $gross * $pct / 100 * $f; }
+                elseif (!$ml) { $noMl++; $rule = 'no ML'; }
+                else { $pc = cm_pct($ch, $ml, $gross); if ($pc === null) { $unpriced++; $rule = 'ML not priced'; } else { $pct = (float)$pc; $rule = 'chart'; $com = $gross * $pct / 100 * $f; } }
+                $out[$i] = ['bill_id' => (int)$b['bill_id'], 'bill_no' => (string)$b['bill_no'], 'day' => $day, 'time' => substr((string)$b['created_at'], 11, 5), 'emp_id' => (int)$b['emp_id'],
+                    'employee_id' => $b['real_id'] ? (int)$b['emp_id'] : 0, 'name' => (string)$b['emp_name'], 'code' => $hasCode, 'total' => $gross, 'ml' => $ml,
+                    'pct' => $pct, 'rule' => $rule, 'reduced' => $f < 1.0, 'com' => round($com, 2)];
+            }
+        }
+        ksort($out);
+        return $memo[$mk] = ['bills' => array_values($out), 'no_ml' => $noMl, 'unpriced' => $unpriced];
+    }
+}
+

@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Leaders Helper — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=260929d">
+<link rel="stylesheet" href="assets/css/sales_theme.css?v=1">
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar">
+      <div><h1>Leaders Helper</h1><div class="sub" style="font-size:12.5px;color:var(--muted);margin-top:2px">Fixed monthly salary, a daily checklist, and the payout that follows the work done — day by day.</div></div>
+      <div style="display:flex;gap:10px;align-items:center"><button class="btn secondary" id="btnReload" type="button">↻ Refresh</button></div>
+    </div>
+    <div class="content">
+      <div id="alertBox"></div>
+      <div id="lh"><div class="card"><div class="empty">Loading…</div></div></div>
+    </div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=2"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=21"></script>
+<script src="assets/js/leaders_helper.js?v=1"></script>
+<script>
+guardPage(); renderSidebar('commission');
+const lh = LeadersHelper.mount('lh'); document.getElementById('btnReload').onclick = () => lh && lh.reload();
+</script>
+</body>
+</html>

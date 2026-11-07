@@ -77,7 +77,7 @@
 </div>
 <script src="assets/js/config.js?v=4"></script>
 <script src="assets/js/api.js?v=9"></script>
-<script src="assets/js/layout.js?v=20"></script>
+<script src="assets/js/layout.js?v=21"></script>
 <script src="assets/js/boss_common.js?v=3"></script>
 <script src="assets/js/b2_common.js?v=t7"></script>
 <script src="assets/js/b2_my.js?v=1"></script>
@@ -86,7 +86,7 @@
   guardPage();
   renderSidebar('my_day');
   const { esc, $, toast, inr } = BD;
-  let SAL = null, ME = null, DP = null, BDD = null, PF = null, ATT = null, FLAGS = null, PO = null, stream = null, OPL = null;   // OPL = registered places (Pantry ...): one card per place, see assets/js/of_place_ui.js
+  let LH = null, SAL = null, ME = null, DP = null, BDD = null, PF = null, ATT = null, FLAGS = null, PO = null, stream = null, OPL = null;   // OPL = registered places (Pantry ...): one card per place, see assets/js/of_place_ui.js
   const PAGE = { dispatch: 'dept_dispatch.html', shops: 'dept_shops.html', supplies: 'dept_supplies.html', fix: 'dept_fix.html' };
   const j = (p) => p.catch(() => null);
   // Busy-hour safety: each read is retried once, and if it still fails the last good copy of it (kept in this tab) is shown instead of a blank card.
@@ -104,6 +104,7 @@
       PO = po; OPL = opl && Array.isArray(opl.places) ? opl : null; ME = me; DP = dp || { items: [], done: [], penalties: [], mode: 'shadow' }; BDD = bdd || { tasks: [], penalties: [], week: { done: 0, missed: 0 }, mode: DP.mode }; PF = pf; ATT = att; FLAGS = fl || {};
       if (!ME) throw new Error('Your login is not linked to an employee.');
       render(); records();
+      api.get('lh.mine').then((r) => { if (r && r.helper) { LH = r; render(); } }).catch(() => { /* not a Leaders Helper: no card */ });
       api.get('salary.detail').then((r) => { if (r && r.detail) { SAL = r.detail; render(); } }).catch(() => { /* commission-only staff have no monthly salary: no card */ });
       BD.who().then((b) => { if (b.manager) $('mgr').innerHTML = '<a class="bd-btn sm" href="boss_engine.html">Boss Engine</a>'; });
     } catch (e) { $('root').innerHTML = '<div class="bd-card"><div class="bd-empty"><b>Cannot open My Day</b>' + esc(e.message) + '</div></div>'; }
@@ -201,6 +202,18 @@
   }
 
   /* ---------------- salary so far this month: earned days, minus penalties ---------------- */
+  /* ---------------- Leaders Helper: today's checklist + the payout so far (read only, the Admin / Sales Head tick the work) ---------------- */
+  function lhCard() {
+    if (!LH || !LH.helper) return ''; const p = (LH.people || [])[0]; if (!p) return ''; const t = (LH.totals || {})[p.id] || { earned: 0, missed: 0, done: 0, tasks: 0 };
+    const today = (LH.rows || []).find((r) => r.date === LH.today), td = today && today.per[p.id] ? today.per[p.id] : { tasks: [], done: 0, total: 0, amount: 0, full: 0 };
+    const pct = td.total ? Math.round(td.done * 100 / td.total) : 0;
+    const list = td.tasks.length ? td.tasks.map((x) => '<div class="bd-sub" style="display:flex;gap:8px;align-items:center;padding:5px 0"><span style="width:20px;height:20px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:900;' + (x.done ? 'background:#16a34a;color:#fff' : 'border:2px solid #cbd5e1;color:transparent') + '">✓</span><span style="' + (x.done ? 'text-decoration:line-through;opacity:.6' : '') + '">' + esc(x.title) + '</span></div>').join('') : '<div class="bd-sub">No work given for today yet.</div>';
+    const days = (LH.rows || []).filter((r) => !r.partial).slice(0, 5).map((r) => { const d = r.per[p.id]; return '<div class="bd-sub" style="display:flex;justify-content:space-between;gap:8px"><span>' + esc(r.dow + ' ' + r.date.slice(8) + '/' + r.date.slice(5, 7)) + ' · ' + (d.total ? d.done + ' of ' + d.total + ' done' : 'no tasks') + '</span><b style="color:' + (d.amount >= d.full ? '#16a34a' : '#d9423b') + '">' + inr(d.amount) + '</b></div>'; }).join('');
+    return '<div class="md-card"><div class="md-lb">Your daily payout · ' + inr(p.salary) + ' a month</div>' + (p.note ? '<div class="bd-sub" style="margin:-2px 0 8px">' + esc(p.note) + '</div>' : '') + '<div class="md-perf" style="grid-template-columns:repeat(3,1fr)">'
+      + '<div class="g"><b>' + inr(t.earned) + '</b><small>earned so far</small></div><div><b>' + inr(td.amount) + '</b><small>today · ' + pct + '% done</small></div><div class="' + (t.missed > 0 ? 'r' : 'g') + '"><b>' + inr(t.missed) + '</b><small>lost to pending work</small></div></div>'
+      + '<div class="md-lb" style="margin-top:12px">Today’s work</div>' + list + '<div class="bd-sub" style="margin-top:6px">' + (LH.cfg && LH.cfg.mode === 'punch' ? 'Your day’s pay (' + inr(td.full) + ') is written by itself when you punch in.' : 'Your Admin or Sales Head marks the work done. A day pays ' + inr(td.full) + ' when everything is done.') + '</div>'
+      + (days ? '<div class="md-lb" style="margin-top:12px">Last days</div>' + days : '') + '</div>';
+  }
   function salaryCard() {
     if (!SAL) return '';
     const pen = Number(SAL.penalty_total) || 0, c = SAL.counts || {};
@@ -281,7 +294,7 @@
     const pin = punchedIn(), redo = !!(PF && PF.redo);
     // Before punch in the day is only the punch-in steps and the Punch In button. Work, penalties and the rest open after it.
     let body = pin && !redo
-      ? dayCard() + salaryCard() + perfCard() + tasks() + '<div id="b2MyBox"></div>' + reportCard() + tellCard() + penalties()
+      ? dayCard() + lhCard() + salaryCard() + perfCard() + tasks() + '<div id="b2MyBox"></div>' + reportCard() + tellCard() + penalties()
       : punchCard() + '<div class="md-wait">Your work for today opens after you punch in.</div>' + (pin ? dayCard() + tasks() : '');
     body = body.replace('class="md-card', 'class="md-card pull');   // the first card slides up over the orange header
     $('root').innerHTML = hero() + body;

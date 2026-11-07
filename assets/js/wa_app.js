@@ -622,7 +622,8 @@
       if (!res.ok) { let m = 'Could not load the file.'; try { m = (await res.json()).error || m; } catch (e) { } throw new Error(m); } return (MEDIA[id] = URL.createObjectURL(await res.blob()));
     }
     const capOf = (m) => { const x = /^[^:]{1,20}:\s*([\s\S]+)$/.exec(m.body || ''); return x ? x[1] : ''; };
-    function tick(m) { if (m.dir !== 'out') return ''; const s = m.status; return s === 'failed' ? (m.retry ? ` <button type="button" class="wx-rt" data-rt="${esc(m.cid)}">⚠ Not sent · Retry</button>` : ' <span class="f">⚠ failed</span>') : s === 'read' ? ' <span class="r">✓✓</span>' : s === 'delivered' ? ' ✓✓' : s === 'sending' ? ' …' : ' ✓'; }
+    const failWhy = (m) => { const c = +m.err_code || 0, t = String(m.err || '').slice(0, 90); const h = { 131053: 'WhatsApp could not use this file (format / size)', 131052: 'WhatsApp could not download this file', 131047: 'the customer has not written in 24 hours', 131026: 'the customer cannot receive it (not on WhatsApp / blocked)', 131049: 'Meta limit for this customer', 130429: 'sending too fast, wait a minute', 131051: 'unsupported message type' }[c]; return (h || t) ? ' — ' + (h || t) + (c ? ' (' + c + ')' : '') : ''; };
+    function tick(m) { if (m.dir !== 'out') return ''; const s = m.status; return s === 'failed' ? (m.retry ? ` <button type="button" class="wx-rt" data-rt="${esc(m.cid)}">⚠ Not sent · Retry</button>` : ` <span class="f">⚠ failed${esc(failWhy(m))}</span>`) : s === 'read' ? ' <span class="r">✓✓</span>' : s === 'delivered' ? ' ✓✓' : s === 'sending' ? ' …' : ' ✓'; }
     function bubble(m) {
       if (m.dir === 'sys') return `<div class="wx-ev">${esc(m.body || '')}</div>`;
       const cls = m.dir === 'in' ? 'in' : (m.who === 'bot' ? 'out bot' : m.mtype === 'template' ? 'out tpl' : 'out'); let b = '';
@@ -636,6 +637,16 @@
       const rb = !m.tmp && m.dir !== 'sys' && /^\d+$/.test(String(m.id)) ? '<button type="button" class="wx-rb" data-rb="' + m.id + '" title="Reply to this message" aria-label="Reply">↩</button>' : '';   // ↩ reply to this message (on a phone: swipe it right)
       return `<div class="wx-b ${cls} ${m.tmp ? 'tmp' : ''}" data-id="${m.id}">${rb}${m.who === 'bot' ? '<span class="wx-tag">🤖 BOT</span>' : m.who === 'phone' ? '<span class="wx-tag">📱 PHONE APP</span>' : m.who === 'flow' ? '<span class="wx-tag">⚡ AUTO</span>' : m.mtype === 'template' ? '<span class="wx-tag">PRE-MADE</span>' : ''}${qt}${b}<small>${hhmm(m.ts)}${tick(m)}</small></div>`;
     }
+
+    // 🖼 tap a photo → it opens full screen (phone and PC): pinch to zoom, tap anywhere or ✕ to close
+    function photoOpen(src) {
+      if (document.querySelector('.ph-lb')) return;   // one viewer at a time (a photo can be tapped through two handlers)
+      if (!document.getElementById('phStyle')) { const st = document.createElement('style'); st.id = 'phStyle'; st.textContent = '.ph-lb{position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:99999;display:flex;align-items:center;justify-content:center;touch-action:pinch-zoom;overscroll-behavior:contain}.ph-lb img{max-width:100vw;max-height:100vh;width:auto;height:auto;object-fit:contain;touch-action:pinch-zoom}.ph-lb .ph-x{position:fixed;top:max(12px,env(safe-area-inset-top));right:14px;width:44px;height:44px;border-radius:50%;border:0;background:rgba(255,255,255,.18);color:#fff;font-size:22px;line-height:1;cursor:pointer}.ph-lb .ph-o{position:fixed;bottom:max(14px,env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);background:rgba(255,255,255,.18);color:#fff;padding:10px 16px;border-radius:99px;font:600 14px system-ui,sans-serif;text-decoration:none}'; document.head.appendChild(st); }
+      const d = document.createElement('div'); d.className = 'ph-lb'; d.innerHTML = '<img alt="photo"><button type="button" class="ph-x" aria-label="Close">✕</button><a class="ph-o" target="_blank" rel="noopener">Open original</a>';
+      d.querySelector('img').src = src; d.querySelector('.ph-o').href = src; const close = () => { d.remove(); document.removeEventListener('keydown', esc2); }; const esc2 = (e) => { if (e.key === 'Escape') close(); };
+      d.addEventListener('click', (e) => { if (e.target.closest('.ph-o')) return; close(); }); document.addEventListener('keydown', esc2); document.body.appendChild(d);
+    }
+    document.addEventListener('click', (e) => { const im = e.target.closest('#wxMs .wx-b img'); if (im && !e.target.closest('.wx-qt,a')) { e.preventDefault(); photoOpen(im.currentSrc || im.src); } });
     document.addEventListener('click', (e) => { const q = e.target.closest('.wx-qt'); if (!q) return; const t = document.querySelector('.wx-b[data-id="' + q.dataset.qid + '"]');
       const go = (el) => { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.remove('wx-fl'); void el.offsetWidth; el.classList.add('wx-fl'); };
       if (t) { go(t); return; }
@@ -1051,7 +1062,7 @@
         // Only two recordings go as they are: OGG with Opus (Firefox) and MP4 with AAC (iPhone). Chrome's WebM and Chrome's newer "MP4 with Opus" are refused
         // by WhatsApp at delivery (the voice note shows as failed), so they are turned into MP3 here.
         if (/ogg/.test(ty) && !/mp4|webm/.test(blob.type || '')) file = new File([blob], 'voice.ogg', { type: 'audio/ogg' });
-        else if (/mp4a|aac/.test(ty)) file = new File([blob], 'voice.m4a', { type: 'audio/mp4' });
+        else if (/mp4a|aac/.test(ty) && /iPhone|iPad|iPod/.test(navigator.userAgent || '')) file = new File([blob], 'voice.m4a', { type: 'audio/mp4' });   // only an iPhone really records AAC; Android Chrome says "mp4a" for what it asked for but records Opus-in-MP4, which WhatsApp refuses (voice note shows failed) → it goes through the MP3 converter below
         else file = new File([await toMp3(blob)], 'voice.mp3', { type: 'audio/mpeg' });
         await sendFiles([file], '');
       } catch (e) { toast('Could not prepare the voice note: ' + e.message, true); }

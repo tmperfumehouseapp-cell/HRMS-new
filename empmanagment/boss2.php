@@ -2786,11 +2786,18 @@ function cm_offer_stop(PDO $pdo, $id, $by) {
     cm_offers($pdo); $pdo->prepare("UPDATE cm_offers SET active = 0, stopped_at = ? WHERE id = ?")->execute([bd_now(), (int)$id]);
     return [true, 'Offer stopped.', 200];
 }
-function cm_emps(PDO $pdo) {
-    $emps = [];
+/** people assigned to Retail wholesale or Store in Total Budgeting: they are paid by that rule (salary + collections % / store chart), so the online commission engine skips them */
+function cm_offline_ids(PDO $pdo) {
+    if (function_exists('pay_offline_ids')) return pay_offline_ids($pdo);
+    $o = [];
+    try { $j = json_decode((string)setting_get($pdo, 'budget_cfg', ''), true); foreach ((array)($j['people'] ?? []) as $id => $v) if (is_array($v) && in_array((string)($v['grp'] ?? ''), ['retail', 'store'], true)) $o[(int)$id] = 1; } catch (Throwable $e) {}
+    return $o;
+}
+function cm_emps(PDO $pdo, $day = null) {
+    $emps = []; $off = cm_offline_ids($pdo); $dayOff = ($day && function_exists('pay_day_assign')) ? (pay_day_assign($pdo)[$day] ?? []) : [];   // on a day moved to the store, no online commission
     foreach ($pdo->query("SELECT e.employee_id, e.full_name, e.sales_tag, e.basic_salary, e.joining_date, e.designation, d.department_name
         FROM employees e LEFT JOIN departments d ON d.department_id = e.department_id WHERE e.status != 'ex'")->fetchAll() as $e) {
-        if (stripos((string)$e['department_name'], 'sales') === false) continue; $emps[(int)$e['employee_id']] = $e;
+        if (stripos((string)$e['department_name'], 'sales') === false || isset($off[(int)$e['employee_id']]) || isset($dayOff[(int)$e['employee_id']])) continue; $emps[(int)$e['employee_id']] = $e;
     }
     return $emps;
 }
@@ -2799,7 +2806,7 @@ function cm_day(PDO $pdo, $day, array $ch = null, array $offers = null, array $b
     $ch = $ch ?: cm_chart($pdo); if ($offers === null) $offers = cm_offers($pdo); if ($boosts === null) $boosts = cm_boosts($pdo);
     foreach (['coach_sales_load', 'sales_target_fn', 'day_marks_between'] as $f) if (!function_exists($f)) return ['rows' => [], 'error' => 'The HRMS order functions were not found (' . $f . ').'];
     try {
-        $emps = cm_emps($pdo); if (!$emps) return ['rows' => [], 'error' => ''];
+        $emps = cm_emps($pdo, $day); if (!$emps) return ['rows' => [], 'error' => ''];
         $marks = day_marks_between($pdo, $day, $day); $targetOf = sales_target_fn($pdo, $emps, $day, $day, $marks);
         $sale = coach_sales_load($pdo, $emps, $day, $day);
     } catch (Throwable $e) { return ['rows' => [], 'error' => 'Could not read the orders: ' . $e->getMessage()]; }
@@ -3616,13 +3623,14 @@ function b2_dispatch(PDO $pdo, $action, array $auth, array $w, $by, array $in, $
     case 'bd.b2_strip': { json_response(b2_strip($pdo, $w, (string)($in['page'] ?? $_GET['page'] ?? ''), $me)); }
     case 'bd.b2_tick': { $adm(); json_response(['ok' => true, 'result' => b2_tick($pdo, time(), true)]); }
     /* ----- Commission 2 (preview only; admin) ----- */
-    case 'bd.b2_cm_view': { $adm(); $ch = cm_chart($pdo); $off = cm_offers($pdo); $bo = cm_boosts($pdo); $day = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($_GET['day'] ?? '')) ? (string)$_GET['day'] : b2_day();
+    case 'bd.b2_cm_view': { $adm(); if (function_exists('price_sync_once')) price_sync_once($pdo); $ch = cm_chart($pdo); $off = cm_offers($pdo); $bo = cm_boosts($pdo); $day = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($_GET['day'] ?? '')) ? (string)$_GET['day'] : b2_day();
         $dr = cm_day($pdo, $day, $ch, $off, $bo); $ppl = []; foreach (cm_emps($pdo) as $id => $e) $ppl[] = ['id' => $id, 'name' => trim((string)$e['full_name'])];
         json_response(['day' => $day, 'chart' => $ch, 'offers' => $off, 'boosts' => $bo, 'people' => $ppl, 'result' => $dr, 'needs' => cm_needs($pdo, $ch, $off, $dr)]); }
     case 'bd.b2_cm_recount': { $adm(); json_response(cm_recount($pdo, max(1, min(31, (int)($_GET['days'] ?? $in['days'] ?? 10))), (string)($_GET['end'] ?? $in['end'] ?? ''))); }
     case 'bd.b2_cm_chart_save': { $adm(); $post(); $cur = cm_chart($pdo); $r = cm_chart_clean((array)($in['chart'] ?? $in), $cur); if (!$r[0]) json_response(['error' => $r[1]], 422);
         $c = $r[0]; $c['reviewed'] = !empty($in['reviewed']) ? 1 : (int)($cur['reviewed'] ?? 0); $c['updated_at'] = bd_now(); $c['updated_by'] = $by; setting_set($pdo, 'cm_chart', json_encode($c)); b2_log('commission', 'chart', 'pricing chart saved', $by);
-        json_response(['ok' => true, 'message' => 'Pricing saved.', 'chart' => $c]); }
+        $sy = function_exists('price_sync') ? price_sync($pdo, 'cm', (string)$by) : null;   // one pricing: the same prices go to Learn & Setup → Pricing (same ML, same % column)
+        json_response(['ok' => true, 'message' => 'Pricing saved.' . ($sy && ($sy['changed'] || $sy['added']) ? ' The Price Chart (Learn & Setup → Pricing) now has the same prices (' . ($sy['changed'] + $sy['added']) . ' size' . (($sy['changed'] + $sy['added']) === 1 ? '' : 's') . ').' : '') . ($sy && $sy['error'] ? ' ' . $sy['error'] : ''), 'chart' => $c]); }
     case 'bd.b2_cm_offer_add': { $adm(); $post(); $out(cm_offer_save($pdo, $in, $by)); }
     case 'bd.b2_cm_offer_stop': { $adm(); $post(); $out(cm_offer_stop($pdo, $gid(), $by)); }
     case 'bd.b2_cm_boost_add': { $adm(); $post(); $out(cm_boost_save($pdo, $in, $by)); }

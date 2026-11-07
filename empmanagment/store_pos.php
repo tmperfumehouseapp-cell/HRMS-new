@@ -146,13 +146,28 @@ function st_punch_map(PDO $pdo, array $ids): array
 function st_staff_day(PDO $pdo, int $empId, ?array $punch): array
 {
     $day = st_day(); $bills = []; $sum = 0.0; $ml = 0; $com = 0.0;
-    $q = $pdo->prepare("SELECT bill_id, bill_no, created_at, total_ml, total, order_code FROM st_bills WHERE emp_id = ? AND biz_date = ? AND status = 'ok' ORDER BY bill_id DESC");
-    $q->execute([$empId, $day]);
-    foreach ($q->fetchAll() as $b) {
-        $pc = st_pct_for($pdo, (int)$b['total_ml'], (float)$b['total'], $empId, trim((string)$b['order_code']) !== '');
-        $c = $pc['pct'] === null ? 0.0 : round((float)$b['total'] * $pc['pct'] / 100, 2);
-        $bills[] = ['bill_no' => $b['bill_no'], 'time' => substr((string)$b['created_at'], 11, 5), 'ml' => (int)$b['total_ml'], 'total' => (float)$b['total'], 'pct' => $pc['pct'], 'commission' => $c, 'code' => $b['order_code']];
-        $sum += (float)$b['total']; $ml += (int)$b['total_ml']; $com += $c;
+    // Commission = what the ONLINE sales commission rules pay for each bill (price chart, offers, order-code rule), no over-target extra: the same figures as
+    // Total Budgeting → Store. If the commission engine is not available on this server, fall back to the older per-bill chart estimate.
+    $eng = function_exists('budget_engine_ready') && budget_engine_ready();
+    if ($eng) {
+        try {
+            $r = budget_store_calc($pdo, $day, $day); $times = [];
+            foreach (array_reverse($r['bills']) as $b) {
+                if ((int)$b['emp_id'] !== $empId) continue;
+                $bills[] = ['bill_no' => $b['bill_no'], 'time' => $b['time'], 'ml' => (int)$b['ml'], 'total' => (float)$b['total'], 'pct' => $b['pct'], 'commission' => (float)$b['com'], 'code' => $b['code'] ? 'yes' : '', 'rule' => $b['rule'] . ($b['reduced'] ? ' (no code: reduced)' : '')];
+                $sum += (float)$b['total']; $ml += (int)$b['ml']; $com += (float)$b['com'];
+            }
+        } catch (Throwable $e) { error_log('st_staff_day engine: ' . $e->getMessage()); $eng = false; $bills = []; $sum = 0.0; $ml = 0; $com = 0.0; }
+    }
+    if (!$eng) {
+        $q = $pdo->prepare("SELECT bill_id, bill_no, created_at, total_ml, total, order_code FROM st_bills WHERE emp_id = ? AND biz_date = ? AND status = 'ok' ORDER BY bill_id DESC");
+        $q->execute([$empId, $day]);
+        foreach ($q->fetchAll() as $b) {
+            $pc = st_pct_for($pdo, (int)$b['total_ml'], (float)$b['total'], $empId, trim((string)$b['order_code']) !== '');
+            $c = $pc['pct'] === null ? 0.0 : round((float)$b['total'] * $pc['pct'] / 100, 2);
+            $bills[] = ['bill_no' => $b['bill_no'], 'time' => substr((string)$b['created_at'], 11, 5), 'ml' => (int)$b['total_ml'], 'total' => (float)$b['total'], 'pct' => $pc['pct'], 'commission' => $c, 'code' => $b['order_code']];
+            $sum += (float)$b['total']; $ml += (int)$b['total_ml']; $com += $c;
+        }
     }
     $pay = null;
     try {
@@ -781,6 +796,17 @@ try {
             if (array_filter(array_column($people, 'bday'))) register_shutdown_function(function () use ($pdo) { if (function_exists('fastcgi_finish_request')) @fastcgi_finish_request(); @ignore_user_abort(true); @set_time_limit(60); try { st_bday_ensure_template($pdo); if ((int)date('G') >= 8 && (int)date('G') < 21) st_bday_run($pdo, true); } catch (Throwable $e) { error_log('bday after bill: ' . $e->getMessage()); } });      // a birthday saved with this bill that is close gets its code and WhatsApp message right away
             $pdo->commit();
             $pc = st_pct_for($pdo, $t['total_ml'], $total, $empId, $code !== '');
+            // The bill's commission by the SAME rules as online sales, incl. the order-code ("no code") rule: a bill without an order code pays the reduced share
+            // unless enough of the day's bills have one. Shown to the biller right after saving. Falls back to the older chart estimate if the engine is not here.
+            $cmx = null; $codeRule = null;
+            try {
+                if (function_exists('budget_engine_ready') && budget_engine_ready()) {
+                    $rr = budget_store_calc($pdo, st_day(), st_day());
+                    foreach ($rr['bills'] as $bb) if ((int)$bb['bill_id'] === (int)$billId) { $cmx = $bb; break; }
+                    $chc = cm_chart($pdo); $codeRule = ['codepct' => (float)$chc['codepct'], 'nocode' => (float)$chc['nocode']];
+                }
+            } catch (Throwable $e) { error_log('st_bill.create commission: ' . $e->getMessage()); }
+            if ($cmx && $cmx['pct'] !== null) { $pc = ['pct' => round((float)$cmx['pct'] * ($cmx['reduced'] ? $codeRule['nocode'] / 100 : 1), 2), 'source' => 'online rules' . ($cmx['reduced'] ? ' · no order code: reduced' : '')]; }
             $invOut = [];
             if ($chainRow) {      // the numbered GST invoice (same series as the online orders); if it fails the bill stays and the bill list offers "Make GST invoice"
                 $iv = st_chain_invoice($pdo, $billId);
@@ -792,7 +818,7 @@ try {
             foreach ($ppl as &$ax) { $ax['auto'] = $autoWa[$ax['person_id']] ?? ''; } unset($ax);
             foreach ($ppl as &$x) { if ($x['phone'] !== '') { $tok = substr($x['link'], strrpos($x['link'], '=') + 1); $m = st_wa_message(['name' => $x['name'], 'phone' => $x['phone'], 'token' => $tok, 'returning' => $x['returning']], ['bill_no' => $billNo, 'total' => $total], $cs); $x['wa_url'] = $m['url']; } }
             unset($x);
-            json_response(['ok' => true, 'bill_id' => $billId, 'bill_no' => $billNo, 'total' => $total, 'total_ml' => $t['total_ml'], 'commission_pct' => $pc['pct'], 'commission_from' => $pc['source'], 'people' => $ppl] + $invOut + [
+            json_response(['ok' => true, 'bill_id' => $billId, 'bill_no' => $billNo, 'total' => $total, 'total_ml' => $t['total_ml'], 'commission_pct' => $pc['pct'], 'commission_from' => $pc['source'], 'commission_amount' => $cmx ? (float)$cmx['com'] : null, 'no_code' => $code === '', 'code_rule' => $codeRule, 'people' => $ppl] + $invOut + [
                 'message' => 'Bill ' . $billNo . ' saved: ' . $t['total_ml'] . ' ml, ₹' . number_format($total) . '.']);
             break;
         }
@@ -953,6 +979,7 @@ try {
         case 'st_team.get': {
             require_auth();
             $ids = array_map('intval', $pdo->query("SELECT emp_id FROM st_duty")->fetchAll(PDO::FETCH_COLUMN));
+            if (function_exists('pay_day_assign')) foreach ((pay_day_assign($pdo)[st_day()] ?? []) as $dEid => $dG) if ($dG === 'store' && !in_array((int)$dEid, $ids, true)) $ids[] = (int)$dEid;
             $punch = st_punch_map($pdo, $ids); $rows = [];
             foreach ($ids as $id) {
                 $n = $pdo->prepare("SELECT full_name, employee_code FROM employees WHERE employee_id = ? AND status != 'ex'"); $n->execute([$id]); $e = $n->fetch(); if (!$e) continue;
@@ -964,6 +991,32 @@ try {
             usort($rows, fn($a, $b) => $b['sales'] <=> $a['sales']);
             json_response(['day' => st_day(), 'day_start' => ST_DAY_START_HOUR, 'needs_punch' => (int)setting_get($pdo, 'st_bill_needs_punch', 0), 'people' => $rows,
                 'totals' => ['sales' => round(array_sum(array_column($rows, 'sales')), 2), 'bills' => array_sum(array_column($rows, 'bills_n')), 'commission' => round(array_sum(array_column($rows, 'commission')), 2), 'in' => count(array_filter($rows, fn($r) => !empty($r['punch']))), 'people' => count($rows)]]);
+            break;
+        }
+
+        // Total Budgeting: what each store person earned on every day of a range. The SAME price-by-ML chart (or a running Flash Offer) the online sales use,
+        // but a store has no sales limit, so there is NO over-target extra (+30 / +40 / +60 %) and no order-code rule. Commission = bill total x the chart % of the bill's ML and price.
+        case 'st_team.month': {
+            require_auth();
+            $from = (string)($_GET['date_from'] ?? ''); $to = (string)($_GET['date_to'] ?? '');
+            if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $from) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $to) || $to < $from || (strtotime($to) - strtotime($from)) > 62 * 86400) json_response(['error' => 'date_from and date_to must be YYYY-MM-DD, at most 62 days apart.'], 422);
+            $slab = ml_slab_get($pdo); $flash = flash_offer_list_get($pdo); $memo = []; $by = []; $unpriced = 0;
+            $q = $pdo->prepare("SELECT emp_id, emp_name, biz_date, created_at, total_ml, total FROM st_bills WHERE status = 'ok' AND biz_date BETWEEN ? AND ? ORDER BY biz_date, bill_id");
+            $q->execute([$from, $to]);
+            foreach ($q->fetchAll() as $b) {
+                $emp = (int)$b['emp_id']; $day = (string)$b['biz_date']; $ml = (int)$b['total_ml']; $amt = (float)$b['total'];
+                $mk = $day . '|' . $emp; if (!isset($memo[$mk])) $memo[$mk] = ml_slab_for($slab, $day, $emp); $chart = $memo[$mk];
+                $fl = flash_offer_pct_for($flash, $ml, $amt, strtotime((string)$b['created_at']) ?: time());
+                if ($fl !== null) $pct = (float)$fl['pct']; else { $pc = !empty($chart['on']) ? coach_slab_pct($chart, $ml, $amt, false) : null; $pct = $pc === null ? null : (float)$pc; }
+                if ($pct === null) $unpriced++;
+                $c = $pct === null ? 0.0 : round($amt * $pct / 100, 2);
+                if (!isset($by[$emp])) $by[$emp] = ['employee_id' => $emp, 'name' => (string)$b['emp_name'], 'sales' => 0.0, 'commission' => 0.0, 'bills' => 0, 'perday' => []];
+                if (!isset($by[$emp]['perday'][$day])) $by[$emp]['perday'][$day] = ['day' => $day, 'sales' => 0.0, 'commission' => 0.0, 'bills' => 0];
+                $by[$emp]['perday'][$day]['sales'] += $amt; $by[$emp]['perday'][$day]['commission'] += $c; $by[$emp]['perday'][$day]['bills']++;
+                $by[$emp]['sales'] += $amt; $by[$emp]['commission'] += $c; $by[$emp]['bills']++;
+            }
+            foreach ($by as &$x) { $x['sales'] = round($x['sales'], 2); $x['commission'] = round($x['commission'], 2); $x['perday'] = array_values(array_map(function ($d) { $d['sales'] = round($d['sales'], 2); $d['commission'] = round($d['commission'], 2); return $d; }, $x['perday'])); } unset($x);
+            json_response(['from' => $from, 'to' => $to, 'people' => array_values($by), 'unpriced_bills' => $unpriced]);
             break;
         }
 
@@ -1038,6 +1091,7 @@ try {
         case 'st_bill.staff': {
             require_auth();
             $on = array_map('intval', $pdo->query("SELECT emp_id FROM st_duty")->fetchAll(PDO::FETCH_COLUMN));
+            if (function_exists('pay_day_assign')) foreach ((pay_day_assign($pdo)[st_day()] ?? []) as $dEid => $dG) if ($dG === 'store' && !in_array((int)$dEid, $on, true)) $on[] = (int)$dEid;   // moved to the store for today
             $rows = []; $punched = st_punch_map($pdo, $on); $needsPunch = (int)setting_get($pdo, 'st_bill_needs_punch', 0);
             foreach ($pdo->query("SELECT employee_id, full_name FROM employees WHERE status != 'ex' ORDER BY full_name")->fetchAll() as $e) {
                 $rows[] = ['employee_id' => (int)$e['employee_id'], 'name' => (string)$e['full_name'], 'on' => in_array((int)$e['employee_id'], $on, true), 'punched' => !empty($punched[(int)$e['employee_id']])];

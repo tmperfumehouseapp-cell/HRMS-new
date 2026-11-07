@@ -177,8 +177,8 @@ function wa_auto_alloc(PDO $pdo): int
     catch (Throwable $e) { return 0; }
     setting_set($pdo, 'wa_alloc_seen', (string)count($rows));
     $n = 0; foreach ($rows as $o) { try { if (is_array(order_auto_alloc($pdo, (string)$o['store_key'], $o))) $n++; } catch (Throwable $e) { } }   // the same rule as a new order (api.php)
-    if ((string)setting_get($pdo, 'camp2_off_v1', '') !== '1') {   // 📢 owner (6 Nov, evening): the second number is NOT "everything = Campaign" — only a customer we really sent a campaign to is Campaign; website / ad texts are New queries
-        setting_set($pdo, 'camp2_off_v1', '1');
+    if ((string)setting_get($pdo, 'camp2_off_v2', '') !== '1') {   // 📢 owner (6 Nov, evening): the second number is NOT "everything = Campaign" — only a customer we really sent a campaign to is Campaign; website / ad texts are New queries
+        setting_set($pdo, 'camp2_off_v2', '1');
         try { wa_camp_unmark($pdo); } catch (Throwable $e) { error_log('camp2 off: ' . $e->getMessage()); }
     }
     try { wa_camp_requery($pdo, 7); } catch (Throwable $e) { }
@@ -270,6 +270,7 @@ function wa_ad_backfill(PDO $pdo): void
 /** 📢 A "campaign number" (Numbers → the number → "Every chat on this number is Campaign"): every customer who writes to it is a Campaign customer. */
 function wa_camp_number(PDO $pdo, int $numId): bool
 {
+    return false;   // owner (7 Nov): a number is NEVER "everything = Campaign". A customer who writes first (website, ad, offer text, anything) is a New query; only a real reply to a campaign we sent is Campaign.
     static $ids = null; if ($numId <= 0) return false;
     if ($ids === null) { $ids = []; try { foreach ($pdo->query("SELECT id FROM wa_numbers WHERE camp_tag = 1")->fetchAll(PDO::FETCH_COLUMN) as $i) $ids[(int)$i] = true; } catch (Throwable $e) { } }
     return isset($ids[$numId]);
@@ -285,11 +286,11 @@ function wa_camp_sent_ts(PDO $pdo, string $key): string
 {
     try { $q = $pdo->prepare("SELECT MAX(ts) FROM wa_messages WHERE phone = ? AND dir = 'out' AND mtype = 'template' AND who = 'campaign' AND ts >= ?"); $q->execute([$key, date('Y-m-d H:i:s', time() - 3 * 86400)]); return (string)$q->fetchColumn(); } catch (Throwable $e) { return ''; }
 }
-/** True when the customer wrote in the 24 hours before that campaign: their query was still open, so the campaign does not make it a Campaign chat. */
+/** True when the customer wrote in the 30 hours before that campaign (a query stays a New query for 30 hours): their query was still open, so the campaign does not make it a Campaign chat. */
 function wa_camp_in_live_chat(PDO $pdo, string $key, string $campTs): bool
 {
     if ($campTs === '') return false; $t = strtotime($campTs); if (!$t) return false;
-    try { $q = $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND dir = 'in' AND ts BETWEEN ? AND ? LIMIT 1"); $q->execute([$key, date('Y-m-d H:i:s', $t - 86400), $campTs]); return (bool)$q->fetchColumn(); } catch (Throwable $e) { return false; }
+    try { $q = $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND dir = 'in' AND ts BETWEEN ? AND ? LIMIT 1"); $q->execute([$key, date('Y-m-d H:i:s', $t - 30 * 3600), $campTs]); return (bool)$q->fetchColumn(); } catch (Throwable $e) { return false; }
 }
 function wa_source_hook(PDO $pdo, string $key, ?string $prevIn, string $text, string $now): void
 {

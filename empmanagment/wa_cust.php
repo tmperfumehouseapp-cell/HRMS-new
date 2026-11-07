@@ -146,16 +146,32 @@ function wcs_seg_public(array $s): array
 
 }   // function_exists guard
 
+if (is_file(__DIR__ . '/order_hub.php')) require_once __DIR__ . '/order_hub.php';   // the one customer source (customer_facts), shared with Dispatch
 // ---------------------------------------------------------------------------------------------------------------- router
 $__wcs = (string)($action ?? ($_GET['action'] ?? ''));
 if (strpos($__wcs, 'wa.cs_') === 0) {
     $auth = require_auth(); $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     if (!function_exists('wa_tables') || !wa_tables($pdo) || !wcs_tables($pdo)) json_response(['error' => 'Storage is not available.'], 500);
-    if (function_exists('wa_guard_admin')) wa_guard_admin($pdo, $auth);
+    $__open = in_array($__wcs, ['wa.cs_card', 'wa.cs_totals'], true);   // the customer card and the totals are for every signed-in chat user; the rest of Customers stays Admin / HR
+    if (!$__open && function_exists('wa_guard_admin')) wa_guard_admin($pdo, $auth);
     $me = (int)($auth['employee_id'] ?? 0); $in = $isPost ? json_input() : [];
     $needPost = function () use ($isPost) { if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); };
     $cfOf = function ($src) { $j = is_array($src) ? $src : json_decode((string)$src, true); return is_array($j) ? $j : []; };
     switch ($__wcs) {
+        case 'wa.cs_card': {   // the customer card of ONE chat (the side panel): lifetime orders, spend, flags; the same numbers as Dispatch
+            if (!function_exists('ohub_customer')) json_response(['ok' => true, 'none' => true]);
+            $ph = ohub_keys((string)($_GET['phone'] ?? '')); if (!$ph) json_response(['ok' => true, 'none' => true]);
+            ohub_ensure($pdo);
+            $q = $pdo->prepare("SELECT COUNT(*) FROM customer_facts WHERE p10 = ? AND refreshed_at > ?"); $q->execute([$ph[0], date('Y-m-d H:i:s', time() - 1800)]);
+            $c = $q->fetchColumn() ? ohub_card_fast($pdo, $ph) : ohub_customer($pdo, $ph, '');   // a fresh copy is read as it is; an old one is worked out again
+            $out = ['ok' => true, 'customer' => $c];
+            if (!empty($_GET['orders'])) $out['orders'] = array_slice(ohub_orders($pdo, $ph, 8), 0, 8);
+            json_response($out);
+        }
+        case 'wa.cs_totals': {   // the strip on the Customers screen: how many customers we have in all
+            if (!function_exists('ohub_list')) json_response(['ok' => true, 'people' => 0]);
+            $t = ohub_list($pdo, ['totals' => 1]); unset($t['sync']); if (!(function_exists('wa_is_admin') && wa_is_admin($pdo, $auth))) unset($t['spent']); json_response($t);
+        }
         case 'wa.cs_meta': {
             $tags = function_exists('wag_tag_counts') ? (wag_tag_counts($pdo)['tags'] ?? []) : [];
             $nums = []; foreach ($pdo->query("SELECT id, label, display FROM wa_numbers ORDER BY id")->fetchAll() as $n) $nums[] = ['id' => (int)$n['id'], 'label' => (string)($n['label'] !== '' ? $n['label'] : $n['display'])];
