@@ -1,6 +1,6 @@
 /* play_card.js — "My level · gift · week · team wins · break" on the salesperson home (My Sales). Mount: PlayCard.mount(element).
    Everything comes from play.php (play.level / play.gifts / play.gift_open / play.week / play.me / play.feed / play.clap). A part that fails to load is simply left out.
-   The Dino strip (dino.js) sits at the bottom. */
+   The Dino strip (dino.js) is mounted separately at the top of the page. */
 (function () {
   if (window.PlayCard) return;
   var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
@@ -50,10 +50,7 @@
 
   var D = {};
   function paint(host) {
-    var dinoHost = host.querySelector('#pcDino');   // keep the running game while the rest repaints
-    host.innerHTML = '<h2>My game</h2>' + levelHtml(D.level) + giftHtml(D.gifts) + streakHtml(D.me) + weekHtml(D.week) + feedHtml(D.wins) + '<div id="pcDino"></div>';
-    if (dinoHost) host.replaceChild(dinoHost, host.querySelector('#pcDino'));
-    else if (window.TMDino) TMDino.mount(host.querySelector('#pcDino'));
+    host.innerHTML = '<h2>My game</h2>' + levelHtml(D.level) + giftHtml(D.gifts) + streakHtml(D.me) + weekHtml(D.week) + feedHtml(D.wins);   // (the Dino strip sits at the top of the page, see my_sales.html)
     var g = host.querySelector('#pcGift');
     if (g) g.onclick = function () {
       g.disabled = true; g.querySelector('.pc-box').textContent = '🎉';
@@ -85,7 +82,7 @@
         + '.pc-streak{display:flex;gap:12px;align-items:center;background:var(--sx-warn-bg,#fef3c7);border-radius:14px;padding:10px 12px;margin:10px 0}.pc-streak.off{background:#f3f4f6;filter:grayscale(.6)}.pc-flame{font-size:26px}'
         + '.pc-win{display:flex;gap:8px;align-items:center;justify-content:space-between;padding:8px 2px;border-top:1px solid var(--sx-line,#e7e9ee);font-size:13px}.pc-feed{margin-top:4px}.pc-t{min-width:0}'
         + '.pc-clap,.pc-claps{border:1px solid var(--sx-line,#e7e9ee);background:#fff;border-radius:999px;padding:5px 11px;font:700 12px inherit;cursor:pointer;flex:none;min-height:34px}.pc-claps{cursor:default;border-color:transparent;background:#f3f4f6}.pc-clap.on{background:var(--sx-warn-bg,#fef3c7);border-color:#fcd34d}'
-        + '.pc-empty{color:var(--sx-muted,#6b7280);font-size:13px;padding:8px 2px}#pcDino{margin-top:12px}#pcDino .tmd{max-width:none}';
+        + '.pc-empty{color:var(--sx-muted,#6b7280);font-size:13px;padding:8px 2px}';
       document.head.appendChild(s);
     }
     host.style.display = ''; paint(host);
