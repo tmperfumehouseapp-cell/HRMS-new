@@ -177,13 +177,18 @@ function wq_campaign_before(PDO $pdo, string $phone, int $ts, int $days): ?array
     try {
         $q = $pdo->prepare("SELECT i.camp_id, i.sent_at, k.name, k.created_by FROM wa_camp_items i LEFT JOIN wa_campaigns k ON k.id = i.camp_id WHERE i.phone = ? AND i.status = 'sent' AND i.sent_at BETWEEN ? AND ? ORDER BY i.sent_at DESC LIMIT 1");
         $q->execute([$phone, $from, $to]); $r = $q->fetch();
-        if ($r) return ['ts' => wq_ts($r['sent_at']), 'camp_id' => (int)$r['camp_id'], 'name' => (string)($r['name'] ?? ''), 'emp' => (int)($r['created_by'] ?? 0)];
+        if ($r) { if (wq_chat_was_live($pdo, $phone, wq_ts($r['sent_at']))) return null; return ['ts' => wq_ts($r['sent_at']), 'camp_id' => (int)$r['camp_id'], 'name' => (string)($r['name'] ?? ''), 'emp' => (int)($r['created_by'] ?? 0)]; }
     } catch (Throwable $e) { }
     try {
         $q = $pdo->prepare("SELECT ts FROM wa_messages WHERE phone = ? AND dir = 'out' AND who = 'campaign' AND mtype = 'template' AND ts BETWEEN ? AND ? ORDER BY id DESC LIMIT 1"); $q->execute([$phone, $from, $to]); $r = $q->fetch();
-        if ($r) return ['ts' => wq_ts($r['ts']), 'camp_id' => 0, 'name' => 'a broadcast', 'emp' => 0];
+        if ($r) { if (wq_chat_was_live($pdo, $phone, wq_ts($r['ts']))) return null; return ['ts' => wq_ts($r['ts']), 'camp_id' => 0, 'name' => 'a broadcast', 'emp' => 0]; }
     } catch (Throwable $e) { }
     return null;
+}
+/** True when the customer had written to us in the 24 hours BEFORE $ts: their query was still open (inside its 24 hours), so a campaign we send then does not turn it into a Campaign. */
+function wq_chat_was_live(PDO $pdo, string $phone, int $ts): bool
+{
+    try { $q = $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND dir = 'in' AND ts BETWEEN ? AND ? LIMIT 1"); $q->execute([$phone, wq_dt($ts - 86400), wq_dt($ts)]); return (bool)$q->fetchColumn(); } catch (Throwable $e) { return false; }
 }
 /** Context of one query for typing and rules. */
 function wq_ctx(PDO $pdo, array $q, array $opt = []): array

@@ -637,7 +637,12 @@
       return `<div class="wx-b ${cls} ${m.tmp ? 'tmp' : ''}" data-id="${m.id}">${rb}${m.who === 'bot' ? '<span class="wx-tag">🤖 BOT</span>' : m.who === 'phone' ? '<span class="wx-tag">📱 PHONE APP</span>' : m.who === 'flow' ? '<span class="wx-tag">⚡ AUTO</span>' : m.mtype === 'template' ? '<span class="wx-tag">PRE-MADE</span>' : ''}${qt}${b}<small>${hhmm(m.ts)}${tick(m)}</small></div>`;
     }
     document.addEventListener('click', (e) => { const q = e.target.closest('.wx-qt'); if (!q) return; const t = document.querySelector('.wx-b[data-id="' + q.dataset.qid + '"]');
-      if (!t) { toast('That message is older — scroll up to load it.'); return; } t.scrollIntoView({ behavior: 'smooth', block: 'center' }); t.classList.remove('wx-fl'); void t.offsetWidth; t.classList.add('wx-fl'); });
+      const go = (el) => { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.remove('wx-fl'); void el.offsetWidth; el.classList.add('wx-fl'); };
+      if (t) { go(t); return; }
+      (async () => {   // the quoted message is older than what is loaded: load older pages until it appears
+        for (let i = 0; i < 40 && S.cur && S.cur.moreOld; i++) { await loadOlder(); const f = document.querySelector('.wx-b[data-id="' + q.dataset.qid + '"]'); if (f) { go(f); return; } }
+        toast('That message could not be found in this chat.');
+      })(); });
     // ↩ reply to one message (WhatsApp style): swipe a bubble right on the phone, or press ↩ on it; a bar above the box shows what you answer
     function rpText(m) { const lab = { image: '📷 Photo', video: '🎥 Video', audio: '🎤 Voice note', document: '📄 Document', sticker: '🙂 Sticker' }[m.mtype] || ''; const b = String(m.body || '').trim(); return (lab && b ? lab + ' · ' + b : (b || lab || 'Message')).slice(0, 160); }
     function rpSet(id) { if (!S.cur) return; if (S.cur.contact && (S.cur.contact.optout || !S.cur.contact.window_open)) { toast('24 hours passed — only a pre-made message can go now, so you cannot reply to one message.'); return; } const m = S.cur.msgs.find((x) => String(x.id) === String(id)); if (!m) return; S.cur.rp = { id: m.id, dir: m.dir, text: rpText(m) }; rpDraw(); const t = $('#wxTx'); if (t) t.focus(); }
@@ -659,9 +664,9 @@
     }
     // ⬆ older messages: the chat opens with the newest 80; scrolling to the top (or tapping the bar) loads the 80 before them, until the first message
     async function loadOlder() {
-      if (!S.cur || !S.cur.moreOld || S.cur.oldBusy) return; const phone = S.cur.phone, box = $('#wxMs'); S.cur.oldBusy = true;
+      if (!S.cur || !S.cur.moreOld) return; while (S.cur && S.cur.oldBusy) await new Promise((z) => setTimeout(z, 80)); if (!S.cur || !S.cur.moreOld) return; const phone = S.cur.phone, box = $('#wxMs'); S.cur.oldBusy = true;
       try {
-        const ids = S.cur.msgs.filter((m) => /^\d+$/.test(String(m.id))).map((m) => +m.id), d = await api.get('wa.chat', { phone, before: Math.min.apply(null, ids), limit: 80 });
+        const ids = S.cur.msgs.filter((m) => /^\d+$/.test(String(m.id))).map((m) => +m.id), d = await api.get('wa.chat', { phone, before: (S.cur.msgs.find((m) => /^\d+$/.test(String(m.id))) || {}).id || Math.min.apply(null, ids), limit: 80 });
         if (!S.cur || S.cur.phone !== phone) return;
         const have = new Set(S.cur.msgs.map((m) => m.id)); S.cur.msgs = d.messages.filter((m) => !have.has(m.id)).concat(S.cur.msgs); S.cur.moreOld = !!d.more;
         const h0 = box.scrollHeight, t0 = box.scrollTop; box.innerHTML = msgsHtml(); box.scrollTop = box.scrollHeight - h0 + t0;   // stay where you were reading
