@@ -1061,7 +1061,7 @@
         // Only two recordings go as they are: OGG with Opus (Firefox) and MP4 with AAC (iPhone). Chrome's WebM and Chrome's newer "MP4 with Opus" are refused
         // by WhatsApp at delivery (the voice note shows as failed), so they are turned into MP3 here.
         if (/ogg/.test(ty) && !/mp4|webm/.test(blob.type || '')) file = new File([blob], 'voice.ogg', { type: 'audio/ogg' });
-        else if (/mp4a|aac/.test(ty)) file = new File([blob], 'voice.m4a', { type: 'audio/mp4' });
+        else if (/mp4a|aac/.test(ty) && /iPhone|iPad|iPod/.test(navigator.userAgent || '')) file = new File([blob], 'voice.m4a', { type: 'audio/mp4' });   // only an iPhone really records AAC; Android Chrome says "mp4a" for what it asked for but records Opus-in-MP4, which WhatsApp refuses (voice note shows failed) → it goes through the MP3 converter below
         else file = new File([await toMp3(blob)], 'voice.mp3', { type: 'audio/mpeg' });
         await sendFiles([file], '');
       } catch (e) { toast('Could not prepare the voice note: ' + e.message, true); }

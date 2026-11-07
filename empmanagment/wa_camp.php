@@ -427,7 +427,7 @@ function wa_camp_pause(PDO $pdo, int $id, string $why): void { $pdo->prepare("UP
 /** What to do with a failed message: ['final'|'retry'|'skip'|'pause', why]. $attempt = how many tries were made so far (the one that just failed included). */
 function wa_camp_fail_plan(int $ec, int $attempt, bool $retryOn, int $maxTries = 3): array
 {
-    if ($ec === 131049) return $attempt < 2 ? ['held', ''] : ['skip', 'Held by Meta again on the extra try — stopped'];   // Meta's marketing limit for this customer: ONE more try 3 days later (owner's rule), then stop
+    if ($ec === 131049) return $attempt < 2 ? ['held', ''] : ['skip', 'Held by Meta again on the extra try — stopped'];   // Meta's marketing limit for this customer: ONE more try 1 day later (owner's rule, 7 Nov), then stop
     if ($ec === 131048) return ['pause', 'Meta flagged these messages as spam (code 131048) — pause and check the message and the audience.'];
     if (in_array($ec, [131050, 131047, 131021, 130472, 131051, 100, 131008, 131009], true)) return ['final', 'Meta will not deliver this one — not retried'];   // the customer stopped marketing / 24-hour rule / own number / test group / type not supported / the request itself is wrong (retrying cannot help)
     if (!$retryOn) return ['final', 'Retry is off for this campaign'];
@@ -435,11 +435,11 @@ function wa_camp_fail_plan(int $ec, int $attempt, bool $retryOn, int $maxTries =
     if ($attempt >= max(1, min(3, $maxTries))) return ['final', 'Failed after ' . max(1, min(3, $maxTries)) . ' ' . (max(1, min(3, $maxTries)) === 1 ? 'try' : 'tries')];   // the owner may lower it (extra.retries)
     return ['retry', ''];
 }
-/** 🛑 Held by Meta (131049): the one extra try goes 3 days later at the customer's own hour (Meta's marketing limit for a person has reset by then). */
+/** 🛑 Held by Meta (131049): the one extra try goes 1 day later at the customer's own hour (Meta's marketing limit for a person has reset by then). */
 function wa_camp_held_try(PDO $pdo, string $phone, int $defHour, int $nowTs): int
 {
     $h = wa_camp_user_hours($pdo, [$phone])[$phone] ?? ($defHour ?: 19);
-    return wa_camp_send_at($pdo, mktime(0, 0, 0, (int)date('n', $nowTs), (int)date('j', $nowTs) + 3, (int)date('Y', $nowTs)), $h, $phone);
+    return wa_camp_send_at($pdo, mktime(0, 0, 0, (int)date('n', $nowTs), (int)date('j', $nowTs) + 1, (int)date('Y', $nowTs)), $h, $phone);   // owner (7 Nov): 1 day, was 3
 }
 /** Once: people skipped by the two rules the owner removed (Meta held them lately · business number) in campaigns of the last 3 days go back in the queue. */
 function wa_camp_rules_backfill(PDO $pdo, int $nowTs): void

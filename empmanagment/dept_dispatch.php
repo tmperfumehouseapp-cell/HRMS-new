@@ -526,6 +526,10 @@ if (strpos((string)$action, 'dp.dsp_') === 0) {
         if (!function_exists('ohub_list')) json_response(['error' => 'order_hub.php is missing on this server.'], 500);
         json_response(ohub_list($pdo, $_GET));
     }
+    case 'dp.dsp_cust_import': {   // one batch of the Shopify customer history (the Customers page keeps calling until it says done)
+        if (!function_exists('ohub_shop_import')) json_response(['error' => 'order_hub.php is missing on this server.'], 500);
+        $r = ohub_shop_import($pdo, 8.0); json_response(['ok' => $r['error'] === '', 'error' => $r['error'], 'read' => $r['n'], 'done' => $r['done'], 'total' => $r['total'], 'without_phone' => $r['noph']]);
+    }
     case 'dp.dsp_cust_rebuild': {   // read every order again and rebuild the Customers list
         if (!function_exists('ohub_rebuild')) json_response(['error' => 'order_hub.php is missing on this server.'], 500);
         $n = ohub_rebuild($pdo); dp_put('ohub_last_ts', (string)time()); json_response(['ok' => true, 'people' => $n]);

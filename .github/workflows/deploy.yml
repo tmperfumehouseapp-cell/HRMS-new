@@ -1,4 +1,4 @@
-# Auto-deploy: every push to main uploads the changed files to Hostinger (FTP).
+# Hostinger upload (FTP). Manual only now: run it from the Actions tab. It no longer runs on every push to main.
 # Needs 3 repository secrets (GitHub → Settings → Secrets and variables → Actions):
 #   FTP_SERVER    e.g. ftp.fourpirates.space  (Hostinger → Files → FTP Accounts)
 #   FTP_USERNAME  the FTP account name
@@ -7,9 +7,9 @@
 #   (default "./" = the FTP account's own folder; use "public_html/" if the account starts above it).
 name: Deploy to Hostinger
 
+# Hostinger is NOT deployed automatically any more (owner's choice: changes go to the VPS only, see deploy-staging.yml).
+# To upload to Hostinger by hand: GitHub -> Actions -> "Deploy to Hostinger" -> Run workflow.
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       full:
