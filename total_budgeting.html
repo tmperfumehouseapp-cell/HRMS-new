@@ -76,6 +76,8 @@
 #tb .chart text{fill:#6b7280; font:10px sans-serif;}
 #tb .legend{display:flex; flex-wrap:wrap; gap:6px 16px; color:var(--muted); font-size:11px; margin-top:6px;}
 #tb .sw{display:inline-block; width:10px; height:10px; margin-right:5px; border:1px solid #cfd6d2; vertical-align:-1px;}
+#tb thead th:nth-child(3){text-align:left;}
+#tb td.role{text-align:left; color:var(--muted); max-width:170px; overflow:hidden; text-overflow:ellipsis; font-family:var(--f-ui, inherit);}
 #tb td.n[data-emp]{cursor:pointer;} #tb td.n[data-emp]:hover{text-decoration:underline; color:#1d4ed8;}
 #tb .cl{background:#f3f0ff; border-radius:12px; padding:10px 14px; margin-bottom:10px; line-height:1.5; font-size:13px;} #tb .cl b.h{display:block; font-size:11px; text-transform:uppercase; letter-spacing:.07em; color:#6d4fd6; margin-bottom:2px;} #tb .cl ul{margin:6px 0 0; padding-left:18px;} #tb .cl li.bad{color:#b3261e;} #tb .cl li.warn{color:#8a5a00;} #tb .cl .ok{color:#1d6b47; font-weight:700;}
 #tb .tbtn{padding:6px 14px; border-radius:10px; background:var(--ink); color:#fff; font:inherit; font-weight:800; font-size:12.5px; border:0; cursor:pointer;} #tb .tbtn:disabled{opacity:.5; cursor:default;}
@@ -151,7 +153,7 @@
     // team rows: sales-department employees + everybody who has commission
     const empAll = ((ok(2) || {}).employees || []).filter(e => e.status !== 'ex');
     const byName = {}; empAll.forEach(e => { byName[nk(e.full_name)] = e; });
-    const rows = {}, add = (name, e) => { const k = e ? 'e' + e.employee_id : 'n' + nk(name); if (!rows[k]) rows[k] = { key: k, name: e ? e.full_name : name, empId: e ? Number(e.employee_id) : 0, monthly: e ? Number(e.monthly_salary) || 0 : 0, comm: {}, pen: {}, why: {} }; return rows[k]; };
+    const rows = {}, add = (name, e) => { const k = e ? 'e' + e.employee_id : 'n' + nk(name); if (!rows[k]) rows[k] = { key: k, name: e ? e.full_name : name, empId: e ? Number(e.employee_id) : 0, role: e ? String(e.designation || '') : '', monthly: e ? Number(e.monthly_salary) || 0 : 0, comm: {}, pen: {}, why: {} }; return rows[k]; };
     empAll.filter(e => /sales/i.test(e.department_name || '')).forEach(e => add(e.full_name, e));
     (cm.people || []).forEach(p => { const e = byName[nk(p.name)]; const r = add(p.name, e); (p.perday || []).forEach(x => { r.comm[x.day] = (r.comm[x.day] || 0) + (Number(x.new) || 0); }); });
     const byEmp = {}; Object.values(rows).forEach(r => { if (r.empId) byEmp[r.empId] = r; });
@@ -159,7 +161,7 @@
     const team = Object.values(rows).sort((a, b) => a.name.localeCompare(b.name));
     team.forEach(r => { r.perDay = r.monthly > 0 ? r.monthly / PAYDAYS : 0; });
 
-    const leaders = (lr.rules.leaders || []).map(n => ({ name: n, empId: byName[nk(n)] ? Number(byName[nk(n)].employee_id) : 0, fin: {}, sug: {}, set: {} }));
+    const leaders = (lr.rules.leaders || []).map(n => ({ name: n, empId: byName[nk(n)] ? Number(byName[nk(n)].employee_id) : 0, role: byName[nk(n)] && byName[nk(n)].designation ? String(byName[nk(n)].designation) : 'Leader', fin: {}, sug: {}, set: {} }));
     const lrRow = {}; (lr.rows || []).forEach(x => { lrRow[x.date] = x; leaders.forEach(l => { const s = (x.set || {})[l.name]; if (s) { l.fin[x.date] = Number(s.amount) || 0; l.set[x.date] = true; } else if (x.sug_amt != null) l.sug[x.date] = Number(x.sug_amt); }); });
 
     const bud = ok(5) || { target: 0, lump: 0, expenses: [], can_edit: false };
@@ -188,7 +190,7 @@
 
   /* ---------- views ---------- */
   const thd = (d) => { const t = d === S.M.today; const y = d === addDay(S.M.today, -1); return '<th class="' + (t ? 'tod' : '') + '" title="' + d + '">' + Number(d.slice(8)) + ' ' + ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][Number(d.slice(5, 7)) - 1] + '<small>' + (t ? 'Today' : y ? 'Yest.' : wdOf(d)) + '</small></th>'; };
-  const grid = (head, rows, foot) => '<div class="sheet" tabindex="0"><table><thead><tr><th class="i">#</th><th class="n">Name</th>' + head + S.M.days.map(thd).join('') + '</tr></thead><tbody>' + rows + '</tbody><tfoot>' + foot + '</tfoot></table></div>';
+  const grid = (head, rows, foot) => '<div class="sheet" tabindex="0"><table><thead><tr><th class="i">#</th><th class="n">Name</th><th>Role</th>' + head + S.M.days.map(thd).join('') + '</tr></thead><tbody>' + rows + '</tbody><tfoot>' + foot + '</tfoot></table></div>';
   const tc = (d) => d === S.M.today ? 'tod' : '';
 
   function empView() {
@@ -203,9 +205,9 @@
     };
     const tot = (r) => D.reduce((a, d) => a + val(r, d), 0);
     const list = m === 'pen' ? M.team.filter(r => D.some(d => r.pen[d])) : M.team;
-    const body = list.map((r, i) => '<tr><td class="i">' + (i + 1) + '</td><td class="n"' + (r.empId ? ' data-emp="' + r.empId + '" title="Open ' + esc(r.name) + '"' : '') + '>' + esc(r.name) + '</td><td class="t">' + (r.monthly ? f(r.monthly) : '–') + '</td><td class="t">' + (r.perDay ? f(r.perDay) : '–') + '</td><td class="t">' + f(tot(r)) + '</td>' + D.map(d => cell(r, d)).join('') + '</tr>').join('')
+    const body = list.map((r, i) => '<tr><td class="i">' + (i + 1) + '</td><td class="n"' + (r.empId ? ' data-emp="' + r.empId + '" title="Open ' + esc(r.name) + '"' : '') + '>' + esc(r.name) + '</td><td class="role">' + esc(r.role) + '</td><td class="t">' + (r.monthly ? f(r.monthly) : '–') + '</td><td class="t">' + (r.perDay ? f(r.perDay) : '–') + '</td><td class="t">' + f(tot(r)) + '</td>' + D.map(d => cell(r, d)).join('') + '</tr>').join('')
       || '<tr><td colspan="20" style="text-align:left;padding:14px">Nobody to show for this month.</td></tr>';
-    const foot = '<tr><td class="i"></td><td class="n">Total · ' + list.length + '</td><td>' + f(list.reduce((a, r) => a + r.monthly, 0)) + '</td><td>' + f(list.reduce((a, r) => a + r.perDay, 0)) + '</td><td>' + f(list.reduce((a, r) => a + tot(r), 0)) + '</td>' + D.map(d => '<td>' + f(list.reduce((a, r) => a + val(r, d), 0)) + '</td>').join('') + '</tr>';
+    const foot = '<tr><td class="i"></td><td class="n">Total · ' + list.length + '</td><td></td><td>' + f(list.reduce((a, r) => a + r.monthly, 0)) + '</td><td>' + f(list.reduce((a, r) => a + r.perDay, 0)) + '</td><td>' + f(list.reduce((a, r) => a + tot(r), 0)) + '</td>' + D.map(d => '<td>' + f(list.reduce((a, r) => a + val(r, d), 0)) + '</td>').join('') + '</tr>';
     const note = m === 'comm' ? 'Commission comes in automatically from the new <b>Commission → Result &amp; rules</b> engine. The newest day is next to the name.'
       : m === 'pen' ? 'Red cells are penalties logged that day. The dashed one is today and is cut tomorrow.'
       : '<b>Day pay = fixed salary ÷ 30 + commission − the penalty cut that day.</b> * marks a day with a penalty cut. Commission-only people have no fixed part.';
@@ -218,12 +220,12 @@
     if (!M.leaders.length) return '<div class="warn">No leaders are set up yet. Add them on the Leaders rule (lr.rules).</div>';
     const v = (l, d) => m === 'fin' ? (l.fin[d] || 0) : m === 'sug' ? (l.sug[d] != null ? l.sug[d] : (l.fin[d] || 0)) : 0;
     const tot = (l) => D.reduce((a, d) => a + v(l, d), 0);
-    const body = M.leaders.map((l, i) => '<tr><td class="i">' + (i + 1) + '</td><td class="n"' + (l.empId ? ' data-emp="' + l.empId + '" title="Open ' + esc(l.name) + '"' : '') + '>' + esc(l.name) + '</td><td class="t">' + f(tot(l)) + '</td>' + D.map(d => {
+    const body = M.leaders.map((l, i) => '<tr><td class="i">' + (i + 1) + '</td><td class="n"' + (l.empId ? ' data-emp="' + l.empId + '" title="Open ' + esc(l.name) + '"' : '') + '>' + esc(l.name) + '</td><td class="role">' + esc(l.role) + '</td><td class="t">' + f(tot(l)) + '</td>' + D.map(d => {
       if (m === 'roas') { const x = M.lrRow[d]; return '<td class="' + tc(d) + '">' + (x && x.roas != null ? x.roas.toFixed(2) : '–') + '</td>'; }
       if (m === 'fin') return l.set[d] ? '<td class="' + tc(d) + '">' + f(l.fin[d]) + '</td>' : '<td class="z ' + tc(d) + '" title="' + (l.sug[d] != null ? 'Not set yet. Suggested ' + f(l.sug[d]) + ' (not counted)' : 'No data') + '">–</td>';
       const isSet = l.set[d]; return '<td class="' + tc(d) + ' ' + (isSet ? '' : 'base') + '" title="' + (isSet ? 'Set amount' : 'Suggestion only, not counted') + '">' + (l.sug[d] != null || isSet ? f(v(l, d)) : '–') + '</td>';
     }).join('') + '</tr>').join('');
-    const foot = '<tr><td class="i"></td><td class="n">Total · ' + M.leaders.length + ' leaders</td><td>' + f(M.leaders.reduce((a, l) => a + tot(l), 0)) + '</td>' + D.map(d => '<td>' + (m === 'roas' ? '' : f(M.leaders.reduce((a, l) => a + v(l, d), 0))) + '</td>').join('') + '</tr>';
+    const foot = '<tr><td class="i"></td><td class="n">Total · ' + M.leaders.length + ' leaders</td><td></td><td>' + f(M.leaders.reduce((a, l) => a + tot(l), 0)) + '</td>' + D.map(d => '<td>' + (m === 'roas' ? '' : f(M.leaders.reduce((a, l) => a + v(l, d), 0))) + '</td>').join('') + '</tr>';
     const note = m === 'fin' ? 'Only amounts that were <b>Set</b> on the Leaders page count. The same figures, read from there.' : m === 'sug' ? 'Italic = suggestion only (the ₹' + f(M.roasKind.base) + ' basic below the ROAS cut, or the slab % above it). Not counted until set.' : 'The day\'s ROAS (collection ÷ ad spend).';
     return '<div class="bar"><div class="seg">' + [['fin', 'Final (set)'], ['sug', 'Suggested'], ['roas', 'ROAS']].map(x => '<button data-s="lead" data-v="' + x[0] + '" class="' + (m === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</div><span class="hint">' + note + '</span></div>' + grid('<th class="t">Month total</th>', body, foot);
   }
@@ -231,9 +233,9 @@
   function penView() {
     const M = S.M, D = M.days, list = M.team.filter(r => D.some(d => r.pen[d]));
     const logged = (r) => D.reduce((a, d) => a + (r.pen[d] || 0), 0), cut = (r) => D.reduce((a, d) => a + penCut(r, d), 0);
-    const body = list.map((r, i) => '<tr><td class="i">' + (i + 1) + '</td><td class="n"' + (r.empId ? ' data-emp="' + r.empId + '" title="Open ' + esc(r.name) + '"' : '') + '>' + esc(r.name) + '</td><td class="t">' + f(logged(r)) + '</td><td class="t">' + f(cut(r)) + '</td>' + D.map(d => r.pen[d] ? '<td class="neg ' + (d === M.today ? 'pend' : '') + '" title="' + esc(r.why[d] || '') + (d === M.today ? ' · pending, cut tomorrow' : ' · cut next day') + '">−' + f(r.pen[d]) + '</td>' : '<td class="z ' + tc(d) + '">–</td>').join('') + '</tr>').join('')
+    const body = list.map((r, i) => '<tr><td class="i">' + (i + 1) + '</td><td class="n"' + (r.empId ? ' data-emp="' + r.empId + '" title="Open ' + esc(r.name) + '"' : '') + '>' + esc(r.name) + '</td><td class="role">' + esc(r.role) + '</td><td class="t">' + f(logged(r)) + '</td><td class="t">' + f(cut(r)) + '</td>' + D.map(d => r.pen[d] ? '<td class="neg ' + (d === M.today ? 'pend' : '') + '" title="' + esc(r.why[d] || '') + (d === M.today ? ' · pending, cut tomorrow' : ' · cut next day') + '">−' + f(r.pen[d]) + '</td>' : '<td class="z ' + tc(d) + '">–</td>').join('') + '</tr>').join('')
       || '<tr><td colspan="20" style="text-align:left;padding:14px">No applied penalties for the sales team this month.</td></tr>';
-    const foot = '<tr><td class="i"></td><td class="n">Total · ' + list.length + ' people</td><td>' + f(list.reduce((a, r) => a + logged(r), 0)) + '</td><td>' + f(list.reduce((a, r) => a + cut(r), 0)) + '</td>' + D.map(d => '<td>' + f(list.reduce((a, r) => a + (r.pen[d] || 0), 0)) + '</td>').join('') + '</tr>';
+    const foot = '<tr><td class="i"></td><td class="n">Total · ' + list.length + ' people</td><td></td><td>' + f(list.reduce((a, r) => a + logged(r), 0)) + '</td><td>' + f(list.reduce((a, r) => a + cut(r), 0)) + '</td>' + D.map(d => '<td>' + f(list.reduce((a, r) => a + (r.pen[d] || 0), 0)) + '</td>').join('') + '</tr>';
     const pending = M.team.reduce((a, r) => a + (r.pen[M.today] || 0), 0);
     return '<div class="bar"><span class="hint"><b>Rule:</b> a penalty logged on a day is cut from that person the next day, and the budget refreshes. Pending for tomorrow: <b>' + rs(pending) + '</b>. Add or waive penalties on the People → Penalties page.</span></div>'
       + grid('<th class="t">Logged</th><th class="t">Cut so far</th>', body, foot);

@@ -19,10 +19,18 @@ if (!function_exists('person_can')) {
     }
     function person_load(PDO $pdo, int $id): ?array
     {
-        $st = $pdo->prepare("SELECT e.employee_id, e.full_name, e.employee_code, e.designation, e.monthly_salary, e.status, d.department_name
-                             FROM employees e LEFT JOIN departments d ON d.department_id = e.department_id WHERE e.employee_id = ?");
-        $st->execute([$id]);
-        return $st->fetch() ?: null;
+        try {
+            $st = $pdo->prepare("SELECT e.*, d.department_name, m.full_name AS manager_name FROM employees e LEFT JOIN departments d ON d.department_id = e.department_id
+                                 LEFT JOIN employees m ON m.employee_id = e.reporting_manager_id WHERE e.employee_id = ?");
+            $st->execute([$id]);
+        } catch (Throwable $x) {
+            $st = $pdo->prepare("SELECT e.*, d.department_name, '' AS manager_name FROM employees e LEFT JOIN departments d ON d.department_id = e.department_id WHERE e.employee_id = ?");
+            $st->execute([$id]);
+        }
+        $r = $st->fetch();
+        if (!$r) return null;
+        unset($r['password'], $r['password_hash']);   // never leave the server
+        return $r;
     }
     /** everything the card shows, in one array (also the facts Claude summarises) */
     function person_build(PDO $pdo, array $e): array
@@ -80,7 +88,22 @@ if (!function_exists('person_can')) {
         } catch (Throwable $x) {}
         $penMonth = 0.0; foreach ($pens as $p) if ($p['status'] === 'applied' && substr($p['date'], 0, 7) === $month) $penMonth += $p['amount'];
 
-        return ['employee' => ['id' => $id, 'name' => $e['full_name'], 'code' => $e['employee_code'], 'designation' => (string)($e['designation'] ?? ''), 'dept' => (string)($e['department_name'] ?? ''), 'status' => $e['status']],
+        // who they are: role (title), login role, joined, contact, manager, photo
+        $login = null;
+        try { $q = $pdo->prepare("SELECT username, role FROM users WHERE employee_id = ? LIMIT 1"); $q->execute([$id]); $login = $q->fetch() ?: null; } catch (Throwable $x) {}
+        $profile = ['role' => (string)($e['designation'] ?? ''), 'login_role' => $login ? (string)$login['role'] : '', 'login_user' => $login ? (string)$login['username'] : '', 'joining_date' => (string)($e['joining_date'] ?? ''),
+            'mobile' => (string)($e['mobile'] ?? ''), 'email' => (string)($e['email'] ?? ''), 'employment_type' => (string)($e['employment_type'] ?? ''), 'manager' => (string)($e['manager_name'] ?? ''), 'photo' => (string)($e['photo'] ?? '')];
+
+        // pay of the last two months (and this one): what the Salary page worked out. Commission-based people get their commission from the card (Commission engine).
+        $history = [];
+        if ($monthly > 0) {
+            foreach ([0, 1, 2] as $k) {
+                $m = date('Y-m', strtotime($month . '-01 -' . $k . ' month'));
+                try { $d = salary_calc($pdo, $e, $m, salary_rules_load($pdo)); $history[] = ['month' => $m, 'earned' => $d['earned'], 'penalty_total' => $d['penalty_total'], 'net_pay' => $d['net_pay'], 'present' => $d['counts']['present'] ?? 0, 'absent' => $d['counts']['absent'] ?? 0]; } catch (Throwable $x) {}
+            }
+        }
+
+        return ['employee' => ['id' => $id, 'name' => $e['full_name'], 'code' => $e['employee_code'], 'designation' => (string)($e['designation'] ?? ''), 'dept' => (string)($e['department_name'] ?? ''), 'status' => $e['status']], 'profile' => $profile, 'salary_history' => $history,
             'pay' => $pay, 'timing' => $timing, 'month' => $month, 'today' => $today, 'stats' => ['present' => $present, 'late' => $late, 'short' => $short, 'penalties_month' => round($penMonth, 2)],
             'days' => $days, 'salary' => $salary, 'penalties' => $pens];
     }
@@ -97,7 +120,7 @@ if ($__pc === 'person.card' || $__pc === 'person.summary') {
         $card['can_edit'] = convo_is_admin($auth);   // only Admin changes anything on the card: add / change / waive penalties and timing
         $card['is_admin'] = $card['can_edit'];
         $isHr = in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true);
-        if (!$isHr && !$card['can_edit']) { $card['salary'] = null; $card['pay']['monthly'] = null; $card['pay']['per_day'] = null; }   // house rule: salary figures are for Admin and HR only
+        if (!$isHr && !$card['can_edit']) { $card['salary_history'] = []; $card['salary'] = null; $card['pay']['monthly'] = null; $card['pay']['per_day'] = null; }   // house rule: salary figures are for Admin and HR only
         json_response($card);
     }
 

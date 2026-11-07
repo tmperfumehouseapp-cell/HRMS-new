@@ -218,12 +218,12 @@
 
   function openPerson(id, tab) {
     if (S.dr) S.dr.close();
-    var o = overlay('<div class="dr"><div class="pp-load mut">Loading…</div></div>'); S.dr = o; o.pid = id; o.tab = tab || 'overview'; o.data = null;
+    var o = overlay('<div class="dr"><div class="pp-load mut">Loading…</div></div>'); S.dr = o; o.pid = id; o.tab = tab || 'work'; o.data = null;
     $$('.pp-c').forEach(function (c) { c.classList.toggle('sel', Number(c.dataset.id) === id); });
     return call('person', { params: { id: id, month: S.month } }).then(function (d) { o.data = d; drawer(o); }).catch(function (e) { o.close(); fail(e); });
   }
   function refreshDrawer(o, keepTab) { return call('person', { params: { id: o.pid, month: S.month } }).then(function (d) { o.data = d; if (!keepTab) o.tab = o.tab; drawer(o); }); }
-  var TABS = [['overview', 'Overview'], ['login', 'Login'], ['seats', 'Seats'], ['tasks', 'Tasks'], ['salary', 'Salary'], ['work', 'Work & penalties'], ['docs', 'Documents'], ['records', 'Records']];
+  var TABS = [['work', 'Profile'], ['overview', 'Edit details'], ['login', 'Login'], ['seats', 'Seats'], ['tasks', 'Tasks'], ['salary', 'Salary'], ['docs', 'Documents'], ['records', 'Records']];
   function drawer(o) {
     var d = o.data, p = d.person, row = person(o.pid) || {}; var admin = S.B.me.admin;
     var dp = dept(Number(p.department_id));

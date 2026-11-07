@@ -28,8 +28,12 @@ window.PersonCard = (function () {
       + '.pc-f{display:grid;gap:6px;margin-top:6px}.pc-f input,.pc-f select{font:inherit;border:1px solid #d9dde3;border-radius:10px;padding:7px 10px;width:100%;background:#fff}.pc-f .two{display:grid;grid-template-columns:1fr 1fr;gap:8px}.pc-f label{font-size:11.5px;color:#6b7280;font-weight:700}'
       + '.pc-modes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:10px 0}.pc-mode{border:1.5px solid #e1e4ea;border-radius:14px;padding:10px;cursor:pointer}.pc-mode.on{border-color:#16945a;background:#f1faf5}.pc-mode b{display:block;font-size:13px}.pc-mode span{font-size:11.5px;color:#6b7280}'
       + '.pc-err{background:#fde8e6;color:#b3261e;border-radius:12px;padding:10px 12px}.pc-load{color:#6b7280;padding:14px 0}.pc-msg{font-size:12.5px;color:#16784a;margin-top:6px}.pc-note{background:#f6f7f9;border-radius:12px;padding:9px 11px;font-size:12.5px;color:#4a505c;line-height:1.5}'
+      + '.pc-head{display:flex;gap:12px;align-items:center;margin-bottom:2px}.pc-av{width:56px;height:56px;border-radius:50%;background:#e5e7eb center/cover no-repeat;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:20px;color:#fff;flex:none}'
+      + '.pc-info{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:2px 14px;margin-top:8px;font-size:12.5px}.pc-info div{display:flex;justify-content:space-between;gap:8px;border-bottom:1px solid #f0f1f4;padding:3px 0;min-width:0}.pc-info span{color:#6b7280}.pc-info b{text-align:right;overflow-wrap:anywhere}'
+      + '.pc-att{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}.pc-chip.big{font-size:12px;padding:3px 10px}'
+      + '.pc-tbl{width:100%;border-collapse:collapse;font-size:12.5px}.pc-tbl td,.pc-tbl th{padding:4px 6px;border-bottom:1px solid #f0f1f4;text-align:right}.pc-tbl th{color:#6b7280;font-weight:700}.pc-tbl td:first-child,.pc-tbl th:first-child{text-align:left}'
       + '.pc [hidden],.pc-ov [hidden]{display:none !important}'
-      + '@media(max-width:480px){.pc-tiles{grid-template-columns:repeat(2,1fr)}.pc-modes{grid-template-columns:1fr}}';
+      + '@media(max-width:480px){.pc-info{grid-template-columns:1fr}.pc-tiles{grid-template-columns:repeat(2,1fr)}.pc-modes{grid-template-columns:1fr}}';
     document.head.appendChild(st);
   }
   function overlay(inner) {
@@ -72,28 +76,73 @@ window.PersonCard = (function () {
 
   /* ---------- the card ---------- */
   const when = (d) => { const x = new Date(d + 'T12:00:00'); return isNaN(x) ? d : x.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }); };
-  function body(c, o) {
-    const e = c.employee, t = c.timing, p = c.pay, st = c.stats;
+  const whenY = (d) => { const x = new Date(String(d).slice(0, 10) + 'T12:00:00'); return isNaN(x) ? '' : x.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }); };
+  const monthName = (m) => new Date(m + '-01T12:00:00').toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
+  const service = (d) => { const a = new Date(String(d).slice(0, 10) + 'T12:00:00'); if (isNaN(a)) return ''; const n = new Date(); let m = (n.getFullYear() - a.getFullYear()) * 12 + n.getMonth() - a.getMonth(); if (n.getDate() < a.getDate()) m--; if (m < 0) return ''; const y = Math.floor(m / 12); return (y ? y + ' yr ' : '') + (m % 12) + ' m'; };
+  const colors = ['#f59e0b', '#10b981', '#3b82f6', '#ec4899', '#8b5cf6', '#f97316', '#14b8a6', '#ef4444'];
+  const colorOf = (n) => colors[[...String(n)].reduce((a, ch) => a + ch.charCodeAt(0), 0) % colors.length];
+  const photoUrl = (p) => { try { return p ? API_BASE_URL.replace('/api.php', '') + '/' + String(p).replace(/^\/+/, '') : ''; } catch (e) { return ''; } };
+  const row = (a, b) => '<div class="pc-row"><span>' + a + '</span><b>' + b + '</b></div>';
+
+  /* documents: what is missing, waiting for approval, expired or ending soon (licence, insurance, Aadhaar ...) */
+  function docState(d, today) {
+    if (!d.doc_id || !d.file) return d.required ? ['bad', 'Missing'] : null;
+    if (d.expiry) { const left = Math.round((new Date(String(d.expiry).slice(0, 10) + 'T12:00:00') - new Date(today + 'T12:00:00')) / 864e5); if (!isNaN(left)) { if (left < 0) return ['bad', 'Expired ' + whenY(d.expiry)]; if (left <= 30) return ['warn', 'Ends in ' + left + ' days']; } }
+    if (d.status && d.status !== 'approved') return ['warn', 'Waiting for approval'];
+    return ['ok', 'OK' + (d.expiry ? ' · till ' + whenY(d.expiry) : '')];
+  }
+
+  function body(c, o, x) {
+    const e = c.employee, t = c.timing, p = c.pay, st = c.stats, pr = c.profile || {};
+    const docs = x && x.documents ? x.documents.map((d) => ({ d, s: docState(d, c.today) })).filter((q) => q.s) : [];
+    const missing = docs.filter((q) => q.s[1] === 'Missing').map((q) => q.d.name), ending = docs.filter((q) => /^(Expired|Ends)/.test(q.s[1])).map((q) => q.d.name + ' (' + q.s[1].toLowerCase() + ')'), waiting = docs.filter((q) => q.s[1] === 'Waiting for approval').map((q) => q.d.name);
+    const agrOpen = x && x.agreements ? x.agreements.filter((a) => a.status && !/sign|accept|approved|done|complete/i.test(a.status)) : [];
+    const att = [];
+    if (missing.length) att.push(['bad', 'Missing: ' + missing.join(', ')]);
+    if (ending.length) att.push(['warn', ending.join(', ')]);
+    if (waiting.length) att.push(['warn', 'Waiting for approval: ' + waiting.join(', ')]);
+    if (agrOpen.length) att.push(['warn', 'Agreement not signed: ' + agrOpen.map((a) => a.name).join(', ')]);
+    if (p.type === 'commission' && !t.own) att.push(['', 'No timing set']);
+    const pend = c.penalties.filter((q) => q.pending); if (pend.length) att.push(['warn', pend.length + ' penalty cut tomorrow']);
+    if (!x) att.push(['', 'Documents and agreements could not be read']);
+
     let h = '<div class="pc">';
-    if (o.header) h += '<h2>' + esc(e.name) + '</h2><div class="sub">' + esc([e.code, e.designation, e.dept].filter(Boolean).join(' · ')) + '</div>';
+    const initial = esc((e.name || '?').trim()[0] || '?'), ph = photoUrl(pr.photo);
+    const chips = '<span class="pc-chip big ok">' + esc(pr.role || 'No role set') + '</span> ' + (pr.login_role ? '<span class="pc-chip big">login: ' + esc(pr.login_role) + '</span> ' : '<span class="pc-chip big">no login</span> ') + (e.status && e.status !== 'active' ? '<span class="pc-chip big warn">' + esc(e.status) + '</span>' : '');
+    h += o.header ? '<div class="pc-head"><span class="pc-av" style="' + (ph ? 'background-image:url(\'' + esc(ph) + '\')' : 'background:' + colorOf(e.name)) + '">' + (ph ? '' : initial) + '</span><div style="min-width:0"><h2>' + esc(e.name) + '</h2><div style="margin-top:3px">' + chips + '</div>'
+      + '<div class="sub">' + esc([e.code, e.dept].filter(Boolean).join(' · ')) + '</div></div></div>' : '<div style="margin-bottom:2px">' + chips + '</div>';
+    h += '<div class="pc-info">' + (pr.joining_date ? '<div><span>Joined</span><b>' + whenY(pr.joining_date) + (service(pr.joining_date) ? ' · ' + service(pr.joining_date) : '') + '</b></div>' : '<div><span>Joined</span><b>not recorded</b></div>')
+      + (pr.employment_type ? '<div><span>Employment</span><b>' + esc(pr.employment_type) + '</b></div>' : '') + (pr.manager ? '<div><span>Reports to</span><b>' + esc(pr.manager) + '</b></div>' : '')
+      + (pr.mobile ? '<div><span>Mobile</span><b>' + esc(pr.mobile) + '</b></div>' : '') + (pr.email ? '<div><span>Email</span><b>' + esc(pr.email) + '</b></div>' : '') + '</div>';
+    if (att.length) h += '<div class="pc-att">' + att.map((a) => '<span class="pc-chip big ' + a[0] + '">' + esc(a[1]) + '</span>').join('') + '</div>';
+
     h += '<div class="pc-claude" id="pcSum"><b>Claude</b><span>Reading this month…</span></div>';
 
     h += '<h4>Pay</h4>';
-    if (p.type === 'salary') h += '<div class="pc-row"><span>Fixed salary</span><b>' + (p.monthly != null ? inr(p.monthly) + ' a month · ' + inr(p.per_day) + ' a day (÷ 30)' : 'Fixed salary') + '</b></div>'
-      + (c.salary ? '<div class="pc-row"><span>This month so far</span><b>' + inr(c.salary.earned) + ' earned − ' + inr(c.salary.penalty_total) + ' penalties = ' + inr(c.salary.net_pay) + '</b></div>' : '');
-    else h += '<div class="pc-row"><span>Commission-based</span><b>The day\'s commission is the day\'s pay</b></div><div class="pc-note">Penalties are assigned by you and come out of the commission. Set timing below to see who was late.</div>';
+    if (p.type === 'salary') h += row('Fixed salary', p.monthly != null ? inr(p.monthly) + ' a month · ' + inr(p.per_day) + ' a day (÷ 30)' : 'Fixed salary')
+      + (c.salary_history && c.salary_history.length ? '<table class="pc-tbl"><tr><th>Month</th><th>Earned</th><th>Penalties</th><th>You get</th></tr>' + c.salary_history.map((m, i) => '<tr><td>' + monthName(m.month) + (i === 0 ? ' (so far)' : '') + '</td><td>' + inr(m.earned) + '</td><td>' + (m.penalty_total ? '−' + inr(m.penalty_total) : '–') + '</td><td><b>' + inr(m.net_pay) + '</b></td></tr>').join('') + '</table>' : '');
+    else h += row('Commission-based', 'The day\'s commission is the day\'s pay') + '<div class="pc-note">Penalties are assigned by you and come out of the commission. Set timing below to see who was late.</div>'
+      + '<div id="pcComm" style="margin-top:6px">' + (c.can_edit ? '<button class="pc-btn" data-a="comm" type="button">Show commission of the last 2 months</button>' : '') + '</div>';
 
     h += '<h4>Timing</h4><div class="pc-row"><span><span class="pc-chip ' + (t.penalised ? 'ok' : '') + '">' + (p.type === 'commission' && !t.own ? 'Not set' : MODES[t.mode][0]) + '</span> ' + esc(t.label) + '</span>'
       + (c.is_admin ? '<button class="pc-btn" data-a="timing" type="button">Change timing</button>' : '') + '</div>';
 
+    const ts = x && x.task_stat;
     h += '<h4>This month</h4><div class="pc-tiles"><div class="pc-tile"><b>' + st.present + '</b><small>days punched in</small></div><div class="pc-tile"><b' + (st.late ? ' style="color:#b3261e"' : '') + '>' + st.late + '</b><small>late</small></div><div class="pc-tile"><b' + (st.short ? ' style="color:#b3261e"' : '') + '>' + st.short + '</b><small>short on hours</small></div><div class="pc-tile"><b' + (st.penalties_month ? ' style="color:#b3261e"' : '') + '>' + inr(st.penalties_month) + '</b><small>penalties</small></div></div>';
+    if (ts) h += row('Tasks today', (ts.done || 0) + ' of ' + (ts.today || 0) + ' done' + (ts.late ? ' · <span style="color:#b3261e">' + ts.late + ' late</span>' : ''));
     if (c.days.length) h += '<details style="margin-top:6px"><summary style="cursor:pointer;color:#6b7280;font-size:12.5px">Last punches</summary>' + c.days.map((d) => '<div class="pc-row"><span>' + when(d.date) + '</span><span>' + esc(d.in) + ' to ' + esc(d.out || '…') + (d.flag ? ' <span class="pc-chip bad">' + (d.flag === 'late' ? 'late' : 'short') + '</span>' : '') + '</span></div>').join('') + '</details>';
 
-    h += '<h4>Penalties</h4><div id="pcPens">' + (c.penalties.length ? c.penalties.map((x) => {
-      const chip = x.status === 'applied' ? (x.pending ? '<span class="pc-chip warn">cut ' + when(x.cut_on) + '</span>' : '<span class="pc-chip bad">applied</span>') : '<span class="pc-chip">' + esc(x.status) + '</span>';
-      return '<div class="pc-pen" data-id="' + x.id + '"><div class="t"><span>' + esc(x.title) + '</span><span>' + (x.orig_amount != null && x.orig_amount !== x.amount ? '<s style="color:#9aa1ad;font-weight:500">' + inr(x.orig_amount) + '</s> ' : '') + inr(x.amount) + '</span></div>'
-        + '<div class="n">' + when(x.date) + ' · ' + (x.source === 'auto' ? 'automatic' : 'by hand') + ' · from ' + esc(x.from) + ' ' + chip + (x.note ? '<br>' + esc(x.note) : '') + (x.resolve_note ? '<br>' + esc(x.resolve_note) : '') + '</div>'
-        + (c.can_edit && x.status === 'applied' ? '<div class="a"><button class="pc-btn" data-a="pedit" type="button">Change amount</button><button class="pc-btn red" data-a="pwaive" type="button">Waive</button></div><div class="pc-f" data-slot hidden></div>' : '') + '</div>';
+    if (x) {
+      h += '<h4>Documents</h4>' + (docs.length ? docs.map((q) => '<div class="pc-row"><span>' + esc(q.d.name) + (q.d.number ? ' <span style="color:#9aa1ad">' + esc(q.d.number) + '</span>' : '') + '</span><span class="pc-chip ' + q.s[0] + '">' + esc(q.s[1]) + '</span></div>').join('') : '<div class="sub">No documents are required for this person.</div>');
+      if (x.agreements && x.agreements.length) h += '<h4>Agreements</h4>' + x.agreements.slice(0, 5).map((a) => row(esc(a.name), '<span class="pc-chip ' + (/sign|accept|approved|done|complete/i.test(a.status) ? 'ok' : 'warn') + '">' + esc(a.status || '') + '</span>')).join('');
+      if (x.leave && x.leave.length) h += '<h4>Leave</h4>' + x.leave.slice(0, 4).map((l) => row(esc(l.leave_type || 'Leave') + ' · ' + when(String(l.date_from).slice(0, 10)) + (l.date_to && l.date_to !== l.date_from ? ' to ' + when(String(l.date_to).slice(0, 10)) : ''), esc(l.status || ''))).join('');
+    }
+
+    h += '<h4>Penalties</h4><div id="pcPens">' + (c.penalties.length ? c.penalties.map((q) => {
+      const chip = q.status === 'applied' ? (q.pending ? '<span class="pc-chip warn">cut ' + when(q.cut_on) + '</span>' : '<span class="pc-chip bad">applied</span>') : '<span class="pc-chip">' + esc(q.status) + '</span>';
+      return '<div class="pc-pen" data-id="' + q.id + '"><div class="t"><span>' + esc(q.title) + '</span><span>' + (q.orig_amount != null && q.orig_amount !== q.amount ? '<s style="color:#9aa1ad;font-weight:500">' + inr(q.orig_amount) + '</s> ' : '') + inr(q.amount) + '</span></div>'
+        + '<div class="n">' + when(q.date) + ' · ' + (q.source === 'auto' ? 'automatic' : 'by hand') + ' · from ' + esc(q.from) + ' ' + chip + (q.note ? '<br>' + esc(q.note) : '') + (q.resolve_note ? '<br>' + esc(q.resolve_note) : '') + '</div>'
+        + (c.can_edit && q.status === 'applied' ? '<div class="a"><button class="pc-btn" data-a="pedit" type="button">Change amount</button><button class="pc-btn red" data-a="pwaive" type="button">Waive</button></div><div class="pc-f" data-slot hidden></div>' : '') + '</div>';
     }).join('') : '<div class="sub">No penalties in the last two months.</div>') + '</div>'
       + (c.can_edit ? '<div style="margin-top:8px"><button class="pc-btn go" data-a="padd" type="button">+ Add a penalty</button></div><div class="pc-f" id="pcAdd" hidden></div>' : '') + '<div id="pcMsg"></div></div>';
     return h;
@@ -101,9 +150,9 @@ window.PersonCard = (function () {
 
   async function render(el, id, opts) {
     css(); opts = opts || {}; el.innerHTML = '<div class="pc-load">Loading…</div>';
-    let c; try { c = await api.get('person.card', { employee_id: id }); } catch (e) { el.innerHTML = '<div class="pc-err">' + esc(e.message || 'Could not open this person.') + '</div>'; return null; }
+    let c, x = null; try { [c, x] = await Promise.all([api.get('person.card', { employee_id: id }), api.get('bd.pp_person', { id: id, month: new Date().toISOString().slice(0, 7) }).catch(() => null)]); } catch (e) { el.innerHTML = '<div class="pc-err">' + esc(e.message || 'Could not open this person.') + '</div>'; return null; }
     const again = () => { render(el, id, opts); if (opts.onChange) opts.onChange(); };
-    el.innerHTML = body(c, opts);
+    el.innerHTML = body(c, opts, x);
     api.get('person.summary', { employee_id: id }).then((r) => {
       const b = el.querySelector('#pcSum'); if (!b) return;
       b.innerHTML = '<b>Claude' + (r.by === 'claude' ? '' : ' (quick read)') + '</b>' + esc(r.summary) + ((r.fixes || []).length ? '<ul>' + r.fixes.map((x) => '<li>' + esc(x) + '</li>').join('') + '</ul>' : '');
@@ -112,6 +161,16 @@ window.PersonCard = (function () {
     const t = c.timing;
     el.onclick = async (ev) => {
       const b = ev.target.closest('button[data-a]'); if (!b) return; const a = b.dataset.a, pen = b.closest('.pc-pen');
+      if (a === 'comm') {
+        const box = el.querySelector('#pcComm'); box.innerHTML = '<div class="pc-load">Reading the commission…</div>'; let out = '<table class="pc-tbl"><tr><th>Month</th><th>Commission</th><th>Days</th></tr>';
+        for (const k of [0, 1, 2]) {
+          const d = new Date(c.today + 'T12:00:00'); d.setDate(1); d.setMonth(d.getMonth() - k); const ym = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'), dim = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+          const end = k === 0 ? c.today : ym + '-' + String(dim).padStart(2, '0'), days = k === 0 ? Number(c.today.slice(8)) : dim;
+          try { const r = await api.get('bd.b2_cm_recount', { days, end }); const me = (r.people || []).find((q) => String(q.name).toLowerCase().replace(/\s+/g, ' ').trim() === String(c.employee.name).toLowerCase().replace(/\s+/g, ' ').trim());
+            out += '<tr><td>' + monthName(ym) + (k === 0 ? ' (so far)' : '') + '</td><td>' + (me ? '<b>' + inr(me.new) + '</b>' : '–') + '</td><td>' + (me ? me.days : 0) + '</td></tr>'; } catch (x2) { out += '<tr><td>' + monthName(ym) + '</td><td colspan="2" style="text-align:left">could not read</td></tr>'; }
+        }
+        box.innerHTML = out + '</table><div class="sub">From Commission → Result &amp; rules (worked out again for those days).</div>'; return;
+      }
       if (a === 'timing') return timing([{ id: id, name: c.employee.name, mode: t.mode, fx_start: t.fx_start, fx_end: t.fx_end, fx_late: t.fx_late, hours_target: t.hours_target, hours_full: t.hours_full, win_from: t.win_from, win_to: t.win_to }], again);
       if (a === 'padd') {
         const box = el.querySelector('#pcAdd'); if (!box.hidden) { box.hidden = true; return; }
