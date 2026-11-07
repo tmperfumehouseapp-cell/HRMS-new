@@ -55,7 +55,7 @@ function lh_migrate(PDO $pdo): void
     if ((string)setting_get($pdo, 'lh_fix1', '') === '1') return; setting_set($pdo, 'lh_fix1', '1');
     try {
         $pdo->exec("UPDATE lh_people p JOIN employees e ON e.employee_id = p.employee_id SET p.active = 0 WHERE e.full_name LIKE '%Nazima%'");
-        foreach ([['Ankit', 'Gandhi', "Dipti Madam's work"], ['Jatin', 'Jadav', 'Campaign · helps Pradeep Chauhan'], ['Rudra', 'Kachar', 'Query check · helps Ayazba']] as [$a, $b, $note])
+        foreach ([['Ankit', 'Gandhi', "Dipti Madam's work"], ['Jatin', 'Jadav', 'Campaign · helps Pradeep Chauhan'], ['Rudra', 'Kachar', 'Query check · helps Ayaz Bhai']] as [$a, $b, $note])
             $pdo->prepare("UPDATE lh_people p JOIN employees e ON e.employee_id = p.employee_id SET p.note = ? WHERE e.full_name LIKE ? AND e.full_name LIKE ? AND p.note = ''")->execute([$note, '%' . $a . '%', '%' . $b . '%']);
     } catch (Throwable $e) { error_log('lh_migrate: ' . $e->getMessage()); }
 }
@@ -64,7 +64,7 @@ function lh_seed(PDO $pdo): array
 {
     if ((string)setting_get($pdo, 'lh_seeded', '') === '1') return [];
     setting_set($pdo, 'lh_seeded', '1'); $cfg = lh_cfg($pdo); $miss = [];
-    foreach ([['Ankit', 'Gandhi', "Dipti Madam's work"], ['Jatin', 'Jadav', 'Campaign · helps Pradeep Chauhan'], ['Rudra', 'Kachar', 'Query check · helps Ayazba']] as [$a, $b, $note]) {
+    foreach ([['Ankit', 'Gandhi', "Dipti Madam's work"], ['Jatin', 'Jadav', 'Campaign · helps Pradeep Chauhan'], ['Rudra', 'Kachar', 'Query check · helps Ayaz Bhai']] as [$a, $b, $note]) {
         try {
             $q = $pdo->prepare("SELECT employee_id FROM employees WHERE COALESCE(status, 'approved') <> 'ex' AND full_name LIKE ? AND full_name LIKE ? ORDER BY employee_id LIMIT 1"); $q->execute(['%' . $a . '%', '%' . $b . '%']); $id = (int)$q->fetchColumn();
             if ($id > 0) $pdo->prepare("INSERT IGNORE INTO lh_people (employee_id, salary, active, added_at, note) VALUES (?, ?, 1, ?, ?)")->execute([$id, $cfg['salary'], date('Y-m-d H:i:s'), $note]); else $miss[] = trim($a . ' ' . $b);
