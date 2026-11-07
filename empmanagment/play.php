@@ -5,7 +5,7 @@
  *   play.me     GET   {streak, best, today_in, wins_today}      the signed-in employee's on-time streak (days in a row, newest first)
  *   play.feed   GET   {wins:[{id, who, text, amount, at, claps, mine}]}   the team's wins of the last 7 days (first names only)
  *   play.clap   POST  {id}  -> {claps, mine}                     one 👏 per person per win (tap again to take it back)
- *   play.dino_score POST {score, ms}   play.dino_board GET       the company Dino-run board (today's champion, all-time best)
+ *   play.dino_score POST {score, ms}   play.dino_board GET       the company Dino-run board (today's and this month's champion, first / last today, all-time best)
  *   play.level  GET   Bronze / Silver / Gold this month from sales, on-time days and rating, with the bars to the next step
  *   play.week   GET   "Your week": last Monday-to-Sunday (sales, orders, rank, best day, streak)
  *   play.gifts  GET / play.gift_open POST   Mystery gifts: earned by a quality win, the SERVER picks the prize
@@ -259,8 +259,13 @@ if (strpos($__play, 'play.') === 0) {
             $t = $pdo->query("SELECT d.employee_id, d.best, e.full_name FROM play_dino d LEFT JOIN employees e ON e.employee_id = d.employee_id WHERE d.day = CURDATE() ORDER BY d.best DESC, d.employee_id ASC")->fetchAll();
             $champion = null; $mine = 0; $rank = 0; $i = 0;
             foreach ($t as $r) { $i++; if ($i === 1) $champion = ['who' => play_first_name((string)$r['full_name']), 'best' => (int)$r['best'], 'mine' => (int)$r['employee_id'] === $emp]; if ((int)$r['employee_id'] === $emp) { $mine = (int)$r['best']; $rank = $i; } }
+            $mq = $pdo->query("SELECT d.employee_id, MAX(d.best) b, e.full_name FROM play_dino d LEFT JOIN employees e ON e.employee_id = d.employee_id WHERE d.day >= DATE_FORMAT(CURDATE(), '%Y-%m-01') GROUP BY d.employee_id, e.full_name ORDER BY b DESC, d.employee_id ASC LIMIT 1")->fetch();
+            $monthTop = $mq ? ['who' => play_first_name((string)$mq['full_name']), 'best' => (int)$mq['b'], 'mine' => (int)$mq['employee_id'] === $emp] : null;   // the best single run of this month
             $a = $pdo->query("SELECT d.employee_id, MAX(d.best) b, e.full_name FROM play_dino d LEFT JOIN employees e ON e.employee_id = d.employee_id GROUP BY d.employee_id, e.full_name ORDER BY b DESC LIMIT 1")->fetch();
-            json_response(['champion' => $champion, 'mine_today' => $mine, 'mine_rank' => $rank, 'players' => count($t),
+            $lastRow = $t ? $t[count($t) - 1] : null; $top = [];
+            foreach (array_slice($t, 0, 3) as $ix => $r) $top[] = ['rank' => $ix + 1, 'who' => play_first_name((string)$r['full_name']), 'best' => (int)$r['best'], 'mine' => (int)$r['employee_id'] === $emp];
+            $last = ($lastRow && count($t) > 1) ? ['rank' => count($t), 'who' => play_first_name((string)$lastRow['full_name']), 'best' => (int)$lastRow['best'], 'mine' => (int)$lastRow['employee_id'] === $emp] : null;   // the person at the bottom of today's board
+            json_response(['top' => $top, 'last' => $last, 'month_top' => $monthTop, 'champion' => $champion, 'mine_today' => $mine, 'mine_rank' => $rank, 'players' => count($t),
                 'all_time' => $a ? ['who' => play_first_name((string)$a['full_name']), 'best' => (int)$a['b']] : null]);
         }
         case 'play.level': {

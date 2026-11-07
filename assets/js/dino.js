@@ -4,7 +4,7 @@
    Pauses when the tab is hidden. The rules (TMDino.core) have no screen code, so they can be tested alone. */
 (function () {
   if (window.TMDino) return;
-  var W = 600, H = 150, GROUND = 124, DW = 42, DH = 48;
+  var W = 600, H = 200, GROUND = 174, DW = 42, DH = 48;
 
   // ---------- rules (no screen) ----------
   function newState() { return { y: 0, vy: 0, dist: 0, speed: 6, obs: [], gap: 260, dead: false, frames: 0 }; }
@@ -96,21 +96,25 @@
   var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
   var CSS = '.tmd{background:var(--card,#fff);border:1px solid var(--line,#e7e9ee);border-radius:22px;overflow:hidden;display:flex;flex-direction:column;max-width:560px;font-family:Manrope,system-ui,sans-serif;color:var(--ink,#111827);box-shadow:0 8px 24px rgba(17,24,39,.08)}'
     + '.tmd-h{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:11px 14px;background:linear-gradient(120deg,#7c2d12,#c2410c 55%,#f97316);color:#fff;font-weight:800;font-size:14px}.tmd-h small{font-weight:700;font-size:12px;opacity:.92}.tmd-h b{font-variant-numeric:tabular-nums}'
-    + '.tmd canvas{width:100%;aspect-ratio:4/1;display:block;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;user-select:none}'
-    + '.tmd-f{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:10px 14px 12px}.tmd-chips{display:flex;gap:6px;flex-wrap:wrap;min-width:0}'
+    + '.tmd-play{display:flex;align-items:stretch}.tmd canvas{flex:1;min-width:0;width:100%;aspect-ratio:3/1;display:block;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;user-select:none}'
+    + '.tmd-side{flex:none;width:84px;display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg,#fff7ed,#ffedd5);border-left:1px solid #fed7aa}'
+    + '.tmd-f{display:flex;flex-direction:column;gap:8px;padding:10px 14px 12px}.tmd-chips{display:flex;gap:6px;flex-wrap:wrap;min-width:0}'
     + '.tmd-chip{font-size:11.5px;font-weight:700;padding:5px 10px;border-radius:999px;background:#f3f4f6;color:#374151;white-space:nowrap}.tmd-chip b{color:#111827}.tmd-chip.gold{background:#fef3c7}'
-    + '.tmd-b{border:0;border-radius:999px;background:#f97316;color:#fff;font:800 14px inherit;padding:0 22px;min-height:44px;cursor:pointer;box-shadow:0 4px 12px rgba(249,115,22,.35);transition:transform .12s cubic-bezier(.3,1.6,.5,1)}.tmd-b:active{transform:scale(.94)}';
+    + '.tmd-res{border-radius:16px;background:#fff7ed;border:1px solid #fed7aa;padding:10px 12px;display:flex;flex-direction:column;gap:6px;animation:tmdIn .35s cubic-bezier(.2,1.2,.4,1)}@keyframes tmdIn{from{opacity:0;transform:translateY(8px)}}'
+    + '.tmd-res .y{font-size:14px;font-weight:800;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}.tmd-res .y span{font-weight:700;color:#9a3412}'
+    + '.tmd-res .r{display:flex;justify-content:space-between;gap:8px;font-size:13px;padding:6px 10px;border-radius:12px;background:#fff}.tmd-res .r b{font-variant-numeric:tabular-nums}.tmd-res .r.me{background:#ffedd5;font-weight:800}.tmd-res .n{font-size:12px;color:#6b7280}'
+    + '.tmd-b{border:0;border-radius:50%;width:66px;height:66px;background:radial-gradient(circle at 35% 30%,#fdba74,#f97316 55%,#c2410c);color:#fff;font:800 11px Manrope,system-ui,sans-serif;letter-spacing:.06em;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;box-shadow:0 6px 0 #9a3412,0 10px 18px rgba(154,52,18,.35);transition:transform .08s,box-shadow .08s;touch-action:manipulation}.tmd-b span{font-size:22px;line-height:1}.tmd-b:active,.tmd-b.on{transform:translateY(5px);box-shadow:0 1px 0 #9a3412,0 4px 8px rgba(154,52,18,.3)}';
   function mount(host) {
     if (!host || host.dataset.tmd) return; host.dataset.tmd = '1';
     if (!document.getElementById('tmdCss')) { var st = document.createElement('style'); st.id = 'tmdCss'; st.textContent = CSS; document.head.appendChild(st); }
     host.innerHTML = '<div class="tmd"><div class="tmd-h"><span>🦖 Dino Run</span><small>Score <b id="tmdS">0</b> · Your best <b id="tmdB">0</b></small></div>'
-      + '<canvas aria-label="Dino game: tap to jump"></canvas>'
-      + '<div class="tmd-f"><div class="tmd-chips" id="tmdBoard"><span class="tmd-chip">Loading the company board…</span></div><button type="button" class="tmd-b" id="tmdJ">Jump ⬆</button></div></div>';
+      + '<div class="tmd-play"><canvas aria-label="Dino game: tap to jump"></canvas><div class="tmd-side"><button type="button" class="tmd-b" id="tmdJ" aria-label="Jump"><span>⬆</span>JUMP</button></div></div>'
+      + '<div class="tmd-f"><div class="tmd-chips" id="tmdBoard"><span class="tmd-chip">Loading the company board…</span></div><div id="tmdRes"></div></div></div>';
     var cv = host.querySelector('canvas'), ctx = cv.getContext('2d');
     var dpr = Math.min(2, window.devicePixelRatio || 1); cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     var s = newState(), state = 'idle', jumpQ = false, last = 0, raf = 0, startAt = 0, best = 0, parts = [], flash = 0, pop = null, shake = 0, tIdle = 0;
     try { best = Number(localStorage.getItem('tm_dino_best')) || 0; } catch (e) {}
-    var elS = host.querySelector('#tmdS'), elB = host.querySelector('#tmdB'), elBoard = host.querySelector('#tmdBoard');
+    var elS = host.querySelector('#tmdS'), elB = host.querySelector('#tmdB'), elBoard = host.querySelector('#tmdBoard'), elRes = host.querySelector('#tmdRes'), lastRun = 0;
     elB.textContent = best;
     var clouds = [{ x: 90, y: 26, s: 1 }, { x: 300, y: 42, s: .8 }, { x: 500, y: 20, s: 1.2 }];
 
@@ -175,7 +179,7 @@
       if (s.dead) return over();
       raf = requestAnimationFrame(loop);
     }
-    function begin() { s = newState(); state = 'run'; parts = []; pop = null; flash = 0; shake = 0; startAt = performance.now(); last = startAt; jumpQ = true; cancelAnimationFrame(raf); raf = requestAnimationFrame(loop); }
+    function begin() { elRes.innerHTML = ''; s = newState(); state = 'run'; parts = []; pop = null; flash = 0; shake = 0; startAt = performance.now(); last = startAt; jumpQ = true; cancelAnimationFrame(raf); raf = requestAnimationFrame(loop); }
     function pressed() {
       if (state === 'run') { jumpQ = true; return; }
       if (state === 'idle' || state === 'dead') begin();
@@ -186,20 +190,32 @@
       try { navigator.vibrate && navigator.vibrate(40); } catch (e) {}
       var sc = score(s), ms = Math.round(performance.now() - startAt);
       if (sc > best) { best = sc; elB.textContent = best; try { localStorage.setItem('tm_dino_best', String(best)); } catch (e) {} if (window.TMWin && sc >= 50) TMWin.win({ title: 'New best: ' + sc, ms: 2200, from: cv }); }
-      if (sc >= 20 && window.api && api.post) api.post('play.dino_score', { score: sc, ms: ms }).then(loadBoard).catch(function () {});
+      lastRun = sc;
+      var after = function () { loadBoard(true); };
+      if (sc >= 20 && window.api && api.post) api.post('play.dino_score', { score: sc, ms: ms }).then(after).catch(after); else after();
     }
-    function loadBoard() {
+    function row(cls, ic, lbl, r) { return '<div class="r ' + cls + '"><span>' + ic + ' ' + lbl + ' · <b>' + esc(r.who) + (r.mine ? ' (you)' : '') + '</b></span><b>' + r.best + '</b></div>'; }
+    function loadBoard(showResult) {
       if (!window.api || !api.get) { elBoard.innerHTML = ''; return; }
       api.get('play.dino_board').then(function (d) {
         var l = [];
-        l.push(d.champion ? '<span class="tmd-chip gold">🏆 <b>' + esc(d.champion.who) + '</b> ' + d.champion.best + (d.champion.mine ? ' (you!)' : '') + '</span>' : '<span class="tmd-chip">🏆 Be today\'s first champion</span>');
+        l.push(d.champion ? '<span class="tmd-chip gold">🏆 Today <b>' + esc(d.champion.who) + '</b> ' + d.champion.best + (d.champion.mine ? ' (you!)' : '') + '</span>' : '<span class="tmd-chip">🏆 Be today\'s first champion</span>');
         if (d.mine_today) l.push('<span class="tmd-chip">You <b>' + d.mine_today + '</b>' + (d.mine_rank ? ' · #' + d.mine_rank + ' of ' + d.players : '') + '</span>');
-        if (d.all_time) l.push('<span class="tmd-chip">⭐ <b>' + esc(d.all_time.who) + '</b> ' + d.all_time.best + '</span>');
+        if (d.month_top) l.push('<span class="tmd-chip gold">👑 Month <b>' + esc(d.month_top.who) + '</b> ' + d.month_top.best + (d.month_top.mine ? ' (you!)' : '') + '</span>');
         elBoard.innerHTML = l.join('');
-      }).catch(function () { elBoard.innerHTML = ''; });
+        if (showResult === true) {   // after the game: your run, who is first and who is last today
+          var h = '<div class="tmd-res"><div class="y">Your run: ' + lastRun + '<span>' + (lastRun < 20 ? 'Score 20+ to get on the board' : (d.mine_rank ? '#' + d.mine_rank + ' of ' + d.players + ' today' : '')) + '</span></div>';
+          if (d.top && d.top[0]) h += row('first' + (d.top[0].mine ? ' me' : ''), '🥇', 'First today', d.top[0]);
+          if (d.month_top) h += row('month' + (d.month_top.mine ? ' me' : ''), '👑', 'Top of the month', d.month_top);
+          if (d.last) h += row('last' + (d.last.mine ? ' me' : ''), '🐢', 'Last today', d.last);
+          h += '<div class="n">Tap the strip or press JUMP to play again.</div></div>';
+          elRes.innerHTML = h;
+        }
+      }).catch(function () { elBoard.innerHTML = ''; if (showResult === true) elRes.innerHTML = '<div class="tmd-res"><div class="y">Your run: ' + lastRun + '</div></div>'; });
     }
     cv.addEventListener('pointerdown', function (e) { e.preventDefault(); pressed(); });
-    host.querySelector('#tmdJ').addEventListener('click', pressed);
+    var jb = host.querySelector('#tmdJ'); jb.addEventListener('pointerdown', function (e) { e.preventDefault(); jb.classList.add('on'); pressed(); }); ['pointerup', 'pointerleave', 'pointercancel'].forEach(function (n) { jb.addEventListener(n, function () { jb.classList.remove('on'); }); });
+    jb.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); pressed(); } });
     document.addEventListener('keydown', function (e) {
       if (!host.isConnected || (e.key !== ' ' && e.key !== 'ArrowUp')) return;
       var t = e.target && e.target.tagName; if (t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT' || t === 'BUTTON') return;
@@ -207,7 +223,7 @@
       e.preventDefault(); pressed();
     });
     document.addEventListener('visibilitychange', function () { if (document.hidden && state === 'run') { state = 'idle'; cancelAnimationFrame(raf); paint(); } });
-    paint(); loadBoard();
+    paint(); loadBoard(false);
   }
   window.TMDino.mount = mount;
 })();
