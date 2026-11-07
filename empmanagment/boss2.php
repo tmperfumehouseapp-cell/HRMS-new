@@ -2788,6 +2788,7 @@ function cm_offer_stop(PDO $pdo, $id, $by) {
 }
 /** people assigned to Retail wholesale or Store in Total Budgeting: they are paid by that rule (salary + collections % / store chart), so the online commission engine skips them */
 function cm_offline_ids(PDO $pdo) {
+    if (function_exists('pay_offline_ids')) return pay_offline_ids($pdo);
     $o = [];
     try { $j = json_decode((string)setting_get($pdo, 'budget_cfg', ''), true); foreach ((array)($j['people'] ?? []) as $id => $v) if (is_array($v) && in_array((string)($v['grp'] ?? ''), ['retail', 'store'], true)) $o[(int)$id] = 1; } catch (Throwable $e) {}
     return $o;

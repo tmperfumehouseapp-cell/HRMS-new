@@ -7770,9 +7770,25 @@ function ct_recon(PDO $pdo, string $day): array
  *   4. otherwise the profile daily target, lifted by the Sales Executive ladder
  * $emps = rows with basic_salary / joining_date / designation. Returns fn(int $employeeId, string $day): float.
  */
+/** People paid by their own rule, not by the online sales commission: assigned to Retail wholesale or Store in Total Budgeting, or (when not assigned) a retail wholesale / retailer / dealer by
+ *  department or designation. They have NO sales target and no over-target extra. [employee_id => 'retail'|'store'] */
+function pay_offline_ids(PDO $pdo): array
+{
+    static $memo = null; if ($memo !== null) return $memo;
+    $memo = [];
+    try {
+        $j = json_decode((string)setting_get($pdo, 'budget_cfg', ''), true); $ov = is_array($j['people'] ?? null) ? $j['people'] : [];
+        foreach ($ov as $id => $v) if (is_array($v) && in_array((string)($v['grp'] ?? ''), ['retail', 'store'], true)) $memo[(int)$id] = (string)$v['grp'];
+        foreach ($pdo->query("SELECT e.employee_id, e.designation, d.department_name FROM employees e LEFT JOIN departments d ON d.department_id = e.department_id WHERE e.status != 'ex'")->fetchAll() as $e) {
+            $id = (int)$e['employee_id']; if (!empty($ov[$id]['grp']) || isset($memo[$id])) continue;
+            if (preg_match('/wholesale|retailer|dealer|retail field/i', (string)$e['department_name'] . ' ' . (string)$e['designation'])) $memo[$id] = 'retail';
+        }
+    } catch (Throwable $e) { error_log('pay_offline_ids: ' . $e->getMessage()); }
+    return $memo;
+}
 function sales_target_fn(PDO $pdo, array $emps, string $from, string $to, array $marks, bool $zeroOff = false): callable
 {
-    $over = [];
+    $over = []; $noTarget = pay_offline_ids($pdo);
     try {
         ensure_group_key_column($pdo, 'daily_targets', ['target_date', 'employee_id']);
         $dt = $pdo->prepare("SELECT d.target_date, d.employee_id, SUM(d.amount) AS a FROM daily_targets d WHERE d.target_date BETWEEN ? AND ? AND NOT (d.group_key = '' AND EXISTS (SELECT 1 FROM daily_targets x WHERE x.target_date = d.target_date AND x.employee_id = d.employee_id AND x.group_key = 'tmph')) GROUP BY d.target_date, d.employee_id");
@@ -7786,7 +7802,8 @@ function sales_target_fn(PDO $pdo, array $emps, string $from, string $to, array 
         $mm->execute([substr($from, 0, 7), substr($to, 0, 7)]);
         foreach ($mm->fetchAll() as $r) $monMan[(int)$r['employee_id'] . '|' . $r['month']] = (float)$r['m'];
     } catch (Throwable $e) {}
-    return function (int $id, string $d) use ($emps, $over, $marks, $monMan, $zeroOff): float {
+    return function (int $id, string $d) use ($emps, $over, $marks, $monMan, $zeroOff, $noTarget): float {
+        if (isset($noTarget[$id])) return 0.0;      // retail wholesale and store people have no sales target
         $mk = $marks[$d . '|' . $id] ?? '';
         if (isset($over[$d . '|' . $id])) return $over[$d . '|' . $id];      // a target typed by hand for the day wins, even on a Leave / off-marked day
         if ($mk === 'leave' || ($zeroOff && $mk === 'off')) return 0.0;
