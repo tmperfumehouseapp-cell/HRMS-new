@@ -147,6 +147,7 @@
     const tiers = (c.tiers || []).concat([[0, 0], [0, 0], [0, 0]]).slice(0, Math.max(3, (c.tiers || []).length));
     let h = card('Price → commission %, ML by ML', 'Type the selling price for each % column. An order pays the % of the nearest price column: at or above the midpoint of two prices = the higher %, below it = the lower %. Above the 7% price = 7%, below the 3% price = ' + c.floor + '%.',
       '<div class="cm-note" id="cmAutoNote" style="display:none;background:#fef9c3;border:1px solid #facc15;border-radius:12px;padding:10px 12px;margin-bottom:10px"><b>The empty 5% prices are filled in yellow</b> with the middle of the 6% and 4% price (rounded to ₹10). Check them, change any you like, then press <b>Save pricing</b> — nothing is saved until you do.</div><div class="cm-sc"><table class="cm-t" id="cmTbl"><thead><tr><th>ML</th>' + COLS.map((x) => '<th>' + x + '% price</th>').join('') + '<th></th></tr></thead><tbody>' + rows + '</tbody></table></div><div style="margin-top:10px"><button class="bd-btn sm" id="cmAddRow" type="button">+ Add ML row</button> <button class="bd-btn sm" id="cmFill5" type="button">Fill the empty 5% prices</button></div>');
+    if (D.unified) h = card('Prices · one price chart', 'These are the prices from <a href="price_charts.html">Learn &amp; Setup → Pricing</a>: <b>one chart for the whole app</b> (the Teach bot, the cart, the customer photo and commission all read it). Change a price there and it changes here, in the bot and in commission at once. A blank 5% price changes nothing until you set it. What you set on this page are the commission <b>rules</b> below.', '<div id="pcAll" class="cm-note">Loading the prices…</div><div style="margin-top:8px"><a class="bd-btn pri" href="price_charts.html" style="text-decoration:none;display:inline-block">Edit the prices (Learn &amp; Setup → Pricing)</a></div>');
     h += card('Rules', '', '<div class="cm-g">'
       + '<div><label>Floor % (below the 3% price)</label><input id="cmFloor" value="' + c.floor + '"></div>'
       + '<div><label>Code limit (share of orders with a code)</label><select id="cmCode">' + [60, 70, 80].map((x) => '<option value="' + x + '"' + (Number(c.codepct) === x ? ' selected' : '') + '>' + x + '%</option>').join('') + '</select></div>'
@@ -157,21 +158,21 @@
       + '<div class="cm-g" id="cmTiers">' + tiers.map((t, i) => '<div><label>Step ' + (i + 1) + ': over target by % → extra %</label><div style="display:flex;gap:6px"><input data-t="' + i + '" data-s="0" value="' + (t[0] || '') + '" placeholder="over %"><input data-t="' + i + '" data-s="1" value="' + (t[1] || '') + '" placeholder="extra %"></div></div>').join('')
       + '<div><label>Maximum extra %</label><input id="cmMax" value="' + c.bonus_max + '"></div></div>'
       + '<label style="display:flex;gap:8px;align-items:center;margin:16px 0 8px;font-weight:700"><input type="checkbox" id="cmRev"' + (c.reviewed ? ' checked' : '') + '> I checked these prices</label>'
-      + '<button class="bd-btn pri" id="cmSave" type="button">Save pricing</button>');
-    h += card('Shower gel, attar, others and combos', 'The same prices as <a href="price_charts.html">Learn &amp; Setup → Pricing</a>: one set of data, shown here and edited there. Perfume sizes above are kept the same in both places (same ML, same % column; the commission price wins where a size is in both). A change on either page reaches the other.', '<div id="pcOne" class="cm-note">Loading the prices…</div>');
+      + '<button class="bd-btn pri" id="cmSave" type="button">' + (D.unified ? 'Save the rules' : 'Save pricing') + '</button>');
+    if (!D.unified) h += card('Shower gel, attar, others and combos', 'The same prices as <a href="price_charts.html">Learn &amp; Setup → Pricing</a>: one set of data, shown here and edited there. Perfume sizes above are kept the same in both places (same ML, same % column; the commission price wins where a size is in both). A change on either page reaches the other.', '<div id="pcOne" class="cm-note">Loading the prices…</div>');
     return h;
   }
   /* the non-perfume prices live in ONE place (Price Chart page): show them here, read from the same data */
   async function loadPcOne() {
-    const box = $('pcOne'); if (!box) return;
+    const box = $('pcAll') || $('pcOne'); if (!box) return; const all = box.id === 'pcAll';
     try {
       const r = await api.get('pc.get'), ch = r.charts || {}, fmt = (v) => v ? Number(v).toLocaleString('en-IN') : '–';
       const head = (c, first) => '<thead><tr><th>' + first + '</th>' + (c.cols || []).map((x, i) => '<th>' + x + '% price' + (c.names && c.names[i] ? '<small style="display:block;font-weight:400">' + c.names[i] + '</small>' : '') + '</th>').join('') + '</tr></thead>';
       const lab = (m) => [m.perf ? m.perf + ' ml perfume' : '', m.gel ? m.gel + ' shower gel' : '', m.attar ? m.attar + ' attar' : '', m.other ? m.other + ' other' : ''].filter(Boolean).join(' + ');
       const seg = (k, title, first, unit) => { const c = ch[k]; if (!c || !(c.rows || []).length) return '<h3 style="margin:12px 0 4px;font-size:14px">' + title + '</h3><div class="cm-note">No prices yet. Add them in Learn &amp; Setup → Pricing.</div>';
         return '<h3 style="margin:12px 0 4px;font-size:14px">' + title + ' (' + c.rows.length + ')</h3><div class="cm-sc"><table class="cm-t">' + head(c, first) + '<tbody>' + c.rows.map((x) => '<tr><td>' + (k === 'mix' ? lab(x) : x.ml + ' ' + unit) + '</td>' + (x.p || []).map((v) => '<td>' + fmt(v) + '</td>').join('') + '</tr>').join('') + '</tbody></table></div>'; };
-      box.className = ''; box.innerHTML = seg('gel', 'Shower gel', 'Pieces', 'pc') + seg('attar', 'Attar', 'Pieces', 'pc') + seg('other', 'Others', 'Pieces', 'pc') + seg('mix', 'Combos', 'Combo', '')
-        + '<div class="cm-note" style="margin-top:8px">Today the commission engine pays perfume by ML. These prices are shown here so both pricing pages are one; edit them in <a href="price_charts.html">Learn &amp; Setup → Pricing</a>.</div>';
+      box.className = ''; box.innerHTML = (all ? seg('perfume', 'Perfume (by total ml)', 'Total ml', 'ml') : '') + seg('gel', 'Shower gel', 'Pieces', 'pc') + seg('attar', 'Attar', 'Pieces', 'pc') + seg('other', 'Others', 'Pieces', 'pc') + seg('mix', 'Combos', 'Combo', '')
+        + '<div class="cm-note" style="margin-top:8px">' + (all ? 'Perfume is paid by its total ml; shower gel, attar, others and combos are paid by their own rows (a combo prices the whole order). A combo that is not in the chart earns nothing until you add its price. Edit every price in <a href="price_charts.html">Learn &amp; Setup → Pricing</a>.' : 'These prices are shown here so both pricing pages are one; edit them in <a href="price_charts.html">Learn &amp; Setup → Pricing</a>.') + '</div>';
     } catch (e) { box.textContent = 'Could not read the other prices: ' + ((e && e.message) || 'try again'); }
   }
 

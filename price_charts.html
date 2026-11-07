@@ -70,6 +70,7 @@
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const pct = (v) => String(Math.round(Number(v) * 100) / 100);
   const root = document.getElementById('pc'), alertBox = document.getElementById('alertBox');
+  const sayLong = (msg) => { alertBox.innerHTML = '<div class="alert success">' + esc(msg) + '</div>'; setTimeout(() => { alertBox.innerHTML = ''; }, 45000); };   // an important notice stays up longer
   const say = (msg, bad) => { alertBox.innerHTML = '<div class="alert ' + (bad ? 'error' : 'success') + '">' + esc(msg) + '</div>'; setTimeout(() => { alertBox.innerHTML = ''; }, 6000); };
   // One chart, five sections. Perfume = by TOTAL ml (the commission slab). Attar / shower gel / others = by pieces. Combos = 2+ kinds bought together (perfume added on top).
   const SECS = [
@@ -85,6 +86,7 @@
 
   async function load() {
     try { const d = await api.get('pc.get'); S.charts = d.charts; S.can = !!d.can_edit; S.cust = Number(d.cust_col || 0); S.photo = d.photo_url || ''; S.hist = d.hist || []; draw();
+      if (d.unify && d.unify.at) { let seen = ''; try { seen = localStorage.getItem('pc_unify_seen') || ''; } catch (x) {} if (seen !== d.unify.at) { sayLong('✅ ONE price chart now: the 5% column was added to every section (blank where nobody priced it yet: it changes nothing until you do). Where a size was in both charts the commission price was taken' + ((d.unify.added || []).length ? '; ' + d.unify.added.length + ' size' + (d.unify.added.length === 1 ? '' : 's') + ' came in from the commission chart (' + d.unify.added.join(', ') + ' ml)' : '') + ((d.unify.estimated || []).length ? '. Their 3.5% price was estimated between its neighbours, please check: ' + d.unify.estimated.join(', ') + ' ml' : '') + '. The Teach bot has relearned the chart.', false); try { localStorage.setItem('pc_unify_seen', d.unify.at); } catch (x) {} } }
       if (d.auto) { if (d.auto.error) say('Your combo list could not be put in: ' + d.auto.error, true); else say('✅ Your combo list was put in: ' + (d.auto.rows || []).length + ' rows at the 6% column, the other columns filled from your own prices. Press ↩ Undo on a section to take it back.'); } }
     catch (e) { root.innerHTML = '<div class="alert error">' + esc(e.message) + '</div>'; }
   }

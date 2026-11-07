@@ -7518,9 +7518,11 @@ function ml_slab_clean(array $in): array
         $seen[$ml] = 1;
         $p = array_values(array_map(fn($v) => round((float)$v, 2), (array)($r['p'] ?? [])));
         if (count($p) !== $n) return [null, $ml . ' ml: fill a price in every column.'];
+        $lastP = 0.0;
         for ($i = 0; $i < $n; $i++) {
-            if ($p[$i] <= 0) return [null, $ml . ' ml: every price must be more than 0.'];
-            if ($i && $p[$i] > $p[$i - 1]) return [null, $ml . ' ml: prices must go down from left to right (₹' . $p[$i - 1] . ' → ₹' . $p[$i] . ').'];
+            if ($p[$i] <= 0) { if (abs($cols[$i] - 5.0) < 0.001) continue; return [null, $ml . ' ml: every price must be more than 0 (only the 5% column may stay blank).']; }
+            if ($lastP > 0 && $p[$i] > $lastP) return [null, $ml . ' ml: prices must go down from left to right (₹' . $lastP . ' → ₹' . $p[$i] . ').'];
+            $lastP = $p[$i];
         }
         $rows[] = ['ml' => $ml, 'p' => $p];
     }
@@ -7595,11 +7597,14 @@ function coach_slab_pct(array $ch, $ml, float $price, bool $pre): ?float
     foreach ($rows as $i => $a) {
         if ((float)$a['ml'] === $ml) { $p = array_map('floatval', $a['p']); break; }
         $b = $rows[$i + 1] ?? null;
-        if ($b && $ml > $a['ml'] && $ml < $b['ml']) { $f = ($ml - $a['ml']) / ($b['ml'] - $a['ml']); $p = []; foreach ($a['p'] as $j => $v) $p[] = (float)$v + ((float)$b['p'][$j] - (float)$v) * $f; break; }
+        if ($b && $ml > $a['ml'] && $ml < $b['ml']) { $f = ($ml - $a['ml']) / ($b['ml'] - $a['ml']); $p = []; foreach ($a['p'] as $j => $v) $p[] = ((float)$v > 0 && (float)$b['p'][$j] > 0) ? (float)$v + ((float)$b['p'][$j] - (float)$v) * $f : 0.0; break; }
     }
     if ($p === null) return null;
     if ($pre && (float)($ch['prepaid'] ?? 0) > 0) $price = $price / (1 - (float)$ch['prepaid'] / 100);
     $cols = array_map('floatval', $ch['cols']);
+    $pp = []; $cc = []; foreach ($p as $j => $v) if ((float)$v > 0 && isset($cols[$j])) { $pp[] = (float)$v; $cc[] = $cols[$j]; }      // a blank price column (for example the new 5% column nobody priced yet) is skipped
+    if (!$pp) return (float)($ch['floor'] ?? 0);
+    $p = $pp; $cols = $cc;
     if ($price >= $p[0]) return $cols[0];
     for ($j = 0; $j < count($p) - 1; $j++) {
         if ($price <= $p[$j] && $price >= $p[$j + 1]) {
@@ -7832,10 +7837,10 @@ function sales_target_fn(PDO $pdo, array $emps, string $from, string $to, array 
     };
 }
 
-/** The new commission engine (Commission → Result & rules) PAYS only when switched live (setting cm_live = '1'). Default: OFF, so nothing changes until the pricing is unified and an Admin switches it on. */
+/** The new commission engine (Commission → Result & rules) PAYS (live) unless an Admin switched it off in Total Budgeting (setting cm_live = '0'). Default: live. It reads the prices from the one Price Chart. */
 function cm_is_live(PDO $pdo): bool
 {
-    static $v = null; if ($v === null) { try { $v = (string)setting_get($pdo, 'cm_live', '0') === '1'; } catch (Throwable $e) { $v = false; } } return $v;
+    static $v = null; if ($v === null) { try { $v = (string)setting_get($pdo, 'cm_live', '1') !== '0'; } catch (Throwable $e) { $v = false; } } return $v;
 }
 /** One person's commission for one day when the new engine is live. No row (retail / store people, or moved to the store that day) = 0, they are paid by their own rule;
  *  a day with orders the new engine could not price (no ML, size not in the chart) keeps the old figure, so nobody is paid less because of a gap in the chart. */
