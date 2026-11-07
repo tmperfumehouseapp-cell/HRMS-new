@@ -234,7 +234,7 @@ body.emb .tabs{display:none;}
   const WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const PAYDAYS = 30;                                   // salary and fixed expenses are split by 30, the same as the Salary page
 
-  const S = { salMode: (() => { try { return localStorage.getItem('tb_salmode') === 'page' ? 'page' : 'flat'; } catch (e) { return 'flat'; } })(), log: null, bAll: false, dayDate: '', xq: '', nc: false, bd: '', bp: '', bq: '', bn: 300, bills: null, billsFor: '', mm: false, sel: new Set(), tg: 'dept', q: '', msg: '', msgBad: false, tab: EMB || 'budget', emp: 'comm', ea: 'pay', eg: 'all', lead: 'fin', M: null, warn: [], edit: null };
+  const S = { salMode: (() => { try { return localStorage.getItem('tb_salmode') === 'page' ? 'page' : 'flat'; } catch (e) { return 'flat'; } })(), log: null, bAll: false, dayDate: '', xq: '', nc: false, bd: '', bp: '', bq: '', bn: 300, bills: null, billsFor: '', mm: false, sel: new Set(), tg: 'dept', q: '', msg: '', msgBad: false, tab: EMB || (() => { try { const t = new URLSearchParams(location.search).get('tab'); return ['budget', 'emps', 'retail', 'store', 'lead', 'pen', 'team', 'ex'].indexOf(t) > -1 ? t : 'budget'; } catch (e) { return 'budget'; } })(), emp: 'comm', ea: 'pay', eg: 'all', lead: 'fin', M: null, warn: [], edit: null };
   const ymd = (y, m, d) => y + '-' + pad(m) + '-' + pad(d);
   const addDay = (iso, n) => { const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() + n); return ymd(d.getFullYear(), d.getMonth() + 1, d.getDate()); };
   const wdOf = (iso) => WD[new Date(iso + 'T12:00:00').getDay()];
