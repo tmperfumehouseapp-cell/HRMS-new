@@ -819,8 +819,8 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo)\./', $__wa)) {
             $sig = md5(json_encode([$sg, $c['assigned_emp'] ?? 0, $c['status'] ?? '', $c['tag'] ?? '', $c['optout'] ?? 0, $c['cx_id'] ?? 0, $c['hot'] ?? 0, $c['summary'] ?? '', $c['last_in_at'] ?? '', $c['state'] ?? '', $c['remind_at'] ?? '']));
             if (empty($_GET['before']) && (string)($_GET['sig'] ?? '') === $sig) json_response(['same' => 1, 'sig' => $sig]);
             $lim = max(1, min(300, (int)($_GET['limit'] ?? 100))); $before = (int)($_GET['before'] ?? 0);
-            $st = $pdo->prepare("SELECT m.id, m.dir, m.mtype, m.body, m.media_id, m.media_mime, m.status, m.who, m.emp_id, m.ts, m.number_id, m.reply_to FROM wa_messages m WHERE m.phone = ?" . ($before ? ' AND m.id < ?' : '') . " ORDER BY m.ts DESC, m.id DESC LIMIT $lim");   // by time: past chats Meta shares later (📱 phone app history) sit in their right place
-            $st->execute($before ? [$key, $before] : [$key]); $msgs = array_reverse($st->fetchAll());
+            $st = $pdo->prepare("SELECT m.id, m.dir, m.mtype, m.body, m.media_id, m.media_mime, m.status, m.who, m.emp_id, m.ts, m.number_id, m.reply_to FROM wa_messages m WHERE m.phone = ?" . ($before ? ' AND m.id < ?' : '') . " ORDER BY m.ts DESC, m.id DESC LIMIT " . ($lim + 1));   // by time: past chats Meta shares later (📱 phone app history) sit in their right place
+            $st->execute($before ? [$key, $before] : [$key]); $msgs = $st->fetchAll(); $more = count($msgs) > $lim; if ($more) array_pop($msgs); $msgs = array_reverse($msgs);   // one extra row tells the page that older messages exist ("Load older messages")
             $nums = []; foreach ($pdo->query("SELECT id, display, label, panel FROM wa_numbers")->fetchAll() as $n) $nums[(int)$n['id']] = $n['label'] !== '' ? $n['label'] : ($n['display'] !== '' ? $n['display'] : 'Number ' . $n['id']);
             $names = employee_names_by_id($pdo);
             foreach ($msgs as &$m) { $m['id'] = (int)$m['id']; $m['number'] = $nums[(int)$m['number_id']] ?? ''; $m['emp_name'] = $names[(int)$m['emp_id']] ?? ''; } unset($m); wa_add_quotes($pdo, $msgs);
@@ -834,7 +834,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo)\./', $__wa)) {
             $ct['first_message'] = mb_substr((string)$one("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id LIMIT 1"), 0, 120); $ct['first_seen'] = $c['first_seen'];
             $log = []; if (wa_is_admin($pdo, $auth)) { $q2 = $pdo->prepare("SELECT from_emp, to_emp, by_emp, how, at FROM wa_assign_log WHERE phone = ? ORDER BY id DESC LIMIT 10"); $q2->execute([$key]);
                 foreach ($q2->fetchAll() as $l) $log[] = ['at' => $l['at'], 'how' => $l['how'], 'from' => $names[(int)$l['from_emp']] ?? '', 'to' => $names[(int)$l['to_emp']] ?? '', 'by' => $names[(int)$l['by_emp']] ?? '']; }
-            json_response(['contact' => $ct, 'messages' => $msgs, 'assign_log' => $log, 'sig' => $sig, 'peek' => $peek]);
+            json_response(['contact' => $ct, 'messages' => $msgs, 'more' => $more, 'assign_log' => $log, 'sig' => $sig, 'peek' => $peek]);
         }
         case 'wa.cx_note': {   // 📝 the salesperson's note for the complaint team (goes into the case history; the customer never sees it)
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);

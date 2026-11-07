@@ -438,8 +438,8 @@
 
   // ---------- Build rows from the loaded data ----------
   const statusOf = (emp, d) => (emp.status || {})[d] || '';
-  const OWN_ROWS = ['tm4u', 'tmsg'];                                   // panels that are their own commission row
-  const PLAB = { '': 'TM Perfume House', tm4u: 'TM4U', tmsg: 'TM Shower Gel' };
+  const OWN_ROWS = ['tmsg'];                                   // panels that are their own commission row
+  const PLAB = { '': 'TM Perfume House', tmsg: 'TM Shower Gel' };
   const targetOf = (row, d) => Number(((row.emp.target || {})[row.rk] || {})[d] || 0);
   const isPre = (fs) => { fs = String(fs || '').toLowerCase(); return fs.indexOf('cod') === -1 && fs.indexOf('pending') === -1; };   // not COD / pending = prepaid, as on Targets
 
@@ -1019,7 +1019,7 @@
     pop.style.left = Math.max(10, Math.min(innerWidth - w - 10, r.left + r.width / 2 - w / 2)) + 'px';
     pop.style.top = (r.bottom + h + 10 > innerHeight ? Math.max(10, r.top - h - 8) : r.bottom + 8) + 'px';
   }
-  const PNAME = { tmph: 'TM Perfume House', tm4u: 'TM4U', tmsg: 'TM Shower Gel' };
+  const PNAME = { tmph: 'TM Perfume House', tmsg: 'TM Shower Gel' };
   const TSRC = { manual: 'Set by hand', shared: 'Set on the Targets page', ladder: 'New Sales Executive ladder', rule: 'Automatic rule', profile: 'Profile / monthly target' };
   function showTgt(btn) {
     const t = TG[btn.dataset.tg]; if (!t) return;
@@ -1034,7 +1034,7 @@
       ${lines.length ? lines.map((l) => `<div class="ln"><span>${esc(PNAME[l.panel] || l.panel)}<span class="sub">${esc(l.src)}</span></span><b>${inr(l.amt)}</b></div>`).join('') : '<div class="ln"><span>No target detail for this period</span><b>—</b></div>'}
       <div class="ln tot"><span>Target used for commission</span><span>${inr(a.target)}</span></div>
       ${lines.length && Math.abs(sum - a.target) > 1 ? `<div class="note">Panel parts add up to ${inr(sum)}.</div>` : ''}
-      <div class="note">${a.row.rk ? esc(PLAB[a.row.rk]) + ' is counted on its own: its own target and its own commission.' : 'TM4U and TM Shower Gel are separate rows.'} Days marked Absent or Leave count no target.</div>`;
+      <div class="note">${a.row.rk ? esc(PLAB[a.row.rk]) + ' is counted on its own: its own target and its own commission.' : 'TM Shower Gel is a separate row.'} Days marked Absent or Leave count no target.</div>`;
     pop.hidden = false;
     pop.style.left = '0px'; pop.style.top = '0px';
     const r = btn.getBoundingClientRect(), w = pop.offsetWidth, h = pop.offsetHeight;

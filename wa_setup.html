@@ -184,7 +184,7 @@ define('WA_VERIFY_TOKEN', 'any-long-random-text-you-choose');</pre>
   // ---- numbers
   let NUMS = [], NC = {};
   async function nact(btn, fn) { if (busy) return; busy = true; btn.disabled = true; try { await fn(); } catch (e) { msg('wsNumMsg', e.message, 'err'); } finally { busy = false; btn.disabled = false; } }
-  const PANELS = ['TM Perfume House', 'TM4U', 'TM Shower Gel'];
+  const PANELS = ['TM Perfume House', 'TM Shower Gel'];
   function numHtml(n) {
     const c = NC[n.id], q = c && c.info ? String(c.info.quality_rating || '').toUpperCase() : '', nm = c && c.info ? String(c.info.name_status || '').toUpperCase() : '';
     let chk = '';

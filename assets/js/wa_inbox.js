@@ -491,13 +491,17 @@
     function drawMsgs(keepScroll) {
       const box = $('wiM'); if (!box || !S.cur) return;
       const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 80; let last = '', h = '', lastNum = '';
-      S.cur.messages.forEach((m) => {
+      const seen = new Set(), all = (S.older || []).concat(S.cur.messages).filter((m) => !seen.has(m.id) && seen.add(m.id));   // older pages loaded by scrolling up + the newest page
+      if (S.moreOld) h += '<div class="wi-ev" id="wiOld" style="cursor:pointer">⬆ Load older messages</div>';
+      all.forEach((m) => {
         const d = parse(m.ts); const k = d ? dayLabel(d) : ''; if (k && k !== last) { h += `<div class="wi-day">${esc(k)}</div>`; last = k; }
         if (m.dir !== 'sys' && m.number) { if (lastNum && m.number !== lastNum) h += `<div class="wi-ev">📱 Continued on ${esc(m.number)}</div>`; lastNum = m.number; }   // one customer, several of our numbers: show the switch
         h += bubble(m);
       });
       box.innerHTML = h || '<div class="wi-empty" style="margin:auto">No messages yet.</div>';
       if (!keepScroll || atBottom) box.scrollTop = box.scrollHeight;
+      const ob = $('wiOld'); if (ob) ob.onclick = loadOlder;
+      box.onscroll = () => { if (box.scrollTop < 60 && S.moreOld && !S.oldBusy) loadOlder(); };
       box.querySelectorAll('.wi-b img').forEach((im) => { im.onclick = () => lightbox(im.src); });
       box.querySelectorAll('.ld').forEach((el) => {
         el.onclick = async () => {
@@ -512,6 +516,16 @@
         };
       });
       box.querySelectorAll('.ld[data-m^="prod:"]').forEach((el) => el.click());   // product photos show at once
+    }
+    // ⬆ older messages: the page opens with the newest 100; scrolling to the top (or tapping the bar) loads the 100 before them, again and again until the first message
+    async function loadOlder() {
+      if (!S.cur || !S.moreOld || S.oldBusy) return; const box = $('wiM'), ph = S.sel; S.oldBusy = true;
+      try {
+        const ids = (S.older || []).concat(S.cur.messages).map((m) => m.id), d = await api.get('wa.chat', { phone: ph, before: Math.min.apply(null, ids), limit: 100 });
+        if (S.sel !== ph || !S.cur) return;
+        S.older = d.messages.concat(S.older || []); S.moreOld = !!d.more;
+        const h0 = box ? box.scrollHeight : 0, t0 = box ? box.scrollTop : 0; drawMsgs(true); if (box) box.scrollTop = box.scrollHeight - h0 + t0;   // stay where you were reading
+      } catch (e) { } finally { S.oldBusy = false; }
     }
     function lightbox(src) { const d = document.createElement('div'); d.className = 'wi-lb'; d.innerHTML = `<img src="${src}">`; d.onclick = () => d.remove(); document.body.appendChild(d); }
 
@@ -1167,7 +1181,7 @@
       S.sel = phone; closeSheet(); asgClose(); if (root.classList.contains('det')) layerDone('det', false); drawList(); root.classList.add('open'); root.classList.remove('det'); layerOpen('chat', backChat); S.cur = null; S.tagFor = '';
       $('wiC').innerHTML = '<div class="wi-empty" style="margin:auto">Loading…</div>'; $('wiS').innerHTML = '';
       try {
-        S.cur = await api.get('wa.chat', { phone }); S.lastMsgId = lastId();
+        S.cur = await api.get('wa.chat', { phone }); S.older = []; S.moreOld = !!S.cur.more; S.oldBusy = false; S.lastMsgId = lastId();
         S.fu = null; S.fuEdit = false; drawComposer(); drawHead(); drawMsgs(false); drawSide(); drawNote(); loadFu();
         const c = S.cur.contact; if (S.cur.messages.some((m) => m.dir === 'in') && c.tag === '') runTag(false);
         S.tagFor = lastIn();

@@ -301,7 +301,12 @@ function wa_source_hook(PDO $pdo, string $key, ?string $prevIn, string $text, st
         $fresh = $prevIn === null || $prevIn === '' || strtotime((string)$prevIn) < time() - 86400;
         if ($fresh && (string)$c['source'] !== 'query' && wa_is_ad_text($text)) {
             $q = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE phone = ? AND dir = 'out' AND mtype = 'template' AND who = 'campaign' AND ts >= ?"); $q->execute([$key, date('Y-m-d H:i:s', time() - 3 * 86400)]);
-            if ((int)$q->fetchColumn() === 0) { $pdo->prepare("UPDATE wa_contacts SET source = 'query' WHERE phone = ?")->execute([$key]); return; }
+            $sentCamp = (int)$q->fetchColumn() > 0;
+            // a customer who tapped our promotion/ad link arrives with the ready-made text and is NOT swiping a reply to our template → a fresh query, never "Campaign",
+            // even if we sent them a campaign in the last 3 days. Only a real reply (swipe-reply to a message of ours) stays Campaign.
+            $isReply = false;
+            if ($sentCamp) { $r = $pdo->prepare("SELECT reply_to FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $r->execute([$key]); $isReply = trim((string)$r->fetchColumn()) !== ''; }
+            if (!$sentCamp || !$isReply) { $pdo->prepare("UPDATE wa_contacts SET source = 'query' WHERE phone = ?")->execute([$key]); return; }
         }
         if ((string)$c['source'] !== '') return;
         $kw = trim((string)wa_team_cfg($pdo)['community_kw']);

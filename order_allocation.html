@@ -420,7 +420,7 @@
   const fmtHM = (t) => { const [h, m] = t.split(':').map(Number); return `${((h + 11) % 12) + 1}${m ? ':' + String(m).padStart(2, '0') : ''} ${h >= 12 ? 'PM' : 'AM'}`; };
   function todayStr() { return bizDayOf(new Date()); }
 
-  let HOUSES = { tmph: 'TM Perfume House', tm4u: 'TM4U', tmsg: 'TM Shower Gel' };
+  let HOUSES = { tmph: 'TM Perfume House', tmsg: 'TM Shower Gel' };
   let TYPES = { query: 'Query', campaign: 'Campaign' };
   let SOURCES = {};
   let EMPS = [];          // [{id, code, name, groups:[...]}]
