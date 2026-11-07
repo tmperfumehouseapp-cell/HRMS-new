@@ -340,7 +340,7 @@ if ($__bg === 'budget.person_save') {
     // One person's pay setup: which pay group (online sales / retail wholesale / store / other), their own retail % of collections, store commission on or off,
     // and whether they appear in the store POS "Billed by" list (st_duty). Only Admin.
     $auth = require_auth();
-    if (!convo_is_admin($auth)) json_response(['error' => 'Only Admin can change the pay setup.'], 403);
+    if (!convo_is_admin($auth) && !(function_exists('user_can') && user_can($auth, 'commission'))) json_response(['error' => 'Only Admin, HR or a role with the Commission tick (Sales Head) can change the pay setup.'], 403);
     if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
     $in = json_input(); $id = (int)($in['employee_id'] ?? 0);
     $ex = $pdo->prepare("SELECT COUNT(*) FROM employees WHERE employee_id = ?"); $ex->execute([$id]);
