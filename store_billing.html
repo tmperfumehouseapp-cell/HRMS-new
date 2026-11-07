@@ -83,6 +83,17 @@
   .bdcard .bdr{display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px solid var(--sx-line);font-size:13px;flex-wrap:wrap}.bdcard .bdr:first-of-type{border-top:0}
   .bdcard .bdr .n{flex:1;min-width:120px}.bdcard .bdr small{display:block;color:var(--sx-mut)}
   .bdcard .pill{padding:2px 10px;border-radius:999px;font-weight:800;font-size:11.5px;background:var(--sx-violet-t);color:var(--sx-violet)}.bdcard .pill.today{background:#fff4e0;color:#b45309}
+  .srcs{display:flex;flex-wrap:wrap;gap:6px}
+  .src{border:1.5px solid var(--sx-line);background:#fff;border-radius:999px;padding:6px 12px;font:700 12.5px inherit;cursor:pointer;transition:border-color .12s}
+  .src:hover{border-color:var(--sx-accent)}.src.on{border-color:transparent;background:linear-gradient(135deg,var(--sx-accent),var(--sx-accent-d));color:#fff;box-shadow:0 4px 12px rgba(255,122,47,.3)}
+  .srcrow{display:flex;align-items:center;gap:10px;padding:5px 0;border-top:1px solid var(--sx-line);font-size:13px}.srcrow:first-of-type{border-top:0}.srcrow .bar{flex:1;height:8px;border-radius:99px;background:var(--sx-line);overflow:hidden}.srcrow .bar i{display:block;height:100%;background:var(--sx-accent)}
+  .acw{position:relative}.acw .sx-in{padding-right:34px}
+  .acx{position:absolute;right:6px;top:50%;transform:translateY(-50%);border:0;background:var(--sx-bg);width:24px;height:24px;border-radius:50%;cursor:pointer;font-weight:800;line-height:1}
+  .acdd{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:30;background:#fff;border:1.5px solid var(--sx-line);border-radius:14px;box-shadow:0 12px 28px rgba(0,0,0,.14);max-height:260px;overflow-y:auto;padding:4px}
+  .acdd.up{top:auto;bottom:calc(100% + 4px)}
+  .acdd .h{padding:6px 10px 2px;font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--sx-mut)}
+  .acdd .o{display:flex;justify-content:space-between;gap:10px;padding:7px 10px;border-radius:9px;cursor:pointer;font-size:13.5px}.acdd .o small{color:var(--sx-mut);font-size:11.5px;white-space:nowrap}
+  .acdd .o.on,.acdd .o:hover{background:var(--sx-violet-t)}
   .minibtn{border:0;background:#1fa855;color:#fff;border-radius:8px;padding:2px 9px;font:800 11px inherit;cursor:pointer}
   /* ---------- compact: tighter everywhere; wide screens put the panel in two columns ---------- */
   .bhero{padding:8px clamp(12px,1.6vw,20px)!important;border-radius:20px}.bhero .v{font-size:clamp(22px,2.6vw,32px)!important}.bhero .k{font-size:10.5px}
@@ -100,7 +111,7 @@
   @media (min-width:1000px){
     .bc{width:min(900px,92vw)}
     .bc-body{grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);align-items:start;grid-auto-flow:dense}
-    .c-scan{grid-column:1;grid-row:1}.c-price{grid-column:1;grid-row:2}.c-cust{grid-column:2;grid-row:1/span 2}
+    .c-scan{grid-column:1;grid-row:1}.c-price{grid-column:1;grid-row:2}.c-cust{grid-column:2;grid-row:1}.c-src{grid-column:2;grid-row:2}
   }
   @media (min-width:1500px){.bc{width:min(1000px,70vw)}}
   @media (max-width:380px){.bc-body{padding:8px}.bc .sx-card{padding:8px 10px}.bhero .v{font-size:22px!important}.pr b{font-size:13px}.prices{gap:4px}}
@@ -122,6 +133,8 @@
       </div></div>
 
       <div class="sx-card bdcard" id="bdCard" style="display:none"><h3>🎂 Birthdays <small id="bdSub">next 7 days</small></h3><div id="bdList"></div></div>
+
+      <div class="sx-card" id="srcCard" style="display:none"><h3>📣 Where customers came from <small id="srcSub"></small></h3><div id="srcList"></div><h3 style="margin-top:14px">📍 Areas <small id="areaSub"></small></h3><div id="areaList"></div></div>
 
       <div class="sx-card">
         <h3>Bills <input type="date" id="dayPick" class="sx-in" style="width:auto;min-height:32px;padding:3px 8px;font-size:12.5px;margin-left:6px"><small id="dayTot"></small></h3>
@@ -150,6 +163,13 @@
     <div class="sx-card c-cust">
       <div class="sx-f" style="margin-bottom:6px;display:flex;align-items:center">Customers on this bill <span style="font-weight:600;margin-left:6px" id="custNeed"></span><span class="cstep"><button id="cMinus" aria-label="One customer fewer">−</button><b id="cCount">1</b><button id="cPlus" aria-label="One customer more">+</button></span></div>
       <div class="cust" id="cust"></div>
+    </div>
+    <div class="sx-card c-src">
+      <div class="sx-f" style="margin-bottom:6px">How did the customer find us? <span style="font-weight:600">(optional)</span></div>
+      <div class="srcs" id="srcs"></div>
+      <input class="sx-in" id="srcNote" placeholder="Write it here (e.g. which ad, who told them)…" style="margin-top:6px;display:none" maxlength="120" autocomplete="off">
+      <div class="sx-f" style="margin:12px 0 6px">Which area / city is the customer from? <span style="font-weight:600">(optional)</span></div>
+      <div class="acw"><input class="sx-in" id="areaIn" placeholder="Pick from the list or type — any Surat area, city or state of India…" maxlength="80" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="areaDD"><button type="button" class="acx" id="areaX" aria-label="Clear" hidden>×</button><div class="acdd" id="areaDD" role="listbox" hidden></div></div>
     </div>
     <div class="sx-card c-price">
       <div class="sx-f" style="margin-bottom:6px">Price for the total ml <span style="font-weight:600">(% = commission)</span></div>
@@ -186,6 +206,51 @@
   const phoneOk = (v) => /^[6-9]\d{9}$/.test(digits(v));
   const personOk = (p) => p.declined ? p.reason.trim().length > 1 : phoneOk(p.phone);
   const custOk = () => !needPhone && people.every((p) => !p.name && !p.phone && !p.declined) ? true : people.every(personOk);
+  const SOURCES = [['insta_ad', '📸 Instagram ad'], ['fb_ad', '👍 Facebook ad'], ['flyer', '📄 Flyer'], ['friend', '🤝 Friend suggestion'], ['first_time', '🚪 First time visitor'], ['google', '📍 Google / Maps'], ['whatsapp', '💬 WhatsApp'], ['other', '✍️ Other']];
+  let source = '';
+  function renderSrc() {
+    $('srcs').innerHTML = SOURCES.map(([k, l]) => `<button type="button" class="src ${source === k ? 'on' : ''}" data-s="${k}">${l}</button>`).join('');
+    $('srcNote').style.display = source ? '' : 'none';
+    $('srcNote').placeholder = source === 'other' ? 'Write where they came from…' : 'Add a note (optional) — e.g. which ad, who told them';
+  }
+  $('srcs').addEventListener('click', (e) => { const b = e.target.closest('[data-s]'); if (!b) return; source = source === b.dataset.s ? '' : b.dataset.s; if (!source) $('srcNote').value = ''; renderSrc(); if (source === 'other') $('srcNote').focus(); });
+  renderSrc();
+  // AREA / CITY picker: every Surat area + every state and city of India (assets/data/india_places.json) — pick from the list or just type
+  let PL = null, plLoading = null, acItems = [], acPos = -1;
+  const loadPlaces = () => PL ? Promise.resolve(PL) : (plLoading = plLoading || fetch('assets/data/india_places.json?v=1').then((r) => r.json()).then((d) => (PL = d)).catch(() => { plLoading = null; return null; }));
+  const acSearch = (q) => {
+    if (!PL) return [];
+    q = q.trim().toLowerCase();
+    const mk = (g, label, sub, val) => ({ g, label, sub, val });
+    const sur = PL.surat.map((a) => mk('Surat areas', a, 'Surat, Gujarat', a + ', Surat'));
+    if (!q) return sur;
+    const rank = (n) => (n.toLowerCase().startsWith(q) ? 0 : n.toLowerCase().split(/[\s(]+/).some((w) => w.startsWith(q)) ? 1 : n.toLowerCase().includes(q) ? 2 : 9);
+    const pick = (list, lim) => list.map((x) => [rank(x.label), x]).filter((r) => r[0] < 9).sort((a, b) => a[0] - b[0] || a[1].label.localeCompare(b[1].label)).slice(0, lim).map((r) => r[1]);
+    const cit = PL.cities.map(([n, si]) => mk('Cities', n, PL.states[si], n.replace(/\s*\(.*\)$/, '') + ', ' + PL.states[si]));
+    const sta = PL.states.map((n) => mk('States', n, 'State', n));
+    return [...pick(sur, 30), ...pick(cit, 30), ...pick(sta, 8)];
+  };
+  function acRender() {
+    const dd = $('areaDD'), raw = $('areaIn').value;
+    if (!PL) { dd.innerHTML = '<div class="h">Loading the list…</div>'; return; }
+    acItems = acSearch(raw); let last = '', h = '';
+    acItems.forEach((it, i) => { if (it.g !== last) { last = it.g; h += `<div class="h">${it.g}</div>`; } h += `<div class="o ${i === acPos ? 'on' : ''}" role="option" data-i="${i}"><span>${esc(it.label)}</span><small>${esc(it.sub)}</small></div>`; });
+    if (raw.trim() && !acItems.some((it) => it.val.toLowerCase() === raw.trim().toLowerCase())) h += `<div class="o" role="option" data-i="-1"><span>Use “${esc(raw.trim())}” as typed</span><small>not in the list</small></div>`;
+    dd.innerHTML = h || '<div class="h">No match — what you type is saved as it is</div>';
+  }
+  const acOpen = () => { $('areaDD').hidden = false; { const foot = document.querySelector('.bc-foot'), r = $('areaIn').getBoundingClientRect(), room = (foot ? foot.getBoundingClientRect().top : innerHeight) - r.bottom; $('areaDD').classList.toggle('up', room < 290 && r.top > 290); } $('areaIn').setAttribute('aria-expanded', 'true'); loadPlaces().then(acRender); acRender(); };
+  const acClose = () => { $('areaDD').hidden = true; $('areaIn').setAttribute('aria-expanded', 'false'); acPos = -1; };
+  const acChoose = (i) => { if (i >= 0 && acItems[i]) $('areaIn').value = acItems[i].val; acClose(); $('areaX').hidden = !$('areaIn').value; };
+  $('areaIn').addEventListener('focus', acOpen);
+  $('areaIn').addEventListener('input', () => { acPos = -1; $('areaX').hidden = !$('areaIn').value; if ($('areaDD').hidden) acOpen(); else acRender(); });
+  $('areaIn').addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); if ($('areaDD').hidden) acOpen(); acPos = Math.max(0, Math.min(acItems.length - 1, acPos + (e.key === 'ArrowDown' ? 1 : -1))); acRender(); const on = $('areaDD').querySelector('.o.on'); if (on) on.scrollIntoView({ block: 'nearest' }); }
+    else if (e.key === 'Enter') { if (!$('areaDD').hidden && acPos >= 0) { e.preventDefault(); acChoose(acPos); } else acClose(); }
+    else if (e.key === 'Escape') acClose();
+  });
+  $('areaDD').addEventListener('mousedown', (e) => { const o = e.target.closest('[data-i]'); if (!o) return; e.preventDefault(); acChoose(+o.dataset.i); });
+  $('areaIn').addEventListener('blur', () => setTimeout(acClose, 120));
+  $('areaX').addEventListener('mousedown', (e) => { e.preventDefault(); $('areaIn').value = ''; $('areaX').hidden = true; $('areaIn').focus(); acRender(); });
   const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   function renderCust() {
     $('cCount').textContent = people.length;
@@ -330,12 +395,12 @@
   // ---------- make the bill: saved, the panel resets and stays open for the next customer
   $('btnBill').onclick = async () => {
     $('btnBill').disabled = true;
-    const body = { codes: cart.map((b) => b.code), gift_codes: cart.filter((b) => b.gift).map((b) => b.code), emp_id: +$('emp').value, people: people.filter((p) => p.name || p.phone || p.declined).map((p) => ({ name: p.name, phone: p.declined ? '' : p.phone, declined: p.declined, reason: p.reason, bday: p.declined ? '' : (p.bday || '') })), order_code: $('ocode').value, sold_time: soldTouched ? ($('soldAt').value || '') : '', biz_date: ($('bizDay').value && $('bizDay').value !== storeToday) ? $('bizDay').value : '', discount: +$('disc').value || 0, pay_mode: $('pay').value, cash_amt: +$('cash').value || 0, online_amt: +$('online').value || 0 };
+    const body = { source, source_note: source ? $('srcNote').value.trim() : '', area: $('areaIn').value.trim(), codes: cart.map((b) => b.code), gift_codes: cart.filter((b) => b.gift).map((b) => b.code), emp_id: +$('emp').value, people: people.filter((p) => p.name || p.phone || p.declined).map((p) => ({ name: p.name, phone: p.declined ? '' : p.phone, declined: p.declined, reason: p.reason, bday: p.declined ? '' : (p.bday || '') })), order_code: $('ocode').value, sold_time: soldTouched ? ($('soldAt').value || '') : '', biz_date: ($('bizDay').value && $('bizDay').value !== storeToday) ? $('bizDay').value : '', discount: +$('disc').value || 0, pay_mode: $('pay').value, cash_amt: +$('cash').value || 0, online_amt: +$('online').value || 0 };
     if (chain) body.chain_code = chain.code;
     if (pickedCol !== null) body.price_col = pickedCol; else body.custom_price = +$('customPrice').value || 0;
     try {
       const d = await api.post('st_bill.create', body); beep(true);
-      showDone(d); resetCust();
+      showDone(d); resetCust(); source = ''; $('srcNote').value = ''; $('areaIn').value = ''; renderSrc(); $('areaX').hidden = true;
       cart = []; chain = null; quote = null; pickedCol = null; ['ocode', 'cash', 'online', 'customPrice'].forEach((i) => $(i).value = ''); ocodeAuto = true; fillCode(); soldTouched = false; setSoldNow(); $('bizDay').value = storeToday; $('disc').value = 0; $('scanMsg').innerHTML = '';
       renderCart(); renderQuote();
       toast(d.message + (d.commission_pct != null ? ` Commission ≈ ${d.commission_pct}%.` : '') + ' Scan the next customer’s bottles, or close.');
@@ -377,8 +442,19 @@
         return `<div class="bdr"><div class="n"><b>${esc(x.name || 'Customer')}</b><small>${x.phone ? '+' + esc(x.phone) + ' · ' : ''}${dt.getDate()} ${MONTHS[dt.getMonth()]}</small></div>${when}${x.in_days === 0 ? (x.gifted ? '<span class="pill">🎁 gift given</span>' : '<span class="pill today">🎁 gift due (free 50 ml)</span>') : ''}${x.phone ? `<a class="minibtn" style="text-decoration:none" target="_blank" rel="noopener" href="https://wa.me/${esc(x.phone)}?text=${encodeURIComponent('Happy Birthday ' + (x.name || '') + '! 🎂 Wishing you a fragrant year ahead — Team TMPH')}">Wish</a>` : ''}</div>`; }).join('');
     } catch (e) { $('bdCard').style.display = 'none'; }
   }
+  async function loadSources() {
+    try {
+      const d = await api.get('st_bill.sources', listDate ? { date: listDate } : {}), mx = Math.max(1, ...d.rows.map((r) => r.n));
+      $('srcCard').style.display = d.rows.length || (d.areas || []).length ? '' : 'none';
+      $('srcSub').textContent = `${d.asked} of ${d.total} bill${d.total === 1 ? '' : 's'} answered`;
+      $('srcList').innerHTML = d.rows.map((r) => `<div class="srcrow"><b style="min-width:150px">${esc(r.key ? ((SOURCES.find((x) => x[0] === r.key) || [0, r.label])[1]) : 'Not asked')}</b><span class="bar"><i style="width:${Math.round(r.n / mx * 100)}%"></i></span><span>${r.n} · ${inr(r.amt)}</span></div>`).join('');
+      const A = d.areas || [], am = Math.max(1, ...A.map((r) => r.n));
+      $('areaSub').textContent = A.length ? `${d.area_asked} of ${d.total} bill${d.total === 1 ? '' : 's'} answered` : 'not asked yet today';
+      $('areaList').innerHTML = A.map((r) => `<div class="srcrow"><b style="min-width:150px">${esc(r.area)}</b><span class="bar"><i style="width:${Math.round(r.n / am * 100)}%"></i></span><span>${r.n} · ${inr(r.amt)}</span></div>`).join('');
+    } catch (e) { $('srcCard').style.display = 'none'; }
+  }
   async function loadBills() {
-    loadBirthdays();
+    loadBirthdays(); loadSources();
     try {
       const d = await api.get('st_bill.list', listDate ? { date: listDate } : {}), ok = d.bills.filter((b) => b.status === 'ok');
       if (!listDate || listDate === d.today) { $('hTotal').textContent = inr(d.total); $('hBills').textContent = ok.length; $('hMl').textContent = d.total_ml; $('hAvg').textContent = inr(ok.length ? d.total / ok.length : 0); }
