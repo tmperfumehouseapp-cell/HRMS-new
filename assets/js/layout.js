@@ -65,7 +65,9 @@ const LAYOUT_BUILD = '261102.2';   // shown under your name in the sidebar
 // Smaller on phones: the page is laid out at 90% size (one viewport setting, so every screen shrinks together). WhatsApp pages and frames are left alone.
 (function () {
   try {
-    if (/whatsapp|\/wa_|wa_chats|wa_one|my_chats/i.test(location.pathname + location.search)) { document.documentElement.classList.add('wa-skip'); return; }   // WhatsApp: not touched (also skips the compact CSS)
+    if (/whatsapp|\/wa_|wa_chats|wa_one|my_chats/i.test(location.pathname + location.search)) { document.documentElement.classList.add('wa-skip'); return; }   // WhatsApp: not touched (no "ph" class, so phone.css never applies)
+    var mqp = window.matchMedia('(max-width:820px)'), setPh = function () { document.documentElement.classList.toggle('ph', mqp.matches); };
+    setPh(); if (mqp.addEventListener) mqp.addEventListener('change', setPh);                  // html.ph = the phone layout (phone.css)
     if (window.self !== window.top) return;                                  // a frame follows its top page
     if (!window.matchMedia('(max-width:820px)').matches) return;
     var m = document.querySelector('meta[name="viewport"]'); if (!m) return;
@@ -82,6 +84,7 @@ const LAYOUT_BUILD = '261102.2';   // shown under your name in the sidebar
   try {
     const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = 'assets/css/mobile.css?v=9';
     document.head.appendChild(l);
+    const ph = document.createElement('link'); ph.rel = 'stylesheet'; ph.href = 'assets/css/phone.css?v=1'; document.head.appendChild(ph);   // the one compact phone style (html.ph)
     const mq = window.matchMedia('(max-width:820px)');
     const wrap = () => {
       if (!mq.matches) return;

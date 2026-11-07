@@ -96,38 +96,4 @@
   .main{ padding-left:max(10px, env(safe-area-inset-left)) !important; padding-right:max(10px, env(safe-area-inset-right)) !important; padding-bottom:max(16px, env(safe-area-inset-bottom)); }
 }
 
-
-/* compact phone pass: tighter gutters, smaller headings, slimmer cards. Pages marked wa-skip (WhatsApp admin pages) are left as they were. */
-@media (max-width:820px){
-  html:not(.wa-skip) body{font-size:12.5px;}
-  html:not(.wa-skip) .main{padding-top:4px !important;}
-  html:not(.wa-skip) .topbar{padding-top:6px !important; padding-bottom:2px !important; min-height:44px !important;}
-  html:not(.wa-skip) .topbar h1, html:not(.wa-skip) h1{font-size:16px !important;}
-  html:not(.wa-skip) h2{font-size:14px !important;}
-  html:not(.wa-skip) h3{font-size:13px !important;}
-  html:not(.wa-skip) .card, html:not(.wa-skip) .panel, html:not(.wa-skip) .bd-card, html:not(.wa-skip) .box{padding:8px 10px !important; margin-bottom:8px !important; border-radius:12px !important;}
-  html:not(.wa-skip) .sub, html:not(.wa-skip) small, html:not(.wa-skip) .muted, html:not(.wa-skip) .bd-sub{font-size:11px;}
-  html:not(.wa-skip) table th, html:not(.wa-skip) table td{padding:5px 6px !important;}
-}
-
-/* smaller tabs on phones: the workspace tabs (Pricing, Salary, ...), page tabs and pills (WhatsApp pages marked wa-skip keep theirs) */
-@media (max-width:820px){
-  html:not(.wa-skip) .ws-pill{font-size:11.5px !important; padding:5px 11px !important; border-radius:99px !important;}
-  html:not(.wa-skip) .ws-pill em{font-size:10px !important; padding:0 5px !important; line-height:14px !important; margin-left:4px !important;}
-  html:not(.wa-skip) .ws-tabs{gap:4px !important; padding:1px 2px 4px !important; margin-top:4px !important;}
-  html:not(.wa-skip) .tabs button, html:not(.wa-skip) .tabs a, html:not(.wa-skip) .cm-tabs button, html:not(.wa-skip) .bd-tabs button{font-size:11.5px !important; padding:5px 11px !important; min-height:0 !important;}
-  html:not(.wa-skip) .pill, html:not(.wa-skip) .chip, html:not(.wa-skip) .bd-chip{font-size:11px !important; padding:3px 9px !important;}
-  html:not(.wa-skip) .sh-head{font-size:14.5px !important;}
-  html:not(.wa-skip) .sh-hero{padding:9px 11px 8px !important;}
-  html:not(.wa-skip) .stat-card .value, html:not(.wa-skip) .kpi .v{font-size:17px !important;}
-  html:not(.wa-skip) .stat-card .label, html:not(.wa-skip) .kpi .l, html:not(.wa-skip) .kpi .k{font-size:9.5px !important;}
-}
-
-/* My Sales: the big numbers and headings, smaller on phones (WhatsApp pages marked wa-skip are not touched) */
-@media (max-width:820px){
-  html:not(.wa-skip) .qc .qn{font-size:19px !important;} html:not(.wa-skip) .ot-big{font-size:25px !important;}
-  html:not(.wa-skip) .sh-cbig b{font-size:24px !important;} html:not(.wa-skip) .sh-res .big{font-size:15px !important;} html:not(.wa-skip) .sh-out .big{font-size:21px !important;}
-  html:not(.wa-skip) .sh-emoji{font-size:20px !important;} html:not(.wa-skip) .sh-head{font-size:14px !important;}
-  html:not(.wa-skip) .cch .kp b{font-size:14px !important;} html:not(.wa-skip) .rtc .rg span{width:52px !important;height:52px !important;font-size:17px !important;}
-  html:not(.wa-skip) .sh-pop h3{font-size:15px !important;} html:not(.wa-skip) .sh-pop p{font-size:12px !important;}
-}
+/* (the compact phone sizes now live in phone.css — one file, class html.ph) */
