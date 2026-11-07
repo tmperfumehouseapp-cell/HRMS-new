@@ -377,14 +377,19 @@ function st_chain_gate(PDO $pdo): string
 }
 
 /**
- * Splits a chain bill: the chain is billed at its own price, the perfumes get the REST of the total (shared by ml). The total never changes.
+ * Splits a chain bill: the chain gets its share (default 50% of the total, the online chain rule), the perfumes get the REST (shared by ml). The total never changes.
  * @param array $bottles sale bottles ['ml'=>int,...]  @return array ['chain_p','perfume_p','parts'=>[paise per bottle, same order]] or ['error'=>...]
  */
-function st_chain_split(float $total, float $chainPrice, array $bottles): array
+function st_chain_share(float $total, float $pct): float
+{
+    return (float)round($total * $pct / 100);      // whole rupees, the same rule the billing screen uses
+}
+function st_chain_split(float $total, float $chainPrice, array $bottles, float $mrp = 0): array
 {
     $totalP = (int)round($total * 100); $chainP = (int)round($chainPrice * 100);
-    if ($chainP <= 0) return ['error' => 'This chain has no price.'];
-    if ($chainP >= $totalP) return ['error' => 'The chain costs ₹' . number_format($chainPrice) . ' but the bill is only ₹' . number_format($total) . '. The perfumes need a share too: add more perfume or choose a cheaper chain.'];
+    if ($chainP <= 0) return ['error' => 'The chain share of this bill is ₹0. Add more perfume.'];
+    if ($mrp > 0 && $chainP > (int)round($mrp * 100)) return ['error' => 'The chain share of this bill is ₹' . number_format($chainPrice) . ' but this chain’s MRP is only ₹' . number_format($mrp) . '. Choose a chain with a higher MRP (a chain is never billed above its MRP).'];
+    if ($chainP >= $totalP) return ['error' => 'The chain share (₹' . number_format($chainPrice) . ') is not less than the bill (₹' . number_format($total) . '). Add more perfume.'];
     if (!$bottles) return ['error' => 'A chain bill needs at least one perfume bottle.'];
     $perfP = $totalP - $chainP;
     $parts = wch_split_exact($perfP, array_map(fn($b) => max(1, (int)$b['ml']), $bottles));

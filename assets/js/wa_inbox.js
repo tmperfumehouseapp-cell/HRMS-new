@@ -471,7 +471,7 @@
       else if (m.media_id && m.mtype === 'video') body = (MEDIA[m.media_id] ? `<video controls preload="metadata" src="${MEDIA[m.media_id]}"></video>` : `<div class="ld" data-m="${esc(m.media_id)}" data-k="vid">🎬 Tap to play video</div>`) + (cap ? `<div class="wi-cap">${linkify(esc(cap))}</div>` : '');
       else if (m.media_id) { const fn = capOf(m) || 'Document'; body = `<div class="ld" data-m="${esc(m.media_id)}" data-k="doc" data-n="${esc(fn)}">📄 ${esc(fn)} — tap to download</div>`; }
       else body = linkify(esc(m.body || ''));
-      const d = parse(m.ts); const who = m.dir === 'out' ? (m.who === 'bot' ? 'Bot' : m.who === 'campaign' ? 'Campaign' : m.who === 'followup' ? 'Follow-up' : (m.emp_name || 'Team')) : '';
+      const d = parse(m.ts); const who = m.dir === 'out' ? (m.who === 'bot' ? 'Bot' : m.who === 'campaign' ? 'Campaign' : m.who === 'followup' ? 'Follow-up' : m.who === 'phone' ? '📱 Phone app' : (m.emp_name || 'Team')) : '';
       const tg = m.mtype === 'template' ? '<span class="tg">📋 Pre-made message</span>' : '';
       const qt = m.quote ? `<div class="wi-qt" data-qid="${m.quote.id}" title="Go to that message"><b>${m.quote.dir === 'in' ? 'Customer' : 'You'}</b><span>${esc(m.quote.text)}</span></div>` : '';   // ↩ the customer swiped on this earlier message
       const rb = '<button type="button" class="wi-rb" data-rb="' + m.id + '" title="Reply to this message" aria-label="Reply">↩</button>';

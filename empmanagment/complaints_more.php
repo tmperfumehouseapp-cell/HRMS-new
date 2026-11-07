@@ -69,6 +69,7 @@ function cx2_ensure(PDO $pdo) {
                 "ALTER TABLE cx_cases ADD COLUMN promise_at DATE NULL",
                 "ALTER TABLE cx_cases ADD COLUMN promise_what VARCHAR(200) NOT NULL DEFAULT ''",
                 "ALTER TABLE cx_cases ADD COLUMN promise_state VARCHAR(8) NOT NULL DEFAULT ''",
+                "ALTER TABLE cx_cases ADD COLUMN quiet TINYINT NOT NULL DEFAULT 0",
                 "ALTER TABLE cx_cases ADD COLUMN pen_mask INT NOT NULL DEFAULT 0",
                 "ALTER TABLE cx_cases ADD COLUMN root_cause VARCHAR(10) NOT NULL DEFAULT ''",
                 "ALTER TABLE cx_cases ADD COLUMN claim_status VARCHAR(8) NOT NULL DEFAULT ''",
@@ -397,7 +398,7 @@ function cx3_on_raise(PDO $pdo, $id, array $in) {
 }
 /** One ticket message to the customer: created / resolved / reopened. Returns a short note ('' = nothing sent). */
 function cx3_send(PDO $pdo, $r, $kind, $retry = false) {
-    if (!$r || (string)$r['phone'] === '' || cx_cfg($pdo, 'ticket_msgs') === '0') return '';
+    if (!$r || (string)$r['phone'] === '' || cx_cfg($pdo, 'ticket_msgs') === '0' || !empty($r['quiet'])) return '';   // 📱 quiet = the customer is on our old phone: no message from HRMS
     if (function_exists('cx_wa')) cx_wa(); if (!function_exists('wa_contact')) return ''; cx5_tpl_mod();
     $c = wa_contact($pdo, (string)$r['phone']); if (!$c && function_exists('wa_ensure_contact')) $c = wa_ensure_contact($pdo, (string)$r['phone'], (string)$r['cust_name']); if (!$c || (int)($c['optout'] ?? 0) === 1) return '';
     $name = function_exists('wa_first_name') ? wa_first_name((string)($r['cust_name'] ?: ($c['name'] ?? ''))) : 'ji'; $code = cx_code($r['id']); $P = cx_problems(); $issue = $P[$r['problem']][0] ?? 'your complaint';
@@ -925,6 +926,11 @@ function cx2_dispatch(PDO $pdo, $action, array $auth, array $w, $by, array $in, 
         cx_ev($pdo, (int)$r['id'], $me0, 'note', '📨 ' . $meName . ' sent the pre-made message “' . (string)$t['name'] . '”' . (isset($vars[2]) ? ': ' . cx_short($vars[2], 120) : ''));
         json_response(['ok' => true, 'message' => 'Sent ✓']);
     }
+    case 'bd.staff_report': {   // 📈 staff progress (Boss / Admin): punch in-out, leave, complaint work, Good / Average / Weak
+        if (empty($role['mgr']) && empty($role['admin'])) json_response(['error' => 'Only the complaints boss, the top boss / deputy or Admin can see the staff report.'], 403);
+        if (!function_exists('sr_report')) json_response(['error' => 'Not available.'], 501);
+        json_response(['ok' => true] + sr_report($pdo, (int)($_GET['days'] ?? 7), (int)($_GET['emp'] ?? 0)));
+    }
     case 'bd.cx_promise': {   // ⏸ "Promise a date": the fix is known but happens later (POST {id, date, what, tell} · {id, clear: 1})
         $post(); $needTeam(); $r = $load(true); $id = (int)$r['id']; if (!in_array($r['status'], $open, true)) json_response(['error' => 'It is already solved.'], 422);
         if (!empty($in['clear'])) { $pdo->prepare("UPDATE cx_cases SET promise_at = NULL, promise_what = '', promise_state = '', due_at = ?, updated_at = ? WHERE id = ?")->execute([date('Y-m-d H:i:s', time() + 2 * 3600), bd_now(), $id]); cx_ev($pdo, $id, $me, 'plan', '⏸ ' . $meName . ' removed the promised date.'); json_response(['ok' => true, 'message' => 'Promise removed.']); }
@@ -933,7 +939,7 @@ function cx2_dispatch(PDO $pdo, $action, array $auth, array $w, $by, array $in, 
         $pdo->prepare("UPDATE cx_cases SET promise_at = ?, promise_what = ?, promise_state = '', due_at = ?, late_alert = 0, stage_alert = 0, updated_at = ? WHERE id = ?")->execute([$d, $what, date('Y-m-d H:i:s', $ts), bd_now(), $id]);   // the ticket is not late before the promised day ends
         $when = date('j M', strtotime($d)); cx_ev($pdo, $id, $me, 'plan', '⏸ ' . $meName . ' promised for ' . $when . ': ' . $what);
         $msg = 'Saved — pending until ' . $when . '.';
-        if (!empty($in['tell']) && (string)$r['phone'] !== '' && function_exists('cx5_send_update')) { [$ok, $res] = cx5_send_update($pdo, cx_row($pdo, $id), mb_strtoupper(mb_substr($what, 0, 1)) . mb_substr($what, 1) . ' on ' . $when . '. We will update you here.');
+        if (!empty($in['tell']) && (string)$r['phone'] !== '' && empty($r['quiet']) && function_exists('cx5_send_update')) { [$ok, $res] = cx5_send_update($pdo, cx_row($pdo, $id), mb_strtoupper(mb_substr($what, 0, 1)) . mb_substr($what, 1) . ' on ' . $when . '. We will update you here.');
             $msg .= $ok ? ' The customer was told.' : ' The customer could not be told yet: ' . $res; if ($ok) cx_ev($pdo, $id, $me, 'note', '📨 Customer told: ' . $what . ' on ' . $when); }
         json_response(['ok' => true, 'message' => $msg]);
     }
@@ -1357,7 +1363,7 @@ function cx7_sent(PDO $pdo, $id, $step) { return (string)cx_state_get($pdo, 'cx7
 function cx7_night() { if (defined('CX7_DAY')) return false; $h = (int)date('G'); return $h >= 21 || $h < 8; }
 /** Send one progress step for a ticket. $why: 'auto' or the person's name. Returns a short note. */
 function cx7_send(PDO $pdo, array $r, $step, $detail, $why = 'auto', $fromQueue = false) {
-    $D = cx7_defs(); if (!isset($D[$step]) || (string)$r['phone'] === '' || cx_cfg($pdo, 'ticket_msgs') === '0') return '';
+    $D = cx7_defs(); if (!isset($D[$step]) || (string)$r['phone'] === '' || cx_cfg($pdo, 'ticket_msgs') === '0' || !empty($r['quiet'])) return '';
     $id = (int)$r['id']; $was = cx7_sent($pdo, $id, $step); $again = $why === 'again' || strpos((string)$why, 'again:') === 0; if ($again && !in_array($step, ['tracking', 'shipped'], true)) return 'already sent';
     if ($was !== '' && strpos($was, 'wait') !== 0 && !$again) return 'already sent';   // once per ticket — only the tracking number / new goods shipped can be sent again ("the customer did not get it")
     $detail = trim(preg_replace('/\s+/u', ' ', (string)$detail)); if ($detail === '') $detail = ['pickup' => 'soon', 'pickedup' => 'by the courier', 'received' => 'we will share it shortly', 'shipped' => 'tracking will follow', 'tracking' => 'being updated', 'reattempt' => 'soon', 'refund' => 'your refund', 'transit' => 'with the courier', 'arrived' => 'today'][$step];
@@ -1440,4 +1446,5 @@ function cx7_auto(PDO $pdo) {
 }
 
 if (is_file(__DIR__ . '/complaints_photo.php')) { require_once __DIR__ . '/complaints_photo.php'; }   // 📷 every complaint message = an approved WhatsApp message, with its photo
-if (is_file(__DIR__ . '/complaints_dash.php')) { require_once __DIR__ . '/complaints_dash.php'; }   // 📊 the Complaints dashboard (bd.cx_dash)
+if (is_file(__DIR__ . '/complaints_dash.php')) { require_once __DIR__ . '/complaints_dash.php'; }
+if (is_file(__DIR__ . '/staff_report.php')) { require_once __DIR__ . '/staff_report.php'; }   // 📈 the staff progress report (bd.staff_report)   // 📊 the Complaints dashboard (bd.cx_dash)

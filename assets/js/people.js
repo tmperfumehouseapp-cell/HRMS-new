@@ -218,12 +218,12 @@
 
   function openPerson(id, tab) {
     if (S.dr) S.dr.close();
-    var o = overlay('<div class="dr"><div class="pp-load mut">Loading…</div></div>'); S.dr = o; o.pid = id; o.tab = tab || 'overview'; o.data = null;
+    var o = overlay('<div class="dr"><div class="pp-load mut">Loading…</div></div>'); S.dr = o; o.pid = id; o.tab = tab || 'work'; o.data = null;
     $$('.pp-c').forEach(function (c) { c.classList.toggle('sel', Number(c.dataset.id) === id); });
     return call('person', { params: { id: id, month: S.month } }).then(function (d) { o.data = d; drawer(o); }).catch(function (e) { o.close(); fail(e); });
   }
   function refreshDrawer(o, keepTab) { return call('person', { params: { id: o.pid, month: S.month } }).then(function (d) { o.data = d; if (!keepTab) o.tab = o.tab; drawer(o); }); }
-  var TABS = [['overview', 'Overview'], ['login', 'Login'], ['seats', 'Seats'], ['tasks', 'Tasks'], ['salary', 'Salary'], ['docs', 'Documents'], ['records', 'Records']];
+  var TABS = [['work', 'Profile'], ['overview', 'Edit details'], ['login', 'Login'], ['seats', 'Seats'], ['tasks', 'Tasks'], ['salary', 'Salary'], ['docs', 'Documents'], ['records', 'Records']];
   function drawer(o) {
     var d = o.data, p = d.person, row = person(o.pid) || {}; var admin = S.B.me.admin;
     var dp = dept(Number(p.department_id));
@@ -231,6 +231,7 @@
     var h = '<div class="dr"><div class="hd">' + avatar({ photo: p.photo, name: p.full_name }, true) + '<div><h2>' + esc(p.full_name) + '</h2><div class="mut sm">' + esc(p.employee_code) + ' · ' + esc((dp && dp.name) || p.department_name || 'No department') + ' · ' + esc(p.designation || '') + '</div><div style="margin-top:3px">' + chips + '</div></div><button class="x" data-act="dr-close">✕</button></div>'
       + '<div class="pp-tabs">' + TABS.map(function (t) { return '<button data-act="tab" data-v="' + t[0] + '" class="' + (o.tab === t[0] ? 'on' : '') + '">' + t[1] + (t[0] === 'docs' && row.docs_missing ? ' (' + row.docs_missing + ')' : '') + (t[0] === 'tasks' && row.t && row.t.late ? ' (' + row.t.late + ' late)' : '') + '</button>'; }).join('') + '</div><div id="ppTab"></div></div>';
     o.innerHTML = h; var tabEl = $('#ppTab', o); tabEl.innerHTML = tabHtml(o); bindTab(o, tabEl);
+    if (o.tab === 'work') { if (window.PersonCard) window.PersonCard.render(tabEl, o.pid, { onChange: function () { /* the card reloads itself; other tabs read fresh next time */ } }); else tabEl.innerHTML = '<div class="mut sm">The person card file is missing (assets/js/person_card.js).</div>'; }
     $('#ppAvBig', o).addEventListener('click', function () { var f = document.createElement('input'); f.type = 'file'; f.accept = 'image/jpeg,image/png,image/webp'; f.onchange = function () { if (f.files[0]) savePerson(o, null, f.files[0]); }; f.click(); });
   }
   function kv(a, b) { return '<div class="row"><span>' + a + '</span><b>' + b + '</b></div>'; }

@@ -445,7 +445,7 @@ function fi_charge_cols(array $rows, array $a): array
 function fi_net_col(array $rows, array $a): ?int
 {
     $used = array_filter(array_values($a['cols']), fn($v) => $v !== null);
-    foreach (($rows[(int)$a['header_row']] ?? []) as $i => $h) { $l = strtolower(trim((string)$h)); if (!in_array($i, $used, true) && preg_match('/net.?(settle|amount|amt|payout|received)|settled.?(amount|amt)|payout.?amount|merchant.?net|amount.?settled/', $l) && !preg_match('/fee|charge|gst|tax|tds|deduct/', $l)) return $i; }
+    foreach (($rows[(int)$a['header_row']] ?? []) as $i => $h) { $l = strtolower(trim((string)$h)); if (!in_array($i, $used, true) && preg_match('/amount.?\(?net\)?|net.?(settle|amount|amt|payout|received)|settled.?(amount|amt)|payout.?amount|merchant.?net|amount.?settled/', $l) && !preg_match('/fee|charge|gst|tax|tds|deduct/', $l)) return $i; }
     return null;
 }
 /** Total of every numeric column of the file (so a wrong amount / fee column is easy to spot): [['col' => header, 'sum' => total], ...]. */

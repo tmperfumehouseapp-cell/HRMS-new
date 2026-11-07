@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Total Budgeting — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=260929d">
+<link rel="stylesheet" href="assets/css/sales_theme.css?v=1">
+<style>
+#tb{max-width:1400px;}
+#tb button{min-height:0;}
+#tb .sub{color:var(--muted); font-size:12.5px;}
+#tb .bar{display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; justify-content:space-between; margin-bottom:10px;}
+#tb .tabs{display:flex; gap:2px; border-bottom:1px solid var(--line); margin-bottom:12px; overflow-x:auto;}
+#tb .tabs button{font:inherit; font-weight:700; font-size:13px; background:none; border:0; border-bottom:2px solid transparent; padding:9px 14px; cursor:pointer; color:var(--muted); white-space:nowrap;}
+#tb .tabs button.on{color:var(--ink); border-bottom-color:#ea580c;}
+#tb .seg{display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden;}
+#tb .seg button{font:inherit; font-size:12px; font-weight:700; padding:5px 12px; background:#fff; color:var(--muted); border:0; cursor:pointer;}
+#tb .seg button+button{border-left:1px solid var(--line);}
+#tb .seg button.on{background:var(--ink); color:#fff;}
+#tb .hint{color:var(--muted); font-size:12px; max-width:75ch;}
+#tb .hint b{color:var(--ink);}
+#tb .warn{background:#fff7ed; color:#9a3412; border:1px solid #fed7aa; border-radius:10px; padding:8px 12px; font-size:12.5px; margin-bottom:10px;}
+#tb .sheet{background:#fff; border:1px solid var(--line); overflow:auto; max-height:min(72vh,760px);}
+#tb table{border-collapse:separate; border-spacing:0; font-size:12px; font-variant-numeric:tabular-nums; width:max-content; min-width:100%;}
+#tb th,#tb td{height:22px; padding:0 7px; border-right:1px solid #e3e7ea; border-bottom:1px solid #e3e7ea; white-space:nowrap; text-align:right; background:#fff;}
+#tb thead th{position:sticky; top:0; z-index:3; background:#eef3f0; font-weight:700; height:32px; line-height:1.1; padding-block:3px;}
+#tb thead th small{display:block; font-weight:500; color:var(--muted); font-size:10px; text-transform:uppercase; letter-spacing:.04em;}
+#tb th.n,#tb td.n{text-align:left; position:sticky; left:0; z-index:2; min-width:150px; border-right:2px solid #cfd6d2; font-weight:600;}
+#tb thead th.n{z-index:4;}
+#tb td.i,#tb th.i{color:var(--muted); text-align:center; width:28px; min-width:28px; padding:0 2px; background:#eef3f0;}
+#tb td.t,#tb th.t{font-weight:700; background:#eef3f0;}
+#tb tbody tr:hover td{background:#f1f8f4;}
+#tb tbody tr:hover td.t,#tb tbody tr:hover td.i{background:#eef3f0;}
+#tb .tod{background:#e9f4ee;}
+#tb thead th.tod{background:#cfe6d9;}
+#tb td.z{color:#c3cbc7;}
+#tb td.neg{color:#b3261e; background:#fbe9e7; font-weight:600;}
+#tb td.base{color:var(--muted); font-style:italic;}
+#tb td.pend{outline:1.5px dashed #b7791f; outline-offset:-2px;}
+#tb tfoot td{position:sticky; bottom:0; z-index:3; background:#eef3f0; font-weight:700; border-top:2px solid #cfd6d2;}
+#tb tfoot td.n{z-index:4;}
+#tb .kpis{display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); border:1px solid var(--line); background:#fff; margin-bottom:10px;}
+#tb .kpi{padding:8px 12px; border-right:1px solid var(--line);}
+#tb .kpi:last-child{border-right:0;}
+#tb .kpi span{display:block; color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.05em; font-weight:700;}
+#tb .kpi b{font-size:20px; font-weight:800;}
+#tb .kpi em{font-style:normal; font-size:11px; color:var(--muted); display:block;}
+#tb .kpi.bad b{color:#b3261e;}
+#tb .alert{padding:8px 12px; background:#fbe9e7; color:#b3261e; border:1px solid #f3c5bf; font-weight:600; margin-bottom:10px;}
+#tb .alert.good{background:#e9f4ee; color:#1d6b47; border-color:#bfdccb;}
+#tb .meter{position:relative; height:12px; background:#eef3f0; border:1px solid var(--line);}
+#tb .meter i{position:absolute; inset:0 auto 0 0; background:#1d6b47;}
+#tb .meter u{position:absolute; top:-3px; bottom:-3px; width:2px; background:var(--ink);}
+#tb .meter-l{display:flex; justify-content:space-between; color:var(--muted); font-size:11px; margin:3px 0 12px;}
+#tb .cols{display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr)); gap:14px; align-items:start; margin-bottom:12px;}
+#tb .cols>*{min-width:0;}
+#tb h3{font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin:0 0 4px;}
+#tb .plain{max-height:none;}
+#tb .plain table{width:100%;}
+#tb .plain td:first-child,#tb .plain th:first-child{text-align:left;}
+#tb .plain td.src{text-align:left; color:var(--muted); font-size:11px;}
+#tb .plain tr.sum td{font-weight:700; background:#eef3f0; border-top:2px solid #cfd6d2;}
+#tb .ed input{font:inherit; font-size:12px; border:1px solid var(--line); border-radius:6px; padding:2px 6px; height:22px; width:100%; background:#fffaf5;}
+#tb .ed input.a{text-align:right; width:110px;}
+#tb .ed button{font:inherit; font-size:12px; border:1px solid var(--line); background:#fff; border-radius:6px; cursor:pointer; padding:1px 8px;}
+#tb .chart{background:#fff; border:1px solid var(--line); padding:8px 8px 4px;}
+#tb .chart svg{display:block; width:100%; max-width:780px; height:auto;}
+#tb .chart text{fill:#6b7280; font:10px sans-serif;}
+#tb .legend{display:flex; flex-wrap:wrap; gap:6px 16px; color:var(--muted); font-size:11px; margin-top:6px;}
+#tb .sw{display:inline-block; width:10px; height:10px; margin-right:5px; border:1px solid #cfd6d2; vertical-align:-1px;}
+#tb thead th:nth-child(3){text-align:left;}
+#tb td.role{text-align:left; color:var(--muted); max-width:170px; overflow:hidden; text-overflow:ellipsis; font-family:var(--f-ui, inherit);}
+#tb td.n[data-emp]{cursor:pointer;} #tb td.n[data-emp]:hover{text-decoration:underline; color:#1d4ed8;}
+#tb .cl{background:#f3f0ff; border-radius:12px; padding:10px 14px; margin-bottom:10px; line-height:1.5; font-size:13px;} #tb .cl b.h{display:block; font-size:11px; text-transform:uppercase; letter-spacing:.07em; color:#6d4fd6; margin-bottom:2px;} #tb .cl ul{margin:6px 0 0; padding-left:18px;} #tb .cl li.bad{color:#b3261e;} #tb .cl li.warn{color:#8a5a00;} #tb .cl .ok{color:#1d6b47; font-weight:700;}
+#tb .tbtn{padding:6px 14px; border-radius:10px; background:var(--ink); color:#fff; font:inherit; font-weight:800; font-size:12.5px; border:0; cursor:pointer;} #tb .tbtn:disabled{opacity:.5; cursor:default;}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar">
+      <div><h1>Total Budgeting</h1><div class="sub">Commission, leaders, salary ÷ 30, fixed expenses and penalties, day by day</div></div>
+      <div style="display:flex; gap:10px; align-items:center;"><input type="month" id="mon" style="font:inherit; padding:6px 8px; border:1px solid var(--line); border-radius:8px;"><button class="btn secondary" id="btnReload" type="button">↻ Refresh</button></div>
+    </div>
+    <div class="content">
+      <div id="tb"><div class="card"><div class="empty">Loading…</div></div></div>
+    </div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=2"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script src="assets/js/person_card.js?v=pc1"></script>
+<script>
+(function () {
+  guardPage();
+  renderSidebar('commission');
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const f = (n) => Math.round(Number(n) || 0).toLocaleString('en-IN');
+  const rs = (n) => '₹' + f(n);
+  const lakh = (n) => '₹' + ((Number(n) || 0) / 100000).toLocaleString('en-IN', { maximumFractionDigits: 2 }) + ' L';
+  const nk = (s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const pad = (n) => String(n).padStart(2, '0');
+  const WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const PAYDAYS = 30;                                   // salary and fixed expenses are split by 30, the same as the Salary page
+
+  const S = { tab: 'budget', emp: 'comm', lead: 'fin', M: null, warn: [], edit: null };
+  const ymd = (y, m, d) => y + '-' + pad(m) + '-' + pad(d);
+  const addDay = (iso, n) => { const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() + n); return ymd(d.getFullYear(), d.getMonth() + 1, d.getDate()); };
+  const wdOf = (iso) => WD[new Date(iso + 'T12:00:00').getDay()];
+
+  /* ---------- load everything from the pages that already exist ---------- */
+  async function load() {
+    const month = $('mon').value || new Date().toISOString().slice(0, 7);
+    const [Y, Mo] = month.split('-').map(Number), dim = new Date(Y, Mo, 0).getDate();
+    const from = month + '-01', last = ymd(Y, Mo, dim);
+    const clientToday = new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
+    const prev = (() => { const d = new Date(Y, Mo - 2, 1); return d.getFullYear() + '-' + pad(d.getMonth() + 1); })();
+    const shownDay = clientToday.slice(0, 7) === month ? clientToday : (clientToday > last ? last : from);   // last day of the month to read (any past month works)
+    const daysBack = Number(shownDay.slice(8));
+    $('tb').innerHTML = '<div class="card"><div class="empty">Loading the month…</div></div>';
+    const R = await Promise.allSettled([
+      api.get('lr.get', { date_from: from, date_to: last < clientToday ? last : clientToday }),
+      api.get('bd.b2_cm_recount', { days: daysBack, end: shownDay }),
+      api.get('employees.list'),
+      api.get('penalties.list', { month, status: 'applied' }),
+      api.get('penalties.list', { month: prev, status: 'applied' }),
+      api.get('budget.get', { month }),
+    ]);
+    const ok = (i) => R[i].status === 'fulfilled' ? R[i].value : null;
+    const why = (i) => R[i].status === 'rejected' ? (R[i].reason && R[i].reason.message || 'failed') : '';
+    const warn = [];
+    if (!ok(0)) warn.push('Leaders could not be read (' + why(0) + '). Leaders show as 0.');
+    if (!ok(1)) warn.push('Commission could not be read (' + why(1) + '). It needs the Admin login. Commission shows as 0.');
+    if (!ok(2)) warn.push('The employee list could not be read (' + why(2) + ').');
+    if (!ok(3)) warn.push('Penalties could not be read (' + why(3) + ').');
+    if (!ok(5)) warn.push('The budget numbers could not be read (' + why(5) + ').');
+    const lr = ok(0) || { rows: [], rules: { leaders: [] }, today: clientToday }, cm = ok(1) || { people: [] };
+    const today = lr.today || clientToday;
+    const shown = today.slice(0, 7) === month ? today : (today > last ? last : (today < from ? from : last));
+    const days = []; for (let d = shown; d >= from; d = addDay(d, -1)) days.push(d);
+
+    // team rows: sales-department employees + everybody who has commission
+    const empAll = ((ok(2) || {}).employees || []).filter(e => e.status !== 'ex');
+    const byName = {}; empAll.forEach(e => { byName[nk(e.full_name)] = e; });
+    const rows = {}, add = (name, e) => { const k = e ? 'e' + e.employee_id : 'n' + nk(name); if (!rows[k]) rows[k] = { key: k, name: e ? e.full_name : name, empId: e ? Number(e.employee_id) : 0, role: e ? String(e.designation || '') : '', monthly: e ? Number(e.monthly_salary) || 0 : 0, comm: {}, pen: {}, why: {} }; return rows[k]; };
+    empAll.filter(e => /sales/i.test(e.department_name || '')).forEach(e => add(e.full_name, e));
+    (cm.people || []).forEach(p => { const e = byName[nk(p.name)]; const r = add(p.name, e); (p.perday || []).forEach(x => { r.comm[x.day] = (r.comm[x.day] || 0) + (Number(x.new) || 0); }); });
+    const byEmp = {}; Object.values(rows).forEach(r => { if (r.empId) byEmp[r.empId] = r; });
+    [ok(3), ok(4)].forEach(p => ((p || {}).rows || []).forEach(x => { const r = byEmp[Number(x.employee_id)]; if (!r) return; r.pen[x.penalty_date] = (r.pen[x.penalty_date] || 0) + Number(x.amount || 0); r.why[x.penalty_date] = (r.why[x.penalty_date] ? r.why[x.penalty_date] + '; ' : '') + (x.title || x.category || 'Penalty'); }));
+    const team = Object.values(rows).sort((a, b) => a.name.localeCompare(b.name));
+    team.forEach(r => { r.perDay = r.monthly > 0 ? r.monthly / PAYDAYS : 0; });
+
+    const leaders = (lr.rules.leaders || []).map(n => ({ name: n, empId: byName[nk(n)] ? Number(byName[nk(n)].employee_id) : 0, role: byName[nk(n)] && byName[nk(n)].designation ? String(byName[nk(n)].designation) : 'Leader', fin: {}, sug: {}, set: {} }));
+    const lrRow = {}; (lr.rows || []).forEach(x => { lrRow[x.date] = x; leaders.forEach(l => { const s = (x.set || {})[l.name]; if (s) { l.fin[x.date] = Number(s.amount) || 0; l.set[x.date] = true; } else if (x.sug_amt != null) l.sug[x.date] = Number(x.sug_amt); }); });
+
+    const bud = ok(5) || { target: 0, lump: 0, expenses: [], can_edit: false };
+    S.M = { month, from, last, dim, today, shown, days, team, leaders, lrRow, bud, roasKind: lr.rules };
+    S.warn = warn; S.edit = JSON.parse(JSON.stringify({ target: bud.target, lump: bud.lump, expenses: bud.expenses }));
+    S.claudeFor = '';
+    render(); askClaude();
+  }
+
+  /* ---------- the one set of numbers every tab reads ---------- */
+  const penCut = (r, d) => r.pen[addDay(d, -1)] || 0;          // a penalty logged on a day is cut the next day
+  const dayPay = (r, d) => (Number(d.slice(8)) <= PAYDAYS ? r.perDay : 0) + (r.comm[d] || 0) - penCut(r, d);
+  function figures() {
+    const M = S.M, exp = (S.edit.expenses || []).reduce((a, x) => a + (Number(x.amount) || 0), 0), by = {};
+    const tot = { leaders: 0, comm: 0, salary: 0, fixed: 0, pen: 0 };
+    M.days.forEach(d => {
+      const inPay = Number(d.slice(8)) <= PAYDAYS;
+      const b = { leaders: M.leaders.reduce((a, l) => a + (l.fin[d] || 0), 0), comm: M.team.reduce((a, r) => a + (r.comm[d] || 0), 0),
+        salary: inPay ? M.team.reduce((a, r) => a + r.perDay, 0) : 0, fixed: inPay ? exp / PAYDAYS : 0, pen: M.team.reduce((a, r) => a + penCut(r, d), 0) };
+      b.net = b.leaders + b.comm + b.salary + b.fixed - b.pen; by[d] = b; Object.keys(tot).forEach(k => { tot[k] += b[k]; });
+    });
+    const spent = tot.leaders + tot.comm + tot.salary + tot.fixed - tot.pen, elapsed = Math.min(M.days.length, PAYDAYS);
+    const projected = elapsed ? spent / elapsed * PAYDAYS : 0;
+    return { by, tot, spent, projected, exp, elapsed };
+  }
+
+  /* ---------- views ---------- */
+  const thd = (d) => { const t = d === S.M.today; const y = d === addDay(S.M.today, -1); return '<th class="' + (t ? 'tod' : '') + '" title="' + d + '">' + Number(d.slice(8)) + ' ' + ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][Number(d.slice(5, 7)) - 1] + '<small>' + (t ? 'Today' : y ? 'Yest.' : wdOf(d)) + '</small></th>'; };
+  const grid = (head, rows, foot) => '<div class="sheet" tabindex="0"><table><thead><tr><th class="i">#</th><th class="n">Name</th><th>Role</th>' + head + S.M.days.map(thd).join('') + '</tr></thead><tbody>' + rows + '</tbody><tfoot>' + foot + '</tfoot></table></div>';
+  const tc = (d) => d === S.M.today ? 'tod' : '';
+
+  function empView() {
+    const M = S.M, m = S.emp, D = M.days;
+    const val = (r, d) => m === 'comm' ? (r.comm[d] || 0) : m === 'pen' ? (r.pen[d] || 0) : dayPay(r, d);
+    const cell = (r, d) => {
+      const v = val(r, d);
+      if (m === 'pen') return v ? '<td class="neg ' + (d === M.today ? 'pend' : '') + '" title="' + esc(r.why[d] || '') + (d === M.today ? ' · cut tomorrow' : ' · cut next day') + '">−' + f(v) + '</td>' : '<td class="z ' + tc(d) + '">–</td>';
+      if (m === 'comm') return v ? '<td class="' + tc(d) + '">' + f(v) + '</td>' : '<td class="z ' + tc(d) + '">–</td>';
+      const c = penCut(r, d);
+      return '<td class="' + tc(d) + '" title="' + f(Number(d.slice(8)) <= PAYDAYS ? r.perDay : 0) + ' day salary + ' + f(r.comm[d] || 0) + ' commission − ' + f(c) + ' penalty">' + f(v) + (c ? '<sup style="color:#b3261e">*</sup>' : '') + '</td>';
+    };
+    const tot = (r) => D.reduce((a, d) => a + val(r, d), 0);
+    const list = m === 'pen' ? M.team.filter(r => D.some(d => r.pen[d])) : M.team;
+    const body = list.map((r, i) => '<tr><td class="i">' + (i + 1) + '</td><td class="n"' + (r.empId ? ' data-emp="' + r.empId + '" title="Open ' + esc(r.name) + '"' : '') + '>' + esc(r.name) + '</td><td class="role">' + esc(r.role) + '</td><td class="t">' + (r.monthly ? f(r.monthly) : '–') + '</td><td class="t">' + (r.perDay ? f(r.perDay) : '–') + '</td><td class="t">' + f(tot(r)) + '</td>' + D.map(d => cell(r, d)).join('') + '</tr>').join('')
+      || '<tr><td colspan="20" style="text-align:left;padding:14px">Nobody to show for this month.</td></tr>';
+    const foot = '<tr><td class="i"></td><td class="n">Total · ' + list.length + '</td><td></td><td>' + f(list.reduce((a, r) => a + r.monthly, 0)) + '</td><td>' + f(list.reduce((a, r) => a + r.perDay, 0)) + '</td><td>' + f(list.reduce((a, r) => a + tot(r), 0)) + '</td>' + D.map(d => '<td>' + f(list.reduce((a, r) => a + val(r, d), 0)) + '</td>').join('') + '</tr>';
+    const note = m === 'comm' ? 'Commission comes in automatically from the new <b>Commission → Result &amp; rules</b> engine. The newest day is next to the name.'
+      : m === 'pen' ? 'Red cells are penalties logged that day. The dashed one is today and is cut tomorrow.'
+      : '<b>Day pay = fixed salary ÷ 30 + commission − the penalty cut that day.</b> * marks a day with a penalty cut. Commission-only people have no fixed part.';
+    return '<div class="bar"><div class="seg">' + [['comm', 'Commission'], ['pen', 'Penalty'], ['pay', 'Day pay']].map(x => '<button data-s="emp" data-v="' + x[0] + '" class="' + (m === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</div><span class="hint">' + note + '</span></div>'
+      + grid('<th class="t">Fixed</th><th class="t">Per day</th><th class="t">Month total</th>', body, foot);
+  }
+
+  function leadView() {
+    const M = S.M, D = M.days, m = S.lead;
+    if (!M.leaders.length) return '<div class="warn">No leaders are set up yet. Add them on the Leaders rule (lr.rules).</div>';
+    const v = (l, d) => m === 'fin' ? (l.fin[d] || 0) : m === 'sug' ? (l.sug[d] != null ? l.sug[d] : (l.fin[d] || 0)) : 0;
+    const tot = (l) => D.reduce((a, d) => a + v(l, d), 0);
+    const body = M.leaders.map((l, i) => '<tr><td class="i">' + (i + 1) + '</td><td class="n"' + (l.empId ? ' data-emp="' + l.empId + '" title="Open ' + esc(l.name) + '"' : '') + '>' + esc(l.name) + '</td><td class="role">' + esc(l.role) + '</td><td class="t">' + f(tot(l)) + '</td>' + D.map(d => {
+      if (m === 'roas') { const x = M.lrRow[d]; return '<td class="' + tc(d) + '">' + (x && x.roas != null ? x.roas.toFixed(2) : '–') + '</td>'; }
+      if (m === 'fin') return l.set[d] ? '<td class="' + tc(d) + '">' + f(l.fin[d]) + '</td>' : '<td class="z ' + tc(d) + '" title="' + (l.sug[d] != null ? 'Not set yet. Suggested ' + f(l.sug[d]) + ' (not counted)' : 'No data') + '">–</td>';
+      const isSet = l.set[d]; return '<td class="' + tc(d) + ' ' + (isSet ? '' : 'base') + '" title="' + (isSet ? 'Set amount' : 'Suggestion only, not counted') + '">' + (l.sug[d] != null || isSet ? f(v(l, d)) : '–') + '</td>';
+    }).join('') + '</tr>').join('');
+    const foot = '<tr><td class="i"></td><td class="n">Total · ' + M.leaders.length + ' leaders</td><td></td><td>' + f(M.leaders.reduce((a, l) => a + tot(l), 0)) + '</td>' + D.map(d => '<td>' + (m === 'roas' ? '' : f(M.leaders.reduce((a, l) => a + v(l, d), 0))) + '</td>').join('') + '</tr>';
+    const note = m === 'fin' ? 'Only amounts that were <b>Set</b> on the Leaders page count. The same figures, read from there.' : m === 'sug' ? 'Italic = suggestion only (the ₹' + f(M.roasKind.base) + ' basic below the ROAS cut, or the slab % above it). Not counted until set.' : 'The day\'s ROAS (collection ÷ ad spend).';
+    return '<div class="bar"><div class="seg">' + [['fin', 'Final (set)'], ['sug', 'Suggested'], ['roas', 'ROAS']].map(x => '<button data-s="lead" data-v="' + x[0] + '" class="' + (m === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</div><span class="hint">' + note + '</span></div>' + grid('<th class="t">Month total</th>', body, foot);
+  }
+
+  function penView() {
+    const M = S.M, D = M.days, list = M.team.filter(r => D.some(d => r.pen[d]));
+    const logged = (r) => D.reduce((a, d) => a + (r.pen[d] || 0), 0), cut = (r) => D.reduce((a, d) => a + penCut(r, d), 0);
+    const body = list.map((r, i) => '<tr><td class="i">' + (i + 1) + '</td><td class="n"' + (r.empId ? ' data-emp="' + r.empId + '" title="Open ' + esc(r.name) + '"' : '') + '>' + esc(r.name) + '</td><td class="role">' + esc(r.role) + '</td><td class="t">' + f(logged(r)) + '</td><td class="t">' + f(cut(r)) + '</td>' + D.map(d => r.pen[d] ? '<td class="neg ' + (d === M.today ? 'pend' : '') + '" title="' + esc(r.why[d] || '') + (d === M.today ? ' · pending, cut tomorrow' : ' · cut next day') + '">−' + f(r.pen[d]) + '</td>' : '<td class="z ' + tc(d) + '">–</td>').join('') + '</tr>').join('')
+      || '<tr><td colspan="20" style="text-align:left;padding:14px">No applied penalties for the sales team this month.</td></tr>';
+    const foot = '<tr><td class="i"></td><td class="n">Total · ' + list.length + ' people</td><td></td><td>' + f(list.reduce((a, r) => a + logged(r), 0)) + '</td><td>' + f(list.reduce((a, r) => a + cut(r), 0)) + '</td>' + D.map(d => '<td>' + f(list.reduce((a, r) => a + (r.pen[d] || 0), 0)) + '</td>').join('') + '</tr>';
+    const pending = M.team.reduce((a, r) => a + (r.pen[M.today] || 0), 0);
+    return '<div class="bar"><span class="hint"><b>Rule:</b> a penalty logged on a day is cut from that person the next day, and the budget refreshes. Pending for tomorrow: <b>' + rs(pending) + '</b>. Add or waive penalties on the People → Penalties page.</span></div>'
+      + grid('<th class="t">Logged</th><th class="t">Cut so far</th>', body, foot);
+  }
+
+  function chart(F) {
+    const M = S.M, W = 640, H = 170, L = 38, Bm = 20, T = 8, allow = S.edit.target / PAYDAYS;
+    const days = [...M.days].reverse(), vals = days.map(d => F.by[d].net), max = Math.max(allow, ...vals, 1) * 1.12, bw = (W - L - 8) / Math.max(1, days.length);
+    const y = (v) => T + (H - T - Bm) * (1 - v / max);
+    const bars = days.map((d, i) => { const x = L + i * bw + bw * .18; return '<rect x="' + x.toFixed(1) + '" y="' + y(vals[i]).toFixed(1) + '" width="' + (bw * .64).toFixed(1) + '" height="' + Math.max(0, y(0) - y(vals[i])).toFixed(1) + '" fill="' + (allow && vals[i] > allow ? '#b3261e' : '#1d6b47') + '"><title>' + d + ': ' + rs(vals[i]) + '</title></rect><text x="' + (x + bw * .32).toFixed(1) + '" y="' + (H - 6) + '" text-anchor="middle">' + Number(d.slice(8)) + '</text>'; }).join('');
+    const ticks = [0, .5, 1].map(t => { const v = max / 1.12 * t, yy = y(v); return '<line x1="' + L + '" x2="' + W + '" y1="' + yy + '" y2="' + yy + '" stroke="#e3e7ea"/><text x="' + (L - 4) + '" y="' + (yy + 3) + '" text-anchor="end">' + (v / 100000).toFixed(1) + 'L</text>'; }).join('');
+    const line = allow ? '<line x1="' + L + '" x2="' + W + '" y1="' + y(allow) + '" y2="' + y(allow) + '" stroke="#111827" stroke-dasharray="4 3"/><text x="' + W + '" y="' + (y(allow) - 4) + '" text-anchor="end">daily allowance ' + lakh(allow) + '</text>' : '';
+    return '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Daily net spend against the daily allowance">' + ticks + bars + line + '</svg>';
+  }
+
+  /* what needs fixing: worked out from the numbers above, then Claude writes it up in a few plain lines */
+  function needs(F) {
+    const M = S.M, E = S.edit, n = [];
+    if (!E.target) n.push(['warn', 'No target is set for ' + M.month + '. Type it in the box below and Save.']);
+    else if (F.projected > E.target) n.push(['bad', 'On this pace the month ends at ' + lakh(F.projected) + ', which is ' + lakh(F.projected - E.target) + ' over the ' + lakh(E.target) + ' target. Cut spending or raise the target.']);
+    const unsetDays = Object.values(M.lrRow).filter(x => x.date < M.today && x.sug_amt != null && M.leaders.some(l => !l.set[x.date])).length;
+    if (unsetDays) n.push(['warn', 'Leader commission is not set on ' + unsetDays + ' past day' + (unsetDays === 1 ? '' : 's') + '. Those days count as 0 until you Set them on the Leaders tab.']);
+    const odd = M.team.filter(r => !r.empId && Object.keys(r.comm).length);
+    if (odd.length) n.push(['warn', odd.length + ' name' + (odd.length === 1 ? '' : 's') + ' in the commission result ' + (odd.length === 1 ? 'does' : 'do') + ' not match an employee (' + odd.slice(0, 3).map(r => r.name).join(', ') + '). Their penalties and salary cannot be counted until the names match.']);
+    const pend = M.team.reduce((a, r) => a + (r.pen[M.today] || 0), 0);
+    if (pend) n.push(['warn', rs(pend) + ' of penalties logged today will be cut tomorrow.']);
+    if (!F.exp) n.push(['warn', 'No fixed expenses are entered, so electricity, rent and the like are not in the budget.']);
+    S.warn.forEach(w => n.push(['bad', w]));
+    return n;
+  }
+  function claudeFacts(F) {
+    const M = S.M, E = S.edit; return { month: M.month, days_elapsed: F.elapsed, target: E.target, lump_sum: E.lump, spent_so_far: Math.round(F.spent), projected_month_end: Math.round(F.projected), over_target_by: E.target ? Math.round(F.projected - E.target) : null,
+      today: F.by[M.today] ? { net: Math.round(F.by[M.today].net) } : null, month_totals: Object.fromEntries(Object.entries(F.tot).map(([k, v]) => [k, Math.round(v)])), fixed_expenses_monthly: Math.round(F.exp),
+      problems: needs(F).map(x => x[1]) };
+  }
+  async function askClaude() {
+    if (S.claudeFor === S.M.month + '|' + S.M.today) return; S.claudeFor = S.M.month + '|' + S.M.today; S.claude = '';
+    try { const r = await api.post('budget.summary', { facts: claudeFacts(figures()) }); S.claude = r.summary || ''; } catch (x) { S.claude = ''; }
+    const b = document.getElementById('clSum'); if (b) b.textContent = S.claude;
+  }
+  function claudeBox(F) {
+    const n = needs(F);
+    return '<div class="cl"><b class="h">Claude</b><span id="clSum">' + esc(S.claude || '') + '</span>' + (n.length ? '<ul>' + n.map(x => '<li class="' + x[0] + '">' + esc(x[1]) + '</li>').join('') + '</ul>' : '<div class="ok">Nothing needs fixing right now.</div>') + '</div>';
+  }
+
+  function budView() {
+    const M = S.M, F = figures(), E = S.edit, t = F.by[M.today] || { leaders: 0, comm: 0, salary: 0, fixed: 0, pen: 0, net: 0 }, yd = F.by[addDay(M.today, -1)] || { leaders: 0, comm: 0, salary: 0, fixed: 0, pen: 0, net: 0 };
+    const over = F.projected - E.target, pct = E.target ? Math.min(100, F.spent / E.target * 100) : 0, mark = E.target ? Math.min(100, F.projected / E.target * 100) : 0;
+    const line = (label, k, src, neg) => '<tr><td>' + label + '</td><td>' + (neg && t[k] ? '−' : '') + f(t[k]) + '</td><td>' + (neg && yd[k] ? '−' : '') + f(yd[k]) + '</td><td>' + (neg && F.tot[k] ? '−' : '') + f(F.tot[k]) + '</td><td class="src">' + src + '</td></tr>';
+    const ed = M.bud.can_edit;
+    const ex = (E.expenses || []).map((x, i) => '<tr class="ed"><td><input data-ex="' + i + '" data-f="name" value="' + esc(x.name) + '" ' + (ed ? '' : 'disabled') + '></td><td><input class="a" data-ex="' + i + '" data-f="amount" value="' + esc(x.amount) + '" inputmode="decimal" ' + (ed ? '' : 'disabled') + '></td><td>' + f(x.amount / PAYDAYS) + '</td>' + (ed ? '<td><button data-rm="' + i + '" title="Remove">×</button></td>' : '') + '</tr>').join('');
+    return claudeBox(F) + '<div class="kpis">'
+      + '<div class="kpi"><span>Target</span><b>' + (E.target ? lakh(E.target) : '–') + '</b><em>Lump sum added ' + rs(E.lump) + '</em></div>'
+      + '<div class="kpi"><span>Spent so far</span><b>' + lakh(F.spent) + '</b><em>' + F.elapsed + ' of ' + PAYDAYS + ' days</em></div>'
+      + '<div class="kpi ' + (E.target && over > 0 ? 'bad' : '') + '"><span>Projected month end</span><b>' + lakh(F.projected) + '</b><em>at the daily average so far</em></div>'
+      + '<div class="kpi ' + (E.target && over > 0 ? 'bad' : '') + '"><span>' + (over > 0 ? 'Over target by' : 'Under target by') + '</span><b>' + (E.target ? lakh(Math.abs(over)) : '–') + '</b><em>Left in lump sum ' + lakh(E.lump - F.spent) + '</em></div></div>'
+      + (E.target ? '<div class="alert ' + (over > 0 ? '' : 'good') + '">' + (over > 0 ? 'Projected ' + lakh(F.projected) + ' against a ' + lakh(E.target) + ' target. ' + lakh(over) + ' to cut, or raise the target.' : 'On track to finish inside the target.') + '</div>' : '<div class="warn">Type this month\'s target below and press Save to see the over / under figure.</div>')
+      + '<div class="meter"><i style="width:' + pct + '%"></i><u style="left:' + mark + '%" title="Projected"></u></div><div class="meter-l"><span>Spent ' + pct.toFixed(0) + '% of target</span><span>Black marker: projected month end</span></div>'
+      + '<div class="cols"><section><h3>Day by day</h3><div class="sheet plain"><table><thead><tr><th>Item</th><th class="tod">Today</th><th>Yesterday</th><th>Month so far</th><th style="text-align:left">Comes from</th></tr></thead><tbody>'
+      + line('Leaders commission (set amounts)', 'leaders', 'Leaders page') + line('Salespeople commission', 'comm', 'Commission → Result &amp; rules')
+      + line('Fixed salaries (÷ 30 a day)', 'salary', 'Employee salary') + line('Fixed expenses (÷ 30 a day)', 'fixed', 'List on the right') + line('Penalties cut', 'pen', 'Penalties', true)
+      + '<tr class="sum"><td>Net spend</td><td>' + f(t.net) + '</td><td>' + f(yd.net) + '</td><td>' + f(F.spent) + '</td><td class="src"></td></tr></tbody></table></div></section>'
+      + '<section><h3>Target, lump sum and fixed expenses</h3><div class="sheet plain ed"><table><thead><tr><th>Item</th><th>Amount</th><th>Per day</th>' + (ed ? '<th></th>' : '') + '</tr></thead><tbody>'
+      + '<tr class="ed"><td>Target for ' + esc(M.month) + '</td><td colspan="2"><input class="a" data-top="target" value="' + esc(E.target || '') + '" inputmode="decimal" ' + (ed ? '' : 'disabled') + '></td>' + (ed ? '<td></td>' : '') + '</tr>'
+      + '<tr class="ed"><td>Lump sum added</td><td colspan="2"><input class="a" data-top="lump" value="' + esc(E.lump || '') + '" inputmode="decimal" ' + (ed ? '' : 'disabled') + '></td>' + (ed ? '<td></td>' : '') + '</tr>'
+      + ex + '<tr class="sum"><td>Fixed expenses</td><td>' + f(F.exp) + '</td><td>' + f(F.exp / PAYDAYS) + '</td>' + (ed ? '<td></td>' : '') + '</tr></tbody></table></div>'
+      + (ed ? '<div style="margin-top:8px; display:flex; gap:8px"><button class="tbtn" id="addEx" type="button" style="background:#fff;color:var(--ink);border:1px solid var(--line)">+ Add expense</button><button class="tbtn" id="saveBud" type="button">Save</button></div>' : '<div class="hint" style="margin-top:6px">Only Admin can change these.</div>') + '</section></div>'
+      + '<h3>Daily net spend against the daily allowance</h3><div class="chart">' + chart(F) + '</div>'
+      + '<div class="legend"><span><i class="sw" style="background:#1d6b47"></i>Inside the daily allowance</span><span><i class="sw" style="background:#b3261e"></i>Over it</span><span>Penalties logged today (' + rs(M.team.reduce((a, r) => a + (r.pen[M.today] || 0), 0)) + ') are cut tomorrow</span></div>';
+  }
+
+  function render() {
+    const tabs = [['budget', 'Total Budgeting'], ['emp', 'Employees'], ['lead', 'Leaders'], ['pen', 'Penalties']];
+    const body = S.tab === 'budget' ? budView() : S.tab === 'emp' ? empView() : S.tab === 'lead' ? leadView() : penView();
+    $('tb').innerHTML = (S.warn.length ? '<div class="warn">' + S.warn.map(esc).join('<br>') + '</div>' : '')
+      + '<div class="tabs" role="tablist">' + tabs.map(t => '<button role="tab" data-t="' + t[0] + '" class="' + (S.tab === t[0] ? 'on' : '') + '">' + t[1] + '</button>').join('') + '</div>' + body;
+  }
+
+  $('tb').addEventListener('click', async (e) => {
+    const nm = e.target.closest('td.n[data-emp]'); if (nm && window.PersonCard) { PersonCard.open(Number(nm.dataset.emp), { onChange: () => load().catch(() => {}) }); return; }
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.t) { S.tab = b.dataset.t; render(); return; }
+    if (b.dataset.s) { S[b.dataset.s] = b.dataset.v; render(); return; }
+    if (b.dataset.rm != null) { S.edit.expenses.splice(Number(b.dataset.rm), 1); render(); return; }
+    if (b.id === 'addEx') { S.edit.expenses.push({ name: '', amount: 0 }); render(); return; }
+    if (b.id === 'saveBud') {
+      b.disabled = true;
+      try { await api.post('budget.save', { month: S.M.month, target: Number(S.edit.target) || 0, lump: Number(S.edit.lump) || 0, expenses: S.edit.expenses.filter(x => String(x.name).trim()) }); S.M.bud.target = S.edit.target; S.M.bud.lump = S.edit.lump; render(); b.textContent = 'Saved'; }
+      catch (err) { alert(err.message || 'Could not save.'); b.disabled = false; }
+    }
+  });
+  $('tb').addEventListener('change', (e) => {
+    const i = e.target; if (i.tagName !== 'INPUT') return;
+    if (i.dataset.top) S.edit[i.dataset.top] = Number(String(i.value).replace(/,/g, '')) || 0;
+    else if (i.dataset.ex != null) { const x = S.edit.expenses[Number(i.dataset.ex)]; x[i.dataset.f] = i.dataset.f === 'amount' ? (Number(String(i.value).replace(/,/g, '')) || 0) : i.value; }
+    else return;
+    render();
+  });
+  $('mon').value = new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 7);
+  $('mon').onchange = () => load().catch(err => { $('tb').innerHTML = '<div class="card"><div class="empty">' + esc(err.message) + '</div></div>'; });
+  $('btnReload').onclick = () => $('mon').onchange();
+  $('mon').onchange();
+})();
+</script>
+</body>
+</html>

@@ -109,9 +109,9 @@
             <label class="sx-f" style="width:84px">Photo<span id="chPhotoBox" style="display:flex;align-items:center;justify-content:center;width:72px;height:72px;border:1.5px dashed var(--sx-line);border-radius:12px;overflow:hidden;cursor:pointer;background:var(--sx-card,#fff);font-size:12px;color:var(--sx-mut)">+ photo</span><input type="file" id="chPhoto" accept="image/*" style="display:none"></label>
             <label class="sx-f" style="flex:1;min-width:170px">Name<input class="sx-in" id="chName" placeholder="e.g. Gold link chain" maxlength="120"></label>
             <label class="sx-f" style="width:110px">MRP ₹<input class="sx-in" id="chMrp" type="number" min="0" inputmode="numeric"></label>
-            <label class="sx-f" style="width:130px">Selling price ₹<input class="sx-in" id="chPrice" type="number" min="0" inputmode="numeric"></label>
+            <label class="sx-f" style="width:130px">Price ₹ (optional)<input class="sx-in" id="chPrice" type="number" min="0" inputmode="numeric"></label>
             <button class="sx-btn" id="chSave">Save chain</button><button class="sx-btn ghost" id="chCancel" style="display:none">Cancel</button></div>
-          <div class="sx-mut" style="font-size:12px;margin-top:8px">No stock is added here. Next: <b>Make labels</b> (one barcode per chain), print, stick, then scan them in <b>3 · Scan into inventory</b> — only scanned chains count as stock. At the counter you scan the chain’s sticker and the bill splits by itself (chain at its price, perfumes get the rest of the same total) with a numbered GST invoice.</div>
+          <div class="sx-mut" style="font-size:12px;margin-top:8px">No stock is added here. Next: <b>Make labels</b> (one barcode per chain), print, stick, then scan them in <b>3 · Scan into inventory</b> — only scanned chains count as stock. At the counter you scan the chain’s sticker and the bill splits by itself: <b>50% of the total is the chain, 50% the perfumes</b> (never above the chain’s MRP) with a numbered GST invoice.</div>
           <div id="chMsg"></div></div>
         <div id="chList" class="sx-mut">Loading…</div>
       </div>
@@ -618,7 +618,7 @@
     const L = chData.chains;
     $('chList').innerHTML = L.length ? L.map((c) => `<div class="sx-card" style="margin-bottom:10px;display:flex;gap:12px;flex-wrap:wrap;align-items:center">
       ${c.photo ? `<img src="${esc(c.photo)}" alt="" style="width:64px;height:64px;border-radius:12px;object-fit:cover">` : '<span style="width:64px;height:64px;border-radius:12px;background:var(--sx-line);display:inline-block"></span>'}
-      <div style="flex:1;min-width:170px"><b>${esc(c.name)}</b><div class="sx-mut" style="font-size:12.5px">${c.mrp ? 'MRP ' + rupee(c.mrp) + ' · ' : ''}selling ${rupee(c.price)}</div>
+      <div style="flex:1;min-width:170px"><b>${esc(c.name)}</b><div class="sx-mut" style="font-size:12.5px">${c.mrp ? 'MRP ' + rupee(c.mrp) : ''}</div>
         <div style="font-size:12.5px;margin-top:3px"><b>${c.in_stock}</b> in stock · ${c.waiting} label${c.waiting === 1 ? '' : 's'} waiting to be scanned · ${c.sold} sold</div></div>
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><input class="sx-in" type="number" min="1" max="200" value="1" data-q="${c.chain_id}" style="width:70px" aria-label="How many labels"><button class="sx-btn" data-mk="${c.chain_id}">Make labels</button>
         ${c.waiting ? `<button class="sx-btn ghost" data-pr="${c.chain_id}">Print ${c.waiting} waiting</button>` : ''}<button class="sx-btn ghost" data-ed="${c.chain_id}">Edit</button><button class="sx-btn ghost" data-rm="${c.chain_id}">Remove</button></div></div>`).join('')

@@ -51,7 +51,7 @@ function cx_problems() {
         $P['other'] = $o; }
     return $P;
 }
-function cx_sources() { return ['whatsapp' => 'WhatsApp', 'call' => 'Call', 'store' => 'Store', 'order' => 'Order', 'social' => 'Instagram / social', 'email' => 'Email', 'other' => 'Other']; }
+function cx_sources() { return ['whatsapp' => 'WhatsApp', 'oldphone' => 'Old phone (AI number)', 'call' => 'Call', 'store' => 'Store', 'order' => 'Order', 'social' => 'Instagram / social', 'email' => 'Email', 'other' => 'Other']; }
 function cx_urgencies() { return ['normal' => 'Normal', 'high' => 'High', 'urgent' => 'Urgent']; }
 function cx_resolutions() { return ['exchange' => 'Exchanged', 'resend' => 'Parcel resent', 'refund' => 'Refunded', 'credit' => 'Store credit given', 'explained' => 'Explained, customer fine', 'other' => 'Other']; }
 function cx_defaults() {
@@ -226,7 +226,7 @@ function cx_views(PDO $pdo, array $rows, $full = false) {
         $v = ['id' => (int)$r['id'], 'code' => cx_code($r['id']), 'phone' => $r['phone'], 'name' => $r['cust_name'] !== '' ? $r['cust_name'] : ($r['phone'] !== '' ? '+91 ' . $r['phone'] : 'Customer'), 'source' => $r['source'], 'source_label' => $S[$r['source']] ?? $r['source'],
             'problem' => $r['problem'], 'problem_label' => $pb[0], 'problem_icon' => $pb[1], 'ai_guess' => function_exists('cx4_guess_of') ? cx4_guess_of($r) : null, 'summary' => (string)$r['summary'], 'product' => $r['product'], 'order_name' => $r['order_name'], 'awb' => $r['awb'], 'courier' => $r['courier'],
             'urgency' => $r['urgency'], 'desk' => $r['desk'], 'desk_label' => $D[$r['desk']][0] ?? $r['desk'], 'status' => $r['status'], 'owner' => (int)$r['owner_emp'], 'owner_name' => cx_name($pdo, $r['owner_emp']),
-            'promise_at' => (string)($r['promise_at'] ?? ''), 'promise_what' => (string)($r['promise_what'] ?? ''), 'promise_state' => (string)($r['promise_state'] ?? ''), 'raised_by' => (int)$r['raised_by'], 'raised_name' => cx_name($pdo, $r['raised_by']), 'raised_at' => $r['raised_at'], 'ago' => cx_age($r['raised_at']), 'late' => $t['late'], 'time_label' => $t['label'], 'due_at' => $r['due_at'],
+            'quiet' => (int)($r['quiet'] ?? 0), 'promise_at' => (string)($r['promise_at'] ?? ''), 'promise_what' => (string)($r['promise_what'] ?? ''), 'promise_state' => (string)($r['promise_state'] ?? ''), 'raised_by' => (int)$r['raised_by'], 'raised_name' => cx_name($pdo, $r['raised_by']), 'raised_at' => $r['raised_at'], 'ago' => cx_age($r['raised_at']), 'late' => $t['late'], 'time_label' => $t['label'], 'due_at' => $r['due_at'],
             'first_reply' => !empty($r['first_reply_at']), 'waiting' => (bool)$waiting, 'last' => isset($last[(int)$r['id']]) ? cx_short($last[(int)$r['id']], 70) : '', 'repeat' => max(0, ($rep[$r['phone']] ?? 0) - 1),
             'res' => $r['resolution'], 'res_label' => cx_resolutions()[$r['resolution']] ?? '', 'cost' => (float)$r['res_cost'] + ((int)$r['refund_ok'] === 1 ? (float)$r['refund_amt'] : 0), 'refund_amt' => (float)$r['refund_amt'], 'refund_ok' => (int)$r['refund_ok'], 'happy' => $r['happy'] === null ? null : (int)$r['happy'],
             'resolved_at' => $r['resolved_at'], 'reopen_n' => (int)$r['reopen_n']];
@@ -272,7 +272,9 @@ function cx_raise(PDO $pdo, array $auth, array $role, array $in) {
     $prev = ($contact && (int)$contact['assigned_emp'] > 0 && (int)($contact['cx_id'] ?? 0) === 0) ? (int)$contact['assigned_emp'] : $emp;
     $pdo->prepare("INSERT INTO cx_cases (phone, cust_name, source, problem, summary, product, order_name, awb, courier, urgency, desk, status, owner_emp, raised_by, prev_emp, raised_at, reply_due, due_at, steps_done, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
         ->execute([$key, $name, $src, $problem, $summary, trim(mb_substr((string)($in['product'] ?? ''), 0, 120)), $order, $awb, $courier, $urg, $desk, 'open', $owner, $emp, $prev, $now, date('Y-m-d H:i:s', $nowTs + $rm * 60), date('Y-m-d H:i:s', $nowTs + $fh * 3600), '[]', $now]);
-    $id = (int)$pdo->lastInsertId(); $code = cx_code($id); $case = cx_row($pdo, $id);
+    $id = (int)$pdo->lastInsertId();
+    if (!empty($in['quiet']) || $src === 'oldphone') { try { $pdo->prepare("UPDATE cx_cases SET quiet = 1 WHERE id = ?")->execute([$id]); } catch (Throwable $e) { } }   // 📱 the customer talks on our OLD phone (migration): HRMS sends them nothing, the team answers on that phone
+    $code = cx_code($id); $case = cx_row($pdo, $id);
     cx_ev($pdo, $id, $emp, 'raised', cx_name($pdo, $emp) . ' raised the complaint (' . $P[$problem][0] . ', ' . $U[$urg] . ') from ' . $S[$src]);
     if ($summary !== '' && $summary !== $P[$problem][0] && empty($in['quiet_note'])) cx_ev($pdo, $id, $emp, 'note', $summary);
     if ($key !== '') { $n = $pdo->prepare("SELECT COUNT(*) FROM cx_cases WHERE phone = ? AND id <> ? AND raised_at >= ?"); $n->execute([$key, $id, date('Y-m-d', strtotime('-90 days'))]); if ((int)$n->fetchColumn() > 0) cx_ev($pdo, $id, 0, 'alert', 'Repeat complainer: this customer has complained before in the last 90 days.'); }
