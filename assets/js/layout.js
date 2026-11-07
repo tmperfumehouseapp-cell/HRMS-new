@@ -848,10 +848,15 @@ function renderSidebarCore(active) {
     // Custom role: sidebar built from its granted permissions. The page
     // stays hidden until me.flags confirms this role may open it, so a
     // refused page never flashes its "no permission" errors.
-    document.documentElement.style.visibility = 'hidden';
-    // Safety net: a slow or stuck server reply must never leave the page
-    // invisible — after 6 s the page shows regardless.
-    setTimeout(() => { document.documentElement.style.visibility = ''; }, 6000);
+    // A page this person was already allowed to open in the last 12 hours shows AT ONCE (the check still runs in the background and sends them away
+    // if the permission was taken back). Only a page never confirmed before waits hidden — and never longer than 2.5 s.
+    const okKey = 'hrms_pok:' + user.username + ':' + user.role + ':' + active;
+    const seenOk = (() => { try { return Date.now() - Number(localStorage.getItem(okKey) || 0) < 43200000; } catch (e) { return false; } })();
+    if (!seenOk) {
+      document.documentElement.style.visibility = 'hidden';
+      // Safety net: a slow or stuck server reply must never leave the page invisible.
+      setTimeout(() => { document.documentElement.style.visibility = ''; }, 2500);
+    }
     document.getElementById('sidebar').outerHTML = `
     <aside class="sidebar">
       <div class="brand">HR<span>MS</span></div>
@@ -875,6 +880,7 @@ function renderSidebarCore(active) {
       const nav = document.getElementById('customNav');
       if (!nav) return;
       if (activePerm && !perms.includes(activePerm)) {
+        try { localStorage.removeItem(okKey); } catch (e) { /* ignore */ }
         // Not allowed here (e.g. login sent them to the Dashboard): go to
         // the first page this role IS allowed, instead of showing an error.
         const home = perms.map(p => (PAGES_FOR_PERM[p] || [])[0]).find(Boolean);
@@ -883,6 +889,7 @@ function renderSidebarCore(active) {
         nav.insertAdjacentHTML('beforeend', `<span style="display:block; padding:8px 20px; font-size:12px; color:#fca5a5; line-height:1.5;">Your role "${user.role}" doesn't include <b>${label}</b>. Ask an Admin to tick it on the Roles page.</span>`);
       }
       document.documentElement.style.visibility = '';
+      try { localStorage.setItem(okKey, String(Date.now())); } catch (e) { /* ignore */ }   // remembered: next time this page opens with no wait
       if (window.WS) { WS.customNav(nav, perms, d, active, { PAGES_FOR_PERM, SALES_PERMS, SALES_PAGE_KEYS }); return; } /*ws*/
       // The sales pages (Control Tower, Orders, Allocation, Codes, Targets, Performance, Commission, Retail ...) live inside ONE Sales item.
       const inSales = perms.some(p => SALES_PERMS.includes(p));
@@ -918,7 +925,9 @@ function renderSidebarCore(active) {
     // the Employee role was granted that module on the Roles page.
     const EMPLOYEE_PAGES = ['social_inbox', 'attendance', 'leave', 'my_salary', 'my_penalties', 'my_agreements', 'my_sales', 'orders', 'my_chats', 'wasales', 'my_space', 'my_orders', 'my_day', 'boss_engine', 'boss_inbox', 'daily_summary', 'tracker', 'brain', 'office_care', 'boss_questions', 'boss_penalties', 'dept_hub', 'dept_dispatch', 'customers', 'dept_restock', 'dept_shops', 'dept_supplies', 'dept_work', 'dept_fix', 'people_admin' /*bd-arr*/, 'flyers', 'complaints', 'my_complaints'];
     const needsCheck = !EMPLOYEE_PAGES.includes(active);
-    if (needsCheck) { document.documentElement.style.visibility = 'hidden'; setTimeout(() => { document.documentElement.style.visibility = ''; }, 6000); }
+    const empOkKey = 'hrms_pok:' + user.username + ':Employee:' + active;
+    const empSeenOk = (() => { try { return Date.now() - Number(localStorage.getItem(empOkKey) || 0) < 43200000; } catch (e) { return false; } })();   // already confirmed in the last 12 h: no waiting
+    if (needsCheck && !empSeenOk) { document.documentElement.style.visibility = 'hidden'; setTimeout(() => { document.documentElement.style.visibility = ''; }, 2500); }
 
     document.getElementById('sidebar').outerHTML = `
     <aside class="sidebar">
@@ -950,9 +959,9 @@ function renderSidebarCore(active) {
       try { localStorage.setItem('hrms_home', 'my_day.html'); } catch (e) { /* private mode */ }
       // replace(): the refused page never enters the history, so the back
       // button goes to the previous employee page, not back to this one.
-      if (!allowed.includes(active)) { window.location.replace('my_day.html'); return; }
+      if (!allowed.includes(active)) { try { localStorage.removeItem(empOkKey); } catch (e) { /* ignore */ } window.location.replace('my_day.html'); return; }
       if (!d.has_salary && active === 'my_salary') { window.location.replace('my_day.html'); return; }
-      if (needsCheck) document.documentElement.style.visibility = '';
+      if (needsCheck) { document.documentElement.style.visibility = ''; try { localStorage.setItem(empOkKey, String(Date.now())); } catch (e) { /* ignore */ } }
 
       const holder = document.getElementById('empSalesNav');
       if (holder) {
