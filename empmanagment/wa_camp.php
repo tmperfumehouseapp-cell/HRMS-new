@@ -552,9 +552,12 @@ function wa_camp_tick(PDO $pdo): array
     try { wa_camp_rules_backfill($pdo, $nowTs); } catch (Throwable $e) { }
     try { wa_camp_retry_scan($pdo, $nowTs); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'campaign retries: ' . $e->getMessage()); }
     $inWin = wa_camp_in_window($pdo, $nowTs); $due = "((status = 'queued' AND (send_at IS NULL OR send_at <= '$now')) OR (status = 'retry' AND next_try <= '$now'))";
+    // a campaign is FINISHED as soon as everyone has had their first try (owner, 7 Nov: not "Sending" for 3 days while Meta-held people wait for their one extra try).
+    // The waiting retries stay in the queue: the moment one is due, the campaign is reopened for it and finishes again.
+    try { $pdo->exec("UPDATE wa_campaigns SET status = 'running', finished_at = NULL WHERE status = 'done' AND id IN (SELECT camp_id FROM wa_camp_items WHERE status = 'retry' AND next_try <= '$now')"); } catch (Throwable $e) { }
     foreach ($pdo->query("SELECT id FROM wa_campaigns WHERE status = 'running' ORDER BY id")->fetchAll() as $row) {
         $c = wa_camp_row($pdo, (int)$row['id']); if (!$c) continue; $id = (int)$c['id'];
-        $rem = (int)$pdo->query("SELECT COUNT(*) FROM wa_camp_items WHERE camp_id = $id AND status IN ('queued', 'retry')")->fetchColumn();
+        $rem = (int)$pdo->query("SELECT COUNT(*) FROM wa_camp_items WHERE camp_id = $id AND (status = 'queued' OR (status = 'retry' AND next_try <= '$now'))")->fetchColumn();
         if ($rem === 0) { if ((int)$pdo->query("SELECT COUNT(*) FROM wa_camp_items WHERE camp_id = $id AND status = 'sending'")->fetchColumn() === 0) $pdo->prepare("UPDATE wa_campaigns SET status = 'done', finished_at = ?, note = '' WHERE id = ?")->execute([$now, $id]); continue; }
         $t = wa_camp_tpl($pdo, (int)$c['tpl_id'], true, (int)$c['media_lib_id']);
         if (!$t) { foreach (wa_fam_members($pdo, wa_fam_root(wa_mix_trow($pdo, (int)$c['tpl_id']))) as $fm) if ($fm['line'] === 'M' && (int)$fm['id'] !== (int)$c['tpl_id'] && !$fm['relabelled_at'] && ($t = wa_camp_tpl($pdo, (int)$fm['id'], true, (int)$c['media_lib_id']))) break; }   // the first version is not available anywhere: an alternative version of the same message takes over
@@ -698,7 +701,7 @@ function wa_camp_tick(PDO $pdo): array
         if ($stop !== '' && !empty($hard)) wa_camp_pause($pdo, $id, $stop);
         elseif ($stop !== '') $pdo->prepare("UPDATE wa_campaigns SET note = ? WHERE id = ?")->execute([mb_substr($stop, 0, 200), $id]);
         else $pdo->prepare("UPDATE wa_campaigns SET note = '' WHERE id = ? AND status = 'running'")->execute([$id]);
-        if ($stop === '' && (int)$pdo->query("SELECT COUNT(*) FROM wa_camp_items WHERE camp_id = $id AND status IN ('queued', 'sending', 'retry')")->fetchColumn() === 0) $pdo->prepare("UPDATE wa_campaigns SET status = 'done', finished_at = ?, note = '' WHERE id = ? AND status = 'running'")->execute([date('Y-m-d H:i:s', $nowTs), $id]);
+        if ($stop === '' && (int)$pdo->query("SELECT COUNT(*) FROM wa_camp_items WHERE camp_id = $id AND (status IN ('queued', 'sending') OR (status = 'retry' AND next_try <= '" . date('Y-m-d H:i:s', $nowTs) . "'))")->fetchColumn() === 0) $pdo->prepare("UPDATE wa_campaigns SET status = 'done', finished_at = ?, note = '' WHERE id = ? AND status = 'running'")->execute([date('Y-m-d H:i:s', $nowTs), $id]);
         $hard = false; $res[$id] = ['sent' => $sent, 'failed' => $failed, 'skipped' => $skipped, 'stop' => $stop];
         if ($plan) $res[$id]['mix'] = ['u_status' => $plan['u_status'], 'target' => $plan['target'], 'achieved' => $plan['achieved'], 'per_number' => array_map(fn($p) => ['share' => $p['share'], 'state' => $p['u_state'], 'u_given' => $p['u_given'], 'elig' => $p['elig']], $plan['per_number'])];
     }
