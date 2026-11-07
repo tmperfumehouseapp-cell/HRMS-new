@@ -1,0 +1,426 @@
+<?php
+/**
+ * wmo.php — 🧾 MANUAL ORDER from a WhatsApp chat (the customer paid by QR / UPI, or pays on delivery; no website checkout).   (actions "wmo.*", loaded by wa_more.php)
+ *
+ * The flow
+ *   1. In the chat the salesperson presses "🧾 Manual order": chooses Full prepaid / Part prepaid + COD / Full COD, uploads the payment screenshot (Claude reads the amount + UTR),
+ *      chooses the ML and a combo (6 × 20 ml …), picks the perfumes (and a chain) from the Shopify catalogue the cart already syncs (wch_prod / wch_var), and sends the customer a link.
+ *   2. The customer opens the link (no login: wmo_form.php?t=TOKEN), fills name, mobile (checked against the chat's number), second mobile, address, landmark, pincode (city + state fill
+ *      themselves) and presses Done.
+ *   3. Done = the order is FINAL: a row in shop_orders (so Orders, Sales, Commission, Finance and Dispatch see it exactly like a Shopify order), the allocation to the chat's salesperson
+ *      (Query / Campaign from the chat's source), the secondary mobile, the "address received" tick, the parcel in Dispatch, one confirmation message, "order completed" on the chat.
+ *
+ * Money rules (same as the chain cart): every chain is billed at its FULL price, all of the discount lands on the perfumes: perfumes get = total - chains.
+ *   Full prepaid: total = what the screenshot shows.  Part prepaid: total = agreed total, paid = screenshot, COD balance = total - paid.  Full COD: nothing paid, the whole total on delivery.
+ *   The order carries total_outstanding the way Shopify does (COD balance), and the UPI reference (UTR) as pay_ref, so a bank statement row with that UTR matches the order in Finance.
+ *
+ * Nothing here touches wch.php. Own tables: wmo_order. Setting wmo_on (default 1) switches the whole thing off.
+ *   wmo.shot_read POST {image(base64), mime}            → what Claude reads on a payment screenshot {amount, utr, date, status, payer, dup}
+ *   wmo.create    POST {phone, pay, total, paid, utr, ml, lines[{vid,qty}], chains[{vid,qty}], shot?, note?}  → {order}
+ *   wmo.send      POST {id}                             → sends the link into the chat
+ *   wmo.list      GET  {phone}                          → this chat's manual orders
+ *   wmo.cancel    POST {id}
+ *   wmo.form      GET/POST {t}   PUBLIC: the customer's address page (HTML)        wmo.pin  GET {pin}  PUBLIC: city + state of a pincode
+ * PHP 7.4 safe.
+ */
+if (!isset($pdo) || !function_exists('json_response')) { return; }
+
+if (!function_exists('wmo_tables')) {
+
+function wmo_on(PDO $pdo): bool { return (string)setting_get($pdo, 'wmo_on', '1') !== '0'; }
+function wmo_tables(PDO $pdo): bool
+{
+    static $ok = null; if ($ok !== null) return $ok;
+    try {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS wmo_order (id INT AUTO_INCREMENT PRIMARY KEY, order_no VARCHAR(16) NOT NULL DEFAULT '', token CHAR(32) NOT NULL, phone VARCHAR(12) NOT NULL, emp_id INT NOT NULL DEFAULT 0,
+            assign_emp INT NOT NULL DEFAULT 0, status VARCHAR(10) NOT NULL DEFAULT 'draft', pay VARCHAR(8) NOT NULL DEFAULT 'prepaid', total_p BIGINT NOT NULL DEFAULT 0, paid_p BIGINT NOT NULL DEFAULT 0, cod_p BIGINT NOT NULL DEFAULT 0,
+            utr VARCHAR(40) NOT NULL DEFAULT '', ml INT NOT NULL DEFAULT 0, lines_json MEDIUMTEXT NULL, shot_mime VARCHAR(20) NOT NULL DEFAULT '', shot_b64 MEDIUMTEXT NULL, shot_json TEXT NULL, src VARCHAR(12) NOT NULL DEFAULT '',
+            cust_json TEXT NULL, phone_match TINYINT NOT NULL DEFAULT 1, shop_id BIGINT NULL, note VARCHAR(255) NOT NULL DEFAULT '', created_at DATETIME NOT NULL, sent_at DATETIME NULL, opened_at DATETIME NULL, confirmed_at DATETIME NULL,
+            cancelled_at DATETIME NULL, UNIQUE KEY uq_wmo_tok (token), KEY k_wmo_phone (phone, status), KEY k_wmo_utr (utr)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        foreach (['sr_order_id' => "VARCHAR(24) NOT NULL DEFAULT ''", 'sr_note' => "VARCHAR(255) NOT NULL DEFAULT ''"] as $c => $def) { try { if (!$pdo->query("SHOW COLUMNS FROM wmo_order LIKE '$c'")->fetch()) $pdo->exec("ALTER TABLE wmo_order ADD COLUMN $c $def"); } catch (PDOException $e) { } }      // the Shiprocket order id and the last note
+        return $ok = true;
+    } catch (PDOException $e) { error_log('wmo_tables: ' . $e->getMessage()); return $ok = false; }
+}
+
+// ------------------------------------------------------------------------------------------------------------------ small helpers
+function wmo_p($rupees): int { return (int)round(((float)$rupees) * 100); }
+function wmo_rs(int $p): string { return '₹' . ($p % 100 === 0 ? number_format($p / 100, 0, '.', ',') : number_format($p / 100, 2, '.', ',')); }
+function wmo_phone10($s): string { return substr(preg_replace('/\D+/', '', (string)$s), -10); }
+function wmo_clip($s, int $n): string { return mb_substr(trim(preg_replace('/\s+/u', ' ', (string)$s)), 0, $n); }
+/** The synthetic shopify_id of a manual order: far above every real Shopify id (those are below 1e14), still exact in JavaScript. */
+function wmo_sid(int $id): int { return 7000000000000000 + $id; }
+function wmo_store_key(): string { $s = function_exists('shopify_stores') ? array_keys(shopify_stores()) : []; return in_array('tmperfumehouse', $s, true) ? 'tmperfumehouse' : ($s[0] ?? 'tmperfumehouse'); }
+function wmo_link(string $token): string
+{
+    $base = defined('APP_URL') && APP_URL ? rtrim((string)APP_URL, '/') : ((!empty($_SERVER['HTTPS']) || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https' ? 'https://' : 'http://') . ($_SERVER['HTTP_HOST'] ?? 'localhost'));
+    $dir = isset($_SERVER['SCRIPT_NAME']) ? rtrim(dirname((string)$_SERVER['SCRIPT_NAME']), '/\\') : '/empmanagment';
+    return $base . ($dir === '' || $dir === '.' ? '' : $dir) . '/wmo_form.php?t=' . $token;
+}
+/** Split $totalP over $weights so that the parts add up EXACTLY (whole rupees when possible, else paise); every part at least 1 paise. */
+function wmo_split(int $totalP, array $weights): array
+{
+    $n = count($weights); if ($n === 0) return []; if ($n === 1) return [$totalP];
+    $sum = array_sum($weights); if ($sum <= 0) { $weights = array_fill(0, $n, 1); $sum = $n; }
+    $out = [];
+    foreach ([100, 1] as $unit) {
+        $out = []; $acc = 0; for ($i = 0; $i < $n - 1; $i++) { $a = (int)(round($totalP * $weights[$i] / $sum / $unit) * $unit); $out[] = $a; $acc += $a; }
+        $out[] = $totalP - $acc; $ok = true; foreach ($out as $a) if ($a <= 0) $ok = false; if ($ok) return $out;
+    }
+    return $out;
+}
+/** Query / Campaign for the allocation, from the chat's source. */
+function wmo_type_of(array $c): string { return ((string)($c['source'] ?? '')) === 'campaign' ? 'campaign' : 'query'; }
+function wmo_emp(PDO $pdo, int $id): array
+{
+    if ($id <= 0) return ['name' => '', 'tag' => ''];
+    try { $q = $pdo->prepare("SELECT full_name, sales_tag FROM employees WHERE employee_id = ?"); $q->execute([$id]); $r = $q->fetch(); return $r ? ['name' => (string)$r['full_name'], 'tag' => trim((string)$r['sales_tag'])] : ['name' => '', 'tag' => '']; }
+    catch (Throwable $e) { return ['name' => '', 'tag' => '']; }
+}
+/** 5 attempts per minute per visitor and key: the customer page and the pincode lookup are public. */
+function wmo_throttle(string $key, int $max): bool
+{
+    $f = sys_get_temp_dir() . '/hrms_wmo_' . md5($key . '|' . ($_SERVER['REMOTE_ADDR'] ?? '') . '|' . date('Hi')); $n = is_file($f) ? (int)@file_get_contents($f) : 0; if ($n >= $max) return false; @file_put_contents($f, (string)($n + 1)); return true;
+}
+
+// ------------------------------------------------------------------------------------------------------------------ the lines and the money
+/** Looks the chosen variants up in the Shopify catalogue copy (wch_var / wch_prod) and splits the money. Returns [lines, perfumeMl, error]. */
+function wmo_lines(PDO $pdo, int $totalP, array $perf, array $chains): array
+{
+    $want = []; foreach ([['perfume', $perf, 20], ['chain', $chains, 5]] as [$kind, $arr, $max]) foreach ($arr as $x) {
+        if (!is_array($x)) continue; $vid = (int)($x['vid'] ?? 0); $q = (int)($x['qty'] ?? 0); if ($vid <= 0 || $q < 1) continue; $want[$vid] = ['kind' => $kind, 'qty' => min($max, $q)] + ($want[$vid] ?? []);
+    }
+    if (!$want) return [[], 0, 'Pick at least one perfume.'];
+    try {
+        $in = implode(',', array_fill(0, count($want), '?'));
+        $st = $pdo->prepare("SELECT v.vid, v.pid, v.sku, v.title vtitle, v.ml, v.price_p, v.avail, p.title, p.short, p.kind FROM wch_var v JOIN wch_prod p ON p.pid = v.pid WHERE v.vid IN ($in)"); $st->execute(array_keys($want)); $rows = $st->fetchAll();
+    } catch (Throwable $e) { return [[], 0, 'The product catalogue is not ready. Refresh it once (Sales → WhatsApp → Chain cart) and try again.']; }
+    $by = []; foreach ($rows as $r) $by[(int)$r['vid']] = $r;
+    $L = []; $chainP = 0; $ml = 0;
+    foreach ($want as $vid => $w) {
+        $r = $by[$vid] ?? null; if (!$r) return [[], 0, 'A product is not in the catalogue any more. Search it again.'];
+        if ((int)$r['avail'] !== 1) return [[], 0, trim((string)($r['short'] ?: $r['title'])) . ' is out of stock.'];
+        $isChain = (string)$r['kind'] === 'chain'; if ($isChain !== ($w['kind'] === 'chain')) return [[], 0, 'A chain was picked as a perfume (or the other way round). Search it again.'];
+        $mrp = (int)$r['price_p']; $label = $r['ml'] !== null ? (int)$r['ml'] . ' ml' : trim((string)$r['vtitle']);
+        $L[] = ['vid' => (int)$vid, 'sku' => (string)$r['sku'], 'pid' => (int)$r['pid'], 'title' => (string)$r['title'], 'short' => (string)($r['short'] ?: $r['title']), 'label' => $label, 'ml' => $r['ml'] === null ? null : (int)$r['ml'], 'qty' => (int)$w['qty'], 'mrp_p' => $mrp, 'chain' => $isChain, 'total_p' => 0];
+        if ($isChain) $chainP += $mrp * (int)$w['qty']; elseif ($r['ml'] !== null) $ml += (int)$r['ml'] * (int)$w['qty'];
+    }
+    $pi = []; foreach ($L as $i => $l) if (!$l['chain']) $pi[] = $i; if (!$pi) return [[], 0, 'Pick at least one perfume.'];
+    $perfP = $totalP - $chainP; $pieces = 0; foreach ($pi as $i) $pieces += $L[$i]['qty'];
+    if ($perfP < $pieces * 1000) return [[], 0, 'After the chain (' . wmo_rs($chainP) . ' at its full price) too little is left for the perfumes. Raise the total or remove the chain.'];
+    foreach ($L as $i => $l) if ($l['chain']) $L[$i]['total_p'] = $l['mrp_p'] * $l['qty'];
+    $parts = wmo_split($perfP, array_map(fn($i) => max(1, $L[$i]['mrp_p'] * $L[$i]['qty']), $pi)); foreach ($pi as $k => $i) $L[$i]['total_p'] = $parts[$k];
+    return [$L, $ml, ''];
+}
+/** Shopify-shaped line items of the order lines (for the ML / colour / chain helpers of the Orders pages). */
+function wmo_line_items(array $L): array
+{
+    $o = []; foreach ($L as $l) $o[] = ['title' => $l['title'], 'name' => $l['title'] . ' - ' . $l['label'], 'variant_title' => $l['label'], 'quantity' => (int)$l['qty'], 'price' => round($l['total_p'] / 100 / max(1, (int)$l['qty']), 2), 'total_discount' => 0, 'sku' => '']; return $o;
+}
+
+// ------------------------------------------------------------------------------------------------------------------ the payment screenshot
+function wmo_read_shot(PDO $pdo, string $b64, string $mime): array
+{
+    $sys = "You read a screenshot of a UPI / QR payment (PhonePe, Google Pay, Paytm, a bank app …) that a customer sent to TM Perfume House. Return JSON: ok = true only if it really is a payment confirmation; amount = the amount paid in rupees as a number (0 if unclear); "
+        . "utr = the UPI reference / UTR / transaction id exactly as printed (digits and letters only, empty if none); date = the payment date and time as printed; status = success | failed | pending | unknown; payer = the payer's name if shown; app = the app; note = one short sentence of anything odd "
+        . "(edited look, a different date, the receiver is not TM Perfume House, amount unclear). Never invent a number.";
+    $sch = ['type' => 'OBJECT', 'properties' => ['ok' => ['type' => 'BOOLEAN'], 'amount' => ['type' => 'NUMBER'], 'utr' => ['type' => 'STRING'], 'date' => ['type' => 'STRING'], 'status' => ['type' => 'STRING'], 'payer' => ['type' => 'STRING'], 'app' => ['type' => 'STRING'], 'note' => ['type' => 'STRING']], 'required' => ['ok', 'amount', 'utr', 'date', 'status', 'payer', 'app', 'note']];
+    [$ok, $v, $why] = convo_ai($sys, [['text' => 'Read this payment screenshot.'], ['inlineData' => ['mimeType' => $mime, 'data' => $b64]]], $sch, false, 700, 'claude');
+    if (!$ok) return ['error' => 'Claude could not read it: ' . mb_substr((string)$why, 0, 160) . ' You can type the amount yourself.'];
+    $utr = preg_replace('/[^A-Za-z0-9]/', '', (string)($v['utr'] ?? ''));
+    $out = ['ok' => !empty($v['ok']), 'amount' => round(max(0, (float)($v['amount'] ?? 0)), 2), 'utr' => mb_substr($utr, 0, 40), 'date' => wmo_clip($v['date'] ?? '', 40), 'status' => in_array(($v['status'] ?? ''), ['success', 'failed', 'pending'], true) ? $v['status'] : 'unknown', 'payer' => wmo_clip($v['payer'] ?? '', 60), 'app' => wmo_clip($v['app'] ?? '', 30), 'note' => wmo_clip($v['note'] ?? '', 200), 'dup' => ''];
+    if ($out['utr'] !== '' && wmo_tables($pdo)) { $q = $pdo->prepare("SELECT order_no FROM wmo_order WHERE utr = ? AND status <> 'cancelled' LIMIT 1"); $q->execute([$out['utr']]); $d = $q->fetchColumn(); if ($d) $out['dup'] = (string)$d; }
+    return $out;
+}
+
+// ------------------------------------------------------------------------------------------------------------------ view of one order
+function wmo_out(PDO $pdo, array $r, bool $full = false): array
+{
+    $L = json_decode((string)$r['lines_json'], true) ?: []; $cust = json_decode((string)($r['cust_json'] ?? ''), true) ?: [];
+    $o = ['id' => (int)$r['id'], 'order_no' => (string)$r['order_no'], 'status' => (string)$r['status'], 'pay' => (string)$r['pay'], 'total' => $r['total_p'] / 100, 'paid' => $r['paid_p'] / 100, 'cod' => $r['cod_p'] / 100, 'utr' => (string)$r['utr'], 'ml' => (int)$r['ml'],
+        'lines' => array_map(fn($l) => ['short' => $l['short'], 'label' => $l['label'], 'qty' => (int)$l['qty'], 'chain' => !empty($l['chain']), 'total' => $l['total_p'] / 100], $L), 'created_at' => (string)$r['created_at'], 'sent_at' => (string)($r['sent_at'] ?? ''), 'opened_at' => (string)($r['opened_at'] ?? ''), 'confirmed_at' => (string)($r['confirmed_at'] ?? ''),
+        'link' => $r['status'] === 'cancelled' ? '' : wmo_link((string)$r['token']), 'phone_match' => (int)$r['phone_match'], 'name' => (string)($cust['name'] ?? '')];
+    if ($full && $r['status'] === 'confirmed') { $o['ship'] = wmo_ship_text($r['order_no'], $cust, $r); try { $q = $pdo->prepare("SELECT inv_no, sent_at FROM wch_inv WHERE order_name = ? ORDER BY id DESC LIMIT 1"); $q->execute([(string)$r['order_no']]); $iv = $q->fetch(); $o['inv'] = $iv ? ['no' => (string)$iv['inv_no'], 'sent' => !empty($iv['sent_at'])] : null; } catch (Throwable $e) { $o['inv'] = null; } $o['sr'] = ['id' => (string)($r['sr_order_id'] ?? ''), 'note' => (string)($r['sr_note'] ?? '')]; }
+    return $o;
+}
+function wmo_ship_text(string $no, array $c, array $r): string
+{
+    return $no . "\n" . ($c['name'] ?? '') . "\nMobile: " . ($c['phone'] ?? '') . (!empty($c['phone2']) ? ' / ' . $c['phone2'] : '') . "\n" . ($c['addr1'] ?? '') . (!empty($c['addr2']) ? ', ' . $c['addr2'] : '') . (!empty($c['landmark']) ? "\nLandmark: " . $c['landmark'] : '') . "\n" . ($c['city'] ?? '') . ', ' . ($c['state'] ?? '') . ' - ' . ($c['pin'] ?? '')
+        . "\n" . ((int)$r['cod_p'] > 0 ? 'COLLECT ON DELIVERY: ' . wmo_rs((int)$r['cod_p']) : 'PREPAID');
+}
+
+// ------------------------------------------------------------------------------------------------------------------ the customer finishes the order
+function wmo_pin_lookup(string $pin): array
+{
+    if (!preg_match('/^[1-9]\d{5}$/', $pin)) return [];
+    $c = sys_get_temp_dir() . '/hrms_pin_' . $pin; if (is_file($c) && filemtime($c) > time() - 30 * 86400) { $j = json_decode((string)@file_get_contents($c), true); if (is_array($j) && !empty($j['city'])) return $j; }
+    $ch = curl_init('https://api.postalpincode.in/pincode/' . $pin); curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 5, CURLOPT_CONNECTTIMEOUT => 3]); $raw = curl_exec($ch); curl_close($ch);
+    $j = json_decode((string)$raw, true); $po = $j[0]['PostOffice'][0] ?? null; if (!is_array($po)) return [];
+    $out = ['city' => wmo_clip($po['District'] ?? ($po['Block'] ?? ''), 60), 'state' => wmo_clip($po['State'] ?? '', 60)]; if ($out['city'] === '') return [];
+    @file_put_contents($c, json_encode($out)); return $out;
+}
+/** Checks what the customer typed. Returns [clean, error]. */
+function wmo_check_form(array $in, string $chatPhone): array
+{
+    $name = wmo_clip($in['name'] ?? '', 80); $ph = wmo_phone10($in['phone'] ?? ''); $ph2 = wmo_phone10($in['phone2'] ?? ''); $a1 = wmo_clip($in['addr1'] ?? '', 140); $a2 = wmo_clip($in['addr2'] ?? '', 140);
+    $lm = wmo_clip($in['landmark'] ?? '', 100); $pin = preg_replace('/\D+/', '', (string)($in['pin'] ?? '')); $city = wmo_clip($in['city'] ?? '', 60); $state = wmo_clip($in['state'] ?? '', 60); $email = wmo_clip($in['email'] ?? '', 120);
+    if (mb_strlen($name) < 2) return [[], 'Please write your full name.'];
+    if (!preg_match('/^[6-9]\d{9}$/', $ph)) return [[], 'Please write your 10-digit mobile number.'];
+    if ($ph2 !== '' && !preg_match('/^[6-9]\d{9}$/', $ph2)) return [[], 'The second mobile number must have 10 digits (or leave it empty).'];
+    if (mb_strlen($a1) < 5) return [[], 'Please write your house / flat and street.'];
+    if (!preg_match('/^[1-9]\d{5}$/', $pin)) return [[], 'Please write a 6-digit pincode.'];
+    if ($city === '' || $state === '') { $g = wmo_pin_lookup($pin); if ($g) { $city = $city ?: $g['city']; $state = $state ?: $g['state']; } }
+    if ($city === '' || $state === '') return [[], 'Please write your city and state.'];
+    if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) return [[], 'The e-mail looks wrong (or leave it empty).'];
+    return [['name' => $name, 'phone' => $ph, 'phone2' => $ph2, 'addr1' => $a1, 'addr2' => $a2, 'landmark' => $lm, 'pin' => $pin, 'city' => $city, 'state' => $state, 'email' => $email, 'match' => $ph === $chatPhone ? 1 : 0], ''];
+}
+/** Makes the order final in the database: shop_orders row, allocation, extra phone, address tick. Returns the order number. (wmo_notify does the messages after the commit.) */
+function wmo_finalize(PDO $pdo, array $r, array $cust): string
+{
+    $id = (int)$r['id']; $L = json_decode((string)$r['lines_json'], true) ?: []; $sid = wmo_sid($id); $store = wmo_store_key(); $key = (string)$r['phone']; $emp = wmo_emp($pdo, (int)$r['assign_emp']);
+    $li = wmo_line_items($L); $mlt = order_ml_total($li); $now = date('Y-m-d H:i:s'); $paid = (int)$r['paid_p'] > 0;
+    $fs = (int)$r['cod_p'] <= 0 ? 'paid' : ($paid ? 'partially_paid' : 'pending'); $tags = array_values(array_filter([$emp['tag'], 'wa-manual', $r['pay'] === 'cod' ? 'cod' : 'prepaid']));
+    $row = ['id' => $sid, 'order_name' => (string)$r['order_no'], 'created_at' => date('c'), 'customer' => $cust['name'], 'phone' => $key, 'items' => count($li), 'colors' => order_product_colors($li), 'ml' => $mlt['ml'], 'ml10' => $mlt['ml10'], 'xparts' => $mlt['parts'] ?: (object)[]]
+        + order_x_com(null, $mlt['parts'], (int)$mlt['ml'], $r['total_p'] / 100)
+        + ['dti' => order_dti($li) ?: 0, 'total' => round($r['total_p'] / 100, 2), 'currency' => 'INR', 'financial_status' => $fs, 'outstanding' => round($r['cod_p'] / 100, 2), 'paid' => $paid && (int)$r['cod_p'] > 0 ? round($r['paid_p'] / 100, 2) : null,
+           'fulfillment_status' => 'unfulfilled', 'tags' => implode(', ', $tags), 'pay_ref' => (string)$r['utr']];
+    foreach (['ensure_shop_orders_table', 'ensure_order_allocations_table', 'ensure_order_address_table', 'ensure_order_phones_table'] as $__f) if (function_exists($__f)) { try { $__f($pdo); } catch (Throwable $e) { } }      // the tables the order lands in exist
+    orders_upsert($pdo, $store, [$row]);
+    try { $pdo->prepare("INSERT INTO order_allocations (source, order_id, house, order_type, employee_id, is_direct, allocated_by) VALUES (?, ?, 'tmph', ?, ?, 0, 'WhatsApp manual order') ON DUPLICATE KEY UPDATE order_type = VALUES(order_type), employee_id = VALUES(employee_id)")->execute([$store, (string)$sid, (string)$r['src'] === 'campaign' ? 'campaign' : 'query', (int)$r['assign_emp']]); } catch (Throwable $e) { error_log('wmo alloc: ' . $e->getMessage()); }
+    try {
+        $extra = array_values(array_unique(array_filter([$cust['phone2'], $cust['phone'] !== $key ? $cust['phone'] : ''])));
+        if ($extra) $pdo->prepare("INSERT INTO order_extra_phones (source, order_id, order_name, phone, updated_by) VALUES (?, ?, ?, ?, 'Customer link') ON DUPLICATE KEY UPDATE phone = VALUES(phone)")->execute([$store, (string)$sid, (string)$r['order_no'], implode(', ', $extra)]);
+        $pdo->prepare("INSERT INTO order_address (source, order_id, order_name, updated_by) VALUES (?, ?, ?, 'Customer link') ON DUPLICATE KEY UPDATE updated_by = VALUES(updated_by)")->execute([$store, (string)$sid, (string)$r['order_no']]);
+    } catch (Throwable $e) { error_log('wmo extra: ' . $e->getMessage()); }
+    $pdo->prepare("UPDATE wmo_order SET status = 'confirmed', confirmed_at = ?, cust_json = ?, phone_match = ?, shop_id = ? WHERE id = ?")->execute([$now, json_encode($cust, JSON_UNESCAPED_UNICODE), (int)$cust['match'], $sid, $id]);
+    return (string)$r['order_no'];
+}
+/** After the order is saved (outside the database lock): the Dispatch parcel now, one confirmation, "order completed" on the chat. */
+function wmo_notify(PDO $pdo, array $r, array $cust): void
+{
+    $L = json_decode((string)$r['lines_json'], true) ?: []; $key = (string)$r['phone']; $now = date('Y-m-d H:i:s');
+    if (function_exists('dp_dsp_sync')) { try { dp_dsp_sync($pdo, time(), true); } catch (Throwable $e) { } }       // the parcel appears in Dispatch now, not in three minutes
+    $c = function_exists('wa_contact') ? wa_contact($pdo, $key) : null;
+    if ($c) {
+        // the customer gets the ready-made "Order received" message of WhatsApp -> Automation -> Order updates (wa_done_mark sends it); shipped / out for delivery / delivered follow from Dispatch by themselves
+        if (function_exists('wa_done_mark')) { try { wa_done_mark($pdo, $key, (int)$r['assign_emp'], 'manual', (string)$r['order_no']); } catch (Throwable $e) { error_log('wmo done: ' . $e->getMessage()); } }
+        if (function_exists('wa_event')) { try { wa_event($pdo, $key, '🧾 Manual order ' . $r['order_no'] . ' confirmed by the customer — ' . wmo_rs((int)$r['total_p']) . ((int)$r['cod_p'] > 0 ? ' (COD ' . wmo_rs((int)$r['cod_p']) . ')' : ' (prepaid)') . ((int)$cust['match'] === 1 ? '' : ' · ⚠ the mobile number written is different from this chat')); } catch (Throwable $e) { } }
+        $note = wmo_invoice($pdo, $r, $cust, 0); if (function_exists('wa_event')) { try { wa_event($pdo, $key, '🧾 ' . $note); } catch (Throwable $e) { } }
+        $note = wmo_shiprocket($pdo, $r, $cust); if (function_exists('wa_event')) { try { wa_event($pdo, $key, '🚚 ' . $note); } catch (Throwable $e) { } }
+    }
+}
+
+// ------------------------------------------------------------------------------------------------------------------ Shiprocket
+/** Shiprocket must know the order, because it pulls Shopify orders by itself but not these. The order is created there with the order id WM-xxxxx, so Dispatch (which matches Shiprocket orders to parcels by that id)
+ *  gets the courier, the AWB and the status by itself. Same login as the Dispatch page (config SHIPROCKET_EMAIL / PASSWORD, or the ones saved on the Parcels page). */
+function wmo_sr_kv(PDO $pdo, string $k, ?string $set = null): string
+{
+    try {
+        if ($set !== null) { $pdo->prepare("INSERT INTO dp_state (skey, svalue) VALUES (?,?) ON DUPLICATE KEY UPDATE svalue = VALUES(svalue)")->execute([$k, $set]); return $set; }
+        $q = $pdo->prepare("SELECT svalue FROM dp_state WHERE skey = ?"); $q->execute([$k]); $v = $q->fetchColumn(); return $v === false ? '' : (string)$v;
+    } catch (Throwable $e) { return ''; }
+}
+function wmo_sr_http(string $method, string $url, array $headers, $body = null): array
+{
+    if (!function_exists('curl_init')) return [0, null, 'PHP curl is not switched on on this server.'];
+    $ch = curl_init($url); curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 25, CURLOPT_CONNECTTIMEOUT => 10, CURLOPT_CUSTOMREQUEST => $method, CURLOPT_HTTPHEADER => array_merge(['Content-Type: application/json', 'Accept: application/json'], $headers)]);
+    if ($body !== null) curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($body, JSON_UNESCAPED_UNICODE));
+    $out = curl_exec($ch); $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); $err = $out === false ? curl_error($ch) : ''; curl_close($ch);
+    $j = ($out !== false && $out !== '') ? json_decode($out, true) : null; return [$code, is_array($j) ? $j : null, $err];
+}
+/** [token, error] */
+function wmo_sr_token(PDO $pdo, bool $force = false): array
+{
+    $e = function_exists('tmph_cfg') ? trim((string)tmph_cfg('SHIPROCKET_EMAIL', '')) : ''; $p = function_exists('tmph_cfg') ? (string)tmph_cfg('SHIPROCKET_PASSWORD', '') : '';
+    if ($e === '' || $p === '') { $e = trim(wmo_sr_kv($pdo, 'sr_email')); $p = wmo_sr_kv($pdo, 'sr_pass'); }
+    if ($e === '' || $p === '') return ['', 'Shiprocket email and password are not saved (Dispatch → Parcels and tracking → Shiprocket).'];
+    $base = rtrim(function_exists('tmph_cfg') ? (string)tmph_cfg('SHIPROCKET_BASE', 'https://apiv2.shiprocket.in') : 'https://apiv2.shiprocket.in', '/');
+    $tok = wmo_sr_kv($pdo, 'sr_token'); $exp = (int)wmo_sr_kv($pdo, 'sr_token_exp'); $sig = wmo_sr_kv($pdo, 'sr_token_for');
+    if (!$force && $tok !== '' && $exp > time() + 300 && $sig === md5($e . '|' . $p)) return [$tok, ''];
+    [$code, $j, $err] = wmo_sr_http('POST', $base . '/v1/external/auth/login', [], ['email' => $e, 'password' => $p]);
+    if ($err !== '') return ['', 'Could not reach Shiprocket: ' . $err];
+    if ($code === 200 && is_array($j) && !empty($j['token'])) { wmo_sr_kv($pdo, 'sr_token', (string)$j['token']); wmo_sr_kv($pdo, 'sr_token_exp', (string)(time() + 8 * 86400)); wmo_sr_kv($pdo, 'sr_token_for', md5($e . '|' . $p)); return [(string)$j['token'], '']; }
+    return ['', 'Shiprocket login failed (HTTP ' . $code . ')' . (is_array($j) && !empty($j['message']) ? ': ' . mb_substr((string)$j['message'], 0, 100) : '') . '.'];
+}
+/** the pickup address name Shiprocket knows: the setting wmo_sr_pickup, else the primary one of the account (saved after the first lookup) */
+function wmo_sr_pickup(PDO $pdo, string $tok, string $base): string
+{
+    $set = trim((string)setting_get($pdo, 'wmo_sr_pickup', '')); if ($set !== '') return $set;
+    [$code, $j] = wmo_sr_http('GET', $base . '/v1/external/settings/company/pickup', ['Authorization: Bearer ' . $tok]); $list = (array)($j['data']['shipping_address'] ?? []); if (!$list) return '';
+    $pick = $list[0]; foreach ($list as $x) if (!empty($x['is_primary_location'])) { $pick = $x; break; }
+    $name = trim((string)($pick['pickup_location'] ?? '')); if ($name !== '') setting_set($pdo, 'wmo_sr_pickup', $name); return $name;
+}
+/** Creates the order in Shiprocket (once). Returns a short note; never throws. */
+function wmo_shiprocket(PDO $pdo, array $r, array $cust): string
+{
+    try {
+        if (trim((string)$r['sr_order_id']) !== '') return 'Shiprocket order ' . $r['sr_order_id'] . ' already exists.';
+        [$tok, $er] = wmo_sr_token($pdo); if ($tok === '') return 'Shiprocket order not made: ' . $er;
+        $base = rtrim(function_exists('tmph_cfg') ? (string)tmph_cfg('SHIPROCKET_BASE', 'https://apiv2.shiprocket.in') : 'https://apiv2.shiprocket.in', '/');
+        $pick = wmo_sr_pickup($pdo, $tok, $base); if ($pick === '') return 'Shiprocket order not made: no pickup address found (add one in Shiprocket, or set wmo_sr_pickup).';
+        $L = json_decode((string)$r['lines_json'], true) ?: []; $items = []; $pieces = 0;
+        foreach ($L as $l) { $q = max(1, (int)$l['qty']); $pieces += $q; $items[] = ['name' => mb_substr(trim($l['short'] . (!empty($l['chain']) ? '' : ' ' . $l['label'])), 0, 100), 'sku' => (string)(($l['sku'] ?? '') !== '' ? $l['sku'] : 'WM' . (int)$l['vid']), 'units' => $q, 'selling_price' => round($l['total_p'] / 100 / $q, 2), 'discount' => '', 'tax' => '', 'hsn' => '']; }
+        $parts = preg_split('/\s+/', trim((string)$cust['name']), 2); $cod = (int)$r['cod_p'] > 0;
+        $w = (float)setting_get($pdo, 'wmo_sr_weight', '0.5'); $w = max($w, round(0.12 * $pieces, 2));      // kg: at least the setting, about 120 g a bottle
+        $body = ['order_id' => (string)$r['order_no'], 'order_date' => date('Y-m-d H:i'), 'pickup_location' => $pick, 'comment' => 'Manual order from WhatsApp', 'billing_customer_name' => (string)$parts[0], 'billing_last_name' => (string)($parts[1] ?? ''),
+            'billing_address' => (string)$cust['addr1'], 'billing_address_2' => trim((string)$cust['addr2'] . ($cust['landmark'] !== '' ? ', ' . $cust['landmark'] : ''), ', '), 'billing_city' => (string)$cust['city'], 'billing_pincode' => (string)$cust['pin'], 'billing_state' => (string)$cust['state'], 'billing_country' => 'India',
+            'billing_email' => (string)($cust['email'] !== '' ? $cust['email'] : 'noemail@tmperfumehouse.com'), 'billing_phone' => (string)$cust['phone'], 'shipping_is_billing' => true, 'order_items' => $items, 'payment_method' => $cod ? 'COD' : 'Prepaid',
+            'sub_total' => round(($cod ? $r['cod_p'] : $r['total_p']) / 100, 2), 'length' => (float)setting_get($pdo, 'wmo_sr_length', '15'), 'breadth' => (float)setting_get($pdo, 'wmo_sr_breadth', '12'), 'height' => (float)setting_get($pdo, 'wmo_sr_height', '8'), 'weight' => $w];
+        $res = null; for ($try = 0; $try < 2; $try++) { [$code, $j, $err] = wmo_sr_http('POST', $base . '/v1/external/orders/create/adhoc', ['Authorization: Bearer ' . $tok], $body); if ($code === 401 && $try === 0) { [$tok, $er] = wmo_sr_token($pdo, true); if ($tok === '') return 'Shiprocket order not made: ' . $er; continue; } $res = [$code, $j, $err]; break; }
+        [$code, $j, $err] = $res ?: [0, null, 'no answer']; if ($err !== '') return 'Shiprocket order not made: ' . $err;
+        $sid = is_array($j) ? (string)($j['order_id'] ?? '') : ''; if (($code === 200 || $code === 201) && $sid !== '') {
+            $pdo->prepare("UPDATE wmo_order SET sr_order_id = ?, sr_note = ? WHERE id = ?")->execute([mb_substr($sid, 0, 24), 'Created in Shiprocket as ' . $r['order_no'], (int)$r['id']]); return 'Shiprocket order created (id ' . $sid . ') as ' . $r['order_no'] . ': the tracking number comes to Dispatch by itself once you ship it.'; }
+        $msg = is_array($j) ? (string)($j['message'] ?? '') : ''; if (is_array($j) && !empty($j['errors'])) $msg .= ' ' . mb_substr(json_encode($j['errors'], JSON_UNESCAPED_UNICODE), 0, 160);
+        $note = 'Shiprocket refused it (HTTP ' . $code . ')' . ($msg !== '' ? ': ' . mb_substr(trim($msg), 0, 200) : '') . '.'; $pdo->prepare("UPDATE wmo_order SET sr_note = ? WHERE id = ?")->execute([mb_substr($note, 0, 250), (int)$r['id']]); return 'Shiprocket order not made: ' . $note;
+    } catch (Throwable $e) { error_log('wmo_shiprocket: ' . $e->getMessage()); return 'Shiprocket order not made: ' . mb_substr($e->getMessage(), 0, 120); }
+}
+/** The GST invoice of a confirmed manual order: made by the billing module of the chain cart (wch.php, with the GST details of Learn & Setup -> Cart setup -> Billing) and sent to the customer on WhatsApp.
+ *  The module makes invoices from a cart, so a finished cart row is written for the order. Returns a short note; never throws. */
+function wmo_invoice(PDO $pdo, array $r, array $cust, int $emp = 0): string
+{
+    foreach (['wch_billing_gate', 'wch_bill_make', 'wch_bill_send', 'wch_arr'] as $f) if (!function_exists($f)) return 'GST invoice is not available on this server.';
+    try {
+        $g = wch_billing_gate($pdo); if (empty($g['ok'])) return 'GST invoice not made: the billing details are incomplete (Learn & Setup → Cart setup → Billing: ' . implode(', ', array_slice((array)($g['missing'] ?? []), 0, 4)) . '). Then press "GST invoice" on the order.';
+        $L = json_decode((string)$r['lines_json'], true) ?: []; $lines = [];
+        foreach ($L as $l) { $parts = wmo_split((int)$l['total_p'], array_fill(0, max(1, (int)$l['qty']), 1)); for ($i = 0; $i < max(1, (int)$l['qty']); $i++) $lines[] = ['kind' => !empty($l['chain']) ? 'chain' : 'perfume', 'vid' => (int)$l['vid'], 'sku' => (string)($l['sku'] ?? ''), 'short' => (string)$l['short'], 'title' => (string)$l['title'], 'ml' => $l['ml'] === null ? null : (int)$l['ml'], 'amount_p' => (int)$parts[$i]]; }
+        $plan = ['lines' => $lines, 'sum_p' => (int)$r['total_p']];
+        $ship = ['name' => $cust['name'], 'address1' => $cust['addr1'], 'address2' => trim($cust['addr2'] . ($cust['landmark'] !== '' ? ', ' . $cust['landmark'] : ''), ', '), 'city' => $cust['city'], 'zip' => $cust['pin'], 'province' => $cust['state'], 'province_code' => ''];
+        $q = $pdo->prepare("SELECT * FROM wch_cart WHERE order_name = ? ORDER BY id DESC LIMIT 1"); $q->execute([(string)$r['order_no']]); $cart = $q->fetch();
+        if (!$cart) {
+            $now = date('Y-m-d H:i:s');
+            $pdo->prepare("INSERT INTO wch_cart (phone, emp_id, status, total_p, ml, lines_json, plan_json, order_sid, order_name, order_mode, order_paid, order_at, order_total_p, ship_json, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+                ->execute([(string)$r['phone'], (int)$r['assign_emp'], 'ordered', (int)$r['total_p'], (int)$r['ml'], json_encode(array_map(fn($l) => ['vid' => (int)$l['vid'], 'qty' => (int)$l['qty']], $L)), json_encode($plan, JSON_UNESCAPED_UNICODE), (string)wmo_sid((int)$r['id']), (string)$r['order_no'], (int)$r['cod_p'] > 0 ? 'cod' : 'prepaid', 1, $now, (int)$r['total_p'], json_encode($ship, JSON_UNESCAPED_UNICODE), $now, $now]);
+            $q = $pdo->prepare("SELECT * FROM wch_cart WHERE id = ?"); $q->execute([(int)$pdo->lastInsertId()]); $cart = $q->fetch();
+        }
+        [$ok, $err, , $inv] = wch_bill_make($pdo, $cart, ''); if (!$ok || !$inv) return 'GST invoice not made: ' . $err;
+        [$ok2, $err2] = wch_bill_send($pdo, $inv, $emp); return $ok2 ? 'GST invoice ' . $inv['inv_no'] . ' sent to the customer.' : 'GST invoice ' . $inv['inv_no'] . ' made but not sent: ' . $err2;
+    } catch (Throwable $e) { error_log('wmo_invoice: ' . $e->getMessage()); return 'GST invoice not made: ' . mb_substr($e->getMessage(), 0, 120); }
+}
+
+
+// ------------------------------------------------------------------------------------------------------------------ the customer's page
+function wmo_page(string $title, string $body, int $status = 200, ?callable $after = null): void
+{
+    http_response_code($status); header('Content-Type: text/html; charset=UTF-8'); header('Cache-Control: no-store'); header('X-Robots-Tag: noindex');
+    echo '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' . htmlspecialchars($title) . '</title><style>'
+        . ':root{--g:#128c5a;--ink:#17202a;--mut:#667781;--line:#e3e8ee;--bad:#c0392b}*{box-sizing:border-box}body{margin:0;background:#f3f6f4;color:var(--ink);font:16px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}'
+        . '.w{max-width:520px;margin:0 auto;padding:16px 14px 40px}h1{font-size:21px;margin:6px 0 2px}.sub{color:var(--mut);font-size:14px;margin-bottom:12px}.card{background:#fff;border-radius:16px;padding:14px;margin:12px 0;box-shadow:0 1px 6px #0001}'
+        . '.ln{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px dashed var(--line);font-size:14.5px}.ln:last-child{border:0}.tot{font-weight:800}label{display:block;font-weight:700;font-size:14px;margin:12px 0 4px}label small{font-weight:400;color:var(--mut)}'
+        . 'input{width:100%;font:inherit;padding:12px;border:1.5px solid #cfd8dc;border-radius:12px;background:#fff}input:focus{outline:0;border-color:var(--g)}.r2{display:grid;grid-template-columns:1fr 1fr;gap:10px}'
+        . 'button{width:100%;margin-top:16px;padding:15px;border:0;border-radius:14px;background:var(--g);color:#fff;font-weight:800;font-size:17px;font-family:inherit;cursor:pointer}.err{background:#fdecea;color:var(--bad);border-radius:12px;padding:10px 12px;margin:10px 0;font-weight:700}.ok{font-size:44px;text-align:center}'
+        . '</style></head><body><div class="w">' . $body . '</div></body></html>';
+    if ($after) {      // the customer already has his page: the messages, the invoice and Shiprocket are done now, without making him wait
+        ignore_user_abort(true); @set_time_limit(90);
+        if (function_exists('fastcgi_finish_request')) { fastcgi_finish_request(); } else { header('Connection: close'); @ob_end_flush(); @flush(); }
+        try { $after(); } catch (Throwable $e) { error_log('wmo after: ' . $e->getMessage()); }
+    }
+    exit;
+}
+/** GET = the form; POST = the customer pressed Done. */
+function wmo_form(PDO $pdo): void
+{
+    if (!wmo_tables($pdo)) wmo_page('Order', '<div class="card">Please try again in a moment.</div>', 503);
+    $t = preg_replace('/[^a-f0-9]/', '', (string)($_GET['t'] ?? '')); $e = static function ($s) { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); };
+    if (strlen($t) !== 32 || !wmo_throttle('form' . $t, 30)) wmo_page('Order', '<div class="card"><b>This link is not valid.</b><br>Please ask us on WhatsApp for a new one.</div>', 404);
+    $q = $pdo->prepare("SELECT * FROM wmo_order WHERE token = ?"); $q->execute([$t]); $r = $q->fetch();
+    if (!$r) wmo_page('Order', '<div class="card"><b>This link is not valid.</b><br>Please ask us on WhatsApp for a new one.</div>', 404);
+    $L = json_decode((string)$r['lines_json'], true) ?: [];
+    if ($r['status'] === 'confirmed') wmo_page('Order confirmed', '<div class="card"><div class="ok">✅</div><h1 style="text-align:center">Your order ' . $e($r['order_no']) . ' is confirmed</h1><p style="text-align:center" class="sub">Thank you! We will message you the tracking details on WhatsApp.</p></div>');
+    if ($r['status'] === 'cancelled' || strtotime((string)$r['created_at']) < time() - 7 * 86400) wmo_page('Order', '<div class="card"><b>This link has expired.</b><br>Please ask us on WhatsApp for a new one.</div>', 410);
+    $err = ''; $v = ['name' => '', 'phone' => '', 'phone2' => '', 'addr1' => '', 'addr2' => '', 'landmark' => '', 'pin' => '', 'city' => '', 'state' => '', 'email' => ''];
+    $c0 = function_exists('wa_contact') ? wa_contact($pdo, (string)$r['phone']) : null; $v['phone'] = (string)$r['phone']; $v['name'] = $c0 ? trim((string)($c0['name'] ?? '')) : '';      // the chat's number and name are filled in; the customer can change them
+    if (empty($r['opened_at'])) $pdo->prepare("UPDATE wmo_order SET opened_at = ? WHERE id = ?")->execute([date('Y-m-d H:i:s'), (int)$r['id']]);
+    if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
+        foreach ($v as $k => $_) $v[$k] = (string)($_POST[$k] ?? '');
+        [$cl, $er] = wmo_check_form($_POST, (string)$r['phone']);
+        if ($er === '' && wmo_throttle('submit' . $t, 6)) {
+            $pdo->beginTransaction();
+            try {
+                $lk = $pdo->prepare("SELECT status FROM wmo_order WHERE id = ? FOR UPDATE"); $lk->execute([(int)$r['id']]);
+                if ($lk->fetchColumn() === 'confirmed') { $pdo->commit(); wmo_page('Order confirmed', '<div class="card"><div class="ok">✅</div><h1 style="text-align:center">Your order ' . $e($r['order_no']) . ' is confirmed</h1></div>'); }
+                $no = wmo_finalize($pdo, $r, $cl); $pdo->commit();
+                wmo_page('Order confirmed', '<div class="card"><div class="ok">✅</div><h1 style="text-align:center">Thank you, ' . $e(explode(' ', $cl['name'])[0]) . '!</h1><p style="text-align:center">Your order <b>' . $e($no) . '</b> is confirmed.<br>We will message you the tracking details on WhatsApp.</p></div>', 200, function () use ($pdo, $r, $cl) { wmo_notify($pdo, $r, $cl); });
+            } catch (Throwable $ex) { if ($pdo->inTransaction()) $pdo->rollBack(); error_log('wmo_form: ' . $ex->getMessage()); $err = 'Something went wrong. Please press Done once more.'; }
+        } else $err = $er !== '' ? $er : 'Please wait a minute and try again.';
+    }
+    $rows = ''; foreach ($L as $l) $rows .= '<div class="ln"><span>' . (int)$l['qty'] . ' × ' . $e($l['short']) . (!empty($l['chain']) ? '' : ' · ' . $e($l['label'])) . '</span></div>';
+    $money = '<div class="ln tot"><span>Order total</span><span>' . $e(wmo_rs((int)$r['total_p'])) . '</span></div>' . ((int)$r['paid_p'] > 0 ? '<div class="ln"><span>Already paid</span><span>' . $e(wmo_rs((int)$r['paid_p'])) . '</span></div>' : '')
+        . ((int)$r['cod_p'] > 0 ? '<div class="ln tot"><span>Pay on delivery</span><span>' . $e(wmo_rs((int)$r['cod_p'])) . '</span></div>' : '<div class="ln"><span>Payment</span><span>Fully paid ✅</span></div>');
+    $f = function ($n, $lab, $ph = '', $attr = '') use ($v, $e) { return '<label>' . $lab . '</label><input name="' . $n . '" value="' . $e($v[$n]) . '" ' . $attr . ($ph !== '' ? ' placeholder="' . $e($ph) . '"' : '') . '>'; };
+    $stf = function ($n) use ($v, $e) {      // a list of the states: the GST on the invoice needs a real state
+        $sts = function_exists('wch_states') ? array_values(wch_states()) : [];
+        if (!$sts) return '<label>State</label><input name="state" value="' . $e($v['state']) . '" required id="state">';
+        $o = '<option value="">— choose —</option>'; foreach ($sts as $x) $o .= '<option value="' . $e($x) . '"' . (strcasecmp($v['state'], $x) === 0 ? ' selected' : '') . '>' . $e($x) . '</option>';
+        return '<label>State</label><select name="state" id="state" required style="width:100%;font:inherit;padding:12px;border:1.5px solid #cfd8dc;border-radius:12px;background:#fff">' . $o . '</select>';
+    };
+    $body = '<h1>🧾 Your order ' . $e($r['order_no']) . '</h1><div class="sub">TM Perfume House · please check and add your delivery details</div><div class="card">' . $rows . '</div><div class="card">' . $money . '</div>'
+        . ($err !== '' ? '<div class="err">' . $e($err) . '</div>' : '') . '<form method="post" class="card" autocomplete="on">'
+        . $f('name', 'Full name', '', 'required autocomplete="name"') . $f('phone', 'Mobile number <small>(the one you use on WhatsApp)</small>', '10-digit mobile', 'required inputmode="numeric" maxlength="14" autocomplete="tel"') . $f('phone2', 'Second mobile number <small>(optional)</small>', '', 'inputmode="numeric" maxlength="14"')
+        . $f('addr1', 'House / flat no., building, street', '', 'required autocomplete="address-line1"') . $f('addr2', 'Area / locality <small>(optional)</small>', '', 'autocomplete="address-line2"') . $f('landmark', 'Landmark <small>(optional)</small>')
+        . '<div class="r2"><div>' . $f('pin', 'Pincode <small>(exactly 6 digits)</small>', '6 digits', 'required inputmode="numeric" pattern="[1-9][0-9]{5}" minlength="6" maxlength="6" title="Exactly 6 digits" id="pin" autocomplete="postal-code"') . '</div><div>' . $f('city', 'City', '', 'required id="city"') . '</div></div>' . $stf('state') . $f('email', 'E-mail <small>(optional)</small>', '', 'type="email"')
+        . '<button type="submit">Done — confirm my order</button></form>'
+        . '<script>(function(){var p=document.getElementById("pin"),c=document.getElementById("city"),s=document.getElementById("state");if(!p)return;p.addEventListener("input",function(){var v=p.value.replace(/\D/g,"").slice(0,6);if(v!==p.value)p.value=v;if(v.length===6){fetch(location.pathname.replace(/[^\/]*$/,"")+"api.php?action=wmo.pin&pin="+v).then(function(r){return r.json()}).then(function(d){if(d&&d.city){if(!c.value)c.value=d.city;if(!s.value)s.value=d.state}}).catch(function(){})}})})();</script>';
+    wmo_page('Your order ' . $r['order_no'], $body);
+}
+
+}   // function_exists guard
+
+// ---------------------------------------------------------------------------------------------------------------- actions
+$__wmo = (string)($action ?? ($_GET['action'] ?? ''));
+if (strpos($__wmo, 'wmo.') === 0) {
+    if ($__wmo === 'wmo.form') wmo_form($pdo);
+    if ($__wmo === 'wmo.pin') { if (!wmo_throttle('pin', 40)) json_response(['error' => 'Too many tries.'], 429); json_response(wmo_pin_lookup(preg_replace('/\D+/', '', (string)($_GET['pin'] ?? ''))) ?: ['city' => '', 'state' => '']); }
+    $auth = require_auth();
+    if (!wmo_tables($pdo)) json_response(['error' => 'Storage is not available.'], 500);
+    if (!wmo_on($pdo)) json_response(['error' => 'Manual orders are switched off (setting wmo_on).'], 403);
+    $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'; $in = $isPost ? json_input() : $_GET; $me = (int)($auth['employee_id'] ?? 0);
+    $chat = function () use ($pdo, $auth, $in) { $k = wmo_phone10($in['phone'] ?? ''); $c = strlen($k) === 10 && function_exists('wa_contact') ? wa_contact($pdo, $k) : null; if (!$c) json_response(['error' => 'Chat not found.'], 404); if (function_exists('wa_can_chat') && !wa_can_chat($pdo, $auth, $c)) json_response(['error' => 'This chat is assigned to someone else.'], 403); return $c; };
+    $mine = function () use ($pdo, $auth, $in) { $q = $pdo->prepare("SELECT * FROM wmo_order WHERE id = ?"); $q->execute([(int)($in['id'] ?? 0)]); $r = $q->fetch(); if (!$r) json_response(['error' => 'Order not found.'], 404); $c = wa_contact($pdo, (string)$r['phone']); if ($c && function_exists('wa_can_chat') && !wa_can_chat($pdo, $auth, $c)) json_response(['error' => 'This chat is assigned to someone else.'], 403); return $r; };
+    switch ($__wmo) {
+        case 'wmo.shot_read': {
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $mime = strtolower((string)($in['mime'] ?? 'image/jpeg')); $b64 = preg_replace('/^data:[^,]*,/', '', (string)($in['image'] ?? ''));
+            if (!in_array($mime, ['image/jpeg', 'image/png', 'image/webp'], true) || $b64 === '' || strlen($b64) > 6000000 || base64_decode($b64, true) === false) json_response(['error' => 'Send a JPG, PNG or WebP screenshot under 4 MB.'], 422);
+            json_response(wmo_read_shot($pdo, $b64, $mime));
+        }
+        case 'wmo.create': {
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $c = $chat(); $pay = (string)($in['pay'] ?? ''); if (!in_array($pay, ['prepaid', 'partial', 'cod'], true)) json_response(['error' => 'Choose Full prepaid, Part prepaid or Full COD.'], 422);
+            $total = wmo_p($in['total'] ?? 0); $paid = $pay === 'cod' ? 0 : wmo_p($in['paid'] ?? 0); $utr = preg_replace('/[^A-Za-z0-9]/', '', (string)($in['utr'] ?? ''));
+            if ($total < 10000 || $total > 50000000) json_response(['error' => 'The order total must be between ₹100 and ₹500000.'], 422);
+            if ($pay === 'prepaid') $paid = $total; if ($pay === 'partial' && ($paid < 100 || $paid >= $total)) json_response(['error' => 'For a part payment the paid amount must be more than ₹1 and less than the total.'], 422);
+            if ($pay !== 'cod' && empty($in['shot'])) json_response(['error' => 'Upload the payment screenshot first.'], 422);
+            if ($utr !== '') { $d = $pdo->prepare("SELECT order_no FROM wmo_order WHERE utr = ? AND status <> 'cancelled' LIMIT 1"); $d->execute([$utr]); $dn = $d->fetchColumn(); if ($dn && empty($in['dup_ok'])) json_response(['error' => 'This payment reference (UTR) is already used on order ' . $dn . '. The same payment cannot pay two orders.', 'code' => 'dup', 'order' => $dn], 409); }
+            [$L, $ml, $er] = wmo_lines($pdo, $total, (array)($in['lines'] ?? []), (array)($in['chains'] ?? [])); if ($er !== '') json_response(['error' => $er], 422);
+            $shot = (string)($in['shot'] ?? ''); $smime = strtolower((string)($in['shot_mime'] ?? 'image/jpeg')); $sb = preg_replace('/^data:[^,]*,/', '', $shot); if ($sb !== '' && (strlen($sb) > 3000000 || !in_array($smime, ['image/jpeg', 'image/png', 'image/webp'], true))) $sb = '';
+            $assign = (int)($c['assigned_emp'] ?: $me); $token = bin2hex(random_bytes(16)); $now = date('Y-m-d H:i:s');
+            $pdo->prepare("INSERT INTO wmo_order (token, phone, emp_id, assign_emp, status, pay, total_p, paid_p, cod_p, utr, ml, lines_json, shot_mime, shot_b64, shot_json, src, note, created_at) VALUES (?,?,?,?, 'draft', ?,?,?,?,?,?,?,?,?,?,?,?,?)")
+                ->execute([$token, (string)$c['phone'], $me, $assign, $pay, $total, $paid, $total - $paid, $utr, $ml, json_encode($L, JSON_UNESCAPED_UNICODE), $sb !== '' ? $smime : '', $sb !== '' ? $sb : null, wmo_clip(json_encode($in['shot_read'] ?? new stdClass(), JSON_UNESCAPED_UNICODE), 1500), (string)($c['source'] ?? ''), wmo_clip($in['note'] ?? '', 250), $now]);
+            $id = (int)$pdo->lastInsertId(); $no = 'WM-' . str_pad((string)$id, 5, '0', STR_PAD_LEFT); $pdo->prepare("UPDATE wmo_order SET order_no = ? WHERE id = ?")->execute([$no, $id]);
+            $q = $pdo->prepare("SELECT * FROM wmo_order WHERE id = ?"); $q->execute([$id]); json_response(['ok' => true, 'order' => wmo_out($pdo, $q->fetch())]);
+        }
+        case 'wmo.send': {
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $r = $mine(); if (!in_array($r['status'], ['draft', 'sent'], true)) json_response(['error' => 'This order is already ' . $r['status'] . '.'], 422);
+            $c = wa_contact($pdo, (string)$r['phone']); $nm = function_exists('wo_first_name') ? wo_first_name((string)($c['name'] ?? '')) : 'ji';
+            $text = "Hello " . $nm . "! 🙏 Thank you for your payment" . ((int)$r['paid_p'] > 0 ? " of " . wmo_rs((int)$r['paid_p']) : '') . ".\n\nYour order " . $r['order_no'] . " is ready. Please open this link, check your order and add your delivery address — the order is confirmed as soon as you press Done:\n" . wmo_link((string)$r['token']);
+            [$ok, $res] = wa_send_text($pdo, $c, $text, 'emp', $me);
+            if (!$ok) json_response(['error' => (string)$res, 'link' => wmo_link((string)$r['token']), 'code' => 'send'], 422);
+            $pdo->prepare("UPDATE wmo_order SET status = 'sent', sent_at = ? WHERE id = ?")->execute([date('Y-m-d H:i:s'), (int)$r['id']]);
+            if (function_exists('wa_event')) { try { wa_event($pdo, (string)$r['phone'], '🧾 Manual order ' . $r['order_no'] . ' — address link sent (' . wmo_rs((int)$r['total_p']) . ')'); } catch (Throwable $e) { } }
+            json_response(['ok' => true, 'link' => wmo_link((string)$r['token'])]);
+        }
+        case 'wmo.list': {
+            $c = $chat(); $q = $pdo->prepare("SELECT * FROM wmo_order WHERE phone = ? ORDER BY id DESC LIMIT 20"); $q->execute([(string)$c['phone']]); json_response(['ok' => true, 'orders' => array_map(fn($r) => wmo_out($pdo, $r, true), $q->fetchAll())]);
+        }
+        case 'wmo.invoice': {
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $r = $mine(); if ($r['status'] !== 'confirmed') json_response(['error' => 'The invoice is made after the customer confirms the order.'], 422);
+            $cust = json_decode((string)$r['cust_json'], true) ?: []; $note = wmo_invoice($pdo, $r, $cust, $me); json_response(['ok' => strpos($note, 'sent to the customer') !== false, 'note' => $note]);
+        }
+        case 'wmo.shiprocket': {
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $r = $mine(); if ($r['status'] !== 'confirmed') json_response(['error' => 'The Shiprocket order is made after the customer confirms.'], 422);
+            $cust = json_decode((string)$r['cust_json'], true) ?: []; $note = wmo_shiprocket($pdo, $r, $cust); json_response(['ok' => strpos($note, 'created') !== false || strpos($note, 'already') !== false, 'note' => $note]);
+        }
+        case 'wmo.cancel': {
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $r = $mine(); if ($r['status'] === 'confirmed') json_response(['error' => 'The customer already confirmed this order. Cancel it like any other order.'], 422);
+            $pdo->prepare("UPDATE wmo_order SET status = 'cancelled', cancelled_at = ? WHERE id = ?")->execute([date('Y-m-d H:i:s'), (int)$r['id']]); json_response(['ok' => true]);
+        }
+        default: json_response(['error' => 'Unknown manual-order action.'], 404);
+    }
+}
