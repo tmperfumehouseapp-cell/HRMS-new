@@ -105,10 +105,11 @@ if ($__bg === 'budget.get') {
     if (!user_can($auth, 'commission')) json_response(['error' => 'You do not have permission to do this.'], 403);
     $month = trim((string)($_GET['month'] ?? date('Y-m')));
     if (!preg_match('/^\d{4}-\d{2}$/', $month)) json_response(['error' => 'month must be YYYY-MM.'], 422);
+    if (convo_is_admin($auth) && function_exists('price_unify_once')) price_unify_once($pdo);   // the one Price Chart: runs once, the first time an Admin opens Total Budgeting, Commission or Pricing after the update
     $c = budget_cfg($pdo); $m = $c['months'][$month] ?? [];
     $duty = []; try { if (function_exists('ensure_st_tables')) ensure_st_tables($pdo); $duty = array_map('intval', $pdo->query("SELECT emp_id FROM st_duty")->fetchAll(PDO::FETCH_COLUMN)); } catch (Throwable $e) {}
     $gl = []; foreach (['sales', 'leader', 'helper', 'retail', 'store', 'other'] as $gk) $gl[$gk] = (float)(($m['goals'] ?? [])[$gk] ?? 0);
-    json_response(['month' => $month, 'target' => (float)($m['target'] ?? 0), 'lump' => (float)($m['lump'] ?? 0), 'goals' => $gl, 'retail' => $c['retail'], 'people' => (object)$c['people'], 'leader_map' => (object)$c['leader_map'], 'settled' => (object)$c['settled'], 'days' => (object)$c['days'], 'closed' => (object)$c['closed'], 'duty' => $duty, 'expenses' => $c['expenses'], 'can_edit' => convo_is_admin($auth)]);
+    json_response(['month' => $month, 'target' => (float)($m['target'] ?? 0), 'lump' => (float)($m['lump'] ?? 0), 'goals' => $gl, 'retail' => $c['retail'], 'people' => (object)$c['people'], 'leader_map' => (object)$c['leader_map'], 'settled' => (object)$c['settled'], 'days' => (object)$c['days'], 'closed' => (object)$c['closed'], 'engine_live' => function_exists('cm_is_live') ? cm_is_live($pdo) : false, 'duty' => $duty, 'expenses' => $c['expenses'], 'can_edit' => convo_is_admin($auth)]);
 }
 if ($__bg === 'budget.save') {
     $auth = require_auth();
@@ -200,6 +201,16 @@ if ($__bg === 'budget.bill_assign') {
     $pdo->prepare("UPDATE st_bills SET emp_id = ?, emp_name = ? WHERE bill_id = ?")->execute([$eid, (string)$nm, $bid]);
     budget_audit($pdo, $auth, 'Store bill ' . $brow['bill_no'] . ' now belongs to ' . $nm, $eid);
     json_response(['ok' => true, 'employee_id' => $eid, 'name' => (string)$nm]);
+}
+if ($__bg === 'budget.engine_set') {
+    // Which commission engine pays: the NEW one (live, reads the one Price Chart) or the old one. Admin only, logged. Switching back is one click.
+    $auth = require_auth();
+    if (!convo_is_admin($auth)) json_response(['error' => 'Only Admin can switch the commission engine.'], 403);
+    if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
+    $in = json_input(); $live = !empty($in['live']);
+    budget_lock($pdo); setting_set($pdo, 'cm_live', $live ? '1' : '0');
+    budget_audit($pdo, $auth, $live ? 'Switched the commission payout to the NEW engine (live)' : 'Switched the commission payout back to the OLD engine');
+    json_response(['ok' => true, 'live' => $live]);
 }
 if ($__bg === 'budget.close_month' || $__bg === 'budget.open_month') {
     // Close a finished month: its pay setups, day moves, bills and goals can no longer change, and a snapshot of its totals is kept. Open it again (Admin, logged) to correct something.

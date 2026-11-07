@@ -29,7 +29,7 @@
       const b = rows[i + 1];
       if (b && ml > a.ml && ml < b.ml) {
         const f = (ml - a.ml) / (b.ml - a.ml);
-        return { p: a.p.map((v, j) => Number(v) + (Number(b.p[j]) - Number(v)) * f), how: 'between ' + a.ml + ' and ' + b.ml + ' ml rows' };
+        return { p: a.p.map((v, j) => (Number(v) > 0 && Number(b.p[j]) > 0) ? Number(v) + (Number(b.p[j]) - Number(v)) * f : 0), how: 'between ' + a.ml + ' and ' + b.ml + ' ml rows' };
       }
     }
     return null;
@@ -39,15 +39,17 @@
   function pctOf(chart, ml, price) {
     const row = rowFor(chart, ml);
     if (!row) return null;
-    const cols = chart.cols.map(Number), p = row.p;
+    // a blank price column (the 5% column nobody priced yet) is skipped, so it never changes who earns what; idx keeps each column's place in the chart
+    const cols = [], p = [], idx = []; row.p.forEach((v, i) => { if (Number(v) > 0) { cols.push(Number(chart.cols[i])); p.push(Number(v)); idx.push(i); } });
+    if (!p.length) return null;
     price = Number(price) || 0;
-    if (price >= p[0]) return { pct: cols[0], col: 0, row, why: 'chart price or more' };
+    if (price >= p[0]) return { pct: cols[0], col: idx[0], row, why: 'chart price or more' };
     for (let j = 0; j < p.length - 1; j++) {
       if (price <= p[j] && price >= p[j + 1]) {
-        if (price === p[j + 1] || p[j] === p[j + 1]) return { pct: cols[j + 1], col: j + 1, row, why: 'exactly a chart price' };
-        if (chart.mode !== 'between') return { pct: cols[j + 1], col: j + 1, row, why: 'below ₹' + Math.round(p[j]).toLocaleString('en-IN') + ' → the ₹' + Math.round(p[j + 1]).toLocaleString('en-IN') + ' column (' + cols[j + 1] + '%)' };
+        if (price === p[j + 1] || p[j] === p[j + 1]) return { pct: cols[j + 1], col: idx[j + 1], row, why: 'exactly a chart price' };
+        if (chart.mode !== 'between') return { pct: cols[j + 1], col: idx[j + 1], row, why: 'below ₹' + Math.round(p[j]).toLocaleString('en-IN') + ' → the ₹' + Math.round(p[j + 1]).toLocaleString('en-IN') + ' column (' + cols[j + 1] + '%)' };
         const f = (price - p[j + 1]) / (p[j] - p[j + 1]);
-        return { pct: cols[j + 1] + (cols[j] - cols[j + 1]) * f, col: j + 1, row, between: [j, j + 1], why: 'between ₹' + Math.round(p[j + 1]).toLocaleString('en-IN') + ' (' + cols[j + 1] + '%) and ₹' + Math.round(p[j]).toLocaleString('en-IN') + ' (' + cols[j] + '%)' };
+        return { pct: cols[j + 1] + (cols[j] - cols[j + 1]) * f, col: idx[j + 1], row, between: [j, j + 1], why: 'between ₹' + Math.round(p[j + 1]).toLocaleString('en-IN') + ' (' + cols[j + 1] + '%) and ₹' + Math.round(p[j]).toLocaleString('en-IN') + ' (' + cols[j] + '%)' };
       }
     }
     const fl = Number(chart.floor) || 0;
