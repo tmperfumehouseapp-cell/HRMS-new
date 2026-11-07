@@ -737,8 +737,8 @@ function st_wa_defs(): array
             'ex' => $ex, 'lab' => $lab, 'buttons' => []],
         // sent only when asked for (st_wa_seed with $only): a promotional message, so category MARKETING
         'tmph_store_bday' => ['category' => 'MARKETING', 'folder' => 'Store birthdays', 'about' => 'A birthday gift for a store customer: a code for one free 50 ml perfume.',
-            'body' => "Hello {{1}}, your birthday is on {{2}} and TM Perfume House has a gift for you: a FREE 50 ml perfume of your choice! Show this code {{3}} at our store any time till {{4}} and collect it. Happy birthday in advance!",
-            'ex' => ['Rahul', '14 Dec', 'BD-7K3M9P', '21 Dec'], 'lab' => ['Name', 'Birthday', 'Gift code', 'Valid till'], 'buttons' => []],
+            'body' => "Hello {{1}}, greetings from TM Perfume House! Your birthday is on {{2}} and we have a FREE 50 ml perfume gift for you. Collect it from our store any time between {{3}} and {{4}} by showing this code: {{5}}. Happy birthday in advance!",
+            'ex' => ['Rahul', '14 Dec', '12 Dec', '19 Dec', 'BD-7K3M9P'], 'lab' => ['Name', 'Birthday', 'From', 'Till', 'Gift code'], 'buttons' => []],
     ];
 }
 /** Makes the two templates and sends them to Meta (safe to run again: what exists is not made twice, what is already at Meta is not sent twice). */
@@ -1291,7 +1291,7 @@ function st_gift_given(PDO $pdo, string $phone, int $year): bool
 
 /* ============================== BIRTHDAY GIFT: a WhatsApp code N days before the birthday, redeemed at billing for one free 50 ml ============================== */
 
-function st_bday_defaults(): array { return ['enabled' => 1, 'send_before' => 5, 'valid_after' => 7, 'auto_wa' => 1]; }
+function st_bday_defaults(): array { return ['enabled' => 1, 'send_before' => 2, 'valid_after' => 5, 'auto_wa' => 1]; }
 function st_bday_cfg(PDO $pdo): array
 {
     $d = st_bday_defaults();
@@ -1300,7 +1300,7 @@ function st_bday_cfg(PDO $pdo): array
 }
 function st_bday_cfg_save(PDO $pdo, array $in): array
 {
-    $c = ['enabled' => empty($in['enabled']) ? 0 : 1, 'auto_wa' => empty($in['auto_wa']) ? 0 : 1, 'send_before' => max(1, min(30, (int)($in['send_before'] ?? 5))), 'valid_after' => max(0, min(60, (int)($in['valid_after'] ?? 7)))];
+    $c = ['enabled' => empty($in['enabled']) ? 0 : 1, 'auto_wa' => empty($in['auto_wa']) ? 0 : 1, 'send_before' => max(1, min(30, (int)($in['send_before'] ?? 2))), 'valid_after' => max(0, min(60, (int)($in['valid_after'] ?? 5)))];
     $pdo->prepare("INSERT INTO st_cs_settings (skey, svalue) VALUES ('bday', ?) ON DUPLICATE KEY UPDATE svalue = VALUES(svalue)")->execute([json_encode($c)]);
     return $c;
 }
@@ -1350,6 +1350,18 @@ function st_bday_run(PDO $pdo, bool $send = true, ?int $now = null): array
     }
     return $out;
 }
+/** Makes the WhatsApp birthday template and sends it to Meta for approval BY ITSELF (nobody has to press a button). At most once an hour, and only while it does not exist yet. */
+function st_bday_ensure_template(PDO $pdo): string
+{
+    try {
+        if (!st_wa_load() || !wa_tpl_tables($pdo)) return 'WhatsApp is not available on this server';
+        if (st_wa_tpl($pdo, 'tmph_store_bday')) return 'approved';
+        if ((int)setting_get($pdo, 'st_bday_seed_at', '0') > time() - 3600) return 'waiting for Meta to approve (asked less than an hour ago)';
+        setting_set($pdo, 'st_bday_seed_at', (string)time());
+        $r = st_wa_seed($pdo, ['tmph_store_bday']);
+        return !empty($r['error']) ? (string)$r['error'] : ($r['failed'] ? 'Meta said: ' . mb_substr((string)reset($r['failed']), 0, 120) : ($r['submitted'] ? 'sent to Meta' : 'already with Meta'));
+    } catch (Throwable $e) { return mb_substr($e->getMessage(), 0, 120); }
+}
 /** One voucher → one WhatsApp template message from the shop's own number. Returns [ok, note]; the result is saved on the voucher. */
 function st_bday_send(PDO $pdo, array $v): array
 {
@@ -1368,7 +1380,7 @@ function st_bday_send(PDO $pdo, array $v): array
         if (!$c) { $pdo->prepare("INSERT INTO wa_contacts (phone, wa_id, name, first_seen, state, status, source) VALUES (?, ?, ?, ?, 'unassigned', 'open', '')")->execute([$key, '91' . $key, mb_substr((string)$v['name'], 0, 120), date('Y-m-d H:i:s')]); }
         $nm = trim((string)$v['name']); $first = $nm !== '' ? explode(' ', $nm)[0] : 'ji'; if (function_exists('wa_first_name')) $first = wa_first_name($nm);
         $dt = st_bday_next((string)$v['bday'], strtotime((string)$v['valid_from'])) ?: strtotime((string)$v['valid_to']);
-        $vars = [$first, date('j M', $dt), (string)$v['code'], date('j M Y', strtotime((string)$v['valid_to']))];
+        $vars = [$first, date('j M', $dt), date('j M', strtotime((string)$v['valid_from'])), date('j M', strtotime((string)$v['valid_to'])), (string)$v['code']];
         $r = wa_tpl_send_components($pdo, $t, $vars, (string)$num['phone_id'], []);
         if (empty($r['ok'])) return $note(false, (string)($r['error'] ?? 'could not build the message'), 'failed');
         $pl = ['messaging_product' => 'whatsapp', 'to' => '91' . $key, 'type' => 'template', 'template' => ['name' => $t['name'], 'language' => ['code' => $t['language']]]];
@@ -1409,7 +1421,7 @@ function st_bday_daily(PDO $pdo): void
     register_shutdown_function(function () use ($pdo, $day, $today) {
         if (function_exists('hrms_release')) hrms_release(); elseif (function_exists('fastcgi_finish_request')) @fastcgi_finish_request();
         @ignore_user_abort(true); @set_time_limit(120);
-        try { ensure_st_tables($pdo); $r = st_bday_run($pdo, true); if (!$r['waiting'] && !$r['failed']) @file_put_contents($day, $today); else error_log('st_bday_daily: ' . json_encode($r)); }
+        try { ensure_st_tables($pdo); st_bday_ensure_template($pdo); $r = st_bday_run($pdo, true); if (!$r['waiting'] && !$r['failed']) @file_put_contents($day, $today); else error_log('st_bday_daily: ' . json_encode($r)); }
         catch (Throwable $e) { error_log('st_bday_daily: ' . $e->getMessage()); }
     });
 }

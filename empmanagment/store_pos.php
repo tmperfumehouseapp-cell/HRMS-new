@@ -778,6 +778,7 @@ try {
             $gi = 0;
             foreach ($giftFor as $gp) { if (!empty($gp['voucher_id'])) { $vu = $pdo->prepare("UPDATE st_bday_vouchers SET status = 'redeemed', redeemed_at = ?, redeemed_bill_id = ?, redeemed_by = ? WHERE voucher_id = ? AND status = 'active'"); $vu->execute([$now, $billId, $empName, $gp['voucher_id']]); if ($vu->rowCount() !== 1) { $pdo->rollBack(); json_response(['error' => 'This birthday code was just used on another bill.'], 409); } }
                 $gb = $found[$giftWant[$gi++]]; $pdo->prepare("INSERT INTO st_bday_gifts (phone, name, gift_year, bill_id, bottle_id, given_by, created_at) VALUES (?,?,?,?,?,?,?)")->execute([$gp['phone'], $gp['name'], (int)date('Y'), $billId, (int)$gb['bottle_id'], $empName, $now]); }
+            if (array_filter(array_column($people, 'bday'))) register_shutdown_function(function () use ($pdo) { if (function_exists('fastcgi_finish_request')) @fastcgi_finish_request(); try { st_bday_ensure_template($pdo); } catch (Throwable $e) { } });
             $pdo->commit();
             $pc = st_pct_for($pdo, $t['total_ml'], $total, $empId, $code !== '');
             $invOut = [];
@@ -831,8 +832,8 @@ try {
 
         case 'st_bday.run': {             // managers: make the codes and send them now (otherwise it happens by itself once a day after 9 AM)
             $auth = require_auth(); if (!(in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true) || user_can($auth, 'rs_manage'))) json_response(['error' => 'Only a manager can do this.'], 403);
-            $r = st_bday_run($pdo, true); @unlink(sys_get_temp_dir() . '/hrms_st_bday_day');
-            json_response(['ok' => true] + $r + ['message' => $r['off'] ? 'The birthday gift is switched off.' : $r['made'] . ' new code(s), ' . $r['sent'] . ' sent' . ($r['waiting'] ? ', ' . $r['waiting'] . ' waiting for the WhatsApp template to be approved' : '') . ($r['failed'] ? ', ' . $r['failed'] . ' not sent' : '') . '.']);
+            $tn = st_bday_ensure_template($pdo); $r = st_bday_run($pdo, true); @unlink(sys_get_temp_dir() . '/hrms_st_bday_day');
+            json_response(['ok' => true] + $r + ['message' => $r['off'] ? 'The birthday gift is switched off.' : $r['made'] . ' new code(s), ' . $r['sent'] . ' sent' . ($r['waiting'] ? ', ' . $r['waiting'] . ' waiting for the WhatsApp template to be approved' : '') . ($r['failed'] ? ', ' . $r['failed'] . ' not sent' : '') . '. WhatsApp message: ' . $tn . '.']);
             break;
         }
 
