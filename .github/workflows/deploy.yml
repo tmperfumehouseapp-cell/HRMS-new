@@ -74,6 +74,7 @@ jobs:
             **/help_data/**
             **/learn_backups/**
             **/backups/**
+            chain/images/**   # the product photos are already on the server; Hostinger keeps refusing them (550 No such file) and the whole deploy stopped
             analytics/data/**
             docs/**
             DEPLOY_NOTES.md
