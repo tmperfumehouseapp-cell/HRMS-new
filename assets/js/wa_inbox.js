@@ -248,8 +248,9 @@
       $('wiF').innerHTML = FEEDS.map(([k, l]) => `<button type="button" class="wi-chip ${S.src === k ? 'on' : ''}" data-k="${k}">${l}${k && c[k] != null ? '<i>' + c[k] + '</i>' : ''}</button>`).join('');
       $('wiF').querySelectorAll('button').forEach((b) => { b.onclick = () => setFeed(b.dataset.k); });
       let x = ''; if (AU.allowed) x += `<button type="button" class="wi-chip wi-auc ${AU.on ? 'on' : ''}" id="wiAuT" title="The suggested reply counts down 10 seconds and sends itself unless you press Cancel">⚡ Auto-reply ${AU.on ? 'ON' : 'OFF'}</button>`;
+      if (admin) x += `<button type="button" class="wi-chip ${S.bulk && S.bulk.on ? 'on' : ''}" id="wiBkT" title="Select many chats: send one message to all of them, or move them to another person">☑ Select chats</button>`;
       if (admin) x += `<button type="button" class="wi-chip" id="wiAuM" title="Switch auto-reply on or off for the whole team">${AU.allowed ? '🔓 Team auto-reply: ON' : '🔒 Team auto-reply: OFF'}</button>`;
-      if (x) { $('wiF').insertAdjacentHTML('beforeend', x); if ($('wiAuT')) $('wiAuT').onclick = auToggle; if ($('wiAuM')) $('wiAuM').onclick = auMaster; }
+      if (x) { $('wiF').insertAdjacentHTML('beforeend', x); if ($('wiAuT')) $('wiAuT').onclick = auToggle; if ($('wiBkT')) $('wiBkT').onclick = () => bkToggleMode(); if ($('wiAuM')) $('wiAuM').onclick = auMaster; }
     }
     function setFeed(k, scope) {
       S.src = k || ''; S.emp = 0; if ($('wiE')) { $('wiE').value = '0'; ebSync(); }
@@ -282,10 +283,10 @@
       const lg = '<div class="wi-lg" title="Each chat is coloured by what is happening in it right now"><span><i style="background:#22c55e"></i>Hot · ready to buy</span><span><i style="background:#f59e0b"></i>Waiting too long</span><span><i style="background:#60a5fa"></i>Talking now</span><span><i style="background:#c4c9d1"></i>Gone quiet</span><span><i style="background:#a78bfa"></i>Complaint</span><span><i style="background:#9ca3af"></i>🏢 Business</span></div>';
       const en = S.emp && $('wiE') ? (($('wiE').selectedOptions[0] || {}).text || '').replace(/ \(absent\)$/, '') : '', fn = en.split(' ')[0];
       const tgb = admin && S.emp ? `<div class="wi-tgb"><button type="button" data-tg="0" class="${S.empTag ? '' : 'on'}">Now with ${esc(fn)}${S.counts.emp_now != null ? ' (' + S.counts.emp_now + ')' : ''}</button><button type="button" data-tg="1" class="${S.empTag ? 'on' : ''}">🏷 ${esc(fn)}'s tag — all${S.counts.emp_tag != null ? ' (' + S.counts.emp_tag + ')' : ''}</button></div>` : '';
-      L.innerHTML = tgb + (admin ? '' : lg) + grab + rows.map((c) => { const un = c.unread && c.phone !== S.sel; return `<div class="wi-it ${c.phone === S.sel ? 'sel' : ''} ${c.waiting ? 'wait' : ''} ${un ? 'unr' : ''} ${c.heat ? 'h-' + c.heat : ''}" data-p="${esc(c.phone)}">${av(c)}<div class="wi-bd">
+      L.innerHTML = tgb + bkBarHtml() + (admin ? '' : lg) + grab + rows.map((c) => { const un = c.unread && c.phone !== S.sel, bs = S.bulk.on && S.bulk.set.has(c.phone); return `<div class="wi-it ${c.phone === S.sel && !S.bulk.on ? 'sel' : ''} ${bs ? 'bsel' : ''} ${c.waiting ? 'wait' : ''} ${un ? 'unr' : ''} ${c.heat ? 'h-' + c.heat : ''}" data-p="${esc(c.phone)}">${S.bulk.on ? '<span class="wi-ck ' + (bs ? 'on' : '') + '"></span>' : ''}${av(c)}<div class="wi-bd">
           <div class="n"><span>${esc(title(c))}</span><span class="t">${c.waiting ? '● ' : ''}${esc(ago(c.last_at))}</span></div>
           <div class="m2"><span class="m">${esc(c.preview || '')}</span>${un ? `<span class="wi-un">${c.unread > 9 ? '9+' : c.unread}</span>` : ''}</div><div class="pl">${pills(c)}</div></div></div>`; }).join('');
-      L.querySelectorAll('.wi-it').forEach((el) => { el.onclick = () => openChat(el.dataset.p); });
+      L.querySelectorAll('.wi-it').forEach((el) => { el.onclick = () => (S.bulk.on ? bkToggle(el.dataset.p) : openChat(el.dataset.p)); }); bkWire(L);
       L.querySelectorAll('[data-tg]').forEach((b) => { b.onclick = () => { S.empTag = b.dataset.tg === '1'; loadList(); }; });
       L.querySelectorAll('[data-grab]').forEach((b) => { b.onclick = async (e) => { e.stopPropagation(); b.disabled = true; try { await api.post('wq.grab', { phone: b.dataset.grab }); S.grab = (S.grab || []).filter((x) => x.phone !== b.dataset.grab); await loadList(true); openChat(b.dataset.grab); } catch (er) { alert(er.message); loadList(true); } }; });
     }
@@ -1242,6 +1243,142 @@
         if (changed) { maybeSuggest(false); auArm(); }
         if (!S.fuEdit && !S.fuBusy) loadFu();
       } catch (e) { /* a quiet refresh never interrupts the person */ }
+    }
+
+    // ============================================================================================================================
+    // ☑ BULK: select many chats (one by one, or "all in this view") → send one pre-made message to all of them, or move them all to one person
+    // ============================================================================================================================
+    S.bulk = { on: false, set: new Set(), info: {}, total: 0 };
+    const bkStyle = () => {
+      if (document.getElementById('bkStyle')) return; const st = document.createElement('style'); st.id = 'bkStyle';
+      st.textContent = `
+      .bk-bar{position:sticky;top:0;z-index:6;background:linear-gradient(135deg,#0f172a,#1e293b);color:#fff;padding:10px 12px;display:flex;flex-direction:column;gap:8px;box-shadow:0 6px 20px rgba(15,23,42,.25)}
+      .bk-top{display:flex;align-items:center;gap:10px}.bk-n{font-weight:800;font-size:15px;flex:1}.bk-n small{display:block;font-weight:500;font-size:11.5px;opacity:.7;margin-top:1px}
+      .bk-x{border:0;background:rgba(255,255,255,.14);color:#fff;border-radius:99px;padding:7px 12px;font-weight:700;font-size:12.5px;cursor:pointer}
+      .bk-row{display:flex;gap:8px;flex-wrap:wrap}.bk-b{flex:1 1 0;min-width:120px;border:0;border-radius:12px;padding:11px 12px;font-weight:800;font-size:13.5px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px;transition:transform .08s,opacity .15s}
+      .bk-b:active{transform:scale(.97)}.bk-b[disabled]{opacity:.4;cursor:not-allowed}.bk-b.send{background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff}.bk-b.move{background:linear-gradient(135deg,#6366f1,#4f46e5);color:#fff}
+      .bk-link{background:none;border:0;color:#93c5fd;font-weight:700;font-size:12.5px;cursor:pointer;padding:0;text-align:left}
+      .wi-ck{flex:0 0 auto;width:22px;height:22px;border-radius:50%;border:2px solid #b6bfcc;margin:auto 10px auto 0;display:flex;align-items:center;justify-content:center;transition:all .12s;background:#fff}
+      .wi-ck.on{background:#4f46e5;border-color:#4f46e5}.wi-ck.on:after{content:'✓';color:#fff;font-size:13px;font-weight:900;line-height:1}
+      .wi-it.bsel{background:#eef2ff !important;box-shadow:inset 3px 0 0 #4f46e5}
+      .bk-sh h4{margin:0 0 4px;font-size:17px}.bk-sh .sub{color:#64748b;font-size:12.5px;margin-bottom:12px}
+      .bk-who{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid #e2e8f0;border-radius:14px;margin-bottom:8px;cursor:pointer;transition:all .12s;background:#fff}
+      .bk-who:hover{border-color:#a5b4fc}.bk-who.on{border-color:#4f46e5;background:#eef2ff;box-shadow:0 0 0 3px rgba(79,70,229,.12)}
+      .bk-av{width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800}
+      .bk-who b{display:block;font-size:14px}.bk-who small{color:#64748b;font-size:11.5px}.bk-dot{width:9px;height:9px;border-radius:50%;background:#22c55e;margin-left:auto}.bk-dot.off{background:#cbd5e1}
+      .bk-prog{height:12px;border-radius:99px;background:#e2e8f0;overflow:hidden;margin:14px 0 8px}.bk-prog i{display:block;height:100%;width:0;background:linear-gradient(90deg,#22c55e,#16a34a);transition:width .25s}
+      .bk-stats{display:flex;gap:8px;margin:10px 0}.bk-stat{flex:1;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:10px;text-align:center}.bk-stat b{display:block;font-size:20px}.bk-stat small{color:#64748b;font-size:11.5px}
+      .bk-stat.ok b{color:#16a34a}.bk-stat.bad b{color:#dc2626}
+      .bk-fail{max-height:160px;overflow:auto;border:1px solid #fecaca;background:#fef2f2;border-radius:12px;padding:8px 10px;font-size:12px;margin-top:8px}
+      .bk-map{display:flex;gap:8px;align-items:center;margin:6px 0}.bk-map label{font-weight:800;min-width:44px}.bk-map select{flex:0 0 150px}.bk-map input{flex:1}
+      .bk-prev{white-space:pre-wrap;background:#dcf8c6;border-radius:12px 12px 12px 3px;padding:10px 12px;font-size:13.5px;margin:10px 0;box-shadow:0 1px 2px rgba(0,0,0,.08)}
+      .bk-tpl{padding:11px 12px;border:1.5px solid #e2e8f0;border-radius:14px;margin-bottom:8px;cursor:pointer;background:#fff}.bk-tpl:hover{border-color:#86efac}.bk-tpl b{font-size:13.5px;display:block;margin-bottom:3px}.bk-tpl span{font-size:12.5px;color:#475569;display:block;max-height:3.9em;overflow:hidden}
+      `; document.head.appendChild(st);
+    };
+    const bkN = () => S.bulk.set.size, bkFmt = (n) => Number(n).toLocaleString('en-IN');
+    function bkParams() { const p = { scope: S.emp ? 'emp' : S.scope, q: S.q }; if (S.src) p.src = S.src; if (S.emp) p.emp = S.emp; if (S.emp && S.empTag) p.tag = 1; if (S.flt.length) p.flt = S.flt.join(','); return p; }
+    function bkToggleMode(on) { bkStyle(); S.bulk.on = on == null ? !S.bulk.on : on; if (!S.bulk.on) { S.bulk.set.clear(); S.bulk.info = {}; } root.classList.toggle('bkon', S.bulk.on); drawFeeds(); drawList(); }
+    function bkToggle(ph) { if (S.bulk.set.has(ph)) S.bulk.set.delete(ph); else { S.bulk.set.add(ph); const c = S.chats.find((x) => x.phone === ph); if (c) S.bulk.info[ph] = { name: c.name || '' }; } drawList(); }
+    async function bkSelectAll() {
+      const btn = $('bkAll'); if (btn) { btn.textContent = 'Selecting…'; btn.disabled = true; }
+      try { const d = await api.get('wa.chats', Object.assign(bkParams(), { ids: 1 })); (d.ids || []).forEach((x) => { S.bulk.set.add(x.phone); S.bulk.info[x.phone] = { name: x.name || '' }; }); }
+      catch (e) { S.chats.forEach((c) => { S.bulk.set.add(c.phone); S.bulk.info[c.phone] = { name: c.name || '' }; }); }
+      drawList();
+    }
+    function bkBarHtml() {
+      if (!S.bulk.on) return ''; const n = bkN(), loaded = S.chats.length, tot = Math.max(loaded, (S.counts && (S.scope === 'unassigned' ? S.counts.unassigned : S.scope === 'closed' ? S.counts.closed : S.counts.all)) || 0);
+      const allSel = loaded > 0 && S.chats.every((c) => S.bulk.set.has(c.phone));
+      return `<div class="bk-bar" id="bkBar"><div class="bk-top"><div class="bk-n">${n ? bkFmt(n) + ' selected' : 'Select chats'}<small>${n ? 'Tap a chat to add or remove it' : 'Tap chats, or select everything in this view'}</small></div><button type="button" class="bk-x" id="bkOff">✕ Done</button></div>
+        <div class="bk-row"><button type="button" class="bk-link" id="bkAll">${allSel ? '☑ All ' + bkFmt(loaded) + ' shown are selected' : '☐ Select all in this view'}${tot > loaded ? ' (up to ' + bkFmt(Math.min(3000, tot)) + ')' : ''}</button>${n ? '<button type="button" class="bk-link" id="bkNone" style="margin-left:auto">Clear</button>' : ''}</div>
+        <div class="bk-row"><button type="button" class="bk-b send" id="bkSend" ${n ? '' : 'disabled'}>📨 Send message</button><button type="button" class="bk-b move" id="bkMove" ${n ? '' : 'disabled'}>👤 Transfer</button></div></div>`;
+    }
+    function bkWire(L) {
+      const b = $('bkBar'); if (!b) return;
+      $('bkOff').onclick = () => bkToggleMode(false); $('bkAll').onclick = bkSelectAll; if ($('bkNone')) $('bkNone').onclick = () => { S.bulk.set.clear(); drawList(); };
+      $('bkSend').onclick = bkSendOpen; $('bkMove').onclick = bkMoveOpen;
+    }
+    // ---------- 👤 transfer many chats to one person
+    async function bkMoveOpen() {
+      const n = bkN(); if (!n) return; const box = sheet('Transfer chats'); box.className = (box.className || '') + ' bk-sh'; box.innerHTML = '<div class="wi-empty">Loading people…</div>'; let people = [];
+      try { people = (await api.get('wa.people', { all: 1 })).people || []; } catch (e) { box.innerHTML = `<div class="wi-err">${esc(e.message)}</div>`; return; }
+      let pick = 0, q = '';
+      const draw = () => {
+        const rows = people.filter((p) => !q || p.name.toLowerCase().includes(q.toLowerCase()));
+        box.innerHTML = `<div class="bk-sh"><h4>Move ${bkFmt(n)} chat${n === 1 ? '' : 's'} to…</h4><div class="sub">The whole conversation moves with the customer. They keep their history; the new person gets the chat now.</div>
+          <input class="wi-in" id="bkQ" type="search" placeholder="Search a person…" value="${esc(q)}" style="margin-bottom:10px">
+          <div style="max-height:46vh;overflow:auto">${rows.map((p) => `<div class="bk-who ${pick === p.emp_id ? 'on' : ''}" data-e="${p.emp_id}"><div class="bk-av">${esc((p.name || '?').charAt(0).toUpperCase())}</div><div><b>${esc(p.name)}</b><small>${p.open != null ? p.open + ' open chats' : (p.present ? 'Present today' : 'Absent today')}</small></div><span class="bk-dot ${p.present ? '' : 'off'}" title="${p.present ? 'Present' : 'Absent'}"></span></div>`).join('') || '<div class="wi-empty">Nobody found.</div>'}</div>
+          <div id="bkMsg"></div><div class="wi-act" style="margin-top:12px"><button type="button" class="wi-btn p" id="bkGo" ${pick ? '' : 'disabled'}>${pick ? 'Move ' + bkFmt(n) + ' chat' + (n === 1 ? '' : 's') + ' to ' + esc((people.find((p) => p.emp_id === pick) || {}).name || '') : 'Choose a person'}</button></div></div>`;
+        box.querySelectorAll('[data-e]').forEach((el) => { el.onclick = () => { pick = +el.dataset.e; draw(); }; });
+        const qi = $('bkQ'); if (qi) { qi.oninput = () => { q = qi.value; const pos = qi.selectionStart; draw(); const x = $('bkQ'); x.focus(); x.setSelectionRange(pos, pos); }; }
+        const go = $('bkGo'); if (go) go.onclick = async () => {
+          const who = (people.find((p) => p.emp_id === pick) || {}).name || ''; if (!pick || !confirm('Move ' + bkFmt(n) + ' chat' + (n === 1 ? '' : 's') + ' to ' + who + '?')) return;
+          go.disabled = true; go.textContent = 'Moving…'; const phones = [...S.bulk.set]; let moved = 0, skipped = 0, why = {};
+          try {
+            for (let i = 0; i < phones.length; i += 400) { const r = await api.post('wa.bulk_assign', { phones: phones.slice(i, i + 400), emp_id: pick }); moved += r.moved || 0; skipped += r.skipped_n || 0; (r.skipped || []).forEach((x) => { why[x.why] = (why[x.why] || 0) + 1; }); go.textContent = 'Moving… ' + bkFmt(Math.min(phones.length, i + 400)) + ' / ' + bkFmt(phones.length); }
+            box.innerHTML = `<div class="bk-sh" style="text-align:center;padding:14px 0"><div style="font-size:46px">✅</div><h4>${bkFmt(moved)} chat${moved === 1 ? '' : 's'} moved to ${esc(who)}</h4>${skipped ? `<div class="sub">${bkFmt(skipped)} not moved: ${Object.keys(why).map((k) => esc(k) + ' (' + why[k] + ')').join(', ')}</div>` : '<div class="sub">All done.</div>'}<div class="wi-act"><button type="button" class="wi-btn p" id="bkDone">Done</button></div></div>`;
+            $('bkDone').onclick = () => { closeSheet(); bkToggleMode(false); loadList(true); };
+          } catch (e) { $('bkMsg').innerHTML = `<div class="wi-err">${esc(e.message)}</div>`; go.disabled = false; go.textContent = 'Try again'; }
+        };
+      };
+      draw();
+    }
+    // ---------- 📨 send one pre-made message to many chats (each customer gets their own first name)
+    async function bkSendOpen() {
+      const n = bkN(); if (!n) return; const box = sheet('Send to ' + bkFmt(n) + ' chats'); box.innerHTML = '<div class="wi-empty">Loading messages…</div>'; let list = [];
+      try { list = ((await api.get('wa.tpl_list')).templates || []).filter((t) => !t.auto && sendable(t)); } catch (e) { box.innerHTML = `<div class="wi-err">${esc(e.message)}</div>`; return; }
+      let q = '';
+      const pickList = () => {
+        const rows = list.filter((t) => !q || (t.name + ' ' + t.body).toLowerCase().includes(q.toLowerCase()));
+        box.innerHTML = `<div class="bk-sh"><h4>Send to ${bkFmt(n)} chat${n === 1 ? '' : 's'}</h4><div class="sub">Choose an approved pre-made message. It goes out from each customer's own WhatsApp number, one by one.</div>
+          <input class="wi-in" id="bkTq" type="search" placeholder="Search messages…" value="${esc(q)}" style="margin-bottom:10px"><div style="max-height:56vh;overflow:auto">${rows.map((t) => `<div class="bk-tpl" data-id="${t.id}"><b>${t.star ? '⭐ ' : ''}${esc(t.name.replace(/_/g, ' '))}</b><span>${esc(t.body)}</span></div>`).join('') || '<div class="wi-empty">No approved message found.</div>'}</div></div>`;
+        box.querySelectorAll('.bk-tpl').forEach((el) => { el.onclick = () => compose(list.find((t) => String(t.id) === el.dataset.id)); });
+        const qi = $('bkTq'); if (qi) qi.oninput = () => { q = qi.value; const pos = qi.selectionStart; pickList(); const x = $('bkTq'); x.focus(); x.setSelectionRange(pos, pos); };
+      };
+      const compose = (t) => {
+        const nv = (String(t.body).match(/\{\{\s*\d+\s*\}\}/g) || []).length, hv = !!t.header_var, H = []; for (let i = 1; i <= nv; i++) H[i - 1] = tplVarHint(t, i);
+        const map = []; for (let i = 0; i < nv; i++) map[i] = { how: H[i].k === 'name' ? 'name' : 'text', text: H[i].k === 'date' ? (H[i].eg || '') : '' }; const hmap = { how: 'name', text: '' };
+        const sample = (() => { const ph = [...S.bulk.set][0]; return (S.bulk.info[ph] || {}).name || ''; })();
+        const vals = (name) => map.map((m) => m.how === 'name' ? (name || 'ji') : m.text.trim());
+        const draw = () => {
+          let h = `<div class="bk-sh"><button type="button" class="wi-btn" id="bkBack" style="margin-bottom:8px">‹ Back</button><h4>${esc(t.name.replace(/_/g, ' '))}</h4><div class="sub">Fill each blank. "First name" gives every customer their own name.</div>`;
+          if (hv) h += `<div class="bk-map"><label>Head</label><select data-h="how"><option value="name"${hmap.how === 'name' ? ' selected' : ''}>First name</option><option value="text"${hmap.how === 'text' ? ' selected' : ''}>Same text</option></select>${hmap.how === 'text' ? `<input class="wi-in" data-h="text" value="${esc(hmap.text)}" placeholder="Heading text">` : ''}</div>`;
+          for (let i = 0; i < nv; i++) h += `<div class="bk-map"><label>{{${i + 1}}}</label><select data-i="${i}" data-k="how"><option value="name"${map[i].how === 'name' ? ' selected' : ''}>First name</option><option value="text"${map[i].how === 'text' ? ' selected' : ''}>Same text</option></select>${map[i].how === 'text' ? `<input class="wi-in" data-i="${i}" data-k="text" value="${esc(map[i].text)}" placeholder="${H[i].eg ? 'e.g. ' + esc(H[i].eg) : 'Write it here'}">` : '<span style="color:#64748b;font-size:12.5px">e.g. ' + esc(sample ? firstName({ name: sample }) || 'ji' : 'Rahul') + '</span>'}</div>`;
+          h += `<div class="bk-prev" id="bkPrev"></div><div id="bkMsg"></div><div class="wi-act"><button type="button" class="wi-btn p" id="bkGo">📨 Send to ${bkFmt(n)} chat${n === 1 ? '' : 's'}</button></div><div class="ft" style="color:#64748b;font-size:12px;margin-top:8px">Customers who opted out are skipped automatically.</div></div>`;
+          box.innerHTML = h;
+          const prev = () => { const v = vals(firstName({ name: sample })); $('bkPrev').textContent = (t.header_text ? fill(t.header_text, [hmap.how === 'name' ? (firstName({ name: sample }) || 'ji') : hmap.text]) + '\n' : '') + fill(t.body, v) + (t.footer ? '\n' + t.footer : ''); }; prev();
+          $('bkBack').onclick = pickList;
+          box.querySelectorAll('select').forEach((s) => { s.onchange = () => { if (s.dataset.h) hmap.how = s.value; else map[+s.dataset.i].how = s.value; draw(); }; });
+          box.querySelectorAll('input[data-k="text"],input[data-h="text"]').forEach((x) => { x.oninput = () => { if (x.dataset.h) hmap.text = x.value; else map[+x.dataset.i].text = x.value; prev(); }; });
+          $('bkGo').onclick = () => {
+            for (let i = 0; i < nv; i++) if (map[i].how === 'text') { if (!map[i].text.trim()) { $('bkMsg').innerHTML = `<div class="wi-err">Fill {{${i + 1}}} first.</div>`; return; } const bad = tplVarBad(H[i] || {}, map[i].text.trim()); if (bad) { $('bkMsg').innerHTML = `<div class="wi-err">${esc(bad)}</div>`; return; } }
+            if (hv && hmap.how === 'text' && !hmap.text.trim()) { $('bkMsg').innerHTML = '<div class="wi-err">Fill the heading first.</div>'; return; }
+            if (!confirm('Send "' + t.name.replace(/_/g, ' ') + '" to ' + bkFmt(n) + ' chat' + (n === 1 ? '' : 's') + ' now?')) return;
+            run(t, map, hmap, [...S.bulk.set]);
+          };
+        };
+        draw();
+      };
+      const run = (t, map, hmap, phones) => {
+        let done = 0, ok = 0, bad = 0, stop = false; const fails = []; const total = phones.length;
+        box.innerHTML = `<div class="bk-sh" style="text-align:center"><h4>Sending…</h4><div class="sub">Keep this window open until it finishes.</div><div class="bk-prog"><i id="bkPb"></i></div><div class="bk-stats"><div class="bk-stat"><b id="bkD">0</b><small>of ${bkFmt(total)}</small></div><div class="bk-stat ok"><b id="bkO">0</b><small>sent</small></div><div class="bk-stat bad"><b id="bkB">0</b><small>not sent</small></div></div><div class="wi-act"><button type="button" class="wi-btn" id="bkStop">Stop</button></div></div>`;
+        $('bkStop').onclick = () => { stop = true; $('bkStop').disabled = true; $('bkStop').textContent = 'Stopping…'; };
+        const upd = () => { $('bkPb').style.width = Math.round(done * 100 / total) + '%'; $('bkD').textContent = bkFmt(done); $('bkO').textContent = bkFmt(ok); $('bkB').textContent = bkFmt(bad); };
+        const one = async (ph) => {
+          const nm = firstName({ name: (S.bulk.info[ph] || {}).name || '' }) || 'ji', v = map.map((m) => m.how === 'name' ? nm : m.text.trim());
+          try { await api.post('wa.tpl_send', { phone: ph, id: t.id, vars: v, header_var: t.header_var ? (hmap.how === 'name' ? nm : hmap.text.trim()) : '' }); ok++; }
+          catch (e) { bad++; fails.push({ ph, name: (S.bulk.info[ph] || {}).name || ph, why: e.message || 'failed' }); }
+          done++; upd();
+        };
+        let idx = 0; const worker = async () => { while (!stop && idx < total) { const ph = phones[idx++]; await one(ph); } };
+        Promise.all([worker(), worker(), worker()]).then(() => {
+          const left = phones.slice(idx).length, why = {}; fails.forEach((f) => { why[f.why] = (why[f.why] || 0) + 1; });
+          box.innerHTML = `<div class="bk-sh" style="text-align:center"><div style="font-size:46px">${bad && !ok ? '⚠️' : '✅'}</div><h4>${bkFmt(ok)} message${ok === 1 ? '' : 's'} sent</h4><div class="bk-stats"><div class="bk-stat ok"><b>${bkFmt(ok)}</b><small>sent</small></div><div class="bk-stat bad"><b>${bkFmt(bad)}</b><small>not sent</small></div>${left ? `<div class="bk-stat"><b>${bkFmt(left)}</b><small>stopped before</small></div>` : ''}</div>
+            ${bad ? `<div class="bk-fail" style="text-align:left"><b>Why some were not sent</b><br>${Object.keys(why).map((k) => esc(k) + ' — ' + why[k]).join('<br>')}</div>` : ''}<div class="wi-act" style="margin-top:12px">${bad ? '<button type="button" class="wi-btn" id="bkRetry">Retry the ' + bkFmt(bad) + ' not sent</button>' : ''}<button type="button" class="wi-btn p" id="bkDone">Done</button></div></div>`;
+          $('bkDone').onclick = () => { closeSheet(); bkToggleMode(false); loadList(true); };
+          if ($('bkRetry')) $('bkRetry').onclick = () => run(t, map, hmap, fails.map((f) => f.ph));
+        });
+      };
+      pickList();
     }
 
     // ---------- start
