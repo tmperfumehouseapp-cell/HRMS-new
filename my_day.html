@@ -211,7 +211,7 @@
     const days = (LH.rows || []).filter((r) => !r.partial).slice(0, 5).map((r) => { const d = r.per[p.id]; return '<div class="bd-sub" style="display:flex;justify-content:space-between;gap:8px"><span>' + esc(r.dow + ' ' + r.date.slice(8) + '/' + r.date.slice(5, 7)) + ' · ' + (d.total ? d.done + ' of ' + d.total + ' done' : 'no tasks') + '</span><b style="color:' + (d.amount >= d.full ? '#16a34a' : '#d9423b') + '">' + inr(d.amount) + '</b></div>'; }).join('');
     return '<div class="md-card"><div class="md-lb">Your daily payout · ' + inr(p.salary) + ' a month</div>' + (p.note ? '<div class="bd-sub" style="margin:-2px 0 8px">' + esc(p.note) + '</div>' : '') + '<div class="md-perf" style="grid-template-columns:repeat(3,1fr)">'
       + '<div class="g"><b>' + inr(t.earned) + '</b><small>earned so far</small></div><div><b>' + inr(td.amount) + '</b><small>today · ' + pct + '% done</small></div><div class="' + (t.missed > 0 ? 'r' : 'g') + '"><b>' + inr(t.missed) + '</b><small>lost to pending work</small></div></div>'
-      + '<div class="md-lb" style="margin-top:12px">Today’s work</div>' + list + '<div class="bd-sub" style="margin-top:6px">Your Admin or Sales Head marks the work done. A day pays ' + inr(td.full) + ' when everything is done.</div>'
+      + '<div class="md-lb" style="margin-top:12px">Today’s work</div>' + list + '<div class="bd-sub" style="margin-top:6px">' + (LH.cfg && LH.cfg.mode === 'punch' ? 'Your day’s pay (' + inr(td.full) + ') is written by itself when you punch in.' : 'Your Admin or Sales Head marks the work done. A day pays ' + inr(td.full) + ' when everything is done.') + '</div>'
       + (days ? '<div class="md-lb" style="margin-top:12px">Last days</div>' + days : '') + '</div>';
   }
   function salaryCard() {

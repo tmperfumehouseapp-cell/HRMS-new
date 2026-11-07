@@ -14,6 +14,7 @@
  *   Editing (everything except lh.get / lh.mine / lh.staff): Admin, HR and Sales Head only. The helpers only read.
  *
  * The rule: day amount = salary ÷ days (30).
+ *   punch (default) → the whole day amount is written automatically the moment the person punches in (Attendance); no punch = ₹0. The work list is shown next to it.
  *   proportional → day amount × (tasks done ÷ tasks of that day) · all → the whole day amount only when every task is done, else ₹0.
  *   A past day with no tasks at all pays the whole day amount (nothing was given to do). Today pays only for what is done so far.
  * The checklist template makes its tasks for each day by itself (only for days from the day the item was added: old days never change).
@@ -22,10 +23,10 @@ if (!function_exists('lh_cfg')) {
 
 function lh_cfg(PDO $pdo): array
 {
-    $d = ['salary' => 21000, 'days' => 30, 'mode' => 'proportional'];
+    $d = ['salary' => 21000, 'days' => 30, 'mode' => 'punch'];
     $j = json_decode((string)setting_get($pdo, 'lh_cfg', ''), true); if (!is_array($j)) return $d;
     return ['salary' => isset($j['salary']) && is_numeric($j['salary']) ? max(0, (float)$j['salary']) : $d['salary'], 'days' => isset($j['days']) && (int)$j['days'] > 0 ? min(31, (int)$j['days']) : $d['days'],
-        'mode' => ($j['mode'] ?? '') === 'all' ? 'all' : 'proportional'];
+        'mode' => in_array(($j['mode'] ?? ''), ['punch', 'all', 'proportional'], true) ? $j['mode'] : $d['mode']];
 }
 function lh_tables(PDO $pdo): bool
 {
@@ -90,9 +91,10 @@ function lh_ensure_day(PDO $pdo, int $emp, string $day): void
         foreach ($q->fetchAll() as $t) $ins->execute([$emp, $day, $t['title'], (int)$t['id']]);
     } catch (Throwable $e) { }
 }
-function lh_day_pay(array $cfg, float $salary, int $done, int $total, bool $partial): array
+function lh_day_pay(array $cfg, float $salary, int $done, int $total, bool $partial, bool $punched = false): array
 {
     $day = $cfg['days'] > 0 ? $salary / $cfg['days'] : 0;
+    if ($cfg['mode'] === 'punch') return [$punched ? round($day, 2) : 0.0, $day];   // the day's salary is written the moment the person punches in
     if ($total === 0) return [$partial ? 0.0 : round($day, 2), $day];
     $amt = $cfg['mode'] === 'all' ? ($done >= $total ? $day : 0) : $day * $done / $total;
     return [round($amt, 2), $day];
@@ -104,6 +106,12 @@ function lh_month(PDO $pdo, string $month, array $only = []): array
     $to = min($last, $today); $days = [];
     for ($d = strtotime($first); date('Y-m-d', $d) <= $to; $d = strtotime('+1 day', $d)) $days[] = date('Y-m-d', $d);
     foreach ($people as $p) foreach ($days as $d) lh_ensure_day($pdo, $p['id'], $d);
+    $punch = []; if ($days && $people) {   // the punch-in of each helper for each day (Attendance)
+        try {
+            $in = implode(',', array_map('intval', array_column($people, 'id')));
+            foreach ($pdo->query("SELECT employee_id, punch_date, punch_in FROM attendance WHERE punch_in IS NOT NULL AND punch_date BETWEEN '" . $first . "' AND '" . $to . "' AND employee_id IN ($in)")->fetchAll() as $a) $punch[(int)$a['employee_id']][substr((string)$a['punch_date'], 0, 10)] = (string)$a['punch_in'];
+        } catch (Throwable $e) { }
+    }
     $tasks = []; if ($days && $people) {
         $q = $pdo->prepare("SELECT id, employee_id, day, title, done, done_at FROM lh_tasks WHERE day BETWEEN ? AND ? ORDER BY id"); $q->execute([$first, $to]);
         foreach ($q->fetchAll() as $t) $tasks[(int)$t['employee_id']][(string)$t['day']][] = ['id' => (int)$t['id'], 'title' => (string)$t['title'], 'done' => (int)$t['done'] === 1, 'at' => (string)($t['done_at'] ?? '')];
@@ -114,8 +122,8 @@ function lh_month(PDO $pdo, string $month, array $only = []): array
         $per = []; $partial = $d >= $today;
         foreach ($people as $p) {
             $tl = $tasks[$p['id']][$d] ?? []; $n = count($tl); $dn = count(array_filter($tl, fn($t) => $t['done']));
-            [$amt, $full] = lh_day_pay($cfg, (float)$p['salary'], $dn, $n, $partial);
-            $per[$p['id']] = ['tasks' => $tl, 'done' => $dn, 'total' => $n, 'amount' => $amt, 'full' => round($full, 2)];
+            $pi = $punch[$p['id']][$d] ?? ''; [$amt, $full] = lh_day_pay($cfg, (float)$p['salary'], $dn, $n, $partial, $pi !== '');
+            $per[$p['id']] = ['tasks' => $tl, 'done' => $dn, 'total' => $n, 'amount' => $amt, 'full' => round($full, 2), 'punched' => $pi !== '', 'punch_in' => $pi !== '' ? substr($pi, 11, 5) : ''];
             $t = &$tot[$p['id']]; $t['earned'] += $amt; $t['done'] += $dn; $t['tasks'] += $n; if (!$partial) $t['missed'] += max(0, $full - $amt); unset($t);
         }
         $rows[] = ['date' => $d, 'dow' => date('D', strtotime($d)), 'partial' => $partial, 'per' => $per];
@@ -155,7 +163,7 @@ if (strpos($__lh, 'lh.') === 0) {
         case 'lh.cfg_save': {
             $needEdit(); $in = json_input(); $c = lh_cfg($pdo);
             if (isset($in['days'])) { $d = (int)$in['days']; if ($d < 20 || $d > 31) json_response(['error' => 'Days in a month: 20 to 31.'], 422); $c['days'] = $d; }
-            if (isset($in['mode'])) $c['mode'] = $in['mode'] === 'all' ? 'all' : 'proportional';
+            if (isset($in['mode'])) $c['mode'] = in_array($in['mode'], ['punch', 'all', 'proportional'], true) ? $in['mode'] : 'punch';
             if (isset($in['salary'])) { if (!is_numeric($in['salary']) || (float)$in['salary'] < 0) json_response(['error' => 'Salary must be a number.'], 422); $c['salary'] = (float)$in['salary']; }
             setting_set($pdo, 'lh_cfg', json_encode($c)); json_response(['ok' => true, 'cfg' => $c]);
         }
