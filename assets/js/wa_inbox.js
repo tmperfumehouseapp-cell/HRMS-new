@@ -1261,6 +1261,9 @@
       .wi-ck{flex:0 0 auto;width:22px;height:22px;border-radius:50%;border:2px solid #b6bfcc;margin:auto 10px auto 0;display:flex;align-items:center;justify-content:center;transition:all .12s;background:#fff}
       .wi-ck.on{background:#4f46e5;border-color:#4f46e5}.wi-ck.on:after{content:'✓';color:#fff;font-size:13px;font-weight:900;line-height:1}
       .wi-it.bsel{background:#eef2ff !important;box-shadow:inset 3px 0 0 #4f46e5}
+      .bk-job{position:fixed;left:50%;top:10px;transform:translateX(-50%);z-index:9500;background:linear-gradient(135deg,#0f172a,#1e293b);color:#fff;border-radius:16px;padding:10px 14px;box-shadow:0 12px 40px rgba(15,23,42,.35);display:flex;align-items:center;gap:12px;max-width:min(94vw,720px);flex-wrap:wrap}
+      .bk-jt{font-size:13px;flex:1 1 220px}.bk-jp{flex:1 1 120px;height:8px;border-radius:99px;background:rgba(255,255,255,.18);overflow:hidden}.bk-jp i{display:block;height:100%;background:linear-gradient(90deg,#22c55e,#4ade80);transition:width .25s}
+      .bk-ja{display:flex;gap:6px}.bk-ja button{border:0;border-radius:99px;padding:6px 12px;font-weight:800;font-size:12.5px;cursor:pointer;background:rgba(255,255,255,.16);color:#fff}
       .bk-sh h4{margin:0 0 4px;font-size:17px}.bk-sh .sub{color:#64748b;font-size:12.5px;margin-bottom:12px}
       .bk-who{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid #e2e8f0;border-radius:14px;margin-bottom:8px;cursor:pointer;transition:all .12s;background:#fff}
       .bk-who:hover{border-color:#a5b4fc}.bk-who.on{border-color:#4f46e5;background:#eef2ff;box-shadow:0 0 0 3px rgba(79,70,229,.12)}
@@ -1322,9 +1325,33 @@
       };
       draw();
     }
+    // ---------- the background job: progress bar at the top of the inbox, result on demand
+    const bkLeave = (e) => { e.preventDefault(); e.returnValue = ''; return ''; };
+    function bkJobStop() { if (S.bkjob) { S.bkjob.stop = true; } const b = $('bkStop'); if (b) { b.disabled = true; b.textContent = 'Stopping…'; } bkPill(); }
+    function bkUpd() {
+      const j = S.bkjob; if (!j) return; const pct = j.total ? Math.round(j.done * 100 / j.total) : 0;
+      if ($('bkPb')) { $('bkPb').style.width = pct + '%'; $('bkD').textContent = bkFmt(j.done); $('bkO').textContent = bkFmt(j.ok); $('bkB').textContent = bkFmt(j.bad); }
+      const pb = $('bkJobBar'); if (pb) pb.style.width = pct + '%'; const t = $('bkJobTxt'); if (t) t.innerHTML = j.running ? `📨 Sending “${esc(j.name)}” <b>${bkFmt(j.done)} / ${bkFmt(j.total)}</b> · ${bkFmt(j.ok)} sent${j.bad ? ' · <span style="color:#fecaca">' + bkFmt(j.bad) + ' not sent</span>' : ''}${j.stop ? ' · stopping…' : ''}` : `✅ “${esc(j.name)}” finished · <b>${bkFmt(j.ok)} sent</b>${j.bad ? ' · <span style="color:#fecaca">' + bkFmt(j.bad) + ' not sent</span>' : ''}`;
+    }
+    function bkPill() {
+      bkStyle(); let el = $('bkJob'); const j = S.bkjob; if (!j) { if (el) el.remove(); return; }
+      if (!el) { el = document.createElement('div'); el.id = 'bkJob'; el.className = 'bk-job'; root.appendChild(el); }
+      el.innerHTML = `<div class="bk-jt"><span id="bkJobTxt"></span></div><div class="bk-jp"><i id="bkJobBar" style="width:${j.total ? Math.round(j.done * 100 / j.total) : 0}%"></i></div><div class="bk-ja">${j.running ? '<button type="button" id="bkJS">Stop</button>' : '<button type="button" id="bkJV">Details</button><button type="button" id="bkJX">✕</button>'}</div>`;
+      if ($('bkJS')) $('bkJS').onclick = () => { if (confirm('Stop sending? The ones already sent stay sent.')) bkJobStop(); };
+      if ($('bkJV')) $('bkJV').onclick = bkResult; if ($('bkJX')) $('bkJX').onclick = () => { S.bkjob = null; bkPill(); };
+      bkUpd();
+    }
+    function bkResult() {
+      const j = S.bkjob; if (!j) return; const box = sheet('Bulk send result'), left = Math.max(0, j.total - j.done), why = {}; j.fails.forEach((f) => { why[f.why] = (why[f.why] || 0) + 1; });
+      box.innerHTML = `<div class="bk-sh" style="text-align:center"><div style="font-size:46px">${j.bad && !j.ok ? '⚠️' : '✅'}</div><h4>${bkFmt(j.ok)} message${j.ok === 1 ? '' : 's'} sent</h4><div class="bk-stats"><div class="bk-stat ok"><b>${bkFmt(j.ok)}</b><small>sent</small></div><div class="bk-stat bad"><b>${bkFmt(j.bad)}</b><small>not sent</small></div>${left ? `<div class="bk-stat"><b>${bkFmt(left)}</b><small>stopped before</small></div>` : ''}</div>
+        ${j.bad ? `<div class="bk-fail" style="text-align:left"><b>Why some were not sent</b><br>${Object.keys(why).map((k) => esc(k) + ' — ' + why[k]).join('<br>')}</div>` : ''}<div class="wi-act" style="margin-top:12px">${j.bad && !j.running ? '<button type="button" class="wi-btn" id="bkRetry">Retry the ' + bkFmt(j.bad) + ' not sent</button>' : ''}<button type="button" class="wi-btn p" id="bkDone">Done</button></div></div>`;
+      $('bkDone').onclick = () => { closeSheet(); loadList(true); };
+      if ($('bkRetry')) $('bkRetry').onclick = () => { const ph = j.fails.map((f) => f.ph); closeSheet(); S.bkjob = null; bkRetryRun(j.t, j.map, j.hmap, ph); };
+    }
+    let bkRetryRun = () => { };
     // ---------- 📨 send one pre-made message to many chats (each customer gets their own first name)
     async function bkSendOpen() {
-      const n = bkN(); if (!n) return; const box = sheet('Send to ' + bkFmt(n) + ' chats'); box.innerHTML = '<div class="wi-empty">Loading messages…</div>'; let list = [];
+      const n = bkN(); if (!n) return; let box = sheet('Send to ' + bkFmt(n) + ' chats'); box.innerHTML = '<div class="wi-empty">Loading messages…</div>'; let list = [];
       try { list = ((await api.get('wa.tpl_list')).templates || []).filter((t) => !t.auto && sendable(t)); } catch (e) { box.innerHTML = `<div class="wi-err">${esc(e.message)}</div>`; return; }
       let q = '';
       const pickList = () => {
@@ -1359,25 +1386,22 @@
         draw();
       };
       const run = (t, map, hmap, phones) => {
-        let done = 0, ok = 0, bad = 0, stop = false; const fails = []; const total = phones.length;
-        box.innerHTML = `<div class="bk-sh" style="text-align:center"><h4>Sending…</h4><div class="sub">Keep this window open until it finishes.</div><div class="bk-prog"><i id="bkPb"></i></div><div class="bk-stats"><div class="bk-stat"><b id="bkD">0</b><small>of ${bkFmt(total)}</small></div><div class="bk-stat ok"><b id="bkO">0</b><small>sent</small></div><div class="bk-stat bad"><b id="bkB">0</b><small>not sent</small></div></div><div class="wi-act"><button type="button" class="wi-btn" id="bkStop">Stop</button></div></div>`;
-        $('bkStop').onclick = () => { stop = true; $('bkStop').disabled = true; $('bkStop').textContent = 'Stopping…'; };
-        const upd = () => { $('bkPb').style.width = Math.round(done * 100 / total) + '%'; $('bkD').textContent = bkFmt(done); $('bkO').textContent = bkFmt(ok); $('bkB').textContent = bkFmt(bad); };
+        if (S.bkjob && S.bkjob.running) { alert('A bulk send is still running. Wait for it to finish or press Stop in the bar at the top.'); return; }
+        const job = S.bkjob = { name: t.name.replace(/_/g, ' '), total: phones.length, done: 0, ok: 0, bad: 0, stop: false, running: true, fails: [], idx: 0, phones, t, map, hmap };
+        box.innerHTML = `<div class="bk-sh" style="text-align:center"><h4>Sending “${esc(job.name)}”…</h4><div class="sub">It keeps sending in the background — you can minimise this and carry on with your chats.</div><div class="bk-prog"><i id="bkPb"></i></div><div class="bk-stats"><div class="bk-stat"><b id="bkD">0</b><small>of ${bkFmt(job.total)}</small></div><div class="bk-stat ok"><b id="bkO">0</b><small>sent</small></div><div class="bk-stat bad"><b id="bkB">0</b><small>not sent</small></div></div><div class="wi-act"><button type="button" class="wi-btn p" id="bkMin">⬇ Minimise — keep sending</button><button type="button" class="wi-btn" id="bkStop">Stop</button></div></div>`;
+        $('bkMin').onclick = () => closeSheet(); $('bkStop').onclick = () => bkJobStop();
+        if (S.bulk.on) bkToggleMode(false);   // the selection is used up: the list is free again
+        window.addEventListener('beforeunload', bkLeave); bkPill(); bkUpd();
         const one = async (ph) => {
-          const nm = firstName({ name: (S.bulk.info[ph] || {}).name || '' }) || 'ji', v = map.map((m) => m.how === 'name' ? nm : m.text.trim());
-          try { await api.post('wa.tpl_send', { phone: ph, id: t.id, vars: v, header_var: t.header_var ? (hmap.how === 'name' ? nm : hmap.text.trim()) : '' }); ok++; }
-          catch (e) { bad++; fails.push({ ph, name: (S.bulk.info[ph] || {}).name || ph, why: e.message || 'failed' }); }
-          done++; upd();
+          const nm = firstName({ name: (S.bulk.info[ph] || {}).name || '' }) || 'ji', v = job.map.map((m) => m.how === 'name' ? nm : m.text.trim());
+          try { await api.post('wa.tpl_send', { phone: ph, id: job.t.id, vars: v, header_var: job.t.header_var ? (job.hmap.how === 'name' ? nm : job.hmap.text.trim()) : '' }); job.ok++; }
+          catch (e) { job.bad++; job.fails.push({ ph, name: (S.bulk.info[ph] || {}).name || ph, why: e.message || 'failed' }); }
+          job.done++; bkUpd();
         };
-        let idx = 0; const worker = async () => { while (!stop && idx < total) { const ph = phones[idx++]; await one(ph); } };
-        Promise.all([worker(), worker(), worker()]).then(() => {
-          const left = phones.slice(idx).length, why = {}; fails.forEach((f) => { why[f.why] = (why[f.why] || 0) + 1; });
-          box.innerHTML = `<div class="bk-sh" style="text-align:center"><div style="font-size:46px">${bad && !ok ? '⚠️' : '✅'}</div><h4>${bkFmt(ok)} message${ok === 1 ? '' : 's'} sent</h4><div class="bk-stats"><div class="bk-stat ok"><b>${bkFmt(ok)}</b><small>sent</small></div><div class="bk-stat bad"><b>${bkFmt(bad)}</b><small>not sent</small></div>${left ? `<div class="bk-stat"><b>${bkFmt(left)}</b><small>stopped before</small></div>` : ''}</div>
-            ${bad ? `<div class="bk-fail" style="text-align:left"><b>Why some were not sent</b><br>${Object.keys(why).map((k) => esc(k) + ' — ' + why[k]).join('<br>')}</div>` : ''}<div class="wi-act" style="margin-top:12px">${bad ? '<button type="button" class="wi-btn" id="bkRetry">Retry the ' + bkFmt(bad) + ' not sent</button>' : ''}<button type="button" class="wi-btn p" id="bkDone">Done</button></div></div>`;
-          $('bkDone').onclick = () => { closeSheet(); bkToggleMode(false); loadList(true); };
-          if ($('bkRetry')) $('bkRetry').onclick = () => run(t, map, hmap, fails.map((f) => f.ph));
-        });
+        const worker = async () => { while (!job.stop && job.idx < job.total) { const ph = job.phones[job.idx++]; await one(ph); } };
+        Promise.all([worker(), worker(), worker(), worker()]).then(() => { job.running = false; window.removeEventListener('beforeunload', bkLeave); bkUpd(); bkPill(); if ($('bkPb')) bkResult(); });
       };
+      bkRetryRun = (tt, mm, hh, ph) => { box = sheet('Sending…'); run(tt, mm, hh, ph); };
       pickList();
     }
 
