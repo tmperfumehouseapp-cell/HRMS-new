@@ -28,6 +28,8 @@ jobs:
           printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
           ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
           test -s ~/.ssh/known_hosts || { echo "::error::Cannot reach $STAGING_HOST on port 22 (firewall?)"; exit 1; }
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+          ssh "${{ secrets.STAGING_USER }}@$STAGING_HOST" 'echo "login ok as $(whoami) in $(pwd)"' || { echo "::error::SSH login failed (key not accepted for this user?)"; exit 1; }
 
       - name: Upload changed files (rsync over SSH, compared by content)
         env:
@@ -35,9 +37,9 @@ jobs:
           STAGING_USER: ${{ secrets.STAGING_USER }}
           STAGING_PATH: ${{ secrets.STAGING_PATH }}
         run: |
+          set -o pipefail
           rsync -rlcz --no-perms --no-owner --no-group --omit-dir-times --itemize-changes \
-            -e "ssh -i ~/.ssh/staging_key -o IdentitiesOnly=yes" \
-            --exclude='.git*' --exclude='.github/' --exclude='config.php' --exclude='config.js' --exclude='uploads/' \
+                        --exclude='.git*' --exclude='.github/' --exclude='config.php' --exclude='config.js' --exclude='uploads/' \
             --exclude='help_data/' --exclude='learn_backups/' --exclude='backups/' --exclude='analytics/data/' \
             --exclude='docs/' --exclude='DEPLOY_NOTES.md' --exclude='README_TMPH.md' --exclude='gitignore' \
             ./ "$STAGING_USER@$STAGING_HOST:$STAGING_PATH" | tee /tmp/rsync.log
@@ -49,11 +51,12 @@ jobs:
           STAGING_USER: ${{ secrets.STAGING_USER }}
           STAGING_PATH: ${{ secrets.STAGING_PATH }}
         run: |
+          set -o pipefail
           bad=0
           for f in help.html index.html empmanagment/api.php assets/js/layout.js; do
             [ -f "$f" ] || continue
             here=$(sha256sum "$f" | cut -d' ' -f1)
-            there=$(ssh -i ~/.ssh/staging_key -o IdentitiesOnly=yes "$STAGING_USER@$STAGING_HOST" "sha256sum '${STAGING_PATH}${f}' 2>/dev/null" | cut -d' ' -f1)
+            there=$(ssh "$STAGING_USER@$STAGING_HOST" "sha256sum '${STAGING_PATH}${f}' 2>/dev/null" | cut -d' ' -f1)
             if [ "$here" = "$there" ]; then echo "MATCH      $f"; else echo "DIFFERENT  $f"; bad=1; fi
           done
           exit $bad
