@@ -144,7 +144,7 @@
   #shMis > .sh-meet{order:6;} #chatCard{order:7;} #shLead{order:8;} .ms-flow > #rateCard{order:12;}   /* rating after Top 5 and the missions (compact pass) */
   #shMis > .sh-ting{order:9;} #shMis > .sh-mgrid{order:10;} #shMis > :not(.sh-meet):not(.sh-ting):not(.sh-mgrid){order:11;}
   #coachCard{order:12;} #otWrap{order:13;} #statGrid{order:14;} #qcCard{order:15;} #detailCard{order:16;} #arCard{order:17;}
-  #shOffer{order:18;} #shPrice{order:19;}
+  #shOffer{order:18;} #shPrice{order:19;} #shPlay{order:20;}
   @media (max-width:640px){ #chatCard, #coachCard, #otWrap, #statGrid, #qcCard, #detailCard, #arCard{zoom:.8;} }
 </style>
 <style>
@@ -198,6 +198,7 @@
         <section class="sh-hero" id="shHero" style="display:none;"></section>
         <div class="sh-quests" id="shQuests" style="display:none;"></div>
         <div id="shOffer"></div>
+        <section class="card" id="shPlay" style="display:none;"></section>
         <section class="card sh-price" id="shPrice" style="display:none;"></section>
       </div>
       <div class="card cch" id="coachCard" style="display:none;"></div>
@@ -246,6 +247,9 @@
 <script>window.FO_MOUNT = document.getElementById('shOffer');</script>
 <script src="assets/js/flash_offer.js?v=261103a"></script>
 <script src="assets/js/sales_home2.js?v=261103c"></script>
+<script src="assets/js/snake.js?v=1"></script>
+<script src="assets/js/play_card.js?v=1"></script>
+<script>try { if (window.PlayCard) PlayCard.mount(document.getElementById("shPlay")); } catch (e) { /* the card is a bonus */ }</script>
 <script>
   guardPage();
   renderSidebar('my_sales');

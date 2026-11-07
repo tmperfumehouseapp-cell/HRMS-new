@@ -18454,6 +18454,7 @@ function retail_display_pending(PDO $pdo, string $city): array
 $action = $_GET['action'] ?? '';
 if (is_file(__DIR__ . '/brain.php')) { require_once __DIR__ . '/brain.php'; }
 if (is_file(__DIR__ . '/price_charts.php')) { require_once __DIR__ . '/price_charts.php'; }   // ONE price chart section (perfume / attar / shower gel / others by total ml) for the cart, the bot and commission; answers pc.* itself   // the company brain: ONE Claude door + scopes (company / customer / internal); every module below can use it
+if (is_file(__DIR__ . '/play.php')) { require_once __DIR__ . '/play.php'; }   // streaks + the Wins feed on the salesperson home; answers play.* itself
 if (strpos((string)$action, 'leader.') === 0) { require __DIR__ . '/leader_pay.php'; }
 if (strpos((string)$action, 'lh.') === 0) { require __DIR__ . '/leader_helper.php'; }   // 👥 Leaders Helper: fixed salary, daily checklist, daily payout
        if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo)\./', (string)$action)) { require __DIR__ . '/wa.php'; }          // wq. = WhatsApp Sales (wq.php, loaded by wa.php → wa_more.php)
@@ -30280,6 +30281,10 @@ switch ($action) {
             "INSERT INTO order_allocations (source, order_id, house, order_type, employee_id, is_direct, allocated_by) VALUES (?, ?, ?, ?, ?, ?, ?)
              ON DUPLICATE KEY UPDATE house = VALUES(house), order_type = VALUES(order_type), employee_id = VALUES(employee_id), is_direct = VALUES(is_direct), allocated_by = VALUES(allocated_by), allocated_at = CURRENT_TIMESTAMP"
         )->execute([$source, $orderId, $house, $type, $empId, $direct ? 1 : 0, $who]);
+        if (!$direct && $empId > 0 && function_exists('play_record_win')) {      // the Wins feed: a real allocation is a win for that salesperson
+            $amt = 0.0; try { $ot = $pdo->prepare("SELECT total FROM shop_orders WHERE store_key = ? AND shopify_id = ? LIMIT 1"); $ot->execute([$source, $orderId]); $amt = (float)$ot->fetchColumn(); } catch (Throwable $e) { $amt = 0.0; }
+            play_record_win($pdo, $empId, 'order', 'closed order #' . $orderId . ($amt > 0 ? ' · ₹' . number_format($amt, 0) : ''), $amt, 'alloc:' . $source . ':' . $orderId);
+        }
         json_response([
             'message' => 'Order #' . $orderId . ' → ' . $empName . ' · ' . house_labels()[$house] . ($type ? ' · ' . ucfirst($type) : '') . '.',
             'allocated_by' => $who, 'allocated_at' => date('Y-m-d H:i:s'), 'employee_name' => $empName, 'direct' => $direct ? 1 : 0,
