@@ -4,6 +4,11 @@
    One place to change the phone size:  1) page scale: layout.js (0.9)  2) the sizes below.  Sections: base · tabs · My Sales · My Day. */
 
 /* ---------- base: gutters, headings, cards, small text, tables ---------- */
+  /* the page title and the Search / bell buttons share ONE row (they used to wrap onto a second, empty-looking row) */
+  html.ph .topbar{flex-wrap:nowrap !important; align-items:center !important;}
+  html.ph .topbar #wsTools{flex:none; margin-left:auto !important;}
+  html.ph .ws-srch{padding:6px 9px !important; font-size:12px !important; box-shadow:none !important;}
+  html.ph .ws-bell{padding:5px 9px !important; font-size:12px !important;}
   html.ph body{font-size:12.5px;}
   html.ph .main{padding-top:4px !important;}
   html.ph .topbar{padding-top:6px !important; padding-bottom:2px !important; min-height:44px !important;}
@@ -40,7 +45,7 @@
 
 /* ---------- My Day: every card (hero, day finished, salary, how you are doing, work today, report, tell the boss, my records, steps, duties) ---------- */
   html.ph .md{padding-bottom:16px;}
-  html.ph .md-hero{border-radius:16px;padding:9px 12px 38px 52px;}
+  html.ph .md-hero{border-radius:16px;padding:9px 12px 38px 12px;}
   html.ph .md-hero:after{width:120px;height:120px;right:-34px;top:-44px;}
   html.ph .md-hero .g{font-size:10.5px;}
   html.ph .md-hero h1{font-size:17px;margin:0 0 1px;}
