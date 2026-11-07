@@ -26,7 +26,8 @@
         <div class="sub" style="margin-top:6px">Tick the work as it is completed. Only the Admin, HR and the Sales Head can edit; the helpers see their own page read-only.</div>${D.missing && D.missing.length ? `<div class="alert error" style="margin-top:10px">Not found in the employee list: ${esc(D.missing.join(', '))}. Use “Add person”.</div>` : ''}</div>`;
       h += '<div class="pp">' + (P.length ? P.map((p) => { const t = T[p.id], day = c.days ? p.salary / c.days : 0, td = D.rows.find((r) => r.date === D.today), x = td ? td.per[p.id] : null, pct = x && x.total ? Math.round(x.done * 100 / x.total) : 0;
         return `<div class="pc"><div class="top"><div class="av">${esc((p.name || '?').charAt(0).toUpperCase())}</div><div class="grow"><b class="nm">${esc(p.name)}</b><small>${inr(day)} a day</small></div><button class="x" data-rm="${p.id}" title="Remove from Leaders Helper">✕</button></div>
-          <div class="sal">₹<input type="number" min="0" value="${p.salary}" data-sal="${p.id}"><button data-ssave="${p.id}">Save</button><small style="margin-left:2px">/ month</small></div>
+          <input class="f lhn" data-note="${p.id}" value="${esc(p.note || '')}" placeholder="Who they help (e.g. Query check · helps Ayazba)" maxlength="120" style="width:100%;margin-top:8px;font-size:12.5px;padding:6px 9px">
+        <div class="sal">₹<input type="number" min="0" value="${p.salary}" data-sal="${p.id}"><button data-ssave="${p.id}">Save</button><small style="margin-left:2px">/ month</small></div>
           <div class="big g">${inr(t.earned)}</div><small>earned so far this month</small><div class="bar"><i style="width:${c.days ? Math.min(100, Math.round(t.earned * 100 / p.salary)) : 0}%"></i></div>
           <div class="row3"><div class="mini"><b>${x ? x.done + ' / ' + x.total : '—'}</b><small>today's work · ${pct}%</small></div><div class="mini ${t.missed > 0 ? 'bad' : ''}"><b>${inr(t.missed)}</b><small>lost to pending work</small></div></div></div>`; }).join('') : '<div class="card"><div class="empty">Nobody added yet. Press “Add person”.</div></div>') + '</div>';
       h += `<div class="card"><div class="hd"><h2>Day by day</h2><div class="sub">Tap a day to tick, add or remove its work.</div></div><div class="tw"><table><thead><tr><th>Day</th>${P.map((p) => `<th>${esc(p.name)}</th>`).join('')}</tr></thead><tbody>`;
@@ -38,6 +39,7 @@
       $('setb').onclick = openSettings; $('tplb').onclick = openTpl; $('addp').onclick = openAdd;
       root.querySelectorAll('.dayc').forEach((el) => { el.onclick = () => openDay(el.dataset.day, +el.dataset.id); });
       root.querySelectorAll('[data-ssave]').forEach((b) => { b.onclick = () => act('lh.person_save', { employee_id: +b.dataset.ssave, salary: root.querySelector(`[data-sal="${b.dataset.ssave}"]`).value }, 'Salary saved.'); });
+      root.querySelectorAll('[data-note]').forEach((i) => { i.onchange = () => act('lh.person_save', { employee_id: +i.dataset.note, note: i.value }, 'Saved.'); });
       root.querySelectorAll('[data-rm]').forEach((b) => { b.onclick = () => { if (confirm('Remove this person from Leaders Helper? Their old days stay.')) act('lh.person_del', { employee_id: +b.dataset.rm }); }; });
     }
     function modal(html) { closeModal(); const o = document.createElement('div'); o.className = 'ov'; o.id = 'ov'; o.innerHTML = `<div class="md">${html}</div>`; o.onclick = (e) => { if (e.target === o) closeModal(); }; root.appendChild(o); return o.firstChild; }
