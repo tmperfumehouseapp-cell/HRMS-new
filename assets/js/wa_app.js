@@ -636,6 +636,16 @@
       const rb = !m.tmp && m.dir !== 'sys' && /^\d+$/.test(String(m.id)) ? '<button type="button" class="wx-rb" data-rb="' + m.id + '" title="Reply to this message" aria-label="Reply">↩</button>' : '';   // ↩ reply to this message (on a phone: swipe it right)
       return `<div class="wx-b ${cls} ${m.tmp ? 'tmp' : ''}" data-id="${m.id}">${rb}${m.who === 'bot' ? '<span class="wx-tag">🤖 BOT</span>' : m.who === 'phone' ? '<span class="wx-tag">📱 PHONE APP</span>' : m.who === 'flow' ? '<span class="wx-tag">⚡ AUTO</span>' : m.mtype === 'template' ? '<span class="wx-tag">PRE-MADE</span>' : ''}${qt}${b}<small>${hhmm(m.ts)}${tick(m)}</small></div>`;
     }
+
+    // 🖼 tap a photo → it opens full screen (phone and PC): pinch to zoom, tap anywhere or ✕ to close
+    function photoOpen(src) {
+      if (document.querySelector('.ph-lb')) return;   // one viewer at a time (a photo can be tapped through two handlers)
+      if (!document.getElementById('phStyle')) { const st = document.createElement('style'); st.id = 'phStyle'; st.textContent = '.ph-lb{position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:99999;display:flex;align-items:center;justify-content:center;touch-action:pinch-zoom;overscroll-behavior:contain}.ph-lb img{max-width:100vw;max-height:100vh;width:auto;height:auto;object-fit:contain;touch-action:pinch-zoom}.ph-lb .ph-x{position:fixed;top:max(12px,env(safe-area-inset-top));right:14px;width:44px;height:44px;border-radius:50%;border:0;background:rgba(255,255,255,.18);color:#fff;font-size:22px;line-height:1;cursor:pointer}.ph-lb .ph-o{position:fixed;bottom:max(14px,env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);background:rgba(255,255,255,.18);color:#fff;padding:10px 16px;border-radius:99px;font:600 14px system-ui,sans-serif;text-decoration:none}'; document.head.appendChild(st); }
+      const d = document.createElement('div'); d.className = 'ph-lb'; d.innerHTML = '<img alt="photo"><button type="button" class="ph-x" aria-label="Close">✕</button><a class="ph-o" target="_blank" rel="noopener">Open original</a>';
+      d.querySelector('img').src = src; d.querySelector('.ph-o').href = src; const close = () => { d.remove(); document.removeEventListener('keydown', esc2); }; const esc2 = (e) => { if (e.key === 'Escape') close(); };
+      d.addEventListener('click', (e) => { if (e.target.closest('.ph-o')) return; close(); }); document.addEventListener('keydown', esc2); document.body.appendChild(d);
+    }
+    document.addEventListener('click', (e) => { const im = e.target.closest('#wxMs .wx-b img'); if (im && !e.target.closest('.wx-qt,a')) { e.preventDefault(); photoOpen(im.currentSrc || im.src); } });
     document.addEventListener('click', (e) => { const q = e.target.closest('.wx-qt'); if (!q) return; const t = document.querySelector('.wx-b[data-id="' + q.dataset.qid + '"]');
       const go = (el) => { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.remove('wx-fl'); void el.offsetWidth; el.classList.add('wx-fl'); };
       if (t) { go(t); return; }

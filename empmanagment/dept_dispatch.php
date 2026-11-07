@@ -335,8 +335,8 @@ function dp_dispatch_tick(PDO $pdo, $now) {
     // bring the newest Shopify orders in first (every 10 minutes; a failure is remembered and shown on the Dispatch page)
     try { if (function_exists('dp_dsp_autoheal_orders')) { $x = dp_dsp_autoheal_orders($pdo, $now); if ($x !== null) $res['shop'] = $x; } } catch (Throwable $e) { error_log('Shopify order refresh: ' . $e->getMessage()); }
     list($new, $canc) = dp_dsp_sync($pdo, $now, false); $res['synced'] = $new; $res['canc'] = $canc;
-    // Shiprocket: every 15 minutes when an API user is saved (a failure is remembered and shown on the page, it never stops the tick)
-    try { if (function_exists('dp_dsp_sr_cfg') && dp_dsp_sr_cfg()['ok'] && $now - (int)dp_get('sr_last_ts', '0') >= 900) { $sr = dp_dsp_sr_sync($pdo, 15); $res['sr'] = $sr['ok'] ? $sr['updated'] : -1; } } catch (Throwable $e) { error_log('Shiprocket sync: ' . $e->getMessage()); }
+    // Shiprocket: every 10 minutes (the same beat as the Shopify order read above) when an API user is saved (a failure is remembered and shown on the page, it never stops the tick)
+    try { if (function_exists('dp_dsp_sr_cfg') && dp_dsp_sr_cfg()['ok'] && $now - (int)dp_get('sr_last_ts', '0') >= 600) { $sr = dp_dsp_sr_sync($pdo, 15); $res['sr'] = $sr['ok'] ? $sr['updated'] : -1; } } catch (Throwable $e) { error_log('Shiprocket sync: ' . $e->getMessage()); }
     // Live tracking: ask Shiprocket again about parcels in transit that have gone quiet (40 per run, oldest first); the webhook does the instant part
     try { if (function_exists('dp_live_tick')) $res['live'] = dp_live_tick($pdo, $now); } catch (Throwable $e) { error_log('Dispatch live tick: ' . $e->getMessage()); }
     // "Needs attention": NDR / undelivered / RTO / lost / damaged, parcels past their deadline or courier date, tracking numbers nobody scanned (once per parcel and reason; wa_orders.php)
@@ -508,18 +508,25 @@ if (strpos((string)$action, 'dp.dsp_') === 0) {
         if (!$r || (string)$r['shot_mime'] === '' || (string)$r['shot_b64'] === '') json_response(['error' => 'No payment screenshot was saved for this order.'], 404);
         json_response(['ok' => true, 'mime' => (string)$r['shot_mime'], 'b64' => (string)$r['shot_b64']]);
     }
-    case 'dp.order_hub': {   // the grand popup: order card + timeline + customer card + who is waiting (order_hub.php)
+    case 'dp.dsp_hub': {   // the grand popup: order card + timeline + customer card + who is waiting (order_hub.php)
         if (!function_exists('ohub_view')) json_response(['error' => 'order_hub.php is missing on this server.'], 500);
         $r = ohub_view($pdo, ['id' => $_GET['id'] ?? ($in['id'] ?? 0), 'case' => $_GET['case'] ?? ($in['case'] ?? 0), 'phone' => $_GET['phone'] ?? ($in['phone'] ?? ''), 'order' => $_GET['order'] ?? ($in['order'] ?? ''),
             'store' => $_GET['store'] ?? ($in['store'] ?? ''), 'sid' => $_GET['sid'] ?? ($in['sid'] ?? ''), 'bill' => $_GET['bill'] ?? ($in['bill'] ?? 0)]);
         if (empty($r['ok'])) json_response(['error' => $r['error'] ?? 'Not found.'], 404);
         json_response($r);
     }
-    case 'dp.cust_list': {   // the Customers list: one row per person (last 10 digits of the phone)
+    case 'dp.dsp_pay': {   // payment details of one order straight from the gateway (GoKwik etc., via Shopify): every transaction id
+        if (!function_exists('ohub_pay_live')) json_response(['error' => 'order_hub.php is missing on this server.'], 500);
+        $store = (string)($_GET['store'] ?? ''); $sid = (string)($_GET['sid'] ?? '');
+        if (($store === '' || $sid === '') && !empty($_GET['id'])) { $q = $pdo->prepare("SELECT store_key, shopify_id FROM dp_dsp_parcels WHERE id = ?"); $q->execute([(int)$_GET['id']]); $r = $q->fetch(); if ($r) { $store = (string)$r['store_key']; $sid = (string)$r['shopify_id']; } }
+        $r = ohub_pay_live($pdo, $store, $sid); if (empty($r['ok'])) json_response(['error' => $r['error'] ?? 'Could not read the payment.'], 502);
+        json_response($r);
+    }
+    case 'dp.dsp_cust_list': {   // the Customers list: one row per person (last 10 digits of the phone)
         if (!function_exists('ohub_list')) json_response(['error' => 'order_hub.php is missing on this server.'], 500);
         json_response(ohub_list($pdo, $_GET));
     }
-    case 'dp.cust_rebuild': {   // read every order again and rebuild the Customers list
+    case 'dp.dsp_cust_rebuild': {   // read every order again and rebuild the Customers list
         if (!function_exists('ohub_rebuild')) json_response(['error' => 'order_hub.php is missing on this server.'], 500);
         $n = ohub_rebuild($pdo); dp_put('ohub_last_ts', (string)time()); json_response(['ok' => true, 'people' => $n]);
     }
