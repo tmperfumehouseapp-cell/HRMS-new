@@ -1,6 +1,6 @@
 /* dino.js — Dino Run, the break game on the Punch in / out pages (My Day + Attendance). TMDino.mount(element).
    Two looks, picked with the small ☀️/🌙 button (saved on this phone): Candy Day (bright cartoon) and Neon Night (arcade).
-   One control: tap the game, press Space / Up, the JUMP button on the game screen, or the big round JUMP button below it. Jump the cacti, grab the coins (+10 each).
+   One control: tap the game, press Space / Up, or the JUMP button on the game screen. Jump the cacti, grab the coins (+10 each).
    After every run: your rank, who is first today, the top of the month and who is last (company board in play.php:
    play.dino_score / play.dino_board). Pauses when the tab is hidden. Honours "reduce motion" (no shake). */
 (function () {
@@ -27,11 +27,7 @@
     + '.tmd-rb{font-size:10.5px;font-weight:700;opacity:.85;text-align:center}'
     + '.tmd-sj{position:absolute;right:9px;bottom:9px;width:54px;height:54px;border-radius:50%;border:0;cursor:pointer;color:#fff;font:800 9.5px Manrope,system-ui,sans-serif;letter-spacing:.06em;display:flex;flex-direction:column;align-items:center;justify-content:center;touch-action:manipulation;z-index:3;opacity:.92;transition:transform .08s}.tmd-sj span{font-size:18px;line-height:1}.tmd-sj:active,.tmd-sj.on{transform:scale(.92)}'
     + '.tmd[data-w="candy"] .tmd-sj{background:radial-gradient(circle at 35% 28%,#fdba74,#f97316 60%,#c2410c);box-shadow:0 4px 0 #9a3412,0 8px 14px rgba(0,0,0,.3)}.tmd[data-w="neon"] .tmd-sj{background:radial-gradient(circle at 35% 28%,#67e8f9,#0891b2 60%,#164e63);box-shadow:0 0 0 2px #22d3ee,0 0 18px rgba(34,211,238,.7)}'
-    + '.tmd-ctl{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 11px 10px}.tmd-champ{display:flex;flex-direction:column;gap:5px;min-width:0}.tmd-chip{font-size:11px;font-weight:800;padding:4px 9px;border-radius:999px;background:var(--gchip);white-space:nowrap}'
-    + '.tmd-jump{flex:none;width:62px;height:62px;border-radius:50%;border:0;cursor:pointer;color:#fff;font:800 10.5px Manrope,system-ui,sans-serif;letter-spacing:.08em;display:flex;flex-direction:column;align-items:center;justify-content:center;touch-action:manipulation;transition:transform .08s,box-shadow .08s}.tmd-jump span{font-size:20px;line-height:1}'
-    + '.tmd[data-w="candy"] .tmd-jump{background:radial-gradient(circle at 35% 28%,#fdba74,#f97316 55%,#c2410c);box-shadow:0 6px 0 #9a3412,0 12px 18px rgba(154,52,18,.3)}'
-    + '.tmd[data-w="neon"] .tmd-jump{background:radial-gradient(circle at 35% 28%,#67e8f9,#0891b2 60%,#164e63);color:#ecfeff;box-shadow:0 0 0 2px #22d3ee,0 0 22px rgba(34,211,238,.7),0 6px 0 #0e3a4a}'
-    + '.tmd-jump:active,.tmd-jump.on{transform:translateY(5px)}.tmd[data-w="candy"] .tmd-jump:active,.tmd[data-w="candy"] .tmd-jump.on{box-shadow:0 1px 0 #9a3412,0 4px 8px rgba(154,52,18,.3)}.tmd[data-w="neon"] .tmd-jump:active,.tmd[data-w="neon"] .tmd-jump.on{box-shadow:0 0 0 2px #22d3ee,0 0 14px rgba(34,211,238,.6),0 1px 0 #0e3a4a}'
+    + '.tmd-ctl{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 11px 10px}.tmd-champ{display:flex;flex-wrap:wrap;gap:5px;min-width:0}.tmd-chip{font-size:11px;font-weight:800;padding:4px 9px;border-radius:999px;background:var(--gchip);white-space:nowrap}'
     + '@media (prefers-reduced-motion:reduce){.tmd-pulse{animation:none}.tmd-rep{animation:none}}';
 
   var P = {
@@ -48,11 +44,11 @@
       + '<div class="tmd-stage"><canvas aria-label="Dino game: tap to jump"></canvas><div class="tmd-ov tmd-start"><div class="big tmd-pulse">Tap to run ▶</div><small>Jump the cacti · grab the coins</small></div>'
       + '<div class="tmd-ov tmd-goov" style="display:none"><div class="tmd-rep"><div class="tmd-rh"><b>Game over</b><span class="gr-r"></span></div><div class="tmd-rs"></div><div class="tmd-rp"></div><div class="tmd-rb">Tap the game or JUMP to play again</div></div></div>'
       + '<button type="button" class="tmd-sj" aria-label="Jump"><span>⬆</span>JUMP</button></div>'
-      + '<div class="tmd-ctl"><div class="tmd-champ"><span class="tmd-chip">Loading the company board…</span></div><button type="button" class="tmd-jump" aria-label="Jump"><span>⬆</span>JUMP</button></div></div>';
+      + '<div class="tmd-ctl"><div class="tmd-champ"><span class="tmd-chip">Loading the company board…</span></div></div></div>';
     var root = host.querySelector('.tmd'), q = function (c) { return host.querySelector(c); };
     var cv = q('canvas'), ctx = cv.getContext('2d'), dpr = Math.min(2, window.devicePixelRatio || 1);
     cv.width = W * dpr; cv.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    var wb = q('.tmd-wb'), start = q('.tmd-start'), goov = q('.tmd-goov'), sj = q('.tmd-sj'), jb = q('.tmd-jump');
+    var wb = q('.tmd-wb'), start = q('.tmd-start'), goov = q('.tmd-goov'), sj = q('.tmd-sj');
     var best = 0; try { best = +localStorage.getItem('tm_dino_best') || 0; } catch (e) {} q('.best').textContent = best;
     function setWorld(w) { world = w; root.dataset.w = w; wb.textContent = w === 'candy' ? '🌙' : '☀️'; wb.title = w === 'candy' ? 'Night look' : 'Day look'; try { localStorage.setItem('tm_dino_world', w); } catch (e) {} if (state !== 'run') paint(); }
 
@@ -194,8 +190,6 @@
     }
     wb.addEventListener('click', function () { setWorld(world === 'candy' ? 'neon' : 'candy'); });
     q('.tmd-stage').addEventListener('pointerdown', function (e) { e.preventDefault(); press(); });
-    jb.addEventListener('pointerdown', function (e) { e.preventDefault(); jb.classList.add('on'); press(); });
-    ['pointerup', 'pointerleave', 'pointercancel'].forEach(function (n) { jb.addEventListener(n, function () { jb.classList.remove('on'); }); });
     sj.addEventListener('pointerdown', function (e) { e.preventDefault(); e.stopPropagation(); sj.classList.add('on'); press(); });
     ['pointerup', 'pointerleave', 'pointercancel'].forEach(function (n) { sj.addEventListener(n, function () { sj.classList.remove('on'); }); });
     document.addEventListener('keydown', function (e) {

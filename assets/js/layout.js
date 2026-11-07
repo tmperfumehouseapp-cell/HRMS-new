@@ -80,7 +80,7 @@ const LAYOUT_BUILD = '261102.2';   // shown under your name in the sidebar
 // Compact phone layout: one shared stylesheet for every page, and every table gets its own sideways-scroll box on small screens.
 (function () {
   try {
-    const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = 'assets/css/mobile.css?v=7';
+    const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = 'assets/css/mobile.css?v=8';
     document.head.appendChild(l);
     const mq = window.matchMedia('(max-width:820px)');
     const wrap = () => {
@@ -716,10 +716,10 @@ window.WS = (function () {
       if (btn.length < 2) return;
       const on = (h) => file === h || (h === 'my_day.html' && /^(dept_[a-z]+)\.html$/.test(file)) || (h === 'my_day.html' && /^(attendance|leave|my_salary|my_penalties|my_agreements|my_space)\.html$/.test(file)) || (h === 'my_orders.html' && /^(orders|order_allocation)\.html$/.test(file));
       const st = document.createElement('style'); st.id = 'wsEmpCss';
-      st.textContent = '#wsEmpNav{display:none;}@media (max-width:820px){#wsEmpNav{display:flex; position:fixed; left:0; right:0; bottom:0; z-index:90; background:#fffdf8; border-top:1px solid #ece7dc; padding:6px 8px calc(6px + env(safe-area-inset-bottom)); gap:4px;}'
-        + '#wsEmpNav a{flex:1; display:flex; flex-direction:column; align-items:center; gap:2px; padding:7px 2px; border-radius:16px; text-decoration:none; color:#4b5563; font-size:11px; font-weight:600; position:relative;}'
-        + '#wsEmpNav a .i{font-size:20px; line-height:1;} #wsEmpNav a.on{background:#111; color:#fff;} #wsEmpNav a em{position:absolute; top:2px; right:18%; background:#e02424; color:#fff; border-radius:9px; font-style:normal; font-size:11px; padding:0 5px; line-height:15px;}'
-        + 'body{padding-bottom:78px;}}';
+      st.textContent = '#wsEmpNav{display:none;}@media (max-width:820px){#wsEmpNav{display:flex; position:fixed; left:0; right:0; bottom:0; z-index:90; background:#fffdf8; border-top:1px solid #ece7dc; padding:3px 6px calc(3px + env(safe-area-inset-bottom)); gap:2px;}'
+        + '#wsEmpNav a{flex:1; display:flex; flex-direction:column; align-items:center; gap:1px; padding:4px 2px; border-radius:12px; text-decoration:none; color:#4b5563; font-size:10px; font-weight:600; position:relative;}'
+        + '#wsEmpNav a .i{font-size:15px; line-height:1;} #wsEmpNav a.on{background:#111; color:#fff;} #wsEmpNav a em{position:absolute; top:2px; right:18%; background:#e02424; color:#fff; border-radius:9px; font-style:normal; font-size:11px; padding:0 4px; line-height:13px; font-size:10px;}'
+        + 'body{padding-bottom:52px;}}';
       document.head.appendChild(st);
       const nav = document.createElement('nav'); nav.id = 'wsEmpNav';
       const link = (b) => '<a href="' + b[0] + '" class="' + (on(b[0]) ? 'on' : '') + '"><span class="i">' + b[2] + '</span>' + esc(b[1]) + (b[3] > 0 ? '<em>' + b[3] + '</em>' : '') + '</a>';
