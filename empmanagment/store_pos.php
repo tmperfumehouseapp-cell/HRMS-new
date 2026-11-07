@@ -751,6 +751,8 @@ try {
             $billId = (int)$pdo->lastInsertId();
             $billNo = 'ST-' . str_pad((string)$billId, 6, '0', STR_PAD_LEFT);
             $pdo->prepare("UPDATE st_bills SET bill_no = ? WHERE bill_id = ?")->execute([$billNo, $billId]);
+            $srcKey = (string)($in['source'] ?? ''); if (!isset(ST_SOURCES[$srcKey])) $srcKey = '';      // where the customer came from (optional)
+            if ($srcKey !== '') $pdo->prepare("UPDATE st_bills SET source = ?, source_note = ? WHERE bill_id = ?")->execute([$srcKey, mb_substr(trim((string)($in['source_note'] ?? '')), 0, 120), $billId]);
             $item = $pdo->prepare("INSERT INTO st_bill_items (bill_id, bottle_id, ml, kind) VALUES (?, ?, ?, ?)");
             $sold = $pdo->prepare("UPDATE st_bottles SET status = 'sold', sold_at = ?, bill_id = ? WHERE bottle_id = ? AND status = 'stock'");
             foreach ($found as $b) {
@@ -782,6 +784,16 @@ try {
             unset($x);
             json_response(['ok' => true, 'bill_id' => $billId, 'bill_no' => $billNo, 'total' => $total, 'total_ml' => $t['total_ml'], 'commission_pct' => $pc['pct'], 'commission_from' => $pc['source'], 'people' => $ppl] + $invOut + [
                 'message' => 'Bill ' . $billNo . ' saved: ' . $t['total_ml'] . ' ml, ₹' . number_format($total) . '.']);
+            break;
+        }
+
+        case 'st_bill.sources': {         // how many bills came from each source on a day (default: today's store day)
+            require_auth();
+            $d = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($_GET['date'] ?? '')) ? $_GET['date'] : st_day();
+            $q = $pdo->prepare("SELECT source, COUNT(*) n, COALESCE(SUM(total),0) amt FROM st_bills WHERE biz_date = ? AND status = 'ok' GROUP BY source"); $q->execute([$d]);
+            $by = []; $all = 0; foreach ($q->fetchAll() as $r) { $by[(string)$r['source']] = ['n' => (int)$r['n'], 'amt' => round((float)$r['amt'])]; $all += (int)$r['n']; }
+            $rows = []; foreach (ST_SOURCES as $k => $lab) if (isset($by[$k])) $rows[] = ['key' => $k, 'label' => $lab] + $by[$k];
+            json_response(['date' => $d, 'total' => $all, 'asked' => $all - ($by['']['n'] ?? 0), 'rows' => $rows, 'list' => ST_SOURCES]);
             break;
         }
 

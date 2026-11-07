@@ -15,6 +15,8 @@
 
 const ST_CODE_BASE = 100000;     // code = ST_CODE_BASE + bottle_id  -> always 6 digits (up to 999999): short code = few, fat bars = easy scan
 const ST_SIZES = [10, 20, 50, 100];
+/** "Where did the customer come from?" — asked at billing. key => label */
+const ST_SOURCES = ['insta_ad' => 'Instagram ad', 'fb_ad' => 'Facebook ad', 'flyer' => 'Flyer', 'friend' => 'Friend suggestion', 'first_time' => 'First time visitor', 'google' => 'Google / Maps', 'whatsapp' => 'WhatsApp', 'other' => 'Other'];
 const ST_DAY_START_HOUR = 3;      // the store's new day starts at 3 AM: a bill made at 2:30 AM still belongs to the day before
 
 /** The hour the store's new day starts (default 3). */
@@ -297,7 +299,7 @@ function st_daily_sync(PDO $pdo): void
 function st_migrate(PDO $pdo): void
 {
     static $ran = false; if ($ran) return; $ran = true;
-    $flag = sys_get_temp_dir() . '/hrms_st_mig_v7';
+    $flag = sys_get_temp_dir() . '/hrms_st_mig_v8';
     if (is_file($flag)) return;
     try {
         foreach (['printed_at' => 'DATETIME NULL', 'print_count' => 'INT NOT NULL DEFAULT 0'] as $c => $def)
@@ -345,6 +347,8 @@ function st_migrate(PDO $pdo): void
             given_by VARCHAR(80) NOT NULL DEFAULT '', created_at DATETIME NOT NULL, UNIQUE KEY uq_st_bg (phone, gift_year), KEY idx_st_bg_bill (bill_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         if (!$pdo->query("SHOW COLUMNS FROM st_bill_people LIKE 'bday'")->fetch()) $pdo->exec("ALTER TABLE st_bill_people ADD COLUMN bday CHAR(5) NOT NULL DEFAULT ''");      // customer birthday as MM-DD
+        foreach (['source' => "VARCHAR(20) NOT NULL DEFAULT ''", 'source_note' => "VARCHAR(120) NOT NULL DEFAULT ''"] as $c => $def)
+            if (!$pdo->query("SHOW COLUMNS FROM st_bills LIKE '$c'")->fetch()) $pdo->exec("ALTER TABLE st_bills ADD COLUMN $c $def");
         @file_put_contents($flag, '1');
     } catch (Throwable $e) { error_log('st_migrate: ' . $e->getMessage()); }
 }
