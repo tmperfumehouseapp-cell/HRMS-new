@@ -2,12 +2,12 @@
 /**
  * ORDER HUB: the one big popup of Dispatch (an ORDER card + a CUSTOMER card + the WhatsApp chat) and the Customers list.
  *
- *   dp.order_hub     GET  ?id=<parcel id> | ?case=<Needs attention case id> | ?phone=<number> [&order=#1234 &store=key] | ?bill=<store bill id>
+ *   dp.dsp_hub     GET  ?id=<parcel id> | ?case=<Needs attention case id> | ?phone=<number> [&order=#1234 &store=key] | ?bill=<store bill id>
  *                         -> order card (payment, gateway, salesperson, commission, items, complaints), merged timeline (order -> payment -> tracking ->
  *                            every courier scan -> delivered -> COD money -> complaints -> Needs attention), customer card (lifetime numbers across
  *                            online + store + old POS, risk flags, who is waiting), and the list of this customer's orders.
- *   dp.cust_list     GET  ?q= &sort=spent|orders|last|first|name &flt=all|vip|risk|store|online|both|lapsed &page=   the Customers list (one row per person)
- *   dp.cust_rebuild  POST the Customers list is rebuilt from every order (also runs by itself in the background tick)
+ *   dp.dsp_cust_list     GET  ?q= &sort=spent|orders|last|first|name &flt=all|vip|risk|store|online|both|lapsed &page=   the Customers list (one row per person)
+ *   dp.dsp_cust_rebuild  POST the Customers list is rebuilt from every order (also runs by itself in the background tick)
  *
  * ONE PERSON = the LAST 10 DIGITS of the phone number, whatever the spaces, +91 or 0 in front. Online orders (shop_orders), Manual orders, store bills
  * (st_bills / st_bill_people) and the old POS (pos_orders / pos_customers) all count toward the same person.
