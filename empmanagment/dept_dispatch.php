@@ -335,8 +335,8 @@ function dp_dispatch_tick(PDO $pdo, $now) {
     // bring the newest Shopify orders in first (every 10 minutes; a failure is remembered and shown on the Dispatch page)
     try { if (function_exists('dp_dsp_autoheal_orders')) { $x = dp_dsp_autoheal_orders($pdo, $now); if ($x !== null) $res['shop'] = $x; } } catch (Throwable $e) { error_log('Shopify order refresh: ' . $e->getMessage()); }
     list($new, $canc) = dp_dsp_sync($pdo, $now, false); $res['synced'] = $new; $res['canc'] = $canc;
-    // Shiprocket: every 15 minutes when an API user is saved (a failure is remembered and shown on the page, it never stops the tick)
-    try { if (function_exists('dp_dsp_sr_cfg') && dp_dsp_sr_cfg()['ok'] && $now - (int)dp_get('sr_last_ts', '0') >= 900) { $sr = dp_dsp_sr_sync($pdo, 15); $res['sr'] = $sr['ok'] ? $sr['updated'] : -1; } } catch (Throwable $e) { error_log('Shiprocket sync: ' . $e->getMessage()); }
+    // Shiprocket: every 10 minutes (the same beat as the Shopify order read above) when an API user is saved (a failure is remembered and shown on the page, it never stops the tick)
+    try { if (function_exists('dp_dsp_sr_cfg') && dp_dsp_sr_cfg()['ok'] && $now - (int)dp_get('sr_last_ts', '0') >= 600) { $sr = dp_dsp_sr_sync($pdo, 15); $res['sr'] = $sr['ok'] ? $sr['updated'] : -1; } } catch (Throwable $e) { error_log('Shiprocket sync: ' . $e->getMessage()); }
     // Live tracking: ask Shiprocket again about parcels in transit that have gone quiet (40 per run, oldest first); the webhook does the instant part
     try { if (function_exists('dp_live_tick')) $res['live'] = dp_live_tick($pdo, $now); } catch (Throwable $e) { error_log('Dispatch live tick: ' . $e->getMessage()); }
     // "Needs attention": NDR / undelivered / RTO / lost / damaged, parcels past their deadline or courier date, tracking numbers nobody scanned (once per parcel and reason; wa_orders.php)
