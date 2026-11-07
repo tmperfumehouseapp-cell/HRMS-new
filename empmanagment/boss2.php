@@ -2786,11 +2786,17 @@ function cm_offer_stop(PDO $pdo, $id, $by) {
     cm_offers($pdo); $pdo->prepare("UPDATE cm_offers SET active = 0, stopped_at = ? WHERE id = ?")->execute([bd_now(), (int)$id]);
     return [true, 'Offer stopped.', 200];
 }
+/** people assigned to Retail wholesale or Store in Total Budgeting: they are paid by that rule (salary + collections % / store chart), so the online commission engine skips them */
+function cm_offline_ids(PDO $pdo) {
+    $o = [];
+    try { $j = json_decode((string)setting_get($pdo, 'budget_cfg', ''), true); foreach ((array)($j['people'] ?? []) as $id => $v) if (is_array($v) && in_array((string)($v['grp'] ?? ''), ['retail', 'store'], true)) $o[(int)$id] = 1; } catch (Throwable $e) {}
+    return $o;
+}
 function cm_emps(PDO $pdo) {
-    $emps = [];
+    $emps = []; $off = cm_offline_ids($pdo);
     foreach ($pdo->query("SELECT e.employee_id, e.full_name, e.sales_tag, e.basic_salary, e.joining_date, e.designation, d.department_name
         FROM employees e LEFT JOIN departments d ON d.department_id = e.department_id WHERE e.status != 'ex'")->fetchAll() as $e) {
-        if (stripos((string)$e['department_name'], 'sales') === false) continue; $emps[(int)$e['employee_id']] = $e;
+        if (stripos((string)$e['department_name'], 'sales') === false || isset($off[(int)$e['employee_id']])) continue; $emps[(int)$e['employee_id']] = $e;
     }
     return $emps;
 }

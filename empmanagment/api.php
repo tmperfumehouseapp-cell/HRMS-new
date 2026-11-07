@@ -427,6 +427,7 @@ function action_page_perms(string $action): array
         'addons.' => ['allocation'],                    // Order Allocation: add-ons
         'employees.list' => ['dashboard', 'leave_requests', 'documents', 'agreements', 'approvals', 'targets', 'performance', 'commission', 'allocation'],
         'st_team.month' => ['commission'],               // Total Budgeting reads each store person's daily commission (same chart, no over-target extra)
+        'employees.set_salary' => ['commission'], 'penalties.apply' => ['commission'], 'penalties.waive' => ['commission'], 'penalties.rules' => ['commission'],   // Total Budgeting: set a salary, add / remove a penalty (still Admin / HR only)
         'departments.save' => ['commission'], 'departments.delete' => ['commission'],   // create / rename / delete a section from Total Employees (still Admin / HR only)
         'departments.list' => ['commission'],            // Total Budgeting → Total Employees lists every department
         'employees.set_department' => ['commission'],    // ...and moves a person between them by drag and drop (still Admin / HR only)
@@ -19229,6 +19230,21 @@ switch ($action) {
             }
             json_response(['error' => 'Could not save employee.'], 500);
         }
+        break;
+    }
+
+    case 'employees.set_salary': {
+        // Total Budgeting → Total Employees: define a person's fixed monthly salary right there (0 = no fixed salary, commission only).
+        $auth = require_auth();
+        require_role(['Admin', 'HR'], $auth);
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
+        $input = json_input();
+        $id = (int)($input['employee_id'] ?? 0);
+        $sal = $input['monthly_salary'] ?? null;
+        if (!$id) json_response(['error' => 'employee_id is required.'], 422);
+        if (!is_numeric($sal) || (float)$sal < 0 || (float)$sal > 10000000) json_response(['error' => 'Type the monthly salary as an amount in rupees (0 for none).'], 422);
+        $pdo->prepare("UPDATE employees SET monthly_salary = ? WHERE employee_id = ?")->execute([round((float)$sal, 2), $id]);
+        json_response(['message' => 'Saved.', 'employee_id' => $id, 'monthly_salary' => round((float)$sal, 2)]);
         break;
     }
 

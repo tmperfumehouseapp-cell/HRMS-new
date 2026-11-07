@@ -5,6 +5,10 @@
  *
  *   budget.get   GET  month=YYYY-MM          → { month, target, lump, goals:{sales,leader,store,other}, expenses:[{name, amount}] }
  *   budget.save  POST {month, target, lump, goals?, expenses:[{name, amount}]}   → saves them (Admin only)
+ *   budget.store_comm GET date_from,date_to  → store commission per person per day, by the same rules as the online engine (no over-target extra)
+ *   budget.store_bills GET date_from,date_to  → store bills with who billed each
+ *   budget.bill_assign POST {bill_id, employee_id}   → change who a store bill belongs to (Admin)
+ *   budget.person_save POST {employee_id, grp?, rpct?, sc?, duty?}   → one person's pay group, retail % of collections, store commission, store POS billing (Admin)
  *   budget.retail GET date_from,date_to      → retail wholesale sales per person per day (billed / paid, returns taken off)
  *   budget.summary POST {facts}              → Claude's few plain lines for the top of the page
  *
@@ -29,8 +33,16 @@ if (!function_exists('budget_cfg')) {
         $j = json_decode((string)setting_get($pdo, 'budget_cfg', ''), true);
         if (!is_array($j)) $j = [];
         $rt = is_array($j['retail'] ?? null) ? $j['retail'] : [];
+        $pp = [];   // per person: pay group (sales / retail / store / other), own retail % of collections, store commission on / off
+        foreach ((array)($j['people'] ?? []) as $pid => $v) {
+            if (!is_array($v) || (int)$pid <= 0) continue;
+            $g = (string)($v['grp'] ?? ''); $g = in_array($g, ['sales', 'retail', 'store', 'other'], true) ? $g : '';
+            $rp = $v['rpct'] ?? null; $rp = ($rp === null || $rp === '' || !is_numeric($rp)) ? null : round(max(0, min(50, (float)$rp)), 2);
+            $sc = array_key_exists('sc', $v) ? (empty($v['sc']) ? 0 : 1) : 1;
+            if ($g !== '' || $rp !== null || $sc === 0) $pp[(string)(int)$pid] = ['grp' => $g, 'rpct' => $rp, 'sc' => $sc];
+        }
         return ['expenses' => budget_cfg_from((array)($j['expenses'] ?? [])), 'months' => is_array($j['months'] ?? null) ? $j['months'] : [],
-            'retail' => ['pct' => round(max(0, min(50, (float)($rt['pct'] ?? 0))), 2), 'basis' => (($rt['basis'] ?? '') === 'paid') ? 'paid' : 'billed']];
+            'retail' => ['pct' => round(max(0, min(50, (float)($rt['pct'] ?? 0))), 2), 'basis' => (($rt['basis'] ?? '') === 'billed') ? 'billed' : 'paid'], 'people' => $pp];
     }
 }
 
@@ -41,8 +53,9 @@ if ($__bg === 'budget.get') {
     $month = trim((string)($_GET['month'] ?? date('Y-m')));
     if (!preg_match('/^\d{4}-\d{2}$/', $month)) json_response(['error' => 'month must be YYYY-MM.'], 422);
     $c = budget_cfg($pdo); $m = $c['months'][$month] ?? [];
+    $duty = []; try { if (function_exists('ensure_st_tables')) ensure_st_tables($pdo); $duty = array_map('intval', $pdo->query("SELECT emp_id FROM st_duty")->fetchAll(PDO::FETCH_COLUMN)); } catch (Throwable $e) {}
     $gl = []; foreach (['sales', 'leader', 'retail', 'store', 'other'] as $gk) $gl[$gk] = (float)(($m['goals'] ?? [])[$gk] ?? 0);
-    json_response(['month' => $month, 'target' => (float)($m['target'] ?? 0), 'lump' => (float)($m['lump'] ?? 0), 'goals' => $gl, 'retail' => $c['retail'], 'expenses' => $c['expenses'], 'can_edit' => convo_is_admin($auth)]);
+    json_response(['month' => $month, 'target' => (float)($m['target'] ?? 0), 'lump' => (float)($m['lump'] ?? 0), 'goals' => $gl, 'retail' => $c['retail'], 'people' => (object)$c['people'], 'duty' => $duty, 'expenses' => $c['expenses'], 'can_edit' => convo_is_admin($auth)]);
 }
 if ($__bg === 'budget.save') {
     $auth = require_auth();
@@ -67,13 +80,104 @@ if ($__bg === 'budget.save') {
     if (isset($in['retail']) && is_array($in['retail'])) {   // the retail wholesale commission: a % of the sales of each retail person, on the billed or the paid amount
         $v = $in['retail']['pct'] ?? 0;
         if (!is_numeric($v) || (float)$v < 0 || (float)$v > 50) json_response(['error' => 'The retail commission is a percentage from 0 to 50.'], 422);
-        $c['retail'] = ['pct' => round((float)$v, 2), 'basis' => (($in['retail']['basis'] ?? '') === 'paid') ? 'paid' : 'billed'];
+        $c['retail'] = ['pct' => round((float)$v, 2), 'basis' => (($in['retail']['basis'] ?? '') === 'billed') ? 'billed' : 'paid'];
     }
     if (isset($in['expenses']) && is_array($in['expenses'])) {
         $c['expenses'] = budget_cfg_from($in['expenses']);
     }
     setting_set($pdo, 'budget_cfg', json_encode($c));
     json_response(['ok' => true]);
+}
+if ($__bg === 'budget.store_comm') {
+    // Store commission per person per day by the SAME rules as the online sales commission engine (Commission → Result & rules):
+    // the price-by-ML chart, an offer that matches the bill, and the order-code rule (not enough bills with a code = the no-code bills pay the reduced share).
+    // The only difference: a store has no sales limit, so no over-target extra and no boost. Commission = what the same engine pays for that bill, extras left out.
+    $auth = require_auth();
+    if (!user_can($auth, 'commission')) json_response(['error' => 'You do not have permission to do this.'], 403);
+    $from = (string)($_GET['date_from'] ?? ''); $to = (string)($_GET['date_to'] ?? '');
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $from) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $to) || $to < $from || (strtotime($to) - strtotime($from)) > 62 * 86400) json_response(['error' => 'date_from and date_to must be YYYY-MM-DD, at most 62 days apart.'], 422);
+    try { if (is_file(__DIR__ . '/boss.php')) require_once __DIR__ . '/boss.php'; } catch (Throwable $e) { error_log('budget.store_comm boss: ' . $e->getMessage()); }
+    if (!function_exists('cm_chart') || !function_exists('cm_pct') || !function_exists('cm_offers') || !function_exists('cm_offer_match') || !function_exists('cm_code_need')) json_response(['error' => 'The commission engine is not available on this server.'], 500);
+    $ch = cm_chart($pdo); $offers = cm_offers($pdo); $by = []; $noMl = 0; $unpriced = 0; $groups = [];
+    try {
+        if (function_exists('ensure_st_tables')) ensure_st_tables($pdo);
+        $q = $pdo->prepare("SELECT emp_id, emp_name, biz_date, order_code, total_ml, total FROM st_bills WHERE status = 'ok' AND biz_date BETWEEN ? AND ? ORDER BY bill_id");
+        $q->execute([$from, $to]);
+        foreach ($q->fetchAll() as $b) $groups[(int)$b['emp_id'] . '|' . $b['biz_date']][] = $b;
+    } catch (Throwable $e) { error_log('budget.store_comm: ' . $e->getMessage()); json_response(['from' => $from, 'to' => $to, 'people' => [], 'note' => 'The store tables are not there yet.']); }
+    foreach ($groups as $k => $list) {
+        [$emp, $day] = explode('|', $k, 2); $emp = (int)$emp; $n = count($list); $nCode = 0;
+        foreach ($list as $b) if (trim((string)$b['order_code']) !== '') $nCode++;
+        $need = cm_code_need($n, (float)$ch['codepct']); $codeOk = $need > 0 && $nCode >= $need; $nocodeF = (float)$ch['nocode'] / 100;
+        $com = 0.0; $sales = 0.0;
+        foreach ($list as $b) {
+            $gross = (float)$b['total']; $ml = (int)$b['total_ml']; $sales += $gross; $f = (trim((string)$b['order_code']) !== '' || $codeOk) ? 1.0 : $nocodeF;
+            $of = $ml ? cm_offer_match($offers, $ml, $gross, $day, (float)$ch['window']) : null;
+            if ($of) { $com += $gross * (float)$of['pct'] / 100 * $f; continue; }
+            if (!$ml) { $noMl++; continue; }
+            $pc = cm_pct($ch, $ml, $gross); if ($pc === null) { $unpriced++; continue; }
+            $com += $gross * $pc / 100 * $f;
+        }
+        if (!isset($by[$emp])) $by[$emp] = ['employee_id' => $emp, 'name' => (string)$list[0]['emp_name'], 'sales' => 0.0, 'commission' => 0.0, 'bills' => 0, 'perday' => []];
+        $by[$emp]['perday'][] = ['day' => $day, 'sales' => round($sales, 2), 'commission' => round($com, 2), 'bills' => $n, 'codes' => $nCode, 'code_ok' => $codeOk];
+        $by[$emp]['sales'] += $sales; $by[$emp]['commission'] += $com; $by[$emp]['bills'] += $n;
+    }
+    foreach ($by as &$x) { $x['sales'] = round($x['sales'], 2); $x['commission'] = round($x['commission'], 2); } unset($x);
+    json_response(['from' => $from, 'to' => $to, 'people' => array_values($by), 'no_ml_bills' => $noMl, 'unpriced_bills' => $unpriced]);
+}
+if ($__bg === 'budget.store_bills') {
+    // Store bills of a range with who billed each one, so a wrong or missing "Billed by" can be fixed (commission follows the person on the bill).
+    $auth = require_auth();
+    if (!user_can($auth, 'commission')) json_response(['error' => 'You do not have permission to do this.'], 403);
+    $from = (string)($_GET['date_from'] ?? ''); $to = (string)($_GET['date_to'] ?? '');
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $from) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $to) || $to < $from || (strtotime($to) - strtotime($from)) > 62 * 86400) json_response(['error' => 'date_from and date_to must be YYYY-MM-DD, at most 62 days apart.'], 422);
+    $rows = [];
+    try {
+        if (function_exists('ensure_st_tables')) ensure_st_tables($pdo);
+        $q = $pdo->prepare("SELECT b.bill_id, b.bill_no, b.biz_date, b.created_at, b.emp_id, b.emp_name, b.total, b.total_ml, e.employee_id AS real_id FROM st_bills b LEFT JOIN employees e ON e.employee_id = b.emp_id AND e.status != 'ex'
+            WHERE b.status = 'ok' AND b.biz_date BETWEEN ? AND ? ORDER BY b.bill_id DESC LIMIT 800");
+        $q->execute([$from, $to]);
+        foreach ($q->fetchAll() as $b) $rows[] = ['bill_id' => (int)$b['bill_id'], 'bill_no' => (string)$b['bill_no'], 'day' => (string)$b['biz_date'], 'time' => substr((string)$b['created_at'], 11, 5), 'employee_id' => $b['real_id'] ? (int)$b['emp_id'] : 0, 'name' => (string)$b['emp_name'], 'total' => (float)$b['total'], 'ml' => (int)$b['total_ml']];
+    } catch (Throwable $e) { error_log('budget.store_bills: ' . $e->getMessage()); }
+    json_response(['from' => $from, 'to' => $to, 'bills' => $rows]);
+}
+if ($__bg === 'budget.bill_assign') {
+    // Change who a store bill belongs to. The commission of that bill moves to the new person at once (it is worked out from the bill).
+    $auth = require_auth();
+    if (!convo_is_admin($auth)) json_response(['error' => 'Only Admin can change who billed.'], 403);
+    if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
+    $in = json_input(); $bid = (int)($in['bill_id'] ?? 0); $eid = (int)($in['employee_id'] ?? 0);
+    $e = $pdo->prepare("SELECT full_name FROM employees WHERE employee_id = ? AND status != 'ex'"); $e->execute([$eid]); $nm = $e->fetchColumn();
+    if (!$eid || $nm === false) json_response(['error' => 'Choose an employee.'], 422);
+    $b = $pdo->prepare("SELECT bill_id FROM st_bills WHERE bill_id = ? AND status = 'ok'"); $b->execute([$bid]);
+    if (!$b->fetchColumn()) json_response(['error' => 'Bill not found.'], 404);
+    $pdo->prepare("UPDATE st_bills SET emp_id = ?, emp_name = ? WHERE bill_id = ?")->execute([$eid, (string)$nm, $bid]);
+    json_response(['ok' => true, 'employee_id' => $eid, 'name' => (string)$nm]);
+}
+if ($__bg === 'budget.person_save') {
+    // One person's pay setup: which pay group (online sales / retail wholesale / store / other), their own retail % of collections, store commission on or off,
+    // and whether they appear in the store POS "Billed by" list (st_duty). Only Admin.
+    $auth = require_auth();
+    if (!convo_is_admin($auth)) json_response(['error' => 'Only Admin can change the pay setup.'], 403);
+    if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
+    $in = json_input(); $id = (int)($in['employee_id'] ?? 0);
+    $ex = $pdo->prepare("SELECT COUNT(*) FROM employees WHERE employee_id = ?"); $ex->execute([$id]);
+    if (!$id || !(int)$ex->fetchColumn()) json_response(['error' => 'Choose an employee.'], 422);
+    $c = budget_cfg($pdo); $p = $c['people'][(string)$id] ?? ['grp' => '', 'rpct' => null, 'sc' => 1];
+    if (array_key_exists('grp', $in)) { $g = (string)$in['grp']; if ($g !== '' && !in_array($g, ['sales', 'retail', 'store', 'other'], true)) json_response(['error' => 'Unknown pay group.'], 422); $p['grp'] = $g; }
+    if (array_key_exists('rpct', $in)) { $v = $in['rpct']; if ($v === '' || $v === null) $p['rpct'] = null; elseif (!is_numeric($v) || (float)$v < 0 || (float)$v > 50) json_response(['error' => 'The retail commission is a percentage from 0 to 50.'], 422); else $p['rpct'] = round((float)$v, 2); }
+    if (array_key_exists('sc', $in)) $p['sc'] = empty($in['sc']) ? 0 : 1;
+    $c['people'][(string)$id] = $p;
+    if (($p['grp'] ?? '') === '' && $p['rpct'] === null && (int)($p['sc'] ?? 1) === 1) unset($c['people'][(string)$id]);
+    setting_set($pdo, 'budget_cfg', json_encode($c));
+    $duty = null;
+    try {
+        if (function_exists('ensure_st_tables')) ensure_st_tables($pdo);
+        $want = array_key_exists('duty', $in) ? !empty($in['duty']) : (($p['grp'] ?? '') === 'store' && array_key_exists('grp', $in) ? true : null);   // assigned to the store = can bill there; leaving the store never switches billing off by itself
+        if ($want === true) { $pdo->prepare("INSERT IGNORE INTO st_duty (emp_id, added_at) VALUES (?, ?)")->execute([$id, date('Y-m-d H:i:s')]); $duty = true; }
+        elseif ($want === false) { $pdo->prepare("DELETE FROM st_duty WHERE emp_id = ?")->execute([$id]); $duty = false; }
+    } catch (Throwable $e) { error_log('budget.person_save duty: ' . $e->getMessage()); }
+    json_response(['ok' => true, 'duty' => $duty]);
 }
 if ($__bg === 'budget.retail') {
     // Retail wholesale sales of each person, per day: delivered sale orders (billed amount, and what was paid) minus returns, by the person who created the order.
