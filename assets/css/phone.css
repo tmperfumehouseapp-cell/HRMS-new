@@ -84,3 +84,7 @@
   html.ph .md-recp button{font-size:11px;padding:5px 11px;}
   html.ph .md-ov .md-ovbar{padding:7px 10px;font-size:13px;}
   html.ph .md-bad, html.ph .md-pen, html.ph .md-bonus, html.ph .md-note, html.ph .md-lockbox{padding:8px 10px;font-size:11px;border-radius:11px;}
+
+/* ---------- bottom bars: the "Allocate order" button (My Sales, people who may allocate) sits ABOVE the employee bottom menu, not under it ---------- */
+  html.ph .sh-ab{bottom:calc(76px + env(safe-area-inset-bottom,0px)) !important;}
+  html.ph body.sh-pad .content{padding-bottom:150px;}
