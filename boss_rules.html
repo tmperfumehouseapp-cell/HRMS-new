@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Rules in sync — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=4">
+<link rel="stylesheet" href="assets/css/boss.css?v=1">
+<link rel="stylesheet" href="assets/css/boss2.css?v=t7">
+<style>.bd{max-width:none} .rl-t{width:100%;border-collapse:collapse;font-size:13px} .rl-t th{text-align:left;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:#6b7280;padding:6px 8px;border-bottom:1px solid #e5e7eb} .rl-t td{padding:8px;border-bottom:1px solid #f0f1f4;vertical-align:top} .rl-n{font-variant-numeric:tabular-nums;white-space:nowrap} .rl-pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:800;background:#eef1f6;color:#3b4252} .rl-pill.on{background:#e7f6ee;color:#0f6e45} .rl-pill.off{background:#fdeaea;color:#a12a2a} .rl-books{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px} .rl-b{border:1px solid #e5e7eb;border-radius:14px;padding:10px 12px;background:#fff} .rl-b b{display:block;font-size:13px} .rl-b span{font-size:12px;color:#6b7280}</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><div><h1>Rules in sync</h1><div class="bd-sub">One rule, one value. A Boss task and an old rule book on the same thing are linked: the newest change wins on both sides, and only one of them charges.</div></div><div><button class="bd-btn" id="bRun" type="button">Check everything now</button></div></div>
+    <div class="content"><div class="bd" id="root"><div class="bd-empty">Loading…</div></div></div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=4"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script src="assets/js/boss_common.js?v=3"></script>
+<script src="assets/js/b2_common.js?v=t7"></script>
+<script>
+  guardPage();
+  renderSidebar('boss_engine');
+  const { esc, toast } = BD;
+  const inr = (n) => '₹' + Math.round((+n || 0) * 100) / 100;
+  const card = (t, sub, body) => '<div class="bd-card"><div class="bd-h"><div><h2>' + t + '</h2>' + (sub ? '<div class="bd-sub">' + sub + '</div>' : '') + '</div></div>' + body + '</div>';
+  async function load() {
+    const R = document.getElementById('root');
+    let D; try { D = await B2.get('bd.b2_rules_view'); } catch (e) { R.innerHTML = '<div class="bd-empty"><b>Cannot open</b>' + esc(e.message) + '</div>'; return; }
+    let h = '';
+    h += card('Limits everyone shares', 'Change them in a Boss task or on the page itself: both change this one value.',
+      '<div class="rl-books"><div class="rl-b"><b>Tracking ID within ' + D.limits.tracking_hours + ' hours</b><span>Parcels page · Rules bar</span></div><div class="rl-b"><b>In transit by day ' + D.limits.transit_day + '</b><span>Parcels page · Rules bar</span></div><div class="rl-b"><b>Courier pickup within ' + D.limits.pickup_hours + ' hours</b><span>Parcels page · Rules bar</span></div>' + '<div class="rl-b"><b>Money used by ' + esc(D.limits.money_time || '21:00') + '</b><span>Money page</span></div></div>');
+    h += card('Linked now (' + D.links.length + ')', 'These are one rule already. “Charges” says who takes the money: only one ever does.',
+      D.links.length ? '<table class="rl-t"><tr><th>Boss task</th><th>Old rule</th><th>Charges</th><th>Task ₹</th><th>Old rule ₹</th><th></th></tr>' + D.links.map((l) => '<tr><td>' + esc(l.task) + '</td><td>' + esc(l.rule) + '<div class="bd-sub">' + esc(l.book) + (l.why === 'manual' ? ' · linked by you' : ' · linked automatically') + '</div></td><td><span class="rl-pill ' + (l.charger === 'Both off' ? 'off' : 'on') + '">' + esc(l.charger) + '</span></td><td class="rl-n">' + inr(l.task_amount) + '</td><td class="rl-n">' + inr(l.rule_amount) + (l.rule_on ? '' : ' (off)') + '</td><td><button class="bd-btn sm" data-un="' + l.id + '" type="button">Unlink</button></td></tr>').join('') + '</table>' : '<div class="bd-empty">Nothing linked yet. Tasks that use a system check (tracking, transit, punch, money, visits, supplies) link by themselves when they start.</div>');
+    h += card('Look-alikes waiting for you (' + D.lookalikes.length + ')', 'An old rule that reads like a Boss task. Nothing changes until you tap Link.',
+      D.lookalikes.length ? '<table class="rl-t"><tr><th>Boss task</th><th>Old rule</th><th>Task ₹</th><th>Old rule ₹</th><th></th></tr>' + D.lookalikes.map((l, i) => '<tr><td>' + esc(l.task) + '</td><td>' + esc(l.rule) + '</td><td class="rl-n">' + inr(l.task_amount) + '</td><td class="rl-n">' + inr(l.rule_amount) + (l.rule_on ? '' : ' (off)') + '</td><td><button class="bd-btn pri sm" data-ln="' + i + '" type="button">Link</button></td></tr>').join('') + '</table>' : '<div class="bd-empty">No look-alikes.</div>');
+    h += card('Old rule books', 'Where each old rule lives today.', '<div class="rl-books">' + D.books.map((b) => '<div class="rl-b"><b>' + esc(b.name) + '</b><span>' + b.on + ' of ' + b.count + ' on · ' + esc(b.where) + '</span></div>').join('') + '</div>');
+    R.innerHTML = h;
+    R.querySelectorAll('[data-un]').forEach((b) => b.onclick = async () => { try { const r = await B2.post('bd.b2_rules_unlink', { id: +b.dataset.un }); toast(r.message); load(); } catch (e) { toast(e.message, true); } });
+    R.querySelectorAll('[data-ln]').forEach((b) => b.onclick = async () => { const l = D.lookalikes[+b.dataset.ln]; try { const r = await B2.post('bd.b2_rules_link', { task_id: l.task_id, book: l.book, ref: l.ref }); toast(r.message); load(); } catch (e) { toast(e.message, true); } });
+  }
+  document.getElementById('bRun').onclick = async () => { try { const r = await B2.post('bd.b2_rules_pass', {}); toast(r.message); load(); } catch (e) { toast(e.message, true); } };
+  load();
+</script>
+</body>
+</html>

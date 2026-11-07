@@ -1,0 +1,1054 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Employees — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=260928b">
+<style>
+  .pager{display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; padding:12px 20px; border-top:1px solid var(--line); font-size:13px; color:var(--muted);}
+  .pager .pages{display:flex; align-items:center; gap:4px; flex-wrap:wrap;}
+  .pager button{min-width:34px; height:32px; padding:0 10px; border:1px solid var(--line); border-radius:6px; background:#fff; color:inherit; font-size:13px; cursor:pointer;}
+  .pager button.on{background:var(--navy-900, #0f172a); color:#fff; border-color:var(--navy-900, #0f172a); font-weight:600;}
+  .pager button:disabled{opacity:.45; cursor:not-allowed;}
+  .pager .dots{padding:0 4px;}
+  .pager select{padding:6px 8px; border:1px solid var(--line); border-radius:6px; font-size:13px; background:#fff;}
+</style>
+<style>
+  @media (min-width:821px){ .card table td:last-child .row-actions{flex-wrap:nowrap;} .card table td:last-child .row-actions button{white-space:nowrap;} }
+  .g-sel { padding:4px 6px; border:1px solid var(--line); border-radius:6px; font-size:12px; background:#fff; cursor:pointer; }
+  .g-sel.g-M { background:#eef4ff; border-color:#c9dafc; color:#1d4ed8; }
+  .g-sel.g-F { background:#fdeef6; border-color:#f6c6df; color:#be185d; }
+  .g-sel.g-x { color:#999; }
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><h1>Employees</h1></div>
+    <div class="content">
+      <div id="alertBox"></div>
+      <div class="card">
+        <div class="card-head">
+          <h2 id="cardTitle">Employees</h2>
+          <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <select id="deptFilter" style="padding:8px 10px; border:1px solid var(--line); border-radius:6px; font-size:13px;">
+              <option value="">All Departments</option>
+            </select>
+            <select id="genderFilter" style="padding:8px 10px; border:1px solid var(--line); border-radius:6px; font-size:13px;">
+              <option value="">All Genders</option>
+              <option value="M">Male</option>
+              <option value="F">Female</option>
+              <option value="none">Gender not set</option>
+            </select>
+            <select id="sortFilter" style="padding:8px 10px; border:1px solid var(--line); border-radius:6px; font-size:13px;">
+              <option value="">Sort by (default: employee no.)</option>
+              <option value="code_desc">Employee no. — newest first</option>
+              <option value="joining_desc">Joining date: New to Old</option>
+              <option value="joining_asc">Joining date: Old to New</option>
+              <option value="name_asc">Name: A to Z</option>
+              <option value="name_desc">Name: Z to A</option>
+            </select>
+            <div class="search-box"><input type="text" id="tableSearch" placeholder="Search name, code, email, mobile..."></div>
+            <button class="btn secondary" id="btnExport" style="width:auto;">Export to Excel</button>
+            <button class="btn secondary" id="btnBulkAdd">Bulk Add</button>
+            <button class="btn" id="btnAddNew">+ Add Employee</button>
+          </div>
+        </div>
+        <table>
+          <thead>
+            <tr><th style="width:48px;"></th><th>Code</th><th>Name</th><th>Department</th><th>Gender</th><th>Mobile</th><th>Joining Date</th><th>Pending Docs</th><th style="width:140px;">Actions</th></tr>
+          </thead>
+          <tbody id="tableBody">
+            <tr><td colspan="9" class="loading">Loading...</td></tr>
+          </tbody>
+        </table>
+        <div class="pager" id="pager" style="display:none;">
+          <div id="pagerInfo"></div>
+          <div class="pages" id="pagerPages"></div>
+          <div>Rows per page
+            <select id="pageSize">
+              <option value="20">20</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+              <option value="all">All</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="modal-overlay" id="formModal">
+  <div class="modal wide">
+    <h3 id="modalTitle">Add Employee</h3>
+    <div id="modalAlert"></div>
+    <form id="empForm">
+      <input type="hidden" id="recordId">
+
+      <div class="field">
+        <label>Photo</label>
+        <div style="display:flex; align-items:center; gap:14px;">
+          <div id="photoPreview" style="width:64px; height:64px; border-radius:50%; overflow:hidden; background:#f2f2f4; border:2px solid #eee; display:flex; align-items:center; justify-content:center; flex-shrink:0; color:#999; cursor:pointer;" title="Click to choose a photo">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
+          </div>
+          <div>
+            <button type="button" id="photoPickBtn" class="btn secondary" style="width:auto;">Choose photo</button>
+            <button type="button" id="photoCameraBtn" class="btn secondary" style="width:auto;">Take photo</button>
+            <input type="file" id="photoInput" accept=".jpg,.jpeg,.png,.webp" style="display:none;">
+          </div>
+        </div>
+
+        <div id="cameraPanel" style="display:none; margin-top:12px; max-width:360px;">
+          <video id="cameraVideo" autoplay playsinline style="width:100%; border-radius:8px; background:#000; transform:scaleX(-1);"></video>
+          <div style="display:flex; gap:8px; margin-top:8px;">
+            <button type="button" id="cameraCaptureBtn" class="btn" style="width:auto;">Capture</button>
+            <button type="button" id="cameraFlipBtn" class="btn secondary" style="width:auto;">🔄 Switch camera</button>
+            <button type="button" id="cameraCancelBtn" class="btn secondary" style="width:auto;">Cancel</button>
+          </div>
+          <div id="cameraMsg" style="font-size:13px; font-weight:600; color:#c0392b; margin-top:8px; line-height:1.5;"></div>
+        </div>
+      </div>
+
+      <div class="field-grid">
+        <div class="field">
+          <label for="fullName">Full Name *</label>
+          <input type="text" id="fullName" required maxlength="150">
+        </div>
+        <div class="field">
+          <label for="department">Department</label>
+          <select id="department"><option value="">— Select —</option></select>
+        </div>
+      </div>
+
+      <div class="field-grid">
+        <div class="field" style="position:relative;">
+          <label for="managerSearchInput">Reporting Manager</label>
+          <input type="text" id="managerSearchInput" placeholder="Search employee..." autocomplete="off">
+          <input type="hidden" id="reportingManager">
+          <div id="managerDropdown" style="display:none; position:absolute; top:100%; left:0; right:0; background:#fff; border:1px solid var(--line,#ddd); border-radius:8px; box-shadow:0 6px 18px rgba(0,0,0,0.12); max-height:220px; overflow-y:auto; z-index:50;"></div>
+        </div>
+        <div></div>
+      </div>
+
+      <div class="field-grid">
+        <div class="field">
+          <label for="salesTag">Order Tag <span style="text-transform:none; font-weight:400;">(matches Shopify order tag, e.g. "ir")</span></label>
+          <input type="text" id="salesTag" maxlength="50" placeholder="e.g. ir">
+        </div>
+        <div></div>
+      </div>
+
+      <div class="field">
+        <label>Store / Panel (which businesses this employee sells for)</label>
+        <div id="storeGroupsBox" style="display:flex; flex-wrap:wrap; gap:6px 18px; padding:6px 0;">
+          <span style="color:#888; font-size:13px;">Loading stores...</span>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>WhatsApp Groups</label>
+        <div id="waGroupsBox" style="display:flex; flex-wrap:wrap; gap:6px 18px; padding:6px 0;">
+          <span style="color:#888; font-size:13px;">Loading groups...</span>
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Excel Files</label>
+        <div id="excelFilesBox" style="display:flex; flex-wrap:wrap; gap:6px 18px; padding:6px 0;">
+          <span style="color:#888; font-size:13px;">Loading files...</span>
+        </div>
+      </div>
+
+      <div class="field-grid">
+        <div class="field">
+          <label for="mobile">Mobile</label>
+          <input type="text" id="mobile" maxlength="20">
+        </div>
+        <div class="field">
+          <label for="email">Email</label>
+          <input type="email" id="email" maxlength="150">
+        </div>
+      </div>
+
+      <div class="field-grid">
+        <div class="field">
+          <label for="joiningDate">Joining Date *</label>
+          <input type="date" id="joiningDate" required>
+        </div>
+        <div class="field">
+          <label for="dob">Date of Birth</label>
+          <input type="date" id="dob">
+        </div>
+      </div>
+
+      <div class="field-grid">
+        <div class="field">
+          <label for="gender">Gender <span style="text-transform:none; font-weight:400;">(Female = any footwear allowed at Punch In)</span></label>
+          <select id="gender">
+            <option value="">— Not set —</option>
+            <option value="M">Male</option>
+            <option value="F">Female</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="employmentType">Employment Type</label>
+          <input type="text" id="employmentType" placeholder="Full-time / Part-time / Contract" maxlength="50">
+        </div>
+        <input type="hidden" id="basicSalary">
+        <div class="field">
+          <label for="monthlySalary">Monthly Salary <span style="text-transform:none; font-weight:400;">(0 = no salary page)</span></label>
+          <input type="number" id="monthlySalary" step="0.01" min="0">
+        </div>
+      </div>
+        <div class="field">
+          <label for="designation">Designation</label>
+          <input type="text" id="designation" maxlength="100" placeholder="e.g. Sales Executive">
+        </div>
+
+      <div class="field">
+        <label for="address">Address</label>
+        <textarea id="address" rows="2"></textarea>
+      </div>
+
+      <div class="field-grid">
+        <div class="field">
+          <label for="emName">Emergency Contact Name</label>
+          <input type="text" id="emName" maxlength="150">
+        </div>
+        <div class="field">
+          <label for="emMobile">Emergency Contact Mobile</label>
+          <input type="text" id="emMobile" maxlength="20">
+        </div>
+      </div>
+      <div class="field">
+        <label for="emRelation">Emergency Contact Relation</label>
+        <input type="text" id="emRelation" maxlength="50">
+      </div>
+
+      <div class="actions">
+        <button type="button" class="btn secondary" id="btnCancel">Cancel</button>
+        <button type="submit" class="btn" id="btnSave">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<div class="modal-overlay" id="bulkModal">
+  <div class="modal wide">
+    <h3>Bulk Add Employees</h3>
+    <div id="bulkAlert"></div>
+    <div style="font-size:12.5px; color:var(--muted); margin-bottom:10px;">
+      Upload your Excel/CSV file. Columns (any order, with a header row):<br>
+      <b>Name, Mobile, Email, Department, Joining Date, Salary/Target</b> — and optionally: DOB, Address, Employment Type, Reporting Manager (name or EMP code), Emergency Contact Name / Mobile / Relation.<br>With a header row, columns are matched by name in ANY order.<br>
+      Only Name is required — leave other columns blank if unknown. Department must match an existing department name.
+    </div>
+    <div style="margin-bottom:10px;">
+      <input type="file" id="bulkFile" accept=".xlsx,.xls,.csv" style="font-size:13px;">
+      <div style="font-size:12px; color:var(--muted); margin-top:4px;">Choose an Excel/CSV file. <a href="employee_template.xlsx" download>Download demo Excel template</a> with all fields.</div>
+    </div>
+    <textarea id="bulkText" rows="10" hidden style="width:100%; padding:10px; border:1px solid var(--line); border-radius:6px; font-size:13px; font-family:monospace;" placeholder="Rahul Patel	9876543210	rahul@x.com	sales	01-09-2026	400000
+Amit Shah	9123456780		web management		"></textarea>
+    <div id="bulkPreview" style="font-size:12.5px; margin-top:8px; color:var(--muted);"></div>
+    <div class="actions">
+      <button type="button" class="btn secondary" id="btnBulkCancel">Cancel</button>
+      <button type="button" class="btn" id="btnBulkImport">Import</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="assets/js/config.js?v=260928b"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script>
+  guardPage();
+  renderSidebar('employees');
+
+  const tableBody = document.getElementById('tableBody');
+  const alertBox = document.getElementById('alertBox');
+  const overlay = document.getElementById('formModal');
+  const modalAlert = document.getElementById('modalAlert');
+  let departments = [];
+  let searchTimer = null;
+
+  function showAlert(msg, type = 'success') {
+    alertBox.innerHTML = `<div class="alert ${type}">${msg}</div>`;
+    setTimeout(() => (alertBox.innerHTML = ''), 4000);
+  }
+
+  async function loadStoreGroups() {
+    const box = document.getElementById('storeGroupsBox');
+    try {
+      const data = await api.get('store_groups.options');
+      const groups = data.groups || [];
+      box.innerHTML = groups.map(g => `
+        <label style="display:inline-flex; align-items:center; gap:6px; font-size:13px; cursor:pointer; font-weight:normal;">
+          <input type="checkbox" class="store-group-cb" value="${g.key}" style="width:auto; margin:0;"> ${g.label}
+        </label>`).join('') || '<span style="color:#888; font-size:13px;">No stores configured.</span>';
+    } catch (err) {
+      box.innerHTML = `<span style="color:#c0392b; font-size:13px;">${err.message}</span>`;
+    }
+  }
+
+  async function loadWaGroups() {
+    const box = document.getElementById('waGroupsBox');
+    try {
+      const data = await api.get('whatsapp_groups.list');
+      const groups = data.groups || [];
+      if (groups.length === 0) {
+        box.innerHTML = '<span style="color:#888; font-size:13px;">No groups yet — add them on the <a href="whatsapp_groups.html">WhatsApp Groups</a> page.</span>';
+        return;
+      }
+      box.innerHTML = groups.map(g => `
+        <label style="display:inline-flex; align-items:center; gap:6px; font-size:13px; cursor:pointer; font-weight:normal;">
+          <input type="checkbox" class="wa-group-cb" value="${g.group_id}" style="width:auto; margin:0;"> ${g.group_name}
+        </label>`).join('');
+    } catch (err) {
+      box.innerHTML = `<span style="color:#c0392b; font-size:13px;">${err.message}</span>`;
+    }
+  }
+
+  async function loadExcelFiles() {
+    const box = document.getElementById('excelFilesBox');
+    try {
+      const data = await api.get('excel_files.list');
+      const files = data.files || [];
+      if (files.length === 0) {
+        box.innerHTML = '<span style="color:#888; font-size:13px;">No files yet — add them on the <a href="excel_files.html">Excel Files</a> page.</span>';
+        return;
+      }
+      box.innerHTML = files.map(f => `
+        <label style="display:inline-flex; align-items:center; gap:6px; font-size:13px; cursor:pointer; font-weight:normal;">
+          <input type="checkbox" class="excel-file-cb" value="${f.file_id}" style="width:auto; margin:0;"> ${f.file_name}
+        </label>`).join('');
+    } catch (err) {
+      box.innerHTML = `<span style="color:#c0392b; font-size:13px;">${err.message}</span>`;
+    }
+  }
+
+  function updateSalaryLabel() {}
+
+  async function loadDepartmentsIntoSelects() {
+    const data = await api.get('departments.list');
+    departments = data.departments;
+    const options = departments.map(d => `<option value="${d.department_id}">${d.department_name}</option>`).join('');
+    document.getElementById('department').innerHTML = '<option value="">— Select —</option>' + options;
+    document.getElementById('deptFilter').innerHTML = '<option value="">All Departments</option>' + options;
+  }
+
+  let allEmployeesForManager = [];
+
+  async function loadManagerOptions() {
+    const data = await api.get('employees.list');
+    allEmployeesForManager = data.employees;
+  }
+
+  const managerSearchInput = document.getElementById('managerSearchInput');
+  const managerHidden = document.getElementById('reportingManager');
+  const managerDropdown = document.getElementById('managerDropdown');
+  let managerExcludeId = null;
+
+  function renderManagerDropdown(filterText) {
+    const q = (filterText || '').trim().toLowerCase();
+    const matches = allEmployeesForManager.filter(e => {
+      if (managerExcludeId && String(e.employee_id) === String(managerExcludeId)) return false;
+      if (!q) return true;
+      return e.full_name.toLowerCase().includes(q) || e.employee_code.toLowerCase().includes(q);
+    });
+
+    const noneRow = `<div class="manager-option" data-id="" data-name="" style="padding:9px 12px; cursor:pointer; color:#888;">— None —</div>`;
+    const rows = matches.map(e => `
+      <div class="manager-option" data-id="${e.employee_id}" data-name="${e.full_name.replace(/"/g, '&quot;')}" style="padding:9px 12px; cursor:pointer;">
+        ${e.full_name} <span class="badge">${e.employee_code}</span>
+      </div>
+    `).join('');
+
+    managerDropdown.innerHTML = noneRow + (rows || '<div style="padding:9px 12px; color:#888;">No matches.</div>');
+    managerDropdown.querySelectorAll('.manager-option').forEach(row => {
+      row.addEventListener('mousedown', (e) => {
+        e.preventDefault(); // keep focus so click registers before blur closes the dropdown
+        managerHidden.value = row.dataset.id;
+        managerSearchInput.value = row.dataset.name;
+        managerDropdown.style.display = 'none';
+      });
+      row.addEventListener('mouseenter', () => { row.style.background = '#f5f5f5'; });
+      row.addEventListener('mouseleave', () => { row.style.background = ''; });
+    });
+  }
+
+  managerSearchInput.addEventListener('focus', () => {
+    renderManagerDropdown(managerSearchInput.value);
+    managerDropdown.style.display = 'block';
+  });
+  managerSearchInput.addEventListener('input', () => {
+    managerHidden.value = ''; // typing invalidates any prior selection until they pick again
+    renderManagerDropdown(managerSearchInput.value);
+    managerDropdown.style.display = 'block';
+  });
+  managerSearchInput.addEventListener('blur', () => {
+    setTimeout(() => { managerDropdown.style.display = 'none'; }, 100);
+  });
+
+  function setManagerField(employeeId, excludeId) {
+    managerExcludeId = excludeId || null;
+    if (employeeId) {
+      const match = allEmployeesForManager.find(e => String(e.employee_id) === String(employeeId));
+      managerSearchInput.value = match ? match.full_name : '';
+      managerHidden.value = employeeId;
+    } else {
+      managerSearchInput.value = '';
+      managerHidden.value = '';
+    }
+  }
+
+  const PHOTO_ICON_SVG = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>';
+  const photoInput = document.getElementById('photoInput');
+  const photoPreview = document.getElementById('photoPreview');
+  const photoPickBtn = document.getElementById('photoPickBtn');
+  const photoCameraBtn = document.getElementById('photoCameraBtn');
+  const cameraPanel = document.getElementById('cameraPanel');
+  const cameraVideo = document.getElementById('cameraVideo');
+  const cameraMsg = document.getElementById('cameraMsg');
+
+  let selectedPhotoFile = null; // set from either the file picker or a camera capture
+  let cameraStream = null;
+
+  photoPreview.addEventListener('click', () => photoInput.click());
+  photoPickBtn.addEventListener('click', () => photoInput.click());
+
+  photoInput.addEventListener('change', () => {
+    const file = photoInput.files[0];
+    if (file) {
+      selectedPhotoFile = file;
+      photoPreview.innerHTML = `<img src="${URL.createObjectURL(file)}" style="width:100%;height:100%;object-fit:cover;">`;
+    }
+  });
+
+  function stopCamera() {
+    if (cameraStream) {
+      cameraStream.getTracks().forEach(track => track.stop());
+      cameraStream = null;
+    }
+    cameraPanel.style.display = 'none';
+  }
+
+  let cameraFacing = 'user'; // 'user' = front, 'environment' = back
+
+  async function startCamera() {
+    cameraMsg.textContent = '';
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      cameraPanel.style.display = 'block';
+      cameraMsg.textContent = 'Camera access is not available in this browser.';
+      return;
+    }
+    if (cameraStream) {
+      cameraStream.getTracks().forEach(t => t.stop());
+      cameraStream = null;
+    }
+    try {
+      cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: cameraFacing } });
+      cameraVideo.srcObject = cameraStream;
+      // Mirror only the front camera (selfie feel); back camera stays normal.
+      cameraVideo.style.transform = cameraFacing === 'user' ? 'scaleX(-1)' : 'none';
+      cameraPanel.style.display = 'block';
+    } catch (err) {
+      cameraPanel.style.display = 'block';
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        cameraMsg.innerHTML = 'Camera access is blocked for this site. Click the icon in your browser\'s address bar, set Camera to "Allow", then reload the page and try again.';
+      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+        cameraMsg.textContent = 'No camera was found on this device.';
+      } else {
+        cameraMsg.textContent = 'Could not access the camera (' + err.name + ').';
+      }
+    }
+  }
+
+  photoCameraBtn.addEventListener('click', () => { cameraFacing = 'user'; startCamera(); });
+
+  document.getElementById('cameraFlipBtn').addEventListener('click', () => {
+    cameraFacing = cameraFacing === 'user' ? 'environment' : 'user';
+    startCamera();
+  });
+
+  document.getElementById('cameraCancelBtn').addEventListener('click', stopCamera);
+
+  document.getElementById('cameraCaptureBtn').addEventListener('click', () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = cameraVideo.videoWidth;
+    canvas.height = cameraVideo.videoHeight;
+    const ctx = canvas.getContext('2d');
+    if (cameraFacing === 'user') {
+      // Mirror the capture to match the mirrored selfie preview.
+      ctx.translate(canvas.width, 0);
+      ctx.scale(-1, 1);
+    }
+    ctx.drawImage(cameraVideo, 0, 0, canvas.width, canvas.height);
+
+    canvas.toBlob(blob => {
+      selectedPhotoFile = new File([blob], `photo_${Date.now()}.jpg`, { type: 'image/jpeg' });
+      photoPreview.innerHTML = `<img src="${URL.createObjectURL(blob)}" style="width:100%;height:100%;object-fit:cover;">`;
+      stopCamera();
+    }, 'image/jpeg', 0.9);
+  });
+
+  function openModal(emp = null) {
+    document.getElementById('empForm').reset();
+    modalAlert.innerHTML = '';
+    document.getElementById('recordId').value = '';
+    photoInput.value = '';
+    selectedPhotoFile = null;
+    stopCamera();
+    photoPreview.innerHTML = (emp && emp.photo)
+      ? `<img src="${API_BASE_URL.replace('/api.php', '')}/${emp.photo}" style="width:100%;height:100%;object-fit:cover;">`
+      : PHOTO_ICON_SVG;
+    setManagerField(emp ? emp.reporting_manager_id : null, emp ? emp.employee_id : null);
+
+    const empGroupIds = new Set(((emp && emp.whatsapp_groups) || []).map(g => String(g.group_id)));
+    document.querySelectorAll('.wa-group-cb').forEach(cb => { cb.checked = empGroupIds.has(cb.value); });
+
+    const empStores = new Set((emp && emp.store_groups) || []);
+    document.querySelectorAll('.store-group-cb').forEach(cb => { cb.checked = empStores.has(cb.value); });
+
+    const empFileIds = new Set(((emp && emp.excel_files) || []).map(f => String(f.file_id)));
+    document.querySelectorAll('.excel-file-cb').forEach(cb => { cb.checked = empFileIds.has(cb.value); });
+    setTimeout(updateSalaryLabel, 0);
+
+    if (emp) {
+      document.getElementById('modalTitle').textContent = `Edit Employee (${emp.employee_code})`;
+      document.getElementById('recordId').value = emp.employee_id;
+      document.getElementById('fullName').value = emp.full_name || '';
+      document.getElementById('department').value = emp.department_id || '';
+      document.getElementById('mobile').value = emp.mobile || '';
+      document.getElementById('email').value = emp.email || '';
+      document.getElementById('joiningDate').value = emp.joining_date || '';
+      document.getElementById('dob').value = emp.date_of_birth || '';
+      document.getElementById('employmentType').value = emp.employment_type || '';
+      document.getElementById('gender').value = emp.gender === 'M' || emp.gender === 'F' ? emp.gender : '';
+    document.getElementById('designation').value = emp.designation || '';
+      document.getElementById('basicSalary').value = emp.basic_salary || '';
+      document.getElementById('monthlySalary').value = Number(emp.monthly_salary) > 0 ? emp.monthly_salary : '';
+      document.getElementById('salesTag').value = emp.sales_tag || '';
+      setTimeout(updateSalaryLabel, 0);
+      document.getElementById('address').value = emp.address || '';
+      document.getElementById('emName').value = emp.emergency_contact_name || '';
+      document.getElementById('emMobile').value = emp.emergency_contact_mobile || '';
+      document.getElementById('emRelation').value = emp.emergency_contact_relation || '';
+    } else {
+      document.getElementById('modalTitle').textContent = 'Add Employee';
+    }
+    overlay.classList.add('open');
+  }
+  function closeModal() { overlay.classList.remove('open'); stopCamera(); }
+
+  document.getElementById('btnAddNew').addEventListener('click', () => openModal());
+
+  // ---- Bulk add
+  const bulkModal = document.getElementById('bulkModal');
+  document.getElementById('btnBulkAdd').addEventListener('click', () => {
+    document.getElementById('bulkText').value = '';
+    document.getElementById('bulkFile').value = '';
+    document.getElementById('bulkAlert').innerHTML = '';
+    document.getElementById('bulkPreview').textContent = '';
+    bulkModal.classList.add('open');
+  });
+  document.getElementById('btnBulkCancel').addEventListener('click', () => bulkModal.classList.remove('open'));
+  bulkModal.addEventListener('click', (e) => { if (e.target === bulkModal) bulkModal.classList.remove('open'); });
+
+  const COL_PATTERNS = {
+    full_name: /full\s*name|employee\s*name|^name$/i,
+    emergency_contact_name: /emergency.*name/i,
+    emergency_contact_mobile: /emergency.*(mobile|phone|no)/i,
+    emergency_contact_relation: /relation/i,
+    reporting_manager: /manager|reporting/i,
+    mobile: /mobile|phone|contact/i,
+    email: /e-?mail/i,
+    department: /depart|dept/i,
+    date_of_birth: /birth|dob/i,
+    joining_date: /join|doj/i,
+    employment_type: /employment|full.?time|type/i,
+    basic_salary: /salary|target/i,
+    address: /address/i,
+    sales_tag: /^tag$|order.?tag|sales.?tag/i,
+  };
+
+  function parseBulk() {
+    const lines = document.getElementById('bulkText').value.split('\n')
+      .map(l => l.replace(/\r/g, '')).filter(l => l.trim());
+    if (!lines.length) return { rows: [], mapping: null };
+
+    const split = (line) => (line.includes('\t') ? line.split('\t') : line.split(',')).map(c => c.trim());
+
+    // Header detection: does the first line's cells match known column names?
+    const first = split(lines[0]);
+    const map = {};
+    first.forEach((cell, idx) => {
+      for (const [field, re] of Object.entries(COL_PATTERNS)) {
+        if (map[field] === undefined && re.test(cell)) { map[field] = idx; break; }
+      }
+    });
+    const hasHeader = map.full_name !== undefined;
+
+    const dataLines = hasHeader ? lines.slice(1) : lines;
+    const get = (cols, field, fallbackIdx) => {
+      const idx = hasHeader ? map[field] : fallbackIdx;
+      return idx === undefined ? '' : (cols[idx] || '').trim();
+    };
+
+    const rows = dataLines.map(line => {
+      const cols = split(line);
+      return {
+        full_name: get(cols, 'full_name', 0),
+        mobile: get(cols, 'mobile', 1),
+        email: get(cols, 'email', 2),
+        department: get(cols, 'department', 3),
+        joining_date: get(cols, 'joining_date', 4),
+        basic_salary: get(cols, 'basic_salary', 5) || 0,
+        date_of_birth: get(cols, 'date_of_birth'),
+        address: get(cols, 'address'),
+        employment_type: get(cols, 'employment_type'),
+        reporting_manager: get(cols, 'reporting_manager'),
+        emergency_contact_name: get(cols, 'emergency_contact_name'),
+        emergency_contact_mobile: get(cols, 'emergency_contact_mobile'),
+        emergency_contact_relation: get(cols, 'emergency_contact_relation'),
+        sales_tag: get(cols, 'sales_tag'),
+      };
+    }).filter(r => r.full_name);
+
+    return { rows, mapping: hasHeader ? map : null };
+  }
+
+  document.getElementById('bulkFile').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf);
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      let rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: '' });
+      rows = rows.filter(r => r.some(c => String(c).trim() !== ''));
+      const tsv = rows.map(r => r.map(c => String(c).trim()).join('\t')).join('\n');
+      document.getElementById('bulkText').value = tsv;
+      document.getElementById('bulkText').dispatchEvent(new Event('input'));
+      if (!tsv) document.getElementById('bulkAlert').innerHTML = '<div class="alert error">No rows found in that file.</div>';
+    } catch (err) {
+      document.getElementById('bulkAlert').innerHTML = `<div class="alert error">Could not read file: ${err.message}</div>`;
+    }
+  });
+
+  const FIELD_LABELS = {
+    full_name: 'Name', mobile: 'Mobile', email: 'Email', department: 'Department',
+    joining_date: 'Joining Date', basic_salary: 'Salary/Target', date_of_birth: 'DOB',
+    address: 'Address', employment_type: 'Employment Type', reporting_manager: 'Reporting Manager',
+    emergency_contact_name: 'Emergency Name', emergency_contact_mobile: 'Emergency Mobile',
+    emergency_contact_relation: 'Emergency Relation', sales_tag: 'Order Tag',
+  };
+
+  document.getElementById('bulkText').addEventListener('input', () => {
+    const { rows, mapping } = parseBulk();
+    const box = document.getElementById('bulkPreview');
+    if (!rows.length) {
+      box.innerHTML = '<span style="color:#c81e1e;">No employees detected — check that a Name column exists.</span>';
+      return;
+    }
+    if (mapping) {
+      const matched = Object.keys(mapping).map(f => FIELD_LABELS[f]);
+      const missing = Object.keys(FIELD_LABELS).filter(f => mapping[f] === undefined).map(f => FIELD_LABELS[f]);
+      box.innerHTML =
+        `<b>${rows.length}</b> employee${rows.length === 1 ? '' : 's'} detected. ` +
+        `<span style="color:#0f7a41;">Matched ${matched.length} field${matched.length === 1 ? '' : 's'}:</span> ${matched.join(', ')}.` +
+        (missing.length ? `<br><span style="color:#888;">Not in your file (will stay blank): ${missing.join(', ')}.</span>` : '') +
+        `<br>First row: ${rows[0].full_name} | ${rows[0].mobile || 'no mobile'} | ${rows[0].department || 'no dept'}`;
+    } else {
+      box.innerHTML = `<b>${rows.length}</b> employee${rows.length === 1 ? '' : 's'} detected (no header row — using default column order Name, Mobile, Email, Department, Joining Date, Salary). First: ${rows[0].full_name}`;
+    }
+  });
+
+  document.getElementById('btnBulkImport').addEventListener('click', async () => {
+    const { rows } = parseBulk();
+    if (rows.length === 0) {
+      document.getElementById('bulkAlert').innerHTML = '<div class="alert error">Paste at least one row first.</div>';
+      return;
+    }
+    const btn = document.getElementById('btnBulkImport');
+    btn.disabled = true; btn.textContent = 'Importing...';
+    try {
+      const data = await api.post('employees.bulk_add', { employees: rows });
+      bulkModal.classList.remove('open');
+
+      // Persistent result box — stays until YOU close it (no auto-clear).
+      const hasErrors = (data.errors || []).length > 0;
+      const box = document.createElement('div');
+      box.className = 'alert ' + (hasErrors ? 'error' : 'success');
+      box.style.cssText = 'position:relative; padding-right:44px; white-space:pre-line;';
+      box.textContent = data.message + (hasErrors ? '\n\n' + data.errors.join('\n') : '');
+      const closeBtn = document.createElement('button');
+      closeBtn.innerHTML = '&#10005;';
+      closeBtn.title = 'Close';
+      closeBtn.style.cssText = 'position:absolute; top:8px; right:10px; background:none; border:none; cursor:pointer; font-size:15px; font-weight:700; color:inherit; padding:4px;';
+      closeBtn.onclick = () => box.remove();
+      box.appendChild(closeBtn);
+      alertBox.appendChild(box);
+
+      loadEmployees();
+    } catch (err) {
+      document.getElementById('bulkAlert').innerHTML = `<div class="alert error">${err.message}</div>`;
+    } finally {
+      btn.disabled = false; btn.textContent = 'Import';
+    }
+  });
+  document.getElementById('btnCancel').addEventListener('click', closeModal);
+  // Outside click intentionally does NOT close the employee form —
+  // prevents losing a half-filled form by a stray click. Use Cancel to close.
+
+  function sortRows(rows) {
+    const sortBy = document.getElementById('sortFilter').value;
+    const gf = document.getElementById('genderFilter').value;
+    const sorted = !gf ? rows.slice() : rows.filter(r => gf === 'none' ? (r.gender !== 'M' && r.gender !== 'F') : r.gender === gf);
+
+    if (sortBy === 'code_desc') {
+      sorted.sort((a, b) => (b.employee_code || '').localeCompare(a.employee_code || ''));
+    } else if (sortBy === 'joining_desc') {
+      sorted.sort((a, b) => new Date(b.joining_date || 0) - new Date(a.joining_date || 0));
+    } else if (sortBy === 'joining_asc') {
+      sorted.sort((a, b) => new Date(a.joining_date || 0) - new Date(b.joining_date || 0));
+    } else if (sortBy === 'name_asc') {
+      sorted.sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''));
+    } else if (sortBy === 'name_desc') {
+      sorted.sort((a, b) => (b.full_name || '').localeCompare(a.full_name || ''));
+    }
+
+    return sorted;
+  }
+
+  // ---- pagination (client side; search / department / sort reset to page 1)
+  let page = 1;
+  const pager = document.getElementById('pager');
+  const pageSizeSel = document.getElementById('pageSize');
+  try { const ps = localStorage.getItem('hrms_emp_page_size'); if (ps) pageSizeSel.value = ps; } catch (e) {}
+
+  function pageSize() {
+    const v = pageSizeSel.value;
+    return v === 'all' ? Infinity : (parseInt(v, 10) || 20);
+  }
+
+  function renderPager(total) {
+    const size = pageSize();
+    const pages = size === Infinity ? 1 : Math.max(1, Math.ceil(total / size));
+    if (page > pages) page = pages;
+    if (total === 0) { pager.style.display = 'none'; return; }
+    pager.style.display = '';
+    const from = size === Infinity ? 1 : (page - 1) * size + 1;
+    const to = size === Infinity ? total : Math.min(total, page * size);
+    document.getElementById('pagerInfo').textContent = `Showing ${from}–${to} of ${total}`;
+
+    // page numbers: 1 … (page-1) page (page+1) … last
+    const nums = [];
+    for (let i = 1; i <= pages; i++) {
+      if (i === 1 || i === pages || Math.abs(i - page) <= 1) nums.push(i);
+      else if (nums[nums.length - 1] !== '…') nums.push('…');
+    }
+    let html = `<button data-p="${page - 1}" ${page <= 1 ? 'disabled' : ''} title="Previous">‹</button>`;
+    html += nums.map(n => n === '…'
+      ? `<span class="dots">…</span>`
+      : `<button data-p="${n}" class="${n === page ? 'on' : ''}">${n}</button>`).join('');
+    html += `<button data-p="${page + 1}" ${page >= pages ? 'disabled' : ''} title="Next">›</button>`;
+    document.getElementById('pagerPages').innerHTML = html;
+  }
+
+  document.getElementById('pagerPages').addEventListener('click', (e) => {
+    const btn = e.target.closest('button[data-p]');
+    if (!btn || btn.disabled) return;
+    page = parseInt(btn.dataset.p, 10);
+    renderTable(currentRows);
+    document.querySelector('.card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
+  pageSizeSel.addEventListener('change', () => {
+    try { localStorage.setItem('hrms_emp_page_size', pageSizeSel.value); } catch (e) {}
+    page = 1;
+    renderTable(currentRows);
+  });
+
+  function renderTable(rows) {
+    rows = sortRows(rows);
+    document.getElementById('cardTitle').textContent = `Employees (${rows.length})`;
+    if (rows.length === 0) {
+      tableBody.innerHTML = '<tr><td colspan="9" class="empty-state">No employees found.</td></tr>';
+      renderPager(0);
+      return;
+    }
+    renderPager(rows.length);
+    const size = pageSize();
+    if (size !== Infinity) rows = rows.slice((page - 1) * size, page * size);
+    tableBody.innerHTML = rows.map(r => {
+      const photoHtml = r.photo
+        ? `<img src="${API_BASE_URL.replace('/api.php','')}/${r.photo}" style="width:36px;height:36px;border-radius:50%;object-fit:cover;">`
+        : `<div style="width:36px;height:36px;border-radius:50%;background:#f2f2f4;border:1px solid #eee;display:flex;align-items:center;justify-content:center;color:#999;">
+             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
+           </div>`;
+      const pending = Number(r.pending_count || 0);
+      const pendingHtml = pending > 0
+        ? `<span class="badge inactive">${pending} missing</span>`
+        : `<span class="badge">All complete</span>`;
+      const nameSuffix = r.status === 'pending'
+        ? ' <span class="badge inactive" title="Added by HR, waiting for Admin approval">Pending Approval</span>'
+        : '';
+
+      return `
+      <tr>
+        <td><a href="employee_detail.html?id=${r.employee_id}">${photoHtml}</a></td>
+        <td><a href="employee_detail.html?id=${r.employee_id}"><span class="badge">${r.employee_code}</span></a></td>
+        <td><a href="employee_detail.html?id=${r.employee_id}" style="color:inherit; text-decoration:none;">${r.full_name}</a>${nameSuffix}</td>
+        <td>${r.department_name ? `<a href="#" onclick="filterByDept('${r.department_id}'); return false;" title="Show all ${r.department_name} employees">${r.department_name}</a>` : '—'}</td>
+        <td><select class="g-sel g-${r.gender === 'M' || r.gender === 'F' ? r.gender : 'x'}" onchange="setGender(${r.employee_id}, this)" title="Female = any footwear allowed at Punch In">
+          <option value="" ${r.gender !== 'M' && r.gender !== 'F' ? 'selected' : ''}>Not set</option>
+          <option value="M" ${r.gender === 'M' ? 'selected' : ''}>Male</option>
+          <option value="F" ${r.gender === 'F' ? 'selected' : ''}>Female</option>
+        </select></td>
+        <td>${r.mobile || '—'}</td>
+        <td>${r.joining_date ? new Date(r.joining_date).toLocaleDateString('en-IN', {day:'2-digit',month:'short',year:'numeric'}) : '—'}</td>
+        <td>${pendingHtml}</td>
+        <td>
+          <div class="row-actions">
+            <button onclick='editEmployee(${r.employee_id})'>Edit</button>
+            <button class="danger-link" onclick="deleteEmployee(${r.employee_id}, '${(r.full_name||'').replace(/'/g,"\\'")}')">Delete</button>
+          </div>
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  let currentRows = [];
+
+  async function loadEmployees() {
+    const search = document.getElementById('tableSearch').value.trim();
+    const deptId = document.getElementById('deptFilter').value;
+    const params = {};
+    if (search) params.search = search;
+    if (deptId) params.department_id = deptId;
+
+    try {
+      const data = await api.get('employees.list', params);
+      currentRows = data.employees;
+      page = 1;
+      renderTable(currentRows);
+    } catch (err) {
+      tableBody.innerHTML = `<tr><td colspan="9"><div class="alert error">${err.message}</div></td></tr>`;
+      pager.style.display = 'none';
+    }
+  }
+
+  // Gender right in the list: saved at once (Female = any footwear accepted at Punch In).
+  window.setGender = async function (id, sel) {
+    const g = sel.value;
+    sel.disabled = true;
+    try {
+      await api.post('employees.set_gender', { employee_id: id, gender: g });
+      const row = currentRows.find(r => Number(r.employee_id) === Number(id));
+      if (row) row.gender = g || null;
+      sel.className = 'g-sel g-' + (g || 'x');
+    } catch (err) {
+      showAlert(err.message, 'error');
+      const row = currentRows.find(r => Number(r.employee_id) === Number(id));
+      sel.value = row && row.gender ? row.gender : '';
+    } finally { sel.disabled = false; }
+  };
+  document.getElementById('genderFilter').addEventListener('change', () => { page = 1; renderTable(currentRows); });
+
+  window.editEmployee = async function (id) {
+    try {
+      const data = await api.get('employees.get', { id });
+      openModal(data.employee);
+    } catch (err) {
+      showAlert(err.message, 'error');
+    }
+  };
+
+  window.deleteEmployee = async function (id, name) {
+    if (!confirm(`Move "${name}" to Ex-Employees?\n\nTheir profile and documents stay saved — you can Rejoin or permanently delete them from the Ex-Employees page.`)) return;
+    try {
+      await api.post('employees.delete', { employee_id: id });
+      showAlert('Employee moved to Ex-Employees.');
+      loadEmployees();
+    } catch (err) {
+      showAlert(err.message, 'error');
+    }
+  };
+
+  document.getElementById('empForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const id = document.getElementById('recordId').value;
+    const btn = document.getElementById('btnSave');
+    btn.disabled = true;
+
+    const fields = {
+      full_name: document.getElementById('fullName').value.trim(),
+      department_id: document.getElementById('department').value || '',
+      reporting_manager_id: document.getElementById('reportingManager').value || '',
+      mobile: document.getElementById('mobile').value.trim(),
+      email: document.getElementById('email').value.trim(),
+      joining_date: document.getElementById('joiningDate').value,
+      date_of_birth: document.getElementById('dob').value || '',
+      employment_type: document.getElementById('employmentType').value.trim(),
+      gender: document.getElementById('gender').value,
+      designation: document.getElementById('designation').value.trim(),
+      basic_salary: document.getElementById('basicSalary').value || 0,
+      monthly_salary: document.getElementById('monthlySalary').value || 0,
+      address: document.getElementById('address').value.trim(),
+      emergency_contact_name: document.getElementById('emName').value.trim(),
+      emergency_contact_mobile: document.getElementById('emMobile').value.trim(),
+      emergency_contact_relation: document.getElementById('emRelation').value.trim(),
+      sales_tag: document.getElementById('salesTag').value.trim(),
+      whatsapp_group_ids: JSON.stringify(
+        Array.from(document.querySelectorAll('.wa-group-cb:checked')).map(cb => Number(cb.value))
+      ),
+      store_group_keys: JSON.stringify(
+        Array.from(document.querySelectorAll('.store-group-cb:checked')).map(cb => cb.value)
+      ),
+      excel_file_ids: JSON.stringify(
+        Array.from(document.querySelectorAll('.excel-file-cb:checked')).map(cb => Number(cb.value))
+      ),
+    };
+    if (id) fields.employee_id = id;
+
+    const newPhoto = selectedPhotoFile;
+
+    try {
+      let res;
+      if (newPhoto) {
+        // A photo was chosen — send multipart so the file goes along with the fields.
+        const formData = new FormData();
+        Object.entries(fields).forEach(([key, val]) => formData.append(key, val));
+        formData.append('photo', newPhoto);
+
+        const headers = {};
+        const token = api.token();
+        if (token) headers['Authorization'] = 'Bearer ' + token;
+
+        const response = await fetch(`${API_BASE_URL}?action=employees.save`, {
+          method: 'POST',
+          headers,
+          body: formData,
+        });
+        res = await response.json();
+        if (!response.ok) throw new Error(res.error || 'Save failed.');
+      } else {
+        // No new photo — plain JSON, keeps whatever photo (if any) is already saved.
+        const payload = { ...fields };
+        if (payload.department_id === '') payload.department_id = null;
+        if (payload.reporting_manager_id === '') payload.reporting_manager_id = null;
+        if (payload.date_of_birth === '') payload.date_of_birth = null;
+        res = await api.post('employees.save', payload);
+      }
+
+      closeModal();
+      showAlert(id ? 'Employee updated.' : `Employee added (code: ${res.employee_code}).`);
+      loadEmployees();
+    } catch (err) {
+      modalAlert.innerHTML = `<div class="alert error">${err.message}</div>`;
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  document.getElementById('tableSearch').addEventListener('input', () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(loadEmployees, 350);
+  });
+  window.filterByDept = function (deptId) {
+    const sel = document.getElementById('deptFilter');
+    sel.value = String(deptId);
+    loadEmployees();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  document.getElementById('deptFilter').addEventListener('change', loadEmployees);
+  document.getElementById('sortFilter').addEventListener('change', () => { page = 1; renderTable(currentRows); });
+
+  /*
+   * Export the currently filtered + sorted rows (whatever's on screen right
+   * now — search term, department filter, and sort order all apply) to an
+   * .xlsx file. For a full unfiltered export, use the Dashboard's export button.
+   */
+  document.getElementById('btnExport').addEventListener('click', () => {
+    const btn = document.getElementById('btnExport');
+    const rows = sortRows(currentRows);
+
+    if (rows.length === 0) {
+      showAlert('No rows to export — adjust your filters first.', 'error');
+      return;
+    }
+
+    const exportRows = rows.map(r => ({
+      'Code': r.employee_code,
+      'Full Name': r.full_name,
+      'Department': r.department_name || '',
+      'Mobile': r.mobile || '',
+      'Email': r.email || '',
+      'Joining Date': r.joining_date || '',
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(exportRows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Employees');
+
+    const today = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(workbook, `employees_filtered_${today}.xlsx`);
+  });
+
+  (async function init() {
+    await loadDepartmentsIntoSelects();
+    await loadManagerOptions();
+    await loadStoreGroups();
+    await loadWaGroups();
+    await loadExcelFiles();
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const deptFromUrl = urlParams.get('department_id');
+    if (deptFromUrl) {
+      document.getElementById('deptFilter').value = deptFromUrl;
+      history.replaceState(null, '', 'employees.html');
+    }
+
+    await loadEmployees();
+
+    const editId = urlParams.get('edit');
+    if (editId) {
+      window.editEmployee(editId);
+    }
+
+    if (urlParams.get('resubmit')) {
+      const raw = sessionStorage.getItem('resubmitEmployee');
+      sessionStorage.removeItem('resubmitEmployee');
+      history.replaceState(null, '', 'employees.html');
+      if (raw) {
+        try {
+          const payload = JSON.parse(raw);
+          openModal(); // fresh "Add Employee" mode
+          document.getElementById('fullName').value = payload.full_name || '';
+          document.getElementById('mobile').value = payload.mobile || '';
+          document.getElementById('email').value = payload.email || '';
+          document.getElementById('address').value = payload.address || '';
+          document.getElementById('dob').value = payload.date_of_birth || '';
+          document.getElementById('joiningDate').value = payload.joining_date || '';
+          document.getElementById('department').value = payload.department_id || '';
+          document.getElementById('basicSalary').value = payload.basic_salary || '';
+          document.getElementById('employmentType').value = payload.employment_type || '';
+          document.getElementById('emName').value = payload.emergency_contact_name || '';
+          document.getElementById('emMobile').value = payload.emergency_contact_mobile || '';
+          document.getElementById('emRelation').value = payload.emergency_contact_relation || '';
+          setManagerField(payload.reporting_manager_id || null, null);
+          showAlert('Form pre-filled from the declined submission — review and Save to resubmit.');
+        } catch (e) {
+          showAlert('Could not load the declined submission data.', 'error');
+        }
+      }
+    }
+  })();
+</script>
+</body>
+</html>

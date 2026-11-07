@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Detailed Performance Report — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=260929d">
+<style>
+  /* ---------- filter card ---------- */
+  .dr-filters{display:flex; align-items:flex-end; gap:10px 12px; flex-wrap:wrap; margin-bottom:14px; padding:14px 16px;}
+  .dr-f label{display:block; font-size:11px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px 2px;}
+  .dr-f input[type=date], .dr-f select{height:38px; border:1px solid var(--line); border-radius:12px; padding:0 12px; font-size:13px; font-weight:600; background:#fff; color:var(--ink); min-width:130px;}
+  .dr-chips{display:flex; gap:6px; flex-wrap:wrap;}
+  .dr-chip{height:38px; padding:0 13px; white-space:nowrap; flex:0 0 auto; border-radius:999px; background:#f1f2f5; color:#4a4f5a; font-size:12.5px; font-weight:700; border:none; cursor:pointer;}
+  .dr-chip:hover{background:#e7e9ee;}
+  .dr-chip.on{background:var(--ink); color:#fff;}
+  .dr-sp{flex:1; min-width:10px;}
+  .dr-btn{height:38px; border-radius:999px; padding:0 14px; font-size:13px; font-weight:800; display:inline-flex; align-items:center; gap:7px; border:none; cursor:pointer; white-space:nowrap;}
+  .dr-btn.o{background:var(--accent); color:#fff;} .dr-btn.o:hover{background:var(--accent-dark);}
+  .dr-btn.g{background:#e4f6ec; color:#16945a;} .dr-btn.g:hover{background:#d3efe0;}
+  .dr-btn.s{background:#f1f2f5; color:var(--ink);} .dr-btn.s:hover{background:#e7e9ee;}
+  .dr-btn svg{width:15px; height:15px; stroke:currentColor; fill:none; stroke-width:2.2; stroke-linecap:round; stroke-linejoin:round;}
+  .dr-btn:disabled{opacity:.55; cursor:not-allowed;}
+
+  /* ---------- the sheet ---------- */
+  .xl{border:1px solid #c9ccd2; border-radius:10px; overflow:hidden; background:#fff;}
+  .xl-bar{display:flex; align-items:center; gap:10px; background:#f6f7f9; border-bottom:1px solid #c9ccd2; padding:5px 10px; font-size:12px; color:#5b606b; min-height:34px;}
+  .xl-bar .nm{background:#fff; border:1px solid #d5d8de; border-radius:5px; padding:1px 9px; font-weight:700; color:var(--ink); min-width:46px; text-align:center;}
+  .xl-bar .fx{font-style:italic; font-weight:800; color:#16945a; font-family:Georgia,serif;}
+  .xl-bar .ff{flex:1; min-width:0; background:#fff; border:1px solid #d5d8de; padding:1px 9px; font-family:Consolas,Menlo,monospace; color:var(--ink); border-radius:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .xl-bar .rt{margin-left:auto; white-space:nowrap;}
+  .xl-scroll{overflow:auto; max-height:calc(100vh - 330px); min-height:300px; position:relative; -webkit-overflow-scrolling:touch;}
+  .xl table{border-collapse:separate; border-spacing:0; font-size:12.5px; font-variant-numeric:tabular-nums; width:100%;}
+  .xl th, .xl td{border-right:1px solid #dcdfe4; border-bottom:1px solid #dcdfe4; padding:0 7px; height:30px; white-space:nowrap; text-align:right; vertical-align:middle;}
+  .xl thead th{position:sticky; background:#eef0f3; color:var(--ink); font-weight:800; z-index:3;}
+  .xl thead tr.ltr th{top:0; height:20px; font-size:11px; color:#8a8f9a; font-weight:700; background:#e6e8ec; text-align:center;}
+  .xl thead tr.grp th{top:20px; height:22px; font-size:11px; letter-spacing:.08em; text-transform:uppercase; text-align:center; color:#fff; border-bottom:none;}
+  .xl thead tr.hd th{top:42px; height:36px; font-size:12px; background:#f1f3f6; border-bottom:2px solid #9aa0ab; line-height:1.15; white-space:normal; text-align:center; min-width:70px;}
+  .xl th{text-transform:none; letter-spacing:0;}
+  .xl thead tr.grp th{text-transform:uppercase; letter-spacing:.08em;}
+  .xl th small{display:block; font-size:11px; font-weight:600; color:#8a8f9a;}
+  .xl .rn{position:sticky; left:0; z-index:2; width:30px; min-width:30px; background:#e6e8ec; color:#8a8f9a; font-size:11px; text-align:center; padding:0;}
+  .xl thead .rn{z-index:5;}
+  .xl td.dt{position:sticky; left:30px; z-index:2; text-align:left; font-weight:700; background:inherit; border-right:2px solid #9aa0ab; min-width:112px;}
+  .xl thead th.dt{position:sticky; left:30px; z-index:5; text-align:left; border-right:2px solid #9aa0ab; min-width:112px;}
+  .xl tbody tr:nth-child(odd) td{background:#fff;}
+  .xl tbody tr:nth-child(even) td{background:#f7f8fa;}
+  .xl tbody tr.wk td{background:#fff7ef;}
+  .xl tbody tr:hover td{background:#eef4ff;}
+  .xl tbody td.rn{background:#e6e8ec !important;}
+  .xl td.ed{cursor:cell;}
+  .xl td.sel{outline:2px solid #1d6fe8; outline-offset:-2px; background:#fff !important; position:relative; z-index:1;}
+  .xl td.dt.sel{z-index:2;}
+  .xl td.man{background:#fffbe0 !important;}
+  .xl td.man::after{content:""; position:absolute; top:0; right:0; border-style:solid; border-width:0 8px 8px 0; border-color:transparent #e67e22 transparent transparent;}
+  .xl td{position:relative;}
+  .xl td.dt{position:sticky;}
+  .xl td.c{font-weight:800;}
+  .xl td.tx{text-align:left; font-size:11.5px; max-width:170px; overflow:hidden; text-overflow:ellipsis;}
+  .xl td.none{color:#b6bac3;}
+  .xl td input.cellin{width:100%; min-width:70px; height:26px; border:none; outline:none; background:#fff; font:inherit; text-align:inherit; padding:0 4px; box-shadow:none; border-radius:0;}
+  .xl td .acc{display:inline-block; padding:1px 8px; border-radius:999px; background:#eaf0ff; color:#2c4fd1; font-weight:700; font-size:11px; margin-right:3px;}
+  .roas{font-weight:800;} .roas.g{color:#16945a;} .roas.m{color:#c47a00;} .roas.r{color:#d9423b;}
+  .xl tfoot td{position:sticky; bottom:0; z-index:4; background:#fff3e0; font-weight:800; border-top:2px solid var(--ink); height:36px;}
+  .xl tfoot td.rn{background:#ffe2bd; color:var(--ink); font-size:13px; z-index:5;}
+  .xl tfoot td.dt{background:#ffe2bd; z-index:5;}
+  .xl-status{display:flex; gap:18px; align-items:center; flex-wrap:wrap; background:#f6f7f9; border-top:1px solid #c9ccd2; padding:6px 12px; font-size:11.5px; color:#5b606b;}
+  .xl-status b{color:var(--ink);} .xl-status .r{margin-left:auto;}
+  .xl-sheet{display:flex; gap:6px; background:#f6f7f9; border-top:1px solid #c9ccd2; padding:0 10px;}
+  .xl-sheet div{padding:5px 14px; font-size:11.5px; font-weight:700; color:#16945a; background:#fff; border:1px solid #c9ccd2; border-top:none; border-radius:0 0 8px 8px; box-shadow:inset 0 -2px 0 #16945a;}
+  .dr-legend{display:flex; gap:14px; flex-wrap:wrap; font-size:11.5px; color:var(--muted); margin:8px 2px 0;}
+  .dr-legend i{display:inline-block; width:12px; height:12px; border-radius:3px; vertical-align:-2px; margin-right:5px; border:1px solid #d9dce2;}
+  /* loading veil, matching the app theme */
+  .xl-load{position:absolute; inset:0; z-index:20; background:rgba(255,255,255,.82); display:none; align-items:center; justify-content:center; flex-direction:column; gap:10px; font-weight:800; font-size:13px; color:var(--ink);}
+  .xl-load.on{display:flex;}
+  .xl-spin{width:34px; height:34px; border-radius:50%; border:3.5px solid rgba(255,122,47,.25); border-top-color:var(--accent); animation:xlspin .9s linear infinite;}
+  @keyframes xlspin{to{transform:rotate(360deg);}}
+  .xl-load small{font-weight:600; color:var(--muted);}
+  .dr-toast{position:fixed; right:18px; bottom:18px; z-index:300; background:var(--ink); color:#fff; padding:10px 16px; border-radius:12px; font-size:13px; font-weight:700; box-shadow:0 10px 30px rgba(20,22,26,.3); display:none;}
+  .dr-toast.err{background:#d9423b;} .dr-toast.on{display:block;}
+  /* people popup */
+  .dr-modal{position:fixed; inset:0; background:rgba(20,22,26,.45); z-index:200; display:none; align-items:center; justify-content:center; padding:16px;}
+  .dr-modal.on{display:flex;}
+  .dr-box{background:#fff; border-radius:22px; padding:20px; width:min(440px,100%); box-shadow:0 24px 60px rgba(20,22,26,.25);}
+  .dr-box h3{margin:0 0 6px; font-size:17px;} .dr-box p{margin:0 0 12px; color:var(--muted); font-size:13px;}
+  .dr-box input[type=text]{width:100%; height:40px; border:1px solid var(--line); border-radius:12px; padding:0 12px; font-size:14px;}
+  .dr-box .row{display:flex; gap:8px; justify-content:flex-end; margin-top:14px;}
+  @media (max-width:820px){
+    .dr-filters{gap:10px;} .dr-f{flex:1 1 140px;} .dr-f input[type=date], .dr-f select{width:100%;}
+    .dr-sp{display:none;} .dr-btn{flex:1 1 140px; justify-content:center;}
+    .dr-f{min-width:0;} .dr-f.wide{flex:1 1 100%; min-width:0; max-width:100%;} .dr-chips{flex-wrap:nowrap; overflow-x:auto; padding-bottom:2px; scrollbar-width:none;} .dr-chips::-webkit-scrollbar{display:none;}
+    .dr-filters{padding:12px;}
+    .xl-scroll{max-height:calc(100vh - 260px);}
+    .xl-bar .rt{display:none;}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar">
+      <h1 id="pageTitle">Detailed Performance Report</h1>
+    </div>
+    <div class="content">
+      <div id="alertBox"></div>
+      <div class="card dr-filters">
+        <div class="dr-f"><label for="dFrom">From date</label><input type="date" id="dFrom"></div>
+        <div class="dr-f"><label for="dTo">To date</label><input type="date" id="dTo"></div>
+        <div class="dr-f wide"><label>Quick</label>
+          <div class="dr-chips" id="quick">
+            <button type="button" class="dr-chip" data-q="today">Today</button>
+            <button type="button" class="dr-chip" data-q="yesterday">Yesterday</button>
+            <button type="button" class="dr-chip" data-q="7">Last 7 days</button>
+            <button type="button" class="dr-chip on" data-q="month">This month</button>
+            <button type="button" class="dr-chip" data-q="last">Last month</button>
+          </div>
+        </div>
+        <div class="dr-f wide"><label for="dHouse">House</label>
+          <select id="dHouse">
+            <option value="">All houses</option>
+            <option value="tmph">TM Perfume House</option>
+            <option value="tm4u">TM4U</option>
+            <option value="tmsg">TM Shower Gel</option>
+          </select>
+        </div>
+        <div class="dr-sp"></div>
+        <button class="dr-btn s" id="btnPeople" type="button" title="Whose commission is added up in Combined Commission">⚙ Combined people</button>
+        <button class="dr-btn s" id="btnRefresh" type="button">↻ Refresh</button>
+        <button class="dr-btn g" id="btnCsv" type="button"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 11l5 5 5-5M5 20h14"/></svg>Export CSV</button>
+        <button class="dr-btn o" id="btnXlsx" type="button"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 11l5 5 5-5M5 20h14"/></svg>Export to Excel</button>
+      </div>
+
+      <div class="xl">
+        <div class="xl-bar"><span class="nm" id="xlName">—</span><span class="fx">fx</span><span class="ff" id="xlFormula">Click a cell. Double-click (or press Enter) to type over the automatic value.</span><span class="rt">Frozen: Date column · headers · Total row</span></div>
+        <div class="xl-scroll" id="xlScroll">
+          <div class="xl-load" id="xlLoad"><div class="xl-spin"></div><span>Loading the sheet…</span><small>Orders are read from the live order list, the first load can take a few seconds.</small></div>
+          <table id="sheet"></table>
+        </div>
+        <div class="xl-status"><span id="stRows">Ready</span><span id="stDays"></span><span id="stHouse"></span><span class="r" id="stSum"></span></div>
+        <div class="xl-sheet"><div>Performance</div></div>
+      </div>
+      <div class="dr-legend">
+        <span><i style="background:#fffbe0; border-color:#e5d98a;"></i>Typed by hand (orange corner) · select it and press Delete to go back to automatic</span>
+        <span><i style="background:#fff;"></i>Automatic from the HRMS</span>
+        <span><i style="background:#f1f3f6;"></i>Calculated (Ticket Size, Query Ratio, ROAS): cannot be typed</span>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="dr-modal" id="peopleModal"><div class="dr-box">
+  <h3>Combined Commission</h3>
+  <p>The commissions of these people (first names, separated by commas) are added up in the Combined Commission column.</p>
+  <input type="text" id="peopleIn" maxlength="200" placeholder="Pradeep, Dipti, Ayaz">
+  <div class="row"><button class="dr-btn s" id="peopleCancel" type="button">Cancel</button><button class="dr-btn o" id="peopleSave" type="button">Save</button></div>
+</div></div>
+<div class="dr-toast" id="toast"></div>
+<datalist id="acctList"></datalist>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="assets/js/config.js?v=260929d"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script>
+  guardPage();
+  renderSidebar('detailed_report');
+
+  // ---------- columns (exact order of the report) ----------
+  // t: int / money / pct / x / text.  ed: can be typed over.  grp: group band.
+  const COLS = [
+    { k: 'order', n: 'Order', t: 'int', ed: 1, g: 0 },
+    { k: 'qty', n: 'Qty', t: 'int', ed: 1, g: 0 },
+    { k: 'coll', n: 'Collection', s: '₹', t: 'money', ed: 1, g: 0, bold: 1 },
+    { k: 'pre', n: 'Prepaid', s: '₹', t: 'money', ed: 1, g: 1 },
+    { k: 'cod', n: 'COD', s: '₹', t: 'money', ed: 1, g: 1 },
+    { k: 'acct', n: 'Prepaid Account', s: 'bank / UPI', t: 'text', ed: 1, g: 1 },
+    { k: 'chain', n: 'Chain Sell', s: '₹', t: 'money', ed: 1, g: 2 },
+    { k: 'perf', n: 'Perfume Sell', s: '₹', t: 'money', ed: 1, g: 2 },
+    { k: 'comm', n: 'Commission', s: '₹', t: 'money', ed: 1, g: 2 },
+    { k: 'q', n: 'Query', t: 'int', ed: 1, g: 3 },
+    { k: 'qr', n: 'Query Ratio', s: 'order ÷ query', t: 'pct', g: 3 },
+    { k: 'qo', n: 'Query Order', t: 'int', ed: 1, g: 3 },
+    { k: 'camp', n: 'Campaign Order', t: 'int', ed: 1, g: 3 },
+    { k: 'tkt', n: 'Ticket Size', s: 'avg order ₹', t: 'money', g: 4 },
+    { k: 'ad', n: 'Ad Spend', s: '₹', t: 'money', ed: 1, g: 4 },
+    { k: 'ccomm', n: 'Combined Commission', s: '₹', t: 'money', ed: 1, g: 4 },
+    { k: 'roas', n: 'ROAS', s: 'coll ÷ ad', t: 'x', g: 4 },
+  ];
+  const GROUPS = [['Sales', '#14161a', 3], ['Payment', '#2c4fd1', 3], ['Mix & commission', '#c4620f', 3], ['Queries', '#7b3fc4', 4], ['Ads & return', '#16945a', 4]];
+  const HELP = {
+    order: 'Orders counted like the Orders page (allocated, cancelled left out)', qty: 'Total items in those orders', coll: 'Total amount of those orders',
+    pre: 'Orders with nothing left to pay on delivery', cod: 'Orders still to be paid on delivery (Cash on Delivery)', acct: 'Which bank / UPI got the prepaid money (typed by hand)',
+    chain: 'Total of orders marked Chain = Yes on Order Allocation', perf: 'Collection − Chain Sell', comm: 'Commissions saved for the day on the Commission page',
+    q: 'Queries entered on Assign Queries', qr: '= Query Order ÷ Query × 100', qo: 'Orders tagged Query', camp: 'Orders tagged Campaign',
+    tkt: '= Collection ÷ Order', ad: 'Ad spend (the same figure as the Orders page ROAS box)', ccomm: 'Commission of the combined people for the day', roas: '= Collection ÷ Ad Spend',
+  };
+  const LETTERS = 'ABCDEFGHIJKLMNOPQR';
+  const ZERO = (v) => v === null || v === undefined;
+
+  const $ = (id) => document.getElementById(id);
+  let DATA = null, VIEW = { from: '', to: '', house: '' }, SEL = null, EDIT = null, BUSY = false, REQ = 0;
+
+  // ---------- helpers ----------
+  const inr = (n) => { n = Math.round(Number(n) || 0); const s = String(Math.abs(n)); let l = s.slice(-3), r = s.slice(0, -3); if (r) l = r.replace(/\B(?=(\d{2})+(?!\d))/g, ',') + ',' + l; return (n < 0 ? '-' : '') + l; };
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const z2 = (n) => String(n).padStart(2, '0');
+  const ymd = (d) => d.getFullYear() + '-' + z2(d.getMonth() + 1) + '-' + z2(d.getDate());
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const dLabel = (iso) => iso.slice(8, 10) + ' ' + MON[+iso.slice(5, 7) - 1] + ' ' + iso.slice(2, 4);
+  function toast(msg, err) { const t = $('toast'); t.textContent = msg; t.className = 'dr-toast on' + (err ? ' err' : ''); clearTimeout(toast.t); toast.t = setTimeout(() => (t.className = 'dr-toast'), err ? 5000 : 1800); }
+  function fmt(c, v) {
+    if (c.t === 'text') return v ? String(v).split(/\s*\+\s*/).map((a) => `<span class="acc">${esc(a)}</span>`).join('') : '';
+    if (ZERO(v)) return '—';
+    if (c.t === 'int') return inr(v);
+    if (c.t === 'money') return '₹' + inr(v);
+    if (c.t === 'pct') return Number(v).toFixed(1) + '%';
+    if (c.t === 'x') return Number(v).toFixed(2) + 'x';
+    return esc(v);
+  }
+  function derive(r) {
+    const v = r.v;
+    if (!r.m.includes('perf')) v.perf = Math.max(0, (v.coll || 0) - (v.chain || 0));
+    v.tkt = v.order > 0 ? v.coll / v.order : null;
+    v.qr = v.q > 0 ? v.qo / v.q * 100 : null;
+    v.roas = (!ZERO(v.ad) && v.ad > 0) ? v.coll / v.ad : null;
+  }
+  function totals() {
+    const t = { acctSet: new Set() }, add = ['order', 'qty', 'coll', 'pre', 'cod', 'chain', 'perf', 'comm', 'q', 'qo', 'camp', 'ccomm'];
+    add.forEach((k) => (t[k] = 0)); t.ad = null;
+    DATA.rows.forEach((r) => {
+      add.forEach((k) => (t[k] += Number(r.v[k]) || 0));
+      if (!ZERO(r.v.ad)) t.ad = (t.ad || 0) + Number(r.v.ad);
+      String(r.v.acct || '').split(/\s*\+\s*|\s*,\s*/).forEach((a) => { if (a) t.acctSet.add(a); });
+    });
+    t.tkt = t.order > 0 ? t.coll / t.order : null;
+    t.qr = t.q > 0 ? t.qo / t.q * 100 : null;
+    t.roas = (!ZERO(t.ad) && t.ad > 0) ? t.coll / t.ad : null;
+    t.acct = t.acctSet.size ? t.acctSet.size + ' account' + (t.acctSet.size === 1 ? '' : 's') : '';
+    return t;
+  }
+  function roasCls(v, avg) { if (ZERO(v)) return ''; if (!avg) return 'm'; return v >= avg ? 'g' : (v < avg * 0.8 ? 'r' : 'm'); }
+
+  // ---------- drawing ----------
+  function draw() {
+    if (!DATA) { $('sheet').innerHTML = ''; return; }
+    const T = totals();
+    let h = '<thead><tr class="ltr"><th class="rn"></th><th class="dt" style="text-align:center;background:#e6e8ec">A</th>' + COLS.map((c, i) => `<th>${LETTERS[i + 1]}</th>`).join('') + '</tr>';
+    h += '<tr class="grp"><th class="rn" style="background:#e6e8ec"></th><th class="dt" style="background:#6f7480;color:#fff"></th>' + GROUPS.map((g) => `<th colspan="${g[2]}" style="background:${g[1]}">${g[0]}</th>`).join('') + '</tr>';
+    h += '<tr class="hd"><th class="rn" style="color:#8a8f9a">1</th><th class="dt" style="text-align:left">Date</th>' + COLS.map((c) => `<th title="${esc(HELP[c.k])}">${c.n.replace('Combined Commission', 'Combined<br>Commission').replace('Campaign Order', 'Campaign<br>Order').replace('Prepaid Account', 'Prepaid<br>Account')}${c.s ? '<small>' + esc(c.s) + '</small>' : ''}</th>`).join('') + '</tr></thead><tbody>';
+    DATA.rows.forEach((r, ri) => {
+      const wk = r.dow === 'Sat' || r.dow === 'Sun';
+      h += `<tr${wk ? ' class="wk"' : ''}><td class="rn">${ri + 2}</td><td class="dt" data-r="${ri}" data-c="-1">${dLabel(r.date)}, ${r.dow}</td>`;
+      COLS.forEach((c, ci) => {
+        const v = r.v[c.k], man = r.m.includes(c.k);
+        let cls = (c.ed ? 'ed ' : '') + (man ? 'man ' : '') + (c.t === 'text' ? 'tx ' : '') + (c.bold ? 'c ' : '') + (c.t !== 'text' && ZERO(v) ? 'none ' : '');
+        let inner = fmt(c, v);
+        if (c.k === 'roas' && !ZERO(v)) { cls += 'roas ' + roasCls(v, T.roas); }
+        h += `<td class="${cls.trim()}" data-r="${ri}" data-c="${ci}">${inner}</td>`;
+      });
+      h += '</tr>';
+    });
+    h += '</tbody><tfoot><tr><td class="rn">Σ</td><td class="dt" style="text-align:left">TOTAL · ' + DATA.rows.length + ' day' + (DATA.rows.length === 1 ? '' : 's') + '</td>' +
+      COLS.map((c) => `<td class="${c.t === 'text' ? 'tx' : ''}${c.k === 'roas' && !ZERO(T.roas) ? ' roas g' : ''}">${c.t === 'text' ? esc(T.acct) : fmt(c, T[c.k])}</td>`).join('') + '</tr></tfoot>';
+    $('sheet').innerHTML = h;
+    $('stRows').textContent = 'Rows: ' + DATA.rows.length;
+    $('stDays').textContent = dLabel(DATA.from) + ' → ' + dLabel(DATA.to);
+    $('stHouse').textContent = 'House: ' + (DATA.house ? (DATA.houses[DATA.house] || DATA.house) : 'All houses');
+    $('stSum').innerHTML = 'Sum of Collection: <b>₹' + inr(T.coll) + '</b> &nbsp; ROAS: <b>' + (ZERO(T.roas) ? '—' : T.roas.toFixed(2) + 'x') + '</b>';
+    const un = DATA.unalloc || { orders: 0 };
+    const w = (DATA.warnings || []).slice();
+    if (un.orders > 0) w.unshift(un.orders + ' order' + (un.orders === 1 ? '' : 's') + ' (₹' + inr(un.amount) + ') not allocated yet, so not counted. Same as the Orders page.');
+    $('alertBox').innerHTML = w.length ? `<div class="alert" style="background:#fff7e0; color:#8a5a00; border:1px solid #f1dc9a;">${w.map(esc).join('<br>')}</div>` : '';
+    $('acctList').innerHTML = (DATA.accounts || []).map((a) => `<option value="${esc(a)}">`).join('');
+    if (SEL) { const c = cellEl(SEL.r, SEL.c); if (c) c.classList.add('sel'); }
+  }
+  const cellEl = (r, c) => $('sheet').querySelector(`td[data-r="${r}"][data-c="${c}"]`);
+
+  // ---------- loading ----------
+  async function load(keepSel) {
+    const from = $('dFrom').value, to = $('dTo').value, house = $('dHouse').value;
+    if (!from || !to) return;
+    if (from > to) { toast('From date must be before To date.', 1); return; }
+    if ((new Date(to) - new Date(from)) / 86400000 > 92) { toast('Pick at most 93 days.', 1); return; }
+    const my = ++REQ; $('xlLoad').classList.add('on'); BUSY = true;
+    if (!keepSel) SEL = null;
+    try {
+      const d = await api.get('report_detail.get', { date_from: from, date_to: to, house });
+      if (my !== REQ) return;
+      d.rows.forEach((r) => { if (Array.isArray(r.au)) r.au = {}; });
+      DATA = d; VIEW = { from, to, house };
+      try { sessionStorage.setItem('dr_view', JSON.stringify(VIEW)); } catch (e) {}
+      draw();
+    } catch (err) {
+      if (my !== REQ) return;
+      DATA = null; draw();
+      $('alertBox').innerHTML = `<div class="alert error">${esc(err.message)}</div>`;
+    } finally { if (my === REQ) { $('xlLoad').classList.remove('on'); BUSY = false; } }
+  }
+
+  // ---------- selection + editing ----------
+  function select(r, c) {
+    if (EDIT) return;
+    const old = $('sheet').querySelector('td.sel'); if (old) old.classList.remove('sel');
+    SEL = { r, c };
+    const el = cellEl(r, c); if (!el) return; el.classList.add('sel');
+    el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    const row = DATA.rows[r], col = c >= 0 ? COLS[c] : null;
+    $('xlName').textContent = (c >= 0 ? LETTERS[c + 1] : 'A') + (r + 2);
+    if (!col) { $('xlFormula').textContent = 'Date: ' + row.date; return; }
+    const man = row.m.includes(col.k), au = row.au && row.au[col.k];
+    let f = col.n + ': ' + (HELP[col.k] || '');
+    if (!col.ed) f = col.n + ' is calculated: ' + HELP[col.k];
+    else if (man) f += (col.k === 'ad' ? '  ·  typed. Press Delete to clear.' : '  ·  typed by hand' + (!ZERO(au) ? ' (automatic was ' + (col.t === 'money' ? '₹' + inr(au) : inr(au)) + ')' : '') + '. Press Delete to go back to automatic.');
+    else f += '  ·  automatic. Double-click or press Enter to type over it.';
+    $('xlFormula').textContent = f;
+  }
+  function startEdit(r, c, firstKey) {
+    const col = COLS[c]; if (!col || !col.ed || EDIT || BUSY) return;
+    const el = cellEl(r, c), row = DATA.rows[r]; if (!el) return;
+    const cur = row.v[col.k];
+    const inp = document.createElement('input');
+    inp.className = 'cellin'; inp.type = 'text'; inp.autocomplete = 'off';
+    if (col.t === 'text') { inp.setAttribute('list', 'acctList'); inp.value = cur || ''; inp.placeholder = 'HDFC 4821, PhonePe…'; }
+    else { inp.inputMode = 'decimal'; inp.value = ZERO(cur) ? '' : String(Math.round(cur * 100) / 100); }
+    if (firstKey !== undefined) inp.value = firstKey;
+    EDIT = { r, c, el, orig: el.innerHTML, done: false };
+    el.innerHTML = ''; el.appendChild(inp); inp.focus(); if (firstKey === undefined) inp.select();
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); commit(inp.value, 1); }
+      else if (e.key === 'Tab') { e.preventDefault(); e.stopPropagation(); commit(inp.value, 0, e.shiftKey ? -1 : 1); }
+      else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancelEdit(); }
+      else e.stopPropagation();
+    });
+    inp.addEventListener('blur', () => { if (EDIT && !EDIT.done) commit(inp.value, 0, 0); });
+  }
+  function cancelEdit() { if (!EDIT) return; EDIT.done = true; const { r, c } = EDIT; EDIT = null; draw(); select(r, c); focusGrid(); }
+  async function commit(raw, down, right) {
+    if (!EDIT || EDIT.done) return; EDIT.done = true;
+    const { r, c } = EDIT; EDIT = null;
+    const col = COLS[c], row = DATA.rows[r], k = col.k;
+    let val = String(raw).trim();
+    const same = col.t === 'text' ? val === String(row.v[k] || '') : (val !== '' && Number(val.replace(/[,₹\s]/g, '')) === Number(row.v[k]));
+    if (val === '' && !row.m.includes(k)) { draw(); select(r, c); focusGrid(); return; }          // nothing typed on an automatic cell
+    if (same && row.m.includes(k)) { draw(); select(r, c); focusGrid(); return; }
+    if (same && k !== 'ad') { draw(); select(r, c); focusGrid(); return; }                       // typed the same as automatic: keep it automatic
+    await save(r, c, val);
+    const nr = Math.max(0, Math.min(DATA.rows.length - 1, r + (down ? 1 : 0))), nc = Math.max(0, Math.min(COLS.length - 1, c + (right || 0)));
+    select(nr, nc); focusGrid();
+  }
+  async function save(r, c, val) {
+    const col = COLS[c], row = DATA.rows[r], k = col.k;
+    try {
+      await api.post('report_detail.set', { date: row.date, house: VIEW.house, field: k, value: val });
+      if (val === '') {
+        row.m = row.m.filter((x) => x !== k);
+        if (k === 'ad') row.v.ad = null; else if (k === 'acct') row.v.acct = ''; else if (row.au && !ZERO(row.au[k])) row.v[k] = row.au[k];
+        if (row.au) delete row.au[k];
+      } else {
+        if (!row.m.includes(k)) row.m.push(k);
+        if (row.au && ZERO(row.au[k]) && k !== 'ad' && k !== 'acct') row.au[k] = row.v[k];
+        if (col.t === 'text') row.v[k] = val; else { const n = Number(String(val).replace(/[,₹\s]/g, '')); row.v[k] = ['order', 'qty', 'q', 'qo', 'camp'].includes(k) ? Math.round(n) : Math.round(n * 100) / 100; }
+      }
+      derive(row); draw(); toast(val === '' ? 'Back to automatic' : 'Saved');
+    } catch (err) { draw(); toast(err.message, 1); }
+  }
+  function focusGrid() { const s = $('xlScroll'); s.tabIndex = 0; s.focus({ preventScroll: true }); }
+  $('xlScroll').addEventListener('click', (e) => {
+    const td = e.target.closest('td[data-r]'); if (!td || EDIT) return;
+    select(+td.dataset.r, +td.dataset.c); focusGrid();
+  });
+  $('xlScroll').addEventListener('dblclick', (e) => {
+    const td = e.target.closest('td[data-r]'); if (!td) return;
+    const r = +td.dataset.r, c = +td.dataset.c; if (c < 0) return; select(r, c); startEdit(r, c);
+  });
+  $('xlScroll').addEventListener('keydown', (e) => {
+    if (EDIT || !SEL || !DATA) return;
+    let { r, c } = SEL; const maxR = DATA.rows.length - 1;
+    const k = e.key;
+    if (k === 'ArrowDown') r = Math.min(maxR, r + 1); else if (k === 'ArrowUp') r = Math.max(0, r - 1);
+    else if (k === 'ArrowRight' || k === 'Tab' && !e.shiftKey) c = Math.min(COLS.length - 1, c + 1);
+    else if (k === 'ArrowLeft' || k === 'Tab' && e.shiftKey) c = Math.max(-1, c - 1);
+    else if (k === 'Enter' || k === 'F2') { if (c >= 0) { e.preventDefault(); startEdit(r, c); } return; }
+    else if (k === 'Delete' || k === 'Backspace') {
+      if (c >= 0 && COLS[c].ed && DATA.rows[r].m.includes(COLS[c].k)) { e.preventDefault(); save(r, c, '').then(() => { select(r, c); }); }
+      return;
+    }
+    else if (k.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && c >= 0 && COLS[c].ed) {
+      if (COLS[c].t !== 'text' && !/[0-9.,₹-]/.test(k)) return;
+      e.preventDefault(); startEdit(r, c, k); return;
+    } else return;
+    e.preventDefault(); select(r, c);
+  });
+
+  // ---------- filters ----------
+  function setQuick(q) {
+    const now = new Date(), t = ymd(now); let f = t, to = t;
+    if (q === 'yesterday') { const y = new Date(now); y.setDate(y.getDate() - 1); f = to = ymd(y); }
+    else if (q === '7') { const y = new Date(now); y.setDate(y.getDate() - 6); f = ymd(y); }
+    else if (q === 'month') f = t.slice(0, 8) + '01';
+    else if (q === 'last') { const a = new Date(now.getFullYear(), now.getMonth() - 1, 1), b = new Date(now.getFullYear(), now.getMonth(), 0); f = ymd(a); to = ymd(b); }
+    $('dFrom').value = f; $('dTo').value = to;
+    document.querySelectorAll('#quick .dr-chip').forEach((b) => b.classList.toggle('on', b.dataset.q === q));
+    load();
+  }
+  document.querySelectorAll('#quick .dr-chip').forEach((b) => b.addEventListener('click', () => setQuick(b.dataset.q)));
+  ['dFrom', 'dTo'].forEach((id) => $(id).addEventListener('change', () => { document.querySelectorAll('#quick .dr-chip').forEach((b) => b.classList.remove('on')); load(); }));
+  $('dHouse').addEventListener('change', () => load());
+  $('btnRefresh').addEventListener('click', () => load(true));
+
+  // ---------- combined people ----------
+  $('btnPeople').addEventListener('click', () => { $('peopleIn').value = DATA && DATA.people ? DATA.people.join(', ') : 'Pradeep, Dipti, Ayaz'; $('peopleModal').classList.add('on'); $('peopleIn').focus(); });
+  $('peopleCancel').addEventListener('click', () => $('peopleModal').classList.remove('on'));
+  $('peopleModal').addEventListener('click', (e) => { if (e.target === $('peopleModal')) $('peopleModal').classList.remove('on'); });
+  $('peopleSave').addEventListener('click', async () => {
+    try { await api.post('report_detail.people_save', { people: $('peopleIn').value }); $('peopleModal').classList.remove('on'); toast('Saved'); load(true); }
+    catch (err) { toast(err.message, 1); }
+  });
+
+  // ---------- export ----------
+  function exportRows() {
+    const T = totals(), head = ['Date'].concat(COLS.map((c) => c.n));
+    const rows = DATA.rows.map((r) => [r.date].concat(COLS.map((c) => (c.t === 'text' ? (r.v[c.k] || '') : (ZERO(r.v[c.k]) ? '' : Math.round(r.v[c.k] * 100) / 100)))));
+    const tot = ['TOTAL'].concat(COLS.map((c) => (c.t === 'text' ? T.acct : (ZERO(T[c.k]) ? '' : Math.round(T[c.k] * 100) / 100))));
+    return { head, rows, tot };
+  }
+  const fname = (ext) => 'Performance_Report_' + DATA.from + (DATA.from === DATA.to ? '' : '_to_' + DATA.to) + '_' + (DATA.house || 'All') + '.' + ext;
+  $('btnCsv').addEventListener('click', () => {
+    if (!DATA) return;
+    const { head, rows, tot } = exportRows();
+    const q = (v) => { v = String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+    const csv = '﻿' + [head].concat(rows, [tot]).map((r) => r.map(q).join(',')).join('\r\n');
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); a.download = fname('csv'); document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  });
+  $('btnXlsx').addEventListener('click', () => {
+    if (!DATA) return;
+    if (typeof XLSX === 'undefined') { alert('The Excel library could not load (no internet?). Reload the page and try again, or use Export CSV.'); return; }
+    const { head, rows, tot } = exportRows();
+    const ws = XLSX.utils.aoa_to_sheet([head].concat(rows, [tot]));
+    ws['!cols'] = head.map((h, i) => ({ wch: i === 0 ? 12 : Math.max(10, h.length + 2) }));
+    ws['!freeze'] = { xSplit: 1, ySplit: 1 }; ws['!views'] = [{ state: 'frozen', xSplit: 1, ySplit: 1 }];
+    const f = { money: '#,##0', int: '#,##0', pct: '0.0"%"', x: '0.00"x"' };
+    for (let r = 1; r <= rows.length + 1; r++) COLS.forEach((c, i) => { const cell = ws[XLSX.utils.encode_cell({ r, c: i + 1 })]; if (cell && cell.t === 'n' && f[c.t]) cell.z = f[c.t]; });
+    ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: rows.length, c: head.length - 1 } }) };
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Performance');
+    XLSX.writeFile(wb, fname('xlsx'));
+  });
+
+  // ---------- start ----------
+  (function init() {
+    let v = null; try { v = JSON.parse(sessionStorage.getItem('dr_view') || 'null'); } catch (e) {}
+    if (v && v.from && v.to) {
+      $('dFrom').value = v.from; $('dTo').value = v.to; $('dHouse').value = v.house || '';
+      document.querySelectorAll('#quick .dr-chip').forEach((b) => b.classList.remove('on'));
+      load();
+    } else setQuick('month');
+  })();
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>

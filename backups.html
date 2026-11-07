@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Backups — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=260929d">
+<link rel="stylesheet" href="assets/css/sales_theme.css?v=1">
+<style>
+#bk{max-width:860px; --pl:var(--line,#e5e7eb); --pm:var(--muted,#6b7280); --pi:var(--ink,#111827);}
+#bk button{min-height:0; font:inherit;}
+#bk .sub{color:var(--pm); font-size:12.5px;}
+#bk .top{display:flex; align-items:center; gap:14px; flex-wrap:wrap; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:14px; padding:14px 16px; margin-bottom:14px;}
+#bk .top.warn{background:#fffbeb; border-color:#fde68a;} #bk .top.bad{background:#fef2f2; border-color:#fecaca;}
+#bk .top .tx{flex:1; min-width:220px;} #bk .top b{font-size:15px;}
+#bk .pri{padding:9px 16px; border-radius:11px; background:var(--pi); color:#fff; border:0; font-weight:800; font-size:13px; cursor:pointer;} #bk .pri:disabled{opacity:.5; cursor:default;}
+#bk .ghost{padding:6px 12px; border-radius:9px; background:#f3f4f6; color:var(--pi); border:0; font-weight:700; font-size:12px; cursor:pointer;} #bk .ghost.dg{color:#b91c1c;}
+#bk .box{border:1px solid var(--pl); border-radius:14px; background:#fff; overflow:hidden;}
+#bk .it{display:flex; align-items:center; gap:12px; padding:12px 14px; border-top:1px solid #f1f2f5; flex-wrap:wrap;} #bk .it:first-child{border-top:0;}
+#bk .it .d{flex:1; min-width:200px;} #bk .it .d b{font-size:14px;} #bk .it .d .sub{margin-top:2px;}
+#bk .tag{font-size:11px; font-weight:800; border-radius:999px; padding:2px 9px; background:#eef2ff; color:#4338ca; margin-left:6px;} #bk .tag.m{background:#fef3c7; color:#92400e;} #bk .tag.b{background:#f3f4f6; color:#6b7280;}
+#bk .empty{padding:24px; text-align:center; color:var(--pm);}
+#bk .note{font-size:12.5px; color:var(--pm); margin:12px 2px;}
+body > .bk-toast{position:fixed; left:50%; bottom:22px; transform:translateX(-50%); background:var(--pi); color:#fff; border-radius:11px; padding:9px 16px; font-size:13px; font-weight:700; z-index:60; max-width:90vw;}
+html.in-sales .topbar{display:none;}
+</style>
+<style>
+/* === MOBILE PASS v1 === */
+@media (max-width:820px){ #bk .ghost{min-height:40px; padding:8px 14px;} }
+/* === END MOBILE PASS v1 === */
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><div><h1>Backups</h1><div class="sub">A copy of everything the bot has learned</div></div></div>
+    <div class="content"><div id="bk"><div class="box"><div class="empty">Loading…</div></div></div></div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=2"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script>
+(function () {
+  guardPage();
+  renderSidebar('sales');
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const root = $('bk'); let D = null, busy = '', toastT = null;
+  const toast = (m) => { let t = document.querySelector('body > .bk-toast'); if (t) t.remove(); t = document.createElement('div'); t.className = 'bk-toast'; t.textContent = m; document.body.appendChild(t); clearTimeout(toastT); toastT = setTimeout(() => t.remove(), 3500); };
+  const kb = (n) => n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
+  const when = (s) => { if (!s) return '—'; const d = new Date(s.replace(' ', 'T')); if (isNaN(d)) return s; const t = new Date(), same = d.toDateString() === t.toDateString(), y = new Date(t - 864e5).toDateString() === d.toDateString();
+    return (same ? 'Today' : y ? 'Yesterday' : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })) + ', ' + d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }); };
+  const LBL = { lib_guide: 'guide versions', lib_teach: 'lessons', lib_facts: 'facts', lib_feedback: 'feedback', wa_learn: 'bot learnings', lib_best: 'best lines', lib_replay: 'replays', wa_fu_rules: 'follow-up rules', ph_photos: 'photos' };
+  const sum = (c) => Object.keys(LBL).filter(k => c && c[k]).map(k => c[k] + ' ' + LBL[k]).join(' · ') || 'empty';
+
+  async function load() {
+    try { D = await api.get('lb.list'); if (!D || !Array.isArray(D.backups)) throw new Error('The server answered in an unexpected way. Upload the new learn_backup.php and api.php, then hard refresh.'); render(); }
+    catch (e) { root.innerHTML = `<div class="box"><div class="empty" style="color:#b91c1c;">${esc(e.message || 'Could not load')}</div></div>`; }
+  }
+  function render() {
+    const first = D.backups[0], ageH = first ? (Date.now() - new Date(first.made.replace(' ', 'T'))) / 36e5 : null;
+    const cls = !D.writable ? 'bad' : (!first ? 'warn' : ageH > 30 ? 'warn' : '');
+    const head = !D.writable ? `<b>The server cannot save backups</b><div class="sub">Create a folder named <b>learn_backups</b> next to api.php and allow writing (permission 755).</div>`
+      : !first ? `<b>No backup yet</b><div class="sub">The first one is made automatically within 24 hours, or press Back up now.</div>`
+      : `<b>Last backup: ${esc(when(first.made))}</b><div class="sub">Saved automatically every 24 hours · the newest ${D.keep} are kept${ageH > 30 ? ' · <b style="color:#b45309">older than a day — it runs when someone next uses the HRMS</b>' : ''}</div>`;
+    root.innerHTML = `<div class="top ${cls}"><div class="tx">${head}</div><button class="pri" id="bRun" ${busy ? 'disabled' : ''}>${busy || 'Back up now'}</button></div>` +
+      `<div class="box">${D.backups.length ? D.backups.map(b => `<div class="it"><div class="d"><b>${esc(when(b.made))}</b><span class="tag ${b.kind === 'manual' ? 'm' : b.kind === 'before' ? 'b' : ''}">${b.kind === 'manual' ? 'by hand' : b.kind === 'before' ? 'safety copy before a restore' : 'automatic'}</span><div class="sub">${esc(sum(b.counts))} · ${kb(b.size)}</div></div>` +
+        `<button class="ghost" data-a="dl" data-n="${esc(b.name)}">Download</button><button class="ghost" data-a="rs" data-n="${esc(b.name)}">Restore</button><button class="ghost dg" data-a="del" data-n="${esc(b.name)}">Delete</button></div>`).join('') : '<div class="empty">Nothing saved yet.</div>'}</div>` +
+      `<div class="note">What is saved: the guide book (every version), taught lessons, facts, feedback, what the bot learned from chats, follow-up rules, the photo list and the learning settings. Passwords and keys are never saved. The photo files themselves stay in your server folder.<br><br>
+      <b>Tip:</b> the copies live on the same server as your HRMS. Press <b>Download</b> now and then and keep the file on your computer or Google Drive, so you also have a copy outside the server.</div>`;
+    const r = $('bRun'); if (r) r.onclick = run;
+  }
+  async function run() { busy = 'Saving…'; render(); try { const r = await api.post('lb.run', {}); toast('Backup saved'); } catch (e) { toast(e.message || 'Could not back up'); } busy = ''; await load(); }
+  async function dl(n) {
+    try {
+      const r = await fetch(api.buildUrl('lb.download', { name: n }), { headers: { Authorization: 'Bearer ' + api.token() } }); if (!r.ok) throw new Error('Could not download.');
+      const b = await r.blob(), u = URL.createObjectURL(b), a = document.createElement('a'); a.href = u; a.download = n; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 4000);
+    } catch (e) { toast(e.message); }
+  }
+  root.addEventListener('click', async (e) => {
+    const el = e.target.closest('[data-a]'); if (!el) return; const a = el.dataset.a, n = el.dataset.n;
+    if (a === 'dl') return dl(n);
+    if (a === 'del') { if (!confirm('Delete this backup copy?')) return; try { await api.post('lb.del', { name: n }); toast('Deleted'); await load(); } catch (er) { toast(er.message); } return; }
+    if (a === 'rs') {
+      const b = D.backups.find(x => x.name === n); if (!b) return;
+      if (!confirm('Restore the backup of ' + when(b.made) + '?\n\nEverything the bot learned AFTER that time will be replaced by this copy. A safety copy of the current state is saved first, so you can undo this.')) return;
+      el.disabled = true; el.textContent = 'Restoring…';
+      try { const r = await api.post('lb.restore', { name: n }); toast('Restored. A safety copy of before was saved.'); } catch (er) { toast(er.message); }
+      await load();
+    }
+  });
+  load();
+})();
+</script>
+</body>
+</html>

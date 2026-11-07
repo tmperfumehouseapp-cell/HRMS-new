@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Brain — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=4">
+<link rel="stylesheet" href="assets/css/boss.css?v=1">
+<link rel="stylesheet" href="assets/css/boss2.css?v=t7">
+<link rel="stylesheet" href="assets/css/brain.css?v=1">
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><div><h1>Brain</h1><div class="bd-sub">What Claude knows, who may hear it, and where it is used. One brain for the whole HRMS.</div></div></div>
+    <div class="content"><div class="bd br" id="root"><div class="bd-empty">Loading…</div></div></div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=4"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script src="assets/js/boss_common.js?v=3"></script>
+<script src="assets/js/brain_page.js?v=2"></script>
+<script>
+  guardPage();
+  renderSidebar('brain');
+  BRN.mount(document.getElementById('root'));
+</script>
+</body>
+</html>

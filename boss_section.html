@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Section — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=4">
+<link rel="stylesheet" href="assets/css/boss.css?v=1">
+<link rel="stylesheet" href="assets/css/boss2.css?v=t7">
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><div><h1 id="ttl">Section</h1><div class="bd-sub" id="sub">&nbsp;</div></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><a class="bd-btn" href="boss_engine.html?tab=sections">‹ All sections</a><button class="bd-btn" id="bAsk" type="button">Ask Claude</button><button class="bd-btn" id="bRep" type="button">Report a problem</button><button class="bd-btn pri" id="bAdd" type="button">+ Add task</button></div></div>
+    <div class="content"><div class="bd" id="root"><div class="bd-empty">Loading…</div></div></div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=4"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script src="assets/js/boss_common.js?v=3"></script>
+<script src="assets/js/b2_common.js?v=t7"></script>
+<script src="assets/js/of_place_ui.js?v=p2"></script>
+<script>
+  guardPage();
+  renderSidebar('boss_engine');
+  const { esc, $, toast, inr } = BD;
+  const CODE = new URLSearchParams(location.search).get('code') || '';
+  let D = null, KIND = '', LIST = null;
+  const box = (title, sub, body, right) => '<div class="bd-card"><div class="bd-h"><div><h2>' + title + '</h2>' + (sub ? '<div class="bd-sub">' + sub + '</div>' : '') + '</div>' + (right || '') + '</div>' + body + '</div>';
+  const redo = () => { B2.reset(); load(); };
+
+  async function load() {
+    try { D = await B2.get('bd.b2_section', { code: CODE }); } catch (e) { $('root').innerHTML = '<div class="bd-card"><div class="bd-empty"><b>Cannot open this section</b>' + esc(e.message || '') + '</div></div>'; return; }
+    LIST = await B2.get('bd.b2_items', { section: CODE, status: 'live', kind: KIND, dept: 1 }).catch(() => ({ items: [] }));
+    render();
+  }
+  function render() {
+    const s = D.section, t = D.today || {};
+    $('ttl').textContent = s.name; $('sub').textContent = s.about || '';
+    document.title = s.name + ' — HRMS';
+    let h = '';
+    /* A — where this section stands today */
+    h += '<div class="bd-card"><div class="bd-h"><div><h2>Today in ' + esc(s.name) + '</h2><div class="bd-sub">' + (s.boss ? 'Section boss: ' + esc(s.boss) : 'No section boss yet — choose one in People &amp; seats') + '</div></div><span class="bd-chip ' + (s.live ? 'ok' : 'warn') + '">' + (s.live ? 'Live' : 'Test mode — staff do not see these tasks yet') + '</span></div>'
+      + '<div class="b2-review">' + esc(D.summary) + '</div><div class="b2-bar" style="margin:12px 0 4px"><i class="' + ((t.pct || 0) < 50 ? 'warn' : '') + '" style="width:' + (t.pct || 0) + '%"></i></div>'
+      + '<div class="bd-sub">' + (t.done || 0) + ' done · ' + (t.open || 0) + ' open · ' + (t.missed || 0) + ' missed' + (t.review ? ' · ' + t.review + ' waiting for a check' : '') + '</div></div>';
+    h += '<div id="ofpBoss"></div>';   /* registered places of this section (Pantry ...): owner, today's check, what went to To buy / To fix */
+    /* B — needs attention */
+    const hot = (D.slipping || []).concat(D.late || []);
+    if (hot.length || (D.pens_waiting && D.pens_waiting.count)) h += box('Needs attention', 'Slipping means missed ' + 3 + ' or more times in 7 days. Late means today’s cut-off has passed.',
+      hot.map((i) => B2.itemRow(i)).join('') + (D.pens_waiting && D.pens_waiting.count ? '<div class="b2-item"><div class="l"><div class="t">' + D.pens_waiting.count + ' penalty waiting for your decision (' + inr(D.pens_waiting.amount) + ')</div></div><div class="r"><a class="bd-btn sm" href="boss_engine.html?tab=pens">Decide</a></div></div>' : ''));
+    /* C — numbers */
+    if ((D.numbers || []).length) h += box('Numbers', 'Typed every day by the owner, with a screenshot as proof.', '<div class="b2-nums">' + D.numbers.map((n) => B2.numTile(n, true)).join('') + '</div>');
+    /* D — all work of this section */
+    h += box('Work in this section', 'Click a kind to filter. Click a task to open it.',
+      '<div class="b2-tiles" style="margin-top:6px">' + D.tiles.map((k) => '<button type="button" class="b2-tile' + (KIND === k.kind ? ' on' : '') + '" data-kind="' + k.kind + '"><small>' + esc(k.label) + '</small><b>' + k.total + '</b><div class="m">' + (k.slipping ? '<span class="bad">' + k.slipping + ' slipping</span>' : '') + (k.late ? '<span class="warn">' + k.late + ' late</span>' : '') + (!k.slipping && !k.late ? '<span>' + (k.total ? 'on track' : 'none') + '</span>' : '') + '</div></button>').join('') + '</div>'
+      + ((LIST.items || []).length ? LIST.items.map((i) => B2.itemRow(i)).join('') : '<div class="bd-empty"><b>No tasks' + (KIND ? ' of this kind' : '') + '</b>Press “+ Add task” and tell Claude what must be done.</div>'),
+      '<a class="bd-btn sm" href="#" id="csv">Download Excel (CSV)</a>');
+    /* E — people */
+    if ((D.people || []).length) h += box('People', 'Who has work in this section today.', '<div class="scroll"><table style="width:100%;font-size:13px;border-collapse:collapse"><thead><tr style="text-align:left;color:#6a7280"><th style="padding:6px 8px">Name</th><th>Today</th><th>Missed in 7 days</th><th>Now</th></tr></thead><tbody>' + D.people.map((p) => { const t2 = p.today || {}; return '<tr style="border-top:1px solid #eceef1"><td style="padding:8px"><b>' + esc(p.name) + '</b></td><td>' + (t2.done || 0) + ' done · ' + (t2.open || 0) + ' open' + (t2.missed ? ' · <b style="color:#d9423b">' + t2.missed + ' missed</b>' : '') + '</td><td>' + (p.missed_7d ? '<b style="color:#d9423b">' + p.missed_7d + '</b>' : '0') + '</td><td>' + (p.away ? '<span class="bd-chip warn">' + esc(p.away) + '</span>' : '<span class="bd-chip ok">here</span>') + '</td></tr>'; }).join('') + '</tbody></table></div>');
+    /* F — department jobs, problems, builds, pages */
+    const dp = D.dept || {};
+    if (dp.open || dp.done || dp.missed) h += box('Department jobs', 'Jobs from the department pages (Dispatch, Money, Shops, Supplies, Work, Fix) that belong to this section.', '<div style="display:flex;gap:8px;flex-wrap:wrap"><span class="bd-chip">' + (dp.done || 0) + ' done</span><span class="bd-chip info">' + (dp.open || 0) + ' open</span>' + (dp.late ? '<span class="bd-chip warn">' + dp.late + ' late</span>' : '') + (dp.missed ? '<span class="bd-chip bad">' + dp.missed + ' missed</span>' : '') + '</div>' + (LIST.dept && LIST.dept.length ? '<div style="margin-top:8px">' + LIST.dept.slice(0, 8).map((x) => '<div class="b2-ev"><i>▤</i><div>' + esc(x.title) + '<div class="bd-sub">' + esc(x.owner || '') + ' · ' + esc(x.status) + (x.due_at ? ' · due ' + esc(String(x.due_at).slice(11, 16)) : '') + '</div></div></div>').join('') + '</div>' : ''));
+    if ((D.problems || []).length) h += box('Problems', 'Reported here and still open.', D.problems.map((p) => '<div class="b2-item" data-p="' + p.id + '"><div class="l"><div class="t">' + esc(p.title) + '</div><div class="s">' + esc(p.by || '') + ' · ' + esc(p.ago) + ' ago' + (p.cause && p.cause.text ? ' · ' + esc(p.cause.label) + ' cause' : '') + '</div></div><div class="r">' + (p.again_n ? '<span class="bd-chip bad">Came back ' + p.again_n + '×</span>' : '') + '<span class="bd-chip ' + (p.step === 'decide' ? 'warn' : 'info') + '">' + esc(p.step_label) + '</span></div></div>').join(''));
+    if ((D.builds || []).length) h += box('Waiting to be built', 'Pages this section needs that do not exist yet.', D.builds.map((b) => '<div class="b2-item"><div class="l"><div class="t">' + esc(b.title) + '</div><div class="s">' + esc(b.why || '') + '</div></div><div class="r"><span class="bd-chip info">' + esc(b.status_label) + '</span></div></div>').join(''), '<a class="bd-btn sm" href="boss_engine.html?tab=builds">Build system</a>');
+    if ((D.pages || []).length) h += box('Pages of this section', 'Claude knows what each number on these pages means and how it is judged.', D.pages.map((p) => '<a class="bd-chip" style="margin:0 6px 6px 0;text-decoration:none" href="' + esc(p.page) + '">' + esc(p.title) + '</a>').join(''));
+    $('root').innerHTML = h;
+    if (window.OfPlace && $('ofpBoss')) OfPlace.mountBoss($('ofpBoss'), { sectionName: s.name });
+    $('root').querySelectorAll('.b2-tile').forEach((b) => b.onclick = () => { KIND = KIND === b.dataset.kind ? '' : b.dataset.kind; load(); });
+    $('root').querySelectorAll('.b2-item[data-open]').forEach((b) => b.onclick = () => B2.openItem(Number(b.dataset.open), redo));
+    $('root').querySelectorAll('.b2-num[data-open]').forEach((b) => b.onclick = () => B2.openItem(Number(b.dataset.open), redo));
+    $('root').querySelectorAll('.b2-item[data-p]').forEach((b) => b.onclick = () => B2.openProblem(Number(b.dataset.p), redo));
+    const csv = $('csv'); if (csv) csv.onclick = async (e) => { e.preventDefault(); try { const r = await fetch(api.buildUrl('bd.b2_csv', { section: CODE }), { headers: { Authorization: 'Bearer ' + api.token() } }); if (!r.ok) throw new Error('Could not download'); const u = URL.createObjectURL(await r.blob()); const a = document.createElement('a'); a.href = u; a.download = 'section-' + CODE + '.csv'; document.body.appendChild(a); a.click(); a.remove(); } catch (err) { B2.fail(err); } };
+  }
+  $('bAdd').onclick = () => B2.editItem({ section: CODE, onSaved: redo });
+  $('bRep').onclick = () => B2.report({ section: CODE, page: 'boss_section.html', sectionName: D && D.section.name, onSent: redo });
+  $('bAsk').onclick = () => B2.askClaude({ section: CODE, sectionName: D && D.section.name });
+  load();
+</script>
+</body>
+</html>

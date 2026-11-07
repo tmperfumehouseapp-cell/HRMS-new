@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Decision history — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=4">
+<link rel="stylesheet" href="assets/css/boss.css?v=1">
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><div><h1>Decision history</h1><div class="bd-sub" id="sub">Decisions already made, and notes. Open decisions are in Needs you on the Boss Engine.</div></div><div><a class="bd-btn pri" href="boss_engine.html">Open Needs you</a></div></div>
+    <div class="content"><div class="bd">
+      <div class="bd-tabs" id="tabs"></div>
+      <div id="root"><div class="bd-empty">Loading…</div></div>
+    </div></div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=4"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script src="assets/js/boss_common.js?v=3"></script>
+<script>
+  /* the inbox moved into Needs you (Boss Engine > Today). This page only keeps the history. */
+  if (!new URLSearchParams(location.search).get('history')) { location.replace('boss_engine.html'); }
+  guardPage();
+  renderSidebar('boss_engine');
+  const { esc, $, toast, inr } = BD;
+  let ITEMS = [], MODE = 'shadow', EMPS = [], TAB = 'all';
+  const GROUPS = { all: null, money: ['penalty', 'appeal', 'dp_pen', 'dp_appeal'], photos: ['ai_review'], people: ['uncovered', 'new_joiner', 'new_section', 'collision', 'doc', 'handover', 'dp_punchout'], other: ['season', 'problem', 'changed', 'note', 'digest', 'loop', 'dp_note'] };
+  let GROUP = 'all';
+
+  async function load() {
+    try {
+      const [d, o] = await Promise.all([api.get('bd.inbox', { status: TAB === 'all' ? 'all' : 'open' }), EMPS.length ? Promise.resolve(null) : api.get('bd.org')]);
+      ITEMS = d.items; MODE = d.mode; if (o) EMPS = o.employees;
+      tabs(); render();
+    } catch (e) { $('root').innerHTML = '<div class="bd-card"><div class="bd-empty"><b>Cannot open the inbox</b>' + esc(e.message) + '</div></div>'; }
+  }
+  function tabs() {
+    const cnt = (g) => ITEMS.filter((i) => i.status === 'open' && (!GROUPS[g] || GROUPS[g].includes(i.kind))).length;
+    $('tabs').innerHTML = [['all', 'Everything'], ['money', 'Money'], ['photos', 'Photos'], ['people', 'People & setup'], ['other', 'Other']].map(([k, l]) => '<button type="button" data-g="' + k + '" class="' + (GROUP === k ? 'on' : '') + '">' + l + (cnt(k) ? ' (' + cnt(k) + ')' : '') + '</button>').join('')
+      + '<button type="button" data-g="_hist" class="' + (TAB === 'all' ? 'on' : '') + '">History</button>';
+  }
+  $('tabs').onclick = (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.g === '_hist') { TAB = TAB === 'all' ? 'open' : 'all'; load(); return; }
+    GROUP = b.dataset.g; tabs(); render();
+  };
+
+  function card(it) {
+    const [kl, kc] = BD.KIND[it.kind] || [it.kind, ''];
+    const t = it.extra && it.extra.task, p = it.payload || {};
+    let body = '<div style="font-size:13.5px;line-height:1.5;color:#4a505c;margin-top:4px">' + esc(it.body || '') + '</div>', acts = '';
+    const open = it.status === 'open';
+    const A = (act, label, cls, extra) => '<button class="bd-btn sm ' + (cls || '') + '" data-act="' + act + '" data-id="' + it.id + '" ' + (extra || '') + '>' + label + '</button>';
+    if (it.kind === 'dp_punchout') {
+      body += '<div class="bd-call info"><b>Jobs not done:</b> ' + esc(((p.left || []).slice(0, 8)).join('; ')) + (p.note ? '<br><b>Says:</b> ' + esc(p.note) : '') + '</div>';
+      acts = A('approve', 'Allow punch out', 'go') + A('reject', 'No, finish the jobs', 'bad');
+    } else if (it.kind === 'dp_pen') {
+      if (MODE !== 'live') body += '<div class="bd-call warn">The Boss Engine is not in Live mode, so approving will not take money yet.</div>';
+      acts = A('approve', 'Give the penalty', 'bad') + A('reject', 'No penalty', '');
+    } else if (it.kind === 'dp_appeal') {
+      body += '<div class="bd-call info"><b>Reason given:</b> ' + esc(it.body) + '</div>';
+      acts = A('approve', 'Accept appeal (cancel penalty)', 'go') + A('reject', 'Decline', '');
+    } else if (it.kind === 'penalty' && t) {
+      body += '<div class="bd-sub" style="margin-top:6px"><b>' + esc(t.owner) + '</b> · ' + esc(t.section) + ' · due ' + esc(t.due_label) + ' · remark: ' + esc(t.pen_remark || '') + '</div>';
+      if (MODE !== 'live') body += '<div class="bd-call warn">The Boss Engine is not in Live mode, so approving will not take money yet.</div>';
+      acts = A('approve', 'Give ' + inr(t.pen_amount) + ' penalty', 'bad') + A('reject', 'No penalty', '');
+    } else if (it.kind === 'appeal' && t) {
+      body += '<div class="bd-call info"><b>' + esc(t.owner) + ' says:</b> ' + esc(it.body) + '<br><span class="bd-sub">Penalty ' + inr(t.pen_amount) + ' for "' + esc(t.title) + '" · ' + esc(t.pen_remark || '') + '</span></div>';
+      acts = A('approve', 'Accept appeal (cancel penalty)', 'go') + A('reject', 'Decline', '');
+    } else if (it.kind === 'ai_review' && t) {
+      body += '<div class="bd-sub" style="margin-top:6px"><b>' + esc(t.owner) + '</b> · ' + esc(t.section) + ' · what it must show: ' + esc(t.photo_prompt || t.title) + '</div>'
+        + (t.ai_reason ? '<div class="bd-call warn"><b>AI said:</b> ' + esc(t.ai_reason) + '</div>' : '') + (t.has_photo ? '<img class="bd-ph" data-photo="' + t.id + '" alt="photo">' : '');
+      acts = A('approve', 'Photo is fine', 'go') + A('reject', 'Send back — retake', 'bad');
+    } else if (it.kind === 'uncovered' && t) {
+      body += '<div class="bd-f" style="margin-top:8px"><label>Give it to</label><select class="bd-in" id="emp' + it.id + '"><option value="">Choose a person…</option>' + EMPS.map((e) => '<option value="' + e.id + '">' + esc(e.name) + (e.dept ? ' — ' + esc(e.dept) : '') + '</option>').join('') + '</select></div>';
+      acts = A('assign', 'Give duty', 'pri');
+    } else if (it.kind === 'new_section') {
+      acts = '<a class="bd-btn sm pri" href="boss_engine.html?tab=sections">Tell me what this team does</a>' + A('dismiss', 'Not now', '');
+    } else if (it.kind === 'new_joiner') {
+      const m = it.extra && it.extra.match;
+      if (m) {
+        body += '<div style="margin-top:8px;display:flex;flex-direction:column;gap:8px">' + m.options.map((o, i) => '<div class="bd-row" style="border:1px solid var(--line);border-radius:16px;padding:9px 12px"><div class="l"><div class="t">' + esc(o.title) + '</div><div class="s">' + esc(o.section) + ' · ' + esc(o.why) + '</div></div><div class="r"><button class="bd-btn sm pri" data-join="' + it.id + '" data-seat="' + o.seat_id + '">Seat here</button></div></div>').join('') + '</div>';
+        if (m.suggest_new) body += '<div class="bd-call info" style="margin-top:8px"><b>New role?</b> ' + esc(m.suggest_new.why) + '<div style="margin-top:8px"><button class="bd-btn sm" data-newrole="' + it.id + '" data-sec="' + m.suggest_new.section_id + '" data-title="' + esc(m.suggest_new.title) + '">Create role "' + esc(m.suggest_new.title) + '" and seat ' + esc(m.emp.name) + '</button></div></div>';
+      }
+      acts = A('dismiss', 'Later', '');
+    } else if (it.kind === 'season') {
+      body += '<div class="bd-list" style="margin-top:8px">' + (p.plan || []).map((x) => '<div class="bd-row" style="padding:7px 0"><div class="l"><div class="t" style="font-size:13.5px">' + esc(x.title) + '</div></div><div class="r"><span class="bd-chip">' + esc(x.date) + '</span><span class="bd-chip">' + esc(x.section) + '</span></div></div>').join('') + '</div>';
+      acts = A('approve', 'Create these duties', 'go') + A('dismiss', 'Skip this festival', '');
+    } else if (it.kind === 'collision') {
+      acts = '<a class="bd-btn sm" href="boss_engine.html?tab=work">See duties</a>' + A('dismiss', 'Got it', '');
+    } else if (it.kind === 'changed') {
+      acts = (it.section_id ? '<a class="bd-btn sm pri" href="boss_engine.html?tab=sections">Update duties for this change</a>' : '') + A('dismiss', 'Nothing changes', '');
+    } else if (it.kind === 'problem' && t) {
+      body += '<div class="bd-sub" style="margin-top:6px">' + esc(t.owner) + ' · ' + esc(t.title) + '</div>'; acts = A('dismiss', 'Seen', 'pri');
+    } else if (p.link && (it.kind === 'doc' || it.kind === 'handover' || it.kind === 'loop')) {
+      const open = { doc: 'Open Doc Check', handover: 'Choose who takes over', loop: 'See what Claude suggests' }[it.kind];
+      acts = '<a class="bd-btn sm pri" href="' + esc(p.link) + '">' + open + '</a>' + A('dismiss', 'Later', '');
+    } else { acts = A('dismiss', 'OK', ''); }
+    return '<div class="bd-card" data-card="' + it.id + '"><div class="bd-h" style="margin-bottom:0"><div><span class="bd-chip ' + kc + '">' + esc(kl) + '</span> <strong style="margin-left:6px;font-size:15px">' + esc(it.title) + '</strong></div><span class="bd-sub">' + esc(String(it.at).slice(5, 16)) + (it.section ? ' · ' + esc(it.section) : '') + '</span></div>'
+      + body + (open ? '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">' + acts + '</div>' : '<div class="bd-sub" style="margin-top:8px">' + esc(it.status) + '</div>') + '</div>';
+  }
+  function render() {
+    const list = ITEMS.filter((i) => (TAB === 'all' || i.status === 'open') && (!GROUPS[GROUP] || GROUPS[GROUP].includes(i.kind)));
+    $('root').innerHTML = list.length ? list.map(card).join('') : '<div class="bd-card"><div class="bd-empty"><b>Nothing waiting</b>When something needs your yes or no it will appear here.</div></div>';
+    document.querySelectorAll('img[data-photo]').forEach(async (im) => { try { im.src = await BD.photo(im.dataset.photo); } catch (e) { im.replaceWith(Object.assign(document.createElement('div'), { className: 'bd-sub', textContent: 'Photo not available' })); } });
+  }
+  async function act(id, a, extra) {
+    try { const r = await api.post('bd.inbox_act', Object.assign({ id: Number(id), act: a }, extra || {})); toast(r.message || 'Done.'); load(); } catch (e) { toast(e.message, true); }
+  }
+  $('root').onclick = async (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.act) {
+      const a = b.dataset.act, id = b.dataset.id;
+      if (a === 'assign') { const v = $('emp' + id).value; if (!v) return toast('Choose a person.', true); return act(id, 'approve', { emp_id: Number(v) }); }
+      if (a === 'approve' && b.classList.contains('bad') && !(await BD.confirm('Give this penalty?', 'The employee is told and it goes on their salary sheet.', 'Give penalty', true))) return;
+      return act(id, a);
+    }
+    if (b.dataset.join) {
+      const it = ITEMS.find((x) => x.id === Number(b.dataset.join)); b.disabled = true;
+      try { const r = await api.post('bd.match_apply', { emp_id: it.payload.emp_id, seat_id: Number(b.dataset.seat) }); toast(r.message); load(); } catch (er) { toast(er.message, true); b.disabled = false; }
+    }
+    if (b.dataset.newrole) {
+      const it = ITEMS.find((x) => x.id === Number(b.dataset.newrole)); b.disabled = true;
+      try { const r = await api.post('bd.match_apply', { emp_id: it.payload.emp_id, new: { section_id: Number(b.dataset.sec), title: b.dataset.title } }); toast(r.message); load(); } catch (er) { toast(er.message, true); b.disabled = false; }
+    }
+  };
+  load();
+</script>
+</body>
+</html>

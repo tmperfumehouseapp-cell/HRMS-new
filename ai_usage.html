@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<title>AI usage — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=260929d">
+<style>
+  .au-k{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:0 0 14px}
+  .au-k div{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px}
+  .au-k small{display:block;font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+  .au-k b{font-size:22px}
+  .au-t{width:100%;border-collapse:collapse;font-size:13px}
+  .au-t th,.au-t td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+  .au-t th:first-child,.au-t td:first-child{text-align:left}
+  .au-bar{height:8px;border-radius:99px;background:#f58220;display:inline-block;vertical-align:middle;margin-right:6px}
+  .au-w{overflow-x:auto}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><h1>AI usage</h1></div>
+    <div class="content">
+      <div id="alertBox"></div>
+      <div class="card" style="padding:14px">
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px"><b>Month</b><input type="month" id="auM" style="width:auto"><span class="sub" id="auP"></span></div>
+        <div id="auBody"><div class="sub">Loading…</div></div>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=2"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script>
+  guardPage();
+  renderSidebar('system_health');
+  // 💸 Which HRMS job uses the AI, day by day (counts kept by the server for every Claude call: ai_usage). Admin only.
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const n = (x) => Number(x || 0).toLocaleString('en-IN'), usd = (x) => '$' + Number(x || 0).toFixed(2), mt = (x) => (Number(x || 0) / 1e6).toFixed(1) + ' M';
+  const M = document.getElementById('auM'), B = document.getElementById('auBody');
+  const now = new Date(); M.value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  async function load() {
+    B.innerHTML = '<div class="sub">Loading…</div>';
+    let d; try { d = await api.get('ai.usage', { month: M.value }); } catch (e) { B.innerHTML = '<div class="alert error">' + esc(e.message) + '</div>'; return; }
+    document.getElementById('auP').textContent = 'AI: ' + (d.provider || '') + ' · monthly budget ' + usd(d.budget_usd) + ' · left ' + usd(d.left_usd);
+    const rows = d.rows || [], byJob = {}, byDay = {};
+    rows.forEach((r) => {
+      const j = byJob[r.purpose] = byJob[r.purpose] || { calls: 0, inT: 0, outT: 0, usd: 0, models: {} };
+      j.calls += +r.calls; j.inT += +r.in_tokens; j.outT += +r.out_tokens; j.usd += +r.cost_usd; j.models[r.model] = 1;
+      const y = byDay[r.use_date] = byDay[r.use_date] || { calls: 0, inT: 0, usd: 0, top: {} };
+      y.calls += +r.calls; y.inT += +r.in_tokens; y.usd += +r.cost_usd; y.top[r.purpose] = (y.top[r.purpose] || 0) + +r.in_tokens;
+    });
+    const jobs = Object.entries(byJob).sort((a, b) => b[1].inT - a[1].inT), max = jobs.length ? jobs[0][1].inT : 1, t = d.total || {};
+    let h = `<div class="au-k"><div><small>AI calls</small><b>${n(t.calls)}</b></div><div><small>Tokens in</small><b>${mt(t.in)}</b></div><div><small>Tokens out</small><b>${mt(t.out)}</b></div><div><small>Cost (this month)</small><b>${usd(t.usd)}</b></div></div>`;
+    h += '<h3 style="margin:6px 0">Which job uses the AI</h3><div class="au-w"><table class="au-t"><thead><tr><th>Job</th><th>Calls</th><th>Tokens in</th><th>Avg in / call</th><th>Tokens out</th><th>Cost</th></tr></thead><tbody>'
+      + (jobs.length ? jobs.map(([k, j]) => `<tr><td><span class="au-bar" style="width:${Math.max(4, Math.round(j.inT * 120 / Math.max(1, max)))}px"></span><b>${esc(k)}</b><br><small class="sub">${esc(Object.keys(j.models).join(', '))}</small></td><td>${n(j.calls)}</td><td>${mt(j.inT)}</td><td>${n(Math.round(j.inT / Math.max(1, j.calls)))}</td><td>${mt(j.outT)}</td><td>${usd(j.usd)}</td></tr>`).join('') : '<tr><td colspan="6">No AI use recorded this month.</td></tr>') + '</tbody></table></div>';
+    const days = Object.entries(byDay).sort((a, b) => b[0].localeCompare(a[0]));
+    h += '<h3 style="margin:16px 0 6px">Day by day</h3><div class="au-w"><table class="au-t"><thead><tr><th>Day</th><th>Calls</th><th>Tokens in</th><th>Cost</th><th>Biggest job</th></tr></thead><tbody>'
+      + days.map(([dt, y]) => { const top = Object.entries(y.top).sort((a, b) => b[1] - a[1])[0]; return `<tr><td>${esc(dt)}</td><td>${n(y.calls)}</td><td>${mt(y.inT)}</td><td>${usd(y.usd)}</td><td>${top ? esc(top[0]) + ' (' + mt(top[1]) + ')' : ''}</td></tr>`; }).join('') + '</tbody></table></div>';
+    B.innerHTML = h;
+  }
+  M.onchange = load; load();
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>

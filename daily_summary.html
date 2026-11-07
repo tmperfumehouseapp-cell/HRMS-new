@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Summary — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=4">
+<link rel="stylesheet" href="assets/css/boss.css?v=1">
+<style>
+  .ds-hero{display:flex;gap:18px;align-items:center;flex-wrap:wrap;}
+  .ds-hero .big{font-size:30px;font-weight:800;letter-spacing:-.02em;line-height:1.1;}
+  .ds-hero .ok{color:#16945a;} .ds-hero .need{color:#d9423b;}
+  .ds-dot{width:46px;height:46px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-size:22px;color:#fff;background:#16945a;}
+  .ds-dot.need{background:#ff7a2f;}
+  .ds-item{display:flex;gap:12px;padding:14px 0;border-top:1px solid var(--line,#eceef1);}
+  .ds-item:first-child{border-top:0;}
+  .ds-sev{width:10px;height:10px;border-radius:50%;margin-top:6px;flex:none;background:#f2b33d;} .ds-sev.bad{background:#d9423b;} .ds-sev.info{background:#7a8499;}
+  .ds-item .t{font-weight:700;font-size:14.5px;} .ds-item .d{font-size:13px;color:#4a505c;margin-top:2px;line-height:1.45;}
+  .ds-sugg{margin-top:6px;font-size:13px;background:#fff8ea;border-radius:12px;padding:8px 11px;color:#6b4a00;line-height:1.45;}
+  .ds-acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:9px;}
+  .ds-spot{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px;}
+  .ds-spot .c{border:1px solid var(--line,#eceef1);border-radius:18px;padding:10px;}
+  .ds-spot img{width:100%;height:150px;object-fit:cover;border-radius:12px;background:#f1f3f6;display:block;margin-bottom:8px;}
+  .ds-off{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px;}
+  .ds-off a{display:block;border:1px solid var(--line,#eceef1);border-radius:18px;padding:12px 14px;color:inherit;text-decoration:none;} .ds-off a:hover{background:#faf8f3;}
+  .ds-fixed li{font-size:13px;color:#4a505c;margin:3px 0;}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><div><h1>Summary</h1><div class="bd-sub" id="asof">&nbsp;</div></div>
+      <div><button class="bd-btn" id="run" type="button" style="display:none">Check again now</button></div></div>
+    <div class="content"><div class="bd" id="hqChat"></div><div class="bd" id="hqBoard"></div><div class="bd" id="root"><div class="bd-empty">Loading…</div></div></div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=4"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script src="assets/js/boss_common.js?v=2"></script>
+<script src="assets/js/hq_board.js?v=1"></script>
+<script src="assets/js/hq_chat.js?v=3"></script>
+<script>
+  guardPage();
+  renderSidebar('daily_summary');
+  const { esc, $, toast } = BD;
+  let D = null, SPOT = null;
+  const LINK = {
+    wa_day: () => 'wa_sales_live.html',
+    doc_missing: (i) => 'doc_check.html' + (i.emp_id ? '?emp=' + i.emp_id : ''), doc_expiry: (i) => 'doc_check.html' + (i.emp_id ? '?emp=' + i.emp_id : ''), doc_check: (i) => 'doc_check.html' + (i.emp_id ? '?emp=' + i.emp_id : ''), doc_bad: (i) => 'doc_check.html' + (i.emp_id ? '?emp=' + i.emp_id : ''),
+    leaver: (i) => 'handover.html' + (i.emp_id ? '?emp=' + i.emp_id : ''), seat_empty: () => 'boss_engine.html?tab=people', of_zone: () => 'office_care.html', of_stale: () => 'office_care.html',
+    att_open: () => 'attendance_admin.html', att_dup: () => 'attendance_admin.html', leave_overlap: () => 'leave_requests.html', pen_cap: () => 'penalties.html',
+  };
+  const LINKTXT = { wa_day: 'Open WhatsApp Sales', leaver: 'Open handover', seat_empty: 'Open Setup', of_zone: 'Open the office', of_stale: 'Open the office', att_open: 'Open Attendance', att_dup: 'Open Attendance', leave_overlap: 'Open Leave', pen_cap: 'Open Penalties' };
+
+  async function load() {
+    try {
+      D = await api.get('chk.summary');
+      $('asof').textContent = D.last_run ? 'Claude last checked ' + String(D.last_run).slice(0, 16).replace('T', ' ') : 'Claude has not run the night check yet';
+      $('run').style.display = D.can_decide ? '' : 'none';
+      render();
+      loadSpot();
+    } catch (e) { $('root').innerHTML = '<div class="bd-card"><div class="bd-empty"><b>Cannot open the summary</b>' + esc(e.message) + '</div></div>'; }
+  }
+  function hero() {
+    const n = D.n, need = D.needs, checked = D.headline.checked;
+    return '<div class="bd-card"><div class="ds-hero"><div class="ds-dot ' + (need ? 'need' : '') + '">' + (need ? '!' : '✓') + '</div><div style="flex:1;min-width:240px">'
+      + '<div class="big ' + (need ? 'need' : 'ok') + '">' + (need ? need + (need === 1 ? ' thing needs' : ' things need') + ' a person' : 'All clear') + '</div>'
+      + '<div class="bd-sub" style="margin-top:4px;font-size:13.5px">Claude looked at <b>' + checked + '</b> things (tasks, photos, documents, data). ' + (D.n.fixed_24h ? D.n.fixed_24h + ' problems fixed themselves. ' : '') + (D.loops ? '<b style="color:#d9423b">' + D.loops + ' keep coming back.</b>' : 'Nothing keeps repeating.') + '</div></div>'
+      + (D.mode === 'shadow' ? '<span class="bd-chip warn" title="Staff do not see duties yet">Boss Engine in test mode</span>' : '') + '</div></div>';
+  }
+  function stats() {
+    const n = D.n, y = n.y, c = (l, v, cls) => '<div class="bd-stat ' + (cls || '') + '"><small>' + l + '</small><b>' + v + '</b></div>';
+    return '<div class="bd-stats">' + c('Done yesterday', y.done, 'ok') + c('Missed yesterday', y.missed, y.missed ? 'bad' : '') + c('Photos Claude cleared', n.photos.pass, 'ok') + c('Retakes asked', n.photos.fail) + c('Documents read', n.docs.clear + n.docs.unsure + n.docs.retake) + c('Fixed by themselves', n.fixed_24h, 'ok') + '</div>';
+  }
+  function item(i) {
+    const lk = LINK[i.kind] ? LINK[i.kind](i) : '';
+    return '<div class="ds-item" data-id="' + i.id + '"><span class="ds-sev ' + esc(i.sev) + '"></span><div style="flex:1;min-width:0"><div class="t">' + esc(i.title) + (i.loop ? ' <span class="bd-chip bad">keeps coming back · ' + i.hits + (i.hits === 1 ? ' day' : ' days') + '</span>' : (i.hits > 1 ? ' <span class="bd-chip">' + i.hits + ' days</span>' : '')) + '</div>'
+      + (i.detail ? '<div class="d">' + esc(i.detail) + '</div>' : '') + (i.suggest ? '<div class="ds-sugg"><b>Claude suggests:</b> ' + esc(i.suggest) + '</div>' : '')
+      + '<div class="ds-acts">' + (lk ? '<a class="bd-btn sm pri" href="' + lk + '">' + esc(LINKTXT[i.kind] || 'Open') + '</a>' : '') + '<button class="bd-btn sm" data-act="fixed" data-id="' + i.id + '">I fixed it</button><button class="bd-btn sm" data-act="dismiss" data-id="' + i.id + '">Not a problem</button></div></div></div>';
+  }
+  function needs() {
+    if (!D.items.length) return '<div class="bd-card"><div class="bd-h"><h2>Needs a person</h2></div><div class="bd-empty"><b>Nothing</b>Claude checked every task, photo, document and record. When something needs you, it appears here with a suggested fix. You do not need to open any task yourself.</div></div>';
+    return '<div class="bd-card"><div class="bd-h"><h2>Needs a person</h2><span class="bd-sub">Repeating problems first</span></div>' + D.items.slice().sort((a, b) => (b.loop - a.loop)).map(item).join('') + '</div>';
+  }
+  function offices() {
+    if (!D.offices || !D.offices.length) return '';
+    return '<div class="bd-card"><div class="bd-h"><h2>Offices</h2><a class="bd-btn sm" href="office_care.html">Open Offices</a></div><div class="ds-off">' + D.offices.map((o) => {
+      const t = o.today, tot = t.done + t.open + t.missed + t.unowned, pct = tot ? Math.round(100 * t.done / tot) : 0;
+      return '<a href="office_care.html?id=' + o.id + '"><b>' + esc(o.name) + '</b><div class="bd-bar" style="margin:8px 0"><i class="' + (t.missed ? 'bad' : '') + '" style="width:' + pct + '%"></i></div><div class="bd-sub">' + t.done + ' of ' + tot + ' cleanings done today' + (t.missed ? ' · <b style="color:#d9423b">' + t.missed + ' missed</b>' : '') + '</div>'
+        + '<div class="bd-sub" style="margin-top:4px">Claude cleared ' + o.ai_clear + ' · unsure ' + o.ai_unsure + (o.to_review ? ' · <b>' + o.to_review + ' to check</b>' : '') + (o.loops ? ' · <b style="color:#d9423b">' + o.loops + ' repeating</b>' : '') + '</div></a>';
+    }).join('') + '</div></div>';
+  }
+  function fixed() {
+    if (!D.fixed.length) return '';
+    return '<div class="bd-card"><div class="bd-h"><h2>Fixed by themselves</h2><span class="bd-sub">Claude saw these were solved</span></div><ul class="ds-fixed">' + D.fixed.map((t) => '<li>✓ ' + esc(t) + '</li>').join('') + '</ul></div>';
+  }
+  function render() {
+    $('root').innerHTML = hero() + stats() + needs() + offices() + '<div id="spotBox"></div>' + fixed()
+      + '<div class="bd-card"><div class="bd-sub" style="line-height:1.6"><b>What stays human:</b> money (penalties wait for your yes), hiring and firing, legal papers. <b>What Claude cannot do:</b> prove a document is genuine, or read PDFs yet — it reads photos (JPG/PNG) of documents and says when it is unsure.</div></div>';
+  }
+  async function loadSpot() {
+    try { SPOT = await api.get('chk.spot'); } catch (e) { return; }
+    const box = $('spotBox'); if (!box) return;
+    const a = SPOT.accuracy, acc = a.checked ? '<span class="bd-chip ' + (a.pct >= 90 ? 'ok' : 'warn') + '">Claude agreed with you ' + a.pct + '% · ' + a.checked + ' checked</span>' : '<span class="bd-chip">No sample judged yet</span>';
+    if (!SPOT.items.length) { box.innerHTML = '<div class="bd-card"><div class="bd-h"><h2>Quick look</h2>' + acc + '</div><div class="bd-sub">A small random sample (5%) of what Claude cleared lands here, so you can see how often Claude is right. Nothing to look at right now.</div></div>'; return; }
+    box.innerHTML = '<div class="bd-card"><div class="bd-h"><h2>Quick look</h2>' + acc + '</div><div class="bd-sub" style="margin-bottom:10px">Claude cleared these. Glance at a few and tell it if you disagree.</div><div class="ds-spot">' + SPOT.items.map((s) =>
+      '<div class="c" data-spot="' + s.id + '">' + (s.task_id ? '<img data-photo="' + s.task_id + '" alt="">' : '') + '<b style="font-size:13.5px">' + esc(s.label) + '</b><div class="bd-sub">' + esc(s.where || s.who || '') + ' · Claude said: ' + esc(s.reason || 'clear') + '</div>'
+      + '<div class="ds-acts"><button class="bd-btn sm go" data-v="agree" data-id="' + s.id + '">Looks fine</button><button class="bd-btn sm bad" data-v="disagree" data-id="' + s.id + '">Not fine</button></div></div>').join('') + '</div></div>';
+    box.querySelectorAll('img[data-photo]').forEach(async (im) => { try { im.src = await BD.photo(im.dataset.photo); } catch (e) { im.remove(); } });
+  }
+  $('root').onclick = async (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    try {
+      if (b.dataset.act) { const r = await api.post('chk.finding_act', { id: Number(b.dataset.id), act: b.dataset.act }); toast(r.message); load(); }
+      else if (b.dataset.v) { const r = await api.post('chk.spot_act', { id: Number(b.dataset.id), verdict: b.dataset.v }); toast(b.dataset.v === 'agree' ? 'Thanks.' : 'Noted. Claude will be stricter on this.'); load(); }
+    } catch (er) { toast(er.message, true); }
+  };
+  $('run').onclick = async () => { $('run').disabled = true; try { await api.post('chk.run', {}); toast('Claude checked everything again.'); await load(); } catch (e) { toast(e.message, true); } $('run').disabled = false; };
+  // Boss chat (above) and the people board: they show only for Admin / HR / section bosses
+  let BOARD = null;
+  api.get('dp.hq_track').then(() => {
+    HQ_CHAT.mount($('hqChat'), { onAct: () => { if (BOARD) BOARD.reload(); } });
+    BOARD = HQ.mount($('hqBoard'), {});
+  }).catch(() => {});
+  load();
+</script>
+</body>
+</html>

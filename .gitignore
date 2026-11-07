@@ -1,0 +1,52 @@
+﻿# Secrets / local config
+.env
+.env.*
+**/config.php
+**/config.local.php
+**/help_cfg.php
+**/seo_config*.php
+assets/js/config.js
+
+# Non-HRMS / secret-heavy modules (keep local; do not publish yet)
+reward/
+
+# Upload / media / binary-heavy data
+empmanagment/uploads/
+empmanagment/wa_files/
+empmanagment/learn_backups/
+empmanagment/help_data/
+
+# Backups and junk
+**/backups/
+**/backup/
+**/*backup*/
+**/*.bak
+**/*.bak-*
+**/*.old
+**/layout.js.bak*
+public_html_*.html
+public_html_assets_js_*.js
+public_html_empmanagment_*.php
+
+# Logs
+**/logs/
+**/*.log
+**/collect-errors.log
+**/webhook.log
+**/webhook.log.old
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+.cursorignore
+
+# Dependencies
+node_modules/
+vendor/
+
+# POS module secrets
+tmpos/ai_key.php
+
+tmpos/db_config.php

@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Shopping list &amp; repairs — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=4">
+<link rel="stylesheet" href="assets/css/boss.css?v=1">
+<style>
+  .fx-chips{display:flex;gap:7px;overflow-x:auto;padding:2px 0 12px;scrollbar-width:none;} .fx-chips::-webkit-scrollbar{display:none;}
+  .fx-chip{flex:none;border:1px solid var(--line);background:#fff;border-radius:99px;padding:8px 15px;font-weight:700;font-size:13px;cursor:pointer;font-family:inherit;color:#3a3f4a;}
+  .fx-chip.on{background:#fff1e6;border-color:#ffd2b0;color:#c2540a;} .fx-chip em{font-style:normal;background:#e8590c;color:#fff;border-radius:9px;font-size:11px;padding:0 6px;margin-left:6px;line-height:16px;display:inline-block;}
+  .fx-note{background:#fff8ea;border-radius:16px;padding:12px 15px;font-size:13.5px;color:#6b4a00;line-height:1.5;margin-bottom:14px;} .fx-note b{color:#4d3500;}
+  .fx-bulk{background:#14161a;color:#fff;border-radius:22px;padding:12px 16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:6px;position:sticky;top:8px;z-index:5;}
+  .fx-bulk b{font-size:14px;} .fx-bulk .lb{font-size:12.5px;color:#c9ced8;}
+  .fx-bulk select,.fx-bulk input[type=date]{background:#2a2e36;color:#fff;border:0;border-radius:99px;padding:9px 14px;font-weight:700;font-size:13.5px;font-family:inherit;max-width:100%;min-height:38px;}
+  .fx-bulk .go{background:#ff7a2f;color:#fff;border:0;border-radius:99px;padding:10px 18px;font-weight:800;font-size:14px;cursor:pointer;font-family:inherit;min-height:40px;} .fx-bulk .go[disabled]{opacity:.5;}
+  .fx-bulk .x{background:transparent;border:0;color:#c9ced8;cursor:pointer;font-size:13px;font-family:inherit;text-decoration:underline;}
+  .fx-sug{background:#e8f0fe;color:#24428f;border-radius:14px;padding:9px 13px;font-size:13px;line-height:1.5;margin:0 0 10px;} .fx-sug button{border:0;background:#fff;border-radius:99px;padding:4px 11px;font-weight:700;font-size:12.5px;cursor:pointer;font-family:inherit;color:#24428f;margin:2px 3px 2px 0;}
+  .fx-head,.fx-row{display:grid;grid-template-columns:26px minmax(0,2.3fr) minmax(0,1.4fr) 84px minmax(0,1.6fr) 124px;gap:12px;align-items:center;}
+  .fx-head{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:6px 4px;}
+  .fx-row{padding:13px 4px;border-top:1px solid var(--line);cursor:default;} .fx-row .tt{font-weight:800;font-size:14.5px;line-height:1.3;cursor:pointer;} .fx-row .tt:hover{text-decoration:underline;}
+  .fx-row small{display:block;font-size:12px;color:var(--muted);margin-top:2px;font-weight:500;line-height:1.35;}
+  .fx-row .pl{font-size:13.5px;} .fx-row .sn{font-size:13.5px;font-weight:600;} .fx-row .sn.late{color:#c0261e;font-weight:800;}
+  .fx-row input[type=checkbox]{width:20px;height:20px;accent-color:#14161a;} .fx-row .nb{font-size:12.5px;color:var(--muted);}
+  .fx-who{display:inline-flex;align-items:center;gap:7px;background:#f1f3f6;border-radius:99px;padding:5px 12px 5px 6px;font-weight:700;font-size:13px;max-width:100%;}
+  .fx-who i{font-style:normal;width:22px;height:22px;border-radius:50%;background:#ffe2cc;color:#c2540a;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;flex:none;} .fx-who span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .fx-st{display:inline-block;border-radius:99px;padding:4px 12px;font-size:12px;font-weight:800;white-space:nowrap;}
+  .fx-st.reported{background:#fde8e6;color:#b3261e;} .fx-st.given{background:#e3edff;color:#2456b3;} .fx-st.doing{background:#fff1cc;color:#8a5a00;} .fx-st.done{background:#dcf4e6;color:#0f6b43;} .fx-st.checked{background:#e7e9ee;color:#3a3f4a;} .fx-st.cancelled{background:#eceef1;color:#6f7480;}
+  .fx-steps{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 14px;} .fx-steps span{font-size:12px;font-weight:700;padding:5px 12px;border-radius:99px;background:#f1f3f6;color:#6f7480;} .fx-steps span.on{background:#14161a;color:#fff;} .fx-steps span.past{background:#dcf4e6;color:#0f6b43;}
+  .fx-box{background:#f6f7f9;border-radius:18px;padding:13px 14px;margin-bottom:12px;} .fx-box h4{margin:0 0 9px;font-size:14px;font-weight:800;}
+  .fx-ph{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;} .fx-ph .p{aspect-ratio:4/3;border-radius:14px;background:#dfe2e8;overflow:hidden;position:relative;display:flex;align-items:center;justify-content:center;font-size:12.5px;font-weight:700;color:#5b616e;text-align:center;padding:6px;}
+  .fx-ph .p img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;cursor:zoom-in;} .fx-ph .p.add{cursor:pointer;background:#dff3e8;color:#0f6b43;border:2px dashed #9bd5b6;} .fx-ph .p.add.bill{background:#eceef3;color:#5b616e;border-color:#c7ccd6;} .fx-ph .p.add.has{border-style:solid;}
+  .fx-ph .p input{display:none;} .fx-ph.one .p{aspect-ratio:16/6;}
+  .fx-pay{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-top:6px;} .fx-pay button{border:1px solid var(--line);background:#fff;border-radius:14px;padding:10px 8px;font-weight:700;font-size:13px;cursor:pointer;font-family:inherit;color:#3a3f4a;line-height:1.25;} .fx-pay button small{display:block;font-weight:500;font-size:11px;color:var(--muted);} .fx-pay button.on{background:#14161a;color:#fff;border-color:#14161a;} .fx-pay button.on small{color:#c9ced8;}
+  .fx-warn{border-radius:14px;padding:10px 13px;font-size:13px;line-height:1.45;margin:8px 0;} .fx-warn.w{background:#fff3dc;color:#7a4e00;} .fx-warn.i{background:#e8f0fe;color:#2456b3;} .fx-warn.b{background:#fde8e6;color:#9b231c;} .fx-warn.g{background:#e6f6ee;color:#0f6b43;}
+  .fx-big{width:100%;border-radius:99px;padding:15px 18px;font-weight:800;font-size:15.5px;cursor:pointer;font-family:inherit;border:1px solid #14161a;background:#14161a;color:#fff;margin-top:8px;min-height:50px;} .fx-big.alt{background:#fff;color:#14161a;} .fx-big.go{background:#16945a;border-color:#16945a;} .fx-big[disabled]{opacity:.55;}
+  .fx-mine{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:13px 0;border-top:1px solid var(--line);cursor:pointer;} .fx-mine:first-child{border-top:0;} .fx-mine .tt{font-weight:800;font-size:15px;line-height:1.3;} .fx-mine small{display:block;font-size:12.5px;color:var(--muted);margin-top:2px;font-weight:500;}
+  .fx-hero{background:#14161a;color:#fff;border-radius:24px;padding:20px 20px 22px;margin-bottom:14px;} .fx-hero h2{margin:0 0 5px;font-size:20px;font-weight:800;} .fx-hero p{margin:0 0 14px;font-size:13.5px;color:#c9ced8;line-height:1.5;} .fx-hero button{border:0;border-radius:99px;padding:13px 22px;background:#ff7a2f;color:#fff;font-weight:800;font-size:15px;cursor:pointer;font-family:inherit;min-height:48px;}
+  .fx-dn{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;} .fx-info{font-size:13px;color:#4a505c;line-height:1.6;} .fx-info b{color:var(--ink);}
+  .fx-zoom{position:fixed;inset:0;background:rgba(10,12,16,.88);z-index:99999;display:flex;align-items:center;justify-content:center;padding:14px;} .fx-zoom img{max-width:100%;max-height:100%;border-radius:12px;}
+  .fx-wk{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:12px 0;border-top:1px solid var(--line);flex-wrap:wrap;} .fx-wk:first-child{border-top:0;} .fx-wk .nm{font-weight:800;font-size:15px;} .fx-wk .s{font-size:12.5px;color:var(--muted);margin-top:2px;}
+  @media (max-width:820px){
+    .fx-head{display:none;}
+    .fx-row{grid-template-columns:26px minmax(0,1fr) auto;grid-template-areas:"ck tt st" ". pl sn" ". who who";gap:5px 10px;padding:13px 2px;}
+    .fx-row > :nth-child(1){grid-area:ck;} .fx-row > :nth-child(2){grid-area:tt;} .fx-row > :nth-child(3){grid-area:pl;} .fx-row > :nth-child(4){grid-area:sn;text-align:right;} .fx-row > :nth-child(5){grid-area:who;} .fx-row > :nth-child(6){grid-area:st;justify-self:end;}
+    .fx-bulk{border-radius:20px;} .fx-bulk select,.fx-bulk input[type=date]{flex:1 1 140px;}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><div><h1>Shopping list &amp; repairs</h1><div class="bd-sub" id="sub">Things to buy and things to fix, for every office and the store.</div></div><div id="topBtns"></div></div>
+    <div class="content"><div class="bd" id="root"><div class="bd-empty">Loading…</div></div></div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=4"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script src="assets/js/boss_common.js?v=2"></script>
+<script>
+  guardPage();
+  renderSidebar('dept_fix');
+  const { esc, $, toast, inr } = BD;
+  const QS = new URLSearchParams(location.search);
+  let A = null, JOBS = [], ST = null, WK = [], LIVE = false;
+  let TAB = QS.get('tab') || 'fix', OFF = 0, SEL = {}, SUG = null, ME_ONLY = QS.get('me') === '1', WANT_REPORT = QS.get('report') === '1';
+  const STEPS = ['Reported', 'Given', 'Doing', 'Done', 'Checked'];
+  const STTXT = { reported: 'Reported', given: 'Given', doing: 'Doing', done: 'Done · check', checked: 'Checked', cancelled: 'Cancelled' };
+  const PAYTXT = { upi: 'Company UPI', pocket: 'Own pocket', cash: 'Cash', workman: 'Workman paid directly' };
+  const dayName = (s) => { if (!s) return ''; const d = new Date(s.replace(' ', 'T')); return d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }); };
+  const dayShort = (s) => { if (!s) return ''; const d = new Date(s.replace(' ', 'T')); return d.toLocaleDateString('en-IN', { weekday: 'short' }); };
+  const ago = (d) => d <= 0 ? 'Today' : (d === 1 ? '1 day' : d + ' days');
+  const ymd = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const addDays = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return ymd(d); };
+  const mineMode = () => !A.full || ME_ONLY;
+
+  /* ---------- photos need the login token, so they are fetched, not linked ---------- */
+  const blobs = {};
+  async function fileUrl(id, kind) {
+    const k = id + ':' + kind; if (blobs[k]) return blobs[k];
+    const r = await fetch(api.buildUrl('dp.fx_file', { id, kind }), { headers: { Authorization: 'Bearer ' + api.token() } });
+    if (!r.ok) throw new Error('file');
+    return (blobs[k] = URL.createObjectURL(await r.blob()));
+  }
+  function zoom(src) { const z = document.createElement('div'); z.className = 'fx-zoom'; z.innerHTML = '<img src="' + src + '" alt="">'; z.onclick = () => z.remove(); document.body.appendChild(z); }
+  async function fillPhotos(root) {
+    for (const p of root.querySelectorAll('[data-file]')) {
+      const [id, kind] = p.dataset.file.split(':');
+      fileUrl(id, kind).then((u) => { p.innerHTML = '<img src="' + u + '" alt="">'; p.querySelector('img').onclick = () => zoom(u); }).catch(() => { p.textContent = 'Photo not available'; });
+    }
+  }
+
+  /* ---------- load ---------- */
+  async function loadAll() {
+    try {
+      A = await api.get('dp.fx_access'); LIVE = A.live;
+      if (!A.full) { TAB = 'mine'; ME_ONLY = false; }
+      else if (ME_ONLY) TAB = 'mine';
+      else if (!['fix', 'done', 'workmen'].includes(TAB)) TAB = 'fix';
+      await loadTab();
+      if (WANT_REPORT) { WANT_REPORT = false; try { history.replaceState(null, '', location.pathname + (ME_ONLY ? '?me=1' : '')); } catch (e) {} reportSheet(); }
+    } catch (e) { $('root').innerHTML = '<div class="bd-card"><div class="bd-empty"><b>Cannot open Repairs</b>' + esc(e.message) + '</div></div>'; }
+  }
+  async function loadTab() {
+    SEL = {}; SUG = null;
+    const top = $('topBtns');
+    top.innerHTML = (TAB === 'mine' && !ME_ONLY ? '' : '<button class="bd-btn pri" id="rep" type="button">Report a problem</button>') + (A.all && TAB !== 'mine' ? ' <button class="bd-btn" id="cfg" type="button">Settings</button>' : '');
+    if (TAB === 'mine') { const d = await api.get('dp.fx_list', { mine: 1 }); JOBS = d.jobs; ST = null; }
+    else if (TAB === 'workmen') { WK = (await api.get('dp.fx_workman_list')).workmen; }
+    else {
+      const p = { tab: TAB === 'done' ? 'done' : 'open' }; if (OFF) p.office = OFF;
+      const d = await api.get('dp.fx_list', p); JOBS = d.jobs; ST = d.stats;
+      if (!WK.length || TAB === 'fix') { try { WK = (await api.get('dp.fx_workman_list')).workmen; } catch (e) { WK = []; } }
+    }
+    render();
+  }
+
+  /* ---------- render ---------- */
+  function tabStrip() {
+    const open = ST ? ST.to_fix : '';
+    return '<div class="bd-tabs"><button data-go="dept_work.html" type="button">To buy</button><button data-tab="fix" class="' + (TAB === 'fix' ? 'on' : '') + '" type="button">To fix' + (open !== '' ? ' · ' + open : '') + '</button>'
+      + '<button data-tab="done" class="' + (TAB === 'done' ? 'on' : '') + '" type="button">Done</button><button data-tab="workmen" class="' + (TAB === 'workmen' ? 'on' : '') + '" type="button">Workmen</button></div>';
+  }
+  function render() {
+    let h = '';
+    if (!LIVE) h += '<div class="fx-note"><b>Not live yet.</b> You can report problems and give them out, but nobody gets a My Day task or a notification, and nothing is escalated. Answer Claude\'s questions in <a href="boss_questions.html"><b>Boss &gt; Questions</b></a> (Office supplies) and press "This is right, make it live".</div>';
+    if (TAB === 'mine') h += mineView();
+    else { h += tabStrip(); h += TAB === 'workmen' ? workmenView() : listView(); }
+    $('root').innerHTML = h; afterRender();
+  }
+
+  function whoChip(j) {
+    const g = j.given; if (!g) return '<span class="nb">Nobody yet</span>';
+    const nm = g.type === 'workman' ? g.name + (g.trade ? ' · ' + g.trade : '') : g.name;
+    return '<span class="fx-who"><i>' + esc((g.name || '?').charAt(0).toUpperCase()) + '</i><span>' + esc(nm) + '</span></span>';
+  }
+  function stChip(j) {
+    let t = STTXT[j.status];
+    if (j.status === 'given' && j.due_at) t = 'Due ' + dayShort(j.due_at);
+    return '<span class="fx-st ' + j.status + '">' + esc(t) + '</span>';
+  }
+  function subLine(j) {
+    if (j.source === 'issue') return 'from cleaning photos' + (j.detail ? ', ' + esc(j.detail.replace(/^Came back on /, 'came back on ').replace(/ \(.*$/, '')) : '');
+    return 'reported by ' + esc(j.reported_by || 'staff');
+  }
+  function listView() {
+    let h = '';
+    if (TAB === 'fix' && ST) h += '<div class="bd-stats" style="grid-template-columns:repeat(4,minmax(0,1fr))">'
+      + '<div class="bd-stat"><small>To fix</small><b>' + ST.to_fix + '</b></div>'
+      + '<div class="bd-stat ' + (ST.unassigned ? 'bad' : 'ok') + '"><small>Not given yet</small><b>' + ST.unassigned + '</b></div>'
+      + '<div class="bd-stat ' + (ST.overdue ? 'bad' : 'ok') + '"><small>Overdue</small><b>' + ST.overdue + '</b></div>'
+      + '<div class="bd-stat"><small>Done this month</small><b>' + ST.done_month + '</b></div></div>';
+    h += '<div class="bd-card">';
+    h += '<div class="fx-chips"><button class="fx-chip ' + (!OFF ? 'on' : '') + '" data-off="0" type="button">All offices</button>' + A.offices.map((o) => '<button class="fx-chip ' + (OFF === o.id ? 'on' : '') + '" data-off="' + o.id + '" type="button">' + esc(o.name) + (o.open ? '<em>' + o.open + '</em>' : '') + '</button>').join('') + '</div>';
+    if (TAB === 'fix') h += '<div id="bulkBox">' + bulkBar() + '</div>';
+    if (!JOBS.length) { h += '<div class="bd-empty"><b>' + (TAB === 'done' ? 'Nothing done yet' : 'Nothing to fix') + '</b>' + (TAB === 'done' ? 'Finished jobs from the last 60 days show here.' : 'Press "Report a problem" when something is broken. Cleaning photos that show the same problem again and again land here by themselves.') + '</div></div>'; return h; }
+    h += '<div class="fx-head"><span></span><span>Problem</span><span>Office · place</span><span>' + (TAB === 'done' ? 'Done on' : 'Seen') + '</span><span>' + (TAB === 'done' ? 'Done by' : 'Given to') + '</span><span>Step</span></div>';
+    h += JOBS.map(rowHtml).join('');
+    h += '</div>';
+    if (TAB === 'fix') h += '<div class="bd-sub" style="padding:2px 6px 14px;line-height:1.55">Problems come in three ways: <b>1)</b> Claude sees the same cleaning problem again and again, <b>2)</b> anybody presses "Report a problem" with a photo, <b>3)</b> the checker adds one. Claude only suggests who should fix it, you give it. Anything not fixed by its date, or open for more than ' + A.settings.fx_escalate_days + ' days, goes to your Inbox once.</div>';
+    return h;
+  }
+  function rowHtml(j) {
+    const sel = !!SEL[j.id]; const late = j.overdue || (j.days >= 3 && j.status !== 'done' && j.status !== 'checked');
+    const ck = j.can.assign ? '<input type="checkbox" data-sel="' + j.id + '" ' + (sel ? 'checked' : '') + '>' : '<span></span>';
+    let who = whoChip(j);
+    if (TAB === 'done') who = whoChip(j) + (j.cost ? '<div class="nb" style="margin-top:4px">' + inr(j.cost) + ' · ' + esc(PAYTXT[j.paid_by] || '') + '</div>' : '');
+    let acts = '';
+    if (TAB === 'done') {
+      acts = '<div style="grid-column:2 / -1;display:flex;gap:7px;flex-wrap:wrap;padding-top:2px">' + (j.can.check ? '<button class="bd-btn sm go" data-check="' + j.id + '" type="button">Checked</button>' : '')
+        + (j.can.reopen ? '<button class="bd-btn sm" data-back="' + j.id + '" type="button">Send back</button>' : '') + (j.ai_verdict === 'not checked' && j.status === 'done' ? '<span class="bd-chip warn">Claude did not check the photo</span>' : '')
+        + (j.status === 'done' && !j.can.check ? '<span class="bd-chip">Waiting for another person to check</span>' : '') + '</div>';
+    }
+    return '<div class="fx-row" data-row="' + j.id + '">' + ck + '<div><div class="tt" data-open="' + j.id + '">' + esc(j.title) + '</div><small>' + subLine(j) + '</small></div>'
+      + '<div class="pl">' + esc(j.office || '—') + (j.zone ? ' · ' + esc(j.zone) : '') + '</div>'
+      + '<div class="sn ' + (late ? 'late' : '') + '">' + (TAB === 'done' ? esc(dayName(j.done_at)) : ago(j.days)) + '</div>' + '<div>' + who + '</div><div>' + stChip(j) + '</div>' + acts + '</div>';
+  }
+  function bulkBar() {
+    const n = Object.keys(SEL).length; if (!n) return '';
+    if (!A.can_assign) return '';
+    const emps = A.employees || [], wk = WK.filter((w) => w.active);
+    let h = '<div class="fx-bulk"><b>' + n + ' selected</b><span class="lb">Give to:</span>'
+      + '<select id="bEmp"><option value="">Staff person ▾</option>' + emps.map((e) => '<option value="' + e.id + '">' + esc(e.name) + '</option>').join('') + '</select>'
+      + '<span class="lb">or</span><select id="bWk"><option value="">Workman ▾</option>' + wk.map((w) => '<option value="' + w.id + '">' + esc(w.name + (w.trade ? ' (' + w.trade + ')' : '')) + '</option>').join('') + '</select>'
+      + '<span class="lb">Fix by</span><input type="date" id="bDue" min="' + addDays(0) + '" value="' + addDays(A.settings.fx_due_days) + '">'
+      + '<button class="go" id="bGo" type="button">Give · notify</button><button class="x" id="bNo" type="button">Clear</button></div>';
+    h += '<div id="sugBox">' + sugHtml() + '</div>';
+    return h;
+  }
+  function sugHtml() {
+    if (!SUG) return '';
+    const parts = [];
+    SUG.workmen.forEach((w) => parts.push('<button data-sw="' + w.id + '" type="button">' + esc(w.name) + '</button> ' + esc(w.line)));
+    SUG.staff.forEach((s) => parts.push('<button data-se="' + s.id + '" type="button">' + esc(s.name) + '</button> ' + esc(s.line)));
+    if (!parts.length) return '';
+    return '<div class="fx-sug"><b>Claude suggests</b>' + (SUG.trade ? ' (looks like ' + esc(SUG.trade) + ' work)' : '') + ': ' + parts.join(' · ') + ' <span style="opacity:.7">You decide.</span></div>';
+  }
+
+  /* ---------- "mine": what I reported and what I must fix ---------- */
+  function mineView() {
+    let list = JOBS.slice();
+    if (ME_ONLY) list = list.filter((j) => j.role === 'doer' || j.role === 'follower');
+    const act = list.filter((j) => ['reported', 'given', 'doing'].includes(j.status)), fin = list.filter((j) => !['reported', 'given', 'doing'].includes(j.status));
+    let h = '';
+    if (!A.full || !ME_ONLY) h += '<div class="fx-hero"><h2>Something broken?</h2><p>Take a photo and tell us where it is. The checker of that office is told and gives it to the right person.</p><button id="rep2" type="button">Report a problem</button></div>';
+    if (A.full && ME_ONLY) h += '<div class="bd-sub" style="margin:-4px 2px 12px">Only the jobs given to you. <a href="dept_fix.html"><b>See the whole To fix list</b></a></div>';
+    h += '<div class="bd-card"><div class="bd-h"><h2>' + (ME_ONLY ? 'Jobs for you' : 'Your problems and jobs') + '</h2><span class="bd-sub">' + act.length + ' open</span></div>';
+    if (!act.length) h += '<div class="bd-empty" style="padding:18px 0"><b>Nothing open</b>' + (ME_ONLY ? 'No repair is waiting for you.' : 'When you report a problem it shows here, with its steps.') + '</div>';
+    else h += act.map(mineRow).join('');
+    h += '</div>';
+    if (fin.length && !ME_ONLY) h += '<div class="bd-card"><div class="bd-h"><h2>Finished</h2></div>' + fin.slice(0, 15).map(mineRow).join('') + '</div>';
+    return h;
+  }
+  function mineRow(j) {
+    const role = j.role === 'doer' ? 'Given to you' : (j.role === 'follower' ? 'You follow up on ' + (j.given ? j.given.name : 'this') : 'You reported this');
+    return '<div class="fx-mine" data-open="' + j.id + '"><div><div class="tt">' + esc(j.title) + '</div><small>' + esc(j.place) + ' · ' + role + (j.due_at && ['given', 'doing'].includes(j.status) ? ' · by ' + esc(dayName(j.due_at)) : '') + '</small></div>' + stChip(j) + '</div>';
+  }
+
+  /* ---------- workmen ---------- */
+  function workmenView() {
+    let h = '<div class="bd-card"><div class="bd-h"><h2>Workmen</h2><span><button class="bd-btn pri sm" id="wkAdd" type="button">Add workman</button></span></div><div class="bd-sub" style="margin-bottom:6px">Plumber, electrician, AC man ... Claude suggests one from the kind of problem and the jobs they did before. Nobody is notified directly: the person who follows up gets the task.</div>';
+    if (!WK.length) h += '<div class="bd-empty" style="padding:18px 0"><b>No workmen yet</b>Add the people you call for repairs.</div>';
+    else h += WK.map((w) => '<div class="fx-wk"><div><div class="nm">' + esc(w.name) + (w.active ? '' : ' <span class="bd-chip">not used now</span>') + '</div><div class="s">' + (w.trade ? esc(w.trade) + ' · ' : '') + (w.phone ? '<a href="tel:' + esc(w.phone.replace(/\s/g, '')) + '">' + esc(w.phone) + '</a> · ' : '') + w.done + ' job' + (w.done === 1 ? '' : 's') + ' done' + (w.open ? ', ' + w.open + ' open' : '') + (w.cost ? ' · ' + inr(w.cost) + ' in total' : '') + '</div></div><button class="bd-btn sm" data-wk="' + w.id + '" type="button">Edit</button></div>').join('');
+    return h + '</div>';
+  }
+  function workmanModal(w) {
+    w = w || { id: 0, name: '', phone: '', trade: '', note: '', active: 1 };
+    const m = BD.modal('<h3>' + (w.id ? 'Edit workman' : 'New workman') + '</h3><div class="bd-f"><label>Name</label><input class="bd-in" id="wN" value="' + esc(w.name) + '" placeholder="e.g. Raju"></div><div class="bd-f"><label>Kind of work</label><input class="bd-in" id="wT" value="' + esc(w.trade) + '" placeholder="plumber, electrician, AC, carpenter, painter ..."></div>'
+      + '<div class="bd-f"><label>Phone</label><input class="bd-in" id="wP" inputmode="tel" value="' + esc(w.phone) + '"></div><div class="bd-f"><label>Note</label><input class="bd-in" id="wO" value="' + esc(w.note) + '" placeholder="optional"></div>'
+      + (w.id ? '<label style="display:flex;gap:8px;align-items:center;font-size:14px"><input type="checkbox" id="wA" ' + (w.active ? 'checked' : '') + '> Still call this person</label>' : '')
+      + '<div class="acts"><button class="bd-btn" id="wNo" type="button">Cancel</button><button class="bd-btn pri" id="wYes" type="button">Save</button></div>');
+    m.querySelector('#wNo').onclick = BD.close;
+    m.querySelector('#wYes').onclick = async (ev) => {
+      const b = ev.target; b.disabled = true;
+      try { await api.post('dp.fx_workman_save', { id: w.id || undefined, name: m.querySelector('#wN').value, trade: m.querySelector('#wT').value, phone: m.querySelector('#wP').value, note: m.querySelector('#wO').value, active: m.querySelector('#wA') ? m.querySelector('#wA').checked : 1 }); BD.close(); toast('Saved.'); loadTab(); }
+      catch (e) { toast(e.message, true); b.disabled = false; }
+    };
+  }
+
+  /* ---------- picture picker used by every sheet ---------- */
+  function picker(cls, label, id) {
+    return '<label class="p add ' + cls + '" id="pk_' + id + '"><span>' + label + '</span><input type="file" accept="image/*" capture="environment" id="' + id + '"></label>';
+  }
+  function wirePicker(m, id) {
+    const inp = m.querySelector('#' + id), box = m.querySelector('#pk_' + id);
+    inp.onchange = () => {
+      const f = inp.files[0]; if (!f) return;
+      const u = URL.createObjectURL(f); box.classList.add('has'); box.innerHTML = '<img src="' + u + '" alt="" style="cursor:pointer"><input type="file" accept="image/*" capture="environment" id="' + id + '" style="display:none">';
+      const ni = box.querySelector('input'); ni.files = inp.files; ni.onchange = inp.onchange; wirePicker(m, id);
+    };
+  }
+
+  /* ---------- report a problem ---------- */
+  function reportSheet() {
+    const offs = A.offices;
+    const m = BD.modal('<h3>Report a problem</h3>'
+      + '<div class="bd-f"><label>Which office or store</label>' + (offs.length ? '<select class="bd-in" id="rO"><option value="">Choose…</option>' + offs.map((o) => '<option value="' + o.id + '">' + esc(o.name) + '</option>').join('') + '</select>' : '<input class="bd-in" id="rOt" placeholder="e.g. Surat store">') + '</div>'
+      + '<div class="bd-f"><label>Where inside</label><select class="bd-in" id="rZ"><option value="">Choose the office first</option></select><input class="bd-in" id="rZt" placeholder="Write the place (e.g. Back door)" style="display:none;margin-top:7px"></div>'
+      + '<div class="bd-f"><label>What is wrong</label><input class="bd-in" id="rT" maxlength="190" placeholder="e.g. Washroom tap is leaking"></div>'
+      + '<div class="bd-f"><label>More details (if any)</label><textarea class="bd-in" id="rD" maxlength="390" style="min-height:62px"></textarea></div>'
+      + '<div class="bd-f"><label>Photo of the problem (required)</label><div class="fx-ph one" style="grid-template-columns:1fr">' + picker('', '📷 Take or choose a photo', 'rP') + '</div></div>'
+      + '<div id="rErr"></div><div class="acts"><button class="bd-btn" id="rNo" type="button">Cancel</button><button class="bd-btn pri" id="rYes" type="button">Send</button></div>');
+    wirePicker(m, 'rP');
+    const oSel = m.querySelector('#rO'), zSel = m.querySelector('#rZ'), zTxt = m.querySelector('#rZt');
+    const fillZ = () => {
+      const o = offs.find((x) => String(x.id) === (oSel ? oSel.value : ''));
+      zSel.innerHTML = '<option value="">' + (o || !offs.length ? 'Choose…' : 'Choose the office first') + '</option>' + (o ? o.zones.map((z) => '<option value="' + z.id + '">' + esc(z.name) + '</option>').join('') : '') + '<option value="-1">Somewhere else…</option>';
+      zTxt.style.display = 'none';
+    };
+    if (oSel) oSel.onchange = fillZ; else fillZ();
+    zSel.onchange = () => { zTxt.style.display = zSel.value === '-1' ? 'block' : 'none'; };
+    m.querySelector('#rNo').onclick = BD.close;
+    m.querySelector('#rYes').onclick = async (ev) => {
+      const b = ev.target, err = m.querySelector('#rErr'); err.innerHTML = '';
+      const fd = new FormData(); fd.append('title', m.querySelector('#rT').value); fd.append('detail', m.querySelector('#rD').value);
+      if (oSel) fd.append('office_id', oSel.value); else fd.append('office_text', m.querySelector('#rOt').value);
+      if (zSel.value === '-1') fd.append('zone_text', zTxt.value); else if (zSel.value) fd.append('zone_id', zSel.value);
+      const f = m.querySelector('#rP').files[0]; if (f) fd.append('photo', f);
+      b.disabled = true;
+      try { const r = await api.upload('dp.fx_report', fd); BD.close(); toast(r.message); loadAll(); }
+      catch (e) { err.innerHTML = '<div class="fx-warn b">' + esc(e.message) + '</div>'; b.disabled = false; }
+    };
+  }
+
+  /* ---------- one problem: steps, photos, what the person does next ---------- */
+  async function openJob(id) {
+    let j; try { j = (await api.get('dp.fx_get', { id })).job; } catch (e) { toast(e.message, true); return; }
+    const idx = j.status === 'cancelled' ? -1 : j.step;
+    const steps = '<div class="fx-steps">' + STEPS.map((s, i) => '<span class="' + (i === idx ? 'on' : (i < idx ? 'past' : '')) + '">' + s + '</span>').join('') + '</div>';
+    let h = '<h3 style="margin-bottom:2px">' + (j.can.done || j.can.start ? 'Fix: ' : '') + esc(j.title) + '</h3><div class="bd-sub">' + esc(j.place || 'No place') + (j.given ? ' · given to ' + esc(j.given.name) : '') + (j.assigned_by ? ' by ' + esc(j.assigned_by) : '') + (j.due_at && ['given', 'doing'].includes(j.status) ? ' · by ' + esc(dayName(j.due_at)) : '') + '</div>' + steps;
+    if (j.status === 'cancelled') h += '<div class="fx-warn w">Cancelled' + (j.cancel_note ? ': ' + esc(j.cancel_note) : '') + '</div>';
+    if (j.reopen_note) h += '<div class="fx-warn b"><b>Sent back:</b> ' + esc(j.reopen_note) + '</div>';
+    if (j.help_note && ['given', 'doing'].includes(j.status)) h += '<div class="fx-warn w"><b>Asked for help:</b> ' + esc(j.help_note) + '</div>';
+    if (j.overdue) h += '<div class="fx-warn b">Past its date' + (j.escalated ? ' — your boss has been told' : '') + '.</div>';
+    h += '<div class="fx-box"><h4>Before</h4>' + (j.detail && j.source !== 'issue' ? '<div class="fx-info" style="margin-bottom:8px">' + esc(j.detail) + '</div>' : '') + (j.source === 'issue' ? '<div class="fx-info" style="margin-bottom:8px">' + esc(j.detail) + '</div>' : '')
+      + '<div class="fx-ph">' + (j.files.before ? '<div class="p" data-file="' + j.id + ':before">Loading…</div>' : '<div class="p">No photo (came from the cleaning checks)</div>') + '<div class="p" style="background:#eef0f3">' + esc(j.title) + '</div></div>'
+      + '<div class="fx-info" style="margin-top:8px">Reported by <b>' + esc(j.reported_by || '—') + '</b> · ' + ago(j.days) + ' ago</div></div>';
+    const doing = j.can.done;
+    if (doing) {
+      h += '<div class="fx-box"><h4>When it is fixed</h4><div class="fx-ph">' + picker('', '📷 After photo<br><small>must show it fixed</small>', 'dA') + picker('bill', '🧾 Bill (if any)', 'dB') + '</div>'
+        + '<div class="bd-f" style="margin-top:12px"><label>Cost in ₹ (0 if it was free)</label><input class="bd-in" id="dC" inputmode="decimal" placeholder="0"></div>'
+        + '<div id="payBox" style="display:none"><label style="font-size:12px;font-weight:700;color:#4a505c">Paid by</label><div class="fx-pay" id="payBtns">'
+        + Object.keys(PAYTXT).map((k) => '<button type="button" data-pay="' + k + '">' + PAYTXT[k] + '<small>' + ({ upi: 'Screenshot needed', pocket: 'You get paid back', cash: 'Please avoid cash', workman: 'Only the cost is noted' })[k] + '</small></button>').join('') + '</div>'
+        + '<div id="shotBox" style="display:none;margin-top:10px"><label style="font-size:12px;font-weight:700;color:#4a505c">Payment screenshot (required)</label><div class="fx-ph one" style="grid-template-columns:1fr;margin-top:5px">' + picker('bill', '📲 Choose the payment screenshot', 'dS') + '</div></div></div>'
+        + '<div class="bd-sub" style="margin-top:9px">Claude compares the before and after photos. If it still looks broken, he asks you to take it again.</div><div id="dErr"></div></div>';
+    }
+    if (j.status === 'done' || j.status === 'checked') {
+      h += '<div class="fx-box"><h4>Done' + (j.done_at ? ' · ' + esc(dayName(j.done_at)) : '') + '</h4><div class="fx-ph">' + (j.files.after ? '<div class="p" data-file="' + j.id + ':after">Loading…</div>' : '<div class="p">No after photo</div>') + (j.files.bill ? '<div class="p" data-file="' + j.id + ':bill">Loading…</div>' : '<div class="p">No bill</div>') + '</div>'
+        + '<div class="fx-info" style="margin-top:8px">' + (j.cost !== null ? 'Cost <b>' + inr(j.cost) + '</b> · ' + esc(PAYTXT[j.paid_by] || (j.cost > 0 ? '' : 'free')) : 'No cost noted') + (j.files.pay ? ' · <a href="#" id="payShot">payment screenshot</a>' : '') + '</div>'
+        + (j.ai_verdict === 'ok' ? '<div class="fx-warn g">Claude compared the photos: fixed. ' + esc(j.ai_note) + '</div>' : '<div class="fx-warn w">Claude did not check the photos this time. Please look carefully.</div>')
+        + (j.status === 'checked' ? '<div class="fx-info">Checked by <b>' + esc(j.checked_by) + '</b> · ' + esc(dayName(j.checked_at)) + '</div>' : '') + '</div>';
+    }
+    h += '<div id="jErr"></div>';
+    if (j.can.start && j.status === 'given') h += '<button class="fx-big alt" id="jStart" type="button">I started</button>';
+    if (doing) h += '<button class="fx-big" id="jDone" type="button">Mark done</button>';
+    if (j.can.help) h += '<button class="fx-big alt" id="jHelp" type="button">I need a workman / part</button>';
+    if (j.can.check) h += '<button class="fx-big go" id="jCheck" type="button">Checked, it is fine</button>';
+    if (j.can.reopen) h += '<button class="fx-big alt" id="jBack" type="button">Send back</button>';
+    if (j.can.assign && j.status !== 'reported') h += '<button class="fx-big alt" id="jTake" type="button">Take it back (give to somebody else)</button>';
+    if (j.can.cancel) h += '<button class="fx-big alt" id="jCancel" type="button" style="color:#b3261e;border-color:#e8b8b4">Cancel this problem</button>';
+    h += '<div class="acts" style="margin-top:6px"><button class="bd-btn" id="jClose" type="button">Close</button></div>';
+    const m = BD.modal(h); m.style.maxWidth = '460px';
+    fillPhotos(m); m.querySelector('#jClose').onclick = BD.close;
+    const ps = m.querySelector('#payShot'); if (ps) ps.onclick = async (e) => { e.preventDefault(); try { zoom(await fileUrl(j.id, 'pay')); } catch (x) { toast('Cannot open the screenshot.', true); } };
+    const jerr = (t) => { m.querySelector('#jErr').innerHTML = '<div class="fx-warn b">' + esc(t) + '</div>'; m.querySelector('#jErr').scrollIntoView({ block: 'nearest' }); };
+    const run = async (btn, fn) => { btn.disabled = true; try { await fn(); } catch (e) { jerr(e.message); toast(e.message, true); btn.disabled = false; } };
+    const done = (t) => { BD.close(); toast(t); loadAll(); };
+    const el = (s) => m.querySelector(s);
+    if (el('#jStart')) el('#jStart').onclick = (e) => run(e.target, async () => { const r = await api.post('dp.fx_start', { id: j.id }); done(r.message); });
+    if (el('#jCheck')) el('#jCheck').onclick = (e) => run(e.target, async () => { const r = await api.post('dp.fx_check', { id: j.id }); done(r.message); });
+    if (el('#jCancel')) el('#jCancel').onclick = async () => { const why = prompt('Why is this cancelled? (e.g. Duplicate)'); if (why === null) return; try { const r = await api.post('dp.fx_cancel', { id: j.id, reason: why }); done(r.message); } catch (e) { jerr(e.message); } };
+    if (el('#jTake')) el('#jTake').onclick = async () => { try { await api.post('dp.fx_unassign', { job_ids: [j.id] }); done('Back in the list.'); } catch (e) { jerr(e.message); } };
+    if (el('#jBack')) el('#jBack').onclick = () => reasonSheet('Send back', 'What is still wrong? The person sees this.', async (t) => { const r = await api.post('dp.fx_reopen', { id: j.id, reason: t }); done(r.message); });
+    if (el('#jHelp')) el('#jHelp').onclick = () => reasonSheet('I need help', 'What do you need? (a workman, a part, a key ...)', async (t) => { const r = await api.post('dp.fx_need_help', { id: j.id, note: t }); done(r.message); });
+    if (doing) {
+      wirePicker(m, 'dA'); wirePicker(m, 'dB'); wirePicker(m, 'dS');
+      let pay = '';
+      const upd = () => { const c = Number(el('#dC').value) > 0; el('#payBox').style.display = c ? 'block' : 'none'; el('#shotBox').style.display = c && pay === 'upi' ? 'block' : 'none'; };
+      el('#dC').oninput = upd;
+      el('#payBtns').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; pay = b.dataset.pay; el('#payBtns').querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b)); upd(); };
+      el('#jDone').onclick = (e) => run(e.target, async () => {
+        const fd = new FormData(); fd.append('id', j.id);
+        const a = el('#dA').files[0]; if (!a) { throw new Error('Add the AFTER photo first.'); } fd.append('after', a);
+        const bl = el('#dB').files[0]; if (bl) fd.append('bill', bl);
+        const c = el('#dC').value.trim(); if (c !== '') fd.append('cost', c);
+        if (Number(c) > 0) { if (!pay) throw new Error('Choose how the cost was paid.'); fd.append('paid_by', pay); if (pay === 'upi') { const s = el('#dS').files[0]; if (!s) throw new Error('A Company UPI payment needs the payment screenshot.'); fd.append('pay_shot', s); } }
+        el('#dErr').innerHTML = '<div class="fx-warn i">Claude is looking at the photos…</div>';
+        try { const r = await api.upload('dp.fx_done', fd); done(r.message); }
+        catch (x) { el('#dErr').innerHTML = ''; throw x; }
+      });
+    }
+  }
+  function reasonSheet(title, hint, fn) {
+    const m = BD.modal('<h3>' + esc(title) + '</h3><div class="bd-sub" style="margin-bottom:8px">' + esc(hint) + '</div><textarea class="bd-in" id="rsT" maxlength="240"></textarea><div id="rsE"></div><div class="acts"><button class="bd-btn" id="rsNo" type="button">Cancel</button><button class="bd-btn pri" id="rsYes" type="button">Send</button></div>');
+    m.querySelector('#rsNo').onclick = BD.close;
+    m.querySelector('#rsYes').onclick = async (e) => { e.target.disabled = true; try { await fn(m.querySelector('#rsT').value); } catch (x) { m.querySelector('#rsE').innerHTML = '<div class="fx-warn b">' + esc(x.message) + '</div>'; e.target.disabled = false; } };
+  }
+
+  /* ---------- settings ---------- */
+  function settingsSheet() {
+    const s = A.settings;
+    const m = BD.modal('<h3>Repairs settings</h3><div class="bd-f"><label>Remind the person every (minutes)</label><input class="bd-in" id="sR" inputmode="numeric" value="' + s.wk_repeat_min + '"><div class="hint">Between 7 AM and 9 PM, until the date. 0 = no reminders. Shared with the shopping list.</div></div>'
+      + '<div class="bd-f"><label>Tell the Inbox when a problem is still open after (days)</label><input class="bd-in" id="sE" inputmode="numeric" value="' + s.fx_escalate_days + '"><div class="hint">It is also told once when the given date passes.</div></div>'
+      + '<div class="bd-f"><label>Normal time to fix (days from today)</label><input class="bd-in" id="sD" inputmode="numeric" value="' + s.fx_due_days + '"></div>'
+      + '<label style="display:flex;gap:8px;align-items:center;font-size:14px"><input type="checkbox" id="sA" ' + (s.fx_ai ? 'checked' : '') + '> Claude compares the before and after photos</label>'
+      + '<div class="acts"><button class="bd-btn" id="sNo" type="button">Cancel</button><button class="bd-btn pri" id="sYes" type="button">Save</button></div>');
+    m.querySelector('#sNo').onclick = BD.close;
+    m.querySelector('#sYes').onclick = async (e) => { e.target.disabled = true; try { const r = await api.post('dp.fx_settings', { wk_repeat_min: Number(m.querySelector('#sR').value), fx_escalate_days: Number(m.querySelector('#sE').value), fx_due_days: Number(m.querySelector('#sD').value), fx_ai: m.querySelector('#sA').checked ? 1 : 0 }); A.settings = r; BD.close(); toast('Saved.'); } catch (x) { toast(x.message, true); e.target.disabled = false; } };
+  }
+
+  /* ---------- actions ---------- */
+  async function suggest() {
+    const ids = Object.keys(SEL).map(Number); if (!ids.length) { SUG = null; return; }
+    try { SUG = await api.post('dp.fx_suggest', { job_ids: ids }); } catch (e) { SUG = null; }
+  }
+  async function refreshBulk() {
+    await suggest(); const bb = $('bulkBox'); if (!bb) return;
+    const keep = {}; ['bEmp', 'bWk', 'bDue'].forEach((i) => { const e = $(i); if (e) keep[i] = e.value; });
+    bb.innerHTML = bulkBar(); Object.keys(keep).forEach((i) => { const e = $(i); if (e && keep[i] !== undefined) e.value = keep[i]; });
+    document.querySelectorAll('.fx-row').forEach((r) => { const c = r.querySelector('[data-sel]'); if (c) c.checked = !!SEL[c.dataset.sel]; });
+  }
+  function afterRender() {
+    const R = $('root');
+    R.querySelectorAll('[data-go]').forEach((b) => b.onclick = () => { location.href = b.dataset.go; });
+    R.querySelectorAll('[data-tab]').forEach((b) => b.onclick = () => { TAB = b.dataset.tab; ME_ONLY = false; loadTab(); });
+    R.querySelectorAll('[data-off]').forEach((b) => b.onclick = () => { OFF = Number(b.dataset.off); loadTab(); });
+    R.querySelectorAll('[data-open]').forEach((b) => b.onclick = () => openJob(Number(b.dataset.open)));
+    R.querySelectorAll('[data-check]').forEach((b) => b.onclick = async () => { try { const r = await api.post('dp.fx_check', { id: Number(b.dataset.check) }); toast(r.message); loadTab(); } catch (e) { toast(e.message, true); } });
+    R.querySelectorAll('[data-back]').forEach((b) => b.onclick = () => reasonSheet('Send back', 'What is still wrong? The person sees this.', async (t) => { const r = await api.post('dp.fx_reopen', { id: Number(b.dataset.back), reason: t }); BD.close(); toast(r.message); loadTab(); }));
+    R.querySelectorAll('[data-wk]').forEach((b) => b.onclick = () => workmanModal(WK.find((w) => w.id === Number(b.dataset.wk))));
+    if ($('wkAdd')) $('wkAdd').onclick = () => workmanModal();
+    if ($('rep2')) $('rep2').onclick = reportSheet;
+    R.onchange = (e) => { const t = e.target; if (t.dataset && t.dataset.sel) { if (t.checked) SEL[t.dataset.sel] = 1; else delete SEL[t.dataset.sel]; refreshBulk(); } else if (t.id === 'bEmp' && t.value) $('bWk').value = ''; else if (t.id === 'bWk' && t.value) $('bEmp').value = ''; };
+    R.onclick = (e) => {
+      const t = e.target;
+      if (t.id === 'bNo') { SEL = {}; SUG = null; refreshBulk(); }
+      else if (t.dataset && t.dataset.sw) { $('bWk').value = t.dataset.sw; $('bEmp').value = ''; }
+      else if (t.dataset && t.dataset.se) { $('bEmp').value = t.dataset.se; $('bWk').value = ''; }
+      else if (t.id === 'bGo') give(t);
+    };
+    const bb = $('bulkBox'); if (bb && Object.keys(SEL).length) refreshBulk();
+  }
+  async function give(btn) {
+    const e1 = Number($('bEmp').value), w1 = Number($('bWk').value);
+    if (!e1 && !w1) { toast('Choose a staff person or a workman.', true); return; }
+    btn.disabled = true;
+    try {
+      const r = await api.post('dp.fx_assign', { job_ids: Object.keys(SEL).map(Number), emp_id: e1 || undefined, workman_id: w1 || undefined, due_at: $('bDue').value });
+      toast(r.message); await loadTab();
+    } catch (x) { toast(x.message, true); btn.disabled = false; }
+  }
+  document.addEventListener('click', (e) => {
+    if (e.target.id === 'rep') reportSheet();
+    else if (e.target.id === 'cfg') settingsSheet();
+  });
+  loadAll();
+</script>
+</body>
+</html>

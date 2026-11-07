@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agreement — HRMS</title>
+<style>
+  html, body { margin:0; padding:0; background:#e5e7eb; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; }
+  #hrmsBar { position:sticky; top:0; z-index:50; background:#111827; color:#fff; padding:10px 16px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; font-size:13.5px; }
+  #hrmsBar .t { font-weight:600; flex:1; min-width:180px; }
+  #hrmsBar .sub { color:#9ca3af; font-size:12px; }
+  #hrmsBar button, #hrmsBar a { background:#2563eb; color:#fff; border:none; border-radius:6px; padding:8px 14px; font-size:13px; font-weight:600; cursor:pointer; text-decoration:none; display:inline-flex; align-items:center; }
+  #hrmsBar button.sec, #hrmsBar a.sec { background:transparent; border:1px solid rgba(255,255,255,.25); }
+  #hrmsBar button:disabled { opacity:.5; cursor:not-allowed; }
+  #hrmsStatus { padding:8px 16px; font-size:13px; background:#fffbeb; color:#92400e; display:none; }
+  #hrmsStatus.ok { background:#ecfdf5; color:#065f46; }
+  #hrmsStatus.err { background:#fef2f2; color:#991b1b; }
+  #hrmsWrap { padding:20px 0 40px; overflow-x:auto; }
+  #paper { margin:0 auto; width:210mm; max-width:100%; background:#fff; box-shadow:0 2px 14px rgba(0,0,0,.18); }
+  #paper canvas.pg { display:block; width:100%; height:auto; border-bottom:6px solid #e5e7eb; }
+  #paper canvas.pg:last-child { border-bottom:none; }
+  @media print { #hrmsBar, #hrmsStatus { display:none !important; } #hrmsWrap { padding:0; } #paper { box-shadow:none; margin:0; } body { background:#fff; } }
+</style>
+</head>
+<body>
+<div id="hrmsBar">
+  <div class="t" id="hrmsTitle">Agreement</div>
+  <span class="sub" id="hrmsMeta"></span>
+  <a class="sec" id="hrmsPdfLink" style="display:none;" target="_blank">Open saved PDF</a>
+  <button id="hrmsDownload" disabled>Download PDF</button>
+  <button class="sec" id="hrmsRegen" style="display:none;" title="Rebuild the archived PDF from the template">Regenerate &amp; save</button>
+  <button class="sec" id="hrmsBack">Back</button>
+</div>
+<div id="hrmsStatus"></div>
+<div id="hrmsWrap"><div id="paper"><div style="padding:60px; text-align:center; color:#6b7280; font-size:14px;">Loading agreement...</div></div></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<script src="assets/js/config.js?v=2"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script>
+  guardPage();
+
+  // Link to an uploaded file through the file viewer (api.php files.view),
+  // with the login carried in the link. Direct /uploads/ links 404 on this
+  // hosting, and this needs no other script to run.
+  function fileUrl(rel) {
+    return API_BASE_URL + '?action=files.view&path=' + encodeURIComponent(String(rel || '').replace(/^\/+/, ''))
+      + '&token=' + encodeURIComponent(api.token() || '');
+  }
+  if (window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+  const params = new URLSearchParams(location.search);
+  const agreementId = Number(params.get('id') || 0);
+  // bg=1: opened in a hidden frame by the Agreements / My Agreements page
+  // just to create and save the PDF. No on-screen preview; report back when
+  // done (or failed) so the next one can start.
+  const BG = params.get('bg') === '1';
+  const reportBack = (saved) => { if (window.parent !== window) window.parent.postMessage({ hrmsPdfReady: agreementId, saved: !!saved }, '*'); };
+  const paper = document.getElementById('paper');
+  const statusBox = document.getElementById('hrmsStatus');
+  const btnDl = document.getElementById('hrmsDownload');
+  const btnRegen = document.getElementById('hrmsRegen');
+  const pdfLink = document.getElementById('hrmsPdfLink');
+  let info = null, data = null, builtBlob = null, busy = false;
+
+  function status(msg, cls) { statusBox.textContent = msg; statusBox.className = cls || ''; statusBox.style.display = msg ? 'block' : 'none'; }
+  document.getElementById('hrmsBack').addEventListener('click', () => {
+    if (history.length > 1) history.back();
+    else location.href = (api.currentUser() || {}).role === 'Employee' ? 'my_agreements.html' : 'agreements.html';
+  });
+  function fileName() {
+    const clean = s => (s || '').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '_');
+    return `${clean(info.template_name) || 'agreement'}_${clean(info.employee_name) || 'employee'}_${info.employee_code || ''}.pdf`;
+  }
+  function showPdfLink() { if (info && info.signed_file) { pdfLink.href = fileUrl(info.signed_file); pdfLink.style.display = ''; } else pdfLink.style.display = 'none'; }
+  async function saveToServer(blob) {
+    const fd = new FormData(); fd.append('agreement_id', String(agreementId)); fd.append('pdf', blob, fileName());
+    const d = await api.upload('agreements.upload_pdf', fd);
+    info.signed_file = d.signed_file; showPdfLink(); return d;
+  }
+
+  // =====================================================================
+  //  PDF TEMPLATE — overlay values onto the original file
+  // =====================================================================
+  const FONT_URLS = {
+    regular: 'https://raw.githubusercontent.com/google/fonts/main/ofl/poppins/Poppins-Regular.ttf',
+    bold:    'https://raw.githubusercontent.com/google/fonts/main/ofl/poppins/Poppins-SemiBold.ttf',
+  };
+  async function fetchBytes(url) { const r = await fetch(url, { cache: 'force-cache' }); if (!r.ok) throw new Error('fetch ' + r.status); return new Uint8Array(await r.arrayBuffer()); }
+  // Files under /uploads have no CORS headers, so template + archived PDFs are
+  // streamed through api.php (agreements.file) with the login token attached.
+  async function fetchAgreementFile(which) {
+    const r = await fetch(api.buildUrl('agreements.file', { agreement_id: agreementId, which }), {
+      headers: { 'Authorization': 'Bearer ' + api.token() }, cache: 'no-store',
+    });
+    if (r.ok) return new Uint8Array(await r.arrayBuffer());
+
+    let msg = 'could not load ' + which + ' file (' + r.status + ')';
+    try { msg = (await r.json()).error || msg; } catch (e) {}
+
+    // "Unknown action" here means api.php on the server predates this
+    // feature. Fall back to a direct file fetch (works if the host serves
+    // /uploads with permissive CORS) so the page still functions, but make
+    // the real cause unmistakable if that also fails.
+    if (/unknown action/i.test(msg)) {
+      const relPath = which === 'signed' ? info.signed_file : info.template_file;
+      if (relPath) {
+        try {
+          const r2 = await fetch(fileUrl(relPath), { cache: 'no-store' });
+          if (r2.ok) return new Uint8Array(await r2.arrayBuffer());
+        } catch (e) { /* fall through to the clear error below */ }
+      }
+      throw new Error('the server is running an older api.php (missing "agreements.file") — re-upload api.php to your hosting, then reload this page');
+    }
+    throw new Error(msg);
+  }
+
+  /** Locate every {{placeholder}} on a pdf.js page. Returns [{key,x,y,w,size,font}] in PDF units. */
+  async function findPlaceholders(page) {
+    const tc = await page.getTextContent();
+    const items = tc.items.filter(i => i.str !== undefined);
+    const lines = [];
+    for (const it of items) {
+      const y = it.transform[5];
+      let line = lines.find(l => Math.abs(l.y - y) < 2.5);
+      if (!line) { line = { y, items: [] }; lines.push(line); }
+      line.items.push(it);
+    }
+    const found = [];
+    for (const line of lines) {
+      line.items.sort((a, b) => a.transform[4] - b.transform[4]);
+      const chars = [];
+      for (const it of line.items) {
+        const x0 = it.transform[4], w = it.width || 0, n = it.str.length || 1;
+        const size = Math.abs(it.transform[3]) || Math.abs(it.transform[0]) || 10;
+        for (let k = 0; k < it.str.length; k++) chars.push({ c: it.str[k], x: x0 + (w * k) / n, xe: x0 + (w * (k + 1)) / n, size, font: it.fontName });
+      }
+      const str = chars.map(c => c.c).join('');
+      const re = /\{\{\s*(\w+)\s*\}\}/g; let m;
+      while ((m = re.exec(str)) !== null) {
+        const a = chars[m.index], b = chars[m.index + m[0].length - 1];
+        if (!a || !b) continue;
+        found.push({ key: m[1], x: a.x, y: line.y, w: Math.max(b.xe - a.x, 8), size: a.size, font: a.font });
+      }
+    }
+    return found;
+  }
+
+  /** Sample the page background just left of a placeholder so the cover-up rectangle blends in. */
+  async function sampleBg(page, x, y) {
+    const vp = page.getViewport({ scale: 1 });
+    const c = document.createElement('canvas'); c.width = vp.width; c.height = vp.height;
+    await page.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
+    const px = Math.max(1, Math.min(c.width - 2, Math.round(x - 6)));
+    const py = Math.max(1, Math.min(c.height - 2, Math.round(vp.height - y - 3)));
+    const d = c.getContext('2d').getImageData(px, py, 1, 1).data;
+    return { r: d[0] / 255, g: d[1] / 255, b: d[2] / 255 };
+  }
+
+  async function buildFromPdfTemplate() {
+    status('Preparing your agreement...', '');
+    const tplBytes = await fetchAgreementFile('template');
+    const src = await pdfjsLib.getDocument({ data: tplBytes.slice(0) }).promise;
+    const { PDFDocument, rgb, StandardFonts } = PDFLib;
+    const pdfDoc = await PDFDocument.load(tplBytes, { ignoreEncryption: true });
+    try { pdfDoc.registerFontkit(fontkit); } catch (e) {}
+
+    let fontR, fontB;
+    try {
+      fontR = await pdfDoc.embedFont(await fetchBytes(FONT_URLS.regular), { subset: true });
+      fontB = await pdfDoc.embedFont(await fetchBytes(FONT_URLS.bold), { subset: true });
+    } catch (e) {
+      fontR = await pdfDoc.embedFont(StandardFonts.Helvetica);
+      fontB = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+    }
+    let sigImg = null;
+    if (data.signature) {
+      try {
+        const b = Uint8Array.from(atob(data.signature.split(',')[1]), c => c.charCodeAt(0));
+        sigImg = data.signature.startsWith('data:image/jpeg') ? await pdfDoc.embedJpg(b) : await pdfDoc.embedPng(b);
+      } catch (e) { sigImg = null; }
+    }
+
+    const vars = data.vars || {};
+    const pages = pdfDoc.getPages();
+    let replaced = 0;
+    for (let i = 0; i < pages.length; i++) {
+      const jsPage = await src.getPage(i + 1);
+      const spots = await findPlaceholders(jsPage);
+      if (!spots.length) continue;
+      const page = pages[i];
+      const bg = await sampleBg(jsPage, spots[0].x, spots[0].y);
+      for (const sp of spots) {
+        const size = Math.max(7, Math.min(sp.size, 14));
+        page.drawRectangle({ x: sp.x - 1, y: sp.y - size * 0.28, width: sp.w + 3, height: size * 1.25, color: rgb(bg.r, bg.g, bg.b) });
+        replaced++;
+        if (sp.key === 'signature') {
+          if (sigImg) {
+            const maxW = Math.max(sp.w + 20, 110), maxH = size * 3.2;
+            let w = maxW, h = w * sigImg.height / sigImg.width;
+            if (h > maxH) { h = maxH; w = h * sigImg.width / sigImg.height; }
+            page.drawImage(sigImg, { x: sp.x, y: sp.y - size * 0.25, width: w, height: h });
+          } else {
+            page.drawText('(signed digitally)', { x: sp.x, y: sp.y, size: size * 0.9, font: fontR, color: rgb(0.25, 0.25, 0.25) });
+          }
+          continue;
+        }
+        let val = vars[sp.key];
+        if (val === undefined || val === null) val = '';
+        val = String(val);
+        const bold = /bold|semibold|black|heavy/i.test(sp.font || '') || sp.key === 'name';
+        const font = bold ? fontB : fontR;
+        let fs = size;
+        const avail = Math.max(sp.w, 60);
+        while (fs > 6.5 && font.widthOfTextAtSize(val, fs) > avail + 40) fs -= 0.5;
+        page.drawText(val, { x: sp.x, y: sp.y, size: fs, font, color: rgb(0.07, 0.07, 0.07) });
+      }
+    }
+    if (!replaced) status('Note: no {{placeholders}} were found in this PDF template — check the markers are plain text (not images).', 'err');
+    pdfDoc.setTitle(`${info.template_name} — ${info.employee_name}`);
+    pdfDoc.setProducer('HRMS');
+    const out = await pdfDoc.save();
+    return new Blob([out], { type: 'application/pdf' });
+  }
+
+  async function previewPdf(blob) {
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    const doc = await pdfjsLib.getDocument({ data: bytes }).promise;
+    paper.innerHTML = '';
+    for (let i = 1; i <= doc.numPages; i++) {
+      const page = await doc.getPage(i);
+      const vp = page.getViewport({ scale: 1.6 });
+      const c = document.createElement('canvas'); c.className = 'pg'; c.width = vp.width; c.height = vp.height;
+      await page.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
+      paper.appendChild(c);
+    }
+  }
+
+  // =====================================================================
+  //  HTML TEMPLATE — render with its own CSS via html2pdf
+  // =====================================================================
+  async function buildFromHtmlTemplate() {
+    paper.style.transform = '';
+    const imgs = [...paper.querySelectorAll('img')].filter(i => !i.complete);
+    await Promise.all(imgs.map(i => new Promise(r => { i.onload = i.onerror = r; })));
+    if (document.fonts && document.fonts.ready) { try { await document.fonts.ready; } catch (e) {} }
+    return await html2pdf().set({
+      margin: 0, filename: fileName(), image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true, letterRendering: true, scrollX: 0, scrollY: 0 },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+      pagebreak: { mode: ['css', 'legacy'], after: '.page' },
+    }).from(paper).outputPdf('blob');
+  }
+
+  // =====================================================================
+  async function buildBlob() {
+    if (builtBlob) return builtBlob;
+    builtBlob = info.template_kind === 'pdf' ? await buildFromPdfTemplate() : await buildFromHtmlTemplate();
+    return builtBlob;
+  }
+
+  async function generateAndSave() {
+    if (busy) return; busy = true; btnDl.disabled = true; btnRegen.disabled = true;
+    try {
+      builtBlob = null;
+      const blob = await buildBlob();
+      if (info.template_kind === 'pdf' && !BG) await previewPdf(blob);
+      status('Saving PDF to server...', '');
+      await saveToServer(blob);
+      status('PDF saved — this is the archived signed agreement.', 'ok');
+      setTimeout(() => status('', ''), 4000);
+      reportBack(true);
+    } catch (err) {
+      status('Could not generate the PDF — ' + err.message, 'err');
+      reportBack(false);
+    } finally { busy = false; btnDl.disabled = false; btnRegen.disabled = false; }
+  }
+
+  btnDl.addEventListener('click', async () => {
+    if (busy) return; busy = true; btnDl.disabled = true;
+    try {
+      status('Preparing download...', '');
+      const blob = await buildBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = fileName(); document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      status('', '');
+      if (info.status === 'signed' && !info.signed_file) await saveToServer(blob).catch(() => {});
+      reportBack(!!info.signed_file);
+    } catch (err) { status('Download failed: ' + err.message, 'err'); }
+    finally { busy = false; btnDl.disabled = false; }
+  });
+  btnRegen.addEventListener('click', generateAndSave);
+
+  async function load() {
+    if (!agreementId) { paper.innerHTML = '<div style="padding:40px;color:#991b1b;">No agreement id.</div>'; return; }
+    try {
+      data = await api.get('agreements.render', { agreement_id: agreementId });
+      info = data.agreement;
+      document.getElementById('hrmsTitle').textContent = info.template_name;
+      document.getElementById('hrmsMeta').textContent =
+        `${info.employee_name} · ${info.employee_code} · ${info.status === 'signed' ? 'Signed' : 'Pending'}${info.reference ? ' · ' + info.reference : ''}`;
+      showPdfLink();
+      const isStaff = ((api.currentUser() || {}).role || '') !== 'Employee';
+
+      if (info.template_kind === 'docx') {
+        if (info.signed_file) { location.replace(fileUrl(info.signed_file)); return; }
+        paper.innerHTML = '<div style="padding:40px;color:#6b7280;">This agreement uses a Word template and has not been generated yet.</div>';
+        return;
+      }
+
+      if (info.template_kind === 'html') {
+        paper.innerHTML = data.html;
+        paper.querySelectorAll('script').forEach(s => { const n = document.createElement('script'); n.textContent = s.textContent; s.replaceWith(n); });
+      }
+
+      btnDl.disabled = false;
+      if (isStaff && info.status === 'signed') btnRegen.style.display = '';
+
+      if (info.template_kind === 'pdf') {
+        if (info.status === 'signed' && info.signed_file) {
+          reportBack(true);
+          if (BG) return;                       // nothing to do in the background
+          status('Loading saved PDF...', '');
+          const bytes = await fetchAgreementFile('signed');
+          builtBlob = new Blob([bytes], { type: 'application/pdf' });
+          await previewPdf(builtBlob);
+          status('', '');
+        } else if (info.status === 'signed') {
+          await generateAndSave();
+        } else {
+          const blob = await buildBlob();
+          await previewPdf(blob);
+          status('', '');
+        }
+      } else if (info.status === 'signed' && !info.signed_file) {
+        await generateAndSave();
+      }
+    } catch (err) {
+      paper.innerHTML = `<div style="padding:40px;color:#991b1b;">${err.message}</div>`;
+    }
+  }
+  load();
+</script>
+</body>
+</html>

@@ -1,0 +1,2495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Attendance — HRMS</title>
+<script src="assets/js/splash.js?v=4"></script>
+<link rel="stylesheet" href="assets/css/style.css?v=4">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@700&display=swap">
+<style>
+  /* Camera stays off until a punch button is tapped. */
+  .cam-panel{position:relative; width:100%; max-width:400px; margin:0 auto; border-radius:14px; overflow:hidden; background:#0b0b0f;
+    animation:camIn .32s cubic-bezier(.2,.8,.2,1);}
+  .cam-panel[hidden]{display:none;}
+  @keyframes camIn{from{opacity:0; transform:translateY(14px) scale(.98);}}
+  .cam-panel video{display:block; width:100%; transform:scaleX(-1);}   /* mirror, like a selfie */
+  .cam-panel.rear video{transform:none;}                               /* back camera: not mirrored */
+  /* Front | Back switch, top of the camera view */
+  .cam-sw{position:absolute; top:54px; left:50%; transform:translateX(-50%); display:flex; gap:2px; padding:3px; border-radius:20px; background:rgba(0,0,0,.5); z-index:3;}
+  .cam-sw button{border:0; background:none; color:#e5e7eb; font-size:12.5px; font-weight:600; padding:6px 14px; min-height:0; border-radius:16px; cursor:pointer; display:flex; align-items:center; gap:6px;}
+  .cam-sw button b{width:7px; height:7px; border-radius:50%; background:transparent;}
+  .cam-sw button.on{background:#fff; color:#111827;}
+  .cam-sw button.on b{background:#ef4444; animation:camBlink 1s infinite;}
+  .cam-sw button:focus-visible{outline:3px solid #fff; outline-offset:1px;}
+  /* Face guide oval: dashed while searching, green once matched. */
+  .cam-oval{position:absolute; left:50%; top:47%; width:52%; aspect-ratio:3/4; transform:translate(-50%,-50%); border-radius:50%;
+    border:3px dashed rgba(255,255,255,.6); box-shadow:0 0 0 999px rgba(0,0,0,.28); transition:border-color .25s, box-shadow .25s, left .3s, width .3s; pointer-events:none;}
+  .cam-oval.ok{border:3px solid #22c55e; box-shadow:0 0 0 999px rgba(0,0,0,.2), 0 0 16px #22c55e;}
+  .cam-live{position:absolute; top:10px; left:10px; display:flex; align-items:center; gap:6px; color:#fff; font-size:11.5px; font-weight:600;
+    background:rgba(0,0,0,.35); padding:4px 9px; border-radius:12px;}
+  .cam-live b{width:8px; height:8px; border-radius:50%; background:#ef4444; animation:camBlink 1s infinite;}
+  @keyframes camBlink{50%{opacity:.3;}}
+  .cam-cancel{position:absolute; top:8px; right:8px; width:36px; height:36px; min-height:0; border-radius:50%; border:none; background:rgba(0,0,0,.45);
+    color:#fff; font-size:17px; line-height:1; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0;}
+  .cam-cancel:focus-visible{outline:3px solid #fff; outline-offset:2px;}
+  .cam-overlay{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#fff; font-weight:600; font-size:14px;
+    text-align:center; padding:12px; background:rgba(0,0,0,.45);}
+  .cam-overlay[hidden]{display:none;}
+  .punch-btns{display:flex; gap:10px; justify-content:center; margin-top:14px; flex-wrap:wrap;}
+  .punch-btns .btn{min-width:150px;}
+  .done-note{text-align:center; margin-top:12px; font-size:14px; font-weight:600; color:var(--ok-fg,#0f7a41);}
+  .done-note[hidden]{display:none;}
+  /* The four checks, ticked off as they pass. */
+  .steps{display:flex; gap:6px; list-style:none; margin:0 0 12px; padding:0; flex-wrap:wrap;}
+  .steps[hidden]{display:none;}
+  .steps li{flex:1 1 0; min-width:70px; display:flex; align-items:center; gap:6px; padding:6px 8px; border-radius:8px; background:var(--bg); border:1px solid var(--line); font-size:12px; color:var(--muted); font-weight:600; white-space:nowrap;}
+  .steps li i{flex:none; width:18px; height:18px; border-radius:50%; border:1.5px solid currentColor; font-style:normal; font-size:11px; display:inline-flex; align-items:center; justify-content:center;}
+  .steps li[hidden]{display:none;}
+  .cam-panel.shoe .cam-oval, .cam-panel.shoe .cam-sw{display:none;}                  /* footwear step: no face oval, no Front/Back switch (back camera) */
+  .cam-shoe{position:absolute; left:0; right:0; bottom:0; padding:26px 12px 12px; display:flex; flex-direction:column; align-items:center; gap:6px; background:linear-gradient(transparent, rgba(0,0,0,.72)); z-index:3;}
+  .cam-shoe[hidden]{display:none;}
+  .cam-shoe-t{color:#fff; font-size:13px; font-weight:600; text-align:center; line-height:1.35;} .cam-shoe-t.bad{color:#fecaca;} .cam-shoe-t.ok{color:#bbf7d0;}
+  .cam-shoe-btn{width:66px; height:66px; min-height:0; border-radius:50%; border:4px solid #fff; background:rgba(255,255,255,.28); padding:0; cursor:pointer; box-shadow:0 2px 10px rgba(0,0,0,.35);}
+  .cam-shoe-row{display:flex; align-items:center; justify-content:center; width:100%;} .cam-shoe-row[hidden]{display:none;}
+  /* Shoe photo: taken first, checked after. The still replaces the live view while the server looks at it. */
+  .cam-shoe-frame{position:absolute; inset:38px 22px 112px; border:2px dashed rgba(255,255,255,.55); border-radius:14px; pointer-events:none; z-index:2;}
+  .cam-shoe-frame span{position:absolute; top:-10px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,.55); color:#fff; font-size:11px; font-weight:700; padding:2px 8px; border-radius:999px; white-space:nowrap;}
+  .cam-shoe-frame[hidden]{display:none;}
+  /* ID card photo (live camera): one yellow box, the card held inside it. */
+  .cam-idf{display:none; position:absolute; inset:0; pointer-events:none; z-index:2;}
+  .cam-panel.idc .cam-idf{display:block;} .cam-panel.idc.still .cam-idf{display:none;}
+  .cam-panel.idc .cam-shoe-frame{display:none;}
+  .cam-idf .fc{position:absolute; left:50%; top:40%; width:78%; aspect-ratio:1.586; transform:translate(-50%,-50%); border:3px dashed #facc15; border-radius:14px; box-shadow:0 0 0 999px rgba(0,0,0,.28);}
+  .cam-idf span{position:absolute; left:50%; transform:translateX(-50%); top:8%; background:rgba(0,0,0,.6); color:#fff; font-size:11px; font-weight:800; padding:3px 9px; border-radius:6px; white-space:nowrap;}
+  .cam-still{position:absolute; inset:0; width:100%; height:100%; object-fit:cover; z-index:2; background:#0b0b0f;} .cam-still[hidden]{display:none;}
+  .cam-panel.still .cam-live b{background:#9ca3af; animation:none;}
+  .cam-check{position:absolute; inset:0; z-index:4; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; color:#fff; font-weight:700; font-size:14px; background:rgba(0,0,0,.42); text-align:center; padding:12px;}
+  .cam-check[hidden]{display:none;} .cam-check small{font-weight:600; font-size:12px; opacity:.85;}
+  .cam-check i{width:38px; height:38px; border-radius:50%; border:3.5px solid rgba(255,255,255,.3); border-top-color:var(--accent); animation:shoeSpin .9s linear infinite;}
+  @keyframes shoeSpin{to{transform:rotate(360deg);}}
+  .cam-stamp{position:absolute; top:12%; left:50%; transform:translateX(-50%) rotate(-4deg); z-index:4; padding:8px 14px; border-radius:12px; font-weight:900; font-size:14px; letter-spacing:.02em; border:2.5px solid; background:rgba(0,0,0,.45); max-width:86%; text-align:center; line-height:1.25;}
+  .cam-stamp.ok{color:#86efac; border-color:#86efac;} .cam-stamp.bad{color:#fca5a5; border-color:#fca5a5;} .cam-stamp[hidden]{display:none;}
+  .cam-shoe-acts{display:flex; gap:8px; width:100%;} .cam-shoe-acts[hidden]{display:none;}
+  .cam-shoe-acts button{flex:1; height:44px; min-height:0; border-radius:999px; font-weight:800; font-size:13.5px; cursor:pointer; padding:0 10px;}
+  .cam-shoe-acts .rt{background:var(--accent); color:#fff; border:none;} .cam-shoe-acts .cx{background:rgba(255,255,255,.14); color:#fff; border:1.5px solid rgba(255,255,255,.6);}
+  @media (prefers-reduced-motion: reduce){ .cam-check i{animation:none;} }
+  .cam-shoe-btn:active{background:#fff;} .cam-shoe-btn[disabled]{opacity:.45; cursor:default;} .cam-shoe-btn:focus-visible{outline:3px solid #fff; outline-offset:3px;}
+  .steps li.on{color:var(--accent); border-color:var(--accent); background:#eff4ff;}
+  .steps li.done{color:#0f7a41; border-color:#bfe6cf; background:#e7f7ee;}
+  .steps li.done i::before{content:'✓';}
+  .steps li.skip{color:var(--muted); background:#f3f4f6;}
+  .steps li.skip i::before{content:'–';}
+  .steps li.bad{color:#c81e1e; border-color:#f3c9c9; background:#fdecec;}
+  .steps li.bad i::before{content:'✕';}
+  .steps li i:empty::before{content:attr(data-n);}
+  .steps li.done i, .steps li.skip i, .steps li.bad i{content:none;}
+  /* Step 1: ask before checking the location */
+  .locbox{border:1px solid var(--line); border-radius:14px; padding:20px 16px; text-align:center; background:var(--surface,#fff);}
+  .locbox[hidden]{display:none;}
+  .loc-pin{position:relative; width:58px; height:58px; margin:0 auto 10px; border-radius:50%; background:#dbeafe; color:#1d4ed8; display:flex; align-items:center; justify-content:center;}
+  .loc-pin svg{width:29px; height:29px;}
+  .loc-pin.busy::after{content:''; position:absolute; inset:-6px; border-radius:50%; border:3px solid #bfdbfe; border-top-color:#2563eb; animation:locSpin .8s linear infinite;}
+  .loc-pin.ok{background:#dcfce7; color:#15803d;}
+  @keyframes locSpin{to{transform:rotate(360deg);}}
+  .loc-t{font-size:16px; font-weight:700; margin-bottom:4px;}
+  .loc-s{font-size:12.5px; color:var(--muted); line-height:1.5;}
+  .loc-btns{display:flex; flex-direction:column; gap:8px; margin-top:14px;}
+  .loc-btns[hidden]{display:none;}
+  /* Reminder switch */
+  .rem-row{display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;}
+  .rem-row .sw{position:relative; width:46px; height:26px; flex:none; border-radius:13px; background:#cbd5e1; border:none; cursor:pointer; transition:background .2s; padding:0; min-height:0;}
+  .rem-row .sw::after{content:''; position:absolute; top:3px; left:3px; width:20px; height:20px; border-radius:50%; background:#fff; transition:left .2s; box-shadow:0 1px 2px rgba(0,0,0,.3);}
+  .rem-row .sw.on{background:#22c55e;}
+  .rem-row .sw.on::after{left:23px;}
+  .rem-row .sw:disabled{opacity:.75; cursor:not-allowed;}
+  .rem-req{display:inline-block; font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; padding:2px 7px; border-radius:10px; background:#e0e7ff; color:#3730a3; margin-left:6px; vertical-align:middle;}
+  .rem-note.ok{color:#0f7a41; font-weight:600;}
+  .rem-note.bad{color:#c81e1e; font-weight:600;}
+  .rem-note.warn{color:#8a5a00; font-weight:600;}
+  .rem-diag{margin-top:10px; font-size:11px; color:var(--muted); line-height:1.5; word-break:break-word;}
+  .rem-diag[hidden]{display:none;}
+  .rem-steps{margin:8px 0 0; padding-left:18px; font-size:12px; line-height:1.6; color:var(--ink,#374151);}
+  .rem-steps[hidden]{display:none;}
+  .rem-big{width:100%; margin-top:10px;}
+  .rem-lock{margin-top:10px; background:#fff4db; color:#8a5a00; border-radius:9px; padding:9px 11px; font-size:12.5px; line-height:1.45; font-weight:600;}
+  .rem-lock.bad{background:#fdecec; color:#8a1f1f;}
+  .rem-lock[hidden]{display:none;}
+  .rem-note{font-size:12px; color:var(--muted); margin-top:8px; line-height:1.45;}
+  /* Store opening checklist: tasks with their photos, shown after punch in */
+  .ck-head{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px;}
+  .ck-pill{font-size:11px; font-weight:700; padding:3px 10px; border-radius:20px; background:#FFF4DB; color:#8a5a00; white-space:nowrap;}
+  .ck-pill.ok{background:#e7f7ee; color:#0f7a41;}
+  .ck-bar{height:6px; border-radius:4px; background:#eceef2; overflow:hidden; margin-bottom:12px;}
+  .ck-bar i{display:block; height:100%; background:var(--accent); transition:width .25s;}
+  .ck-bar.done i{background:#16a34a;}
+  .ck-task{display:flex; gap:10px; padding:11px 0; border-top:1px solid var(--line); align-items:flex-start;}
+  .ck-task:first-child{border-top:none; padding-top:2px;}
+  .ck-tick{width:22px; height:22px; border-radius:50%; border:2px solid var(--line); flex:0 0 auto; margin-top:1px; font-size:11.5px;
+    display:flex; align-items:center; justify-content:center; color:var(--muted); font-weight:700;}
+  .ck-tick.on{background:#16a34a; border-color:#16a34a; color:#fff;}
+  .ck-tick.now{border-color:var(--accent); color:var(--accent); background:#eff4ff;}
+  .ck-body{flex:1; min-width:0;}
+  .ck-name{font-size:13.5px; font-weight:600; line-height:1.35;}
+  .ck-sub{font-size:11.5px; color:var(--muted); margin-top:2px;}
+  .ck-shots{display:flex; gap:6px; margin-top:8px; flex-wrap:wrap;}
+  .ck-shot{width:52px; height:52px; border-radius:8px; position:relative; overflow:hidden; background:#eceef2; flex:0 0 auto;}
+  .ck-shot img{width:100%; height:100%; object-fit:cover; display:block;}
+  .ck-shot button{position:absolute; top:2px; right:2px; width:18px; height:18px; min-height:0; padding:0; border:none; border-radius:50%;
+    background:rgba(17,24,39,.72); color:#fff; font-size:11px; line-height:1; cursor:pointer;}
+  .ck-cam{margin-top:9px; padding:8px 12px; font-size:12.5px; font-weight:600; min-height:0; width:auto;}
+  .ck-note{font-size:11.5px; color:var(--muted); text-align:center; margin-top:8px; line-height:1.45;}
+  .ck-lock{background:#FFF4DB; color:#8a5a00; border-radius:9px; padding:10px 12px; font-size:12.5px; line-height:1.5; margin-bottom:12px;}
+  .ck-done{background:#e7f7ee; color:#0f7a41; border-radius:9px; padding:11px 12px; font-size:13px; font-weight:600; margin-bottom:12px;}
+  .eg{position:relative; flex:none; width:46px; height:46px; border-radius:9px; overflow:hidden; border:1.5px solid var(--accent); box-shadow:0 1px 4px rgba(0,0,0,.15); cursor:pointer; background:#eceef2; padding:0; min-height:0; display:inline-block;}
+  .eg img{width:100%; height:100%; object-fit:cover; display:block;}
+  .eg em{position:absolute; left:0; right:0; bottom:0; background:rgba(232,89,12,.92); color:#fff; font-size:11px; font-weight:800; text-align:center; font-style:normal; letter-spacing:.03em; padding:1px 0;}
+  .eg-lb{position:fixed; inset:0; z-index:100000; background:rgba(15,10,6,.88); display:flex; flex-direction:column; align-items:center; justify-content:center; padding:18px; box-sizing:border-box;}
+  .eg-lb[hidden]{display:none;}
+  .eg-lb .cap{color:#fff; font-size:12px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; opacity:.9; margin-bottom:6px;}
+  .eg-lb .tt{color:#fff; font-size:15px; font-weight:700; margin-bottom:12px; text-align:center; max-width:560px;}
+  .eg-lb img{max-width:min(100%,560px); max-height:68vh; border-radius:12px; box-shadow:0 8px 30px rgba(0,0,0,.5); background:#222;}
+  .eg-lb .x{position:absolute; top:14px; right:14px; width:38px; height:38px; min-height:0; padding:0; border-radius:50%; border:none; background:rgba(255,255,255,.22); color:#fff; font-size:19px; cursor:pointer;}
+  .eg-lb .hint{color:#fff; opacity:.75; font-size:12px; margin-top:12px;}
+  .ck-ph{margin-top:14px;} .ck-ph:first-child{margin-top:0;}
+  .ck-phh{display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px;}
+  .ck-chip{font-size:11px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; padding:4px 10px; border-radius:12px; white-space:nowrap;}
+  .ck-chip.pre_in{background:#fde8e8; color:#a31515;} .ck-chip.post_in{background:#e8f0ff; color:#1d4fb8;} .ck-chip.pre_out{background:#FFF4DB; color:#8a5a00;} .ck-chip.post_out{background:#efe8fb; color:#5b2fa8;}
+  .pc-card{border:1px solid var(--line); border-radius:11px; padding:10px 12px; margin-bottom:10px; background:#fffdf9;}
+  .pc-card:last-child{margin-bottom:0;}
+  .pc-ch{display:flex; align-items:center; justify-content:space-between; gap:8px;} .pc-ch b{font-size:14.5px;}
+  .ck-wait{font-size:12px; color:var(--muted); line-height:1.45; padding:8px 10px; border:1px dashed var(--line); border-radius:9px;}
+  .ck-wait ul{margin:4px 0 0; padding-left:18px;}
+  .ck-shift{font-size:12px; color:var(--muted); margin-top:8px;}
+  .ck-shift b{color:var(--ink);}
+  /* Punch-in proofs: Instagram / YouTube comment screenshots (and any the admin adds), uploaded before Punch In */
+  .pf-card[hidden]{display:none;}
+  .pf-card.compact .pf-head{display:none;}
+  .pf-head{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px;}
+  .pf-head h3{font-size:14.5px; margin:0;}
+  .pf-note{border-radius:10px; padding:9px 11px; font-size:12.5px; line-height:1.45; font-weight:600; margin-bottom:10px;}
+  .pf-note.wait{background:#FFF4DB; color:#8a5a00;}
+  .pf-note.ok{background:#e7f7ee; color:#0f7a41;}
+  .pf-note.bad{background:#fdecec; color:#8a1f1f;}
+  .pf-card.compact .pf-note{margin-bottom:0;}
+  .pf-req{display:flex; gap:10px; padding:12px 0; border-top:1px solid var(--line); align-items:flex-start;}
+  .pf-req:first-of-type{border-top:0; padding-top:2px;}
+  .pf-tile{width:34px; height:34px; border-radius:9px; display:flex; align-items:center; justify-content:center; flex:none; font-size:11.5px; font-weight:800; background:#e0e7ff; color:#3730a3;}
+  .pf-tile.instagram{background:#fce7f3; color:#be185d;}
+  .pf-tile.youtube{background:#fee2e2; color:#b91c1c;}
+  .pf-body{flex:1; min-width:0;}
+  .pf-name{font-size:13.5px; font-weight:700; line-height:1.3; display:flex; align-items:center; gap:7px; flex-wrap:wrap;}
+  .pf-tick{width:18px; height:18px; border-radius:50%; background:#16a34a; color:#fff; font-size:11px; display:inline-flex; align-items:center; justify-content:center;}
+  .pf-desc{font-size:11.8px; color:var(--muted); margin-top:3px; line-height:1.45;}
+  .pf-redo{background:#fdecec; color:#8a1f1f; border-radius:9px; padding:7px 10px; font-size:12px; line-height:1.4; margin-top:7px; font-weight:600;}
+  input.pf-in{display:block; width:100%; box-sizing:border-box; margin-top:8px; border:1px solid var(--line); border-radius:9px; padding:9px 10px; font-size:13px; min-height:0; background:#fffdf9; color:var(--ink);}
+  .pf-acts{display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:9px;}
+  .pf-up{background:#e8590c; color:#fff; border:0; border-radius:9px; font-size:12.5px; font-weight:700; padding:8px 13px; min-height:0; cursor:pointer;}
+  .pf-up:disabled{opacity:.6;}
+  .pf-alt{background:#fff; color:#c2410c; border:1.5px solid #f3c9ad; border-radius:8px; font-size:11.5px; font-weight:700; padding:5px 9px; min-height:0; cursor:pointer;}
+  .pf-got{display:flex; gap:10px; margin-top:9px; align-items:center;}
+  .pf-shots{display:flex; gap:6px; flex-wrap:wrap; flex:none;}
+  .pf-shot{position:relative; width:46px; height:64px; border-radius:7px; overflow:hidden; background:#eceef2; border:1px solid var(--line); flex:none;}
+  .pf-shot img{width:100%; height:100%; object-fit:cover; display:block;}
+  .pf-shot.gone{display:flex; align-items:center; justify-content:center; text-align:center; font-size:11px; line-height:1.15; font-weight:700; color:#8a93a3; padding:3px;}
+  .pf-shot button{position:absolute; top:2px; right:2px; width:18px; height:18px; min-height:0; padding:0; border:0; border-radius:50%; background:rgba(17,24,39,.72); color:#fff; font-size:11px; line-height:1; cursor:pointer;}
+  .pf-meta{flex:1; min-width:0; font-size:11.5px; color:var(--muted); line-height:1.5; overflow-wrap:anywhere;}
+  .pf-meta b{display:block; color:var(--ink); font-size:12px;}
+  .pf-card .pf-note.wait{display:none;}
+  .pf-card .pf-req{padding:10px 0;}
+  .pf-card .pf-desc{display:none;}
+  #remCard.ok .card-head, #remCard.ok .rem-note{display:none;}
+  #remCard.ok .rem-row{padding:0;}
+  .pf-card .pf-prog{font-size:11.5px; color:var(--muted); margin-top:6px;}
+  /* The exact Reel / video the admin wants opened, shown above the screenshot upload */
+  .pf-lk{display:flex; align-items:center; gap:10px; text-decoration:none; color:var(--ink); border:1.5px solid #f3c9ad; background:linear-gradient(135deg,#fff7f1,#fff); border-radius:13px; padding:10px; margin-top:9px; position:relative;}
+  .pf-lk:active{transform:scale(.99);}
+  .pf-lk .pf-tile{width:40px; height:40px; border-radius:11px; font-size:12.5px;}
+  .pf-lk .pf-lm{flex:1; min-width:0;}
+  .pf-lk .pf-lm small{display:block; font-size:11px; font-weight:800; letter-spacing:.08em; color:#c2410c; text-transform:uppercase;}
+  .pf-lk .pf-lm b{display:block; font-size:12.5px; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .pf-lk .pf-go{background:#e8590c; color:#fff; border-radius:9px; padding:8px 11px; font-size:12px; font-weight:800; white-space:nowrap; flex:none;}
+  .pf-lk.seen{border-color:#bfe8cf; background:#f1fbf5;}
+  .pf-lk.seen .pf-go{background:#16a34a;}
+  .pf-steps{display:flex; gap:5px; flex-wrap:wrap; margin-top:8px;}
+  .pf-steps span{font-size:11px; font-weight:700; background:#f1ede6; color:#6b5a48; border-radius:99px; padding:3px 8px;}
+  .pf-steps span.on{background:#e7f7ee; color:#0f7a41;}
+  .pf-clean{font-weight:700;color:#b45309;} .pf-clean.c4,.pf-clean.c5{color:var(--ok-fg);} .pf-clean.c1,.pf-clean.c2{color:var(--bad-fg);}
+  /* Handwritten lines the admin writes for each proof: one above the link (with a small arrow at Open), one under it */
+  .pf-hw{position:relative;}
+  .pf-ht,.pf-hb{font-family:Caveat,"Segoe Print","Bradley Hand","Comic Sans MS",cursive; font-weight:700; color:#c2410c; overflow-wrap:anywhere;}
+  .pf-ht{font-size:21px; line-height:1.05; transform:rotate(-1.5deg); transform-origin:left center; margin:7px 0 0 2px; padding-right:58px; min-height:28px;}
+  .pf-hw .pf-arw{position:absolute; right:58px; top:2px; width:44px; height:28px; color:#c2410c; transform:rotate(10deg); pointer-events:none;}
+  .pf-hw .pf-arw svg{width:100%; height:100%; display:block;}
+  .pf-hw .pf-lk{margin-top:4px;}
+  .pf-hb{font-size:23px; line-height:1.1; transform:rotate(-1deg); transform-origin:left center; margin:8px 0 0 2px;}
+  .pf-meta a{color:inherit; text-decoration:underline;}
+  @media (max-width:820px){ .punch-btns .btn{flex:1 1 140px; min-height:48px; font-size:15px;} .steps li{font-size:11.5px; padding:6px 6px;} }
+  @media (prefers-reduced-motion: reduce){ .pulse::before, .pulse::after, .pulse .rip, .pulse.on .hr-prog{animation:none;} .pulse .rip{display:none;} .hr-ring .hr-prog{transition:none;} .cam-panel{animation:none;} .cam-live b{animation:none;} .cam-sw button.on b{animation:none;} .cam-oval{transition:none;} .loc-pin.busy::after{animation-duration:2s;} }
+  /* ===== Home look (TMPH orange on cream) — this page only ===== */
+  .pp .main{--accent:#e8590c; --accent-dark:#c2410c; --bg:#fbf3e8; --line:#eadfce; --muted:#7a6552; --ink:#2b1d12;}
+  body.pp{background:#fbf3e8;}
+  .pp .topbar{background:transparent; border-bottom:0;}
+  .pp .card{border:0; border-radius:18px; box-shadow:0 2px 10px rgba(120,80,40,.10);}
+  .pp .card-head{border-bottom:1px solid #f1e7d8;}
+  .hm{max-width:520px; margin:0 auto;}
+  .hm-hd{display:flex; align-items:center; gap:12px; margin:0 2px 12px;}
+  .hm-av{width:44px; height:44px; border-radius:50%; background:#e8590c; color:#fff; font-weight:800; font-size:15px; display:flex; align-items:center; justify-content:center; flex:none;}
+  .hm-hi small{display:block; font-size:12.5px; color:var(--muted); line-height:1.2;}
+  .hm-hi b{display:block; font-size:19px; color:var(--ink); line-height:1.25;}
+  .hm-card{background:#fff; border-radius:22px; padding:16px; box-shadow:0 2px 10px rgba(120,80,40,.10); margin-bottom:12px;}
+  .hm-top{display:flex; align-items:center; justify-content:space-between; gap:8px 10px; flex-wrap:wrap;}
+  .hm-top b{font-size:14.5px;}
+  .hm-pills{display:flex; gap:6px; flex-wrap:wrap;}
+  .pc{font-size:12px; font-weight:700; padding:3px 10px; border-radius:20px; white-space:nowrap;}
+  .pc.amb{background:#fff4db; color:#8a5a00;}
+  .pc.grn{background:#e7f7ee; color:#0f7a41;}
+  .hm-chip{margin-left:auto; font-size:12px; font-weight:800; padding:5px 12px; border-radius:20px; background:#ffe6d2; color:#c2410c; white-space:nowrap;}
+  .hm-chip.on{background:#e7f7ee; color:#0f7a41;}
+  .hm-chip.late{background:#fff4db; color:#8a5a00;}
+  /* one quiet line under the button */
+  .hm-hint{text-align:center; font-size:13px; font-weight:600; color:var(--muted); margin:2px 0 0;}
+  .hm-hint[hidden]{display:none;}
+  #remLock:not([hidden]) ~ #camHint, #pfLock:not([hidden]) ~ #camHint{display:none;}
+  .hm-shift{text-align:center; font-size:12px; color:var(--muted); margin-top:6px;}
+  .hm-shift .pc{margin-left:4px; padding:2px 8px; font-size:11px;}
+  #verifyMsg:empty{display:none;}
+  body:not(.punching) #steps{display:none !important;}   /* Location / Face strip belongs to the verify screen only */
+  .hm-tiles{display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:12px;}
+  .hm-tiles div{background:#fff; border-radius:14px; padding:9px 10px; box-shadow:0 1px 3px rgba(120,80,40,.08);}
+  .hm-tiles small{display:block; font-size:11px; color:var(--muted);}
+  .hm-tiles b{font-size:15px; white-space:nowrap;}
+  .hm-links{display:flex; gap:8px; margin-bottom:12px; overflow-x:auto; padding-bottom:2px; -webkit-overflow-scrolling:touch; scrollbar-width:none;}
+  .hm-links::-webkit-scrollbar{display:none;}
+  .hm-links a{flex:1 0 82px;}
+  .hm-links:empty{display:none;}
+  .hm-links a{background:#fff; border-radius:14px; padding:10px 4px; text-align:center; font-size:11.5px; font-weight:700; color:var(--ink); box-shadow:0 1px 3px rgba(120,80,40,.08);}
+  .hm-links a:hover{text-decoration:none; background:#fff8f1;}
+  .hm-links svg{display:block; margin:0 auto 4px; width:22px; height:22px; color:#e8590c;}
+  .hm-vh{display:none; align-items:center; gap:10px; font-size:19px; font-weight:800; color:var(--ink); margin:0 2px 12px;}
+  /* Pulse button: one big round button with soft rings */
+  .pulse{--btn:170px; position:relative; display:flex; align-items:center; justify-content:center; height:290px;}
+  .pulse[hidden]{display:none;}
+  .pulse::before, .pulse::after{content:''; position:absolute; left:50%; top:50%; border-radius:50%; transform:translate(-50%,-50%); pointer-events:none;}
+  .pulse::before{width:290px; height:290px; background:rgba(255,122,47,.08); animation:pls 3.2s ease-in-out infinite;}
+  .pulse::after{width:230px; height:230px; background:rgba(255,122,47,.14); animation:pls 3.2s ease-in-out .5s infinite;}
+  @keyframes pls{50%{transform:translate(-50%,-50%) scale(1.05);}}
+  .pulse.on::before, .pulse.on::after{animation-duration:4.4s;}
+  /* ripples that spread out from the button */
+  .pulse .rip{position:absolute; left:50%; top:50%; width:var(--btn); height:var(--btn); margin:calc(var(--btn) / -2) 0 0 calc(var(--btn) / -2); border-radius:50%; border:2px solid rgba(232,89,12,.55); pointer-events:none; animation:rip 3.2s ease-out infinite;}
+  .pulse .rip.b{animation-delay:1.6s;}
+  .pulse.on .rip{animation-duration:4.4s; border-color:rgba(232,89,12,.4);}
+  .pulse.on .rip.b{animation-delay:2.2s;}
+  @keyframes rip{0%{transform:scale(.92); opacity:.7;} 100%{transform:scale(1.62); opacity:0;}}
+  /* hours ring: fills as the shift goes on */
+  .hr-ring{position:absolute; left:50%; top:50%; width:calc(var(--btn) + 36px); height:calc(var(--btn) + 36px); transform:translate(-50%,-50%) rotate(-90deg); pointer-events:none; overflow:visible;}
+  .hr-ring circle{fill:none; stroke-width:5.4;}
+  .hr-ring .hr-track{stroke:#ffe3cf;}
+  .hr-ring .hr-prog{stroke:#e8590c; stroke-linecap:round; stroke-dasharray:0 100; transition:stroke-dasharray .8s ease, opacity .3s; opacity:0;}
+  .pulse.on .hr-prog{opacity:1; animation:hrglow 4.4s ease-in-out infinite;}
+  .pulse.full .hr-prog{stroke:#16a34a; animation:none;}
+  @keyframes hrglow{50%{filter:drop-shadow(0 0 4px rgba(232,89,12,.65));}}
+  .hm .punch-btns{position:relative; z-index:1; display:block; margin:0;}
+  .hm .punch-btns .btn{display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; width:170px; min-width:0; height:170px; min-height:0; padding:0; border-radius:50%; background:#fff; color:#c2410c; border:6px solid #ffd2b5; font-size:18px; font-weight:800; box-shadow:0 10px 24px rgba(232,89,12,.20); transition:transform .15s, box-shadow .15s;}
+  .hm .punch-btns .btn::before{content:''; width:42px; height:42px; flex:none; background:currentColor; -webkit-mask:var(--ico) center/contain no-repeat; mask:var(--ico) center/contain no-repeat;}
+  .hm .punch-btns .btn:hover:not(:disabled){background:#fff8f1; transform:scale(1.03);}
+  .hm .punch-btns .btn:active:not(:disabled){transform:scale(.97);}
+  .hm .punch-btns .btn:disabled{opacity:.85; box-shadow:none; cursor:not-allowed;}
+  .hm .punch-btns .btn:disabled::before{opacity:.6;}
+  #btnPunchIn{--ico:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 11V5a2 2 0 0 1 4 0v6'/%3E%3Cpath d='M13 10a2 2 0 0 1 4 0v3a6 6 0 0 1-6 6h-1a5 5 0 0 1-4-2l-2-3a1.6 1.6 0 0 1 2.4-2L9 14'/%3E%3C/svg%3E");}
+  #btnPunchIn.enroll{--ico:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z'/%3E%3Ccircle cx='12' cy='13' r='3.5'/%3E%3C/svg%3E");}
+  #btnPunchOut{--ico:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14 4h5a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-5'/%3E%3Cpath d='M10 8l-4 4 4 4M6 12h10'/%3E%3C/svg%3E");}
+  .hm .punch-btns #btnPunchIn.enroll{font-size:14.5px; padding:0 14px; text-align:center; line-height:1.2;}
+  .hm .punch-btns #btnPunchOut{color:#2b1d12; border-color:#d9c7b4;}
+  .hm .punch-btns #btnPunchOut:hover:not(:disabled){background:#fbf3e8;}
+  .hm .rem-lock{background:none; padding:0; margin-top:2px; text-align:center; font-size:13px;}
+  .hm .rem-lock.bad{background:none; color:#c81e1e;}
+  .hm .done-note{background:#e7f7ee; border-radius:12px; padding:12px; margin-top:4px;}
+  .hm .cam-panel{border-radius:18px;}
+  /* orange instead of the old blue, on this page only */
+  .pp .steps li.on{color:#e8590c; border-color:#e8590c; background:#fff0e6;}
+  .pp .loc-pin:not(.ok){background:#ffe8d6; color:#e8590c;}
+  .pp .loc-pin.busy::after{border-color:#fcd9bd; border-top-color:#e8590c;}
+  .pp .ck-tick.now{background:#fff0e6;}
+  /* while a punch is running the page becomes the "Verify" screen */
+  body.punching .hm-hd, body.punching #todayStatus, body.punching #camHint, body.punching .pulse,
+  body.punching #doneNote, body.punching #remLock, body.punching #pfCard, body.punching #pfLock, body.punching #hmTiles, body.punching #ckCard, body.punching #pcCard, body.punching #remCard, body.punching .hm-links{display:none !important;}
+  body.punching .hm-vh{display:flex;}
+  body.punching .hm-card{background:none; box-shadow:none; padding:0;}
+  @media (max-width:400px){ .hm-card{padding:14px;} .hm-hi b{font-size:18px;} .pulse{height:260px; --btn:152px;} .pulse::before{width:260px; height:260px;} .pulse::after{width:206px; height:206px;} .hm .punch-btns .btn{width:152px; height:152px;} }
+  /* Phones: roomier tap targets, and the page's cards no longer touch the screen edges. */
+  @media (max-width:560px){ .hm{padding:0 12px;} }
+  @media (max-width:820px){
+    .ck-shot button, .pf-shot button{width:26px; height:26px; top:0; right:0; font-size:15px; background:rgba(17,24,39,.8);}
+    .ck-shot{width:60px; height:60px;}
+    .ck-cam{min-height:40px; padding:10px 14px;}
+    .cam-sw button{padding:9px 14px;}
+    input.pf-in{font-size:16px; padding:11px 12px;}
+    .pf-up{min-height:40px; padding:10px 14px; font-size:13px;}
+    .pf-alt{min-height:36px; padding:8px 12px; font-size:12px;}
+    .rem-row .sw::before{content:''; position:absolute; inset:-8px -4px;}
+  }
+  /* Read-only: shown inside My Day > My records (?in=sales without from=day) - history only, no punching. The punch screen is the overlay (?from=day). */
+  html.att-ro #punchCard, html.att-ro #pfCard, html.att-ro #pfLock, html.att-ro #remLock, html.att-ro .hm-vh, html.att-ro .hm-hd, html.att-ro .hm-links{display:none !important;}
+</style>
+<script>(function () { try { var q = location.search; if (window.parent !== window && /[?&]in=sales(&|$)/.test(q) && !/[?&]from=day(&|$)/.test(q)) document.documentElement.classList.add('att-ro'); } catch (e) {} })();</script>
+</head>
+<body class="pp">
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><h1>Attendance</h1></div>
+    <div class="content">
+      <div id="alertBox"></div>
+
+      <div class="hm">
+        <div class="hm-hd">
+          <div class="hm-av" id="hmAv">·</div>
+          <div class="hm-hi"><small id="hmGreet">Hello</small><b id="hmName">&nbsp;</b></div>
+          <span class="hm-chip" id="hmChip">Not in</span>
+        </div>
+
+        <div class="hm-vh"><span id="hmVerifyT">Verify to punch in</span></div>
+
+        <div class="hm-card" id="punchCard">
+
+          <ol class="steps" id="steps" hidden>
+            <li data-k="loc"><i data-n="1"></i>Location</li>
+            <li data-k="face"><i data-n="2"></i>Face</li>
+            <li data-k="footwear" hidden><i data-n="3"></i>Footwear</li>
+          </ol>
+
+          <div id="locBox" class="locbox" hidden>
+            <div class="loc-pin" id="locPin"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s7-6.2 7-11.5A7 7 0 0 0 5 9.5C5 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.6"/></svg></div>
+            <div class="loc-t" id="locTitle">Check your location?</div>
+            <div class="loc-s" id="locSub">We confirm you are at your office before the face check. Allow location when your phone asks.</div>
+            <div class="loc-btns" id="locBtns">
+              <button type="button" class="btn" id="btnLocYes">Yes, check location</button>
+              <button type="button" class="btn secondary" id="btnLocNo">Cancel</button>
+            </div>
+          </div>
+
+          <div id="camPanel" class="cam-panel" hidden>
+            <video id="cam" playsinline muted></video>
+            <div id="camOval" class="cam-oval" aria-hidden="true"></div>
+            <div class="cam-live" aria-hidden="true"><b></b>Camera on</div>
+            <button type="button" class="cam-cancel" id="btnCancel" aria-label="Cancel and turn the camera off">✕</button>
+            <div class="cam-sw" id="camSw" role="group" aria-label="Choose camera">
+              <button type="button" data-f="user" class="on" aria-pressed="true"><b></b>Front</button>
+              <button type="button" data-f="environment" aria-pressed="false"><b></b>Back</button>
+            </div>
+            <img id="camStill" class="cam-still" alt="The photo you took" hidden>
+            <div id="camShoeFrame" class="cam-shoe-frame" aria-hidden="true" hidden><span>Keep both shoes inside</span></div>
+            <div class="cam-idf" aria-hidden="true"><i class="fc"></i><span>🪪 Hold your ID card inside the box</span></div>
+            <div id="camStamp" class="cam-stamp" hidden></div>
+            <div id="camCheck" class="cam-check" hidden><i></i>Checking the photo…<small>Is this proper shoes?</small></div>
+            <div id="camShoe" class="cam-shoe" hidden>
+              <div class="cam-shoe-t" id="camShoeT">Place your shoes in the frame</div>
+              <div class="cam-shoe-row" id="camShoeRow"><button type="button" class="cam-shoe-btn" id="btnShoeSnap" aria-label="Take the footwear photo"></button></div>
+              <div class="cam-shoe-acts" id="camShoeActs" hidden><button type="button" class="cx" id="btnShoeCancel">✕ Cancel</button><button type="button" class="rt" id="btnShoeRetake">📷 Retake photo</button></div>
+            </div>
+            <div id="camOverlay" class="cam-overlay">Starting camera…</div>
+          </div>
+          <canvas id="snap" style="display:none;"></canvas>
+
+          <div class="pulse" id="pulse">
+            <i class="rip"></i><i class="rip b"></i>
+            <svg class="hr-ring" viewBox="0 0 100 100" aria-hidden="true"><circle class="hr-track" cx="50" cy="50" r="46"/><circle class="hr-prog" id="hrProg" cx="50" cy="50" r="46" pathLength="100"/></svg>
+            <div class="punch-btns">
+              <button class="btn" id="btnPunchIn" disabled>Punch In</button>
+              <button class="btn secondary" id="btnPunchOut" disabled>Punch Out</button>
+            </div>
+          </div>
+          <div id="remLock" class="rem-lock" hidden></div>
+          <div id="pfLock" class="rem-lock" hidden></div>
+          <div id="camHint" class="hm-hint"></div>
+          <div id="doneNote" class="done-note" hidden>You're done for today ✓</div>
+          <div id="verifyMsg" role="status" aria-live="polite" style="text-align:center; margin-top:10px; font-size:13.5px; min-height:20px;"></div>
+          <div id="todayStatus" class="hm-shift loading"></div>
+        </div>
+
+        <!-- Punch-in proofs (Instagram / YouTube comment screenshots, plus any the admin adds). Shown only when the admin
+             has a proof for this employee; Punch In stays locked until every one is uploaded. -->
+        <div class="hm-card pf-card" id="pfCard" hidden>
+          <div class="pf-head"><h3 id="pfTitle">Punch In proofs</h3><span class="ck-pill" id="pfPill"></span></div>
+          <div id="pfAlert"></div>
+          <div id="pfBox"></div>
+        </div>
+
+        <div class="hm-tiles" id="hmTiles">
+          <div><small>Punch In</small><b id="tIn">—</b></div>
+          <div><small>Punch Out</small><b id="tOut">—</b></div>
+          <div><small>Hours</small><b id="tHrs">—</b></div>
+        </div>
+
+      <!-- Store staff only: the opening tasks, each with its photos. Hidden
+           for everybody else (the card is only shown once the server says
+           this employee is on the store checklist). -->
+      <div class="card" style="max-width:560px; display:none;" id="ckCard">
+        <div class="card-head"><h2 id="ckHead">Opening checklist</h2></div>
+        <div style="padding:14px 20px;">
+          <div id="ckAlert"></div>
+          <div id="ckBox" class="loading" style="padding:0;">Loading...</div>
+        </div>
+      </div>
+      <!-- Photo categories the admin made (Cleaning › Shoe rack / Floor / Fan …); shown only when one applies to this employee. -->
+      <div class="card" style="max-width:560px; display:none;" id="pcCard">
+        <div class="card-head"><h2>Photo tasks</h2></div>
+        <div style="padding:14px 20px;">
+          <div id="pcAlert"></div>
+          <div id="pcBox"></div>
+        </div>
+      </div>
+      <input type="file" accept="image/*" capture="environment" id="ckFile" style="display:none;">
+      <input type="file" accept="image/*" capture="environment" id="pcFile" style="display:none;">
+      <input type="file" accept="image/*,.jpg,.jpeg,.png,.webp,.gif,.bmp,.heic,.heif,.avif,.tif,.tiff" id="pfFile" style="display:none;">
+
+      <div class="card" style="max-width:560px;" id="remCard">
+        <div class="card-head"><h2>Punch-in reminder <span class="rem-req">Required</span></h2></div>
+        <div style="padding:14px 20px;">
+          <div class="rem-row">
+            <div>
+              <div style="font-size:13.5px; font-weight:600;" id="remTitle">Remind me if I haven't punched in</div>
+              <div style="font-size:12px; color:var(--muted);" id="remWhen">A notification on this phone at shift start + 20 min.</div>
+            </div>
+            <button type="button" class="sw" id="remSwitch" role="switch" aria-checked="false" aria-label="Punch-in reminder (required)" disabled></button>
+          </div>
+          <div class="rem-note" id="remNote">Checking…</div>
+          <ol class="rem-steps" id="remSteps" hidden>
+            <li>Tap the 🔒 lock icon in the address bar (or open the browser's site settings)</li>
+            <li>Notifications → <b>Allow</b></li>
+            <li>Come back here and tap <b>Check again</b></li>
+          </ol>
+          <button type="button" class="btn rem-big" id="btnRemOn" style="display:none;">Turn on reminders</button>
+          <button type="button" class="btn secondary rem-big" id="btnRemCopy" style="display:none;">Copy link to open in the browser</button>
+          <div class="rem-diag" id="remDiag" hidden></div>
+          <button type="button" class="btn secondary" id="btnRemTest" style="display:none; margin-top:10px; padding:7px 14px; font-size:13px;">Send a test notification</button>
+        </div>
+      </div>
+
+        <div class="hm-links" id="hmLinks"></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="assets/js/config.js?v=2"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
+<script>
+  guardPage();
+  renderSidebar('attendance');
+
+  const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model';
+  const MATCH_THRESHOLD = 0.50;  // euclidean distance — lower is stricter (was 0.45: too many real employees were refused in normal indoor light; the library's own default is 0.6)
+  const MATCHES_NEEDED = 3;      // consecutive matching frames; one mismatch resets the count
+  const MIN_FACE_FRAC = 0.22;    // face must span at least this share of the frame width
+  const OTHER_MARGIN = 0.04;     // live face must be this much closer to YOU than to anyone else (was 0.08: with many employees, ordinary look-alikes kept failing real people)
+  let slowDevice = false;        // set when the models had to fall back to the CPU
+
+  const alertBox = document.getElementById('alertBox');
+  const video = document.getElementById('cam');
+  const panel = document.getElementById('camPanel');
+  const overlay = document.getElementById('camOverlay');
+  const oval = document.getElementById('camOval');
+  const verifyMsg = document.getElementById('verifyMsg');
+  const btnIn = document.getElementById('btnPunchIn');
+  const btnOut = document.getElementById('btnPunchOut');
+  const locBox = document.getElementById('locBox');
+  const HINT_TXT = 'We check your location, then your face.';
+  const stepsEl = document.getElementById('steps');
+
+  let enrolledDescriptor = null; // Float32Array
+  let otherDescriptors = [];     // a few other employees' fingerprints, for the look-alike check
+  let enrollMode = false;
+  let faceLoaded = false;        // face.get answered (decides Enroll vs Punch)
+  let setup = null;              // reminder setup (push key)
+  let busy = false;
+  let stream = null;             // the live camera, only while a punch runs
+  let cancelled = false;         // ✕ tapped, or the app was left mid-punch
+  let todayRow = null;
+  let fwAny = false;        // any footwear accepted (female employees, from attendance.today)
+  const placeTxt = () => fwAny ? 'Place your footwear in the frame (any footwear is fine), then tap the round button' : 'Place your shoes in the frame, then tap the round button';
+  let fwRequired = false;   // footwear photo needed at Punch In (from attendance.today; admin switch FOOTWEAR_CHECK)
+
+  let alertTimer = null;
+  function showAlert(msg, type = 'success') {
+    alertBox.innerHTML = `<div class="alert ${type}">${msg}</div>`;
+    clearTimeout(alertTimer);   // an earlier alert's timer must not wipe this one
+    alertTimer = setTimeout(() => (alertBox.innerHTML = ''), 6000);
+  }
+  function setMsg(text, color) {
+    verifyMsg.textContent = text;
+    verifyMsg.style.color = color || 'var(--muted)';
+  }
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+  // ---------- Step strip ----------
+  // Checks in order: 1 Location, 2 Face, 3 Footwear (Punch In only, when the admin has the footwear check on).
+  function stepsShow(withShoe) {
+    stepsEl.hidden = false;
+    stepsEl.querySelectorAll('li').forEach(li => { li.className = ''; });
+    const sl = stepsEl.querySelector('li[data-k="footwear"]');
+    if (sl) sl.hidden = !withShoe;
+  }
+  function step(k, state) {
+    const li = stepsEl.querySelector(`li[data-k="${k}"]`);
+    if (li) li.className = state || '';
+  }
+
+  // ---------- Home header + hours ----------
+  function nameFromLogin() {
+    const u = api.currentUser() || {};
+    return String(u.username || '').split(/[._\s@-]+/)[0].replace(/\d+$/, '');
+  }
+  function paintHead(fullName) {
+    const raw = (fullName && String(fullName).trim()) || nameFromLogin();
+    const parts = raw.split(/\s+/).filter(Boolean);
+    const first = parts[0] ? parts[0].charAt(0).toUpperCase() + parts[0].slice(1) : '';
+    const h = new Date().getHours();
+    document.getElementById('hmGreet').textContent = (h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening') + ' · ' + new Date().toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+    document.getElementById('hmName').textContent = first ? 'Hi, ' + first : 'Welcome';
+    document.getElementById('hmAv').textContent = ((parts[0] || '').charAt(0) + (parts.length > 1 ? parts[parts.length - 1].charAt(0) : '')).toUpperCase() || '·';
+  }
+  let hrsTimer = null;
+  let shiftMin = 540;            // length of today's shift in minutes (9 h when no shift is set)
+  let punchMode = 'fixed';       // punch rule: fixed time / hours only / no rule
+  const fmtHM = (m) => Math.floor(m / 60) + 'h ' + String(m % 60).padStart(2, '0') + 'm';
+  const toMin = (t) => { const [h, m] = String(t).split(':').map(Number); return h * 60 + (m || 0); };
+  // The line under the button: the hours so far while working, otherwise what a tap does.
+  function paintHint() {
+    const el = document.getElementById('camHint');
+    const a = todayRow;
+    if (enrollMode) { el.textContent = 'First time only — tap to enroll your face.'; return; }
+    if (a && a.punch_in && !a.punch_out) {
+      const w = Math.max(0, Math.floor((Date.now() - new Date(a.punch_in.replace(' ', 'T'))) / 60000));
+      if (punchMode === 'free') el.textContent = `${fmtHM(w)} worked`;
+      else el.textContent = w >= shiftMin ? `${fmtHM(w)} worked · ${punchMode === 'hours' ? 'your hours are complete ✓' : 'shift hours complete ✓'}` : `${fmtHM(w)} worked · ${fmtHM(shiftMin - w)} to go`;
+      return;
+    }
+    el.textContent = HINT_TXT;
+  }
+  // Hours ring: empty before punch-in, fills with the hours worked, turns green when the shift is complete.
+  function paintRing() {
+    const a = todayRow, pulse = document.getElementById('pulse');
+    const working = !!(a && a.punch_in && !a.punch_out);
+    let pct = 0;
+    if (working) {
+      const w = Math.max(0, (Date.now() - new Date(a.punch_in.replace(' ', 'T'))) / 60000);
+      pct = Math.min(1, w / shiftMin);
+    }
+    pulse.classList.toggle('on', working);
+    pulse.classList.toggle('full', working && pct >= 1);
+    document.getElementById('hrProg').style.strokeDasharray = (pct * 100).toFixed(2) + ' 100';
+    paintHint();
+  }
+  function hoursText(a) {
+    if (!a || !a.punch_in) return '—';
+    const from = new Date(a.punch_in.replace(' ', 'T'));
+    const to = a.punch_out ? new Date(a.punch_out.replace(' ', 'T')) : new Date();
+    const m = Math.max(0, Math.floor((to - from) / 60000));
+    return Math.floor(m / 60) + 'h ' + String(m % 60).padStart(2, '0') + 'm';
+  }
+
+  // Quick links to the employee's other pages (same pages the menu shows).
+  const LINK_ICONS = {
+    rupee: '<path d="M7 5h10M7 9h10M7 5c5 0 7 2 7 4s-2 4-7 4l6 6"/>',
+    warn: '<path d="M12 4l9 16H3z"/><path d="M12 10v4M12 17.5v.1"/>',
+    chart: '<path d="M5 19V9M12 19V5M19 19v-7"/>',
+    bag: '<path d="M5 8h14l-1 12H6z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/>',
+    doc: '<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 13h6M10 17h6"/>',
+  };
+  async function loadLinks() {
+    const u = api.currentUser() || {};
+    if (u.role !== 'Employee') return;          // other roles use the menu
+    try {
+      const d = await api.get('me.flags');
+      const L = [];
+      if (d.has_salary) L.push(['my_salary.html', 'Salary', 'rupee']);
+      L.push(['my_penalties.html', 'Penalties', 'warn']);
+      if (d.is_sales) { L.push(['my_sales.html', 'Sales', 'chart']); L.push(['orders.html', 'Orders', 'bag']); }
+      L.push(['my_agreements.html', 'Agreements', 'doc']);
+      document.getElementById('hmLinks').innerHTML = L.map(x =>
+        `<a href="${x[0]}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${LINK_ICONS[x[2]]}</svg>${x[1]}</a>`).join('');
+    } catch (e) { /* the menu still has every link */ }
+  }
+
+  // ---------- Today's status ----------
+  async function loadToday() {
+    try {
+      const data = await api.get('attendance.today');
+      const a = data.attendance;
+      todayRow = a;
+      fwRequired = !!data.footwear_required;
+      fwAny = !!data.any_footwear;            // female employee: any footwear (Crocs, slippers, heels …) is accepted
+      { const ck = document.querySelector('#camCheck small'); if (ck) ck.textContent = fwAny ? 'Any footwear is fine' : 'Is this proper shoes?';
+        const fr = document.querySelector('#camShoeFrame span'); if (fr) fr.textContent = fwAny ? 'Keep your footwear inside' : 'Keep both shoes inside'; }
+      const fmt = (t) => t ? new Date(t.replace(' ', 'T')).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '—';
+      // The employee's own working time, when one has been given to them.
+      const sh = data.shift || {};
+      punchMode = sh.mode || 'fixed';
+      paintHead(data.employee_name);
+      const hasIn = !!(a && a.punch_in), hasOut = !!(a && a.punch_out);
+      let late = '';
+      if (sh.shift_start && hasIn && punchMode !== 'free' && !(punchMode === 'hours' && !sh.win_to)) {
+        const inTs = new Date(a.punch_in.replace(' ', 'T'));
+        const due = new Date(inTs); const [sH, sM] = sh.shift_start.split(':').map(Number);
+        due.setHours(sH, sM + (Number(sh.late_after) || 0), 0, 0);
+        const lateMin = Math.round((inTs - due) / 60000);
+        late = lateMin > 0 ? ` <span class="pc amb">Late ${lateMin} min</span>` : ' <span class="pc grn">On time</span>';
+      }
+      const chip = document.getElementById('hmChip');
+      chip.textContent = hasIn ? (hasOut ? 'Done ✓' : 'Working') : 'Not in';
+      chip.className = 'hm-chip' + (hasIn ? ' on' : '');
+      shiftMin = 540;
+      if (sh.shift_start && sh.shift_end) {
+        let len = toMin(sh.shift_end) - toMin(sh.shift_start);
+        if (len <= 0) len += 1440;                     // night shift: ends after midnight
+        if (len >= 60) shiftMin = len;
+      }
+      let shiftTxt = sh.shift_start ? `Shift ${hm12(sh.shift_start)}${sh.shift_end ? ' – ' + hm12(sh.shift_end) : ''}` : '';
+      if (punchMode === 'hours') {
+        const ht = Number(sh.hours_target) || 8;
+        shiftMin = Math.round(ht * 60);
+        shiftTxt = `${ht} h a day · ` + (sh.win_from && sh.win_to ? `start ${hm12(sh.win_from)} – ${hm12(sh.win_to)}` : sh.win_to ? `start by ${hm12(sh.win_to)}` : sh.win_from ? `start from ${hm12(sh.win_from)}` : 'start any time');
+      } else if (punchMode === 'free') {
+        shiftTxt = 'No time rules · punch is optional';
+      }
+      const ts = document.getElementById('todayStatus');
+      ts.classList.remove('loading');   // stop the spinner once loaded
+      ts.innerHTML = (shiftTxt + late).trim();
+      ts.hidden = !ts.innerHTML;
+      document.getElementById('tIn').textContent = fmt(a && a.punch_in);
+      document.getElementById('tOut').textContent = fmt(a && a.punch_out);
+      document.getElementById('tHrs').textContent = hoursText(a);
+      clearInterval(hrsTimer);
+      if (hasIn && !hasOut) hrsTimer = setInterval(() => { document.getElementById('tHrs').textContent = hoursText(todayRow); paintRing(); }, 30000);
+      paintRing();
+      if (!enrollMode) {
+        btnIn.style.display = (a && a.punch_in) ? 'none' : '';
+        btnOut.style.display = (a && a.punch_in && !a.punch_out) ? '' : 'none';
+      }
+      const done = !!(a && a.punch_in && a.punch_out);
+      document.getElementById('doneNote').hidden = !done;
+      document.getElementById('pulse').hidden = done;          // nothing left to tap once done
+      document.getElementById('camHint').hidden = done;
+      loadChecklist();
+      loadCats();
+      loadProofs();
+    } catch (err) {
+      document.getElementById('todayStatus').classList.remove('loading');
+      document.getElementById('todayStatus').innerHTML = `<div class="alert error">${err.message}</div>`;
+      document.getElementById('todayStatus').hidden = false;
+    }
+  }
+
+  // ---------- Store opening checklist ----------
+  // Store staff only. Tasks come from the server in order; each needs its
+  // own number of photos, taken with the phone camera. Punch Out stays
+  // locked (server-side too) until the whole list is submitted.
+  const hm12 = (t) => { const [h, m] = String(t).split(':').map(Number); return `${((h + 11) % 12) + 1}:${String(m || 0).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`; };
+  const ckCard = document.getElementById('ckCard');
+  const ckFile = document.getElementById('ckFile');
+  let ckState = null;
+  let ckTaskId = 0;
+  let ckBusy = false;
+
+  // Store tasks have four timings: pre_in (Punch In stays locked until the photos are in), post_in (the opening checklist, needs Submit),
+  // pre_out (opens once the opening list is submitted; Punch Out stays locked until done) and post_out (opens after Punch Out, blocks nothing).
+  // The server refuses Punch In / Out too; this only keeps the buttons honest.
+  const CK_LOCK_MSG = 'Finish and submit the store tasks first';
+  const CK_IN_MSG = 'Take the Before Punch In photos first';
+  const CK_PHASES = ['pre_in', 'post_in', 'pre_out', 'post_out'];
+  const CK_NAMES = { pre_in: 'Before Punch In', post_in: 'After Punch In', pre_out: 'Before Punch Out', post_out: 'After Punch Out' };
+  function ckStatus(d) {
+    const inn = !!Number(d.punched_in), out = !!Number(d.punched_out);
+    const ph = d.phases || {};
+    const openingDone = !(ph.post_in && ph.post_in.tasks_total) || !!d.submitted_at;
+    return {
+      pre_in: inn ? 'closed' : 'open',
+      post_in: !inn ? 'wait' : (out ? 'closed' : 'open'),
+      pre_out: !inn ? 'wait' : (out ? 'closed' : (openingDone ? 'open' : 'wait')),
+      post_out: out ? 'open' : 'wait',
+    };
+  }
+  function ckApplyLock() {
+    const d = ckState;
+    const store = !!(d && Number(d.is_store) && d.phases);
+    const ph = store ? d.phases : {};
+    const lockIn = store && !Number(d.punched_in) && ph.pre_in.tasks_total && !ph.pre_in.complete;
+    const lockOut = store && Number(d.punched_in) && !Number(d.punched_out)
+      && ((ph.post_in.tasks_total && !d.submitted_at) || (ph.pre_out.tasks_total && !ph.pre_out.complete));
+    const pl = pcLocks();                    // photo categories lock Punch In / Out the same way
+    const outMsg = lockOut ? CK_LOCK_MSG : (pl.out ? PC_OUT_MSG : '');
+    const inMsg = (lockIn || pl.inn) ? CK_IN_MSG : '';
+    if (outMsg) { btnOut.disabled = true; btnOut.title = outMsg; }
+    else if (btnOut.title === CK_LOCK_MSG || btnOut.title === PC_OUT_MSG) { btnOut.disabled = false; btnOut.title = ''; }
+    if (inMsg) { btnIn.disabled = true; if (!btnIn.title) btnIn.title = inMsg; }
+    else if (btnIn.title === CK_IN_MSG) {
+      btnIn.title = '';
+      if (faceLoaded && !busy && !(reminderNeeded && !reminderOn)) btnIn.disabled = false;
+    }
+  }
+
+  function ckAlert(msg, type = 'error') {
+    document.getElementById('ckAlert').innerHTML = msg ? `<div class="alert ${type}" style="margin-bottom:10px;">${msg}</div>` : '';
+    if (msg) setTimeout(() => { const b = document.getElementById('ckAlert'); if (b) b.innerHTML = ''; }, 5000);
+  }
+  const ckPhotoUrl = (p) => api.buildUrl('files.view', { path: p, token: api.token() || '' });
+
+  async function loadChecklist() {
+    try {
+      const d = await api.get('store_tasks.my');
+      if (!Number(d.is_store)) { ckCard.style.display = 'none'; ckState = null; return; }
+      ckState = d;
+      ckCard.style.display = '';
+      renderChecklist();
+    } catch (err) {
+      // A server without the checklist tables just doesn't show the card.
+      ckCard.style.display = 'none';
+      ckState = null;
+    }
+  }
+
+  // Optional example photo: a small square next to a task / proof; tapping it shows the photo big, on this same page (never a new tab).
+  function egSquare(kind, id, v, title) {
+    const url = api.buildUrl('example.image', { kind, id, token: api.token() || '', v: v || '' });
+    return `<button type="button" class="eg" data-egu="${pfEsc(url)}" data-egt="${pfEsc(title)}" aria-label="See an example photo for ${pfEsc(title)}"><img src="${pfEsc(url)}" alt="" loading="lazy"><em>EXAMPLE</em></button>`;
+  }
+  const egLb = document.createElement('div');
+  egLb.className = 'eg-lb'; egLb.hidden = true;
+  egLb.innerHTML = '<button type="button" class="x" aria-label="Close">✕</button><div class="cap">Example photo</div><div class="tt"></div><img alt="Example photo"><div class="hint">Take your photo like this · tap anywhere to close</div>';
+  document.body.appendChild(egLb);
+  const egClose = () => { egLb.hidden = true; egLb.querySelector('img').removeAttribute('src'); };
+  egLb.addEventListener('click', egClose);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !egLb.hidden) egClose(); });
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest && e.target.closest('.eg');
+    if (!b) return;
+    e.preventDefault(); e.stopPropagation();
+    egLb.querySelector('.tt').textContent = b.dataset.egt || '';
+    egLb.querySelector('img').src = b.dataset.egu;
+    egLb.hidden = false;
+  }, true);
+
+  function ckTaskRow(t, i, canShoot, canRemove, firstOpen) {
+    const have = t.photos.length;
+    const left = t.photos_required - have;
+    const isNow = canShoot && !t.done && firstOpen.v;
+    if (isNow) firstOpen.v = false;
+    const shots = t.photos.map(p => `
+      <span class="ck-shot"><img src="${ckPhotoUrl(p.photo)}" alt="">${canRemove ? `<button type="button" title="Remove this photo" onclick="ckRemove(${p.photo_id})">×</button>` : ''}</span>`).join('');
+    // The empty slot is only shown next to photos already taken; a task with nothing yet just gets the button underneath.
+    const addSlot = canShoot && left > 0 && have > 0 ? `<span class="ck-shot" style="background:#fff; border:1.5px dashed #b6bdc8; display:flex; align-items:center; justify-content:center; color:#7b8494; font-size:19px; cursor:pointer;" onclick="ckShoot(${t.task_id})">+</span>` : '';
+    const sub = t.done
+      ? (t.photos[0] ? `${t.photos.length} photo${t.photos.length === 1 ? '' : 's'} · ${hm12(t.photos[t.photos.length - 1].taken_at.slice(11, 16))}` : 'done')
+      : (have ? `${have} of ${t.photos_required} photos` : `${t.photos_required} photo${t.photos_required === 1 ? '' : 's'}`);
+    return `<div class="ck-task">
+        <span class="ck-tick ${t.done ? 'on' : (isNow ? 'now' : '')}">${t.done ? '✓' : (i + 1)}</span>
+        <div class="ck-body">
+          <div class="ck-name">${pfEsc(t.title)}</div>
+          <div class="ck-sub">${sub}</div>
+          ${(shots || addSlot) ? `<div class="ck-shots">${shots}${addSlot}</div>` : ''}
+          ${isNow ? `<button type="button" class="btn ck-cam" onclick="ckShoot(${t.task_id})">📷 ${have ? 'Take ' + left + ' more photo' + (left === 1 ? '' : 's') : 'Take photo'}</button>` : ''}
+        </div>
+        ${t.example ? egSquare('task', t.task_id, t.example, t.title) : ''}
+      </div>`;
+  }
+
+  function renderChecklist() {
+    const d = ckState;
+    const box = document.getElementById('ckBox');
+    box.classList.remove('loading');
+    const P = d.phases || {};
+    const total = CK_PHASES.reduce((n, k) => n + (P[k] ? P[k].tasks_total : 0), 0);
+    if (!total) { box.innerHTML = '<div style="font-size:13px; color:var(--muted);">No store tasks are set for you yet.</div>'; ckApplyLock(); return; }
+    const st = ckStatus(d);
+    const submitted = !!d.submitted_at;
+    const onlyOpening = CK_PHASES.every(k => k === 'post_in' || !P[k].tasks_total);
+    document.getElementById('ckHead').textContent = onlyOpening ? 'Opening checklist' : 'Store tasks';
+    const sections = CK_PHASES.map((k) => {
+      const p = P[k];
+      if (!p || !p.tasks_total) return '';
+      const s = st[k];
+      const pill = `<span class="ck-pill ${p.complete ? 'ok' : ''}">${p.tasks_done} of ${p.tasks_total}</span>`;
+      const chip = `<div class="ck-phh"><span class="ck-chip ${k}">${CK_NAMES[k]}</span>${pill}</div>`;
+      const firstOpen = { v: true };
+      if (k === 'pre_in' && s === 'closed' && !p.complete) return '';           // admin added it after Punch In: not asked any more
+      if (s === 'wait') {
+        const why = k === 'post_in' ? 'Punch in first. The photos can be uploaded once you have punched in.'
+          : (k === 'pre_out' ? 'Opens after you submit the opening checklist.' : 'Opens after you punch out.');
+        return `<div class="ck-ph">${chip}<div class="ck-wait">${why}<ul>${p.tasks.map(t => `<li>${pfEsc(t.title)} · ${t.photos_required} photo${t.photos_required === 1 ? '' : 's'}</li>`).join('')}</ul></div></div>`;
+      }
+      const pct = p.photos_need ? Math.max(2, Math.round(p.photos_have / p.photos_need * 100)) : 0;
+      let head = '', canShoot = s === 'open', canRemove = s === 'open', extra = '';
+      if (k === 'pre_in') {
+        head = p.complete ? `<div class="ck-done">✓ Before Punch In photos done</div>`
+          : `<div class="ck-lock"><b>${p.tasks_total} task${p.tasks_total === 1 ? '' : 's'} before you can punch in.</b> Take the photo, then Punch In opens.</div>`;
+      } else if (k === 'post_in') {
+        canShoot = s === 'open' && !submitted; canRemove = !submitted;
+        head = submitted ? `<div class="ck-done">✓ Opening checklist submitted at ${hm12(d.submitted_at.slice(11, 16))} · ${p.photos_have} photo${p.photos_have === 1 ? '' : 's'}</div>`
+          : `<div class="ck-lock"><b>${p.tasks_total} opening task${p.tasks_total === 1 ? '' : 's'} to finish.</b> Take the photo as you do each one — Punch Out opens after all ${p.photos_need} photos are uploaded and you tap Submit.</div>`;
+        extra = submitted ? '' : `<button type="button" class="btn" id="ckSubmit" style="width:100%; margin-top:6px;" ${p.complete ? '' : 'disabled'}>Submit checklist · ${p.photos_have} / ${p.photos_need} photos</button>
+           <div class="ck-note">Punch Out stays locked until the checklist is submitted</div>`;
+      } else if (k === 'pre_out') {
+        head = p.complete ? `<div class="ck-done">✓ Closing photos done</div>`
+          : `<div class="ck-lock"><b>${p.tasks_total} closing task${p.tasks_total === 1 ? '' : 's'}.</b> Finish ${p.tasks_total === 1 ? 'it' : 'them'}, then Punch Out opens.</div>`;
+      } else {
+        head = p.complete ? `<div class="ck-done">✓ After Punch Out photos done</div>`
+          : `<div class="ck-lock" style="background:#efe8fb; color:#5b2fa8;"><b>${p.tasks_total} task${p.tasks_total === 1 ? '' : 's'} after Punch Out.</b> Your day closes when ${p.tasks_total === 1 ? 'it is' : 'they are'} done.</div>`;
+      }
+      const rows = p.tasks.map((t, i) => ckTaskRow(t, i, canShoot, canRemove, firstOpen)).join('');
+      return `<div class="ck-ph">${chip}${head}<div class="ck-bar ${p.complete ? 'done' : ''}"><i style="width:${pct}%;"></i></div>${rows}${extra}</div>`;
+    }).join('');
+    ckApplyLock(); pfApplyLock();
+    box.innerHTML = sections;
+    const sb = document.getElementById('ckSubmit');
+    if (sb) sb.addEventListener('click', ckSubmit);
+  }
+
+  // The camera opens through a normal file input with capture — the phone's
+  // own camera app, so no video stream is kept open on this page.
+  window.ckShoot = function (taskId) {
+    if (ckBusy) return;
+    ckTaskId = taskId;
+    ckFile.value = '';
+    ckFile.click();
+  };
+  ckFile.addEventListener('change', async () => {
+    const file = ckFile.files && ckFile.files[0];
+    if (!file || !ckTaskId) return;
+    ckBusy = true;
+    ckAlert('');
+    const box = document.getElementById('ckBox');
+    box.style.opacity = '.6';
+    try {
+      const fd = new FormData();
+      fd.append('task_id', ckTaskId);
+      fd.append('photo', file, 'task.jpg');
+      // Stamp the photo with where it was taken, when the phone will say.
+      try { const f = await getLocation(); fd.append('lat', f.lat); fd.append('lng', f.lng); } catch (e) { /* photo is still saved */ }
+      const d = await api.upload('store_tasks.upload', fd);
+      ckState = Object.assign({}, ckState, d);
+      renderChecklist();
+    } catch (err) {
+      ckAlert(err.message);
+    } finally {
+      ckBusy = false;
+      box.style.opacity = '';
+      ckFile.value = '';
+    }
+  });
+
+  window.ckRemove = async function (photoId) {
+    if (ckBusy) return;
+    ckBusy = true;
+    try {
+      const fd = new FormData();
+      fd.append('photo_id', photoId);
+      const d = await api.upload('store_tasks.remove_photo', fd);
+      ckState = Object.assign({}, ckState, d);
+      renderChecklist();
+    } catch (err) {
+      ckAlert(err.message);
+    } finally { ckBusy = false; }
+  };
+
+  async function ckSubmit() {
+    if (ckBusy) return;
+    ckBusy = true;
+    const btn = document.getElementById('ckSubmit');
+    if (btn) { btn.disabled = true; btn.textContent = 'Submitting…'; }
+    try {
+      const fd = new FormData();
+      fd.append('submit', '1');
+      const d = await api.upload('store_tasks.submit', fd);
+      ckState = Object.assign({}, ckState, d);
+      renderChecklist();
+      ckAlert(d.message || 'Checklist submitted.', 'success');
+      showAlert('Opening checklist submitted — you can punch out when your shift ends.');
+    } catch (err) {
+      ckAlert(err.message);
+      renderChecklist();
+    } finally { ckBusy = false; }
+  }
+
+  // ---------- Photo categories (admin: Punch-in proofs › + Add category) ----------
+  // One card per timing: each category is a group of items (Shoe rack, Floor, Fan …) with its own photos, taken with the phone camera.
+  // Before Punch In locks Punch In; After Punch In and Before Punch Out lock Punch Out; After Punch Out blocks nothing.
+  // The server refuses Punch In / Out too — ckApplyLock() (below) only keeps the buttons honest.
+  const pcCard = document.getElementById('pcCard');
+  const pcFile = document.getElementById('pcFile');
+  let pcState = null;
+  let pcItemId = 0;
+  let pcBusy = false;
+  const PC_OUT_MSG = 'Finish the photo tasks first';
+  function pcLocks() {
+    const d = pcState;
+    if (!d || !Number(d.total) || !d.phases) return { inn: false, out: false };
+    const ph = d.phases, inn = !!Number(d.punched_in), out = !!Number(d.punched_out);
+    return {
+      inn: !inn && !!ph.pre_in.items_total && !ph.pre_in.complete,
+      out: inn && !out && ((!!ph.post_in.items_total && !ph.post_in.complete) || (!!ph.pre_out.items_total && !ph.pre_out.complete)),
+    };
+  }
+  function pcIcon(name) {
+    const n = String(name || '').toLowerCase();
+    if (/clean|safai|sweep|mop|wash/.test(n)) return '🧹';
+    if (/cash|money|counter|close|closing|bill/.test(n)) return '💵';
+    if (/light|bulb|lamp/.test(n)) return '💡';
+    if (/shoe|rack|display|arrange|stock|shelf/.test(n)) return '🗂️';
+    if (/open|opening|set-?up|morning/.test(n)) return '🔑';
+    if (/safe|secur|lock|shutter/.test(n)) return '🔒';
+    return '📸';
+  }
+  function pcAlert(msg, type = 'error') {
+    document.getElementById('pcAlert').innerHTML = msg ? `<div class="alert ${type}" style="margin-bottom:10px;">${pfEsc(msg)}</div>` : '';
+    if (msg) setTimeout(() => { const b = document.getElementById('pcAlert'); if (b) b.innerHTML = ''; }, 5000);
+  }
+  async function loadCats() {
+    try {
+      const d = await api.get('photocat.my');
+      if (!Number(d.total)) { pcCard.style.display = 'none'; pcState = null; ckApplyLock(); return; }
+      pcState = d;
+      renderCats();
+    } catch (err) {
+      pcCard.style.display = 'none';
+      pcState = null;
+      ckApplyLock();
+    }
+  }
+  function pcItemRow(t, i, canShoot, canRemove, firstOpen) {
+    const have = t.photos.length;
+    const left = t.photos_required - have;
+    const isNow = canShoot && !t.done && firstOpen.v;
+    if (isNow) firstOpen.v = false;
+    const shots = t.photos.map(p => `
+      <span class="ck-shot"><img src="${ckPhotoUrl(p.photo)}" alt="">${canRemove ? `<button type="button" title="Remove this photo" onclick="pcRemove(${p.photo_id})">×</button>` : ''}</span>`).join('');
+    const addSlot = canShoot && left > 0 && have > 0 ? `<span class="ck-shot" style="background:#fff; border:1.5px dashed #b6bdc8; display:flex; align-items:center; justify-content:center; color:#7b8494; font-size:19px; cursor:pointer;" onclick="pcShoot(${t.item_id})">+</span>` : '';
+    const sub = t.done
+      ? `${have} photo${have === 1 ? '' : 's'} · ${hm12(t.photos[have - 1].taken_at.slice(11, 16))}`
+      : (have ? `${have} of ${t.photos_required} photos` : `${t.photos_required} photo${t.photos_required === 1 ? '' : 's'}`);
+    return `<div class="ck-task">
+        <span class="ck-tick ${t.done ? 'on' : (isNow ? 'now' : '')}">${t.done ? '✓' : (i + 1)}</span>
+        <div class="ck-body">
+          <div class="ck-name">${pfEsc(t.title)}</div>
+          <div class="ck-sub">${sub}</div>
+          ${(shots || addSlot) ? `<div class="ck-shots">${shots}${addSlot}</div>` : ''}
+          ${isNow ? `<button type="button" class="btn ck-cam" onclick="pcShoot(${t.item_id})">📷 ${have ? 'Take ' + left + ' more photo' + (left === 1 ? '' : 's') : 'Take photo'}</button>` : ''}
+        </div>
+        ${t.example ? egSquare('catitem', t.item_id, t.example, t.title) : ''}
+      </div>`;
+  }
+  function renderCats() {
+    const d = pcState, box = document.getElementById('pcBox');
+    const P = d.phases || {}, st = d.phase_status || {};
+    const html = CK_PHASES.map((k) => {
+      const p = P[k];
+      if (!p || !p.cats.length) return '';
+      if (k === 'pre_in' && st[k] === 'closed' && !p.complete) return '';          // added after Punch In: not asked any more
+      const s = st[k];
+      const chip = `<div class="ck-phh"><span class="ck-chip ${k}">${CK_NAMES[k]}</span><span class="ck-pill ${p.complete ? 'ok' : ''}">${p.cats.filter(c => Number(c.complete)).length} of ${p.cats.length} ${p.cats.length === 1 ? 'category' : 'categories'}</span></div>`;
+      if (s === 'wait') {
+        const why = k === 'post_out' ? 'Opens after you punch out.' : 'Punch in first. The photos can be taken once you have punched in.';
+        return `<div class="ck-ph">${chip}<div class="ck-wait">${why}<ul>${p.cats.map(c => `<li>${pcIcon(c.name)} ${pfEsc(c.name)} · ${c.items_total} item${c.items_total === 1 ? '' : 's'}</li>`).join('')}</ul></div></div>`;
+      }
+      const open = s === 'open';
+      const names = p.cats.map(c => pfEsc(c.name)).join(', ');
+      let head;
+      if (p.complete) head = `<div class="ck-done">✓ ${CK_NAMES[k]} photos done</div>`;
+      else if (k === 'pre_in') head = `<div class="ck-lock"><b>${names}: ${p.items_total} item${p.items_total === 1 ? '' : 's'} before you can punch in.</b> Take the photo for each one, then Punch In opens.</div>`;
+      else if (k === 'post_out') head = `<div class="ck-lock" style="background:#efe8fb; color:#5b2fa8;"><b>${names}: ${p.items_total} item${p.items_total === 1 ? '' : 's'} after Punch Out.</b> Your day closes when ${p.items_total === 1 ? 'it is' : 'they are'} done.</div>`;
+      else head = `<div class="ck-lock"><b>${names}: ${p.items_total} item${p.items_total === 1 ? '' : 's'}.</b> Take the photo as you finish each one. Punch Out opens when all are done.</div>`;
+      const cards = p.cats.map((c) => {
+        const pct = c.photos_need ? Math.max(2, Math.round(c.photos_have / c.photos_need * 100)) : 0;
+        const firstOpen = { v: true };
+        return `<div class="pc-card"><div class="pc-ch"><b>${pcIcon(c.name)} ${pfEsc(c.name)}</b><span class="ck-pill ${Number(c.complete) ? 'ok' : ''}">${c.items_done} of ${c.items_total}${Number(c.complete) ? ' ✓' : ''}</span></div>
+          <div class="ck-bar ${Number(c.complete) ? 'done' : ''}"><i style="width:${pct}%;"></i></div>
+          ${c.items.map((t, i) => pcItemRow(t, i, open, open, firstOpen)).join('')}</div>`;
+      }).join('');
+      return `<div class="ck-ph">${chip}${head}${cards}</div>`;
+    }).join('');
+    pcCard.style.display = html ? '' : 'none';
+    box.innerHTML = html;
+    ckApplyLock(); pfApplyLock();
+  }
+  window.pcShoot = function (itemId) {
+    if (pcBusy) return;
+    pcItemId = itemId;
+    pcFile.value = '';
+    pcFile.click();
+  };
+  pcFile.addEventListener('change', async () => {
+    const file = pcFile.files && pcFile.files[0];
+    if (!file || !pcItemId) return;
+    pcBusy = true;
+    pcAlert('');
+    const box = document.getElementById('pcBox');
+    box.style.opacity = '.6';
+    try {
+      const fd = new FormData();
+      fd.append('item_id', pcItemId);
+      fd.append('photo', file, 'item.jpg');
+      try { const f = await getLocation(); fd.append('lat', f.lat); fd.append('lng', f.lng); } catch (e) { /* photo is still saved */ }
+      const d = await api.upload('photocat.upload', fd);
+      pcState = Object.assign({}, pcState, d);
+      renderCats();
+    } catch (err) {
+      pcAlert(err.message);
+    } finally {
+      pcBusy = false;
+      box.style.opacity = '';
+      pcFile.value = '';
+    }
+  });
+  window.pcRemove = async function (photoId) {
+    if (pcBusy) return;
+    pcBusy = true;
+    try {
+      const fd = new FormData();
+      fd.append('photo_id', photoId);
+      const d = await api.upload('photocat.remove_photo', fd);
+      pcState = Object.assign({}, pcState, d);
+      renderCats();
+    } catch (err) {
+      pcAlert(err.message);
+    } finally { pcBusy = false; }
+  };
+
+  // ---------- Punch-in proofs ----------
+  // Instagram / YouTube comment screenshots (and any other proof the admin adds). The card only shows when at least
+  // one applies to this employee. Punch In stays locked until every one is uploaded — the server refuses it too.
+  // The screenshot comes from the gallery (that is where screenshots are saved), so the picker has no camera-only flag.
+  const pfCard = document.getElementById('pfCard');
+  const pfFile = document.getElementById('pfFile');
+  const PF_LOCK_MSG = 'Upload your proofs first';
+  let pfState = null;
+  let pfLoaded = false;          // proofs.my answered (Punch In waits for it)
+  let pfStage = 'punch';         // 'enroll' while this person still has to enroll their face (the proofs asked once), else 'punch'
+  let pfBusy = false;
+  let pfRuleId = 0;
+  let pfReplace = false;
+  const pfLinks = {};            // the link typed for each proof, kept across redraws
+  const pfEdit = {};             // proofs being replaced
+  const pfEsc = (v) => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const pfItem = (id) => ((pfState && pfState.items) || []).find(i => Number(i.rule_id) === Number(id));
+
+  // Punch In is only offered once every proof is in (and not at all until the proofs have loaded).
+  function pfApplyLock() {
+    const d = pfState;
+    const waiting = !pfLoaded;
+    const lock = (waiting || !!(d && Number(d.total) && !Number(d.complete) && !Number(d.punched_in)));
+    const note = document.getElementById('pfLock');
+    if (lock) {
+      btnIn.disabled = true; btnIn.title = PF_LOCK_MSG;
+      const left = d ? Math.max(0, Number(d.total) - Number(d.done_count || 0)) : 0;
+      note.textContent = waiting ? '' : (d && d.once) ? '🔒 Enroll your ID card first (below)' : `🔒 ${left || ''} proof${left === 1 ? '' : 's'} to upload first`.replace('  ', ' ');
+      note.hidden = waiting;
+    } else {
+      note.hidden = true;
+      if (btnIn.title === PF_LOCK_MSG) {
+        btnIn.title = '';
+        if (faceLoaded && !busy && !(reminderNeeded && !reminderOn)) btnIn.disabled = false;
+      }
+    }
+  }
+
+  function pfAlert(msg, type = 'error') {
+    document.getElementById('pfAlert').innerHTML = msg ? `<div class="alert ${type}" style="margin-bottom:10px;">${pfEsc(msg)}</div>` : '';
+    if (msg) setTimeout(() => { const b = document.getElementById('pfAlert'); if (b) b.innerHTML = ''; }, 5000);
+  }
+
+  function pfTileText(it) {
+    if (it.kind === 'instagram') return 'IG';
+    if (it.kind === 'youtube') return 'YT';
+    const w = String(it.title || '').trim().split(/\s+/).filter(Boolean);
+    return (w.length > 1 ? w[0][0] + w[1][0] : (w[0] || '?').slice(0, 2)).toUpperCase();
+  }
+
+  // The link the admin set for a proof: only http(s) is ever turned into a clickable link.
+  const pfOpened = {};
+  function pfLinkInfo(it) {
+    const url = String(it.target_url || '').trim();
+    if (!/^https?:\/\//i.test(url)) return null;
+    let label = 'Open this link', host = '';
+    try { host = new URL(url).hostname.replace(/^www\./, '').replace(/^m\./, ''); } catch (e) { return null; }
+    if (host === 'instagram.com') label = /\/reel\//.test(url) ? 'Instagram Reel' : 'Instagram post';
+    else if (host === 'youtu.be' || host === 'youtube.com') label = /\/shorts\//.test(url) ? 'YouTube Short' : 'YouTube video';
+    else label = host;
+    const tile = host === 'instagram.com' ? 'IG' : ((host === 'youtu.be' || host === 'youtube.com') ? 'YT' : '↗');
+    const cls = host === 'instagram.com' ? 'instagram' : ((host === 'youtu.be' || host === 'youtube.com') ? 'youtube' : 'custom');
+    return { url, label, tile, cls, short: url.replace(/^https?:\/\/(www\.)?/i, '').replace(/\/$/, '') };
+  }
+  window.pfLinkOpened = function (id) { pfOpened[id] = 1; setTimeout(renderProofs, 400); };
+
+  // Shoe cleanliness rating (1-5) from the footwear AI: stars + words.
+  const CLEAN_WORDS = ['', 'Very dirty', 'Dirty', 'Average', 'Clean', 'Spotless'];
+  const cleanStars = (n) => { n = Math.max(0, Math.min(5, Number(n) || 0)); return '★'.repeat(n) + '☆'.repeat(5 - n); };
+  const cleanTxt = (n) => `Cleanliness ${cleanStars(n)} ${Number(n)}/5 · ${CLEAN_WORDS[Number(n)] || ''}`;
+
+  function pfItemHtml(it, punched) {
+    const id = Number(it.rule_id), need = Number(it.shots_required), have = Number(it.have);
+    const editing = !!pfEdit[id];
+    const done = Number(it.done) === 1 && !editing;
+    const kind = (it.kind === 'instagram' || it.kind === 'youtube') ? it.kind : 'custom';
+    const tile = `<span class="pf-tile ${kind}">${pfEsc(pfTileText(it))}</span>`;
+    const proofs = it.proofs || [];
+    const canRemove = !punched && need > 1;
+    const thumbs = proofs.map(p => (!p.file || Number(p.expired)) ? `<span class="pf-shot gone" title="Screenshot auto-deleted after 42 hours">Auto-<br>deleted</span>` : `<span class="pf-shot"><img src="${ckPhotoUrl(p.file)}" alt="">${canRemove ? `<button type="button" title="Remove this screenshot" onclick="pfRemove(${Number(p.proof_id)})">×</button>` : ''}</span>`).join('');
+    if (done) {
+      const last = proofs[proofs.length - 1];
+      const dlk = pfLinkInfo(it);
+      const sub = it.link ? pfEsc(String(it.link).replace(/^https?:\/\//i, '')) : it.capture === 'idcard' ? (it.daily ? "Today's ID card checked ✓" : 'ID card enrolled ✓') : (Number(it.footwear) === 1 ? (need > 1 ? need + ' photos approved' : 'Footwear approved ✓') : (it.kind === 'custom' ? (need > 1 ? need + ' photos' : 'Photo uploaded') : (need > 1 ? need + ' screenshots' : 'Screenshot uploaded')));
+      const rate = (Number(it.footwear) === 1 && last && last.clean_rating != null) ? `<br><span class="pf-clean c${Number(last.clean_rating)}">${pfEsc(cleanTxt(last.clean_rating))}</span>${last.clean_note ? ` <small>(${pfEsc(last.clean_note)})</small>` : ''}` : '';
+      const subLk = (dlk ? `<br><a href="${pfEsc(dlk.url)}" target="_blank" rel="noopener noreferrer">${pfEsc(dlk.label)} ↗</a>` : '') + rate;
+      return `<div class="pf-req">${tile}<div class="pf-body">
+        <div class="pf-name">${pfEsc(it.title)} <span class="pf-tick">✓</span></div>
+        <div class="pf-got"><div class="pf-shots">${thumbs}</div>
+          <div class="pf-meta"><b>Saved ${last ? hm12(String(last.uploaded_at).slice(11, 16)) : ''}</b>${sub}${subLk}</div>
+          ${(!punched && need === 1 && !(pfState && pfState.once)) ? `<button type="button" class="pf-alt" onclick="pfEditOn(${id})">Replace</button>` : ''}
+        </div></div></div>`;
+    }
+    const redo = Number(it.redo) ? `<div class="pf-redo">Sent back: ${pfEsc(it.redo_note)}</div>` : '';
+    const lk = pfLinkInfo(it);
+    const seen = !!pfOpened[id];
+    // The two handwritten lines are written by the admin per proof. Neither written: the old 1-2-3-4 chips stay.
+    const hTop = String(it.hint_top || '').trim(), hBot = String(it.hint_bottom || '').trim();
+    const hand = !!(hTop || hBot);
+    const arrow = '<span class="pf-arw" aria-hidden="true"><svg viewBox="0 0 80 50" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8 C 30 -2, 62 8, 66 38"/><path d="M54 30 L66 40 L72 25"/></svg></span>';
+    const lkHtml = lk ? `<div class="pf-hw">
+      ${hTop ? `<div class="pf-ht">${pfEsc(hTop)}</div>${arrow}` : ''}
+      <a class="pf-lk${seen ? ' seen' : ''}" href="${pfEsc(lk.url)}" target="_blank" rel="noopener noreferrer" onclick="pfLinkOpened(${id})">
+        <span class="pf-tile ${lk.cls}">${pfEsc(lk.tile)}</span>
+        <span class="pf-lm"><small>${pfEsc(lk.label)}</small><b>${pfEsc(lk.short)}</b></span>
+        <span class="pf-go">${seen ? 'Opened ✓' : 'Open ↗'}</span></a></div>
+      ${hand ? (hBot ? `<div class="pf-hb">${pfEsc(hBot)}</div>` : '') : `<div class="pf-steps"><span class="${seen ? 'on' : ''}">1 Open</span><span>2 Like</span><span>3 Comment</span><span>4 Screenshot</span></div>`}`
+      : (hand ? `${hTop ? `<div class="pf-ht" style="padding-right:0; min-height:0">${pfEsc(hTop)}</div>` : ''}${hBot ? `<div class="pf-hb">${pfEsc(hBot)}</div>` : ''}` : '');
+    const ph = it.kind === 'youtube' ? 'Paste the YouTube video link' : (it.kind === 'instagram' ? 'Paste the Instagram post link' : 'Paste the link');
+    const linkIn = Number(it.link_required)
+      ? `<input class="pf-in" id="pfLink${id}" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="${ph}" value="${pfEsc(pfLinks[id] != null ? pfLinks[id] : (it.link || ''))}" oninput="pfLinks[${id}] = this.value" aria-label="Link for ${pfEsc(it.title)}">`
+      : '';
+    const shoe = Number(it.footwear) === 1;     // a shoes requirement WITH the AI check on (PROOF_SHOE_AI): live camera instead of an upload
+    const fid = it.capture === 'idcard';         // ID card: live camera photo only (no gallery), checked by the AI
+    const word = it.kind === 'custom' ? 'photo' : 'screenshot';   // a custom proof (shoes photo etc.) is a photo from the phone, not a screenshot
+    const label = fid ? (editing ? '🪪 Take new photo' : (it.daily ? "🪪 Show today's ID card" : '🪪 Enroll ID card')) : shoe
+      ? (editing ? 'Take new photo' : (need > 1 ? `Take photo (${have + 1} of ${need})` : 'Take photo'))
+      : (editing ? `Upload new ${word}` : (need > 1 ? `Upload ${word} (${have + 1} of ${need})` : `Upload ${word}`));
+    return `<div class="pf-req">${tile}<div class="pf-body">
+      <div class="pf-name">${pfEsc(it.title)}</div>
+      ${it.instruction ? `<div class="pf-desc">${pfEsc(it.instruction)}</div>` : ''}
+      ${redo}
+      ${lkHtml}
+      ${(!editing && have > 0) ? `<div class="pf-shots" style="margin-top:8px;">${thumbs}</div><div class="pf-prog">${have} of ${need} ${word}s saved</div>` : ''}
+      ${linkIn}
+      <div class="pf-acts"><button type="button" class="pf-up" onclick="${fid ? 'pfIdCard' : shoe ? 'pfShoe' : 'pfPick'}(${id}, ${editing ? 'true' : 'false'})">${label}</button>${it.example ? `<span style="margin-left:auto;">${egSquare('proof', id, it.example, it.title)}</span>` : ''}${editing ? `<button type="button" class="pf-alt" onclick="pfEditOff(${id})">Cancel</button>` : ''}</div>
+    </div></div>`;
+  }
+
+  function renderProofs() {
+    const d = pfState;
+    if (!d || !Number(d.total)) { pfCard.hidden = true; return; }
+    const punched = Number(d.punched_in) === 1;
+    const redo = Number(d.redo) || 0;
+    const complete = Number(d.complete) === 1;
+    // Punched in already: only a proof the admin sent back is asked for again. A requirement added later is not asked retroactively.
+    if (punched && !redo) { pfCard.hidden = true; return; }   // after Punch In the screenshots are not shown again (Punch Out is only the punch)
+    pfCard.hidden = false;
+    const compact = punched && !redo;
+    pfCard.classList.toggle('compact', compact);
+    const pill = document.getElementById('pfPill');
+    pill.textContent = `${d.done_count} of ${d.total}`;
+    const once = !!d.once;      // already enrolled, a once-only proof (ID card …) still missing
+    const enr = pfStage === 'enroll' && !once, unlockTxt = enr ? 'Enroll' : 'Punch In';
+    document.getElementById('pfTitle').textContent = once ? '🪪 Enroll your ID card — 1st time only' : enr ? 'Proofs before you enroll' : 'Punch In proofs';
+    pill.className = 'ck-pill' + (complete ? ' ok' : '');
+    let note;
+    if (compact) note = `<div class="pf-note ok">✓ Punch-in proofs submitted</div>`;
+    else if (punched) note = `<div class="pf-note bad">Your admin sent ${redo} proof${redo === 1 ? '' : 's'} back — upload ${redo === 1 ? 'it' : 'them'} again.</div>`;
+    else if (complete) note = `<div class="pf-note ok">All proofs saved — you can ${enr ? 'enroll your face' : 'punch in'} now.</div>`;
+    else if (once) note = `<div class="pf-note wait">One-time step — take a live photo of your ID card. After this, Punch In works as normal.</div>`;
+    else if (Number(d.done_count) === 0) note = `<div class="pf-note wait">Upload ${Number(d.total) === 1 ? 'this proof' : 'these ' + d.total + ' proofs'} to unlock ${unlockTxt}.</div>`;
+    else { const left = Number(d.total) - Number(d.done_count); note = `<div class="pf-note wait">${left} proof${left === 1 ? '' : 's'} left — then ${unlockTxt} unlocks.</div>`; }
+    document.getElementById('pfBox').innerHTML = note + (compact ? '' : d.items.map(it => pfItemHtml(it, punched)).join(''));
+  }
+
+  async function loadProofs() {
+    // Still to enroll the face? Then the proofs asked at the Enroll step (once); otherwise the day's Punch In proofs.
+    // (enrollMode is only known once face.get has answered — loadFace() calls this again if the answer changes the stage.)
+    const stage = faceLoaded && enrollMode ? 'enroll' : 'punch';
+    pfStage = stage;
+    try {
+      pfState = await api.get('proofs.my', stage === 'enroll' ? { stage: 'enroll' } : undefined);
+    } catch (err) {
+      pfState = null;          // a server without the proofs: nothing to ask for
+    }
+    if (pfStage !== stage) return;     // another load took over while this one was waiting
+    if (pfState && pfState.stage === 'enroll') pfStage = 'enroll';   // enrolled, but a once-only proof (ID card) is missing
+    pfLoaded = true;
+    renderProofs();
+    pfApplyLock();
+  }
+
+  window.pfEditOn = function (id) { pfEdit[id] = true; renderProofs(); };
+  window.pfEditOff = function (id) { delete pfEdit[id]; renderProofs(); };
+  window.pfLinks = pfLinks;
+
+  window.pfPick = function (ruleId, replace) {
+    if (pfBusy) return;
+    const it = pfItem(ruleId);
+    if (!it) return;
+    if (Number(it.link_required)) {
+      const v = String(pfLinks[ruleId] != null ? pfLinks[ruleId] : (it.link || '')).trim();
+      if (!v) {
+        pfAlert('Paste the link to the post or video first, then upload the screenshot.');
+        const el = document.getElementById('pfLink' + ruleId); if (el) el.focus();
+        return;
+      }
+    }
+    pfRuleId = ruleId;
+    pfReplace = !!replace;
+    pfFile.value = '';
+    pfFile.click();
+  };
+
+  // ---------- Photo-only upload helpers ----------
+  const PHOTO_EXT = /\.(jpe?g|jfif|png|webp|gif|bmp|heic|heif|avif|tiff?|dng)$/i;
+  const isPhotoFile = (f) => !!f && ((f.type && f.type.indexOf('image/') === 0) || (!(f.type && f.type.indexOf('/') > 0 && f.type.indexOf('image/') !== 0) && PHOTO_EXT.test(f.name || '')));
+  const isHeic = (f) => /heic|heif/i.test(f.type || '') || /\.(heic|heif)$/i.test(f.name || '');
+  function loadHeicLib() {
+    if (window.heic2any) return Promise.resolve();
+    return new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js';
+      s.onload = () => res(); s.onerror = () => rej(new Error('lib'));
+      document.head.appendChild(s);
+    });
+  }
+  // JPG / PNG / WEBP go as they are. Any other picture (HEIC, HEIF, GIF, BMP, AVIF, TIFF …) is turned into a JPG here, in the phone,
+  // so the server always receives a normal photo.
+  async function photoForUpload(file) {
+    const t = (file.type || '').toLowerCase();
+    if (/^image\/(jpeg|png|webp)$/.test(t)) return file;
+    const jpgName = (file.name || 'photo').replace(/\.[^.]+$/, '') + '.jpg';
+    const draw = async (src) => {
+      const bmp = await createImageBitmap(src);
+      const sc = Math.min(1, 2400 / Math.max(bmp.width, bmp.height)), cv = document.createElement('canvas');
+      cv.width = Math.round(bmp.width * sc); cv.height = Math.round(bmp.height * sc);
+      const cx = cv.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0, 0, cv.width, cv.height); cx.drawImage(bmp, 0, 0, cv.width, cv.height);
+      if (bmp.close) bmp.close();
+      const blob = await new Promise(r => cv.toBlob(r, 'image/jpeg', 0.9));
+      if (!blob) throw new Error('blob');
+      return new File([blob], jpgName, { type: 'image/jpeg' });
+    };
+    try { return await draw(file); } catch (e) { /* this browser cannot read it directly */ }
+    if (isHeic(file)) {
+      try {
+        await loadHeicLib();
+        let out = await window.heic2any({ blob: file, toType: 'image/jpeg', quality: 0.9 });
+        if (Array.isArray(out)) out = out[0];
+        return new File([out], jpgName, { type: 'image/jpeg' });
+      } catch (e) { /* fall through */ }
+    }
+    return file;   // let the server try (it converts HEIC too when it can) and report if it cannot
+  }
+
+  pfFile.addEventListener('change', async () => {
+    let file = pfFile.files && pfFile.files[0];
+    if (!file || !pfRuleId) return;
+    // Photos only — any picture format (.jpg .png .heic .webp …); PDF, Excel and every other file type is refused.
+    if (!isPhotoFile(file)) { pfAlert('Only a photo can be uploaded (JPG, PNG, HEIC, WEBP … any photo). PDF, Excel and other files are not accepted.'); pfFile.value = ''; return; }
+    pfBusy = true;
+    pfAlert('');
+    const box = document.getElementById('pfBox');
+    box.style.opacity = '.6';
+    try {
+      file = await photoForUpload(file);
+      const it = pfItem(pfRuleId) || {};
+      const fd = new FormData();
+      fd.append('rule_id', pfRuleId);
+      if (pfStage === 'enroll') fd.append('stage', 'enroll');
+      fd.append('replace', pfReplace ? 1 : 0);
+      fd.append('link', String(pfLinks[pfRuleId] != null ? pfLinks[pfRuleId] : (it.link || '')).trim());
+      fd.append('photo', file, file.name || 'proof.jpg');
+      const d = await api.upload('proofs.upload', fd);
+      pfState = d;
+      delete pfEdit[pfRuleId];
+      renderProofs();
+      pfApplyLock();
+      pfOnceDone();
+    } catch (err) {
+      pfAlert(err.message);
+    } finally {
+      pfBusy = false;
+      box.style.opacity = '';
+      pfFile.value = '';
+    }
+  });
+
+  // Shoes requirement: "Take photo" opens the back camera (no gallery). The server's AI checks the photo inside proofs.upload:
+  // shoes = saved + approved, Crocs / slippers / unclear = rejected and the same camera takes the next photo.
+  window.pfShoe = async function (ruleId, replace) {
+    if (pfBusy || busy) return;
+    const it = pfItem(ruleId);
+    if (!it) return;
+    pfBusy = true; busy = true; cancelled = false;
+    pfAlert('');
+    document.getElementById('hmVerifyT').textContent = 'Take a photo of your footwear';
+    document.body.classList.add('punching');
+    window.scrollTo(0, 0);
+    stepsEl.hidden = true;
+    setMsg('Opening the camera…', 'var(--accent)');
+    try {
+      await openCamera('environment');
+      if (cancelled) return;
+      panel.classList.add('shoe'); camShoe.hidden = false; shoeUnfreeze();
+      for (let tries = 0; tries < 12; tries++) {
+        setMsg('Take a photo of your footwear…', 'var(--accent)');
+        shoeHint(placeTxt(), false);
+        btnShoe.disabled = false;
+        if (!(await shoeWaitSnap())) return;                 // ✕ tapped
+        btnShoe.disabled = true;
+        const blob = await frameBlob();                      // the photo is taken first…
+        shoeFreeze(blob);                                    // …then shown and checked
+        setMsg('Checking the photo you took…', 'var(--accent)');
+        const fd = new FormData();
+        fd.append('rule_id', ruleId);
+        if (pfStage === 'enroll') fd.append('stage', 'enroll');
+        fd.append('replace', replace ? 1 : 0);
+        fd.append('link', '');
+        fd.append('photo', blob, 'footwear.jpg');
+        let d;
+        try { d = await api.upload('proofs.upload', fd); }
+        catch (e) {
+          if (cancelled) return;
+          const data = e.data || {};
+          const fw = data.footwear || {};
+          const noAi = data.reason === 'ai_unavailable' || fw.reason === 'ai_unavailable' || e.status === 503;
+          if (data.retake || noAi) {                          // rejected (or the AI could not be reached): the stamp goes on the photo, Retake opens the camera again
+            shoeStamp(false, noAi ? '! COULD NOT CHECK' : '✕ REJECTED' + (fw.shoe_type_detected ? ' · ' + fw.shoe_type_detected : ''));
+            shoeHint(e.message, true);
+            setMsg(e.message, 'var(--bad-fg)');
+            if ((await shoeWaitRetake(noAi ? '↻ Try again' : '')) !== 'retake') return;
+            shoeUnfreeze();
+            continue;
+          }
+          throw e;
+        }
+        const fwr = (d && d.footwear) || {};
+        shoeStamp(true, '✓ APPROVED' + (fwr.shoe_type_detected ? ' · ' + fwr.shoe_type_detected : ''));
+        const fDirty = Number(fwr.cleanliness) > 0 && Number(fwr.cleanliness) <= 2;     // 1-2 stars: saved, with a "clean your shoes" warning
+        shoeHint('Footwear approved ✓' + (fwr.cleanliness ? ' · ' + cleanTxt(fwr.cleanliness) : '') + (fwr.cleanliness_note ? ' — “' + fwr.cleanliness_note + '”' : '') + (fDirty ? ' ⚠ Please clean your shoes before tomorrow.' : ''), fDirty); camShoeT.classList.add('ok');
+        pfState = d; delete pfEdit[ruleId];                   // saved: show it even if ✕ was tapped a moment ago
+        renderProofs();
+        if (!cancelled) { setMsg(fDirty ? '⚠ Footwear approved · ' + cleanTxt(fwr.cleanliness) + ' — your shoes are dirty, please clean them before tomorrow.' : 'Footwear approved ✓' + (fwr.cleanliness ? ' · ' + cleanTxt(fwr.cleanliness) : ''), fDirty ? '#b45309' : 'var(--ok-fg)'); await sleep(fDirty ? 3200 : 1600); setMsg(''); }
+        return;
+      }
+      throw new Error('Footwear not approved after several tries — wear proper shoes and try again.');
+    } catch (err) {
+      if (!cancelled && err.message !== 'cancelled') pfAlert(err.message);
+    } finally {
+      shoeReset(); camShoeT.classList.remove('ok');
+      document.body.classList.remove('punching');
+      closeCamera();
+      ckApplyLock(); pfApplyLock(); applyRemLock();
+      pfBusy = false; busy = false;
+    }
+  };
+
+  // The one-time proofs of an already-enrolled person are done: switch to the day's Punch In proofs.
+  function pfOnceDone() {
+    if (pfState && pfState.once && Number(pfState.complete) && !enrollMode) {
+      showAlert('✅ ID card enrolled — thank you! You can punch in now.');
+      pfLoaded = false; loadProofs();
+    }
+  }
+
+  // ID card: live camera only (back camera, no gallery) — the card held inside the yellow box, one photo. No face check.
+  // The server's AI checks it is an ID card and, for the daily check, that it is the same card the person enrolled.
+  window.pfIdCard = async function (ruleId, replace) {
+    if (pfBusy || busy) return;
+    const it = pfItem(ruleId);
+    if (!it) return;
+    pfBusy = true; busy = true; cancelled = false;
+    pfAlert('');
+    document.getElementById('hmVerifyT').textContent = it.daily ? "Show today's ID card" : 'Enroll your ID card';
+    document.body.classList.add('punching');
+    window.scrollTo(0, 0);
+    stepsEl.hidden = true;
+    setMsg('Opening the camera…', 'var(--accent)');
+    const chk = document.querySelector('#camCheck small'), chkOld = chk ? chk.textContent : '';
+    if (chk) chk.textContent = it.daily ? 'Is this your enrolled ID card?' : 'Is this an ID card?';
+    try {
+      await openCamera('environment');
+      if (cancelled) return;
+      panel.classList.add('shoe', 'idc'); camShoe.hidden = false; shoeUnfreeze();
+      for (let tries = 0; tries < 12; tries++) {
+        setMsg('Hold your ID card inside the yellow box, then tap the round button', 'var(--accent)');
+        shoeHint('ID card inside the box · close · clear · no glare', false);
+        btnShoe.disabled = false;
+        if (!(await shoeWaitSnap())) return;                 // ✕ tapped
+        btnShoe.disabled = true;
+        const blob = await frameBlob();
+        shoeFreeze(blob);
+        shoeHint('Checking your ID card…', false);
+        const fd = new FormData();
+        fd.append('rule_id', ruleId);
+        if (pfStage === 'enroll') fd.append('stage', 'enroll');
+        fd.append('replace', replace ? 1 : 0);
+        fd.append('link', '');
+        fd.append('photo', blob, 'id_card.jpg');
+        let bad = '';
+        try {
+          const d = await api.upload('proofs.upload', fd);
+          shoeStamp(true, it.daily ? '✓ ID CARD OK' : '✓ ENROLLED');
+          shoeHint(it.daily ? "Today's ID card checked ✓" : 'ID card enrolled ✓', false); camShoeT.classList.add('ok');
+          pfState = d; delete pfEdit[ruleId];
+          renderProofs();
+          if (!cancelled) { setMsg(it.daily ? 'ID card checked ✓' : 'ID card enrolled ✓', 'var(--ok-fg)'); await sleep(1300); setMsg(''); }
+          pfOnceDone();
+          return;
+        } catch (e) {
+          if (cancelled) return;
+          if (!(e.data && e.data.retake)) throw e;
+          bad = e.message;
+        }
+        shoeStamp(false, '✕ TRY AGAIN');
+        shoeHint(bad, true);
+        setMsg(bad, 'var(--bad-fg)');
+        if ((await shoeWaitRetake()) !== 'retake') return;
+        shoeUnfreeze();
+      }
+      throw new Error('ID card not accepted after several tries — try again in good light.');
+    } catch (err) {
+      if (!cancelled && err.message !== 'cancelled') pfAlert(err.message);
+    } finally {
+      if (chk) chk.textContent = chkOld;
+      shoeReset(); panel.classList.remove('idc'); camShoeT.classList.remove('ok');
+      document.body.classList.remove('punching');
+      closeCamera();
+      ckApplyLock(); pfApplyLock(); applyRemLock();
+      pfBusy = false; busy = false;
+    }
+  };
+
+  window.pfRemove = async function (proofId) {
+    if (pfBusy) return;
+    pfBusy = true;
+    try {
+      const fd = new FormData();
+      fd.append('proof_id', proofId);
+      pfState = await api.upload('proofs.remove', fd);
+      renderProofs();
+      pfApplyLock();
+    } catch (err) {
+      pfAlert(err.message);
+    } finally { pfBusy = false; }
+  };
+
+  // ---------- Face models: loaded once, in the background ----------
+  let modelsPromise = null;
+  let modelsLoaded = false;
+  function loadModels() {
+    if (!modelsPromise) {
+      modelsPromise = (async () => {
+        const tf = faceapi.tf;
+        if (tf && tf.env) {
+          try { tf.env().set('WEBGL_FORCE_F16_TEXTURES', false); } catch (e) {}
+          try { await tf.ready(); } catch (e) {}
+          let exact = true;
+          try { exact = tf.getBackend() !== 'webgl' || tf.env().getBool('WEBGL_RENDER_FLOAT32_ENABLED'); } catch (e) {}
+          if (!exact) { try { await tf.setBackend('cpu'); await tf.ready(); slowDevice = true; } catch (e) {} }
+        }
+        await Promise.all([
+          faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+          faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+          faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
+        ]);
+      })().catch(err => { modelsPromise = null; throw new Error('Could not load the face check — check your internet and tap again.'); });
+    }
+    return modelsPromise;
+  }
+
+  // Whether this person still needs to enroll decides what the first button does.
+  async function loadFace() {
+    try {
+      const faceData = await api.get('face.get');
+      otherDescriptors = (faceData.others || []).map(d => { try { return new Float32Array(JSON.parse(d)); } catch (e) { return null; } }).filter(Boolean);
+      if (faceData.descriptor) {
+        enrolledDescriptor = new Float32Array(JSON.parse(faceData.descriptor));
+        enrollMode = false;
+        paintHint();
+      } else {
+        enrollMode = true;
+        btnIn.classList.add('enroll');
+        paintHint();
+        btnIn.textContent = 'Enroll My Face';
+        btnIn.style.display = '';
+        btnOut.style.display = 'none';
+      }
+      faceLoaded = true;
+      btnIn.disabled = false;
+      btnOut.disabled = false;
+      if (enrollMode && pfStage !== 'enroll') { pfLoaded = false; loadProofs(); }   // still to enroll: ask for the Enroll proofs instead of the day's
+      ckApplyLock();          // store staff: keep Punch Out locked if the checklist is open
+      pfApplyLock();          // punch-in proofs: keep Punch In locked until they are uploaded
+      applyRemLock();         // reminder is required: punching stays locked until it is on
+    } catch (err) {
+      setMsg(err.message, 'var(--bad-fg)');
+    }
+  }
+
+  // Reminder setup. Older servers answer punch.setup; the current one only
+  // has push.key — so the reminder key is read from there when needed.
+  async function loadSetup() {
+    setup = { push: {}, employee: {}, reminder: {} };   // the old punch.setup call no longer exists on the server (it always failed): start from the defaults and read the reminder key below
+    if (!(setup.push && setup.push.public_key)) {
+      try {
+        const k = await api.get('push.key');
+        setup.push = Object.assign({}, setup.push, { public_key: k.key });
+      } catch (err) { /* switch stays off with a clear note */ }
+    }
+    paintHint();
+    initReminder();
+  }
+
+  // ---------- Camera: on only while a punch runs ----------
+  let camFacing = 'user';        // 'user' = front, 'environment' = back
+  let switching = false;         // a Front/Back switch is in progress
+  let camEpoch = 0;              // bumps on every switch so the face check starts clean
+  const camSw = document.getElementById('camSw');
+  const camName = (f) => (f === 'user' ? 'front' : 'back');
+  function camSwShow(f) {
+    camSw.querySelectorAll('button').forEach(b => {
+      const on = b.dataset.f === f;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+  }
+  async function openCamera(facing) {
+    facing = facing || 'user';          // front camera first
+    camFacing = facing;
+    camSwShow(facing);
+    panel.hidden = false;
+    panel.classList.toggle('rear', facing === 'environment');
+    oval.classList.remove('ok');
+    overlay.hidden = false;
+    overlay.textContent = 'Starting ' + camName(facing) + ' camera…';
+    try {
+      // Ask for the exact camera strictly first — a loose request lets iOS
+      // pick or switch cameras. Fall back to the loose form on devices
+      // that don't label their cameras.
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { exact: facing }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+      } catch (strict) {
+        if (strict && strict.name !== 'OverconstrainedError' && strict.name !== 'NotFoundError') throw strict;
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+      }
+    } catch (err) {
+      if (err && (err.name === 'NotAllowedError' || err.name === 'SecurityError')) {
+        throw new Error('Camera permission is blocked — allow camera access for this site in your browser settings, then tap again.');
+      }
+      if (err && err.name === 'NotFoundError') throw new Error('No camera found on this device.');
+      throw new Error('Could not start the camera — close other apps using it and tap again.');
+    }
+    if (cancelled) { closeCamera(); return; }     // ✕ tapped while the permission prompt was up
+    video.srcObject = stream;
+    await new Promise(r => (video.readyState >= 1 ? r() : (video.onloadedmetadata = r)));
+    await video.play().catch(() => {});
+    // "Ready" arrives before the first real picture on both Android and
+    // iOS. Wait for frames first.
+    const t0 = Date.now();
+    while (!cancelled && Date.now() - t0 < 8000 && !(video.readyState >= 2 && video.videoWidth > 0)) {
+      await sleep(100);
+    }
+    if (cancelled) { closeCamera(); return; }
+    if (!(video.videoWidth > 0)) throw new Error('The camera started but sent no picture — close other apps using it and tap again.');
+    await sleep(350);    // let exposure settle
+    overlay.hidden = true;
+  }
+
+  // Stops every camera track (turns the camera light off) and hides the view.
+  function closeCamera() {
+    if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+    video.srcObject = null;
+    video.onloadedmetadata = null;
+    panel.hidden = true;
+    panel.classList.remove('rear');
+    camFacing = 'user'; camSwShow('user');
+    oval.classList.remove('ok');
+  }
+
+  function detectOnce() {
+    return faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 320 }))
+      .withFaceLandmarks()
+      .withFaceDescriptor();
+  }
+
+  function eyeAspectRatio(eye) {
+    const d = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+    return (d(eye[1], eye[5]) + d(eye[2], eye[4])) / (2 * d(eye[0], eye[3]));
+  }
+
+  function frameBlob() {
+    const canvas = document.getElementById('snap');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext('2d').drawImage(video, 0, 0);
+    return new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.8));
+  }
+
+  // ---------- GPS: keep reading and use the BEST fix ----------
+  // iPhones answer first with a rough Wi-Fi / cell position (often 300-400 m
+  // off) and refine it over the next seconds. One quick reading therefore lands
+  // on the wrong spot on the map. This watches for up to maxMs, ignores stale
+  // cached fixes, stops early once the fix is within goodM metres, and returns
+  // the most accurate reading (a Position object, like getCurrentPosition).
+  function bestFix(o) {
+    o = o || {};
+    const maxMs = o.maxMs || 15000, goodM = o.goodM || 20, t0 = Date.now();
+    return new Promise((resolve, reject) => {
+      if (!navigator.geolocation) { reject({ code: 2 }); return; }
+      let best = null, lastErr = null, done = false, id = null, timer = null;
+      const finish = () => {
+        if (done) return; done = true;
+        clearTimeout(timer);
+        if (id !== null) { try { navigator.geolocation.clearWatch(id); } catch (e) {} }
+        best ? resolve(best) : reject(lastErr || { code: 3 });
+      };
+      try {
+        id = navigator.geolocation.watchPosition((p) => {
+          if (p.timestamp && p.timestamp < t0 - 5000) return;            // stale cached fix
+          if (!best || p.coords.accuracy < best.coords.accuracy) best = p;
+          if (o.onProgress) { try { o.onProgress(best); } catch (e) {} }
+          if (best.coords.accuracy <= goodM) finish();
+        }, (e) => { lastErr = e; if (e.code === 1) finish(); },
+        { enableHighAccuracy: true, maximumAge: 0, timeout: maxMs });
+      } catch (e) { reject(e); return; }
+      timer = setTimeout(finish, maxMs);
+    });
+  }
+  const PRECISE_HINT = 'On iPhone turn on Settings › Privacy & Security › Location Services › Safari Websites (or this app) › Precise Location, and stay outdoors or near a window.';
+  function gpsErrMsg(err, fallback) {
+    return err && err.code === 1 ? 'Location permission is blocked for this site — allow it in the browser settings, then tap again.' : fallback;
+  }
+
+
+  // ---------- Step 1: location ----------
+  function getLocation() {
+    if (!navigator.geolocation) return Promise.reject(new Error('This browser has no location support.'));
+    return bestFix({
+      maxMs: 15000, goodM: 25,
+      onProgress: (b) => { const sub = document.getElementById('locSub'); if (sub) sub.textContent = `Keep GPS on and hold still — accuracy ±${Math.round(b.coords.accuracy)} m, refining…`; }
+    }).then(
+      p => ({ lat: p.coords.latitude, lng: p.coords.longitude, acc: Math.round(p.coords.accuracy || 0) }),
+      e => { throw new Error(e && e.code === 1
+        ? 'Location permission is blocked — allow location for this site in your browser settings, then tap again.'
+        : (e && e.code === 3 ? 'Could not get your location in time — move near a window or outdoors and tap again.' : 'Could not read your location — turn GPS on and tap again.')); });
+  }
+  function distanceM(a, b) {
+    const R = 6371000, toR = (d) => d * Math.PI / 180;
+    const dp = toR(b.lat - a.lat), dl = toR(b.lng - a.lng);
+    const h = Math.sin(dp / 2) ** 2 + Math.cos(toR(a.lat)) * Math.cos(toR(b.lat)) * Math.sin(dl / 2) ** 2;
+    return 2 * R * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+  }
+
+  // The punch locations (office centre + radius). The server checks again on
+  // save; this is the quick answer before the camera opens.
+  let officeList = null;
+  async function loadOffices() {
+    if (officeList) return officeList;
+    try { const d = await api.get('me.offices'); officeList = d.offices || []; }
+    catch (err) { officeList = []; }
+    return officeList;
+  }
+
+  function locUi(state, title, sub, showBtns) {
+    const pin = document.getElementById('locPin');
+    pin.className = 'loc-pin' + (state ? ' ' + state : '');
+    document.getElementById('locTitle').textContent = title;
+    document.getElementById('locSub').textContent = sub;
+    document.getElementById('locBtns').hidden = !showBtns;
+  }
+  function hideLoc() { locBox.hidden = true; }
+
+  // Step 1: ask first. "Yes" checks the GPS against the office; a wrong place
+  // stops here, before any camera opens. Resolves {lat,lng,acc} (null = cancelled).
+  async function locationGate() {
+    step('loc', 'on');
+    locUi('', 'Check your location?', 'We confirm you are at your office before the face check. Allow location when your phone asks.', true);
+    locBox.hidden = false;
+    const yes = await new Promise(resolve => {
+      const y = document.getElementById('btnLocYes'), n = document.getElementById('btnLocNo');
+      const done = (v) => { y.onclick = null; n.onclick = null; resolve(v); };
+      y.onclick = () => done(true);
+      n.onclick = () => { cancelled = true; done(false); };
+    });
+    if (!yes || cancelled) return null;
+
+    locUi('busy', 'Checking location…', 'Keep GPS on. This takes a few seconds.', false);
+    let loc;
+    try { loc = await getLocation(); }
+    catch (err) { step('loc', 'bad'); hideLoc(); throw err; }
+    const offices = await loadOffices();
+    let where = '';
+    if (offices.length) {
+      let best = null, bestD = Infinity;
+      for (const o of offices) { const d = distanceM(loc, o); if (d < bestD) { bestD = d; best = o; } }
+      const d = Math.round(bestD);
+      if (d > Number(best.radius_m) + Math.min(loc.acc, 30)) {
+        step('loc', 'bad'); hideLoc();
+        const far = d >= 1000 ? (d / 1000).toFixed(1) + ' km' : d + ' m';
+        throw new Error(`You are ${far} from ${best.office_name} (nearest office) — you must be within ${best.radius_m} m of an office to punch.` + (loc.acc > 60 ? ` Your phone's GPS is only accurate to ±${loc.acc} m right now. ${PRECISE_HINT}` : ''));
+      }
+      where = `${best.office_name} · ${d} m away`;
+    }
+    step('loc', 'done');
+    locUi('ok', 'Location OK ✓', where || 'Location received.', false);
+    await sleep(900);
+    hideLoc();
+    return loc;
+  }
+
+  // ---------- Step 2: face ----------
+  async function enrollFlow() {
+    setMsg('Look at the camera and hold still...', 'var(--accent)');
+    const samples = [];
+    let t0 = Date.now();
+    const limit = slowDevice ? 30000 : 20000;
+    let lastHint = '';
+    while (samples.length < 3 && !cancelled && Date.now() - t0 < limit) {
+      if (switching) { await sleep(100); t0 = Date.now(); samples.length = 0; continue; }   // camera being switched
+      let det;
+      try { det = await detectOnce(); } catch (derr) { if (switching) continue; throw derr; }
+      if (cancelled) return;
+      let hint = '';
+      if (!det) hint = 'No face found yet — face the camera in good light.';
+      else if (det.detection.box.width < MIN_FACE_FRAC * video.videoWidth) hint = 'Come closer — your face must fill the oval.';
+      if (hint) {
+        oval.classList.remove('ok');
+        if (hint !== lastHint) { setMsg(hint, 'var(--accent)'); lastHint = hint; }
+        await sleep(150);
+        continue;
+      }
+      oval.classList.add('ok');
+      samples.push(det.descriptor);
+      setMsg(`Hold still... capture ${samples.length} of 3`, 'var(--accent)');
+      lastHint = '';
+      await sleep(400);
+    }
+    if (cancelled) return;
+    if (samples.length < 3) {
+      setMsg(lastHint === 'Come closer — your face must fill the oval.'
+        ? 'Face too far from the camera — hold the phone closer and tap Enroll again.'
+        : 'No face found — face the camera in good light and tap Enroll again.', 'var(--bad-fg)');
+      return;
+    }
+    for (let i = 1; i < samples.length; i++) {
+      if (faceapi.euclideanDistance(samples[0], samples[i]) > 0.35) {
+        setMsg('Could not get a steady reading — hold still in good light and tap Enroll again.', 'var(--bad-fg)');
+        return;
+      }
+    }
+    const avg = new Array(128).fill(0);
+    samples.forEach(s => s.forEach((v, i) => (avg[i] += v / samples.length)));
+    const avgF = new Float32Array(avg);
+    for (const o of otherDescriptors) {
+      if (faceapi.euclideanDistance(avgF, o) < MATCH_THRESHOLD) {
+        setMsg('This capture resembles another employee too closely — move to better light, face the camera straight on, and tap Enroll again.', 'var(--bad-fg)');
+        return;
+      }
+    }
+
+    await api.post('face.enroll', { descriptor: avg });
+    showAlert('Face enrolled. You can punch in now.');
+    enrolledDescriptor = new Float32Array(avg);
+    enrollMode = false;
+    btnIn.classList.remove('enroll');
+    btnIn.textContent = 'Punch In';
+    paintHint();
+    setMsg('');
+    loadToday();
+  }
+
+  // Matches the live face and confirms it is live (blink or head turn).
+  // Resolves with the verified frame as a JPEG blob; throws on failure.
+  async function faceStep() {
+    step('face', 'on');
+    setMsg('Look at the camera...', 'var(--accent)');
+
+    let matches = 0;
+    let bestDist = Infinity;
+    let tooFar = false;
+    let frame = 0;
+    let baselineEAR = 0;
+    let sawClosed = false;
+    let live = false;
+    let noseBase = null;
+    let t0 = Date.now();
+    let epochSeen = camEpoch;
+    const limit = slowDevice ? 30000 : 18000;
+    let lookalike = false;
+    let otherAtBest = null;      // distance to the nearest OTHER employee on the closest frame (sent to Admin when the check fails)
+
+    while (Date.now() - t0 < limit && !cancelled) {
+      if (switching || camEpoch !== epochSeen) {      // camera was switched: wait, then start the check afresh
+        while (switching && !cancelled) await sleep(100);
+        if (cancelled) break;
+        epochSeen = camEpoch;
+        matches = 0; bestDist = Infinity; tooFar = false; frame = 0; baselineEAR = 0;
+        sawClosed = false; live = false; noseBase = null; lookalike = false; t0 = Date.now();
+        continue;
+      }
+      frame++;
+      const needDescriptor = matches < MATCHES_NEEDED && (slowDevice || frame % 2 === 1);
+      let det;
+      try {
+        if (needDescriptor) {
+          det = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 256 }))
+            .withFaceLandmarks().withFaceDescriptor();
+        } else {
+          det = await faceapi.detectSingleFace(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 256 }))
+            .withFaceLandmarks();
+        }
+      } catch (derr) {
+        if (switching || camEpoch !== epochSeen) continue;   // picture vanished mid-switch
+        throw derr;
+      }
+      if (switching || camEpoch !== epochSeen) continue;     // result belongs to the camera that was just closed
+      if (cancelled) throw new Error('cancelled');
+
+      if (det) {
+        if (det.descriptor && matches < MATCHES_NEEDED) {
+          if (det.detection.box.width < MIN_FACE_FRAC * video.videoWidth) {
+            tooFar = true;
+            setMsg('Come closer — your face must fill the oval.', 'var(--accent)');
+          } else {
+            tooFar = false;
+            const dist = faceapi.euclideanDistance(det.descriptor, enrolledDescriptor);
+            let nearestOther = Infinity;
+            for (const o of otherDescriptors) nearestOther = Math.min(nearestOther, faceapi.euclideanDistance(det.descriptor, o));
+            if (dist < bestDist) { bestDist = dist; otherAtBest = nearestOther === Infinity ? null : nearestOther; }
+            const distinct = nearestOther - dist >= OTHER_MARGIN;
+            if (dist < MATCH_THRESHOLD && !distinct) lookalike = true;
+            matches = (dist < MATCH_THRESHOLD && distinct) ? matches + 1 : 0;
+          }
+        }
+        oval.classList.toggle('ok', matches >= MATCHES_NEEDED);
+
+        const ear = (eyeAspectRatio(det.landmarks.getLeftEye()) + eyeAspectRatio(det.landmarks.getRightEye())) / 2;
+        if (ear > baselineEAR) baselineEAR = ear;
+        if (baselineEAR > 0.12) {
+          if (ear < baselineEAR * 0.72) sawClosed = true;
+          else if (sawClosed && ear > baselineEAR * 0.9) live = true;
+        }
+        const nose = det.landmarks.getNose()[3];
+        const box = det.detection.box;
+        const rel = (nose.x - box.x) / box.width;
+        if (noseBase === null) noseBase = rel;
+        if (Math.abs(rel - noseBase) > 0.10) live = true;
+
+        if (matches >= MATCHES_NEEDED && !live) setMsg('Face matched ✓ Blink once or turn your head slightly...', 'var(--accent)');
+        if (matches >= MATCHES_NEEDED && live) break;
+      }
+      await sleep(slowDevice ? 20 : 60);
+    }
+    if (cancelled) throw new Error('cancelled');
+
+    // tell Admin why a face check failed (shows in Attendance → Refused punches), so wrong refusals can be spotted and tuned
+    const reportFace = (kind) => { try { api.post('attendance.face_fail', { kind, best: bestDist < Infinity ? Math.round(bestDist * 1000) / 1000 : null, other: otherAtBest === null ? null : Math.round(otherAtBest * 1000) / 1000, type: (typeof punchType !== 'undefined' && punchType) ? punchType : 'in' }).catch(() => {}); } catch (e) { /* only a log */ } };
+    if (matches < MATCHES_NEEDED) {
+      reportFace(lookalike ? 'lookalike' : (tooFar ? 'far' : 'nomatch'));
+      step('face', 'bad');
+      const score = bestDist < Infinity ? ` (closest score ${bestDist.toFixed(2)}, needs under ${MATCH_THRESHOLD})` : '';
+      if (lookalike) throw new Error('Face not recognized — this face also resembles another employee, so it was refused. Re-enrol in good light if this is really you.');
+      throw new Error((tooFar ? 'Face too far from the camera' : 'Face not recognized') + ' — tap again in better light, closer to the camera.' + score);
+    }
+    if (!live) {
+      reportFace('notlive');
+      step('face', 'bad');
+      throw new Error('Could not confirm a live face — tap again, then blink or turn your head slightly.');
+    }
+    step('face', 'done');
+    setMsg('Face verified ✓', 'var(--ok-fg)');
+    return frameBlob();
+  }
+
+  // ---------- Footwear photo (Punch In) ----------
+  // Back camera, no gallery: the employee takes a live photo of their shoes; the server's AI check approves or rejects it.
+  // On a rejection the camera stays open so they can simply take it again. Resolves with the approved photo; throws on cancel / failure.
+  const camShoe = document.getElementById('camShoe'), camShoeT = document.getElementById('camShoeT'), btnShoe = document.getElementById('btnShoeSnap');
+  function shoeHint(t, bad) { camShoeT.textContent = t; camShoeT.classList.toggle('bad', !!bad); }
+  // Photo first, check after: the live view is replaced by the photo that was taken, the server looks at it, and the result is
+  // stamped on that photo. Rejected = "Retake photo" (same camera) or Cancel.
+  const camStill = document.getElementById('camStill'), camStamp = document.getElementById('camStamp'), camCheck = document.getElementById('camCheck');
+  const camShoeFrame = document.getElementById('camShoeFrame'), camShoeRow = document.getElementById('camShoeRow'), camShoeActs = document.getElementById('camShoeActs');
+  const camLiveT = document.querySelector('.cam-live');
+  let stillUrl = '';
+  function shoeFreeze(blob) {                       // show the photo just taken + "Checking…"
+    if (stillUrl) URL.revokeObjectURL(stillUrl);
+    stillUrl = URL.createObjectURL(blob); camStill.src = stillUrl; camStill.hidden = false;
+    panel.classList.add('still'); camLiveT.lastChild.textContent = 'Photo taken';
+    camShoeFrame.hidden = true; camShoeRow.hidden = true; camShoeActs.hidden = true; camStamp.hidden = true; camCheck.hidden = false;
+    shoeHint('Camera is paused, the photo you took is being checked', false);
+  }
+  function shoeStamp(ok, text) { camCheck.hidden = true; camStamp.className = 'cam-stamp ' + (ok ? 'ok' : 'bad'); camStamp.textContent = text; camStamp.hidden = false; }
+  function shoeUnfreeze() {                         // back to the live camera
+    camStill.hidden = true; camStill.removeAttribute('src'); if (stillUrl) { URL.revokeObjectURL(stillUrl); stillUrl = ''; }
+    panel.classList.remove('still'); camLiveT.lastChild.textContent = 'Camera on';
+    camStamp.hidden = true; camCheck.hidden = true; camShoeActs.hidden = true; camShoeRow.hidden = false; camShoeFrame.hidden = false;
+  }
+  function shoeReset() { shoeUnfreeze(); camShoeFrame.hidden = true; camShoe.hidden = true; panel.classList.remove('shoe'); btnShoe.disabled = false; }
+  // Resolves 'retake' or false (Cancel / ✕ tapped / app left).
+  function shoeWaitRetake(label) {
+    document.getElementById('btnShoeRetake').textContent = label || '📷 Retake photo';
+    camShoeActs.hidden = false;
+    return new Promise((resolve) => {
+      const btnRt = document.getElementById('btnShoeRetake'), btnCx = document.getElementById('btnShoeCancel');
+      const finish = (v) => { btnRt.removeEventListener('click', onRt); btnCx.removeEventListener('click', onCx); clearInterval(timer); camShoeActs.hidden = true; resolve(v); };
+      const onRt = () => finish('retake'); const onCx = () => { cancelled = true; finish(false); };
+      btnRt.addEventListener('click', onRt); btnCx.addEventListener('click', onCx);
+      const timer = setInterval(() => { if (cancelled) finish(false); }, 150);
+    });
+  }
+  // Resolves 'snap' (round button) or false (✕ tapped / app left).
+  function shoeWaitSnap() {
+    return new Promise((resolve) => {
+      const finish = (v) => { btnShoe.removeEventListener('click', onSnap); clearInterval(timer); resolve(v); };
+      const onSnap = () => finish('snap');
+      btnShoe.addEventListener('click', onSnap);
+      const timer = setInterval(() => { if (cancelled) finish(false); }, 150);
+    });
+  }
+  // A photo to the server (multipart). Returns [http response, json answer].
+  async function shoePost(action, fd) {
+    let res, data;
+    try {
+      res = await fetch(api.buildUrl(action), { method: 'POST', headers: { 'Authorization': 'Bearer ' + api.token() }, body: fd });
+      data = await res.json().catch(() => ({}));
+    } catch (e) { throw new Error('No connection — check your internet and tap again.'); }
+    return [res, data];
+  }
+  async function footwearStep() {
+    step('footwear', 'on');
+    setMsg('Take a photo of your footwear…', 'var(--accent)');
+    await openCamera('environment');
+    if (cancelled) throw new Error('cancelled');
+    panel.classList.add('shoe'); camShoe.hidden = false; shoeUnfreeze();
+    try {
+      for (let tries = 0; tries < 12; tries++) {
+        step('footwear', 'on');
+        shoeHint(placeTxt(), false); camShoeT.classList.remove('ok');
+        setMsg('Take a photo of your footwear…', 'var(--accent)');
+        btnShoe.disabled = false;
+        if (!(await shoeWaitSnap())) throw new Error('cancelled');
+        btnShoe.disabled = true;
+        const blob = await frameBlob();                      // the photo is taken first…
+        shoeFreeze(blob);                                    // …then shown and checked
+        setMsg('Checking the photo you took…', 'var(--accent)');
+        const fd = new FormData(); fd.append('photo', blob, 'footwear.jpg');
+        const [res, data] = await shoePost('attendance.footwear_check', fd);
+        if (cancelled) throw new Error('cancelled');
+        if (data.is_valid) {
+          step('footwear', 'done');
+          shoeStamp(true, '✓ APPROVED' + (data.shoe_type_detected ? ' · ' + data.shoe_type_detected : ''));
+          const dirty = Number(data.cleanliness) > 0 && Number(data.cleanliness) <= 2;      // 1-2 stars: punch goes through, with a clear "clean your shoes" warning
+          shoeHint('Footwear approved ✓' + (data.cleanliness ? ' · ' + cleanTxt(data.cleanliness) : '') + (data.cleanliness_note ? ' — “' + data.cleanliness_note + '”' : '') + (dirty ? ' ⚠ Please clean your shoes before tomorrow.' : '') + ' — saving your Punch In…', dirty); camShoeT.classList.add('ok');
+          setMsg((dirty ? '⚠ ' : '') + 'Footwear approved' + (data.cleanliness ? ' · ' + cleanTxt(data.cleanliness) : '') + (dirty ? ' — your shoes are dirty, please clean them before tomorrow.' : ' ✓'), dirty ? '#b45309' : 'var(--ok-fg)');
+          await sleep(dirty ? 3200 : 1400);
+          return blob;
+        }
+        const noAi = data.reason === 'ai_unavailable' || res.status === 503;
+        if (!noAi && (data.retake === false || (!res.ok && !data.message))) { step('footwear', 'bad'); throw new Error(data.message || data.error || 'Footwear check failed.'); }
+        step('footwear', 'bad');
+        shoeStamp(false, noAi ? '! COULD NOT CHECK' : '✕ REJECTED' + (data.shoe_type_detected ? ' · ' + data.shoe_type_detected : ''));
+        shoeHint(data.message || 'Rejected: please take the photo again.', true);
+        setMsg(data.message || 'Rejected', 'var(--bad-fg)');
+        if ((await shoeWaitRetake(noAi ? '↻ Try again' : '')) !== 'retake') throw new Error('cancelled');
+        shoeUnfreeze();                                      // Retake: the same camera, live again
+      }
+      step('footwear', 'bad');
+      throw new Error('Footwear not approved after several tries — wear proper shoes and tap Punch In again.');
+    } finally { shoeReset(); camShoeT.classList.remove('ok'); }
+  }
+
+  // ---------- Save ----------
+  async function submitPunch(type, loc, faceBlob, shoeBlob) {
+    setMsg('All checks passed ✓ Saving...', 'var(--ok-fg)');
+    const fd = new FormData();
+    fd.append('type', type);
+    fd.append('photo', faceBlob, 'punch.jpg');
+    if (shoeBlob) fd.append('footwear', shoeBlob, 'footwear.jpg');        // the exact photo the server approved
+    if (loc) { fd.append('lat', loc.lat); fd.append('lng', loc.lng); fd.append('accuracy', loc.acc); }
+    const res = await fetch(api.buildUrl('attendance.punch'), {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + api.token() },
+      body: fd,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      if (data.check) step(data.check, 'bad');
+      if (data.proofs) { pfState = Object.assign({}, data.proofs, { punched_in: 0 }); if (data.proofs.stage === 'enroll') pfStage = 'enroll'; pfLoaded = true; renderProofs(); pfApplyLock(); }
+      throw new Error(data.error || 'Punch failed.');
+    }
+    showAlert(data.message);
+    setMsg('');
+    loadToday();
+  }
+
+  async function handle(type) {
+    if (busy || !faceLoaded) return;
+    if (reminderNeeded && !reminderOn) { applyRemLock(); return; }
+    if (type === 'in' && pfLoaded && pfState && Number(pfState.total) && !Number(pfState.complete) && !Number(pfState.punched_in)) {
+      pfApplyLock();
+      pfCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+    // (The Sales call-recording step before Punch Out ended on 1 Nov 2026: Punch Out asks for no recordings.)
+    busy = true;
+    cancelled = false;
+    document.getElementById('hmVerifyT').textContent = enrollMode ? 'Enroll your face' : (type === 'out' ? 'Verify to punch out' : 'Verify to punch in');
+    document.body.classList.add('punching');
+    window.scrollTo(0, 0);
+    [btnIn, btnOut].forEach(b => (b.disabled = true));
+    if (enrollMode) stepsEl.hidden = true; else stepsShow(type === 'in' && fwRequired);
+    try {
+      // Face models download while the location question is on screen.
+      const modelsReady = loadModels();
+      modelsReady.catch(() => {});
+      if (enrollMode) {
+        const camReady = openCamera('user');
+        camReady.catch(() => {});
+        if (!modelsLoaded) setMsg('Loading the face check… first time can take a few seconds', 'var(--accent)');
+        await modelsReady;
+        modelsLoaded = true;
+        if (cancelled) return;
+        await camReady;
+        if (cancelled) return;
+        await enrollFlow();
+        return;
+      }
+
+      // Step 1: ask, then check the location (no camera yet).
+      const loc = await locationGate();
+      if (cancelled || !loc) return;
+
+      // Step 2: face page — front camera first, Front | Back switch at the top.
+      setMsg('Opening the camera…', 'var(--accent)');
+      await openCamera('user');
+      if (cancelled) return;
+      if (!modelsLoaded) setMsg('Loading the face check… first time can take a few seconds', 'var(--accent)');
+      await modelsReady;
+      modelsLoaded = true;
+      if (cancelled) return;
+      const faceBlob = await faceStep();
+      if (cancelled) return;
+      closeCamera();
+      let shoeBlob = null;
+      if (type === 'in' && fwRequired) {                     // Step 3: footwear photo (back camera) approved by the AI check
+        shoeBlob = await footwearStep();
+        if (cancelled) return;
+        closeCamera();
+      }
+      await submitPunch(type, loc, faceBlob, shoeBlob);
+    } catch (err) {
+      if (!cancelled && err.message !== 'cancelled') setMsg(err.message, 'var(--bad-fg)');
+    } finally {
+      document.body.classList.remove('punching');
+      hideLoc();
+      closeCamera();        // always off afterwards: success, failure or cancel
+      [btnIn, btnOut].forEach(b => (b.disabled = false));
+      ckApplyLock();
+      pfApplyLock();
+      applyRemLock();
+      busy = false;
+    }
+  }
+
+  btnIn.addEventListener('click', () => handle('in'));
+  btnOut.addEventListener('click', () => handle('out'));
+
+  document.getElementById('btnCancel').addEventListener('click', () => {
+    cancelled = true;
+    closeCamera();
+    setMsg('Cancelled — camera off, nothing saved.');
+  });
+
+  // Front | Back: the running camera is closed first, then the other one starts.
+  camSw.addEventListener('click', async (e) => {
+    const b = e.target.closest('button');
+    if (!b || !stream || switching || busy === false || b.dataset.f === camFacing) return;
+    const from = camFacing, to = b.dataset.f;
+    switching = true; camEpoch++;
+    camSw.querySelectorAll('button').forEach(x => (x.disabled = true));
+    overlay.hidden = false;
+    overlay.textContent = 'Closing ' + camName(from) + ' camera…';
+    oval.classList.remove('ok');
+    setMsg('Switching camera…', 'var(--accent)');
+    stream.getTracks().forEach(t => t.stop()); stream = null; video.srcObject = null;
+    await sleep(350);
+    try {
+      await openCamera(to);
+      if (!cancelled) setMsg('Look at the camera...', 'var(--accent)');
+    } catch (err) {
+      // That camera would not start (e.g. no back camera): go back to the one that worked.
+      try { await openCamera(from); setMsg(err.message, 'var(--bad-fg)'); }
+      catch (e2) { cancelled = true; closeCamera(); setMsg(e2.message, 'var(--bad-fg)'); }
+    } finally {
+      switching = false; camEpoch++;
+      camSw.querySelectorAll('button').forEach(x => (x.disabled = false));
+    }
+  });
+
+  // Leaving the app mid-punch turns the camera off instead of leaving it running.
+  function stopOnLeave() {
+    if (!stream && !switching) return;
+    cancelled = true;
+    closeCamera();
+    setMsg('Camera turned off because you left the app — tap again to punch.');
+  }
+  document.addEventListener('visibilitychange', () => { if (document.hidden) stopOnLeave(); });
+  window.addEventListener('pagehide', stopOnLeave);
+
+  // ---------- Punch-in reminder (push notification) — REQUIRED ----------
+  // Cannot be switched off. Until it is on for this phone, Punch In / Out is
+  // locked. (Where a phone/browser cannot do notifications at all, or the
+  // server has no key, nothing is locked — nobody is shut out for that.)
+  const remSwitch = document.getElementById('remSwitch');
+  const remNote = document.getElementById('remNote');
+  const remSteps = document.getElementById('remSteps');
+  const btnRemOn = document.getElementById('btnRemOn');
+  const btnRemTest = document.getElementById('btnRemTest');
+  const isIOS = (/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) && !window.MSStream;
+  const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  // A page opened as a file on a computer (file://, origin "null") can never register the notification worker, so
+  // it counts as "cannot do notifications" — punching is not locked there (nobody is shut out for it).
+  const onWeb = /^https?:$/.test(location.protocol);
+  const pushSupported = onWeb && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+  let reminderOn = false;                 // this phone is allowed + subscribed
+  let reminderNeeded = pushSupported;     // required here (until the server/browser say otherwise)
+
+  // Keeps Punch In / Out locked while the required reminder is not on.
+  function applyRemLock() {
+    const lock = reminderNeeded && !reminderOn;
+    const box = document.getElementById('remLock');
+    if (lock) {
+      [btnIn, btnOut].forEach(b => (b.disabled = true));
+      const blocked = pushSupported && Notification.permission === 'denied';
+      box.className = 'rem-lock' + (blocked ? ' bad' : '');
+      box.textContent = blocked
+        ? '🔒 Notifications are blocked — unblock them below'
+        : '🔒 Turn on the reminder below to punch';
+      box.hidden = false;
+    } else {
+      box.hidden = true;
+      if (faceLoaded && !busy) { [btnIn, btnOut].forEach(b => (b.disabled = false)); ckApplyLock(); pfApplyLock(); }
+    }
+  }
+
+  // on: reminder works on this phone. Otherwise shows how to turn it on / unblock it.
+  function remState(on, note, kind) {
+    reminderOn = !!on;
+    remSwitch.classList.toggle('on', !!on);
+    document.getElementById('remCard').classList.toggle('ok', !!on);
+    remSwitch.setAttribute('aria-checked', on ? 'true' : 'false');
+    remNote.textContent = note || '';
+    remNote.className = 'rem-note' + (kind ? ' ' + kind : '');
+    btnRemTest.style.display = on ? '' : 'none';
+    const blocked = pushSupported && Notification.permission === 'denied';
+    remSteps.hidden = !!on || !blocked || !reminderNeeded;
+    btnRemOn.style.display = (!on && reminderNeeded) ? '' : 'none';
+    btnRemOn.textContent = blocked ? 'Check again' : 'Turn on reminders';
+    applyRemLock();
+  }
+  const REM_ON_NOTE = 'Reminder is on for this phone ✓ Required — it can\'t be switched off.';
+  function remShowOff(extra) {
+    const blocked = Notification.permission === 'denied';
+    remState(false, blocked
+      ? 'Notifications are blocked for this site.'
+      : (extra || 'Your phone will ask to allow notifications — tap Allow.'), blocked ? 'bad' : '');
+  }
+  function urlB64ToBytes(s) {
+    const pad = '='.repeat((4 - s.length % 4) % 4);
+    const raw = atob((s + pad).replace(/-/g, '+').replace(/_/g, '/'));
+    return Uint8Array.from(raw, c => c.charCodeAt(0));
+  }
+  // One notification worker for the whole site: the same sw.js that every page registers
+  // (layout.js uses it too), so a phone has exactly ONE subscription — never two.
+  async function pushReg() {
+    return navigator.serviceWorker.getRegistration();
+  }
+  // Older versions of this page used a second worker (scope "pushsw/"). If this phone still has
+  // one, remove it and its server entry so the phone does not get every reminder twice.
+  async function oldScopeSub() {
+    try {
+      const r = await navigator.serviceWorker.getRegistration('pushsw/');
+      if (r && /\/pushsw\/$/.test(r.scope)) return { reg: r, sub: await r.pushManager.getSubscription() };
+    } catch (e) {}
+    return null;
+  }
+  async function dropOldScope() {
+    const o = await oldScopeSub();
+    if (!o) return;
+    try { if (o.sub) { const ep = o.sub.endpoint; await o.sub.unsubscribe(); api.post('push.unsubscribe', { endpoint: ep }).catch(() => {}); } } catch (e) {}
+    try { await o.reg.unregister(); } catch (e) {}
+  }
+  // Same key as the server's current one? (If the server's key ever changed, an old
+  // subscription is refused by Google/Apple and notifications silently never arrive.)
+  function sameKey(sub, keyB64) {
+    try {
+      const k = sub.options && sub.options.applicationServerKey;
+      if (!k) return true;                       // cannot tell — assume fine
+      const a = new Uint8Array(k), b = urlB64ToBytes(keyB64);
+      return a.length === b.length && a.every((v, i) => v === b[i]);
+    } catch (e) { return true; }
+  }
+  // Registers the worker, waits until it is running, and returns a subscription made with the
+  // server's current key. force = throw away the old subscription and make a fresh one.
+  let oldEndpoint = '';                   // the phone entry we just threw away — the server forgets it too
+  async function ensureSub(force) {
+    let reg = await pushReg();
+    if (!reg) reg = await navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' });
+    else { try { await reg.update(); } catch (e) {} }                    // pick up a newer notification worker
+    for (let i = 0; i < 100 && (!reg.active || reg.installing || reg.waiting); i++) await sleep(100);   // install / update can take a few seconds
+    if (!reg.active) throw new Error('The notification service did not start — close and reopen the app, then try again.');
+    let sub = await reg.pushManager.getSubscription();
+    const expired = sub && sub.expirationTime && sub.expirationTime < Date.now();
+    if (sub && (force || expired || !sameKey(sub, setup.push.public_key))) {
+      oldEndpoint = sub.endpoint;
+      try { await sub.unsubscribe(); } catch (e) {}
+      sub = null;
+    }
+    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64ToBytes(setup.push.public_key) });
+    return sub;
+  }
+  // Saves this phone's subscription on the server (and drops the one it replaced). If the server says this
+  // exact entry is dead (the push service told it so), a brand-new one is made and saved instead.
+  // Returns the subscription that is now saved.
+  async function saveSub(sub) {
+    for (let tries = 0; tries < 2; tries++) {
+      const body = Object.assign({}, sub.toJSON(), oldEndpoint && oldEndpoint !== sub.endpoint ? { old_endpoint: oldEndpoint } : {});
+      const r = await api.post('push.subscribe', body);
+      if (!r.dead) { oldEndpoint = ''; await dropOldScope(); return sub; }
+      sub = await ensureSub(true);
+    }
+    throw new Error('Could not get a working notification link for this phone. Close the app fully, open it again and retry.');
+  }
+  // Waits for the phone's notification worker to say "got it" for this test (or gives up).
+  function waitForPush(tid, ms) {
+    return new Promise((resolve) => {
+      const sw = navigator.serviceWorker;
+      let done = false;
+      const fin = (v) => { if (done) return; done = true; sw.removeEventListener('message', on); clearTimeout(t); resolve(v); };
+      const on = (e) => { const m = e.data || {}; if (m.type === 'hrms-push' && m.tid === tid) fin(m); };
+      const t = setTimeout(() => fin(null), ms);
+      sw.addEventListener('message', on);
+      try { if (sw.startMessages) sw.startMessages(); } catch (e) {}
+    });
+  }
+
+  // Why can't this phone get notifications — and the exact way to fix it.
+  // (An iPhone browser tab has no notification feature at all, so there is no
+  // permission to give there; it appears only in the Home Screen app.)
+  function explainNoPush() {
+    const ua = navigator.userAgent;
+    const m = ua.match(/OS (\d+)[_.](\d+)/);
+    const iosV = m ? parseFloat(m[1] + '.' + m[2]) : 0;
+    const iosOld = isIOS && iosV && iosV < 16.4;
+    const inApp = /FBAN|FBAV|Instagram|WhatsApp|MicroMessenger|Snapchat|Line\/|Telegram|; wv\)/i.test(ua);
+    const br = /CriOS/.test(ua) ? 'Chrome' : /FxiOS/.test(ua) ? 'Firefox' : /EdgiOS|EdgA|Edg\//.test(ua) ? 'Edge' : /SamsungBrowser/.test(ua) ? 'Samsung Internet' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : 'this browser';
+    const steps = (arr) => { remSteps.innerHTML = arr.map(x => '<li>' + x + '</li>').join(''); remSteps.hidden = false; };
+    let note, list = null, copy = false;
+    if (!onWeb) {
+      note = 'This page is opened from a file on this computer, not from the website — notifications cannot work here.';
+      list = ['Open HRMS from your website address (<b>https://…/attendance.html</b>) in <b>Chrome</b>', 'Come back to this box and tap <b>Turn on reminders</b>'];
+    } else if (inApp) {
+      note = 'HRMS is open inside another app (WhatsApp / Instagram / …). Notifications do not work there.';
+      list = ['Tap <b>Copy link</b> below', 'Open <b>' + (isIOS ? 'Safari' : 'Chrome') + '</b> and paste the link', isIOS ? 'Tap <b>Share → Add to Home Screen</b>, then open HRMS from the icon' : 'Come back to this box and tap <b>Turn on reminders</b>'];
+      copy = true;
+    } else if (isIOS && iosOld) {
+      note = 'This iPhone is on iOS ' + iosV + '. Phone notifications need iOS 16.4 or newer.';
+      list = ['Open <b>Settings → General → Software Update</b>', 'Update to the latest iOS', 'Then come back here and follow the Home Screen steps'];
+    } else if (isIOS && standalone) {
+      note = 'HRMS is on your Home Screen but this iPhone is not allowing notifications for it.';
+      list = ['Delete the HRMS icon from the Home Screen', 'Open HRMS in <b>Safari</b> and tap <b>Share → Add to Home Screen → Add</b>', 'Open HRMS from the <b>new icon</b>, come back here and tap <b>Turn on reminders</b>'];
+    } else if (isIOS) {
+      note = 'On iPhone, notifications work only from the Home Screen app — not inside a ' + br + ' tab. (That is why no permission question appears here.) Do this once:';
+      list = ['Open this page in <b>Safari</b>', 'Tap the <b>Share</b> button → <b>Add to Home Screen</b> → Add', 'Open <b>HRMS from the new Home Screen icon</b>', 'Tap <b>Turn on reminders</b> in this box and press <b>Allow</b>'];
+      copy = br !== 'Safari';
+    } else {
+      note = 'This phone/browser cannot show reminder notifications (it is too old, or it has no Google services).';
+      list = ['Open the <b>Play Store</b> → update <b>Chrome</b>', 'Open HRMS in <b>Chrome</b> (not the phone\'s built-in browser)', 'Come back here and tap <b>Turn on reminders</b>'];
+    }
+    remState(false, note, 'warn');
+    if (list) steps(list);
+    if (copy) { btnRemCopy.style.display = ''; btnRemCopy.textContent = isIOS && br !== 'Safari' ? 'Copy link to open in Safari' : 'Copy link to open in the browser'; }
+    const d = document.getElementById('remDiag');
+    d.textContent = 'Reminders can\'t be turned on here · ' + (!onWeb ? 'page opened as a file · ' : '') + (isIOS ? 'iPhone/iPad iOS ' + (iosV || '?') : 'Android/other') + ' · ' + br + ' · ' + (standalone ? 'Home Screen app' : 'browser tab') + (inApp ? ' · inside another app' : '') + ' · you can still punch; the reminder pop-up works while HRMS is open.';
+    d.hidden = false;
+    // Installed on the Home Screen yet still no notification feature = the app manifest must say "display: standalone".
+    if (isIOS) {
+      fetch('manifest.json', { cache: 'no-store' }).then(r => r.json()).then(j => {
+        const ok = j.display === 'standalone' || j.display === 'fullscreen';
+        d.textContent += ' · manifest display: ' + (j.display || 'missing');
+        if (!ok && !iosOld && !inApp) { remNote.textContent = 'Server setup problem: manifest.json says "display": "' + (j.display || 'missing') + '" but iPhone needs "standalone" — tell the admin to fix it, then add HRMS to the Home Screen again.'; remNote.className = 'rem-note bad'; }
+      }).catch(() => { d.textContent += ' · manifest.json not found'; if (iosOld || inApp) return; remNote.textContent = 'Server setup problem: manifest.json is missing — iPhone cannot install HRMS as an app. Tell the admin.'; remNote.className = 'rem-note bad'; });
+    }
+  }
+  const btnRemCopy = document.getElementById('btnRemCopy');
+  btnRemCopy.addEventListener('click', async () => {
+    const url = location.href.split('#')[0];
+    try { await navigator.clipboard.writeText(url); btnRemCopy.textContent = 'Link copied ✓ — paste it in the browser'; }
+    catch (e) { window.prompt('Copy this link and open it in the browser:', url); }
+  });
+
+  async function initReminder() {
+    const r = (setup && setup.reminder) || {};
+    if (r.day_start) {
+      const [h, m] = r.day_start.split(':').map(Number);
+      const t = new Date(); t.setHours(h, m + (r.after_min || 0), 0, 0);
+      document.getElementById('remWhen').textContent = `A notification on this phone at ${t.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })} if you haven't punched in (shift start + ${r.after_min} min).`;
+    }
+    if (!pushSupported) {
+      reminderNeeded = false;   // this phone/browser cannot do it — nothing to lock
+      remSwitch.disabled = true;
+      explainNoPush();
+      return;
+    }
+    if (!(setup && setup.push && setup.push.public_key)) {
+      reminderNeeded = false;   // server has no push key — nothing to lock
+      remSwitch.disabled = true;
+      remState(false, 'Reminders are not available on the server right now.');
+      return;
+    }
+    reminderNeeded = true;
+    try {
+      const reg = await pushReg();
+      const old = reg ? await reg.pushManager.getSubscription() : null;
+      const older = old ? null : await oldScopeSub();                // enabled earlier through the old second worker
+      if ((old || (older && older.sub)) && Notification.permission === 'granted') {
+        const sub = await ensureSub(false);                          // also repairs a subscription made with an old key
+        try { await saveSub(sub); } catch (e) {}                     // keep the server copy fresh (and replace a dead one)
+        remState(true, REM_ON_NOTE, 'ok');
+        startPresence();
+      } else {
+        remShowOff();
+      }
+    } catch (e) {
+      remShowOff();
+    }
+  }
+
+  async function enableReminder() {
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') throw new Error('Notification permission was not given — allow notifications for this site and try again.');
+    const sub = await ensureSub(false);
+    await saveSub(sub);
+  }
+
+  // "Turn on reminders" (or "Check again" when blocked). There is no way to turn it off.
+  btnRemOn.addEventListener('click', async () => {
+    btnRemOn.disabled = true;
+    try {
+      if (Notification.permission === 'denied') {
+        await initReminder();               // re-check: maybe it was unblocked in settings
+        if (!reminderOn) remShowOff();
+      } else {
+        await enableReminder();
+        remState(true, REM_ON_NOTE, 'ok');
+        // Location is asked once here too, so "at the office, not punched in" can be noticed.
+        getLocation().then(reportPresence).then(startPresence).catch(() => {});
+      }
+    } catch (err) {
+      remShowOff(err.message);
+    } finally {
+      btnRemOn.disabled = false;
+    }
+  });
+
+  // One test, about THIS phone only: refresh/save its entry, ask the server to push to it,
+  // and wait for the phone's own worker to confirm it received and showed the notification.
+  async function testThisPhone(force) {
+    const sub = await saveSub(await ensureSub(force));
+    const tid = Math.random().toString(36).slice(2, 10);
+    const got = waitForPush(tid, 10000);
+    try {
+      await api.post('push.test', { endpoint: sub.endpoint, tid });
+    } catch (e) {
+      if (e.data && e.data.code === 'gone') return { gone: true };
+      throw e;
+    }
+    return { arrived: await got };
+  }
+  btnRemTest.addEventListener('click', async () => {
+    btnRemTest.disabled = true;
+    remNote.className = 'rem-note'; remNote.textContent = 'Sending…';
+    const tip = isIOS
+      ? ' iPhone: Settings → Notifications → HRMS must be ON, and Focus / Do Not Disturb must be off.'
+      : ' Phone Settings → Apps → (your browser or HRMS) → Notifications must be ON, and Do Not Disturb off.';
+    try {
+      let r = await testThisPhone(false);
+      if (r.gone) {
+        // Google/Apple say this phone's notification link expired — make a brand-new one and test again.
+        remNote.textContent = 'This phone\'s notification link had expired — making a new one…';
+        r = await testThisPhone(true);
+      }
+      if (r.gone) throw new Error('The notification service keeps refusing this phone. Close the app fully, open it again and press Test once more.');
+      if (r.arrived && r.arrived.shown) {
+        remNote.className = 'rem-note ok';
+        remNote.textContent = 'Test notification delivered to this phone ✓ and shown by the app. Don\'t see it on screen? Pull down the notification bar.' + tip;
+      } else if (r.arrived) {
+        remNote.className = 'rem-note bad';
+        remNote.textContent = 'This phone received the test but could not show it: ' + (r.arrived.error || 'unknown error') + '.' + tip;
+      } else {
+        remNote.className = 'rem-note warn';
+        remNote.textContent = 'Sent, but this phone has not confirmed it yet. Check the phone is online and not in battery-saver, wait a few seconds, then press Test again.' + tip;
+      }
+    } catch (err) {
+      remNote.className = 'rem-note bad';
+      remNote.textContent = 'Test failed: ' + err.message;
+    } finally {
+      btnRemTest.disabled = false;
+    }
+  });
+
+  // ---------- At the office and not punched in → reminder ----------
+  // The server sends the "punch in" reminder to someone who is inside an
+  // office area, past punch-in time, with no punch in. It knows where the
+  // phone is only from this report, so the page sends its position (at most
+  // every 2 minutes) while it is open and the site is allowed to use location.
+  let presenceAt = 0, presenceWatch = null;
+  async function reportPresence(loc) {
+    if (!loc || Date.now() - presenceAt < 120000) return;
+    if (todayRow && todayRow.punch_in) return;        // already punched in — nothing to remind
+    presenceAt = Date.now();
+    try { await api.post('presence.report', { lat: loc.lat, lng: loc.lng, accuracy: loc.acc }); }
+    catch (e) { presenceAt = 0; }                     // a courtesy call: punching never depends on it
+  }
+  async function startPresence() {
+    if (presenceWatch !== null || !navigator.geolocation || !window.isSecureContext) return;
+    let state = 'prompt';
+    try { if (navigator.permissions && navigator.permissions.query) state = (await navigator.permissions.query({ name: 'geolocation' })).state; } catch (e) {}
+    if (state !== 'granted') return;                  // the permission popup only appears for a tap
+    presenceWatch = navigator.geolocation.watchPosition(
+      p => reportPresence({ lat: p.coords.latitude, lng: p.coords.longitude, acc: Math.round(p.coords.accuracy || 0) }),
+      () => {}, { enableHighAccuracy: false, maximumAge: 60000, timeout: 30000 });
+  }
+
+  paintHead();
+  loadToday();
+  loadLinks();
+  loadFace().then(loadSetup);
+  loadModels().then(() => { modelsLoaded = true; }).catch(() => { /* retried on tap, with a clear message */ });
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>

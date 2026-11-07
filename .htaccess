@@ -1,2 +1,52 @@
-Require all denied
-Deny from all
+# ---------------------------------------------------------------------
+# HRMS front-end (tmbodywash.com/app) — no stale code in browsers.
+# HTML / JS / CSS / JSON are always re-fetched from the server, so any
+# file you upload is live on the next page load. Images, fonts and
+# uploads keep normal caching.
+# ---------------------------------------------------------------------
+
+# 1. LiteSpeed (Hostinger) server cache — off for this folder.
+#    Must be at top level, not inside <FilesMatch>.
+<IfModule LiteSpeed>
+  CacheDisable public /
+  CacheDisable private /
+</IfModule>
+
+# 2. Browser cache headers for code files.
+<IfModule mod_headers.c>
+  <FilesMatch "\.(html|htm|js|css|json)$">
+    Header unset ETag
+    Header unset Last-Modified
+    Header always set Cache-Control "no-store, no-cache, must-revalidate, max-age=0"
+    Header always set Pragma "no-cache"
+    Header always set Expires "Thu, 01 Jan 1970 00:00:00 GMT"
+  </FilesMatch>
+</IfModule>
+
+# 3. Override Hostinger's default "expires in 1 month" for these types.
+<IfModule mod_expires.c>
+  ExpiresActive On
+  ExpiresByType text/html "access plus 0 seconds"
+  ExpiresByType text/css "access plus 0 seconds"
+  ExpiresByType text/javascript "access plus 0 seconds"
+  ExpiresByType application/javascript "access plus 0 seconds"
+  ExpiresByType application/x-javascript "access plus 0 seconds"
+  ExpiresByType application/json "access plus 0 seconds"
+</IfModule>
+
+FileETag None
+
+# ---------------------------------------------------------------------
+# Backup / log / data files must never be downloadable from the web
+# (Help page: "Backup or data file on the server ... downloadable").
+# FilesMatch + Require is inherited by every sub-folder (reward/app, empmanagment/learn_backups, ...).
+# ---------------------------------------------------------------------
+<FilesMatch "\.(log|old|bak|backup|orig|sql|gz|zip|tar|7z|rar|sqlite|sqlite3|db|swp)$">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+  </IfModule>
+</FilesMatch>

@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Doc Check — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=4">
+<link rel="stylesheet" href="assets/css/boss.css?v=1">
+<style>
+  .dc-p{border-top:1px solid var(--line,#eceef1);padding:14px 0;} .dc-p:first-child{border-top:0;}
+  .dc-p h3{margin:0;font-size:15px;font-weight:800;} .dc-docs{display:flex;flex-wrap:wrap;gap:7px;margin-top:9px;}
+  .dc-d{border-radius:14px;padding:6px 11px;font-size:12.5px;background:#eef7f1;color:#0f6b43;line-height:1.35;max-width:100%;}
+  .dc-d.missing{background:#fdecea;color:#a42a24;} .dc-d.expired{background:#fdecea;color:#a42a24;} .dc-d.expiring,.dc-d.check,.dc-d.unreadable{background:#fff3dc;color:#8a5800;}
+  .dc-d small{display:block;opacity:.85;font-size:11.5px;}
+  .dc-rule{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:7px 0;font-size:13.5px;}
+  .dc-form{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:10px;} .dc-form label{display:block;font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><div><h1>Doc Check</h1><div class="bd-sub" id="sub">Missing, expiring and unclear documents. Claude checks every night.</div></div>
+      <div><input class="bd-in" id="q" placeholder="Find a person…" style="max-width:200px"></div></div>
+    <div class="content"><div class="bd" id="root"><div class="bd-empty">Loading…</div></div></div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=4"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script src="assets/js/boss_common.js?v=2"></script>
+<script>
+  guardPage();
+  renderSidebar('doc_check');
+  const { esc, $, toast } = BD;
+  let D = null, EMPS = [], SET = null, FILTER = 'all';
+  const ONE = Number(new URLSearchParams(location.search).get('emp') || 0);
+
+  async function load() {
+    try {
+      const [d, s] = await Promise.all([api.get('chk.docs', ONE ? { emp: ONE } : {}), SET ? Promise.resolve(SET) : api.get('chk.settings')]);
+      D = d; SET = s; EMPS = s.employees || EMPS; render();
+    } catch (e) { $('root').innerHTML = '<div class="bd-card"><div class="bd-empty"><b>Cannot open Doc Check</b>' + esc(e.message) + '<br>This page is for Admin and HR only: passports and licences are private.</div></div>'; }
+  }
+  const STATE = { missing: 'Missing', expired: 'Expired', expiring: 'Expiring', check: 'Look at it', unreadable: 'Not readable', ok: 'OK' };
+  function stats() {
+    const t = D.totals, c = (l, v, cls) => '<div class="bd-stat ' + (cls || '') + '"><small>' + l + '</small><b>' + v + '</b></div>';
+    return '<div class="bd-stats">' + c('People checked', t.people) + c('Complete', t.complete, 'ok') + c('Documents missing', t.missing, t.missing ? 'bad' : '') + c('Expired / expiring', t.expiring, t.expiring ? 'bad' : '') + c('Need a look', t.check, t.check ? 'bad' : '') + '</div>';
+  }
+  function people() {
+    const q = $('q').value.trim().toLowerCase();
+    let list = D.people.filter((p) => !q || (p.name + ' ' + (p.code || '') + ' ' + (p.dept || '')).toLowerCase().indexOf(q) > -1);
+    if (FILTER === 'missing') list = list.filter((p) => p.missing); else if (FILTER === 'expiring') list = list.filter((p) => p.expiring); else if (FILTER === 'check') list = list.filter((p) => p.check);
+    const tabs = [['all', 'Everyone with a problem'], ['missing', 'Missing'], ['expiring', 'Expiring'], ['check', 'Look at it']];
+    let h = '<div class="bd-card"><div class="bd-tabs" id="ftabs">' + tabs.map((t) => '<button type="button" data-f="' + t[0] + '" class="' + (FILTER === t[0] ? 'on' : '') + '">' + t[1] + '</button>').join('') + '</div>';
+    if (!list.length) h += '<div class="bd-empty"><b>' + (ONE ? 'Nothing to show for this person' : 'No problems') + '</b>' + (ONE ? '' : 'Every required document is uploaded, readable and in date.') + '</div>';
+    h += list.map((p) => '<div class="dc-p"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><h3>' + esc(p.name) + ' <span class="bd-sub">' + esc(p.code || '') + (p.dept ? ' · ' + esc(p.dept) : '') + (p.designation ? ' · ' + esc(p.designation) : '') + '</span></h3><a class="bd-btn sm" href="documents.html">Upload in Documents</a></div>'
+      + '<div class="dc-docs">' + p.rows.map((r) => '<span class="dc-d ' + r.state + '"><b>' + esc(r.type) + '</b> — ' + esc(STATE[r.state] || r.state) + (r.note ? '<small>' + esc(r.note) + '</small>' : '') + '</span>').join('') + '</div></div>').join('');
+    return h + '</div>';
+  }
+  function rules() {
+    const dn = {}; D.types.forEach((t) => { dn[t.id] = t.name; });
+    const dep = {}; (SET.employees || []).forEach((e) => { if (e.department_id) dep[e.department_id] = e.dept; });
+    const who = (r) => r.scope === 'all' ? 'Everyone' : (r.scope === 'dept' ? 'Department: ' + (dep[r.scope_val] || '#' + r.scope_val) : 'Designation contains "' + r.scope_val + '"');
+    const deptOpts = Object.keys(dep).map((k) => '<option value="' + k + '">' + esc(dep[k]) + '</option>').join('');
+    return '<div class="bd-card"><div class="bd-h"><h2>Who must have which document</h2></div><div class="bd-sub">Documents marked <b>Required</b> in Documents → types apply to everyone. Add extra rules here, for example a driving licence for drivers.</div>'
+      + (D.rules.length ? D.rules.map((r) => '<div class="dc-rule"><span class="bd-chip">' + esc(who(r)) + '</span> must have <b>' + esc(dn[r.document_type_id] || '#' + r.document_type_id) + '</b><button class="bd-btn sm" data-rm="' + r.scope + '|' + esc(r.scope_val) + '|' + r.document_type_id + '">Remove</button></div>').join('') : '<div class="bd-sub" style="margin-top:8px">No extra rules yet.</div>')
+      + '<div class="dc-form"><div><label>Who</label><select class="bd-in" id="rScope"><option value="dept">A department</option><option value="desig">A designation</option><option value="all">Everyone</option></select></div>'
+      + '<div id="rValWrap"><label>Which</label><select class="bd-in" id="rVal">' + deptOpts + '</select></div>'
+      + '<div><label>Document</label><select class="bd-in" id="rDoc">' + D.types.map((t) => '<option value="' + t.id + '">' + esc(t.name) + '</option>').join('') + '</select></div><button class="bd-btn pri" id="rAdd" type="button">Add rule</button></div>'
+      + '<div class="bd-sub" style="margin-top:10px"><b>Agreements:</b> add "Agreement" as a document type (Documents → types), tick Required, and Claude chases it like any other paper.</div></div>';
+  }
+  function settings() {
+    const s = SET.settings;
+    return '<div class="bd-card"><div class="bd-h"><h2>Settings</h2></div><div class="dc-form">'
+      + '<div><label>Who is told about document problems</label><select class="bd-in" id="sHr"><option value="0">Anyone in the Boss Inbox</option>' + (SET.employees || []).map((e) => '<option value="' + e.id + '"' + (e.id === s.hr_emp ? ' selected' : '') + '>' + esc(e.name) + '</option>').join('') + '</select></div>'
+      + '<div><label>New joiners get (days)</label><input class="bd-in" id="sGrace" type="number" min="0" max="60" value="' + s.doc_grace_days + '" style="width:90px"></div>'
+      + '<div><label>Warn before expiry (days)</label><input class="bd-in" id="sWarn" type="number" min="1" max="365" value="' + s.doc_warn_days + '" style="width:90px"></div>'
+      + '<div><label>Spot check (% of cleared work)</label><input class="bd-in" id="sSpot" type="number" min="0" max="100" value="' + s.spot_pct + '" style="width:90px"></div>'
+      + '<button class="bd-btn" id="sSave" type="button">Save</button></div>'
+      + '<div class="bd-sub" style="margin-top:12px;line-height:1.6">Claude reads document <b>photos</b> (JPG/PNG): is it readable, does the name match, do the number and expiry match what was typed. It <b>cannot prove a document is genuine</b>, and PDFs are not read yet — those show "not read by Claude".</div></div>';
+  }
+  function render() {
+    $('root').innerHTML = (ONE ? '<div class="bd-card"><a href="doc_check.html">← Everyone</a></div>' : stats()) + people() + (ONE ? '' : rules() + settings());
+    const sc = $('rScope'); if (sc) sc.onchange = () => { const v = sc.value; $('rValWrap').style.display = v === 'all' ? 'none' : ''; $('rValWrap').innerHTML = '<label>Which</label>' + (v === 'dept' ? '<select class="bd-in" id="rVal">' + Object.entries((() => { const m = {}; (SET.employees || []).forEach((e) => { if (e.department_id) m[e.department_id] = e.dept; }); return m; })()).map(([k, n]) => '<option value="' + k + '">' + esc(n) + '</option>').join('') + '</select>' : '<input class="bd-in" id="rVal" placeholder="e.g. Driver">'); };
+  }
+  $('q').oninput = () => { if (D) render(); };
+  $('root').onclick = async (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    try {
+      if (b.dataset.f) { FILTER = b.dataset.f; return render(); }
+      if (b.id === 'rAdd') { const sc = $('rScope').value; const r = await api.post('chk.doc_rule_save', { scope: sc, scope_val: sc === 'all' ? '' : ($('rVal') ? $('rVal').value : ''), document_type_id: Number($('rDoc').value) }); toast(r.message); load(); }
+      else if (b.dataset.rm) { const [sc, v, d] = b.dataset.rm.split('|'); const r = await api.post('chk.doc_rule_save', { scope: sc, scope_val: v, document_type_id: Number(d), remove: true }); toast('Rule removed.'); load(); }
+      else if (b.id === 'sSave') { await api.post('chk.settings', { hr_emp: Number($('sHr').value), doc_grace_days: Number($('sGrace').value), doc_warn_days: Number($('sWarn').value), spot_pct: Number($('sSpot').value) }); SET = null; toast('Saved.'); load(); }
+    } catch (er) { toast(er.message, true); }
+  };
+  load();
+</script>
+</body>
+</html>

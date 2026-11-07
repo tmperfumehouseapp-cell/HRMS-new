@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Parcels and tracking — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=5">
+<link rel="stylesheet" href="assets/css/boss.css?v=1">
+<style>/* Parcels and tracking is a wide table page: use the full width on a PC (boss.css caps .bd at 1180px) */
+.bd{max-width:none}
+/* Parcels | Needs attention switch (live order cases from WhatsApp chats and courier problems) */
+.wor-tabsw{display:flex;gap:6px;margin:0 0 14px;overflow-x:auto}.wor-tabsw button{flex:none;display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line,#e6e8ec);background:#fff;border-radius:99px;padding:10px 18px;font:inherit;font-weight:700;font-size:14px;cursor:pointer;color:#4a505c;min-height:44px}.wor-tabsw button.on{background:var(--ink,#14161a);color:#fff;border-color:var(--ink,#14161a)}.wor-tabsw b{display:none;min-width:22px;height:22px;border-radius:99px;background:#d9423b;color:#fff;font-size:12px;line-height:22px;text-align:center;padding:0 6px}.wor-tabsw b.show{display:inline-block}</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><div><h1>Parcels and tracking</h1><div class="bd-sub" id="sub">A tracking ID within the set hours, in transit by the set day, a remark every day on untraceable parcels. Sundays are not counted.</div></div><div id="topBtns"></div></div>
+    <div class="content"><div class="wor-tabsw" id="worTabs"><button class="on" data-t="parcels">Parcels and tracking</button><button data-t="attn">Needs attention <b id="worBadge"></b></button></div><div class="bd" id="worAttn" style="display:none"></div><div class="bd" id="dsReport"><div class="bd-empty">Loading…</div></div><div class="bd" id="hqPeople"></div><div class="bd-sub" style="text-align:center;margin:6px 0 20px" id="dsFoot"></div></div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=4"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/order_card.js?v=1"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script src="assets/js/boss_common.js?v=2"></script>
+<script src="assets/js/hq_board.js?v=1"></script>
+<script src="assets/js/hq_chat.js?v=3"></script>
+<script src="assets/js/dsp_report.js?v=14"></script>
+<script src="assets/js/min_text.js?v=2"></script>
+<script src="assets/js/wa_ord_ui.js?v=6"></script>
+<script>
+  guardPage();
+  renderSidebar('dept_dispatch');
+  try { DSP.mount(document.getElementById('dsReport')); } catch (e) { document.getElementById('dsReport').innerHTML = '<div class="bd-card"><div class="bd-empty"><b>Cannot open Parcels and tracking</b>' + BD.esc(e.message) + '</div></div>'; }
+  try { HQ.mount(document.getElementById('hqPeople'), { section: 'dispatch', title: 'People tracked in Dispatch' }); } catch (e) {}
+  // Parcels | Needs attention. The second tab is built the first time it is opened; the red number is the open cases (checked once a minute).
+  (function () {
+    const tabs = document.getElementById('worTabs'), box = document.getElementById('worAttn'), badge = document.getElementById('worBadge'); let built = null;
+    const parcels = ['dsReport', 'hqPeople', 'dsFoot', 'topBtns'].map((i) => document.getElementById(i));
+    function setBadge(n) { badge.textContent = n > 99 ? '99+' : n; badge.className = n > 0 ? 'show' : ''; }
+    function show(t) {
+      tabs.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.getAttribute('data-t') === t));
+      const a = t === 'attn'; box.style.display = a ? '' : 'none'; parcels.forEach((e) => { if (e) e.style.display = a ? 'none' : ''; });
+      const h = document.querySelector('.topbar h1'); if (h) h.textContent = a ? 'Needs attention' : 'Parcels and tracking';
+      if (a && !built && window.WaOrd) built = WaOrd.attention(box, { onCount: setBadge }); else if (a && built) built.refresh();
+      try { history.replaceState(null, '', a ? '?tab=attention' : location.pathname); } catch (e) {}
+    }
+    tabs.addEventListener('click', (e) => { const b = e.target.closest('[data-t]'); if (b) show(b.getAttribute('data-t')); });
+    const poll = () => { if (!document.hidden && window.WaOrd) WaOrd.count(setBadge); }; poll(); setInterval(poll, 60000);
+    if (/[?&]tab=attention/.test(location.search)) show('attn');
+  })();
+</script>
+</body>
+</html>

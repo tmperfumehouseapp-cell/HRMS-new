@@ -1,0 +1,1025 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Documents — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css">
+<style>
+  .expiry-ok{color:var(--ok-fg);font-weight:600;}
+  .expiry-warn{color:#b45309;font-weight:600;}
+  .expiry-bad{color:var(--bad-fg);font-weight:600;}
+  .doc-row {
+    border: 1px solid var(--line, #e5e5e5);
+    border-radius: 8px;
+    padding: 16px;
+    margin-top: 14px;
+    position: relative;
+  }
+  .doc-row-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 4px;
+  }
+  .doc-row-label {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted, #888);
+  }
+  .remove-row-btn {
+    background: none;
+    border: none;
+    color: var(--bad-fg, #c0392b);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 4px 8px;
+  }
+  .remove-row-btn:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><h1>Employee Documents</h1></div>
+    <div class="content">
+      <div id="alertBox"></div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>Upload documents</h2>
+          <div style="display:flex; gap:10px;">
+            <button type="button" class="btn secondary" id="btnManageDocTypes" style="width:auto;">Manage types</button>
+            <button type="button" class="btn secondary" id="btnAddDocType" style="width:auto;">+ New document type</button>
+          </div>
+        </div>
+        <div id="addDocTypeRow" style="display:none; padding:14px 20px 0; align-items:center; gap:10px; flex-wrap:wrap;">
+          <input type="text" id="newDocTypeName" placeholder="e.g. Passbook" maxlength="100" style="max-width:260px;">
+          <label style="display:flex; align-items:center; gap:6px; font-size:13px; font-weight:400;">
+            <input type="checkbox" id="newDocTypeHasExpiry" checked style="width:auto;"> Has an expiry date
+          </label>
+          <label style="display:flex; align-items:center; gap:6px; font-size:13px; font-weight:400;">
+            <input type="checkbox" id="newDocTypeRequired" style="width:auto;"> Required for every employee
+          </label>
+          <button type="button" class="btn" id="btnSaveDocType" style="width:auto;">Add</button>
+          <button type="button" class="btn secondary" id="btnCancelDocType" style="width:auto;">Cancel</button>
+          <span id="docTypeMsg" style="font-size:12px;"></span>
+        </div>
+        <div id="manageDocTypesPanel" style="display:none; padding:14px 20px 0;">
+          <div id="manageDocTypesList"></div>
+        </div>
+        <div style="padding:20px;">
+          <div class="field" style="max-width:420px;">
+            <label for="employeeSelect">Employee *</label>
+            <select id="employeeSelect" required><option value="">— Select —</option></select>
+          </div>
+
+          <div id="docRows"></div>
+
+          <button type="button" class="btn secondary" id="addRowBtn" style="width:auto; margin:6px 0 18px;">+ Add another document</button>
+
+          <div style="display:flex; align-items:center; gap:16px;">
+            <button type="button" class="btn" id="uploadBtn" style="width:auto;">Upload All Documents</button>
+            <div id="uploadProgress" style="font-size:13px; color:var(--muted, #666);"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2 id="listTitle">Pending Documents</h2>
+          <select id="filterEmployee" style="padding:8px 10px; border:1px solid var(--line); border-radius:6px; font-size:13px;">
+            <option value="">All Employees</option>
+          </select>
+        </div>
+        <table>
+          <thead>
+            <tr><th>Employee</th><th>Document</th><th>Number</th><th>Expiry</th><th style="width:140px;">Actions</th></tr>
+          </thead>
+          <tbody id="tableBody">
+            <tr><td colspan="5" class="loading">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="modal-overlay" id="editModal">
+  <div class="modal">
+    <h3>Edit Document</h3>
+    <div id="editModalAlert"></div>
+    <form id="editDocForm">
+      <input type="hidden" id="editDocId">
+      <div class="field">
+        <label for="editDocType">Document Type *</label>
+        <select id="editDocType" required></select>
+      </div>
+      <div class="field">
+        <label for="editDocNumber">Document Number</label>
+        <input type="text" id="editDocNumber" maxlength="100">
+      </div>
+      <div class="field-grid">
+        <div class="field">
+          <label for="editIssueDate">Issue Date</label>
+          <input type="date" id="editIssueDate">
+        </div>
+        <div class="field">
+          <label for="editExpiryDate">Expiry Date</label>
+          <input type="date" id="editExpiryDate">
+        </div>
+      </div>
+      <div class="field">
+        <label for="editRemarks">Remarks</label>
+        <input type="text" id="editRemarks" maxlength="255">
+      </div>
+      <div class="field">
+        <label for="editDocFile">Replace File (optional — PDF, JPG, PNG, max 5MB)</label>
+        <div class="dropzone" style="border:2px dashed var(--line); border-radius:8px; padding:12px; text-align:center; cursor:pointer; font-size:12.5px; color:var(--muted); margin-bottom:6px;">Drag &amp; drop file here — or click to choose</div>
+        <input type="file" id="editDocFile" accept=".pdf,.jpg,.jpeg,.png">
+      </div>
+      <div class="actions">
+        <button type="button" class="btn secondary" id="btnEditCancel">Cancel</button>
+        <button type="submit" class="btn" id="btnEditSave">Save Changes</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="assets/js/config.js"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script>
+  guardPage();
+  renderSidebar('documents');
+
+  const alertBox = document.getElementById('alertBox');
+  const tableBody = document.getElementById('tableBody');
+  let currentDocs = [];
+
+  function showAlert(msg, type = 'success') {
+    alertBox.innerHTML = `<div class="alert ${type}">${msg}</div>`;
+    setTimeout(() => (alertBox.innerHTML = ''), 4000);
+  }
+
+  function expiryClass(dateStr) {
+    if (!dateStr) return '';
+    const days = (new Date(dateStr) - new Date()) / (1000 * 60 * 60 * 24);
+    if (days < 0) return 'expiry-bad';
+    if (days <= 30) return 'expiry-warn';
+    return 'expiry-ok';
+  }
+
+  let docTypeOptionsHtml = '<option value="">— Select —</option>';
+  let rowCounter = 0;
+
+  let digitalSignatureTypeId = null;
+  let docTypeExpiryMap = {}; // document_type_id -> has_expiry (1/0)
+
+  let allDocTypes = [];            // full list, used by the edit modal
+  let uploadedTypeIds = new Set(); // document_type_ids already uploaded for the selected employee
+
+  /*
+   * Options for the upload-row Document Type dropdowns.
+   * With no employee selected: full list. With an employee selected: only the
+   * types they have NOT uploaded yet, each labelled "(Pending)". Once a type
+   * is uploaded (pending or approved), it disappears from this list.
+   */
+  function buildRowOptionsHtml() {
+    const employeeSelected = !!document.getElementById('employeeSelect').value;
+    const types = employeeSelected
+      ? allDocTypes.filter(t => !uploadedTypeIds.has(String(t.document_type_id)))
+      : allDocTypes;
+
+    if (employeeSelected && types.length === 0) {
+      return '<option value="">All document types uploaded ✓</option>';
+    }
+    return '<option value="">— Select —</option>' +
+      types.map(t => `<option value="${t.document_type_id}">${t.document_name}${employeeSelected ? ' (Pending)' : ''}</option>`).join('');
+  }
+
+  /*
+   * Recompute which document types the selected employee has already uploaded
+   * (pending-approval AND approved both count as uploaded), then rebuild every
+   * upload row's dropdown so only the still-pending types remain.
+   */
+  async function refreshPendingTypes() {
+    const employeeId = document.getElementById('employeeSelect').value;
+    uploadedTypeIds = new Set();
+    if (employeeId) {
+      try {
+        const both = await api.get('employee_documents.list', { employee_id: employeeId, status: 'pending,approved' });   // one call, not two
+        (both.documents || [])
+          .forEach(d => uploadedTypeIds.add(String(d.document_type_id)));
+      } catch (e) {
+        // If the lookup fails, fall back to showing the full list.
+      }
+    }
+    refreshDocTypeSelects();
+  }
+
+  let allEmployees = [];
+
+  /*
+   * Upload dropdown lists only employees who still have at least one
+   * document type NOT uploaded (pending approval and approved both count as
+   * uploaded). Someone with everything submitted drops out of it; the
+   * filter dropdown below the table still lists everyone.
+   */
+  async function refreshEmployeeSelect() {
+    const sel = document.getElementById('employeeSelect');
+    const keep = sel.value;
+    let complete = new Set();
+    try {
+      const both = await api.get('employee_documents.list', { status: 'pending,approved' });   // one call, not two
+      const uploaded = {};
+      (both.documents || []).forEach(d => {
+        (uploaded[d.employee_id] = uploaded[d.employee_id] || new Set()).add(String(d.document_type_id));
+      });
+      const typeIds = allDocTypes.map(t => String(t.document_type_id));
+      allEmployees.forEach(e => {
+        const up = uploaded[e.employee_id] || new Set();
+        if (typeIds.length && typeIds.every(id => up.has(id))) complete.add(String(e.employee_id));
+      });
+    } catch (e) {
+      // Lookup failed — show everyone rather than nobody.
+    }
+    const list = allEmployees.filter(e => !complete.has(String(e.employee_id)));
+    sel.innerHTML = '<option value="">— Select —</option>' + list.map(e =>
+      `<option value="${e.employee_id}">${e.full_name} (${e.employee_code})</option>`).join('');
+    sel.value = list.some(e => String(e.employee_id) === keep) ? keep : '';
+  }
+
+  async function loadDropdowns() {
+    const [empData, typeData] = await Promise.all([
+      api.get('employees.list'),
+      api.get('document_types.list'),
+    ]);
+
+    allEmployees = empData.employees || [];
+    allDocTypes = typeData.document_types;
+    const empOptions = allEmployees.map(e =>
+      `<option value="${e.employee_id}">${e.full_name} (${e.employee_code})</option>`
+    ).join('');
+    document.getElementById('filterEmployee').innerHTML = '<option value="">All Employees</option>' + empOptions;
+    await refreshEmployeeSelect();
+
+    docTypeOptionsHtml = '<option value="">— Select —</option>' +
+      typeData.document_types.map(t => `<option value="${t.document_type_id}">${t.document_name}</option>`).join('');
+
+    docTypeExpiryMap = {};
+    typeData.document_types.forEach(t => {
+      // Defaults to "has expiry" when the column doesn't exist yet on your
+      // server — run add_has_expiry_column.sql to enable per-type control.
+      docTypeExpiryMap[t.document_type_id] = t.has_expiry === undefined ? 1 : Number(t.has_expiry);
+    });
+
+    const sigType = typeData.document_types.find(t => t.document_name.trim().toLowerCase() === 'digital signature');
+    digitalSignatureTypeId = sigType ? sigType.document_type_id : null;
+
+    document.querySelectorAll('.doc-row').forEach(updateRowMode);
+  }
+
+  /*
+   * Refresh every existing document-type <select> (each upload row, plus the
+   * edit modal) to include a newly added type, keeping whatever was already
+   * selected in each one.
+   */
+  function refreshDocTypeSelects() {
+    const html = buildRowOptionsHtml();
+    document.querySelectorAll('.row-doctype').forEach(sel => {
+      const current = sel.value;
+      sel.innerHTML = html;
+      sel.value = current; // becomes '' automatically if the type is no longer in the list
+      if (sel.value !== current) updateRowMode(sel.closest('.doc-row'));
+    });
+  }
+
+  const addDocTypeRow = document.getElementById('addDocTypeRow');
+  const newDocTypeName = document.getElementById('newDocTypeName');
+  const docTypeMsg = document.getElementById('docTypeMsg');
+
+  document.getElementById('btnAddDocType').addEventListener('click', () => {
+    addDocTypeRow.style.display = 'flex';
+    newDocTypeName.value = '';
+    document.getElementById('newDocTypeHasExpiry').checked = true;
+    document.getElementById('newDocTypeRequired').checked = false;
+    docTypeMsg.textContent = '';
+    newDocTypeName.focus();
+  });
+
+  document.getElementById('btnCancelDocType').addEventListener('click', () => {
+    addDocTypeRow.style.display = 'none';
+  });
+
+  const manageDocTypesPanel = document.getElementById('manageDocTypesPanel');
+  const manageDocTypesList = document.getElementById('manageDocTypesList');
+
+  document.getElementById('btnManageDocTypes').addEventListener('click', () => {
+    const opening = manageDocTypesPanel.style.display === 'none';
+    manageDocTypesPanel.style.display = opening ? 'block' : 'none';
+    if (opening) renderManageDocTypesList();
+  });
+
+  async function renderManageDocTypesList() {
+    manageDocTypesList.innerHTML = '<p style="font-size:13px;color:#888;">Loading...</p>';
+    try {
+      const data = await api.get('document_types.list');
+      if (!data.document_types.length) {
+        manageDocTypesList.innerHTML = '<p style="font-size:13px;color:#888;">No document types yet.</p>';
+        return;
+      }
+      manageDocTypesList.innerHTML = data.document_types.map(t => `
+        <div class="delete-row">
+          <div class="delete-row-info">
+            <div class="delete-row-name">
+              ${t.document_name}
+              ${Number(t.is_required) ? '<span class="badge">Required</span>' : ''}
+              ${Number(t.has_expiry) === 0 ? '<span class="badge inactive">No expiry</span>' : ''}
+            </div>
+          </div>
+          <div class="delete-row-actions">
+            <button class="btn-pill" style="color:var(--accent);" onclick="editType(${t.document_type_id}, '${t.document_name.replace(/'/g, "\\'").replace(/"/g, '&quot;')}', ${Number(t.has_expiry) ? 1 : 0}, ${Number(t.is_required) ? 1 : 0})">Edit</button>
+            <button class="btn-pill btn-delete" data-delete-type="${t.document_type_id}" data-name="${t.document_name.replace(/"/g, '&quot;')}">Delete</button>
+          </div>
+        </div>
+      `).join('');
+
+      manageDocTypesList.querySelectorAll('[data-delete-type]').forEach(btn => {
+        btn.addEventListener('click', () => deleteDocType(btn.dataset.deleteType, btn.dataset.name, btn));
+      });
+    } catch (err) {
+      manageDocTypesList.innerHTML = `<p style="font-size:13px;color:#c0392b;">${err.message}</p>`;
+    }
+  }
+
+  async function deleteDocType(id, name, btn) {
+    if (!confirm(`Delete document type "${name}"? This only works if no documents are using it.`)) return;
+    btn.disabled = true;
+    btn.textContent = 'Deleting...';
+    try {
+      try {
+        await api.post('document_types.delete', { document_type_id: id });
+      } catch (err) {
+        if (err.data && err.data.needs_force) {
+          const n = err.data.doc_count;
+          if (!confirm(`This type has ${n} uploaded document(s).\n\nDeleting it will PERMANENTLY delete those files too. Continue?`)) return;
+          await api.post('document_types.delete', { document_type_id: id, force: 1 });
+        } else {
+          throw err;
+        }
+      }
+      showAlert(`"${name}" deleted.`);
+      await loadDropdowns();
+      refreshDocTypeSelects();
+      renderManageDocTypesList();
+    } catch (err) {
+      showAlert(err.message, 'error');
+      btn.disabled = false;
+      btn.textContent = 'Delete';
+    }
+  }
+
+  document.getElementById('btnSaveDocType').addEventListener('click', async () => {
+    const name = newDocTypeName.value.trim();
+    if (!name) {
+      docTypeMsg.textContent = 'Enter a name first.';
+      docTypeMsg.style.color = '#c0392b';
+      return;
+    }
+    try {
+      const hasExpiry = document.getElementById('newDocTypeHasExpiry').checked;
+      const isRequired = document.getElementById('newDocTypeRequired').checked;
+      await api.post('document_types.save', { document_name: name, has_expiry: hasExpiry ? 1 : 0, is_required: isRequired ? 1 : 0 });
+      await loadDropdowns();
+      refreshDocTypeSelects();
+      addDocTypeRow.style.display = 'none';
+      showAlert(`"${name}" added as a document type.`);
+    } catch (err) {
+      docTypeMsg.textContent = err.message;
+      docTypeMsg.style.color = '#c0392b';
+    }
+  });
+
+  /*
+   * One row = one document to upload. Each row is independent — its own
+   * type, number, file, dates, and remarks — but all rows share the single
+   * Employee dropdown above, since batch upload is for one employee at a time.
+   */
+  function addDocRow() {
+    rowCounter++;
+    const rowId = 'docRow' + rowCounter;
+    const row = document.createElement('div');
+    row.className = 'doc-row';
+    row.id = rowId;
+    row.innerHTML = `
+      <div class="doc-row-head">
+        <span class="doc-row-label">Document</span>
+        <button type="button" class="remove-row-btn" data-remove>Remove</button>
+      </div>
+      <div class="field-grid">
+        <div class="field">
+          <label>Document Type *</label>
+          <select class="row-doctype" required>${buildRowOptionsHtml()}</select>
+        </div>
+        <div class="field">
+          <label>Document Number</label>
+          <input type="text" class="row-docnumber" maxlength="100" placeholder="e.g. Aadhaar number">
+        </div>
+      </div>
+
+      <div class="field-grid row-file-wrap">
+        <div class="field">
+          <label>File(s) * (PDF, JPG, PNG — max 5MB each. Select multiple pages/photos if needed.)</label>
+          <div class="dropzone" style="border:2px dashed var(--line); border-radius:8px; padding:12px; text-align:center; cursor:pointer; font-size:12.5px; color:var(--muted); margin-bottom:6px;">Drag &amp; drop files here — or click to choose</div>
+          <input type="file" class="row-file" accept=".pdf,.jpg,.jpeg,.png" multiple required>
+          <div class="row-file-count" style="font-size:12px; color:#888; margin-top:4px;"></div>
+        </div>
+        <div class="field">
+          <label>Remarks</label>
+          <input type="text" class="row-remarks" maxlength="255">
+        </div>
+      </div>
+
+      <div class="row-sig-wrap" style="display:none;">
+        <label style="display:block; font-size:13px; font-weight:600; margin:0 0 6px;">Sign below</label>
+        <div style="border:1px solid var(--line,#ddd); border-radius:8px; overflow:hidden; touch-action:none; max-width:600px;">
+          <canvas class="row-sig-canvas" style="display:block; width:100%; height:200px; background:#fff; cursor:crosshair;"></canvas>
+        </div>
+        <button type="button" class="btn secondary row-sig-clear" style="width:auto; margin-top:10px;">Clear signature</button>
+        <div class="row-sig-hint" style="font-size:12px; color:#888; margin-top:6px;"></div>
+      </div>
+
+      <div class="field-grid row-dates-wrap">
+        <div class="field row-issue-wrap">
+          <label>Issue Date</label>
+          <input type="date" class="row-issue">
+        </div>
+        <div class="field row-expiry-wrap">
+          <label>Expiry Date</label>
+          <input type="date" class="row-expiry">
+        </div>
+      </div>
+    `;
+    document.getElementById('docRows').appendChild(row);
+
+    row.querySelector('.row-file').addEventListener('change', (e) => {
+      const count = e.target.files.length;
+      row.querySelector('.row-file-count').textContent = count > 1
+        ? `${count} files selected — each will be saved as a separate entry under this document type.`
+        : '';
+    });
+
+    row.querySelector('.row-doctype').addEventListener('change', () => updateRowMode(row));
+    initRowSignature(row);
+    updateRowMode(row);
+
+    row.querySelector('[data-remove]').addEventListener('click', () => {
+      const allRows = document.querySelectorAll('.doc-row');
+      if (allRows.length <= 1) {
+        showAlert('At least one document row is required.', 'error');
+        return;
+      }
+      row.remove();
+    });
+  }
+
+  function resetDocRows() {
+    document.getElementById('docRows').innerHTML = '';
+    addDocRow();
+  }
+
+  document.getElementById('addRowBtn').addEventListener('click', addDocRow);
+
+  // Whenever the employee changes, filter the Document Type dropdowns down
+  // to that employee's still-pending (not yet uploaded) types.
+  document.getElementById('employeeSelect').addEventListener('change', refreshPendingTypes);
+
+  // ---- Edit Document modal ----
+  const editModal = document.getElementById('editModal');
+  const editModalAlert = document.getElementById('editModalAlert');
+
+  window.editDoc = function (id) {
+    const doc = currentDocs.find(d => d.employee_document_id == id);
+    if (!doc) return;
+
+    document.getElementById('editDocType').innerHTML = docTypeOptionsHtml;
+    document.getElementById('editDocId').value = doc.employee_document_id;
+    document.getElementById('editDocType').value = doc.document_type_id || '';
+    document.getElementById('editDocNumber').value = doc.document_number || '';
+    document.getElementById('editIssueDate').value = doc.issue_date || '';
+    document.getElementById('editExpiryDate').value = doc.expiry_date || '';
+    document.getElementById('editRemarks').value = doc.remarks || '';
+    document.getElementById('editDocFile').value = '';
+    editModalAlert.innerHTML = '';
+    editModal.classList.add('open');
+  };
+
+  function closeEditModal() { editModal.classList.remove('open'); }
+  document.getElementById('btnEditCancel').addEventListener('click', closeEditModal);
+  editModal.addEventListener('click', (e) => { if (e.target === editModal) closeEditModal(); });
+
+  document.getElementById('editDocForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('btnEditSave');
+    btn.disabled = true;
+
+    const id = document.getElementById('editDocId').value;
+    let newFile = document.getElementById('editDocFile').files[0];
+
+    try {
+      if (newFile) {
+        newFile = await compressForUpload(newFile);
+        const formData = new FormData();
+        formData.append('employee_document_id', id);
+        formData.append('document_type_id', document.getElementById('editDocType').value);
+        formData.append('document_number', document.getElementById('editDocNumber').value);
+        formData.append('issue_date', document.getElementById('editIssueDate').value);
+        formData.append('expiry_date', document.getElementById('editExpiryDate').value);
+        formData.append('remarks', document.getElementById('editRemarks').value);
+        formData.append('document_file', newFile);
+
+        const headers = {};
+        const token = api.token();
+        if (token) headers['Authorization'] = 'Bearer ' + token;
+
+        const res = await fetch(API_BASE_URL + '?action=employee_documents.update', {
+          method: 'POST',
+          headers,
+          body: formData,
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Update failed.');
+      } else {
+        await api.post('employee_documents.update', {
+          employee_document_id: id,
+          document_type_id: document.getElementById('editDocType').value,
+          document_number: document.getElementById('editDocNumber').value,
+          issue_date: document.getElementById('editIssueDate').value,
+          expiry_date: document.getElementById('editExpiryDate').value,
+          remarks: document.getElementById('editRemarks').value,
+        });
+      }
+
+      closeEditModal();
+      showAlert('Document updated.');
+      refreshPendingTypes();
+      loadDocuments();
+    } catch (err) {
+      editModalAlert.innerHTML = `<div class="alert error">${err.message}</div>`;
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  const DOCS_PAGE_SIZE = 10;
+  let showAllDocs = false;
+
+  function renderDocTable(rows) {
+    const visibleRows = showAllDocs ? rows : rows.slice(0, DOCS_PAGE_SIZE);
+
+    tableBody.innerHTML = visibleRows.map(d => `
+      <tr>
+        <td><a href="employee_detail.html?id=${d.employee_id}">${d.full_name} <span class="badge">${d.employee_code}</span></a></td>
+        <td>${d.document_name}</td>
+        <td>${d.document_number || '—'}</td>
+        <td class="${expiryClass(d.expiry_date)}">${d.expiry_date ? new Date(d.expiry_date).toLocaleDateString('en-IN', {day:'2-digit',month:'short',year:'numeric'}) : '—'}</td>
+        <td>
+          <div class="row-actions">
+            <a href="${API_BASE_URL.replace('/api.php','')}/${d.document_file}" target="_blank">View</a>
+            <button onclick="editDoc(${d.employee_document_id})">Edit</button>
+            <button class="danger-link" onclick="deleteDoc(${d.employee_document_id})">Delete</button>
+          </div>
+        </td>
+      </tr>`).join('');
+
+    const toggleRow = rows.length > DOCS_PAGE_SIZE
+      ? `<tr><td colspan="5" style="text-align:center; padding:14px;">
+          <button type="button" id="btnToggleDocs" style="background:none; border:none; color:#1d4ed8; font-weight:600; cursor:pointer;">
+            ${showAllDocs ? 'Show less' : `View all ${rows.length} documents`}
+          </button>
+        </td></tr>`
+      : '';
+    tableBody.insertAdjacentHTML('beforeend', toggleRow);
+
+    if (rows.length > DOCS_PAGE_SIZE) {
+      document.getElementById('btnToggleDocs').addEventListener('click', () => {
+        showAllDocs = !showAllDocs;
+        renderDocTable(rows);
+      });
+    }
+  }
+
+  async function loadDocuments() {
+    const employeeId = document.getElementById('filterEmployee').value;
+    const params = { status: 'pending' };
+    if (employeeId) params.employee_id = employeeId;
+
+    try {
+      const data = await api.get('employee_documents.list', params);
+      const rows = data.documents;
+      currentDocs = rows;
+      document.getElementById('listTitle').textContent = `Pending Documents (${rows.length})`;
+      showAllDocs = false;
+
+      if (rows.length === 0) {
+        tableBody.innerHTML = '<tr><td colspan="5" class="empty-state">No documents pending approval.</td></tr>';
+        return;
+      }
+
+      renderDocTable(rows);
+    } catch (err) {
+      tableBody.innerHTML = `<tr><td colspan="5"><div class="alert error">${err.message}</div></td></tr>`;
+    }
+  }
+
+  window.deleteDoc = async function (id) {
+    if (!confirm('Delete this document? This cannot be undone.')) return;
+    try {
+      await api.post('employee_documents.delete', { employee_document_id: id });
+      showAlert('Document deleted.');
+      refreshPendingTypes(); // that type may be pending again for the selected employee
+      refreshEmployeeSelect(); // and that employee may be back in the upload list
+      loadDocuments();
+    } catch (err) {
+      showAlert(err.message, 'error');
+    }
+  };
+
+  document.getElementById('filterEmployee').addEventListener('change', loadDocuments);
+
+  /*
+   * Compress an image in the browser before uploading, targeting ~2MB.
+   * Photos from phone cameras (5–15MB) come down to ≤2MB by scaling to a
+   * max dimension and stepping JPEG quality down gently — text stays sharp
+   * and readable. PDFs and files already ≤2MB pass through untouched.
+   */
+  const MAX_UPLOAD_BYTES = 2 * 1024 * 1024;
+
+  async function compressForUpload(file) {
+    if (!file.type.startsWith('image/') || file.size <= MAX_UPLOAD_BYTES) return file;
+
+    let img;
+    try {
+      img = await createImageBitmap(file);
+    } catch (e) {
+      return file; // unreadable as image — send as-is
+    }
+
+    let maxDim = 2600; // keeps A4 scans crisp and readable
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#ffffff'; // PNG transparency becomes white, not black
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+      let quality = 0.88;
+      let blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', quality));
+      while (blob && blob.size > MAX_UPLOAD_BYTES && quality > 0.6) {
+        quality -= 0.07;
+        blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', quality));
+      }
+      if (blob && blob.size <= MAX_UPLOAD_BYTES) {
+        return new File([blob], file.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' });
+      }
+      maxDim = Math.round(maxDim * 0.8); // still too big — reduce dimensions and retry
+    }
+    return file; // give up gracefully — original goes up
+  }
+
+  async function uploadOneFile(employeeId, row, file) {
+    const docTypeId = row.querySelector('.row-doctype').value;
+
+    file = await compressForUpload(file);
+
+    const formData = new FormData();
+    formData.append('employee_id', employeeId);
+    formData.append('document_type_id', docTypeId);
+    formData.append('document_number', row.querySelector('.row-docnumber').value);
+    formData.append('issue_date', row.querySelector('.row-issue').value);
+    formData.append('expiry_date', row.querySelector('.row-expiry').value);
+    formData.append('remarks', row.querySelector('.row-remarks').value);
+    formData.append('document_file', file);
+
+    const headers = {};
+    const token = api.token();
+    if (token) headers['Authorization'] = 'Bearer ' + token;
+
+    const res = await fetch(API_BASE_URL + '?action=employee_documents.upload', {
+      method: 'POST',
+      headers,
+      body: formData, // no Content-Type header — browser sets multipart boundary automatically
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Upload failed.');
+  }
+
+  function isSigRow(row) {
+    const docType = row.querySelector('.row-doctype').value;
+    return !!digitalSignatureTypeId && docType == digitalSignatureTypeId;
+  }
+
+  document.getElementById('uploadBtn').addEventListener('click', async () => {
+    const employeeId = document.getElementById('employeeSelect').value;
+    if (!employeeId) {
+      showAlert('Select an employee first.', 'error');
+      return;
+    }
+
+    const rows = Array.from(document.querySelectorAll('.doc-row'));
+    const invalidRow = rows.find(r => {
+      if (!r.querySelector('.row-doctype').value) return true;
+      if (isSigRow(r)) return !r._sigHasStroke;
+      return r.querySelector('.row-file').files.length === 0;
+    });
+    if (invalidRow) {
+      showAlert('Every row needs a document type, and either a file selected or a signature drawn.', 'error');
+      return;
+    }
+
+    // Flatten rows into individual (row, file) uploads — a row with 3 selected
+    // files (e.g. 3 pages of an Agreement) becomes 3 separate uploads, all
+    // sharing that row's document type, number, dates, and remarks. A row set
+    // to "Digital Auto Signature" contributes its one drawn signature instead.
+    const tasks = [];
+    for (const row of rows) {
+      if (isSigRow(row)) {
+        const sigFile = await row._getSignatureFile();
+        if (sigFile) tasks.push({ row, file: sigFile });
+      } else {
+        const files = Array.from(row.querySelector('.row-file').files);
+        files.forEach(file => tasks.push({ row, file }));
+      }
+    }
+
+    const btn = document.getElementById('uploadBtn');
+    const progress = document.getElementById('uploadProgress');
+    btn.disabled = true;
+
+    let successCount = 0;
+    const failures = [];
+
+    for (let i = 0; i < tasks.length; i++) {
+      progress.textContent = `Uploading ${i + 1} of ${tasks.length}...`;
+      try {
+        await uploadOneFile(employeeId, tasks[i].row, tasks[i].file);
+        successCount++;
+      } catch (err) {
+        failures.push(`File ${i + 1}: ${err.message}`);
+      }
+    }
+
+    progress.textContent = '';
+    btn.disabled = false;
+
+    if (failures.length === 0) {
+      showAlert(`${successCount} file${successCount === 1 ? '' : 's'} uploaded.`);
+      document.getElementById('employeeSelect').value = '';
+      resetDocRows();
+    } else if (successCount === 0) {
+      showAlert(`All uploads failed. ${failures[0]}`, 'error');
+    } else {
+      showAlert(`${successCount} uploaded, ${failures.length} failed. ${failures[0]}`, 'error');
+    }
+
+    // Uploaded types are no longer pending — refresh the dropdowns.
+    refreshPendingTypes();
+    refreshEmployeeSelect();
+    loadDocuments();
+  });
+
+  /*
+   * Toggle a row between "upload a file" mode and "draw a signature" mode,
+   * based on whether its Document Type is set to "Digital Auto Signature".
+   */
+  function updateRowMode(row) {
+    const docType = row.querySelector('.row-doctype').value;
+    const isSig = !!digitalSignatureTypeId && docType == digitalSignatureTypeId;
+
+    row.querySelector('.row-file-wrap').style.display = isSig ? 'none' : 'grid';
+    row.querySelector('.row-sig-wrap').style.display = isSig ? 'block' : 'none';
+    row.querySelector('.row-file').required = !isSig;
+
+    // The canvas was set up while hidden (0x0) — size it now that it's visible.
+    if (isSig) {
+      const canvas = row.querySelector('.row-sig-canvas');
+      if (canvas && canvas.width === 0 && row._resizeSig) row._resizeSig();
+    }
+
+    // Hide both Issue Date and Expiry Date for document types that don't
+    // expire (e.g. Aadhaar) — controlled per-type via has_expiry.
+    const hasExpiry = docType ? (docTypeExpiryMap[docType] !== 0) : true;
+    row.querySelector('.row-dates-wrap').style.display = hasExpiry ? 'grid' : 'none';
+    if (!hasExpiry) {
+      row.querySelector('.row-issue').value = '';
+      row.querySelector('.row-expiry').value = '';
+    }
+  }
+
+  /*
+   * Set up mouse/touch drawing on one row's signature canvas. The captured
+   * stroke stays in-memory as a flag (row._sigHasStroke) and is only turned
+   * into an actual PNG file at upload time, via row._getSignatureFile().
+   */
+  function initRowSignature(row) {
+    const canvas = row.querySelector('.row-sig-canvas');
+    const ctx = canvas.getContext('2d');
+    let drawing = false;
+    row._sigHasStroke = false;
+
+    function resize() {
+      const rect = canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      ctx.scale(dpr, dpr);
+      ctx.lineWidth = 2;
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = '#1a1a1a';
+    }
+    row._resizeSig = resize;
+    resize();
+
+    function pointerPos(e) {
+      const rect = canvas.getBoundingClientRect();
+      const point = e.touches ? e.touches[0] : e;
+      return { x: point.clientX - rect.left, y: point.clientY - rect.top };
+    }
+
+    function start(e) {
+      e.preventDefault();
+      drawing = true;
+      row._sigHasStroke = true;
+      const p = pointerPos(e);
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+    }
+    function move(e) {
+      if (!drawing) return;
+      e.preventDefault();
+      const p = pointerPos(e);
+      ctx.lineTo(p.x, p.y);
+      ctx.stroke();
+    }
+    function end() { drawing = false; }
+
+    canvas.addEventListener('mousedown', start);
+    canvas.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', end);
+    canvas.addEventListener('touchstart', start, { passive: false });
+    canvas.addEventListener('touchmove', move, { passive: false });
+    canvas.addEventListener('touchend', end);
+
+    row.querySelector('.row-sig-clear').addEventListener('click', () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      row._sigHasStroke = false;
+    });
+
+    row._getSignatureFile = () => new Promise(resolve => {
+      if (!row._sigHasStroke) { resolve(null); return; }
+      canvas.toBlob(blob => {
+        resolve(new File([blob], `signature_${Date.now()}.png`, { type: 'image/png' }));
+      }, 'image/png');
+    });
+  }
+
+  (async function init() {
+    await loadDropdowns();
+    addDocRow();
+    await loadDocuments();
+
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('resubmit')) {
+      const raw = sessionStorage.getItem('resubmitDocument');
+      sessionStorage.removeItem('resubmitDocument');
+      history.replaceState(null, '', 'documents.html');
+      if (raw) {
+        try {
+          const payload = JSON.parse(raw);
+          const firstRow = document.querySelector('.doc-row');
+          if (payload.employee_id) {
+            document.getElementById('employeeSelect').value = payload.employee_id;
+            await refreshPendingTypes(); // filter dropdowns to this employee's pending types
+          }
+          if (firstRow) {
+            firstRow.querySelector('.row-doctype').value = payload.document_type_id || '';
+            firstRow.querySelector('.row-doctype').dispatchEvent(new Event('change'));
+            firstRow.querySelector('.row-docnumber').value = payload.document_number || '';
+            firstRow.querySelector('.row-remarks').value = payload.remarks || '';
+            firstRow.querySelector('.row-issue').value = payload.issue_date || '';
+            firstRow.querySelector('.row-expiry').value = payload.expiry_date || '';
+          }
+          showAlert('Fields pre-filled from the declined submission — choose the file again and click Upload All Documents.');
+        } catch (e) {
+          showAlert('Could not load the declined submission data.', 'error');
+        }
+      }
+    }
+  })();
+
+  window.editType = function (id, currentName, hasExpiry, isRequired) {
+    let m = document.getElementById('editTypeModal');
+    if (!m) {
+      document.body.insertAdjacentHTML('beforeend', `
+        <div class="modal-overlay" id="editTypeModal">
+          <div class="modal" style="max-width:380px;">
+            <h3>Edit Document Type</h3>
+            <div class="field">
+              <label for="etName">Name</label>
+              <input type="text" id="etName">
+            </div>
+            <label style="display:flex; align-items:center; gap:8px; font-size:13.5px; margin:8px 0;">
+              <input type="checkbox" id="etExpiry"> Has expiry date
+            </label>
+            <label style="display:flex; align-items:center; gap:8px; font-size:13.5px; margin:8px 0;">
+              <input type="checkbox" id="etRequired"> Required for every employee
+            </label>
+            <div class="actions">
+              <button type="button" class="btn secondary" id="etCancel">Cancel</button>
+              <button type="button" class="btn" id="etSave">Save</button>
+            </div>
+          </div>
+        </div>`);
+      m = document.getElementById('editTypeModal');
+      document.getElementById('etCancel').addEventListener('click', () => m.classList.remove('open'));
+      document.getElementById('etSave').addEventListener('click', async () => {
+        const name = document.getElementById('etName').value.trim();
+        if (!name) { showAlert('Name is required.', 'error'); return; }
+        const btn = document.getElementById('etSave');
+        btn.disabled = true;
+        try {
+          await api.post('document_types.update', {
+            document_type_id: Number(m.dataset.typeId),
+            document_name: name,
+            has_expiry: document.getElementById('etExpiry').checked ? 1 : 0,
+            is_required: document.getElementById('etRequired').checked ? 1 : 0,
+          });
+          m.classList.remove('open');
+          showAlert('Document type updated.');
+          renderManageDocTypesList();
+          refreshPendingTypes();
+        } catch (err) {
+          showAlert(err.message, 'error');
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    }
+    m.dataset.typeId = id;
+    document.getElementById('etName').value = currentName;
+    document.getElementById('etExpiry').checked = !!hasExpiry;
+    document.getElementById('etRequired').checked = !!isRequired;
+    m.classList.add('open');
+  };
+
+  // ---- Drag & drop for all document dropzones (works on dynamically added rows too)
+  function dzInput(dz) {
+    return dz.closest('.field') ? dz.closest('.field').querySelector('input[type="file"]') : null;
+  }
+  document.addEventListener('dragover', (e) => {
+    const dz = e.target.closest('.dropzone');
+    if (dz) { e.preventDefault(); dz.style.borderColor = 'var(--accent)'; dz.style.background = '#eef4ff'; }
+  });
+  document.addEventListener('dragleave', (e) => {
+    const dz = e.target.closest('.dropzone');
+    if (dz) { dz.style.borderColor = ''; dz.style.background = ''; }
+  });
+  document.addEventListener('drop', (e) => {
+    const dz = e.target.closest('.dropzone');
+    if (!dz) return;
+    e.preventDefault();
+    dz.style.borderColor = ''; dz.style.background = '';
+    const input = dzInput(dz);
+    if (input && e.dataTransfer.files.length) {
+      input.files = e.dataTransfer.files;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      dz.textContent = e.dataTransfer.files.length + ' file(s) ready ✓';
+      dz.style.color = '#0f7a41';
+    }
+  });
+  document.addEventListener('click', (e) => {
+    const dz = e.target.closest('.dropzone');
+    if (dz) { const input = dzInput(dz); if (input) input.click(); }
+  });
+  // Prevent the browser opening dropped files outside dropzones
+  window.addEventListener('dragover', (e) => e.preventDefault());
+  window.addEventListener('drop', (e) => e.preventDefault());
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>

@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Boss Engine — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=4">
+<link rel="stylesheet" href="assets/css/boss.css?v=1">
+<link rel="stylesheet" href="assets/css/boss2.css?v=t7">
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><div><h1>Boss Engine</h1><div class="bd-sub" id="sub">One place for what needs you, and what is slipping</div></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="bd-btn" id="bAsk" type="button">Ask Claude</button><button class="bd-btn pri" id="bAdd" type="button">+ Add task</button></div></div>
+    <div class="content"><div class="bd">
+      <div class="bd-tabs" id="tabs"></div>
+      <div id="root"><div class="bd-empty">Loading…</div></div>
+    </div></div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=4"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script src="assets/js/boss_common.js?v=3"></script>
+<script src="assets/js/b2_common.js?v=t8"></script>
+<script src="assets/js/person_card.js?v=pc1"></script>
+<script src="assets/js/b2_inbox.js?v=t4"></script>
+<script src="assets/js/cq_panel.js?v=cq4"></script>
+<script>
+  guardPage();
+  renderSidebar('boss_engine');
+  const { esc, $, toast, inr } = BD;
+  const TABS = [['today', 'Today'], ['sections', 'Sections'], ['work', 'All work'], ['pens', 'Penalties'], ['problems', 'Problems'], ['setup', 'Setup & health']];
+  const ALIAS = { people: 'setup', seats: 'setup', punch: 'pens', builds: 'setup', docs: 'setup', inbox: 'today' };       // old addresses still work: they open the tab that now holds them
+  const EMB = /[?&]in=/.test(location.search);                                          // inside the Boss panel: the panel draws the tabs
+  let HOST = null, ANCHOR = '';
+  const R = () => HOST || $('root');
+  let TAB = 'today', CACHE = {}, FILTER = { kind: '', status: 'live', section: '', q: '' }, PSTATE = 'ask', PRSTEP = 'open';
+
+  const view = () => (location.hash ? location.hash.slice(1) : (new URLSearchParams(location.search).get('tab') || 'today')).split('?')[0];
+  function tabs() {
+    const n = { problems: CACHE.chips && CACHE.chips.problems, setup: CACHE.chips && CACHE.chips.builds };
+    $('tabs').innerHTML = TABS.map(([k, l]) => '<button type="button" data-t="' + k + '" class="' + (TAB === k ? 'on' : '') + '">' + l + (n[k] ? ' <span class="bd-chip" style="margin-left:4px;padding:1px 7px">' + n[k] + '</span>' : '') + '</button>').join('');
+  }
+  $('tabs').onclick = (e) => { const b = e.target.closest('button'); if (b) location.hash = '#' + b.dataset.t; };
+  window.addEventListener('hashchange', () => route());
+  const fail = (e) => B2.fail(e);
+  const box = (title, sub, body, right) => '<div class="bd-card"><div class="bd-h"><div><h2>' + title + '</h2>' + (sub ? '<div class="bd-sub">' + sub + '</div>' : '') + '</div>' + (right || '') + '</div>' + body + '</div>';
+
+  async function route(quiet) {
+    HOST = null; const v = view(); ANCHOR = ALIAS[v] && !TABS.some((t) => t[0] === v) ? v : '';
+    TAB = TABS.some((t) => t[0] === v) ? v : (ALIAS[v] || 'today'); tabs(); const keepY = window.scrollY; if (!quiet) $('root').innerHTML = '<div class="bd-empty">Loading…</div>';
+    if (EMB) { try { parent.postMessage({ b2view: TAB }, location.origin); } catch (e) { /* standalone */ } }
+    try { await ({ today: vToday, sections: vSections, problems: vProblems, work: vWork, pens: vPens, setup: vSetup }[TAB])(); }
+    catch (e) { $('root').innerHTML = '<div class="bd-card"><div class="bd-empty"><b>Cannot open this</b>' + esc(e.message || 'Try again') + '</div></div>'; }
+    if (quiet) window.scrollTo(0, keepY);
+    if (ANCHOR) { const a = document.getElementById('a_' + ANCHOR); if (a) setTimeout(() => a.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80); }
+  }
+  const redo = () => { B2.reset(); route(); };
+  /* the Boss Engine re-reads itself every minute (Today, Sections, Problems), so a change made in People, Finance or by a person shows here without a reload; it waits while a window is open or you are typing */
+  setInterval(() => {
+    const ae = document.activeElement;
+    if (document.visibilityState !== 'visible' || document.querySelector('.bd-modal') || (ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) || !['today', 'sections', 'problems'].includes(TAB)) return;
+    B2.reset(); route(true);
+  }, 60000);
+
+  /* ================= TODAY ================= */
+  async function vToday() {
+    let [d, setup, old, tp, secs] = await Promise.all([B2.get('bd.b2_brief'), B2.get('bd.b2_setup').catch(() => null), B2I.load().catch(() => ({ items: [], quiet: 0, mode: 'shadow' })), B2.get('bd.b2_today_plus').catch(() => null), B2.get('bd.b2_sections').catch(() => ({ sections: [] }))]);
+    tp = tp || { accountability: [], loads: [], notes: { total: 0, groups: [] }, numbers: [], late_total: 0, chains: {}, coverage: { covered: 0, total: 0 }, golive: { mode: 'test', live_count: 0, blockers: 0, all: 0 }, cap: 6 };
+    const docs = old.items.filter((x) => x.kind === 'doc');
+    const grouped = docs.length >= 3;                                                       // many "documents missing" cards become one line
+    if (grouped) old = Object.assign({}, old, { items: old.items.filter((x) => x.kind !== 'doc'), docs: docs });
+    const nNeeds = d.needs.total + old.items.length + (grouped ? 1 : 0);
+    CACHE.chips = d.chips; tabs();
+    const t = d.today || {}; const pct = t.pct || 0; let h = '';
+    const g = tp.golive || {}; const adm = setup && setup.admin;
+    if (setup && setup.settings.mode !== 'on') h += '<div class="b2-gl off"><div><b>The Boss Engine is switched off.</b> Turn it on in Setup & health.</div><a class="bd-btn sm" href="#setup">Open Setup</a></div>';
+    else if (g.mode === 'live') h += '<div class="b2-gl ok"><div><b>Live in every section.</b> Staff see their tasks. Every penalty still asks you first.</div><a class="bd-btn sm" href="#setup">Go-live check</a></div>';
+    else if (g.mode === 'some') h += '<div class="b2-gl some"><div><b>Live in ' + g.live_count + ' of ' + g.all + ' sections.</b> The rest are in test mode: built and judged, but staff do not see them and nobody is asked about a penalty.</div><a class="bd-btn sm" href="#setup">Go-live check</a></div>';
+    else h += '<div class="b2-gl"><div><b>Test mode.</b> Claude watches and plans, but nobody is asked and nothing is charged. <b>' + (g.blockers ? 'Go-live check: ' + g.blockers + ' thing' + (g.blockers === 1 ? '' : 's') + ' to fix.' : 'Go-live check: ready.') + '</b></div><a class="bd-btn sm" href="#setup">Open go-live check</a></div>';
+    h += '<div id="cqToday"></div>';                                                      // Claude asks: conflicts and open questions from every page
+    const bad = (tp.numbers || []).filter((n) => n.bad);
+    const nNotes = tp.notes ? tp.notes.total : 0, nDec = nNeeds;
+    h += '<div class="b2-k4">'
+      + '<div class="k"><small>Today</small><b>' + (t.done || 0) + ' of ' + (t.due || 0) + '</b><div class="m">' + (t.missed ? '<span style="color:#d9423b;font-weight:800">' + t.missed + ' missed</span> · ' : '') + (t.open || 0) + ' open</div></div>'
+      + '<div class="k"><small>Needs you</small><b>' + nDec + (nNotes ? ' + ' + nNotes + ' notes' : '') + '</b><div class="m">A few minutes, once a day</div></div>'
+      + '<div class="k' + (tp.late_total ? ' bad' : '') + '"><small>Late numbers</small><b>' + (tp.late_total || 0) + '</b><div class="m">' + (bad.length ? bad.map((n) => esc(n.value + ' ' + (n.bad_text || n.label))).join('<br>') : 'Nothing is late') + '</div></div>'
+      + '<div class="k"><small>Coverage</small><b>' + tp.coverage.covered + ' of ' + tp.coverage.total + '</b><div class="m">' + (tp.coverage.total ? 'steps watched in sections with a chain' : 'No chain yet') + '</div></div></div>';
+    h += '<div class="bd-card"><div class="bd-h"><h2>Claude’s review</h2><span class="bd-chip ' + (t.missed ? 'warn' : 'ok') + '">Today ' + (t.done || 0) + ' / ' + (t.due || 0) + ' done</span></div>'
+      + '<div class="b2-review">' + esc(d.review || '') + '</div><div class="b2-bar" style="margin-top:12px"><i class="' + (pct < 50 ? 'warn' : '') + '" style="width:' + pct + '%"></i></div></div>';
+    const noteLine = nNotes ? '<div class="b2-need b2-notes"><div class="top"><div><div class="t">' + nNotes + ' note' + (nNotes === 1 ? '' : 's') + ' · ' + tp.notes.groups.map((x) => x.count + ' ' + esc(x.label)).join(' · ') + '</div><div class="s">Information only. Nothing to decide. They stay in History.</div></div><button type="button" class="bd-btn sm" id="nClear">Read &amp; clear all</button></div></div>' : '';
+    h += box('Needs you', nNeeds ? nNeeds + ' decision' + (nNeeds === 1 ? '' : 's') + ' waiting. Nothing happens to a person until you say yes.' : 'Nothing is waiting for you.', ((d.needs.items.length || old.items.length) ? d.needs.items.map(B2.needHtml).join('') + old.items.slice(0, 12).map((x) => B2I.card(x, old.mode)).join('') + (grouped ? '<div class="b2-need"><div class="top"><div><div class="t">' + docs.length + ' people are missing documents</div><div class="s">Aadhaar, agreement, PAN and similar. ' + esc(docs.slice(0, 3).map((x) => String(x.title).split(':')[0]).join(', ')) + (docs.length > 3 ? ' and ' + (docs.length - 3) + ' more' : '') + '</div></div><span class="bd-chip warn">Document</span></div><div class="acts"><a class="bd-btn sm pri" href="' + esc((docs[0].payload && docs[0].payload.link) || 'doc_check.html') + '">Open Doc Check</a><button type="button" class="bd-btn sm" id="docLater">Later, for all</button></div></div>' : '') + (old.items.length > 12 ? '<div id="oldMore" hidden>' + old.items.slice(12).map((x) => B2I.card(x, old.mode)).join('') + '</div><button type="button" class="bd-btn sm" id="oldMoreBtn">Show ' + (old.items.length - 12) + ' more</button>' : '') : '<div class="bd-empty"><b>All clear</b>When Claude finds something that needs a decision it appears here.</div>') + noteLine,
+      '<a class="bd-btn sm" href="boss_inbox.html?history=1">History</a>');
+    // sections: how much each one is watched
+    const chs = tp.chains || {};
+    h += box('Sections', 'How much of each section Claude watches, and today’s result.', '<div class="b2-cov">' + (secs.sections || []).map((s) => {
+      const td = s.today || {}, ch = chs[s.code];
+      const chip = s.late || s.slipping ? '<span class="bd-chip bad">' + ((s.late || 0) + (s.slipping || 0)) + ' late</span>' : (s.pens_waiting ? '<span class="bd-chip warn">' + s.pens_waiting + ' to decide</span>' : (s.items ? '<span class="bd-chip ok">On track</span>' : '<span class="bd-chip">No tasks</span>'));
+      const bar = ch ? Math.round(100 * ch.covered / Math.max(1, ch.total)) : (td.pct || 0);
+      return '<a href="#sections"><h3>' + esc(s.name) + chip + '</h3><div class="row"><div class="b2-bar"><i class="' + (bar < 34 && ch ? 'warn' : '') + '" style="width:' + bar + '%"></i></div><b>' + (ch ? ch.covered + ' of ' + ch.total : (td.done || 0) + ' of ' + (td.due || 0)) + '</b></div>'
+        + '<div class="bd-sub" style="font-size:12.5px">' + (ch ? 'Steps watched' + (ch.next ? ' · Next: ' + esc(ch.next) : '') : 'Done today') + ' · ' + s.items + ' task' + (s.items === 1 ? '' : 's') + (s.live ? '' : ' · Test mode') + '</div></a>';
+    }).join('') + '</div>');
+    // daily accountability + workload cap
+    const acc = (tp.accountability || []);
+    const rowsA = acc.slice(0, 10).map((a) => '<tr><td><b>' + (a.owner ? esc(a.owner) : '<span class="bd-chip bad">Nobody on this seat</span>') + '</b></td><td>' + esc(a.title) + (a.fair ? ' <span class="bd-chip">Fair days</span>' : '') + '</td><td>' + B2.strip(a.strip) + '</td><td>' + a.streak + '</td></tr>').join('');
+    const full = (tp.loads || []).filter((l) => l.full);
+    h += '<div class="b2-two"><div class="bd-card"><div class="bd-h"><div><h2>Daily accountability</h2><div class="bd-sub">Daily tasks never retire. Each one has a name, a 7-day strip and a streak.</div></div></div>'
+      + (acc.length ? '<div class="scroll"><table class="b2-tbl"><thead><tr><th>Person</th><th>Task</th><th>Last 7 days</th><th>Streak</th></tr></thead><tbody>' + rowsA + '</tbody></table></div>' + (acc.length > 10 ? '<div class="bd-sub" style="margin-top:8px"><a href="#work">See all ' + acc.length + ' daily tasks</a></div>' : '') : '<div class="bd-empty"><b>No daily task yet</b>Add one with + Add task.</div>') + '</div>'
+      + '<div class="bd-card"><div class="bd-h"><div><h2>Workload</h2><div class="bd-sub">At most ' + tp.cap + ' daily tasks per person.</div></div><a class="bd-btn sm" href="#setup">Change limit</a></div>'
+      + ((tp.loads || []).length ? (tp.loads || []).slice(0, 8).map((l) => '<div class="b2-cap"><span class="nm" title="' + esc(l.name) + '">' + esc(l.name) + '</span><div class="b2-bar"><i class="' + (l.full ? 'bad' : (l.pct >= 83 ? 'warn' : '')) + '" style="width:' + l.pct + '%"></i></div><span class="n">' + l.n + ' of ' + l.cap + '</span></div>').join('') : '<div class="bd-sub">Nobody owns a daily task yet.</div>')
+      + (full.length ? '<div class="bd-call warn" style="margin:10px 0 0">' + full.map((l) => esc(l.name)).join(', ') + (full.length === 1 ? ' is' : ' are') + ' full. A new daily task for ' + (full.length === 1 ? 'them' : 'them') + ' asks you to merge, pause or move one first.</div>' : '') + '</div></div>';
+    if (d.numbers.length) h += '<div style="height:14px"></div>' + box('Numbers', 'Typed every day with a screenshot. Pin or unpin from a number task.', '<div class="b2-nums">' + d.numbers.map((n) => B2.numTile(n, true)).join('') + '</div>');
+    const p = d.penalties;
+    h += box('Penalties this month', 'Only you decide. Limit ' + inr(p.cap_person) + ' per person and ' + inr(p.cap_total) + ' in total each month.',
+      '<div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center"><div><div class="bd-lb">Charged by this engine</div><div style="font-size:24px;font-weight:800">' + inr(p.month_total) + '</div></div>'
+      + (p.waiting ? '<div><div class="bd-lb">Waiting for you</div><div style="font-size:24px;font-weight:800;color:#9a6200">' + p.waiting + '</div></div>' : '')
+      + '<div style="flex:1 1 220px">' + (p.top.length ? p.top.map((x) => '<div class="bd-sub" style="font-size:13px">' + esc(x.emp) + ' — ' + inr(x.charged) + ' (' + x.count + ')</div>').join('') : '<div class="bd-sub">No penalties given this month.</div>') + '</div></div>', '<a class="bd-btn sm" href="#pens">Open</a>');
+    $('root').innerHTML = h;
+    if (window.CQ && $('cqToday')) CQ.mount($('cqToday'), { max: 2 });
+    $('root').querySelectorAll('.b2-need').forEach((el) => {
+      const n = d.needs.items.find((x) => x.key === el.dataset.key); if (!n) return;
+      el.querySelectorAll('[data-act]').forEach((b) => b.onclick = () => B2.needAct(n, b.dataset.act, redo));
+    });
+    B2I.bind($('root'), old, redo);
+    if ($('oldMoreBtn')) $('oldMoreBtn').onclick = (e) => { $('oldMore').hidden = false; e.target.remove(); };
+    if ($('docLater')) $('docLater').onclick = async (e) => { e.target.disabled = true; try { for (const x of docs) await B2.post('bd.inbox_act', { id: x.id, act: 'dismiss' }); toast('Moved to History.'); redo(); } catch (er) { fail(er); e.target.disabled = false; } };
+    if ($('nClear')) $('nClear').onclick = async (e) => { e.target.disabled = true; try { const r = await B2.post('bd.b2_notes_clear', {}); toast(r.message || 'Cleared.'); redo(); } catch (er) { fail(er); e.target.disabled = false; } };
+    $('root').querySelectorAll('.b2-num[data-open]').forEach((b) => b.onclick = () => B2.openItem(Number(b.dataset.open), redo));
+  }
+
+  /* ================= SECTIONS ================= */
+  async function vSections() {
+    const [d, cc, tp] = await Promise.all([B2.get('bd.b2_sections'), B2.get('bd.b2_chain').catch(() => ({ chains: [] })), B2.get('bd.b2_today_plus').catch(() => ({ chains: {} }))]);
+    const ICON = { covered: '✓', ask: '→', later: '⏳', skip: '–', open: '' };
+    const chainCard = (c) => {
+      const code = c.code;
+      const row = (s) => {
+        let sub = '', acts = '';
+        if (s.state === 'covered') sub = 'Task made' + (s.owner ? ' · ' + esc(s.owner) : '') + (s.by_system ? ' · the system checks it' : '');
+        else if (s.state === 'later') { sub = 'Waiting for a system: Claude needs “' + esc(s.needs || s.title) + '”. It is on the Build system list. Tick it by hand until then.'; acts = '<button type="button" class="bd-btn sm" data-ch="open" data-k="' + s.key + '">Ask me again</button>'; }
+        else if (s.state === 'skip') { sub = 'You said: no task needed. Claude remembers.'; acts = '<button type="button" class="bd-btn sm" data-ch="open" data-k="' + s.key + '">Ask me again</button>'; }
+        else if (s.state === 'ask') {
+          sub = 'Claude suggests: “' + esc(s.say) + '”';
+          acts = '<button type="button" class="bd-btn pri sm" data-ch="make" data-k="' + s.key + '">Make this task</button>' + (s.needs ? '<button type="button" class="bd-btn sm" data-ch="later" data-k="' + s.key + '">The system cannot count it yet</button>' : '') + '<button type="button" class="bd-btn sm" data-ch="skip" data-k="' + s.key + '">I don’t need this</button>';
+        } else sub = 'Next, after the ones above.';
+        return '<div class="stp ' + s.state + '"><div class="ic ' + s.state + '">' + (ICON[s.state] || s.n) + '</div><div style="flex:1;min-width:0"><div class="t">' + s.n + '. ' + esc(s.title) + '</div><div class="s">' + sub + '</div>' + (acts ? '<div class="acts">' + acts + '</div>' : '') + '</div></div>';
+      };
+      return '<div class="bd-card b2-chain" data-chain="' + esc(code) + '"><div class="bd-h"><div><h2>' + esc(c.title) + ': what else should Claude watch?</h2><div class="bd-sub">Claude keeps asking until every step is a task, skipped, or waiting for a system.</div></div><span class="bd-chip dark">' + c.covered + ' of ' + c.total + ' covered</span></div>'
+        + '<div class="b2-bar" style="margin-bottom:6px"><i style="width:' + c.pct + '%"></i></div>' + c.steps.map(row).join('') + '</div>';
+    };
+    const chs = tp.chains || {};
+    $('root').innerHTML = (cc.chains || []).filter(Boolean).map(chainCard).join('') + box('Sections', 'Each part of the business has its own page with its numbers, tasks and problems.', '<div class="bd-grid">' + d.sections.map((s) => {
+      const t = s.today || {}, ch = chs[s.code];
+      return '<a class="bd-sec" href="boss_section.html?code=' + encodeURIComponent(s.code) + '"><div style="display:flex;justify-content:space-between;gap:6px;align-items:flex-start"><h3>' + esc(s.name) + '</h3><span class="bd-chip ' + (s.live ? 'ok' : '') + '">' + (s.live ? 'Live' : 'Test') + '</span></div>'
+        + '<div class="n">' + (s.boss ? 'Boss: ' + esc(s.boss) : 'No section boss yet') + '</div>'
+        + '<div class="b2-bar"><i style="width:' + (t.pct || 0) + '%"></i></div><div class="n">Today ' + (t.done || 0) + ' of ' + (t.due || 0) + ' done' + (t.missed ? ' · <b style="color:#d9423b">' + t.missed + ' missed</b>' : '') + '</div>'
+        + '<div style="display:flex;gap:6px;flex-wrap:wrap"><span class="bd-chip">' + s.items + ' task' + (s.items === 1 ? '' : 's') + '</span>' + (ch ? '<span class="bd-chip dark">' + ch.covered + ' of ' + ch.total + ' steps</span>' : '') + (s.slipping ? '<span class="bd-chip bad">' + s.slipping + ' slipping</span>' : '') + (s.late ? '<span class="bd-chip warn">' + s.late + ' late</span>' : '') + (s.problems ? '<span class="bd-chip info">' + s.problems + ' problem' + (s.problems === 1 ? '' : 's') + '</span>' : '') + (s.pens_waiting ? '<span class="bd-chip warn">' + s.pens_waiting + ' to decide</span>' : '') + '</div></a>';
+    }).join('') + '</div>');
+    $('root').querySelectorAll('.b2-chain').forEach((card) => {
+      const c = (cc.chains || []).find((x) => x && x.code === card.dataset.chain); if (!c) return;
+      card.querySelectorAll('[data-ch]').forEach((b) => b.onclick = async () => {
+        const st = c.steps.find((x) => x.key === b.dataset.k), a = b.dataset.ch;
+        if (a === 'make') return B2.editItem({ section: c.code, prefill: { title: st.title, section_code: c.code }, text: st.say, chain: c.code + ':' + st.key, onSaved: redo });
+        b.disabled = true;
+        try { const r = await B2.post('bd.b2_chain_set', { section: c.code, step: st.key, state: a === 'later' ? 'later' : (a === 'skip' ? 'skip' : 'open') }); toast(r.message || 'Done.'); redo(); } catch (e) { fail(e); b.disabled = false; }
+      });
+    });
+  }
+
+  /* ================= PROBLEMS ================= */
+  async function vProblems() {
+    const d = await B2.get('bd.b2_problems', { step: PRSTEP }); const list = d.problems;
+    $('root').innerHTML = box('Problems', 'Told by anyone on any page. Claude finds the likely cause from the records, then you choose.',
+      '<div class="bd-tabs">' + [['open', 'Open'], ['decide', 'Waiting for you'], ['watch', 'Being watched'], ['closed', 'Closed']].map(([k, l]) => '<button type="button" data-ps="' + k + '" class="' + (PRSTEP === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div>'
+      + (list.length ? list.map((p) => '<div class="b2-item" data-p="' + p.id + '"><div class="l"><div class="t">' + esc(p.title) + '</div><div class="s">' + esc(p.by || '') + ' · ' + esc(p.ago) + ' ago · ' + esc(p.section) + (p.cause && p.cause.text ? ' · ' + esc(p.cause.label) + ' cause' : '') + '</div></div><div class="r">' + (p.again_n ? '<span class="bd-chip bad">Came back ' + p.again_n + '×</span>' : '') + '<span class="bd-chip ' + ({ decide: 'warn', watch: 'info', work: 'info' }[p.step] || '') + '">' + esc(p.step_label) + '</span></div></div>').join('') : '<div class="bd-empty"><b>Nothing here</b>Problems that staff or you report appear here.</div>'),
+      '<button class="bd-btn sm pri" id="pNew" type="button">Report one</button>');
+    $('root').querySelectorAll('[data-ps]').forEach((b) => b.onclick = () => { PRSTEP = b.dataset.ps; vProblems(); });
+    $('root').querySelectorAll('[data-p]').forEach((b) => b.onclick = () => B2.openProblem(Number(b.dataset.p), redo));
+    $('pNew').onclick = () => B2.report({ onSent: redo });
+  }
+
+  /* ================= ALL WORK ================= */
+  async function vWork() {
+    const [secs, d] = await Promise.all([B2.sections(), B2.get('bd.b2_items', { status: FILTER.status, kind: FILTER.kind, section: FILTER.section, q: FILTER.q })]);
+    const items = d.items;
+    $('root').innerHTML = box('All work', 'Every task in one list. Click a task to see its days and change it.',
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"><select class="bd-in" id="wKind" style="max-width:190px"><option value="">All kinds</option>' + Object.keys(B2.KINDS).map((k) => '<option value="' + k + '"' + (FILTER.kind === k ? ' selected' : '') + '>' + B2.KINDS[k][0] + '</option>').join('') + '</select>'
+      + '<select class="bd-in" id="wSec" style="max-width:220px"><option value="">All sections</option>' + secs.map((s) => '<option value="' + esc(s.code) + '"' + (FILTER.section === s.code ? ' selected' : '') + '>' + esc(s.name) + '</option>').join('') + '</select>'
+      + '<select class="bd-in" id="wSt" style="max-width:170px">' + [['live', 'Running'], ['archived', 'Closed'], ['done', 'Done'], ['all', 'Everything']].map(([k, l]) => '<option value="' + k + '"' + (FILTER.status === k ? ' selected' : '') + '>' + l + '</option>').join('') + '</select>'
+      + '<input class="bd-in" id="wQ" placeholder="Search a task, press Enter" value="' + esc(FILTER.q) + '" style="max-width:260px"></div>'
+      + (items.length ? (FILTER.section ? items.map((i) => B2.itemRow(i, { section: true })).join('') : (() => { const g = {}; items.forEach((i) => { (g[i.section] = g[i.section] || []).push(i); }); return Object.keys(g).map((k) => '<div class="b2-grp"><span>' + esc(k) + '</span><span>' + g[k].length + ' task' + (g[k].length === 1 ? '' : 's') + '</span></div>' + g[k].map((i) => B2.itemRow(i, { section: true })).join('')).join(''); })()) : '<div class="bd-empty"><b>No tasks match</b>Change the filters or add a task.</div>'),
+      '<button class="bd-btn sm" id="wCsv" type="button">Download Excel (CSV)</button>');
+    const re = () => { FILTER.kind = $('wKind').value; FILTER.section = $('wSec').value; FILTER.status = $('wSt').value; vWork(); };
+    ['wKind', 'wSec', 'wSt'].forEach((id) => $(id).onchange = re);
+    $('wQ').onkeydown = (e) => { if (e.key === 'Enter') { FILTER.q = $('wQ').value.trim(); vWork(); } };
+    $('root').querySelectorAll('.b2-item[data-open]').forEach((b) => b.onclick = () => B2.openItem(Number(b.dataset.open), redo));
+    $('wCsv').onclick = async () => {
+      try { const r = await fetch(api.buildUrl('bd.b2_csv', { section: FILTER.section }), { headers: { Authorization: 'Bearer ' + api.token() } }); if (!r.ok) throw new Error('Could not download'); const u = URL.createObjectURL(await r.blob()); const a = document.createElement('a'); a.href = u; a.download = 'boss-engine.csv'; document.body.appendChild(a); a.click(); a.remove(); } catch (e) { fail(e); }
+    };
+  }
+
+  /* ================= PENALTIES ================= */
+  async function vPens() {
+    const d = await B2.get('bd.b2_pens', { state: PSTATE });
+    const L = { ask: 'Waiting for you', charged: 'Charged', waived: 'Waived', shadow: 'Test mode', all: 'All' };
+    const SL = { ask: 'Waiting', charged: 'Charged', waived: 'Waived', called: 'Called', fixing: 'Fixing cause', moved: 'Work moved', capped: 'Limit reached', shadow: 'Test' };
+    $('root').innerHTML = box('Penalties', 'This engine only ASKS. You decide each one. Limit ' + inr(d.cap_person) + ' per person and ' + inr(d.cap_total) + ' in total each month; charged so far: ' + inr(d.month_total) + '.',
+      '<div style="margin-bottom:10px"><a class="bd-btn sm" href="hub.html?w=people&t=penalties" target="_top">Penalty history (day by day, manual and automatic) →</a></div>'
+      + '<div class="bd-tabs">' + Object.keys(L).map((k) => '<button type="button" data-s="' + k + '" class="' + (PSTATE === k ? 'on' : '') + '">' + L[k] + '</button>').join('') + '</div>'
+      + (d.penalties.length ? d.penalties.map((p) => '<div class="b2-need" data-id="' + p.id + '"><div class="top"><div style="flex:1 1 260px"><div class="t">' + esc(p.emp) + ' — ' + esc(p.item) + '</div><div class="s">' + esc(p.reason) + ' · ' + inr(p.amount) + ' · ' + (p.same_30d > 1 ? p.same_30d + ' times in 30 days' : 'first time in 30 days') + ' · this month charged ' + inr(p.month_charged) + '</div>' + (p.note ? '<div class="s">Note: ' + esc(p.note) + '</div>' : '') + '</div><span class="bd-chip ' + ({ ask: 'warn', charged: 'bad', waived: 'ok', shadow: 'info' }[p.state] || '') + '">' + esc(SL[p.state] || p.state) + '</span></div>'
+        + (p.state === 'ask' ? '<div class="acts"><button class="bd-btn sm bad" data-a="charge">Charge ' + inr(p.amount) + '</button><button class="bd-btn sm" data-a="waive">Waive</button><button class="bd-btn sm" data-a="call">Call</button><button class="bd-btn sm" data-a="fix">Fix the cause</button><button class="bd-btn sm" data-a="move">Move the work</button></div>' : '') + '</div>').join('') : '<div class="bd-empty"><b>Nothing here</b>' + (PSTATE === 'ask' ? 'No penalty is waiting for your decision.' : 'No penalties in this list.') + '</div>'));
+    $('root').querySelectorAll('[data-s]').forEach((b) => b.onclick = () => { PSTATE = b.dataset.s; vPens(); });
+    $('root').querySelectorAll('.b2-need[data-id]').forEach((el) => {
+      const p = d.penalties.find((x) => x.id === Number(el.dataset.id));
+      el.querySelectorAll('[data-a]').forEach((b) => b.onclick = () => B2.needAct({ type: 'penalty', id: p.id, amount: p.amount, title: p.emp + ' — ' + p.item }, b.dataset.a, redo));
+    });
+      try {   // penalties of this month in each department (People keeps the department list; Admin and HR only)
+        const pd = await B2.get('bd.pp_pen_dept');
+        if (pd && pd.rows) {
+          const bx = document.createElement('div'); bx.id = 'a_pdept'; bx.style.marginTop = '14px';
+          bx.innerHTML = box('Penalties by department · ' + esc(pd.month), 'Everything charged this month in each department (all kinds of penalty), and what is still waiting for your decision. Total charged: ' + inr(pd.total) + (pd.ask_total ? ' · waiting for you: ' + inr(pd.ask_total) : '') + '.',
+            '<div class="scroll"><table class="b2-tbl"><thead><tr><th>Department</th><th>People</th><th>Charged</th><th>From Boss tasks</th><th>Waiting for you</th></tr></thead><tbody>'
+            + pd.rows.map((r) => '<tr><td><b>' + esc(r.name) + '</b></td><td>' + r.people + '</td><td>' + (r.applied ? inr(r.applied) + ' <span class="bd-sub">(' + r.n + ')</span>' : '—') + '</td><td>' + (r.boss ? inr(r.boss) : '—') + '</td><td>' + (r.ask ? '<span class="bd-chip warn">' + r.ask + ' · ' + inr(r.ask_amt) + '</span>' : '—') + '</td></tr>').join('') + '</tbody></table></div>');
+          $('root').appendChild(bx);
+        }
+      } catch (e) { /* section bosses cannot see the department table: the rest of the tab still works */ }
+      const rules = document.createElement('div'); rules.id = 'a_rules'; rules.innerHTML = box('Department penalty rules', 'The fixed rules of Dispatch, Shops, Supplies and Repairs, with their amounts.', '<iframe title="Penalty rules" src="boss_penalties.html?in=sales" style="width:100%;height:720px;border:0;border-radius:14px;background:#fff"></iframe>'); rules.style.marginTop = '14px'; $('root').appendChild(rules);
+    const sub = document.createElement('div'); sub.id = 'a_punch'; sub.style.marginTop = '14px'; $('root').appendChild(sub);
+    HOST = sub; await vPunch();                                    // Punch rules live here now; HOST stays set so the table can redraw inside this tab
+  }
+
+  /* ================= PEOPLE & SEATS ================= */
+  /* the top boss / deputy and the daily workload (this used to be the "People & seats" tab; People now holds people, seats and positions) */
+  async function setupTop() {
+    const [d, st, ld] = await Promise.all([B2.get('bd.b2_people'), B2.get('bd.b2_setup').catch(() => null), B2.get('bd.b2_loads').catch(() => null)]);
+    let h = '';
+    if (ld) {
+      const kept = {}; (ld.kept || []).forEach((k) => { kept[k.seat_id] = k.kept_pct; });
+      h += box('Daily workload', 'Daily tasks each person or team seat owns. The limit is ' + ld.cap + '. Daily tasks never retire by themselves: a person at the limit gets a new one only after you merge, pause or move one.',
+        (ld.loads.length ? '<div class="scroll"><table class="b2-tbl"><thead><tr><th>Person or seat</th><th>Section</th><th style="width:34%">Daily tasks (limit ' + ld.cap + ')</th><th>Kept, 30 days</th></tr></thead><tbody>' + ld.loads.map((l) => '<tr><td><b>' + esc(l.name) + '</b>' + (l.kind === 'seat' ? ' <span class="bd-chip">Team seat</span>' : '') + (l.holders ? '' : ' <span class="bd-chip bad">Nobody on this seat</span>') + '</td><td>' + esc((l.sections || []).join(', ')) + '</td><td><div class="b2-cap" style="margin:0"><div class="b2-bar"><i class="' + (l.full ? 'bad' : (l.pct >= 83 ? 'warn' : '')) + '" style="width:' + l.pct + '%"></i></div><span class="n">' + l.n + ' of ' + l.cap + '</span></div></td><td>' + (kept[l.seat_id] == null ? '—' : kept[l.seat_id] + '%') + '</td></tr>').join('') + '</tbody></table></div>' : '<div class="bd-empty"><b>No daily task has an owner yet</b></div>'));
+    }
+    if (st && st.admin) {
+      const opt = (sel) => '<option value="">Nobody</option>' + d.people.map((p) => '<option value="' + p.id + '"' + (Number(sel) === p.id ? ' selected' : '') + '>' + esc(p.name) + '</option>').join('');
+      h += box('The top of the business', 'The top boss decides penalties and gets the hardest problems. The deputy covers when the top boss is away.',
+        '<div class="bd-2"><div class="bd-f"><label>Top boss</label><select class="bd-in" id="tTop">' + opt(st.top_boss) + '</select></div><div class="bd-f"><label>Deputy</label><select class="bd-in" id="tDep">' + opt(st.deputy) + '</select></div></div>'
+        + '<div class="bd-f"><label>Deputy’s name (if not an employee)</label><input class="bd-in" id="tDepName" value="' + esc(st.settings.deputy_name || '') + '"></div><button class="bd-btn pri sm" id="tSave" type="button">Save</button>');
+    }
+    return { h, bind() {
+      if ($('tSave')) $('tSave').onclick = async () => { try { await B2.post('bd.b2_top_set', { top_boss: Number($('tTop').value || 0), deputy: Number($('tDep').value || 0), deputy_name: $('tDepName').value.trim() }); toast('Saved.'); redo(); } catch (e) { fail(e); } };
+    } };
+  }
+
+  /* ================= PUNCH RULES ================= */
+  const PM = { fixed: ['Fixed time', 'info'], hours: ['Hours only', 'ok'], free: ['No rule', ''] };
+  let PU = { rows: [], sel: {}, q: '', m: '', admin: false };
+  async function vPunch() {      // drawn inside Penalties
+    const [d, st] = await Promise.all([B2.get('bd.b2_punch'), B2.get('bd.b2_setup').catch(() => null)]);
+    PU.rows = d.rows || []; PU.sel = {}; PU.admin = !!(st && st.admin); PU.counts = d.counts || {}; PU.err = d.error || '';
+    drawPunch();
+  }
+  function drawPunch() {
+    const c = PU.counts || {}; const q = PU.q.toLowerCase();
+    const rows = PU.rows.filter((r) => (!PU.m || r.mode === PU.m) && (!q || (r.name + ' ' + r.dept).toLowerCase().includes(q)));
+    const nSel = Object.keys(PU.sel).length;
+    let h = '';
+    if (PU.err) h += '<div class="bd-call bad">' + esc(PU.err) + '</div>';
+    h += '<div class="bd-stats" style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:14px">'
+      + '<div class="bd-stat"><small>Fixed time</small><b>' + (c.fixed || 0) + '</b></div><div class="bd-stat"><small>Hours only</small><b>' + (c.hours || 0) + '</b></div><div class="bd-stat"><small>No rule</small><b>' + (c.free || 0) + '</b></div>'
+      + '<div class="bd-stat' + (c.short ? ' bad' : '') + '"><small>Short on hours today</small><b>' + (c.short || 0) + '</b></div></div>';
+    const seg = [['', 'All'], ['fixed', 'Fixed time'], ['hours', 'Hours only'], ['free', 'No rule']].map(([k, l]) => '<button type="button" data-pm="' + k + '" class="' + (PU.m === k ? 'on' : '') + '">' + l + '</button>').join('');
+    const body = '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px"><input class="bd-in" id="puQ" placeholder="Search name or department" value="' + esc(PU.q) + '" style="flex:1 1 200px;max-width:280px;padding:8px 12px"><span class="bd-seg" style="margin-top:0">' + seg + '</span>'
+      + (PU.admin ? '<button class="bd-btn sm" id="puBulk" type="button"' + (nSel ? '' : ' disabled') + '>Set rule for ' + (nSel ? nSel + ' selected' : 'selected') + '…</button>' : '') + '</div>'
+      + '<div style="overflow-x:auto"><table style="width:100%;font-size:13px;border-collapse:collapse"><thead><tr style="text-align:left;color:#6a7280">' + (PU.admin ? '<th style="width:28px;padding:6px 4px"><input type="checkbox" id="puAll"></th>' : '') + '<th style="padding:6px 8px">Employee</th><th>Rule</th><th>Details</th><th>Today</th></tr></thead><tbody>'
+      + (rows.length ? rows.map((r) => '<tr data-id="' + r.id + '" style="border-top:1px solid #eceef1;' + (PU.admin ? 'cursor:pointer' : '') + '">' + (PU.admin ? '<td style="padding:9px 4px"><input type="checkbox" class="puCk" data-id="' + r.id + '"' + (PU.sel[r.id] ? ' checked' : '') + '></td>' : '')
+        + '<td style="padding:9px 8px"><b>' + esc(r.name) + '</b><div class="bd-sub">' + esc(r.dept || '') + '</div></td><td><span class="bd-chip ' + PM[r.mode][1] + '">' + PM[r.mode][0] + '</span></td><td>' + esc(r.detail) + '</td><td><span class="bd-chip ' + esc(r.today_kind || '') + '">' + esc(r.today) + '</span></td></tr>').join('')
+        : '<tr><td colspan="5"><div class="bd-empty">Nobody matches.</div></td></tr>')
+      + '</tbody></table></div>';
+    R().innerHTML = h + box('Who punches how', PU.admin ? 'Every person has one of three rules. Tap a row to change it, or tick several and set them together.' : 'Every person has one of three rules. Only the admin can change them.', body);
+    $('puQ').oninput = (e) => { PU.q = e.target.value; const pos = e.target.selectionStart; drawPunch(); const n = $('puQ'); n.focus(); try { n.setSelectionRange(pos, pos); } catch (x) {} };
+    R().querySelectorAll('[data-pm]').forEach((b) => b.onclick = () => { PU.m = b.dataset.pm; drawPunch(); });
+    if (!PU.admin) return;
+    R().querySelectorAll('.puCk').forEach((k) => k.onclick = (e) => { e.stopPropagation(); if (k.checked) PU.sel[k.dataset.id] = 1; else delete PU.sel[k.dataset.id]; $('puBulk').disabled = !Object.keys(PU.sel).length; $('puBulk').textContent = 'Set rule for ' + (Object.keys(PU.sel).length ? Object.keys(PU.sel).length + ' selected' : 'selected') + '…'; });
+    $('puAll').onclick = (e) => { rows.forEach((r) => { if (e.target.checked) PU.sel[r.id] = 1; else delete PU.sel[r.id]; }); drawPunch(); };
+    R().querySelectorAll('tbody tr[data-id]').forEach((tr) => tr.onclick = (e) => { if (e.target.closest('input')) return; PersonCard.open(Number(tr.dataset.id), { onChange: redo }); });
+    $('puBulk').onclick = () => punchEdit(PU.rows.filter((r) => PU.sel[r.id]));
+  }
+  // The timing editor and the person card now live in assets/js/person_card.js (one copy, shared with Total Budgeting and Boss -> People).
+  function punchEdit(list) { list = list.filter(Boolean); if (list.length) PersonCard.timing(list, (msg) => { toast(msg || 'Saved.'); redo(); }); }
+
+  /* ================= BUILD SYSTEM ================= */
+  async function vBuilds() {
+    const d = await B2.get('bd.b2_builds');
+    const SL = { spec: 'Spec ready', building: 'Being built', live: 'Live', dropped: 'Dropped' };
+    R().innerHTML = box('Build system', 'Things the business needs that the system does not have yet. Each one is a clear spec, so it can be built in one go. Tasks that depend on one wait here.',
+      d.builds.length ? d.builds.map((b) => '<div class="b2-need" data-b="' + b.id + '"><div class="top"><div style="flex:1 1 260px"><div class="t">' + esc(b.title) + '</div><div class="s">' + esc(b.why || '') + (b.section ? ' · ' + esc(b.section) : '') + (b.home ? ' · page: ' + esc(b.home) : '') + (b.waiting && b.waiting.length ? ' · ' + b.waiting.length + ' task(s) waiting for it' : '') + '</div></div><span class="bd-chip ' + ({ spec: 'info', building: 'warn', live: 'ok' }[b.status] || '') + '">' + esc(SL[b.status] || b.status) + '</span></div>'
+        + '<div class="acts"><button class="bd-btn sm" data-a="spec" type="button">Read the spec</button>' + (b.status === 'spec' ? '<button class="bd-btn sm" data-a="building" type="button">Mark: being built</button>' : '') + (b.status !== 'live' && b.status !== 'dropped' ? '<button class="bd-btn sm go" data-a="live" type="button">Mark: live</button><button class="bd-btn sm" data-a="dropped" type="button">Drop</button>' : '') + '</div></div>').join('') : '<div class="bd-empty"><b>Nothing to build</b>When a problem needs a new page, it lands here.</div>',
+      '<button class="bd-btn sm pri" id="bNew" type="button">+ Add</button>');
+    R().querySelectorAll('.b2-need[data-b]').forEach((el) => {
+      const b = d.builds.find((x) => x.id === Number(el.dataset.b));
+      el.querySelectorAll('[data-a]').forEach((btn) => btn.onclick = async () => {
+        const a = btn.dataset.a;
+        if (a === 'spec') { const m = BD.modal('<h3>' + esc(b.title) + '</h3><pre style="white-space:pre-wrap;font-family:inherit;font-size:13.5px;line-height:1.55;margin:0">' + esc(b.spec || 'No spec yet.') + '</pre><div class="acts"><button class="bd-btn" id="spCopy">Copy</button><button class="bd-btn pri" id="spNo">Close</button></div>'); m.querySelector('#spNo').onclick = BD.close; m.querySelector('#spCopy').onclick = () => { if (navigator.clipboard) navigator.clipboard.writeText(b.spec || ''); toast('Copied.'); }; return; }
+        try { await B2.post('bd.b2_build_status', { id: b.id, status: a }); toast('Updated.'); redo(); } catch (e) { fail(e); }
+      });
+    });
+    $('bNew').onclick = async () => {
+      const secs = await B2.sections();
+      const m = BD.modal('<h3>Add to the Build system</h3><div class="bd-f"><label>What is needed?</label><input class="bd-in" id="nbT" placeholder="Courier pickup time tracker"></div><div class="bd-f"><label>Section</label><select class="bd-in" id="nbS"><option value="">General</option>' + secs.map((s) => '<option value="' + esc(s.code) + '">' + esc(s.name) + '</option>').join('') + '</select></div><div class="bd-f"><label>Why, and what it should show</label><textarea class="bd-in" id="nbSp"></textarea></div><div class="acts"><button class="bd-btn" id="nbNo">Cancel</button><button class="bd-btn go" id="nbOk">Add</button></div>');
+      m.querySelector('#nbNo').onclick = BD.close;
+      m.querySelector('#nbOk').onclick = async () => { try { await B2.post('bd.b2_build_save', { title: m.querySelector('#nbT').value.trim(), section_code: m.querySelector('#nbS').value, spec: m.querySelector('#nbSp').value, why: m.querySelector('#nbSp').value.slice(0, 200) }); BD.close(); toast('Added.'); redo(); } catch (e) { fail(e); } };
+    };
+  }
+
+  /* ================= DOCUMENTS ================= */
+  async function vDocs() {
+    const [d, P, S] = await Promise.all([B2.get('bd.b2_docs'), B2.people(), B2.sections()]);
+    R().innerHTML = box('Documents that expire', 'Licences, agreements, insurance, GST and similar. You are reminded 30, 14, 7 and 0 days before, and a task is made for the owner.',
+      d.docs.length ? d.docs.map((x) => '<div class="b2-item" data-d="' + x.id + '"><div class="l"><div class="t">' + esc(x.title) + '</div><div class="s">' + esc(x.kind) + ' · owner: ' + esc(x.owner || 'nobody') + (x.party ? ' · ' + esc(x.party) : '') + ' · ' + (x.expires_on ? 'expires ' + esc(x.expires_on) : 'no date yet') + '</div></div><div class="r"><span class="bd-chip ' + ({ expired: 'bad', soon: 'bad', near: 'warn', ok: 'ok' }[x.state] || '') + '">' + (x.expires_on ? (x.days_left < 0 ? Math.abs(x.days_left) + ' days over' : x.days_left + ' days left') : 'Add date') + '</span></div></div>').join('') : '<div class="bd-empty"><b>No documents</b>Add the first one so you are warned before it expires.</div>',
+      '<button class="bd-btn sm pri" id="dNew" type="button">+ Add document</button>');
+    const edit = (x) => {
+      x = x || {};
+      const m = BD.modal('<h3>' + (x.id ? 'Edit document' : 'Add document') + '</h3><div class="bd-f"><label>Name</label><input class="bd-in" id="dT" value="' + esc(x.title || '') + '" placeholder="Shop licence, Oberon 1"></div>'
+        + '<div class="bd-2"><div class="bd-f"><label>Kind</label><select class="bd-in" id="dK">' + ['licence', 'agreement', 'insurance', 'tax', 'other'].map((k) => '<option value="' + k + '"' + (x.kind === k ? ' selected' : '') + '>' + k + '</option>').join('') + '</select></div><div class="bd-f"><label>Expires on</label><input class="bd-in" id="dE" type="date" value="' + esc(x.expires_on || '') + '"></div></div>'
+        + '<div class="bd-2"><div class="bd-f"><label>Owner</label><select class="bd-in" id="dO"><option value="">Nobody yet</option>' + P.people.map((p) => '<option value="' + p.id + '">' + esc(p.name) + '</option>').join('') + '</select></div><div class="bd-f"><label>Section</label><select class="bd-in" id="dS"><option value="">General</option>' + S.map((s) => '<option value="' + esc(s.code) + '"' + (x.section_code === s.code ? ' selected' : '') + '>' + esc(s.name) + '</option>').join('') + '</select></div></div>'
+        + '<div class="bd-f"><label>Other party / notes</label><input class="bd-in" id="dP" value="' + esc(x.party || '') + '"></div><div class="acts">' + (x.id ? '<button class="bd-btn bad" id="dDel">Remove</button>' : '') + '<button class="bd-btn" id="dNo">Cancel</button><button class="bd-btn go" id="dOk">Save</button></div>');
+      m.querySelector('#dNo').onclick = BD.close;
+      if (x.id) m.querySelector('#dDel').onclick = async () => { try { await B2.post('bd.b2_doc_del', { id: x.id }); BD.close(); toast('Removed.'); redo(); } catch (e) { fail(e); } };
+      m.querySelector('#dOk').onclick = async () => { try { await B2.post('bd.b2_doc_save', { id: x.id || 0, title: m.querySelector('#dT').value.trim(), kind: m.querySelector('#dK').value, expires_on: m.querySelector('#dE').value || null, emp_id: Number(m.querySelector('#dO').value || 0), section_code: m.querySelector('#dS').value, party: m.querySelector('#dP').value.trim() }); BD.close(); toast('Saved.'); redo(); } catch (e) { fail(e); } };
+    };
+    $('dNew').onclick = () => edit();
+    R().querySelectorAll('[data-d]').forEach((b) => b.onclick = () => edit(d.docs.find((x) => x.id === Number(b.dataset.d))));
+  }
+
+  /* ================= SETUP & HEALTH ================= */
+  async function vSetup() {
+    const [s, h] = await Promise.all([B2.get('bd.b2_setup'), B2.get('bd.b2_health')]);
+    const c = s.settings, adm = s.admin; const dis = adm ? '' : ' disabled';
+    const num = (id, label, v, hint, min, max) => '<div class="bd-f"><label>' + label + '</label><input class="bd-in" id="' + id + '" type="number" min="' + min + '" max="' + max + '" value="' + esc(v) + '"' + dis + '>' + (hint ? '<div class="hint">' + hint + '</div>' : '') + '</div>';
+    const gl = await B2.get('bd.b2_golive').catch(() => null);
+    const top = await setupTop().catch(() => ({ h: '', bind() {} }));
+    let x = top.h;
+    if (gl) {
+      const tone = (z) => z.status === 'bad' ? 'bad' : (z.status === 'warn' ? 'warn' : 'ok'), lab = (z) => z.status === 'bad' ? 'Fix ' + z.holes : (z.status === 'warn' ? (z.waiting ? 'Ready, ' + z.waiting + ' later' : 'Ready, load full') : 'Ready');
+      x += box('Go-live check', 'All sections in one go, only when it is safe. A new task never charges anyone for ' + gl.safety.fair_days + ' days, and every penalty still asks you first (limit ' + inr(gl.safety.cap_person) + ' per person a month).',
+        '<div class="scroll"><table class="b2-tbl"><thead><tr><th>Section</th><th>Tasks</th><th>Owners</th><th>Holes</th><th>Daily load</th><th>Waiting for a system</th><th>Mode</th><th>Status</th></tr></thead><tbody>'
+        + gl.sections.map((z) => '<tr><td><b>' + esc(z.name) + '</b></td><td>' + z.tasks + '</td><td>' + esc(z.owners) + '</td><td>' + (z.holes ? z.holes : '—') + '</td><td>' + esc(z.load) + '</td><td>' + (z.waiting || 0) + '</td><td><span class="bd-chip ' + (z.live ? 'ok' : '') + '">' + (z.live ? 'Live' : 'Test') + '</span></td><td><span class="bd-chip ' + tone(z) + '">' + lab(z) + '</span></td></tr>').join('') + '</tbody></table></div>'
+        + gl.blockers.map((b) => '<div class="bd-call bad"><b>This blocks go-live' + (b.section ? ' in ' + esc(b.section) : '') + ':</b> ' + esc(b.text) + ' ' + (b.code ? '<a class="bd-btn sm pri" style="margin-left:8px" href="hub.html?w=boss&t=people" target="_top">Choose a person</a>' : '') + '</div>').join('')
+        + gl.warnings.map((w) => '<div class="bd-call warn"><b>Good to know:</b> ' + esc(w) + '</div>').join('')
+        + '<div class="bd-call ' + (gl.can_go ? 'ok' : 'info') + '"><b>Safety:</b> ' + gl.global.map((g) => esc(g.text)).join(' · ') + ' · “Switch everything back to test” is one click.</div>'
+        + (adm ? '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"><button class="bd-btn pri" id="glAll" type="button"' + (gl.can_go && !gl.all_live ? '' : ' disabled') + '>' + (gl.all_live ? 'Every section is live' : 'Switch all ' + gl.sections.length + ' sections live') + '</button>' + (gl.live_count ? '<button class="bd-btn" id="glBack" type="button">Switch everything back to test</button>' : '') + '</div>' : '<div class="bd-sub">Only Admin or HR can switch sections live.</div>'));
+    }
+    x += '<div id="a_builds"></div><div id="a_docs"></div>';
+    x += box('Health', 'The engine checks itself. If something is wrong it says so here.',
+      '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"><span class="bd-chip ' + (h.heartbeat_ok ? 'ok' : 'bad') + '">' + (h.heartbeat_ok ? 'Running (last beat ' + (h.heartbeat_min || 0) + ' min ago)' : 'Not running — check the 5-minute cron') + '</span><span class="bd-chip ' + (h.selftest_ok ? 'ok' : 'bad') + '">Self-test ' + (h.selftest_ok ? 'passed' : 'FAILED') + '</span><span class="bd-chip ' + (h.ai ? 'ok' : 'warn') + '">Claude ' + (h.ai ? 'connected' : 'not connected (simple answers only)') + '</span></div>'
+      + '<div class="bd-sub" style="font-size:13px;line-height:1.7">Active tasks <b>' + h.counts.active + '</b> · drafts <b>' + h.counts.drafts + '</b> · runs today <b>' + h.counts.runs_today + '</b> · without an owner today <b>' + h.counts.unowned_today + '</b> · open holes <b>' + h.counts.alerts + '</b></div>'
+      + (h.last_error ? '<div class="bd-call bad">Last error: ' + esc(h.last_error) + '</div>' : '')
+      + '<div class="bd-sub" style="font-size:13px;margin-top:10px">Pages where Claude knows the full contract: <b>' + (h.contracts.full || []).length + '</b>' + (h.contracts.text_only && h.contracts.text_only.length ? ' · reads page text only: ' + h.contracts.text_only.map(esc).join(', ') : '') + '</div>',
+      adm ? '<button class="bd-btn sm" id="hRun" type="button">Run a check now</button>' : '');
+    const sc = h.scan;
+    x += box('Daily scan', 'Once a day Claude reads every number the system holds. If a number is bad and no task watches it, a problem appears in Needs you. It never charges anyone.',
+      '<div class="bd-sub" style="font-size:13px;line-height:1.7;margin-bottom:10px">' + (sc ? 'Last scan ' + esc(String(sc.at).slice(5, 16)) + ': read <b>' + sc.looked + '</b> numbers · raised <b>' + sc.raised + '</b> · closed by itself <b>' + sc.closed + '</b> · already watched by a task <b>' + sc.watched + '</b>' + (sc.cannot_read ? ' · could not read <b>' + sc.cannot_read + '</b>' : '') + '.' : 'It has not run yet. It runs by itself once a day (not on Sunday).') + '</div>'
+      + '<div class="bd-2"><div class="bd-f"><label>Daily scan</label><select class="bd-in" id="sScan"' + dis + '><option value="1"' + (c.scan !== '0' ? ' selected' : '') + '>On</option><option value="0"' + (c.scan === '0' ? ' selected' : '') + '>Off</option></select></div>' + num('sScanH', 'Runs at or after this hour (0–23)', c.scan_hour, 'It needs the 5-minute cron to be running.', 0, 23) + '</div>',
+      adm ? '<button class="bd-btn sm" id="hScan" type="button">Scan now</button>' : '');
+    const bdm = await B2.get('bd.settings').then((r) => (r.settings || {}).mode || 'shadow').catch(() => null);      // the OLD switch: it decides whether staff see their duties in My Day
+    if (bdm !== null) x += box('Staff see their duties in My Day', 'This is the switch behind the message “Your boss is still setting up duties”. Until it is on, no staff member sees any duty in My Day, even when the sections above are live.',
+      '<div class="bd-2"><div class="bd-f"><label>Now</label><select class="bd-in" id="sBdMode"' + dis + '><option value="shadow"' + (bdm === 'shadow' ? ' selected' : '') + '>Test: staff see nothing</option><option value="soft"' + (bdm === 'soft' ? ' selected' : '') + '>Staff see their duties (no money is taken)</option>' + (bdm === 'live' ? '<option value="live" selected>Fully live (real penalties)</option>' : '') + '</select></div><div></div></div>'
+      + (adm ? '<button class="bd-btn pri" id="sBdSave" type="button">Save</button>' : '<div class="bd-sub">Only Admin can change this.</div>'));
+    x += box('Which sections are live', 'A section in test mode is built and judged, but staff do not see its tasks and no penalty is asked. Switch each one live when you trust it.',
+      '<div class="bd-grid">' + s.sections.map((z) => '<label class="bd-sec" style="flex-direction:row;align-items:center;gap:10px;cursor:' + (adm ? 'pointer' : 'default') + '"><input type="checkbox" class="lvSec" value="' + esc(z.code) + '"' + (z.live ? ' checked' : '') + dis + '> <span><b>' + esc(z.name) + '</b><span class="n" style="display:block">' + (z.live ? 'Live' : 'Test mode') + '</span></span></label>').join('') + '</div>');
+    x += box('Rules and limits', 'The numbers behind “slipping”, penalties and targets.',
+      '<div class="bd-2">' + num('sCapD', 'Daily tasks one person can own (workload limit)', c.cap_daily, 'A new daily task for someone at the limit asks you to merge, pause or move one first.', 1, 30) + '<div></div></div>'
+      + '<div class="bd-2">' + num('sCapP', 'Penalty limit per person each month ₹', c.cap_person, '', 0, 100000) + num('sCapT', 'Penalty limit for everyone each month ₹', c.cap_total, '', 0, 1000000) + '</div>'
+      + '<div class="bd-2">' + num('sFair', 'Fair start (days with no penalty)', c.fair_days, 'A new task never charges anyone in its first days.', 0, 90) + '<div class="bd-f"><label>Daily cut-off for “late”</label><input class="bd-in" id="sCut" type="time" value="' + esc(c.cutoff) + '"' + dis + '></div></div>'
+      + '<div class="bd-2">' + num('sSlipM', 'Daily task is slipping when missed this many times in 7 days', c.slip_miss, '', 1, 7) + num('sSlipU', 'A number is slipping when under target on this many of 7 days', c.slip_under, '', 1, 7) + '</div>'
+      + '<div class="bd-2">' + num('sImp', 'An Improve task closes after this many good days', c.improve_days, '', 2, 30) + num('sWatch', 'A solved problem is watched for this many days', c.watch_days, '', 7, 120) + '</div>'
+      + '<div class="bd-2">' + num('sBump', 'Proposed target = last 14 days average + this %', c.target_bump, '', 0, 200) + '<div class="bd-f"><label>Check pictures with Claude</label><select class="bd-in" id="sPilot"' + dis + '><option value="0"' + (c.pilot !== '1' ? ' selected' : '') + '>Off</option><option value="1"' + (c.pilot === '1' ? ' selected' : '') + '>On (flags only, never decides)</option></select></div></div>'
+      + '<div class="bd-f"><label>Boss Engine</label><select class="bd-in" id="sMode"' + dis + '><option value="on"' + (c.mode === 'on' ? ' selected' : '') + '>On</option><option value="off"' + (c.mode === 'off' ? ' selected' : '') + '>Off (nothing is generated)</option></select></div>'
+      + (adm ? '<button class="bd-btn pri" id="sSave" type="button">Save</button>' : '<div class="bd-sub">Only Admin or HR can change these.</div>'));
+    x += box('Older settings', 'The department system (Dispatch, Shops, Supplies, Repairs) keeps its own mode and limits.', '<div class="bd-sub" style="font-size:13px;line-height:1.7">Mode: <b>' + esc(s.legacy.mode) + '</b> · daily penalty limit ' + inr(s.legacy.pen_cap_day) + ' · monthly ' + inr(s.legacy.pen_cap_month) + ' · reminder every ' + esc(s.legacy.remind_min) + ' min · “away” after ' + esc(s.legacy.away_after_min) + ' min.</div>'
+      + (adm && s.tick_key ? '<div class="bd-sub" style="margin-top:10px;font-size:12px;word-break:break-all">Cron (every 5 minutes): <code>' + esc(location.origin + '/empmanagment/api.php?action=bd.tick&key=' + s.tick_key) + '</code></div>' : ''));
+    $('root').innerHTML = x; top.bind();
+    HOST = $('a_builds'); await vBuilds(); HOST = $('a_docs'); await vDocs(); HOST = null;                  // Build system and Documents now live in this tab
+    if ($('sBdSave')) $('sBdSave').onclick = async (e) => { e.target.disabled = true; try { await B2.post('bd.settings', { mode: $('sBdMode').value }); toast('Saved. Staff will see their duties in My Day after they refresh.'); } catch (er) { fail(er); } e.target.disabled = false; };
+    if ($('glAll')) $('glAll').onclick = async (e) => { if (!(await BD.confirm('Switch every section live?', 'Staff will see their tasks right away. Every penalty still asks you first. You can switch everything back to test with one click.', 'Switch all live', false))) return; e.target.disabled = true; try { const r = await B2.post('bd.b2_golive_set', { all: 1 }); toast(r.message || 'Live.'); redo(); } catch (er) { fail(er); e.target.disabled = false; } };
+    if ($('glBack')) $('glBack').onclick = async (e) => { if (!(await BD.confirm('Switch everything back to test?', 'Staff stop seeing tasks and nobody is asked about a penalty. Nothing is deleted.', 'Back to test', true))) return; e.target.disabled = true; try { const r = await B2.post('bd.b2_golive_set', { all: 0 }); toast(r.message || 'Test mode.'); redo(); } catch (er) { fail(er); e.target.disabled = false; } };
+    if ($('hScan')) $('hScan').onclick = async (e) => { e.target.disabled = true; try { const r = await B2.post('bd.b2_scan', {}); toast(r.message || 'Scanned.'); redo(); } catch (er) { fail(er); e.target.disabled = false; } };
+    if ($('hRun')) $('hRun').onclick = async () => { try { await B2.post('bd.b2_tick', {}); toast('Checked.'); redo(); } catch (e) { fail(e); } };
+    if ($('sSave')) $('sSave').onclick = async () => {
+      const live = Array.from(document.querySelectorAll('.lvSec:checked')).map((i) => i.value);
+      const g = (id) => $(id).value;
+      try { await B2.post('bd.b2_setup_save', { cap_daily: Number(g('sCapD')), cap_person: Number(g('sCapP')), cap_total: Number(g('sCapT')), fair_days: Number(g('sFair')), cutoff: g('sCut'), slip_miss: Number(g('sSlipM')), slip_under: Number(g('sSlipU')), improve_days: Number(g('sImp')), watch_days: Number(g('sWatch')), target_bump: Number(g('sBump')), pilot: g('sPilot') === '1' ? 1 : 0, scan: g('sScan') === '1' ? 1 : 0, scan_hour: Number(g('sScanH')), mode: g('sMode'), live_sections: live }); toast('Saved.'); redo(); } catch (e) { fail(e); }
+    };
+  }
+
+  if (EMB) { $('tabs').style.display = 'none'; const tb = document.querySelector('.topbar'); tb.style.cssText = 'display:flex;justify-content:flex-end;margin:0 0 10px;padding:0;min-height:0;'; tb.firstElementChild.style.display = 'none'; const ct = document.querySelector('.content'); if (ct) ct.style.paddingTop = '0'; const mn = document.querySelector('.main'); if (mn) mn.style.paddingTop = '0'; }
+  $('bAdd').onclick = () => B2.editItem({ onSaved: () => { if (TAB === 'today' || TAB === 'work') redo(); else location.hash = '#work'; } });
+  $('bAsk').onclick = () => B2.askClaude({});
+  route();
+</script>
+</body>
+</html>

@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Commission Rules — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=3">
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar">
+      <h1>Commission Rules</h1>
+      <button class="btn" id="btnAdd">+ Add Rule</button>
+    </div>
+    <div class="content">
+      <div id="alertBox"></div>
+      <div class="card" style="padding:12px 16px;margin-bottom:14px;background:#f8fafc">
+        <b>💰 Prices are in one place: Learn &amp; Setup → Pricing.</b>
+        <div style="font-size:13px;color:var(--muted);margin-top:3px">The Price chart (perfume by total ml, attar / shower gel / others by pieces, and combos) is used by the bot, the WhatsApp cart and commission. This page keeps the commission rules; the ML price slab card below holds its commission settings (on / off, cap, bonus, no-code %, special days).</div>
+        <a href="learning.html#pricing" style="display:inline-block;margin-top:6px;font-weight:700">Open Pricing →</a>
+      </div>
+
+      <div class="card" style="padding:14px 18px;margin-bottom:14px">
+        <b>📋 All commission rules are on this page</b>
+        <div style="font-size:13px;color:var(--muted);margin-top:4px;line-height:1.55">From top to bottom: slab rates (over-target tiers, base rate, prepaid), order-code rules, your manual rules (fixed commission, order code, order rating, panel and date), the ML price slab and the 🎯 Target bonus. The Commission page works them out in this order: slab rate → order-code cut → fixed / panel / rating rules → ML price slab → order set by hand → <b>Target bonus (last)</b>. A commission you set by hand for a person always wins. Offers and boosts are in Sales → Team → Commission → Result &amp; rules.
+        <a href="hub.html?w=budget&amp;t=bt_commission" target="_top" style="display:inline-block;margin-left:4px;font-weight:700">Open Result &amp; rules →</a></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>Over-target flat tiers</h2>
+          <span style="font-size:12px; color:var(--muted);">Highest matching tier wins outright — no prepaid adjustment stacks on top.</span>
+        </div>
+        <table>
+          <thead><tr><th>% over target</th><th>Min ticket size</th><th>Rate</th><th>Label</th><th style="width:120px;">Actions</th></tr></thead>
+          <tbody id="overBody"><tr><td colspan="5" class="loading">Loading...</td></tr></tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>Base rate (target status x ticket size)</h2></div>
+        <table>
+          <thead><tr><th>Target status</th><th>Min ticket size</th><th>Rate</th><th>Label</th><th style="width:120px;">Actions</th></tr></thead>
+          <tbody id="baseBody"><tr><td colspan="5" class="loading">Loading...</td></tr></tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>Prepaid adjustment</h2>
+          <span style="font-size:12px; color:var(--muted);">Applied on top of the base rate only — not on top of an over-target tier.</span>
+        </div>
+        <table>
+          <thead><tr><th>Min prepaid %</th><th>Adjustment</th><th>Label</th><th style="width:120px;">Actions</th></tr></thead>
+          <tbody id="prepaidBody"><tr><td colspan="4" class="loading">Loading...</td></tr></tbody>
+        </table>
+      </div>
+
+      <div class="card" style="max-width:640px;">
+        <div class="card-head"><h2>Test a calculation</h2></div>
+        <div style="padding:16px 20px;">
+          <div class="field-grid">
+            <div class="field"><label>Achieved sales (₹)</label><input type="number" id="tAchieved" value="130000"></div>
+            <div class="field"><label>Target (₹)</label><input type="number" id="tTarget" value="100000"></div>
+            <div class="field"><label>Average ticket size (₹)</label><input type="number" id="tTicket" value="2500"></div>
+            <div class="field"><label>Prepaid %</label><input type="number" id="tPrepaid" value="85"></div>
+          </div>
+          <button class="btn" id="btnTest" style="width:auto; margin-top:6px;">Calculate</button>
+          <div id="testResult" style="margin-top:16px; display:none;">
+            <div style="display:flex; gap:24px; margin-bottom:10px;">
+              <div><div style="font-size:11.5px; color:var(--muted); text-transform:uppercase;">Rate</div><div style="font-size:22px; font-weight:700;" id="testRate">—</div></div>
+              <div><div style="font-size:11.5px; color:var(--muted); text-transform:uppercase;">Commission</div><div style="font-size:22px; font-weight:700;" id="testAmount">—</div></div>
+            </div>
+            <div style="font-size:13px; color:var(--muted);" id="testRule"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="modal-overlay" id="ruleModal">
+  <div class="modal" style="max-width:460px;">
+    <h3 id="modalTitle">Add Rule</h3>
+    <div id="modalAlert"></div>
+    <div class="field">
+      <label>Rule type</label>
+      <select id="ruleType">
+        <option value="over_target">Over-target flat tier</option>
+        <option value="base">Base rate</option>
+        <option value="prepaid">Prepaid adjustment</option>
+      </select>
+    </div>
+
+    <div class="field" id="fldOverPct">
+      <label>% over target (achieved is at least this much above target)</label>
+      <input type="number" id="overPct" step="1" placeholder="e.g. 30">
+    </div>
+    <div class="field" id="fldAchieved">
+      <label>Target status</label>
+      <select id="achievedTarget">
+        <option value="1">Target achieved</option>
+        <option value="0">Target not achieved</option>
+      </select>
+    </div>
+    <div class="field" id="fldTicketMin">
+      <label>Minimum ticket size (₹) — 0 for any</label>
+      <input type="number" id="ticketMin" step="1" value="0">
+    </div>
+    <div class="field" id="fldPrepaidMin">
+      <label>Minimum prepaid % this applies from</label>
+      <input type="number" id="prepaidMin" step="1" placeholder="e.g. 80">
+    </div>
+    <div class="field">
+      <label id="rateLabel">Rate (%)</label>
+      <input type="number" id="rate" step="0.1" placeholder="e.g. 6.8">
+    </div>
+    <div class="field">
+      <label>Label (optional note, shown in the list)</label>
+      <input type="text" id="label" placeholder="e.g. +30% over target, big tickets">
+    </div>
+    <div class="field">
+      <label>Sort order (lower runs first when priorities matter)</label>
+      <input type="number" id="sortOrder" value="0">
+    </div>
+    <div class="actions">
+      <button type="button" class="btn secondary" id="btnCancel">Cancel</button>
+      <button type="button" class="btn" id="btnSave">Save Rule</button>
+    </div>
+  </div>
+</div>
+
+<script src="assets/js/config.js?v=2"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script>
+  guardPage();
+  renderSidebar('commission_rules');
+
+  const alertBox = document.getElementById('alertBox');
+  const modal = document.getElementById('ruleModal');
+  const modalAlert = document.getElementById('modalAlert');
+  let allRules = [];
+  let editingId = 0;
+
+  function showAlert(msg, type = 'success') {
+    alertBox.innerHTML = `<div class="alert ${type}">${msg}</div>`;
+    setTimeout(() => (alertBox.innerHTML = ''), 4000);
+  }
+
+  function fieldsFor(type) {
+    document.getElementById('fldOverPct').style.display = type === 'over_target' ? '' : 'none';
+    document.getElementById('fldAchieved').style.display = type === 'base' ? '' : 'none';
+    document.getElementById('fldTicketMin').style.display = type === 'prepaid' ? 'none' : '';
+    document.getElementById('fldPrepaidMin').style.display = type === 'prepaid' ? '' : 'none';
+    document.getElementById('rateLabel').textContent = type === 'prepaid' ? 'Adjustment (%, use a minus sign to subtract)' : 'Rate (%)';
+  }
+  document.getElementById('ruleType').addEventListener('change', (e) => fieldsFor(e.target.value));
+
+  function openModal(rule) {
+    modalAlert.innerHTML = '';
+    editingId = rule ? rule.rule_id : 0;
+    document.getElementById('modalTitle').textContent = rule ? 'Edit Rule' : 'Add Rule';
+    const type = rule ? rule.rule_type : 'over_target';
+    document.getElementById('ruleType').value = type;
+    document.getElementById('overPct').value = rule && rule.over_pct !== null ? rule.over_pct : '';
+    document.getElementById('achievedTarget').value = rule && rule.achieved_target !== null ? String(rule.achieved_target) : '1';
+    document.getElementById('ticketMin').value = rule ? rule.ticket_min : 0;
+    document.getElementById('prepaidMin').value = rule && rule.prepaid_min !== null ? rule.prepaid_min : '';
+    document.getElementById('rate').value = rule ? rule.rate : '';
+    document.getElementById('label').value = rule ? (rule.label || '') : '';
+    document.getElementById('sortOrder').value = rule ? rule.sort_order : 0;
+    fieldsFor(type);
+    modal.classList.add('open');
+  }
+  document.getElementById('btnAdd').addEventListener('click', () => openModal(null));
+  document.getElementById('btnCancel').addEventListener('click', () => modal.classList.remove('open'));
+
+  document.getElementById('btnSave').addEventListener('click', async () => {
+    const type = document.getElementById('ruleType').value;
+    const rate = document.getElementById('rate').value;
+    if (rate === '') { modalAlert.innerHTML = '<div class="alert error">Rate is required.</div>'; return; }
+    const payload = {
+      rule_id: editingId, rule_type: type, rate: Number(rate),
+      ticket_min: Number(document.getElementById('ticketMin').value || 0),
+      sort_order: Number(document.getElementById('sortOrder').value || 0),
+      label: document.getElementById('label').value.trim(),
+    };
+    if (type === 'over_target') {
+      if (document.getElementById('overPct').value === '') { modalAlert.innerHTML = '<div class="alert error">Enter the over-target percent.</div>'; return; }
+      payload.over_pct = Number(document.getElementById('overPct').value);
+    } else if (type === 'base') {
+      payload.achieved_target = document.getElementById('achievedTarget').value === '1';
+    } else {
+      if (document.getElementById('prepaidMin').value === '') { modalAlert.innerHTML = '<div class="alert error">Enter the minimum prepaid percent.</div>'; return; }
+      payload.prepaid_min = Number(document.getElementById('prepaidMin').value);
+    }
+    const btn = document.getElementById('btnSave');
+    btn.disabled = true;
+    try {
+      await api.post('commission_rules.save', payload);
+      modal.classList.remove('open');
+      showAlert('Rule saved.');
+      load();
+    } catch (err) {
+      modalAlert.innerHTML = `<div class="alert error">${err.message}</div>`;
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  window.editRule = function (id) {
+    const r = allRules.find(x => x.rule_id === id);
+    if (r) openModal(r);
+  };
+  window.deleteRule = async function (id, label) {
+    if (!confirm(`Delete rule "${label}"?`)) return;
+    try {
+      await api.post('commission_rules.delete', { rule_id: id });
+      showAlert('Rule deleted.');
+      load();
+    } catch (err) {
+      showAlert(err.message, 'error');
+    }
+  };
+
+  function actionsCell(r) {
+    return `<div class="row-actions">
+      <button onclick="editRule(${r.rule_id})">Edit</button>
+      <button class="danger-link" onclick="deleteRule(${r.rule_id}, '${(r.label || r.rule_type).replace(/'/g, "\\'")}')">Delete</button>
+    </div>`;
+  }
+
+  function renderTables() {
+    const over = allRules.filter(r => r.rule_type === 'over_target').sort((a, b) => b.over_pct - a.over_pct || b.ticket_min - a.ticket_min);
+    const base = allRules.filter(r => r.rule_type === 'base').sort((a, b) => (b.achieved_target - a.achieved_target) || (b.ticket_min - a.ticket_min));
+    const prepaid = allRules.filter(r => r.rule_type === 'prepaid').sort((a, b) => b.prepaid_min - a.prepaid_min);
+
+    document.getElementById('overBody').innerHTML = over.length ? over.map(r => `
+      <tr><td>+${Number(r.over_pct)}% or more</td><td>${Number(r.ticket_min) > 0 ? '₹' + Number(r.ticket_min).toLocaleString('en-IN') : 'Any'}</td>
+      <td><b>${Number(r.rate)}%</b></td><td style="font-size:12.5px; color:var(--muted);">${r.label || '—'}</td><td>${actionsCell(r)}</td></tr>`).join('')
+      : '<tr><td colspan="5" class="empty-state">No over-target tiers yet.</td></tr>';
+
+    document.getElementById('baseBody').innerHTML = base.length ? base.map(r => `
+      <tr><td>${Number(r.achieved_target) === 1 ? 'Achieved' : 'Not achieved'}</td><td>${Number(r.ticket_min) > 0 ? '₹' + Number(r.ticket_min).toLocaleString('en-IN') : 'Any'}</td>
+      <td><b>${Number(r.rate)}%</b></td><td style="font-size:12.5px; color:var(--muted);">${r.label || '—'}</td><td>${actionsCell(r)}</td></tr>`).join('')
+      : '<tr><td colspan="5" class="empty-state">No base rate rules yet.</td></tr>';
+
+    document.getElementById('prepaidBody').innerHTML = prepaid.length ? prepaid.map(r => `
+      <tr><td>${Number(r.prepaid_min)}% or more</td><td><b>${Number(r.rate) > 0 ? '+' : ''}${Number(r.rate)}%</b></td>
+      <td style="font-size:12.5px; color:var(--muted);">${r.label || '—'}</td><td>${actionsCell(r)}</td></tr>`).join('')
+      : '<tr><td colspan="4" class="empty-state">No prepaid adjustment rules yet.</td></tr>';
+  }
+
+  async function load() {
+    try {
+      const data = await api.get('commission_rules.list');
+      allRules = data.rules || [];
+      renderTables();
+    } catch (err) {
+      showAlert(err.message, 'error');
+    }
+  }
+
+  document.getElementById('btnTest').addEventListener('click', async () => {
+    const box = document.getElementById('testResult');
+    try {
+      const params = new URLSearchParams({
+        achieved: document.getElementById('tAchieved').value,
+        target: document.getElementById('tTarget').value,
+        ticket_avg: document.getElementById('tTicket').value,
+        prepaid_pct: document.getElementById('tPrepaid').value,
+      });
+      // Reuses the same commission.get math via a lightweight client-side
+      // preview is not available server-side as a single call, so we just
+      // ask the server for the live sales-team table and, if this employee
+      // isn't in it, fall back to explaining that this box is illustrative.
+      // Simpler: call commission_rules.list is already loaded; compute here
+      // with identical logic to mirror the server for instant feedback.
+      const rules = allRules;
+      const achieved = Number(document.getElementById('tAchieved').value) || 0;
+      const target = Number(document.getElementById('tTarget').value) || 0;
+      const ticket = Number(document.getElementById('tTicket').value) || 0;
+      const prepaid = Number(document.getElementById('tPrepaid').value) || 0;
+      const overPct = target > 0 ? ((achieved / target) - 1) * 100 : 0;
+      const achievedTarget = target > 0 ? achieved >= target : false;
+
+      let overMatches = rules.filter(r => r.rule_type === 'over_target' && overPct >= Number(r.over_pct) && ticket >= Number(r.ticket_min));
+      overMatches.sort((a, b) => Number(b.over_pct) - Number(a.over_pct) || Number(b.ticket_min) - Number(a.ticket_min));
+
+      let rate, ruleText;
+      if (overMatches.length) {
+        rate = Number(overMatches[0].rate);
+        ruleText = 'Over-target tier: ' + (overMatches[0].label || ('+' + overMatches[0].over_pct + '% -> ' + rate + '%'));
+      } else {
+        let baseMatches = rules.filter(r => r.rule_type === 'base' && Number(r.achieved_target) === (achievedTarget ? 1 : 0) && ticket >= Number(r.ticket_min));
+        baseMatches.sort((a, b) => Number(b.ticket_min) - Number(a.ticket_min));
+        rate = baseMatches.length ? Number(baseMatches[0].rate) : 0;
+        ruleText = baseMatches.length ? ('Base rate: ' + (baseMatches[0].label || rate + '%')) : 'No matching base rule';
+        let prepaidMatches = rules.filter(r => r.rule_type === 'prepaid' && prepaid >= Number(r.prepaid_min));
+        prepaidMatches.sort((a, b) => Number(b.prepaid_min) - Number(a.prepaid_min));
+        if (prepaidMatches.length) {
+          rate += Number(prepaidMatches[0].rate);
+          ruleText += ' + ' + (prepaidMatches[0].label || ('prepaid adjustment ' + prepaidMatches[0].rate + '%'));
+        }
+      }
+      document.getElementById('testRate').textContent = rate.toFixed(1) + '%';
+      document.getElementById('testAmount').textContent = '₹' + Math.round(achieved * rate / 100).toLocaleString('en-IN');
+      document.getElementById('testRule').textContent = ruleText;
+      box.style.display = 'block';
+    } catch (err) {
+      showAlert(err.message, 'error');
+    }
+  });
+
+  load();
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>

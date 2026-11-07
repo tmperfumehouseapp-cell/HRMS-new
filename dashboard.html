@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Dashboard — HRMS</title>
+<script src="assets/js/splash.js?v=4"></script>
+<link rel="stylesheet" href="assets/css/style.css?v=4">
+<style>
+  @media (max-width:820px){ .content > .stat-grid, #statsArea{margin-left:10px; margin-right:10px;} }
+  /* Missing-document badges: on desktop they wrap in the cell; on phones
+     they stay in one row and scroll sideways inside the card, instead of
+     running off its edge. The scrollbar is hidden — swipe to see more. */
+  .doc-badges{display:flex; flex-wrap:wrap; gap:4px;}
+  @media (max-width:820px){
+    .doc-badges{flex:1 1 0; min-width:0; flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch;
+      scrollbar-width:none; padding-bottom:2px; mask-image:linear-gradient(90deg,#000 88%,transparent);}
+    .doc-badges::-webkit-scrollbar{display:none;}
+    .doc-badges .badge{flex:none; white-space:nowrap;}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar" style="display:flex; align-items:center; justify-content:space-between;">
+      <h1>Dashboard</h1>
+      <button class="btn" id="btnExportAll" style="width:auto;">Export Employees (Excel)</button>
+    </div>
+    <div class="content">
+      <div id="statsArea" class="loading">Loading...</div>
+      <div class="card" id="approvalBanner" style="display:none; background:#fffbeb;">
+        <div style="padding:16px 20px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;">
+          <span id="approvalBannerText" style="font-weight:600; color:#92400e;"></span>
+          <a href="approvals.html" class="btn" style="width:auto;">Review &rarr;</a>
+        </div>
+      </div>
+      <div class="card" id="alertsCard" style="display:none;">
+        <div class="card-head"><h2 id="alertsTitle">Expiring / Expired Documents</h2></div>
+        <table>
+          <thead><tr><th>Employee</th><th>Document</th><th>Expiry Date</th><th>Status</th></tr></thead>
+          <tbody id="alertsTableBody"></tbody>
+        </table>
+      </div>
+      <div class="card" id="pendingCard" style="display:none;">
+        <div class="card-head">
+          <h2 id="pendingTitle">Pending Documents</h2>
+          <span id="pendingCount" style="font-size:12.5px; color:var(--muted);"></span>
+        </div>
+        <table>
+          <thead><tr><th>Employee</th><th>Missing Documents</th></tr></thead>
+          <tbody id="pendingTableBody"></tbody>
+        </table>
+        <div style="padding:12px 20px; text-align:center; display:none;" id="pendingLoadMoreWrap">
+          <button class="btn secondary" id="btnPendingLoadMore" style="width:auto;">Load more</button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="assets/js/config.js?v=2"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script>
+  guardPage();
+  renderSidebar('dashboard');
+
+  (async function load() {
+    const statsArea = document.getElementById('statsArea');
+    try {
+      // Not all five at once (together with the menu badges that was 14 requests in the same second and the database refused some):
+      // the summary first, then the document lists two at a time.
+      const data = await api.get('dashboard.stats');
+      const [typeData, pendUp] = await Promise.all([
+        api.get('document_types.list'),
+        api.get('employee_documents.list', { status: 'pending' }),
+      ]);
+      const [empData, apprUp] = await Promise.all([
+        api.get('employees.list'),
+        api.get('employee_documents.list', { status: 'approved' }),
+      ]);
+      const expiringTotal = data.expiring_documents_total ?? data.expiring_documents.length;
+
+      /*
+       * Pending documents, computed the same way as the Documents page and
+       * Employee Details page: for every employee, every document type they
+       * have NOT uploaded yet counts as pending. Uploaded = pending approval
+       * OR approved. This replaces the server's required-types-only list.
+       */
+      const uploadedByEmp = {};
+      [...(pendUp.documents || []), ...(apprUp.documents || [])].forEach(d => {
+        (uploadedByEmp[d.employee_id] = uploadedByEmp[d.employee_id] || new Set())
+          .add(String(d.document_type_id));
+      });
+      const allTypes = typeData.document_types || [];
+      const missingByEmp = (empData.employees || []).map(e => {
+        const up = uploadedByEmp[e.employee_id] || new Set();
+        return {
+          employee_id: e.employee_id,
+          full_name: e.full_name,
+          employee_code: e.employee_code,
+          missing: allTypes.filter(t => !up.has(String(t.document_type_id))).map(t => t.document_name),
+        };
+      }).filter(e => e.missing.length > 0);
+      const pendingTotal = missingByEmp.reduce((sum, e) => sum + e.missing.length, 0);
+
+      const pendingApprovalCount = (data.pending_approval_employees || []).length + (data.pending_approval_documents || []).length;
+      if (pendingApprovalCount > 0) {
+        document.getElementById('approvalBannerText').textContent =
+          `${pendingApprovalCount} item${pendingApprovalCount === 1 ? '' : 's'} waiting for your approval.`;
+        document.getElementById('approvalBanner').style.display = 'block';
+      }
+
+      statsArea.outerHTML = `
+        <div class="stat-grid" id="statsArea">
+          <div class="stat-card"><div class="label">Active Employees</div><div class="value">${data.total_employees}</div></div>
+          <div class="stat-card"><div class="label">Departments</div><div class="value">${data.total_departments}</div></div>
+          <div class="stat-card"><div class="label">Expiring/Expired Docs</div><div class="value">${expiringTotal}</div></div>
+          <div class="stat-card"><div class="label">Pending Documents</div><div class="value">${pendingTotal}</div></div>
+        </div>`;
+
+      const alertsTitle = document.getElementById('alertsTitle');
+      alertsTitle.textContent = expiringTotal > data.expiring_documents.length
+        ? `Expiring / Expired Documents (showing ${data.expiring_documents.length} of ${expiringTotal})`
+        : 'Expiring / Expired Documents';
+
+      const alertsBody = document.getElementById('alertsTableBody');
+      if (data.expiring_documents.length === 0) {
+        alertsBody.innerHTML = '<tr><td colspan="4" class="empty-state">No documents expiring in the next 30 days.</td></tr>';
+      } else {
+        // Group by employee so each person gets one row listing all their
+        // expiring/expired documents together, instead of a repeated row per document.
+        const byEmployee = {};
+        const order = [];
+        data.expiring_documents.forEach(d => {
+          if (!byEmployee[d.employee_id]) {
+            byEmployee[d.employee_id] = { employee_id: d.employee_id, full_name: d.full_name, employee_code: d.employee_code, docs: [] };
+            order.push(d.employee_id);
+          }
+          byEmployee[d.employee_id].docs.push(d);
+        });
+
+        alertsBody.innerHTML = order.map(empId => {
+          const group = byEmployee[empId];
+          const docLines = group.docs.map(d => `<div style="padding:4px 0;">${d.document_name}</div>`).join('');
+          const expiryLines = group.docs.map(d =>
+            `<div style="padding:4px 0;">${new Date(d.expiry_date).toLocaleDateString('en-IN', {day:'2-digit',month:'short',year:'numeric'})}</div>`
+          ).join('');
+          const statusLines = group.docs.map(d => {
+            const isExpired = d.days_left < 0;
+            const statusClass = isExpired ? 'badge inactive' : 'badge';
+            const statusText = isExpired ? `Expired ${Math.abs(d.days_left)}d ago` : `${d.days_left}d left`;
+            return `<div style="padding:4px 0;"><span class="${statusClass}">${statusText}</span></div>`;
+          }).join('');
+
+          return `<tr>
+            <td style="vertical-align:top;"><a href="employee_detail.html?id=${group.employee_id}">${group.full_name} <span class="badge">${group.employee_code}</span></a></td>
+            <td style="vertical-align:top;">${docLines}</td>
+            <td style="vertical-align:top;">${expiryLines}</td>
+            <td style="vertical-align:top;">${statusLines}</td>
+          </tr>`;
+        }).join('');
+
+        if (expiringTotal > data.expiring_documents.length) {
+          alertsBody.insertAdjacentHTML('beforeend', `
+            <tr><td colspan="4" style="text-align:center; padding:14px;">
+              <a href="documents.html" style="color:#1d4ed8; font-weight:600;">View all ${expiringTotal} documents &rarr;</a>
+            </td></tr>
+          `);
+        }
+      }
+      document.getElementById('alertsCard').style.display = 'block';
+
+      const pendingBody = document.getElementById('pendingTableBody');
+      const pendingTitle = document.getElementById('pendingTitle');
+      pendingTitle.textContent = `Pending Documents (${pendingTotal})`;
+
+      const PENDING_PAGE_SIZE = 10;
+      let pendingShown = 0;
+
+      function renderPendingRow(e) {
+        const typeBadges = e.missing.map(name => `<span class="badge inactive">${name}</span>`).join('');
+        return `<tr>
+            <td style="vertical-align:top;"><a href="employee_detail.html?id=${e.employee_id}">${e.full_name} <span class="badge">${e.employee_code}</span></a></td>
+            <td style="vertical-align:top;"><div class="doc-badges">${typeBadges}</div></td>
+          </tr>`;
+      }
+
+      function loadMorePending() {
+        const next = missingByEmp.slice(pendingShown, pendingShown + PENDING_PAGE_SIZE);
+        pendingBody.insertAdjacentHTML('beforeend', next.map(renderPendingRow).join(''));
+        pendingShown += next.length;
+        document.getElementById('pendingCount').textContent = `Showing ${pendingShown} of ${missingByEmp.length}`;
+        document.getElementById('pendingLoadMoreWrap').style.display = pendingShown >= missingByEmp.length ? 'none' : 'block';
+      }
+
+      if (missingByEmp.length === 0) {
+        pendingBody.innerHTML = '<tr><td colspan="2" class="empty-state">No pending documents — every employee has uploaded all document types.</td></tr>';
+      } else {
+        document.getElementById('btnPendingLoadMore').addEventListener('click', loadMorePending);
+        loadMorePending();
+      }
+      document.getElementById('pendingCard').style.display = 'block';
+
+    } catch (err) {
+      statsArea.innerHTML = '<div class="alert error">' + err.message + '</div>';
+    }
+  })();
+
+  /*
+   * Export ALL active employees to an .xlsx file — full data, unfiltered.
+   * For filtered/sorted exports, use the "Export to Excel" button on the
+   * Employees page instead, which respects whatever search/department/sort
+   * is currently applied there.
+   */
+  document.getElementById('btnExportAll').addEventListener('click', async () => {
+    const btn = document.getElementById('btnExportAll');
+    btn.disabled = true;
+    btn.textContent = 'Preparing...';
+
+    try {
+      const data = await api.get('employees.list');
+      const rows = data.employees.map(e => ({
+        'Code': e.employee_code,
+        'Full Name': e.full_name,
+        'Department': e.department_name || '',
+        'Mobile': e.mobile || '',
+        'Email': e.email || '',
+        'Joining Date': e.joining_date || '',
+        'Date of Birth': e.date_of_birth || '',
+        'Employment Type': e.employment_type || '',
+        'Basic Salary': e.basic_salary || '',
+        'Address': e.address || '',
+        'Emergency Contact Name': e.emergency_contact_name || '',
+        'Emergency Contact Mobile': e.emergency_contact_mobile || '',
+        'Emergency Contact Relation': e.emergency_contact_relation || '',
+      }));
+
+      const worksheet = XLSX.utils.json_to_sheet(rows);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Employees');
+
+      const today = new Date().toISOString().slice(0, 10);
+      XLSX.writeFile(workbook, `employees_full_${today}.xlsx`);
+    } catch (err) {
+      alert('Export failed: ' + err.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Export Employees (Excel)';
+    }
+  });
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>

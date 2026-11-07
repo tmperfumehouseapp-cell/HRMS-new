@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Penalty rules — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=4">
+<link rel="stylesheet" href="assets/css/boss.css?v=1">
+<style>
+  .pr-tbl{width:100%;border-collapse:collapse;} .pr-tbl th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);text-align:left;padding:8px 8px;font-weight:700;} .pr-tbl td{padding:12px 8px;border-top:1px solid var(--line);font-size:14px;vertical-align:middle;} .pr-tbl tr.sel td{background:#fafbfc;} .pr-tbl tr[data-k]{cursor:pointer;}
+  .pr-edit{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;}
+  .pr-bar{height:11px;border-radius:99px;background:#eceef1;overflow:hidden;} .pr-bar i{display:block;height:100%;background:#ff7a2f;border-radius:99px;}
+  .pr-cols{display:grid;grid-template-columns:1.2fr 1fr;gap:14px;align-items:start;} @media (max-width:960px){.pr-cols{grid-template-columns:1fr;}}
+  .scrollx{overflow-x:auto;}
+  .np-steps{display:flex;gap:5px;margin:2px 0 14px;} .np-steps i{flex:1;height:5px;border-radius:9px;background:#e6e8ec;} .np-steps i.on{background:#ff7a2f;} .np-steps i.cur{background:#111;}
+  .np-sug{background:#edf8f2;border:1px solid #cfeadb;border-radius:16px;padding:12px 14px;font-size:14px;line-height:1.5;margin:10px 0;} .np-sug small{display:block;color:#4a505c;margin-top:3px;}
+  .np-sum{border:1px solid var(--line);border-radius:16px;padding:12px 14px;font-size:14px;line-height:1.6;background:#fafbfc;}
+  .np-pick{display:flex;flex-direction:column;gap:6px;margin:8px 0;}
+  .bd-modal textarea.bd-in{min-height:84px;font:inherit;}
+  .sc-tabs{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 14px;} .sc-tabs button{border:0;background:#fff;border-radius:99px;padding:8px 14px;font-weight:700;font-size:13px;cursor:pointer;font-family:inherit;color:#4a505c;box-shadow:0 1px 3px rgba(20,22,26,.08);} .sc-tabs button.on{background:#111;color:#fff;} .sc-tabs button em{font-style:normal;color:var(--muted);font-weight:600;margin-left:5px;} .sc-tabs button.on em{color:#c9ced8;} .sc-tabs button i{display:inline-block;width:7px;height:7px;border-radius:50%;background:#e0a100;margin-left:6px;}
+  .sc-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:10px 0 4px;} @media (max-width:700px){.sc-stats{grid-template-columns:1fr 1fr;}}
+  .sc-stat{background:#f7f8fa;border-radius:16px;padding:12px 14px;} .sc-stat small{display:block;font-size:12px;color:var(--muted);font-weight:600;} .sc-stat b{display:block;font-size:22px;font-weight:800;letter-spacing:-.02em;margin-top:3px;} .sc-stat.red b{color:#b3261e;}
+  .sc-seat{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid var(--line);border-radius:16px;padding:10px 14px;margin-top:8px;flex-wrap:wrap;} .sc-seat small{display:block;color:var(--muted);font-size:12.5px;}
+  .sc-row{display:flex;justify-content:space-between;gap:10px;border-top:1px solid var(--line);padding:10px 0;font-size:14px;align-items:center;} .sc-row:first-of-type{border-top:0;}
+  .sc-empty{background:#fff8e6;border:1px solid #f2d98a;border-radius:16px;padding:14px 16px;font-size:14px;line-height:1.5;margin-bottom:12px;}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><div><h1>Penalty rules</h1><div class="bd-sub" id="sub">What costs how much, who is charged, and who decides</div></div><div id="topBtns"><button class="bd-btn pri" id="newPen">+ New penalty</button></div></div>
+    <div class="content"><div class="bd" id="root"><div class="bd-empty">Loading…</div></div></div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=4"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script src="assets/js/boss_common.js?v=3"></script>
+<script>
+  guardPage();
+  renderSidebar('boss_penalties');
+  const { esc, $, toast, inr } = BD;
+  let R = null, C = null, O = null, SECT = 'all', SEL = '', ADMIN = false;
+  const LABEL = { hr: 'Punch in/out · HR', care: 'WhatsApp · Customer care', accounts: 'Finance · Cash', store: 'Store', dispatch: 'Parcels', retaildist: 'Retail displays', supplies: 'Supplies', sales: 'Sales', marketing: 'Marketing', other: 'By hand · Other' };
+  const secName = (x) => LABEL[x.code] || x.name;
+  const PER = { parcel: 'per parcel', day: 'a day', miss: 'each miss' };
+
+  async function load() {
+    try {
+      const [a, b, w, o] = await Promise.all([api.get('dp.rules'), api.get('dp.charged'), BD.who(), api.get('dp.pen_overview')]);
+      R = a; C = b; O = o; ADMIN = !!w.admin; if (!SEL && R.rules.length) SEL = R.rules[0].rkey; render();
+    } catch (e) { $('root').innerHTML = '<div class="bd-card"><div class="bd-empty"><b>Cannot open Penalty rules</b>' + esc(e.message) + '</div></div>'; }
+  }
+  // Claude's suggestion for rules made by the departments (shown on the rule; "Use" only fills the form, you still press Save)
+  const SUGR = { dsp_untr_remark: { amount: 50, mode: 'approve', grace: 0, text: '₹50 for each untraceable parcel that has no remark by 6 PM, every day (Sundays skipped), charged only after your yes.', why: 'It counts from the day you switch it on, never the past. A parcel with no remark for 3 days costs ₹150, so the owner cannot let one sleep.' } };
+  const seatTitle = (code) => { const s = R.seats.find((x) => x.code === code); return s ? s.title : (code || '-'); };
+  const sec = () => (O.sections || []).find((x) => x.code === SECT);
+  const tabsHtml = () => '<div class="sc-tabs"><button data-sc="all" class="' + (SECT === 'all' ? 'on' : '') + '">All sections</button>' + O.sections.map((x) => {
+    const none = !x.rule_keys.length && !x.duties.length && !x.hr_rules.length;
+    return '<button data-sc="' + esc(x.code) + '" class="' + (SECT === x.code ? 'on' : '') + '">' + esc(secName(x)) + (x.month.amount > 0 ? '<em>' + inr(x.month.amount) + '</em>' : '') + (none && x.code !== 'other' ? '<i title="No penalty set"></i>' : '') + '</button>';
+  }).join('') + '</div>';
+  function overviewHtml() {
+    let h = '<div class="bd-card"><div class="bd-h"><h2>Every section at a glance</h2><span class="bd-sub">Charged this month</span></div><div class="scrollx"><table class="pr-tbl"><thead><tr><th>Section</th><th>Rules</th><th>Duty penalties</th><th>Charged</th><th>Waiting</th><th>Missed duties</th><th></th></tr></thead><tbody>'
+      + O.sections.map((x) => {
+        const nr = x.rule_keys.length + x.hr_rules.length, nd = x.duties.length, none = !nr && !nd;
+        return '<tr data-sc="' + esc(x.code) + '" style="cursor:pointer"><td><b>' + esc(secName(x)) + '</b></td><td>' + (nr || '<span class="bd-sub">none</span>') + '</td><td>' + (nd ? nd + ' of ' + x.duties_total + ' duties' : '<span class="bd-sub">' + (x.duties_total ? '0 of ' + x.duties_total + ' duties' : 'none') + '</span>') + '</td><td><b>' + (x.month.amount > 0 ? inr(x.month.amount) : '–') + '</b>' + (x.month.count ? ' <span class="bd-sub">' + x.month.count + ' time' + (x.month.count === 1 ? '' : 's') + '</span>' : '') + '</td><td>' + (x.month.waiting_count ? inr(x.month.waiting_amount) + ' <span class="bd-sub">' + x.month.waiting_count + '</span>' : '–') + '</td><td>' + (x.month.missed || '–') + '</td><td>' + (none && x.code !== 'other' ? '<span class="bd-chip warn">No penalty set</span>' : '<button class="bd-btn sm" data-sc="' + esc(x.code) + '">Check</button>') + '</td></tr>';
+      }).join('') + '</tbody></table></div><div class="bd-sub" style="margin-top:10px">Click a section to check its rules, who is charged, and to give a seat to a person.</div>'
+      + (ADMIN ? '<div style="margin-top:10px"><button class="bd-btn sm" id="addSec">+ Add a section (for example Offices)</button></div>' : '') + '</div>';
+    const tot = C.by_seat.reduce((a, x) => a + x.amount, 0), mx = Math.max(1, ...C.by_seat.map((x) => x.amount));
+    h += '<div class="bd-card"><div class="bd-h"><h2>Charged this month by Boss rules</h2><span class="bd-sub">' + inr(tot) + ' in all</span></div>'
+      + (C.by_seat.length ? C.by_seat.map((x) => '<div style="display:flex;align-items:center;gap:12px;margin:12px 0"><div style="width:42%;font-weight:700;font-size:14px">' + esc(x.seat) + '</div><div class="pr-bar" style="flex:1"><i style="width:' + Math.round(100 * x.amount / mx) + '%"></i></div><div style="width:70px;text-align:right;font-weight:700">' + inr(x.amount) + '</div></div>').join('') : '<div class="bd-empty" style="padding:16px">Nothing charged yet this month.</div>')
+      + (C.waiting.count ? '<div class="bd-call info">' + C.waiting.count + ' recorded penalt' + (C.waiting.count === 1 ? 'y' : 'ies') + ' (' + inr(C.waiting.amount) + ') ' + (C.mode === 'live' ? 'waiting for your yes in the Inbox.' : 'would be charged if the Boss Engine were Fully live.') + '</div>' : '') + '</div>';
+    return h;
+  }
+  function sectionHtml(x) {
+    const rules = R.rules.filter((r) => x.rule_keys.indexOf(r.rkey) > -1);
+    let h = '<div class="bd-card"><div class="bd-h"><h2>' + esc(secName(x)) + '</h2>' + (x.code !== 'other' ? '<button class="bd-btn pri sm" id="newSec">+ New penalty for this section</button>' : '') + '</div><div class="bd-sub">' + esc(x.about || '') + '</div>'
+      + '<div class="sc-stats"><div class="sc-stat"><small>Charged this month</small><b>' + inr(x.month.amount) + '</b></div><div class="sc-stat"><small>Times charged</small><b>' + x.month.count + '</b></div><div class="sc-stat"><small>Waiting / recorded</small><b>' + inr(x.month.waiting_amount) + '</b></div><div class="sc-stat ' + (x.month.missed ? 'red' : '') + '"><small>Duties missed</small><b>' + x.month.missed + '</b></div></div></div>';
+    if (!rules.length && !x.duties.length && !x.hr_rules.length && x.code !== 'other') h += '<div class="sc-empty"><b>No penalty is set for ' + esc(secName(x)) + ' yet.</b> Nobody is charged here, whatever they miss. Press "+ New penalty for this section", or give a duty a penalty in Duties.</div>';
+    if (x.seats.length && x.code !== 'other') h += '<div class="bd-card"><div class="bd-h"><h2>Who does this work (who is charged)</h2></div>' + x.seats.map((st) => '<div class="sc-seat"><div><b>' + esc(st.title) + '</b><small>' + (st.holders.length ? esc(st.holders.map((p) => p.name).join(', ')) : '<span style="color:#b3261e">Nobody seated: nobody can be charged</span>') + '</small></div>' + (ADMIN ? '<div style="display:flex;gap:6px"><select class="bd-in" data-seatsel="' + esc(st.code) + '" style="min-width:160px"><option value="">Choose a person…</option>' + (PS.setup ? PS.setup.employees.map((e) => '<option value="' + e.id + '">' + esc(e.name) + '</option>').join('') : '') + '</select><button class="bd-btn sm pri" data-seatgo="' + esc(st.code) + '">Seat</button></div>' : '') + '</div>').join('') + '</div>';
+    if (rules.length) {
+      h += '<div class="bd-card"><div class="bd-h"><h2>Rules: what costs how much</h2></div><div class="scrollx"><table class="pr-tbl"><thead><tr><th>Rule</th><th>Amount</th><th>Charged to</th><th>When</th><th>Takes it</th></tr></thead><tbody>'
+        + rules.map((r) => '<tr data-k="' + r.rkey + '" class="' + (SEL === r.rkey ? 'sel' : '') + '"><td><b>' + esc(r.title) + '</b>' + (r.active ? '' : ' <span class="bd-chip">Off</span>') + (r.topic === 'custom' ? ' <span class="bd-chip info">Yours</span>' : '') + '</td><td>' + (r.amount > 0 ? inr(r.amount) + ' <span class="bd-sub">' + PER[r.per] + '</span>' : '<span class="bd-chip warn">You decide</span>') + '</td><td>' + esc(r.seat === 'self' ? 'The person himself' : seatTitle(r.seat)) + (r.holders.length ? '<div class="bd-sub">' + esc(r.holders.join(', ')) + '</div>' : (r.seat && r.seat !== 'self' ? '<div class="bd-sub" style="color:#b3261e">Nobody seated</div>' : '')) + '</td><td>' + esc(r.when || '') + (r.grace_min ? ' <span class="bd-sub">+ ' + r.grace_min + ' min</span>' : '') + '</td><td>' + (r.mode === 'auto' ? 'Automatically' : 'Inbox approval') + (r.topic === 'custom' ? '<div style="margin-top:6px"><button class="bd-btn sm" data-flag="' + r.rkey + '">Flag a miss</button></div>' : '') + '</td></tr>').join('') + '</tbody></table></div></div>';
+      const r = rules.find((q) => q.rkey === SEL) || rules[0]; SEL = r.rkey;
+      h += '<div class="bd-card"><div class="bd-h"><h2>Edit rule · ' + esc(r.title) + '</h2></div><div class="pr-edit">'
+        + '<div class="bd-f"><label>Amount (rupees)</label><input class="bd-in" id="e_amt" type="number" min="0" inputmode="numeric" value="' + r.amount + '" ' + (ADMIN ? '' : 'disabled') + '><div class="hint">' + PER[r.per] + '. 0 means nobody is charged yet.</div></div>'
+        + '<div class="bd-f"><label>Charged to (seat)</label><select class="bd-in" id="e_seat" ' + (ADMIN ? '' : 'disabled') + '>' + R.seats.map((s) => '<option value="' + esc(s.code) + '" ' + (s.code === r.seat ? 'selected' : '') + '>' + esc(s.title) + '</option>').join('') + '</select></div>'
+        + '<div class="bd-f"><label>Takes it</label><select class="bd-in" id="e_mode" ' + (ADMIN ? '' : 'disabled') + '><option value="auto" ' + (r.mode === 'auto' ? 'selected' : '') + '>Automatically</option><option value="approve" ' + (r.mode === 'approve' ? 'selected' : '') + '>After my yes in the Inbox</option></select></div>'
+        + '<div class="bd-f"><label>Grace (minutes)</label><input class="bd-in" id="e_grace" type="number" min="0" inputmode="numeric" value="' + r.grace_min + '" ' + (ADMIN ? '' : 'disabled') + '></div>'
+        + '<div class="bd-f"><label>Rule is</label><select class="bd-in" id="e_act" ' + (ADMIN ? '' : 'disabled') + '><option value="1" ' + (r.active ? 'selected' : '') + '>On</option><option value="0" ' + (!r.active ? 'selected' : '') + '>Off</option></select></div></div>'
+        + (SUGR[r.rkey] && ADMIN && !(r.active && r.amount > 0) ? '<div class="np-sug"><b>Claude suggests:</b> ' + esc(SUGR[r.rkey].text) + '<small>' + esc(SUGR[r.rkey].why) + '</small><button class="bd-btn sm" id="useSug" style="margin-top:8px">Use this suggestion</button></div>' : '')
+        + (ADMIN ? '<button class="bd-btn pri" id="sv" style="margin-top:6px">Save</button>' : '<div class="bd-sub">Only Admin or HR can change a rule.</div>') + '</div>';
+    }
+    if (x.hr_rules.length) h += '<div class="bd-card"><div class="bd-h"><h2>HR rules (automatic)</h2><a class="bd-btn sm" href="penalties.html">Edit in HR > Penalties</a></div>' + x.hr_rules.map((q) => '<div class="sc-row"><div><b>' + esc(q.name) + '</b></div><div>' + (q.amount > 0 ? inr(q.amount) : '<span class="bd-chip warn">No amount</span>') + ' ' + (q.active ? '<span class="bd-chip ok">On</span>' : '<span class="bd-chip">Off</span>') + '</div></div>').join('') + '</div>';
+    if (x.code !== 'other') h += '<div class="bd-card"><div class="bd-h"><h2>Duties with a penalty</h2><a class="bd-btn sm" href="boss_engine.html?tab=work">Edit in All work</a></div>'
+      + (x.duties.length ? x.duties.map((d) => '<div class="sc-row"><div><b>' + esc(d.title) + '</b><div class="bd-sub">' + esc(d.freq) + ' · due ' + esc(d.due) + ' · ' + (d.mode === 'auto' ? 'automatic' : 'after your yes') + (d.holders.length ? ' · ' + esc(d.holders.join(', ')) : ' · nobody seated') + (d.status === 'proposed' ? ' · <b>not live yet</b>' : '') + '</div></div><div><b>' + inr(d.amount) + '</b></div></div>').join('') : '<div class="bd-sub">None of this section\'s ' + x.duties_total + ' dut' + (x.duties_total === 1 ? 'y has' : 'ies have') + ' a penalty.</div>') + '</div>';
+    h += '<div class="bd-card"><div class="bd-h"><h2>Charged this month</h2><span class="bd-sub">' + inr(x.month.amount) + '</span></div>' + (x.people.length ? x.people.map((p) => '<div class="sc-row"><div><b>' + esc(p.name) + '</b> <span class="bd-sub">' + p.count + ' time' + (p.count === 1 ? '' : 's') + '</span></div><div><b>' + inr(p.amount) + '</b></div></div>').join('') : '<div class="bd-empty" style="padding:14px">Nobody was charged in this section this month.</div>') + '</div>';
+    return h;
+  }
+  function render() {
+    const modeNote = R.mode === 'live' ? '' : '<div class="bd-call warn"><b>' + (R.mode === 'shadow' ? 'Test mode:' : 'Staff-see-tasks mode:') + '</b> penalties are only recorded. Nobody is charged until the Boss Engine is Fully live (Boss > Setup).</div>';
+    const x = SECT === 'all' ? null : sec(); if (!x) SECT = 'all';
+    let h = modeNote + tabsHtml() + (SECT === 'all' ? overviewHtml() : sectionHtml(x))
+      + '<div class="bd-sub" style="margin:8px 4px">All penalties share the day and month limit (now ' + inr(R.limits.day) + ' a day, ' + inr(R.limits.month) + ' a month per person). Your CA still confirms the monthly limit.</div>';
+    $('root').innerHTML = h;
+    document.querySelectorAll('[data-sc]').forEach((el) => el.onclick = (e) => { e.stopPropagation(); SECT = el.dataset.sc; const s2 = sec(); if (s2 && s2.rule_keys.length && s2.rule_keys.indexOf(SEL) < 0) SEL = s2.rule_keys[0]; if (s2 && ADMIN && !PS.setup) { api.get('dp.pen_setup').then((d) => { PS.setup = d; render(); }).catch(() => {}); } render(); window.scrollTo(0, 0); });
+    document.querySelectorAll('tr[data-k]').forEach((tr) => tr.onclick = (e) => { if (e.target.closest('[data-flag]')) return; SEL = tr.dataset.k; render(); });
+    document.querySelectorAll('[data-flag]').forEach((b) => b.onclick = () => flagMiss(b.dataset.flag));
+    const ns = $('newSec'); if (ns) ns.onclick = () => openNew(SECT);
+    const as = $('addSec'); if (as) as.onclick = addSection;
+    document.querySelectorAll('[data-seatgo]').forEach((b) => b.onclick = async () => {
+      const code = b.dataset.seatgo, sel = document.querySelector('select[data-seatsel="' + code + '"]'), v = sel && sel.value; if (!v) return toast('Choose a person.', true);
+      const st = sec().seats.find((q) => q.code === code); const ids = (st ? st.holders.map((p) => p.id) : []).filter((i) => i !== Number(v)); ids.unshift(Number(v));
+      try { await api.post('dp.seat_set', { code, emp_ids: ids }); toast('Seated.'); load(); } catch (e) { toast(e.message, true); }
+    });
+    const us = $('useSug'); if (us) us.onclick = () => { const q = SUGR[SEL]; $('e_amt').value = q.amount; $('e_mode').value = q.mode; $('e_grace').value = q.grace * 1440; $('e_act').value = '1'; toast('Filled in. Press Save to switch the rule on.'); };
+    const sv = $('sv'); if (sv) sv.onclick = async () => {
+      try { await api.post('dp.rule_save', { rkey: SEL, amount: Number($('e_amt').value || 0), seat: $('e_seat').value, mode: $('e_mode').value, grace_min: Number($('e_grace').value || 0), active: Number($('e_act').value) }); toast('Saved.'); load(); } catch (e) { toast(e.message, true); }
+    };
+  }
+  function addSection() {
+    const m = BD.modal('<h3>Add a section</h3><div class="bd-sub" style="margin-bottom:10px">For example Offices. It gets three seats (boss, checker, team); you then seat people here and add penalties to it.</div><div class="bd-f"><label>Name</label><input class="bd-in" id="as_n" maxlength="60"></div><div class="bd-f"><label>What does it do? (one line)</label><input class="bd-in" id="as_a" maxlength="200"></div><div class="acts"><button class="bd-btn" id="as_x">Cancel</button><button class="bd-btn pri" id="as_ok">Create</button></div>');
+    m.querySelector('#as_x').onclick = BD.close;
+    m.querySelector('#as_ok').onclick = async () => { try { const r = await api.post('dp.pen_dept_create', { name: m.querySelector('#as_n').value, about: m.querySelector('#as_a').value }); BD.close(); toast('Section created.'); SECT = r.code || 'all'; PS.setup = null; load(); } catch (e) { toast(e.message, true); } };
+  }
+
+  /* ---------- New penalty with Claude ---------- */
+  const PS = { setup: null }, NP = { step: 0, d: null, text: '', byClaude: false };
+  const STEPS = ['Name', 'Department', 'Seat', 'Person', 'Amount', 'How', 'Check'];
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition; let rec = null;
+  function secOf(code) { return PS.setup.sections.find((s) => s.code === code); }
+  function seatsOf(code) { const s = secOf(code); return s ? s.seats : []; }
+  async function openNew(sect) {
+    try { if (!PS.setup) PS.setup = await api.get('dp.pen_setup'); } catch (e) { return toast(e.message, true); }
+    NP.step = -1; NP.d = null; NP.text = ''; NP.sect = (typeof sect === 'string' && sect) ? sect : ''; drawNew();
+  }
+  function bar() { return '<div class="np-steps">' + STEPS.map((x, i) => '<i class="' + (i < NP.step ? 'on' : (i === NP.step ? 'cur' : '')) + '"></i>').join('') + '</div>'; }
+  const sug = (why, extra) => '<div class="np-sug"><b>Claude suggests:</b> ' + extra + (why ? '<small>' + esc(why) + '</small>' : '') + '</div>';
+  function drawNew() {
+    const d = NP.d; let h = '', foot = '';
+    if (NP.step < 0) {
+      h = '<h3>New penalty</h3><div class="bd-sub" style="margin-bottom:10px">Tell Claude what it is for. Claude fills in the rest and you only say yes or change it.</div><textarea class="bd-in" id="np_t" maxlength="600" placeholder="For example: a penalty if the dustbin at Oberon 2 is not emptied by 6 PM">' + esc(NP.text) + '</textarea>'
+        + (SR ? '<div style="margin-top:8px"><button class="bd-btn" id="np_v" type="button">🎤 Say it by voice</button></div>' : '');
+      foot = '<button class="bd-btn" id="np_x">Cancel</button><button class="bd-btn pri" id="np_go">Ask Claude</button>';
+    } else {
+      const why = d.why || {}; const ss = seatsOf(d.dept); const seat = ss.find((x) => x.code === d.seat);
+      h = '<h3>' + esc(STEPS[NP.step]) + ' <span class="bd-sub" style="font-weight:600">· step ' + (NP.step + 1) + ' of ' + STEPS.length + '</span></h3>' + bar();
+      if (NP.step === 0) h += '<div class="bd-f"><label>What is the penalty for?</label><input class="bd-in" id="f_title" maxlength="120" value="' + esc(d.title) + '"></div>' + sug('', 'this name. Keep it short and plain, the person sees it.');
+      if (NP.step === 1) h += '<div class="bd-f"><label>Department</label><select class="bd-in" id="f_dept">' + PS.setup.sections.map((s) => '<option value="' + esc(s.code) + '" ' + (s.code === d.dept ? 'selected' : '') + '>' + esc(s.name) + '</option>').join('') + (PS.setup.admin ? '<option value="__new">+ New department…</option>' : '') + '</select></div><div id="newDept"></div>' + sug(why.dept, '<b>' + esc((secOf(d.dept) || {}).name || '') + '</b>');
+      if (NP.step === 2) h += '<div class="bd-f"><label>Seat (who in the department is charged)</label><select class="bd-in" id="f_seat">' + ss.map((x) => '<option value="' + esc(x.code) + '" ' + (x.code === d.seat ? 'selected' : '') + '>' + esc(x.title) + '</option>').join('') + '<option value="self" ' + (d.seat === 'self' ? 'selected' : '') + '>The person himself (chosen when you flag a miss)</option></select></div>' + sug(why.seat, '<b>' + esc(seat ? seat.title : 'The person himself') + '</b>');
+      if (NP.step === 3) {
+        if (d.seat === 'self') h += '<div class="bd-call info">This penalty is charged to whoever you name when you flag a miss. Nothing to choose here.</div>';
+        else if (d.holders.length) h += '<div class="bd-call info"><b>' + esc(d.holders.map((x) => x.name).join(', ')) + '</b> already sits in this seat, so he is charged. To change him, use Departments.</div>';
+        else if (!PS.setup.admin) h += '<div class="bd-call warn">Nobody sits in this seat yet. Admin or HR seats a person in Departments. The penalty is still saved.</div>';
+        else h += '<div class="bd-sub">Nobody sits in this seat yet. Claude never seats anybody without your yes.</div>' + (d.suggest.length ? sug('From the last 30 days of work.', d.suggest.map((p) => '<b>' + esc(p.name) + '</b>: ' + esc(p.line)).join('<br>')) + '<div class="np-pick">' + d.suggest.map((p) => '<button class="bd-btn ' + (NP.pid === p.id ? 'pri' : '') + '" data-pid="' + p.id + '" style="text-align:left">Seat ' + esc(p.name) + '</button>').join('') + '</div>' : '')
+          + '<div class="bd-f"><label>Or choose someone</label><select class="bd-in" id="f_pid"><option value="">Nobody yet</option>' + PS.setup.employees.map((e) => '<option value="' + e.id + '" ' + (NP.pid === e.id ? 'selected' : '') + '>' + esc(e.name) + '</option>').join('') + '</select></div>';
+      }
+      if (NP.step === 4) h += '<div class="pr-edit"><div class="bd-f"><label>Amount (rupees)</label><input class="bd-in" id="f_amt" type="number" min="0" inputmode="numeric" value="' + d.amount + '"></div><div class="bd-f"><label>Charged</label><select class="bd-in" id="f_per"><option value="miss" ' + (d.per === 'miss' ? 'selected' : '') + '>Each time it is missed</option><option value="day" ' + (d.per === 'day' ? 'selected' : '') + '>For each day</option></select></div></div>' + sug(why.amount, '<b>' + inr(d.amount) + '</b> ' + (d.per === 'day' ? 'a day' : 'each time') + '. Limits: ' + inr(R.limits.day) + ' a day, ' + inr(R.limits.month) + ' a month per person.');
+      if (NP.step === 5) h += '<div class="pr-edit"><div class="bd-f"><label>Takes it</label><select class="bd-in" id="f_mode"><option value="auto" ' + (d.mode === 'auto' ? 'selected' : '') + '>Automatically</option><option value="approve" ' + (d.mode === 'approve' ? 'selected' : '') + '>After my yes in the Inbox</option></select></div><div class="bd-f"><label>Grace (minutes)</label><input class="bd-in" id="f_grace" type="number" min="0" inputmode="numeric" value="' + d.grace_min + '"></div></div><div class="bd-f"><label>When (shown to the person)</label><input class="bd-in" id="f_when" maxlength="120" value="' + esc(d.when_text || '') + '" placeholder="by 6 PM every day"></div>' + sug(why.mode, '<b>' + (d.mode === 'auto' ? 'Automatically' : 'After your yes') + '</b>');
+      if (NP.step === 6) {
+        const who = d.seat === 'self' ? 'the person you name' : (d.holders.length ? d.holders.map((x) => x.name).join(', ') : (NP.pid ? (PS.setup.employees.find((e) => e.id === NP.pid) || {}).name : 'nobody seated yet'));
+        h += '<div class="np-sum"><b>' + esc(d.title) + '</b><br>' + inr(d.amount) + ' ' + (d.per === 'day' ? 'a day' : 'each time') + ' · charged to <b>' + esc(who) + '</b> (' + esc((secOf(d.dept) || {}).name || '') + (d.seat === 'self' ? '' : ' · ' + esc((seat || {}).title || '')) + ')<br>' + (d.mode === 'auto' ? 'Taken automatically' : 'Taken after your yes in the Inbox') + (d.grace_min ? ' · ' + d.grace_min + ' min grace' : '') + (d.when_text ? ' · ' + esc(d.when_text) : '') + '</div>'
+          + '<div class="bd-call info"><b>How a miss is found:</b> the HRMS has no data to see this by itself, so you or the department checker press <b>Flag a miss</b> on this rule. ' + (R.mode === 'live' ? 'It is charged by the rules above.' : 'Now it is only recorded: nobody is charged until the Boss Engine is Fully live.') + '</div>'
+          + '<div class="bd-f"><label>Want something changed? Tell Claude</label><div style="display:flex;gap:8px"><input class="bd-in" id="np_fix" placeholder="for example: make it 200 and charge the checker"><button class="bd-btn" id="np_fixgo">Change</button></div></div>';
+      }
+      foot = '<button class="bd-btn" id="np_x">Cancel</button><button class="bd-btn" id="np_back">Back</button>' + (NP.step < 6 ? '<button class="bd-btn pri" id="np_next">Yes, that is right</button>' : '<button class="bd-btn pri" id="np_mk">Create the penalty</button>');
+    }
+    const m = BD.modal(h + '<div class="acts">' + foot + '</div>', { sticky: true });
+    const on = (id, f) => { const e = m.querySelector('#' + id); if (e) e.onclick = f; };
+    on('np_x', BD.close); on('np_back', () => { readStep(m); NP.step = NP.step <= 0 ? -1 : NP.step - 1; drawNew(); });
+    on('np_next', () => { if (!readStep(m)) return; NP.step++; if (NP.step === 3 && (NP.d.seat === 'self')) { /* nothing to choose */ } drawNew(); });
+    on('np_go', async () => {
+      const t = m.querySelector('#np_t').value.trim(); if (t.length < 4) return toast('Write a few words about it.', true);
+      NP.text = t; const b = m.querySelector('#np_go'); b.disabled = true; b.textContent = 'Claude is thinking…';
+      try { const r = await api.post('dp.pen_draft', { text: t }); NP.d = r.draft; NP.byClaude = r.by_claude; NP.pid = 0; NP.step = 0;
+        if (NP.sect && secOf(NP.sect) && NP.d.dept !== NP.sect) { const st = seatsOf(NP.sect)[0]; NP.d.dept = NP.sect; NP.d.seat = st ? st.code : 'self'; NP.d.holders = st ? st.holders : []; NP.d.suggest = []; NP.d.why = Object.assign({}, NP.d.why, { dept: 'You are adding this from the ' + secOf(NP.sect).name + ' page.', seat: '' }); }
+        drawNew(); } catch (e) { toast(e.message, true); b.disabled = false; b.textContent = 'Ask Claude'; }
+    });
+    on('np_v', (ev) => { const b = ev.currentTarget; if (rec) { rec.stop(); rec = null; return; } rec = new SR(); rec.lang = 'en-IN'; rec.interimResults = false; rec.onresult = (e) => { const t = e.results[0][0].transcript; const x = m.querySelector('#np_t'); x.value = (x.value ? x.value + ' ' : '') + t; }; rec.onend = () => { rec = null; b.textContent = '🎤 Say it by voice'; }; b.textContent = '● Listening… tap to stop'; rec.start(); });
+    on('np_fixgo', async () => {
+      const f = m.querySelector('#np_fix').value.trim(); if (f.length < 3) return toast('Write what to change.', true);
+      try { const r = await api.post('dp.pen_draft', { text: NP.text, fix: f, draft: NP.d }); NP.d = r.draft; NP.pid = 0; toast('Changed.'); drawNew(); } catch (e) { toast(e.message, true); }
+    });
+    on('np_mk', async () => {
+      const d = NP.d, b = m.querySelector('#np_mk'); b.disabled = true;
+      try { const r = await api.post('dp.pen_create', { title: d.title, seat: d.seat, amount: d.amount, per: d.per, mode: d.mode, grace_min: d.grace_min, when_text: d.when_text, person_id: NP.pid || 0 }); BD.close(); toast('Penalty created' + (r.seated ? ' · ' + r.seated + ' now sits in the seat' : '') + (r.mode === 'live' ? '.' : ' (test mode: only recorded).')); SEL = r.rkey; PS.setup = null; load(); } catch (e) { toast(e.message, true); b.disabled = false; }
+    });
+    m.querySelectorAll('[data-pid]').forEach((b) => b.onclick = () => { NP.pid = Number(b.dataset.pid); drawNew(); });
+    const fd = m.querySelector('#f_dept'); if (fd) fd.onchange = () => { if (fd.value !== '__new') { m.querySelector('#newDept').innerHTML = ''; return; } m.querySelector('#newDept').innerHTML = '<div class="bd-card" style="box-shadow:none;border:1px solid var(--line);padding:12px"><div class="bd-f"><label>New department name</label><input class="bd-in" id="nd_n" maxlength="60"></div><div class="bd-f"><label>What does it do? (one line)</label><input class="bd-in" id="nd_a" maxlength="200"></div><div class="bd-sub">It is created with three seats: Boss, Checker and Team. You can change who sits in them in Departments.</div><button class="bd-btn pri" id="nd_ok" style="margin-top:8px">Create department</button></div>';
+      m.querySelector('#nd_ok').onclick = async () => { try { const r = await api.post('dp.pen_dept_create', { name: m.querySelector('#nd_n').value, about: m.querySelector('#nd_a').value }); PS.setup.sections = r.sections; NP.d.dept = r.code; NP.d.seat = (seatsOf(r.code)[0] || {}).code || 'self'; NP.d.why = Object.assign({}, NP.d.why, { dept: 'You just made this department.', seat: 'The team seat does the work.' }); NP.d.holders = []; NP.d.suggest = []; toast('Department created.'); drawNew(); } catch (e) { toast(e.message, true); } }; };
+  }
+  /** reads the field of the current step; false = something is wrong */
+  function readStep(m) {
+    const d = NP.d, v = (id) => { const e = m.querySelector('#' + id); return e ? e.value : null; };
+    if (NP.step === 0 && v('f_title') !== null) { if (v('f_title').trim().length < 3) { toast('Give it a short name.', true); return false; } d.title = v('f_title').trim(); }
+    if (NP.step === 1 && v('f_dept') !== null) { if (v('f_dept') === '__new') { toast('Create the new department first, or pick one from the list.', true); return false; } if (v('f_dept') !== d.dept) { d.dept = v('f_dept'); d.seat = (seatsOf(d.dept)[0] || {}).code || 'self'; d.holders = []; d.suggest = []; d.why = Object.assign({}, d.why, { dept: '', seat: '' }); } }
+    if (NP.step === 2 && v('f_seat') !== null && v('f_seat') !== d.seat) { d.seat = v('f_seat'); NP.pid = 0; const s = seatsOf(d.dept).find((x) => x.code === d.seat); d.holders = s ? s.holders : []; d.suggest = []; }
+    if (NP.step === 3 && v('f_pid') !== null && v('f_pid') !== '') NP.pid = Number(v('f_pid'));
+    if (NP.step === 4 && v('f_amt') !== null) { const a = Number(v('f_amt')); if (!(a >= 0) || a > R.limits.month) { toast('The amount must be 0 to ' + R.limits.month + '.', true); return false; } d.amount = a; d.per = v('f_per'); }
+    if (NP.step === 5 && v('f_mode') !== null) { d.mode = v('f_mode'); d.grace_min = Math.max(0, Number(v('f_grace') || 0)); d.when_text = (v('f_when') || '').trim(); }
+    return true;
+  }
+  async function flagMiss(rkey) {
+    const r = R.rules.find((x) => x.rkey === rkey); if (!r) return;
+    try { if (!PS.setup) PS.setup = await api.get('dp.pen_setup'); } catch (e) { return toast(e.message, true); }
+    const hold = r.holders && r.holders.length ? r.holders[0] : '';
+    const m = BD.modal('<h3>Flag a miss · ' + esc(r.title) + '</h3><div class="bd-sub" style="margin-bottom:10px">' + (hold ? 'Charged to ' + esc(hold) + ' unless you pick someone else.' : 'Nobody sits in this seat. Pick the person.') + '</div>'
+      + '<div class="bd-f"><label>Person</label><select class="bd-in" id="fl_p"><option value="">' + (hold ? 'The seat holder (' + esc(hold) + ')' : 'Choose a person…') + '</option>' + PS.setup.employees.map((e) => '<option value="' + e.id + '">' + esc(e.name) + '</option>').join('') + '</select></div>'
+      + '<div class="pr-edit"><div class="bd-f"><label>Date</label><input class="bd-in" id="fl_d" type="date" value="' + new Date().toISOString().slice(0, 10) + '"></div><div class="bd-f"><label>How many times</label><input class="bd-in" id="fl_c" type="number" min="1" max="20" value="1"></div></div>'
+      + '<div class="bd-f"><label>What was missed? (the person sees this)</label><textarea class="bd-in" id="fl_n" maxlength="300"></textarea></div><div class="acts"><button class="bd-btn" id="fl_x">Cancel</button><button class="bd-btn pri" id="fl_ok">Flag it</button></div>');
+    m.querySelector('#fl_x').onclick = BD.close;
+    m.querySelector('#fl_ok').onclick = async () => {
+      try { const x = await api.post('dp.pen_flag', { rkey, emp_id: Number(m.querySelector('#fl_p').value || 0), date: m.querySelector('#fl_d').value, count: Number(m.querySelector('#fl_c').value || 1), note: m.querySelector('#fl_n').value }); BD.close();
+        toast(x.who + ': ' + (x.pen_state === 'applied' ? 'penalty ' + inr(x.amount) + ' given.' : (x.pen_state === 'pending' ? inr(x.amount) + ' is waiting for your yes in the Inbox.' : (x.pen_state === 'shadow' ? inr(x.amount) + ' recorded (test mode, nobody charged).' : 'recorded, no amount yet.')))); PS.setup = null; load(); } catch (e) { toast(e.message, true); }
+    };
+  }
+  document.getElementById('newPen').onclick = () => openNew(SECT === 'all' ? '' : SECT);
+  load().then(() => { if (/[?&]new=1/.test(location.search) || location.hash === '#new') openNew(''); });
+</script>
+</body>
+</html>

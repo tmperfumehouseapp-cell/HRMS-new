@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Employee Details — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css">
+<style>
+  .expiry-ok{color:var(--ok-fg);font-weight:600;}
+  .expiry-warn{color:#b45309;font-weight:600;}
+  .expiry-bad{color:var(--bad-fg);font-weight:600;}
+  .profile-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .profile-name-block h2 { margin: 0 0 4px; }
+  .detail-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 18px;
+    padding: 20px;
+  }
+  .detail-item .label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted, #888);
+    margin-bottom: 4px;
+  }
+  .detail-item .value { font-size: 14px; color: var(--text, #1a1a1a); }
+  .back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--muted, #666);
+    text-decoration: none;
+    margin-bottom: 6px;
+  }
+  .back-link:hover { color: var(--text, #1a1a1a); }
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar">
+      <h1 id="pageTitle">Employee Details</h1>
+    </div>
+    <div class="content">
+      <a href="#" id="backLink" class="back-link">&larr; Back</a>
+      <div id="alertBox"></div>
+
+      <div class="card" id="profileCard" style="display:none;">
+        <div class="card-head profile-head">
+          <div style="display:flex; align-items:center; gap:16px;">
+            <div id="profPhoto" style="width:64px; height:64px; border-radius:50%; overflow:hidden; background:#f2f2f4; border:2px solid #eee; display:flex; align-items:center; justify-content:center; flex-shrink:0; color:#999;">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
+            </div>
+            <div class="profile-name-block">
+              <h2 id="profName">—</h2>
+              <span class="badge" id="profCode"></span>
+            </div>
+          </div>
+          <button class="btn" id="btnEditEmployee" style="width:auto;">Edit Employee</button>
+        </div>
+        <div class="detail-grid" id="detailGrid"></div>
+      </div>
+
+      <div class="card" id="loadingCard">
+        <div style="padding:20px;" class="loading">Loading employee...</div>
+      </div>
+
+      <div class="card" id="waGroupsCard" style="display:none;">
+        <div class="card-head"><h2 id="waGroupsTitle">WhatsApp Groups</h2></div>
+        <div id="waGroupsBody" style="padding:16px 20px;"></div>
+      </div>
+
+      <div class="card" id="excelFilesCard" style="display:none;">
+        <div class="card-head"><h2 id="excelFilesTitle">Excel Files</h2></div>
+        <div id="excelFilesBody" style="padding:16px 20px;"></div>
+      </div>
+
+      <div class="card" id="pendingDocsCard" style="display:none;">
+        <div class="card-head"><h2 id="pendingDocsTitle">Pending Documents</h2></div>
+        <div id="pendingDocsBody" style="padding:16px 20px;"></div>
+      </div>
+
+      <div class="card" id="sourcesCard" style="display:none;">
+        <div class="card-head"><h2 id="sourcesTitle">Found In</h2></div>
+        <table>
+          <thead>
+            <tr><th>Type</th><th>Source</th><th>Sheet / Group</th><th>Row</th><th>Matched By</th><th style="width:80px;"></th></tr>
+          </thead>
+          <tbody id="sourcesTableBody"></tbody>
+        </table>
+      </div>
+
+      <div class="card" id="docsCard" style="display:none;">
+        <div class="card-head">
+          <h2 id="docsTitle">Documents</h2>
+        </div>
+        <table>
+          <thead>
+            <tr><th>Document</th><th>Number</th><th>Issue Date</th><th>Expiry</th><th>Status</th><th>Remarks</th><th style="width:100px;">Actions</th></tr>
+          </thead>
+          <tbody id="docsTableBody">
+            <tr><td colspan="7" class="loading">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card" id="agreementsCard" style="display:none;">
+        <div class="card-head"><h2 id="agreementsTitle">Agreements</h2></div>
+        <table>
+          <thead>
+            <tr><th>Agreement</th><th>Status</th><th>Signed on</th><th>Reference</th><th style="width:120px;">Actions</th></tr>
+          </thead>
+          <tbody id="agreementsTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="assets/js/config.js"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script>
+  guardPage();
+
+  // Link to an uploaded file through the file viewer (api.php files.view),
+  // with the login carried in the link. Direct /uploads/ links 404 on this
+  // hosting, and this needs no other script to run.
+  function fileUrl(rel) {
+    return API_BASE_URL + '?action=files.view&path=' + encodeURIComponent(String(rel || '').replace(/^\/+/, ''))
+      + '&token=' + encodeURIComponent(api.token() || '');
+  }
+  renderSidebar('employees');
+
+  // Remember where the user came from (Targets, Performance, Attendance…)
+  // so both "Back" and the post-save redirect from the Employees edit form
+  // can return there. Captured once on arrival, because navigating to the
+  // edit form would otherwise overwrite the referrer.
+  (function captureOrigin() {
+    const ref = document.referrer;
+    if (!ref) return;
+    try {
+      const u = new URL(ref);
+      if (u.origin !== location.origin) return;
+      const page = u.pathname.split('/').pop();
+      // Don't record the edit form itself or this page — only real origins.
+      if (!page || page === 'employee_detail.html' || page === 'employees.html') return;
+      sessionStorage.setItem('hrmsReturnTo', u.pathname + u.search);
+    } catch (e) { /* malformed referrer — just skip */ }
+  })();
+
+  // "Back" returns to whichever page linked here (Targets, Performance,
+  // Assign Queries, Employees, etc.) instead of always going to Employees.
+  document.getElementById('backLink').addEventListener('click', (e) => {
+    e.preventDefault();
+    if (history.length > 1) history.back();
+    else location.href = 'employees.html';
+  });
+
+  const alertBox = document.getElementById('alertBox');
+
+  function showAlert(msg, type = 'success') {
+    alertBox.innerHTML = `<div class="alert ${type}">${msg}</div>`;
+    setTimeout(() => (alertBox.innerHTML = ''), 4000);
+  }
+
+  function expiryClass(dateStr) {
+    if (!dateStr) return '';
+    const days = (new Date(dateStr) - new Date()) / (1000 * 60 * 60 * 24);
+    if (days < 0) return 'expiry-bad';
+    if (days <= 30) return 'expiry-warn';
+    return 'expiry-ok';
+  }
+
+  function fmtDate(dateStr) {
+    return dateStr ? new Date(dateStr).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  const employeeId = params.get('id');
+
+  if (!employeeId) {
+    document.getElementById('loadingCard').innerHTML = '<div style="padding:20px;"><div class="alert error">No employee id specified.</div></div>';
+  } else {
+    loadEmployee();
+    loadDocuments();
+    loadSources();
+    loadAgreements();
+  }
+
+  async function loadSources() {
+    try {
+      const data = await api.get('employee_sources.get', { employee_id: employeeId });
+      const rows = data.sources || [];
+      if (rows.length === 0) return; // card stays hidden when nothing is mapped
+
+      document.getElementById('sourcesTitle').textContent = `Found In (${rows.length})`;
+      document.getElementById('sourcesTableBody').innerHTML = rows.map(s => `
+        <tr>
+          <td><span class="badge">${s.source_type === 'whatsapp' ? 'WhatsApp' : 'Sheet'}</span></td>
+          <td>${s.source_name}</td>
+          <td>${s.sheet_name || '—'}</td>
+          <td>${s.row_no || '—'}</td>
+          <td>${s.matched_on || '—'}</td>
+          <td>${s.source_url ? `<a href="${s.source_url}" target="_blank">Open</a>` : ''}</td>
+        </tr>`).join('');
+      document.getElementById('sourcesCard').style.display = 'block';
+    } catch (err) {
+      // Sources are optional — never block the page on them.
+      console.error('Sources load failed:', err.message);
+    }
+  }
+
+  async function loadEmployee() {
+    try {
+      const data = await api.get('employees.get', { id: employeeId });
+      const e = data.employee;
+
+      document.getElementById('pageTitle').textContent = e.full_name;
+      document.getElementById('profName').textContent = e.full_name;
+      document.getElementById('profCode').textContent = e.employee_code;
+
+      if (e.photo) {
+        document.getElementById('profPhoto').innerHTML = `<img src="${API_BASE_URL.replace('/api.php', '')}/${e.photo}" style="width:100%;height:100%;object-fit:cover;">`;
+      }
+
+      const items = [
+        ['Department', e.department_name || '—'],
+        ['Reporting Manager', e.manager_name || '—'],
+        ['Mobile', e.mobile || '—'],
+        ['Email', e.email || '—'],
+        ['Joining Date', fmtDate(e.joining_date)],
+        ['Date of Birth', fmtDate(e.date_of_birth)],
+        ['Employment Type', e.employment_type || '—'],
+        ['Basic Salary', e.basic_salary ? Number(e.basic_salary).toLocaleString('en-IN') : '—'],
+        ['Address', e.address || '—'],
+        ['Emergency Contact', e.emergency_contact_name || '—'],
+        ['Emergency Mobile', e.emergency_contact_mobile || '—'],
+        ['Emergency Relation', e.emergency_contact_relation || '—'],
+      ];
+
+      document.getElementById('detailGrid').innerHTML = items.map(([label, value]) => `
+        <div class="detail-item">
+          <div class="label">${label}</div>
+          <div class="value">${value}</div>
+        </div>
+      `).join('');
+
+      document.getElementById('btnEditEmployee').addEventListener('click', () => {
+        window.location.href = 'employees.html?edit=' + employeeId;
+      });
+
+      const waGroups = e.whatsapp_groups || [];
+      document.getElementById('waGroupsTitle').textContent =
+        waGroups.length > 0 ? `WhatsApp Groups (${waGroups.length})` : 'WhatsApp Groups';
+      document.getElementById('waGroupsBody').innerHTML = waGroups.length > 0
+        ? waGroups.map(g => `<span class="badge" style="margin:3px;">${g.group_name}</span>`).join('')
+        : '<span style="color:#888; font-size:13px;">Not added to any WhatsApp group yet — use Edit Employee to select groups.</span>';
+      document.getElementById('waGroupsCard').style.display = 'block';
+
+      const excelFiles = e.excel_files || [];
+      document.getElementById('excelFilesTitle').textContent =
+        excelFiles.length > 0 ? `Excel Files (${excelFiles.length})` : 'Excel Files';
+      document.getElementById('excelFilesBody').innerHTML = excelFiles.length > 0
+        ? excelFiles.map(f => f.file_url
+            ? `<a href="${f.file_url}" target="_blank" class="badge" style="margin:3px;">${f.file_name} ↗</a>`
+            : `<span class="badge" style="margin:3px;">${f.file_name}</span>`).join('')
+        : '<span style="color:#888; font-size:13px;">Not added to any Excel file yet — use Edit Employee to select files.</span>';
+      document.getElementById('excelFilesCard').style.display = 'block';
+
+      document.getElementById('loadingCard').style.display = 'none';
+      document.getElementById('profileCard').style.display = 'block';
+    } catch (err) {
+      document.getElementById('loadingCard').innerHTML = `<div style="padding:20px;"><div class="alert error">${err.message}</div></div>`;
+    }
+  }
+
+  async function loadDocuments() {
+    const tbody = document.getElementById('docsTableBody');
+    try {
+      const [pendingData, approvedData, typesData] = await Promise.all([
+        api.get('employee_documents.list', { employee_id: employeeId, status: 'pending' }),
+        api.get('employee_documents.list', { employee_id: employeeId, status: 'approved' }),
+        api.get('document_types.list'),
+      ]);
+
+      const pendingDocs = (pendingData.documents || []).map(d => ({ ...d, _status: 'pending' }));
+      const approvedDocs = (approvedData.documents || []).map(d => ({ ...d, _status: 'approved' }));
+      const rows = [...pendingDocs, ...approvedDocs];
+
+      // ---- Pending Documents card: every document type this employee has
+      // not uploaded yet (uploaded = pending approval OR approved). As soon
+      // as a type is uploaded it disappears from this list.
+      const uploadedTypeIds = new Set(rows.map(d => String(d.document_type_id)));
+      const notUploaded = (typesData.document_types || []).filter(t => !uploadedTypeIds.has(String(t.document_type_id)));
+
+      const pendingDocsCard = document.getElementById('pendingDocsCard');
+      if (notUploaded.length > 0) {
+        document.getElementById('pendingDocsTitle').textContent = `Pending Documents (${notUploaded.length})`;
+        document.getElementById('pendingDocsBody').innerHTML =
+          notUploaded.map(t => `<span class="badge inactive" style="margin:3px;">${t.document_name}</span>`).join('');
+        pendingDocsCard.style.display = 'block';
+      } else {
+        pendingDocsCard.style.display = 'none';
+      }
+
+      // ---- Uploaded documents table (pending approval first, then approved)
+      document.getElementById('docsTitle').textContent = `Documents (${rows.length})`;
+      document.getElementById('docsCard').style.display = 'block';
+
+      if (rows.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No documents uploaded for this employee yet.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = rows.map(d => `
+        <tr>
+          <td>${d.document_name}</td>
+          <td>${d.document_number || '—'}</td>
+          <td>${fmtDate(d.issue_date)}</td>
+          <td class="${expiryClass(d.expiry_date)}">${fmtDate(d.expiry_date)}</td>
+          <td><span class="badge ${d._status === 'approved' ? '' : 'inactive'}">${d._status === 'approved' ? 'Approved' : 'Pending approval'}</span></td>
+          <td>${d.remarks || '—'}</td>
+          <td>
+            <div class="row-actions">
+              <a href="${API_BASE_URL.replace('/api.php', '')}/${d.document_file}" target="_blank">View</a>
+              <button class="danger-link" onclick="deleteDoc(${d.employee_document_id})">Delete</button>
+            </div>
+          </td>
+        </tr>`).join('');
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="7"><div class="alert error">${err.message}</div></td></tr>`;
+    }
+  }
+
+  // ---- Agreements sent to this employee. Signed ones open/download the
+  // generated PDF; anything still pending can be removed from here too.
+  async function loadAgreements() {
+    const tbody = document.getElementById('agreementsTableBody');
+    const card = document.getElementById('agreementsCard');
+    try {
+      const data = await api.get('agreements.list', { employee_id: employeeId });
+      const rows = data.agreements || [];
+      if (!rows.length) { card.style.display = 'none'; return; }
+
+      const signedCount = rows.filter(a => a.status === 'signed').length;
+      document.getElementById('agreementsTitle').textContent =
+        `Agreements (${signedCount} signed${rows.length - signedCount ? ' · ' + (rows.length - signedCount) + ' pending' : ''})`;
+
+      tbody.innerHTML = rows.map(a => {
+        const signed = a.status === 'signed';
+        return `<tr>
+          <td>${a.template_name}${signed && Number(a.auto_signed) ? '<div style="font-size:11px; color:#0f7a41;">auto-signed</div>' : ''}</td>
+          <td>${signed
+            ? '<span class="badge" style="background:#e7f7ee; color:#0f7a41;">Signed</span>'
+            : '<span class="badge" style="background:#fdf3e3; color:#b45f06;">Pending</span>'}</td>
+          <td>${a.signed_at ? new Date(a.signed_at.replace(' ', 'T')).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+          <td style="font-size:12px; color:var(--muted);">${a.reference || '—'}</td>
+          <td>
+            <div class="row-actions">
+              ${signed ? `<a href="agreement_view.html?id=${a.agreement_id}">View</a>` : '<span style="color:var(--muted); font-size:12.5px;">—</span>'}
+              ${signed && a.signed_file ? `<a href="${fileUrl(a.signed_file)}" target="_blank">PDF</a>` : ''}
+              <button class="danger-link" onclick="deleteAgreement(${a.agreement_id}, '${a.template_name.replace(/'/g, "\\'")}')">Delete</button>
+            </div>
+          </td>
+        </tr>`;
+      }).join('');
+      card.style.display = 'block';
+    } catch (err) {
+      // Agreements are optional (HR/Admin only) — never block the page.
+      console.error('Agreements load failed:', err.message);
+      card.style.display = 'none';
+    }
+  }
+
+  window.deleteAgreement = async function (id, name) {
+    if (!confirm(`Delete "${name}" for this employee?\n\nThe generated PDF is removed too. This cannot be undone.`)) return;
+    try {
+      await api.post('agreements.delete', { agreement_id: id });
+      showAlert('Agreement deleted.');
+      loadAgreements();
+    } catch (err) {
+      showAlert(err.message, 'error');
+    }
+  };
+
+  window.deleteDoc = async function (id) {
+    if (!confirm('Delete this document? This cannot be undone.')) return;
+    try {
+      await api.post('employee_documents.delete', { employee_document_id: id });
+      showAlert('Document deleted.');
+      loadDocuments();
+    } catch (err) {
+      showAlert(err.message, 'error');
+    }
+  };
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>

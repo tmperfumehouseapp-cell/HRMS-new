@@ -1,0 +1,1466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Commission — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=261008d">
+<style>
+#cm{--gold:#b45309; --gold-bg:#fff7e6; --green:#0f7a41; --green-bg:#e7f7ee; --blue:#1d4ed8; --blue-bg:#e8f0ff; max-width:1280px;}
+#cm button{min-height:0;}
+#cm .muted{color:var(--muted);} #cm .small{font-size:12px;}
+#cm .sec{overflow:hidden; margin-bottom:22px; border-radius:14px;}
+#cm .sec-h{padding:16px 18px 12px; display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; align-items:flex-start; border-bottom:1px solid #f0f1f3;}
+#cm .sec-h h2{font-size:17px; margin:0; display:flex; align-items:center; gap:8px;}
+#cm .sec-h .range{font-size:12.5px; color:var(--muted); margin-top:3px;}
+#cm .dot{width:10px; height:10px; border-radius:50%; background:#16a34a; display:inline-block;} #cm .dot.m{background:var(--blue);}
+#cm .kpis{display:flex; gap:8px; flex-wrap:wrap;}
+#cm .kpi{background:#f8fafc; border:1px solid var(--line); border-radius:10px; padding:7px 12px; min-width:104px;}
+#cm .kpi .l{font-size:11px; color:var(--muted); font-weight:600;} #cm .kpi .v{font-size:16px; font-weight:700; margin-top:1px;}
+#cm .kpi.g{background:var(--green-bg); border-color:#cfe9da;} #cm .kpi.g .v{color:var(--green);}
+
+#cm .bar{display:flex; gap:10px; flex-wrap:wrap; align-items:center; padding:12px 18px; background:#fafbfc; border-bottom:1px solid #f0f1f3;}
+#cm .search{position:relative; flex:1 1 220px; max-width:320px;}
+#cm .search input{width:100%; padding:8px 12px 8px 32px; border:1px solid var(--line); border-radius:20px; font-size:13.5px; background:#fff; font-family:inherit;}
+#cm .search svg{position:absolute; left:11px; top:50%; transform:translateY(-50%); width:15px; height:15px; color:var(--muted);}
+#cm .seg{display:inline-flex; background:#e9ecf1; border-radius:20px; padding:3px;}
+#cm .seg button{border:none; background:transparent; padding:6px 14px; border-radius:17px; font-size:12.5px; font-weight:600; color:#4b5563; cursor:pointer;}
+#cm .seg button.on{background:#fff; color:var(--ink); box-shadow:0 1px 3px rgba(0,0,0,.12);}
+#cm .sel{padding:7px 10px; border:1px solid var(--line); border-radius:20px; font-size:12.5px; background:#fff; font-family:inherit; color:var(--ink);}
+#cm .bar .sp{flex:1;}
+
+#cm .scroll{overflow-x:auto;}
+#cm table{width:100%; border-collapse:collapse; font-size:13.5px;}
+#cm .scroll > table{min-width:860px;}
+#cm thead th{font-size:11.5px; text-transform:uppercase; letter-spacing:.03em; text-align:left; color:var(--muted); padding:10px 14px; border-bottom:1px solid var(--line); background:#fafafa; white-space:nowrap; font-weight:700; position:static;}
+#cm th.r, #cm td.r{text-align:right;}
+#cm tbody td{padding:11px 14px; border-bottom:1px solid #f0f1f3; vertical-align:middle; white-space:nowrap; font-size:13.5px;}
+#cm tbody tr:last-child td{border-bottom:none;}
+#cm tr.click{cursor:pointer;} #cm tr.click:hover td{background:#f6f9ff;} #cm tr.sel td{background:#eef4ff;}
+#cm .emp{display:flex; align-items:center; gap:10px;}
+#cm .av{width:34px; height:34px; border-radius:50%; background:linear-gradient(135deg,#334155,#0f172a); color:#fff; font-weight:700; font-size:12.5px; display:flex; align-items:center; justify-content:center; flex:none;}
+#cm .emp b{display:block; font-size:13.5px; line-height:1.2;} #cm .emp span{font-size:11.5px; color:var(--muted);} #cm .emp b .pill{font-size:11px; padding:1px 7px; vertical-align:1px;}
+#cm .chev{color:#94a3b8; margin-left:4px; font-size:12px;}
+#cm .prog{width:130px; height:6px; background:#e8ebf0; border-radius:4px; margin:5px 0 0 auto; overflow:hidden;} #cm .prog i{display:block; height:100%; background:#f59e0b; border-radius:4px;} #cm .prog i.done{background:#16a34a;} #cm .prog i.over{background:#7c3aed;}
+#cm .pct{font-size:11px; color:var(--muted); margin-left:4px; font-weight:600;}
+#cm .pend{color:var(--bad-fg); font-weight:600;} #cm .pend.zero{color:var(--green);}
+#cm .com{font-weight:800; font-size:14.5px; color:var(--green);} #cm .com.none{color:#9ca3af; font-weight:600;}
+#cm .com.man{color:#c2410c;} #cm .pill.man{background:#ffedd5; color:#c2410c; font-size:11px; padding:1px 7px; margin-left:6px; vertical-align:1px;} #cm .kpi.o{background:#fff4e8;} #cm .kpi.o .v{color:#c2410c;} #cm .held.mann{color:#c2410c;}
+#cm .d-h .btn.chgman{background:#fff; color:var(--ink); border:1.5px solid var(--ink); white-space:nowrap;} #cm .d-h .btn.chgman[disabled]{opacity:.45; cursor:not-allowed;}
+#mcModal .auto{background:#f6f7f9; border-radius:12px; padding:10px 14px; font-size:12.5px; line-height:1.7; margin:-4px 0 14px;} #mcModal .auto .row{display:flex; justify-content:space-between; gap:12px;} #mcModal .auto b{color:var(--ink); text-align:right;}
+#mcModal .mcseg,#shModal .mcseg{display:flex; background:#f0f1f4; border-radius:12px; padding:3px; margin-bottom:12px;} #mcModal .mcseg button,#shModal .mcseg button{flex:1; border:0; background:transparent; font:inherit; font-size:12.5px; font-weight:700; padding:8px; border-radius:10px; color:var(--muted); cursor:pointer;} #mcModal .mcseg button.on,#shModal .mcseg button.on{background:#fff; color:var(--ink); box-shadow:0 1px 4px rgba(0,0,0,.1);}
+#mcModal .mcprev{background:#fff4e8; border-radius:12px; padding:10px 14px; font-size:13px; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center; gap:10px;} #mcModal .mcprev b{font-size:18px; color:#c2410c;}
+#cm .rate{display:inline-block; font-size:11px; font-weight:700; color:var(--gold); background:var(--gold-bg); border:1px solid #f6dfa8; border-radius:10px; padding:1px 7px; margin-left:6px; cursor:pointer;}
+#cm .pill{display:inline-block; padding:2px 10px; border-radius:12px; font-size:11.5px; font-weight:700;}
+#cm .p-leave{background:#fde8e8; color:#b91c1c;} #cm .p-ok{background:#e7f7ee; color:#0f7a41;} #cm .p-mut{background:#eef0f4; color:#6b7280;} #cm .p-wait{background:#fff4db; color:#8a5a00;} #cm .p-blue{background:var(--blue-bg); color:var(--blue);}
+#cm .pay-pre{background:#e7f7ee; color:#0f7a41;} #cm .pay-cod{background:#fff4db; color:#8a5a00;}
+#cm .ocode{display:inline-block; background:#eef2ff; color:#3730a3; border-radius:8px; padding:1px 7px; font-size:11.5px; font-weight:700;}
+#cm .shr{display:inline-block; font-size:11px; font-weight:700; padding:1px 8px; border-radius:10px; background:#fff4db; color:#8a5a00;} #cm .shr.man{background:#14161a; color:#fff;}
+#cm .chg{border:1px solid var(--line); background:#fff; border-radius:999px; width:26px; height:26px; cursor:pointer; margin-left:4px; padding:0; line-height:1; font-size:12px; color:var(--ink);} #cm .chg:hover{background:#f4f5f7;}
+#cm .held{font-size:11px; color:var(--gold); font-weight:600; margin-top:2px;}
+#cm .empty{padding:34px; text-align:center; color:var(--muted);}
+#cm .pager{display:flex; align-items:center; gap:6px; flex-wrap:wrap; padding:12px 18px; border-top:1px solid #f0f1f3; font-size:12.5px; color:#4b5563;}
+#cm .pager .pinfo{margin-right:auto;}
+#cm .pager .psize{border:1px solid var(--line); border-radius:12px; padding:5px 8px; font-size:12.5px; background:#fff; color:var(--ink);}
+#cm .pager button{min-width:34px; height:34px; padding:0 10px; border:1px solid var(--line); border-radius:12px; background:#fff; font-size:13px; font-weight:600; cursor:pointer; color:var(--ink);}
+#cm .pager button:hover:not(:disabled){border-color:var(--accent);}
+#cm .pager button.on{background:var(--ink); color:#fff; border-color:var(--ink);}
+#cm .pager button:disabled{opacity:.4; cursor:default;}
+#cm .pager .gap{padding:0 2px; color:var(--muted);}
+@media (max-width:820px){ #cm .pager{padding:10px 14px; justify-content:center;} #cm .pager .pinfo{flex:1 0 100%; text-align:center; margin:0;} }
+#cm .ordsum{padding:10px 18px; font-size:12.5px; color:#4b5563; background:#fafbfc; border-top:1px solid #f0f1f3;}
+
+#cm .detail{border-top:3px solid var(--blue);} #cm .detail[hidden]{display:none;}
+#cm .d-h{padding:14px 18px; display:flex; gap:12px; flex-wrap:wrap; align-items:center; justify-content:space-between; background:#f6f9ff; border-bottom:1px solid #dbe7fb;}
+#cm .d-h .who{display:flex; align-items:center; gap:12px;} #cm .d-h h3{margin:0; font-size:16px;}
+#cm .dlbtn{display:inline-flex; align-items:center; gap:6px; background:#fff; border:1px solid var(--line); border-radius:20px; padding:7px 14px; font-size:12.5px; font-weight:600; cursor:pointer; color:var(--ink);}
+#cm .dlbtn svg{width:15px; height:15px;}
+#cm .dlbtn:hover{border-color:var(--ok-fg,#15803d); color:var(--ok-fg,#15803d);}
+#cm .dlbtn:disabled{opacity:.5; cursor:default;}
+#cm .closebtn{background:#fff; border:1px solid var(--line); border-radius:20px; padding:6px 14px; font-size:12.5px; font-weight:600; cursor:pointer; color:var(--ink);}
+#cm tr.day td{cursor:pointer;} #cm tr.day:hover td{background:#f8faff;}
+#cm tr.ord td{background:#fbfcfe; font-size:12.5px; color:#4b5563; padding:7px 14px; white-space:normal;}
+#cm .oline{display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; padding:3px 0 3px 30px; border-bottom:1px dashed #eceff3;} #cm .oline:last-child{border:none;}
+#cm tr.leaveday td{background:#fff8f8;}
+
+#cm .pop{position:fixed; z-index:300; width:290px; max-width:calc(100vw - 20px); background:#fff; border:1px solid var(--line); border-radius:12px; box-shadow:0 12px 34px rgba(0,0,0,.22); padding:12px 14px; font-size:12.5px; line-height:1.55;}
+#cm .pop[hidden]{display:none;} #cm .pop h5{margin:0 0 6px; font-size:13px;} #cm .pop .ln{display:flex; justify-content:space-between; gap:10px; border-bottom:1px dashed #eceff3; padding:3px 0;} #cm .pop .tot{font-weight:800; color:var(--green); border:none; padding-top:6px; font-size:14px;}
+
+/* ===== DEMO additions (new things) ===== */
+#cm .demo-banner{background:#eef4ff; border:1px solid #cddcfb; color:#1e3a8a; border-radius:12px; padding:10px 14px; margin-bottom:16px; font-size:13px; line-height:1.5;}
+#cm .demo-banner b{background:#1d4ed8; color:#fff; border-radius:6px; padding:1px 7px; font-size:11px; letter-spacing:.05em; margin-right:6px;}
+#cm .newtag{display:inline-block; background:#16a34a; color:#fff; font-size:11px; font-weight:800; letter-spacing:.06em; padding:2px 7px; border-radius:8px; vertical-align:2px; margin-right:6px;}
+#cm .newtag.sm{padding:1px 5px; margin:0 0 0 4px; font-size:11px;}
+/* switch */
+#cm .tgl{display:inline-flex; align-items:center; gap:7px; cursor:pointer; font-size:12.5px; font-weight:600; color:#4b5563; user-select:none;}
+#cm .tgl input{position:absolute; opacity:0; width:0; height:0;}
+#cm .tgl i{width:34px; height:20px; border-radius:20px; background:#cbd2dc; position:relative; transition:background .15s; flex:none;}
+#cm .tgl i::after{content:''; position:absolute; left:2px; top:2px; width:16px; height:16px; border-radius:50%; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.3); transition:left .15s;}
+#cm .tgl input:checked + i{background:#16a34a;} #cm .tgl input:checked + i::after{left:16px;}
+#cm .tgl input:disabled + i{opacity:.45;} #cm .tgl:has(input:disabled){cursor:not-allowed;}
+#cm .tgl input:focus-visible + i{outline:2px solid var(--blue); outline-offset:2px;}
+/* date range bar */
+#cm .rngbar{background:#f6faf7; border-bottom:1px solid #e1efe6;}
+#cm .rngbar .rl{font-size:13px;}
+#cm .rngbar .dt{display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:600; color:#4b5563;}
+#cm .rngbar .dt input{padding:6px 10px; border:1px solid var(--line); border-radius:20px; font-size:12.5px; font-family:inherit; background:#fff; color:var(--ink);}
+#cm .chips{display:flex; gap:6px; flex-wrap:wrap;}
+#cm .chips button{border:1px solid var(--line); background:#fff; border-radius:20px; padding:6px 13px; font-size:12px; font-weight:600; cursor:pointer; color:#4b5563;} #cm .chips button.on{background:var(--ink); color:#fff; border-color:var(--ink);}
+/* per-order commission notes */
+#cm .cn{font-size:11px; font-weight:600; color:var(--muted); margin-top:1px; white-space:normal;}
+#cm .cn.z{color:#b91c1c;} #cm .cn.mx{color:var(--green);} #cm .cn.fx{color:var(--blue);} #cm .cn.cut{color:var(--gold);} #cm .cn.man{color:#14161a; font-weight:700;} #cm .cn.sl{color:#6d28d9;}
+#cm b.zero{color:#9ca3af;}
+#cm .tgb{background:none; border:0; border-bottom:1px dotted var(--muted); padding:0; margin:0; font:inherit; color:inherit; cursor:pointer; min-height:0; width:auto; border-radius:0; box-shadow:none;}
+#cm .tgb:hover{color:var(--blue); border-bottom-color:var(--blue);}
+#cm .pop .sub{display:block; font-size:11px; color:var(--muted); font-weight:400;} #cm .pop .note{margin-top:8px; font-size:11px; color:var(--muted); line-height:1.45;}
+#cm .rate.fx{color:var(--blue); background:var(--blue-bg); border-color:#c7d8fb;}
+#cm .held.mixn{color:var(--green);} #cm .held.fxn{color:var(--blue);}
+#cm .stars{position:relative; display:inline-block; font-size:15px; line-height:1; color:#d5d9e0; white-space:nowrap;} #cm .stars i{position:absolute; left:0; top:0; overflow:hidden; color:#f59e0b; font-style:normal; white-space:nowrap;} #cm .stnum{display:block; font-size:11px; color:var(--muted); margin-top:2px;}
+#cm .ordsum .chk{color:var(--green); font-weight:700;}
+#cm tr.click .emp b{color:var(--blue);} #cm tr.click:hover .emp b{text-decoration:underline;}
+#cm .d-h .seg{margin-left:auto;}
+@media (max-width:820px){ #cm .rngbar{gap:8px;} }
+@media (min-width:821px){ #cm table.oT{min-width:980px;} }
+
+@media (max-width:820px){
+  #cm .scroll > table{min-width:0;}
+  #cm .sec-h{padding:14px;} #cm .bar{padding:10px 12px;} #cm .search{max-width:none;}
+  #cm .prog{margin-left:0;}
+  #cm .scroll tbody td{white-space:normal;}
+  #cm tr.ord td{padding:7px 12px;} #cm .oline{padding-left:0;}
+  .content .irow input.ml, .content .irow input.price{min-height:38px !important;} .content .irow button{min-width:36px !important; min-height:36px !important;}
+  .content #foAddRow{min-height:38px !important;} .content #foHours, .content #foPct, .content #foNocode, .content #foNote{min-height:36px !important;}
+}
+</style>
+<style>
+/* === MOBILE PASS v1 === */
+@media (max-width:820px){
+  /* #cm button{min-height:0} left the pills and buttons 26-31px high */
+  #cm button, #cm .seg button, #cm .dlbtn{min-height:40px;}
+  #cm .pager button{min-width:40px; height:40px;}
+  #cm input:not([type=checkbox]):not([type=radio]), #cm select{min-height:40px;}
+}
+/* === END MOBILE PASS v1 === */
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar">
+      <div><h1>Commission</h1><div class="sub" style="font-size:12.5px; color:var(--muted); margin-top:2px;">Sales employees' commission, worked out from live Targets, Orders and Attendance data</div></div>
+      <div style="display:flex; gap:10px; align-items:center;">
+        <button class="btn secondary" id="btnReload" type="button">↻ Refresh</button>
+      </div>
+    </div>
+    <div class="content">
+      <div id="alertBox"></div>
+      <div id="cm">
+        <!-- ================= TODAY ================= -->
+        <section class="card sec" id="secToday">
+          <div class="sec-h">
+            <div><h2><span class="dot"></span> Today's Data</h2><div class="range" id="tRange">Loading…</div></div>
+            <div class="kpis" id="tKpis"></div>
+          </div>
+          <div class="bar">
+            <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="tQ" type="search" placeholder="Search employee name" autocomplete="off"></div>
+            <div class="seg" id="tView"><button type="button" data-v="emp" class="on">Employee-wise</button><button type="button" data-v="ord">Order-wise</button></div>
+            <span class="sp"></span>
+            <span class="small muted" id="tHint">Tap an employee name to see ALL their orders of today</span>
+            <button type="button" class="dlbtn" id="tDl" title="Download this table as Excel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg><span>Excel</span></button>
+            <label class="tgl" title="Show all rows on one page, or split into pages"><input type="checkbox" class="pgOn" checked><i></i><span>Pagination <b class="pgTxt">ON</b></span></label>
+            <select class="sel" id="tSort" aria-label="Sort"></select>
+          </div>
+          <div class="scroll" id="tBody"><div class="loading">Loading orders…</div></div>
+        </section>
+
+        <!-- ================= MONTH ================= -->
+        <section class="card sec" id="secMonth">
+          <div class="sec-h">
+            <div><h2><span class="dot m"></span> Monthly Data</h2><div class="range" id="mRange">Loading…</div></div>
+            <div class="kpis" id="mKpis"></div>
+          </div>
+          <div class="bar rngbar">
+            <b class="rl">Date range</b>
+            <label class="dt">From <input type="date" id="mFrom"></label>
+            <label class="dt">To <input type="date" id="mTo"></label>
+            <div class="chips" id="mChips"><button type="button" data-r="month">This month</button><button type="button" data-r="7">Last 7 days</button><button type="button" data-r="last">Last month</button><button type="button" data-r="today">Today</button></div>
+          </div>
+          <div class="bar">
+            <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="mQ" type="search" placeholder="Search employee name" autocomplete="off"></div>
+            <div class="seg" id="mView"><button type="button" data-v="emp" class="on">Employee-wise</button><button type="button" data-v="ord">Order-wise</button></div>
+            <span class="sp"></span>
+            <span class="small muted" id="mHint">Tap an employee name to see ALL their orders with commission</span>
+            <button type="button" class="dlbtn" id="mDl" title="Download this table as Excel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg><span>Excel</span></button>
+            <label class="tgl" title="Show all rows on one page, or split into pages"><input type="checkbox" class="pgOn" checked><i></i><span>Pagination <b class="pgTxt">ON</b></span></label>
+            <select class="sel" id="mSort" aria-label="Sort"></select>
+          </div>
+          <div class="scroll" id="mBody"><div class="loading">Loading…</div></div>
+
+          <div class="detail" id="detail" hidden>
+            <div class="d-h">
+              <div class="who"><div class="av" id="dAv"></div><div><h3 id="dName"></h3><div class="small muted" id="dSub"></div></div></div>
+              <div class="kpis" id="dKpis"></div>
+              <div class="seg" id="dView"><button type="button" data-v="ord" class="on">All orders</button><button type="button" data-v="day">Date-wise</button></div>
+              <button type="button" class="btn chgman" id="dMan" title="Change this employee's commission by hand">✎ Change commission</button>
+              <button type="button" class="dlbtn" id="dDl" title="Download this table as Excel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg><span>Excel</span></button><button class="closebtn" id="dClose" type="button">✕ Close</button>
+            </div>
+            <div class="scroll" id="dBody"></div>
+            <div class="small muted" id="dNote" style="padding:10px 18px 14px;">Daily commission is an estimate of that day alone (that day's ticket size against that day's target). The Monthly row above uses the month's total, so the two do not add up exactly — the month's total is the one that counts.</div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="modal-overlay" id="shModal">
+  <div class="modal" style="max-width:440px;">
+    <h3>Change this order's commission</h3>
+    <div id="shInfo" style="font-size:12.5px; color:var(--muted); margin:-8px 0 12px; line-height:1.5;"></div>
+    <div id="shAlert"></div>
+    <div class="mcseg" id="shSeg"><button type="button" data-m="pct" class="on" title="A share of the commission this order would normally earn">% of normal</button><button type="button" data-m="rate" title="A rate on this order's amount">Rate % of order</button><button type="button" data-m="flat" title="An exact amount in rupees">Set amount ₹</button></div>
+    <div class="field"><label for="shPct" id="shLbl">Pays this share of the normal commission (%)</label><input id="shPct" type="number" min="0" max="500" step="0.01" inputmode="decimal"></div>
+    <div class="field"><label for="shWhy">Reason <span style="text-transform:none; font-weight:400;">(optional)</span></label><input id="shWhy" maxlength="255" placeholder="e.g. Customer code added late"></div>
+    <div id="shPrev" style="font-size:12.5px; background:#f6f7f9; border-radius:12px; padding:8px 12px;"></div>
+    <div class="actions"><button type="button" class="btn secondary" id="shRemove" style="margin-right:auto;">Remove manual</button><button type="button" class="btn secondary" id="shCancel">Cancel</button><button type="button" class="btn" id="shSave">Save</button></div>
+  </div>
+</div>
+<div class="modal-overlay" id="mcModal">
+  <div class="modal" style="max-width:470px;">
+    <h3>Change commission</h3>
+    <div id="mcSub" style="font-size:12.5px; color:var(--muted); margin:-8px 0 12px; line-height:1.5;"></div>
+    <div id="mcAlert"></div>
+    <div class="auto" id="mcAuto"></div>
+    <div class="mcseg" id="mcSeg"><button type="button" data-m="rate" class="on">Change the rate %</button><button type="button" data-m="amt">Set the amount ₹</button></div>
+    <div class="field" id="mcFRate"><label for="mcRate">Rate (% of sales)</label><input id="mcRate" type="number" min="0" max="999.99" step="0.01" inputmode="decimal"></div>
+    <div class="field" id="mcFAmt" style="display:none;"><label for="mcAmt">Commission amount (₹)</label><input id="mcAmt" type="number" min="0" step="0.01" inputmode="decimal"></div>
+    <div class="field"><label for="mcWhy">Reason <span style="text-transform:none; font-weight:400;">(optional)</span></label><input id="mcWhy" maxlength="255" placeholder="e.g. Approved by Jaimin"></div>
+    <div class="mcprev" id="mcPrev"></div>
+    <div class="actions"><button type="button" class="btn secondary" id="mcClear" style="margin-right:auto; color:#c81e1e;">Back to automatic</button><button type="button" class="btn secondary" id="mcCancel">Cancel</button><button type="button" class="btn" id="mcSave">Save</button></div>
+  </div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="assets/js/config.js?v=260928b"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script src="assets/js/ml_slab.js?v=261103y"></script>
+<script>window.FO_ADMIN = true;</script>
+<script src="assets/js/flash_offer.js?v=261103a"></script>
+<script>
+  // Embed mode: the Orders page opens this page in a hidden frame (commission.html?embed=1&from=..&to=..) and reads the finished numbers,
+  // so both pages always show exactly the same commission.
+  const EMBED = new URLSearchParams(location.search).get('embed') === '1';
+  guardPage();
+  if (!EMBED) renderSidebar('commission');
+  else document.documentElement.classList.add('embed');
+
+  const $ = (id) => document.getElementById(id);
+  const inr = (v) => '₹' + Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const alertBox = $('alertBox');
+  function showAlert(msg, type) { alertBox.innerHTML = `<div class="alert ${type || 'error'}">${msg}</div>`; }
+
+  // ---------- Business-day timing (Admin: Targets → Day timing) ----------
+  // A day runs from its start time (default 10:00) to the next day's start, so "Today" is the day running now.
+  let DAY_START = ['10:00', '10:00', '10:00', '10:00', '10:00', '10:00', '10:00'];
+  // The rule lists do not depend on the date, so they start loading right away — in parallel with the day timing and the orders.
+  const PRE = { rules: api.get('commission_rules.list'), codeList: api.get('commission_rules.code_list'), manual: api.get('commission_rules.manual_list'), slab: api.get('ml_slab.get'), flash: api.get('flash_offer.get') };
+  Object.keys(PRE).forEach((k) => PRE[k].catch(() => {}));
+  const timingReady = api.get('day_timing.get').then((d) => { if (Array.isArray(d.start) && d.start.length === 7) DAY_START = d.start; }).catch(() => {});
+  const ymd = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  function bizDayOf(dt) {
+    const d = new Date(dt);
+    const hm = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+    if (hm < DAY_START[d.getDay()]) d.setDate(d.getDate() - 1);
+    return ymd(d);
+  }
+  const fmtHM = (t) => { const [h, m] = t.split(':').map(Number); return `${((h + 11) % 12) + 1}${m ? ':' + String(m).padStart(2, '0') : ''} ${h >= 12 ? 'PM' : 'AM'}`; };
+  function dayWindowText() {
+    const all = new Set(DAY_START);
+    if (all.size === 1) { const t = fmtHM(DAY_START[0]); return `${t} to next day ${t}`; }
+    const names = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    return 'each day from ' + DAY_START.map((t, i) => `${names[i]} ${fmtHM(t)}`).join(', ');
+  }
+  const dFmt = (d) => new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', weekday: 'short' });
+  const addDay = (d, n) => { const x = new Date(d + 'T00:00:00'); x.setDate(x.getDate() + n); return ymd(x); };
+
+  // ---------- State ----------
+  const STORE_TO_GROUP = { tmperfumehouse: 'tmph' };   // same rule as Targets
+  let TODAY = '', FROM = '', TO = '', MSTART = '', RFROM = '', RTO = '', DAYS = [];   // FROM..TO = what is loaded; RFROM..RTO = the Monthly date range; DAYS = days of that range
+  let PAGING = true;                                  // NEW: pagination ON / OFF (manual switch)
+  let SLAB = null;        // ML price slab chart (Commission Rules → ML price slab), see assets/js/ml_slab.js
+  let FLASH = [];         // ⚡ every Flash Offer (its hours + sizes + %): an order of an offer's size inside its hours pays the offer's flat % (MLSLAB.flashFor)
+  const NEW = { mix: [], fixed: [], star: [], panel: [], bonus: [] };                 // NEW: manual rules (code-mix rule, fixed-by-count plans)
+  let EMPS = [];          // from commission_page.days: employee, role, target[rowKey][date], status[date]
+  let ORD = [];           // orders that count toward commission
+  let IDX = {};           // "employeeId|rowKey" -> date -> { ach, n, pre, orders[] }
+  let RULES = null;       // commission_rules rows, or null if they could not be read
+  let CODE = { on: false, rules: [], shares: {}, ok: true };   // order-code rules (Commission Rules page) + shares set by hand
+  let RAW = [];           // the orders as loaded, kept so a manual change can re-price without reloading
+  let ORDBY = {};         // order key -> order record
+  let ROWS = [];          // one per employee and row: '' = TM Perfume House; 'tm4u', 'tmsg' = TM4U, TM Shower Gel — each counted on its own
+  let READY = false, openKey = null, dScope = 'm';   // dScope: which table the open employee detail belongs to ('t' = Today, 'm' = Monthly)
+  // Commission set by hand ("employee|row" -> { rate, amount, reason }): belongs to one month, so it applies only while the Monthly range is that whole month.
+  let MAN = {}, DAYMAN = {};   // DAYMAN: the commissions set by hand for Today (Today table)
+  const monthEndOf = (d) => d.slice(0, 7) + '-' + String(new Date(Number(d.slice(0, 4)), Number(d.slice(5, 7)), 0).getDate()).padStart(2, '0');
+  const manOk = () => !!RFROM && !!RTO && RFROM.slice(8) === '01' && RTO === (monthEndOf(RFROM) < TODAY ? monthEndOf(RFROM) : TODAY);
+  // Where a commission set by hand is saved: Today = that day, the whole month (1st → today / month end) = the month, any other range = that exact range.
+  const manScope = (t) => t ? TODAY : manOk() ? RFROM.slice(0, 7) : RFROM === RTO ? RFROM : RFROM + '_' + RTO;
+  const dDays = () => dScope === 't' ? [TODAY] : DAYS, dFrom = () => dScope === 't' ? TODAY : RFROM, dTo = () => dScope === 't' ? TODAY : RTO;
+  let SPAN = [];          // every day that was loaded
+  const dayOpen = new Set();
+  const SORTS = { com: ['Commission · high to low', (a, b) => b.c.amount - a.c.amount], ach: ['Achieved · high to low', (a, b) => b.ach - a.ach], pend: ['Pending · high to low', (a, b) => b.pending - a.pending], name: ['Name · A to Z', (a, b) => a.row.emp.full_name.localeCompare(b.row.emp.full_name)] };
+  const ST = { t: { q: '', view: 'emp', sort: 'com', page: 1, size: 25 }, m: { q: '', view: 'emp', sort: 'com', page: 1, size: 25 }, d: { tab: 'ord', page: 1, size: 10 } };
+  const WHY = {};
+
+  // ---------- Commission rules (same calculation as the Targets page) ----------
+  function calcCommission(achieved, target, ticket, prepaidPct) {
+    if (!RULES || !RULES.length || achieved <= 0) return null;
+    const overPct = target > 0 ? ((achieved / target) - 1) * 100 : 0;
+    const achievedTarget = target > 0 ? achieved >= target : false;
+    const steps = [];
+    const overMatches = RULES.filter((r) => r.rule_type === 'over_target' && overPct >= Number(r.over_pct) && ticket >= Number(r.ticket_min));
+    overMatches.sort((a, b) => Number(b.over_pct) - Number(a.over_pct) || Number(b.ticket_min) - Number(a.ticket_min));
+    let rate;
+    if (overMatches.length) {
+      const m = overMatches[0];
+      rate = Number(m.rate);
+      steps.push({ label: 'Over-target', detail: m.label || ('Beat target by ' + Math.round(overPct) + '%'), value: rate.toFixed(1) + '%' });
+      steps.push({ label: 'Prepaid', detail: 'Not applied — over-target rates are flat', value: '—', muted: true });
+    } else {
+      const baseMatches = RULES.filter((r) => r.rule_type === 'base' && Number(r.achieved_target) === (achievedTarget ? 1 : 0) && ticket >= Number(r.ticket_min));
+      baseMatches.sort((a, b) => Number(b.ticket_min) - Number(a.ticket_min));
+      const bm = baseMatches[0];
+      rate = bm ? Number(bm.rate) : 0;
+      steps.push({ label: 'Base rate', detail: bm ? (bm.label || ('Target ' + (achievedTarget ? 'achieved' : 'not achieved') + ', ticket ' + (Number(bm.ticket_min) > 0 ? '≥ ' + inr(bm.ticket_min) : 'any'))) : 'No matching base rule', value: rate.toFixed(1) + '%' });
+      const pm = RULES.filter((r) => r.rule_type === 'prepaid' && prepaidPct >= Number(r.prepaid_min));
+      pm.sort((a, b) => Number(b.prepaid_min) - Number(a.prepaid_min));
+      if (pm.length) {
+        const adj = Number(pm[0].rate);
+        rate += adj;
+        steps.push({ label: 'Prepaid', detail: pm[0].label || (Math.round(prepaidPct) + '% prepaid'), value: (adj > 0 ? '+' : '') + adj.toFixed(1) + '%' });
+      } else steps.push({ label: 'Prepaid', detail: Math.round(prepaidPct) + '% prepaid — no matching rule', value: '—', muted: true });
+    }
+    rate = Math.round(rate * 100) / 100;
+    return { rate, amount: achieved * rate / 100, steps, ticket, prepaidPct, overPct, hit: achievedTarget };
+  }
+
+  // ---------- Order-code rules: what share of the normal commission each order earns ----------
+  const ruleName = (r) => r.label || (r.match_type === 'no_code' ? 'Order has no code' : r.match_type === 'has_code' ? 'Order has a code' : 'Code starts with ' + r.prefix);
+  // An order's commission set by hand: a share of the normal commission (pct), a rate on the order (rate) or a ₹ amount (flat).
+  // pct goes through the normal pricing; rate / flat pay EXACTLY that whatever the other rules say (applied last, see agg()).
+  const manOf = (k) => (CODE.shares && CODE.shares[k]) || null;
+  const manPct = (k) => { const m = manOf(k); return m && (m.mode || 'pct') === 'pct' ? m : null; };
+  const ovAmt = (o) => { const m = manOf(o.key); if (!m || !m.mode || m.mode === 'pct') return null; return m.mode === 'flat' ? Number(m.share_pct) : o.amt * Number(m.share_pct) / 100; };
+  const ovTxt = (m) => m.mode === 'flat' ? inr(m.share_pct) : fmtN(m.share_pct) + '% of the order';
+  const shTxt = (sh) => sh.mode === 'flat' ? inr(sh.v) + ' flat' : sh.mode === 'rate' ? (Math.round(sh.v * 100) / 100) + '% rate' : (Math.round(sh.v * 100) / 100) + '%';
+  // A share set by hand wins; otherwise the first switched-on rule that matches; otherwise 100% (null).
+  // ctx = the employee's situation for the period being worked out ({ hit: target achieved, ticket: avg ticket size }); rules with an
+  // "only when" condition need it, and are skipped when it is not known.
+  function shareFor(x, ctx) {
+    const m = manPct(x.key);
+    if (m) return { mode: 'pct', v: Number(m.share_pct), why: 'manual', note: m.reason || '' };
+    if (!CODE.on) return null;
+    if (ctx && ctx.full) return null;   // NEW: code-mix rule met — no order-code cut
+    const has = !!x.code;
+    for (const r of CODE.rules) {
+      if (!Number(r.enabled)) continue;
+      if (r.houses && String(r.houses).split(',').indexOf(x.house) === -1) continue;
+      const wt = r.when_target || 'any', wk = r.when_ticket || 'any';
+      if (wt !== 'any' || wk !== 'any') {
+        if (!ctx) continue;
+        if (wt === 'hit' && !ctx.hit) continue;
+        if (wt === 'miss' && ctx.hit) continue;
+        if (wk === 'lt' && !(ctx.ticket < Number(r.when_ticket_val))) continue;
+        if (wk === 'gte' && !(ctx.ticket >= Number(r.when_ticket_val))) continue;
+      }
+      if (r.match_type === 'no_code' && has) continue;
+      if (r.match_type === 'has_code' && !has) continue;
+      if (r.match_type === 'prefix' && !(has && String(x.code).toUpperCase().indexOf(String(r.prefix).toUpperCase()) === 0)) continue;
+      return { mode: r.pay_mode, v: Number(r.pay_value), why: 'rule', rule: r };
+    }
+    return null;
+  }
+  // What one order is worth: eff = amount that earns the employee's slab rate, flat = ₹ added as-is.
+  // 'rate' mode pays its own fixed % of the order amount instead of the slab rate.
+  function calcPrice(x, ctx) {
+    const sh = shareFor(x, ctx);
+    if (!sh) return { sh, eff: x.amt, flat: 0 };
+    if (sh.mode === 'flat') return { sh, eff: 0, flat: sh.v };
+    if (sh.mode === 'rate') return { sh, eff: 0, flat: x.amt * sh.v / 100 };
+    return { sh, eff: x.amt * sh.v / 100, flat: 0 };
+  }
+  function priceOrder(x) { const p = calcPrice(x); x.sh = p.sh; x.eff = p.eff; x.flat = p.flat; }
+  const hasCond = () => CODE.on && CODE.rules.some((r) => Number(r.enabled) && ((r.when_target || 'any') !== 'any' || (r.when_ticket || 'any') !== 'any'));
+  // Commission of one order at its row's rate.
+  const orderCom = (x, rate) => x.flat + rate * x.eff / 100;
+  // A person's FIXED commission is always paid. When the bundle's order-code condition is not met (e.g. fewer than 80% of the orders have a code),
+  // each order still earns the fixed amount, but cut by the order-code rule that matches it (e.g. "no code → 50%"). ctx = { hit, ticket } of the person.
+  const fixedBaseOf = (o, mode, per) => mode === 'rate' ? o.amt * per / 100 : per;
+  function fixedPayOf(o, mode, per, cut, ctx) {
+    const base = fixedBaseOf(o, mode, per);
+    if (!cut) return base;
+    const sh = shareFor(o, ctx);
+    if (!sh) return base;
+    return sh.mode === 'flat' ? sh.v : sh.mode === 'rate' ? o.amt * sh.v / 100 : base * sh.v / 100;
+  }
+  function repriceAll() {
+    ORD.forEach(priceOrder);
+    Object.keys(IDX).forEach((k) => Object.keys(IDX[k]).forEach((d) => {
+      const cell = IDX[k][d]; cell.eff = 0; cell.flat = 0;
+      cell.orders.forEach((x) => { cell.eff += x.eff; cell.flat += x.flat; });
+    }));
+  }
+  function shChip(o, withBtn, p) {
+    const sh = (p || o).sh, ov = manOf(o.key);
+    let h;
+    if (ov && ov.mode && ov.mode !== 'pct') h = `<span class="shr man" title="Commission set by hand${ov.reason ? ': ' + esc(ov.reason) : ''}">manual ${ov.mode === 'flat' ? inr(ov.share_pct) : fmtN(ov.share_pct) + '% rate'}</span>`;
+    else if (!sh) h = '<span class="muted small">100%</span>';
+    else if (sh.why === 'manual') h = `<span class="shr man" title="Changed by hand${sh.note ? ': ' + esc(sh.note) : ''}">manual ${shTxt(sh)}</span>`;
+    else h = `<span class="shr" title="${esc(ruleName(sh.rule))}">${shTxt(sh)}</span>`;
+    return h + (withBtn ? ' ' + chgBtn(o) : '');
+  }
+  const chgBtn = (o) => `<button type="button" class="chg" data-chg="${esc(o.key)}" title="Change this order's commission" aria-label="Change this order's commission">✎</button>`;
+  // the Share cell of an order row: what set its share (or the manual figure) + the ✎ button
+  function shCell(o, aggs, p, fixed) {
+    if (ovAmt(o) !== null) return shChip(o, true, p);
+    const t = fixed ? 'fixed' : shNote(o, aggs);
+    return t ? `<span class="muted small">${t}</span> ${chgBtn(o)}` : shChip(o, true, p);
+  }
+
+  // ---------- Build rows from the loaded data ----------
+  const statusOf = (emp, d) => (emp.status || {})[d] || '';
+  const OWN_ROWS = ['tm4u', 'tmsg'];                                   // panels that are their own commission row
+  const PLAB = { '': 'TM Perfume House', tm4u: 'TM4U', tmsg: 'TM Shower Gel' };
+  const targetOf = (row, d) => Number(((row.emp.target || {})[row.rk] || {})[d] || 0);
+  const isPre = (fs) => { fs = String(fs || '').toLowerCase(); return fs.indexOf('cod') === -1 && fs.indexOf('pending') === -1; };   // not COD / pending = prepaid, as on Targets
+
+  function buildData(orders) {
+    const byEmp = {}; EMPS.forEach((e) => { byEmp[e.employee_id] = e; });
+    ORD = []; IDX = {}; ORDBY = {};
+    (orders || []).forEach((o) => {
+      if (o.cancelled) return;                                                  // cancelled orders earn nothing
+      if (!STORE_TO_GROUP[o.store_key] && !(o.allocated && o.house)) return;     // only the house stores (+ MySales orders moved to a panel)
+      const id = Number(o.employee_id || 0);
+      if (!id || !byEmp[id]) return;
+      const day = o.biz_date || bizDayOf(o.created_at);
+      if (day < FROM || day > TO) return;
+      const rk = OWN_ROWS.indexOf(o.house) > -1 ? o.house : '';
+      const amt = Number(o.total || 0), pre = isPre(o.financial_status);
+      const x = { id: o.id, key: (o.store_key || o.source || '') + ':' + o.id, house: o.house || STORE_TO_GROUP[o.store_key] || '', name: o.order_name, code: o.code || '', stars: o.ticket_rating == null ? null : Number(o.ticket_rating) / 2, emp: id, rk, day, created: o.created_at, amt, pre, fs: o.financial_status || '', store: o.store || '', ml: o.ml == null ? null : Number(o.ml), x_amt: Number(o.x_amt) || 0, x_com: Number(o.x_com) || 0, x_note: o.x_note || '', x_all: !!o.x_all, x_pct: o.x_pct == null ? null : Number(o.x_pct) };
+      priceOrder(x);
+      ORD.push(x); ORDBY[x.key] = x;
+      const k = id + '|' + rk, cell = ((IDX[k] = IDX[k] || {})[day] = IDX[k][day] || { ach: 0, n: 0, pre: 0, eff: 0, flat: 0, orders: [] });
+      cell.ach += amt; cell.n++; if (pre) cell.pre += amt; cell.eff += x.eff; cell.flat += x.flat; cell.orders.push(x);
+    });
+    ORD.sort((a, b) => String(b.created).localeCompare(String(a.created)));
+    buildRows();
+  }
+  function buildRows() {
+    ROWS = [];
+    EMPS.forEach((e) => [''].concat(OWN_ROWS).forEach((rk) => {
+      const k = e.employee_id + '|' + rk;
+      const hasT = DAYS.some((d) => Number(((e.target || {})[rk] || {})[d] || 0) > 0);
+      if (hasT || IDX[k]) ROWS.push({ key: k, emp: e, rk });
+    }));
+  }
+
+  // The slab commission (rate × everything achieved) becomes rate × what each order is paid for, plus any flat amounts.
+  // Ticket size, target and prepaid share still use the full amounts, so the rate itself does not change.
+  function applyCodeRules(c, orders, eff, flat, pm) {
+    const full = c.amount;
+    c.full = full;
+    c.amount = c.rate * eff / 100 + flat;
+    c.held = full - c.amount;
+    const groups = {};
+    orders.forEach((o) => {
+      const p = (pm && pm[o.key]) || o;
+      if (!p.sh || (p.sh.mode === 'pct' && Math.abs(p.sh.v - 100) < 1e-9)) return;
+      const g = p.sh.why === 'manual' ? 'Changed by hand' : ruleName(p.sh.rule) + ' · ' + shTxt(p.sh);
+      const d = orderCom(p, c.rate) - c.rate * o.amt / 100;
+      const e = groups[g] || (groups[g] = { n: 0, d: 0 });
+      e.n++; e.d += d;
+    });
+    c.adj = Object.keys(groups).length > 0;
+    Object.keys(groups).forEach((g) => {
+      const e = groups[g];
+      c.steps.push({ label: 'Order code', detail: `${e.n} order${e.n === 1 ? '' : 's'} · ${g}`, value: (e.d < 0 ? '−' : '+') + inr(Math.abs(e.d)) });
+    });
+  }
+
+  // NEW — fixed-by-count plans: the minimum is measured on the current calendar month (1st → today)
+  const monthStat = (empId) => { let n = 0, ach = 0; ORD.forEach((o) => { if (o.emp === empId && o.day >= MSTART && o.day <= TODAY) { n++; ach += o.amt; } }); return { n, ach }; };   // every panel of the person counts (TM Perfume House, TM4U, TM Shower Gel)
+  // A rule's dates: no From / To = all days. day is a business day 'YYYY-MM-DD'.
+  const inWin = (r, day) => (!r.from || day >= r.from) && (!r.to || day <= r.to);
+  const planReached = (p) => { if (!(Number(p.min) > 0)) return true; const s = monthStat(p.emp); return p.minType === 'amount' ? s.ach >= Number(p.min) : s.n >= Number(p.min); };   // no minimum (blank / 0) = never locked
+  const fmtN = (v) => String(Math.round(Number(v) * 100) / 100);
+  // how a rule / plan pays, in words: full | rate (fixed % of sales) | pct (% of the normal commission) | flat (₹ per order)
+  const payTxt = (mode, v) => mode === 'full' ? 'full commission' : mode === 'rate' ? fmtN(v) + '% of sales' : mode === 'pct' ? fmtN(v) + '% of the normal commission' : inr(v) + ' per order';
+  const payBadge = (mode, v) => mode === 'rate' ? fmtN(v) + '% fixed' : mode === 'pct' ? fmtN(v) + '% of normal' : mode === 'flat' ? inr(v) + '/order' : '';
+  const planMinTxt = (p) => !(Number(p.min) > 0) ? 'No minimum' : p.minType === 'amount' ? inr(p.min) + ' achieved' : p.min + ' orders';
+  const planHave = (p) => { const s = monthStat(p.emp); return p.minType === 'amount' ? inr(s.ach) : s.n + ' orders'; };
+
+  // One row over a set of days.
+  function agg(row, days) {
+    let ach = 0, n = 0, pre = 0, eff = 0, flat = 0, target = 0, leave = 0, absent = 0, worked = 0;
+    const orders = [];
+    days.forEach((d) => {
+      const x = (IDX[row.key] || {})[d];
+      if (x) { ach += x.ach; n += x.n; pre += x.pre; eff += x.eff; flat += x.flat; orders.push(...x.orders); }
+      target += targetOf(row, d);
+      const st = statusOf(row.emp, d);
+      if (st === 'leave') leave += 1; else if (st === 'half_leave') leave += 0.5; else if (st === 'absent') absent += 1;
+      worked += (st === 'present' || st === 'wfh') ? 1 : (st === 'half_leave' ? 0.5 : (x && x.n ? 1 : 0));
+    });
+    const ticket = n ? ach / n : 0, prePct = ach > 0 ? Math.min(100, pre / ach * 100) : 0;
+    let c = calcCommission(ach, target, ticket, prePct);
+    let pm = null;
+    // NEW — manual code rules: when the share of this employee's orders with a code is at least / at most a number you set,
+    // pay full commission (no order-code cut), a fixed % of sales, a % of the normal commission, or ₹ per order.
+    const codePct = n ? orders.filter((o) => o.code).length / n * 100 : 0;
+    // A rule with dates looks only at the orders of those days (the share of orders with a code is counted on them) and changes only those orders.
+    const mixRule = (c && n > 0) ? NEW.mix.find((r) => {
+      if (!r.on || (r.who.length && r.who.indexOf(row.emp.employee_id) === -1)) return false;
+      const wo = (r.from || r.to) ? orders.filter((o) => inWin(r, o.day)) : orders;
+      if (!wo.length) return false;
+      const pc = wo.filter((o) => o.code).length / wo.length * 100;
+      return r.op === 'lte' ? pc <= Number(r.thr) : pc >= Number(r.thr);
+    }) : null;
+    // Rules saved together as one bundle: the Order-code rule of the bundle is the CONDITION for the Fixed commission / Panel rule of the same bundle.
+    // Fixed / Panel pay only while that condition is met (e.g. "orders with a code are at least 80%"); otherwise the normal commission is paid.
+    const gates = {}, gateInfo = {};
+    NEW.mix.forEach((r) => {
+      if (!r.on || !r.grp || (r.who.length && r.who.indexOf(row.emp.employee_id) === -1)) return;
+      const wo = (r.from || r.to) ? orders.filter((o) => inWin(r, o.day)) : orders;
+      const pc = wo.length ? wo.filter((o) => o.code).length / wo.length * 100 : 0;
+      const ok = wo.length > 0 && (r.op === 'lte' ? pc <= Number(r.thr) : pc >= Number(r.thr));
+      if (!gates[r.grp]) { gates[r.grp] = ok; gateInfo[r.grp] = { pct: Math.round(pc), thr: Number(r.thr), op: r.op }; }
+    });
+    const gateOk = (g) => !g || gates[g] !== false;
+    const gateTxt = (g) => { const i = gateInfo[g]; return i ? `only ${i.pct}% of orders have a code — its rule needs ${i.op === 'lte' ? 'at most' : 'at least'} ${fmtN(i.thr)}%` : ''; };
+    const mixWo = mixRule ? orders.filter((o) => inWin(mixRule, o.day)) : [];
+    const mixDated = !!(mixRule && (mixRule.from || mixRule.to));
+    const mixPct = mixRule ? mixWo.filter((o) => o.code).length / mixWo.length * 100 : codePct;
+    let cutAmt = null;
+    if (c && (hasCond() || mixRule)) {   // rules that depend on this employee's target / ticket size: price each order in this context
+      const ctx = { hit: c.hit, ticket: c.ticket, full: !!mixRule };
+      if (mixRule) { const ctx0 = { hit: c.hit, ticket: c.ticket }; let e0 = 0, f0 = 0; orders.forEach((o) => { const p = calcPrice(o, ctx0); e0 += p.eff; f0 += p.flat; }); cutAmt = c.rate * e0 / 100 + f0; }
+      const ctx0b = { hit: c.hit, ticket: c.ticket };
+      pm = {}; eff = 0; flat = 0;
+      orders.forEach((o) => { const p = calcPrice(o, (mixRule && inWin(mixRule, o.day)) ? ctx : ctx0b); pm[o.key] = p; eff += p.eff; flat += p.flat; });
+    }
+    if (c) applyCodeRules(c, orders, eff, flat, pm);
+    if (c && mixRule) {
+      const mode = mixRule.mode, v = Number(mixRule.v);
+      if (mixDated) {   // dates: only the orders of those days are paid this way
+        let dl = 0;
+        mixWo.forEach((o) => { const b = orderCom((pm && pm[o.key]) || o, c.rate); dl += mode === 'pct' ? b * (v / 100 - 1) : mode === 'rate' ? o.amt * v / 100 - b : mode === 'flat' ? v - b : 0; });
+        c.amount += dl;
+      }
+      else if (mode === 'pct') c.amount = c.amount * v / 100;
+      else if (mode === 'rate') c.amount = ach * v / 100;
+      else if (mode === 'flat') c.amount = n * v;
+      if (mode !== 'full') { c.held = 0; c.adj = false; c.full = c.amount; }
+      const saved = c.amount - cutAmt;
+      c.mix = { win: mixRule, pct: Math.round(mixPct), thr: Number(mixRule.thr), op: mixRule.op, mode, v, label: mixRule.label || '', saved, badge: payBadge(mode, v) };
+      c.steps.push({ label: mixRule.label || 'Code rule', detail: `${Math.round(mixPct)}% of ${mixDated ? 'the orders in its dates' : 'orders'} have a code (rule: ${mixRule.op === 'lte' ? 'at most' : 'at least'} ${fmtN(mixRule.thr)}%) → ${payTxt(mode, v)}`, value: saved > 0.5 || saved < -0.5 ? (saved > 0 ? '+' : '−') + inr(Math.abs(saved)) : 'full' });
+    }
+    // NEW — fixed commission for selected people, once the minimum is reached: a % of sales, or ₹ per order
+    // A person's fixed commission is paid on EVERY panel row of that person (TM Perfume House, TM4U, TM Shower Gel),
+    // and even when the slab gives no rate (no slab rule / no target): the fixed % of sales (or ₹ per order) is the whole commission then.
+    const plan = n > 0 ? NEW.fixed.find((p) => p.emp === row.emp.employee_id && p.on && !p.from && !p.to && planReached(p)) : null;
+    if (plan) {
+      if (!c) c = { rate: 0, amount: 0, steps: [], held: 0, ticket, prepaidPct: prePct, overPct: 0, hit: false };
+      const v = Number(plan.per), cut = !gateOk(plan.grp), fctx = { hit: c.hit, ticket: c.ticket };
+      let full = 0, paid = 0, cutN = 0;
+      orders.forEach((o) => { const b = fixedBaseOf(o, plan.mode, v), q = fixedPayOf(o, plan.mode, v, cut, fctx); full += b; paid += q; if (cut && Math.abs(q - b) > 0.005) cutN++; });
+      c.fixedPlan = { mode: plan.mode, v, n, ach, badge: payBadge(plan.mode, v), cut, ctx: fctx };
+      c.slabAmount = c.amount;
+      c.amount = paid; c.held = full - paid; c.adj = false; c.mix = null; c.full = full;
+      c.steps = [{ label: 'Fixed commission', detail: `${plan.mode === 'rate' ? fmtN(v) + '% of ' + inr(ach) + ' sales' : n + ' order' + (n === 1 ? '' : 's') + ' × ' + inr(v)} (minimum ${planMinTxt(plan)} reached)`, value: inr(full) }];
+      if (cut) {
+        c.steps.push({ label: 'Order code', detail: `${gateTxt(plan.grp)} → orders are cut by the order-code rules (${cutN} order${cutN === 1 ? '' : 's'})`, value: (full - paid > 0.005 ? '−' : '') + inr(full - paid) });
+      }
+    }
+    // NEW — order-rating rules: each order's commission is cut by its star rating (and by "no code"), see starMul()
+    if (c && c.steps && n > 0 && NEW.star.some((r) => r.on)) {
+      const tmp = {}; tmp[row.emp.employee_id + '|' + row.rk] = { c, pm };
+      let cut = 0, cnt = 0;
+      orders.forEach((o) => { const sm = starMul(o); if (!sm) return; const b = comBase(o, tmp).v, sb = starBase(o, tmp).v, d = sb * sm.m - b; if (Math.abs(d) > 0.005) { cut += d; cnt++; } });
+      if (cnt) {
+        c.amount += cut; c.starCut = { cut, cnt };
+        c.steps.push({ label: 'Order rating', detail: `${cnt} order${cnt === 1 ? '' : 's'} with a low star rating pay less (rating rules)`, value: (cut < 0 ? '−' : '+') + inr(Math.abs(cut)) });
+      }
+    }
+    // NEW — panel + date rules, and a fixed commission that has dates: the order pays a fixed amount whatever it would have earned above
+    // (see panelRuleFor() / fixedFor())
+    if (n > 0 && (NEW.panel.some((r) => r.on) || NEW.fixed.some((p) => p.on && (p.from || p.to)))) {
+      const hits = orders.filter((o) => panelRuleFor(o, gateOk) || fixedFor(o, gateOk));
+      if (hits.length) {
+        if (!c) c = { rate: 0, amount: 0, steps: [], held: 0, ticket, prepaidPct: prePct, overPct: 0, hit: false };
+        const tmp = {}; tmp[row.emp.employee_id + '|' + row.rk] = { c, pm };
+        let dP = 0, dF = 0, nP = 0, nF = 0, fullF = 0, paidF = 0; const names = {}, rl = {}, fl = {};
+        hits.forEach((o) => {
+          const r = panelRuleFor(o, gateOk), cur = comStar(o, tmp).v;
+          if (r) { dP += o.amt * r.pct / 100 - cur; nP++; names[r.label || 'Panel rule'] = 1; rl[r.id] = r; }
+          else { const fp = fixedFor(o, gateOk), v = comOf(o, tmp, gateOk, true).v; dF += v - cur; nF++; fullF += fixedBaseOf(o, fp.mode, fp.per); paidF += v; fl[fp.id] = fp; }
+        });
+        c.amount += dP + dF; c.panelCnt = nP;
+        const ids = Object.keys(rl); if (ids.length === 1 && nP === n) c.panelBadge = fmtN(rl[ids[0]].pct) + '% fixed';
+        // every order of the row is on ONE dated fixed commission: show it as the rate (not the slab %), and the held-back amount is the fixed one's order-code cut
+        const fids = Object.keys(fl); if (fids.length === 1 && nF === n) { c.fixedBadge = payBadge(fl[fids[0]].mode, fl[fids[0]].per); c.held = fullF - paidF; c.full = fullF; c.adj = false; c.mix = null; }
+        if (nP) c.steps.push({ label: 'Panel rule', detail: `${nP} order${nP === 1 ? '' : 's'} pay a fixed % of sales · ${Object.keys(names).join(', ')}`, value: (dP < 0 ? '−' : '+') + inr(Math.abs(dP)) });
+        if (nF) c.steps.push({ label: 'Fixed commission', detail: `${nF} order${nF === 1 ? '' : 's'} on the fixed commission (its dates)`, value: (dF < 0 ? '−' : '+') + inr(Math.abs(dF)) });
+      }
+    }
+    // NEW — ML price slab: each order with a known total ML pays its slab % (see slabFor); the rest keep what they earn above.
+    if (n > 0 && window.MLSLAB && (MLSLAB.on(SLAB) || FLASH.length)) {
+      if (!c) c = { rate: 0, amount: 0, steps: [], held: 0, ticket, prepaidPct: prePct, overPct: 0, hit: false };
+      if (!c.steps) c.steps = [];
+      const tmp = {}; tmp[row.emp.employee_id + '|' + row.rk] = { c, pm, gates };
+      let dS = 0, nS = 0, vS = 0, aS = 0, capN = 0, ncN = 0, bnN = 0, flN = 0;
+      orders.forEach((o) => {
+        if (panelRuleFor(o, gateOk) || fixedFor(o, gateOk)) return;
+        const r = comOfAuto(o, tmp, gateOk);
+        if (!r.slab) return;
+        dS += r.v - comOfAuto(o, tmp, gateOk, true).v; nS++; vS += r.v; aS += o.amt;
+        if (r.slab.steps.some((t) => t.indexOf('target incomplete') > -1)) capN++;
+        if (r.slab.bonus) bnN++;
+        if (r.slab.flash) flN++; else if (!o.code) ncN++;
+      });
+      if (nS) {
+        c.amount += dS;
+        c.slab = { n: nS, all: nS === n, v: vS, amt: aS, pct: aS > 0 ? vS / aS * 100 : 0, capN, ncN };
+        if (nS === n) { c.slabBadge = fmtN(Math.round(c.slab.pct * 100) / 100) + '% ML'; c.held = 0; c.adj = false; }
+        c.steps.push({ label: 'ML price slab', detail: `${nS} order${nS === 1 ? '' : 's'} paid by size + price (avg ${fmtN(Math.round(c.slab.pct * 100) / 100)}%)${flN ? ` · ${flN} on a ⚡ Flash Offer (its own %)` : ''}${bnN ? ` · ${bnN} with +${fmtN(SLAB.bonus)}% bonus (target achieved)` : ''}${capN ? ` · ${capN} capped at ${fmtN(SLAB.cap)}% (target incomplete)` : ''}${ncN ? ` · ${ncN} without code → ${fmtN(SLAB.nocode)}%` : ''}${nS < n ? ` · ${n - nS} other order${n - nS === 1 ? '' : 's'} (no ML / size not in the chart / outside the slab dates) keep the normal commission` : ''}`, value: (dS < 0 ? '−' : '+') + inr(Math.abs(dS)) });
+      }
+    }
+    // NEW — an order whose commission was set by hand pays exactly that (₹ amount, or a rate on the order), whatever it would have earned above
+    if (n > 0) {
+      const ovs = orders.filter((o) => ovAmt(o) !== null);
+      if (ovs.length) {
+        if (!c) c = { rate: 0, amount: 0, steps: [], held: 0, ticket, prepaidPct: prePct, overPct: 0, hit: false };
+        if (!c.steps) c.steps = [];
+        const tmp = {}; tmp[row.emp.employee_id + '|' + row.rk] = { c, pm, gates };
+        let dO = 0;
+        ovs.forEach((o) => { dO += ovAmt(o) - comOf(o, tmp, gateOk, true).v; });
+        c.amount += dO; c.ovr = { n: ovs.length, d: dO };
+        c.steps.push({ label: 'Order set by hand', detail: `${ovs.length} order${ovs.length === 1 ? '' : 's'} pay the amount you set`, value: (dO < 0 ? '−' : '+') + inr(Math.abs(dO)) });
+      }
+    }
+    // NEW — target bonus (Commission Rules → Target bonus): for the chosen people and dates, once the COLLECTION of those dates reaches the TARGET of those dates
+    // (or target + X% more), the commission is raised by the step's % (final = commission + commission × %). Applied last, so it works on whatever the rules above
+    // paid; a commission set by hand (withManual below) still replaces everything. Nothing happens below the target.
+    if (c && c.steps && n > 0 && NEW.bonus.length) {
+      const key = row.key, byDay = IDX[key] || {};
+      for (const r of NEW.bonus) {
+        if (!r.on || !(r.all || r.who.indexOf(row.emp.employee_id) !== -1) || !days.some((d) => inWin(r, d))) continue;
+        let wa = 0, wt = 0;
+        SPAN.forEach((d) => { if (!inWin(r, d)) return; const x = byDay[d]; if (x) wa += x.ach; wt += targetOf(row, d); });
+        if (!(wt > 0)) continue;
+        const pct = (wa / wt - 1) * 100;
+        let hit = null; r.tiers.forEach((t) => { if (t.on && pct + 1e-9 >= t.over && (!hit || t.over > hit.over)) hit = t; });
+        if (!hit) continue;
+        let da = 0, ia = 0; days.forEach((d) => { const x = byDay[d]; if (x) { da += x.ach; if (inWin(r, d)) ia += x.ach; } });
+        const share = da > 0 ? ia / da : 0, bonus = c.amount * share * hit.bonus / 100;
+        if (!(bonus > 0.005)) continue;
+        c.amount += bonus; c.bonus = { label: r.label, pct: hit.bonus, over: hit.over, amount: bonus, ach: wa, target: wt };
+        c.steps.push({ label: 'Target bonus', detail: `${r.label}: collection ${inr(wa)} vs target ${inr(wt)} (${pct >= 0 ? '+' : ''}${Math.round(pct * 10) / 10}%) → ${hit.over === 0 ? 'target done' : 'target + ' + fmtN(hit.over) + '% more'}: +${fmtN(hit.bonus)}% on the commission${share < 1 ? ' (the part earned inside its dates)' : ''}${((r.from && r.from < FROM) || (r.to && r.to > TO)) ? ' · only the days loaded on this page are counted' : ''}`, value: '+' + inr(bonus) });
+        break;
+      }
+    }
+    return { gates, pm, row, ach, n, pre, target, ticket, prePct, pending: Math.max(0, target - ach), leave, absent, worked, orders, c: withManual(row, days, c || { rate: 0, amount: 0, steps: null, held: 0 }) };
+  }
+  // A commission set by hand replaces the worked-out one for the whole-month range (not for Today, nor for a single day of the detail).
+  function withManual(row, days, c) {
+    const k = row.emp.employee_id + '|' + row.rk;
+    const man = (days === DAYS ? MAN[k] : null) || (days.length === 1 && days[0] === TODAY ? DAYMAN[k] : null) || null;
+    if (!man) return c;
+    const autoTxt = inr(c.amount) + (c.steps ? ' (' + fmtN(c.rate) + '%)' : '');
+    return Object.assign({}, c, {
+      auto: { amount: c.amount, rate: c.rate, ok: !!c.steps, why: (c.fixedPlan || c.fixedBadge) ? 'Fixed commission' : (c.mix && c.mix.badge) ? 'Code rule' : c.panelBadge ? 'Panel rule' : c.slabBadge ? 'ML price slab' : 'Rate by target / ticket size / prepaid' },
+      manual: man, amount: man.amount, rate: man.rate, held: 0, fixedPlan: null, fixedBadge: null, mix: null, panelBadge: null, slabBadge: null, adj: null,
+      steps: [{ label: 'Manual commission', detail: 'Set by hand' + (man.reason ? ': ' + man.reason : '') + ' · automatic would be ' + autoTxt, value: fmtN(man.rate) + '%' }].concat((c.steps || []).map((x) => Object.assign({}, x, { label: 'Automatic · ' + x.label, muted: true }))),
+    });
+  }
+  // Average = achieved per working day, from the 1st up to the given day.
+  const avgTo = (row, day, from) => { const a = agg(row, SPAN.filter((d) => d >= (from || MSTART) && d <= day)); return a.worked > 0 ? a.ach / a.worked : 0; };
+
+  // ---------- Rendering ----------
+  const LEAVE_TXT = { present: ['Present', 'p-ok'], absent: ['Absent', 'p-leave'], leave: ['On leave', 'p-leave'], half_leave: ['Half-day leave', 'p-wait'], wfh: ['Work from home', 'p-blue'], holiday: ['Holiday', 'p-mut'], week_off: ['Week off', 'p-mut'] };
+  const AB_TITLE = 'No punch-in and no Leave / WFH / Holiday / Week-off mark — no target is counted for this day';
+  const ini = (n) => String(n).split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
+  const progress = (a) => { const p = a.target > 0 ? a.ach / a.target * 100 : 0; return `<div class="prog"><i class="${p > 130 ? 'over' : p >= 100 ? 'done' : ''}" style="width:${Math.min(100, p)}%"></i></div>`; };
+  const pctTxt = (a) => a.target > 0 ? `<span class="pct">${Math.round(a.ach / a.target * 100)}%</span>` : '';
+  const rateBtn = (a, key) => { if (!a.c.steps) return ''; WHY[key] = a; return `<button type="button" class="rate${a.c.fixedPlan || a.c.panelBadge || a.c.fixedBadge || (a.c.mix && a.c.mix.badge) || a.c.slabBadge ? ' fx' : ''}" data-why="${key}" title="How this was calculated">${a.c.panelBadge ? a.c.panelBadge : a.c.fixedPlan ? a.c.fixedPlan.badge : a.c.fixedBadge ? a.c.fixedBadge : (a.c.mix && a.c.mix.badge) ? a.c.mix.badge : a.c.slabBadge ? a.c.slabBadge : a.c.rate.toFixed(1).replace(/\.0$/, '') + '%'}</button>${a.c.bonus ? ` <span class="pill p-ok" title="${esc(a.c.bonus.label)}">+${fmtN(a.c.bonus.pct)}% bonus</span>` : ''}`; };
+  const pendCell = (a) => a.target <= 0 ? '<span class="muted">—</span>' : a.pending > 0 ? `<span class="pend">${inr(a.pending)}</span>` : '<span class="pend zero">✓ Done</span>';
+  const nameHtml = (row, chev, man) => `<b>${esc(row.emp.full_name)}${row.rk ? ' <span class="pill p-blue">' + esc(PLAB[row.rk]) + '</span>' : ''}${man ? ' <span class="pill man">MANUAL</span>' : ''}${chev ? ' <span class="chev">›</span>' : ''}</b>`;
+
+  function statusPill(st) { const t = LEAVE_TXT[st]; return t ? `<span class="pill ${t[1]}"${st === 'absent' ? ` title="${AB_TITLE}"` : ''}>${t[0]}</span>` : '<span class="muted">—</span>'; }
+
+  // Target cell: click it to see which panel each rupee of the target came from (and whether it was set by hand or is automatic).
+  const TG = {};
+  const tgtBtn = (a, key, days) => { if (!(a.target > 0)) return '<span class="muted">—</span>'; TG[key] = { a, days }; return `<button type="button" class="tgb" data-tg="${esc(key)}" title="Where this target comes from">${inr(a.target)}</button>`; };
+
+  function empRow(a, key, mode) {
+    const e = a.row.emp;
+    let leave;
+    if (mode === 'today') leave = statusPill(statusOf(e, TODAY));
+    else leave = (a.leave ? `<span class="pill p-leave">${a.leave} leave</span>` : '<span class="pill p-mut">0 leave</span>') + (a.absent ? ` <span class="pill p-wait" title="${AB_TITLE}">${a.absent} absent</span>` : '');
+    return `<tr class="click ${openKey === a.row.key && dScope === (mode === 'today' ? 't' : 'm') ? 'sel' : ''}" data-k="${esc(a.row.key)}">
+      <td><div class="emp"><div class="av">${esc(ini(e.full_name))}</div><div>${nameHtml(a.row, true, !!a.c.manual)}<span>${esc(e.role)}${e.employee_code ? ' · ' + esc(e.employee_code) : ''}</span></div></div></td>
+      <td class="r" data-label="Target">${tgtBtn(a, 'e' + key, mode === 'today' ? [TODAY] : DAYS)}</td>
+      <td class="r" data-label="Ticket Size">${a.n ? inr(a.ticket) + `<div class="small muted">${a.n} order${a.n === 1 ? '' : 's'}</div>` : '<span class="muted">—</span>'}</td>
+      <td class="r" data-label="Achieved"><b>${inr(a.ach)}</b>${pctTxt(a)}${a.target > 0 ? progress(a) : ''}</td>
+      <td class="r" data-label="Pending">${pendCell(a)}</td>
+      <td class="r" data-label="Average">${inr(mode === 'today' ? avgTo(a.row, TODAY) : (a.worked > 0 ? a.ach / a.worked : 0))}<div class="small muted">per day${mode === 'today' ? ' (this month)' : ''}</div></td>
+      <td class="r" data-label="Commission">${a.c.steps ? `<span class="com${a.c.manual ? ' man' : ''}">${inr(a.c.amount)}</span>${rateBtn(a, key)}${a.c.manual ? `<div class="held mann">manual · automatic would be ${inr(a.c.auto.amount)}</div>` : ''}${a.c.fixedPlan ? `<div class="held fxn">fixed · ${a.c.fixedPlan.mode === 'rate' ? fmtN(a.c.fixedPlan.v) + '% of ' + inr(a.c.fixedPlan.ach) : inr(a.c.fixedPlan.v) + ' × ' + a.c.fixedPlan.n + ' orders'}${a.c.fixedPlan.cut && Math.abs(a.c.held) >= 0.5 ? ' · order-code −' + inr(Math.abs(a.c.held)) : ''}${ratingTxt(a.c)}</div>` : a.c.mix ? `<div class="held mixn">✓ ${esc(a.c.mix.label || 'code rule')} · ${a.c.mix.pct}% with code → ${esc(payTxt(a.c.mix.mode, a.c.mix.v))}${a.c.mix.mode === 'full' && a.c.mix.saved > 0.5 ? ' (+' + inr(a.c.mix.saved) + ')' : ''}</div>` : Math.abs(a.c.held) >= 0.5 ? `<div class="held">order-code rules ${a.c.held > 0 ? '−' : '+'}${inr(Math.abs(a.c.held))}${ratingTxt(a.c)}</div>` : (ratingTxt(a.c) ? `<div class="held">${ratingTxt(a.c).replace(/^ · /, '')}</div>` : '')}` : '<span class="com none">₹0</span>'}</td>
+      <td data-label="Leave">${leave}</td></tr>`;
+  }
+  // the order-rating cut (Commission Rules → rating rules) is part of the total too, so it is named next to the order-code cut
+  const ratingTxt = (c) => c && c.starCut && Math.abs(c.starCut.cut) >= 0.5 ? ' · rating ' + (c.starCut.cut < 0 ? '−' : '+') + inr(Math.abs(c.starCut.cut)) : '';
+  const THEAD = '<thead><tr><th>Employee</th><th class="r">Target</th><th class="r">Ticket Size</th><th class="r">Achieved</th><th class="r">Pending</th><th class="r">Average</th><th class="r">Commission</th><th>Leave</th></tr></thead>';
+
+  function kpis(list) {
+    const com = list.reduce((s, r) => s + r.c.amount, 0), ach = list.reduce((s, r) => s + r.ach, 0), pend = list.reduce((s, r) => s + r.pending, 0);
+    const act = list.filter((r) => r.target > 0), hit = act.filter((r) => r.ach >= r.target).length;
+    const held = list.reduce((s, r) => s + (r.c.held || 0), 0);
+    return `<div class="kpi g"><div class="l">Total commission</div><div class="v">${inr(com)}</div></div>
+      ${Math.abs(held) >= 0.5 ? `<div class="kpi" title="Commission held back (−) or added (+) by the order-code rules"><div class="l">Order-code rules</div><div class="v">${held > 0 ? '−' : '+'}${inr(Math.abs(held))}</div></div>` : ''}
+      <div class="kpi"><div class="l">Achieved</div><div class="v">${inr(ach)}</div></div>
+      <div class="kpi"><div class="l">Pending</div><div class="v">${inr(pend)}</div></div>
+      <div class="kpi"><div class="l">Target hit</div><div class="v">${hit} / ${act.length}</div></div>`;
+  }
+
+  // ---------- Pagination ----------
+  const PAGE_SIZES = [10, 25, 50, 100];
+  function paginate(list, st) {
+    if (!PAGING) return { rows: list, from: list.length ? 1 : 0, to: list.length, pages: 1 };
+    const pages = Math.max(1, Math.ceil(list.length / st.size));
+    if (st.page > pages) st.page = pages; if (st.page < 1) st.page = 1;
+    const a = (st.page - 1) * st.size;
+    return { rows: list.slice(a, a + st.size), from: list.length ? a + 1 : 0, to: Math.min(list.length, a + st.size), pages };
+  }
+  function pagerHtml(st, total, pg, noun) {
+    if (!PAGING) return total > 10 ? `<div class="pager"><span class="pinfo">Showing <b>all ${total}</b> ${noun} · pagination is OFF</span></div>` : '';
+    if (total <= PAGE_SIZES[0]) return '';
+    const nums = []; const p = st.page, n = pg.pages;
+    for (let i = 1; i <= n; i++) if (i === 1 || i === n || Math.abs(i - p) <= 1) nums.push(i); else if (nums[nums.length - 1] !== '…') nums.push('…');
+    return `<div class="pager"><span class="pinfo">Showing <b>${pg.from}–${pg.to}</b> of <b>${total}</b> ${noun}</span>
+      <select class="psize" data-size aria-label="Rows per page">${PAGE_SIZES.map((v) => `<option value="${v}" ${v === st.size ? 'selected' : ''}>${v} / page</option>`).join('')}</select>
+      <button type="button" data-pg="${p - 1}" ${p <= 1 ? 'disabled' : ''} aria-label="Previous page">‹</button>
+      ${nums.map((x) => x === '…' ? '<span class="gap">…</span>' : `<button type="button" data-pg="${x}" class="${x === p ? 'on' : ''}">${x}</button>`).join('')}
+      <button type="button" data-pg="${p + 1}" ${p >= n ? 'disabled' : ''} aria-label="Next page">›</button></div>`;
+  }
+
+  // The pricing of one order in its employee's period: { sh, eff, flat } and the employee's rate.
+  // NEW: what ONE order earns, with a short reason when it is ₹0 or special
+  function comBase(o, aggs) {
+    const A = aggs[o.emp + '|' + o.rk], c = A && A.c;
+    if (c && c.fixedPlan) { const fp = c.fixedPlan, v = fixedPayOf(o, fp.mode, fp.v, fp.cut, fp.ctx), b = fixedBaseOf(o, fp.mode, fp.v); return { v, note: 'fixed · ' + payTxt(fp.mode, fp.v) + (fp.cut && Math.abs(v - b) > 0.005 ? ' · order-code cut' : ''), cls: Math.abs(v - b) > 0.005 ? 'cut' : 'fx' }; }
+    const p = (A && A.pm && A.pm[o.key]) || o, rate = c ? (c.rate || 0) : 0;
+    if (!c || !c.steps) return { v: 0, note: 'no commission earned this period', cls: 'z' };
+    if (c.mix && c.mix.mode !== 'full' && inWin(c.mix.win, o.day)) {
+      const m = c.mix, v = m.mode === 'rate' ? o.amt * m.v / 100 : m.mode === 'flat' ? m.v : orderCom(p, rate) * m.v / 100;
+      return { v, note: (m.label || 'code rule') + ' · ' + payTxt(m.mode, m.v), cls: 'mx' };
+    }
+    if (!rate && !p.flat) return { v: 0, note: 'rate is 0% this period', cls: 'z' };
+    const v = orderCom(p, rate);
+    if (c.mix && !(p.sh && p.sh.why === 'manual')) return { v, note: 'full · ' + (c.mix.label || 'code rule'), cls: 'mx' };
+    if (v < 0.005) return { v: 0, note: p.sh && p.sh.why === 'rule' ? ruleName(p.sh.rule) + ' pays ' + shTxt(p.sh) : 'pays 0', cls: 'z' };
+    if (p.sh && p.sh.why === 'rule' && p.sh.mode === 'pct' && p.sh.v < 100) return { v, note: ruleName(p.sh.rule) + ' · ' + shTxt(p.sh), cls: 'cut' };
+    return { v, note: '', cls: '' };
+  }
+  // NEW — order-rating rules (set on the Commission Rules page): an order rated up to N stars pays X% of its commission,
+  // and if it also has no code, Y% of that. The lowest-star rule an order fits wins. Unrated orders pay normally.
+  const starTxt = (v) => fmtN(v) + '★';
+  // the order's star rating (given on the Orders / Performance page), read-only here
+  const starCell = (o) => o.stars == null ? '<span class="muted">—</span>' : `<span class="stars" title="${fmtN(o.stars)} of 5 stars">★★★★★<i style="width:${Math.max(0, Math.min(100, o.stars / 5 * 100))}%">★★★★★</i></span><span class="stnum">${fmtN(o.stars)} / 5</span>`;
+  function starMul(o) {
+    if (o.stars == null) return null;
+    let best = null;
+    NEW.star.forEach((r) => { if (r.on && inWin(r, o.day) && (!r.who.length || r.who.indexOf(o.emp) !== -1) && o.stars <= r.star && (!best || r.star < best.star)) best = r; });
+    return best ? { r: best, m: best.pay / 100 * (o.code ? 1 : best.nc / 100) } : null;
+  }
+  // A rated order that fits a rating rule starts from its FULL commission (rate × amount) — the rating rule decides the cut,
+  // including the "no code" cut, so the order-code rule is not applied on top of it. (Fixed commission / a rule paying
+  // a fixed %, % or ₹ keep their own amount and the rating cut is applied to that.)
+  function starBase(o, aggs) {
+    const A = aggs[o.emp + '|' + o.rk], c = A && A.c, b = comBase(o, aggs);
+    if (c && c.fixedPlan && c.fixedPlan.cut && starMul(o)) return { v: fixedBaseOf(o, c.fixedPlan.mode, c.fixedPlan.v), replaces: true };      // fixed paid with the order-code cut: a rating rule decides the cut itself (incl. "no code"), as for the normal commission
+    if (!c || !c.steps || c.fixedPlan || (c.mix && c.mix.mode !== 'full')) return { v: b.v, replaces: false };
+    return { v: (c.rate || 0) * o.amt / 100, replaces: true };
+  }
+  function comStar(o, aggs) {
+    const b = comBase(o, aggs), s = starMul(o);
+    if (!s) return b;
+    const sb = starBase(o, aggs);
+    if (!(sb.v > 0)) return b;
+    const v = sb.v * s.m;
+    return { v, note: starTxt(o.stars) + ' rating · ' + (s.r.label || 'rating rule') + ' · pays ' + fmtN(s.r.pay) + '%' + (!o.code && Number(s.r.nc) !== 100 ? ', no code → ' + fmtN(s.r.nc) + '% of that' : ''), cls: v < 0.005 ? 'z' : 'cut' };
+  }
+  // NEW — panel + date rules (set on the Commission Rules page): orders of the chosen panels on the chosen business days pay a fixed % of
+  // their amount. This wins over the slab, the order-code rules, the person's fixed commission and the rating rules (an order whose share
+  // was changed by hand keeps that share). The earliest rule that fits is used.
+  function panelRuleFor(o, ok) {
+    if (manPct(o.key)) return null;
+    let best = null;
+    NEW.panel.forEach((r) => { if (r.on && inWin(r, o.day) && (!ok || ok(r.grp)) && r.panels.indexOf(o.house) !== -1 && (!r.who.length || r.who.indexOf(o.emp) !== -1) && (!best || r.id < best.id)) best = r; });
+    return best;
+  }
+  // A person's fixed commission that has dates: the orders of those days pay it (a % of the order, or ₹ per order) — once the minimum is reached.
+  // (A fixed commission for all days is worked out on the whole period instead, see agg().) The rating cut still applies to it.
+  function fixedFor(o, ok) {
+    if (manPct(o.key)) return null;                 // every panel row of the person (not only TM Perfume House)
+    return NEW.fixed.find((p) => p.on && (p.from || p.to) && p.emp === o.emp && inWin(p, o.day) && planReached(p)) || null;
+  }
+  // the bundle condition of the employee this order belongs to (worked out in agg())
+  const gateFn = (o, aggs) => { const A = aggs && aggs[o.emp + '|' + o.rk]; return (g) => !g || !A || !A.gates || A.gates[g] !== false; };
+  // NEW — ML price slab: the order's total ML + its price give its commission % (Commission Rules → ML price slab).
+  // The daily target is checked per day (the order's own business day, its panel row): true = achieved (+ bonus), false = not, null = no target that day.
+  function slabHit(o) {
+    const e = EMPS.find((x) => x.employee_id === o.emp);
+    const t = Number(((((e || {}).target || {})[o.rk]) || {})[o.day] || 0);
+    if (!(t > 0)) return null;
+    const cell = (IDX[o.emp + '|' + o.rk] || {})[o.day];
+    return !!cell && cell.ach >= t;
+  }
+  // % above the day's target (0 = just reached): the over-target bonus steps (+30% → 30% extra, +40%, +60%, +100%) use it.
+  function slabOver(o) {
+    const e = EMPS.find((x) => x.employee_id === o.emp);
+    const t = Number(((((e || {}).target || {})[o.rk]) || {})[o.day] || 0), cell = (IDX[o.emp + '|' + o.rk] || {})[o.day];
+    return t > 0 && cell ? (cell.ach / t - 1) * 100 : null;
+  }
+  // null = the slab does not decide this order (switched off, no ML, size outside the chart, or a fixed commission / code-mix rule pays the person).
+  // 70% code rule: once enough of a person's orders of a day carry a code, every order of that day pays full (o.codeOk). Worked out once per order list / chart.
+  let CODE_DONE = { s: null, o: null };
+  function ensureCodes() {
+    if (!window.MLSLAB || !SLAB || (CODE_DONE.s === SLAB && CODE_DONE.o === ORD)) return;
+    CODE_DONE = { s: SLAB, o: ORD }; MLSLAB.tagCodes(SLAB, ORD);
+  }
+  function slabFor(o, aggs) {
+    if (!window.MLSLAB || o.ml == null || !(MLSLAB.on(SLAB) || FLASH.length)) return null;
+    ensureCodes();
+    const A = aggs && aggs[o.emp + '|' + o.rk], c = A && A.c;
+    if (c && (c.fixedPlan || (c.mix && c.mix.mode !== 'full' && inWin(c.mix.win, o.day)))) return null;
+    // ⚡ Flash Offer: this size, sold inside the offer's hours → the offer's flat % (price not compared); wins over the slab, works with the chart off.
+    const f = FLASH.length ? MLSLAB.flashFor(FLASH, o.ml, o.created) : null;
+    if (f) return MLSLAB.flashCom(f, o);
+    if (!MLSLAB.on(SLAB)) return null;
+    return MLSLAB.orderCom(SLAB, o, slabHit(o), slabOver(o));
+  }
+  // An order whose commission was set by hand (₹ / rate) pays exactly that; noOv = what it would earn by the rules alone.
+  function comOf(o, aggs, ok, noOv) {
+    const ov = noOv ? null : ovAmt(o);
+    if (ov !== null) { const m = manOf(o.key); return { v: ov, note: 'set by hand · ' + ovTxt(m), cls: 'man' }; }
+    return comOfAuto(o, aggs, ok);
+  }
+  function comOfAuto(o, aggs, ok, noSlab) {
+    ok = ok || gateFn(o, aggs);
+    const r = panelRuleFor(o, ok);
+    if (r) return { v: o.amt * r.pct / 100, note: (r.label || 'Panel rule') + ' · fixed ' + fmtN(r.pct) + '%', cls: 'fx' };
+    const fp = fixedFor(o, ok);
+    if (fp) {
+      const A = aggs && aggs[o.emp + '|' + o.rk], cc = A && A.c, cut = !!(ok && fp.grp && !ok(fp.grp)), sm = starMul(o), fv = fixedPayOf(o, fp.mode, fp.per, cut && !sm, cc ? { hit: cc.hit, ticket: cc.ticket } : undefined);      // a rating rule decides the cut itself (incl. "no code")
+      const v = fv * (sm ? sm.m : 1);
+      return { v, note: 'fixed · ' + payTxt(fp.mode, fp.per) + (cut && Math.abs(fv - fixedBaseOf(o, fp.mode, fp.per)) > 0.005 ? ' · order-code cut' : '') + (sm ? ' · ' + starTxt(o.stars) + ' rating cut' : ''), cls: 'fx' };
+    }
+    // NEW — ML price slab: wins over the normal slab rate and the order-code rules (it has its own "no code" cut); a rating rule still cuts it.
+    const sl = noSlab ? null : slabFor(o, aggs);
+    if (sl && sl.flash) {
+      const sm = starMul(o), v = sl.v * (sm ? sm.r.pay / 100 : 1);
+      return { v, note: '⚡ Flash offer · ' + sl.ml + ' ml · ' + fmtN(sl.base) + '%' + (o.code ? '' : ' → ' + fmtN(sl.pct) + '% (no code)') + (sm ? ' · ' + starTxt(o.stars) + ' rating cut' : ''), cls: v < 0.005 ? 'z' : 'sl', slab: sl };
+    }
+    if (sl) {
+      const sm = starMul(o), v = sl.v * (sm ? sm.r.pay / 100 : 1);
+      const why = [];
+      if (sl.overMax) why.push('discount ' + fmtN(sl.disc) + '% more than ' + fmtN(SLAB.maxdisc) + '% max');
+      else {
+        if (sl.pct < sl.base && slabHit(o) === false) why.push('target incomplete');
+        if (!o.code && o.codeOk) why.push('no code, but the day\'s code goal is reached → full');
+        else if (!o.code && Number(SLAB.nocode) !== 100) why.push('no code');
+        if (sl.bonus) why.push('target achieved +' + fmtN(sl.bonusPct != null ? sl.bonusPct : SLAB.bonus) + '%'); if (sl.special) why.push('📅 ' + sl.special.join(', '));
+      }
+      return { v, note: 'ML slab · ' + sl.ml + ' ml · ' + fmtN(sl.base) + '%' + (why.length ? ' → ' + fmtN(sl.pct) + '% (' + why.join(', ') + ')' : '') + (sm ? ' · ' + starTxt(o.stars) + ' rating cut' : ''), cls: v < 0.005 ? 'z' : 'sl', slab: sl };
+    }
+    return comStar(o, aggs);
+  }
+  const shNote = (o, aggs) => panelRuleFor(o, gateFn(o, aggs)) ? 'panel rule' : fixedFor(o, gateFn(o, aggs)) ? 'fixed rule' : slabFor(o, aggs) ? (slabFor(o, aggs).flash ? 'flash offer' : 'ML slab') : byRating(o, aggs) ? 'by rating' : '';
+  const byRating = (o, aggs) => !!starMul(o) && starBase(o, aggs).replaces && starBase(o, aggs).v > 0;
+  const comCell = (r) => `<b class="${r.cls === 'z' ? 'zero' : ''}">${inr(r.v)}</b>${r.note ? `<div class="cn ${r.cls}">${esc(r.note)}</div>` : ''}`;
+  const priceIn = (aggs, o) => { const A = aggs[o.emp + '|' + o.rk]; return { p: (A && A.pm && A.pm[o.key]) || o, rate: A && A.c ? (A.c.rate || 0) : 0 }; };
+  function ordTable(list, st, withDate, id, aggs) {
+    if (!list.length) return '<div class="empty">No orders match.</div>';
+    const byEmp = {}; EMPS.forEach((e) => { byEmp[e.employee_id] = e; });
+    const pg = paginate(list, st), shown = pg.rows, tot = list.reduce((s, o) => s + o.amt, 0);
+    const tm = (t) => new Date(t).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+    return `<table style="min-width:980px"><thead><tr><th>Order</th><th>${withDate ? 'Date · Time' : 'Time'}</th><th>Employee</th><th class="r">Amount</th><th>Payment</th><th>Code</th><th>Rating</th><th class="r">Share</th><th class="r">Commission</th></tr></thead><tbody>
+      ${shown.map((o) => { const q = priceIn(aggs, o); return `<tr><td data-label="Order"><b>${esc(o.name)}</b><div class="small muted">${esc(o.store)}</div></td><td data-label="${withDate ? 'Date · Time' : 'Time'}">${withDate ? esc(dFmt(o.day)) + ' · ' : ''}${esc(tm(o.created))}</td>
+        <td data-label="Employee">${esc(byEmp[o.emp].full_name)}${o.rk ? ' <span class="pill p-blue">' + esc(PLAB[o.rk]) + '</span>' : ''}</td><td class="r" data-label="Amount"><b>${inr(o.amt)}</b></td>
+        <td data-label="Payment"><span class="pill ${o.pre ? 'pay-pre' : 'pay-cod'}">${o.pre ? 'Prepaid' : 'COD / pending'}</span></td><td data-label="Code">${o.code ? `<span class="ocode">${esc(o.code)}</span>` : '<span class="pill p-leave" style="font-size:11px;">no code</span>'}</td>
+        <td data-label="Rating">${starCell(o)}</td>
+        <td class="r" data-label="Share" style="white-space:nowrap;">${shCell(o, aggs, q.p)}</td>
+        <td class="r" data-label="Commission">${comCell(comOf(o, aggs))}</td></tr>`; }).join('')}
+      </tbody></table>
+      <div class="ordsum">${list.length} order${list.length === 1 ? '' : 's'} · <b>${inr(tot)}</b></div>
+      ${pagerHtml(st, list.length, pg, 'orders')}`;
+  }
+
+  function renderTable(k) {
+    const st = ST[k], q = st.q.trim().toLowerCase(), isT = k === 't';
+    const days = isT ? [TODAY] : DAYS;
+    let all = ROWS.map((r) => agg(r, days));
+    if (!isT) all = all.filter((a) => a.n || a.target > 0);
+    $(k + 'Kpis').innerHTML = kpis(all);
+    const body = $(k + 'Body');
+    if (st.view === 'emp') {
+      const rows = all.filter((a) => a.row.emp.full_name.toLowerCase().includes(q)).sort(SORTS[st.sort][1]);
+      const pg = paginate(rows, st);
+      body.innerHTML = rows.length ? `<table>${THEAD}<tbody>${pg.rows.map((a) => empRow(a, k + a.row.key, isT ? 'today' : 'month')).join('')}</tbody></table>${pagerHtml(st, rows.length, pg, 'employees')}`
+        : `<div class="empty">${ROWS.length ? 'No employee matches “' + esc(st.q) + '”.' : 'No sales employee has a target or orders yet this month.'}</div>`;
+    } else {
+      const aggs = {}; all.forEach((a) => { aggs[a.row.key] = a; });
+      body.innerHTML = ordTable(ORD.filter((o) => (isT ? o.day === TODAY : (o.day >= RFROM && o.day <= RTO)) && EMPS.find((e) => e.employee_id === o.emp).full_name.toLowerCase().includes(q)), st, !isT, k, aggs);
+    }
+  }
+  function setRanges() {
+    $('tRange').textContent = dFmt(TODAY) + ' · order day ' + dayWindowText() + ' · ' + ORD.filter((o) => o.day === TODAY).length + ' orders so far';
+    $('mRange').textContent = dFmt(RFROM) + (RFROM === RTO ? '' : ' → ' + dFmt(RTO)) + ' · ' + ORD.filter((o) => o.day >= RFROM && o.day <= RTO).length + ' orders' + (CODE.on ? ' · order-code rules ON' : '');
+  }
+
+  // ---------- Date-wise detail (Monthly table → employee) ----------
+  function renderDetail() {
+    const box = $('detail');
+    const row = openKey && ROWS.find((r) => r.key === openKey);
+    if (!row) { box.hidden = true; return; }
+    box.hidden = false;
+    const e = row.emp, m = agg(row, dDays());
+    $('dAv').textContent = ini(e.full_name); $('dName').textContent = e.full_name + (row.rk ? ' · ' + PLAB[row.rk] : '');
+    $('dSub').textContent = e.role + (e.employee_code ? ' · ' + e.employee_code : '') + ' · ' + (dScope === 't' ? 'Today · ' + dFmt(TODAY) : dFmt(RFROM) + (RFROM === RTO ? '' : ' → ' + dFmt(RTO)));
+    if (m.c.manual) $('dSub').textContent += ' · automatic would be ' + inr(m.c.auto.amount) + (m.c.auto.ok ? ' (' + fmtN(m.c.auto.rate) + '%)' : '');
+    const mb = $('dMan');
+    mb.style.display = ''; mb.disabled = false;
+    mb.textContent = m.c.manual ? '✎ Change manual commission' : '✎ Change commission';
+    mb.title = 'Change this employee\'s commission by hand (saved for ' + (dScope === 't' ? 'today' : manOk() ? 'this month' : RFROM === RTO ? 'this day' : 'this date range') + ')';
+    const cpct = m.n ? Math.round(m.orders.filter((o) => o.code).length / m.n * 100) : 0, zero0 = m.orders.length;
+    $('dKpis').innerHTML = `<div class="kpi ${m.c.manual ? 'o' : 'g'}"><div class="l">Commission${m.c.manual ? ' · manual' : ''}</div><div class="v">${inr(m.c.amount)}</div></div><div class="kpi${m.c.manual ? ' o' : ''}"><div class="l">${m.c.manual ? 'Manual rate' : m.c.panelBadge ? 'Panel rule' : (m.c.fixedPlan || m.c.fixedBadge) ? 'Fixed commission' : (m.c.mix && m.c.mix.badge) ? 'Code rule' : m.c.slabBadge ? 'ML price slab (avg)' : 'Rate'}</div><div class="v">${m.c.panelBadge ? m.c.panelBadge : m.c.fixedPlan ? m.c.fixedPlan.badge : m.c.fixedBadge ? m.c.fixedBadge : (m.c.mix && m.c.mix.badge) ? m.c.mix.badge : m.c.slabBadge ? m.c.slabBadge : (m.c.steps ? m.c.rate.toFixed(1).replace(/\.0$/, '') : 0) + '%'}</div></div><div class="kpi"><div class="l">Orders</div><div class="v">${m.n}</div></div><div class="kpi"><div class="l">Orders with code</div><div class="v">${cpct}%</div></div>`;
+    $('dView').style.display = dScope === 't' ? 'none' : '';
+    if (dScope === 't') ST.d.tab = 'ord';
+    [...$('dView').children].forEach((b) => b.classList.toggle('on', b.dataset.v === ST.d.tab));
+    if (ST.d.tab === 'ord') { renderDetailOrders(row, m); return; }
+    $('dNote').textContent = 'Daily commission is an estimate of that day alone (that day\'s ticket size against that day\'s target). The row in the Monthly table uses the whole range, so the two do not add up exactly — the range total is the one that counts.';
+    const tm = (t) => new Date(t).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+    const rowsHtml = DAYS.slice().reverse().map((d) => {
+      const a = agg(row, [d]), st = statusOf(e, d), open = dayOpen.has(d) && a.n > 0;
+      const key = 'd' + row.key + d;
+      let h = `<tr class="day ${st === 'absent' || st === 'leave' ? 'leaveday' : ''}" data-d="${d}">
+        <td data-label="Date"><b>${esc(dFmt(d))}</b>${d === TODAY ? ' <span class="pill p-wait">Today</span>' : ''}${a.n ? '<span class="chev">' + (open ? '▾' : '›') + '</span>' : ''}</td>
+        <td class="r" data-label="Target">${tgtBtn(a, 'g' + key, [d])}</td>
+        <td class="r" data-label="Ticket Size">${a.n ? inr(a.ticket) + `<div class="small muted">${a.n} order${a.n === 1 ? '' : 's'}</div>` : '<span class="muted">—</span>'}</td>
+        <td class="r" data-label="Achieved"><b>${inr(a.ach)}</b>${pctTxt(a)}</td>
+        <td class="r" data-label="Pending">${pendCell(a)}</td>
+        <td class="r" data-label="Average">${inr(avgTo(row, d, RFROM))}<div class="small muted">per day so far</div></td>
+        <td class="r" data-label="Est. commission">${a.c.steps ? `<span class="com">${inr(a.c.amount)}</span>${rateBtn(a, key)}` : '<span class="com none">₹0</span>'}</td>
+        <td data-label="Leave">${statusPill(st)}</td></tr>`;
+      if (open) h += `<tr class="ord"><td colspan="8">${a.orders.slice().sort((x, y) => String(y.created).localeCompare(String(x.created))).map((o) => `<div class="oline"><span>${esc(tm(o.created))} · <b>${esc(o.name)}</b>${o.code ? ` <span class="ocode">${esc(o.code)}</span>` : ' <span class="pill p-leave" style="font-size:11px;">no code</span>'}${((a.pm && a.pm[o.key]) || o).sh ? ' ' + shChip(o, false, (a.pm && a.pm[o.key]) || o) : ''}</span><span><b>${inr(o.amt)}</b> <span class="pill ${o.pre ? 'pay-pre' : 'pay-cod'}">${o.pre ? 'Prepaid' : 'COD / pending'}</span>${o.stars == null ? '' : ' <span class="small muted">' + starTxt(o.stars) + '</span>'}</span></div>`).join('')}</td></tr>`;
+      return h;
+    }).join('');
+    $('dBody').innerHTML = `<table><thead><tr><th>Date</th><th class="r">Target</th><th class="r">Ticket Size</th><th class="r">Achieved</th><th class="r">Pending</th><th class="r">Average</th><th class="r">Est. commission</th><th>Leave</th></tr></thead><tbody>${rowsHtml}</tbody></table>
+      <div class="ordsum">Month total · target ${inr(m.target)} · achieved <b>${inr(m.ach)}</b> · pending ${inr(m.pending)} · ticket ${m.n ? inr(m.ticket) : '—'} · commission <b style="color:var(--ok-fg)">${inr(m.c.amount)}</b> · ${m.leave} leave${m.absent ? ', ' + m.absent + ' absent' : ''}</div>`;
+  }
+
+
+  // NEW — every order of this employee in the range, with the commission each one earns (₹0 ones too, with the reason)
+  function renderDetailOrders(row, m) {
+    const e = row.emp, aggs = {}; aggs[row.key] = m;
+    const tm = (t) => new Date(t).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+    const list = ORD.filter((o) => o.emp === e.employee_id && o.rk === row.rk && o.day >= dFrom() && o.day <= dTo()).slice().sort((a, b) => String(b.created).localeCompare(String(a.created)));
+    const rows = list.map((o) => ({ o, r: comOf(o, aggs) }));
+    const sumCom = rows.reduce((s, x) => s + x.r.v, 0), sumAmt = list.reduce((s, o) => s + o.amt, 0), zeros = rows.filter((x) => x.r.v === 0).length;
+    const st = ST.d, pg = paginate(rows, st);
+    $('dBody').innerHTML = !rows.length ? '<div class="empty">' + (dScope === 't' ? 'No orders today yet.' : 'No orders in this date range.') + '</div>' : `<table class="oT"><thead><tr><th>Order</th><th>Date · Time</th><th class="r">Amount</th><th>Payment</th><th>Code</th><th>Rating</th><th class="r">Share</th><th class="r">Commission</th></tr></thead><tbody>
+      ${pg.rows.map(({ o, r }) => `<tr><td data-label="Order"><b>${esc(o.name)}</b><div class="small muted">${esc(o.store)}</div></td>
+        <td data-label="Date · Time">${esc(dFmt(o.day))} · ${esc(tm(o.created))}</td>
+        <td class="r" data-label="Amount"><b>${inr(o.amt)}</b></td>
+        <td data-label="Payment"><span class="pill ${o.pre ? 'pay-pre' : 'pay-cod'}">${o.pre ? 'Prepaid' : 'COD / pending'}</span></td>
+        <td data-label="Code">${o.code ? `<span class="ocode">${esc(o.code)}</span>` : '<span class="pill p-leave" style="font-size:11px;">no code</span>'}</td>
+        <td data-label="Rating">${starCell(o)}</td>
+        <td class="r" data-label="Share" style="white-space:nowrap;">${shCell(o, aggs, (m.pm && m.pm[o.key]) || o, m.c.fixedPlan)}</td>
+        <td class="r" data-label="Commission">${comCell(r)}</td></tr>`).join('')}
+      </tbody></table>
+      <div class="ordsum">${list.length} order${list.length === 1 ? '' : 's'} · <b>${inr(sumAmt)}</b> sales · commission <b style="color:var(--ok-fg)">${inr(sumCom)}</b>${zeros ? ` · <b>${zeros}</b> order${zeros === 1 ? '' : 's'} earned ₹0` : ''}${Math.abs(sumCom - m.c.amount) < 1 ? ' · <span class="chk">✓ adds up to the ' + (dScope === 't' ? 'Today' : 'Monthly') + ' row</span>' : ''}</div>
+      ${pagerHtml(st, rows.length, pg, 'orders')}`;
+    $('dNote').textContent = (m.c.manual ? 'This employee\'s commission was set by hand, so the commission in the box above is the manual figure; the amounts per order below are only an estimate at that rate. ' : '') + (dScope === 't' ? 'Every order the employee made today' : 'Every order the employee made in this date range') + ' is listed — including the ones that earn ₹0. Cancelled orders are not counted. The commission column adds up to the employee\'s commission in the ' + (dScope === 't' ? 'Today' : 'Monthly') + ' table.';
+  }
+
+  // ---------- "How was this rate reached" popover ----------
+  const pop = document.createElement('div'); pop.className = 'pop'; pop.hidden = true; $('cm').appendChild(pop);
+  function showWhy(btn) {
+    const a = WHY[btn.dataset.why]; if (!a || !a.c.steps) return;
+    const c = a.c;
+    pop.innerHTML = `<h5>${esc(a.row.emp.full_name)} — how ${c.fixedPlan ? 'the fixed commission' : (c.mix && c.mix.badge) ? 'the code rule pays' : c.rate.toFixed(1).replace(/\.0$/, '') + '%'} was reached</h5>
+      <div class="ln"><span>Ticket size</span><b>${inr(c.ticket)}</b></div>
+      <div class="ln"><span>Achieved vs target</span><b>${inr(a.ach)} / ${a.target > 0 ? inr(a.target) + ' (' + Math.round(a.ach / a.target * 100) + '%)' : 'no target'}</b></div>
+      <div class="ln"><span>Prepaid share</span><b>${Math.round(c.prepaidPct)}%</b></div>
+      ${c.fixedPlan ? `<div class="ln"><span>Normal slab would be</span><b>${inr(c.slabAmount)}</b></div>` : ''}
+      ${c.steps.map((s) => `<div class="ln"><span>${esc(s.label)} · ${esc(s.detail)}</span><b>${esc(s.value)}</b></div>`).join('')}
+      <div class="ln tot"><span>${c.manual ? 'Manual commission' : c.fixedPlan ? ((c.fixedPlan.cut || c.starCut) ? 'Fixed commission after cuts' : c.fixedPlan.mode === 'rate' ? fmtN(c.fixedPlan.v) + '% × ' + inr(c.fixedPlan.ach) : c.fixedPlan.n + ' orders × ' + inr(c.fixedPlan.v)) : c.mix ? esc(c.mix.label || 'Code rule') + ' · ' + esc(payTxt(c.mix.mode, c.mix.v)) : c.adj ? 'After order-code rules' : inr(a.ach) + ' × ' + c.rate.toFixed(1).replace(/\.0$/, '') + '%'}</span><span>${inr(c.amount)}</span></div>`;
+    pop.hidden = false;
+    pop.style.left = '0px'; pop.style.top = '0px';
+    const r = btn.getBoundingClientRect(), w = pop.offsetWidth, h = pop.offsetHeight;
+    pop.style.left = Math.max(10, Math.min(innerWidth - w - 10, r.left + r.width / 2 - w / 2)) + 'px';
+    pop.style.top = (r.bottom + h + 10 > innerHeight ? Math.max(10, r.top - h - 8) : r.bottom + 8) + 'px';
+  }
+  const PNAME = { tmph: 'TM Perfume House', tm4u: 'TM4U', tmsg: 'TM Shower Gel' };
+  const TSRC = { manual: 'Set by hand', shared: 'Set on the Targets page', ladder: 'New Sales Executive ladder', rule: 'Automatic rule', profile: 'Profile / monthly target' };
+  function showTgt(btn) {
+    const t = TG[btn.dataset.tg]; if (!t) return;
+    const a = t.a, e = a.row.emp, parts = ((e.parts || {})[a.row.rk]) || [];
+    const lines = parts.map((p) => {
+      let amt = 0; const ss = {};
+      t.days.forEach((d) => { const v = Number((p.by_day || {})[d] || 0); if (v > 0) { amt += v; ss[(p.src || {})[d] || ''] = 1; } });
+      return amt > 0 ? { panel: p.panel, amt, src: Object.keys(ss).map((k) => TSRC[k] || '').filter(Boolean).join(' + ') } : null;
+    }).filter(Boolean);
+    const sum = lines.reduce((s, l) => s + l.amt, 0);
+    pop.innerHTML = `<h5>${esc(e.full_name)} — target ${inr(a.target)}</h5>
+      ${lines.length ? lines.map((l) => `<div class="ln"><span>${esc(PNAME[l.panel] || l.panel)}<span class="sub">${esc(l.src)}</span></span><b>${inr(l.amt)}</b></div>`).join('') : '<div class="ln"><span>No target detail for this period</span><b>—</b></div>'}
+      <div class="ln tot"><span>Target used for commission</span><span>${inr(a.target)}</span></div>
+      ${lines.length && Math.abs(sum - a.target) > 1 ? `<div class="note">Panel parts add up to ${inr(sum)}.</div>` : ''}
+      <div class="note">${a.row.rk ? esc(PLAB[a.row.rk]) + ' is counted on its own: its own target and its own commission.' : 'TM4U and TM Shower Gel are separate rows.'} Days marked Absent or Leave count no target.</div>`;
+    pop.hidden = false;
+    pop.style.left = '0px'; pop.style.top = '0px';
+    const r = btn.getBoundingClientRect(), w = pop.offsetWidth, h = pop.offsetHeight;
+    pop.style.left = Math.max(10, Math.min(innerWidth - w - 10, r.left + r.width / 2 - w / 2)) + 'px';
+    pop.style.top = (r.bottom + h + 10 > innerHeight ? Math.max(10, r.top - h - 8) : r.bottom + 8) + 'px';
+  }
+  document.addEventListener('click', (e) => {
+    const tb = e.target.closest && e.target.closest('[data-tg]');
+    if (tb) { e.stopPropagation(); showTgt(tb); return; }
+    const w = e.target.closest && e.target.closest('[data-why]');
+    if (w) { e.stopPropagation(); showWhy(w); return; }
+    if (!e.target.closest || !e.target.closest('.pop')) pop.hidden = true;
+  }, true);
+  addEventListener('scroll', () => { pop.hidden = true; }, { passive: true });
+
+  // ---------- Excel download (Today, Monthly and the date-wise detail) ----------
+  // Exports every row of the table (not just the page on screen), with the current search applied.
+  const panelOf = (rk) => PLAB[rk] || PLAB[''];
+  const shNum = (o) => { const mo = manOf(o.key); if (mo && mo.mode && mo.mode !== 'pct') return 'manual ' + ovTxt(mo) + (mo.reason ? ' (' + mo.reason + ')' : ''); const sh = o.sh; return !sh ? '100%' : shTxt(sh) + (sh.why === 'manual' ? ' (manual' + (sh.note ? ': ' + sh.note : '') + ')' : ''); };
+  const LEAVE_PLAIN = (st) => (LEAVE_TXT[st] || ['', ''])[0];
+  function xlsxSheet(head, rows, widths, totals) {
+    const aoa = [head].concat(rows); if (totals) aoa.push(totals);
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = widths.map((w) => ({ wch: w }));
+    ws['!freeze'] = { xSplit: 0, ySplit: 1 };
+    return ws;
+  }
+  function ordRows(list, aggs) {
+    const byEmp = {}; EMPS.forEach((e) => { byEmp[e.employee_id] = e; });
+    const tm = (t) => new Date(t).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+    return list.map((o) => {
+      const q = priceIn(aggs, o);
+      return [o.name, o.store, o.day, tm(o.created), byEmp[o.emp].full_name, panelOf(o.rk), Math.round(o.amt), o.pre ? 'Prepaid' : 'COD / pending', o.code || 'no code', o.stars == null ? '' : o.stars, shNum(q.p), Math.round(comOf(o, aggs).v * 100) / 100];
+    });
+  }
+  const ORD_HEAD = ['Order', 'Store', 'Business day', 'Time', 'Employee', 'Panel', 'Amount (₹)', 'Payment', 'Code', 'Rating (★ of 5)', 'Share', 'Commission (₹)'];
+  const ORD_W = [14, 22, 13, 10, 24, 26, 12, 15, 14, 12, 18, 15];
+  function downloadScope(k) {
+    if (!READY || typeof XLSX === 'undefined') { showAlert('The Excel library is still loading — try again in a moment.', 'error'); return; }
+    const st = ST[k], isT = k === 't', q = st.q.trim().toLowerCase();
+    const days = isT ? [TODAY] : DAYS;
+    const all = ROWS.map((r) => agg(r, days));
+    const rows = all.filter((a) => a.row.emp.full_name.toLowerCase().includes(q)).sort(SORTS[st.sort][1]);
+    const aggs = {}; all.forEach((a) => { aggs[a.row.key] = a; });
+    const E = rows.map((a) => {
+      const e = a.row.emp;
+      return [e.full_name, e.employee_code || '', e.role || '', panelOf(a.row.rk), Math.round(a.target), a.n, Math.round(a.ticket), Math.round(a.ach), Math.round(a.pending), Math.round(a.prePct * 10) / 10,
+        isT ? Math.round(avgTo(a.row, TODAY)) : Math.round(a.worked > 0 ? a.ach / a.worked : 0), a.c.steps ? Math.round(a.c.rate * 100) / 100 : 0, a.c.steps ? Math.round(a.c.amount * 100) / 100 : 0, Math.abs(a.c.held) >= 0.5 ? -Math.round(a.c.held * 100) / 100 : 0,
+        isT ? LEAVE_PLAIN(statusOf(e, TODAY)) : a.leave, isT ? '' : a.absent];
+    });
+    const sum = (i) => E.reduce((s, r) => s + (Number(r[i]) || 0), 0);
+    const tot = ['TOTAL', '', '', '', sum(4), sum(5), '', sum(7), sum(8), '', '', '', Math.round(sum(12) * 100) / 100, Math.round(sum(13) * 100) / 100, '', ''];
+    const eHead = ['Employee', 'Code', 'Role', 'Panel', 'Target (₹)', 'Orders', 'Ticket size (₹)', 'Achieved (₹)', 'Pending (₹)', 'Prepaid %', 'Average / day (₹)', 'Rate %', 'Commission (₹)', 'Order-code rules (₹)', isT ? 'Status today' : 'Leave days', isT ? '' : 'Absent days'];
+    const names = new Set(rows.map((a) => a.row.emp.employee_id));
+    const olist = ORD.filter((o) => (isT ? o.day === TODAY : (o.day >= RFROM && o.day <= RTO)) && names.has(o.emp)).slice().sort((a, b) => String(a.created).localeCompare(String(b.created)));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, xlsxSheet(eHead, E, [24, 11, 18, 26, 12, 8, 14, 13, 13, 10, 15, 8, 15, 18, 13, 12], tot), 'Employee-wise');
+    const oTot = ['TOTAL', '', '', '', '', '', olist.reduce((s, o) => s + Math.round(o.amt), 0), '', '', '', '', ''];
+    const oRows = ordRows(olist, aggs); oTot[11] = Math.round(oRows.reduce((s, r) => s + r[11], 0) * 100) / 100;
+    XLSX.utils.book_append_sheet(wb, xlsxSheet(ORD_HEAD, oRows, ORD_W, oTot), 'Orders');
+    XLSX.writeFile(wb, isT ? `Commission_Today_${TODAY}.xlsx` : `Commission_${RFROM}_to_${RTO}.xlsx`);
+  }
+  function downloadDetail() {
+    const row = openKey && ROWS.find((r) => r.key === openKey);
+    if (!row || !READY || typeof XLSX === 'undefined') return;
+    const e = row.emp, m = agg(row, dDays());
+    const D = dDays().map((d) => {
+      const a = agg(row, [d]);
+      return [d, Math.round(a.target), a.n, Math.round(a.ticket), Math.round(a.ach), Math.round(a.pending), Math.round(avgTo(row, d, dFrom())), a.c.steps ? Math.round(a.c.amount * 100) / 100 : 0, LEAVE_PLAIN(statusOf(e, d))];
+    });
+    const tot = ['MONTH TOTAL', Math.round(m.target), m.n, Math.round(m.ticket), Math.round(m.ach), Math.round(m.pending), '', Math.round(m.c.amount * 100) / 100, m.leave + ' leave' + (m.absent ? ', ' + m.absent + ' absent' : '')];
+    const aggs = {}; aggs[row.key] = m;
+    const olist = ORD.filter((o) => o.emp === e.employee_id && o.rk === row.rk && o.day >= dFrom() && o.day <= dTo()).slice().sort((a, b) => String(a.created).localeCompare(String(b.created)));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, xlsxSheet(['Date', 'Target (₹)', 'Orders', 'Ticket size (₹)', 'Achieved (₹)', 'Pending (₹)', 'Average / day (₹)', 'Est. commission (₹)', 'Status'], D, [14, 12, 8, 14, 13, 13, 16, 17, 18], tot), 'Date-wise');
+    const oRows = ordRows(olist, aggs);
+    XLSX.utils.book_append_sheet(wb, xlsxSheet(ORD_HEAD, oRows, ORD_W, ['TOTAL', '', '', '', '', '', olist.reduce((s, o) => s + Math.round(o.amt), 0), '', '', '', '', Math.round(oRows.reduce((s, r) => s + r[11], 0) * 100) / 100]), 'Orders');
+    XLSX.writeFile(wb, `Commission_${e.full_name.replace(/[^A-Za-z0-9]+/g, '_')}${row.rk ? '_' + PLAB[row.rk].replace(/[^A-Za-z0-9]+/g, '') : ''}_${dScope === 't' ? 'Today_' + TODAY : dFrom() + '_to_' + dTo()}.xlsx`);
+  }
+  $('tDl').onclick = () => downloadScope('t');
+  $('mDl').onclick = () => downloadScope('m');
+  $('dDl').onclick = downloadDetail;
+
+  // ---------- Wiring ----------
+  function renderAll() { setRanges(); renderTable('t'); renderTable('m'); renderDetail(); if (EMBED && READY) embedSoon(); }
+  [['t', () => renderTable('t')], ['m', () => { renderTable('m'); }]].forEach(([k, fn]) => {
+    const st = ST[k];
+    $(k + 'Sort').innerHTML = Object.keys(SORTS).map((s) => `<option value="${s}">${SORTS[s][0]}</option>`).join('');
+    $(k + 'Sort').onchange = (e) => { st.sort = e.target.value; st.page = 1; if (READY) fn(); };
+    $(k + 'Q').oninput = (e) => { st.q = e.target.value; st.page = 1; if (READY) fn(); };
+    $(k + 'View').onclick = (e) => {
+      const b = e.target.closest('button'); if (!b) return;
+      st.view = b.dataset.v; st.page = 1;
+      [...$(k + 'View').children].forEach((x) => x.classList.toggle('on', x === b));
+      $(k + 'Sort').style.display = st.view === 'emp' ? '' : 'none';
+      $(k + 'Hint').style.display = st.view === 'emp' ? '' : 'none';
+      if (READY) fn();
+    };
+    $(k + 'Body').onchange = (e) => {
+      const sz = e.target.closest && e.target.closest('select[data-size]');
+      if (sz && READY) { st.size = Number(sz.value) || 25; st.page = 1; fn(); }
+    };
+    $(k + 'Body').onclick = (e) => {
+      if (!READY) return;
+      const pb = e.target.closest('button[data-pg]');
+      if (pb) { if (pb.disabled) return; st.page = Number(pb.dataset.pg) || 1; fn(); $(k === 't' ? 'secToday' : 'secMonth').scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+      if (e.target.closest('[data-size]')) return;
+      if (e.target.closest('[data-why]') || e.target.closest('[data-tg]')) return;
+      const tr = e.target.closest('tr[data-k]'); if (!tr) return;
+      const same = openKey === tr.dataset.k && dScope === k;
+      openKey = same ? null : tr.dataset.k; dScope = k; dayOpen.clear(); ST.d.page = 1;
+      if (openKey) { $(k + 'Body').after($('detail')); ST.d.tab = 'ord'; }   // the detail opens right under the table that was clicked
+      renderTable('t'); renderTable('m'); renderDetail();
+      if (openKey) $('detail').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+  });
+  $('dClose').onclick = () => { const sec = dScope === 't' ? 'secToday' : 'secMonth'; openKey = null; renderTable('t'); renderTable('m'); renderDetail(); $(sec).scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+  $('dView').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; ST.d.tab = b.dataset.v; ST.d.page = 1; renderDetail(); };
+  $('dBody').onchange = (e) => { const sz = e.target.closest && e.target.closest('select[data-size]'); if (sz) { ST.d.size = Number(sz.value) || 10; ST.d.page = 1; renderDetail(); } };
+  $('dBody').onclick = (e) => {
+    const pb = e.target.closest('button[data-pg]');
+    if (pb) { if (!pb.disabled) { ST.d.page = Number(pb.dataset.pg) || 1; renderDetail(); $('detail').scrollIntoView({ behavior: 'smooth', block: 'start' }); } return; }
+    if (e.target.closest('[data-size]')) return;
+    if (e.target.closest('[data-why]') || e.target.closest('[data-tg]')) return;
+    const tr = e.target.closest('tr.day'); if (!tr) return;
+    const d = tr.dataset.d; dayOpen.has(d) ? dayOpen.delete(d) : dayOpen.add(d); renderDetail();
+  };
+  $('btnReload').onclick = () => load({ fresh: true });
+
+  // ---------- Change one order's share by hand ----------
+  const shModal = $('shModal');
+  let shOrder = null, shRate = 0, shMode = 'pct', shAuto = 0;
+  const SHM = { pct: ['Pays this share of the normal commission (%)', 500], rate: ['Pays this rate on the order amount (%)', 100], flat: ['Pays exactly this amount for the order (₹)', 99999] };
+  function shSetMode(m) {
+    shMode = m;
+    [...$('shSeg').children].forEach((b) => b.classList.toggle('on', b.dataset.m === m));
+    $('shLbl').textContent = SHM[m][0]; $('shPct').max = SHM[m][1];
+    shPreview();
+  }
+  function shPreview() {
+    const val = Number($('shPct').value || 0), o = shOrder; if (!o) return;
+    const base = `Automatic now <b>${inr(shAuto)}</b> · `;
+    if (shMode === 'flat') $('shPrev').innerHTML = base + `this order will pay <b>${inr(val)}</b>`;
+    else if (shMode === 'rate') $('shPrev').innerHTML = base + `${fmtN(val)}% of ${inr(o.amt)} = <b>${inr(o.amt * val / 100)}</b>`;
+    else {
+      const normal = o.amt * shRate / 100;
+      $('shPrev').innerHTML = shRate > 0
+        ? `${inr(o.amt)} order at a ${shRate.toFixed(1).replace(/\.0$/, '')}% rate → normal ${inr(normal)} · at ${fmtN(val)}% pays <b>${inr(normal * val / 100)}</b>`
+        : 'This employee has no commission rate for this period yet, so a share has no effect until they earn one — use "Rate % of order" or "Set amount ₹" instead.';
+    }
+  }
+  function openShare(key, tbl) {
+    const o = ORDBY[key]; if (!o) return;
+    const row = ROWS.find((r) => r.key === o.emp + '|' + o.rk);
+    const a = row ? agg(row, tbl === 't' ? [TODAY] : DAYS) : null;
+    shOrder = o; shRate = a && a.c ? (a.c.rate || 0) : 0;
+    const aggs = {}; if (row && a) aggs[row.key] = a;
+    shAuto = a ? comOf(o, aggs, null, true).v : 0;
+    const op = (a && a.pm && a.pm[o.key]) || o, cm = manOf(key);
+    $('shInfo').innerHTML = `<b>${esc(o.name)}</b> · ${inr(o.amt)} · ${o.code ? 'code ' + esc(o.code) : 'no code'}${op.sh && op.sh.why === 'rule' ? '<br>Now paying ' + esc(shTxt(op.sh)) + ' (' + esc(ruleName(op.sh.rule)) + ')' : ''}`;
+    $('shWhy').value = (cm && cm.reason) || '';
+    $('shRemove').style.display = cm ? '' : 'none';
+    $('shAlert').innerHTML = '';
+    shSetMode(cm ? (cm.mode || 'pct') : 'pct');
+    $('shPct').value = cm ? cm.share_pct : (op.sh ? (op.sh.mode === 'pct' ? op.sh.v : 100) : 100);
+    shPreview(); shModal.classList.add('open'); $('shPct').focus(); $('shPct').select();
+  }
+  $('shSeg').onclick = (e) => {
+    const b = e.target.closest('button'); if (!b || b.dataset.m === shMode) return;
+    shSetMode(b.dataset.m);
+    $('shPct').value = b.dataset.m === 'flat' ? Math.round(shAuto * 100) / 100 : b.dataset.m === 'rate' ? (shOrder && shOrder.amt > 0 ? Math.round(shAuto / shOrder.amt * 10000) / 100 : 0) : 100;
+    shPreview(); $('shPct').focus(); $('shPct').select();
+  };
+  const closeShare = () => shModal.classList.remove('open');
+  $('shCancel').onclick = closeShare;
+  shModal.addEventListener('click', (e) => { if (e.target === shModal) closeShare(); });
+  $('shPct').addEventListener('input', shPreview);
+  $('shSave').onclick = async () => {
+    const o = shOrder, btn = $('shSave'); btn.disabled = true; $('shAlert').innerHTML = '';
+    try {
+      const t = $('shPct').value.trim(), pct = Number(t);
+      if (t === '' || !isFinite(pct) || pct < 0 || pct > SHM[shMode][1]) throw new Error('Enter a number from 0 to ' + SHM[shMode][1] + '.');
+      await api.post('commission_page.order_share_set', { order_key: o.key, order_day: o.day, share_pct: pct, pay_mode: shMode, reason: $('shWhy').value.trim() });
+      CODE.shares[o.key] = { share_pct: pct, mode: shMode, reason: $('shWhy').value.trim() };
+      closeShare(); repriceAll(); renderAll();
+    } catch (err) { $('shAlert').innerHTML = `<div class="alert error">${esc(err.message)}</div>`; }
+    finally { btn.disabled = false; }
+  };
+  $('shRemove').onclick = async () => {
+    const o = shOrder, btn = $('shRemove'); btn.disabled = true; $('shAlert').innerHTML = '';
+    try {
+      await api.post('commission_page.order_share_clear', { order_key: o.key });
+      delete CODE.shares[o.key];
+      closeShare(); repriceAll(); renderAll();
+    } catch (err) { $('shAlert').innerHTML = `<div class="alert error">${esc(err.message)}</div>`; }
+    finally { btn.disabled = false; }
+  };
+  // ---------- Change one employee's commission by hand (the whole-month Monthly range) ----------
+  const mcModal = $('mcModal');
+  let mcRow = null, mcMode = 'rate', mcAch = 0, mcAuto = null;
+  const r2 = (v) => Math.round(v * 100) / 100;
+  const mcVals = () => {                                   // { rate, amount } from whichever box is open; null while it is empty / wrong
+    if (mcMode === 'rate') { const t = $('mcRate').value.trim(), r = Number(t); return t === '' || !isFinite(r) || r < 0 || r > 999.99 ? null : { rate: r2(r), amount: r2(mcAch * r / 100) }; }
+    const t = $('mcAmt').value.trim(), a = Number(t);
+    return t === '' || !isFinite(a) || a < 0 ? null : { amount: r2(a), rate: mcAch > 0 ? Math.min(999.99, r2(a / mcAch * 100)) : 0 };
+  };
+  function mcPreview() {
+    const v = mcVals();
+    $('mcPrev').innerHTML = v ? `<span>New commission${mcMode === 'amt' ? ' · rate ' + fmtN(v.rate) + '%' : ''}</span><b>${inr(v.amount)}</b>` : '<span>Enter a valid number</span><b>—</b>';
+  }
+  function mcSetMode(m) {
+    mcMode = m;
+    [...$('mcSeg').children].forEach((b) => b.classList.toggle('on', b.dataset.m === m));
+    $('mcFRate').style.display = m === 'rate' ? '' : 'none'; $('mcFAmt').style.display = m === 'amt' ? '' : 'none';
+    mcPreview();
+  }
+  function openManual() {
+    const row = openKey && ROWS.find((r) => r.key === openKey);
+    if (!row || !READY) return;
+    const a = agg(row, dScope === 't' ? [TODAY] : DAYS), man = a.c.manual;
+    mcRow = row; mcAch = a.ach;
+    mcAuto = man ? a.c.auto : { amount: a.c.amount, rate: a.c.rate, ok: !!a.c.steps, why: (a.c.fixedPlan || a.c.fixedBadge) ? 'Fixed commission' : (a.c.mix && a.c.mix.badge) ? 'Code rule' : a.c.panelBadge ? 'Panel rule' : 'Rate by target / ticket size / prepaid' };
+    $('mcSub').textContent = row.emp.full_name + (row.rk ? ' · ' + PLAB[row.rk] : '') + ' · ' + (dScope === 't' ? 'Today · ' + dFmt(TODAY) + '. Saved for this employee and today.' : dFmt(RFROM) + (RFROM === RTO ? '' : ' → ' + dFmt(RTO)) + '. Saved for this employee and ' + (manOk() ? 'this month' : RFROM === RTO ? 'this day' : 'exactly this date range') + '.');
+    $('mcAuto').innerHTML = `<div class="row"><span>Automatic now</span><b>${inr(mcAuto.amount)}${mcAuto.ok ? ' · ' + fmtN(mcAuto.rate) + '%' : ''}</b></div>
+      <div class="row"><span>Rule used</span><b>${esc(mcAuto.ok ? mcAuto.why : 'No commission earned')}</b></div>
+      <div class="row"><span>Rate is worked on</span><b>${inr(mcAch)} sales</b></div>`;
+    $('mcRate').value = man ? man.rate : (mcAuto.ok ? mcAuto.rate : 0); $('mcAmt').value = man ? man.amount : mcAuto.amount;
+    $('mcWhy').value = man ? (man.reason || '') : '';
+    $('mcClear').style.display = man ? '' : 'none';
+    $('mcAlert').innerHTML = '';
+    mcSetMode('rate'); mcModal.classList.add('open'); $('mcRate').focus(); $('mcRate').select();
+  }
+  const closeManual = () => mcModal.classList.remove('open');
+  async function reloadManual() {
+    if (dScope === 't') {
+      const d = await api.get('commission_page.manual_list', { day: TODAY });
+      DAYMAN = (d && d.manual && !Array.isArray(d.manual)) ? d.manual : {};
+      return;
+    }
+    const d = await api.get('commission_page.manual_list', { month: manScope(false) });
+    MAN = (d && d.manual && !Array.isArray(d.manual)) ? d.manual : {};
+  }
+  $('dMan').onclick = openManual;
+  $('mcCancel').onclick = closeManual;
+  mcModal.addEventListener('click', (e) => { if (e.target === mcModal) closeManual(); });
+  $('mcSeg').onclick = (e) => { const b = e.target.closest('button'); if (b) { mcSetMode(b.dataset.m); (mcMode === 'rate' ? $('mcRate') : $('mcAmt')).focus(); } };
+  $('mcRate').addEventListener('input', mcPreview); $('mcAmt').addEventListener('input', mcPreview);
+  async function mcSend(path, body, btn) {
+    btn.disabled = true; $('mcAlert').innerHTML = '';
+    try {
+      await api.post(path, Object.assign({ [dScope === 't' ? 'day' : 'month']: manScope(dScope === 't'), employee_id: mcRow.emp.employee_id, row_key: mcRow.rk }, body));
+      await reloadManual();
+      closeManual(); renderAll();
+    } catch (err) { $('mcAlert').innerHTML = `<div class="alert error">${esc(err.message)}</div>`; }
+    finally { btn.disabled = false; }
+  }
+  $('mcSave').onclick = () => {
+    const v = mcVals();
+    if (!v) { $('mcAlert').innerHTML = '<div class="alert error">Enter a valid ' + (mcMode === 'rate' ? 'rate (0–999.99 %)' : 'amount (₹0 or more)') + '.</div>'; return; }
+    mcSend('commission_page.manual_set', { rate: v.rate, amount: v.amount, reason: $('mcWhy').value.trim() }, $('mcSave'));
+  };
+  $('mcClear').onclick = () => mcSend('commission_page.manual_clear', {}, $('mcClear'));
+  addEventListener('keydown', (e) => { if (e.key === 'Escape' && mcModal.classList.contains('open')) closeManual(); });
+
+  [['t', 'tBody'], ['m', 'mBody'], ['d', 'dBody']].forEach(([k, id]) => $(id).addEventListener('click', (e) => {
+    const b = e.target.closest && e.target.closest('[data-chg]');
+    if (b && READY) { e.stopPropagation(); openShare(b.dataset.chg, k === 'd' ? dScope : k); }
+  }, true));
+
+  // ---------- Load ----------
+  let loadId = 0, FIRST_LOAD = true;
+  // opts.fresh = the Refresh button: reload the rule lists too and re-sync the last 10 days of orders from Shopify right now.
+  // Changing the date range only reloads days, orders and hand-set shares (the rule lists are kept).
+  async function load(opts) {
+    opts = opts || {};
+    const id = ++loadId;
+    const statics = FIRST_LOAD || !!opts.fresh;
+    const S = FIRST_LOAD ? PRE : (statics ? { rules: api.get('commission_rules.list'), codeList: api.get('commission_rules.code_list'), manual: api.get('commission_rules.manual_list'), slab: api.get('ml_slab.get'), flash: api.get('flash_offer.get') } : null);
+    FIRST_LOAD = false;
+    READY = false; openKey = null; alertBox.innerHTML = '';
+    await timingReady;
+    TODAY = bizDayOf(new Date()); MSTART = TODAY.slice(0, 8) + '01';
+    if (!RFROM) { RFROM = MSTART; RTO = TODAY; }
+    FROM = RFROM < MSTART ? RFROM : MSTART; TO = RTO > TODAY ? RTO : TODAY;
+    SPAN = []; for (let d = FROM; d <= TO; d = addDay(d, 1)) SPAN.push(d);
+    DAYS = SPAN.filter((d) => d >= RFROM && d <= RTO);
+    syncRangeUi();
+    $('tRange').textContent = $('mRange').textContent = 'Loading…';
+    $('tBody').innerHTML = $('mBody').innerHTML = '<div class="loading">Loading orders…</div>';
+    $('detail').hidden = true;
+    // everything below starts at the same moment
+    const pDays = api.get('commission_page.days', { date_from: FROM, date_to: TO });
+    const pOrders = api.get('shopify.orders', Object.assign({ date_from: FROM, date_to: TO, lite: 1, ratings: 1 }, opts.fresh ? { fresh: 1 } : {}));
+    const pShares = api.get('commission_page.order_shares', { date_from: FROM, date_to: TO });
+    const shOf = (sh) => (sh && sh.shares && !Array.isArray(sh.shares)) ? sh.shares : {};
+    const pRules = S ? S.rules.then((d) => { RULES = d.rules || []; }, () => { RULES = null; }) : Promise.resolve();
+    const pSlab = S ? S.slab.then((d) => { SLAB = (d && d.chart) || null; }, () => { SLAB = null; }) : Promise.resolve();
+    const pFlash = S ? S.flash.then((d) => { FLASH = (d && (d.all || d.history)) || []; }, () => { FLASH = []; }) : Promise.resolve();
+    const pCode = S
+      ? Promise.all([S.codeList, pShares]).then(([r, sh]) => { CODE = { on: !!r.on, rules: r.rules || [], shares: shOf(sh), ok: true }; }, () => { CODE = { on: false, rules: [], shares: {}, ok: false }; })
+      : pShares.then((sh) => { CODE.shares = shOf(sh); }, () => { /* keep the shares we have */ });
+    MAN = {}; DAYMAN = {};
+    const pDayMan = api.get('commission_page.manual_list', { day: TODAY }).then((d) => { DAYMAN = (d && d.manual && !Array.isArray(d.manual)) ? d.manual : {}; }, () => { DAYMAN = {}; });
+    const pMan = api.get('commission_page.manual_list', { month: manScope(false) }).then((d) => { MAN = (d && d.manual && !Array.isArray(d.manual)) ? d.manual : {}; }, () => { MAN = {}; });
+    const pManual = S ? S.manual.then((d) => setManual(d), () => { NEW.ok = false; NEW.mix = []; NEW.fixed = []; NEW.star = []; NEW.panel = []; NEW.bonus = []; }) : Promise.resolve();
+    try {
+      const [dd, od] = await Promise.all([pDays, pOrders]);
+      await pRules; await pCode; await pManual; await pMan; await pDayMan; await pSlab; await pFlash;
+      if (id !== loadId) return;
+      EMPS = dd.employees || [];
+      if (dd.today && dd.today !== TODAY) { /* server and browser disagree on the day: keep the browser's */ }
+      if (!RULES) showAlert('The commission rules could not be read, so commission shows ₹0. Reload, or check access.', 'error');
+      if (!CODE.ok) showAlert('The order-code rules could not be read (is the new api.php uploaded?), so every order is paid the normal commission for now.', 'error');
+      const errs = (od.errors || []).filter(Boolean);
+      if (errs.length) showAlert('Some orders could not be loaded, so figures may be incomplete: ' + errs.map(esc).join(' · '), 'error');
+      RAW = od.orders || [];
+      buildData(RAW);
+      READY = true;
+      renderAll();
+      refineTargets(id);
+    } catch (err) {
+      if (id !== loadId) return;
+      const msg = `<div class="alert error" style="margin:14px 18px;">${esc(err.message)}</div>`;
+      $('tBody').innerHTML = $('mBody').innerHTML = msg;
+      $('tRange').textContent = $('mRange').textContent = '';
+      if (EMBED) embedSend({ error: err.message || 'Could not load' });
+    }
+  }
+  // The first targets skip the automatic daily-target rule (instant); this asks again WITH it and refreshes the figures.
+  async function refineTargets(id) {
+    try {
+      const dd = await api.get('commission_page.days', { date_from: FROM, date_to: TO, rule: 1 });
+      if (id !== loadId || !dd.rule_used) return;
+      const next = dd.employees || [];
+      if (JSON.stringify(next) === JSON.stringify(EMPS)) return;   // the rule changed nothing: no redraw
+      EMPS = next;
+      buildRows(); renderAll();
+    } catch (err) { /* keep the first targets */ }
+  }
+
+  // =====================================================================================================
+  // NEW  — manual rules cards, date range, pagination ON/OFF
+  // =====================================================================================================
+  // ---------- manual rules: set on the Commission Rules page, read here and applied to the numbers ----------
+  NEW.ok = true;
+  function setManual(d) {
+    NEW.ok = true;
+    NEW.mix = ((d && d.mix) || []).map((r) => ({ id: Number(r.rule_id), on: !!Number(r.enabled), label: r.label || '', op: r.op === 'lte' ? 'lte' : 'gte', thr: Number(r.thr), mode: ['full', 'rate', 'pct', 'flat'].indexOf(r.pay_mode) > -1 ? r.pay_mode : 'full', v: Number(r.pay_value || 0), who: (r.who || []).map(Number), grp: String(r.grp || ''), from: String(r.date_from || ''), to: String(r.date_to || '') }));
+    NEW.fixed = ((d && d.fixed) || []).map((p) => ({ id: Number(p.plan_id), emp: Number(p.employee_id), per: Number(p.per), mode: p.pay_mode === 'rate' ? 'rate' : 'flat', minType: p.min_type === 'amount' ? 'amount' : 'count', min: Number(p.min), on: !!Number(p.enabled), grp: String(p.grp || ''), from: String(p.date_from || ''), to: String(p.date_to || '') }));
+    NEW.panel = ((d && d.panel) || []).map((r) => ({ id: Number(r.rule_id), on: !!Number(r.enabled), label: r.label || '', panels: r.panels || [], from: String(r.date_from || ''), to: String(r.date_to || ''), pct: Number(r.pct), grp: String(r.grp || ''), who: (r.who || []).map(Number) }));
+    // target bonus rules: the chosen people, the dates and the steps ({ on, over: % above target, bonus: % on the commission })
+    NEW.bonus = ((d && d.bonus) || []).map((r) => ({ id: Number(r.rule_id), on: !!Number(r.enabled), label: r.label || 'Target bonus', who: (r.who || []).map(Number), all: !!Number(r.all), from: String(r.date_from || ''), to: String(r.date_to || ''), tiers: (r.tiers || []).map((t) => ({ on: !!Number(t.on), over: Number(t.over), bonus: Number(t.bonus) })) }));
+    NEW.star = ((d && d.star) || []).map((r) => ({ id: Number(r.rule_id), on: !!Number(r.enabled), label: r.label || '', star: Number(r.max_star), pay: Number(r.pay_pct), nc: Number(r.nocode_pct), who: (r.who || []).map(Number), from: String(r.date_from || ''), to: String(r.date_to || '') }));
+  }
+
+  // ---------- date range (Monthly Data) ----------
+  const lastMonthRange = () => { const e = addDay(MSTART, -1); return [e.slice(0, 8) + '01', e]; };
+  const chipRange = (r) => r === 'month' ? [MSTART, TODAY] : r === '7' ? [addDay(TODAY, -6), TODAY] : r === 'today' ? [TODAY, TODAY] : lastMonthRange();
+  function syncRangeUi() {
+    $('mFrom').value = RFROM; $('mTo').value = RTO; $('mFrom').max = $('mTo').max = TODAY;
+    [...$('mChips').children].forEach((b) => { const c = chipRange(b.dataset.r); b.classList.toggle('on', c[0] === RFROM && c[1] === RTO); });
+  }
+  function setRange(f, t) {
+    if (!f || !t) return;
+    if (f > t) { const x = f; f = t; t = x; }
+    if (t > TODAY) t = TODAY;
+    RFROM = f; RTO = t; ST.m.page = 1; ST.d.page = 1; load();
+  }
+  $('mFrom').onchange = $('mTo').onchange = () => setRange($('mFrom').value, $('mTo').value);
+  $('mChips').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; const c = chipRange(b.dataset.r); setRange(c[0], c[1]); };
+
+  // ---------- pagination ON / OFF ----------
+  function syncPg() { document.querySelectorAll('.pgOn').forEach((c) => { c.checked = PAGING; }); document.querySelectorAll('.pgTxt').forEach((s) => { s.textContent = PAGING ? 'ON' : 'OFF'; }); }
+  try { PAGING = localStorage.getItem('hrms_comm_paging') !== '0'; } catch (e) { /* default ON */ }
+  syncPg();
+  document.querySelectorAll('.pgOn').forEach((cb) => { cb.onchange = () => { PAGING = cb.checked; try { localStorage.setItem('hrms_comm_paging', PAGING ? '1' : '0'); } catch (e) { /* ignore */ } ST.t.page = ST.m.page = ST.d.page = 1; syncPg(); if (READY) renderAll(); }; });
+
+  // ---------- embed mode (used by the Orders page) ----------
+  // For the range loaded here, work out each employee's commission per panel (house), and each order's commission, and which rule decided it.
+  function embedResults() {
+    const aggs = {}, rows = ROWS.map((r) => agg(r, DAYS)); rows.forEach((a) => { aggs[a.row.key] = a; });
+    const emps = {}, ord = {}, TAGN = { panel: 'Panel rule', fixed: 'Fixed commission', mix: 'Order-code mix rule', star: '★ rating rule', code: 'Order-code rule' };
+    rows.forEach((a) => {
+      const c = a.c, id = a.row.emp.employee_id;
+      // Commission set by hand: the employee's orders share that amount (in proportion to what each would earn, or to its value), so the Orders page adds up to it.
+      const mf = c && c.manual ? { sum: a.orders.reduce((t, o) => t + comOf(o, aggs).v, 0), amt: c.manual.amount, ach: a.ach } : null;
+      a.orders.forEach((o) => {
+        let r = comOf(o, aggs);
+        if (mf) r = { v: mf.sum > 0.005 ? r.v * mf.amt / mf.sum : (mf.ach > 0 ? mf.amt * o.amt / mf.ach : 0), note: 'manual commission' };
+        const hs = o.house || '', full = (c && c.steps && c.rate ? c.rate : 0) * o.amt / 100;
+        const byH = emps[id] = emps[id] || {}, E = byH[hs] = byH[hs] || { amt: 0, n: 0, coll: 0, rate: c && c.steps ? c.rate : 0, tags: {} };
+        E.amt += r.v; E.n++; E.coll += o.amt;
+        let k = '', label = '';
+        const gf = gateFn(o, aggs), pr = panelRuleFor(o, gf);
+        if (mf) { k = 'code'; label = 'Manual commission'; }
+        else if (pr) { k = 'panel'; label = (pr.label || 'Panel rule') + ' ' + fmtN(pr.pct) + '%'; }
+        else if (c && c.fixedPlan) { k = 'fixed'; label = 'Fixed ' + c.fixedPlan.badge; }
+        else if (fixedFor(o, gf)) { const fp = fixedFor(o, gf); k = 'fixed'; label = 'Fixed ' + payBadge(fp.mode, fp.per); }
+        else if (c && c.mix && c.mix.mode !== 'full') { k = 'mix'; label = (c.mix.label || 'Code mix rule') + ' · ' + c.mix.badge; }
+        else if (r.slab) { k = 'slab'; label = r.slab.flash ? '⚡ Flash offer' : 'ML price slab'; }
+        else if (starMul(o)) { k = 'star'; const sm = starMul(o); label = starTxt(o.stars) + ' · ' + (sm.r.label || 'rating rule'); }
+        else if (c && c.mix) { k = 'mix'; label = (c.mix.label || 'Code mix rule') + ' · full commission'; }
+        else if (Math.abs(r.v - full) > 0.005) { k = 'code'; label = (r.note || '').split(' · ')[0] || TAGN.code; }
+        if (k) { const T = E.tags[k + '|' + label] = E.tags[k + '|' + label] || { k, l: label, n: 0, d: 0 }; T.n++; T.d += r.v - full; }
+        ord[o.key] = [Math.round(r.v * 100) / 100, r.note || '', k];
+      });
+    });
+    Object.keys(emps).forEach((id) => Object.keys(emps[id]).forEach((h) => { const E = emps[id][h]; E.tags = Object.keys(E.tags).map((x) => { const T = E.tags[x]; T.d = Math.round(T.d * 100) / 100; return T; }); E.amt = Math.round(E.amt * 100) / 100; }));
+    return { emps, ord };
+  }
+  function embedSend(extra) { try { parent.postMessage(Object.assign({ t: 'comm_res', from: RFROM, to: RTO }, extra), location.origin); } catch (e) { /* no parent */ } }
+  let embedTimer = 0;
+  function embedSoon() { clearTimeout(embedTimer); embedTimer = setTimeout(() => { try { embedSend(embedResults()); } catch (e) { embedSend({ error: 'Could not work out the commission (' + e.message + ')' }); } }, 60); }
+  if (EMBED) {
+    const qs = new URLSearchParams(location.search), f = qs.get('from'), t = qs.get('to'), okD = (v) => /^\d{4}-\d{2}-\d{2}$/.test(v || '');
+    if (okD(f) && okD(t) && f <= t) { RFROM = f; RTO = t; }
+    addEventListener('message', (e) => {
+      if (e.origin !== location.origin) return;
+      const d = e.data || {};
+      if (d.t === 'comm_req' && okD(d.from) && okD(d.to) && d.from <= d.to) { RFROM = d.from; RTO = d.to; load({ fresh: !!d.fresh }); }
+    });
+    try { parent.postMessage({ t: 'comm_hello' }, location.origin); } catch (e) { /* no parent */ }
+  }
+
+  load();
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>

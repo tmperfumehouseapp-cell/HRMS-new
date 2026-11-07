@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Retail displays — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=4">
+<link rel="stylesheet" href="assets/css/boss.css?v=1">
+<style>
+  .sh-note{background:#fff8ea;border-radius:14px;padding:11px 14px;font-size:13px;color:#6b4a00;line-height:1.5;margin-bottom:14px;}
+  .sh-prog{display:flex;align-items:center;gap:14px;flex-wrap:wrap;}
+  .sh-prog .big{font-size:30px;font-weight:800;letter-spacing:-.02em;line-height:1;} .sh-prog .bd-bar{flex:1;min-width:140px;height:12px;}
+  .sh-bar-o i{background:#e85d04!important;}
+  .sh-city{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;}
+  .sh-item{display:flex;gap:12px;align-items:flex-start;padding:14px 0;border-top:1px solid var(--line);}
+  .sh-item:first-child{border-top:0;}
+  .sh-n{flex:none;width:34px;height:34px;border-radius:50%;background:#f1f3f6;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;color:#4a505c;}
+  .sh-item.done .sh-n{background:#16945a;color:#fff;} .sh-item.short .sh-n{background:#f2b33d;color:#fff;} .sh-item.over .sh-n{background:#fdecea;color:#a02b25;}
+  .sh-body{flex:1;min-width:0;} .sh-body h3{margin:0;font-size:15.5px;font-weight:800;line-height:1.3;}
+  .sh-meta{font-size:12.5px;color:var(--muted);margin-top:3px;line-height:1.5;}
+  .sh-acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px;}
+  .sh-visit-btn{min-height:46px;padding:10px 22px;font-size:15px;}
+  .sh-money{border-radius:16px;padding:12px 14px;font-size:14px;line-height:1.5;margin:10px 0;font-weight:600;}
+  .sh-money.red{background:#fdecea;color:#a02b25;border:2px solid #d9423b;} .sh-money.green{background:#e8f6ee;color:#0f6b43;} .sh-money.grey{background:#f1f3f6;color:#4a505c;}
+  .sh-count{border-radius:20px;padding:16px;text-align:center;margin:10px 0;} .sh-count b{display:block;font-size:34px;font-weight:800;letter-spacing:-.02em;}
+  .sh-count.ok{background:#e8f6ee;color:#0f6b43;} .sh-count.warn{background:#fff3dc;color:#7a4b00;}
+  .sh-prev{width:100%;max-height:220px;object-fit:cover;border-radius:16px;margin-top:8px;background:#eceef1;}
+  .sh-ring{width:92px;height:92px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex:none;}
+  .sh-ring span{width:70px;height:70px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:20px;}
+  .sh-cc{display:flex;gap:16px;align-items:center;flex-wrap:wrap;}
+  .sh-cc .nums{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px 18px;flex:1;min-width:230px;} .sh-cc .nums b{display:block;font-size:22px;font-weight:800;line-height:1.1;} .sh-cc .nums small{font-size:11.5px;color:var(--muted);font-weight:600;}
+  .sh-2{display:grid;grid-template-columns:1fr 1fr;gap:14px;} @media (max-width:900px){.sh-2{grid-template-columns:1fr;}}
+  .sh-tbl{width:100%;border-collapse:collapse;font-size:13.5px;} .sh-tbl th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);text-align:left;padding:7px 8px;font-weight:700;} .sh-tbl td{padding:9px 8px;border-top:1px solid var(--line);vertical-align:top;}
+  .scrollx{overflow-x:auto;}
+  .sh-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:8px;}
+  .sh-thumb{width:64px;height:48px;object-fit:cover;border-radius:10px;background:#eceef1;cursor:pointer;}
+  @media (max-width:560px){.sh-item{gap:10px;} .bd-card{padding:15px 14px;}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><div><h1>Retail displays</h1><div class="bd-sub" id="sub">Visit every display once in the round. Claude counts the bottles.</div></div><div id="topBtns"></div></div>
+    <div class="content"><div class="bd" id="root"><div class="bd-empty">Loading…</div></div></div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=4"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script src="assets/js/boss_common.js?v=2"></script>
+<script>
+  guardPage();
+  renderSidebar('dept_shops');
+  const { esc, $, toast, inr } = BD;
+  const QS = new URLSearchParams(location.search);
+  let TAB = QS.get('tab') || '', CITY = QS.get('city') || '', T = null, OV = null, CALLS = null, PINS = null, POS = null, TABS = [];
+  const fmtD = (d) => { if (!d) return ''; const x = new Date(d + 'T00:00:00'); return x.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }); };
+  const blobCache = {};
+  async function photoUrl(id) {
+    if (blobCache[id]) return blobCache[id];
+    const r = await fetch(api.buildUrl('dp.sh_file', { visit_id: id }), { headers: { Authorization: 'Bearer ' + api.token() } });
+    if (!r.ok) throw new Error('photo'); return (blobCache[id] = URL.createObjectURL(await r.blob()));
+  }
+
+  /* ---------------- loading ---------------- */
+  async function loadAll(keepTab) {
+    const [t, o] = await Promise.all([
+      api.get('dp.sh_today', CITY ? { city: CITY } : {}).catch((e) => ({ _err: e })),
+      api.get('dp.sh_overview').catch((e) => ({ _err: e })),
+    ]);
+    T = t._err ? null : t; OV = o._err ? null : o;
+    if (!T && !OV) { $('root').innerHTML = '<div class="bd-card"><div class="bd-empty"><b>This page is for the display visitor and the retail distribution manager</b>' + esc((t._err && t._err.message) || '') + '</div></div>'; return; }
+    if (T) CITY = T.city;
+    TABS = [];
+    if (T) TABS.push(['today', 'Today']);
+    if (OV) TABS.push(['overview', 'Overview'], ['calls', 'Calls'], ['pins', 'Pins'], ['setup', 'Setup']);
+    if (!TABS.some((x) => x[0] === TAB)) TAB = TABS[0][0];
+    render();
+  }
+  function head() {
+    const live = T ? T.live : (OV && OV.live);
+    return (live === false ? '<div class="sh-note"><b>Not live yet.</b> You can look around, but visits are not counted and nobody is charged. Answer Claude\'s questions in <b>Boss &gt; Questions</b> and press "This is right, make it live".</div>' : '')
+      + '<div class="bd-tabs">' + TABS.map((x) => '<button class="' + (TAB === x[0] ? 'on' : '') + '" data-tab="' + x[0] + '">' + x[1] + '</button>').join('') + '</div>';
+  }
+  async function render() {
+    if (TAB === 'today') return renderToday();
+    if (TAB === 'overview') return renderOverview();
+    if (TAB === 'calls') return renderCalls();
+    if (TAB === 'pins') return renderPins();
+    if (TAB === 'setup') return renderSetup();
+  }
+  function bindTabs() { document.querySelectorAll('[data-tab]').forEach((b) => { b.onclick = async () => { TAB = b.dataset.tab; history.replaceState(null, '', '?tab=' + TAB + (CITY ? '&city=' + encodeURIComponent(CITY) : '')); await render(); }; }); }
+
+  /* ---------------- Today (the visitor) ---------------- */
+  function itemHtml(i) {
+    const over = i.state !== 'done' && i.overdue_days > 0;
+    const last = i.last ? (i.days + ' day' + (i.days === 1 ? '' : 's') + ' ago') : 'never visited';
+    const v = i.visit;
+    let tag = '';
+    if (i.state === 'done') tag = '<span class="bd-chip ok">Visited' + (v && v.count != null ? ' · ' + v.count + ' of ' + v.expected : '') + '</span>' + (v && v.short_confirmed ? ' <span class="bd-chip warn">short</span>' : '') + (v && v.due_flag ? ' <span class="bd-chip bad">collect ' + inr(v.collect) + '</span>' : '');
+    else if (i.state === 'short') tag = '<span class="bd-chip warn">Display is short — retake</span>';
+    else if (over) tag = '<span class="bd-chip bad">' + i.overdue_days + ' day' + (i.overdue_days === 1 ? '' : 's') + ' late</span>';
+    return '<div class="sh-item ' + (i.state === 'done' ? 'done' : (i.state === 'short' ? 'short' : (over ? 'over' : ''))) + '"><div class="sh-n">' + (i.state === 'done' ? '✓' : i.ord) + '</div><div class="sh-body">'
+      + '<h3>' + esc(i.name) + '</h3><div class="sh-meta">' + esc([i.area, i.owner].filter(Boolean).join(' · ')) + '<br>Last visit: ' + last + (i.owes > 0 ? ' · owes <b>' + inr(i.owes) + '</b>' : '') + '</div>'
+      + (tag ? '<div style="margin-top:6px">' + tag + '</div>' : '')
+      + '<div class="sh-acts">' + (i.state !== 'done' ? '<button class="bd-btn pri sh-visit-btn" data-visit="' + i.shop_id + '"' + (T.live ? '' : ' disabled') + '>' + (i.state === 'short' ? 'Retake photo' : 'Visit') + '</button>' : '')
+      + (i.maps ? '<a class="bd-btn sm" target="_blank" rel="noopener" href="' + esc(i.maps) + '">Directions</a>' : '')
+      + (i.phone ? '<a class="bd-btn sm" href="tel:' + esc(i.phone) + '">Call</a>' : '')
+      + (!i.pin ? '<button class="bd-btn sm" data-pin="' + i.shop_id + '">Pin this shop here</button>' : '') + '</div>'
+      + (!i.pin && i.state !== 'done' ? '<div class="sh-meta">No map pin yet. Stand at the shop and press "Pin this shop here".</div>' : '') + '</div></div>';
+  }
+  function renderToday() {
+    const pct = T.total ? Math.round(100 * T.done / T.total) : 0;
+    const pend = T.items.filter((i) => i.state !== 'done'), done = T.items.filter((i) => i.state === 'done');
+    $('sub').textContent = 'Today in ' + T.city + ' · the list is ordered as a route';
+    $('topBtns').innerHTML = '<button class="bd-btn" id="locBtn" type="button">Start from my location</button>';
+    $('root').innerHTML = head()
+      + (T.cities.filter((c) => c.mine).length > 1 ? '<div class="sh-city">' + T.cities.filter((c) => c.mine).map((c) => '<button class="bd-btn sm ' + (c.city === T.city ? 'pri' : '') + '" data-city="' + esc(c.city) + '">' + esc(c.city) + ' · ' + c.shops + '</button>').join('') + '</div>' : '')
+      + '<div class="bd-card"><div class="sh-prog"><div class="big">' + T.done + ' <span style="font-size:15px;color:var(--muted);font-weight:700">of ' + T.total + ' done</span></div><div class="bd-bar sh-bar-o"><i style="width:' + pct + '%"></i></div></div>'
+      + '<div class="bd-sub" style="margin-top:8px">Take one photo of the whole display (24 bottles = full). Ask the shop how many bottles it holds. Claude counts, and tells you at once if something is short or if the shop owes more than it holds.</div></div>'
+      + '<div class="bd-card"><div class="bd-h"><h2>To visit (' + pend.length + ')</h2>' + (T.live ? '<button class="bd-btn sm" id="moreBtn" type="button">+ 10 more shops</button>' : '') + '</div>'
+      + (pend.length ? pend.map(itemHtml).join('') : '<div class="bd-empty"><b>All done for today</b>Well done. Nothing more on the list.</div>') + '</div>'
+      + (done.length ? '<div class="bd-card"><div class="bd-h"><h2>Done today (' + done.length + ')</h2></div>' + done.map(itemHtml).join('') + '</div>' : '');
+    bindTabs(); bindToday();
+  }
+  function bindToday() {
+    document.querySelectorAll('[data-city]').forEach((b) => { b.onclick = async () => { CITY = b.dataset.city; T = await api.get('dp.sh_today', { city: CITY }); renderToday(); }; });
+    document.querySelectorAll('[data-visit]').forEach((b) => { b.onclick = () => openVisit(Number(b.dataset.visit)); });
+    document.querySelectorAll('[data-pin]').forEach((b) => { b.onclick = () => pinHere(Number(b.dataset.pin)); });
+    if ($('moreBtn')) $('moreBtn').onclick = async () => { try { const r = await api.post('dp.sh_more', { city: T.city }); toast(r.added ? r.added + ' more shops added to the list' : 'No more shops are near their date'); await reloadToday(); } catch (e) { toast(e.message, true); } };
+    if ($('locBtn')) $('locBtn').onclick = () => {
+      if (!navigator.geolocation) return toast('This phone cannot give its location', true);
+      toast('Finding where you are…');
+      navigator.geolocation.getCurrentPosition(async (p) => { POS = { lat: p.coords.latitude, lng: p.coords.longitude }; T = await api.get('dp.sh_today', { city: T.city, lat: POS.lat, lng: POS.lng }); renderToday(); toast('Route now starts from where you stand'); }, () => toast('Switch on location and try again', true), { enableHighAccuracy: true, timeout: 12000 });
+    };
+  }
+  async function reloadToday() { T = await api.get('dp.sh_today', Object.assign({ city: T.city }, POS || {})); if (TAB === 'today') renderToday(); }
+  function pinHere(shopId) {
+    if (!navigator.geolocation) return toast('This phone cannot give its location', true);
+    toast('Getting the exact spot…');
+    navigator.geolocation.getCurrentPosition(async (p) => {
+      try { const r = await api.post('dp.sh_pin', { shop_id: shopId, lat: p.coords.latitude, lng: p.coords.longitude, accuracy_m: Math.round(p.coords.accuracy) }); toast(r.message); await reloadToday(); } catch (e) { toast(e.message, true); }
+    }, () => toast('Switch on location and try again', true), { enableHighAccuracy: true, timeout: 15000 });
+  }
+
+  /* ---------------- the visit ---------------- */
+  let VGPS = null;
+  function openVisit(shopId) {
+    const it = T.items.find((x) => x.shop_id === shopId); if (!it) return;
+    VGPS = null;
+    if (navigator.geolocation) navigator.geolocation.getCurrentPosition((p) => { VGPS = { lat: p.coords.latitude, lng: p.coords.longitude, accuracy_m: Math.round(p.coords.accuracy) }; }, () => {}, { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 });
+    const m = BD.modal('<h3>' + esc(it.name) + '</h3><div class="bd-sub" style="margin:-8px 0 12px">' + esc([it.area, it.owner].filter(Boolean).join(' · ')) + (it.owes > 0 ? ' · owes ' + inr(it.owes) : '') + '</div><div id="vBody"></div>', { sticky: true });
+    vForm(m, it);
+  }
+  function vForm(m, it, msg) {
+    m.querySelector('#vBody').innerHTML = (msg ? '<div class="bd-call warn" style="background:#fff3dc;color:#7a4b00">' + msg + '</div>' : '')
+      + '<div class="bd-f"><label>1. Photo of the whole display</label><label class="bd-btn pri" style="width:100%;min-height:52px">Open camera<input type="file" id="vPh" accept="image/*" capture="environment" hidden></label><img id="vPrev" class="sh-prev" style="display:none" alt=""></div>'
+      + '<div class="bd-f"><label>2. How many bottles does the shop hold? (ask the owner, type 0 if none)</label><div class="bd-2"><div><input class="bd-in" id="vB20" type="number" inputmode="numeric" min="0" placeholder="20 ml bottles"></div><div><input class="bd-in" id="vB50" type="number" inputmode="numeric" min="0" placeholder="50 ml bottles"></div></div></div>'
+      + '<div class="bd-f"><label>Note (optional)</label><input class="bd-in" id="vNote" placeholder="e.g. owner asked for a refill"></div>'
+      + '<div class="acts"><button class="bd-btn" id="vX">Cancel</button><button class="bd-btn go" id="vGo">Send to Claude</button></div>';
+    let file = null;
+    m.querySelector('#vPh').onchange = (e) => { file = e.target.files[0]; if (file) { const im = m.querySelector('#vPrev'); im.src = URL.createObjectURL(file); im.style.display = 'block'; } };
+    m.querySelector('#vX').onclick = () => { BD.close(); };
+    m.querySelector('#vGo').onclick = async () => {
+      if (!file) return toast('Take the display photo first', true);
+      const b20 = m.querySelector('#vB20').value, b50 = m.querySelector('#vB50').value;
+      if (b20 === '' && b50 === '') return toast('Type how many bottles the shop holds (0 if none)', true);
+      const fd = new FormData(); fd.append('shop_id', it.shop_id); fd.append('photo', file, 'display.jpg'); fd.append('b20', b20 === '' ? 0 : b20); fd.append('b50', b50 === '' ? 0 : b50); fd.append('note', m.querySelector('#vNote').value);
+      if (VGPS) { fd.append('lat', VGPS.lat); fd.append('lng', VGPS.lng); fd.append('accuracy_m', VGPS.accuracy_m); }
+      m.querySelector('#vBody').innerHTML = '<div class="bd-empty"><b>Claude is counting the bottles…</b>This takes a few seconds.</div>';
+      try { const r = await api.upload('dp.sh_visit', fd); vResult(m, it, r); }
+      catch (e) { vForm(m, it, esc(e.message)); }
+    };
+  }
+  function vResult(m, it, r) {
+    if (!r.ok) {   // retake
+      m.querySelector('#vBody').innerHTML = '<div class="sh-count warn"><b>' + (r.count != null ? r.count + ' of ' + r.expected : 'Retake') + '</b>' + esc(r.message) + '</div>'
+        + (r.can_confirm ? '<div class="bd-f"><label>If the display is really short, say why (optional)</label><input class="bd-in" id="vWhy" placeholder="e.g. shop sold 7 this week"></div>' : '')
+        + '<div class="acts"><button class="bd-btn" id="vClose">Close</button>' + (r.can_confirm ? '<button class="bd-btn bad" id="vShort">It is really short</button>' : '') + '<button class="bd-btn pri" id="vRe">Retake photo</button></div>';
+      m.querySelector('#vClose').onclick = async () => { BD.close(); await reloadToday(); };
+      m.querySelector('#vRe').onclick = () => vForm(m, it);
+      if (r.can_confirm) m.querySelector('#vShort').onclick = async () => {
+        try { const rr = await api.post('dp.sh_visit_confirm_short', { visit_id: r.visit_id, note: m.querySelector('#vWhy').value }); vResult(m, it, rr); } catch (e) { toast(e.message, true); }
+      };
+      return;
+    }
+    const mo = r.money || {}, cls = mo.flag ? 'red' : (mo.due > 0 ? 'green' : 'grey');
+    m.querySelector('#vBody').innerHTML = (r.ai_skipped ? '<div class="sh-note">Claude could not check this photo. A person will look at it.</div>' : '<div class="sh-count ok"><b>' + (r.count != null ? r.count + ' of ' + r.expected : 'Saved') + '</b>' + (r.count != null && r.count >= r.expected ? 'Full display. Well done.' : 'Display counted.') + '</div>')
+      + (r.flags && r.flags.length ? '<div class="sh-note"><b>Claude noticed:</b> ' + esc(r.flags.join(', ')) + '. The manager was told.</div>' : '')
+      + '<div class="sh-money ' + cls + '">' + (mo.flag ? '<span style="font-size:15px;font-weight:800">COLLECT ' + inr(mo.collect) + ' NOW</span><br>' : '') + esc(mo.text || '') + (mo.price_note ? '<div style="font-weight:500;font-size:12.5px;margin-top:4px">Stock: ' + esc(mo.price_note) + ' = ' + inr(mo.stock) + ' · due ' + inr(mo.due) + '</div>' : '') + '</div>'
+      + '<div class="acts"><button class="bd-btn pri" id="vDone">Next shop</button></div>';
+    m.querySelector('#vDone').onclick = async () => { BD.close(); await reloadToday(); };
+  }
+
+  /* ---------------- Overview (the manager) ---------------- */
+  function ring(pct) { return '<div class="sh-ring" style="background:conic-gradient(#e85d04 ' + (pct * 3.6) + 'deg,#eceef1 0)"><span>' + pct + '%</span></div>'; }
+  async function renderOverview() {
+    OV = await api.get('dp.sh_overview');
+    $('sub').textContent = 'Round of ' + OV.settings.round_days + ' days · about ' + OV.settings.per_day + ' displays a day';
+    $('topBtns').innerHTML = '';
+    const cityCards = OV.cities.map((c) => '<div class="bd-card"><div class="bd-h"><h2>' + esc(c.city) + '</h2><span class="bd-sub">' + (c.visitors.length ? 'Visitor: ' + esc(c.visitors.join(', ')) : '<b style="color:#d9423b">Nobody holds the visitor seat</b>') + '</span></div>'
+      + '<div class="sh-cc">' + ring(c.pct) + '<div class="nums"><div><b>' + c.total + '</b><small>displays</small></div><div><b>' + c.visited_round + '</b><small>seen this round</small></div><div><b>' + c.done_today + ' / ' + c.plan + '</b><small>today</small></div>'
+      + '<div><b style="color:' + (c.overdue ? '#d9423b' : 'inherit') + '">' + c.overdue + '</b><small>overdue</small></div><div><b>' + c.never + '</b><small>never visited</small></div><div><b>' + (c.days_left || 0) + '</b><small>days to finish</small></div></div></div></div>').join('');
+    const rowName = (x) => '<b>' + esc(x.name) + '</b> <span class="bd-sub">' + esc([x.area, x.city].filter(Boolean).join(' · ')) + '</span>';
+    const photoBtn = (x) => '<img class="sh-thumb" data-vph="' + x.id + '" alt="" title="Open photo">';
+    $('root').innerHTML = head() + '<div class="bd-grid" style="grid-template-columns:repeat(auto-fit,minmax(340px,1fr));margin-bottom:0">' + (cityCards || '<div class="bd-card"><div class="bd-empty"><b>No displays in the round yet</b>Shops with a display order join automatically.</div></div>') + '</div>'
+      + '<div class="sh-2">'
+      + '<div class="bd-card"><div class="bd-h"><h2>Sold more, paid less <span class="bd-chip ' + (OV.red.length ? 'bad' : 'ok') + '">' + OV.red.length + '</span></h2></div><div class="bd-sub">The shop owes more than the bottles it holds. Collect the amount.</div>'
+      + (OV.red.length ? OV.red.map((x) => '<div class="bd-row"><div class="l"><div class="t">' + esc(x.name) + '</div><div class="s">' + esc([x.area, x.city].join(' · ')) + ' · seen ' + fmtD(x.visit_day) + ' · owes ' + inr(x.due_now) + ' · stock ' + inr(x.stock) + '</div></div><div class="r"><span class="bd-chip bad">collect ' + inr(x.collect) + '</span>' + (x.phone ? '<a class="bd-btn sm" href="tel:' + esc(x.phone) + '">Call</a>' : '') + '</div></div>').join('') : '<div class="bd-empty">None. Every visited shop holds enough stock for what it owes.</div>') + '</div>'
+      + '<div class="bd-card"><div class="bd-h"><h2>Short displays <span class="bd-chip ' + (OV.short.length ? 'warn' : 'ok') + '">' + OV.short.length + '</span></h2></div><div class="bd-sub">Last 3 days. Claude counted fewer bottles than a full display, or noticed damage.</div>'
+      + (OV.short.length ? OV.short.map((x) => '<div class="bd-row"><div class="l"><div class="t">' + rowName(x) + '</div><div class="s">' + (x.count != null ? x.count + ' of ' + x.expected + ' bottles' : '') + (x.flags.length ? ' · ' + esc(x.flags.join(', ')) : '') + (x.note ? ' · "' + esc(x.note) + '"' : '') + ' · ' + fmtD(x.day) + '</div></div><div class="r">' + photoBtn(x) + '</div></div>').join('') : '<div class="bd-empty">No short displays.</div>') + '</div></div>'
+      + '<div class="sh-2">'
+      + '<div class="bd-card"><div class="bd-h"><h2>Photos for a person to look at <span class="bd-chip ' + (OV.look.length ? 'info' : 'ok') + '">' + OV.look.length + '</span></h2></div><div class="bd-sub">Claude could not count these (the AI was not available).</div>'
+      + (OV.look.length ? OV.look.map((x) => '<div class="bd-row"><div class="l"><div class="t">' + rowName(x) + '</div><div class="s">' + fmtD(x.day) + '</div></div><div class="r">' + photoBtn(x) + '</div></div>').join('') : '<div class="bd-empty">Nothing waiting.</div>') + '</div>'
+      + '<div class="bd-card"><div class="bd-h"><h2>Missed visits <span class="bd-chip ' + (OV.missed.length ? 'bad' : 'ok') + '">' + OV.missed.length + '</span></h2></div><div class="bd-sub">Not visited within the round. ' + (OV.rule ? (OV.rule.amount > 0 ? 'Penalty ' + inr(OV.rule.amount) + ' per day, ' + (OV.rule.mode === 'auto' ? 'taken automatically' : 'after your approval') : 'Penalty amount not set yet — set it in Boss &gt; Penalties') : '') + '.</div>'
+      + (OV.missed.length ? OV.missed.map((x) => '<div class="bd-row"><div class="l"><div class="t">' + rowName(x) + '</div><div class="s">Found missed on ' + fmtD(x.day) + '</div></div></div>').join('') : '<div class="bd-empty">No missed visits.</div>')
+      + (OV.far.length ? '<div class="bd-h" style="margin-top:14px"><h2 style="font-size:14px">Photos taken far from the shop pin</h2></div>' + OV.far.map((x) => '<div class="bd-row"><div class="l"><div class="t">' + rowName(x) + '</div><div class="s">' + x.distance_m + ' m away · ' + fmtD(x.day) + '</div></div></div>').join('') : '') + '</div></div>';
+    bindTabs();
+    document.querySelectorAll('[data-vph]').forEach(async (im) => { try { im.src = await photoUrl(im.dataset.vph); im.onclick = () => BD.modal('<img class="bd-ph" style="max-height:70vh" src="' + im.src + '" alt=""><div class="acts"><button class="bd-btn" onclick="BD.close()">Close</button></div>'); } catch (e) { im.style.display = 'none'; } });
+  }
+
+  /* ---------------- Calls ---------------- */
+  async function renderCalls() {
+    CALLS = await api.get('dp.sh_calls');
+    $('sub').textContent = 'Who to call, and who gets a new display'; $('topBtns').innerHTML = '';
+    const stateBtns = (k, id) => ['called|Called', 'interested|Wants a display', 'later|Call later', 'no|No'].map((x) => { const [s, l] = x.split('|'); return '<button class="bd-btn sm" data-cs="' + s + '|' + k + '|' + id + '">' + l + '</button>'; }).join('');
+    $('root').innerHTML = head()
+      + '<div class="bd-card"><div class="bd-h"><h2>Displays that need a call <span class="bd-chip info">' + CALLS.reorder.length + '</span></h2></div><div class="bd-sub">From each shop\'s orders: sold fast (offer a refill or a bigger display) or sold nothing (find out why).</div>'
+      + (CALLS.reorder.length ? CALLS.reorder.map((x) => '<div class="bd-row"><div class="l"><div class="t">' + esc(x.name) + ' <span class="bd-chip ' + (x.kind === 'fast' ? 'ok' : 'warn') + '">' + (x.kind === 'fast' ? 'sold fast' : 'sold nothing') + '</span></div><div class="s">' + esc([x.area, x.city].filter(Boolean).join(' · ')) + ' · ' + esc(x.why) + '</div></div><div class="r">' + (x.phone ? '<a class="bd-btn sm pri" href="tel:' + esc(x.phone) + '">Call ' + esc(x.phone) + '</a>' : '<span class="bd-chip">no number</span>') + '</div></div>').join('') : '<div class="bd-empty">Nobody to call right now.</div>') + (CALLS.reorder_more > 0 ? '<div class="bd-sub" style="margin-top:8px">+ ' + CALLS.reorder_more + ' more. Work through these first; the list refills.</div>' : '') + '</div>'
+      + '<div class="bd-card"><div class="bd-h"><h2>Give a new display <span class="bd-chip info">' + CALLS.prospects.length + '</span></h2><button class="bd-btn sm" id="addProsp" type="button">+ Add a shop by hand</button></div><div class="bd-sub">Shops that already buy but have no display, and shops found on Google Maps. Call, then give the display. It joins the visit round on its own.</div>'
+      + (CALLS.prospects.length ? CALLS.prospects.map((x) => '<div class="bd-row"><div class="l"><div class="t">' + esc(x.name) + (x.call_state && x.call_state !== 'none' ? ' <span class="bd-chip">' + esc(x.call_state) + '</span>' : '') + '</div><div class="s">' + esc([x.area, x.city].filter(Boolean).join(' · ')) + ' · ' + esc(x.why) + (x.call_note ? ' · "' + esc(x.call_note) + '"' : '') + '</div>'
+        + '<div class="sh-acts">' + (x.phone ? '<a class="bd-btn sm pri" href="tel:' + esc(x.phone) + '">Call ' + esc(x.phone) + '</a>' : '') + stateBtns(x.shop_id ? 's' : 'p', x.shop_id || x.prospect_id) + '<button class="bd-btn sm go" data-give="' + esc(x.key) + '">Give a display</button></div></div></div>').join('') : '<div class="bd-empty">No prospects yet. Search Google below or add one by hand.</div>') + '</div>'
+      + '<div class="bd-card"><div class="bd-h"><h2>Find shops on Google Maps</h2></div>'
+      + (CALLS.google ? '<div class="sh-row"><input class="bd-in" id="gQ" placeholder="e.g. perfume shop Adajan" style="max-width:340px"><input class="bd-in" id="gC" placeholder="City" value="' + esc(CITY || 'Surat') + '" style="max-width:160px"><button class="bd-btn pri" id="gGo" type="button">Search</button></div><div id="gOut"></div>' : '<div class="bd-sub">Add the Google key in <b>Boss &gt; Setup &gt; Maps and Places</b> and Claude will find nearby shops with their phone numbers. Until then use "+ Add a shop by hand".</div>') + '</div>';
+    bindTabs();
+    document.querySelectorAll('[data-cs]').forEach((b) => { b.onclick = async () => {
+      const [s, k, id] = b.dataset.cs.split('|'); const note = (s === 'no' || s === 'later' || s === 'interested') ? (prompt('Note (optional)') || '') : '';
+      try { await api.post('dp.sh_call_note', Object.assign({ state: s, note }, k === 's' ? { shop_id: Number(id) } : { prospect_id: Number(id) })); await renderCalls(); } catch (e) { toast(e.message, true); } }; });
+    document.querySelectorAll('[data-give]').forEach((b) => { b.onclick = () => giveDisplay(CALLS.prospects.find((x) => x.key === b.dataset.give)); });
+    if ($('addProsp')) $('addProsp').onclick = () => giveDisplay(null, true);
+    if ($('gGo')) $('gGo').onclick = async () => {
+      $('gOut').innerHTML = '<div class="bd-empty">Searching…</div>';
+      try {
+        const r = await api.get('dp.sh_places', { q: $('gQ').value, city: $('gC').value });
+        $('gOut').innerHTML = r.places.length ? r.places.map((p, i) => '<div class="bd-row"><div class="l"><div class="t">' + esc(p.name) + '</div><div class="s">' + esc(p.address) + (p.phone ? ' · ' + esc(p.phone) : ' · no phone on Google') + '</div></div><div class="r"><button class="bd-btn sm" data-addp="' + i + '">Add to my list</button></div></div>').join('') : '<div class="bd-empty">Nothing found.</div>';
+        document.querySelectorAll('[data-addp]').forEach((b) => { b.onclick = async () => { const p = r.places[Number(b.dataset.addp)]; try { await api.post('dp.sh_prospect_add', Object.assign({ city: $('gC').value }, p)); toast('Added'); await renderCalls(); } catch (e) { toast(e.message, true); } }; });
+      } catch (e) { $('gOut').innerHTML = '<div class="bd-call bad">' + esc(e.message) + '</div>'; }
+    };
+  }
+  function giveDisplay(p, onlyAdd) {
+    const m = BD.modal('<h3>' + (onlyAdd ? 'Add a shop' : 'Give a display to ' + esc(p.name)) + '</h3>'
+      + '<div class="bd-f"><label>Shop name</label><input class="bd-in" id="gName" value="' + esc(p ? p.name : '') + '"></div><div class="bd-2"><div class="bd-f"><label>Owner</label><input class="bd-in" id="gOwner"></div><div class="bd-f"><label>Phone</label><input class="bd-in" id="gPhone" inputmode="tel" value="' + esc(p ? (p.phone || '') : '') + '"></div></div>'
+      + '<div class="bd-2"><div class="bd-f"><label>Area</label><input class="bd-in" id="gArea" value="' + esc(p ? (p.area || '') : '') + '"></div><div class="bd-f"><label>City</label><input class="bd-in" id="gCity" value="' + esc(p ? (p.city || '') : (CITY || 'Surat')) + '"></div></div>'
+      + (onlyAdd ? '' : '<div class="sh-note">The shop joins the visit round and its first visit is due tomorrow. Send the bottles with a normal Retail "display" order.</div>')
+      + '<div class="acts"><button class="bd-btn" onclick="BD.close()">Cancel</button><button class="bd-btn go" id="gSave">' + (onlyAdd ? 'Add to call list' : 'Give display') + '</button></div>');
+    m.querySelector('#gSave').onclick = async () => {
+      const body = { name: m.querySelector('#gName').value, owner: m.querySelector('#gOwner').value, phone: m.querySelector('#gPhone').value, area: m.querySelector('#gArea').value, city: m.querySelector('#gCity').value };
+      try {
+        if (onlyAdd) { await api.post('dp.sh_prospect_add', body); toast('Added'); }
+        else { if (p.shop_id) body.shop_id = p.shop_id; else body.prospect_id = p.prospect_id; const r = await api.post('dp.sh_new_display', body); toast(r.message); }
+        BD.close(); await renderCalls();
+      } catch (e) { toast(e.message, true); }
+    };
+  }
+
+  /* ---------------- Pins ---------------- */
+  async function renderPins() {
+    const city = CITY || (OV.cities[0] && OV.cities[0].city) || '';
+    PINS = await api.get('dp.sh_pins', { city });
+    $('sub').textContent = PINS.shops.length + ' displays · ' + PINS.no_pin + ' without a map pin'; $('topBtns').innerHTML = '';
+    $('root').innerHTML = head()
+      + '<div class="sh-city">' + OV.cities.map((c) => '<button class="bd-btn sm ' + (c.city === city ? 'pri' : '') + '" data-pcity="' + esc(c.city) + '">' + esc(c.city) + '</button>').join('') + '</div>'
+      + '<div class="bd-card"><div class="bd-h"><h2>Map pins</h2></div><div class="bd-sub">The visitor pins a shop by standing at it and pressing "Pin this shop here". You can also paste a Google Maps link. Shops without a pin are listed first.</div><div class="scrollx"><table class="sh-tbl"><tr><th>Shop</th><th>Area</th><th>Last visit</th><th>Due</th><th>Pin</th></tr>'
+      + PINS.shops.map((s) => '<tr><td><b>' + esc(s.name) + '</b><div class="bd-sub">' + esc(s.phone || '') + '</div></td><td>' + esc(s.area) + '</td><td>' + (s.last ? fmtD(s.last) : 'never') + '</td><td>' + (s.overdue_days > 0 ? '<span class="bd-chip bad">' + s.overdue_days + ' late</span>' : fmtD(s.due_on)) + '</td><td>'
+        + (s.maps ? '<a class="bd-btn sm" target="_blank" rel="noopener" href="' + esc(s.maps) + '">Open in Maps</a> ' : '<span class="bd-chip warn">no pin</span> ') + '<button class="bd-btn sm" data-setpin="' + s.shop_id + '">' + (s.maps ? 'Change' : 'Set from link') + '</button></td></tr>').join('') + '</table></div></div>';
+    bindTabs();
+    document.querySelectorAll('[data-pcity]').forEach((b) => { b.onclick = async () => { CITY = b.dataset.pcity; await renderPins(); }; });
+    document.querySelectorAll('[data-setpin]').forEach((b) => { b.onclick = async () => {
+      const link = prompt('Paste the Google Maps link of this shop (or "lat, lng")'); if (!link) return;
+      try { await api.post('dp.sh_pin', { shop_id: Number(b.dataset.setpin), maps_link: link }); toast('Pinned'); await renderPins(); } catch (e) { toast(e.message, true); } }; });
+  }
+
+  /* ---------------- Setup ---------------- */
+  async function renderSetup() {
+    const S = (await api.get('dp.sh_settings')).settings;
+    $('sub').textContent = 'The numbers behind the round'; $('topBtns').innerHTML = '';
+    $('root').innerHTML = head() + '<div class="bd-card"><div class="bd-h"><h2>Round and photo rules</h2></div>'
+      + '<div class="bd-2"><div class="bd-f"><label>Days in one round</label><input class="bd-in" id="sRound" type="number" value="' + S.round_days + '"><div class="hint">Every display is visited once in this many days. A display not seen for one day more is a missed visit.</div></div>'
+      + '<div class="bd-f"><label>Displays per visitor per day</label><input class="bd-in" id="sPer" type="number" value="' + S.per_day + '"></div>'
+      + '<div class="bd-f"><label>Bottles in a full display</label><input class="bd-in" id="sFull" type="number" value="' + S.full + '"></div>'
+      + '<div class="bd-f"><label>Ask for a retake below this many bottles</label><input class="bd-in" id="sMin" type="number" value="' + S.min + '"><div class="hint">22 lets Claude\'s count be off by two.</div></div></div>'
+      + '<div class="bd-f"><label><input type="checkbox" id="sSun" ' + (S.sunday ? 'checked' : '') + '> Make a list on Sundays too</label></div>'
+      + '<div class="acts" style="justify-content:flex-start"><button class="bd-btn pri" id="sSave">Save</button></div><div class="bd-sub" style="margin-top:10px">Penalty amount for a missed visit: <b>Boss &gt; Penalties</b>. Google key: <b>Boss &gt; Setup</b>. Google Maps key ' + (S.google ? 'is set.' : 'is not set yet.') + ' Only an Admin can save here.</div></div>';
+    bindTabs();
+    $('sSave').onclick = async () => {
+      try { await api.post('dp.sh_settings', { round_days: Number($('sRound').value), per_day: Number($('sPer').value), full: Number($('sFull').value), min: Number($('sMin').value), sunday: $('sSun').checked }); toast('Saved'); await loadAll(true); } catch (e) { toast(e.message, true); }
+    };
+  }
+
+  loadAll().catch((e) => { $('root').innerHTML = '<div class="bd-card"><div class="bd-empty"><b>Cannot open Retail displays</b>' + esc(e.message) + '</div></div>'; });
+</script>
+</body>
+</html>

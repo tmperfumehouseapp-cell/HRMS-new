@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Office supplies — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=4">
+<link rel="stylesheet" href="assets/css/boss.css?v=1">
+<style>
+  .su-places{display:flex;gap:7px;overflow-x:auto;padding:2px 0 10px;scrollbar-width:none;} .su-places::-webkit-scrollbar{display:none;}
+  .su-pl{flex:none;border:1px solid var(--line);background:#fff;border-radius:18px;padding:9px 15px;font-weight:700;font-size:13px;cursor:pointer;font-family:inherit;color:#4a505c;text-align:left;line-height:1.25;}
+  .su-pl small{display:block;font-weight:600;font-size:11px;color:var(--muted);} .su-pl.on{background:var(--ink);color:#fff;border-color:var(--ink);} .su-pl.on small{color:#c9ced8;}
+  .su-pl em{font-style:normal;background:#e8590c;color:#fff;border-radius:9px;font-size:11px;padding:0 6px;margin-left:6px;line-height:16px;display:inline-block;}
+  .su-note{background:#fff8ea;border-radius:16px;padding:12px 15px;font-size:13.5px;color:#6b4a00;line-height:1.5;margin-bottom:14px;}
+  .su-note b{color:#4d3500;}
+  .su-ok{background:#e6f6ee;color:#0f6b43;}
+  .su-ppl{display:flex;gap:18px;flex-wrap:wrap;font-size:13px;color:#4a505c;margin-top:4px;} .su-ppl b{color:var(--ink);}
+  .su-need{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:12px 0;border-top:1px solid var(--line);flex-wrap:wrap;} .su-need:first-child{border-top:0;}
+  .su-need > div:first-child{flex:1 1 110px;min-width:0;}
+  .su-need .nm{font-weight:800;font-size:15px;} .su-need .q{font-size:12.5px;color:var(--muted);margin-top:2px;}
+  .su-late{color:#d9423b;font-weight:700;}
+  .su-mark{display:inline-flex;border:1px solid var(--line);border-radius:99px;overflow:hidden;background:#fff;flex:none;}
+  .su-mark button{border:0;background:transparent;padding:9px 16px;font-weight:700;font-size:13px;cursor:pointer;font-family:inherit;color:#4a505c;min-height:40px;}
+  .su-mark button.on.ok{background:#16945a;color:#fff;} .su-mark button.on.low{background:#f2b33d;color:#3b2a00;} .su-mark button.on.empty{background:#d9423b;color:#fff;}
+  .su-pay{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;} .su-pay button{border:1px solid var(--line);background:#fff;border-radius:16px;padding:11px 10px;font-weight:700;font-size:13px;cursor:pointer;font-family:inherit;text-align:left;line-height:1.3;}
+  .su-pay button small{display:block;font-weight:500;font-size:11.5px;color:var(--muted);} .su-pay button.on{border-color:var(--ink);background:#111;color:#fff;} .su-pay button.on small{color:#c9ced8;}
+  .su-items label{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line);font-size:14px;} .su-items label:first-child{border-top:0;}
+  .su-items input[type=number]{width:74px;padding:7px 8px;border:1px solid var(--line);border-radius:12px;font-size:15px;font-family:inherit;}
+  .su-warn{border-radius:14px;padding:10px 13px;font-size:13px;line-height:1.45;margin:8px 0;} .su-warn.w{background:#fff3dc;color:#7a4e00;} .su-warn.i{background:#e8f0fe;color:#2456b3;}
+  .su-shot{display:inline-flex;align-items:center;gap:8px;} .su-shot img{width:54px;height:54px;object-fit:cover;border-radius:12px;}
+  .of-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:9px;}
+  .su-bal{font-weight:800;font-size:17px;} .su-bal.owe{color:#d9423b;}
+  .su-tbl{width:100%;border-collapse:collapse;font-size:13.5px;} .su-tbl td,.su-tbl th{padding:9px 6px;border-top:1px solid var(--line);text-align:left;vertical-align:middle;} .su-tbl th{font-size:11.5px;color:var(--muted);font-weight:700;border-top:0;}
+  @media (max-width:820px){ .su-hide-m{display:none;} .su-mark button{padding:9px 10px;font-size:12.5px;} .su-need{flex-wrap:nowrap;} .su-need:has(.su-mark) > div:first-child .q{font-size:11.5px;} .su-tbl td,.su-tbl th{padding:8px 3px;} }
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><div><h1>Office supplies</h1><div class="bd-sub" id="sub">Milk, ice, coffee, hand wash and the rest, for every office and the store.</div></div><div id="topBtns"></div></div>
+    <div class="content"><div class="bd" id="hqPeople"></div><div class="bd" id="root"><div class="bd-empty">Loading…</div></div></div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=4"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script src="assets/js/boss_common.js?v=2"></script>
+<script src="assets/js/hq_board.js?v=1"></script>
+<script>
+  guardPage();
+  renderSidebar('dept_supplies');
+  const { esc, $, toast, inr } = BD;
+  const QS = new URLSearchParams(location.search);
+  let O = null, P = null, PL = null, SUP = null, REI = null, CYC = null;
+  let CUR = QS.get('place') || '', TAB = QS.get('tab') || '', MARKS = {};
+  const REASON = { daily: ['Every morning', 'info'], low: ['Low', 'warn'], empty: ['Empty', 'bad'], cycle: ['Cycle is up', 'info'], min: ['Below minimum', 'warn'], missing: ['Missing', 'bad'], new: ['New for the place', 'info'] };   // min / missing / new come from registered places
+  const rsn = (r) => REASON[r] || [String(r || ''), 'info'];
+  const isPl = (i) => i.mode === 'count' || i.kind === 'equipment' || !!i.zone_id;   // made and edited in Offices > Places, not here
+  const PAY = { upi: ['Company UPI', 'Screenshot needed'], credit: ['Supplier ledger', 'Pay later, bill is kept'], pocket: ['Own pocket', 'You get paid back by UPI'], cash: ['Cash', 'Please avoid cash'] };
+  const modeText = (i) => i.kind === 'equipment' ? 'Equipment · ' + (i.equip_state || 'not checked yet') : (i.mode === 'count' ? 'Counted each morning' + (i.min_qty != null ? ' · min ' + q(i.min_qty) : '') : (i.mode === 'daily' ? 'Every day' : (i.mode === 'cycle' ? 'Every ' + i.cycle_days + ' days' : 'Claude is learning')));
+  const q = (n) => String(Math.round(Number(n) * 100) / 100);
+  const hiOf = (id) => { const it = P && P.items.find((x) => x.id === id); return it && it.name_hi ? it.name_hi : ''; };
+
+  async function shotOpen(name) {
+    try { const r = await fetch(api.buildUrl('dp.su_file', { name }), { headers: { Authorization: 'Bearer ' + api.token() } }); if (!r.ok) throw 0; window.open(URL.createObjectURL(await r.blob()), '_blank'); } catch (e) { toast('Cannot open the picture.', true); }
+  }
+  const shotBtn = (n, label) => n ? '<button class="bd-btn sm" data-shot="' + esc(n) + '" type="button">' + (label || 'Screenshot') + '</button>' : '';
+
+  /* ---------------- load ---------------- */
+  async function loadAll(keepTab) {
+    try {
+      O = await api.get('dp.su_overview');
+      if (!O.places.length) { $('root').innerHTML = '<div class="bd-card"><div class="bd-empty"><b>Nothing for you here</b>You are not the buyer or checker of any place yet.</div></div>'; return; }
+      if (!O.places.some((p) => p.code === CUR)) CUR = O.places[0].code;
+      const can = O.places.find((p) => p.code === CUR);
+      if (!TAB || !tabs().some((t) => t[0] === TAB)) TAB = can.can_buy ? 'buy' : 'check';
+      await loadPlace();
+    } catch (e) { $('root').innerHTML = '<div class="bd-card"><div class="bd-empty"><b>Cannot open Office supplies</b>' + esc(e.message) + '</div></div>'; }
+  }
+  async function loadPlace() {
+    P = await api.get('dp.su_place', { code: CUR });
+    MARKS = {}; P.items.forEach((i) => { if (P.today[i.id]) MARKS[i.id] = P.today[i.id]; });
+    if (TAB === 'suppliers') SUP = await api.get('dp.su_ledger');
+    if (TAB === 'reimb') REI = await api.get('dp.su_reimb_list');
+    if (TAB === 'cycles' && O.access.manager) CYC = await api.get('dp.su_cycles');
+    render();
+  }
+  function tabs() {
+    const t = [];
+    const c = O.places.find((p) => p.code === CUR) || {};
+    if (c.can_buy) t.push(['buy', 'Need to buy']);
+    if (c.can_check) t.push(['check', 'Check']);
+    t.push(['list', 'Items']);
+    t.push(['suppliers', 'Suppliers']);
+    t.push(['reimb', 'Pay back']);
+    if (O.access.manager) t.push(['cycles', 'Learned cycles']);
+    return t;
+  }
+
+  /* ---------------- render ---------------- */
+  function render() {
+    const T = O.totals;
+    let h = '';
+    if (!O.live) h += '<div class="su-note"><b>Not live yet.</b> You can look around and set things up, but nothing is asked of staff and nobody is fined. Answer Claude\'s questions in <a href="boss_questions.html"><b>Boss &gt; Questions</b></a>, then press "This is right, make it live".</div>';
+    h += '<div class="su-note" style="background:#e8f0fe;color:#24428f">Every office in one list, give items to a person, add the payment screenshot: <a href="dept_work.html"><b>Shopping list (all offices)</b></a></div>';
+    if (T) h += '<div class="bd-stats" style="grid-template-columns:repeat(4,minmax(0,1fr))">'
+      + '<div class="bd-stat ' + (T.needs ? 'bad' : 'ok') + '"><small>Things to buy</small><b>' + T.needs + '</b></div>'
+      + '<div class="bd-stat ' + (T.owed ? 'bad' : '') + '"><small>Owed to suppliers</small><b>' + inr(T.owed) + '</b></div>'
+      + '<div class="bd-stat ' + (T.reimb ? 'bad' : '') + '"><small>To pay back</small><b>' + inr(T.reimb_amount) + '</b></div>'
+      + '<div class="bd-stat ' + (T.cycles ? 'bad' : '') + '"><small>Cycles to confirm</small><b>' + T.cycles + '</b></div></div>';
+    h += '<div class="su-places">' + O.places.map((p) => '<button class="su-pl ' + (p.code === CUR ? 'on' : '') + '" data-place="' + p.code + '" type="button">' + esc(p.name) + (p.open_needs ? '<em>' + p.open_needs + '</em>' : '')
+      + '<small>' + (p.low + p.empty ? (p.low + p.empty) + ' low or empty' : (p.checked_today ? 'checked today' : p.items + ' items')) + '</small></button>').join('') + '</div>';
+    const pl = P.place;
+    h += '<div class="bd-card"><div class="bd-h"><h2>' + esc(pl.name) + '</h2><span>' + (P.can.admin ? '<button class="bd-btn sm" id="people" type="button">Choose people</button>' : '') + '</span></div>'
+      + '<div class="su-ppl"><span>Buyer: <b>' + (pl.buyer.length ? esc(pl.buyer.join(', ')) : 'nobody yet') + '</b></span><span>Checker: <b>' + (pl.checker.length ? esc(pl.checker.join(', ')) : 'nobody yet') + '</b></span>'
+      + (O.rule ? '<span>If not bought in time: <b>' + (O.rule.decide && !O.rule.amount ? 'penalty not set yet' : inr(O.rule.amount)) + '</b></span>' : '') + '</div></div>';
+    h += '<div class="bd-tabs">' + tabs().map((t) => '<button data-tab="' + t[0] + '" class="' + (t[0] === TAB ? 'on' : '') + '" type="button">' + t[1] + (t[0] === 'buy' && P.needs.length ? ' (' + P.needs.length + ')' : '') + '</button>').join('') + '</div>';
+    h += ({ buy: buyView, check: checkView, list: listView, suppliers: suppliersView, reimb: reimbView, cycles: cyclesView }[TAB] || buyView)();
+    $('root').innerHTML = h;
+  }
+
+  function buyView() {
+    const n = P.needs;
+    let h = '<div class="bd-card"><div class="bd-h"><h2>Need to buy</h2><span>' + (P.can.buy && n.length ? '<button class="bd-btn pri" id="bought" type="button">I bought something</button>' : '') + '</span></div>';
+    if (!n.length) h += '<div class="bd-empty" style="padding:18px 0"><b>Nothing to buy</b>Milk and ice show up every morning. Anything the checker marks Low or Empty shows up here at once.</div>';
+    else h += n.map((x) => '<div class="su-need"><div><div class="nm">' + esc(x.item) + (hiOf(x.item_id) ? ' <span class="bd-sub" style="font-weight:600">' + esc(hiOf(x.item_id)) + '</span>' : '') + ' <span class="bd-sub" style="font-weight:600">' + q(x.qty) + ' ' + esc(x.unit) + '</span></div><div class="q"><span class="bd-chip ' + rsn(x.reason)[1] + '">' + rsn(x.reason)[0] + '</span> &nbsp;needed by <span class="' + (x.late ? 'su-late' : '') + '">' + esc(x.needed_label) + (x.late ? ' (late)' : '') + '</span></div></div></div>').join('');
+    h += '</div>';
+    if (!P.can.buy) h = h.replace(/<button class="bd-btn pri" id="bought".*?<\/button>/, '');
+    h += '<div class="bd-card"><div class="bd-h"><h2>Bought recently</h2></div>' + (P.recent.length ? P.recent.map((b) => '<div class="bd-row"><div class="l"><div class="t">' + esc(b.items.join(', ')) + '</div><div class="s">' + esc(String(b.at).slice(5, 16)) + ' · ' + esc(b.by) + ' · ' + inr(b.amount) + ' · ' + esc(PAY[b.paid_by][0]) + (b.supplier ? ' · ' + esc(b.supplier) : '') + (b.note ? ' · ' + esc(b.note) : '') + '</div></div><div class="r">'
+      + (b.reimb === 'pending' ? '<span class="bd-chip warn">to pay back</span>' : (b.reimb === 'paid' ? '<span class="bd-chip ok">paid back</span>' : '')) + shotBtn(b.shot) + '</div></div>').join('') : '<div class="bd-empty" style="padding:14px 0">Nothing bought yet.</div>') + '</div>';
+    return h;
+  }
+
+  function checkView() {
+    const act = P.items.filter((i) => i.status === 'active' && !isPl(i)), plc = P.items.filter((i) => i.status === 'active' && isPl(i));
+    const can = P.can.check && O.live;
+    const marked = act.filter((i) => MARKS[i.id]).length;
+    let h = '<div class="bd-card"><div class="bd-h"><h2>Check: ' + esc(P.place.name) + '</h2><span class="bd-chip ' + (marked === act.length ? 'ok' : 'warn') + '">' + marked + ' of ' + act.length + ' marked</span></div>'
+      + '<div class="bd-sub" style="margin-bottom:6px">One tap per item. Low or Empty goes to "Need to buy" straight away.' + (!P.can.check ? ' You can only look.' : (!O.live ? ' Marks can be saved once this is live.' : '')) + '</div>';
+    h += act.map((i) => '<div class="su-need"><div><div class="nm">' + esc(i.name) + '</div><div class="q">' + modeText(i) + (i.last_bought ? ' · last bought ' + esc(i.last_bought.slice(5)) : '') + '</div></div>'
+      + '<div class="su-mark" data-item="' + i.id + '">' + ['ok', 'low', 'empty'].map((s) => '<button type="button" data-mark="' + s + '" class="' + (MARKS[i.id] === s ? 'on ' + s : '') + '"' + (can ? '' : ' disabled') + '>' + s.charAt(0).toUpperCase() + s.slice(1) + '</button>').join('') + '</div></div>').join('');
+    h += can ? '<div class="of-row" style="margin-top:12px"><button class="bd-btn pri" id="saveCheck" type="button">Save marks</button> <button class="bd-btn" id="allOk" type="button">Mark the rest Ok</button></div>' : '';
+    h += '</div>';
+    if (plc.length) h += '<div class="bd-card"><div class="bd-h"><h2>Counted in the daily place check</h2><span class="bd-chip info">' + plc.length + '</span></div><div class="bd-sub" style="margin-bottom:6px">These are counted by the owner of the place in My Day (photo, count, refill, equipment). Nothing to tap here.</div>'
+      + plc.map((i) => '<div class="su-need"><div><div class="nm">' + esc(i.name) + (i.name_hi ? ' <span class="bd-sub" style="font-weight:600">' + esc(i.name_hi) + '</span>' : '') + '</div><div class="q">' + esc(modeText(i)) + (i.last_count != null ? ' · last count ' + q(i.last_count) : '') + '</div></div>' + (i.last_count != null && i.min_qty != null && i.last_count < i.min_qty ? '<span class="bd-chip bad">below minimum</span>' : (i.equip_state && i.equip_state !== 'present' ? '<span class="bd-chip bad">' + esc(i.equip_state) + '</span>' : '')) + '</div>').join('') + '</div>';
+    return h;
+  }
+
+  const nowChip = (i) => i.kind === 'equipment' ? (i.equip_state ? '<span class="bd-chip ' + (i.equip_state === 'present' ? 'ok' : 'bad') + '">' + esc(i.equip_state) + '</span>' : '<span class="bd-chip">not checked</span>') : (i.mode === 'count' ? (i.last_count == null ? '<span class="bd-chip">not counted</span>' : '<span class="bd-chip ' + (i.min_qty != null && i.last_count < i.min_qty ? 'bad' : 'ok') + '">' + q(i.last_count) + '</span>') : '<span class="bd-chip ' + (i.state === 'ok' ? 'ok' : (i.state === 'low' ? 'warn' : 'bad')) + '">' + i.state + '</span>');
+  function listView() {
+    const act = P.items.filter((i) => i.status === 'active'), prop = P.items.filter((i) => i.status === 'proposed');
+    let h = '<div class="bd-card"><div class="bd-h"><h2>Items at ' + esc(P.place.name) + '</h2><span>' + (P.can.edit ? '<button class="bd-btn sm" id="addItem" type="button">+ Add item</button> ' + (P.place.office_id ? '<button class="bd-btn sm" id="propose" type="button">Read the office video</button>' : '') : '') + '</span></div>'
+      + '<table class="su-tbl"><tr><th>Item</th><th>How often</th><th class="su-hide-m">Usual amount</th><th>Now</th><th></th></tr>'
+      + act.map((i) => '<tr><td><b>' + esc(i.name) + '</b>' + (i.name_hi ? '<div class="bd-sub">' + esc(i.name_hi) + '</div>' : '') + '</td><td>' + modeText(i) + '</td><td class="su-hide-m">' + q(i.qty) + ' ' + esc(i.unit) + '</td><td>' + nowChip(i) + '</td><td style="text-align:right">' + (P.can.edit ? (isPl(i) ? (P.place.office_id ? '<a class="bd-btn sm" href="office_care.html?id=' + P.place.office_id + (i.zone_id ? '&zone=' + i.zone_id : '') + '">Edit in Places</a>' : '') : '<button class="bd-btn sm" data-edit="' + i.id + '" type="button">Edit</button>') : '') + '</td></tr>').join('') + '</table></div>';
+    if (prop.length) h += '<div class="bd-card" style="border:1px dashed #e0b45a"><div class="bd-h"><h2>Claude found these in the office video</h2></div><div class="bd-sub">Accept the ones you really want to keep stocked. Nothing is checked or bought until you accept.</div>'
+      + prop.map((i) => '<div class="bd-row"><div class="l"><div class="t">' + esc(i.name) + '</div><div class="s">' + esc(i.unit) + '</div></div><div class="r">' + (P.can.edit ? '<button class="bd-btn sm go" data-accept="' + i.id + '" type="button">Accept</button><button class="bd-btn sm bad" data-drop="' + i.id + '" type="button">Not needed</button>' : '') + '</div></div>').join('') + '</div>';
+    if (O.access.manager) h += '<div class="bd-card"><div class="bd-h"><h2>Places</h2><button class="bd-btn sm" id="addPlace" type="button">+ Add a place</button></div><div class="bd-sub">Surat store, Oberon 1, 2 and 3, Nishal office and RJD Hub are here already. An office added in Offices joins by itself. Times: daily items by <b>' + esc(O.settings.daily_by) + '</b>, the checker by <b>' + esc(O.settings.check_by) + '</b>; Low is needed within ' + O.settings.low_h + ' h, Empty within ' + O.settings.empty_h + ' h.</div></div>';
+    return h;
+  }
+
+  function suppliersView() {
+    const S = SUP.suppliers;
+    let h = '<div class="bd-card"><div class="bd-h"><h2>Suppliers</h2><span>' + (SUP.can_edit ? '<button class="bd-btn sm" id="addSup" type="button">+ Add supplier</button>' : '') + '</span></div>'
+      + '<div class="bd-sub">Every payment to a supplier needs a payment screenshot. Pay by UPI or through the ledger, not cash.</div>';
+    h += S.length ? S.map((s) => '<div class="bd-row"><div class="l"><div class="t">' + esc(s.name) + (s.active ? '' : ' <span class="bd-chip">off</span>') + '</div><div class="s">' + esc([s.phone, s.items].filter(Boolean).join(' · ')) + (s.pending_bills ? ' · ' + s.pending_bills + ' pending bill' + (s.pending_bills === 1 ? '' : 's') + ' since ' + esc(s.oldest) : '') + '</div></div>'
+      + '<div class="r"><span class="su-bal ' + (s.balance > 0 ? 'owe' : '') + '">' + (s.balance > 0 ? inr(s.balance) + ' owed' : (s.balance < 0 ? inr(-s.balance) + ' advance' : 'settled')) + '</span><button class="bd-btn sm" data-ledger="' + s.id + '" type="button">Ledger</button>' + (s.balance > 0 && (O.access.buyer) ? '<button class="bd-btn sm go" data-paysup="' + s.id + '" type="button">Record payment</button>' : '') + (SUP.can_edit ? '<button class="bd-btn sm" data-editsup="' + s.id + '" type="button">Edit</button>' : '') + '</div></div>').join('')
+      : '<div class="bd-empty" style="padding:18px 0"><b>No supplier yet</b>Add them when you are ready (the milk man, the coffee vendor). Nothing is blocked until then.</div>';
+    return h + '</div>';
+  }
+  function reimbView() {
+    const R = REI.rows;
+    let h = '<div class="bd-card"><div class="bd-h"><h2>Pay back</h2></div><div class="bd-sub">When someone buys from his own pocket, the main admin pays him back by UPI and attaches the transaction screenshot here.</div>';
+    h += R.length ? R.map((r) => '<div class="bd-row"><div class="l"><div class="t">' + esc(r.who) + ' · ' + inr(r.amount) + '</div><div class="s">' + esc(r.place) + ' · ' + esc(String(r.at).slice(5, 16)) + (r.note ? ' · ' + esc(r.note) : '') + (r.status === 'paid' ? ' · paid back ' + esc(String(r.paid_at).slice(5, 16)) : '') + '</div></div><div class="r">'
+      + (r.status === 'pending' ? '<span class="bd-chip warn">waiting</span>' : '<span class="bd-chip ok">paid back</span>') + shotBtn(r.receipt, 'Receipt') + shotBtn(r.proof, 'UPI proof') + (r.status === 'pending' && REI.can_pay ? '<button class="bd-btn sm go" data-payback="' + r.id + '" type="button">Paid back</button>' : '') + '</div></div>').join('')
+      : '<div class="bd-empty" style="padding:18px 0"><b>Nothing to pay back</b></div>';
+    return h + '</div>';
+  }
+  function cyclesView() {
+    const C = CYC.cycles, open = C.filter((c) => c.status === 'proposed');
+    let h = '<div class="bd-card"><div class="bd-h"><h2>Learned cycles</h2><span><button class="bd-btn sm" id="learn" type="button">Look at the checks again</button></span></div>'
+      + '<div class="bd-sub">After 2 refills (or 3 days of checks after one), Claude works out how long an item lasts and proposes a cycle. It never changes by itself: you confirm.</div>';
+    h += open.length ? open.map((c) => '<div class="bd-row"><div class="l"><div class="t">' + esc(c.item) + ' at ' + esc(c.place) + ': bring it every ' + c.cycle_days + ' day' + (c.cycle_days === 1 ? '' : 's') + '</div><div class="s">' + esc(c.basis || '') + (c.current ? ' Now: every ' + c.current + ' days.' : '') + '</div></div><div class="r"><button class="bd-btn sm go" data-cyc="approve|' + c.id + '|' + c.cycle_days + '" type="button">Confirm</button><button class="bd-btn sm" data-cyc="change|' + c.id + '|' + c.cycle_days + '" type="button">Other days…</button><button class="bd-btn sm bad" data-cyc="reject|' + c.id + '|0" type="button">No</button></div></div>').join('')
+      : '<div class="bd-empty" style="padding:18px 0"><b>Nothing to confirm</b>Claude is still watching the checks.</div>';
+    const done = C.filter((c) => c.status !== 'proposed').slice(0, 8);
+    if (done.length) h += '<div class="bd-sub" style="margin-top:10px">Earlier: ' + done.map((c) => esc(c.item) + ' (' + esc(c.place) + ') ' + (c.status === 'approved' ? 'every ' + c.cycle_days + ' d, confirmed' : 'declined')).join(' · ') + '</div>';
+    return h + '</div>';
+  }
+
+  /* ---------------- modals ---------------- */
+  function boughtModal() {
+    const st = { pay: 'upi', file: null };
+    const m = BD.modal('<h3>I bought…</h3><div class="su-items" id="bItems">' + P.items.filter((i) => i.status === 'active').map((i) => {
+      const nd = P.needs.find((x) => x.item_id === i.id);
+      return '<label><input type="checkbox" data-bi="' + i.id + '" ' + (nd ? 'checked' : '') + '> <span style="flex:1">' + esc(i.name) + (nd ? ' <span class="bd-chip ' + rsn(nd.reason)[1] + '">' + rsn(nd.reason)[0] + '</span>' : '') + '</span><input type="number" step="any" min="0" value="' + q(nd ? nd.qty : i.qty) + '" data-bq="' + i.id + '"> <small>' + esc(i.unit) + '</small></label>';
+    }).join('') + '</div>'
+      + '<div class="bd-f" style="margin-top:12px"><label>How was it paid?</label><div class="su-pay" id="bPay">' + Object.keys(PAY).map((k) => '<button type="button" data-p="' + k + '" class="' + (k === 'upi' ? 'on' : '') + '">' + PAY[k][0] + '<small>' + PAY[k][1] + '</small></button>').join('') + '</div></div>'
+      + '<div id="bWarn"></div>'
+      + '<div class="bd-f"><label>Total amount (₹)</label><input class="bd-in" id="bAmt" type="number" inputmode="decimal" min="0" step="any"></div>'
+      + '<div class="bd-f" id="bSupW"><label>Supplier <span class="hint">(needed for the supplier ledger)</span></label><select class="bd-in" id="bSup"><option value="">—</option>' + P.suppliers.map((s) => '<option value="' + s.id + '">' + esc(s.name) + '</option>').join('') + '</select></div>'
+      + '<div class="bd-f"><label id="bShotL">Payment screenshot</label><label class="bd-btn">Choose picture<input type="file" id="bShot" accept="image/*" hidden></label> <span id="bShotN" class="bd-sub"></span></div>'
+      + '<div class="bd-f"><label>Remark (optional)</label><input class="bd-in" id="bNote" placeholder="e.g. 2 L milk packets"></div>'
+      + '<div class="acts"><button class="bd-btn" id="bNo" type="button">Cancel</button><button class="bd-btn pri" id="bYes" type="button">Save</button></div>');
+    const warn = () => {
+      const w = { upi: ['i', 'Attach the UPI payment screenshot. It is required.'], credit: ['i', 'Choose the supplier. The bill is added to his ledger as pending; you do not pay now. Add a bill photo if you have one.'], pocket: ['i', 'You will be paid back by UPI. A receipt photo helps.'], cash: ['w', 'Please avoid cash; pay by UPI or ledger. The boss will see this.'] }[st.pay];
+      m.querySelector('#bWarn').innerHTML = '<div class="su-warn ' + w[0] + '">' + w[1] + '</div>';
+      m.querySelector('#bShotL').textContent = st.pay === 'upi' ? 'Payment screenshot (required)' : (st.pay === 'cash' ? 'Bill photo (optional)' : 'Bill / receipt photo (optional)');
+      m.querySelector('#bSupW').style.display = (st.pay === 'credit' || st.pay === 'upi') ? '' : 'none';
+    };
+    warn();
+    m.querySelector('#bPay').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; st.pay = b.dataset.p; m.querySelectorAll('#bPay button').forEach((x) => x.classList.toggle('on', x === b)); warn(); };
+    m.querySelector('#bShot').onchange = (e) => { st.file = e.target.files[0] || null; m.querySelector('#bShotN').textContent = st.file ? st.file.name : ''; };
+    m.querySelector('#bNo').onclick = BD.close;
+    m.querySelector('#bYes').onclick = async () => {
+      const lines = [...m.querySelectorAll('[data-bi]')].filter((c) => c.checked).map((c) => ({ item_id: Number(c.dataset.bi), qty: Number(m.querySelector('[data-bq="' + c.dataset.bi + '"]').value) }));
+      if (!lines.length) return toast('Tick what you bought.', true);
+      const fd = new FormData(); fd.append('code', CUR); fd.append('paid_by', st.pay); fd.append('amount', m.querySelector('#bAmt').value); fd.append('items', JSON.stringify(lines)); fd.append('note', m.querySelector('#bNote').value);
+      const sp = m.querySelector('#bSup').value; if (sp) fd.append('supplier_id', sp); if (st.file) fd.append('shot', st.file);
+      const b = m.querySelector('#bYes'); b.disabled = true;
+      try { const r = await api.upload('dp.su_bought', fd); BD.close(); toast(r.message); await loadAll(); } catch (e) { toast(e.message, true); b.disabled = false; }
+    };
+  }
+  function itemModal(it) {
+    it = it || { id: 0, name: '', unit: 'pc', mode: 'learn', cycle_days: 10, qty: 1, supplier_id: null };
+    const m = BD.modal('<h3>' + (it.id ? 'Edit item' : 'New item') + '</h3><div class="bd-f"><label>Name</label><input class="bd-in" id="iN" value="' + esc(it.name) + '"></div>'
+      + '<div class="bd-f"><label>How often must it come?</label><select class="bd-in" id="iM"><option value="learn">Not sure, Claude learns it from the checks</option><option value="daily">Every day</option><option value="cycle">Every … days</option></select></div>'
+      + '<div class="bd-f" id="iCw"><label>Days between purchases</label><input class="bd-in" id="iC" type="number" min="2" value="' + (it.cycle_days || 10) + '"></div>'
+      + '<div class="bd-f"><label>Usual amount and unit</label><div style="display:flex;gap:8px"><input class="bd-in" id="iQ" type="number" step="any" value="' + q(it.qty) + '"><input class="bd-in" id="iU" value="' + esc(it.unit) + '" placeholder="L, kg, pack"></div></div>'
+      + '<div class="bd-f"><label>Usual supplier (optional)</label><select class="bd-in" id="iS"><option value="">—</option>' + P.suppliers.map((s) => '<option value="' + s.id + '" ' + (it.supplier_id === s.id ? 'selected' : '') + '>' + esc(s.name) + '</option>').join('') + '</select></div>'
+      + '<div class="acts">' + (it.id ? '<button class="bd-btn bad" id="iOff" type="button" style="margin-right:auto">Stop stocking</button>' : '') + '<button class="bd-btn" id="iNo" type="button">Cancel</button><button class="bd-btn pri" id="iYes" type="button">Save</button></div>');
+    m.querySelector('#iM').value = it.mode; const sync = () => { m.querySelector('#iCw').style.display = m.querySelector('#iM').value === 'cycle' ? '' : 'none'; }; sync(); m.querySelector('#iM').onchange = sync;
+    m.querySelector('#iNo').onclick = BD.close;
+    const go = async (status) => {
+      try { await api.post('dp.su_item_save', { place_code: CUR, id: it.id, name: m.querySelector('#iN').value, mode: m.querySelector('#iM').value, cycle_days: Number(m.querySelector('#iC').value), qty: Number(m.querySelector('#iQ').value), unit: m.querySelector('#iU').value, supplier_id: Number(m.querySelector('#iS').value) || 0, status }); BD.close(); toast('Saved.'); loadPlace(); } catch (e) { toast(e.message, true); }
+    };
+    m.querySelector('#iYes').onclick = () => go('active');
+    if (it.id) m.querySelector('#iOff').onclick = () => go('off');
+  }
+  function supModal(s) {
+    s = s || { id: 0, name: '', phone: '', items: '', note: '', active: 1 };
+    const m = BD.modal('<h3>' + (s.id ? 'Edit supplier' : 'New supplier') + '</h3><div class="bd-f"><label>Name</label><input class="bd-in" id="sN" value="' + esc(s.name) + '" placeholder="e.g. Ramesh (milk)"></div><div class="bd-f"><label>Phone</label><input class="bd-in" id="sP" value="' + esc(s.phone || '') + '" inputmode="tel"></div><div class="bd-f"><label>What he supplies</label><input class="bd-in" id="sI" value="' + esc(s.items || '') + '"></div>'
+      + (s.id ? '<div class="bd-f"><label><input type="checkbox" id="sA" ' + (s.active ? 'checked' : '') + '> Still supplying</label></div>' : '')
+      + '<div class="acts"><button class="bd-btn" id="sNo" type="button">Cancel</button><button class="bd-btn pri" id="sYes" type="button">Save</button></div>');
+    m.querySelector('#sNo').onclick = BD.close;
+    m.querySelector('#sYes').onclick = async () => { try { await api.post('dp.su_supplier_save', { id: s.id, name: m.querySelector('#sN').value, phone: m.querySelector('#sP').value, items: m.querySelector('#sI').value, active: m.querySelector('#sA') ? m.querySelector('#sA').checked : 1 }); BD.close(); toast('Saved.'); loadPlace(); } catch (e) { toast(e.message, true); } };
+  }
+  function shotModal(title, hint, extra, endpoint, fields, done) {
+    const st = { file: null };
+    const m = BD.modal('<h3>' + esc(title) + '</h3><div class="bd-sub" style="margin-bottom:10px">' + hint + '</div>' + extra + '<div class="bd-f"><label>Payment screenshot (required)</label><label class="bd-btn">Choose picture<input type="file" id="xShot" accept="image/*" hidden></label> <span id="xShotN" class="bd-sub"></span></div><div class="acts"><button class="bd-btn" id="xNo" type="button">Cancel</button><button class="bd-btn pri" id="xYes" type="button">Save</button></div>');
+    m.querySelector('#xShot').onchange = (e) => { st.file = e.target.files[0] || null; m.querySelector('#xShotN').textContent = st.file ? st.file.name : ''; };
+    m.querySelector('#xNo').onclick = BD.close;
+    m.querySelector('#xYes').onclick = async () => {
+      const fd = new FormData(); Object.entries(fields(m)).forEach(([k, v]) => fd.append(k, v)); if (st.file) fd.append('shot', st.file);
+      const b = m.querySelector('#xYes'); b.disabled = true;
+      try { const r = await api.upload(endpoint, fd); BD.close(); toast(r.message); done(); } catch (e) { toast(e.message, true); b.disabled = false; }
+    };
+  }
+  async function ledgerModal(id) {
+    try {
+      const d = await api.get('dp.su_ledger', { supplier_id: id });
+      BD.modal('<h3>' + esc(d.supplier.name) + ' — ledger</h3><div class="su-bal ' + (d.balance > 0 ? 'owe' : '') + '" style="margin-bottom:8px">' + (d.balance > 0 ? inr(d.balance) + ' owed' : 'settled') + '</div>'
+        + '<table class="su-tbl"><tr><th>Date</th><th>What</th><th style="text-align:right">Amount</th><th></th></tr>' + d.rows.map((r) => '<tr><td>' + esc(r.date.slice(5)) + '</td><td>' + (r.kind === 'bill' ? 'Bill <span class="bd-chip ' + (r.status === 'paid' ? 'ok' : 'warn') + '">' + r.status + '</span>' : 'Payment') + (r.note ? '<div class="bd-sub">' + esc(r.note) + '</div>' : '') + '</td><td style="text-align:right;font-weight:700">' + (r.kind === 'bill' ? '' : '− ') + inr(r.amount) + '</td><td>' + shotBtn(r.shot, 'Proof') + '</td></tr>').join('') + '</table>' + (d.rows.length ? '' : '<div class="bd-empty">No entries yet.</div>')
+        + '<div class="acts"><button class="bd-btn" onclick="BD.close()" type="button">Close</button></div>');
+    } catch (e) { toast(e.message, true); }
+  }
+  async function peopleModal() {
+    const buyers = P.buyer_ids.slice(), checkers = P.checker_ids.slice();
+    const row = (k, list, label, help) => '<div class="bd-f"><label>' + label + '</label><div class="bd-sub" style="margin-bottom:6px">' + help + '</div><select class="bd-in" id="' + k + '"><option value="">Nobody (use the shared one)</option>' + P.employees.map((e) => '<option value="' + e.id + '" ' + (list[0] === e.id ? 'selected' : '') + '>' + esc(e.name) + '</option>').join('') + '</select></div>';
+    const sg = P.suggest && P.suggest.length ? '<div class="su-warn i">Claude suggests, from the track record: ' + P.suggest.map((s) => '<b>' + esc(s.name) + '</b> (' + esc(s.line) + ')').join('; ') + '. You decide.</div>' : '';
+    const m = BD.modal('<h3>People for ' + esc(P.place.name) + '</h3>' + sg + row('pB', buyers, 'Buyer', 'Gets "Buy for ' + esc(P.place.name) + '" in My Day' + (P.shared_buyer.length ? '. Shared buyer for all places: ' + esc(P.shared_buyer.join(', ')) : '') + '.') + row('pC', checkers, 'Checker', 'Marks Ok / Low / Empty. ' + (P.place.office_id ? 'If left empty, the checker of the office is used.' : 'If left empty, the Supplies checker is used.')) + '<div class="acts"><button class="bd-btn" id="pNo" type="button">Cancel</button><button class="bd-btn pri" id="pYes" type="button">Save</button></div>');
+    m.querySelector('#pNo').onclick = BD.close;
+    m.querySelector('#pYes').onclick = async () => {
+      try {
+        const b = Number(m.querySelector('#pB').value), c = Number(m.querySelector('#pC').value);
+        await api.post('dp.su_seat_set', { place_code: CUR, role: 'buyer', emp_ids: b ? [b] : [] }); await api.post('dp.su_seat_set', { place_code: CUR, role: 'checker', emp_ids: c ? [c] : [] });
+        BD.close(); toast('Saved.'); loadAll();
+      } catch (e) { toast(e.message, true); }
+    };
+  }
+
+  /* ---------------- clicks ---------------- */
+  $('root').onclick = async (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    try {
+      if (b.dataset.place) { CUR = b.dataset.place; const c = O.places.find((p) => p.code === CUR); if (!tabs().some((t) => t[0] === TAB) || (TAB === 'buy' && !c.can_buy)) TAB = c.can_buy ? 'buy' : 'check'; return loadPlace(); }
+      if (b.dataset.tab) { TAB = b.dataset.tab; return loadPlace(); }
+      if (b.dataset.shot) return shotOpen(b.dataset.shot);
+      if (b.dataset.mark) { const id = b.parentNode.dataset.item; MARKS[id] = b.dataset.mark; b.parentNode.querySelectorAll('button').forEach((x) => { x.className = x === b ? 'on ' + x.dataset.mark : ''; }); return; }
+      if (b.id === 'allOk') { P.items.filter((i) => i.status === 'active' && !MARKS[i.id]).forEach((i) => { MARKS[i.id] = 'ok'; }); return render(); }
+      if (b.id === 'saveCheck') {
+        const marks = Object.keys(MARKS).map((id) => ({ item_id: Number(id), state: MARKS[id] })); if (!marks.length) return toast('Mark at least one item.', true);
+        const r = await api.post('dp.su_check', { code: CUR, marks }); toast(r.message); return loadAll();
+      }
+      if (b.id === 'bought') return boughtModal();
+      if (b.id === 'addItem') return itemModal();
+      if (b.dataset.edit) return itemModal(P.items.find((i) => i.id === Number(b.dataset.edit)));
+      if (b.dataset.accept) { const it = P.items.find((i) => i.id === Number(b.dataset.accept)); await api.post('dp.su_item_save', { place_code: CUR, id: it.id, name: it.name, unit: it.unit, mode: 'learn', qty: it.qty, status: 'active' }); toast(it.name + ' is on the list.'); return loadPlace(); }
+      if (b.dataset.drop) { const it = P.items.find((i) => i.id === Number(b.dataset.drop)); await api.post('dp.su_item_save', { place_code: CUR, id: it.id, name: it.name, unit: it.unit, mode: 'learn', qty: it.qty, status: 'off' }); return loadPlace(); }
+      if (b.id === 'propose') { const r = await api.post('dp.su_propose', { place_code: CUR }); toast(r.message); return loadPlace(); }
+      if (b.id === 'addPlace') { const m = BD.modal('<h3>New place</h3><div class="bd-f"><label>Name</label><input class="bd-in" id="nP" placeholder="e.g. Godown"></div><div class="acts"><button class="bd-btn" id="nNo" type="button">Cancel</button><button class="bd-btn pri" id="nYes" type="button">Add</button></div>'); m.querySelector('#nNo').onclick = BD.close; m.querySelector('#nYes').onclick = async () => { try { await api.post('dp.su_place_save', { name: m.querySelector('#nP').value }); BD.close(); loadAll(); } catch (er) { toast(er.message, true); } }; return; }
+      if (b.id === 'people') return peopleModal();
+      if (b.id === 'addSup') return supModal();
+      if (b.dataset.editsup) return supModal(SUP.suppliers.find((s) => s.id === Number(b.dataset.editsup)));
+      if (b.dataset.ledger) return ledgerModal(Number(b.dataset.ledger));
+      if (b.dataset.paysup) {
+        const s = SUP.suppliers.find((x) => x.id === Number(b.dataset.paysup));
+        return shotModal('Pay ' + s.name, 'Owed: <b>' + inr(s.balance) + '</b>. Pay by UPI, then attach the screenshot. Oldest bills are closed first.', '<div class="bd-f"><label>Amount paid (₹)</label><input class="bd-in" id="xAmt" type="number" step="any" value="' + s.balance + '"></div><div class="bd-f"><label>Remark (optional)</label><input class="bd-in" id="xNote"></div>', 'dp.su_ledger_pay',
+          (m) => ({ supplier_id: s.id, amount: m.querySelector('#xAmt').value, note: m.querySelector('#xNote').value }), () => loadPlace());
+      }
+      if (b.dataset.payback) {
+        const r = REI.rows.find((x) => x.id === Number(b.dataset.payback));
+        return shotModal('Pay back ' + r.who, 'Send <b>' + inr(r.amount) + '</b> by UPI, then attach the transaction screenshot.', '', 'dp.su_reimb_pay', () => ({ id: r.id }), () => loadAll());
+      }
+      if (b.id === 'learn') { const r = await api.post('dp.su_learn', {}); toast(r.message); return loadPlace(); }
+      if (b.dataset.cyc) {
+        const [act, id, days] = b.dataset.cyc.split('|'); let d = Number(days);
+        if (act === 'change') { const v = prompt('Bring it every how many days?', days); if (!v) return; d = Number(v); }
+        const r = await api.post('dp.su_cycle_act', { id: Number(id), act: act === 'reject' ? 'reject' : 'approve', cycle_days: d }); toast(r.message); return loadAll();
+      }
+    } catch (er) { toast(er.message, true); }
+  };
+  loadAll();
+  try { HQ.mount(document.getElementById('hqPeople'), { section: 'supplies', title: 'People tracked in Supplies' }); } catch (e) {}
+</script>
+</body>
+</html>

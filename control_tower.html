@@ -1,0 +1,907 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Sales Control Tower — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=4">
+<style>
+  .ldseg{display:flex; gap:4px;} .ldseg button{width:auto; min-height:0; border:1px solid var(--line); background:#fff; color:var(--ink); border-radius:99px; padding:4px 12px; font-size:12px; font-weight:800; cursor:pointer;} .ldseg button.on{background:#111827; color:#fff; border-color:#111827;}
+  .ldr{display:grid; grid-template-columns:26px 1fr auto; gap:10px; align-items:center; padding:8px 4px; border-top:1px solid var(--line);} .ldr:first-child{border-top:0;}
+  .ldr .cv .mut{display:block; font-size:11px; color:#94a3b8; font-weight:700;}
+  .ldr .rk{text-align:center; font-weight:900; color:var(--muted);} .ldr .nm b{font-weight:800;} .ldr .nm em{font-style:normal; font-size:11px; font-weight:800; color:#b45309; background:#fef3c7; border-radius:99px; padding:1px 8px; margin-left:4px;}
+  .ldr .bar{height:5px; border-radius:4px; background:#e5e7eb; margin-top:4px; overflow:hidden;} .ldr .bar i{display:block; height:100%; background:linear-gradient(90deg,#4ade80,#16a34a);}
+  .ldr .cv{text-align:right;} .ldr .cv b{display:block; font-size:15px; font-weight:900;} .ldr .cv b.ok{color:#15803d;} .ldr .cv b.warn{color:#b45309;} .ldr .cv small{font-size:11px; color:var(--muted);}
+  .ldt{border-radius:10px; padding:8px 11px; margin-top:6px; font-size:12.5px; line-height:1.45; background:#EEF2FF; color:#3730a3;} .ldt.coach{background:#FFF7ED; color:#9a3412;} .ldt b{display:block; font-size:13px;}
+  @media (max-width:640px){ #p-focus, #p-today, #p-alerts, #p-md, #p-rt, #p-qb, #p-bench, #p-set, #tabs{zoom:.8;} }
+  .ct-tabs{display:flex; gap:6px; flex-wrap:wrap; margin:0 0 14px;}
+  .ct-tab{border:1px solid var(--line); background:#fff; border-radius:999px; padding:8px 16px; font-weight:600; font-size:13px; cursor:pointer; color:var(--ink);}
+  .ct-tab.on{background:var(--ink); color:#fff; border-color:var(--ink);}
+  .ct-tab .n{display:inline-block; margin-left:6px; background:#e02424; color:#fff; border-radius:10px; padding:0 7px; font-size:11px;}
+  .ct-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px; margin-bottom:14px;}
+  .ct-tile{background:#fff; border:1px solid var(--line); border-radius:18px; padding:14px 16px; position:relative; overflow:hidden;}
+  .ct-tile .k{font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--muted);}
+  .ct-tile .v{font-size:26px; font-weight:800; margin-top:4px; line-height:1.1;}
+  .ct-tile .v small{font-size:13px; font-weight:600; color:var(--muted);}
+  .ct-tile .s{font-size:12px; color:var(--muted); margin-top:5px; line-height:1.4;}
+  .ct-tile::before{content:""; position:absolute; left:0; top:0; bottom:0; width:5px; background:#d1d5db;}
+  .ct-tile.ok::before{background:#16a34a;} .ct-tile.warn::before{background:#f59e0b;} .ct-tile.red::before{background:#dc2626;}
+  .bar{height:7px; background:#eef0f3; border-radius:6px; overflow:hidden; margin-top:8px;}
+  .bar i{display:block; height:100%; background:#16a34a; border-radius:6px;} .bar.warn i{background:#f59e0b;} .bar.red i{background:#dc2626;}
+  .chips{display:flex; gap:6px; flex-wrap:wrap; margin-top:8px;}
+  .chip{font-size:11.5px; font-weight:700; padding:3px 9px; border-radius:999px; background:#f3f4f6; color:#4b5563;}
+  .chip.hit,.chip.ok{background:#e4f6ec; color:#16945a;} .chip.miss,.chip.red{background:#fdecea; color:#d9423b;} .chip.warn{background:#fef3c7; color:#92400e;}
+  .al{display:flex; gap:12px; align-items:flex-start; padding:12px 16px; border-bottom:1px solid var(--line);}
+  .al:last-child{border-bottom:0;}
+  .al .dot{flex:none; width:10px; height:10px; border-radius:50%; margin-top:6px; background:#9ca3af;}
+  .al.red .dot{background:#dc2626;} .al.warn .dot{background:#f59e0b;} .al.info .dot{background:#3b82f6;}
+  .al.meet{background:#fff7ed;}
+  .al .t{font-weight:700; font-size:13.5px;} .al .b{font-size:12.5px; color:#4b5563; margin-top:2px; line-height:1.45; white-space:pre-wrap;}
+  .al .m{font-size:11.5px; color:var(--muted); margin-top:3px;}
+  .al .act{margin-left:auto; flex:none;}
+  .tag{font-size:11px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; background:#fde68a; color:#78350f; border-radius:6px; padding:2px 6px; margin-left:6px;}
+  .tbl-wrap{overflow-x:auto;}
+  table.ct td, table.ct th{white-space:nowrap;}
+  .pc{font-weight:700;} .pc.ok{color:#16945a;} .pc.warn{color:#b45309;} .pc.red{color:#d9423b;}
+  .md-it{padding:12px 16px; border-bottom:1px solid var(--line);} .md-it:last-child{border-bottom:0;}
+  .md-it .h{display:flex; gap:10px; align-items:flex-start; flex-wrap:wrap;}
+  .md-it .lab{font-weight:700; font-size:13.5px; flex:1 1 280px;}
+  .md-it .adv{font-size:12.5px; color:#4b5563; margin-top:4px; line-height:1.45;}
+  .md-it .txt{font-size:12px; background:#f6f7f9; border-radius:8px; padding:8px 10px; margin-top:6px; white-space:pre-wrap;}
+  .st{font-size:11px; font-weight:800; padding:3px 8px; border-radius:999px; text-transform:uppercase; letter-spacing:.04em; background:#f3f4f6; color:#4b5563;}
+  .st.open{background:#fdecea; color:#d9423b;} .st.changed{background:#e0e7ff; color:#3730a3;} .st.improved{background:#e4f6ec; color:#16945a;} .st.cleared{background:#e4f6ec; color:#16945a;} .st.removed{background:#f3f4f6;}
+  .sub{font-size:12px; color:var(--muted);}
+  .set-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:10px 16px; padding:14px 18px;}
+  .set-grid label{display:block; font-size:12px; font-weight:600; color:#4b5563; margin-bottom:3px;}
+  .set-grid input, .set-grid select, .set-grid textarea{width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:8px; font-size:13.5px; background:#fff;}
+  .set-h{padding:12px 18px 0; font-weight:800; font-size:13px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted);}
+  .res-list{display:flex; flex-wrap:wrap; gap:8px; padding:8px 18px 14px;}
+  .res-list label{display:flex; gap:6px; align-items:center; font-size:13px; background:#f6f7f9; border-radius:999px; padding:5px 12px; cursor:pointer;}
+  .al .rv{margin-top:6px; font-size:12.5px; color:#166534; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:10px; padding:6px 10px;} .al .rv .rn{color:#14532d; font-weight:600; margin-top:2px; word-break:break-word;}
+  .rt-seg{display:flex; gap:6px; flex-wrap:wrap;} .rt-sum{display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin:10px 0 4px;} .rt-sum div{background:#f6f7f9; border-radius:12px; padding:8px 10px;} .rt-sum b{display:block; font-size:19px; font-weight:900;} .rt-sum small{font-size:11px; color:var(--muted); font-weight:700;}
+  .rt-p{border-top:1px solid var(--line);} .rt-p>summary{list-style:none; cursor:pointer; display:grid; grid-template-columns:26px 1fr auto; gap:10px; align-items:center; padding:10px 4px;} .rt-p>summary::-webkit-details-marker{display:none;}
+  .rt-sc{font-weight:900; font-size:15px; border-radius:99px; padding:2px 12px; background:#e5e7eb;} .rt-sc.g{background:#dcfce7; color:#166534;} .rt-sc.a{background:#fef3c7; color:#92400e;} .rt-sc.r{background:#fee2e2; color:#991b1b;}
+  .rt-qc{display:flex; flex-wrap:wrap; gap:5px; margin-top:5px; align-items:center;} .rt-qc span{font-size:11px; font-weight:800; border-radius:999px; padding:2px 9px; background:#eef2ff; color:#3730a3; white-space:nowrap;} .rt-qc .mn{background:#ecfdf5; color:#065f46;} .rt-qc .lo{background:#f1f5f9; color:#475569;} .rt-qc .lo.old{background:#fef3c7; color:#92400e;} .rt-qc .lo.none{background:#fee2e2; color:#991b1b;} .rt-qc .cv.g{background:#dcfce7; color:#166534;} .rt-qc .cv.a{background:#fef3c7; color:#92400e;} .rt-qc .cv.r{background:#fee2e2; color:#991b1b;}
+  .tg-pg{height:8px; border-radius:99px; background:#e5e7eb; overflow:hidden; position:relative; margin-top:6px; min-width:90px;} .tg-pg i{display:block; height:100%; border-radius:99px; background:#f59e0b; transition:width .4s;} .tg-pg.mid i{background:#3b82f6;} .tg-pg.ok i{background:linear-gradient(90deg,#16a34a,#22c55e);} .tg-pg.low i{background:#ef4444;}
+  .tg-ok{display:inline-block; margin-top:4px; font-size:11px; font-weight:900; color:#166534; background:#dcfce7; border-radius:99px; padding:1px 9px;} .tg-row{width:100%; margin-top:6px;} .tg-row .tg-t{display:flex; justify-content:space-between; font-size:11.5px; font-weight:800; color:#065f46;}
+  .rt-rb{border:1px solid #c7d2fe; background:#fff; color:#3730a3; border-radius:999px; font-size:11.5px; font-weight:800; padding:3px 11px; cursor:pointer; min-height:28px; width:auto;} .rt-rb:hover{background:#eef2ff;}
+  .qy-t{width:100%; border-collapse:collapse; font-size:13px;} .qy-t th{font-size:11px; text-transform:uppercase; color:var(--muted); text-align:left; padding:6px 6px; border-bottom:1px solid var(--line);} .qy-t td{padding:9px 6px; border-bottom:1px solid #f1f5f9; vertical-align:middle;} .qy-t td.n{text-align:right; font-variant-numeric:tabular-nums;} .qy-t th.n{text-align:right;} .card .qy-t{min-width:0;}
+  .rt-lb{font-size:11.5px; color:var(--muted); font-weight:700;} .rt-body{padding:0 4px 10px 36px;}
+  .rt-r{display:grid; grid-template-columns:1fr auto; column-gap:10px; padding:5px 0; border-top:1px dashed var(--line); font-size:13px;} .rt-r:first-child{border-top:0;} .rt-r .rn{font-weight:800;} .rt-r .rv{font-weight:900; text-align:right;}
+  .rt-bar{grid-column:1/-1; height:5px; border-radius:4px; background:#e5e7eb; overflow:hidden; margin:3px 0;} .rt-bar i{display:block; height:100%;} .rt-bar i.g{background:#16a34a;} .rt-bar i.a{background:#f59e0b;} .rt-bar i.r{background:#ef4444;}
+  .rt-rm{grid-column:1/-1; font-size:12px; color:#92400e; background:#fffbeb; border-radius:8px; padding:3px 8px; margin-top:2px;}
+  @media (max-width:640px){ .rt-sum{grid-template-columns:repeat(2,1fr);} .rt-body{padding-left:4px;} }
+  .fc-seg{display:flex; gap:6px; flex-wrap:wrap; align-items:center;} .fc-sum{display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin:10px 0 2px;} .fc-sum div{background:#f6f7f9; border-radius:12px; padding:8px 10px;} .fc-sum b{display:block; font-size:18px; font-weight:900;} .fc-sum small{font-size:11px; color:var(--muted); font-weight:700;}
+  .fc-h{font-size:11.5px; font-weight:900; text-transform:uppercase; letter-spacing:.05em; margin:14px 0 6px; display:flex; gap:6px; align-items:center;} .fc-h.r{color:#b91c1c;} .fc-h.a{color:#b45309;} .fc-h.g{color:#166534;}
+  .fc-pc{border:1px solid var(--line); border-left-width:5px; border-radius:12px; padding:10px 12px; margin-bottom:8px; background:#fff;} .fc-pc.r{border-left-color:#ef4444;} .fc-pc.a{border-left-color:#f59e0b;} .fc-pc.g{border-left-color:#22c55e;}
+  .fc-top{display:flex; justify-content:space-between; align-items:center; gap:8px;} .fc-top b{font-size:14.5px;} .fc-up{font-size:11px; color:var(--muted); font-weight:700; margin-left:6px;}
+  .fc-sc{font-weight:900; border-radius:99px; padding:1px 10px; font-size:13px; background:#e5e7eb;} .fc-sc.g{background:#dcfce7; color:#166534;} .fc-sc.a{background:#fef3c7; color:#92400e;} .fc-sc.r{background:#fee2e2; color:#991b1b;}
+  .fc-it{display:grid; grid-template-columns:22px 1fr; gap:6px; padding:6px 0; border-top:1px dashed var(--line); font-size:13px;} .fc-it:first-of-type{margin-top:6px;} .fc-it .w{font-weight:800;} .fc-it .y{color:var(--muted); font-size:12px;}
+  .fc-do{color:#1e40af; background:#eff6ff; border-radius:8px; padding:3px 8px; margin-top:3px; display:inline-block; font-size:12px; font-weight:700;}
+  .fc-b{display:flex; gap:6px; margin-top:8px; flex-wrap:wrap; align-items:center;} .fc-b .btn{width:auto; min-height:0; padding:5px 13px; font-size:12px; font-weight:800; border-radius:99px;}
+  .fc-dn{background:#f0fdf4; border:1px solid #bbf7d0; border-radius:10px; padding:5px 9px; font-size:12.5px; color:#166534; margin-top:6px; word-break:break-word;} .fc-dn i{font-style:normal; color:#14532d; font-weight:700;}
+  .fc-imp{font-size:11.5px; font-weight:800; border-radius:99px; padding:1px 9px; background:#f1f5f9; color:#475569; display:inline-block; margin:2px 4px 0 0;} .fc-imp.up{background:#dcfce7; color:#166534;} .fc-imp.down{background:#fee2e2; color:#991b1b;} .fc-lp{font-size:11px; color:var(--muted); font-weight:800; margin-top:6px;}
+  .fc-tw{overflow-x:auto;} .fc-tb{width:100%; border-collapse:collapse; font-size:13px; min-width:760px;} .fc-tb th{text-align:left; font-size:11px; text-transform:uppercase; color:var(--muted); letter-spacing:.04em; padding:6px 8px; border-bottom:2px solid var(--line);} .fc-tb td{padding:8px; border-bottom:1px solid #eef0f3; vertical-align:top;}
+  .fc-tb tr.r td:first-child{box-shadow:inset 4px 0 0 #ef4444;} .fc-tb tr.a td:first-child{box-shadow:inset 4px 0 0 #f59e0b;} .fc-tb tr.g td:first-child{box-shadow:inset 4px 0 0 #22c55e;} .fc-tb .ln{margin-bottom:4px;}
+  @media (max-width:640px){ .fc-sum{grid-template-columns:repeat(2,1fr);} }
+  .qsum{display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin:8px 0;} .qsum div{background:#f3f4f6; border-radius:12px; padding:8px 4px; text-align:center;} .qsum b{display:block; font-size:19px; font-weight:900;} .qsum small{font-size:11px; color:var(--muted); font-weight:800;}
+  .qgrid{display:grid; grid-template-columns:repeat(6,1fr); gap:4px;} @media (min-width:700px){ .qgrid{grid-template-columns:repeat(auto-fill,minmax(84px,1fr)); gap:6px;} }
+  .qsq{width:auto; min-height:0; border:0; border-radius:9px; padding:5px 2px; text-align:center; line-height:1.15; cursor:pointer; font-family:inherit;} .qsq b{display:block; font-size:13px; font-weight:900;} .qsq small{display:block; font-size:11px; font-weight:800; overflow:hidden; white-space:nowrap; text-overflow:ellipsis;}
+  .qsq.sel{outline:2px solid #111827; outline-offset:1px;} .qsq.g,.qdet.g{background:#dcfce7; color:#14532d;} .qsq.a,.qdet.a{background:#fef3c7; color:#78350f;} .qsq.r,.qdet.r{background:#fee2e2; color:#7f1d1d;} .qsq.na,.qdet.na{background:#f3f4f6; color:#6b7280;}
+  .qlg{display:flex; gap:10px; flex-wrap:wrap; font-size:11px; color:var(--muted); font-weight:700; margin-top:8px;} .qlg i{display:inline-block; width:9px; height:9px; border-radius:3px; margin-right:3px; vertical-align:-1px;} .qlg i.g{background:#86efac;} .qlg i.a{background:#fcd34d;} .qlg i.r{background:#fca5a5;} .qlg i.na{background:#d1d5db;}
+  .qdet{border-radius:12px; padding:9px 12px; margin-top:10px; font-size:13px;} .qdet .qbig{font-size:14px; margin-top:3px;} .qdet .qbig b{font-size:17px;} .qdet .mut{color:inherit; opacity:.7;}
+  .ldr .cv b.qo{font-size:18px;}
+  .cl-top .cl-card{max-width:none;} @media (max-width:900px){ .cl-top .ct-grid{grid-template-columns:repeat(3,1fr); gap:8px;} .cl-top .ct-tile:nth-child(-n+2){grid-column:1/-1;} .cl-top .ct-tile{padding:10px 11px;} .cl-top .ct-tile .v{font-size:20px;} }
+  .cl-card{margin-bottom:14px;} .cl-k{font-size:11px; font-weight:900; color:var(--muted); text-transform:uppercase; letter-spacing:.04em;} .cl-big{font-size:32px; font-weight:900; color:#15803d; margin:2px 0; line-height:1.15;}
+  .cl-vs{font-size:11px; font-weight:800; border-radius:99px; padding:1px 9px; margin-left:8px; vertical-align:6px; background:#dcfce7; color:#15803d;} .cl-vs.dn{background:#fee2e2; color:#991b1b;}
+  .cl-s{font-size:11.5px; color:var(--muted); font-weight:700; line-height:1.35;} .cl-split{display:flex; height:12px; border-radius:99px; overflow:hidden; margin:9px 0 5px; background:#e5e7eb;} .cl-split i{display:block; height:100%;} .cl-split .bq{background:#3b82f6;} .cl-split .bc{background:#f59e0b;}
+  .cl-lg{display:flex; justify-content:space-between; font-size:11.5px; font-weight:800;} .q{color:#1d4ed8;} .c{color:#b45309;} .cl-g2{display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px;} .cl-sub{border-radius:14px; padding:10px;} .cl-sub.q{background:#eff6ff;} .cl-sub.c{background:#fffbeb;} .cl-v{font-size:22px; font-weight:900; margin:2px 0;}
+  .clq{color:#1d4ed8;} .clc{color:#b45309;} .clt{color:#15803d;} tr.cl-tot td{border-top:2px solid var(--line); font-weight:900; background:#f8fafc;}
+  .cl-ph{display:none;} @media (max-width:700px){ .cl-ph{display:block;} .people-tbl{display:none;} }
+  .cl-pr{display:block; border-top:1px solid #f1f5f9; font-size:12px;} .cl-pr summary,.cl-ptot{display:grid; grid-template-columns:1.2fr 1fr 1fr 1fr; gap:6px; align-items:center; padding:8px 0; cursor:pointer; list-style:none;} .cl-pr summary::-webkit-details-marker{display:none;}
+  .cl-ph-h{display:grid; grid-template-columns:1.2fr 1fr 1fr 1fr; gap:6px; padding:4px 0; font-size:11px; font-weight:900; color:var(--muted); text-transform:uppercase; border-top:0;}
+  .cl-pr .n{font-weight:800; font-size:12.5px;} .cl-pr small{display:block; color:var(--muted); font-size:11px; font-weight:700;} .cl-more{font-size:11.5px; color:var(--muted); padding:0 0 8px; line-height:1.5;} .cl-ptot{border-top:2px solid var(--line); background:#f8fafc; cursor:default;}
+
+  /* Give queries (Query Boost) */
+  .gq-hrs{display:flex; gap:5px; overflow-x:auto; padding:4px 1px 8px; margin:6px 0 2px; -webkit-overflow-scrolling:touch;}
+  .gq-h{flex:none; min-width:46px; width:auto; min-height:0; border:1px solid var(--line); background:#fff; border-radius:11px; padding:4px 6px; text-align:center; font-family:inherit; cursor:pointer; line-height:1.15; color:var(--ink);} .gq-h b{display:block; font-size:12.5px; font-weight:900;} .gq-h small{display:block; font-size:11px; font-weight:800; color:var(--muted);}
+  .gq-h.on{background:#111827; color:#fff; border-color:#111827;} .gq-h.on small{color:#cbd5e1;} .gq-h.now{box-shadow:0 0 0 2px #f59e0b inset;} .gq-h.fut{opacity:.4; cursor:default;} .gq-h.has b{color:#15803d;} .gq-h.on.has b{color:#bbf7d0;}
+  .gq-r{display:grid; grid-template-columns:1fr auto; gap:10px; align-items:center; padding:8px 2px; border-top:1px solid var(--line);} .gq-r:first-of-type{border-top:0;} .gq-r .nm b{font-weight:800; font-size:13.5px;} .gq-r .nm small{display:block; font-size:11px; color:var(--muted); font-weight:700;}
+  .gq-st{display:flex; align-items:center; gap:6px;} .gq-st button{width:38px; min-height:0; height:38px; border-radius:50%; border:1px solid var(--line); background:#fff; font-size:20px; font-weight:900; line-height:1; cursor:pointer; padding:0; color:var(--ink);} .gq-st button.pl{background:#16a34a; color:#fff; border-color:#16a34a;} .gq-st button:disabled{opacity:.35; cursor:default;}
+  .gq-st input{width:58px; height:38px; text-align:center; font-size:17px; font-weight:900; border:1px solid var(--line); border-radius:10px; padding:0; background:#fff; -moz-appearance:textfield;} .gq-st input::-webkit-outer-spin-button,.gq-st input::-webkit-inner-spin-button{-webkit-appearance:none; margin:0;}
+  .gq-sg{display:inline-block; margin-top:4px; border:0; min-height:0; border-radius:99px; padding:3px 10px; font:inherit; font-size:11.5px; font-weight:900; cursor:pointer; line-height:1.3; text-align:left; max-width:100%;}
+  .gq-sg.g{background:#dcfce7; color:#166534;} .gq-sg.a{background:#fef3c7; color:#92400e;} .gq-sg.r{background:#fee2e2; color:#991b1b; cursor:default;} .gq-sg.b{background:#e0e7ff; color:#3730a3;} .gq-sg.d{background:#f1f5f9; color:#475569;}
+  .gq-sg small{display:inline; font-size:inherit; color:inherit; opacity:.8; font-weight:700;} .gq-r .nm .gq-why{display:block; font-size:11px; color:var(--muted); font-weight:700;}
+  .gq-pl{background:#f0fdf4; border:1px solid #bbf7d0; color:#14532d; border-radius:12px; padding:7px 11px; font-size:12px; font-weight:700; line-height:1.5; margin:2px 0 6px;} .gq-pl b{font-weight:900;}
+  .gq-tot{display:flex; justify-content:space-between; gap:8px; font-size:12px; font-weight:800; color:var(--muted); padding:8px 2px 2px; border-top:2px solid var(--line); margin-top:4px;}
+  .gq-bh{display:grid; grid-template-columns:62px 1fr; gap:8px; padding:7px 2px; border-top:1px solid var(--line); font-size:12.5px; align-items:start;} .gq-bh:first-of-type{border-top:0;} .gq-bh b{font-weight:900;} .gq-bh .who{color:#4b5563; line-height:1.5;} .gq-bh .who i{font-style:normal; display:inline-block; background:#f1f5f9; border-radius:99px; padding:0 8px; margin:0 4px 3px 0; font-weight:700;}
+  .qa-ban{background:#fff7ed; border:1px solid #fdba74; color:#9a3412; border-radius:12px; padding:10px 14px; margin:0 0 12px; font-size:13px; font-weight:700;}
+  #p-qb.qa-ro button[data-a], #p-qb.qa-ro input[data-a], #p-qb.qa-ro .gq-r input{opacity:.45; pointer-events:none;}
+  /* library tiles (the Rudra panel that used these ended on 1 Nov 2026) */
+  .rd-sum{display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:10px 0 6px;} .rd-sum div{background:#f6f7f9; border-radius:12px; padding:9px 10px;} .rd-sum b{display:block; font-size:22px; font-weight:900;} .rd-sum small{font-size:11px; color:var(--muted); font-weight:800; text-transform:uppercase; letter-spacing:.03em;}
+  .rm-st{font-size:12px; border-radius:10px; padding:6px 10px; margin-top:8px; background:#f8fafc; border:1px solid var(--line); line-height:1.45; word-break:break-word;} .rm-st.ok{background:#f0fdf4; border-color:#bbf7d0; color:#166534;} .rm-st.wait{background:#fffbeb; border-color:#fde68a; color:#92400e;} .rm-st b{font-weight:800;}
+
+  /* Last days (Today tab) */
+  .hs-live{float:right; font-size:11px; font-weight:800; color:#15803d; background:#dcfce7; border-radius:99px; padding:3px 9px; white-space:nowrap;}
+  .hs-same{background:#eff6ff; border-radius:12px; padding:9px 11px; font-size:12.5px; line-height:1.7; margin:2px 0 10px;} .hs-same b{font-weight:900;} .hs-same .up{color:#15803d; font-weight:800;} .hs-same .dn{color:#b91c1c; font-weight:800;}
+  .hs-t{width:100%; border-collapse:collapse; font-size:12.5px;} .hs-t th{font-size:11px; text-transform:uppercase; color:var(--muted); text-align:right; padding:4px 4px; border-bottom:2px solid var(--line); white-space:nowrap;} .hs-t th:first-child,.hs-t td:first-child{text-align:left;}
+  .hs-t td{padding:7px 4px; border-bottom:1px solid #f1f5f9; text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap;} .hs-t td small{display:block; font-size:11px; color:var(--muted); font-weight:700;}
+  .hs-t tr.now td{background:#fefce8; font-weight:800;} .hs-t tr.tot td{border-top:2px solid var(--line); font-weight:900; background:#f8fafc;}
+  .hs-lg{display:flex; gap:4px 12px; flex-wrap:wrap; font-size:11px; font-weight:800; margin-top:6px;} .hs-lg i{display:inline-block; width:14px; height:4px; border-radius:3px; margin-right:4px; vertical-align:middle;}
+  .card table.hs-t{min-width:0; width:100%;}
+  /* Today tab: Remarks section + collection check */
+  .rm-sec .rm-sum{display:flex; flex-wrap:wrap; gap:8px; margin:2px 0 12px;} .rm-sec .rm-sum span{border-radius:999px; padding:5px 12px; font-size:12.5px; font-weight:800; background:#f1f5f9; color:#334155;} .rm-sec .rm-sum .g{background:#dcfce7; color:#166534;} .rm-sec .rm-sum .w{background:#fef3c7; color:#92400e;}
+  .rm-new{display:grid; grid-template-columns:200px 1fr auto; gap:8px; align-items:start;} .rm-new select,.rm-new textarea{width:100%; border:1px solid var(--line); border-radius:10px; padding:9px 11px; font:inherit; font-size:14px; background:#fff; min-height:44px;} .rm-new textarea{resize:vertical; min-height:44px;}
+  .rm-new .btn{width:auto; white-space:nowrap; min-height:44px;} .rm-qk{display:flex; flex-wrap:wrap; gap:6px; margin:8px 0 2px;} .rm-qk button{border:1px solid var(--line); background:#fff; border-radius:999px; padding:5px 11px; font-size:12px; font-weight:700; color:#334155; cursor:pointer; min-height:32px;} .rm-qk button:hover{background:#f8fafc;}
+  .rm-log{margin-top:14px;} .rm-log h3{font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin:12px 0 6px;} .rm-it{display:grid; grid-template-columns:62px 130px 1fr auto; gap:10px; padding:9px 0; border-bottom:1px solid #f1f5f9; align-items:start; font-size:13.5px;} .rm-it .tm{color:var(--muted); font-size:12px; font-variant-numeric:tabular-nums;} .rm-it .to{font-weight:800;} .rm-it .by{display:block; color:var(--muted); font-size:11.5px; font-weight:600;} .rm-it .st{font-size:11.5px; font-weight:800; border-radius:999px; padding:3px 10px; white-space:nowrap;} .rm-it .st.ok{background:#dcfce7; color:#166534;} .rm-it .st.wait{background:#fef3c7; color:#92400e;}
+  .rm-pp{display:flex; flex-wrap:wrap; gap:6px; margin:0 0 4px;} .rm-pp span{font-size:11.5px; font-weight:700; background:#eef2ff; color:#3730a3; border-radius:999px; padding:3px 10px;}
+  @media (max-width:700px){ .rm-new{grid-template-columns:1fr;} .rm-new .btn{width:100%;} .rm-it{grid-template-columns:1fr auto; gap:4px 10px;} .rm-it .tm{grid-column:1; order:1;} .rm-it .st{grid-column:2; grid-row:1; order:2;} .rm-it .to{grid-column:1 / span 2; order:3;} .rm-it .bd{grid-column:1 / span 2; order:4;} }
+  .rc-box{margin-bottom:14px;} .rc-hd{display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin:2px 0 10px;} .rc-hd div{background:#f8fafc; border:1px solid var(--line); border-radius:12px; padding:10px 12px;} .rc-hd b{display:block; font-size:20px; font-weight:900; font-variant-numeric:tabular-nums;} .rc-hd small{font-size:11px; font-weight:800; text-transform:uppercase; color:var(--muted); letter-spacing:.04em;} .rc-hd .gap.ok b{color:#166534;} .rc-hd .gap.bad b{color:#b45309;}
+  .rc-k{display:grid; grid-template-columns:1fr auto auto; gap:2px 12px; padding:8px 0; border-top:1px solid #f1f5f9; font-size:13px; align-items:center;} .rc-k .nt{grid-column:1 / span 3; font-size:11.5px; color:var(--muted);} .rc-k b{font-variant-numeric:tabular-nums;} .rc-k details{grid-column:1 / span 3;} .rc-k summary{cursor:pointer; font-size:12px; color:#1d4ed8; font-weight:700; margin-top:2px;} .rc-k .ol{display:flex; justify-content:space-between; gap:10px; padding:4px 0; font-size:12.5px; border-bottom:1px dashed #e5e7eb;}
+  .rc-k .tag-w{color:#b45309;} .rc-ok{font-size:13px; color:#166534; font-weight:700; padding:6px 0;}
+
+  .hs-c{padding:14px 14px 12px;}
+  .hs-ch{width:100%; height:auto; display:block;}
+  .hs-hw{overflow:auto; max-height:440px; margin-top:6px;} .hs-h th{position:sticky; top:0; background:#fff; z-index:1;} .hs-h td,.hs-h th{font-size:11px; padding:5px 4px;} .hs-h td.z{color:#cbd5e1;} .hs-h td.hi{background:#dcfce7; font-weight:800;} .hs-h td.lo{background:#fee2e2;} .hs-h td.fut{color:#cbd5e1; background:#f8fafc;} .hs-h tr.cur td:first-child{box-shadow:inset 3px 0 0 #f59e0b;}
+  .empty{padding:26px; text-align:center; color:var(--muted); font-size:13.5px;}
+  .big-ok{font-size:15px; font-weight:700; color:#16945a;}
+  @media (max-width:820px){ .al{flex-wrap:wrap;} .al .act{margin-left:22px;} .ct-tile .v{font-size:23px;} }
+</style>
+<style>
+/* === MOBILE PASS v1 === */
+@media (max-width:640px){
+  /* the old zoom:.8 shrank all text below 10px: keep real size, content wraps instead */
+  #p-focus, #p-today, #p-alerts, #p-md, #p-rt, #p-pp, #p-qb, #p-bench, #p-set, #tabs{zoom:1 !important; padding-left:10px; padding-right:10px;}
+  .ct-tab, .th-sct .btn, .btn.secondary{min-height:40px;}
+}
+@media (max-width:640px){
+  .bk-strip small, .bk-grid .nm, .bk-lg, .bk-foot, .bk-lad .lk b, .bk-strip b span, .qsum small, .gq-h small, .nt-chip small, .hs-t th, .hs-t td small, .cl-ph-h, .sbl i{font-size:11px;}
+}
+/* === END MOBILE PASS v1 === */
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar">
+      <h1>Sales Control Tower</h1>
+      <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+        <input type="date" id="datePick" title="Business day (10 AM to 10 AM)" style="padding:8px 10px; border:1px solid var(--line); border-radius:6px; font-size:13px;">
+        <button class="btn secondary" id="btnRefresh" style="width:auto;">↻ Refresh</button>
+      </div>
+    </div>
+    <div class="content">
+      <div id="alertBox"></div>
+      <div class="ct-tabs" id="tabs">
+        <button class="ct-tab on" data-t="today">Today</button>
+        <button class="ct-tab" data-t="focus">☀️ Focus <span class="n" id="nFo" style="display:none;"></span></button>
+        <button class="ct-tab" data-t="alerts">Alerts <span class="n" id="nAl" style="display:none;"></span></button>
+        <button class="ct-tab" data-t="md">Message Doctor <span class="n" id="nMd" style="display:none;"></span></button>
+        <button class="ct-tab" data-t="qb">🏁 Query Boost</button>
+        <button class="ct-tab" data-t="rt">⭐ Ratings</button>
+        <button class="ct-tab" data-t="bench">Benchmarks &amp; Ideas</button>
+        <button class="ct-tab" data-t="set" id="tabSet" style="display:none;">Settings</button>
+      </div>
+
+      <section id="p-today"></section>
+      <section id="p-focus" style="display:none;"></section>
+      <section id="p-alerts" style="display:none;"></section>
+      <section id="p-md" style="display:none;"></section>
+      <section id="p-rt" style="display:none;"></section>
+      <section id="p-qb" style="display:none;"><div id="qaBanner" class="qa-ban" hidden></div><div id="qbBot"></div><div id="qbTop"></div><div id="qbGive"></div></section>
+      <section id="p-bench" style="display:none;"></section>
+      <section id="p-set" style="display:none;"></section>
+    </div>
+  </main>
+</div>
+
+<div class="modal-overlay" id="resModal">
+  <div class="modal" style="max-width:420px;">
+    <h3 id="resTitle">Mark resolved</h3>
+    <div class="sub" id="resSub" style="margin-bottom:10px;"></div>
+    <div class="field"><label for="resNote" id="resLbl">Comment <b style="color:#dc2626;">(required)</b> — what did you do? e.g. "spoke to him, he will send proofs"</label><input type="text" id="resNote" maxlength="280" autocomplete="off"><div class="sub" id="resErr" style="color:#dc2626;font-weight:700;display:none;margin-top:6px;">Please write a comment (at least 3 letters) to mark this resolved.</div></div>
+    <div class="actions">
+      <button type="button" class="btn secondary" id="resCancel">Cancel</button>
+      <button type="button" class="btn" id="resOk">✅ Resolved</button>
+    </div>
+  </div>
+</div>
+
+<script src="assets/js/config.js?v=2"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script>
+  guardPage();
+  renderSidebar('control_tower');
+
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const inr = (n) => n == null ? '—' : '₹' + Math.round(Number(n)).toLocaleString('en-IN');
+  const alertBox = document.getElementById('alertBox');
+  function showAlert(msg, type = 'success') { alertBox.innerHTML = `<div class="alert ${type}">${esc(msg)}</div>`; window.scrollTo({ top: 0, behavior: 'smooth' }); setTimeout(() => (alertBox.innerHTML = ''), 6000); }
+  const $ = (id) => document.getElementById(id);
+  const pad = (n) => String(n).padStart(2, '0');
+  const dstr = (d) => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+
+  let T = null, MD = null, BM = null, tab = 'today';
+  // "Unknown action" = the server still runs the OLD api.php (the new one has not been uploaded yet).
+  const errHtml = (err) => /unknown action/i.test(err.message || '')
+    ? `<div class="empty" style="text-align:left;max-width:640px;margin:0 auto;"><b style="font-size:15px;">⚠️ The server still has the old api.php</b><br><br>The Control Tower needs the new <b>api.php</b> from the update zip.<br>
+       hPanel → fourpirates.space → Files → File Manager → <b>public_html/empmanagment</b> → upload the new <b>api.php</b> and choose <b>Overwrite</b> (do not touch config.php). Then refresh this page.</div>`
+    : `<div class="empty">${esc(err.message)}</div>`;
+  const nameOf = (id) => ((T && T.names || []).find(n => Number(n.id) === Number(id)) || {}).name || ('#' + id);
+  const stCls = (s) => s === 'ok' || s === 'hit' || s === 'top' ? 'ok' : (s === 'warn' || s === 'near' || s === 'climb' ? 'warn' : (s === 'red' || s === 'miss' || s === 'low' ? 'red' : ''));
+  const pctCls = (v, goal, amber, red) => v == null ? '' : (v >= goal ? 'ok' : (v >= amber ? 'warn' : 'red'));
+  const bar = (v, max, cls) => `<div class="bar ${cls || ''}"><i style="width:${Math.max(0, Math.min(100, max ? v / max * 100 : 0))}%"></i></div>`;
+
+  // ---------- the OLD typed-query screens (Give queries, Campaign, Move, Planner) end on the WhatsApp Sales cut-over date: read-only + banner; the server refuses every write ----------
+  const QA = { ended: false, msg: '' };
+  const QA_W = ['qb.bump', 'qb.set', 'cq.bump', 'cq.tag', 'qm.move', 'qm.waive', 'qm.undo', 'qm.tag'];
+  (function () { const post = api.post.bind(api); api.post = (a, ...r) => (QA.ended && QA_W.indexOf(a) >= 0) ? Promise.reject(new Error(QA.msg)) : post(a, ...r); })();
+  api.get('qa.status').then(s => {
+    if (!s || !s.ended) return;
+    QA.ended = true; QA.msg = s.message;
+    const b = document.getElementById('qaBanner'); if (b) { b.textContent = s.message; b.hidden = false; }
+    const p = document.getElementById('p-qb'); if (p) p.classList.add('qa-ro');
+  }).catch(() => { /* older api.php: nothing to show */ });
+
+  // ---------- tabs ----------
+  document.getElementById('tabs').addEventListener('click', (e) => {
+    const b = e.target.closest('.ct-tab'); if (!b) return;
+    tab = b.dataset.t;
+    document.querySelectorAll('.ct-tab').forEach(x => x.classList.toggle('on', x === b));
+    ['focus', 'today', 'alerts', 'md', 'qb', 'rt', 'bench', 'set'].forEach(k => $('p-' + k).style.display = k === tab ? '' : 'none');
+    if (tab === 'today') { loadHist(); if (RC) loadRecon(); loadRemToday(); }
+    if (tab === 'focus') loadFocus();
+    if (tab === 'qb') loadGive();
+    if (tab === 'rt') loadRt();
+    if (tab === 'md' && !MD) loadMd(false);
+    if (tab === 'bench' && !BM) loadBench();
+    if (tab === 'bench' && !MD) loadMd(false);
+    if (tab === 'set') renderSettings();
+  });
+
+  // ---------- TODAY ----------
+  async function loadTower(refresh) {
+    try {
+      const day = $('datePick').value;
+      T = await api.get('ct.tower', Object.assign({}, day ? { date: day } : {}, refresh ? { refresh: 1 } : {}));
+      if (!$('datePick').value) $('datePick').value = T.day;
+      $('tabSet').style.display = T.can_settings ? '' : 'none';
+      renderToday(); renderAlerts(); renderQb();
+      const open = (T.alerts || []).filter(a => a.status === 'open' && a.kind !== 'digest').length;
+      const nAl = $('nAl'); nAl.textContent = open; nAl.style.display = open ? '' : 'none';
+      if (tab === 'set') renderSettings();
+    } catch (err) { $('p-today').innerHTML = `<div class="card">${errHtml(err)}</div>`; }
+  }
+
+  function renderToday() {
+    const t = T.team || {}, cfg = T.cfg || {};
+    const qs = stCls(t.q_state);
+    const qGoal = Number(t.q_expected_now || 0), qPct = Number(t.q_goal_pct || cfg.q_conv_goal || 23), commGoal = Number(t.comm_target || cfg.comm_target || 200);
+    const tot = Number(t.sales || 0), qS = Number(t.qsales || 0), cS = Number(t.csales || 0), qShare = tot > 0 ? Math.round(qS / tot * 100) : 0, cShare = tot > 0 ? Math.round(cS / tot * 100) : 0;
+    const tkOf = (rs, n) => n > 0 ? inr(Math.round(rs / n)) : '—';
+        const steps = (cfg.ticket_steps || [2600, 2700]);
+    const tk = Number(t.ticket || 0);
+    const tkCls = tk >= steps[steps.length - 1] ? 'ok' : (tk >= steps[0] ? 'warn' : 'red');
+    const checks = (t.comm_checks || []).map(c => `<span class="chip ${c.state === 'hit' ? 'hit' : c.state === 'miss' ? 'miss' : ''}">${esc(c.at)} · ${c.have}/${c.need}</span>`).join('');
+    const mixP = Number(t.mix_pct || 0);
+    const mixCls = pctCls(mixP, cfg.mix_goal || 85, cfg.mix_amber || 80);
+    const codeP = t.code_rate == null ? null : Number(t.code_rate);
+    const isToday = T.day === T.today;
+    const coll = `<div class="card cl-card"><div class="cl-k">💰 Total collection · ${isToday ? '10 AM → now' : 'full day'}</div>
+        <div class="cl-big">${inr(tot)}${t.sales_prev ? `<span class="cl-vs ${tot >= t.sales_prev ? 'up' : 'dn'}">${tot >= t.sales_prev ? '▲' : '▼'} vs yesterday ${inr(t.sales_prev)}</span>` : ''}</div>
+        <div class="cl-s">${t.orders ?? 0} orders · avg ticket ${inr(tk)}</div>
+        <div class="cl-split"><i class="bq" style="width:${qShare}%"></i><i class="bc" style="width:${cShare}%"></i></div>
+        <div class="cl-lg"><span class="q">■ Query ${qShare}%</span><span class="c">■ Campaign ${cShare}%</span></div>
+        <div class="cl-g2">
+          <div class="cl-sub q"><div class="cl-k">🎯 Query collection</div><div class="cl-v q">${inr(qS)}</div>
+            <div class="cl-s"><b>${t.query_orders ?? 0}</b> query orders · ticket ${tkOf(qS, t.query_orders)}</div></div>
+          <div class="cl-sub c"><div class="cl-k">📣 Campaign collection</div><div class="cl-v c">${inr(cS)}</div>
+            <div class="cl-s"><b>${t.community_orders ?? 0}</b> campaign orders · ticket ${tkOf(cS, t.community_orders)}</div></div></div></div>`;
+    const tiles = `
+      <div class="ct-grid">
+        <div class="ct-tile ${qs}"><div class="k">🎯 Query orders — goal ${qPct}% of queries</div>
+          <div class="v">${t.query_orders ?? 0} <small>/ ${qGoal} goal</small></div>
+          ${bar(t.query_orders || 0, Math.max(1, qGoal), qs)}
+          <div class="s">${t.queries ?? 0} queries given · converting <b>${t.q_conv != null ? t.q_conv + '%' : '—'}</b> (goal ${qPct}%)${t.q_state === 'early' ? ' · too early to judge' : ''}</div></div>
+        <div class="ct-tile"><div class="k">📣 Campaign / community orders — goal ${commGoal}</div>
+          <div class="v">${t.community_orders ?? 0} <small>/ ${commGoal} goal</small></div>
+          ${bar(t.community_orders || 0, commGoal)}
+          <div class="chips">${checks || '<span class="sub">No checkpoints</span>'}</div></div>
+        <div class="ct-tile ${tkCls}"><div class="k">Average ticket</div>
+          <div class="v">${inr(tk)}</div>
+          <div class="s">Ladder: ${steps.map(s => inr(s)).join(' → ')} · big orders (above ${inr(cfg.big_order)}) are shown separately per person</div></div>
+        <div class="ct-tile ${mixCls}"><div class="k">Dark green + light green + white</div>
+          <div class="v">${mixP.toFixed(0)}% <small>of pieces (goal ${cfg.mix_goal || 85}%)</small></div>
+          ${bar(mixP, 100, mixCls)}
+          <div class="s">DG ${t.dg ?? 0} · LG ${t.lg ?? 0} · WH ${t.wh ?? 0} · other ${t.oth ?? 0}</div></div>
+        <div class="ct-tile ${codeP == null ? '' : (codeP >= 65 ? 'ok' : codeP >= 50 ? 'warn' : 'red')}"><div class="k">Order-code share</div>
+          <div class="v">${codeP == null ? '—' : codeP.toFixed(0) + '%'} <small>(goal 65%)</small></div>
+          ${bar(codeP || 0, 100, codeP >= 65 ? '' : 'warn')}</div>
+      </div>`;
+    const open = (T.alerts || []).filter(a => a.status === 'open' && a.kind !== 'digest');
+    const top = open.slice(0, 6);
+    const alerts = `<div class="card" style="margin-bottom:14px;"><div class="card-head"><h2>Needs attention ${open.length ? '(' + open.length + ')' : ''}</h2>${open.length > 6 ? '<button class="btn secondary" style="width:auto;padding:6px 12px;font-size:12.5px;" onclick="goTab(\'alerts\')">See all</button>' : ''}</div>
+      ${top.length ? top.map(alertRow).join('') : '<div class="empty"><span class="big-ok">✅ Nothing is red right now.</span><br>Everything the tower watches is on track.</div>'}</div>`;
+
+    const rows = (T.emps || []).map(e => {
+      const tv = e.tv || {}, mix = e.mix || {};
+      const tCls = stCls(tv.state === 'top' || tv.state === 'raise' ? 'ok' : tv.state === 'near' ? 'near' : tv.state === 'low' ? 'low' : tv.state === 'climb' ? 'warn' : '');
+      const codeTxt = e.code_rate == null ? '—' : Math.round(e.code_rate) + '%';
+      const empAl = open.filter(a => Number(a.emp) === Number(e.id));
+      return `<tr>
+        <td><b>${esc(e.name)}</b>${empAl.some(a => a.meet) ? '<span class="tag">meet admin</span>' : ''}</td>
+        <td><b class="clq">${inr(e.qsales || 0)}</b> <span class="sub">${e.qo ?? 0} orders</span></td>
+        <td><b class="clc">${inr(e.csales || 0)}</b> <span class="sub">${e.co ?? 0} orders</span></td>
+        <td><b class="clt">${inr(e.sales || 0)}</b> <span class="sub">${e.orders ?? 0} orders</span></td>
+        <td style="min-width:130px;">${e.target ? tgBar(e.sales, e.target, e.pct != null ? Math.round(e.pct) : null) : '<span class="sub">no target</span>'}</td>
+        <td>${e.queries ?? 0} <span class="sub">${e.conv != null ? '· ' + Math.round(e.conv) + '% conv' : ''}</span></td>
+        <td><span class="pc ${tCls}">${inr(e.ticket)}</span> <span class="sub">clean ${inr(e.clean_ticket)}${tv.carried ? ' · carried by big order' : ''}${tv.need_next ? ' · next order ' + inr(tv.need_next) : ''}</span></td>
+        <td><span class="pc ${e.code_ok ? 'ok' : 'warn'}">${codeTxt}</span> <span class="sub">${e.code_left > 0 ? e.code_left + ' more codes' : ''}</span></td>
+        <td><span class="pc ${pctCls(mix.pct, cfg.mix_goal || 85, cfg.mix_amber || 80)}">${mix.pct == null ? '—' : Math.round(mix.pct) + '%'}</span> <span class="sub">${mix.pieces ?? 0} pcs</span></td>
+        <td>${empAl.length ? `<span class="chip ${empAl.some(a => a.sev === 'red') ? 'red' : 'warn'}">${empAl.length} alert${empAl.length > 1 ? 's' : ''}</span>` : '<span class="chip ok">clear</span>'}</td>
+      </tr>`;
+    }).join('');
+    const people = `<div class="card"><div class="card-head"><div><h2>Salespeople — ${esc(T.day)}</h2><div class="sub">Business day runs 10 AM → 10 AM. Updated ${esc((T.now || '').slice(11, 16))}.</div></div></div>
+      <div class="tbl-wrap people-tbl"><table class="ct"><thead><tr><th>Name</th><th>Query ₹</th><th>Campaign ₹</th><th>Total ₹</th><th>Target</th><th>Queries</th><th>Ticket</th><th>Codes</th><th>DG+LG+WH</th><th>Status</th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="11" class="empty">No sales team data for this day.</td></tr>'}${(T.emps || []).length ? `<tr class="cl-tot"><td>Team</td><td class="clq">${inr(qS)}</td><td class="clc">${inr(cS)}</td><td class="clt">${inr(tot)}</td><td></td><td>${t.queries ?? 0}</td><td>${inr(tk)}</td><td>${codeP == null ? '' : codeP.toFixed(0) + '%'}</td><td>${mixP.toFixed(0)}%</td><td></td></tr>` : ''}</tbody></table></div>
+      <div class="cl-ph"><div class="cl-pr cl-ph-h"><span>Name</span><span>Query ₹</span><span>Campaign ₹</span><span>Total ₹</span></div>${(T.emps || []).map(e => `<details class="cl-pr"><summary><span class="n">${esc(e.name)}<small>${e.orders ?? 0} orders · ${e.queries ?? 0} queries</small></span><span><b class="clq">${inr(e.qsales || 0)}</b><small>${e.qo ?? 0} orders</small></span><span><b class="clc">${inr(e.csales || 0)}</b><small>${e.co ?? 0} orders</small></span><span><b class="clt">${inr(e.sales || 0)}</b></span></summary>
+        <div class="cl-more">${e.target ? tgBar(e.sales, e.target, e.pct != null ? Math.round(e.pct) : null) : ''}Ticket ${inr(e.ticket)} (clean ${inr(e.clean_ticket)}) · Codes ${e.code_rate == null ? '—' : Math.round(e.code_rate) + '%'}${e.code_left > 0 ? ' (' + e.code_left + ' more)' : ''} · Colour mix ${(e.mix || {}).pct == null ? '—' : Math.round(e.mix.pct) + '%'} ${e.conv != null ? ' · conv ' + Math.round(e.conv) + '%' : ''}</div></details>`).join('')}
+        ${(T.emps || []).length ? `<div class="cl-pr cl-ptot"><span class="n">Team</span><span><b class="clq">${inr(qS)}</b></span><span><b class="clc">${inr(cS)}</b></span><span><b class="clt">${inr(tot)}</b></span></div>` : ''}</div></div>`;
+    $('p-today').innerHTML = `<div class="cl-top">${coll}${tiles}</div><div id="reconBox"></div><div id="histBox"></div><div id="remToday"></div>` + alerts + people;
+    renderHist(); renderRecon(); loadRemToday();
+  }
+
+  // ---------- Today tab → ✍️ Remarks: pick a person, write, send → it pops up on that person's My Sales. Below: every remark given (count, seen / not seen) ----------
+  let RTD = null;
+  const QK = ['Great work today 👏', 'Call your pending customers 📞', 'Push the ticket size up 🎯'];
+  async function loadRemToday() {
+    try { RTD = await api.get('ct.remark_recent'); } catch (e) { RTD = { error: e.message }; }
+    renderRemToday();
+  }
+  function renderRemToday() {
+    const box = $('remToday'); if (!box) return;
+    const keepEmp = $('rtEmp') ? $('rtEmp').value : '', keepTxt = $('rtTxt') ? $('rtTxt').value : '';
+    if (!RTD || RTD.error) { box.innerHTML = `<div class="card rm-sec" style="margin-bottom:14px;"><div class="card-head"><div><h2>✍️ Remarks</h2></div></div><div class="empty">${esc(RTD ? RTD.error : 'Loading…')}</div></div>`; return; }
+    const emps = (T && T.emps) || [], list = RTD.remarks || [], td = RTD.today || { given: 0, seen: 0, unseen: 0, people: 0 };
+    const byP = {}; list.filter(x => x.today).forEach(x => { byP[x.name || nameOf(x.employee_id)] = (byP[x.name || nameOf(x.employee_id)] || 0) + 1; });
+    const item = (x) => `<div class="rm-it"><span class="tm">${esc(String(x.at).slice(5, 10) === String(list[0] && list[0].at || '').slice(5, 10) ? '' : String(x.at).slice(5, 10).split('-').reverse().join('/') + ' ')}${esc(String(x.at).slice(11, 16))}</span><span class="to">${esc(x.name || nameOf(x.employee_id))}<span class="by">from ${esc(x.from || '—')}</span></span><span class="bd">${esc(x.body)}</span>` +
+      (x.seen ? `<span class="st ok">✅ Seen ${esc(x.seen)}</span>` : '<span class="st wait">⏳ Not seen</span>') + '</div>';
+    const tdl = list.filter(x => x.today), old = list.filter(x => !x.today);
+    box.innerHTML = `<div class="card rm-sec" style="margin-bottom:14px;"><div class="card-head"><div><h2>✍️ Remarks</h2><div class="sub">Pick a person and write — it pops up on their <b>My Sales</b> until they tap <b>Got it</b>. You see here who has read it.</div></div></div>
+      <div class="rm-sum"><span>Given today <b>${td.given}</b></span><span>to <b>${td.people}</b> ${td.people === 1 ? 'person' : 'people'}</span><span class="g">✅ Seen <b>${td.seen}</b></span><span class="${td.unseen ? 'w' : 'g'}">⏳ Not seen <b>${td.unseen}</b></span></div>
+      ${Object.keys(byP).length ? '<div class="rm-pp">' + Object.keys(byP).map(n => `<span>${esc(n)} · ${byP[n]}</span>`).join('') + '</div>' : ''}
+      <div class="rm-new"><select id="rtEmp" aria-label="Person"><option value="">Choose a person…</option>${emps.map(e => `<option value="${e.id}">${esc(e.name)}</option>`).join('')}</select>
+        <textarea id="rtTxt" rows="2" maxlength="400" placeholder="Write the remark…"></textarea><button type="button" class="btn" id="rtSend" disabled>📨 Send</button></div>
+      <div class="rm-qk">${QK.map((q, i) => `<button type="button" data-q="${i}">${esc(q)}</button>`).join('')}</div>
+      <div class="rm-log">${tdl.length ? '<h3>Given today</h3>' + tdl.map(item).join('') : '<div class="sub" style="padding:8px 0;">No remark given today yet.</div>'}${old.length ? '<h3>Earlier (last 3 days)</h3>' + old.map(item).join('') : ''}</div></div>`;
+    const sel = $('rtEmp'), tx = $('rtTxt'), go = $('rtSend');
+    sel.value = keepEmp; tx.value = keepTxt;
+    const chk = () => { go.disabled = !(Number(sel.value) > 0 && tx.value.trim().length >= 3); };
+    sel.onchange = chk; tx.oninput = chk; chk();
+    box.querySelectorAll('.rm-qk button').forEach(b => b.onclick = () => { tx.value = QK[Number(b.dataset.q)]; tx.focus(); chk(); });
+    go.onclick = async () => {
+      go.disabled = true;
+      try {
+        const id = Number(sel.value);
+        await api.post('ct.remark_send', { employee_id: id, text: tx.value.trim(), src: 'today' });
+        const who = nameOf(id).split(' ')[0];
+        sel.value = ''; tx.value = '';
+        showAlert('Remark sent — it shows on ' + who + '\'s My Sales.');
+        loadRemToday();
+      } catch (err) { showAlert(err.message, 'error'); chk(); }
+    };
+  }
+  // ---------- Today tab → 💰 Collection check: the tower number next to the Orders page number, and every order that makes them differ ----------
+  let RC = null;
+  async function loadRecon() {
+    try { RC = await api.get('ct.recon', T && T.day ? { date: T.day } : {}); } catch (e) { RC = { error: e.message }; }
+    renderRecon();
+  }
+  function renderRecon() {
+    const box = $('reconBox'); if (!box) return;
+    if (!RC) { box.innerHTML = ''; loadRecon(); return; }
+    if (!RC.kinds && !RC.error) { box.innerHTML = ''; return; }
+    if (RC.error) { box.innerHTML = /unknown action|not allowed/i.test(RC.error) ? '' : `<div class="card rc-box"><div class="sub">Collection check: ${esc(RC.error)}</div></div>`; return; }
+    const gap = Number(RC.gap || 0), wait = RC.kinds.find(k => k.key === 'tag_only') || { n: 0, amt: 0 };
+    const ks = RC.kinds.filter(k => k.key !== 'counted' && k.n > 0);
+    box.innerHTML = `<div class="card rc-box"><div class="card-head"><div><h2>💰 Collection check</h2><div class="sub">Same business day, same rule as the Orders page: an order counts once it is <b>allocated</b>. Cancelled orders are left out.</div></div></div>
+      <div class="rc-hd"><div><b>${inr(RC.tower)}</b><small>Sales tower</small></div><div><b>${inr(RC.orders_page)}</b><small>Orders page</small></div><div class="gap ${gap ? 'bad' : 'ok'}"><b>${gap ? inr(gap) : '✓ same'}</b><small>${gap ? 'Difference' : 'No difference'}</small></div></div>
+      ${wait.n ? `<div class="rc-ok tag-w">⏳ ${wait.n} order${wait.n === 1 ? '' : 's'} (${inr(wait.amt)}) carry a salesperson tag but are not allocated yet — allocate them and they count in both.</div>` : ''}
+      ${ks.length ? ks.map(k => `<div class="rc-k"><span>${esc(k.label)}</span><b>${k.n}</b><b class="${k.key === 'tag_only' ? 'tag-w' : ''}">${inr(k.amt)}</b><span class="nt">${esc(k.note)}</span>
+        <details><summary>Show orders${k.n > k.list.length ? ' (first ' + k.list.length + ')' : ''}</summary>${k.list.map(o => `<div class="ol"><span>${esc(o.name)} · ${esc(o.at)}${o.who ? ' · ' + esc(o.who) : ''}</span><b>${inr(o.amt)}</b></div>`).join('')}</details></div>`).join('') : '<div class="rc-ok">✅ Every order of this day is counted the same way on both screens.</div>'}</div>`;
+  }
+
+  // ---------- Query → order ranking: orders ÷ queries given (today + last 7 days), who ordered first, and who to give more queries to ----------
+  let LV = 'today', QSEL = null;
+  function leadersCard() {
+    const L = T.leaders; if (!L || !L.today) return '';
+    const V = L[LV] || L.today, min = L.min || 5, tc = V.team_conv;
+    const list = (V.rows || []).filter(r => r.queries > 0 || r.orders > 0);
+    const tq = list.reduce((x, r) => x + r.queries, 0), to = list.reduce((x, r) => x + r.orders, 0);
+    const cls = (r) => r.queries < min || r.conv == null ? 'na' : tc == null ? 'g' : r.conv >= tc ? 'g' : r.conv >= tc * 0.6 ? 'a' : 'r';
+    const first = (n) => { const w = String(n || '').trim().split(/\s+/); return w[0] + (w[1] ? ' ' + w[1][0] + '.' : ''); };
+    const sq = list.map(r => `<button type="button" class="qsq ${cls(r)}${QSEL === r.id ? ' sel' : ''}" onclick="selQ(${r.id})" title="${esc(r.name)}"><b>${r.orders}/${r.queries}</b><small>${esc(first(r.name))}</small></button>`).join('');
+    const sel = list.find(r => r.id === QSEL);
+    const det = sel ? (() => { const tip = (L.tips || []).find(t => t.id === sel.id);
+      return `<div class="qdet ${cls(sel)}"><div><b>${esc(sel.name)}</b>${sel.rank ? ' · rank ' + sel.rank + ' of ' + list.filter(r => r.rank != null).length : ' · not ranked (under ' + min + ' queries)'}${sel.first ? ' · ⚡ first order ' + esc(sel.first_order || '') : ''}</div>
+        <div class="qbig"><b>${sel.orders}</b> query order${sel.orders === 1 ? '' : 's'} out of <b>${sel.queries}</b> quer${sel.queries === 1 ? 'y' : 'ies'} = <b>${sel.conv != null ? sel.conv + '%' : '—'}</b> <span class="mut">(team ${tc != null ? tc + '%' : '—'})</span></div>
+        ${sel.comm ? '<div class="mut">+' + sel.comm + ' community order' + (sel.comm === 1 ? '' : 's') + ' — not counted</div>' : ''}${tip ? `<div class="ldt ${tip.kind}" style="margin-top:6px;"><b>${tip.kind === 'more' ? '📈 Give more queries' : '🎯 Coach first'}</b>${esc(tip.text)}</div>` : ''}</div>`; })() : '<div class="sub" style="margin-top:8px;">Tap a square to see that person.</div>';
+    const tips = (L.tips || []).map(t => `<div class="ldt ${t.kind}"><b>${t.kind === 'more' ? '📈 Give more queries' : '🎯 Coach first'} — ${esc(t.name)}</b>${esc(t.text)}</div>`).join('');
+    return `<div class="card" style="margin-bottom:14px;"><div class="card-head"><div><h2>🏁 Query → order board</h2><div class="sub">Each square = one person: <b>query orders / queries</b>. Community / campaign orders are not counted. Suggestions only — you give the queries below.</div></div>
+      <div class="ldseg"><button type="button" class="${LV === 'today' ? 'on' : ''}" onclick="setLV('today')">Today</button><button type="button" class="${LV === 'week' ? 'on' : ''}" onclick="setLV('week')">7 days</button></div></div>
+      <div class="qsum"><div><b>${to}/${tq}</b><small>QUERY ORDERS / QUERIES</small></div><div><b>${tc != null ? tc + '%' : '—'}</b><small>TEAM RATIO</small></div><div><b>${list.length}</b><small>PEOPLE WORKING</small></div><div><b>${(T.team && T.team.q_goal_pct) || (T.cfg && T.cfg.q_conv_goal) || 23}%</b><small>GOAL</small></div></div>
+      ${sq ? '<div class="qgrid">' + sq + '</div>' : '<div class="empty">No queries recorded yet.</div>'}
+      <div class="qlg"><span><i class="g"></i>at / above team</span><span><i class="a"></i>60–100% of team</span><span><i class="r"></i>under 60%</span><span><i class="na"></i>under ${min} queries</span></div>${det}
+      ${tips ? '<div class="sub" style="font-weight:800;margin:12px 0 4px;">Suggestions (last 7 days)</div>' + tips : ''}</div>`;
+  }
+  window.selQ = (id) => { QSEL = QSEL === id ? null : id; if (typeof renderQb === 'function') renderQb(); };
+  // ---------- ☀️ MORNING FOCUS: who to talk to today and about what (built from yesterday) ----------
+  let FO = null, FV = (() => { try { const v = localStorage.getItem('ct_focus_view'); if (v === 'cards' || v === 'table') return v; } catch (e) {} return innerWidth >= 900 ? 'table' : 'cards'; })();
+  async function loadFocus() {
+    if (!FO) $('p-focus').innerHTML = '<div class="card"><div class="empty">Getting today\'s focus ready…</div></div>';
+    try { FO = await api.get('ct.focus'); } catch (e) { FO = { error: e.message }; }
+    await loadRem(); renderFocus();
+  }
+  window.setFV = (v) => { FV = v; try { localStorage.setItem('ct_focus_view', v); } catch (e) {} renderFocus(); };
+  function renderFocus() {
+    const box = $('p-focus'), D = FO; if (!box) return;
+    const nf = $('nFo');
+    if (!D || D.error) { box.innerHTML = `<div class="card"><div class="card-head"><div><h2>☀️ Morning Focus</h2></div></div><div class="empty">${esc(D ? D.error : 'No data')}</div></div>`; return; }
+    const rows = D.rows || [], tm = D.team || {};
+    const open = rows.filter(r => !r.done).length; if (nf) { nf.textContent = open; nf.style.display = open ? '' : 'none'; }
+    const cl = (v) => v == null ? '' : v >= 7 ? 'g' : v >= 5.5 ? 'a' : 'r';
+    const G = { talk: ['🔴', 'Talk first', 'r'], check: ['🟡', 'Check in', 'a'], praise: ['🟢', 'Praise today', 'g'] };
+    const dayTxt = (() => { try { return new Date(D.day + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' }); } catch (e) { return D.day; } })();
+    const mv = (r) => r.prev != null && r.score != null ? (r.score >= r.prev ? '▲ ' : '▼ ') + Math.abs(Math.round((r.score - r.prev) * 10) / 10) + ' vs day before' : '';
+    const prog = (r) => (r.progress || []).length ? `<div class="fc-lp">Last focus: ${(r.progress).map(p => `<span class="fc-imp ${p.state}">${esc(p.label)} ${p.from} → ${p.to} ${p.state === 'up' ? '✅ improved' : p.state === 'down' ? '⚠ went down' : '· same'}</span>`).join('')}</div>` : '';
+    const done = (r) => r.done ? `<div class="fc-dn">✅ <b>${r.grp === 'praise' ? 'Praised' : 'Talked'}</b> by ${esc(r.done_by || 'someone')} · ${esc(String(r.done_at || '').slice(11, 16))} — <i>“${esc(r.note || '')}”</i></div>` : '';
+    const rmBtn = (r) => `<button type="button" class="btn secondary" onclick="askRemark(${r.id},'focus')">✍️ Remark</button>`;
+    const btns = (r) => r.done ? `<div class="fc-b">${rmBtn(r)}</div>${remBox(r.id)}` : `<div class="fc-b"><button type="button" class="btn" style="background:#166534;color:#fff;border-color:#166534;" onclick="askTalked(${r.id})">✅ ${r.grp === 'praise' ? 'Praised' : 'Talked'} — add comment</button>${rmBtn(r)}<button type="button" class="btn secondary" onclick="goTab('rt')">⭐ Ratings</button>${(r.items || []).some(i => i.k === 'conv') ? '<button type="button" class="btn secondary" onclick="goTab(\'qb\')">🏁 Query Boost</button>' : ''}</div>${remBox(r.id)}`;
+    const card = (r) => `<div class="fc-pc ${G[r.grp][2]}"><div class="fc-top"><div><b>${esc(r.name)}</b><span class="fc-up">${esc(mv(r))}</span></div><span class="fc-sc ${cl(r.score)}">${r.score != null ? r.score : '—'}</span></div>
+      ${(r.items || []).map(i => `<div class="fc-it"><span>${i.icon || ''}</span><div><div class="w">${esc(i.label)} — ${esc(i.why)}</div><div class="fc-do">Do: ${esc(i.do)}</div></div></div>`).join('')}${prog(r)}${done(r)}${btns(r)}</div>`;
+    let body;
+    if (!rows.length) body = '<div class="empty">Nothing to work on yet — yesterday\'s ratings are not ready, or everyone is doing great 🎉</div>';
+    else if (FV === 'cards') body = ['talk', 'check', 'praise'].map(g => { const l = rows.filter(r => r.grp === g); return l.length ? `<div class="fc-h ${G[g][2]}">${G[g][0]} ${G[g][1]} (${l.length})</div>` + l.map(card).join('') : ''; }).join('');
+    else body = `<div class="fc-tw"><table class="fc-tb"><tr><th>Person</th><th>Yesterday</th><th>Work on</th><th>Why (yesterday's number)</th><th>What to say / do</th><th>Done</th></tr>${rows.map(r => `<tr class="${G[r.grp][2]}"><td><b>${esc(r.name)}</b></td><td><span class="fc-sc ${cl(r.score)}">${r.score != null ? r.score : '—'}</span><div class="fc-up" style="margin:3px 0 0;">${esc(mv(r))}</div></td>
+      <td>${(r.items || []).map(i => `<div class="ln">${i.icon || ''} ${esc(i.label)}</div>`).join('')}</td><td>${(r.items || []).map(i => `<div class="ln">${esc(i.why)}</div>`).join('')}${prog(r)}</td><td>${(r.items || []).map(i => `<div class="ln">${esc(i.do)}</div>`).join('')}</td>
+      <td>${r.done ? `<div class="fc-dn" style="margin:0;">✅ ${esc(r.done_by || '')} · ${esc(String(r.done_at || '').slice(11, 16))}<br><i>“${esc(r.note || '')}”</i></div>` : `<button type="button" class="btn" style="width:auto;min-height:0;padding:4px 12px;font-size:12px;background:#166534;color:#fff;border-color:#166534;" onclick="askTalked(${r.id})">✅ ${r.grp === 'praise' ? 'Praised' : 'Talked'}</button>`} <button type="button" class="btn secondary" style="width:auto;min-height:0;padding:4px 10px;font-size:12px;margin-top:4px;" onclick="askRemark(${r.id},'focus')">✍️ Remark</button>${remBox(r.id)}</td></tr>`).join('')}</table></div>`;
+    const wk = tm.weak ? `${esc(tm.weak.label)} (${tm.weak.avg})` : '—';
+    box.innerHTML = `<div class="card"><div class="card-head"><div><h2>☀️ Focus for ${esc(dayTxt)}</h2><div class="sub">Built from yesterday's numbers · who to talk to and what to work on · <b>${tm.done || 0} of ${tm.total || 0} done</b></div></div>
+      <div class="fc-seg"><div class="ldseg"><button type="button" class="${FV === 'cards' ? 'on' : ''}" onclick="setFV('cards')">Cards</button><button type="button" class="${FV === 'table' ? 'on' : ''}" onclick="setFV('table')">Table</button></div></div></div>
+      <div class="fc-sum"><div><b>${tm.avg != null ? tm.avg : '—'}</b><small>Team rating yesterday</small></div><div><b style="font-size:14px;">${wk}</b><small>Team weak spot</small></div><div><b>${tm.talk || 0}</b><small>Talk first</small></div><div><b>${tm.praise || 0}</b><small>Praise today</small></div></div>${body}</div>`;
+  }
+  let resMode = 'alert', resEmp = 0, resSrc = 'focus';
+  const RES_LBL = 'Comment <b style="color:#dc2626;">(required)</b> — what did you do? e.g. "spoke to him, he will send proofs"';
+  const RES_ERR = 'Please write a comment (at least 3 letters) to mark this resolved.';
+  // one small pop-up for three jobs: mark an alert resolved · mark a Focus card talked · send a remark
+  function openRes(mode, title, sub, lbl, okTxt, max) {
+    resMode = mode; $('resTitle').textContent = title; $('resSub').textContent = sub || '';
+    $('resLbl').innerHTML = lbl || RES_LBL; $('resOk').textContent = okTxt || '✅ Resolved'; $('resNote').maxLength = max || 280;
+    $('resErr').textContent = mode === 'remark' ? 'Write the remark first (at least 3 letters).' : RES_ERR;
+    $('resNote').value = ''; $('resErr').style.display = 'none'; $('resOk').disabled = true; $('resModal').classList.add('open'); setTimeout(() => $('resNote').focus(), 50);
+  }
+  window.askTalked = (id) => { resEmp = id; const r = ((FO && FO.rows) || []).find(x => x.id === id) || {}; openRes('focus', r.grp === 'praise' ? 'Mark praised' : 'Mark talked', r.name || ''); };
+  // ---------- ✍️ REMARKS: the sales head writes a remark → it pops up on the salesperson's My Sales until she taps "Got it" → here it shows "Seen by <name> <time>" ----------
+  let REM = {};
+  async function loadRem() { try { const r = await api.get('ct.remark_recent'); REM = {}; (r.remarks || []).forEach(x => { if (!REM[x.employee_id]) REM[x.employee_id] = x; }); } catch (e) { /* older api.php */ } }
+  const pName = (id) => { const f = ((FO && FO.rows) || []).find(x => x.id === id) || ((RT[RV] && RT[RV].rows) || []).find(x => x.id === id); return (f && f.name) || nameOf(id); };
+  const remBox = (id, who) => { const r = REM[id]; if (!r) return '';
+    return r.seen ? `<div class="rm-st ok">💬 “${esc(r.body)}” — ✅ <b>Seen by ${esc(who || r.name || pName(id))}</b> ${esc(r.seen)}</div>` : `<div class="rm-st wait">💬 “${esc(r.body)}” — ⏳ <b>not seen yet</b> · sent ${esc(String(r.at || '').slice(11, 16))}</div>`; };
+  window.askRemark = (id, src) => { resEmp = id; resSrc = src || 'focus';
+    openRes('remark', '✍️ Send remark', pName(id), 'Your remark — it pops up on <b>' + esc(pName(id).split(' ')[0]) + '</b>\'s My Sales until she taps <b>Got it</b>', '📨 Send', 400); };
+  async function afterRemark() { await loadRem(); if (tab === 'today') loadRemToday(); if (tab === 'focus') renderFocus(); if (tab === 'rt') renderRt(); }
+  // ---------- RATINGS: every salesperson's rating, by person or by section, with the remarks ----------
+  let RT = {}, RV = 'today', RM = 'person';
+  async function loadRt() {
+    if (!RT[RV]) { $('p-rt').innerHTML = '<div class="card"><div class="empty">Loading ratings…</div></div>'; try { RT[RV] = await api.get('rating.team', { view: RV }); } catch (e) { RT[RV] = { error: e.message }; } }
+    await loadRem(); renderRt();
+  }
+  window.setRV = (v) => { RV = v; loadRt(); };
+  window.setRM = (m) => { RM = m; renderRt(); };
+  // the progress line toward the target (sales ÷ target); green + 🎯 once the target is reached
+  const tgBar = (sales, target, pct) => { if (!target) return ''; const p = pct != null ? pct : Math.round(sales / target * 100), c = p >= 100 ? 'ok' : p >= 60 ? 'mid' : p >= 30 ? '' : 'low';
+    return `<div class="tg-row"><div class="tg-t"><span>🎯 ${inr(sales || 0)} of ${inr(target)}</span><span>${p}%${p >= 100 ? ' ✅' : ''}</span></div><div class="tg-pg ${c}"><i style="width:${Math.min(100, p)}%"></i></div>${p >= 100 ? '<span class="tg-ok">🎯 Target achieved' + (p > 100 ? ' · +' + inr(sales - target) : '') + '</span>' : ''}</div>`; };
+  // query-based view of one person: queries given, query orders, ratio (orders ÷ queries), and when the last order came
+  const qrow = (id) => { const L = T && T.leaders; if (!L) return null; const V = (RQ === 'week' ? L.week : L.today) || L.today; return ((V && V.rows) || []).find(r => Number(r.id) === Number(id)) || null; };
+  const lastTag = (id) => {
+    const e = ((T && T.emps) || []).find(x => Number(x.id) === Number(id));
+    if (!e || !e.last_order) return '<span class="lo none">🕒 no order yet today</span>';
+    const a = new Date(String(e.last_order).replace(' ', 'T')), b = new Date(String(T.now || '').replace(' ', 'T'));
+    let mins = isNaN(a) || isNaN(b) ? null : Math.max(0, Math.round((b - a) / 60000));
+    const ago = mins == null ? '' : mins < 60 ? mins + ' min ago' : Math.floor(mins / 60) + ' h ' + (mins % 60) + ' m ago';
+    return `<span class="lo${mins != null && mins >= 90 ? ' old' : ''}">🕒 last order ${esc(String(e.last_order).slice(11, 16))}${ago ? ' · ' + ago : ''}</span>`;
+  };
+  const qChips = (id, row) => {
+    const r = qrow(id), tc = T && T.leaders ? ((RQ === 'week' ? T.leaders.week : T.leaders.today) || {}).team_conv : null;
+    const q = r ? r.queries : 0, o = r ? r.orders : 0, cv = r && r.conv != null ? r.conv : null;
+    const cls = cv == null || tc == null ? '' : cv >= tc ? 'g' : cv >= tc * 0.6 ? 'a' : 'r';
+    const money = row ? `<span class="mn">💰 Sales ${inr(row.sales || 0)}</span><span class="mn">🎯 Target ${row.target ? inr(row.target) : '—'}${row.pct != null ? ' · ' + row.pct + '%' : ''}</span>` : '';
+    return `<div class="rt-qc">${money}<span>📞 ${q} quer${q === 1 ? 'y' : 'ies'} given</span><span>🛒 ${o} query order${o === 1 ? '' : 's'}</span><span class="cv ${cls}">${cv == null ? '— %' : cv + '% of queries'}</span>${lastTag(id)}</div>`;
+  };
+  let RQ = 'today';
+  window.setRQ = (v) => { RQ = v; renderRt(); };
+  const rbBtn = (id, first) => `<button type="button" class="rt-rb" onclick="event.preventDefault();event.stopPropagation();askRemark(${id},'rating')">✍️ Add remark${first ? ' · ' + esc(first) : ''}</button>`;
+  function renderRt() {
+    const D = RT[RV], box = $('p-rt'); if (!box) return;
+    const seg = `<div class="rt-seg"><div class="ldseg">${[['today', 'Today'], ['month', 'This month'], ['last', 'Last month']].map(([k, l]) => `<button type="button" class="${RV === k ? 'on' : ''}" onclick="setRV('${k}')">${l}</button>`).join('')}</div>
+      <div class="ldseg">${[['person', 'By person'], ['section', 'By section'], ['query', 'By query']].map(([k, l]) => `<button type="button" class="${RM === k ? 'on' : ''}" onclick="setRM('${k}')">${l}</button>`).join('')}</div></div>`;
+    if (!D || D.error) { box.innerHTML = `<div class="card"><div class="card-head"><div><h2>⭐ Sales ratings</h2></div>${seg}</div><div class="empty">${esc(D ? D.error : 'No data')}</div></div>`; return; }
+    const P = D.parts || {}, keys = Object.keys(P), rows = D.rows || [], tm = D.team || {};
+    const cl = (v) => v == null ? '' : v >= 7 ? 'g' : v >= 5.5 ? 'a' : 'r';
+    const lab = (s) => s == null ? '' : s >= 8.5 ? '🌟 Star' : s >= 7 ? '💪 Strong' : s >= 5.5 ? '📈 Growing' : '🎯 Focus mode';
+    const partRow = (k, r) => { const v = r.parts ? r.parts[k] : null, nt = r.notes ? r.notes[k] : '';
+      return `<div class="rt-r"><span class="rn">${P[k].icon} ${esc(P[k].label)}</span><span class="rv">${v == null ? '—' : v}</span>${v == null ? '' : `<div class="rt-bar"><i class="${cl(v)}" style="width:${Math.max(2, Math.min(100, v * 10))}%"></i></div>`}${nt ? `<div class="rt-rm">${esc(nt)}</div>` : ''}</div>`; };
+    const wk = tm.weak ? `${P[tm.weak.k] ? P[tm.weak.k].label : tm.weak.k} (${tm.weak.avg})` : '—';
+    const sum = `<div class="rt-sum"><div><b>${tm.avg != null ? tm.avg : '—'}</b><small>Team average</small></div><div><b>${tm.strong || 0}</b><small>Strong (7+)</small></div><div><b>${tm.focus || 0}</b><small>Focus mode (&lt;5.5)</small></div><div><b style="font-size:14px;">${esc(wk)}</b><small>Weakest section</small></div></div>`;
+    let body = '';
+    if (!rows.length) body = '<div class="empty">No ratings yet for this period.</div>';
+    else if (RM === 'query') {
+      const L = T && T.leaders, V = L ? ((RQ === 'week' ? L.week : L.today) || {}) : {}, tc = V.team_conv;
+      const list = rows.map(r => { const q = qrow(r.id); return { r, q: q ? q.queries : 0, o: q ? q.orders : 0, cv: q && q.conv != null ? q.conv : null }; }).sort((a, b) => (b.cv == null ? -1 : b.cv) - (a.cv == null ? -1 : a.cv) || b.q - a.q);
+      const cls = (cv) => cv == null || tc == null ? '' : cv >= tc ? 'g' : cv >= tc * 0.6 ? 'a' : 'r';
+      body = `<div class="rt-seg" style="margin:10px 0;"><div class="ldseg"><button type="button" class="${RQ === 'today' ? 'on' : ''}" onclick="setRQ('today')">Today</button><button type="button" class="${RQ === 'week' ? 'on' : ''}" onclick="setRQ('week')">7 days</button></div><span class="sub" style="align-self:center;">Rating by query = query orders ÷ queries given · team ${tc != null ? tc + '%' : '—'}</span></div>
+        <div class="tbl-wrap"><table class="qy-t no-stack"><thead><tr><th>Person</th><th class="n">Sales</th><th class="n">Target</th><th class="n">Queries given</th><th class="n">Query orders</th><th class="n">Rating by query</th><th>Last order</th><th></th></tr></thead><tbody>${list.map(x => `<tr><td><b>${esc(x.r.name)}</b><div class="rt-lb">overall ${x.r.score != null ? x.r.score : '—'}/10</div></td><td class="n"><b>${inr(x.r.sales || 0)}</b></td><td class="n">${x.r.target ? inr(x.r.target) : '—'}${tgBar(x.r.sales, x.r.target, x.r.pct)}</td><td class="n"><b>${x.q}</b></td><td class="n">${x.o}</td><td class="n"><span class="rt-qc" style="display:inline-flex;margin:0;"><span class="cv ${cls(x.cv)}">${x.cv == null ? '—' : x.cv + '%'}</span></span></td><td><span class="rt-qc" style="margin:0;">${lastTag(x.r.id)}</span></td><td>${rbBtn(x.r.id)}</td></tr>`).join('')}</tbody></table></div>`;
+    }
+    else if (RM === 'person') body = rows.map((r, i) => `<details class="rt-p"><summary><span class="rk" style="text-align:center;font-weight:900;color:var(--muted);">${['🥇', '🥈', '🥉'][i] || (i + 1)}</span><div><b>${esc(r.name)}</b><div class="rt-lb">${lab(r.score)}${r.prev != null && r.score != null ? ' · ' + (r.score >= r.prev ? '▲' : '▼') + ' ' + Math.abs(Math.round((r.score - r.prev) * 10) / 10) + ' vs before' : ''}${r.days ? ' · ' + r.days + ' days' : ''}</div>${qChips(r.id, r)}${tgBar(r.sales, r.target, r.pct)}<div class="rt-qc">${rbBtn(r.id)}</div></div><span class="rt-sc ${cl(r.score)}">${r.score != null ? r.score : '—'}</span></summary>
+        <div class="rt-body">${keys.map(k => partRow(k, r)).join('')}${r.insight && r.insight.lift ? `<div class="rt-rm" style="background:#eff6ff;color:#1e40af;">💡 Biggest lift: ${esc((P[r.insight.lift.k] || {}).label || r.insight.lift.k)} ${r.insight.lift.from} → ${r.insight.lift.to} = +${r.insight.lift.gain} on the rating</div>` : ''}<div class="fc-b"><button type="button" class="btn secondary" onclick="askRemark(${r.id},'rating')">✍️ Send remark to ${esc(String(r.name).split(' ')[0])}</button></div>${remBox(r.id)}</div></details>`).join('');
+    else body = keys.map(k => {
+      const list = rows.filter(r => r.parts && r.parts[k] != null).sort((a, b) => a.parts[k] - b.parts[k]);
+      const avg = (D.part_avg || {})[k];
+      return `<details class="rt-p" open><summary><span>${P[k].icon}</span><div><b>${esc(P[k].label)}</b><div class="rt-lb">weight ${P[k].w}% · ${list.length} people · lowest first</div></div><span class="rt-sc ${cl(avg)}">${avg != null ? avg : '—'}</span></summary>
+        <div class="rt-body">${list.length ? list.map(r => `<div class="rt-r"><span class="rn">${esc(r.name)} <small style="color:var(--muted);font-weight:700;">· ${inr(r.sales || 0)} / ${r.target ? inr(r.target) : '—'}</small> ${rbBtn(r.id)}</span><span class="rv">${r.parts[k]}</span><div class="rt-bar"><i class="${cl(r.parts[k])}" style="width:${Math.max(2, Math.min(100, r.parts[k] * 10))}%"></i></div>${r.notes && r.notes[k] ? `<div class="rt-rm">${esc(r.notes[k])}</div>` : ''}</div>`).join('') : '<div class="sub">Nobody has this one yet.</div>'}</div></details>`;
+    }).join('');
+    box.innerHTML = `<div class="card"><div class="card-head"><div><h2>⭐ Sales ratings</h2><div class="sub">Every salesperson's rating out of 10 — the same ratings they see on My Sales, with the remarks. ${esc(D.period || '')}</div></div>${seg}</div>${sum}${body}</div>`;
+  }
+  // ---------- QUERY BOOST (after Message Doctor): who converts queries best → who should get the most queries ----------
+  function renderQb() {
+    const box = $('qbTop'), bot = $('qbBot'); if (!box || !bot) return;
+    const L = T && T.leaders;
+    if (!L || !L.today) { box.innerHTML = '<div class="card" style="margin-bottom:14px;"><div class="empty">No query data yet.</div></div>'; bot.innerHTML = ''; return; }
+    const V = L[LV] || L.today, min = L.min || 5;
+    const best = (V.rows || []).filter(r => r.rank != null && r.conv > 0 && r.queries >= min).sort((a, b) => b.conv - a.conv).slice(0, 5);
+    const sum = best.reduce((x, r) => x + r.conv, 0);
+    const split = best.map(r => Math.round(sum > 0 ? r.conv / sum * 100 : 0));
+    if (split.length) split[0] += 100 - split.reduce((x, n) => x + n, 0);          // the shares add up to exactly 100
+    const medal = (i) => ['🥇', '🥈', '🥉', '4', '5'][i];
+    const rows = best.map((r, i) => `<div class="ldr" style="grid-template-columns:26px 1fr auto auto;"><span class="rk">${medal(i)}</span><div class="nm"><b>${esc(r.name)}</b><div class="bar"><i style="width:${Math.min(100, r.conv * 2)}%"></i></div></div><div class="cv"><b class="ok qo">${r.orders} / ${r.queries}</b><small>query orders / queries · ${r.conv}%</small>${r.comm ? '<span class="mut">+' + r.comm + ' community — not counted</span>' : ''}</div><div class="cv" style="min-width:74px;"><b>${split[i]}</b><small>of next 100</small></div></div>`).join('');
+    box.innerHTML = `<div class="card" style="margin-bottom:14px;"><div class="card-head"><div><h2>🎯 Give the most queries to</h2>
+      <div class="sub">Best query orders ÷ queries ${V === L.week ? 'in the last 7 days' : 'today'} · team ${V.team_conv != null ? V.team_conv + '%' : '—'}. People under ${min} queries are not ranked yet. <b>Suggestion only</b> — give the queries in <b>Give queries</b> just below.</div></div>
+      <div class="ldseg"><button type="button" class="${LV === 'today' ? 'on' : ''}" onclick="setLV('today')">Today</button><button type="button" class="${LV === 'week' ? 'on' : ''}" onclick="setLV('week')">7 days</button></div></div>
+      ${rows ? '<div class="sub" style="font-weight:800;margin:6px 0 2px;">If you have 100 more queries to give, split them like this:</div>' + rows : '<div class="empty">Not enough queries yet — nobody has reached ' + min + ' queries.</div>'}</div>`;
+    bot.innerHTML = leadersCard();
+  }
+  window.setLV = (v) => { LV = v; renderQb(); };
+  window.goTab = (k) => document.querySelector(`.ct-tab[data-t="${k}"]`).click();
+
+
+
+  // ---------- 📅 LAST DAYS (Today tab): orders + collection of the last 2 / 3 / 5 / 7 business days, same-time check, by-hour line chart + table. Refreshes every minute. ----------
+  let HS = null, HN = (() => { try { const v = Number(localStorage.getItem('ct_hist_n')); if ([2, 3, 5, 7].includes(v)) return v; } catch (e) {} return 3; })();
+  const HCOL = ['#15803d', '#2563eb', '#f59e0b', '#9333ea', '#ef4444', '#0891b2', '#64748b'];
+  const kS = (v) => { v = Math.round(Number(v) || 0); return v >= 100000 ? (v / 100000).toFixed(v % 100000 === 0 ? 0 : 1) + 'L' : v >= 1000 ? (v / 1000).toFixed(v >= 10000 || v % 1000 === 0 ? 0 : 1) + 'k' : String(v); };
+  const hLb = (h) => h === 0 ? '12a' : h < 12 ? h + 'a' : h === 12 ? '12p' : (h - 12) + 'p';
+  const hFl = (h) => (h % 12 === 0 ? 12 : h % 12) + ' ' + (h < 12 ? 'AM' : 'PM');
+  async function loadHist() {
+    const day = $('datePick').value;
+    try { HS = await api.get('ct.history', day ? { date: day } : {}); } catch (e) { HS = { error: e.message }; }
+    renderHist();
+  }
+  window.setHN = (n) => { HN = n; try { localStorage.setItem('ct_hist_n', String(n)); } catch (e) {} renderHist(); };
+  function renderHist() {
+    const box = $('histBox'); if (!box) return;
+    if (!HS) { box.innerHTML = '<div class="card" style="margin-bottom:14px;"><div class="empty">Loading the last days…</div></div>'; return; }
+    if (HS.error) { box.innerHTML = `<div class="card" style="margin-bottom:14px;"><div class="card-head"><div><h2>📅 Last days</h2></div></div>${/unknown action/i.test(HS.error) ? errHtml({ message: HS.error }) : `<div class="empty">${esc(HS.error)}</div>`}</div>`; return; }
+    const D = (HS.days || []).slice(0, HN), live = HS.is_today, nowIdx = HS.now_idx;
+    const lab = (d, i) => live ? (i === 0 ? ['Today', 'till ' + HS.now] : i === 1 ? ['Yesterday', d.dow] : i === 2 ? ['Day before', d.dow] : [d.dow, '']) : [d.dow, i === 0 ? 'full day' : ''];
+    const short = (d, i) => live ? (i === 0 ? 'Today' : i === 1 ? 'Yest.' : d.dow.replace(/ \w+$/, '')) : d.dow.replace(/ \w+$/, '');
+    const pc = (a, b) => b > 0 ? (a >= b ? `<span class="up">▲ ${Math.round((a - b) / b * 100)}%</span>` : `<span class="dn">▼ ${Math.round((b - a) / b * 100)}%</span>`) : '';
+    // same-time check (today so far against the same clock time on the days before)
+    let same = '';
+    if (D.length > 1 && D[0].same_s != null) {
+      const parts = D.slice(0, 3).map((d, i) => `${i === 0 ? 'Today' : i === 1 ? 'Yesterday' : 'Day before'} <b>${inr(d.same_s)}</b> <span class="sub">(${d.same_n} orders)</span>${i > 0 ? ' ' + pc(D[0].same_s, d.same_s) : ''}`);
+      same = `<div class="hs-same">⏱ <b>${live ? 'Same time (till ' + esc(HS.now) + ')' : 'Full day'}</b><br>${parts.join(' · ')}</div>`;
+    }
+    const sum = (k) => D.reduce((x, d) => x + (Number(d[k]) || 0), 0), n = D.length, tOrd = sum('orders'), tS = sum('sales');
+    const rows = D.map((d, i) => { const [a, b] = lab(d, i); return `<tr class="${i === 0 ? 'now' : ''}"><td><b>${esc(a)}</b>${b ? `<small>${esc(b)}</small>` : ''}</td><td>${d.orders}</td><td>${inr(d.sales)}</td><td>${d.orders ? inr(d.ticket) : '—'}</td><td>${inr(d.qs)}<small>${d.qo} orders</small></td><td>${inr(d.cs)}<small>${d.co} orders</small></td></tr>`; }).join('');
+    const tot = `<tr class="tot"><td>${n}-day total<small>avg / day</small></td><td>${tOrd}<small>${Math.round(tOrd / n)}</small></td><td>${inr(tS)}<small>${inr(tS / n)}</small></td><td>${tOrd ? inr(tS / tOrd) : '—'}</td><td>${inr(sum('qs'))}<small>${sum('qo')} orders</small></td><td>${inr(sum('cs'))}<small>${sum('co')} orders</small></td></tr>`;
+    // running total by hour
+    const cum = D.map((d, i) => { let c = 0; const last = i === 0 && live ? nowIdx : 23; return d.h.slice(0, last + 1).map(x => (c += x[1])); });
+    const wide = innerWidth >= 900, W = wide ? 1100 : 720, Hh = wide ? 240 : 230, L = 40, R = 10, Tp = 12, B = 24, raw = Math.max(1, ...cum.map(c => c[c.length - 1] || 0)), mag = Math.pow(10, Math.floor(Math.log10(raw / 4))), stp = [1, 2, 2.5, 5, 10].map(m => m * mag).find(v => v * 4 >= raw), mx = stp * 4;
+    const px = (i) => L + (W - L - R) * i / 24, py = (v) => Tp + (Hh - Tp - B) * (1 - v / mx);
+    let svg = `<svg class="hs-ch" viewBox="0 0 ${W} ${Hh}" role="img" aria-label="Collection by hour">`;
+    for (let g = 0; g <= 4; g++) { const v = mx * g / 4, y = py(v); svg += `<line x1="${L}" x2="${W - R}" y1="${y}" y2="${y}" stroke="#eef0f3"/><text x="${L - 4}" y="${y + 3}" font-size="10" fill="#94a3b8" text-anchor="end">${kS(v)}</text>`; }
+    (HS.hours || []).forEach((h, i) => { if (i % 3 === 0) svg += `<text x="${px(i)}" y="${Hh - 7}" font-size="10" fill="#94a3b8" text-anchor="middle">${hLb(h)}</text>`; });
+    cum.slice().reverse().forEach((c, ri) => { const k = cum.length - 1 - ri, pts = [[0, 0]].concat(c.map((v, i) => [i + 1, v])).map(q => px(q[0]).toFixed(1) + ',' + py(q[1]).toFixed(1)); const lastP = pts[pts.length - 1].split(',');
+      svg += `<polyline points="${pts.join(' ')}" fill="none" stroke="${HCOL[k]}" stroke-width="${k === 0 ? 3.6 : 1.9}" stroke-linejoin="round" stroke-linecap="round" ${k > 2 ? 'stroke-dasharray="5 4"' : ''}/>`; if (k === 0) svg += `<circle cx="${lastP[0]}" cy="${lastP[1]}" r="5" fill="${HCOL[0]}"/>`; });
+    svg += '</svg>';
+    const leg = D.map((d, i) => `<span><i style="background:${HCOL[i]}"></i>${esc(lab(d, i)[0])} ${kS(d.sales)}</span>`).join('');
+    // hour by hour table
+    const hrs = HS.hours || [];
+    const stat = D.map((d, i) => { const ok = d.h.map((x, j) => (i === 0 && live && j > nowIdx) ? null : x[1]).map((v, j) => v != null && d.h[j][0] > 0 ? v : null).filter(v => v != null); return { mx: ok.length ? Math.max(...ok) : null, mn: ok.length > 1 ? Math.min(...ok) : null }; });
+    const hr = hrs.map((h, j) => `<tr class="${live && j === nowIdx ? 'cur' : ''}"><td><b>${hFl(h)}</b></td>${D.map((d, i) => { const x = d.h[j], fut = i === 0 && live && j > nowIdx;
+      const cls = fut ? 'fut' : x[0] === 0 ? 'z' : x[1] === stat[i].mx ? 'hi' : (stat[i].mn != null && x[1] === stat[i].mn ? 'lo' : '');
+      return `<td class="${cls}">${fut ? '—' : x[0] === 0 ? '·' : x[0] + ' · ₹' + kS(x[1])}</td>`; }).join('')}</tr>`).join('');
+    box.innerHTML = `<div class="card hs-c" style="margin-bottom:14px;"><span class="hs-live">● live · ${esc(HS.at || '')}</span><div class="card-head" style="padding:0;"><div><h2>📅 Last days — orders &amp; collection</h2><div class="sub">Compare ${live ? 'today' : 'this day'} with the days before · every business day is 10 AM → 10 AM</div></div></div>
+      <div class="ldseg" style="margin:10px 0;">${[2, 3, 5, 7].map(k => `<button type="button" class="${HN === k ? 'on' : ''}" onclick="setHN(${k})">${k} days</button>`).join('')}</div>${same}
+      <div class="tbl-wrap"><table class="hs-t no-stack"><tr><th>Day</th><th>Orders</th><th>Collection</th><th>Ticket</th><th>Query ₹</th><th>Campaign ₹</th></tr>${rows}${D.length > 1 ? tot : ''}</table></div></div>
+      <div class="card hs-c" style="margin-bottom:14px;"><h2>📈 Collection by hour <span class="sub" style="font-weight:600;">(running total)</span></h2><div class="sub">One line per day${live ? ' · thick line = today, stops at the current hour' : ''}</div>${svg}<div class="hs-lg">${leg}</div></div>
+      <div class="card hs-c" style="margin-bottom:14px;"><h2>🕐 Hour by hour — orders · ₹</h2><div class="sub">Green = best hour of that day · red = weakest hour so far · orange mark = the hour running now</div>
+      <div class="hs-hw"><table class="hs-t hs-h no-stack"><tr><th>Hour</th>${D.map((d, i) => `<th>${esc(short(d, i))}</th>`).join('')}</tr>${hr}</table></div></div>`;
+  }
+
+  // ---------- 📋 GIVE QUERIES (inside Query Boost): ONE count per person — shower-gel and normal queries are the same thing, no house, no campaign ----------
+  let GQ = null, GQH = null, GQT = 0, GQINIT = false;
+  const hLab = (h) => h === 0 ? '12a' : h < 12 ? h + 'a' : h === 12 ? '12p' : (h - 12) + 'p';
+  const hFull = (h) => (h % 12 === 0 ? 12 : h % 12) + ' ' + (h < 12 ? 'AM' : 'PM');
+  async function loadGive() {
+    if (!GQ) $('qbGive').innerHTML = '<div class="card"><div class="empty">Loading…</div></div>';
+    const day = $('datePick').value;
+    try {
+      GQ = await api.get('qb.list', Object.assign({}, day ? { date: day } : {}, GQH != null ? { hour: GQH } : {}));
+      if (!GQINIT && GQ.plan && GQH == null) { GQINIT = true; GQH = GQ.plan.hour; GQ = await api.get('qb.list', Object.assign({}, day ? { date: day } : {}, { hour: GQH })); }       // open on the hour running now, where the suggestions are
+      GQINIT = true;
+    } catch (e) { GQ = { error: e.message }; }
+    renderGive();
+  }
+  function renderGive() {
+    const box = $('qbGive'), D = GQ; if (!box) return;
+    if (!D || D.error) { box.innerHTML = `<div class="card"><div class="card-head"><div><h2>📋 Give queries</h2></div></div>${D && /unknown action/i.test(D.error || '') ? errHtml({ message: D.error }) : `<div class="empty">${esc(D ? D.error : 'No data')}</div>`}</div>`; return; }
+    const hrs = (D.hours || []).map(h => `<button type="button" class="gq-h${GQH === h.hour ? ' on' : ''}${h.now ? ' now' : ''}${h.future ? ' fut' : ''}${h.n > 0 ? ' has' : ''}" data-h="${h.hour}"${h.future ? ' disabled' : ''}><b>${hLab(h.hour)}</b><small>${h.n > 0 ? h.n : '·'}</small></button>`).join('');
+    const ppl = D.people || [];
+    const val = (p) => GQH == null ? p.queries : (p.hour || 0);
+    // 🧭 planner: a suggestion on the same line as − / number / + for the hour running now; people come top-first (the order changes every hour)
+    const PL = D.plan && GQH != null && GQH === D.plan.hour ? D.plan : null, PR = {};
+    if (PL) PL.rows.forEach(r => { PR[r.id] = r; });
+    const TAGL = { top: 'Top', hot: 'Ordering now', ok: '', due: 'Due an order', new: 'Basic', weak: 'Low ratio', hold: 'Hold' };
+    const sgChip = (p) => {
+      const r = PR[p.id]; if (!r) return '';
+      const g = val(p), n = r.sug, tl = TAGL[r.tag] ? ' · ' + TAGL[r.tag] : '';
+      if (r.tag === 'hold') return `<span class="gq-sg r">⛔ Hold · coach first</span>`;
+      const cls = g >= n ? 'd' : (r.tag === 'due' ? 'a' : (r.tag === 'new' ? 'b' : 'g'));
+      const txt = g >= n ? `✅ ${g} / ${n} done${g > n ? ' (+' + (g - n) + ')' : ''}` : `💡 Suggest ${n}${r.carry ? ' <small>(+' + r.carry + ' carried)</small>' : ''}${tl} <small>· ${g} / ${n}</small>`;
+      return g >= n ? `<span class="gq-sg ${cls}">${txt}</span>` : `<button type="button" class="gq-sg ${cls}" data-a="f" data-id="${p.id}" data-v="${n}" aria-label="Fill ${n} for ${esc(p.name)}">${txt}</button>`;
+    };
+    const medal = (p) => { const r = PR[p.id]; return r && r.rank <= 3 && r.tag !== 'hold' && r.tag !== 'weak' ? ['🥇', '🥈', '🥉'][r.rank - 1] + ' ' : ''; };
+    const list = PL ? ppl.slice().sort((a, b) => ((PR[a.id] || {}).rank || 999) - ((PR[b.id] || {}).rank || 999)) : ppl;
+    const rows = list.map(p => `<div class="gq-r"><div class="nm"><b>${medal(p)}${esc(p.name)}</b><small>${GQH == null ? `${p.orders} query order${p.orders === 1 ? '' : 's'} · ${p.queries} quer${p.queries === 1 ? 'y' : 'ies'}` : `${hFull(GQH)} · day total ${p.queries}`}</small>${PR[p.id] ? `<span class="gq-why">${esc(PR[p.id].why)}</span>${sgChip(p)}` : ''}</div>
+      <div class="gq-st"><button type="button" data-a="m" data-id="${p.id}" ${val(p) <= 0 ? 'disabled' : ''} aria-label="One less">−</button><input type="number" inputmode="numeric" min="0" max="9999" value="${val(p)}" data-a="s" data-id="${p.id}" aria-label="Queries for ${esc(p.name)}"><button type="button" class="pl" data-a="p" data-id="${p.id}" aria-label="One more">+</button></div></div>`).join('');
+    const plLine = PL ? `<div class="gq-pl">🧭 <b>${hFull(PL.hour)}: suggest ${PL.total}</b> · given ${PL.given}${PL.carried ? ' · carried +' + PL.carried : ''} · expect ~${PL.pred_hour} order${PL.pred_hour === 1 ? '' : 's'}${PL.pred_day != null ? ' · day ≈ ' + PL.pred_day + ' orders' : ''}${PL.flow != null ? ' · flow ' + (PL.flow > 0 ? '+' : '') + PL.flow + '% vs usual' + (PL.adjusted ? ' → suggestions ' + (PL.adjusted > 0 ? '+' : '') + PL.adjusted + '%' : '') : ''}</div>`
+      : (D.plan && GQH !== D.plan.hour ? `<div class="gq-pl">🧭 Tap <b>${hFull(D.plan.hour)}</b> above to see how many queries to give each person this hour.</div>` : '');
+    const byHour = (D.hours || []).filter(h => h.n > 0).map(h => `<div class="gq-bh"><b>${hFull(h.hour)}</b><div class="who"><b>${h.n} quer${h.n === 1 ? 'y' : 'ies'}</b><br>${((D.by_emp || {})[String(h.hour)] || []).map(x => `<i>${esc(x.name.split(' ')[0])} ${x.n}</i>`).join('')}</div></div>`).join('')
+      + (D.earlier > 0 ? `<div class="gq-bh"><b>Earlier</b><div class="who"><b>${D.earlier} quer${D.earlier === 1 ? 'y' : 'ies'}</b><br><span class="sub">given before the hour log existed — no time saved</span></div></div>` : '');
+    box.innerHTML = `<div class="card" style="margin-bottom:14px;"><div class="card-head"><div><h2>📋 Give queries</h2><div class="sub">One count per person — <b>shower gel and normal queries are the same</b>. Pick an hour to give for that hour, or <b>Whole day</b>. ${D.date !== D.biz_today ? '<b style="color:#b45309;">Editing ' + esc(D.date) + '</b>' : ''}</div></div></div>
+      <div class="gq-hrs"><button type="button" class="gq-h${GQH == null ? ' on' : ''}" data-h=""><b>Whole day</b><small>${D.total}</small></button>${hrs}</div>
+      ${plLine}${rows || '<div class="empty">No sales people found.</div>'}
+      <div class="gq-tot"><span>Total queries given${GQH != null ? ' in ' + hFull(GQH) : ''}</span><b>${GQH == null ? D.total : ppl.reduce((x, p) => x + (p.hour || 0), 0)}</b></div></div>
+      <div class="card" style="margin-bottom:14px;"><div class="card-head"><div><h2>🕐 By hour — queries given</h2><div class="sub">Queries only · tap an hour above to give for it</div></div></div>${byHour || '<div class="empty">Nothing given yet today.</div>'}</div>`;
+  }
+  function gqSync() { clearTimeout(GQT); GQT = setTimeout(() => { loadGive(); loadTower(false); }, 900); }     // re-read the numbers + refresh the board above
+  async function gqDo(id, how, v) {
+    const p = ((GQ && GQ.people) || []).find(x => x.id === id); if (!p) return;
+    const day = $('datePick').value || (GQ && GQ.date), hour = GQH;
+    const old = { q: p.queries, h: p.hour };
+    try {
+      let r;
+      if (how === 'f') { const n = Math.max(0, Math.min(9999, parseInt(v, 10) || 0)), cur = hour == null ? p.queries : (p.hour || 0); if (n > cur) { if (hour == null) p.queries = n; else { p.queries += n - cur; p.hour = n; } renderGive(); } r = await api.post('qb.set', { employee_id: id, value: n, date: day, hour }); }
+      else if (how === 's') { const n = Math.max(0, Math.min(9999, parseInt(v, 10) || 0)); r = await api.post('qb.set', { employee_id: id, value: n, date: day, hour }); }
+      else {
+        const cur = hour == null ? p.queries : (p.hour || 0); if (how === 'm' && cur <= 0) return;
+        const d = how === 'm' ? -1 : 1; if (hour == null) p.queries = Math.max(0, p.queries + d); else { p.hour = Math.max(0, (p.hour || 0) + d); p.queries = Math.max(0, p.queries + d); }
+        renderGive(); r = await api.post('qb.bump', { employee_id: id, delta: d, date: day, hour });
+      }
+      if (r && r.queries != null) { p.queries = r.queries; if (hour != null && r.hour != null) p.hour = r.hour; }
+      gqSync();
+    } catch (err) { p.queries = old.q; p.hour = old.h; showAlert(err.message, 'error'); loadGive(); }
+  }
+  $('qbGive').addEventListener('click', (e) => {
+    const h = e.target.closest('.gq-h'); if (h) { if (h.disabled) return; GQH = h.dataset.h === '' ? null : Number(h.dataset.h); loadGive(); return; }
+    const b = e.target.closest('button[data-a]'); if (b) gqDo(Number(b.dataset.id), b.dataset.a, b.dataset.v);
+  });
+  $('qbGive').addEventListener('change', (e) => { const i = e.target.closest('input[data-a="s"]'); if (i) gqDo(Number(i.dataset.id), 's', i.value); });
+
+  // ---------- ALERTS ----------
+  function alertRow(a) {
+    const who = a.emp ? nameOf(a.emp) : 'Team';
+    return `<div class="al ${esc(a.sev)} ${a.meet ? 'meet' : ''}">
+      <span class="dot"></span>
+      <div><div class="t">${esc(a.title)}${a.meet ? '<span class="tag">meet admin</span>' : ''}</div>
+      ${a.body ? `<div class="b">${esc(a.body)}</div>` : ''}
+      <div class="m">${esc(who)} · ${esc(a.day || '')} · ${esc((a.created_at || '').slice(11, 16))}</div>
+      ${a.status === 'resolved' ? `<div class="rv">✅ <b>Resolved by ${esc(a.resolved_by || 'someone')}</b>${a.resolved_at ? ' · ' + esc(String(a.resolved_at).slice(5, 16).replace('-', '/').replace(' ', ' · ')) : ''}${a.note ? `<div class="rn">💬 “${esc(a.note)}”</div>` : ''}</div>` : ''}</div>
+      ${a.status === 'open' ? `<div class="act"><button class="btn secondary" style="width:auto;padding:6px 12px;font-size:12.5px;" onclick="askResolve(${a.id})">✅ Resolved</button></div>` : ''}
+    </div>`;
+  }
+  function renderAlerts() {
+    const all = (T.alerts || []);
+    const open = all.filter(a => a.status === 'open' && a.kind !== 'digest');
+    const meet = open.filter(a => a.meet), rest = open.filter(a => !a.meet);
+    const digests = all.filter(a => a.kind === 'digest').slice(0, 5);
+    const done = all.filter(a => a.status === 'resolved').slice(0, 15);
+    const sec = (title, list, sub) => `<div class="card" style="margin-bottom:14px;"><div class="card-head"><div><h2>${title}</h2>${sub ? `<div class="sub">${sub}</div>` : ''}</div></div>${list.length ? list.map(alertRow).join('') : '<div class="empty">None 🎉</div>'}</div>`;
+    $('p-alerts').innerHTML =
+      sec('Meet admin (' + meet.length + ')', meet, 'These stay until Admin / HR or a named resolver presses ✅ Resolved and writes a comment on what was done.') +
+      sec('Open alerts (' + rest.length + ')', rest) +
+      (digests.length ? sec('Latest digests', digests) : '') +
+      sec('Recently resolved', done);
+  }
+  let resId = 0;
+  window.askResolve = (id) => { resId = id; const a = (T.alerts || []).find(x => x.id === id) || {}; openRes('alert', 'Mark resolved', a.title || ''); };
+  $('resNote').oninput = () => { const ok = $('resNote').value.trim().length >= 3; $('resOk').disabled = !ok; if (ok) $('resErr').style.display = 'none'; };
+  $('resNote').onkeydown = (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); $('resOk').click(); } };
+  $('resCancel').onclick = () => $('resModal').classList.remove('open');
+  $('resOk').onclick = async () => {
+    const note = $('resNote').value.trim();
+    if (note.length < 3) { $('resErr').style.display = 'block'; $('resNote').focus(); return; }
+    try {
+      if (resMode === 'remark') { await api.post('ct.remark_send', { employee_id: resEmp, text: note, src: resSrc }); $('resModal').classList.remove('open'); showAlert('Remark sent — it shows on ' + pName(resEmp).split(' ')[0] + "'s My Sales until she taps Got it."); afterRemark(); }
+      else if (resMode === 'focus') { await api.post('ct.focus_done', { employee_id: resEmp, note }); $('resModal').classList.remove('open'); showAlert('Saved.'); loadFocus(); }
+      else { await api.post('ct.resolve', { id: resId, note }); $('resModal').classList.remove('open'); showAlert('Marked resolved.'); loadTower(false); }
+    }
+    catch (err) { showAlert(err.message, 'error'); }
+  };
+
+  // ---------- MESSAGE DOCTOR ----------
+  async function loadMd(refresh) {
+    $('p-md').innerHTML = '<div class="card"><div class="empty">The Doctor is reading the chats…</div></div>';
+    try { MD = await api.get('md.report', refresh ? { refresh: 1 } : {}); }
+    catch (err) { $('p-md').innerHTML = `<div class="card">${errHtml(err)}</div>`; return; }
+    renderMd(); renderIdeas();
+    const open = (MD.weak || []).filter(w => w.status === 'open').length;
+    const n = $('nMd'); n.textContent = open; n.style.display = open ? '' : 'none';
+  }
+  const TYPE_LAB = { section: 'Skill section', msg: 'Message', offer: 'Offer', flash: 'Flash offer' };
+  function mTxt(it) {
+    const m = it.m || {};
+    if (it.itype === 'msg') return `used ${m.uses ?? 0}× · ${m.reply ?? '?'}% customers replied · ${m.orders ?? '?'}% ended in an order`;
+    if (it.itype === 'offer') return `pitched ${m.pitched ?? 0}× · accepted ${m.accepted ?? 0}%`;
+    if (it.itype === 'flash') return `${m.orders ?? 0} of ${m.of_orders ?? 0} orders used it (${m.share ?? 0}%) in ${m.hours ?? 0} h`;
+    if (it.itype === 'section') return `team score ${m.score ?? '?'}/10${m.prev != null ? ' (was ' + m.prev + ')' : ''} over ${m.chats ?? 0} chats`;
+    return '';
+  }
+  function mdRow(it, weak) {
+    const stl = { open: 'Not fixed', changed: 'Changed — watching', improved: 'Improved ✓', cleared: 'Cleared ✓', removed: 'Removed' }[it.status] || it.status;
+    const days = it.flagged_days > 1 ? ` · flagged ${it.flagged_days} days` : '';
+    const fixBtn = weak && (it.status === 'open') ? `<button class="btn secondary" style="width:auto;padding:6px 12px;font-size:12.5px;" onclick="mdFix('${esc(it.ikey)}')">🔧 I fixed it</button>` : '';
+    const verdict = it.verdict ? ` · after the change: <b>${esc(it.verdict)}</b>` : '';
+    return `<div class="md-it"><div class="h"><div class="lab"><span class="sub" style="text-transform:uppercase;font-weight:700;">${esc(TYPE_LAB[it.itype] || it.itype)}</span><br>${esc(it.label)}</div>
+      ${weak ? `<span class="st ${esc(it.status)}">${esc(stl)}</span>` : ''}${fixBtn}</div>
+      <div class="sub" style="margin-top:3px;">${esc(mTxt(it))}${days}${verdict}</div>
+      <div class="adv">${esc(it.advice || '')}</div>
+      ${it.text ? `<div class="txt">${esc(it.text)}</div>` : ''}</div>`;
+  }
+  function renderMd() {
+    const weak = MD.weak || [], good = MD.good || [], log = MD.log || [], cfg = MD.cfg || {};
+    const stuck = weak.filter(w => w.status === 'open' && (w.flagged_days || 1) >= (cfg.ignore_days || 3));
+    const byT = (t) => weak.filter(w => w.itype === t);
+    const group = (t, title) => byT(t).length ? `<div class="set-h" style="padding-top:14px;">${title}</div>${byT(t).map(w => mdRow(w, true)).join('')}` : '';
+    $('p-md').innerHTML = `
+      ${stuck.length ? `<div class="alert error" style="margin-bottom:12px;">🚨 ${stuck.length} thing${stuck.length > 1 ? 's have' : ' has'} been flagged for ${cfg.ignore_days || 3}+ days and nobody has changed ${stuck.length > 1 ? 'them' : 'it'}. Admin is notified until they are fixed.</div>` : ''}
+      <div class="card" style="margin-bottom:14px;"><div class="card-head"><div><h2>What is NOT working</h2>
+        <div class="sub">Read from ${MD.chats_read ?? 0} chat screenshots / calls of the last 30 days. After you press “I fixed it” the Doctor keeps watching and tells you if it helped.</div></div>
+        <button class="btn secondary" style="width:auto;padding:6px 12px;font-size:12.5px;" onclick="loadMd(true)">↻ Re-read now</button></div>
+        ${weak.length ? group('section', 'Sections to fix') + group('msg', 'Messages customers ignore') + group('offer', 'Offers customers do not take') + group('flash', 'Flash offers that did not sell') : '<div class="empty"><span class="big-ok">✅ Nothing weak found.</span><br>Not enough chats yet, or everything is working.</div>'}
+      </div>
+      <div class="card" style="margin-bottom:14px;"><div class="card-head"><div><h2>What works very well</h2><div class="sub">Copy this style into the weak messages.</div></div></div>
+        ${good.length ? good.map(g => mdRow(g, false)).join('') : '<div class="empty">Nothing stands out yet.</div>'}</div>
+      <div class="card"><div class="card-head"><div><h2>Fix log — did it help?</h2><div class="sub">Every change you marked, and what the Doctor saw afterwards.</div></div></div>
+        ${log.length ? log.map(l => `<div class="md-it"><div class="h"><div class="lab">${esc(l.label)}</div><span class="st ${esc(l.status)}">${esc(l.status)}</span></div>
+          <div class="sub">${l.fixed_by ? 'changed by ' + esc(l.fixed_by) + ' · ' : ''}${esc((l.fixed_at || '').slice(0, 16))}${l.verdict ? ' · result: <b>' + esc(l.verdict) + '</b>' : ' · still watching'}</div></div>`).join('') : '<div class="empty">No fixes logged yet.</div>'}</div>`;
+  }
+  window.loadMd = loadMd;
+  window.mdFix = async (key) => {
+    const note = prompt('What did you change? (optional)', '');
+    if (note === null) return;
+    try { await api.post('md.fix', { key, note }); showAlert('Noted. The Doctor will compare the next chats with the old ones.'); loadMd(false); }
+    catch (err) { showAlert(err.message, 'error'); }
+  };
+
+  // ---------- BENCHMARKS & IDEAS ----------
+  async function loadBench() {
+    $('p-bench').innerHTML = '<div class="card"><div class="empty">Loading benchmarks…</div></div>';
+    try { BM = await api.get('ct.benchmarks'); } catch (err) { $('p-bench').innerHTML = `<div class="card">${errHtml(err)}</div>`; return; }
+    renderBench();
+  }
+  function renderBench() {
+    if (!BM) return;
+    const lab = { conv: 'Conversion (orders ÷ queries)', ticket: 'Clean ticket', speed: 'Speed (min to first order)', volume: 'Volume (orders / day)' };
+    const fmt = (k, v) => v == null ? '—' : (k === 'ticket' ? inr(v) : k === 'conv' ? v + '%' : k === 'speed' ? Math.round(v) + ' min' : v);
+    const top = Object.keys(lab).map(k => `<div class="ct-tile"><div class="k">${lab[k]}</div>
+      <div style="margin-top:8px;">${((BM.top3 || {})[k] || []).map((p, i) => `<div style="display:flex;justify-content:space-between;font-size:13.5px;padding:2px 0;"><span>${['🥇', '🥈', '🥉'][i]} ${esc(p.name)}</span><b>${fmt(k, p.v)}</b></div>`).join('') || '<span class="sub">Not enough data</span>'}</div>
+      <div class="s">Benchmark = average of the top 3 · ${fmt(k, (BM.bench || {})[k])}</div></div>`).join('');
+    const rows = (BM.rows || []).map(r => `<tr><td><b>${esc(r.name)}</b></td><td>${r.orders ?? 0}</td><td>${fmt('conv', r.conv)}</td><td>${fmt('ticket', r.ticket)}</td><td>${fmt('speed', r.speed)}</td><td>${fmt('volume', r.volume)}</td>
+      <td><span class="pc ${r.outcome >= 7 ? 'ok' : r.outcome >= 4 ? 'warn' : 'red'}">${r.outcome == null ? '—' : r.outcome + ' / 10'}</span></td></tr>`).join('');
+    $('p-bench').innerHTML = `<div class="ct-grid">${top}</div>
+      <div class="card" style="margin-bottom:14px;"><div class="card-head"><div><h2>Outcome rating vs the top 3</h2><div class="sub">Last ${BM.days || 30} days. Rated on results (conversion, clean ticket, speed, volume) against the best three people — not on a fixed rubric.</div></div></div>
+        <div class="tbl-wrap"><table class="ct"><thead><tr><th>Name</th><th>Orders</th><th>Conversion</th><th>Clean ticket</th><th>Speed</th><th>Orders/day</th><th>Outcome</th></tr></thead><tbody>${rows || '<tr><td colspan="7" class="empty">Not enough days of data yet.</td></tr>'}</tbody></table></div></div>
+      <div id="ideasBox"></div>`;
+    renderIdeas();
+  }
+  function renderIdeas() {
+    const box = $('ideasBox'); if (!box || !MD) return;
+    const ideas = MD.ideas || [];
+    box.innerHTML = `<div class="card"><div class="card-head"><div><h2>Learning ideas the AI found</h2><div class="sub">Built from what the best chats do differently. One new idea per person per day is shown on My Sales; “adopted” = they started doing it, “rigid” = shown several days, no change (Admin is told).</div></div></div>
+      ${ideas.length ? ideas.map(i => `<div class="md-it"><div class="h"><div class="lab">${esc(i.title)}</div><span class="chip">shown ${i.shown}</span><span class="chip ok">adopted ${i.adopted}</span><span class="chip ${i.rigid ? 'red' : ''}">rigid ${i.rigid}</span></div><div class="adv">${esc(i.body)}</div><div class="sub" style="margin-top:3px;">${esc(i.why || '')}</div></div>`).join('') : '<div class="empty">Ideas appear once enough chats have been read (12+).</div>'}</div>`;
+  }
+
+  // ---------- SETTINGS ----------
+  const SET_FIELDS = [
+    ['Goals', [['q_conv_goal', 'Query orders goal (% of queries given)'], ['comm_target', 'Community orders / day goal'], ['ticket_steps', 'Ticket ladder (₹, comma separated)', 'list'], ['big_order', 'Big order above (₹) — kept out of “clean ticket”'], ['ticket_min_orders', 'Ticket judged after this many orders'], ['q_warn_pct', 'Pace warning below (% of expected)'], ['q_red_pct', 'Pace red below (% of expected)']]],
+    ['Dark green / light green / white', [['mix_goal', 'Goal % of pieces'], ['mix_amber', 'Amber below %'], ['mix_red', 'Red below %'], ['mix_min_pieces', 'Judge after this many pieces']]],
+  ];
+  function renderSettings() {
+    if (!T || !T.can_settings) { $('p-set').innerHTML = '<div class="card"><div class="empty">Only Admin / HR can change the settings.</div></div>'; return; }
+    const c = T.cfg;
+    const inp = (k, label, kind) => `<div><label>${esc(label)}</label><input data-k="${k}" ${kind === 'list' ? 'data-list="1"' : 'type="number" step="any"'} value="${esc(kind === 'list' ? (c[k] || []).join(', ') : c[k])}"></div>`;
+    const grp = SET_FIELDS.map(([t, f]) => `<div class="set-h">${t}</div><div class="set-grid">${f.map(x => inp(x[0], x[1], x[2])).join('')}</div>`).join('');
+    const cc = (c.comm_checks || []).map(x => x[0] + '=' + x[1]).join(', ');
+    const meet = (c.meet || []).map(m => `<tr data-id="${esc(m.id)}"><td><input type="checkbox" class="mOn" ${m.on ? 'checked' : ''}></td><td>${esc(m.label)}<div class="sub">${esc(m.hint || '')}</div></td>
+      <td><input type="number" step="any" class="mV1" value="${m.v1}" style="width:90px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;"></td>
+      <td><input type="number" step="any" class="mV2" value="${m.v2}" style="width:90px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;"></td></tr>`).join('');
+    const res = (T.names || []).map(n => `<label><input type="checkbox" class="resCb" value="${n.id}" ${(c.resolvers || []).map(Number).includes(Number(n.id)) ? 'checked' : ''}> ${esc(n.name)}</label>`).join('');
+    const md = c.md || {}, id = c.ideas || {}, ow = c.outcome_weights || {};
+    $('p-set').innerHTML = `<div class="card">
+      <div class="card-head"><div><h2>Control Tower settings</h2><div class="sub">Everything here can be changed any time. Saved settings apply from the next 5-minute pass.</div></div><button class="btn" id="btnSave" style="width:auto;">Save settings</button></div>
+      ${grp}
+      <div class="set-h">Community checkpoints</div><div class="set-grid"><div style="grid-column:1/-1;"><label>Time=orders needed, comma separated (24 h clock) — e.g. 13:00=50, 14:00=80, 15:00=110, 18:00=160</label><input id="sCc" value="${esc(cc)}"></div>
+        <div style="grid-column:1/-1;"><label>Admin digest hours (24 h clock, comma separated)</label><input id="sDig" value="${esc((c.digest_hours || []).join(', '))}"></div></div>
+      <div class="set-h">Who can press “Resolved” (besides Admin / HR)</div><div class="res-list">${res || '<span class="sub">No salespeople loaded.</span>'}</div>
+      <div class="set-h">“Meet admin” triggers</div>
+      <div class="tbl-wrap"><table class="ct"><thead><tr><th>On</th><th>When</th><th>Value 1</th><th>Value 2</th></tr></thead><tbody id="meetBody">${meet}</tbody></table></div>
+      <div class="set-h">Message Doctor &amp; learning ideas</div>
+      <div class="set-grid">
+        <div><label>Weak if used at least (times)</label><input type="number" data-md="min_uses" value="${md.min_uses}"></div>
+        <div><label>Tell Admin if not fixed after (days)</label><input type="number" data-md="ignore_days" value="${md.ignore_days}"></div>
+        <div><label>Weak when customer replies below (%)</label><input type="number" data-md="weak_reply" value="${md.weak_reply}"></div>
+        <div><label>Skill section judged after (chats)</label><input type="number" data-md="min_chats_section" value="${md.min_chats_section}"></div>
+        <div><label>First learning idea after (days)</label><input type="number" data-id="after_days" value="${id.after_days}"></div>
+        <div><label>“Rigid” if no change after (days)</label><input type="number" data-id="rigid_days" value="${id.rigid_days}"></div>
+      </div>
+      <div class="set-h">Outcome rating weights (%)</div>
+      <div class="set-grid">${['conv:Conversion', 'ticket:Clean ticket', 'speed:Speed', 'volume:Volume'].map(s => { const [k, l] = s.split(':'); return `<div><label>${l}</label><input type="number" data-ow="${k}" value="${ow[k]}"></div>`; }).join('')}</div>
+      <div class="set-h">🪔 Diwali theme</div>
+      <div class="set-grid">
+        <div><label>Mode</label><select id="sTheme"><option value="auto">Auto (between the dates)</option><option value="on">Always on</option><option value="off">Off</option></select></div>
+        <div><label>From</label><input type="date" id="sFrom" value="${esc(c.theme_from)}"></div>
+        <div><label>To</label><input type="date" id="sTo" value="${esc(c.theme_to)}"></div>
+        <div style="align-self:end;" class="sub">Right now: <b>${T.theme && T.theme.on ? 'ON 🪔' : 'off'}</b></div>
+      </div>
+      <div style="padding:6px 18px 18px;"><button class="btn" id="btnSave2" style="width:auto;">Save settings</button></div>
+    </div>`;
+    $('sTheme').value = c.theme || 'auto';
+    $('btnSave').onclick = $('btnSave2').onclick = saveSettings;
+  }
+  async function saveSettings() {
+    const b = {};
+    document.querySelectorAll('#p-set [data-k]').forEach(el => { b[el.dataset.k] = el.dataset.list ? el.value.split(',').map(x => parseFloat(x)).filter(x => x > 0) : parseFloat(el.value); });
+    b.comm_checks = $('sCc').value.split(',').map(x => x.trim().split('=')).filter(x => x.length === 2).map(x => [x[0].trim(), parseInt(x[1], 10)]);
+    b.digest_hours = $('sDig').value.split(',').map(x => parseInt(x, 10)).filter(x => x >= 0 && x <= 23);
+    b.resolvers = [...document.querySelectorAll('.resCb:checked')].map(x => parseInt(x.value, 10));
+    b.meet = [...document.querySelectorAll('#meetBody tr')].map(tr => ({ id: tr.dataset.id, on: tr.querySelector('.mOn').checked ? 1 : 0, v1: parseFloat(tr.querySelector('.mV1').value) || 0, v2: parseFloat(tr.querySelector('.mV2').value) || 0 }));
+    b.md = {}; document.querySelectorAll('[data-md]').forEach(el => b.md[el.dataset.md] = parseFloat(el.value));
+    b.ideas = {}; document.querySelectorAll('[data-id]').forEach(el => b.ideas[el.dataset.id] = parseFloat(el.value));
+    b.outcome_weights = {}; document.querySelectorAll('[data-ow]').forEach(el => b.outcome_weights[el.dataset.ow] = parseFloat(el.value));
+    b.theme = $('sTheme').value; b.theme_from = $('sFrom').value; b.theme_to = $('sTo').value;
+    try {
+      await api.post('ct.cfg_set', b);
+      showAlert('Settings saved.');
+      try { localStorage.removeItem('hrms_theme_cache'); if (window.hrmsTheme) window.hrmsTheme.refresh(); } catch (e) {}
+      await loadTower(true);
+    } catch (err) { showAlert(err.message, 'error'); }
+  }
+
+  $('btnRefresh').onclick = () => { loadTower(true); loadHist(); if (MD) loadMd(true); if (BM) loadBench(); };
+  $('datePick').onchange = () => { loadTower(false); loadHist(); if (tab === 'qb') loadGive(); };
+  loadTower(false); loadHist(); loadFocus();
+  setInterval(() => { if (!document.hidden && tab === 'today') { loadHist(); loadRecon(); if (!document.activeElement || !/^(rtTxt|rtEmp)$/.test(document.activeElement.id)) loadRemToday(); } }, 60000);      // the Last days panel is live: every minute
+  loadMd(false);
+  setInterval(() => { if (!document.hidden && $('datePick').value === (T && T.today)) loadTower(false); }, 120000);
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>
