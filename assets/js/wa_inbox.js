@@ -462,7 +462,8 @@
     }
     function tick(m) {
       if (m.dir !== 'out') return ''; const s = m.status;
-      return s === 'failed' ? ' <span class="wi-tick f">⚠ failed</span>' : s === 'read' ? ' <span class="wi-tick r">✓✓</span>' : s === 'delivered' ? ' <span class="wi-tick">✓✓</span>' : ' <span class="wi-tick">✓</span>';
+      const failWhy = (m) => { const c = +m.err_code || 0, t = String(m.err || '').slice(0, 90); const h = { 131053: 'WhatsApp could not use this file (format / size)', 131052: 'WhatsApp could not download this file', 131047: 'the customer has not written in 24 hours', 131026: 'the customer cannot receive it (not on WhatsApp / blocked)', 131049: 'Meta limit for this customer', 130429: 'sending too fast, wait a minute', 131051: 'unsupported message type' }[c]; return (h || t) ? ' — ' + (h || t) + (c ? ' (' + c + ')' : '') : ''; };
+      return s === 'failed' ? ` <span class="wi-tick f">⚠ failed${esc(failWhy(m))}</span>` : s === 'read' ? ' <span class="wi-tick r">✓✓</span>' : s === 'delivered' ? ' <span class="wi-tick">✓✓</span>' : ' <span class="wi-tick">✓</span>';
     }
     const capOf = (m) => { const x = /^[^:]{1,20}:\s*([\s\S]+)$/.exec(m.body || ''); return x ? x[1] : ''; };
     function bubble(m) {
