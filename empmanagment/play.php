@@ -246,8 +246,8 @@ if (strpos($__play, 'play.') === 0) {
             if ($emp <= 0) json_response(['error' => 'Your login is not linked to an employee.'], 403);
             if (!play_ensure2($pdo)) json_response(['error' => 'The board could not start (database).'], 500);
             $in = json_input(); $sc = (int)($in['score'] ?? 0); $ms = (int)($in['ms'] ?? 0);
-            // light sanity check: a score cannot grow faster than the game's top speed allows
-            if ($sc < 1 || $sc > 20000 || $ms < 500 || $sc > $ms * 0.09 + 10) json_response(['error' => 'That score does not look right.'], 422);
+            // light sanity check: a score cannot grow faster than the game's top speed plus its coins allow
+            if ($sc < 1 || $sc > 30000 || $ms < 500 || $sc > $ms * 0.16 + 10) json_response(['error' => 'That score does not look right.'], 422);
             $pdo->prepare("INSERT INTO play_dino (day, employee_id, best, plays) VALUES (CURDATE(), ?, ?, 1) ON DUPLICATE KEY UPDATE best = GREATEST(best, VALUES(best)), plays = plays + 1")->execute([$emp, $sc]);
             $top = $pdo->query("SELECT employee_id, best FROM play_dino WHERE day = CURDATE() ORDER BY best DESC, employee_id ASC LIMIT 1")->fetch();
             $champ = $top && (int)$top['employee_id'] === $emp;
