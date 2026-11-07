@@ -23,7 +23,7 @@
   <div id="sidebar"></div>
   <main class="main">
     <div class="topbar"><div><h1>Parcels and tracking</h1><div class="bd-sub" id="sub">A tracking ID within the set hours, in transit by the set day, a remark every day on untraceable parcels. Sundays are not counted.</div></div><div id="topBtns"></div></div>
-    <div class="content"><div class="wor-tabsw" id="worTabs"><button class="on" data-t="parcels">Parcels and tracking</button><button data-t="attn">Needs attention <b id="worBadge"></b></button></div><div class="bd" id="worAttn" style="display:none"></div><div class="bd" id="dsReport"><div class="bd-empty">Loading…</div></div><div class="bd" id="hqPeople"></div><div class="bd-sub" style="text-align:center;margin:6px 0 20px" id="dsFoot"></div></div>
+    <div class="content"><div id="custStrip"></div><div class="wor-tabsw" id="worTabs"><button class="on" data-t="parcels">Parcels and tracking</button><button data-t="attn">Needs attention <b id="worBadge"></b></button></div><div class="bd" id="worAttn" style="display:none"></div><div class="bd" id="dsReport"><div class="bd-empty">Loading…</div></div><div class="bd" id="hqPeople"></div><div class="bd-sub" style="text-align:center;margin:6px 0 20px" id="dsFoot"></div></div>
   </main>
 </div>
 <script src="assets/js/config.js?v=4"></script>
@@ -32,7 +32,7 @@
 <script src="assets/js/boss_common.js?v=2"></script>
 <script src="assets/js/hq_board.js?v=1"></script>
 <script src="assets/js/hq_chat.js?v=3"></script>
-<script src="assets/js/order_hub.js?v=2"></script>
+<script src="assets/js/order_hub.js?v=4"></script>
 <script src="assets/js/dsp_report.js?v=16"></script>
 <script src="assets/js/min_text.js?v=2"></script>
 <script src="assets/js/wa_ord_ui.js?v=7"></script>
@@ -40,6 +40,7 @@
   guardPage();
   renderSidebar('dept_dispatch');
   try { DSP.mount(document.getElementById('dsReport')); } catch (e) { document.getElementById('dsReport').innerHTML = '<div class="bd-card"><div class="bd-empty"><b>Cannot open Parcels and tracking</b>' + BD.esc(e.message) + '</div></div>'; }
+  try { OrderHub.summary(document.getElementById('custStrip')); } catch (e) {}
   try { HQ.mount(document.getElementById('hqPeople'), { section: 'dispatch', title: 'People tracked in Dispatch' }); } catch (e) {}
   // Parcels | Needs attention. The second tab is built the first time it is opened; the red number is the open cases (checked once a minute).
   (function () {

@@ -19,6 +19,12 @@ if (!defined('OHUB_LOADED')) define('OHUB_LOADED', 1);
 function ohub_p10($p): string { $d = preg_replace('/\D+/', '', (string)$p) ?? ''; return strlen($d) >= 10 ? substr($d, -10) : ''; }
 /** SQL: a phone column with spaces, dashes, + ( ) . removed, then its last 10 digits */
 function ohub_sqlp(string $col): string { return "RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE($col, ' ', ''), '-', ''), '+', ''), '(', ''), ')', ''), '.', ''), 10)"; }
+/** every 10-digit number inside a field that may hold more than one ("98765 43210, 91234 56789"), or in a list of such fields */
+function ohub_keys($raw): array
+{
+    $out = []; foreach ((array)$raw as $one) foreach (preg_split('/[,;\/|\n\r]+/', (string)$one) ?: [] as $part) { $k = ohub_p10($part); if ($k !== '') $out[$k] = true; }
+    return array_map('strval', array_keys($out));
+}
 function ohub_num($v): float { return round((float)$v, 2); }
 
 function ohub_ensure(PDO $pdo): bool
@@ -46,13 +52,14 @@ function ohub_notcancel(PDO $pdo): string
 
 /* ============================================================== bulk: every customer at once ============================================================== */
 /** [p10 => ['name','names','online_n',...]] from the real tables. Each source is read on its own; one failing leaves its columns empty. */
-function ohub_bulk(PDO $pdo, ?string $only = null): array
+function ohub_bulk(PDO $pdo, $only = null): array
 {
+    if ($only !== null) { $only = ohub_keys($only); if (!$only) return []; }   // null = everybody; else the list of numbers
     $C = []; $new = function () { return ['names' => [], 'online_n' => 0, 'online_amt' => 0.0, 'store_n' => 0, 'store_amt' => 0.0, 'pos_n' => 0, 'pos_amt' => 0.0, 'first' => null, 'last' => null, 'rto_n' => 0, 'cx_n' => 0, 'cx_open' => 0]; };
     $touch = function (&$c, $first, $last) { if ($first && (!$c['first'] || $first < $c['first'])) $c['first'] = $first; if ($last && (!$c['last'] || $last > $c['last'])) $c['last'] = $last; };
     $addName = function (&$c, $n) { $n = trim((string)$n); if ($n !== '' && !in_array($n, $c['names'], true) && count($c['names']) < 6) $c['names'][] = $n; };
     $run = function (string $sql, string $col, callable $each) use ($pdo, $only) {
-        try { $st = $pdo->prepare(str_replace('{W}', $only === null ? " AND LENGTH(" . ohub_sqlp($col) . ") = 10" : " AND " . ohub_sqlp($col) . " = ?", $sql)); $st->execute($only === null ? [] : [$only]); foreach ($st->fetchAll() as $r) $each($r); }
+        try { $st = $pdo->prepare(str_replace('{W}', $only === null ? " AND LENGTH(" . ohub_sqlp($col) . ") = 10" : " AND " . ohub_sqlp($col) . " IN (" . implode(',', array_fill(0, count($only), '?')) . ")", $sql)); $st->execute($only === null ? [] : $only); foreach ($st->fetchAll() as $r) $each($r); }
         catch (Throwable $e) { error_log('ohub_bulk: ' . $e->getMessage()); }
     };
     // 1. online + manual orders (Shopify cache), without the cancelled ones
@@ -114,25 +121,25 @@ function ohub_tick(PDO $pdo, int $now): array
 
 /* ============================================================== one customer ============================================================== */
 /** every order this person ever made, newest first: [['src','name','at','total','status','store','sid','bill','parcel']] */
-function ohub_orders(PDO $pdo, string $p10, int $limit = 60): array
+function ohub_orders(PDO $pdo, $phones, int $limit = 60): array
 {
-    $out = [];
+    $out = []; $ph = ohub_keys($phones); if (!$ph) return []; $in = implode(',', array_fill(0, count($ph), '?'));
     try {
         $st = $pdo->prepare("SELECT s.store_key, s.shopify_id, s.order_name, s.created_at, s.total, s.financial_status, s.fulfillment_status, s.customer" . (ohub_notcancel($pdo) !== '' ? ", EXISTS (SELECT 1 FROM order_cancels oc WHERE oc.order_id = CAST(s.shopify_id AS CHAR)) AS cancelled" : ", 0 AS cancelled") . "
-            FROM shop_orders s WHERE " . ohub_sqlp('s.phone') . " = ? ORDER BY s.created_at DESC LIMIT " . (int)$limit);
-        $st->execute([$p10]);
+            FROM shop_orders s WHERE " . ohub_sqlp('s.phone') . " IN ($in) ORDER BY s.created_at DESC LIMIT " . (int)$limit);
+        $st->execute($ph);
         foreach ($st->fetchAll() as $r) $out[] = ['src' => preg_match('/^WM-\d+$/i', (string)$r['order_name']) ? 'manual' : 'online', 'name' => (string)$r['order_name'], 'at' => (string)$r['created_at'], 'total' => ohub_num($r['total']),
             'status' => (int)$r['cancelled'] ? 'cancelled' : ((string)$r['fulfillment_status'] ?: 'unfulfilled'), 'pay' => (string)$r['financial_status'], 'store' => (string)$r['store_key'], 'sid' => (string)$r['shopify_id'], 'who' => (string)$r['customer']];
     } catch (Throwable $e) { }
     try {
-        $st = $pdo->prepare("SELECT b.bill_id, b.bill_no, b.created_at, b.total, b.pay_mode, b.emp_name, b.total_ml FROM st_bills b WHERE b.status = 'ok' AND (" . ohub_sqlp('b.customer_phone') . " = ?
-            OR (TRIM(b.customer_phone) = '' AND EXISTS (SELECT 1 FROM st_bill_people p WHERE p.bill_id = b.bill_id AND p.declined = 0 AND " . ohub_sqlp('p.phone') . " = ?))) ORDER BY b.created_at DESC LIMIT " . (int)$limit);
-        $st->execute([$p10, $p10]);
+        $st = $pdo->prepare("SELECT b.bill_id, b.bill_no, b.created_at, b.total, b.pay_mode, b.emp_name, b.total_ml FROM st_bills b WHERE b.status = 'ok' AND (" . ohub_sqlp('b.customer_phone') . " IN ($in)
+            OR (TRIM(b.customer_phone) = '' AND EXISTS (SELECT 1 FROM st_bill_people p WHERE p.bill_id = b.bill_id AND p.declined = 0 AND " . ohub_sqlp('p.phone') . " IN ($in)))) ORDER BY b.created_at DESC LIMIT " . (int)$limit);
+        $st->execute(array_merge($ph, $ph));
         foreach ($st->fetchAll() as $r) $out[] = ['src' => 'store', 'name' => (string)($r['bill_no'] ?: ('Bill ' . $r['bill_id'])), 'at' => (string)$r['created_at'], 'total' => ohub_num($r['total']), 'status' => 'billed', 'pay' => (string)$r['pay_mode'], 'bill' => (int)$r['bill_id'], 'who' => (string)$r['emp_name'], 'ml' => (int)$r['total_ml']];
     } catch (Throwable $e) { }
     try {
-        $st = $pdo->prepare("SELECT o.id, o.created_at, o.total FROM pos_orders o JOIN pos_customers c ON c.id = o.customer_id WHERE " . ohub_sqlp('c.phone') . " = ? ORDER BY o.created_at DESC LIMIT " . (int)$limit);
-        $st->execute([$p10]);
+        $st = $pdo->prepare("SELECT o.id, o.created_at, o.total FROM pos_orders o JOIN pos_customers c ON c.id = o.customer_id WHERE " . ohub_sqlp('c.phone') . " IN ($in) ORDER BY o.created_at DESC LIMIT " . (int)$limit);
+        $st->execute($ph);
         foreach ($st->fetchAll() as $r) $out[] = ['src' => 'pos', 'name' => 'POS #' . $r['id'], 'at' => (string)$r['created_at'], 'total' => ohub_num($r['total']), 'status' => 'billed', 'pay' => '', 'who' => ''];
     } catch (Throwable $e) { }
     usort($out, function ($a, $b) { return strcmp((string)$b['at'], (string)$a['at']); });
@@ -153,33 +160,41 @@ function ohub_flags(array $c, ?int $now = null): array
     return $f;
 }
 /** the customer card for one phone (reads the live tables, saves the copy) */
-function ohub_customer(PDO $pdo, string $p10, string $nameHint = ''): array
+function ohub_customer(PDO $pdo, $phones, string $nameHint = ''): array
 {
-    ohub_ensure($pdo); $now = time();
-    $bulk = ohub_bulk($pdo, $p10); $c = $bulk[$p10] ?? null; if (!$c) { $c = ['names' => [], 'online_n' => 0, 'online_amt' => 0, 'store_n' => 0, 'store_amt' => 0, 'pos_n' => 0, 'pos_amt' => 0, 'first' => null, 'last' => null, 'rto_n' => 0, 'cx_n' => 0, 'cx_open' => 0]; }
+    ohub_ensure($pdo); $now = time(); $ph = ohub_keys($phones); $p10 = $ph ? $ph[0] : '';   // the first number is the main one; the others are the same person's other numbers
+    $bulk = ohub_bulk($pdo, $ph); $c = ['names' => [], 'online_n' => 0, 'online_amt' => 0.0, 'store_n' => 0, 'store_amt' => 0.0, 'pos_n' => 0, 'pos_amt' => 0.0, 'first' => null, 'last' => null, 'rto_n' => 0, 'cx_n' => 0, 'cx_open' => 0];
+    foreach ($ph as $k) {
+        if (empty($bulk[$k])) continue; $x = $bulk[$k];
+        foreach (['online_n', 'online_amt', 'store_n', 'store_amt', 'pos_n', 'pos_amt', 'rto_n', 'cx_n', 'cx_open'] as $f) $c[$f] += $x[$f];
+        foreach ($x['names'] as $n) if (!in_array($n, $c['names'], true) && count($c['names']) < 6) $c['names'][] = $n;
+        if ($x['first'] && (!$c['first'] || $x['first'] < $c['first'])) $c['first'] = $x['first']; if ($x['last'] && (!$c['last'] || $x['last'] > $c['last'])) $c['last'] = $x['last'];
+    }
     if ($nameHint !== '' && !in_array($nameHint, $c['names'], true)) array_unshift($c['names'], $nameHint);
-    $row = ohub_row($p10, $c); if ($row['orders_n'] > 0 || $row['cx_n'] > 0) ohub_save($pdo, [$row]);
+    $rows = []; foreach ($ph as $k) if (!empty($bulk[$k])) { $r1 = ohub_row($k, $bulk[$k]); if ($r1['orders_n'] > 0 || $r1['cx_n'] > 0) $rows[] = $r1; } if ($rows) ohub_save($pdo, $rows);
+    $row = ohub_row($p10, $c);
     $row['aov'] = $row['orders_n'] ? round($row['spent'] / $row['orders_n']) : 0;
     $row['days_since'] = $row['last_at'] ? (int)floor(($now - strtotime((string)$row['last_at'])) / 86400) : null;
-    $row['names_list'] = $c['names']; $row['flags'] = ohub_flags($row, $now); $row['phone'] = $p10;
+    $row['names_list'] = $c['names']; $row['flags'] = ohub_flags($row, $now); $row['phone'] = $p10; $row['phones'] = $ph;
     $hist = null; try { $hist = $pdo->query("SELECT MIN(created_at) FROM shop_orders")->fetchColumn(); } catch (Throwable $e) { } $row['online_since'] = $hist ? substr((string)$hist, 0, 10) : null;
     return $row;
 }
 /** who is waiting: the customer wrote and nobody answered, plus the open Needs-attention case and open complaint */
-function ohub_wait(PDO $pdo, string $p10): array
+function ohub_wait(PDO $pdo, $phones): array
 {
     $w = ['chat' => null, 'case' => null, 'cx' => null]; $now = time(); $nm = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : [];
+    $ph = ohub_keys($phones); if (!$ph) return $w; $in = implode(',', array_fill(0, count($ph), '?')); $in91 = array_merge($ph, array_map(function ($x) { return '91' . $x; }, $ph));
     try {
-        $q = $pdo->prepare("SELECT name, assigned_emp, last_in_at, last_out_at, state FROM wa_contacts WHERE phone = ? OR phone = ? LIMIT 1"); $q->execute([$p10, '91' . $p10]); $r = $q->fetch();
-        if ($r) { $in = $r['last_in_at'] ? strtotime((string)$r['last_in_at']) : 0; $out = $r['last_out_at'] ? strtotime((string)$r['last_out_at']) : 0;
-            $w['chat'] = ['holder' => (int)$r['assigned_emp'] ? ($nm[(int)$r['assigned_emp']] ?? '') : '', 'last_in' => $r['last_in_at'], 'last_out' => $r['last_out_at'], 'waiting' => $in > 0 && $in > $out, 'mins' => $in > 0 && $in > $out ? (int)floor(($now - $in) / 60) : 0]; }
+        $q = $pdo->prepare("SELECT name, assigned_emp, last_in_at, last_out_at, state FROM wa_contacts WHERE phone IN (" . implode(',', array_fill(0, count($in91), '?')) . ") ORDER BY last_in_at DESC LIMIT 1"); $q->execute($in91); $r = $q->fetch();
+        if ($r) { $inT = $r['last_in_at'] ? strtotime((string)$r['last_in_at']) : 0; $out = $r['last_out_at'] ? strtotime((string)$r['last_out_at']) : 0;
+            $w['chat'] = ['holder' => (int)$r['assigned_emp'] ? ($nm[(int)$r['assigned_emp']] ?? '') : '', 'last_in' => $r['last_in_at'], 'last_out' => $r['last_out_at'], 'waiting' => $inT > 0 && $inT > $out, 'mins' => $inT > 0 && $inT > $out ? (int)floor(($now - $inT) / 60) : 0]; }
     } catch (Throwable $e) { }
     try {
-        $q = $pdo->prepare("SELECT id, reason, created_at, owner_name FROM wa_ord_cases WHERE status = 'open' AND phone = ? ORDER BY created_at ASC LIMIT 1"); $q->execute([$p10]); $r = $q->fetch();
+        $q = $pdo->prepare("SELECT id, reason, created_at, owner_name FROM wa_ord_cases WHERE status = 'open' AND RIGHT(phone, 10) IN ($in) ORDER BY created_at ASC LIMIT 1"); $q->execute($ph); $r = $q->fetch();
         if ($r) $w['case'] = ['id' => (int)$r['id'], 'reason' => (string)$r['reason'], 'since' => (string)$r['created_at'], 'mins' => (int)floor(($now - strtotime((string)$r['created_at'])) / 60), 'owner' => (string)$r['owner_name']];
     } catch (Throwable $e) { }
     try {
-        $q = $pdo->prepare("SELECT id, raised_at, owner_emp FROM cx_cases WHERE status IN ('open','reopened') AND RIGHT(phone, 10) = ? ORDER BY raised_at ASC LIMIT 1"); $q->execute([$p10]); $r = $q->fetch();
+        $q = $pdo->prepare("SELECT id, raised_at, owner_emp FROM cx_cases WHERE status IN ('open','reopened') AND RIGHT(phone, 10) IN ($in) ORDER BY raised_at ASC LIMIT 1"); $q->execute($ph); $r = $q->fetch();
         if ($r) $w['cx'] = ['id' => (int)$r['id'], 'code' => 'C-' . str_pad((string)(int)$r['id'], 4, '0', STR_PAD_LEFT), 'since' => (string)$r['raised_at'], 'mins' => (int)floor(($now - strtotime((string)$r['raised_at'])) / 60), 'owner' => (int)$r['owner_emp'] ? ($nm[(int)$r['owner_emp']] ?? '') : ''];
     } catch (Throwable $e) { }
     return $w;
@@ -253,7 +268,19 @@ function ohub_view(PDO $pdo, array $g): array
     if (!$p && empty($g['bill']) && !empty($g['phone']) && empty($g['order'])) {   // only a phone: show the latest parcel of this customer, if any
         $p10 = ohub_p10($g['phone']); if ($p10 !== '') { try { $q = $pdo->prepare("SELECT * FROM dp_dsp_parcels WHERE " . ohub_sqlp('phone') . " = ? ORDER BY created_at DESC LIMIT 1"); $q->execute([$p10]); $p = $q->fetch() ?: null; } catch (Throwable $e) { } }
     }
-    $phone = ohub_p10($g['phone'] ?? '') ?: ($p ? ohub_p10($p['phone'] ?? '') : '');
+    // WHO is this customer: every number we know for this order (the order's own number(s), the chat number, other numbers saved on the order or linked by hand)
+    $chatPhone = ohub_p10($g['phone'] ?? ''); $nums = [];
+    if ($p) {
+        foreach (ohub_keys($p['phone'] ?? '') as $k) $nums[] = $k;
+        try { $q = $pdo->prepare("SELECT phone FROM order_extra_phones WHERE order_id = ? OR (order_name <> '' AND LOWER(TRIM(LEADING '#' FROM order_name)) = ?)"); $q->execute([(string)$p['shopify_id'], strtolower(ltrim((string)$p['order_name'], '#'))]); foreach ($q->fetchAll() as $x) foreach (ohub_keys($x['phone']) as $k) $nums[] = $k; } catch (Throwable $e) { }
+        try { $q = $pdo->prepare("SELECT phone FROM wa_ord_links WHERE shopify_id = ? OR LOWER(TRIM(LEADING '#' FROM order_name)) = ?"); $q->execute([(string)$p['shopify_id'], strtolower(ltrim((string)$p['order_name'], '#'))]); foreach ($q->fetchAll() as $x) foreach (ohub_keys($x['phone']) as $k) $nums[] = $k; } catch (Throwable $e) { }
+        if (function_exists('of_get')) { try { $f = of_get($pdo, (string)$p['order_name']); if ($f) foreach (ohub_keys($f['phone'] ?? '') as $k) $nums[] = $k; } catch (Throwable $e) { } }
+    }
+    if ($chatPhone !== '') $nums[] = $chatPhone;
+    $nums = array_values(array_unique($nums));
+    $phone = $p && ohub_keys($p['phone'] ?? '') ? ohub_keys($p['phone'])[0] : ($nums ? $nums[0] : '');   // main number = the order's own number
+    if ($phone !== '' && ($k = array_search($phone, $nums, true)) !== false && $k > 0) { unset($nums[$k]); array_unshift($nums, $phone); $nums = array_values($nums); }
+    $out['chat_phone'] = $chatPhone !== '' ? $chatPhone : $phone; $out['phones'] = $nums;
     $card = null; $events = [];
     if ($p) {
         try { $card = function_exists('dp_dsp_card') ? dp_dsp_card($pdo, $p) : null; } catch (Throwable $e) { error_log('ohub card: ' . $e->getMessage()); }
@@ -267,9 +294,14 @@ function ohub_view(PDO $pdo, array $g): array
     $out['order'] = $card; $out['events'] = $events;
     $out['phone'] = $phone; $out['case'] = $case ? ['id' => (int)$case['id'], 'reason' => (string)$case['reason'], 'status' => (string)$case['status'], 'note' => (string)$case['note'], 'owner' => (string)$case['owner_name'], 'created_at' => (string)$case['created_at']] : null;
     $out['timeline'] = ohub_timeline($pdo, $p, $card, $events, $phone, (string)$out['order_name']);
-    if ($phone !== '') {
+    if ($nums) {
         $hint = $p ? (string)($p['customer'] ?? '') : ($case ? (string)$case['cust_name'] : '');
-        $out['customer'] = ohub_customer($pdo, $phone, $hint); $out['orders'] = ohub_orders($pdo, $phone); $out['wait'] = ohub_wait($pdo, $phone);
+        $out['customer'] = ohub_customer($pdo, $nums, $hint); $out['orders'] = ohub_orders($pdo, $nums); $out['wait'] = ohub_wait($pdo, $nums);
+        if ($p && (string)$p['order_name'] !== '') {   // the order on screen is always in the list, even when its number is saved somewhere we do not search
+            $has = false; foreach ($out['orders'] as $o1) if (strtolower(ltrim($o1['name'], '#')) === strtolower(ltrim((string)$p['order_name'], '#'))) { $has = true; break; }
+            if (!$has) { $tot = $card && isset($card['pay']['total']) ? ohub_num($card['pay']['total']) : 0.0; array_unshift($out['orders'], ['src' => preg_match('/^WM-\d+$/i', (string)$p['order_name']) ? 'manual' : 'online', 'name' => (string)$p['order_name'], 'at' => (string)$p['created_at'], 'total' => $tot, 'status' => (string)$p['status'], 'pay' => '', 'store' => (string)$p['store_key'], 'sid' => (string)$p['shopify_id'], 'who' => (string)($p['customer'] ?? '')]);
+                if ((int)$out['customer']['orders_n'] < 1) { $c0 = &$out['customer']; $c0['orders_n'] = 1; $c0['online_n'] = max(1, (int)$c0['online_n']); $c0['online_amt'] = max($tot, (float)$c0['online_amt']); $c0['spent'] = max($tot, (float)$c0['spent']); $c0['aov'] = (int)round($c0['spent']); $c0['first_at'] = $c0['last_at'] = (string)$p['created_at']; $c0['days_since'] = (int)floor((time() - strtotime((string)$p['created_at'])) / 86400); $c0['flags'] = ohub_flags($c0); unset($c0); } }
+        }
     }
     return $out;
 }
@@ -278,6 +310,11 @@ function ohub_view(PDO $pdo, array $g): array
 function ohub_list(PDO $pdo, array $g): array
 {
     ohub_ensure($pdo);
+    if (!empty($g['totals'])) {   // only the numbers (the strip at the top of the Dispatch page)
+        $n = (int)$pdo->query("SELECT COUNT(*) FROM customer_facts")->fetchColumn(); if ($n === 0) ohub_rebuild($pdo);
+        $t = $pdo->query("SELECT COUNT(*) a, SUM(orders_n >= 2) rep, SUM(channel = 'both') b, SUM(rto_n >= 1 OR cx_n >= 2 OR cx_open > 0) risk, SUM(first_at >= (NOW() - INTERVAL 30 DAY)) new30, SUM(spent) spent, MAX(refreshed_at) at FROM customer_facts")->fetch();
+        return ['ok' => true, 'people' => (int)$t['a'], 'repeat' => (int)$t['rep'], 'both' => (int)$t['b'], 'risk' => (int)$t['risk'], 'new30' => (int)$t['new30'], 'spent' => (float)$t['spent'], 'at' => (string)$t['at'], 'sync' => ohub_sync_health()];
+    }
     $n = (int)$pdo->query("SELECT COUNT(*) FROM customer_facts")->fetchColumn(); $built = $n > 0;
     if (!$built) { ohub_rebuild($pdo); }
     $w = ['1=1']; $par = [];
@@ -294,4 +331,62 @@ function ohub_list(PDO $pdo, array $g): array
     foreach ($st->fetchAll() as $r) { $r['flags'] = ohub_flags($r); $r['aov'] = (int)$r['orders_n'] ? round((float)$r['spent'] / (int)$r['orders_n']) : 0; $rows[] = $r; }
     $tot = $pdo->query("SELECT COUNT(*) a, SUM(orders_n >= 2) rep, SUM(channel = 'both') b, SUM(rto_n >= 1 OR cx_n >= 2 OR cx_open > 0) risk, MAX(refreshed_at) at FROM customer_facts")->fetch();
     return ['ok' => true, 'rows' => $rows, 'count' => (int)$t['c'], 'spent' => (float)$t['s'], 'page' => $page, 'per' => $per, 'totals' => ['people' => (int)$tot['a'], 'repeat' => (int)$tot['rep'], 'both' => (int)$tot['b'], 'risk' => (int)$tot['risk'], 'at' => (string)$tot['at']]];
+}
+
+/* ============================================================== payment details straight from the gateway ============================================================== */
+/** Gateway names (GoKwik, Razorpay ...), every transaction with its ids, the KWIK id(s) and the order's payment notes, read live from Shopify for ONE order
+ *  (Shopify is where GoKwik writes what it knows). Also saved on the order_facts copy, so Finance and the next opening have it. */
+function ohub_pay_live(PDO $pdo, string $store, string $sid): array
+{
+    if (!function_exists('shopify_stores') || !function_exists('shopify_get_token') || !function_exists('dp_dsp_shop_get')) return ['ok' => false, 'error' => 'The Shopify connection is not part of this server.'];
+    if (!preg_match('/^\d+$/', $sid)) return ['ok' => false, 'error' => 'No Shopify order id.'];
+    $stores = shopify_stores(); if (!isset($stores[$store])) return ['ok' => false, 'error' => 'Unknown store.'];
+    $tok = shopify_get_token($store, $stores[$store]); if (is_array($tok)) return ['ok' => false, 'error' => (string)($tok['error'] ?? 'No Shopify token.')];
+    $dom = $stores[$store]['domain'];
+    list($c1, $o, $e1) = dp_dsp_shop_get($dom, $tok, '/admin/api/2024-10/orders/' . $sid . '.json', ['fields' => 'id,name,tags,note,note_attributes,payment_gateway_names,financial_status,total_price,total_outstanding,checkout_token,source_name,reference,processing_method']);
+    if ($c1 !== 200 || !is_array($o)) return ['ok' => false, 'error' => 'Shopify said ' . ($c1 ?: 'no answer') . ($e1 !== '' ? ' (' . $e1 . ')' : '') . '. Try again in a minute.'];
+    $o = (array)($o['order'] ?? []);
+    list($c2, $t) = dp_dsp_shop_get($dom, $tok, '/admin/api/2024-10/orders/' . $sid . '/transactions.json', []);
+    $tx = ($c2 === 200 && is_array($t)) ? (array)($t['transactions'] ?? []) : [];
+    $flat = function ($v, $pre = '') use (&$flat) { $r = []; if (is_array($v)) { foreach ($v as $k => $x) { if (is_array($x)) $r = array_merge($r, $flat($x, $pre . $k . '.')); elseif ($x !== null && $x !== '' && !is_bool($x)) $r[$pre . $k] = mb_substr((string)$x, 0, 120); } } return $r; };
+    $list = [];
+    foreach ($tx as $x) { if (!is_array($x)) continue;
+        $rc = $x['receipt'] ?? null; if (is_string($rc)) { $j = json_decode($rc, true); $rc = is_array($j) ? $j : []; }
+        $rcf = array_slice($flat((array)$rc), 0, 14, true);
+        $list[] = ['id' => (string)($x['id'] ?? ''), 'kind' => (string)($x['kind'] ?? ''), 'status' => (string)($x['status'] ?? ''), 'gateway' => (string)($x['gateway'] ?? ''), 'amount' => (string)($x['amount'] ?? ''), 'at' => substr(str_replace('T', ' ', (string)($x['created_at'] ?? '')), 0, 19),
+            'payment_id' => (string)($x['payment_id'] ?? ''), 'auth' => (string)($x['authorization'] ?? ''), 'message' => mb_substr((string)($x['message'] ?? ''), 0, 160), 'error' => (string)($x['error_code'] ?? ''), 'test' => !empty($x['test']), 'receipt' => $rcf, 'method' => (string)($x['payment_details']['credit_card_company'] ?? '')]; }
+    $attrs = []; foreach ((array)($o['note_attributes'] ?? []) as $a) if (is_array($a) && (string)($a['name'] ?? '') !== '') $attrs[] = ['k' => mb_substr((string)$a['name'], 0, 60), 'v' => mb_substr((string)($a['value'] ?? ''), 0, 160)];
+    $kwik = function_exists('order_pay_refs') ? order_pay_refs($o + ['note' => (string)($o['note'] ?? '') . ' ' . json_encode($tx, JSON_UNESCAPED_UNICODE)]) : '';
+    if (function_exists('of_save_pay') && $tx) { try { of_save_pay($pdo, $store, $sid, $tx); } catch (Throwable $e) { } }
+    $tags = array_values(array_filter(array_map('trim', explode(',', (string)($o['tags'] ?? '')))));
+    return ['ok' => true, 'gateways' => array_values((array)($o['payment_gateway_names'] ?? [])), 'tags' => $tags, 'kwik' => $kwik, 'tx' => array_slice($list, 0, 12), 'attrs' => array_slice($attrs, 0, 20), 'source' => (string)($o['source_name'] ?? ''), 'method' => (string)($o['processing_method'] ?? ''),
+        'status' => (string)($o['financial_status'] ?? ''), 'total' => (string)($o['total_price'] ?? ''), 'outstanding' => isset($o['total_outstanding']) ? (string)$o['total_outstanding'] : '', 'reference' => (string)($o['reference'] ?? ''), 'tx_ok' => $c2 === 200];
+}
+
+/** Is the HRMS in step with Shopify and Shiprocket? One line each, read from what the background jobs wrote down (nothing is called here).
+ *  [['key','label','state' ok|warn|bad|off,'text','ts']] */
+function ohub_sync_health(): array
+{
+    if (!function_exists('dp_get')) return [];
+    $now = time(); $age = function ($ts) use ($now) { if (!$ts) return 'never'; $m = (int)floor(($now - $ts) / 60); return $m < 1 ? 'just now' : ($m < 60 ? $m . ' min ago' : ($m < 1440 ? floor($m / 60) . ' h ago' : floor($m / 1440) . ' d ago')); };
+    $L = [];
+    // Shiprocket: the quick read, the day-by-day roll, and the instant webhook
+    $cfg = function_exists('dp_dsp_sr_cfg') ? dp_dsp_sr_cfg() : ['ok' => false];
+    $ts = (int)dp_get('sr_last_ts', '0'); $err = (string)dp_get('sr_last_err', ''); $rts = (int)dp_get('sr_roll_ts', '0'); $rerr = (string)dp_get('sr_roll_err', '');
+    $live = function_exists('dp_live_stats') ? dp_live_stats() : null; $hts = $live && !empty($live['hook_ts']) ? (int)$live['hook_ts'] : 0;
+    if (!$cfg['ok']) $L[] = ['sr', 'Shiprocket', 'bad', 'Not connected: the Shiprocket email and password are not saved.', 0];
+    else {
+        $bad = $err !== '' ? $err : $rerr; $last = max($ts, $rts);
+        if ($bad !== '') $L[] = ['sr', 'Shiprocket', 'bad', 'Failing: ' . mb_substr($bad, 0, 220), $last];
+        elseif (!$last || $now - $last > 3 * 3600) $L[] = ['sr', 'Shiprocket', 'warn', 'Has not been read for ' . ($last ? $age($last) : 'a long time') . ' (the background job may not be running).', $last];
+        else $L[] = ['sr', 'Shiprocket', 'ok', 'Read ' . $age($last) . ((string)dp_get('sr_last_msg', '') !== '' ? ' · ' . mb_substr((string)dp_get('sr_last_msg', ''), 0, 90) : ''), $last];
+    }
+    $L[] = ['hook', 'Shiprocket instant updates', $hts && $now - $hts < 86400 ? 'ok' : ($hts ? 'warn' : 'off'), $hts ? 'Last push from Shiprocket ' . $age($hts) . ' · ' . (int)($live['hook_today'] ?? 0) . ' today' : 'Not connected yet (Shiprocket does not push scans; the HRMS has to ask for them).', $hts];
+    $un = (string)dp_get('sr_last_unmatched', ''); $n = (int)$un;
+    if ($n > 0) $L[] = ['srm', 'Shiprocket orders not matched here', $n > 20 ? 'warn' : 'info', $n . ' in the last read, e.g. ' . mb_substr(trim(substr($un, (int)strpos($un, '|') + 1)), 0, 120), $ts];
+    // Shopify: the orders and their tracking numbers
+    $sts = (int)dp_get('shop_last_ts', '0'); $serr = (string)dp_get('shop_last_err', ''); $fts = (int)dp_get('sf_last_ts', '0'); $ferr = (string)dp_get('sf_last_err', '');
+    if ($serr !== '' || $ferr !== '') $L[] = ['shop', 'Shopify', 'bad', 'Failing: ' . mb_substr($serr !== '' ? $serr : $ferr, 0, 220), max($sts, $fts)];
+    else $L[] = ['shop', 'Shopify', $sts && $now - $sts < 3600 ? 'ok' : 'warn', $sts ? 'Orders read ' . $age($sts) : 'Has not been read yet', $sts];
+    return array_map(function ($x) { return ['key' => $x[0], 'label' => $x[1], 'state' => $x[2], 'text' => $x[3], 'ts' => $x[4]]; }, $L);
 }

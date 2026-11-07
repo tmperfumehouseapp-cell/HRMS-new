@@ -515,6 +515,13 @@ if (strpos((string)$action, 'dp.dsp_') === 0) {
         if (empty($r['ok'])) json_response(['error' => $r['error'] ?? 'Not found.'], 404);
         json_response($r);
     }
+    case 'dp.dsp_pay': {   // payment details of one order straight from the gateway (GoKwik etc., via Shopify): every transaction id
+        if (!function_exists('ohub_pay_live')) json_response(['error' => 'order_hub.php is missing on this server.'], 500);
+        $store = (string)($_GET['store'] ?? ''); $sid = (string)($_GET['sid'] ?? '');
+        if (($store === '' || $sid === '') && !empty($_GET['id'])) { $q = $pdo->prepare("SELECT store_key, shopify_id FROM dp_dsp_parcels WHERE id = ?"); $q->execute([(int)$_GET['id']]); $r = $q->fetch(); if ($r) { $store = (string)$r['store_key']; $sid = (string)$r['shopify_id']; } }
+        $r = ohub_pay_live($pdo, $store, $sid); if (empty($r['ok'])) json_response(['error' => $r['error'] ?? 'Could not read the payment.'], 502);
+        json_response($r);
+    }
     case 'dp.dsp_cust_list': {   // the Customers list: one row per person (last 10 digits of the phone)
         if (!function_exists('ohub_list')) json_response(['error' => 'order_hub.php is missing on this server.'], 500);
         json_response(ohub_list($pdo, $_GET));
