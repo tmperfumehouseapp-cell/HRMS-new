@@ -262,10 +262,13 @@ if (strpos($__play, 'play.') === 0) {
             $mq = $pdo->query("SELECT d.employee_id, MAX(d.best) b, e.full_name FROM play_dino d LEFT JOIN employees e ON e.employee_id = d.employee_id WHERE d.day >= DATE_FORMAT(CURDATE(), '%Y-%m-01') GROUP BY d.employee_id, e.full_name ORDER BY b DESC, d.employee_id ASC LIMIT 1")->fetch();
             $monthTop = $mq ? ['who' => play_first_name((string)$mq['full_name']), 'best' => (int)$mq['b'], 'mine' => (int)$mq['employee_id'] === $emp] : null;   // the best single run of this month
             $a = $pdo->query("SELECT d.employee_id, MAX(d.best) b, e.full_name FROM play_dino d LEFT JOIN employees e ON e.employee_id = d.employee_id GROUP BY d.employee_id, e.full_name ORDER BY b DESC LIMIT 1")->fetch();
+            $todayAll = []; foreach (array_slice($t, 0, 30) as $ix => $r) $todayAll[] = ['rank' => $ix + 1, 'who' => play_first_name((string)$r['full_name']), 'best' => (int)$r['best'], 'mine' => (int)$r['employee_id'] === $emp];   // everybody's best today
+            $monthAll = []; $mi = 0;
+            foreach ($pdo->query("SELECT d.employee_id, MAX(d.best) b, e.full_name FROM play_dino d LEFT JOIN employees e ON e.employee_id = d.employee_id WHERE d.day >= DATE_FORMAT(CURDATE(), '%Y-%m-01') GROUP BY d.employee_id, e.full_name ORDER BY b DESC, d.employee_id ASC LIMIT 30")->fetchAll() as $r) { $mi++; $monthAll[] = ['rank' => $mi, 'who' => play_first_name((string)$r['full_name']), 'best' => (int)$r['b'], 'mine' => (int)$r['employee_id'] === $emp]; }   // everybody's best this month
             $lastRow = $t ? $t[count($t) - 1] : null; $top = [];
             foreach (array_slice($t, 0, 3) as $ix => $r) $top[] = ['rank' => $ix + 1, 'who' => play_first_name((string)$r['full_name']), 'best' => (int)$r['best'], 'mine' => (int)$r['employee_id'] === $emp];
             $last = ($lastRow && count($t) > 1) ? ['rank' => count($t), 'who' => play_first_name((string)$lastRow['full_name']), 'best' => (int)$lastRow['best'], 'mine' => (int)$lastRow['employee_id'] === $emp] : null;   // the person at the bottom of today's board
-            json_response(['top' => $top, 'last' => $last, 'month_top' => $monthTop, 'champion' => $champion, 'mine_today' => $mine, 'mine_rank' => $rank, 'players' => count($t),
+            json_response(['today_all' => $todayAll, 'month_all' => $monthAll, 'top' => $top, 'last' => $last, 'month_top' => $monthTop, 'champion' => $champion, 'mine_today' => $mine, 'mine_rank' => $rank, 'players' => count($t),
                 'all_time' => $a ? ['who' => play_first_name((string)$a['full_name']), 'best' => (int)$a['b']] : null]);
         }
         case 'play.level': {
