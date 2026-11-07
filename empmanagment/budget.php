@@ -33,7 +33,7 @@ if (!function_exists('budget_cfg')) {
         $j = json_decode((string)setting_get($pdo, 'budget_cfg', ''), true);
         if (!is_array($j)) $j = [];
         $rt = is_array($j['retail'] ?? null) ? $j['retail'] : [];
-        $lm = [];   // leader name (as written on the Leaders rule, e.g. "Ayazba") => the employee it is
+        $lm = [];   // leader name (as written on the Leaders rule, e.g. "Ayaz Bhai") => the employee it is
         foreach ((array)($j['leader_map'] ?? []) as $ln => $eid) if (trim((string)$ln) !== '' && (int)$eid > 0) $lm[mb_substr(trim((string)$ln), 0, 60)] = (int)$eid;
         $sl = [];   // ex-employees whose pending salary was paid / settled: employee id => when, by whom, how much
         foreach ((array)($j['settled'] ?? []) as $sid => $v) if ((int)$sid > 0 && is_array($v)) $sl[(string)(int)$sid] = ['at' => mb_substr((string)($v['at'] ?? ''), 0, 19), 'by' => mb_substr((string)($v['by'] ?? ''), 0, 60), 'amount' => round((float)($v['amount'] ?? 0), 2)];
@@ -160,7 +160,7 @@ if ($__bg === 'budget.settle') {
     json_response(['ok' => true]);
 }
 if ($__bg === 'budget.leader_link') {
-    // Tell the budget which employee a leader name on the Leaders rule is ("Ayazba" = Ayaz Ansari). employee_id 0 removes the link. A linked person is a leader only:
+    // Tell the budget which employee a leader name on the Leaders rule is ("Ayaz Bhai" = Ayaz Ansari). employee_id 0 removes the link. A linked person is a leader only:
     // no fixed salary, no salesperson commission; they are paid by the leader commission. Admin only.
     $auth = require_auth();
     if (!convo_is_admin($auth)) json_response(['error' => 'Only Admin can link a leader.'], 403);

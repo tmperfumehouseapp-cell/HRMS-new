@@ -35,6 +35,7 @@ function lh_tables(PDO $pdo): bool
         $pdo->exec("CREATE TABLE IF NOT EXISTS lh_tpl (id INT AUTO_INCREMENT PRIMARY KEY, employee_id INT NOT NULL DEFAULT 0, title VARCHAR(160) NOT NULL, from_day DATE NOT NULL, active TINYINT NOT NULL DEFAULT 1, sort_no INT NOT NULL DEFAULT 0) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         $pdo->exec("CREATE TABLE IF NOT EXISTS lh_tasks (id INT AUTO_INCREMENT PRIMARY KEY, employee_id INT NOT NULL, day DATE NOT NULL, title VARCHAR(160) NOT NULL, tpl_id INT NULL, done TINYINT NOT NULL DEFAULT 0, done_at DATETIME NULL, done_by INT NOT NULL DEFAULT 0, created_by INT NOT NULL DEFAULT 0,
             UNIQUE KEY u_tpl (employee_id, day, tpl_id), KEY k_day (day, employee_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        try { $pdo->exec("ALTER TABLE lh_people ADD COLUMN note VARCHAR(120) NOT NULL DEFAULT ''"); } catch (Throwable $e) { }   // who the person helps (shown under the name)
         return $ok = true;
     } catch (Throwable $e) { error_log('lh_tables: ' . $e->getMessage()); return $ok = false; }
 }
@@ -48,15 +49,25 @@ function lh_can_edit(PDO $pdo, array $auth): bool
         return $r && function_exists('sales_role_kind') && sales_role_kind((string)$r['department_name'], (string)$r['designation']) === 'head';
     } catch (Throwable $e) { return false; }
 }
-/** Once, when nobody is added yet: find the four people by name. Returns the names that were not found. */
+/** One-time fix for installs that were already seeded: Nazima Karodiya is not a helper (taken out), and the three helpers get their "who they help" line. */
+function lh_migrate(PDO $pdo): void
+{
+    if ((string)setting_get($pdo, 'lh_fix1', '') === '1') return; setting_set($pdo, 'lh_fix1', '1');
+    try {
+        $pdo->exec("UPDATE lh_people p JOIN employees e ON e.employee_id = p.employee_id SET p.active = 0 WHERE e.full_name LIKE '%Nazima%'");
+        foreach ([['Ankit', 'Gandhi', "Dipti Madam's work"], ['Jatin', 'Jadav', 'Campaign · helps Pradeep Chauhan'], ['Rudra', 'Kachar', 'Query check · helps Ayaz Bhai']] as [$a, $b, $note])
+            $pdo->prepare("UPDATE lh_people p JOIN employees e ON e.employee_id = p.employee_id SET p.note = ? WHERE e.full_name LIKE ? AND e.full_name LIKE ? AND p.note = ''")->execute([$note, '%' . $a . '%', '%' . $b . '%']);
+    } catch (Throwable $e) { error_log('lh_migrate: ' . $e->getMessage()); }
+}
+/** Once, when nobody is added yet: find the people by name. Returns the names that were not found. */
 function lh_seed(PDO $pdo): array
 {
     if ((string)setting_get($pdo, 'lh_seeded', '') === '1') return [];
     setting_set($pdo, 'lh_seeded', '1'); $cfg = lh_cfg($pdo); $miss = [];
-    foreach ([['Ankit', 'Gandhi'], ['Jatin', 'Jadav'], ['Rudra', 'Kachar'], ['Naz', '']] as [$a, $b]) {
+    foreach ([['Ankit', 'Gandhi', "Dipti Madam's work"], ['Jatin', 'Jadav', 'Campaign · helps Pradeep Chauhan'], ['Rudra', 'Kachar', 'Query check · helps Ayaz Bhai']] as [$a, $b, $note]) {
         try {
             $q = $pdo->prepare("SELECT employee_id FROM employees WHERE COALESCE(status, 'approved') <> 'ex' AND full_name LIKE ? AND full_name LIKE ? ORDER BY employee_id LIMIT 1"); $q->execute(['%' . $a . '%', '%' . $b . '%']); $id = (int)$q->fetchColumn();
-            if ($id > 0) $pdo->prepare("INSERT IGNORE INTO lh_people (employee_id, salary, active, added_at) VALUES (?, ?, 1, ?)")->execute([$id, $cfg['salary'], date('Y-m-d H:i:s')]); else $miss[] = trim($a . ' ' . $b);
+            if ($id > 0) $pdo->prepare("INSERT IGNORE INTO lh_people (employee_id, salary, active, added_at, note) VALUES (?, ?, 1, ?, ?)")->execute([$id, $cfg['salary'], date('Y-m-d H:i:s'), $note]); else $miss[] = trim($a . ' ' . $b);
         } catch (Throwable $e) { $miss[] = $a; }
     }
     return $miss;
@@ -64,9 +75,9 @@ function lh_seed(PDO $pdo): array
 function lh_people(PDO $pdo, bool $onlyActive = true): array
 {
     $names = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : [];
-    $out = []; foreach ($pdo->query("SELECT employee_id, salary, active FROM lh_people ORDER BY added_at, employee_id")->fetchAll() as $r) {
+    $out = []; foreach ($pdo->query("SELECT employee_id, salary, active, note FROM lh_people ORDER BY added_at, employee_id")->fetchAll() as $r) {
         if ($onlyActive && (int)$r['active'] !== 1) continue; $id = (int)$r['employee_id'];
-        $out[] = ['id' => $id, 'name' => (string)($names[$id] ?? ('#' . $id)), 'salary' => (float)$r['salary'], 'active' => (int)$r['active'] === 1];
+        $out[] = ['id' => $id, 'name' => (string)($names[$id] ?? ('#' . $id)), 'salary' => (float)$r['salary'], 'active' => (int)$r['active'] === 1, 'note' => (string)($r['note'] ?? '')];
     }
     return $out;
 }
@@ -120,6 +131,7 @@ $__lh = (string)($action ?? ($_GET['action'] ?? ''));
 if (strpos($__lh, 'lh.') === 0) {
     $auth = require_auth();
     if (!lh_tables($pdo)) json_response(['error' => 'Could not prepare the Leaders Helper tables.'], 500);
+    lh_migrate($pdo);
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'; $me = (int)($auth['employee_id'] ?? 0); $edit = lh_can_edit($pdo, $auth);
     $needEdit = function () use ($edit, $isPost) { if (!$edit) json_response(['error' => 'Only the Admin, HR or the Sales Head can change this.'], 403); if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); };
     switch ($__lh) {
@@ -153,8 +165,9 @@ if (strpos($__lh, 'lh.') === 0) {
             $pdo->prepare("INSERT INTO lh_people (employee_id, salary, active, added_at) VALUES (?, ?, 1, ?) ON DUPLICATE KEY UPDATE active = 1, salary = VALUES(salary)")->execute([$id, $sal, date('Y-m-d H:i:s')]); json_response(['ok' => true]);
         }
         case 'lh.person_save': {
-            $needEdit(); $in = json_input(); $id = (int)($in['employee_id'] ?? 0); $sal = $in['salary'] ?? null; if ($sal !== null && (!is_numeric($sal) || (float)$sal < 0)) json_response(['error' => 'Salary must be a number.'], 422);
-            if ($sal !== null) $pdo->prepare("UPDATE lh_people SET salary = ? WHERE employee_id = ?")->execute([(float)$sal, $id]);
+            $needEdit(); $in = json_input(); $id = (int)($in['employee_id'] ?? 0); $sal = $in['salary'] ?? null; if ($sal !== null && $sal !== '' && (!is_numeric($sal) || (float)$sal < 0)) json_response(['error' => 'Salary must be a number.'], 422);
+            if ($sal !== null && $sal !== '') $pdo->prepare("UPDATE lh_people SET salary = ? WHERE employee_id = ?")->execute([(float)$sal, $id]);
+            if (array_key_exists('note', $in)) $pdo->prepare("UPDATE lh_people SET note = ? WHERE employee_id = ?")->execute([trim(mb_substr((string)$in['note'], 0, 120)), $id]);
             if (isset($in['active'])) $pdo->prepare("UPDATE lh_people SET active = ? WHERE employee_id = ?")->execute([!empty($in['active']) ? 1 : 0, $id]);
             json_response(['ok' => true]);
         }

@@ -15,9 +15,23 @@
  * ROAS and collection come from the same place as the Detailed report (collection ÷ the ad spend typed on the Orders page).
  */
 if (!function_exists('lr_rules')) {
+    /** One time (owner, 7 Nov): the leader written "Ayazba" is now "Ayaz Bhai" everywhere — in the Leaders rule, in the amounts already Set, and in the budget's leader link. */
+    function lr_rename_once(PDO $pdo): void
+    {
+        static $busy = false; if ($busy) return; $busy = true;
+        try {
+            if ((string)setting_get($pdo, 'lr_rename_ayaz', '') === '1') return; setting_set($pdo, 'lr_rename_ayaz', '1'); $old = 'Ayazba'; $new = 'Ayaz Bhai';
+            $j = json_decode((string)setting_get($pdo, 'lr_rules', ''), true);
+            if (is_array($j) && !empty($j['leaders']) && is_array($j['leaders'])) { $j['leaders'] = array_values(array_unique(array_map(fn($n) => strcasecmp(trim((string)$n), $old) === 0 ? $new : $n, $j['leaders']))); setting_set($pdo, 'lr_rules', json_encode($j)); }
+            $b = json_decode((string)setting_get($pdo, 'budget_cfg', ''), true);
+            if (is_array($b) && is_array($b['leader_map'] ?? null)) { $m = []; foreach ($b['leader_map'] as $k => $v) $m[strcasecmp(trim((string)$k), $old) === 0 ? $new : $k] = $v; $b['leader_map'] = $m; setting_set($pdo, 'budget_cfg', json_encode($b)); }
+            try { $pdo->prepare("UPDATE IGNORE leader_roas_manual SET leader = ? WHERE leader = ?")->execute([$new, $old]); } catch (Throwable $e) { }
+        } catch (Throwable $e) { error_log('lr_rename_once: ' . $e->getMessage()); }
+    }
     function lr_rules(PDO $pdo): array
     {
-        $d = ['cut' => 2.95, 'base' => 1000.0, 'start' => 0.30, 'step' => 0.01, 'leaders' => ['Dipti Madam', 'Ayazba', 'Pradeep']];
+        lr_rename_once($pdo);
+        $d = ['cut' => 2.95, 'base' => 1000.0, 'start' => 0.30, 'step' => 0.01, 'leaders' => ['Dipti Madam', 'Ayaz Bhai', 'Pradeep']];
         $j = json_decode((string)setting_get($pdo, 'lr_rules', ''), true);
         if (!is_array($j)) return $d;
         foreach (['cut', 'base', 'start', 'step'] as $k) if (isset($j[$k]) && is_numeric($j[$k])) $d[$k] = (float)$j[$k];
