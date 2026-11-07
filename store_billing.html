@@ -145,6 +145,7 @@
 
       <div class="sx-card">
         <h3>Bills <input type="date" id="dayPick" class="sx-in" style="width:auto;min-height:32px;padding:3px 8px;font-size:12.5px;margin-left:6px"><small id="dayTot"></small></h3>
+        <div style="display:flex;align-items:center;gap:8px;margin:4px 0 8px;flex-wrap:wrap"><label for="payF" class="sx-f" style="margin:0">Show</label><select class="sx-in" id="payF" style="width:auto;min-width:280px;font-weight:700"></select></div>
         <div class="brow head h"><span></span><span>Bill</span><span>ml</span><span>Time</span><span>Payment</span><span>Order code</span><span style="text-align:right">Total</span><span></span></div>
         <div id="bills"></div>
         <div id="dutyCard" style="display:none;margin-top:12px"><details class="sx-d"><summary>Who can bill (manager)</summary><div class="duty" id="duty" style="margin-top:8px"></div></details></div>
@@ -523,19 +524,31 @@
       $('areaList').innerHTML = A.map((r) => `<div class="srcrow"><b style="min-width:150px">${esc(r.area)}</b><span class="bar"><i style="width:${Math.round(r.n / am * 100)}%"></i></span><span>${r.n} · ${inr(r.amt)}</span></div>`).join('');
     } catch (e) { $('srcCard').style.display = 'none'; }
   }
-  async function loadBills() {
-    loadBirthdays(); loadSources();
+  // ---------- verify payments: show only the Online / UPI bills, or only the Cash ones (a Cash + online bill is in both, with its part)
+  let payFilter = 'all';
+  const isOk = (b) => b.status === 'ok';
+  const passPay = (b) => payFilter === 'all' ? true : isOk(b) && (payFilter === 'online' ? +b.online_amt > 0 : payFilter === 'cash' ? +b.cash_amt > 0 : b.pay_mode === 'split');
+  const payPill = (b) => (PAY[b.pay_mode] || b.pay_mode) + (b.pay_mode === 'split' ? ` · ₹${Math.round(+b.cash_amt).toLocaleString('en-IN')} cash + ₹${Math.round(+b.online_amt).toLocaleString('en-IN')} online` : '');
+  function renderPayF(all) {
+    const okb = all.filter(isOk), on = okb.filter((b) => +b.online_amt > 0), ca = okb.filter((b) => +b.cash_amt > 0), sp = okb.filter((b) => b.pay_mode === 'split'), sum = (L, k) => L.reduce((a, b) => a + (+b[k] || 0), 0);
+    const opt = (k, label, n, amt) => `<option value="${k}" ${payFilter === k ? 'selected' : ''}>${label} — ${n} bill${n === 1 ? '' : 's'} · ${inr(amt)}</option>`;
+    $('payF').innerHTML = opt('all', 'All payments', okb.length, sum(okb, 'total')) + opt('online', '💳 Online / UPI', on.length, sum(on, 'online_amt')) + opt('cash', '💵 Cash', ca.length, sum(ca, 'cash_amt')) + opt('split', '🔀 Cash + online (split bills only)', sp.length, sum(sp, 'total'));
+  }
+  $('payF').addEventListener('change', () => { payFilter = $('payF').value; payOpen = 0; payD = null; dayOpen = 0; loadBills(true); });
+  async function loadBills(quiet) {
+    if (!quiet) { loadBirthdays(); loadSources(); }
     try {
       const d = await api.get('st_bill.list', listDate ? { date: listDate } : {}), ok = d.bills.filter((b) => b.status === 'ok');
       if (!listDate || listDate === d.today) { $('hTotal').textContent = inr(d.total); $('hBills').textContent = ok.length; $('hMl').textContent = d.total_ml; $('hAvg').textContent = inr(ok.length ? d.total / ok.length : 0); }
       $('hDay').textContent = '· ' + new Date(d.today + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }) + ' · a new day starts at ' + d.day_start + ' AM';
       lastBills = d.bills; $('dayPick').value = d.date; $('dayPick').max = d.today; setBizDay(d.today);
       $('dayTot').textContent = `${ok.length} bill${ok.length === 1 ? '' : 's'} · ${inr(d.total)} · ${d.total_ml} ml`;
-      $('bills').innerHTML = d.bills.length ? d.bills.map((b) => `<div class="brow ${b.status === 'void' ? 'void' : ''}"><span class="av">${sxAv(b.emp_name)}</span>
-        <span class="nm"><b>${esc(b.bill_no)}</b><small>${esc(b.emp_name)}${b.customer_name ? ' · ' + esc(b.customer_name) : ''}</small></span>
-        <span class="meta"><span class="h" style="font-weight:700">${b.total_ml}</span><span class="sx-pill m" style="background:var(--sx-blue-t);color:var(--sx-blue)">${b.total_ml} ml</span><span class="h sx-mut">${esc(b.created_at.slice(11, 16))}</span><span class="sx-pill">${PAY[b.pay_mode] || b.pay_mode}</span>${b.chain_name ? (b.inv_no ? `<span class="sx-pill good" title="Chain ${esc(b.chain_name)}">⛓ ${b.inv_url ? `<a href="${esc(b.inv_url)}" target="_blank" rel="noopener" style="color:inherit">${esc(b.inv_no)}</a>` : esc(b.inv_no)}</span>` : (b.status === 'ok' ? `<button class="minibtn" data-inv="${b.bill_id}" title="${esc(b.inv_err || '')}">⛓ Make GST invoice</button>` : '')) : ''}${b.order_code ? `<span class="sx-pill good">${esc(b.order_code)}</span>` : (b.status === 'ok' ? `<span class="sx-pill warn">${sxi('alert')} no code</span>` : '')}</span>
+      renderPayF(d.bills); const shown = d.bills.filter(passPay);
+      $('bills').innerHTML = shown.length ? shown.map((b) => `<div class="brow ${b.status === 'void' ? 'void' : ''}"><span class="av">${sxAv(b.emp_name)}</span>
+        <span class="nm"><b>${esc(b.bill_no)}</b><small>${esc(b.emp_name)}${b.customer_name ? ' · ' + esc(b.customer_name) : ''}${b.pay_mode === 'split' ? ' · <b style="color:var(--sx-ink)">' + inr(+b.cash_amt) + ' cash + ' + inr(+b.online_amt) + ' online</b>' : ''}</small></span>
+        <span class="meta"><span class="h" style="font-weight:700">${b.total_ml}</span><span class="sx-pill m" style="background:var(--sx-blue-t);color:var(--sx-blue)">${b.total_ml} ml</span><span class="h sx-mut">${esc(b.created_at.slice(11, 16))}</span><span class="sx-pill">${esc(PAY[b.pay_mode] || b.pay_mode)}</span>${b.chain_name ? (b.inv_no ? `<span class="sx-pill good" title="Chain ${esc(b.chain_name)}">⛓ ${b.inv_url ? `<a href="${esc(b.inv_url)}" target="_blank" rel="noopener" style="color:inherit">${esc(b.inv_no)}</a>` : esc(b.inv_no)}</span>` : (b.status === 'ok' ? `<button class="minibtn" data-inv="${b.bill_id}" title="${esc(b.inv_err || '')}">⛓ Make GST invoice</button>` : '')) : ''}${b.order_code ? `<span class="sx-pill good">${esc(b.order_code)}</span>` : (b.status === 'ok' ? `<span class="sx-pill warn">${sxi('alert')} no code</span>` : '')}</span>
         <b class="tot" style="text-align:right;background:none;color:inherit;padding:0;margin:0;display:block;font-size:14px">${inr(b.total)}</b>
-        ${b.status === 'ok' && (isManager || d.date === d.today) ? `<span style="display:flex;gap:6px;flex-wrap:wrap"><button class="x" data-p="${b.bill_id}" style="color:var(--sx-blue,#2a62c9)">Payment</button>${isManager ? `<button class="x" data-d="${b.bill_id}" title="Count this bill on another day">Change day</button><button class="x" data-v="${b.bill_id}">Cancel</button>` : ''}</span>` : '<span></span>'}${payOpen === b.bill_id && payD ? payEditor(b) : ''}${dayOpen === b.bill_id ? `<div style="grid-column:1/-1;display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;padding:8px 0"><label class="sx-f">This bill counts on<input class="sx-in" type="date" id="dayNew" min="${shiftDay(d.today, -45)}" max="${d.today}" value="${d.date}"></label><button class="sx-btn" data-dgo="${b.bill_id}">Move</button><button class="sx-btn ghost" data-dx="1">Cancel</button></div>` : ''}${peopleRow(b)}</div>`).join('') : '<div class="sx-mut" style="padding:10px 4px">No bills on this day. Press <b>New bill</b> or just scan a bottle.</div>';
+        ${b.status === 'ok' && (isManager || d.date === d.today) ? `<span style="display:flex;gap:6px;flex-wrap:wrap"><button class="x" data-p="${b.bill_id}" style="color:var(--sx-blue,#2a62c9)">Payment</button>${isManager ? `<button class="x" data-d="${b.bill_id}" title="Count this bill on another day">Change day</button><button class="x" data-v="${b.bill_id}">Cancel</button>` : ''}</span>` : '<span></span>'}${payOpen === b.bill_id && payD ? payEditor(b) : ''}${dayOpen === b.bill_id ? `<div style="grid-column:1/-1;display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;padding:8px 0"><label class="sx-f">This bill counts on<input class="sx-in" type="date" id="dayNew" min="${shiftDay(d.today, -45)}" max="${d.today}" value="${d.date}"></label><button class="sx-btn" data-dgo="${b.bill_id}">Move</button><button class="sx-btn ghost" data-dx="1">Cancel</button></div>` : ''}${peopleRow(b)}</div>`).join('') : `<div class="sx-mut" style="padding:10px 4px">${d.bills.length ? 'No ' + (payFilter === 'online' ? 'online / UPI' : payFilter === 'cash' ? 'cash' : 'split') + ' bills on this day.' : 'No bills on this day. Press <b>New bill</b> or just scan a bottle.'}</div>`;
     } catch (e) { $('bills').textContent = e.message; }
   }
   // ---------- change the payment of a bill (Cash / Online / Cash + online); buttons redraw the list, typing only updates the message in place
