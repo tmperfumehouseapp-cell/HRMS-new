@@ -655,7 +655,17 @@
       R.addEventListener('touchend', (e) => { const b0 = e.target.closest && e.target.closest('#wxMs .wx-b[data-id]'); if (b0 && dx < 8 && /^\d+$/.test(b0.dataset.id) && !e.target.closest('a,button,img,video,audio,.wx-ld,.wx-qt')) { const now = Date.now(); if (lastTap.id === b0.dataset.id && now - lastTap.t < 320) { lastTap = { id: '', t: 0 }; try { e.preventDefault(); } catch (er) { } rpSet(b0.dataset.id); return; } lastTap = { id: b0.dataset.id, t: now }; } }, { passive: false });
       R.addEventListener('touchend', () => { if (!el) return; const b = el; el = null; b.style.transition = 'transform .15s'; b.style.transform = ''; setTimeout(() => { b.style.transition = ''; }, 160); if (dx >= 55) { try { navigator.vibrate && navigator.vibrate(15); } catch (e) { } rpSet(b.dataset.id); } }); }
     function msgsHtml() {
-      let last = '', h = '', lastNum = ''; for (const m of S.cur.msgs) { const d = dayLbl(m.ts); if (d !== last) { h += `<div class="wx-day">${d}</div>`; last = d; } if (m.dir !== 'sys' && m.number) { if (lastNum && m.number !== lastNum) h += `<div class="wx-ev">📱 Continued on ${esc(m.number)}</div>`; lastNum = m.number; } h += bubble(m); } return h;
+      let last = '', h = S.cur.moreOld ? '<div class="wx-ev" id="wxOld" style="cursor:pointer">⬆ Load older messages</div>' : '', lastNum = ''; for (const m of S.cur.msgs) { const d = dayLbl(m.ts); if (d !== last) { h += `<div class="wx-day">${d}</div>`; last = d; } if (m.dir !== 'sys' && m.number) { if (lastNum && m.number !== lastNum) h += `<div class="wx-ev">📱 Continued on ${esc(m.number)}</div>`; lastNum = m.number; } h += bubble(m); } return h;
+    }
+    // ⬆ older messages: the chat opens with the newest 80; scrolling to the top (or tapping the bar) loads the 80 before them, until the first message
+    async function loadOlder() {
+      if (!S.cur || !S.cur.moreOld || S.cur.oldBusy) return; const phone = S.cur.phone, box = $('#wxMs'); S.cur.oldBusy = true;
+      try {
+        const ids = S.cur.msgs.filter((m) => /^\d+$/.test(String(m.id))).map((m) => +m.id), d = await api.get('wa.chat', { phone, before: Math.min.apply(null, ids), limit: 80 });
+        if (!S.cur || S.cur.phone !== phone) return;
+        const have = new Set(S.cur.msgs.map((m) => m.id)); S.cur.msgs = d.messages.filter((m) => !have.has(m.id)).concat(S.cur.msgs); S.cur.moreOld = !!d.more;
+        const h0 = box.scrollHeight, t0 = box.scrollTop; box.innerHTML = msgsHtml(); box.scrollTop = box.scrollHeight - h0 + t0;   // stay where you were reading
+      } catch (e) { } finally { if (S.cur) S.cur.oldBusy = false; }
     }
     function scrollEnd(force) { const e = $('#wxMs'); if (!e) return; if (force || e.scrollHeight - e.scrollTop - e.clientHeight < 160) e.scrollTop = e.scrollHeight; }
     async function openChat(phone, opt) {
@@ -748,8 +758,8 @@
     async function loadChat() {
       const phone = S.cur.phone;
       try {
-        const d = await api.get('wa.chat', { phone, limit: 80 }); if (!S.cur || S.cur.phone !== phone) return; S.cur.contact = d.contact; S.cur.msgs = d.messages; S.cur.last = Math.max(0, ...d.messages.map((m) => m.id)); S.cur.row = Object.assign({}, S.cur.row, { name: d.contact.name });
-        const c = d.contact; $('#wxCn').innerHTML = esc(c.name || pretty(c.phone)) + ' ' + badgeOf(S.cur.row); $('#wxMs').innerHTML = msgsHtml(); scrollEnd(true); drawFoot(); loadSugg(false); loadInfo();
+        const d = await api.get('wa.chat', { phone, limit: 80 }); if (!S.cur || S.cur.phone !== phone) return; S.cur.contact = d.contact; S.cur.msgs = d.messages; S.cur.moreOld = !!d.more; S.cur.last = Math.max(0, ...d.messages.map((m) => m.id)); S.cur.row = Object.assign({}, S.cur.row, { name: d.contact.name });
+        const c = d.contact; $('#wxCn').innerHTML = esc(c.name || pretty(c.phone)) + ' ' + badgeOf(S.cur.row); $('#wxMs').innerHTML = msgsHtml(); scrollEnd(true); { const mb = $('#wxMs'); mb.onscroll = () => { if (mb.scrollTop < 60) loadOlder(); }; mb.onclick = (e) => { if (e.target.closest('#wxOld')) loadOlder(); }; } drawFoot(); loadSugg(false); loadInfo();
         const imgs = S.cur.msgs.filter((m) => m.media_id && (m.mtype === 'image') && !MEDIA[m.media_id]).slice(-4); imgs.forEach((m) => mediaUrl(m.media_id).then((u) => { const el = $('.wx-ld[data-m="' + m.media_id + '"]'); if (el) { el.outerHTML = `<img src="${u}" alt="">`; } }).catch(() => { }));
       } catch (e) { toast(e.message, true); closeChat(); }
     }
