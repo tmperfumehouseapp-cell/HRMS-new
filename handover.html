@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Handover — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=4">
+<link rel="stylesheet" href="assets/css/boss.css?v=1">
+<style>
+  .hv-seat{border:1px solid var(--line,#eceef1);border-radius:18px;padding:13px 15px;margin-top:10px;}
+  .hv-seat h4{margin:0;font-size:14.5px;font-weight:800;} .hv-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:9px;}
+  .hv-tasks{font-size:12.5px;color:#4a505c;margin-top:8px;line-height:1.6;}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><div><h1>Handover</h1><div class="bd-sub">When someone leaves, nothing they did is left without an owner.</div></div><div></div></div>
+    <div class="content"><div class="bd" id="root"><div class="bd-empty">Loading…</div></div></div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=4"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script src="assets/js/boss_common.js?v=2"></script>
+<script>
+  guardPage();
+  renderSidebar('handover');
+  const { esc, $, toast } = BD;
+  const ONE = Number(new URLSearchParams(location.search).get('emp') || 0);
+  let D = null;
+  async function load() {
+    try { D = await api.get('chk.handover', ONE ? { emp: ONE } : {}); render(); }
+    catch (e) { $('root').innerHTML = '<div class="bd-card"><div class="bd-empty"><b>Cannot open Handover</b>' + esc(e.message) + '</div></div>'; }
+  }
+  function cand(c) { return '<option value="' + c.id + '">' + esc(c.name) + ' — ' + esc(c.why) + ', ' + c.load + ' task' + (c.load === 1 ? '' : 's') + ' today' + (c.away ? ' (' + esc(c.away) + ')' : '') + '</option>'; }
+  function leaver(l) {
+    let h = '<div class="bd-card" data-emp="' + l.emp_id + '"><div class="bd-h"><h2>' + esc(l.name) + ' <span class="bd-chip bad">has left' + (l.left_at ? ' · ' + esc(String(l.left_at).slice(0, 10)) : '') + '</span></h2></div>'
+      + '<div class="bd-sub">Holds <b>' + l.seats.length + '</b> seat' + (l.seats.length === 1 ? '' : 's') + ' and has <b>' + l.task_count + '</b> open task' + (l.task_count === 1 ? '' : 's') + '. Backups are covering today. Choose who takes over for good.</div>';
+    h += l.seats.map((s) => '<div class="hv-seat"><h4>' + esc(s.section || '') + ' · ' + esc(s.title) + ' <span class="bd-chip">was no. ' + s.rank + '</span></h4>'
+      + '<div class="bd-sub">' + s.duties + ' live dut' + (s.duties === 1 ? 'y' : 'ies') + (s.others.length ? ' · still on the seat: ' + esc(s.others.join(', ')) : ' · <b style="color:#d9423b">nobody else is on this seat</b>') + '</div>'
+      + '<div class="hv-row"><select class="bd-in" data-seat="' + s.seat_id + '" style="flex:1;min-width:220px"><option value="0">Nobody new (backups only)</option>' + s.candidates.map(cand).join('') + '</select></div></div>').join('');
+    if (!l.seats.length) h += '<div class="bd-sub" style="margin-top:8px">No seats left. Only open tasks remain; they move to the backups automatically.</div>';
+    if (l.tasks.length) h += '<div class="hv-tasks"><b>Open tasks on this name:</b> ' + l.tasks.slice(0, 8).map((t) => esc(t.title) + ' (' + esc(String(t.task_date).slice(5)) + ')').join(' · ') + (l.tasks.length > 8 ? ' …' : '') + '</div>';
+    if (l.docs && l.docs.length) h += '<div class="hv-tasks"><b>Papers on file:</b> ' + esc(l.docs.join(', ')) + ' — kept in Ex-employees.</div>';
+    return h + '<div class="hv-row"><button class="bd-btn pri" data-apply="' + l.emp_id + '">Hand over</button></div></div>';
+  }
+  function render() {
+    $('root').innerHTML = (ONE ? '<div class="bd-card"><a href="handover.html">← All leavers</a></div>' : '') + (D.leavers.length ? D.leavers.map(leaver).join('') : '<div class="bd-card"><div class="bd-empty"><b>Nothing left behind</b>No former employee holds a seat or an open task. Claude checks every night and will add a card here the day someone leaves.</div></div>');
+  }
+  $('root').onclick = async (e) => {
+    const b = e.target.closest('button[data-apply]'); if (!b) return;
+    const card = b.closest('[data-emp]'); const moves = [...card.querySelectorAll('select[data-seat]')].map((s) => ({ seat_id: Number(s.dataset.seat), to_emp: Number(s.value) }));
+    if (!(await BD.confirm('Hand over?', 'The leaver is removed from every seat. New people are told. Today\'s open tasks move to whoever now holds the seat.', 'Hand over'))) return;
+    b.disabled = true;
+    try { const r = await api.post('chk.handover_apply', { emp_id: Number(b.dataset.apply), moves }); toast(r.message); load(); } catch (er) { toast(er.message, true); b.disabled = false; }
+  };
+  load();
+</script>
+</body>
+</html>

@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Order Targets — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=260929d">
+<style>
+  [hidden]{display:none !important;}
+  .sub{font-size:11.5px; color:var(--muted);}
+  .empty{padding:34px 20px; text-align:center; color:var(--muted); font-size:13.5px; line-height:1.6;}
+  .empty b{color:var(--ink);}
+  .empty .btn{margin-top:12px; width:auto;}
+  .tscroll{overflow-x:auto; -webkit-overflow-scrolling:touch;}
+
+  /* top bar controls */
+  .bar-ctl{display:flex; gap:8px; align-items:center; flex-wrap:wrap;}
+  .bar-ctl input[type=date]{width:150px;}
+  .bar-ctl .nav-s{width:38px; padding-left:0 !important; padding-right:0 !important;}
+
+  /* segmented switch */
+  .seg{display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; background:#fff;}
+  .seg button{padding:6px 14px; font-size:12.5px; font-weight:600; color:var(--muted); background:#fff; border:0; border-right:1px solid var(--line); min-height:0; cursor:pointer; font-family:inherit;}
+  .seg button:last-child{border-right:0;}
+  .seg button.on{background:var(--accent); color:#fff;}
+  .hd-l{display:flex; align-items:center; gap:14px; flex-wrap:wrap;}
+  .hd-l h2{display:flex; align-items:center; gap:8px;}
+  .saved{color:#0f7a41; font-weight:600;}
+
+  /* order-target tables */
+  table.ot{width:100%; border-collapse:collapse;}
+  table.ot th{font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); text-align:left; padding:10px 12px; border-bottom:1px solid var(--line); background:#fafbfc; font-weight:600; white-space:nowrap; position:static;}
+  table.ot td{padding:12px; border-bottom:1px solid var(--line); font-size:13.5px; vertical-align:middle;}
+  table.ot tr:last-child td{border-bottom:0;}
+  table.ot th:first-child, table.ot td:first-child{padding-left:16px; position:sticky; left:0; background:#fff; z-index:1;}
+  table.ot th:first-child{background:#fafbfc; z-index:2;}
+  table.ot th:last-child, table.ot td:last-child{padding-right:16px;}
+  table.ot .r{text-align:right;}
+  .emp{display:flex; align-items:center; gap:10px; min-width:0;}
+  .emp > div{min-width:0;}
+  .emp b{display:block; font-size:13.5px; white-space:nowrap;}
+  .av{width:32px; height:32px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; color:#fff; flex:0 0 auto;}
+  .tgt{display:inline-flex; align-items:center; gap:6px; font-weight:700; font-size:14px; background:none; border:0; padding:3px 6px; margin:-3px -6px; border-radius:6px; cursor:pointer; color:var(--ink); font-family:inherit; min-height:0;}
+  .tgt:hover{background:#eef2ff;}
+  .tgt i{font-style:normal; font-size:11px; color:#9aa3b2; font-weight:400;}
+  .tgt.unset{color:var(--accent); font-weight:600; font-size:12.5px;}
+  .tin{width:84px; padding:6px 8px; border:1px solid var(--accent); border-radius:6px; font-size:14px; font-weight:700; box-shadow:0 0 0 3px #dbe6ff; font-family:inherit;}
+  .pc{color:var(--muted); font-weight:600; font-size:12.5px; margin-left:3px;}
+  .ach b, .pen b{font-size:14px;}
+  .bar{height:6px; border-radius:6px; background:#e8ebf0; margin-top:6px; position:relative; width:150px; overflow:visible;}
+  .bar i{display:block; height:100%; border-radius:6px; background:var(--accent);}
+  .bar i.ok{background:#16a34a;} .bar i.low{background:#e08a00;}
+  .bar u{position:absolute; top:-3px; bottom:-3px; width:2px; background:#111827; opacity:.55; border-radius:2px;}
+  .chip{display:inline-block; font-size:11.5px; font-weight:700; padding:3px 10px; border-radius:20px; white-space:nowrap;}
+  .chip.ok{background:#e7f7ee; color:#0f7a41;} .chip.on{background:#e6efff; color:#1d4ed8;} .chip.low{background:#fff1d6; color:#9a5b00;}
+  .chip.miss{background:#fdecec; color:#c81e1e;} .chip.soon{background:#f1f3f6; color:#6b7280;}
+  .plus{display:inline-block; padding:6px 12px; border:1px solid #bfd3ff; background:#f3f7ff; color:#1d4ed8; border-radius:7px; font-size:12.5px; font-weight:700; white-space:nowrap; cursor:pointer; font-family:inherit; min-height:0;}
+  .plus:hover{background:#e8f0ff;}
+  .plus:disabled{opacity:.5; cursor:not-allowed;}
+  tr.tot td{background:#f8fafc !important; font-weight:700; border-top:2px solid var(--line);}
+  .note{font-size:11.5px; color:var(--muted); padding:11px 16px; border-top:1px solid var(--line); background:#fcfcfd; line-height:1.55;}
+
+  /* inline "+ Add orders" form */
+  tr.hl td{background:#fffdf5 !important;}
+  tr.xp td{background:#f3f7ff !important; border-bottom:1px solid #cfe0ff; padding:12px 16px 14px;}
+  tr.xp td:first-child{position:static;}
+  .xform{display:flex; align-items:flex-end; gap:14px; flex-wrap:wrap;}
+  .xform .lbl{font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; margin-bottom:4px;}
+  .xform select, .xform input{padding:8px 10px; border:1px solid var(--line); border-radius:7px; font-size:13.5px; background:#fff; min-width:128px; font-family:inherit; color:var(--ink);}
+  .xform input{font-weight:700; width:130px;} .xform input.xq,.xform input.xc{width:104px; min-width:0;} .xform input.xq{border-color:#bfd3ff;} .xform input.xc{border-color:#fcd9a8;}
+  .xform select:focus, .xform input:focus{outline:none; border-color:var(--accent); box-shadow:0 0 0 3px #dbe6ff;}
+  .xform .prev{flex:1 1 300px; background:#e8f0ff; border-radius:8px; padding:9px 11px; font-size:12.5px; color:#1e3a8a; line-height:1.55;}
+  .xform .prev .bad{color:#c81e1e;}
+  .xform .acts{display:flex; gap:8px;}
+  .xform .acts .btn{padding:8px 15px; font-size:12.5px; min-height:0; width:auto;}
+
+  /* query / campaign columns */
+  table.ot th.qc-h.q{color:#1d4ed8;} table.ot th.qc-h.c{color:#b45309;}
+  table.ot td.qc{font-variant-numeric:tabular-nums;} table.ot td.qc.q b{color:#1d4ed8;} table.ot td.qc.c b{color:#b45309;}
+  .qct{display:flex; justify-content:center; gap:3px; margin-top:3px;} .qct span{font-size:11px; font-weight:800; border-radius:6px; padding:0 4px; line-height:15px;} .qct .q{background:#e0ecff; color:#1d4ed8;} .qct .c{background:#fff1d6; color:#b45309;}
+  .xform .prev>div+div{margin-top:3px;}
+  /* hour grid */
+  .hc{display:inline-flex; align-items:center; justify-content:center; width:46px; height:30px; border:1px solid var(--line); border-radius:6px; font-size:13px; font-weight:600; background:#fff; padding:0; text-align:center; font-family:inherit; color:var(--ink);}
+  input.hc::placeholder{color:#b3bac7; font-weight:400;}
+  .hc.fut{background:#f4f5f8; color:#c3c9d4; border-style:dashed;}
+  input.hc:focus, input.tn:focus{outline:none; border-color:var(--accent); box-shadow:0 0 0 3px #dbe6ff; color:var(--accent);}
+  input.hc::-webkit-outer-spin-button, input.hc::-webkit-inner-spin-button, input.tn::-webkit-outer-spin-button, input.tn::-webkit-inner-spin-button, .xform input::-webkit-outer-spin-button, .xform input::-webkit-inner-spin-button, .tin::-webkit-outer-spin-button, .tin::-webkit-inner-spin-button{-webkit-appearance:none; margin:0;}
+  input.hc, input.tn, .xform input, .tin{-moz-appearance:textfield; appearance:textfield;}
+  table.ot th.hh{text-align:center; padding:8px 3px; font-size:11px; line-height:1.25;}
+  table.ot th.hh.now{background:#e6efff; color:#1d4ed8;}
+  table.ot td.hd{text-align:center; padding:9px 3px;}
+  table.ot td.hd.now{background:#f5f9ff;}
+
+  /* plan: tracked people */
+  .chips{display:flex; flex-wrap:wrap; gap:7px; align-items:center;}
+  .pchip{display:inline-flex; align-items:center; gap:7px; padding:5px 6px; border:1px solid var(--line); border-radius:22px; background:#fff; font-size:12.5px; font-weight:600;}
+  .pchip .av{width:22px; height:22px; font-size:11px;}
+  .pchip button{background:none; border:0; color:#9aa3b2; font-size:15px; padding:0 5px 0 1px; cursor:pointer; line-height:1; min-height:0; font-family:inherit;}
+  .pchip button:hover{color:#c81e1e;}
+  .addc{padding:6px 12px; border:1px dashed #9fb7ee; border-radius:22px; color:#1d4ed8; font-size:12.5px; font-weight:700; background:#f7faff; cursor:pointer; font-family:inherit; min-height:0;}
+  .pick{border-top:1px solid var(--line); background:#f8fafd; padding:14px 20px 16px;}
+  .pick .ph{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:11px; font-size:12.5px;}
+  .pick select, .pick input[type=text]{padding:7px 10px; border:1px solid var(--line); border-radius:7px; background:#fff; font-size:12.5px; font-family:inherit; color:var(--ink);}
+  .pick input[type=text]{margin-left:auto; width:220px;}
+  .cands{display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:10px;}
+  .cand{display:flex; align-items:center; gap:10px; background:#fff; border:1px solid var(--line); border-radius:9px; padding:9px 11px; font-size:13px; min-width:0;}
+  .cand > div{min-width:0;}
+  .cand b{display:block; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .cand .go{margin-left:auto; font-size:12px; font-weight:700; padding:4px 11px; border-radius:6px; border:1px solid #bfd3ff; background:#f3f7ff; color:#1d4ed8; white-space:nowrap; cursor:pointer; font-family:inherit; min-height:0;}
+  .cand .got{margin-left:auto; font-size:11.5px; color:#0f7a41; font-weight:700; white-space:nowrap;}
+  .hrs-set{display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:12px 20px 14px; border-top:1px solid var(--line); font-size:12.5px; color:var(--muted);}
+  .hrs-set select{padding:6px 9px; border:1px solid var(--line); border-radius:7px; background:#fff; font-size:12.5px; font-family:inherit; color:var(--ink);}
+  .hrs-set .btn{padding:6px 12px; font-size:12.5px; min-height:0; width:auto;}
+
+  /* plan: week grid */
+  .btns{display:flex; gap:8px; flex-wrap:wrap;}
+  .btns .btn{padding:6px 12px; font-size:12.5px; min-height:0; width:auto;}
+  table.ot th.day{text-align:center; width:84px;}
+  table.ot th.day small{display:block; font-size:11px; color:#9aa3b2; text-transform:none; letter-spacing:0; font-weight:500;}
+  table.ot th.day.today{background:#e6efff; color:#1d4ed8;}
+  table.ot td.dd{text-align:center; padding:9px 4px;}
+  input.tn{width:62px; height:30px; border:1px solid var(--line); border-radius:6px; font-size:13.5px; font-weight:700; background:#fff; text-align:center; padding:0; font-family:inherit; color:var(--ink);}
+  input.tn::placeholder{color:#b3bac7; font-weight:400;}
+  input.tn:placeholder-shown{background:#f4f5f8; border-style:dashed;}
+  input.tn:disabled{background:#f4f5f8; color:#6b7280; border-style:solid; cursor:not-allowed;}
+  .same{display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:12px 20px; background:#f3f7ff; border-bottom:1px solid #cfe0ff; font-size:12.5px;}
+  .same input[type=number], .same select{padding:6px 9px; border:1px solid var(--line); border-radius:7px; font-size:13px; background:#fff; font-family:inherit; color:var(--ink);}
+  .same input[type=number]{width:84px; font-weight:700;}
+  .same label{display:inline-flex; align-items:center; gap:5px; color:var(--muted);}
+  .same .btn{padding:6px 12px; font-size:12.5px; min-height:0; width:auto;}
+
+  /* phone cards */
+  .mcs{padding:12px 12px 2px;}
+  .mc{border:1px solid var(--line); border-radius:10px; padding:12px; margin:0 0 10px; background:#fff;}
+  .mc.hl{background:#fffdf5;}
+  .mc.team{background:#f8fafc;}
+  .mc-h{display:flex; align-items:center; gap:10px;}
+  .mc-h .grow{flex:1; min-width:0;}
+  .mc-h b{display:block; font-size:14px;}
+  .mc-n{display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-top:12px;}
+  .mc-n .k{font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.03em;}
+  .mc-n .v{font-size:15px; font-weight:700;}
+  .mc .bar{width:100%;}
+  .mc-f{display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:10px;}
+  .mc .xform{margin-top:12px; padding-top:12px; border-top:1px dashed #cfe0ff;}
+  @media (max-width:820px){
+    .topbar > div:first-child{justify-content:flex-start;}
+    .bar-ctl{width:100%;}
+    #hrTable .emp .sub, #planTable .emp .sub{display:none;}
+    #hrTable .av, #planTable .av{width:26px; height:26px; font-size:11px;}
+    #hrTable .emp, #planTable .emp{gap:7px;}
+    #hrTable .emp b, #planTable .emp b{font-size:12.5px; white-space:normal; max-width:84px; line-height:1.25;}
+    table.ot th:first-child, table.ot td:first-child{padding-left:10px;}
+    .bar-ctl input[type=date]{flex:1 1 140px; width:auto;}
+    .bar-ctl .nav-s{flex:0 0 38px !important;}
+    .xform .prev{white-space:normal; flex:1 1 100%;}
+    .xform > div:not(.prev):not(.acts){flex:1 1 130px;}
+    .xform select, .xform input{width:100%;}
+    .pick{padding:12px 14px 14px;}
+    .pick input[type=text]{margin-left:0; width:100%; flex:1 1 100%;}
+    .hrs-set, .same{padding-left:14px; padding-right:14px;}
+    .card .tscroll table.ot{min-width:0;}
+    #hrTable{min-width:760px;}
+    #planTable{min-width:700px;}
+    #hrTable .emp b, #planTable .emp b{max-width:104px;}
+    .seg{max-width:100%;}
+    .seg button{white-space:nowrap; flex:none; min-height:36px;}
+    .tgt{min-height:36px; padding:3px 8px; margin:-3px -8px;}
+    .plus{min-height:36px; padding:8px 12px;}
+    input.hc{height:38px; font-size:16px;}
+    input.tn{height:38px; font-size:16px; width:66px;}
+    .pchip{padding:3px 4px 3px 6px;}
+    .pchip button{min-width:36px; min-height:36px; font-size:18px; padding:0; margin:-4px 0;}
+    .pick select, .pick input[type=text], .hrs-set select, .same input[type=number], .same select{min-height:40px; font-size:16px;}
+    .hrs-set .btn, .same .btn{min-height:38px;}
+    .pick select, .hrs-set select, .same select{max-width:100%; min-width:0;}
+    .addc{min-height:36px; padding:8px 14px;}
+    .cand .go{min-height:36px; min-width:64px; padding:6px 12px;}
+    .seg button#wkPrev, .seg button#wkNext{min-width:40px;}
+    .xform{display:grid; grid-template-columns:1fr 1fr; gap:10px; align-items:end;}
+    .xform > div:not(.prev):not(.acts){flex:none; min-width:0;}
+    .xform > div:first-child, .xform .prev, .xform .acts{grid-column:1 / -1;}
+    .xform select, .xform input, .xform input.xq, .xform input.xc{width:100%; min-width:0; min-height:42px; font-size:16px;}
+    .xform .acts{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+    .xform .acts .btn{min-height:44px; font-size:14px;}
+  }
+  @media (min-width:600px) and (max-width:820px){
+    .mcs{display:grid; grid-template-columns:1fr 1fr; gap:0 10px; align-items:start;}
+    .mcs .mc.team, .mcs .mc:has(.xform){grid-column:1 / -1;}
+  }
+  @media (max-width:560px){
+    .bar-ctl .btn{flex:1 1 120px;}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar">
+      <div><h1 id="pgTitle">Order Targets</h1><div class="sub" id="pgSub" style="margin-top:2px;">Daily order target for selected employees, tracked hour by hour</div></div>
+      <div class="bar-ctl" id="barDay">
+        <button type="button" class="btn secondary nav-s" id="btnPrev" title="Previous day">‹</button>
+        <input type="date" id="dayInput">
+        <button type="button" class="btn secondary nav-s" id="btnNext" title="Next day">›</button>
+        <button type="button" class="btn secondary" id="btnToday">Today</button>
+        <button type="button" class="btn secondary" id="btnPlan">Plan targets</button>
+        <button type="button" class="btn" id="btnAddEmp">+ Add employees</button>
+      </div>
+      <div class="bar-ctl" id="barPlan" hidden>
+        <button type="button" class="btn secondary" id="btnBack">← Back to daily table</button>
+      </div>
+    </div>
+    <div class="content">
+      <div id="alertBox"></div>
+
+      <!-- ===== daily table ===== -->
+      <div id="viewDay">
+        <div class="card" style="margin-bottom:0;">
+          <div class="card-head">
+            <div class="hd-l">
+              <h2 id="dayTitle">—</h2>
+              <div class="seg" id="modeSeg"><button type="button" data-m="sum" class="on">Summary</button><button type="button" data-m="hr">Hour-wise</button></div>
+              <span class="sub saved" id="saveNote"></span>
+            </div>
+            <span class="sub" id="dayMeta"></span>
+          </div>
+          <div id="dayBody"><div class="empty">Loading…</div></div>
+          <div class="note" id="dayNote"></div>
+        </div>
+      </div>
+
+      <!-- ===== plan targets ===== -->
+      <div id="viewPlan" hidden>
+        <div class="card">
+          <div class="card-head"><h2>Employees being tracked</h2><span class="sub">Only these people appear on the daily table</span></div>
+          <div style="padding:14px 20px 16px;"><div class="chips" id="trackChips"></div></div>
+          <div class="pick" id="pickBox" hidden>
+            <div class="ph">
+              <b>Add employees</b><span class="sub">department</span>
+              <select id="pickDept"></select>
+              <input type="text" id="pickQ" placeholder="Search by name or code…" autocomplete="off">
+            </div>
+            <div class="cands" id="cands"></div>
+          </div>
+          <div class="hrs-set">
+            <span>Hours tracked each day</span>
+            <select id="hrStart"></select><span>to</span><select id="hrEnd"></select>
+            <button type="button" class="btn secondary" id="btnHrs">Save hours</button>
+            <span class="sub">The target is spread evenly over these hours to show who is on pace.</span>
+          </div>
+        </div>
+        <div class="card" style="margin-bottom:0;">
+          <div class="card-head">
+            <div class="hd-l">
+              <h2 id="wkTitle">Targets</h2>
+              <div class="seg"><button type="button" id="wkPrev" title="Previous week">‹</button><button type="button" id="wkNow" class="on">This week</button><button type="button" id="wkNext" title="Next week">›</button></div>
+              <span class="sub saved" id="planNote"></span>
+            </div>
+            <div class="btns"><button type="button" class="btn secondary" id="btnCopy">Copy last week</button><button type="button" class="btn secondary" id="btnSame">Same number for all days…</button></div>
+          </div>
+          <div class="same" id="sameBox" hidden>
+            <span>Set</span><input type="number" id="sameN" min="1" max="9999" inputmode="numeric" placeholder="100">
+            <span>orders a day, from today to the end of this week, for</span><select id="sameWho"></select>
+            <label><input type="checkbox" id="sameSun" checked> skip Sunday</label>
+            <button type="button" class="btn" id="btnSameGo">Apply</button><button type="button" class="btn secondary" id="btnSameNo">Cancel</button>
+          </div>
+          <div class="tscroll"><table class="ot no-stack" id="planTable"></table></div>
+          <div class="note">Type a number in any box — it saves when you leave it. A blank box (—) means no target that day (an off day). Days that are over are locked here so history never changes; to correct one, open that day on the daily table.</div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="assets/js/config.js?v=260929d"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script>
+  guardPage();
+  renderSidebar('order_targets');
+
+  // ---------- helpers ----------
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const pad = (n) => String(n).padStart(2, '0');
+  const dstr = (d) => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+  const addDays = (s, n) => { const d = new Date(s + 'T00:00:00'); d.setDate(d.getDate() + n); return dstr(d); };
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const dparts = (s) => { const d = new Date(s + 'T00:00:00'); return { dow: DOW[d.getDay()], wd: d.getDay(), dd: pad(d.getDate()), dn: d.getDate(), mon: MON[d.getMonth()] }; };
+  const hrLabel = (h) => ((h % 12) || 12) + (h % 24 < 12 ? ' AM' : ' PM');
+  const hrRange = (h) => hrLabel(h) + ' – ' + hrLabel(h + 1);
+  const fmtTime = (t) => { if (!t) return ''; const [h, m] = String(t).split(':').map(Number); return ((h % 12) || 12) + ':' + pad(m) + ' ' + (h < 12 ? 'AM' : 'PM'); };
+  // The server's clock decides what "now" is, so a browser set to another time zone still shows the right time.
+  const nowHM = () => {
+    const d = new Date(); let m = d.getHours() * 60 + d.getMinutes();
+    if (D && D.now) { const [h, mm] = D.now.split(':').map(Number); m = h * 60 + mm + Math.round((Date.now() - D.at) / 60000); }
+    m = ((m % 1440) + 1440) % 1440;
+    return pad(Math.floor(m / 60)) + ':' + pad(m % 60);
+  };
+  const PAL = ['#6366f1', '#0ea5e9', '#f59e0b', '#10b981', '#c026d3', '#8b5cf6', '#14b8a6', '#f97316'];
+  const initials = (n) => String(n || '?').trim().split(/\s+/).slice(0, 2).map(w => w[0] || '').join('').toUpperCase();
+  const avatar = (id, name) => `<span class="av" style="background:${PAL[Math.abs(Number(id) || 0) % PAL.length]}">${esc(initials(name))}</span>`;
+  const isMob = () => window.matchMedia('(max-width:820px)').matches;
+
+  const alertBox = $('alertBox');
+  function showAlert(msg, type = 'success') {
+    alertBox.innerHTML = `<div class="alert ${type}">${esc(msg)}</div>`;
+    clearTimeout(showAlert.t);
+    showAlert.t = setTimeout(() => { alertBox.innerHTML = ''; }, type === 'error' ? 6000 : 3500);
+    if (type === 'error') window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+  function flash(el, msg) {
+    el.textContent = msg;
+    clearTimeout(el._t);
+    el._t = setTimeout(() => { el.textContent = ''; }, 2500);
+  }
+  // Shared hosting drops a request now and then ("Failed to fetch") — try once more. Every call here is safe to repeat.
+  async function withRetry(fn, tries = 2) {
+    let last;
+    for (let i = 0; i < tries; i++) {
+      try { return await fn(); } catch (e) { last = e; if (e && e.data) throw e; if (e && /Session expired/.test(e.message)) throw e; await new Promise(r => setTimeout(r, 600)); }
+    }
+    throw last;
+  }
+  const get = (a, p) => withRetry(() => api.get(a, p));
+  const post = (a, b) => withRetry(() => api.post(a, b));
+
+  // ---------- percent maths ----------
+  // A person who is still short never shows 100%: 199 of 200 reads 99% achieved / 1% pending.
+  const pctOf = (a, t) => { if (!(t > 0)) return 0; const p = Math.round(a / t * 100); return a >= t ? p : Math.min(99, p); };
+  const pendOf = (a, t) => Math.max(0, t - a);
+  const penPct = (a, t) => (t > 0 && a < t) ? 100 - pctOf(a, t) : 0;
+  function calc(r) {
+    const t = r.target, a = r.achieved;
+    let state = 'none';
+    if (t > 0) {
+      if (a >= t) state = 'ok';
+      else if (D.date > D.today || (D.date === D.today && D.pace <= 0 && !D.open_hours.length)) state = 'soon';
+      else if (D.date < D.today || D.pace >= 100) state = 'miss';
+      else state = (a / t * 100 >= D.pace) ? 'on' : 'low';
+    }
+    return { pct: pctOf(a, t), pend: pendOf(a, t), pp: penPct(a, t), raw: t > 0 ? a / t * 100 : 0, state };
+  }
+  const CHIP = { ok: '<span class="chip ok">Done</span>', on: '<span class="chip on">On track</span>', low: '<span class="chip low">Behind</span>', miss: '<span class="chip miss">Missed</span>', soon: '<span class="chip soon">Upcoming</span>', none: '<span class="sub">No target</span>' };
+  function teamOf(rows) {
+    let T = 0, A = 0, P = 0, Q = 0, K = 0;
+    rows.forEach(r => { Q += r.query || 0; K += r.campaign || 0; if (r.target > 0) { T += r.target; A += r.achieved; P += pendOf(r.achieved, r.target); } });
+    return { T, A, P, Q, K, pct: pctOf(A, T), pp: P > 0 ? Math.max(1, Math.min(100, Math.round(P / T * 100))) : 0 };
+  }
+
+  // ---------- state ----------
+  let view = 'day', mode = 'sum';
+  let D = null, date = '';
+  let adding = null, editingTarget = null, saving = 0, loadSeq = 0;
+  let S = null, P = null, planWeek = '', pickOpen = false, pickDept = null, sameOpen = false;
+  const rowOf = (id) => D && D.rows.find(r => r.employee_id === id);
+
+  // ---------- daily: load ----------
+  async function loadDay(silent) {
+    const seq = ++loadSeq;
+    if (!silent) $('dayBody').innerHTML = '<div class="empty">Loading…</div>';
+    try {
+      const d = await get('order_targets.day', date ? { date } : {});
+      if (seq !== loadSeq) return;
+      D = d; D.at = Date.now(); date = d.date; $('dayInput').value = date;
+      D.rows.forEach(r => { r.qh = r.qhours || {}; r.ch = r.chours || {}; r.query = r.query || 0; r.campaign = r.campaign || 0; });
+      renderDay();
+    } catch (e) {
+      if (seq !== loadSeq) return;
+      if (!silent) { $('dayBody').innerHTML = '<div class="empty">Could not load the day.</div>'; showAlert(e.message, 'error'); }
+    }
+  }
+
+  // ---------- daily: render ----------
+  function renderDay() {
+    const d = D, p = dparts(d.date);
+    $('dayTitle').innerHTML = `${p.dow}, ${p.dd} ${p.mon}` + (d.date === d.today ? ' <span class="chip on">Today</span>' : '');
+    document.querySelectorAll('#modeSeg button').forEach(b => b.classList.toggle('on', b.dataset.m === mode));
+    const lasts = d.rows.map(r => r.last_update).filter(Boolean).sort();
+    $('dayMeta').textContent = (lasts.length ? 'Last update ' + fmtTime(lasts[lasts.length - 1]) : 'No orders entered yet') + (d.date === d.today ? ' · now ' + fmtTime(d.now) : '');
+    $('dayNote').innerHTML = mode === 'sum'
+      ? 'Achieved = total of the hourly entries · Pending = Target − Achieved · the thin dark tick on each bar is where the target should be by now (spread evenly over ' + hrLabel(d.start) + ' – ' + hrLabel(d.end) + ').'
+      : 'Each box = orders done in <b>that hour</b>. Hours that have not started are locked. A forgotten hour can be filled in later — Achieved and Pending recalculate at once.';
+    if (!d.rows.length) {
+      $('dayBody').innerHTML = '<div class="empty"><b>No one is being tracked yet.</b><br>Choose the employees who have a daily order target, then set a number for each day.<br><button type="button" class="btn" data-act="go-plan">Choose employees</button></div>';
+      return;
+    }
+    $('dayBody').innerHTML = mode === 'hr' ? hrTable() : (isMob() ? sumCards() : sumTable());
+    if (adding) { const x = $('dayBody').querySelector('.xval'); if (x) { x.focus(); x.select(); } }
+    if (editingTarget !== null) { const x = $('dayBody').querySelector('.tin'); if (x) { x.focus(); x.select(); } }
+  }
+
+  const empCell = (r) => `<div class="emp">${avatar(r.employee_id, r.full_name)}<div><b>${esc(r.full_name)}</b><span class="sub">${esc(r.department_name || 'Employee')}${r.employee_code ? ' · ' + esc(r.employee_code) : ''}</span></div></div>`;
+  function tgtCell(r) {
+    if (editingTarget === r.employee_id) return `<input class="tin" type="number" min="0" max="9999" inputmode="numeric" value="${r.target || ''}" placeholder="0" data-emp="${r.employee_id}">`;
+    return r.target > 0
+      ? `<button type="button" class="tgt" data-act="edit-target" data-emp="${r.employee_id}" title="Change the target for this day">${r.target}<i>✎</i></button>`
+      : `<button type="button" class="tgt unset" data-act="edit-target" data-emp="${r.employee_id}">Set target <i>✎</i></button>`;
+  }
+  function barOf(r, m) {
+    if (!(r.target > 0)) return '';
+    const cls = m.state === 'ok' ? 'ok' : ((m.state === 'low' || m.state === 'miss') ? 'low' : '');
+    const tick = (D.date === D.today && D.pace > 0 && D.pace < 100) ? `<u style="left:${D.pace}%"></u>` : '';
+    return `<div class="bar"><i class="${cls}" style="width:${Math.min(100, m.raw)}%"></i>${tick}</div>`;
+  }
+  const achCell = (r, m) => `<b>${r.achieved}</b>${r.target > 0 ? `<span class="pc">(${m.pct}%)</span>` : ''}`;
+  const penCell = (r, m) => r.target > 0 ? `<b>${m.pend}</b><span class="pc">(${m.pp}%)</span>` : '<span class="sub">—</span>';
+  const addBtn = (r) => D.open_hours.length
+    ? `<button type="button" class="plus" data-act="add" data-emp="${r.employee_id}">+ Add orders</button>`
+    : `<button type="button" class="plus" disabled title="Hours open as the day starts">+ Add orders</button>`;
+
+  const qcStr = (r, k, h) => (r[k] && r[k][h]) ? String(r[k][h]) : '';
+  const qcSum = (r, k) => Object.values(r[k] || {}).reduce((a, v) => a + v, 0);
+  function defaultHour(r) {
+    // Prefer the tracked hours (the table columns); the other hours of the day are picked by hand in the dropdown.
+    const inCols = D.open_hours.filter(h => D.hours.includes(h)), open = inCols.length ? inCols : D.open_hours; if (!open.length) return null;
+    const done = open.filter(h => h !== D.now_hour);
+    for (let i = done.length - 1; i >= 0; i--) if (r.hours[done[i]] == null) return done[i];
+    return D.now_hour != null ? D.now_hour : open[open.length - 1];
+  }
+  function prevHtml(r) {
+    const a = adding, t = r.target;
+    if (a.val === '') return '<span class="sub">Type the orders done in that hour to see the new totals.</span>';
+    const v = Number(a.val);
+    if (!Number.isInteger(v) || v < 0 || v > 9999) return '<span class="bad">Enter a whole number from 0 to 9999.</span>';
+    const q = parseWhole(a.q), c = parseWhole(a.c), qq = q === null ? 0 : q, cc = c === null ? 0 : c;
+    if (Number.isNaN(q) || Number.isNaN(c)) return '<span class="bad">Query and Campaign must be whole numbers.</span>';
+    if (qq + cc > v) return `<span class="bad">Query ${qq} + Campaign ${cc} = ${qq + cc} is more than the ${v} orders of this hour.</span>`;
+    const old = r.hours[a.hour] == null ? 0 : r.hours[a.hour], na = r.achieved - old + v;
+    const oq = (r.qh && r.qh[a.hour]) || 0, oc = (r.ch && r.ch[a.hour]) || 0, nq = r.query - oq + qq, nc = r.campaign - oc + cc;
+    const qcLine = `<div>Query <b>${r.query} → ${nq}</b> &nbsp;·&nbsp; Campaign <b>${r.campaign} → ${nc}</b> &nbsp;·&nbsp; Other <b>${(na - nq - nc)}</b></div>`;
+    if (!(t > 0)) return `<div>Achieved <b>${r.achieved} → ${na}</b></div>${qcLine}`;
+    return `<div>Achieved <b>${r.achieved} → ${na} (${pctOf(na, t)}%)</b> &nbsp;·&nbsp; Pending <b>${pendOf(r.achieved, t)} → ${pendOf(na, t)} (${penPct(na, t)}%)</b></div>${qcLine}`;
+  }
+  function formHtml(r) {
+    // Every hour of the day (from the day's start, wrapping past midnight); an hour that has not begun yet is greyed out.
+    const openSet = new Set(D.open_hours), allHrs = (D.all_hours && D.all_hours.length) ? D.all_hours : D.open_hours;
+    const opts = allHrs.map(h => `<option value="${h}"${h === adding.hour ? ' selected' : ''}${openSet.has(h) ? '' : ' disabled'}>${hrRange(h)}${r.hours[h] != null ? ' — now ' + r.hours[h] : (openSet.has(h) ? '' : ' — not yet')}</option>`).join('');
+    return `<div class="xform" data-emp="${r.employee_id}">
+      <div><div class="lbl">Adding for</div><b style="font-size:13.5px;">${esc(r.full_name)}</b><div class="sub">${r.target > 0 ? 'target ' + r.target + ' · ' : ''}so far ${r.achieved}</div></div>
+      <div><div class="lbl">For the hour</div><select class="xhr">${opts}</select></div>
+      <div><div class="lbl">Orders done in that hour</div><input class="xval" type="number" min="0" max="9999" inputmode="numeric" value="${esc(adding.val)}"></div>
+      <div><div class="lbl" style="color:#1d4ed8;">of which Query</div><input class="xq" type="number" min="0" max="9999" inputmode="numeric" placeholder="0" value="${esc(adding.q)}"></div>
+      <div><div class="lbl" style="color:#b45309;">of which Campaign</div><input class="xc" type="number" min="0" max="9999" inputmode="numeric" placeholder="0" value="${esc(adding.c)}"></div>
+      <div class="prev" data-prev>${prevHtml(r)}</div>
+      <div class="acts"><button type="button" class="btn secondary" data-act="x-cancel">Cancel</button><button type="button" class="btn" data-act="x-save">Save</button></div>
+    </div>`;
+  }
+
+  const qcCells = (r) => `<td class="qc q">${r.query > 0 ? '<b>' + r.query + '</b>' : '<span class="sub">—</span>'}</td><td class="qc c">${r.campaign > 0 ? '<b>' + r.campaign + '</b>' : '<span class="sub">—</span>'}</td>`;
+  function sumTable() {
+    let h = '<div class="tscroll"><table class="ot no-stack"><thead><tr><th>Employee</th><th>Target</th><th>Achieved</th><th>Pending</th><th class="qc-h q">Query</th><th class="qc-h c">Campaign</th><th>Pace</th><th>Last update</th><th></th></tr></thead><tbody>';
+    D.rows.forEach(r => {
+      const m = calc(r), open = adding && adding.id === r.employee_id;
+      h += `<tr class="${open ? 'hl' : ''}"><td>${empCell(r)}</td><td>${tgtCell(r)}</td><td class="ach">${achCell(r, m)}${barOf(r, m)}</td><td class="pen">${penCell(r, m)}</td>${qcCells(r)}<td>${CHIP[m.state]}</td><td><span class="sub" style="font-size:12.5px;">${r.last_update ? fmtTime(r.last_update) : '—'}</span></td><td class="r">${addBtn(r)}</td></tr>`;
+      if (open) h += `<tr class="xp"><td colspan="9">${formHtml(r)}</td></tr>`;
+    });
+    const t = teamOf(D.rows);
+    h += `<tr class="tot"><td>Team total</td><td>${t.T}</td><td>${t.A}<span class="pc">(${t.pct}%)</span></td><td>${t.P}<span class="pc">(${t.pp}%)</span></td><td class="qc q"><b>${t.Q}</b></td><td class="qc c"><b>${t.K}</b></td><td></td><td></td><td></td></tr>`;
+    return h + '</tbody></table></div>';
+  }
+  function sumCards() {
+    let h = '<div class="mcs">';
+    D.rows.forEach(r => {
+      const m = calc(r), open = adding && adding.id === r.employee_id;
+      h += `<div class="mc${open ? ' hl' : ''}">
+        <div class="mc-h">${avatar(r.employee_id, r.full_name)}<div class="grow"><b>${esc(r.full_name)}</b><span class="sub">${esc(r.department_name || 'Employee')}${r.employee_code ? ' · ' + esc(r.employee_code) : ''}</span></div>${CHIP[m.state]}</div>
+        <div class="mc-n"><div><div class="k">Target</div><div class="v">${tgtCell(r)}</div></div><div><div class="k">Achieved</div><div class="v">${achCell(r, m)}</div></div><div><div class="k">Pending</div><div class="v">${penCell(r, m)}</div></div></div>
+        <div class="mc-n" style="margin-top:6px;"><div><div class="k" style="color:#1d4ed8;">Query</div><div class="v">${r.query || 0}</div></div><div><div class="k" style="color:#b45309;">Campaign</div><div class="v">${r.campaign || 0}</div></div><div><div class="k">Other</div><div class="v">${Math.max(0, r.achieved - (r.query || 0) - (r.campaign || 0))}</div></div></div>
+        <div style="margin-top:8px;">${barOf(r, m)}</div>
+        <div class="mc-f"><span class="sub">Last update ${r.last_update ? fmtTime(r.last_update) : '—'}</span>${addBtn(r)}</div>
+        ${open ? formHtml(r) : ''}
+      </div>`;
+    });
+    const t = teamOf(D.rows);
+    h += `<div class="mc team"><div class="mc-h"><div class="grow"><b>Team total</b></div></div><div class="mc-n"><div><div class="k">Target</div><div class="v">${t.T}</div></div><div><div class="k">Achieved</div><div class="v">${t.A}<span class="pc">(${t.pct}%)</span></div></div><div><div class="k">Pending</div><div class="v">${t.P}<span class="pc">(${t.pp}%)</span></div></div></div><div class="mc-n" style="margin-top:6px;"><div><div class="k" style="color:#1d4ed8;">Query</div><div class="v">${t.Q}</div></div><div><div class="k" style="color:#b45309;">Campaign</div><div class="v">${t.K}</div></div></div></div>`;
+    return h + '</div>';
+  }
+
+  const qcTag = (r, x) => {
+    const q = (r.qh && r.qh[x]) || 0, c = (r.ch && r.ch[x]) || 0;
+    return (q || c) ? `<div class="qct">${q ? '<span class="q">Q' + q + '</span>' : ''}${c ? '<span class="c">C' + c + '</span>' : ''}</div>` : '';
+  };
+  function hrTable() {
+    const open = new Set(D.open_hours);
+    let h = '<div class="tscroll"><table class="ot no-stack" id="hrTable"><thead><tr><th>Employee</th><th>Target</th>';
+    D.hours.forEach(x => { h += `<th class="hh${x === D.now_hour ? ' now' : ''}">${hrLabel(x)}${x === D.now_hour ? '<br>now' : ''}</th>`; });
+    h += '<th>Achieved</th><th>Pending</th><th class="qc-h q">Query</th><th class="qc-h c">Campaign</th></tr></thead><tbody>';
+    D.rows.forEach(r => {
+      const m = calc(r);
+      h += `<tr data-emp="${r.employee_id}"><td>${empCell(r)}</td><td><b>${r.target > 0 ? r.target : '—'}</b></td>`;
+      D.hours.forEach(x => {
+        const now = x === D.now_hour ? ' now' : '';
+        h += open.has(x)
+          ? `<td class="hd${now}"><input class="hc" type="number" min="0" max="9999" inputmode="numeric" placeholder="–" value="${r.hours[x] == null ? '' : r.hours[x]}" data-emp="${r.employee_id}" data-h="${x}" aria-label="${esc(r.full_name)} ${hrRange(x)}">${qcTag(r, x)}</td>`
+          : `<td class="hd${now}"><span class="hc fut" title="${hrLabel(x)} has not started">·</span></td>`;
+      });
+      h += `<td class="c-ach">${achCell(r, m)}</td><td class="c-pen">${penCell(r, m)}</td>${qcCells(r).replace('class="qc q"', 'class="qc q c-q"').replace('class="qc c"', 'class="qc c c-c"')}</tr>`;
+    });
+    h += '<tr class="tot" id="hrTot"><td>Team total</td><td class="t-t"></td>';
+    D.hours.forEach(x => { h += `<td class="hd" data-th="${x}" style="font-size:13px;"></td>`; });
+    h += '<td class="t-a"></td><td class="t-p"></td><td class="qc q t-q"></td><td class="qc c t-k"></td></tr></tbody></table></div>';
+    setTimeout(updateHourTotals, 0);
+    return h;
+  }
+  // Updates the numbers in place, so tabbing across the boxes is never interrupted.
+  function updateHourTotals() {
+    const tbl = $('hrTable'); if (!tbl || !D) return;
+    D.rows.forEach(r => {
+      const tr = tbl.querySelector(`tr[data-emp="${r.employee_id}"]`); if (!tr) return;
+      const m = calc(r);
+      tr.querySelector('.c-ach').innerHTML = achCell(r, m);
+      tr.querySelector('.c-pen').innerHTML = penCell(r, m);
+      tr.querySelector('.c-q').innerHTML = r.query > 0 ? '<b>' + r.query + '</b>' : '<span class="sub">—</span>';
+      tr.querySelector('.c-c').innerHTML = r.campaign > 0 ? '<b>' + r.campaign + '</b>' : '<span class="sub">—</span>';
+    });
+    D.hours.forEach(x => {
+      const c = tbl.querySelector(`td[data-th="${x}"]`); if (!c) return;
+      if (!D.open_hours.includes(x)) { c.textContent = ''; return; }
+      c.textContent = D.rows.reduce((s, r) => s + (r.hours[x] || 0), 0);
+    });
+    const t = teamOf(D.rows);
+    tbl.querySelector('.t-t').textContent = t.T;
+    tbl.querySelector('.t-a').innerHTML = `${t.A}<span class="pc">(${t.pct}%)</span>`;
+    tbl.querySelector('.t-p').innerHTML = `${t.P}<span class="pc">(${t.pp}%)</span>`;
+    tbl.querySelector('.t-q').innerHTML = '<b>' + t.Q + '</b>'; tbl.querySelector('.t-k').innerHTML = '<b>' + t.K + '</b>';
+  }
+
+  // ---------- daily: saving ----------
+  function setHourLocal(r, hour, val) {
+    if (val === null) delete r.hours[hour]; else r.hours[hour] = val;
+    r.achieved = Object.values(r.hours).reduce((s, v) => s + v, 0);
+    r.last_update = nowHM();
+  }
+  async function saveHour(id, hour, val, q, c) {
+    const r = rowOf(id); if (!r) return false;
+    const before = JSON.parse(JSON.stringify(r));
+    setHourLocal(r, hour, val);
+    const withQC = q !== undefined;
+    r.qh = r.qh || {}; r.ch = r.ch || {};
+    if (val === null) { delete r.qh[hour]; delete r.ch[hour]; }
+    else if (withQC) { if (q > 0) r.qh[hour] = q; else delete r.qh[hour]; if (c > 0) r.ch[hour] = c; else delete r.ch[hour]; }
+    r.query = qcSum(r, 'qh'); r.campaign = qcSum(r, 'ch');
+    saving++;
+    try {
+      const cell = { employee_id: id, date, hour, orders: val === null ? '' : val };
+      if (withQC) { cell.query = q; cell.campaign = c; }
+      await post('order_targets.hours_save', { cells: [cell] });
+      flash($('saveNote'), 'Saved ✓');
+      return true;
+    } catch (e) {
+      Object.assign(r, before);
+      showAlert(e.message, 'error');
+      return false;
+    } finally { saving--; }
+  }
+  async function saveTarget(id, val) {
+    const r = rowOf(id); if (!r) return;
+    const before = r.target;
+    if (before === val) return;
+    r.target = val;
+    renderDay();
+    saving++;
+    try {
+      await post('order_targets.plan_save', { cells: [{ employee_id: id, date, target: val === 0 ? '' : val }] });
+      flash($('saveNote'), 'Saved ✓');
+    } catch (e) { r.target = before; showAlert(e.message, 'error'); renderDay(); }
+    finally { saving--; }
+  }
+  const parseWhole = (raw) => { raw = String(raw).trim(); if (raw === '') return null; const n = Number(raw); return (Number.isInteger(n) && n >= 0 && n <= 9999) ? n : NaN; };
+
+  // ---------- daily: events ----------
+  const body = $('dayBody');
+  body.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-act]'); if (!b) return;
+    const act = b.dataset.act, id = Number(b.dataset.emp || (b.closest('.xform') && b.closest('.xform').dataset.emp) || 0);
+    if (act === 'go-plan') { showPlan(true); return; }
+    if (act === 'edit-target') { adding = null; editingTarget = id; renderDay(); return; }
+    if (act === 'add') {
+      const r = rowOf(id); if (!r) return;
+      editingTarget = null;
+      const hr = defaultHour(r);
+      adding = { id, hour: hr, val: r.hours[hr] == null ? '' : String(r.hours[hr]), q: qcStr(r, 'qh', hr), c: qcStr(r, 'ch', hr) };
+      renderDay(); return;
+    }
+    if (act === 'x-cancel') { adding = null; renderDay(); return; }
+    if (act === 'x-save') submitAdd();
+  });
+  body.addEventListener('input', (e) => {
+    const cl = e.target.classList;
+    if ((cl.contains('xval') || cl.contains('xq') || cl.contains('xc')) && adding) {
+      if (cl.contains('xval')) adding.val = e.target.value; else if (cl.contains('xq')) adding.q = e.target.value; else adding.c = e.target.value;
+      const f = e.target.closest('.xform'), r = rowOf(adding.id);
+      f.querySelector('[data-prev]').innerHTML = prevHtml(r);
+    }
+  });
+  body.addEventListener('change', (e) => {
+    const t = e.target;
+    if (t.classList.contains('xhr') && adding) {
+      adding.hour = Number(t.value);
+      const r = rowOf(adding.id);
+      adding.val = r.hours[adding.hour] == null ? '' : String(r.hours[adding.hour]);
+      adding.q = qcStr(r, 'qh', adding.hour); adding.c = qcStr(r, 'ch', adding.hour);
+      const f = t.closest('.xform'), inp = f.querySelector('.xval');
+      inp.value = adding.val; f.querySelector('.xq').value = adding.q; f.querySelector('.xc').value = adding.c;
+      f.querySelector('[data-prev]').innerHTML = prevHtml(r);
+      inp.focus(); inp.select();
+      return;
+    }
+    if (t.classList.contains('hc') && t.tagName === 'INPUT') {
+      const id = Number(t.dataset.emp), hour = Number(t.dataset.h), r = rowOf(id);
+      const val = parseWhole(t.value);
+      if (Number.isNaN(val)) { showAlert('Orders must be a whole number from 0 to 9999.', 'error'); t.value = r.hours[hour] == null ? '' : r.hours[hour]; return; }
+      if ((r.hours[hour] == null ? null : r.hours[hour]) === val) return;
+      const done = saveHour(id, hour, val);   // the numbers change at once; the save follows
+      updateHourTotals();
+      done.then((ok) => { if (!ok) renderDay(); });
+    }
+  });
+  body.addEventListener('keydown', (e) => {
+    const t = e.target;
+    if (t.classList.contains('xval') || t.classList.contains('xq') || t.classList.contains('xc')) {
+      if (e.key === 'Enter') { e.preventDefault(); submitAdd(); }
+      else if (e.key === 'Escape') { adding = null; renderDay(); }
+    } else if (t.classList.contains('tin')) {
+      if (e.key === 'Enter') { e.preventDefault(); commitTarget(t); }
+      else if (e.key === 'Escape') { editingTarget = null; renderDay(); }
+    } else if (t.classList.contains('hc') && e.key === 'Enter') {
+      // Enter moves down the column, so a whole hour can be typed for everyone without touching the mouse.
+      e.preventDefault();
+      const tr = t.closest('tr'); let n = tr.nextElementSibling;
+      while (n && !n.dataset.emp) n = n.nextElementSibling;
+      const nx = n && n.querySelector(`input.hc[data-h="${t.dataset.h}"]`);
+      t.blur();
+      if (nx) { nx.focus(); nx.select(); }
+    }
+  });
+  body.addEventListener('focusout', (e) => { if (e.target.classList && e.target.classList.contains('tin')) commitTarget(e.target); });
+  function commitTarget(inp) {
+    if (editingTarget === null) return;
+    const id = editingTarget, val = parseWhole(inp.value);
+    editingTarget = null;
+    if (Number.isNaN(val)) { showAlert('A target must be a whole number from 0 to 9999.', 'error'); renderDay(); return; }
+    saveTarget(id, val === null ? 0 : val);
+  }
+  async function submitAdd() {
+    if (!adding) return;
+    const r = rowOf(adding.id), v = parseWhole(adding.val);
+    if (v === null) { showAlert('Type how many orders were done in that hour.', 'error'); return; }
+    if (Number.isNaN(v)) { showAlert('Orders must be a whole number from 0 to 9999.', 'error'); return; }
+    const hour = adding.hour, q = parseWhole(adding.q), c = parseWhole(adding.c), qq = q === null ? 0 : q, cc = c === null ? 0 : c;
+    if (Number.isNaN(q) || Number.isNaN(c)) { showAlert('Query and Campaign must be whole numbers from 0 to 9999.', 'error'); return; }
+    if (qq + cc > v) { showAlert('Query (' + qq + ') + Campaign (' + cc + ') cannot be more than the orders of that hour (' + v + ').', 'error'); return; }
+    adding = null;
+    const done = saveHour(r.employee_id, hour, v, qq, cc);   // the numbers change at once; the save follows
+    renderDay();
+    if (!(await done)) loadDay(true);
+  }
+
+  // ---------- daily: top bar ----------
+  function goDate(d) { if (!d) return; date = d; adding = null; editingTarget = null; loadDay(); }
+  $('dayInput').addEventListener('change', (e) => goDate(e.target.value));
+  $('btnPrev').addEventListener('click', () => goDate(addDays(date, -1)));
+  $('btnNext').addEventListener('click', () => goDate(addDays(date, 1)));
+  $('btnToday').addEventListener('click', () => { date = ''; adding = null; editingTarget = null; loadDay(); });
+  $('btnPlan').addEventListener('click', () => showPlan(false));
+  $('btnAddEmp').addEventListener('click', () => showPlan(true));
+  $('modeSeg').addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b || b.dataset.m === mode) return;
+    mode = b.dataset.m; adding = null; editingTarget = null;
+    if (D) renderDay();
+  });
+  window.matchMedia('(max-width:820px)').addEventListener('change', () => { if (view === 'day' && D) renderDay(); });
+
+  // Light refresh: when the tab comes back and once a minute — never while something is being typed.
+  function busy() {
+    const a = document.activeElement;
+    return saving > 0 || adding || editingTarget !== null || (a && /^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName) && a.closest('#dayBody'));
+  }
+  function refresh() { if (view === 'day' && !document.hidden && !busy()) loadDay(true); }
+  document.addEventListener('visibilitychange', refresh);
+  window.addEventListener('focus', refresh);
+  setInterval(refresh, 60000);
+
+  // ================= plan =================
+  function setView(v) {
+    view = v;
+    $('viewDay').hidden = v !== 'day'; $('viewPlan').hidden = v !== 'plan';
+    $('barDay').hidden = v !== 'day'; $('barPlan').hidden = v !== 'plan';
+    $('pgTitle').textContent = v === 'plan' ? 'Plan targets' : 'Order Targets';
+    $('pgSub').textContent = v === 'plan' ? 'Pick the employees, then set a target for each day — it can be different every day' : 'Daily order target for selected employees, tracked hour by hour';
+  }
+  async function showPlan(openPicker) {
+    setView('plan');
+    if (openPicker) pickOpen = true;
+    try { await Promise.all([loadStaff(), loadWeek(planWeek || date || '')]); renderPlan(); }
+    catch (e) { showAlert(e.message, 'error'); }
+    if (openPicker) { $('pickBox').scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
+  }
+  $('btnBack').addEventListener('click', () => { setView('day'); history.replaceState(null, '', location.pathname); loadDay(); });
+  async function loadStaff() { S = await get('order_targets.staff'); if (pickDept === null) { const sh = S.departments.find(d => /^sales head$/i.test(d.department_name.trim())); pickDept = sh ? String(sh.department_id) : ''; } }
+  async function loadWeek(ws) { P = await get('order_targets.plan', ws ? { week_start: ws } : {}); planWeek = P.week_start; }
+
+  function renderPlan() {
+    renderChips(); renderCands(); renderHours(); renderWeek();
+    $('pickBox').hidden = !pickOpen;
+  }
+  function renderChips() {
+    $('trackChips').innerHTML = (S.tracked.length ? S.tracked.map(e => `<span class="pchip">${avatar(e.employee_id, e.full_name)}${esc(e.full_name)}<button type="button" data-rm="${e.employee_id}" title="Stop tracking ${esc(e.full_name)}" aria-label="Remove ${esc(e.full_name)}">×</button></span>`).join('') : '<span class="sub">No one yet — add the employees who have a daily order target.</span>')
+      + `<button type="button" class="addc" id="btnPick">${pickOpen ? '− Hide list' : '+ Add employee'}</button>`;
+  }
+  $('trackChips').addEventListener('click', async (e) => {
+    if (e.target.closest('#btnPick')) { pickOpen = !pickOpen; renderChips(); $('pickBox').hidden = !pickOpen; return; }
+    const rm = e.target.closest('[data-rm]'); if (!rm) return;
+    const id = Number(rm.dataset.rm), emp = S.tracked.find(x => x.employee_id === id);
+    if (!confirm(`Stop tracking ${emp ? emp.full_name : 'this employee'}? Numbers already saved for past days stay.`)) return;
+    try { await post('order_targets.remove_staff', { employee_id: id }); await Promise.all([loadStaff(), loadWeek(planWeek)]); renderPlan(); }
+    catch (err) { showAlert(err.message, 'error'); }
+  });
+  function renderCands() {
+    const sel = $('pickDept');
+    sel.innerHTML = '<option value="">All departments</option>' + S.departments.map(d => `<option value="${d.department_id}"${String(d.department_id) === pickDept ? ' selected' : ''}>${esc(d.department_name)}</option>`).join('');
+    drawCands();
+  }
+  function drawCands() {
+    const q = $('pickQ').value.trim().toLowerCase(), tracked = new Set(S.tracked.map(x => x.employee_id));
+    let list = S.employees.filter(e => (!pickDept || String(e.department_id) === pickDept) && (!q || (e.full_name + ' ' + e.employee_code).toLowerCase().includes(q)));
+    const total = list.length; list = list.slice(0, 60);
+    $('cands').innerHTML = list.length ? list.map(e => `<div class="cand">${avatar(e.employee_id, e.full_name)}<div><b>${esc(e.full_name)}</b><span class="sub">${esc(e.employee_code)}${e.department_name ? ' · ' + esc(e.department_name) : ''}</span></div>${tracked.has(e.employee_id) ? '<span class="got">✓ Tracked</span>' : `<button type="button" class="go" data-add="${e.employee_id}">+ Add</button>`}</div>`).join('') + (total > 60 ? `<div class="sub" style="grid-column:1/-1;">Showing the first 60 of ${total} — narrow it with the search box.</div>` : '')
+      : '<div class="sub" style="grid-column:1/-1;">No one matches. Try another department or search.</div>';
+  }
+  $('pickDept').addEventListener('change', (e) => { pickDept = e.target.value; drawCands(); });
+  $('pickQ').addEventListener('input', drawCands);
+  $('cands').addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-add]'); if (!b) return;
+    b.disabled = true;
+    try { await post('order_targets.add_staff', { employee_ids: [Number(b.dataset.add)] }); await Promise.all([loadStaff(), loadWeek(planWeek)]); renderChips(); drawCands(); renderWeek(); }
+    catch (err) { showAlert(err.message, 'error'); b.disabled = false; }
+  });
+
+  function renderHours() {
+    const opt = (from, to, cur) => { let h = ''; for (let i = from; i <= to; i++) h += `<option value="${i}"${i === cur ? ' selected' : ''}>${hrLabel(i)}</option>`; return h; };
+    $('hrStart').innerHTML = opt(0, 23, S.start); $('hrEnd').innerHTML = opt(1, 24, S.end);
+  }
+  $('btnHrs').addEventListener('click', async () => {
+    const s = Number($('hrStart').value), e = Number($('hrEnd').value);
+    if (e <= s) { showAlert('The last hour must come after the first hour.', 'error'); return; }
+    try { const r = await post('order_targets.settings_save', { start: s, end: e }); S.start = r.start; S.end = r.end; showAlert('Tracked hours saved: ' + hrLabel(r.start) + ' to ' + hrLabel(r.end) + '.'); }
+    catch (err) { showAlert(err.message, 'error'); }
+  });
+
+  function renderWeek() {
+    const days = P.days, today = P.today;
+    const a = dparts(days[0]), z = dparts(days[6]);
+    $('wkTitle').textContent = `Targets · ${a.dd} ${a.mon === z.mon ? '' : a.mon + ' '}– ${z.dd} ${z.mon}`;
+    const cur = days.includes(today);
+    $('wkNow').classList.toggle('on', cur);
+    $('wkNow').textContent = cur ? 'This week' : 'Go to this week';
+    let h = '<thead><tr><th>Employee</th>' + days.map(d => { const p = dparts(d); return `<th class="day${d === today ? ' today' : ''}">${p.dow} ${p.dn}<small>${d === today ? 'today' : p.mon}</small></th>`; }).join('') + '</tr></thead><tbody>';
+    if (!P.rows.length) h += `<tr><td colspan="8"><div class="empty">Add employees above, then their week appears here.</div></td></tr>`;
+    P.rows.forEach(r => {
+      h += `<tr><td><div class="emp">${avatar(r.employee_id, r.full_name)}<div><b>${esc(r.full_name)}</b><span class="sub">${esc(r.employee_code)}</span></div></div></td>`;
+      days.forEach(d => { const v = r.targets[d]; h += `<td class="dd"><input class="tn" type="number" min="0" max="9999" inputmode="numeric" placeholder="—" value="${v ? v : ''}" data-emp="${r.employee_id}" data-d="${d}"${d < today ? ' disabled title="This day is over — correct it from the daily table"' : ''}></td>`; });
+      h += '</tr>';
+    });
+    if (P.rows.length) h += '<tr class="tot"><td>Team target</td>' + days.map(d => `<td class="dd" data-tt="${d}"></td>`).join('') + '</tr>';
+    $('planTable').innerHTML = h + '</tbody>';
+    updateTeamRow();
+    const who = $('sameWho'), keep = who.value;
+    who.innerHTML = '<option value="">every tracked employee</option>' + P.rows.map(r => `<option value="${r.employee_id}">${esc(r.full_name)}</option>`).join('');
+    who.value = keep;
+    $('sameBox').hidden = !sameOpen;
+  }
+  function updateTeamRow() {
+    P.days.forEach(d => {
+      const c = $('planTable').querySelector(`td[data-tt="${d}"]`); if (!c) return;
+      const s = P.rows.reduce((t, r) => t + (r.targets[d] || 0), 0);
+      c.textContent = s || '—';
+    });
+  }
+  async function saveCells(cells) {
+    await post('order_targets.plan_save', { cells });
+    cells.forEach(c => { const r = P.rows.find(x => x.employee_id === c.employee_id); if (!r) return; if (c.target) r.targets[c.date] = c.target; else delete r.targets[c.date]; });
+  }
+  $('planTable').addEventListener('change', async (e) => {
+    const t = e.target; if (!t.classList.contains('tn')) return;
+    const id = Number(t.dataset.emp), d = t.dataset.d, r = P.rows.find(x => x.employee_id === id);
+    const val = parseWhole(t.value);
+    if (Number.isNaN(val)) { showAlert('A target must be a whole number from 0 to 9999.', 'error'); t.value = r.targets[d] || ''; return; }
+    try { await saveCells([{ employee_id: id, date: d, target: val || 0 }]); flash($('planNote'), 'Saved ✓'); updateTeamRow(); }
+    catch (err) { showAlert(err.message, 'error'); t.value = r.targets[d] || ''; }
+  });
+  $('planTable').addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' || !e.target.classList.contains('tn')) return;
+    e.preventDefault();
+    const t = e.target, tr = t.closest('tr'), n = tr.nextElementSibling;
+    t.blur();
+    const nx = n && n.querySelector(`input.tn[data-d="${t.dataset.d}"]`);
+    if (nx) { nx.focus(); nx.select(); }
+  });
+  async function goWeek(ws) { try { await loadWeek(ws); sameOpen = false; renderWeek(); } catch (e) { showAlert(e.message, 'error'); } }
+  $('wkPrev').addEventListener('click', () => goWeek(addDays(planWeek, -7)));
+  $('wkNext').addEventListener('click', () => goWeek(addDays(planWeek, 7)));
+  $('wkNow').addEventListener('click', () => goWeek(''));
+
+  $('btnCopy').addEventListener('click', async () => {
+    if (!P.rows.length) { showAlert('Add employees first.', 'error'); return; }
+    const today = P.today, idx = P.days.map((d, i) => i).filter(i => P.days[i] >= today);
+    if (!idx.length) { showAlert('This week is already over — nothing to copy into.', 'error'); return; }
+    let prev;
+    try { prev = await get('order_targets.plan', { week_start: addDays(planWeek, -7) }); } catch (e) { showAlert(e.message, 'error'); return; }
+    const pm = {}; prev.rows.forEach(r => { pm[r.employee_id] = r.targets; });
+    const cells = [];
+    P.rows.forEach(r => idx.forEach(i => { const v = (pm[r.employee_id] || {})[prev.days[i]] || 0; if ((r.targets[P.days[i]] || 0) !== v) cells.push({ employee_id: r.employee_id, date: P.days[i], target: v }); }));
+    if (!cells.length) { showAlert('Nothing to change — this week already matches last week.'); return; }
+    if (P.rows.some(r => idx.some(i => r.targets[P.days[i]])) && !confirm('Replace the targets for the days still to come this week with last week\'s numbers?')) return;
+    try { await saveCells(cells); renderWeek(); flash($('planNote'), 'Copied ✓'); } catch (e) { showAlert(e.message, 'error'); }
+  });
+  $('btnSame').addEventListener('click', () => { sameOpen = !sameOpen; $('sameBox').hidden = !sameOpen; if (sameOpen) $('sameN').focus(); });
+  $('btnSameNo').addEventListener('click', () => { sameOpen = false; $('sameBox').hidden = true; });
+  $('btnSameGo').addEventListener('click', async () => {
+    const n = parseWhole($('sameN').value);
+    if (n === null || Number.isNaN(n) || n < 1) { showAlert('Type a target of 1 or more.', 'error'); return; }
+    const who = $('sameWho').value ? [Number($('sameWho').value)] : P.rows.map(r => r.employee_id);
+    const skipSun = $('sameSun').checked;
+    const days = P.days.filter(d => d >= P.today && !(skipSun && dparts(d).wd === 0));
+    if (!days.length || !who.length) { showAlert('No days left this week to fill.', 'error'); return; }
+    const cells = []; who.forEach(id => days.forEach(d => cells.push({ employee_id: id, date: d, target: n })));
+    try { await saveCells(cells); sameOpen = false; renderWeek(); flash($('planNote'), 'Saved ✓'); } catch (e) { showAlert(e.message, 'error'); }
+  });
+
+  // ---------- start ----------
+  if (location.hash === '#plan') showPlan(false); else loadDay();
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>

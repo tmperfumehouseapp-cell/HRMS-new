@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Offices — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=4">
+<link rel="stylesheet" href="assets/css/boss.css?v=1">
+<style>
+  .of-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:14px;}
+  .of-card{display:block;background:var(--surface);border-radius:var(--radius);padding:18px 20px;color:inherit;text-decoration:none;box-shadow:0 1px 2px rgba(20,22,26,.04),0 6px 18px -10px rgba(20,22,26,.12);cursor:pointer;}
+  .of-card:hover{transform:translateY(-1px);} .of-card h3{margin:0 0 3px;font-size:17px;font-weight:800;}
+  .of-steps{display:flex;gap:10px;flex-wrap:wrap;} .of-steps span{flex:1;min-width:150px;border-radius:16px;padding:10px 13px;background:#f1f3f6;font-size:13px;font-weight:600;color:#4a505c;} .of-steps span.done{background:#e6f6ee;color:#0f6b43;} .of-steps span.now{background:#111;color:#fff;}
+  .of-frames{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0;} .of-frames img{width:78px;height:58px;object-fit:cover;border-radius:10px;}
+  .of-zone{border:1px solid var(--line,#eceef1);border-radius:18px;padding:13px 15px;margin-top:10px;} .of-zone.proposed{border-style:dashed;background:#fffaf0;} .of-zone.off{opacity:.55;}
+  .of-zone h4{margin:0;font-size:15px;font-weight:800;} .of-zone ul{margin:8px 0 0;padding-left:20px;font-size:13.5px;line-height:1.55;} .of-zone li small{color:var(--muted);}
+  .of-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:9px;}
+  .of-ppl{margin-top:12px;} .of-ppl h4{margin:0 0 6px;font-size:13.5px;font-weight:800;} .of-chip{display:inline-flex;align-items:center;gap:6px;background:#f1f3f6;border-radius:99px;padding:5px 6px 5px 12px;font-size:13px;margin:0 6px 6px 0;}
+  .of-chip button{border:0;background:#dfe3e8;border-radius:50%;width:22px;height:22px;cursor:pointer;font-size:12px;line-height:1;}
+  .of-chk{display:flex;gap:12px;flex-wrap:wrap;border-top:1px solid var(--line,#eceef1);padding:12px 0;} .of-chk img{width:150px;height:110px;object-fit:cover;border-radius:12px;background:#f1f3f6;}
+  .of-note{background:#fff8ea;border-radius:14px;padding:10px 13px;font-size:13px;color:#6b4a00;line-height:1.5;margin-top:10px;}
+  textarea.bd-in{min-height:84px;resize:vertical;font:inherit;}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><div><h1 id="ttl">Offices</h1><div class="bd-sub" id="sub">Cleaning and upkeep. Claude checks every photo first.</div></div><div id="topBtns"></div></div>
+    <div class="content"><div class="bd" id="root"><div class="bd-empty">Loading…</div></div></div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=4"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script src="assets/js/boss_common.js?v=2"></script>
+<script src="assets/js/of_place_ui.js?v=p2"></script>
+<script>
+  guardPage();
+  renderSidebar('office_care');
+  const { esc, $, toast } = BD;
+  const STORE = new URLSearchParams(location.search).get('store') === '1';
+  let OID = Number(new URLSearchParams(location.search).get('id') || 0), L = null, G = null, FR = [], NOTICE = null, SEL = {};
+  const PEOPLE = {};   // working copy of the three seat lists
+
+  /* ---------------- list ---------------- */
+  async function loadList() {
+    OID = 0; history.replaceState(null, '', location.pathname);
+    try { L = await api.get('of.list'); renderList(); } catch (e) { fail(e); }
+  }
+  function fail(e) { $('root').innerHTML = '<div class="bd-card"><div class="bd-empty"><b>Cannot open Offices</b>' + esc(e.message) + '</div></div>'; }
+  function renderList() {
+    $('topBtns').innerHTML = L.admin ? '<button class="bd-btn pri" id="newOff" type="button">+ New office</button>' : '';
+    if (!L.offices.length) { $('root').innerHTML = '<div class="bd-card"><div class="bd-empty"><b>No office yet</b>Add your first office (for example Oberon 1). Then show Claude a short walk-through video and it will draw up the cleaning zones and checkpoints for you to approve.</div></div><div id="ofpOther"></div>'; mountOther(); return; }
+    $('root').innerHTML = '<div class="of-grid">' + L.offices.map((o) => {
+      const t = o.today || { done: 0, open: 0, missed: 0, unowned: 0, ai_clear: 0, to_review: 0, issues: 0, loops: 0 }, tot = t.done + t.open + t.missed + t.unowned, pct = tot ? Math.round(100 * t.done / tot) : 0;
+      return '<a class="of-card" data-open="' + o.id + '"><h3>' + esc(o.name) + (o.kind === 'store' ? ' <span class="bd-chip info">Store</span>' : '') + '</h3><div class="bd-sub">' + esc(o.address || '') + '</div>'
+        + '<div style="margin:10px 0"><span class="bd-chip ok">' + o.zones.approved + ' zones live</span> ' + (o.zones.proposed ? '<span class="bd-chip warn">' + o.zones.proposed + ' to approve</span> ' : '') + (!o.cleaners.length ? '<span class="bd-chip bad">no cleaner</span>' : '') + '</div>'
+        + (tot ? '<div class="bd-bar"><i class="' + (t.missed ? 'bad' : '') + '" style="width:' + pct + '%"></i></div><div class="bd-sub" style="margin-top:5px">' + t.done + ' of ' + tot + ' cleanings done today' + (t.missed ? ' · <b style="color:#d9423b">' + t.missed + ' missed</b>' : '') + '</div>' : '<div class="bd-sub">No cleaning due today</div>')
+        + '<div class="bd-sub" style="margin-top:8px">Cleaners: ' + (o.cleaners.length ? esc(o.cleaners.join(', ')) : '—') + '<br>Checker: ' + (o.checker.length ? esc(o.checker.join(', ')) : '—') + '</div>'
+        + ((t.to_review || t.loops) ? '<div style="margin-top:8px">' + (t.to_review ? '<span class="bd-chip info">' + t.to_review + ' to check</span> ' : '') + (t.loops ? '<span class="bd-chip bad">' + t.loops + ' repeating problem</span>' : '') + '</div>' : '') + '</a>';
+    }).join('') + '</div><div id="ofpOther"></div>';
+    mountOther();
+  }
+  /* Places that belong to no office yet (store, RJD Hub ...): register a place there; the office and its Boss Engine section are made for you. */
+  function mountOther() {
+    if (!window.OfPlace || !$('ofpOther')) return;
+    OfPlace.mountOther($('ofpOther'), { admin: L.admin, start: (o) => OfPlace.openWizard({ root: $('root'), h1: $('ttl'), sub: $('sub'), btns: $('topBtns'), officeId: 0, officeName: o.supplyName, hasSection: false, supplyCode: o.supplyCode, supplyName: o.supplyName, screen: 1, onExit: () => loadList() }) });
+  }
+
+  /* ---------------- detail ---------------- */
+  async function loadOne(id) {
+    OID = id; history.replaceState(null, '', '?id=' + id);
+    try { G = await api.get('of.get', { id }); ['cleaner', 'checker', 'main'].forEach((k) => { PEOPLE[k] = G.seats[k].holders.slice(); }); renderOne(); } catch (e) { fail(e); }
+  }
+  const empName = (id) => { const e = G.employees.find((x) => x.id === id); return e ? e.name : '#' + id; };
+
+  /* ---------------- Store: CAFETERIA (a small pantry) ----------------
+     One place "Cafeteria": 3 reference photos + a few counted things (milk, coffee, glasses...) each with a "must have" number.
+     One person fills it every day (photos + counts, in My Day); here the boss sees what is missing ("To bring"). Built on the Pantry engine (of.pl_*). */
+  const CF = { place: null, others: [], photos: [], items: [], today: null, form: null, edit: false, busy: false, draft: null, msg: '' };
+  const CF_UNITS = [['bag', 'Bag (થેલી)'], ['grams', 'Grams'], ['kg', 'Kg'], ['packet', 'Packet'], ['pcs', 'Pieces'], ['litre', 'Litre']];
+  const CF_DEFAULT = [{ name: 'Milk', unit: 'bag', min: 4 }, { name: 'Coffee', unit: 'grams', min: 500 }, { name: 'Glasses', unit: 'pcs', min: 20 }];
+  const cfRef = (pid) => api.buildUrl('of.pl_photo_get', { point_id: pid, token: api.token() });
+  const dataToBlob = (u) => { const h = u.split(','), m = /:(.*?);/.exec(h[0])[1], bin = atob(h[1]), a = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i); return new Blob([a], { type: m }); };
+  const fileToBlob = (file) => new Promise((res, rej) => { const im = new Image(), u = URL.createObjectURL(file); im.onload = () => { try { res(dataToBlob(shrink(im, im.naturalWidth, im.naturalHeight))); } catch (e) { rej(e); } URL.revokeObjectURL(u); }; im.onerror = () => { URL.revokeObjectURL(u); rej(new Error('This photo cannot be opened. Choose another one.')); }; im.src = u; });
+  const addMin = (hhmm, n) => { const [h, m] = hhmm.split(':').map(Number), t = (h * 60 + m + n) % 1440; return String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0'); };
+  const cfNum = (v) => String(Math.round(Number(v) * 100) / 100);
+  async function renderStoreSimple() {
+    $('sub').textContent = G.office.name; $('topBtns').innerHTML = '';
+    if (!document.getElementById('cfCss')) { const st = document.createElement('style'); st.id = 'cfCss'; st.textContent = '.cf-ph{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}@media(max-width:560px){.cf-ph{grid-template-columns:1fr}}.cf-s{border:2px dashed #c8ccd2;border-radius:14px;aspect-ratio:4/3;position:relative;overflow:hidden;display:grid;place-items:center;background:#f6f7f9;color:#6f7480;font-weight:700;text-align:center;cursor:pointer}.cf-s img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}.cf-s input{position:absolute;inset:0;opacity:0;cursor:pointer}.cf-s .t{position:absolute;left:6px;bottom:6px;background:rgba(0,0,0,.6);color:#fff;font-size:11px;border-radius:99px;padding:1px 9px}.cf-r{display:grid;grid-template-columns:minmax(120px,2fr) minmax(110px,1fr) minmax(90px,1fr) auto;gap:8px;align-items:end;margin-bottom:8px}@media(max-width:560px){.cf-r{grid-template-columns:1fr 1fr}}.cf-r label{display:flex;flex-direction:column;gap:2px;font-size:12px;color:#6f7480}.cf-tb{width:100%;border-collapse:collapse;font-size:14px}.cf-tb td,.cf-tb th{padding:8px 6px;border-bottom:1px solid #eceef2;text-align:left}.cf-tb th{font-size:12px;color:#6f7480}.cf-bad{color:#b42318;font-weight:700}.cf-ok{color:#157a3c;font-weight:700}.cf-bring{border:2px solid #b45309;border-radius:12px;padding:10px 14px;background:#fff8ec}'; document.head.appendChild(st); }
+    $('root').innerHTML = '<div class="bd-card"><div class="bd-sub">લોડ થઈ રહ્યું છે…</div></div>';
+    CF.place = null; CF.others = []; CF.photos = []; CF.items = []; CF.today = null; CF.form = null;
+    try {
+      const r = await api.get('of.pl_list', { office_id: OID }); const all = r.places || [];
+      CF.place = all.find((p) => p.name === 'Cafeteria') || null; CF.others = all.filter((p) => p.name !== 'Cafeteria' && p.state === 'on');
+      if (CF.place) {
+        const d = await api.get('of.pl_get', { zone_id: CF.place.zone_id }); CF.photos = d.photos || []; CF.items = d.counts || [];
+        try { CF.today = await api.get('of.pl_today', { zone_id: CF.place.zone_id }); } catch (e) { CF.today = null; }
+        try { CF.form = await api.get('of.pl_form', { zone_id: CF.place.zone_id }); } catch (e) { CF.form = null; }
+      }
+    } catch (e) { CF.place = null; }
+    CF.edit = false; CF.draft = null; drawCafe();
+  }
+  function cfStartDraft() {
+    const own = CF.place && CF.place.owner && CF.place.owner.emp_ids && CF.place.owner.emp_ids[0] || 0;
+    CF.draft = {
+      photos: [0, 1, 2].map((i) => { const p = CF.photos[i]; return { file: null, url: p && p.has_ref ? cfRef(p.point_id) : '', pointId: p ? p.point_id : 0 }; }),
+      items: CF.items.length ? CF.items.map((i) => ({ id: i.id, name: i.name, unit: i.unit || 'pcs', min: i.min == null ? 0 : i.min })) : CF_DEFAULT.map((x) => Object.assign({}, x)),
+      emp: own, time: (CF.place && CF.place.photo_time) || '11:00'
+    };
+  }
+  function cfDrawForm() {
+    const D = CF.draft, empOpt = '<option value="">Choose…</option>' + G.employees.map((e) => '<option value="' + e.id + '"' + (e.id === D.emp ? ' selected' : '') + '>' + esc(e.name) + '</option>').join('');
+    let h = '';
+    h += '<div class="bd-card"><div class="bd-h"><h2>1 · Reference photos (3)</h2></div><div class="bd-sub" style="margin:6px 0 10px">Take 3 photos of how the cafeteria should look when it is ready (for example the counter, the shelf and the sink). The person sees them and takes the same photos every day. Tap a box to choose a photo.</div><div class="cf-ph">'
+      + D.photos.map((p, i) => '<div class="cf-s">' + (p.url ? '<img alt="" src="' + esc(p.url) + '">' : '<span>📷 Photo ' + (i + 1) + '</span>') + '<span class="t">Photo ' + (i + 1) + '</span><input type="file" accept="image/*" data-cfp="' + i + '"></div>').join('') + '</div></div>';
+    h += '<div class="bd-card"><div class="bd-h"><h2>2 · What must be there</h2></div><div class="bd-sub" style="margin:6px 0 10px">Add each thing, how it is counted, and the number that <b>must be there at least</b>. Example: <b>Milk · Bag · 4</b> means at least 4 bags must always be there. Coffee can be in grams or kg or packets. Anything below its number goes to the <b>"To bring"</b> list.</div>'
+      + D.items.map((x, i) => '<div class="cf-r"><label>Name<input class="bd-in" data-cfn="' + i + '" value="' + esc(x.name) + '" placeholder="e.g. Milk"></label><label>Counted in<select class="bd-in" data-cfu="' + i + '">' + CF_UNITS.map((u) => '<option value="' + u[0] + '"' + (u[0] === x.unit ? ' selected' : '') + '>' + u[1] + '</option>').join('') + '</select></label><label>Must have at least<input class="bd-in" type="number" min="0" step="any" inputmode="decimal" data-cfm="' + i + '" value="' + esc(x.min) + '"></label><button class="bd-btn sm" type="button" data-cfx="' + i + '" aria-label="remove">✕</button></div>').join('')
+      + '<button class="bd-btn sm" type="button" id="cfAdd">+ Add a thing</button></div>';
+    h += '<div class="bd-card"><div class="bd-h"><h2>3 · Who fills it every day</h2></div><div class="bd-sub" style="margin:6px 0 10px">This person sees the Cafeteria in <b>My Day</b>, takes the 3 photos, types the counts (milk, coffee, glasses…) and presses Submit.</div><div class="cf-r" style="grid-template-columns:minmax(160px,2fr) minmax(110px,1fr)"><label>Person<select class="bd-in" id="cfEmp">' + empOpt + '</select></label><label>Fill it by<input class="bd-in" type="time" id="cfTime" value="' + esc(D.time) + '"></label></div></div>';
+    h += '<div class="bd-card"><button class="bd-btn pri" id="cfSave" type="button"' + (CF.busy ? ' disabled' : '') + '>' + (CF.busy ? 'Saving…' : (CF.place ? 'Save changes' : 'Start the Cafeteria')) + '</button> ' + (CF.place ? '<button class="bd-btn" id="cfCancel" type="button">Cancel</button>' : '') + '</div>';
+    return h;
+  }
+  function cfDrawStatus() {
+    const P = CF.place, T = CF.today, rows = (T && T.rows) || [], done = !!(T && T.submitted), byId = {}; rows.forEach((r) => { byId[r.item_id] = r; });
+    const owner = (P.owner && P.owner.names && P.owner.names.length) ? P.owner.names.join(', ') : 'nobody yet';
+    const low = rows.filter((r) => r.below);
+    let h = '<div class="bd-card"><div class="bd-h"><h2>Cafeteria</h2><span><span class="bd-chip ' + (P.state === 'on' ? 'ok' : 'warn') + '">' + (P.state === 'on' ? 'ON' : 'OFF') + '</span> <button class="bd-btn sm" id="cfEdit" type="button">Edit</button></span></div>'
+      + '<div class="bd-sub" style="margin-top:4px">Filled by <b>' + esc(owner) + '</b> · every day by ' + esc(P.photo_time || '') + (P.state === 'on' ? '' : ' · <b>switched off</b>') + '</div></div>';
+    h += '<div class="bd-card"><div class="bd-h"><h2>Today</h2><span class="bd-chip ' + (done ? 'ok' : 'warn') + '">' + (done ? '✓ Filled' : 'Not filled yet') + '</span></div>'
+      + (done ? '<div class="bd-sub" style="margin:4px 0 8px">Filled by <b>' + esc(T.by || '') + '</b> at ' + esc(String(T.at || '').slice(11, 16)) + '</div>' : '<div class="bd-sub" style="margin:4px 0 8px">The person has not submitted today\'s counts yet. Last counts are shown below.</div>')
+      + '<table class="cf-tb"><thead><tr><th>Thing</th><th>Count today</th><th>Must have</th><th></th></tr></thead><tbody>'
+      + CF.items.map((i) => { const r = byId[i.id]; const v = r ? r.value : null; const bad = r && r.below; return '<tr><td><b>' + esc(i.name) + '</b></td><td>' + (r ? '<b>' + cfNum(v) + '</b> ' + esc(i.unit || '') : (i.last_count != null ? '<span class="bd-sub">last: ' + cfNum(i.last_count) + ' ' + esc(i.unit || '') + '</span>' : '–')) + '</td><td>' + cfNum(i.min == null ? 0 : i.min) + ' ' + esc(i.unit || '') + '</td><td>' + (r ? (bad ? '<span class="cf-bad">Short by ' + cfNum(Math.max(0, i.min - v)) + '</span>' : '<span class="cf-ok">OK ✓</span>') : '') + '</td></tr>'; }).join('')
+      + '</tbody></table></div>';
+    if (done) h += low.length ? '<div class="cf-bring"><b style="font-size:15px">To bring (' + low.length + ')</b><div class="bd-sub" style="margin:2px 0 6px">These are below the number that must be there. Bring them, and the person types the new count tomorrow.</div>' + low.map((r) => '<div style="font-size:15px;padding:3px 0">• <b>' + esc(r.name) + '</b>: bring <b>' + cfNum(r.need_qty != null ? r.need_qty : Math.max(0, r.min - r.value)) + '</b> ' + esc((CF.items.find((i) => i.id === r.item_id) || {}).unit || '') + ' <span class="bd-sub">(has ' + cfNum(r.value) + ', must have ' + cfNum(r.min) + ')</span></div>').join('') + '</div>' : '<div class="bd-card"><div class="cf-ok">Nothing is missing today ✓</div></div>';
+    // photos: what it should look like, and what was taken today
+    const fp = (CF.form && CF.form.photos) || [];
+    h += '<div class="bd-card"><div class="bd-h"><h2>Photos</h2></div><div class="cf-ph" style="margin-top:8px">' + CF.photos.map((p, i) => { const f = fp.find((x) => x.point_id === p.point_id); const today = f && f.status === 'done' && f.task_id ? '<img alt="" data-photo="' + f.task_id + '">' : ''; return '<div><div class="bd-sub" style="margin-bottom:4px">Photo ' + (i + 1) + ' · should look like</div><div class="cf-s" style="cursor:default">' + (p.has_ref ? '<img alt="" src="' + esc(cfRef(p.point_id)) + '">' : '<span>no photo</span>') + '</div>' + '<div class="bd-sub" style="margin:6px 0 4px">Today</div><div class="cf-s" style="cursor:default">' + (today || '<span>not taken yet</span>') + '</div></div>'; }).join('') + '</div></div>';
+    if (P.state !== 'on') h += '<div class="bd-card"><button class="bd-btn pri" id="cfOn" type="button">Switch ON</button></div>';
+    return h;
+  }
+  function drawCafe() {
+    let h = '';
+    if (CF.msg) { h += '<div class="bd-card"><div class="bd-sub" style="color:#157a3c;font-weight:700">' + esc(CF.msg) + '</div></div>'; CF.msg = ''; }
+    if (!CF.place || CF.edit) { if (!CF.draft) cfStartDraft(); h += '<div class="bd-card"><div class="bd-h"><h2>' + (CF.place ? 'Edit the Cafeteria' : 'Start the Cafeteria') + '</h2></div><div class="bd-sub" style="margin-top:4px">A small pantry to begin with: 3 photos and a few counted things. We can make it bigger later in the same way.</div></div>' + cfDrawForm(); }
+    else h += cfDrawStatus();
+    $('root').innerHTML = h;
+    const on = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = fn; };
+    on('cfEdit', () => { CF.edit = true; CF.draft = null; drawCafe(); });
+    on('cfCancel', () => { CF.edit = false; CF.draft = null; drawCafe(); });
+    on('cfAdd', () => { CF.draft.items.push({ name: '', unit: 'pcs', min: 0 }); cfKeep(); drawCafe(); });
+    on('cfSave', cfSave);
+    on('cfOn', async () => { try { const r = await api.post('of.pl_on', { zone_id: CF.place.zone_id }); CF.msg = r.message; await loadOne(OID); } catch (e) { toast(e.message, true); } });
+    document.querySelectorAll('[data-cfx]').forEach((b) => { b.onclick = () => { cfKeep(); CF.draft.items.splice(+b.dataset.cfx, 1); drawCafe(); }; });
+    document.querySelectorAll('[data-cfp]').forEach((inp) => { inp.onchange = () => { const f = inp.files[0]; if (!f) return; cfKeep(); const d = CF.draft.photos[+inp.dataset.cfp]; d.file = f; d.url = URL.createObjectURL(f); drawCafe(); }; });
+  }
+  function cfKeep() {        // copy what is typed into the draft before the form is drawn again
+    if (!CF.draft || !document.getElementById('cfSave')) return;
+    document.querySelectorAll('[data-cfn]').forEach((el) => { CF.draft.items[+el.dataset.cfn].name = el.value; });
+    document.querySelectorAll('[data-cfu]').forEach((el) => { CF.draft.items[+el.dataset.cfu].unit = el.value; });
+    document.querySelectorAll('[data-cfm]').forEach((el) => { CF.draft.items[+el.dataset.cfm].min = el.value; });
+    const e = document.getElementById('cfEmp'); if (e) CF.draft.emp = Number(e.value) || 0; const t = document.getElementById('cfTime'); if (t) CF.draft.time = t.value || '11:00';
+  }
+  async function cfSave() {
+    cfKeep(); const D = CF.draft;
+    const items = D.items.map((x) => ({ id: x.id || undefined, name: String(x.name).trim(), unit: x.unit, min: x.min === '' ? NaN : Number(x.min) })).filter((x) => x.name);
+    if (!items.length) { toast('Add at least one thing to count (for example Milk).', true); return; }
+    if (items.some((x) => !(x.min >= 0))) { toast('Type the "must have at least" number for every thing.', true); return; }
+    if (!D.emp) { toast('Choose the person who fills it every day.', true); return; }
+    if (!CF.place && !D.photos.some((p) => p.file)) { toast('Add at least one reference photo (3 is best).', true); return; }
+    CF.busy = true; drawCafe();
+    try {
+      let zid = CF.place ? CF.place.zone_id : 0;
+      if (!zid) { const r = await api.post('of.pl_step', { office_id: OID, step: 1, data: { name: 'Cafeteria', name_hi: 'કેફેટેરિયા' } }); zid = r.zone_id; }
+      await api.post('of.pl_step', { zone_id: zid, step: 2, data: { photo_time: D.time } });
+      for (let i = 0; i < D.photos.length; i++) {
+        const p = D.photos[i]; if (!p.file) continue;
+        const fd = new FormData(); fd.append('zone_id', zid); if (p.pointId) fd.append('point_id', p.pointId); fd.append('label', 'Cafeteria photo ' + (i + 1)); fd.append('label_hi', 'કેફેટેરિયા ફોટો ' + (i + 1)); fd.append('sort', i + 1); fd.append('photo', await fileToBlob(p.file), 'ref.jpg');
+        toast('Saving photo ' + (i + 1) + '…'); await api.upload('of.pl_photo', fd);
+      }
+      await api.post('of.pl_step', { zone_id: zid, step: 3, data: { counts: items } });
+      await api.post('of.pl_step', { zone_id: zid, step: 9, data: { photo_time: D.time, check_by: addMin(D.time, 60), owner_emp_ids: [D.emp] } });
+      let msg = 'Saved.';
+      if (!CF.place || CF.place.state !== 'on') { const r = await api.post('of.pl_on', { zone_id: zid, owner_emp_ids: [D.emp] }); msg = r.message + ((r.warnings || []).length ? ' ' + r.warnings.join(' ') : ''); }
+      for (const o of CF.others) { try { await api.post('of.pl_off', { zone_id: o.zone_id }); } catch (e) { /* the old place stays as it was */ } }      // the old Pantry / cleaning places stop; nothing is deleted
+      CF.busy = false; CF.msg = msg; await loadOne(OID);
+    } catch (e) { CF.busy = false; drawCafe(); toast(e.message, true); }
+  }
+  function renderOne() {
+    if (G.office.kind === 'store') return renderStoreSimple();
+    const O = G.office, hasZ = G.zones.length, appr = G.zones.filter((z) => z.status === 'approved').length, ppl = G.seats.cleaner.holders.length > 0;
+    $('sub').textContent = O.name + (O.address ? ' · ' + O.address : '');
+    $('topBtns').innerHTML = '<button class="bd-btn" id="back" type="button">← All offices</button>';
+    const st = (n, d, now) => '<span class="' + (d ? 'done' : (now ? 'now' : '')) + '">' + (d ? '✓ ' : '') + n + '</span>';
+    let h = '<div id="ofpHost"></div><div class="bd-card"><div class="of-steps">' + st('1  Show Claude the office', hasZ, !hasZ) + st('2  Approve the zones', appr > 0, hasZ && !appr) + st('3  Choose the people', ppl, appr > 0 && !ppl) + st('4  Claude checks every photo', appr > 0 && ppl, false) + '</div></div>';
+    if (NOTICE) h += notice();
+    h += showCard() + zonesCard() + peopleCard() + checksCard() + issuesCard() + ticketsCard();
+    $('root').innerHTML = h;
+    mountPlaces();
+  }
+  /* Places (Pantry, Washroom ...) of this office: list + Add place wizard. Lives in assets/js/of_place_ui.js. */
+  let PZ = new URLSearchParams(location.search).get('zone');
+  function mountPlaces() {
+    if (!window.OfPlace || !$('ofpHost')) return;
+    const z = PZ; PZ = null;
+    OfPlace.mountOffice($('ofpHost'), { officeId: OID, officeName: G.office.name, admin: G.admin, openZone: z, wizard: { root: $('root'), h1: $('ttl'), sub: $('sub'), btns: $('topBtns') }, onWizardExit: () => loadOne(OID) });
+  }
+  function notice() {
+    const n = NOTICE;
+    return '<div class="bd-card"><div class="bd-h"><h2>Claude drew up ' + n.made + ' zone' + (n.made === 1 ? '' : 's') + '</h2><button class="bd-btn sm" id="noticeX" type="button">Got it</button></div>' + (n.summary ? '<div class="bd-sub">' + esc(n.summary) + '</div>' : '')
+      + (n.skipped ? '<div class="bd-sub">' + n.skipped + ' were already there and skipped.</div>' : '')
+      + (n.not_seen.length ? '<div class="of-note"><b>Not seen in the video — add by hand if they exist:</b> ' + esc(n.not_seen.join(', ')) + '</div>' : '')
+      + (n.questions.length ? '<div class="of-note"><b>Claude needs to know:</b><ul style="margin:6px 0 0 18px;padding:0">' + n.questions.map((q) => '<li>' + esc(q) + '</li>').join('') + '</ul></div>' : '') + '</div>';
+  }
+  function showCard() {
+    if (!G.admin) return '';
+    return '<div class="bd-card"><div class="bd-h"><h2>Show Claude the office</h2></div><div class="bd-sub">Walk through the office with your phone for 30–60 seconds, slowly, every corner (entrance, desks, pantry, washroom, floor). Or choose a few photos. Claude proposes zones and checkpoints; <b>nothing goes live until you approve it</b>.</div>'
+      + '<div class="of-row"><label class="bd-btn">Choose video<input type="file" id="fVid" accept="video/*" hidden></label><label class="bd-btn">Choose photos<input type="file" id="fPh" accept="image/*" multiple hidden></label></div>'
+      + '<div class="of-frames" id="frames">' + FR.map((f) => '<img src="' + f + '" alt="">').join('') + '</div>'
+      + '<div class="bd-f"><label>Anything Claude should know? (optional)</label><textarea class="bd-in" id="dNotes" placeholder="e.g. Marble floor. The pantry is shared with the next office. Cleaner comes at 9."></textarea></div>'
+      + '<div class="of-row"><button class="bd-btn pri" id="draft" type="button"' + (FR.length ? '' : ' disabled') + '>Claude, draw up the zones' + (FR.length ? ' (' + FR.length + ' pictures)' : '') + '</button></div></div>';
+  }
+  function zoneHtml(z) {
+    const t = z.today, tot = t.done + t.open + t.missed;
+    return '<div class="of-zone ' + z.status + '"><div class="bd-h" style="margin-bottom:2px"><h4>' + (G.admin && z.status === 'proposed' ? '<input type="checkbox" data-sel="' + z.id + '" ' + (SEL[z.id] ? 'checked' : '') + '> ' : '') + esc(z.name) + (z.name_hi ? ' <span class="bd-sub">' + esc(z.name_hi) + '</span>' : '') + '</h4>'
+      + '<span><span class="bd-chip ' + (z.status === 'approved' ? 'ok' : (z.status === 'proposed' ? 'warn' : '')) + '">' + (z.status === 'proposed' ? 'waiting for you' : (z.status === 'approved' ? 'live' : 'off')) + '</span> ' + z.times.map((x) => '<span class="bd-chip">' + BD.t12(x) + '</span>').join(' ') + '</span></div>'
+      + (z.note ? '<div class="bd-sub">' + esc(z.note) + '</div>' : '')
+      + '<ul>' + z.points.map((p) => '<li>' + esc(p.text) + (p.text_hi ? ' <small>· ' + esc(p.text_hi) + '</small>' : '') + '</li>').join('') + '</ul>'
+      + (z.status === 'approved' ? '<div class="bd-sub" style="margin-top:6px">Today: ' + (tot ? t.done + ' of ' + tot + ' done' + (t.missed ? ', <b style="color:#d9423b">' + t.missed + ' missed</b>' : '') + (t.who ? ' · ' + esc(t.who) : '') : 'nothing due') + (z.last ? ' · last photo: ' + (z.last.ai_verdict === 'clear' ? 'cleared by Claude' : 'Claude unsure') : '') + '</div>' : '')
+      + (G.admin ? '<div class="of-row"><button class="bd-btn sm" data-edit="' + z.id + '">Edit</button>' + (z.status !== 'approved' ? '<button class="bd-btn sm go" data-zs="approve|' + z.id + '">Approve</button>' : '<button class="bd-btn sm" data-zs="off|' + z.id + '">Switch off</button>') + (z.status === 'off' ? '' : '') + '<button class="bd-btn sm bad" data-zs="delete|' + z.id + '">Remove</button></div>' : '') + '</div>';
+  }
+  function zonesCard() {
+    const prop = G.zones.filter((z) => z.status === 'proposed');
+    return '<div class="bd-card"><div class="bd-h"><h2>Zones and checkpoints</h2><span>' + (G.admin ? (prop.length ? '<button class="bd-btn sm go" id="apprAll" type="button">Approve all ' + prop.length + '</button> ' : '') + '<button class="bd-btn sm" id="addZone" type="button">+ Add zone by hand</button>' : '') + '</span></div>'
+      + '<div class="bd-sub">A checkpoint is something one photo can prove. The cleaner takes ONE photo per zone; Claude checks it against these lines.</div>'
+      + (G.zones.length ? G.zones.map(zoneHtml).join('') : '<div class="bd-empty"><b>No zones yet</b>Show Claude the office above, or add a zone by hand.</div>') + '</div>';
+  }
+  function pickList(k, title, help) {
+    const list = PEOPLE[k];
+    return '<div class="of-ppl"><h4>' + title + '</h4><div class="bd-sub" style="margin-bottom:6px">' + help + '</div>'
+      + list.map((id, i) => '<span class="of-chip"><b>' + (k === 'cleaner' ? (i + 1) + '.' : '') + '</b> ' + esc(empName(id)) + (G.admin ? ' <button data-mv="' + k + '|' + i + '|-1" title="Earlier">↑</button><button data-mv="' + k + '|' + i + '|1" title="Later">↓</button><button data-rm="' + k + '|' + i + '" title="Remove">✕</button>' : '') + '</span>').join('')
+      + (G.admin ? '<div class="of-row"><select class="bd-in" data-add="' + k + '" style="max-width:320px"><option value="">+ Add a person…</option>' + G.employees.filter((e) => list.indexOf(e.id) < 0).map((e) => '<option value="' + e.id + '">' + esc(e.name) + (e.load ? ' — ' + e.load + ' tasks today' : '') + '</option>').join('') + '</select></div>' : '') + '</div>';
+  }
+  function peopleCard() {
+    return '<div class="bd-card"><div class="bd-h"><h2>People</h2>' + (G.admin ? '<button class="bd-btn sm pri" id="savePpl" type="button">Save people</button>' : '') + '</div>'
+      + '<div class="bd-sub">Set once. The daily cleaning tasks are made from this. If the first cleaner is away, the next one gets it; if someone leaves, Claude raises a handover so nothing is left out.</div>'
+      + pickList('cleaner', 'Cleaners', 'First person does the cleaning; the rest are backups in this order.')
+      + pickList('checker', 'Checker', 'Looks at the photos Claude is unsure about' + (G.judge === 'shadow' ? ' — and at every photo until you trust Claude' : '') + '.')
+      + pickList('main', 'Main checker', 'Gets the repeating problems and decides.') + '</div>';
+  }
+  function checksCard() {
+    const mode = G.judge === 'live';
+    return '<div class="bd-card"><div class="bd-h"><h2>To check <span class="bd-chip ' + (G.checks.length ? 'info' : '') + '">' + G.checks.length + '</span></h2>' + (G.admin ? '<span class="bd-seg" id="judge"><button type="button" data-j="shadow" class="' + (!mode ? 'on' : '') + '">Checker sees every cleaning</button><button type="button" data-j="live" class="' + (mode ? 'on' : '') + '">Claude decides</button></span>' : '') + '</div>'
+      + '<div class="bd-sub">' + (mode ? 'Claude\'s verdict is final. You only see what Claude was unsure about, plus a 5% sample on the Daily Summary.' : 'While you build trust, every finished cleaning waits here for a quick glance. Switch to "Claude decides" when you are happy.') + '</div>'
+      + (G.checks.length ? G.checks.map((c) => '<div class="of-chk"><img data-photo="' + c.task_id + '" alt=""><div style="flex:1;min-width:200px"><b>' + esc(c.zone) + '</b> <span class="bd-chip ' + (c.ai === 'clear' ? 'ok' : 'warn') + '">Claude: ' + (c.ai === 'clear' ? 'clear' : 'unsure') + '</span><div class="bd-sub">' + esc(c.who) + ' · ' + esc(String(c.at).slice(5, 16)) + '</div><div style="font-size:13px;margin-top:4px">' + esc(c.reason || '') + '</div>'
+        + '<div class="of-row"><button class="bd-btn sm go" data-ck="ok|' + c.id + '">Fine</button><button class="bd-btn sm bad" data-ck="redo|' + c.id + '">Send back — retake</button></div></div></div>').join('') : '<div class="bd-empty" style="padding:14px 0">Nothing waiting.</div>') + '</div>';
+  }
+  function issuesCard() {
+    return '<div class="bd-card"><div class="bd-h"><h2>Repeating problems</h2></div><div class="bd-sub">The same remark is merged into one line. Three different days means cleaning alone will not fix it.</div>'
+      + (G.issues.length ? G.issues.map((i) => '<div class="of-chk"><div style="flex:1;min-width:220px"><b>' + esc(i.zone) + '</b> — ' + esc(i.remark) + ' ' + (i.loop ? '<span class="bd-chip bad">keeps coming back</span>' : '') + (i.status === 'ticket' ? ' <span class="bd-chip info">ticket open</span>' : '') + '<div class="bd-sub">Seen ' + i.hits + ' times on ' + i.days + ' day' + (i.days === 1 ? '' : 's') + ' since ' + esc(i.since) + '</div>'
+        + '<div class="of-row">' + (i.status === 'open' ? '<button class="bd-btn sm pri" data-is="ticket|' + i.id + '">Make a maintenance ticket</button>' : '') + '<button class="bd-btn sm" data-is="fixed|' + i.id + '">It is fixed</button></div></div></div>').join('') : '<div class="bd-empty" style="padding:14px 0">No repeating problem.</div>') + '</div>';
+  }
+  function ticketsCard() {
+    if (!G.tickets.length) return '';
+    return '<div class="bd-card"><div class="bd-h"><h2>Maintenance tickets</h2></div>' + G.tickets.map((t) => '<div class="of-chk"><div style="flex:1;min-width:220px"><b>' + esc(t.title) + '</b> <span class="bd-chip ' + (t.status === 'done' ? 'ok' : (t.status === 'doing' ? 'warn' : 'bad')) + '">' + esc(t.status) + '</span><div class="bd-sub">' + esc(t.detail || '') + (t.assigned_to ? ' · ' + esc(t.assigned_to) : '') + '</div>'
+      + (t.status !== 'done' ? '<div class="of-row">' + (t.status === 'open' ? '<button class="bd-btn sm" data-tk="doing|' + t.id + '">Someone is on it</button>' : '') + '<button class="bd-btn sm go" data-tk="done|' + t.id + '">Done</button></div>' : '') + '</div></div>').join('') + '</div>';
+  }
+
+  /* ---------------- frames from the video ---------------- */
+  const MAXW = 800;
+  function shrink(src, w, h) {
+    const k = Math.min(1, MAXW / Math.max(w, h)), c = document.createElement('canvas'); c.width = Math.round(w * k); c.height = Math.round(h * k);
+    c.getContext('2d').drawImage(src, 0, 0, c.width, c.height); return c.toDataURL('image/jpeg', 0.72);
+  }
+  function framesFromVideo(file) {
+    return new Promise((res, rej) => {
+      const v = document.createElement('video'); v.muted = true; v.playsInline = true; v.preload = 'auto'; const url = URL.createObjectURL(file); v.src = url;
+      const out = []; let n = 0, N = 10;
+      v.onerror = () => { URL.revokeObjectURL(url); rej(new Error('This video cannot be opened in the browser. Try photos instead.')); };
+      v.onloadedmetadata = () => { if (!isFinite(v.duration) || v.duration < 1) { rej(new Error('The video is too short.')); return; } N = Math.max(4, Math.min(10, Math.round(v.duration / 4))); v.currentTime = Math.min(0.5, v.duration / 3); };
+      v.onseeked = () => {
+        out.push(shrink(v, v.videoWidth, v.videoHeight)); n++;
+        if (n >= N) { URL.revokeObjectURL(url); res(out); return; }
+        v.currentTime = Math.min(v.duration - 0.2, (v.duration * (n + 0.5)) / N);
+      };
+    });
+  }
+  function framesFromPhotos(files) {
+    return Promise.all([...files].slice(0, 12).map((f) => new Promise((res, rej) => { const im = new Image(), u = URL.createObjectURL(f); im.onload = () => { const d = shrink(im, im.naturalWidth, im.naturalHeight); URL.revokeObjectURL(u); res(d); }; im.onerror = () => rej(new Error('One of the files is not a picture.')); im.src = u; })));
+  }
+
+  /* ---------------- editors ---------------- */
+  function zoneEditor(z) {
+    z = z || { id: 0, name: '', name_hi: '', times: ['11:00'], note: '', points: [] };
+    const m = BD.modal('<h3>' + (z.id ? 'Edit zone' : 'New zone') + '</h3><div class="bd-f"><label>Zone name</label><input class="bd-in" id="zN" value="' + esc(z.name) + '" placeholder="e.g. Pantry"></div>'
+      + '<div class="bd-f"><label>Name in Hindi (optional)</label><input class="bd-in" id="zH" value="' + esc(z.name_hi || '') + '"></div>'
+      + '<div class="bd-f"><label>Cleaning times (24h, comma separated, up to 3)</label><input class="bd-in" id="zT" value="' + esc(z.times.join(', ')) + '" placeholder="09:30, 16:00"></div>'
+      + '<div class="bd-f"><label>Checkpoints — one per line. Each must be something one photo can show.</label><textarea class="bd-in" id="zP" style="min-height:140px">' + esc(z.points.map((p) => p.text).join('\n')) + '</textarea></div>'
+      + '<div class="acts"><button class="bd-btn" id="zNo" type="button">Cancel</button><button class="bd-btn pri" id="zYes" type="button">Save</button></div>');
+    m.querySelector('#zNo').onclick = BD.close;
+    m.querySelector('#zYes').onclick = async () => {
+      const pts = m.querySelector('#zP').value.split('\n').map((x) => x.trim()).filter(Boolean).map((t) => { const old = z.points.find((p) => p.text === t); return { text: t, text_hi: old ? old.text_hi : '' }; });
+      try { await api.post('of.zone_save', { office_id: OID, zone: { id: z.id, name: m.querySelector('#zN').value, name_hi: m.querySelector('#zH').value, note: z.note, times: m.querySelector('#zT').value.split(',').map((x) => x.trim()).filter(Boolean), points: pts } }); BD.close(); toast('Saved. Approve it to make it live.'); loadOne(OID); } catch (e) { toast(e.message, true); }
+    };
+  }
+  function newOffice() {
+    const m = BD.modal('<h3>New office</h3><div class="bd-f"><label>Name</label><input class="bd-in" id="oN" placeholder="e.g. Oberon 1"></div><div class="bd-f"><label>Address / floor (optional)</label><input class="bd-in" id="oA"></div><div class="acts"><button class="bd-btn" id="oNo" type="button">Cancel</button><button class="bd-btn pri" id="oYes" type="button">Create</button></div>');
+    m.querySelector('#oNo').onclick = BD.close;
+    m.querySelector('#oYes').onclick = async () => { try { const r = await api.post('of.save', { name: m.querySelector('#oN').value, address: m.querySelector('#oA').value }); BD.close(); toast('Office created.'); loadOne(r.id); } catch (e) { toast(e.message, true); } };
+  }
+
+  /* ---------------- clicks ---------------- */
+  document.addEventListener('change', async (e) => {
+    const t = e.target;
+    if (t.id === 'fVid' && t.files[0]) { try { toast('Reading the video…'); FR = await framesFromVideo(t.files[0]); renderOne(); } catch (er) { toast(er.message, true); } }
+    else if (t.id === 'fPh' && t.files.length) { try { FR = await framesFromPhotos(t.files); renderOne(); } catch (er) { toast(er.message, true); } }
+    else if (t.dataset && t.dataset.add) { const id = Number(t.value); if (id) { PEOPLE[t.dataset.add].push(id); const keep = $('dNotes') ? $('dNotes').value : ''; renderOne(); if ($('dNotes')) $('dNotes').value = keep; } }
+    else if (t.dataset && t.dataset.sel) { SEL[t.dataset.sel] = t.checked; }
+  });
+  $('root').onclick = async (e) => {
+    const card = e.target.closest('[data-open]'); if (card) return loadOne(Number(card.dataset.open));
+    const b = e.target.closest('button'); if (!b) return;
+    try {
+      if (b.id === 'noticeX') { NOTICE = null; return renderOne(); }
+      if (b.id === 'draft') {
+        b.disabled = true; b.textContent = 'Claude is looking…';
+        const r = await api.post('of.draft', { office_id: OID, frames: FR, notes: $('dNotes').value }); FR = []; NOTICE = r; await loadOne(OID); window.scrollTo({ top: 0, behavior: 'smooth' });
+      } else if (b.id === 'addZone') zoneEditor();
+      else if (b.dataset.edit) zoneEditor(G.zones.find((z) => z.id === Number(b.dataset.edit)));
+      else if (b.id === 'apprAll') { const r = await api.post('of.zone_status', { office_id: OID, act: 'approve', ids: G.zones.filter((z) => z.status === 'proposed').map((z) => z.id) }); toast(r.message); loadOne(OID); }
+      else if (b.dataset.zs) {
+        const [act, id] = b.dataset.zs.split('|');
+        if (act === 'delete' && !(await BD.confirm('Remove this zone?', 'Its daily cleaning task stops. Past photos stay on record.', 'Remove', true))) return;
+        const r = await api.post('of.zone_status', { office_id: OID, act, id: Number(id) }); toast(r.message); loadOne(OID);
+      } else if (b.dataset.mv) { const [k, i, d] = b.dataset.mv.split('|'); const a = PEOPLE[k], x = Number(i), y = x + Number(d); if (y >= 0 && y < a.length) { [a[x], a[y]] = [a[y], a[x]]; renderOne(); } }
+      else if (b.dataset.rm) { const [k, i] = b.dataset.rm.split('|'); PEOPLE[k].splice(Number(i), 1); renderOne(); }
+      else if (b.id === 'savePpl') { const r = await api.post('of.seats_save', { office_id: OID, cleaner: PEOPLE.cleaner, checker: PEOPLE.checker, main: PEOPLE.main }); toast(r.message); loadOne(OID); }
+      else if (b.dataset.j) { const r = await api.post('of.settings', { judge: b.dataset.j }); toast(r.message); loadOne(OID); }
+      else if (b.dataset.ck) { const [act, id] = b.dataset.ck.split('|'); const r = await api.post('of.check_act', { id: Number(id), act }); toast(r.message); loadOne(OID); }
+      else if (b.dataset.is) { const [act, id] = b.dataset.is.split('|'); const r = await api.post('of.issue_act', { id: Number(id), act }); toast(r.message); loadOne(OID); }
+      else if (b.dataset.tk) { const [act, id] = b.dataset.tk.split('|'); const r = await api.post('of.ticket_act', { id: Number(id), act }); toast(r.message); loadOne(OID); }
+    } catch (er) { toast(er.message, true); if (b.id === 'draft') { b.disabled = false; b.textContent = 'Claude, draw up the zones'; } }
+  };
+  document.addEventListener('click', (e) => {
+    if (e.target.id === 'newOff') newOffice();
+    else if (e.target.id === 'back') loadList();
+  });
+  new MutationObserver(() => { document.querySelectorAll('img[data-photo]:not([src])').forEach(async (im) => { im.src = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=='; try { im.src = await BD.photo(im.dataset.photo); } catch (er) { im.style.visibility = 'hidden'; } }); }).observe($('root'), { childList: true, subtree: true });
+  /* Store door: Store > Cleaning & Pantry opens THIS page on the store office (one system, two doors). Not registered yet = one button. */
+  async function openStore() {
+    try {
+      L = await api.get('of.list'); const st = L.offices.find((o) => o.kind === 'store');
+      if (st) { loadOne(st.id); return; }
+      $('root').innerHTML = '<div class="bd-card"><div class="bd-empty"><b>Register the store</b>The store works exactly like an office: Claude draws up the cleaning zones and the pantry from a short video, you approve them, and the cleaners are checked each day. It will also appear under Offices.' + (L.admin ? '<div style="margin-top:12px"><button class="bd-btn pri" id="regStore" type="button">Register the store</button></div>' : '<div style="margin-top:8px">Ask an admin to register it.</div>') + '</div></div>';
+    } catch (e) { fail(e); }
+  }
+  document.addEventListener('click', async (e) => {
+    if (e.target.id !== 'regStore') return;
+    try { const r = await api.post('of.save', { name: 'Store', kind: 'store' }); toast('Store registered.'); loadOne(r.id); } catch (er) { toast(er.message, true); }
+  });
+  if (OID) loadOne(OID); else if (STORE) openStore(); else loadList();
+</script>
+</body>
+</html>

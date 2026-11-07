@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Orders — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=4">
+<style>
+  .eh{padding-top:6px;}
+  .eh-pills{display:flex; gap:7px; overflow-x:auto; padding:2px 0 6px; scrollbar-width:none; -webkit-overflow-scrolling:touch;}
+  .eh-pills::-webkit-scrollbar{display:none;}
+  .eh-pill{flex:none; white-space:nowrap; font:inherit; font-size:13px; font-weight:800; padding:9px 17px; border-radius:999px; background:#fff; border:1px solid var(--line); color:#4a4f5c; cursor:pointer; box-shadow:0 1px 2px rgba(0,0,0,.04); transition:transform .12s, background .15s;}
+  .eh-pill:active{transform:scale(.96);}
+  .eh-pill.on{background:linear-gradient(135deg,#111827,#1f2937); color:#fff; border-color:#111827; box-shadow:0 4px 12px rgba(17,24,39,.28);}
+  .eh-host{position:relative; margin-top:6px;}
+  .eh-frame{display:block; width:100%; border:0; background:transparent; height:calc(100vh - 150px); min-height:520px;}
+  .eh-load{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:13px; pointer-events:none;}
+  .eh-empty{padding:40px 16px; text-align:center; color:var(--muted); font-size:13.5px;}
+  @media (max-width:820px){ .eh-frame{height:calc(100vh - 190px - env(safe-area-inset-bottom)); height:calc(100dvh - 190px - env(safe-area-inset-bottom));}   /* ends above the bottom bar: the last rows are never hidden */ .eh-pill{padding:8px 14px; font-size:12.5px;} .eh{padding-left:10px; padding-right:10px;} }
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><h1>Orders</h1></div>
+    <div class="content eh">
+      <div class="eh-pills" id="ehPills" role="tablist"></div>
+      <div class="eh-host" id="ehHost"><div class="eh-load" id="ehLoad">Loading…</div></div>
+    </div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=2"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script>
+  guardPage();
+  renderSidebar('my_orders');
+  window.EMP_HUB = { key: 'orders', title: 'Orders', tabs: [['allocate','➕ Allocate order','order_allocation.html','allocation',''],['orders','📋 My orders','orders.html','','']] };
+</script>
+<script src="assets/js/emp_hub.js?v=261103m"></script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>

@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Help · System doctor</title>
+<style>
+:root{--bg:#eef0f3;--card:#fff;--ink:#14161a;--mut:#6b7280;--line:#e6e8ec;--or:#ff7a2f;--g:#16a34a;--gs:#e8f7ee;--a:#d97706;--as:#fff4e0;--r:#dc2626;--rs:#fdeaea;--b:#2563eb}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.45;-webkit-text-size-adjust:100%}
+body{padding:14px 14px 60px;max-width:1240px;margin:0 auto}
+button{font:inherit;cursor:pointer;border:0;background:none;color:inherit}
+.card{background:var(--card);border-radius:18px;padding:16px;box-shadow:0 1px 2px rgba(20,22,26,.04)}
+.row{display:flex;gap:12px;flex-wrap:wrap}
+.grid{display:grid;gap:12px}.grid>*,.row>*{min-width:0}
+h1{font-size:20px;font-weight:800;letter-spacing:-.2px}
+h2{font-size:15px;font-weight:800;margin-bottom:2px}
+.sub{color:var(--mut);font-size:12.5px}
+.sec{margin-top:18px}
+.sechead{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin:0 2px 8px;flex-wrap:wrap}
+.pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:8px 14px;font-weight:700;font-size:13px;background:#fff;color:var(--ink);border:1px solid var(--line);white-space:nowrap}
+.pill.dark{background:var(--ink);color:#fff;border-color:var(--ink)}
+.pill.or{background:var(--or);color:#fff;border-color:var(--or)}
+.pill:disabled{opacity:.5;cursor:default}
+.tag{display:inline-block;border-radius:999px;padding:2px 9px;font-size:11.5px;font-weight:800;white-space:nowrap}
+.t-strong{background:var(--gs);color:var(--g)}.t-weak{background:var(--as);color:var(--a)}.t-failing,.t-down{background:var(--rs);color:var(--r)}.t-unknown{background:#eef0f3;color:var(--mut)}
+.c-strong,.c-g,.c-ok{color:var(--g)}.c-weak,.c-a,.c-warn{color:var(--a)}.c-failing,.c-down,.c-r,.c-bad{color:var(--r)}.c-unknown{color:var(--mut)}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:1px}
+.d-strong,.d-g,.d-ok{background:var(--g)}.d-weak,.d-a,.d-warn{background:var(--a)}.d-failing,.d-down,.d-r,.d-bad{background:var(--r)}.d-unknown,.d-x{background:#cfd3da}
+/* top */
+.top{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.top .btns{display:flex;gap:8px;flex-wrap:wrap}
+/* hero */
+.hero{display:grid;grid-template-columns:150px 1fr 190px;gap:18px;align-items:center}
+.ring{position:relative;width:140px;height:140px}
+.ring svg{width:140px;height:140px;transform:rotate(-90deg)}
+.ring .n{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.ring .n b{font-size:38px;font-weight:800;line-height:1}
+.ring .n span{font-size:11.5px;color:var(--mut);font-weight:700;margin-top:3px}
+.docsay{font-size:17px;font-weight:700;line-height:1.35}
+.docby{margin-top:6px;font-size:12px;color:var(--mut)}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.chip{border-radius:12px;padding:7px 12px;font-weight:800;font-size:13px}
+.risk{background:#f6f7f9;border-radius:14px;padding:14px;text-align:center}
+.risk b{font-size:30px;font-weight:800;display:block;line-height:1.1}
+.risk small{display:block;color:var(--mut);font-size:12px;font-weight:700;margin-top:2px}
+.meter{height:8px;border-radius:99px;background:#e3e6ea;margin-top:10px;overflow:hidden}
+.meter i{display:block;height:100%;border-radius:99px}
+/* scores */
+.scores{grid-template-columns:repeat(6,1fr)}
+.sc{padding:14px}
+.sc .lab{font-size:12px;color:var(--mut);font-weight:800}
+.sc .big{display:flex;align-items:baseline;gap:8px;margin:4px 0 2px}
+.sc .big b{font-size:28px;font-weight:800;line-height:1}
+.sc .gr{font-size:13px;font-weight:800;border-radius:8px;padding:1px 8px}
+.sc .note{font-size:11.5px;color:var(--mut);min-height:30px}
+.trend{font-size:11.5px;font-weight:800}
+/* readiness */
+.ready{grid-template-columns:repeat(6,1fr)}
+.rd{padding:12px;display:flex;gap:10px;align-items:flex-start}
+.rd .ic{flex:0 0 26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:14px}
+.rd b{display:block;font-size:13px}
+.rd span{font-size:11.5px;color:var(--mut)}
+/* strip */
+.strip{display:flex;gap:2px;height:30px}
+.strip i{flex:1;border-radius:3px;min-width:2px}
+.legend{display:flex;justify-content:space-between;font-size:11.5px;color:var(--mut);margin-top:6px}
+/* findings */
+.find{display:flex;gap:12px;padding:12px 0;border-top:1px solid var(--line)}
+.find:first-child{border-top:0}
+.find .bar{flex:0 0 5px;border-radius:4px}
+.find b{display:block;font-size:14px}
+.find p{font-size:12.5px;color:var(--mut);margin-top:2px}
+.find .fix{font-size:12.5px;margin-top:4px}
+.find .fix em{font-style:normal;font-weight:800}
+.find button{margin-top:6px;font-size:12px;font-weight:800;color:var(--or)}
+/* service cards */
+.svc{grid-template-columns:repeat(4,1fr)}
+.svc .card{padding:14px}
+.svc .hd{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}
+.kv{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;padding:3px 0;border-top:1px dashed var(--line)}
+.kv span{color:var(--mut)}
+.kv b{text-align:right}
+/* tables */
+.tablewrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:12.5px;min-width:640px}
+th{text-align:left;font-size:11.5px;color:var(--mut);font-weight:800;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
+tr:last-child td{border-bottom:0}
+.mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}
+.spark{display:flex;gap:1.5px;height:16px;align-items:flex-end}
+.spark i{width:4px;border-radius:1px;height:100%}
+.risk-s{display:inline-block;min-width:44px;text-align:center;border-radius:8px;padding:2px 6px;font-weight:800;font-size:12px}
+/* functions / pages */
+.fgrid{grid-template-columns:repeat(3,1fr)}
+.fn{padding:12px 14px;display:flex;gap:10px;align-items:flex-start}
+.fn b{display:block;font-size:13px}.fn span{font-size:12px;color:var(--mut)}
+.pgrid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.pg{background:#f6f7f9;border-radius:12px;padding:9px 10px;font-size:12.5px;font-weight:700;display:flex;align-items:flex-start;gap:6px;min-height:42px}
+.pg small{display:block;font-weight:500;color:var(--mut);font-size:11px;line-height:1.25}
+.pg.bad{background:var(--rs)}.pg.warn{background:var(--as)}
+.prog{height:8px;border-radius:99px;background:#e3e6ea;overflow:hidden;margin-top:10px}.prog i{display:block;height:100%;width:0;background:var(--or);transition:width .3s}
+/* charts */
+.bars{display:flex;align-items:flex-end;gap:4px;height:90px}
+.bars i{flex:1;background:var(--or);border-radius:4px 4px 0 0;min-height:2px;position:relative}
+.bars.h7 i{background:var(--ink)}
+.bl{display:flex;gap:4px;font-size:11px;color:var(--mut);margin-top:4px}.bl span{flex:1;text-align:center}
+/* lists */
+.li{display:flex;justify-content:space-between;gap:10px;padding:9px 0;border-top:1px solid var(--line);font-size:12.5px}
+.li:first-child{border-top:0}.li small{color:var(--mut);display:block}
+/* ask */
+.askbox{display:flex;gap:8px;flex-wrap:wrap}
+.askbox input{flex:1;min-width:200px;border:1px solid var(--line);border-radius:999px;padding:11px 16px;font:inherit;background:#fff}
+.answer{margin-top:12px;background:#f6f7f9;border-radius:14px;padding:12px 14px;white-space:pre-wrap;font-size:13.5px}
+.quick{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.quick button{border:1px solid var(--line);border-radius:999px;padding:5px 11px;font-size:12px;font-weight:700;background:#fff}
+/* page doctor */
+.pdsum{grid-template-columns:repeat(4,1fr)}
+.pdsum .card{padding:14px}.pdsum small{color:var(--mut);font-weight:800;font-size:12px}.pdsum b{display:block;font-size:26px;font-weight:800;line-height:1.1;margin-top:3px}.pdsum span{font-size:11.5px;color:var(--mut)}
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}.filters .pill{padding:6px 12px;font-size:12.5px}
+.rowp{background:#fff;border-radius:16px;margin-bottom:8px;overflow:hidden}
+.rh{display:grid;grid-template-columns:1.5fr 1.25fr .9fr 1.35fr 1.7fr 24px;gap:12px;align-items:center;padding:12px 16px;cursor:pointer}
+.rh .nm b{display:block;font-size:14px}.rh .nm span{font-size:11.5px;color:var(--mut)}
+.sp b{font-size:16px;font-weight:800}.sp .gr{margin-left:6px}
+.pbar{height:6px;border-radius:99px;background:#e9ebef;margin-top:5px;overflow:hidden}.pbar i{display:block;height:100%;border-radius:99px}
+.chips2{display:flex;gap:6px;flex-wrap:wrap}.chip2{border-radius:9px;padding:3px 8px;font-size:11.5px;font-weight:800}
+.chip2.g{background:var(--gs);color:var(--g)}.chip2.a{background:var(--as);color:var(--a)}.chip2.r{background:var(--rs);color:var(--r)}
+.t-g{background:var(--gs);color:var(--g)}.t-a{background:var(--as);color:var(--a)}.t-r{background:var(--rs);color:var(--r)}
+.rh .iss{font-size:12.5px;color:var(--mut)}.rh .chev{color:var(--mut);font-weight:800;text-align:center}
+.det{border-top:1px solid var(--line);padding:16px;background:#fbfbfc;display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+.det h3{font-size:12px;color:var(--mut);font-weight:800;margin-bottom:8px;text-transform:uppercase;letter-spacing:.3px}
+.stack{display:flex;height:22px;border-radius:7px;overflow:hidden;margin:8px 0;background:#e9ebef}.stack i{display:block}
+.leg{font-size:12px;display:grid;gap:3px}.leg span{display:flex;justify-content:space-between;gap:8px}
+.fnd{display:flex;gap:8px;font-size:12.5px;padding:6px 0;border-top:1px dashed var(--line);align-items:flex-start}.fnd:first-of-type{border-top:0}.fnd .tag{flex:0 0 auto}
+.fixi{display:flex;gap:10px;font-size:12.5px;padding:7px 0}.fixi em{flex:0 0 20px;height:20px;border-radius:50%;background:var(--ink);color:#fff;font-style:normal;font-weight:800;font-size:11px;display:flex;align-items:center;justify-content:center}
+.fixi b{display:block}.fixi span{color:var(--mut)}
+.shots{display:flex;gap:10px;align-items:flex-end;margin-top:12px}
+.ph{width:74px;height:130px;border:3px solid #14161a;border-radius:12px;background:#f4f5f7;position:relative;overflow:hidden}
+.ph .blk,.dk .blk{position:absolute;left:6px;right:6px;height:12px;background:#d8dbe0;border-radius:4px}
+.ph .blk{left:5px;right:-14px;height:14px}
+.dk{width:140px;height:92px;border:3px solid #14161a;border-radius:8px;background:#f4f5f7;position:relative;overflow:hidden}
+.cap{font-size:11px;font-weight:800;text-align:center;margin-top:4px}
+.cut{position:absolute;top:0;bottom:0;right:0;width:10px;background:repeating-linear-gradient(45deg,#dc2626,#dc2626 3px,#fff 3px,#fff 6px);opacity:.8}
+.mini{display:flex;gap:2px;height:18px;align-items:flex-end}.mini i{width:5px;border-radius:1px}
+.btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+@media(max-width:1000px){.pdsum{grid-template-columns:repeat(2,1fr)}.rh{grid-template-columns:1fr 1fr;gap:10px}.rh .iss,.rh .chev{grid-column:1/-1}.det{grid-template-columns:1fr}}
+/* what to do now */
+.it{display:flex;gap:12px;padding:14px;background:#fff;border-radius:16px;margin-bottom:8px}
+.it .bar{flex:0 0 5px;border-radius:4px}.it .bd{flex:1;min-width:0}
+.it .ttl{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.it .ttl b{font-size:14.5px}
+.it p{font-size:12.5px;color:var(--mut);margin-top:3px}.it .fix{font-size:12.5px;margin-top:5px}.it .fix em{font-style:normal;font-weight:800}
+.it .row2{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center}
+.pill.sm{padding:6px 12px;font-size:12.5px}
+.att{font-size:11.5px;color:var(--mut);background:#f3f4f6;border-radius:8px;padding:3px 8px;font-weight:700}
+.prev{margin-top:10px;background:#14161a;color:#e5e7eb;border-radius:14px;padding:14px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;white-space:pre-wrap;line-height:1.5;word-break:break-word}
+.t-k-failing{background:var(--rs);color:var(--r)}.t-k-weak{background:var(--as);color:var(--a)}.t-k-warning{background:#eef2ff;color:#4f46e5}
+.toast{position:fixed;right:20px;bottom:20px;background:#14161a;color:#fff;border-radius:999px;padding:10px 16px;font-weight:700;font-size:13px;z-index:60;box-shadow:0 6px 20px rgba(0,0,0,.25)}
+@media(max-width:620px){.toast{left:12px;right:12px;text-align:center;border-radius:14px}}
+/* gate */
+#gate{position:fixed;inset:0;background:var(--bg);z-index:50;display:none;align-items:center;justify-content:center;padding:20px}
+#gate .card{max-width:420px;width:100%}
+#gate input{width:100%;border:1px solid var(--line);border-radius:12px;padding:12px;font:inherit;margin:12px 0}
+.msg{font-size:12.5px;color:var(--r);min-height:18px}
+.note{font-size:12px;color:var(--mut)}
+details summary{cursor:pointer;font-weight:800;font-size:13px}
+.watch label{display:flex;gap:8px;align-items:center;padding:4px 0;font-size:12.5px}
+.empty{color:var(--mut);font-size:12.5px;padding:8px 0}
+@media(max-width:1000px){.scores,.ready{grid-template-columns:repeat(3,1fr)}.svc{grid-template-columns:repeat(2,1fr)}.fgrid{grid-template-columns:repeat(2,1fr)}.hero{grid-template-columns:130px 1fr}.hero .risk{grid-column:1/-1}}
+@media(max-width:620px){body{padding:10px 10px 50px}.scores,.ready,.svc,.fgrid{grid-template-columns:repeat(2,1fr)}.hero{grid-template-columns:1fr;text-align:center}.ring{margin:0 auto}.chips{justify-content:center}.docsay{font-size:16px}.sc .big b{font-size:24px}h1{font-size:18px}}
+@media(max-width:380px){.scores,.ready,.svc,.fgrid{grid-template-columns:1fr}}
+
+/* feature check */
+.ftp{padding:12px 14px;margin-bottom:10px}.ftp h3{margin:0;font-size:14.5px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}.ftp h3 small{font-weight:500;color:var(--mut)}
+.ftp ul{margin:8px 0 0;padding-left:18px;font-size:13px}.ftp li{margin:3px 0}.ftp li i{font-style:normal;color:var(--mut)}
+.ftr{display:flex;gap:8px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px}.ftr:last-child{border:0}.ftr>div{flex:1;min-width:0}.ftr small{display:block;color:var(--mut)}
+.ftreq{display:flex;gap:8px;margin:8px 0}.ftreq textarea{flex:1;min-height:44px;font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:12px}
+</style>
+</head>
+<body>
+
+<div id="gate"><div class="card"><h2>Help · System doctor</h2><p class="sub" id="gateMsg" style="margin-top:8px">Only an Admin login can open Help. Please log in to the HRMS again.</p></div></div>
+
+<div class="top">
+  <div>
+    <h1>Help · System doctor</h1>
+    <div class="sub" id="stamp">Loading…</div>
+  </div>
+  <div class="btns">
+    <button class="pill" id="bFull" style="background:#4f46e5;color:#fff;border-color:#4f46e5">🔬 Full check</button>
+    <button class="pill" id="bRefresh">↻ Refresh</button>
+    <button class="pill or" id="bRun">⚡ Check now</button>
+    <button class="pill dark" id="bCopy">📋 Copy report for Claude</button>
+    <button class="pill" id="bSolve" style="background:#16a34a;color:#fff;border-color:#16a34a">🧩 Solution prompt (all in one)</button>
+  </div>
+</div>
+
+<div id="app" style="display:none">
+
+<!-- full check result -->
+<div class="card" id="fullBox" style="display:none;margin-bottom:12px"><h2 style="margin:0">🔬 Full check</h2><div class="sub" id="fullSub"></div><div id="fullSteps" style="margin-top:8px"></div><div id="fullEnd" style="margin-top:10px"></div></div>
+
+<!-- hero -->
+<div class="card hero">
+  <div class="ring"><svg viewBox="0 0 140 140"><circle cx="70" cy="70" r="60" fill="none" stroke="#eceef1" stroke-width="13"/><circle id="ringArc" cx="70" cy="70" r="60" fill="none" stroke="#16a34a" stroke-width="13" stroke-linecap="round" stroke-dasharray="0 377"/></svg>
+    <div class="n"><b id="hScore">–</b><span id="hGrade">Overall health</span></div></div>
+  <div>
+    <div class="docsay" id="docSay">Dr. Claude is looking at your system…</div>
+    <div class="docby" id="docBy"></div>
+    <div class="chips" id="chips"></div>
+    <div id="goal" style="margin-top:10px;font-size:12.5px;line-height:1.5"></div>
+  </div>
+  <div class="risk"><small>Chance of trouble in the next hour</small><b id="riskPct">–</b><small id="riskLab"></small><div class="meter"><i id="riskBar" style="width:0"></i></div></div>
+</div>
+
+<!-- scores -->
+<div class="sec"><div class="sechead"><div><h2>Scores</h2><div class="sub">Grades A (best) to F. The small number shows change since yesterday.</div></div></div>
+  <div class="grid scores" id="scores"></div></div>
+
+<!-- readiness -->
+<div class="sec"><div class="sechead"><div><h2>Can my team work now?</h2></div></div>
+  <div class="grid ready" id="ready"></div></div>
+
+<!-- last hour -->
+<div class="sec"><div class="card"><div class="sechead" style="margin-bottom:10px"><div><h2>Last 60 minutes</h2><div class="sub">One block per minute: green worked, orange slow, red failed, grey no check.</div></div></div>
+  <div class="strip" id="strip"></div><div class="legend"><span>60 min ago</span><span>now</span></div></div></div>
+
+<!-- what to do -->
+<div class="sec"><div class="sechead"><div><h2>What to do now</h2><div class="sub">Each problem has a ready message. Tap <b>Copy for Claude</b>, paste it into Claude, attach the file named, and the fix comes back.</div></div>
+  <button class="pill dark" id="bCopyAll">📋 Copy ALL for Claude</button></div>
+  <div class="card" style="padding:12px;margin-bottom:10px"><div class="chips" id="todoSum" style="margin-top:0"></div></div>
+  <div class="filters" id="todoTabs"></div>
+  <div id="finds"></div></div>
+
+<!-- services -->
+<div class="sec"><div class="sechead"><div><h2>Core services</h2></div></div>
+  <div class="grid svc" id="svc"></div></div>
+
+<!-- apis -->
+<div class="sec"><div class="sechead"><div><h2>APIs &amp; backend calls</h2><div class="sub" id="apiSub">Your browser calls these read-only requests once a minute while this page is open.</div></div>
+  <button class="pill" id="bWatch">Choose calls to watch</button></div>
+  <div class="card" style="padding:6px 8px">
+    <div id="watchBox" style="display:none;padding:10px" class="watch"></div>
+    <div class="tablewrap"><table><thead><tr><th>Call</th><th>Strength</th><th>Worked (24 h)</th><th>Typical speed</th><th>Last 30 checks</th><th>Chance of failing</th><th>Why</th></tr></thead><tbody id="apis"></tbody></table></div>
+  </div></div>
+
+<!-- functions -->
+<div class="sec"><div class="sechead"><div><h2>Functions</h2></div></div>
+  <div class="grid fgrid" id="funcs"></div></div>
+
+<!-- pages -->
+<div class="sec"><div class="sechead"><div><h2>All pages <span class="sub" id="pgCount"></span></h2><div class="sub" id="uiSub">Page files are checked every 5 minutes.</div></div></div>
+  <div class="card"><div class="grid pgrid" id="pages"></div></div></div>
+
+<!-- page doctor -->
+<div class="sec"><div class="sechead"><div><h2>Page Doctor</h2><div class="sub" id="pdSub">Every page: how fast it opens, chance it fails, how it looks on phone and computer, and how to improve it.</div></div>
+  <div class="row" style="gap:8px"><button class="pill dark" id="bUI">▶ Run page check</button><button class="pill" id="bUIstop" style="display:none">Stop</button></div></div>
+  <div class="prog" id="uiProg" style="display:none"><i></i></div><div class="note" id="uiTxt" style="display:none;margin:6px 0"></div>
+  <div class="grid pdsum" id="pdSum"></div>
+  <div class="filters" id="pdFilters"></div>
+  <div id="pdList"></div></div>
+
+<!-- feature check -->
+<div class="sec"><div class="sechead"><div><h2>Feature check <span class="sub" id="ftCount"></span></h2><div class="sub" id="ftSub">Reads every page and says which buttons and features work, which look dead, what can be removed, and what is missing on the server. It never clicks anything.</div></div>
+  <div class="row" style="gap:8px"><button class="pill dark" id="bFeat">▶ Scan all buttons &amp; features</button><button class="pill" id="bFeatCopy" style="display:none">📋 Copy findings for Claude</button></div></div>
+  <div class="grid pdsum" id="ftSum"></div>
+  <div class="filters" id="ftTabs"></div>
+  <div id="ftList"></div></div>
+
+<!-- charts -->
+<div class="row sec" style="align-items:stretch">
+  <div class="card" style="flex:1 1 300px;min-width:0"><h2>Errors per hour</h2><div class="sub" id="errSub">Last 24 hours, from the server error log.</div><div class="bars" id="errBars" style="margin-top:12px"></div><div class="bl" id="errLab"></div></div>
+  <div class="card" style="flex:1 1 300px;min-width:0"><h2>Health, last 7 days</h2><div class="sub">Daily health score.</div><div class="bars h7" id="hBars" style="margin-top:12px"></div><div class="bl" id="hLab"></div></div>
+</div>
+
+<!-- files + incidents -->
+<div class="row sec" style="align-items:stretch">
+  <div class="card" style="flex:1 1 300px;min-width:0"><h2>New &amp; changed files (24 h)</h2><div class="sub">Your uploads — PHP files are syntax-checked.</div><div id="files" style="margin-top:8px"></div></div>
+  <div class="card" style="flex:1 1 300px;min-width:0"><h2>Incident log (7 days)</h2><div class="sub">A problem is logged when 2 checks in a row fail.</div><div id="incs" style="margin-top:8px"></div></div>
+</div>
+
+<!-- ask -->
+<div class="sec"><div class="card"><h2>Ask the doctor</h2><div class="sub">Short plain-English answers based on the checks above.</div>
+  <div class="askbox" style="margin-top:10px"><input id="askIn" placeholder="e.g. Why are pages going blank?" maxlength="400"><button class="pill dark" id="bAsk">Ask</button></div>
+  <div class="quick"><button data-q="Why does the database fail sometimes?">Why does the database fail?</button><button data-q="Is it safe for all staff to work now?">Is it safe to work now?</button><button data-q="What should I fix first?">What to fix first?</button><button data-q="Did my last file upload break anything?">Did my upload break anything?</button></div>
+  <div class="answer" id="answer" style="display:none"></div></div></div>
+
+<div class="sec note" style="text-align:center">
+  Help v<span id="ver">1.0</span> · Read-only: it measures and explains, it never changes your system.<br>
+  Chance-of-failing is an estimate from recent checks, not a promise.
+</div>
+</div>
+
+<script>
+(function(){
+'use strict';
+var API='empmanagment/help_api.php', HRMS_API='empmanagment/api.php';
+var WATCH_NAME='help_watch';
+var S=null, busy=false, uiStop=false, probing=false;
+function $(id){return document.getElementById(id)}
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+function getKey(){try{return localStorage.getItem('hrms_token')||''}catch(e){return ''}}
+function ago(sec){if(sec==null)return 'never';if(sec<5)return 'just now';if(sec<90)return Math.round(sec)+' s ago';if(sec<5400)return Math.round(sec/60)+' min ago';if(sec<172800)return Math.round(sec/3600)+' h ago';return Math.round(sec/86400)+' days ago'}
+function ms(v){return v==null?'–':(v>=1000?(v/1000).toFixed(1)+' s':Math.round(v)+' ms')}
+var LV={strong:'Strong',weak:'Weak',failing:'Failing',down:'Down',unknown:'Waiting'};
+function tag(l){return '<span class="tag t-'+l+'">'+(LV[l]||l)+'</span>'}
+
+function call(action,body,timeout){
+  var ctl=new AbortController(), t=setTimeout(function(){ctl.abort()},timeout||30000);
+  return fetch(API+'?action='+action+'&_='+Date.now(),{method:body?'POST':'GET',headers:{'X-Help-Token':getKey(),'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined,signal:ctl.signal,cache:'no-store'})
+   .then(function(r){clearTimeout(t);return r.text().then(function(tx){var j;try{j=JSON.parse(tx)}catch(e){throw new Error('The Help backend did not answer properly (is help_api.php uploaded?)')}if(!j.ok&&r.status===403)throw new Error('KEY');if(!j.ok)throw new Error(j.error||'Error');return j})})
+   .catch(function(e){clearTimeout(t);if(e.name==='AbortError')throw new Error('Timed out');throw e});
+}
+function gate(msg){$('gate').style.display='flex';$('app').style.display='none';if(msg)$('gateMsg').textContent=msg;}
+
+/* ───── render ───── */
+function colorFor(s){return s==null?'#cfd3da':s>=90?'#16a34a':s>=75?'#65a30d':s>=60?'#d97706':s>=40?'#ea580c':'#dc2626'}
+function render(st){
+  S=st; $('ver').textContent=st.version;
+  var h=st.scores.health, hs=h.score;
+  $('hScore').textContent=hs==null?'–':hs; $('hGrade').textContent=hs==null?'Waiting for data':'Health · '+h.grade;
+  var arc=$('ringArc'); arc.setAttribute('stroke',colorFor(hs)); arc.setAttribute('stroke-dasharray',((hs||0)/100*377)+' 377');
+  var d=st.doctor; var say=d&&d.short?d.short:'Dr. Claude is collecting the first live data — about a minute…';
+  $('docSay').textContent=say; $('docBy').textContent=d?('Dr. Claude · '+(d.by==='claude'?'written by Claude':'rule-based note')+' · '+ago(st.now-d.at)):'';
+  (function(){var g=st.goal,el=$('goal');if(!g||g.health==null){el.innerHTML='';return}
+    if(g.health>=g.target){el.innerHTML='<b class="c-strong">✓ Goal reached: health '+Math.round(g.health)+' (target '+g.target+')</b>';return}
+    el.innerHTML='<b>Goal '+g.target+'</b> · now '+Math.round(g.health)+' — '+(g.target-Math.round(g.health))+' points to go. What holds it down:'
+     +g.drags.map(function(d){return '<div style="margin-top:4px"><b>'+esc(d.name)+' '+d.score+'</b> <span class="c-weak">(costs '+d.cost+' points)</span><br><span class="sub">'+esc(d.why)+'</span></div>'}).join('')})();
+  var c=st.counts; $('chips').innerHTML='<span class="chip t-strong">'+c.strong+' strong</span><span class="chip t-weak">'+c.weak+' weak</span><span class="chip t-failing">'+(c.failing+c.down)+' failing</span>';
+  $('riskPct').textContent=st.risk.pct+'%'; $('riskLab').textContent=st.risk.label+' risk'; var rb=$('riskBar'); rb.style.width=st.risk.pct+'%'; rb.style.background=st.risk.pct<15?'#16a34a':st.risk.pct<40?'#d97706':'#dc2626';
+  $('stamp').textContent=st.cron_age==null?'Starting the first check…':'Last check '+ago(st.cron_age)+' · checks every minute · this page refreshes by itself';
+
+  var names=[['health','Overall health'],['speed','Speed rating'],['rel','Reliability'],['cap','Capacity'],['ui','UI quality'],['sec','Security']], sh='';
+  names.forEach(function(n){var x=st.scores[n[0]],col=colorFor(x.score),tr=x.trend==null?'':(x.trend>0?'<span class="trend c-g">▲ '+x.trend+'</span>':x.trend<0?'<span class="trend c-r">▼ '+Math.abs(x.trend)+'</span>':'<span class="trend" style="color:var(--mut)">● same</span>');
+    sh+='<div class="card sc"><div class="lab">'+n[1]+'</div><div class="big"><b>'+(x.score==null?'–':x.score)+'</b><span class="gr" style="background:'+col+'22;color:'+col+'">'+x.grade+'</span>'+tr+'</div><div class="note">'+esc(x.note||'')+'</div></div>'});
+  $('scores').innerHTML=sh;
+
+  $('ready').innerHTML=st.readiness.map(function(r){var cls=r.state==='g'?'g':r.state==='a'?'a':'r';return '<div class="card rd"><div class="ic d-'+cls+'">'+(cls==='g'?'✓':cls==='a'?'!':'✕')+'</div><div><b>'+esc(r.name)+'</b><span>'+esc(r.note)+'</span></div></div>'}).join('');
+
+  $('strip').innerHTML=st.strip.map(function(v,i){return '<i class="d-'+v+'" title="'+(60-i)+' min ago"></i>'}).join('');
+
+  renderTodo(st);
+  var db=st.db, be=st.backend, pos=st.pos, sv=st.server||{};
+  function kv(a,b){return '<div class="kv"><span>'+a+'</span><b>'+b+'</b></div>'}
+  var dbi=db.info||{};
+  $('svc').innerHTML=
+   '<div class="card"><div class="hd"><h2>Database</h2>'+tag(db.level)+'</div>'+kv('Answers in',ms(db.p50))+kv('Worked (24 h)',db.rate==null?'–':(db.rate*100).toFixed(1)+'%')+kv('Connections in use',db.use==null?'–':Math.round(db.use*100)+'% ('+(dbi.threads_connected||'?')+' / '+db.limit+')')+kv('Busiest ever seen',dbi.max_used_connections||'–')+kv('Size',dbi.size_mb?dbi.size_mb+' MB · '+dbi.tables+' tables':'–')+kv('Refused calls (24 h)',db.refused_24h)+'</div>'+
+   '<div class="card"><div class="hd"><h2>HRMS backend</h2>'+tag(be.level)+'</div>'+kv('Typical answer',ms(be.p50))+kv('Slowest 5%',ms(be.p95))+kv('Worked (24 h)',be.rate==null?'–':(be.rate*100).toFixed(1)+'%')+kv('Many-at-once test',be.burst_rate==null?'–':Math.round(be.burst_rate*100)+'% answered')+kv('Tests done',be.burst_n||0)+'</div>'+
+   '<div class="card"><div class="hd"><h2>Store POS</h2>'+tag(pos.level)+'</div>'+kv('Login page opens in',ms(pos.p50))+kv('Worked (24 h)',pos.rate==null?'–':(pos.rate*100).toFixed(1)+'%')+kv('Address','fourpirates.space/tmpos')+'</div>'+
+   '<div class="card"><div class="hd"><h2>Server</h2>'+tag(sv.writable===false?'failing':'strong')+'</div>'+kv('PHP',esc(sv.php||'–'))+kv('Disk free',sv.disk_free_gb!=null?sv.disk_free_gb+' GB ('+sv.disk_free_pct+'%)':'–')+kv('Load now',sv.load1==null?'–':sv.load1)+kv('Server time',esc((sv.time||'').replace('T',' ').slice(0,16)))+Object.keys(st.ssl||{}).map(function(k){return kv('Certificate · '+esc(k),st.ssl[k]==null?'?':st.ssl[k]+' days')}).join('')+'</div>';
+
+  $('apis').innerHTML=st.apis.length?st.apis.map(function(a){var rc=a.risk<15?'t-strong':a.risk<40?'t-weak':'t-failing';
+    return '<tr><td class="mono">'+esc(a.name)+'</td><td>'+tag(a.level)+'</td><td>'+a.rate+'%</td><td>'+ms(a.p50)+'</td><td><div class="spark">'+a.spark.map(function(s){return '<i class="d-'+s+'"></i>'}).join('')+'</div></td><td><span class="risk-s '+rc+'">'+a.risk+'%</span></td><td class="note">'+(a.why?'Last error: '+esc(a.why):'—')+'</td></tr>'}).join(''):'<tr><td colspan="7" class="empty">No call history yet. Keep this page open for a few minutes — it checks the calls you chose, once a minute. Use “Choose calls to watch” to add more.</td></tr>';
+
+  $('funcs').innerHTML=st.functions.map(function(x){return '<div class="card fn"><span class="dot d-'+x.level+'" style="margin-top:5px;flex:0 0 9px"></span><div><b>'+esc(x.name)+'</b><span>'+esc(x.note)+'</span></div></div>'}).join('');
+
+  $('pgCount').textContent='('+st.pages.length+')';
+  $('pages').innerHTML=st.pages.map(function(p){var cls=p.state==='bad'?'bad':p.state==='warn'?'warn':'';var dc=p.state==='ok'?'g':p.state==='warn'?'a':p.state==='bad'?'r':'x';
+    return '<div class="pg '+cls+'" title="'+esc(p.file)+'"><span class="dot d-'+dc+'" style="margin-top:4px;flex:0 0 9px"></span><div>'+esc(p.label)+(p.note?'<small>'+esc(p.note)+'</small>':'')+'</div></div>'}).join('')||'<div class="empty">Could not read the page list from assets/js/layout.js.</div>';
+  if(st.ui)$('uiSub').textContent='Page files are checked every 5 minutes. Last page check: '+ago(st.now-st.ui.at)+'.';
+  renderPD(st);
+
+  var el=st.errorlog;
+  if(el&&el.found){var mx=Math.max.apply(null,el.hours.concat([1]));$('errBars').innerHTML=el.hours.map(function(v,i){return '<i style="height:'+Math.max(2,v/mx*100)+'%" title="'+v+' errors"></i>'}).join('');
+    var nowH=new Date().getHours();$('errLab').innerHTML=el.hours.map(function(v,i){var hh=(nowH-(23-i)+48)%24;return '<span>'+(i%4===3?hh:'')+'</span>'}).join('');$('errSub').textContent=el.total+' error lines in 24 h · '+el.dbfail+' about connections · '+el.fatal+' fatal'}
+  else{$('errBars').innerHTML='<div class="empty">No readable error log found.</div>';$('errLab').innerHTML='';$('errSub').textContent='hPanel → Logs → Error log shows it.'}
+  var hv=(st.history||[]);var hm=100;$('hBars').innerHTML=hv.map(function(x){return '<i style="height:'+(x.health==null?2:Math.max(3,x.health/hm*100))+'%;background:'+colorFor(x.health)+'" title="'+(x.health==null?'no data':x.health)+'"></i>'}).join('');
+  $('hLab').innerHTML=hv.map(function(x){return '<span>'+x.day+(x.health!=null?'<br><b>'+x.health+'</b>':'')+'</span>'}).join('');
+
+  $('files').innerHTML=st.files.length?st.files.map(function(x){var bad=/^BROKEN|EMPTY/.test(x.note||'');return '<div class="li"><div><b class="mono">'+esc(x.path)+'</b><small>'+(x.state==='new'?'New':'Changed')+' · '+ago(st.now-x.changed_at)+'</small></div><div class="'+(bad?'c-r':'c-g')+'" style="font-weight:800;text-align:right">'+esc(x.note||'')+'</div></div>'}).join(''):'<div class="empty">No uploads in the last 24 hours.</div>';
+  $('incs').innerHTML=st.incidents.length?st.incidents.map(function(x){var open=!x.ended;return '<div class="li"><div><b>'+esc(x.title)+'</b><small>'+esc(x.detail||'')+'</small></div><div style="text-align:right;white-space:nowrap"><span class="tag '+(open?'t-failing':'t-strong')+'">'+(open?'Open':'Fixed in '+Math.max(1,Math.round((x.ended-x.started)/60))+' min')+'</span><small>'+ago(st.now-x.started)+'</small></div></div>'}).join(''):'<div class="empty">✓ No incidents in 7 days.</div>';
+}
+
+/* ───── load / refresh ───── */
+var fastT=null;
+function applied(j){render(j.status);clearTimeout(fastT);
+  if(j.refreshing||j.status.cron_age==null){$('stamp').textContent='Collecting live data… the first check takes about a minute. This page updates by itself.';fastT=setTimeout(function(){call('status').then(applied).catch(function(){})},9000)}}
+function load(){
+  if(!getKey()){gate('You are not logged in. Please log in to the HRMS again.');return}
+  call('status').then(function(j){$('gate').style.display='none';$('app').style.display='block';applied(j);startProbes()})
+   .catch(function(e){if(e.message==='KEY'){gate(e.message==='KEY'?'Only an Admin login can open Help. Please log in to the HRMS again.':e.message);return}
+     $('app').style.display='block';$('stamp').innerHTML='<span class="c-r">Help could not reach its backend: '+esc(e.message)+'</span>'});
+}
+$('bRefresh').onclick=function(){
+  var b=this; if(b.disabled)return; b.disabled=true; b.textContent='↻ Refreshing…';
+  var done=function(msg){b.textContent=msg;setTimeout(function(){b.textContent='↻ Refresh';b.disabled=false},1400)};
+  if(!getKey()){gate('You are not logged in. Please log in to the HRMS again.');done('↻ Refresh');return}
+  call('status').then(function(j){$('gate').style.display='none';$('app').style.display='block';applied(j);startProbes();done('✓ Updated '+new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit'}))})
+   .catch(function(e){if(e.message==='KEY'){gate('Only an Admin login can open Help. Please log in to the HRMS again.');done('↻ Refresh');return}
+     $('app').style.display='block';$('stamp').innerHTML='<span class="c-r">Help could not reach its backend: '+esc(e.message)+'</span>';done('✕ Failed — try again')});
+};
+$('bRun').onclick=function(){var b=this;b.disabled=true;b.textContent='Checking… (up to 1 min)';call('run',{},170000).then(function(j){applied(j)}).catch(function(e){alert('Check failed: '+e.message)}).then(function(){b.disabled=false;b.textContent='⚡ Check now'})};
+$('bCopy').onclick=function(){var b=this;call('report').then(function(j){var done=function(){b.textContent='✓ Copied';setTimeout(function(){b.textContent='📋 Copy report for Claude'},2000)};
+  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(j.text).then(done,function(){fb(j.text);done()})}else{fb(j.text);done()}}).catch(function(e){alert(e.message)})};
+function fb(t){var a=document.createElement('textarea');a.value=t;a.style.cssText='position:fixed;left:-999px';document.body.appendChild(a);a.select();try{document.execCommand('copy')}catch(e){}a.remove()}
+document.addEventListener('click',function(e){var b=e.target.closest('[data-ask]');if(b){$('askIn').value=b.getAttribute('data-ask');$('askIn').scrollIntoView({behavior:'smooth',block:'center'});ask()}
+  var q=e.target.closest('.quick button');if(q){$('askIn').value=q.getAttribute('data-q');ask()}});
+function ask(){var q=$('askIn').value.trim();if(!q)return;var a=$('answer');a.style.display='block';a.textContent='Dr. Claude is thinking…';$('bAsk').disabled=true;
+  call('ask',{q:q},40000).then(function(j){a.textContent=j.answer+(j.by==='claude'?'':'\n\n(rule-based answer)')}).catch(function(e){a.textContent='Could not ask: '+e.message}).then(function(){$('bAsk').disabled=false})}
+$('bAsk').onclick=ask;$('askIn').addEventListener('keydown',function(e){if(e.key==='Enter')ask()});
+
+/* ───── API watch (your browser makes read-only calls with your own login) ───── */
+function watchList(){try{var w=JSON.parse(localStorage.getItem(WATCH_NAME)||'null');if(Array.isArray(w))return w.slice(0,15)}catch(e){}return ['me.flags']}
+function autoWatch(){try{if(localStorage.getItem(WATCH_NAME)!==null)return}catch(e){return}
+  call('discover').then(function(j){var pick=['me.flags'];(j.safe||[]).forEach(function(n){if(pick.length<7&&pick.indexOf(n)<0&&/(\.|_)(list|get|summary|stats|count|counts|overview|today|status|badge|flags)$/.test(n))pick.push(n)});saveWatch(pick)}).catch(function(){})}
+function saveWatch(w){try{localStorage.setItem(WATCH_NAME,JSON.stringify(w.slice(0,15)))}catch(e){}}
+function probeOnce(){
+  if(probing||document.hidden||!getKey())return; var tok='';try{tok=localStorage.getItem('hrms_token')||''}catch(e){}
+  if(!tok)return; probing=true; var list=watchList(), out=[], i=0;
+  (function next(){ if(i>=list.length){ probing=false; if(out.length)call('probe_report',{items:out}).catch(function(){});return}
+    var a=list[i++], t0=performance.now(), ctl=new AbortController(), to=setTimeout(function(){ctl.abort()},12000);
+    fetch(HRMS_API+'?action='+encodeURIComponent(a)+'&probe=1&_='+Date.now(),{headers:{'Authorization':'Bearer '+tok},cache:'no-store',signal:ctl.signal})
+     .then(function(r){return r.text().then(function(tx){clearTimeout(to);var ok=r.status>=200&&r.status<500&&r.status!==401&&tx.charAt(0)==='{'&&!/Database connection failed|error 2002/i.test(tx);   /* a 4xx JSON answer (e.g. 'login not linked to an employee', 'not found') proves the backend is up; only 401 (session ended) and 5xx count as a failure */
+        out.push({name:a,ok:ok,ms:Math.round(performance.now()-t0),detail:ok?'':('HTTP '+r.status+' '+tx.slice(0,70).replace(/\s+/g,' '))})})})
+     .catch(function(e){clearTimeout(to);out.push({name:a,ok:false,ms:Math.round(performance.now()-t0),detail:e.name==='AbortError'?'no answer in 12 s':'network error'})})
+     .then(function(){setTimeout(next,350)}) })();
+}
+function startProbes(){ if(startProbes.on)return; startProbes.on=true; autoWatch(); setTimeout(probeOnce,2500); setInterval(probeOnce,60000)}
+$('bWatch').onclick=function(){var box=$('watchBox');if(box.style.display==='block'){box.style.display='none';return}
+  box.style.display='block';box.innerHTML='<div class="note">Looking for safe read-only calls in your backend…</div>';
+  call('discover').then(function(j){var cur=watchList(),all=j.safe.slice();cur.forEach(function(c){if(all.indexOf(c)<0)all.unshift(c)});
+    box.innerHTML='<div class="note" style="margin-bottom:6px">Tick up to 15 calls. Only names that look read-only (list / get / summary…) are shown. Each is called once a minute with your own login while this page is open.</div>'+
+      (all.length?all.map(function(n){return '<label><input type="checkbox" value="'+esc(n)+'"'+(cur.indexOf(n)>=0?' checked':'')+'> <span class="mono">'+esc(n)+'</span></label>'}).join(''):'<div class="empty">Nothing found automatically. Type a call name below.</div>')+
+      '<div class="askbox" style="margin-top:8px"><input id="wAdd" placeholder="Add a call name, e.g. me.flags"><button class="pill" id="wAddB">Add</button><button class="pill dark" id="wSave">Save</button></div>';
+    $('wAddB').onclick=function(){var v=$('wAdd').value.trim();if(/^[A-Za-z0-9_.\-]{2,60}$/.test(v)){var l=watchList();if(l.indexOf(v)<0)l.push(v);saveWatch(l);$('bWatch').click();$('bWatch').click()}};
+    $('wSave').onclick=function(){var l=[].slice.call(box.querySelectorAll('input[type=checkbox]:checked')).map(function(x){return x.value});saveWatch(l.length?l:['me.flags']);box.style.display='none';probeOnce()};
+  }).catch(function(e){box.innerHTML='<div class="msg">'+esc(e.message)+'</div>'})};
+
+/* ───── What to do now: every problem has a ready message for Claude ───── */
+var TODO_FILTER='all', TODO_OPEN={}, RC={};   // RC = the answer of the last 'Recheck this' per problem
+var KIND={failing:'Failing',weak:'Weak',warning:'Warning'}, KCOL={failing:'var(--r)',weak:'var(--a)',warning:'#6366f1'};
+function promptFor(f){
+  var L=['PROBLEM ('+KIND[f.kind]+'): '+f.title];
+  if(f.why)L.push('WHAT I FOUND: '+f.why);
+  if(f.measured)L.push('WHAT I MEASURED: '+f.measured);
+  if(f.where)L.push('WHERE: '+f.where);
+  if(f.fix)L.push('SUGGESTED FIX: '+f.fix);
+  L.push('SYSTEM: TM Perfume House HRMS (fourpirates.space) — static HTML pages + PHP/MySQL on Hostinger. I am not a backend developer.');
+  L.push((f.attach&&f.attach.length)?'PLEASE: find the root cause, give me the COMPLETE corrected file(s) with the full path of each, and exact steps (where to click in Hostinger File Manager / phpMyAdmin). I will attach: '+f.attach.join(', ')+'.':'PLEASE: no file is needed — give me the exact steps (where to click in Hostinger hPanel / File Manager / phpMyAdmin) and what to check afterwards to be sure it is fixed.');
+  return L.join('\n');
+}
+function rcOf(f){var t=String(f.title||'');
+  if(/store POS/i.test(t))return {k:'pos'};
+  if(/database is not answering|Database had some failures|Database connections are nearly/i.test(t))return {k:'db'};
+  if(/refused when many arrive/i.test(t))return {k:'burst'};
+  if(/HRMS backend|Backend call|POS had some failures/i.test(t))return {k:'backend'};
+  if(/on the server:|Backup or data file/i.test(t))return {k:'security'};
+  if(f.attach&&f.attach.length&&/\.html$/.test(f.attach[0]))return {k:'page',file:f.attach[0]};
+  return {k:'all'}}
+async function recheck(i,btn){
+  var f=todoItems(S)[i];if(!f)return;var rc=rcOf(f),title=f.title,old=btn.textContent;btn.disabled=true;btn.textContent='Checking…';
+  try{
+    if(rc.k==='page'){await runCheck([rc.file],true);var jp=await call('status');applied(jp);var still=(jp.status.findings||[]).some(function(x){return x.title===title});RC[title]={ok:!still,msg:still?'Re-measured just now — it still needs work (see the numbers above).':'Re-measured just now — this problem is gone.'}}
+    else if(rc.k==='all'){var ja=await call('run');applied(ja);var st2=(ja.status.findings||[]).some(function(x){return x.title===title});RC[title]={ok:!st2,msg:st2?'Checked again now — it is still there.':'Checked again now — this problem is gone.'}}
+    else{var j=await call('recheck',{what:rc.k}),r=j.result||{ok:false,detail:'no answer'};applied({status:j.status});
+      var still2=(j.status.findings||[]).some(function(x){return x.title===title});
+      RC[title]={ok:!!r.ok,msg:(j.label||'Check')+' just now: '+r.detail+(r.ms?' ('+r.ms+' ms)':'')+(r.ok&&still2?' — the card stays while the 24-hour numbers catch up; each good check helps.':'')}}
+  }catch(e){RC[title]={ok:false,msg:'Could not run the check: '+(e.message||e)}}
+  btn.disabled=false;btn.textContent=old;if(S)renderTodo(S)}
+function todoItems(st){return (st.findings||[]).filter(function(f){return TODO_FILTER==='all'||f.kind===TODO_FILTER})}
+function renderTodo(st){
+  var all=st.findings||[], n={failing:0,weak:0,warning:0};all.forEach(function(f){n[f.kind]++});
+  $('todoSum').innerHTML=all.length?'<span class="chip t-k-failing">'+n.failing+' Failing</span><span class="chip t-k-weak">'+n.weak+' Weak</span><span class="chip t-k-warning">'+n.warning+' Warning'+(n.warning===1?'':'s')+'</span>':'<span class="chip t-strong">✓ Nothing needs your attention</span>';
+  $('todoTabs').innerHTML=all.length?[['all','All '+all.length],['failing','Failing '+n.failing],['weak','Weak '+n.weak],['warning','Warnings '+n.warning]].map(function(t){return '<button class="pill sm'+(TODO_FILTER===t[0]?' dark':'')+'" data-tf="'+t[0]+'">'+t[1]+'</button>'}).join(''):'';
+  $('bCopyAll').style.display=all.length?'':'none';
+  var items=todoItems(st);
+  $('finds').innerHTML=items.length?items.map(function(f,i){var key=f.title,open=TODO_OPEN[key]===undefined?(i===0&&TODO_FILTER==='all'&&f.kind==='failing'):TODO_OPEN[key];
+    return '<div class="it"><div class="bar" style="background:'+KCOL[f.kind]+'"></div><div class="bd"><div class="ttl"><span class="tag t-k-'+f.kind+'">'+KIND[f.kind]+'</span><b>'+esc(f.title)+'</b></div>'+(f.why?'<p>'+esc(f.why)+'</p>':'')+'<div class="fix"><em>Fix:</em> '+esc(f.fix)+'</div>'+
+      '<div class="row2"><button class="pill or sm" data-cp="'+i+'">📋 Copy for Claude</button><button class="pill sm" data-rc="'+i+'" title="Run just this check again now">↻ Recheck this</button><button class="pill sm" data-ask="'+esc(f.ask)+'">Ask the doctor</button><button class="pill sm" data-pv="'+i+'">'+(open?'Hide':'Preview')+' message</button><span class="att">'+((f.attach&&f.attach.length)?'📎 Attach: '+esc(f.attach.join(', ')):'No file needed')+'</span></div>'+
+      (RC[f.title]?'<div class="rcres" style="margin-top:8px;font-size:13px;font-weight:600;color:'+(RC[f.title].ok?'var(--g)':'var(--r)')+'">'+(RC[f.title].ok?'✓ ':'✕ ')+esc(RC[f.title].msg)+'</div>':'')+(open?'<div class="prev">'+esc(promptFor(f))+'</div>':'')+'</div></div>'}).join(''):'<div class="card"><div class="empty">✓ No problems in this group.</div></div>';
+}
+function toast(t){var d=document.createElement('div');d.className='toast';d.textContent=t;document.body.appendChild(d);setTimeout(function(){d.remove()},2200)}
+function copyText(t,msg){var ok=function(){toast(msg||'✓ Copied — paste it into Claude')};if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(ok,function(){fb(t);ok()})}else{fb(t);ok()}}
+document.addEventListener('click',function(e){
+  var t=e.target.closest('[data-tf]');if(t){TODO_FILTER=t.getAttribute('data-tf');if(S)renderTodo(S);return}
+  var rcb=e.target.closest('[data-rc]');if(rcb&&S){recheck(+rcb.getAttribute('data-rc'),rcb);return}
+  var c=e.target.closest('[data-cp]');if(c&&S){var f=todoItems(S)[+c.getAttribute('data-cp')];if(f)copyText(promptFor(f));return}
+  var p=e.target.closest('[data-pv]');if(p&&S){var g=todoItems(S)[+p.getAttribute('data-pv')];if(g){var cur=TODO_OPEN[g.title];TODO_OPEN[g.title]=cur===undefined?!(todoItems(S)[0]===g&&TODO_FILTER==='all'&&g.kind==='failing'):!cur;renderTodo(S)}return}
+});
+$('bCopyAll').onclick=function(){if(!S)return;var all=S.findings||[];if(!all.length)return;
+  var head='HRMS HELP REPORT — '+new Date().toLocaleString()+'\nSystem: TM Perfume House HRMS (fourpirates.space), static HTML + PHP/MySQL on Hostinger. I am not a backend developer.\nOverall health: '+(S.scores.health.score==null?'–':S.scores.health.score+' ('+S.scores.health.grade+')')+' · '+all.length+' problem(s) below, worst first.\nPlease go one by one: for each, find the root cause and give me the COMPLETE corrected file(s) with full path and exact steps. Tell me which files you need me to attach.\n';
+  var body=all.map(function(f,i){var L=['',(i+1)+'. ['+KIND[f.kind]+'] '+f.title];if(f.why)L.push('   Found: '+f.why);if(f.measured)L.push('   Measured: '+f.measured);if(f.where)L.push('   Where: '+f.where);if(f.fix)L.push('   Suggested: '+f.fix);L.push('   Attach: '+((f.attach&&f.attach.length)?f.attach.join(', '):'no file needed'));return L.join('\n')}).join('\n');
+  copyText(head+body,'✓ Copied all '+all.length+' problems — paste into Claude')};
+
+/* one single prompt that asks Claude to fix everything found: problems, slow pages, pages likely to fail, phone/design issues, weak services */
+$('bSolve').onclick=function(){if(!S){return}
+  var L=[],n=0,F=S.findings||[],rows=((S.page_doctor&&S.page_doctor.rows)||[]);
+  L.push('TASK: Fix everything listed below in my HRMS in ONE go, then give me the COMPLETE updated file(s) with full path. Report faithfully what you fixed and what you could not.');
+  L.push('System: TM Perfume House HRMS (fourpirates.space) — static HTML pages in the root, PHP backend in empmanagment/ (api.php + modules), POS in tmpos/, MySQL on Hostinger shared hosting (limited DB connections). I am not a developer: no manual steps, commit it so it deploys by itself, never touch config.php / uploads / help_cfg.php, do not delete unused pages.');
+  L.push('Report time: '+new Date().toLocaleString()+' · Health '+(S.scores&&S.scores.health&&S.scores.health.score!=null?S.scores.health.score+' ('+S.scores.health.grade+')':'–')+'. Target: no failing item, health 95+.');
+  var P=F.filter(function(f){return f.kind==='failing'}),W=F.filter(function(f){return f.kind!=='failing'});
+  if(P.length){L.push('');L.push('A. FAILING (fix first)');P.forEach(function(f){n++;L.push(n+'. '+f.title+(f.why?' — '+f.why:'')+(f.measured?' | measured: '+f.measured:'')+(f.where?' | where: '+f.where:'')+(f.fix?' | suggested: '+f.fix:''))})}
+  var slow=rows.filter(function(x){return x.speed_ms>3500}).sort(function(a,b){return b.speed_ms-a.speed_ms});
+  if(slow.length){L.push('');L.push('B. SLOW PAGES (aim: opens under 2.5 s — fewer requests, cache, lighter data, lazy-load below the fold)');slow.forEach(function(x){n++;L.push(n+'. '+x.label+' ('+x.file+'): opens in '+secs(x.speed_ms)+', '+x.calls+' requests, slowest '+((x.slow&&x.slow.name)||'–')+' '+secs(x.slow&&x.slow.ms))})}
+  var fail=rows.filter(function(x){return x.fail_pct>=30});
+  if(fail.length){L.push('');L.push('C. PAGES WITH A HIGH CHANCE OF FAILING (make the calls fault-tolerant: retry once, show cached data, never a blank page)');fail.forEach(function(x){n++;L.push(n+'. '+x.label+' ('+x.file+'): '+x.fail_pct+'% chance of failing, '+x.calls+' requests, slowest '+((x.slow&&x.slow.name)||'–'))})}
+  var ph=rows.filter(function(x){return x.m!=='ok'||x.r!=='ok'||(x.im&&x.im.length)});
+  if(ph.length){L.push('');L.push('D. PHONE / DESIGN (390 px wide: no sideways scroll, text at least 11 px, buttons at least 26 px, nothing cut off)');ph.forEach(function(x){n++;L.push(n+'. '+x.label+' ('+x.file+'): phone '+x.m+', responsive '+x.r+((x.im&&x.im.length)?' — '+x.im.join('; '):''))})}
+  if(W.length){L.push('');L.push('E. WARNINGS / WEAK');W.forEach(function(f){n++;L.push(n+'. '+f.title+(f.why?' — '+f.why:'')+(f.fix?' | suggested: '+f.fix:''))})}
+  if(!n){L.push('');L.push('Nothing is failing right now. Please only confirm health is 95+ and suggest the single best speed improvement.')}
+  var att={};F.forEach(function(f){(f.attach||[]).forEach(function(a){att[a]=1})});rows.forEach(function(x){if(slow.indexOf(x)>-1||fail.indexOf(x)>-1||ph.indexOf(x)>-1)att[x.file]=1});
+  L.push('');L.push('Files you will probably need me to attach: '+(Object.keys(att).join(', ')||'none'));
+  L.push('Rules: fix the root cause, keep every existing feature working, test before you say it is done, and finish with a short list: fixed / not fixed + why.');
+  copyText(L.join('\n'),'✓ Copied one prompt with '+n+' item(s) — paste into Claude')};
+
+/* ───── Page Doctor ───── */
+var PD_FILTER='all', PD_OPEN={}, PD_FIRST=true;
+function secs(v){return v==null?'–':(v/1000).toFixed(1)+' s'}
+function chip(l,v){var c=v==='ok'?'g':v==='warn'?'a':'r',t=v==='ok'?'✓':v==='warn'?'!':'✕';return '<span class="chip2 '+c+'">'+l+' '+t+'</span>'}
+var GR={A:'g',B:'g',C:'a',D:'a',F:'r'};
+function pdFilterFn(f){return f==='needs'?function(x){return x.state!=='ok'||x.fail_pct>=30||x.speed_ms>3500}:f==='slow'?function(x){return x.speed_ms>3500}:f==='phone'?function(x){return x.m!=='ok'||x.r!=='ok'}:f==='fail'?function(x){return x.fail_pct>=30}:function(){return true}}
+function renderPD(st){
+  var pd=st.page_doctor, sum=$('pdSum'), fl=$('pdFilters'), list=$('pdList');
+  if(!pd){sum.innerHTML='';fl.innerHTML='';list.innerHTML='<div class="card"><div class="empty">No page check yet. Press <b>▶ Run page check</b> — it opens every page one by one on phone, tablet and computer widths (about '+Math.max(2,Math.round(st.pages.length*6/60))+'–'+Math.max(3,Math.round(st.pages.length*8/60))+' minutes) and measures speed, requests and layout. It only looks; it never clicks or saves.</div></div>';return}
+  var m=pd.summary, hc=m.health>=75?'var(--g)':m.health>=60?'var(--a)':'var(--r)';
+  $('pdSub').textContent='Checked '+ago(st.now-pd.at)+' · '+pd.total+' pages · measured in your browser at phone, tablet and computer width.';
+  sum.innerHTML='<div class="card"><small>Slowest page</small><b style="color:'+(m.slowest.ms>3500?'var(--r)':m.slowest.ms>2500?'var(--a)':'var(--g)')+'">'+secs(m.slowest.ms)+'</b><span>'+esc(m.slowest.label)+' · average '+secs(m.avg_ms)+'</span></div>'+
+   '<div class="card"><small>Not phone-ready</small><b style="color:'+(m.not_phone?'var(--a)':'var(--g)')+'">'+m.not_phone+' <span style="font-size:14px">of '+pd.total+'</span></b><span>cut off, too small or broken on a phone</span></div>'+
+   '<div class="card"><small>Likely to fail</small><b style="color:'+(m.likely_fail?'var(--r)':'var(--g)')+'">'+m.likely_fail+'</b><span>pages with 30%+ chance at busy times</span></div>'+
+   '<div class="card"><small>Page health</small><b style="color:'+hc+'">'+m.health+' <span style="font-size:14px">'+m.grade+'</span></b><span>average of speed + layout + failure risk</span></div>';
+  var F=[['all','All '+pd.total,pd.total],['needs','Needs work '+m.needs_work],['slow','Slow '+m.slow],['phone','Not phone-ready '+m.not_phone],['fail','Likely to fail '+m.likely_fail]];
+  fl.innerHTML=F.map(function(f){return '<button class="pill'+(PD_FILTER===f[0]?' dark':'')+'" data-pdf="'+f[0]+'">'+f[1]+'</button>'}).join('');
+  var rows=pd.rows.filter(pdFilterFn(PD_FILTER));
+  if(PD_FIRST&&rows.length){PD_OPEN[rows[0].file]=true;PD_FIRST=false}
+  list.innerHTML=rows.length?rows.map(function(x){return pdRow(x)}).join(''):'<div class="card"><div class="empty">No pages in this group — good.</div></div>';
+}
+function pdRow(x){
+  var bc=x.speed_ms>3500?'var(--r)':x.speed_ms>2500?'var(--a)':'var(--g)', open=!!PD_OPEN[x.file], fc=x.fail_pct>=30?'r':x.fail_pct>=12?'a':'g';
+  var iss=x.found.filter(function(f){return f.level!=='g'}).slice(0,2).map(function(f){return f.text}).join(' · ')||'Healthy';
+  var h='<div class="rowp" data-f="'+esc(x.file)+'"><div class="rh" data-pdt="'+esc(x.file)+'"><div class="nm"><b>'+esc(x.label)+'</b><span>'+esc(x.group)+' · '+x.calls+' data requests</span></div>'+
+   '<div class="sp"><b>'+secs(x.speed_ms)+'</b><span class="tag gr t-'+GR[x.grade]+'">'+x.grade+'</span><div class="pbar"><i style="width:'+Math.min(100,x.speed_ms/5000*100)+'%;background:'+bc+'"></i></div></div>'+
+   '<div><span class="tag t-'+fc+'">'+x.fail_pct+'% chance</span><div class="sub" style="margin-top:3px">of failing</div></div>'+
+   '<div class="chips2">'+chip('Desktop',x.d)+chip('Phone',x.m)+chip('Responsive',x.r)+'</div><div class="iss">'+esc(iss)+'</div><div class="chev">'+(open?'⌃':'⌄')+'</div></div>';
+  if(open){
+    var p=x.parts||{}, tot=Math.max(1,(p.file||0)+(p.scripts||0)+(p.data||0)+(p.images||0)+(p.draw||0));
+    var seg=[['file','Page file','#14161a'],['scripts','Scripts and styles','#6b7280'],['data','Waiting for data ('+x.calls+' requests)','#ff7a2f'],['images','Images','#d97706'],['draw','Drawing the page','#cfd3da']];
+    var hist=(x.hist||[]), hm=Math.max.apply(null,hist.concat([1]));
+    var cut=x.m==='bad'||x.r==='bad'||x.over390>4;
+    h+='<div class="det"><div><h3>Where the '+secs(x.speed_ms)+' goes</h3><div class="stack">'+seg.map(function(g){return '<i style="width:'+((p[g[0]]||0)/tot*100)+'%;background:'+g[2]+'"></i>'}).join('')+'</div>'+
+     '<div class="leg">'+seg.map(function(g){return '<span><em style="font-style:normal"><i style="display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;background:'+g[2]+'"></i>'+g[1]+'</em><b>'+secs(p[g[0]]||0)+'</b></span>'}).join('')+'</div>'+
+     '<div class="note" style="margin-top:6px">Split is approximate. Slowest request: <b>'+esc((x.slow&&x.slow.name)||'–')+'</b> '+secs(x.slow&&x.slow.ms)+(x.failed_calls?' · <span class="c-r">'+x.failed_calls+' request(s) failed</span>':'')+'</div>'+
+     '<h3 style="margin-top:14px">Recent checks</h3>'+(hist.length>1?'<div class="mini">'+hist.map(function(v){return '<i style="height:'+Math.max(8,v/hm*100)+'%;background:'+(v>3500?'#dc2626':v>2500?'#d97706':'#16a34a')+'"></i>'}).join('')+'</div>':'<div class="note">Run the check again later to see the trend.</div>')+'</div>'+
+     '<div><h3>What I found</h3>'+x.found.map(function(f){return '<div class="fnd"><span class="tag t-'+f.level+'">'+esc(f.tag)+'</span><div>'+esc(f.text)+'</div></div>'}).join('')+
+     '<div class="shots"><div><div class="ph"><div class="blk" style="top:10px"></div><div class="blk" style="top:30px"></div><div class="blk" style="top:50px"></div><div class="blk" style="top:70px"></div>'+(cut?'<div class="cut"></div>':'')+'</div><div class="cap '+(cut?'c-r':'c-g')+'">Phone '+(cut?'✕':'✓')+'</div></div>'+
+     '<div><div class="dk"><div class="blk" style="top:8px"></div><div class="blk" style="top:26px"></div><div class="blk" style="top:44px"></div><div class="blk" style="top:62px"></div></div><div class="cap '+(x.d==='ok'?'c-g':'c-r')+'">Computer '+(x.d==='ok'?'✓':'✕')+'</div></div></div></div>'+
+     '<div><h3>How to improve</h3>'+x.tips.map(function(t,i){return '<div class="fixi"><em>'+(i+1)+'</em><div><b>'+esc(t.t)+'</b><span>'+esc(t.s)+'</span></div></div>'}).join('')+
+     '<div class="btns"><button class="pill or" data-pdcopy="'+esc(x.file)+'">Copy fix request for Claude</button><button class="pill" data-pdre="'+esc(x.file)+'">Re-check this page</button></div></div></div>';
+  }
+  return h+'</div>';
+}
+document.addEventListener('click',function(e){
+  var f=e.target.closest('[data-pdf]');if(f){PD_FILTER=f.getAttribute('data-pdf');if(S)renderPD(S);return}
+  var c=e.target.closest('[data-pdcopy]');if(c){pdCopy(c.getAttribute('data-pdcopy'),c);return}
+  var r=e.target.closest('[data-pdre]');if(r){runCheck([r.getAttribute('data-pdre')],true);return}
+  var t=e.target.closest('[data-pdt]');if(t){var k=t.getAttribute('data-pdt');PD_OPEN[k]=!PD_OPEN[k];if(S)renderPD(S)}
+});
+function pdCopy(file,btn){
+  var x=((S&&S.page_doctor&&S.page_doctor.rows)||[]).filter(function(r){return r.file===file})[0];if(!x)return;
+  var t='Please improve the HRMS page "'+x.label+'" ('+x.file+').\nMeasured: opens in '+secs(x.speed_ms)+' (grade '+x.grade+'), '+x.calls+' data requests, slowest '+((x.slow&&x.slow.name)||'–')+' '+secs(x.slow&&x.slow.ms)+', '+x.fail_pct+'% chance of failing. Desktop '+x.d+', phone '+x.m+', responsive '+x.r+'.\nFound:\n'+x.found.map(function(f){return '- '+f.tag+': '+f.text}).join('\n')+'\nSuggested:\n'+x.tips.map(function(f,i){return (i+1)+'. '+f.t+' — '+f.s}).join('\n')+'\nI will attach the page file. Give me the complete updated file with its full path.';
+  var done=function(){btn.textContent='✓ Copied — paste it to Claude';setTimeout(function(){btn.textContent='Copy fix request for Claude'},2500)};
+  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(done,function(){fb(t);done()})}else{fb(t);done()}
+}
+
+/* ───── page check: opens each page once in a hidden frame, measures it, then looks at it at phone, tablet and computer width ───── */
+var ERR_RE=new RegExp(['Database connection fail'+'ed','Fa'+'tal err'+'or','Pa'+'rse err'+'or','Warn'+'ing:','Not'+'ice:','Stack tr'+'ace','Uncau'+'ght','Undefined (variable|index|array key)','Server is bu'+'sy','error 20'+'02','\\[object Object\\]'].join('|'),'i');   // written in pieces so this page never contains the very words the server-side page check looks for
+function looks(doc,win,W){
+  var o={blank:false,err:'',fatal:false,over:0,off:'',tiny:0,small:0,broken:0,empty:0,login:false};
+  try{
+    var txt=(doc.body&&doc.body.innerText||'').trim();
+    if(txt.length<25)o.blank=true;
+    var m=txt.match(ERR_RE);if(m){o.err=m[0].slice(0,30);o.fatal=/Database|Fatal|Parse|Stack|Uncaught|2002/i.test(m[0])}
+    if(/login/i.test(win.location.pathname))o.login=true;
+    var sw=Math.max(doc.documentElement.scrollWidth,doc.body?doc.body.scrollWidth:0);o.over=Math.max(0,sw-W);
+    var els=doc.body.querySelectorAll('*'),n=Math.min(els.length,3500),i,cs,r;
+    if(o.over>4){for(i=0;i<n;i++){r=els[i].getBoundingClientRect();if(r.width&&r.right>W+6&&els[i].offsetParent!==null){cs=win.getComputedStyle(els[i]);if(cs.position==='fixed')continue;var c=typeof els[i].className==='string'&&els[i].className.trim()?'.'+els[i].className.trim().split(/\s+/)[0]:'';o.off=els[i].tagName.toLowerCase()+c;break}}}
+    var imgs=doc.images;for(i=0;i<imgs.length;i++){var im=imgs[i];if(im.getAttribute('src')==='')o.empty++;else if(im.complete&&im.naturalWidth===0&&im.getAttribute('src')&&im.offsetParent!==null)o.broken++}
+    var bt=doc.querySelectorAll('button,a,input,select'),k;for(k=0;k<bt.length&&k<700;k++){r=bt[k].getBoundingClientRect();if(r.height>0&&r.width>0&&bt[k].offsetParent!==null&&(r.height<26||r.width<26)&&!(bt[k].tagName==='INPUT'&&bt[k].closest('label')))o.tiny++}   /* a tick-box inside a label is tapped through the label */
+    for(i=0;i<n;i++){var el=els[i];if(el.offsetParent===null)continue;var has=false,ch=el.childNodes,q;for(q=0;q<ch.length;q++){if(ch[q].nodeType===3&&ch[q].nodeValue.trim().length>1){has=true;break}}if(has){var fz=parseFloat(win.getComputedStyle(el).fontSize);if(fz>0&&fz<11)o.small++}   /* font-size:0 = a label hidden on purpose (collapsed menu), not tiny text */}
+  }catch(e){o.err='could not inspect'}
+  return o;
+}
+function hookFrame(w){
+  w.__hlpHook=1;var h=w.__hlp={inflight:0};
+  try{var of=w.fetch;if(of)w.fetch=function(){h.inflight++;var done=function(){h.inflight=Math.max(0,h.inflight-1)};var p;try{p=of.apply(this,arguments)}catch(e){done();throw e}p.then(done,done);return p}}catch(e){}
+  try{var sp=w.XMLHttpRequest&&w.XMLHttpRequest.prototype,os=sp&&sp.send;if(os)sp.send=function(){var x=this;h.inflight++;var d=false;x.addEventListener('loadend',function(){if(!d){d=true;h.inflight=Math.max(0,h.inflight-1)}});return os.apply(this,arguments)}}catch(e){}
+}
+function sleep(ms){return new Promise(function(r){setTimeout(r,ms)})}
+function measure(fr){
+  var w=fr.contentWindow,pf=w.performance,nav=(pf.getEntriesByType('navigation')[0])||{},res=pf.getEntriesByType('resource'),calls=[],mS=0,mD=0,mI=0,failed=0;
+  res.forEach(function(e){var t=e.initiatorType;
+    if(t==='fetch'||t==='xmlhttprequest'){var a=/[?&]action=([^&]+)/.exec(e.name),nm=a?decodeURIComponent(a[1]):e.name.split('?')[0].split('/').pop();calls.push({name:nm,ms:Math.round(e.duration)});mD=Math.max(mD,e.responseEnd);if(e.responseStatus&&(e.responseStatus>=500||e.responseStatus===403||e.responseStatus===404||e.responseStatus===408||e.responseStatus===429))failed++}   /* a 400 is the server answering 'this login has no employee record' (the Help check runs as the admin) — that is not a failure of the page */
+    else if(t==='script'||t==='link'||t==='css')mS=Math.max(mS,e.responseEnd);else if(t==='img')mI=Math.max(mI,e.responseEnd)});
+  var h=nav.responseEnd||0,ld=nav.loadEventEnd||0,total=Math.max(h,mS,mD,mI,ld),slow=calls.slice().sort(function(a,b){return b.ms-a.ms})[0]||{name:'',ms:0};
+  return {speed:Math.round(total),calls:calls.length,failed:failed,slow:slow,parts:{file:Math.round(h),scripts:Math.round(Math.max(0,mS-h)),data:Math.round(Math.max(0,mD-Math.max(mS,h))),images:Math.round(Math.max(0,mI-Math.max(mD,mS,h))),draw:Math.round(Math.max(0,total-Math.max(h,mS,mD,mI)))}};
+}
+async function checkOne(fr,p){
+  var row={file:p.file,d:'ok',m:'ok',r:'ok',im:[],ir:[],id:[],speed_ms:0,calls:0,failed_calls:0,slow:{name:'',ms:0},parts:{}};
+  fr.style.width='390px';
+  var hookT=setInterval(function(){try{var w=fr.contentWindow;if(w.__hlpHook||!w.document||w.location.href.indexOf('help_check')<0)return;hookFrame(w)}catch(e){}},5);
+  var loaded=await new Promise(function(res){var done=false,t=setTimeout(function(){if(!done){done=true;res(false)}},20000);fr.onload=function(){if(!done){done=true;clearTimeout(t);res(true)}};fr.src=p.file+(p.file.indexOf('?')<0?'?':'&')+'help_check=1'});
+  clearInterval(hookT);
+  if(!loaded){row.m=row.d=row.r='bad';row.im.push('did not finish loading in 20 s');row.speed_ms=20000;return row}
+  // wait until the page has no request in flight and makes no new ones for 1.5 s (min 2 s, max 14 s)
+  var last=-1,still=0,t0=Date.now();
+  while(Date.now()-t0<14000){await sleep(300);var c=0,fl=0;try{c=fr.contentWindow.performance.getEntriesByType('resource').length;fl=fr.contentWindow.__hlp?fr.contentWindow.__hlp.inflight:0}catch(e){}
+    still=(c===last&&fl<=0)?still+1:0;last=c;if(still>=5&&Date.now()-t0>=2000)break}
+  try{var M=measure(fr);row.speed_ms=M.speed;row.calls=M.calls;row.failed_calls=M.failed;row.slow=M.slow;row.parts=M.parts}catch(e){row.im.push('could not measure speed')}
+  var wd={m:390,t:768,d:1280},R={};
+  for(var k in wd){fr.style.width=wd[k]+'px';await sleep(k==='m'?200:700);R[k]=looks(fr.contentDocument,fr.contentWindow,wd[k])}
+  var A=R.m,B=R.t,D=R.d;
+  // phone
+  if(A.blank){row.m='bad';row.im.push('page looks blank')}
+  if(A.err){row.im.push('shows “'+A.err+'”');row.m=A.fatal?'bad':(row.m==='bad'?'bad':'warn')}
+  if(A.login)row.im.push('sent to the login page');
+  if(A.broken||A.empty){row.im.push((A.broken+A.empty)+' broken or empty image'+((A.broken+A.empty)>1?'s':''));if(row.m==='ok')row.m='warn'}
+  if(A.tiny>12){row.im.push(A.tiny+' very small buttons or links');if(row.m==='ok')row.m='warn'}
+  if(A.small>10){row.im.push('text smaller than 11 px in '+A.small+' places');if(row.m==='ok')row.m='warn'}
+  // responsive (does the layout fit each width?)
+  row.over390=A.over;row.over768=B.over;row.offender=A.off||B.off||'';row.tiny=A.tiny;row.small_text=A.small;row.broken_img=A.broken+A.empty;
+  if(A.over>40){row.r='bad';row.ir.push('cut off on phone: '+A.over+' px wider than the screen'+(A.off?' ('+A.off+')':''))}
+  else if(A.over>4){row.r='warn';row.ir.push('slightly wider than the phone screen ('+A.over+' px'+(A.off?', '+A.off:'')+')')}
+  if(B.over>4){if(row.r==='ok')row.r='warn';row.ir.push('wider than a tablet screen by '+B.over+' px')}
+  // desktop
+  if(D.blank){row.d='bad';row.id.push('page looks blank')}
+  if(D.err){row.id.push('shows “'+D.err+'”');row.d=D.fatal?'bad':(row.d==='bad'?'bad':'warn')}
+  if(D.over>4){if(row.d==='ok')row.d='warn';row.id.push('wider than the computer screen by '+D.over+' px')}
+  if(D.broken||D.empty){if(row.d==='ok')row.d='warn';row.id.push((D.broken+D.empty)+' broken or empty image(s)')}
+  return row;
+}
+var checking=false;
+$('bUIstop').onclick=function(){uiStop=true};
+$('bUI').onclick=function(){
+  if(!S||!S.pages.length||checking)return;
+  if(!confirm('This opens all '+S.pages.length+' pages one by one (about '+Math.max(3,Math.round(S.pages.length*7/60))+' minutes; this Help page is skipped) and looks at them on phone, tablet and computer widths. It does not click or save anything, but each page makes its normal data requests — best done when the shop is quiet. Continue?'))return;
+  runCheck(S.pages.map(function(p){return p.file}),false);
+};
+async function runCheck(files,partial){
+  if(checking)return;checking=true;busy=true;uiStop=false;
+  var list=S.pages.filter(function(p){return files.indexOf(p.file)>-1&&p.file!=='help.html'}),rows=[],btn=$('bUI');
+  btn.disabled=true;$('bUIstop').style.display='';$('uiProg').style.display='block';$('uiTxt').style.display='block';
+  var fr=document.createElement('iframe');fr.setAttribute('aria-hidden','true');fr.style.cssText='position:fixed;left:-9999px;top:0;width:390px;height:800px;border:0;visibility:hidden';document.body.appendChild(fr);
+  for(var i=0;i<list.length&&!uiStop;i++){
+    $('uiProg').firstChild.style.width=Math.round((i+1)/list.length*100)+'%';$('uiTxt').textContent='Checking '+(i+1)+' of '+list.length+': '+list[i].label;
+    try{rows.push(await checkOne(fr,list[i]))}catch(e){rows.push({file:list[i].file,d:'warn',m:'warn',r:'warn',im:['could not check: '+e.message],ir:[],id:[]})}
+  }
+  fr.onload=null;fr.remove();$('uiProg').style.display='none';$('uiTxt').style.display='none';$('bUIstop').style.display='none';btn.disabled=false;checking=false;busy=false;
+  if(rows.length){try{await call('ui_report',{partial:partial||rows.length<S.pages.length,rows:rows},60000);PD_FIRST=true;load()}catch(e){alert('Could not save the page check: '+e.message)}}
+}
+
+/* auto refresh (reads only Help's own small database — adds no load to MySQL) */
+setInterval(function(){if(!document.hidden&&getKey()&&!busy)call('status').then(applied).catch(function(){})},25000);
+document.addEventListener('visibilitychange',function(){if(!document.hidden)load()});
+/* ───── Feature check ───── */
+var FT=null, FTREQ=[], FTTAB='all';
+function ftTag(k,t){return '<span class="tag t-'+k+'">'+t+'</span>'}
+function ftSave(){return FT}
+function renderFeat(){
+  var sum=$('ftSum'),tabs=$('ftTabs'),list=$('ftList');
+  if(!FT){sum.innerHTML='';tabs.innerHTML='';list.innerHTML='<div class="card"><div class="empty">No feature scan yet. Press <b>▶ Scan all buttons &amp; features</b> (takes a few seconds).</div></div>';$('bFeatCopy').style.display='none';return}
+  var t=FT.totals; $('ftCount').textContent='('+t.pages+' pages · '+t.buttons+' buttons & links)';
+  $('ftSub').textContent='Scanned '+ago(Math.max(0,Math.round(Date.now()/1000-FT.at)))+' in '+FT.secs+' s. Reads your files only — it never clicks or changes anything.';
+  var open=FTREQ.filter(function(r){return r.status!=='done'}).length;
+  function card(l,v,c,sub){return '<div class="card"><small>'+l+'</small><b style="color:'+c+'">'+v+'</b><span>'+sub+'</span></div>'}
+  sum.innerHTML=card('Usable',t.usable,'var(--g)','buttons and links that have working code')
+   +card('Not usable',t.dead+t.missing_api,t.dead+t.missing_api?'var(--r)':'var(--g)','dead buttons, broken links, calls the server cannot answer')
+   +card('Need a look',t.check,t.check?'var(--a)':'var(--g)','no code found that reacts to them')
+   +card('Can be removed',t.removable,'var(--ink)','pages nothing links to')
+   +card('Server actions unused',t.unused_api,'var(--mut)','no page calls them (check before removing)')
+   +card('New requirements',open,open?'var(--a)':'var(--g)','open on your list');
+  var tabsD=[['all','All pages '+t.pages],['bad','Not usable '+FT.pages.filter(function(p){return p.state==='bad'}).length],['weak','Need a look '+FT.pages.filter(function(p){return p.state==='weak'}).length],['rem','Removable '+(FT.removable.length+Math.min(FT.unused_api.length,0))],['unused','Unused on server '+FT.unused_api.length],['req','Requirements '+FTREQ.length]];
+  tabs.innerHTML=tabsD.map(function(x){return '<button class="pill sm'+(FTTAB===x[0]?' dark':'')+'" data-ft="'+x[0]+'">'+x[1]+'</button>'}).join('');
+  $('bFeatCopy').style.display='';
+  var h='';
+  function pageCard(p){
+    var st=p.state==='bad'?'failing':p.state==='weak'?'weak':p.state==='unused'?'unknown':'strong', lab=p.state==='bad'?'Not usable':p.state==='weak'?'Need a look':p.state==='unused'?'Unused page':'Usable';
+    var x='<div class="card ftp"><h3>'+esc(p.label)+' <small>'+esc(p.file)+(p.in_menu?'':' · not in menu')+'</small>'+ftTag(st,lab)+'<small>'+p.ok+' of '+p.buttons+' work</small></h3>';
+    var ul='';
+    p.dead.forEach(function(d){ul+='<li><b>'+esc(d.label||'(no text)')+'</b> — '+esc(d.why)+'</li>'});
+    p.missing_api.forEach(function(a){ul+='<li>The page calls <b>'+esc(a)+'</b> but the server has no such action — add it, or remove the button that needs it</li>'});
+    p.check.forEach(function(d){ul+='<li><i><b>'+esc(d.label||'(no text)')+'</b> — '+esc(d.why)+'</i></li>'});
+    (p.dups||[]).forEach(function(d){ul+='<li>Repeated button: '+esc(d)+' — one may be removable</li>'});
+    return x+(ul?'<ul>'+ul+'</ul>':'')+'</div>';
+  }
+  if(FTTAB==='all'||FTTAB==='bad'||FTTAB==='weak'){
+    var rows=FT.pages.filter(function(p){return FTTAB==='all'||p.state===FTTAB});
+    h=rows.length?rows.map(pageCard).join(''):'<div class="card"><div class="empty">Nothing in this group — good.</div></div>';
+  }else if(FTTAB==='rem'){
+    h='<div class="card ftp"><h3>Pages that can probably be removed</h3><div class="sub">Not in the menu, and no other page, script or PHP file links to them. Open each one first — if nobody needs it, delete the file.</div>'
+     +(FT.removable.length?FT.removable.map(function(r){return '<div class="ftr"><div><b>'+esc(r.file)+'</b><small>'+esc(r.why)+'</small></div></div>'}).join(''):'<div class="empty">None.</div>')+'</div>';
+  }else if(FTTAB==='unused'){
+    h='<div class="card ftp"><h3>Server actions no page calls</h3><div class="sub">Many are used by cron jobs, other apps or code that builds the name in pieces — never delete one without checking.</div><div style="margin-top:8px;font-size:12.5px;line-height:1.9">'
+     +FT.unused_api.map(function(a){return '<span class="tag t-unknown" style="margin:2px">'+esc(a)+'</span>'}).join(' ')+'</div></div>';
+  }else{
+    h='<div class="card ftp"><h3>New requirements <small>things you want added or changed</small></h3><div class="ftreq"><textarea id="ftReqIn" maxlength="600" placeholder="e.g. Add a Download Excel button on the Salary page"></textarea><button class="pill dark" id="ftReqAdd">Add</button></div>'
+     +(FTREQ.length?FTREQ.slice().reverse().map(function(r){return '<div class="ftr"><div><b>'+esc(r.text)+'</b><small>added '+ago(Math.round(Date.now()/1000-r.at))+'</small></div>'
+       +'<select data-rs="'+r.id+'"><option value="open"'+(r.status==='open'?' selected':'')+'>Open</option><option value="doing"'+(r.status==='doing'?' selected':'')+'>In progress</option><option value="done"'+(r.status==='done'?' selected':'')+'>Done</option></select>'
+       +'<button class="pill sm" data-rd="'+r.id+'">Delete</button></div>'}).join(''):'<div class="empty">No requirements yet. Write one above and press Add.</div>')+'</div>';
+  }
+  list.innerHTML=h;
+}
+function ftApply(j){FT=j.scan||FT;FTREQ=j.reqs||FTREQ;renderFeat()}
+function ftLoad(){call('features_last').then(ftApply).catch(function(){renderFeat()})}
+$('bFeat').onclick=function(){var b=this;b.disabled=true;b.textContent='Scanning… (a few seconds)';
+  call('features',{force:1},120000).then(function(j){ftApply(j)}).catch(function(e){alert('Scan failed: '+e.message)}).then(function(){b.disabled=false;b.textContent='▶ Scan all buttons & features'})};
+$('ftTabs').onclick=function(e){var b=e.target.closest('[data-ft]');if(b){FTTAB=b.getAttribute('data-ft');renderFeat()}};
+$('ftList').onclick=function(e){
+  var a=e.target.closest('#ftReqAdd');
+  if(a){var t=($('ftReqIn').value||'').trim();if(!t)return;a.disabled=true;call('req_add',{text:t}).then(function(j){FTREQ=j.reqs;renderFeat()}).catch(function(x){alert(x.message);a.disabled=false});return}
+  var d=e.target.closest('[data-rd]');if(d&&confirm('Delete this requirement?'))call('req_del',{id:d.getAttribute('data-rd')}).then(function(j){FTREQ=j.reqs;renderFeat()}).catch(function(x){alert(x.message)})};
+$('ftList').onchange=function(e){var s=e.target.closest('[data-rs]');if(s)call('req_set',{id:s.getAttribute('data-rs'),status:s.value}).then(function(j){FTREQ=j.reqs;renderFeat()}).catch(function(x){alert(x.message)})};
+$('bFeatCopy').onclick=function(){
+  if(!FT)return;var L=['Please fix and improve my HRMS (fourpirates.space). Findings from the Help → Feature check:',''];
+  FT.pages.filter(function(p){return p.state!=='good'}).forEach(function(p){
+    L.push('PAGE '+p.file+' ('+p.label+')');
+    p.dead.forEach(function(d){L.push('  - NOT USABLE: "'+d.label+'" — '+d.why)});
+    p.missing_api.forEach(function(a){L.push('  - MISSING ON SERVER: '+a)});
+    p.check.slice(0,6).forEach(function(d){L.push('  - CHECK: "'+d.label+'" — '+d.why)});L.push('')});
+  if(FT.removable.length){L.push('PAGES THAT CAN PROBABLY BE REMOVED (nothing links to them):');FT.removable.forEach(function(r){L.push('  - '+r.file)});L.push('')}
+  var open=FTREQ.filter(function(r){return r.status!=='done'});
+  if(open.length){L.push('NEW REQUIREMENTS I WANT:');open.forEach(function(r,i){L.push('  '+(i+1)+'. '+r.text)});L.push('')}
+  L.push('Give me the complete corrected files with their full paths and exact upload steps for Hostinger File Manager.');
+  var txt=L.join('\n'),b=this,done=function(){b.textContent='✓ Copied';setTimeout(function(){b.textContent='📋 Copy findings for Claude'},2000)};
+  if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(txt).then(done,function(){prompt('Copy this:',txt)});else prompt('Copy this:',txt)};
+renderFeat();
+
+/* ───── Full check: final report + fix prompt ───── */
+function fcAll(){var o=[];((S&&S.findings)||[]).forEach(function(f){o.push(f)});return o}
+function fcReport(R){
+  var st=S||{},sc=st.scores||{},c=st.counts||{},g=st.goal,L=[];
+  L.push('HRMS FULL CHECK — FINAL REPORT · '+new Date().toLocaleString('en-IN'),'');
+  L.push('HEALTH: '+((sc.health&&sc.health.score)!=null?sc.health.score+' ('+sc.health.grade+')':'–')+'  |  Speed '+((sc.speed&&sc.speed.grade)||'–')+' · Reliability '+((sc.reliability&&sc.reliability.grade)||(sc.rel&&sc.rel.grade)||'–')+' · Capacity '+((sc.capacity&&sc.capacity.grade)||(sc.cap&&sc.cap.grade)||'–')+' · UI '+((sc.ui&&sc.ui.grade)||'–')+' · Security '+((sc.security&&sc.security.grade)||(sc.sec&&sc.sec.grade)||'–'));
+  L.push('COUNTS: '+(c.strong||0)+' strong · '+(c.weak||0)+' weak · '+(c.failing||0)+' failing','');
+  if(g&&g.health!=null&&g.health<g.target){L.push('GOAL '+g.target+': now '+Math.round(g.health)+'. What holds it down:');(g.drags||[]).forEach(function(d){L.push('  - '+d.name+' '+d.score+' (costs '+d.cost+' points): '+d.why)});L.push('')}
+  L.push('RESULT OF EACH STEP');R.forEach(function(r){L.push('  '+({ok:'[OK]  ',warn:'[WEAK]',bad:'[FAIL]'}[r.st]||'[ ?? ]')+' '+r.n+' — '+(r.note||''));(r.list||[]).forEach(function(x){L.push('         · '+x)})});L.push('');
+  var f=fcAll(),fl=f.filter(function(x){return x.kind==='failing'}),wk=f.filter(function(x){return x.kind==='weak'}),wr=f.filter(function(x){return x.kind==='warning'});
+  function block(t,a){if(!a.length)return;L.push(t+' ('+a.length+')');a.forEach(function(x,i){L.push('  '+(i+1)+'. '+x.title);if(x.why)L.push('     why: '+x.why);if(x.measured)L.push('     measured: '+x.measured);if(x.where)L.push('     where: '+x.where)});L.push('')}
+  block('FAILING',fl);block('WEAK',wk);block('WARNINGS',wr);
+  if(!f.length)L.push('No open problems in the Help list.','');
+  if(FT){var t=FT.totals;L.push('FEATURES: '+t.pages+' pages, '+t.buttons+' buttons & links — '+t.usable+' usable, '+t.dead+' dead, '+t.check+' need a look, '+t.missing_api+' call(s) with no server action, '+t.removable+' removable page(s).')}
+  var op=(FTREQ||[]).filter(function(r){return r.status!=='done'});if(op.length){L.push('','MY OPEN REQUIREMENTS');op.forEach(function(r,i){L.push('  '+(i+1)+'. '+r.text)})}
+  return L.join('\n');
+}
+function fcPrompt(R){
+  var f=fcAll(),L=[];
+  L.push('You are my senior developer. My system is the HRMS of TM Perfume House: GitHub repo jaimin69-tm/HRMS (HTML pages in the root, PHP backend in empmanagment/), live at fourpirates.space on Hostinger shared hosting. I am not a developer.','');
+  L.push('GOAL: make EVERYTHING listed below strong — zero failing, zero weak — and the Help page Health at 95 or more. Find the real root cause of each item and fix it properly in the code. Do not hide problems and do not change the Help scoring rules to look better.','');
+  L.push('RULES:','- Work directly on the repo and commit to main (and the working branch). Never touch config.php, uploads/ or other server-only files.','- Test what you change (php -l, run the page in a browser where you can) and tell me honestly what you could and could not verify.','- Items that are only Hostinger settings (database connection limit, cron job, SSL) — give me exact click-by-click steps, do not pretend code fixes them.','- At the end give me: (1) the list of changed files with their full paths, (2) exact upload steps for Hostinger File Manager, (3) what I should check on the Help page afterwards.','');
+  L.push('FULL CHECK RESULT:');R.forEach(function(r){L.push('- '+r.n+': '+(r.st||'').toUpperCase()+' — '+(r.note||''));(r.list||[]).forEach(function(x){L.push('    · '+x)})});L.push('');
+  var order=['failing','weak','warning'];
+  order.forEach(function(k){var a=f.filter(function(x){return x.kind===k});if(!a.length)return;L.push((k==='failing'?'FAILING (fix first)':k==='weak'?'WEAK':'WARNINGS')+':');
+    a.forEach(function(x,i){L.push((i+1)+'. '+x.title);if(x.why)L.push('   what I found: '+x.why);if(x.measured)L.push('   measured: '+x.measured);if(x.where)L.push('   file: '+x.where);if(x.fix)L.push('   suggested fix: '+x.fix)});L.push('')});
+  if(FT){var bad=FT.pages.filter(function(p){return p.state==='bad'}).slice(0,25);if(bad.length){L.push('DEAD BUTTONS / BROKEN LINKS / MISSING SERVER ACTIONS (from the Feature check):');
+    bad.forEach(function(p){L.push('- '+p.file+': '+p.dead.slice(0,5).map(function(d){return '"'+d.label+'" ('+d.why+')'}).concat(p.missing_api.map(function(a){return 'page calls missing server action '+a})).join('; '))});L.push('')}
+    if(FT.removable.length){L.push('PAGES THAT LOOK UNUSED (nothing links to them): '+FT.removable.map(function(r){return r.file}).join(', '),'- Tell me which are safe to remove; do not delete anything without listing it first.','')}}
+  var op=(FTREQ||[]).filter(function(r){return r.status!=='done'});if(op.length){L.push('NEW THINGS I WANT ADDED:');op.forEach(function(r,i){L.push((i+1)+'. '+r.text)});L.push('')}
+  L.push('Start with the FAILING items, then WEAK, then the rest. When finished, tell me honestly which items are fully fixed, which need a Hostinger action from me, and which you could not verify.');
+  return L.join('\n');
+}
+function fcCopy(txt,btn,label){var done=function(){btn.textContent='✓ Copied';setTimeout(function(){btn.textContent=label},2000)};
+  if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(txt).then(done,function(){prompt('Copy this:',txt)});else prompt('Copy this:',txt)}
+function fcEnd(R,rep,prm,at){
+  var nb=R.filter(function(r){return r.st==='bad'}).length,nw=R.filter(function(r){return r.st==='warn'}).length;
+  var d=new Date(at*1000).toLocaleString('en-IN');
+  $('fullEnd').innerHTML='<b class="'+(nb?'c-failing':nw?'c-weak':'c-strong')+'">'+(nb?nb+' area(s) have problems':nw?'Working, with '+nw+' area(s) to improve':'Everything checked is working')+'</b> <span class="sub">· last full check '+esc(d)+'</span>'
+   +'<div class="row" style="gap:8px;margin-top:10px"><button class="pill dark" id="fcRep">📄 Copy final report</button><button class="pill" id="fcPrm" style="background:#4f46e5;color:#fff;border-color:#4f46e5">🧠 Copy fix prompt (paste to Claude)</button></div>'
+   +'<details style="margin-top:10px"><summary class="sub" style="cursor:pointer">Read the final report</summary><pre style="white-space:pre-wrap;font-size:12px;background:#f6f7f9;border-radius:12px;padding:10px;max-height:360px;overflow:auto">'+esc(rep)+'</pre></details>'
+   +'<details style="margin-top:6px"><summary class="sub" style="cursor:pointer">Read the fix prompt</summary><pre style="white-space:pre-wrap;font-size:12px;background:#f6f7f9;border-radius:12px;padding:10px;max-height:360px;overflow:auto">'+esc(prm)+'</pre></details>';
+  $('fcRep').onclick=function(){fcCopy(rep,this,'📄 Copy final report')};
+  $('fcPrm').onclick=function(){fcCopy(prm,this,'🧠 Copy fix prompt (paste to Claude)')};
+}
+function fcLoadLast(){call('full_get').then(function(j){if(!j.last)return;var l=j.last;$('fullBox').style.display='block';fcRender(l.steps||[],'Last full check — press 🔬 Full check to run a new one');fcEnd(l.steps||[],l.report||'',l.prompt||'',l.at||0)}).catch(function(){})}
+
+/* ───── Full check: everything, in order ───── */
+function fcRender(R,sub){
+  $('fullSub').textContent=sub||'';
+  $('fullSteps').innerHTML=R.map(function(r){var ic=r.st==='run'?'⏳':r.st==='ok'?'✅':r.st==='warn'?'🟠':r.st==='bad'?'❌':'⚪';
+    return '<div class="ftr"><div style="flex:0 0 26px">'+ic+'</div><div><b>'+esc(r.n)+'</b><small>'+esc(r.note||'')+'</small>'
+     +(r.list&&r.list.length?'<ul style="margin:4px 0 0;padding-left:18px;font-size:12.5px">'+r.list.map(function(x){return '<li>'+esc(x)+'</li>'}).join('')+'</ul>':'')+'</div></div>'}).join('')}
+async function fullCheck(){
+  var b=$('bFull'); if(b.disabled||checking)return;
+  if(!confirm('Full check runs everything in order:\n1. server health (database, backend, POS, security)\n2. every page: buttons, links, features\n3. the backend: every safe read-only call\n4. every page on phone, tablet and computer\n\nIt takes about 3–6 minutes and makes many requests — best when the shop is quiet. Continue?'))return;
+  uiStop=false; b.disabled=true; b.textContent='🔬 Checking…'; var box=$('fullBox'); box.style.display='block'; $('fullEnd').innerHTML=''; box.scrollIntoView({behavior:'smooth',block:'start'});
+  for(var w=0;probing&&w<60;w++)await sleep(250);   // the background once-a-minute probe may be running for a moment: let it finish
+  var R=[{n:'1. Server health',st:'wait'},{n:'2. Buttons and features of every page',st:'wait'},{n:'3. Backend (every safe read-only call)',st:'wait'},{n:'4. Every page on phone, tablet and computer',st:'wait'}];
+  var t0=Date.now(), tok='';try{tok=localStorage.getItem('hrms_token')||''}catch(e){}
+  function upd(){fcRender(R,'Started '+new Date(t0).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})+' · please keep this page open')}
+  try{
+    // 1 server
+    R[0].st='run';upd();
+    try{var j1=await call('run',{},170000);applied(j1);var st=j1.status||S,c=st.counts||{};
+      var hs=st.scores&&st.scores.health&&st.scores.health.score;R[0].note=(hs!=null?'Health '+hs+' · ':'')+c.strong+' strong, '+c.weak+' weak, '+c.failing+' failing';R[0].st=c.failing?'bad':(c.weak?'warn':'ok')}
+    catch(e){R[0].st='bad';R[0].note='Could not run: '+e.message}
+    // 2 features
+    R[1].st='run';upd();
+    try{var j2=await call('features',{force:1},120000);ftApply(j2);var t=j2.scan.totals;
+      R[1].note=t.pages+' pages, '+t.buttons+' buttons & links: '+t.usable+' work, '+t.dead+' dead, '+t.missing_api+' calls with no server action'+(t.check?', '+t.check+' the scan could not confirm (reading the code only)':'')+(t.removable?' · '+t.removable+' unused pages listed as removable':'');
+      R[1].list=j2.scan.pages.filter(function(p){return p.state==='bad'}).slice(0,12).map(function(p){return p.file+': '+(p.dead.length?p.dead.length+' dead':'')+(p.missing_api.length?' '+p.missing_api.length+' missing server action(s)':'')});
+      R[1].st=(t.dead+t.missing_api)?'bad':(t.check>20?'warn':'ok')}   /* a proven problem = red; a few buttons the scan cannot confirm is only a note */
+    catch(e){R[1].st='bad';R[1].note='Could not run: '+e.message}
+    // 3 backend
+    R[2].st='run';upd();
+    try{var jd=await call('discover');var names=['me.flags'].concat((jd.safe||[]).filter(function(n){return n!=='me.flags'})).slice(0,70);var okn=0,fails=[],slow=0,slowNames=[];
+      for(var i=0;i<names.length&&!uiStop;i++){
+        R[2].note='Testing '+(i+1)+' of '+names.length+': '+names[i];upd();
+        var a=names[i],t1=performance.now();
+        try{var r=await fetch(HRMS_API+'?action='+encodeURIComponent(a)+'&probe=1&_='+Date.now(),{headers:{'Authorization':'Bearer '+tok},cache:'no-store'});var tx=await r.text();
+          var good=r.status<500&&r.status!==401&&tx.charAt(0)==='{'&&!/Database connection failed|error 2002/i.test(tx);
+          if(good)okn++;else fails.push(a+' → HTTP '+r.status+' '+tx.slice(0,70).replace(/\s+/g,' '));
+          var took=performance.now()-t1;
+          if(good&&took>3000){            // the first call of a day can be slow while the server warms up: measure again, and only a call that is still slow counts
+            var t2=performance.now();try{var r2=await fetch(HRMS_API+'?action='+encodeURIComponent(a)+'&probe=1&_='+Date.now(),{headers:{'Authorization':'Bearer '+tok},cache:'no-store'});await r2.text()}catch(e2){}
+            took=performance.now()-t2}
+          if(took>3000){slow++;slowNames.push(a+' — '+(took/1000).toFixed(1)+' s')}}
+        catch(e){fails.push(a+' → no answer')}
+        await sleep(300)}
+      R[2].note=okn+' of '+names.length+' calls answered correctly'+(slow?' · '+slow+' still slow (over 3 s) when measured twice':'');R[2].list=fails.concat(slowNames.map(function(x){return 'slow: '+x})).slice(0,15);R[2].st=fails.length?'bad':(slow?'warn':'ok')}
+    catch(e){R[2].st='bad';R[2].note='Could not run: '+e.message}
+    // 4 pages
+    R[3].st='run';R[3].note='This takes the longest — progress is shown in the Page Doctor section below';upd();
+    try{await runCheck(S.pages.map(function(p){return p.file}),false);var j4=await call('status');applied(j4);var rows=(j4.status.page_doctor&&j4.status.page_doctor.rows)||[];
+      var bad=rows.filter(function(x){return x.state==='bad'}),warn=rows.filter(function(x){return x.state==='warn'});
+      R[3].note=rows.length+' pages checked: '+(rows.length-bad.length-warn.length)+' clean, '+warn.length+' with something to improve, '+bad.length+' with a problem';
+      R[3].list=bad.concat(warn).slice(0,12).map(function(x){return x.label+' ('+x.file+') — '+((x.found||[]).filter(function(f){return f.level!=='g'}).slice(0,2).map(function(f){return f.text}).join(' · ')||x.state)});
+      R[3].st=bad.length?'bad':(warn.length?'warn':'ok')}
+    catch(e){R[3].st='bad';R[3].note='Could not run: '+e.message}
+  }finally{
+    var secs=Math.round((Date.now()-t0)/1000);
+    fcRender(R,'Finished in '+Math.floor(secs/60)+' min '+(secs%60)+' s');
+    var rep='',prm='';
+    try{rep=fcReport(R);prm=fcPrompt(R)}catch(e){rep='Could not build the report: '+e.message}
+    fcEnd(R,rep,prm,Math.round(Date.now()/1000));
+    call('full_save',{at:Math.round(Date.now()/1000),steps:R.map(function(r){return {n:r.n,st:r.st,note:r.note||'',list:(r.list||[]).slice(0,15)}}),report:rep,prompt:prm}).catch(function(){});
+    b.disabled=false;b.textContent='🔬 Full check'}
+}
+$('bFull').onclick=fullCheck;
+fcLoadLast();
+
+ftLoad();
+load();
+})();
+</script>
+</body>
+</html>

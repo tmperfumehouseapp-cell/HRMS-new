@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Refunds & closed parcels — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=260928b">
+<link rel="stylesheet" href="assets/css/store.css?v=6">
+<style>
+  .tabs2{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap}.tabs2 button{border:0;background:#fff;border-radius:999px;padding:7px 15px;font:800 13px inherit;cursor:pointer;box-shadow:inset 0 0 0 1.5px var(--sx-line)}.tabs2 button.on{background:var(--sx-ink);color:#fff;box-shadow:none}.tabs2 button b{margin-left:5px;opacity:.7}
+  .bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}.bar .sp{flex:1}.bar select,.bar input{width:auto;min-height:36px;padding:5px 10px;font-size:13px}
+  .pr{display:grid;grid-template-columns:28px minmax(90px,.9fr) minmax(110px,1.3fr) 110px 90px 100px 130px;gap:8px;align-items:center;padding:8px 4px;border-top:1px solid var(--sx-line);font-size:13px}
+  .pr.head{border-top:0;font-size:11px;font-weight:800;color:var(--sx-mut);letter-spacing:.05em;text-transform:uppercase}.pr .r{text-align:right}.pr small{display:block;color:var(--sx-mut);font-size:11px}
+  .age{padding:1px 9px;border-radius:999px;font-weight:800;font-size:11px;background:#eef0f3;color:#6b7280}.age.w{background:#fff4e0;color:#b45309}.age.b{background:#fdecea;color:#b42318}
+  .tg{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:800;background:#eef0f3}.tg.rto{background:#fdecea;color:#b42318}.tg.ns{background:#fff4e0;color:#b45309}.tg.lost{background:var(--sx-violet-t);color:var(--sx-violet)}.tg.due{background:#fdecea;color:#b42318}.tg.paid{background:var(--sx-aqua-t);color:#0d7a55}.tg.held{background:#fff4e0;color:#b45309}
+  @media (max-width:900px){.pr{grid-template-columns:24px 1fr 1fr}.pr.head{display:none}.pr .nm{grid-column:2/-1}.pr .r{text-align:left}}
+  .ov{position:fixed;inset:0;background:rgba(20,22,26,.42);opacity:0;pointer-events:none;transition:opacity .18s;z-index:40}.ov.on{opacity:1;pointer-events:auto}
+  .dr{position:fixed;top:0;right:0;bottom:0;width:min(480px,96vw);background:var(--sx-bg);z-index:41;display:flex;flex-direction:column;transform:translateX(104%);transition:transform .22s cubic-bezier(.2,.8,.2,1);box-shadow:-18px 0 50px rgba(20,22,26,.22);border-radius:26px 0 0 26px}.dr.on{transform:none}@media (max-width:640px){.dr{width:100%;border-radius:0}}
+  .dr-h{display:flex;align-items:center;gap:10px;padding:12px 16px;background:#fff;border-radius:26px 0 0 0;box-shadow:0 1px 0 var(--sx-line)}@media (max-width:640px){.dr-h{border-radius:0}}.dr-h b{font-size:16px;flex:1}.dr-x{border:0;background:var(--sx-bg);width:34px;height:34px;border-radius:50%;cursor:pointer;font-size:18px;font-weight:700}
+  .dr-b{flex:1;overflow-y:auto;padding:12px 14px;display:grid;gap:10px;align-content:start}.dr-f{padding:10px 14px calc(12px + env(safe-area-inset-bottom));background:#fff;box-shadow:0 -1px 0 var(--sx-line)}.dr .sx-card{padding:12px 14px;border-radius:18px;box-shadow:none;border:1px solid var(--sx-line)}.dr .sx-in{min-height:38px;padding:7px 10px;font-size:14px}
+  .opt{display:flex;gap:10px;align-items:flex-start;border:2px solid var(--sx-line);background:#fff;border-radius:14px;padding:9px 12px;cursor:pointer;margin-bottom:6px}.opt:has(input:checked){border-color:var(--sx-accent);background:var(--sx-orange-t)}.opt input{margin-top:3px}.opt b{display:block;font-size:13.5px}.opt small{color:var(--sx-mut);font-size:12px}
+  .act{border:0;background:var(--sx-bg);border-radius:10px;padding:5px 10px;font:800 12px inherit;cursor:pointer}.act:hover{background:var(--sx-line)}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><div><h1>Refunds &amp; closed parcels</h1><div class="sub" style="font-size:12.5px;color:var(--muted);margin-top:2px" id="subLine">Parcels live in Dispatch. Here: the refunds to give, the parcels closed, and the old unpaid ones</div></div></div>
+    <div class="content"><div class="sx-page" id="root"><div class="sx-card sx-mut">Loading…</div></div></div>
+  </main>
+</div>
+<div class="ov" id="ov"></div>
+<aside class="dr" id="dr" aria-hidden="true"><div class="dr-h"><b id="drT"></b><button class="dr-x" id="drX" aria-label="Close">×</button></div><div class="dr-b" id="drB"></div><div class="dr-f" id="drF"></div></aside>
+<script src="assets/js/config.js?v=4"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script src="assets/js/store_common.js?v=3"></script>
+<script>
+  guardPage();
+  renderSidebar('finance_parcels');
+  const m2 = (n) => { n = Number(n || 0); return '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: Math.abs(n % 1) > 0.004 ? 2 : 0, maximumFractionDigits: 2 }); };
+  const dShort = (d) => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '';
+  const KIND = { rto: ['RTO · returned', 'rto'], not_sent: ['Not sent', 'ns'], lost: ['Lost', 'lost'] };
+  const ageCls = (a) => a >= 15 ? 'b' : a >= 8 ? 'w' : '';
+  let view = 'refunds', ch = 'all', older = '', L = null, sel = new Set(), ACC = [], SHOW = 50, ACC_P = null;
+  // the payment accounts are only needed when the 'Mark refunded' window opens: ask for them then (one request less on page open)
+  const ensureAcc = () => (ACC.length ? Promise.resolve() : (ACC_P = ACC_P || api.get('fi.accounts').then((d) => { ACC = d.accounts || []; }).catch(() => { ACC_P = null; })));
+  const open = (t, b, f) => { $('drT').textContent = t; $('drB').innerHTML = b; $('drF').innerHTML = f || ''; $('drF').style.display = f ? '' : 'none'; $('dr').classList.add('on'); $('ov').classList.add('on'); };
+  const close = () => { $('dr').classList.remove('on'); $('ov').classList.remove('on'); };
+  $('drX').onclick = close; $('ov').onclick = close; document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+  const note = (id, m) => { $(id).innerHTML = m ? `<div class="sx-msg bad">${sxi('xc')}<span>${esc(m)}</span></div>` : ''; };
+
+  async function load() {
+    sel = new Set();
+    SHOW = 50;
+    try { L = await api.get('fi.parcels', { view, channel: ch, older }); if (!older) older = String(L.older); draw(); }
+    catch (e) { $('root').innerHTML = `<div class="sx-card"><div class="sx-msg bad">${sxi('xc')}<span>${esc(e.message)}</span></div></div>`; }
+  }
+  function draw() {
+    const tabs = [['waiting', 'Waiting for money'], ['closed', 'Closed'], ['refunds', 'Refunds to give'], ['refunds_paid', 'Refunds paid']];
+    const head = view === 'waiting' ? '<span><input type="checkbox" id="all"></span><span>Order</span><span>Customer</span><span>Channel</span><span class="r">Age</span><span class="r">Amount</span><span></span>' : '<span></span><span>Order</span><span>Customer</span><span>What happened</span><span>Refund</span><span class="r">Amount</span><span></span>';
+    $('subLine').textContent = L.track_from ? `Tracking orders placed from ${dShort(L.track_from)} · a parcel is flagged after ${L.wait_days} days` : 'Set the tracking start day on the Incoming page first';
+    $('root').innerHTML = `
+      <div class="tabs2">${tabs.map(([k, l]) => `<button data-v="${k}" class="${view === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+      <div class="sx-card"><div class="bar">
+        <select class="sx-in" id="fCh"><option value="all">COD + prepaid</option><option value="online_cod">COD only</option><option value="online_prepaid">Prepaid only</option></select>
+        ${view === 'waiting' ? `<label class="sx-f" style="display:flex;gap:6px;align-items:center;margin:0">older than <input class="sx-in" id="fOld" type="number" min="0" max="120" value="${esc(older)}" style="width:70px"> days</label>` : ''}
+        <span class="sp"></span><b>${L.count} parcel${L.count === 1 ? '' : 's'} · ${m2(L.amount)}</b>
+        ${view === 'waiting' ? `<button class="sx-btn" id="bClose" disabled>Close selected (<span id="nSel">0</span>)</button>` : ''}</div>
+        ${L.list.length ? `<div class="pr head">${head}</div>${L.list.slice(0, SHOW).map(row).join('')}${L.list.length > SHOW ? `<div style="padding:12px;text-align:center"><button class="sx-btn" id="bMore">Show ${Math.min(50, L.list.length - SHOW)} more (${L.list.length - SHOW} not shown)</button></div>` : ''}` : `<div class="sx-mut" style="padding:10px 4px">${view === 'waiting' ? 'No parcel is waiting longer than ' + esc(older) + ' days. 🎉' : 'Nothing here.'}</div>`}
+      </div>`;
+    $('fCh').value = ch;
+    document.querySelectorAll('[data-k]').forEach((c) => { if (sel.has(c.dataset.k)) c.checked = true; }); sync();
+  }
+  const row = (r) => view === 'waiting'
+    ? `<div class="pr"><span><input type="checkbox" data-k="${esc(r.key)}|${r.channel}"></span><span class="nm"><b>${esc(r.name)}</b><small>${esc(dShort(r.day))}</small></span><span>${esc(r.customer || '—')}${r.phone ? `<small>${esc(r.phone)}</small>` : ''}</span><span>${esc(r.channel_label)}</span><span class="r"><span class="age ${ageCls(r.age)}">${r.age} d</span></span><span class="r"><b>${m2(r.amount)}</b></span><span class="r"><button class="act" data-one="${esc(r.key)}|${r.channel}">Close…</button></span></div>`
+    : `<div class="pr"><span></span><span class="nm"><b>${esc(r.name)}</b><small>${esc(dShort(r.day))} · ${esc(r.channel_label)}</small></span><span>${esc(r.customer || '—')}${r.phone ? `<small>${esc(r.phone)}</small>` : ''}</span><span><span class="tg ${KIND[r.kind] ? KIND[r.kind][1] : ''}">${esc(KIND[r.kind] ? KIND[r.kind][0] : r.kind)}</span>${r.note ? `<small>${esc(r.note)}</small>` : ''}</span>
+      <span>${r.refund_status === 'none' ? '<span class="tg">no refund needed</span>' : r.refund_status === 'due' ? '<span class="tg due">refund due</span>' : r.refund_status === 'held' ? `<span class="tg held">${r.resolution === 'credit' ? 'store credit' : 'to re-ship'}</span>` : `<span class="tg paid">paid ${esc(dShort(r.refund_date))}</span><small>${esc(r.refund_ref)}</small>`}</span>
+      <span class="r"><b>${m2(r.refund_amount || r.amount)}</b></span><span class="r">${r.refund_status === 'due' || r.refund_status === 'held' ? `<button class="act" data-pay="${r.id}">Mark refunded</button>` : ''}${r.refund_status !== 'paid' ? ` <button class="act" data-undo="${r.id}" title="Put the parcel back in waiting">Undo</button>` : ''}</span></div>`;
+
+  document.addEventListener('click', async (e) => {
+    const t = e.target, v = t.closest('[data-v]'); if (v) { view = v.dataset.v; load(); return; }
+    if (t.id === 'bMore') { SHOW += 50; draw(); return; }
+    if (t.id === 'all') { document.querySelectorAll('[data-k]').forEach((c) => { c.checked = t.checked; t.checked ? sel.add(c.dataset.k) : sel.delete(c.dataset.k); }); sync(); return; }
+    const k = t.closest('[data-k]'); if (k) { k.checked ? sel.add(k.dataset.k) : sel.delete(k.dataset.k); sync(); return; }
+    if (t.id === 'bClose') closeDrawer([...sel]); const one = t.closest('[data-one]'); if (one) closeDrawer([one.dataset.one]);
+    const pay = t.closest('[data-pay]'); if (pay) payDrawer(+pay.dataset.pay);
+    const un = t.closest('[data-undo]'); if (un && confirm('Put this parcel back in “waiting”?')) { try { await api.post('fi.close_undo', { id: +un.dataset.undo }); load(); } catch (er) { alert(er.message); } }
+  });
+  document.addEventListener('change', (e) => { if (e.target.id === 'fCh') { ch = e.target.value; load(); } else if (e.target.id === 'fOld') { older = e.target.value; load(); } });
+  const sync = () => { if ($('bClose')) { $('bClose').disabled = !sel.size; $('nSel').textContent = sel.size; } };
+
+  // close one or many: they must be of ONE channel (the refund rule differs)
+  function closeDrawer(keys) {
+    const chans = [...new Set(keys.map((k) => k.split('|')[1]))]; if (chans.length > 1) return alert('Choose parcels of one channel at a time (COD or prepaid).');
+    const c = chans[0], prepaid = c === 'online_prepaid';
+    open(keys.length + ' parcel' + (keys.length === 1 ? '' : 's') + ' · close', `<div class="sx-card"><div class="sx-f" style="margin-bottom:6px">What happened to ${keys.length === 1 ? 'it' : 'them'}?</div>
+      <label class="opt"><input type="radio" name="k" value="rto" checked><span><b>Returned (RTO)</b><small>The courier brought it back.</small></span></label>
+      <label class="opt"><input type="radio" name="k" value="not_sent"><span><b>Not sent</b><small>It never left us (cancelled, out of stock…).</small></span></label>
+      <label class="opt"><input type="radio" name="k" value="lost"><span><b>Lost in transit</b><small>The courier lost it.</small></span></label></div>
+      ${prepaid ? `<div class="sx-card"><div class="sx-f" style="margin-bottom:6px">The customer already paid. What do we do with the money?</div>
+        <label class="opt"><input type="radio" name="r" value="refund" checked><span><b>Refund the customer</b><small>It goes on “Refunds to give” until you mark it paid.</small></span></label>
+        <label class="opt"><input type="radio" name="r" value="credit"><span><b>Keep as store credit</b><small>Held for the customer's next order.</small></span></label>
+        <label class="opt"><input type="radio" name="r" value="reship"><span><b>Send it again</b><small>A new parcel goes out; the money stays held.</small></span></label></div>` : `<div class="sx-card"><div class="sx-msg info">${sxi('info')}<span>COD: the customer never paid, so no refund is needed. The amount is simply no longer expected.</span></div></div>`}
+      <div class="sx-card"><label class="sx-f">Note (optional)<input class="sx-in" id="cN" placeholder="e.g. customer refused, RTO received 3 Nov" autocomplete="off"></label><div id="cM" style="margin-top:8px"></div></div>`, `<button class="sx-btn big" id="cOk">Close ${keys.length} parcel${keys.length === 1 ? '' : 's'}</button>`);
+    $('cOk').onclick = async () => {
+      try { const r = await api.post('fi.close', { channel: c, orders: keys.map((k) => k.split('|')[0]), kind: document.querySelector('input[name=k]:checked').value, resolution: prepaid ? document.querySelector('input[name=r]:checked').value : 'none', note: $('cN').value });
+        close(); if (r.skipped && r.skipped.length) alert('Closed ' + r.closed + '. Skipped: ' + r.skipped.join(', ')); load(); } catch (e) { note('cM', e.message); }
+    };
+  }
+  async function payDrawer(id) {
+    await ensureAcc();
+    const r = L.list.find((x) => x.id === id);
+    open('Mark refunded · ' + r.name, `<div class="sx-card"><div class="bk" style="font-weight:800">${esc(r.customer || '')} ${esc(r.phone || '')}<br>${m2(r.refund_amount)} ${r.resolution === 'refund' ? 'refund' : '(' + (r.resolution === 'credit' ? 'store credit' : 'to re-ship') + ')'}</div></div>
+      <div class="sx-card"><label class="sx-f">Paid from<select class="sx-in" id="pA"><option value="">Choose the account…</option>${ACC.filter((a) => a.active).map((a) => `<option value="${a.id}">${esc(a.name)}</option>`).join('')}</select></label>
+        <div class="sx-r2" style="margin-top:10px"><label class="sx-f">Date<input class="sx-in" id="pD" type="date" value="${new Date().toISOString().slice(0, 10)}"></label><label class="sx-f">Reference (UTR / UPI id)<input class="sx-in" id="pR" autocomplete="off"></label></div><div id="pM" style="margin-top:8px"></div></div>`, `<button class="sx-btn big" id="pOk">Mark as refunded</button>`);
+    $('pOk').onclick = async () => { try { await api.post('fi.refund_pay', { id, account_id: +$('pA').value, date: $('pD').value, ref: $('pR').value }); close(); load(); } catch (e) { note('pM', e.message); } };
+  }
+  load();
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>

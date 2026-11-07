@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>My Agreements — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=4">
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><h1>My Agreements</h1></div>
+    <div class="content">
+      <div id="alertBox"></div>
+
+      <div class="card" style="max-width:560px;">
+        <div class="card-head">
+          <h2>My Signature</h2>
+          <span style="font-size:12px; color:var(--muted);">Saved once — applied automatically</span>
+        </div>
+        <div style="padding:14px 20px;" id="sigBox"><div class="loading">Loading...</div></div>
+      </div>
+
+      <div class="card" style="max-width:560px;">
+        <div class="card-head"><h2 id="listTitle">My Documents</h2></div>
+        <div id="list"><div class="loading" style="padding:20px; text-align:center;">Loading...</div></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="modal-overlay" id="signModal">
+  <div class="modal" style="max-width:420px;">
+    <h3 id="signTitle">My Signature</h3>
+    <p style="font-size:12.5px; color:var(--muted); margin:0 0 10px;">Draw your signature below using your finger or mouse. It is stored once and applied to your documents automatically.</p>
+    <canvas id="pad" width="360" height="140" style="width:100%; height:140px; border:1px dashed var(--line); border-radius:8px; background:#fff; touch-action:none;"></canvas>
+    <div style="display:flex; gap:8px; margin-top:8px;">
+      <button type="button" class="btn secondary" id="clearPad" style="width:auto;">Clear</button>
+    </div>
+    <div class="actions">
+      <button type="button" class="btn secondary" id="signCancel">Cancel</button>
+      <button type="button" class="btn" id="signGo">Save Signature</button>
+    </div>
+  </div>
+</div>
+
+<script src="assets/js/config.js?v=2"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script>
+  guardPage();
+
+  // Link to an uploaded file through the file viewer (api.php files.view),
+  // with the login carried in the link. Direct /uploads/ links 404 on this
+  // hosting, and this needs no other script to run.
+  function fileUrl(rel) {
+    return API_BASE_URL + '?action=files.view&path=' + encodeURIComponent(String(rel || '').replace(/^\/+/, ''))
+      + '&token=' + encodeURIComponent(api.token() || '');
+  }
+  renderSidebar('my_agreements');
+
+  const alertBox = document.getElementById('alertBox');
+
+  function showAlert(msg, type = 'success') {
+    alertBox.innerHTML = `<div class="alert ${type}">${msg}</div>`;
+    setTimeout(() => (alertBox.innerHTML = ''), 5000);
+  }
+
+  // ---------- Signature pad ----------
+  const pad = document.getElementById('pad');
+  const ctx = pad.getContext('2d');
+  let drawing = false, hasInk = false;
+
+  function resizePad() {
+    const ratio = window.devicePixelRatio || 1;
+    const w = pad.clientWidth, h = 140;
+    pad.width = w * ratio; pad.height = h * ratio;
+    ctx.scale(ratio, ratio);
+    ctx.lineWidth = 2.2; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#1f2430';
+  }
+
+  function pos(e) {
+    const r = pad.getBoundingClientRect();
+    const p = e.touches ? e.touches[0] : e;
+    return { x: p.clientX - r.left, y: p.clientY - r.top };
+  }
+  function start(e) { e.preventDefault(); drawing = true; hasInk = true; const p = pos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); }
+  function move(e) { if (!drawing) return; e.preventDefault(); const p = pos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); }
+  function end() { drawing = false; }
+
+  pad.addEventListener('mousedown', start); pad.addEventListener('mousemove', move);
+  window.addEventListener('mouseup', end);
+  pad.addEventListener('touchstart', start, { passive: false });
+  pad.addEventListener('touchmove', move, { passive: false });
+  pad.addEventListener('touchend', end);
+
+  document.getElementById('clearPad').addEventListener('click', () => {
+    ctx.clearRect(0, 0, pad.width, pad.height); hasInk = false;
+  });
+
+  const signModal = document.getElementById('signModal');
+  document.getElementById('signCancel').addEventListener('click', () => signModal.classList.remove('open'));
+
+  window.openSign = function (title) {
+    document.getElementById('signTitle').textContent = title || 'My Signature';
+    signModal.classList.add('open');
+    setTimeout(() => { resizePad(); ctx.clearRect(0, 0, pad.width, pad.height); hasInk = false; }, 30);
+  };
+
+  document.getElementById('signGo').addEventListener('click', async () => {
+    if (!hasInk) { showAlert('Please draw your signature first.', 'error'); return; }
+    const btn = document.getElementById('signGo');
+    btn.disabled = true;
+    try {
+      const png = pad.toDataURL('image/png');
+      const d = await api.post('signature.save', { signature: png });
+      signModal.classList.remove('open');
+      showAlert(d.message);
+      load();
+    } catch (err) {
+      showAlert(err.message, 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  let savedSig = null;
+
+  function renderSig() {
+    const box = document.getElementById('sigBox');
+    if (savedSig) {
+      box.innerHTML = `
+        <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
+          <img src="${fileUrl(savedSig)}&v=${Date.now()}" alt="signature" style="height:56px; background:#fff; border:1px solid var(--line); border-radius:6px; padding:4px;">
+          <div>
+            <div style="font-size:12.5px; color:#0f7a41; font-weight:600;">Signature saved &#10003;</div>
+            <div style="font-size:11.5px; color:var(--muted);">Every document sent to you is signed with this automatically.</div>
+          </div>
+          <button class="btn secondary" style="margin-left:auto; padding:7px 14px; font-size:13px;" onclick="openSign('Update my signature')">Change</button>
+        </div>`;
+    } else {
+      box.innerHTML = `
+        <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+          <div style="flex:1; min-width:200px;">
+            <div style="font-size:13px;">You haven't saved a signature yet.</div>
+            <div style="font-size:11.5px; color:var(--muted); margin-top:3px;">Draw it once — after that your documents are signed for you automatically.</div>
+          </div>
+          <button class="btn" style="padding:7px 16px; font-size:13px;" onclick="openSign('Save my signature')">Draw signature</button>
+        </div>`;
+    }
+  }
+
+  // After signing a PDF/HTML-based agreement, the PDF is made in the
+  // browser. Open it once in a hidden frame so the PDF is saved and the
+  // signed copy is emailed with the PDF inside — nothing to click.
+  let pdfFrame = null;
+  function makePdfInBackground(rows) {
+    const need = (rows || []).filter(a => a.status === 'signed' && !a.signed_file && (a.template_kind === 'html' || a.template_kind === 'pdf'));
+    if (!need.length) return;
+    const next = () => {
+      const a = need.shift();
+      if (!a) { if (pdfFrame) pdfFrame.src = 'about:blank'; return; }
+      if (!pdfFrame) {
+        pdfFrame = document.createElement('iframe');
+        pdfFrame.style.cssText = 'position:fixed; width:2px; height:2px; left:-10px; top:-10px; opacity:0; pointer-events:none;';
+        pdfFrame.setAttribute('aria-hidden', 'true');
+        document.body.appendChild(pdfFrame);
+      }
+      const timer = setTimeout(next, 60000);
+      const onMsg = (e) => { if (e.data && Number(e.data.hrmsPdfReady) === a.agreement_id) { clearTimeout(timer); window.removeEventListener('message', onMsg); setTimeout(next, 300); } };
+      window.addEventListener('message', onMsg);
+      pdfFrame.src = 'agreement_view.html?id=' + a.agreement_id + '&bg=1';
+    };
+    next();
+  }
+
+  // Employee asks for their signed copy again — sent right away with the PDF.
+  window.emailMe = async function (id, btn) {
+    btn.disabled = true; const t = btn.textContent; btn.textContent = 'Sending…';
+    try {
+      const d = await api.post('agreements.email_me', { agreement_id: id });
+      showAlert(d.message || 'Sent.');
+    } catch (err) {
+      showAlert(err.message, 'error');
+    } finally { btn.disabled = false; btn.textContent = t; }
+  };
+  // Send anything waiting in the outbox (e.g. the copy queued when this
+  // agreement was signed), in the background.
+  async function pumpMail() { try { await api.get('mail.process'); } catch (e) {} }
+
+  async function load() {
+    const box = document.getElementById('list');
+    try {
+      const data = await api.get('agreements.mine');
+      pumpMail();
+      makePdfInBackground(data.agreements || []);
+      savedSig = data.signature_file || null;
+      renderSig();
+
+      const rows = data.agreements || [];
+      document.getElementById('listTitle').textContent =
+        rows.length ? `My Documents (${rows.length})` : 'My Documents';
+
+      if (!rows.length) {
+        box.innerHTML = '<div class="empty-state" style="padding:24px; text-align:center;">No documents yet.</div>';
+        return;
+      }
+
+      box.innerHTML = rows.map(a => {
+        const signed = a.status === 'signed';
+        const when = signed && a.signed_at
+          ? 'Signed on ' + new Date(a.signed_at.replace(' ', 'T')).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+          : (a.render_error
+              ? '<span style="color:#c81e1e;">Could not prepare: ' + a.render_error + '</span>'
+              : (savedSig ? 'Being prepared — refresh in a moment.' : 'Save your signature above and this is signed automatically.'));
+        const right = signed
+          ? `<span style="display:flex; gap:8px; align-items:center;">
+               <a href="agreement_view.html?id=${a.agreement_id}" class="btn" style="text-decoration:none; padding:7px 14px; font-size:13px;">View</a>
+               ${a.status === 'signed' ? `<button type="button" class="btn secondary" style="width:auto;" onclick="emailMe(${a.agreement_id}, this)">Email me the PDF</button>` : ''}
+             </span>`
+          : '<span class="badge" style="background:#fdf3e3; color:#b45f06;">Waiting for signature</span>';
+        return `
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; padding:13px 20px; border-bottom:1px solid var(--line);">
+          <div>
+            <div style="font-size:14px;">${a.template_name}</div>
+            <div style="font-size:11.5px; color:var(--muted);">${when}</div>
+          </div>
+          ${right}
+        </div>`;
+      }).join('');
+    } catch (err) {
+      box.innerHTML = `<div style="padding:16px 20px;"><div class="alert error">${err.message}</div></div>`;
+    }
+  }
+
+  load();
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>

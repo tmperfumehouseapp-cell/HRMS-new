@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Summary — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=260928b">
+<link rel="stylesheet" href="assets/css/store.css?v=6">
+<style>
+  .ch{--c:var(--sx-blue);--t:var(--sx-blue-t)}
+  .ch.store_cash{--c:#c4521f;--t:var(--sx-orange-t)}.ch.store_online{--c:var(--sx-violet);--t:var(--sx-violet-t)}.ch.online_prepaid{--c:var(--sx-blue);--t:var(--sx-blue-t)}.ch.online_cod{--c:#12805a;--t:var(--sx-aqua-t)}.ch.retail{--c:#b45309;--t:#fff4e0}.ch.other{--c:#6b7280;--t:#eef0f3}
+  .per{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+  .per button{border:0;background:#fff;border-radius:999px;padding:7px 14px;font:800 12.5px inherit;cursor:pointer;box-shadow:inset 0 0 0 1.5px var(--sx-line)}.per button.on{background:var(--sx-ink);color:#fff;box-shadow:none}
+  .per input{min-height:34px;padding:3px 8px;font-size:12.5px;width:auto}.per .sp{flex:1}
+  .gr{display:grid;grid-template-columns:repeat(12,1fr);gap:clamp(8px,1vw,14px)}.gr>.sx-card{margin:0;min-width:0}
+  .c6{grid-column:span 6}.c4{grid-column:span 4}.c8{grid-column:span 8}.c12{grid-column:span 12}
+  @media (max-width:1100px){.c6,.c4,.c8{grid-column:span 12}}
+  .tb{width:100%;border-collapse:collapse;font-size:13px}.tb th{font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--sx-mut);text-align:right;padding:4px 6px}.tb th:first-child,.tb td:first-child{text-align:left}
+  .tb td{padding:7px 6px;border-top:1px solid var(--sx-line);text-align:right;white-space:nowrap}.tb td small{display:block;color:var(--sx-mut);font-size:11px}.tb tr.tot td{font-weight:800;border-top:2px solid var(--sx-ink)}
+  .dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--c,#6b7280);margin-right:6px}
+  .hb{display:grid;grid-template-columns:minmax(110px,1.1fr) 1.8fr 86px 40px;gap:8px;align-items:center;padding:5px 0;font-size:13px}
+  .hb .tr{height:12px;border-radius:99px;background:#eef0f3;overflow:hidden}.hb .tr i{display:block;height:100%;border-radius:99px;background:var(--sx-orange,#ff7a2f)}.hb.top .tr i{background:var(--sx-bad,#b42318)}
+  .hb b{text-align:right}.hb span.s{text-align:right;color:var(--sx-mut);font-size:12px}.hb small{color:var(--sx-mut);display:block;font-size:11px}
+  .tr2{display:flex;gap:4px;align-items:flex-end;height:130px;padding-top:14px}.tr2 .d{flex:1;min-width:6px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:1px;height:100%;position:relative}
+  .tr2 .d i{display:block;width:100%;max-width:26px;border-radius:4px 4px 1px 1px}.tr2 .d i.s{background:var(--sx-blue-t);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--sx-blue) 35%,transparent)}.tr2 .d i.r{background:var(--sx-aqua,#1baf7a);position:absolute;bottom:14px;width:60%;max-width:16px}
+  .tr2 .d em{font-style:normal;font-size:9.5px;color:var(--sx-mut);position:absolute;bottom:0}
+  .lg{display:flex;gap:12px;font-size:11.5px;color:var(--sx-mut);margin-top:6px;font-weight:700}.lg i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:-1px}
+  .src{display:flex;gap:6px;flex-wrap:wrap}.src span{font-size:11.5px;font-weight:700;padding:3px 10px;border-radius:999px;background:var(--sx-aqua-t);color:#0d7a55}.src span.no{background:#eef0f3;color:#6b7280}
+  .w{display:flex;gap:8px;align-items:center;padding:8px 0;border-top:1px solid var(--sx-line);font-size:13px;flex-wrap:wrap}.w:first-of-type{border-top:0}.w b{margin-left:auto}
+  .ptn{display:inline-flex;align-items:center;gap:6px}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><div><h1>Finance summary</h1><div class="sub" style="font-size:12.5px;color:var(--muted);margin-top:2px" id="subLine">Orders, money in, money out and what still needs a look: everything read from where it already lives</div></div></div>
+    <div class="content"><div class="sx-page" id="root"><div class="sx-card sx-mut">Loading…</div></div></div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=4"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script src="assets/js/store_common.js?v=3"></script>
+<script>
+  guardPage();
+  renderSidebar('finance_sum');
+  const m2 = (n) => { n = Number(n || 0); return '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: Math.abs(n % 1) > 0.004 ? 2 : 0, maximumFractionDigits: 2 }); };
+  const dShort = (d) => new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+  const addDays = (d, n) => { const x = new Date(d + 'T00:00:00'); x.setDate(x.getDate() + n); return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'); };
+  let P = 'today', FROM = '', TO = '', D = null, TODAY = '';
+  function range(k) {
+    if (k === 'today') return [TODAY, TODAY]; if (k === 'yesterday') return [addDays(TODAY, -1), addDays(TODAY, -1)];
+    if (k === '7') return [addDays(TODAY, -6), TODAY]; if (k === '30') return [addDays(TODAY, -29), TODAY];
+    if (k === 'month') return [TODAY.slice(0, 8) + '01', TODAY]; if (k === 'lastmonth') { const f = new Date(TODAY.slice(0, 7) + '-01T00:00:00'); f.setMonth(f.getMonth() - 1); const a = f.getFullYear() + '-' + String(f.getMonth() + 1).padStart(2, '0') + '-01'; return [a, addDays(TODAY.slice(0, 8) + '01', -1)]; }
+    return [FROM || TODAY, TO || TODAY];
+  }
+  const bar = (label, v, mx, extra, top) => `<div class="hb ${top ? 'top' : ''}"><span>${label}</span><div class="tr"><i style="width:${Math.max(v > 0 ? 3 : 0, Math.round(v / Math.max(1, mx) * 100))}%"></i></div><b>${m2(v)}</b><span class="s">${extra}</span></div>`;
+  function draw() {
+    const O = D.orders, M = D.money_in, Z = D.money_out, W = D.watch, days = D.days;
+    const per = [['today', 'Today'], ['yesterday', 'Yesterday'], ['7', '7 days'], ['30', '30 days'], ['month', 'This month'], ['lastmonth', 'Last month'], ['custom', 'Custom']];
+    const mxd = Math.max(1, ...days.map((x) => Math.max(x.sales + x.store_sales, x.received)));
+    const mxo = Math.max(1, ...Z.list.map((x) => x.amount));
+    $('root').innerHTML = `
+      <div class="per">${per.map(([k, l]) => `<button data-p="${k}" class="${P === k ? 'on' : ''}">${l}</button>`).join('')}
+        ${P === 'custom' ? `<input class="sx-in" type="date" id="cF" value="${esc(D.from)}" max="${esc(TODAY)}"> <span class="sx-mut">to</span> <input class="sx-in" type="date" id="cT" value="${esc(D.to)}" max="${esc(TODAY)}"><button id="cGo">Show</button>` : ''}
+        <span class="sp"></span><b style="font-size:14px">${D.from === D.to ? esc(dShort(D.from)) : esc(dShort(D.from)) + ' – ' + esc(dShort(D.to))}</b></div>
+      <div class="sx-kpis">
+        <div class="sx-kpi blue"><div class="ic">${sxi('receipt')}</div><div class="tx"><div class="lb">Orders</div><b>${O.total.orders}</b><small>${O.online.orders} online · ${O.store.bills} store</small></div></div>
+        <div class="sx-kpi violet"><div class="ic">${sxi('chart')}</div><div class="tx"><div class="lb">Sales</div><b>${m2(O.total.sales)}</b><small>average ticket ${m2(O.total.avg_ticket)}</small></div></div>
+        <div class="sx-kpi aqua"><div class="ic">${sxi('ok')}</div><div class="tx"><div class="lb">Received</div><b>${m2(M.received)}</b><small>${M.receipts} receipt${M.receipts === 1 ? '' : 's'}${M.older_received ? ' · + ' + m2(M.older_received) + ' for older orders (in the bank, not set against booked)' : ''}</small></div></div>
+        <div class="sx-kpi orange"><div class="ic">${sxi('xc')}</div><div class="tx"><div class="lb">Spent</div><b>${m2(Z.spent)}</b><small>${Z.top ? 'most on ' + esc(Z.top.label) : 'nothing recorded'}</small></div></div>
+        <div class="sx-kpi ${D.net >= 0 ? 'aqua' : 'orange'}"><div class="ic">${sxi('box')}</div><div class="tx"><div class="lb">Received − spent</div><b>${m2(D.net)}</b><small>outstanding ${m2(M.outstanding)}</small></div></div>
+      </div>
+      <div class="gr">
+        <div class="sx-card c8"><h3>${sxi('chart')} Day by day <small>sales (online + store) and money received</small></h3>
+          <div class="tr2">${days.map((x) => `<div class="d" title="${esc(dShort(x.day))} · ${x.orders + x.store_bills} orders · sales ${m2(x.sales + x.store_sales)} · received ${m2(x.received)}"><i class="s" style="height:${Math.round((x.sales + x.store_sales) / mxd * 100)}%"></i><i class="r" style="height:${Math.round(x.received / mxd * 100)}%"></i>${days.length <= 16 ? `<em>${new Date(x.day + 'T00:00:00').getDate()}</em>` : ''}</div>`).join('')}</div>
+          <div class="lg"><span><i style="background:var(--sx-blue-t);box-shadow:inset 0 0 0 1px var(--sx-blue)"></i>sales</span><span><i style="background:var(--sx-aqua,#1baf7a)"></i>received</span></div>
+          <table class="sx-sr"><caption>Sales and received per day</caption>${days.map((x) => `<tr><td>${x.day}</td><td>${x.sales + x.store_sales}</td><td>${x.received}</td></tr>`).join('')}</table></div>
+        <div class="sx-card c4"><h3>${sxi('alert')} Needs a look</h3>
+          <div class="w"><span>Outstanding, all channels</span><b>${m2(W.outstanding)}</b></div>
+          <div class="w"><span>Parcels older than ${W.wait_days} days, money not received</span><b>${W.overdue_parcels} · ${m2(W.overdue_amount)}</b></div>
+          <div class="w"><span>Refunds to give customers</span><b>${W.refunds_due_n} · ${m2(W.refunds_due)}</b></div>
+          ${W.track_from ? '' : '<div class="sx-msg warn" style="margin-top:8px">' + sxi('alert') + '<span>Set the tracking start day in Incoming.</span></div>'}
+          <div class="ptn" style="margin-top:8px"><a class="sx-pill info" style="text-decoration:none" href="hub.html?w=finance&t=finance_in" target="_top">Open Incoming →</a><a class="sx-pill info" style="text-decoration:none" href="hub.html?w=finance&t=finance_parcels" target="_top">Refunds →</a></div></div>
+        <div class="sx-card c6"><h3>${sxi('receipt')} Orders and average ticket</h3>
+          <table class="tb"><tr><th></th><th>Orders</th><th>Sales</th><th>Avg ticket</th></tr>
+            <tr><td><b>Online</b><small>${O.online.items} items · COD ${O.online.cod_orders} order${O.online.cod_orders === 1 ? '' : 's'} (${O.online.cod_pct}% of sales)</small></td><td>${O.online.orders}</td><td>${m2(O.online.sales)}</td><td>${m2(O.online.avg_ticket)}</td></tr>
+            <tr><td><b>Store</b><small>${O.store.ml} ml · cash ${m2(O.store.cash)} · UPI/card ${m2(O.store.online)}${O.store.discount ? ' · discount ' + m2(O.store.discount) : ''}</small></td><td>${O.store.bills}</td><td>${m2(O.store.sales)}</td><td>${m2(O.store.avg_ticket)}</td></tr>
+            <tr class="tot"><td>Total</td><td>${O.total.orders}</td><td>${m2(O.total.sales)}</td><td>${m2(O.total.avg_ticket)}</td></tr></table>
+          <div class="sx-mut" style="font-size:11.5px;margin-top:6px">Online uses the 10 AM day, store uses the 3 AM day. Cancelled and voided orders are left out.</div></div>
+        <div class="sx-card c6"><h3>${sxi('box')} Money in <small>by channel</small></h3>
+          <table class="tb"><tr><th></th><th>Booked</th><th>Received</th><th>Outstanding</th></tr>
+            ${M.channels.filter((c) => c.booked || c.received || c.outstanding).map((c) => `<tr class="ch ${c.key}"><td><span class="dot"></span>${esc(c.label)}</td><td>${m2(c.booked)}</td><td>${m2(c.received)}</td><td>${m2(c.outstanding)}${c.outstanding > 0 && c.oldest_age ? `<small>oldest ${c.oldest_age} d</small>` : ''}</td></tr>`).join('') || '<tr><td colspan="4" class="sx-mut">Nothing yet.</td></tr>'}</table>
+          <div class="sx-f" style="margin:10px 0 4px">Where it landed (bank / cash box)</div>
+          ${M.accounts.length ? M.accounts.map((a) => bar(esc(a.name), a.amount, M.accounts[0].amount, '', false)).join('') : '<div class="sx-mut">No receipt in this period.</div>'}</div>
+        <div class="sx-card c12"><h3>${sxi('xc')} Where the money went <small>${Z.top_group ? 'most spent on ' + esc(Z.top_group.label) + ' · ' + m2(Z.top_group.amount) + ' (' + Z.top_group.share + '%)' : ''}</small></h3>
+          ${Z.list.length ? `<div class="gr" style="grid-template-columns:repeat(12,1fr)"><div class="c6" style="grid-column:span 6;min-width:0"><div class="sx-f" style="margin-bottom:4px">By section</div>${Z.groups.map((g, i) => bar(esc(g.label), g.amount, Z.groups[0].amount, g.share + '%', i === 0)).join('')}</div>
+            <div class="c6" style="grid-column:span 6;min-width:0"><div class="sx-f" style="margin-bottom:4px">By item · biggest first</div>${Z.list.slice(0, 12).map((x, i) => bar(esc(x.label) + `<small>${esc(x.source)} · ${x.n} entr${x.n === 1 ? 'y' : 'ies'}</small>`, x.amount, mxo, x.share + '%', i === 0)).join('')}</div></div>` : `<div class="sx-mut">${esc(Z.note)}</div>`}
+          <div class="sx-mut" style="font-size:11.5px;margin-top:6px">Bank deposits are not counted: they only move cash. Spending is read from Daily Money, the Finance ledger's expenses and refunds paid to customers.</div></div>
+        <div class="sx-card c12"><h3>${sxi('info')} Where these numbers come from</h3><div class="src">${D.sources.map((s) => `<span class="${s.ok ? '' : 'no'}">${s.ok ? '✓' : '○'} ${esc(s.name)}${s.note ? ' · ' + esc(s.note) : ''}</span>`).join('')}</div></div>
+      </div>`;
+  }
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-p]'); if (b) { P = b.dataset.p; if (P === 'custom') { FROM = D.from; TO = D.to; draw(); } else load(); return; }
+    if (e.target.id === 'cGo') { FROM = $('cF').value; TO = $('cT').value; load(); }
+  });
+  async function load() {
+    try {
+      if (!TODAY) { const o = await api.get('fi.settings_get'); TODAY = o.today; }
+      const [f, t] = range(P); D = await api.get('fi.summary', { from: f, to: t }); draw();
+      try { parent.postMessage({ tmphCtx: { page: 'Finance Summary', date_from: D.from, date_to: D.to, period: P } }, location.origin); } catch (e) {}      // the assistant knows which range you are looking at
+    } catch (e) { $('root').innerHTML = `<div class="sx-card"><div class="sx-msg bad">${sxi('xc')}<span>${esc(e.message)}</span></div></div>`; }
+  }
+  load(); setInterval(() => { if (!document.hidden && P !== 'custom' && !document.activeElement.matches('input')) load(); }, 120000);
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>

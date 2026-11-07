@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Decline History — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=3">
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><h1>Decline History</h1></div>
+    <div class="content">
+      <div id="alertBox"></div>
+
+      <div class="card">
+        <div class="card-head"><h2 id="historyTitle">History</h2></div>
+        <table>
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>Name</th>
+              <th>Reason</th>
+              <th>Declined By</th>
+              <th>Declined At</th>
+              <th style="width:120px;">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="historyTableBody">
+            <tr><td colspan="6" class="loading">Loading...</td></tr>
+          </tbody>
+        </table>
+        <div style="padding:12px 20px; display:flex; align-items:center; justify-content:center; gap:14px; flex-wrap:wrap;">
+          <span id="histShownCount" style="font-size:12.5px; color:var(--muted);"></span>
+          <button class="btn secondary" id="btnHistLoadMore" style="width:auto; display:none;">Load more</button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="assets/js/config.js?v=2"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script>
+  guardPage();
+  renderSidebar('history');
+
+  const alertBox = document.getElementById('alertBox');
+  function showAlert(msg, type = 'success') {
+    alertBox.innerHTML = `<div class="alert ${type}">${msg}</div>`;
+    setTimeout(() => (alertBox.innerHTML = ''), 4000);
+  }
+
+  function fmtDateTime(dateStr) {
+    return dateStr ? new Date(dateStr).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
+  }
+
+  const currentUser = api.currentUser() || {};
+
+  // Paging: 10 rows, "Load more" adds 10.
+  const HIST_PAGE_SIZE = 10;
+  let histLimit = HIST_PAGE_SIZE;
+  const HIST_FETCH = 50;   // rows asked from the server at a time
+  let histRows = [];
+  let histTotal = 0;
+
+  function histRowHtml(h) {
+        const displayName = h.entity_type === 'document'
+          ? `${h.document_name} <span style="color:#888;">(${h.employee_name}${h.employee_code ? ' · ' + h.employee_code : ''})</span>`
+          : `${h.employee_name}${h.employee_code ? ` <span class="badge">${h.employee_code}</span>` : ''}`;
+
+        return `
+        <tr>
+          <td><span class="badge">${h.entity_type === 'document' ? 'Document' : 'Employee'}</span></td>
+          <td>${displayName}</td>
+          <td>${h.reason || '—'}</td>
+          <td>${h.declined_by}</td>
+          <td>${fmtDateTime(h.declined_at)}</td>
+          <td>
+            <div class="row-actions">
+              <button onclick='addAgain(${h.history_id}, "${h.entity_type}", ${JSON.stringify(h.payload || '{}').replace(/"/g, '&quot;')})'>Add Again</button>
+            </div>
+          </td>
+        </tr>`;
+  }
+
+  function renderHistory() {
+    const tbody = document.getElementById('historyTableBody');
+    const label = document.getElementById('histShownCount');
+    const btn = document.getElementById('btnHistLoadMore');
+    document.getElementById('historyTitle').textContent = `History (${histTotal || histRows.length})`;
+    if (!histRows.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No declined items yet.</td></tr>';
+      label.textContent = '';
+      btn.style.display = 'none';
+      return;
+    }
+    const showing = Math.min(histLimit, histRows.length);
+    tbody.innerHTML = histRows.slice(0, showing).map(histRowHtml).join('');
+    label.textContent = `Showing ${showing} of ${histTotal || histRows.length}`;
+    btn.style.display = showing >= (histTotal || histRows.length) ? 'none' : 'inline-block';
+  }
+
+  document.getElementById('btnHistLoadMore').addEventListener('click', async () => {
+    histLimit += HIST_PAGE_SIZE;
+    if (histLimit > histRows.length && histRows.length < histTotal) {   // need more than what was fetched: ask the server for the next 50
+      const b = document.getElementById('btnHistLoadMore'); b.disabled = true;
+      try {
+        const more = await api.get('approval_history.list', { limit: HIST_FETCH, offset: histRows.length });
+        histRows = histRows.concat(more.history || []);
+        histTotal = more.total || histTotal;
+      } catch (err) { showAlert(err.message, 'error'); }
+      b.disabled = false;
+    }
+    renderHistory();
+  });
+
+  async function loadHistory() {
+    const tbody = document.getElementById('historyTableBody');
+    try {
+      const data = await api.get('approval_history.list', { limit: HIST_FETCH, offset: 0 });
+      histRows = data.history || [];
+      histTotal = data.total || histRows.length;
+      renderHistory();
+    } catch (err) {
+      document.getElementById('histShownCount').textContent = '';
+      document.getElementById('btnHistLoadMore').style.display = 'none';
+      tbody.innerHTML = `<tr><td colspan="6"><div class="alert error">${err.message}</div></td></tr>`;
+    }
+  }
+
+  window.addAgain = async function (historyId, entityType, payloadJson) {
+    let payload;
+    try {
+      payload = JSON.parse(payloadJson);
+    } catch (e) {
+      showAlert('Could not read the original submission data.', 'error');
+      return;
+    }
+
+    // Remove this entry from the decline history — it's being resubmitted.
+    try {
+      await api.post('approval_history.delete', { history_id: historyId });
+    } catch (e) {
+      // Don't block resubmission if the delete fails; the row just stays
+      // in history until the backend action exists.
+      console.error('Could not remove history entry:', e.message);
+    }
+
+    if (entityType === 'employee') {
+      sessionStorage.setItem('resubmitEmployee', JSON.stringify(payload));
+      window.location.href = 'employees.html?resubmit=1';
+    } else {
+      sessionStorage.setItem('resubmitDocument', JSON.stringify(payload));
+      window.location.href = 'documents.html?resubmit=1';
+    }
+  };
+
+  loadHistory();
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>

@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Leaders — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=260929d">
+<link rel="stylesheet" href="assets/css/sales_theme.css?v=1">
+<style>
+#lr{max-width:1280px;}
+#lr button{min-height:0;}
+#lr .sub{color:var(--muted); font-size:12.5px;}
+#lr .card{padding:16px; margin-bottom:14px;}
+#lr .hd{display:flex; align-items:center; gap:12px; flex-wrap:wrap;} #lr .hd h2{margin:0; font-size:18px;}
+#lr .rules{display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-top:12px;}
+#lr .rl{border:1px solid var(--line); border-radius:14px; padding:10px 12px;}
+#lr .rl small{display:block; font-size:11px; font-weight:800; color:var(--muted); text-transform:uppercase; letter-spacing:.05em;}
+#lr .rl .hint{font-size:12px; color:var(--muted); margin-top:5px;}
+#lr .inp{display:inline-flex; align-items:center; gap:4px; border:1.5px solid #fdba74; background:#fffaf5; border-radius:10px; padding:4px 9px; margin-top:5px;}
+#lr .inp input{border:0; background:none; font:inherit; font-weight:800; font-size:16px; width:84px; padding:2px 0; outline:0; color:var(--ink);}
+#lr .inp i{font-style:normal; font-size:12px; color:var(--muted); font-weight:700;}
+#lr .inp.ro{border-color:var(--line); background:#f9fafb;}
+#lr .names{display:flex; gap:6px; flex-wrap:wrap; margin-top:10px; align-items:center;}
+#lr .nm{display:inline-flex; align-items:center; gap:6px; background:#f3f4f6; border-radius:999px; padding:4px 6px 4px 12px; font-size:12.5px; font-weight:700;}
+#lr .nm button{border:0; background:#e5e7eb; border-radius:50%; width:18px; height:18px; line-height:16px; padding:0; cursor:pointer; font-weight:800; color:#6b7280;}
+#lr .nadd{border:1.5px dashed #fdba74; background:#fffaf5; border-radius:999px; padding:4px 12px; font:inherit; font-size:12.5px; font-weight:700; width:150px;}
+#lr .slab{display:flex; gap:6px; flex-wrap:wrap; margin-top:12px;} #lr .slab span{font-size:11.5px; font-weight:700; background:#f6f7f9; border-radius:9px; padding:4px 9px;}
+#lr .tbtn{padding:8px 14px; border-radius:12px; background:var(--ink); color:#fff; font:inherit; font-weight:800; font-size:12.5px; border:0; cursor:pointer;} #lr .tbtn:disabled{opacity:.5; cursor:default;}
+#lr .arr{width:34px; height:34px; border-radius:50%; border:1px solid var(--line); background:#fff; font:inherit; font-weight:800; cursor:pointer; padding:0; color:var(--ink);}
+#lr table{width:100%; border-collapse:collapse; font-size:13px;}
+#lr th{font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); text-align:left; padding:8px; border-bottom:1px solid var(--line); white-space:nowrap;}
+#lr td{padding:10px 8px; border-bottom:1px solid #f0f1f4; vertical-align:middle;}
+#lr tfoot td{font-weight:800; border-bottom:0; background:#fafbfc;}
+#lr .roas{font-weight:800; font-size:15px;} #lr .roas.ok{color:#16a34a;} #lr .roas.below{color:#dc2626;}
+#lr .chip{font-size:11px; font-weight:800; padding:3px 9px; border-radius:999px; display:inline-block; white-space:nowrap;}
+#lr .chip.ok{background:#e4f6ec; color:#16945a;} #lr .chip.below{background:#fdecea; color:#d9423b;} #lr .chip.none{background:#fef3c7; color:#92400e;}
+#lr .sug{background:#eff6ff; border-radius:10px; padding:5px 9px; font-size:12px; font-weight:700; color:#1d4ed8; white-space:nowrap; display:inline-block;}
+#lr .sug.g{background:#f3f4f6; color:#6b7280;}
+#lr .in{display:flex; align-items:center; gap:5px;} #lr .in .rs{font-weight:800; color:var(--muted); font-size:13px;}
+#lr .fld{width:84px; border:1.5px solid var(--line); border-radius:9px; padding:6px 8px; font:inherit; font-weight:800; font-size:13px; text-align:right; background:#fff;}
+#lr .fld::placeholder{color:#93c5fd; font-weight:700;}
+#lr .fld.set{border-color:#34d399; background:#f0fdf4;} #lr .fld:disabled{background:#f9fafb;}
+#lr .fld.busy{opacity:.5;}
+#lr .sb{padding:6px 12px; border-radius:9px; border:0; background:#16a34a; color:#fff; font:inherit; font-weight:800; font-size:12px; cursor:pointer;} #lr .sb:disabled{background:#e5e7eb; color:#9ca3af; cursor:default;}
+#lr .xb{border:0; background:#f3f4f6; border-radius:50%; width:22px; height:22px; line-height:20px; padding:0; cursor:pointer; font-weight:800; color:#6b7280;}
+#lr .fin{font-size:11.5px; color:var(--muted); margin-top:3px;} #lr .fin b{color:var(--ink); font-size:12.5px;} #lr .fin .ok{color:#15803d;} #lr .fin .ns{color:#b45309; font-weight:700;}
+#lr .adb{border:1.5px dashed #fbbf24; background:#fffbeb; color:#92400e; border-radius:9px; padding:5px 10px; font:inherit; font-weight:800; font-size:12px; cursor:pointer; white-space:nowrap;}
+#lr .ade{border:0; background:none; cursor:pointer; font-size:12px; padding:0 0 0 4px; color:var(--muted);}
+#lr .adin{width:92px; border:1.5px solid #fbbf24; border-radius:9px; padding:5px 8px; font:inherit; font-weight:800; font-size:13px; text-align:right;}
+#lr .note{background:#fffbeb; border:1px solid #fde68a; color:#92400e; border-radius:12px; padding:9px 12px; font-size:12.5px; font-weight:700; margin-top:12px;}
+#lr button.sug{border:0; cursor:pointer; font:inherit; font-size:12px; font-weight:700;}
+#lr .empty{padding:26px; text-align:center; color:var(--muted);}
+#lr .cards{display:none;}
+#lr .dc{border:1px solid var(--line); border-radius:14px; padding:12px; margin-top:10px;}
+#lr .dc .top{display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
+#lr .dc .nums{display:grid; grid-template-columns:1fr 1fr; gap:6px; margin:10px 0; font-size:12.5px;}
+#lr .dc .lrow{display:flex; align-items:center; gap:8px; padding:8px 0; border-top:1px solid #f0f1f4;} #lr .dc .lrow .who{flex:1; font-weight:800;}
+@media (max-width:820px){ #lr .rules{grid-template-columns:1fr 1fr;} #lr .tw{display:none;} #lr .cards{display:block;} }
+@media (max-width:430px){ #lr .rules{grid-template-columns:1fr;} }
+html.in-sales .topbar{display:none;}
+</style>
+<style>
+/* === MOBILE PASS v1 === */
+@media (max-width:820px){
+  #lr .sb, #lr .adb, #lr .tbtn, #lr .arr{min-height:40px;}
+  #lr .arr{width:40px; height:40px;}
+  #lr .sb{min-width:56px;}
+  #lr .fld{min-height:40px; font-size:16px;}
+}
+@media (max-width:820px){ #lr .ns, #lr .chip, #lr small{font-size:12px;} }
+@media (max-width:820px){ #lr .nm button{width:36px; height:36px; line-height:34px; font-size:15px;} }
+/* === END MOBILE PASS v1 === */
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar">
+      <div><h1>Leaders</h1><div class="sub" style="font-size:12.5px; color:var(--muted); margin-top:2px;">The page only suggests a commission from the day's ROAS — you type the amount and press Set</div></div>
+      <div style="display:flex; gap:10px; align-items:center;"><button class="btn secondary" id="btnReload" type="button">↻ Refresh</button></div>
+    </div>
+    <div class="content">
+      <div id="alertBox"></div>
+      <div id="lr"><div class="card"><div class="empty">Loading…</div></div></div>
+    </div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=2"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script>
+(function () {
+  guardPage();
+  renderSidebar('commission');
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const inr = (n) => n == null ? '—' : '₹' + Math.round(Number(n)).toLocaleString('en-IN');
+  const num = (v) => { const x = parseFloat(String(v).replace(',', '.')); return isNaN(x) ? null : x; };
+  const pf = (p) => p == null ? '—' : (Math.round(p * 1000) / 1000).toFixed(2);
+  const alertBox = $('alertBox');
+  const showAlert = (msg, type) => { alertBox.innerHTML = `<div class="alert ${type || 'error'}">${esc(msg)}</div>`; if (type === 'success') setTimeout(() => { alertBox.innerHTML = ''; }, 2500); };
+
+  let D = null, R = null, month = '', draft = null, adEdit = '';      // D = the page data, R = the rule (as saved), draft = the rule being edited
+  const ymd = (d) => d.toISOString().slice(0, 10);
+  const monthEnd = (m) => { const [y, mo] = m.split('-').map(Number); return ymd(new Date(Date.UTC(y, mo, 0))); };
+  const addMonth = (m, n) => { const [y, mo] = m.split('-').map(Number); return ymd(new Date(Date.UTC(y, mo - 1 + n, 1))).slice(0, 7); };
+  const r1 = (x) => Math.floor(x * 10 + 0.5 + 1e-9) / 10;
+  const sugPct = (rl, roas) => roas == null || roas + 1e-9 < rl.cut ? null : Math.round((rl.start + Math.max(0, Math.round((r1(roas) - r1(rl.cut)) * 10)) * rl.step) * 1000) / 1000;
+
+  async function load() {
+    try {
+      const today = (D && D.today) || null;
+      const m = month || (today ? String(today).slice(0, 7) : '');
+      const q = m ? { date_from: m + '-01', date_to: (today && m === String(today).slice(0, 7)) ? today : monthEnd(m) } : {};
+      const raw = await api.get('lr.get', q);
+      if (!raw || !Array.isArray(raw.rows) || !raw.rules) throw new Error('The server answered in an unexpected way (' + Object.keys(raw || {}).join(', ') + '). Upload the new leader_roas.php and api.php, then hard refresh.');
+      const oldSrv = raw.rows.some(r => r && r.set === undefined);
+      D = raw; D.oldServer = oldSrv;
+      D.today = String(D.today || new Date(Date.now() + 19800000).toISOString().slice(0, 10));
+      D.from = String(D.from || D.today.slice(0, 8) + '01');
+      D.rows = D.rows.filter(r => r && r.date).map(r => Object.assign({ set: {}, ad_all: false }, r, { set: r.set || {} }));
+      D.totals = D.totals || {}; D.not_set = D.not_set || 0;
+      month = month || D.from.slice(0, 7); R = D.rules; R.leaders = Array.isArray(R.leaders) ? R.leaders : []; draft = JSON.parse(JSON.stringify(R));
+      render();
+    } catch (e) { $('lr').innerHTML = `<div class="card"><div class="alert error" style="margin:0;">${esc(e.message || 'Could not load')}<div class="sub" style="margin-top:6px;">${esc(String(e.stack || '').split('\n').slice(1, 3).join(' | '))}</div></div></div>`; }
+  }
+
+  const slabHtml = () => { const base = r1(draft.cut); return [0, 1, 2, 3, 4, 5].map(k => `<span>${(base + k * 0.1).toFixed(1)} → ${pf(draft.start + k * draft.step)}%</span>`).join('') + '<span>… and so on</span>'; };
+  function rulesHtml() {
+    const ed = D.can_edit, v = (k, u, hint, label, w) => `<div class="rl"><small>${label}</small><div class="inp${ed ? '' : ' ro'}"><input data-r="${k}" value="${esc(draft[k])}" ${ed ? '' : 'disabled'} inputmode="decimal"><i>${u}</i></div><div class="hint">${hint}</div></div>`;
+    const dirty = JSON.stringify(draft) !== JSON.stringify(R);
+    return `<div class="card"><div class="hd"><h2>Leaders commission — ROAS</h2><span class="sub">ROAS = collection ÷ ad spend (same figures as the Live page and the Detailed report)</span><span style="flex:1"></span>${ed ? `<button class="tbtn" data-act="saverules" ${dirty ? '' : 'disabled'}>Save rule</button>` : '<span class="sub">View only — Admin changes the rule and sets amounts</span>'}</div>
+      <div class="rules">${v('cut', 'ROAS', 'below this = base only', 'ROAS cut-off')}${v('base', '₹ / day', 'paid to each leader when ROAS is below the cut-off', 'Base per leader')}${v('start', '%', 'of the day’s collection, at the cut-off ROAS', 'Starting commission')}${v('step', '% more', 'for every +0.1 ROAS', 'Step')}</div>
+      <div class="slab" id="slab">${slabHtml()}</div>
+      <div class="sub" style="margin-top:8px;">These numbers only make the 💡 suggestion. Nothing is paid until you type the amount for a leader and press <b>Set</b>.</div>
+      <div class="names">${draft.leaders.map((n, i) => `<span class="nm">${esc(n)}${ed && draft.leaders.length > 1 ? `<button type="button" data-act="rmlead" data-i="${i}" title="Remove">×</button>` : ''}</span>`).join('')}${ed ? '<input class="nadd" id="nadd" placeholder="+ add a leader" maxlength="60">' : ''}</div></div>`;
+  }
+
+  const collOf = (day) => { const r = D.rows.find(x => x.date === day); return r ? Number(r.coll) : 0; };
+  // what is typed → rupees: "1240" = ₹1,240 · "0.31%" = 0.31% of that day's collection
+  const parseAmt = (raw, day) => {
+    raw = String(raw).trim(); if (raw === '') return { empty: true };
+    const pc = raw.endsWith('%'), x = num(pc ? raw.slice(0, -1) : raw);
+    if (x == null || x < 0) return { bad: true };
+    if (pc) { if (x > 100) return { bad: true }; return { amount: Math.round(collOf(day) * x / 100), pct: x }; }
+    const c = collOf(day); return { amount: Math.round(x), pct: c > 0 ? Math.round(x / c * 100000) / 1000 : 0 };
+  };
+  function cell(r, n, ed) {
+    const s = r.set[n], val = s ? Math.round(s.amount) : '', ph = r.sug_amt != null ? Math.round(r.sug_amt) : '';
+    const state = s ? `<span class="ok">✓ <b>Set ${inr(s.amount)}</b>${s.pct != null ? ' · ' + pf(s.pct) + '%' : ''}${s.legacy ? ' · from an older %' : ''}</span>` : '<span class="ns">not set</span>';
+    return { box: `<div class="in"><span class="rs">₹</span><input class="fld${s ? ' set' : ''}" data-day="${r.date}" data-who="${esc(n)}" data-orig="${val}" value="${val}" placeholder="${ph}" inputmode="decimal" ${ed ? '' : 'disabled'}>${ed ? `<button type="button" class="sb" data-act="set" disabled>${s ? 'Update' : 'Set'}</button>${s ? '<button type="button" class="xb" data-act="unset" title="Un-set this day">×</button>' : ''}` : ''}</div><div class="fin">${state}</div>` };
+  }
+  const statusChip = (r) => r.status === 'ok' ? `<span class="chip ok">Achieved ≥ ${esc(R.cut)}</span>` : r.status === 'below' ? `<span class="chip below">Below ${esc(R.cut)}</span>` : '<span class="chip none">Ad spend missing</span>';
+  const sugBox = (r, ed) => r.status === 'ok' ? `<button type="button" class="sug" ${ed ? `data-act="usesug" data-day="${r.date}" title="Tap to fill the boxes with this amount (you still press Set)"` : 'disabled'}>💡 ${pf(r.sug)}% = ${inr(r.sug_amt)} each</button>` : r.status === 'below' ? `<button type="button" class="sug g" ${ed ? `data-act="usesug" data-day="${r.date}" title="Tap to fill the boxes with the base (you still press Set)"` : 'disabled'}>💡 Base ${inr(r.sug_amt)} each</button>` : '<span class="sug g">Add the ad spend first</span>';
+  const adCell = (r, ed) => {
+    if (adEdit === r.date) return `<input class="adin" id="adin" inputmode="numeric" value="${r.ad == null ? '' : Math.round(r.ad)}" placeholder="₹ total"> <button type="button" class="sb" data-act="adsave" data-day="${r.date}">Save</button> <button type="button" class="xb" data-act="adcancel">×</button>`;
+    if (r.ad == null) return ed ? `<button type="button" class="adb" data-act="adedit" data-day="${r.date}">＋ Add ad spend</button>` : '—';
+    return inr(r.ad) + (ed ? `<button type="button" class="ade" data-act="adedit" data-day="${r.date}" title="Change this day's ad spend">✎</button>` : '') + (r.ad_all ? '' : '<div class="sub" style="font-size:11px;">sum of the panels</div>');
+  };
+  const dayLab = (r) => `${r.dow} ${Number(r.date.slice(8))} ${new Date(r.date + 'T00:00:00Z').toLocaleString('en-IN', { month: 'short', timeZone: 'UTC' })}`;
+
+  function tableHtml() {
+    const ed = D.can_edit, L = R.leaders;
+    const rows = D.rows.map(r => `<tr data-d="${r.date}"><td><b>${esc(dayLab(r))}</b></td><td>${adCell(r, ed)}</td><td>${inr(r.coll)}</td><td><span class="roas ${r.status}">${r.roas == null ? '—' : r.roas.toFixed(2)}</span></td><td>${statusChip(r)}</td><td>${sugBox(r, ed)}</td>${L.map(n => { const c = cell(r, n, ed); return `<td style="min-width:190px;">${c.box}</td>`; }).join('')}</tr>`).join('');
+    const cards = D.rows.map(r => `<div class="dc"><div class="top"><b style="font-size:14px;">${esc(dayLab(r))}</b><span style="flex:1"></span>${statusChip(r)}</div>
+      <div class="nums"><div class="sub">Ad spend <b style="color:var(--ink)">${adCell(r, ed)}</b></div><div class="sub">Collection <b style="color:var(--ink)">${inr(r.coll)}</b></div><div class="sub">ROAS <b class="roas ${r.status}">${r.roas == null ? '—' : r.roas.toFixed(2)}</b></div><div>${sugBox(r, ed)}</div></div>
+      ${L.map(n => { const c = cell(r, n, ed); return `<div class="lrow" style="align-items:flex-start;"><span class="who">${esc(n)}</span><div>${c.box}</div></div>`; }).join('')}</div>`).join('');
+    const foot = `<tr><td colspan="6">${esc(monthLabel())} so far — amounts you have Set</td>${L.map(n => `<td>${inr(D.totals[n])}</td>`).join('')}</tr>`;
+    return `<div class="card"><div class="hd"><button class="arr" data-act="pm">‹</button><h2>${esc(monthLabel())}</h2><button class="arr" data-act="nm" ${month >= D.today.slice(0, 7) ? 'disabled' : ''}>›</button><span class="sub">${ed ? 'Tap 💡 to fill the boxes with the suggestion, or type your own ₹ amount (or a % like 0.31%) — then press Set. Days you have not Set are not counted.' : 'View only.'}</span></div>
+      ${D.oldServer ? '<div class="note">⚠ The server still has the OLD leader_roas.php, so Set will not work. Upload the new leader_roas.php to public_html/empmanagment/ and refresh.</div>' : ''}
+      ${D.not_set > 0 ? `<div class="note">⚠ ${D.not_set} leader-day${D.not_set === 1 ? '' : 's'} in this month have a suggestion but no amount Set yet.</div>` : ''}
+      ${D.rows.length ? `<div class="tw" style="overflow-x:auto;"><table><thead><tr><th>Day</th><th>Ad spend</th><th>Collection</th><th>ROAS</th><th>Status</th><th>Suggested</th>${L.map(n => `<th>${esc(n)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody><tfoot>${foot}</tfoot></table></div>
+      <div class="cards">${cards}<div class="dc" style="background:#fafbfc;"><b>${esc(monthLabel())} so far</b>${L.map(n => `<div class="lrow"><span class="who">${esc(n)}</span><b>${inr(D.totals[n])}</b></div>`).join('')}</div></div>` : '<div class="empty">No days in this month yet.</div>'}</div>`;
+  }
+  const monthLabel = () => new Date(month + '-01T00:00:00Z').toLocaleString('en-IN', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+  function render() {
+    const f = document.activeElement && document.activeElement.id === 'nadd';
+    $('lr').innerHTML = rulesHtml() + tableHtml();
+    if (f) $('nadd').focus();
+  }
+
+  $('lr').addEventListener('input', (e) => {
+    const k = e.target.dataset && e.target.dataset.r; if (!k) return;
+    const x = num(e.target.value); if (x != null) draft[k] = x;
+    const b = document.querySelector('[data-act=saverules]'); if (b) b.disabled = JSON.stringify(draft) === JSON.stringify(R);
+    const sl = $('slab'); if (sl) sl.innerHTML = slabHtml();
+  });
+  // keep what was typed but not Set yet when the page re-draws
+  const typedNow = () => Array.from(document.querySelectorAll('#lr .fld')).filter(i => i.value !== i.dataset.orig).map(i => [i.dataset.day, i.dataset.who, i.value]);
+  const restoreTyped = (list) => list.forEach(([d, w, v]) => document.querySelectorAll('#lr .fld').forEach(i => { if (i.dataset.day === d && i.dataset.who === w) { i.value = v; const b = i.closest('.in').querySelector('[data-act=set]'); if (b) b.disabled = false; } }));
+  async function reloadKeep() { const keep = typedNow(); await load(); restoreTyped(keep); }
+  $('lr').addEventListener('input', (e) => {
+    const t = e.target; if (!t.classList || !t.classList.contains('fld')) return;
+    const b = t.closest('.in').querySelector('[data-act=set]'); if (!b) return;
+    const p = parseAmt(t.value, t.dataset.day);
+    b.disabled = p.empty || p.bad || t.value === t.dataset.orig;
+
+  });
+  async function doSet(inp) {
+    const p = parseAmt(inp.value, inp.dataset.day);
+    if (p.empty) return;
+    if (p.bad) { showAlert('Type the amount in ₹ (or a % like 0.31%).'); return; }
+    inp.classList.add('busy');
+    try { await api.post('lr.set', { date: inp.dataset.day, leader: inp.dataset.who, amount: p.amount, pct: p.pct }); showAlert(inp.dataset.who + ' · ' + inp.dataset.day + ' set to ' + inr(p.amount), 'success'); await reloadKeep(); }
+    catch (err) { showAlert(err.message); inp.classList.remove('busy'); }
+  }
+  $('lr').addEventListener('keydown', (e) => {
+    if (e.target.id === 'nadd' && e.key === 'Enter') { const n = e.target.value.trim(); if (n && !draft.leaders.includes(n)) { draft.leaders.push(n); render(); const b = document.querySelector('[data-act=saverules]'); if (b) b.disabled = false; } }
+    if (e.target.classList && e.target.classList.contains('fld') && e.key === 'Enter') doSet(e.target);
+    if (e.target.id === 'adin' && e.key === 'Enter') adSave(adEdit);
+  });
+  $('lr').addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-act]'); if (!b || b.disabled) return;
+    const a = b.dataset.act;
+    if (a === 'pm') { month = addMonth(month, -1); await load(); }
+    else if (a === 'nm') { month = addMonth(month, 1); await load(); }
+    else if (a === 'set') { doSet(b.closest('.in').querySelector('.fld')); }
+    else if (a === 'unset') {
+      const i = b.closest('.in').querySelector('.fld');
+      try { await api.post('lr.set', { date: i.dataset.day, leader: i.dataset.who, amount: null }); await reloadKeep(); } catch (err) { showAlert(err.message); }
+    }
+    else if (a === 'usesug') {
+      const r = D.rows.find(x => x.date === b.dataset.day); if (!r || r.sug_amt == null) return;
+      document.querySelectorAll('#lr .fld').forEach(i => { if (i.dataset.day === r.date && !r.set[i.dataset.who] && !i.disabled) { i.value = Math.round(r.sug_amt); const sb = i.closest('.in').querySelector('[data-act=set]'); if (sb) sb.disabled = false; } });
+    }
+    else if (a === 'adedit') { const keep = typedNow(); adEdit = b.dataset.day; render(); restoreTyped(keep); const x = $('adin'); if (x) { x.focus(); x.select(); } }
+    else if (a === 'adcancel') { const keep = typedNow(); adEdit = ''; render(); restoreTyped(keep); }
+    else if (a === 'adsave') { adSave(b.dataset.day); }
+    else if (a === 'rmlead') { draft.leaders.splice(Number(b.dataset.i), 1); render(); const s = document.querySelector('[data-act=saverules]'); if (s) s.disabled = false; }
+    else if (a === 'saverules') {
+      try { b.disabled = true; await api.post('lr.rules', { cut: draft.cut, base: draft.base, start: draft.start, step: draft.step, leaders: draft.leaders }); showAlert('Rule saved.', 'success'); await load(); }
+      catch (err) { showAlert(err.message); b.disabled = false; }
+    }
+  });
+  async function adSave(day) {
+    const x = $('adin'); if (!x) return; const raw = x.value.trim(), v = raw === '' ? null : num(raw);
+    if (raw !== '' && (v == null || v < 0)) { showAlert('Type the total ad spend of the day in ₹.'); return; }
+    try { await api.post('panel_spend.save', { date: day, panel: 'all', amount: v }); adEdit = ''; showAlert('Ad spend saved — the Live page and Orders page use the same figure.', 'success'); await reloadKeep(); }
+    catch (err) { showAlert(err.message); }
+  }
+  $('btnReload').onclick = () => reloadKeep();
+  load();
+})();
+</script>
+</body>
+</html>

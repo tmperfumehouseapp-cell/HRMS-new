@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#e85d04">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>My Day — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=4">
+<link rel="stylesheet" href="assets/css/boss.css?v=1">
+<link rel="stylesheet" href="assets/css/boss2.css?v=t7">
+<style>
+  .md{max-width:620px;margin:0 auto;padding:0 4px 30px;}
+  .md *{box-sizing:border-box;}
+  .md-hero{position:relative;overflow:hidden;border-radius:30px;padding:22px 22px 70px;color:#fff;background:linear-gradient(135deg,#e85d04,#f48c06);box-shadow:0 14px 30px -16px rgba(232,93,4,.7);}
+  .md-hero:after{content:"";position:absolute;right:-60px;top:-70px;width:230px;height:230px;border-radius:50%;background:rgba(255,255,255,.12);}
+  .md-hero .g{font-size:14px;opacity:.92;} .md-hero h1{margin:2px 0 4px;font-size:30px;font-weight:800;letter-spacing:-.02em;color:#fff;} .md-hero .sub{font-size:13px;opacity:.92;line-height:1.4;max-width:70%;}
+  .md-av{position:absolute;right:20px;top:20px;width:72px;height:72px;border-radius:22px;border:3px solid rgba(255,255,255,.85);background:#f6d7b8;overflow:hidden;z-index:2;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:800;color:#a0480a;}
+  .md-av img{width:100%;height:100%;object-fit:cover;display:block;}
+  .md-chip{display:inline-block;margin-top:12px;background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.35);border-radius:99px;padding:6px 13px;font-size:12.5px;font-weight:700;}
+  .md-card{background:#fff;border-radius:26px;padding:18px 18px;margin-top:12px;box-shadow:0 1px 2px rgba(20,22,26,.04),0 8px 22px -14px rgba(20,22,26,.18);}
+  .md-card.pull{margin-top:-52px;position:relative;z-index:3;}
+  .md-lb{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em;font-weight:800;}
+  .md-perf{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:10px;text-align:center;}
+  .md-perf b{display:block;font-size:24px;font-weight:800;letter-spacing:-.02em;line-height:1.1;} .md-perf small{display:block;font-size:11px;color:var(--muted);line-height:1.25;margin-top:3px;} .md-perf .g b{color:#16945a;} .md-perf .r b{color:#d9423b;}
+  .md-h{font-size:17px;font-weight:800;margin:0 0 8px;letter-spacing:-.01em;display:flex;justify-content:space-between;align-items:center;gap:8px;}
+  .md-step{display:flex;gap:13px;padding:14px 0;border-top:1px solid #eef0f3;} .md-step:first-of-type{border-top:0;}
+  .md-n{flex:none;width:30px;height:30px;border-radius:50%;background:#e6e8ec;color:#8a91a0;font-weight:800;font-size:13px;display:flex;align-items:center;justify-content:center;}
+  .md-step.now .md-n{background:#f26a0e;color:#fff;} .md-step.done .md-n{background:#16945a;color:#fff;} .md-step.bad .md-n{background:#d9423b;color:#fff;}
+  .md-step .t{font-weight:800;font-size:15.5px;} .md-step.lock .t{color:#9aa0ab;}
+  .md-step .s{font-size:13px;color:#5b6270;line-height:1.45;margin-top:2px;}
+  .md-step .a{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
+  .md-bad{background:#fdeceb;color:#a02b25;border-radius:16px;padding:12px 14px;font-size:13.5px;line-height:1.5;margin-top:8px;}
+  .md-thumb{display:flex;gap:10px;align-items:center;margin-top:9px;flex-wrap:wrap;} .md-thumb img{width:78px;height:78px;object-fit:cover;border-radius:16px;background:#eceef1;}
+  .md-go{display:block;width:100%;margin-top:12px;border:0;border-radius:22px;padding:17px;font-size:17px;font-weight:800;font-family:inherit;cursor:pointer;background:#111;color:#fff;} .md-go[disabled]{background:#c8ccd4;color:#fff;cursor:not-allowed;} .md-go.green{background:#16945a;}
+  .md-miss{border:2px solid #f2c4c0;background:#fff;}
+  .md-miss h3{margin:0 0 6px;color:#b3261e;font-size:19px;font-weight:800;}
+  .md-pen{background:#fdeceb;border-radius:16px;padding:12px 14px;margin-top:10px;font-size:13.5px;line-height:1.5;color:#7d1f1a;}
+  .md-item{display:flex;gap:12px;align-items:center;justify-content:space-between;border:1px solid #eceef1;border-radius:20px;padding:13px 15px;background:#fff;margin-top:8px;cursor:pointer;text-decoration:none;color:inherit;}
+  .md-item .t{font-weight:700;font-size:14.5px;line-height:1.35;} .md-item .s{font-size:12.5px;color:var(--muted);margin-top:3px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;}
+  .md-item.done{opacity:.6;} .md-item.late{border-color:#f2b33d;background:#fffaf0;}
+  .md-tick{width:32px;height:32px;border-radius:50%;border:2px solid #cfd3da;flex:none;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;} .md-item.done .md-tick{background:#16945a;border-color:#16945a;}
+  .md-open{flex:none;font-size:12.5px;font-weight:800;color:#e85d04;}
+  .md-sales .big{font-size:30px;font-weight:800;letter-spacing:-.02em;} .md-sales .bar{height:12px;border-radius:99px;background:#f1e4d8;overflow:hidden;margin:8px 0 6px;} .md-sales .bar i{display:block;height:100%;background:linear-gradient(90deg,#f48c06,#e85d04);border-radius:99px;}
+  .md-two{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;} .md-two div{background:#f7f8fa;border-radius:16px;padding:11px 13px;} .md-two b{display:block;font-size:19px;font-weight:800;} .md-two small{font-size:11.5px;color:var(--muted);}
+  .md-bonus{background:#fff6e5;border-radius:16px;padding:11px 13px;margin-top:10px;font-size:13px;line-height:1.45;color:#7a4c00;}
+  .md-note{background:#eef3ff;color:#2456b3;border-radius:14px;padding:10px 13px;font-size:12.5px;margin-top:10px;line-height:1.45;}
+  .md-pt{display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-top:1px solid #eef0f3;font-size:14px;align-items:center;flex-wrap:wrap;} .md-pt:first-of-type{border-top:0;}
+  .md-ov{position:fixed;left:0;right:0;top:0;bottom:0;z-index:3000;background:#fff;display:flex;flex-direction:column;}
+  .md-ov iframe{flex:1;border:0;width:100%;background:#fff;}
+  .md-ovbar{display:flex;gap:10px;align-items:center;padding:10px 12px;border-bottom:1px solid #eceef1;font-weight:800;font-size:15px;}
+  .md-work{display:flex;align-items:center;justify-content:space-between;gap:12px;} .md-work b{font-size:26px;font-weight:800;letter-spacing:-.02em;display:block;line-height:1.1;} .md-work small{color:var(--muted);font-size:12.5px;}
+  .md-lock{background:#f1f2f4;color:#6b7280;border-radius:99px;padding:8px 14px;font-size:13.5px;font-weight:800;white-space:nowrap;}
+  .md-lockbox{margin-top:12px;background:#fff8ea;border:1px solid #f1deb0;border-radius:18px;padding:12px 14px;font-size:14px;line-height:1.45;} .md-lockl{margin:6px 0 2px;font-size:13.5px;} .md-lockl div{margin:2px 0;}
+  .md-lockmsg{margin-top:10px;border-radius:12px;padding:9px 12px;font-size:13.5px;} .md-lockmsg.wait{background:#eaf2ff;color:#1e4fa3;} .md-lockmsg.bad{background:#fdeceb;color:#a3302a;}
+  .md-out{border:0;border-radius:18px;padding:14px 18px;font-size:15px;font-weight:800;font-family:inherit;cursor:pointer;background:#111;color:#fff;white-space:nowrap;}
+  .md-wait{background:#fff6e5;color:#7a4c00;border-radius:18px;padding:13px 15px;margin-top:12px;font-size:13.5px;line-height:1.5;}
+  .md-rec{padding-bottom:40px;} .md-rec .md-card{margin-top:18px;padding:16px 14px 14px;}
+  .md-recp{display:flex;gap:7px;overflow-x:auto;padding:10px 0 4px;scrollbar-width:none;-webkit-overflow-scrolling:touch;} .md-recp::-webkit-scrollbar{display:none;}
+  .md-recp button{flex:none;white-space:nowrap;font:inherit;font-size:13px;font-weight:800;padding:9px 16px;border-radius:999px;background:#fff;border:1px solid var(--line,#dfe3e8);color:#4a4f5c;cursor:pointer;} .md-recp button.on{background:linear-gradient(135deg,#111827,#1f2937);color:#fff;border-color:#111827;}
+  .md-recf{position:relative;margin-top:8px;} .md-recf iframe{display:block;width:100%;border:0;background:transparent;height:calc(100vh - 150px);min-height:520px;} .md-recl[hidden]{display:none;} .md-recf iframe[hidden]{display:none;} .md-recl{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:13px;pointer-events:none;}
+  @media (max-width:420px){.md-hero h1{font-size:26px;} .md-perf b{font-size:21px;}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><div><h1>My Day</h1><div class="bd-sub" id="sub">&nbsp;</div></div><div id="mgr"></div></div>
+    <div class="content"><div class="md" id="root"><div class="bd-empty">Loading…</div></div><div class="md md-rec" id="rec"></div></div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=4"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script src="assets/js/boss_common.js?v=3"></script>
+<script src="assets/js/b2_common.js?v=t7"></script>
+<script src="assets/js/b2_my.js?v=1"></script>
+<script src="assets/js/of_place_ui.js?v=p2"></script>
+<script>
+  guardPage();
+  renderSidebar('my_day');
+  const { esc, $, toast, inr } = BD;
+  let SAL = null, ME = null, DP = null, BDD = null, PF = null, ATT = null, FLAGS = null, PO = null, stream = null, OPL = null;   // OPL = registered places (Pantry ...): one card per place, see assets/js/of_place_ui.js
+  const PAGE = { dispatch: 'dept_dispatch.html', shops: 'dept_shops.html', supplies: 'dept_supplies.html', fix: 'dept_fix.html' };
+  const j = (p) => p.catch(() => null);
+  // Busy-hour safety: each read is retried once, and if it still fails the last good copy of it (kept in this tab) is shown instead of a blank card.
+  const g = async (action) => {
+    const k = 'myday:' + action, ask = () => api.get(action);
+    let r = null;
+    try { r = await ask(); } catch (e) { await new Promise((z) => setTimeout(z, 500 + Math.random() * 400)); try { r = await ask(); } catch (e2) { r = null; } }
+    try { if (r) sessionStorage.setItem(k, JSON.stringify(r)); else { const c = sessionStorage.getItem(k); if (c) r = JSON.parse(c); } } catch (e) { /* no storage: fine */ }
+    return r;
+  };
+
+  async function load() {
+    try {
+      const [me, dp, bdd, pf, att, fl, po, opl] = await Promise.all([g('dp.me'), g('dp.my_day'), g('bd.my_day'), g('proofs.my'), g('attendance.today'), g('me.flags'), g('dp.po_state'), g('of.pl_my_day')]);
+      PO = po; OPL = opl && Array.isArray(opl.places) ? opl : null; ME = me; DP = dp || { items: [], done: [], penalties: [], mode: 'shadow' }; BDD = bdd || { tasks: [], penalties: [], week: { done: 0, missed: 0 }, mode: DP.mode }; PF = pf; ATT = att; FLAGS = fl || {};
+      if (!ME) throw new Error('Your login is not linked to an employee.');
+      render(); records();
+      api.get('salary.detail').then((r) => { if (r && r.detail) { SAL = r.detail; render(); } }).catch(() => { /* commission-only staff have no monthly salary: no card */ });
+      BD.who().then((b) => { if (b.manager) $('mgr').innerHTML = '<a class="bd-btn sm" href="boss_engine.html">Boss Engine</a>'; });
+    } catch (e) { $('root').innerHTML = '<div class="bd-card"><div class="bd-empty"><b>Cannot open My Day</b>' + esc(e.message) + '</div></div>'; }
+  }
+  const hhmm = (t) => { const d = new Date(String(t).replace(' ', 'T')); return isNaN(d) ? '' : d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }); };
+  const punchedIn = () => !!(ATT && ATT.attendance && ATT.attendance.punch_in) || !!(PF && PF.punched_in);
+  const shiftStart = () => { const s = ATT && ATT.shift; return s && (s.shift_start || s.start || s.start_time) || ''; };
+
+  /* ---------------- header + month ---------------- */
+  function avatar() {
+    if (ME.photo) { try { return '<img alt="" src="' + esc(api.buildUrl('files.view', { path: ME.photo, token: api.token() })) + '" onerror="this.remove()">'; } catch (e) {} }
+    return esc((ME.first || '?').charAt(0).toUpperCase());
+  }
+  function hero() {
+    const ss = shiftStart(), pin = punchedIn();
+    const sm = ATT && ATT.shift ? (ATT.shift.mode || 'fixed') : 'fixed';
+    const chip = pin ? 'Punched in ' + esc(ATT && ATT.attendance ? hhmm(ATT.attendance.punch_in) : '') : (sm === 'hours' ? (esc(String(ATT.shift.hours_target || 8)) + ' h a day · not punched in') : (sm === 'free' ? 'Not punched in' : 'Shift ' + esc(ss || '') + ' · not punched in'));
+    return '<div class="md-hero"><div class="md-av">' + avatar() + '</div><div class="g">' + esc(ME.greeting) + ' 👋</div><h1>' + esc(ME.first) + '</h1><div class="sub">' + esc([ME.code, ME.designation].filter(Boolean).join(' · ')) + ' · ' + new Date().toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }) + '</div><span class="md-chip">' + chip + '</span></div>';
+  }
+  function perfCard() {
+    return '<div class="md-card"><div class="md-lb">How you are doing this month</div><div class="md-perf">'
+      + '<div class="' + (ME.on_time_punch == null ? '' : (ME.on_time_punch >= 90 ? 'g' : (ME.on_time_punch < 70 ? 'r' : ''))) + '"><b>' + (ME.on_time_punch == null ? '-' : ME.on_time_punch + '%') + '</b><small>on time, this month</small></div>'
+      + '<div class="' + (ME.tasks_on_time == null ? '' : (ME.tasks_on_time >= 90 ? 'g' : (ME.tasks_on_time < 70 ? 'r' : ''))) + '"><b>' + (ME.tasks_on_time == null ? '-' : ME.tasks_on_time + '%') + '</b><small>tasks on time</small></div>'
+      + '<div class="' + (ME.penalties_month > 0 ? 'r' : 'g') + '"><b>' + inr(ME.penalties_month) + '</b><small>penalties</small></div><div><b>' + ME.streak + '</b><small>days in a row</small></div></div></div>';
+  }
+
+  /* ---------------- punch gate ---------------- */
+  function punchCard() {
+    if (punchedIn() && !(PF && PF.redo)) return '';
+    if (!PF || !PF.items || !PF.items.length) return punchedIn() ? '' : punchOnly(0);
+    const items = PF.items; let firstOpen = items.findIndex((i) => !i.done);
+    const total = items.length, left = items.filter((i) => !i.done).length;
+    let h = '';
+    if (DP.punch_missed && !punchedIn()) {
+      const m = DP.punch_missed;
+      h += '<div class="md-card md-miss"><h3>Punch in missed</h3><div style="font-size:14px;line-height:1.5">The steps were not finished ' + m.grace_min + ' minutes after your shift start. Today is marked <b>late, no punch in</b>. Your boss is told.</div>'
+        + (m.pen_amount > 0 ? '<div class="md-pen"><b>Penalty ' + inr(m.pen_amount) + '</b> · rule "Punch in missed". ' + (DP.mode !== 'live' ? 'Test period: nothing is charged yet.' : (m.rule_mode === 'auto' ? 'It is taken automatically.' : 'It waits for your boss to say yes or no.')) + '</div>' : '') + '</div>'
+        + '<div class="md-card"><div class="md-h">You can still finish and punch in</div><div class="bd-sub">Your punch in is then saved with the late time. The penalty stays.</div></div>';
+    }
+    h += '<div class="md-card"><div class="md-h">' + (punchedIn() ? 'Please redo these' : 'To punch in, do these ' + total) + '</div>';
+    items.forEach((it, i) => {
+      const cls = it.done ? 'done' : (it.redo ? 'bad' : (i === firstOpen ? 'now' : 'lock'));
+      const n = it.done ? '✓' : (it.redo ? '!' : (i + 1));
+      let body = '';
+      if (it.done) {
+        body = '<div class="s">Done' + (it.proofs && it.proofs[0] && it.proofs[0].clean_rating ? ' · clean ' + it.proofs[0].clean_rating + ' / 5' : '') + (it.proofs && it.proofs[0] && it.proofs[0].ai_note ? ' · ' + esc(it.proofs[0].ai_note) : '') + '</div>'
+          + (!punchedIn() && it.proofs && it.proofs.length ? '<div class="a"><button class="bd-btn sm" data-rm="' + it.proofs[0].proof_id + '">Take it back</button></div>' : '');
+      } else if (i === firstOpen || it.redo) {
+        body = '<div class="s">' + esc(it.instruction || 'Add the screenshot.') + '</div>'
+          + (it.redo ? '<div class="md-bad"><b>Not accepted.</b> ' + esc(it.redo_note) + '</div>' : '')
+          + (it.link_required ? '<input class="bd-in" id="lk' + it.rule_id + '" placeholder="Paste the link of the post or video you commented on" style="margin-top:9px">' : '')
+          + '<div class="a">' + (it.target_url ? '<a class="bd-btn sm" target="_blank" rel="noopener" href="' + esc(it.target_url) + '">Open today\'s ' + (it.kind === 'youtube' ? 'video' : 'reel') + '</a>' : '')
+          + (it.footwear || it.capture === 'idcard' ? '<button class="bd-btn pri sm" data-cam="' + it.rule_id + '">📷 Take live photo</button>' : '<button class="bd-btn pri sm" data-file="' + it.rule_id + '">📷 Add screenshot</button><input type="file" accept="image/*" hidden id="fi' + it.rule_id + '" data-rule="' + it.rule_id + '">') + '</div>'
+          + (it.footwear || it.capture === 'idcard' ? '<div class="bd-sub" style="margin-top:6px">Live camera only. Photos from the gallery are not accepted.</div>' : '')
+          + (it.example ? '<div class="md-thumb"><img alt="example" data-ex="' + it.rule_id + '"><span class="bd-sub">Example photo</span></div>' : '');
+      } else body = '<div class="s">Opens after the previous step.</div>';
+      h += '<div class="md-step ' + cls + '"><div class="md-n">' + n + '</div><div style="min-width:0;flex:1"><div class="t">' + esc(it.title) + (it.shots_required > 1 ? ' <span class="bd-sub">(' + it.have + ' of ' + it.shots_required + ')</span>' : '') + '</div>' + body + '</div></div>';
+    });
+    h += '</div><button class="md-go ' + (left ? '' : 'green') + '" id="punchGo" ' + (left ? 'disabled' : '') + '>' + (left ? 'Punch in · ' + left + ' step' + (left === 1 ? '' : 's') + ' left' : 'Punch in now') + '</button>';
+    if (!left) h += '<div class="bd-sub" style="text-align:center;margin-top:6px">You will take your face photo on the next screen.</div>';
+    return h;
+  }
+  function punchOnly() { return '<div class="md-card"><div class="md-h">Ready to punch in</div><button class="md-go green" id="punchGo">Punch in now</button></div>'; }
+
+  /* ---------------- tasks ---------------- */
+  const mins = (t) => (new Date(String(t.due_at).replace(' ', 'T')) - Date.now()) / 60000;
+  function bdItem(t) {
+    const done = t.status === 'done', missed = t.status === 'missed', chips = [];
+    chips.push('<span class="bd-chip' + (missed ? ' bad' : (mins(t) < 0 && !done ? ' warn' : '')) + '">' + (missed ? 'Missed · was due ' : 'Due ') + esc(t.due_label) + '</span>');
+    if (t.proof === 'photo' && !done) chips.push('<span class="bd-chip info">📷 Photo</span>');
+    if (t.proof === 'count' && !done) chips.push('<span class="bd-chip info"># Number' + (t.target_qty != null ? ' · ' + ({ min: 'at least ', max: 'at most ', any: '' }[t.cmp] || '') + t.target_qty : '') + '</span>');
+    if (t.proof === 'auto' && !done) chips.push('<span class="bd-chip info">Counted automatically' + (t.proof_value != null ? ' · ' + t.proof_value + (t.target_qty ? ' of ' + t.target_qty : '') : '') + '</span>');
+    if (t.cover_why && t.orig) chips.push('<span class="bd-chip warn">Covering for ' + esc(t.orig) + '</span>');
+    if (done && t.check_state === 'pending') chips.push('<span class="bd-chip info">Waiting for your checker</span>');
+    if (t.pen_state === 'pending') chips.push('<span class="bd-chip bad">Penalty may follow</span>');
+    return '<div class="md-item ' + (done ? 'done' : (mins(t) < 0 ? 'late' : '')) + '" data-bd="' + t.id + '"><div style="min-width:0"><div class="t">' + esc(t.title) + '</div><div class="s">' + chips.join('') + '</div></div><div class="md-tick">' + (done ? '✓' : '') + '</div></div>';
+  }
+  function dpItem(t) {
+    const late = t.due_at && new Date(String(t.due_at).replace(' ', 'T')) < Date.now();
+    const pr = t.payload && t.payload.progress && typeof t.payload.progress.total === 'number' ? t.payload.progress : null;
+    return '<a class="md-item ' + (late ? 'late' : '') + '" href="' + (((t.payload && t.payload.page) || PAGE[t.kind]) || '#') + '"><div style="min-width:0"><div class="t">' + esc(t.title) + '</div><div class="s">' + (t.detail ? esc(t.detail) + ' · ' : '') + (t.due_label ? '<span class="bd-chip' + (late ? ' warn' : '') + '">Due ' + esc(t.due_label) + '</span>' : '') + (t.pen_state === 'pending' || t.pen_state === 'applied' ? '<span class="bd-chip bad">Penalty</span>' : '') + '</div>' + (pr && pr.total ? '<div style="height:5px;border-radius:3px;background:#e6e9ee;margin-top:7px;overflow:hidden;max-width:260px"><i style="display:block;height:100%;width:' + Math.round(100 * pr.done / pr.total) + '%;background:#16945a"></i></div>' + (pr.label ? '<div class="bd-sub" style="margin-top:3px;font-weight:700">' + pr.done + ' of ' + pr.total + ' ' + esc(pr.label) + '</div>' : '') : '') + (t.payload && t.payload.note ? '<div class="bd-sub" style="margin-top:5px">' + esc(t.payload.note) + '</div>' : '') + '</div><span class="md-open">' + esc((t.payload && t.payload.btn) || 'Open') + ' ›</span></a>';
+  }
+  function tasks() {
+    if (DP.mode === 'shadow') return '<div class="md-card"><div class="md-h">Your duties</div><div class="bd-sub">Your boss is still setting up duties. When they switch it on, they show here.</div></div>';
+    const hideP = (window.OfPlace && OPL) ? OfPlace.dayHide(OPL) : {}, plc = (window.OfPlace && OPL) ? OfPlace.dayCount(OPL) : { done: 0, total: 0 };   // a place card replaces its own photo + count tasks in this list
+    const T = (BDD.tasks || []).filter((t) => !hideP[t.id]), dpOpen = DP.items || [], dpDone = DP.done || [];
+    const open = T.filter((t) => t.status === 'open'), rest = T.filter((t) => t.status !== 'open' && t.status !== 'excused');
+    const done = T.filter((t) => t.status === 'done').length + dpDone.length + plc.done, tot = T.filter((t) => t.status !== 'excused').length + dpOpen.length + dpDone.length + plc.total;
+    let h = '<div class="md-card"><div class="md-h"><span>Your work today</span><span class="bd-chip ' + (tot && done === tot ? 'ok' : '') + '">' + done + ' of ' + tot + ' done</span></div>';
+    if (!tot) h += '<div class="bd-sub">Nothing assigned today. If you expected something, ask your boss.</div>';
+    h += (plc.total ? OfPlace.dayCards(OPL) : '') + (dpOpen.length ? dpOpen.map(dpItem).join('') : '') + open.map(bdItem).join('') + dpDone.map((t) => '<div class="md-item done"><div style="min-width:0"><div class="t">' + esc(t.title) + '</div></div><div class="md-tick">✓</div></div>').join('') + rest.map(bdItem).join('');
+    if (BDD.week && (BDD.week.done || BDD.week.missed)) h += '<div class="bd-sub" style="margin-top:10px">Last 6 days: ' + BDD.week.done + ' done' + (BDD.week.missed ? ', <b style="color:#d9423b">' + BDD.week.missed + ' missed</b>' : '') + '</div>';
+    if (ME.seats && ME.seats.length) h += '<div class="bd-sub" style="margin-top:8px">Your seat' + (ME.seats.length > 1 ? 's' : '') + ': ' + ME.seats.map((s) => esc(s.title)).join(', ') + '</div>';
+    return h + '</div>';
+  }
+
+  /* ---------------- salary so far this month: earned days, minus penalties ---------------- */
+  function salaryCard() {
+    if (!SAL) return '';
+    const pen = Number(SAL.penalty_total) || 0, c = SAL.counts || {};
+    const lines = (SAL.penalties || []).slice(0, 3).map((p) => '<div class="bd-sub" style="display:flex;justify-content:space-between;gap:8px"><span>' + esc(String(p.date || '').slice(5).split('-').reverse().join('/')) + ' · ' + esc(p.title || 'Penalty') + '</span><b style="color:#d9423b">−' + inr(p.amount) + '</b></div>').join('');
+    return '<div class="md-card"><div class="md-lb">Salary so far this month</div><div class="md-perf" style="grid-template-columns:repeat(3,1fr)">'
+      + '<div><b>' + inr(SAL.earned) + '</b><small>earned so far</small></div>'
+      + '<div class="' + (pen > 0 ? 'r' : 'g') + '"><b>' + (pen > 0 ? '−' : '') + inr(pen) + '</b><small>penalties</small></div>'
+      + '<div class="g"><b>' + inr(SAL.net_pay) + '</b><small>you get so far</small></div></div>'
+      + '<div class="bd-sub" style="margin-top:8px">' + (c.present || 0) + ' days present · ' + inr(SAL.daily_rate) + ' a day (salary ÷ 30)' + (c.absent ? ' · ' + c.absent + ' absent' : '') + '</div>' + (lines ? '<div style="margin-top:6px">' + lines + '</div>' : '') + '</div>';
+  }
+
+  /* ---------------- after punch in: working time + punch out ---------------- */
+  function dayCard() {
+    const at = ATT && ATT.attendance; if (!at || !at.punch_in) return '';
+    const inT = new Date(String(at.punch_in).replace(' ', 'T'));
+    if (at.punch_out) {
+      const outT = new Date(String(at.punch_out).replace(' ', 'T')), m = Math.max(0, Math.round((outT - inT) / 60000));
+      return '<div class="md-card"><div class="md-work"><div><small>Day finished</small><b>' + Math.floor(m / 60) + ' h ' + (m % 60) + ' m</b><small>' + hhmm(at.punch_in) + ' to ' + hhmm(at.punch_out) + '</small></div><span class="bd-chip ok">Punched out</span></div></div>';
+    }
+    const m = Math.max(0, Math.floor((Date.now() - inT) / 60000));
+    const since = '<small>Working since ' + hhmm(at.punch_in) + '</small><b>' + Math.floor(m / 60) + ' h ' + (m % 60) + ' m</b>';
+    const lockedNow = !!(PO && PO.locked);
+    if (!lockedNow) {
+      const ok = PO && PO.approved ? '<div class="bd-sub" style="margin-top:8px"><b style="color:#16945a">Allowed to punch out</b> by ' + esc(PO.approved.by) + (PO.approved.at ? ' at ' + esc(PO.approved.at) : '') + '.</div>' : '<div class="bd-sub" style="margin-top:8px">All your jobs are done. Punch out asks for anything still left for the day (for example call recordings).</div>';
+      return '<div class="md-card"><div class="md-work"><div>' + since + '</div><button class="md-out" id="punchOutGo">Punch out</button></div>' + ok + '</div>';
+    }
+    // locked: the jobs of the day are not finished. The Punch Out button does not exist yet.
+    const left = (window.OfPlace && OPL) ? OfPlace.dayLeft(PO.left || [], OPL) : (PO.left || []), rq = PO.req, who = PO.hr || 'HR';
+    let ask;
+    if (rq && rq.state === 'pending') ask = '<div class="md-lockmsg wait"><b>Asked at ' + esc(rq.at) + '.</b> ' + esc(who) + ' and the Admin are told. Wait for the answer here, or call ' + esc(who) + '.</div>';
+    else ask = (rq && rq.state === 'denied' ? '<div class="md-lockmsg bad"><b>Not allowed' + (rq.by ? ' by ' + esc(rq.by) : '') + '.</b> Finish the jobs below, or call ' + esc(who) + '.</div>' : '')
+      + '<button class="bd-btn sm" id="poAsk" style="margin-top:10px">Cannot finish? Ask for punch out</button>';
+    return '<div class="md-card"><div class="md-work"><div>' + since + '</div><span class="md-lock">🔒 Punch out</span></div>'
+      + '<div class="md-lockbox"><b>Punch out opens when all your jobs are done.</b><div class="md-lockl">' + left.slice(0, 5).map((x) => '<div>• ' + esc(x.title) + (x.due ? ' <span class="bd-sub">(due ' + esc(x.due) + ')</span>' : '') + '</div>').join('') + (left.length > 5 ? '<div class="bd-sub">and ' + (left.length - 5) + ' more</div>' : '') + '</div>' + ask + '</div></div>';
+  }
+  /* The real punch screen (location, face, shoes, recordings) opens right here on top of My Day, so punching is part of the day, not another menu. */
+  function openPunch() {
+    if (document.getElementById('pnOv')) return;
+    const ov = document.createElement('div'); ov.id = 'pnOv'; ov.className = 'md-ov';
+    ov.innerHTML = '<div class="md-ovbar"><button class="bd-btn sm" id="pnX">← Back to My Day</button><span>' + (punchedIn() ? 'Punch out' : 'Punch in') + '</span></div><iframe title="Punch" allow="camera; microphone; geolocation; clipboard-write" src="attendance.html?in=sales&from=day"></iframe>';
+    document.body.appendChild(ov); document.body.style.overflow = 'hidden';
+    const wasIn = punchedIn(), wasOut = !!(ATT && ATT.attendance && ATT.attendance.punch_out);
+    let t = null;
+    const stop = () => { clearInterval(t); ov.remove(); document.body.style.overflow = ''; load(); };
+    ov.querySelector('#pnX').onclick = stop;
+    t = setInterval(async () => {
+      const a = await j(api.get('attendance.today')); const at = a && a.attendance; if (!at) return;
+      if ((!wasIn && at.punch_in) || (wasIn && !wasOut && at.punch_out)) { toast(at.punch_out && wasIn ? 'Punched out. Good work today.' : 'Punched in. Have a good day.'); stop(); }
+    }, 3000);
+  }
+
+  /* ---------------- ask for punch out (only when the jobs are not finished) ---------------- */
+  function askPunchOut() {
+    const left = (PO && PO.left) || [];
+    const m = BD.modal('<h3>Ask for punch out</h3><div class="bd-sub" style="margin-bottom:8px">' + left.length + ' job' + (left.length === 1 ? ' is' : 's are') + ' not done. ' + esc((PO && PO.hr) || 'HR') + ' and the Admin get a message and decide.</div><textarea class="bd-in" id="poT" placeholder="Why can you not finish? (short)" maxlength="200"></textarea><div class="acts"><button class="bd-btn" id="poC">Cancel</button><button class="bd-btn pri" id="poOk">Send request</button></div>');
+    m.querySelector('#poC').onclick = BD.close;
+    m.querySelector('#poOk').onclick = async () => { try { const r = await api.post('dp.po_ask', { note: m.querySelector('#poT').value }); BD.close(); toast(r.message); PO = r.state || PO; render(); } catch (e) { toast(e.message, true); } };
+  }
+  async function pollPO() { if (document.hidden || !PO || !PO.in || $('pnOv')) return; const n = await j(api.get('dp.po_state')); if (!n) return; if (JSON.stringify(n) !== JSON.stringify(PO)) { PO = n; render(); } }
+
+  /* ---------------- penalties ---------------- */
+  function penalties() {
+    const list = [];
+    (BDD.penalties || []).forEach((p) => list.push({ kind: 'bd', id: p.task_id, title: p.title, date: p.date, amount: p.amount, state: p.state, remark: p.remark }));
+    (DP.penalties || []).forEach((p) => list.push({ kind: 'dp', id: p.item_id, title: p.title, date: p.date, amount: p.amount, state: p.state, remark: p.remark }));
+    if (!list.length) return '';
+    list.sort((a, b) => String(b.date).localeCompare(String(a.date)));
+    return '<div class="md-card"><div class="md-h"><span>Penalties</span><span class="bd-sub">Last 30 days</span></div>' + list.map((p) => {
+      const st = { pending: ['Waiting for your boss', 'warn'], applied: ['Given', 'bad'], appealed: ['Appeal sent', 'info'], waived: ['Cancelled', 'ok'] }[p.state] || [p.state, ''];
+      return '<div class="md-pt"><div><b style="font-size:14px">' + esc(p.title) + '</b> <span class="bd-sub">· ' + esc(p.date) + '</span><div class="bd-sub">' + inr(p.amount) + (p.remark ? ' · ' + esc(p.remark) : '') + '</div></div><div style="display:flex;gap:6px;align-items:center"><span class="bd-chip ' + st[1] + '">' + st[0] + '</span>' + (p.state === 'pending' || p.state === 'applied' ? '<button class="bd-btn sm" data-appeal="' + p.kind + ':' + p.id + '">Not fair?</button>' : '') + '</div></div>';
+    }).join('') + '</div>';
+  }
+
+  function reportCard() { return '<a class="md-card" href="dept_fix.html?report=1" style="display:flex;justify-content:space-between;align-items:center;gap:10px;text-decoration:none;color:inherit"><div><div class="md-h" style="margin:0">Something broken or dirty?</div><div class="bd-sub">Report a problem with a photo. The boss gives it to someone to fix.</div></div><span class="md-open">Report ›</span></a>'; }
+  function tellCard() { return '<button type="button" class="md-card" id="b2Rep" style="border:0;display:flex;width:100%;text-align:left;font:inherit;cursor:pointer;justify-content:space-between;align-items:center;gap:10px;color:inherit"><div><div class="md-h" style="margin:0">Tell the boss a problem</div><div class="bd-sub">Something wrong, late or missing? Type it in your own words. Claude finds the cause and your boss decides.</div></div><span class="md-open">Report ›</span></button>'; }
+  function render() {
+    $('sub').textContent = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' });
+    const pin = punchedIn(), redo = !!(PF && PF.redo);
+    // Before punch in the day is only the punch-in steps and the Punch In button. Work, penalties and the rest open after it.
+    let body = pin && !redo
+      ? dayCard() + salaryCard() + perfCard() + tasks() + '<div id="b2MyBox"></div>' + reportCard() + tellCard() + penalties()
+      : punchCard() + '<div class="md-wait">Your work for today opens after you punch in.</div>' + (pin ? dayCard() + tasks() : '');
+    body = body.replace('class="md-card', 'class="md-card pull');   // the first card slides up over the orange header
+    $('root').innerHTML = hero() + body;
+    if (typeof B2MY !== 'undefined' && $('b2MyBox')) B2MY.mount($('b2MyBox'));
+    if ($('b2Rep')) $('b2Rep').onclick = () => B2MY.report();
+    document.querySelectorAll('img[data-ex]').forEach((im) => { const it = PF.items.find((x) => x.rule_id === Number(im.dataset.ex)); if (it && it.example) im.src = api.buildUrl('example.image', { kind: 'proof', id: it.rule_id, token: api.token() }); });
+  }
+
+  /* ---------------- My records (was "My Space"): attendance history, leave, salary, penalties, agreements. Drawn ONCE, outside #root, so the 60-second refresh never reloads the open page. ---------------- */
+  const REC = [['attendance', '⏱ Attendance', 'attendance.html', ''], ['leave', '🏖 Leave', 'leave.html', ''], ['salary', '💵 Salary', 'my_salary.html', 'has_salary'], ['penalties', '⚠ Penalties', 'my_penalties.html', ''], ['agreements', '📄 Agreements', 'my_agreements.html', '']];
+  let recDone = false, recCur = '';
+  const recVis = () => REC.filter((t) => !t[3] || (FLAGS && FLAGS[t[3]]));
+  function recShow(key, scroll) {
+    const box = $('rec'); if (!box || !box.firstChild) return;
+    const t = recVis().find((x) => x[0] === key);
+    recCur = t ? t[0] : '';
+    box.querySelectorAll('.md-recp button').forEach((b) => b.classList.toggle('on', b.dataset.t === recCur));
+    const host = box.querySelector('#recHost'); if (!host) return;
+    host.querySelectorAll('iframe').forEach((f) => { f.hidden = f.dataset.t !== recCur; });
+    host.hidden = !recCur;
+    if (t && !host.querySelector('iframe[data-t="' + t[0] + '"]')) {
+      const f = document.createElement('iframe'); f.dataset.t = t[0]; f.title = t[1]; f.setAttribute('allow', 'geolocation');
+      const l = box.querySelector('.md-recl'); l.hidden = false;
+      f.addEventListener('load', () => { l.hidden = true; });
+      f.src = t[2] + '?in=sales'; host.appendChild(f);
+    }
+    if (scroll) box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  function recFromHash() {
+    const m = /^#records(?:\/([a-z]+))?/.exec(location.hash || ''); if (!m) return false;
+    const key = m[1] || (recCur || recVis()[0] && recVis()[0][0]); recShow(key, true); return true;
+  }
+  function records() {
+    if (recDone || !FLAGS) return; recDone = true;
+    $('rec').innerHTML = '<div class="md-card"><div class="md-lb">My records</div><div class="bd-sub" style="margin-top:2px">Attendance history, leave, salary, penalties and agreements - tap one to open it here.</div>'
+      + '<div class="md-recp">' + recVis().map((t) => '<button type="button" data-t="' + t[0] + '">' + t[1] + '</button>').join('') + '</div>'
+      + '<div class="md-recf" id="recHost" hidden><div class="md-recl" hidden>Loading…</div></div></div>';
+    $('rec').querySelector('.md-recp').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; const same = b.dataset.t === recCur; recShow(same ? '' : b.dataset.t, false); try { history.replaceState(null, '', same ? location.pathname + location.search : '#records/' + b.dataset.t); } catch (er) {} };
+    window.addEventListener('hashchange', recFromHash);
+    recFromHash();
+  }
+
+  /* ---------------- events ---------------- */
+  /* a registered place (Pantry ...): one card, one job - photos, count, refill and equipment together */
+  function openPlaceCheck(zone) {
+    const pl = OPL && (OPL.places || []).find((p) => String(p.zone_id) === String(zone)); if (!pl || !window.OfPlace) return;
+    OfPlace.openCheck({ zoneId: pl.zone_id, taskId: pl.check_task_id || 0, lang: OPL.lang || 'both', camera: (title, hint, onUse) => camera(title, hint, onUse, null, true), onClose: () => load() });
+  }
+  $('root').onkeydown = (e) => { if (e.key !== 'Enter' && e.key !== ' ') return; const c = e.target.closest && e.target.closest('[data-ofp]'); if (c && e.target === c) { e.preventDefault(); openPlaceCheck(c.dataset.ofp); } };
+  $('root').onclick = async (e) => {
+    const pc = e.target.closest('[data-ofp]'); if (pc) return openPlaceCheck(pc.dataset.ofp);
+    const b = e.target.closest('button,[data-bd]'); if (!b) return;
+    if (b.dataset.bd) { const t = (BDD.tasks || []).find((x) => x.id === Number(b.dataset.bd)); if (t) openTask(t); return; }
+    if (b.id === 'punchGo' || b.id === 'punchOutGo') { if (b.id === 'punchOutGo' && PO && PO.locked) { toast('Finish your jobs first.', true); return; } openPunch(); return; }
+    if (b.id === 'poAsk') return askPunchOut();
+    if (b.dataset.file) { $('fi' + b.dataset.file).click(); return; }
+    if (b.dataset.cam) { const it = PF.items.find((x) => x.rule_id === Number(b.dataset.cam)); return camera('Take a live photo', it.instruction, (blob) => uploadProof(it, blob)); }
+    if (b.dataset.rm) { try { const r = await api.post('proofs.remove', { proof_id: Number(b.dataset.rm) }); PF = r; toast('Removed.'); render(); } catch (er) { toast(er.message, true); } return; }
+    if (b.dataset.appeal) { const [k, id] = b.dataset.appeal.split(':'); return appeal(k, Number(id)); }
+  };
+  $('root').onchange = (e) => {
+    const f = e.target.closest('input[type=file][data-rule]'); if (!f || !f.files[0]) return;
+    const it = PF.items.find((x) => x.rule_id === Number(f.dataset.rule)); uploadProof(it, f.files[0]); f.value = '';
+  };
+  async function uploadProof(it, blob) {
+    const fd = new FormData(); fd.append('rule_id', it.rule_id); fd.append('photo', blob, 'proof.jpg');
+    if (it.link_required) { const l = $('lk' + it.rule_id); if (!l || !l.value.trim()) { toast('Paste the link first.', true); return false; } fd.append('link', l.value.trim()); }
+    if (it.redo) fd.append('replace', '0');
+    try {
+      const r = await api.upload('proofs.upload', fd); PF = r; toast('Saved.'); render(); return true;
+    } catch (er) {
+      toast(er.message, true);
+      // keep the reason on screen under the step
+      const msg = er.message || 'Not accepted.'; const step = [...document.querySelectorAll('.md-step.now .s')][0];
+      if (step && !document.getElementById('lastBad')) { const d = document.createElement('div'); d.id = 'lastBad'; d.className = 'md-bad'; d.innerHTML = '<b>Not accepted.</b> ' + esc(msg) + ' Boss sees every rejected screenshot with the reason.'; step.after(d); }
+      return false;
+    }
+  }
+  function appeal(kind, id) {
+    const m = BD.modal('<h3>Tell your boss why</h3><textarea class="bd-in" id="aT" placeholder="What happened?" maxlength="400"></textarea><div class="acts"><button class="bd-btn" id="aC">Cancel</button><button class="bd-btn pri" id="aOk">Send</button></div>');
+    m.querySelector('#aC').onclick = BD.close;
+    m.querySelector('#aOk').onclick = async () => { try { const r = kind === 'dp' ? await api.post('dp.appeal', { item_id: id, note: m.querySelector('#aT').value }) : await api.post('bd.task_appeal', { task_id: id, text: m.querySelector('#aT').value }); BD.close(); toast(r.message); load(); } catch (e) { toast(e.message, true); } };
+  }
+
+  /* ---------------- duty modal + camera (from the Boss Engine My Day) ---------------- */
+  function stopCam() { if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; } }
+  function openTask(t) {
+    let head = '<div class="bd-lb">' + esc(t.section) + ' · due ' + esc(t.due_label) + '</div><h3 style="margin:6px 0 8px">' + esc(t.title) + '</h3>' + (t.why ? '<div class="bd-sub" style="margin-bottom:8px">' + esc(t.why) + '</div>' : '');
+    if (t.cover_why && t.orig) head += '<div class="bd-call warn">You are covering for <b>' + esc(t.orig) + '</b> today.</div>';
+    if (t.status === 'done') { BD.modal(head + '<div class="bd-call ok">Done' + (t.check_state === 'pending' ? '. Waiting for your checker to look at the photo.' : '.') + '</div><div class="acts"><button class="bd-btn" id="x">Close</button></div>').querySelector('#x').onclick = BD.close; return; }
+    if (t.status === 'missed') head += '<div class="bd-call bad">This was due at ' + esc(t.due_label) + '. Do it now anyway; your boss will see it was late.</div>';
+    if (t.pen_default > 0 && t.status === 'open') head += '<div class="bd-sub" style="margin-bottom:6px">If missed: a penalty of ' + inr(t.pen_default) + ' may be given.</div>';
+    if (t.proof === 'tick') {
+      const m = BD.modal(head + '<div class="acts"><button class="bd-btn" id="x">Not yet</button><button class="bd-btn go" id="ok">Mark done</button></div>');
+      m.querySelector('#x').onclick = BD.close; m.querySelector('#ok').onclick = () => sendTask(t, {}, m);
+    } else if (t.proof === 'count') {
+      const m = BD.modal(head + '<div class="bd-f"><label>' + esc(({ min: 'How many? (target ' + t.target_qty + ')', max: 'How many are left? (should be ' + (t.target_qty || 0) + ' or less)', any: 'How many?' }[t.cmp]) + (t.unit ? ' — ' + t.unit : '')) + '</label><input class="bd-in" type="number" inputmode="numeric" min="0" id="n" value="' + (t.proof_value != null ? t.proof_value : '') + '"></div><div class="acts"><button class="bd-btn" id="x">Cancel</button><button class="bd-btn go" id="ok">Save</button></div>');
+      m.querySelector('#x').onclick = BD.close; m.querySelector('#ok').onclick = () => { const v = m.querySelector('#n').value; if (v === '') return toast('Enter the number.', true); sendTask(t, { value: Number(v) }, m); };
+    } else if (t.proof === 'auto') {
+      const m = BD.modal(head + '<div class="bd-call info">The system counts this by itself' + (t.proof_value != null ? ': <b>' + t.proof_value + '</b>' + (t.target_qty ? ' of ' + t.target_qty : '') + ' so far' : '') + '. Just do the work' + (t.unit === 'flyers' ? ' and take the photos on the Flyers page' : '') + '.</div><div class="acts"><button class="bd-btn" id="x">Close</button>' + (t.unit === 'flyers' ? '<a class="bd-btn pri" href="flyers.html">Open Flyers</a>' : '') + '</div>');
+      m.querySelector('#x').onclick = BD.close;
+    } else taskCamera(t, head);
+  }
+  async function sendTask(t, extra, m, blob) {
+    const btns = m.querySelectorAll('button'); btns.forEach((b) => b.disabled = true);
+    try {
+      let r;
+      if (blob) { const fd = new FormData(); fd.append('task_id', t.id); fd.append('photo', blob, 'proof.jpg'); r = await api.upload('bd.task_submit', fd); }
+      else r = await api.post('bd.task_submit', Object.assign({ task_id: t.id }, extra));
+      if (r.retake) { btns.forEach((b) => b.disabled = false); return r; }
+      stopCam(); BD.close(); toast(r.message || 'Done.'); load(); return r;
+    } catch (e) { btns.forEach((b) => b.disabled = false); toast(e.message, true); }
+  }
+  function taskCamera(t, head, note) {
+    camera(t.title, (t.photo_prompt ? 'The photo must show: ' + t.photo_prompt : ''), null, { t, head, note });
+  }
+  /* one live-camera sheet for everything (shoe photo, ID card, duty photos). onUse(blob) returns true when accepted. */
+  function camera(title, hint, onUse, duty, fb) {   // fb = true: also offer the phone camera app when the live camera cannot start (daily place check)
+    const head = duty ? duty.head : '<h3 style="margin:0 0 8px">' + esc(title) + '</h3>';
+    const m = BD.modal(head + (hint ? '<div class="bd-call info">' + esc(hint) + '</div>' : '') + (duty && duty.note ? '<div class="bd-call bad"><b>Retake:</b> ' + esc(duty.note) + '</div>' : '')
+      + '<div class="bd-cam"><video id="vid" playsinline muted autoplay></video><img id="pv" style="display:none" alt=""><div class="msg" id="cmsg">Opening the camera…</div></div>'
+      + '<button class="bd-shot" id="shot" type="button" disabled aria-label="Take photo"></button>'
+      + (duty || fb ? '<div class="bd-sub" style="text-align:center">Camera not opening? <label style="color:#0f7a4d;font-weight:700;text-decoration:underline;cursor:pointer">Use the phone camera app<input type="file" id="file" accept="image/*" capture="environment" hidden></label></div>' : '<div class="bd-sub" style="text-align:center">Live camera only. If it does not open, allow the camera for this site.</div>')
+      + '<div class="acts"><button class="bd-btn" id="x">Cancel</button><button class="bd-btn" id="re" style="display:none">Retake</button><button class="bd-btn go" id="ok" style="display:none">Use this photo</button></div>', { sticky: true });
+    const q = (s) => m.querySelector(s); let blob = null; BD.onClose = stopCam;
+    q('#x').onclick = () => { stopCam(); BD.close(); };
+    const preview = (b) => { blob = b; stopCam(); q('#pv').src = URL.createObjectURL(b); q('#pv').style.display = 'block'; q('#vid').style.display = 'none'; q('#cmsg').style.display = 'none'; q('#shot').style.display = 'none'; q('#re').style.display = ''; q('#ok').style.display = ''; };
+    const fi = q('#file'); if (fi) fi.onchange = (e) => { if (e.target.files[0]) preview(e.target.files[0]); };
+    q('#re').onclick = () => { blob = null; q('#pv').style.display = 'none'; q('#vid').style.display = ''; q('#shot').style.display = ''; q('#re').style.display = 'none'; q('#ok').style.display = 'none'; start(); };
+    q('#ok').onclick = async () => {
+      q('#ok').textContent = 'Checking…'; q('#ok').disabled = true;
+      if (duty) { const r = await sendTask(duty.t, {}, m, blob); if (r && r.retake) { BD.close(); taskCamera(duty.t, duty.head, r.reason + ' (' + r.left + ' ' + (r.left === 1 ? 'try' : 'tries') + ' left)'); } else if (!r) { q('#ok').textContent = 'Use this photo'; q('#ok').disabled = false; } return; }
+      const ok = await onUse(blob); if (ok) { stopCam(); BD.close(); } else { q('#ok').textContent = 'Use this photo'; q('#ok').disabled = false; }
+    };
+    async function start() {
+      try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('no camera');
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } }, audio: false });
+        const v = q('#vid'); v.srcObject = stream; await v.play(); q('#cmsg').style.display = 'none'; q('#shot').disabled = false;
+      } catch (e) { q('#cmsg').innerHTML = 'The camera could not start.<br>Allow the camera for this site and try again.'; }
+    }
+    q('#shot').onclick = () => {
+      const v = q('#vid'); if (!v.videoWidth) return;
+      const c = document.createElement('canvas'); const s = Math.min(1, 1280 / Math.max(v.videoWidth, v.videoHeight)); c.width = v.videoWidth * s; c.height = v.videoHeight * s;
+      c.getContext('2d').drawImage(v, 0, 0, c.width, c.height); c.toBlob((b) => b && preview(b), 'image/jpeg', 0.85);
+    };
+    start();
+  }
+  const typing = () => { const a = document.activeElement; if (a && a.closest && a.closest('#b2MyBox') && /INPUT|TEXTAREA/.test(a.tagName)) return true; return Array.from(document.querySelectorAll('#b2MyBox input')).some((i) => (i.type === 'file' ? i.files && i.files.length : (i.type !== 'range' && i.value))); };
+  load(); setInterval(() => { if (!document.hidden && !$('bdModal') && !$('ofpOv') && !typing()) load(); }, 300000); setInterval(() => { if (!document.hidden && !$('bdModal')) pollPO(); }, 60000);   // lighter: the punch-out check every minute, the full day every 5 minutes (it reloads at once when you come back to the app)   // paused while the page is hidden; 7 requests every 2 min (was every 1 min), punch-out check every 30 s (was 20 s, even when hidden)
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && !$('bdModal') && !$('ofpOv') && !typing()) load(); });
+</script>
+</body>
+</html>

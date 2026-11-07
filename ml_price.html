@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>ML Price Check — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=4">
+<style>
+  .mp{max-width:760px;}
+  @media (max-width:820px){
+    .mp{padding:0 8px; max-width:none;}
+    .mp .sizes button{min-height:34px; padding:6px 12px;}
+    .mp .chip{min-height:38px;}
+    .mp .box input{font-size:20px;}
+    .mp .card{margin-left:0; margin-right:0;}
+  }
+  @media (max-width:380px){ .mp .res .big{font-size:23px;} }
+  .mp .in2{display:flex; gap:10px; flex-wrap:wrap;}
+  .mp .box{flex:1 1 160px; background:#fff; border:2px solid #f97316; border-radius:14px; padding:8px 12px;}
+  .mp .box label{display:block; font-size:11.5px; color:var(--muted); font-weight:700;}
+  .mp .box input{border:0; padding:2px 0; font-size:22px; font-weight:800; width:100%; background:transparent; min-height:0; box-shadow:none; outline:none;}
+  .mp .sizes{display:flex; gap:6px; flex-wrap:wrap; margin:10px 0 4px;}
+  .mp .sizes button{border:1px solid var(--line); background:#fff; border-radius:999px; padding:5px 11px; font-size:12.5px; font-weight:700; cursor:pointer; min-height:0; width:auto; color:var(--ink);}
+  .mp .sizes button.on{background:#111827; color:#fff; border-color:#111827;}
+  .mp .chips{display:flex; gap:8px; flex-wrap:wrap; margin:8px 0 14px;}
+  .mp .chip{display:inline-flex; align-items:center; gap:6px; border:1px solid var(--line); background:#fff; border-radius:999px; padding:7px 13px; font-size:13px; font-weight:700; cursor:pointer; user-select:none;}
+  .mp .chip input{width:16px; height:16px; margin:0; min-height:0; accent-color:#111827;}
+  .mp .chip.on{background:#111827; color:#fff; border-color:#111827;}
+  .mp .res{background:#fff; border:2px solid #16a34a; border-radius:16px; padding:14px 16px; margin-bottom:14px;}
+  .mp .res.lo{border-color:#dc2626;} .mp .res.na{border-color:#cbd5e1;}
+  .mp .res .big{font-size:26px; font-weight:900; color:#15803d; line-height:1.15;}
+  .mp .res.lo .big{color:#b91c1c;} .mp .res.na .big{color:#475569; font-size:18px;}
+  .mp .res .why{font-size:13px; color:#4b5563; line-height:1.55; margin-top:6px;}
+  .mp .res .up{margin-top:8px; font-size:13.5px; background:#f0fdf4; border-radius:10px; padding:8px 10px; color:#166534;}
+  .mp .warn{background:#fff7ed; border:1px solid #fed7aa; border-radius:12px; padding:10px 12px; font-size:13px; line-height:1.5; color:#9a3412; margin-bottom:14px;}
+  .mp .ext{background:#fff1f2; border:2px solid #fecdd3; border-radius:14px; padding:12px 14px; font-size:13px; line-height:1.55; margin-bottom:14px;}
+  .mp .ext .big{font-size:20px; font-weight:900; color:#be123c;}
+  .mp .ext.ok{background:#f0fdf4; border-color:#bbf7d0;} .mp .ext.ok .big{color:#15803d;}
+  .mp .wn{display:flex; gap:10px; align-items:flex-start; background:#fef2f2; border:2px solid #fca5a5; border-radius:14px; padding:11px 13px; margin-bottom:12px;}
+  .mp .wn .i{font-size:20px; line-height:1.2;} .mp .wn b{display:block; font-size:14.5px; color:#991b1b; line-height:1.5;}
+  .mp .wn small{display:block; font-size:12px; color:#b91c1c; margin-top:3px;}
+  .mp .off{background:#f1f5f9; border-radius:12px; padding:9px 12px; font-size:12.5px; color:#475569; margin-bottom:12px;}
+  .mp table{width:100%; min-width:0 !important; border-collapse:collapse; font-size:13.5px;}
+  .mp th{font-size:11px; text-transform:uppercase; letter-spacing:.03em; color:var(--muted); text-align:left; padding:8px 12px; border-bottom:1px solid var(--line); background:#fafbfc;}
+  .mp td{padding:9px 12px; border-bottom:1px solid #f0f1f3;}
+  .mp td.r, .mp th.r{text-align:right;}
+  .mp tr.me td{background:#fffbeb; font-weight:800;}
+  .mp tr.zero td{color:#9ca3af;}
+  .mp .nm{font-size:11.5px; color:var(--muted); font-weight:600; margin-left:4px;}
+  .mp tr.pick{cursor:pointer;} .mp tr.pick:hover td{background:#f8fafc;}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar">
+      <div><h1>ML Price Check</h1><div class="sub" style="font-size:12.5px; color:var(--muted); margin-top:2px;">Type the order's total ML and the customer's price — see your commission</div></div>
+    </div>
+    <div class="content">
+      <div id="alertBox"></div>
+      <div class="mp" id="mp"><div class="loading">Loading the price chart…</div></div>
+    </div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=2"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script src="assets/js/ml_slab.js?v=261103y"></script>
+<script>
+  guardPage();
+  renderSidebar('ml_price');
+
+  const inr = (v) => '₹' + Math.round(Number(v || 0)).toLocaleString('en-IN');
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const todayYmd = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+  const fmtP = (v) => String(Math.round(Number(v) * 100) / 100) + '%';
+  const root = document.getElementById('mp');
+  let CH = null;
+  // What the salesperson picked (kept for this browser only).
+  const S = { ml: 250, price: '', free: false, code: true, pre: false, hit: false };      // hit = today's target achieved → + bonus %
+  try { Object.assign(S, JSON.parse(localStorage.getItem('hrms_mlprice') || '{}')); } catch (e) { /* defaults */ }
+  const keep = () => { try { localStorage.setItem('hrms_mlprice', JSON.stringify(S)); } catch (e) { /* not kept */ } };
+
+  // Warning line (Gujarati): the max-discount rule from Commission Rules → ML price slab. Follows the % and "for" setting; hidden when off.
+  function maxWarn() {
+    const m = Number(CH.maxdisc) || 0;
+    if (!(m > 0)) return '';
+    const all = CH.maxdisc_for === 'all', r0 = CH.rows.find((r) => r.ml === 100) || CH.rows[0];
+    const cut = Math.ceil(Number(r0.p[0]) * (1 - m / 100));
+    const msg = all ? `જો ${m}% થી વધારે discount આપશો, તો એ order નું commission 0 થઈ જશે.` : `જો code નહીં હોય અને ${m}% થી વધારે discount આપશો, તો એ order નું commission 0 થઈ જશે.`;
+    return `<div class="wn"><span class="i">⚠️</span><div><b>${msg}</b><small>Example: ${r0.ml} ml chart ${inr(r0.p[0])} → ${inr(cut)} થી ઓછું = commission ₹0</small></div></div>`;
+  }
+
+  async function load() {
+    try {
+      const d = await api.get('ml_slab.get');
+      if (d.error) throw new Error(d.error);
+      CH = d.chart;
+      if (!CH || !CH.rows || !CH.rows.length) throw new Error('No price chart has been set yet.');
+      draw();
+    } catch (e) { root.innerHTML = `<div class="alert error">${esc(e.message)}</div>`; }
+  }
+
+  function draw() {
+    const sizes = CH.rows.map((r) => r.ml).filter((m) => m % 50 === 0);
+    root.innerHTML = `
+      ${maxWarn()}
+      ${MLSLAB.on(CH) ? '' : '<div class="off">The ML price slab is not switched on yet — the figures below show how it will pay once Admin switches it on.</div>'}
+      ${(CH.from || CH.to) ? `<div class="off">These rules apply to orders <b>${esc(MLSLAB.datesTxt(CH))}</b>${MLSLAB.activeOn(CH, todayYmd()) ? '' : ' — <b>not today</b>'}.</div>` : ''}
+      <div class="in2">
+        <div class="box"><label for="iMl">Total ML (bottles × size)</label><input id="iMl" type="number" inputmode="numeric" min="1" value="${esc(S.ml)}"></div>
+        <div class="box"><label for="iPr">Customer price ₹</label><input id="iPr" type="number" inputmode="numeric" min="0" placeholder="e.g. 2700" value="${esc(S.price)}"></div>
+      </div>
+      <div class="sizes">${sizes.map((m) => `<button type="button" data-ml="${m}" class="${Number(S.ml) === m ? 'on' : ''}">${m} ml</button>`).join('')}</div>
+      <div class="chips">
+        <label class="chip ${S.free ? 'on' : ''}"><input type="checkbox" id="cFree" ${S.free ? 'checked' : ''}>+ 10 ml free</label>
+        <label class="chip ${S.code ? 'on' : ''}"><input type="checkbox" id="cCode" ${S.code ? 'checked' : ''}>Code</label>
+        <label class="chip ${S.pre ? 'on' : ''}"><input type="checkbox" id="cPre" ${S.pre ? 'checked' : ''}>Prepaid</label>
+        <label class="chip ${S.hit ? 'on' : ''}"><input type="checkbox" id="cHit" ${S.hit ? 'checked' : ''}>Today's target achieved${CH && Number(CH.bonus) > 0 ? ' (+' + Number(CH.bonus) + '%)' : ''}</label>
+      </div>
+      <div id="out"></div>`;
+    const set = (k, v) => { S[k] = v; keep(); calc(); };
+    root.querySelector('#iMl').oninput = (e) => { set('ml', e.target.value); root.querySelectorAll('.sizes button').forEach((b) => b.classList.toggle('on', Number(b.dataset.ml) === Number(e.target.value))); };
+    root.querySelector('#iPr').oninput = (e) => set('price', e.target.value);
+    root.querySelectorAll('.sizes button').forEach((b) => { b.onclick = () => { root.querySelector('#iMl').value = b.dataset.ml; root.querySelector('#iMl').dispatchEvent(new Event('input')); }; });
+    [['cFree', 'free'], ['cCode', 'code'], ['cPre', 'pre'], ['cHit', 'hit']].forEach(([id, k]) => {
+      root.querySelector('#' + id).onchange = (e) => { e.target.closest('.chip').classList.toggle('on', e.target.checked); set(k, e.target.checked); };
+    });
+    calc();
+  }
+
+  // One order at a given ML and price, with the picked options.
+  const C = () => MLSLAB.preview(CH);
+  const com = (ml, price) => MLSLAB.orderCom(C(), { ml, amt: price, pre: S.pre, code: S.code ? 'X' : '' }, S.hit);
+
+  function calc() {
+    const out = document.getElementById('out');
+    const base = Number(S.ml) || 0, ml = base + (S.free ? 10 : 0), price = Number(S.price) || 0;
+    const row = MLSLAB.rowFor(CH, ml);
+    if (!(base > 0)) { out.innerHTML = '<div class="res na"><div class="big">Type the total ML</div></div>'; return; }
+    if (!row) { out.innerHTML = `<div class="res na"><div class="big">${ml} ml is not in the chart</div><div class="why">The chart covers ${CH.rows[0].ml}–${CH.rows[CH.rows.length - 1].ml} ml. Orders of other sizes earn the normal commission.</div></div>`; return; }
+    let html = '';
+    if (price > 0) {
+      const r = com(ml, price);
+      // The next higher column above this price: how much more the order would earn there.
+      const look = r.look, cols = CH.cols.map(Number);
+      let up = '';
+      for (let j = row.p.length - 1; j >= 0; j--) {
+        const p = Math.ceil(row.p[j] * (S.pre ? 1 - Number(CH.prepaid) / 100 : 1) / 10) * 10;
+        if (row.p[j] > look + 0.5) { const r2 = com(ml, p); if (r2 && r2.v > r.v + 0.5) { up = `Sell at <b>${inr(p)}</b> → ${fmtP(r2.pct)} = <b>${inr(r2.v)}</b> (+${inr(r2.v - r.v)})`; } break; }
+      }
+      html += `<div class="res ${r.pct < 2 ? 'lo' : ''}"><div class="big">${fmtP(r.pct)} = ${inr(r.v)}</div>
+        <div class="why">${r.steps.map(esc).join('<br>')}</div>${up ? `<div class="up">${up}</div>` : ''}</div>`;
+      // Extra ML by price: chart price ÷ ML = price of 1 ml; the customer's price ÷ that = ML he paid for.
+      const x = MLSLAB.extraByPrice(CH, ml, price, S.pre), r1 = (v) => Math.round(v * 10) / 10;
+      if (x) html += x.extra > 0.05
+        ? `<div class="ext"><div class="big">${r1(x.extra)} ml extra</div>Chart ${inr(x.chart)} ÷ ${ml} ml = <b>₹${x.per.toFixed(2)} per ml</b>.<br>${inr(x.look)}${S.pre ? ' (before the prepaid discount)' : ''} pays for <b>${r1(x.paid)} ml</b> → you give <b>${r1(x.extra)} ml (${inr(x.value)})</b> extra.</div>`
+        : `<div class="ext ok"><div class="big">0 ml extra</div>${inr(x.look)} is the chart price (${inr(x.chart)}) or more — nothing given extra.</div>`;
+      // Max discount: more than chart.maxdisc % off the chart price = no commission. The lowest price that still earns.
+      const maxd = Number(CH.maxdisc) || 0, maxAll = CH.maxdisc_for === 'all';
+      if (maxd > 0 && S.code && !maxAll) html += `<div class="off">With a code there is no discount limit (${r.disc}% off). Without a code, more than ${maxd}% off pays nothing.</div>`;
+      else if (maxd > 0) {
+        const minPay = Math.ceil(row.p[0] * (1 - maxd / 100));      // chart price − max % (e.g. ₹1,810 − 10% = ₹1,629), prepaid or not
+        if (r.overMax) html += `<div class="warn" style="background:#fef2f2; border-color:#fecaca; color:#991b1b;">⛔ ${inr(price)} is <b>${r.disc}% off</b> the ${ml} ml chart price (${inr(row.p[0])}) — more than the ${maxd}% max, so <b>no commission</b>. Lowest price that still earns: <b>${inr(minPay)}</b>.</div>`;
+        else html += `<div class="off">${r.disc}% off the chart price · max allowed ${maxd}% (lowest price ${inr(minPay)})</div>`;
+      }
+      if (!S.free) {
+        const rf = com(base + 10, price);
+        if (rf && rf.v < r.v - 0.5) html += `<div class="warn">⚠ Giving 10 ml free at ${inr(price)} counts as ${base + 10} ml → <b>${fmtP(rf.pct)} = ${inr(rf.v)}</b> instead of ${inr(r.v)} (−${inr(r.v - rf.v)}).</div>`;
+      }
+    } else {
+      html += '<div class="res na"><div class="big">Type the customer price</div><div class="why">Or tap a price in the list below.</div></div>';
+    }
+    // Every price of this size, with what it earns. Prepaid: the price the customer pays (after the prepaid discount).
+    const lookPrice = price > 0 ? com(ml, price).look : null;
+    const lines = row.p.map((p, j) => {
+      const pay = Math.round(p * (S.pre ? 1 - Number(CH.prepaid) / 100 : 1));
+      const r = com(ml, pay);
+      return { p, pay, j, r };
+    });
+    let meAt = -1;
+    if (lookPrice != null) { meAt = lines.findIndex((x) => lookPrice >= x.p - 0.5); if (meAt === -1) meAt = lines.length; }
+    const rowsHtml = [];
+    // Max discount line: chart price − max % (₹1,810 − 10% = ₹1,629). Every price below it pays ₹0.
+    const maxd = Number(CH.maxdisc) || 0, cut = maxd > 0 && (CH.maxdisc_for === 'all' || !S.code) ? Math.ceil(row.p[0] * (1 - maxd / 100)) : 0;
+    let cutDone = !cut;
+    const cutRow = () => { cutDone = true; const r = com(ml, cut); return `<tr class="pick" data-p="${cut}" style="outline:2px solid #fecaca; outline-offset:-2px;"><td><b>${inr(cut)}</b><span class="nm" style="color:#b91c1c;">lowest · ${maxd}% off</span></td><td class="r">${fmtP(r.pct)}</td><td class="r"><b>${inr(r.v)}</b></td></tr><tr class="zero"><td colspan="3" style="color:#b91c1c; font-weight:700;">Below ${inr(cut)} (more than ${maxd}% off) → no commission</td></tr>`; };
+    lines.forEach((x, i) => {
+      if (!cutDone && x.pay < cut) rowsHtml.push(cutRow());
+      if (i === meAt && lookPrice != null && Math.abs(lookPrice - x.p) > 0.5) rowsHtml.push(meRow(price, ml));
+      const nm = CH.names && CH.names[x.j] && !/^up to/i.test(CH.names[x.j]) ? `<span class="nm">${esc(CH.names[x.j])}</span>` : '';
+      const exact = lookPrice != null && Math.abs(lookPrice - x.p) <= 0.5;
+      rowsHtml.push(`<tr class="pick${exact ? ' me' : ''}" data-p="${x.pay}"><td>${inr(x.pay)}${nm}${exact ? ' ← you' : ''}</td><td class="r">${fmtP(x.r.pct)}</td><td class="r"><b>${inr(x.r.v)}</b></td></tr>`);
+    });
+    if (!cutDone) rowsHtml.push(cutRow());
+    if (meAt === lines.length && lookPrice != null) rowsHtml.push(meRow(price, ml));
+    { const lp = lines[lines.length - 1].pay, lr = Number(CH.floor) > 0 ? com(ml, lp - 1) : null;      // lowest % (2.8%): every price below the last column
+      rowsHtml.push(lr && lr.pct > 0 ? `<tr class="zero" style="color:#166534;"><td>below ${inr(lp)} <span class="nm">lowest · any price</span></td><td class="r">${fmtP(lr.pct)}</td><td class="r">${fmtP(lr.pct)} of the price</td></tr>` : `<tr class="zero"><td>below ${inr(lp)}</td><td class="r">0%</td><td class="r">₹0</td></tr>`); }
+    html += `<div class="card" style="padding:0; overflow:hidden;"><div class="card-head" style="padding:12px 14px;"><h2 style="font-size:15px;">${ml} ml prices${row.how.indexOf('between') === 0 ? ' <span style="font-weight:500; font-size:12px; color:var(--muted);">(' + esc(row.how) + ')</span>' : ''}</h2><span style="font-size:12px; color:var(--muted);">${S.code ? 'with code' : 'no code'}${S.hit ? ' · target achieved' : ''}${S.pre ? ' · prepaid' : ''}</span></div>
+      <div style="overflow-x:auto;"><table class="no-stack"><thead><tr><th>Price</th><th class="r">%</th><th class="r">You earn</th></tr></thead><tbody>${rowsHtml.join('')}</tbody></table></div></div>`;
+    out.innerHTML = html;
+    out.querySelectorAll('tr.pick').forEach((tr) => { tr.onclick = () => { const v = tr.dataset.p; root.querySelector('#iPr').value = v; S.price = v; keep(); calc(); window.scrollTo({ top: 0, behavior: 'smooth' }); }; });
+  }
+  function meRow(price, ml) { const r = com(ml, price); return `<tr class="me"><td>${inr(price)} ← you</td><td class="r">${fmtP(r.pct)}</td><td class="r">${inr(r.v)}</td></tr>`; }
+
+  load();
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>

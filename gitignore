@@ -1,0 +1,3 @@
+# Secrets - never commit these (the Gemini key lives here)
+.env
+config.php

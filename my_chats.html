@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0f6e7e">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Chats">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>My Chats</title>
+<style>html,body{margin:0;height:100%;background:#f4f6fa;font-family:Inter,"Segoe UI",system-ui,-apple-system,Arial,sans-serif;-webkit-text-size-adjust:100%}#wa{height:100%}</style>
+</head>
+<body>
+<!-- The WhatsApp chat app for salespeople. Standalone on purpose: no sidebar, no My Day / punch banners (they live on their own pages). -->
+<div id="wa"></div>
+<script src="assets/js/config.js?v=2"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/wa_icons.js?v=i1"></script>
+<script>if (!api.token()) location.href = 'index.html';</script>
+<script src="assets/js/cx_raise.js?v=cx9"></script>
+<script src="assets/js/wa_prod_ui.js?v=pr4"></script>
+<script src="assets/js/wa_app.js?v=q53"></script>
+<script>WaApp.start(document.getElementById('wa'));</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>

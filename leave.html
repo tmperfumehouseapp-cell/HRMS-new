@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>My Leave — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=4">
+<style>
+  .grid{display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.25fr); gap:16px; align-items:start;}
+  @media (max-width:900px){ .grid{grid-template-columns:minmax(0,1fr);} }
+  .pad{padding:4px 22px 22px;}
+  .sub{color:var(--muted); font-size:13px;}
+  .tiles{display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:16px;}
+  .tile{background:#fff; border-radius:22px; padding:14px 16px; box-shadow:var(--shadow);}
+  .tile .l{font-size:12px; font-weight:600; color:var(--muted);} .tile .v{font-size:26px; font-weight:800; letter-spacing:-.02em; margin-top:2px;}
+  .tile .v small{font-size:13px; font-weight:600; color:var(--muted); margin-left:3px;}
+  .tile.g .v{color:var(--ok-fg);} .tile.o .v{color:var(--accent-dark);}
+  /* type chooser */
+  .types{display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:16px;}
+  .types label{position:relative; display:block; cursor:pointer; margin:0;}
+  .types input{position:absolute; opacity:0; pointer-events:none;}
+  .types span{display:block; text-align:center; padding:11px 6px; border:1.5px solid var(--line); border-radius:16px; font-size:13px; font-weight:700; background:#fff;}
+  .types span small{display:block; font-weight:500; color:var(--muted); font-size:11px; margin-top:1px;}
+  .types input:checked + span{border-color:var(--accent); background:#fff4ec; color:var(--accent-dark);}
+  .types input:focus-visible + span{outline:2px solid var(--accent); outline-offset:2px;}
+  .days-chip{display:flex; align-items:center; justify-content:space-between; gap:10px; background:#f6f7f9; border-radius:16px; padding:10px 14px; font-size:13px; margin-bottom:16px;}
+  .days-chip b{font-size:15px;} .days-chip .warn{color:#b45309; font-weight:600; font-size:12px; text-align:right;} .days-chip .warn.ok{color:var(--ok-fg);}
+  textarea{min-height:76px; resize:vertical;}
+  /* request rows */
+  .req{display:flex; gap:14px; align-items:flex-start; padding:14px 22px; border-top:1px solid var(--line);}
+  .req:first-child{border-top:0;}
+  .req .dt{flex:none; width:54px; text-align:center; background:#f6f7f9; border-radius:14px; padding:7px 0; line-height:1.1;}
+  .req .dt b{display:block; font-size:19px;} .req .dt span{font-size:11px; font-weight:700; text-transform:uppercase; color:var(--muted); letter-spacing:.04em;}
+  .req .mid{flex:1; min-width:0;} .req .mid .t{font-weight:700; font-size:14px;} .req .mid .r{color:var(--muted); font-size:12.5px; margin-top:2px; overflow-wrap:anywhere;}
+  .req .end{flex:none; text-align:right; display:flex; flex-direction:column; align-items:flex-end; gap:6px;}
+  .pill{display:inline-block; padding:3px 11px; border-radius:999px; font-size:11.5px; font-weight:700;}
+  .p-pend{background:#fff4e0; color:#b45309;} .p-ok{background:var(--ok-bg); color:var(--ok-fg);} .p-no{background:var(--bad-bg); color:var(--bad-fg);}
+  .link{background:none; border:0; padding:0; min-height:0; width:auto; color:var(--bad-fg); font-size:12px; font-weight:600; cursor:pointer;}
+  .note{background:#f6f7f9; border-radius:12px; padding:6px 10px; font-size:12px; margin-top:7px; color:#3a3f4a;}
+  .empty{padding:28px 22px; text-align:center; color:var(--muted); font-size:13px;}
+  /* admin */
+  .seg{display:flex; gap:6px; flex-wrap:wrap;}
+  .seg button{background:#fff; color:var(--ink); border:1px solid var(--line); padding:8px 14px; border-radius:999px; font-size:13px; font-weight:600; cursor:pointer; width:auto; min-height:0;}
+  .seg button b{margin-left:4px; font-size:12px; color:var(--muted);} .seg button.on{background:var(--navy-900); border-color:var(--navy-900); color:#fff;} .seg button.on b{color:#cbd0d8;}
+  .seg button.hot b{background:#e02424; color:#fff; border-radius:9px; padding:0 7px;}
+  .acard{padding:16px 22px; border-top:1px solid var(--line);} .acard:first-child{border-top:0;}
+  .ahead{display:flex; align-items:center; gap:12px; flex-wrap:wrap;}
+  .av{width:40px; height:40px; border-radius:50%; background:linear-gradient(135deg,#ff9a5a,#ff7a2f); color:#fff; font-weight:800; display:flex; align-items:center; justify-content:center; flex:none;}
+  .ahead .nm{font-weight:700;} .ahead .nm small{display:block; font-weight:500; color:var(--muted); font-size:12px;}
+  .ahead .sp{margin-left:auto;}
+  .abody{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px 18px; margin:12px 0 4px; font-size:13px;}
+  .abody .k{font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--muted);} .abody .vv{font-weight:600; margin-top:1px;}
+  .reason{background:#f6f7f9; border-radius:14px; padding:9px 12px; font-size:13px; margin-top:8px;}
+  .flag{display:inline-flex; align-items:center; gap:6px; margin-top:8px; font-size:12px; font-weight:600; color:#b45309; background:#fff4e0; padding:4px 10px; border-radius:999px;}
+  .flag.ok{color:var(--ok-fg); background:var(--ok-bg);}
+  .acts{display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; align-items:center;}
+  .acts input{flex:1; min-width:150px; border-radius:999px; padding:9px 14px; font-size:13px; border:1px solid var(--line);}
+  .btn.sm{width:auto; padding:9px 18px; font-size:13px; min-height:0;}
+  .btn.ok{background:var(--ok-fg);} .btn.ok:hover{background:#12804e;}
+  .btn.no{background:#fff; color:var(--bad-fg); border:1px solid #f3c7c3;} .btn.no:hover{background:var(--bad-bg);}
+  .toast{position:fixed; left:50%; bottom:22px; transform:translateX(-50%); background:var(--navy-900); color:#fff; padding:11px 20px; border-radius:999px; font-size:13px; font-weight:600; opacity:0; pointer-events:none; transition:opacity .2s;}
+  .toast.show{opacity:1;}
+  @media (max-width:560px){
+    .tiles{gap:8px;} .tile{padding:12px;} .tile .v{font-size:22px;}
+    .req{padding:12px 16px;} .pad{padding:4px 16px 18px;} .acard{padding:14px 16px;}
+    .types span{font-size:12.5px; padding:10px 4px;}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><h1>My Leave</h1></div>
+    <div class="content">
+      <div id="alertBox"></div>
+      <div class="tiles">
+        <div class="tile g"><div class="l">Free leave left</div><div class="v" id="tFree">—</div></div>
+        <div class="tile o"><div class="l">Pending</div><div class="v" id="tPend">—</div></div>
+        <div class="tile"><div class="l">Taken this month</div><div class="v" id="tTaken">—</div></div>
+      </div>
+      <div class="grid">
+        <div class="card">
+          <div class="card-head"><h2>Apply for leave</h2></div>
+          <form class="pad" id="frm" autocomplete="off">
+            <div class="types">
+              <label><input type="radio" name="type" value="leave" checked><span>Full day<small>Leave</small></span></label>
+              <label><input type="radio" name="type" value="half_leave"><span>Half day<small>Half leave</small></span></label>
+              <label><input type="radio" name="type" value="wfh"><span>Work from home<small>WFH</small></span></label>
+            </div>
+            <div class="field-grid">
+              <div class="field"><label for="dFrom">From</label><input type="date" id="dFrom"></div>
+              <div class="field"><label for="dTo">To</label><input type="date" id="dTo"></div>
+            </div>
+            <div class="days-chip"><span>Total <b id="nDays">—</b></span><span class="warn" id="warn"></span></div>
+            <div class="field"><label for="why">Reason</label><textarea id="why" maxlength="400" placeholder="Why do you need leave?"></textarea></div>
+            <button class="btn block" type="submit" id="btnSend">Send request</button>
+            <div class="sub" style="margin-top:10px; text-align:center;">Admin will approve or reject. Approved days are marked on your attendance automatically.</div>
+          </form>
+        </div>
+        <div class="card">
+          <div class="card-head"><h2>My requests</h2></div>
+          <div id="myList"><div class="empty">Loading...</div></div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="assets/js/config.js?v=2"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script>
+  guardPage();
+  renderSidebar('leave');
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const D = (s) => new Date(s + 'T00:00:00');
+  const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const fmt = (s) => { const d = D(s); return d.getDate() + ' ' + MON[d.getMonth()]; };
+  const TYPE = { leave: 'Full day leave', half_leave: 'Half day leave', wfh: 'Work from home' };
+  const dstr = (n) => (Number(n) === 1 ? '1 day' : Number(n) + ' days');
+  const range = (r) => fmt(r.date_from) + (r.date_to !== r.date_from ? ' → ' + fmt(r.date_to) : '');
+  function toast(t, bad) { const el = $('toast'); el.textContent = t; el.style.background = bad ? '#b42318' : ''; el.classList.add('show'); clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove('show'), 2600); }
+  let S = { today: '', month: '', free_total: 0, used: {}, requests: [] };
+  const typ = () => document.querySelector('input[name=type]:checked').value;
+  const spanDays = (t, f, to) => t === 'half_leave' ? 0.5 : Math.round((D(to) - D(f)) / 864e5) + 1;
+
+  function calc() {
+    const t = typ(), f = $('dFrom').value;
+    if (t === 'half_leave') { $('dTo').value = f; $('dTo').disabled = true; } else $('dTo').disabled = false;
+    const to = $('dTo').value;
+    $('warn').classList.remove('ok');
+    if (!f || !to) { $('nDays').textContent = '—'; $('warn').textContent = ''; return null; }
+    if (D(to) < D(f)) { $('nDays').textContent = '—'; $('warn').textContent = 'End date is before start'; return null; }
+    const n = spanDays(t, f, to);
+    $('nDays').textContent = dstr(n);
+    if (t === 'wfh') { $('warn').classList.add('ok'); $('warn').textContent = 'No leave deducted'; return n; }
+    const m = f.slice(0, 7), left = Math.max(0, S.free_total - (S.used[m] || 0));
+    const over = n - left;
+    $('warn').classList.toggle('ok', over <= 0);
+    $('warn').textContent = over <= 0 ? 'Within free leave' : (over % 1 ? over : Math.round(over)) + (over === 1 ? ' day' : ' days') + ' beyond free leave — salary cut';
+    return n;
+  }
+  document.querySelectorAll('input[name=type]').forEach((i) => i.addEventListener('change', calc));
+  $('dFrom').addEventListener('change', () => { if (!$('dTo').value || D($('dTo').value) < D($('dFrom').value)) $('dTo').value = $('dFrom').value; calc(); });
+  $('dTo').addEventListener('change', calc);
+
+  const fmtN = (n) => (n % 1 ? n.toFixed(1) : String(n));
+  function paint() {
+    const left = Math.max(0, S.free_total - (S.used[S.month] || 0));
+    $('tFree').innerHTML = fmtN(left) + '<small>' + (left === 1 ? 'day' : 'days') + '</small>';
+    $('tPend').textContent = S.requests.filter((r) => r.status === 'pending').length;
+    $('tTaken').innerHTML = fmtN(S.taken || 0) + '<small>' + (S.taken === 1 ? 'day' : 'days') + '</small>';
+    $('myList').innerHTML = S.requests.length ? S.requests.map((r) => {
+      const d = D(r.date_from);
+      const pill = r.status === 'pending' ? '<span class="pill p-pend">Pending</span>' : r.status === 'approved' ? '<span class="pill p-ok">Approved</span>' : '<span class="pill p-no">Rejected</span>';
+      return `<div class="req">
+        <div class="dt"><b>${d.getDate()}</b><span>${MON[d.getMonth()]}</span></div>
+        <div class="mid"><div class="t">${TYPE[r.leave_type] || esc(r.leave_type)} · ${dstr(r.days)}</div>
+          <div class="r">${range(r)} — ${esc(r.reason)}</div>
+          ${r.status !== 'pending' && r.admin_note ? `<div class="note"><b>${esc(r.decided_by || 'Admin')}:</b> ${esc(r.admin_note)}</div>` : ''}</div>
+        <div class="end">${pill}${r.status === 'pending' ? `<button type="button" class="link" data-c="${r.leave_id}">Cancel</button>` : ''}</div></div>`;
+    }).join('') : '<div class="empty">No requests yet.</div>';
+    calc();
+  }
+
+  async function load() {
+    try {
+      const d = await api.get('leave.my');
+      S = d;
+      if (!$('dFrom').value) { $('dFrom').value = d.today; $('dTo').value = d.today; }
+      $('dFrom').min = d.today; $('dTo').min = d.today;
+      paint();
+    } catch (err) {
+      $('myList').innerHTML = '<div class="empty">Could not load.</div>';
+      $('alertBox').innerHTML = `<div class="alert error">${esc(err.message)}</div>`;
+    }
+  }
+  $('frm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (calc() === null) { toast('Check the dates', true); return; }
+    if (!$('why').value.trim()) { toast('Please add a reason', true); $('why').focus(); return; }
+    const b = $('btnSend'); b.disabled = true;
+    try {
+      const r = await api.post('leave.apply', { type: typ(), from: $('dFrom').value, to: $('dTo').value, reason: $('why').value.trim() });
+      $('why').value = ''; toast(r.message || 'Request sent'); await load();
+    } catch (err) { toast(err.message, true); }
+    b.disabled = false;
+  });
+  $('myList').addEventListener('click', async (e) => {
+    const c = e.target.dataset.c; if (!c) return;
+    if (!confirm('Cancel this leave request?')) return;
+    try { await api.post('leave.cancel', { leave_id: Number(c) }); toast('Request cancelled'); } catch (err) { toast(err.message, true); }
+    load();
+  });
+  load();
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>

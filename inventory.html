@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Inventory — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=260928b">
+<link rel="stylesheet" href="assets/css/store.css?v=6">
+<style>
+  .tabs2{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}.tabs2 button{border:1px solid var(--sx-line);background:#fff;border-radius:999px;padding:8px 15px;font:700 13px inherit;cursor:pointer;color:#4a505c}.tabs2 button.on{background:var(--sx-ink);color:#fff;border-color:var(--sx-ink)}
+  .bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}.bar .sp{flex:1}.bar select,.bar input{width:auto;min-height:36px;padding:5px 12px;font-size:13px;border-radius:999px;border:1px solid var(--sx-line);background:#f6f7f9}.bar input.grow{flex:1;min-width:170px}
+  .g{display:grid;gap:12px}.g4{grid-template-columns:repeat(4,minmax(0,1fr))}.g3{grid-template-columns:repeat(3,minmax(0,1fr))}.g2{grid-template-columns:repeat(2,minmax(0,1fr))}.g21{grid-template-columns:minmax(0,2fr) minmax(0,1fr)}
+  @media (max-width:1000px){.g4,.g3{grid-template-columns:repeat(2,minmax(0,1fr))}.g21{grid-template-columns:minmax(0,1fr)}}@media (max-width:640px){.g4,.g3,.g2{grid-template-columns:minmax(0,1fr)}}
+  .tbl{width:100%;border-collapse:collapse;font-size:13px}.tbl th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--sx-mut);padding:8px 8px;border-bottom:1px solid var(--sx-line);white-space:nowrap;font-weight:800}.tbl td{padding:9px 8px;border-bottom:1px solid var(--sx-line);vertical-align:middle}.tbl tr:last-child td{border-bottom:0}.tbl tbody tr.cl{cursor:pointer}.tbl tbody tr.cl:hover{background:#f6f7f9}
+  .num{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}.sc{overflow-x:auto}
+  .pill{display:inline-flex;align-items:center;border-radius:999px;padding:2px 10px;font-size:11.5px;font-weight:800;white-space:nowrap}.pill.ok{background:var(--sx-good-t);color:var(--sx-good)}.pill.warn{background:var(--sx-warn-t);color:var(--sx-warn)}.pill.bad{background:var(--sx-bad-t);color:var(--sx-bad)}.pill.info{background:var(--sx-blue-t);color:var(--sx-blue)}.pill.mut{background:#eef0f3;color:#6b7280}
+  .meter{height:8px;border-radius:6px;background:#e6e8ec;overflow:hidden;min-width:70px;position:relative}.meter i{display:block;height:100%;border-radius:6px}.meter b{position:absolute;top:-2px;bottom:-2px;width:2px;background:#14161a;opacity:.5}
+  .hero{position:relative;overflow:hidden;border-radius:26px;color:#fff;padding:clamp(16px,2.2vw,26px);margin-bottom:14px;background:radial-gradient(900px 260px at 92% -30%,rgba(255,122,47,.65),transparent 62%),radial-gradient(500px 220px at 0% 120%,rgba(98,80,214,.45),transparent 60%),linear-gradient(135deg,#14161a,#22262e)}
+  .hero .k{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;opacity:.75}.hero h2{font-size:24px;margin:4px 0;font-weight:800;letter-spacing:-.02em}.hero p{margin:0;opacity:.8}
+  .hero .nums{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-top:14px}.hero .nums>div{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.13);border-radius:16px;padding:9px 13px}.hero .l{font-size:11.5px;opacity:.7;font-weight:600}.hero .v{font-size:23px;font-weight:700;font-variant-numeric:tabular-nums}
+  .btn{border:1.5px solid var(--sx-ink);background:#fff;color:var(--sx-ink);border-radius:999px;padding:7px 15px;font:700 13px inherit;cursor:pointer;display:inline-flex;gap:6px;align-items:center;min-height:36px;text-decoration:none}.btn:hover{background:#f4f5f7}.btn.pri{background:var(--sx-ink);color:#fff}.btn.sm{padding:3px 11px;min-height:28px;font-size:12px}.btn.wa{background:#e3f6ea;border-color:#bfe6cd;color:#17703d}.btn.warn{border-color:var(--sx-bad);color:var(--sx-bad)}.btn[disabled]{opacity:.45;cursor:default}
+  .hero .btn{background:rgba(255,255,255,.12);color:#fff;border-color:rgba(255,255,255,.4)}.hero .btn.go{background:var(--sx-accent);border-color:var(--sx-accent)}
+  .al{display:flex;gap:12px;padding:11px 13px;border-radius:16px;background:#f6f7f9;align-items:flex-start}.al .d{width:10px;height:10px;border-radius:50%;margin-top:5px;flex:none;background:var(--sx-blue)}.al.bad{background:var(--sx-bad-t)}.al.bad .d{background:var(--sx-bad)}.al.warn{background:var(--sx-warn-t)}.al.warn .d{background:var(--sx-warn)}.al b{display:block}.al span{color:var(--sx-mut);font-size:13px}.al .a{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+  .stack{display:grid;gap:9px}.eq{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:9px}.eq>div{background:#f6f7f9;border-radius:14px;padding:9px 12px}.eq .l{font-size:11.5px;color:var(--sx-mut);font-weight:700}.eq .v{font-size:19px;font-weight:700;font-variant-numeric:tabular-nums}
+  .note{font-size:12px;color:var(--sx-mut)}.empty{padding:22px;text-align:center;color:var(--sx-mut)}
+  .fld{display:grid;gap:4px;margin-bottom:9px}.fld label{font-size:12px;font-weight:800;color:var(--sx-mut)}.fld input,.fld select,.fld textarea{width:100%;border:1px solid var(--sx-line);border-radius:12px;padding:9px 12px;font:inherit;background:#fff}.fr{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+  .lc{background:#f6f7f9;border-radius:16px;padding:10px 12px;margin-bottom:9px}.lc input,.lc select{border:1px solid var(--sx-line);border-radius:10px;padding:7px 9px;font:inherit;min-width:0;width:100%;background:#fff}
+  .lc .lr{display:flex;gap:6px;margin-bottom:7px;align-items:center}.lc .lr input{flex:2 1 0}.lc .lr select{flex:1.2 1 0}.lc .lr .btn{flex:0 0 34px;padding:0;justify-content:center}
+  .lc .l4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}.lc .l4 label{display:block;font-size:11px;font-weight:800;color:var(--sx-mut);margin-bottom:2px}
+  @media (max-width:560px){.lc .l4{grid-template-columns:repeat(2,minmax(0,1fr))}.lc .lr{flex-wrap:wrap}.lc .lr input{flex:1 1 60%}.lc .lr select{flex:1 1 100%;order:3}}
+  .lc .auto{font-size:12px;color:var(--sx-mut);margin-top:6px}.lc .auto b{color:#14161a}.lc .cust{background:var(--sx-warn-t);color:var(--sx-warn);border-radius:99px;padding:1px 9px;font-weight:800;font-size:11px;margin-left:6px}
+  .ov{position:fixed;inset:0;background:rgba(20,22,26,.42);opacity:0;pointer-events:none;transition:opacity .18s;z-index:40}.ov.on{opacity:1;pointer-events:auto}
+  .dr{position:fixed;top:0;right:0;bottom:0;width:min(520px,96vw);background:var(--sx-bg);z-index:41;display:flex;flex-direction:column;transform:translateX(104%);transition:transform .22s cubic-bezier(.2,.8,.2,1);box-shadow:-18px 0 50px rgba(20,22,26,.22);border-radius:26px 0 0 26px}.dr.on{transform:none}@media (max-width:640px){.dr{border-radius:0}}
+  .dr-h{display:flex;align-items:center;gap:10px;padding:12px 16px;background:#fff;border-radius:26px 0 0 0;box-shadow:0 1px 0 var(--sx-line)}@media (max-width:640px){.dr-h{border-radius:0}}.dr-h b{font-size:16px;flex:1}.dr-x{border:0;background:var(--sx-bg);width:34px;height:34px;border-radius:50%;font-size:20px;cursor:pointer}
+  .dr-b{flex:1;overflow-y:auto;padding:12px 14px;display:grid;gap:10px;align-content:start}.dr-f{padding:10px 14px calc(12px + env(safe-area-inset-bottom));background:#fff;box-shadow:0 -1px 0 var(--sx-line);display:flex;gap:8px;flex-wrap:wrap}
+  .msg{background:#f6f7f9;border-radius:14px;padding:11px 13px;white-space:pre-wrap;font-size:13px}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--sx-mut)}.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px}
+  svg text{font-size:10.5px;fill:#6f7480}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><div><h1>Inventory</h1><div class="sub" style="font-size:12.5px;color:var(--muted);margin-top:2px">Oils, perfumes, orders and dealers: what you have, what you need, what will be late</div></div></div>
+    <div class="content"><div class="sx-page"><div class="tabs2" id="tabs"></div><div id="root"><div class="sx-card sx-mut">Loading…</div></div></div></div>
+  </main>
+</div>
+<div class="ov" id="ov"></div>
+<aside class="dr" id="dr" aria-hidden="true"><div class="dr-h"><b id="drT"></b><button class="dr-x" id="drX" aria-label="Close">×</button></div><div class="dr-b" id="drB"></div><div class="dr-f" id="drF"></div></aside>
+<datalist id="pdl"></datalist>
+<script src="assets/js/config.js?v=4"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script>
+  guardPage();
+  renderSidebar('iv_dash');
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const fmt = (n, d = 0) => Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: d, minimumFractionDigits: d });
+  const inr = (n) => '₹' + fmt(n);
+  const dS = (d) => d ? new Date(String(d).slice(0, 10) + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) : '';
+  const EMB = /[?&]in=/.test(location.search);
+  if (window.self !== window.top) { const st = document.createElement('style'); st.textContent = '.topbar{display:none!important}'; document.head.appendChild(st); }   // inside the Inventory workspace the workspace draws the title
+  const VIEWS = [['dashboard', 'Dashboard'], ['oils', 'Oil stock'], ['perfumes', 'Perfumes'], ['calc', 'Oil calculator'], ['orders', 'Orders'], ['dealers', 'Dealers'], ['alerts', 'Alerts'], ['reports', 'Reports']];
+  const view = () => { const v = (location.hash || '').slice(1).split('?')[0]; return VIEWS.some((x) => x[0] === v) ? v : 'dashboard'; };
+  const G = (a, p) => api.get(a, p || {});
+  const P = (a, b) => api.post(a, b || {});
+  let OPT = null, CUR = 'dashboard';
+  const opts = async (force) => { if (!OPT || force) { OPT = await G('iv.options'); $('pdl').innerHTML = OPT.perfumes.map((p) => '<option value="' + esc(p.name) + ' (' + esc(p.code) + ')">').join(''); } return OPT; };
+  const perfId = (txt) => { const t = String(txt || '').trim().toLowerCase(); if (!t || !OPT) return 0; const hit = OPT.perfumes.find((p) => (p.name + ' (' + p.code + ')').toLowerCase() === t) || OPT.perfumes.find((p) => p.code.toLowerCase() === t) || OPT.perfumes.find((p) => p.name.toLowerCase() === t); return hit ? hit.id : 0; };
+  const toast = (m, bad) => { const t = document.createElement('div'); t.textContent = m; t.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:' + (bad ? '#d9423b' : '#14161a') + ';color:#fff;padding:11px 18px;border-radius:99px;font-weight:700;z-index:60;max-width:92vw'; document.body.appendChild(t); setTimeout(() => t.remove(), bad ? 4200 : 2200); };
+  const fail = (e) => toast(e && e.message ? e.message : 'Something went wrong', true);
+
+  /* ---------- drawer ---------- */
+  const openDr = (t, b, f) => { $('drT').textContent = t; $('drB').innerHTML = b; $('drF').innerHTML = f || ''; $('drF').style.display = f ? '' : 'none'; $('dr').classList.add('on'); $('ov').classList.add('on'); $('dr').setAttribute('aria-hidden', 'false'); };
+  const closeDr = () => { $('dr').classList.remove('on'); $('ov').classList.remove('on'); $('dr').setAttribute('aria-hidden', 'true'); };
+  $('drX').onclick = closeDr; $('ov').onclick = closeDr; document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDr(); });
+
+  const stPill = (s) => ({ out: '<span class="pill bad">Out of stock</span>', low: '<span class="pill bad">Below minimum</span>', watch: '<span class="pill warn">Running down</span>', ok: '<span class="pill ok">Healthy</span>' }[s]);
+  const meter = (o) => { const max = Math.max(o.min_ml * 3, o.stock_ml, 1), pc = Math.min(100, o.stock_ml / max * 100); const col = { out: '#d9423b', low: '#d9423b', watch: '#b45309', ok: '#16945a' }[o.status]; return '<div class="meter" title="' + fmt(o.stock_ml) + ' ml, minimum ' + fmt(o.min_ml) + ' ml"><i style="width:' + pc + '%;background:' + col + '"></i><b style="left:' + Math.min(98, o.min_ml / max * 100) + '%"></b></div>'; };
+  const alertHtml = (a) => {
+    const acts = [];
+    if (a.oil_id && ['out', 'low', 'predict', 'overdue'].includes(a.type)) acts.push('<button class="btn sm wa" data-wa="' + a.oil_id + '"' + (a.buy_ml ? ' data-q="' + a.buy_ml + '"' : '') + '>WhatsApp dealer</button>');
+    if (a.oil_id && a.buy_ml) acts.push('<button class="btn sm" data-po="' + a.oil_id + '" data-q="' + a.buy_ml + '">Create purchase</button>');
+    if (a.type === 'late') { acts.push('<button class="btn sm" data-cm="' + a.order_id + '">Message customer</button>'); acts.push('<a class="btn sm" href="#orders">See order</a>'); }
+    if (a.type === 'overdue' || a.type === 'payment') acts.push('<a class="btn sm" href="#dealers">Open dealers</a>');
+    return '<div class="al ' + a.sev + '"><span class="d"></span><div><b>' + esc(a.title) + '</b><span>' + esc(a.text) + '</span></div><div class="a">' + acts.join('') + '</div></div>';
+  };
+
+  /* ---------- router ---------- */
+  function tabs() { $('tabs').style.display = EMB ? 'none' : ''; $('tabs').innerHTML = VIEWS.map((v) => '<button type="button" data-t="' + v[0] + '" class="' + (CUR === v[0] ? 'on' : '') + '">' + v[1] + '</button>').join(''); }
+  $('tabs').onclick = (e) => { const b = e.target.closest('button'); if (b) location.hash = '#' + b.dataset.t; };
+  async function route() {
+    CUR = view(); tabs(); $('root').innerHTML = '<div class="sx-card sx-mut">Loading…</div>';
+    try { await opts(); await ({ dashboard: vDash, oils: vOils, perfumes: vPerf, calc: vCalc, orders: vOrders, dealers: vDealers, alerts: vAlerts, reports: vReports }[CUR])(); }
+    catch (e) { $('root').innerHTML = '<div class="sx-card"><div class="sx-msg bad"><span>' + esc(e.message) + '</span></div></div>'; }
+  }
+  window.addEventListener('hashchange', route);
+  const redo = () => route();
+
+  /* ---------- dashboard ---------- */
+  async function vDash() {
+    const d = await G('iv.dash'), k = d.kpi, c = k.counts;
+    const donut = (() => { const R = 54, C = 2 * Math.PI * R, tot = Math.max(1, k.oils); let a = 0, s = ''; [['ok', '#16945a'], ['watch', '#b45309'], ['low', '#d9423b'], ['out', '#7a1f17']].forEach(([key, col]) => { const f = c[key] / tot; s += '<circle r="' + R + '" cx="70" cy="70" fill="none" stroke="' + col + '" stroke-width="18" stroke-dasharray="' + (f * C) + ' ' + C + '" stroke-dashoffset="' + (-a * C) + '" transform="rotate(-90 70 70)"/>'; a += f; });
+      return '<div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap"><svg viewBox="0 0 140 140" width="130" height="130">' + (k.oils ? s : '<circle r="54" cx="70" cy="70" fill="none" stroke="#e6e8ec" stroke-width="18"/>') + '<text x="70" y="72" text-anchor="middle" style="font-size:22px;font-weight:700;fill:#14161a">' + k.oils + '</text><text x="70" y="88" text-anchor="middle">oils</text></svg><div class="stack" style="gap:6px"><div class="legend"><span><i style="background:#16945a"></i>Healthy ' + c.ok + '</span></div><div class="legend"><span><i style="background:#b45309"></i>Running down ' + c.watch + '</span></div><div class="legend"><span><i style="background:#d9423b"></i>Below minimum ' + c.low + '</span></div><div class="legend"><span><i style="background:#7a1f17"></i>Out of stock ' + c.out + '</span></div></div></div>'; })();
+    const todo = c.out + c.low + k.late_orders;
+    $('root').innerHTML = (k.oils === 0 ? '<div class="sx-card" style="margin-bottom:12px"><b>Start here.</b> Add your dealers, then your oils with their opening stock, then your perfumes (paste many at once). The dashboard fills itself after that. <a class="btn sm pri" href="#oils" style="margin-left:6px">Add the first oil</a></div>' : '') + `
+    <div class="hero"><div class="k">Inventory manager</div><h2>${todo ? todo + ' things need you today' : 'Everything is covered today'}</h2><p>${c.out} oil out of stock, ${c.low} below minimum, ${k.late_orders} orders will be late if nothing is bought.</p>
+      <div class="nums"><div><div class="l">Oil in stock</div><div class="v">${fmt(k.total_ml / 1000, 1)} L</div></div><div><div class="l">Stock value</div><div class="v">${inr(k.value)}</div></div><div><div class="l">Perfumes</div><div class="v">${fmt(k.perfumes)}</div></div><div><div class="l">Open orders</div><div class="v">${k.open_orders}</div></div><div><div class="l">Orders at risk</div><div class="v">${k.late_orders}</div></div></div>
+      <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap"><a class="btn go" href="#alerts">Open alerts (${k.alerts})</a><a class="btn" href="#calc">Check an order</a><a class="btn" href="#dealers">Message dealers</a></div></div>
+    <div class="g g21"><div class="sx-card"><h3>Needs attention</h3><div class="stack">${d.alerts.map(alertHtml).join('') || '<div class="empty">Nothing needs attention.</div>'}</div></div><div class="sx-card"><h3>Stock health</h3>${donut}</div></div>
+    <div class="g g2" style="margin-top:12px"><div class="sx-card"><h3>Orders that will be late <small>if you do nothing</small></h3>${d.late.length ? '<div class="sc"><table class="tbl"><thead><tr><th>Order</th><th>Oil missing</th><th>Result</th></tr></thead><tbody>' + d.late.map((o) => '<tr><td><b>' + esc(o.code) + '</b><div class="note">' + esc(o.customer) + ' · due ' + dS(o.due_date) + '</div></td><td>' + (o.sim.short ? Object.keys(o.sim.short).length : 0) + ' oil(s)</td><td><span class="pill bad">about ' + Math.max(1, o.sim.late_by) + ' days late</span></td></tr>').join('') + '</tbody></table></div>' : '<div class="empty">No order is at risk.</div>'}</div>
+    <div class="sx-card"><h3>Suggested purchase <small>ready to send</small></h3>${d.buy.length ? '<div class="sc"><table class="tbl"><thead><tr><th>Oil</th><th>Dealer</th><th class="num">Buy</th><th></th></tr></thead><tbody>' + d.buy.map((b) => '<tr><td><b>' + esc(b.oil) + '</b><div class="note">' + fmt(b.stock_ml) + ' ml left</div></td><td>' + esc(b.supplier || '—') + '</td><td class="num">' + fmt(b.qty_ml) + ' ml<div class="note">' + inr(b.est) + '</div></td><td><button class="btn sm wa" data-wa="' + b.oil_id + '" data-q="' + b.qty_ml + '">WhatsApp</button></td></tr>').join('') + '</tbody></table></div>' : '<div class="empty">Nothing to buy now.</div>'}</div></div>
+    <div class="sx-card" style="margin-top:12px"><h3>Latest stock movement</h3>${d.recent.length ? d.recent.map((m) => '<div class="note" style="padding:5px 0;border-top:1px solid #eef0f3"><b style="color:#14161a">' + esc(m.oil) + '</b> · ' + ({ in: 'delivery', out: 'used', count: 'count', return: 'returned', open: 'opening stock' }[m.kind] || m.kind) + ' <b style="color:' + (m.qty_ml < 0 ? '#d9423b' : '#16945a') + '">' + (m.qty_ml > 0 ? '+' : '') + fmt(m.qty_ml, 1) + ' ml</b> · balance ' + fmt(m.balance_ml) + ' ml · ' + esc(m.created_at.slice(5, 16)) + ' ' + esc(m.ref || '') + '</div>').join('') : '<div class="empty">No movement yet.</div>'}</div>`;
+  }
+
+  /* ---------- oil stock ---------- */
+  let OF = { q: '', f: '', off: 0 };
+  async function vOils() {
+    $('root').innerHTML = '<div class="sx-card"><div class="bar"><input class="grow" id="oq" placeholder="Search oils by name, code or dealer" value="' + esc(OF.q) + '"><select id="of"><option value="">All</option><option value="action">Needs action</option><option value="watch">Running down</option><option value="ok">Healthy</option></select><span class="sp"></span><button class="btn" id="oExp">Export CSV</button><button class="btn" id="oAdd">+ Add oil</button><button class="btn pri" id="oRec">+ Record delivery</button></div><div class="sc"><table class="tbl"><thead><tr><th>Oil</th><th>Dealer</th><th>Stock level</th><th class="num">In stock</th><th class="num">Minimum</th><th class="num">Used</th><th class="num">Days left</th><th>Status</th></tr></thead><tbody id="orows"><tr><td colspan="8" class="empty">Loading…</td></tr></tbody></table></div><div class="bar" style="margin-top:10px"><span class="note" id="ocount"></span><span class="sp"></span><button class="btn sm" id="oPrev">Previous</button><button class="btn sm" id="oNext">Next</button></div><p class="note" style="margin:6px 0 0">The thin black mark on each bar is the minimum. Click a row for its history, perfumes and dealer.</p></div>';
+    $('of').value = OF.f; let t = null;
+    $('oq').oninput = (e) => { clearTimeout(t); t = setTimeout(() => { OF.q = e.target.value; OF.off = 0; drawOils(); }, 250); }; $('of').onchange = (e) => { OF.f = e.target.value; OF.off = 0; drawOils(); };
+    $('oAdd').onclick = () => oilForm(); $('oRec').onclick = () => recvForm(); $('oPrev').onclick = () => { OF.off = Math.max(0, OF.off - 40); drawOils(); }; $('oNext').onclick = () => { OF.off += 40; drawOils(); };
+    $('oExp').onclick = async () => { try { const d = await G('iv.oils', { limit: 200 }); const rows = [['Code', 'Oil', 'Dealer', 'Stock ml', 'Minimum ml', 'Used ml', 'Price per ml', 'Status']].concat(d.oils.map((o) => [o.code, o.name, o.supplier, o.stock_ml, o.min_ml, o.used_ml, o.price_per_ml, o.status])); const csv = rows.map((r) => r.map((x) => '"' + String(x).replace(/"/g, '""') + '"').join(',')).join('\n'); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = 'oil-stock.csv'; a.click(); } catch (e) { fail(e); } };
+    drawOils();
+  }
+  async function drawOils() {
+    try {
+      const d = await G('iv.oils', { q: OF.q, f: OF.f, limit: 40, offset: OF.off });
+      $('orows').innerHTML = d.oils.map((o) => '<tr class="cl" data-oil="' + o.id + '"><td><b>' + esc(o.name) + '</b><div class="note">' + esc(o.code) + '</div></td><td>' + esc(o.supplier || '—') + '</td><td style="min-width:120px">' + meter(o) + '</td><td class="num">' + fmt(o.stock_ml) + ' ml</td><td class="num">' + fmt(o.min_ml) + ' ml</td><td class="num">' + fmt(o.used_ml) + ' ml</td><td class="num">' + (o.days_left === null ? '—' : o.days_left > 200 ? '200+' : Math.floor(o.days_left)) + '</td><td>' + stPill(o.status) + (o.incoming_ml ? '<div class="note">+' + fmt(o.incoming_ml) + ' ml on the way</div>' : '') + '</td></tr>').join('') || '<tr><td colspan="8" class="empty">' + (OF.q || OF.f ? 'No oil matches.' : 'No oils yet. Use “+ Add oil”.') + '</td></tr>';
+      $('ocount').textContent = d.total ? 'Showing ' + (OF.off + 1) + '–' + Math.min(d.total, OF.off + 40) + ' of ' + d.total + ' oils' : ''; $('oPrev').disabled = OF.off === 0; $('oNext').disabled = OF.off + 40 >= d.total;
+    } catch (e) { fail(e); }
+  }
+  async function oilDetail(id) {
+    try {
+      const d = await G('iv.oil_get', { id }), o = d.oil;
+      openDr(o.name + ' · ' + o.code, `<div class="sx-card"><div class="eq"><div><div class="l">In stock</div><div class="v">${fmt(o.stock_ml)} ml</div></div><div><div class="l">Minimum</div><div class="v">${fmt(o.min_ml)} ml</div></div><div><div class="l">Reorder at</div><div class="v">${fmt(o.reorder_ml)} ml</div></div><div><div class="l">Price</div><div class="v">${inr(o.price_per_ml)}/ml</div></div></div>
+        <p class="note" style="margin:8px 0 0">Used about ${fmt(o.daily_ml, 1)} ml a day. Reorder point = daily use × (dealer lead time ${o.lead_days} days + safety days). ${stPill(o.status)}</p></div>
+        <div class="sx-card"><b>Dealer:</b> ${esc(o.supplier || 'not set')}${o.phone ? ' · ' + esc(o.phone) : ''}<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap"><button class="btn sm wa" data-wa="${o.id}" data-q="${d.buy_ml}">WhatsApp</button><button class="btn sm" data-call="${o.id}">Call</button><button class="btn sm" data-po="${o.id}" data-q="${d.buy_ml}">Create purchase (${fmt(d.buy_ml)} ml)</button></div></div>
+        <div class="sx-card"><h3>Used in ${d.perfumes.length} perfumes</h3><div class="note">${d.perfumes.slice(0, 30).map((p) => esc(p.name)).join(', ') || 'No perfume uses this oil yet.'}${d.perfumes.length > 30 ? ' …' : ''}</div></div>
+        <div class="sx-card"><h3>Movement</h3>${d.moves.map((m) => '<div class="note" style="padding:4px 0;border-top:1px solid #eef0f3"><b style="color:#14161a">' + dS(m.created_at) + '</b> ' + ({ in: 'Delivery', out: 'Used', count: 'Count', return: 'Returned', open: 'Opening' }[m.kind] || m.kind) + ' <b style="color:' + (m.qty_ml < 0 ? '#d9423b' : '#16945a') + '">' + (m.qty_ml > 0 ? '+' : '') + fmt(m.qty_ml, 1) + '</b> → ' + fmt(m.balance_ml) + ' ml ' + esc(m.ref || '') + '</div>').join('') || '<div class="note">No movement yet.</div>'}</div>
+        <div class="sx-card"><h3>Purchases</h3>${d.purchases.map((p) => '<div class="note" style="padding:4px 0;border-top:1px solid #eef0f3"><b style="color:#14161a">' + esc(p.code) + '</b> ' + fmt(p.qty_ml) + ' ml · ' + inr(p.total) + ' · ' + esc(p.status) + (p.status === 'received' ? (p.paid == 1 ? ' · paid' : ' · unpaid') : ' · expected ' + dS(p.expected_at)) + '</div>').join('') || '<div class="note">No purchase yet.</div>'}</div>`,
+        `<button class="btn pri" id="dRec">Record delivery</button><button class="btn" id="dCount">Count stock</button><button class="btn" id="dEdit">Edit</button>`);
+      $('dRec').onclick = () => recvForm(o.id); $('dCount').onclick = () => countForm(o); $('dEdit').onclick = () => oilForm(o);
+    } catch (e) { fail(e); }
+  }
+  const supOptions = (sel) => '<option value="0">— choose dealer —</option>' + OPT.suppliers.map((s) => '<option value="' + s.id + '"' + (+sel === s.id ? ' selected' : '') + '>' + esc(s.name) + '</option>').join('');
+  const oilOptions = (sel) => '<option value="">— choose oil —</option>' + OPT.oils.map((o) => '<option value="' + o.id + '"' + (+sel === o.id ? ' selected' : '') + '>' + esc(o.name) + ' (' + esc(o.code) + ')</option>').join('');
+  function oilForm(o) {
+    const e = !!o; o = o || {};
+    openDr(e ? 'Edit oil' : 'Add oil', `<div class="sx-card"><div class="fld"><label>Oil name</label><input id="fN" value="${esc(o.name || '')}"></div><div class="fr"><div class="fld"><label>Code (optional)</label><input id="fC" value="${esc(o.code || '')}"></div><div class="fld"><label>Dealer</label><select id="fS">${supOptions(o.supplier_id)}</select></div></div>
+      <div class="fr"><div class="fld"><label>Minimum stock (ml)</label><input id="fM" type="number" min="0" value="${esc(o.min_ml || '')}"></div><div class="fld"><label>Price per ml (₹)</label><input id="fP" type="number" min="0" step="0.01" value="${esc(o.price_per_ml || '')}"></div></div>
+      ${e ? '' : '<div class="fld"><label>Opening stock now (ml)</label><input id="fO" type="number" min="0" value="0"></div>'}<div class="fld"><label>Notes</label><input id="fT" value="${esc(o.notes || '')}"></div><div id="fE" class="note" style="color:#d9423b"></div></div>`,
+      `<button class="btn pri" id="fSave">Save</button>${e ? '<button class="btn warn" id="fOff">Switch off</button>' : ''}`);
+    $('fSave').onclick = async () => { try { await P('iv.oil_save', { id: o.id || 0, name: $('fN').value, code: $('fC').value, supplier_id: +$('fS').value, min_ml: +$('fM').value || 0, price_per_ml: +$('fP').value || 0, stock_ml: e ? 0 : +$('fO').value || 0, notes: $('fT').value }); toast('Saved'); await opts(true); closeDr(); redo(); } catch (x) { $('fE').textContent = x.message; } };
+    if (e) $('fOff').onclick = async () => { try { await P('iv.oil_off', { id: o.id }); toast('Switched off'); await opts(true); closeDr(); redo(); } catch (x) { $('fE').textContent = x.message; } };
+  }
+  function recvForm(oilId, purchase) {
+    openDr('Record delivery', `<div class="sx-card"><div class="fld"><label>Oil</label><select id="rO">${oilOptions(oilId)}</select></div><div class="fr"><div class="fld"><label>Quantity received (ml)</label><input id="rQ" type="number" min="1" value="${purchase ? esc(purchase.qty_ml) : ''}"></div><div class="fld"><label>Price per ml (₹)</label><input id="rP" type="number" min="0" step="0.01" value="${purchase ? esc(purchase.price_per_ml) : ''}"></div></div><div class="fld"><label>Note (batch, bill number)</label><input id="rN"></div><p class="note">Stock goes up and the purchase is saved to the dealer's history.${purchase ? ' This closes order ' + esc(purchase.code) + '.' : ''}</p><div id="rE" class="note" style="color:#d9423b"></div></div>`, '<button class="btn pri" id="rSave">Add to stock</button>');
+    $('rSave').onclick = async () => { try { const r = await P('iv.receive', { oil_id: +$('rO').value, qty_ml: +$('rQ').value, price_per_ml: +$('rP').value || 0, note: $('rN').value, purchase_id: purchase ? purchase.id : 0 }); toast('Stock is now ' + fmt(r.balance_ml) + ' ml'); closeDr(); redo(); } catch (x) { $('rE').textContent = x.message; } };
+  }
+  function countForm(o) {
+    openDr('Count stock · ' + o.name, `<div class="sx-card"><p class="note" style="margin-top:0">The system says <b>${fmt(o.stock_ml)} ml</b>. Weigh or measure what is really there and type it. The difference is saved as a correction.</p><div class="fld"><label>Counted quantity (ml)</label><input id="cR" type="number" min="0" value="${esc(o.stock_ml)}"></div><div class="fld"><label>Note</label><input id="cN" placeholder="e.g. monthly count"></div><div id="cE" class="note" style="color:#d9423b"></div></div>`, '<button class="btn pri" id="cSave">Save count</button>');
+    $('cSave').onclick = async () => { try { const r = await P('iv.adjust', { oil_id: o.id, real_ml: +$('cR').value, note: $('cN').value }); toast(r.diff ? 'Corrected by ' + fmt(r.diff, 1) + ' ml' : 'Matches the system'); closeDr(); redo(); } catch (x) { $('cE').textContent = x.message; } };
+  }
+
+  /* ---------- perfumes ---------- */
+  let PF = { q: '', family: '', f: '', sort: 'name', off: 0 };
+  async function vPerf() {
+    $('root').innerHTML = '<div class="sx-card"><div class="bar"><input class="grow" id="pq" placeholder="Search perfumes" value="' + esc(PF.q) + '"><select id="pfam"><option value="">All families</option></select><select id="pf"><option value="">Any stock</option><option value="short">Fewer than 20 bottles (50 ml)</option><option value="out">Cannot make any</option></select><select id="ps"><option value="name">A to Z</option><option value="cap">Fewest bottles first</option></select><span class="sp"></span><button class="btn" id="pImp">Import list</button><button class="btn pri" id="pAdd">+ Add perfume</button></div><div class="sc"><table class="tbl"><thead><tr><th>Perfume</th><th>Family</th><th>Oil</th><th class="num">Oil %</th><th class="num">20 ml</th><th class="num">50 ml</th><th class="num">100 ml</th><th class="num">Can make (50 ml)</th></tr></thead><tbody id="prow"><tr><td colspan="8" class="empty">Loading…</td></tr></tbody></table></div><div class="bar" style="margin-top:10px"><span class="note" id="pcount"></span><span class="sp"></span><button class="btn sm" id="pPrev">Previous</button><button class="btn sm" id="pNext">Next</button></div></div>';
+    $('pf').value = PF.f; $('ps').value = PF.sort; let t = null;
+    $('pq').oninput = (e) => { clearTimeout(t); t = setTimeout(() => { PF.q = e.target.value; PF.off = 0; drawPerf(); }, 250); };
+    ['pfam', 'pf', 'ps'].forEach((id) => { $(id).onchange = () => { PF.family = $('pfam').value; PF.f = $('pf').value; PF.sort = $('ps').value; PF.off = 0; drawPerf(); }; });
+    $('pAdd').onclick = () => perfForm(); $('pImp').onclick = importForm; $('pPrev').onclick = () => { PF.off = Math.max(0, PF.off - 30); drawPerf(); }; $('pNext').onclick = () => { PF.off += 30; drawPerf(); };
+    drawPerf();
+  }
+  async function drawPerf() {
+    try {
+      const d = await G('iv.perfumes', { q: PF.q, family: PF.family, f: PF.f, sort: PF.sort, limit: 30, offset: PF.off }); window.__PERF = d.perfumes;
+      const fs = $('pfam'); if (fs.options.length === 1) { fs.innerHTML += d.families.map((f) => '<option>' + esc(f) + '</option>').join(''); fs.value = PF.family; }
+      $('prow').innerHTML = d.perfumes.map((p) => { const c = p.cap[50]; return '<tr class="cl" data-perf="' + p.id + '"><td><b>' + esc(p.name) + '</b><div class="note">' + esc(p.code) + '</div></td><td>' + esc(p.family || '—') + '</td><td>' + esc(p.oil) + (p.oil2 ? '<div class="note">+ ' + esc(p.oil2) + '</div>' : '') + '</td><td class="num">' + fmt(+p.oil_pct + (p.oil2 ? +p.oil2_pct : 0), 1) + '%</td><td class="num">' + fmt(p.need[20], 1) + ' ml</td><td class="num">' + fmt(p.need[50], 1) + ' ml</td><td class="num">' + fmt(p.need[100], 1) + ' ml</td><td class="num"><span class="pill ' + (c < 10 ? 'bad' : c < 30 ? 'warn' : 'ok') + '">' + fmt(c) + ' bottles</span></td></tr>'; }).join('') || '<tr><td colspan="8" class="empty">' + (PF.q || PF.family || PF.f ? 'No perfume matches.' : 'No perfumes yet. Use “+ Add perfume” or “Import list”.') + '</td></tr>';
+      $('pcount').textContent = d.total ? 'Showing ' + (PF.off + 1) + '–' + Math.min(d.total, PF.off + 30) + ' of ' + d.total + ' perfumes' : ''; $('pPrev').disabled = PF.off === 0; $('pNext').disabled = PF.off + 30 >= d.total;
+    } catch (e) { fail(e); }
+  }
+  async function perfForm(p) {
+    await opts(); const e = !!p; p = p || {};
+    openDr(e ? 'Edit perfume' : 'Add perfume', `<div class="sx-card"><div class="fld"><label>Perfume name</label><input id="qN" value="${esc(p.name || '')}"></div><div class="fr"><div class="fld"><label>Code (optional)</label><input id="qC" value="${esc(p.code || '')}"></div><div class="fld"><label>Family</label><input id="qF" value="${esc(p.family || '')}" placeholder="Woody, Floral…"></div></div>
+      <div class="fr"><div class="fld"><label>Oil</label><select id="qO">${oilOptions(p.oil_id)}</select></div><div class="fld"><label>Oil strength (%)</label><input id="qP" type="number" step="0.5" min="1" max="60" value="${esc(p.oil_pct || OPT.default_pct)}"></div></div>
+      <div class="fr"><div class="fld"><label>Second oil (blend, optional)</label><select id="qO2"><option value="0">— none —</option>${OPT.oils.map((o) => '<option value="' + o.id + '"' + (+p.oil2_id === o.id ? ' selected' : '') + '>' + esc(o.name) + '</option>').join('')}</select></div><div class="fld"><label>Second oil strength (%)</label><input id="qP2" type="number" step="0.5" min="0" value="${esc(+p.oil2_pct || '')}"></div></div>
+      <div class="eq" id="qEq"></div><div class="fr" style="margin-top:9px"><div class="fld"><label>Resting days before filling</label><input id="qR" type="number" min="0" max="30" value="${esc(p.rest_days == null ? 2 : p.rest_days)}"></div><div class="fld"><label>&nbsp;</label><span class="note">Used in delivery dates.</span></div></div>
+      <div class="fr" style="grid-template-columns:repeat(3,1fr)"><div class="fld"><label>Price 20 ml</label><input id="q20" type="number" value="${esc(+p.price20 || '')}"></div><div class="fld"><label>Price 50 ml</label><input id="q50" type="number" value="${esc(+p.price50 || '')}"></div><div class="fld"><label>Price 100 ml</label><input id="q100" type="number" value="${esc(+p.price100 || '')}"></div></div><div id="qE" class="note" style="color:#d9423b"></div></div>`,
+      `<button class="btn pri" id="qSave">Save</button>${e ? '<button class="btn warn" id="qOff">Switch off</button>' : ''}`);
+    const eq = () => { const a = +$('qP').value || 0, b = $('qO2').value !== '0' ? (+$('qP2').value || 0) : 0; $('qEq').innerHTML = [20, 50, 100].map((s) => '<div><div class="l">' + s + ' ml needs</div><div class="v">' + fmt(s * (a + b) / 100, 2) + ' ml</div></div>').join(''); };
+    ['qP', 'qP2', 'qO2'].forEach((id) => { $(id).oninput = eq; $(id).onchange = eq; }); eq();
+    $('qSave').onclick = async () => { try { await P('iv.perf_save', { id: p.id || 0, name: $('qN').value, code: $('qC').value, family: $('qF').value, oil_id: +$('qO').value, oil_pct: +$('qP').value, oil2_id: +$('qO2').value, oil2_pct: +$('qP2').value || 0, rest_days: +$('qR').value, price20: +$('q20').value || 0, price50: +$('q50').value || 0, price100: +$('q100').value || 0 }); toast('Saved'); await opts(true); closeDr(); redo(); } catch (x) { $('qE').textContent = x.message; } };
+    if (e) $('qOff').onclick = async () => { try { await P('iv.perf_off', { id: p.id }); toast('Switched off'); await opts(true); closeDr(); redo(); } catch (x) { $('qE').textContent = x.message; } };
+  }
+  function importForm() {
+    openDr('Import perfumes', '<div class="sx-card"><p class="note" style="margin-top:0">Paste one perfume per line: <b>name, oil, strength %, family</b>. The oil must already exist (name or code). Strength and family are optional. You can copy the columns straight from Excel.</p><div class="fld"><textarea id="iT" rows="12" placeholder="Midnight Oud, Oud Royal, 25, Woody&#10;Aqua Velvet, Marine Mist, 25, Fresh"></textarea></div><div id="iE" class="note"></div></div>', '<button class="btn pri" id="iGo">Import</button>');
+    $('iGo').onclick = async () => {
+      const rows = $('iT').value.split('\n').map((l) => l.split(/\t|,/).map((x) => x.trim())).filter((c) => c[0]).map((c) => ({ name: c[0], oil: c[1] || '', pct: c[2] ? +c[2] : '', family: c[3] || '' }));
+      if (!rows.length) { $('iE').textContent = 'Paste at least one line.'; return; }
+      try { const r = await P('iv.perf_import', { rows }); $('iE').innerHTML = '<b style="color:#16945a">' + r.added + ' added.</b>' + (r.skipped_n ? ' ' + r.skipped_n + ' skipped:<br>' + r.skipped.map(esc).join('<br>') : ''); await opts(true); redo(); } catch (x) { $('iE').style.color = '#d9423b'; $('iE').textContent = x.message; }
+    };
+  }
+
+  /* ---------- one editor for order lines (calculator and order form) ---------- */
+  const SIZE_LIST = [5, 10, 20, 30, 50, 100, 200];
+  const newLine = (o) => Object.assign({ perf: '', oil_id: 0, size: '50', other: '', qty: 1, pct: '', ml: '', note: '' }, o || {});
+  const lineSize = (l) => l.size === 'other' ? (+l.other || 0) : +l.size;
+  const perfOf = (l) => { const id = perfId(l.perf); return id ? OPT.perfumes.find((p) => p.id === id) : null; };
+  const autoPct = (l) => { const p = perfOf(l); return p ? (+p.oil_pct + (+p.oil2_id ? +p.oil2_pct : 0)) : OPT.default_pct; };
+  const perBottle = (l) => l.ml !== '' && +l.ml > 0 ? +l.ml : lineSize(l) * ((l.pct !== '' && +l.pct > 0) ? +l.pct : autoPct(l)) / 100;
+  const isCustom = (l) => (l.ml !== '' && +l.ml > 0) || (l.pct !== '' && +l.pct > 0);
+  const serial = (l) => ({ perfume_id: perfId(l.perf), oil_id: +l.oil_id || 0, size_ml: lineSize(l), qty: +l.qty || 1, oil_pct: l.pct !== '' ? +l.pct : 0, oil_ml: l.ml !== '' ? +l.ml : 0, oil_note: l.note || '' });
+  const sizeOpts = (v) => SIZE_LIST.concat(+v && !SIZE_LIST.includes(+v) && v !== 'other' ? [+v] : []).sort((a, b) => a - b).map((x) => '<option value="' + x + '"' + (String(v) === String(x) ? ' selected' : '') + '>' + x + ' ml</option>').join('') + '<option value="other"' + (v === 'other' ? ' selected' : '') + '>Other size…</option>';
+  /* root: element, lines: array, o: { onChange, needPerf } */
+  function lineEditor(root, lines, o) {
+    o = o || {};
+    const card = (l, i) => '<div class="lc" data-i="' + i + '"><div class="lr' + (o.needPerf ? ' one' : '') + '"><input list="pdl" data-k="perf" value="' + esc(l.perf) + '" placeholder="' + (o.needPerf ? 'Perfume (type a name and pick it)' : 'Perfume (optional, pick from the list)') + '">' + (o.needPerf ? '' : '<select data-k="oil_id"><option value="0">Oil (if no perfume)…</option>' + OPT.oils.map((x) => '<option value="' + x.id + '"' + (+l.oil_id === x.id ? ' selected' : '') + '>' + esc(x.name) + '</option>').join('') + '</select>') + '<button class="btn sm" type="button" data-del="' + i + '"' + (lines.length < 2 ? ' disabled' : '') + ' aria-label="Remove line">×</button></div>' +
+      '<div class="l4"><div><label>Bottle size</label><select data-k="size">' + sizeOpts(l.size) + '</select><input type="number" min="1" max="2000" data-k="other" placeholder="ml" value="' + esc(l.other) + '" style="margin-top:5px' + (l.size === 'other' ? '' : ';display:none') + '"></div><div><label>Quantity</label><input type="number" min="1" data-k="qty" value="' + esc(l.qty) + '"></div><div><label>Oil % <span style="font-weight:600">(auto)</span></label><input type="number" min="0" max="100" step="0.5" data-k="pct" placeholder="auto" value="' + esc(l.pct) + '"></div><div><label>Or oil ml per bottle</label><input type="number" min="0" max="2000" step="0.1" data-k="ml" placeholder="auto" value="' + esc(l.ml) + '"></div></div>' +
+      '<div class="auto"></div><input data-k="note" placeholder="Why different oil? (optional, e.g. extra strong for this customer)" value="' + esc(l.note) + '" style="margin-top:6px;display:none"></div>';
+    const upd = (el, l) => { const p = perfOf(l); const sz = lineSize(l), pb = perBottle(l), q = +l.qty || 1; const au = el.querySelector('.auto'); const oilSel = el.querySelector('[data-k=oil_id]');
+      if (oilSel) oilSel.style.display = p ? 'none' : ''; el.querySelector('[data-k=other]').style.display = l.size === 'other' ? '' : 'none'; el.querySelector('[data-k=note]').style.display = isCustom(l) ? '' : 'none';
+      au.innerHTML = sz > 0 ? (isCustom(l) ? 'Using <b>' + fmt(pb, 2) + ' ml</b> oil per bottle' + '<span class="cust">custom</span> · auto would be ' + fmt(sz * autoPct(l) / 100, 2) : 'Auto: <b>' + fmt(pb, 2) + ' ml</b> oil per bottle (' + fmt(autoPct(l), 1) + '%)') + ' · <b>' + fmt(pb * q, 1) + ' ml</b> for ' + fmt(q) + ' bottles' : 'Choose a bottle size.'; };
+    const draw = () => {
+      root.innerHTML = lines.map(card).join(''); root.querySelectorAll('.lc').forEach((el) => { const l = lines[+el.dataset.i]; upd(el, l);
+        el.querySelectorAll('[data-k]').forEach((f) => { const h = () => { const k = f.dataset.k; l[k] = (k === 'size' || k === 'perf' || k === 'note' || k === 'pct' || k === 'ml' || k === 'other') ? f.value : (k === 'oil_id' ? +f.value : +f.value); upd(el, l); if (o.onChange) o.onChange(); }; f.addEventListener('input', h); f.addEventListener('change', h); }); });
+      root.querySelectorAll('[data-del]').forEach((b) => { b.onclick = () => { lines.splice(+b.dataset.del, 1); draw(); if (o.onChange) o.onChange(); }; });
+    };
+    draw(); return { draw };
+  }
+
+  /* ---------- calculator ---------- */
+  let CL = [newLine({ qty: 24 })];
+  async function vCalc() {
+    $('root').innerHTML = '<div class="g g21"><div class="sx-card"><h3>Order lines</h3><div id="cLines"></div><div style="display:flex;gap:8px;margin-top:2px;flex-wrap:wrap"><button class="btn sm" id="cAddL">+ Add line</button><button class="btn sm pri" id="cOrder" disabled>Create order from this</button></div><p class="note" style="margin:10px 0 0">Pick any bottle size. A perfume is optional: without one you still see the oil needed, and you can pick an oil to see the stock. Normal oil is the perfume’s % (25% unless set). If you use more or less oil for a bottle, type a different <b>Oil %</b> or a fixed <b>oil ml per bottle</b> on that line.</p></div><div class="sx-card" id="cRes"><div class="empty">Choose a bottle size and quantity to see the oil needed.</div></div></div><div class="sx-card" style="margin-top:12px"><h3>The rule in plain numbers <small>25% oil</small></h3><div class="eq"><div><div class="l">20 ml bottle</div><div class="v">5 ml oil</div></div><div><div class="l">50 ml bottle</div><div class="v">12.5 ml oil</div></div><div><div class="l">100 ml bottle</div><div class="v">25 ml oil</div></div><div><div class="l">1 litre of oil makes</div><div class="v">200 / 80 / 40</div><div class="note">20 / 50 / 100 ml bottles</div></div></div></div>';
+    const ed = lineEditor($('cLines'), CL, { onChange: runCalc });
+    $('cAddL').onclick = () => { CL.push(newLine({ qty: 1 })); ed.draw(); runCalc(); };
+    $('cOrder').onclick = () => orderForm(null, CL.filter((l) => perfId(l.perf)).map((l) => ({ perfume_id: perfId(l.perf), size_ml: lineSize(l), qty: +l.qty || 1, oil_pct: l.pct !== '' ? +l.pct : null, oil_ml: l.ml !== '' ? +l.ml : null, oil_note: l.note })));
+    runCalc();
+  }
+  let calcT = null;
+  function runCalc() {
+    clearTimeout(calcT); calcT = setTimeout(async () => {
+      const ok = CL.filter((l) => lineSize(l) > 0); $('cOrder').disabled = !(CL.length && CL.every((l) => perfId(l.perf)));
+      if (!ok.length) { $('cRes').innerHTML = '<div class="empty">Choose a bottle size and quantity to see the oil needed.</div>'; return; }
+      try {
+        const r = await P('iv.calc', { lines: ok.map(serial) });
+        $('cRes').innerHTML = '<h3>Result <small>' + (r.oils.length ? (r.enough ? '<span class="pill ok">Enough oil</span>' : '<span class="pill bad">Not enough oil</span>') : '') + '</small></h3>' +
+          '<div class="eq" style="margin-bottom:10px"><div><div class="l">Total oil for this order</div><div class="v">' + fmt(r.total_oil_ml, 1) + ' ml</div></div><div><div class="l">Bottles</div><div class="v">' + fmt(r.lines.reduce((a, x) => a + x.qty, 0)) + '</div></div></div>' +
+          '<div class="stack" style="margin-bottom:10px">' + r.lines.map((x) => '<div class="note"><b style="color:#14161a">' + esc(x.perfume) + '</b> · ' + fmt(x.qty) + ' × ' + fmt(x.size_ml) + ' ml · ' + fmt(x.oil_per_bottle, 2) + ' ml oil each = <b style="color:#14161a">' + fmt(x.total_ml, 1) + ' ml</b>' + (x.custom ? ' <span class="pill warn">custom oil (auto ' + fmt(x.auto_per_bottle, 2) + ')</span>' : '') + '</div>').join('') + '</div>' +
+          (r.no_oil_ml > 0 ? '<div class="al"><span class="d"></span><div><b>' + fmt(r.no_oil_ml, 1) + ' ml of oil needed</b><span>No oil is chosen for some lines. Pick a perfume or an oil on the line to see stock and what is left.</span></div></div>' : '') +
+          '<div class="stack">' + r.oils.map((o) => '<div class="al ' + (o.short_ml > 0 ? 'bad' : o.below_min ? 'warn' : '') + '"><span class="d"></span><div style="flex:1"><b>' + esc(o.oil) + '</b><div class="eq" style="margin-top:6px"><div><div class="l">Needed</div><div class="v">' + fmt(o.need_ml, 1) + ' ml</div></div><div><div class="l">In stock</div><div class="v">' + fmt(o.stock_ml) + ' ml</div></div><div><div class="l">Left after</div><div class="v" style="color:' + (o.short_ml > 0 ? '#d9423b' : '#16945a') + '">' + (o.short_ml > 0 ? '−' + fmt(o.short_ml) : fmt(o.after_ml, 1)) + ' ml</div></div></div>' + (o.short_ml > 0 ? '<span>Short by ' + fmt(o.short_ml) + ' ml. ' + esc(o.supplier || 'The dealer') + ' delivers in ' + o.lead_days + ' days.</span><div style="margin-top:6px"><button class="btn sm wa" data-wa="' + o.oil_id + '">WhatsApp dealer</button></div>' : o.below_min ? '<span>Possible, but stock falls below the minimum (' + fmt(o.min_ml) + ' ml). Suggested purchase ' + fmt(o.buy_ml) + ' ml.</span>' : '') + '</div></div>').join('') + '</div>' +
+          (r.oils.length ? '<p class="note" style="margin:10px 0 0">Ready about <b>' + dS(r.ready_by) + '</b>' + (r.rest_days ? ' (includes ' + r.rest_days + ' resting days)' : '') + '.</p>' : '');
+      } catch (e) { $('cRes').innerHTML = '<div class="sx-msg bad"><span>' + esc(e.message) + '</span></div>'; }
+    }, 200);
+  }
+
+  /* ---------- orders ---------- */
+  let OS = { status: 'open', q: '' };
+  async function vOrders() {
+    const d = await G('iv.orders', { status: OS.status, q: OS.q }), cn = d.counts;
+    const chips = [['open', 'Open'], ['received', 'Received'], ['in_production', 'In production'], ['ready', 'Ready'], ['dispatched', 'Dispatched'], ['cancelled', 'Cancelled']];
+    $('root').innerHTML = '<div class="sx-card"><div class="bar"><input class="grow" id="oq2" placeholder="Search order or customer" value="' + esc(OS.q) + '"><span class="sp"></span><span class="note" id="oSyn" style="margin-right:8px">Checking Shopify…</span><button class="btn" id="oSync">↻ Sync now</button><button class="btn pri" id="oNew">+ Add order</button></div><div class="tabs2" style="margin-bottom:8px">' + chips.map(([k, l]) => '<button data-s="' + k + '" class="' + (OS.status === k ? 'on' : '') + '">' + l + (k !== 'open' && cn[k] ? ' · ' + cn[k] : '') + '</button>').join('') + '</div><div class="sc"><table class="tbl"><thead><tr><th>Order</th><th>Items</th><th>Due</th><th class="num">Oil</th><th>Production</th><th>Delivery</th><th></th></tr></thead><tbody>' + (d.orders.map((o) => {
+      const s = o.sim, late = s && s.late, blocked = s && s.blocked; const cls = { received: 'mut', in_production: 'info', ready: 'ok', dispatched: 'ok', cancelled: 'mut' }[o.status];
+      const acts = o.status === 'received' ? '<button class="btn sm pri" data-act="issue" data-id="' + o.id + '">Start production</button><button class="btn sm" data-edit="' + o.id + '">Edit</button>' : o.status === 'in_production' ? '<button class="btn sm pri" data-act="ready" data-id="' + o.id + '">Mark ready</button>' : o.status === 'ready' ? '<button class="btn sm pri" data-act="dispatch" data-id="' + o.id + '">Dispatch</button>' : '';
+      return '<tr><td><b>' + esc(o.code) + '</b><div class="note">' + esc(o.customer) + (o.channel ? ' · ' + esc(o.channel) : '') + '</div></td><td>' + o.lines.map((l) => esc(l.perfume) + ' <span class="note">' + l.qty + '×' + l.size_ml + ' ml</span>' + ((l.oil_ml || l.oil_pct) ? ' <span class="pill warn" title="' + esc(l.oil_note || 'Custom oil') + '">custom oil ' + (l.oil_ml ? fmt(l.oil_ml, 1) + ' ml each' : fmt(l.oil_pct, 1) + '%') + '</span>' : '')).join('<br>') + '</td><td>' + dS(o.due_date) + '</td><td class="num">' + fmt(o.oil_ml, 1) + ' ml</td><td><span class="pill ' + (blocked ? 'bad' : cls) + '">' + (blocked ? 'Waiting for oil' : o.status_label) + '</span></td><td>' + (o.status === 'received' ? (late ? '<span class="pill bad">about ' + Math.max(1, s.late_by) + ' days late</span>' + (blocked ? '<div class="note">' + s.short_named.map((x) => esc(x.oil) + ' −' + fmt(x.gap_ml)).join(', ') + '</div>' : '') : '<span class="pill ok">On time</span>') : '<span class="note">—</span>') + '</td><td><div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end">' + acts + (late ? '<button class="btn sm" data-cm="' + o.id + '">Message customer</button>' : '') + (['received', 'in_production', 'ready'].includes(o.status) ? '<button class="btn sm warn" data-act="cancel" data-id="' + o.id + '">Cancel</button>' : '') + '</div></td></tr>'; }).join('') || '<tr><td colspan="7" class="empty">No orders here.</td></tr>') + '</tbody></table></div><p class="note" style="margin:10px 0 0">Orders are checked in order of due date. The earliest due date gets oil first; when the oil runs out, every later order that needs it is marked late. “Start production” takes the oil out of stock.</p></div>';
+    let t = null; $('oq2').oninput = (e) => { clearTimeout(t); t = setTimeout(() => { OS.q = e.target.value; redo(); }, 350); };
+    $('root').querySelectorAll('[data-s]').forEach((b) => { b.onclick = () => { OS.status = b.dataset.s; redo(); }; });
+    $('oNew').onclick = () => orderForm(); window.__ORD = d.orders;
+    $('oSync').onclick = () => syncShopify(true);
+    syncShopify(false);
+  }
+  /* match Shopify product names to your perfumes once (saved, then automatic) */
+  async function matchForm() {
+    await opts(); const d = await G('iv.unmatched'); const U = d.items || [];
+    const sizes = [0, 5, 10, 20, 30, 50, 100, 200];
+    openDr('Match Shopify products to your perfumes', '<div class="sx-card"><p class="note" style="margin:0 0 10px">These Shopify products are not in your perfume list under the same name. Where I could guess the perfume I filled it in — check it, change it if wrong (type a name and choose it). It is saved, so the next orders match by themselves. Leave a row empty to skip it. If a product has no ml size in Shopify, pick the usual size.</p>' +
+      (U.length ? U.map((x, i) => '<div class="lc" data-u="' + i + '" style="margin-bottom:8px"><div class="note" style="color:#14161a;margin-bottom:5px"><b>' + esc(x.title) + '</b> · ' + x.cnt + ' time(s)</div><div class="lr one"><input list="pdl" data-p value="' + esc(x.guess || '') + '" placeholder="Your perfume (type a name and pick it)"><select data-z style="margin-top:5px">' + sizes.map((z) => '<option value="' + z + '">' + (z ? 'If no size in Shopify use ' + z + ' ml' : 'Size from Shopify') + '</option>').join('') + '</select></div></div>').join('') : '<div class="note">Nothing to match right now.</div>') +
+      (d.aliases && d.aliases.length ? '<details style="margin-top:10px"><summary class="note">Already matched by you (' + d.aliases.length + ')</summary>' + d.aliases.map((a) => '<div class="note">' + esc(a.title) + ' → <b>' + esc(a.perfume || '?') + '</b>' + (a.size_ml ? ' · ' + a.size_ml + ' ml' : '') + '</div>').join('') + '</details>' : '') +
+      (U.length ? '<div class="bar" style="margin-top:12px"><span class="sp"></span><button class="btn pri" id="mSave">Save matches</button></div><div class="note" id="mErr" style="color:#b91c1c"></div>' : '') + '</div>');
+    if (U.length) $('mSave').onclick = async () => {
+      const items = []; document.querySelectorAll('[data-u]').forEach((el) => { const x = U[+el.dataset.u], pid = perfId(el.querySelector('[data-p]').value); if (pid) items.push({ title_key: x.title_key, title: x.title, perfume_id: pid, size_ml: +el.querySelector('[data-z]').value }); });
+      if (!items.length) { $('mErr').textContent = 'Pick at least one perfume from the list.'; return; }
+      try { const r = await P('iv.alias_save', { items }); toast('Saved ' + r.saved + ' match(es)' + (r.added ? ' · ' + r.added + ' new order(s) added' : '')); closeDr(); redo(); } catch (e) { $('mErr').textContent = e.message; }
+    };
+  }
+  /* live orders: pulled from Shopify when this tab opens and every 4 minutes while it stays open; new orders appear here and are counted in the oil need */
+  let SYN_T = null;
+  async function syncShopify(force) {
+    const el = $('oSyn'); if (!el) return;
+    try {
+      const r = await G('iv.sync', force ? { force: 1 } : {});
+      if (!$('oSyn')) return;
+      if (r.error) el.textContent = r.error;
+      else if (r.skipped) el.innerHTML = 'Live from Shopify · checked ' + String(r.at).slice(11, 16) + ' · ' + r.seen + ' orders in the last 30 days, ' + r.open + ' not shipped yet' + (r.waiting ? ' · <a href="#" id="oUnm" style="color:#b45309;font-weight:600">' + r.waiting + ' waiting for product matching</a>' : '');
+      else {
+        el.innerHTML = 'Live from Shopify · checked ' + String(r.at).slice(11, 16) + (r.added ? ' · <b>' + r.added + ' new order(s)</b>' : ' · no new orders') + ' · ' + r.seen + ' orders in the last 30 days, ' + r.open + ' not shipped yet' + (r.closed ? ' · ' + r.closed + ' closed' : '') + (r.errors && r.errors.length ? ' · <span style="color:#b91c1c">' + esc(r.errors[0]) + '</span>' : '') +
+          ((r.unmatched && r.unmatched.length) ? ' · <a href="#" id="oUnm" style="color:#b45309;font-weight:600">' + r.unmatched.length + ' product(s) need matching</a>' + (r.waiting ? ' (' + r.waiting + ' order(s) waiting)' : '') : '');
+        if (r.added || r.closed) redo();
+      }
+      if ($('oUnm')) $('oUnm').onclick = (e) => { e.preventDefault(); matchForm(); };
+    } catch (e) { if ($('oSyn')) $('oSyn').textContent = 'Could not reach Shopify: ' + e.message; }
+    clearTimeout(SYN_T); SYN_T = setTimeout(() => { if ($('oSyn') && !document.hidden) syncShopify(false); else if ($('oSyn')) syncShopify(false); }, 240000);
+  }
+  async function orderForm(o, lines) {
+    await opts(); o = o || {};
+    const L = (o.lines || lines || [{ perfume_id: 0, size_ml: 50, qty: 1 }]).map((l) => { const p = OPT.perfumes.find((x) => x.id === l.perfume_id); const std = SIZE_LIST.includes(+l.size_ml);
+      return newLine({ perf: p ? p.name + ' (' + p.code + ')' : '', size: std ? String(l.size_ml) : 'other', other: std ? '' : String(l.size_ml), qty: l.qty, pct: l.oil_pct == null ? '' : String(l.oil_pct), ml: l.oil_ml == null ? '' : String(l.oil_ml), note: l.oil_note || '' }); });
+    const due = o.due_date || new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10);
+    openDr(o.id ? 'Edit order ' + o.code : 'Add order', `<div class="sx-card"><div class="fr"><div class="fld"><label>Customer</label><input id="oC" value="${esc(o.customer || '')}"></div><div class="fld"><label>Channel</label><select id="oH">${['', 'Shopify', 'WhatsApp', 'Retail shop', 'Dealer', 'Phone'].map((c) => '<option' + (o.channel === c ? ' selected' : '') + '>' + c + '</option>').join('')}</select></div></div><div class="fld"><label>Due date</label><input id="oD" type="date" value="${esc(due)}"></div><label class="note" style="font-weight:800">Items</label><div id="oL"></div><button class="btn sm" id="oAddL" type="button">+ Add line</button><div class="fld" style="margin-top:10px"><label>Note</label><input id="oN" value="${esc(o.note || '')}"></div><div id="oE" class="note" style="color:#d9423b"></div></div>`, '<button class="btn pri" id="oSave">Save order</button>');
+    const ed = lineEditor($('oL'), L, { needPerf: true });
+    $('oAddL').onclick = () => { L.push(newLine({ qty: 1 })); ed.draw(); };
+    $('oSave').onclick = async () => { if (L.some((l) => !perfId(l.perf) || lineSize(l) < 1)) { $('oE').textContent = 'Pick every perfume from the list (type a name and choose it) and a bottle size.'; return; } try { await P('iv.order_save', { id: o.id || 0, customer: $('oC').value, channel: $('oH').value, due_date: $('oD').value, note: $('oN').value, lines: L.map(serial) }); toast('Order saved'); closeDr(); if (CUR === 'orders') redo(); else location.hash = '#orders'; } catch (x) { $('oE').textContent = x.message; } };
+  }
+
+  /* ---------- dealers ---------- */
+  async function vDealers() {
+    const [d, pu] = await Promise.all([G('iv.suppliers'), G('iv.purchases', { status: 'all', limit: 30 })]);
+    $('root').innerHTML = '<div class="bar"><span class="sp"></span><button class="btn pri" id="sNew">+ Add dealer</button></div>' + (d.suppliers.length ? '<div class="g g3">' + d.suppliers.map((s) => '<div class="sx-card"><h3>' + esc(s.name) + (s.on_time !== null ? ' <span class="pill ' + (s.on_time >= 90 ? 'ok' : s.on_time >= 80 ? 'warn' : 'bad') + '">' + s.on_time + '% on time</span>' : '') + '</h3><div class="note">' + esc(s.city) + (s.terms ? ' · ' + esc(s.terms) : '') + '</div><div class="eq" style="margin:9px 0"><div><div class="l">Supplies</div><div class="v">' + s.oils.length + ' oils</div></div><div><div class="l">Delivery</div><div class="v">' + s.lead_days + ' days</div></div><div><div class="l">Bought</div><div class="v">' + inr(s.spent) + '</div></div></div><div class="note">Phone <b style="color:#14161a">' + esc(s.phone || '—') + '</b>' + (s.due ? ' · <b style="color:#d9423b">' + inr(s.due) + ' unpaid</b>' : '') + '</div><div style="display:flex;gap:6px;margin:9px 0;flex-wrap:wrap">' + (s.wa ? '<a class="btn sm wa" target="_blank" rel="noopener" href="https://wa.me/' + s.wa + '">WhatsApp</a>' : '') + (s.phone ? '<a class="btn sm" href="tel:' + esc(s.phone.replace(/[^\d+]/g, '')) + '">Call</a>' : '') + '<button class="btn sm" data-sh="' + s.id + '">History</button><button class="btn sm" data-se="' + s.id + '">Edit</button></div>' + (s.to_buy.length ? '<div class="al warn"><span class="d"></span><span style="color:#14161a"><b>' + s.to_buy.length + ' oils to buy:</b> ' + s.to_buy.map(esc).join(', ') + '</span></div>' : '<span class="pill ok">Nothing to buy now</span>') + '</div>').join('') + '</div>' : '<div class="sx-card empty">No dealers yet. Add the dealer you buy each oil from.</div>') +
+      '<div class="sx-card" style="margin-top:12px"><h3>Purchases <small>orders to dealers and deliveries</small></h3><div class="sc"><table class="tbl"><thead><tr><th>Date</th><th>Oil</th><th>Dealer</th><th class="num">Quantity</th><th class="num">Total</th><th>Status</th><th></th></tr></thead><tbody>' + (pu.purchases.map((p) => '<tr><td>' + dS(p.ordered_at) + '<div class="note">' + esc(p.code) + '</div></td><td>' + esc(p.oil || '') + '</td><td>' + esc(p.supplier || '—') + '</td><td class="num">' + fmt(p.qty_ml) + ' ml</td><td class="num">' + inr(p.total) + '</td><td>' + (p.status === 'ordered' ? '<span class="pill warn">Ordered · due ' + dS(p.expected_at) + '</span>' : p.status === 'received' ? '<span class="pill ' + (p.paid == 1 ? 'ok' : 'info') + '">Received' + (p.paid == 1 ? ' · paid' : ' · unpaid') + '</span>' : '<span class="pill mut">Cancelled</span>') + '</td><td><div style="display:flex;gap:5px;justify-content:flex-end">' + (p.status === 'ordered' ? '<button class="btn sm pri" data-prec="' + p.id + '">Received</button><button class="btn sm warn" data-pcan="' + p.id + '">Cancel</button>' : p.status === 'received' && p.paid != 1 ? '<button class="btn sm" data-ppaid="' + p.id + '">Mark paid</button>' : '') + '</div></td></tr>').join('') || '<tr><td colspan="7" class="empty">No purchase yet.</td></tr>') + '</tbody></table></div></div>';
+    $('sNew').onclick = () => supForm(); window.__SUP = d.suppliers; window.__PUR = pu.purchases;
+  }
+  function supForm(s) {
+    s = s || {};
+    openDr(s.id ? 'Edit dealer' : 'Add dealer', `<div class="sx-card"><div class="fld"><label>Dealer name</label><input id="sN" value="${esc(s.name || '')}"></div><div class="fr"><div class="fld"><label>City</label><input id="sC" value="${esc(s.city || '')}"></div><div class="fld"><label>Delivery time (days)</label><input id="sL" type="number" min="0" value="${esc(s.lead_days == null ? 3 : s.lead_days)}"></div></div><div class="fr"><div class="fld"><label>Phone</label><input id="sP" value="${esc(s.phone || '')}"></div><div class="fld"><label>WhatsApp (if different)</label><input id="sW" value="${esc(s.whatsapp || '')}"></div></div><div class="fr"><div class="fld"><label>Email</label><input id="sE" value="${esc(s.email || '')}"></div><div class="fld"><label>Payment terms</label><input id="sT" value="${esc(s.terms || '')}" placeholder="Advance, Net 7 days"></div></div><div class="fld"><label>Address / notes</label><input id="sA" value="${esc(s.address || s.notes || '')}"></div><div id="sErr" class="note" style="color:#d9423b"></div></div>`, '<button class="btn pri" id="sSave">Save</button>' + (s.id ? '<button class="btn warn" id="sOff">Switch off</button>' : ''));
+    $('sSave').onclick = async () => { try { await P('iv.sup_save', { id: s.id || 0, name: $('sN').value, city: $('sC').value, lead_days: +$('sL').value, phone: $('sP').value, whatsapp: $('sW').value, email: $('sE').value, terms: $('sT').value, address: $('sA').value }); toast('Saved'); await opts(true); closeDr(); redo(); } catch (x) { $('sErr').textContent = x.message; } };
+    if (s.id) $('sOff').onclick = async () => { try { await P('iv.sup_off', { id: s.id }); toast('Switched off'); await opts(true); closeDr(); redo(); } catch (x) { $('sErr').textContent = x.message; } };
+  }
+
+  /* ---------- alerts ---------- */
+  async function vAlerts() {
+    const [d, st] = await Promise.all([G('iv.alerts'), G('iv.settings')]), s = st.settings;
+    $('root').innerHTML = '<div class="g g21"><div class="sx-card"><h3>Open alerts <small>' + d.alerts.length + '</small></h3><div class="stack">' + (d.alerts.map(alertHtml).join('') || '<div class="empty">All clear. Nothing needs attention.</div>') + '</div></div><div class="sx-card"><h3>Rules behind the alerts</h3><div class="fld"><label>Safety days (extra days of oil kept beyond delivery time)</label><input id="kS" type="number" min="0" value="' + esc(s.safety_days) + '"></div><div class="fld"><label>Look back for daily use (days)</label><input id="kW" type="number" min="7" value="' + esc(s.window_days) + '"></div><div class="fld"><label>Default oil strength (%)</label><input id="kD" type="number" min="1" max="60" value="' + esc(s.default_pct) + '"></div><div class="fld"><label>Extra oil for wastage (%)</label><input id="kA" type="number" min="0" max="20" step="0.5" value="' + esc(s.wastage_pct) + '"></div><div class="fld"><label>Buy in steps of (ml)</label><input id="kR" type="number" min="10" value="' + esc(s.buy_round_ml) + '"></div><div class="fld"><label>Buy enough for (days after delivery)</label><input id="kT" type="number" min="7" value="' + esc(s.target_days) + '"></div><button class="btn pri" id="kSave">Save rules</button><p class="note" style="margin:8px 0 0">Alerts: out of stock · below minimum · shortage predicted · late order · delivery overdue · payment unpaid for 7+ days. Only Admin can change the rules.</p></div></div>';
+    $('kSave').onclick = async () => { try { await P('iv.settings', { safety_days: +$('kS').value, window_days: +$('kW').value, default_pct: +$('kD').value, wastage_pct: +$('kA').value, buy_round_ml: +$('kR').value, target_days: +$('kT').value }); toast('Rules saved'); redo(); } catch (e) { fail(e); } };
+  }
+
+  /* ---------- reports ---------- */
+  let RP = 'weekly';
+  const bars = (vals, labels, color) => { const W = 620, H = 200, L = 44, B = 24, T = 8, n = vals.length, mx = Math.max(1, ...vals) * 1.15, bw = (W - L - 6) / n; let g = ''; for (let i = 0; i <= 4; i++) { const y = T + (H - B - T) * (1 - i / 4); g += '<line x1="' + L + '" x2="' + (W - 4) + '" y1="' + y + '" y2="' + y + '" stroke="#e6e8ec"/><text x="' + (L - 6) + '" y="' + (y + 3) + '" text-anchor="end">' + fmt(mx * i / 4 / 1000, 1) + '</text>'; } return '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" role="img">' + g + vals.map((v, i) => { const h = (H - B - T) * v / mx; return '<rect x="' + (L + i * bw + bw * .18) + '" y="' + (H - B - h) + '" width="' + (bw * .64) + '" height="' + h + '" rx="3" fill="' + color + '"/>'; }).join('') + labels.map((l, i) => (n <= 8 || i % 2 === 0) ? '<text x="' + (L + i * bw + bw / 2) + '" y="' + (H - 7) + '" text-anchor="middle">' + esc(l) + '</text>' : '').join('') + '</svg>'; };
+  async function vReports() {
+    const d = await G('iv.reports', { period: RP }), U = d.used.reduce((a, b) => a + b, 0), Bq = d.bought.reduce((a, b) => a + b, 0), tm = Math.max(1, ...d.top.map((x) => x.used_ml));
+    $('root').innerHTML = '<div class="bar"><div class="tabs2" style="margin:0">' + [['daily', 'Daily'], ['weekly', 'Weekly'], ['monthly', 'Monthly']].map(([k, l]) => '<button data-rp="' + k + '" class="' + (RP === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div></div>' +
+      '<div class="g g4"><div class="sx-card"><div class="note">Oil available</div><div class="v" style="font-size:24px;font-weight:700">' + fmt(d.total_ml / 1000, 1) + ' L</div></div><div class="sx-card"><div class="note">Oil used</div><div class="v" style="font-size:24px;font-weight:700">' + fmt(U / 1000, 1) + ' L</div></div><div class="sx-card"><div class="note">Oil bought</div><div class="v" style="font-size:24px;font-weight:700">' + fmt(Bq / 1000, 1) + ' L</div><div class="note">' + inr(d.spend) + ' spent</div></div><div class="sx-card"><div class="note">Unpaid to dealers</div><div class="v" style="font-size:24px;font-weight:700;color:' + (d.unpaid ? '#d9423b' : '#16945a') + '">' + inr(d.unpaid) + '</div></div></div>' +
+      '<div class="g g2" style="margin-top:12px"><div class="sx-card"><h3>Oil consumption <small>litres</small></h3>' + bars(d.used, d.labels, '#ff7a2f') + '</div><div class="sx-card"><h3>Oil purchased <small>litres</small></h3>' + bars(d.bought, d.labels, '#2a78d6') + '</div></div>' +
+      '<div class="g g2" style="margin-top:12px"><div class="sx-card"><h3>Most used oils <small>last 30 days</small></h3><div class="stack">' + (d.top.filter((x) => x.used_ml > 0).map((o) => '<div><div style="display:flex;justify-content:space-between"><span>' + esc(o.name) + '</span><span class="note">' + fmt(o.used_ml) + ' ml</span></div><div class="meter"><i style="width:' + (o.used_ml / tm * 100) + '%;background:#ff7a2f"></i></div></div>').join('') || '<div class="empty">No oil used yet.</div>') + '</div></div><div class="sx-card"><h3>Production capacity <small>with today’s stock</small></h3><div class="eq">' + [20, 50, 100].map((s) => '<div><div class="l">' + s + ' ml bottles</div><div class="v">' + fmt(d.capacity[s]) + '</div><div class="note">per perfume, average</div></div>').join('') + '</div><p class="note" style="margin:10px 0 0">Capacity is how many bottles each perfume can still be made from its oil.</p></div></div>';
+    $('root').querySelectorAll('[data-rp]').forEach((b) => { b.onclick = () => { RP = b.dataset.rp; redo(); }; });
+  }
+
+  /* ---------- shared clicks ---------- */
+  async function waOpen(oilId, qty) {
+    try {
+      const m = await G('iv.message', { oil_id: oilId, qty_ml: qty || 0 });
+      openDr('Message ' + (m.supplier || 'dealer'), '<div class="sx-card"><div class="note">Written from your stock. Check it, then send.</div><div class="msg" id="mTxt">' + esc(m.text) + '</div><div class="note">Dealer number: <b style="color:#14161a">' + esc(m.phone || 'not saved') + '</b></div>' + (m.phone ? '' : '<div class="note" style="color:#d9423b">Add the dealer’s phone on the Dealers page.</div>') + '</div>', (m.wa_url ? '<a class="btn wa" target="_blank" rel="noopener" href="' + esc(m.wa_url) + '">Open WhatsApp</a>' : '') + '<button class="btn" id="mCopy">Copy message</button>' + (m.tel_url ? '<a class="btn" href="' + esc(m.tel_url) + '">Call</a>' : ''));
+      $('mCopy').onclick = (e) => { try { navigator.clipboard.writeText(m.text).then(() => { e.target.textContent = 'Copied'; }, () => { e.target.textContent = 'Select the text and copy'; }); } catch (x) { e.target.textContent = 'Select the text and copy'; } };
+    } catch (e) { fail(e); }
+  }
+  document.addEventListener('click', async (e) => {
+    const t = e.target.closest('button,a,tr'); if (!t) return; const D = t.dataset || {};
+    if (D.wa) return waOpen(+D.wa, +D.q || 0);
+    if (D.call) { try { const m = await G('iv.message', { oil_id: +D.call }); openDr('Call ' + (m.supplier || 'dealer'), '<div class="sx-card"><div style="font-size:26px;font-weight:800">' + esc(m.phone || 'No number saved') + '</div></div>', m.tel_url ? '<a class="btn pri" href="' + esc(m.tel_url) + '">Call now</a>' : ''); } catch (x) { fail(x); } return; }
+    if (D.po) { try { const r = await P('iv.purchase_create', { oil_id: +D.po, qty_ml: +D.q || 0 }); toast('Purchase ' + r.code + ' created. Delivery expected ' + dS(r.expected_at)); if (CUR === 'dealers' || CUR === 'oils' || CUR === 'dashboard' || CUR === 'alerts') redo(); } catch (x) { fail(x); } return; }
+    if (D.cm) { try { const m = await G('iv.order_message', { id: +D.cm }); openDr('Delay message to customer', '<div class="sx-card"><div class="msg">' + esc(m.text) + '</div></div>', '<button class="btn pri" id="mCopy">Copy message</button>'); $('mCopy').onclick = (ev) => { try { navigator.clipboard.writeText(m.text).then(() => { ev.target.textContent = 'Copied'; }, () => {}); } catch (x) { /* manual copy */ } }; } catch (x) { fail(x); } return; }
+    if (t.tagName === 'TR' && D.oil) return oilDetail(+D.oil);
+    if (t.tagName === 'TR' && D.perf) { const row = (window.__PERF || []).find((p) => p.id === +D.perf); if (row) perfForm(row); return; }
+    if (D.act) { const id = +D.id; if (D.act === 'cancel' && t.dataset.sure !== '1') { t.dataset.sure = '1'; t.textContent = 'Sure? Cancel'; setTimeout(() => { if (t.isConnected) { t.dataset.sure = ''; t.textContent = 'Cancel'; } }, 3000); return; } try { await P('iv.order_act', { id, act: D.act }); toast({ issue: 'Production started, oil taken out of stock', ready: 'Marked ready', dispatch: 'Dispatched', cancel: 'Order cancelled' }[D.act]); redo(); } catch (x) { fail(x); } return; }
+    if (D.edit) { const o = (window.__ORD || []).find((x) => x.id === +D.edit); if (o) orderForm(o); return; }
+    if (D.se) { const s = (window.__SUP || []).find((x) => x.id === +D.se); if (s) supForm(s); return; }
+    if (D.sh) { try { const r = await G('iv.purchases', { supplier_id: +D.sh, status: 'all', limit: 50 }); openDr('Purchase history', '<div class="sx-card sc"><table class="tbl"><thead><tr><th>Date</th><th>Oil</th><th class="num">ml</th><th class="num">₹/ml</th><th class="num">Total</th><th>Status</th></tr></thead><tbody>' + (r.purchases.map((p) => '<tr><td>' + dS(p.ordered_at) + '</td><td>' + esc(p.oil || '') + '</td><td class="num">' + fmt(p.qty_ml) + '</td><td class="num">' + fmt(p.price_per_ml, 2) + '</td><td class="num">' + inr(p.total) + '</td><td>' + esc(p.status) + (p.status === 'received' ? (p.paid == 1 ? ' · paid' : ' · unpaid') : '') + '</td></tr>').join('') || '<tr><td colspan="6" class="empty">No purchase yet.</td></tr>') + '</tbody></table></div>'); } catch (x) { fail(x); } return; }
+    if (D.prec) { const p = (window.__PUR || []).find((x) => x.id === +D.prec); if (p) { await opts(); recvForm(p.oil_id, p); } return; }
+    if (D.pcan) { try { await P('iv.purchase_act', { id: +D.pcan, act: 'cancel' }); toast('Purchase cancelled'); redo(); } catch (x) { fail(x); } return; }
+    if (D.ppaid) { try { await P('iv.purchase_act', { id: +D.ppaid, act: 'paid' }); toast('Marked paid'); redo(); } catch (x) { fail(x); } return; }
+  });
+
+  route();
+</script>
+</body>
+</html>

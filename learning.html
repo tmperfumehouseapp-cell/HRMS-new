@@ -1,0 +1,1025 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Learning &amp; Improvement — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap">
+<style>
+  [hidden]{display:none !important;}
+  .lx{font-family:Manrope,system-ui,-apple-system,Segoe UI,Arial,sans-serif; -webkit-font-smoothing:antialiased; color:#1b2430; max-width:1180px; margin:0 auto; padding:0 4px 40px; font-size:14px;}
+  .lx *{box-sizing:border-box;} .lx button,.lx input,.lx select,.lx textarea{font:inherit; color:inherit;}
+  .lx .sub{color:#6b7684; font-size:12.5px; line-height:1.5;} .lx .sp{flex:1;} .lx .row{display:flex; gap:10px; align-items:center; flex-wrap:wrap;}
+  /* header */
+  .lx-hd{background:#fff; border:1px solid #e3e8ef; border-radius:18px; overflow:hidden; margin-bottom:14px;}
+  .lx-top{display:flex; gap:12px; align-items:center; padding:14px 18px; flex-wrap:wrap;} .lx-top h2{margin:0; font-size:20px; font-weight:800;}
+  .lx-pill{display:inline-flex; align-items:center; gap:6px; padding:4px 11px; border-radius:99px; font-size:12px; font-weight:700; background:#f1f3f6; color:#4a5565; white-space:nowrap;}
+  .lx-pill.g{background:#e6f7ee; color:#0f766e;} .lx-pill.o{background:#fff1e3; color:#c2570c;} .lx-pill.b{background:#e8f0ff; color:#2457c5;} .lx-pill.r{background:#fde8e8; color:#b42318;} .lx-pill.p{background:#f3efff; color:#6d3fd1;}
+  .lx-sel{border:1px solid #cfd6e0; border-radius:10px; background:#fff; padding:7px 10px; font-weight:700; font-size:13px; cursor:pointer;}
+  .lx-strip{display:flex; gap:10px; flex-wrap:wrap; padding:10px 18px; background:#fafbfc; border-top:1px solid #eef1f5;}
+  .lx-stat{background:#fff; border:1px solid #e3e8ef; border-radius:12px; padding:7px 14px; font-size:12px; color:#6b7684; cursor:pointer; text-align:left;} .lx-stat:hover{border-color:#f5b27a;}
+  .lx-stat b{display:block; font-size:19px; color:#1b2430; line-height:1.15;}
+  .lx-tabs{display:flex; gap:4px; padding:8px 14px 0; border-top:1px solid #e3e8ef; overflow-x:auto; -webkit-overflow-scrolling:touch;}
+  .lx-tab{flex-shrink:0; border:1px solid transparent; border-bottom:0; background:none; padding:11px 16px; border-radius:10px 10px 0 0; font-weight:700; font-size:14px; color:#6b7684; cursor:pointer; white-space:nowrap; display:flex; gap:7px; align-items:center;}
+  .lx-tab.on{background:#fff7ef; color:#c2570c; border-color:#f5b27a; box-shadow:inset 0 -3px 0 #f58220;} .lx-tab em{font-style:normal; background:#f58220; color:#fff; border-radius:99px; font-size:11px; padding:1px 7px;}
+  .lx-tab .rd{width:9px; height:9px; border-radius:50%; background:#e5322d; box-shadow:0 0 0 2px #fff;} .lx-bill{background:#fde8e8; color:#9a2620; border:1px solid #f5c2bd; border-radius:12px; padding:9px 13px; margin:0 0 12px; font-size:13px; line-height:1.5; display:flex; gap:10px; align-items:center; flex-wrap:wrap;}
+  /* cards, buttons, inputs */
+  .lx-card{background:#fff; border:1px solid #e3e8ef; border-radius:16px; padding:14px 16px; margin-bottom:12px;}
+  .lx-card.on{border:2px solid #f58220;} .lx-card.ok{border-left:5px solid #16a34a;} .lx-card.ask{border-left:5px solid #f59e0b;}
+  .lx-sec{font-size:12px; font-weight:800; letter-spacing:.07em; text-transform:uppercase; color:#6b7684; margin:16px 0 8px;}
+  .lx-btn{border:1px solid #d5dbe4; background:#fff; border-radius:10px; padding:9px 14px; font-weight:700; font-size:13px; cursor:pointer; min-height:38px; width:auto;} .lx-btn:hover{background:#f6f8fa;} .lx-btn:disabled{opacity:.55; cursor:default;}
+  .lx-btn.p{background:#f58220; border-color:#f58220; color:#fff;} .lx-btn.p:hover{background:#e0731a;} .lx-btn.r{color:#b42318;} .lx-btn.s{min-height:32px; padding:5px 11px; font-size:12.5px;}
+  .lx-in,.lx-ta{width:100%; border:1px solid #cfd6e0; border-radius:10px; padding:9px 11px; background:#fff; line-height:1.4;} .lx-ta{resize:vertical; min-height:64px;}
+  .lx-in:focus,.lx-ta:focus{outline:2px solid #fbd3b0; border-color:#f58220;}
+  .lx-mic{border:2px dashed #f5b27a; background:#fffaf5; border-radius:16px; padding:12px 14px;} .lx-mic .lx-ta{border:0; background:transparent; min-height:70px; padding:4px 2px;}
+  .lx-micb{border:0; background:#f58220; color:#fff; min-width:36px; height:36px; padding:0 12px; border-radius:99px; font-weight:700; white-space:nowrap; cursor:pointer; font-size:16px; flex:none;} .lx-micb.on{background:#dc2626; animation:lxp 1s infinite;} @keyframes lxp{50%{opacity:.55}}
+  .lx-micb.s{min-width:28px; height:28px; padding:0 9px; font-size:12px; vertical-align:middle; margin-left:6px;}
+  .lx-q{border:1px solid #e3e8ef; border-radius:12px; padding:9px 11px; margin:8px 0; background:#fcfcfd;} .lx-q small{display:block; font-weight:700; font-size:13px; margin-bottom:5px;}
+  .lx-con{background:#fff7ef; border:1px dashed #f5b27a; border-radius:12px; padding:10px 14px; margin:8px 0; font-size:13.5px;} .lx-con b.t{display:block; color:#c2570c; font-size:12px; letter-spacing:.04em; margin-bottom:4px;} .lx-con ul{margin:4px 0 0 18px; padding:0;}
+  .lx-sum{background:linear-gradient(180deg,#f0fdf4,#fff); border:1px solid #bbf7d0; border-radius:12px; padding:11px 14px; margin:8px 0;} .lx-sum b.t{display:block; font-size:12px; letter-spacing:.06em; color:#166534; margin-bottom:4px;} .lx-sum ul{list-style:none; margin:0; padding:0;} .lx-sum li{position:relative; padding:5px 0 5px 22px; font-size:13.5px; line-height:1.5; border-top:1px dashed #d1fae5;} .lx-sum li:first-child{border-top:0;} .lx-sum li:before{content:"✓"; position:absolute; left:2px; color:#16a34a; font-weight:900;} .lx-sm{font-size:11.5px; color:#6b7684; margin-top:7px;}
+  .lx-tg{font-size:11px; font-weight:800; border-radius:6px; padding:1px 6px; margin-left:6px; white-space:normal;} .lx-tg.n{background:#fef3c7; color:#92400e;} .lx-tg.c{background:#e0f2fe; color:#075985;} .lx-tg.h{background:#f1f3f6; color:#6b7684;}
+  .lx-thread{display:flex; flex-direction:column; gap:10px; background:#fafbfc; border:1px solid #eef0f3; border-radius:12px; padding:12px; max-height:460px; overflow-y:auto; margin:8px 0;} .lx-day{align-self:center; font-size:11px; font-weight:700; color:#9aa4b2;}
+  .lx-b{max-width:86%; border-radius:14px; padding:9px 12px; font-size:13.5px; line-height:1.5; white-space:pre-wrap; word-break:break-word;} .lx-b.bot{align-self:flex-start; background:#fff; border:1px solid #e3e8ef; border-top-left-radius:4px;} .lx-b.me{align-self:flex-end; background:#fff7ed; border:1px solid #fed7aa; border-top-right-radius:4px;} .lx-b.got{align-self:flex-start; background:#f0fdf4; border:1px solid #bbf7d0; border-top-left-radius:4px; max-width:92%;}
+  .lx-w{font-size:11px; font-weight:800; letter-spacing:.05em; color:#6b7684; margin-bottom:4px;} .lx-w i{font-style:normal; font-weight:600; letter-spacing:0; color:#9aa4b2; margin-left:6px;}
+  .lx-qq{padding:6px 0; border-top:1px dashed #e5e7eb;} .lx-qq:first-of-type{border-top:0; padding-top:0;} .lx-qq.dn{color:#8a94a3; text-decoration:none;} .lx-rq{border:0; background:none; color:#c2570c; font-weight:800; font-size:12px; cursor:pointer; padding:2px 4px; min-height:0; width:auto;}
+  .lx-sg{margin:7px 0 3px; border:1px solid #fde68a; background:#fffbeb; border-radius:12px; padding:8px 10px; white-space:normal;} .lx-sg .h{display:flex; gap:6px; align-items:center; flex-wrap:wrap; font-size:11px; font-weight:800; color:#92400e;} .lx-sg .a{font-size:13.5px; margin:4px 0 2px; color:#1f2937;} .lx-sg .bt{display:flex; gap:6px; flex-wrap:wrap; margin-top:7px;} .lx-sg .nt{font-size:11px; color:#6b7280; margin-top:5px;}
+  .lx-ev{font-size:11px; font-weight:700; border-radius:99px; padding:1px 8px; background:#dcfce7; color:#14532d;} .lx-ev.w{background:#fee2e2; color:#991b1b;} .lx-ev.o{background:#e0e7ff; color:#3730a3;} .lx-ev.g{background:#f3f4f6; color:#4b5563;}
+  .lx-pl .g{font-size:11px; font-weight:800; color:#6b7280; text-transform:uppercase; letter-spacing:.03em; margin:7px 0 2px;} .lx-pl .r{display:flex; gap:8px; padding:4px 0; border-top:1px dashed #fde68a;} .lx-pl .w{flex:none; width:70px; font-weight:800; color:#c2570c; font-size:12.5px;} .lx-pl .t{font-size:13px; white-space:pre-wrap;}
+  .lx-bulk{margin:8px 0; display:flex; gap:8px; align-items:center; flex-wrap:wrap; font-size:12.5px; color:#6b7280;}
+  .lx-seen{font-size:11.5px; color:#9a3412; margin-top:6px; background:#fff7ed; border-radius:8px; padding:4px 8px; display:inline-block;} .lx-lock{font-size:11px; color:#9aa4b2; margin-top:5px;} .lx-qa{margin-bottom:5px;} .lx-qa small{display:block; font-weight:700; color:#6b7684; font-size:11.5px;} .lx-chg{font-size:12.5px; margin-top:6px; color:#92400e; background:#fffbeb; border:1px solid #fde68a; border-radius:8px; padding:5px 9px;}
+  .lx-comp{margin-top:8px;} .lx-box{display:flex; gap:8px; align-items:flex-start; border:1.5px solid #fdba74; background:#fffaf5; border-radius:14px; padding:8px 10px;} .lx-box .lx-ta{border:0; background:transparent; min-height:56px; padding:2px;} .lx-rpl{font-size:12.5px; background:#fff7ed; border:1px solid #fed7aa; border-radius:10px; padding:6px 10px; margin-bottom:6px;} .lx-rx{border:0; background:none; cursor:pointer; color:#9aa4b2; font-size:14px; padding:0 4px; min-height:0; width:auto;}
+  .lx-ack{background:#eff6ff; border:1px solid #bfdbfe; border-radius:10px; padding:7px 11px; margin:6px 0; font-size:13px;} .lx-done{background:#f0fdf4; border:1px solid #bbf7d0; border-radius:12px; padding:9px 13px; margin:8px 0; font-size:13px;}
+  .lx-err{background:#fde8e8; color:#9a2620; border-radius:12px; padding:9px 13px; margin:8px 0; font-size:13px;} .lx-note{background:#fff7e6; color:#7a5200; border:1px solid #f6dfaa; border-radius:12px; padding:9px 13px; margin:8px 0; font-size:13px; line-height:1.5;}
+  .lx-empty{padding:26px 14px; text-align:center; color:#7b8a82; line-height:1.6;}
+  details.lx-d > summary{cursor:pointer; font-weight:700; font-size:13.5px; list-style:none; display:flex; gap:8px; align-items:center; flex-wrap:wrap;} details.lx-d > summary::-webkit-details-marker{display:none;}
+  details.lx-d > summary::before{content:'▸'; color:#9aa4b2;} details.lx-d[open] > summary::before{content:'▾';}
+  /* quick set-up */
+  .lx-q3{display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px;} .lx-qb{border:1px solid #e3e8ef; background:#fff; border-radius:14px; padding:13px 15px; text-align:left; cursor:pointer;} .lx-qb:hover{border-color:#f5b27a;} .lx-qb.on{border:2px solid #f58220; background:#fff7ef;}
+  .lx-qb b{font-size:15px; display:block;} .lx-qb small{display:block; color:#6b7684; margin-top:4px; font-size:12.5px; line-height:1.45;}
+  /* limits */
+  .lx-lim{border:1px solid #e3e8ef; border-radius:12px; padding:10px 12px; margin:8px 0; background:#fff;} .lx-t{width:100%; border-collapse:collapse; font-size:13px; margin-top:6px;}
+  .lx-t th{font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:#6b7684; text-align:left; padding:5px 6px;} .lx-t td{padding:3px 4px;} .lx-t input[type=text]{width:100%; min-width:62px; border:1px solid #cfd6e0; border-radius:8px; padding:6px 8px;}
+  .lx-t input.e{border-color:#f58220; background:#fff7ef;} .lx-x{border:0; background:#eef1f5; width:26px; height:26px; border-radius:50%; cursor:pointer; font-size:13px; color:#6b7684;}
+  .lx-g{display:flex; gap:8px; margin-top:6px;} .lx-g input{flex:1; min-width:0; border:1px solid #cfd6e0; border-radius:8px; padding:6px 8px;} .lx-dt{margin-top:8px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;} .lx-dt input{border:1px solid #cfd6e0; border-radius:8px; padding:6px 8px;}
+  .lx-cf{background:#fff7e6; border:1px solid #f6dfaa; border-radius:12px; padding:10px 13px; margin:8px 0; font-size:13px;} .lx-cf label{display:block; margin:6px 0; cursor:pointer;}
+  .lx-grp{border:1px solid #e3e8ef; border-radius:12px; padding:10px 12px; margin:8px 0; background:#fff;} .lx-grp.expired{opacity:.6;}
+  /* follow-ups */
+  .lx-sit{border:1px solid #e3e8ef; border-radius:14px; background:#fff; margin:10px 0; overflow:hidden;} .lx-sit[open]{border:2px solid #f58220;}
+  .lx-sit > summary{padding:12px 14px; cursor:pointer; list-style:none; display:flex; gap:9px; align-items:center; flex-wrap:wrap; font-weight:800; font-size:14.5px;} .lx-sit > summary::-webkit-details-marker{display:none;}
+  .lx-sit > summary::after{content:'▸'; color:#9aa4b2; margin-left:auto;} .lx-sit[open] > summary::after{content:'▾';}
+  .lx-sb{padding:0 14px 14px;} .lx-stp{display:grid; grid-template-columns:54px 150px minmax(0,1fr) minmax(0,190px) 30px; gap:10px; align-items:start; padding:10px 0; border-top:1px solid #f1f3f6;}
+  .lx-stp.h{border-top:0; font-size:11px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:#6b7684; padding:2px 0;} .lx-stp .n{font-weight:800; color:#c2570c; padding-top:8px;}
+  .lx-stp .tm{display:flex; gap:6px;} .lx-stp .tm input{width:64px; border:1px solid #cfd6e0; border-radius:8px; padding:7px 8px;} .lx-stp .tm select{border:1px solid #cfd6e0; border-radius:8px; padding:7px 6px; background:#fff;}
+  .lx-stp .rm{display:flex; gap:6px;} .lx-stp .rm input{min-width:0; flex:1; border:1px solid #cfd6e0; border-radius:8px; padding:7px 9px;}
+  .lx-hl{background:#fff7ef; border:1px dashed #f5b27a; border-radius:10px; padding:9px 12px; font-size:13px; color:#8a4a12; margin-top:10px;}
+  /* chats */
+  .lx-chat{background:#efeae2; border-radius:14px; padding:12px; min-height:200px; max-height:460px; overflow-y:auto;} .lx-cb{max-width:80%; padding:8px 11px; border-radius:10px; font-size:13.5px; margin:6px 0; line-height:1.42; white-space:pre-wrap; word-break:break-word;}
+  .lx-pcs{display:flex; gap:6px; margin-top:6px; flex-wrap:wrap;} .lx-pcard{width:104px; background:#fff; border-radius:8px; overflow:hidden; font-size:11px; line-height:1.3;} .lx-pcard img,.lx-pnoimg{width:104px; height:96px; object-fit:cover; display:block; background:#eef0f3;} .lx-pnoimg{display:flex; align-items:center; justify-content:center; color:#9aa3af;} .lx-pt{padding:4px 6px;} .lx-pt b{display:block;} .lx-pt span{color:#6b7684;} .lx-cb small.lx-pflag{color:#b45309; font-weight:700;}
+  .lx-cb.c{background:#fff;} .lx-cb.m{background:#d9fdd3; margin-left:auto;} .lx-cb small{display:block; color:#6b7684; margin-top:4px; font-size:11.5px;}
+  .lx-gap{text-align:center; margin:8px 0;} .lx-gap span{font-size:11.5px; color:#4a5565; background:#ffffffcc; border-radius:8px; padding:3px 9px; display:inline-block;}
+  .lx-2{display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:14px;} .lx-3{display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px;}
+  .lx-big{font-size:30px; font-weight:800; line-height:1.15;} .lx-bars{display:flex; align-items:flex-end; gap:12px; height:130px; margin-top:10px;} .lx-bars div{flex:1; background:#f58220; border-radius:8px 8px 0 0; color:#fff; font-weight:800; font-size:12px; text-align:center; padding-top:4px; min-height:22px;}
+  .lx-lbl{display:flex; gap:12px; font-size:12px; color:#6b7684; text-align:center;} .lx-lbl span{flex:1;}
+  .lx-fn{display:flex; align-items:center; gap:10px; margin:6px 0; font-size:13px;} .lx-fn i{display:block; height:12px; border-radius:6px; background:#f58220; min-width:3px;}
+  .lx-kv{padding:8px 0; border-top:1px solid #f1f3f6; font-size:13.5px; display:flex; gap:8px; align-items:flex-start;} .lx-kv:first-child{border-top:0;}
+  @media (max-width:1000px){ .lx-q3{grid-template-columns:repeat(2,minmax(0,1fr));} }
+  @media (max-width:760px){
+    .lx-q3,.lx-3,.lx-2{grid-template-columns:1fr;} .lx-stp{grid-template-columns:1fr; gap:6px;} .lx-stp.h{display:none;} .lx-stp .n{padding-top:0;} .lx-top h2{font-size:17px;}
+    .lx-tabs{flex-wrap:wrap; overflow:visible; gap:6px; padding:10px 12px 10px;} .lx-tab{padding:8px 12px; font-size:13px; border:1px solid #e3e8ef; border-radius:99px; background:#fff;} .lx-tab.on{box-shadow:none;} .lx-strip{gap:6px; padding:8px 12px;} .lx-stat{padding:5px 10px;} .lx-stat b{font-size:16px;} .lx-cb{max-width:92%;}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><div><h1>Learning &amp; Improvement</h1><div style="font-size:11.5px; color:var(--muted); margin-top:2px;">Teach the bot once — it follows it in Practice chat and WhatsApp</div></div></div>
+    <div class="content"><div id="lx" class="lx"><div class="lx-empty">Loading…</div></div></div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=2"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script>
+(function () {
+  guardPage();
+  renderSidebar('sales');
+
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const root = $('lx');
+  const TABS = [['teach', '🎙 Teach board'], ['fu', '🔁 Follow-up Autopilot'], ['wa', '💬 From WhatsApp'], ['pricing', '💰 Price chart'], ['products', '🛍 Products'], ['lists', '🗒️ Lists'], ['billing', '🧾 Billing'], ['cmsg', '✉️ Cart messages'], ['brain', '📚 Saved brain'], ['store', '🏪 Store info'], ['test', '🧪 Practice chat'], ['res', '📈 Results']];
+  // one Learn & Setup: six sections; a section with more than one screen shows them as small sub-tabs
+  const SECTIONS = [['teach', '🎙 Teach', ['teach', 'wa']], ['fu', '🔁 Follow-ups', ['fu']], ['pricing', '💰 Pricing', ['pricing']], ['products', '🛍 Products', ['products', 'lists']], ['cart', '🛒 Cart setup', ['billing', 'cmsg']], ['brain', '📚 Saved brain', ['brain', 'store']], ['test', '🧪 Test', ['test', 'res']]];
+  const secOf = (t) => SECTIONS.find((x) => x[2].includes(t)) || SECTIONS[0];
+  const MODES = [['off', 'Follow-ups off'], ['suggest', 'Suggest only'], ['auto24', 'Auto inside 24 h'], ['autotpl', 'Auto + templates']];
+
+  // ---------------- state (everything the page remembers while you work)
+  const S = {
+    tab: 'teach', bd: null, bdErr: '', bdMsg: null, bdBusy: '', bdIn: '', bdImgs: [], bdShelf: {}, reps: [], bdNote: '', bdOpen: {}, bdDraft: {}, bdLim: {}, bdCorr: {}, bdConf: {}, bdReply: {}, bdRq: {}, thAll: {}, thPos: {}, sgEdit: {}, sgSure: {}, sgDraft: {}, sugTried: {}, sugBusy: '',
+    facts: null, factsErr: '', ruleBusy: false, catBusy: false,
+    fu: null, fuErr: '', fuOpen: false, fuBusy: '', fuD: {}, fuEdit: {}, fuNew: { title: '', desc: '' }, fuMsg: '',
+    wa: null, waErr: '', waSt: 'new', gaps: null, gapsErr: '', hist: null, histErr: '',
+    res: null, resErr: '',
+    bill: null,
+    chat: [], chatBusy: false, chatIn: '', teachBox: null, simSid: '', sim: null, simBusy: false, simErr: '', simCtx: ''
+  };
+  let REC = null;
+  const lang = () => { try { return localStorage.getItem('lx_lang') || 'hi-IN'; } catch (e) { return 'hi-IN'; } };
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const mic = (f, small) => SR ? `<button type="button" class="lx-micb${small ? ' s' : ''}" data-lx="mic" data-for="${f}" title="Press to start speaking, press again to stop">🎤 Start</button>` : '';
+  const toast = (m, bad) => { document.querySelectorAll('.lx-toast').forEach((x) => x.remove()); const t = document.createElement('div'); t.className = 'lx-toast'; t.textContent = m; t.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:' + (bad ? '#b42318' : '#14532d') + ';color:#fff;padding:10px 18px;border-radius:12px;font-weight:700;font-size:13.5px;z-index:999;max-width:90vw;'; document.body.appendChild(t); setTimeout(() => t.remove(), bad ? 9000 : 3200); };
+  const bdFail = (e) => { S.bdErr = msg(e); toast(msg(e), true); };      // a failed Teach action: the red box at the top AND a message you can see wherever you are on the page
+  const msg = (e) => (e && e.message) || String(e || 'Something went wrong.');
+  const soft = async (fn) => { try { return { ok: true, d: await fn() }; } catch (e) { return { ok: false, err: msg(e) }; } };   // for the parts that need the new server files — a miss never breaks the page
+  const NEEDS = 'This part needs the new server files (the next delivery). Everything else works already.';
+
+  // ================================================================== TEACH BOARD (topics → questions → concept + limits → "Got it")
+  function stash() {
+    document.querySelectorAll('#lx [data-ivr]').forEach((x) => { S.bdReply[x.dataset.ivr] = x.value; });
+    document.querySelectorAll('#lx [data-sgin]').forEach((x) => { S.sgDraft[x.dataset.sgin] = x.value; });
+    { const bx = document.querySelector('#lx #lxB_all'); if (bx) S.bdAllDraft = bx.value; }
+    document.querySelectorAll('#lx textarea[id^="lxM_"]').forEach((x) => { S.mDraft = S.mDraft || {}; S.mDraft[x.id.slice(4)] = x.value; });
+    document.querySelectorAll('#lx textarea[id^="lxG_"]').forEach((x) => { S.waGd = S.waGd || {}; S.waGd[x.id.slice(4)] = x.value; });
+    document.querySelectorAll('#lx .lx-thread[data-tid]').forEach((x) => { S.thPos[x.dataset.tid] = (x.scrollHeight - x.scrollTop - x.clientHeight < 40) ? -1 : x.scrollTop; });
+    document.querySelectorAll('#lx .lx-lim').forEach((box) => {
+      const st = { rows: [], gen: [], temp: false, from: '', to: '' };
+      box.querySelectorAll('tr[data-ri]').forEach((tr) => { const g = (f) => (tr.querySelector('[data-f="' + f + '"]') || {}).value || ''; st.rows.push({ label: g('label'), start: g('start'), lowest: g('lowest'), max_pct: g('max_pct'), never: !!(tr.querySelector('[data-f="never"]') || {}).checked }); });
+      box.querySelectorAll('[data-gi]').forEach((d) => { const g = (f) => (d.querySelector('[data-f="' + f + '"]') || {}).value || ''; st.gen.push({ name: g('name'), value: g('value') }); });
+      const tp = box.querySelector('[data-f="temp"]'); st.temp = !!(tp && tp.checked); st.from = (box.querySelector('[data-f="from"]') || {}).value || ''; st.to = (box.querySelector('[data-f="to"]') || {}).value || '';
+      S.bdLim[box.dataset.tid] = st;
+    });
+    const r = $('lxIn'); if (r) S.bdIn = r.value; const nb = $('lxNote'); if (nb) S.bdNote = nb.value;
+    document.querySelectorAll('#lx [data-fsid]').forEach((card) => { const sid = card.dataset.fsid; const D = S.fuD[sid]; if (!D) return;
+      D.all = (card.querySelector('[data-fall]') || { value: D.all }).value;
+      card.querySelectorAll('.lx-stp[data-n]').forEach((row) => { const st = D.steps.find((x) => String(x.n) === row.dataset.n); if (!st) return; st.v = (row.querySelector('[data-fv]') || { value: st.v }).value; st.u = (row.querySelector('[data-fu]') || { value: st.u }).value; st.text = (row.querySelector('[data-ft]') || { value: st.text }).value; st.remark = (row.querySelector('[data-fr]') || { value: st.remark }).value; }); });
+    document.querySelectorAll('#lx [data-fnew]').forEach((x) => { S.fuNew[x.dataset.fnew] = x.value; });
+    const ch = $('lxChatIn'); if (ch) S.chatIn = ch.value;
+  }
+  function limState(t) {
+    if (!S.bdLim[t.id]) { const L = t.limits || {}; S.bdLim[t.id] = { rows: (L.rows || []).map((r) => ({ label: r.label || '', start: r.start == null ? '' : String(r.start), lowest: r.lowest == null ? '' : String(r.lowest), max_pct: r.max_pct == null ? '' : String(r.max_pct), never: !!r.never })), gen: (L.gen || []).map((g) => ({ name: g.name || '', value: g.value || '' })), temp: !!t.to, from: t.from || '', to: t.to || '' }; }
+    return S.bdLim[t.id];
+  }
+  const limPayload = (st) => ({ rows: st.rows.filter((r) => r.label.trim()).map((r) => ({ label: r.label.trim(), start: r.start, lowest: r.lowest, max_pct: r.max_pct, never: !!r.never })), gen: st.gen.filter((g) => g.name.trim() && g.value.trim()) });
+  function limHtml(t) {
+    const st = limState(t), inp = (f, v, ph, cls) => `<input data-f="${f}" type="text" inputmode="${f === 'label' ? 'text' : 'decimal'}" value="${esc(v)}" placeholder="${ph}" class="${cls || ''}">`;
+    const rows = st.rows.map((r, i) => `<tr data-ri="${i}"><td>${inp('label', r.label, '20 ml')}</td><td>${inp('start', r.start, '₹', !r.never && r.start === '' ? 'e' : '')}</td><td>${inp('lowest', r.lowest, '₹', !r.never && r.lowest === '' ? 'e' : '')}</td><td>${inp('max_pct', r.max_pct, '%')}</td><td style="text-align:center"><input type="checkbox" data-f="never" ${r.never ? 'checked' : ''}></td><td><button type="button" class="lx-x" data-lx="rowdel" data-tid="${t.id}" data-i="${i}" title="Remove">✕</button></td></tr>`).join('');
+    const gen = st.gen.map((g, i) => `<div class="lx-g" data-gi="${i}">${inp('name', g.name, 'e.g. Max follow-ups')}${inp('value', g.value, 'e.g. 4')}<button type="button" class="lx-x" data-lx="gendel" data-tid="${t.id}" data-i="${i}" title="Remove">✕</button></div>`).join('');
+    return `<div class="lx-lim" data-tid="${t.id}"><b style="font-size:13px">🔒 Limits for this topic</b> <span class="sub">— the bot never goes outside these. Between them every choice is the bot's. Orange = fill it if you want a limit.</span>
+      <div style="overflow-x:auto"><table class="lx-t"><tr><th>Size / band</th><th>Start ₹</th><th>Lowest ₹</th><th>Max %</th><th>Never</th><th></th></tr>${rows || '<tr><td colspan="6" class="sub">No size limits yet.</td></tr>'}</table></div>
+      <div style="margin-top:6px"><button type="button" class="lx-btn s" data-lx="rowadd" data-tid="${t.id}">+ Size / band</button></div>
+      <div style="margin-top:8px"><span class="sub"><b>Other limits</b> (max follow-ups, shortest gap, max messages per day, quiet hours, deepest price per day …)</span>${gen}<div style="margin-top:6px"><button type="button" class="lx-btn s" data-lx="genadd" data-tid="${t.id}">+ Other limit</button></div></div>
+      <label style="display:flex;gap:6px;align-items:center;margin-top:10px;font-size:13px"><input type="checkbox" data-f="temp" ${st.temp ? 'checked' : ''}> ⏳ Temporary (festival / offer) — it ends by itself and the normal limits come back</label>
+      <div class="lx-dt" style="${st.temp ? '' : 'display:none'}"><span class="sub">From</span><input type="date" data-f="from" value="${esc(st.from)}"><span class="sub">to</span><input type="date" data-f="to" value="${esc(st.to)}"></div></div>`;
+  }
+  // ---- a topic is a CHAT: the summary stays on top, the thread below, one reply box at the bottom. His messages are never edited — a new reply always wins over an older one.
+  const qkey = (q) => String(q || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  function sumHtml(t) {
+    const sm = t.summary || [], nq = (t.open || []).length;
+    const tag = (x) => x.n === 'new' ? '<span class="lx-tg n">NEW</span>' : x.n === 'chg' ? `<span class="lx-tg c">CHANGED${x.was ? ' — was ' + esc(x.was) : ''}</span>` : x.n === 'chat' ? '<span class="lx-tg h">from your chats — tell me if wrong</span>' : '';
+    return `<div class="lx-sum"><b class="t">🧠 WHAT I UNDERSTOOD SO FAR</b>${sm.length ? '<ul>' + sm.map((x) => `<li>${esc(x.t)}${tag(x)}</li>`).join('') + '</ul>' : '<div class="sub" style="margin-top:5px">Nothing yet — answer below and I will write here what I understood.</div>'}<div class="lx-sm">${nq ? nq + ' question' + (nq === 1 ? '' : 's') + ' still open' : '✅ No question left'} · this box always shows my latest understanding</div></div>`;
+  }
+  // 💡 a suggested answer under every waiting question: from the chats (with the number of chats behind it), from your earlier words, or a plain guess. Approve = it becomes your answer. Change = write what is different.
+  const hLabel = (h) => { h = Number(h) || 0; if (h < 1) return Math.max(1, Math.round(h * 60)) + ' min'; if (h < 24) return (+h.toFixed(1)) + ' h'; const d = h / 24; return (+d.toFixed(1)) + (d === 1 ? ' day' : ' days'); };
+  const sugOf = (t, q) => (t.sug || []).find((x) => qkey(x.q) === qkey(q));
+  const evHtml = (s) => s.b === 'chats' ? `<span class="lx-ev ${s.n < 3 ? 'w' : ''}">📚 seen in ${s.n} chat${s.n === 1 ? '' : 's'}${s.n < 3 ? ' · weak evidence' : ''}</span>` : s.b === 'owner' ? '<span class="lx-ev o">🗣 follows from what you told me</span>' : '<span class="lx-ev g">💭 my guess — no chat shows this</span>';
+  function planHtml(p) {
+    const st = (p && p.steps) || [], w = st.filter((x) => x.h <= 24), l = st.filter((x) => x.h > 24), row = (x) => `<div class="r"><span class="w">after ${hLabel(x.h)}</span><span class="t">${esc(String(x.text || '').replace(/\{name\}/g, '‹name›'))}</span></div>`;
+    return '<div class="lx-pl"><b>' + esc((p && p.title) || 'Follow-up') + '</b>' + (w.length ? '<div class="g">Inside the 24-hour window — normal messages</div>' + w.map(row).join('') : '') + (l.length ? '<div class="g">After 24 hours — WhatsApp templates (Meta must approve them)</div>' + l.map(row).join('') : '') + '</div>';
+  }
+  function sugHtml(t, q) {
+    const s = sugOf(t, q); if (!s) return '';
+    const key = t.id + '|' + qkey(q), weak = s.b !== 'chats' || s.n < 3, sure = !!S.sgSure[key], plan = s.k === 'plan' && s.plan;
+    let h = '<div class="lx-sg"><div class="h">💡 ' + (plan ? 'MY SUGGESTED FOLLOW-UP PLAN' : 'MY SUGGESTION') + ' ' + evHtml(s) + '</div>' + (plan ? planHtml(s.plan) : '<div class="a">' + esc(s.a) + '</div>');
+    if (S.sgEdit[key]) {
+      const id = 'sgt_' + t.id + '_' + (t.sug || []).indexOf(s);
+      h += '<textarea class="lx-ta" id="' + id + '" data-sgin="' + esc(key) + '" rows="2" placeholder="' + (plan ? 'What should change in the plan? e.g. make the second message 8 minutes' : 'What is different? Write your answer in your own words') + '">' + esc(S.sgDraft[key] || '') + '</textarea>' + mic('#' + id, true)
+        + '<div class="bt"><button type="button" class="lx-btn p s" data-lx="sg_send" data-tid="' + t.id + '" data-q="' + esc(q) + '">' + (plan ? '📤 Change the plan' : '📤 Send my answer') + '</button><button type="button" class="lx-btn s" data-lx="sg_x" data-tid="' + t.id + '" data-q="' + esc(q) + '">✕</button></div>';
+    } else {
+      h += '<div class="bt"><button type="button" class="lx-btn p s" data-lx="sg_ok" data-tid="' + t.id + '" data-q="' + esc(q) + '">' + (weak && sure ? '✓ Sure? Tap again to approve' : plan ? '✓ Approve plan' : '✓ Approve') + '</button><button type="button" class="lx-btn s" data-lx="sg_chg" data-tid="' + t.id + '" data-q="' + esc(q) + '">✎ Change</button></div>'
+        + (weak && sure ? '<div class="nt">⚠️ ' + (s.b === 'chats' ? 'Only ' + s.n + ' chat' + (s.n === 1 ? '' : 's') + ' show this.' : 'No chat shows this.') + ' Approve only if it is right.</div>' : '')
+        + (plan ? '<div class="nt">Approving saves this in <b>Follow-up plans</b>. Nothing is sent to customers until the <b>Follow-up mode</b> (top right) is switched on.</div>' : '');
+    }
+    return h + '</div>';
+  }
+  function bulkHtml(t) {
+    if (t.stage !== 'ask') return '';
+    const strong = (t.sug || []).filter((x) => x.k === 'text' && x.b === 'chats' && x.n >= 3).length, busy = S.sugBusy === t.id || (t.sug_missing > 0 && (S.sugTried[t.id] || 0) < 15);
+    if (!strong && !busy) return '';
+    return '<div class="lx-bulk">' + (strong ? `<button type="button" class="lx-btn s" data-lx="sg_all" data-tid="${t.id}" title="Approve every suggestion that 3 or more chats show">✓ Approve all strong suggestions (${strong})</button>` : '') + (busy ? '<span>💡 writing suggestions…</span>' : '') + '</div>';
+  }
+  function threadHtml(t) {
+    const th = t.thread || [], open = new Set((t.open || []).map(qkey)), mine = new Set(); th.forEach((m) => { if (m.w === 'me') (m.qa || []).forEach((x) => mine.add(qkey(x.q))); }); const all = !!S.thAll[t.id], cut = all ? 0 : Math.max(0, th.length - 9);
+    let last = -1, h = cut ? `<button type="button" class="lx-btn s" style="align-self:center" data-lx="thmore" data-tid="${t.id}">▲ Show ${cut} earlier message${cut === 1 ? '' : 's'}</button>` : '';
+    th.slice(cut).forEach((m) => {
+      if (m.r !== last) { last = m.r; h += `<div class="lx-day">— Round ${m.r} —</div>`; }
+      if (m.w === 'ask') h += `<div class="lx-b bot"><div class="lx-w">🤖 BOT ASKS <i>${m.src === 'chats' || m.src === 'gaps' ? 'general question, from your chats' : m.src === 'follow' ? 'follow-up' : ''}</i></div>${(m.qs || []).map((q) => { const o = open.has(qkey(q)); return `<div class="lx-qq ${o ? '' : 'dn'}">${o ? esc(q) + ` <button type="button" class="lx-rq" data-lx="rq" data-tid="${t.id}" data-q="${esc(q)}" title="Answer only this question">↩ answer this</button>` + sugHtml(t, q) : '✓ ' + esc(q) + (mine.has(qkey(q)) ? ' <span class="sub">— answered</span>' : ' <span class="sub">— already covered by your replies, no need to answer</span>')}</div>`; }).join('')}${m.seen ? `<div class="lx-seen">📎 ${esc(m.seen)}</div>` : ''}</div>`;
+      else if (m.w === 'me') h += `<div class="lx-b me"><div class="lx-w">🧑 YOU</div>${(m.qa || []).map((x) => `<div class="lx-qa"><small>${esc(x.q)}</small>${x.ap ? (x.plan ? '✓ Approved — ' : '✓ Approved my suggestion — ') : x.pf ? '✎ Change the plan: ' : x.base ? '✎ Changed my suggestion: ' : ''}${esc(x.a)}</div>`).join('')}${m.text ? `<div>${esc(m.text)}</div>` : ''}<div class="lx-lock">🔒 saved — stays as it is</div></div>`;
+      else h += `<div class="lx-b got"><div class="lx-w">✅ GOT IT</div>${esc(m.text || 'Understood.')}${(m.chg || []).length ? `<div class="lx-chg">Changed: ${m.chg.map(esc).join(' · ')}</div>` : ''}</div>`;
+    });
+    return `<div class="lx-thread" data-tid="${t.id}">${h || '<div class="sub" style="align-self:center">No messages yet.</div>'}</div>`;
+  }
+  function composerHtml(t) {
+    const rq = S.bdRq[t.id], rev = t.stage === 'review';
+    return `<div class="lx-comp">${rq ? `<div class="lx-rpl">↩ Answering this question: <b>${esc(rq)}</b> <button type="button" class="lx-rx" data-lx="rqx" data-tid="${t.id}" title="Cancel">✕</button></div>` : ''}
+      <div class="lx-box"><textarea class="lx-ta" id="lxr_${t.id}" data-ivr="${t.id}" rows="3" placeholder="${rev ? 'Not right? Tell me what to change, or add more… (type or speak)' : 'Answer, correct something, or add more… (type or speak)'}">${esc(S.bdReply[t.id] || '')}</textarea>${mic('#lxr_' + t.id)}</div>
+      <div class="row" style="margin-top:8px"><button type="button" class="lx-btn p" data-lx="ans" data-tid="${t.id}">📤 Send</button><button type="button" class="lx-btn" data-lx="tsum" data-tid="${t.id}" title="Skip the questions: what you wrote is the WHOLE summary of this topic">📝 This is my whole summary</button>${rev ? '' : `<button type="button" class="lx-btn" data-lx="enough" data-tid="${t.id}" title="Stop asking and write the concept and limits now">✋ Enough — wrap up</button>`}<button type="button" class="lx-btn r" data-lx="del" data-tid="${t.id}">🗑 Skip this topic</button></div>
+      <div class="sub" style="margin-top:6px">Your old messages never change — a new message always wins over an older one. One message can answer many questions; I clear the ones it covers.</div></div>`;
+  }
+  // 📝 whole-summary teaching: Claude's proposed change for this topic (from the general summary or this topic's own summary) → Approve / Reject
+  function propHtml(t) {
+    const p = t.prop; if (!p) return '';
+    const li = (a) => a.map((x) => '<li>' + esc(x) + '</li>').join('');
+    return `<div class="lx-cf" style="border-color:#7c3aed;background:#f5f3ff"><b>📝 Proposed change ${({ overall: 'from your general summary', topic: 'from your summary of this topic', group: 'from your answer to a question group', whatsapp: 'from ' + (p.wa_n || '') + ' WhatsApp replies + your answer' })[p.src] || ''}</b>
+      ${p.understood ? `<div style="margin-top:4px">${esc(p.understood)}</div>` : ''}
+      ${(p.summary || []).length ? `<div class="sub" style="margin-top:6px"><b>New summary of this topic</b></div><ul style="margin:2px 0 0 18px;padding:0;font-size:13px">${li(p.summary)}</ul>` : ''}
+      ${(p.clash || []).length ? `<div class="sub" style="margin-top:6px;color:#b42318"><b>⚠️ Changes these older rules</b> (the new one wins — you can keep an old one at Concept clear)</div><ul style="margin:2px 0 0 18px;padding:0;font-size:13px">${p.clash.map((c) => '<li>' + (c.n ? '#' + c.n + ' ' : '') + '“' + esc(c.old) + '” — ' + esc(c.why) + '</li>').join('')}</ul>` : ''}
+      ${(p.impact || []).length ? `<div class="sub" style="margin-top:6px"><b>🔄 Where it changes</b></div><ul style="margin:2px 0 0 18px;padding:0;font-size:13px">${li(p.impact)}</ul>` : ''}
+      ${(p.answered || []).length ? `<div class="sub" style="margin-top:6px"><b>✔️ This clears ${p.answered.length} question${p.answered.length > 1 ? 's' : ''}</b></div><ul style="margin:2px 0 0 18px;padding:0;font-size:12.5px">${li(p.answered.slice(0, 12))}</ul>` : ''}
+      ${(p.left || []).length ? `<div class="sub" style="margin-top:6px"><b>❓ Still not clear — I will ask</b></div><ul style="margin:2px 0 0 18px;padding:0;font-size:13px">${li(p.left)}</ul>` : ''}
+      <div class="row" style="margin-top:8px"><button type="button" class="lx-btn p" data-lx="prop_ok" data-tid="${t.id}">✅ Approve</button><button type="button" class="lx-btn" data-lx="prop_no" data-tid="${t.id}">✕ Reject</button><span class="sub">Not right? Write the whole summary of this topic below and press 📝.</span></div></div>`;
+  }
+  // 🧩 the topic's questions merged into a few groups — one answer per group
+  function mergedHtml(t) {
+    const nq = (t.open || []).length, G = t.merged || [];
+    if (!G.length) return nq >= 3 ? `<div class="row" style="margin:8px 0"><button type="button" class="lx-btn" data-lx="merge" data-tid="${t.id}" ${S.mergeBusy === t.id ? 'disabled' : ''}>${S.mergeBusy === t.id ? '🤖 Merging…' : '🧩 Merge these ' + nq + ' questions into groups'}</button><span class="sub">answer a few general questions instead of ${nq} small ones</span></div>` : '';
+    return `<div class="lx-card" style="margin:8px 0;border:2px solid #7c3aed;background:#fbfaff"><div class="row" style="align-items:center"><b>🧩 ${G.length} group${G.length > 1 ? 's' : ''} — answer each once</b><span class="sp"></span><button type="button" class="lx-btn s" data-lx="merge" data-tid="${t.id}">🔄 Group again</button></div>
+      ${G.map((g, i) => `<div style="margin-top:10px;padding-top:8px;border-top:1px solid #ece8fb"><div class="row" style="align-items:center"><b>${esc(g.title)}</b><span class="lx-pill b">${g.qs.length} question${g.qs.length > 1 ? 's' : ''}</span></div>
+        <details class="lx-d" style="margin:4px 0"><summary class="sub">show the questions</summary><ul style="margin:4px 0 0 18px;padding:0;font-size:12.5px">${g.qs.map((q) => '<li>' + esc(q) + '</li>').join('')}</ul></details>
+        <div style="font-weight:700;margin:4px 0">❓ ${esc(g.ask)}</div>
+        <div class="row" style="align-items:flex-start"><textarea class="lx-ta" id="lxM_${t.id}_${i}" rows="2" style="flex:1" placeholder="Your one answer for all ${g.qs.length} — type or speak">${esc((S.mDraft || {})[t.id + '_' + i] || '')}</textarea>${mic('#lxM_' + t.id + '_' + i, true)}</div>
+        ${g.suggest ? `<div class="sub" style="margin-top:4px">💡 Suggested: ${esc(g.suggest)} <button type="button" class="lx-btn s" data-lx="msug" data-tid="${t.id}" data-i="${i}">Use this</button></div>` : ''}
+        <div class="row" style="margin-top:6px"><button type="button" class="lx-btn p s" data-lx="mans" data-tid="${t.id}" data-i="${i}">📤 Answer this group</button><span class="sub">Claude shows what it understood and any clash — you approve.</span></div></div>`).join('')}</div>`;
+  }
+  function clashHtml(t) {
+    const c = t.clash || [], im = t.impact || []; if (!c.length && !im.length) return '';
+    return `<div class="lx-cf">${c.length ? `<b>⚔️ New rule wins over these older rules</b><div class="sub">Tick one only if the OLD rule should stay.</div>${c.map((x) => `<label style="display:block;margin-top:4px;font-size:13px"><input type="checkbox" data-keep="${t.id}" value="${x.n}" ${x.n ? '' : 'disabled'}> Keep old ${x.n ? '#' + x.n + ' ' : ''}“${esc(x.old)}” <span class="sub">— ${esc(x.why)}</span></label>`).join('')}` : ''}
+      ${im.length ? `<div class="sub" style="margin-top:6px"><b>🔄 Where it changes after Concept clear</b></div><ul style="margin:2px 0 0 18px;padding:0;font-size:13px">${im.map((x) => '<li>' + esc(x) + '</li>').join('')}</ul>` : ''}</div>`;
+  }
+  function topicHtml(t, i) {
+    const rev = t.stage === 'review', op = rev || i < 2 || S.bdOpen[t.id], nq = (t.open || []).length;
+    const src = (t.src === 'gaps' || t.src === 'chats') ? '<span class="lx-pill b">from your chats</span> ' : '';
+    const head = `<details class="lx-d lx-card ${rev ? 'ok' : 'ask'}" data-tid="${t.id}" ${op ? 'open' : ''}><summary>${rev ? '✅' : '💬'} <span style="font-size:15px;font-weight:800">${esc(t.title)}</span> <button type="button" class="lx-btn s" data-px="topic" data-tid="${t.id}" title="Open the questions of this topic in a pop-up and answer them all at once">🎙 ${rev ? 'Change' : 'Answer' + (nq ? ' (' + nq + ')' : '')}</button> ${t.wa_n ? '<span class="lx-pill b" title="WhatsApp replies used to teach this topic">💬 ' + t.wa_n + ' WhatsApp replies</span> ' : ''}<span class="lx-pill" title="Which shelf of the company brain this goes on">${({ customer: ['🛍', 'Customer'], internal: ['🔒', 'Staff only'], company: ['🏢', 'Company'] }[S.bdShelf[t.id] || t.shelf] || ['🛍', 'Customer']).join(' ')}</span> <span class="lx-pill ${rev ? 'g' : 'o'}">${rev ? 'concept clear — confirm' : nq + ' question' + (nq === 1 ? '' : 's') + (t.round ? ' · round ' + (t.round + 1) : '')}</span>${src}${t.to ? `<span class="lx-pill b">⏳ till ${esc(t.to)}</span>` : ''}</summary>`;
+    if (!rev) return head + propHtml(t) + sumHtml(t) + mergedHtml(t) + bulkHtml(t) + threadHtml(t) + composerHtml(t) + '</details>';
+    const rl = t.rules || [], cf = S.bdConf[t.id];
+    const conf = cf ? `<div class="lx-cf"><b>⚠️ This clashes with a limit you saved earlier</b>${cf.conflict.map((c) => `<div class="sub" style="margin-top:4px"><b>${esc(c.label)}</b> — saved (${esc(c.old_title)}): ${esc(c.old)}<br>now: ${esc(c.new)}</div>`).join('')}
+      <label><input type="radio" name="ivch_${t.id}" value="replace" ${cf.choice === 'replace' || !cf.choice ? 'checked' : ''}> ${cf.dated ? 'The new one wins' + (cf.until ? ' until ' + esc(cf.until) : '') + ' — then the old one comes back by itself' : 'The new one wins — drop the old one (my latest word is final)'}</label>
+      <label><input type="radio" name="ivch_${t.id}" value="both" ${cf.choice === 'both' ? 'checked' : ''}> Both apply — the bot takes the more generous number</label>
+      <label><input type="radio" name="ivch_${t.id}" value="keep" ${cf.choice === 'keep' ? 'checked' : ''}> Keep the old one — ignore the new numbers</label>
+      <button type="button" class="lx-btn p" data-lx="okc" data-tid="${t.id}">Confirm my choice</button></div>` : '';
+    return head + propHtml(t) + sumHtml(t) + clashHtml(t) + threadHtml(t)
+      + (rl.length ? `<details class="lx-d" style="margin:8px 0"><summary class="sub">📋 Guidance I will follow (${rl.length}) — ${t.to ? 'kept only until ' + esc(t.to) : 'saved when you press Concept clear'}</summary><div style="font-size:13px;margin:6px 0 0 14px">${rl.map((x, n) => (n + 1) + '. ' + esc(x)).join('<br>')}</div></details>` : '')
+      + limHtml(t) + conf + composerHtml(t)
+      + `<div class="row" style="margin-top:10px;align-items:center"><label class="sub" style="font-weight:700">Save on shelf <select class="lx-ta" style="width:auto;padding:6px 8px;margin-left:4px" data-shelf="${t.id}">${Object.entries({ customer: ['🛍', 'Customer'], internal: ['🔒', 'Staff only'], company: ['🏢', 'Company'] }).map(([k, v]) => `<option value="${k}" ${(S.bdShelf[t.id] || t.shelf || 'customer') === k ? 'selected' : ''}>${v[0]} ${v[1]}${k === 'customer' ? ' — bot & replies' : k === 'internal' ? ' — never told to customers' : ' — facts for everyone'}</option>`).join('')}</select></label><button type="button" class="lx-btn p" data-lx="ok" data-tid="${t.id}">✅ Concept clear — start using</button></div></details>`;
+  }
+  // 📚 the board fills itself from the saved chats: first 7–10 topics, then older chats and every new chat add only what is still unknown
+  function mineHtml() {
+    const c = (S.bd || {}).chats; if (!c) return '';
+    if (!c.total) return '<div class="lx-note" style="margin-bottom:10px">📚 <b>Learning from your chats</b> — no saved chats with text yet. Add chats in <b>Chat library</b> and this board fills itself with topics and questions.</div>';
+    const pct = Math.max(0, Math.min(100, Math.round(c.read / c.total * 100))), working = S.mineBusy || c.busy;
+    const why = { board_full: '🧱 The board has 12 topics — finish a few with <b>Concept clear</b> and I read on.', enough: '✋ Plenty of questions are waiting — answer them and I read more automatically.' }[S.mineWhy] || '';
+    const line = working ? '🤖 <b>Reading chats and writing questions…</b>' : c.paused ? '⏸ <b>Paused</b> — press Resume to continue.' : (!c.read && S.mineErr) ? '⚠️ ' + esc(S.mineErr) : why || ((!c.left && !c.new) ? '✅ <b>All your chats are read</b> — I keep watching for new chats and ask only what is new.' : '🔄 Reading your chats automatically — new questions appear here by themselves.');
+    return `<div class="lx-card" style="margin-bottom:12px"><div class="row" style="align-items:center"><b style="font-size:14px">📚 Learning from your chats</b><span class="lx-pill ${c.left || c.new ? 'o' : 'g'}">${c.read} of ${c.total} read${c.left ? ' · ' + c.left + ' older waiting' : ''}${c.new ? ' · ' + c.new + ' new' : ''}</span><span class="sp"></span><button type="button" class="lx-btn s" data-lx="mine_pause">${c.paused ? '▶ Resume' : '⏸ Pause'}</button>${!c.left && !c.new ? '<button type="button" class="lx-btn s" data-lx="mine_restart" title="Read the newest chats again from the start">↺ Read again</button>' : ''}</div>
+      <div style="height:7px;border-radius:7px;background:#eceef2;margin:8px 0 6px;overflow:hidden"><div style="height:100%;width:${pct}%;background:#16a34a"></div></div><div class="sub">${line}</div></div>`;
+  }
+  function teachHtml() {
+    const B = S.bd, m = S.bdMsg, busy = S.bdBusy;
+    let h = mineHtml() + `<div class="lx-mic"><div class="row" style="align-items:flex-start"><div style="flex:1;min-width:220px"><div class="sub" style="margin-bottom:2px"><b>Tell me anything</b> — a rule, an idea, a price, a habit, an offer…</div><textarea class="lx-ta" id="lxIn" rows="3" placeholder="e.g. Never say “starts from”. / 20 ml is ₹1500, I can go down to ₹1300. / At the time of ordering, first ask … (write as much detail as you like, or add screenshots)">${esc(S.bdIn)}</textarea>
+      <div class="row" style="margin-top:6px;align-items:center;gap:6px"><label class="lx-btn s" style="cursor:pointer">📷 Add screenshots<input type="file" id="lxImg" accept="image/*" multiple hidden></label>${S.bdImgs.map((im, i) => `<span style="position:relative;display:inline-block"><img src="data:${im.mime};base64,${im.data}" alt="screenshot ${i + 1}" style="height:54px;width:auto;border-radius:8px;border:1px solid #ddd;display:block"><button type="button" data-lx="img_rm" data-i="${i}" aria-label="Remove screenshot" style="position:absolute;top:-6px;right:-6px;border:0;border-radius:50%;width:20px;height:20px;background:#e5484d;color:#fff;font-size:12px;line-height:20px;padding:0;cursor:pointer">×</button></span>`).join('')}<span class="sub">${S.bdImgs.length ? S.bdImgs.length + ' of 4' : 'up to 4 — you can also paste them here'}</span></div></div>${mic('#lxIn')}</div>
+      ${(S.bd && S.bd.guide_new) ? `<div class="lx-note" style="margin:8px 0 0">📘 <b>Guidebook v${S.bd.guide_new} is live.</b> Check it against your rules — questions open only where they clash. <button type="button" class="lx-btn p s" data-px="guide">🔎 Check now</button></div>` : ''}
+      <div class="row" style="margin-top:6px"><button type="button" class="lx-btn p" data-lx="add" ${busy ? 'disabled' : ''}>${busy === 'add' ? '🤖 Thinking…' : '❓ Make topics & questions'}</button><button type="button" class="lx-btn" data-px="guide" title="Compare the live guidebook with your own rules: a topic opens only where they clash">🔎 Guidebook vs my rules</button><button type="button" class="lx-btn" data-lx="overall" ${busy ? 'disabled' : ''} title="Write how you sell in general — Claude updates EVERY topic on the board and you approve each">${busy === 'overall' ? '🤖 Updating every topic…' : '📝 General summary → update every topic'}</button><button type="button" class="lx-btn" data-lx="gaps" ${busy ? 'disabled' : ''} title="The bot reads your saved chats and opens topics for situations it would not know how to handle">${busy === 'gaps' ? '🤖 Reading your chats…' : '🔍 Find gaps in my chats'}</button><span class="sp"></span>${SR ? `<select class="lx-sel" id="lxLang" title="Language for the 🎤 buttons"><option value="hi-IN">🎤 हिन्दी</option><option value="en-IN">🎤 English</option><option value="gu-IN">🎤 ગુજરાતી</option></select>` : ''}</div>
+      <div class="sub" style="margin-top:6px">Each topic is a chat. The bot asks general questions and keeps <b>what it understood</b> on top; you reply, it says <b>Got it</b> and updates the summary — questions your reply already covers disappear. Under each question the bot gives a <b>suggested answer</b> (with the number of chats that show it): press <b>Approve</b> or <b>Change</b>. Follow-up questions come as one <b>plan</b> — times and messages — saved into Follow-up plans when you approve. When nothing is left to ask you see the <b>concept</b> and the <b>limits</b> — press <b>Concept clear — start using</b> and the topic is gone. If it clashes with an older rule or limit, it asks which one wins. Your goal: an empty board.</div></div>
+    <div class="lx-sec">Quick set-up</div>
+    <div class="lx-q3"><button type="button" class="lx-qb" data-lx="tab" data-t="pricing"><b>💰 Prices</b><small>Fill the Price chart (Pricing tab). Then tell me here how to quote — e.g. “start at 6.5%, go lower only after the customer negotiates”.</small></button>
+      <button type="button" class="lx-qb ${S.fuOpen ? 'on' : ''}" data-lx="fu_toggle"><b>📨 Set up follow-ups</b><small>Situations first (price agreed but no payment…), then steps 1–4 for each. <span style="color:#c2570c;font-weight:800">${S.fuOpen ? 'Open below ↓' : 'Tap to open'}</span></small></button>
+      <button type="button" class="lx-qb" data-lx="seed" data-kind="offer"><b>🎁 Add an offer</b><small>Diwali / festival price with dates. The normal price comes back by itself.</small></button>
+      <button type="button" class="lx-qb" data-lx="facts_build" ${busy ? 'disabled' : ''}><b>🏗 Build store facts</b><small>From everything you already answered — no typing. You check one card and press Concept clear.</small></button></div>
+    <details class="lx-d" style="margin:12px 0 4px" data-tid="note" ${S.bdOpen.note ? 'open' : ''}><summary class="sub" style="font-weight:700">📝 A note for ALL topics (applies to every question and rule)</summary><div class="lx-q" style="margin-top:6px"><small>e.g. “Always answer in the customer's language. Never sound pushy.” ${mic('#lxNote', true)}</small><textarea class="lx-ta" id="lxNote" rows="2">${esc(S.bdNote)}</textarea><div style="margin-top:6px"><button type="button" class="lx-btn s" data-lx="note" ${busy ? 'disabled' : ''}>${busy === 'note' ? '🤖 Thinking…' : 'Apply to all topics'}</button></div>${B && B.note ? `<div class="sub" style="margin-top:4px">Notes so far: ${esc(B.note).replace(/\n/g, ' · ')}</div>` : ''}</div></details>`;
+    if (S.fuOpen) h += fuHtml();
+    if ((S.reps || []).length) h += `<div class="lx-sec">🚩 Reports from salespeople (${S.reps.length}) — a bad reply they saw; nothing changes until you make it a topic</div>` + S.reps.map((r) => `<div class="lx-card" style="padding:10px 12px;margin-bottom:8px"><div class="sub"><b>${esc(r.by)}</b> · ${esc(String(r.at).slice(5, 16))}${r.phone ? ' · +91 ' + esc(r.phone) : ''}</div>${r.note ? `<div style="margin:4px 0;white-space:pre-wrap">${esc(r.note)}</div>` : ''}${(r.images || []).length ? `<div class="row" style="gap:6px;margin:4px 0">${r.images.map((im, i) => `<img src="data:${esc(im.mime)};base64,${im.data}" alt="screenshot ${i + 1}" style="height:64px;border-radius:8px;border:1px solid #ddd">`).join('')}</div>` : ''}${r.chat ? `<details class="sub"><summary>The chat</summary><div style="white-space:pre-wrap;margin-top:4px">${esc(r.chat)}</div></details>` : ''}<div class="row" style="margin-top:8px"><button type="button" class="lx-btn p s" data-lx="rep_topic" data-rid="${r.id}" ${S.bdBusy ? 'disabled' : ''}>❓ Make a topic</button><button type="button" class="lx-btn s" data-lx="rep_drop" data-rid="${r.id}">Dismiss</button></div></div>`).join('');
+    h += '<div class="lx-sec">Topics — your goal is an empty board</div>';
+    if (!B) return h + `<div class="lx-err">${esc(S.bdErr || 'Loading…')}</div>`;
+    if (S.bdErr) h += `<div class="lx-err">⚠️ ${esc(S.bdErr)}</div>`;
+    if (m) h += `<div class="lx-done">${m.understood ? `✅ <b>Got it.</b> ${esc(m.understood)}` : ''}${(m.impact || []).length ? `<div class="sub" style="margin-top:6px"><b>🔄 What will change once you finish this topic (Concept clear):</b><ul style="margin:4px 0 0 18px;padding:0">${m.impact.map((x) => '<li>' + esc(x) + '</li>').join('')}</ul></div>` : ''}${(m.solved || []).length ? `<div class="sub" style="margin-top:4px">✔️ Also answered by this, so removed: ${m.solved.map((q) => '“' + esc(q) + '”').join(' · ')}</div>` : ''}${(m.saved || []).length || m.limits ? `<div class="sub" style="margin-top:4px;color:#15803d">💾 Topic finished${(m.saved || []).length ? ' — saved to rules: ' + m.saved.map(esc).join(' · ') : ''}${m.limits ? '<br>🔒 ' + m.limits + ' limit' + (m.limits > 1 ? 's' : '') + ' saved' + (m.until ? ' until ' + esc(m.until) + ' — then the normal limits come back by themselves' : '') : ''}<br>🔄 WhatsApp suggested replies use them from the next customer message.</div>` : ''}</div>`;
+    const n = (B.topics || []).length, rv = (B.topics || []).filter((t) => t.stage === 'review').length;
+    h += `<div class="sub" style="margin:4px 0 6px">${n ? '<b>' + n + ' open topic' + (n > 1 ? 's' : '') + '</b>' + (rv ? ' · ' + rv + ' ready to confirm' : '') : '🎉 The board is empty — nothing left to ask. I keep reading your chats and bring new questions by myself; you can also tell me something above.'}${B.done ? ' · ✅ ' + B.done + ' finished' : ''}</div>`;
+    h += boardConvHtml(B);
+    const np = (B.topics || []).filter((t) => t.prop).length; if (np) h += `<div class="lx-cf" style="border-color:#7c3aed;background:#f5f3ff;margin-bottom:8px"><b>📝 ${np} topic${np > 1 ? 's have' : ' has'} a proposed change</b> — check each card below, or <button type="button" class="lx-btn p s" data-lx="prop_all">✅ Approve all ${np}</button></div>`;
+    const TP = (B.topics || []).map((t, i) => [t, i]), fc = TP.filter((x) => x[0].src === 'chats' || x[0].src === 'gaps'), sd = TP.filter((x) => !(x[0].src === 'chats' || x[0].src === 'gaps'));
+    return h + (fc.length ? `<div class="lx-sec">📚 From your old chats (${fc.length})</div>` + fc.map((x) => topicHtml(x[0], x[1])).join('') : '') + (sd.length ? `<div class="lx-sec">💬 From what you told me (${sd.length})</div>` + sd.map((x) => topicHtml(x[0], x[1])).join('') : '');
+  }
+  function applyBoard(d, tid) {
+    S.bd = { topics: d.topics || [], done: d.done || 0, note: d.note || '', groups: d.groups || [], chats: d.chats || null, guide_new: d.guide_new || 0 }; S.bdErr = '';
+    S.bdMsg = { understood: d.understood || '', impact: d.impact || [], solved: d.solved || [], saved: d.saved || [], limits: d.limits_saved || 0, until: d.until || '' };
+    if (tid) delete S.bdLim[tid]; Object.keys(S.bdLim).forEach((k) => { if (!S.bd.topics.some((t) => t.id === k)) delete S.bdLim[k]; });
+    if (d.style != null && S.facts) S.facts.style = d.style;
+  }
+  async function teachAct(act, b) {
+    stash(); const tid = b.dataset.tid, openT = (id) => { S.bdOpen[id] = true; };
+    const run = async (what, fn) => { S.bdBusy = what; S.bdErr = ''; paint(true, true); try { await fn(); } catch (e) { bdFail(e); } S.bdBusy = ''; paint(true, true); };
+    if (act === 'rep_topic' || act === 'rep_drop') { const id = Number(b.dataset.rid), r = (S.reps || []).find((x) => x.id === id); if (!r) return;
+      if (act === 'rep_drop') { try { await api.post('teach.report_done', { id, dismiss: 1 }); S.reps = S.reps.filter((x) => x.id !== id); } catch (e) { bdFail(e); } paint(true, true); return; }
+      const text = 'A salesperson (' + r.by + ') reported a bad reply.' + (r.note ? ' What they say: "' + r.note + '".' : '') + (r.chat ? '\nThe last messages of the chat:\n' + r.chat : '') + '\nWork out what our side should do instead and ask me only what is unclear.';
+      await run('add', async () => { const d = await api.post('teach.board_add', { text, images: r.images || [] }); await api.post('teach.report_done', { id }); S.reps = S.reps.filter((x) => x.id !== id); applyBoard(d); (d.touched || []).forEach(openT); }); return; }
+    if (act === 'overall') { const text = ($('lxIn') || {}).value ? $('lxIn').value.trim() : ''; if (!text) { toast('Write your general summary in the box first.', true); return; } S.bdIn = text;
+      await run('overall', async () => { const d = await api.post('teach.board_overall', { text }); S.bdIn = ''; applyBoard(d); (d.topics || []).filter((t) => t.prop).forEach((t) => openT(t.id)); S.bdMsg.understood = (d.understood || '') + ((d.proposed || []).length ? ' — proposed changes for: ' + d.proposed.join(', ') + '.' : '') + ((d.not_covered || []).length ? ' Not covered by this summary: ' + d.not_covered.join(', ') + ' (write their summary on the card).' : ''); }); return; }
+    if (act === 'tsum') { const box = document.querySelector('#lx [data-ivr="' + tid + '"]'), text = box ? box.value.trim() : ''; if (!text) { toast('Write the whole summary of this topic in its box first.', true); return; }
+      b.disabled = true; b.textContent = '🤖 Reading your summary…';
+      try { const d = await api.post('teach.board_summary', { tid, text }); S.bdReply[tid] = ''; applyBoard(d); openT(tid); } catch (e) { bdFail(e); } paint(true, true); return; }
+    if (act === 'prop_ok' || act === 'prop_no' || act === 'prop_all') { b.disabled = true;
+      try { const d = await api.post('teach.board_prop', { tid: act === 'prop_all' ? '*' : tid, act: act === 'prop_no' ? 'reject' : 'approve' }); applyBoard(d); if (act !== 'prop_no') toast(d.understood || 'Approved'); } catch (e) { bdFail(e); } paint(true, true); return; }
+    if (act === 'bd_reset') { S.bdConv = null; S.bdConvMsg = ''; paint(true, true); return; }
+    if (act === 'bd_sug') { const R = (S.bdConv || {}).last, box = $('lxB_all'); if (R && box) { box.value = R.questions.map((q, i) => (i + 1) + '. ' + q.suggest).join('\n'); S.bdAllDraft = box.value; } return; }
+    if (act === 'bd_all') {
+      const box = $('lxB_all'), ans = box ? box.value.trim() : ''; if (!ans) { toast('Write your answer first.', true); return; }
+      S.bdConv = S.bdConv || { turns: [], last: null }; const C = S.bdConv; C.turns.push({ q: C.last ? (C.last.questions || []).map((q) => q.q) : [], a: ans }); S.bdConvBusy = 'round'; S.bdConvMsg = ''; paint(true, true);
+      try { C.last = await api.post('teach.wa_round', { kind: 'board', situations: '', turns: C.turns }); S.bdAllDraft = ''; } catch (e) { C.turns.pop(); toast(msg(e), true); }
+      S.bdConvBusy = ''; paint(true, true); return;
+    }
+    if (act === 'bd_fin') {
+      const C = S.bdConv, R = C && C.last; if (!R) return; S.bdConvBusy = 'fin'; paint(true, true);
+      try {
+        const text = 'MY GENERAL ANSWERS FOR ALL OPEN TOPICS (treat them as the answer to every waiting question they cover):\n' + C.turns.map((t, i) => ((t.q || []).length ? 'You asked: ' + t.q.join(' / ') + '\n' : '') + 'Round ' + (i + 1) + ': ' + t.a).join('\n') + '\n\nWHAT YOU UNDERSTOOD: ' + R.understood + '\n- ' + (R.summary || []).join('\n- ');
+        const d1 = await api.post('teach.board_overall', { text }); applyBoard(d1);
+        const n = ((d1.topics || []).filter((t) => t.prop)).length; let d2 = d1;
+        if (n) { d2 = await api.post('teach.board_prop', { tid: '*', act: 'approve' }); applyBoard(d2); }
+        const ready = (d2.topics || []).filter((t) => t.stage === 'review').length;
+        S.bdConvMsg = '✅ <b>' + n + ' topic' + (n === 1 ? '' : 's') + ' updated.</b> ' + ready + ' ready — press <b>✅ Concept clear all</b> to start using them.' + ((d1.not_covered || []).length ? ' Not covered by your answers: ' + esc(d1.not_covered.join(', ')) + ' — they keep their questions.' : '');
+        S.bdConv = null;
+      } catch (e) { toast(msg(e), true); }
+      S.bdConvBusy = ''; paint(true, true); return;
+    }
+    if (act === 'bd_clearall') {
+      const ready = ((S.bd || {}).topics || []).filter((t) => t.stage === 'review' && !t.prop); if (!ready.length) return;
+      if (!confirm('Save all ' + ready.length + ' ready topics to the brain now? Where a topic clashes with an older rule or limit, the new one wins.')) return;
+      S.bdConvBusy = 'clear'; paint(true, true); let ok = 0, last = null;
+      for (const t of ready) { try { last = await api.post('teach.board_confirm', { tid: t.id, limits: t.limits || { rows: [], gen: [] }, from: '', to: '', choice: 'replace', shelf: S.bdShelf[t.id] || t.shelf || 'customer' }); if (!last.conflict) ok++; } catch (e) { toast(t.title + ': ' + msg(e), true); } }
+      if (last && last.topics) applyBoard(last); else await loadAll();
+      S.bdConvMsg = '✅ <b>' + ok + ' topic' + (ok === 1 ? '' : 's') + ' saved</b> — used from the next reply.'; S.bdConvBusy = ''; refreshQuiet(); paint(true, true); return;
+    }
+    if (act === 'merge') { S.mergeBusy = tid; paint(true, true); try { const d = await api.post('teach.board_merge', { tid }); applyBoard(d); openT(tid); } catch (e) { bdFail(e); } S.mergeBusy = ''; paint(true, true); return; }
+    if (act === 'msug' || act === 'mans') {
+      const t = ((S.bd || {}).topics || []).find((x) => x.id === tid), g = t && (t.merged || [])[+b.dataset.i]; if (!g) return; const key = tid + '_' + b.dataset.i, box = $('lxM_' + key);
+      if (act === 'msug') { if (box) box.value = g.suggest; S.mDraft = S.mDraft || {}; S.mDraft[key] = g.suggest; return; }
+      const ans = box ? box.value.trim() : ''; if (!ans) { toast('Write your answer for this group first.', true); return; }
+      b.disabled = true; b.textContent = '🤖 Reading your answer…';
+      try { const d = await api.post('teach.board_summary', { tid, text: 'Question: ' + g.ask + '\nMy answer: ' + ans, part: 1, src: 'group', qs: g.qs }); if (S.mDraft) delete S.mDraft[key]; applyBoard(d); openT(tid); } catch (e) { bdFail(e); }
+      paint(true, true); return;
+    }
+    if (act === 'img_rm') { S.bdImgs.splice(Number(b.dataset.i), 1); paint(true, true); return; }
+    if (act === 'add') { const text = ($('lxIn') || {}).value ? $('lxIn').value.trim() : ''; if (!text && !S.bdImgs.length) { toast('Write or speak something, or add a screenshot.', true); return; } S.bdIn = text; popStart(text, S.bdImgs.map((x) => ({ mime: x.mime, data: x.data }))); return; }
+    if (act === 'facts_build') { b.disabled = true; await run('facts', async () => { const d = await api.post('teach.facts_build', {}); applyBoard(d); (d.touched || []).forEach(openT); S.tab = 'teach'; }); if (S.bdErr) { S.tab = S.tab; } else { toast('Store facts built — check the card, then press Concept clear.'); window.scrollTo(0, 0); } return; }
+    if (act === 'seed') { const text = b.dataset.kind === 'pricing' ? 'Set up my pricing limits. Interview me: for each size what is the starting price, the lowest price I allow, the maximum discount, and which sizes the bot must never sell. Also ask how the bot should behave when a customer hesitates on price.' : 'I want to add a temporary festival offer. Interview me: which sizes or products, the offer price, the start and end dates, whether it replaces or adds to the normal price, and any free gift.'; await run('add', async () => { const d = await api.post('teach.board_add', { text }); applyBoard(d); (d.touched || []).forEach(openT); }); return; }
+    if (act === 'mine_pause') { const c = (S.bd || {}).chats || {}; try { const d = await api.post('teach.board_chats', { pause: !c.paused }); if (S.bd) S.bd.chats = d.chats || null; S.mineWhy = ''; } catch (e) { bdFail(e); } paint(true, true); return; }
+    if (act === 'mine_restart') { await run('mine', async () => { const d = await api.post('teach.board_chats', { restart: 1, force: true }); if (d.ran === false) { if (S.bd) S.bd.chats = d.chats || null; } else { applyBoard(d); (d.touched || []).forEach(openT); } }); return; }
+    if (act === 'gaps') { await run('gaps', async () => { const d = await api.post('teach.board_gaps', {}); applyBoard(d); (d.touched || []).forEach(openT); }); return; }
+    if (act === 'note') { const text = ($('lxNote') ? $('lxNote').value : '').trim(); if (!text) { toast('Write or speak the note first.', true); return; } await run('note', async () => { const d = await api.post('teach.board_note', { text }); S.bdNote = ''; applyBoard(d); }); return; }
+    if (act === 'del') { try { const d = await api.post('teach.board_del', { tid }); applyBoard(d, tid); S.bdMsg = null; } catch (e) { bdFail(e); } paint(true, true); return; }
+    const t = ((S.bd || {}).topics || []).find((x) => x.id === tid), st = t ? limState(t) : null;
+    if (act === 'rowadd' && st) { st.rows.push({ label: '', start: '', lowest: '', max_pct: '', never: false }); paint(true, true); return; }
+    if (act === 'rowdel' && st) { st.rows.splice(+b.dataset.i, 1); paint(true, true); return; }
+    if (act === 'genadd' && st) { st.gen.push({ name: '', value: '' }); paint(true, true); return; }
+    if (act === 'gendel' && st) { st.gen.splice(+b.dataset.i, 1); paint(true, true); return; }
+    if (act === 'sg_chg' || act === 'sg_x') { const key = tid + '|' + qkey(b.dataset.q); S.sgEdit[key] = act === 'sg_chg'; S.sgSure[key] = false; paint(true, true); if (act === 'sg_chg') { const el = [...document.querySelectorAll('[data-sgin]')].find((x) => x.dataset.sgin === key); if (el) el.focus(); } return; }
+    if (act === 'sg_ok' || act === 'sg_send' || act === 'sg_all') {
+      const sendBody = async (body, label) => { b.disabled = true; b.textContent = label; try { const d = await api.post('teach.board_answer', body); S.bdReply[tid] = ''; S.bdRq[tid] = ''; S.thPos[tid] = -1; applyBoard(d, tid); S.bdConf[tid] = null; openT(tid); if (d.fu_saved) { toast('Saved in Follow-up plans: ' + d.fu_saved.title); refreshQuiet(); } } catch (e) { bdFail(e); } paint(true, true); };
+      if (act === 'sg_all') { const qs = (t.sug || []).filter((x) => x.k === 'text' && x.b === 'chats' && x.n >= 3).map((x) => ({ q: x.q, ap: true })); if (!qs.length) return; if (!window.confirm('Approve ' + qs.length + ' suggestion' + (qs.length === 1 ? '' : 's') + ' that 3 or more chats show? Each one becomes your answer.')) return; await sendBody({ tid, answers: qs }, '🤖 Thinking…'); return; }
+      const q = b.dataset.q, sg = t ? sugOf(t, q) : null, key = tid + '|' + qkey(q); if (!sg) { toast('That suggestion is gone — reload the page.', true); return; }
+      if (act === 'sg_ok') { if ((sg.b !== 'chats' || sg.n < 3) && !S.sgSure[key]) { S.sgSure[key] = true; paint(true, true); return; } S.sgSure[key] = false; await sendBody({ tid, answers: [{ q, ap: true }] }, '🤖 Thinking…'); return; }
+      const el = [...document.querySelectorAll('[data-sgin]')].find((x) => x.dataset.sgin === key), text = (el ? el.value : (S.sgDraft[key] || '')).trim(); if (!text) { toast('Write what is different first.', true); return; }
+      S.sgDraft[key] = ''; S.sgEdit[key] = false; await sendBody({ tid, answers: [{ q, a: text, ...(sg.k === 'plan' ? { planfix: true } : { base: sg.a }) }] }, '🤖 Thinking…'); return;
+    }
+    if (act === 'rq') { S.bdRq[tid] = b.dataset.q || ''; paint(true, true); const ta = $('lxr_' + tid); if (ta) ta.focus(); return; }
+    if (act === 'rqx') { S.bdRq[tid] = ''; paint(true, true); return; }
+    if (act === 'thmore') { S.thAll[tid] = true; paint(true, true); return; }
+    if (act === 'ans' || act === 'enough') {
+      const ta = $('lxr_' + tid), text = (ta ? ta.value : (S.bdReply[tid] || '')).trim(), rq = S.bdRq[tid] || '';
+      if (act === 'ans' && !text) { toast('Write or speak your reply first.', true); return; }
+      const body = { tid, enough: act === 'enough' }; if (act === 'ans') { if (rq) body.answers = [{ q: rq, a: text }]; else body.text = text; }
+      if (t && t.stage === 'review' && st) body.limits = limPayload(st);
+      b.disabled = true; b.textContent = '🤖 Thinking…';
+      let said = '';
+      try {
+        const d = await api.post('teach.board_answer', body); S.bdReply[tid] = ''; S.bdRq[tid] = ''; S.thPos[tid] = -1; applyBoard(d, tid); S.bdConf[tid] = null; openT(tid);
+        const t2 = ((S.bd || {}).topics || []).find((x) => x.id === tid), sm = (t2 && t2.summary) || [], nn = sm.filter((x) => x.n === 'new').length, nc = sm.filter((x) => x.n === 'chg').length;      // what the answer changed in "What I understood so far"
+        said = nn || nc ? 'Updated “What I understood”: ' + (nn ? nn + ' new point' + (nn === 1 ? '' : 's') : '') + (nn && nc ? ' · ' : '') + (nc ? nc + ' changed' : '') + '.' : 'I read your message — the summary already says this, so nothing changed. Tell me what is different.';
+      } catch (e) { bdFail(e); }
+      paint(true, true);
+      if (said) { toast(said); setTimeout(() => { const el = document.querySelector('details[data-tid="' + tid + '"] .lx-sum'); if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.style.boxShadow = '0 0 0 3px #f58220'; setTimeout(() => { el.style.boxShadow = ''; }, 3500); } }, 150); }
+      return;
+    }
+    if (act === 'ok' || act === 'okc') {
+      { const unsent = document.querySelector('#lx [data-ivr="' + tid + '"]'); if (unsent && unsent.value.trim()) { toast('You wrote something in the box but did not press Send. Press Send first so I read it (or clear the box), then press Concept clear.', true); return; } }
+      let choice = ''; if (act === 'okc') { const r = document.querySelector('#lx input[name="ivch_' + tid + '"]:checked'); choice = r ? r.value : 'replace'; }
+      b.disabled = true; b.textContent = '💾 Saving…';
+      try {
+        const sel = document.querySelector('#lx select[data-shelf="' + tid + '"]'); const shelf = sel ? sel.value : (S.bdShelf[tid] || '');
+        const keep = Array.from(document.querySelectorAll('#lx input[data-keep="' + tid + '"]:checked')).map((x) => Number(x.value)).filter(Boolean);
+        const d = await api.post('teach.board_confirm', Object.assign({ tid, limits: limPayload(st), from: st.temp ? st.from : '', to: st.temp ? st.to : '', choice, shelf }, keep.length ? { keep } : {}));
+        if (d.conflict) S.bdConf[tid] = { conflict: d.conflict, dated: !!d.dated, until: d.until || '', choice: '' };
+        else { S.bdConf[tid] = null; applyBoard(d, tid); toast('Saved on the ' + ({ customer: 'Customer', internal: 'Staff only', company: 'Company' }[d.shelf] || 'Customer') + ' shelf — used from the next reply.'); refreshQuiet(); }
+      } catch (e) { bdFail(e); }
+      paint(true, true); return;
+    }
+  }
+
+  // ================================================================== FOLLOW-UPS (situations first, steps inside, remarks, "Got it")
+  const dly = (h) => { h = Number(h) || 0; return h > 0 && h < 1 ? { v: Math.round(h * 60), u: 'm' } : (h >= 24 && h % 24 === 0 ? { v: h / 24, u: 'd' } : { v: h, u: 'h' }); };
+  const dlyText = (h) => { const d = dly(h); return d.v + (d.u === 'd' ? ' day' : d.u === 'm' ? ' min' : ' h') + (d.u === 'd' && d.v !== 1 ? 's' : ''); };
+  const toHours = (st) => { const v = parseFloat(String(st.v).replace(',', '.')); return isFinite(v) && v > 0 ? Math.round(v * (st.u === 'd' ? 24 : st.u === 'm' ? 1 / 60 : 1) * 10000) / 10000 : 0; };
+  function fuDraft(sit) {
+    if (!S.fuD[sit.id]) S.fuD[sit.id] = { all: sit.remark_all || '', steps: (sit.steps || []).map((s, i) => { const d = dly(s.after_h); return { n: s.n || i + 1, v: String(d.v), u: d.u, text: s.text || '', remark: s.remark || '' }; }) };
+    return S.fuD[sit.id];
+  }
+  const fuPayload = (sit) => { const D = fuDraft(sit); return { sid: sit.id, remark_all: D.all, steps: D.steps.map((x, i) => ({ n: i + 1, after_h: toHours(x), text: x.text.trim(), remark: x.remark.trim() })) }; };
+  function sitHtml(sit, idx) {
+    const D = fuDraft(sit), stop = sit.kind === 'stop', saved = sit.stage === 'saved';
+    const sum = stop ? 'stops automatically' : D.steps.length ? D.steps.map((x) => (parseFloat(x.v) || 0) + (x.u === 'd' ? 'd' : 'h')).join(' → ') : 'no steps yet';
+    const o = S.bdOpen['fu' + sit.id], head = `<details class="lx-sit" data-fsid="${esc(sit.id)}" ${(o === true || S.fuEdit[sit.id] || (o === undefined && idx === 0)) ? 'open' : ''}><summary>${esc(sit.title)} ${stop ? '<span class="lx-pill r">stop automatically</span>' : `<span class="lx-pill ${saved ? 'g' : 'o'}">${saved ? 'saved — editing' : 'draft'} · ${D.steps.length} step${D.steps.length === 1 ? '' : 's'}</span>`}<span class="sub" style="font-weight:500">${esc(sum)}</span>${sit.priority ? `<span class="lx-pill b">priority ${esc(sit.priority)}</span>` : ''}</summary><div class="lx-sb">
+      ${sit.desc ? `<div class="sub" style="margin-bottom:6px">${esc(sit.desc)}</div>` : ''}`;
+    if (stop) return head + `<div class="lx-hl">When a customer sounds frustrated or angry the bot stops all follow-ups and hands the chat to a person.</div><div class="row" style="margin-top:10px"><button type="button" class="lx-btn p" data-lx="fu_save" data-sid="${esc(sit.id)}">✅ Got it — save</button><button type="button" class="lx-btn r" data-lx="fu_del" data-sid="${esc(sit.id)}">🗑 Delete</button></div></div></details>`;
+    const rows = D.steps.map((x, i) => `<div class="lx-stp" data-n="${x.n}"><div class="n">Step ${i + 1}</div><div class="tm"><input data-fv type="text" inputmode="decimal" value="${esc(x.v)}"><select data-fu><option value="m" ${x.u === 'm' ? 'selected' : ''}>minutes</option><option value="h" ${x.u === 'h' ? 'selected' : ''}>hours</option><option value="d" ${x.u === 'd' ? 'selected' : ''}>days</option></select></div>
+      <div><textarea class="lx-ta" data-ft rows="2" placeholder="What the bot says at this step">${esc(x.text)}</textarea></div>
+      <div class="rm"><input data-fr type="text" value="${esc(x.remark)}" placeholder="Remark: softer / aggressive / urgency…"><button type="button" class="lx-btn s" data-lx="fu_srem" data-sid="${esc(sit.id)}" data-n="${x.n}" title="Rewrite this step with my remark">↻</button></div>
+      <button type="button" class="lx-x" data-lx="fu_stepdel" data-sid="${esc(sit.id)}" data-n="${x.n}" title="Remove step">✕</button></div>`).join('');
+    return head + `<div class="lx-stp h"><div>Step</div><div>Suggested time (after the last message)</div><div>What the bot says (draft)</div><div>Your remark</div><div></div></div>${rows || '<div class="sub" style="padding:8px 0">No steps yet — add one or press Redraft.</div>'}
+      <div class="row" style="margin-top:6px"><button type="button" class="lx-btn s" data-lx="fu_stepadd" data-sid="${esc(sit.id)}">+ Step</button><button type="button" class="lx-btn s" data-lx="fu_redraft" data-sid="${esc(sit.id)}">✨ Redraft all steps</button></div>
+      <div class="lx-hl"><b>Overall remark for this situation</b> ${mic('#lxall_' + sit.id, true)}<textarea class="lx-ta" id="lxall_${esc(sit.id)}" data-fall rows="2" style="margin-top:6px;background:#fff" placeholder="e.g. Never push after step 4. If they say ‘kal batata hu’, wait till the time they said. Keep it short, no pressure.">${esc(D.all)}</textarea><div style="margin-top:6px"><button type="button" class="lx-btn s" data-lx="fu_arem" data-sid="${esc(sit.id)}">Apply to all steps</button></div></div>
+      <div class="sub" style="margin-top:8px">Times are only my suggestion — change any. After the last step the bot stops. Inside the 24-hour window it sends a normal message; after 24 hours it needs an approved template.</div>
+      <div class="row" style="margin-top:10px"><button type="button" class="lx-btn p" data-lx="fu_save" data-sid="${esc(sit.id)}">✅ Got it — save this plan</button><button type="button" class="lx-btn r" data-lx="fu_del" data-sid="${esc(sit.id)}">🗑 Delete situation</button></div></div></details>`;
+  }
+  function fuHtml() {
+    let h = `<div class="lx-sec" style="display:flex;gap:8px;align-items:center">📨 Follow-ups — situations first <span class="lx-pill ${S.fu && S.fu.mode && S.fu.mode !== 'off' ? 'g' : ''}">${esc((MODES.find((m) => m[0] === ((S.fu || {}).mode || 'off')) || MODES[0])[1])}</span></div>`;
+    if (!S.fu) return h + `<div class="lx-note">${S.fuErr ? '⚙️ ' + esc(S.fuErr) + '<br>' : ''}${NEEDS}</div>`;
+    if (S.fuMsg) h += `<div class="lx-done">${esc(S.fuMsg)}</div>`;
+    const sits = (S.fu.situations || []), show = sits.filter((x) => x.stage !== 'saved' || S.fuEdit[x.id]);
+    if (!sits.length) h += `<div class="lx-card"><div class="lx-empty">No follow-up situations yet.<br><span class="sub">I draft the common ones (price agreed but no payment · asked the price then quiet · stopped after the first reply · needs to ask family · frustrated) with steps 1–4 and suggested times. You change what you like, then press Got it.</span><div style="margin-top:12px"><button type="button" class="lx-btn p" data-lx="fu_seed" ${S.fuBusy ? 'disabled' : ''}>${S.fuBusy === 'seed' ? '🤖 Drafting…' : '✨ Draft my follow-up situations'}</button></div></div></div>`;
+    else if (!show.length) h += `<div class="lx-done">🎉 All follow-up plans are saved — they now live in <b>Saved brain</b>. Add another situation below, or edit one from there.</div>`;
+    h += show.map((x, i) => sitHtml(x, i)).join('');
+    h += `<div class="lx-card" style="border:2px solid #c7d2fe;background:#f5f7ff"><div class="sub" style="margin-bottom:6px"><b>🗣 Tell Claude</b> — say the whole plan in your own words (any language). Claude makes the situation with timed steps; you check and save.</div>
+      <div style="display:flex;gap:6px;align-items:flex-start"><textarea class="lx-ta" id="lxsum" rows="3" style="flex:1;background:#fff" placeholder="e.g. When the customer gives the address but doesn't pay: after 5 min send the payment link again, after 15 min ask if they need help paying, after 2 hours say the order is kept ready, next day a soft reminder, day 3 last message. Never offer a discount.">${esc(S.fuSum || '')}</textarea>${mic('#lxsum', true)}</div>
+      <div class="row" style="margin-top:6px"><button type="button" class="lx-btn p" data-lx="fu_sum" ${S.fuBusy ? 'disabled' : ''}>${S.fuBusy === 'sum' ? '🤖 Claude is making it…' : '✨ Make this follow-up'}</button><span class="sub">Times can be minutes, hours or days — up to 4 days.</span></div></div>`;
+    h += `<div class="lx-card"><div class="sub" style="margin-bottom:6px"><b>+ Add a situation</b> — describe a moment where the customer goes quiet; I draft the steps.</div><div class="row"><input class="lx-in" style="flex:1;min-width:160px" data-fnew="title" value="${esc(S.fuNew.title)}" placeholder="Name, e.g. Needs to ask family"><input class="lx-in" style="flex:2;min-width:200px" data-fnew="desc" value="${esc(S.fuNew.desc)}" placeholder="What happens? e.g. Customer says ‘I'll ask my husband’ and then goes quiet"><button type="button" class="lx-btn p" data-lx="fu_add" ${S.fuBusy ? 'disabled' : ''}>${S.fuBusy === 'add' ? '🤖 Drafting…' : 'Add & draft'}</button></div></div>`;
+    return h;
+  }
+  async function fuAct(act, b) {
+    stash(); const sid = b.dataset.sid; const sit = ((S.fu || {}).situations || []).find((x) => x.id === sid);
+    const apply = async (d, keep) => { if (d && d.situations) S.fu = d; else if (d && d.situation) { const L = S.fu.situations; const i = L.findIndex((x) => x.id === d.situation.id); if (i >= 0) L[i] = d.situation; else L.push(d.situation); if (d.mode) S.fu.mode = d.mode; } else { const r = await soft(() => api.get('fu.plans')); if (r.ok) S.fu = r.d; } if (!keep && sid) delete S.fuD[sid]; S.fuMsg = ''; };
+    const run = async (what, fn) => { S.fuBusy = what; paint(true, true); try { await fn(); S.fuErr = ''; } catch (e) { toast(msg(e), true); } S.fuBusy = ''; paint(true, true); };
+    if (act === 'fu_sum') { const ta = document.getElementById('lxsum'); S.fuSum = ta ? ta.value : (S.fuSum || ''); if (S.fuSum.trim().length < 15) { toast('Tell Claude the situation, the times and what to say.', true); return; }
+      await run('sum', async () => { const d = await api.post('fu.sit_from_summary', { text: S.fuSum.trim() }); S.fuSum = ''; if (d.situation) S.fuEdit[d.situation.id] = true; await apply(d); }); return; }
+    if (act === 'fu_seed') { await run('seed', async () => { await apply(await api.post('fu.seed', {})); }); return; }
+    if (act === 'fu_add') { const t = (S.fuNew.title || '').trim(); if (!t) { toast('Give the situation a name.', true); return; } await run('add', async () => { const d = await api.post('fu.sit_add', { title: t, desc: (S.fuNew.desc || '').trim() }); S.fuNew = { title: '', desc: '' }; await apply(d, true); if (d.situation) S.bdOpen['fu' + d.situation.id] = true; }); return; }
+    if (!sit) return; const D = fuDraft(sit);
+    if (act === 'fu_stepadd') { const last = D.steps[D.steps.length - 1], d = last ? dly(toHours(last) * 2 || 24) : { v: 2, u: 'h' }; D.steps.push({ n: Math.max(0, ...D.steps.map((x) => x.n)) + 1, v: String(d.v), u: d.u, text: '', remark: '' }); S.bdOpen['fu' + sid] = true; paint(true, true); return; }
+    if (act === 'fu_stepdel') { D.steps = D.steps.filter((x) => String(x.n) !== b.dataset.n); S.bdOpen['fu' + sid] = true; paint(true, true); return; }
+    if (act === 'fu_srem') { const st = D.steps.find((x) => String(x.n) === b.dataset.n); if (!st || !st.remark.trim()) { toast('Write a remark first (softer, aggressive, add urgency…).', true); return; } b.disabled = true; b.textContent = '…'; S.bdOpen['fu' + sid] = true;
+      try { const d = await api.post('fu.step_remark', { ...fuPayload(sit), n: st.n, remark: st.remark.trim() }); await apply(d, true); const ns = (d.situation || {}).steps || []; const hit = ns.find((x) => x.n === st.n) || ns[st.n - 1]; if (hit) { st.text = hit.text || st.text; st.remark = ''; } } catch (e) { toast(msg(e), true); } paint(true, true); return; }
+    if (act === 'fu_arem') { if (!D.all.trim()) { toast('Write the overall remark first.', true); return; } b.disabled = true; b.textContent = 'Thinking…'; S.bdOpen['fu' + sid] = true;
+      try { const d = await api.post('fu.sit_remark', { ...fuPayload(sit), text: D.all.trim() }); delete S.fuD[sid]; await apply(d, true); const ns = ((d.situation || {}).steps) || []; const sit2 = S.fu.situations.find((x) => x.id === sid); if (sit2) { sit2.remark_all = D.all; S.fuD[sid] = { all: D.all, steps: ns.map((s, i) => { const q = dly(s.after_h); return { n: s.n || i + 1, v: String(q.v), u: q.u, text: s.text || '', remark: '' }; }) }; } } catch (e) { toast(msg(e), true); } paint(true, true); return; }
+    if (act === 'fu_redraft') { if (D.steps.some((x) => x.text.trim()) && !confirm('Redraft the steps? Your edited texts on this situation will be replaced.')) return; S.bdOpen['fu' + sid] = true; await run('redraft', async () => { delete S.fuD[sid]; await apply(await api.post('fu.sit_draft', { sid }), true); }); return; }
+    if (act === 'fu_save') { const p = fuPayload(sit); if (sit.kind !== 'stop' && !p.steps.length) { toast('Add at least one step.', true); return; } if (sit.kind !== 'stop' && p.steps.some((x) => !x.text || !x.after_h)) { toast('Every step needs a time and a message.', true); return; }
+      b.disabled = true; b.textContent = '💾 Saving…'; try { await apply(await api.post('fu.sit_save', { ...p, confirm: true })); delete S.fuEdit[sid]; toast('Plan saved — WhatsApp follows it from now on.'); refreshQuiet(); } catch (e) { toast(msg(e), true); } paint(true, true); return; }
+    if (act === 'fu_del') { if (!confirm('Delete “' + sit.title + '” and its steps?')) return; await run('del', async () => { await apply(await api.post('fu.sit_del', { sid })); delete S.fuEdit[sid]; }); return; }
+  }
+
+  // ================================================================== SAVED BRAIN
+  const rulesOf = (style) => String(style || '').split(/\n+/).map((x) => x.replace(/^\s*\d+[.)]\s*/, '').trim()).filter(Boolean);
+  const rulesText = (arr) => arr.map((x, i) => (i + 1) + '. ' + x).join('\n');
+  async function saveRules(arr) { S.ruleBusy = true; paint(true, true); try { await api.post('teach.facts_save', { style: rulesText(arr) }); S.facts = Object.assign(S.facts || {}, { style: rulesText(arr) }); toast('Rules saved.'); } catch (e) { toast(msg(e), true); } S.ruleBusy = false; paint(true, true); }
+  function grpHtml(x) {
+    const col = x.state === 'active' ? ['#e6f7ee', '#0f766e'] : x.state === 'upcoming' ? ['#e8f0ff', '#2457c5'] : ['#f1f3f6', '#6b7684'];
+    return `<div class="lx-grp ${x.state === 'expired' ? 'expired' : ''}"><div class="row"><b>${esc(x.title)}</b><span class="lx-pill" style="background:${col[0]};color:${col[1]}">${esc(x.state)}</span>${x.to ? `<span class="sub">${x.from ? esc(x.from) + ' → ' : 'till '}${esc(x.to)}</span>` : '<span class="sub">no end date</span>'}${x.soon ? '<span class="lx-pill o">⏰ ends within a day — extend?</span>' : ''}<span class="sp"></span>${x.to ? `<button type="button" class="lx-btn s" data-lx="gext" data-gid="${esc(x.gid)}" data-to="${esc(x.to)}">📅 Extend</button>` : ''}<button type="button" class="lx-btn s r" data-lx="gdel" data-gid="${esc(x.gid)}">🗑 Delete</button></div><div class="sub" style="margin-top:6px">${(x.lines || []).map(esc).join('<br>')}</div></div>`;
+  }
+  // 🏗 STORE FACTS: nobody types them any more. They are built from your answers; what is left of the old Facts boxes stays visible here (read-only) and the newer limits win over it.
+  const noteLines = (t) => String(t || '').split(/\r?\n/).filter((l) => !/^\s*#{1,3}\s/.test(l) && l.trim() !== '').join('\n');
+  function factsCardHtml() {
+    const F = S.facts; if (!F) return '';
+    const old = [['💰 Prices & sizes', noteLines(F.prices)], ['🎁 Offers', noteLines(F.offers)], ['🚚 Policies (COD, delivery, returns)', noteLines(F.rules)]].filter((x) => x[1].trim() !== '');
+    return '<div class="lx-sec">Store facts</div><div class="lx-card"><div class="sub">There is no typed Facts page any more. Prices, offers and policies are <b>built from your answers</b>: the limits above are the facts the bot may quote, and they always win over older notes.</div>'
+      + '<div class="row" style="margin-top:8px"><button type="button" class="lx-btn p" data-lx="facts_build" ' + (S.bdBusy ? 'disabled' : '') + '>🏗 Build / refresh from my answers</button><span class="sub">Reads everything you answered (and the old notes below), makes one card to check. Nothing is saved until you press <b>Concept clear</b>.</span></div>'
+      + (old.length ? '<details class="lx-d" style="margin-top:10px"><summary class="sub" style="font-weight:700">🗂 Older notes kept from the old Facts boxes (read-only)</summary>' + old.map((x) => '<div class="sub" style="margin-top:8px"><b>' + x[0] + '</b></div><div class="lx-kv"><div style="flex:1;white-space:pre-wrap;font-size:13px">' + esc(x[1]) + '</div></div>').join('') + '</details>' : '')
+      + '<div class="row" style="margin-top:12px;align-items:center"><div style="flex:1"><b>🛍 Shopify catalogue</b><div class="sub">' + (F.products ? '<b>' + F.products + '</b> products loaded' + (F.synced_at ? ' · ' + esc(F.synced_at) : '') + '. The bot can name them and quote their variant prices.' : 'Not loaded yet — the bot cannot name products or quote their prices.') + '</div></div><button type="button" class="lx-btn s" data-lx="cat_sync" ' + (S.catBusy ? 'disabled' : '') + '>' + (S.catBusy ? 'Loading…' : '🔄 Load / refresh') + '</button></div>'
+      + '<label class="row" style="margin-top:12px;gap:8px;align-items:center;font-size:13px"><input type="checkbox" data-lx="judge" ' + (F.judge ? 'checked' : '') + '> ⚖️ Judge every reply — the bot writes 3 drafts and a judge picks the best (about 2× the AI cost, clearly better replies)</label></div>';
+  }
+  // 🧠 one brain: every page that feeds the bot, what is in it, when it changed, where to change it
+  function knowsHtml() {
+    const d = S.src; if (!d || !(d.sources || []).length) return '';
+    const ago = (t) => { if (!t) return ''; const m = Math.round((Date.now() - new Date(String(t).replace(' ', 'T')).getTime()) / 60000); return !isFinite(m) ? '' : m < 60 ? Math.max(1, m) + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : Math.round(m / 1440) + ' days ago'; };
+    return `<div class="lx-card" style="margin-bottom:12px"><div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap"><b style="font-size:15px">🧠 What the bot knows</b><span class="sub">every page below feeds one brain — change it in one place and the bot, the cart, the campaigns and every Claude use it from the next reply</span></div>
+      ${d.changed && d.changed.at ? `<div class="sub" style="margin:6px 0 2px">Last change ${esc(ago(d.changed.at))}: ${esc((d.changed.what || []).join(' · '))}</div>` : ''}
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px;margin-top:8px">${d.sources.map((x) => `<div style="border:1px solid #e5e7eb;border-radius:12px;padding:8px 10px;background:#fff${x.warn ? ';border-color:#f59e0b' : ''}"><div style="display:flex;gap:6px;align-items:center"><b>${x.icon} ${esc(x.title)}</b><span class="sp" style="flex:1"></span><button type="button" class="lx-btn s" data-lx="tab" data-t="${esc(x.tab)}">Open</button></div><div class="sub" style="margin-top:3px">${esc(x.n)}${x.at ? ' · ' + esc(ago(x.at)) : ''}</div>${x.warn ? `<div class="sub" style="color:#b45309;margin-top:2px">${esc(x.warn)}</div>` : ''}<div class="sub" style="font-size:11px;margin-top:2px">Change in: ${esc(x.how)}</div></div>`).join('')}</div></div>`;
+  }
+  function brainHtml() {
+    const rules = rulesOf((S.facts || {}).style), G = (S.bd || {}).groups || [];
+    const perm = G.filter((g) => !g.to), temp = G.filter((g) => g.to), plans = ((S.fu || {}).situations || []).filter((x) => x.stage === 'saved');
+    let h = '<div class="lx-2"><div>';
+    h += `<div class="lx-sec" style="margin-top:0">Guidance the bot follows (${rules.length})</div><div class="lx-card">${S.facts ? '' : '<div class="sub">Loading…</div>'}`
+      + rules.map((r, i) => `<div class="lx-kv"><span class="lx-pill g">${i + 1}</span><div style="flex:1">${esc(r)}</div><button type="button" class="lx-x" data-lx="rule_del" data-i="${i}" title="Remove this rule" ${S.ruleBusy ? 'disabled' : ''}>✕</button></div>`).join('')
+      + (S.facts && !rules.length ? '<div class="sub">Nothing saved yet — teach something on the Teach tab and it lands here.</div>' : '')
+      + '<div class="sub" style="margin-top:8px">This is guidance, not a command — it comes from your answers on the Teach tab. Nothing is typed here; remove a line with ✕ if it is wrong.</div></div>';
+    h += `<div class="lx-sec">Follow-up plans (${plans.length})</div><div class="lx-card">${S.fu ? '' : `<div class="sub">⚙️ ${NEEDS}</div>`}${plans.map((p) => `<div class="lx-kv" style="align-items:center"><div style="flex:1"><b>${esc(p.title)}</b> ${p.on === false ? '<span class="lx-pill">paused</span>' : '<span class="lx-pill g">on</span>'}<div class="sub">${p.kind === 'stop' ? 'stops automatically' : (p.steps || []).map((s) => dlyText(s.after_h)).join(' → ') + ' · stops after the last step'}${p.stats && p.stats.sent ? ' · ' + p.stats.sent + ' sent, ' + (p.stats.replied || 0) + ' replied' : ''}</div></div><button type="button" class="lx-btn s" data-lx="fu_edit" data-sid="${esc(p.id)}">Edit</button><button type="button" class="lx-btn s" data-lx="fu_tog" data-sid="${esc(p.id)}" data-on="${p.on === false ? 1 : 0}">${p.on === false ? 'Turn on' : 'Pause'}</button></div>`).join('')}${S.fu && !plans.length ? '<div class="sub">No saved plans yet — set them up on the Teach tab (📨 Set up follow-ups).</div>' : ''}</div>`;
+    h += '</div><div>';
+    h += `<div class="lx-sec" style="margin-top:0">Limits</div>${perm.length ? perm.map(grpHtml).join('') : '<div class="lx-card"><div class="sub">No limits saved yet. Prices come from the Pricing tab; teach any limit (lowest price, max discount) on the Teach board.</div></div>'}`;
+    h += `<div class="lx-sec">Temporary offers</div>${temp.length ? temp.map(grpHtml).join('') : '<div class="lx-card"><div class="sub">No temporary offers. Press 🎁 Add an offer on the Teach tab — the old price comes back by itself when it ends.</div></div>'}`;
+    h += `<div class="lx-sec">History</div><div class="lx-card">${S.hist ? ((S.hist.items || []).length ? S.hist.items.map((x) => `<div class="lx-kv" style="align-items:center"><div style="flex:1"><span class="sub">${esc(x.at)}</span><br>${esc(x.text)}</div>${x.can_undo ? `<button type="button" class="lx-btn s" data-lx="undo" data-id="${esc(x.id)}">↩ Undo</button>` : ''}</div>`).join('') : '<div class="sub">Nothing changed yet.</div>') : `<div class="sub">⚙️ ${esc(S.histErr || '')} ${NEEDS}</div>`}</div>`;
+    h += '</div></div>' + factsCardHtml();
+    return h;
+  }
+
+  // ================================================================== FROM WHATSAPP
+  const fmtWhen = (s) => { const m = /^(\d{4})-(\d\d)-(\d\d)[ T](\d\d):(\d\d)/.exec(s || ''); if (!m) return s || ''; return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true }); };
+  // the All-in-one conversation: your general answer → what Claude understood + general questions → your general reply → … → Submit → Concept clear
+  function waConvHtml(nAll) {
+    const C = S.waConv || { turns: [] }, R = C.last, busy = S.waAllBusy, li = (a) => a.map((x) => '<li>' + esc(x) + '</li>').join('');
+    let h = C.turns.length ? `<div style="margin:8px 0;font-size:13px">${C.turns.map((t, i) => `<div style="margin-top:4px">${(t.q || []).length ? '<span class="sub">❓ ' + t.q.map(esc).join(' / ') + '</span><br>' : ''}🗣 <b>You (round ${i + 1}):</b> ${esc(t.a)}</div>`).join('')}</div>` : '';
+    if (R) h += `<div class="lx-cf" style="border-color:#7c3aed;background:#f5f3ff"><b>🧠 What I understood</b><div style="margin-top:4px">${esc(R.understood)}</div>
+        ${(R.summary || []).length ? `<ul style="margin:4px 0 0 18px;padding:0;font-size:13px">${li(R.summary)}</ul>` : ''}
+        ${(R.clash || []).length ? `<div class="sub" style="margin-top:6px;color:#b42318"><b>⚠️ Changes these older rules / answers</b></div><ul style="margin:2px 0 0 18px;padding:0;font-size:13px">${R.clash.map((c) => '<li>' + (c.n ? '#' + c.n + ' ' : '') + '“' + esc(c.old) + '” — ' + esc(c.why) + '</li>').join('')}</ul>` : ''}
+        ${(R.impact || []).length ? `<div class="sub" style="margin-top:6px"><b>🔄 Where it changes</b></div><ul style="margin:2px 0 0 18px;padding:0;font-size:13px">${li(R.impact)}</ul>` : ''}</div>`;
+    const qs = R ? R.questions || [] : [];
+    if (R && qs.length) h += `<div style="margin-top:8px"><b>❓ Still not clear — ${qs.length} general question${qs.length > 1 ? 's' : ''}</b>${qs.map((q, i) => `<div style="margin-top:4px">${i + 1}. ${esc(q.q)}${q.suggest ? '<div class="sub">💡 ' + esc(q.suggest) + '</div>' : ''}</div>`).join('')}${qs.some((q) => q.suggest) ? '<div class="row" style="margin-top:4px"><button type="button" class="lx-btn s" data-lx="wa_gsugall">Use the suggestions</button></div>' : ''}</div>`;
+    if (R && !qs.length) h += '<div class="lx-done" style="margin-top:8px">✅ <b>I understand everything now.</b> Press Submit, then Concept clear on the Teach tab.</div>';
+    if (!R || qs.length) h += `<div class="row" style="align-items:flex-start;margin-top:8px"><textarea class="lx-ta" id="lxG_all" rows="4" style="flex:1" placeholder="${R ? 'One general reply to these questions (type or speak)' : 'Your one answer for all of these — e.g. how to quote 50 ml / combos, what to ask before the address, COD rule… (type or speak)'}">${esc((S.waGd || {}).all || '')}</textarea>${mic('#lxG_all', true)}</div>`;
+    h += `<div class="row" style="margin-top:8px">${!R || qs.length ? `<button type="button" class="lx-btn p" data-lx="wa_gall" ${busy ? 'disabled' : ''}>${busy === 'round' ? '🤖 Claude is reading your answer…' : R ? '📤 Send my reply' : '📤 Answer all ' + nAll + ' at once'}</button>` : ''}
+      ${R ? `<button type="button" class="lx-btn ${qs.length ? '' : 'p'}" data-lx="wa_gfin" ${busy ? 'disabled' : ''}>${busy === 'fin' ? '💾 Saving…' : qs.length ? 'Submit anyway' : '✅ Submit — ready for Concept clear'}</button><button type="button" class="lx-btn s" data-lx="wa_greset">Start again</button>` : '<span class="sub">or answer each group below</span>'}</div>`;
+    return h;
+  }
+  // 📋 every open topic at once: one general answer → what Claude understood + general questions → … → Submit (every topic updated + approved) → Concept clear all
+  function boardConvHtml(B) {
+    const T = B.topics || [], open = T.filter((t) => (t.open || []).length), ready = T.filter((t) => t.stage === 'review' && !t.prop);
+    if (!open.length && !ready.length && !S.bdConv) return S.bdConvMsg ? '<div class="lx-done" style="margin:8px 0 12px">' + S.bdConvMsg + '</div>' : '';
+    const C = S.bdConv || { turns: [] }, R = C.last, busy = S.bdConvBusy, li = (a) => a.map((x) => '<li>' + esc(x) + '</li>').join(''), nq = open.reduce((a, t) => a + t.open.length, 0);
+    let h = `<div class="lx-card" style="margin:8px 0 12px;border:2px solid #16a34a;background:#f6fef9"><div class="row" style="align-items:center"><b style="font-size:15px">📋 All topics at once — ${open.length} topic${open.length === 1 ? '' : 's'}, ${nq} questions</b><span class="sp"></span>${ready.length ? `<button type="button" class="lx-btn p s" data-lx="bd_clearall" ${busy ? 'disabled' : ''}>${busy === 'clear' ? '💾 Saving…' : '✅ Concept clear all ' + ready.length + ' ready'}</button>` : ''}</div>
+      <div class="sub" style="margin:4px 0 6px">No need to answer question by question: write how you want all of this handled, in general. Claude says what it understood and asks only general questions until it is clear. Submit updates every topic.</div>`;
+    if (open.length && !R) h += `<ol style="margin:0 0 6px 18px;padding:0;font-size:13px">${open.map((t) => `<li><b>${esc(t.title)}</b> (${t.open.length}) — ${esc((t.open || []).slice(0, 2).join(' / '))}</li>`).join('')}</ol>`;
+    if (C.turns.length) h += `<div style="margin:8px 0;font-size:13px">${C.turns.map((t, i) => `<div style="margin-top:4px">${(t.q || []).length ? '<span class="sub">❓ ' + t.q.map(esc).join(' / ') + '</span><br>' : ''}🗣 <b>You (round ${i + 1}):</b> ${esc(t.a)}</div>`).join('')}</div>`;
+    if (R) h += `<div class="lx-cf" style="border-color:#7c3aed;background:#f5f3ff"><b>🧠 What I understood</b><div style="margin-top:4px">${esc(R.understood)}</div>${(R.summary || []).length ? `<ul style="margin:4px 0 0 18px;padding:0;font-size:13px">${li(R.summary)}</ul>` : ''}
+        ${(R.clash || []).length ? `<div class="sub" style="margin-top:6px;color:#b42318"><b>⚠️ Changes these older rules / answers</b></div><ul style="margin:2px 0 0 18px;padding:0;font-size:13px">${R.clash.map((c) => '<li>' + (c.n ? '#' + c.n + ' ' : '') + '“' + esc(c.old) + '” — ' + esc(c.why) + '</li>').join('')}</ul>` : ''}
+        ${(R.impact || []).length ? `<div class="sub" style="margin-top:6px"><b>🔄 Where it changes</b></div><ul style="margin:2px 0 0 18px;padding:0;font-size:13px">${li(R.impact)}</ul>` : ''}</div>`;
+    const qs = R ? R.questions || [] : [];
+    if (R && qs.length) h += `<div style="margin-top:8px"><b>❓ Still not clear — ${qs.length} general question${qs.length > 1 ? 's' : ''}</b>${qs.map((q, i) => `<div style="margin-top:4px">${i + 1}. ${esc(q.q)}${q.suggest ? '<div class="sub">💡 ' + esc(q.suggest) + '</div>' : ''}</div>`).join('')}${qs.some((q) => q.suggest) ? '<div class="row" style="margin-top:4px"><button type="button" class="lx-btn s" data-lx="bd_sug">Use the suggestions</button></div>' : ''}</div>`;
+    if (R && !qs.length) h += '<div class="lx-done" style="margin-top:8px">✅ <b>I understand everything now.</b> Press Submit — every topic gets updated.</div>';
+    if (open.length && (!R || qs.length)) h += `<div class="row" style="align-items:flex-start;margin-top:8px"><textarea class="lx-ta" id="lxB_all" rows="4" style="flex:1" placeholder="${R ? 'One general reply to these questions (type or speak)' : 'How you want all of these handled, in general (type or speak)'}">${esc(S.bdAllDraft || '')}</textarea>${mic('#lxB_all', true)}</div>`;
+    if (open.length) h += `<div class="row" style="margin-top:8px">${!R || qs.length ? `<button type="button" class="lx-btn p" data-lx="bd_all" ${busy ? 'disabled' : ''}>${busy === 'round' ? '🤖 Claude is reading your answer…' : R ? '📤 Send my reply' : '📤 Answer all at once'}</button>` : ''}${R ? `<button type="button" class="lx-btn ${qs.length ? '' : 'p'}" data-lx="bd_fin" ${busy ? 'disabled' : ''}>${busy === 'fin' ? '🤖 Updating every topic…' : qs.length ? 'Submit anyway' : '✅ Submit — update every topic'}</button><button type="button" class="lx-btn s" data-lx="bd_reset">Start again</button>` : ''}</div>`;
+    if (S.bdConvMsg) h += `<div class="lx-done" style="margin-top:8px">${S.bdConvMsg}</div>`;
+    return h + '</div>';
+  }
+  function autoGroup() { if (S.waGBusy) return; S.waGBusy = true; paint(true, true); api.post('wa.learn_groups', {}).then((g) => { S.waG = g; }).catch((e) => { S.waG = { groups: [] }; toast(msg(e), true); }).finally(() => { S.waGBusy = false; paint(true, true); }); }
+  // 🧩 the waiting replies in a few groups: one general answer per group instead of one card at a time
+  function waGroupsHtml(D) {
+    const done0 = S.waAllMsg ? `<div class="lx-done" style="margin-bottom:10px">${S.waAllMsg}</div>` : '';
+    if (S.waSt !== 'new' || !(D.waiting > 0)) return done0;
+    if (S.waG === undefined) { S.waG = null; api.get('wa.learn_groups').then((g) => { S.waG = g; if (!(g.groups || []).length && !S.waGBusy) autoGroup(); paint(true, true); }).catch(() => { S.waG = { groups: [] }; }); }
+    const G = S.waG, busy = S.waGBusy;
+    const real = G && (G.groups || []).filter((g) => !g.nothing), nAll = real ? real.reduce((a, g) => a + g.n, 0) : 0;
+    let h = done0;
+    if (busy) h += '<div class="lx-card" style="margin-bottom:12px;border:2px solid #7c3aed"><b>🤖 Claude is reading your ' + D.waiting + ' waiting replies and merging them into a few situations…</b><div class="sub">This takes about half a minute.</div></div>';
+    if (real && real.length) h += `<div class="lx-card" style="margin-bottom:12px;border:2px solid #16a34a;background:#f6fef9"><b style="font-size:15px">📋 All in one — ${nAll} replies, ${real.length} situations</b>
+      <div class="sub" style="margin:4px 0 6px">Read the summary, write <b>one answer for everything</b>. Claude tells you what it understood, every reply below leaves this list, and anything still unclear comes back as a Teach topic.</div>
+      <ol style="margin:0 0 6px 18px;padding:0;font-size:13px">${real.map((g) => `<li><b>${esc(g.title)}</b> (${g.n}) — ${esc(g.team || g.customers || '')}</li>`).join('')}</ol>
+      ${waConvHtml(nAll)}</div>`;
+    h += `<div class="lx-card" style="margin-bottom:12px;border:2px solid #7c3aed"><div class="row" style="align-items:center"><b style="font-size:15px">🧩 Answer by group — ${D.waiting} replies waiting</b><span class="sp"></span><button type="button" class="lx-btn ${G && G.groups && G.groups.length ? '' : 'p'}" data-lx="wa_group" ${busy ? 'disabled' : ''}>${busy ? '🤖 Claude is grouping…' : G && G.groups && G.groups.length ? '🔄 Group again' : '🧩 Group them'}</button></div>
+      <div class="sub" style="margin-top:4px">Claude puts the waiting replies into a few situations and shows what customers wrote and what your team did. Write <b>one general answer</b> per group — it goes to the Teach board (anything still unclear comes back as a question there) and every reply in the group leaves this list.</div>`;
+    if (G && (G.groups || []).length) h += G.groups.map((g) => `<div class="lx-card" style="margin:10px 0 0;background:#fafaff"><div class="row" style="align-items:center"><b>${esc(g.title)}</b><span class="lx-pill ${g.nothing ? '' : 'b'}">${g.n} repl${g.n === 1 ? 'y' : 'ies'}</span>${!g.nothing ? (g.tid ? `<span class="lx-pill g" title="Your answer goes into this Teach topic">→ topic: ${esc(g.topic || '')}</span>` : '<span class="lx-pill o">→ new topic</span>') : ''}</div>
+        ${g.customers ? `<div class="sub" style="margin-top:6px"><b>What customers wrote:</b> ${esc(g.customers)}</div>` : ''}${g.team ? `<div class="sub" style="margin-top:4px"><b>What your team did:</b> ${esc(g.team)}</div>` : ''}${g.bot ? `<div class="sub" style="margin-top:4px"><b>The bot:</b> ${esc(g.bot)}</div>` : ''}
+        ${g.nothing ? `<div class="row" style="margin-top:8px"><button type="button" class="lx-btn s" data-lx="wa_gskip" data-g="${g.gid}">✕ Not a rule — clear all ${g.n}</button></div>` : `${g.question ? `<div style="margin-top:8px;font-weight:700">❓ ${esc(g.question)}</div>` : ''}
+        <div class="row" style="margin-top:6px;align-items:flex-start"><textarea class="lx-ta" id="lxG_${g.gid}" rows="2" style="flex:1" placeholder="Your general answer for all ${g.n} — type or speak">${esc((S.waGd || {})[g.gid] || '')}</textarea>${mic('#lxG_' + g.gid, true)}</div>
+        ${g.suggest ? `<div class="sub" style="margin-top:4px">💡 Suggested from what your team did: ${esc(g.suggest)} <button type="button" class="lx-btn s" data-lx="wa_gsug" data-g="${g.gid}">Use this</button></div>` : ''}
+        <div class="row" style="margin-top:8px"><button type="button" class="lx-btn p s" data-lx="wa_gteach" data-g="${g.gid}">📤 Teach this group</button><button type="button" class="lx-btn s" data-lx="wa_gskip" data-g="${g.gid}">Not a rule — clear all ${g.n}</button></div>`}</div>`).join('');
+    else if (G && G.at) h += '<div class="sub" style="margin-top:8px">Nothing to group right now.</div>';
+    return h + '</div>';
+  }
+  function waHtml() {
+    const D = S.wa; let h = '';
+    if (!D) h += `<div class="lx-err">${esc(S.waErr || 'Loading…')}</div>`;
+    else {
+      const c = D.counts || {}, tot = (c.used || 0) + (c.edited || 0) + (c.own || 0);
+      h += `<div class="lx-3" style="margin-bottom:12px"><div class="lx-card" style="margin:0"><div class="sub">Sent as suggested (30 days)</div><div class="lx-big">${tot ? Math.round((c.used || 0) * 100 / tot) + '%' : '—'}</div><div class="sub">${c.used || 0} of ${tot} replies</div></div><div class="lx-card" style="margin:0"><div class="sub">Changed a little</div><div class="lx-big">${c.edited || 0}</div></div><div class="lx-card" style="margin:0"><div class="sub">Wrote their own</div><div class="lx-big">${c.own || 0}</div></div></div>`;
+      h += waGroupsHtml(D);
+      h += `<div class="row" style="margin-bottom:8px"><div class="lx-sec" style="margin:0">✏️ Replies your team changed or wrote</div><span class="sp"></span>${[['new', 'Waiting'], ['taught', 'Taught'], ['skipped', 'Skipped']].map(([v, l]) => `<button type="button" class="lx-btn s ${S.waSt === v ? 'p' : ''}" data-lx="wa_st" data-st="${v}">${l}</button>`).join('')}</div>`;
+      const fold = S.waSt === 'new' && S.waG && (S.waG.groups || []).length && !S.waOne;
+      if (fold) h += `<div class="row" style="margin:6px 0 10px"><button type="button" class="lx-btn s" data-lx="wa_one">Show replies one by one (${D.waiting})</button></div>`;
+      else h += (D.items || []).length ? '<div class="lx-2">' + D.items.map((x, i) => `<div class="lx-card" style="margin:0"><div class="row"><b>${esc(x.name || x.phone)}</b><span class="lx-pill ${x.kind === 'edited' ? 'o' : 'b'}">${x.kind === 'edited' ? 'Changed a little' : 'Own reply'}</span><span class="sp"></span><span class="sub">${esc(x.by || 'Salesperson')} · ${esc(fmtWhen(x.at))}</span></div>
+        <div class="sub" style="margin-top:8px">Customer wrote</div><div class="lx-cb c" style="max-width:100%;margin:2px 0">${esc(x.customer || '—')}</div>
+        ${x.sugg ? `<div class="sub" style="margin-top:6px">Bot suggested</div><div class="lx-cb" style="max-width:100%;margin:2px 0;background:#f3efff">${esc(x.sugg)}</div>` : '<div class="sub" style="margin-top:6px">No suggestion was shown for this message.</div>'}
+        ${S.waSt === 'new' ? `<div class="sub" style="margin-top:6px">Team sent — fix the wording first if needed; this is what the bot learns</div><textarea class="lx-ta" id="lxW${i}" rows="3">${esc(x.sent)}</textarea><div class="row" style="margin-top:8px"><button type="button" class="lx-btn p s" data-lx="wa_teach" data-i="${i}">Teach this</button><button type="button" class="lx-btn s" data-lx="wa_skip" data-i="${i}">Not a rule</button></div>` : `<div class="sub" style="margin-top:6px">Team sent</div><div class="lx-cb m" style="max-width:100%;margin:2px 0">${esc(x.sent)}</div>`}</div>`).join('') + '</div>'
+        : `<div class="lx-card"><div class="lx-empty">${S.waSt === 'new' ? '🎉 Nothing waiting. When your team changes a suggestion or writes their own reply, it appears here.' : 'Nothing here.'}</div></div>`;
+    }
+    h += '<div class="lx-sec">What the bot noticed by itself</div>';
+    const G = S.gaps;
+    if (!G) h += `<div class="lx-note">⚙️ ${esc(S.gapsErr || '')} ${NEEDS}</div>`;
+    else {
+      const sit = G.situations || [], uns = G.unsure || [], blk = G.blocked || [];
+      h += '<div class="lx-2"><div>' + (sit.length ? sit.map((x) => `<div class="lx-card"><div class="row"><b>🆕 New situation spotted</b><span class="lx-pill b">${esc(x.n_chats || 0)} chats</span></div><p style="margin:8px 0;line-height:1.5">${esc(x.why || x.title)}</p><div class="lx-hl">Suggestion: add situation <b>“${esc(x.title)}”</b>${x.suggest ? ' — ' + esc(x.suggest) : ''}</div><div class="row" style="margin-top:10px"><button type="button" class="lx-btn p s" data-lx="gap_board" data-kind="situation" data-id="${esc(x.id)}">Add to Teach board</button><button type="button" class="lx-btn s" data-lx="gap_ignore" data-kind="situation" data-id="${esc(x.id)}">Ignore</button></div></div>`).join('') : '<div class="lx-card"><div class="sub">No new situations spotted this week.</div></div>')
+        + '</div><div>' + `<div class="lx-card"><div class="row"><b>🤷 Bot was unsure about</b><span class="lx-pill r">${uns.length}</span></div>${uns.length ? uns.map((x) => `<div class="lx-kv" style="align-items:center"><div style="flex:1">“${esc(x.text)}”${x.count > 1 ? `<div class="sub">asked ${x.count} times</div>` : ''}</div><button type="button" class="lx-btn s" data-lx="gap_board" data-kind="unsure" data-id="${esc(x.id)}">Teach</button><button type="button" class="lx-btn s" data-lx="gap_ignore" data-kind="unsure" data-id="${esc(x.id)}">✕</button></div>`).join('') : '<div class="sub" style="margin-top:6px">Nothing the bot was unsure about.</div>'}</div>`
+        + `<div class="lx-card"><div class="row"><b>⚠️ Bot blocked itself</b><span class="lx-pill">${blk.length}</span></div>${blk.length ? blk.map((x) => `<div class="lx-kv"><div style="flex:1">${esc(x.why)}<div class="sub">${esc(fmtWhen(x.at))}</div></div></div>`).join('') : '<div class="sub" style="margin-top:6px">A reply that would go below a limit is rewritten safely — they are listed here.</div>'}</div></div></div>`;
+    }
+    return h;
+  }
+
+  // ================================================================== RESULTS
+  function resHtml() {
+    const R = S.res, W = S.wa, c = (W && W.counts) || {}, tot = (c.used || 0) + (c.edited || 0) + (c.own || 0);
+    const used = R && R.tiles && R.tiles.used_pct != null ? R.tiles.used_pct : (tot ? Math.round((c.used || 0) * 100 / tot) : null);
+    let h = `<div class="lx-3" style="margin-bottom:12px"><div class="lx-card" style="margin:0"><div class="sub">Suggestions used as written</div><div class="lx-big">${used == null ? '—' : used + '%'}</div>${R && R.tiles && R.tiles.used_delta != null ? `<span class="lx-pill ${R.tiles.used_delta >= 0 ? 'g' : 'r'}">${R.tiles.used_delta >= 0 ? '▲' : '▼'} ${Math.abs(R.tiles.used_delta)}% vs last week</span>` : '<div class="sub">last 30 days</div>'}</div>
+      <div class="lx-card" style="margin:0"><div class="sub">Follow-up reply rate</div><div class="lx-big">${R && R.tiles && R.tiles.fu_reply_pct != null ? R.tiles.fu_reply_pct + '%' : '—'}</div>${R && R.tiles && R.tiles.fu_delta != null ? `<span class="lx-pill ${R.tiles.fu_delta >= 0 ? 'g' : 'r'}">${R.tiles.fu_delta >= 0 ? '▲' : '▼'} ${Math.abs(R.tiles.fu_delta)}%</span>` : ''}</div>
+      <div class="lx-card" style="margin:0"><div class="sub">Orders from follow-ups</div><div class="lx-big">${R && R.tiles && R.tiles.fu_orders != null ? R.tiles.fu_orders : '—'}</div><div class="sub">this week</div></div></div>`;
+    if (!R) return h + `<div class="lx-note">⚙️ ${esc(S.resErr || '')} The first tile already works. The follow-up charts, the funnel and the weekly insights need the new server files (the next delivery).</div>`;
+    const steps = R.steps || [], mx = Math.max(1, ...steps.map((s) => s.pct || 0));
+    h += '<div class="lx-2"><div class="lx-card"><b>Which follow-up step works?</b>' + (steps.length ? `<div class="lx-bars">${steps.map((s) => `<div style="height:${Math.max(8, Math.round((s.pct || 0) * 100 / mx))}%">${s.pct || 0}%</div>`).join('')}</div><div class="lx-lbl">${steps.map((s) => `<span>Step ${esc(s.n)}</span>`).join('')}</div><div class="sub" style="margin-top:6px">% of customers who replied after that step</div>` : '<div class="sub" style="margin-top:6px">No follow-ups sent yet.</div>') + '</div><div>';
+    const ins = R.insights || [];
+    h += `<div class="lx-card"><b>💡 Weekly insight — becomes a question for you</b>${ins.length ? ins.map((x) => `<div class="lx-kv" style="flex-direction:column"><div>${esc(x.text)}</div><div class="row"><button type="button" class="lx-btn p s" data-lx="ins" data-act="ask" data-id="${esc(x.id)}">Yes, ask me</button><button type="button" class="lx-btn s" data-lx="ins" data-act="later" data-id="${esc(x.id)}">Later</button></div></div>`).join('') : '<div class="sub" style="margin-top:6px">No insight yet — it appears after a week of follow-ups.</div>'}</div>`;
+    const fn = R.funnel || [], fm = Math.max(1, ...fn.map((x) => x.n || 0));
+    h += `<div class="lx-card"><b>Where customers drop off</b>${fn.length ? fn.map((x) => `<div class="lx-fn"><span style="width:120px">${esc(x.label)}</span><i style="width:${Math.max(2, Math.round((x.n || 0) * 100 / fm))}%"></i><b>${esc(x.n)}</b></div>`).join('') : '<div class="sub" style="margin-top:6px">Not enough chats yet.</div>'}</div></div></div>`;
+    return h;
+  }
+
+  // ================================================================== TEST (practice chat + "customer goes quiet" simulator)
+  function photoCards(m) {   // small cards under a bot reply: where each picture would come from
+    const items = (m.prods || []).map((p) => ({ n: p.name, t: p.thumb, sub: (p.longevity ? p.longevity + ' · ' : '') + 'Products (Shopify)' })).concat((m.lib || []).map((p) => ({ n: p.label || p.name, t: p.thumb, sub: p.source || 'Photos tab' })));
+    if (!items.length && !m.pflag) return '';
+    return (m.pflag ? '<small class="lx-pflag">⚠ ' + esc(m.pflag) + '</small>' : '') + (items.length ? '<div class="lx-pcs">' + items.map((p) => '<div class="lx-pcard">' + (p.t ? '<img src="' + esc(p.t) + '" alt="">' : '<div class="lx-pnoimg">No picture</div>') + '<div class="lx-pt"><b>' + esc(p.n) + '</b><span>' + esc(p.sub) + '</span></div></div>').join('') + '</div><small>📷 ' + (items.length > 1 ? 'these pictures' : 'this picture') + ' would go after the text (waits 20 seconds, can be cancelled)' + (m.pwhy ? ' · ' + esc(m.pwhy) : '') + '</small>' : '');
+  }
+  function testHtml() {
+    const chat = S.chat.map((m, i) => m.who === 'customer' ? `<div class="lx-cb c">${esc(m.text)}</div>` : `<div class="lx-cb m">${m.err ? '⚠️ ' + esc(m.text) : esc(m.text)}<small>${m.handoff ? '🙋 would hand over to a person · ' : ''}${m.lessons != null ? '📚 reads ' + m.lessons + ' lessons' : ''}${m.facts ? ' · 🧾 facts on' : ''}${m.why ? ' · ' + esc(m.why) : ''}</small>${photoCards(m)}${!m.err ? `<div style="margin-top:6px"><button type="button" class="lx-btn s" data-lx="t_wrong" data-i="${i}">👎 Wrong? Teach it</button></div>` : ''}</div>${S.teachBox === i ? `<div class="lx-q" style="background:#fff"><small>What should the bot have said / done instead?</small><textarea class="lx-ta" id="lxTw" rows="2" placeholder="e.g. Don't go below ₹1300. Ask the size first."></textarea><div style="margin-top:6px"><button type="button" class="lx-btn p s" data-lx="t_wsend" data-i="${i}">Add to Teach board</button><button type="button" class="lx-btn s" data-lx="t_wcancel">Cancel</button></div></div>` : ''}`).join('');
+    const sits = ((S.fu || {}).situations || []).filter((x) => x.kind !== 'stop');
+    const sim = S.sim ? S.sim.steps.map((x) => `<div class="lx-gap"><span>⏱ +${esc(dlyText(x.at_h))} · step ${esc(x.step)}${x.note ? ' · ' + esc(x.note) : ''}</span></div><div class="lx-cb m">${esc(x.text)}${x.channel ? `<small>${esc(x.channel)}</small>` : ''}</div>`).join('') + (S.sim.stopped ? `<div class="lx-gap"><span>⏹ ${esc(S.sim.stopped)}</span></div>` : '') : '';
+    return `<div class="lx-2"><div><div class="lx-sec" style="margin-top:0">Practice chat — you are the customer</div><div class="lx-chat" id="lxChat">${chat || '<div class="sub" style="padding:8px">Type like a customer, e.g. “20 ml ka kya price hai?”. The bot answers with everything you taught so far.</div>'}${S.chatBusy ? '<div class="lx-gap"><span>🤖 thinking…</span></div>' : ''}</div>
+        <div class="row" style="margin-top:8px;flex-wrap:nowrap"><input class="lx-in" id="lxChatIn" style="flex:1" value="${esc(S.chatIn)}" placeholder="Type as the customer…" ${S.chatBusy ? 'disabled' : ''}>${mic('#lxChatIn')}<button type="button" class="lx-btn p" data-lx="t_send" ${S.chatBusy ? 'disabled' : ''}>Send</button></div>
+        <div class="row" style="margin-top:8px"><button type="button" class="lx-btn s" data-lx="t_reset">↺ New chat</button></div></div>
+      <div><div class="lx-sec" style="margin-top:0">Customer goes quiet — simulator</div><div class="lx-card"><b>Pretend the customer stops replying</b><div class="sub">Pick a situation, then jump the time forward to see what the bot would send. The practice chat on the left is used as the story so far.</div>
+        ${S.fu ? `<select class="lx-sel" id="lxSimSit" style="width:100%;margin-top:8px"><option value="">Choose a situation…</option>${sits.map((x) => `<option value="${esc(x.id)}" ${S.simSid === x.id ? 'selected' : ''}>${esc(x.title)}${x.stage !== 'saved' ? ' (draft)' : ''}</option>`).join('')}</select>
+        <div class="row" style="margin-top:8px">${[[2, '+2 hours'], [24, '+1 day'], [48, '+2 days'], [96, '+4 days']].map(([h, l]) => `<button type="button" class="lx-btn s" data-lx="t_sim" data-h="${h}" ${S.simBusy ? 'disabled' : ''}>${l}</button>`).join('')}<button type="button" class="lx-btn s p" data-lx="t_sim" data-h="all" ${S.simBusy ? 'disabled' : ''}>▶ Play the whole plan</button></div>` : `<div class="lx-note" style="margin-top:8px">⚙️ ${esc(S.fuErr || '')} ${NEEDS}</div>`}
+        ${S.simErr ? `<div class="lx-err">${esc(S.simErr)}</div>` : ''}</div>
+        ${S.sim || S.simBusy ? `<div class="lx-chat">${S.simBusy ? '<div class="lx-gap"><span>🤖 working it out…</span></div>' : ''}${sim}</div><div class="row" style="margin-top:8px"><button type="button" class="lx-btn s" data-lx="t_simwrong">👎 Not how I'd say it — teach</button></div>` : ''}</div></div>`;
+  }
+  async function testAct(act, b) {
+    stash();
+    if (act === 't_reset') { S.chat = []; S.chatIn = ''; S.teachBox = null; S.sim = null; paint(true, true); return; }
+    if (act === 't_send') {
+      const text = (($('lxChatIn') || {}).value || '').trim(); if (!text || S.chatBusy) return;
+      const ctx = S.chat.filter((m) => !m.err).map((m) => ({ who: m.who, text: m.text })); S.chat.push({ who: 'customer', text }); S.chatIn = ''; S.chatBusy = true; paint(true, true); scrollChat();
+      try { const r = await api.post('teach.bot', { customer: text, context: ctx, situation: '' }); let ph = {}; try { if (!r.handoff) ph = await api.get('wa.prod_try', { q: text, reply: r.reply || '' }); } catch (e2) { }   /* the pictures the live bot would attach to this message: Shopify products and Photos-tab photos (read-only, same decision as in WhatsApp) */
+        S.chat.push({ who: 'bot', text: r.reply || '(no reply)', handoff: !!r.handoff, lessons: r.lessons, facts: r.facts, why: r.why || '', prods: ph.products || [], lib: ph.lib || [], pflag: ph.flag || '', pwhy: ph.why || '' }); }
+      catch (e) { S.chat.push({ who: 'bot', text: msg(e), err: true }); }
+      S.chatBusy = false; paint(true, true); scrollChat(); const i = $('lxChatIn'); if (i) i.focus(); return;
+    }
+    if (act === 't_wrong') { S.teachBox = +b.dataset.i; paint(true, true); return; }
+    if (act === 't_wcancel') { S.teachBox = null; paint(true, true); return; }
+    if (act === 't_wsend') {
+      const fix = (($('lxTw') || {}).value || '').trim(); if (!fix) { toast('Write what the bot should do instead.', true); return; }
+      const i = +b.dataset.i, bot = S.chat[i], cust = S.chat.slice(0, i).reverse().find((m) => m.who === 'customer');
+      b.disabled = true; try { const d = await api.post('teach.board_add', { text: 'Practice chat: when the customer said “' + (cust ? cust.text : '') + '” the bot replied “' + bot.text + '”. That is wrong. ' + fix }); applyBoard(d); (d.touched || []).forEach((id) => { S.bdOpen[id] = true; }); S.teachBox = null; toast('Added to the Teach board — answer its questions there.'); S.tab = 'teach'; } catch (e) { toast(msg(e), true); } paint(); return;
+    }
+    if (act === 't_sim') {
+      const sid = ($('lxSimSit') || {}).value || S.simSid; if (!sid) { toast('Choose a situation first.', true); return; } S.simSid = sid;
+      S.simBusy = true; S.simErr = ''; paint(true, true);
+      try { S.sim = await api.post('fu.sim', { sid, hours: b.dataset.h === 'all' ? 0 : +b.dataset.h, all: b.dataset.h === 'all', context: S.chat.filter((m) => !m.err).map((m) => ({ who: m.who, text: m.text })) }); } catch (e) { S.simErr = msg(e); S.sim = null; }
+      S.simBusy = false; paint(true, true); return;
+    }
+    if (act === 't_simwrong') { S.tab = 'teach'; S.fuOpen = true; if (S.simSid) S.bdOpen['fu' + S.simSid] = true; paint(); return; }
+  }
+  const scrollChat = () => { const c = $('lxChat'); if (c) c.scrollTop = c.scrollHeight; };
+
+  // ================================================================== loading, header, tabs
+  async function loadAll() {
+    const [bd, facts, wa, fu, gaps, hist, res] = await Promise.all([
+      soft(() => api.get('teach.board')), soft(() => api.get('teach.facts')), soft(() => api.get('wa.learn_list', { st: S.waSt })),
+      soft(() => api.get('fu.plans')), soft(() => api.get('learn.gaps')), soft(() => api.get('learn.history')), soft(() => api.get('learn.results'))]);
+    soft(() => api.get('teach.reports')).then((r) => { if (r.ok) { S.reps = r.d.reports || []; if (S.reps.length) paint(true, true); } });
+    soft(() => api.get('teach.sources')).then((r) => { if (r.ok) { S.src = r.d; if (S.tab === 'brain') paint(true, true); } });   // 🧠 what the bot knows   // 🚩 reports from salespeople
+    if (bd.ok) { S.bd = { topics: bd.d.topics || [], done: bd.d.done || 0, note: bd.d.note || '', groups: bd.d.groups || [], chats: bd.d.chats || null, guide_new: bd.d.guide_new || 0 }; S.bdErr = ''; } else { S.bd = null; S.bdErr = bd.err; }
+    if (facts.ok) { S.facts = facts.d; S.factsErr = ''; } else { S.facts = null; S.factsErr = facts.err; }
+    if (wa.ok) { S.wa = wa.d; S.waErr = ''; } else { S.wa = null; S.waErr = wa.err; }
+    if (fu.ok) { S.fu = fu.d; S.fuErr = ''; } else { S.fu = null; S.fuErr = fu.err; }
+    if (gaps.ok) { S.gaps = gaps.d; } else { S.gaps = null; S.gapsErr = gaps.err; }
+    if (hist.ok) { S.hist = hist.d; } else { S.hist = null; S.histErr = hist.err; }
+    if (res.ok) { S.res = res.d; } else { S.res = null; S.resErr = res.err; }
+    paint();
+  }
+  async function refreshQuiet() { stash(); const [bd, facts, fu, hist] = await Promise.all([soft(() => api.get('teach.board')), soft(() => api.get('teach.facts')), soft(() => api.get('fu.plans')), soft(() => api.get('learn.history'))]);
+    if (bd.ok) S.bd = { topics: bd.d.topics || [], done: bd.d.done || 0, note: bd.d.note || '', groups: bd.d.groups || [], chats: bd.d.chats || null, guide_new: bd.d.guide_new || 0 }; if (facts.ok) S.facts = facts.d; if (fu.ok) S.fu = fu.d; if (hist.ok) S.hist = hist.d; paint(true); }
+  function status() {
+    const B = S.bd || {}, G = B.groups || [], act = G.filter((g) => g.state === 'active');
+    const limits = act.filter((g) => !g.to).reduce((n, g) => n + (g.lines || []).length, 0), offers = act.filter((g) => g.to);
+    const rules = rulesOf((S.facts || {}).style).length, plans = ((S.fu || {}).situations || []).filter((x) => x.stage === 'saved').length;
+    const nw = ((S.wa || {}).waiting || 0) + (S.gaps ? (S.gaps.situations || []).length + (S.gaps.unsure || []).length : 0);
+    const st = (n, l, t) => `<button type="button" class="lx-stat" data-lx="tab" data-t="${t}"><b>${n}</b>${l}</button>`;
+    return st((B.topics || []).length, 'topics waiting', 'teach') + st(rules, 'rules', 'brain') + st(limits, 'limits', 'brain')
+      + st(offers.length, offers.length ? 'offer running (' + esc(offers[0].title) + ', till ' + esc(offers[0].to) + ')' : 'offers running', 'brain') + st(plans, 'follow-up plans', 'brain') + st(nw, 'new from WhatsApp', 'wa');
+  }
+  function badge(t) { if (t === 'teach') return (S.bd || { topics: [] }).topics.length; if (t === 'wa') return ((S.wa || {}).waiting || 0) + (S.gaps ? (S.gaps.situations || []).length + (S.gaps.unsure || []).length : 0); return 0; }
+  function paint(keepScroll, noStash) {
+    if (!noStash) stash();
+    const y = window.pageYOffset || 0, fo = document.activeElement && document.activeElement.id, ss = fo && document.activeElement.selectionStart;
+    const fv = fo && document.activeElement.matches('textarea,input[type="text"],input:not([type])') ? document.activeElement.value : null;   // what you are typing right now
+    const mode = ((S.fu || {}).mode) || 'off';
+    const body = S.tab === 'fu' ? '<div id="lxFu"></div>' : S.tab === 'lists' ? '<div class="sub" style="margin:0 0 8px">Ready perfume lists salespeople send in one tap from the chat (🗒️ Lists). Built from live Shopify sales — ask Claude in plain words.</div><div id="lxLists"></div>' : S.tab === 'teach' ? teachHtml() : S.tab === 'brain' ? knowsHtml() + brainHtml() : S.tab === 'wa' ? waHtml() : S.tab === 'res' ? resHtml() : S.tab === 'store' ? '<div id="storeInfo" class="lx-card"><div class="sub">Loading…</div></div>' : S.tab === 'pricing' ? '<div class="sub" style="margin:0 0 8px">One price chart for the bot, the WhatsApp cart and commission. Perfume by total ml; attar, shower gel and others by pieces; combos for any mix. Tell the bot <b>how</b> to quote on the Teach board.</div><iframe src="price_charts.html?in=sales" title="Price chart" style="width:100%;height:78vh;border:1px solid #e5e7eb;border-radius:14px;background:#fff"></iframe>' : (S.tab === 'products' || S.tab === 'billing' || S.tab === 'cmsg') ? '<div id="wchMount"></div>' : testHtml();
+    root.innerHTML = `<div class="lx-hd"><div class="lx-top"><div><h2>🧠 Learning &amp; Improvement</h2><div class="sub">Teach the bot once — it follows it in the Practice chat and in WhatsApp</div></div><span class="sp"></span>
+      <label class="sub" style="display:flex;gap:6px;align-items:center">Follow-up mode <select class="lx-sel" id="lxMode" ${S.fu ? '' : 'disabled title="Needs the new server files"'}>${MODES.map((m) => `<option value="${m[0]}" ${m[0] === mode ? 'selected' : ''}>${m[1]}</option>`).join('')}</select></label></div>
+      <div class="lx-strip">${status()}</div>
+      <div class="lx-tabs">${SECTIONS.map(([k, l, subs]) => { const n = subs.reduce((a, t) => a + badge(t), 0); return `<button type="button" class="lx-tab ${secOf(S.tab)[0] === k ? 'on' : ''}" data-lx="tab" data-t="${subs[0]}">${l}${n ? `<em>${n}</em>` : ''}${subs.includes('billing') && S.bill && S.bill.red_dot ? '<span class="rd" title="Billing is not complete"></span>' : ''}</button>`; }).join('')}</div>
+      ${secOf(S.tab)[2].length > 1 ? `<div class="lx-tabs" style="margin-top:6px;gap:6px">${secOf(S.tab)[2].map((t) => `<button type="button" class="lx-btn s ${S.tab === t ? 'p' : ''}" data-lx="tab" data-t="${t}">${(TABS.find((x) => x[0] === t) || [t, t])[1]}${badge(t) ? ` (${badge(t)})` : ''}</button>`).join('')}</div>` : ''}</div>
+      ${S.bill && S.bill.red_dot && S.tab !== 'billing' ? `<div class="lx-bill"><span>🧾 <b>Billing is ${S.bill.filled} of ${S.bill.total} filled.</b> Salespeople cannot send chain carts until the rest is filled in.</span><button type="button" class="lx-btn s" data-lx="tab" data-t="billing">Open Billing</button></div>` : ''}
+      <div id="lxBody">${body}</div>`;
+    const lg = $('lxLang'); if (lg) lg.value = lang();
+    if (keepScroll) window.scrollTo(0, y);
+    if (fo && $(fo)) { try { if (fv != null && $(fo).value !== fv) { $(fo).value = fv; keepDraft($(fo)); } $(fo).focus(); if (ss != null && $(fo).setSelectionRange) $(fo).setSelectionRange(ss, ss); } catch (e) { } }
+    document.querySelectorAll('#lx .lx-thread[data-tid]').forEach((x) => { const p = S.thPos[x.dataset.tid]; x.scrollTop = (p == null || p < 0) ? x.scrollHeight : p; });
+    if (S.tab === 'test') scrollChat();
+    if (S.tab === 'store') storeMount();
+    if (S.tab === 'products' || S.tab === 'billing' || S.tab === 'cmsg') wchMount();
+    if (S.tab === 'fu') { const el = document.getElementById('lxFu'); if (el) el.innerHTML = '<div class="lx-card" style="padding:16px"><h3 style="margin:0 0 6px">🔁 Follow-up Autopilot</h3><div class="sub" style="margin-bottom:12px">The follow-ups, offers, festival box and their messages have one home: WhatsApp → Automation → Follow-ups. What you teach there goes into the same brain as Teach the bot.</div><a class="lx-btn p" href="whatsapp.html#followups" target="_top" style="display:inline-block;text-decoration:none">Open the Follow-up Autopilot</a></div>'; }   // 🔁 one home (no second copy here)
+    if (S.tab === 'lists') { const go = () => { const el = document.getElementById('lxLists'); if (el && window.WaLists) WaLists.manage(el); }; if (window.WaLists) go(); else { const sc = document.createElement('script'); sc.src = 'assets/js/wa_lists_ui.js?v=l10'; sc.onload = go; document.head.appendChild(sc); } }
+    setTimeout(sugKick, 50);
+  }
+  // 🏪 store timings, address, delivery times — filled here once; the bot, the order messages and the campaigns read them (wa_orders.php / wa_ord_ui.js)
+  let storeLd = null;
+  function storeMount() {
+    const el = $('storeInfo'); if (!el) return;
+    const go = () => { const e2 = $('storeInfo'); if (!e2 || S.tab !== 'store') return; if (!window.WaOrd) { e2.innerHTML = '<div class="sub">⚙️ The store form is not installed yet — copy assets/js/wa_ord_ui.js and empmanagment/wa_orders.php to the server.</div>'; return; } try { WaOrd.storeForm(e2); } catch (er) { e2.innerHTML = '<div class="sub">⚠️ ' + esc(er.message || 'Could not open the form.') + '</div>'; } };
+    if (window.WaOrd) return go(); if (storeLd) { storeLd.push(go); return; } storeLd = [go];
+    const sc = document.createElement('script'); sc.src = 'assets/js/wa_ord_ui.js?v=6';
+    sc.onload = () => { const q = storeLd || []; storeLd = null; q.forEach((f) => f()); }; sc.onerror = () => { const q = storeLd || []; storeLd = null; q.forEach((f) => f()); }; document.head.appendChild(sc);
+  }
+  // 🔗 chain cart ("wch" module, wch.php + wch_setup_ui.js): Products = catalog sync & mapping, Billing = GST bill details, Cart messages = the customer messages of the cart flow.
+  // Each screen lives in its own element that is kept between repaints, so unsaved typing is never lost when the page redraws.
+  const WCH = {}; let wchLd = null;
+  function wchReady(cb) {
+    if (window.WaCartSetup) return cb(); if (wchLd) { wchLd.push(cb); return; } wchLd = [cb];
+    const sc = document.createElement('script'); sc.src = 'assets/js/wch_setup_ui.js?v=ch4';
+    sc.onload = () => { const q = wchLd || []; wchLd = null; q.forEach((f) => f()); }; sc.onerror = () => { const q = wchLd || []; wchLd = null; q.forEach((f) => f()); }; document.head.appendChild(sc);
+  }
+  function wchMount() {
+    const box = $('wchMount'); if (!box) return; const k = S.tab; let n = WCH[k];
+    if (!n) {
+      n = WCH[k] = document.createElement('div'); n.innerHTML = '<div class="lx-card"><div class="sub">Loading…</div></div>';
+      wchReady(() => {
+        if (!window.WaCartSetup) { n.innerHTML = '<div class="lx-card"><div class="sub">⚙️ This screen is not installed yet — copy assets/js/wch_setup_ui.js and empmanagment/wch.php to the server.</div></div>'; delete WCH[k]; return; }
+        try {
+          if (k === 'products') WaCartSetup.catalog(n, { api });
+          else if (k === 'billing') WaCartSetup.billing(n, { api, onState: (st) => { S.bill = st; paint(true); } });
+          else WaCartSetup.messages(n, { api });
+        } catch (er) { n.innerHTML = '<div class="lx-card"><div class="sub">⚠️ ' + esc(er.message || 'Could not open this screen.') + '</div></div>'; delete WCH[k]; }
+      });
+    }
+    box.appendChild(n);
+  }
+  // red dot on the Billing tab: read the counter once when the page opens (silent when the server file is not installed)
+  function wchBillDot() { wchReady(() => { if (!window.WaCartSetup) return; WaCartSetup.billingState({ api }).then((st) => { if (st) { S.bill = st; if (root.querySelector('.lx-hd')) paint(true); } }); }); }
+  // 💡 questions without a suggestion (old ones, or added by voice) get theirs written in the background — one topic at a time, only for the topics you can see
+  function sugKick() {
+    if (S.tab !== 'teach' || S.sugBusy || S.bdBusy) return;
+    const tops = (S.bd || {}).topics || [], t = tops.find((x, i) => x.stage === 'ask' && (i < 2 || S.bdOpen[x.id]) && x.sug_missing > 0 && (S.sugTried[x.id] || 0) < 15);
+    if (!t) return;
+    S.sugBusy = t.id; S.sugTried[t.id] = (S.sugTried[t.id] || 0) + 1;
+    const typing = () => document.activeElement && document.activeElement.matches('textarea,input');
+    api.post('teach.board_suggest', { tid: t.id }).then((d) => { if (!S.bdBusy) { stash(); S.bd = boardOf(d); } }).catch((e) => { S.sugTried[t.id] = 99; bdFail(e); }).finally(() => { S.sugBusy = ''; if (!typing()) paint(true, true); });
+  }
+
+  // ---------------- events
+  // 🎤 keeps listening until you press the mic again (like a voice note): Chrome stops after a pause → it starts again by itself.
+  // The page redraws now and then, so every result is written into the LIVE box (found again by its selector) and also kept in the page state.
+  let MIC = null;   // { sel, want, timer }
+  function keepDraft(ta) {
+    if (!ta) return; const v = ta.value;
+    if (ta.dataset.ivr) S.bdReply[ta.dataset.ivr] = v; else if (ta.id === 'lxIn') S.bdIn = v;
+    else if (ta.id.indexOf('lxG_') === 0) { S.waGd = S.waGd || {}; S.waGd[ta.id.slice(4)] = v; } else if (ta.id.indexOf('lxM_') === 0) { S.mDraft = S.mDraft || {}; S.mDraft[ta.id.slice(4)] = v; } else if (ta.id === 'lxB_all') S.bdAllDraft = v;
+  }
+  function micPut(sel, t) {
+    const ta = document.querySelector(sel); if (ta) { ta.value = (ta.value ? ta.value.trimEnd() + ' ' : '') + t; ta.dispatchEvent(new Event('input', { bubbles: true })); }
+    const v = ta ? ta.value : null; if (v == null) return;
+    if (ta.dataset.ivr) S.bdReply[ta.dataset.ivr] = v; else if (ta.id === 'lxIn') S.bdIn = v; else if (ta.id.indexOf('lxG_') === 0) { S.waGd = S.waGd || {}; S.waGd[ta.id.slice(4)] = v; } else if (ta.id.indexOf('lxM_') === 0) { S.mDraft = S.mDraft || {}; S.mDraft[ta.id.slice(4)] = v; }
+  }
+  function micMark() { document.querySelectorAll('.lx-micb').forEach((x) => { const on = !!(MIC && MIC.want && x.dataset.for === MIC.sel); x.classList.toggle('on', on); const t = on ? '⏹ Stop' : '🎤 Start'; if (x.textContent !== t) x.textContent = t; x.title = on ? 'Listening… press to stop' : 'Press to start speaking, press again to stop'; }); }
+  function micStop() { if (MIC) { MIC.want = false; clearInterval(MIC.timer); } try { if (REC) REC.stop(); } catch (e) { } REC = null; MIC = null; micMark(); }
+  function micStart() {
+    if (!MIC || !MIC.want) return;
+    const r = new SR(); r.lang = lang(); r.interimResults = true; r.continuous = true; REC = r;
+    { const ta0 = document.querySelector(MIC.sel); MIC.base = ta0 ? ta0.value : ''; }
+    r.onresult = (ev) => {   // words appear in the box AS you speak (grey-ish draft), and stay when Chrome is sure of them
+      if (!MIC) return; let fin = '', live = '';
+      for (let i = ev.resultIndex; i < ev.results.length; i++) { if (ev.results[i].isFinal) fin += ev.results[i][0].transcript + ' '; else live += ev.results[i][0].transcript; }
+      const ta = document.querySelector(MIC.sel); if (!ta) return;
+      if (MIC.base == null || ta.value.indexOf(MIC.base) !== 0) MIC.base = ta.value.replace(MIC.live || '', '').trimEnd();   // you typed or the page redrew: start from what is there
+      if (fin.trim()) { ta.value = MIC.base; MIC.live = ''; micPut(MIC.sel, fin.trim()); MIC.base = ta.value; }
+      MIC.live = live.trim() ? (MIC.base ? ' ' : '') + live.trim() : '';
+      ta.value = MIC.base + MIC.live; ta.scrollTop = ta.scrollHeight;
+    };
+    r.onerror = (ev) => { if (ev && (ev.error === 'not-allowed' || ev.error === 'service-not-allowed' || ev.error === 'audio-capture')) { toast('The microphone is blocked — allow it in the browser (🔒 in the address bar).', true); micStop(); } };
+    r.onend = () => { REC = null; if (MIC && MIC.want) setTimeout(micStart, 250); else micMark(); };   // a pause ended it: listen again
+    try { r.start(); } catch (e) { setTimeout(micStart, 400); }
+  }
+  function doMic(btn) {
+    if (MIC && MIC.want) { const same = MIC.sel === btn.dataset.for; micStop(); if (same) return; }
+    if (!document.querySelector(btn.dataset.for)) return;
+    MIC = { sel: btn.dataset.for, want: true, timer: setInterval(micMark, 600) }; micMark(); micStart();
+  }
+  // ================================================================== the pop-up: shows Claude is working, then ALL the questions of the topic at once, one box for each
+  let POP = null;      // { phase: 'busy' | 'ask' | 'err', text, tids, und, err, draft, again, timer }
+  const popEl = () => {
+    if (!document.getElementById('lxPopCss')) { const c = document.createElement('style'); c.id = 'lxPopCss'; c.textContent = '@keyframes lxspin{to{transform:rotate(360deg)}}'; document.head.appendChild(c); }
+    let el = document.getElementById('lxPop'); if (!el) { el = document.createElement('div'); el.id = 'lxPop'; el.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(15,23,42,.55);display:flex;align-items:flex-start;justify-content:center;padding:20px 10px;overflow-y:auto'; document.body.appendChild(el); } return el;
+  };
+  function popStash() { if (!POP) return; document.querySelectorAll('#lxPop textarea[data-pq]').forEach((ta) => { POP.draft[ta.dataset.pq] = ta.value; }); }
+  function popClose() { const first = POP && POP.tids && POP.tids[0]; if (POP && POP.timer) clearInterval(POP.timer); micStop(); const el = document.getElementById('lxPop'); if (el) el.remove(); POP = null; paint(true, true); if (first) setTimeout(() => { const d = root.querySelector('details[data-tid="' + first + '"]'); if (d) { d.open = true; d.scrollIntoView({ behavior: 'smooth', block: 'start' }); d.style.boxShadow = '0 0 0 3px #f58220'; setTimeout(() => { d.style.boxShadow = ''; }, 3500); } }, 120); }
+  function popPaint() {
+    if (!POP) return; popStash(); if (POP.timer) { clearInterval(POP.timer); POP.timer = null; } const el = popEl(); let body = '';
+    if (POP.phase === 'busy') {
+      body = `<div style="text-align:center;padding:26px 10px"><div style="font-size:40px;display:inline-block;animation:lxspin 1.4s linear infinite">⏳</div><div style="font-weight:800;font-size:16px;margin-top:10px">${esc(POP.text)}</div><div class="sub" style="margin-top:6px">Working for <b id="lxPopSec">0</b> s. This can take 10–40 seconds — keep this window open.</div></div>`;
+      const t0 = Date.now(); POP.timer = setInterval(() => { const x = document.getElementById('lxPopSec'); if (x) x.textContent = Math.round((Date.now() - t0) / 1000); }, 500);
+    } else if (POP.phase === 'err') {
+      body = `<div class="lx-err" style="margin:6px 0"><b>⚠️ It did not work.</b><br>${esc(POP.err)}</div><div class="sub">Nothing was lost. Try again, or say a little more and press Make topics again.</div><div class="row" style="margin-top:10px"><button type="button" class="lx-btn p" data-px="again">↻ Try again</button><button type="button" class="lx-btn" data-px="close">Close</button></div>`;
+    } else {
+      const tops = ((S.bd || {}).topics || []).filter((t) => POP.tids.indexOf(t.id) >= 0);
+      body = POP.und ? `<div class="lx-note" style="margin-bottom:10px">🤖 <b>What I understood:</b> ${esc(POP.und)}</div>` : '';
+      if (POP.more) body += `<div class="sub" style="margin-bottom:8px">ℹ️ ${POP.more} other topic${POP.more === 1 ? ' was' : 's were'} also made. They are on the board — open each with its own <b>Answer</b> button when you want.</div>`;
+      if (!tops.length) body += '<div class="lx-card">Nothing new to ask here. Close this window to see the board.</div>';
+      tops.forEach((t) => {
+        const qs = t.open || [];
+        const sm = t.summary || [], rl = t.rules || [];
+        body += `<div class="lx-card" style="margin-bottom:12px"><div style="font-size:15px;font-weight:800">${t.stage === 'review' ? '✅' : '💬'} ${esc(t.title)}</div>`
+          + `<div class="lx-sum" style="margin-top:8px"><b class="t">🧠 WHAT I UNDERSTOOD SO FAR</b>${sm.length ? '<ul>' + sm.map((x) => `<li>${esc(x.t)}</li>`).join('') + '</ul>' : '<div class="sub" style="margin-top:5px">Nothing yet — your first summary will fill this.</div>'}</div>`;
+        if (!qs.length) {
+          body += '<div class="lx-done" style="margin-top:8px">✅ <b>The concept is clear — nothing left to ask.</b> Check the summary above' + (rl.length ? ', the rules below' : '') + ' and the limits, then press <b>Concept clear</b> on the topic card.</div>' + (rl.length ? '<div class="sub" style="margin-top:8px"><b>Rules I will make when you press Concept clear:</b></div><ol style="margin:4px 0 0 18px;padding:0">' + rl.map((x) => `<li style="margin:4px 0">${esc(x)}</li>`).join('') + '</ol>' : '')
+            + `<div style="margin-top:12px"><div class="sub"><b>Not right, or something to add?</b> Write it here in your own words and press Send — I update the summary and the rules.</div><div class="lx-box"><textarea class="lx-ta" rows="4" id="pg_${t.id}" data-pq="g|${esc(t.id)}" placeholder="What should change? (write or speak)">${esc(POP.draft['g|' + t.id] || '')}</textarea>${mic('#pg_' + t.id)}</div></div>`
+            + `<div class="row" style="margin-top:10px"><button type="button" class="lx-btn p" data-px="send" data-tid="${t.id}">📤 Send my change</button><button type="button" class="lx-btn" data-px="close">👉 Go to the topic and press Concept clear</button></div>`;
+        } else {
+          const shown = qs;      // every open question is listed; one general summary answers as many as it can and those disappear
+          body += `<div class="sub" style="margin-top:4px"><b>${qs.length} question${qs.length === 1 ? '' : 's'} left.</b> Tell me in ONE general summary, in your own words — not question by question. I read it as a whole, remove every question it already answers, and then show what is still missing.</div>`
+            + `<ol style="margin:8px 0 0 18px;padding:0;font-weight:600">${shown.map((q) => `<li style="margin:5px 0">${esc(q)}</li>`).join('')}</ol>`
+            + `<div style="margin-top:12px"><div class="lx-box"><textarea class="lx-ta" rows="6" id="pg_${t.id}" data-pq="g|${esc(t.id)}" placeholder="Your general summary — write or speak the whole story here">${esc(POP.draft['g|' + t.id] || '')}</textarea>${mic('#pg_' + t.id)}</div></div>`
+            + `<div class="row" style="margin-top:10px"><button type="button" class="lx-btn p" data-px="send" data-tid="${t.id}">📤 Send — then show me what is left</button>${t.stage === 'review' ? '' : `<button type="button" class="lx-btn" data-px="enough" data-tid="${t.id}" title="Wrap up with what you have said so far">✋ Enough, wrap up</button>`}</div>`;
+        }
+        body += '</div>';
+      });
+    }
+    el.innerHTML = `<div style="background:#fff;border-radius:16px;max-width:760px;width:100%;padding:16px 18px;box-shadow:0 20px 60px rgba(0,0,0,.35)"><div class="row" style="align-items:center"><b style="font-size:17px">🎙 Your topic and its questions</b><span class="sp" style="flex:1"></span><button type="button" class="lx-btn s" data-px="close" title="Close">✕ Close</button></div><div style="margin-top:10px">${body}</div></div>`;
+    micMark();
+  }
+  function popOpenTopics(tids) {
+    if (!tids.length) { toast('There is nothing to answer.', true); return; }
+    tids.forEach((id) => { S.bdOpen[id] = true; });
+    POP = { phase: 'ask', text: '', tids, und: '', err: '', draft: {}, again: null, timer: null }; popPaint();
+  }
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('#lx [data-px="topic"], #lx [data-px="guide"]'); if (!b) return; e.preventDefault(); e.stopPropagation();      // inside a card header: do not fold / unfold the card
+    if (b.dataset.px === 'guide') popGuide(); else popOpenTopics([b.dataset.tid]);      // ONE topic in the pop-up, never two
+  }, true);
+  async function popGuide() {
+    const my = POP = { phase: 'busy', text: '🔎 Comparing the live guidebook with your rules…', tids: [], und: '', err: '', draft: {}, again: popGuide, timer: null }; popPaint();
+    try {
+      const d = await api.post('teach.board_guide', {}); applyBoard(d); const tch = d.touched || []; tch.forEach((id) => { S.bdOpen[id] = true; });
+      my.tids = tch.slice(0, 1); my.more = Math.max(0, tch.length - 1); my.und = d.understood || ''; my.phase = 'ask';
+    } catch (e) { my.phase = 'err'; my.err = msg(e); }
+    if (POP === my) popPaint(); paint(true, true);
+  }
+  async function popStart(text, images) {
+    const my = POP = { phase: 'busy', text: '🤖 Claude is reading what you said and making topics…', tids: [], und: '', err: '', draft: {}, again: () => popStart(text, images), timer: null }; popPaint();
+    try {
+      const d = await api.post('teach.board_add', { text, images }); S.bdIn = ''; S.bdImgs = []; applyBoard(d);
+      const tch = d.touched || []; tch.forEach((id) => { S.bdOpen[id] = true; });
+      if (tch.length && S.bd && S.bd.topics) { const hit = (t) => tch.indexOf(t.id) >= 0; S.bd.topics = S.bd.topics.filter(hit).concat(S.bd.topics.filter((t) => !hit(t))); }
+      my.tids = tch.slice(0, 1); my.more = Math.max(0, tch.length - 1); my.und = d.understood || ''; my.phase = 'ask';
+    } catch (e) { my.phase = 'err'; my.err = msg(e); }
+    if (POP === my) popPaint(); paint(true, true);
+  }
+  async function popSend(tid, mode) {
+    popStash(); const t = (((S.bd || {}).topics) || []).find((x) => x.id === tid); if (!t) return;
+    const text = (POP.draft['g|' + tid] || '').trim();
+    if (mode === 'send' && !text) { toast('Write your answers in the box first.', true); return; }
+    const my = POP, before = (t.open || []).length; my.phase = 'busy'; my.text = '🤖 Reading your whole message and removing the questions it answers…'; popPaint();
+    try {
+      const d = await api.post('teach.board_answer', { tid, text, enough: mode === 'enough' });
+      applyBoard(d, tid); S.bdOpen[tid] = true; delete my.draft['g|' + tid]; my.und = d.understood || my.und; my.phase = 'ask';
+      const t2 = (((S.bd || {}).topics) || []).find((x) => x.id === tid), left = t2 ? (t2.open || []).length : 0;
+      toast(left ? (left + ' question' + (left === 1 ? '' : 's') + ' left (' + Math.max(0, before - left) + ' answered).') : 'Nothing left to ask in this topic.');
+    } catch (e) { my.phase = 'err'; my.err = msg(e); my.again = () => { my.phase = 'ask'; popPaint(); }; }
+    if (POP === my) popPaint(); paint(true, true);
+  }
+  document.addEventListener('click', (e) => {
+    const m = e.target.closest('#lxPop [data-lx="mic"]'); if (m) { doMic(m); return; }
+    const b = e.target.closest('#lxPop [data-px]'); if (!b || !POP) return; const a = b.dataset.px;
+    if (a === 'close') popClose(); else if (a === 'again') { if (POP.again) POP.again(); } else if (a === 'send' || a === 'enough') popSend(b.dataset.tid, a);
+  });
+  document.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-lx]'); if (!b || !root.contains(b)) return; const act = b.dataset.lx;
+    if (act === 'mic') { doMic(b); return; }
+    stash();
+    if (act === 'tab') { S.tab = b.dataset.t; try { location.hash = S.tab; } catch (er) { } paint(); window.scrollTo(0, 0); return; }
+    if (act === 'fu_toggle') { stash(); S.tab = 'fu'; paint(); window.scrollTo(0, 0); return; S.fuOpen = !S.fuOpen; paint(true, true); if (S.fuOpen) { const r = await soft(() => api.get('fu.plans')); if (r.ok) { S.fu = r.d; S.fuErr = ''; } else { S.fuErr = r.err; } paint(true, true); } return; }
+    if (['img_rm', 'rep_topic', 'rep_drop', 'mine_pause', 'mine_restart', 'add', 'facts_build', 'seed', 'gaps', 'note', 'del', 'rowadd', 'rowdel', 'genadd', 'gendel', 'ans', 'enough', 'rq', 'rqx', 'thmore', 'ok', 'okc', 'sg_ok', 'sg_chg', 'sg_send', 'sg_x', 'sg_all', 'tsum', 'overall', 'prop_ok', 'prop_no', 'prop_all', 'merge', 'mans', 'msug', 'bd_all', 'bd_fin', 'bd_reset', 'bd_sug', 'bd_clearall'].includes(act)) { teachAct(act, b); return; }
+    if (act.startsWith('fu_') && !['fu_toggle', 'fu_edit', 'fu_tog'].includes(act)) { fuAct(act, b); return; }
+    if (act === 'fu_edit') { S.fuEdit[b.dataset.sid] = true; S.bdOpen['fu' + b.dataset.sid] = true; S.fuOpen = true; S.tab = 'teach'; paint(); window.scrollTo(0, 0); return; }
+    if (act === 'fu_tog') { try { const d = await api.post('fu.sit_toggle', { sid: b.dataset.sid, on: b.dataset.on === '1' }); if (d && d.situations) S.fu = d; else { const s = S.fu.situations.find((x) => x.id === b.dataset.sid); if (s) s.on = b.dataset.on === '1'; } } catch (er) { toast(msg(er), true); } paint(true, true); return; }
+    if (act === 'cat_sync') { S.catBusy = true; paint(true, true); try { const r = await api.post('teach.facts_sync', {}); S.facts = Object.assign(S.facts || {}, (await api.get('teach.facts'))); toast('Catalogue loaded: ' + r.products + ' products.'); } catch (er) { toast(msg(er), true); } S.catBusy = false; paint(true, true); return; }
+    if (act === 'judge') { const on = !!b.checked; try { await api.post('teach.facts_save', { judge: on }); if (S.facts) S.facts.judge = on; toast(on ? 'Judge is on.' : 'Judge is off.'); } catch (er) { b.checked = !on; toast(msg(er), true); } return; }
+    if (act === 'rule_del') { stash(); const arr = rulesOf((S.facts || {}).style); const r = arr[+b.dataset.i]; if (!confirm('Remove this rule?\n\n' + r)) return; arr.splice(+b.dataset.i, 1); saveRules(arr); return; }
+    if (act === 'gdel') { if (!confirm('Delete these saved limits?')) return; try { const d = await api.post('teach.limits_del', { gid: b.dataset.gid }); applyBoard(d); S.bdMsg = null; refreshQuiet(); } catch (er) { toast(msg(er), true); } paint(true, true); return; }
+    if (act === 'gext') { const to = prompt('New end date (YYYY-MM-DD)', b.dataset.to || ''); if (!to) return; try { const d = await api.post('teach.limits_extend', { gid: b.dataset.gid, to: to.trim() }); applyBoard(d); S.bdMsg = null; refreshQuiet(); } catch (er) { toast(msg(er), true); } paint(true, true); return; }
+    if (act === 'undo') { if (!confirm('Undo this change?')) return; try { await api.post('learn.undo', { id: b.dataset.id }); toast('Undone.'); await loadAll(); } catch (er) { toast(msg(er), true); } return; }
+    if (act === 'wa_one') { S.waOne = true; paint(true, true); return; }
+    if (act === 'wa_greset') { S.waConv = null; paint(true, true); return; }
+    if (act === 'wa_gsugall') { const R = (S.waConv || {}).last; const box = $('lxG_all'); if (R && box) { box.value = R.questions.map((q, i) => (i + 1) + '. ' + q.suggest).join('\n'); S.waGd = S.waGd || {}; S.waGd.all = box.value; } return; }
+    if (act === 'wa_gall' || act === 'wa_gfin') {
+      const all = ((S.waG || {}).groups || []), real = all.filter((g) => !g.nothing), nothing = all.filter((g) => g.nothing);
+      S.waConv = S.waConv || { turns: [], last: null };
+      const C = S.waConv, sit = real.map((g, i) => (i + 1) + '. ' + g.title + ' (' + g.n + ' replies) — customers: ' + g.customers + ' — my team: ' + g.team + ' — the bot: ' + g.bot).join('\n');
+      if (act === 'wa_gall') {
+        const box = $('lxG_all'), ans = box ? box.value.trim() : ''; if (!ans) { toast('Write your answer first.', true); return; }
+        C.turns.push({ q: C.last ? (C.last.questions || []).map((q) => q.q) : [], a: ans }); S.waAllBusy = 'round'; paint(true, true);
+        try { C.last = await api.post('teach.wa_round', { situations: sit, turns: C.turns }); if (S.waGd) delete S.waGd.all; }
+        catch (er) { C.turns.pop(); toast(msg(er), true); }
+        S.waAllBusy = ''; paint(true, true); return;
+      }
+      const R = C.last; if (!R) return; S.waAllBusy = 'fin'; paint(true, true);
+      try {
+        const d = await api.post('teach.wa_finish', { title: R.title, understood: R.understood, summary: R.summary, rules: R.rules, concept: R.concept, clash: R.clash, impact: R.impact, turns: C.turns, wa_n: real.reduce((x, g) => x + g.n, 0) });
+        applyBoard(d); S.bdOpen[d.tid] = true; let n = 0;
+        for (const g of real) n += (await api.post('wa.learn_group_act', { ids: g.ids, act: 'board', title: g.title })).done || 0;
+        for (const g of nothing) await api.post('wa.learn_group_act', { ids: g.ids, act: 'skip', title: g.title });
+        S.waAllMsg = '✅ <b>Submitted.</b> “' + esc(R.title) + '” is ready on the Teach tab — press <b>Concept clear</b> there to start using it. ' + n + ' WhatsApp replies cleared.';
+        S.waConv = null; S.waG = { groups: [] };
+        const r = await soft(() => api.get('wa.learn_list', { st: S.waSt })); if (r.ok) S.wa = r.d;
+        if (S.wa && S.wa.waiting > 0) autoGroup();
+      } catch (er) { toast(msg(er), true); }
+      S.waAllBusy = ''; paint(true, true); return;
+    }
+    if (act === 'wa_group') { S.waGBusy = true; paint(true, true); try { S.waG = await api.post('wa.learn_groups', {}); } catch (er) { toast(msg(er), true); } S.waGBusy = false; paint(true, true); return; }
+    if (act === 'wa_gsug' || act === 'wa_gteach' || act === 'wa_gskip') {
+      const g = ((S.waG || {}).groups || []).find((x) => x.gid === b.dataset.g); if (!g) return; const box = $('lxG_' + g.gid);
+      if (act === 'wa_gsug') { if (box) box.value = g.suggest; S.waGd = S.waGd || {}; S.waGd[g.gid] = g.suggest; return; }
+      const ans = box ? box.value.trim() : '';
+      if (act === 'wa_gteach' && !ans) { toast('Write your general answer for this group first.', true); return; }
+      b.disabled = true; b.textContent = act === 'wa_gteach' ? '🤖 Teaching…' : 'Clearing…';
+      try {
+        if (act === 'wa_gteach' && g.tid && ((S.bd || {}).topics || []).some((x) => x.id === g.tid)) { const text = 'WhatsApp situation (' + g.n + ' replies): ' + g.title + '.\nWhat customers wrote: ' + g.customers + '\nWhat my team did: ' + g.team + '\nWhat the bot did: ' + g.bot + '\n' + (g.question ? 'Question: ' + g.question + '\n' : '') + 'MY GENERAL ANSWER: ' + ans;
+          const d = await api.post('teach.board_summary', { tid: g.tid, text, part: 1, src: 'whatsapp', wa_n: g.n }); applyBoard(d); S.bdOpen[g.tid] = true; }
+        else if (act === 'wa_gteach') { const text = 'From ' + g.n + ' WhatsApp replies — situation: ' + g.title + '.\nWhat customers wrote: ' + g.customers + '\nWhat my team did: ' + g.team + '\nWhat the bot did: ' + g.bot + '\n' + (g.question ? 'Question: ' + g.question + '\n' : '') + 'MY GENERAL ANSWER (follow this for every such customer): ' + ans;
+          const d = await api.post('teach.board_add', { text }); applyBoard(d); (d.touched || []).forEach((id) => { S.bdOpen[id] = true; }); }
+        const r0 = await api.post('wa.learn_group_act', { ids: g.ids, act: act === 'wa_gteach' ? 'board' : 'skip', title: g.title });
+        S.waG.groups = S.waG.groups.filter((x) => x.gid !== g.gid); if (S.waGd) delete S.waGd[g.gid];
+        toast(act === 'wa_gteach' ? (g.tid ? 'Added to the topic “' + (g.topic || '') + '” — check the proposal on the Teach tab and Approve. ' : 'Sent to the Teach board — ') + r0.done + ' replies cleared.' : r0.done + ' replies cleared.');
+        const r = await soft(() => api.get('wa.learn_list', { st: S.waSt })); if (r.ok) S.wa = r.d;
+      } catch (er) { toast(msg(er), true); b.disabled = false; }
+      paint(true, true); return;
+    }
+    if (act === 'wa_st') { S.waSt = b.dataset.st; const r = await soft(() => api.get('wa.learn_list', { st: S.waSt })); if (r.ok) { S.wa = r.d; S.waErr = ''; } else { S.waErr = r.err; } paint(true, true); return; }
+    if (act === 'wa_teach' || act === 'wa_skip') { const x = S.wa.items[+b.dataset.i]; b.disabled = true; try { await api.post('wa.learn_act', { id: x.id, act: act === 'wa_teach' ? 'teach' : 'skip', text: act === 'wa_teach' ? ($('lxW' + b.dataset.i) || {}).value : undefined }); toast(act === 'wa_teach' ? 'Saved — the bot learns it.' : 'Skipped.'); const r = await soft(() => api.get('wa.learn_list', { st: S.waSt })); if (r.ok) S.wa = r.d; } catch (er) { toast(msg(er), true); } paint(true, true); return; }
+    if (act === 'gap_board' || act === 'gap_ignore') { try { const d = await api.post('learn.gap_act', { kind: b.dataset.kind, id: b.dataset.id, act: act === 'gap_board' ? 'board' : 'ignore' }); if (d && d.topics) { applyBoard(d); (d.touched || []).forEach((id) => { S.bdOpen[id] = true; }); } const r = await soft(() => api.get('learn.gaps')); if (r.ok) S.gaps = r.d; if (act === 'gap_board') { toast('Added to the Teach board.'); S.tab = 'teach'; } } catch (er) { toast(msg(er), true); } paint(); return; }
+    if (act === 'ins') { try { const d = await api.post('learn.insight_act', { id: b.dataset.id, act: b.dataset.act }); if (d && d.topics) { applyBoard(d); (d.touched || []).forEach((id) => { S.bdOpen[id] = true; }); } const r = await soft(() => api.get('learn.results')); if (r.ok) S.res = r.d; if (b.dataset.act === 'ask') { toast('Added to the Teach board.'); S.tab = 'teach'; } } catch (er) { toast(msg(er), true); } paint(); return; }
+    if (act.startsWith('t_')) { testAct(act, b); return; }
+  });
+  // screenshots for "Tell me anything": shrunk to at most 1600 px (JPEG) in the browser so they upload fast
+  const lxShot = (file) => new Promise((ok) => { if (!file || !/^image\//.test(file.type)) return ok(null); const fr = new FileReader(); fr.onload = () => { const im = new Image(); im.onload = () => { const k = Math.min(1, 1600 / Math.max(im.width, im.height)); const cv = document.createElement('canvas'); cv.width = Math.round(im.width * k); cv.height = Math.round(im.height * k); cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height); ok({ mime: 'image/jpeg', data: cv.toDataURL('image/jpeg', 0.85).split(',')[1] }); }; im.onerror = () => ok(null); im.src = fr.result; }; fr.onerror = () => ok(null); fr.readAsDataURL(file); });
+  const lxAddShots = async (files) => { const r = $('lxIn'); if (r) S.bdIn = r.value; for (const f of files) { if (S.bdImgs.length >= 4) { toast('Up to 4 screenshots at a time.', true); break; } const x = await lxShot(f); if (x) S.bdImgs.push(x); } paint(true, true); };
+  document.addEventListener('paste', (e) => { if (!e.target || e.target.id !== 'lxIn' || !e.clipboardData) return; const fs = [...e.clipboardData.files].filter((f) => /^image\//.test(f.type)); if (fs.length) { e.preventDefault(); lxAddShots(fs); } });
+  document.addEventListener('change', (e) => { const t = e.target; if (!t) return; if (t.id === 'lxImg') { lxAddShots([...t.files]); t.value = ''; } else if (t.dataset && t.dataset.shelf) S.bdShelf[t.dataset.shelf] = t.value; });
+  document.addEventListener('change', async (e) => {
+    const t = e.target; if (!t || !root.contains(t)) return;
+    if (t.matches('[data-f="temp"]')) { const d = t.closest('.lx-lim').querySelector('.lx-dt'); if (d) d.style.display = t.checked ? '' : 'none'; return; }
+    if (t.id === 'lxLang') { try { localStorage.setItem('lx_lang', t.value); } catch (er) { } return; }
+    if (t.id === 'lxSimSit') { S.simSid = t.value; S.sim = null; return; }
+    if (t.id === 'lxMode') { const old = (S.fu || {}).mode || 'off'; try { const d = await api.post('fu.mode', { mode: t.value }); if (d && d.situations) S.fu = d; else if (S.fu) S.fu.mode = t.value; toast('Follow-up mode: ' + (MODES.find((m) => m[0] === t.value) || [0, t.value])[1]); } catch (er) { toast(msg(er), true); if (S.fu) S.fu.mode = old; } paint(true, true); return; }
+  });
+  document.addEventListener('toggle', (e) => { const t = e.target; if (t && t.matches && t.matches('details.lx-card[data-tid], details[data-tid="note"]')) S.bdOpen[t.dataset.tid] = t.open; if (t && t.matches && t.matches('details.lx-sit')) S.bdOpen['fu' + t.dataset.fsid] = t.open; }, true);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target && e.target.id === 'lxChatIn') { e.preventDefault(); const b = root.querySelector('[data-lx="t_send"]'); if (b) b.click(); } if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && e.target && e.target.id === 'lxIn') { e.preventDefault(); const b = root.querySelector('[data-lx="add"]'); if (b) b.click(); } });
+
+  const h0 = (location.hash || '').replace('#', ''); if (TABS.some((t) => t[0] === h0)) S.tab = h0;
+  loadAll(); wchBillDot();
+  // ⚡ live board: every 4 s the Teach tab checks the server (the cron or another screen may have added questions) and, when old / new chats are waiting, asks the server to read the next ones. Never repaints while you type.
+  let mineRun = false, mineNext = 0;
+  const boardOf = (d) => ({ topics: d.topics || [], done: d.done || 0, note: d.note || '', groups: d.groups || [], chats: d.chats || null, guide_new: d.guide_new || 0 });
+  async function mineKick() {
+    mineRun = true; S.mineBusy = true; const typing = () => document.activeElement && document.activeElement.matches('textarea,input');
+    if (!typing()) paint(true);
+    try {
+      const d = await api.post('teach.board_chats', {}); S.mineWhy = d.why || ''; S.mineErr = '';
+      if (d.ran === false) { if (S.bd) S.bd.chats = d.chats || null; } else if (!typing()) { applyBoard(d); } else { S.bd = boardOf(d); S.bdMsg = null; }
+      mineNext = Date.now() + (d.ran === false ? 12000 : 20000);
+    } catch (e) { S.mineErr = msg(e); mineNext = Date.now() + 90000; }
+    S.mineBusy = false; mineRun = false; if (!typing()) paint(true);
+  }
+  setInterval(async () => {
+    if (document.hidden || S.tab !== 'teach' || S.bdBusy || mineRun) return;
+    const typing = document.activeElement && document.activeElement.matches('textarea,input'), r = await soft(() => api.get('teach.board'));
+    if (!r.ok || S.bdBusy || mineRun) return;
+    const nb = boardOf(r.d), ob = S.bd || {};
+    if (JSON.stringify(nb.topics) !== JSON.stringify(ob.topics) || JSON.stringify(nb.chats) !== JSON.stringify(ob.chats) || nb.done !== ob.done) { stash(); S.bd = nb; if (!typing) paint(true, true); }
+    const c = nb.chats; if (c && c.total && !c.paused && !c.busy && (c.left || c.new || !c.read) && Date.now() >= mineNext) mineKick();
+  }, 4000);
+  setInterval(() => { if (!document.hidden && S.tab === 'wa' && !document.activeElement.matches('textarea,input')) soft(() => api.get('wa.learn_list', { st: S.waSt })).then((r) => { if (r.ok && JSON.stringify(r.d) !== JSON.stringify(S.wa)) { S.wa = r.d; paint(true); } }); }, 30000);
+})();
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>

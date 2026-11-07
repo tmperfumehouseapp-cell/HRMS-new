@@ -1,0 +1,1741 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Order Allocation — HRMS</title>
+<script>
+  // Opened inside the "Allocate order" pop-up on My Sales (?embed=1): no sidebar / menu / offer strip, talks to the page around it.
+  window.HRMS_EMBED = /[?&]embed=1(&|$)/.test(location.search) && window.parent !== window;
+  if (window.HRMS_EMBED) document.documentElement.classList.add('embed');
+</script>
+<link rel="stylesheet" href="assets/css/style.css?v=260928b">
+<style>
+  html.embed .sidebar, html.embed #menuToggle, html.embed #sidebarBackdrop, html.embed #foBanner{display:none !important;}
+  html.embed .main{margin-left:0 !important; width:100%; max-width:100%;}
+  html.embed .topbar{padding-left:2px !important;} html.embed .topbar > div{flex-wrap:wrap !important; max-width:100%;} html.embed .topbar input[type=date]{flex:1 1 130px; min-width:0;}   /* the date row wraps inside the narrow frame (it was cut off at the left) */
+  html.embed body, html.embed .app{background:#fff;}
+  html.embed .topbar{padding-top:10px;}
+  html.embed .topbar h1, html.embed .topbar .sub{display:none;}
+  html.embed .content{padding-left:12px; padding-right:12px;}
+  .sel{padding:7px 6px; border:1px solid var(--line); border-radius:6px; font-size:13px; background:#fff; width:100%; min-width:104px; max-width:100%;}
+  .sel.changed{border-color:var(--accent); box-shadow:0 0 0 2px #dbe6ff;}
+  .dcode{display:inline-block; margin-left:6px; padding:1px 8px; border-radius:999px; background:#e7f7ee; border:1px dashed #86c9a2; color:#0f7a41; font-size:12px; font-weight:700; letter-spacing:.02em;}
+  .chain-sel, .addr-sel, .price-sel{min-width:70px; width:78px;}
+  .price-sel.old{background:#fff4db; border-color:#f3d9a4; color:#8a5a00; font-weight:700;} .price-sel.new{background:#e0ecff; border-color:#b9cff5; color:#1d4ed8; font-weight:700;}
+  .chain-sel.yes, .addr-sel.yes{background:#e7f7ee; border-color:#bfe3cd; color:#0f7a41; font-weight:700;}
+  .chain-sel.saving, .addr-sel.saving, .price-sel.saving{opacity:.6;} .chain-sel.failed, .addr-sel.failed, .price-sel.failed{border-color:#dc2626; box-shadow:0 0 0 2px #fee2e2;}
+  @media (max-width:820px){ .chain-sel, .addr-sel, .price-sel{width:100%;} }
+  .sel.inline{width:auto;}
+  .ok-btn{width:38px; height:36px; min-height:0; border:none; border-radius:6px; background:#0f7a41; color:#fff; font-size:16px; font-weight:700; cursor:pointer;}
+  .ok-btn:disabled{background:#cbd5e1; cursor:not-allowed;}
+  /* Per-order rating stars (same control as the Performance page) */
+  .rs{display:inline-flex; align-items:center; gap:6px; vertical-align:middle; border-radius:6px; outline:none;}
+  .rs-stars{display:inline-flex; gap:2px; cursor:pointer; user-select:none; -webkit-user-select:none; touch-action:manipulation;}
+  .rs-star{position:relative; width:17px; height:17px; display:inline-block; transition:transform .2s cubic-bezier(.34,1.56,.64,1);}
+  .rs-star svg{position:absolute; inset:0; width:17px; height:17px;}
+  .rs-preview .rs-fill{opacity:.6;}
+  .rs-pop{animation:rsPop .35s cubic-bezier(.34,1.56,.64,1);} @keyframes rsPop{50%{transform:scale(1.35);}}
+  .rs-num{font-size:12px; color:var(--muted); min-width:18px; font-variant-numeric:tabular-nums;}
+  .rs.off .rs-stars{cursor:not-allowed; opacity:.45;}
+  .rs.ro .rs-stars{cursor:default;}
+  .rs-by{display:block; margin-top:3px;}   /* who gave the stars · when (same line as "by … · time" in the Panel column) */
+  @media (max-width:820px){ .rs-star, .rs-star svg{width:24px; height:24px;} }
+  /* Product colour counts (DG / LG / WH / Other) — small, plain text */
+  .clr-totals{display:flex; flex-wrap:wrap; align-items:center; gap:2px 14px; font-size:12.5px; font-weight:600; color:#334155;}
+  .clr-totals span, .clr-line span{display:inline-flex; align-items:center; gap:4px; white-space:nowrap;}
+  .clr-totals i, .clr-line i{width:8px; height:8px; border-radius:50%; border:1px solid rgba(0,0,0,.25); display:inline-block; flex:0 0 auto;}
+  .clr-line{display:flex; flex-wrap:wrap; gap:1px 8px; margin-top:3px; font-size:11px; color:var(--muted);}
+  .clr-line i{width:7px; height:7px;}
+  .clr-dg{background:#14532d;} .clr-lg{background:#86efac;} .clr-wh{background:#fff;} .clr-ot{background:#94a3b8;}
+  @media (max-width:820px){ .clr-totals{width:100%; font-size:12px; gap:2px 12px;} }
+  /* Twelve columns: compact controls so the table fits a laptop screen, and a
+     sideways scroll inside the card (never past its edge) when it doesn't. */
+  .tscroll{overflow-x:auto; -webkit-overflow-scrolling:touch;}
+  #allocCard table{min-width:1250px;}
+  #allocCard th, #allocCard td{padding-left:8px; padding-right:8px;}
+  #allocCard th:first-child, #allocCard td:first-child{padding-left:20px;}
+  #allocCard th:last-child, #allocCard td:last-child{padding-right:20px;}
+  @media (max-width:820px){ .tscroll{overflow:visible;} #allocCard table{min-width:0;} }
+  .code-in{width:100px; padding:6px 8px; border:1px solid var(--line); border-radius:6px; font-size:12.5px; font-weight:700; letter-spacing:.02em; text-transform:uppercase; font-family:ui-monospace,Menlo,Consolas,monospace; background:#fff; min-height:0;}
+  .code-in::placeholder{text-transform:none; font-weight:500; color:#94a3b8; font-family:inherit; letter-spacing:0;}
+  .code-in.saving{border-color:var(--accent); box-shadow:0 0 0 2px #dbe6ff;} .code-in.saved{border-color:#16a34a; box-shadow:0 0 0 2px #dcfce7;} .code-in.failed{border-color:#dc2626; box-shadow:0 0 0 2px #fee2e2;}
+  .code-tag{display:inline-block; padding:2px 9px; border-radius:12px; background:#eef2ff; color:#3730a3; font-weight:700; font-size:12px; font-family:ui-monospace,Menlo,Consolas,monospace; white-space:nowrap;}
+  @media (max-width:820px){ .code-in{width:100%; font-size:16px;} }
+  .cx-btn{display:block; white-space:nowrap; text-align:center; margin-top:4px; padding:3px 9px; min-height:0; width:auto; border-radius:6px; font-size:12px; font-weight:600; cursor:pointer; border:1px solid #f3c9c9; background:#fff; color:var(--bad-fg);}
+  .cx-btn:hover{background:#fdecec;} .cx-btn.undo{margin-top:0; border-color:#bfd3ff; color:#1d4ed8;} .cx-btn.undo:hover{background:#eef4ff;} .cx-btn:disabled{opacity:.5; cursor:default;}
+  .row-cx td{background:#faf5f5;}
+  /* Customer's extra mobile number box (under the customer's phone) */
+  .ph-in{display:block; width:112px; margin-top:5px; padding:5px 8px; border:1px solid var(--line); border-radius:6px; font-size:12.5px; background:#fff;}
+  .ph-in::placeholder{color:#94a3b8;}
+  #allocCard td:first-child .sub{white-space:nowrap;}
+  /* Order number opens the order details; amount already paid sits under a partially_paid badge */
+  .ord-link{color:var(--accent); text-decoration:none; cursor:pointer;}
+  .ord-link:hover b, .ord-link:focus-visible b{text-decoration:underline;}
+  .paid-amt{font-size:11.5px; font-weight:700; color:#0f7a41; margin-top:3px; white-space:nowrap;}
+  .ph-in.saving{border-color:var(--accent); box-shadow:0 0 0 2px #dbe6ff;} .ph-in.saved{border-color:#16a34a; box-shadow:0 0 0 2px #dcfce7;} .ph-in.failed{border-color:#dc2626; box-shadow:0 0 0 2px #fee2e2;}
+  @media (max-width:820px){ .ph-in{width:100%; font-size:16px; padding:8px 10px;} }
+  /* Sales employee login: how many of my orders have an order code (ring + tiles + the orders still missing one) */
+  .mc-card{padding:16px 18px;}
+  .mc-top{display:flex; align-items:center; gap:16px;}
+  .mc-ring{width:84px; height:84px; border-radius:50%; display:flex; align-items:center; justify-content:center; flex:none;}
+  .mc-ring span{width:62px; height:62px; border-radius:50%; background:#fff; display:flex; align-items:center; justify-content:center; font-weight:900; font-size:19px; color:#0f7a41;}
+  .mc-ring.low span{color:#ea580c;}
+  .mc-t1{font-size:12px; font-weight:800; color:#1e40af; letter-spacing:.05em; text-transform:uppercase;}
+  .mc-t2{font-size:15px; font-weight:700; margin-top:4px;} .mc-t2 b{font-size:20px;}
+  .mc-t3{font-size:12px; color:var(--muted); margin-top:3px;}
+  .mc-tiles{display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:8px; margin-top:14px;}
+  .mc-tl{border-radius:12px; padding:8px 10px; border:1px solid;} .mc-tl b{display:block; font-size:20px; font-weight:900;} .mc-tl small{font-size:11px; font-weight:700;}
+  .mc-tl.a{background:#f4f8ff; border-color:#dbe7ff; color:#1d4ed8;} .mc-tl.b{background:#f1faf5; border-color:#cdeedb; color:#0f7a41;} .mc-tl.c{background:#fff4ec; border-color:#fed7aa; color:#ea580c;}
+  .mc-miss{margin-top:12px; padding-top:10px; border-top:1px dashed var(--line); font-size:12.5px;}
+  .mc-miss .h{font-weight:800; color:#ea580c; margin-bottom:6px;}
+  .mc-chip{display:inline-block; margin:0 6px 6px 0; padding:3px 10px; border-radius:999px; background:#fff4ec; color:#c2410c; font-weight:700; font-size:12px; border:1px solid #fed7aa; cursor:pointer; min-height:0; width:auto; font-family:inherit;}
+  .mc-chip:hover{background:#ffedd5;}
+  .mc-goal{font-size:11.5px; color:var(--muted); margin-top:4px;}
+  .mc-ok{margin-top:12px; padding-top:10px; border-top:1px dashed var(--line); font-size:12.5px; font-weight:700; color:#0f7a41;}
+  tr.mc-hl td{background:#fff7ed !important; transition:background .3s;}
+  @media (max-width:820px){ .mc-ring{width:70px; height:70px;} .mc-ring span{width:52px; height:52px; font-size:16px;} .mc-t2{font-size:14px;} .mc-t2 b{font-size:18px;} .mc-tiles{gap:6px;} .mc-tl{padding:7px 8px;} .mc-tl b{font-size:17px;} .mc-tl small{font-size:11px;} }
+  /* Add-on: extra products sold onto an order (same entry as the Performance page) */
+  .ad-wrap{display:flex; align-items:center; gap:6px 8px; flex-wrap:wrap;}
+  .ad-sum{font-size:12px; font-weight:700; color:var(--accent); text-decoration:none; white-space:nowrap;} .ad-sum span{color:var(--muted); font-weight:500;}
+  .ad-add{padding:3px 9px; min-height:0; width:auto; border-radius:6px; font-size:11.5px; font-weight:600; cursor:pointer; border:1px solid var(--line); background:var(--bg); color:var(--accent); white-space:nowrap;}
+  .ad-add:hover{background:#eef4ff;}
+  /* ML column: total ML (+ free ML), and the ML price slab % · ₹ */
+  .mlv{font-weight:800; font-size:13px; white-space:nowrap;}
+  .mlx{display:inline-block; background:#fef3c7; color:#b45309; font-size:11px; font-weight:800; padding:1px 6px; border-radius:99px; margin-left:2px;}
+  .mlt{color:var(--muted); font-weight:600; font-size:11px;}
+  .mlp{display:inline-block; margin-top:3px; font-size:11px; font-weight:800; padding:2px 7px; border-radius:99px; background:#ede9fe; color:#6d28d9; white-space:nowrap;}
+  .mlp.lo{background:#fee2e2; color:#b91c1c;} .mlp.hi{background:#dcfce7; color:#15803d;}
+  .mln{font-size:11px; color:var(--muted); margin-top:2px; white-space:nowrap;}
+  .mle{margin-top:3px; font-size:11px; font-weight:800; color:#b91c1c; white-space:nowrap;}
+  .mlz{margin-top:3px; font-size:11px; font-weight:700; color:#15803d; white-space:nowrap;}
+  .ad-tot{font-size:11px; font-weight:600; color:#0f7a41; margin-top:2px; white-space:nowrap;}
+  .ad-items{font-size:11px; color:#0f7a41; font-weight:600; margin-top:3px; min-width:140px; max-width:220px; line-height:1.3;}
+  .ad-in{width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:6px; font-size:13px;}
+  .ad-in[readonly]{background:var(--bg); color:var(--muted);}
+  @media (max-width:820px){ .ad-add{height:40px; font-size:13px;} .ad-in{font-size:16px;} }
+  @media (max-width:820px){ .cx-btn{width:100%; height:40px; font-size:13px;} }
+  .undo-btn{background:none; border:none; padding:4px 0; color:var(--muted); font-size:12.5px; cursor:pointer; text-decoration:underline; min-height:0;}
+  .house{display:inline-block; padding:2px 9px; border-radius:10px; font-size:11px; font-weight:600; white-space:nowrap;}
+  .house.tmph{background:#dbeafe; color:#1d4ed8;}
+  .house.tm4u{background:#ede9fe; color:#6d28d9;}
+  .house.tmsg{background:#dcfce7; color:#15803d;}
+  .pill{display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:20px; border:1px solid var(--line); font-size:12.5px; cursor:pointer; background:#fff; white-space:nowrap;}
+  .pill.on{background:var(--navy-900); color:#fff; border-color:var(--navy-900);}
+  .pill b{font-weight:700;}
+  .sub{font-size:11.5px; color:var(--muted);}
+  .src{display:inline-block; font-size:11px; color:#6b7280; background:#f3f4f6; border-radius:8px; padding:1px 7px; white-space:nowrap;}
+  .otype{display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:600; white-space:nowrap;}
+  .otype.query{background:#e0f2fe; color:#0369a1;}
+  .otype.campaign{background:#fef3c7; color:#b45309;}
+  .row-done td{background:#f8fffb;}
+
+  /* Customer lookup by mobile number (all dates) */
+  .cust{margin-bottom:16px; border-top:3px solid var(--accent);}
+  .cust[hidden]{display:none;}
+  .cust-top{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px 20px; border-bottom:1px solid var(--line);}
+  .cust-top h2{margin:0; font-size:15px;} .cust-top .sub{margin-top:1px;}
+  .cust-x{background:#fff; border:1px solid var(--line); border-radius:20px; padding:5px 12px; min-height:0; width:auto; font-size:12.5px; font-weight:600; color:var(--ink); cursor:pointer;}
+  .cust-msg{padding:18px 20px; font-size:13.5px; color:var(--muted);}
+  .cust-one{border-bottom:1px solid var(--line);} .cust-one:last-child{border-bottom:none;}
+  .cust-id{display:flex; flex-wrap:wrap; align-items:center; gap:10px 16px; padding:14px 20px 8px;}
+  .cust-av{width:42px; height:42px; border-radius:50%; background:linear-gradient(135deg,#334155,#0f172a); color:#fff; font-weight:700; display:flex; align-items:center; justify-content:center; flex:none;}
+  .cust-nm{flex:1 1 180px; min-width:0;} .cust-nm b{display:block; font-size:16px; line-height:1.25; overflow-wrap:anywhere;}
+  .cust-ph{font-size:14px; font-weight:600; letter-spacing:.01em;} .cust-ph small{font-weight:500; color:var(--muted);}
+  .cust-act{display:flex; gap:8px;}
+  .cust-act a{display:inline-flex; align-items:center; gap:5px; padding:7px 14px; border-radius:20px; font-size:12.5px; font-weight:700; text-decoration:none; border:1px solid var(--line); background:#fff; color:var(--ink);}
+  .cust-act a.wa{background:#e7f7ee; border-color:#cfe9da; color:#0f7a41;}
+  .cust-stats{display:flex; flex-wrap:wrap; gap:8px; padding:4px 20px 12px;}
+  .cust-stat{background:#f8fafc; border:1px solid var(--line); border-radius:10px; padding:6px 12px; min-width:92px;}
+  .cust-stat .l{font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.04em;} .cust-stat .v{font-size:14.5px; font-weight:700; margin-top:1px;}
+  .cust-stat.g{background:#e7f7ee; border-color:#cfe9da;} .cust-stat.g .v{color:#0f7a41;}
+  .co{display:grid; grid-template-columns:minmax(150px,1.1fr) minmax(130px,1fr) minmax(170px,1.3fr) auto; gap:6px 16px; align-items:center; padding:10px 20px; border-top:1px solid #f0f1f3; font-size:13px;}
+  .co.cx{background:#faf5f5;} .co.cx .ord-link b{text-decoration:line-through;}
+  .co .sub{margin-top:1px;} .co-who{display:flex; flex-wrap:wrap; align-items:center; gap:4px 8px;}
+  .co-go{background:#fff; border:1px solid var(--line); border-radius:6px; padding:5px 10px; min-height:0; width:auto; font-size:12px; font-weight:600; color:var(--accent); cursor:pointer; white-space:nowrap;}
+  @media (max-width:820px){
+    .cust-top, .cust-id, .cust-stats, .co{padding-left:14px; padding-right:14px;}
+    .co{grid-template-columns:minmax(0,1fr) auto; gap:4px 12px;} .co-c{grid-column:1 / -1;} .co-d{grid-column:1 / -1;} .co-go{width:100%; height:38px; font-size:13px;}
+    .co-b{text-align:right;}
+  }
+
+  /* searchable employee dropdown */
+  .emp-pick{position:relative; min-width:150px;}
+  .emp-pick input{width:100%; padding:7px 26px 7px 9px; border:1px solid var(--line); border-radius:6px; font-size:13px; background:#fff;}
+  .emp-pick input.changed{border-color:var(--accent); box-shadow:0 0 0 2px #dbe6ff;}
+  .emp-pick .caret{position:absolute; right:9px; top:9px; font-size:11px; color:#94a3b8; pointer-events:none;}
+  .emp-menu{position:fixed; z-index:30; margin:0; background:#fff; border:1px solid var(--line); border-radius:8px; box-shadow:0 10px 30px rgba(15,23,42,.14); max-height:280px; overflow:auto; display:none;}
+  .emp-menu.open{display:block;}
+  .emp-menu .grp{padding:7px 10px 3px; font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:#94a3b8; background:#f8fafc; position:sticky; top:0;}
+  .emp-menu .opt{padding:7px 10px; font-size:13px; cursor:pointer; display:flex; justify-content:space-between; gap:8px;}
+  .emp-menu .opt:hover, .emp-menu .opt.hl{background:#eef2ff;}
+  .emp-menu .opt small{color:#94a3b8; font-size:11px;}
+  .emp-menu .none{padding:10px; font-size:12.5px; color:#94a3b8;}
+  .emp-menu .opt.direct{background:#eef2ff; border-bottom:1px solid #dbe2ff; color:#3730a3; font-weight:600; padding:9px 10px;}
+  .emp-menu .opt.direct small{color:#6366f1; font-weight:500;}
+  .emp-menu .opt.direct:hover, .emp-menu .opt.direct.hl{background:#e0e7ff;}
+  .emp-pick input.direct{background:#eef2ff; border-color:#6366f1; color:#3730a3; font-weight:600;}
+  .dtag{display:inline-block; white-space:nowrap; background:#eef2ff; color:#3730a3; border:1px solid #dbe2ff; border-radius:999px; padding:2px 10px; font-size:12px; font-weight:700;}
+  .pill.dir.on{background:#4338ca; border-color:#4338ca; color:#fff;}
+  .acc-pick{position:relative;}
+  .acc-btn{white-space:nowrap;}
+  .acc-menu{position:absolute; right:0; top:calc(100% + 6px); z-index:40; width:300px; max-width:calc(100vw - 32px); background:#fff; border:1px solid var(--line); border-radius:10px; box-shadow:0 12px 34px rgba(15,23,42,.16); padding:12px; display:none; text-align:left;}
+  .acc-menu.open{display:block;}
+  .lk-opt{display:flex; align-items:flex-start; gap:9px; padding:9px 10px; margin-top:6px; border:1px solid var(--line); border-radius:10px; cursor:pointer;} .lk-opt:hover{background:#f8fafc;} .lk-opt.on{border-color:#a5b4fc; background:#eef2ff;} .lk-opt input{margin-top:3px; width:16px; height:16px; flex:none;} .lk-opt b{display:block; font-size:13px;} .lk-opt small{display:block; color:var(--muted); font-size:11.5px; line-height:1.4; margin-top:1px;}
+  .acc-menu .lk-opt small{margin-left:0; color:var(--muted); font-size:11.5px;} .acc-menu .lk-opt{padding:9px 10px; font-size:13px;}
+  .lk-row input[type=time]{width:120px; padding:8px 10px; border:1px solid var(--line); border-radius:8px; font-size:14px; font-weight:700;}
+  .lk-row{display:flex; align-items:center; gap:8px; margin:8px 0 4px; flex-wrap:wrap;} .lk-row input[type=number]{width:84px; padding:8px 10px; border:1px solid var(--line); border-radius:8px; font-size:14px; font-weight:700;}
+  .lk-row .chip{border:1px solid var(--line); background:#f8fafc; border-radius:16px; padding:5px 11px; font-size:12px; font-weight:700; cursor:pointer; min-height:0; width:auto;} .lk-row .chip:hover,.lk-row .chip.on{background:#eef2ff; border-color:#a5b4fc; color:#3730a3;}
+  .code-in:disabled.locked{width:74px; background:#f1f5f9; color:#64748b; cursor:not-allowed; border-style:dashed;}
+  .code-lk{display:inline-block; margin-left:4px; font-size:12px; cursor:help;}
+  .acc-menu h4{margin:0 0 3px; font-size:14px;}
+  .acc-menu .note{font-size:12px; color:var(--muted); line-height:1.45; margin-bottom:8px;}
+  .acc-menu .list{max-height:250px; overflow:auto; border-top:1px solid var(--line); border-bottom:1px solid var(--line); padding:4px 0;}
+  .acc-menu label{display:flex; align-items:center; gap:9px; padding:8px 6px; font-size:13px; border-radius:6px; cursor:pointer;}
+  .acc-menu label:hover{background:#eef2ff;}
+  .acc-menu label input{width:16px; height:16px; margin:0; flex:none;}
+  .acc-menu label small{margin-left:auto; color:#94a3b8; font-size:11px;}
+  .acc-menu .foot{display:flex; align-items:center; gap:10px; margin-top:10px;}
+  .acc-menu .foot .link{background:none; border:none; padding:0; min-height:0; width:auto; font-size:12.5px; color:var(--accent); cursor:pointer; text-decoration:underline;}
+  .acc-menu .foot .save{margin-left:auto; width:auto;}
+  @media (max-width:820px){
+    .sel, .emp-pick input{font-size:16px;}
+    .sel.inline{width:100%;}
+    .ok-btn{height:40px; width:100%;}
+    .emp-pick{min-width:0;}
+    .acc-pick{width:100%;}
+    .acc-btn{width:100%;}
+    .acc-menu{right:auto; left:0; width:100%; max-width:none;}
+    .acc-menu label{padding:11px 6px; font-size:15px;}
+  }
+
+  /* ---- Responsive pass ---- */
+  @media (min-width:821px){ .card-head .search-box{flex:1 1 280px; min-width:220px;} }
+  @media (max-width:820px){
+    /* each order = a labelled card; a cell's contents stack in the value column instead of sitting side by side */
+    #allocCard tbody td, #allocCard tbody td:first-child, #allocCard tbody td:last-child{padding-left:0; padding-right:0;}
+    /* the label sits in a 104 px left gutter and EVERYTHING else (bare text too, e.g. the customer's name or the item count) in the value column — no grid, so plain text can never land on the label */
+    #allocCard tbody td[data-label]{display:block !important; position:relative; padding:6px 0 6px 114px !important; min-height:28px; text-align:left !important; overflow-wrap:anywhere;}
+    #allocCard tbody td[data-label]::before{position:absolute; left:0; top:8px; width:104px; margin:0;}
+    #allocCard tbody td[data-label] > *{min-width:0; max-width:100%;}
+    #allocCard td:first-child .sub, .paid-amt, .ad-tot, .mlp, .mlz, .mle, .mln, .ad-items{white-space:normal;}
+    .ad-items{min-width:0; max-width:none;}
+    .emp-pick{width:100%;}
+    #allocCard tbody td .sub{margin-top:3px;}
+    #allocCard .ord-link{display:inline-flex; align-items:center; min-height:34px; margin-top:-6px;}
+    .code-in, .ph-in{min-height:42px;}
+    .ad-sum{display:inline-flex; align-items:center; min-height:38px;}
+    .undo-btn{min-height:38px; padding:8px 4px;}
+    .mc-chip{min-height:38px; padding:6px 12px;}
+    .rs-stars{gap:5px;}
+    #search{font-size:16px; min-height:42px;}
+    .card-head .search-box{flex:1 1 100%;}
+    .cust-x{min-height:38px; padding:6px 14px;}
+    .cust-act a{min-height:40px;}
+    .co .ord-link{display:inline-flex; align-items:center; min-height:36px;}
+    .acc-menu input[type=time], .acc-menu input[type=number]{font-size:16px; min-height:40px;}
+    .lk-row .chip{min-height:36px;}
+    #addonModal input, #addonModal select, #addonListModal input{font-size:16px !important;}
+    #addonModal .ad-hd, #addonModal .addon-item{grid-template-columns:minmax(0,1fr) 74px 54px 38px !important;}
+    #addonModal .addon-item button{width:38px !important; height:40px !important;}
+    #addonModal .addon-item .ad-in{min-height:40px;}
+    #addonPrice{width:100% !important; min-height:42px;}
+    #btnAddonAddRow{min-height:40px;}
+    #addonModal .actions{flex-wrap:wrap; gap:10px;}
+    #addonListBody button{min-width:38px; min-height:38px !important; font-size:18px !important;}
+    #detailBody a{display:inline-block; padding:8px 0;}
+  }
+  @media (min-width:601px) and (max-width:820px){
+    #allocCard tbody{display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:10px; padding:0 12px 4px; align-items:start;}
+    #allocCard tbody tr{margin:0;}
+    #allocCard tbody tr:has(td[colspan]){grid-column:1 / -1;}
+  }
+  @media (max-width:560px){
+    .topbar > div:last-child .btn, .topbar > div:last-child input{min-height:42px; font-size:16px;}
+  }
+.btn-bot{border:1px solid #c7d2fe;background:#eef2ff;color:#3730a3;border-radius:999px;padding:5px 12px;font-weight:700;font-size:12.5px;cursor:pointer;}
+.btn-bot:disabled{opacity:.6;cursor:wait;}
+.bot-why{color:#6b4e00 !important;background:#fff7e0;border-radius:6px;padding:2px 6px;margin-top:4px;display:inline-block;max-width:260px;white-space:normal;}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar">
+      <div><h1>Order Allocation</h1><div class="sub" style="margin-top:2px;">All orders — set the employee, the type and the panel each order counts under</div><div class="clr-totals" id="clrTotals" style="margin-top:6px;"></div></div>
+      <div style="display:flex; gap:10px; align-items:center;">
+        <input type="date" id="dateFrom" style="padding:8px 10px; border:1px solid var(--line); border-radius:6px; font-size:13px;">
+        <input type="date" id="dateTo" style="padding:8px 10px; border:1px solid var(--line); border-radius:6px; font-size:13px;">
+        <button class="btn secondary" id="btnToday">Today</button>
+        <div class="acc-pick" id="accPick" style="display:none;">
+          <button type="button" class="btn secondary acc-btn" id="accBtn" title="Which departments' employees can open this page">Employee access</button>
+          <div class="acc-menu" id="accMenu"></div>
+        </div>
+        <div class="acc-pick" id="lkPick" style="display:none;">
+          <button type="button" class="btn secondary acc-btn" id="lkBtn" title="How long after allocation an Employee can add or change an order's code">Code lock</button>
+          <div class="acc-menu" id="lkMenu"></div>
+        </div>
+      </div>
+    </div>
+    <div class="content">
+      <div id="alertBox"></div>
+      <div class="card cust" id="custPanel" hidden>
+        <div class="cust-top"><div><h2>Customer lookup</h2><div class="sub" id="custSub">All dates, all stores</div></div><button type="button" class="cust-x" id="custX">✕ Close</button></div>
+        <div id="custBody"></div>
+      </div>
+      <div class="card mc-card" id="myCodes" hidden></div>
+      <div class="card" id="allocCard">
+        <div class="card-head">
+          <h2 id="cardTitle">Orders</h2>
+          <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <span class="pill on" data-f="pending">Pending <b id="cntPending">0</b></span>
+            <span class="pill" data-f="done">Allocated <b id="cntDone">0</b></span>
+            <span class="pill" data-f="all">All <b id="cntAll">0</b></span>
+            <span class="pill" data-f="cancelled">Cancelled <b id="cntCancelled">0</b></span>
+            <span class="pill dir" data-f="direct" title="Orders allocated as Direct order (no employee)">Direct order <b id="cntDirect">0</b></span>
+            <select id="sourceFilter" class="sel inline" title="Filter by source"><option value="">All sources</option></select>
+            <select id="panelFilter" class="sel inline" title="Filter by panel"><option value="">All panels</option></select>
+            <select id="typeFilter" class="sel inline" title="Filter by type">
+              <option value="">All types</option>
+              <option value="query">Query</option>
+              <option value="campaign">Campaign</option>
+              <option value="none">No type</option>
+            </select>
+            <div class="search-box"><input type="text" id="search" placeholder="Search order, customer, mobile (any date), employee..."></div>
+          </div>
+        </div>
+        <div class="tscroll">
+        <table>
+          <thead><tr><th>Order</th><th style="width:112px;" title="Order code — type it here, or upload the Excel on the Order Codes page and it fills in">Code</th><th>Employee</th><th>Customer</th><th>Items</th><th>Total</th><th style="width:150px;" title="Total ML of the order (free 10 ml pieces shown as extra) and what it earns on the ML price slab">ML</th><th>Payment</th><th>Type</th><th>Panel</th><th style="width:92px;" title="Chain order — Yes or No">Chain</th><th style="width:92px;" title="Address — Yes or No">Address</th><th style="width:100px;" title="Old or New price — which price list this order was sold on">Old / New price</th><th style="width:124px;" title="Ticket size convincing — same per-order rating as the Performance page">Rating</th><th id="thAddon" style="width:120px;" title="Extra products sold onto this order — same as the Add-on on the Performance page">Add-on</th><th style="width:84px;"></th></tr></thead>
+          <tbody id="tbody"><tr><td colspan="16" class="loading">Loading...</td></tr></tbody>
+        </table>
+        </div>
+        <div style="padding:12px 20px; display:flex; align-items:center; justify-content:center; gap:14px; flex-wrap:wrap;">
+          <span id="shownCount" class="sub"></span>
+          <button class="btn secondary" id="btnMore" style="width:auto; display:none;">Load more</button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="modal-overlay" id="addonModal">
+  <div class="modal wide">
+    <h3 id="addonTitle">Add-on</h3>
+    <div id="addonSub" style="font-size:12px; color:var(--muted); margin:-12px 0 16px;"></div>
+    <div id="addonModalAlert"></div>
+    <div class="field">
+      <label for="addonOrder">Original order</label>
+      <input type="text" id="addonOrder" class="ad-in" readonly>
+    </div>
+    <div style="margin-bottom:6px; font-size:12px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.03em;">Products added</div>
+    <div class="ad-hd" style="display:grid; grid-template-columns:1fr 92px 58px 30px; gap:8px; margin-bottom:5px;">
+      <span style="font-size:11px; color:var(--muted);">Product</span>
+      <span style="font-size:11px; color:var(--muted);">Size (ML)</span>
+      <span style="font-size:11px; color:var(--muted);">Qty</span>
+      <span></span>
+    </div>
+    <div id="addonItems"></div>
+    <button type="button" id="btnAddonAddRow" class="btn secondary" style="width:auto; font-size:12.5px; padding:6px 12px;">+ Another product</button>
+    <div class="field" style="margin-top:18px; padding-top:14px; border-top:1px solid var(--line);">
+      <label for="addonPrice">Total add-on price</label>
+      <div style="display:flex; align-items:center; gap:10px;">
+        <input type="number" id="addonPrice" min="0" step="1" placeholder="950" style="width:150px;">
+        <span id="addonCovers" style="font-size:11.5px; color:var(--muted);">for the products above</span>
+      </div>
+    </div>
+    <div class="actions" style="align-items:center; justify-content:space-between;">
+      <span style="font-size:12.5px; color:var(--muted);">Order total <span id="addonTotal" style="color:var(--ink); font-weight:600;">₹0</span></span>
+      <span style="display:flex; gap:10px;">
+        <button type="button" class="btn secondary" id="btnAddonCancel">Cancel</button>
+        <button type="button" class="btn" id="btnAddonSave">Save add-on</button>
+      </span>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="addonListModal">
+  <div class="modal">
+    <h3 id="addonListTitle">Add-ons</h3>
+    <div id="addonListSub" style="font-size:12px; color:var(--muted); margin:-12px 0 14px;"></div>
+    <div id="addonListBody"></div>
+    <div class="actions">
+      <button type="button" class="btn secondary" id="btnAddonListClose">Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="detailModal">
+  <div class="modal wide">
+    <h3 id="detailTitle">Order</h3>
+    <div id="detailBody" style="max-height:65vh; overflow-y:auto; overscroll-behavior:contain;"></div>
+    <div class="actions">
+      <button type="button" class="btn secondary" id="btnDetailClose">Close</button>
+    </div>
+  </div>
+</div>
+
+<script src="assets/js/config.js?v=260928b"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script src="assets/js/ml_slab.js?v=261103y"></script>
+<script>window.FO_SIZE = 'slim'; if (window.HRMS_EMBED) window.FO_HIDE = true;</script>
+<script src="assets/js/flash_offer.js?v=261103a"></script>
+<script>
+  guardPage();
+  if (window.HRMS_EMBED) { const sb = document.getElementById('sidebar'); if (sb) sb.remove(); }      // the page around (My Sales) already has the menu, punch reminder and penalty notice
+  else renderSidebar('order_allocation');
+
+  const alertBox = document.getElementById('alertBox');
+  let alertTimer = null;
+  function showAlert(msg, type = 'success') {
+    alertBox.innerHTML = `<div class="alert ${type}">${msg}</div>`;
+    clearTimeout(alertTimer);
+    alertTimer = setTimeout(() => (alertBox.innerHTML = ''), 5000);
+  }
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const inr = (v) => '₹' + Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+  const fmtT = (t) => t ? new Date(t).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '—';
+  const fmtDT = (t) => t ? new Date(t.replace(' ', 'T')).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+  // ---------- Business-day timing (Admin: Targets → Day timing) ----------
+  // Same rule as the Orders page: a day runs from its start time (default 10:00)
+  // until the next day's start time, so "Today" is the day that is running now.
+  let DAY_START = ['10:00', '10:00', '10:00', '10:00', '10:00', '10:00', '10:00'];
+  const timingReady = api.get('day_timing.get').then(d => { if (Array.isArray(d.start) && d.start.length === 7) DAY_START = d.start; }).catch(() => {});
+  const ymd = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  function bizDayOf(dt) {           // Date -> 'YYYY-MM-DD'
+    const d = new Date(dt);
+    const hm = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+    if (hm < DAY_START[d.getDay()]) d.setDate(d.getDate() - 1);
+    return ymd(d);
+  }
+  const fmtHM = (t) => { const [h, m] = t.split(':').map(Number); return `${((h + 11) % 12) + 1}${m ? ':' + String(m).padStart(2, '0') : ''} ${h >= 12 ? 'PM' : 'AM'}`; };
+  function todayStr() { return bizDayOf(new Date()); }
+
+  let HOUSES = { tmph: 'TM Perfume House', tm4u: 'TM4U', tmsg: 'TM Shower Gel' };
+  let TYPES = { query: 'Query', campaign: 'Campaign' };
+  let SOURCES = {};
+  let EMPS = [];          // [{id, code, name, groups:[...]}]
+  let orders = [];
+  let filter = 'pending';
+  const PAGE = 20;
+  let limit = PAGE;
+  const pending = {};      // "source|id" -> {emp, house, type} chosen, not yet confirmed
+
+  const key = (o) => o.store_key + '|' + o.id;
+  const pend = (k) => (pending[k] = pending[k] || {});
+  const empById = (id) => EMPS.find(e => e.id === Number(id));
+  // Effective choice for a pending row: what was picked, else what the order already says
+  // (employee from the order tag / panel salesman, panel from the store or house tag).
+  const effEmp = (o, p) => (p.emp !== undefined ? p.emp : (o.employee_id || 0));
+  // "Direct order" is chosen in the Employee select: a panel, no employee. In a pending pick it is -1; once saved the order has allocated_direct.
+  const DIRECT = -1;
+  const isDirect = (o, p) => (p.emp !== undefined ? p.emp === DIRECT : !!o.allocated_direct);
+  const noEmpMsg = (o, p) => (isDirect(o, p) ? 'Direct order has no employee' : 'Choose the employee first');
+  const effHouse = (o, p) => (p.house !== undefined ? p.house : (o.house || ''));
+  const effType = (o, p) => (p.type !== undefined ? p.type : (o.order_type || ''));
+
+  function matches(o) {
+    if (filter === 'cancelled') { if (!o.cancelled) return false; }
+    else if (o.cancelled) return false;   // a cancelled order only shows under "Cancelled"
+    if (filter === 'direct' && !o.allocated_direct) return false;
+    if (filter === 'pending' && o.allocated) return false;
+    if (filter === 'done' && !o.allocated) return false;
+    const sf = document.getElementById('sourceFilter').value;
+    if (sf && o.store_key !== sf) return false;
+    const pf = document.getElementById('panelFilter').value;
+    if (pf && (o.house || '') !== pf) return false;
+    const tf = document.getElementById('typeFilter').value;
+    if (tf === 'none' && (o.order_type || '')) return false;
+    if (tf && tf !== 'none' && (o.order_type || '') !== tf) return false;
+    const q = document.getElementById('search').value.trim().toLowerCase();
+    if (!q) return true;
+    const qd = q.replace(/\D/g, '');
+    return String(o.order_name || '').toLowerCase().includes(q)
+      || (o.allocated_direct && 'direct order'.includes(q))
+      || (o.salesman || '').toLowerCase().includes(q)
+      || (o.employee_code || '').toLowerCase().includes(q)
+      || String(o.code || '').toLowerCase().includes(q)
+      || (o.customer || '').toLowerCase().includes(q)
+      || (o.store || '').toLowerCase().includes(q)
+      || (qd.length >= 3 && (String(o.phone || '').replace(/\D/g, '').includes(qd) || String(o.extra_phone || '').replace(/\D/g, '').includes(qd)));
+  }
+
+  const options = (map, sel, blank) => `<option value="">${blank}</option>` +
+    Object.entries(map).map(([k, v]) => `<option value="${k}" ${sel === k ? 'selected' : ''}>${esc(v)}</option>`).join('');
+
+  // ---------- Per-order rating (Ticket size convincing, half stars = 1–10) ----------
+  const STAR_PATH = '<path d="M12 2.6l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.5l-5.9 3.2 1.3-6.6-4.9-4.6 6.6-.8z"/>';
+  // The Employee role can only set Employee, Type and Panel on pending orders — no rating, no Undo,
+  // allocated rows locked. Admin / HR / Sales Head / other roles keep everything.
+  const IS_EMP = String((api.currentUser() || {}).role || '').trim().toLowerCase() === 'employee';
+  // Chain, Address and Old / New price dropdowns: Admin, HR, Sales head and any other role with Order Allocation — the Employee role sees them as plain text.
+  const CAN_ADDR = !IS_EMP;
+  // The Employee role has no Add-on column at all (it can't add or see add-ons here).
+  const NCOL = IS_EMP ? 15 : 16;
+  if (IS_EMP) document.getElementById('thAddon').remove();
+  const RATE_WORDS = ['Not rated','Very poor','Poor','Weak','Fair','Okay','Good','Very good','Great','Excellent','Outstanding'];
+  function starCells(v) {
+    return Array.from({ length: 5 }, (_, i) => {
+      const f = Math.max(0, Math.min(2, v - i * 2));
+      return `<span class="rs-star"><svg viewBox="0 0 24 24" aria-hidden="true"><g fill="#D6D3DF">${STAR_PATH}</g></svg><svg class="rs-fill" viewBox="0 0 24 24" aria-hidden="true" style="clip-path:inset(0 ${100 - f * 50}% 0 0);"><g fill="#E8A21C">${STAR_PATH}</g></svg></span>`;
+    }).join('');
+  }
+  // Under the stars: who gave them and when (empty when not rated).
+  const ratingBy = (o) => o.ticket_rating != null && o.rating_by ? `<span class="sub rs-by">by ${esc(o.rating_by)}${o.rating_at ? ' · ' + fmtDT(o.rating_at) : ''}</span>` : '';
+  function ratingCell(o, empSel, offMsg) {
+    const v = o.ticket_rating == null ? 0 : Math.max(0, Math.min(10, Math.round(Number(o.ticket_rating))));
+    if (IS_EMP) return `<span class="rs ro" title="${v ? v / 2 + ' of 5' : 'Not rated'}"><span class="rs-stars">${starCells(v)}</span><span class="rs-num">${v ? String(v / 2) : '—'}</span></span>${ratingBy(o)}`;
+    const off = !(empSel > 0);
+    return `<span class="rs ${off ? 'off' : ''}" data-k="${key(o)}" data-val="${v}" tabindex="0" role="slider" aria-valuemin="0" aria-valuemax="10" aria-valuenow="${v}"
+      title="${off ? (offMsg || 'Choose the employee first') : RATE_WORDS[v]}"><span class="rs-stars">${starCells(v)}</span><span class="rs-num">${v ? String(v / 2) : '—'}</span></span>${ratingBy(o)}`;
+  }
+  function paintRatingBy(rs, o) {
+    const old = rs.parentNode && rs.parentNode.querySelector('.rs-by'); if (old) old.remove();
+    const html = ratingBy(o); if (html && rs.parentNode) rs.insertAdjacentHTML('afterend', html);
+  }
+  function paintStars(rs, v, preview) {
+    rs.querySelectorAll('.rs-star').forEach((st, i) => {
+      const f = Math.max(0, Math.min(2, v - i * 2));
+      st.querySelector('.rs-fill').style.clipPath = `inset(0 ${100 - f * 50}% 0 0)`;
+    });
+    rs.classList.toggle('rs-preview', !!preview);
+    rs.querySelector('.rs-num').textContent = v ? String(v / 2) : '—';
+    if (!rs.classList.contains('off')) rs.title = RATE_WORDS[v] || '';
+  }
+  async function saveStars(rs, v, starIdx) {
+    const o = orders.find(x => key(x) === rs.dataset.k);
+    if (!o) return;
+    const p = pending[rs.dataset.k] || {};
+    const emp = effEmp(o, p);
+    if (!(emp > 0)) { showAlert(isDirect(o, p) ? 'A direct order has no employee to rate.' : 'Choose the employee first, then rate the order.', 'error'); return; }
+    v = Math.max(1, Math.min(10, v));
+    if (Number(rs.dataset.val) === v) v = 0;                   // same value again = clear
+    const prev = o.ticket_rating;
+    rs.dataset.val = v; o.ticket_rating = v === 0 ? null : v;
+    paintStars(rs, v, false);
+    const st = rs.querySelectorAll('.rs-star')[starIdx];
+    if (st) { st.classList.remove('rs-pop'); void st.offsetWidth; st.classList.add('rs-pop'); }
+    try {
+      const r = await api.post('order_ratings.save', {
+        order_key: o.order_key || (o.store_key + ':' + o.id), order_name: o.order_name, employee_id: emp,
+        group_key: effHouse(o, p) || '', date: o.biz_date || (String(o.created_at || '').slice(0, 10)), field: 'ticket', value: v,
+      });
+      o.rating_by = v === 0 ? '' : ((r && r.by) || (api.currentUser() || {}).username || ''); o.rating_at = v === 0 ? '' : ((r && r.at) || '');
+      paintRatingBy(rs, o);
+    } catch (err) {
+      o.ticket_rating = prev; rs.dataset.val = prev == null ? 0 : Math.round(prev); paintStars(rs, Number(rs.dataset.val), false);
+      showAlert(err.message, 'error');
+    }
+  }
+  (function starEvents() {
+    function stepAt(rs, clientX) {
+      const row = rs.querySelector('.rs-stars').getBoundingClientRect();
+      const x = Math.max(0, Math.min(row.width - 0.01, clientX - row.left));
+      const per = row.width / 5; const i = Math.floor(x / per);
+      return { i, v: i * 2 + ((x - i * per) / per < 0.5 ? 1 : 2) };
+    }
+    document.addEventListener('mousemove', (e) => {
+      const stars = e.target.closest && e.target.closest('.rs-stars'); if (!stars) return;
+      const rs = stars.closest('.rs'); if (rs.classList.contains('off') || rs.classList.contains('ro')) return;
+      paintStars(rs, stepAt(rs, e.clientX).v, true);
+    });
+    document.addEventListener('mouseout', (e) => {
+      const rs = e.target.closest && e.target.closest('.rs');
+      if (!rs || rs.classList.contains('ro') || (e.relatedTarget && rs.contains(e.relatedTarget))) return;
+      paintStars(rs, Number(rs.dataset.val), false);
+    });
+    document.addEventListener('click', (e) => {
+      const stars = e.target.closest && e.target.closest('.rs-stars'); if (!stars) return;
+      const rs = stars.closest('.rs');
+      if (rs.classList.contains('ro')) return;
+      if (rs.classList.contains('off')) { const o = orders.find(x => key(x) === rs.dataset.k); showAlert(o && isDirect(o, pending[rs.dataset.k] || {}) ? 'A direct order has no employee to rate.' : 'Choose the employee first, then rate the order.', 'error'); return; }
+      const { i, v } = stepAt(rs, e.clientX); saveStars(rs, v, i);
+    });
+    document.addEventListener('keydown', (e) => {
+      const rs = e.target.closest && e.target.closest('.rs'); if (!rs || rs.classList.contains('off') || rs.classList.contains('ro')) return;
+      const v = Number(rs.dataset.val);
+      if (e.key === 'ArrowRight' || e.key === 'ArrowUp') { e.preventDefault(); saveStars(rs, v + 1, Math.ceil((v + 1) / 2) - 1); }
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') { e.preventDefault(); if (v > 1) saveStars(rs, v - 1, Math.ceil((v - 1) / 2) - 1); }
+    });
+  })();
+
+  // ---- Product colour (from the product name: DG / LG / WH, anything else = Other)
+  const CLR = [['dg', 'DG', 'Dark Green'], ['lg', 'LG', 'Light Green'], ['wh', 'WH', 'White'], ['other', 'Other', 'Other']];
+  const clrCls = (k) => (k === 'other' ? 'clr-ot' : 'clr-' + k);
+  const clrOf = (o) => o.colors || { dg: 0, lg: 0, wh: 0, other: 0 };
+  function clrLine(o) {
+    const c = clrOf(o);
+    const h = CLR.filter(([k]) => c[k] > 0).map(([k, s, name]) => `<span title="${name}"><i class="${clrCls(k)}"></i>${s} ${c[k]}</span>`).join('');
+    return h ? `<div class="clr-line">${h}</div>` : '';
+  }
+  function renderColorTotals(list) {
+    const tot = { dg: 0, lg: 0, wh: 0, other: 0 };
+    list.forEach(o => { const c = clrOf(o); CLR.forEach(([k]) => { tot[k] += Number(c[k] || 0); }); });
+    document.getElementById('clrTotals').innerHTML = CLR.map(([k, s, name]) => `<span title="${name}"><i class="${clrCls(k)}"></i>${s} ${tot[k]}</span>`).join('');
+  }
+
+  // Extra mobile number of the customer — type it here; saved on Enter / when you leave the box.
+  function phoneBox(o) {
+    if (o.cancelled) return o.extra_phone ? `<div class="sub">+ ${esc(o.extra_phone)}</div>` : '';
+    return `<input type="tel" inputmode="tel" class="ph-in" data-k="${key(o)}" maxlength="16" value="${esc(o.extra_phone || '')}" placeholder="Extra mobile no." autocomplete="off" spellcheck="false" title="Customer's extra mobile number">`;
+  }
+  async function savePhone(inp) {
+    const o = orders.find(x => key(x) === inp.dataset.k);
+    if (!o) return;
+    const ph = inp.value.replace(/[\s().-]+/g, '');
+    inp.value = ph;
+    if (ph === String(o.extra_phone || '')) return;
+    if (ph && !/^\+?\d{10,15}$/.test(ph)) { inp.classList.add('failed'); showAlert('Enter a valid mobile number (10 to 15 digits).', 'error'); return; }
+    inp.classList.remove('saved', 'failed'); inp.classList.add('saving'); inp.disabled = true;
+    try {
+      await api.post('order_phone.set', { source: o.store_key, order_id: String(o.id), order_name: o.order_name, phone: ph });
+      o.extra_phone = ph;
+      inp.classList.remove('saving'); inp.classList.add('saved'); setTimeout(() => inp.classList.remove('saved'), 1200);
+    } catch (err) {
+      inp.value = o.extra_phone || ''; inp.classList.remove('saving'); inp.classList.add('failed'); setTimeout(() => inp.classList.remove('failed'), 2500);
+      showAlert(err.message, 'error');
+    }
+    inp.disabled = false;
+  }
+  document.addEventListener('change', (e) => { if (e.target.classList && e.target.classList.contains('ph-in')) savePhone(e.target); });
+  document.addEventListener('keydown', (e) => {
+    if (!e.target.classList || !e.target.classList.contains('ph-in')) return;
+    if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); }
+    else if (e.key === 'Escape') { const o = orders.find(x => key(x) === e.target.dataset.k); e.target.value = o ? (o.extra_phone || '') : ''; e.target.blur(); }
+  });
+
+  // Chain: Yes / No per order (saved straight away; only "Yes" is stored, no row means No). Employee logins only see it.
+  function chainCell(o, canEdit) {
+    const yes = o.chain === 'yes';
+    if (!canEdit) return `<span class="sub" style="${yes ? 'color:#0f7a41; font-weight:700;' : ''}">${yes ? 'Yes' : 'No'}</span>`;
+    return `<select class="sel chain-sel ${yes ? 'yes' : ''}" data-k="${key(o)}" title="Chain order">` +
+      `<option value="no" ${yes ? '' : 'selected'}>No</option><option value="yes" ${yes ? 'selected' : ''}>Yes</option></select>`;
+  }
+  async function saveChain(sel) {
+    const o = orders.find(x => key(x) === sel.dataset.k);
+    if (!o) return;
+    const v = sel.value === 'yes' ? 'yes' : 'no', prev = o.chain === 'yes' ? 'yes' : 'no';
+    if (v === prev) return;
+    sel.disabled = true; sel.classList.add('saving'); sel.classList.remove('failed');
+    try {
+      await api.post('order_chain.set', { source: o.store_key, order_id: String(o.id), order_name: o.order_name, chain: v });
+      o.chain = v; sel.classList.toggle('yes', v === 'yes');
+    } catch (err) {
+      sel.value = prev; sel.classList.add('failed'); setTimeout(() => sel.classList.remove('failed'), 2500);
+      showAlert(err.message, 'error');
+    }
+    sel.disabled = false; sel.classList.remove('saving');
+  }
+  document.addEventListener('change', (e) => { if (e.target.classList && e.target.classList.contains('chain-sel')) saveChain(e.target); });
+
+  // Address: Yes / No per order (saved straight away; only "Yes" is stored, no row means No). Employee logins only see it.
+  function addressCell(o, canEdit) {
+    const yes = o.address === 'yes';
+    if (!canEdit) return `<span class="sub" style="${yes ? 'color:#0f7a41; font-weight:700;' : ''}">${yes ? 'Yes' : 'No'}</span>`;
+    return `<select class="sel addr-sel ${yes ? 'yes' : ''}" data-k="${key(o)}" title="Address">` +
+      `<option value="no" ${yes ? '' : 'selected'}>No</option><option value="yes" ${yes ? 'selected' : ''}>Yes</option></select>`;
+  }
+  async function saveAddress(sel) {
+    const o = orders.find(x => key(x) === sel.dataset.k);
+    if (!o) return;
+    const v = sel.value === 'yes' ? 'yes' : 'no', prev = o.address === 'yes' ? 'yes' : 'no';
+    if (v === prev) return;
+    sel.disabled = true; sel.classList.add('saving'); sel.classList.remove('failed');
+    try {
+      await api.post('order_address.set', { source: o.store_key, order_id: String(o.id), order_name: o.order_name, address: v });
+      o.address = v; sel.classList.toggle('yes', v === 'yes');
+    } catch (err) {
+      sel.value = prev; sel.classList.add('failed'); setTimeout(() => sel.classList.remove('failed'), 2500);
+      showAlert(err.message, 'error');
+    }
+    sel.disabled = false; sel.classList.remove('saving');
+  }
+  document.addEventListener('change', (e) => { if (e.target.classList && e.target.classList.contains('addr-sel')) saveAddress(e.target); });
+
+  // Old / New price per order (saved straight away; not chosen yet = New). Same rule as Address.
+  const PT_TXT = { old: 'Old', new: 'New' };
+  const ptOf = (o) => o.price_type === 'old' ? 'old' : 'new';
+  function priceCell(o, canEdit) {
+    const v = ptOf(o);
+    if (!canEdit) return `<span class="sub" style="${v === 'old' ? 'color:#8a5a00;' : 'color:#1d4ed8;'} font-weight:700;">${PT_TXT[v]}</span>`;
+    return `<select class="sel price-sel ${v}" data-k="${key(o)}" title="Old or New price">` +
+      `<option value="old" ${v === 'old' ? 'selected' : ''}>Old</option><option value="new" ${v === 'new' ? 'selected' : ''}>New</option></select>`;
+  }
+  async function savePrice(sel) {
+    const o = orders.find(x => key(x) === sel.dataset.k);
+    if (!o) return;
+    const v = sel.value === 'old' ? 'old' : 'new', prev = ptOf(o);
+    if (v === prev) return;
+    sel.disabled = true; sel.classList.add('saving'); sel.classList.remove('failed');
+    try {
+      await api.post('order_price.set', { source: o.store_key, order_id: String(o.id), order_name: o.order_name, price_type: v });
+      o.price_type = v; sel.classList.remove('old', 'new'); sel.classList.add(v);
+    } catch (err) {
+      sel.value = prev; sel.classList.add('failed'); setTimeout(() => sel.classList.remove('failed'), 2500);
+      showAlert(err.message, 'error');
+    }
+    sel.disabled = false; sel.classList.remove('saving');
+  }
+  document.addEventListener('change', (e) => { if (e.target.classList && e.target.classList.contains('price-sel')) savePrice(e.target); });
+
+  // 🤖 Why the robot left a pending order for a person (it gives orders to the salesperson who has the customer's WhatsApp chat)
+  let WHY = {};
+  function botWhy(o) {
+    if (o.allocated || o.cancelled || IS_EMP) return '';
+    const w = WHY[key(o)];
+    const old = o.created_at && (Date.now() - new Date(o.created_at).getTime()) > 2 * 86400000;
+    const t = w ? 'not auto-allocated: ' + w.why : (/^mysales/i.test(o.store_key || '') ? 'MySales orders are not auto-allocated' : (Number(o.total) === 0 ? '₹0 order (replacement) — not auto-allocated' : (old ? 'older than 2 days — the robot only looks at new orders' : 'waiting for the robot (it checks every few minutes)')));
+    return `<div class="sub bot-why">🤖 ${esc(t)}</div>`;
+  }
+  async function loadWhy() { if (IS_EMP) return; try { WHY = (await api.get('wa.alloc_why')).reasons || {}; } catch (e) { WHY = {}; } }
+
+  function rowHtml(o) {
+    const k = key(o);
+    const p = pending[k] || {};
+    const empSel = effEmp(o, p);
+    const houseSel = effHouse(o, p);
+    const empObj = empById(empSel);
+    const direct = isDirect(o, p);
+    const hint = direct ? 'Direct order — no employee' : (o.employee_from ? `${esc(o.employee_from)}: ${esc(o.salesman || '')}` : (o.broadcast ? 'broadcast ' + esc(o.broadcast) : 'no employee on order'));
+    // Employee role on the "All" tab: every row is view-only, like Allocated (edit on the Pending tab).
+    const lock = o.allocated || !!o.cancelled || (IS_EMP && filter === 'all');
+    const empCell = lock
+      ? (o.allocated ? (o.allocated_direct ? `<span class="dtag">Direct order</span><div class="sub">no employee</div>` : `${esc(o.salesman || '—')}<div class="sub">${esc(o.employee_code || '')}</div>`) : `${esc(empObj ? empObj.name : (o.salesman || '—'))}<div class="sub">${hint}</div>`)
+      : `<div class="emp-pick" data-k="${k}">
+           <input type="text" placeholder="Search employee..." value="${empObj ? esc(empObj.name) : (direct ? 'Direct order' : '')}" data-id="${empObj ? empObj.id : (direct ? DIRECT : '')}" class="${p.emp !== undefined ? 'changed' : ''}${direct ? ' direct' : ''}" autocomplete="off">
+           <span class="caret">▼</span>
+           <div class="emp-menu"></div>
+         </div><div class="sub">${hint}</div>`;
+    const shownType = o.allocated ? o.order_type : effType(o, p);
+    const typeCell = lock
+      ? (shownType ? `<span class="otype ${shownType}">${esc(TYPES[shownType] || shownType)}</span>` : '<span class="sub">—</span>')
+      : `<select class="sel ${p.type ? 'changed' : ''}" onchange="pickType('${k}', this.value)">${options(TYPES, effType(o, p), '— Type —')}</select>`;
+    const panelCell = lock
+      ? (o.allocated ? `<span class="house ${o.allocated_house}">${esc(HOUSES[o.allocated_house] || o.allocated_house)}</span>
+         <div class="sub">by ${/^auto/.test(o.allocated_by || '') ? '🤖 ' : ''}${esc(o.allocated_by || '—')}${o.allocated_at ? ' · ' + fmtDT(o.allocated_at) : ''}</div>` : (houseSel ? `<span class="house ${houseSel}">${esc(HOUSES[houseSel] || houseSel)}</span>` : '<span class="sub">—</span>'))
+      : `<select class="sel ${p.house ? 'changed' : ''}" onchange="pickHouse('${k}', this.value)">${options(HOUSES, houseSel, '— Panel —')}</select>`;
+    // Employee role: the Type (Query / Campaign) must be picked too before the ✓ works.
+    const needType = IS_EMP && !effType(o, p);
+    const ready = !o.allocated && houseSel && (empSel > 0 || direct) && !needType;
+    const action = o.cancelled ? '' : o.allocated
+      ? (IS_EMP ? '' : `<button type="button" class="undo-btn" onclick="undoAlloc('${k}', this)">Undo</button>`)
+      : lock ? ''
+      : `<button type="button" class="ok-btn" title="${ready ? 'Confirm' : (needType && houseSel && (empSel > 0 || direct) ? 'Choose the Type (Query / Campaign) first' : 'Choose employee (or Direct order)' + (IS_EMP ? ', type' : '') + ' and panel first')}" ${ready ? '' : 'disabled'} onclick="confirmAlloc('${k}', this)">✓</button>`;
+    // Cancel / Undo cancel (saved in HRMS only — the Shopify order is not changed). Not for the Employee role.
+    const cx = IS_EMP ? '' : (o.cancelled
+      ? `<button type="button" class="cx-btn undo" onclick="cancelOrder('${k}', false, this)">↶ Undo</button><div class="sub">cancelled${o.cancelled.by ? ' by ' + esc(o.cancelled.by) : ''}</div>`
+      : `<button type="button" class="cx-btn" onclick="cancelOrder('${k}', true, this)">✕ Cancel</button>`);
+    return `<tr class="${o.cancelled ? 'row-cx' : (o.allocated ? 'row-done' : '')}" data-k="${k}">
+      <td><a href="#" class="ord-link" onclick="openDetail('${k}'); return false;" title="Open order details"><b>${esc(o.order_name)}</b></a><div class="sub">${fmtT(o.created_at)} <span class="src">${esc(o.source_label || o.store_src || o.store)}</span></div></td>
+      <td>${o.cancelled ? (o.code ? `<span class="code-tag">${esc(o.code)}</span>` : '<span class="sub">—</span>') : o.code_locked ? `<input type="text" class="code-in locked" data-k="${k}" value="${esc(o.code || '')}" placeholder="Locked" disabled title="Locked — the time allowed for adding a code after allocation has passed. Ask Admin / HR."><span class="code-lk" title="Locked — ask Admin / HR">🔒</span>` : `<input type="text" class="code-in" data-k="${k}" maxlength="40" value="${esc(o.code || '')}" placeholder="Ex:-Og12345" autocomplete="off" spellcheck="false">`}</td>
+      <td>${empCell}${botWhy(o)}</td>
+      <td>${esc(o.customer || 'Guest')}<div class="sub">${esc(o.phone || '')}</div>${phoneBox(o)}</td>
+      <td>${o.items}${clrLine(o)}${addonItemsLine(o)}</td>
+      <td>${totalCell(o)}</td>
+      <td>${mlCell(o)}</td>
+      <td><span class="badge ${o.financial_status === 'paid' ? '' : 'inactive'}">${esc(o.financial_status || '—')}</span>${o.financial_status === 'partially_paid' && o.paid != null ? `<div class="paid-amt" title="Already paid by the customer${o.outstanding != null ? ' — ' + inr(o.outstanding) + ' still to pay' : ''}">Paid ${inr(o.paid)}</div>` : ''}</td>
+      <td>${typeCell}</td>
+      <td>${panelCell}</td>
+      <td>${chainCell(o, CAN_ADDR && !o.cancelled)}</td>
+      <td>${addressCell(o, CAN_ADDR && !o.cancelled)}</td>
+      <td>${priceCell(o, CAN_ADDR && !o.cancelled)}</td>
+      <td>${ratingCell(o, empSel, noEmpMsg(o, p))}</td>
+      ${IS_EMP ? '' : `<td>${addonCell(o)}</td>`}
+      <td>${action}${cx}</td>
+    </tr>`;
+  }
+
+  // ---------- Order details (same popup as the Orders page) ----------
+  const detailModal = document.getElementById('detailModal');
+  let detailReqId = 0;
+  // Freeze the page behind the popup WITHOUT moving it: lock <html> (the page scroller), never <body>.
+  // overflow:hidden on <body> shrinks the page to one screen and throws the scroll position back to the top.
+  let pageLockY = 0;
+  function lockPage(on) {
+    const h = document.documentElement;
+    if (on) {
+      if (h.style.overflow === 'hidden') return;
+      pageLockY = window.scrollY;
+      const sb = window.innerWidth - h.clientWidth;      // keep the layout width when the scrollbar disappears
+      h.style.overflow = 'hidden';
+      if (sb > 0) h.style.paddingRight = sb + 'px';
+    } else {
+      if (h.style.overflow !== 'hidden') return;
+      h.style.overflow = ''; h.style.paddingRight = '';
+      if (Math.abs(window.scrollY - pageLockY) > 1) window.scrollTo(0, pageLockY);
+    }
+  }
+  function closeDetail() { detailReqId++; detailModal.classList.remove('open'); lockPage(false); }
+  document.getElementById('btnDetailClose').addEventListener('click', closeDetail);
+  detailModal.addEventListener('click', (e) => { if (e.target === detailModal) closeDetail(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && detailModal.classList.contains('open')) closeDetail(); });
+  const fmtMoney = (v, cur) => ((cur || 'INR') === 'INR' ? '₹' : cur + ' ') + Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+  const fmtFull = (t) => t ? new Date(t).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+  function detailRow(label, value) {
+    if (!value) return '';
+    return `<div style="display:flex; gap:12px; padding:5px 0; font-size:13.5px;"><div style="flex:none; min-width:100px; color:var(--muted); font-weight:600;">${label}</div><div style="flex:1; min-width:0; overflow-wrap:anywhere;">${value}</div></div>`;
+  }
+  const payHtml = (fs, paid, outstanding, gateway) =>
+    `<span class="badge ${fs === 'paid' ? '' : 'inactive'}">${esc(fs || '—')}</span>${gateway ? ' via ' + esc(gateway) : ''}` +
+    (fs === 'partially_paid' && paid != null ? ` &nbsp;<b style="color:#0f7a41;">Paid ${inr(paid)}</b>${outstanding != null ? ' · ' + inr(outstanding) + ' to pay' : ''}` : '');
+  function countedUnder(o) {
+    if (o.cancelled) return 'Cancelled — not counted anywhere';
+    if (o.allocated) return `<b>${esc(HOUSES[o.allocated_house] || o.allocated_house)}</b> — allocated${o.allocated_by ? ' by ' + esc(o.allocated_by) : ''}${o.allocated_at ? ' · ' + esc(fmtDT(o.allocated_at)) : ''}`;
+    return 'Not allocated yet — it is not counted on the Orders page until it is allocated';
+  }
+  // What the list already knows about the order — used for MySales orders (no Shopify record) and when the full details cannot be opened.
+  function localDetail(o, note) {
+    return detailRow('Date', fmtFull(o.created_at)) +
+      detailRow('Customer', esc(o.customer)) +
+      detailRow('Mobile', esc(o.phone)) +
+      detailRow('Extra mobile', esc(o.extra_phone)) +
+      detailRow('Items', o.items) +
+      detailRow('ML', MLSLAB_ok(o) ? mlCell(o) : '') +
+      detailRow('Total', fmtMoney(o.total, o.currency)) +
+      (() => { let ad = 0, its = ''; try { ad = addonSum(o); its = addonItemsLine(o); } catch (e) {} return ad > 0 ? detailRow('Add-on', inr(ad) + its) + detailRow('Total with add-on', '<b>' + inr(Number(o.total || 0) + ad) + '</b>') : ''; })() +
+      detailRow('Payment', payHtml(o.financial_status, o.paid, o.outstanding)) +
+      detailRow('Fulfillment', esc(o.fulfillment_status)) +
+      detailRow('Broadcast', esc(o.broadcast)) +
+      detailRow('Employee', o.allocated_direct ? 'Direct order' : esc(o.salesman)) +
+      detailRow('Type', o.order_type ? esc(TYPES[o.order_type] || o.order_type) : '') +
+      detailRow('Counted under', countedUnder(o)) +
+      (note ? `<div class="sub" style="margin-top:8px;">${note}</div>` : '');
+  }
+  window.openDetail = async function (k) {
+    const o = orders.find(x => key(x) === k) || custOrders.find(x => key(x) === k);
+    if (!o) return;
+    document.getElementById('detailTitle').textContent = `${o.order_name} — ${o.source_label || o.store}`;
+    const body = document.getElementById('detailBody');
+    detailModal.classList.add('open');
+    lockPage(true);
+    if (o.custom_store) { body.innerHTML = localDetail(o); return; }
+    body.innerHTML = '<div class="loading" style="padding:20px 0;">Loading order details...</div>';
+    const id = ++detailReqId;       // opening another order before this one loads: only the latest fills the popup
+    try {
+      const data = await api.get('shopify.order_detail', { store: o.store_key, id: o.id });
+      if (id !== detailReqId) return;
+      const d = data.order;
+      const th = (txt, al) => `<th style="text-align:${al}; font-size:11.5px; color:var(--muted); padding:6px 8px; border-bottom:1px solid var(--line);">${txt}</th>`;
+      const td = (inner, al, extra) => `<td style="padding:7px 8px; border-bottom:1px solid #f2f2f2; text-align:${al}; ${extra || ''}">${inner}</td>`;
+      const itemsHtml = `
+        <table class="no-stack" style="width:100%; border-collapse:collapse; margin:10px 0;">
+          <thead><tr>${th('Product', 'left')}${th('Qty', 'center')}${th('Price', 'right')}${th('Total', 'right')}</tr></thead>
+          <tbody>${(d.line_items || []).map(li => `<tr>
+            ${td(esc(li.title) + (li.variant ? `<div style="font-size:12px; color:var(--muted);">${esc(li.variant)}</div>` : ''), 'left', 'font-size:13.5px;')}
+            ${td(li.quantity, 'center')}${td(fmtMoney(li.price, d.currency), 'right')}${td(fmtMoney(li.total, d.currency), 'right', 'font-weight:600;')}
+          </tr>`).join('')}</tbody>
+        </table>`;
+      const line = (l, v, st) => `<div style="display:flex; justify-content:space-between; padding:3px 0; ${st || ''}"><span>${l}</span><span>${v}</span></div>`;
+      const totalsHtml = `
+        <div style="margin-left:auto; max-width:260px; font-size:13.5px;">
+          ${line('Subtotal', fmtMoney(d.subtotal, d.currency))}
+          ${Number(d.discounts) > 0 || (d.discount_codes || []).length ? line('Discount' + ((d.discount_codes || []).length ? ' <span class="dcode">' + d.discount_codes.map(c => esc(c.code)).join(', ') + '</span>' : ''), '−' + fmtMoney(d.discounts, d.currency), 'color:var(--ok-fg);') : ''}
+          ${line('Shipping', fmtMoney(d.shipping, d.currency))}
+          ${Number(d.tax) > 0 ? line('Tax', fmtMoney(d.tax, d.currency)) : ''}
+          ${line('Total', fmtMoney(d.total, d.currency), 'padding:6px 0; border-top:1px solid var(--line); font-weight:700;')}
+          ${d.financial_status === 'partially_paid' && d.paid != null ? line('Paid', fmtMoney(d.paid, d.currency), 'color:#0f7a41; font-weight:700;') + (d.outstanding != null ? line('To pay (COD)', fmtMoney(d.outstanding, d.currency)) : '') : ''}
+        </div>`;
+      const trackingHtml = (d.tracking || []).length
+        ? detailRow('Tracking', d.tracking.map(t => (t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noopener">${esc(t.number)}</a>` : esc(t.number)) + (t.company ? ' (' + esc(t.company) + ')' : '')).join('<br>'))
+        : '';
+      body.innerHTML =
+        detailRow('Date', fmtFull(d.created_at)) +
+        detailRow('Customer', esc(d.customer)) +
+        detailRow('Mobile', esc(d.phone)) +
+        detailRow('Email', esc(d.email)) +
+        detailRow('Address', (d.address || []).map(esc).join('<br>')) +
+        detailRow('Payment', payHtml(d.financial_status, d.paid, d.outstanding, d.gateway)) +
+        detailRow('Fulfillment', `<span class="badge ${d.fulfillment_status === 'fulfilled' ? '' : 'inactive'}">${esc(d.fulfillment_status || 'unfulfilled')}</span>`) +
+        trackingHtml +
+        detailRow('Note', esc(d.note)) +
+        detailRow('Tags', esc(d.tags)) +
+        detailRow('Employee', o.allocated_direct ? 'Direct order' : esc(o.salesman)) +
+        detailRow('Type', o.order_type ? esc(TYPES[o.order_type] || o.order_type) : '') +
+        detailRow('Counted under', countedUnder(o)) +
+        itemsHtml + totalsHtml;
+    } catch (err) {
+      if (id !== detailReqId) return;
+      // The Employee role can only open full details of its own tagged orders — the rest show what the list has.
+      body.innerHTML = IS_EMP
+        ? localDetail(o, 'Full details (address, items) are only available for your own orders.')
+        : `<div class="alert error">${esc(err.message)}</div>`;
+    }
+  };
+
+  // ---- Order code: type it here (saved on Enter / when you leave the box). Codes uploaded from the Excel on the
+  // Order Codes page are already filled in. Saved in the same place as the Order Codes page, and written as a Shopify tag.
+  async function saveCode(inp) {
+    const o = orders.find(x => key(x) === inp.dataset.k);
+    if (!o) return;
+    const code = inp.value.trim().toUpperCase().replace(/\s+/g, '');
+    inp.value = code;
+    if (code === String(o.code || '')) return;
+    if (code && !/^[A-Z0-9_-]{2,40}$/.test(code)) { inp.classList.add('failed'); showAlert('Code can only have letters, numbers, - and _ (e.g. AG00123).', 'error'); return; }
+    inp.classList.remove('saved', 'failed'); inp.classList.add('saving'); inp.disabled = true;
+    try {
+      const r = await api.post('order_codes.set', { source: o.store_key, order_id: String(o.id), order_name: o.order_name, code, old_code: o.code || '' });
+      o.code = code;
+      renderMyCodes();      // the employee's "My order codes" % moves at once
+      inp.classList.remove('saving'); inp.classList.add('saved'); setTimeout(() => inp.classList.remove('saved'), 1200);
+      if (r && r.tag_error) showAlert(r.message, 'error');
+    } catch (err) {
+      inp.value = o.code || ''; inp.classList.remove('saving'); inp.classList.add('failed'); setTimeout(() => inp.classList.remove('failed'), 2500);
+      showAlert(err.message, 'error');
+      if (/locked/i.test(err.message || '')) { o.code_locked = 1; inp.classList.add('locked'); inp.placeholder = 'Locked'; inp.title = 'Locked — ask Admin / HR.'; return; }      // stays disabled
+    }
+    inp.disabled = false;
+  }
+  document.addEventListener('change', (e) => { if (e.target.classList && e.target.classList.contains('code-in')) saveCode(e.target); });
+  document.addEventListener('keydown', (e) => {
+    if (!e.target.classList || !e.target.classList.contains('code-in')) return;
+    if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); }
+    else if (e.key === 'Escape') { const o = orders.find(x => key(x) === e.target.dataset.k); e.target.value = o ? (o.code || '') : ''; e.target.blur(); }
+  });
+
+  // ---------- Add-on: extra products sold onto an order ----------
+  // Saved in the same place as the Performance page's Add-on (so it shows there too, under the order's employee and
+  // day). Not for the Employee role — no column, and the server refuses it as well.
+  let addonRows = [];
+  async function loadAddons(from, to) {
+    addonRows = [];
+    if (IS_EMP) return;
+    try { addonRows = (await api.get('addons.list', { date_from: from, date_to: to })).addons || []; } catch (err) { addonRows = []; }
+  }
+  const adNm = (s) => String(s == null ? '' : s).replace(/^#/, '').trim().toLowerCase();
+  const adHouse = (o) => effHouse(o, pending[key(o)] || {});
+  const adDate = (o) => o.biz_date || String(o.created_at || '').slice(0, 10);
+  // One add-on = the products saved together (they share an addon_group and one price).
+  function adGroups(o) {
+    const h = adHouse(o), g = {}, ord = [];
+    addonRows.filter(a => adNm(a.order_name) === adNm(o.order_name) && (!a.group_key || !h || a.group_key === h)).forEach(a => {
+      const k = a.addon_group || ('single-' + a.addon_id);
+      if (!g[k]) { g[k] = { key: k, addon_id: a.addon_id, price: 0, items: [] }; ord.push(k); }
+      g[k].price += Number(a.price); g[k].items.push(a);
+    });
+    return ord.map(k => g[k]);
+  }
+  // Add-on money and products also show on the order itself: Total = order amount + add-on (₹2,000 + ₹3,000 = ₹5,000),
+  // and the add-on products are listed under the order's Items.
+  const addonSum = (o) => adGroups(o).reduce((t, x) => t + x.price, 0);
+  // ML column: "180 ml +10 ml extra = 190 ml" and the ML price slab % · ₹ (before the daily-target check — the Commission page
+  // caps it at the slab's limit on a day the target is not complete). MySales orders have no product sizes: "—".
+  let ML_CHART = null;
+  api.get('ml_slab.get').then((d) => { ML_CHART = d && d.chart ? d.chart : null; if (ML_CHART && orders && orders.length) try { render(); } catch (e) {} }).catch(() => {});
+  const MLSLAB_ok = (o) => !!(window.MLSLAB && MLSLAB.parts(o));
+  function mlCell(o) {
+    const m = window.MLSLAB ? MLSLAB.parts(o) : null;
+    if (!m) return '<span class="sub">—</span>';
+    const top = `<span class="mlv">${m.base} ml${m.extra ? ` <span class="mlx">+${m.extra} ml free</span> <span class="mlt">= ${m.total} ml</span>` : ''}</span>`;
+    if (!ML_CHART || !m.total) return top;
+    const r = MLSLAB.orderCom(MLSLAB.preview(ML_CHART), { ml: m.total, day: o.biz_date || '', emp: o.employee_id, amt: Number(o.total || 0), pre: MLSLAB.isPre(o.financial_status), code: o.code || '' }, null);      // daily target not known here: chart % only (+ bonus on the Commission page when achieved)
+    if (!r) return top + `<div class="mln">${!MLSLAB.activeOn(ML_CHART, o.biz_date) ? 'ML slab not active on this date' : m.total + ' ml not in chart'} · normal commission</div>`;
+    const tip = r.steps.join(' · ') + (MLSLAB.on(ML_CHART) ? '' : ' · (ML price slab is OFF — preview only)') + (Number(r.bonusPct) > 0 ? ' · daily target achieved → +' + r.bonusPct + '% bonus on the Commission page' : '') + (r.special ? ' · 📅 special day: ' + r.special.join(', ') : '');
+    return top + `<div><span class="mlp ${r.pct < 2 ? 'lo' : r.pct >= 6 ? 'hi' : ''}" title="${esc(tip)}">${Math.round(r.pct * 100) / 100}% · ${inr(Math.round(r.v))}</span></div>` + mlXLine(o);
+  }
+  // Extra ML by price: chart price ÷ ML = price of 1 ml; price paid ÷ that = ML paid for; the rest of the box was given extra.
+  // Type = Campaign (picked or saved): the campaign price is the set price → 0, not counted. Re-drawn when the Type changes.
+  function mlXLine(o) {
+    const m = window.MLSLAB ? MLSLAB.parts(o) : null;
+    if (!m || !m.total || !ML_CHART) return '';
+    const pre = MLSLAB.isPre(o.financial_status), x = MLSLAB.extraByPrice(ML_CHART, m.total, Number(o.total || 0), pre);
+    if (!x) return '';
+    if (effType(o, pending[key(o)] || {}) === 'campaign') return '<div class="mlz mlxl" title="Campaign price is the set price — extra ML not counted">0 ml extra · campaign</div>';
+    const r1 = (v) => Math.round(v * 10) / 10;
+    return x.extra > 0.05
+      ? `<div class="mle mlxl" title="${esc('Chart ' + inr(x.chart) + ' ÷ ' + m.total + ' ml = ₹' + x.per.toFixed(2) + ' per ml · ' + inr(Math.round(x.look)) + (pre ? ' (prepaid, before the discount)' : '') + ' pays for ' + r1(x.paid) + ' ml')}">${r1(x.extra)} ml extra · ${inr(Math.round(x.value))}</div>`
+      : '<div class="mlz mlxl">0 ml extra</div>';
+  }
+  function totalCell(o) {
+    const ad = addonSum(o);
+    if (!(ad > 0)) return `<b>${inr(o.total)}</b>`;
+    return `<b>${inr(Number(o.total || 0) + ad)}</b><div class="ad-tot" title="Order amount + add-on">${inr(o.total)} + ${inr(ad)} add-on</div>`;
+  }
+  function addonItemsLine(o) {
+    const its = adGroups(o).flatMap(x => x.items);
+    if (!its.length) return '';
+    return `<div class="ad-items" title="Add-on products">+ ${its.map(it => `${esc(it.product_name)}${it.size_ml ? ' ' + esc(it.size_ml) + (/ml/i.test(it.size_ml) ? '' : ' ML') : ''}${Number(it.qty) > 1 ? ' ×' + Number(it.qty) : ''}`).join(', ')}</div>`;
+  }
+  function addonCell(o) {
+    const g = adGroups(o);
+    const sum = g.length ? `<a href="#" class="ad-sum" onclick="showAddons('${key(o)}'); return false;" title="View add-ons">${inr(g.reduce((t, x) => t + x.price, 0))} <span>· ${g.length}</span></a>` : '';
+    const add = o.cancelled ? '' : `<button type="button" class="ad-add" onclick="openAddon('${key(o)}')">+ Add</button>`;
+    return `<div class="ad-wrap">${sum}${add}${sum || add ? '' : '<span class="sub">—</span>'}</div>`;
+  }
+  function addonItemRow() {
+    return `<div class="addon-item" style="display:grid; grid-template-columns:1fr 92px 58px 30px; gap:8px; margin-bottom:7px;">
+      <input type="text" class="ad-in ad-name" placeholder="Product name">
+      <input type="text" class="ad-in ad-size" placeholder="">
+      <input type="number" class="ad-in ad-qty" value="1" min="1" style="padding:8px 6px; text-align:center;">
+      <button type="button" onclick="this.closest('.addon-item').remove(); recalcAddonTotal();" title="Remove this product"
+        style="width:30px; height:34px; padding:0; border:1px solid var(--line); border-radius:6px; background:#fff; color:var(--bad-fg); cursor:pointer; font-size:14px; min-height:0;">&times;</button>
+    </div>`;
+  }
+  window.recalcAddonTotal = function () {
+    const named = [...document.querySelectorAll('#addonItems .addon-item')].filter(r => r.querySelector('.ad-name').value.trim()).length;
+    document.getElementById('addonCovers').textContent = named === 0 ? 'for the products above' : `for ${named} product${named === 1 ? '' : 's'} above`;
+    const price = Number(document.getElementById('addonPrice').value || 0);
+    const o = orders.find(x => key(x) === addonKey), base = o ? Number(o.total || 0) + addonSum(o) : 0;     // the order amount (with any add-on saved before)
+    document.getElementById('addonTotal').innerHTML = o
+      ? `${inr(base)} + ${inr(price > 0 ? price : 0)} = <b style="color:#0f7a41; font-size:15px;">${inr(base + (price > 0 ? price : 0))}</b>`
+      : (price > 0 ? inr(price) : '₹0');
+  };
+  let addonKey = '';
+  window.openAddon = function (k) {
+    const o = orders.find(x => key(x) === k);
+    if (!o || IS_EMP) return;
+    const emp = effEmp(o, pending[k] || {});
+    if (!(emp > 0)) { showAlert(isDirect(o, pending[k] || {}) ? 'A direct order has no employee for an add-on.' : 'Choose the employee first, then add the add-on.', 'error'); return; }
+    const e = empById(emp), h = adHouse(o);
+    addonKey = k;
+    document.getElementById('addonTitle').textContent = 'Add-on for ' + (e ? e.name : 'employee');
+    document.getElementById('addonSub').textContent = new Date(adDate(o) + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' }) + (h ? ' · ' + (HOUSES[h] || h) : '');
+    document.getElementById('addonOrder').value = o.order_name || '';
+    document.getElementById('addonItems').innerHTML = addonItemRow() + addonItemRow();
+    document.getElementById('addonPrice').value = '';
+    document.getElementById('addonModalAlert').innerHTML = '';
+    recalcAddonTotal();      // addonKey is set, so this shows "order + add-on = new total"
+    document.getElementById('addonModal').classList.add('open');
+  };
+  const closeAddon = () => document.getElementById('addonModal').classList.remove('open');
+  window.showAddons = function (k) {
+    const o = orders.find(x => key(x) === k);
+    if (!o) return;
+    const g = adGroups(o);
+    document.getElementById('addonListTitle').textContent = (o.order_name || '') + ' · add-ons';
+    document.getElementById('addonListSub').textContent = `${g.length} add-on${g.length === 1 ? '' : 's'} · ${inr(g.reduce((t, x) => t + x.price, 0))}`;
+    document.getElementById('addonListBody').innerHTML = g.length ? g.map(x => `<div style="padding:9px 0; border-bottom:1px solid var(--line);">
+        <div style="display:flex; justify-content:space-between; align-items:baseline; gap:10px;">
+          <span style="color:var(--accent); font-size:12.5px;">${esc((x.items[0] || {}).created_by || '')}</span>
+          <span style="display:flex; align-items:center; gap:10px;">
+            <b style="font-size:13px;">${inr(x.price)}</b>
+            <button type="button" onclick="deleteAddon('${esc(x.key)}', ${Number(x.addon_id)})" title="Remove this add-on" style="background:none; border:none; cursor:pointer; color:var(--bad-fg); font-size:14px; padding:0; min-height:0;">&times;</button>
+          </span>
+        </div>
+        <div style="font-size:12px; color:var(--muted); margin-top:3px;">${x.items.map(it => `${esc(it.product_name)}${it.size_ml ? ' ' + esc(it.size_ml) + ' ML' : ''}${Number(it.qty) > 1 ? ' ×' + Number(it.qty) : ''}`).join(' · ')}</div>
+      </div>`).join('') : '<div class="empty-state" style="padding:20px;">No add-ons for this order.</div>';
+    document.getElementById('addonListModal').classList.add('open');
+  };
+  window.deleteAddon = async function (groupKey, fallbackId) {
+    if (!confirm('Remove this add-on and all its products?')) return;
+    try {
+      await api.post('addons.delete', String(groupKey).startsWith('single-') ? { addon_id: fallbackId } : { addon_group: groupKey });
+      await loadAddons(document.getElementById('dateFrom').value, document.getElementById('dateTo').value);
+      document.getElementById('addonListModal').classList.remove('open');
+      render();
+      showAlert('Add-on removed.');
+    } catch (err) { showAlert(err.message, 'error'); }
+  };
+  document.getElementById('btnAddonAddRow').addEventListener('click', () => document.getElementById('addonItems').insertAdjacentHTML('beforeend', addonItemRow()));
+  document.getElementById('btnAddonCancel').addEventListener('click', closeAddon);
+  document.getElementById('addonModal').addEventListener('click', (e) => { if (e.target.id === 'addonModal') closeAddon(); });
+  document.getElementById('btnAddonListClose').addEventListener('click', () => document.getElementById('addonListModal').classList.remove('open'));
+  document.getElementById('addonListModal').addEventListener('click', (e) => { if (e.target.id === 'addonListModal') e.currentTarget.classList.remove('open'); });
+  document.getElementById('addonItems').addEventListener('input', (e) => { if (e.target.classList.contains('ad-name')) recalcAddonTotal(); });
+  document.getElementById('addonPrice').addEventListener('input', recalcAddonTotal);
+  document.getElementById('btnAddonSave').addEventListener('click', async () => {
+    const box = document.getElementById('addonModalAlert');
+    const o = orders.find(x => key(x) === addonKey);
+    if (!o || IS_EMP) return;
+    const items = [];
+    document.querySelectorAll('#addonItems .addon-item').forEach(row => {
+      const name = row.querySelector('.ad-name').value.trim();
+      if (!name) return;   // blank spare rows are ignored
+      items.push({ product_name: name, size_ml: row.querySelector('.ad-size').value.trim(), qty: Math.max(1, Number(row.querySelector('.ad-qty').value || 1)) });
+    });
+    if (!items.length) { box.innerHTML = '<div class="alert error">Enter at least one product name.</div>'; return; }
+    const totalPrice = Number(document.getElementById('addonPrice').value || 0);
+    if (!(totalPrice > 0)) { box.innerHTML = '<div class="alert error">Enter the total add-on price.</div>'; return; }
+    const btn = document.getElementById('btnAddonSave');
+    btn.disabled = true;
+    try {
+      const d = await api.post('addons.save', { employee_id: effEmp(o, pending[addonKey] || {}), date: adDate(o), group_key: adHouse(o) || '', order_name: o.order_name, total_price: totalPrice, items });
+      closeAddon();
+      showAlert(d.message || 'Add-on saved.');
+      await loadAddons(document.getElementById('dateFrom').value, document.getElementById('dateTo').value);
+      render();
+    } catch (err) { box.innerHTML = `<div class="alert error">${esc(err.message)}</div>`; }
+    finally { btn.disabled = false; }
+  });
+
+  // A fixed menu must not float away from its input when the page scrolls.
+  ['scroll', 'resize'].forEach(ev => window.addEventListener(ev, () => document.querySelectorAll('.emp-menu.open').forEach(m => m.classList.remove('open')), true));
+
+  // ---------- Sales employee login: my order codes (how many of MY allocated orders have a code) ----------
+  const MY_EMP = Number((api.currentUser() || {}).employee_id) || 0;
+  function renderMyCodes() {
+    const box = document.getElementById('myCodes');
+    if (!IS_EMP || !MY_EMP) { box.hidden = true; return; }
+    const mine = orders.filter(o => !o.cancelled && o.allocated && !o.allocated_direct && Number(o.employee_id) === MY_EMP);
+    const withCode = mine.filter(o => String(o.code || '').trim() !== ''), miss = mine.filter(o => String(o.code || '').trim() === '');
+    const n = mine.length, c = withCode.length, pc = n ? Math.round(c / n * 100) : 0;
+    const f = document.getElementById('dateFrom').value, t = document.getElementById('dateTo').value;
+    const fmt = (d) => new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+    const today = new Date(), td = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+    const when = f === t ? (f === td ? 'today' : fmt(f)) : fmt(f) + ' – ' + fmt(t);
+    box.innerHTML = `<div class="mc-top"><div class="mc-ring${n && pc < 50 ? ' low' : ''}" style="background:conic-gradient(${n ? '#1D9E75' : '#e5e7eb'} ${pc}%, ${n ? '#fde9c7' : '#e5e7eb'} 0);"><span>${n ? pc + '%' : '—'}</span></div>` +
+      `<div><div class="mc-t1">My order codes · ${esc(when)}</div>` +
+      (n ? `<div class="mc-t2"><b>${c}</b> of <b>${n}</b> order${n === 1 ? '' : 's'} ${n === 1 ? 'has' : 'have'} a code</div><div class="mc-t3">${miss.length ? miss.length + ' order' + (miss.length === 1 ? '' : 's') + ' still need' + (miss.length === 1 ? 's' : '') + ' a code' : 'Every order has a code ✓'}</div>`
+         : `<div class="mc-t2">No orders allocated to you yet</div><div class="mc-t3">Once an order is allocated to you it counts here.</div>`) + `</div></div>` +
+      `<div class="mc-tiles"><div class="mc-tl a"><b>${n}</b><small>My orders</small></div><div class="mc-tl b"><b>${c}</b><small>With code${n ? ' · ' + pc + '%' : ''}</small></div><div class="mc-tl c"><b>${miss.length}</b><small>No code${n ? ' · ' + (100 - pc) + '%' : ''}</small></div></div>` +
+      (miss.length ? `<div class="mc-miss"><div class="h">Add a code to these orders</div>${miss.map(o => `<button type="button" class="mc-chip" data-mck="${esc(key(o))}">${esc(o.order_name)}</button>`).join('')}<div class="mc-goal">Click an order number to jump to its row and type the code.</div></div>`
+        : (n ? '<div class="mc-ok">All your orders have a code ✓</div>' : ''));
+    box.hidden = false;
+  }
+  document.getElementById('myCodes').addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-mck]'); if (!b) return;
+    const o = orders.find(x => key(x) === b.dataset.mck); if (!o) return;
+    filter = 'done'; limit = PAGE;
+    document.getElementById('search').value = o.order_name;
+    ['sourceFilter', 'panelFilter', 'typeFilter'].forEach(id => { document.getElementById(id).value = ''; });
+    render();
+    const row = document.querySelector(`#tbody tr[data-k="${CSS.escape(key(o))}"]`);
+    if (row) {
+      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      row.classList.add('mc-hl'); setTimeout(() => row.classList.remove('mc-hl'), 2500);
+      const inp = row.querySelector('.code-in:not([disabled])'); if (inp) setTimeout(() => inp.focus(), 350);
+    }
+  });
+
+  function render() {
+    renderMyCodes();
+    const shown = orders.filter(matches);
+    renderColorTotals(shown);
+    const live = orders.filter(o => !o.cancelled);
+    const done = live.filter(o => o.allocated).length;
+    document.getElementById('cntPending').textContent = live.length - done;
+    if (window.HRMS_EMBED) try { parent.postMessage({ hrms: 'alloc', t: 'count', n: live.length - done }, location.origin); } catch (e) { /* no parent */ }
+    document.getElementById('cntDone').textContent = done;
+    document.getElementById('cntAll').textContent = live.length;
+    document.getElementById('cntCancelled').textContent = orders.length - live.length;
+    document.getElementById('cntDirect').textContent = live.filter(o => o.allocated_direct).length;
+    document.querySelectorAll('.pill').forEach(p => p.classList.toggle('on', p.dataset.f === filter));
+    const tbody = document.getElementById('tbody');
+    if (!shown.length) {
+      tbody.innerHTML = `<tr><td colspan="${NCOL}" class="empty-state">${orders.length ? (filter === 'pending' ? 'Every order for these dates is allocated ✓' : (filter === 'cancelled' ? 'No cancelled orders.' : (filter === 'direct' ? 'No direct orders for these dates.' : 'No matching orders.'))) : 'No orders for these dates.'}</td></tr>`;
+      document.getElementById('shownCount').textContent = '';
+      document.getElementById('btnMore').style.display = 'none';
+    } else {
+      const n = Math.min(limit, shown.length);
+      tbody.innerHTML = shown.slice(0, n).map(rowHtml).join('');
+      tbody.querySelectorAll('.emp-pick').forEach(initEmpPick);
+      document.getElementById('shownCount').textContent = `Showing ${n} of ${shown.length}`;
+      document.getElementById('btnMore').style.display = n >= shown.length ? 'none' : 'inline-block';
+    }
+  }
+
+  // ---- Admin: which departments' employees may open this page (Employee-role logins; Admin / HR / other roles keep their Roles-page access)
+  (function () {
+    if (String((api.currentUser() || {}).role || '') !== 'Admin') return;
+    const pick = document.getElementById('accPick'), btn = document.getElementById('accBtn'), menu = document.getElementById('accMenu');
+    let depts = [], sel = new Set(), defaults = [], ready = false;
+    const nm = (n) => n === '' ? 'No department' : n;
+    const label = () => { btn.textContent = 'Employee access · ' + (sel.size === 0 ? 'nobody' : sel.size === 1 ? [...sel].map(nm)[0] : sel.size + ' departments'); btn.title = sel.size ? 'Employees who can open this page: ' + [...sel].map(nm).join(', ') : 'No Employee-role login can open this page'; };
+    const html = () => `
+      <h4>Who can open this page</h4>
+      <div class="note">Employees in the ticked departments only. Everyone else does not see Order Allocation at all. Admin, HR and other roles are not affected.</div>
+      <div class="list">${depts.map(d => `<label><input type="checkbox" value="${esc(d.name)}"${sel.has(d.name) ? ' checked' : ''}><span>${esc(nm(d.name))}</span><small>${d.count}</small></label>`).join('') || '<div class="sub" style="padding:8px;">No departments</div>'}</div>
+      <div class="foot">${defaults.length ? '<button type="button" class="link" data-a="sales">Sales team</button>' : ''}<button type="button" class="btn save" data-a="save">Save</button></div>`;
+    api.get('allocation.access_get').then((d) => {
+      depts = d.departments || []; defaults = d.default_departments || [];
+      sel = new Set(d.selected || []); ready = true; label(); pick.style.display = '';
+    }).catch(() => {});
+    btn.addEventListener('click', (ev) => { ev.stopPropagation(); if (ready && menu.classList.toggle('open')) menu.innerHTML = html(); });
+    menu.addEventListener('click', async (ev) => {
+      ev.stopPropagation();
+      const b = ev.target.closest('button[data-a]');
+      if (!b) return;
+      if (b.dataset.a === 'sales') { sel = new Set(defaults); menu.innerHTML = html(); return; }
+      b.disabled = true;
+      try {
+        await api.post('allocation.access_set', { departments: [...sel] });
+        label(); menu.classList.remove('open');
+        showAlert(sel.size ? 'Saved — only employees in ' + [...sel].map(nm).map(esc).join(', ') + ' can open Order Allocation.' : 'Saved — no Employee-role login can open Order Allocation.');
+      } catch (err) { b.disabled = false; showAlert(err.message, 'error'); }
+    });
+    menu.addEventListener('change', (ev) => { const c = ev.target.closest('input[type=checkbox]'); if (!c) return; if (c.checked) sel.add(c.value); else sel.delete(c.value); });
+    document.addEventListener('click', () => menu.classList.remove('open'));
+    document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') menu.classList.remove('open'); });
+  })();
+
+
+  // ---- Admin (or any role ticked "Order Code Lock"): how long after allocation an Employee login may add or change an order's code — ONE of: Off, N hours, or until a selected time
+  (function () {
+    // Shown only to Admin and to roles ticked for "Order Code Lock" on the Roles page (the server enforces it too).
+    const pick = document.getElementById('lkPick'), btn = document.getElementById('lkBtn'), menu = document.getElementById('lkMenu');
+    let cfg = { mode: 'off', hours: 6, time: '18:00' }, draft = null, ready = false;
+    const tl = (hm) => { const [h, m] = String(hm || '').split(':').map(Number); return (((h + 11) % 12) + 1) + ':' + String(m || 0).padStart(2, '0') + ' ' + (h >= 12 ? 'PM' : 'AM'); };
+    const label = () => {
+      btn.textContent = 'Code lock · ' + (cfg.mode === 'hours' ? cfg.hours + ' h' : cfg.mode === 'time' ? 'till ' + tl(cfg.time) : 'off');
+      btn.title = cfg.mode === 'hours' ? 'Employees can add or change a code for ' + cfg.hours + ' hour(s) after the order is allocated'
+        : cfg.mode === 'time' ? 'Employees can add or change a code until ' + tl(cfg.time) + ' after the order is allocated' : 'No time limit on adding codes';
+    };
+    const TIMES = [['10:00', '10 AM'], ['14:00', '2 PM'], ['18:00', '6 PM'], ['20:00', '8 PM'], ['23:59', '11:59 PM']];
+    const html = () => `
+      <h4>Order code lock</h4>
+      <div class="note">Choose <b>one</b> rule. Applies to Employee logins only — after the limit the code box is locked and only Admin / HR can change it.</div>
+      <label class="lk-opt${draft.mode === 'off' ? ' on' : ''}"><input type="radio" name="lkm" value="off"${draft.mode === 'off' ? ' checked' : ''}><span><b>Off</b><small>No time limit</small></span></label>
+      <label class="lk-opt${draft.mode === 'hours' ? ' on' : ''}"><input type="radio" name="lkm" value="hours"${draft.mode === 'hours' ? ' checked' : ''}><span><b>Hours after allocation</b><small>Locks N hours after the order is allocated</small></span></label>
+      <div class="lk-row" data-for="hours"><input type="number" id="lkHrs" min="0.5" max="720" step="0.5" value="${draft.hours}" inputmode="decimal"><span>hours</span>${[1, 2, 6, 12, 24].map(h => `<button type="button" class="chip${Number(draft.hours) === h ? ' on' : ''}" data-h="${h}">${h} h</button>`).join('')}</div>
+      <label class="lk-opt${draft.mode === 'time' ? ' on' : ''}"><input type="radio" name="lkm" value="time"${draft.mode === 'time' ? ' checked' : ''}><span><b>Until a selected time</b><small>Locks at that clock time after allocation (if it is already past, the next day's)</small></span></label>
+      <div class="lk-row" data-for="time"><input type="time" id="lkTime" value="${draft.time}">${TIMES.map(([v, l]) => `<button type="button" class="chip${draft.time === v ? ' on' : ''}" data-t="${v}">${l}</button>`).join('')}</div>
+      <div class="foot"><button type="button" class="btn save" data-a="save">Save</button></div>`;
+    const draw = () => { menu.innerHTML = html(); menu.querySelectorAll('.lk-row').forEach(r => r.style.display = r.dataset.for === draft.mode ? '' : 'none'); };
+    api.get('me.flags').then((f) => {
+      if (!(f.permissions || []).includes('order_code_lock')) return null;
+      return api.get('order_codes.lock_get');
+    }).then((d) => { if (!d) return; cfg = { mode: d.mode || 'off', hours: Number(d.hours) || 6, time: d.time || '18:00' }; ready = true; label(); pick.style.display = ''; }).catch(() => {});
+    btn.addEventListener('click', (ev) => { ev.stopPropagation(); if (!ready) return; if (menu.classList.toggle('open')) { draft = Object.assign({}, cfg); draw(); } });
+    menu.addEventListener('change', (ev) => {
+      if (ev.target.name === 'lkm') { draft.mode = ev.target.value; draw(); }
+    });
+    menu.addEventListener('click', async (ev) => {
+      ev.stopPropagation();
+      const c = ev.target.closest('.chip');
+      if (c) { if (c.dataset.h) { draft.hours = Number(c.dataset.h); } else { draft.time = c.dataset.t; } draw(); return; }
+      const b = ev.target.closest('button[data-a="save"]'); if (!b) return;
+      const hrs = Number((menu.querySelector('#lkHrs') || {}).value), tm = (menu.querySelector('#lkTime') || {}).value;
+      const body = { mode: draft.mode, hours: draft.mode === 'hours' ? hrs : draft.hours, time: draft.mode === 'time' ? tm : draft.time };
+      if (draft.mode === 'hours' && !(hrs > 0 && hrs <= 720)) { showAlert('Type the hours (0.5 to 720), or choose Off.', 'error'); return; }
+      if (draft.mode === 'time' && !tm) { showAlert('Pick the time.', 'error'); return; }
+      b.disabled = true;
+      try { const r = await api.post('order_codes.lock_set', body); cfg = { mode: r.mode, hours: Number(r.hours) || cfg.hours, time: r.time || cfg.time }; label(); menu.classList.remove('open'); showAlert(r.message || 'Saved.'); }
+      catch (err) { b.disabled = false; showAlert(err.message, 'error'); }
+    });
+    menu.addEventListener('input', (ev) => { if (ev.target.id === 'lkHrs') draft.hours = Number(ev.target.value) || draft.hours; if (ev.target.id === 'lkTime' && ev.target.value) draft.time = ev.target.value; });
+    document.addEventListener('click', () => menu.classList.remove('open'));
+    document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') menu.classList.remove('open'); });
+  })();
+
+  // ---- searchable employee dropdown, grouped panel-wise
+  function empMenuHtml(q) {
+    q = (q || '').toLowerCase().trim();
+    const hit = (e) => !q || e.name.toLowerCase().includes(q) || String(e.code || '').toLowerCase().includes(q);
+    const opt = (e) => `<div class="opt" data-id="${e.id}"><span>${esc(e.name)}</span><small>${esc(e.code || '')}</small></div>`;
+    let html = (!q || 'direct order'.includes(q)) ? `<div class="opt direct" data-id="${DIRECT}"><span>⚡ Direct order</span><small>no employee</small></div>` : '';
+    Object.keys(HOUSES).forEach(h => {
+      const rows = EMPS.filter(e => (e.groups || []).includes(h) && hit(e));
+      if (rows.length) html += `<div class="grp">${esc(HOUSES[h])}</div>` + rows.map(opt).join('');
+    });
+    const other = EMPS.filter(e => !(e.groups || []).some(g => HOUSES[g]) && hit(e));
+    if (other.length) html += `<div class="grp">Other employees</div>` + other.map(opt).join('');
+    return html || '<div class="none">No employee matches</div>';
+  }
+
+  function initEmpPick(box) {
+    const k = box.dataset.k, inp = box.querySelector('input'), menu = box.querySelector('.emp-menu');
+    // The menu is fixed-positioned under its input so the card's sideways
+    // scroll area never clips it.
+    const place = () => {
+      const r = inp.getBoundingClientRect(), vw = window.innerWidth, vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+      const w = Math.min(Math.max(r.width, 220), vw - 16), below = vh - r.bottom - 8, above = r.top - 8, up = below < 180 && above > below;   // phones: stay inside the screen, open upward when there is no room below
+      menu.style.left = Math.max(8, Math.min(r.left, vw - w - 8)) + 'px'; menu.style.width = w + 'px';
+      menu.style.maxHeight = Math.max(120, Math.min(280, up ? above : below)) + 'px';
+      if (up) { menu.style.top = 'auto'; menu.style.bottom = (vh - r.top + 4) + 'px'; } else { menu.style.bottom = 'auto'; menu.style.top = (r.bottom + 4) + 'px'; }
+    };
+    const curName = () => (Number(inp.dataset.id) === DIRECT ? 'Direct order' : (empById(inp.dataset.id) || {}).name);
+    const open = () => { menu.innerHTML = empMenuHtml(inp.value === curName() ? '' : inp.value); place(); menu.classList.add('open'); };
+    inp.addEventListener('focus', () => { inp.select(); open(); });
+    inp.addEventListener('input', () => { inp.dataset.id = ''; menu.innerHTML = empMenuHtml(inp.value); place(); menu.classList.add('open'); });
+    inp.addEventListener('keydown', (e) => {
+      const opts = [...menu.querySelectorAll('.opt')];
+      let i = opts.findIndex(o => o.classList.contains('hl'));
+      if (e.key === 'ArrowDown') { e.preventDefault(); i = Math.min(opts.length - 1, i + 1); opts.forEach(o => o.classList.remove('hl')); if (opts[i]) { opts[i].classList.add('hl'); opts[i].scrollIntoView({ block: 'nearest' }); } }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); i = Math.max(0, i - 1); opts.forEach(o => o.classList.remove('hl')); if (opts[i]) { opts[i].classList.add('hl'); opts[i].scrollIntoView({ block: 'nearest' }); } }
+      else if (e.key === 'Enter') { e.preventDefault(); const o = opts[i] || opts.find(x => !x.classList.contains('direct')) || opts[0]; if (o) choose(o.dataset.id); }
+      else if (e.key === 'Escape') { menu.classList.remove('open'); inp.blur(); }
+    });
+    menu.addEventListener('mousedown', (e) => { const o = e.target.closest('.opt'); if (!o) return; e.preventDefault(); choose(o.dataset.id); });
+    inp.addEventListener('blur', () => setTimeout(() => {
+      menu.classList.remove('open');
+      // Typed text that wasn't picked: fall back to the last chosen employee (or Direct order).
+      if (Number(inp.dataset.id) === DIRECT) { inp.value = 'Direct order'; return; }
+      const e = empById(inp.dataset.id);
+      inp.value = e ? e.name : '';
+      if (!e) { pend(k).emp = 0; refreshOk(k); }
+    }, 120));
+    function choose(id) {
+      const dir = Number(id) === DIRECT;
+      const e = dir ? null : empById(id);
+      if (!dir && !e) return;
+      inp.value = dir ? 'Direct order' : e.name; inp.dataset.id = dir ? DIRECT : e.id; inp.classList.add('changed'); inp.classList.toggle('direct', dir);
+      menu.classList.remove('open');
+      pend(k).emp = dir ? DIRECT : e.id;
+      const sub = inp.closest('td').querySelector('.sub'); if (sub) sub.textContent = dir ? 'Direct order — no employee' : '';
+      refreshOk(k);
+      inp.blur();
+    }
+  }
+
+  function refreshOk(k) {
+    const tr = document.querySelector(`tr[data-k="${k}"]`);
+    const o = orders.find(x => key(x) === k);
+    if (!tr || !o) return;
+    const p = pending[k] || {};
+    const ok = tr.querySelector('.ok-btn');
+    if (ok) {
+      const needType = IS_EMP && !effType(o, p);      // Employee role: Type (Query / Campaign) is required too
+      ok.disabled = !(effHouse(o, p) && effEmp(o, p)) || needType;
+      ok.title = !ok.disabled ? 'Confirm' : (needType && effHouse(o, p) && effEmp(o, p) ? 'Choose the Type (Query / Campaign) first' : 'Choose employee (or Direct order)' + (IS_EMP ? ', type' : '') + ' and panel first');
+    }
+    // Stars unlock as soon as an employee is chosen.
+    const rs = tr.querySelector('.rs');
+    if (rs) { const off = !(effEmp(o, p) > 0); rs.classList.toggle('off', off); rs.title = off ? noEmpMsg(o, p) : (RATE_WORDS[Number(rs.dataset.val)] || ''); }
+  }
+
+  window.pickType = function (k, t) {
+    pend(k).type = t || '';
+    const tr = document.querySelector(`tr[data-k="${k}"]`);
+    if (tr) tr.querySelectorAll('select.sel')[0].classList.toggle('changed', !!t);
+    const o = orders.find(x => key(x) === k);
+    if (o) document.querySelectorAll(`tr[data-k="${k}"] .mlxl`).forEach(el => { el.outerHTML = mlXLine(o) || '<span></span>'; });
+    refreshOk(k);
+  };
+
+  window.pickHouse = function (k, house) {
+    pend(k).house = house || '';
+    const tr = document.querySelector(`tr[data-k="${k}"]`);
+    if (tr) tr.querySelectorAll('select.sel')[1].classList.toggle('changed', !!house);
+    refreshOk(k);
+  };
+
+  window.confirmAlloc = async function (k, btn) {
+    const o = orders.find(x => key(x) === k);
+    if (!o) return;
+    const p = pending[k] || {};
+    const emp = effEmp(o, p), house = effHouse(o, p);
+    if (!house || !emp) return;
+    if (IS_EMP && !effType(o, p)) { showAlert('Choose the Type (Query / Campaign) first.', 'error'); return; }
+    btn.disabled = true;
+    const wasMine = !!o.allocated && !o.allocated_direct && Number(o.employee_id) === MY_EMP;     // re-saving my own order = no celebration again
+    try {
+      const type = effType(o, p);
+      const dir = emp === DIRECT;
+      const body = { source: o.store_key, order_id: String(o.id), house, order_type: type, employee_id: dir ? 0 : emp, direct: dir ? 1 : 0 };
+      const d = await api.post('allocation.set', body);          // (no chat-screenshot / call-recording proof is asked for any more — ended on 1 Nov 2026)
+      const e = dir ? null : empById(emp);
+      o.allocated = 1; o.allocated_house = house; o.house = house; o.order_type = type;
+      o.allocated_direct = dir ? 1 : 0;
+      o.allocated_emp = dir ? 0 : emp; o.employee_id = dir ? 0 : emp; o.salesman = dir ? '' : (d.employee_name || (e ? e.name : o.salesman)); o.employee_code = e ? e.code : (dir ? '' : o.employee_code);
+      o.allocated_by = d.allocated_by; o.allocated_at = d.allocated_at;
+      o.store_src = o.store_src || o.store; o.store = HOUSES[house];
+      delete pending[k];
+      showAlert(d.message, 'success');
+      render();
+      if (window.HRMS_EMBED) try { parent.postMessage({ hrms: 'alloc', t: 'allocated' }, location.origin); } catch (e) { /* no parent */ }
+      // Sales employee allocating to themselves: 🎯 arrow + ₹ coin rain with today's target (see allocCelebrate below).
+      if (IS_EMP && !dir && MY_EMP && Number(emp) === MY_EMP && !wasMine && window.allocCelebrate) window.allocCelebrate(o);
+    } catch (err) {
+      btn.disabled = false;
+      showAlert(err.message, 'error');
+    }
+  };
+
+  window.cancelOrder = async function (k, cancel, btn) {
+    const o = orders.find(x => key(x) === k);
+    if (!o) return;
+    btn.disabled = true;
+    try {
+      const d = await api.post('orders.cancel', { source: o.store_key, order_id: String(o.id), order_name: o.order_name, cancel: cancel ? 1 : 0 });
+      o.cancelled = cancel ? { by: d.by || '', at: d.at || '' } : null;
+      showAlert(d.message);
+      render();
+    } catch (err) {
+      btn.disabled = false;
+      showAlert(err.message, 'error');
+    }
+  };
+
+  window.undoAlloc = async function (k, btn) {
+    const o = orders.find(x => key(x) === k);
+    if (!o) return;
+    if (!confirm(`Remove the allocation of ${o.order_name}?`)) return;
+    btn.disabled = true;
+    try {
+      const d = await api.post('allocation.set', { source: o.store_key, order_id: String(o.id), house: '' });
+      showAlert(d.message);
+      await load();   // re-read: employee / panel go back to what the order itself says
+    } catch (err) {
+      btn.disabled = false;
+      showAlert(err.message, 'error');
+    }
+  };
+
+  function fillFilters() {
+    const sf = document.getElementById('sourceFilter'), pf = document.getElementById('panelFilter');
+    const sv = sf.value, pv = pf.value;
+    sf.innerHTML = '<option value="">All sources</option>' + Object.entries(SOURCES).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('');
+    pf.innerHTML = '<option value="">All panels</option>' + Object.entries(HOUSES).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('');
+    sf.value = sv; pf.value = pv;
+  }
+
+  async function load() {
+    const from = document.getElementById('dateFrom').value, to = document.getElementById('dateTo').value;
+    if (!from || !to) return;
+    if (from > to) { showAlert('"From" date must be before "To" date.', 'error'); return; }
+    const fmt = (d) => new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' });
+    // The window shown: from the first day's start time to the next day's start time after the last day (default 10 AM → next day 10 AM).
+    const endD = new Date(to + 'T00:00:00'); endD.setDate(endD.getDate() + 1);
+    const startAt = (d) => fmtHM(DAY_START[new Date(d + 'T00:00:00').getDay()]);
+    document.getElementById('cardTitle').textContent = 'Orders — ' + fmt(from) + ', ' + startAt(from) + ' → ' + fmt(ymd(endD)) + ', ' + startAt(ymd(endD));
+    document.getElementById('tbody').innerHTML = `<tr><td colspan="${NCOL}" class="loading">Loading...</td></tr>`;
+    try {
+      let d;
+      try { d = await api.get('allocation.list', { date_from: from, date_to: to }); }
+      catch (e1) {                                                   // a dropped connection on a long range: try once more before showing an error
+        if (!/fetch|network|load failed/i.test(e1.message || '')) throw e1;
+        document.getElementById('tbody').innerHTML = `<tr><td colspan="${NCOL}" class="loading">Still loading (long date range)…</td></tr>`;
+        await new Promise(r => setTimeout(r, 1500));
+        try { d = await api.get('allocation.list', { date_from: from, date_to: to }); }
+        catch (e2) { throw new Error(/fetch|network|load failed/i.test(e2.message || '') ? 'The server took too long for this date range. Pick fewer days (e.g. one month) and try again.' : e2.message); }
+      }
+      orders = d.orders || [];
+      if (d.houses) HOUSES = d.houses;
+      if (d.types) TYPES = d.types;
+      if (d.sources) SOURCES = d.sources;
+      if (d.employees) EMPS = d.employees;
+      fillFilters();
+      (d.errors || []).forEach(e => showAlert(e, 'error'));
+      await Promise.all([loadAddons(from, to), loadWhy()]);
+      limit = PAGE;
+      render();
+    } catch (err) {
+      document.getElementById('tbody').innerHTML = `<tr><td colspan="${NCOL}"><div class="alert error">${err.message}</div></td></tr>`;
+    }
+  }
+
+  document.querySelectorAll('.pill').forEach(p => p.addEventListener('click', () => { filter = p.dataset.f; limit = PAGE; render(); }));
+  let searchTimer = null;
+  document.getElementById('search').addEventListener('input', () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { limit = PAGE; render(); }, 150); });
+
+  // ---------- Customer lookup: type a mobile number (6+ digits) in the search box and every order of that
+  // customer, from ANY date, is listed above the table — customer details, totals and each order id.
+  // The table below still only shows the day(s) picked; "Open day" jumps to an order's day.
+  const custPanel = document.getElementById('custPanel'), custBody = document.getElementById('custBody');
+  let custOrders = [], custSeq = 0, custTimer = null;
+  const phoneQuery = (v) => /^[\d\s+\-().]+$/.test(v) && v.replace(/\D/g, '').length >= 6;
+  const fmtPh = (d) => d.length === 10 ? d.slice(0, 5) + ' ' + d.slice(5) : d;
+  const fmtDay = (t) => t ? new Date(t).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+  function custClose() { custSeq++; custPanel.hidden = true; custOrders = []; custBody.innerHTML = ''; }
+  function custOrderRow(o) {
+    const k = key(o);
+    const who = o.allocated_direct ? '<span class="dtag">Direct order</span>' : (o.salesman ? `<b>${esc(o.salesman)}</b>` : '<span class="sub">No employee</span>');
+    const panel = o.house ? `<span class="house ${esc(o.house)}">${esc(o.house_label || HOUSES[o.house] || o.house)}</span>` : '';
+    const state = o.cancelled ? '<span class="badge inactive">Cancelled</span>' : (o.allocated ? '<span class="badge">Allocated</span>' : '<span class="badge inactive">Not allocated</span>');
+    return `<div class="co ${o.cancelled ? 'cx' : ''}">
+      <div class="co-a"><a href="#" class="ord-link" onclick="openDetail('${k}'); return false;" title="Open order details"><b>${esc(o.order_name)}</b></a> <span class="src">${esc(o.source_label || o.store)}</span>
+        <div class="sub">${esc(fmtFull(o.created_at))}${o.code ? ' · <span class="code-tag">' + esc(o.code) + '</span>' : ''}</div></div>
+      <div class="co-b"><b>${inr(o.total)}</b> <span class="badge ${o.financial_status === 'paid' ? '' : 'inactive'}">${esc(o.financial_status || '—')}</span>
+        <div class="sub">${o.items} item${o.items === 1 ? '' : 's'} · ${esc(o.fulfillment_status || '')}</div></div>
+      <div class="co-c"><div class="co-who">${who} ${panel} ${state}</div>${o.extra_phone ? `<div class="sub">Extra no. ${esc(o.extra_phone)}</div>` : ''}</div>
+      <div class="co-d"><button type="button" class="co-go" onclick="custGo('${k}')">Open day →</button></div>
+    </div>`;
+  }
+  function custCard(c) {
+    const ph = c.phone, others = (c.other_phones || []).map(fmtPh).join(', ');
+    const wa = ph.length === 10 ? 'https://wa.me/91' + ph : 'https://wa.me/' + ph;
+    return `<div class="cust-one">
+      <div class="cust-id">
+        <div class="cust-av">${esc((c.name === 'Guest' ? '#' : c.name.split(/\s+/).map(w => w[0]).slice(0, 2).join('')).toUpperCase())}</div>
+        <div class="cust-nm"><b>${esc(c.name)}</b><div class="cust-ph">${esc(fmtPh(ph))}${others ? ` <small>· also ${esc(others)}</small>` : ''}</div></div>
+        <div class="cust-act"><a href="tel:+91${esc(ph)}">📞 Call</a><a class="wa" href="${wa}" target="_blank" rel="noopener">WhatsApp</a></div>
+      </div>
+      <div class="cust-stats">
+        <div class="cust-stat g"><div class="l">Orders</div><div class="v">${c.order_count}${c.cancelled_count ? ` <span class="sub">+${c.cancelled_count} cancelled</span>` : ''}</div></div>
+        <div class="cust-stat g"><div class="l">Total spent</div><div class="v">${inr(c.spent)}</div></div>
+        <div class="cust-stat"><div class="l">First order</div><div class="v">${esc(fmtDay(c.first_at))}</div></div>
+        <div class="cust-stat"><div class="l">Last order</div><div class="v">${esc(fmtDay(c.last_at))}</div></div>
+        <div class="cust-stat"><div class="l">Bought from</div><div class="v" style="font-size:13px;">${esc((c.stores || []).join(', '))}</div></div>
+      </div>
+      ${c.orders.map(custOrderRow).join('')}
+    </div>`;
+  }
+  async function custLookup() {
+    const v = document.getElementById('search').value.trim();
+    if (!phoneQuery(v)) { custClose(); return; }
+    const id = ++custSeq;
+    custPanel.hidden = false;
+    document.getElementById('custSub').textContent = 'Searching ' + v + ' in all orders…';
+    custBody.innerHTML = '<div class="cust-msg">Searching all dates…</div>';
+    try {
+      const d = await api.get('allocation.customer_search', { phone: v });
+      if (id !== custSeq) return;                                  // typed something else meanwhile
+      const cs = d.customers || [];
+      custOrders = cs.flatMap(c => c.orders);
+      document.getElementById('custSub').textContent = cs.length
+        ? `${v} · ${d.orders_found} order${d.orders_found === 1 ? '' : 's'} found, all dates` + (cs.length > 1 ? ` · ${d.matches} different numbers match` : '')
+        : v + ' · all dates';
+      const errs = (d.errors || []).map(e => `<div class="alert error" style="margin:10px 20px;">${esc(e)}</div>`).join('');
+      custBody.innerHTML = errs + (cs.length ? cs.map(custCard).join('')
+        : '<div class="cust-msg">No order found with this mobile number (checked the Shopify stores and MySales, including the extra mobile number). Check the digits, or try fewer digits.</div>');
+    } catch (err) {
+      if (id !== custSeq) return;
+      custBody.innerHTML = `<div class="alert error" style="margin:14px 20px;">${esc(err.message)}</div>`;
+    }
+  }
+  document.getElementById('search').addEventListener('input', () => { clearTimeout(custTimer); custTimer = setTimeout(custLookup, 450); });
+  document.getElementById('custX').addEventListener('click', custClose);
+  // Jump the order table to the day of one of the customer's orders and show that order.
+  window.custGo = async function (k) {
+    const o = custOrders.find(x => key(x) === k);
+    if (!o) return;
+    const day = o.biz_date || String(o.created_at || '').slice(0, 10);
+    document.getElementById('dateFrom').value = day; document.getElementById('dateTo').value = day;
+    filter = o.cancelled ? 'cancelled' : 'all';
+    document.getElementById('search').value = o.order_name;
+    document.getElementById('sourceFilter').value = ''; document.getElementById('panelFilter').value = ''; document.getElementById('typeFilter').value = '';
+    custClose();
+    await load();
+    document.getElementById('allocCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+  ['sourceFilter', 'panelFilter', 'typeFilter'].forEach(id => document.getElementById(id).addEventListener('change', () => { limit = PAGE; render(); }));
+  document.getElementById('btnMore').addEventListener('click', () => { limit += PAGE; render(); });
+  document.getElementById('dateFrom').addEventListener('change', load);
+  document.getElementById('dateTo').addEventListener('change', load);
+  document.getElementById('btnToday').addEventListener('click', () => { document.getElementById('dateFrom').value = todayStr(); document.getElementById('dateTo').value = todayStr(); load(); });
+  timingReady.then(() => {
+    document.getElementById('dateFrom').value = todayStr();
+    document.getElementById('dateTo').value = todayStr();
+    load();
+  });
+</script>
+<script>
+/* ---------- Sales employee: after allocating an order to themselves — 🎯 one arrow per order today + ₹ coin rain ----------
+   my.alloc_pulse gives today's target / sales / orders and the team ranking (names + % only). The order that completes the target
+   gets the big "Target complete" celebration; after that only a small toast. No target today / an order of another day: small toast. */
+(function () {
+  const css = `
+.apz{position:fixed; inset:0; z-index:9999; display:flex; align-items:flex-start; justify-content:center; padding:24px 14px; background:rgba(15,23,42,.55); opacity:0; transition:opacity .2s; overflow:auto;}
+.apz.on{opacity:1}
+.apz .cd{position:relative; width:100%; max-width:360px; margin-top:2vh; border-radius:22px; padding:10px 14px 14px; text-align:center; background:linear-gradient(160deg,#fff7ed,#ffedd5); box-shadow:0 24px 60px rgba(0,0,0,.4); transform:scale(.6); opacity:0; color:#111827; font-family:inherit;}
+.apz.on .cd{animation:apzPop .5s cubic-bezier(.2,1.5,.4,1) forwards}
+@keyframes apzPop{to{transform:scale(1); opacity:1}}
+.apz .cd.win{background:linear-gradient(160deg,#ecfdf5,#bbf7d0)}
+.apz svg{display:block; margin:0 auto; overflow:visible; max-width:100%}
+.apz .shk{animation:apzShk .45s ease}
+@keyframes apzShk{20%{transform:translate(3px,-2px) rotate(1.5deg)}45%{transform:translate(-3px,1px) rotate(-1.2deg)}70%{transform:translate(2px,0)}100%{transform:none}}
+.apz .cnt{display:inline-block; background:#111827; color:#fff; border-radius:999px; font-size:12px; font-weight:800; padding:3px 11px}
+.apz .cnt b{color:#fdba74}
+.apz .t1{font-size:19px; font-weight:900; margin-top:6px}
+.apz .lab{font-size:11px; font-weight:800; letter-spacing:.3px; color:#9a3412; margin-top:6px}
+.apz .big{font-size:32px; font-weight:900; color:#ea580c; line-height:1.1}
+.apz .sm{display:flex; justify-content:space-between; font-size:11.5px; color:#7c2d12}
+.apz .rk{background:#fff; border-radius:12px; padding:3px 8px; margin-top:9px; text-align:left; font-size:13px}
+.apz .rk div{display:flex; justify-content:space-between; padding:5px 6px}
+.apz .rk .me{background:#fef3c7; border-radius:8px; font-weight:800}
+.apz .rk .gap{justify-content:center; color:#94a3b8; padding:0}
+.apz .gu{font-size:12.5px; line-height:1.45; margin-top:6px; color:#7c2d12}
+.apz .win .gu{color:#166534}
+.apz .cg{font-size:12px; font-weight:900; letter-spacing:.04em; color:#c2410c; margin-top:6px; text-transform:uppercase}
+.apz .go2{background:#f1f5f9 !important; color:#0f172a !important; margin-top:6px !important}
+.apz .tp{display:flex; gap:9px; text-align:left; border-radius:12px; padding:8px 10px; font-size:12.5px; line-height:1.45; border:1px solid #fde68a; background:#fefce8; color:#334155}
+.apz .tp.win{background:#ecfdf5; border-color:#bbf7d0}
+.apz .tp .e{font-size:19px; line-height:1.1} .apz .tp b{display:block; font-size:13px; color:#0f172a}
+.apz .go{display:block; width:100%; border:0; color:#fff; border-radius:12px; padding:11px; font-weight:800; font-size:14px; margin-top:10px; background:#ea580c; cursor:pointer; min-height:0}
+.apz .win .go{background:#16a34a}
+.apz .rtp{display:block; margin:10px auto 0; width:fit-content; max-width:100%; background:#111827; color:#fff; border-radius:99px; padding:7px 14px; font-size:13px; font-weight:700; text-align:center;} .apz .rtp b{color:#fde68a;}
+.apz .wt{font-size:23px; font-weight:900; color:#14532d; margin-top:4px}
+.apz .bonus{background:#fff; border-radius:12px; padding:10px; margin-top:9px}
+.apz .bonus b{display:block; font-size:22px; color:#15803d}
+.apz canvas{position:fixed; inset:0; width:100vw; height:100vh; pointer-events:none; z-index:2}
+.apz .pace{position:relative; height:12px; background:#fed7aa; border-radius:8px; margin:7px 0 3px;}
+.apz .pace i{position:absolute; left:0; top:0; bottom:0; border-radius:8px; background:#ea580c; transition:width 1s cubic-bezier(.2,.8,.2,1);}
+.apz .pace.ah i{background:#16a34a;} .apz .pace.jb i{background:#f59e0b;}
+.apz .pace u{position:absolute; top:-4px; bottom:-4px; width:3px; margin-left:-1px; background:#111827; border-radius:2px;}
+.apz .pb{display:inline-block; border-radius:99px; padding:3px 10px; font-size:11.5px; font-weight:800;}
+.apz .pb.ah{background:#dcfce7; color:#166534;} .apz .pb.jb{background:#ffedd5; color:#9a3412;}
+.apz .tm{background:#111827; color:#fff; border-radius:11px; padding:7px 10px; font-size:12px; margin-top:8px; text-align:left; line-height:1.4;} .apz .tm b{color:#86efac;}
+.apz .ck{font-size:11px; font-weight:800; color:#64748b; text-align:left; margin-top:9px; letter-spacing:.3px;}
+.apz .tp{display:flex; gap:8px; text-align:left; border-radius:11px; padding:7px 9px; margin-top:5px; font-size:12px; line-height:1.4; background:#fff; border:1px solid #fed7aa; color:#334155;}
+.apz .tp .e{font-size:18px; line-height:1.1;} .apz .tp b{display:block; font-size:12.5px; color:#111827;}
+.apz .tp.push{background:#fefce8; border-color:#fde68a;} .apz .tp.win{background:#ecfdf5; border-color:#bbf7d0;} .apz .tp.focus{background:#fff7ed; border-color:#fdba74;} .apz .tp.learn{background:#eff6ff; border-color:#bfdbfe;}
+.apz .tm.calm{background:#fff7ed; color:#7c2d12;} .apz .tm.calm b{color:#c2410c;}
+.apz .cm{margin-top:6px; background:#ecfdf5; border:1px solid #bbf7d0; color:#14532d; border-radius:11px; padding:6px 10px; font-size:12.5px;} .apz .cm b{font-size:15px;}
+.apz .bdg{display:flex; gap:5px; flex-wrap:wrap; justify-content:center; margin-top:7px;}
+.apz .bdg span{background:linear-gradient(135deg,#fde68a,#fbbf24); color:#78350f; border-radius:99px; padding:4px 10px; font-size:12px; font-weight:800; box-shadow:0 3px 10px rgba(251,191,36,.45); opacity:0; transform:scale(.3);}
+.apz.on .bdg span{animation:apzBdg .55s cubic-bezier(.2,1.6,.4,1) forwards;}
+@keyframes apzBdg{to{opacity:1; transform:scale(1);}}
+.apz .cp{margin-top:6px; font-size:12px; color:#7c2d12;} .apz .cp.up{color:#166534;}
+.apz .nx{margin-top:9px; background:#111827; color:#fff; border-radius:99px; padding:6px 12px; font-size:12px; display:inline-block;} .apz .nx b{color:#fde68a;}
+.aptst{position:fixed; left:50%; bottom:22px; transform:translate(-50%,20px); z-index:9999; background:#111827; color:#fff; border-radius:14px; padding:10px 16px; font-size:13.5px; font-weight:700; box-shadow:0 10px 30px rgba(0,0,0,.35); opacity:0; transition:.25s; max-width:calc(100vw - 28px); text-align:center}
+.aptst.on{opacity:1; transform:translate(-50%,0)}
+.aptst b{color:#fdba74}`;
+  const st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
+
+  const money = (v) => '₹' + Math.round(Number(v) || 0).toLocaleString('en-IN');
+  const pctTxt = (v) => (Math.round(Number(v) * 10) / 10) + '%';
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const calm = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function toast(html) {
+    const t = document.createElement('div'); t.className = 'aptst'; t.innerHTML = html; document.body.appendChild(t);
+    requestAnimationFrame(() => t.classList.add('on'));
+    setTimeout(() => { t.classList.remove('on'); setTimeout(() => t.remove(), 300); }, 3200);
+  }
+
+  // Target board: arrows already in (n − 1) + the new one (flies in). Each hit point: [x, y from the centre, tilt].
+  const HITS = [[-34,-30,22],[20,-40,10],[-28,26,-14],[30,22,-6],[2,-2,16],[-6,-50,30],[44,-6,4],[-42,2,8],[10,40,-20],[-18,-10,12],[24,4,-10],[-4,24,-4]];
+  const arrow = (x, y, a, id) => (id ? `<g id="${id}">` : '') + `<g transform="translate(${x} ${y}) rotate(${a})"><line x1="-78" y1="0" x2="-3" y2="0" stroke="#7c4a1f" stroke-width="3.2" stroke-linecap="round"/><path d="M0 0 L-9 -4.5 L-9 4.5 Z" fill="#475569"/><path d="M-78 0 L-90 -7 L-72 -7 Z M-78 0 L-90 7 L-72 7 Z" fill="#ef4444"/><path d="M-70 0 L-82 -6 L-66 -6 Z M-70 0 L-82 6 L-66 6 Z" fill="#f97316"/></g>` + (id ? '</g>' : '');      // the new arrow sits in an outer group, so its flight does not replace its position
+  function board(n) {
+    const cx = 150, cy = 82, R = [64, 51, 38, 25, 12], C = ['#fff', '#ef4444', '#fff', '#ef4444', '#facc15'];
+    let s = `<svg width="260" height="160" viewBox="10 0 250 165"><g class="bd"><ellipse cx="${cx}" cy="${cy + 70}" rx="46" ry="6" fill="rgba(0,0,0,.12)"/>`;
+    R.forEach((r, i) => { s += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${C[i]}" stroke="#991b1b" stroke-width="${i ? 1 : 2.5}"/>`; });
+    s += `<circle class="fl" cx="${cx}" cy="${cy}" r="12" fill="none" stroke="#fde047" stroke-width="5" opacity="0"/>`;
+    const old = Math.min(n - 1, 11);
+    for (let i = 0; i < old; i++) { const h = HITS[i]; s += arrow(cx + h[0], cy + h[1], h[2]); }
+    const h = HITS[Math.min(n - 1, 11)];
+    return s + `</g>${arrow(cx + h[0], cy + h[1], h[2], 'apzNew')}</svg>`;
+  }
+
+  // ₹ coin rain (and confetti cannons for "target complete").
+  function particles(cv) {
+    const ctx = cv.getContext('2d'); let P = [], raf = 0;
+    const d = window.devicePixelRatio || 1; cv.width = innerWidth * d; cv.height = innerHeight * d; ctx.setTransform(d, 0, 0, d, 0, 0);
+    const COL = ['#f97316', '#22c55e', '#3b82f6', '#ec4899', '#facc15', '#a855f7'];
+    const R = (a, b) => a + Math.random() * (b - a);
+    function loop() {
+      ctx.clearRect(0, 0, innerWidth, innerHeight);
+      P = P.filter((p) => p.life > 0 && p.y < innerHeight + 40);
+      for (const p of P) {
+        p.vy += p.g; p.vx *= .99; p.x += p.vx; p.y += p.vy; p.life--; p.t++;
+        ctx.save(); ctx.globalAlpha = Math.min(1, p.life / 30); ctx.translate(p.x, p.y);
+        if (p.k === 'coin') {
+          ctx.scale(Math.cos(p.t * .15 + p.ph), 1);
+          ctx.fillStyle = '#f59e0b'; ctx.beginPath(); ctx.arc(0, 0, p.s, 0, 7); ctx.fill();
+          ctx.fillStyle = '#fde68a'; ctx.beginPath(); ctx.arc(0, 0, p.s * .72, 0, 7); ctx.fill();
+          ctx.fillStyle = '#b45309'; ctx.font = `bold ${p.s * 1.1}px Arial`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('₹', 0, 1);
+        } else { ctx.rotate(p.t * p.vr); ctx.scale(1, Math.cos(p.t * .2 + p.ph)); ctx.fillStyle = p.c; ctx.fillRect(-p.s / 2, -p.s / 3, p.s, p.s * .66); }
+        ctx.restore();
+      }
+      raf = P.length ? requestAnimationFrame(loop) : 0;
+    }
+    const add = (o) => { P.push(Object.assign({ x: 0, y: 0, vx: 0, vy: 0, g: .12, life: 300, t: 0, ph: R(0, 6), s: 10, k: 'coin', vr: R(-.2, .2), c: COL[Math.floor(Math.random() * COL.length)] }, o)); if (!raf) raf = requestAnimationFrame(loop); };
+    return {
+      coins(n) { for (let i = 0; i < n; i++) setTimeout(() => add({ x: R(10, innerWidth - 10), y: -20, vy: R(2, 4), vx: R(-.5, .5), s: R(9, 14) }), i * 32); },
+      cannons() { [0, 1].forEach((side) => { for (let i = 0; i < 80; i++) add({ k: 'conf', x: side ? innerWidth : 0, y: innerHeight - 10, vx: (side ? -1 : 1) * R(3, 9), vy: R(-18, -10), g: .3, s: R(7, 11), life: 260 }); }); },
+      stop() { P = []; },
+    };
+  }
+
+  function show(o, d) {
+    const amt = Number(o.total) || 0, target = Number(d.target) || 0, sales = Number(d.sales) || 0;
+    const today = (o.biz_date || '') === d.business_day;
+    const before = today ? sales - amt : sales;
+    if (!today || !(target > 0) || !(d.orders > 0)) { const oc = d.coach && d.coach.order_com != null ? ` · 💰 +${money(d.coach.order_com)} commission` : ''; toast(`✓ ${esc(o.order_name)} allocated · <b>+${money(amt)}</b>${today ? oc : ''}`); return; }
+    const win = sales >= target && before < target, done = before >= target;          // done = target was already complete before this order
+    const pend = Math.max(0, target - sales), pendBefore = Math.max(0, target - before);
+    const p1 = Math.min(100, sales / target * 100);
+    const bonus = Number(d.bonus) || 0, C = d.coach || {};
+    const G = C.goal || { mode: 'none' };
+    // Pace: where they should be by now (black line, from the store's real hourly pattern). Never red for the salesperson:
+    // ahead = green, behind = amber "Focus / Catch-up", target out of reach today = a new goal they can still win.
+    const should = C.should_pct != null ? Math.min(100, Number(C.should_pct)) : null;
+    const goalMode = G.mode === 'newgoal';
+    const barT = goalMode ? Number(G.goal) : target, b0 = Math.min(100, before / barT * 100), b1 = Math.min(100, sales / barT * 100);
+    const paceCls = G.mode === 'ahead' ? 'ah' : (G.mode === 'near' || G.mode === 'catchup' || goalMode ? 'jb' : '');
+    const badge = G.mode === 'ahead' ? `<span class="pb ah">🟢 Ahead of time${should != null ? ' by ' + Math.round(sales / target * 100 - should) + '%' : ''}</span>`
+      : G.mode === 'near' ? `<span class="pb jb">🎯 Focus: ${money(G.behind)} to get back on track</span>`
+      : G.mode === 'catchup' ? `<span class="pb jb">🎯 Catch-up mode · ${money(G.behind)} · ~${G.orders} order${G.orders == 1 ? '' : 's'}</span>`
+      : goalMode ? `<span class="pb jb">🎯 Today's goal: ${money(G.goal)}</span>` : '';
+    const leftShare = should != null ? Math.max(0, Math.round(100 - should)) : null;
+    const team = C.people > 1 ? (G.mode === 'ahead'
+      ? `<div class="tm">👥 Team: ફક્ત <b>${C.ahead} of ${C.people}</b> time કરતાં આગળ છે — તમે એમાંના એક છો! 🔥</div>`
+      : (leftShare != null && leftShare >= 15 ? `<div class="tm calm">⏳ આજના આશરે <b>${leftShare}%</b> orders હજુ આવવાના બાકી છે — ${G.mode === 'done' ? (bonus > 0 ? `દરેક પર +${bonus}% bonus 🎁` : 'દરેક order ગણાય છે 💪') : 'હજુ પૂરો સમય છે 💪'}</div>` : '')) : '';
+    const me = (d.rank || []).find((r) => r.me), top = (d.rank || [])[0];
+    let rk = '';
+    (d.rank || []).forEach((r, i) => {
+      if (i && r.pos - d.rank[i - 1].pos > 1) rk += '<div class="gap">⋯</div>';
+      const md = ['🥇', '🥈', '🥉'][r.pos - 1] || ('#' + r.pos);
+      rk += `<div class="${r.me ? 'me' : ''}"><span>${md} ${esc(r.name)}</span><b>${r.pct == null ? '—' : pctTxt(r.pct)}</b></div>`;
+    });
+    if (!me && d.to_top10 > 0) rk += `<div class="gap" style="color:#7c2d12; padding:4px 6px;">Top 10 માં આવવા બસ ${money(d.to_top10)} 💪</div>`;      // outside the top 10: no rank number, just the way up
+    if (!me && C.improved) rk += `<div class="gap" style="color:#166534; padding:4px 6px;">⚡ Today's most improved #${C.improved}</div>`;
+    const gp = me && top && !top.me && top.pct != null && me.pct != null ? Math.max(0, Math.ceil(top.pct - me.pct)) : null;
+    const line = me && me.pos === 1 ? 'શાબાશ! તમે આજે 1st છો 🥇' : (gp != null ? `શાબાશ! 1st આવવા ${gp}% બાકી 💪` : '');
+    // Money of this order (the dopamine: every order = visible ₹) + today's commission so far.
+    const com = C.order_com != null ? `<div class="cm">💰 <b class="oc" data-v="${C.order_com}">+${money(0)}</b> commission on this order${C.com_today ? ` · today <b>${money(C.com_today)}</b>` : ''}</div>` : '';
+    // Small wins (badges) unlocked by this order + the next step.
+    const bdg = (C.badges || []).length ? `<div class="bdg">${C.badges.map((x, i) => `<span style="animation-delay:${1.1 + i * .25}s">${x[0]} ${esc(x[1])}</span>`).join('')}</div>` : '';
+    const yd = Number(C.yest_same) || 0;
+    const cmp = yd > 0 ? (sales > yd ? `<div class="cp up">📈 ગઈકાલ આ સમય કરતાં <b>${money(sales - yd)}</b> આગળ</div>` : `<div class="cp">ગઈકાલે આ સમયે ${money(yd)} — બસ <b>${money(yd - sales)}</b> અને તમે આગળ 📈</div>`) : '';
+    const next = C.next ? `<div class="nx">⏭️ Next: <b>${esc(C.next)}</b></div>` : '';
+    const tips = (C.tips || []).length ? `<div class="ck">💡 YOUR COACH</div>` + C.tips.map((t) => `<div class="tp ${t.kind}"><span class="e">${t.icon}</span><div><b>${esc(t.title)}</b>${esc(t.text)}</div></div>`).join('') : '';
+    const paceBar = `<div class="pace ${paceCls}"><i style="width:${b0}%"></i>${should != null && !goalMode ? `<u style="left:${should}%" title="Where you should be by now"></u>` : ''}</div>
+         <div class="sm"><span class="dn">${money(before)} done</span><span>${goalMode ? 'goal ' + money(barT) : (should != null ? 'should be ' + Math.round(should) + '% now' : pctTxt(p1) + ' of ' + money(target))}</span></div>`;
+    const body = win
+      ? `<div class="cnt">Arrow <b>${d.orders}</b> · target hit!</div><div class="wt">🏆 Target complete!</div>
+         <div style="font-size:13px; color:#166534">${money(sales)} / ${money(target)} · ${pctTxt(sales / target * 100)}</div>
+         ${bonus > 0 ? `<div class="bonus"><span class="lab" style="color:#64748b">TODAY'S BONUS</span><b>+${bonus}% unlocked ✅</b><span style="font-size:12px; color:#166534">on every order of today</span></div>` : ''}
+         ${com}${bdg}<div class="gu">અભિનંદન! ${bonus > 0 ? 'હવે આજના દરેક order પર extra commission' : 'આજનો target પૂરો 🎉'}</div>${team}${tips}${next}<button type="button" class="go">Super! →</button>`
+      : done
+      ? `<div class="cnt">Arrow <b>${d.orders}</b> · order #${d.orders} today</div><div class="t1">+${money(amt)} added!</div>
+         <div style="font-size:13px; color:#166534; margin-top:2px;">🏆 Target done · ${pctTxt(sales / target * 100)} of ${money(target)}</div>
+         ${com}${bdg}${cmp}
+         ${rk ? `<div class="rk">${rk}</div>` : ''}${line ? `<div class="gu">${line}</div>` : ''}${tips}${next}<button type="button" class="go">Next order →</button>`
+      : `<div class="cnt">Arrow <b>${d.orders}</b> · order #${d.orders} today</div><div class="t1">+${money(amt)} added!</div>
+         ${com}${bdg}
+         <div class="lab">${goalMode ? "TODAY'S GOAL" : 'TARGET PENDING'}</div><div class="big">${money(goalMode ? Math.max(0, barT - before) : pendBefore)}</div>
+         ${paceBar}<div style="margin-top:5px;">${badge}</div>${cmp}
+         ${rk ? `<div class="rk">${rk}</div>` : ''}${line ? `<div class="gu">${line}</div>` : ''}${team}${tips}${next}<button type="button" class="go">Next order →</button>`;
+    // 🔑 code goal (65% of the day's orders with a code → every order pays full): how far they are, in one line
+    const CD = C.code || {};
+    const codeLine = CD.pct > 0 && CD.orders > 0 ? (CD.ok ? `<div class="tp win" style="margin-top:8px;"><span class="e">🔑</span><div><b>Code goal done!</b>Full commission on ALL ${CD.orders} orders today 🎉</div></div>`
+      : `<div class="tp push" style="margin-top:8px;"><span class="e">🔑</span><div><b>${CD.left === 1 ? 'Just 1 code away' : 'Just ' + CD.left + ' codes away'} from FULL commission!</b>Add a code to any ${CD.left === 1 ? '1 order' : CD.left + ' orders'} (${CD.have}/${CD.need} done) and every order today pays full${CD.lost > 0 ? ' — about ' + money(CD.lost) + ' more 💰' : ' 💰'}</div></div>`) : '';
+    const ov = document.createElement('div'); ov.className = 'apz';
+    ov.innerHTML = `<canvas></canvas><div class="cd ${win ? 'win' : ''}">${board(d.orders)}<div class="cg">🎉 Congratulations!</div>${body}</div>`;
+    { const g = ov.querySelector('.go'); if (g && codeLine) g.insertAdjacentHTML('beforebegin', codeLine); }
+    if (window.HRMS_EMBED) { const g = ov.querySelector('.go'); if (g) g.insertAdjacentHTML('afterend', '<button type="button" class="go go2">🏠 Back to my sales</button>'); }
+    document.body.appendChild(ov);
+    const fx = calm ? null : particles(ov.querySelector('canvas'));
+    const close = () => { if (fx) fx.stop(); ov.classList.remove('on'); document.removeEventListener('keydown', onKey); setTimeout(() => ov.remove(), 220); };
+    const onKey = (e) => { if (e.key === 'Escape' || e.key === 'Enter') close(); };
+    document.addEventListener('keydown', onKey);
+    ov.addEventListener('click', (e) => {
+      if (e.target.closest('.go2')) { close(); try { parent.postMessage({ hrms: 'alloc', t: 'home' }, location.origin); } catch (x) { /* no parent */ } return; }
+      if (e.target === ov || e.target.closest('.go')) close();
+    });
+    // Today's rating (out of 10, with this order) next to the last worked day.
+    const go = ov.querySelector('.go');
+    if (go && d.rating && d.rating.today != null) {
+      const R = d.rating, up = R.prev != null ? Math.round((R.today - R.prev) * 10) / 10 : null;
+      const rc = document.createElement('div'); rc.className = 'rtp';
+      rc.innerHTML = `⭐ Rating today <b>${Number(R.today).toFixed(1)}</b>${up != null ? (up > 0 ? ` · ગઈકાલ કરતાં +${up} 📈` : up === 0 ? ' · ગઈકાલ જેટલું' : ` · ગઈકાલ ${Number(R.prev).toFixed(1)} — હજુ દિવસ બાકી છે 💪`) : ''}`;
+      go.before(rc);
+    }
+    requestAnimationFrame(() => ov.classList.add('on'));
+    const na = ov.querySelector('#apzNew');
+    if (!calm && na.animate) na.animate([{ transform: 'translate(-190px,-60px)' }, { transform: 'translate(0,0)' }], { duration: 520, delay: 450, easing: 'cubic-bezier(.3,.1,.2,1)', fill: 'backwards' });
+    setTimeout(() => {      // the arrow hits
+      const bd = ov.querySelector('.bd'); bd.classList.add('shk');
+      const fl = ov.querySelector('.fl'); if (fl.animate && !calm) fl.animate([{ opacity: 1, r: 12 }, { opacity: 0, r: 70 }], { duration: 600, easing: 'ease-out' });
+      if (fx) { fx.coins(win ? 70 : 45); if (win) fx.cannons(); }
+      const big = ov.querySelector('.big'), bar = ov.querySelector('.pace i'), dn = ov.querySelector('.dn');
+      if (bar) bar.style.width = b1 + '%';
+      if (dn) dn.textContent = money(sales) + ' done';
+      const fromV = goalMode ? Math.max(0, barT - before) : pendBefore, toV = goalMode ? Math.max(0, barT - sales) : pend;
+      if (big) { const t0 = performance.now(); const step = (tm) => { const k = Math.min(1, (tm - t0) / 900), v = fromV + (toV - fromV) * k * (2 - k); big.textContent = money(v); if (k < 1) requestAnimationFrame(step); }; requestAnimationFrame(step); }
+      const oc = ov.querySelector('.oc');          // this order's commission counts up
+      if (oc) { const to = Number(oc.dataset.v) || 0, t0 = performance.now(); const step = (tm) => { const k = Math.min(1, (tm - t0) / 800); oc.textContent = '+' + money(to * k * (2 - k)); if (k < 1) requestAnimationFrame(step); }; requestAnimationFrame(step); }
+    }, calm ? 0 : 970);
+  }
+
+  window.addEventListener('message', (e) => { if (e.origin === location.origin && e.data && e.data.hrms === 'alloc-reload' && typeof load === 'function') load(); });
+  window.allocCelebrate = async function (o) {
+    try {
+      const d = await Promise.race([api.get('my.alloc_pulse', { source: o.store_key, order_id: String(o.id), amount: Number(o.total) || 0 }), new Promise((_, rej) => setTimeout(() => rej(new Error('slow')), 8000))]);
+      if (d && !d.error) show(o, d);
+    } catch (e) { /* no popup — the allocation itself is saved */ }
+  };
+})();
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>

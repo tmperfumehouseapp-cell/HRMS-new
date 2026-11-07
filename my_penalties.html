@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>My Penalties — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=4">
+<style>
+  @media (max-width:820px){ .content > .stat-grid, #statsArea{margin-left:10px; margin-right:10px;} }
+  .tag{display:inline-block; padding:2px 9px; border-radius:12px; font-size:11px; font-weight:700; white-space:nowrap;}
+  .s-applied{background:var(--bad-bg); color:var(--bad-fg);} .s-removed{background:var(--ok-bg); color:var(--ok-fg);} .s-waived{background:#e5e7eb; color:#4b5563;}
+  .amt{font-weight:700; white-space:nowrap; color:var(--bad-fg);} .amt.struck{text-decoration:line-through; color:var(--muted); font-weight:500;}
+  .scroll{overflow-x:auto;}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar">
+      <h1>My Penalties</h1>
+      <input type="month" id="monthPick" style="padding:8px 10px; border:1px solid var(--line); border-radius:6px; font-size:13px;">
+    </div>
+    <div class="content">
+      <div id="alertBox"></div>
+
+      <div class="stat-grid" style="max-width:720px;">
+        <div class="stat-card"><div class="label">Penalties this month</div><div class="value" id="stCount">—</div></div>
+        <div class="stat-card"><div class="label">Total deducted</div><div class="value" id="stTotal">—</div></div>
+      </div>
+
+      <div class="card" style="max-width:720px;">
+        <div class="card-head"><h2 id="cardTitle">Penalties</h2><span style="font-size:12px; color:var(--muted);">Salary penalties come off your salary; Sales penalties off your commission.</span></div>
+        <div class="scroll">
+          <table>
+            <thead><tr><th>Date</th><th>Penalty</th><th>Amount</th><th>Status</th></tr></thead>
+            <tbody id="penBody"><tr><td colspan="4" class="loading">Loading...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="assets/js/config.js?v=2"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script>
+  guardPage();
+  renderSidebar('my_penalties');
+
+  const inr = (v) => '₹' + Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const ST = { applied: 'Applied', removed: 'Removed', waived: 'Waived' };
+
+  async function load() {
+    const m = document.getElementById('monthPick').value;
+    if (!m) return;
+    document.getElementById('cardTitle').textContent = 'Penalties — ' + new Date(m + '-01T00:00:00').toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+    const tbody = document.getElementById('penBody');
+    try {
+      const d = await api.get('my_penalties.list', { month: m });
+      const live = d.penalties.filter((p) => p.status === 'applied');
+      document.getElementById('stCount').textContent = live.length;
+      document.getElementById('stTotal').textContent = live.length ? '− ' + inr(live.reduce((a, p) => a + p.amount, 0)) : '—';
+      tbody.innerHTML = d.penalties.map((p) => {
+        const dead = p.status !== 'applied';
+        return `<tr>
+          <td style="white-space:nowrap;">${new Date(p.penalty_date + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' })}</td>
+          <td>${esc(p.title)}<div style="font-size:11px; color:var(--muted);">${p.source === 'auto' ? 'Automatic' : 'Given by Admin / HR'} · from ${p.deducted_from === 'commission' ? 'commission' : 'salary'}${p.note && p.note !== '—' ? ' · ' + esc(p.note) : ''}${p.resolve_note ? '<br>' + esc(p.resolve_note) : ''}</div></td>
+          <td class="amt ${dead ? 'struck' : ''}">${inr(p.amount)}${p.orig_amount !== null && !dead ? `<div style="font-size:11px; font-weight:400; color:var(--muted);">was ${inr(p.orig_amount)}</div>` : ''}</td>
+          <td><span class="tag s-${esc(p.status)}">${esc(ST[p.status] || p.status)}</span></td></tr>`;
+      }).join('') || '<tr><td colspan="4" class="empty-state">No penalties this month.</td></tr>';
+      // Seeing this page is "seeing" the pop-up too.
+      if (d.unread && d.unread.length) { try { await api.post('my_penalties.read', {}); } catch (e) {} }
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="4"><div class="alert error">${esc(err.message)}</div></td></tr>`;
+    }
+  }
+
+  const now = new Date();
+  document.getElementById('monthPick').value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  document.getElementById('monthPick').addEventListener('change', load);
+  load();
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>

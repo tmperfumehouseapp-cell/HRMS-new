@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Order Codes — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=260929d">
+<style>
+  .sub{font-size:11.5px; color:var(--muted);}
+  .tabs{display:flex; gap:6px; margin-bottom:16px; flex-wrap:wrap;}
+  .tab{padding:8px 14px; border:1px solid var(--line); border-radius:8px; background:#fff; font-size:13px; font-weight:600; color:var(--muted); cursor:pointer; user-select:none;}
+  .tab.on{background:#111827; color:#fff; border-color:#111827;}
+  .pane{display:none;} .pane.on{display:block;}
+  .code{display:inline-flex; align-items:center; gap:6px; padding:3px 10px; border-radius:12px; background:#eef2ff; color:#3730a3; font-weight:700; font-size:12px; font-family:ui-monospace,Menlo,Consolas,monospace; white-space:nowrap;}
+  .code.none{background:#fff7ed; color:#b45f06; font-family:inherit; font-weight:600;}
+  .code .x{cursor:pointer; opacity:.6; font-weight:400; font-size:14px; line-height:1;} .code .x:hover{opacity:1;}
+  .inl{display:inline-flex; gap:6px; align-items:center;}
+  .inl input{padding:6px 9px; border:1px solid var(--line); border-radius:6px; font-size:12.5px; width:118px; font-family:ui-monospace,Menlo,Consolas,monospace; text-transform:uppercase;}
+  .inl .btn{padding:6px 10px; font-size:12px; min-height:0; width:auto;}
+  .lnk{background:none; border:none; padding:0; color:var(--accent); font-size:12px; cursor:pointer; min-height:0; text-decoration:underline;}
+  .pill{display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:20px; border:1px solid var(--line); font-size:12.5px; cursor:pointer; background:#fff; white-space:nowrap;}
+  .pill.on{background:var(--navy-900,#111827); color:#fff; border-color:var(--navy-900,#111827);}
+  .sel{padding:7px 9px; border:1px solid var(--line); border-radius:6px; font-size:13px; background:#fff;}
+  .drop{border:2px dashed #c7d2fe; border-radius:12px; padding:30px 20px; text-align:center; background:#f8faff; color:var(--muted); font-size:13px; cursor:pointer;}
+  .drop.over{background:#eef2ff; border-color:#6366f1;} .drop b{color:#3730a3;}
+  .res{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin:14px 0;}
+  .res > div{border:1px solid var(--line); border-radius:10px; padding:10px 12px;} .res .n{font-size:20px; font-weight:700;} .res .l{font-size:11px; color:var(--muted); text-transform:uppercase;}
+  .st{display:inline-block; padding:2px 9px; border-radius:10px; font-size:11.5px; font-weight:600; white-space:nowrap;}
+  .st.ok{background:#e7f7ee; color:#0f7a41;} .st.warn{background:#fdf3e3; color:#b45f06;} .st.bad{background:#fdecec; color:#c81e1e;} .st.skip{background:#f3f4f6; color:#6b7280;}
+  .stat-card .value small{font-size:12px; font-weight:500; color:var(--muted);}
+  .tag-ok{color:#0f7a41;}
+  .cust{margin-bottom:16px; border-top:3px solid var(--accent);}
+  .cust[hidden]{display:none;}
+  .cust-top{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px 20px; border-bottom:1px solid var(--line);}
+  .cust-top h2{margin:0; font-size:15px;} .cust-top .sub{margin-top:1px;}
+  .cust-x{background:#fff; border:1px solid var(--line); border-radius:20px; padding:5px 12px; min-height:0; width:auto; font-size:12.5px; font-weight:600; color:var(--ink); cursor:pointer;}
+  .cust-msg{padding:18px 20px; font-size:13.5px; color:var(--muted);}
+  .cust-one{border-bottom:1px solid var(--line);} .cust-one:last-child{border-bottom:none;}
+  .cust-id{display:flex; flex-wrap:wrap; align-items:center; gap:10px 16px; padding:14px 20px 8px;}
+  .cust-av{width:42px; height:42px; border-radius:50%; background:linear-gradient(135deg,#334155,#0f172a); color:#fff; font-weight:700; display:flex; align-items:center; justify-content:center; flex:none;}
+  .cust-nm{flex:1 1 180px; min-width:0;} .cust-nm b{display:block; font-size:16px; line-height:1.25; overflow-wrap:anywhere;}
+  .cust-ph{font-size:14px; font-weight:600; letter-spacing:.01em;} .cust-ph small{font-weight:500; color:var(--muted);}
+  .cust-act{display:flex; gap:8px;}
+  .cust-act a{display:inline-flex; align-items:center; gap:5px; padding:7px 14px; border-radius:20px; font-size:12.5px; font-weight:700; text-decoration:none; border:1px solid var(--line); background:#fff; color:var(--ink);}
+  .cust-act a.wa{background:#e7f7ee; border-color:#cfe9da; color:#0f7a41;}
+  .cust-stats{display:flex; flex-wrap:wrap; gap:8px; padding:4px 20px 12px;}
+  .cust-stat{background:#f8fafc; border:1px solid var(--line); border-radius:10px; padding:6px 12px; min-width:92px;}
+  .cust-stat .l{font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.04em;} .cust-stat .v{font-size:14.5px; font-weight:700; margin-top:1px;}
+  .cust-stat.g{background:#e7f7ee; border-color:#cfe9da;} .cust-stat.g .v{color:#0f7a41;}
+  .st.cxl{background:#fdecec; color:#c81e1e;}
+  @media (max-width:820px){
+    .res{grid-template-columns:1fr 1fr;}
+    .cust-top, .cust-id, .cust-stats{padding-left:14px; padding-right:14px;}
+    /* the Orders and Matching-result tables stack into labelled cards (shared rule) — the Code box is on screen, not off to the right */
+    .tab{min-height:40px; display:inline-flex; align-items:center;} .pill{min-height:38px;}
+    .sel, #search{min-height:42px; font-size:16px;}
+    .inl{flex-wrap:wrap;} .inl input{width:140px; min-height:40px; font-size:16px;} .inl .btn{min-height:40px; padding:6px 16px;}
+    .lnk{padding:9px 10px; min-height:36px;}
+    .code .x{padding:8px 8px; margin:-8px -6px -8px 0; font-size:16px;}
+    .cust-x{min-height:36px; padding:6px 14px;} .cust-act a{min-height:38px;}
+    .card .sub{overflow-wrap:anywhere;}
+    #applyNote{flex:1 1 100%;} #btnApply2{margin-left:0 !important; width:100% !important;}
+    #resCard .card-head > div, #ocOrdersCard .card-head > div{width:100%;}
+    #resCard .card-head .btn{flex:1 1 40%;}
+    #dateFrom, #dateTo{font-size:16px;}
+    #ocOrdersCard .card-head .search-box, #sourceFilter{flex:1 1 100%;}
+  }
+  /* Phones: the Orders and Matching-result tables become labelled cards (same look as the shared stacking rule) so the Code box is on screen;
+     on a tablet the table stays a table and scrolls inside its card. */
+  @media (max-width:600px){
+    #ocOrdersCard table.no-stack, #resCard table.no-stack{display:block; min-width:0; width:100%; overflow-x:visible;}
+    #ocOrdersCard thead, #resCard thead{display:none;}
+    #ocOrdersCard tbody, #ocOrdersCard tbody tr, #ocOrdersCard tbody td, #resCard tbody, #resCard tbody tr, #resCard tbody td{display:block; width:auto;}
+    #ocOrdersCard tbody tr, #resCard tbody tr{border:1px solid var(--line); border-radius:16px; padding:6px 12px; margin:0 12px 8px;}
+    #ocOrdersCard tbody td, #resCard tbody td{border:none; padding:6px 0; font-size:13px; display:flex; flex-wrap:wrap; align-items:flex-start; gap:2px 10px; min-width:0; overflow-wrap:anywhere;}
+    #ocOrdersCard tbody td + td, #resCard tbody td + td{border-top:1px solid var(--line);}
+    #ocOrdersCard tbody td[data-label]::before, #resCard tbody td[data-label]::before{content:attr(data-label); flex:none; width:104px; font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; padding-top:2px;}
+    #ocOrdersCard tbody td[colspan], #resCard tbody td[colspan]{display:block; padding:10px 0;}
+    #ocOrdersCard tbody tr:has(td[colspan]), #resCard tbody tr:has(td[colspan]){border:none; padding:0; margin:0;}
+    #ocOrdersCard tbody td[data-label] .sub, #resCard tbody td[data-label] .sub{flex:1 1 100%; padding-left:114px;}
+    #resCard tbody td:nth-child(3){display:block;} #resCard tbody td:nth-child(3)::before{display:block; width:auto; margin-bottom:3px;}      /* matched-order text reads as one sentence */
+  }
+  @media (max-width:560px){
+    .stat-grid{grid-template-columns:repeat(2, minmax(0, 1fr));}
+    .topbar > div > input[type=date]{flex:1 1 120px; min-width:0;} .topbar > div > button{flex:1 1 120px;}
+    .tabs{flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch; padding:0 10px 4px;} .tab{flex:none;}
+    .drop{padding:22px 14px;}
+    .res .n{font-size:18px;}
+  }
+  @media (min-width:1500px){ .cust-stats{gap:12px;} }
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar">
+      <div><h1>Order Codes</h1><div class="sub" style="margin-top:2px;">Your code on every order (e.g. AG00123) · written as a Shopify tag</div></div>
+      <div style="display:flex; gap:10px; align-items:center;">
+        <input type="date" id="dateFrom" style="padding:8px 10px; border:1px solid var(--line); border-radius:6px; font-size:13px;">
+        <input type="date" id="dateTo" style="padding:8px 10px; border:1px solid var(--line); border-radius:6px; font-size:13px;">
+        <button class="btn secondary" id="btnToday">Today</button>
+        <button class="btn secondary" id="btnMonth">This month</button>
+      </div>
+    </div>
+    <div class="content">
+      <div id="alertBox"></div>
+
+      <div class="tabs">
+        <span class="tab on" data-p="orders">1 · Orders + Code</span>
+        <span class="tab" data-p="upload">2 · Bulk Excel Upload</span>
+      </div>
+
+      <!-- ================= 1. ORDERS ================= -->
+      <div class="pane on" id="p-orders">
+        <div class="card cust" id="custPanel" hidden>
+          <div class="cust-top"><div><h2>Customer lookup</h2><div class="sub" id="custSub">All dates, all stores</div></div><button type="button" class="cust-x" id="custX">✕ Close</button></div>
+          <div id="custBody"></div>
+        </div>
+        <div class="stat-grid" id="statGrid" style="display:none;"></div>
+        <div class="card" id="ocOrdersCard">
+          <div class="card-head">
+            <h2 id="ordersTitle">Orders</h2>
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+              <span class="pill on" data-f="all">All <b id="cntAll">0</b></span>
+              <span class="pill" data-f="none">No code <b id="cntNone">0</b></span>
+              <span class="pill" data-f="coded">With code <b id="cntCoded">0</b></span>
+              <select id="sourceFilter" class="sel" title="Filter by store"><option value="">All stores</option></select>
+              <div class="search-box"><input type="text" id="search" placeholder="Search order, customer, code..."></div>
+            </div>
+          </div>
+          <table class="no-stack">
+            <thead><tr><th>Order</th><th>Customer</th><th>Items</th><th>Total</th><th>Store</th><th>Code (Shopify tag)</th></tr></thead>
+            <tbody id="tbody"><tr><td colspan="6" class="loading">Loading...</td></tr></tbody>
+          </table>
+          <div style="padding:12px 20px; display:flex; align-items:center; justify-content:center; gap:14px; flex-wrap:wrap;">
+            <span id="shownCount" class="sub"></span>
+            <button class="btn secondary" id="btnMore" style="width:auto; display:none;">Load more</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= 2. BULK UPLOAD ================= -->
+      <div class="pane" id="p-upload">
+        <div class="card">
+          <div class="card-head"><h2>Upload Excel — Order ID → Code</h2><button class="btn secondary" id="btnSample" style="width:auto;">⬇ Sample .xlsx</button></div>
+          <div style="padding:16px 20px;">
+            <div class="drop" id="drop">
+              <div style="font-size:26px;">📄</div>
+              <b>Drop your .xlsx / .csv here</b> or click to choose<br>
+              <span class="sub">Columns: <b>Order ID</b> and <b>Code</b> (headings auto-detected; extra columns ignored). Order IDs are matched against orders dated <b id="dropRange">—</b> — change the dates above if the orders are older.</span>
+              <input type="file" id="file" accept=".xlsx,.xls,.csv" style="display:none;">
+            </div>
+            <div id="fileInfo" class="sub" style="margin-top:8px;"></div>
+          </div>
+        </div>
+
+        <div class="card" id="resCard" style="display:none;">
+          <div class="card-head"><h2>Matching result — <span class="sub" id="resTitle"></span></h2>
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+              <label class="sub" style="display:flex; align-items:center; gap:5px;"><input type="checkbox" id="onlyProblems"> Only problems</label>
+              <button class="btn secondary" id="btnProblems" style="width:auto;">⬇ Problem rows</button>
+              <button class="btn secondary" id="btnCancel" style="width:auto;">Cancel</button>
+              <button class="btn" id="btnApply" style="width:auto;">Apply</button>
+            </div></div>
+          <div style="padding:0 20px;"><div class="res" id="resCounts"></div></div>
+          <table class="no-stack">
+            <thead><tr><th>Row</th><th>Order ID (excel)</th><th>Matched order</th><th>Code</th><th>Status</th></tr></thead>
+            <tbody id="resBody"></tbody>
+          </table>
+          <div style="padding:14px 20px; display:flex; gap:12px; align-items:center; flex-wrap:wrap; background:#fff8e6; border-top:1px solid #f0c36d;">
+            <span style="font-size:13px; color:#8a5a00;" id="applyNote">Saving matched rows to the database and writing Shopify tags…</span>
+            <button class="btn" id="btnApply2" style="width:auto; margin-left:auto;">Apply</button>
+          </div>
+        </div>
+
+        <div class="card" id="doneCard" style="display:none;">
+          <div style="padding:18px 20px; display:flex; gap:14px; align-items:center; flex-wrap:wrap;">
+            <div style="font-size:28px;">✅</div>
+            <div><b id="doneMsg"></b><div class="sub" id="doneSub"></div></div>
+            <button class="btn secondary" style="width:auto; margin-left:auto;" onclick="go('orders')">View orders</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="assets/js/config.js?v=260929d"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script>
+  guardPage();
+  renderSidebar('order_codes');
+
+  const alertBox = document.getElementById('alertBox');
+  function showAlert(msg, type = 'success') {
+    alertBox.innerHTML = `<div class="alert ${type}">${msg}</div>`;
+    setTimeout(() => (alertBox.innerHTML = ''), 5000);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const inr = (v) => '₹' + Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+  const normCode = (s) => String(s || '').toUpperCase().replace(/\s+/g, '');
+  const pad = (n) => String(n).padStart(2, '0');
+  const dstr = (d) => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+  const todayStr = () => dstr(new Date());
+  const fmtD = (d) => new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+  const fmtDT = (s) => { const d = new Date(s); return isNaN(d) ? '' : d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }) + ' · ' + d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }); };
+  const range = () => ({ from: document.getElementById('dateFrom').value, to: document.getElementById('dateTo').value });
+  // A dropped connection ("Failed to fetch") is retried a couple of times
+  // before it is shown as an error — the server may just have been busy.
+  async function withRetry(fn, onRetry) {
+    for (let i = 0; ; i++) {
+      try { return await fn(); }
+      catch (err) {
+        if (i >= 2 || !/failed to fetch|networkerror|load failed/i.test(err.message)) throw err;
+        if (onRetry) onRetry(i + 1);
+        await new Promise(r => setTimeout(r, 1500 * (i + 1)));
+      }
+    }
+  }
+
+  // ---------- tabs ----------
+  const loaded = { orders: false };
+  window.go = function (p) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.dataset.p === p));
+    document.querySelectorAll('.pane').forEach(x => x.classList.toggle('on', x.id === 'p-' + p));
+    if (p === 'orders' && !loaded.orders) loadOrders();
+    if (p === 'upload') document.getElementById('dropRange').textContent = fmtD(range().from) + ' – ' + fmtD(range().to);
+    try { history.replaceState(null, '', '#' + p); } catch (e) {}
+  };
+  document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => go(t.dataset.p)));
+
+  // ---------- 1. orders ----------
+  let orders = [], SOURCES = {}, filter = 'all', limit = 50, dbCodes = null;
+  // Customer lookup mode: while a mobile number (6+ digits) has matching orders, the table lists THOSE orders (any date).
+  let custRows = [], custMode = false;
+  const curRows = () => custMode ? custRows : orders;
+  const PAGE = 50;
+  const codeCell = (o, i) => {
+    if (o.code) {
+      const via = o.code_via === 'excel' ? 'excel' : (o.code_via === 'shopify' ? 'from Shopify tag' : (o.code_via ? 'manual' : ''));
+      const who = o.code_by ? (via ? ' · ' : '') + esc(o.code_by) : '';
+      const tag = o.can_tag ? (o.tag_written ? ' · tag ✓' : (o.tag_error ? ` · <span style="color:#c81e1e;" title="${esc(o.tag_error)}">tag ✗</span>` : '')) : '';
+      return `<span class="code">${esc(o.code)} <span class="x" title="Remove code" onclick="setCode(${i}, '')">×</span></span>
+        <button class="lnk" style="margin-left:6px;" onclick="editCode(${i})">edit</button>
+        <div class="sub">${via}${who}${tag}</div>`;
+    }
+    return `<span class="inl"><input id="ci${i}" placeholder="e.g. AG00123" onkeydown="if(event.key==='Enter'){setCode(${i}, this.value)}"><button class="btn" onclick="setCode(${i}, document.getElementById('ci${i}').value)">Save</button></span>`;
+  };
+  function matches(o) {
+    if (filter === 'none' && o.code) return false;
+    if (filter === 'coded' && !o.code) return false;
+    const src = document.getElementById('sourceFilter').value;
+    if (src && o.source !== src) return false;
+    const q = document.getElementById('search').value.trim().toLowerCase();
+    if (!q || custMode) return true;
+    return [o.order_name, o.customer, o.code, o.store, o.id].some(v => String(v || '').toLowerCase().includes(q));
+  }
+  function renderOrders() {
+    if (custMode) document.getElementById('ordersTitle').textContent = 'Orders — mobile ' + document.getElementById('search').value.trim() + ' · all dates';
+    else setOrdersTitle();
+    const tb = document.getElementById('tbody');
+    const rows = curRows();
+    const all = rows.length, coded = rows.filter(o => o.code).length;
+    document.getElementById('cntAll').textContent = all; document.getElementById('cntNone').textContent = all - coded;
+    document.getElementById('cntCoded').textContent = coded;
+    const sg = document.getElementById('statGrid');
+    sg.style.display = 'grid';
+    sg.innerHTML = `
+      <div class="stat-card"><div class="label">Orders</div><div class="value">${all}</div></div>
+      <div class="stat-card"><div class="label">With code</div><div class="value" style="color:#0f7a41;">${coded} <small>${all ? Math.round(coded / all * 100) : 0}%</small></div></div>
+      <div class="stat-card"><div class="label">No code yet</div><div class="value" style="color:#b45f06;">${all - coded}</div></div>
+      <div class="stat-card" title="Rows in the order_codes table (all dates)"><div class="label">Saved in database</div><div class="value">${dbCodes === null ? '—' : dbCodes} <small>all dates</small></div></div>`;
+    const m = rows.filter(matches);
+    const shown = m.slice(0, limit);
+    document.getElementById('shownCount').textContent = m.length ? `Showing ${shown.length} of ${m.length}` : '';
+    document.getElementById('btnMore').style.display = shown.length < m.length ? 'inline-block' : 'none';
+    if (!shown.length) { tb.innerHTML = '<tr><td colspan="6" class="empty-state">No matching orders.</td></tr>'; return; }
+    tb.innerHTML = shown.map(o => {
+      const i = rows.indexOf(o);
+      return `<tr id="r${i}">
+        <td><b>${esc(o.order_name)}</b>${o.cancelled ? ' <span class="st cxl">Cancelled</span>' : ''}<div class="sub">${fmtDT(o.created_at)}</div></td>
+        <td>${esc(o.customer)}${o.phone ? `<div class="sub">${esc(o.phone)}</div>` : ''}</td>
+        <td>${o.items}</td>
+        <td>${inr(o.total)}${o.financial_status ? `<div class="sub">${esc(o.financial_status)}</div>` : ''}</td>
+        <td>${esc(o.store)}${o.source_label !== o.store ? `<div class="sub">${esc(o.source_label)}</div>` : ''}</td>
+        <td>${codeCell(o, i)}</td>
+      </tr>`;
+    }).join('');
+  }
+  window.editCode = function (i) {
+    const o = curRows()[i]; const old = o.code; o.code = '';
+    renderOrders();
+    const inp = document.getElementById('ci' + i); if (inp) { inp.value = old; inp.focus(); inp.select(); }
+    o.code = old; // restored on next render / cancel
+  };
+  window.setCode = async function (i, code) {
+    const o = curRows()[i]; code = normCode(code);
+    if (code === '' && !o.code) { renderOrders(); return; }
+    if (code !== '' && !/^[A-Z0-9_-]{2,40}$/.test(code)) { showAlert('Code can only have letters, numbers, - and _ (e.g. AG00123).', 'error'); return; }
+    if (code === '' && !confirm('Remove code ' + o.code + ' from ' + o.order_name + (o.can_tag ? ' (the Shopify tag is removed too)' : '') + '?')) { renderOrders(); return; }
+    const row = document.getElementById('r' + i); if (row) row.style.opacity = '.5';
+    try {
+      const d = await api.post('order_codes.set', { source: o.source, order_id: String(o.id), order_name: o.order_name, code, old_code: o.code || '' });
+      const upd = { code: d.code, code_via: d.code_via, code_by: d.code_by, code_at: d.code_at, tag_written: d.tag_written, tag_error: d.tag_error };
+      Object.assign(o, upd);
+      const same = orders.find(x => x !== o && x.source === o.source && String(x.id) === String(o.id));   // keep the day list in step
+      if (same) Object.assign(same, upd);
+      renderOrders();
+      showAlert(d.message, d.tag_error ? 'error' : 'success');
+    } catch (err) { if (row) row.style.opacity = ''; showAlert(err.message, 'error'); }
+  };
+  function setOrdersTitle() {
+    const { from, to } = range();
+    document.getElementById('ordersTitle').textContent = 'Orders — ' + (from === to ? fmtD(from) : fmtD(from) + ' to ' + fmtD(to));
+  }
+  async function loadOrders() {
+    const { from, to } = range();
+    if (!from || !to) return;
+    if (from > to) { showAlert('"From" date must be before "To" date.', 'error'); return; }
+    loaded.orders = true;
+    setOrdersTitle();
+    document.getElementById('tbody').innerHTML = '<tr><td colspan="6" class="loading">Loading...</td></tr>';
+    try {
+      const d = await withRetry(() => api.get('order_codes.list', { date_from: from, date_to: to }),
+        (n) => { document.getElementById('tbody').innerHTML = `<tr><td colspan="6" class="loading">Server busy — retrying (${n})…</td></tr>`; });
+      orders = d.orders || []; SOURCES = d.sources || {}; dbCodes = d.db_codes ?? null;
+      if (d.db_error) showAlert(d.db_error, 'error');
+      const sf = document.getElementById('sourceFilter'); const cur = sf.value;
+      sf.innerHTML = '<option value="">All stores</option>' + Object.entries(SOURCES).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('');
+      sf.value = cur;
+      (d.errors || []).forEach(e => showAlert(e, 'error'));
+      limit = PAGE; renderOrders();
+    } catch (err) {
+      document.getElementById('tbody').innerHTML = `<tr><td colspan="6"><div class="alert error">${esc(err.message)}</div></td></tr>`;
+    }
+  }
+  document.querySelectorAll('.pill').forEach(p => p.addEventListener('click', () => { document.querySelectorAll('.pill').forEach(x => x.classList.toggle('on', x === p)); filter = p.dataset.f; limit = PAGE; renderOrders(); }));
+  let st = null;
+  document.getElementById('search').addEventListener('input', () => { clearTimeout(st); st = setTimeout(() => { limit = PAGE; renderOrders(); }, 150); });
+  document.getElementById('sourceFilter').addEventListener('change', () => { limit = PAGE; renderOrders(); });
+
+  // ---------- Customer lookup: type a mobile number (6+ digits) in the search box and every order of that
+  // customer, from ANY date, is listed in the Orders table (order id, store, amount, code — add / edit the code right there);
+  // the card above it shows the customer's details and totals.
+  const custPanel = document.getElementById('custPanel'), custBody = document.getElementById('custBody');
+  let custSeq = 0, custTimer = null;
+  const phoneQuery = (v) => /^[\d\s+\-().]+$/.test(v) && v.replace(/\D/g, '').length >= 6;
+  const fmtPh = (d) => d.length === 10 ? d.slice(0, 5) + ' ' + d.slice(5) : d;
+  const fmtDay = (t) => t ? new Date(t).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+  function custClose() { custSeq++; custPanel.hidden = true; custBody.innerHTML = ''; if (custMode) { custMode = false; custRows = []; renderOrders(); } }
+  function custCard(c) {
+    const ph = c.phone, others = (c.other_phones || []).map(fmtPh).join(', ');
+    const wa = ph.length === 10 ? 'https://wa.me/91' + ph : 'https://wa.me/' + ph;
+    return `<div class="cust-one">
+      <div class="cust-id">
+        <div class="cust-av">${esc((c.name === 'Guest' ? '#' : c.name.split(/\s+/).map(w => w[0]).slice(0, 2).join('')).toUpperCase())}</div>
+        <div class="cust-nm"><b>${esc(c.name)}</b><div class="cust-ph">${esc(fmtPh(ph))}${others ? ` <small>· also ${esc(others)}</small>` : ''}</div></div>
+        <div class="cust-act"><a href="tel:+91${esc(ph)}">📞 Call</a><a class="wa" href="${wa}" target="_blank" rel="noopener">WhatsApp</a></div>
+      </div>
+      <div class="cust-stats">
+        <div class="cust-stat g"><div class="l">Orders</div><div class="v">${c.order_count}${c.cancelled_count ? ` <span class="sub">+${c.cancelled_count} cancelled</span>` : ''}</div></div>
+        <div class="cust-stat g"><div class="l">Total spent</div><div class="v">${inr(c.spent)}</div></div>
+        <div class="cust-stat"><div class="l">First order</div><div class="v">${esc(fmtDay(c.first_at))}</div></div>
+        <div class="cust-stat"><div class="l">Last order</div><div class="v">${esc(fmtDay(c.last_at))}</div></div>
+        <div class="cust-stat"><div class="l">Bought from</div><div class="v" style="font-size:13px;">${esc((c.stores || []).join(', '))}</div></div>
+      </div>
+    </div>`;
+  }
+  async function custLookup() {
+    const v = document.getElementById('search').value.trim();
+    if (!phoneQuery(v)) { custClose(); return; }
+    const id = ++custSeq;
+    custPanel.hidden = false;
+    document.getElementById('custSub').textContent = 'Searching ' + v + ' in all orders…';
+    custBody.innerHTML = '<div class="cust-msg">Searching all dates…</div>';
+    try {
+      const d = await api.get('order_codes.customer_search', { phone: v });
+      if (id !== custSeq) return;                                  // typed something else meanwhile
+      const cs = d.customers || [];
+      // The table below lists this customer's orders (every date) so the code can be added / edited right there.
+      custRows = cs.flatMap(c => c.orders).map(o => ({ source: o.store_key, id: o.id, order_name: o.order_name, created_at: o.created_at, customer: o.customer, phone: o.phone,
+        items: o.items, total: o.total, financial_status: o.financial_status, store: o.store, source_label: o.source_label, code: o.code || '', cancelled: o.cancelled }));
+      custMode = custRows.length > 0; limit = PAGE; renderOrders();
+      document.getElementById('custSub').textContent = cs.length
+        ? `${v} · ${d.orders_found} order${d.orders_found === 1 ? '' : 's'} found, all dates` + (cs.length > 1 ? ` · ${d.matches} different numbers match` : '')
+        : v + ' · all dates';
+      const errs = (d.errors || []).map(e => `<div class="alert error" style="margin:10px 20px;">${esc(e)}</div>`).join('');
+      custBody.innerHTML = errs + (cs.length ? cs.map(custCard).join('')
+        : '<div class="cust-msg">No order found with this mobile number (checked the Shopify stores and MySales, including the extra mobile number). Check the digits, or try fewer digits.</div>');
+    } catch (err) {
+      if (id !== custSeq) return;
+      custBody.innerHTML = `<div class="alert error" style="margin:14px 20px;">${esc(err.message)}</div>`;
+    }
+  }
+  document.getElementById('search').addEventListener('input', () => { clearTimeout(custTimer); custTimer = setTimeout(custLookup, 450); });
+  document.getElementById('custX').addEventListener('click', custClose);
+  document.getElementById('btnMore').addEventListener('click', () => { limit += PAGE; renderOrders(); });
+
+  // ---------- 2. bulk upload ----------
+  let preview = null;
+  const drop = document.getElementById('drop'), fileIn = document.getElementById('file');
+  drop.addEventListener('click', () => fileIn.click());
+  drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+  drop.addEventListener('drop', (e) => { e.preventDefault(); drop.classList.remove('over'); if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
+  fileIn.addEventListener('change', () => { if (fileIn.files[0]) handleFile(fileIn.files[0]); fileIn.value = ''; });
+
+  // Find the "Order ID" and "Code" columns by their headings (any wording
+  // containing order / id and code / tag); fall back to columns A and B.
+  function rowsFromSheet(aoa) {
+    const rows = aoa.filter(r => r && r.some(c => String(c ?? '').trim() !== ''));
+    if (!rows.length) return [];
+    const head = rows[0].map(c => String(c ?? '').trim().toLowerCase());
+    let oi = head.findIndex(h => /order|invoice|#/.test(h) && !/code|tag/.test(h));
+    let ci = head.findIndex(h => /code|tag/.test(h));
+    let start = 1;
+    if (oi < 0 || ci < 0) { oi = 0; ci = 1; start = /^[a-z ]+$/.test(head[0]) && /^[a-z ]+$/.test(head[1] || '') ? 1 : 0; }
+    const out = [];
+    for (let r = start; r < rows.length; r++) {
+      const id = rows[r][oi], code = rows[r][ci];
+      if (String(id ?? '').trim() === '' && String(code ?? '').trim() === '') continue;
+      out.push({ row: r + 1, order_id: String(id ?? '').trim(), code: String(code ?? '').trim() });
+    }
+    return out;
+  }
+  async function handleFile(file) {
+    document.getElementById('fileInfo').textContent = 'Reading ' + file.name + '…';
+    let rows = [];
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      rows = rowsFromSheet(XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' }));
+    } catch (err) { document.getElementById('fileInfo').textContent = ''; showAlert('Could not read the file: ' + err.message, 'error'); return; }
+    if (!rows.length) { document.getElementById('fileInfo').textContent = ''; showAlert('No Order ID / Code rows found in ' + file.name + '.', 'error'); return; }
+    document.getElementById('fileInfo').textContent = file.name + ' · ' + rows.length + ' rows · matching against orders ' + fmtD(range().from) + ' – ' + fmtD(range().to) + '…';
+    document.getElementById('doneCard').style.display = 'none';
+    try {
+      const d = await withRetry(() => api.post('order_codes.preview', { rows, date_from: range().from, date_to: range().to }),
+        (n) => { document.getElementById('fileInfo').textContent = file.name + ' · server busy — retrying (' + n + ')…'; });
+      preview = d; preview.file = file.name;
+      (d.errors || []).forEach(e => showAlert(e, 'error'));
+      document.getElementById('fileInfo').textContent = file.name + ' · ' + rows.length + ' rows';
+      renderPreview();
+      document.getElementById('resCard').scrollIntoView({ behavior: 'smooth' });
+      // Matched rows are saved straight away — no separate Apply step.
+      await applyPreview(true);
+    } catch (err) { document.getElementById('fileInfo').textContent = ''; showAlert(err.message, 'error'); }
+  }
+  const STATUS = { match: ['ok', 'Matched'], replace: ['warn', 'Will replace'], same: ['skip', 'Already same'], notfound: ['bad', 'Order not found'], skip: ['skip', 'Skipped'] };
+  function renderPreview() {
+    const d = preview; if (!d) return;
+    document.getElementById('resCard').style.display = '';
+    document.getElementById('resTitle').textContent = d.file + ' · ' + d.rows.length + ' rows';
+    const c = d.counts;
+    document.getElementById('resCounts').innerHTML = `
+      <div><div class="n" style="color:#0f7a41;">${c.match}</div><div class="l">Matched · will assign</div></div>
+      <div><div class="n" style="color:#b45f06;">${c.replace}</div><div class="l">Already has a code · will replace</div></div>
+      <div><div class="n" style="color:#c81e1e;">${c.notfound}</div><div class="l">Order not found</div></div>
+      <div><div class="n" style="color:#6b7280;">${c.skip}</div><div class="l">Skipped (blank / same / duplicate)</div></div>`;
+    const n = c.match + c.replace;
+    ['btnApply', 'btnApply2'].forEach(id => { const btn = document.getElementById(id); btn.textContent = 'Apply ' + n + ' code' + (n === 1 ? '' : 's'); btn.disabled = n === 0; });
+    const only = document.getElementById('onlyProblems').checked;
+    const rows = d.rows.filter(r => !only || (r.status !== 'match' && r.status !== 'same'));
+    document.getElementById('resBody').innerHTML = rows.length ? rows.map(r => {
+      const [cls, lbl] = STATUS[r.status] || ['skip', r.status];
+      const o = r.order;
+      return `<tr>
+        <td>${r.row}</td>
+        <td>${esc(r.order_id)}</td>
+        <td>${o ? `<b>${esc(o.order_name)}</b> · ${esc(o.customer)} · ${inr(o.total)} <span class="sub">${esc(o.store)}</span>${o.old_code ? ` · has <span class="code">${esc(o.old_code)}</span>` : ''}` : `<span class="sub">${esc(r.note)}</span>`}</td>
+        <td>${r.code ? `<span class="code">${esc(r.code)}</span>` : '<span class="sub">(blank)</span>'}</td>
+        <td><span class="st ${cls}">${lbl}</span>${r.note && o ? `<div class="sub">${esc(r.note)}</div>` : ''}</td>
+      </tr>`;
+    }).join('') : '<tr><td colspan="5" class="empty-state">No problem rows — everything matched.</td></tr>';
+  }
+  document.getElementById('onlyProblems').addEventListener('change', renderPreview);
+  document.getElementById('btnCancel').addEventListener('click', () => { preview = null; document.getElementById('resCard').style.display = 'none'; document.getElementById('fileInfo').textContent = ''; });
+  document.getElementById('btnProblems').addEventListener('click', () => {
+    if (!preview) return;
+    const rows = preview.rows.filter(r => r.status !== 'match' && r.status !== 'same' && r.status !== 'replace').map(r => ({ 'Order ID': r.order_id, 'Code': r.code, 'Problem': r.note || (STATUS[r.status] || [])[1] || r.status }));
+    if (!rows.length) { showAlert('No problem rows.'); return; }
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Problems');
+    XLSX.writeFile(wb, 'order_codes_problems.xlsx');
+  });
+  document.getElementById('btnSample').addEventListener('click', () => {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Order ID', 'Code'], ['#TMPH-58211', 'AG00123'], ['369910', 'BR00042']]), 'Codes');
+    XLSX.writeFile(wb, 'order_codes_sample.xlsx');
+  });
+  document.getElementById('btnApply2').addEventListener('click', () => document.getElementById('btnApply').click());
+  document.getElementById('btnApply').addEventListener('click', () => applyPreview(false));
+  async function applyPreview(auto) {
+    if (!preview) return;
+    const items = preview.rows.filter(r => (r.status === 'match' || r.status === 'replace') && r.order)
+      .map(r => ({ source: r.order.source, id: r.order.id, order_name: r.order.order_name, code: r.code, old_code: r.order.old_code || '' }));
+    if (!items.length) { if (auto) document.getElementById('applyNote').textContent = 'Nothing new to save — every matched order already has this code.'; return; }
+    if (!auto && !confirm('Apply ' + items.length + ' code' + (items.length === 1 ? '' : 's') + '? Shopify tags will be written now.')) return;
+    document.getElementById('applyNote').textContent = 'Saving ' + items.length + ' code' + (items.length === 1 ? '' : 's') + ' to the database and writing Shopify tags…';
+    // Sent in small batches: every Shopify tag is two API calls, so one
+    // request for hundreds of orders would hit the server's time limit.
+    const btn = document.getElementById('btnApply'); btn.disabled = true; document.getElementById('btnApply2').disabled = true;
+    const BATCH = 8; let saved = 0, verified = 0, tagged = 0, tagFailed = [];
+    try {
+      for (let i = 0; i < items.length; i += BATCH) {
+        btn.textContent = `Applying ${Math.min(i + BATCH, items.length)} / ${items.length}…`;
+        const d = await withRetry(() => api.post('order_codes.apply', { items: items.slice(i, i + BATCH) }));
+        saved += d.saved || 0; verified += d.verified || 0; tagged += d.tagged || 0; tagFailed = tagFailed.concat(d.tag_failed || []);
+        // Mark the rows done so a failure mid-way leaves the rest re-applicable.
+        items.slice(i, i + BATCH).forEach(it => { const r = preview.rows.find(x => x.order && x.order.source === it.source && x.order.id === it.id); if (r) { r.status = 'same'; r.note = 'Saved'; } });
+      }
+      document.getElementById('resCard').style.display = 'none';
+      document.getElementById('doneMsg').textContent = saved + ' order' + (saved === 1 ? '' : 's') + ' updated · ' + tagged + ' Shopify tag' + (tagged === 1 ? '' : 's') + ' written' + (tagFailed.length ? ' · ' + tagFailed.length + ' tag' + (tagFailed.length === 1 ? '' : 's') + ' failed' : '');
+      const c = preview.counts;
+      document.getElementById('doneSub').innerHTML = `${c.match} assigned · ${c.replace} replaced · ${c.notfound + c.skip} skipped (${c.notfound} not found, ${c.skip} blank / same / duplicate)` + (tagFailed.length ? `<div style="color:#c81e1e; margin-top:4px;">Tag not written: ${tagFailed.map(esc).join('; ')}</div>` : '');
+      if (verified < saved) document.getElementById('doneSub').innerHTML += `<div style="color:#c81e1e; margin-top:4px;">Only ${verified} of ${saved} could be read back from the database — check the api build / database user rights.</div>`;
+      document.getElementById('doneCard').style.display = '';
+      document.getElementById('fileInfo').textContent = '';
+      preview = null; loaded.orders = false;
+      // Show the result straight away: the Orders tab reloads with the new codes.
+      go('orders'); document.querySelector('.pill[data-f="coded"]').click();
+    } catch (err) {
+      document.getElementById('applyNote').textContent = 'Stopped after ' + saved + ' of ' + items.length + ' — press Apply for the rest.';
+      showAlert('Stopped after ' + saved + ' of ' + items.length + ': ' + err.message + ' — press Apply again for the rest.', 'error');
+      preview.counts = { match: preview.rows.filter(r => r.status === 'match').length, replace: preview.rows.filter(r => r.status === 'replace').length, notfound: preview.counts.notfound, skip: preview.rows.filter(r => ['skip', 'same'].includes(r.status)).length };
+      btn.disabled = false; renderPreview();
+    }
+  }
+
+  // ---------- dates ----------
+  function reloadAll() {
+    loaded.orders = false;
+    const p = document.querySelector('.tab.on').dataset.p;
+    if (p === 'orders') loadOrders(); else if (p === 'upload') document.getElementById('dropRange').textContent = fmtD(range().from) + ' – ' + fmtD(range().to);
+  }
+  document.getElementById('dateFrom').addEventListener('change', reloadAll);
+  document.getElementById('dateTo').addEventListener('change', reloadAll);
+  document.getElementById('btnToday').addEventListener('click', () => { document.getElementById('dateFrom').value = todayStr(); document.getElementById('dateTo').value = todayStr(); reloadAll(); });
+  document.getElementById('btnMonth').addEventListener('click', () => { const d = new Date(); document.getElementById('dateFrom').value = dstr(new Date(d.getFullYear(), d.getMonth(), 1)); document.getElementById('dateTo').value = todayStr(); reloadAll(); });
+  document.getElementById('dateFrom').value = todayStr();
+  document.getElementById('dateTo').value = todayStr();
+  const hash = (location.hash || '').replace('#', '');
+  go(['orders', 'upload'].includes(hash) ? hash : 'orders');
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>

@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Login — HRMS</title>
+<script>
+  // Already signed in: go straight to the home page before anything is drawn — no login page flash.
+  // The opening splash then plays on that page (dashboard.html / my_sales.html).
+  (function () {
+    try {
+      if (localStorage.getItem('hrms_token')) {
+        var u = JSON.parse(localStorage.getItem('hrms_user') || 'null');
+        window.__hsGo = true;
+        window.location.replace((u && u.role === 'Employee') ? (localStorage.getItem('hrms_home') || 'my_day.html') : 'dashboard.html');   // Employees land on My Sales (their numbers); non-sales roles are sent to attendance.html by layout.js and remembered
+      }
+    } catch (e) { /* fall through to the login form */ }
+  })();
+</script>
+<script src="assets/js/splash.js?v=4"></script>
+<link rel="stylesheet" href="assets/css/style.css?v=4">
+</head>
+<body>
+  <div class="auth-wrap">
+    <div class="auth-card">
+      <h1>Login</h1>
+      <p class="sub">Sign in to continue to your dashboard</p>
+      <div id="alertBox"></div>
+      <form id="loginForm">
+        <div class="field">
+          <label for="username">Username</label>
+          <input type="text" id="username" required autofocus>
+        </div>
+        <div class="field">
+          <label for="password">Password</label>
+          <div style="position:relative;">
+            <input type="password" id="password" required style="padding-right:40px; width:100%; box-sizing:border-box;">
+            <button type="button" id="togglePassword" aria-label="Show password"
+              style="position:absolute; right:6px; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; padding:6px; display:flex; align-items:center; color:#6b7280;">
+              <svg id="eyeIcon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <button type="submit" class="btn block" id="loginBtn">Sign in</button>
+      </form>
+    </div>
+  </div>
+
+<script src="assets/js/config.js?v=2"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script>
+  // Each role has its own home page: employees never pass through the
+  // admin Dashboard. replace() keeps the login page out of the history, so
+  // the phone's back button can't land on it (or on a page it bounced off).
+  const homeFor = (u) => (u && u.role === 'Employee') ? (localStorage.getItem('hrms_home') || 'my_day.html') : 'dashboard.html';
+  if (api.token()) window.location.replace(homeFor(api.currentUser()));   // safety net; normally handled in <head>
+
+  const togglePassword = document.getElementById('togglePassword');
+  const passwordInput = document.getElementById('password');
+  const eyeIcon = document.getElementById('eyeIcon');
+  const eyeOpenPath = '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>';
+  const eyeOffPath = '<path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a18.5 18.5 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>';
+
+  togglePassword.addEventListener('click', () => {
+    const showing = passwordInput.type === 'text';
+    passwordInput.type = showing ? 'password' : 'text';
+    eyeIcon.innerHTML = showing ? eyeOpenPath : eyeOffPath;
+    togglePassword.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
+  });
+
+  const form = document.getElementById('loginForm');
+  const alertBox = document.getElementById('alertBox');
+  const loginBtn = document.getElementById('loginBtn');
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    alertBox.innerHTML = '';
+    loginBtn.disabled = true;
+    loginBtn.textContent = 'Signing in...';
+
+    try {
+      const data = await api.post('login', {
+        username: document.getElementById('username').value.trim(),
+        password: document.getElementById('password').value,
+      });
+      api.setToken(data.token);
+      api.setUser(data.user);
+      try { localStorage.removeItem('hrms_home'); } catch (e) { /* ignore */ }      // a different person may have used this device: learn the home page again
+      window.location.replace(homeFor(data.user));
+    } catch (err) {
+      alertBox.innerHTML = '<div class="alert error">' + err.message + '</div>';
+    } finally {
+      loginBtn.disabled = false;
+      loginBtn.textContent = 'Sign in';
+    }
+  });
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>

@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=4">
+<style>
+  /* One workspace page: title, tabs, and the page of the chosen tab inside. */
+  .topbar > .ws-top, .topbar > .ws-tabs, .topbar > .ws-needs{justify-content:flex-start !important;}
+  .topbar > .ws-top > div{display:block; width:auto;}
+  .ws-top{display:flex; align-items:flex-end; gap:12px 18px; flex-wrap:wrap; position:relative;}
+  .ws-top h1{margin:0; font-size:26px; letter-spacing:-.01em;}
+  .ws-top .sub{font-size:12.5px; color:var(--muted); margin-top:2px;}
+  .ws-tabs{display:flex; gap:6px; overflow-x:auto; padding:2px 2px 6px; margin:6px 0 0; scrollbar-width:none; -webkit-overflow-scrolling:touch;}
+  .ws-tabs::-webkit-scrollbar{display:none;}
+  .ws-tabs:empty{display:none;}
+  .ws-pill{flex:none; border:0; cursor:pointer; font:inherit; font-size:13px; font-weight:600; color:#4b5563; background:#fff; padding:8px 16px; border-radius:99px; box-shadow:0 1px 3px rgba(20,22,26,.08); white-space:nowrap; transition:background .15s,color .15s;}
+  .ws-pill:hover{background:#f6f7f9;}
+  .ws-pill.on{background:var(--ink); color:#fff;}
+  .ws-pill em{font-style:normal; background:#e02424; color:#fff; border-radius:9px; font-size:11px; padding:0 6px; margin-left:6px; line-height:16px; display:inline-block;}
+  .ws-needs{display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:4px 2px 8px;}
+  .ws-needs:empty{display:none;}
+  .ws-lbl{font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin-right:4px;}
+  .ws-chip{background:var(--accent); color:#fff !important; border-radius:99px; padding:7px 14px; font-size:13px; text-decoration:none !important; box-shadow:0 2px 8px rgba(255,122,47,.28);}
+  .ws-chip b{font-weight:800;}
+  .ws-ok{font-size:13px; color:var(--ok-fg); background:var(--ok-bg); border-radius:14px; padding:6px 14px; font-weight:600; display:inline-block; max-width:100%; line-height:1.4;}
+  .ws-stage{position:relative; height:calc(100vh - 168px); min-height:460px;}
+  body.ws-focus #menuToggle, body.ws-focus #sidebarBackdrop{display:none !important;}
+  body.ws-focus{overflow:hidden;} body.ws-focus .ws-stage{position:fixed !important; inset:0; height:auto !important; min-height:0 !important; z-index:900; background:#f4f6fa;}
+  .ws-frame{display:block; width:100%; height:100%; border:0; background:transparent;}
+  .ws-frame[hidden], .ws-load[hidden]{display:none !important;}
+  .ws-load{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:13px;}
+  .ws-empty{padding:40px 12px; text-align:center; color:var(--muted); font-size:14px;}
+  @media (max-width:820px){ .ws-stage{height:calc(100vh - 170px);} .ws-top h1{font-size:22px;}
+    .topbar > .ws-tabs{flex-wrap:nowrap !important; overflow-x:auto;}
+    .topbar > .ws-tabs > .ws-pill{flex:none !important; width:auto !important; height:auto !important; padding:8px 16px !important;}
+    .topbar > .ws-needs{gap:8px;} .topbar > .ws-needs > *{width:auto !important;} }
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar" style="display:block;">
+      <div class="ws-top"><div><h1 id="wsTitle">…</h1><div class="sub" id="wsSub"></div></div><div class="ws-tools" id="wsTools"></div></div>
+      <div class="ws-tabs" id="wsTabs" role="tablist"></div>
+      <div class="ws-needs" id="wsNeeds"></div>
+    </div>
+    <div class="content">
+      <div class="ws-stage" id="wsStage"><div class="ws-load" id="wsLoad">Loading…</div><div id="wsHost" style="height:100%"></div></div>
+    </div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=2"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script>
+  guardPage();
+  (function () {
+    var w = new URLSearchParams(location.search).get('w') || 'home';
+    renderSidebar('ws:' + w);
+    if (!window.WS) { document.getElementById('wsHost').innerHTML = '<div class="ws-empty">The menu update is not installed yet (layout.js).</div>'; return; }
+    window.WS.hub();
+  })();
+</script>
+<script>
+/* The stage fills what is left of the screen, whatever sits above it (tabs, the Boss Engine strip, the festival garland). The fixed "100vh - 168px" cut the chat box off at the bottom. */
+(function () {
+  var st = document.getElementById('wsStage'), main = document.querySelector('main.main'), q = 0;
+  if (!st) return;
+  function fit() {
+    q = 0;
+    var top = st.getBoundingClientRect().top + (window.pageYOffset || 0);
+    st.style.height = Math.max(460, Math.floor(window.innerHeight - top - 12)) + 'px';
+  }
+  /* WhatsApp opens full screen: nothing of the HRMS menu, title or tabs is left; the page has its own small "‹ HRMS" button */
+  var askFull = false;   // a page inside asked for the whole screen (e.g. a complaint case open on a phone) — it asks again with false when it is closed
+  window.addEventListener('message', function (e) { if (e.origin === location.origin && e.data && typeof e.data.wsFocus === 'boolean') { askFull = e.data.wsFocus; focus(); } });
+  window.addEventListener('popstate', function () { askFull = false; });
+  function focus() { var P = new URLSearchParams(location.search), t = P.get('t') || ''; document.body.classList.toggle('ws-focus', askFull || (P.get('w') === 'whatsapp' && (t === '' || t === 'whatsapp'))); }
+  setInterval(focus, 400); focus();
+  function soon() { if (!q) q = requestAnimationFrame(fit); }
+  window.addEventListener('resize', soon); window.addEventListener('load', soon); window.addEventListener('orientationchange', soon);
+  try { if (main && window.MutationObserver) new MutationObserver(soon).observe(main, { childList: true, subtree: true }); } catch (e) { /* the resize hook still works */ }
+  soon();
+})();
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>

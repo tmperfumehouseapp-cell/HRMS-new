@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Incoming — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=260928b">
+<link rel="stylesheet" href="assets/css/store.css?v=6">
+<style>
+  /* every channel: its own colour dot (the same palette as the Store charts) */
+  .ch{--c:var(--sx-blue);--t:var(--sx-blue-t)}
+  .ch.store_cash{--c:#c4521f;--t:var(--sx-orange-t)}.ch.store_online{--c:var(--sx-violet);--t:var(--sx-violet-t)}.ch.online_prepaid{--c:var(--sx-blue);--t:var(--sx-blue-t)}.ch.online_cod{--c:#12805a;--t:var(--sx-aqua-t)}.ch.retail{--c:#b45309;--t:#fff4e0}.ch.other{--c:#6b7280;--t:#eef0f3}
+  .fi-nav{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+  .fi-nav .dt{display:flex;align-items:center;gap:4px;background:#fff;border-radius:16px;box-shadow:var(--sx-shadow);padding:4px}
+  .fi-nav .dt button{border:0;background:none;width:34px;height:34px;border-radius:12px;font-size:18px;font-weight:800;cursor:pointer}.fi-nav .dt button:hover{background:var(--sx-bg)}.fi-nav .dt button:disabled{opacity:.3;cursor:default}
+  .fi-nav .dt input{border:0;font:800 14px inherit;background:none;min-height:0;padding:4px 2px;width:132px}
+  .fi-nav .sp{flex:1}
+  .fi-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(clamp(250px,24vw,330px),1fr));gap:clamp(8px,1vw,14px)}
+  .cc{background:#fff;border-radius:20px;box-shadow:var(--sx-shadow);padding:12px 14px 12px;border-top:5px solid var(--c);cursor:pointer;display:flex;flex-direction:column;gap:8px;min-width:0;transition:transform .1s}
+  .cc:hover{transform:translateY(-2px)}
+  .cc .hd{display:flex;align-items:center;gap:8px}.cc .hd b{font-size:14px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .cc .hd .dot{width:12px;height:12px;border-radius:50%;background:var(--c);flex:0 0 auto}
+  .cc .nums{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}.cc .nums div{background:var(--t);border-radius:12px;padding:6px 8px;min-width:0}
+  .cc .nums span{display:block;font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--c)}.cc .nums b{display:block;font-size:clamp(14px,1.3vw,17px);letter-spacing:-.02em;white-space:nowrap}
+  .cc .nums div.o{background:#fff;box-shadow:inset 0 0 0 2px var(--c)}.cc .nums div.o.z{box-shadow:inset 0 0 0 2px var(--sx-line)}.cc .nums div.o.z span{color:var(--sx-mut)}
+  .cc .bar{height:8px;border-radius:99px;background:#eef0f3;overflow:hidden}.cc .bar i{display:block;height:100%;background:var(--c);border-radius:99px}
+  .cc .ft{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--sx-mut);font-weight:700}.cc .ft .sp{flex:1}
+  .spark{display:flex;gap:3px;align-items:flex-end;height:26px}.spark span{width:10px;height:26px;position:relative}.spark i{position:absolute;bottom:0;left:0;right:0;border-radius:3px 3px 1px 1px;background:var(--t);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--c) 30%,transparent)}.spark i.r{background:var(--c);left:2px;right:2px;box-shadow:none}
+  .age{padding:1px 9px;border-radius:999px;font-weight:800;font-size:11px;background:#eef0f3;color:#6b7280}.age.w{background:#fff4e0;color:#b45309}.age.b{background:#fdecea;color:#b42318}
+  .rr{display:grid;grid-template-columns:92px minmax(110px,1fr) minmax(120px,1.2fr) minmax(90px,1fr) 100px 24px;gap:8px;align-items:center;padding:8px 4px;border-top:1px solid var(--sx-line);font-size:13px}
+  .rr.head{border-top:0;font-size:11px;font-weight:800;color:var(--sx-mut);letter-spacing:.05em;text-transform:uppercase}.rr .r{text-align:right}.rr.void{opacity:.45;text-decoration:line-through}
+  .rr small{display:block;color:var(--sx-mut);font-size:11px}.rr a{color:var(--sx-accent);font-weight:800;cursor:pointer;text-decoration:none}
+  @media (max-width:820px){.rr{grid-template-columns:1fr 1fr 90px}.rr.head{display:none}.rr .nm{grid-column:1/-1}}
+  .bk{display:flex;gap:8px;flex-wrap:wrap}.bk .b{background:#fff;border-radius:14px;box-shadow:var(--sx-shadow);padding:6px 12px;font-size:12.5px}.bk .b b{display:block;font-size:15px}.bk .b span{color:var(--sx-mut);font-weight:700}
+  /* drawer */
+  .ov{position:fixed;inset:0;background:rgba(20,22,26,.42);opacity:0;pointer-events:none;transition:opacity .18s;z-index:40}.ov.on{opacity:1;pointer-events:auto}
+  .dr{position:fixed;top:0;right:0;bottom:0;width:min(500px,96vw);background:var(--sx-bg);z-index:41;display:flex;flex-direction:column;transform:translateX(104%);transition:transform .22s cubic-bezier(.2,.8,.2,1);box-shadow:-18px 0 50px rgba(20,22,26,.22);border-radius:26px 0 0 26px}.dr.on{transform:none}
+  .dr.wide{width:min(720px,96vw)}@media (max-width:640px){.dr,.dr.wide{width:100%;border-radius:0}}
+  .dr-h{display:flex;align-items:center;gap:10px;padding:12px 16px;background:#fff;border-radius:26px 0 0 0;box-shadow:0 1px 0 var(--sx-line)}@media (max-width:640px){.dr-h{border-radius:0}}
+  .dr-h b{font-size:16px;flex:1}.dr-x{border:0;background:var(--sx-bg);width:34px;height:34px;border-radius:50%;cursor:pointer;font-size:18px;font-weight:700}
+  .dr-b{flex:1;overflow-y:auto;padding:12px 14px;display:grid;gap:10px;align-content:start}.dr-f{padding:10px 14px calc(12px + env(safe-area-inset-bottom));background:#fff;box-shadow:0 -1px 0 var(--sx-line)}
+  .dr .sx-card{padding:12px 14px;border-radius:18px;box-shadow:none;border:1px solid var(--sx-line)}.dr .sx-in{min-height:38px;padding:7px 10px;font-size:14px}
+  .chs{display:grid;grid-template-columns:1fr 1fr;gap:6px}.chs button{border:2px solid var(--sx-line);background:#fff;border-radius:12px;padding:8px 8px;font:700 12.5px inherit;cursor:pointer;text-align:left;display:flex;gap:7px;align-items:center}.chs button i{width:10px;height:10px;border-radius:50%;background:var(--c);flex:0 0 auto}.chs button.on{border-color:var(--c);background:var(--t)}
+  .paper{background:#fff;border-radius:18px;box-shadow:var(--sx-shadow);padding:18px 18px 14px;font-size:13px}.paper h4{margin:0;font-size:15px}.paper .big{font-size:34px;font-weight:900;letter-spacing:-.03em;margin:10px 0 4px}.paper .kv{display:grid;grid-template-columns:110px 1fr;gap:4px 10px;margin:8px 0}.paper .kv span{color:var(--sx-mut);font-weight:700;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em}
+  .drop svg{width:30px;height:30px;color:var(--sx-accent)}.drop small{display:block;font-weight:600;margin-top:4px}.drop{display:block}
+  @media (max-width:760px){.sx-kpis{grid-template-columns:1fr}}
+  .drop{border:2px dashed var(--sx-line);border-radius:16px;padding:22px 12px;text-align:center;background:#fff;cursor:pointer;color:var(--sx-mut);font-weight:700}.drop:hover{border-color:var(--sx-accent);color:var(--sx-ink)}
+  .tabs2{display:flex;gap:6px;margin-bottom:8px}.tabs2 button{border:0;background:#fff;border-radius:999px;padding:6px 14px;font:800 12.5px inherit;cursor:pointer;box-shadow:inset 0 0 0 1.5px var(--sx-line)}.tabs2 button.on{background:var(--sx-ink);color:#fff;box-shadow:none}
+  .ol{display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-top:1px solid var(--sx-line);font-size:12.5px}.ol:first-child{border-top:0}
+  @media print{body *{visibility:hidden}#paperBox,#paperBox *{visibility:visible}#paperBox{position:absolute;left:0;top:0;width:100%}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><div><h1>Incoming</h1><div class="sub" style="font-size:12.5px;color:var(--muted);margin-top:2px" id="subLine">Money booked, money received, money still to come</div></div></div>
+    <div class="content"><div class="sx-page" id="root"><div class="sx-card sx-mut">Loading…</div></div></div>
+  </main>
+</div>
+<div class="ov" id="ov"></div>
+<aside class="dr" id="dr" aria-hidden="true"><div class="dr-h"><b id="drT"></b><button class="dr-x" id="drX" aria-label="Close">×</button></div><div class="dr-b" id="drB"></div><div class="dr-f" id="drF"></div></aside>
+
+<script src="assets/js/config.js?v=4"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script src="assets/js/store_common.js?v=3"></script>
+<script>
+  guardPage();
+  renderSidebar('finance_in');
+  const m2 = (n) => { n = Number(n || 0); return '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: Math.abs(n % 1) > 0.004 ? 2 : 0, maximumFractionDigits: 2 }); };
+  const dShort = (d) => new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+  const addDays = (d, n) => { const x = new Date(d + 'T00:00:00'); x.setDate(x.getDate() + n); return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'); };
+  const CH = [['store_cash', 'Store · cash'], ['store_online', 'Store · UPI / card'], ['online_prepaid', 'Online · prepaid'], ['online_cod', 'Online · COD'], ['retail', 'Retail · dealers'], ['other', 'Other']];
+  const ageCls = (a) => a >= 10 ? 'b' : a >= 4 ? 'w' : '';
+  let D = null, day = '', ACC = [];
+
+  // ---------- drawer
+  const open = (title, body, foot, wide) => { $('drT').textContent = title; $('drB').innerHTML = body; $('drF').innerHTML = foot || ''; $('drF').style.display = foot ? '' : 'none'; $('dr').classList.toggle('wide', !!wide); $('dr').classList.add('on'); $('ov').classList.add('on'); $('dr').setAttribute('aria-hidden', 'false'); };
+  const close = () => { $('dr').classList.remove('on'); $('ov').classList.remove('on'); $('dr').setAttribute('aria-hidden', 'true'); };
+  $('drX').onclick = close; $('ov').onclick = close; document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+  const note = (id, m, bad) => { const e = $(id); if (e) e.innerHTML = m ? `<div class="sx-msg ${bad ? 'bad' : 'ok'}">${sxi(bad ? 'xc' : 'ok')}<span>${esc(m)}</span></div>` : ''; };
+  // the screen shows TWO combined cards: Store (cash + UPI / card) and Online (prepaid + COD); the channels stay separate underneath (matching, receipts)
+  const FI_GROUPS = [{ key: 'store', label: 'Store', hint: 'Cash and UPI / card taken at the store (Pine Labs)', cls: 'store_online', parts: ['store_cash', 'store_online'] }, { key: 'online', label: 'Online', hint: 'Shopify orders: prepaid (gateway) and COD (courier)', cls: 'online_prepaid', parts: ['online_prepaid', 'online_cod'] }];
+  const fiGroups = (chs) => {
+    const by = {}; chs.forEach((c) => { by[c.key] = c; }); const used = {}, out = [];
+    FI_GROUPS.forEach((g) => {
+      const ps = g.parts.map((k) => by[k]).filter(Boolean); if (!ps.length) return; ps.forEach((c) => { used[c.key] = 1; });
+      const sum = (f) => ps.reduce((s, c) => s + (+c[f] || 0), 0), n = Math.max(...ps.map((c) => (c.spark || []).length));
+      out.push({ key: ps[0].key, cls: g.cls, label: g.label, hint: g.hint, orders_day: sum('orders_day'), booked_day: sum('booked_day'), received_day: sum('received_day'), booked_total: sum('booked_total'), received_total: sum('received_total'), outstanding: sum('outstanding'), advance: sum('advance'), oldest_age: Math.max(0, ...ps.filter((c) => c.outstanding > 0).map((c) => c.oldest_age || 0)),
+        spark: Array.from({ length: n }, (_, i) => ({ day: (ps[0].spark[i] || {}).day, booked: ps.reduce((s, c) => s + ((c.spark[i] || {}).booked || 0), 0), received: ps.reduce((s, c) => s + ((c.spark[i] || {}).received || 0), 0) })),
+        parts: ps.map((c) => ({ key: c.key, label: c.label.replace(/^(Store|Online)\s*[·\-–—:]?\s*/i, '') || c.label, outstanding: c.outstanding })) });
+    });
+    chs.forEach((c) => { if (!used[c.key]) out.push(Object.assign({ cls: c.key }, c)); });
+    return out;
+  };
+  const chPick = (sel) => `<div class="chs" id="chs">${CH.map(([k, l]) => `<button type="button" class="ch ${k} ${k === sel ? 'on' : ''}" data-ch="${k}"><i></i>${esc(l)}</button>`).join('')}</div>`;
+  const accSel = (id) => `<select class="sx-in" id="${id}"><option value="">Choose where it was received…</option>${ACC.filter((a) => a.active).map((a) => `<option value="${a.id}">${esc(a.name)}${a.last4 ? ' ••' + esc(a.last4) : ''}</option>`).join('')}</select>`;
+  let pickedCh = '';
+  document.addEventListener('click', (e) => { const b = e.target.closest('[data-ch]'); if (b && b.closest('#chs')) { pickedCh = b.dataset.ch; document.querySelectorAll('#chs button').forEach((x) => x.classList.toggle('on', x === b)); } });
+
+  // ---------- the day screen
+  function draw() {
+    const T = D.totals, canNext = day < D.today;
+    $('subLine').textContent = 'Booked = what the sales say should come · Received = what reached a bank or cash box · Outstanding = still to come';
+    $('root').innerHTML = `
+      <div class="fi-nav"><div class="dt"><button id="pv" aria-label="Previous day">‹</button><input type="date" id="dp" value="${esc(day)}" max="${esc(D.today)}"><button id="nx" ${canNext ? '' : 'disabled'} aria-label="Next day">›</button></div>
+        <b style="font-size:15px">${esc(dShort(day))}${day === D.today ? ' · today' : ''}</b><span class="sp"></span>
+        <button class="sx-btn ghost" id="bUp">Upload Excel</button><button class="sx-btn" id="bRc">+ Receipt</button></div>
+      ${D.accounts_n ? '' : `<div class="sx-card" style="margin-bottom:12px"><div class="sx-msg warn">${sxi('alert')}<span>Add your bank accounts and cash boxes first (5–6 of them), so every receipt says where the money landed. <b><a href="#" id="bAcc0">Add accounts →</a></b></span></div></div>`}
+      ${D.track_from ? '' : `<div class="sx-card" style="margin-bottom:12px"><div class="sx-msg warn">${sxi('alert')}<span><b>Choose the day tracking starts.</b> Orders placed before it are not tracked, and a file row for such an order is not counted. <a href="#" id="bTrack0"><b>Set the start day →</b></a></span></div></div>`}
+      ${(T.overdue_n || T.refunds_due_n) ? `<div class="sx-card" style="margin-bottom:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">${T.overdue_n ? `<span class="sx-pill warn">${sxi('alert')} ${T.overdue_n} parcel${T.overdue_n === 1 ? '' : 's'} older than ${D.wait_days} days, money not received · ${m2(T.overdue_amount)}</span>` : ''}${T.refunds_due_n ? `<span class="sx-pill bad">${sxi('xc')} ${T.refunds_due_n} refund${T.refunds_due_n === 1 ? '' : 's'} to give customers · ${m2(T.refunds_due)}</span>` : ''}<a class="sx-pill info" style="text-decoration:none" href="hub.html?w=finance&t=finance_parcels" target="_top">Open Parcels →</a></div>` : ''}
+      <div class="sx-kpis">
+        <div class="sx-kpi blue"><div class="ic">${sxi('chart')}</div><div class="tx"><div class="lb">Booked this day</div><b>${m2(T.booked)}</b><small>what the sales say should come</small></div></div>
+        <div class="sx-kpi aqua"><div class="ic">${sxi('ok')}</div><div class="tx"><div class="lb">Received this day</div><b>${m2(T.received)}</b><small>${D.receipts.filter((r) => r.status === 'ok').length} receipt${D.receipts.filter((r) => r.status === 'ok').length === 1 ? '' : 's'}</small></div></div>
+        <div class="sx-kpi orange"><div class="ic">${sxi('alert')}</div><div class="tx"><div class="lb">Outstanding (all days)</div><b>${m2(T.outstanding)}</b><small>still to come from everywhere</small></div></div>
+      </div>
+      <div class="fi-grid">${fiGroups(D.channels).map((c) => {
+        const pct = c.booked_total > 0 ? Math.min(100, Math.round(c.received_total / c.booked_total * 100)) : 0, mx = Math.max(1, ...c.spark.map((s) => Math.max(s.booked, s.received)));
+        return `<div class="cc ch ${c.cls || c.key}" data-open="${c.key}" title="${esc(c.hint)}"><div class="hd"><span class="dot"></span><b>${esc(c.label)}</b>${c.orders_day ? `<small class="sx-mut">${c.orders_day} order${c.orders_day === 1 ? '' : 's'}</small>` : ''}</div>
+          <div class="nums"><div><span>Booked</span><b>${m2(c.booked_day)}</b></div><div><span>Received</span><b>${m2(c.received_day)}</b></div><div class="o ${c.outstanding > 0 ? '' : 'z'}"><span>Outstanding</span><b>${m2(c.outstanding)}</b></div></div>
+          ${c.parts ? `<div class="sx-mut" style="font-size:12px;margin:6px 0 2px;display:flex;gap:10px;flex-wrap:wrap">${c.parts.map((p) => `<span data-open="${p.key}" style="cursor:pointer">${esc(p.label)} <b>${m2(p.outstanding)}</b></span>`).join('<span>·</span>')}<span>outstanding</span></div>` : ''}
+          <div class="bar" title="${pct}% of everything booked has been received"><i style="width:${pct}%"></i></div>
+          <div class="ft"><div class="spark" title="Last 7 days: light = booked, solid = received">${c.spark.map((s) => `<span title="${esc(dShort(s.day))} · booked ${m2(s.booked)} · received ${m2(s.received)}"><i style="height:${Math.round(s.booked / mx * 22)}px"></i><i class="r" style="height:${Math.round(s.received / mx * 22)}px"></i></span>`).join('')}</div><span class="sp"></span>
+            ${c.outstanding > 0 ? `<span class="age ${ageCls(c.oldest_age)}">${c.oldest_age ? 'oldest ' + c.oldest_age + ' d' : 'today'}</span>` : '<span class="age">all received</span>'}${c.advance ? `<span class="age">advance ${m2(c.advance)}</span>` : ''}</div></div>`; }).join('')}</div>
+      <div class="sx-mut" style="font-size:12px;margin-top:10px">${D.track_from ? `Online tracked from <b>${esc(dShort(D.track_from))}</b> · store from <b>${esc(dShort(D.track_from_store || D.track_from))}</b> · parcels are flagged after <b>${D.wait_days}</b> days · <a href="#" id="bTrack">change</a>` : ''}</div>
+      <div class="sx-card" style="margin-top:12px"><h3>${sxi('box')} Where today's money landed <small>${esc(dShort(day))}</small></h3>
+        ${D.by_account.length ? `<div class="bk">${D.by_account.map((a) => `<div class="b"><span>${esc(a.name)}</span><b>${m2(a.amount)}</b></div>`).join('')}</div>` : '<div class="sx-mut">No receipt on this day yet.</div>'}
+        <div style="margin-top:8px"><a href="#" id="bAcc" class="sx-pill info" style="text-decoration:none">Manage accounts →</a></div></div>
+      <div class="sx-card" style="margin-top:12px"><h3>${sxi('receipt')} Receipts <small>${esc(dShort(day))}</small></h3>
+        ${D.receipts.length ? `<div class="rr head"><span>No</span><span>Channel</span><span>Account</span><span>Reference</span><span class="r">Amount</span><span></span></div>${D.receipts.map((r) => `<div class="rr ${r.status === 'void' ? 'void' : ''}"><span><b>${esc(r.no)}</b></span><span>${esc(r.channel_label)}</span><span>${esc(r.account)}</span><span>${esc(r.ref || r.payer || '—')}${r.source === 'file' ? '<small>from a file</small>' : ''}</span><span class="r"><b>${m2(r.amount)}</b></span><span><a data-rc="${r.id}" title="Open receipt">↗</a></span></div>`).join('')}` : '<div class="sx-mut">No receipts on this day. Press <b>+ Receipt</b> or <b>Upload Excel</b>.</div>'}
+      </div>`;
+  }
+  async function load(d) {
+    try { D = await api.get('fi.overview', d ? { date: d } : {}); day = D.date; ACC = (await api.get('fi.accounts')).accounts; draw(); }
+    catch (e) { $('root').innerHTML = `<div class="sx-card"><div class="sx-msg bad">${sxi('xc')}<span>${esc(e.message)}</span></div></div>`; }
+  }
+  document.addEventListener('click', (e) => {
+    const t = e.target;
+    if (t.id === 'pv') load(addDays(day, -1)); else if (t.id === 'nx' && !t.disabled) load(addDays(day, 1));
+    else if (t.id === 'bRc') receiptDrawer(); else if (t.id === 'bUp') uploadDrawer();
+    else if (t.id === 'bAcc' || t.id === 'bAcc0') { e.preventDefault(); accDrawer(); }
+    else if (t.id === 'bTrack' || t.id === 'bTrack0') { e.preventDefault(); trackDrawer(); }
+    const c = t.closest('[data-open]'); if (c) outDrawer(c.dataset.open);
+    const r = t.closest('[data-rc]'); if (r) paperDrawer(+r.dataset.rc);
+  });
+  document.addEventListener('change', (e) => { if (e.target.id === 'dp' && e.target.value) load(e.target.value); });
+
+  // ---------- + Receipt
+  function receiptDrawer(pre) {
+    pre = pre || {}; pickedCh = pre.channel || '';
+    open('New receipt', `<div class="sx-card"><div class="sx-f" style="margin-bottom:6px">What is this money for?</div>${chPick(pickedCh)}</div>
+      <div class="sx-card"><div class="sx-r2"><label class="sx-f">Amount ₹<input class="sx-in" id="rA" type="number" min="0" step="0.01" inputmode="decimal" value="${esc(pre.amount || '')}"></label><label class="sx-f">Date received<input class="sx-in" id="rD" type="date" value="${esc(day)}" max="${esc(D.today)}"></label></div>
+        <label class="sx-f" style="margin-top:10px">Received in<br>${accSel('rAcc')}</label>
+        <div class="sx-r2" style="margin-top:10px"><label class="sx-f">Reference (UTR / slip no.)<input class="sx-in" id="rRef" autocomplete="off"></label><label class="sx-f">Received from<input class="sx-in" id="rPay" autocomplete="off" placeholder="e.g. Delhivery, PayU"></label></div>
+        <label class="sx-f" style="margin-top:10px">Note<input class="sx-in" id="rNote" autocomplete="off"></label><div id="rMsg" style="margin-top:8px"></div></div>`,
+      `<button class="sx-btn big" id="rSave">Save receipt</button>`);
+    $('rSave').onclick = async () => {
+      const body = { channel: pickedCh, amount: +$('rA').value, date: $('rD').value, account_id: +$('rAcc').value, ref: $('rRef').value, payer: $('rPay').value, note: $('rNote').value };
+      try { const r = await api.post('fi.receipt_save', body); await load(day); paperDrawer(r.receipt.id, true); }
+      catch (err) { if (/already in receipt/.test(err.message)) { if (confirm(err.message + '\n\nSave anyway?')) { try { const r = await api.post('fi.receipt_save', { ...body, force: 1 }); await load(day); paperDrawer(r.receipt.id, true); } catch (e2) { note('rMsg', e2.message, 1); } } } else note('rMsg', err.message, 1); }
+    };
+  }
+
+  // ---------- the receipt itself (print / copy for WhatsApp)
+  async function paperDrawer(id, fresh) {
+    let d; try { d = await api.get('fi.receipt_get', { id }); } catch (e) { return alert(e.message); }
+    const r = d.receipt, c = d.company, txt = `${c.name}\nRECEIPT ${r.no}\nDate: ${r.date}\nAmount: ${m2(r.amount)}\nFor: ${r.channel_label}\nReceived in: ${r.account}${r.ref ? '\nRef: ' + r.ref : ''}${r.payer ? '\nFrom: ' + r.payer : ''}`;
+    open('Receipt ' + r.no, `${fresh ? `<div class="sx-msg ok">${sxi('ok')}<span>Saved. This is the receipt.</span></div>` : ''}<div class="paper" id="paperBox"><h4>${esc(c.name)}</h4><div class="sx-mut" style="font-size:11.5px">${esc(c.address || '')}${c.gstin ? ' · GSTIN ' + esc(c.gstin) : ''}</div>
+      <div style="margin-top:10px;font-weight:800;letter-spacing:.2em;font-size:11px;color:var(--sx-mut)">RECEIPT ${esc(r.no)}${r.status === 'void' ? ' · CANCELLED' : ''}</div><div class="big">${m2(r.amount)}</div>
+      <div class="kv"><span>Date</span><b>${esc(r.date)}</b><span>For</span><b>${esc(r.channel_label)}</b><span>Received in</span><b>${esc(r.account)}</b>${r.payer ? `<span>Received from</span><b>${esc(r.payer)}</b>` : ''}${r.ref ? `<span>Reference</span><b>${esc(r.ref)}</b>` : ''}${r.note ? `<span>Note</span><b>${esc(r.note)}</b>` : ''}${d.orders_proved ? `<span>Orders proved</span><b>${d.orders_proved} order${d.orders_proved === 1 ? '' : 's'}</b>` : ''}<span>Entered by</span><b>${esc(r.by)}</b></div>
+      ${r.claude_note ? `<div class="sx-msg info" style="margin-top:8px">${sxi('info')}<span><b>✨ Claude:</b> ${esc(r.claude_note)}</span></div>` : ''}${r.status === 'void' ? `<div class="sx-msg bad">${sxi('xc')}<span>Cancelled: ${esc(r.void_reason)}</span></div>` : ''}</div>
+      ${r.status === 'ok' ? `<div class="sx-card"><div class="sx-f">Made a mistake?</div><div style="display:flex;gap:8px;margin-top:6px"><input class="sx-in" id="vR" placeholder="Why is this receipt cancelled?"><button class="sx-btn ghost" id="vB">Cancel receipt</button></div><div id="vM" style="margin-top:6px"></div></div>` : ''}`,
+      `<div style="display:flex;gap:8px"><button class="sx-btn big" id="pPrint">Print</button><button class="sx-btn big ghost" id="pCopy">Copy for WhatsApp</button></div>`);
+    $('pPrint').onclick = () => window.print();
+    $('pCopy').onclick = async () => { try { await navigator.clipboard.writeText(txt); $('pCopy').textContent = 'Copied ✓'; } catch (e) { prompt('Copy this', txt); } };
+    if ($('vB')) $('vB').onclick = async () => { try { await api.post('fi.receipt_void', { id: r.id, reason: $('vR').value }); await load(day); close(); } catch (e) { note('vM', e.message, 1); } };
+  }
+
+  // ---------- one channel: open days, parcels, old outstanding
+  async function outDrawer(ch) {
+    let x; try { x = await api.get('fi.outstanding', { channel: ch }); } catch (e) { return alert(e.message); }
+    const s = x.state, o = x.orders;
+    open(x.label, `<div class="bk"><div class="b"><span>Booked (all)</span><b>${m2(s.booked)}</b></div><div class="b"><span>Received (all)</span><b>${m2(s.received)}</b></div><div class="b"><span>Outstanding</span><b>${m2(s.outstanding)}</b></div></div>
+      ${o ? `<div class="sx-card"><div class="sx-f" style="margin-bottom:6px">Parcels / orders</div><div class="bk"><div class="b"><span>Orders booked</span><b>${o.booked}</b></div><div class="b"><span>Proved by a file</span><b>${o.settled}</b></div><div class="b"><span>Still waiting</span><b>${o.waiting}</b></div><div class="b"><span>Waiting amount</span><b>${m2(o.waiting_amount)}</b></div></div>
+        <div class="sx-mut" style="font-size:12px;margin:6px 0">An order turns “proved” when an uploaded remittance / settlement file lists it. Orders with no file yet are the ones still waiting.</div>
+        ${o.list.map((q) => `<div class="ol"><span><b>${esc(q.name)}</b> · ${esc(dShort(q.day))}</span><b>${m2(q.amount)}</b></div>`).join('') || '<div class="sx-mut">Nothing is waiting.</div>'}${o.waiting > o.list.length ? `<div class="sx-mut" style="font-size:12px;margin-top:4px">…and ${o.waiting - o.list.length} more, oldest first shown.</div>` : ''}</div>` : ''}
+      <div class="sx-card"><div class="sx-f" style="margin-bottom:6px">Days still open (oldest first)</div>${s.open_days.length ? s.open_days.map((d) => `<div class="ol"><span>${esc(dShort(d.day))} <span class="age ${ageCls(d.age)}">${d.age} d</span>${d.orders ? ` · ${d.orders} order${d.orders === 1 ? '' : 's'}` : ''}</span><span>${m2(d.pending)} <small class="sx-mut">of ${m2(d.booked)}</small></span></div>`).join('') : '<div class="sx-mut">Everything booked has been received.</div>'}<div class="sx-mut" style="font-size:12px;margin-top:6px">Money received is applied to the oldest day first.</div></div>`,
+      `<button class="sx-btn big" id="oRc">+ Receipt for ${esc(x.label)}</button>`, true);
+    $('oRc').onclick = () => receiptDrawer({ channel: ch });
+  }
+
+  // ---------- old outstanding
+  // ---------- the day tracking starts
+  function trackDrawer() {
+    open('Tracking start day', `<div class="sx-card"><div class="sx-msg info">${sxi('info')}<span>Money is tracked <b>only for orders placed on or after this day</b>. Older parcels are not tracked: a remittance file row for one of them is ignored, so old settlements do not confuse the books.</span></div></div>
+      <div class="sx-card"><div class="sx-r2"><label class="sx-f">Online: start tracking from<input class="sx-in" id="tF" type="date" value="${esc(D.track_from || D.today)}"></label><label class="sx-f">Store: start tracking from<input class="sx-in" id="tFs" type="date" value="${esc(D.track_from_store || D.today)}"></label><label class="sx-f">Flag a parcel after (days)<input class="sx-in" id="tW" type="number" min="1" max="60" value="${esc(D.wait_days)}"></label></div>
+        <label class="sx-f" style="margin-top:10px">On the Dispatch screen, tuck away paid / closed parcels older than (days)<input class="sx-in" id="tK" type="number" min="7" max="60" value="${esc(D.keep_days || 20)}"></label>
+        <div class="sx-mut" style="font-size:12px;margin:2px 0 8px">Parcels with an open issue (money not received, RTO not closed, refund due) are never tucked away. Anyone can press “show them” on the Dispatch screen.</div>
+        <label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;font-weight:700"><input type="checkbox" id="tA" ${+D.auto_remit === 0 ? '' : 'checked'} style="margin-top:3px"><span>Tick “Money received” in Dispatch by itself when an uploaded file proves a COD payment<small class="sx-mut" style="display:block;font-weight:600">Only for delivered parcels, only when (nearly) the full amount arrived, and it says “Finance file RC-…”.</small></span></label><div id="tM" style="margin-top:8px"></div></div>`, `<button class="sx-btn big" id="tS">Save</button>`);
+    $('tS').onclick = async () => { try { await api.post('fi.settings_save', { track_from: $('tF').value, track_from_store: $('tFs').value, wait_days: +$('tW').value, keep_days: +$('tK').value, auto_remit: $('tA').checked ? 1 : 0 }); await load(day); close(); } catch (e) { note('tM', e.message, 1); } };
+  }
+
+  // ---------- accounts
+  function accDrawer() {
+    const list = () => ACC.map((a) => `<div class="ol"><span><b>${esc(a.name)}</b>${a.last4 ? ' ••' + esc(a.last4) : ''} <small class="sx-mut">${esc(a.kind)}${a.active ? '' : ' · hidden'}</small></span><span><b>${m2(a.received_total)}</b> <small class="sx-mut">received</small></span></div>`).join('') || '<div class="sx-mut">No account yet.</div>';
+    open('Bank accounts and cash boxes', `<div class="sx-card"><div class="sx-f" style="margin-bottom:6px">Your accounts</div>${list()}</div>
+      <div class="sx-card"><div class="sx-f" style="margin-bottom:6px">Add one</div><label class="sx-f">Name<input class="sx-in" id="aN" placeholder="e.g. HDFC current, Store cash box" autocomplete="off"></label>
+        <div class="sx-r2" style="margin-top:10px"><label class="sx-f">Type<select class="sx-in" id="aK"><option value="bank">Bank</option><option value="cash">Cash box</option><option value="wallet">Wallet / gateway</option></select></label><label class="sx-f">Last 4 digits<input class="sx-in" id="aL" inputmode="numeric" maxlength="4"></label></div><div id="aM" style="margin-top:8px"></div></div>`,
+      `<button class="sx-btn big" id="aS">Add account</button>`);
+    $('aS').onclick = async () => { try { await api.post('fi.account_save', { name: $('aN').value, kind: $('aK').value, last4: $('aL').value }); await load(day); accDrawer(); } catch (e) { note('aM', e.message, 1); } };
+  }
+
+  // ---------- Upload Excel: Claude reads it, you confirm
+  function uploadDrawer() {
+    open('Upload Excel / CSV', `<div class="sx-card"><label class="drop" for="uF">${sxi('receipt')}<br>Choose the file (.xlsx or .csv)<br><small>A courier COD remittance, a gateway settlement, a UPI report or a bank statement. Claude reads what it is.</small></label><input type="file" id="uF" accept=".xlsx,.csv,.txt,.tsv" style="display:none"><div id="uM" style="margin-top:8px"></div></div><div id="uR"></div>`, '');
+    $('uF').onchange = async () => {
+      const f = $('uF').files[0]; if (!f) return; $('uM').innerHTML = `<div class="sx-mut">Reading ${esc(f.name)} …</div>`; $('uR').innerHTML = '';
+      try { const fd = new FormData(); fd.append('file', f); const p = await api.upload('fi.upload_preview', fd); $('uM').innerHTML = ''; showPreview(p); }
+      catch (e) { note('uM', e.message, 1); }
+    };
+  }
+  function showPreview(p) {
+    const a = p.analysis; pickedCh = a.channel;
+    $('uR').innerHTML = `<div class="sx-card"><div class="sx-f" style="margin-bottom:4px">${a.by_claude ? '✨ Claude read this file' : 'Read by header words'}</div><div style="font-weight:800">${esc(p.file)}</div>
+      <div class="sx-mut" style="font-size:12.5px;margin:4px 0 8px">${esc(a.summary || '')}${a.provider ? ' · ' + esc(a.provider) : ''}</div>
+      <div class="bk"><div class="b"><span>Rows in file</span><b>${p.received_rows}</b></div><div class="b"><span>Counted</span><b>${p.counted_rows}</b></div><div class="b"><span>Total counted</span><b>${m2(p.total)}</b></div>${p.orders_matched || ['online_cod', 'online_prepaid'].includes(a.channel) ? `<div class="b"><span>Orders we were waiting for</span><b>${p.orders_matched}</b></div>` : ''}</div>
+      ${!p.pine ? `<div class="sx-msg" style="margin-top:8px">${sxi('info')}<span><b>Columns read:</b> amount = “${esc((p.read || {}).amount_col || '—')}”${(p.read || {}).net_col ? `, net settled = “${esc(p.read.net_col)}”` : ''}; fee columns: ${(p.charge && p.charge.cols && p.charge.cols.length) ? esc(p.charge.cols.join(', ')) : '<b>none found</b>'}.${p.charge && p.charge.amount ? '' : ' No fees were taken off, so the full amount is counted.'}${(p.sums || []).length ? `<br><small>Column totals in the file: ${(p.sums || []).map(x => esc(x.col) + ' = ' + m2(x.sum)).join(' · ')}</small>` : ''}</span></div>` : ''}
+      ${p.charge && p.charge.amount ? `<div class="sx-msg" style="margin-top:8px">${sxi('alert')}<span><b>${esc(p.analysis.provider || 'Gateway')} charges:</b> ${m2(p.charge.amount)} (${esc((p.charge.cols || []).join(' + '))}) — kept as a spend. Paid by customers ${m2(p.charge.gross || 0)}; only the <b>net settled ${m2((p.charge.gross || 0) - p.charge.amount)}</b> is counted as received.</span></div>` : ''}
+      ${p.pine ? `<div class="sx-msg ${(p.classes.noref || p.classes.badref) ? 'warn' : 'info'}" style="margin-top:8px">${sxi('alert')}<span><b>Pine Labs:</b> each payment is matched by the order ID typed on the machine (store bill, or a Shopify order for COD / courier orders).${(p.classes.noref || p.classes.badref) ? ' <b>' + ((p.classes.noref ? p.classes.noref.n : 0) + (p.classes.badref ? p.classes.badref.n : 0)) + ' payment(s) (' + m2((p.classes.noref ? p.classes.noref.amount : 0) + (p.classes.badref ? p.classes.badref.amount : 0)) + ') have no valid order ID</b> — they are saved as received money but flagged to Boss for a penalty.' : ''}</span></div>` : ''}
+      ${p.classes && p.classes.unknown ? `<div class="sx-msg info" style="margin-top:8px">${sxi('info')}<span><b>No tracked order found:</b> ${p.classes.unknown.n} row${p.classes.unknown.n === 1 ? '' : 's'} (${m2(p.classes.unknown.amount)}) match no order placed since tracking started (mostly older orders). The money is saved as received in the bank but is <b>not</b> set against the booked amount. Uploading the same file again does not count it twice.</span></div>` : ''}
+      ${p.classes && p.classes.no_order && p.untracked && p.untracked.n ? `<div class="sx-msg info" style="margin-top:8px">${sxi('info')}<span><b>No order ID in the file:</b> ${p.classes.no_order.n} row${p.classes.no_order.n === 1 ? '' : 's'} cannot be tied to a tracked order, so the money is saved as received in the bank but is <b>not</b> set against the booked amount.</span></div>` : ''}
+      ${p.classes && p.classes.before_start ? `<div class="sx-msg" style="margin-top:8px">${sxi('info')}<span><b>Older orders:</b> ${p.classes.before_start.n} row${p.classes.before_start.n === 1 ? '' : 's'} (${m2(p.classes.before_start.amount)}) are for orders placed before tracking started. The money is counted as received in the bank, but those orders are not tracked and it does not reduce the outstanding.</span></div>` : ''}
+      ${p.discount && p.discount.n ? `<div class="sx-msg" style="margin-top:8px">${sxi('alert')}<span><b>Prepaid discount lost:</b> ${m2(p.discount.amount)} on ${p.discount.n} order${p.discount.n === 1 ? '' : 's'} — the customer paid less than the order's prepaid amount, so this money will never arrive.</span></div>` : ''}
+      ${(() => { const c = p.classes || {}, L = { already: 'already proved by an earlier file', closed: 'for parcels you closed by hand' }, rows = Object.keys(L).filter((k) => c[k]); return rows.length ? `<div class="sx-msg warn" style="margin-top:8px">${sxi('alert')}<span><b>Not counted:</b> ${rows.map((k) => c[k].n + ' row' + (c[k].n === 1 ? '' : 's') + ' (' + m2(c[k].amount) + ') ' + L[k]).join(' · ')}.</span></div>` : ''; })()}
+      <div style="margin-top:8px">${p.by_day.map((d) => `<div class="ol"><span>${esc(d.day === 'no date' ? 'no date in file' : dShort(d.day))}</span><b>${m2(d.amount)}</b></div>`).join('')}</div></div>
+      <div class="sx-card"><div class="sx-f" style="margin-bottom:6px">What is this money for? <small class="sx-mut">${a.by_claude ? 'Claude suggests the highlighted one' : ''}</small></div>${chPick(a.channel)}
+        <label class="sx-f" style="margin-top:10px">Received in<br>${accSel('uAcc')}</label>${p.by_day.some((d) => d.day === 'no date') ? `<label class="sx-f" style="margin-top:10px">Date for rows without a date<input class="sx-in" id="uD" type="date" value="${esc(D.today)}" max="${esc(D.today)}"></label>` : ''}<div id="uM2" style="margin-top:8px"></div>
+        <details class="sx-d" style="margin-top:8px"><summary>First rows as read</summary><div style="font-size:12px;margin-top:6px">${p.sample.map((r) => `<div class="ol"><span>${esc(r.day || '—')} · ${esc(r.order || r.ref || '')}</span><b>${m2(r.amount)}</b></div>`).join('')}</div></details>
+        <button class="sx-btn big" id="uOk" style="margin-top:10px">Save ${p.by_day.filter((d) => d.day !== 'no date').length + (p.by_day.some((d) => d.day === 'no date') ? 1 : 0)} receipt(s)</button></div>`;
+    $('uOk').onclick = async () => {
+      try { const r = await api.post('fi.upload_commit', { upload_id: p.upload_id, channel: pickedCh, account_id: +$('uAcc').value, date: $('uD') ? $('uD').value : '', include_unknown: $('uUnk') && $('uUnk').checked ? 1 : 0 }); await load(day);
+        open('Saved', `<div class="sx-msg ok">${sxi('ok')}<span>${r.receipts.length} receipt${r.receipts.length === 1 ? '' : 's'} saved · ${m2(r.total)}${r.orders_proved ? ' · ' + r.orders_proved + ' order' + (r.orders_proved === 1 ? '' : 's') + ' proved as paid' : ''}${r.charge ? ' · gateway charges ' + m2(r.charge) + ' saved as spend' : ''}${r.pine_flags && r.pine_flags.length ? ' · ⚠ ' + r.pine_flags.length + ' payment(s) without a valid order ID flagged to Boss' : ''}${r.discount ? ' · prepaid discount lost ' + m2(r.discount) : ''}${r.ignored_rows ? ' · ' + r.ignored_rows + ' row' + (r.ignored_rows === 1 ? '' : 's') + ' not counted' : ''}${r.dispatch_ticked ? ' · “Money received” ticked on ' + r.dispatch_ticked + ' Dispatch parcel' + (r.dispatch_ticked === 1 ? '' : 's') : ''}.</span></div><div class="sx-card">${r.receipts.map((n) => `<div class="ol"><b>${esc(n)}</b></div>`).join('')}</div>`, `<button class="sx-btn big" id="sD">Done</button>`); $('sD').onclick = close; }
+      catch (e) { note('uM2', e.message, 1); }
+    };
+  }
+  load();
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>
