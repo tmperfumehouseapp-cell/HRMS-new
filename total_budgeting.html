@@ -81,6 +81,26 @@
 #tb td.n[data-emp]{cursor:pointer;} #tb td.n[data-emp]:hover{text-decoration:underline; color:#1d4ed8;}
 #tb .cl{background:#f3f0ff; border-radius:12px; padding:10px 14px; margin-bottom:10px; line-height:1.5; font-size:13px;} #tb .cl b.h{display:block; font-size:11px; text-transform:uppercase; letter-spacing:.07em; color:#6d4fd6; margin-bottom:2px;} #tb .cl ul{margin:6px 0 0; padding-left:18px;} #tb .cl li.bad{color:#b3261e;} #tb .cl li.warn{color:#8a5a00;} #tb .cl .ok{color:#1d6b47; font-weight:700;}
 #tb .tbtn{padding:6px 14px; border-radius:10px; background:var(--ink); color:#fff; font:inherit; font-weight:800; font-size:12.5px; border:0; cursor:pointer;} #tb .tbtn:disabled{opacity:.5; cursor:default;}
+#tb .te-k{margin-bottom:12px;}
+#tb .te-bar{display:flex; flex-wrap:wrap; gap:8px 12px; align-items:center; margin-bottom:12px;}
+#tb .te-bar input{font:inherit; font-size:13px; padding:7px 12px; border:1px solid var(--line); border-radius:99px; min-width:230px; background:#fff;}
+#tb .te-msg{font-size:12.5px; font-weight:600; color:#1d6b47;} #tb .te-msg.bad{color:#b3261e;}
+#tb .grp{background:#fff; border:1.5px solid var(--line); border-radius:16px; padding:12px 14px 6px; margin-bottom:12px; transition:border-color .15s, background .15s;}
+#tb .grp.over{border-color:#ea580c; background:#fff7ed; box-shadow:0 0 0 3px #fed7aa;}
+#tb .grp-h{display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 14px; margin-bottom:10px;}
+#tb .grp-h b{font-size:15px;} #tb .grp-h .cnt{background:var(--ink); color:#fff; border-radius:99px; padding:1px 9px; font-size:12px; font-weight:800;}
+#tb .grp-h span{color:var(--muted); font-size:12px;}
+#tb .strip{display:flex; flex-wrap:wrap; gap:14px 12px; padding-bottom:8px; min-height:92px; align-items:flex-start;}
+#tb .st{width:78px; text-align:center; cursor:grab; user-select:none; -webkit-user-select:none;}
+#tb .st:active{cursor:grabbing;} #tb .st.drag{opacity:.35;}
+#tb .ring{width:64px; height:64px; margin:0 auto 4px; border-radius:50%; padding:3px; background:linear-gradient(45deg,#f59e0b,#ea580c,#db2777); position:relative;}
+#tb .st.pend .ring{background:#cbd5e1;}
+#tb .ring .av{position:relative; width:100%; height:100%; border-radius:50%; border:2.5px solid #fff; background:#e5e7eb; overflow:hidden; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:20px; color:#fff;}
+#tb .ring .av img{position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:block; pointer-events:none;}
+#tb .st:hover .ring{transform:scale(1.06);} #tb .ring{transition:transform .12s;}
+#tb .st .nm{font-size:11.5px; font-weight:600; line-height:1.2; overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; word-break:break-word;}
+#tb .st .rl{font-size:10px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+#tb .grp .none{color:var(--muted); font-size:12.5px; padding:22px 4px; border:1.5px dashed var(--line); border-radius:12px; flex:1; text-align:center;}
 </style>
 </head>
 <body>
@@ -114,7 +134,7 @@
   const WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const PAYDAYS = 30;                                   // salary and fixed expenses are split by 30, the same as the Salary page
 
-  const S = { tab: 'budget', emp: 'comm', lead: 'fin', M: null, warn: [], edit: null };
+  const S = { q: '', msg: '', msgBad: false, tab: 'budget', emp: 'comm', lead: 'fin', M: null, warn: [], edit: null };
   const ymd = (y, m, d) => y + '-' + pad(m) + '-' + pad(d);
   const addDay = (iso, n) => { const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() + n); return ymd(d.getFullYear(), d.getMonth() + 1, d.getDate()); };
   const wdOf = (iso) => WD[new Date(iso + 'T12:00:00').getDay()];
@@ -136,6 +156,7 @@
       api.get('penalties.list', { month, status: 'applied' }),
       api.get('penalties.list', { month: prev, status: 'applied' }),
       api.get('budget.get', { month }),
+      api.get('departments.list'),
     ]);
     const ok = (i) => R[i].status === 'fulfilled' ? R[i].value : null;
     const why = (i) => R[i].status === 'rejected' ? (R[i].reason && R[i].reason.message || 'failed') : '';
@@ -145,6 +166,7 @@
     if (!ok(2)) warn.push('The employee list could not be read (' + why(2) + ').');
     if (!ok(3)) warn.push('Penalties could not be read (' + why(3) + ').');
     if (!ok(5)) warn.push('The budget numbers could not be read (' + why(5) + ').');
+    if (!ok(6)) warn.push('The department list could not be read (' + why(6) + '). Total Employees groups by the departments it finds on people.');
     const lr = ok(0) || { rows: [], rules: { leaders: [] }, today: clientToday }, cm = ok(1) || { people: [] };
     const today = lr.today || clientToday;
     const shown = today.slice(0, 7) === month ? today : (today > last ? last : (today < from ? from : last));
@@ -165,7 +187,11 @@
     const lrRow = {}; (lr.rows || []).forEach(x => { lrRow[x.date] = x; leaders.forEach(l => { const s = (x.set || {})[l.name]; if (s) { l.fin[x.date] = Number(s.amount) || 0; l.set[x.date] = true; } else if (x.sug_amt != null) l.sug[x.date] = Number(x.sug_amt); }); });
 
     const bud = ok(5) || { target: 0, lump: 0, expenses: [], can_edit: false };
-    S.M = { month, from, last, dim, today, shown, days, team, leaders, lrRow, bud, roasKind: lr.rules };
+    const deptMap = {}; ((ok(6) || {}).departments || []).forEach(d => { deptMap[Number(d.department_id)] = String(d.department_name); });
+    empAll.forEach(e => { const id = Number(e.department_id) || 0; if (id && !deptMap[id]) deptMap[id] = String(e.department_name || 'Department ' + id); });
+    const depts = Object.keys(deptMap).map(id => ({ id: Number(id), name: deptMap[id] })).sort((a, b) => a.name.localeCompare(b.name));
+    const people = empAll.map(e => ({ id: Number(e.employee_id), name: String(e.full_name || ''), code: String(e.employee_code || ''), role: String(e.designation || ''), deptId: Number(e.department_id) || 0, monthly: Number(e.monthly_salary) || 0, photo: e.photo || '', joined: String(e.joining_date || ''), pending: e.status && e.status !== 'approved' })).sort((a, b) => a.name.localeCompare(b.name));
+    S.M = { depts, people, month, from, last, dim, today, shown, days, team, leaders, lrRow, bud, roasKind: lr.rules };
     S.warn = warn; S.edit = JSON.parse(JSON.stringify({ target: bud.target, lump: bud.lump, expenses: bud.expenses }));
     S.claudeFor = '';
     render(); askClaude();
@@ -307,15 +333,49 @@
       + '<div class="legend"><span><i class="sw" style="background:#1d6b47"></i>Inside the daily allowance</span><span><i class="sw" style="background:#b3261e"></i>Over it</span><span>Penalties logged today (' + rs(M.team.reduce((a, r) => a + (r.pen[M.today] || 0), 0)) + ') are cut tomorrow</span></div>';
   }
 
+  /* ---------- Total Employees: one row of round photos (like story bubbles) per department ---------- */
+  const photoUrl = (p) => { try { return p ? API_BASE_URL.replace('/api.php', '') + '/' + String(p).replace(/^\/+/, '') : ''; } catch (e) { return ''; } };
+  const hue = (s) => { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
+  const bubble = (p) => {
+    const u = photoUrl(p.photo), ini = esc((p.name.trim()[0] || '?').toUpperCase());
+    return '<div class="st' + (p.pending ? ' pend' : '') + '" draggable="true" data-emp="' + p.id + '" title="' + esc(p.name + (p.role ? ' · ' + p.role : '')) + ' — click to open, drag to another department"><div class="ring"><div class="av" style="background:hsl(' + hue(p.name) + ',45%,48%)">'
+      + (u ? '<img src="' + esc(u) + '" alt="" loading="lazy" onerror="this.remove()">' : '') + '<span style="position:absolute;z-index:0">' + ini + '</span></div></div><div class="nm">' + esc(p.name) + '</div><div class="rl">' + esc(p.role || '—') + '</div></div>';
+  };
+  function teamGroups() {
+    const M = S.M, q = nk(S.q), P = M.people.filter(p => !q || nk(p.name + ' ' + p.role + ' ' + p.code).includes(q));
+    const gs = M.depts.map(d => ({ id: d.id, name: d.name, all: M.people.filter(p => p.deptId === d.id), list: P.filter(p => p.deptId === d.id) }));
+    const nod = { id: 0, name: 'No department', all: M.people.filter(p => !p.deptId), list: P.filter(p => !p.deptId) };
+    if (nod.all.length) gs.push(nod);
+    const shown = gs.filter(g => !q || g.list.length);
+    return shown.map(g => {
+      const pay = g.all.reduce((a, p) => a + p.monthly, 0);
+      return '<section class="grp" data-dept="' + g.id + '"><div class="grp-h"><b>' + esc(g.name) + '</b><span class="cnt">' + g.all.length + '</span><span>' + (pay ? rs(pay) + ' fixed salary a month' : 'No fixed salary (commission-based)') + '</span></div>'
+        + '<div class="strip">' + (g.list.length ? g.list.map(bubble).join('') : '<div class="none">Nobody here yet. Drag a person onto this box.</div>') + '</div></section>';
+    }).join('') || '<div class="card"><div class="empty">Nobody matches “' + esc(S.q) + '”.</div></div>';
+  }
+  function teamView() {
+    const M = S.M, P = M.people, d30 = addDay(M.today, -30);
+    const fresh = P.filter(p => p.joined && p.joined >= d30), pay = P.reduce((a, p) => a + p.monthly, 0);
+    const kp = (l, v, n) => '<div class="kpi"><span>' + l + '</span><b>' + v + '</b><em>' + n + '</em></div>';
+    const biggest = M.depts.map(d => ({ n: d.name, c: P.filter(p => p.deptId === d.id).length })).sort((a, b) => b.c - a.c)[0];
+    return '<div class="kpis te-k">' + kp('Total employees', P.length, 'working with you now')
+      + kp('Departments', M.depts.length, biggest && biggest.c ? 'biggest: ' + esc(biggest.n) + ' (' + biggest.c + ')' : '')
+      + kp('Fixed salary a month', lakh(pay), P.filter(p => !p.monthly).length + ' are commission-only')
+      + kp('Joined last 30 days', fresh.length, fresh.slice(0, 3).map(p => esc(p.name.split(' ')[0])).join(', ') || 'no new joiners')
+      + kp('No photo / no department', P.filter(p => !p.photo).length + ' / ' + P.filter(p => !p.deptId).length, 'worth completing') + '</div>'
+      + '<div class="te-bar"><input id="teQ" type="search" placeholder="Find a person…" value="' + esc(S.q) + '" autocomplete="off"><span class="hint">Click a photo to open the person. <b>Drag a photo onto another department</b> to move them.</span><span class="te-msg' + (S.msgBad ? ' bad' : '') + '" id="teMsg">' + esc(S.msg) + '</span></div>'
+      + '<div id="teGroups">' + teamGroups() + '</div>';
+  }
+
   function render() {
-    const tabs = [['budget', 'Total Budgeting'], ['emp', 'Employees'], ['lead', 'Leaders'], ['pen', 'Penalties']];
-    const body = S.tab === 'budget' ? budView() : S.tab === 'emp' ? empView() : S.tab === 'lead' ? leadView() : penView();
+    const tabs = [['budget', 'Total Budgeting'], ['emp', 'Employees'], ['lead', 'Leaders'], ['pen', 'Penalties'], ['team', 'Total Employees']];
+    const body = S.tab === 'budget' ? budView() : S.tab === 'emp' ? empView() : S.tab === 'lead' ? leadView() : S.tab === 'team' ? teamView() : penView();
     $('tb').innerHTML = (S.warn.length ? '<div class="warn">' + S.warn.map(esc).join('<br>') + '</div>' : '')
       + '<div class="tabs" role="tablist">' + tabs.map(t => '<button role="tab" data-t="' + t[0] + '" class="' + (S.tab === t[0] ? 'on' : '') + '">' + t[1] + '</button>').join('') + '</div>' + body;
   }
 
   $('tb').addEventListener('click', async (e) => {
-    const nm = e.target.closest('td.n[data-emp]'); if (nm && window.PersonCard) { PersonCard.open(Number(nm.dataset.emp), { onChange: () => load().catch(() => {}) }); return; }
+    const nm = e.target.closest('td.n[data-emp], .st[data-emp]'); if (nm && window.PersonCard) { PersonCard.open(Number(nm.dataset.emp), { onChange: () => load().catch(() => {}) }); return; }
     const b = e.target.closest('button'); if (!b) return;
     if (b.dataset.t) { S.tab = b.dataset.t; render(); return; }
     if (b.dataset.s) { S[b.dataset.s] = b.dataset.v; render(); return; }
@@ -334,6 +394,24 @@
     else return;
     render();
   });
+  /* drag a person onto another department */
+  let dragId = 0;
+  const tb = $('tb'), grpOf = (e) => e.target.closest && e.target.closest('.grp[data-dept]');
+  tb.addEventListener('dragstart', (e) => { const st = e.target.closest && e.target.closest('.st[data-emp]'); if (!st) return; dragId = Number(st.dataset.emp); st.classList.add('drag'); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', String(dragId)); } catch (x) {} });
+  tb.addEventListener('dragend', () => { dragId = 0; tb.querySelectorAll('.drag,.over').forEach(x => x.classList.remove('drag', 'over')); });
+  tb.addEventListener('dragover', (e) => { const g = grpOf(e); if (!g || !dragId) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move'; tb.querySelectorAll('.grp.over').forEach(x => { if (x !== g) x.classList.remove('over'); }); g.classList.add('over'); });
+  tb.addEventListener('dragleave', (e) => { const g = grpOf(e); if (g && !g.contains(e.relatedTarget)) g.classList.remove('over'); });
+  tb.addEventListener('drop', async (e) => {
+    const g = grpOf(e); if (!g || !dragId) return; e.preventDefault(); g.classList.remove('over');
+    const p = S.M.people.find(x => x.id === dragId), to = Number(g.dataset.dept); dragId = 0;
+    if (!p || p.deptId === to) return;
+    const nameOf = (id) => id ? (S.M.depts.find(d => d.id === id) || {}).name || 'that department' : 'No department';
+    const from = p.deptId; p.deptId = to; S.msg = 'Moving ' + p.name + '…'; S.msgBad = false; render();
+    try { await api.post('employees.set_department', { employee_id: p.id, department_id: to }); S.msg = p.name + ' moved from ' + nameOf(from) + ' to ' + nameOf(to) + '.'; }
+    catch (err) { p.deptId = from; S.msg = (err && err.message) || 'Could not move.'; S.msgBad = true; }
+    render();
+  });
+  tb.addEventListener('input', (e) => { if (e.target.id !== 'teQ') return; S.q = e.target.value; $('teGroups').innerHTML = teamGroups(); });
   $('mon').value = new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 7);
   $('mon').onchange = () => load().catch(err => { $('tb').innerHTML = '<div class="card"><div class="empty">' + esc(err.message) + '</div></div>'; });
   $('btnReload').onclick = () => $('mon').onchange();
