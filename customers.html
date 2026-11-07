@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Customers — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=5">
+<link rel="stylesheet" href="assets/css/boss.css?v=1">
+<style>.bd{max-width:none}</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><div><h1>Customers</h1><div class="bd-sub">One row per person, from every online order, store bill and old-POS bill. The same person is found by the last 10 digits of the phone number. Tap a customer for the full card, their orders, and the WhatsApp chat.</div></div></div>
+    <div class="content"><div class="bd" id="cust"></div></div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=4"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=21"></script>
+<script src="assets/js/boss_common.js?v=2"></script>
+<script src="assets/js/order_hub.js?v=1"></script>
+<script>
+  guardPage();
+  renderSidebar('customers');
+  try { OrderHub.customers(document.getElementById('cust')); } catch (e) { document.getElementById('cust').innerHTML = '<div class="bd-card"><div class="bd-empty"><b>Cannot open Customers</b>' + (e.message || '') + '</div></div>'; }
+</script>
+</body>
+</html>

@@ -1148,5 +1148,6 @@ function dp_dsp_autoheal(PDO $pdo, $now) {
         dp_dsp_shop_note('of', $o['error'] === '', $o['facts'] . ' orders refreshed, ' . $o['com_days'] . ' commission days', $o['error']);
         $out['facts'] = $o['facts'];
     }
+    if (function_exists('ohub_tick')) { try { $h = ohub_tick($pdo, $now); if ($h['ran']) dp_dsp_shop_note('ohub', $h['error'] === '', $h['n'] . ' customers in the Customers list', $h['error']); } catch (Throwable $e) { } }   // Customers list (customer_facts), every 6 hours
     return $out;
 }

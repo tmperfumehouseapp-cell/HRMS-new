@@ -68,6 +68,7 @@ if (is_file(__DIR__ . '/dept_dispatch_more.php')) require_once __DIR__ . '/dept_
 if (is_file(__DIR__ . '/dept_dispatch_live.php')) require_once __DIR__ . '/dept_dispatch_live.php';   // live tracking: webhook, scan timeline, 5-minute safety net
 if (is_file(__DIR__ . '/order_facts.php')) require_once __DIR__ . '/order_facts.php';   // one row per order: payment, who took it, commission, Shiprocket, Finance
 if (is_file(__DIR__ . '/wa_orders.php')) require_once __DIR__ . '/wa_orders.php';   // "Needs attention" cases (delivery problems from WhatsApp chats and from the courier status)
+if (is_file(__DIR__ . '/order_hub.php')) require_once __DIR__ . '/order_hub.php';   // the big Order + Customer popup and the Customers list (order_hub.php)
 
 /* ============================== tables ============================== */
 function dp_dsp_ensure(PDO $pdo) {
@@ -506,6 +507,21 @@ if (strpos((string)$action, 'dp.dsp_') === 0) {
         try { $q = $pdo->prepare("SELECT shot_mime, shot_b64 FROM wmo_order WHERE order_no = ? LIMIT 1"); $q->execute([$on]); $r = $q->fetch(); } catch (Throwable $e) { $r = null; }
         if (!$r || (string)$r['shot_mime'] === '' || (string)$r['shot_b64'] === '') json_response(['error' => 'No payment screenshot was saved for this order.'], 404);
         json_response(['ok' => true, 'mime' => (string)$r['shot_mime'], 'b64' => (string)$r['shot_b64']]);
+    }
+    case 'dp.order_hub': {   // the grand popup: order card + timeline + customer card + who is waiting (order_hub.php)
+        if (!function_exists('ohub_view')) json_response(['error' => 'order_hub.php is missing on this server.'], 500);
+        $r = ohub_view($pdo, ['id' => $_GET['id'] ?? ($in['id'] ?? 0), 'case' => $_GET['case'] ?? ($in['case'] ?? 0), 'phone' => $_GET['phone'] ?? ($in['phone'] ?? ''), 'order' => $_GET['order'] ?? ($in['order'] ?? ''),
+            'store' => $_GET['store'] ?? ($in['store'] ?? ''), 'sid' => $_GET['sid'] ?? ($in['sid'] ?? ''), 'bill' => $_GET['bill'] ?? ($in['bill'] ?? 0)]);
+        if (empty($r['ok'])) json_response(['error' => $r['error'] ?? 'Not found.'], 404);
+        json_response($r);
+    }
+    case 'dp.cust_list': {   // the Customers list: one row per person (last 10 digits of the phone)
+        if (!function_exists('ohub_list')) json_response(['error' => 'order_hub.php is missing on this server.'], 500);
+        json_response(ohub_list($pdo, $_GET));
+    }
+    case 'dp.cust_rebuild': {   // read every order again and rebuild the Customers list
+        if (!function_exists('ohub_rebuild')) json_response(['error' => 'order_hub.php is missing on this server.'], 500);
+        $n = ohub_rebuild($pdo); dp_put('ohub_last_ts', (string)time()); json_response(['ok' => true, 'people' => $n]);
     }
     case 'dp.order_facts': {   // everything we know about one order (by order number, Shopify id, AWB or KWIK id)
         if (!function_exists('of_get')) json_response(['error' => 'order_facts.php is missing.'], 500);
