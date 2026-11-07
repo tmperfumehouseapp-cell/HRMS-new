@@ -191,6 +191,16 @@ if ($__bg === 'budget.day_assign') {
     setting_set($pdo, 'budget_cfg', json_encode($c));
     json_response(['ok' => true]);
 }
+if ($__bg === 'budget.reset_review') {
+    // Fresh start: everybody goes back to red (not checked). Their pay setup stays as the suggestion; each person is confirmed again one by one. Admin only.
+    $auth = require_auth();
+    if (!convo_is_admin($auth)) json_response(['error' => 'Only Admin can restart the review.'], 403);
+    if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
+    $c = budget_cfg($pdo); $n = 0;
+    foreach ($c['people'] as $pid => &$pp) { if (!empty($pp['ok'])) { $pp['ok'] = 0; $pp['ok_by'] = ''; $pp['ok_at'] = ''; $n++; } } unset($pp);
+    setting_set($pdo, 'budget_cfg', json_encode($c));
+    json_response(['ok' => true, 'reset' => $n]);
+}
 if ($__bg === 'budget.settle') {
     // Pending salary of an ex-employee: mark it settled (paid) or pending again. Admin only. The amount is what the page showed when you pressed it.
     $auth = require_auth();

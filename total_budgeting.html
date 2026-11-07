@@ -703,6 +703,22 @@
       } else if (what === 'add') pickPeople(id);
     } catch (err) { say((err && err.message) || 'Could not do that.', true); }
   }
+  /* Fresh start review: everybody counts as new today. One by one: department, how they are paid, the timing; the old setup is only the suggestion. */
+  const reviewRows = () => S.M.all.filter(r => r.empId && !r.leader);
+  const reviewTotal = () => reviewRows().length, reviewDone = () => reviewRows().filter(r => r.ok).length;
+  function nextReview(afterId, skipping) {
+    const M = S.M, lack = (r) => payInfo(r).t === 'Not assigned' || !M.timing[r.empId], todo = reviewRows().filter(r => !r.ok).sort((a, b) => (lack(b) - lack(a)) || a.name.localeCompare(b.name));
+    if (!todo.length) return 0; if (!afterId) return todo[0].empId;
+    const i = todo.findIndex(r => r.empId === afterId); const nx = skipping ? todo[(i + 1) % todo.length] : todo[0];
+    return nx && nx.empId !== afterId ? nx.empId : 0;
+  }
+  function reviewCard() {
+    const t = reviewTotal(), d = reviewDone(), pct = t ? Math.round(d / t * 100) : 0, ed = S.M.bud.can_edit;
+    return '<div class="todo" style="background:#eff6ff;border-color:#bfdbfe"><b>Fresh start: ' + d + ' of ' + t + ' people reviewed (' + pct + '%)</b> <span class="hint">Everybody counts as new today. Go through them one by one: department, how they are paid (fixed, commission, both, no pay) and the timing. What was there before is shown as the suggestion. The month so far (day 1 to today) recounts with whatever you set.</span>'
+      + '<div class="meter" style="margin:8px 0"><i style="width:' + pct + '%;background:#2563eb"></i></div><div style="display:flex;gap:8px;flex-wrap:wrap">'
+      + (d < t ? '<button class="tbtn" type="button" data-do="rvstart">' + (d ? 'Continue the review ▶' : 'Start the review ▶') + '</button>' : '<span class="un" style="font-weight:700">All reviewed ✓</span>')
+      + (ed ? '<button class="tbtn" type="button" data-do="rvreset" style="background:#fff;color:var(--ink);border:1px solid var(--line)">Start again (everyone red)</button>' : '') + '</div></div>';
+  }
   /* people whose pay is still undefined: they count as nothing until somebody defines it here */
   function pendingCard() {
     const M = S.M, noPay = (r) => payInfo(r).t === 'Not assigned', noTm = (r) => !M.timing[r.empId], todo = M.all.filter(r => r.empId && !r.leader && (noPay(r) || noTm(r)));
@@ -718,15 +734,17 @@
   }
   /* Pay setup: pay group, how they are paid (no pay / fixed salary / commission / fixed + commission), the salary, the commission rule of the group,
      the punch timing (strict / flexible hours / none) and the "checked" tick. Saving writes the salary, the budget setup and the Boss Engine timing. */
-  function setupPopup(empId) {
+  function setupPopup(empId, opts) {
+    opts = opts || {};
     const M = S.M, r = M.rowBy[empId], p = M.people.find(x => x.id === empId); if (!r || !p) return;
     if (r.leader) { say('Leaders are paid by the leader commission set on the Leaders tab. Their card salary is not counted.'); return; }
     const gp = Number(S.edit.retail.pct) || 0, pi = payInfo(r), T0 = M.timing[empId] || null, R = S.edit.retail;
-    const st = { g: r.grp, pt: r.np ? 'none' : pi.t === 'Fixed salary' ? 'fixed' : pi.t === 'Fixed + commission' ? 'both' : 'comm', sal: r.monthly || '', rp: r.rpct != null ? r.rpct : '', rt: r.rtarget != null ? r.rtarget : '', du: M.duty.has(empId) || r.grp === 'store', ok: !!r.ok,
+    const sugPt = (() => { if (r.np) return 'none'; if (pi.t !== 'Not assigned') return null; const hasSal = r.monthly > 0, comm = r.grp === 'sales' || r.grp === 'store' || r.grp === 'retail'; return hasSal ? (comm ? 'both' : 'fixed') : (comm ? 'comm' : 'none'); })();   // a suggestion for people with no rule yet, from what the card already says
+    const st = { d: p.deptId || 0, g: r.grp, pt: sugPt || (r.np ? 'none' : pi.t === 'Fixed salary' ? 'fixed' : pi.t === 'Fixed + commission' ? 'both' : 'comm'), sal: r.monthly || '', rp: r.rpct != null ? r.rpct : '', rt: r.rtarget != null ? r.rtarget : '', du: M.duty.has(empId) || r.grp === 'store', ok: opts.review ? true : !!r.ok,
       tm: T0 ? T0.mode : '', s: T0 && T0.own ? T0.start : '', e: T0 ? (T0.end || '') : '', l: T0 ? T0.late : 15, h: T0 && T0.hours ? T0.hours : 8, hf: T0 ? T0.hours_full : 0, wa: T0 ? (T0.win_from || '') : '', wb: T0 ? (T0.win_to || '') : '' };
     const ov = document.createElement('div'); ov.className = 'pk-ov'; document.body.appendChild(ov);
     const close = () => ov.remove(), q = (i) => ov.querySelector(i);
-    const sync = () => { const g = (i, k, num) => { const e = q(i); if (e) st[k] = e.type === 'checkbox' ? e.checked : e.value; }; g('#suG', 'g'); g('#suSal', 'sal'); g('#suR', 'rp'); g('#suRT', 'rt'); g('#suD', 'du'); g('#suOk', 'ok'); g('#tS', 's'); g('#tE', 'e'); g('#tL', 'l'); g('#tH', 'h'); g('#tHF', 'hf'); g('#tWA', 'wa'); g('#tWB', 'wb'); };
+    const sync = () => { const g = (i, k, num) => { const e = q(i); if (e) st[k] = e.type === 'checkbox' ? e.checked : e.value; }; g('#suG', 'g'); g('#suDept', 'd'); g('#suSal', 'sal'); g('#suR', 'rp'); g('#suRT', 'rt'); g('#suD', 'du'); g('#suOk', 'ok'); g('#tS', 's'); g('#tE', 'e'); g('#tL', 'l'); g('#tH', 'h'); g('#tHF', 'hf'); g('#tWA', 'wa'); g('#tWB', 'wb'); };
     const draw = () => {
       const g = st.g, pt = st.pt, paid = pt !== 'none', hasFix = pt === 'fixed' || pt === 'both', hasCom = pt === 'comm' || pt === 'both';
       const opt = (v, t) => '<label class="' + (pt === v ? 'on' : '') + '"><input type="radio" name="pt" value="' + v + '"' + (pt === v ? ' checked' : '') + '>' + t + '</label>';
@@ -741,12 +759,14 @@
         : st.tm === 'hours' ? '<div class="two" style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div><label>Hours to complete each day</label><input type="text" id="tH" inputmode="decimal" value="' + esc(st.h) + '"></div><div><label>Full day from (hours)</label><input type="text" id="tHF" inputmode="decimal" value="' + esc(st.hf || '') + '" placeholder="optional"></div></div><div class="two" style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div><label>Earliest punch in</label><input type="time" id="tWA" value="' + esc(st.wa) + '"></div><div><label>Latest punch in</label><input type="time" id="tWB" value="' + esc(st.wb) + '"></div></div><div class="note">They can come any time (inside the window, if set) but must complete the hours. A short day is marked short.</div>'
         : st.tm === 'free' ? '<div class="note">No timing: punching is optional. Never late.</div>' : '<div class="note" style="background:#fff1e6;color:#b45309">Timing not set yet: choose one of the three.</div>';
       ov.innerHTML = '<div class="pk" role="dialog"><div class="pk-h"><b>Pay setup · ' + esc(p.name) + '</b><button type="button" data-x="1" aria-label="Close">×</button></div><div class="su">'
+        + (opts.review ? '<div class="note" style="background:#eff6ff;color:#1d4ed8"><b>Fresh start review:</b> ' + reviewDone() + ' of ' + reviewTotal() + ' checked. Set this person, then press <b>Save &amp; next</b>.<br><span style="color:#4b5563">Before: ' + esc(pi.t) + ' · ' + esc(tmInfo(empId).t) + ' · ' + esc(GL[r.grp]) + (sugPt ? '. Suggested now: ' + ({ none: 'No pay', fixed: 'Fixed salary', comm: 'Commission based', both: 'Fixed + commission' })[sugPt] + ' (from their card).' : '') + '</span></div>' : '')
+        + '<label>Department</label><select id="suDept"><option value="0">No department</option>' + M.depts.map(d => '<option value="' + d.id + '"' + (Number(st.d) === d.id ? ' selected' : '') + '>' + esc(d.name) + '</option>').join('') + '</select>'
         + '<label>Pay group</label><select id="suG">' + [['sales', 'Sales (online)'], ['retail', 'Retail wholesale'], ['store', 'Store (offline)'], ['other', 'Other']].map(x => '<option value="' + x[0] + '"' + (g === x[0] ? ' selected' : '') + '>' + x[1] + '</option>').join('') + '</select>'
         + '<label>How is this person paid?</label><div class="opts" style="grid-template-columns:repeat(2,1fr)">' + opt('none', 'No pay') + opt('fixed', 'Fixed salary') + opt('comm', 'Commission based') + opt('both', 'Fixed + commission') + '</div>'
         + (hasFix ? '<label>Fixed monthly salary (₹)</label><input type="text" id="suSal" inputmode="decimal" value="' + esc(st.sal) + '" placeholder="e.g. 20000">' : '') + comm
         + '<label>Timing</label><div class="opts">' + tmo('fixed', 'Strict timing', 'time in and time out') + tmo('hours', 'Flexible hours', 'just the hours') + tmo('free', 'No timing', 'punch optional') + '</div>' + tmf
         + '<label class="su-ok' + (st.ok ? ' on' : '') + '"><input type="checkbox" id="suOk"' + (st.ok ? ' checked' : '') + ' style="width:auto;margin-top:2px"><span>✓ I have set and checked this person\'s pay rules and timing.<br><span style="font-weight:400;color:#6b7280">Turns their line <b style="color:#16a34a">green</b> everywhere in Total Budgeting. Red means not checked yet.</span></span></label>'
-        + '<div id="suE"></div></div><div class="pk-f"><button type="button" class="pk-go" id="suExit" style="background:#fff;color:#b3261e;border:1px solid #f3c5bf" title="No longer working here">Make ex-employee…</button><span class="hint">Today: ' + esc(pi.t) + ' · ' + esc(tmInfo(empId).t) + '</span><button type="button" class="pk-go" id="suGo">Save</button></div></div>';
+        + '<div id="suE"></div></div><div class="pk-f"><button type="button" class="pk-go" id="suExit" style="background:#fff;color:#b3261e;border:1px solid #f3c5bf" title="No longer working here">Make ex-employee…</button><span class="hint">Today: ' + esc(pi.t) + ' · ' + esc(tmInfo(empId).t) + '</span>' + (opts.review ? '<button type="button" class="pk-go" id="suSkip" style="background:#fff;color:#14161a;border:1px solid #d9dde3">Skip</button><button type="button" class="pk-go" id="suGo">Save &amp; next ▶</button>' : '<button type="button" class="pk-go" id="suGo">Save</button>') + '</div></div>';
     };
     draw();
     ov.addEventListener('input', sync);
@@ -754,6 +774,7 @@
     ov.addEventListener('click', async (e) => {
       if (e.target === ov || e.target.closest('[data-x]')) { close(); return; }
       if (e.target.id === 'suExit') { close(); exitEmployee(empId, p.name); return; }
+      if (e.target.id === 'suSkip') { close(); const nx = nextReview(empId, true); if (nx) setupPopup(nx, { review: true }); else say('That was the last one left to review.'); return; }
       if (e.target.id !== 'suGo') return; sync();
       const E = q('#suE'), btn = e.target, err = (m) => { E.innerHTML = '<div class="err">' + m + '</div>'; };
       const g = st.g, pt = st.pt, num = (v) => Number(String(v == null ? '' : v).replace(/,/g, '')) || 0, hasFix = pt === 'fixed' || pt === 'both', hasCom = pt === 'comm' || pt === 'both';
@@ -769,11 +790,13 @@
       body.sc = g === 'store' && (pt === 'fixed' || pt === 'none') ? 0 : 1; if (g === 'store') body.duty = !!st.du;
       btn.disabled = true;
       try {
+        if (Number(st.d) !== (p.deptId || 0)) await api.post('employees.set_department', { employee_id: empId, department_id: Number(st.d) || 0 });
         if (pt !== 'none' && sal !== r.monthly) await api.post('employees.set_salary', { employee_id: empId, monthly_salary: sal });
         await api.post('budget.person_save', body);
         const tb = { ids: [empId], mode: st.tm }, chg = !T0 || T0.mode !== st.tm || (st.tm === 'fixed' && (T0.start !== st.s || (T0.end || '') !== st.e || Number(T0.late) !== num(st.l))) || (st.tm === 'hours' && (Number(T0.hours) !== num(st.h) || Number(T0.hours_full || 0) !== num(st.hf) || (T0.win_from || '') !== st.wa || (T0.win_to || '') !== st.wb));
         if (st.tm && chg) { if (st.tm === 'fixed') { tb.shift_start = st.s; tb.shift_end = st.e; tb.late_after = num(st.l) || 15; } if (st.tm === 'hours') { tb.hours_target = num(st.h) || 8; tb.hours_full = num(st.hf); tb.win_from = st.wa; tb.win_to = st.wb; } await api.post('bd.b2_punch_set', tb); }
         close(); S.msg = p.name + ': saved (' + (pt === 'none' ? 'no pay' : pt === 'fixed' ? 'fixed salary' : pt === 'comm' ? 'commission based' : 'fixed + commission') + ', ' + GL[g] + (st.tm ? ', ' + (st.tm === 'fixed' ? 'strict timing' : st.tm === 'hours' ? 'flexible hours' : 'no timing') : ', timing not set') + ')' + (body.ok ? ' and marked checked (green).' : '. Still red: tick “checked” when you are sure.'); S.msgBad = false; await load();
+        if (opts.review) { const nx = nextReview(empId, false); if (nx) setupPopup(nx, { review: true }); else { S.msg = 'Everyone is reviewed. The whole setup is fresh from today.'; S.msgBad = false; render(); } }
       } catch (er) { btn.disabled = false; err(esc((er && er.message) || 'Could not save.')); }
     });
   }
@@ -823,7 +846,7 @@
       + kp('Pay rules checked', (() => { const a = M.all.filter(r => r.empId && !r.leader); return a.filter(r => r.ok).length + ' of ' + a.length; })(), 'green = checked, red = still to set and check', (() => { const a = M.all.filter(r => r.empId && !r.leader); return a.some(r => !r.ok); })())
       + kp('No photo / no department', P.filter(p => !p.photo).length + ' / ' + P.filter(p => !p.deptId).length, 'worth completing') + '</div>'
       + '<div class="te-bar"><button type="button" data-do="nc" class="tbtn" style="' + (S.nc ? '' : 'background:#fff;color:var(--ink);border:1px solid var(--line)') + '">' + (S.nc ? 'Showing not checked only' : 'Not checked only') + '</button>' + (S.tg === 'dept' ? '<button class="tbtn" type="button" data-do="new">+ New section</button>' : '') + '<div class="seg">' + [['dept', 'By department'], ['grp', 'By pay: sales · leaders · retail · store']].map(x => '<button data-s="tg" data-v="' + x[0] + '" class="' + (S.tg === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</div><input id="teQ" type="search" placeholder="Find a person…" value="' + esc(S.q) + '" autocomplete="off"><span class="hint">Click a photo to open the person. ' + (S.tg === 'dept' ? '<b>Drag a photo onto another department</b> to move them.' : 'Everybody is here: sales, leaders, retail wholesale, store and the rest.') + '</span><span class="te-msg' + (S.msgBad ? ' bad' : '') + '" id="teMsg">' + esc(S.msg) + '</span></div>'
-      + pendingCard() + (S.tg === 'grp' ? dayCard() : '') + '<div id="teGroups">' + teamGroups() + '</div>'
+      + reviewCard() + pendingCard() + (S.tg === 'grp' ? dayCard() : '') + '<div id="teGroups">' + teamGroups() + '</div>'
       + '<div class="dock" id="teDock">' + dockInner() + '</div>';
   }
 
@@ -875,7 +898,9 @@
     if (e.target.closest('[data-ball]')) { S.bAll = !!e.target.closest('[data-ball]').checked; const bx = $('billsBox'); if (bx) bx.innerHTML = billsInner(); return; }
     if (e.target.closest('[data-more]')) { S.bn += 300; const bx = $('billsBox'); if (bx) bx.innerHTML = billsInner(); return; }
     if (e.target.closest('[data-recount]')) { S.bills = null; render(); return; }
-    const act = e.target.closest('button[data-do]'); if (act) { if (act.dataset.do === 'nc') { S.nc = !S.nc; render(); return; } if (act.dataset.do === 'penadd') { penPopup(0, ''); return; } deptAction(act.dataset.do, Number(act.dataset.did || 0)); return; }
+    const act = e.target.closest('button[data-do]'); if (act) { if (act.dataset.do === 'nc') { S.nc = !S.nc; render(); return; }
+      if (act.dataset.do === 'rvstart') { const nx = nextReview(0); if (nx) setupPopup(nx, { review: true }); return; }
+      if (act.dataset.do === 'rvreset') { if (!confirm('Start again?\n\nEveryone goes back to red (not checked). Their pay setup stays as the suggestion, and you confirm each person one by one.')) return; api.post('budget.reset_review', {}).then(r => { S.msg = 'Fresh start: everyone is red again (' + (r.reset || 0) + ' were green).'; S.msgBad = false; return load(); }).catch(err => say((err && err.message) || 'Could not restart.', true)); return; } if (act.dataset.do === 'penadd') { penPopup(0, ''); return; } deptAction(act.dataset.do, Number(act.dataset.did || 0)); return; }
     const rj = e.target.closest('button[data-rejoin]'); if (rj) { if (!confirm('Rejoin ' + rj.dataset.nm + '?\n\nThey come back to every list and the budget. Their login works again. You will need to set their pay rules again.')) return; rj.disabled = true; api.post('employees.rejoin', { employee_id: Number(rj.dataset.rejoin) }).then(() => { S.msg = rj.dataset.nm + ' has rejoined.'; S.msgBad = false; return load(); }).catch(err => { rj.disabled = false; S.msg = (err && err.message) || 'Could not rejoin.'; S.msgBad = true; render(); }); return; }
     const stl = e.target.closest('button[data-settle]'); if (stl) { stl.disabled = true; api.post('budget.settle', { employee_id: Number(stl.dataset.settle), settled: stl.dataset.v === '1', amount: Number(stl.dataset.amt) || 0 }).then(() => { S.msg = stl.dataset.v === '1' ? 'Marked settled.' : 'Back to pending.'; S.msgBad = false; return load(); }).catch(err => { stl.disabled = false; S.msg = (err && err.message) || 'Could not save.'; S.msgBad = true; render(); }); return; }
     const dx = e.target.closest('[data-dayx]'); if (dx) { const x = dx.dataset.dayx.split('|'); api.post('budget.day_assign', { employee_id: Number(x[0]), day: x[1], grp: '' }).then(() => { S.msg = 'Taken back: that day counts as normal again.'; S.msgBad = false; return load(); }).catch(err => say((err && err.message) || 'Could not undo.', true)); return; }
