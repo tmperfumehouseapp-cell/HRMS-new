@@ -26,7 +26,10 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(
     // Always ask the server "has this changed?" (cache:'no-cache' = revalidate): the server answers 304 with no body when it has not,
     // so a repeat visit downloads almost nothing, and an uploaded change still shows on the very next load.
-    fetch(req.url, { cache: 'no-cache', credentials: 'same-origin' }).catch(() => fetch(req))
+    fetch(req.url, { cache: 'no-cache', credentials: 'same-origin' })
+      .then((r) => (r.status >= 500 ? Promise.reject(new Error('server ' + r.status)) : r))
+      // one quiet retry after a moment: a file replaced mid-deploy or a flaky mobile connection no longer shows a failed page that "works on the second refresh"
+      .catch(() => new Promise((ok) => setTimeout(ok, 350)).then(() => fetch(req.url, { cache: 'no-cache', credentials: 'same-origin' })).catch(() => fetch(req)))
   );
 });
 
