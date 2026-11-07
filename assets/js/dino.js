@@ -43,7 +43,7 @@
     var world = 'candy'; try { if (localStorage.getItem('tm_dino_world') === 'neon') world = 'neon'; } catch (e) {}
     host.innerHTML = '<div class="tmd" data-w="' + world + '"><div class="tmd-gh"><div class="tmd-t"><b>🦖 Dino Run</b><small>Collect coins · jump the cacti</small></div>'
       + '<div class="tmd-sc"><div><small>Score</small><b class="sc">0</b></div><div><small>Best</small><b class="best">0</b></div><button type="button" class="tmd-wb" aria-label="Switch look"></button></div></div>'
-      + '<div class="tmd-stage"><canvas aria-label="Dino game: tap to jump"></canvas><div class="tmd-ov tmd-start"><div class="big tmd-pulse">Tap to run ▶</div><small>Jump the cacti · grab the coins · the screen stays still while you play</small></div>'
+      + '<div class="tmd-stage"><canvas aria-label="Dino game: tap to jump"></canvas><div class="tmd-ov tmd-start"><div class="big tmd-pulse">Tap to run ▶</div><small>Jump the cacti · grab the coins</small></div>'
       + '<div class="tmd-ov tmd-goov" style="display:none"><div class="tmd-rep"><div class="tmd-rs"></div><div class="tmd-top" style="display:none"></div><div class="tmd-me"></div></div></div>'
       + '<button type="button" class="tmd-sw" aria-label="Move the jump button to the other side" title="Move the jump button">↔</button>'
       + '<button type="button" class="tmd-sj" aria-label="Jump"><span>⬆</span>JUMP</button></div>'

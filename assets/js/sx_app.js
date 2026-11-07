@@ -32,7 +32,7 @@ window.SX = (function () {
 .sx-wrap{display:grid;grid-template-columns:minmax(320px,380px) minmax(0,1fr);height:calc(100vh - 92px)}
 .sx-l{background:#fff;border-right:1px solid var(--ln);display:flex;flex-direction:column;min-height:0}
 .sx-fl{display:flex;gap:6px;padding:10px;overflow-x:auto;scrollbar-width:none;flex:none}.sx-fl::-webkit-scrollbar{display:none}
-.sx-ch{display:inline-flex;gap:4px;align-items:center;background:#fff;border:1px solid var(--ln);border-radius:999px;padding:6px 12px;font-size:13px;font-weight:700;color:#54656f;cursor:pointer;white-space:nowrap;min-height:34px}.sx-ch.on{background:#d9fdd3;border-color:#b7ecb0;color:#008069}.sx-ch b{font-size:11.5px;background:#e9edef;border-radius:99px;padding:0 6px}.sx-ch.on b{background:#fff}
+.sx-ch{flex:none;display:inline-flex;gap:4px;align-items:center;background:#fff;border:1px solid var(--ln);border-radius:999px;padding:6px 12px;font-size:13px;font-weight:700;color:#54656f;cursor:pointer;white-space:nowrap;min-height:34px}.sx-ch.on{background:#d9fdd3;border-color:#b7ecb0;color:#008069}.sx-ch b{font-size:11.5px;background:#e9edef;border-radius:99px;padding:0 6px}.sx-ch.on b{background:#fff}
 .sx-q{margin:0 10px 8px;border:1px solid var(--ln);border-radius:999px;padding:8px 14px;font:inherit;font-size:14px;outline:0;background:#f7f8f9;flex:none}
 .sx-ls{overflow-y:auto;flex:1;min-height:0}
 .sx-row{display:flex;gap:11px;padding:11px 12px;border-bottom:1px solid #f0f2f5;cursor:pointer;align-items:flex-start}.sx-row:hover,.sx-row.on{background:#f0f9f6}

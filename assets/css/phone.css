@@ -4,9 +4,19 @@
    One place to change the phone size:  1) page scale: layout.js (0.9)  2) the sizes below.  Sections: base · tabs · My Sales · My Day. */
 
 /* ---------- base: gutters, headings, cards, small text, tables ---------- */
-  /* the page title and the Search / bell buttons share ONE row (they used to wrap onto a second, empty-looking row) */
-  html.ph .topbar{flex-wrap:nowrap !important; align-items:center !important;}
-  html.ph .topbar #wsTools{flex:none; margin-left:auto !important;}
+  /* HEADER, one rule for every page: row 1 = [title + one-line subtitle] [search] [bell]; anything else in the header (month picker, Download / Refresh buttons ...) drops to a full-width row 2.
+     Nothing sits beside the title any more, so text can never run under a button. */
+  html.ph .topbar{display:flex !important; flex-wrap:wrap !important; align-items:center !important; gap:6px 8px !important;}
+  html.ph .topbar > div:first-child{order:0; flex:1 1 200px !important; min-width:0 !important;}   /* 200px basis: the full-width row below can never share the line and squeeze the title */
+  html.ph .topbar > #wsTools{order:1; flex:none !important; margin-left:auto !important;}
+  html.ph .topbar > :not(:first-child):not(#wsTools){order:2; flex:1 0 100% !important; min-width:0 !important; max-width:100% !important;}
+  html.ph .topbar > div:not(:has(h1)){margin-left:0 !important; width:auto !important;}   /* style.css pulled these rows 52px left under the menu button: that shoved text and the month picker off-screen */
+  html.ph .topbar input[type=month], html.ph .topbar input[type=date], html.ph .topbar select{flex:1 1 auto; min-width:0;}
+  html.ph .ws-top{display:flex !important; flex-wrap:nowrap !important; align-items:center !important; gap:8px !important;}
+  html.ph .ws-top > div:first-child{flex:1 1 0 !important; min-width:0 !important;}
+  html.ph .ws-top h1{font-size:17px !important;}
+  html.ph .ws-top .sub{white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  html.ph .ws-top .ws-tools, html.ph .ws-top #wsTools{flex:none !important; margin-left:0 !important;}
   html.ph .ws-srch{padding:6px 9px !important; font-size:12px !important; box-shadow:none !important;}
   html.ph .ws-bell{padding:5px 9px !important; font-size:12px !important;}
   html.ph body{font-size:12.5px;}
@@ -88,3 +98,38 @@
 /* ---------- bottom bars: the "Allocate order" button (My Sales, people who may allocate) sits ABOVE the employee bottom menu, not under it ---------- */
   html.ph .sh-ab{bottom:calc(76px + env(safe-area-inset-bottom,0px)) !important;}
   html.ph body.sh-pad .content{padding-bottom:150px;}
+
+/* ---------- NO COLLISIONS: pill rows never squeeze, cards never clip their words, floating buttons never cover content ---------- */
+  /* rows of pills / tabs / chips: each one keeps its full text and the row scrolls sideways (Inbox filters were shrinking into each other) */
+  html.ph :is(.sx-fl,.ws-tabs,.tabs,.bd-tabs,.cm-tabs){gap:6px;}
+  html.ph :is(.sx-ch,.ws-pill,.tabs button,.bd-tabs button,.cm-tabs button){flex:none !important; white-space:nowrap !important;}
+  html.ph #tb .seg{display:flex !important; max-width:100%; overflow-x:auto;}
+  html.ph #tb .seg button{flex:none; white-space:nowrap; min-height:30px; line-height:1.25;}
+  html.ph #tb .te-bar{gap:6px 8px; margin-bottom:10px;}
+  html.ph #tb .te-bar input{min-width:0 !important; flex:1 1 140px;}
+  /* Dispatch group tiles: 2 per row on a phone (4 squeezed ones cut their labels), long words may wrap */
+  html.ph .dr-tiles{grid-template-columns:repeat(2,minmax(0,1fr)) !important;}
+  html.ph .dr-tile{min-width:0; overflow:hidden;}
+  html.ph .dr-tile small{letter-spacing:0 !important; overflow-wrap:anywhere; hyphens:auto; font-size:10px !important;}
+  /* cards and tiles: text may wrap, never run past the edge */
+  html.ph :is(.card,.bd-card,.panel,.kpi,.stat-card,.dr-tile,.md-card){min-width:0;}
+  html.ph :is(.card,.bd-card,.panel,.kpi,.stat-card) :is(b,small,span,p,div){overflow-wrap:anywhere;}
+  /* the TMPH assistant: a small round button instead of a wide pill; sits above the employee bottom bar; the page leaves room under it */
+  html.ph .tmph-fab{width:42px !important; height:42px !important; padding:0 !important; gap:0 !important; font-size:0 !important; justify-content:center !important; right:12px !important; bottom:calc(12px + env(safe-area-inset-bottom,0px)) !important; opacity:.94;}
+  html.ph .tmph-fab-ic{width:34px !important; height:34px !important;}
+  html.ph body:has(#wsEmpNav) .tmph-fab{bottom:calc(86px + env(safe-area-inset-bottom,0px)) !important;}
+  html.ph body:not(:has(#wsEmpNav)){padding-bottom:64px;}
+  /* messages / toasts rise above the floating button and the bottom bar */
+  html.ph .sx-toast{bottom:calc(76px + env(safe-area-inset-bottom,0px)) !important;}
+  /* sticky panels that cover the page on a phone: the Budgeting "Drop a person on a department" box was stuck on top of the text below it */
+  html.ph #tb .dock{position:static !important; max-height:none !important; box-shadow:none !important; margin-top:10px;}
+  /* My Day hello card: greeting and name never run under the round photo */
+  html.ph .md-hero .g, html.ph .md-hero h1{max-width:calc(100% - 58px);}
+  /* search boxes with a magnifier icon inside: keep room for the icon (the compact-input rule had removed it, so the icon sat on top of the word "Search") */
+  html.ph .att-search input{padding-left:36px !important;}
+  /* date ranges: the two date boxes share the card width instead of poking out of it */
+  html.ph .att-range{flex:1 1 100%; min-width:0;}
+  html.ph .att-range input{flex:1 1 0; width:auto !important; min-width:0;}
+  /* Complaints: three nested paddings (10 + 10 + 16 px) pushed the tickets 36 px in from the edge; now 12 */
+  html.ph #cxBody{padding:6px 2px !important;}
+  html.ph .tk{padding-left:8px !important; padding-right:8px !important;}
