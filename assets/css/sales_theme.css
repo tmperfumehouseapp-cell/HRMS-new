@@ -72,3 +72,18 @@ html:is(.sx,.tm) .btn:active{ transform:scale(.97); }
 @keyframes tmShimmer{ from{ background-position:200% 0 } to{ background-position:-200% 0 } }
 .tm-skel{ border-radius:12px; min-height:14px; background:linear-gradient(90deg,#eef0f3 25%,#f7f8fa 37%,#eef0f3 63%); background-size:200% 100%; animation:tmShimmer 1.4s linear infinite; }
 @media (prefers-reduced-motion:reduce){ html:is(.sx,.tm) *{ transition:none !important; animation:none !important; } }
+
+/* ---- win moments (win.js) ---- */
+.tm-win{ position:fixed; left:50%; bottom:calc(24px + env(safe-area-inset-bottom,0px)); transform:translate(-50%,30px); opacity:0; pointer-events:none; z-index:100000;
+  display:flex; align-items:center; gap:8px; padding:10px 16px; border-radius:999px; background:#111827; color:#fff; font:700 14px 'Manrope',system-ui,sans-serif; box-shadow:0 10px 30px rgba(0,0,0,.25); transition:transform .35s cubic-bezier(.2,1.3,.4,1), opacity .2s; max-width:calc(100vw - 32px); }
+.tm-win.on{ transform:translate(-50%,0); opacity:1; }
+.tm-win-ic{ display:grid; place-items:center; width:22px; height:22px; border-radius:50%; background:#16a34a; font-size:13px; flex:none; }
+.tm-win-amt{ color:#fbbf24; font-variant-numeric:tabular-nums; }
+.tm-coin{ position:fixed; z-index:100000; pointer-events:none; color:#f59e0b; font:800 14px system-ui; transform:translate(-50%,-50%); animation:tmCoin .9s cubic-bezier(.2,.7,.3,1) forwards; }
+@keyframes tmCoin{ 0%{opacity:1; transform:translate(-50%,-50%) scale(.6)} 70%{opacity:1} 100%{opacity:0; transform:translate(calc(-50% + var(--dx)), calc(-50% + var(--dy) + 60px)) scale(1.1)} }
+.tm-pop{ animation:tmPop .5s cubic-bezier(.2,1.5,.4,1); }
+@keyframes tmPop{ 0%{transform:scale(.94); opacity:.4} 100%{transform:scale(1); opacity:1} }
+.tm-clear{ display:flex; flex-direction:column; align-items:center; gap:6px; padding:34px 16px; text-align:center; color:var(--sx-muted,#6b7280); }
+.tm-clear b{ color:var(--sx-ink,#111827); font-size:16px; font-weight:800; }
+.tm-clear-ic{ width:48px; height:48px; border-radius:50%; display:grid; place-items:center; background:var(--sx-ok-bg,#e4f6ec); color:var(--sx-ok-fg,#16945a); font-size:24px; font-weight:800; }
+@media (prefers-reduced-motion:reduce){ .tm-win{ transition:opacity .2s; transform:translate(-50%,0); } .tm-coin{ display:none; } .tm-pop{ animation:none; } }
