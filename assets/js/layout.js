@@ -262,7 +262,7 @@ window.WS = (function () {
     { key: 'wasales', label: 'WhatsApp Sales', icon: 'wasales', sub: 'Every customer query: who holds it, who is behind, what works', tabs: [['wasales', 'WhatsApp Sales', 'wa_sales_live.html', 'wa']] },
     { key: 'complaints', label: 'Complaints', icon: 'complaints', sub: 'Every customer problem is a ticket — Tracking and Complaint desks', tabs: [['complaints', 'Tickets', 'complaints.html', 'cx'], ['my_complaints', 'My complaints', 'my_complaints.html', 'cxm']] },
     { key: 'inbox', label: 'Inbox', icon: 'inbox', sub: 'Instagram, Facebook, email and reviews — answered in one place', tabs: [['social_inbox', 'Inbox hub', 'social_inbox.html', 'sx']] },
-    { key: 'boss', label: 'Boss', icon: 'approvals', sub: 'Tasks, numbers, problems and penalties', tabs: [['boss_engine', 'Today', 'boss_engine.html', 'boss', 'today'], ['be_sections', 'Sections', 'boss_engine.html', 'boss', 'sections'], ['be_work', 'All work', 'boss_engine.html', 'boss', 'work'], ['people', 'People', 'people.html', 'pp'], ['be_pens', 'Penalties', 'boss_engine.html', 'boss', 'pens'], ['be_problems', 'Problems', 'boss_engine.html', 'boss', 'problems'], ['boss_questions', 'Questions', 'boss_questions.html', 'boss'], ['dept_hub', 'Workbenches', 'dept_hub.html', 'boss'], ['daily_summary', 'Summary', 'daily_summary.html', 'boss'], ['tracker', 'Daily tracker', 'tracker.html', 'boss'], ['brain', 'Brain', 'brain.html', 'boss'], ['be_setup', 'Setup & health', 'boss_engine.html', 'boss', 'setup'], ['commission_new', 'Commission', 'commission_new.html', 'admin'], ['boss_rules', 'Rules in sync', 'boss_rules.html', 'admin']] },
+    { key: 'boss', label: 'Boss', icon: 'approvals', sub: 'Tasks, numbers, problems and penalties', tabs: [['boss_engine', 'Today', 'boss_engine.html', 'boss', 'today'], ['be_sections', 'Sections', 'boss_engine.html', 'boss', 'sections'], ['be_work', 'All work', 'boss_engine.html', 'boss', 'work'], ['people', 'People', 'people.html', 'pp'], ['staff_progress', 'Staff progress', 'staff_progress.html', 'cxr'], ['be_pens', 'Penalties', 'boss_engine.html', 'boss', 'pens'], ['be_problems', 'Problems', 'boss_engine.html', 'boss', 'problems'], ['boss_questions', 'Questions', 'boss_questions.html', 'boss'], ['dept_hub', 'Workbenches', 'dept_hub.html', 'boss'], ['daily_summary', 'Summary', 'daily_summary.html', 'boss'], ['tracker', 'Daily tracker', 'tracker.html', 'boss'], ['brain', 'Brain', 'brain.html', 'boss'], ['be_setup', 'Setup & health', 'boss_engine.html', 'boss', 'setup'], ['commission_new', 'Commission', 'commission_new.html', 'admin'], ['boss_rules', 'Rules in sync', 'boss_rules.html', 'admin']] },
     { key: 'dispatch', label: 'Dispatch', icon: 'dispatch', sub: 'Parcels, tracking numbers and Shiprocket', tabs: [['dept_dispatch', 'Parcels and tracking', 'dept_dispatch.html', 'boss'], ['dept_restock', 'Store orders', 'dept_restock.html', 'rsd'], ['dispatch_logins', 'Dispatch logins', 'dispatch_logins.html', 'admin']] },
     { key: 'store', label: 'Store', icon: 'retail_store', sub: 'Everything about the store', tabs: [['store_dashboard', 'Dashboard', 'store_dashboard.html', 'rsm'], ['store_billing', 'Billing', 'store_billing.html', 'rs'], ['store_team', 'Team', 'store_team.html', 'rsm'], ['store_inventory', 'Inventory', 'store_inventory.html', 'rs'], ['store_cleaning', 'Cleaning & Pantry', 'store_cleaning.html', 'boss'], ['store_contacts', 'Customer follow-up', 'store_contacts.html', 'rsm'], ['flyers', 'Flyers', 'flyers.html', 'fl'], ['flyer_map', 'Flyer Map', 'flyer_map.html', 'flm'], ['store_logins', 'Store logins', 'store_logins.html', 'admin']] },
     { key: 'inventory', label: 'Inventory', icon: 'inventory', sub: 'Oils, perfumes, orders and dealers: what you have, what you need, what will be late', tabs: [['iv_dash', 'Dashboard', 'inventory.html', '', 'dashboard'], ['iv_oils', 'Oil stock', 'inventory.html', '', 'oils'], ['iv_perf', 'Perfumes', 'inventory.html', '', 'perfumes'], ['iv_calc', 'Oil calculator', 'inventory.html', '', 'calc'], ['iv_orders', 'Orders', 'inventory.html', '', 'orders'], ['iv_sup', 'Dealers', 'inventory.html', '', 'dealers'], ['iv_alerts', 'Alerts', 'inventory.html', '', 'alerts'], ['iv_rep', 'Reports', 'inventory.html', '', 'reports']] },
@@ -335,6 +335,7 @@ window.WS = (function () {
     if (need === 'boss') return ctx.boss;
     if (need === 'pp') return !!(ctx.isAdmin || ctx.role === 'HR');   // People (Boss → People): Admin and HR
     if (need === 'cx') return !!(ctx.isAdmin || (ctx.cx && ctx.cx.team));   // the Complaint team (people on a desk seat), Admin and the complaints boss
+    if (need === 'cxr') return !!(ctx.isAdmin || (ctx.cx && ctx.cx.mgr));   // Staff progress: Admin, the complaints boss, the top boss / deputy (the same people bd.staff_report lets in)
     if (need === 'cxm') return !!(ctx.isAdmin || (ctx.cx && (ctx.cx.team || ctx.cx.has_mine)) || ctx.isSales);   // My complaints: the ones I raised
     if (need === 'sx') return !!(ctx.isAdmin || (ctx.sx && ctx.sx.team));   // the Inbox team (seat inbox.worker), Admin and the Inbox boss
     if (need === 'fl') return !!ctx.fl;
@@ -674,6 +675,7 @@ window.WS = (function () {
       if (f.is_sales) { btn.push(['my_sales.html', 'My Sales', '\u{1F4C8}', 0]); btn.push(['my_orders.html', 'Orders', '\u{1F6CD}', 0]); btn.push(['my_chats.html', 'Chats', '\u{1F4AC}', 0]); btn.push(['my_chats.html?tab=queries', 'Queries', '\u{1F4CB}', 0]); }
       const cxb = await api.get('bd.cx_badge').catch(() => null);   // Complaints: the team opens the board, a salesperson who raised one sees the status
       if (cxb && cxb.team) btn.push(['complaints.html', 'Complaints', '\u26A0\uFE0F', Number(cxb.my_open) || Number(cxb.late) || 0]); else if (cxb && cxb.has_mine) btn.push(['my_complaints.html', 'Complaints', '\u26A0\uFE0F', 0]);
+      if (cxb && cxb.mgr) btn.push(['staff_progress.html', 'Staff', '\u{1F4C8}', 0]);   // 📈 Staff progress (complaints boss)
       const sxb = await api.get('bd.sx_badge').catch(() => null);   // Inbox hub: the people who answer Instagram / Facebook / email / reviews
       if (sxb && sxb.team) btn.push(['social_inbox.html', 'Inbox', '\u{1F4E5}', Number(sxb.late) || Number(sxb.mine) || 0]);
       if (btn.length < 2) return;
@@ -891,7 +893,7 @@ function renderSidebarCore(active) {
       const grantedActives = perms.flatMap(p => (PAGES_FOR_PERM[p] || []).map(def => def[2]));
       const allowed = ['attendance', 'leave', 'my_salary', 'my_penalties', 'my_agreements', 'my_space'].concat(grantedActives);
       allowed.push('my_day', 'boss_engine', 'boss_inbox', 'daily_summary', 'tracker', 'brain', 'office_care', 'boss_questions', 'boss_penalties', 'dept_hub', 'dept_dispatch', 'dept_restock', 'dept_shops', 'dept_supplies', 'dept_work', 'dept_fix', 'people_admin'); /*bd*/
-      allowed.push('flyers', 'complaints', 'my_complaints', 'social_inbox');
+      allowed.push('flyers', 'complaints', 'my_complaints', 'social_inbox', 'staff_progress');   // staff_progress: the server (bd.staff_report) lets in only the complaints boss / top boss / deputy
       if (d.is_sales) allowed.push('my_sales', 'orders', 'my_chats', 'wasales', 'my_orders');
       // Home page after login: sales people open My Sales (their numbers, rating, offer); everyone else opens Attendance. Remembered for index.html.
       try { localStorage.setItem('hrms_home', 'my_day.html'); } catch (e) { /* private mode */ }
@@ -944,6 +946,7 @@ function renderSidebarCore(active) {
           const n = c.team ? ((Number(c.my_open) || 0) || (Number(c.late) || 0)) : 0;
           a2.innerHTML = 'Complaints' + (n ? ' <span style="background:#e02424;color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;font-weight:700;margin-left:6px;">' + n + '</span>' : '');
           nav.appendChild(a2);
+          if (c.mgr && !document.getElementById('spNavLink')) { const a4 = document.createElement('a'); a4.id = 'spNavLink'; a4.href = 'staff_progress.html'; a4.className = active === 'staff_progress' ? 'active' : ''; a4.textContent = 'Staff progress'; nav.appendChild(a4); }   // 📈 the complaints boss: the team's punch, leave and ticket work
         }).catch(() => {});
       }
     }).catch(() => { if (needsCheck) window.location.replace('my_day.html'); });

@@ -445,6 +445,95 @@ function dp_dsp_rep_where(array $f, array &$par) {
     if ($f['q'] !== '') { $l = '%' . str_replace(['%', '_'], ['\\%', '\\_'], ltrim($f['q'], '#')) . '%'; $w[] = "(order_name LIKE ? OR tracking_no LIKE ? OR customer LIKE ? OR phone LIKE ? OR pend_track LIKE ?)"; array_push($par, $l, $l, $l, $l, $l); }
     return implode(' AND ', $w);
 }
+/**
+ * 🧾 The Order card (Dispatch → tap a tracking number): everything HRMS knows about one parcel's order, in one answer.
+ * Reads only what is already stored — order_facts (payment, salesperson, commission, Finance), the Manual order (wmo_order: payment
+ * screenshot, UTR Claude read, address, items), complaints (cx_cases), the WhatsApp chat (wa_contacts) and the parcel's own times.
+ * Shopify and Manual (WM-) orders alike. The payment screenshot itself comes from dp.dsp_card_shot (only when asked).
+ */
+function dp_dsp_card(PDO $pdo, array $p): array
+{
+    $c = ['order' => (string)$p['order_name'], 'store' => (string)$p['store_key'], 'shopify_id' => (string)$p['shopify_id'], 'manual' => (bool)preg_match('/^WM-\d+$/i', (string)$p['order_name'])];
+    $h = function ($a, $b) { $x = strtotime((string)$a); $y = strtotime((string)$b); return ($x && $y && $y >= $x) ? round(($y - $x) / 3600, 1) : null; };
+    $c['times'] = ['ordered' => substr((string)$p['created_at'], 0, 16), 'tracked' => substr((string)($p['tracked_at'] ?? ''), 0, 16), 'tracked_by' => (string)($p['tracked_by'] ?? ''), 'transit' => substr((string)($p['transit_at'] ?? ''), 0, 16),
+        'delivered' => substr((string)($p['delivered_at'] ?? ''), 0, 16), 'remit' => substr((string)($p['remit_at'] ?? ''), 0, 16), 'h_track' => $h($p['created_at'], $p['tracked_at'] ?? ''), 'h_deliver' => $h($p['created_at'], $p['delivered_at'] ?? '')];
+    // 💳 order + payment + salesperson + commission + Finance: the order_facts copy (filled in the background), else the order itself
+    $f = function_exists('of_get') ? of_get($pdo, (string)$p['order_name']) : null;
+    if (!$f) { try { $q = $pdo->prepare("SELECT total, outstanding, financial_status, tags, ml_total AS ml, pay_ref, created_at FROM shop_orders WHERE store_key = ? AND shopify_id = ?"); $q->execute([$p['store_key'], $p['shopify_id']]); $f = $q->fetch() ?: null; } catch (Throwable $e) { $f = null; } }
+    $num = function ($v) { return $v === null || $v === '' ? null : round((float)$v, 2); };
+    $c['pay'] = $f ? ['total' => $num($f['total'] ?? null), 'outstanding' => $num($f['outstanding'] ?? null), 'status' => (string)($f['financial_status'] ?? ''), 'ref' => (string)($f['pay_ref'] ?? ''), 'gateway' => (string)($f['gateway'] ?? ''),
+        'paid_amt' => $num($f['paid_amt'] ?? null), 'paid_on' => (string)($f['paid_on'] ?? ''), 'channel' => (string)($f['fin_channel'] ?? ''), 'closed' => (string)($f['closed_kind'] ?? ''), 'refund' => (string)($f['refund_status'] ?? ''),
+        'tx' => array_slice((array)($f['pay'] ?? []), 0, 4)] : null;
+    $c['ml'] = $f && ($f['ml'] ?? null) !== null ? (int)$f['ml'] : null; $c['tags'] = $f ? (string)($f['tags'] ?? '') : ''; $c['code'] = $f ? (string)($f['order_code'] ?? '') : '';
+    $c['com'] = $f && ($f['com_at'] ?? null) ? ['amt' => $num($f['com_amt']), 'pct' => $num($f['com_pct']), 'share' => $num($f['share_pct'] ?? null), 'day' => (string)($f['com_day'] ?? '')] : null;
+    $who = dp_dsp_who($pdo, [$p])[(int)$p['id']] ?? [];
+    $c['sp'] = (string)($who['sp'] ?? '') ?: (string)($f['emp_name'] ?? ''); $c['sp_type'] = (string)($who['sp_type'] ?? '') ?: (string)($f['order_type'] ?? ''); $c['chat'] = (string)($who['chat'] ?? '');
+    // 💬 the WhatsApp chat
+    $c['wa'] = null;
+    if ($c['chat'] !== '') { try { $q = $pdo->prepare("SELECT name, source, assigned_emp, last_in_at FROM wa_contacts WHERE phone = ?"); $q->execute([$c['chat']]); $w = $q->fetch();
+        if ($w) { $nm = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : []; $c['wa'] = ['name' => (string)$w['name'], 'source' => (string)$w['source'], 'holder' => (int)$w['assigned_emp'] ? ($nm[(int)$w['assigned_emp']] ?? '') : '', 'last_in' => substr((string)$w['last_in_at'], 0, 16)]; } } catch (Throwable $e) { } }
+    // ⚠ every complaint of this order or this customer (open first)
+    $c['cx'] = [];
+    try {
+        $on = strtolower(ltrim((string)$p['order_name'], '#'));
+        $q = $pdo->prepare("SELECT id, problem, status, owner_emp, raised_at, resolved_at, order_name FROM cx_cases WHERE LOWER(TRIM(LEADING '#' FROM order_name)) = ?" . ($c['chat'] !== '' ? " OR phone = ?" : "") . " ORDER BY status IN ('open','reopened') DESC, id DESC LIMIT 6");
+        $q->execute($c['chat'] !== '' ? [$on, $c['chat']] : [$on]); $nm = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : [];
+        foreach ($q->fetchAll() as $x) $c['cx'][] = ['id' => (int)$x['id'], 'code' => 'C-' . str_pad((string)(int)$x['id'], 4, '0', STR_PAD_LEFT), 'label' => function_exists('cx_problems') ? ((cx_problems()[(string)$x['problem']][0] ?? '') ?: (string)$x['problem']) : (string)$x['problem'],
+            'status' => (string)$x['status'], 'owner' => (int)$x['owner_emp'] ? ($nm[(int)$x['owner_emp']] ?? '') : '', 'raised' => substr((string)$x['raised_at'], 0, 16), 'this_order' => strtolower(ltrim((string)$x['order_name'], '#')) === $on];
+    } catch (Throwable $e) { }
+    // 🧾 a Manual order: how it was paid (screenshot + what Claude read), items, address, who made it
+    $c['wm'] = null;
+    if ($c['manual']) {
+        try { $q = $pdo->prepare("SELECT * FROM wmo_order WHERE order_no = ? LIMIT 1"); $q->execute([(string)$p['order_name']]); $r = $q->fetch();
+            if ($r) { $nm = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : []; $cu = json_decode((string)($r['cust_json'] ?? ''), true) ?: []; $rd = json_decode((string)($r['shot_json'] ?? ''), true) ?: [];
+                $c['wm'] = ['pay' => (string)$r['pay'], 'total' => (int)$r['total_p'] / 100, 'paid' => (int)$r['paid_p'] / 100, 'cod' => (int)$r['cod_p'] / 100, 'utr' => (string)$r['utr'], 'shot' => (string)($r['shot_mime'] ?? '') !== '',
+                    'read' => array_intersect_key($rd, array_flip(['amount', 'utr', 'date', 'status', 'payer'])), 'by' => $nm[(int)$r['emp_id']] ?? '', 'note' => (string)$r['note'], 'sr' => trim((string)($r['sr_order_id'] ?? '') . ' ' . (string)($r['sr_note'] ?? '')),
+                    'made' => substr((string)$r['created_at'], 0, 16), 'sent' => substr((string)($r['sent_at'] ?? ''), 0, 16), 'opened' => substr((string)($r['opened_at'] ?? ''), 0, 16), 'confirmed' => substr((string)($r['confirmed_at'] ?? ''), 0, 16),
+                    'lines' => array_map(function ($l) { return ['name' => trim((string)($l['short'] ?? '') . ' ' . (empty($l['chain']) ? (string)($l['label'] ?? '') : '')), 'qty' => (int)($l['qty'] ?? 1), 'total' => (int)($l['total_p'] ?? 0) / 100, 'chain' => !empty($l['chain'])]; }, json_decode((string)$r['lines_json'], true) ?: []),
+                    'cust' => array_intersect_key($cu, array_flip(['name', 'phone', 'phone2', 'addr1', 'addr2', 'landmark', 'pin', 'city', 'state']))]; } } catch (Throwable $e) { }
+    }
+    return $c;
+}
+/**
+ * 👤 Who sold each parcel's order and ⚠ whether its customer has an open complaint — for Shopify and Manual (WM-) orders alike.
+ * Salesperson: the order's allocation (Order allocation page), else the salesperson holding the customer's WhatsApp chat.
+ * Complaint: an open / reopened ticket for this order number or this customer's number. One query each for the whole list.
+ * Returns [parcel id => ['sp' => name, 'sp_type' => query|campaign|'', 'chat' => 10-digit phone, 'cx' => [id, code, label] | null]].
+ */
+function dp_dsp_who(PDO $pdo, array $list): array
+{
+    $out = []; if (!$list) return $out;
+    $p10 = function ($p) { $d = preg_replace('/\D+/', '', (string)$p) ?? ''; return strlen($d) >= 10 ? substr($d, -10) : ''; };
+    $names = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : [];
+    $alloc = []; $chatEmp = []; $cxP = []; $cxO = [];
+    $ids = []; $phones = []; $ords = [];
+    foreach ($list as $r) { $ids[] = [(string)$r['store_key'], (string)$r['shopify_id']]; $ph = $p10($r['phone'] ?? ''); if ($ph !== '') $phones[$ph] = 1; $on = strtolower(ltrim((string)$r['order_name'], '#')); if ($on !== '') $ords[$on] = 1; }
+    try {
+        $w = implode(' OR ', array_fill(0, count($ids), '(source = ? AND order_id = ?)')); $par = []; foreach ($ids as $x) { $par[] = $x[0]; $par[] = $x[1]; }
+        $q = $pdo->prepare("SELECT source, order_id, employee_id, order_type FROM order_allocations WHERE is_direct = 0 AND ($w)"); $q->execute($par);
+        foreach ($q->fetchAll() as $a) $alloc[$a['source'] . '|' . $a['order_id']] = $a;
+    } catch (Throwable $e) { }
+    if ($phones) {
+        $in = implode(',', array_fill(0, count($phones), '?'));
+        try { $q = $pdo->prepare("SELECT phone, assigned_emp FROM wa_contacts WHERE phone IN ($in)"); $q->execute(array_keys($phones)); foreach ($q->fetchAll() as $c) $chatEmp[(string)$c['phone']] = (int)$c['assigned_emp']; } catch (Throwable $e) { }
+    }
+    try {
+        $par = array_keys($phones); $w = $par ? 'phone IN (' . implode(',', array_fill(0, count($par), '?')) . ')' : '0';
+        if ($ords) { $w .= ' OR LOWER(TRIM(LEADING \'#\' FROM order_name)) IN (' . implode(',', array_fill(0, count($ords), '?')) . ')'; $par = array_merge($par, array_keys($ords)); }
+        $q = $pdo->prepare("SELECT id, phone, order_name, problem, status FROM cx_cases WHERE status IN ('open','reopened') AND ($w) ORDER BY id DESC"); $q->execute($par);
+        foreach ($q->fetchAll() as $c) {
+            $cx = ['id' => (int)$c['id'], 'code' => 'C-' . str_pad((string)(int)$c['id'], 4, '0', STR_PAD_LEFT), 'label' => function_exists('cx_problems') ? ((cx_problems()[(string)$c['problem']][0] ?? '') ?: ucfirst((string)$c['problem'])) : ucfirst((string)$c['problem']), 'status' => (string)$c['status']];
+            if ((string)$c['phone'] !== '' && !isset($cxP[(string)$c['phone']])) $cxP[(string)$c['phone']] = $cx;
+            $on = strtolower(ltrim((string)$c['order_name'], '#')); if ($on !== '' && !isset($cxO[$on])) $cxO[$on] = $cx;
+        }
+    } catch (Throwable $e) { }   // no complaint tables on this install
+    foreach ($list as $r) {
+        $a = $alloc[$r['store_key'] . '|' . $r['shopify_id']] ?? null; $ph = $p10($r['phone'] ?? ''); $on = strtolower(ltrim((string)$r['order_name'], '#'));
+        $emp = $a ? (int)$a['employee_id'] : (int)($chatEmp[$ph] ?? 0);
+        $out[(int)$r['id']] = ['sp' => $emp ? ($names[$emp] ?? ('#' . $emp)) : '', 'sp_type' => $a ? (string)$a['order_type'] : '', 'chat' => $ph, 'cx' => $cxO[$on] ?? ($ph !== '' ? ($cxP[$ph] ?? null) : null)];
+    }
+    return $out;
+}
 function dp_dsp_rep_row(array $r, $now, array $cm = [], array $un = []) {
     $c = strtotime($r['created_at']); $grp = (int)($r['grp'] ?? 0);
     $open = in_array($grp, [1, 2, 3, 4, 5, 9], true);
@@ -524,7 +613,8 @@ function dp_dsp_report(PDO $pdo, array $g, $now) {
     $mk = function (array $list) use ($pdo, $now, $cm) {
         $un = dp_dsp_untr_info($pdo, array_values(array_filter($list, function ($r) { return (int)$r['grp'] === 1; })), $now);
         $ce = dp_dsp_untr_ended($pdo, array_map(function ($r) { return (int)$r['id']; }, array_filter($list, function ($r) { return (int)$r['grp'] === 8 && in_array($r['status'], ['tracked', 'transit'], true); })));
-        return array_map(function ($r) use ($now, $cm, $un, $ce) { $x = dp_dsp_rep_row($r, $now, $cm, $un); if (isset($ce[(int)$r['id']])) $x['case_end'] = $ce[(int)$r['id']]; return $x; }, $list);
+        $who = dp_dsp_who($pdo, $list);   // 👤 salesperson + ⚠ open complaint of each order
+        return array_map(function ($r) use ($now, $cm, $un, $ce, $who) { $x = dp_dsp_rep_row($r, $now, $cm, $un); if (isset($ce[(int)$r['id']])) $x['case_end'] = $ce[(int)$r['id']]; return $x + ($who[(int)$r['id']] ?? []); }, $list);
     };
     $ordG = "(CASE WHEN grp IN (6,7,8,10) THEN -UNIX_TIMESTAMP(created_at) WHEN grp = 3 THEN UNIX_TIMESTAMP(COALESCE(tracked_at, created_at)) WHEN grp = 9 THEN UNIX_TIMESTAMP(COALESCE(pend_at, created_at)) ELSE UNIX_TIMESTAMP(created_at) END), id";
     $rows = []; $total = 0; $sf = (string)($g['status'] ?? 'all'); $per = 100; $page = 1; $groups = null;

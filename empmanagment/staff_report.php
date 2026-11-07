@@ -6,7 +6,7 @@
  *   · complaint work: tickets got, solved, open now, open > 2 days, first reply time, happy %, promises missed
  *   · a score 0–100 → 🟢 Good · 🟡 Average · 🔴 Weak, with the reasons in plain words
  * Action: bd.staff_report  GET {days: 1 | 7 | 30, emp?}   (complaints boss / checker / top boss / deputy, or Admin)
- * Loaded at the bottom of complaints_more.php; the screen is assets/js/staff_report.js (staff_progress.html).
+ * Loaded at the bottom of complaints_more.php; the screen is staff_progress.html (Boss → Staff progress).
  */
 if (!function_exists('sr_report')) {
 
