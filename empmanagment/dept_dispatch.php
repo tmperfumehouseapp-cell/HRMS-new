@@ -496,7 +496,16 @@ if (strpos((string)$action, 'dp.dsp_') === 0) {
     case 'dp.dsp_live': {   // one parcel's journey: stored scans, refreshed from Shiprocket when older than a minute
         if (!function_exists('dp_live_view')) json_response(['error' => 'Live tracking is not installed (dept_dispatch_live.php is missing).'], 500);
         $lid = (int)($_GET['id'] ?? ($in['id'] ?? 0)); if ($lid <= 0) json_response(['error' => 'Missing parcel.'], 422);
-        json_response(dp_live_view($pdo, $lid, !empty($_GET['force']) || !empty($in['force']), $now));
+        $view = dp_live_view($pdo, $lid, !empty($_GET['force']) || !empty($in['force']), $now);
+        if (empty($_GET['force']) && empty($in['force']) && function_exists('dp_dsp_card')) { try { $q = $pdo->prepare("SELECT * FROM dp_dsp_parcels WHERE id = ?"); $q->execute([$lid]); $pr = $q->fetch(); if ($pr) $view['card'] = dp_dsp_card($pdo, $pr); } catch (Throwable $e) { } }   // 🧾 the Order card (not on the 30-second refresh)
+        json_response($view);
+    }
+    case 'dp.dsp_card_shot': {   // 🧾 the payment screenshot of a Manual order (only when the card asks for it)
+        $lid = (int)($_GET['id'] ?? 0); $q = $pdo->prepare("SELECT order_name FROM dp_dsp_parcels WHERE id = ?"); $q->execute([$lid]); $on = (string)$q->fetchColumn();
+        if ($on === '' || !preg_match('/^WM-\d+$/i', $on)) json_response(['error' => 'Not a manual order.'], 404);
+        try { $q = $pdo->prepare("SELECT shot_mime, shot_b64 FROM wmo_order WHERE order_no = ? LIMIT 1"); $q->execute([$on]); $r = $q->fetch(); } catch (Throwable $e) { $r = null; }
+        if (!$r || (string)$r['shot_mime'] === '' || (string)$r['shot_b64'] === '') json_response(['error' => 'No payment screenshot was saved for this order.'], 404);
+        json_response(['ok' => true, 'mime' => (string)$r['shot_mime'], 'b64' => (string)$r['shot_b64']]);
     }
     case 'dp.order_facts': {   // everything we know about one order (by order number, Shopify id, AWB or KWIK id)
         if (!function_exists('of_get')) json_response(['error' => 'order_facts.php is missing.'], 500);

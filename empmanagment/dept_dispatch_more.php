@@ -446,6 +446,55 @@ function dp_dsp_rep_where(array $f, array &$par) {
     return implode(' AND ', $w);
 }
 /**
+ * 🧾 The Order card (Dispatch → tap a tracking number): everything HRMS knows about one parcel's order, in one answer.
+ * Reads only what is already stored — order_facts (payment, salesperson, commission, Finance), the Manual order (wmo_order: payment
+ * screenshot, UTR Claude read, address, items), complaints (cx_cases), the WhatsApp chat (wa_contacts) and the parcel's own times.
+ * Shopify and Manual (WM-) orders alike. The payment screenshot itself comes from dp.dsp_card_shot (only when asked).
+ */
+function dp_dsp_card(PDO $pdo, array $p): array
+{
+    $c = ['order' => (string)$p['order_name'], 'store' => (string)$p['store_key'], 'shopify_id' => (string)$p['shopify_id'], 'manual' => (bool)preg_match('/^WM-\d+$/i', (string)$p['order_name'])];
+    $h = function ($a, $b) { $x = strtotime((string)$a); $y = strtotime((string)$b); return ($x && $y && $y >= $x) ? round(($y - $x) / 3600, 1) : null; };
+    $c['times'] = ['ordered' => substr((string)$p['created_at'], 0, 16), 'tracked' => substr((string)($p['tracked_at'] ?? ''), 0, 16), 'tracked_by' => (string)($p['tracked_by'] ?? ''), 'transit' => substr((string)($p['transit_at'] ?? ''), 0, 16),
+        'delivered' => substr((string)($p['delivered_at'] ?? ''), 0, 16), 'remit' => substr((string)($p['remit_at'] ?? ''), 0, 16), 'h_track' => $h($p['created_at'], $p['tracked_at'] ?? ''), 'h_deliver' => $h($p['created_at'], $p['delivered_at'] ?? '')];
+    // 💳 order + payment + salesperson + commission + Finance: the order_facts copy (filled in the background), else the order itself
+    $f = function_exists('of_get') ? of_get($pdo, (string)$p['order_name']) : null;
+    if (!$f) { try { $q = $pdo->prepare("SELECT total, outstanding, financial_status, tags, ml_total AS ml, pay_ref, created_at FROM shop_orders WHERE store_key = ? AND shopify_id = ?"); $q->execute([$p['store_key'], $p['shopify_id']]); $f = $q->fetch() ?: null; } catch (Throwable $e) { $f = null; } }
+    $num = function ($v) { return $v === null || $v === '' ? null : round((float)$v, 2); };
+    $c['pay'] = $f ? ['total' => $num($f['total'] ?? null), 'outstanding' => $num($f['outstanding'] ?? null), 'status' => (string)($f['financial_status'] ?? ''), 'ref' => (string)($f['pay_ref'] ?? ''), 'gateway' => (string)($f['gateway'] ?? ''),
+        'paid_amt' => $num($f['paid_amt'] ?? null), 'paid_on' => (string)($f['paid_on'] ?? ''), 'channel' => (string)($f['fin_channel'] ?? ''), 'closed' => (string)($f['closed_kind'] ?? ''), 'refund' => (string)($f['refund_status'] ?? ''),
+        'tx' => array_slice((array)($f['pay'] ?? []), 0, 4)] : null;
+    $c['ml'] = $f && ($f['ml'] ?? null) !== null ? (int)$f['ml'] : null; $c['tags'] = $f ? (string)($f['tags'] ?? '') : ''; $c['code'] = $f ? (string)($f['order_code'] ?? '') : '';
+    $c['com'] = $f && ($f['com_at'] ?? null) ? ['amt' => $num($f['com_amt']), 'pct' => $num($f['com_pct']), 'share' => $num($f['share_pct'] ?? null), 'day' => (string)($f['com_day'] ?? '')] : null;
+    $who = dp_dsp_who($pdo, [$p])[(int)$p['id']] ?? [];
+    $c['sp'] = (string)($who['sp'] ?? '') ?: (string)($f['emp_name'] ?? ''); $c['sp_type'] = (string)($who['sp_type'] ?? '') ?: (string)($f['order_type'] ?? ''); $c['chat'] = (string)($who['chat'] ?? '');
+    // 💬 the WhatsApp chat
+    $c['wa'] = null;
+    if ($c['chat'] !== '') { try { $q = $pdo->prepare("SELECT name, source, assigned_emp, last_in_at FROM wa_contacts WHERE phone = ?"); $q->execute([$c['chat']]); $w = $q->fetch();
+        if ($w) { $nm = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : []; $c['wa'] = ['name' => (string)$w['name'], 'source' => (string)$w['source'], 'holder' => (int)$w['assigned_emp'] ? ($nm[(int)$w['assigned_emp']] ?? '') : '', 'last_in' => substr((string)$w['last_in_at'], 0, 16)]; } } catch (Throwable $e) { } }
+    // ⚠ every complaint of this order or this customer (open first)
+    $c['cx'] = [];
+    try {
+        $on = strtolower(ltrim((string)$p['order_name'], '#'));
+        $q = $pdo->prepare("SELECT id, problem, status, owner_emp, raised_at, resolved_at, order_name FROM cx_cases WHERE LOWER(TRIM(LEADING '#' FROM order_name)) = ?" . ($c['chat'] !== '' ? " OR phone = ?" : "") . " ORDER BY status IN ('open','reopened') DESC, id DESC LIMIT 6");
+        $q->execute($c['chat'] !== '' ? [$on, $c['chat']] : [$on]); $nm = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : [];
+        foreach ($q->fetchAll() as $x) $c['cx'][] = ['id' => (int)$x['id'], 'code' => 'C-' . str_pad((string)(int)$x['id'], 4, '0', STR_PAD_LEFT), 'label' => function_exists('cx_problems') ? ((cx_problems()[(string)$x['problem']][0] ?? '') ?: (string)$x['problem']) : (string)$x['problem'],
+            'status' => (string)$x['status'], 'owner' => (int)$x['owner_emp'] ? ($nm[(int)$x['owner_emp']] ?? '') : '', 'raised' => substr((string)$x['raised_at'], 0, 16), 'this_order' => strtolower(ltrim((string)$x['order_name'], '#')) === $on];
+    } catch (Throwable $e) { }
+    // 🧾 a Manual order: how it was paid (screenshot + what Claude read), items, address, who made it
+    $c['wm'] = null;
+    if ($c['manual']) {
+        try { $q = $pdo->prepare("SELECT * FROM wmo_order WHERE order_no = ? LIMIT 1"); $q->execute([(string)$p['order_name']]); $r = $q->fetch();
+            if ($r) { $nm = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : []; $cu = json_decode((string)($r['cust_json'] ?? ''), true) ?: []; $rd = json_decode((string)($r['shot_json'] ?? ''), true) ?: [];
+                $c['wm'] = ['pay' => (string)$r['pay'], 'total' => (int)$r['total_p'] / 100, 'paid' => (int)$r['paid_p'] / 100, 'cod' => (int)$r['cod_p'] / 100, 'utr' => (string)$r['utr'], 'shot' => (string)($r['shot_mime'] ?? '') !== '',
+                    'read' => array_intersect_key($rd, array_flip(['amount', 'utr', 'date', 'status', 'payer'])), 'by' => $nm[(int)$r['emp_id']] ?? '', 'note' => (string)$r['note'], 'sr' => trim((string)($r['sr_order_id'] ?? '') . ' ' . (string)($r['sr_note'] ?? '')),
+                    'made' => substr((string)$r['created_at'], 0, 16), 'sent' => substr((string)($r['sent_at'] ?? ''), 0, 16), 'opened' => substr((string)($r['opened_at'] ?? ''), 0, 16), 'confirmed' => substr((string)($r['confirmed_at'] ?? ''), 0, 16),
+                    'lines' => array_map(function ($l) { return ['name' => trim((string)($l['short'] ?? '') . ' ' . (empty($l['chain']) ? (string)($l['label'] ?? '') : '')), 'qty' => (int)($l['qty'] ?? 1), 'total' => (int)($l['total_p'] ?? 0) / 100, 'chain' => !empty($l['chain'])]; }, json_decode((string)$r['lines_json'], true) ?: []),
+                    'cust' => array_intersect_key($cu, array_flip(['name', 'phone', 'phone2', 'addr1', 'addr2', 'landmark', 'pin', 'city', 'state']))]; } } catch (Throwable $e) { }
+    }
+    return $c;
+}
+/**
  * 👤 Who sold each parcel's order and ⚠ whether its customer has an open complaint — for Shopify and Manual (WM-) orders alike.
  * Salesperson: the order's allocation (Order allocation page), else the salesperson holding the customer's WhatsApp chat.
  * Complaint: an open / reopened ticket for this order number or this customer's number. One query each for the whole list.
