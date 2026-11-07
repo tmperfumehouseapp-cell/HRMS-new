@@ -778,7 +778,7 @@ try {
             $gi = 0;
             foreach ($giftFor as $gp) { if (!empty($gp['voucher_id'])) { $vu = $pdo->prepare("UPDATE st_bday_vouchers SET status = 'redeemed', redeemed_at = ?, redeemed_bill_id = ?, redeemed_by = ? WHERE voucher_id = ? AND status = 'active'"); $vu->execute([$now, $billId, $empName, $gp['voucher_id']]); if ($vu->rowCount() !== 1) { $pdo->rollBack(); json_response(['error' => 'This birthday code was just used on another bill.'], 409); } }
                 $gb = $found[$giftWant[$gi++]]; $pdo->prepare("INSERT INTO st_bday_gifts (phone, name, gift_year, bill_id, bottle_id, given_by, created_at) VALUES (?,?,?,?,?,?,?)")->execute([$gp['phone'], $gp['name'], (int)date('Y'), $billId, (int)$gb['bottle_id'], $empName, $now]); }
-            if (array_filter(array_column($people, 'bday'))) register_shutdown_function(function () use ($pdo) { if (function_exists('fastcgi_finish_request')) @fastcgi_finish_request(); try { st_bday_ensure_template($pdo); } catch (Throwable $e) { } });
+            if (array_filter(array_column($people, 'bday'))) register_shutdown_function(function () use ($pdo) { if (function_exists('fastcgi_finish_request')) @fastcgi_finish_request(); @ignore_user_abort(true); @set_time_limit(60); try { st_bday_ensure_template($pdo); if ((int)date('G') >= 8 && (int)date('G') < 21) st_bday_run($pdo, true); } catch (Throwable $e) { error_log('bday after bill: ' . $e->getMessage()); } });      // a birthday saved with this bill that is close gets its code and WhatsApp message right away
             $pdo->commit();
             $pc = st_pct_for($pdo, $t['total_ml'], $total, $empId, $code !== '');
             $invOut = [];
