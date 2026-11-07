@@ -99,7 +99,7 @@ Core HR tables used heavily (some created elsewhere / assumed existing — **cre
 | Module | Purpose | Main files | DB tables |
 |--------|---------|------------|-----------|
 | Dispatch | Parcels, tracking, Shiprocket | `dept_dispatch.html`, `dept_dispatch*.php` | `dp_dsp_parcels`, `dp_dsp_couriers`, `dp_dsp_events`, `dp_dsp_untr*`, `dp_items`, `shop_orders` |
-| Order + Customer popup, Customers list | One big popup (order card, merged timeline, customer card, WhatsApp chat) and one row per person (last 10 digits of the phone: online, store, old POS) | `customers.html`, `assets/js/order_hub.js`, `empmanagment/order_hub.php` (`dp.order_hub`, `dp.cust_list`, `dp.cust_rebuild`) | `customer_facts` (a copy, rebuilt every 6 h), reads `shop_orders`, `st_bills`, `st_bill_people`, `pos_orders`, `pos_customers`, `cx_cases`, `wa_ord_cases`, `order_facts` |
+| Order + Customer popup, Customers list | One big popup (order card, merged timeline, customer card, WhatsApp chat) and one row per person (last 10 digits of the phone: online, store, old POS) | `customers.html`, `assets/js/order_hub.js`, `empmanagment/order_hub.php` (`dp.dsp_hub`, `dp.dsp_cust_list`, `dp.dsp_cust_rebuild`) | `customer_facts` (a copy, rebuilt every 6 h), reads `shop_orders`, `st_bills`, `st_bill_people`, `pos_orders`, `pos_customers`, `cx_cases`, `wa_ord_cases`, `order_facts` |
 
 ---
 

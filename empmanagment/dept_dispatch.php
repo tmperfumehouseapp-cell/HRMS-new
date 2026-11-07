@@ -508,18 +508,18 @@ if (strpos((string)$action, 'dp.dsp_') === 0) {
         if (!$r || (string)$r['shot_mime'] === '' || (string)$r['shot_b64'] === '') json_response(['error' => 'No payment screenshot was saved for this order.'], 404);
         json_response(['ok' => true, 'mime' => (string)$r['shot_mime'], 'b64' => (string)$r['shot_b64']]);
     }
-    case 'dp.order_hub': {   // the grand popup: order card + timeline + customer card + who is waiting (order_hub.php)
+    case 'dp.dsp_hub': {   // the grand popup: order card + timeline + customer card + who is waiting (order_hub.php)
         if (!function_exists('ohub_view')) json_response(['error' => 'order_hub.php is missing on this server.'], 500);
         $r = ohub_view($pdo, ['id' => $_GET['id'] ?? ($in['id'] ?? 0), 'case' => $_GET['case'] ?? ($in['case'] ?? 0), 'phone' => $_GET['phone'] ?? ($in['phone'] ?? ''), 'order' => $_GET['order'] ?? ($in['order'] ?? ''),
             'store' => $_GET['store'] ?? ($in['store'] ?? ''), 'sid' => $_GET['sid'] ?? ($in['sid'] ?? ''), 'bill' => $_GET['bill'] ?? ($in['bill'] ?? 0)]);
         if (empty($r['ok'])) json_response(['error' => $r['error'] ?? 'Not found.'], 404);
         json_response($r);
     }
-    case 'dp.cust_list': {   // the Customers list: one row per person (last 10 digits of the phone)
+    case 'dp.dsp_cust_list': {   // the Customers list: one row per person (last 10 digits of the phone)
         if (!function_exists('ohub_list')) json_response(['error' => 'order_hub.php is missing on this server.'], 500);
         json_response(ohub_list($pdo, $_GET));
     }
-    case 'dp.cust_rebuild': {   // read every order again and rebuild the Customers list
+    case 'dp.dsp_cust_rebuild': {   // read every order again and rebuild the Customers list
         if (!function_exists('ohub_rebuild')) json_response(['error' => 'order_hub.php is missing on this server.'], 500);
         $n = ohub_rebuild($pdo); dp_put('ohub_last_ts', (string)time()); json_response(['ok' => true, 'people' => $n]);
     }

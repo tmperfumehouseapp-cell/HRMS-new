@@ -7,7 +7,7 @@
  *   OrderHub.open({ ..., tab:'chat' })  opens on the WhatsApp chat
  *   OrderHub.customers(el)           the Customers list (customers.html)
  *
- * Reads dp.order_hub / dp.cust_list (empmanagment/order_hub.php). The chat inside is wa_one.html, the same chat screen as everywhere.
+ * Reads dp.dsp_hub / dp.dsp_cust_list (empmanagment/order_hub.php). The chat inside is wa_one.html, the same chat screen as everywhere.
  * Needs api.js. One person = the last 10 digits of the phone, so online, store and old-POS orders sit on the same customer card. */
 window.OrderHub = (function () {
   const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -104,7 +104,7 @@ window.OrderHub = (function () {
     if (!quiet) { const b = S.ov.querySelector('[data-bd]'); if (b && !S.d) b.innerHTML = '<div class="oh-sk"></div><div class="oh-sk" style="width:70%"></div>'; }
     try {
       const q = {}; ['id', 'case', 'phone', 'order', 'store', 'sid', 'bill'].forEach((k) => { if (req[k]) q[k] = req[k]; });
-      S.d = await api.get('dp.order_hub', q);
+      S.d = await api.get('dp.dsp_hub', q);
     } catch (e) { if (CUR !== S) return; S.ov.querySelector('[data-bd]').innerHTML = '<div class="oh-empty"><b>Cannot open this</b>' + esc(errMsg(e)) + '</div>'; S.ov.querySelector('.oh-r1 h2').textContent = 'Not found'; return; }
     if (CUR !== S) return; draw(S);
     if (S.d.order && !S.d.order.manual) loadItems(S);
@@ -257,7 +257,7 @@ window.OrderHub = (function () {
     const FL = [['all', 'Everyone'], ['vip', '⭐ High value'], ['repeat', 'Repeat'], ['new', 'First-time'], ['both', 'Store + Online'], ['store', 'Store'], ['online', 'Online'], ['risk', '🚩 Risk'], ['lapsed', 'Not ordered for 120 d']];
     async function load(quiet) {
       if (!quiet) el.querySelector('[data-rows]').innerHTML = '<tr><td colspan="8"><div class="oh-empty">Loading…</div></td></tr>';
-      try { S.d = await api.get('dp.cust_list', { q: S.q, flt: S.flt, sort: S.sort, page: S.page }); } catch (e) { el.querySelector('[data-rows]').innerHTML = '<tr><td colspan="8"><div class="oh-empty"><b>Cannot open the customers</b>' + esc(errMsg(e)) + '</div></td></tr>'; return; }
+      try { S.d = await api.get('dp.dsp_cust_list', { q: S.q, flt: S.flt, sort: S.sort, page: S.page }); } catch (e) { el.querySelector('[data-rows]').innerHTML = '<tr><td colspan="8"><div class="oh-empty"><b>Cannot open the customers</b>' + esc(errMsg(e)) + '</div></td></tr>'; return; }
       draw();
     }
     function draw() {
@@ -277,7 +277,7 @@ window.OrderHub = (function () {
     el.addEventListener('click', async (e) => {
       const f = e.target.closest('[data-flt]'); if (f) { S.flt = f.getAttribute('data-flt'); S.page = 1; el.querySelectorAll('[data-flt]').forEach((b) => b.classList.toggle('on', b === f)); return load(true); }
       if (e.target.closest('[data-pp]')) { S.page = Math.max(1, S.page - 1); return load(true); } if (e.target.closest('[data-pn]')) { S.page++; return load(true); }
-      const rb = e.target.closest('[data-rb]'); if (rb) { rb.disabled = true; rb.textContent = 'Reading every order…'; try { const r = await api.post('dp.cust_rebuild', {}); toast(r.people + ' customers'); await load(true); } catch (er) { toast(errMsg(er)); } rb.disabled = false; rb.textContent = '↻ Rebuild now'; return; }
+      const rb = e.target.closest('[data-rb]'); if (rb) { rb.disabled = true; rb.textContent = 'Reading every order…'; try { const r = await api.post('dp.dsp_cust_rebuild', {}); toast(r.people + ' customers'); await load(true); } catch (er) { toast(errMsg(er)); } rb.disabled = false; rb.textContent = '↻ Rebuild now'; return; }
       const tr = e.target.closest('tr[data-i]'); if (tr && S.d) { const r = S.d.rows[+tr.getAttribute('data-i')]; if (r) open({ phone: r.p10 }); }
     });
     load(); return { refresh: () => load(true) };
