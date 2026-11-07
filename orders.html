@@ -842,7 +842,6 @@
 <div class="modal-overlay" id="detailModal">
   <div class="modal wide">
     <h3 id="detailTitle">Order</h3>
-    <div id="detailCard" style="max-height:40vh; overflow-y:auto;"></div>
     <div id="detailBody" style="max-height:65vh; overflow-y:auto; overscroll-behavior:contain;"></div>
     <div class="actions">
       <button type="button" class="btn secondary" id="btnDetailClose">Close</button>
@@ -936,29 +935,7 @@
         </div>
       </div>
       <div class="field">
-        <label for="moSeller">Sold by (salesperson)</label>
-        <select id="moSeller"><option value="0">— choose —</option></select>
-      </div>
-      <div class="field">
-        <label for="moAddress">Delivery address * <span style="font-weight:400;color:var(--muted)">(Shiprocket needs it to ship)</span></label>
-        <input type="text" id="moAddress" maxlength="255" required>
-      </div>
-      <div class="field-grid">
-        <div class="field">
-          <label for="moCity">City *</label>
-          <input type="text" id="moCity" maxlength="80" required>
-        </div>
-        <div class="field">
-          <label for="moState">State *</label>
-          <input type="text" id="moState" maxlength="80" required>
-        </div>
-      </div>
-      <div class="field">
-        <label for="moPin">Pincode *</label>
-        <input type="text" id="moPin" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" required>
-      </div>
-      <div class="field">
-        <label for="moRemarks">Remarks / what was ordered</label>
+        <label for="moRemarks">Remarks</label>
         <input type="text" id="moRemarks" maxlength="255">
       </div>
       <div class="actions">
@@ -971,7 +948,6 @@
 
 <script src="assets/js/config.js?v=2"></script>
 <script src="assets/js/api.js?v=9"></script>
-<script src="assets/js/order_card.js?v=1"></script>
 <script src="assets/js/layout.js?v=20"></script>
 <script src="assets/js/ml_slab.js?v=261103y"></script>
 <script src="assets/js/convo.js?v=261024a"></script>
@@ -2957,8 +2933,6 @@
     const body = document.getElementById('detailBody');
     detailModal.classList.add('open');
     lockPage(true); // freeze the page behind the popup
-    // Order card: sold by, status, Dispatch, complaints, open the customer's chat (Shopify and manual orders alike)
-    if (window.OrderCard) OrderCard.mount(document.getElementById('detailCard'), { store: o.store_key === 'manual' ? 'manual' : o.store_key, id: o.store_key === 'manual' ? o.manual_order_id : o.id, name: o.order_name, phone: o.phone });
 
     if (o.store_key === 'manual' || o.custom_store) {
       body.innerHTML =
@@ -3094,8 +3068,6 @@
     document.getElementById('orderModalAlert').innerHTML = '';
     document.getElementById('moDate').value = nowLocal();
     orderModal.classList.add('open');
-    const sel = document.getElementById('moSeller');
-    if (sel.options.length < 2) api.get('order.sellers').then((d) => { (d.sellers || []).forEach((x) => { const op = document.createElement('option'); op.value = x.id; op.textContent = x.name; sel.appendChild(op); }); }).catch(() => {});
   });
   document.getElementById('btnOrderCancel').addEventListener('click', () => orderModal.classList.remove('open'));
   orderModal.addEventListener('click', (e) => { if (e.target === orderModal) orderModal.classList.remove('open'); });
@@ -3106,7 +3078,7 @@
     btn.disabled = true;
     try {
       const dtLocal = document.getElementById('moDate').value; // yyyy-mm-ddThh:mm
-      const saved = await api.post('manual_orders.save', {
+      await api.post('manual_orders.save', {
         customer_name: document.getElementById('moCustomer').value.trim(),
         phone: document.getElementById('moPhone').value.trim(),
         items: Number(document.getElementById('moItems').value || 1),
@@ -3116,14 +3088,9 @@
         order_date: dtLocal ? dtLocal.replace('T', ' ') + ':00' : '',
         order_no: document.getElementById('moOrderNo').value.trim(),
         remarks: document.getElementById('moRemarks').value.trim(),
-        sales_emp: Number(document.getElementById('moSeller').value || 0),
-        address: document.getElementById('moAddress').value.trim(),
-        city: document.getElementById('moCity').value.trim(),
-        state: document.getElementById('moState').value.trim(),
-        pincode: document.getElementById('moPin').value.trim(),
       });
       orderModal.classList.remove('open');
-      showAlert((saved && saved.message) || 'Order added.');
+      showAlert('Order added.');
       loadOrders();
     } catch (err) {
       document.getElementById('orderModalAlert').innerHTML = `<div class="alert error">${err.message}</div>`;
@@ -4028,7 +3995,7 @@
   function esCmOpen(id, b) {
     const e = esRowsFor(b).find(r => r.id === id), c = e && e.cm; if (!c) return;
     const from = esEl('dateFrom').value, to = esEl('dateTo').value, nm = String(e.n || '').trim().toLowerCase();
-    const list = allOrders.filter(o => !o.cancelled && isCounted(o) && String(o.salesman || '').trim().toLowerCase() === nm && (b === 'all' || panelOf(o) === b)).sort((x, y) => String(x.created_at) < String(y.created_at) ? -1 : 1);
+    const list = allOrders.filter(o => !o.cancelled && isCounted(o) && (o.employee_id ? Number(o.employee_id) === Number(id) : String(o.salesman || '').trim().toLowerCase() === nm) && (b === 'all' || panelOf(o) === b)).sort((x, y) => String(x.created_at) < String(y.created_at) ? -1 : 1);
     const tags = c.tags || [], special = tags.reduce((a, t) => a + (t.k === 'panel' || t.k === 'fixed' || (t.k === 'mix' && !/full commission/.test(t.l)) ? t.n : 0), 0), slabN = Math.max(0, c.n - special);
     const sgn = (d) => (d < 0 ? '−' : '+') + esInr(Math.abs(d));
     const money = (v) => '₹' + (Math.round(v * 100) / 100).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });

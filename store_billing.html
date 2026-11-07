@@ -245,7 +245,7 @@
     renderQuote();
   }
   function renderCart() {
-    $('chips').innerHTML = (chain ? `<span class="bchip"><span class="sz" style="background:#b8860b;color:#fff">CHAIN</span><span class="nm">${esc(chain.name)} · ${chain.split_pct || 50}% of bill</span><button data-xc="1" aria-label="Remove chain">×</button></span>` : '') + cart.map((b) => `<span class="bchip ${szClass(b)}"><span class="sz">${b.kind === 'tester' ? 'T ' : ''}${b.ml}</span><span class="nm">${esc(b.title)}</span><button data-x="${b.code}" aria-label="Remove">×</button></span>`).join('');
+    $('chips').innerHTML = (chain ? `<span class="bchip"><span class="sz" style="background:#b8860b;color:#fff">CHAIN</span><span class="nm">${esc(chain.name)} · ${inr(chain.price)}</span><button data-xc="1" aria-label="Remove chain">×</button></span>` : '') + cart.map((b) => `<span class="bchip ${szClass(b)}"><span class="sz">${b.kind === 'tester' ? 'T ' : ''}${b.ml}</span><span class="nm">${esc(b.title)}</span><button data-x="${b.code}" aria-label="Remove">×</button></span>`).join('');
     const sale = cart.filter((b) => b.kind !== 'tester'), ml = sale.reduce((a, b) => a + b.ml, 0), t = cart.length - sale.length;
     $('totMl').textContent = ml + ' ml';
     $('totSub').textContent = cart.length || chain ? `${sale.length} bottle${sale.length === 1 ? '' : 's'}${t ? ' + ' + t + ' tester' + (t > 1 ? 's' : '') : ''}` : 'Nothing scanned yet';
@@ -262,22 +262,20 @@
   }
   $('prices').addEventListener('click', (e) => { const c = e.target.closest('[data-c]'); if (!c) return; pickedCol = +c.dataset.c; renderQuote(); });
   const total = () => Math.max(0, listPrice() - (+$('disc').value || 0));
-  const chainShare = (t) => Math.round(t * (chain.split_pct || 50) / 100);
   function chainInfo(t) {          // the split shown to staff; the real split is made again on the server with the same rule
     if (!chain) return '';
     const sale = cart.some((b) => b.kind !== 'tester');
-    if (!sale || t <= 0) return `<div class="sx-msg warn" style="margin-top:8px">${sxi('alert')}<span>Chain ${esc(chain.name)} is on the bill (it gets ${chain.split_pct || 50}% of the total). Scan the perfumes and pick the price to see the split.</span></div>`;
-    const cp = chainShare(t);
-    if (chain.mrp > 0 && cp > chain.mrp) return `<div class="sx-msg bad" style="margin-top:8px">${sxi('xc')}<span>The chain’s share is ${inr(cp)} but this chain’s MRP is only ${inr(chain.mrp)}. Take a chain with a higher MRP.</span></div>`;
-    if (cp <= 0 || cp >= t) return `<div class="sx-msg bad" style="margin-top:8px">${sxi('xc')}<span>The chain share (${inr(cp)}) does not fit this bill. Add more perfume.</span></div>`;
-    return `<div class="sx-card" style="margin:8px 0 0;padding:10px 12px;background:var(--sx-blue-t,#eef5ff)"><b>Split on the GST invoice</b><div style="display:flex;justify-content:space-between;margin-top:4px"><span>Perfumes</span><b>${inr(t - cp)}</b></div><div style="display:flex;justify-content:space-between"><span>Chain · ${esc(chain.name)}</span><b>${inr(cp)}</b></div><div style="display:flex;justify-content:space-between;border-top:1px solid var(--sx-line);margin-top:4px;padding-top:4px"><span>Bill total (does not change)</span><b>${inr(t)}</b></div></div>`;
+    if (!sale || t <= 0) return `<div class="sx-msg warn" style="margin-top:8px">${sxi('alert')}<span>Chain ${esc(chain.name)} (${inr(chain.price)}) is on the bill. Scan the perfumes and pick the price to see the split.</span></div>`;
+    if (chain.price >= t) return `<div class="sx-msg bad" style="margin-top:8px">${sxi('xc')}<span>The chain costs ${inr(chain.price)} but the bill is only ${inr(t)}. Add more perfume or take a cheaper chain.</span></div>`;
+    const share = Math.round(chain.price / t * 100), over = share > (chain.split_pct || 50);
+    return `<div class="sx-card" style="margin:8px 0 0;padding:10px 12px;background:var(--sx-blue-t,#eef5ff)"><b>Split on the GST invoice</b><div style="display:flex;justify-content:space-between;margin-top:4px"><span>Perfumes</span><b>${inr(t - chain.price)}</b></div><div style="display:flex;justify-content:space-between"><span>Chain · ${esc(chain.name)}</span><b>${inr(chain.price)}</b></div><div style="display:flex;justify-content:space-between;border-top:1px solid var(--sx-line);margin-top:4px;padding-top:4px"><span>Bill total (does not change)</span><b>${inr(t)}</b></div>${over ? `<small class="sx-mut">The chain is ${share}% of the bill (usual: up to ${chain.split_pct || 50}%).</small>` : ''}</div>`;
   }
   function updatePay() {
     const t = total();
     $('chainBox').innerHTML = chainInfo(t);
     $('splitRow').style.display = $('pay').value === 'split' ? '' : 'none';
     $('btnBill').textContent = t > 0 ? 'Make bill · ' + inr(t) : 'Make bill';
-    $('btnBill').disabled = !(cart.some((b) => b.kind !== 'tester') && t > 0 && +$('emp').value && custOk() && !(chain && (chainShare(t) >= t || chainShare(t) <= 0 || (chain.mrp > 0 && chainShare(t) > chain.mrp))));
+    $('btnBill').disabled = !(cart.some((b) => b.kind !== 'tester') && t > 0 && +$('emp').value && custOk() && !(chain && chain.price >= t));
     $('btnBill').title = custOk() ? '' : 'Add each customer’s mobile number first';
   }
   // the Order code box fills itself with the next code of the person who bills (KC00061); the cashier can still type another one
@@ -347,44 +345,21 @@
     : `<span class="pp"><b>${esc(p.name || '+' + p.phone.slice(-10))}</b>${p.returning ? '<span class="st y" style="background:var(--sx-violet-t);color:var(--sx-violet)">↺ returning</span>' : ''}${p.sent_at ? stp(1, 'Sent') : `<button class="minibtn" data-wa="${p.person_id}" data-u="${esc(p.wa_url || '')}">Send on WhatsApp</button>`}${stp(p.opened_at, 'Opened')}${p.returning ? '' : stp(p.contact_at, 'Contacts') + stp(p.community_at, 'Community') + stp(p.review_at, 'Review')}</span>`).join('')}</div>`;
 
   // ---------- today's bills
-  let listDate = '', dayOpen = 0, payOpen = 0, payD = null, lastBills = [];
+  let listDate = '', dayOpen = 0;
   async function loadBills() {
     try {
       const d = await api.get('st_bill.list', listDate ? { date: listDate } : {}), ok = d.bills.filter((b) => b.status === 'ok');
       if (!listDate || listDate === d.today) { $('hTotal').textContent = inr(d.total); $('hBills').textContent = ok.length; $('hMl').textContent = d.total_ml; $('hAvg').textContent = inr(ok.length ? d.total / ok.length : 0); }
       $('hDay').textContent = '· ' + new Date(d.today + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }) + ' · a new day starts at ' + d.day_start + ' AM';
-      lastBills = d.bills; $('dayPick').value = d.date; $('dayPick').max = d.today; setBizDay(d.today);
+      $('dayPick').value = d.date; $('dayPick').max = d.today; setBizDay(d.today);
       $('dayTot').textContent = `${ok.length} bill${ok.length === 1 ? '' : 's'} · ${inr(d.total)} · ${d.total_ml} ml`;
       $('bills').innerHTML = d.bills.length ? d.bills.map((b) => `<div class="brow ${b.status === 'void' ? 'void' : ''}"><span class="av">${sxAv(b.emp_name)}</span>
         <span class="nm"><b>${esc(b.bill_no)}</b><small>${esc(b.emp_name)}${b.customer_name ? ' · ' + esc(b.customer_name) : ''}</small></span>
         <span class="meta"><span class="h" style="font-weight:700">${b.total_ml}</span><span class="sx-pill m" style="background:var(--sx-blue-t);color:var(--sx-blue)">${b.total_ml} ml</span><span class="h sx-mut">${esc(b.created_at.slice(11, 16))}</span><span class="sx-pill">${PAY[b.pay_mode] || b.pay_mode}</span>${b.chain_name ? (b.inv_no ? `<span class="sx-pill good" title="Chain ${esc(b.chain_name)}">⛓ ${b.inv_url ? `<a href="${esc(b.inv_url)}" target="_blank" rel="noopener" style="color:inherit">${esc(b.inv_no)}</a>` : esc(b.inv_no)}</span>` : (b.status === 'ok' ? `<button class="minibtn" data-inv="${b.bill_id}" title="${esc(b.inv_err || '')}">⛓ Make GST invoice</button>` : '')) : ''}${b.order_code ? `<span class="sx-pill good">${esc(b.order_code)}</span>` : (b.status === 'ok' ? `<span class="sx-pill warn">${sxi('alert')} no code</span>` : '')}</span>
         <b class="tot" style="text-align:right;background:none;color:inherit;padding:0;margin:0;display:block;font-size:14px">${inr(b.total)}</b>
-        ${b.status === 'ok' && (isManager || d.date === d.today) ? `<span style="display:flex;gap:6px;flex-wrap:wrap"><button class="x" data-p="${b.bill_id}" style="color:var(--sx-blue,#2a62c9)">Payment</button>${isManager ? `<button class="x" data-d="${b.bill_id}" title="Count this bill on another day">Change day</button><button class="x" data-v="${b.bill_id}">Cancel</button>` : ''}</span>` : '<span></span>'}${payOpen === b.bill_id && payD ? payEditor(b) : ''}${dayOpen === b.bill_id ? `<div style="grid-column:1/-1;display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;padding:8px 0"><label class="sx-f">This bill counts on<input class="sx-in" type="date" id="dayNew" min="${shiftDay(d.today, -45)}" max="${d.today}" value="${d.date}"></label><button class="sx-btn" data-dgo="${b.bill_id}">Move</button><button class="sx-btn ghost" data-dx="1">Cancel</button></div>` : ''}${peopleRow(b)}</div>`).join('') : '<div class="sx-mut" style="padding:10px 4px">No bills on this day. Press <b>New bill</b> or just scan a bottle.</div>';
+        ${b.status === 'ok' && isManager ? `<span style="display:flex;gap:6px;flex-wrap:wrap"><button class="x" data-d="${b.bill_id}" title="Count this bill on another day">Change day</button><button class="x" data-v="${b.bill_id}">Cancel</button></span>` : '<span></span>'}${dayOpen === b.bill_id ? `<div style="grid-column:1/-1;display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;padding:8px 0"><label class="sx-f">This bill counts on<input class="sx-in" type="date" id="dayNew" min="${shiftDay(d.today, -45)}" max="${d.today}" value="${d.date}"></label><button class="sx-btn" data-dgo="${b.bill_id}">Move</button><button class="sx-btn ghost" data-dx="1">Cancel</button></div>` : ''}${peopleRow(b)}</div>`).join('') : '<div class="sx-mut" style="padding:10px 4px">No bills on this day. Press <b>New bill</b> or just scan a bottle.</div>';
     } catch (e) { $('bills').textContent = e.message; }
   }
-  // ---------- change the payment of a bill (Cash / Online / Cash + online); buttons redraw the list, typing only updates the message in place
-  const PAYN = { cash: 'Cash', online: 'Online / UPI', split: 'Cash + online' };
-  const payEditor = (b) => `<div style="grid-column:1/-1;border-top:1px dashed var(--sx-line);padding:10px 0;display:flex;flex-direction:column;gap:8px"><div style="display:flex;gap:6px;flex-wrap:wrap">${['cash', 'online', 'split'].map((m) => `<button class="sx-btn ${payD.mode === m ? '' : 'ghost'}" data-pm="${m}">${PAYN[m]}</button>`).join('')}</div>
-    ${payD.mode === 'split' ? `<div class="sx-r2"><label class="sx-f">Cash ₹<input class="sx-in" type="number" min="0" inputmode="numeric" id="pCash" value="${payD.cash}"></label><label class="sx-f">Online ₹<input class="sx-in" type="number" min="0" inputmode="numeric" id="pOnl" value="${payD.online}"></label></div>` : ''}
-    <div id="payMsg"></div><div style="display:flex;gap:8px"><button class="sx-btn" id="payGo" data-pgo="${b.bill_id}">Save payment</button><button class="sx-btn ghost" data-px="1">Cancel</button></div></div>`;
-  function payCheck() {
-    const b = lastBills.find((x) => x.bill_id === payOpen); if (!b || !payD) return; const go = $('payGo'), msg = $('payMsg'); if (!go || !msg) return;
-    if (payD.mode !== 'split') { msg.innerHTML = `<span class="sx-mut" style="font-size:12.5px">The whole ${inr(b.total)} counts as ${PAYN[payD.mode]}.</span>`; go.disabled = false; return; }
-    const s = (+payD.cash || 0) + (+payD.online || 0), ok = Math.abs(s - b.total) <= 0.5;
-    msg.innerHTML = `<div class="sx-msg ${ok ? 'ok' : 'bad'}">${sxi(ok ? 'ok' : 'xc')}<span>${ok ? 'Cash + online = ' + inr(b.total) : 'Cash + online = ' + inr(s) + ', the bill is ' + inr(b.total)}</span></div>`; go.disabled = !ok;
-  }
-  $('bills').addEventListener('input', (e) => {
-    if (e.target.id !== 'pCash' && e.target.id !== 'pOnl') return; const b = lastBills.find((x) => x.bill_id === payOpen); if (!b) return;
-    if (e.target.id === 'pCash') { payD.cash = +e.target.value || 0; payD.online = Math.max(0, b.total - payD.cash); $('pOnl').value = payD.online; } else { payD.online = +e.target.value || 0; payD.cash = Math.max(0, b.total - payD.online); $('pCash').value = payD.cash; }
-    payCheck();
-  });
-  $('bills').addEventListener('click', async (e) => {
-    const pb = e.target.closest('[data-p]'), pm = e.target.closest('[data-pm]'), pg = e.target.closest('[data-pgo]');
-    if (pb) { const id = +pb.dataset.p; if (payOpen === id) { payOpen = 0; payD = null; } else { const b = lastBills.find((x) => x.bill_id === id); payOpen = id; payD = { mode: b.pay_mode, cash: b.cash_amt, online: b.online_amt }; } dayOpen = 0; await loadBills(); payCheck(); return; }
-    if (pm) { const b = lastBills.find((x) => x.bill_id === payOpen); payD.mode = pm.dataset.pm; if (payD.mode === 'cash') { payD.cash = b.total; payD.online = 0; } else if (payD.mode === 'online') { payD.cash = 0; payD.online = b.total; } else if (!(payD.cash > 0 && payD.online > 0)) { payD.cash = Math.round(b.total / 2); payD.online = b.total - payD.cash; } await loadBills(); payCheck(); return; }
-    if (e.target.closest('[data-px]')) { payOpen = 0; payD = null; return loadBills(); }
-    if (pg) { pg.disabled = true; try { const r = await api.post('st_bill.set_pay', { bill_id: +pg.dataset.pgo, pay_mode: payD.mode, cash_amt: payD.cash, online_amt: payD.online }); payOpen = 0; payD = null; toast(r.message); loadBills(); } catch (err) { $('payMsg').innerHTML = `<div class="sx-msg bad">${sxi('xc')}<span>${esc(err.message)}</span></div>`; pg.disabled = false; } }
-  });
   $('dayPick').addEventListener('change', () => { listDate = $('dayPick').value; loadBills(); });
   $('bills').addEventListener('click', async (e) => {
     const dd = e.target.closest('[data-d]'); if (dd) { dayOpen = dayOpen === +dd.dataset.d ? 0 : +dd.dataset.d; return loadBills(); }

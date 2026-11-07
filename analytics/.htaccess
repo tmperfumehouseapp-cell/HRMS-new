@@ -1,0 +1,5 @@
+# Keep secrets and logs private. collect.php stays public.
+<FilesMatch "^(config\.php|config\.example\.php|schema\.sql|collect-errors\.log)$">
+  Require all denied
+</FilesMatch>
+Options -Indexes

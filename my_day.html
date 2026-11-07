@@ -86,7 +86,7 @@
   guardPage();
   renderSidebar('my_day');
   const { esc, $, toast, inr } = BD;
-  let SAL = null, ME = null, DP = null, BDD = null, PF = null, ATT = null, FLAGS = null, PO = null, stream = null, OPL = null;   // OPL = registered places (Pantry ...): one card per place, see assets/js/of_place_ui.js
+  let ME = null, DP = null, BDD = null, PF = null, ATT = null, FLAGS = null, PO = null, stream = null, OPL = null;   // OPL = registered places (Pantry ...): one card per place, see assets/js/of_place_ui.js
   const PAGE = { dispatch: 'dept_dispatch.html', shops: 'dept_shops.html', supplies: 'dept_supplies.html', fix: 'dept_fix.html' };
   const j = (p) => p.catch(() => null);
   // Busy-hour safety: each read is retried once, and if it still fails the last good copy of it (kept in this tab) is shown instead of a blank card.
@@ -104,7 +104,6 @@
       PO = po; OPL = opl && Array.isArray(opl.places) ? opl : null; ME = me; DP = dp || { items: [], done: [], penalties: [], mode: 'shadow' }; BDD = bdd || { tasks: [], penalties: [], week: { done: 0, missed: 0 }, mode: DP.mode }; PF = pf; ATT = att; FLAGS = fl || {};
       if (!ME) throw new Error('Your login is not linked to an employee.');
       render(); records();
-      api.get('salary.detail').then((r) => { if (r && r.detail) { SAL = r.detail; render(); } }).catch(() => { /* commission-only staff have no monthly salary: no card */ });
       BD.who().then((b) => { if (b.manager) $('mgr').innerHTML = '<a class="bd-btn sm" href="boss_engine.html">Boss Engine</a>'; });
     } catch (e) { $('root').innerHTML = '<div class="bd-card"><div class="bd-empty"><b>Cannot open My Day</b>' + esc(e.message) + '</div></div>'; }
   }
@@ -200,18 +199,6 @@
     return h + '</div>';
   }
 
-  /* ---------------- salary so far this month: earned days, minus penalties ---------------- */
-  function salaryCard() {
-    if (!SAL) return '';
-    const pen = Number(SAL.penalty_total) || 0, c = SAL.counts || {};
-    const lines = (SAL.penalties || []).slice(0, 3).map((p) => '<div class="bd-sub" style="display:flex;justify-content:space-between;gap:8px"><span>' + esc(String(p.date || '').slice(5).split('-').reverse().join('/')) + ' · ' + esc(p.title || 'Penalty') + '</span><b style="color:#d9423b">−' + inr(p.amount) + '</b></div>').join('');
-    return '<div class="md-card"><div class="md-lb">Salary so far this month</div><div class="md-perf" style="grid-template-columns:repeat(3,1fr)">'
-      + '<div><b>' + inr(SAL.earned) + '</b><small>earned so far</small></div>'
-      + '<div class="' + (pen > 0 ? 'r' : 'g') + '"><b>' + (pen > 0 ? '−' : '') + inr(pen) + '</b><small>penalties</small></div>'
-      + '<div class="g"><b>' + inr(SAL.net_pay) + '</b><small>you get so far</small></div></div>'
-      + '<div class="bd-sub" style="margin-top:8px">' + (c.present || 0) + ' days present · ' + inr(SAL.daily_rate) + ' a day (salary ÷ 30)' + (c.absent ? ' · ' + c.absent + ' absent' : '') + '</div>' + (lines ? '<div style="margin-top:6px">' + lines + '</div>' : '') + '</div>';
-  }
-
   /* ---------------- after punch in: working time + punch out ---------------- */
   function dayCard() {
     const at = ATT && ATT.attendance; if (!at || !at.punch_in) return '';
@@ -281,7 +268,7 @@
     const pin = punchedIn(), redo = !!(PF && PF.redo);
     // Before punch in the day is only the punch-in steps and the Punch In button. Work, penalties and the rest open after it.
     let body = pin && !redo
-      ? dayCard() + salaryCard() + perfCard() + tasks() + '<div id="b2MyBox"></div>' + reportCard() + tellCard() + penalties()
+      ? dayCard() + perfCard() + tasks() + '<div id="b2MyBox"></div>' + reportCard() + tellCard() + penalties()
       : punchCard() + '<div class="md-wait">Your work for today opens after you punch in.</div>' + (pin ? dayCard() + tasks() : '');
     body = body.replace('class="md-card', 'class="md-card pull');   // the first card slides up over the orange header
     $('root').innerHTML = hero() + body;

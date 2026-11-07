@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chain Collection</title>
+<meta name="description" content="Chains, bracelets and combos in one page. Tap any product to see all its photos.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --orange: #e8641b;      /* CHANGE: your tmperfumehouse orange */
+    --cream:  #f6efe6;      /* CHANGE: your tmperfumehouse cream */
+    --orange-soft: #fbe6d8; /* light orange band behind section titles */
+    --ink: #1f1a14;
+    --muted: #7d7166;
+    --line: #e4d9cb;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--cream);
+    color: var(--ink);
+    font-family: 'DM Sans', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  img { display: block; max-width: 100%; }
+  button { font-family: inherit; }
+
+  /* ---------- header ---------- */
+  .top {
+    position: sticky; top: 0; z-index: 20;
+    height: 60px;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 24px;
+    background: var(--cream);
+    border-bottom: 1px solid var(--line);
+  }
+  .brand {
+    font-family: 'Fredoka', sans-serif;
+    font-weight: 600; font-size: 20px; letter-spacing: 4px; text-transform: uppercase;
+    color: var(--orange);
+  }
+  .count { font-size: 13px; color: var(--muted); }
+
+  /* ---------- type filter ---------- */
+  .filters {
+    position: sticky; top: 60px; z-index: 19;
+    display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 24px;
+    max-width: 1080px; margin: 0 auto;
+    background: var(--cream);
+  }
+  .chip {
+    height: 44px; padding: 0 22px; border-radius: 22px;
+    border: 2px solid var(--orange); background: transparent; color: var(--orange);
+    font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 14px; letter-spacing: 1px; text-transform: uppercase;
+    cursor: pointer;
+  }
+  .chip.active { background: var(--orange); color: #fff; }
+  .sec.hidden { display: none; }
+
+  /* ---------- hero ---------- */
+  .hero { padding: 40px 24px 20px; max-width: 1080px; margin: 0 auto; }
+  .eyebrow { font-size: 12px; letter-spacing: 3px; text-transform: uppercase; color: var(--orange); font-weight: 600; }
+  .hero h1 {
+    margin: 10px 0 8px;
+    font-family: 'Fredoka', sans-serif; font-weight: 600;
+    font-size: clamp(36px, 6vw, 64px); line-height: 1; letter-spacing: -0.5px;
+  }
+  .hero p { margin: 0; color: var(--muted); font-size: 15px; line-height: 1.5; }
+
+  /* ---------- sections ---------- */
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px 56px; }
+  .sec { margin-top: 28px; }
+  .sec-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 16px; border-radius: 10px;
+    background: var(--orange-soft); border-left: 5px solid var(--orange);
+    margin-bottom: 12px;
+  }
+  .sec-head h2 {
+    margin: 0; font-family: 'Fredoka', sans-serif; font-weight: 600;
+    font-size: 22px; letter-spacing: 2px; text-transform: uppercase; color: var(--orange);
+  }
+  .sec-head span { font-size: 13px; color: var(--muted); flex-shrink: 0; margin-left: 10px; }
+
+  .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .tile {
+    position: relative; aspect-ratio: 1 / 1; overflow: hidden;
+    background: #000; border: 0; padding: 0; border-radius: 6px; cursor: pointer;
+  }
+  .tile img { width: 100%; height: 100%; object-fit: contain; }
+  .tile .num {
+    position: absolute; top: 10px; left: 10px;
+    height: 26px; padding: 0 10px; border-radius: 13px;
+    background: var(--orange); color: #fff;
+    font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 13px;
+    display: flex; align-items: center;
+  }
+  .tile .tag {
+    position: absolute; top: 10px; right: 10px;
+    height: 26px; padding: 0 10px; border-radius: 13px;
+    background: var(--orange); color: #fff;
+    font-weight: 600; font-size: 11px; letter-spacing: .5px; text-transform: uppercase;
+    display: flex; align-items: center;
+  }
+  .tile .label {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    padding: 28px 56px 10px 12px;
+    background: linear-gradient(to top, rgba(0,0,0,.8), rgba(0,0,0,0));
+    color: #fff; font-family: 'Fredoka', sans-serif; font-weight: 500; font-size: 15px;
+    text-align: left; line-height: 1.2;
+  }
+  .tile .label i { font-style: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .tile .cnt {
+    position: absolute; right: 10px; bottom: 10px;
+    height: 22px; padding: 0 8px; border-radius: 11px;
+    background: rgba(255,255,255,.22); color: #fff; font-size: 12px; font-weight: 600;
+    display: flex; align-items: center; gap: 4px;
+  }
+  .tile .cnt svg { width: 12px; height: 12px; }
+  .empty {
+    grid-column: 1 / -1; padding: 28px 16px; text-align: center;
+    border: 2px dashed var(--line); border-radius: 10px; color: var(--muted); font-size: 14px;
+  }
+
+  /* ---------- footer ---------- */
+  .foot {
+    border-top: 1px solid var(--line); padding: 32px 24px 48px;
+    display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center;
+  }
+  .foot .brand { font-size: 16px; }
+  .foot p { margin: 0; color: var(--muted); font-size: 13px; }
+
+  /* ---------- product sheet ---------- */
+  .dim { position: fixed; inset: 0; z-index: 40; background: rgba(0,0,0,.5); display: none; }
+  .dim.open { display: block; }
+  .sheet {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 45;
+    background: var(--cream); border-radius: 18px 18px 0 0;
+    padding: 10px 14px 24px; max-height: 94vh; overflow-y: auto;
+    display: none;
+  }
+  .sheet.open { display: block; animation: up .25s ease-out; }
+  @keyframes up { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+  .handle { width: 40px; height: 4px; border-radius: 2px; background: #c9bda9; margin: 0 auto 12px; }
+  .x {
+    position: absolute; top: 12px; right: 14px;
+    width: 36px; height: 36px; border-radius: 18px; border: 0;
+    background: var(--orange); color: #fff; font-size: 20px; line-height: 1; cursor: pointer;
+  }
+  .big {
+    display: block; width: 100%; aspect-ratio: 1 / 1;
+    background: #000; border: 0; padding: 0; border-radius: 12px; overflow: hidden; cursor: zoom-in;
+  }
+  .big img { width: 100%; height: 100%; object-fit: contain; }
+  .dots { display: flex; justify-content: center; gap: 6px; margin: 10px 0; min-height: 6px; }
+  .dots i { width: 6px; height: 6px; border-radius: 3px; background: #cbbfab; transition: width .15s; }
+  .dots i.on { background: var(--orange); width: 18px; }
+  .thumbs { display: flex; gap: 8px; }
+  .thumb {
+    width: 64px; height: 64px; padding: 0; border: 2px solid transparent; border-radius: 8px;
+    background: #000; overflow: hidden; opacity: .55; cursor: pointer;
+  }
+  .thumb.on { opacity: 1; border-color: var(--orange); }
+  .thumb img { width: 100%; height: 100%; object-fit: contain; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
+  .name { font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 20px; line-height: 1.2; }
+  .sub { font-size: 13px; color: var(--muted); margin-top: 2px; }
+  .pill {
+    flex-shrink: 0; height: 26px; padding: 0 12px; border-radius: 13px;
+    background: var(--orange); color: #fff; font-size: 11px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .5px; display: flex; align-items: center;
+  }
+  .pill:empty { display: none; }
+
+  /* ---------- full-screen zoom ---------- */
+  .lb {
+    position: fixed; inset: 0; z-index: 50;
+    background: #000; display: none; align-items: center; justify-content: center; padding: 16px;
+  }
+  .lb.open { display: flex; }
+  .lb img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  .lb-close {
+    position: absolute; top: 16px; right: 16px;
+    width: 44px; height: 44px; border-radius: 22px;
+    border: 0; background: var(--orange); color: #fff; font-size: 22px; line-height: 1; cursor: pointer;
+  }
+  .lb-nav {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    width: 44px; height: 44px; border-radius: 22px;
+    border: 1px solid #444; background: #111; color: #fff; font-size: 24px; line-height: 1; cursor: pointer;
+  }
+  .lb-prev { left: 16px; }
+  .lb-next { right: 16px; }
+  .lb-cap { position: absolute; bottom: 16px; left: 0; right: 0; text-align: center; font-size: 14px; color: #cfc6ba; }
+
+  /* ---------- desktop: sheet becomes a centered box ---------- */
+  @media (min-width: 761px) {
+    .sheet {
+      left: 50%; right: auto; bottom: auto; top: 50%;
+      transform: translate(-50%, -50%);
+      width: 520px; border-radius: 18px; padding: 16px 18px 22px;
+    }
+    .sheet.open { animation: none; }
+    .handle { display: none; }
+    .x { top: 16px; right: 18px; }
+  }
+
+  /* ---------- mobile ---------- */
+  @media (max-width: 760px) {
+    .top { padding: 0 14px; height: 54px; }
+    .brand { font-size: 17px; letter-spacing: 3px; }
+    .filters { top: 54px; padding: 8px 10px; gap: 6px; }
+    .chip { height: 36px; padding: 0 13px; font-size: 12px; letter-spacing: .5px; }
+    .hero { padding: 20px 14px 12px; }
+    .wrap { padding: 0 6px 40px; }
+    .sec { margin-top: 16px; }
+    .sec-head { padding: 10px 12px; margin-bottom: 8px; }
+    .sec-head h2 { font-size: 15px; letter-spacing: 1px; }
+    .sec-head span { font-size: 12px; }
+    .grid { gap: 4px; }
+    .tile { border-radius: 4px; }
+    .tile .num { top: 6px; left: 6px; height: 20px; padding: 0 7px; font-size: 11px; }
+    .tile .tag { top: 6px; right: 6px; height: 20px; padding: 0 7px; font-size: 9px; }
+    .tile .label { font-size: 11px; padding: 20px 40px 6px 7px; }
+    .tile .cnt { right: 6px; bottom: 6px; height: 18px; padding: 0 6px; font-size: 10px; }
+    .tile .cnt svg { width: 10px; height: 10px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="brand">tmperfumehouse</div>
+  <div class="count" id="count"></div>
+</header>
+
+<div class="filters" id="filters" aria-label="Filter by type"></div>
+
+<main class="wrap" id="sections">
+    
+</main>
+
+<footer class="foot">
+  <div class="brand">tmperfumehouse</div>
+  <p>Surat, Gujarat</p>
+</footer>
+
+<div class="dim" id="dim"></div>
+<div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-label="Product photos">
+  <div class="handle"></div>
+  <button class="x" id="sheetClose" aria-label="Close">&times;</button>
+  <button class="big" id="bigBtn" aria-label="View full size"><img id="bigImg" src="" alt=""></button>
+  <div class="dots" id="dots"></div>
+  <div class="thumbs" id="thumbs"></div>
+  <div class="row">
+    <div>
+      <div class="name" id="shName"></div>
+      <div class="sub" id="shSub"></div>
+    </div>
+    <span class="pill" id="shTag"></span>
+  </div>
+</div>
+
+<div class="lb" id="lb" role="dialog" aria-modal="true" aria-label="Full size photo">
+  <button class="lb-close" id="lbClose" aria-label="Close">&times;</button>
+  <button class="lb-nav lb-prev" id="lbPrev" aria-label="Previous">&lsaquo;</button>
+  <img id="lbImg" src="" alt="">
+  <button class="lb-nav lb-next" id="lbNext" aria-label="Next">&rsaquo;</button>
+  <div class="lb-cap" id="lbCap"></div>
+</div>
+
+<script>
+  // ===== SETTINGS =====
+  var IMG_DIR = 'images/';   // folder where the product images live
+
+  // ===== SECTIONS =====
+  // Each section: title (heading), short (text on the top filter button), tag (shown on tiles, "" for none), products (name + image files).
+  // To add a product: put its photos in the images/ folder and add one line like
+  //   {"name": "Combo 1", "images": ["combo-1-1.jpg", "combo-1-2.jpg", "combo-1-3.jpg"]}
+  var SECTIONS = [
+    { title: "Chain", tag: "", products: [
+      {"name": "Lunelle Chain", "images": ["01-lunelle-chain-1.jpg", "01-lunelle-chain-2.jpg", "01-lunelle-chain-3.jpg"]},
+      {"name": "Lunara Weave", "images": ["02-lunara-weave-1.jpg", "02-lunara-weave-2.jpg", "02-lunara-weave-3.jpg"]},
+      {"name": "Lunelle Veil", "images": ["03-lunelle-veil-1.jpg", "03-lunelle-veil-2.jpg", "03-lunelle-veil-3.jpg"]},
+      {"name": "Velora Chain", "images": ["04-velora-chain-1.jpg", "04-velora-chain-2.jpg", "04-velora-chain-3.jpg"]},
+      {"name": "Vela Chain", "images": ["05-vela-chain-1.jpg", "05-vela-chain-2.jpg", "05-vela-chain-3.jpg"]},
+      {"name": "Elysian Weave", "images": ["06-elysian-weave-1.jpg", "06-elysian-weave-2.jpg"]},
+      {"name": "Solenne Gold", "images": ["07-solenne-gold-1.jpg", "07-solenne-gold-2.jpg", "07-solenne-gold-3.jpg"]},
+      {"name": "Aurora Chain", "images": ["08-aurora-chain-1.jpg", "08-aurora-chain-2.jpg", "08-aurora-chain-3.jpg"]},
+      {"name": "Lumière Weave", "images": ["09-lumiere-weave-1.jpg", "09-lumiere-weave-2.jpg", "09-lumiere-weave-3.jpg"]},
+      {"name": "Velora Chain", "images": ["10-velora-chain-1.jpg", "10-velora-chain-2.jpg", "10-velora-chain-3.jpg"]},
+      {"name": "Veyra Royale", "images": ["11-veyra-royale-1.jpg", "11-veyra-royale-2.jpg", "11-veyra-royale-3.jpg"]}
+    ] },
+    // { title: "Bracelet", tag: "Bracelet", products: [
+    //   {"name": "Lumière Weave", "images": ["12-lumiere-weave-1.jpg", "12-lumiere-weave-2.jpg", "12-lumiere-weave-3.jpg"]},
+    //   {"name": "Aurelia Knot", "images": ["13-aurelia-knot-1.jpg"]},
+    //   {"name": "Elysian Serpent", "images": ["14-elysian-serpent-1.jpg", "14-elysian-serpent-2.jpg", "14-elysian-serpent-3.jpg"]},
+    //   {"name": "Celeste Weave", "images": ["15-celeste-weave-1.jpg", "15-celeste-weave-2.jpg", "15-celeste-weave-3.jpg"]},
+    //   {"name": "Veyra Gold", "images": ["16-veyra-gold-1.jpg", "16-veyra-gold-2.jpg", "16-veyra-gold-3.jpg"]},
+    //   {"name": "Seraphine Chain", "images": ["17-seraphine-chain-1.jpg", "17-seraphine-chain-2.jpg", "17-seraphine-chain-3.jpg"]}
+    // ] },
+    { title: "Chain + Bracelet Combo", short: "Chain + Bracelet", tag: "Combo", products: [
+      {"name": "Lumière Weave Chain + Bracelet", "images": ["ring-cgain4.jpeg", "09-lumiere-weave-1.jpg", "12-lumiere-weave-1.jpg"]},
+      {"name": "Aurora Chain + Celeste Weave", "images": ["ring-cgain3.jpeg", "08-aurora-chain-1.jpg", "15-celeste-weave-2.jpg"]},
+      {"name": "Solenne Gold + Veyra Gold", "images": ["ring-cgain2.jpeg", "07-solenne-gold-1.jpg", "16-veyra-gold-1.jpg"]},
+      {"name": "Veyra Royale + Seraphine Chain", "images": ["ring-chain1.jpeg", "11-veyra-royale-1.jpg", "17-seraphine-chain-1.jpg"]}
+    ] },
+    { title: "Chain + Bracelet + Ring Combo", short: "Chain + Bracelet + Ring", tag: "Combo", products: [
+      {"name": "Eclipse Mate Combo",    "images": ["ring-chain-brceletr-1.jpeg", "25-eclipse-mate-2.jpg",   "07-solenne-gold-1.jpg",  "16-veyra-gold-1.jpg"]},
+      {"name": "Eclipse Core Combo",    "images": ["ring-chain-brceletr-2.jpeg", "23-eclipse-core-1.jpg",   "10-velora-chain-1.jpg",  "12-lumiere-weave-1.jpg"]},
+      {"name": "Vanta Crest Combo",     "images": ["ring-chain-brceletr-3.jpeg", "22-vanta-crest-1.jpg",    "04-velora-chain-1.jpg",  "17-seraphine-chain-1.jpg"]},
+      {"name": "Eclipse Crest Combo",   "images": ["ring-chain-brceletr-4.jpeg", "21-eclipse-crest-1.jpg",  "06-elysian-weave-1.jpg", "14-elysian-serpent-3.jpg"]},
+      {"name": "Eclipse Royale Combo",  "images": ["ring-chain-brceletr-5.jpeg", "20-eclipse-royale-1.jpg", "11-veyra-royale-1.jpg",  "15-celeste-weave-2.jpg"]},
+      {"name": "Eclipse Signet Combo",  "images": ["ring-chain-brceletr-6.jpeg", "19-eclipse-signet-4.jpg", "10-velora-chain-1.jpg",  "12-lumiere-weave-1.jpg"]},
+      {"name": "Eclipse Signet Oval Combo", "images": ["ring-chain-brceletr-7.jpeg", "19-eclipse-signet-2.jpg", "09-lumiere-weave-1.jpg", "15-celeste-weave-2.jpg"]},
+      {"name": "Eclipse Black Combo",   "images": ["ring-chain-brceletr-8.jpeg", "24-eclipse-black-1.jpg",  "10-velora-chain-1.jpg",  "14-elysian-serpent-1.jpg"]},
+      {"name": "Seraphine Ring Combo",  "images": ["ring-chain-brceletr-9.jpeg", "18-seraphine-ring-1.jpg", "09-lumiere-weave-1.jpg", "15-celeste-weave-2.jpg"]}
+    ] },
+    
+  ];
+
+  // ===== RENDER =====
+  var root = document.getElementById('sections');
+  var camera = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5" aria-hidden="true"><rect x="3" y="7" width="14" height="14" rx="2"/><path d="M7 7V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-2"/></svg>';
+  var total = 0;
+
+  SECTIONS.forEach(function (sec, s) {
+    total += sec.products.length;
+    var el = document.createElement('section');
+    el.className = 'sec';
+    var tiles = sec.products.map(function (p, i) {
+      return '<button class="tile" data-s="' + s + '" data-p="' + i + '" aria-label="' + p.name + ', ' + p.images.length + ' photos">' +
+        '<img src="' + IMG_DIR + p.images[0] + '" alt="' + p.name + '" loading="' + (s === 0 && i < 3 ? 'eager' : 'lazy') + '">' +
+        '<span class="num">' + String(i + 1).padStart(2, '0') + '</span>' +
+        (sec.tag ? '<span class="tag">' + sec.tag + '</span>' : '') +
+        '<span class="label"><i>' + p.name + '</i></span>' +
+        '<span class="cnt">' + camera + p.images.length + '</span>' +
+      '</button>';
+    }).join('');
+    if (!tiles) tiles = '<div class="empty">' + sec.title + ' photos coming soon</div>';
+    el.innerHTML =
+      '<div class="sec-head"><h2>' + sec.title + '</h2><span>' + sec.products.length + ' designs</span></div>' +
+      '<div class="grid">' + tiles + '</div>';
+    root.appendChild(el);
+  });
+  document.getElementById('count').textContent = total + ' designs';
+
+  // ===== TYPE FILTER (top buttons) =====
+  // One section is always selected. DEFAULT_FILTER = which one opens first (0 = Chain, 1 = Chain + Bracelet, 2 = Chain + Bracelet + Ring).
+  var DEFAULT_FILTER = 0;
+  var filters = document.getElementById('filters');
+  var active = DEFAULT_FILTER;
+  filters.innerHTML = SECTIONS.map(function (sec, i) {
+    return '<button class="chip" data-f="' + i + '" aria-pressed="false">' + (sec.short || sec.title) + '</button>';
+  }).join('');
+
+  function applyFilter() {
+    filters.querySelectorAll('.chip').forEach(function (b, i) {
+      b.classList.toggle('active', i === active);
+      b.setAttribute('aria-pressed', i === active ? 'true' : 'false');
+    });
+    root.querySelectorAll('.sec').forEach(function (s, i) {
+      s.classList.toggle('hidden', i !== active);
+    });
+  }
+  applyFilter(); // default on page load
+
+  filters.addEventListener('click', function (e) {
+    var c = e.target.closest('.chip');
+    if (!c) return;
+    active = +c.dataset.f;
+    applyFilter();
+    var y = root.offsetTop - filters.offsetHeight - document.querySelector('.top').offsetHeight;
+    if (window.scrollY > y) window.scrollTo(0, y);
+  });
+
+  // ===== PRODUCT SHEET =====
+  var dim = document.getElementById('dim'), sheet = document.getElementById('sheet');
+  var bigImg = document.getElementById('bigImg'), dots = document.getElementById('dots'), thumbs = document.getElementById('thumbs');
+  var shName = document.getElementById('shName'), shSub = document.getElementById('shSub'), shTag = document.getElementById('shTag');
+  var cur = null, k = 0;
+
+  function setPhoto(n) {
+    k = (n + cur.images.length) % cur.images.length;
+    bigImg.src = IMG_DIR + cur.images[k];
+    bigImg.alt = cur.name + ' photo ' + (k + 1);
+    dots.querySelectorAll('i').forEach(function (d, i) { d.classList.toggle('on', i === k); });
+    thumbs.querySelectorAll('.thumb').forEach(function (t, i) { t.classList.toggle('on', i === k); });
+  }
+  function openSheet(s, p) {
+    var sec = SECTIONS[s];
+    cur = sec.products[p];
+    shName.textContent = String(p + 1).padStart(2, '0') + ' · ' + cur.name;
+    shSub.textContent = cur.images.length > 1 ? cur.images.length + ' photos · swipe or tap a thumbnail' : '1 photo · tap to zoom';
+    shTag.textContent = sec.tag;
+    dots.innerHTML = cur.images.length > 1 ? cur.images.map(function () { return '<i></i>'; }).join('') : '';
+    thumbs.innerHTML = cur.images.length > 1 ? cur.images.map(function (f, i) {
+      return '<button class="thumb" data-k="' + i + '" aria-label="Photo ' + (i + 1) + '"><img src="' + IMG_DIR + f + '" alt=""></button>';
+    }).join('') : '';
+    setPhoto(0);
+    dim.classList.add('open'); sheet.classList.add('open');
+    sheet.scrollTop = 0;
+    document.body.style.overflow = 'hidden';
+  }
+  function closeSheet() {
+    dim.classList.remove('open'); sheet.classList.remove('open');
+    document.body.style.overflow = '';
+  }
+
+  root.addEventListener('click', function (e) {
+    var t = e.target.closest('.tile');
+    if (t) openSheet(+t.dataset.s, +t.dataset.p);
+  });
+  thumbs.addEventListener('click', function (e) {
+    var t = e.target.closest('.thumb');
+    if (t) setPhoto(+t.dataset.k);
+  });
+  document.getElementById('sheetClose').addEventListener('click', closeSheet);
+  dim.addEventListener('click', closeSheet);
+
+  // swipe on the big photo
+  var sx = 0;
+  bigImg.addEventListener('touchstart', function (e) { sx = e.touches[0].clientX; }, { passive: true });
+  bigImg.addEventListener('touchend', function (e) {
+    var dx = e.changedTouches[0].clientX - sx;
+    if (Math.abs(dx) > 50 && cur.images.length > 1) setPhoto(dx < 0 ? k + 1 : k - 1);
+  }, { passive: true });
+
+  // ===== FULL-SCREEN ZOOM (inside the open product) =====
+  var lb = document.getElementById('lb'), lbImg = document.getElementById('lbImg'), lbCap = document.getElementById('lbCap');
+  function showLb(n) {
+    setPhoto(n);
+    lbImg.src = IMG_DIR + cur.images[k]; lbImg.alt = bigImg.alt;
+    lbCap.textContent = cur.name + ' · ' + (k + 1) + '/' + cur.images.length;
+  }
+  function openLb() { showLb(k); lb.classList.add('open'); }
+  function closeLb() { lb.classList.remove('open'); }
+
+  document.getElementById('bigBtn').addEventListener('click', openLb);
+  document.getElementById('lbClose').addEventListener('click', closeLb);
+  document.getElementById('lbPrev').addEventListener('click', function () { showLb(k - 1); });
+  document.getElementById('lbNext').addEventListener('click', function () { showLb(k + 1); });
+  lb.addEventListener('click', function (e) { if (e.target === lb) closeLb(); });
+  var lx = 0;
+  lb.addEventListener('touchstart', function (e) { lx = e.touches[0].clientX; }, { passive: true });
+  lb.addEventListener('touchend', function (e) {
+    var dx = e.changedTouches[0].clientX - lx;
+    if (Math.abs(dx) > 50 && cur.images.length > 1) showLb(dx < 0 ? k + 1 : k - 1);
+  }, { passive: true });
+
+  document.addEventListener('keydown', function (e) {
+    if (lb.classList.contains('open')) {
+      if (e.key === 'Escape') closeLb();
+      if (e.key === 'ArrowLeft') showLb(k - 1);
+      if (e.key === 'ArrowRight') showLb(k + 1);
+    } else if (sheet.classList.contains('open')) {
+      if (e.key === 'Escape') closeSheet();
+      if (e.key === 'ArrowLeft') setPhoto(k - 1);
+      if (e.key === 'ArrowRight') setPhoto(k + 1);
+    }
+  });
+</script>
+</body>
+</html>

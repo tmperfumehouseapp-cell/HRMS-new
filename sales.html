@@ -2444,10 +2444,12 @@
         ['month', 'Performance', 'performance.html', 'performance'],
         ['sheet', 'Day-by-day sheet', 'detailed_report.html', 'detailed_report'],
       ]],
-      // These three open the Total Budgeting menu item (one page, one place): a 'go:' tab is a link, not a second copy
-      ['budgeting', 'Total Budgeting', 'go:hub.html?w=budget&t=bt_total', 'commission'],
-      ['commission', 'Commission', 'go:hub.html?w=budget&t=bt_commission', 'commission'],
-      ['leaders', 'Leaders', 'go:hub.html?w=budget&t=bt_leaders', 'commission'],
+      ['commission', 'Commission', null, null, [
+        ['result', 'Result & rules', 'commission_new.html', 'commission'],
+        ['old', 'Old result (pays today)', 'commission.html', 'commission'],
+        // old Rules page hidden (commission_rules.html and its data are kept): Pricing, Offers and Boosts now live in "Result & rules"
+      ]],
+      ['leaders', 'Leaders', 'leaders.html', 'commission'],
       ['allrules', 'Commission rules', 'commission_rules.html', 'commission_rules'],   // every commission rule in one page: slab rates, order codes, fixed / panel / rating rules, ML price slab and the Target bonus
     ] },
     { k: 'retail', t: 'Shops (wholesale)', tabs: [
@@ -2473,7 +2475,7 @@
     ] },
   ];
   // Old links and bookmarks (#people/ordertargets, #learn/doctor ...) still land on the right page.
-  const OLD = { ordertargets: ['people', 'targets', 'orders'], report: ['people', 'performance', 'sheet'], rules: ['people', 'allrules', ''],
+  const OLD = { ordertargets: ['people', 'targets', 'orders'], report: ['people', 'performance', 'sheet'], rules: ['people', 'commission', 'result'],
     doctor: ['tools', 'messages', 'doctor'], bench: ['tools', 'messages', 'bench'], library: ['learn', 'library', ''], conv: ['tools', 'conv', ''] };
   // bookmarks from before the Learn & Setup clean-up (#learn/messages, #learn/proof/conv, #learn/photos ...)
   const LEARN_MOVED = { messages: ['tools', 'messages'], backups: ['tools', 'backups'], settings: ['tools', 'settings'], photos: ['learn', 'botdata', 'photos'], products: ['learn', 'botdata', 'products'] };
@@ -2488,12 +2490,6 @@
 
   function parseHash() {
     const h = (location.hash || '').replace(/^#/, '').split('/'); let r = { s: h[0] || '', t: h[1] || '', k: h[2] || '' };
-    // Commission, Leaders and Total Budgeting now live in their own menu item (Total Budgeting): old links go there
-    const MOVED = { commission: 'bt_commission', leaders: 'bt_leaders', rules: 'bt_commission' };
-    if (r.s === 'budget' || ((r.s === 'people' || r.s === '') && MOVED[r.t])) {
-      const tab = r.s === 'budget' ? (r.t === 'leaders' ? 'bt_leaders' : r.t === 'commission' ? (r.k === 'old' ? 'bt_old' : 'bt_commission') : 'bt_total') : (MOVED[r.t] === 'bt_commission' && r.k === 'old' ? 'bt_old' : MOVED[r.t]);
-      location.replace('hub.html?w=budget&t=' + tab); r = { s: 'live', t: '', k: '' };
-    }
     if (OLD[r.t] && !r.k) r = { s: OLD[r.t][0], t: OLD[r.t][1], k: OLD[r.t][2] };
     if (r.s === 'learn' && r.t === 'proof') r = r.k === 'conv' ? { s: 'tools', t: 'conv', k: '' } : { s: 'learn', t: 'library', k: '' };
     else if (r.s === 'learn' && LEARN_MOVED[r.t]) { const m = LEARN_MOVED[r.t]; r = { s: m[0], t: m[1], k: m[2] || r.k }; }
@@ -2502,10 +2498,7 @@
   // the tab (and the page inside it) that a key points to; a group tab with no page named opens its first page
   function pick(sKey, tKey, kKey) {
     let sec = VIS.find(x => x.k === sKey);
-    if (!sec) { let last = ''; try { last = localStorage.getItem('hrms_sales_last') || ''; } catch (e) {} const lp = last.split('/'); sec = VIS.find(x => x.k === lp[0]) || VIS[0];
-      if (sec && sec.k === lp[0]) { const lt = sec.tabs.find(x => x[0] === lp[1]); const lsrc = lt ? String((lt[4] ? ((lt[4].find(x => x[0] === lp[2]) || lt[4][0]) || [])[2] : lt[2]) || '') : '';
-        if (lsrc.indexOf('go:') === 0) sec = VIS[0];   // the last tab only JUMPS to another page (Commission / Leaders → Budgeting): opening Sales must never bounce away — start at the first tab
-        else { tKey = tKey || lp[1]; kKey = kKey || lp[2]; } } }
+    if (!sec) { let last = ''; try { last = localStorage.getItem('hrms_sales_last') || ''; } catch (e) {} const lp = last.split('/'); sec = VIS.find(x => x.k === lp[0]) || VIS[0]; if (sec && sec.k === lp[0]) { tKey = tKey || lp[1]; kKey = kKey || lp[2]; } }
     if (!sec) return null;
     if (OLD[tKey] && sec.k === OLD[tKey][0] && !kKey) { kKey = OLD[tKey][2]; tKey = OLD[tKey][1]; }
     const tab = sec.tabs.find(x => x[0] === tKey) || sec.tabs[0];
@@ -2524,8 +2517,7 @@
   let slStarted = false;   // the first tab replaces the entry; each tab opened after it is one Back step
   function show(noPush) {
     if (!cur) return;
-    if (cur.src && cur.src.indexOf('go:') === 0) { location.href = cur.src.slice(3); return; }   // a link to the page's one real home
-    if (!(cur.src && cur.src.indexOf('go:') === 0)) { try { localStorage.setItem('hrms_sales_last', cur.sec.k + '/' + cur.tab[0] + (cur.kid ? '/' + cur.kid[0] : '')); } catch (e) {} }   // a jump tab is never remembered
+    try { localStorage.setItem('hrms_sales_last', cur.sec.k + '/' + cur.tab[0] + (cur.kid ? '/' + cur.kid[0] : '')); } catch (e) {}
     const hash = '#' + cur.sec.k + '/' + cur.tab[0] + (cur.kid ? '/' + cur.kid[0] : ''); if (location.hash !== hash) { if (!slStarted || noPush) history.replaceState(history.state, '', hash); else history.pushState({ slTab: hash }, '', hash); } slStarted = true;
     const isCt = cur.src.indexOf(CT) === 0;
     $('ctPane').hidden = !isCt; if (window.ctOn) window.ctOn(isCt);

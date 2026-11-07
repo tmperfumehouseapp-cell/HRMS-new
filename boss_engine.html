@@ -32,7 +32,6 @@
 <script src="assets/js/layout.js?v=20"></script>
 <script src="assets/js/boss_common.js?v=3"></script>
 <script src="assets/js/b2_common.js?v=t8"></script>
-<script src="assets/js/person_card.js?v=pc1"></script>
 <script src="assets/js/b2_inbox.js?v=t4"></script>
 <script src="assets/js/cq_panel.js?v=cq4"></script>
 <script>
@@ -291,11 +290,38 @@
     if (!PU.admin) return;
     R().querySelectorAll('.puCk').forEach((k) => k.onclick = (e) => { e.stopPropagation(); if (k.checked) PU.sel[k.dataset.id] = 1; else delete PU.sel[k.dataset.id]; $('puBulk').disabled = !Object.keys(PU.sel).length; $('puBulk').textContent = 'Set rule for ' + (Object.keys(PU.sel).length ? Object.keys(PU.sel).length + ' selected' : 'selected') + '…'; });
     $('puAll').onclick = (e) => { rows.forEach((r) => { if (e.target.checked) PU.sel[r.id] = 1; else delete PU.sel[r.id]; }); drawPunch(); };
-    R().querySelectorAll('tbody tr[data-id]').forEach((tr) => tr.onclick = (e) => { if (e.target.closest('input')) return; PersonCard.open(Number(tr.dataset.id), { onChange: redo }); });
+    R().querySelectorAll('tbody tr[data-id]').forEach((tr) => tr.onclick = (e) => { if (e.target.closest('input')) return; punchEdit([PU.rows.find((r) => r.id === Number(tr.dataset.id))]); });
     $('puBulk').onclick = () => punchEdit(PU.rows.filter((r) => PU.sel[r.id]));
   }
-  // The timing editor and the person card now live in assets/js/person_card.js (one copy, shared with Total Budgeting and Boss -> People).
-  function punchEdit(list) { list = list.filter(Boolean); if (list.length) PersonCard.timing(list, (msg) => { toast(msg || 'Saved.'); redo(); }); }
+  function punchEdit(list) {
+    list = list.filter(Boolean); if (!list.length) return;
+    const one = list.length === 1 ? list[0] : null; let mode = one ? one.mode : 'fixed';
+    const nm = one ? esc(one.name) + ' — how does ' + (one.name.split(' ')[0] ? esc(one.name.split(' ')[0]) : 'this person') + ' punch?' : list.length + ' people — set one rule for all';
+    const card = (k, t, d) => '<div data-mode="' + k + '" class="puCard" style="border:1.5px solid ' + (mode === k ? '#16945a' : '#e1e4ea') + ';background:' + (mode === k ? '#f1faf5' : '#fff') + ';border-radius:16px;padding:11px 12px;cursor:pointer"><b style="display:block;font-size:13.5px">' + t + '</b><span style="font-size:11.5px;color:#7a808c;line-height:1.35;display:block;margin-top:3px">' + d + '</span></div>';
+    const v = (x, f) => esc(one ? (x === undefined || x === null ? f : x) : f);
+    const m = BD.modal('<h3>' + nm + '</h3><div class="bd-sub" style="margin-bottom:12px">Pick one rule. Lateness, “away” checks and reminders follow it.</div>'
+      + '<div id="puCards" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:12px"></div>'
+      + '<div id="puFix"><div class="bd-2"><div class="bd-f"><label>Shift starts</label><input class="bd-in" type="time" id="pxS" value="' + v(one && one.fx_start, '') + '"></div><div class="bd-f"><label>Shift ends</label><input class="bd-in" type="time" id="pxE" value="' + v(one && one.fx_end, '') + '"></div></div>'
+      + '<div class="bd-f"><label>Late after (min)</label><input class="bd-in" type="number" id="pxL" min="0" max="240" value="' + v(one && one.fx_late, '15') + '"></div>' + (one ? '' : '<div class="bd-sub">Leave the start empty to keep each person’s own times.</div>') + '</div>'
+      + '<div id="puHrs"><div class="bd-2"><div class="bd-f"><label>Hours to complete each day</label><input class="bd-in" type="number" step="0.25" min="1" max="16" id="phT" value="' + v(one && one.hours_target, '8') + '"></div><div class="bd-f"><label>Counts as a full day from (hours)</label><input class="bd-in" type="number" step="0.25" min="0" max="16" id="phF" value="' + v(one && one.hours_full && one.hours_full < one.hours_target ? one.hours_full : '', '') + '" placeholder="same as daily hours"></div>'
+      + '<div class="bd-f"><label>Earliest punch in</label><input class="bd-in" type="time" id="phA" value="' + v(one && one.win_from, '') + '"><div class="hint">Empty = any time</div></div><div class="bd-f"><label>Latest punch in</label><input class="bd-in" type="time" id="phB" value="' + v(one && one.win_to, '') + '"><div class="hint">Late only after this. Empty = never late</div></div></div></div>'
+      + '<div id="puNote" style="background:#f6f7f9;border-radius:14px;padding:11px 13px;font-size:12.5px;color:#4a505c;line-height:1.5;margin-top:4px"></div>'
+      + '<div class="acts"><button class="bd-btn" id="puNo" type="button">Cancel</button><button class="bd-btn go" id="puOk" type="button">Save</button></div>');
+    const notes = { fixed: '<b>What happens:</b> in at the set time, out at the set time. Late after the grace minutes. Same as before.', hours: '<b>What happens:</b> they can come any time (inside the window, if you set one) but must complete the hours. The punch page shows how much is left. A short day shows as “Short …”, and your “Short hours” penalty rule applies if you have one.', free: '<b>What happens:</b> punch is optional. Never marked late, never “away”, no punch reminders, no late or short-hours penalty.' };
+    const paint = () => {
+      m.querySelector('#puCards').innerHTML = card('fixed', 'Fixed time', 'In and out at set times') + card('hours', 'Hours only', 'Come any time, complete the hours') + card('free', 'No rule', 'Punch is optional. Never late.');
+      m.querySelectorAll('.puCard').forEach((c) => c.onclick = () => { mode = c.dataset.mode; paint(); });
+      m.querySelector('#puFix').style.display = mode === 'fixed' ? '' : 'none'; m.querySelector('#puHrs').style.display = mode === 'hours' ? '' : 'none'; m.querySelector('#puNote').innerHTML = notes[mode];
+    };
+    paint();
+    m.querySelector('#puNo').onclick = BD.close;
+    m.querySelector('#puOk').onclick = async () => {
+      const g = (id) => m.querySelector(id).value.trim(); const body = { ids: list.map((r) => r.id), mode };
+      if (mode === 'fixed') { body.shift_start = g('#pxS'); body.shift_end = g('#pxE'); if (body.shift_start) body.late_after = Number(g('#pxL') || 15); }
+      if (mode === 'hours') { body.hours_target = Number(g('#phT') || 8); body.hours_full = Number(g('#phF') || 0); body.win_from = g('#phA'); body.win_to = g('#phB'); }
+      try { const r = await B2.post('bd.b2_punch_set', body); BD.close(); toast(r.message || 'Saved.'); redo(); } catch (e) { fail(e); }
+    };
+  }
 
   /* ================= BUILD SYSTEM ================= */
   async function vBuilds() {
