@@ -622,7 +622,8 @@
       if (!res.ok) { let m = 'Could not load the file.'; try { m = (await res.json()).error || m; } catch (e) { } throw new Error(m); } return (MEDIA[id] = URL.createObjectURL(await res.blob()));
     }
     const capOf = (m) => { const x = /^[^:]{1,20}:\s*([\s\S]+)$/.exec(m.body || ''); return x ? x[1] : ''; };
-    function tick(m) { if (m.dir !== 'out') return ''; const s = m.status; return s === 'failed' ? (m.retry ? ` <button type="button" class="wx-rt" data-rt="${esc(m.cid)}">⚠ Not sent · Retry</button>` : ' <span class="f">⚠ failed</span>') : s === 'read' ? ' <span class="r">✓✓</span>' : s === 'delivered' ? ' ✓✓' : s === 'sending' ? ' …' : ' ✓'; }
+    const failWhy = (m) => { const c = +m.err_code || 0, t = String(m.err || '').slice(0, 90); const h = { 131053: 'WhatsApp could not use this file (format / size)', 131052: 'WhatsApp could not download this file', 131047: 'the customer has not written in 24 hours', 131026: 'the customer cannot receive it (not on WhatsApp / blocked)', 131049: 'Meta limit for this customer', 130429: 'sending too fast, wait a minute', 131051: 'unsupported message type' }[c]; return (h || t) ? ' — ' + (h || t) + (c ? ' (' + c + ')' : '') : ''; };
+    function tick(m) { if (m.dir !== 'out') return ''; const s = m.status; return s === 'failed' ? (m.retry ? ` <button type="button" class="wx-rt" data-rt="${esc(m.cid)}">⚠ Not sent · Retry</button>` : ` <span class="f">⚠ failed${esc(failWhy(m))}</span>`) : s === 'read' ? ' <span class="r">✓✓</span>' : s === 'delivered' ? ' ✓✓' : s === 'sending' ? ' …' : ' ✓'; }
     function bubble(m) {
       if (m.dir === 'sys') return `<div class="wx-ev">${esc(m.body || '')}</div>`;
       const cls = m.dir === 'in' ? 'in' : (m.who === 'bot' ? 'out bot' : m.mtype === 'template' ? 'out tpl' : 'out'); let b = '';
