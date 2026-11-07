@@ -924,6 +924,7 @@ try {
         case 'st_team.get': {
             require_auth();
             $ids = array_map('intval', $pdo->query("SELECT emp_id FROM st_duty")->fetchAll(PDO::FETCH_COLUMN));
+            if (function_exists('pay_day_assign')) foreach ((pay_day_assign($pdo)[st_day()] ?? []) as $dEid => $dG) if ($dG === 'store' && !in_array((int)$dEid, $ids, true)) $ids[] = (int)$dEid;
             $punch = st_punch_map($pdo, $ids); $rows = [];
             foreach ($ids as $id) {
                 $n = $pdo->prepare("SELECT full_name, employee_code FROM employees WHERE employee_id = ? AND status != 'ex'"); $n->execute([$id]); $e = $n->fetch(); if (!$e) continue;
@@ -1035,6 +1036,7 @@ try {
         case 'st_bill.staff': {
             require_auth();
             $on = array_map('intval', $pdo->query("SELECT emp_id FROM st_duty")->fetchAll(PDO::FETCH_COLUMN));
+            if (function_exists('pay_day_assign')) foreach ((pay_day_assign($pdo)[st_day()] ?? []) as $dEid => $dG) if ($dG === 'store' && !in_array((int)$dEid, $on, true)) $on[] = (int)$dEid;   // moved to the store for today
             $rows = []; $punched = st_punch_map($pdo, $on); $needsPunch = (int)setting_get($pdo, 'st_bill_needs_punch', 0);
             foreach ($pdo->query("SELECT employee_id, full_name FROM employees WHERE status != 'ex' ORDER BY full_name")->fetchAll() as $e) {
                 $rows[] = ['employee_id' => (int)$e['employee_id'], 'name' => (string)$e['full_name'], 'on' => in_array((int)$e['employee_id'], $on, true), 'punched' => !empty($punched[(int)$e['employee_id']])];

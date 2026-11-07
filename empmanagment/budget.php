@@ -8,7 +8,9 @@
  *   budget.store_comm GET date_from,date_to  → store commission per person per day, by the same rules as the online engine (no over-target extra)
  *   budget.store_bills GET date_from,date_to  → store bills with who billed each
  *   budget.bill_assign POST {bill_id, employee_id}   → change who a store bill belongs to (Admin)
- *   budget.person_save POST {employee_id, grp?, rpct?, sc?, duty?}   → one person's pay group, retail % of collections, store commission, store POS billing (Admin)
+ *   budget.day_assign POST {employee_id, day, grp 'store'|'retail'|''}  → move one person to the store / retail for ONE day (no online commission that day)
+ *   budget.timing GET  → everybody's punch timing (strict / flexible hours / none)
+ *   budget.person_save POST {employee_id, grp?, rpct?, sc?, np?, duty?, ok?}   → one person's pay group, retail % of collections, store commission, store POS billing (Admin)
  *   budget.retail GET date_from,date_to      → retail wholesale sales per person per day (billed / paid, returns taken off)
  *   budget.summary POST {facts}              → Claude's few plain lines for the top of the page
  *
@@ -27,6 +29,17 @@ if (!function_exists('budget_cfg_from')) {
         return array_slice($exp, 0, 40);
     }
 }
+if (!function_exists('budget_retail_clean')) {
+    /** the retail wholesale rule: commission % of collections, the whole-month collection target, the add-on if it is reached and the minus if it is not (flat ₹ or % of that month's commission) */
+    function budget_retail_clean(array $rt): array
+    {
+        $ty = function ($v) { return ((string)$v === 'pct') ? 'pct' : 'flat'; };
+        $n = function ($v, $max) { return is_numeric($v) ? round(max(0, min($max, (float)$v)), 2) : 0.0; };
+        $bt = $ty($rt['bonus_type'] ?? 'flat'); $mt = $ty($rt['minus_type'] ?? 'flat');
+        return ['pct' => $n($rt['pct'] ?? 0, 50), 'basis' => (($rt['basis'] ?? '') === 'billed') ? 'billed' : 'paid', 'target' => $n($rt['target'] ?? 0, 1000000000),
+            'bonus_type' => $bt, 'bonus_v' => $n($rt['bonus_v'] ?? 0, $bt === 'pct' ? 500 : 100000000), 'minus_type' => $mt, 'minus_v' => $n($rt['minus_v'] ?? 0, $mt === 'pct' ? 500 : 100000000)];
+    }
+}
 if (!function_exists('budget_cfg')) {
     function budget_cfg(PDO $pdo): array
     {
@@ -37,17 +50,20 @@ if (!function_exists('budget_cfg')) {
         foreach ((array)($j['leader_map'] ?? []) as $ln => $eid) if (trim((string)$ln) !== '' && (int)$eid > 0) $lm[mb_substr(trim((string)$ln), 0, 60)] = (int)$eid;
         $sl = [];   // ex-employees whose pending salary was paid / settled: employee id => when, by whom, how much
         foreach ((array)($j['settled'] ?? []) as $sid => $v) if ((int)$sid > 0 && is_array($v)) $sl[(string)(int)$sid] = ['at' => mb_substr((string)($v['at'] ?? ''), 0, 19), 'by' => mb_substr((string)($v['by'] ?? ''), 0, 60), 'amount' => round((float)($v['amount'] ?? 0), 2)];
+        $dy = [];   // one-day moves: date => [employee id => 'store' | 'retail']; only the last 120 days are kept
+        foreach ((array)($j['days'] ?? []) as $dd => $mm) if (preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$dd) && (string)$dd >= date('Y-m-d', strtotime('-120 days')) && is_array($mm)) foreach ($mm as $eid => $gg) if ((int)$eid > 0 && in_array($gg, ['store', 'retail'], true)) $dy[(string)$dd][(string)(int)$eid] = $gg;
         $pp = [];   // per person: pay group (sales / retail / store / other), own retail % of collections, store commission on / off
         foreach ((array)($j['people'] ?? []) as $pid => $v) {
             if (!is_array($v) || (int)$pid <= 0) continue;
             $g = (string)($v['grp'] ?? ''); $g = in_array($g, ['sales', 'retail', 'store', 'other'], true) ? $g : '';
             $rp = $v['rpct'] ?? null; $rp = ($rp === null || $rp === '' || !is_numeric($rp)) ? null : round(max(0, min(50, (float)$rp)), 2);
+            $rtg = $v['rtarget'] ?? null; $rtg = ($rtg === null || $rtg === '' || !is_numeric($rtg)) ? null : round(max(0, min(1000000000, (float)$rtg)), 2);   // this person's own monthly collection target (blank = the shared one)
             $sc = array_key_exists('sc', $v) ? (empty($v['sc']) ? 0 : 1) : 1;
-            $okf = empty($v['ok']) ? 0 : 1;
-            if ($g !== '' || $rp !== null || $sc === 0 || $okf) $pp[(string)(int)$pid] = ['grp' => $g, 'rpct' => $rp, 'sc' => $sc, 'ok' => $okf, 'ok_by' => $okf ? mb_substr((string)($v['ok_by'] ?? ''), 0, 60) : '', 'ok_at' => $okf ? mb_substr((string)($v['ok_at'] ?? ''), 0, 19) : ''];
+            $okf = empty($v['ok']) ? 0 : 1; $npf = empty($v['np']) ? 0 : 1;   // np = "no pay": on nobody's payroll, counts as nothing
+            if ($g !== '' || $rp !== null || $rtg !== null || $sc === 0 || $okf || $npf) $pp[(string)(int)$pid] = ['grp' => $g, 'rpct' => $rp, 'rtarget' => $rtg, 'sc' => $sc, 'np' => $npf, 'ok' => $okf, 'ok_by' => $okf ? mb_substr((string)($v['ok_by'] ?? ''), 0, 60) : '', 'ok_at' => $okf ? mb_substr((string)($v['ok_at'] ?? ''), 0, 19) : ''];
         }
         return ['expenses' => budget_cfg_from((array)($j['expenses'] ?? [])), 'months' => is_array($j['months'] ?? null) ? $j['months'] : [],
-            'retail' => ['pct' => round(max(0, min(50, (float)($rt['pct'] ?? 0))), 2), 'basis' => (($rt['basis'] ?? '') === 'billed') ? 'billed' : 'paid'], 'people' => $pp, 'leader_map' => $lm, 'settled' => $sl];
+            'retail' => budget_retail_clean($rt), 'people' => $pp, 'leader_map' => $lm, 'settled' => $sl, 'days' => $dy];
     }
 }
 
@@ -60,7 +76,7 @@ if ($__bg === 'budget.get') {
     $c = budget_cfg($pdo); $m = $c['months'][$month] ?? [];
     $duty = []; try { if (function_exists('ensure_st_tables')) ensure_st_tables($pdo); $duty = array_map('intval', $pdo->query("SELECT emp_id FROM st_duty")->fetchAll(PDO::FETCH_COLUMN)); } catch (Throwable $e) {}
     $gl = []; foreach (['sales', 'leader', 'retail', 'store', 'other'] as $gk) $gl[$gk] = (float)(($m['goals'] ?? [])[$gk] ?? 0);
-    json_response(['month' => $month, 'target' => (float)($m['target'] ?? 0), 'lump' => (float)($m['lump'] ?? 0), 'goals' => $gl, 'retail' => $c['retail'], 'people' => (object)$c['people'], 'leader_map' => (object)$c['leader_map'], 'settled' => (object)$c['settled'], 'duty' => $duty, 'expenses' => $c['expenses'], 'can_edit' => convo_is_admin($auth)]);
+    json_response(['month' => $month, 'target' => (float)($m['target'] ?? 0), 'lump' => (float)($m['lump'] ?? 0), 'goals' => $gl, 'retail' => $c['retail'], 'people' => (object)$c['people'], 'leader_map' => (object)$c['leader_map'], 'settled' => (object)$c['settled'], 'days' => (object)$c['days'], 'duty' => $duty, 'expenses' => $c['expenses'], 'can_edit' => convo_is_admin($auth)]);
 }
 if ($__bg === 'budget.save') {
     $auth = require_auth();
@@ -82,10 +98,11 @@ if ($__bg === 'budget.save') {
             $c['months'][$month]['goals'][$gk] = round((float)$v, 2);
         }
     }
-    if (isset($in['retail']) && is_array($in['retail'])) {   // the retail wholesale commission: a % of the sales of each retail person, on the billed or the paid amount
+    if (isset($in['retail']) && is_array($in['retail'])) {   // the retail wholesale rule: % of collections, whole-month target, add-on if reached, minus if not
         $v = $in['retail']['pct'] ?? 0;
         if (!is_numeric($v) || (float)$v < 0 || (float)$v > 50) json_response(['error' => 'The retail commission is a percentage from 0 to 50.'], 422);
-        $c['retail'] = ['pct' => round((float)$v, 2), 'basis' => (($in['retail']['basis'] ?? '') === 'billed') ? 'billed' : 'paid'];
+        foreach (['target', 'bonus_v', 'minus_v'] as $rk) { $x = $in['retail'][$rk] ?? 0; if ($x !== '' && $x !== null && (!is_numeric($x) || (float)$x < 0)) json_response(['error' => 'Type the retail target, add-on and minus as amounts (0 or more).'], 422); }
+        $c['retail'] = budget_retail_clean($in['retail']);
     }
     if (isset($in['expenses']) && is_array($in['expenses'])) {
         $c['expenses'] = budget_cfg_from($in['expenses']);
@@ -148,6 +165,32 @@ if ($__bg === 'budget.bill_assign') {
     $pdo->prepare("UPDATE st_bills SET emp_id = ?, emp_name = ? WHERE bill_id = ?")->execute([$eid, (string)$nm, $bid]);
     json_response(['ok' => true, 'employee_id' => $eid, 'name' => (string)$nm]);
 }
+if ($__bg === 'budget.timing') {
+    // Everybody's punch timing (Boss Engine "who punches how"): strict (in / out times), flexible hours, or no timing. Only people who have a timing row are listed; the rest are "not set".
+    $auth = require_auth();
+    if (!user_can($auth, 'commission')) json_response(['error' => 'You do not have permission to do this.'], 403);
+    $out = [];
+    try {
+        $day = function_exists('biz_today') ? biz_today($pdo) : date('Y-m-d');
+        foreach (emp_shift_map($pdo, $day) as $id => $r) $out[(int)$id] = ['mode' => (string)($r['mode'] ?? 'fixed'), 'own' => (int)($r['own'] ?? 0), 'start' => (string)($r['shift_start'] ?? ''), 'end' => (string)($r['shift_end'] ?? ''), 'late' => (int)($r['late_after'] ?? 15),
+            'hours' => (float)($r['hours_target'] ?? 0), 'hours_full' => (float)($r['hours_full'] ?? 0), 'win_from' => (string)($r['win_from'] ?? ''), 'win_to' => (string)($r['win_to'] ?? '')];
+    } catch (Throwable $e) { error_log('budget.timing: ' . $e->getMessage()); }
+    json_response(['timing' => (object)$out]);
+}
+if ($__bg === 'budget.day_assign') {
+    // Move a person from online to the store (or retail) for ONE day. That day: no online commission and no target, store commission counts, and in the store POS they can bill. The next day they are back. Admin only.
+    $auth = require_auth();
+    if (!convo_is_admin($auth)) json_response(['error' => 'Only Admin can move somebody to the store for a day.'], 403);
+    if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
+    $in = json_input(); $eid = (int)($in['employee_id'] ?? 0); $day = (string)($in['day'] ?? ''); $g = (string)($in['grp'] ?? '');
+    if (!$eid) json_response(['error' => 'Choose an employee.'], 422);
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $day) || $day < date('Y-m-d', strtotime('-45 days')) || $day > date('Y-m-d', strtotime('+2 days'))) json_response(['error' => 'Pick a day from the last 45 days up to tomorrow.'], 422);
+    if ($g !== '' && !in_array($g, ['store', 'retail'], true)) json_response(['error' => 'Only the store or retail wholesale.'], 422);
+    $c = budget_cfg($pdo);
+    if ($g === '') { unset($c['days'][$day][(string)$eid]); if (empty($c['days'][$day])) unset($c['days'][$day]); } else $c['days'][$day][(string)$eid] = $g;
+    setting_set($pdo, 'budget_cfg', json_encode($c));
+    json_response(['ok' => true]);
+}
 if ($__bg === 'budget.settle') {
     // Pending salary of an ex-employee: mark it settled (paid) or pending again. Admin only. The amount is what the page showed when you pressed it.
     $auth = require_auth();
@@ -182,13 +225,15 @@ if ($__bg === 'budget.person_save') {
     $in = json_input(); $id = (int)($in['employee_id'] ?? 0);
     $ex = $pdo->prepare("SELECT COUNT(*) FROM employees WHERE employee_id = ?"); $ex->execute([$id]);
     if (!$id || !(int)$ex->fetchColumn()) json_response(['error' => 'Choose an employee.'], 422);
-    $c = budget_cfg($pdo); $p = $c['people'][(string)$id] ?? ['grp' => '', 'rpct' => null, 'sc' => 1, 'ok' => 0];
+    $c = budget_cfg($pdo); $p = $c['people'][(string)$id] ?? ['grp' => '', 'rpct' => null, 'sc' => 1, 'ok' => 0, 'np' => 0];
     if (array_key_exists('grp', $in)) { $g = (string)$in['grp']; if ($g !== '' && !in_array($g, ['sales', 'retail', 'store', 'other'], true)) json_response(['error' => 'Unknown pay group.'], 422); $p['grp'] = $g; }
     if (array_key_exists('rpct', $in)) { $v = $in['rpct']; if ($v === '' || $v === null) $p['rpct'] = null; elseif (!is_numeric($v) || (float)$v < 0 || (float)$v > 50) json_response(['error' => 'The retail commission is a percentage from 0 to 50.'], 422); else $p['rpct'] = round((float)$v, 2); }
+    if (array_key_exists('rtarget', $in)) { $v = $in['rtarget']; if ($v === '' || $v === null) $p['rtarget'] = null; elseif (!is_numeric($v) || (float)$v < 0) json_response(['error' => 'Type the monthly target as an amount in rupees.'], 422); else $p['rtarget'] = round((float)$v, 2); }
     if (array_key_exists('sc', $in)) $p['sc'] = empty($in['sc']) ? 0 : 1;
+    if (array_key_exists('np', $in)) $p['np'] = empty($in['np']) ? 0 : 1;
     if (array_key_exists('ok', $in)) { $p['ok'] = empty($in['ok']) ? 0 : 1; $p['ok_by'] = $p['ok'] ? (string)($auth['username'] ?? '') : ''; $p['ok_at'] = $p['ok'] ? date('Y-m-d H:i:s') : ''; }   // green = Admin has set and checked this person's pay rules and timing
     $c['people'][(string)$id] = $p;
-    if (($p['grp'] ?? '') === '' && $p['rpct'] === null && (int)($p['sc'] ?? 1) === 1 && empty($p['ok'])) unset($c['people'][(string)$id]);
+    if (($p['grp'] ?? '') === '' && $p['rpct'] === null && ($p['rtarget'] ?? null) === null && (int)($p['sc'] ?? 1) === 1 && empty($p['ok']) && empty($p['np'])) unset($c['people'][(string)$id]);
     setting_set($pdo, 'budget_cfg', json_encode($c));
     $duty = null;
     try {

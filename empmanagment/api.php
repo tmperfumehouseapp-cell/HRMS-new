@@ -7789,9 +7789,17 @@ function pay_offline_ids(PDO $pdo): array
     } catch (Throwable $e) { error_log('pay_offline_ids: ' . $e->getMessage()); }
     return $memo;
 }
+/** One-day moves from online to the store (or retail) set in Total Budgeting → Total Employees: [Y-m-d => [employee_id => 'store'|'retail']]. On that day the person is paid by that rule (store commission, no online commission, no target); the next day they are back. */
+function pay_day_assign(PDO $pdo): array
+{
+    static $m = null; if ($m !== null) return $m;
+    $m = [];
+    try { $j = json_decode((string)setting_get($pdo, 'budget_cfg', ''), true); foreach ((array)($j['days'] ?? []) as $d => $x) if (is_array($x)) foreach ($x as $id => $g) if (in_array($g, ['store', 'retail'], true)) $m[(string)$d][(int)$id] = (string)$g; } catch (Throwable $e) { error_log('pay_day_assign: ' . $e->getMessage()); }
+    return $m;
+}
 function sales_target_fn(PDO $pdo, array $emps, string $from, string $to, array $marks, bool $zeroOff = false): callable
 {
-    $over = []; $noTarget = pay_offline_ids($pdo);
+    $over = []; $noTarget = pay_offline_ids($pdo); $dayOff = pay_day_assign($pdo);
     try {
         ensure_group_key_column($pdo, 'daily_targets', ['target_date', 'employee_id']);
         $dt = $pdo->prepare("SELECT d.target_date, d.employee_id, SUM(d.amount) AS a FROM daily_targets d WHERE d.target_date BETWEEN ? AND ? AND NOT (d.group_key = '' AND EXISTS (SELECT 1 FROM daily_targets x WHERE x.target_date = d.target_date AND x.employee_id = d.employee_id AND x.group_key = 'tmph')) GROUP BY d.target_date, d.employee_id");
@@ -7805,8 +7813,8 @@ function sales_target_fn(PDO $pdo, array $emps, string $from, string $to, array 
         $mm->execute([substr($from, 0, 7), substr($to, 0, 7)]);
         foreach ($mm->fetchAll() as $r) $monMan[(int)$r['employee_id'] . '|' . $r['month']] = (float)$r['m'];
     } catch (Throwable $e) {}
-    return function (int $id, string $d) use ($emps, $over, $marks, $monMan, $zeroOff, $noTarget): float {
-        if (isset($noTarget[$id])) return 0.0;      // retail wholesale and store people have no sales target
+    return function (int $id, string $d) use ($emps, $over, $marks, $monMan, $zeroOff, $noTarget, $dayOff): float {
+        if (isset($noTarget[$id]) || isset($dayOff[$d][$id])) return 0.0;      // no sales target for retail / store people, nor on a day they were moved to the store      // retail wholesale and store people have no sales target
         $mk = $marks[$d . '|' . $id] ?? '';
         if (isset($over[$d . '|' . $id])) return $over[$d . '|' . $id];      // a target typed by hand for the day wins, even on a Leave / off-marked day
         if ($mk === 'leave' || ($zeroOff && $mk === 'off')) return 0.0;
