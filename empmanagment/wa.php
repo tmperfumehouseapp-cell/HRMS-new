@@ -511,6 +511,18 @@ function wa_event(PDO $pdo, string $key, string $text): void
 {
     try { $pdo->prepare("INSERT INTO wa_messages (wamid, phone, number_id, dir, mtype, body, status, who, ts) VALUES (?, ?, 0, 'sys', 'event', ?, 'sent', 'system', ?)")->execute(['sys.' . uniqid('', true), $key, mb_substr($text, 0, 300), date('Y-m-d H:i:s')]); } catch (PDOException $e) { }
 }
+/** 🔔 In-app notices for a salesperson (e.g. "Rahul took over Priya's chat"): one row per event, shown to that person only, until they close it. */
+function wa_notice_table(PDO $pdo): bool
+{
+    static $ok = null; if ($ok !== null) return $ok;
+    try { $pdo->exec("CREATE TABLE IF NOT EXISTS wa_notices (id INT AUTO_INCREMENT PRIMARY KEY, to_emp INT NOT NULL, by_emp INT NOT NULL DEFAULT 0, phone VARCHAR(12) NOT NULL DEFAULT '', cname VARCHAR(120) NOT NULL DEFAULT '', kind VARCHAR(12) NOT NULL DEFAULT '', at DATETIME NOT NULL, seen TINYINT NOT NULL DEFAULT 0, KEY k_to (to_emp, seen, at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"); return $ok = true; }
+    catch (Throwable $e) { return $ok = false; }
+}
+function wa_notice_add(PDO $pdo, int $to, int $by, string $phone, string $cname, string $kind): void
+{
+    if (!wa_notice_table($pdo)) return;
+    try { $pdo->prepare("INSERT INTO wa_notices (to_emp, by_emp, phone, cname, kind, at, seen) VALUES (?, ?, ?, ?, ?, ?, 0)")->execute([$to, $by, $phone, mb_substr($cname, 0, 120), $kind, date('Y-m-d H:i:s')]); } catch (Throwable $e) { }
+}
 function wa_assign_to(PDO $pdo, string $key, int $emp, int $by, string $how): void
 {
     $c = wa_contact($pdo, $key); if (!$c) return; $now = date('Y-m-d H:i:s');
@@ -520,6 +532,8 @@ function wa_assign_to(PDO $pdo, string $key, int $emp, int $by, string $how): vo
     if (function_exists('wag_q_moved')) wag_q_moved($pdo, $key, (int)$c['assigned_emp'], $emp);   // the query ledger follows the chat
     if (function_exists('wq_after_assign')) wq_after_assign($pdo, $key, (int)$c['assigned_emp'], $emp, $by, $how);   // WhatsApp Sales: clears Attention needed
     if (function_exists('wa_callnow_open')) wa_callnow_open($pdo, $key, $emp, $by);   // the "call this customer now" alert
+    // 🔔 someone took this chat from its holder (take over / grab): the holder sees a small notice at the top of THEIR WhatsApp (only theirs)
+    if ($emp > 0 && (int)$c['assigned_emp'] > 0 && (int)$c['assigned_emp'] !== $emp && $by === $emp && in_array($how, ['takeover', 'grab'], true)) wa_notice_add($pdo, (int)$c['assigned_emp'], $emp, $key, (string)($c['name'] ?? ''), $how);
     wa_event($pdo, $key, $emp <= 0 ? 'Taken off ' . ($from ?: 'the team') . ' by ' . $who : ($how === 'transfer' ? $from . ' transferred this chat to ' . $to : ($from !== '' ? 'Moved from ' . $from . ' to ' . $to . ' by ' . $who : 'Given to ' . $to . ' by ' . $who)));
     if ($emp > 0 && $emp !== $by && function_exists('ct_push')) { try { ct_push($pdo, [$emp], 'New WhatsApp chat', trim(($c['name'] !== '' ? $c['name'] : '+91 ' . $key) . ' was given to you.'), '/my_chats.html?phone=' . $key, 'wa-' . $key); } catch (Throwable $e) { } }
 }
@@ -905,6 +919,17 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo)\./', $__wa)) {
                 try { wa_assign_to($pdo, $key, $to, $me, $adm ? 'manual' : 'transfer'); $moved++; } catch (Throwable $e) { $skipped[] = ['phone' => $key, 'why' => 'could not move']; }
             }
             json_response(['ok' => true, 'moved' => $moved, 'skipped' => array_slice($skipped, 0, 30), 'skipped_n' => count($skipped), 'to' => $nm[$to] ?? '']);
+        }
+        case 'wa.notices': {   // 🔔 my own unseen notices (someone took my chat): only the logged-in person's, last 3 days
+            $me = (int)($auth['employee_id'] ?? 0); if ($me <= 0 || !wa_notice_table($pdo)) json_response(['notices' => []]);
+            $q = $pdo->prepare("SELECT id, by_emp, phone, cname, kind, at FROM wa_notices WHERE to_emp = ? AND seen = 0 AND at >= ? ORDER BY id DESC LIMIT 20"); $q->execute([$me, date('Y-m-d H:i:s', time() - 3 * 86400)]); $nm = employee_names_by_id($pdo);
+            json_response(['notices' => array_map(fn($r) => ['id' => (int)$r['id'], 'by' => (string)($nm[(int)$r['by_emp']] ?? 'Someone'), 'phone' => (string)$r['phone'], 'name' => (string)$r['cname'], 'kind' => (string)$r['kind'], 'at' => (string)$r['at']], $q->fetchAll())]);
+        }
+        case 'wa.notice_seen': {
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $me = (int)($auth['employee_id'] ?? 0); if ($me <= 0 || !wa_notice_table($pdo)) json_response(['ok' => true]);
+            $in = json_input(); $ids = array_values(array_filter(array_map('intval', (array)($in['ids'] ?? [])))); if (!empty($in['all'])) $pdo->prepare("UPDATE wa_notices SET seen = 1 WHERE to_emp = ?")->execute([$me]);
+            elseif ($ids) $pdo->prepare("UPDATE wa_notices SET seen = 1 WHERE to_emp = ? AND id IN (" . implode(',', $ids) . ")")->execute([$me]);
+            json_response(['ok' => true]);
         }
         case 'wa.takeover': {   // a manager (or admin) takes a chat from whoever has it — at any time, no waiting rule. The salesperson's app locks that chat at once.
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
