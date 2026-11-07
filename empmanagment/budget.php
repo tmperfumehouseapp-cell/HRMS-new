@@ -35,16 +35,19 @@ if (!function_exists('budget_cfg')) {
         $rt = is_array($j['retail'] ?? null) ? $j['retail'] : [];
         $lm = [];   // leader name (as written on the Leaders rule, e.g. "Ayazba") => the employee it is
         foreach ((array)($j['leader_map'] ?? []) as $ln => $eid) if (trim((string)$ln) !== '' && (int)$eid > 0) $lm[mb_substr(trim((string)$ln), 0, 60)] = (int)$eid;
+        $sl = [];   // ex-employees whose pending salary was paid / settled: employee id => when, by whom, how much
+        foreach ((array)($j['settled'] ?? []) as $sid => $v) if ((int)$sid > 0 && is_array($v)) $sl[(string)(int)$sid] = ['at' => mb_substr((string)($v['at'] ?? ''), 0, 19), 'by' => mb_substr((string)($v['by'] ?? ''), 0, 60), 'amount' => round((float)($v['amount'] ?? 0), 2)];
         $pp = [];   // per person: pay group (sales / retail / store / other), own retail % of collections, store commission on / off
         foreach ((array)($j['people'] ?? []) as $pid => $v) {
             if (!is_array($v) || (int)$pid <= 0) continue;
             $g = (string)($v['grp'] ?? ''); $g = in_array($g, ['sales', 'retail', 'store', 'other'], true) ? $g : '';
             $rp = $v['rpct'] ?? null; $rp = ($rp === null || $rp === '' || !is_numeric($rp)) ? null : round(max(0, min(50, (float)$rp)), 2);
             $sc = array_key_exists('sc', $v) ? (empty($v['sc']) ? 0 : 1) : 1;
-            if ($g !== '' || $rp !== null || $sc === 0) $pp[(string)(int)$pid] = ['grp' => $g, 'rpct' => $rp, 'sc' => $sc];
+            $okf = empty($v['ok']) ? 0 : 1;
+            if ($g !== '' || $rp !== null || $sc === 0 || $okf) $pp[(string)(int)$pid] = ['grp' => $g, 'rpct' => $rp, 'sc' => $sc, 'ok' => $okf, 'ok_by' => $okf ? mb_substr((string)($v['ok_by'] ?? ''), 0, 60) : '', 'ok_at' => $okf ? mb_substr((string)($v['ok_at'] ?? ''), 0, 19) : ''];
         }
         return ['expenses' => budget_cfg_from((array)($j['expenses'] ?? [])), 'months' => is_array($j['months'] ?? null) ? $j['months'] : [],
-            'retail' => ['pct' => round(max(0, min(50, (float)($rt['pct'] ?? 0))), 2), 'basis' => (($rt['basis'] ?? '') === 'billed') ? 'billed' : 'paid'], 'people' => $pp, 'leader_map' => $lm];
+            'retail' => ['pct' => round(max(0, min(50, (float)($rt['pct'] ?? 0))), 2), 'basis' => (($rt['basis'] ?? '') === 'billed') ? 'billed' : 'paid'], 'people' => $pp, 'leader_map' => $lm, 'settled' => $sl];
     }
 }
 
@@ -57,7 +60,7 @@ if ($__bg === 'budget.get') {
     $c = budget_cfg($pdo); $m = $c['months'][$month] ?? [];
     $duty = []; try { if (function_exists('ensure_st_tables')) ensure_st_tables($pdo); $duty = array_map('intval', $pdo->query("SELECT emp_id FROM st_duty")->fetchAll(PDO::FETCH_COLUMN)); } catch (Throwable $e) {}
     $gl = []; foreach (['sales', 'leader', 'retail', 'store', 'other'] as $gk) $gl[$gk] = (float)(($m['goals'] ?? [])[$gk] ?? 0);
-    json_response(['month' => $month, 'target' => (float)($m['target'] ?? 0), 'lump' => (float)($m['lump'] ?? 0), 'goals' => $gl, 'retail' => $c['retail'], 'people' => (object)$c['people'], 'leader_map' => (object)$c['leader_map'], 'duty' => $duty, 'expenses' => $c['expenses'], 'can_edit' => convo_is_admin($auth)]);
+    json_response(['month' => $month, 'target' => (float)($m['target'] ?? 0), 'lump' => (float)($m['lump'] ?? 0), 'goals' => $gl, 'retail' => $c['retail'], 'people' => (object)$c['people'], 'leader_map' => (object)$c['leader_map'], 'settled' => (object)$c['settled'], 'duty' => $duty, 'expenses' => $c['expenses'], 'can_edit' => convo_is_admin($auth)]);
 }
 if ($__bg === 'budget.save') {
     $auth = require_auth();
@@ -145,6 +148,17 @@ if ($__bg === 'budget.bill_assign') {
     $pdo->prepare("UPDATE st_bills SET emp_id = ?, emp_name = ? WHERE bill_id = ?")->execute([$eid, (string)$nm, $bid]);
     json_response(['ok' => true, 'employee_id' => $eid, 'name' => (string)$nm]);
 }
+if ($__bg === 'budget.settle') {
+    // Pending salary of an ex-employee: mark it settled (paid) or pending again. Admin only. The amount is what the page showed when you pressed it.
+    $auth = require_auth();
+    if (!convo_is_admin($auth)) json_response(['error' => 'Only Admin can settle a pending salary.'], 403);
+    if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
+    $in = json_input(); $id = (int)($in['employee_id'] ?? 0); if (!$id) json_response(['error' => 'Choose an employee.'], 422);
+    $c = budget_cfg($pdo);
+    if (!empty($in['settled'])) $c['settled'][(string)$id] = ['at' => date('Y-m-d H:i:s'), 'by' => (string)($auth['username'] ?? ''), 'amount' => round((float)($in['amount'] ?? 0), 2)]; else unset($c['settled'][(string)$id]);
+    setting_set($pdo, 'budget_cfg', json_encode($c));
+    json_response(['ok' => true]);
+}
 if ($__bg === 'budget.leader_link') {
     // Tell the budget which employee a leader name on the Leaders rule is ("Ayazba" = Ayaz Ansari). employee_id 0 removes the link. A linked person is a leader only:
     // no fixed salary, no salesperson commission; they are paid by the leader commission. Admin only.
@@ -168,12 +182,13 @@ if ($__bg === 'budget.person_save') {
     $in = json_input(); $id = (int)($in['employee_id'] ?? 0);
     $ex = $pdo->prepare("SELECT COUNT(*) FROM employees WHERE employee_id = ?"); $ex->execute([$id]);
     if (!$id || !(int)$ex->fetchColumn()) json_response(['error' => 'Choose an employee.'], 422);
-    $c = budget_cfg($pdo); $p = $c['people'][(string)$id] ?? ['grp' => '', 'rpct' => null, 'sc' => 1];
+    $c = budget_cfg($pdo); $p = $c['people'][(string)$id] ?? ['grp' => '', 'rpct' => null, 'sc' => 1, 'ok' => 0];
     if (array_key_exists('grp', $in)) { $g = (string)$in['grp']; if ($g !== '' && !in_array($g, ['sales', 'retail', 'store', 'other'], true)) json_response(['error' => 'Unknown pay group.'], 422); $p['grp'] = $g; }
     if (array_key_exists('rpct', $in)) { $v = $in['rpct']; if ($v === '' || $v === null) $p['rpct'] = null; elseif (!is_numeric($v) || (float)$v < 0 || (float)$v > 50) json_response(['error' => 'The retail commission is a percentage from 0 to 50.'], 422); else $p['rpct'] = round((float)$v, 2); }
     if (array_key_exists('sc', $in)) $p['sc'] = empty($in['sc']) ? 0 : 1;
+    if (array_key_exists('ok', $in)) { $p['ok'] = empty($in['ok']) ? 0 : 1; $p['ok_by'] = $p['ok'] ? (string)($auth['username'] ?? '') : ''; $p['ok_at'] = $p['ok'] ? date('Y-m-d H:i:s') : ''; }   // green = Admin has set and checked this person's pay rules and timing
     $c['people'][(string)$id] = $p;
-    if (($p['grp'] ?? '') === '' && $p['rpct'] === null && (int)($p['sc'] ?? 1) === 1) unset($c['people'][(string)$id]);
+    if (($p['grp'] ?? '') === '' && $p['rpct'] === null && (int)($p['sc'] ?? 1) === 1 && empty($p['ok'])) unset($c['people'][(string)$id]);
     setting_set($pdo, 'budget_cfg', json_encode($c));
     $duty = null;
     try {
