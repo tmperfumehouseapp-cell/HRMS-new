@@ -407,7 +407,7 @@
       showDone(d); resetCust(); source = ''; $('srcNote').value = ''; $('areaIn').value = ''; renderSrc(); $('areaX').hidden = true;
       cart = []; chain = null; quote = null; pickedCol = null; ['ocode', 'cash', 'online', 'customPrice'].forEach((i) => $(i).value = ''); ocodeAuto = true; fillCode(); soldTouched = false; setSoldNow(); $('bizDay').value = storeToday; $('disc').value = 0; $('scanMsg').innerHTML = '';
       renderCart(); renderQuote();
-      toast(d.message + (d.commission_pct != null ? ` Commission ≈ ${d.commission_pct}%.` : '') + ' Scan the next customer’s bottles, or close.');
+      toast(d.message + (d.commission_pct != null ? ` Commission ≈ ${d.commission_pct}%${d.commission_amount != null ? ' (₹' + Math.round(d.commission_amount).toLocaleString('en-IN') + ')' : ''}.` : '') + (d.no_code && d.code_rule ? ` No order code on this bill: it pays ${d.code_rule.nocode}% of the commission unless ${d.code_rule.codepct}% of today’s bills have a code.` : '') + ' Scan the next customer’s bottles, or close.');
       loadBills(); $('scanIn').focus();
     } catch (e) { beep(false); toast(e.message, 1); updatePay(); }
   };

@@ -77,7 +77,7 @@
     $('tabs').innerHTML = [['result', 'Result'], ['pricing', 'Pricing'], ['offers', 'Offers & boosts']].map((t) => '<button type="button" data-t="' + t[0] + '" class="' + (TAB === t[0] ? 'on' : '') + '">' + t[1] + '</button>').join('');
     $('tabs').querySelectorAll('button').forEach((b) => b.onclick = () => { TAB = b.dataset.t; location.hash = TAB; render(); });
   }
-  function render() { tabs(); $('root').innerHTML = ({ result: rResult, pricing: rPricing, offers: rOffers }[TAB] || rResult)(); bind(); }
+  function render() { tabs(); $('root').innerHTML = ({ result: rResult, pricing: rPricing, offers: rOffers }[TAB] || rResult)(); bind(); if (TAB === 'pricing') loadPcOne(); }
 
   /* ---------- RESULT ---------- */
   function rResult() {
@@ -157,7 +157,21 @@
       + '<div><label>Maximum extra %</label><input id="cmMax" value="' + c.bonus_max + '"></div></div>'
       + '<label style="display:flex;gap:8px;align-items:center;margin:16px 0 8px;font-weight:700"><input type="checkbox" id="cmRev"' + (c.reviewed ? ' checked' : '') + '> I checked these prices</label>'
       + '<button class="bd-btn pri" id="cmSave" type="button">Save pricing</button>');
+    h += card('Shower gel, attar, others and combos', 'The same prices as <a href="price_charts.html">Learn &amp; Setup → Pricing</a>: one set of data, shown here and edited there. Perfume sizes above are kept the same in both places (same ML, same % column; the commission price wins where a size is in both). A change on either page reaches the other.', '<div id="pcOne" class="cm-note">Loading the prices…</div>');
     return h;
+  }
+  /* the non-perfume prices live in ONE place (Price Chart page): show them here, read from the same data */
+  async function loadPcOne() {
+    const box = $('pcOne'); if (!box) return;
+    try {
+      const r = await api.get('pc.get'), ch = r.charts || {}, fmt = (v) => v ? Number(v).toLocaleString('en-IN') : '–';
+      const head = (c, first) => '<thead><tr><th>' + first + '</th>' + (c.cols || []).map((x, i) => '<th>' + x + '% price' + (c.names && c.names[i] ? '<small style="display:block;font-weight:400">' + c.names[i] + '</small>' : '') + '</th>').join('') + '</tr></thead>';
+      const lab = (m) => [m.perf ? m.perf + ' ml perfume' : '', m.gel ? m.gel + ' shower gel' : '', m.attar ? m.attar + ' attar' : '', m.other ? m.other + ' other' : ''].filter(Boolean).join(' + ');
+      const seg = (k, title, first, unit) => { const c = ch[k]; if (!c || !(c.rows || []).length) return '<h3 style="margin:12px 0 4px;font-size:14px">' + title + '</h3><div class="cm-note">No prices yet. Add them in Learn &amp; Setup → Pricing.</div>';
+        return '<h3 style="margin:12px 0 4px;font-size:14px">' + title + ' (' + c.rows.length + ')</h3><div class="cm-sc"><table class="cm-t">' + head(c, first) + '<tbody>' + c.rows.map((x) => '<tr><td>' + (k === 'mix' ? lab(x) : x.ml + ' ' + unit) + '</td>' + (x.p || []).map((v) => '<td>' + fmt(v) + '</td>').join('') + '</tr>').join('') + '</tbody></table></div>'; };
+      box.className = ''; box.innerHTML = seg('gel', 'Shower gel', 'Pieces', 'pc') + seg('attar', 'Attar', 'Pieces', 'pc') + seg('other', 'Others', 'Pieces', 'pc') + seg('mix', 'Combos', 'Combo', '')
+        + '<div class="cm-note" style="margin-top:8px">Today the commission engine pays perfume by ML. These prices are shown here so both pricing pages are one; edit them in <a href="price_charts.html">Learn &amp; Setup → Pricing</a>.</div>';
+    } catch (e) { box.textContent = 'Could not read the other prices: ' + ((e && e.message) || 'try again'); }
   }
 
   /* ---------- OFFERS & BOOSTS ---------- */
