@@ -487,7 +487,12 @@
       bar.innerHTML = '<div class="wi-qt" style="flex:1;margin:0;cursor:default"><b>' + (S.rp.dir === 'in' ? 'Customer' : 'You') + '</b><span>' + esc(S.rp.text) + '</span></div><button type="button" id="wiRpX" aria-label="Cancel reply">✕</button>'; $('wiRpX').onclick = () => { S.rp = null; wiRpDraw(); }; }
     // ↩ tap the quoted message → jump to it and flash it
     document.addEventListener('click', (e) => { const q = e.target.closest('.wi-qt'); if (!q) return; const t = document.querySelector('.wi-b[data-id="' + q.dataset.qid + '"]');
-      if (!t) { alert('That message is older — scroll up to load it.'); return; } t.scrollIntoView({ behavior: 'smooth', block: 'center' }); t.classList.remove('wi-fl'); void t.offsetWidth; t.classList.add('wi-fl'); });
+      const go = (el) => { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); el.classList.remove('wi-fl'); void el.offsetWidth; el.classList.add('wi-fl'); };
+      if (t) { go(t); return; }
+      (async () => {   // the quoted message is older than what is loaded: load older pages until it appears
+        for (let i = 0; i < 40 && S.moreOld; i++) { await loadOlder(); const f = document.querySelector('.wi-b[data-id="' + q.dataset.qid + '"]'); if (f) { go(f); return; } }
+        alert('That message could not be found in this chat.');
+      })(); });
     function drawMsgs(keepScroll) {
       const box = $('wiM'); if (!box || !S.cur) return;
       const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 80; let last = '', h = '', lastNum = '';
@@ -519,9 +524,9 @@
     }
     // ⬆ older messages: the page opens with the newest 100; scrolling to the top (or tapping the bar) loads the 100 before them, again and again until the first message
     async function loadOlder() {
-      if (!S.cur || !S.moreOld || S.oldBusy) return; const box = $('wiM'), ph = S.sel; S.oldBusy = true;
+      if (!S.cur || !S.moreOld) return; while (S.oldBusy) await new Promise((z) => setTimeout(z, 80)); const box = $('wiM'), ph = S.sel; S.oldBusy = true;
       try {
-        const ids = (S.older || []).concat(S.cur.messages).map((m) => m.id), d = await api.get('wa.chat', { phone: ph, before: Math.min.apply(null, ids), limit: 100 });
+        const ids = (S.older || []).concat(S.cur.messages).map((m) => m.id), d = await api.get('wa.chat', { phone: ph, before: ((S.older && S.older.length ? S.older : S.cur.messages)[0] || {}).id || Math.min.apply(null, ids), limit: 100 });
         if (S.sel !== ph || !S.cur) return;
         S.older = d.messages.concat(S.older || []); S.moreOld = !!d.more;
         const h0 = box ? box.scrollHeight : 0, t0 = box ? box.scrollTop : 0; drawMsgs(true); if (box) box.scrollTop = box.scrollHeight - h0 + t0;   // stay where you were reading
