@@ -190,6 +190,14 @@
 .pk-go{border-radius:10px; background:linear-gradient(180deg,#1f2937,#111827); padding:7px 16px;}
 .pk .su-before{background:linear-gradient(180deg,#eff6ff,#e4efff); border-radius:12px;}
 @media (max-width:760px){ #tb .tabs{overflow-x:auto;} #tb .kpis{grid-template-columns:repeat(2,1fr);} #tb .st{width:64px;} #tb .grp{padding:8px 9px 2px;} }
+
+body.emb #sidebar{display:none;}
+body.emb .app{display:block;}
+body.emb .main{margin:0;padding:0;width:100%;max-width:none;}
+body.emb .topbar > div:first-child{display:none;}
+body.emb .topbar{padding:6px 10px;margin:0;justify-content:flex-end;}
+body.emb .content{padding:6px 10px 14px;}
+body.emb .tabs{display:none;}
 </style>
 </head>
 <body>
@@ -212,6 +220,9 @@
 <script>
 (function () {
   guardPage();
+  /* ?embed=store or ?embed=retail: the same Store / Retail Wholesale view of Total Budgeting, shown inside the Store and Retail pages (same data, so a change here shows there and the other way round) */
+  const EMB = (() => { try { const v = new URLSearchParams(location.search).get('embed'); return v === 'store' || v === 'retail' ? v : ''; } catch (e) { return ''; } })();
+  if (EMB) document.body.classList.add('emb');
   renderSidebar('commission');
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -223,7 +234,7 @@
   const WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const PAYDAYS = 30;                                   // salary and fixed expenses are split by 30, the same as the Salary page
 
-  const S = { salMode: (() => { try { return localStorage.getItem('tb_salmode') === 'page' ? 'page' : 'flat'; } catch (e) { return 'flat'; } })(), log: null, bAll: false, dayDate: '', xq: '', nc: false, bd: '', bp: '', bq: '', bn: 300, bills: null, billsFor: '', mm: false, sel: new Set(), tg: 'dept', q: '', msg: '', msgBad: false, tab: 'budget', emp: 'comm', ea: 'pay', eg: 'all', lead: 'fin', M: null, warn: [], edit: null };
+  const S = { salMode: (() => { try { return localStorage.getItem('tb_salmode') === 'page' ? 'page' : 'flat'; } catch (e) { return 'flat'; } })(), log: null, bAll: false, dayDate: '', xq: '', nc: false, bd: '', bp: '', bq: '', bn: 300, bills: null, billsFor: '', mm: false, sel: new Set(), tg: 'dept', q: '', msg: '', msgBad: false, tab: EMB || 'budget', emp: 'comm', ea: 'pay', eg: 'all', lead: 'fin', M: null, warn: [], edit: null };
   const ymd = (y, m, d) => y + '-' + pad(m) + '-' + pad(d);
   const addDay = (iso, n) => { const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() + n); return ymd(d.getFullYear(), d.getMonth() + 1, d.getDate()); };
   const wdOf = (iso) => WD[new Date(iso + 'T12:00:00').getDay()];
@@ -1047,7 +1058,7 @@
     const pk = e.target.closest('.st[data-emp]'); if (pk && S.mm) { const id = Number(pk.dataset.emp); S.sel.has(id) ? S.sel.delete(id) : S.sel.add(id); pk.classList.toggle('sel', S.sel.has(id)); const dk = $('teDock'); if (dk) dk.innerHTML = dockInner(); return; }
     const nm = e.target.closest('td.n[data-emp], .st[data-emp]'); if (nm && window.PersonCard) { PersonCard.open(Number(nm.dataset.emp), { onChange: () => load().catch(() => {}), paySetup: (id, done) => setupPopup(id, { after: done }), paySummary: (id) => paySummaryHtml(id) }); return; }
     const b = e.target.closest('button'); if (!b) return;
-    if (b.dataset.t) { S.tab = b.dataset.t; render(); return; }
+    if (b.dataset.t) { if (EMB && b.dataset.t !== EMB) return; S.tab = b.dataset.t; render(); return; }
     if (b.dataset.s) { S[b.dataset.s] = b.dataset.v; render(); return; }
     if (b.dataset.rm != null) { S.edit.expenses.splice(Number(b.dataset.rm), 1); render(); return; }
     if (b.id === 'addEx') { S.edit.expenses.push({ name: '', amount: 0 }); render(); return; }
