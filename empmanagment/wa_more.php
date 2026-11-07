@@ -280,6 +280,17 @@ function wa_camp_mark(PDO $pdo, string $key, string $now): void
     $pdo->prepare("UPDATE wa_contacts SET source = 'campaign' WHERE phone = ? AND source <> 'campaign'")->execute([$key]);
     try { $pdo->prepare("INSERT IGNORE INTO wa_ctags (phone, tag, src, at) VALUES (?, 'campaign', 'auto', ?)")->execute([$key, $now]); $pdo->prepare("INSERT IGNORE INTO wa_tagidx (phone, tag) VALUES (?, 'campaign')")->execute([$key]); } catch (Throwable $e) { }
 }
+/** The latest campaign template we sent this customer in the last 3 days: its time, or '' when none. */
+function wa_camp_sent_ts(PDO $pdo, string $key): string
+{
+    try { $q = $pdo->prepare("SELECT MAX(ts) FROM wa_messages WHERE phone = ? AND dir = 'out' AND mtype = 'template' AND who = 'campaign' AND ts >= ?"); $q->execute([$key, date('Y-m-d H:i:s', time() - 3 * 86400)]); return (string)$q->fetchColumn(); } catch (Throwable $e) { return ''; }
+}
+/** True when the customer wrote in the 24 hours before that campaign: their query was still open, so the campaign does not make it a Campaign chat. */
+function wa_camp_in_live_chat(PDO $pdo, string $key, string $campTs): bool
+{
+    if ($campTs === '') return false; $t = strtotime($campTs); if (!$t) return false;
+    try { $q = $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND dir = 'in' AND ts BETWEEN ? AND ? LIMIT 1"); $q->execute([$key, date('Y-m-d H:i:s', $t - 86400), $campTs]); return (bool)$q->fetchColumn(); } catch (Throwable $e) { return false; }
+}
 function wa_source_hook(PDO $pdo, string $key, ?string $prevIn, string $text, string $now): void
 {
     if (function_exists('wa_seg_touch')) { try { wa_seg_touch($pdo, $key, $prevIn, $now); } catch (Throwable $e) { } }
@@ -312,7 +323,11 @@ function wa_source_hook(PDO $pdo, string $key, ?string $prevIn, string $text, st
         $kw = trim((string)wa_team_cfg($pdo)['community_kw']);
         if ($kw !== '' && stripos($text, $kw) !== false) { $pdo->prepare("UPDATE wa_contacts SET source = 'community' WHERE phone = ?")->execute([$key]); return; }
         $q = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE phone = ? AND dir = 'out' AND mtype = 'template' AND who = 'campaign' AND ts >= ?"); $q->execute([$key, date('Y-m-d H:i:s', time() - 3 * 86400)]);
-        if ((int)$q->fetchColumn() > 0) $pdo->prepare("UPDATE wa_contacts SET source = 'campaign' WHERE phone = ?")->execute([$key]);
+        if ((int)$q->fetchColumn() > 0) {
+            // a campaign we sent while their query was still inside its 24 hours does not turn it into a Campaign chat: it stays a Query
+            $live = wa_camp_in_live_chat($pdo, $key, wa_camp_sent_ts($pdo, $key));
+            $pdo->prepare("UPDATE wa_contacts SET source = ? WHERE phone = ?")->execute([$live ? 'query' : 'campaign', $key]);
+        }
     } catch (Throwable $e) { }
 }
 
