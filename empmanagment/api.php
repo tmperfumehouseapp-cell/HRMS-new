@@ -426,6 +426,8 @@ function action_page_perms(string $action): array
         'commission_rules.manual_list' => ['commission'],
         'addons.' => ['allocation'],                    // Order Allocation: add-ons
         'employees.list' => ['dashboard', 'leave_requests', 'documents', 'agreements', 'approvals', 'targets', 'performance', 'commission', 'allocation'],
+        'departments.list' => ['commission'],            // Total Budgeting → Total Employees lists every department
+        'employees.set_department' => ['commission'],    // ...and moves a person between them by drag and drop (still Admin / HR only)
         'document_types.list' => ['dashboard', 'approvals'],
         'employee_documents.list' => ['dashboard', 'approvals'],
         'employee_documents.approve' => ['approvals'],
@@ -19218,6 +19220,25 @@ switch ($action) {
             }
             json_response(['error' => 'Could not save employee.'], 500);
         }
+        break;
+    }
+
+    case 'employees.set_department': {
+        // Total Budgeting → Total Employees: drag a person onto another department. Only the department changes (department_id 0 / '' = no department).
+        $auth = require_auth();
+        require_role(['Admin', 'HR'], $auth);
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
+        $input = json_input();
+        $id = (int)($input['employee_id'] ?? 0);
+        $dept = (int)($input['department_id'] ?? 0);
+        if (!$id) json_response(['error' => 'employee_id is required.'], 422);
+        if ($dept) {
+            $chk = $pdo->prepare("SELECT department_name FROM departments WHERE department_id = ?");
+            $chk->execute([$dept]);
+            if ($chk->fetchColumn() === false) json_response(['error' => 'That department does not exist.'], 422);
+        }
+        $pdo->prepare("UPDATE employees SET department_id = ? WHERE employee_id = ?")->execute([$dept ?: null, $id]);
+        json_response(['message' => 'Moved.', 'employee_id' => $id, 'department_id' => $dept ?: null]);
         break;
     }
 
