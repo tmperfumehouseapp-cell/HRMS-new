@@ -2502,7 +2502,10 @@
   // the tab (and the page inside it) that a key points to; a group tab with no page named opens its first page
   function pick(sKey, tKey, kKey) {
     let sec = VIS.find(x => x.k === sKey);
-    if (!sec) { let last = ''; try { last = localStorage.getItem('hrms_sales_last') || ''; } catch (e) {} const lp = last.split('/'); sec = VIS.find(x => x.k === lp[0]) || VIS[0]; if (sec && sec.k === lp[0]) { tKey = tKey || lp[1]; kKey = kKey || lp[2]; } }
+    if (!sec) { let last = ''; try { last = localStorage.getItem('hrms_sales_last') || ''; } catch (e) {} const lp = last.split('/'); sec = VIS.find(x => x.k === lp[0]) || VIS[0];
+      if (sec && sec.k === lp[0]) { const lt = sec.tabs.find(x => x[0] === lp[1]); const lsrc = lt ? String((lt[4] ? ((lt[4].find(x => x[0] === lp[2]) || lt[4][0]) || [])[2] : lt[2]) || '') : '';
+        if (lsrc.indexOf('go:') === 0) sec = VIS[0];   // the last tab only JUMPS to another page (Commission / Leaders → Budgeting): opening Sales must never bounce away — start at the first tab
+        else { tKey = tKey || lp[1]; kKey = kKey || lp[2]; } } }
     if (!sec) return null;
     if (OLD[tKey] && sec.k === OLD[tKey][0] && !kKey) { kKey = OLD[tKey][2]; tKey = OLD[tKey][1]; }
     const tab = sec.tabs.find(x => x[0] === tKey) || sec.tabs[0];
