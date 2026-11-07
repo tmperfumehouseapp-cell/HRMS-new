@@ -2793,11 +2793,11 @@ function cm_offline_ids(PDO $pdo) {
     try { $j = json_decode((string)setting_get($pdo, 'budget_cfg', ''), true); foreach ((array)($j['people'] ?? []) as $id => $v) if (is_array($v) && in_array((string)($v['grp'] ?? ''), ['retail', 'store'], true)) $o[(int)$id] = 1; } catch (Throwable $e) {}
     return $o;
 }
-function cm_emps(PDO $pdo) {
-    $emps = []; $off = cm_offline_ids($pdo);
+function cm_emps(PDO $pdo, $day = null) {
+    $emps = []; $off = cm_offline_ids($pdo); $dayOff = ($day && function_exists('pay_day_assign')) ? (pay_day_assign($pdo)[$day] ?? []) : [];   // on a day moved to the store, no online commission
     foreach ($pdo->query("SELECT e.employee_id, e.full_name, e.sales_tag, e.basic_salary, e.joining_date, e.designation, d.department_name
         FROM employees e LEFT JOIN departments d ON d.department_id = e.department_id WHERE e.status != 'ex'")->fetchAll() as $e) {
-        if (stripos((string)$e['department_name'], 'sales') === false || isset($off[(int)$e['employee_id']])) continue; $emps[(int)$e['employee_id']] = $e;
+        if (stripos((string)$e['department_name'], 'sales') === false || isset($off[(int)$e['employee_id']]) || isset($dayOff[(int)$e['employee_id']])) continue; $emps[(int)$e['employee_id']] = $e;
     }
     return $emps;
 }
@@ -2806,7 +2806,7 @@ function cm_day(PDO $pdo, $day, array $ch = null, array $offers = null, array $b
     $ch = $ch ?: cm_chart($pdo); if ($offers === null) $offers = cm_offers($pdo); if ($boosts === null) $boosts = cm_boosts($pdo);
     foreach (['coach_sales_load', 'sales_target_fn', 'day_marks_between'] as $f) if (!function_exists($f)) return ['rows' => [], 'error' => 'The HRMS order functions were not found (' . $f . ').'];
     try {
-        $emps = cm_emps($pdo); if (!$emps) return ['rows' => [], 'error' => ''];
+        $emps = cm_emps($pdo, $day); if (!$emps) return ['rows' => [], 'error' => ''];
         $marks = day_marks_between($pdo, $day, $day); $targetOf = sales_target_fn($pdo, $emps, $day, $day, $marks);
         $sale = coach_sales_load($pdo, $emps, $day, $day);
     } catch (Throwable $e) { return ['rows' => [], 'error' => 'Could not read the orders: ' . $e->getMessage()]; }
