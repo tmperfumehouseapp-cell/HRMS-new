@@ -296,7 +296,7 @@ function st_daily_sync(PDO $pdo): void
 function st_migrate(PDO $pdo): void
 {
     static $ran = false; if ($ran) return; $ran = true;
-    $flag = sys_get_temp_dir() . '/hrms_st_mig_v6';
+    $flag = sys_get_temp_dir() . '/hrms_st_mig_v7';
     if (is_file($flag)) return;
     try {
         foreach (['printed_at' => 'DATETIME NULL', 'print_count' => 'INT NOT NULL DEFAULT 0'] as $c => $def)
@@ -339,6 +339,7 @@ function st_migrate(PDO $pdo): void
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         foreach (['chain_amt' => 'DECIMAL(10,2) NOT NULL DEFAULT 0', 'chain_name' => "VARCHAR(120) NOT NULL DEFAULT ''", 'inv_id' => 'INT NOT NULL DEFAULT 0', 'inv_no' => "VARCHAR(20) NOT NULL DEFAULT ''", 'inv_token' => "VARCHAR(40) NOT NULL DEFAULT ''", 'inv_err' => "VARCHAR(200) NOT NULL DEFAULT ''"] as $c => $def)
             if (!$pdo->query("SHOW COLUMNS FROM st_bills LIKE '$c'")->fetch()) $pdo->exec("ALTER TABLE st_bills ADD COLUMN $c $def");
+        if (!$pdo->query("SHOW COLUMNS FROM st_bill_people LIKE 'bday'")->fetch()) $pdo->exec("ALTER TABLE st_bill_people ADD COLUMN bday CHAR(5) NOT NULL DEFAULT ''");      // customer birthday as MM-DD
         @file_put_contents($flag, '1');
     } catch (Throwable $e) { error_log('st_migrate: ' . $e->getMessage()); }
 }
@@ -1044,14 +1045,15 @@ function st_guest_page(PDO $pdo, array $q, array $p, string $tok, array $cs, boo
  */
 function st_customer_lookup(PDO $pdo, string $phone, int $exceptBill = 0): array
 {
-    $r = ['phone' => $phone, 'returning' => false, 'visits' => 0, 'last_visit' => null, 'name' => null, 'done' => ['contact' => false, 'community' => false, 'review' => false], 'source' => null];
+    $r = ['phone' => $phone, 'returning' => false, 'visits' => 0, 'last_visit' => null, 'name' => null, 'bday' => '', 'done' => ['contact' => false, 'community' => false, 'review' => false], 'source' => null];
     if ($phone === '') return $r;
     try {
-        $st = $pdo->prepare("SELECT p.person_id, p.name, b.bill_id, b.created_at FROM st_bill_people p JOIN st_bills b ON b.bill_id = p.bill_id AND b.status = 'ok' WHERE p.phone = ? AND p.declined = 0 AND b.bill_id <> ? ORDER BY b.created_at DESC");
+        $st = $pdo->prepare("SELECT p.person_id, p.name, p.bday, b.bill_id, b.created_at FROM st_bill_people p JOIN st_bills b ON b.bill_id = p.bill_id AND b.status = 'ok' WHERE p.phone = ? AND p.declined = 0 AND b.bill_id <> ? ORDER BY b.created_at DESC");
         $st->execute([$phone, $exceptBill]); $rows = $st->fetchAll();
         if ($rows) {
             $r['returning'] = true; $r['source'] = 'store'; $r['visits'] = count(array_unique(array_column($rows, 'bill_id'))); $r['last_visit'] = $rows[0]['created_at'];
             foreach ($rows as $x) if (trim((string)$x['name']) !== '') { $r['name'] = $x['name']; break; }
+            foreach ($rows as $x) if (!empty($x['bday'])) { $r['bday'] = (string)$x['bday']; break; }
             $ids = implode(',', array_map('intval', array_column($rows, 'person_id')));
             foreach ($pdo->query("SELECT DISTINCT kind FROM st_bill_events WHERE person_id IN ($ids) AND kind IN ('contact','community','review')")->fetchAll() as $e) $r['done'][$e['kind']] = true;
         }
@@ -1234,4 +1236,27 @@ function st_next_order_code(PDO $pdo, int $empId): array
     $scan("SELECT DISTINCT order_code FROM st_bills WHERE order_code LIKE ?");
     $scan("SELECT DISTINCT code FROM order_codes WHERE code LIKE ?");
     return ['prefix' => $prefix, 'code' => $prefix . str_pad((string)($max + 1), $width, '0', STR_PAD_LEFT)];
+}
+
+
+/** Customers whose birthday falls in the next $days days (today included), from what the store collected at billing. */
+function st_birthdays(PDO $pdo, int $days = 7): array
+{
+    $out = [];
+    try {
+        $rows = $pdo->query("SELECT p.phone, p.name, p.bday, MAX(b.created_at) last FROM st_bill_people p JOIN st_bills b ON b.bill_id = p.bill_id AND b.status = 'ok' WHERE p.bday <> '' AND p.declined = 0 GROUP BY p.phone, p.name, p.bday")->fetchAll();
+        $seen = []; $today = strtotime(date('Y-m-d'));
+        foreach ($rows as $r) {
+            $k = $r['phone'] !== '' ? $r['phone'] : $r['name']; if (isset($seen[$k])) continue;
+            if (!preg_match('/^(\d\d)-(\d\d)$/', $r['bday'], $m)) continue;
+            $dt = null;
+            foreach ([(int)date('Y'), (int)date('Y') + 1] as $y) { if (checkdate((int)$m[1], (int)$m[2], $y)) { $t = strtotime(sprintf('%04d-%02d-%02d', $y, $m[1], $m[2])); if ($t >= $today) { $dt = $t; break; } } }
+            if ($dt === null) continue;
+            $left = (int)round(($dt - $today) / 86400); if ($left > $days) continue;
+            $seen[$k] = 1;
+            $out[] = ['name' => (string)$r['name'], 'phone' => (string)$r['phone'], 'bday' => $r['bday'], 'date' => date('Y-m-d', $dt), 'in_days' => $left, 'last_visit' => $r['last']];
+        }
+    } catch (Throwable $e) { error_log('st_birthdays: ' . $e->getMessage()); }
+    usort($out, fn($a, $b) => $a['in_days'] <=> $b['in_days'] ?: strcmp($a['name'], $b['name']));
+    return $out;
 }
