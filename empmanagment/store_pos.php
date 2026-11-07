@@ -710,6 +710,12 @@ try {
             if ($giftWant) {      // BIRTHDAY GIFT: one free 50 ml for a customer ON their birthday, once a year per mobile number
                 $todayMD = date('m-d', strtotime(st_day())); $isMgr = in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true) || user_can($auth, 'rs_manage');
                 foreach ($giftWant as $gc) { $gb = $found[$gc] ?? null; if (!$gb || (int)$gb['ml'] !== 50 || ($gb['status'] ?? '') !== 'stock') { $pdo->rollBack(); json_response(['error' => 'A birthday gift must be a 50 ml bottle that is in stock.'], 400); } }
+                $bdCode = trim((string)($in['bday_code'] ?? ''));
+                if ($bdCode !== '') {      // the customer showed the birthday code from WhatsApp: one gift, whoever brought it
+                    $chk = st_bday_check($pdo, $bdCode, st_day()); if (empty($chk['ok'])) { $pdo->rollBack(); json_response(['error' => $chk['error']], 400); }
+                    if (count($giftWant) !== 1) { $pdo->rollBack(); json_response(['error' => 'One birthday code gives one free 50 ml.'], 400); }
+                    $giftFor[] = ['phone' => (string)$chk['voucher']['phone'], 'name' => (string)$chk['voucher']['name'], 'voucher_id' => (int)$chk['voucher']['voucher_id']];
+                } else
                 foreach ($people as $pp) {
                     if (count($giftFor) >= count($giftWant)) break;
                     if ($pp['declined'] || $pp['phone'] === '' || ($pp['bday'] ?? '') !== $todayMD) continue;
@@ -785,7 +791,9 @@ try {
             $ip = $pdo->prepare("INSERT INTO st_bill_people (bill_id, person_no, name, phone, token, declined, reason, returning_c, visit_no, created_at, bday) VALUES (?,?,?,?,?,?,?,?,?,?,?)");
             foreach ($people as $i => $pp) $ip->execute([$billId, $i + 1, $pp['name'], $pp['phone'], bin2hex(random_bytes(10)), $pp['declined'], $pp['reason'], $pp['returning'], $pp['visit_no'], $now, $pp['bday'] ?? '']);
             $gi = 0;
-            foreach ($giftFor as $gp) { $gb = $found[$giftWant[$gi++]]; $pdo->prepare("INSERT INTO st_bday_gifts (phone, name, gift_year, bill_id, bottle_id, given_by, created_at) VALUES (?,?,?,?,?,?,?)")->execute([$gp['phone'], $gp['name'], (int)date('Y'), $billId, (int)$gb['bottle_id'], $empName, $now]); }
+            foreach ($giftFor as $gp) { if (!empty($gp['voucher_id'])) { $vu = $pdo->prepare("UPDATE st_bday_vouchers SET status = 'redeemed', redeemed_at = ?, redeemed_bill_id = ?, redeemed_by = ? WHERE voucher_id = ? AND status = 'active'"); $vu->execute([$now, $billId, $empName, $gp['voucher_id']]); if ($vu->rowCount() !== 1) { $pdo->rollBack(); json_response(['error' => 'This birthday code was just used on another bill.'], 409); } }
+                $gb = $found[$giftWant[$gi++]]; $pdo->prepare("INSERT INTO st_bday_gifts (phone, name, gift_year, bill_id, bottle_id, given_by, created_at) VALUES (?,?,?,?,?,?,?)")->execute([$gp['phone'], $gp['name'], (int)date('Y'), $billId, (int)$gb['bottle_id'], $empName, $now]); }
+            if (array_filter(array_column($people, 'bday'))) register_shutdown_function(function () use ($pdo) { if (function_exists('fastcgi_finish_request')) @fastcgi_finish_request(); @ignore_user_abort(true); @set_time_limit(60); try { st_bday_ensure_template($pdo); if ((int)date('G') >= 8 && (int)date('G') < 21) st_bday_run($pdo, true); } catch (Throwable $e) { error_log('bday after bill: ' . $e->getMessage()); } });      // a birthday saved with this bill that is close gets its code and WhatsApp message right away
             $pdo->commit();
             $pc = st_pct_for($pdo, $t['total_ml'], $total, $empId, $code !== '');
             // The bill's commission by the SAME rules as online sales, incl. the order-code ("no code") rule: a bill without an order code pays the reduced share
@@ -812,6 +820,53 @@ try {
             unset($x);
             json_response(['ok' => true, 'bill_id' => $billId, 'bill_no' => $billNo, 'total' => $total, 'total_ml' => $t['total_ml'], 'commission_pct' => $pc['pct'], 'commission_from' => $pc['source'], 'commission_amount' => $cmx ? (float)$cmx['com'] : null, 'no_code' => $code === '', 'code_rule' => $codeRule, 'people' => $ppl] + $invOut + [
                 'message' => 'Bill ' . $billNo . ' saved: ' . $t['total_ml'] . ' ml, ₹' . number_format($total) . '.']);
+            break;
+        }
+
+        case 'st_bday.check': {           // the cashier typed the birthday code: whose is it, is it good today?
+            require_auth();
+            $in = json_input(); $chk = st_bday_check($pdo, (string)($in['code'] ?? ($_GET['code'] ?? '')), st_day());
+            json_response($chk['ok'] ? ['ok' => true, 'voucher' => st_bday_public($chk['voucher'])] : ['ok' => false, 'error' => $chk['error']]);
+            break;
+        }
+
+        case 'st_bday.list': {            // codes made / sent / used (newest first) + the settings and whether the WhatsApp template is approved
+            $auth = require_auth();
+            $cfg = st_bday_cfg($pdo);
+            $rows = array_map('st_bday_public', $pdo->query("SELECT * FROM st_bday_vouchers ORDER BY (status = 'active') DESC, valid_to ASC, voucher_id DESC LIMIT 100")->fetchAll());
+            $tpl = st_wa_status($pdo)['templates']['tmph_store_bday'] ?? ['status' => 'missing', 'reason' => ''];
+            $known = (int)$pdo->query("SELECT COUNT(DISTINCT phone) FROM st_bill_people WHERE bday <> '' AND declined = 0 AND phone <> ''")->fetchColumn();
+            json_response(['cfg' => $cfg, 'vouchers' => $rows, 'template' => $tpl, 'customers_with_birthday' => $known, 'can_manage' => in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true) || user_can($auth, 'rs_manage')]);
+            break;
+        }
+
+        case 'st_bday.send': {            // send (or send again) one code on WhatsApp now
+            require_auth();
+            $in = json_input(); $q = $pdo->prepare("SELECT * FROM st_bday_vouchers WHERE voucher_id = ?"); $q->execute([(int)($in['id'] ?? 0)]); $v = $q->fetch();
+            if (!$v) json_response(['error' => 'Code not found.'], 404);
+            if ($v['status'] !== 'active') json_response(['error' => 'This code is already used or cancelled.'], 400);
+            [$ok, $why] = st_bday_send($pdo, $v);
+            json_response(['ok' => $ok, 'message' => $ok ? 'Sent on WhatsApp.' : 'Not sent: ' . $why]);
+            break;
+        }
+
+        case 'st_bday.cfg_save': {        // managers: on/off, days before the birthday, days it stays valid after it, automatic WhatsApp on/off
+            $auth = require_auth(); if (!(in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true) || user_can($auth, 'rs_manage'))) json_response(['error' => 'Only a manager can change this.'], 403);
+            json_response(['ok' => true, 'cfg' => st_bday_cfg_save($pdo, json_input())]);
+            break;
+        }
+
+        case 'st_bday.run': {             // managers: make the codes and send them now (otherwise it happens by itself once a day after 9 AM)
+            $auth = require_auth(); if (!(in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true) || user_can($auth, 'rs_manage'))) json_response(['error' => 'Only a manager can do this.'], 403);
+            $tn = st_bday_ensure_template($pdo); $r = st_bday_run($pdo, true); @unlink(sys_get_temp_dir() . '/hrms_st_bday_day');
+            json_response(['ok' => true] + $r + ['message' => $r['off'] ? 'The birthday gift is switched off.' : $r['made'] . ' new code(s), ' . $r['sent'] . ' sent' . ($r['waiting'] ? ', ' . $r['waiting'] . ' waiting for the WhatsApp template to be approved' : '') . ($r['failed'] ? ', ' . $r['failed'] . ' not sent' : '') . '. WhatsApp message: ' . $tn . '.']);
+            break;
+        }
+
+        case 'st_bday.seed': {            // managers: make the WhatsApp birthday template and send it to Meta for approval
+            $auth = require_auth(); if (!(in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true) || user_can($auth, 'rs_manage'))) json_response(['error' => 'Only a manager can do this.'], 403);
+            $r = st_wa_seed($pdo, ['tmph_store_bday']);
+            json_response(['ok' => empty($r['failed']) && empty($r['error']), 'result' => $r, 'message' => !empty($r['error']) ? (string)$r['error'] : ($r['failed'] ? 'Meta said: ' . mb_substr((string)reset($r['failed']), 0, 160) : ($r['submitted'] ? 'Sent to Meta for approval (usually a few minutes to a day).' : 'Already with Meta.'))]);
             break;
         }
 

@@ -94,6 +94,12 @@
   .acdd .h{padding:6px 10px 2px;font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--sx-mut)}
   .acdd .o{display:flex;justify-content:space-between;gap:10px;padding:7px 10px;border-radius:9px;cursor:pointer;font-size:13.5px}.acdd .o small{color:var(--sx-mut);font-size:11.5px;white-space:nowrap}
   .acdd .o.on,.acdd .o:hover{background:var(--sx-violet-t)}
+  .bdcard .code{font:800 12.5px ui-monospace,Menlo,Consolas,monospace;letter-spacing:.5px;background:#fff4e0;color:#b45309;border:1.5px dashed #e0a458;border-radius:8px;padding:2px 8px}
+  .bdcard .pill.ok{background:var(--sx-aqua-t);color:#0d7a55}.bdcard .pill.bad{background:#fdecea;color:#b3261e}
+  .bdset{display:grid;gap:10px;font-size:13px}.bdset .r{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.bdset label{display:inline-flex;gap:6px;align-items:center}
+  .bdset input[type=number]{width:70px;min-height:32px}
+  .gcode{display:grid;gap:6px}.gcode .row{display:flex;gap:6px}.gcode .row .sx-in{flex:1;text-transform:uppercase;font-family:ui-monospace,Menlo,Consolas,monospace;letter-spacing:1px}
+  .gok{background:#f1fbf5;border:1.5px solid var(--sx-good);border-radius:12px;padding:8px 10px;font-size:12.5px}
   .minibtn{border:0;background:#1fa855;color:#fff;border-radius:8px;padding:2px 9px;font:800 11px inherit;cursor:pointer}
   /* ---------- compact: tighter everywhere; wide screens put the panel in two columns ---------- */
   .bhero{padding:8px clamp(12px,1.6vw,20px)!important;border-radius:20px}.bhero .v{font-size:clamp(22px,2.6vw,32px)!important}.bhero .k{font-size:10.5px}
@@ -132,7 +138,8 @@
         <button class="sx-btn newbtn" id="btnNew"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>New bill</button>
       </div></div>
 
-      <div class="sx-card bdcard" id="bdCard" style="display:none"><h3>🎂 Birthdays <small id="bdSub">next 7 days</small></h3><div id="bdList"></div></div>
+      <div class="sx-card bdcard" id="bdCard"><h3>🎂 Birthdays &amp; gift codes <small id="bdSub">next 14 days</small></h3><div id="bdAuto" style="margin:2px 0 8px"></div><div id="bdList"></div>
+        <details class="sx-d" id="bdSet" style="margin-top:10px"><summary>⚙ Birthday gift settings</summary><div id="bdSetBody" style="margin-top:10px"></div></details></div>
 
       <div class="sx-card" id="srcCard" style="display:none"><h3>📣 Where customers came from <small id="srcSub"></small></h3><div id="srcList"></div><h3 style="margin-top:14px">📍 Areas <small id="areaSub"></small></h3><div id="areaList"></div></div>
 
@@ -163,6 +170,11 @@
     <div class="sx-card c-cust">
       <div class="sx-f" style="margin-bottom:6px;display:flex;align-items:center">Customers on this bill <span style="font-weight:600;margin-left:6px" id="custNeed"></span><span class="cstep"><button id="cMinus" aria-label="One customer fewer">−</button><b id="cCount">1</b><button id="cPlus" aria-label="One customer more">+</button></span></div>
       <div class="cust" id="cust"></div>
+      <div class="gcode" style="margin-top:10px">
+        <div class="sx-f">🎁 Birthday gift code <span style="font-weight:600">(the customer shows the WhatsApp message)</span></div>
+        <div class="row"><input class="sx-in" id="gcIn" placeholder="BD-XXXXXX" maxlength="14" autocomplete="off"><button type="button" class="lnk" id="gcBtn">Check</button></div>
+        <div id="gcOut"></div>
+      </div>
     </div>
     <div class="sx-card c-src">
       <div class="sx-f" style="margin-bottom:6px">How did the customer find us? <span style="font-weight:600">(optional)</span></div>
@@ -296,7 +308,22 @@
   const todayMD = () => String(storeToday || '').slice(5);
   // BIRTHDAY GIFT: a customer whose birthday is today (saved earlier — or a manager approves), not gifted yet this year, may take one free 50 ml
   const giftOk = (p) => !p.declined && phoneOk(p.phone) && p.bday && p.bday === todayMD() && p.lk && !p.lk.gifted_year && (p.lk.bday === todayMD() || isManager);
-  const giftSlots = () => people.filter(giftOk).length;
+  let bv = null;      // the birthday code the customer showed (checked by the server)
+  const giftSlots = () => bv ? 1 : people.filter(giftOk).length;
+  function renderGc() {
+    $('gcOut').innerHTML = bv ? `<div class="gok">✅ <b>${esc(bv.name || 'Customer')}</b> · birthday ${esc(bv.birthday)} · code <b>${esc(bv.code)}</b> valid till ${esc(new Date(bv.valid_to + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }))}<br>Free <b>50 ml</b> — scan the 50 ml bottle and tap “🎁 gift?”. <button type="button" class="x" id="gcClear" style="margin-left:6px">Remove</button></div>` : '';
+  }
+  const gcCheck = async () => {
+    const code = $('gcIn').value.trim(); if (!code) { $('gcOut').innerHTML = ''; return; }
+    $('gcBtn').disabled = true;
+    try { const d = await api.post('st_bday.check', { code }); if (d.ok) { bv = d.voucher; $('gcIn').value = bv.code; renderGc(); refresh(); } else { bv = null; $('gcOut').innerHTML = `<div class="sx-msg bad">${sxi('xc')}<span>${esc(d.error)}</span></div>`; refresh(); } }
+    catch (e) { bv = null; $('gcOut').innerHTML = `<div class="sx-msg bad">${sxi('xc')}<span>${esc(e.message)}</span></div>`; }
+    $('gcBtn').disabled = false;
+  };
+  $('gcBtn').addEventListener('click', gcCheck);
+  $('gcIn').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); gcCheck(); } });
+  $('gcIn').addEventListener('input', () => { if (bv) { bv = null; $('gcOut').innerHTML = ''; refresh(); } });
+  $('gcOut').addEventListener('click', (e) => { if (e.target.id === 'gcClear') { bv = null; $('gcIn').value = ''; renderGc(); refresh(); } });
   const szClass = (b) => b.gift ? 'tester' : b.kind === 'tester' ? 'tester' : 's' + b.ml;
   const PAY = { cash: 'Cash', online: 'Online', split: 'Split' };
 
@@ -399,12 +426,12 @@
   // ---------- make the bill: saved, the panel resets and stays open for the next customer
   $('btnBill').onclick = async () => {
     $('btnBill').disabled = true;
-    const body = { source, source_note: source ? $('srcNote').value.trim() : '', area: $('areaIn').value.trim(), codes: cart.map((b) => b.code), gift_codes: cart.filter((b) => b.gift).map((b) => b.code), emp_id: +$('emp').value, people: people.filter((p) => p.name || p.phone || p.declined).map((p) => ({ name: p.name, phone: p.declined ? '' : p.phone, declined: p.declined, reason: p.reason, bday: p.declined ? '' : (p.bday || '') })), order_code: $('ocode').value, sold_time: soldTouched ? ($('soldAt').value || '') : '', biz_date: ($('bizDay').value && $('bizDay').value !== storeToday) ? $('bizDay').value : '', discount: +$('disc').value || 0, pay_mode: $('pay').value, cash_amt: +$('cash').value || 0, online_amt: +$('online').value || 0 };
+    const body = { bday_code: bv ? bv.code : '', source, source_note: source ? $('srcNote').value.trim() : '', area: $('areaIn').value.trim(), codes: cart.map((b) => b.code), gift_codes: cart.filter((b) => b.gift).map((b) => b.code), emp_id: +$('emp').value, people: people.filter((p) => p.name || p.phone || p.declined).map((p) => ({ name: p.name, phone: p.declined ? '' : p.phone, declined: p.declined, reason: p.reason, bday: p.declined ? '' : (p.bday || '') })), order_code: $('ocode').value, sold_time: soldTouched ? ($('soldAt').value || '') : '', biz_date: ($('bizDay').value && $('bizDay').value !== storeToday) ? $('bizDay').value : '', discount: +$('disc').value || 0, pay_mode: $('pay').value, cash_amt: +$('cash').value || 0, online_amt: +$('online').value || 0 };
     if (chain) body.chain_code = chain.code;
     if (pickedCol !== null) body.price_col = pickedCol; else body.custom_price = +$('customPrice').value || 0;
     try {
       const d = await api.post('st_bill.create', body); beep(true);
-      showDone(d); resetCust(); source = ''; $('srcNote').value = ''; $('areaIn').value = ''; renderSrc(); $('areaX').hidden = true;
+      showDone(d); resetCust(); bv = null; $('gcIn').value = ''; renderGc(); source = ''; $('srcNote').value = ''; $('areaIn').value = ''; renderSrc(); $('areaX').hidden = true;
       cart = []; chain = null; quote = null; pickedCol = null; ['ocode', 'cash', 'online', 'customPrice'].forEach((i) => $(i).value = ''); ocodeAuto = true; fillCode(); soldTouched = false; setSoldNow(); $('bizDay').value = storeToday; $('disc').value = 0; $('scanMsg').innerHTML = '';
       renderCart(); renderQuote();
       toast(d.message + (d.commission_pct != null ? ` Commission ≈ ${d.commission_pct}%${d.commission_amount != null ? ' (₹' + Math.round(d.commission_amount).toLocaleString('en-IN') + ')' : ''}.` : '') + (d.no_code && d.code_rule ? ` No order code on this bill: it pays ${d.code_rule.nocode}% of the commission unless ${d.code_rule.codepct}% of today’s bills have a code.` : '') + ' Scan the next customer’s bottles, or close.');
@@ -438,14 +465,53 @@
 
   // ---------- today's bills
   let listDate = '', dayOpen = 0, payOpen = 0, payD = null, lastBills = [];
+  const dm = (d) => d ? new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '';
+  const wishText = (x) => `Hello ${x.name || ''}, greetings from TM Perfume House! Your birthday is on ${x.birthday || ''} and we have a FREE 50 ml perfume gift for you. Collect it from our store any time between ${dm(x.valid_from)} and ${dm(x.valid_to)} by showing this code: ${x.code}. Happy birthday in advance!`;
+  let bdInfo = null;
   async function loadBirthdays() {
     try {
-      const d = await api.get('st_cust.birthdays', { days: 7 }), L = d.list || [];
-      $('bdCard').style.display = L.length ? '' : 'none';
-      $('bdList').innerHTML = L.map((x) => { const dt = new Date(x.date + 'T00:00:00'), when = x.in_days === 0 ? '<span class="pill today">Today 🎉</span>' : `<span class="pill">${x.in_days === 1 ? 'Tomorrow' : 'in ' + x.in_days + ' days'}</span>`;
-        return `<div class="bdr"><div class="n"><b>${esc(x.name || 'Customer')}</b><small>${x.phone ? '+' + esc(x.phone) + ' · ' : ''}${dt.getDate()} ${MONTHS[dt.getMonth()]}</small></div>${when}${x.in_days === 0 ? (x.gifted ? '<span class="pill">🎁 gift given</span>' : '<span class="pill today">🎁 gift due (free 50 ml)</span>') : ''}${x.phone ? `<a class="minibtn" style="text-decoration:none" target="_blank" rel="noopener" href="https://wa.me/${esc(x.phone)}?text=${encodeURIComponent('Happy Birthday ' + (x.name || '') + '! 🎂 Wishing you a fragrant year ahead — Team TMPH')}">Wish</a>` : ''}</div>`; }).join('');
-    } catch (e) { $('bdCard').style.display = 'none'; }
+      const [d, info] = await Promise.all([api.get('st_cust.birthdays', { days: 14 }), api.get('st_bday.list').catch(() => null)]); bdInfo = info;
+      const L = d.list || [];
+      $('bdSub').textContent = info ? `next 14 days · ${info.customers_with_birthday} customer${info.customers_with_birthday === 1 ? '' : 's'} with a birthday saved` : 'next 14 days';
+      const ts0 = info ? String((info.template || {}).status || 'missing').toUpperCase() : '';
+      $('bdAuto').innerHTML = !info ? '' : !info.cfg.enabled ? '<span class="pill bad">Birthday gift is switched OFF</span>' : ts0 === 'APPROVED' ? `<span class="pill ok">✓ Automatic — the WhatsApp message with the gift code goes by itself ${info.cfg.send_before} days before every birthday. Nothing to do.</span>` : ts0 === 'REJECTED' ? '<span class="pill bad">⚠ Meta did not approve the WhatsApp message — open settings below</span>' : `<span class="pill">⏳ Automatic — the WhatsApp message was sent to Meta for approval. Codes are being made already; each one goes to the customer by itself the moment Meta approves (usually within a day).</span>`;
+      $('bdList').innerHTML = L.length ? L.map((x) => {
+        const dt = new Date(x.date + 'T00:00:00'), v = x.voucher;
+        const when = x.in_days === 0 ? '<span class="pill today">Today 🎉</span>' : `<span class="pill">${x.in_days === 1 ? 'Tomorrow' : 'in ' + x.in_days + ' days'}</span>`;
+        let g = '';
+        if (v) {
+          const used = v.status === 'redeemed' || x.gifted;
+          g = `<span class="code">${esc(v.code)}</span>` + (used ? '<span class="pill ok">🎁 gift taken</span>' : v.wa_status === 'sent' ? '<span class="pill ok">✓ sent on WhatsApp</span>' : v.wa_status === 'failed' ? `<span class="pill bad" title="${esc(v.wa_note)}">⚠ not sent</span>` : `<span class="pill" title="${esc(v.wa_note)}">⏳ not sent yet</span>`) + `<small style="color:var(--sx-mut)">valid till ${esc(new Date(v.valid_to + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }))}</small>`;
+        } else g = '<small style="color:var(--sx-mut)">code goes on WhatsApp ' + ((bdInfo && bdInfo.cfg.send_before) || 2) + ' days before</small>';
+        const mgr = bdInfo && bdInfo.can_manage, sentOk = v && v.wa_status === 'sent';
+        const btns = (v && mgr && v.status === 'active' && !sentOk ? `<button class="minibtn" data-bsend="${v.id}" style="background:#0b6ef6">Send now</button>` : '') + (x.phone && !sentOk ? `<a class="minibtn" style="text-decoration:none" target="_blank" rel="noopener" href="https://wa.me/${esc(x.phone)}?text=${encodeURIComponent(v ? wishText(Object.assign({}, v, { name: v.name || x.name })) : 'Happy Birthday ' + (x.name || '') + '! 🎂 Wishing you a fragrant year ahead — Team TMPH')}">${v ? 'WhatsApp' : 'Wish'}</a>` : '');
+        return `<div class="bdr"><div class="n"><b>${esc(x.name || 'Customer')}</b><small>${x.phone ? '+' + esc(x.phone) + ' · ' : ''}${dt.getDate()} ${MONTHS[dt.getMonth()]}</small></div>${when}<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${g}</div>${btns}</div>`;
+      }).join('') : '<div class="sx-mut" style="padding:6px 0;font-size:13px">No birthday in the next 14 days. Ask every customer for their birthday at billing — the WhatsApp message with the gift code goes to them by itself 2 days before.</div>';
+      renderBdSet();
+    } catch (e) { $('bdList').innerHTML = ''; }
   }
+  function renderBdSet() {
+    const i = bdInfo; if (!i) { $('bdSet').style.display = 'none'; return; } $('bdSet').style.display = '';
+    const t = i.template || {}, ts = String(t.status || 'missing').toUpperCase(), c = i.cfg;
+    const tpl = ts === 'APPROVED' ? '<span class="pill ok">✓ WhatsApp message approved</span>' : ts === 'PENDING' ? '<span class="pill">⏳ waiting for Meta to approve the WhatsApp message</span>' : ts === 'REJECTED' ? `<span class="pill bad">✗ Meta said no ${esc(t.reason || '')}</span>` : '<span class="pill bad">WhatsApp message not sent to Meta yet</span>';
+    $('bdSetBody').innerHTML = i.can_manage ? `<div class="bdset">
+      <div class="r"><label><input type="checkbox" id="bsOn" ${c.enabled ? 'checked' : ''}> Birthday gift is ON</label><label><input type="checkbox" id="bsWa" ${c.auto_wa ? 'checked' : ''}> Send the code on WhatsApp by itself</label></div>
+      <div class="r">Send the code <input type="number" class="sx-in" id="bsBefore" min="1" max="30" value="${c.send_before}"> days before the birthday · valid until <input type="number" class="sx-in" id="bsAfter" min="0" max="60" value="${c.valid_after}"> days after it</div>
+      <div class="r">${tpl}${ts === 'APPROVED' || ts === 'PENDING' ? '' : '<button class="lnk" id="bsSeed">Send the message to Meta for approval</button>'}</div>
+      <div class="r"><button class="sx-btn" id="bsSave" style="padding:8px 16px">Save</button><button class="lnk" id="bsRun">Make codes &amp; send now</button><span id="bsMsg" class="sx-mut"></span></div>
+      <div class="gok" style="background:#f7f9fb;border-color:var(--sx-line)"><b>What the customer gets on WhatsApp</b> (${c.send_before} days before the birthday):<br><span id="bsPrev"></span></div>
+      <div class="sx-mut" style="font-size:12px">It also runs by itself once a day after 9 AM. The WhatsApp message is sent to Meta for approval by itself. A customer gets one code a year; one code = one free 50 ml.</div></div>` : `<div class="bdset"><div class="r">${tpl}</div><div class="sx-mut">Code goes ${c.send_before} days before the birthday, valid ${c.valid_after} days after it. A manager can change this.</div></div>`;
+  }
+  const bsPreview = () => { const el = $('bsPrev'); if (!el || !bdInfo) return; const c = bdInfo.cfg, d0 = new Date(), b = new Date(d0.getTime() + c.send_before * 864e5), e2 = new Date(b.getTime() + c.valid_after * 864e5); const f = (d) => d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }); el.textContent = `Hello Rahul, greetings from TM Perfume House! Your birthday is on ${f(b)} and we have a FREE 50 ml perfume gift for you. Collect it from our store any time between ${f(d0)} and ${f(e2)} by showing this code: BD-7K3M9P. Happy birthday in advance!`; };
+  const _rbs = renderBdSet; renderBdSet = function () { _rbs(); bsPreview(); };
+  $('bdCard').addEventListener('click', async (e) => {
+    const note = (m, bad) => { const el = $('bsMsg'); if (el) { el.textContent = m; el.style.color = bad ? 'var(--sx-bad)' : 'var(--sx-good)'; } };
+    const bs = e.target.closest('[data-bsend]');
+    if (bs) { bs.disabled = true; try { const r = await api.post('st_bday.send', { id: +bs.dataset.bsend }); alert(r.message); } catch (err) { alert(err.message); } loadBirthdays(); return; }
+    if (e.target.id === 'bsSave') { try { await api.post('st_bday.cfg_save', { enabled: $('bsOn').checked ? 1 : 0, auto_wa: $('bsWa').checked ? 1 : 0, send_before: +$('bsBefore').value || 5, valid_after: +$('bsAfter').value || 0 }); note('Saved.'); loadBirthdays(); } catch (err) { note(err.message, 1); } }
+    if (e.target.id === 'bsRun') { e.target.disabled = true; note('Working…'); try { const r = await api.post('st_bday.run', {}); note(r.message); loadBirthdays(); } catch (err) { note(err.message, 1); } e.target.disabled = false; }
+    if (e.target.id === 'bsSeed') { e.target.disabled = true; try { const r = await api.post('st_bday.seed', {}); note(r.message, !r.ok); loadBirthdays(); } catch (err) { note(err.message, 1); } e.target.disabled = false; }
+  });
   async function loadSources() {
     try {
       const d = await api.get('st_bill.sources', listDate ? { date: listDate } : {}), mx = Math.max(1, ...d.rows.map((r) => r.n));
