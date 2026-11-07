@@ -2797,7 +2797,7 @@ function cm_emps(PDO $pdo, $day = null) {
     $emps = []; $off = cm_offline_ids($pdo); $dayOff = ($day && function_exists('pay_day_assign')) ? (pay_day_assign($pdo)[$day] ?? []) : [];   // on a day moved to the store, no online commission
     foreach ($pdo->query("SELECT e.employee_id, e.full_name, e.sales_tag, e.basic_salary, e.joining_date, e.designation, d.department_name
         FROM employees e LEFT JOIN departments d ON d.department_id = e.department_id WHERE e.status != 'ex'")->fetchAll() as $e) {
-        if (stripos((string)$e['department_name'], 'sales') === false || isset($off[(int)$e['employee_id']]) || isset($dayOff[(int)$e['employee_id']])) continue; $emps[(int)$e['employee_id']] = $e;
+        if (stripos((string)$e['department_name'], 'sales') === false || ($day && function_exists('pay_off_at') ? pay_off_at($pdo, (int)$e['employee_id'], (string)$day) : isset($off[(int)$e['employee_id']])) || isset($dayOff[(int)$e['employee_id']])) continue; $emps[(int)$e['employee_id']] = $e;
     }
     return $emps;
 }

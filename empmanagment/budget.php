@@ -60,7 +60,16 @@ if (!function_exists('budget_cfg')) {
             $rtg = $v['rtarget'] ?? null; $rtg = ($rtg === null || $rtg === '' || !is_numeric($rtg)) ? null : round(max(0, min(1000000000, (float)$rtg)), 2);   // this person's own monthly collection target (blank = the shared one)
             $sc = array_key_exists('sc', $v) ? (empty($v['sc']) ? 0 : 1) : 1;
             $okf = empty($v['ok']) ? 0 : 1; $npf = empty($v['np']) ? 0 : 1;   // np = "no pay": on nobody's payroll, counts as nothing
-            if ($g !== '' || $rp !== null || $rtg !== null || $sc === 0 || $okf || $npf) $pp[(string)(int)$pid] = ['grp' => $g, 'rpct' => $rp, 'rtarget' => $rtg, 'sc' => $sc, 'np' => $npf, 'ok' => $okf, 'ok_by' => $okf ? mb_substr((string)($v['ok_by'] ?? ''), 0, 60) : '', 'ok_at' => $okf ? mb_substr((string)($v['ok_at'] ?? ''), 0, 19) : ''];
+            $hist = [];   // dated pay setup: from this day on (the first entry counts from the start); earlier days keep the earlier entry
+            foreach ((array)($v['hist'] ?? []) as $h) {
+                if (!is_array($h) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($h['from'] ?? ''))) continue;
+                $hg = (string)($h['grp'] ?? ''); $hg = in_array($hg, ['sales', 'retail', 'store', 'other'], true) ? $hg : '';
+                $hr = $h['rpct'] ?? null; $hr = ($hr === null || $hr === '' || !is_numeric($hr)) ? null : round(max(0, min(50, (float)$hr)), 2);
+                $ht = $h['rtarget'] ?? null; $ht = ($ht === null || $ht === '' || !is_numeric($ht)) ? null : round(max(0, min(1000000000, (float)$ht)), 2);
+                $hist[(string)$h['from']] = ['from' => (string)$h['from'], 'grp' => $hg, 'np' => empty($h['np']) ? 0 : 1, 'monthly' => round(max(0, min(10000000, (float)($h['monthly'] ?? 0))), 2), 'rpct' => $hr, 'rtarget' => $ht, 'sc' => array_key_exists('sc', $h) ? (empty($h['sc']) ? 0 : 1) : 1];
+            }
+            ksort($hist); $hist = array_values($hist);
+            if ($g !== '' || $rp !== null || $rtg !== null || $sc === 0 || $okf || $npf || $hist) $pp[(string)(int)$pid] = ['hist' => $hist, 'grp' => $g, 'rpct' => $rp, 'rtarget' => $rtg, 'sc' => $sc, 'np' => $npf, 'ok' => $okf, 'ok_by' => $okf ? mb_substr((string)($v['ok_by'] ?? ''), 0, 60) : '', 'ok_at' => $okf ? mb_substr((string)($v['ok_at'] ?? ''), 0, 19) : ''];
         }
         return ['expenses' => budget_cfg_from((array)($j['expenses'] ?? [])), 'months' => is_array($j['months'] ?? null) ? $j['months'] : [],
             'retail' => budget_retail_clean($rt), 'people' => $pp, 'leader_map' => $lm, 'settled' => $sl, 'days' => $dy];
@@ -242,8 +251,21 @@ if ($__bg === 'budget.person_save') {
     if (array_key_exists('sc', $in)) $p['sc'] = empty($in['sc']) ? 0 : 1;
     if (array_key_exists('np', $in)) $p['np'] = empty($in['np']) ? 0 : 1;
     if (array_key_exists('ok', $in)) { $p['ok'] = empty($in['ok']) ? 0 : 1; $p['ok_by'] = $p['ok'] ? (string)($auth['username'] ?? '') : ''; $p['ok_at'] = $p['ok'] ? date('Y-m-d H:i:s') : ''; }   // green = Admin has set and checked this person's pay rules and timing
+    // Dated history. from = '' / 'start': the setup counts from the very start (all days so far are recounted with it). A date: it counts from that day, earlier days stay as they were.
+    $from = array_key_exists('from', $in) ? trim((string)$in['from']) : null;
+    if ($from !== null && (array_key_exists('monthly', $in) || array_key_exists('grp', $in) || array_key_exists('np', $in) || array_key_exists('rpct', $in) || array_key_exists('sc', $in) || array_key_exists('rtarget', $in))) {
+        $entry = ['from' => '2000-01-01', 'grp' => (string)($p['grp'] ?? ''), 'np' => empty($p['np']) ? 0 : 1, 'monthly' => round(max(0, (float)($in['monthly'] ?? 0)), 2), 'rpct' => $p['rpct'] ?? null, 'rtarget' => $p['rtarget'] ?? null, 'sc' => (int)($p['sc'] ?? 1)];
+        if ($from === '' || $from === 'start') { $p['hist'] = [$entry]; }
+        else {
+            if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $from) || $from < '2000-01-01' || $from > date('Y-m-d', strtotime('+2 days'))) json_response(['error' => 'Pick the day it starts from (not far in the future).'], 422);
+            $h = (array)($p['hist'] ?? []);
+            if (!$h) { $pv = is_array($in['prev'] ?? null) ? $in['prev'] : []; $h[] = ['from' => '2000-01-01', 'grp' => (string)($pv['grp'] ?? ''), 'np' => empty($pv['np']) ? 0 : 1, 'monthly' => round(max(0, (float)($pv['monthly'] ?? 0)), 2), 'rpct' => (isset($pv['rpct']) && $pv['rpct'] !== '' && is_numeric($pv['rpct'])) ? round((float)$pv['rpct'], 2) : null, 'rtarget' => (isset($pv['rtarget']) && $pv['rtarget'] !== '' && is_numeric($pv['rtarget'])) ? round((float)$pv['rtarget'], 2) : null, 'sc' => array_key_exists('sc', $pv) ? (empty($pv['sc']) ? 0 : 1) : 1]; }
+            $entry['from'] = $from; $h = array_values(array_filter($h, function ($x) use ($from) { return ($x['from'] ?? '') !== $from; })); $h[] = $entry; usort($h, function ($a, $b) { return strcmp((string)$a['from'], (string)$b['from']); });
+            $p['hist'] = $h;
+        }
+    }
     $c['people'][(string)$id] = $p;
-    if (($p['grp'] ?? '') === '' && $p['rpct'] === null && ($p['rtarget'] ?? null) === null && (int)($p['sc'] ?? 1) === 1 && empty($p['ok']) && empty($p['np'])) unset($c['people'][(string)$id]);
+    if (($p['grp'] ?? '') === '' && $p['rpct'] === null && ($p['rtarget'] ?? null) === null && (int)($p['sc'] ?? 1) === 1 && empty($p['ok']) && empty($p['np']) && empty($p['hist'])) unset($c['people'][(string)$id]);
     setting_set($pdo, 'budget_cfg', json_encode($c));
     $duty = null;
     try {

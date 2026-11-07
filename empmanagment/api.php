@@ -7797,6 +7797,14 @@ function pay_day_assign(PDO $pdo): array
     try { $j = json_decode((string)setting_get($pdo, 'budget_cfg', ''), true); foreach ((array)($j['days'] ?? []) as $d => $x) if (is_array($x)) foreach ($x as $id => $g) if (in_array($g, ['store', 'retail'], true)) $m[(string)$d][(int)$id] = (string)$g; } catch (Throwable $e) { error_log('pay_day_assign: ' . $e->getMessage()); }
     return $m;
 }
+/** True when this person was paid by the retail / store rule ON THAT DAY (the dated pay setup in Total Budgeting; before any dated setup: the current assignment or retail by name). */
+function pay_off_at(PDO $pdo, int $id, string $day): bool
+{
+    static $cfg = null; if ($cfg === null) { $cfg = []; try { $j = json_decode((string)setting_get($pdo, 'budget_cfg', ''), true); $cfg = is_array($j['people'] ?? null) ? $j['people'] : []; } catch (Throwable $e) {} }
+    $pp = $cfg[$id] ?? $cfg[(string)$id] ?? null;
+    if (is_array($pp) && !empty($pp['hist'])) { $g = null; foreach ($pp['hist'] as $h) if (($h['from'] ?? '9999') <= $day) $g = (string)($h['grp'] ?? ''); if ($g !== null) return in_array($g, ['retail', 'store'], true); }
+    $off = pay_offline_ids($pdo); return isset($off[$id]);
+}
 function sales_target_fn(PDO $pdo, array $emps, string $from, string $to, array $marks, bool $zeroOff = false): callable
 {
     $over = []; $noTarget = pay_offline_ids($pdo); $dayOff = pay_day_assign($pdo);
@@ -7813,8 +7821,8 @@ function sales_target_fn(PDO $pdo, array $emps, string $from, string $to, array 
         $mm->execute([substr($from, 0, 7), substr($to, 0, 7)]);
         foreach ($mm->fetchAll() as $r) $monMan[(int)$r['employee_id'] . '|' . $r['month']] = (float)$r['m'];
     } catch (Throwable $e) {}
-    return function (int $id, string $d) use ($emps, $over, $marks, $monMan, $zeroOff, $noTarget, $dayOff): float {
-        if (isset($noTarget[$id]) || isset($dayOff[$d][$id])) return 0.0;      // no sales target for retail / store people, nor on a day they were moved to the store      // retail wholesale and store people have no sales target
+    return function (int $id, string $d) use ($pdo, $emps, $over, $marks, $monMan, $zeroOff, $noTarget, $dayOff): float {
+        if (pay_off_at($pdo, $id, $d) || isset($dayOff[$d][$id])) return 0.0;      // no sales target for retail / store people, nor on a day they were moved to the store      // retail wholesale and store people have no sales target
         $mk = $marks[$d . '|' . $id] ?? '';
         if (isset($over[$d . '|' . $id])) return $over[$d . '|' . $id];      // a target typed by hand for the day wins, even on a Leave / off-marked day
         if ($mk === 'leave' || ($zeroOff && $mk === 'off')) return 0.0;
