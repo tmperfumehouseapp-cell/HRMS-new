@@ -254,7 +254,7 @@ function wa_tick(PDO $pdo, bool $force = false): array
 function wa_is_ad_text(string $t): bool
 {
     $t = mb_strtolower(trim($t)); if ($t === '' || mb_strlen($t) > 300) return false;
-    return (bool)(preg_match('/more info(rmation)? (on|about) this|interested in this|saw (your|this) ad|\btmph\b|tm\s*perfume\s*house|\bwant to (buy|order)\b|\bi\s*want\b.*\bml\b/u', $t) || preg_match('/\d+\s*ml\b.*\b(in|at|for|@|rs\.?|₹)\s*\d{3,5}\b/u', $t));
+    return (bool)(preg_match('/more info(rmation)? (on|about) this|interested in this|saw (your|this) ad|\btmph\b|tm\s*perfume\s*house|\bwant to (buy|order)\b|placing my first order|free\s*10\s*ml|extra discount|\bi\s*want\b.*\bml\b/u', $t) || preg_match('/\d+\s*ml\b.*\b(in|at|for|@|rs\.?|₹)\s*\d{3,5}\b/u', $t));
 }
 /** Once: chats of the last 2 days whose first words were an ad's ready-made text, before this rule existed, are marked as ad queries too. */
 function wa_ad_backfill(PDO $pdo): void
