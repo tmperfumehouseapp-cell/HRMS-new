@@ -393,7 +393,7 @@ const DSP = (() => {
     // orders made by hand in the WhatsApp chat (Manual order, name WM-00001) carry a purple edge and a MANUAL pill, so they are easy to tell from website orders
     const isMan = (r) => /^WM-\d+/i.test(String(r.order || '')), kwikTag = (r) => r.kwik ? '<div class="mono" style="font-size:11px;color:#64748b;font-weight:600" title="Payment gateway (KWIK) id: Finance matches the settlement file with it">' + esc(String(r.kwik).split(',')[0]) + '</div>' : '', manPill = (r) => isMan(r) ? ' <span class="dr-pill" style="background:#ede7ff;color:#5b34c4" title="Made by hand in the WhatsApp chat (QR / UPI / COD), not on the website">MANUAL</span>' : '', manEdge = (r) => isMan(r) ? ';box-shadow:inset 5px 0 0 #7c3aed' : '';
     // 💬 the order number opens the customer's WhatsApp chat right here; 👤 who sold it and ⚠ an open complaint sit under the customer (Shopify and Manual orders alike)
-    const ordCell = (r) => (r.chat ? '<button type="button" class="dr-ord" data-chat="' + esc(r.chat) + '" data-oname="' + esc(r.order) + '" data-cust="' + esc(r.customer) + '" title="Open ' + esc(r.customer || 'the customer') + '’s WhatsApp chat">' + esc(r.order) + '</button>' : '<b>' + esc(r.order) + '</b>') + '<button type="button" class="dr-oc" data-trk="' + r.id + '" title="Order card">🧾</button>' + manPill(r) + kwikTag(r);
+    const ordCell = (r) => (r.chat ? '<button type="button" class="dr-ord" data-chat="' + esc(r.chat) + '" data-pid="' + r.id + '" data-oname="' + esc(r.order) + '" data-cust="' + esc(r.customer) + '" title="Open everything about ' + esc(r.order) + ': order, customer and WhatsApp chat">' + esc(r.order) + '</button>' : '<b>' + esc(r.order) + '</b>') + '<button type="button" class="dr-oc" data-trk="' + r.id + '" title="Order card">🧾</button>' + manPill(r) + kwikTag(r);
     const custCell = (r) => esc(r.customer)
       + (r.sp ? '<div class="dr-sp" title="Salesperson of this order">👤 ' + esc(r.sp) + (r.sp_type ? ' · ' + (r.sp_type === 'campaign' ? 'Campaign' : 'Query') : '') + '</div>' : '')
       + (r.cx ? '<div><a class="dr-pill bad" href="complaints.html?case=' + (+r.cx.id) + '" target="_top" title="Open complaint ticket ' + esc(r.cx.code) + '">⚠ ' + esc(r.cx.code) + ' · ' + esc(r.cx.label) + '</a></div>' : '');
@@ -758,8 +758,9 @@ const DSP = (() => {
       const b = e.target.closest('button,a,tr[data-band]'); if (!b || !el.contains(b)) return;
       if (b.tagName === 'A') return;
       const d = b.dataset;
-      if (d.chat) return openChat(d.chat, d.oname || '', d.cust || '');
-      if (d.trk) return openLive(d.trk);
+      // the one big popup (order card + customer card + chat, order_hub.js); the old two popups stay only as a fallback when that file did not load
+      if (d.chat) { if (window.OrderHub && d.pid) { OrderHub.onClose = () => { load(); }; return OrderHub.open({ id: d.pid }); } return openChat(d.chat, d.oname || '', d.cust || ''); }
+      if (d.trk) { if (window.OrderHub) { OrderHub.onClose = () => { load(); }; return OrderHub.open({ id: d.trk }); } return openLive(d.trk); }
       if (d.lvinfo) return liveInfo(b);
       if (d.cp) { try { await navigator.clipboard.writeText(d.cp); BD.toast('Copied.'); } catch (er) { BD.toast('Select it and copy by hand.', true); } return; }
       if (d.band !== undefined) {   // click on a dark band: open / close the group
