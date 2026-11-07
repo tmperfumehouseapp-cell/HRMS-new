@@ -195,6 +195,7 @@
       ${p.declined ? `<input class="sx-in" data-f="reason" placeholder="Why no number? (required)" value="${esc(p.reason)}">` : `<input class="sx-in" data-f="phone" placeholder="Mobile number" inputmode="tel" autocomplete="off" value="${esc(p.phone)}">`}
       <label class="skip"><input type="checkbox" data-f="declined" ${p.declined ? 'checked' : ''}> won’t share</label>
       ${p.declined ? '' : `<div class="bd">🎂 Birthday <select class="sx-in" data-f="bd">${'<option value="">Day</option>' + Array.from({ length: 31 }, (_, k) => `<option value="${String(k + 1).padStart(2, '0')}" ${(p.bday || '').slice(3) === String(k + 1).padStart(2, '0') ? 'selected' : ''}>${k + 1}</option>`).join('')}</select><select class="sx-in" data-f="bm">${'<option value="">Month</option>' + MONTHS.map((m, k) => `<option value="${String(k + 1).padStart(2, '0')}" ${(p.bday || '').slice(0, 2) === String(k + 1).padStart(2, '0') ? 'selected' : ''}>${m}</option>`).join('')}</select></div>`}
+      ${p.bday && p.bday === todayMD() && !p.declined ? `<div class="back" style="background:#fff4e0;color:#b45309">🎂 Birthday today! ${p.lk && p.lk.gifted_year ? 'Already got this year’s gift.' : giftOk(p) ? 'Free 50 ml gift — scan a 50 ml and tap “🎁 gift?”.' : phoneOk(p.phone) ? 'Gift needs a manager (birthday was not saved earlier).' : 'Enter the mobile number to give the gift.'}</div>` : ''}
       ${p.lk && p.lk.returning && !p.declined ? `<div class="back">↺ Returning · ${p.lk.visits} visit${p.lk.visits === 1 ? '' : 's'}${p.lk.last_visit ? ' · last ' + esc(String(p.lk.last_visit).slice(0, 10)) : ''} — don’t ask again for contacts / community / review</div>` : ''}
     </div>`).join('');
     updatePay();
@@ -206,7 +207,7 @@
     if (f === 'phone') {
       people[i].lk = null; clearTimeout(lkTimer);
       if (phoneOk(e.target.value)) lkTimer = setTimeout(async () => {
-        try { const d = await api.get('st_cust.lookup', { phone: digits(e.target.value) }); if (digits(people[i].phone) === digits(e.target.value)) { people[i].lk = d; if (d.returning && !people[i].name && d.name) people[i].name = d.name; if (d.bday && !people[i].bday) people[i].bday = d.bday; const keep = document.activeElement && document.activeElement.dataset.f, row = i; renderCust(); if (keep) { const el = document.querySelector(`#cust [data-i="${row}"] [data-f="${keep}"]`); if (el) { el.focus(); el.setSelectionRange && el.setSelectionRange(el.value.length, el.value.length); } } }
+        try { const d = await api.get('st_cust.lookup', { phone: digits(e.target.value) }); if (digits(people[i].phone) === digits(e.target.value)) { people[i].lk = d; if (d.returning && !people[i].name && d.name) people[i].name = d.name; if (d.bday && !people[i].bday) people[i].bday = d.bday; const keep = document.activeElement && document.activeElement.dataset.f, row = i; renderCust(); refresh(); if (keep) { const el = document.querySelector(`#cust [data-i="${row}"] [data-f="${keep}"]`); if (el) { el.focus(); el.setSelectionRange && el.setSelectionRange(el.value.length, el.value.length); } } }
         } catch (err) { /* lookup is a nicety only */ }
       }, 350);
     }
@@ -215,14 +216,19 @@
   $('cust').addEventListener('change', (e) => {
     const f = e.target.dataset.f; if (f !== 'bd' && f !== 'bm') return;
     const i = +e.target.closest('[data-i]').dataset.i, row = e.target.closest('[data-i]'), dd = row.querySelector('[data-f="bd"]').value, mm = row.querySelector('[data-f="bm"]').value;
-    people[i].bday = dd && mm ? mm + '-' + dd : ''; people[i].bdPart = [mm, dd];
+    people[i].bday = dd && mm ? mm + '-' + dd : ''; renderCust(); refresh();
   });
-  $('cust').addEventListener('change', (e) => { if (e.target.dataset.f !== 'declined') return; const i = +e.target.closest('[data-i]').dataset.i; people[i].declined = e.target.checked; renderCust(); });
+  $('cust').addEventListener('change', (e) => { if (e.target.dataset.f !== 'declined') return; const i = +e.target.closest('[data-i]').dataset.i; people[i].declined = e.target.checked; renderCust(); refresh(); });
   $('cPlus').onclick = () => { if (people.length < 4) { people.push({ name: '', phone: '', bday: '', declined: false, reason: '', lk: null }); renderCust(); } };
   $('cMinus').onclick = () => { if (people.length > 1) { people.pop(); renderCust(); } };
   const resetCust = () => { people = [{ name: '', phone: '', bday: '', declined: false, reason: '', lk: null }]; renderCust(); };
 
-  const szClass = (b) => b.kind === 'tester' ? 'tester' : 's' + b.ml;
+  const free = (b) => b.kind === 'tester' || b.gift;
+  const todayMD = () => String(storeToday || '').slice(5);
+  // BIRTHDAY GIFT: a customer whose birthday is today (saved earlier — or a manager approves), not gifted yet this year, may take one free 50 ml
+  const giftOk = (p) => !p.declined && phoneOk(p.phone) && p.bday && p.bday === todayMD() && p.lk && !p.lk.gifted_year && (p.lk.bday === todayMD() || isManager);
+  const giftSlots = () => people.filter(giftOk).length;
+  const szClass = (b) => b.gift ? 'tester' : b.kind === 'tester' ? 'tester' : 's' + b.ml;
   const PAY = { cash: 'Cash', online: 'Online', split: 'Split' };
 
   // ---------- open / close the New bill panel
@@ -249,25 +255,26 @@
   }
   const scanner = scanBox($('scanIn'), addBottle);                       // the scan box inside the panel
   scanBox($('scanList'), async (code) => { if (!open) openBill(); return addBottle(code); });   // a scan on the LIST starts a new bill by itself
-  $('chips').addEventListener('click', (e) => { if (e.target.closest('[data-xc]')) { chain = null; renderCart(); renderQuote(); return; } const x = e.target.closest('[data-x]'); if (!x) return; cart = cart.filter((b) => b.code !== x.dataset.x); refresh(); });
+  $('chips').addEventListener('click', (e) => { const g = e.target.closest('[data-g]'); if (g) { const b = cart.find((x) => x.code === g.dataset.g); if (b) { b.gift = !b.gift; refresh(); } return; } if (e.target.closest('[data-xc]')) { chain = null; renderCart(); renderQuote(); return; } const x = e.target.closest('[data-x]'); if (!x) return; cart = cart.filter((b) => b.code !== x.dataset.x); refresh(); });
 
+  function dropGifts() { let n = giftSlots(); cart.forEach((b) => { if (b.gift) { if (n > 0) n--; else b.gift = false; } }); }
   async function refresh() {          // only after removing a bottle / changing the salesperson (special-day chart is per person)
-    renderCart();
+    dropGifts(); renderCart();
     if (!cart.length) { quote = null; pickedCol = null; renderQuote(); return; }
-    try { quote = await api.post('st_bill.quote', { codes: cart.map((b) => b.code), emp_id: +$('emp').value || 0 }); } catch (e) { quote = null; toast(e.message, 1); }
+    try { quote = await api.post('st_bill.quote', { codes: cart.map((b) => b.code), gift_codes: cart.filter((b) => b.gift).map((b) => b.code), emp_id: +$('emp').value || 0 }); } catch (e) { quote = null; toast(e.message, 1); }
     if (quote && (pickedCol === null || !quote.columns[pickedCol])) pickedCol = null;
     renderQuote();
   }
   function renderCart() {
-    $('chips').innerHTML = (chain ? `<span class="bchip"><span class="sz" style="background:#b8860b;color:#fff">CHAIN</span><span class="nm">${esc(chain.name)} · ${chain.split_pct || 50}% of bill</span><button data-xc="1" aria-label="Remove chain">×</button></span>` : '') + cart.map((b) => `<span class="bchip ${szClass(b)}"><span class="sz">${b.kind === 'tester' ? 'T ' : ''}${b.ml}</span><span class="nm">${esc(b.title)}</span><button data-x="${b.code}" aria-label="Remove">×</button></span>`).join('');
-    const sale = cart.filter((b) => b.kind !== 'tester'), ml = sale.reduce((a, b) => a + b.ml, 0), t = cart.length - sale.length;
+    $('chips').innerHTML = (chain ? `<span class="bchip"><span class="sz" style="background:#b8860b;color:#fff">CHAIN</span><span class="nm">${esc(chain.name)} · ${chain.split_pct || 50}% of bill</span><button data-xc="1" aria-label="Remove chain">×</button></span>` : '') + cart.map((b) => `<span class="bchip ${szClass(b)}"><span class="sz">${b.gift ? '🎁 ' : b.kind === 'tester' ? 'T ' : ''}${b.ml}</span><span class="nm">${esc(b.title)}</span>${b.kind !== 'tester' && b.ml === 50 && (b.gift || giftSlots() > cart.filter((x) => x.gift).length) ? `<button data-g="${b.code}" aria-label="Birthday gift" title="${b.gift ? 'Remove the birthday gift' : 'Give this 50 ml as the birthday gift (free)'}" style="font-size:12px;width:auto;padding:0 7px;border-radius:999px">${b.gift ? 'gift ✓' : '🎁 gift?'}</button>` : ''}<button data-x="${b.code}" aria-label="Remove">×</button></span>`).join('');
+    const sale = cart.filter((b) => !free(b)), ml = sale.reduce((a, b) => a + b.ml, 0), t = cart.length - sale.length;
     $('totMl').textContent = ml + ' ml';
-    $('totSub').textContent = cart.length || chain ? `${sale.length} bottle${sale.length === 1 ? '' : 's'}${t ? ' + ' + t + ' tester' + (t > 1 ? 's' : '') : ''}` : 'Nothing scanned yet';
+    $('totSub').textContent = cart.length || chain ? `${sale.length} bottle${sale.length === 1 ? '' : 's'}${t - cart.filter((b) => b.gift).length ? ' + ' + (t - cart.filter((b) => b.gift).length) + ' tester' + ((t - cart.filter((b) => b.gift).length) > 1 ? 's' : '') : ''}${cart.some((b) => b.gift) ? ' + 🎁 birthday gift' : ''}` : 'Nothing scanned yet';
     $('bcSub').textContent = cart.length ? ml + ' ml' : '';
   }
   const listPrice = () => (quote && pickedCol !== null && quote.columns[pickedCol]) ? quote.columns[pickedCol].price : ((!quote || !quote.in_chart) ? (+$('customPrice').value || 0) : 0);
   function renderQuote() {
-    const noChart = quote && cart.some((b) => b.kind !== 'tester') && !quote.in_chart;
+    const noChart = quote && cart.some((b) => !free(b)) && !quote.in_chart;
     $('customRow').style.display = noChart && isManager ? '' : 'none';
     $('prices').innerHTML = !quote ? '<span class="sx-mut" style="grid-column:1/-1">Scan a bottle to see prices.</span>'
       : quote.in_chart ? quote.columns.map((c) => `<button class="pr ${pickedCol === c.col ? 'on' : ''}" data-c="${c.col}"><b>${inr(c.price)}</b><small>${c.pct == null ? '&nbsp;' : c.pct + '%'}</small></button>`).join('')
@@ -279,7 +286,7 @@
   const chainShare = (t) => Math.round(t * (chain.split_pct || 50) / 100);
   function chainInfo(t) {          // the split shown to staff; the real split is made again on the server with the same rule
     if (!chain) return '';
-    const sale = cart.some((b) => b.kind !== 'tester');
+    const sale = cart.some((b) => !free(b));
     if (!sale || t <= 0) return `<div class="sx-msg warn" style="margin-top:8px">${sxi('alert')}<span>Chain ${esc(chain.name)} is on the bill (it gets ${chain.split_pct || 50}% of the total). Scan the perfumes and pick the price to see the split.</span></div>`;
     const cp = chainShare(t);
     if (chain.mrp > 0 && cp > chain.mrp) return `<div class="sx-msg bad" style="margin-top:8px">${sxi('xc')}<span>The chain’s share is ${inr(cp)} but this chain’s MRP is only ${inr(chain.mrp)}. Take a chain with a higher MRP.</span></div>`;
@@ -291,7 +298,7 @@
     $('chainBox').innerHTML = chainInfo(t);
     $('splitRow').style.display = $('pay').value === 'split' ? '' : 'none';
     $('btnBill').textContent = t > 0 ? 'Make bill · ' + inr(t) : 'Make bill';
-    $('btnBill').disabled = !(cart.some((b) => b.kind !== 'tester') && t > 0 && +$('emp').value && custOk() && !(chain && (chainShare(t) >= t || chainShare(t) <= 0 || (chain.mrp > 0 && chainShare(t) > chain.mrp))));
+    $('btnBill').disabled = !(cart.some((b) => !free(b)) && t > 0 && +$('emp').value && custOk() && !(chain && (chainShare(t) >= t || chainShare(t) <= 0 || (chain.mrp > 0 && chainShare(t) > chain.mrp))));
     $('btnBill').title = custOk() ? '' : 'Add each customer’s mobile number first';
   }
   // the Order code box fills itself with the next code of the person who bills (KC00061); the cashier can still type another one
@@ -323,7 +330,7 @@
   // ---------- make the bill: saved, the panel resets and stays open for the next customer
   $('btnBill').onclick = async () => {
     $('btnBill').disabled = true;
-    const body = { codes: cart.map((b) => b.code), emp_id: +$('emp').value, people: people.filter((p) => p.name || p.phone || p.declined).map((p) => ({ name: p.name, phone: p.declined ? '' : p.phone, declined: p.declined, reason: p.reason, bday: p.declined ? '' : (p.bday || '') })), order_code: $('ocode').value, sold_time: soldTouched ? ($('soldAt').value || '') : '', biz_date: ($('bizDay').value && $('bizDay').value !== storeToday) ? $('bizDay').value : '', discount: +$('disc').value || 0, pay_mode: $('pay').value, cash_amt: +$('cash').value || 0, online_amt: +$('online').value || 0 };
+    const body = { codes: cart.map((b) => b.code), gift_codes: cart.filter((b) => b.gift).map((b) => b.code), emp_id: +$('emp').value, people: people.filter((p) => p.name || p.phone || p.declined).map((p) => ({ name: p.name, phone: p.declined ? '' : p.phone, declined: p.declined, reason: p.reason, bday: p.declined ? '' : (p.bday || '') })), order_code: $('ocode').value, sold_time: soldTouched ? ($('soldAt').value || '') : '', biz_date: ($('bizDay').value && $('bizDay').value !== storeToday) ? $('bizDay').value : '', discount: +$('disc').value || 0, pay_mode: $('pay').value, cash_amt: +$('cash').value || 0, online_amt: +$('online').value || 0 };
     if (chain) body.chain_code = chain.code;
     if (pickedCol !== null) body.price_col = pickedCol; else body.custom_price = +$('customPrice').value || 0;
     try {
@@ -367,7 +374,7 @@
       const d = await api.get('st_cust.birthdays', { days: 7 }), L = d.list || [];
       $('bdCard').style.display = L.length ? '' : 'none';
       $('bdList').innerHTML = L.map((x) => { const dt = new Date(x.date + 'T00:00:00'), when = x.in_days === 0 ? '<span class="pill today">Today 🎉</span>' : `<span class="pill">${x.in_days === 1 ? 'Tomorrow' : 'in ' + x.in_days + ' days'}</span>`;
-        return `<div class="bdr"><div class="n"><b>${esc(x.name || 'Customer')}</b><small>${x.phone ? '+' + esc(x.phone) + ' · ' : ''}${dt.getDate()} ${MONTHS[dt.getMonth()]}</small></div>${when}${x.phone ? `<a class="minibtn" style="text-decoration:none" target="_blank" rel="noopener" href="https://wa.me/${esc(x.phone)}?text=${encodeURIComponent('Happy Birthday ' + (x.name || '') + '! 🎂 Wishing you a fragrant year ahead — Team TMPH')}">Wish</a>` : ''}</div>`; }).join('');
+        return `<div class="bdr"><div class="n"><b>${esc(x.name || 'Customer')}</b><small>${x.phone ? '+' + esc(x.phone) + ' · ' : ''}${dt.getDate()} ${MONTHS[dt.getMonth()]}</small></div>${when}${x.in_days === 0 ? (x.gifted ? '<span class="pill">🎁 gift given</span>' : '<span class="pill today">🎁 gift due (free 50 ml)</span>') : ''}${x.phone ? `<a class="minibtn" style="text-decoration:none" target="_blank" rel="noopener" href="https://wa.me/${esc(x.phone)}?text=${encodeURIComponent('Happy Birthday ' + (x.name || '') + '! 🎂 Wishing you a fragrant year ahead — Team TMPH')}">Wish</a>` : ''}</div>`; }).join('');
     } catch (e) { $('bdCard').style.display = 'none'; }
   }
   async function loadBills() {
