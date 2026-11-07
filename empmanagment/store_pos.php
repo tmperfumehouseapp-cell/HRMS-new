@@ -789,13 +789,6 @@ try {
             break;
         }
 
-        case 'st_bill.areas': {           // the areas used most in the last 120 days: suggestions for the Area box
-            require_auth();
-            $q = $pdo->query("SELECT MIN(area) area, COUNT(*) n FROM st_bills WHERE status = 'ok' AND area <> '' AND biz_date >= DATE_SUB(CURDATE(), INTERVAL 120 DAY) GROUP BY LOWER(area) ORDER BY n DESC LIMIT 14");
-            json_response(['areas' => array_map(fn($r) => ['area' => (string)$r['area'], 'n' => (int)$r['n']], $q->fetchAll())]);
-            break;
-        }
-
         case 'st_bill.sources': {         // how many bills came from each source on a day (default: today's store day)
             require_auth();
             $d = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($_GET['date'] ?? '')) ? $_GET['date'] : st_day();
