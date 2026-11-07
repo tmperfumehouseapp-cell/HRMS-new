@@ -195,6 +195,7 @@
       <div class="card cch rtc" id="rateCard" style="display:none;"></div>
       <!-- Sales Home (assets/js/sales_home.js): cheer hero · missions (target + code goal) · the ONE orange offer card · price chart · bottom "Allocate order" button -->
       <div id="shHome">
+        <div id="shDino" style="grid-column:1/-1; order:-1; margin-bottom:14px; max-width:620px;"></div>
         <section class="sh-hero" id="shHero" style="display:none;"></section>
         <div class="sh-quests" id="shQuests" style="display:none;"></div>
         <div id="shOffer"></div>
@@ -247,9 +248,9 @@
 <script>window.FO_MOUNT = document.getElementById('shOffer');</script>
 <script src="assets/js/flash_offer.js?v=261103a"></script>
 <script src="assets/js/sales_home2.js?v=261103c"></script>
-<script src="assets/js/dino.js?v=1"></script>
-<script src="assets/js/play_card.js?v=2"></script>
-<script>try { if (window.PlayCard) PlayCard.mount(document.getElementById("shPlay")); } catch (e) { /* the card is a bonus */ }</script>
+<script src="assets/js/dino.js?v=2"></script>
+<script src="assets/js/play_card.js?v=3"></script>
+<script>try { if (window.TMDino) TMDino.mount(document.getElementById("shDino")); if (window.PlayCard) PlayCard.mount(document.getElementById("shPlay")); } catch (e) { /* the card and the game are a bonus */ }</script>
 <script>
   guardPage();
   renderSidebar('my_sales');
