@@ -2813,26 +2813,30 @@ function cm_day(PDO $pdo, $day, array $ch = null, array $offers = null, array $b
     $pre = (float)$ch['prepaid']; $rows = [];
     foreach ($emps as $id => $e) {
         $list = $sale[$day . '|' . $id] ?? []; $target = (float)$targetOf($id, $day);
-        $n = count($list); $sales = 0.0; $nCode = 0; $noMl = 0; $noPrice = 0; $chartCom = 0.0; $offerCom = 0.0; $lines = [];
+        $n = count($list); $sales = 0.0; $nCode = 0; $noMl = 0; $noPrice = 0; $chartCom = 0.0; $offerCom = 0.0; $xcomTotal = 0.0; $lines = [];
         foreach ($list as $o) { if ($o['code'] !== '') $nCode++; }
         $need = cm_code_need($n, (float)$ch['codepct']); $codeOk = $need > 0 && $nCode >= $need; $nocodeF = (float)$ch['nocode'] / 100;
         foreach ($list as $o) {
             $amt = (float)$o['amt']; $sales += $amt;
             $gross = (!empty($o['pre']) && $pre > 0) ? $amt / (1 - $pre / 100) : $amt;           // the prepaid discount is the company's cost
             $f = ($o['code'] !== '' || $codeOk) ? 1.0 : $nocodeF; $ml = $o['ml'] ?? null;
+            // shower gel / attar / others / combos are priced on their own price charts (Learn & Setup → Pricing, shared): a combo prices the WHOLE order (its price already includes the perfume),
+            // otherwise that part is paid on top of the perfume commission. The code rule applies to it like to every order.
+            $xc = (float)($o['xcom'] ?? 0) * $f; $xcomTotal += $xc;
+            if (!empty($o['xall'])) { $lines[] = ['order' => $o['name'], 'ml' => (int)($ml ?: 0), 'price' => round($gross), 'rule' => 'combo', 'pct' => 0, 'code' => $o['code'] !== '', 'com' => round($xc, 2)]; continue; }
             $of = $ml ? cm_offer_match($offers, $ml, $gross, $day, (float)$ch['window']) : null;
             if ($of) { $v = $gross * (float)$of['pct'] / 100 * $f; $offerCom += $v; $lines[] = ['order' => $o['name'], 'ml' => (int)$ml, 'price' => round($gross), 'rule' => 'offer #' . $of['id'], 'pct' => (float)$of['pct'], 'code' => $o['code'] !== '', 'com' => round($v, 2)]; continue; }
-            if (!$ml) { $noMl++; $lines[] = ['order' => $o['name'], 'ml' => 0, 'price' => round($gross), 'rule' => 'no ML', 'pct' => 0, 'code' => $o['code'] !== '', 'com' => 0]; continue; }
+            if (!$ml) { if ($xc <= 0) $noMl++; $lines[] = ['order' => $o['name'], 'ml' => 0, 'price' => round($gross), 'rule' => $xc > 0 ? 'gel / attar / others' : 'no ML', 'pct' => 0, 'code' => $o['code'] !== '', 'com' => round($xc, 2)]; continue; }
             $pc = cm_pct($ch, $ml, $gross);
             if ($pc === null) { $noPrice++; $lines[] = ['order' => $o['name'], 'ml' => (int)$ml, 'price' => round($gross), 'rule' => 'ML not priced', 'pct' => 0, 'code' => $o['code'] !== '', 'com' => 0]; continue; }
             $v = $gross * $pc / 100 * $f; $chartCom += $v; $lines[] = ['order' => $o['name'], 'ml' => (int)$ml, 'price' => round($gross), 'rule' => 'chart', 'pct' => $pc, 'code' => $o['code'] !== '', 'com' => round($v, 2)];
         }
         $bo = cm_boost_for($boosts, $id, $day); $bonus = cm_bonus($ch, $sales, $target, $bo); $extra = $chartCom * $bonus / 100;
         $old = null;
-        if (function_exists('coach_day')) { try { $cd = coach_day($pdo, $day, false); $old = isset($cd[$id]) ? (float)$cd[$id]['com_today'] : null; } catch (Throwable $e) {} }
-        $total = round($chartCom + $offerCom + $extra, 2);
+        if (function_exists('coach_day')) { try { $cd = coach_day($pdo, $day, false, true); $old = isset($cd[$id]) ? (float)$cd[$id]['com_today'] : null; } catch (Throwable $e) {} }
+        $total = round($chartCom + $offerCom + $extra + $xcomTotal, 2);
         $rows[] = ['id' => $id, 'name' => trim((string)$e['full_name']), 'target' => round($target), 'sales' => round($sales), 'pct' => $target > 0 ? round($sales / $target * 100, 1) : null, 'orders' => $n,
-            'codes' => $nCode, 'code_pct' => $n ? round($nCode / $n * 100) : null, 'code_ok' => $codeOk, 'code_need' => $need, 'chart_com' => round($chartCom, 2), 'offer_com' => round($offerCom, 2),
+            'codes' => $nCode, 'code_pct' => $n ? round($nCode / $n * 100) : null, 'code_ok' => $codeOk, 'code_need' => $need, 'chart_com' => round($chartCom, 2), 'offer_com' => round($offerCom, 2), 'x_com' => round($xcomTotal, 2),
             'bonus' => $bonus, 'boost' => $bo ? $bo['name'] : '', 'extra' => round($extra, 2), 'total' => $total, 'old' => $old, 'diff' => $old === null ? null : round($total - $old, 2), 'no_ml' => $noMl, 'not_priced' => $noPrice, 'lines' => $lines];
     }
     usort($rows, function ($a, $b) { return $b['sales'] <=> $a['sales']; });

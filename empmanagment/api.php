@@ -7686,7 +7686,7 @@ function coach_sales_load(PDO $pdo, array $emps, string $from, string $to): arra
             // Orders that only carry a salesperson's tag wait in ct_recon() ("waiting for allocation") instead of silently adding to the tower.
             if (!$who || !isset($emps[$who])) continue;
             $ts = strtotime(str_replace('T', ' ', substr((string)$o['created_at'], 0, 19)));
-            $sale[biz_day_of($pdo, $ts) . '|' . $who][] = ['key' => $storeKey . '|' . (string)$o['id'], 'amt' => (float)$o['total'], 'ts' => $ts, 'ml' => $o['ml'] ?? null, 'ml10' => (int)($o['ml10'] ?? 0),
+            $sale[biz_day_of($pdo, $ts) . '|' . $who][] = ['key' => $storeKey . '|' . (string)$o['id'], 'amt' => (float)$o['total'], 'ts' => $ts, 'ml' => $o['ml'] ?? null, 'ml10' => (int)($o['ml10'] ?? 0), 'xcom' => (function () use ($pdo, $o) { $x = order_x_com($pdo, is_array($o['xparts'] ?? null) ? $o['xparts'] : (isset($o['xparts']) ? (array)$o['xparts'] : null), (int)($o['ml'] ?? 0), (float)$o['total']); return (float)$x['x_com']; })(), 'xall' => (function () use ($pdo, $o) { $x = order_x_com($pdo, is_array($o['xparts'] ?? null) ? $o['xparts'] : (isset($o['xparts']) ? (array)$o['xparts'] : null), (int)($o['ml'] ?? 0), (float)$o['total']); return !empty($x['x_all']); })(),
                 'pre' => $isPre(strtolower((string)($o['financial_status'] ?? ''))), 'paid' => order_paid_amt((float)$o['total'], (string)($o['financial_status'] ?? ''), $o['outstanding'] ?? null), 'code' => order_code_for($pdo, $storeKey, $o['id'], (string)($o['tags'] ?? '')), 'name' => (string)$o['order_name'],
                 'col' => is_array($o['colors'] ?? null) ? $o['colors'] : null, 'type' => (string)($a['type'] ?? '')];
         }
@@ -7832,10 +7832,24 @@ function sales_target_fn(PDO $pdo, array $emps, string $from, string $to, array 
     };
 }
 
-function coach_day(PDO $pdo, string $day, bool $hist = true): array
+/** The new commission engine (Commission → Result & rules) PAYS only when switched live (setting cm_live = '1'). Default: OFF, so nothing changes until the pricing is unified and an Admin switches it on. */
+function cm_is_live(PDO $pdo): bool
+{
+    static $v = null; if ($v === null) { try { $v = (string)setting_get($pdo, 'cm_live', '0') === '1'; } catch (Throwable $e) { $v = false; } } return $v;
+}
+/** One person's commission for one day when the new engine is live. No row (retail / store people, or moved to the store that day) = 0, they are paid by their own rule;
+ *  a day with orders the new engine could not price (no ML, size not in the chart) keeps the old figure, so nobody is paid less because of a gap in the chart. */
+function cm_live_pick(?array $row, float $old, bool $offline): float
+{
+    if ($row === null) return $offline ? 0.0 : $old;
+    if ((int)($row['no_ml'] ?? 0) + (int)($row['not_priced'] ?? 0) > 0) return $old;
+    return (float)($row['total'] ?? 0);
+}
+function coach_day(PDO $pdo, string $day, bool $hist = true, bool $raw = false): array
 {
     static $memo = [];
-    if (isset($memo[$day . (int)$hist])) return $memo[$day . (int)$hist];
+    $mk = $day . (int)$hist . ($raw ? 'r' : '');
+    if (isset($memo[$mk])) return $memo[$mk];
     $today = biz_today($pdo); $now = $day === $today ? time() : strtotime($day . ' 23:59:59');
     $emps = [];
     foreach ($pdo->query("SELECT e.employee_id, e.full_name, e.sales_tag, e.basic_salary, e.joining_date, e.designation, d.department_name
@@ -7873,6 +7887,13 @@ function coach_day(PDO $pdo, string $day, bool $hist = true): array
     $month1 = substr($day, 0, 8) . '01';
     $bonusPct = !empty($chart['on']) ? (float)($chart['bonus'] ?? 0) : 0.0;
     $out = [];
+    $cmMap = null;      // the new engine is live: its figure is what is paid (see cm_is_live)
+    if (!$raw && cm_is_live($pdo)) {
+        try {
+            if (!function_exists('cm_day') && is_file(__DIR__ . '/boss.php')) require_once __DIR__ . '/boss.php';
+            if (function_exists('cm_day')) { $cr = cm_day($pdo, $day); if (empty($cr['error'])) { $cmMap = []; foreach ((array)$cr['rows'] as $x) $cmMap[(int)$x['id']] = $x; } }
+        } catch (Throwable $e) { error_log('coach_day live engine: ' . $e->getMessage()); $cmMap = null; }
+    }
     foreach ($emps as $id => $e) {
         $list = $sale[$day . '|' . $id] ?? [];
         usort($list, fn($a, $b) => $a['ts'] <=> $b['ts']);
@@ -7954,6 +7975,7 @@ function coach_day(PDO $pdo, string $day, bool $hist = true): array
         foreach ($ds as $i => $d) { $w = 0.0; for ($j = $i; $j < min(count($ds), $i + 7); $j++) $w += $mDaySales[$ds[$j]]; if ($w > $bw) { $bw = $w; $bwFrom = $d; } }
         $ySame = 0.0;
         foreach ($sale[$yday . '|' . $id] ?? [] as $o) if ($o['ts'] - $yStart <= $elapsed) $ySame += $o['amt'];
+        if ($cmMap !== null) $com = cm_live_pick($cmMap[(int)$id] ?? null, $com, pay_off_at($pdo, (int)$id, $day) || isset(pay_day_assign($pdo)[$day][(int)$id]));
         $pct = $target > 0 ? $sales / $target : null;
         $should = $target > 0 ? $target * $exp : null;
         $out[$id] = ['id' => $id, 'name' => trim((string)$e['full_name']), 'role_kind' => sales_role_kind($e['department_name'] ?? '', $e['designation'] ?? ''), 'target' => round($target, 2), 'target_parts' => (object)array_map(fn($v) => round($v), $tparts[$id] ?? []), 'sales' => round($sales, 2), 'orders' => $n,
@@ -7994,7 +8016,7 @@ function coach_day(PDO $pdo, string $day, bool $hist = true): array
         'should_pct' => round($exp * 100, 1), 'ranked' => $cnt,
         'top' => ['ids' => array_column($top, 'id'), 'names' => array_map(fn($x) => trim(explode(' ', $x['name'])[0]), $top), 'code_rate' => $avgOf('code_rate'), 'add10_rate' => $avgOf('add10_rate'), 'ticket' => $avgOf('ticket')]];
     $GLOBALS['coach_sale_memo'][$day . (int)$hist] = $sale;      // the Control Tower reads the same orders (colours, type) without loading them again
-    return $memo[$day . (int)$hist] = ['day' => $day, 'now' => date('Y-m-d H:i:s', $now), 'bonus' => $bonusPct, 'floor' => (float)(ml_slab_for($chart0, $day, 0)['floor'] ?? 0), 'emps' => $out, 'team' => $team];
+    return $memo[$mk] = ['day' => $day, 'now' => date('Y-m-d H:i:s', $now), 'bonus' => $bonusPct, 'floor' => (float)(ml_slab_for($chart0, $day, 0)['floor'] ?? 0), 'emps' => $out, 'team' => $team];
 }
 
 /**
