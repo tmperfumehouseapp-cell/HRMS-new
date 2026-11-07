@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Store Dashboard — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=260928b">
+<link rel="stylesheet" href="assets/css/store.css?v=6">
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><div><h1>Store</h1><div class="sub" style="font-size:12.5px;color:var(--muted);margin-top:2px" id="subLine">Today at a glance</div></div></div>
+    <div class="content"><div class="sx-page" id="root"><div class="sx-card sx-mut">Loading…</div></div></div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=4"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script src="assets/js/store_common.js?v=3"></script>
+<script>
+  guardPage();
+  renderSidebar('store_dashboard');
+  const short = (n) => n >= 100000 ? (n / 100000).toFixed(n >= 1000000 ? 0 : 1) + 'L' : n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'k' : String(Math.round(n));
+  const dayName = (d) => new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short' });
+  const go = (tab, label) => `<a class="sx-pill info" style="text-decoration:none" href="hub.html?w=store&t=${tab}" target="_top">${esc(label)} →</a>`;
+  const GROUPS = [['cleaning', 'Cleaning', 'clean', 'store_cleaning', 'Open Cleaning'], ['pantry', 'Pantry', 'cup', 'store_cleaning', 'Open Pantry'], ['billing', 'Billing', 'receipt', 'store_billing', 'Open Billing'], ['stock', 'Stock & barcodes', 'box', 'store_inventory', 'Open Inventory'], ['flyers', 'Flyers & flyer map', 'mega', 'flyers', 'Open Flyers'], ['customers', 'Customers', 'user', 'store_billing', 'Open Billing']];
+
+  function custCard(c) {
+    if (!c || !c.today || !c.week) return '';
+    const steps = (T) => [['Customers', T.people, 'user'], ['Gave a number', T.numbers], ['Bill sent on WhatsApp', T.sent], ['Opened the bill', T.opened], ['Saved our contacts', T.contact], ['Joined-community tap', T.community], ['Google-review tap', T.review]];
+    const panel = (T, title) => { const mx = Math.max(1, T.people);
+      return `<div><div class="sx-h" style="margin-bottom:6px">${title}${T.returning_n ? ` <span class="sx-pill info">↺ ${T.returning_n} returning</span>` : ''}</div>${T.people ? steps(T).map(([l, v]) => `<div class="sx-hbar" data-tip="${esc(l)} · ${v} of ${T.people}"><span>${esc(l)}</span><div class="tr"><i style="width:${Math.max(v ? 4 : 0, Math.round(v / mx * 100))}%"></i></div><b>${v}</b></div>`).join('') : '<div class="sx-mut">No customers yet.</div>'}${T.declined ? `<div class="sx-mut" style="font-size:12px;margin-top:4px">${T.declined} declined to share a number.</div>` : ''}${T.friends ? `<div class="sx-mut" style="font-size:12px;margin-top:4px">${T.friends} joined through a friend’s link.</div>` : ''}</div>`; };
+    return `<div class="sx-card" style="grid-column:1/-1"><h3>${sxi('user')} Customer follow-through <small>number → WhatsApp bill → contacts → community → review</small></h3>
+      <div class="sx-grid" style="grid-template-columns:repeat(auto-fit,minmax(min(100%,330px),1fr))">${panel(c.today, 'Today')}${panel(c.week, 'Last 7 days')}</div></div>`;
+  }
+  function render(d) {
+    const t = d.today, y = t.yesterday_amount, pct = y > 0 ? Math.round((t.amount - y) / y * 100) : null;
+    const delta = pct === null ? '<span class="sx-delta">no sales yesterday</span>' : `<span class="sx-delta ${pct >= 0 ? 'up' : 'down'}">${pct >= 0 ? '▲' : '▼'} ${Math.abs(pct)}% vs yesterday (${inr(y)})</span>`;
+    const nrem = d.remarks_total, bad = Object.values(d.remarks).some((l) => l.some((r) => r.level === 'bad'));
+    const maxWeek = Math.max(1, ...d.week.map((w) => w.amount)), maxSz = Math.max(1, ...d.stock.sizes.map((z) => z.bottles)), maxP = Math.max(1, ...d.by_person.map((p) => p.amount));
+    const kp = (cls, ic, lb, v, sub) => `<div class="sx-kpi ${cls}"><div class="ic">${sxi(ic)}</div><div class="tx"><div class="lb">${lb}</div><b>${v}</b><small>${sub}</small></div></div>`;
+    $('root').innerHTML = `
+      <div class="sx-hero"><div class="sx-hero-row">
+        <div class="grow"><div class="k">Today's sales · ${esc(new Date(d.date + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' }))} · day changes at ${d.day_start} AM</div><div class="v">${inr(t.amount)}</div><div class="s">${delta}${t.old_pos_bills ? ` <span class="sx-delta" title="Bills made in the Old POS are counted here too">incl. Old POS · ${t.old_pos_bills} bill${t.old_pos_bills === 1 ? '' : 's'} · ${inr(t.old_pos_amount)}</span>` : ''}</div></div>
+        <div class="mini"><div><b>${t.bills}</b><span>bills</span></div><div><b>${t.ml}</b><span>ml sold</span></div><div><b>${inr(t.avg_ticket)}</b><span>avg ticket</span></div><div><b>${t.avg_ml}</b><span>avg ml / bill</span></div></div>
+        <div><span class="sx-delta ${nrem ? (bad ? 'down' : '') : 'up'}" style="font-size:13px;padding:6px 14px">${nrem ? nrem + ' remark' + (nrem > 1 ? 's' : '') + ' need a look' : '✓ all clear'}</span></div>
+      </div></div>
+      <div class="sx-kpis">
+        ${kp('blue', 'receipt', 'Bills today', t.bills, `${inr(t.cash)} cash · ${inr(t.online)} online`)}
+        ${kp('violet', 'ticket', 'Average ticket', inr(t.avg_ticket), t.discount ? inr(t.discount) + ' discount given' : 'no discount today')}
+        ${kp('orange', 'flask', 'ML sold today', t.ml + ' ml', t.testers_given ? t.testers_given + ' free tester(s)' : 'avg ' + t.avg_ml + ' ml per bill')}
+        ${kp('aqua', 'box', 'In stock now', d.stock.bottles + ' bottles', d.stock.products + ' perfumes · ' + d.stock.ml + ' ml')}
+        ${kp('blue', 'scan', 'Barcodes made', d.barcodes.made, `${d.barcodes.made_today} made today · ${d.barcodes.sold} sold`)}
+      </div>
+      <div class="sx-grid sx-dash">
+        <div class="sx-card c-week"><h3>${sxi('chart')} Last 7 days <small>sales in ₹</small></h3>
+          <div class="sx-bars" id="wk">${d.week.map((w, i) => { const now = i === d.week.length - 1, h = Math.max(2, Math.round(w.amount / maxWeek * 118)); return `<div class="col ${now ? 'now' : ''}" data-tip="${dayName(w.date)} ${w.date.slice(8)}/${w.date.slice(5, 7)} · ${inr(w.amount)} · ${w.bills} bill${w.bills === 1 ? '' : 's'}">${(now || w.amount === maxWeek) && w.amount ? `<span class="val">₹${short(w.amount)}</span>` : ''}<div class="bar" style="height:${h}px"></div><span class="day">${now ? 'Today' : dayName(w.date)}</span></div>`; }).join('')}</div>
+          <table class="sx-sr"><caption>Sales in the last 7 days</caption>${d.week.map((w) => `<tr><td>${w.date}</td><td>${w.amount}</td></tr>`).join('')}</table></div>
+        <div class="sx-card c-people"><h3>${sxi('user')} By salesperson today <small>${d.by_person.length || 'none'}</small></h3>
+          ${d.by_person.length ? d.by_person.map((p) => `<div class="sx-hbar" data-tip="${esc(p.name)} · ${p.bills} bills · ${p.ml} ml · avg ${inr(p.avg)}"><span style="display:flex;gap:8px;align-items:center;min-width:0">${sxAv(p.name)}<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.name)}</span></span><div class="tr"><i style="width:${Math.max(4, Math.round(p.amount / maxP * 100))}%"></i></div><b>${inr(p.amount)}</b></div>`).join('') : '<div class="sx-mut">No bills yet today.</div>'}</div>
+        ${custCard(d.customers)}
+        <div class="sx-card c-size"><h3>${sxi('box')} Stock by size <small>bottles for sale</small></h3>
+          ${d.stock.sizes.length ? `<div class="sx-bars" style="height:150px">${d.stock.sizes.map((z) => `<div class="col" data-tip="${z.ml} ml · ${z.bottles} bottles"><span class="val">${z.bottles}</span><div class="bar" style="height:${Math.max(4, Math.round(z.bottles / maxSz * 96))}px;background:var(--sx-aqua)"></div><span class="day">${z.ml} ml</span></div>`).join('')}</div>` : '<div class="sx-mut">No bottles in stock yet.</div>'}</div>
+        <div class="sx-card c-rem"><h3>${sxi('alert')} Remarks <small>${nrem ? nrem + ' to look at' : 'all clear'}</small></h3>
+          <div class="sx-grid" style="grid-template-columns:repeat(auto-fit,minmax(min(100%,330px),1fr))">${GROUPS.map(([k, label, ic, tab, btn]) => {
+            const L = d.remarks[k] || [], extra = (k === 'cleaning' && !d.store_registered) ? `<div class="sx-rem info">${sxi('info')}<span>The store is not registered for cleaning & pantry yet. ${go('store_cleaning', 'Register the store')}</span></div>` : '';
+            return `<div><div class="sx-h" style="margin-bottom:2px"><span style="color:var(--sx-accent);display:inline-flex;width:20px">${sxi(ic)}</span>${label} ${L.length ? `<span class="sx-pill ${L.some((r) => r.level === 'bad') ? 'bad' : 'warn'}">${L.length}</span>` : ''}<small>${go(tab, btn)}</small></div>
+              ${L.length ? L.map((r) => { const [i, c] = sxLevel(r.level); return `<div class="sx-rem ${c}">${sxi(i)}<span>${esc(r.text)}</span></div>`; }).join('') : (extra || `<div class="sx-clear">${sxi('ok')} All clear</div>`)}${L.length ? extra : ''}</div>`; }).join('')}</div></div>
+      </div>`;
+    $('subLine').textContent = 'Updated ' + new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) + ' · refreshes every minute';
+  }
+  async function load() {
+    try { render(await api.get('st_dash.get')); }
+    catch (e) { $('root').innerHTML = `<div class="sx-card"><div class="sx-msg bad">${sxi('xc')}<span>${esc(e.message)}</span></div></div>`; }
+  }
+  sxTips($('root')); load(); setInterval(() => { if (!document.hidden) load(); }, 60000);
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>

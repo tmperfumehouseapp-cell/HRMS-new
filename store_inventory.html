@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Store Inventory — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=260928b">
+<link rel="stylesheet" href="assets/css/store.css?v=6">
+<style>
+  .pane{display:none}.pane.on{display:block}
+  .prod .nm{display:flex;flex-direction:column;gap:4px;margin-bottom:8px}.prod .nm b{font-size:12px;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:2.5em}
+  .prod .mt{display:flex;gap:5px;align-items:center;flex-wrap:wrap;font-size:11px;color:var(--sx-mut);font-weight:700}
+  .prod .mt .sx-pill{padding:1px 8px;font-size:11px}
+  .bd-top{background:linear-gradient(135deg,var(--sx-accent),var(--sx-accent-d));color:#fff}.bd-rising{background:var(--sx-good-t);color:var(--sx-good)}.bd-new{background:var(--sx-blue-t);color:var(--sx-blue)}.bd-slow{background:#eef0f3;color:#6f7480}
+  @media (max-width:599px){.prod .nm b{min-height:0}}
+  .sx-grp{grid-column:1/-1;display:flex;align-items:center;gap:8px;font-size:12px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--sx-mut);margin:10px 0 0}.sx-grp:first-child{margin-top:0}.sx-grp b{color:var(--sx-ink)}.sx-grp i{flex:1;height:1px;background:var(--sx-line)}
+  .steps{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 12px}
+  .steps .st{display:flex;align-items:center;gap:8px;background:#fff;border-radius:16px;padding:8px 14px 8px 8px;font-size:13px;font-weight:700;box-shadow:inset 0 0 0 1.5px var(--sx-line);color:var(--sx-mut)}
+  .steps .st i{font-style:normal;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;background:#eef0f3;color:var(--sx-mut);font-size:12px;font-weight:800}
+  .steps .st.on{color:var(--sx-ink);box-shadow:inset 0 0 0 2px var(--sx-accent)}.steps .st.on i{background:var(--sx-accent);color:#fff}
+  .steps .st small{display:block;font-weight:600;font-size:11px;color:var(--sx-mut)}
+  /* tap-to-add sizes: tap a size to add one bottle-label; a small round badge shows how many; tap the badge to take one away; double-click a size to type a number */
+  .sz{display:grid;grid-template-columns:repeat(4,1fr);gap:5px}
+  .sz label{position:relative;display:block;--c:var(--sx-blue);--t:var(--sx-blue-t)}
+  .sz label.z10{--c:#12805a;--t:var(--sx-aqua-t)}.sz label.z20{--c:var(--sx-blue);--t:var(--sx-blue-t)}.sz label.z50{--c:var(--sx-violet);--t:var(--sx-violet-t)}.sz label.z100{--c:#c4521f;--t:var(--sx-orange-t)}
+  .sz .zc{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;height:38px;border-radius:11px;background:var(--t);color:var(--c);cursor:pointer;user-select:none;-webkit-user-select:none;touch-action:manipulation;transition:transform .07s,background .12s,color .12s}
+  .sz .zc b{font-size:14px;line-height:1;font-weight:800}.sz .zc i{font-style:normal;font-size:11px;font-weight:700;opacity:.8;line-height:1}
+  .sz .zc:hover{filter:brightness(.95)}.sz .zc:active{transform:scale(.93)}.sz .zc:focus-visible{outline:2px solid var(--c);outline-offset:1px}
+  .sz label.on .zc{background:var(--c);color:#fff;box-shadow:0 3px 8px color-mix(in srgb,var(--c) 40%,transparent)}
+  .sz input{display:none}.sz .pm{display:contents}
+  .sz .bdg{display:none;position:absolute;top:-7px;right:-6px;min-width:21px;height:21px;border-radius:11px;border:2px solid #fff;background:var(--sx-ink);color:#fff;font:800 11px/17px inherit;padding:0 5px;cursor:pointer;touch-action:manipulation}
+  .sz label.on .bdg{display:block}.sz .bdg:hover{background:var(--sx-bad)}
+  .sx-inv-list .prod{padding:9px 10px;border-radius:15px}
+  .sz.t{margin-top:7px;display:none}.sz.t label .zc{background:#fff4e0;color:#b45309}.sz.t label.on .zc{background:#b45309;color:#fff}
+  .showT .sz.t{display:grid}
+  @media (max-width:559px){.sz .zc{height:46px}.sz .zc b{font-size:16px}}
+  .log{max-height:min(52vh,520px);overflow:auto;font-size:12.5px;color:var(--sx-ink);margin-top:8px;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,210px),1fr));gap:5px;align-content:start}
+  .log>div{background:var(--sx-bg);border-radius:10px;padding:5px 9px;line-height:1.3}
+  .prev{display:flex;gap:14px;margin-top:10px;max-width:100%;overflow-x:auto;padding-bottom:4px}.prev .lbl{box-shadow:0 0 0 1px var(--sx-line);flex:0 0 auto;border-radius:3px}
+  .seg{display:inline-flex;border-radius:999px;overflow:hidden;box-shadow:inset 0 0 0 1.5px var(--sx-line);margin-bottom:12px;background:#fff}
+  .seg button{border:0;background:none;padding:9px 20px;font:inherit;font-weight:800;font-size:13px;cursor:pointer}.seg button.on{background:var(--sx-ink);color:#fff}
+  .sx-big{font-size:34px;font-weight:800;letter-spacing:-.02em}
+  .ihero .v{font-size:clamp(26px,3.6vw,44px)}
+  /* ---- printed labels: the design proven in the POS (all sizes scale from the 31 x 21 mm roll) ---- */
+  #printArea{display:none}
+  .lbl{box-sizing:border-box;overflow:hidden;display:flex;flex-direction:column;justify-content:space-between;text-align:center;background:#fff;color:#000;font-family:Arial,sans-serif;page-break-after:always;break-after:page}
+  .lbl .nm{font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.05;display:block;margin:0}
+  .lbl .mid{flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .lbl svg{width:100%;flex:1;min-height:0;display:block}
+  .lbl .code{font-weight:800;letter-spacing:.4px;line-height:1}
+  .lbl .dt{color:#000;font-weight:700;white-space:nowrap;line-height:1.1}
+  .prev .lbl{zoom:3}
+  @media print{body *{visibility:hidden}#printArea,#printArea *{visibility:visible}#printArea{display:block;position:absolute;left:0;top:0}.lbl:last-child{page-break-after:auto;break-after:auto}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><div><h1>Inventory</h1><div class="sub" style="font-size:12.5px;color:var(--muted);margin-top:2px">Make barcodes → print → stick → scan into stock</div></div></div>
+    <div class="content"><div class="sx-page">
+      <div id="alertBox"></div>
+      <div class="sx-hero ihero" style="padding:clamp(10px,1.4vw,16px) clamp(14px,2vw,24px)"><div class="sx-hero-row">
+        <div class="grow"><div class="k">In stock now</div><div class="v"><span id="stockBottles">–</span> <span style="font-size:.45em;opacity:.8;font-weight:700">bottles</span></div></div>
+        <div class="mini"><div><b id="stockProducts">–</b><span>perfumes</span></div><div><b id="stockTotal">–</b><span>for sale</span></div></div>
+      </div><div class="sx-szrow" id="szRow"></div></div>
+      <div class="steps" id="steps"><div class="st on" data-s="gen"><i>1</i><span>Make &amp; print<small>choose sizes, make barcodes, print labels</small></span></div><div class="st" data-s="stick"><i>2</i><span>Stick<small>label on each bottle</small></span></div><div class="st" data-s="scan"><i>3</i><span>Scan into inventory<small>scan each bottle: it joins stock</small></span></div></div>
+      <div class="sx-tabs" id="tabs"><button data-t="gen" class="on"><span id="ti1"></span>1 · Make &amp; print</button><button data-t="scan"><span id="ti2"></span>3 · Scan into inventory</button><button data-t="stock"><span id="ti3"></span>Stock</button><button data-t="plan">Order planner</button><button data-t="chain">Chains</button></div>
+
+      <!-- MAKE + PRINT (one step: after making, the labels are right there) -->
+      <div class="pane on" id="p-gen">
+        <div class="sx-card" id="labCard" style="display:none;margin-bottom:14px"><div class="sx-h"><span id="labTitle"></span><span style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap"><button class="sx-btn ghost" id="selAll">Select all</button><button class="sx-btn ghost" id="selNone">None</button><button class="sx-btn" id="btnPrint">Print selected</button></span></div><div id="labGroups"></div><div class="prev" id="labPrev"></div><div class="sx-mut" style="font-size:12px;margin-top:8px">Making barcodes does <b>not</b> add anything to stock. A bottle counts as inventory only when you <b>scan</b> its barcode in the Scan tab. Barcodes you don't use just stay unused: nothing is lost, and you can print any of them again from here (tick the ones you want).</div></div>
+        <div class="sx-card" style="margin-bottom:14px"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <input class="sx-in" id="q" placeholder="Search perfume…" style="flex:1;min-width:180px;width:auto">
+          <select class="sx-in" id="mkSort" style="width:auto;min-height:40px"><option value="best">Best sellers first</option><option value="az">A → Z</option></select>
+          <label style="font-size:13px;font-weight:700;display:flex;gap:6px;align-items:center"><input type="checkbox" id="tstOn"> Testers</label>
+          <button class="sx-btn ghost" id="btnSync">Sync from Shopify</button>
+        </div><div class="sx-mut" style="font-size:12px;margin-top:8px" id="cnt"></div><div style="margin-top:4px" id="syncNote"></div><div style="margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap" id="rankNote"></div></div>
+        <div class="sx-inv-list" id="prodList"><div class="prod sx-mut">Loading…</div></div>
+        <div class="sx-stick"><div class="sx-card" style="margin:0;display:flex;align-items:center;gap:10px;box-shadow:0 8px 28px rgba(20,22,26,.18)">
+          <div style="flex:1;min-width:0"><b id="planSum">Nothing chosen</b></div>
+          <button class="sx-btn ghost" id="btnClear">Clear</button><button class="sx-btn" id="btnMake" disabled>Make barcodes</button></div></div>
+        <div class="sx-card" style="margin-top:14px"><details class="sx-d" id="batchDet"><summary>Earlier batches · label size</summary>
+          <div id="batchList" style="margin-top:8px" class="sx-mut">…</div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;align-items:flex-end">
+            <label class="sx-f">Label width mm<input class="sx-in" id="lw" type="number" step="0.1" style="width:110px"></label>
+            <label class="sx-f">Height mm<input class="sx-in" id="lh" type="number" step="0.1" style="width:110px"></label>
+            <button class="sx-btn ghost" id="btnLsave">Save size</button></div>
+          <div class="sx-mut" style="font-size:12px;margin-top:6px">Taken from your POS label setting (31 × 21 mm if none). When printing: <b>Scale 100%</b>, margins <b>None</b>, paper = the label size.</div></details></div>
+      </div>
+
+      <!-- SCAN: receive new bottles OR audit the shelf, one input -->
+      <div class="pane" id="p-scan">
+        <div class="seg" id="mode"><button data-m="in" class="on">Receive into stock</button><button data-m="audit">Weekly audit</button></div>
+        <div class="sx-card"><div class="sx-scan" style="max-width:860px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 5v14M8 5v14M12 5v14M16 5v14M20 5v14"/></svg><input id="scanIn" inputmode="numeric" autocomplete="off" placeholder="Scan barcode"></div>
+          <div id="scanMsg"></div>
+          <div style="display:flex;align-items:baseline;gap:8px;margin-top:10px;flex-wrap:wrap"><span class="sx-big" id="scanCount">0</span><span class="sx-mut" id="scanWhat">scanned in this sitting</span>
+            <span style="flex:1"></span><button class="sx-btn ghost" id="btnAuditReset" style="display:none">Start over</button><button class="sx-btn" id="btnAudit" style="display:none">Check</button></div>
+          <div class="log" id="scanLog"></div><div id="auditRes" style="font-size:13px;margin-top:6px"></div></div>
+      </div>
+
+      <!-- CHAINS: added by hand (photo, MRP, price - no stock). One barcode per piece; a piece is stock only after its label is scanned in (tab 3). -->
+      <div class="pane" id="p-chain">
+        <div class="sx-card" style="margin-bottom:14px"><div class="sx-h"><span id="chFormTitle">Add a chain</span></div>
+          <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-top:8px">
+            <label class="sx-f" style="width:84px">Photo<span id="chPhotoBox" style="display:flex;align-items:center;justify-content:center;width:72px;height:72px;border:1.5px dashed var(--sx-line);border-radius:12px;overflow:hidden;cursor:pointer;background:var(--sx-card,#fff);font-size:12px;color:var(--sx-mut)">+ photo</span><input type="file" id="chPhoto" accept="image/*" style="display:none"></label>
+            <label class="sx-f" style="flex:1;min-width:170px">Name<input class="sx-in" id="chName" placeholder="e.g. Gold link chain" maxlength="120"></label>
+            <label class="sx-f" style="width:110px">MRP ₹<input class="sx-in" id="chMrp" type="number" min="0" inputmode="numeric"></label>
+            <label class="sx-f" style="width:130px">Price ₹ (optional)<input class="sx-in" id="chPrice" type="number" min="0" inputmode="numeric"></label>
+            <button class="sx-btn" id="chSave">Save chain</button><button class="sx-btn ghost" id="chCancel" style="display:none">Cancel</button></div>
+          <div class="sx-mut" style="font-size:12px;margin-top:8px">No stock is added here. Next: <b>Make labels</b> (one barcode per chain), print, stick, then scan them in <b>3 · Scan into inventory</b> — only scanned chains count as stock. At the counter you scan the chain’s sticker and the bill splits by itself: <b>50% of the total is the chain, 50% the perfumes</b> (never above the chain’s MRP) with a numbered GST invoice.</div>
+          <div id="chMsg"></div></div>
+        <div id="chList" class="sx-mut">Loading…</div>
+      </div>
+
+      <!-- STOCK -->
+      <div class="pane" id="p-plan"><div class="sx-card" id="planCard" style="margin-bottom:14px"></div></div>
+      <div class="pane" id="p-stock">
+        <div class="sx-kpis" id="stKpis"></div>
+        <div class="sx-card" id="sugCard" style="display:none;margin-bottom:14px"></div>
+        <div class="sx-card" id="ordCard" style="margin-bottom:14px"></div>
+        <div class="sx-card" style="margin-bottom:14px"><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+          <input class="sx-in" id="stQ" placeholder="Search perfume…" style="flex:1;min-width:170px;width:auto">
+          <select class="sx-in" id="stSort" style="width:auto"><option value="az">A → Z</option><option value="low">Lowest stock first</option><option value="ml">Most ml first</option><option value="sold">Selling fastest first</option></select>
+        </div><div class="sx-chips" id="stChips" style="margin-top:10px"></div></div>
+        <div class="sx-stock" id="stockGrid"><div class="sx-mut">Loading…</div></div>
+        <div id="stockBody" style="display:none"></div><span id="stockTotal2" style="display:none"></span>
+      </div>
+    </div></div>
+  </main>
+</div>
+<div id="printArea"></div>
+<script src="assets/js/config.js?v=4"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script src="assets/js/store_common.js?v=3"></script>
+<script src="assets/js/jsbarcode.code128.min.js"></script>
+<script>
+  guardPage();
+  renderSidebar('store_inventory');
+  const SIZES = [10, 20, 50, 100], SHOW = 40;      // draw only the first 30 perfumes until the owner searches: keeps phones fast
+  const note = (m, bad) => flash('alertBox', m, bad);
+  let products = [], plan = {}, label = { w: 31, h: 21 }, curBatch = [], showAll = false, onlyPlan = false;
+
+  $('tabs').addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    [...$('tabs').children].forEach((x) => x.classList.toggle('on', x === b));
+    document.querySelectorAll('.pane').forEach((p) => p.classList.toggle('on', p.id === 'p-' + b.dataset.t));
+    document.querySelectorAll('#steps .st').forEach((x) => x.classList.toggle('on', (b.dataset.t === 'scan' && x.dataset.s === 'scan') || (b.dataset.t !== 'scan' && x.dataset.s === 'gen')));
+    if (b.dataset.t === 'scan') scanner.focus();
+    if (b.dataset.t === 'chain' && (!chData || chDirty)) loadChains();
+    if (b.dataset.t === 'plan' && !planBusy) runPlan();      // the planner reads the latest sales and stock every time it is opened (default 600)
+    if (b.dataset.t === 'gen' && makeDirty) { makeDirty = false; renderProducts(); }           // scans changed the counts while this tab was hidden
+    if (b.dataset.t === 'stock') { if (stockData) { renderStock(); if (stockDirty || Date.now() - stockAt > 45000 || !sug || !ord) loadStock(true); } else loadStock(); }      // show what we have at once, refresh quietly only when something changed
+  });
+
+  // ---- make
+  const cleanTitle = (t) => String(t || '').replace(/\s*[|｜]\s*TMPerfumehouse.*$/i, '').trim();
+  const key = (pid, ml, kind) => pid + '|' + ml + '|' + kind;
+  const inputs = (p, kind) => SIZES.map((ml) => { const k = key(p.product_id, ml, kind), v = plan[k] || 0; return `<label class="z${ml}${v ? ' on' : ''}"><span class="zc" data-d="1" role="button" tabindex="0" title="Tap to add one ${kind === 'tester' ? 'tester ' : ''}${ml} ml" aria-label="Add ${ml} ml"><b>${kind === 'tester' ? 'T' + ml : ml}</b><i>ml</i></span><input type="number" min="0" max="200" inputmode="numeric" data-k="${k}" value="${v || ''}" placeholder="0"><button type="button" class="bdg" data-d="-1" title="Tap to take one away" aria-label="Remove one ${ml} ml">${v}</button></label>`; }).join('');
+  const BD = { top: ['bd-top', 'Top seller'], rising: ['bd-rising', '▲ Rising'], new: ['bd-new', 'New seller'], slow: ['bd-slow', 'Slow'] };
+  const GRP = [['top', 'Best sellers'], ['rn', 'Rising & new sellers'], ['steady', 'Selling'], ['slow', 'Slow'], ['none', 'Not selling (last 90 days)']];
+  const grpOf = (p) => p.badge === 'new' || p.badge === 'rising' ? 'rn' : p.badge;
+  function renderProducts() {
+    const q = $('q').value.trim().toLowerCase(), planned = new Set(Object.keys(plan).filter((k) => plan[k] > 0).map((k) => +k.split('|')[0]));
+    if (!planned.size) onlyPlan = false;
+    let all = products.filter((p) => (!q || p.title.toLowerCase().includes(q)) && (!onlyPlan || planned.has(p.product_id)));
+    const az = $('mkSort').value === 'az'; if (az) all = all.slice().sort((a, b) => cleanTitle(a.title).localeCompare(cleanTitle(b.title)));    // otherwise: the server's order = best sellers first
+    const list = (q || showAll) ? all : all.slice(0, SHOW);
+    $('cnt').innerHTML = onlyPlan ? `Showing the ${all.length} perfume${all.length === 1 ? '' : 's'} in your order · <a href="#" id="btnAllProds" style="color:var(--sx-accent-d);font-weight:800">show all perfumes</a>` : all.length + ' perfumes · ' + (az ? 'A → Z' : 'best sellers first') + ' · use the − / + buttons for how many bottles of each size';
+    $('prodList').classList.toggle('showT', $('tstOn').checked);
+    const card = (p) => { const b = BD[p.badge], sold = p.q30 ? `${p.q30} sold in 30 days` : (p.q90 ? 'slow lately' : 'no sales yet'),
+      tip = `Sold ${p.q30} in 30 days, ${p.q90} in 90 (this store ${p.src.store} · old POS ${p.src.pos} · online ${p.src.online})`;
+      return `<div class="prod" title="${esc(tip)}"><div class="nm"><b title="${esc(cleanTitle(p.title))}">${esc(cleanTitle(p.title))}</b><span class="mt">${b ? `<span class="sx-pill ${b[0]}">${p.badge === 'top' ? 'Top #' + p.rank : b[1]}</span>` : ''}<span>${sold}</span>${p.stock_sale ? `<span class="sx-pill good">${p.stock_sale} in stock</span>` : ''}</span></div><div class="sz">${inputs(p, 'sale')}</div><div class="sz t">${inputs(p, 'tester')}</div></div>`; };
+    let html = '', last = '';
+    list.forEach((p) => { const g = grpOf(p); if (!az && !q && g !== last) { last = g; html += `<div class="sx-grp"><b>${GRP.find((x) => x[0] === g)[1]}</b><span>${all.filter((x) => grpOf(x) === g).length}</span><i></i></div>`; } html += card(p); });
+    $('prodList').innerHTML = (list.length ? html : '<div class="prod sx-mut">No perfumes yet — press Sync.</div>')
+      + (list.length < all.length ? `<div class="prod" style="grid-column:1/-1"><button class="sx-btn ghost" style="width:100%" id="btnMore">Show all ${all.length} (or search above)</button></div>` : '');
+    updatePlan();
+  }
+  const planItems = () => Object.keys(plan).filter((k) => plan[k] > 0).map((k) => { const [pid, ml, kind] = k.split('|'); return { product_id: +pid, ml: +ml, kind, qty: plan[k] }; });
+  function updatePlan() {
+    const it = planItems(), n = it.reduce((a, x) => a + x.qty, 0), ml = it.filter((x) => x.kind === 'sale').reduce((a, x) => a + x.qty * x.ml, 0);
+    $('planSum').textContent = n ? `${n} barcodes · ${ml} ml` : 'Nothing chosen'; $('btnMake').disabled = !n;
+  }
+  $('prodList').addEventListener('input', (e) => { const k = e.target.dataset.k; if (!k) return; const v = Math.max(0, Math.min(200, parseInt(e.target.value, 10) || 0)); if (v) plan[k] = v; else delete plan[k]; const lb = e.target.closest('label'); if (lb) { lb.classList.toggle('on', v > 0); const bg = lb.querySelector('.bdg'); if (bg) bg.textContent = v; } updatePlan(); });
+  $('prodList').addEventListener('click', (e) => {
+    if (e.target.id === 'btnMore') { showAll = true; renderProducts(); return; }
+    const b = e.target.closest('[data-d]'); if (!b) return;
+    if (held) { held = false; return; }          // the press-and-hold already added them
+    step(b);
+  });
+  // quantities: tap = +1 · press and HOLD = keeps adding, faster and faster (20 labels in ~2 s) · double-click = type a number · badge / right-click = -1
+  let held = false, holdT = 0, holdI = 0;
+  function step(b, d) {
+    const inp = b.closest('label').querySelector('input'), v = Math.max(0, Math.min(200, (parseInt(inp.value, 10) || 0) + (d === undefined ? +b.dataset.d : d)));
+    inp.value = v || ''; inp.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  const stopHold = () => { clearTimeout(holdT); clearInterval(holdI); };
+  $('prodList').addEventListener('pointerdown', (e) => {
+    const b = e.target.closest('[data-d]'); if (!b || e.button) return; held = false; stopHold();
+    holdT = setTimeout(() => { held = true; let n = 0; step(b); holdI = setInterval(() => { step(b); if (++n === 10) { clearInterval(holdI); holdI = setInterval(() => step(b), 40); } }, 100); }, 380);
+  });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => $('prodList').addEventListener(ev, stopHold));
+  $('prodList').addEventListener('contextmenu', (e) => { const z = e.target.closest('.zc'); if (!z) return; e.preventDefault(); step(z, -1); });
+  $('prodList').addEventListener('dblclick', (e) => {      // type a bigger number: double-click a size
+    const z = e.target.closest('.zc'); if (!z) return; const inp = z.closest('label').querySelector('input'), r = prompt('How many labels of this size?', inp.value || '');
+    if (r === null) return; inp.value = Math.max(0, Math.min(200, parseInt(r, 10) || 0)) || ''; inp.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  $('prodList').addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target.classList && e.target.classList.contains('zc')) { e.preventDefault(); e.target.click(); } });
+  let qt = 0; $('q').addEventListener('input', () => { clearTimeout(qt); qt = setTimeout(renderProducts, 150); });      // wait for a pause in typing
+  $('tstOn').addEventListener('change', () => { $('prodList').classList.toggle('showT', $('tstOn').checked); });          // just a CSS switch: no redraw
+  $('btnClear').onclick = () => { plan = {}; onlyPlan = false; renderProducts(); };
+  $('cnt').addEventListener('click', (e) => { if (e.target.id === 'btnAllProds') { e.preventDefault(); onlyPlan = false; renderProducts(); } });
+  function showSync(sy) {
+    if (!sy || !sy.at) { $('syncNote').innerHTML = `<span class="sx-pill warn">${sxi('alert')} Never synced — press Sync</span>`; return; }
+    $('syncNote').innerHTML = sy.ok ? `<span class="sx-pill good">${sxi('ok')} Synced ${esc(sy.at.slice(0, 16))}</span> <span class="sx-mut" style="font-size:12px">${esc(sy.message)} Auto-syncs every morning.</span>` : `<span class="sx-pill bad">${sxi('xc')} Last sync failed (${esc(sy.at.slice(0, 16))})</span> <span style="color:var(--sx-bad);font-size:12px">${esc(sy.message)}</span>`;
+  }
+  function showRank(r) {
+    if (!r) return; const s = r.sources, tot = s.store + s.pos + s.online;
+    $('rankNote').innerHTML = `<span class="sx-pill ${tot ? 'info' : 'warn'}">${sxi('chart')} Ranking from ${tot ? 'real sales' : 'no sales yet'}</span><span class="sx-mut" style="font-size:12px">this store ${s.store} · old POS ${s.pos} · online ${s.online} bottles (90 days)${r.at ? ' · online updated ' + esc(r.at.slice(0, 16)) : ' · online not loaded yet'}${r.at && !r.ok ? ' <b style="color:var(--sx-bad)">(last try failed: ' + esc(r.message) + ')</b>' : ''}</span><button class="sx-btn ghost" id="btnRank" style="padding:4px 12px;font-size:12px">Update online sales</button>`;
+  }
+  $('rankNote').addEventListener('click', async (e) => { if (e.target.id !== 'btnRank') return; e.target.disabled = true; e.target.textContent = 'Reading Shopify orders…'; try { note((await api.post('st_inv.rank_sync', {})).message); await loadProducts(); } catch (err) { note(err.message, 1); showRank(rankInfo); } });
+  let rankInfo = null;
+  $('mkSort').value = localStorage.getItem('st_mk_sort') || 'best'; $('mkSort').addEventListener('change', () => { localStorage.setItem('st_mk_sort', $('mkSort').value); renderProducts(); });
+  async function loadProducts() { try { const d = await api.get('st_inv.products'); products = d.products; rankInfo = d.rank; showSync(d.sync); showRank(d.rank); renderProducts(); } catch (e) { note(e.message, 1); } }
+  $('btnSync').onclick = async () => { $('btnSync').disabled = true; try { note((await api.post('st_inv.sync', {})).message); await loadProducts(); } catch (e) { note(e.message, 1); } $('btnSync').disabled = false; };
+  $('btnMake').onclick = async () => {
+    const it = planItems(), n = it.reduce((a, x) => a + x.qty, 0);
+    if (!n || !confirm(`Make ${n} new barcodes?`)) return;
+    $('btnMake').disabled = true;
+    try { const d = await api.post('st_inv.generate', { items: it }); it.forEach((x) => { const p = products.find((q) => q.product_id === x.product_id); if (p) p.waiting = (p.waiting || 0) + x.qty; }); plan = {}; onlyPlan = false; stockDirty = true; renderProducts(); note(d.message); openBatch(d.batch, d.bottles); window.scrollTo({ top: 0, behavior: 'smooth' }); $('btnMake').disabled = false; }
+    catch (e) { note(e.message, 1); updatePlan(); }
+  };
+
+  // ---- print
+  async function loadBatches() {
+    try {
+      const d = await api.get('st_inv.batches');
+      $('batchList').innerHTML = d.batches.length ? d.batches.map((b) => `<div class="sx-li"><div class="g"><b>${esc(b.batch)}</b><small>${b.bottles} barcodes made · ${b.scanned} scanned into stock · ${b.unused} unused</small></div><button class="sx-btn ghost" data-b="${esc(b.batch)}">Open</button></div>`).join('') : 'No barcodes made yet.';
+    } catch (e) { $('batchList').textContent = e.message; }
+  }
+  $('batchDet').addEventListener('toggle', () => { if ($('batchDet').open) { loadBatches(); $('lw').value = label.w; $('lh').value = label.h; } });
+  $('batchList').addEventListener('click', (e) => { const b = e.target.closest('[data-b]'); if (b) { openBatch(b.dataset.b); window.scrollTo({ top: 0, behavior: 'smooth' }); } });
+  function labelNode(b) {
+    const k = label.h / 21, f = (s) => { const p = s.split('-'); return p[2] + '/' + p[1] + '/' + p[0].slice(2); };   // dd/mm/yy, short on purpose
+    const d = document.createElement('div'); d.className = 'lbl'; d.style.width = label.w + 'mm'; d.style.height = label.h + 'mm'; d.style.padding = `${0.6 * k}mm ${1.6 * k}mm ${0.5 * k}mm`;
+    // The label says ONLY the short perfume name (the part before " - … Inspired perfume"), big, and under it the size on its own line.
+    const short = (() => { let n = cleanTitle(b.title).replace(/\s*\d+\s*ml\b\.?/i, '').trim(); const m = n.split(/\s+[-–—]\s+/); if (m.length > 1 && /inspired|perfume|attar|edp|extrait|fragrance/i.test(m.slice(1).join(' '))) n = m[0].trim(); n = n.replace(/\s+inspired\s+(perfume|attar|fragrance)\s*$/i, '').trim(); return n || cleanTitle(b.title); })();
+    const nm = document.createElement('div'); nm.className = 'nm';
+    const n1 = document.createElement('div'); n1.textContent = short; n1.style.fontSize = Math.max(4.4, Math.min(7.4, 130 / Math.max(1, short.length))) * k + 'pt'; n1.style.lineHeight = '1.05'; n1.style.whiteSpace = 'nowrap';      // one line: ~130pt of text fit across a 31 mm label
+    const n2 = document.createElement('div'); n2.textContent = (b.kind === 'tester' ? 'TESTER · ' : '') + b.ml + '\u00a0ml'; n2.style.fontSize = 6 * k + 'pt'; n2.style.lineHeight = '1.05'; n2.style.fontWeight = '800';
+    nm.append(n1, n2); nm.style.overflow = 'visible';
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    JsBarcode(svg, b.code, { format: 'CODE128C', width: 3, height: 80, margin: 0, displayValue: false });      // 6 digits in Code 128-C = very few, very thick bars
+    svg.setAttribute('viewBox', '0 0 ' + svg.getAttribute('width').replace('px', '') + ' 80'); svg.removeAttribute('width'); svg.removeAttribute('height');
+    svg.setAttribute('preserveAspectRatio', 'none'); svg.style.height = svg.style.maxHeight = (label.h * 0.52) + 'mm'; svg.style.flex = 'none';      // the barcode keeps exactly its size; only the text around it grows
+    const code = document.createElement('div'); code.className = 'code'; code.style.fontSize = Math.min(20, 6 * k) + 'pt'; code.textContent = b.code;
+    const mid = document.createElement('div'); mid.className = 'mid'; mid.append(svg, code);
+    const dt = document.createElement('div'); dt.className = 'dt'; dt.style.fontSize = Math.min(14, 4.5 * k) + 'pt'; dt.textContent = 'MFG ' + f(b.mfg_date) + ' · EXP ' + f(b.exp_date);
+    d.append(nm, mid, dt); return d;
+  }
+  let sel = new Set(), curBatchName = '';
+  function labGroups() { const g = {}; curBatch.forEach((b) => { const k = b.title + '|' + b.ml + '|' + b.kind; (g[k] = g[k] || { b, list: [] }).list.push(b); }); return Object.values(g); }
+  function renderLabs() {
+    const G = labGroups();
+    $('labGroups').innerHTML = G.map((x, i) => {
+      const n = x.list.length, printed = x.list.filter((b) => b.print_count > 0).length, used = x.list.filter((b) => b.status !== 'generated').length;
+      return `<div class="sx-li lab-grp" style="align-items:flex-start"><input type="checkbox" data-g="${i}" style="margin-top:3px"><div class="g"><b>${esc(cleanTitle(x.b.title))} · ${x.b.kind === 'tester' ? 'tester ' : ''}${x.b.ml} ml</b><small>${n} label${n === 1 ? '' : 's'} · ${printed ? printed + ' printed before' : 'not printed yet'}${used ? ' · ' + used + ' already scanned into stock' : ''}</small>
+        <details class="sx-d" style="margin-top:4px"><summary style="font-size:12px;color:var(--sx-mut)">Pick single labels</summary><div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">${x.list.map((b) => `<label class="sx-pill ${b.status === 'generated' ? '' : 'good'}" style="cursor:pointer"><input type="checkbox" data-c="${b.code}"> ${b.code}${b.print_count ? ' · printed ' + b.print_count + '×' : ''}</label>`).join('')}</div></details></div></div>`; }).join('');
+    syncSel();
+  }
+  function syncSel() {
+    const G = labGroups();
+    $('labGroups').querySelectorAll('[data-g]').forEach((c) => { const l = G[+c.dataset.g].list, k = l.filter((b) => sel.has(b.code)).length; c.checked = k === l.length; c.indeterminate = k > 0 && k < l.length; });
+    $('labGroups').querySelectorAll('[data-c]').forEach((c) => { c.checked = sel.has(c.dataset.c); });
+    $('btnPrint').textContent = sel.size ? `Print selected (${sel.size})` : 'Print selected'; $('btnPrint').disabled = !sel.size;
+    $('labPrev').innerHTML = ''; curBatch.filter((b) => sel.has(b.code)).slice(0, 2).forEach((b) => $('labPrev').appendChild(labelNode(b)));
+  }
+  $('labGroups').addEventListener('change', (e) => {
+    const g = e.target.closest('[data-g]'), c = e.target.closest('[data-c]');
+    if (g) labGroups()[+g.dataset.g].list.forEach((b) => (g.checked ? sel.add(b.code) : sel.delete(b.code)));
+    else if (c) (c.checked ? sel.add(c.dataset.c) : sel.delete(c.dataset.c));
+    syncSel();
+  });
+  $('selAll').onclick = () => { curBatch.forEach((b) => sel.add(b.code)); syncSel(); }; $('selNone').onclick = () => { sel.clear(); syncSel(); };
+  async function openBatch(batch, pre) {
+    try {
+      curBatch = pre || (await api.get('st_inv.batch', { batch })).bottles; curBatchName = batch;
+      sel = new Set(curBatch.filter((b) => !b.print_count).map((b) => b.code));      // new batch: everything not printed yet is ticked; an old one: you choose
+      $('labTitle').textContent = `${batch} · ${curBatch.length} barcode${curBatch.length === 1 ? '' : 's'}`;
+      $('labCard').style.display = ''; renderLabs();
+    } catch (e) { note(e.message, 1); }
+  }
+  $('btnPrint').onclick = async () => {
+    const codes = [...sel]; if (!codes.length) return;
+    const pa = $('printArea'); pa.innerHTML = ''; curBatch.filter((b) => sel.has(b.code)).forEach((b) => pa.appendChild(labelNode(b)));
+    let st = $('pgStyle'); if (!st) { st = document.createElement('style'); st.id = 'pgStyle'; document.head.appendChild(st); }
+    st.textContent = `@page{size:${label.w}mm ${label.h}mm;margin:0}`;
+    await new Promise((r) => setTimeout(r, 100)); window.print();
+    try { await api.post('st_inv.mark_printed', { codes }); curBatch.forEach((b) => { if (sel.has(b.code)) b.print_count = (b.print_count || 0) + 1; }); sel.clear(); renderLabs(); } catch (e) { /* marking is a note only */ }
+  };
+  async function loadLabel() { try { const d = await api.get('st_set.get'); label = { w: d.label_w, h: d.label_h }; } catch (e) {} }
+  $('btnLsave').onclick = async () => { try { await api.post('st_set.save', { label_w: +$('lw').value, label_h: +$('lh').value }); await loadLabel(); note('Label size saved.'); } catch (e) { note(e.message, 1); } };
+
+  // ---- scan: receive or audit (same box)
+  let mode = 'in', scanned = 0, audit = [];
+  $('mode').addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return; mode = b.dataset.m;
+    [...$('mode').children].forEach((x) => x.classList.toggle('on', x === b));
+    const au = mode === 'audit'; $('btnAudit').style.display = $('btnAuditReset').style.display = au ? '' : 'none';
+    $('scanWhat').textContent = au ? 'on the shelf — press Check at the end' : 'scanned in this sitting';
+    $('scanCount').textContent = au ? audit.length : scanned; $('scanMsg').innerHTML = ''; $('auditRes').innerHTML = ''; scanner.focus();
+  });
+  // scans made within ~35 ms of each other go to the server as ONE request; each scan still gets its own beep and message
+  let sq = [], sqT = 0;
+  const scanIn = (code) => new Promise((res) => { sq.push({ code, res }); clearTimeout(sqT); sqT = setTimeout(flushScans, 35); });
+  async function flushScans() {
+    const batch = sq; sq = []; if (!batch.length) return;
+    try {
+      const d = await api.post('st_inv.scan_in_many', { codes: batch.map((x) => x.code) }), by = {}; (d.results || []).forEach((r) => { by[r.code] = r; });
+      batch.forEach((x) => x.res(showScan(x.code, by[x.code])));
+    } catch (err) { $('scanMsg').innerHTML = `<div class="sx-msg bad">${sxi('xc')}<span>${esc(err.message)}</span></div>`; batch.forEach((x) => x.res(false)); }
+  }
+  function showScan(code, r) {
+    if (!r) return true;                                  // the same code twice in one burst: the first one already answered
+    if (r.ok) {
+      scanned++; $('scanCount').textContent = scanned; $('scanMsg').innerHTML = `<div class="sx-msg ok">${sxi('ok')}<span>${esc(r.message)}</span></div>`;
+      const lg = $('scanLog'); lg.insertAdjacentHTML('afterbegin', `<div>${esc(code)} · ${esc(r.bottle.title)}${r.bottle.is_chain ? '' : ' ' + r.bottle.ml + ' ml'}${r.bottle.kind === 'tester' ? ' (tester)' : ''}</div>`); if (r.bottle.is_chain) chDirty = true; while (lg.children.length > 150) lg.lastElementChild.remove();
+      const p = products.find((q) => q.product_id === r.bottle.product_id);      // the Make list and the Stock board are updated here, nothing to refresh
+      if (p) { if (r.bottle.kind === 'tester') p.stock_tester = (p.stock_tester || 0) + 1; else p.stock_sale = (p.stock_sale || 0) + 1; if (p.waiting > 0) p.waiting--; }
+      makeDirty = true; stockDirty = true; return true;
+    }
+    $('scanMsg').innerHTML = `<div class="sx-msg ${r.bad ? 'bad' : 'warn'}">${sxi(r.bad ? 'xc' : 'alert')}<span>${esc(r.message)}</span></div>`; return false;
+  }
+  const scanner = scanBox($('scanIn'), async (code) => {
+    if (mode === 'audit') { if (!audit.includes(code)) audit.push(code); $('scanCount').textContent = audit.length; return true; }
+    return scanIn(code);
+  }, { parallel: true });
+  $('btnAuditReset').onclick = () => { audit = []; $('scanCount').textContent = 0; $('auditRes').innerHTML = ''; $('scanMsg').innerHTML = ''; scanner.focus(); };
+  $('btnAudit').onclick = async () => {
+    try {
+      const d = await api.post('st_inv.audit', { codes: audit });
+      $('scanMsg').innerHTML = `<div class="sx-msg ${d.missing.length || d.not_valid.length ? 'warn' : 'ok'}">${sxi(d.missing.length || d.not_valid.length ? 'alert' : 'ok')}<span>${d.ok} correct · ${d.missing.length} missing · ${d.not_valid.length} not valid</span></div>`;
+      $('auditRes').innerHTML = (d.not_valid.length ? '<b>Not valid</b>' + d.not_valid.map((x) => `<div>${esc(x.code)} — ${esc(x.why)}</div>`).join('') : '') + (d.missing.length ? '<b>Missing from the shelf</b>' + d.missing.map((x) => `<div>${esc(x.code)} — ${esc(x.title)} ${x.ml} ml${x.kind === 'tester' ? ' (tester)' : ''}</div>`).join('') : '');
+    } catch (e) { note(e.message, 1); }
+  };
+
+  // ---- stock board
+  let stockData = null, stFilter = 'all';
+  const LOW = 2;                                                                        // 2 bottles or fewer = "low"
+  const stState = (p) => p.bottles === 0 ? 'out' : p.bottles <= LOW ? 'low' : 'good';
+  const stEsc = (t) => esc(cleanTitle(t));
+  function renderStock() {
+    if (!stockData) return;
+    const P = stockData.products || [], q = $('stQ').value.trim().toLowerCase();
+    const cnt = { all: P.length, low: P.filter((p) => stState(p) === 'low').length, out: P.filter((p) => stState(p) === 'out').length, tst: P.filter((p) => p.testers > 0).length };
+    const sumBottles = P.reduce((a, p) => a + p.bottles, 0), inStockProducts = P.filter((p) => p.bottles > 0).length, testers = P.reduce((a, p) => a + p.testers, 0), sold7 = P.reduce((a, p) => a + p.sold7, 0);
+    const kp = (cls, ic, lb, v, sub) => `<div class="sx-kpi ${cls}"><div class="ic">${sxi(ic)}</div><div class="tx"><div class="lb">${lb}</div><b>${v}</b><small>${sub}</small></div></div>`;
+    $('stKpis').innerHTML = kp('aqua', 'box', 'Perfumes in stock', inStockProducts, sumBottles + ' bottles · ' + stockData.total_ml + ' ml')
+      + kp('orange', 'alert', 'Low stock', cnt.low, 'only ' + LOW + ' bottles or fewer') + kp('violet', 'xc', 'Out of stock', cnt.out, 'nothing left to sell')
+      + kp('blue', 'receipt', 'Sold this week', sold7, 'bottles') + kp('orange', 'flask', 'Testers', testers, 'for customers to try');
+    const chip = (k, label) => `<button data-f="${k}" class="${stFilter === k ? 'on' : ''}">${label} <b>${cnt[k]}</b></button>`;
+    $('stChips').innerHTML = chip('all', 'All') + chip('low', 'Low') + chip('out', 'Out of stock') + chip('tst', 'Has testers');
+    let list = P.filter((p) => (!q || p.title.toLowerCase().includes(q)) && (stFilter === 'all' || (stFilter === 'low' && stState(p) === 'low') || (stFilter === 'out' && stState(p) === 'out') || (stFilter === 'tst' && p.testers > 0)));
+    const so = $('stSort').value;
+    list = list.slice().sort((a, b) => so === 'low' ? a.bottles - b.bottles || a.title.localeCompare(b.title) : so === 'ml' ? b.ml - a.ml : so === 'sold' ? b.sold7 - a.sold7 : a.title.localeCompare(b.title));
+    $('stockGrid').innerHTML = list.length ? list.map((p) => {
+      const stt = stState(p), tot = Math.max(1, p.ml), pill = stt === 'out' ? `<span class="sx-pill bad">${sxi('xc')} Out of stock</span>` : stt === 'low' ? `<span class="sx-pill warn">${sxi('alert')} Low</span>` : `<span class="sx-pill good">${sxi('ok')} In stock</span>`;
+      const mix = [10, 20, 50, 100].filter((ml) => p.sizes[ml] > 0).map((ml) => `<i class="m${ml}" style="flex:${p.sizes[ml] * ml} 1 0" data-tip="${ml} ml × ${p.sizes[ml]} = ${p.sizes[ml] * ml} ml"></i>`).join('');
+      const per = p.sold7 / 7, left = p.bottles > 0 && p.sold7 > 0 ? Math.round(p.bottles / per) : null;
+      return `<div class="stk ${stt}"><div class="top"><div class="nm" title="${stEsc(p.title)}">${stEsc(p.title)}</div>${pill}</div>
+        <div class="big"><b>${p.bottles}</b><span>bottle${p.bottles === 1 ? '' : 's'} · ${p.ml} ml</span></div>
+        <div class="mix" role="img" aria-label="Stock mix by size">${mix}</div>
+        <div class="leg">${[10, 20, 50, 100].map((ml) => `<span class="l${ml} ${p.sizes[ml] ? '' : 'l0'}"><em>${ml}</em>× ${p.sizes[ml] || 0}</span>`).join('')}</div>
+        <div class="meta"><span>${p.sold7 ? 'Sold ' + p.sold7 + ' this week' : 'No sales this week'}</span>${left !== null ? `<span>· ≈ ${left} day${left === 1 ? '' : 's'} left</span>` : ''}${p.testers ? `<span class="sx-pill warn">${p.testers} tester${p.testers > 1 ? 's' : ''}</span>` : ''}</div>
+        <div class="act"><button data-make="${esc(cleanTitle(p.title))}">Make more barcodes</button></div></div>`; }).join('') : '<div class="sx-card sx-mut">Nothing matches. Try another filter or search.</div>';
+  }
+  let stockAt = 0, stockDirty = false, makeDirty = false;
+  async function loadStock(silent, bannerOnly) {
+    try {
+      stockDirty = false; const d = await api.get('st_inv.stock'); stockData = d; stockAt = Date.now();
+      $('stockTotal').textContent = d.total_ml + ' ml';
+      const sale = d.rows.filter((r) => r.kind === 'sale' && r.in_stock > 0), by = {}; sale.forEach((r) => { by[r.ml] = (by[r.ml] || 0) + r.in_stock; });
+      const tst = d.rows.filter((r) => r.kind === 'tester').reduce((a, r) => a + r.in_stock, 0);
+      $('stockBottles').textContent = sale.reduce((a, r) => a + r.in_stock, 0); $('stockProducts').textContent = new Set(sale.map((r) => r.product_id)).size;
+      $('szRow').innerHTML = [10, 20, 50, 100].map((ml) => `<span class="sx-szpill s${ml}"><i>${ml} ml</i><b>× ${by[ml] || 0}</b></span>`).join('') + `<span class="sx-szpill t"><i>Testers</i><b>× ${tst}</b></span>`;
+      if (bannerOnly) return;      // page open: only the top numbers; the cards and suggestions load when the Stock tab is opened
+      renderStock(); if (!silent || !sug || !ord) { loadSuggest(); loadOrder(); } else { loadSuggest(); }
+    } catch (e) { if (!silent) note(e.message, 1); }
+  }
+
+  // ---- Order planner: type how many bottles of EACH size -> one list (retail store only: old POS + new POS). Every line has + / − per size, a perfume can be added or removed, then "Create order".
+  const PL_SIZES = [10, 20, 50, 100];
+  let opl = null, plRows = [], plCarry = [], planIn = { sizes: { 10: 0, 20: 0, 50: 600, 100: 0 }, days: 10 }, planBusy = false, plMore = false;
+  const stX = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  let lastMemo = null;      // the order that was just placed (kept so its memo can be downloaded)
+  const loadScript = (ready, url) => ready() ? Promise.resolve() : new Promise((res, rej) => { const el = document.createElement('script'); el.src = url; el.onload = res; el.onerror = () => rej(new Error('Could not load the file maker. Check the internet and try again.')); document.head.appendChild(el); });
+  const fmtMemoDate = (d) => { const x = new Date(String(d || '').replace(' ', 'T')); return isNaN(x) ? String(d || '') : x.toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }); };
+  function memoFromList() {      // the list on the screen, before it is placed
+    const lines = {};
+    const add = (t, ml, q) => { if (q > 0) { const k = t + '|' + ml; lines[k] = lines[k] || { title: cleanTitle(t), ml, qty: 0 }; lines[k].qty += q; } };
+    plCarry.forEach((c) => add(c.title, c.ml, c.qty));
+    plRows.forEach((r) => plSz().forEach((m) => add(r.title, m, (r.qty_by && r.qty_by[m]) || 0)));
+    return { no: '', by: '', at: new Date().toISOString(), lines: Object.values(lines), placed: false };
+  }
+  function memoTable(m) {
+    const L = m.lines.slice().sort((a, b) => a.title.localeCompare(b.title) || a.ml - b.ml), by = {}; let tb = 0, tm = 0;
+    L.forEach((l) => { by[l.ml] = (by[l.ml] || 0) + l.qty; tb += l.qty; tm += l.qty * l.ml; });
+    return { L, by, tb, tm };
+  }
+  async function memoXlsx(m) {
+    await loadScript(() => window.XLSX, 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
+    const t = memoTable(m), rows = [['ORDER MEMO'], ['Order no.', m.placed ? '#' + m.no : 'Not placed yet'], ['Placed by', m.by || ''], ['Date', fmtMemoDate(m.at)], [], ['#', 'Perfume', 'Size (ml)', 'Bottles', 'Volume (ml)']];
+    t.L.forEach((l, i) => rows.push([i + 1, l.title, l.ml, l.qty, l.qty * l.ml]));
+    rows.push([], ['', 'TOTAL', '', t.tb, t.tm]); Object.keys(t.by).sort((a, b) => a - b).forEach((ml) => rows.push(['', ml + ' ml bottles', '', t.by[ml], t.by[ml] * ml]));
+    const ws = XLSX.utils.aoa_to_sheet(rows); ws['!cols'] = [{ wch: 6 }, { wch: 42 }, { wch: 10 }, { wch: 10 }, { wch: 12 }];
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Order memo'); XLSX.writeFile(wb, 'order-memo-' + (m.placed ? m.no : 'draft') + '.xlsx');
+  }
+  async function memoPdf(m) {
+    await loadScript(() => window.jspdf && window.jspdf.jsPDF, 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+    await loadScript(() => window.jspdf && window.jspdf.jsPDF.API && window.jspdf.jsPDF.API.autoTable, 'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js');
+    const doc = new window.jspdf.jsPDF({ unit: 'pt', format: 'a4' }), t = memoTable(m);
+    doc.setFontSize(18); doc.text('ORDER MEMO', 40, 48); doc.setFontSize(10);
+    doc.text('Order no.: ' + (m.placed ? '#' + m.no : 'not placed yet'), 40, 68); doc.text('Placed by: ' + (m.by || '-'), 40, 82); doc.text('Date: ' + fmtMemoDate(m.at), 40, 96);
+    doc.autoTable({ startY: 112, head: [['#', 'Perfume', 'Size (ml)', 'Bottles', 'Volume (ml)']], body: t.L.map((l, i) => [i + 1, l.title, l.ml, l.qty, l.qty * l.ml]), foot: [['', 'TOTAL', '', t.tb, t.tm]].concat(Object.keys(t.by).sort((a, b) => a - b).map((ml) => ['', ml + ' ml bottles', '', t.by[ml], t.by[ml] * ml])), styles: { fontSize: 9 }, headStyles: { fillColor: [31, 41, 55] }, footStyles: { fillColor: [240, 240, 240], textColor: 20 }, columnStyles: { 0: { cellWidth: 28 }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' } }, didParseCell: (d) => { if (d.section !== 'body' && [2, 3, 4].includes(d.column.index)) d.cell.styles.halign = 'right'; } });
+    doc.save('order-memo-' + (m.placed ? m.no : 'draft') + '.pdf');
+  }
+  const plSz = () => { if (!opl || !opl.sizes) return []; const set = new Set(Object.keys(opl.sizes).map(Number)); (opl.pending || []).forEach((x) => set.add(+x.ml)); return [...set].sort((a, b) => a - b); };
+  const plPendSum = (ml) => plRows.reduce((a, r) => a + ((r.pend && r.pend[ml]) || 0), 0);
+  const plSum = (ml) => plRows.reduce((a, r) => a + ((r.qty_by && r.qty_by[ml]) || 0), 0);
+  const plCSum = () => plCarry.reduce((a, r) => a + (r.qty || 0), 0);
+  function renderPlan() {
+    const showAll = plMore || planIn.sizes[10] > 0 || planIn.sizes[100] > 0, shown = showAll ? PL_SIZES : [20, 50];
+    const sizeIn = shown.map((m) => `<label class="sx-f" style="width:104px">${m} ml bottles<input class="sx-in" data-plsz="${m}" type="number" min="0" max="5000" value="${planIn.sizes[m] || 0}"></label>`).join('') + (showAll ? '' : '<button class="sx-btn ghost" id="plMoreBtn" type="button" style="min-height:34px">+ 10 / 100 ml</button>');
+    let h = `<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end"><div style="flex:1 1 100%"><b style="font-size:16px">Order planner</b><div style="font-size:13px;margin-top:4px"><b>1.</b> Type how many bottles of each size you want to order &nbsp; <b>2.</b> Check the list and change it with + / − &nbsp; <b>3.</b> Press <b>Create order</b>. That is all: one order, one click.</div><div class="sx-mut" style="font-size:12px">It uses the retail store's sales of the last 30 days (old POS and new POS, all sizes) and your stock. Online sales are not used.</div></div>
+      ${sizeIn}<label class="sx-f" style="width:120px">Plan for (days)<input class="sx-in" id="plDays" type="number" min="3" max="30" value="${planIn.days}"></label>
+      <button class="sx-btn" id="plGo" ${planBusy ? 'disabled' : ''}>${planBusy ? 'Reading sales…' : 'Make my order list'}</button></div>`;
+    if (opl) {
+      const P = opl, src = P.sizes ? (P.sources || {}) : {}, SZ = plSz();
+      h += `<div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:12px 0 6px">${SZ.map((m) => { const t = plSum(m), pd = plPendSum(m), want = P.sizes[m], d = want ? (t - pd) - want : 0; return `<span style="font-size:15px"><b>${m} ml</b>: <b>${t}</b>${pd ? ` <span class="sx-pill warn">incl. ${pd} pending</span>` : ''}${want ? ` <span class="sx-mut">(you typed ${want})</span>` : ''}${d ? ` <span class="sx-pill ${d > 0 ? 'warn' : 'info'}">${d > 0 ? '+' : ''}${d}</span>` : ''}</span>`; }).join('')}<span><b>${plRows.length}</b> perfumes</span>${P.urgent ? `<span class="sx-pill bad">${P.urgent} out or almost out</span>` : ''}</div>`;
+      h += `<div class="sx-mut" style="font-size:12px;margin-bottom:8px">Sales read (30 days): new POS ${src.new_pos_bottles || 0} bottles · old POS ${src.old_pos_bottles || 0} bottles${src.old_pos_error ? ' · ' + stX(src.old_pos_error) : ''}${src.old_pos_no_size_bottles ? ' · ' + src.old_pos_no_size_bottles + ' old POS bottles skipped (no size in the name)' : ''}</div>`;
+      const pendAll = (P.pending || []).reduce((a, x) => a + x.remaining, 0);
+      if (pendAll) h += `<div class="sx-mut" style="font-size:12.5px;margin-bottom:8px">${stX((P.on_the_way || []).map((o) => 'Order #' + o.order_id + ' by ' + (o.ordered_by || '?') + ' (' + String(o.ordered_at || '').slice(0, 10) + '): ' + o.pending + ' still pending').join(' · '))}. These pending bottles are already inside the list below, marked <span class="sx-pill warn">pending</span>. Creating this order closes the old one. Press ✕ on a line only if you no longer want it.</div>`;
+      h += `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;align-items:center"><input class="sx-in" id="plAddIn" list="plAddList" placeholder="Add a perfume…" style="flex:1;min-width:180px;max-width:320px"><datalist id="plAddList">${(typeof products !== 'undefined' ? products : []).map((p) => `<option value="${stX(cleanTitle(p.title))}"></option>`).join('')}</datalist><button class="sx-btn ghost" id="plAdd">Add</button><span style="flex:1"></span><button class="sx-btn" id="plCreate">Create order (${SZ.reduce((a, m) => a + plSum(m), 0) + plCSum()} bottles)</button></div>`;
+      if (!plRows.length) h += '<div class="sx-clear">Nothing sold in the last 30 days, so there is nothing to base an order on. You can still add perfumes above.</div>';
+      else h += `<div style="overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px;min-width:${560 + SZ.length * 120}px"><thead><tr style="text-align:left;color:var(--sx-mut);vertical-align:bottom"><th style="padding:6px 4px">#</th><th>Perfume</th>${SZ.map((m) => `<th style="text-align:center">ORDER ${m} ml</th>`).join('')}<th>Sales · ml per day<div style="font-weight:400;font-size:11px">last 5 / 10 / 20 / 30 days</div></th><th>Stock now<div style="font-weight:400;font-size:11px">ml, all sizes</div></th><th>Days left</th></tr></thead><tbody>${plRows.map((r, i) => `<tr style="border-top:1px solid var(--sx-line,#e5e5e5)"><td style="padding:6px 4px">${i + 1}</td><td><button class="sx-btn ghost" data-prm="${i}" style="padding:0 7px;min-height:26px;margin-right:6px" aria-label="remove">✕</button><b>${stX(cleanTitle(r.title))}</b> ${r.priority === 'urgent' ? '<span class="sx-pill bad">urgent</span>' : r.priority === 'soon' ? '<span class="sx-pill warn">soon</span>' : ''}${r.manual ? ' <span class="sx-pill info">added</span>' : ''}${r.fromPending ? ' <span class="sx-pill warn">pending only</span>' : ''}</td>${SZ.map((m) => `<td style="text-align:center;white-space:nowrap"><button class="sx-btn ghost" data-pq="${i}|${m}|-1" style="padding:2px 9px;min-height:30px" aria-label="minus 1">−</button> <input class="sx-in" data-pi="${i}|${m}" type="number" min="0" max="5000" value="${(r.qty_by && r.qty_by[m]) || 0}" style="width:58px;min-height:30px;text-align:center;padding:2px 4px"> <button class="sx-btn ghost" data-pq="${i}|${m}|1" style="padding:2px 9px;min-height:30px" aria-label="plus 1">+</button>${r.pend && r.pend[m] ? `<div style="font-size:11px;color:#b45309">incl. ${r.pend[m]} pending</div>` : ''}</td>`).join('')}<td style="white-space:nowrap">${r.win ? `<b>${r.win[5].per_day}</b> / <b>${r.win[10].per_day}</b> / <b>${r.win[20].per_day}</b> / <b>${r.win[30].per_day}</b><div class="sx-mut" style="font-size:11px">30 days total: ${r.win[30].ml} ml</div>` : '–'}</td><td>${r.stock_ml == null ? '–' : r.stock_ml}</td><td>${r.days_left == null ? '–' : r.days_left}</td></tr>`).join('')}</tbody></table></div><div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap"><button class="sx-btn" id="plXlsx">Download Excel</button><button class="sx-btn" id="plPdf">Download PDF</button><button class="sx-btn ghost" id="plCsv">CSV</button><button class="sx-btn ghost" id="plCopy">Copy the list</button></div>`;
+      if ((src.old_pos_unmatched || []).length) h += `<div class="sx-mut" style="font-size:12px;margin-top:8px">Old POS lines I could not match to a perfume (not counted): ${src.old_pos_unmatched.map((u) => stX(u.title) + ' ×' + u.qty).join(', ')}</div>`;
+      h += `<div class="sx-mut" style="font-size:12px;margin-top:8px">${stX(P.method)} The perfumes are chosen once from all the ml of the order, then each size is shared over them, so every size adds up to the number you typed. The sold columns are in total ml (all sizes), so you can see how much you really sell per day.</div>`;
+    }
+    if (!opl && lastMemo) { const t = memoTable(lastMemo); h += `<div style="border:2px solid #157a3c;border-radius:12px;padding:12px 14px;margin-top:12px"><b style="font-size:15px;color:#157a3c">Order ${lastMemo.placed ? '#' + lastMemo.no : ''} placed ✓</b><div class="sx-mut" style="font-size:12.5px;margin:2px 0 8px">${t.tb} bottles · ${t.L.length} lines · ${stX(lastMemo.by || '')} · ${stX(fmtMemoDate(lastMemo.at))}</div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="sx-btn" id="memoXlsx">Download Excel</button><button class="sx-btn" id="memoPdf">Download PDF</button></div></div>`; }
+    $('planCard').innerHTML = h;
+  }
+  async function runPlan() {
+    const sizes = { 10: 0, 20: 0, 50: 0, 100: 0 }; document.querySelectorAll('[data-plsz]').forEach((el) => { sizes[el.dataset.plsz] = Math.max(0, Math.min(5000, Math.round(+el.value || 0))); });
+    if (!PL_SIZES.some((m) => sizes[m] > 0)) { note('Type how many bottles you want in at least one size.', 1); return; }
+    planIn = { sizes, days: Math.max(3, +$('plDays').value || 10) }; planBusy = true; lastMemo = null; renderPlan();
+    try {
+      opl = await api.get('st_inv.plan', { sizes: PL_SIZES.filter((m) => sizes[m] > 0).map((m) => m + ':' + sizes[m]).join(','), days: planIn.days });
+      plRows = (opl.items || []).map((r) => Object.assign({}, r, { sug: Object.assign({}, r.qty_by), manual: false })); plCarry = [];
+      (opl.pending || []).forEach((x) => { let r = plRows.find((q) => q.product_id === x.product_id); if (!r) { r = { product_id: x.product_id, title: x.title, qty_by: {}, sug: {}, manual: false, win: null, stock_ml: null, days_left: null, priority: 'ok', fromPending: true }; plRows.push(r); } r.qty_by = r.qty_by || {}; r.pend = r.pend || {}; r.qty_by[x.ml] = (r.qty_by[x.ml] || 0) + x.remaining; r.pend[x.ml] = (r.pend[x.ml] || 0) + x.remaining; });
+    } catch (e) { note(e.message, 1); }
+    planBusy = false; renderPlan();
+  }
+  async function createPlanOrder() {
+    const lines = {}, titles = {};      // product|ml -> { product_id, ml, qty, manual }
+    const add = (pid, title, ml, q, manual) => { if (q > 0) { const k = pid + '|' + ml; lines[k] = lines[k] || { product_id: pid, ml, qty: 0, manual: !!manual }; lines[k].qty += q; titles[pid] = cleanTitle(title); } };
+    plCarry.forEach((c) => add(c.product_id, c.title, c.ml, c.qty, false));
+    plRows.forEach((r) => plSz().forEach((m) => add(r.product_id, r.title, m, (r.qty_by && r.qty_by[m]) || 0, r.manual)));
+    const rows = Object.values(lines); if (!rows.length) { note('The list is empty. Add at least one perfume.', 1); return; }
+    const total = rows.reduce((a, r) => a + r.qty, 0), carryIds = [...new Set((opl.pending || []).map((x) => x.order_id))];
+    const bySize = {}; rows.forEach((r) => { bySize[r.ml] = (bySize[r.ml] || 0) + r.qty; });
+    if (!confirm(`Create the order?\n\n${Object.keys(bySize).sort((a, b) => a - b).map((m) => bySize[m] + ' × ' + m + ' ml').join('\n')}\n\nTotal ${total} bottles, ${rows.length} lines.` + (carryIds.length ? `\nThe earlier order(s) still pending will be closed; their pending bottles are inside this order.` : ''))) return;
+    $('plCreate').disabled = true; $('plCreate').textContent = 'Creating the order…';
+    try {
+      const d = await api.post('st_inv.order_create', { lines: rows, carry_order_ids: carryIds });
+      note(d.message || 'Order placed.'); stockDirty = true; try { loadOrder(); } catch (e) { /* later */ }
+      lastMemo = { no: d.order_id, by: d.ordered_by || '', at: d.ordered_at, lines: rows.map((r) => ({ title: titles[r.product_id] || ('#' + r.product_id), ml: r.ml, qty: r.qty })), placed: true };
+      opl = null; plRows = []; plCarry = [];
+    } catch (e) { note(e.message, 1); }
+    renderPlan();
+  }
+  $('planCard').addEventListener('click', (e) => {
+    if (e.target.id === 'plGo') return runPlan();
+    if (e.target.id === 'plMoreBtn') { plMore = true; return renderPlan(); }
+    if (e.target.id === 'memoXlsx') return memoXlsx(lastMemo).catch((er) => note(er.message, 1));
+    if (e.target.id === 'memoPdf') return memoPdf(lastMemo).catch((er) => note(er.message, 1));
+    if (e.target.id === 'plXlsx') return memoXlsx(memoFromList()).catch((er) => note(er.message, 1));
+    if (e.target.id === 'plPdf') return memoPdf(memoFromList()).catch((er) => note(er.message, 1));
+    if (e.target.id === 'plCreate') return createPlanOrder();
+    const q = e.target.closest('[data-pq]'); if (q) { const [i, m, d] = q.dataset.pq.split('|'); const r = plRows[+i]; r.qty_by = r.qty_by || {}; r.qty_by[m] = Math.max(0, Math.min(5000, (r.qty_by[m] || 0) + +d)); return renderPlan(); }
+    const cq = e.target.closest('[data-cq]'); if (cq) { const [i, d] = cq.dataset.cq.split('|'); const c = plCarry[+i]; c.qty = Math.max(0, Math.min(5000, (c.qty || 0) + +d)); return renderPlan(); }
+    const crm = e.target.closest('[data-crm]'); if (crm) { plCarry.splice(+crm.dataset.crm, 1); return renderPlan(); }
+    const rm = e.target.closest('[data-prm]'); if (rm) { plRows.splice(+rm.dataset.prm, 1); return renderPlan(); }
+    if (e.target.id === 'plAdd') { const v = $('plAddIn').value.trim().toLowerCase(), p = (products || []).find((x) => cleanTitle(x.title).toLowerCase() === v); if (!p) { note('Pick the perfume from the list.', 1); return; } const first = String(plSz()[0] || 50); const ex = plRows.find((r) => r.product_id === p.product_id); if (ex) ex.qty_by[first] = (ex.qty_by[first] || 0) + 1; else plRows.push({ product_id: p.product_id, title: p.title, qty_by: { [first]: 1 }, manual: true, win: null, stock_ml: null, days_left: null, priority: 'ok' }); return renderPlan(); }
+    if (!opl) return;
+    const SZ = plSz(), head = ['Perfume'].concat(SZ.map((m) => 'ORDER ' + m + 'ml'), ['Sold ml 5d', 'Sold ml 10d', 'Sold ml 20d', 'Sold ml 30d', 'Stock ml', 'Days left']);
+    const rows = plRows.map((r) => [cleanTitle(r.title)].concat(SZ.map((m) => (r.qty_by && r.qty_by[m]) || 0), [r.win ? r.win[5].ml : '', r.win ? r.win[10].ml : '', r.win ? r.win[20].ml : '', r.win ? r.win[30].ml : '', r.stock_ml == null ? '' : r.stock_ml, r.days_left == null ? '' : r.days_left]));
+    if (e.target.id === 'plCsv') { const csv = [head].concat(rows).map((r) => r.map((c) => '"' + String(c).replace(/"/g, '""') + '"').join(',')).join('\n'), a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv' })); a.download = 'order-' + SZ.map((m) => plSum(m) + 'x' + m + 'ml').join('-') + '.csv'; a.click(); }
+    if (e.target.id === 'plCopy') { const txt = plRows.map((r) => SZ.filter((m) => (r.qty_by && r.qty_by[m]) > 0).map((m) => r.qty_by[m] + ' × ' + cleanTitle(r.title) + ' ' + m + 'ml').join('\n')).filter(Boolean).join('\n'); (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(() => note('List copied.')).catch(() => prompt('Copy this list', txt)); }
+  });
+  $('planCard').addEventListener('change', (e) => {
+    const ci = e.target.dataset && e.target.dataset.ci; if (ci !== undefined) { plCarry[+ci].qty = Math.max(0, Math.min(5000, Math.round(+e.target.value || 0))); renderPlan(); return; }
+    const pi = e.target.dataset && e.target.dataset.pi; if (pi !== undefined) { const [i, m] = pi.split('|'); const r = plRows[+i]; r.qty_by = r.qty_by || {}; r.qty_by[m] = Math.max(0, Math.min(5000, Math.round(+e.target.value || 0))); renderPlan(); }
+  });
+  renderPlan();
+  // ---- suggested order: what to make next (from real sales), one tap into the Make list
+  let sug = null, sugDays = +(localStorage.getItem('st_sug_days') || 14), sugAll = false;
+  const PR = { urgent: ['Urgent', 'bad', 'xc'], soon: ['Soon', 'warn', 'alert'], plan: ['Plan ahead', 'info', 'clock'] };
+  async function loadSuggest() { try { sug = await api.get('st_inv.suggest', { days: sugDays }); renderSuggest(); } catch (e) { $('sugCard').innerHTML = `<div class="sx-msg bad">${sxi('xc')}<span>${esc(e.message)}</span></div>`; } }
+  function renderSuggest() {
+    if (!sug) return;
+    const I = sug.items, shown = sugAll ? I : I.slice(0, 8), opts = [7, 14, 21, 30].map((d) => `<option value="${d}" ${d === sugDays ? 'selected' : ''}>${d} days</option>`).join('');
+    let html = `<div class="sug-head"><span class="t">${sxi('clean')} Suggested order</span><span class="sx-mut">Plan for</span><select class="sx-in" id="sugDays" style="width:auto;min-height:34px;padding:4px 10px">${opts}</select><span style="flex:1"></span>${I.length ? '<button class="sx-btn" id="sugAll">Add all to order list</button>' : ''}</div>`;
+    if (!I.length) return void ($('sugCard').innerHTML = html + `<div class="sx-clear" style="margin-top:8px">${sxi('ok')} Stock covers the next ${sug.days} days for everything that is selling. Nothing to order.</div>`);
+    html += `<div class="sug-sum"><span><b>${sug.total_bottles}</b> bottles</span><span><b>${sug.total_ml}</b> ml</span><span><b>${sug.perfumes}</b> perfume${sug.perfumes === 1 ? '' : 's'}</span>${sug.urgent ? `<span class="sx-pill bad" style="font-size:13px">${sxi('xc')} ${sug.urgent} urgent</span>` : ''}</div>`;
+    let last = '';
+    shown.forEach((x) => {
+      if (x.priority !== last) { last = x.priority; const [lb, cl, ic] = PR[x.priority]; html += `<div class="sug-grp"><span class="sx-pill ${cl}">${sxi(ic)} ${lb}</span></div>`; }
+      html += `<div class="sug-row ${x.priority}"><div class="nm" title="${esc(cleanTitle(x.title))}">${esc(cleanTitle(x.title))}</div><span class="sug-qty l${x.ml}"><em>${x.ml} ml</em>make ${x.qty}</span><div class="why">${esc(x.why)}</div>${x.in_draft ? `<span class="sx-pill good">${sxi('ok')} In order list × ${x.in_draft}</span>` : `<button class="sx-btn ghost add" data-pid="${x.product_id}" data-ml="${x.ml}" data-qty="${x.qty}" style="padding:6px 14px">Add to order list</button>`}</div>`;
+    });
+    if (I.length > shown.length) html += `<button class="sx-btn ghost" id="sugMore" style="margin-top:10px;width:100%">Show all ${I.length} suggestions</button>`;
+    html += `<details class="sx-d" style="margin-top:10px"><summary>How this is worked out</summary><div class="sx-mut" style="margin-top:6px">${esc(sug.method)} Only scanned bottles count as stock, and anything already ordered counts as coming, so you never order twice.</div></details>`;
+    $('sugCard').innerHTML = html;
+  }
+  function addToMake(list) {
+    list.forEach((x) => { plan[key(+x.pid, +x.ml, 'sale')] = Math.min(200, +x.qty); });
+    onlyPlan = true; $('q').value = ''; document.querySelector('[data-t=gen]').click(); renderProducts(); window.scrollTo({ top: 0, behavior: 'smooth' });
+    note(`${list.length} suggested item${list.length === 1 ? '' : 's'} added. Check the numbers, then press Make barcodes.`);
+  }
+  // ---- order list: saved on the server, every change noted, follows the order cycle
+  let ord = null;
+  const fmtD = (t) => t ? new Date(String(t).replace(' ', 'T')).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '';
+  const fmtDT = (t) => t ? new Date(String(t).replace(' ', 'T')).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+  async function loadOrder() { try { ord = await api.get('st_inv.order_get', { days: sugDays }); renderOrder(); } catch (e) { $('ordCard').innerHTML = `<div class="sx-msg bad">${sxi('xc')}<span>${esc(e.message)}</span></div>`; } }
+  async function addToOrder(list) {
+    if (!list.length) return;
+    try { for (const x of list) await api.post('st_inv.order_set', { product_id: +x.pid, ml: +x.ml, qty: +x.qty, source: x.manual ? 'manual' : 'suggest', sug_qty: x.manual ? undefined : +x.qty }); note(`${list.length} item${list.length === 1 ? '' : 's'} added to your order list.`); loadOrder(); loadSuggest(); }
+    catch (e) { note(e.message, 1); }
+  }
+  function renderOrder() {
+    if (!ord) return;
+    const c = ord.cycle, d = ord.draft;
+    const due = !c.last_ordered_at ? `<span class="sx-pill info">${sxi('info')} No order placed yet</span>` : c.due_in_days > 0 ? `<span class="sx-pill good">${sxi('clock')} Next order in ${c.due_in_days} day${c.due_in_days > 1 ? 's' : ''} (${fmtD(c.next_due)})</span>` : c.due_in_days === 0 ? `<span class="sx-pill warn">${sxi('alert')} Order day is today</span>` : `<span class="sx-pill bad">${sxi('xc')} Order is ${-c.due_in_days} day${c.due_in_days < -1 ? 's' : ''} overdue</span>`;
+    let h = `<div class="sug-head"><span class="t">${sxi('list')} Order list</span>${due}<span style="flex:1"></span><span class="sx-mut">Order every</span><input class="sx-in" id="ordCycle" type="number" min="1" max="30" value="${c.cycle_days}" style="width:64px;min-height:34px;padding:4px 8px"><span class="sx-mut">days</span></div>`;
+    h += d.items.length ? d.items.map((i) => {
+      const diff = i.source === 'suggest' && i.sug_now !== i.qty;
+      return `<div class="ord-row ${i.source}"><div class="nm" title="${esc(cleanTitle(i.title))}">${esc(cleanTitle(i.title))}</div><span class="sug-qty l${i.ml}"><em>${i.ml} ml</em>${i.source === 'suggest' ? 'suggested' : 'added by you'}</span>
+        <span class="ord-step"><button data-oq="-1" data-pid="${i.product_id}" data-ml="${i.ml}" aria-label="Less">−</button><b>${i.qty}</b><button class="p" data-oq="1" data-pid="${i.product_id}" data-ml="${i.ml}" aria-label="More">+</button></span>
+        <button class="x" data-orm="1" data-pid="${i.product_id}" data-ml="${i.ml}" title="Remove from the list" style="font-size:18px">×</button>
+        ${diff ? `<div class="hint">${sxi('info')} Suggestion has changed: it now says <b>${i.sug_now || 'none needed'}</b>${i.sug_now ? '' : ' (stock or sales changed)'}. ${i.sug_now ? `<button class="sx-btn ghost" data-use="${i.sug_now}" data-pid="${i.product_id}" data-ml="${i.ml}" style="padding:3px 12px">Use ${i.sug_now}</button>` : ''}</div>` : ''}</div>`; }).join('')
+      : '<div class="sx-mut" style="margin:10px 0">Nothing in the list yet. Add from the suggestions above, or pick a perfume below.</div>';
+    const popts = products.map((p) => `<option value="${esc(cleanTitle(p.title))}"></option>`).join('');
+    h += `<div class="ord-add"><input class="sx-in" id="ordP" list="ordPL" placeholder="Add a perfume yourself…"><datalist id="ordPL">${popts}</datalist><select class="sx-in" id="ordM">${[10, 20, 50, 100].map((m) => `<option value="${m}">${m} ml</option>`).join('')}</select><input class="sx-in" id="ordQ" type="number" min="1" max="500" value="5"><button class="sx-btn ghost" id="ordAdd">Add</button></div>`;
+    h += `<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px"><span class="sx-mut"><b style="color:var(--sx-ink)">${d.total_bottles}</b> bottles · <b style="color:var(--sx-ink)">${d.total_ml}</b> ml</span><span style="flex:1"></span><button class="sx-btn ghost" id="ordMake" ${d.items.length ? '' : 'disabled'}>Send to Make list</button><button class="sx-btn" id="ordPlace" ${d.items.length ? '' : 'disabled'}>Place order</button></div>`;
+    if (ord.open.length) h += `<div class="sug-grp" style="margin-top:16px"><span class="sx-pill info">${sxi('clock')} On order</span></div>` + ord.open.map((o) => `<div style="border-top:1px solid var(--sx-line);margin-top:6px;padding-top:8px"><div style="display:flex;gap:8px;align-items:center"><b style="font-size:13px">Ordered ${fmtDT(o.ordered_at)}${o.ordered_by ? ' · ' + esc(o.ordered_by) : ''}</b><span style="flex:1"></span><button class="x" data-ocancel="${o.order_id}">Cancel order</button></div>${o.items.map((i) => `<div style="font-size:12.5px;margin-top:5px">${esc(cleanTitle(i.title))} · ${i.ml} ml — <b>${i.received}</b> of ${i.qty} made<div class="ord-prog"><i style="width:${Math.round(i.received / i.qty * 100)}%"></i></div></div>`).join('')}</div>`).join('') + '<div class="sx-mut" style="font-size:12px;margin-top:6px">An item is received as you make its barcodes in Make &amp; print (it counts as on order until then, so it is never suggested twice).</div>';
+    const A = { add: (l) => `added <b>${esc(cleanTitle(l.title || ''))} ${l.ml} ml × ${l.to}</b>`, remove: (l) => `removed <b>${esc(cleanTitle(l.title || ''))} ${l.ml} ml</b> (was ${l.from})`, qty: (l) => `changed <b>${esc(cleanTitle(l.title || ''))} ${l.ml} ml</b> from ${l.from} to ${l.to}`, ordered: () => '<b>placed the order</b>', cancelled: () => '<b>cancelled an order</b>', carried: () => '<b>moved the pending items of this order into a new order</b>', done: () => 'order fully received ✓' };
+    if (ord.log.length) h += `<details class="sx-d" style="margin-top:12px"><summary>What changed (notes)</summary><div style="margin-top:6px">${ord.log.map((l) => `<div class="ord-log">${fmtDT(l.at)} · ${esc(l.who || 'system')} ${(A[l.action] || (() => l.action))(l)}</div>`).join('')}</div></details>`;
+    if (ord.history.length) h += `<details class="sx-d" style="margin-top:8px"><summary>Earlier orders</summary><div style="margin-top:6px">${ord.history.map((o) => `<div class="ord-log">${fmtD(o.ordered_at)} · ${o.bottles} bottles · ${o.ml} ml · <b>${o.status === 'ordered' ? 'on order' : o.status === 'done' ? 'received' : 'cancelled'}</b>${o.ordered_by ? ' · ' + esc(o.ordered_by) : ''}</div>`).join('')}</div></details>`;
+    $('ordCard').innerHTML = h;
+  }
+  $('ordCard').addEventListener('click', async (e) => {
+    const t = e.target;
+    try {
+      const q = t.closest('[data-oq]'), rm = t.closest('[data-orm]'), use = t.closest('[data-use]'), oc = t.closest('[data-ocancel]');
+      if (q || rm || use) {
+        const el = q || rm || use, it = ord.draft.items.find((i) => i.product_id === +el.dataset.pid && i.ml === +el.dataset.ml); if (!it) return;
+        const qty = rm ? 0 : use ? +use.dataset.use : it.qty + (+q.dataset.oq);
+        await api.post('st_inv.order_set', { product_id: it.product_id, ml: it.ml, qty: Math.max(0, qty), sug_qty: use ? +use.dataset.use : undefined }); loadOrder(); loadSuggest(); return;
+      }
+      if (oc) { if (confirm('Cancel this order? Its items stop counting as "on order".')) { await api.post('st_inv.order_cancel', { order_id: +oc.dataset.ocancel }); loadOrder(); loadSuggest(); } return; }
+      if (t.id === 'ordAdd') {
+        const name = $('ordP').value.trim().toLowerCase(), hit = products.filter((p) => cleanTitle(p.title).toLowerCase() === name), pick = hit.length === 1 ? hit[0] : products.filter((p) => p.title.toLowerCase().includes(name))[0];
+        if (!name || !pick) { note('Pick a perfume from the list.', 1); return; }
+        await addToOrder([{ pid: pick.product_id, ml: +$('ordM').value, qty: Math.max(1, +$('ordQ').value || 1), manual: true }]); return;
+      }
+      if (t.id === 'ordPlace') { if (confirm(`Place this order: ${ord.draft.total_bottles} bottles (${ord.draft.total_ml} ml)?`)) { note((await api.post('st_inv.order_place', {})).message); loadOrder(); loadSuggest(); } return; }
+      if (t.id === 'ordMake') { addToMake(ord.draft.items.map((i) => ({ pid: i.product_id, ml: i.ml, qty: i.qty }))); return; }
+    } catch (err) { note(err.message, 1); }
+  });
+  $('ordCard').addEventListener('change', async (e) => { if (e.target.id === 'ordCycle') { try { await api.post('st_inv.order_cycle', { days: +e.target.value || 2 }); loadOrder(); } catch (err) { note(err.message, 1); } } });
+  $('sugCard').addEventListener('click', (e) => {
+    if (e.target.id === 'sugMore') { sugAll = true; renderSuggest(); return; }
+    if (e.target.id === 'sugAll') { addToOrder(sug.items.filter((x) => !x.in_draft).map((x) => ({ pid: x.product_id, ml: x.ml, qty: x.qty }))); return; }
+    const b = e.target.closest('.add'); if (b) addToOrder([{ pid: b.dataset.pid, ml: b.dataset.ml, qty: b.dataset.qty }]);
+  });
+  $('sugCard').addEventListener('change', (e) => { if (e.target.id === 'sugDays') { sugDays = +e.target.value; localStorage.setItem('st_sug_days', sugDays); loadSuggest(); loadOrder(); } });
+  $('stChips').addEventListener('click', (e) => { const b = e.target.closest('[data-f]'); if (!b) return; stFilter = b.dataset.f; renderStock(); });
+  $('stQ').addEventListener('input', () => renderStock()); $('stSort').addEventListener('change', renderStock);
+  sxTips($('stockGrid'));
+  $('stockGrid').addEventListener('click', (e) => {
+    const m = e.target.closest('[data-make]'); if (m) { document.querySelector('[data-t=gen]').click(); $('q').value = m.dataset.make; renderProducts(); window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
+  });
+  // ---- chains: add by hand, make one label per piece, print the same size as the bottle labels
+  let chData = null, chDirty = false, chEdit = 0, chPhotoData = '';
+  const chNote = (m, bad) => { $('chMsg').innerHTML = m ? `<div class="sx-msg ${bad ? 'bad' : 'ok'}" style="margin-top:8px">${sxi(bad ? 'xc' : 'ok')}<span>${esc(m)}</span></div>` : ''; };
+  const rupee = (n) => '₹' + Math.round(+n || 0).toLocaleString('en-IN');
+  $('chPhotoBox').onclick = () => $('chPhoto').click();
+  $('chPhoto').addEventListener('change', () => {          // shrink the photo on the phone: a small JPEG is enough for the screen and the bill
+    const f = $('chPhoto').files[0]; if (!f) return; const img = new Image(), u = URL.createObjectURL(f);
+    img.onload = () => { const k = Math.min(1, 420 / Math.max(img.width, img.height)), c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); chPhotoData = c.toDataURL('image/jpeg', 0.72); $('chPhotoBox').innerHTML = `<img src="${chPhotoData}" style="width:100%;height:100%;object-fit:cover">`; URL.revokeObjectURL(u); };
+    img.onerror = () => { chNote('That file is not a picture.', 1); URL.revokeObjectURL(u); }; img.src = u;
+  });
+  function chReset() { chEdit = 0; chPhotoData = ''; $('chPhoto').value = ''; $('chName').value = $('chMrp').value = $('chPrice').value = ''; $('chPhotoBox').textContent = '+ photo'; $('chFormTitle').textContent = 'Add a chain'; $('chCancel').style.display = 'none'; }
+  $('chCancel').onclick = () => { chReset(); chNote(''); };
+  $('chSave').onclick = async () => {
+    const b = $('chSave'); b.disabled = true;
+    try { const d = await api.post('st_chain.save', { chain_id: chEdit, name: $('chName').value, mrp: +$('chMrp').value || 0, price: +$('chPrice').value || 0, photo: chPhotoData }); chReset(); chNote(d.message); await loadChains(); }
+    catch (e) { chNote(e.message, 1); } b.disabled = false;
+  };
+  async function loadChains() {
+    try { chData = await api.get('st_chain.list'); chDirty = false; renderChains(); } catch (e) { $('chList').innerHTML = `<div class="sx-msg bad">${sxi('xc')}<span>${esc(e.message)}</span></div>`; }
+  }
+  function renderChains() {
+    const L = chData.chains;
+    $('chList').innerHTML = L.length ? L.map((c) => `<div class="sx-card" style="margin-bottom:10px;display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+      ${c.photo ? `<img src="${esc(c.photo)}" alt="" style="width:64px;height:64px;border-radius:12px;object-fit:cover">` : '<span style="width:64px;height:64px;border-radius:12px;background:var(--sx-line);display:inline-block"></span>'}
+      <div style="flex:1;min-width:170px"><b>${esc(c.name)}</b><div class="sx-mut" style="font-size:12.5px">${c.mrp ? 'MRP ' + rupee(c.mrp) : ''}</div>
+        <div style="font-size:12.5px;margin-top:3px"><b>${c.in_stock}</b> in stock · ${c.waiting} label${c.waiting === 1 ? '' : 's'} waiting to be scanned · ${c.sold} sold</div></div>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><input class="sx-in" type="number" min="1" max="200" value="1" data-q="${c.chain_id}" style="width:70px" aria-label="How many labels"><button class="sx-btn" data-mk="${c.chain_id}">Make labels</button>
+        ${c.waiting ? `<button class="sx-btn ghost" data-pr="${c.chain_id}">Print ${c.waiting} waiting</button>` : ''}<button class="sx-btn ghost" data-ed="${c.chain_id}">Edit</button><button class="sx-btn ghost" data-rm="${c.chain_id}">Remove</button></div></div>`).join('')
+      : 'No chains yet. Add the first one above.';
+  }
+  function chainLabelNode(ch, code) {
+    const k = label.h / 21, d = document.createElement('div'); d.className = 'lbl'; d.style.width = label.w + 'mm'; d.style.height = label.h + 'mm'; d.style.padding = `${0.6 * k}mm ${1.6 * k}mm ${0.5 * k}mm`;
+    const nm = document.createElement('div'); nm.className = 'nm'; const n1 = document.createElement('div'); n1.textContent = ch.name; n1.style.fontSize = Math.max(4.4, Math.min(7.4, 130 / Math.max(1, ch.name.length))) * k + 'pt'; n1.style.lineHeight = '1.05'; n1.style.whiteSpace = 'nowrap';
+    const n2 = document.createElement('div'); n2.textContent = 'CHAIN'; n2.style.fontSize = 6 * k + 'pt'; n2.style.lineHeight = '1.05'; n2.style.fontWeight = '800'; nm.append(n1, n2); nm.style.overflow = 'visible';
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    JsBarcode(svg, code, { format: 'CODE128C', width: 2.4, height: 80, margin: 0, displayValue: false });
+    svg.setAttribute('viewBox', '0 0 ' + svg.getAttribute('width').replace('px', '') + ' 80'); svg.removeAttribute('width'); svg.removeAttribute('height'); svg.setAttribute('preserveAspectRatio', 'none'); svg.style.height = svg.style.maxHeight = (label.h * 0.52) + 'mm'; svg.style.flex = 'none';
+    const cd = document.createElement('div'); cd.className = 'code'; cd.style.fontSize = Math.min(20, 6 * k) + 'pt'; cd.textContent = code;
+    const mid = document.createElement('div'); mid.className = 'mid'; mid.append(svg, cd);
+    const dt = document.createElement('div'); dt.className = 'dt'; dt.style.fontSize = Math.min(14, 4.5 * k) + 'pt'; dt.textContent = ch.mrp ? 'MRP ' + rupee(ch.mrp) : rupee(ch.price);
+    d.append(nm, mid, dt); return d;
+  }
+  async function printChain(ch, pieces) {
+    if (!pieces.length) return; const pa = $('printArea'); pa.innerHTML = ''; pieces.forEach((x) => pa.appendChild(chainLabelNode(ch, x.code)));
+    let st = $('pgStyle'); if (!st) { st = document.createElement('style'); st.id = 'pgStyle'; document.head.appendChild(st); } st.textContent = `@page{size:${label.w}mm ${label.h}mm;margin:0}`;
+    await new Promise((r) => setTimeout(r, 100)); window.print();
+    try { await api.post('st_chain.mark_printed', { codes: pieces.map((x) => x.code) }); } catch (e) { /* marking is a note only */ }
+  }
+  $('chList').addEventListener('click', async (e) => {
+    const mk = e.target.closest('[data-mk]'), pr = e.target.closest('[data-pr]'), ed = e.target.closest('[data-ed]'), rm = e.target.closest('[data-rm]');
+    try {
+      if (mk) { const id = +mk.dataset.mk, qty = +document.querySelector(`[data-q="${id}"]`).value || 0; mk.disabled = true; const d = await api.post('st_chain.make', { chain_id: id, qty }); chNote(d.message + ' Scan them in “3 · Scan into inventory” once they are stuck on.'); await printChain(d.chain, d.pieces); await loadChains(); }
+      else if (pr) { const d = await api.get('st_chain.pieces', { chain_id: +pr.dataset.pr }); await printChain(d.chain, d.pieces); await loadChains(); }
+      else if (ed) { const c = chData.chains.find((x) => x.chain_id === +ed.dataset.ed); if (!c) return; chEdit = c.chain_id; chPhotoData = ''; $('chName').value = c.name; $('chMrp').value = c.mrp || ''; $('chPrice').value = c.price; $('chPhotoBox').innerHTML = c.photo ? `<img src="${esc(c.photo)}" style="width:100%;height:100%;object-fit:cover">` : '+ photo'; $('chFormTitle').textContent = 'Change “' + c.name + '”'; $('chCancel').style.display = ''; chNote(''); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+      else if (rm) { const c = chData.chains.find((x) => x.chain_id === +rm.dataset.rm); if (c && window.confirm('Remove “' + c.name + '” from the list? Old bills keep it.')) { await api.post('st_chain.remove', { chain_id: c.chain_id }); await loadChains(); } }
+    } catch (err) { chNote(err.message, 1); await loadChains(); }
+  });
+  $('ti1').innerHTML = sxi('print'); $('ti2').innerHTML = sxi('scan'); $('ti3').innerHTML = sxi('box');
+  loadProducts(); loadLabel(); loadStock(true, true);          // the Stock tab loads itself the first time it is opened (4 heavy calls less on every page open)
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>

@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#008069">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Inbox">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Inbox hub — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=4">
+<style>
+  /* the Inbox hub draws its own header, so the page gives it the whole area */
+  .main > .content.sx-wrapper{padding:0;max-width:none;}
+  body.sx-fill .topbar{display:none;}
+  #sxHost{min-height:100vh;}
+</style>
+</head>
+<body class="sx-fill">
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><div><h1>Inbox hub</h1></div></div>
+    <div class="content sx-wrapper"><div id="sxHost"><div style="padding:30px;color:#667781">Loading…</div></div></div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=4"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script src="assets/js/sx_app.js?v=sx2"></script>
+<script>
+  guardPage();
+  renderSidebar('social_inbox');
+  SX.start(document.getElementById('sxHost'));
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
+<script src="assets/js/social_teach.js?v=3"></script>
+</body>
+</html>

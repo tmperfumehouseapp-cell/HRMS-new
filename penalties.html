@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Penalties — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=1">
+<style>
+  .tabs{display:flex; gap:6px; flex-wrap:wrap; margin-bottom:16px;}
+  @media (max-width:820px){ .tabs, #hiStats{margin-left:10px; margin-right:10px;} }
+  .tabs button{background:#fff; color:var(--ink); border:1px solid var(--line); padding:9px 14px; border-radius:20px; font-size:13px; font-weight:600; cursor:pointer; min-height:0; width:auto;}
+  .tabs button.on{background:var(--navy-900); color:#fff; border-color:var(--navy-900);}
+  .pane[hidden]{display:none;}
+  .grid2{display:grid; grid-template-columns:minmax(0,1.1fr) minmax(0,1fr); gap:16px; align-items:start;}
+  @media (max-width:960px){ .grid2{grid-template-columns:minmax(0,1fr);} }
+  .muted{color:var(--muted);} .small{font-size:12px;}
+  .pill-tabs{display:flex; gap:6px; flex-wrap:wrap; padding:12px 16px 4px;}
+  .pill-tabs button{border:1px solid var(--line); background:#fff; color:var(--ink); padding:6px 12px; border-radius:16px; font-size:12.5px; font-weight:600; cursor:pointer; min-height:0; width:auto;}
+  .pill-tabs button.on{background:#eef2ff; border-color:#a5b4fc; color:#3730a3;}
+  .rule{display:flex; gap:10px; align-items:center; padding:11px 16px; border-bottom:1px solid #f0f1f3; cursor:pointer;} .rule:last-child{border:none;} .rule.sel{background:#f5f8ff;}
+  .rule .m{flex:1; min-width:0;} .rule .m b{font-size:13.5px;} .rule .m div{font-size:12px; color:var(--muted); margin-top:2px;}
+  .rule .a{font-weight:700; font-size:13.5px; white-space:nowrap;}
+  .sw{position:relative; width:40px; height:22px; border-radius:11px; background:#cbd5e1; border:none; padding:0; flex:none; cursor:pointer; min-height:0;}
+  .sw::after{content:''; position:absolute; top:3px; left:3px; width:16px; height:16px; border-radius:50%; background:#fff; transition:left .2s;} .sw.on{background:#22c55e;} .sw.on::after{left:21px;}
+  .f{display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:10px 12px; padding:14px 16px;}
+  .f label{display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--muted); font-weight:600;} .f .full{grid-column:1/-1;}
+  .f input,.f select,.f textarea{width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:6px; font-size:14px; background:#fff; min-height:0; font-family:inherit;} .f textarea{resize:vertical;}
+  .f .hint{font-size:11.5px; font-weight:400; color:var(--muted);}
+  .acts{display:flex; gap:8px; justify-content:flex-end; padding:0 16px 14px; flex-wrap:wrap;} .acts .btn{width:auto;}
+  .mini{background:#fff; border:1px solid var(--line); border-radius:6px; padding:5px 9px; font-size:12px; cursor:pointer; min-height:0; width:auto; color:var(--ink);} .mini.red{color:var(--bad-fg); border-color:#f3c9c9;}
+  .stat-row{display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin-bottom:14px;}
+  .stat{background:#fff; border:1px solid var(--line); border-radius:10px; padding:10px 12px;} .stat .l{font-size:11.5px; color:var(--muted);} .stat .v{font-size:19px; font-weight:700; margin-top:2px;} .stat .v.neg{color:var(--bad-fg);}
+  .scroll{overflow-x:auto;}
+  .tag{display:inline-block; padding:2px 9px; border-radius:12px; font-size:11px; font-weight:700; margin-right:4px; white-space:nowrap;}
+  .c-common{background:#e0e7ff; color:#3730a3;} .c-customer_care{background:#fce7f3; color:#9d174d;} .c-sales{background:#dbeafe; color:#1d4ed8;} .c-dept{background:#fef3c7; color:#92400e;} .c-manual{background:#f3e8ff; color:#6b21a8;}
+  .s-applied{background:var(--bad-bg); color:var(--bad-fg);} .s-removed{background:var(--ok-bg); color:var(--ok-fg);} .s-waived{background:#e5e7eb; color:#4b5563;}
+  .t-auto{background:#ecfdf5; color:#047857;} .t-man{background:#f3e8ff; color:#6b21a8;}
+  .amt{font-weight:700; white-space:nowrap;} .amt.neg{color:var(--bad-fg);} .amt.struck{text-decoration:line-through; color:var(--muted); font-weight:500;}
+  .filters{display:flex; gap:8px; flex-wrap:wrap; padding:12px 16px; align-items:center;} .filters select,.filters input{padding:7px 10px; border:1px solid var(--line); border-radius:6px; font-size:13px; background:#fff; min-height:0; width:auto;}
+  .water{padding:12px 16px 14px; font-size:13.5px;} .water div{display:flex; justify-content:space-between; padding:4px 0; gap:10px;} .water .tot{font-weight:700; border-top:1px solid var(--line); margin-top:5px; padding-top:8px; font-size:16px;} .water .neg{color:var(--bad-fg);}
+  .box{border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin:0 16px 12px; font-size:13px; background:#fff;}
+  .box.info{background:#eef6ff; border-color:#cfe2fb; color:#1e3a5f;} .box.warn{background:#fffaf0; border-color:#f1dfb3;} .box.ok{background:#f3fbf6; border-color:#cfe9da;}
+  .notif{background:#f8fafc; border:1px solid var(--line); border-left:4px solid #dc2626; border-radius:10px; padding:9px 12px; font-size:13px; line-height:1.4;} .notif b{display:block; font-size:12.5px;}
+  tr.click{cursor:pointer;} tr.click:hover td{background:#f8faff;} tr.sel td{background:#eef4ff;}
+  /* "Increases each time": the ladder of amounts in the rule editor */
+  .lsel{display:flex; gap:6px;} .lsel button{flex:1; border:1.5px solid var(--line); border-radius:9px; padding:8px; background:#fff; font-weight:800; font-size:12.5px; color:var(--ink); cursor:pointer; min-height:0; width:auto;} .lsel button.on{border-color:#ff7a2f; background:#fff4ec; color:#c2410c;}
+  .lad{border:1.5px solid #fdba74; background:#fffaf5; border-radius:10px; padding:10px 12px; margin-top:6px; display:grid; grid-template-columns:1fr 1fr; gap:10px;} .lad .n{font-weight:800; font-size:12px; color:var(--ink); display:block; margin-bottom:4px;} .lad input{width:100%;}
+  .lad.off{border:none; background:none; padding:0; margin-top:6px;} .lad .pv{grid-column:1/-1; font-size:12px; color:#c2410c; font-weight:700;}
+  .nth{display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:800; margin-left:4px; white-space:nowrap;} .nth.n1{background:#eef3ff; color:#1d4ed8;} .nth.n2{background:#fff4ec; color:#c2410c;} .nth.n3{background:#fee2e2; color:#b91c1c;}
+  .modal-bg{position:fixed; inset:0; background:rgba(17,24,39,.5); z-index:300; display:flex; align-items:center; justify-content:center; padding:16px;} .modal-bg[hidden]{display:none;}
+  .modal{background:#fff; border-radius:14px; width:100%; max-width:420px; padding:18px; box-shadow:0 20px 50px rgba(0,0,0,.3);} .modal h3{margin:0 0 4px; font-size:16px;}
+  .modal textarea{width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:6px; font-size:14px; margin-top:10px; font-family:inherit; min-height:70px;}
+  .modal .acts{padding:12px 0 0;}
+  @media (max-width:700px){ .tbl th,.tbl td{padding:8px 6px;} }
+  .tbl{width:100%; border-collapse:collapse; font-size:13px;} .tbl th{font-size:11.5px; text-align:left; color:var(--muted); padding:8px 10px; border-bottom:1px solid var(--line); background:#fafafa; white-space:nowrap;} .tbl td{padding:9px 10px; border-bottom:1px solid #f0f1f3; vertical-align:top;}
+</style>
+<style>
+/* === MOBILE PASS v1 === */
+@media (max-width:820px){
+  .tabs button, .pill-tabs button, .lsel button{min-height:40px;}
+}
+/* === END MOBILE PASS v1 === */
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar">
+      <h1>Penalties</h1>
+      <input type="month" id="monthPick" style="padding:8px 10px; border:1px solid var(--line); border-radius:6px; font-size:13px;">
+    </div>
+    <div class="content">
+      <div id="alertBox"></div>
+
+      <div class="tabs" id="tabs">
+        <button data-t="rules" class="on">Rules</button>
+        <button data-t="apply">Apply a penalty</button>
+        <button data-t="history">History</button>
+        <button data-t="pay">Salary &amp; commission</button>
+        <button data-t="auto">Automatic</button>
+      </div>
+
+      <!-- RULES -->
+      <section class="pane" id="p-rules">
+        <div class="grid2">
+          <div class="card">
+            <div class="card-head"><h2>Penalty rules</h2><button class="btn" id="btnNewRule" style="width:auto; padding:7px 14px; font-size:13px;">+ New rule</button></div>
+            <div class="pill-tabs" id="catTabs"></div>
+            <div id="ruleList"><div class="loading" style="padding:20px; text-align:center;">Loading...</div></div>
+          </div>
+          <div class="card" id="ruleEditor">
+            <div class="card-head"><h2 id="edTitle">Edit rule</h2><span class="small muted" id="edSub"></span></div>
+            <div class="f" id="edForm"></div>
+            <div class="acts"><button class="mini red" id="edDelete">Delete rule</button><button class="btn secondary" id="edReset">Reset</button><button class="btn" id="edSave">Save rule</button></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- APPLY -->
+      <section class="pane" id="p-apply" hidden>
+        <div class="grid2">
+          <div class="card">
+            <div class="card-head"><h2>Apply a penalty by hand</h2><span class="small muted">any employee, any time</span></div>
+            <div class="f">
+              <label>Employee<select id="apEmp"></select></label>
+              <label>Date<input type="date" id="apDate"></label>
+              <label class="full">Penalty — write it<input id="apName" list="apList" placeholder="Type the penalty, e.g. Wrong item packed" autocomplete="off" maxlength="160"><datalist id="apList"></datalist><span class="hint">Type anything. If it matches a saved rule, the amount fills in by itself.</span></label>
+              <label>Amount (₹)<input type="number" id="apAmt" min="0" step="1" placeholder="0"><span class="hint" id="apStep"></span></label>
+              <label class="full">Reason / note<textarea id="apNote" rows="2" maxlength="255" placeholder="Shown to the employee and kept in the history"></textarea></label>
+              <label class="full" style="flex-direction:row; align-items:center; gap:8px; font-weight:600;"><input type="checkbox" id="apNotify" checked style="width:auto;"> Notify the employee now</label>
+            </div>
+            <div id="apPreview"></div>
+            <div class="acts"><button class="btn" id="apGo">Apply penalty</button></div>
+          </div>
+          <div class="card">
+            <div class="card-head"><h2>What the employee will be told</h2></div>
+            <div style="padding:14px 16px;"><div class="notif" id="apNotif"></div>
+              <div class="small muted" style="margin-top:10px;">Sent as a phone notification (if they allowed notifications) and shown as a pop-up the next time they open HRMS.</div></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- HISTORY -->
+      <section class="pane" id="p-history" hidden>
+        <div class="stat-row" id="hiStats"></div>
+        <div class="card">
+          <div class="card-head"><h2>Penalty history</h2><span class="small muted" id="hiSub">every penalty, who applied it and what happened to it</span></div>
+          <div class="filters">
+            <input type="search" id="hiEmp" list="hiEmpList" placeholder="🔍 Search employee…" autocomplete="off" style="min-width:210px;" aria-label="Employee"><datalist id="hiEmpList"></datalist>
+            <select id="hiAll" title="Which months to show for the picked employee"><option value="">This month</option><option value="1">All months</option></select>
+            <input type="text" id="hiQ" placeholder="Search penalty…" style="min-width:160px;">
+            <select id="hiCat"><option value="">All categories</option><option value="common">Common</option><option value="customer_care">Customer Care</option><option value="sales">Sales</option><option value="dept">Department</option><option value="manual">Written by hand</option></select>
+            <select id="hiSt"><option value="">All statuses</option><option value="applied">Applied</option><option value="removed">Auto-removed</option><option value="waived">Waived</option></select>
+            <select id="hiSrc"><option value="">Auto + manual</option><option value="auto">Automatic</option><option value="manual">Manual</option></select>
+          </div>
+          <div class="scroll"><table class="tbl"><thead><tr><th>Date</th><th>Employee</th><th>Penalty</th><th>Type</th><th>Amount</th><th>Taken from</th><th>Status</th><th>Details</th><th></th></tr></thead><tbody id="hiBody"><tr><td colspan="9" class="loading">Loading...</td></tr></tbody></table></div>
+        </div>
+      </section>
+
+      <!-- SALARY & COMMISSION -->
+      <section class="pane" id="p-pay" hidden>
+        <div class="grid2">
+          <div class="card">
+            <div class="card-head"><h2 id="payHead">After penalties</h2><span class="small muted">click a row</span></div>
+            <div class="scroll"><table class="tbl"><thead><tr><th>Employee</th><th>Paid on</th><th style="text-align:right;">Original</th><th style="text-align:right;">Penalties</th><th style="text-align:right;">Final</th></tr></thead><tbody id="payBody"><tr><td colspan="5" class="loading">Loading...</td></tr></tbody></table></div>
+          </div>
+          <div class="card"><div class="card-head"><h2 id="payTitle">Breakdown</h2><span class="small muted" id="paySub"></span></div><div id="payDetail"><div class="muted" style="padding:16px;">Pick an employee.</div></div></div>
+        </div>
+      </section>
+
+      <!-- AUTOMATIC -->
+      <section class="pane" id="p-auto" hidden>
+        <div class="card">
+          <div class="card-head"><h2>Automatic penalties</h2><button class="btn" id="btnRun" style="width:auto; padding:7px 14px; font-size:13px;">Run the check now</button></div>
+          <div style="padding:14px 16px; font-size:13.5px; line-height:1.55;">
+            <p style="margin:0 0 8px;"><b>For every employee with fixed working hours</b> — not one person. Sales employees have no fixed hours and are never charged automatically; their penalties are written by hand and come off commission.</p>
+            <div id="autoRules"></div>
+            <p style="margin:12px 0 0;" class="muted small">The check runs by itself every minute, from the same working time and late-alert grace you set on the Attendance page. <b>Required hours</b> are the length of each employee's working time (start → end), counted from their punch-in to punch-out — set a working-time end on Attendance for the hours rules to work. Days of leave, WFH, holiday, week-off and Sundays are skipped, and a rule only charges days from the moment you switched it on.</p>
+            <div id="runResult" class="small" style="margin-top:10px;"></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+
+<div class="modal-bg" id="waiveBg" hidden>
+  <div class="modal">
+    <h3>Waive this penalty?</h3>
+    <div class="small muted" id="waiveWhat"></div>
+    <textarea id="waiveWhy" placeholder="Reason (shown to the employee) — e.g. bus strike" maxlength="255"></textarea>
+    <div class="acts"><button class="btn secondary" id="waiveNo">Cancel</button><button class="btn" id="waiveYes">Waive</button></div>
+  </div>
+</div>
+
+<script src="assets/js/config.js?v=2"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script>
+  guardPage();
+  renderSidebar('penalties');
+
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const inr = (v) => '₹' + Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+  const fmtD = (d) => new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+  const CATS = { common: 'Common', customer_care: 'Customer Care', sales: 'Sales', dept: 'Department' };
+  const TAGN = Object.assign({ manual: 'Written by hand' }, CATS);
+  const ST = { applied: 'Applied', removed: 'Auto-removed', waived: 'Waived' };
+  const MSG = 'A penalty of {amount} has been applied to you for {rule}.';
+  const notifText = (tpl, name, amt, time) => { let t = String(tpl || MSG); if (time && t.indexOf('{time}') === -1) t = t.trim() + ' ({time})'; return t.replace('{amount}', inr(amt)).replace('{rule}', name).replace('{time}', time || '').replace(' ()', ''); };
+  const ordN = (n) => n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th');
+  const nthTag = (n) => n ? `<span class="nth n${Math.min(3, n)}">${ordN(n)} time</span>` : '';
+  const showErr = (m) => { $('alertBox').innerHTML = `<div class="alert error">${esc(m)}</div>`; window.scrollTo({ top: 0, behavior: 'smooth' }); setTimeout(() => { $('alertBox').innerHTML = ''; }, 6000); };
+  const showOk = (m) => { $('alertBox').innerHTML = `<div class="alert success">${esc(m)}</div>`; setTimeout(() => { $('alertBox').innerHTML = ''; }, 3500); };
+  const month = () => $('monthPick').value || new Date().toISOString().slice(0, 7);
+
+  let RULES = [], DEPTS = [], EMPS = [], STATEMENT = null, statementMonth = '', STEP = null;   // STEP: the next step (Increases each time) for the Apply form
+  let catSel = 'common', ruleSel = 0, draft = null;
+
+  // ---------- tabs ----------
+  document.querySelectorAll('#tabs button').forEach((b) => b.addEventListener('click', () => {
+    document.querySelectorAll('#tabs button').forEach((x) => x.classList.toggle('on', x === b));
+    document.querySelectorAll('.pane').forEach((p) => { p.hidden = p.id !== 'p-' + b.dataset.t; });
+    if (b.dataset.t === 'history') loadHistory();
+    if (b.dataset.t === 'pay') loadStatement(true);
+    if (b.dataset.t === 'auto') renderAuto();
+    if (b.dataset.t === 'apply') loadStatement(false).then(renderApplyPreview);
+  }));
+
+  // ---------- RULES ----------
+  const trigLabel = (r) => r.trigger_type === 'late_punch' ? 'Automatic · late punch-in · all fixed-hours staff' : r.trigger_type === 'short_hours' ? 'Automatic · short hours · all fixed-hours staff' : r.trigger_type === 'no_punch_out' ? 'Automatic · no punch-out · all fixed-hours staff' : 'Written by hand';
+  async function loadRules() {
+    const d = await api.get('penalties.rules');
+    RULES = d.rules; DEPTS = d.departments || [];
+    if (!ruleSel || !RULES.find((r) => r.rule_id === ruleSel)) { const f = RULES.find((r) => r.category === catSel) || RULES[0]; ruleSel = f ? f.rule_id : 0; if (f) catSel = f.category; }
+    renderRules(); fillSuggestions(); renderAuto();
+  }
+  function renderRules() {
+    $('catTabs').innerHTML = Object.entries(CATS).map(([k, v]) => `<button data-c="${k}" class="${k === catSel ? 'on' : ''}">${v} <span class="muted">· ${RULES.filter((r) => r.category === k).length}</span></button>`).join('');
+    const list = RULES.filter((r) => r.category === catSel);
+    $('ruleList').innerHTML = list.length ? list.map((r) => `<div class="rule ${r.rule_id === ruleSel ? 'sel' : ''}" data-r="${r.rule_id}">
+        <button class="sw ${r.active ? 'on' : ''}" data-sw="${r.rule_id}" title="Switch on / off"></button>
+        <div class="m"><b>${esc(r.name)}</b>${r.category === 'dept' ? ` <span class="tag c-dept">${esc(r.department)}</span>` : ''}<div>${trigLabel(r)}${r.trigger_type !== 'manual' && r.trigger_type !== 'no_punch_out' ? ' · ' + (r.grace_min !== null ? r.grace_min + ' min grace' : 'late-alert grace') : ''}</div></div>
+        <div class="a">${r.ladder_on ? `${inr(r.amount)}<div class="small muted" style="font-weight:600;">+ ${inr(r.ladder_inc)} each time</div>` : inr(r.amount)}</div></div>`).join('') : '<div style="padding:16px;" class="muted">No rules in this category yet. Click “+ New rule”.</div>';
+    renderEditor();
+  }
+  $('catTabs').addEventListener('click', (e) => { const b = e.target.closest('[data-c]'); if (!b) return; catSel = b.dataset.c; draft = null; const f = RULES.find((r) => r.category === catSel); ruleSel = f ? f.rule_id : 0; renderRules(); });
+  $('ruleList').addEventListener('click', async (e) => {
+    const sw = e.target.closest('[data-sw]');
+    if (sw) {
+      const r = RULES.find((x) => x.rule_id === +sw.dataset.sw);
+      try { await api.post('penalties.rule_toggle', { rule_id: r.rule_id, active: r.active ? 0 : 1 }); await loadRules(); showOk(r.active ? 'Rule switched off.' : 'Rule switched on' + (r.trigger_type !== 'manual' ? ' — it charges days from today onwards.' : '.')); } catch (err) { showErr(err.message); }
+      return;
+    }
+    const row = e.target.closest('[data-r]'); if (row) { draft = null; ruleSel = +row.dataset.r; renderRules(); }
+  });
+  function currentRule() { return draft || RULES.find((r) => r.rule_id === ruleSel) || null; }
+  function renderEditor() {
+    const r = currentRule();
+    $('ruleEditor').style.opacity = r ? 1 : .5;
+    if (!r) { $('edTitle').textContent = 'Edit rule'; $('edSub').textContent = ''; $('edForm').innerHTML = '<div class="muted">Pick a rule on the left, or add a new one.</div>'; return; }
+    $('edTitle').textContent = r.name || 'New rule'; $('edSub').textContent = CATS[r.category] + (r.category === 'dept' ? ' · ' + r.department : '');
+    const o = (v, cur, l) => `<option value="${v}" ${String(cur) === String(v) ? 'selected' : ''}>${l}</option>`;
+    const auto = r.trigger_type !== 'manual';
+    $('edForm').innerHTML = `
+      <label class="full">Penalty name<input id="fN" value="${esc(r.name)}" maxlength="120"></label>
+      <label>Category<select id="fC">${Object.entries(CATS).map(([k, v]) => o(k, r.category, v)).join('')}</select></label>
+      <label id="fDw" style="${r.category === 'dept' ? '' : 'display:none'}">Department<select id="fD">${DEPTS.map((d) => o(d, r.department, esc(d))).join('')}</select></label>
+      <label>How it starts<select id="fT">${o('manual', r.trigger_type, 'Written by hand')}${o('late_punch', r.trigger_type, 'Automatic — late punch-in')}${o('short_hours', r.trigger_type, 'Automatic — short working hours')}${o('no_punch_out', r.trigger_type, 'Automatic — no punch-out')}</select></label>
+      <label class="full">Amount<div class="lsel" id="fLsel"><button type="button" data-l="0" class="${r.ladder_on ? '' : 'on'}">Same every time</button><button type="button" data-l="1" class="${r.ladder_on ? 'on' : ''}">Increases each time</button></div>
+        <div id="fLad" class="lad${r.ladder_on ? '' : ' off'}">
+          <div><span class="n" id="fAL">${r.ladder_on ? '1st time (₹)' : 'Amount (₹)'}</span><input type="number" id="fA" min="0" step="1" value="${r.amount}" placeholder="0"></div>
+          <div id="fIncW" style="${r.ladder_on ? '' : 'display:none;'}"><span class="n">Increase by, each time (₹)</span><input type="number" id="fInc" min="0" step="1" value="${r.ladder_inc || ''}" placeholder="e.g. 20"></div>
+          <div class="pv" id="fLadPv" style="${r.ladder_on ? '' : 'display:none;'}"></div>
+        </div></label>
+      <label id="fResetW" style="${r.ladder_on ? '' : 'display:none;'}">Count starts again<select id="fReset">${o('month', r.ladder_reset || 'month', 'Every month')}${o('never', r.ladder_reset || 'month', 'Never (counts all time)')}</select><span class="hint">How many times the rule was already given to that employee decides the step.</span></label>
+      <label class="auto gr" style="${auto && r.trigger_type !== 'no_punch_out' ? '' : 'display:none'}">Grace (minutes)<input type="number" id="fG" min="0" max="240" value="${r.grace_min === null ? '' : r.grace_min}" placeholder="Same as late alert"><span class="hint">No penalty inside the grace time. Empty = each employee's own late-alert time (15 by default).</span></label>
+      <label class="auto late" style="${r.trigger_type === 'late_punch' ? '' : 'display:none'}">When required hours are completed<select id="fH">${o('remove', r.on_hours_done, 'Remove the penalty automatically')}${o('reduce_50', r.on_hours_done, 'Reduce it by half')}${o('keep', r.on_hours_done, 'Keep the penalty')}</select></label>
+      <label class="auto noout" style="${r.trigger_type === 'no_punch_out' ? '' : 'display:none'}">If the punch-out is added later<select id="fO">${o('remove', r.on_hours_done, 'Remove the penalty automatically')}${o('keep', r.on_hours_done === 'remove' ? 'remove' : 'keep', 'Keep the penalty')}</select><span class="hint">Checked the next day, after the business day is over: punched in but no punch-out → penalty.</span></label>
+      <label class="full">Notification text<input id="fM" value="${esc(r.notify_text)}" maxlength="255"><span class="hint">Use {amount}, {rule} and {time} (which time it was). Preview: <b id="fMp"></b></span></label>
+      <div class="full small muted auto" style="${auto ? '' : 'display:none'}">Automatic rules apply to <b>every</b> fixed-hours employee — no need to pick people. Sales employees have no fixed hours and are skipped.</div>`;
+    // "Increases each time": 1st time = amount, every next time + increase
+    const ladOn = () => $('fLsel').querySelector('button.on').dataset.l === '1';
+    const ladAmt = (n) => Math.max(0, (+$('fA').value || 0) + (n - 1) * (+$('fInc').value || 0));
+    const drawPv = () => { $('fLadPv').textContent = ladOn() ? [1, 2, 3, 4].map((n) => ordN(n) + ' ' + inr(ladAmt(n))).join(' · ') + ' · …' : ''; };
+    $('fLsel').querySelectorAll('button').forEach((b) => b.addEventListener('click', (ev) => {
+      ev.preventDefault();   // (inside the Amount <label>: stop the label from "clicking" its first button)
+      $('fLsel').querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
+      const on = ladOn(); $('fLad').classList.toggle('off', !on); $('fIncW').style.display = on ? '' : 'none'; $('fLadPv').style.display = on ? '' : 'none'; $('fResetW').style.display = on ? '' : 'none'; $('fAL').textContent = on ? '1st time (₹)' : 'Amount (₹)'; prev();
+    }));
+    const prev = () => { const on = ladOn(); drawPv(); $('fMp').textContent = notifText($('fM').value, $('fN').value || 'this rule', on ? ladAmt(2) : (+$('fA').value || 0), on ? '2nd time' + ($('fReset').value === 'never' ? '' : ' this month') : null); };
+    prev(); ['fM', 'fA', 'fN', 'fInc'].forEach((i) => $(i).addEventListener('input', prev)); $('fReset').addEventListener('change', prev);
+    $('fC').addEventListener('change', () => { $('fDw').style.display = $('fC').value === 'dept' ? '' : 'none'; });
+    $('fT').addEventListener('change', () => {
+      document.querySelectorAll('#edForm .auto').forEach((x) => { x.style.display = $('fT').value === 'manual' ? 'none' : ''; });
+      document.querySelectorAll('#edForm .late').forEach((x) => { x.style.display = $('fT').value === 'late_punch' ? '' : 'none'; });
+      document.querySelectorAll('#edForm .noout').forEach((x) => { x.style.display = $('fT').value === 'no_punch_out' ? '' : 'none'; });
+      document.querySelectorAll('#edForm .gr').forEach((x) => { x.style.display = $('fT').value === 'manual' || $('fT').value === 'no_punch_out' ? 'none' : ''; });
+    });
+  }
+  $('edSave').addEventListener('click', async () => {
+    const r = currentRule(); if (!r) return;
+    const body = { rule_id: r.rule_id || 0, name: $('fN').value.trim(), category: $('fC').value, department: $('fC').value === 'dept' ? $('fD').value : '', trigger_type: $('fT').value,
+      amount: +$('fA').value || 0, grace_min: $('fT').value === 'manual' || $('fT').value === 'no_punch_out' ? null : ($('fG').value === '' ? null : +$('fG').value), on_hours_done: $('fT').value === 'late_punch' ? $('fH').value : $('fT').value === 'no_punch_out' ? $('fO').value : 'keep',
+      notify_text: $('fM').value.trim(), active: r.rule_id ? r.active : 1,
+      ladder_on: $('fLsel').querySelector('button.on').dataset.l === '1' ? 1 : 0, ladder_inc: +$('fInc').value || 0, ladder_reset: $('fReset').value };
+    if (body.ladder_on && !(body.ladder_inc > 0)) { $('fInc').focus(); return showErr('Type how much it increases each time (more than ₹0).'); }
+    try { const d = await api.post('penalties.rule_save', body); draft = null; ruleSel = d.rule_id; catSel = body.category; await loadRules(); showOk('Rule saved.'); } catch (err) { showErr(err.message); }
+  });
+  $('edReset').addEventListener('click', () => { if (draft) draft = null; renderRules(); });
+  $('edDelete').addEventListener('click', async () => {
+    const r = currentRule(); if (!r) return;
+    if (!r.rule_id) { draft = null; renderRules(); return; }
+    if (!confirm('Delete the rule “' + r.name + '”?')) return;
+    try { await api.post('penalties.rule_delete', { rule_id: r.rule_id }); ruleSel = 0; await loadRules(); showOk('Rule deleted.'); } catch (err) { showErr(err.message); }
+  });
+  $('btnNewRule').addEventListener('click', () => {
+    draft = { rule_id: 0, name: '', category: catSel, department: catSel === 'dept' ? (DEPTS[0] || '') : '', trigger_type: 'manual', amount: 200, grace_min: null, on_hours_done: 'keep', notify_text: MSG, active: 1 };
+    renderEditor(); const n = $('fN'); if (n) n.focus();
+  });
+
+  // ---------- APPLY ----------
+  const empOf = (id) => EMPS.find((e) => e.employee_id === +id);
+  async function loadEmployees() {
+    const d = await api.get('penalties.employees');
+    EMPS = d.employees;
+    fillHiEmps();
+    $('apEmp').innerHTML = EMPS.map((e) => `<option value="${e.employee_id}">${esc(e.full_name)} · ${esc(e.department_name || 'No department')} · ${e.pays_from === 'commission' ? 'Sales (commission)' : 'Salary'}</option>`).join('');
+    fillSuggestions();
+  }
+  function applicableRules(e) {
+    const dn = String(e.department_name || '').toLowerCase();
+    return RULES.filter((r) => r.active && r.trigger_type === 'manual' && (r.category === 'common' || (r.category === 'customer_care' && dn.includes('customer')) || (r.category === 'sales' && e.pays_from === 'commission') || (r.category === 'dept' && r.department === e.department_name)));
+  }
+  function fillSuggestions() {
+    const e = empOf($('apEmp').value); if (!e) { $('apList').innerHTML = ''; return; }
+    $('apList').innerHTML = applicableRules(e).map((r) => `<option value="${esc(r.name)}">${r.ladder_on ? inr(r.amount) + ' + ' + inr(r.ladder_inc) + ' each time' : inr(r.amount)}</option>`).join('');
+  }
+  async function loadStatement(force) {
+    const m = $('apDate').value ? $('apDate').value.slice(0, 7) : month();
+    const want = $('p-pay').hidden ? m : month();
+    if (!force && STATEMENT && statementMonth === want) return;
+    try { const d = await api.get('penalties.statement', { month: want }); STATEMENT = d.rows; statementMonth = want; } catch (err) { STATEMENT = null; $('payBody').innerHTML = `<tr><td colspan="5"><div class="alert error">${esc(err.message)}</div></td></tr>`; return; }
+    if (!$('p-pay').hidden) renderPay();
+  }
+  function renderApplyPreview() {
+    const e = empOf($('apEmp').value); if (!e) return;
+    const name = $('apName').value.trim() || '…', amt = +$('apAmt').value || 0;
+    const row = STATEMENT && statementMonth === ($('apDate').value || '').slice(0, 7) ? STATEMENT.find((r) => r.employee_id === e.employee_id) : null;
+    const from = e.pays_from === 'commission' ? 'commission' : 'salary';
+    if (row) {
+      $('apPreview').innerHTML = `<div class="box info"><b>${from === 'commission' ? 'Commission' : 'Salary'} · ${esc(e.full_name)}</b><div class="water" style="padding:6px 0 0;">
+        <div><span>Original ${from} (this month so far)</span><span>${inr(row.original)}</span></div>
+        <div><span>Penalties already this month</span><span class="neg">− ${inr(row.penalty_total)}</span></div>
+        <div><span>This penalty</span><span class="neg">− ${inr(amt)}</span></div>
+        <div class="tot"><span>Final ${from}</span><span>${inr(Math.max(0, row.original - row.penalty_total - amt))}</span></div></div></div>`;
+    } else {
+      $('apPreview').innerHTML = `<div class="box info small">This penalty will be taken from <b>${from}</b>.</div>`;
+    }
+    const r = RULES.find((x) => x.name.toLowerCase() === name.toLowerCase());
+    const st = STEP && r && STEP.rule_id === r.rule_id && STEP.employee_id === e.employee_id ? STEP.step : null;
+    $('apStep').innerHTML = st ? `<b>${ordN(st.nth)} time${st.reset === 'never' ? '' : ' this month'}</b> → ${inr(st.amount)} <span class="muted">(${inr(st.base)}${st.nth > 1 ? ' + ' + (st.nth - 1) + ' × ' + inr(st.inc) : ''})</span>. You can change it.` : '';
+    $('apNotif').innerHTML = `<b>Penalty applied</b>${esc(notifText(r && r.notify_text, name, amt, st ? st.label : null))}${$('apNote').value.trim() ? esc(' Note: ' + $('apNote').value.trim()) : ''}`;
+  }
+  // "Increases each time": ask the server which time this would be for this employee, and fill the amount in
+  let stepReq = 0;
+  async function loadStep() {
+    const e = empOf($('apEmp').value), r = e && applicableRules(e).find((x) => x.name.toLowerCase() === $('apName').value.trim().toLowerCase());
+    if (!e || !r || !r.ladder_on) { STEP = null; renderApplyPreview(); return; }
+    const id = ++stepReq;
+    try {
+      const d = await api.get('penalties.next_step', { employee_id: e.employee_id, rule_id: r.rule_id, date: $('apDate').value });
+      if (id !== stepReq) return;
+      STEP = d.step ? { rule_id: r.rule_id, employee_id: e.employee_id, step: d.step } : null;
+      if (d.step) $('apAmt').value = d.step.amount;
+    } catch (err) { STEP = null; }
+    renderApplyPreview();
+  }
+  $('apEmp').addEventListener('change', () => { fillSuggestions(); loadStatement(false).then(renderApplyPreview); renderApplyPreview(); loadStep(); });
+  $('apDate').addEventListener('change', () => { loadStatement(false).then(renderApplyPreview); loadStep(); });
+  $('apName').addEventListener('input', () => {
+    const e = empOf($('apEmp').value), m = e && applicableRules(e).find((r) => r.name.toLowerCase() === $('apName').value.trim().toLowerCase());
+    if (m) $('apAmt').value = m.amount; STEP = null; renderApplyPreview();
+    if (m && m.ladder_on) loadStep();
+  });
+  ['apAmt', 'apNote'].forEach((i) => $(i).addEventListener('input', renderApplyPreview));
+  $('apGo').addEventListener('click', async () => {
+    const e = empOf($('apEmp').value), title = $('apName').value.trim(), amt = +$('apAmt').value || 0;
+    if (!e) return showErr('Choose an employee.');
+    if (!title) { $('apName').focus(); return showErr('Write what the penalty is for.'); }
+    if (amt <= 0) { $('apAmt').focus(); return showErr('Enter an amount more than ₹0.'); }
+    $('apGo').disabled = true;
+    try {
+      const d = await api.post('penalties.apply', { employee_id: e.employee_id, title, amount: amt, date: $('apDate').value, note: $('apNote').value.trim(), notify: $('apNotify').checked ? 1 : 0 });
+      showOk(d.message); $('apName').value = ''; $('apAmt').value = ''; $('apNote').value = ''; STEP = null;
+      STATEMENT = null; await loadStatement(false); renderApplyPreview();
+    } catch (err) { showErr(err.message); }
+    $('apGo').disabled = false;
+  });
+
+  // ---------- HISTORY ----------
+  let HIST = [];
+  async function loadHistory() {
+    $('hiBody').innerHTML = '<tr><td colspan="9" class="loading">Loading...</td></tr>';
+    try {
+      const emp = hiEmpPicked(), allM = !!(emp && $('hiAll').value);
+      const d = await api.get('penalties.list', { month: month(), q: $('hiQ').value.trim(), category: $('hiCat').value, status: $('hiSt').value, source: $('hiSrc').value, employee_id: emp ? emp.employee_id : '', all: allM ? 1 : '' });
+      HIST = d.rows; const s = d.stats;
+      $('hiSub').textContent = (emp ? emp.full_name + ' · ' : '') + (allM ? 'all months' : new Date(month() + '-01T00:00:00').toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })) + ' · every penalty, who applied it and what happened to it';
+      $('hiStats').innerHTML = [['Penalties applied', s.applied, ''], ['Total deducted', inr(s.total), 'neg'], ['From salary', inr(s.salary), ''], ['From commission', inr(s.commission), ''], ['Auto-removed', s.removed, ''], ['Waived', s.waived, '']]
+        .map(([l, v, c]) => `<div class="stat"><div class="l">${l}</div><div class="v ${c}">${v}</div></div>`).join('');
+      $('hiBody').innerHTML = d.rows.map((p) => {
+        const dead = p.status !== 'applied';
+        const extra = p.resolve_note ? `<div>${esc(p.resolve_note)}</div>` : '';
+        return `<tr><td>${fmtD(p.penalty_date)}</td><td><b>${esc(p.full_name)}</b><div class="small muted">${esc(p.department_name || '')}</div></td>
+          <td>${esc(p.title)}${nthTag(p.nth)}<div><span class="tag c-${esc(p.category)}">${esc(TAGN[p.category] || p.category)}</span></div></td>
+          <td><span class="tag ${p.source === 'auto' ? 't-auto' : 't-man'}">${p.source === 'auto' ? 'Auto' : 'Manual'}</span></td>
+          <td class="amt ${dead ? 'struck' : 'neg'}">${inr(p.amount)}${p.orig_amount !== null && !dead ? `<div class="small muted" style="font-weight:400;">was ${inr(p.orig_amount)}</div>` : ''}</td>
+          <td>${p.deducted_from === 'commission' ? 'Commission' : 'Salary'}</td><td><span class="tag s-${esc(p.status)}">${esc(ST[p.status] || p.status)}</span></td>
+          <td class="small muted" style="min-width:200px;">${esc(p.note)}${extra}<div>by ${esc(p.created_by)}</div></td>
+          <td style="white-space:nowrap;">${p.status === 'applied' ? `<button class="mini" data-w="${p.penalty_id}">Waive</button>` : ''}</td></tr>`;
+      }).join('') || '<tr><td colspan="9" class="muted" style="text-align:center; padding:20px;">Nothing matches.</td></tr>';
+    } catch (err) { $('hiBody').innerHTML = `<tr><td colspan="9"><div class="alert error">${esc(err.message)}</div></td></tr>`; }
+  }
+  // Employee search: type a name or code, pick from the list → only that person's penalties (This month / All months).
+  const hiEmpLabel = (e) => e.full_name + (e.employee_code ? ' · ' + e.employee_code : '');
+  function hiEmpPicked() {
+    const v = $('hiEmp').value.trim().toLowerCase();
+    if (!v) return null;
+    return EMPS.find((e) => hiEmpLabel(e).toLowerCase() === v) || EMPS.find((e) => String(e.full_name).toLowerCase() === v) || EMPS.find((e) => String(e.employee_code || '').toLowerCase() === v) || null;
+  }
+  function fillHiEmps() { $('hiEmpList').innerHTML = EMPS.map((e) => `<option value="${esc(hiEmpLabel(e))}">${esc(e.department_name || '')}</option>`).join(''); }
+  let hiEmpKey = '';
+  $('hiEmp').addEventListener('input', () => {      // reload only when the picked person changes (or the box is cleared)
+    const e = hiEmpPicked(), k = e ? String(e.employee_id) : ($('hiEmp').value.trim() ? hiEmpKey : '');
+    $('hiAll').disabled = !e;
+    if (k !== hiEmpKey) { hiEmpKey = k; loadHistory(); }
+  });
+  $('hiAll').addEventListener('change', loadHistory);
+  $('hiAll').disabled = true;
+  let hiT = null;
+  ['hiQ'].forEach((i) => $(i).addEventListener('input', () => { clearTimeout(hiT); hiT = setTimeout(loadHistory, 300); }));
+  ['hiCat', 'hiSt', 'hiSrc'].forEach((i) => $(i).addEventListener('change', loadHistory));
+  let waiveId = 0;
+  $('hiBody').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-w]'); if (!b) return;
+    const p = HIST.find((x) => x.penalty_id === +b.dataset.w); if (!p) return;
+    waiveId = p.penalty_id; $('waiveWhat').textContent = `${p.full_name} · ${p.title} · ${inr(p.amount)}`; $('waiveWhy').value = ''; $('waiveBg').hidden = false; $('waiveWhy').focus();
+  });
+  $('waiveNo').addEventListener('click', () => { $('waiveBg').hidden = true; });
+  $('waiveYes').addEventListener('click', async () => {
+    $('waiveYes').disabled = true;
+    try { await api.post('penalties.waive', { penalty_id: waiveId, reason: $('waiveWhy').value.trim() }); $('waiveBg').hidden = true; STATEMENT = null; showOk('Penalty waived and the employee was told.'); loadHistory(); } catch (err) { $('waiveBg').hidden = true; showErr(err.message); }
+    $('waiveYes').disabled = false;
+  });
+
+  // ---------- SALARY & COMMISSION ----------
+  let paySel = 0;
+  function renderPay() {
+    if (!STATEMENT) return;
+    $('payHead').textContent = new Date(month() + '-01T00:00:00').toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }) + ' · after penalties';
+    if (!paySel || !STATEMENT.find((r) => r.employee_id === paySel)) paySel = STATEMENT[0] ? STATEMENT[0].employee_id : 0;
+    $('payBody').innerHTML = STATEMENT.map((r) => `<tr class="click ${r.employee_id === paySel ? 'sel' : ''}" data-e="${r.employee_id}"><td><b>${esc(r.full_name)}</b><div class="small muted">${esc(r.department || '')}</div></td><td>${r.paid_on === 'commission' ? 'Commission' : 'Salary'}</td>
+      <td style="text-align:right;">${inr(r.original)}</td><td style="text-align:right;" class="${r.penalty_total ? 'amt neg' : 'muted'}">${r.penalty_total ? '− ' + inr(r.penalty_total) : '—'}</td><td style="text-align:right;" class="amt">${inr(r.final)}</td></tr>`).join('') || '<tr><td colspan="5" class="muted" style="text-align:center; padding:16px;">No employees.</td></tr>';
+    const r = STATEMENT.find((x) => x.employee_id === paySel);
+    if (!r) { $('payDetail').innerHTML = '<div class="muted" style="padding:16px;">Pick an employee.</div>'; return; }
+    const isC = r.paid_on === 'commission';
+    $('payTitle').textContent = r.full_name; $('paySub').textContent = isC ? 'Sales · paid on commission' : 'Monthly salary (after attendance)';
+    $('payDetail').innerHTML = `<div class="water"><div><span>${isC ? 'Commission earned' : 'Original salary'}</span><span>${inr(r.original)}</span></div>
+      ${r.items.map((p) => `<div><span>${esc(p.title)} <span class="small muted">· ${fmtD(p.date)}</span></span><span class="neg">− ${inr(p.amount)}</span></div>`).join('') || '<div class="muted"><span>No penalties this month</span><span></span></div>'}
+      <div><span>Total penalties</span><span class="neg">− ${inr(r.penalty_total)}</span></div>
+      <div class="tot"><span>${isC ? 'Final commission' : 'Final salary'}</span><span>${inr(r.final)}</span></div></div>
+      ${r.penalty_total > r.original ? '<div class="box warn small">Penalties are more than the amount earned so far, so the final is shown as ₹0.</div>' : ''}`;
+  }
+  $('payBody').addEventListener('click', (e) => { const t = e.target.closest('[data-e]'); if (t) { paySel = +t.dataset.e; renderPay(); } });
+
+  // ---------- AUTOMATIC ----------
+  function renderAuto() {
+    const rs = RULES.filter((r) => r.trigger_type !== 'manual');
+    $('autoRules').innerHTML = rs.map((r) => `<div class="box ${r.active ? 'ok' : 'warn'}" style="margin:0 0 8px;">
+      <b>${esc(r.name)}</b> <span class="tag ${r.active ? 's-removed' : 's-waived'}">${r.active ? 'On' : 'Off'}</span> — ${r.ladder_on ? inr(r.amount) + ' the 1st time, + ' + inr(r.ladder_inc) + ' each next time' + (r.ladder_reset === 'never' ? ' (counts all time)' : ' (starts again every month)') : inr(r.amount)}
+      <div class="small muted" style="margin-top:3px;">${r.trigger_type === 'late_punch'
+        ? `Charged when anyone punches in more than ${r.grace_min !== null ? r.grace_min + ' min' : 'their late-alert time'} after shift start. When required hours are completed: <b>${r.on_hours_done === 'remove' ? 'penalty removed automatically' : r.on_hours_done === 'reduce_50' ? 'penalty reduced by half' : 'penalty kept'}</b>.`
+        : r.trigger_type === 'no_punch_out' ? `Charged the next day when someone punched in but never punched out. If the punch-out is added later: <b>${r.on_hours_done === 'remove' ? 'penalty removed automatically' : 'penalty kept'}</b>.`
+        : `Charged when someone punches out having worked less than their working time minus ${r.grace_min !== null ? r.grace_min : 15} min.`}</div></div>`).join('') || '<div class="muted">No automatic rules yet — add one on the Rules tab (How it starts → Automatic).</div>';
+  }
+  $('btnRun').addEventListener('click', async () => {
+    $('btnRun').disabled = true;
+    try {
+      const r = (await api.post('penalties.run', {})).result;
+      $('runResult').innerHTML = `<div class="alert success">Checked ${r.checked} punched-in employee(s): ${r.late} late penalt${r.late === 1 ? 'y' : 'ies'} applied, ${r.short} short-hours, ${r.noout || 0} no punch-out, ${r.removed} removed, ${r.reduced} reduced.</div>`;
+      STATEMENT = null;
+    } catch (err) { $('runResult').innerHTML = `<div class="alert error">${esc(err.message)}</div>`; }
+    $('btnRun').disabled = false;
+  });
+
+  // ---------- start ----------
+  const now = new Date();
+  $('monthPick').value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  $('apDate').value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+  $('monthPick').addEventListener('change', () => { STATEMENT = null; if (!$('p-history').hidden) loadHistory(); if (!$('p-pay').hidden) loadStatement(true); });
+  (async () => {
+    try { await Promise.all([loadRules(), loadEmployees()]); fillSuggestions(); renderApplyPreview(); }
+    catch (err) { $('ruleList').innerHTML = `<div style="padding:16px;"><div class="alert error">${esc(err.message)}</div></div>`; }
+  })();
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>

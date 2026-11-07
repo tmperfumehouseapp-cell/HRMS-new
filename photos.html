@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Photos — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=260929d">
+<link rel="stylesheet" href="assets/css/sales_theme.css?v=1">
+<style>
+#ph{max-width:900px; --pl:var(--line,#e5e7eb); --pm:var(--muted,#6b7280); --pi:var(--ink,#111827);}
+#ph button{min-height:0; font:inherit;}
+#ph .sub{color:var(--pm); font-size:12.5px;}
+#ph .bar{display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:12px;}
+#ph .bar .sum{flex:1; min-width:220px;} #ph .bar .sum b{font-size:15px;}
+#ph .prog{height:5px; background:#eceef2; border-radius:9px; margin-top:6px; overflow:hidden;} #ph .prog i{display:block; height:100%; background:#16a34a; border-radius:9px;}
+#ph .pri{padding:9px 16px; border-radius:11px; background:var(--pi); color:#fff; border:0; font-weight:800; font-size:13px; cursor:pointer;} #ph .pri:disabled{opacity:.5; cursor:default;}
+#ph .ghost{padding:6px 12px; border-radius:9px; background:#f3f4f6; color:var(--pi); border:0; font-weight:700; font-size:12px; cursor:pointer;}
+#ph .ghost.dg{color:#b91c1c;}
+#ph .drop{border:1.5px dashed #cbd0d8; border-radius:14px; padding:14px; text-align:center; color:var(--pm); font-size:13px; margin-bottom:14px; background:#fafbfc;}
+#ph .drop.on{border-color:#16a34a; background:#f0fdf4; color:#166534;}
+#ph .run{background:#eff6ff; border-radius:12px; padding:10px 14px; font-size:13px; font-weight:700; color:#1d4ed8; margin-bottom:12px;}
+#ph .errs{background:#fef2f2; border-radius:12px; padding:9px 14px; font-size:12.5px; color:#991b1b; margin-bottom:12px;} #ph .errs div{margin:2px 0;}
+#ph .box{border:1px solid var(--pl); border-radius:14px; background:#fff; margin-bottom:12px; overflow:hidden;}
+#ph .box.chk{border-color:#f5d78a; background:#fffdf5;}
+#ph .box > h3{margin:0; padding:11px 14px; font-size:13px; font-weight:800;}
+#ph .ck{display:flex; gap:10px; padding:10px 14px; border-top:1px solid #f1e6c4; align-items:flex-start; flex-wrap:wrap;}
+#ph .ck .tm{width:52px; height:52px; border-radius:9px; background:#e5e7eb center/cover; flex:none; cursor:pointer;}
+#ph .ck .tx{flex:1; min-width:200px; font-size:12.5px;} #ph .ck .tx b{display:block; font-size:13px;}
+#ph .ck .ct{display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-top:6px;}
+#ph select,#ph input[type=text]{border:1.5px solid var(--pl); border-radius:9px; padding:6px 8px; font:inherit; font-size:12.5px; background:#fff; max-width:200px;}
+#ph .row{display:flex; align-items:center; gap:10px; padding:12px 14px; cursor:pointer; border-top:1px solid #f1f2f5;} #ph .row:first-child{border-top:0;}
+#ph .dot{width:10px; height:10px; border-radius:50%; background:#d1d5db; flex:none;} #ph .dot.p{background:#f59e0b;} #ph .dot.r{background:#16a34a;}
+#ph .row .t{flex:1; font-weight:800; font-size:14px;} #ph .row .n{font-size:12.5px; color:var(--pm); font-weight:700;} #ph .row .ch{color:#9ca3af; font-size:11px; transition:transform .15s;} #ph .row.o .ch{transform:rotate(90deg);}
+#ph .det{padding:2px 14px 14px 34px; border-top:0; font-size:12.5px;}
+#ph .det .h{color:var(--pm); margin-bottom:8px;}
+#ph .chips{display:flex; gap:5px; flex-wrap:wrap; margin:6px 0;}
+#ph .chip{font-size:11.5px; font-weight:700; border-radius:999px; padding:3px 10px; background:#fef2f2; color:#b91c1c;} #ph .chip.ok{background:#e4f6ec; color:#16945a;} #ph .chip.sk{background:#f3f4f6; color:#6b7280;}
+#ph .chip.sh{background:#e8f0fe; color:#1d4ed8;}
+#ph .th.shp{grid-template-columns:repeat(auto-fill,minmax(56px,1fr)); margin-bottom:6px;}
+#ph .chip a{color:inherit; opacity:.7; margin-left:4px; cursor:pointer; text-decoration:underline; font-weight:600;}
+#ph .con{background:#f5f3ff; border-radius:11px; padding:9px 12px; margin:8px 0;} #ph .con p{margin:0 0 7px;}
+#ph .con .ok{color:#15803d; font-weight:800;}
+#ph .th{display:grid; grid-template-columns:repeat(auto-fill,minmax(74px,1fr)); gap:6px; margin-top:8px;}
+#ph .th div{aspect-ratio:1; border-radius:9px; background:#e5e7eb center/cover; cursor:pointer; position:relative;} #ph .th div.c{outline:2px solid #f59e0b;}
+#ph .names{width:100%; min-height:130px; border:1.5px solid var(--pl); border-radius:10px; padding:8px; font:inherit; font-size:12.5px; margin-top:6px;}
+#ph .lb{position:fixed; inset:0; background:rgba(0,0,0,.78); display:flex; align-items:center; justify-content:center; z-index:50; padding:16px;}
+#ph .lb .in{background:#fff; border-radius:14px; max-width:520px; width:100%; padding:12px; max-height:92vh; overflow:auto;} #ph .lb img{width:100%; border-radius:10px; display:block;}
+#ph .lb .cap{font-size:13px; font-weight:700; margin:8px 0 2px;}
+body > .ph-toast{position:fixed; left:50%; bottom:22px; transform:translateX(-50%); background:var(--pi); color:#fff; border-radius:11px; padding:9px 16px; font-size:13px; font-weight:700; z-index:60;}
+#ph .empty{padding:24px; text-align:center; color:var(--pm);}
+html.in-sales .topbar{display:none;}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar">
+      <div><h1>Photos</h1><div class="sub">Photos the bot and your team can send to customers</div></div>
+    </div>
+    <div class="content">
+      <div id="ph"><div class="box"><div class="empty">Loading…</div></div></div>
+    </div>
+  </main>
+</div>
+<input type="file" id="pick" accept="image/*" multiple hidden>
+<script src="assets/js/config.js?v=2"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script>
+(function () {
+  guardPage();
+  renderSidebar('sales');
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const root = $('ph');
+  let D = null, open = {}, namesEdit = '', busy = null, errs = [], shown = {}, hintSec = '', lb = null;
+  const URLS = {}, TRIED = {}, FULL = {};
+  let toastT = null;
+  const toast = (m) => { let t = document.querySelector('body > .ph-toast'); if (t) t.remove(); t = document.createElement('div'); t.className = 'ph-toast'; t.textContent = m; document.body.appendChild(t); clearTimeout(toastT); toastT = setTimeout(() => t.remove(), 2600); };   // on the page itself, so a refresh of the list does not wipe it
+
+  async function load() {
+    try {
+      const d = await api.get('ph.list');
+      if (!d || !Array.isArray(d.sections)) throw new Error('The server answered in an unexpected way. Upload the new wa_photos.php and api.php, then hard refresh.');
+      D = d; render();
+    } catch (e) { root.innerHTML = `<div class="box"><div class="empty" style="color:#b91c1c;">${esc(e.message || 'Could not load')}</div></div>`; }
+  }
+
+  // ---- thumbnails: ONE request brings up to 30 small pictures (a request per picture used up the database's hourly connection limit)
+  let thumbBusy = false;
+  function paintThumbs() { root.querySelectorAll('[data-pid]').forEach(el => { const u = URLS[el.dataset.pid]; if (u) el.style.backgroundImage = `url(${u})`; }); }
+  async function wantThumbs() {
+    paintThumbs(); if (thumbBusy) return;
+    const need = [...new Set([...root.querySelectorAll('[data-pid]')].map(e => e.dataset.pid).filter(id => !URLS[id] && !TRIED[id]))].slice(0, 30);
+    if (!need.length) return;
+    thumbBusy = true; need.forEach(id => { TRIED[id] = 1; });
+    try { const r = await api.get('ph.thumbs', { ids: need.join(',') }); Object.keys(r.thumbs || {}).forEach(id => { URLS[id] = r.thumbs[id]; }); paintThumbs(); } catch (e) { need.forEach(id => { delete TRIED[id]; }); }
+    thumbBusy = false; if (root.querySelector('[data-pid]')) setTimeout(() => { if ([...root.querySelectorAll('[data-pid]')].some(e => !URLS[e.dataset.pid] && !TRIED[e.dataset.pid])) wantThumbs(); }, 300);
+  }
+  async function fullPhoto(id) {          // the big picture, only when you open one
+    if (FULL[id]) return FULL[id];
+    const r = await fetch(api.buildUrl('ph.file', { id }), { headers: { Authorization: 'Bearer ' + api.token() } }); if (!r.ok) throw new Error('Could not load the photo.');
+    return FULL[id] = URL.createObjectURL(await r.blob());
+  }
+
+  // ---- screen
+  const secOf = (k) => D.sections.find(s => s.k === k);
+  const photosOf = (k) => D.photos.filter(p => p.section === k);
+  function slotOptions(sec, cur) { return '<option value="">Which photo is it?</option>' + sec.slots.map(x => `<option value="${esc(x.k)}"${x.k === cur ? ' selected' : ''}>${esc(x.t)}</option>`).join(''); }
+  const unscanned = (p) => p.status === 'check' && !p.hide && /AI could not|Not scanned|did not answer/i.test(p.note || '');
+  function checkRow(p) {
+    const sec = secOf(p.section), per = sec && sec.per;
+    const secSel = `<select data-f="section" data-id="${p.id}">${D.sections.map(s => `<option value="${s.k}"${s.k === p.section ? ' selected' : ''}>${esc(s.t)}</option>`).join('')}<option value="other"${p.section === 'other' ? ' selected' : ''}>Not needed</option></select>`;
+    let second = '';
+    if (sec && per) second = `<input type="text" data-f="tag" data-id="${p.id}" list="dl_${per}" placeholder="Which ${per === 'gel' ? 'shower gel' : 'perfume'}?" value="${esc(p.tag)}">`;
+    else if (sec && sec.slots.length) second = `<select data-f="slot" data-id="${p.id}">${slotOptions(sec, p.slot)}</select>`;
+    const ctl = !D.can_edit ? '' : p.hide
+      ? `<div class="ct"><span class="sub">Hide the phone number in the screenshot and upload it again.</span><button class="ghost dg" data-act="del" data-id="${p.id}">Delete</button></div>`
+      : `<div class="ct">${secSel}${second}${unscanned(p) ? `<button class="ghost" data-act="rescan" data-id="${p.id}">Scan again</button>` : ''}<button class="pri" style="padding:6px 14px;font-size:12px" data-act="save" data-id="${p.id}">Save</button><button class="ghost dg" data-act="del" data-id="${p.id}">Delete</button></div>`;
+    return `<div class="ck"><div class="tm" data-pid="${p.id}" data-act="view"></div><div class="tx"><b>${esc(p.label || p.filename || 'Photo')}</b>${p.note ? esc(p.note) : 'I am not sure about this one.'}${ctl}</div></div>`;
+  }
+  function slotChips(sec) {
+    return sec.slots.map(x => {
+      const done = x.have >= x.min, txt = esc(x.t) + (x.min > 1 ? ` ${x.have}/${x.min}` : '');
+      if (x.skip) return `<span class="chip sk">${txt} · don’t have${D.can_edit ? ` <a data-act="skip" data-s="${sec.k}" data-sl="${x.k}" data-v="0">undo</a>` : ''}</span>`;
+      return `<span class="chip${done ? ' ok' : ''}">${done ? '✓ ' : ''}${txt}${!done && D.can_edit && sec.manual ? ` <a data-act="skip" data-s="${sec.k}" data-sl="${x.k}" data-v="1">don’t have</a>` : ''}</span>`;
+    }).join('');
+  }
+  function shopifyBlock(sec) {   // names and photos the website already has (copied from Shopify by Sales > Products)
+    const s = sec.shopify; if (!s) return '';
+    return `<div class="chips"><span class="chip sh">From Shopify</span><span class="chip${s.with_photo >= s.total ? ' ok' : ''}">${s.with_photo} of ${s.total} have a website photo</span>${s.uploaded_only ? `<span class="chip ok">${s.uploaded_only} more from your uploads</span>` : ''}</div>`
+      + (s.thumbs && s.thumbs.length ? `<div class="th shp">${s.thumbs.map(t => `<div style="background-image:url('${esc(t.url)}')" title="${esc(t.name)}"></div>`).join('')}</div>` : '')
+      + `<div class="sub">You do not need to upload these. Upload a photo here only to add one the website does not have.</div>`;
+  }
+  function detail(sec) {
+    const ps = photosOf(sec.k).filter(p => p.status === 'ok' && !p.hide), lim = shown[sec.k] || 24;
+    let h = `<div class="h">${esc(sec.hint)}</div>`;
+    if (sec.per) {
+      if (sec.shopify) h += shopifyBlock(sec);
+      if (!sec.names_total && namesEdit !== sec.per) h += `<div class="chips"><span class="chip">No ${sec.per === 'gel' ? 'shower gel' : 'perfume'} list yet</span></div><div class="sub">Add your list once, and this page will show exactly which ones still have no photo.</div>`;
+      else h += `<div class="chips"><span class="chip${sec.missing_names.length ? '' : ' ok'}">${sec.missing_names.length ? sec.missing_names.length + ' without a photo' : '✓ all have a photo'}</span></div>` +
+        (sec.missing_names.length ? `<details><summary class="sub" style="cursor:pointer">Show which</summary><div class="chips">${sec.missing_names.map(n => `<span class="chip sk">${esc(n)}</span>`).join('')}</div></details>` : '');
+    }
+    if (!sec.per && sec.shopify) h += shopifyBlock(sec);
+    if (sec.slots.length) h += `<div class="chips">${slotChips(sec)}</div>`;
+    if (sec.concept) h += `<div class="con"><p>${sec.concept.confirmed ? '<span class="ok">✓ Got it.</span> ' : '<b>I understand:</b> '}${esc(sec.concept.text)}</p>` +
+      (D.can_edit ? (sec.concept.confirmed ? `<button class="ghost" data-act="reread" data-s="${sec.k}">Read again</button>` : `<button class="pri" style="padding:6px 14px;font-size:12px" data-act="concept" data-s="${sec.k}" data-v="1">Yes, got it</button> <button class="ghost" data-act="concept" data-s="${sec.k}" data-v="0">Not right</button>`) : '') + '</div>';
+    if (D.can_edit) h += `<div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:6px;"><button class="ghost" data-act="add" data-s="${sec.k}">+ Add photos here</button>${sec.per && !sec.shopify ? `<button class="ghost" data-act="names" data-s="${sec.per}">Edit ${sec.per === 'gel' ? 'shower gel' : 'perfume'} list</button>` : ''}</div>`;
+    if (D.can_edit && namesEdit === sec.per && sec.per) h += `<textarea class="names" id="namesTa" placeholder="One name per line">${esc((D.names[sec.per] || []).join('\n'))}</textarea><div style="margin-top:6px;display:flex;gap:8px"><button class="pri" style="padding:7px 14px;font-size:12px" data-act="savenames" data-s="${sec.per}">Save list</button><button class="ghost" data-act="names" data-s="">Cancel</button></div>`;
+    if (ps.length) h += `<div class="th">${ps.slice(0, lim).map(p => `<div data-pid="${p.id}" data-act="view" title="${esc(p.tag || p.label)}"></div>`).join('')}</div>` + (ps.length > lim ? `<button class="ghost" style="margin-top:8px" data-act="more" data-s="${sec.k}">Show all ${ps.length}</button>` : '');
+    else h += `<div class="sub" style="margin-top:8px">${sec.shopify ? 'No uploads — none needed.' : 'No photos yet.'}</div>`;
+    return `<div class="det">${h}</div>`;
+  }
+  function render() {
+    if (!D) return;
+    const chk = D.photos.filter(p => p.status === 'check');
+    const pct = D.sections_total ? Math.round(D.ready / D.sections_total * 100) : 0;
+    const lbH = lb ? (() => { const p = D.photos.find(x => x.id === lb); if (!p) return ''; const sec = secOf(p.section); return `<div class="lb" data-act="closelb"><div class="in" data-stop="1"><img id="lbImg" src="${FULL[p.id] || URLS[p.id] || ''}" alt=""><div class="cap">${esc(p.tag || p.label || p.filename)}</div><div class="sub">${esc(sec ? sec.t : 'Not needed')}${p.slot && sec ? ' · ' + esc((sec.slots.find(x => x.k === p.slot) || {}).t || '') : ''}</div>${D.can_edit ? `<div style="margin-top:8px"><button class="ghost dg" data-act="del" data-id="${p.id}">Delete this photo</button></div>` : ''}</div></div>`; })() : '';
+    root.innerHTML =
+      `<div class="bar"><div class="sum"><b>${D.ready} of ${D.sections_total} sections ready</b>${chk.length ? ` · <span style="color:#b45309;font-weight:700">${chk.length} need your check</span>` : ''}<div class="prog"><i style="width:${pct}%"></i></div></div>${D.can_edit ? '<button class="pri" id="btnPick">Choose photos</button>' : ''}</div>` +
+      (D.ai ? '' : `<div class="errs">The AI key is not set in config.php, so photos cannot be sorted automatically. You can still upload and sort them by hand.</div>`) +
+      (busy ? `<div class="run">${esc(busy)}</div>` : '') +
+      (errs.length ? `<div class="errs">${errs.slice(0, 6).map(e => `<div>${esc(e)}</div>`).join('')}${errs.length > 6 ? `<div>…and ${errs.length - 6} more</div>` : ''}<button class="ghost" style="margin-top:6px" data-act="clrerr">Hide</button></div>` : '') +
+      (D.can_edit ? `<div class="drop" id="drop">Drop photos here — any number, any section. The AI reads each one and puts it in the right place.</div>` : '') +
+      (chk.length ? `<div class="box chk"><h3>Needs your check (${chk.length})${D.can_edit && chk.some(unscanned) ? ` <button class="ghost" style="margin-left:8px" data-act="rescanall">Scan again (${chk.filter(unscanned).length})</button>` : ''}</h3>${chk.map(checkRow).join('')}</div>` : '') +
+      `<div class="box">${D.sections.map(s => {
+        const st = s.ready ? 'r' : (s.photos || s.have ? 'p' : '');
+        const cnt = s.total ? `${s.have} / ${s.total}` : (s.photos ? s.photos + ' photos' : '');
+        return `<div class="row${open[s.k] ? ' o' : ''}" data-act="tog" data-s="${s.k}"><span class="dot ${st}"></span><span class="t">${esc(s.t)}</span><span class="n">${cnt}</span><span class="ch">▶</span></div>${open[s.k] ? detail(s) : ''}`;
+      }).join('')}</div>` +
+      `<datalist id="dl_perfume">${(D.names.perfume || []).map(n => `<option value="${esc(n)}">`).join('')}</datalist><datalist id="dl_gel">${(D.names.gel || []).map(n => `<option value="${esc(n)}">`).join('')}</datalist>` + lbH;
+    bindDrop(); wantThumbs();
+    if (lb && !FULL[lb]) fullPhoto(lb).then(u => { const im = $('lbImg'); if (im && lb) im.src = u; }).catch(() => {});
+  }
+
+  // ---- upload: shrink in the browser (fast on a phone), then the server saves + the AI sorts
+  function shrink(file) {
+    return new Promise((res) => {
+      if (!/^image\/(jpeg|png|webp|gif|bmp)$/i.test(file.type || '')) return res(file);
+      const url = URL.createObjectURL(file), im = new Image();
+      im.onload = () => {
+        try {
+          const m = 1600, k = Math.min(1, m / Math.max(im.naturalWidth, im.naturalHeight)), c = document.createElement('canvas');
+          c.width = Math.max(1, Math.round(im.naturalWidth * k)); c.height = Math.max(1, Math.round(im.naturalHeight * k));
+          const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(im, 0, 0, c.width, c.height);
+          c.toBlob(b => { URL.revokeObjectURL(url); res(b ? new File([b], file.name.replace(/\.\w+$/, '') + '.jpg', { type: 'image/jpeg' }) : file); }, 'image/jpeg', 0.82);
+        } catch (e) { URL.revokeObjectURL(url); res(file); }
+      };
+      im.onerror = () => { URL.revokeObjectURL(url); res(file); }; im.src = url;
+    });
+  }
+  const BUSY_RE = /database|connection|busy|too many|timeout|took too long|network|unexpected|server error|\(5\d\d\)/i;
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  function post(action, fd) {
+    return new Promise((res, rej) => {
+      const x = new XMLHttpRequest(); x.open('POST', api.buildUrl(action)); x.setRequestHeader('Authorization', 'Bearer ' + api.token()); x.timeout = 200000;
+      x.onload = () => { let d = {}; try { d = JSON.parse(x.responseText); } catch (e) { } if (x.status >= 200 && x.status < 300 && !d.error) res(d); else rej(new Error(d.error || ('Server error (' + x.status + ').'))); };
+      x.onerror = () => rej(new Error('Network problem — check the connection and try again.')); x.ontimeout = () => rej(new Error('It took too long.'));
+      x.send(fd);
+    });
+  }
+  // a busy database / network blip is retried (4 s, then 12 s) before it counts as a failure
+  async function postRetry(action, make) {
+    let last;
+    for (let t = 0; t < 3; t++) {
+      try { return await post(action, make()); } catch (e) { last = e; if (!BUSY_RE.test(e.message || '')) throw e; if (t < 2) await sleep(t === 0 ? 4000 : 12000); }
+    }
+    throw last;
+  }
+  const mergePhotos = (list) => { (list || []).forEach(p => { const i = D.photos.findIndex(x => x.id === p.id); if (i >= 0) D.photos[i] = p; else D.photos.unshift(p); }); };
+  async function uploadAll(files, section) {
+    files = [...files].filter(f => /^image\//.test(f.type) || /\.(jpe?g|png|webp|gif|bmp|heic)$/i.test(f.name));
+    if (!files.length) { toast('Pick photos (JPG or PNG).'); return; }
+    errs = []; let sent = 0, ok = 0; const total = files.length, groups = [];
+    for (let k = 0; k < files.length; k += 4) groups.push(files.slice(k, k + 4));
+    let g = 0;
+    const note = () => { busy = `Saved ${ok} of ${total}${sent < total ? ' · sending…' : ' · sorting the last ones…'}`; const r = root.querySelector('.run'); if (r) r.textContent = busy; else render(); };
+    const worker = async () => {
+      while (g < groups.length) {
+        const grp = groups[g++];
+        try {
+          const small = []; for (const f of grp) small.push([await shrink(f), f.name]);       // shrunk in the browser: 1600 px, about 200-400 KB each
+          sent += grp.length; note();
+          const r = await postRetry('ph.add', () => { const fd = new FormData(); small.forEach(([b, n]) => fd.append('files[]', b, n.replace(/\.\w+$/, '') + '.jpg')); if (section) fd.append('section', section); return fd; });
+          ok += (r.photos || []).length; mergePhotos(r.photos); (r.errors || []).forEach(e => errs.push(e.name + ': ' + e.error));
+          if (r.concepts) Object.keys(r.concepts).forEach(k => { const sc = secOf(k); if (sc) sc.concept = { text: r.concepts[k], n: 0, confirmed: false }; });
+        } catch (e) { grp.forEach(f => errs.push(f.name + ': ' + e.message)); }
+        note();
+      }
+    };
+    busy = `Sending ${total} photo${total === 1 ? '' : 's'}…`; render();
+    await Promise.all([worker(), worker()]);
+    busy = null; await load(); toast(ok + ' photo' + (ok === 1 ? '' : 's') + ' saved' + (errs.length ? ', ' + errs.length + ' not saved' : ''));
+  }
+  // "Scan again" for photos the AI could not read (5 per request)
+  async function rescan(ids) {
+    if (!ids.length) return; errs = []; let done = 0; busy = `Scanning ${ids.length}…`; render();
+    for (let k = 0; k < ids.length; k += 5) {
+      const part = ids.slice(k, k + 5);
+      let r = null, last = null;
+      for (let t = 0; t < 3 && !r; t++) { try { r = await api.post('ph.rescan', { ids: part }); } catch (e) { last = e; if (!BUSY_RE.test(e.message || '')) break; if (t < 2) await sleep(t === 0 ? 4000 : 12000); } }
+      if (r) { mergePhotos(r.photos); done += part.length; } else errs.push((last && last.message) || 'Could not scan.');
+      busy = `Scanned ${done} of ${ids.length}…`; const r2 = root.querySelector('.run'); if (r2) r2.textContent = busy;
+    }
+    busy = null; await load(); toast(done + ' scanned');
+  }
+  function bindDrop() {
+    const d = $('ph').querySelector('#drop'), b = $('btnPick'); if (b) b.onclick = () => { hintSec = ''; $('pick').click(); };
+    if (!d) return;
+    ['dragenter', 'dragover'].forEach(ev => d.addEventListener(ev, e => { e.preventDefault(); d.classList.add('on'); }));
+    ['dragleave', 'drop'].forEach(ev => d.addEventListener(ev, e => { e.preventDefault(); d.classList.remove('on'); }));
+    d.addEventListener('drop', e => { if (e.dataTransfer && e.dataTransfer.files.length) uploadAll(e.dataTransfer.files, ''); });
+  }
+  $('pick').addEventListener('change', (e) => { const f = Array.from(e.target.files || []); const s = hintSec; hintSec = ''; e.target.value = ''; if (f.length) uploadAll(f, s); });   // copy the list first: clearing the input empties it
+
+  // ---- clicks
+  async function act(a, el) {
+    const id = +el.dataset.id, s = el.dataset.s;
+    try {
+      if (a === 'tog') { open[s] = !open[s]; if (!open[s] && namesEdit && secOf(s) && secOf(s).per === namesEdit) namesEdit = ''; render(); }
+      else if (a === 'more') { shown[s] = 9999; render(); }
+      else if (a === 'add') { hintSec = s; $('pick').click(); }
+      else if (a === 'names') { namesEdit = s; render(); }
+      else if (a === 'savenames') { const r = await api.post('ph.names', { kind: s, text: $('namesTa').value }); namesEdit = ''; toast(r.count + ' names saved'); await load(); }
+      else if (a === 'skip') { await api.post('ph.skip', { section: s, slot: el.dataset.sl, skip: el.dataset.v === '1' }); await load(); }
+      else if (a === 'concept') { await api.post('ph.concept', { section: s, ok: el.dataset.v === '1' }); toast(el.dataset.v === '1' ? 'Got it — thanks' : 'Removed. Upload more photos and I will read them again.'); await load(); }
+      else if (a === 'reread') { el.disabled = true; el.textContent = 'Reading…'; await api.post('ph.reread', { section: s }); await load(); }
+      else if (a === 'save') {
+        const row = el.closest('.ck'); const body = { id, ok: true };
+        const sc = row.querySelector('[data-f=section]'), tg = row.querySelector('[data-f=tag]'), sl = row.querySelector('[data-f=slot]');
+        if (sc) body.section = sc.value; if (tg) body.tag = tg.value.trim(); if (sl) body.slot = sl.value;
+        await api.post('ph.fix', body); toast('Saved'); await load();
+      }
+      else if (a === 'del') { if (!confirm('Delete this photo?')) return; await api.post('ph.del', { id }); lb = null; toast('Deleted'); await load(); }
+      else if (a === 'view') { const t = el.dataset.pid; if (t) { lb = +t; render(); } }
+      else if (a === 'closelb') { lb = null; render(); }
+      else if (a === 'rescan') { await rescan([id]); }
+      else if (a === 'rescanall') { await rescan(D.photos.filter(unscanned).map(p => p.id)); }
+      else if (a === 'clrerr') { errs = []; render(); }
+    } catch (e) { toast(e.message || 'Something went wrong'); }
+  }
+  root.addEventListener('click', (e) => {
+    if (e.target.closest('select,input,textarea,details,summary')) return;
+    const el = e.target.closest('[data-act]'); if (!el || !root.contains(el)) return;
+    if (el.dataset.act === 'closelb' && e.target.closest('[data-stop]')) return;      // a click inside the white box does not close it
+    act(el.dataset.act, el);
+  });
+  // changing the section of a "needs your check" row changes the second box
+  root.addEventListener('change', (e) => {
+    const t = e.target; if (t.dataset.f !== 'section') return; const p = D.photos.find(x => x.id === +t.dataset.id); if (!p) return;
+    p.section = t.value; p.slot = ''; render();
+  });
+  load();
+})();
+</script>
+</body>
+</html>

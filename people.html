@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#14161a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="People">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>People — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=4">
+<link rel="stylesheet" href="assets/css/people.css?v=pp3">
+<style>[hidden]{display:none !important;}</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><h1>People</h1></div>
+    <div class="content">
+      <div id="pp"><div class="pp-load">Loading…</div></div>
+    </div>
+  </main>
+</div>
+<div id="ppToast" role="status" aria-live="polite"></div>
+<script src="assets/js/config.js?v=4"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script>guardPage(); renderSidebar('people');</script>
+<script src="assets/js/cq_panel.js?v=cq4"></script>
+<script src="assets/js/person_card.js?v=pc1"></script>
+<script src="assets/js/people.js?v=pp7"></script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>

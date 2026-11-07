@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chat — HRMS</title>
+<!-- ONE chat, no list: opened in the side panel of WhatsApp → Give queries / Late replies / Signals / Contacts (whatsapp.html), so the admin reads, replies
+     and assigns without leaving that list. wa_one.html?phone=9876543210 — tells the page around it when the chat was assigned or closed (postMessage). -->
+<link rel="stylesheet" href="assets/css/style.css">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap">
+<style>
+  [hidden]{display:none !important;}
+  html,body{margin:0; height:100%; background:#fff; overflow:hidden;}
+  #wi{height:100%;}
+  .wi.one > *:not(.wi-box){display:none !important;}
+  .wi.one .wi-box,.wi.one.mine .wi-box{position:static !important; display:grid; grid-template-columns:minmax(0,1fr); height:100vh; height:100dvh; min-height:0; border:0; border-radius:0; gap:0;}
+  .wi.one .wi-col.list{display:none !important;}
+  .wi.one .wi-col.chat{display:flex !important; border:0; border-radius:0;}
+  .wi.one .wi-col.side{display:none;}
+  .wi.one.det .wi-col.side{display:flex; position:fixed; inset:0; z-index:50; background:#fff; overflow-y:auto;}
+  .wi.one .wi-head .wi-more.wi-pc{display:inline-flex !important;}
+</style>
+</head>
+<body>
+<div id="wi"></div>
+<script src="assets/js/config.js?v=2"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/wa_icons.js?v=i1"></script>
+<script src="assets/js/cx_raise.js?v=cx9"></script>
+<script src="assets/js/wa_inbox.js?v=wa42"></script>
+<script>
+  if (!api.token()) { parent.postMessage({ wa: 'close' }, location.origin); }
+  else WaInbox.start({ mode: 'admin', root: 'wi', one: true });
+</script>
+</body>
+</html>

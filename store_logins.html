@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<title>Store logins — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=4">
+<style>
+.lg-card{background:#fff;border:1px solid var(--line,#e6e8ec);border-radius:16px;padding:18px;margin-bottom:16px;max-width:760px}
+.lg-card h3{margin:0 0 4px;font-size:16px}.lg-sub{font-size:13px;color:#6b7280;margin:0 0 12px;line-height:1.5}
+.lg-row{display:flex;gap:8px;flex-wrap:wrap}.lg-row input{flex:1;min-width:150px;padding:11px 12px;border:1px solid var(--line,#e6e8ec);border-radius:10px;font:inherit}
+.lg-u{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:11px 0;border-bottom:1px solid #f1f3f6}.lg-u .nm{flex:1;min-width:140px}
+.lg-b{border:1px solid var(--line,#e6e8ec);background:#fff;border-radius:10px;padding:9px 14px;font:inherit;font-weight:600;cursor:pointer}.lg-b.go{background:#14161a;color:#fff;border-color:#14161a}
+.lg-note{font-size:12.5px;color:#6b7280}.lg-toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#14161a;color:#fff;padding:12px 18px;border-radius:14px;opacity:0;transition:.2s;pointer-events:none;z-index:99}.lg-toast.show{opacity:1}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><div><h1>Store logins</h1><div class="sub" style="font-size:12.5px;color:var(--muted);margin-top:2px">ID and password for store staff — they open only the store POS</div></div></div>
+    <div class="content">
+      <div class="lg-card"><h3>+ New login</h3><p class="lg-sub">Give an ID and password to store staff. They open only Store → POS: billing, inventory, returns, cash out and expenses — nothing else in the HRMS.</p>
+        <div class="lg-row"><input id="u" placeholder="ID (e.g. ramesh01)" autocapitalize="off"><input id="p" placeholder="Password (6+ characters)"><button class="lg-b go" id="go">Create login</button></div></div>
+      <div class="lg-card"><h3>People with this login</h3><div id="list" class="lg-note">Loading…</div></div>
+      <div class="lg-note" style="max-width:760px">They sign in at the normal HRMS login page with this ID and password. The role <b>Store Staff</b> (made automatically) opens only: <b>Store → POS</b>. You can see or change it on Admin → Roles.</div>
+    </div>
+  </main>
+</div>
+<div class="lg-toast" id="toast"></div>
+<script src="assets/js/config.js?v=4"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script>
+  guardPage();
+  renderSidebar('store_logins');
+  const ROLE = 'Store Staff', PERM = 'store_pos';
+  const $ = (id) => document.getElementById(id), esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const toast = (m) => { const t = $('toast'); t.textContent = m; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 2800); };
+  const run = async (f) => { try { return await f(); } catch (e) { toast(e.message || 'Something went wrong'); } };
+  // the role is created once (only this one permission), then every login here uses it
+  async function ensureRole() {
+    const d = await api.get('roles.list'); const r = (d.roles || []).find((x) => x.role_name === ROLE);
+    if (r) { if ((r.permissions || []).indexOf(PERM) < 0) await api.post('roles.save', { role_id: r.role_id, role_name: ROLE, permissions: (r.permissions || []).concat([PERM]) }); return; }
+    await api.post('roles.save', { role_name: ROLE, permissions: [PERM] });
+  }
+  async function load() { await run(async () => {
+    const d = await api.get('users.list'); const rows = (d.users || []).filter((u) => u.role === ROLE);
+    $('list').innerHTML = rows.length ? rows.map((u) => '<div class="lg-u"><div class="nm"><b>' + esc(u.username) + '</b></div><button class="lg-b" data-pw="' + u.user_id + '" data-n="' + esc(u.username) + '">New password</button><button class="lg-b" data-del="' + u.user_id + '" data-n="' + esc(u.username) + '">Remove</button></div>').join('') : 'No logins yet.';
+    document.querySelectorAll('[data-pw]').forEach((b) => b.onclick = () => { const p = prompt('New password for ' + b.dataset.n + ' (6+ characters):'); if (p) run(async () => { await api.post('users.update', { user_id: +b.dataset.pw, username: b.dataset.n, role: ROLE, password: p }); toast('Password changed'); }); });
+    document.querySelectorAll('[data-del]').forEach((b) => b.onclick = () => { if (confirm('Remove the login ' + b.dataset.n + '? They can no longer sign in.')) run(async () => { await api.post('users.delete', { user_id: +b.dataset.del }); toast('Removed'); load(); }); });
+  }); }
+  $('go').onclick = () => run(async () => {
+    const u = $('u').value.trim(), p = $('p').value;
+    if (!u || p.length < 6) { toast('Enter an ID and a password of 6+ characters'); return; }
+    await ensureRole(); await api.post('users.create', { username: u, password: p, role: ROLE, employee_id: null });
+    $('u').value = ''; $('p').value = ''; toast('Login created — give them the ID and password'); load();
+  });
+  run(async () => { await ensureRole(); load(); });
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>

@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Retail Field — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css">
+<style>
+  .rf{max-width:760px; margin:0 auto; padding:0 0 60px;}
+  @media (max-width:820px){ .rf{padding:0 10px 60px;} }
+  .rf .sub{font-size:12.5px; color:var(--muted,#6b7280);}
+  .rf-hero{background:var(--navy-900,#111827); color:#fff; border-radius:var(--radius,18px); padding:18px 20px; margin-bottom:14px;}
+  .rf-hero .k{font-size:11px; letter-spacing:.08em; text-transform:uppercase; opacity:.7; font-weight:700;}
+  .rf-hero .v{font-size:26px; font-weight:800; margin:2px 0;}
+  .rf-hero .m{font-size:12.5px; opacity:.8;}
+  .rf-bar{height:7px; background:rgba(255,255,255,.18); border-radius:99px; overflow:hidden; margin-top:10px;}
+  .rf-bar > i{display:block; height:100%; background:var(--accent,#ff7a2f); border-radius:99px; transition:width .25s;}
+  .rf-card{background:var(--surface,#fff); border-radius:var(--radius,18px); box-shadow:var(--shadow,0 1px 3px rgba(20,22,26,.08)); margin-bottom:14px; overflow:hidden;}
+  .rf-h{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:15px 18px 10px;}
+  .rf-h .t{font-size:15.5px; font-weight:800; letter-spacing:-.01em;}
+  .rf-h .n{width:26px; height:26px; border-radius:50%; background:var(--accent,#ff7a2f); color:#fff; display:inline-flex; align-items:center; justify-content:center; font-size:13px; font-weight:800; margin-right:9px;}
+  .rf-b{padding:0 18px 16px;}
+  .pill{display:inline-block; padding:2px 10px; border-radius:99px; font-size:11px; font-weight:800; white-space:nowrap;}
+  .pill.ok{background:#e4f6ec; color:#16945a;} .pill.todo{background:#fff1e6; color:#c2570c;} .pill.bad{background:#fdecea; color:#d9423b;} .pill.na{background:#eceff3; color:#4b5563;} .pill.blue{background:#eaf0ff; color:#1d4ed8;}
+  .two{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+  .fld{display:grid; gap:4px;} .fld label{font-size:12px; color:var(--muted,#6b7280); font-weight:700;}
+  .fld input, .fld textarea, .fld select{width:100%; box-sizing:border-box; padding:11px 12px; border:1px solid var(--line,#e5e7eb); border-radius:12px; font-size:16px; font-family:inherit; background:#fff;}
+  .fld textarea{min-height:64px; resize:vertical;}
+  .rf .btn{min-height:46px; border-radius:999px; font-weight:800; font-size:14.5px;}
+  .rf .btn.full{width:100%;}
+  .rf .btn[disabled]{opacity:.45;}
+  .hint{font-size:12px; color:var(--muted,#6b7280); line-height:1.5; margin-top:6px;}
+  .res{border-radius:12px; padding:10px 12px; margin-top:10px; font-size:13.5px; line-height:1.5; font-weight:600;}
+  .res.ok{background:#e4f6ec; color:#0f5f3b;} .res.warn{background:#fff1e6; color:#7a4310;} .res.bad{background:#fdecea; color:#8a2620;} .res.busy{background:#f3efe8; color:var(--muted,#6b7280);}
+  .shop{display:flex; align-items:center; gap:12px; padding:13px 18px; border-top:1px solid var(--line,#e5e7eb);}
+  .shop.done{background:#f4fbf7;}
+  .shop .no{flex:none; width:28px; height:28px; border-radius:50%; background:#111827; color:#fff; font-size:12.5px; font-weight:800; display:flex; align-items:center; justify-content:center;}
+  .shop.done .no{background:#16945a;}
+  .shop .mid{flex:1; min-width:0;} .shop .nm{font-weight:800; font-size:14.5px; line-height:1.3;} .shop .ar{font-size:12.5px; color:var(--muted,#6b7280); margin-top:1px;}
+  .chips{display:flex; gap:5px; flex-wrap:wrap; margin-top:5px;}
+  .go{flex:none; display:flex; gap:7px; align-items:center;}
+  .ib{width:40px; height:40px; border-radius:50%; border:1px solid var(--line,#e5e7eb); background:#fff; display:inline-flex; align-items:center; justify-content:center; font-size:17px; text-decoration:none; color:inherit; cursor:pointer;}
+  .open{border:0; background:var(--accent,#ff7a2f); color:#fff; border-radius:999px; padding:0 16px; height:40px; font-weight:800; font-size:13.5px; cursor:pointer;}
+  .shop.done .open{background:#e5e7eb; color:#374151;}
+  /* the visit sheet */
+  #sheet{position:fixed; inset:0; z-index:200; background:var(--bg,#fdf8f1); display:none; overflow-y:auto; -webkit-overflow-scrolling:touch;}
+  #sheet.on{display:block;}
+  .sh-top{position:sticky; top:0; z-index:5; background:var(--navy-900,#111827); color:#fff; padding:12px 14px; display:flex; align-items:center; gap:12px;}
+  .sh-top .back{border:0; background:rgba(255,255,255,.14); color:#fff; width:40px; height:40px; border-radius:50%; font-size:18px; cursor:pointer;}
+  .sh-top .t{font-weight:800; font-size:16px; line-height:1.25;} .sh-top .s{font-size:12px; opacity:.75;}
+  .sh-in{max-width:640px; margin:0 auto; padding:14px 12px 90px;}
+  .strip{display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:12px;}
+  .strip > div{background:#fff; border-radius:14px; padding:11px 13px; box-shadow:var(--shadow,0 1px 3px rgba(20,22,26,.08));}
+  .strip .k{font-size:11px; letter-spacing:.07em; text-transform:uppercase; color:var(--muted,#6b7280); font-weight:800;} .strip .v{font-size:19px; font-weight:800; margin-top:2px;}
+  .line{padding:13px 16px; border-top:1px solid var(--line,#e5e7eb);}
+  .line .top{display:flex; align-items:center; justify-content:space-between; gap:10px;}
+  .line .nm{font-weight:800; font-size:14.5px; line-height:1.3;} .line .ls{font-size:12px; color:var(--muted,#6b7280);}
+  .step{display:flex; align-items:center; gap:6px;}
+  .step button{width:40px; height:40px; border-radius:50%; border:1px solid var(--line,#e5e7eb); background:#fff; font-size:20px; font-weight:800; cursor:pointer;}
+  .step input{width:58px; height:40px; text-align:center; border:2px solid var(--line,#e5e7eb); border-radius:12px; font-size:18px; font-weight:800; font-family:inherit;}
+  .step input.fill{border-color:#16945a;} .step input.low{border-color:#d9423b;}
+  .why{display:flex; gap:6px; flex-wrap:wrap; margin-top:9px;}
+  .why button{border:1px solid var(--line,#e5e7eb); background:#fff; border-radius:999px; padding:7px 13px; font-size:13px; font-weight:700; cursor:pointer;}
+  .why button.on{background:#111827; color:#fff; border-color:#111827;}
+  .why .q{flex:1 1 100%; font-size:12.5px; font-weight:800; color:#d9423b;}
+  .yn{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+  .yn button{min-height:50px; border-radius:14px; border:2px solid var(--line,#e5e7eb); background:#fff; font-size:15px; font-weight:800; cursor:pointer;}
+  .yn button.on.y{background:#e4f6ec; border-color:#16945a; color:#0f5f3b;} .yn button.on.n{background:#fdecea; border-color:#d9423b; color:#8a2620;}
+  .lock{display:flex; align-items:center; gap:10px; background:#f3efe8; border-radius:14px; padding:14px; color:var(--muted,#6b7280); font-weight:700; font-size:13.5px;}
+  .photo-prev{width:100%; max-height:220px; object-fit:cover; border-radius:14px; margin-top:10px;}
+  .collect{background:#fff1e6; border:2px solid var(--accent,#ff7a2f); border-radius:18px; padding:16px; margin-top:12px;}
+  .collect .big{font-size:30px; font-weight:800; color:#c2570c; margin:2px 0 8px;}
+  .tbl{width:100%; border-collapse:collapse; font-size:13.5px;} .tbl td{padding:7px 0; border-top:1px solid var(--line,#e5e7eb);} .tbl td:last-child{text-align:right; font-weight:800;}
+  .center{text-align:center; padding:40px 20px; color:var(--muted,#6b7280); line-height:1.6;} .center b{display:block; color:var(--ink,#111827); font-size:16px; margin-bottom:4px;}
+  input[type=file].hid{display:none;}
+  .extra{display:grid; grid-template-columns:1fr 78px 64px 38px; gap:6px; margin-top:8px; align-items:center;}
+  .extra input, .extra select{width:100%; box-sizing:border-box; padding:9px; border:1px solid var(--line,#e5e7eb); border-radius:10px; font-size:15px; font-family:inherit;}
+  .tiny{border:0; background:none; color:#d9423b; font-size:20px; cursor:pointer;}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><h1>Retail Field</h1></div>
+    <div class="content">
+      <div id="alertBox"></div>
+      <div class="rf" id="root"><div class="center">Loading...</div></div>
+    </div>
+  </main>
+</div>
+<div id="sheet"></div>
+
+<script src="assets/js/config.js"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script>
+  guardPage();
+  renderSidebar('retail_field');
+
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const inr = (n) => '₹' + Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+  let D = null, V = null, BUSY = false, SHEET = false, RESULT = null, MODE = 'visit';
+  const blob = {};
+
+  function say(msg, bad) { const a = document.getElementById('alertBox'); a.innerHTML = msg ? `<div class="alert ${bad ? 'error' : 'success'}">${esc(msg)}</div>` : ''; if (msg && !bad) setTimeout(() => { if (a.firstChild) a.innerHTML = ''; }, 3500); if (msg) window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  // Shrink the phone photo before it goes up (big camera photos are slow on mobile data).
+  function shrink(file, max) {
+    return new Promise((resolve) => {
+      const u = URL.createObjectURL(file), im = new Image();
+      im.onload = () => {
+        try {
+          const sc = Math.min(1, max / Math.max(im.naturalWidth, im.naturalHeight));
+          if (sc >= 1 && file.size < 1500000) { URL.revokeObjectURL(u); return resolve(file); }
+          const cv = document.createElement('canvas'); cv.width = Math.round(im.naturalWidth * sc); cv.height = Math.round(im.naturalHeight * sc);
+          cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height);
+          cv.toBlob((bl) => { URL.revokeObjectURL(u); resolve(bl ? new File([bl], 'photo.jpg', { type: 'image/jpeg' }) : file); }, 'image/jpeg', 0.85);
+        } catch (x) { URL.revokeObjectURL(u); resolve(file); }
+      };
+      im.onerror = () => { URL.revokeObjectURL(u); resolve(file); };
+      im.src = u;
+    });
+  }
+  function pos() {
+    return new Promise((res) => {
+      if (!navigator.geolocation) return res(null);
+      navigator.geolocation.getCurrentPosition((p) => res({ lat: p.coords.latitude, lng: p.coords.longitude }), () => res(null), { enableHighAccuracy: true, timeout: 5000, maximumAge: 60000 });
+    });
+  }
+  async function photoUrl(path) {
+    if (!path) return ''; if (blob[path]) return blob[path];
+    try { const r = await fetch(api.buildUrl('rf.photo', { path }), { headers: { Authorization: 'Bearer ' + api.token() } }); if (!r.ok) return ''; return (blob[path] = URL.createObjectURL(await r.blob())); } catch (e) { return ''; }
+  }
+  function pickPhoto() { return new Promise((resolve) => { const f = document.createElement('input'); f.type = 'file'; f.accept = 'image/*'; f.setAttribute('capture', 'environment'); f.onchange = () => resolve(f.files && f.files[0] ? f.files[0] : null); f.click(); }); }
+
+  /* ---------------- the day ---------------- */
+  async function load() {
+    try { D = await api.get('rf.today'); render(); }
+    catch (e) { document.getElementById('root').innerHTML = `<div class="rf-card"><div class="center"><b>${esc(e.message)}</b></div></div>`; }
+  }
+  function statePill(s) {
+    if (!s.done) return '<span class="pill todo">To do</span>';
+    if (s.status === 'clear' || s.status === 'approved') return '<span class="pill ok">✓ Checked</span>';
+    if (s.status === 'rejected') return '<span class="pill bad">Sent back</span>';
+    return '<span class="pill blue">With the checker</span>';
+  }
+  function render() {
+    const d = D, c = d.counts, pct = c.total ? Math.round(100 * c.done / c.total) : 0;
+    const hello = new Date().getHours() < 12 ? 'Good morning' : (new Date().getHours() < 17 ? 'Good afternoon' : 'Good evening');
+    const day = new Date(d.day + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' });
+    let h = `<div class="rf-hero"><div class="k">${esc(day)} · ${esc(d.cities.join(', '))}</div><div class="v">${c.done} of ${c.total} shops done</div>
+      <div class="m">${hello}, ${esc(d.name)}.${c.collect ? ' <b style="color:#ffb27a;">' + c.collect + ' shop' + (c.collect > 1 ? 's' : '') + ' to collect money from.</b>' : ''}${c.remove ? ' ' + c.remove + ' display to take back.' : ''}</div><div class="rf-bar"><i style="width:${pct}%"></i></div></div>`;
+    h += urgentCard() + morningCard() + shopsCard() + eveningCard() + moneyCard();
+    document.getElementById('root').innerHTML = h;
+  }
+  /* ---- money to collect now: sold but not paid, the lock, the ask ---- */
+  function urgentCard() {
+    const u = D.urgent; if (!u || !u.items.length) return '';
+    const st = u.punch_tells ? `<div class="res warn">Visit these shops and collect before you punch out. If you punch out with it unpaid, your checker and the bosses are told straight away.</div>` : `<div class="hint">Money unpaid for over ${u.after_h} hours is reported to the checker if you punch out without collecting it.</div>`;
+    const rows = u.items.map((i) => {
+      const wait = i.hours >= 48 ? Math.round(i.hours / 24) + ' days' : (i.hours >= 1 ? Math.round(i.hours) + ' h' : 'just now');
+      const chip = i.level >= 3 ? '<span class="pill bad">Boss told</span>' : (i.level === 2 ? '<span class="pill bad">Checker told</span>' : (i.level === 1 ? '<span class="pill todo">Reminder sent</span>' : '<span class="pill na">New</span>'));
+      return `<div class="line" style="padding:12px 0; border-top:1px solid #eef0f3;"><div style="display:flex; justify-content:space-between; gap:8px; align-items:flex-start;"><div><b>${esc(i.shop)}</b><div class="ar" style="font-size:12px; color:var(--muted,#6b7280);">${esc(i.area || '')} · waiting ${wait}</div></div>${chip}</div>
+        <div style="margin:6px 0; font-size:14px; line-height:1.4;">${esc(i.text)}</div>
+        ${i.promise ? `<div class="hint" style="margin:0 0 8px;">${i.promise.kind === 'cash' ? 'Cash visit' : 'Promised to pay'}: ${esc(new Date(i.promise.date + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }))}</div>` : ''}
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;"><button class="btn" style="width:auto; min-height:42px; padding:0 16px;" data-act="u-visit" data-id="${i.shop_id}">Visit and collect</button>
+          ${i.mobile ? `<a class="ib" href="tel:${esc(i.mobile)}" title="Call">📞</a>` : ''}${i.wa ? `<a class="ib" target="_blank" rel="noopener" href="${esc(i.wa)}" title="Remind on WhatsApp">💬</a>` : ''}</div></div>`;
+    }).join('');
+    return `<div class="rf-card" style="border:2px solid ${u.punch_tells ? '#d9423b' : '#f0a35e'};"><div class="rf-h"><div class="t">💸 Money to collect now</div><span class="pill bad">${inr(u.total)}</span></div><div class="rf-b">${st}${rows}</div></div>`;
+  }
+  function morningCard() {
+    const m = D.morning;
+    let b = '';
+    if (m.done && m.status !== 'rejected') b = `<div class="res ${m.status === 'review' ? 'warn' : 'ok'}">${m.q20} × 20 ml and ${m.q50} × 50 ml taken out. ${esc(m.ai || '')}</div>${m.status === 'review' ? '<div class="hint">Your checker will look at the photo. You can carry on.</div>' : ''}
+      <button class="btn secondary full" style="margin-top:10px;" data-act="morning-redo">Change the count or photo</button>`;
+    else b = `${m.status === 'rejected' ? `<div class="res bad">Sent back: ${esc(m.note || 'take the photo again')}</div>` : ''}
+      <div class="hint" style="margin:0 0 10px;">Lay out the bottles you are taking today and take one photo. Count them first.</div>
+      <div class="two"><div class="fld"><label>20 ml bottles</label><input id="m20" type="number" inputmode="numeric" min="0" placeholder="0"></div><div class="fld"><label>50 ml bottles</label><input id="m50" type="number" inputmode="numeric" min="0" placeholder="0"></div></div>
+      <button class="btn full" style="margin-top:12px;" data-act="stock-photo" data-kind="morning">📷 Take the photo and send</button><div id="mRes"></div>`;
+    return `<div class="rf-card"><div class="rf-h"><div class="t"><span class="n">1</span>Morning stock</div>${statePill(m)}</div><div class="rf-b">${b}</div></div>`;
+  }
+  function shopsCard() {
+    const rows = D.visits.map((v) => {
+      const chips = [];
+      if (v.remove_id) chips.push('<span class="pill bad">Take display back</span>');
+      if (v.collect > 0) chips.push(`<span class="pill todo">Collect ${inr(v.collect)}</span>`);
+      if (v.promise && v.promise.kind === 'cash') chips.push('<span class="pill ok">Cash visit: shop will pay</span>'); else if (v.promise) chips.push('<span class="pill blue">Promised ' + esc(new Date(v.promise.date + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })) + '</span>');
+      else if (v.due > 0) chips.push(`<span class="pill na">Owes ${inr(v.due)}</span>`);
+      if (v.last_tidy === 0) chips.push('<span class="pill bad">Was not neat</span>');
+      if (v.last_days !== null) chips.push(`<span class="pill na">Last visit ${v.last_days === 0 ? 'today' : v.last_days + 'd ago'}</span>`); else chips.push('<span class="pill blue">First visit</span>');
+      const tel = v.mobile ? `<a class="ib" href="tel:${esc(v.mobile)}" title="Call">📞</a>` : '';
+      const map = v.lat !== null ? `<a class="ib" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${v.lat},${v.lng}" title="Directions">📍</a>` : '';
+      return `<div class="shop ${v.status === 'done' ? 'done' : ''}"><div class="no">${v.status === 'done' ? '✓' : v.seq && v.seq < 9999 ? v.seq : '•'}</div>
+        <div class="mid"><div class="nm">${esc(v.name)}</div><div class="ar">${esc(v.area || '')}${v.owner ? ' · ' + esc(v.owner) : ''}</div><div class="chips">${chips.join('')}</div></div>
+        <div class="go">${tel}${map}<button class="open" data-act="open-visit" data-id="${v.shop_id}" data-plan="${v.plan_id}">${v.status === 'done' ? 'View' : (v.remove_id ? 'Take back' : 'Visit')}</button></div></div>`;
+    }).join('');
+    const cy = D.cycle; const warn = cy.need_per_day > cy.per_day ? `<div class="res warn" style="margin:0 18px 12px;">${cy.shops} shops need about ${cy.need_per_day} visits a day to finish in ${cy.days} days. Today's list has ${cy.per_day}. Tell your manager.</div>` : '';
+    return `<div class="rf-card"><div class="rf-h"><div class="t"><span class="n">2</span>Today's shops</div><span class="pill ok">${D.counts.done}/${D.counts.total}</span></div>${warn}
+      ${rows || '<div class="center"><b>No shops on your list today.</b>Your manager can add shops in Retail Control.</div>'}
+      <div class="rf-b" style="padding-top:12px;"><button class="btn secondary full" data-act="find-link">🔗 Send an order link to any shop</button></div></div>`;
+  }
+  function eveningCard() {
+    const e = D.evening, m = D.morning, x = D.expected_back;
+    let b = '';
+    if (e.done && e.status !== 'rejected') b = `<div class="res ${e.status === 'review' ? 'warn' : 'ok'}">Returned ${e.q20} × 20 ml and ${e.q50} × 50 ml, cash in hand ${inr(e.cash)}. ${esc(e.note || e.ai || '')}</div>`;
+    else if (!m.done) b = '<div class="hint">Do the morning stock first, then the evening return opens here.</div>';
+    else b = `${e.status === 'rejected' ? `<div class="res bad">Sent back: ${esc(e.note || 'check the count')}</div>` : ''}
+      <div class="res busy" style="margin-top:0;">You took ${m.q20} × 20 ml and ${m.q50} × 50 ml this morning.</div>
+      <div class="two" style="margin-top:12px;"><div class="fld"><label>20 ml delivered today</label><input id="d20" type="number" inputmode="numeric" min="0" value="${x.delivered20}"></div><div class="fld"><label>50 ml delivered today</label><input id="d50" type="number" inputmode="numeric" min="0" value="${x.delivered50}"></div></div>
+      <div class="hint" style="margin:-2px 0 6px;">Prefilled from today's delivered orders. Change it if you handed over a different number.</div>
+      <div class="two" style="margin-top:8px;"><div class="fld"><label>20 ml brought back</label><input id="e20" type="number" inputmode="numeric" min="0" placeholder="0"></div><div class="fld"><label>50 ml brought back</label><input id="e50" type="number" inputmode="numeric" min="0" placeholder="0"></div></div>
+      <div class="res warn" id="eExp" style="margin-top:10px;"></div>
+      <div class="fld" style="margin-top:10px;"><label>Cash in hand (collected today in cash: ${inr(x.cash)})</label><input id="eCash" type="number" inputmode="decimal" min="0" placeholder="0"></div>
+      <button class="btn full" style="margin-top:12px;" data-act="stock-photo" data-kind="evening">📷 Take the photo and send</button><div id="eRes"></div>`;
+    return `<div class="rf-card"><div class="rf-h"><div class="t"><span class="n">3</span>Evening return</div>${statePill(e)}</div><div class="rf-b">${b}</div></div>`;
+  }
+  function moneyCard() {
+    const c = D.collected;
+    return `<div class="rf-card"><div class="rf-h"><div class="t">Money collected today</div></div><div class="rf-b"><table class="tbl"><tr><td>Cash</td><td>${inr(c.cash)}</td></tr><tr><td>Online</td><td>${inr(c.online)}</td></tr><tr><td>Total (${c.n} receipt${c.n === 1 ? '' : 's'})</td><td>${inr(c.cash + c.online)}</td></tr></table></div></div>`;
+  }
+
+  /* ---------------- morning / evening photo ---------------- */
+  async function stockPhoto(kind) {
+    if (BUSY) return;
+    const p = kind === 'morning' ? 'm' : 'e', q20 = document.getElementById(p + '20').value, q50 = document.getElementById(p + '50').value, res = document.getElementById(p === 'm' ? 'mRes' : 'eRes');
+    if (q20 === '' || q50 === '') { res.innerHTML = '<div class="res bad">Enter both counts first (0 if none).</div>'; return; }
+    const raw = await pickPhoto(); if (!raw) return;
+    BUSY = true; res.innerHTML = '<div class="res busy">Sending and checking the photo… Claude is looking at it.</div>';
+    try {
+      const fd = new FormData(); fd.append('q20', q20); fd.append('q50', q50); fd.append('photo', await shrink(raw, 1600));
+      if (kind === 'evening') { fd.append('cash_in_hand', document.getElementById('eCash').value || ''); fd.append('d20', document.getElementById('d20').value || '0'); fd.append('d50', document.getElementById('d50').value || '0'); }
+      const r = await api.upload(kind === 'morning' ? 'rf.morning_submit' : 'rf.evening_submit', fd);
+      say(r.message); await load();
+    } catch (e) { res.innerHTML = `<div class="res bad">${esc(e.message)}</div>`; }
+    BUSY = false;
+  }
+
+  /* ---------------- a visit ---------------- */
+  const REASONS = [['sold', 'Sold'], ['lost', 'Lost'], ['broken', 'Broken'], ['not_given', 'Never given']];
+  async function openVisit(shopId, planId) {
+    if (BUSY) return; BUSY = true;
+    try {
+      const d = await api.get('rf.visit_open', { shop_id: shopId });
+      V = { d, plan: planId, lines: d.lines.map((l) => ({ ...l, counted: '', reason: '' })), extra: [], tidy: null, note: '', photo: null, thumb: '', problems: [], refilled: Object.assign({}, d.refilled || {}), bills: [], exc: d.exception || '', excNote: '', excOpen: false }; RESULT = null; MODE = d.remove ? 'remove' : 'visit';
+      if (!SHEET) history.pushState({ rfSheet: 1 }, '', location.href); SHEET = true; drawSheet();
+    } catch (e) { say(e.message, true); }
+    BUSY = false;
+  }
+  function closeSheet(fromPop) {
+    if (!SHEET) return; SHEET = false; document.getElementById('sheet').classList.remove('on'); document.body.style.overflow = '';
+    if (!fromPop && history.state && history.state.rfSheet) history.back();
+    load();
+  }
+  window.addEventListener('popstate', () => { if (SHEET) closeSheet(true); });
+  function localProblems() {
+    const p = [];
+    V.lines.forEach((l) => { if (l.counted === '') p.push('Count ' + l.product + ' ' + l.ml_text); else if (+l.counted < l.expected && !l.reason) p.push((l.expected - l.counted) + ' missing of ' + l.product + ' ' + l.ml_text + ': say why'); });
+    if (MODE === 'visit' && !p.length && V.exc !== 'approved') V.lines.forEach((l) => { const n = need(l); if (n > 0) p.push('Refill ' + n + ' × ' + l.product + ' ' + l.ml_text + ' and make the bill'); });
+    if (!V.lines.length && !V.extra.some((x) => x.name && +x.qty > 0)) p.push('Add the perfumes you see on this display');
+    if (MODE === 'visit') { if (V.tidy === null) p.push('Is the display neat? Yes or No'); else if (V.tidy === 0 && V.note.trim().length < 3) p.push('Write what is not neat'); }
+    return p;
+  }
+  const refilledOf = (l) => +(V.refilled[l.key] || 0);
+  const need = (l) => (l.counted === '' ? 0 : Math.max(0, l.expected - (+l.counted) - refilledOf(l)));
+  function needLines() { return V.lines.filter((l) => need(l) > 0); }
+  function fillCard() {
+    if (MODE !== 'visit') return '';
+    const n = needLines(), bp = V.d.bill_prices || {};
+    const filled = V.lines.some((l) => refilledOf(l) > 0);
+    if (!n.length && !filled && !V.bills.length) return '';
+    let h = `<div class="rf-card"><div class="rf-h"><div class="t"><span class="n">!</span>The display must be full</div>${n.length ? '<span class="pill bad">Not full</span>' : '<span class="pill ok">Full ✓</span>'}</div><div class="rf-b">`;
+    if (n.length) {
+      const est = n.reduce((a, l) => a + need(l) * (+bp[l.ml] || 0), 0);
+      h += `<div class="res warn" style="margin-top:0;">Give the shop the missing bottles now and make the bill. The photo opens only when every perfume is on the display.</div><table class="tbl">${n.map((l) => `<tr><td>${esc(l.product)} ${esc(l.ml_text)}</td><td>${need(l)} to give</td></tr>`).join('')}</table>
+        <button class="btn full" style="margin-top:12px;" data-act="refill" ${BUSY ? 'disabled' : ''}>🧾 Give ${n.reduce((a, l) => a + need(l), 0)} bottles and make the bill${est ? ' (' + inr(est) + ')' : ''}</button><div id="fillRes"></div>`;
+    }
+    V.bills.forEach((b) => { h += `<div class="res ok">Bill ${esc(b.order_no)}: ${b.lines.map((x) => x.qty + ' × ' + esc(x.product) + ' ' + esc(x.ml) + ' ml').join(', ')} · ${inr(b.total)}</div>`; });
+    if (n.length && V.exc !== 'approved') {
+      h += `<div class="hint" style="margin-top:12px;">Shop refused, or you have no bottles left? <button class="link" data-act="exc-open" style="background:none; border:0; color:#1d4ed8; font-weight:800; cursor:pointer; padding:0; font-size:inherit;">Ask the checker to allow it</button></div>`;
+      if (V.excOpen || V.exc) {
+        h += V.exc === 'pending' ? `<div class="res busy">Asked. Waiting for the checker. <button class="link" data-act="exc-check" style="background:none; border:0; color:#1d4ed8; font-weight:800; cursor:pointer; padding:0; font-size:inherit;">Check the answer</button></div>`
+          : (V.exc === 'denied' ? '<div class="res bad">The checker said no. Fill the display, or call your manager.</div>' : '')
+          + `<div class="fld" style="margin-top:8px;"><label>Why can the display not be filled?</label><textarea id="excNote" placeholder="e.g. owner refused new stock until old payment is cleared">${esc(V.excNote)}</textarea></div><button class="btn secondary full" style="margin-top:8px;" data-act="exc-send">Send to the checker</button>`;
+      }
+    }
+    if (V.exc === 'approved' && n.length) h += '<div class="res ok">The checker allowed this visit without a full display. It will be marked for review.</div>';
+    return h + '</div></div>';
+  }
+  function drawSheet() {
+    const s = document.getElementById('sheet'), d = V.d, sh = d.shop; s.classList.add('on'); document.body.style.overflow = 'hidden';
+    let h = `<div class="sh-top"><button class="back" data-act="close-sheet">←</button><div><div class="t">${esc(sh.name)}</div><div class="s">${esc(sh.area || '')}${sh.owner ? ' · ' + esc(sh.owner) : ''}</div></div></div><div class="sh-in">`;
+    if (RESULT) { s.innerHTML = h + resultHtml() + '</div>'; return; }
+    if (d.remove) h += `<div class="res bad" style="margin:0 0 12px;">This display is to be taken back. ${esc((d.remove.reasons || []).join(' · '))}</div>`;
+    h += `<div class="strip"><div><div class="k">Owes (bills delivered)</div><div class="v">${inr(d.due_rule)}</div></div><div><div class="k">Listed bottles worth</div><div class="v">${inr(d.expected_value)}</div></div></div>`;
+    if (d.undelivered > 0) h += `<div class="hint" style="margin:-4px 0 10px;">${inr(d.undelivered)} of the bill is an order not delivered yet; it is not counted against the shop.</div>`;
+    if (d.pay_req) h += `<div class="res warn" style="margin:0 0 12px;">A payment of ${inr(d.pay_req.ask)} is still to be collected here (asked on ${esc(d.pay_req.since)}).</div>`;
+    if (d.last && d.last.tidy === 0) h += `<div class="res bad" style="margin:0 0 12px;">Last time the display was not neat: ${esc(d.last.tidy_note)}</div>`;
+    h += `<div class="rf-card"><div class="rf-h"><div class="t"><span class="n">1</span>Count the display</div><button class="btn secondary" style="min-height:36px; padding:0 14px; font-size:13px;" data-act="all-present">All as listed</button></div>`;
+    V.lines.forEach((l, i) => {
+      const low = l.counted !== '' && +l.counted < l.expected, miss = low ? l.expected - l.counted : 0;
+      h += `<div class="line"><div class="top"><div><div class="nm">${esc(l.product)}</div><div class="ls">${esc(l.ml_text)} · listed ${l.expected}${refilledOf(l) ? ' · <b style="color:#16945a;">+' + refilledOf(l) + ' refilled</b>' : ''}</div></div>
+        <div class="step"><button data-act="dec" data-i="${i}">−</button><input type="number" inputmode="numeric" min="0" value="${esc(l.counted)}" data-i="${i}" class="cnt ${l.counted === '' ? '' : (low ? 'low' : 'fill')}" placeholder="?"><button data-act="inc" data-i="${i}">+</button></div></div>
+        ${low ? `<div class="why"><div class="q">${miss} missing: why?</div>${REASONS.map((r) => `<button data-act="reason" data-i="${i}" data-r="${r[0]}" class="${l.reason === r[0] ? 'on' : ''}">${r[1]}</button>`).join('')}</div>` : ''}</div>`;
+    });
+    V.extra.forEach((x, i) => { h += `<div class="line"><div class="ls" style="margin-bottom:2px;">Found on the display, not on the list</div><div class="extra"><input placeholder="Perfume name" value="${esc(x.name)}" data-x="${i}" data-f="name"><select data-x="${i}" data-f="ml"><option value="20" ${x.ml == '20' ? 'selected' : ''}>20 ml</option><option value="50" ${x.ml == '50' ? 'selected' : ''}>50 ml</option></select><input type="number" inputmode="numeric" min="0" placeholder="Qty" value="${esc(x.qty)}" data-x="${i}" data-f="qty"><button class="tiny" data-act="del-extra" data-i="${i}">✕</button></div></div>`; });
+    h += `<div class="rf-b" style="padding-top:12px;"><button class="btn secondary full" data-act="add-extra">+ A perfume that is not on the list</button></div></div>`;
+    h += fillCard();
+    if (MODE === 'visit') {
+      h += `<div class="rf-card"><div class="rf-h"><div class="t"><span class="n">2</span>Is the display neat?</div></div><div class="rf-b"><div class="yn"><button class="y ${V.tidy === 1 ? 'on' : ''}" data-act="tidy" data-v="1">✓ Yes, neat</button><button class="n ${V.tidy === 0 ? 'on' : ''}" data-act="tidy" data-v="0">✕ No</button></div>
+        ${V.tidy === 0 ? `<div class="fld" style="margin-top:10px;"><label>What is not neat?</label><textarea id="tidyNote" placeholder="e.g. bottles fallen, box broken, sticker missing">${esc(V.note)}</textarea></div>` : ''}</div></div>`;
+    }
+    const pr = localProblems();
+    h += `<div class="rf-card"><div class="rf-h"><div class="t"><span class="n">${MODE === 'visit' ? 3 : 2}</span>Display photo</div></div><div class="rf-b">`;
+    if (pr.length) h += `<div class="lock">🔒 <div>Fill the count first. The photo opens after that.<div class="hint" style="margin-top:4px;">${pr.slice(0, 4).map(esc).join('<br>')}${pr.length > 4 ? '<br>…' : ''}</div></div></div>`;
+    else {
+      h += V.photo ? `<img class="photo-prev" src="${V.thumb}" alt="">` : '';
+      h += `<button class="btn ${V.photo ? 'secondary' : ''} full" style="margin-top:10px;" data-act="take-photo">${V.photo ? '📷 Retake the photo' : '📷 Take the display photo'}</button>`;
+      if (V.photo) h += `<button class="btn full" style="margin-top:10px;" data-act="save-visit" ${BUSY ? 'disabled' : ''}>${MODE === 'remove' ? '✓ Save: display taken back' : '✓ Save the visit'}</button>`;
+    }
+    h += `<div id="vErr"></div></div></div></div>`;
+    s.innerHTML = h;
+  }
+  function redraw() { const y = document.getElementById('sheet').scrollTop; drawSheet(); document.getElementById('sheet').scrollTop = y; }
+  async function saveVisit() {
+    if (BUSY) return; BUSY = true; const err = document.getElementById('vErr'); err.innerHTML = '<div class="res busy">Saving… Claude is checking the photo (a few seconds).</div>'; drawBtn(true);
+    try {
+      const lines = V.lines.map((l) => ({ product: l.product, ml: l.ml, counted: +l.counted, reason: l.reason })).concat(V.extra.filter((x) => x.name && +x.qty > 0).map((x) => ({ product: x.name, ml: x.ml, counted: +x.qty, reason: '' })));
+      const p = await pos(); const fd = new FormData();
+      fd.append('shop_id', V.d.shop.shop_id); fd.append('plan_id', V.plan || 0); fd.append('lines', JSON.stringify(lines)); fd.append('photo', V.photo);
+      if (MODE === 'visit') { fd.append('tidy', V.tidy); fd.append('tidy_note', V.note); }
+      if (p) { fd.append('lat', p.lat); fd.append('lng', p.lng); }
+      const r = await api.upload(MODE === 'remove' ? 'rf.remove_done' : 'rf.visit_submit', fd);
+      RESULT = r; BUSY = false; drawSheet();
+    } catch (e) {
+      BUSY = false; let t = esc(e.message); if (e.data && e.data.problems) t += '<br>' + e.data.problems.map(esc).join('<br>');
+      err.innerHTML = `<div class="res bad">${t}</div>`; drawBtn(false);
+    }
+  }
+  function linesPayload() { return V.lines.map((l) => ({ product: l.product, ml: l.ml, counted: +l.counted, reason: l.reason })); }
+  async function refill() {
+    if (BUSY) return; BUSY = true; const box = document.getElementById('fillRes'); if (box) box.innerHTML = '<div class="res busy">Making the bill…</div>';
+    try {
+      const r = await api.post('rf.refill', { shop_id: V.d.shop.shop_id, lines: linesPayload() });
+      V.refilled = Object.assign({}, r.refilled || {}); if (r.made) V.bills.push({ order_no: r.order_no, total: r.total, lines: r.lines }); BUSY = false; say(r.message); redraw();
+    } catch (e) { BUSY = false; if (box) box.innerHTML = `<div class="res bad">${esc(e.message)}${e.data && e.data.problems ? '<br>' + e.data.problems.map(esc).join('<br>') : ''}</div>`; }
+  }
+  async function excSend() {
+    const el = document.getElementById('excNote'); V.excNote = el ? el.value : ''; if (BUSY) return; BUSY = true;
+    try { const r = await api.post('rf.exception_ask', { shop_id: V.d.shop.shop_id, note: V.excNote }); V.exc = r.status; say(r.message); } catch (e) { say(e.message, true); }
+    BUSY = false; redraw();
+  }
+  async function excCheck() { try { const r = await api.get('rf.exception_state', { shop_id: V.d.shop.shop_id }); V.exc = r.status; } catch (e) { say(e.message, true); } redraw(); }
+  function drawBtn(off) { const b = document.querySelector('[data-act="save-visit"]'); if (b) b.disabled = !!off; }
+  function resultHtml() {
+    const r = RESULT, rule = r.rule || null, sh = V.d.shop;
+    let h = `<div class="rf-card"><div class="rf-h"><div class="t">✓ ${MODE === 'remove' ? 'Display taken back' : 'Visit saved'}</div><span class="pill ${r.status === 'review' ? 'blue' : 'ok'}">${r.status === 'review' ? 'Checker will look' : 'Claude checked: OK'}</span></div><div class="rf-b">`;
+    if (rule) h += `<table class="tbl"><tr><td>Counted / listed</td><td>${rule.counted_units} / ${rule.expected_units}</td></tr><tr><td>Sold</td><td>${rule.sold_units}</td></tr><tr><td>Lost / broken / never given</td><td>${rule.lost_units}</td></tr><tr><td>Bottles on display now are worth</td><td>${inr(rule.stock_value)}</td></tr><tr><td>Shop owes</td><td>${inr(rule.due)}</td></tr></table>`;
+    if (r.ai_summary) h += `<div class="hint">${esc(r.ai_summary)}</div>`;
+    if (r.message && MODE === 'remove') h += `<div class="res ok">${esc(r.message)}</div>`;
+    h += '</div></div>';
+    const ask = MODE === 'remove' ? (r.pay ? r.pay.ask : 0) : (r.pay ? r.pay.ask : 0);
+    if (ask > 0) h += `<div class="collect" id="collectBox"><div class="k" style="font-size:11px; font-weight:800; letter-spacing:.07em; text-transform:uppercase; color:#c2570c;">${MODE === 'remove' ? 'Clear the dues' : 'This shop sold more than it paid for'}</div><div class="big">Collect ${inr(ask)} now</div>
+      <div class="fld"><label>Amount received</label><input id="payAmt" type="number" inputmode="decimal" value="${ask}"></div>
+      <div class="two" style="margin-top:10px;"><button class="btn" data-act="collect" data-m="cash">💵 Cash</button><button class="btn" data-act="collect" data-m="online">📱 Online</button></div><div id="payRes"></div></div>`;
+    else h += '<div class="res ok">Nothing to collect from this shop now.</div>';
+    h += `<div class="rf-card" style="margin-top:14px;"><div class="rf-b" style="padding-top:16px;"><button class="btn secondary full" data-act="link" data-id="${sh.shop_id}">🔗 Send the order link on WhatsApp</button><div id="linkRes"></div><button class="btn full" style="margin-top:10px;" data-act="close-sheet">Next shop →</button></div></div>`;
+    return h;
+  }
+  async function collect(mode) {
+    if (BUSY) return; const amt = +document.getElementById('payAmt').value, res = document.getElementById('payRes');
+    if (!(amt > 0)) { res.innerHTML = '<div class="res bad">Enter the amount.</div>'; return; }
+    BUSY = true; res.innerHTML = '<div class="res busy">Saving…</div>';
+    try {
+      const r = await api.post('rf.collect', { shop_id: V.d.shop.shop_id, amount: amt, mode });
+      res.innerHTML = `<div class="res ok">${esc(r.message)}</div>`;
+      if (!r.still_to_collect) document.getElementById('collectBox').querySelector('.big').textContent = 'Collected ✓'; else { document.getElementById('payAmt').value = r.still_to_collect; }
+    } catch (e) { res.innerHTML = `<div class="res bad">${esc(e.message)}</div>`; }
+    BUSY = false;
+  }
+  async function makeLink(shopId, into) {
+    if (BUSY) return; BUSY = true; const box = document.getElementById(into); box.innerHTML = '<div class="res busy">Making the link…</div>';
+    try {
+      const r = await api.post('rf.link_create', { shop_id: shopId });
+      const url = new URL(r.path, location.href).href;
+      const msg = `Hello ${r.owner || ''}, order your perfumes here (20 ml and 50 ml): ${url}`.replace('Hello ,', 'Hello,');
+      const wa = r.phone ? `https://wa.me/${r.phone}?text=${encodeURIComponent(msg)}` : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+      box.innerHTML = `<div class="res ok">Link ready for ${esc(r.shop)} (valid ${r.days} days).${r.phone ? '' : ' This shop has no valid mobile number, so pick the contact in WhatsApp.'}</div><a class="btn full" style="display:flex; align-items:center; justify-content:center; margin-top:8px; text-decoration:none; background:#16945a; color:#fff;" target="_blank" rel="noopener" href="${wa}">Open WhatsApp</a>`;
+      window.open(wa, '_blank');
+    } catch (e) { box.innerHTML = `<div class="res bad">${esc(e.message)}</div>`; }
+    BUSY = false;
+  }
+  function findLink() {
+    V = { d: { shop: { shop_id: 0, name: 'Order link', area: 'Pick a shop', owner: '' } } }; RESULT = null; SHEET = true; history.pushState({ rfSheet: 1 }, '', location.href);
+    const s = document.getElementById('sheet'); s.classList.add('on'); document.body.style.overflow = 'hidden';
+    s.innerHTML = `<div class="sh-top"><button class="back" data-act="close-sheet">←</button><div><div class="t">Send an order link</div><div class="s">Search the shop, then send it on WhatsApp</div></div></div><div class="sh-in"><div class="fld"><label>Shop name, owner, area or mobile</label><input id="shopQ" placeholder="Type 2 letters…" autocomplete="off"></div><div id="shopRes" style="margin-top:12px;"></div></div>`;
+    document.getElementById('shopQ').focus();
+  }
+  let qT = null;
+  document.addEventListener('input', (e) => {
+    const t = e.target;
+    if (t.id === 'shopQ') { clearTimeout(qT); qT = setTimeout(async () => { const q = t.value.trim(), box = document.getElementById('shopRes'); if (q.length < 2) { box.innerHTML = ''; return; }
+      try { const r = await api.get('rf.shop_search', { q }); box.innerHTML = r.shops.length ? r.shops.map((s) => `<div class="rf-card"><div class="shop" style="border:0;"><div class="mid"><div class="nm">${esc(s.name)}</div><div class="ar">${esc(s.area)} · ${esc(s.owner)} · ${esc(s.mobile)}</div></div><button class="open" data-act="link-pick" data-id="${s.shop_id}">Link</button></div><div id="lk${s.shop_id}" style="padding:0 18px 12px;"></div></div>`).join('') : '<div class="center">No shop found.</div>'; } catch (x) { box.innerHTML = `<div class="res bad">${esc(x.message)}</div>`; } }, 300); return; }
+    if (t.classList && t.classList.contains('cnt')) { const l = V.lines[+t.dataset.i]; l.counted = t.value === '' ? '' : Math.max(0, parseInt(t.value, 10) || 0); if (+l.counted >= l.expected) l.reason = ''; t.classList.toggle('fill', l.counted !== '' && +l.counted >= l.expected); t.classList.toggle('low', l.counted !== '' && +l.counted < l.expected); return; }
+    if (t.id === 'tidyNote') { V.note = t.value; return; }
+    if (t.dataset && t.dataset.x !== undefined) { V.extra[+t.dataset.x][t.dataset.f] = t.value; return; }
+  });
+  document.addEventListener('change', (e) => { const t = e.target; if (t.classList && t.classList.contains('cnt')) redraw(); if (t.dataset && t.dataset.x !== undefined && t.dataset.f !== 'name') redraw(); if (t.id === 'tidyNote') redraw(); });
+  document.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-act]'); if (!b) return; const a = b.dataset.act, i = +b.dataset.i;
+    if (a === 'open-visit') return openVisit(+b.dataset.id, +b.dataset.plan);
+    if (a === 'close-sheet') return closeSheet(false);
+    if (a === 'stock-photo') return stockPhoto(b.dataset.kind);
+    if (a === 'morning-redo') { D.morning = { done: false, status: '' }; return render(); }
+    if (a === 'find-link') return findLink();
+    if (a === 'link-pick') return makeLink(+b.dataset.id, 'lk' + b.dataset.id);
+    if (a === 'link') return makeLink(+b.dataset.id, 'linkRes');
+    if (a === 'collect') return collect(b.dataset.m);
+    if (a === 'u-visit') { const row = D.visits.find((x) => x.shop_id === +b.dataset.id && x.status !== 'done'); return openVisit(+b.dataset.id, row ? row.plan_id : 0); }
+    if (!V) return;
+    if (a === 'inc' || a === 'dec') { const l = V.lines[i]; const c = l.counted === '' ? (a === 'inc' ? 0 : 1) : +l.counted; l.counted = Math.max(0, c + (a === 'inc' ? 1 : -1)); if (+l.counted >= l.expected) l.reason = ''; return redraw(); }
+    if (a === 'reason') { V.lines[i].reason = b.dataset.r; return redraw(); }
+    if (a === 'all-present') { V.lines.forEach((l) => { l.counted = l.expected; l.reason = ''; }); return redraw(); }
+    if (a === 'tidy') { V.tidy = +b.dataset.v; if (V.tidy === 1) V.note = ''; return redraw(); }
+    if (a === 'add-extra') { V.extra.push({ name: '', ml: '50', qty: '' }); return redraw(); }
+    if (a === 'del-extra') { V.extra.splice(i, 1); return redraw(); }
+    if (a === 'take-photo') { const raw = await pickPhoto(); if (!raw) return; V.photo = await shrink(raw, 1600); V.thumb = URL.createObjectURL(V.photo); return redraw(); }
+    if (a === 'save-visit') return saveVisit();
+    if (a === 'refill') return refill();
+    if (a === 'exc-open') { V.excOpen = true; return redraw(); }
+    if (a === 'exc-send') return excSend();
+    if (a === 'exc-check') return excCheck();
+  });
+  function evExp() { const el = document.getElementById('eExp'); if (!el || !D) return; const m = D.morning, a = Math.max(0, m.q20 - (+document.getElementById('d20').value || 0)), b = Math.max(0, m.q50 - (+document.getElementById('d50').value || 0)); el.innerHTML = `You should bring back <b>${a} × 20 ml</b> and <b>${b} × 50 ml</b>.`; }
+  document.addEventListener('input', (e) => { if (e.target.id === 'd20' || e.target.id === 'd50') evExp(); });
+  const _render = render; render = function () { _render(); evExp(); };
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && !SHEET && !BUSY) load(); });
+  load();
+</script>
+</body>
+</html>

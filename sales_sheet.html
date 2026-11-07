@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>30-day sheet — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=260929d">
+<style>
+  [hidden]{display:none !important;}
+
+  /* ---- tiles ---- */
+  #sh .tiles{display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; margin:0 8px 12px;}
+  #sh .tile{background:var(--surface); border-radius:18px; box-shadow:var(--shadow); padding:12px 14px; min-width:0;}
+  #sh .tile .l{font-size:11.5px; color:var(--muted); font-weight:600;}
+  #sh .tile .v{font-size:22px; font-weight:800; letter-spacing:-.02em; margin-top:2px; font-variant-numeric:tabular-nums; white-space:nowrap;}
+  #sh .tile .s{font-size:11.5px; color:var(--muted); margin-top:1px;}
+  #sh .tile .v.g{color:var(--ok-fg);} #sh .tile .v.a{color:#8a5a00;} #sh .tile .v.r{color:var(--bad-fg);}
+  @media (min-width:821px){ #sh .tiles{grid-template-columns:repeat(4, minmax(0, 1fr)); margin:0 0 14px;} }
+
+  /* ---- the sheet ---- */
+  #sh .shwrap{overflow:auto; max-height:72vh; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; border-top:1px solid var(--line);}
+  #sh table.sht{width:auto; min-width:100%; border-collapse:separate; border-spacing:0; font-variant-numeric:tabular-nums;}
+  #sh .sht th, #sh .sht td{padding:7px 6px; font-size:12px; text-align:center; white-space:nowrap; border-bottom:1px solid var(--line); vertical-align:middle; background:#fff;}
+  #sh .sht thead th{position:sticky; top:0; z-index:2; font-size:11px; line-height:1.25; padding:7px 6px; text-transform:none; letter-spacing:0; color:#6f7480; font-weight:700;}
+  #sh .sht thead th small{display:block; font-weight:500; font-size:11px; color:#a0a5b0;}
+  #sh .sht thead th.sun, #sh .sht thead th.sun small{color:var(--bad-fg);}
+  #sh .sht thead th.today{color:var(--ink);} #sh .sht thead th.today small{color:var(--accent-dark); font-weight:700;}
+  #sh .sht th.nm, #sh .sht td.nm{position:sticky; left:0; z-index:1; text-align:left; min-width:104px; max-width:132px; padding-left:12px; box-shadow:1px 0 0 var(--line); overflow:hidden; text-overflow:ellipsis;}
+  #sh .sht thead th.nm{z-index:3;}
+  #sh .sht td.nm b{display:block; font-size:12.5px; overflow:hidden; text-overflow:ellipsis;}
+  #sh .sht td.nm small{display:block; font-size:11px; color:var(--muted);}
+  #sh .sht td.sum{font-weight:700; font-size:12.5px;}
+  #sh .sht td.pc{font-weight:700;} #sh .sht td.pc.g{color:var(--ok-fg);} #sh .sht td.pc.a{color:#8a5a00;} #sh .sht td.pc.r{color:var(--bad-fg);}
+  #sh .sht td.d{cursor:pointer; padding:5px 3px; min-width:46px;}
+  #sh .sht td.d span{display:block; border-radius:8px; padding:5px 2px; font-weight:600;}
+  #sh .sht td.d.g span{background:var(--ok-bg); color:var(--ok-fg);}
+  #sh .sht td.d.a span{background:#fdf3dd; color:#8a5a00;}
+  #sh .sht td.d.r span{background:var(--bad-bg); color:var(--bad-fg);}
+  #sh .sht td.d.x span{background:#f1f3f6; color:#3a3f4a;}
+  #sh .sht td.d.n{color:#c3c7d0; cursor:default;}
+  #sh .sht td.d.pick span{outline:2px solid var(--ink);}
+  #sh .sht tr.tot td{font-weight:800; background:#f7f8fa; position:sticky; bottom:0; z-index:1; border-top:1px solid var(--line);}
+  #sh .sht tr.tot td.nm{z-index:3;}
+  #sh .sht tr.oth td.nm b{color:var(--muted); font-weight:600;}
+  #sh .legend{display:flex; flex-wrap:wrap; gap:6px 14px; padding:10px 16px 4px; font-size:11.5px; color:var(--muted);}
+  #sh .legend i{display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:5px; vertical-align:-1px;}
+  #sh .note{padding:2px 16px 12px; font-size:11.5px; color:var(--muted);}
+  #sh .info{margin:4px 14px 14px; padding:10px 14px; background:#f3f7ff; border-radius:14px; font-size:13px; line-height:1.45;}
+  #sh .hint{font-size:12px; color:var(--muted);}
+  #sh .empty{padding:30px 20px; text-align:center; color:var(--muted);}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar">
+      <h1>30-day sheet</h1>
+      <div>
+        <select id="panelPick" aria-label="Panel">
+          <option value="all">All panels</option>
+          <option value="tmph">TM Perfume House</option>
+          <option value="tm4u">TM4U</option>
+          <option value="tmsg">TM Shower Gel</option>
+          <option value="none">No panel</option>
+        </select>
+        <select id="sortPick" aria-label="Sort by">
+          <option value="coll">Sort: collection</option>
+          <option value="pct">Sort: target %</option>
+          <option value="name">Sort: name</option>
+        </select>
+        <button type="button" class="btn secondary" id="btnRefresh">Refresh</button>
+      </div>
+    </div>
+    <div class="content" id="sh">
+      <div id="alertBox"></div>
+      <div class="tiles" id="tiles"></div>
+      <div class="card">
+        <div class="card-head"><h2>Collection by person and day</h2><span class="hint" id="status"></span></div>
+        <div class="shwrap" id="wrap"><div class="loading">Loading...</div></div>
+        <div class="legend">
+          <span><i style="background:var(--ok-bg); border:1px solid var(--ok-fg);"></i>Day target hit</span>
+          <span><i style="background:#fdf3dd; border:1px solid #8a5a00;"></i>Half or more</span>
+          <span><i style="background:var(--bad-bg); border:1px solid var(--bad-fg);"></i>Under half</span>
+          <span><i style="background:#f1f3f6; border:1px solid #c3c7d0;"></i>No target set</span>
+        </div>
+        <div class="note">Cancelled and not-allocated orders are left out, the same as the Orders page. Day target = the person's target for these 30 days spread over the days they were not absent or on leave. Tap a day for the exact figures. Older days are saved in this browser; today and the last 2 days are refreshed every time. <a href="#" id="btnAll">Reload all 30 days</a> if an old order was changed and the figures look off.</div>
+        <div class="info" id="info" hidden></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="assets/js/config.js?v=2"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script>
+(function () {
+  guardPage();
+  renderSidebar('orders');
+
+  const NDAYS = 30;
+  const PANEL_KEYS = { tmph: 1, tm4u: 1, tmsg: 1 };
+  const STORE_HOUSE_MAP = { tmperfumehouse: 'tmph' };
+
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const inr = (v) => '₹' + Math.round(v).toLocaleString('en-IN');
+  const short = (v) => {
+    v = Math.round(v);
+    if (v >= 100000) return (v / 100000).toFixed(v >= 1000000 ? 0 : 1).replace(/\.0$/, '') + 'L';
+    if (v >= 1000) return (v / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+    return String(v);
+  };
+  const ymdOf = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  const addDays = (ymd, n) => { const d = new Date(ymd + 'T12:00:00'); d.setDate(d.getDate() + n); return ymdOf(d); };
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const dayInfo = (ymd) => { const d = new Date(ymd + 'T12:00:00'); return { n: d.getDate(), m: MON[d.getMonth()], w: WD[d.getDay()], wd: d.getDay() }; };
+
+  // Business day: starts at the time set under Targets > Day timing (default 10:00); an order after midnight belongs to the day before.
+  let DAY_START = ['10:00', '10:00', '10:00', '10:00', '10:00', '10:00', '10:00'];
+  const timingReady = api.get('day_timing.get').then((d) => { if (Array.isArray(d.start) && d.start.length === 7) DAY_START = d.start; }).catch(() => {});
+  function bizDayOf(dt) {
+    const d = new Date(dt);
+    const hm = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+    if (hm < DAY_START[d.getDay()]) d.setDate(d.getDate() - 1);
+    return ymdOf(d);
+  }
+
+  const panelOf = (o) => { const h = o.house || STORE_HOUSE_MAP[o.store_key] || ''; return PANEL_KEYS[h] ? h : 'none'; };
+  const isCounted = (o) => o.store_key === 'manual' || Number(o.allocated) === 1;
+
+  // S.agg[day] = { t: time saved, p: { panel: { person (lower case): [name, collection, orders] } } }
+  // Old days are kept in this browser, so a normal visit only asks the server for the last few days.
+  const S = { team: null, teamFailed: false, agg: {}, done: 0, chunks: 0, panel: 'all', sort: 'coll', view: [], pick: '', days: [], req: 0, err: '', saved: 0, first: true };
+  const alertBox = $('alertBox');
+  const showAlert = (msg) => { alertBox.innerHTML = msg ? '<div class="alert error">' + esc(msg) + '</div>' : ''; };
+
+  const RECENT_DAYS = 3;                 // always asked again: orders still change (cancel, allocate, salesman)
+  const SAVED_FRESH_MS = 24 * 3600 * 1000;
+  const BLOCK = 5, PARALLEL = 2;         // days per request, requests at the same time
+  const cacheKey = () => { const u = api.currentUser() || {}; return 'hrms_sheet30_v1_' + (u.employee_id || u.username || u.id || 'x'); };
+  function readSaved() { try { const j = JSON.parse(localStorage.getItem(cacheKey()) || 'null'); return j && j.agg ? j : { agg: {}, team: null }; } catch (e) { return { agg: {}, team: null }; } }
+  function writeSaved() {
+    try {
+      const keep = {}; S.days.forEach((d) => { if (S.agg[d]) keep[d] = S.agg[d]; });
+      const team = S.team ? { rows: S.team.rows.map((r) => ({ employee_id: r.employee_id, full_name: r.full_name, employee_code: r.employee_code, panels: r.panels })) } : null;      // names + targets, shown at once next time
+      localStorage.setItem(cacheKey(), JSON.stringify({ agg: keep, team }));
+    } catch (e) { /* storage full or blocked: the sheet still works, it just loads in full each time */ }
+  }
+
+  // ---------------- build the numbers ----------------
+  function build() {
+    const by = {};
+    S.days.forEach((day) => {
+      const a = S.agg[day];
+      if (!a) return;
+      Object.keys(a.p).forEach((pk) => {
+        if (S.panel !== 'all' && pk !== S.panel) return;
+        const m = a.p[pk];
+        Object.keys(m).forEach((k) => {
+          const x = m[k];
+          const r = by[k] = by[k] || { name: x[0], d: {}, tot: 0, ord: 0 };
+          const c = r.d[day] = r.d[day] || { c: 0, n: 0 };
+          c.c += x[1]; c.n += x[2]; r.tot += x[1]; r.ord += x[2];
+        });
+      });
+    });
+
+    const rows = [], used = new Set();
+    ((S.team && S.team.rows) || []).forEach((r) => {
+      const k = String(r.full_name || '').trim().toLowerCase();
+      used.add(k);
+      const a = by[k] || { d: {}, tot: 0, ord: 0 };
+      let tg = 0, dt = 0;
+      const pn = r.panels && !Array.isArray(r.panels) ? r.panels : {};
+      Object.keys(pn).forEach((b) => {
+        if (S.panel !== 'all' && b !== S.panel) return;
+        const t = Number(pn[b].target) || 0;
+        if (!t) return;
+        tg += t;
+        const live = NDAYS - (Number(pn[b].absent_days) || 0) - (Number(pn[b].leave_days) || 0);
+        if (live > 0) dt += t / live;
+      });
+      if (!a.ord && !tg) return;
+      rows.push({ name: r.full_name, code: r.employee_code || '', d: a.d, tot: a.tot, ord: a.ord, tg, dt, other: false });
+    });
+    Object.keys(by).forEach((k) => {      // salesman not on the sheet (manual orders, ex-staff ...): still in the totals
+      if (used.has(k)) return;
+      rows.push({ name: by[k].name, code: k ? 'not on sheet' : '', d: by[k].d, tot: by[k].tot, ord: by[k].ord, tg: 0, dt: 0, other: true });
+    });
+
+    rows.forEach((r) => {
+      const act = Object.keys(r.d);
+      r.act = act.length;
+      r.avg = r.act ? r.tot / r.act : 0;
+      r.pct = r.tg > 0 ? Math.round(r.tot / r.tg * 100) : null;
+      r.hit = r.dt > 0 ? act.filter((x) => r.d[x].c >= r.dt).length : 0;
+    });
+    const sorters = {
+      coll: (x, y) => y.tot - x.tot,
+      pct: (x, y) => (y.pct == null ? -1 : y.pct) - (x.pct == null ? -1 : x.pct) || y.tot - x.tot,
+      name: (x, y) => String(x.name).toLowerCase().localeCompare(String(y.name).toLowerCase())
+    };
+    rows.sort((x, y) => (x.other - y.other) || sorters[S.sort](x, y));
+    S.view = rows;
+  }
+
+  // ---------------- draw ----------------
+  const pcCls = (p) => p == null ? '' : (p >= 100 ? 'g' : (p >= 60 ? 'a' : 'r'));
+
+  function render() {
+    if (!S.team && !S.teamFailed) { $('wrap').innerHTML = '<div class="loading">Loading...</div>'; setStatus(); return; }
+    build();
+    const rows = S.view;
+    let tot = 0, ord = 0, tg = 0, perDay = {};
+    rows.forEach((r) => { tot += r.tot; ord += r.ord; tg += r.tg; Object.keys(r.d).forEach((x) => { perDay[x] = (perDay[x] || 0) + r.d[x].c; }); });
+    const activeDays = Object.keys(perDay).length;
+    const pct = tg > 0 ? Math.round(tot / tg * 100) : null;
+    $('tiles').innerHTML =
+      '<div class="tile"><div class="l">30-day collection</div><div class="v">' + inr(tot) + '</div><div class="s">' + ord.toLocaleString('en-IN') + ' orders</div></div>' +
+      '<div class="tile"><div class="l">Average per day</div><div class="v">' + inr(activeDays ? tot / activeDays : 0) + '</div><div class="s">' + activeDays + ' days with orders</div></div>' +
+      '<div class="tile"><div class="l">Team target met</div><div class="v ' + pcCls(pct) + '">' + (pct == null ? '—' : pct + '%') + '</div><div class="s">' + (tg > 0 ? 'of ' + inr(tg) : 'no targets set') + '</div></div>' +
+      '<div class="tile"><div class="l">Best day</div><div class="v">' + inr(activeDays ? Math.max.apply(null, Object.keys(perDay).map((x) => perDay[x])) : 0) + '</div><div class="s">' + (activeDays ? bestDayText(perDay) : 'no orders yet') + '</div></div>';
+
+    const wrap = $('wrap');
+    if (!rows.length) {
+      wrap.innerHTML = S.done < S.chunks ? '<div class="loading">Loading orders...</div>' : '<div class="empty">No orders or targets for this panel in the last 30 days.</div>';
+      setStatus();
+      return;
+    }
+    let h = '<table class="sht no-stack"><thead><tr><th class="nm">Person</th><th>Total</th><th>Target</th><th>Avg / day</th>';
+    S.days.forEach((d, i) => {
+      const x = dayInfo(d);
+      h += '<th class="' + (x.wd === 0 ? 'sun ' : '') + (i === 0 ? 'today' : '') + '">' + (x.n === 1 || i === 0 ? x.n + ' ' + x.m : x.n) + '<small>' + (i === 0 ? 'Today' : x.w) + '</small></th>';
+    });
+    h += '</tr></thead><tbody>';
+    rows.forEach((r, ri) => {
+      h += '<tr' + (r.other ? ' class="oth"' : '') + '><td class="nm"><b>' + esc(r.name) + '</b>' + (r.code ? '<small>' + esc(r.code) + '</small>' : '') + '</td>' +
+        '<td class="sum">' + short(r.tot) + '</td>' +
+        '<td class="pc ' + pcCls(r.pct) + '">' + (r.pct == null ? '—' : r.pct + '%') + '</td>' +
+        '<td>' + (r.act ? short(r.avg) : '—') + '</td>';
+      S.days.forEach((d) => {
+        const v = r.d[d];
+        if (!v) { h += '<td class="d n">–</td>'; return; }
+        const cls = r.dt > 0 ? (v.c >= r.dt ? 'g' : (v.c >= r.dt * 0.5 ? 'a' : 'r')) : 'x';
+        h += '<td class="d ' + cls + (S.pick === ri + '|' + d ? ' pick' : '') + '" data-r="' + ri + '" data-d="' + d + '"><span>' + short(v.c) + '</span></td>';
+      });
+      h += '</tr>';
+    });
+    h += '<tr class="tot"><td class="nm"><b>Team total</b></td><td>' + short(tot) + '</td><td class="pc ' + pcCls(pct) + '">' + (pct == null ? '—' : pct + '%') + '</td><td>' + (activeDays ? short(tot / activeDays) : '—') + '</td>';
+    S.days.forEach((d) => { h += '<td>' + (perDay[d] ? short(perDay[d]) : '–') + '</td>'; });
+    h += '</tr></tbody></table>';
+    const keepX = wrap.scrollLeft, keepY = wrap.scrollTop;
+    wrap.innerHTML = h;
+    wrap.scrollLeft = keepX; wrap.scrollTop = keepY;
+    setStatus();
+    showInfo();
+  }
+
+  function bestDayText(perDay) {
+    let bd = '', bv = -1;
+    Object.keys(perDay).forEach((d) => { if (perDay[d] > bv) { bv = perDay[d]; bd = d; } });
+    const x = dayInfo(bd);
+    return x.w + ' ' + x.n + ' ' + x.m;
+  }
+
+  function setStatus() {
+    const el = $('status');
+    if (S.err) { el.textContent = ''; return; }
+    el.textContent = S.done < S.chunks ? 'Updating ' + S.done + '/' + S.chunks + '...' : (S.saved ? 'Up to date · ' + S.saved + ' older days from saved copy' : 'Up to date');
+  }
+
+  function showInfo() {
+    const box = $('info');
+    if (!S.pick) { box.hidden = true; return; }
+    const p = S.pick.split('|'), r = S.view[Number(p[0])];
+    const v = r && r.d[p[1]];
+    if (!v) { box.hidden = true; return; }
+    const x = dayInfo(p[1]);
+    box.innerHTML = '<b>' + esc(r.name) + '</b> · ' + x.w + ' ' + x.n + ' ' + x.m + '<br>' + inr(v.c) + ' from ' + v.n + ' order' + (v.n === 1 ? '' : 's') +
+      ' · ' + inr(v.c / v.n) + ' per order' + (r.dt > 0 ? '<br>Day target about ' + inr(r.dt) + ' (' + Math.round(v.c / r.dt * 100) + '%)' : '');
+    box.hidden = false;
+  }
+
+  // ---------------- load ----------------
+  // One block of business days a..b (ascending): the orders of those calendar days plus the next one (an order after
+  // midnight belongs to the day before), added up per day, panel and person. Only these small totals are kept.
+  async function fetchBlock(a, b, id) {
+    const data = await api.get('shopify.orders', { date_from: a, date_to: addDays(b, 1), store: '' });
+    if (id !== S.req) return;
+    const fresh = {};
+    for (let d = a; d <= b; d = addDays(d, 1)) fresh[d] = { t: Date.now(), p: {} };
+    (data.orders || []).forEach((o) => {
+      if (o.cancelled || !isCounted(o)) return;
+      const day = bizDayOf(o.created_at);
+      if (!fresh[day]) return;
+      const pk = panelOf(o), nm = String(o.salesman || '').trim(), k = nm.toLowerCase();
+      const pp = fresh[day].p[pk] = fresh[day].p[pk] || {};
+      const x = pp[k] = pp[k] || [nm || 'Not allocated', 0, 0];
+      x[1] += Number(o.total) || 0; x[2]++;
+    });
+    Object.keys(fresh).forEach((d) => { S.agg[d] = fresh[d]; });
+    (data.errors || []).forEach((e) => showAlert(e));
+  }
+
+  async function load(all) {
+    const id = ++S.req;
+    S.err = ''; S.done = 0; S.chunks = 0; S.teamFailed = false; S.pick = ''; S.saved = 0;
+    showAlert('');
+    await timingReady;
+    if (id !== S.req) return;
+    const today = bizDayOf(new Date());
+    S.days = [];
+    for (let i = 0; i < NDAYS; i++) S.days.push(addDays(today, -i));        // newest first
+    const asc = S.days.slice().reverse();
+    if (S.first) { const sv = readSaved(); S.agg = sv.agg; S.team = sv.team; S.first = false; }     // last visit's numbers show at once, then update
+
+    // Which days must come from the server: the last few days, any day not saved yet, any saved copy older than a day.
+    const recent = new Set(S.days.slice(0, RECENT_DAYS)), now = Date.now();
+    const need = asc.filter((d) => all === true || recent.has(d) || !S.agg[d] || now - S.agg[d].t > SAVED_FRESH_MS);
+    S.saved = NDAYS - need.length;
+    const blocks = [];
+    let run = [];
+    const flush = () => { for (let i = 0; i < run.length; i += BLOCK) blocks.push([run[i], run[Math.min(i + BLOCK, run.length) - 1]]); run = []; };
+    need.forEach((d) => { if (run.length && addDays(run[run.length - 1], 1) !== d) flush(); run.push(d); });
+    flush();
+    blocks.reverse();                                                        // newest block first
+    S.chunks = blocks.length;
+    $('tiles').innerHTML = '';
+    render();
+
+    // Attendance and targets of the sales people (same call as the Orders page Employee sheet), at the same time as the orders
+    const from = asc[0], to = asc[asc.length - 1];
+    api.get('team.sheet', { date_from: from, date_to: to }).then((d) => {
+      if (id !== S.req) return;
+      if (!d || !Array.isArray(d.rows)) throw new Error('the server sent an unexpected reply — upload the latest api.php');
+      d.rows.forEach((r) => { if (!r.panels || Array.isArray(r.panels)) r.panels = {}; });
+      S.team = d;
+      writeSaved();
+      render();
+      if (d.auto_rule) {            // the target with the automatic daily rule arrives in a second, slower call
+        api.get('team.sheet', { date_from: from, date_to: to, rule: 1 }).then((r) => {
+          if (id !== S.req || !S.team) return;
+          S.team.rows.forEach((row) => {
+            const pp = (r.panels || {})[row.employee_id] || {};
+            Object.keys(pp).forEach((k) => { row.panels[k] = Object.assign({}, row.panels[k] || {}, pp[k]); });
+          });
+          writeSaved();
+          render();
+        }).catch(() => {});
+      }
+    }).catch((err) => {
+      if (id !== S.req) return;
+      S.teamFailed = true;
+      showAlert('The sales team and targets could not load: ' + (err.message || 'error') + ' — people are listed without targets. Press Refresh.');
+      render();
+    });
+
+    // Orders: a few days per request, two requests at a time, the sheet fills in as each one arrives
+    const queue = blocks.slice();
+    const worker = async () => {
+      while (queue.length) {
+        const bl = queue.shift();
+        try { await fetchBlock(bl[0], bl[1], id); }
+        catch (err) {
+          if (id !== S.req) return;
+          S.err = err.message || 'Could not load orders';
+          showAlert('Orders for ' + bl[0] + ' to ' + bl[1] + ' could not load: ' + S.err + ' — those days may be missing or old. Press Refresh.');
+        }
+        if (id !== S.req) return;
+        S.done++;
+        writeSaved();
+        render();
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(PARALLEL, blocks.length) }, worker));
+  }
+
+  // ---------------- events ----------------
+  $('panelPick').addEventListener('change', (e) => { S.panel = e.target.value; S.pick = ''; render(); });
+  $('sortPick').addEventListener('change', (e) => { S.sort = e.target.value; S.pick = ''; render(); });
+  $('btnRefresh').addEventListener('click', () => load(false));
+  $('btnAll').addEventListener('click', (e) => { e.preventDefault(); load(true); });
+  $('wrap').addEventListener('click', (e) => {
+    const td = e.target.closest('td.d[data-r]');
+    if (!td) return;
+    S.pick = td.dataset.r + '|' + td.dataset.d;
+    $('wrap').querySelectorAll('td.pick').forEach((x) => x.classList.remove('pick'));
+    td.classList.add('pick');
+    showInfo();
+  });
+
+  load(false);
+})();
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>

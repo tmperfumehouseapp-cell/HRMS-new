@@ -1,0 +1,1210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Targets — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=260929d">
+<style>
+  /* Order codes (Order Codes page / Shopify tag) shown under the order count */
+  .ocode{display:inline-flex; align-items:center; padding:1px 7px; border-radius:10px; background:#eef2ff; color:#3730a3; font-weight:700; font-size:11px; font-family:ui-monospace,Menlo,Consolas,monospace; white-space:nowrap; vertical-align:middle;}
+  .ocode.none{background:#fff7ed; color:#b45f06; font-family:inherit; font-weight:600;}
+  .ocode-tog{font-size:11.5px; color:var(--accent); cursor:pointer; font-weight:600; margin-top:3px; display:inline-block;}
+  .ocode-list{margin-top:5px; border-left:2px solid #c7d2fe; padding-left:8px; font-size:11.5px; color:var(--muted);}
+  .ocode-list > div{display:grid; grid-template-columns:1fr auto auto; gap:10px; padding:3px 0; align-items:center;}
+  .tgt-chip{cursor:pointer; border:1px solid var(--line); background:var(--bg); border-radius:6px; padding:4px 9px; display:inline-flex; align-items:center; gap:6px; white-space:nowrap; font-size:13px;}
+  .tgt-chip.empty{color:var(--accent); font-weight:600;}
+  .tgt-pill{font-size:11px; font-weight:600; padding:1px 6px; border-radius:8px;}
+  .tgt-pill.auto{background:#e7f7ee; color:#0f7a41;}
+  .tgt-pill.man{background:#fdf3e3; color:#b45f06;}
+  .tgt-how{font-size:11px; color:var(--muted); margin-top:3px; line-height:1.35;}
+  .tgt-revert{background:none; border:none; padding:0; margin-top:2px; font-size:11px; color:var(--accent); cursor:pointer; min-height:0;}
+  .rule-switch{display:flex; align-items:center; gap:8px; font-size:13.5px; font-weight:600; text-transform:none; letter-spacing:0; color:var(--ink,#111827); margin:0 0 10px;}
+  .rule-switch input, .rule-check input, .rule-houses input{width:16px; height:16px; min-height:0; margin:0; flex:none;}
+  .tscroll{overflow-x:auto; -webkit-overflow-scrolling:touch;}
+  @media (max-width:820px){ .tscroll{overflow:visible;} }
+  .rule-body{max-height:62vh; overflow-y:auto; overscroll-behavior:contain; margin:0 -4px; padding:0 4px;}
+  .rule-card{border:1px solid var(--line); border-radius:12px; padding:12px; margin-bottom:10px; background:var(--surface,#fff);}
+  .rule-card.bad{border-color:#c81e1e;}
+  .rule-card-head{display:flex; align-items:center; gap:8px; margin-bottom:10px;}
+  .rule-card-head input{flex:1; min-width:0; font-weight:600;}
+  .rule-del{background:none; border:none; color:#c81e1e; font-size:12.5px; cursor:pointer; padding:4px 6px; min-height:0; white-space:nowrap;}
+  .rule-days{display:flex; flex-wrap:wrap; gap:5px; margin-bottom:10px;}
+  .rule-day{border:1px solid var(--line); background:#fff; color:var(--muted); border-radius:14px; padding:4px 10px; font-size:12px; font-weight:600; cursor:pointer; min-height:0;}
+  .rule-day.on{background:#eaf2ff; border-color:#2563eb; color:#1d4ed8;}
+  .rule-day.clash{border-color:#c81e1e; color:#c81e1e; background:#fdecec;}
+  .rule-fields{display:grid; grid-template-columns:1fr 1fr; gap:8px 10px;}
+  .rule-fields label{display:flex; flex-direction:column; gap:3px; font-size:11.5px; font-weight:600; text-transform:none; letter-spacing:0; color:var(--muted); margin:0;}
+  .rule-fields input, .rule-fields select{width:100%; min-width:0;}
+  .rule-check{display:flex; align-items:center; gap:8px; margin:10px 0 0; font-size:12.5px; font-weight:400; text-transform:none; letter-spacing:0; color:var(--ink,#111827);}
+  .rule-sentence{margin-top:10px; background:#f6f7fb; border-radius:8px; padding:8px 10px; font-size:12.5px; line-height:1.5;}
+  .rule-sentence b{color:var(--accent);}
+  .rule-add{width:100%; margin:2px 0 12px;}
+  .rule-houses-title{font-size:12px; font-weight:600; color:var(--muted); margin:4px 0 6px;}
+  .rule-houses{display:flex; flex-wrap:wrap; gap:8px 16px;}
+  .rule-houses label{display:flex; align-items:center; gap:6px; font-size:13px; font-weight:400; text-transform:none; letter-spacing:0; color:var(--ink,#111827); margin:0;}
+  .rule-note{font-size:11.5px; color:var(--muted); margin:6px 0 0;}
+  .modal.rule-off .rule-body, .modal.rule-off .rule-houses{opacity:.45; pointer-events:none;}
+  @media (max-width:820px){ .rule-fields input, .rule-fields select, .rule-card-head input{font-size:16px;} .rule-day{padding:6px 11px;} }
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar">
+      <h1 id="pageTitle">Targets</h1>
+      <div style="display:flex; gap:10px; align-items:center;">
+        <input type="text" id="empSearch" placeholder="Search employee..." style="padding:8px 10px; border:1px solid var(--line); border-radius:6px; font-size:13px; width:170px;">
+        <select id="groupPick" style="padding:8px 10px; border:1px solid var(--line); border-radius:6px; font-size:13px;">
+          <option value="">All groups</option>
+          <option value="tmph">TM Perfume House</option>
+          <option value="tm4u">TM4U</option>
+        </select>
+        <input type="date" id="dayPick" title="Daily view (10 AM to next day 10 AM)" style="padding:8px 10px; border:1px solid var(--line); border-radius:6px; font-size:13px;">
+        <input type="month" id="monthPick" style="padding:8px 10px; border:1px solid var(--line); border-radius:6px; font-size:13px;">
+        <button class="btn secondary" id="btnSyncNow" style="width:auto;" title="Fetch the latest orders from Shopify right now">&#8635; Sync now</button>
+        <button class="btn secondary" id="btnTiming" type="button" title="Set when each business day starts">Day timing</button>
+        <button class="btn secondary" id="btnRule" type="button" style="width:auto;" title="How daily targets are set automatically">Target rule</button>
+        <a href="attendance_admin.html" class="btn secondary" style="text-decoration:none;">View attendance</a>
+      </div>
+    </div>
+    <div class="content">
+      <div id="alertBox"></div>
+
+      <div class="card" id="targetsCard">
+        <div class="card-head" id="dailyHead"><h2 id="dailyTitle">Daily</h2><span id="dailyHint" style="font-size:12px; color:var(--muted);">One target per employee — their TM Perfume House orders add up together. A house tag on an order (<b>tmph</b>, <b>tm4u</b>) beats the store it came from; <b>tm4u</b> orders count under a separate TM4U row and target. Day runs 10 AM to next day 10 AM. The house filter only chooses which employees are listed. Click a Daily Target to set it by hand.</span></div>
+        <div class="tscroll"><table>
+          <thead>
+            <tr><th>Employee</th><th>Queries</th><th>Orders</th><th>Ratio</th><th>Achieved</th><th>Ticket Size</th><th>Daily Target</th><th style="width:220px;">Progress</th><th title="Estimated from this day's orders against this day's target — not the month-end payable amount">Est. commission<div style="font-size:11px; font-weight:400; text-transform:none; letter-spacing:0; color:var(--muted);">today only</div></th></tr>
+          </thead>
+          <tbody id="dailyBody">
+            <tr><td colspan="9" class="loading">Loading...</td></tr>
+          </tbody>
+        </table></div>
+        <div id="dailyCards" style="display:none; padding:10px;"></div>
+        <div style="padding:12px 20px; display:flex; align-items:center; justify-content:center; gap:14px; flex-wrap:wrap;">
+          <span id="dailyShownCount" style="font-size:12.5px; color:var(--muted);"></span>
+          <button class="btn secondary" id="btnDailyLoadMore" style="width:auto; display:none;">Load more</button>
+        </div>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+
+<div class="modal-overlay" id="ruleModal">
+  <div class="modal" style="max-width:520px;">
+    <h3>Target rules</h3>
+    <p style="font-size:12.5px; color:var(--muted); margin:-6px 0 12px;">Each rule sets the daily target on the days it covers. A target set by hand always wins. Days in no rule use the employee's profile / monthly target. A new Sales Executive follows a fixed ladder for the first four weeks instead (₹10,000 / 15,000 / 20,000 / 25,000 a day by week); a target set by hand replaces it — higher or lower.</p>
+    <div id="ruleAlert"></div>
+    <label class="rule-switch"><input type="checkbox" id="ruleEnabled"> Set daily targets automatically</label>
+    <div class="rule-body">
+      <div id="ruleList"></div>
+      <button type="button" class="btn secondary rule-add" id="ruleAdd">+ Add rule</button>
+      <div class="rule-houses-title">Applies to employees in</div>
+      <div id="ruleHouses" class="rule-houses"></div>
+      <p class="rule-note">Houses added later are not included until you tick them here.</p>
+    </div>
+    <div class="actions">
+      <button type="button" class="btn secondary" id="ruleCancel">Cancel</button>
+      <button type="button" class="btn" id="ruleSave">Save rules</button>
+    </div>
+  </div>
+</div>
+<div class="modal-overlay" id="timingModal">
+  <div class="modal" style="max-width:440px;">
+    <h3>Day timing</h3>
+    <p style="font-size:12.5px; color:var(--muted); margin:-6px 0 12px;">A business day runs from its start time until the next day's start time. Orders, targets and sales are counted in that window. Default is 10:00 AM every day.</p>
+    <div id="timingAlert"></div>
+    <div id="timingRows"></div>
+    <p style="font-size:11.5px; color:var(--muted); margin:10px 0 0;">A change applies to orders counted from now on. Run <b>Sync now</b> afterwards to recount this month.</p>
+    <div class="actions">
+      <button type="button" class="btn secondary" id="timingReset">Reset to 10:00 AM</button>
+      <button type="button" class="btn secondary" id="timingCancel">Cancel</button>
+      <button type="button" class="btn" id="timingSave">Save</button>
+    </div>
+  </div>
+</div>
+<script src="assets/js/config.js?v=260929d"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script>
+  guardPage();
+  renderSidebar('targets');
+
+  const alertBox = document.getElementById('alertBox');
+  let currentMonth = '';
+  // Shopify order tags that mark an order's type. Edit here to change them.
+  const SCOUT_TAGS = ['query', 's'];         // 's' = old tag, still accepted
+  const CHAMPION_TAGS = ['campaign', 'c'];   // 'c' = old tag, still accepted
+
+  const HOUSE_COLOR = { tmph: '#2563EB' };
+  const HOUSE_COLOR_OTHER = '#6B7280';   // any house added later, until it gets its own colour
+
+  function showAlert(msg, type = 'success') {
+    alertBox.innerHTML = `<div class="alert ${type}">${msg}</div>`;
+    setTimeout(() => (alertBox.innerHTML = ''), 4000);
+  }
+  const inr = (v) => '₹' + Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+
+  function monthEndStr() {
+    const [y, m] = currentMonth.split('-').map(Number);
+    const last = new Date(y, m, 0).getDate();
+    return currentMonth + '-' + String(last).padStart(2, '0');
+  }
+
+  function monthLabel(m) {
+    return new Date(m + '-01T00:00:00').toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+  }
+
+  let monthRows = [];
+  let daysInMonth = 30;
+
+  // ---------- Commission (added — reads the rules from Commission Rules
+  // page and computes each row's commission client-side; never blocks or
+  // alters anything else on the page if the rules can't be fetched). ----------
+  let commissionRules = null;
+  async function loadCommissionRules() {
+    try {
+      const d = await api.get('commission_rules.list');
+      commissionRules = d.rules || [];
+    } catch (err) {
+      commissionRules = []; // column just shows "—" everywhere if unavailable
+    }
+  }
+
+  // Returns the final rate/amount plus the individual steps that produced
+  // them, so the UI can show exactly which rule fired instead of only a
+  // one-line summary. steps = [{label, detail, value, muted?}].
+  function calcCommission(achieved, target, ticket, prepaidPct) {
+    if (!commissionRules || !commissionRules.length || achieved <= 0) return null;
+    const overPct = target > 0 ? ((achieved / target) - 1) * 100 : 0;
+    const achievedTarget = target > 0 ? achieved >= target : false;
+    const steps = [];
+
+    let overMatches = commissionRules.filter(r => r.rule_type === 'over_target' && overPct >= Number(r.over_pct) && ticket >= Number(r.ticket_min));
+    overMatches.sort((a, b) => Number(b.over_pct) - Number(a.over_pct) || Number(b.ticket_min) - Number(a.ticket_min));
+
+    let rate, rule;
+    if (overMatches.length) {
+      const m = overMatches[0];
+      rate = Number(m.rate);
+      rule = m.label || ('+' + m.over_pct + '% over target');
+      steps.push({
+        label: 'Over-target',
+        detail: m.label || ('Beat target by ' + Math.round(overPct) + '%'),
+        value: rate.toFixed(1) + '%',
+      });
+      steps.push({ label: 'Prepaid', detail: 'Not applied — over-target tiers are flat', value: '—', muted: true });
+    } else {
+      let baseMatches = commissionRules.filter(r => r.rule_type === 'base' && Number(r.achieved_target) === (achievedTarget ? 1 : 0) && ticket >= Number(r.ticket_min));
+      baseMatches.sort((a, b) => Number(b.ticket_min) - Number(a.ticket_min));
+      const bm = baseMatches[0];
+      rate = bm ? Number(bm.rate) : 0;
+      rule = bm ? (bm.label || (rate + '%')) : '';
+      steps.push({
+        label: 'Base rate',
+        detail: bm
+          ? (bm.label || ('Target ' + (achievedTarget ? 'achieved' : 'not achieved') + ', ticket ' + (Number(bm.ticket_min) > 0 ? '≥ ' + inr(bm.ticket_min) : 'any')))
+          : 'No matching base rule',
+        value: rate.toFixed(1) + '%',
+      });
+
+      let prepaidMatches = commissionRules.filter(r => r.rule_type === 'prepaid' && prepaidPct >= Number(r.prepaid_min));
+      prepaidMatches.sort((a, b2) => Number(b2.prepaid_min) - Number(a.prepaid_min));
+      if (prepaidMatches.length) {
+        const p = prepaidMatches[0];
+        const adj = Number(p.rate);
+        rate += adj;
+        steps.push({
+          label: 'Prepaid',
+          detail: p.label || (Math.round(prepaidPct) + '% prepaid'),
+          value: (adj > 0 ? '+' : '') + adj.toFixed(1) + '%',
+        });
+      } else {
+        steps.push({ label: 'Prepaid', detail: Math.round(prepaidPct) + '% prepaid — no matching rule', value: '—', muted: true });
+      }
+    }
+    return { rate, amount: achieved * rate / 100, rule, steps, ticket, prepaidPct };
+  }
+
+  // Each row's calculation, so the breakdown can render on demand without
+  // recomputing or re-fetching anything.
+  const commissionCalcs = {};
+
+  function commissionCell(achieved, target, cnt, prepaidAmt, rowKey) {
+    if (achieved <= 0 || cnt <= 0) return '<span style="color:var(--muted);">—</span>';
+    const ticket = achieved / cnt;
+    const prepaidPct = achieved > 0 ? Math.min(100, (prepaidAmt / achieved) * 100) : 0;
+    const c = calcCommission(achieved, target, ticket, prepaidPct);
+    if (!c) return '<span style="color:var(--muted);">—</span>';
+    const key = String(rowKey).replace(/[^A-Za-z0-9_-]/g, '_');
+    commissionCalcs[key] = { c, achieved };
+    return `<b>${inr(c.amount)}</b>
+      <div style="font-size:11px; color:var(--muted); display:flex; align-items:center; gap:4px;">
+        <span>${c.rate.toFixed(1)}%</span>
+        <button type="button" onclick="toggleCommissionInfo('${key}', this)" aria-expanded="false"
+          aria-label="How this commission was calculated" title="How this was calculated"
+          style="border:none; background:none; padding:0; margin:0; width:16px; height:16px; min-height:0; line-height:1; color:var(--accent); cursor:pointer; font-size:13px;">&#9432;</button>
+      </div>
+      <div id="cinfo-${key}" style="display:none;"></div>`;
+  }
+
+  window.toggleCommissionInfo = function (key, btn) {
+    const box = document.getElementById('cinfo-' + key);
+    const entry = commissionCalcs[key];
+    if (!box || !entry) return;
+    if (box.style.display === 'block') {
+      box.style.display = 'none';
+      btn.setAttribute('aria-expanded', 'false');
+      return;
+    }
+    const c = entry.c;
+    const achieved = entry.achieved;
+    box.innerHTML = `
+      <div style="margin-top:7px; padding:8px 9px; background:var(--bg); border:1px solid var(--line); border-radius:6px; min-width:200px;">
+        <div style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; margin-bottom:6px;">How this was calculated</div>
+        <div style="font-size:11px; color:var(--muted); margin-bottom:7px; line-height:1.4;">Based on this day's orders against this day's target. The month-end payable figure is worked out on monthly totals.</div>
+        ${c.steps.map(s => `
+          <div style="display:flex; justify-content:space-between; gap:8px; font-size:11px; margin-bottom:4px; text-align:left;">
+            <span style="color:var(--muted); flex:none; width:64px;">${s.label}</span>
+            <span style="flex:1; color:${s.muted ? 'var(--muted)' : 'var(--ink)'};">${s.detail}</span>
+            <span style="flex:none; font-weight:600; color:${s.muted ? 'var(--muted)' : 'var(--ink)'};">${s.value}</span>
+          </div>`).join('')}
+        <div style="display:flex; justify-content:space-between; gap:8px; font-size:11px; margin-top:7px; padding-top:6px; border-top:1px solid var(--line);">
+          <span style="color:var(--muted);">${inr(achieved)} × ${c.rate.toFixed(1)}%</span>
+          <span style="font-weight:700;">${inr(c.amount)}</span>
+        </div>
+        <a href="commission_rules.html" style="font-size:11px; display:inline-block; margin-top:6px;">Edit commission rules</a>
+      </div>`;
+    box.style.display = 'block';
+    btn.setAttribute('aria-expanded', 'true');
+  };
+
+
+  // ---------- Business-day timing (Admin: Targets → Day timing) ----------
+  // Start time per weekday [Sun..Sat], default 10:00. A business day runs
+  // from its start until the next day's start. Loaded once per page.
+  let DAY_START = ['10:00', '10:00', '10:00', '10:00', '10:00', '10:00', '10:00'];
+  const timingReady = api.get('day_timing.get').then(d => { if (Array.isArray(d.start) && d.start.length === 7) DAY_START = d.start; }).catch(() => {});
+  function bizDayOf(dt) {           // Date -> 'YYYY-MM-DD'
+    const d = new Date(dt);
+    const hm = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+    if (hm < DAY_START[d.getDay()]) d.setDate(d.getDate() - 1);
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  const fmtHM = (t) => { const [h, m] = t.split(':').map(Number); return `${((h + 11) % 12) + 1}${m ? ':' + String(m).padStart(2, '0') : ''} ${h >= 12 ? 'PM' : 'AM'}`; };
+  // "10 AM to next day 10 AM", or "10 AM to next day start (Sun 12 PM)" when days differ
+  function dayWindowText() {
+    const all = new Set(DAY_START);
+    if (all.size === 1) { const t = fmtHM(DAY_START[0]); return `${t} to next day ${t}`; }
+    const names = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    return 'each day from ' + DAY_START.map((t, i) => `${names[i]} ${fmtHM(t)}`).join(', ');
+  }
+  function bizToday() { return bizDayOf(new Date()); }
+
+  function groupFilter() {
+    return document.getElementById('groupPick').value || '';
+  }
+
+  function matchesSearch(r) {
+    const q = (document.getElementById('empSearch').value || '').trim().toLowerCase();
+    if (!q) return true;
+    return (r.full_name || '').toLowerCase().includes(q)
+      || (r.employee_code || '').toLowerCase().includes(q);
+  }
+
+  let dailyCache = null;
+
+  // ---------- Automatic target rules ----------
+  // A set of rules. Each covers some weekdays and averages either the
+  // previous N days, or the same weekday over the previous N weeks
+  // (e.g. last 3 Sundays for a Sunday). Defaults mirror the server's.
+  const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  let ruleSet = {
+    enabled: 1, groups: ['tmph'],
+    rules: [{ name: 'Every day', weekdays: [0, 1, 2, 3, 4, 5, 6], basis: 'days', lookback: 3, pct: 10, min_target: 0, skip_zero: 1 }],
+  };
+  let ruleHouses = { tmph: 'TM Perfume House' };
+
+  async function loadTargetRule() {
+    try {
+      const d = await api.get('target_rule.get');
+      if (d.rule) ruleSet = d.rule;
+      if (d.houses) ruleHouses = d.houses;
+    } catch (err) { /* keep defaults; targets still work */ }
+  }
+
+  // Automatic targets apply to a person in at least one ticked house.
+  const ruleApplies = (r) => !!ruleSet.enabled && (r.houses || []).some(h => (ruleSet.groups || []).includes(h));
+
+  // The rule covering this date's weekday, or null.
+  function ruleForDay(day) {
+    if (!ruleSet.enabled) return null;
+    const wd = new Date(day + 'T00:00:00').getDay();
+    return (ruleSet.rules || []).find(r => (r.weekdays || []).includes(wd)) || null;
+  }
+
+  // The past dates a rule averages for this day, oldest first.
+  function ruleHistDays(rule, day) {
+    if (!rule) return [];
+    const n = Number(rule.lookback) || 0;
+    const step = rule.basis === 'weekday' ? 7 : 1;
+    return Array.from({ length: n }, (_, i) => addDays(day, -step * (n - i)));
+  }
+
+  function ruleBasisLabel(rule, day, n) {
+    if (rule.basis === 'weekday') return `last ${n} ${WEEKDAYS[new Date(day + 'T00:00:00').getDay()]}${n === 1 ? '' : 's'}`;
+    return `last ${n} day${n === 1 ? '' : 's'}`;
+  }
+
+  function ymd(d) {
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  function addDays(dstr, n) { const d = new Date(dstr + 'T00:00:00'); d.setDate(d.getDate() + n); return ymd(d); }
+  // Business day an order belongs to — the server sends biz_date using the
+  // Day timing setting; the local rule is the same for anything without it.
+  function orderDay(o) {
+    if (o.biz_date) return o.biz_date;
+    return bizDayOf(new Date(o.created_at));
+  }
+
+  /*
+   * The daily target for one row, and where it came from.
+   * Priority: set by hand for this day → the rule covering this weekday
+   * (if on, and the person is in a ticked house) → profile Daily Target →
+   * monthly Manual ÷ days.
+   * Desktop rows and phone cards both call this, so they always agree.
+   */
+  function resolveTarget(r) {
+    const { overrides, hist, histDays, rule, day } = dailyCache;
+    // On leave (or absent) that day: no target, whatever else is set.
+    const away = (dailyCache.away || {})[r.employee_id];
+    if (away) return { amount: 0, source: 'away', how: away === 'leave' ? 'On leave — target not counted' : 'Absent — target not counted' };
+    const ek = r.employee_id + '|' + r.group_key;
+    const nk = r.full_name + '|' + r.group_key;
+    // A new Sales Executive's first four weeks (10,000 / 15,000 / 20,000 / 25,000 a day): the automatic target of the day. It
+    // replaces the automatic rule; a target set by hand always wins (higher or lower). Counted on the person's first row only.
+    const L = (dailyCache.ladder || {})[r.employee_id];
+    const lad = L && L.row === r.group_key ? L : null;
+    const ladder = lad ? { amount: Number(lad.amount), source: 'ladder', how: `New Sales Executive · week ${lad.week} of 4 · set by hand to change it` } : null;
+    if (overrides[ek] !== undefined) return { amount: Number(overrides[ek]), source: 'manual', how: 'Set by hand for this day' };
+
+    if (!ladder && rule && ruleApplies(r) && histDays.length) {
+      const byDay = hist[nk] || {};
+      const vals = histDays.map(d => byDay[d] || 0);
+      const counted = rule.skip_zero ? vals.filter(v => v > 0) : vals;
+      const min = Number(rule.min_target) || 0;
+      const pct = Number(rule.pct);
+      const tag = rule.name ? `${rule.name}: ` : '';
+      if (counted.length) {
+        const avg = counted.reduce((a, b) => a + b, 0) / counted.length;
+        const exact = Math.round(avg * (1 + pct / 100));      // to the rupee
+        const amount = Math.max(min, exact);
+        let how = `${tag}avg of ${ruleBasisLabel(rule, day, counted.length)} ${inr(avg)} ${pct >= 0 ? '+' : '−'} ${Math.abs(pct)}%`;
+        how += amount > exact ? ` → minimum ${inr(min)}` : ` = ${inr(amount)}`;
+        return { amount, source: 'rule', how };
+      }
+      if (min > 0) return { amount: min, source: 'rule', how: `${tag}no sales in the ${ruleBasisLabel(rule, day, histDays.length)} — minimum target` };
+    }
+
+    const fallback = r.manual_target !== null ? Math.round(r.manual_target / daysInMonth) : (Number(r.daily_target) || 0);
+    if (ladder && r.manual_target === null && fallback <= ladder.amount) return ladder;      // a monthly target set by hand wins over the ladder
+    return { amount: fallback, source: fallback > 0 ? 'profile' : 'none', how: fallback > 0 ? 'From profile / monthly target' : '' };
+  }
+
+  // Target chip + how it was worked out + "back to auto" when set by hand.
+  function targetCell(r, t, compact) {
+    if (t.source === 'away') {      // on leave / absent: ₹0, not editable
+      const z = `<span class="tgt-chip" style="cursor:default;" title="${t.how}">${inr(0)}</span>`;
+      return compact ? z : z + `<div class="tgt-how">${t.how}</div>`;
+    }
+    const pill = t.source === 'manual' ? '<span class="tgt-pill man">Manual</span>' : (t.source === 'rule' || t.source === 'ladder' ? '<span class="tgt-pill auto">Auto</span>' : '');
+    const chip = `<span class="tgt-chip ${t.amount > 0 ? '' : 'empty'}" data-value="${t.source === 'manual' ? t.amount : ''}"
+        onclick="startEdit(this, ${r.employee_id}, '${r.group_key}', 'day')" title="Click to set by hand">${t.amount > 0 ? inr(t.amount) : 'Set target'} ${pill} ✎</span>`;
+    const revert = t.source === 'manual'
+      ? `<button type="button" class="tgt-revert" onclick="revertTarget(${r.employee_id}, '${r.group_key}')">↺ Back to automatic</button>` : '';
+    if (compact) return chip + revert;
+    return chip + (t.how && t.source !== 'manual' ? `<div class="tgt-how">${t.how}</div>` : '') + (revert ? `<div>${revert}</div>` : '');
+  }
+
+  // One small badge per house the person belongs to.
+  function houseBadges(r) {
+    return (r.houses || []).filter(h => ruleHouses[h]).map(h => {
+      const c = HOUSE_COLOR[h] || HOUSE_COLOR_OTHER;
+      return `<span style="display:inline-block; margin:3px 4px 0 0; padding:1px 8px; border-radius:10px; font-size:11px; font-weight:600; color:${c}; background:${c}18;">${ruleHouses[h] || h}</span>`;
+    }).join('');
+  }
+
+  window.revertTarget = async function (employeeId, groupKey) {
+    try {
+      await api.post('targets.save_daily', { date: document.getElementById('dayPick').value, employee_id: employeeId, group_key: groupKey, amount: null });
+      if (dailyCache) delete dailyCache.overrides[employeeId + '|' + groupKey];
+      renderDaily();
+    } catch (err) {
+      showAlert(err.message, 'error');
+    }
+  };
+
+  // Which Shopify store an order came from -> which house it belongs to.
+  // Matches the same mapping used server-side in targets.sync_orders /
+  // performance.daily, so today's live numbers land under the right house.
+  const STORE_TO_GROUP = { tmperfumehouse: 'tmph' };
+  // A house tag on the order beats the store it came from — same rule as
+  // the server. tmph keeps the order in the person's combined row;
+  // tm4u sends it to their TM4U row. Two house tags = store's house.
+  const HOUSE_TAGS = { tm4u: 'tm4u', tmph: 'tmph', 'tm perfume house': 'tmph' };
+  function orderHouse(o) {
+    if (o.house) return o.house;                       // the server already decided
+    const ht = [...new Set(String(o.tags || '').split(',').map(t => HOUSE_TAGS[t.trim().toLowerCase()]).filter(Boolean))];
+    return ht.length === 1 ? ht[0] : (STORE_TO_GROUP[o.store_key] || '');
+  }
+
+  let dailyReqId = 0;
+  async function loadDaily() {
+    const day = document.getElementById('dayPick').value;
+    if (!day) return;
+    const reqId = ++dailyReqId;
+    document.getElementById('dailyTitle').textContent = 'Daily — ' + new Date(day + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' });
+    const tbody = document.getElementById('dailyBody');
+    tbody.innerHTML = '<tr><td colspan="9" class="loading">Loading day orders...</td></tr>';
+    try {
+      // Past dates the day's rule averages. "Last N days" are consecutive,
+      // so they come back in the same request as today (one wider range).
+      // "Same weekday" dates are a week apart, so each is fetched on its own
+      // in parallel — one range would pull every day in between.
+      const rule = ruleForDay(day);
+      const histDays = ruleHistDays(rule, day);
+      const ordersReq = !histDays.length
+        ? api.get('shopify.orders', { date_from: day, date_to: day })
+        : rule.basis === 'days'
+          ? api.get('shopify.orders', { date_from: histDays[0], date_to: day })
+          : Promise.all([day, ...histDays].map(d => api.get('shopify.orders', { date_from: d, date_to: d })))
+              .then(parts => ({ orders: parts.flatMap(p => p.orders || []), errors: parts.flatMap(p => p.errors || []) }));
+      const [data, ovData, attData, qData] = await Promise.all([
+        ordersReq,
+        api.get('targets.daily', { date: day }),
+        api.get('attendance.list', { date: day }).catch(() => ({ rows: [] })),
+        api.get('queries.assign_list', { date: day, store_group: groupFilter() }).catch(() => ({ employees: [] })),
+      ]);
+      // Query counts, keyed by "employeeId|groupKey" straight from each
+      // employee's per-house breakdown.
+      // Query counts per person, added up across their houses (one row per
+      // employee now), keyed "employeeId|".
+      const queriesByKey = {};
+      (qData.employees || []).forEach(e => (e.groups || []).forEach(g => {
+        const k = e.employee_id + '|';
+        queriesByKey[k] = (queriesByKey[k] || 0) + (Number(g.query_count) || 0);
+      }));
+      // Punch-out time per employee name, for "orders after punch out".
+      const punchOutByName = {};
+      (attData.rows || []).forEach(a => {
+        if (a.punch_out) punchOutByName[a.full_name] = new Date(a.punch_out.replace(' ', 'T') + '+05:30').getTime();
+      });
+      if (reqId !== dailyReqId) return;   // a newer day was picked meanwhile
+      const overrides = ovData.overrides || {}; // keyed "employeeId|groupKey"
+      // Every sum below is keyed "name|groupKey" so each house's numbers
+      // stay independent for the same employee.
+      const sums = {}, counts = {}, scoutSums = {}, champSums = {}, afterPunch = {}, prepaidSums = {};
+      const codeLists = {};   // "name|groupKey" -> [{ name, time, total, code }] for the Orders cell
+      const hist = {};   // "name|" -> { 'YYYY-MM-DD': collection } for the day's rule
+      (data.orders || []).forEach(o => {
+        // Only Shopify orders from a house's own store count here. MySales,
+        // MySales 4P and manual orders belong to no house, so they don't
+        // count toward Achieved or the averages behind automatic targets —
+        // except a MySales order moved to a house on Order Allocation.
+        if (!STORE_TO_GROUP[o.store_key] && !(o.allocated && o.house)) return;
+        if (!o.salesman) return;
+        // One key per person for the TM Perfume House
+        // row ('|' + ''); orders tagged tm4u go to the person's TM4U row.
+        const nk = o.salesman + '|' + (orderHouse(o) === 'tm4u' ? 'tm4u' : '');
+        const amt = Number(o.total || 0);
+        const od = histDays.length ? orderDay(o) : day;
+        if (od !== day) {                 // an earlier day: only feeds the average
+          if (histDays.includes(od)) (hist[nk] = hist[nk] || {})[od] = ((hist[nk] || {})[od] || 0) + amt;
+          return;
+        }
+        sums[nk] = (sums[nk] || 0) + amt;
+        counts[nk] = (counts[nk] || 0) + 1;
+        (codeLists[nk] = codeLists[nk] || []).push({
+          name: o.order_name, total: amt, code: o.code || '',
+          time: new Date(o.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+        });
+        // Order type comes from its Shopify tags: "query" = Query,
+        // "campaign" = Campaign. The old one-letter tags (s / c) still
+        // count, so orders tagged before the switch keep their type.
+        const tags = String(o.tags || '').split(',').map(t => t.trim().toLowerCase());
+        if (tags.some(t => SCOUT_TAGS.includes(t))) scoutSums[nk] = (scoutSums[nk] || 0) + amt;
+        if (tags.some(t => CHAMPION_TAGS.includes(t))) champSums[nk] = (champSums[nk] || 0) + amt;
+        // Prepaid share for the Commission column — anything not COD/pending
+        // counts as prepaid, same rule the server uses for the monthly sync.
+        const fs = String(o.financial_status || '').toLowerCase();
+        if (fs.indexOf('cod') === -1 && fs.indexOf('pending') === -1) {
+          prepaidSums[nk] = (prepaidSums[nk] || 0) + amt;
+        }
+        const po = punchOutByName[o.salesman];
+        if (po && new Date(o.created_at).getTime() > po) {
+          (afterPunch[nk] = afterPunch[nk] || []).push({
+            name: o.order_name,
+            time: new Date(o.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+            total: amt,
+          });
+        }
+      });
+
+      // New Sales Executives (first four weeks): the automatic ladder for this day, per employee and the row it sits on.
+      dailyCache = { sums, counts, scoutSums, champSums, afterPunch, prepaidSums, codeLists, queriesByKey, overrides, ladder: ovData.ladder || {}, away: ovData.away || {}, day, hist, histDays, rule };
+      renderDaily();
+    } catch (err) {
+      if (reqId !== dailyReqId) return;
+      tbody.innerHTML = `<tr><td colspan="9"><div class="alert error">${err.message}</div></td></tr>`;
+    }
+  }
+
+  // Paging: show 10 rows, "Load more" adds 10. The limit is a count rather
+  // than appended HTML because renderDaily() also re-runs after inline edits
+  // (daily target, overrides) — re-rendering up to the current limit keeps
+  // an edit on row 25 from collapsing the list back to 10.
+  const DAILY_PAGE_SIZE = 10;
+  let dailyLimit = DAILY_PAGE_SIZE;
+  let dailyMatched = 0;
+
+  function updateDailyLoadMoreUi() {
+    const label = document.getElementById('dailyShownCount');
+    const btn = document.getElementById('btnDailyLoadMore');
+    if (!dailyMatched) { label.textContent = ''; btn.style.display = 'none'; return; }
+    const showing = Math.min(dailyLimit, dailyMatched);
+    label.textContent = `Showing ${showing} of ${dailyMatched}`;
+    btn.style.display = showing >= dailyMatched ? 'none' : 'inline-block';
+  }
+
+  // Called when the data or filter changes — start again from the first 10.
+  function resetDailyLimit() { dailyLimit = DAILY_PAGE_SIZE; }
+
+  // Order codes under the order count: first three chips, "+N", how many
+  // have no code, and a "codes ▾" toggle with the order-wise list.
+  function codesBlock(list) {
+    if (!list || !list.length) return '';
+    const coded = list.filter(o => o.code);
+    const chips = coded.slice(0, 3).map(o => `<span class="ocode">${o.code}</span>`).join(' ');
+    const more = coded.length > 3 ? ` <span style="color:var(--muted);">+${coded.length - 3}</span>` : '';
+    const missing = list.length - coded.length;
+    const note = missing ? `<span style="color:#b45f06;">${missing} no code</span>` : (coded.length ? '<span style="color:#0f7a41;">all coded</span>' : '');
+    const rows = list.map(o => `<div><span>${o.name} · ${o.time}</span>${o.code ? `<span class="ocode">${o.code}</span>` : '<span class="ocode none">no code</span>'}<span>${inr(o.total)}</span></div>`).join('');
+    return `<div style="font-size:11.5px; margin-top:3px; line-height:1.9;">${chips}${more}${chips && note ? ' · ' : ''}${note}</div>
+      <span class="ocode-tog" onclick="const l = this.nextElementSibling; const open = l.style.display !== 'none'; l.style.display = open ? 'none' : 'block'; this.textContent = open ? 'codes ▾' : 'codes ▴';">codes ▾</span>
+      <div class="ocode-list" style="display:none;">${rows}</div>`;
+  }
+
+  function renderDaily() {
+    const tbody = document.getElementById('dailyBody');
+    if (!dailyCache) return;
+    const { sums, counts, scoutSums, champSums, afterPunch, prepaidSums, codeLists, queriesByKey, day } = dailyCache;
+    // monthRows already has one entry per (employee, house) from targets.get.
+    const matched = monthRows.filter(matchesSearch);
+    dailyMatched = matched.length;
+    const shown = matched.slice(0, dailyLimit);
+    updateDailyLoadMoreUi();
+    if (!shown.length) {
+      tbody.innerHTML = '<tr><td colspan="9" class="empty-state">No matching employees.</td></tr>';
+      document.getElementById('dailyCards').innerHTML = '<div class="empty-state">No matching employees.</div>';
+      return;
+    }
+    tbody.innerHTML = shown.map(r => {
+        const nk = r.full_name + '|' + r.group_key;
+        const ek = r.employee_id + '|' + r.group_key;
+        const achieved = sums[nk] || 0;
+        const cnt = counts[nk] || 0;
+        const tgt = resolveTarget(r);
+        const dailyTarget = tgt.amount;
+        const realPct = dailyTarget > 0 ? Math.round((achieved / dailyTarget) * 100) : 0;
+        const pct = Math.min(100, realPct);
+        const barColor = realPct > 100 ? '#7C3AED' : (pct >= 60 ? '#1D9E75' : (pct >= 30 ? '#EF9F27' : '#E24B4A'));
+        const pctLabel = realPct > 100 ? `<b style="color:#7C3AED;">${realPct}% 🎯</b>` : (dailyTarget > 0 ? `<b style="color:${barColor};">${pct}%</b>` : '—');
+        const houseBadge = houseBadges(r);
+        return `<tr>
+          <td><a href="employee_detail.html?id=${r.employee_id}">${r.full_name}</a><div style="font-size:11.5px; color:var(--muted);">${r.employee_code}</div>${houseBadge}</td>
+          <td>${(() => {
+            const q = queriesByKey[ek];
+            return q > 0 ? q : '<span style="color:var(--muted);">—</span>';
+          })()}</td>
+          <td>${cnt > 0 ? `<a href="orders.html?from=${day}&to=${day}&salesman=${encodeURIComponent(r.full_name)}">${cnt} order${cnt === 1 ? '' : 's'}</a>` : '0'}
+            ${codesBlock(codeLists[nk])}
+            ${(() => {
+              const ap = afterPunch[nk] || [];
+              if (!ap.length) return '';
+              const sum = ap.reduce((t, o) => t + o.total, 0);
+              const shown2 = ap.slice(0, 2);
+              let list = shown2.map(o => `<div style="display:flex; justify-content:space-between; gap:10px;"><span>${o.name} · ${o.time}</span><span>${inr(o.total)}</span></div>`).join('');
+              if (ap.length > 2) list += `<a href="orders.html?from=${day}&to=${day}&salesman=${encodeURIComponent(r.full_name)}" style="display:block; margin-top:4px; font-size:11.5px;">+ ${ap.length - 2} more — view all in Orders</a>`;
+              return `<div style="font-size:11.5px; color:#B45309; font-weight:600; cursor:pointer; margin-top:3px;" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'none' ? 'block' : 'none';">⏰ ${ap.length} after punch-out · ${inr(sum)} ▾</div>
+                <div style="display:none; font-size:11.5px; color:var(--muted); margin-top:4px; border-left:2px solid #F59E0B; padding-left:8px;">${list}</div>`;
+            })()}
+          </td>
+          <td>${(() => {
+            const q = queriesByKey[ek];
+            if (!q || q <= 0) return '<span style="color:var(--muted);">—</span>';
+            const ratio = Math.round((cnt / q) * 100);
+            const bg = ratio >= 25 ? '#e7f7ee' : (ratio >= 15 ? '#fdf3e3' : '#fdecec');
+            const fg = ratio >= 25 ? '#0f7a41' : (ratio >= 15 ? '#b45f06' : '#c81e1e');
+            return `<span class="badge" style="background:${bg}; color:${fg};">${ratio}%</span>
+              <div style="font-size:11px; color:var(--muted);">${cnt}/${q}</div>`;
+          })()}</td>
+          <td style="font-weight:600;">${inr(achieved)}</td>
+          <td>${cnt > 0 ? inr(achieved / cnt) : '—'}</td>
+          <td>${targetCell(r, tgt, false)}</td>
+          <td>
+            ${(() => {
+              const scout = scoutSums[nk] || 0;
+              const champ = champSums[nk] || 0;
+              // One bar, split into Query and Campaign slices. Both widths
+              // are shares of the daily target, so together they read as the
+              // same overall progress the percentage label shows. Any
+              // achieved amount with neither tag is the grey "Other" slice.
+              // When someone beats their target the raw shares exceed 100%,
+              // so everything is scaled down to fit the bar while keeping
+              // the Query:Campaign ratio intact.
+              let sPct = dailyTarget > 0 ? (scout / dailyTarget) * 100 : 0;
+              let cPct = dailyTarget > 0 ? (champ / dailyTarget) * 100 : 0;
+              let otherPct = Math.max(0, pct - sPct - cPct);
+              const sum = sPct + cPct + otherPct;
+              if (sum > 100) {
+                const k = 100 / sum;
+                sPct *= k; cPct *= k; otherPct *= k;
+              }
+              const legend = (label, amt, color) => `
+                <span style="display:inline-flex; align-items:center; gap:5px;">
+                  <span style="width:8px; height:8px; border-radius:2px; background:${color}; flex:none;"></span>
+                  <span style="color:var(--muted);">${label} ${inr(amt)}</span>
+                </span>`;
+              return `
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <div style="flex:1; height:10px; background:var(--bg); border-radius:5px; overflow:hidden; display:flex;">
+                    <div style="width:${sPct}%; background:#0EA5E9;"></div>
+                    <div style="width:${cPct}%; background:#F59E0B;"></div>
+                    <div style="width:${otherPct}%; background:#94A3B8;"></div>
+                  </div>
+                  <span style="white-space:nowrap; font-size:12.5px;">${pctLabel}</span>
+                </div>
+                ${achieved > 0
+                  ? `<div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:6px; font-size:11px;">
+                       ${legend('Query', scout, '#0EA5E9')}
+                       ${legend('Campaign', champ, '#F59E0B')}
+                       ${Math.max(0, achieved - scout - champ) > 0 ? legend('Other', Math.max(0, achieved - scout - champ), '#94A3B8') : ''}
+                     </div>`
+                  : ''}`;
+            })()}
+          </td>
+          <td>${commissionCell(achieved, dailyTarget, cnt, prepaidSums[nk] || 0, ek)}</td>
+        </tr>`;
+      }).join('');
+
+    // Mobile: one progress-led card per (employee, house) row. Uses the
+    // same computed values as the table above so the two can't drift.
+    const cardsEl = document.getElementById('dailyCards');
+    cardsEl.innerHTML = shown.map(r => {
+        const nk = r.full_name + '|' + r.group_key;
+        const ek = r.employee_id + '|' + r.group_key;
+        const achieved = sums[nk] || 0;
+        const cnt = counts[nk] || 0;
+        const tgt = resolveTarget(r);
+        const dailyTarget = tgt.amount;
+        const realPct = dailyTarget > 0 ? Math.round((achieved / dailyTarget) * 100) : 0;
+        const pct = Math.min(100, realPct);
+        const barColor = realPct > 100 ? '#7C3AED' : (pct >= 60 ? '#1D9E75' : (pct >= 30 ? '#EF9F27' : '#E24B4A'));
+
+        // Same segmented bar as the table's Progress column.
+        const scout = scoutSums[nk] || 0;
+        const champ = champSums[nk] || 0;
+        let sPct = dailyTarget > 0 ? (scout / dailyTarget) * 100 : 0;
+        let cPct = dailyTarget > 0 ? (champ / dailyTarget) * 100 : 0;
+        let otherPct = Math.max(0, pct - sPct - cPct);
+        const sum = sPct + cPct + otherPct;
+        if (sum > 100) { const k = 100 / sum; sPct *= k; cPct *= k; otherPct *= k; }
+
+        const q = queriesByKey[ek];
+        const meta = [
+          cnt > 0 ? `${cnt} order${cnt === 1 ? '' : 's'}` : null,
+          cnt > 0 ? `${inr(achieved / cnt)} avg` : null,
+          q > 0 ? `${q} quer${q === 1 ? 'y' : 'ies'}` : null,
+        ].filter(Boolean).join(' · ');
+
+        return `<div style="background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:11px 13px; margin-bottom:8px;">
+          <div style="display:flex; justify-content:space-between; align-items:baseline; gap:8px;">
+            <a href="employee_detail.html?id=${r.employee_id}" style="font-size:13px; font-weight:600;">${r.full_name}</a>
+            <span style="font-size:15px; font-weight:700; white-space:nowrap; color:${dailyTarget > 0 ? barColor : 'inherit'};">${dailyTarget > 0 ? realPct + '%' : '—'}</span>
+          </div>
+          <div style="font-size:11px; color:var(--muted); margin-top:1px;">
+            ${r.employee_code}</div><div>${houseBadges(r)}
+          </div>
+          <div style="height:12px; background:var(--bg); border:1px solid var(--line); border-radius:6px; overflow:hidden; display:flex; margin-top:9px;">
+            <div style="width:${sPct}%; background:#0EA5E9;"></div>
+            <div style="width:${cPct}%; background:#F59E0B;"></div>
+            <div style="width:${otherPct}%; background:#94A3B8;"></div>
+          </div>
+          <div style="display:flex; justify-content:space-between; gap:10px; font-size:11px; color:var(--muted); margin-top:6px;">
+            <span>${inr(achieved)}${dailyTarget > 0 ? ' of ' + inr(dailyTarget) : ''}</span>
+            <span style="text-align:right;">${meta || 'No orders'}</span>
+          </div>
+          ${codesBlock(codeLists[nk])}
+          ${achieved > 0
+            ? `<div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:5px; font-size:11px; color:var(--muted);">
+                 <span style="display:inline-flex; align-items:center; gap:4px;"><span style="width:7px; height:7px; border-radius:2px; background:#0EA5E9;"></span>Query ${inr(scout)}</span>
+                 <span style="display:inline-flex; align-items:center; gap:4px;"><span style="width:7px; height:7px; border-radius:2px; background:#F59E0B;"></span>Campaign ${inr(champ)}</span>
+                 ${Math.max(0, achieved - scout - champ) > 0 ? `<span style="display:inline-flex; align-items:center; gap:4px;"><span style="width:7px; height:7px; border-radius:2px; background:#94A3B8;"></span>Other ${inr(Math.max(0, achieved - scout - champ))}</span>` : ''}
+               </div>`
+            : ''}
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:9px; padding-top:8px; border-top:1px solid var(--line);">
+            <span style="font-size:11px; color:var(--muted);">${commissionLabel(achieved, dailyTarget, cnt, prepaidSums[nk] || 0, 'm' + ek)}</span>
+            <span style="display:flex; align-items:center; gap:10px;">
+              <span style="display:flex; flex-direction:column; align-items:flex-end;">${targetCell(r, tgt, true)}</span>
+              <span style="font-size:14px; font-weight:700; color:#0f7a41; white-space:nowrap;">${commissionAmount(achieved, dailyTarget, cnt, prepaidSums[nk] || 0)}</span>
+            </span>
+          </div>
+          <div id="cinfo-m${ek.replace(/[^A-Za-z0-9_-]/g, '_')}" style="display:none;"></div>
+        </div>`;
+      }).join('');
+  }
+
+  // Commission split into label + amount so the card can place them at
+  // opposite ends of its footer row, reusing the same calculation and the
+  // same expandable breakdown as the table.
+  function commissionLabel(achieved, target, cnt, prepaidAmt, rowKey) {
+    if (achieved <= 0 || cnt <= 0) return 'No commission';
+    const ticket = achieved / cnt;
+    const prepaidPct = achieved > 0 ? Math.min(100, (prepaidAmt / achieved) * 100) : 0;
+    const c = calcCommission(achieved, target, ticket, prepaidPct);
+    if (!c) return 'No commission';
+    const key = String(rowKey).replace(/[^A-Za-z0-9_-]/g, '_');
+    commissionCalcs[key] = { c, achieved };
+    return `Est. commission (today) · ${c.rate.toFixed(1)}%
+      <button type="button" onclick="toggleCommissionInfo('${key}', this)" aria-expanded="false"
+        aria-label="How this commission was calculated" title="How this was calculated"
+        style="border:none; background:none; padding:0; margin-left:3px; width:16px; height:16px; min-height:0; line-height:1; color:var(--accent); cursor:pointer; font-size:13px; vertical-align:-2px;">&#9432;</button>`;
+  }
+
+  function commissionAmount(achieved, target, cnt, prepaidAmt) {
+    if (achieved <= 0 || cnt <= 0) return '—';
+    const ticket = achieved / cnt;
+    const prepaidPct = achieved > 0 ? Math.min(100, (prepaidAmt / achieved) * 100) : 0;
+    const c = calcCommission(achieved, target, ticket, prepaidPct);
+    return c ? inr(c.amount) : '—';
+  }
+
+  async function load() {
+    currentMonth = document.getElementById('monthPick').value;
+    if (!currentMonth) return;
+    document.getElementById('pageTitle').textContent = 'Targets — ' + monthLabel(currentMonth);
+    try {
+      const data = await api.get('targets.get', { month: currentMonth, store_group: groupFilter() });
+      const rows = data.rows || [];
+      monthRows = rows;
+      daysInMonth = Number(data.days_in_month || 30);
+    } catch (err) {
+      showAlert(err.message, 'error');
+    }
+  }
+
+
+  // Click-to-edit with explicit ✓ save / ✕ cancel buttons.
+  window.startEdit = function (chip, employeeId, groupKey, kind) {
+    // The editor replaces the chip itself rather than its table cell. The
+    // old version looked up chip.closest('td'), which exists in the desktop
+    // table but not in the mobile cards — there it returned null and the
+    // tap silently did nothing.
+    const editor = document.createElement('span');
+    editor.style.cssText = 'display:inline-flex; align-items:center; gap:4px; flex-wrap:nowrap;';
+    const restore = () => { if (editor.isConnected) editor.replaceWith(chip); };
+    const current = chip.dataset.value || '';
+
+    const input = document.createElement('input');
+    input.type = 'number'; input.min = 0; input.step = 500; input.value = current;
+    input.inputMode = 'numeric';
+    input.placeholder = kind === 'day' ? 'blank = auto' : 'e.g. 5000';
+    // 16px on phones: iOS zooms the whole page into any input under 16px.
+    const small = window.innerWidth <= 820;
+    input.style.cssText = `width:${small ? 100 : 90}px; padding:6px 8px; border:1px solid var(--line); border-radius:6px; font-size:${small ? 16 : 13}px;`;
+
+    const ok = document.createElement('button');
+    ok.innerHTML = '&#10003;';
+    ok.title = 'Save';
+    ok.style.cssText = 'background:#0f7a41; color:#fff; border:none; border-radius:6px; padding:7px 10px; cursor:pointer; font-size:13px;';
+
+    const no = document.createElement('button');
+    no.innerHTML = '&#10005;';
+    no.title = 'Cancel';
+    no.style.cssText = 'background:#c81e1e; color:#fff; border:none; border-radius:6px; padding:7px 10px; cursor:pointer; font-size:13px;';
+
+    no.onclick = restore;
+
+    ok.onclick = async () => {
+      ok.disabled = true; no.disabled = true;
+      try {
+        if (kind === 'standing') {
+          const amount = Number(input.value || 0);
+          await api.post('employees.set_daily_target', { employee_id: employeeId, amount });
+          // Update every house-row's profile default locally — no full page reload.
+          monthRows.filter(r => r.employee_id === employeeId).forEach(r => (r.daily_target = amount));
+        } else {
+          const amount = input.value === '' ? null : Number(input.value);
+          await api.post('targets.save_daily', {
+            date: document.getElementById('dayPick').value,
+            employee_id: employeeId,
+            group_key: groupKey,
+            amount,
+          });
+          // Update today's override locally — no full page reload.
+          if (dailyCache) {
+            const ek = employeeId + '|' + groupKey;
+            if (amount === null) delete dailyCache.overrides[ek];
+            else dailyCache.overrides[ek] = amount;
+          }
+        }
+        renderDaily();
+      } catch (err) {
+        showAlert(err.message, 'error');
+        restore();
+      } finally {
+        ok.disabled = false; no.disabled = false;
+      }
+    };
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') ok.click();
+      if (e.key === 'Escape') no.click();
+    });
+
+    editor.append(input, ok, no);
+    chip.replaceWith(editor);
+    input.focus();
+  };
+
+  window.saveTarget = async function (employeeId, manualTarget, achieved, el) {
+    try {
+      const payload = { month: currentMonth, employee_id: employeeId };
+      if (manualTarget !== undefined) payload.manual_target = manualTarget === '' ? null : Number(manualTarget);
+      if (achieved !== undefined && achieved !== null) payload.achieved = Number(achieved || 0);
+      await api.post('targets.save', payload);
+      el.style.borderColor = '#0f7a41';
+      setTimeout(() => (el.style.borderColor = ''), 1200);
+      load();
+    } catch (err) {
+      showAlert(err.message, 'error');
+    }
+  };
+
+  // Achieved stays current automatically: on page load and whenever the
+  // month changes, this asks the server to sync. The server itself decides
+  // whether to actually hit Shopify (throttled to once every 5 minutes per
+  // month, shared across every browser/admin) or just confirm it's already
+  // fresh — so opening this page never triggers a slow live fetch unless
+  // the data genuinely needs it.
+  const btnSync = document.getElementById('btnSyncNow');
+
+  // Sync first, then load once. Calling load() before the sync and again
+  // after it (because the sync changed the numbers) is what made the page
+  // fetch everything twice on open. Now the sync runs first and the single
+  // load that follows already sees the fresh data.
+  async function runSync(force, reloadAfter = true) {
+    btnSync.disabled = true;
+    if (force) showAlert('Syncing from Shopify...');
+    try {
+      const d = await api.post('targets.sync_orders', { month: currentMonth, force: !!force });
+      // Only surface the message on an explicit click — a silent background
+      // check on page load shouldn't pop a banner every time.
+      if (force && d.message) showAlert(d.message);
+      // Only reload when the sync actually changed something AND the caller
+      // isn't about to load anyway.
+      if (reloadAfter && !d.skipped) await load().then(loadDaily);
+    } catch (err) {
+      showAlert((force ? 'Sync failed: ' : 'Auto-update failed: ') + err.message, 'error');
+    } finally {
+      btnSync.disabled = false;
+    }
+  }
+
+  btnSync.addEventListener('click', () => runSync(true));
+
+  // Filters and scroll position survive a round trip to an employee's
+  // profile and back, so returning lands the user where they left off
+  // rather than resetting to today's default view at the top of the list.
+  const TARGETS_STATE = 'hrmsTargetsState';
+
+  function saveTargetsState() {
+    try {
+      sessionStorage.setItem(TARGETS_STATE, JSON.stringify({
+        month: document.getElementById('monthPick').value,
+        day: document.getElementById('dayPick').value,
+        group: document.getElementById('groupPick').value,
+        search: document.getElementById('empSearch').value,
+        scroll: window.scrollY,
+        limit: dailyLimit,
+      }));
+    } catch (e) { /* storage unavailable — fall back to defaults */ }
+  }
+
+  // Capture on any navigation away (clicking an employee, the sidebar, etc.)
+  window.addEventListener('pagehide', saveTargetsState);
+
+  function restoreTargetsState() {
+    let s = null;
+    try { s = JSON.parse(sessionStorage.getItem(TARGETS_STATE) || 'null'); } catch (e) {}
+    if (!s) return false;
+    if (s.month) document.getElementById('monthPick').value = s.month;
+    if (s.day) document.getElementById('dayPick').value = s.day;
+    const gp = document.getElementById('groupPick');
+    if (s.group && [...gp.options].some(o => o.value === s.group)) gp.value = s.group;
+    if (s.search) document.getElementById('empSearch').value = s.search;
+    // Restore the loaded row count too — otherwise only 10 rows render and
+    // the saved scroll position points past the end of the list.
+    if (Number(s.limit) > DAILY_PAGE_SIZE) dailyLimit = Number(s.limit);
+    return typeof s.scroll === 'number' ? s.scroll : 0;
+  }
+
+  const now = new Date();
+  document.getElementById('monthPick').value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  document.getElementById('monthPick').addEventListener('change', () => { resetDailyLimit(); init(); });
+  document.getElementById('groupPick').addEventListener('change', () => { resetDailyLimit(); load().then(loadDaily); });
+  document.getElementById('dayPick').value = bizToday();
+  document.getElementById('dayPick').addEventListener('change', () => { resetDailyLimit(); loadDaily(); });
+  let searchTimer = null;
+  document.getElementById('empSearch').addEventListener('input', () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => { resetDailyLimit(); renderDaily(); }, 150);
+  });
+  document.getElementById('btnDailyLoadMore').addEventListener('click', () => {
+    dailyLimit += DAILY_PAGE_SIZE;
+    renderDaily();
+  });
+
+  // No Shopify sync on load. Everything this page shows — Achieved, Ticket
+  // Size, Progress, Commission — is built from the selected DAY's orders
+  // fetched in loadDaily(). The month-long sync only feeds targets.achieved,
+  // which this page stopped displaying when the summary stat cards were
+  // removed, so running it here just meant waiting on a month of Shopify
+  // data to compute a number nothing reads. It still runs from "Sync now",
+  // which is what Commission and Performance pages rely on.
+  // ---------- Target rules window ----------
+  const ruleModal = document.getElementById('ruleModal');
+  const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];                 // show Mon → Sun
+  const DAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  let draft = [];                                          // rules being edited
+
+  function readDraftFromDom() {
+    document.querySelectorAll('#ruleList .rule-card').forEach((card, i) => {
+      const r = draft[i];
+      r.name = card.querySelector('.rule-name').value.trim();
+      r.basis = card.querySelector('.rule-basis').value;
+      r.lookback = Number(card.querySelector('.rule-lookback').value);
+      r.pct = Number(card.querySelector('.rule-pct').value || 0);
+      r.min_target = Number(card.querySelector('.rule-min').value || 0);
+      r.skip_zero = card.querySelector('.rule-skip').checked ? 1 : 0;
+    });
+  }
+
+  function lookbackOptions(basis, current) {
+    const max = basis === 'weekday' ? 8 : 14;
+    const unit = basis === 'weekday' ? 'week' : 'day';
+    const opts = [];
+    for (let n = 1; n <= max; n++) opts.push(`<option value="${n}" ${n === Number(current) ? 'selected' : ''}>${n} ${unit}${n === 1 ? '' : 's'}</option>`);
+    return opts.join('');
+  }
+
+  function ruleSentence(r) {
+    if (!r.weekdays.length) return 'Pick the days this rule covers.';
+    const days = DAY_ORDER.filter(d => r.weekdays.includes(d));
+    const dayText = days.length === 7 ? 'Every day' : days.map(d => WEEKDAYS[d]).join(', ');
+    const basis = r.basis === 'weekday'
+      ? `the same weekday over the last <b>${r.lookback} week${r.lookback === 1 ? '' : 's'}</b>`
+      : `the last <b>${r.lookback} day${r.lookback === 1 ? '' : 's'}</b>`;
+    return `${dayText}: average of ${basis}${r.skip_zero ? ' (days with sales)' : ''} <b>${r.pct >= 0 ? '+' : '−'} ${Math.abs(r.pct)}%</b>${r.min_target > 0 ? `, never below <b>${inr(r.min_target)}</b>` : ''}.`;
+  }
+
+  // Days used by more than one rule, so they can be flagged before saving.
+  function clashes() {
+    const seen = {}, bad = new Set();
+    draft.forEach(r => r.weekdays.forEach(d => { if (seen[d] !== undefined) bad.add(d); seen[d] = true; }));
+    return bad;
+  }
+
+  function renderRules() {
+    const bad = clashes();
+    document.getElementById('ruleList').innerHTML = draft.map((r, i) => `
+      <div class="rule-card ${r.weekdays.some(d => bad.has(d)) ? 'bad' : ''}">
+        <div class="rule-card-head">
+          <input type="text" class="rule-name" maxlength="60" placeholder="Rule ${i + 1}" value="${(r.name || '').replace(/"/g, '&quot;')}" aria-label="Rule name">
+          ${draft.length > 1 ? `<button type="button" class="rule-del" data-del="${i}">Delete</button>` : ''}
+        </div>
+        <div class="rule-days" role="group" aria-label="Days this rule covers">
+          ${DAY_ORDER.map(d => `<button type="button" class="rule-day ${r.weekdays.includes(d) ? 'on' : ''} ${r.weekdays.includes(d) && bad.has(d) ? 'clash' : ''}"
+             data-rule="${i}" data-day="${d}" aria-pressed="${r.weekdays.includes(d)}">${DAY_SHORT[d]}</button>`).join('')}
+        </div>
+        <div class="rule-fields">
+          <label>Average of
+            <select class="rule-basis"><option value="days" ${r.basis === 'days' ? 'selected' : ''}>Last few days</option><option value="weekday" ${r.basis === 'weekday' ? 'selected' : ''}>Same weekday, past weeks</option></select></label>
+          <label>How many
+            <select class="rule-lookback">${lookbackOptions(r.basis, r.lookback)}</select></label>
+          <label>Add on top (%)
+            <input type="number" class="rule-pct" step="1" min="-90" max="500" value="${r.pct}"></label>
+          <label>Minimum target (₹)
+            <input type="number" class="rule-min" step="100" min="0" placeholder="0 = none" value="${Number(r.min_target) > 0 ? r.min_target : ''}"></label>
+        </div>
+        <label class="rule-check"><input type="checkbox" class="rule-skip" ${r.skip_zero ? 'checked' : ''}> Skip days with no sales (leave / absent)</label>
+        <div class="rule-sentence">${ruleSentence(r)}</div>
+      </div>`).join('');
+    ruleModal.querySelector('.modal').classList.toggle('rule-off', !document.getElementById('ruleEnabled').checked);
+  }
+
+  function openRule() {
+    document.getElementById('ruleAlert').innerHTML = '';
+    document.getElementById('ruleEnabled').checked = !!ruleSet.enabled;
+    draft = (ruleSet.rules || []).map(r => ({ ...r, weekdays: [...(r.weekdays || [])] }));
+    if (!draft.length) draft = [{ name: 'Every day', weekdays: [0, 1, 2, 3, 4, 5, 6], basis: 'days', lookback: 3, pct: 10, min_target: 0, skip_zero: 1 }];
+    document.getElementById('ruleHouses').innerHTML = Object.entries(ruleHouses).map(([k, label]) =>
+      `<label><input type="checkbox" value="${k}" ${(ruleSet.groups || []).includes(k) ? 'checked' : ''}> ${label}</label>`).join('');
+    renderRules();
+    ruleModal.classList.add('open');
+  }
+  const closeRule = () => ruleModal.classList.remove('open');
+
+  document.getElementById('btnRule').addEventListener('click', openRule);
+  // Day timing is open to anyone who can open this page — page access gives
+  // every control on the page (the server checks the same module).
+  document.getElementById('ruleCancel').addEventListener('click', closeRule);
+  ruleModal.addEventListener('click', (e) => {
+    if (e.target === ruleModal) { closeRule(); return; }
+    const dayBtn = e.target.closest('.rule-day');
+    if (dayBtn) {
+      readDraftFromDom();
+      const r = draft[Number(dayBtn.dataset.rule)], d = Number(dayBtn.dataset.day);
+      r.weekdays = r.weekdays.includes(d) ? r.weekdays.filter(x => x !== d) : [...r.weekdays, d];
+      renderRules();
+      return;
+    }
+    const del = e.target.closest('[data-del]');
+    if (del) { readDraftFromDom(); draft.splice(Number(del.dataset.del), 1); renderRules(); }
+  });
+  document.getElementById('ruleAdd').addEventListener('click', () => {
+    readDraftFromDom();
+    // New rule starts with whichever days no rule covers yet.
+    const used = new Set(draft.flatMap(r => r.weekdays));
+    draft.push({ name: '', weekdays: [0, 1, 2, 3, 4, 5, 6].filter(d => !used.has(d)), basis: 'weekday', lookback: 3, pct: 10, min_target: 0, skip_zero: 1 });
+    renderRules();
+    const cards = document.querySelectorAll('#ruleList .rule-card');
+    cards[cards.length - 1].scrollIntoView({ block: 'nearest' });
+  });
+  // Typing updates the sentence; changing "Average of" also re-labels "How many".
+  ruleModal.addEventListener('input', (e) => {
+    if (!e.target.closest('.rule-card')) return;
+    readDraftFromDom();
+    const card = e.target.closest('.rule-card');
+    card.querySelector('.rule-sentence').innerHTML = ruleSentence(draft[[...card.parentNode.children].indexOf(card)]);
+  });
+  ruleModal.addEventListener('change', (e) => {
+    if (e.target.id === 'ruleEnabled') { ruleModal.querySelector('.modal').classList.toggle('rule-off', !e.target.checked); return; }
+    if (e.target.classList.contains('rule-basis')) {
+      readDraftFromDom();
+      const i = [...document.querySelectorAll('#ruleList .rule-card')].indexOf(e.target.closest('.rule-card'));
+      draft[i].lookback = Math.min(draft[i].lookback, draft[i].basis === 'weekday' ? 8 : 14);
+      renderRules();
+    }
+  });
+
+  document.getElementById('ruleSave').addEventListener('click', async () => {
+    readDraftFromDom();
+    const alertEl = document.getElementById('ruleAlert');
+    const enabled = document.getElementById('ruleEnabled').checked ? 1 : 0;
+    const groups = [...document.querySelectorAll('#ruleHouses input:checked')].map(i => i.value);
+    if (enabled) {
+      const empty = draft.findIndex(r => !r.weekdays.length);
+      if (empty >= 0) { alertEl.innerHTML = `<div class="alert error">${draft[empty].name || 'Rule ' + (empty + 1)}: pick at least one day.</div>`; return; }
+      if (clashes().size) { alertEl.innerHTML = '<div class="alert error">A day is in more than one rule (shown in red). Each day can only be in one rule.</div>'; return; }
+      if (!groups.length) { alertEl.innerHTML = '<div class="alert error">Tick at least one house, or turn automatic targets off.</div>'; return; }
+    }
+    const btn = document.getElementById('ruleSave');
+    btn.disabled = true;
+    try {
+      const d = await api.post('target_rule.save', { enabled, groups, rules: draft });
+      ruleSet = d.rule || { enabled, groups, rules: draft };
+      closeRule();
+      showAlert(d.message || 'Target rules saved.');
+      loadDaily();   // the dates to fetch may have changed
+    } catch (err) {
+      alertEl.innerHTML = `<div class="alert error">${err.message}</div>`;
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+
+  // ---------- Day timing window ----------
+  const timingModal = document.getElementById('timingModal');
+  const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  function renderTiming(vals) {
+    const order = [1, 2, 3, 4, 5, 6, 0];
+    document.getElementById('timingRows').innerHTML = `<div style="display:grid; grid-template-columns:110px 110px 1fr; gap:6px 10px; font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; padding:0 0 4px;"><span>Day</span><span>Starts at</span><span>Counts from → to</span></div>` +
+      order.map(i => { const n = (i + 1) % 7; return `<div style="display:grid; grid-template-columns:110px 110px 1fr; gap:6px 10px; align-items:center; padding:6px 0; border-top:1px solid var(--line); font-size:13px;">
+        <b>${DAY_NAMES[i]}</b><input type="time" class="timing-in" data-wd="${i}" value="${vals[i]}" style="padding:5px 6px; border:1px solid var(--line); border-radius:6px; font-size:13px;">
+        <span class="timing-win" data-wd="${i}" style="font-size:11.5px; color:var(--muted);"></span></div>`; }).join('');
+    paintWindows();
+  }
+  function timingVals() { const v = [...DAY_START]; document.querySelectorAll('.timing-in').forEach(i => { v[Number(i.dataset.wd)] = i.value || '10:00'; }); return v; }
+  function paintWindows() {
+    const v = timingVals(); const names = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    document.querySelectorAll('.timing-win').forEach(el => { const i = Number(el.dataset.wd), n = (i + 1) % 7;
+      el.textContent = `${names[i]} ${fmtHM(v[i])} → ${names[n]} ${fmtHM(v[n])}`; el.style.color = (v[i] !== '10:00' || v[n] !== '10:00') ? 'var(--accent)' : 'var(--muted)'; });
+  }
+  document.getElementById('btnTiming').addEventListener('click', async () => { await timingReady; document.getElementById('timingAlert').innerHTML = ''; renderTiming(DAY_START); timingModal.classList.add('open'); });
+  document.getElementById('timingCancel').addEventListener('click', () => timingModal.classList.remove('open'));
+  timingModal.addEventListener('click', (e) => { if (e.target === timingModal) timingModal.classList.remove('open'); });
+  timingModal.addEventListener('input', (e) => { if (e.target.classList.contains('timing-in')) paintWindows(); });
+  document.getElementById('timingReset').addEventListener('click', () => renderTiming(['10:00', '10:00', '10:00', '10:00', '10:00', '10:00', '10:00']));
+  document.getElementById('timingSave').addEventListener('click', async () => {
+    const btn = document.getElementById('timingSave'); btn.disabled = true;
+    try {
+      const d = await api.post('day_timing.save', { start: timingVals() });
+      DAY_START = timingVals();
+      timingModal.classList.remove('open');
+      showAlert(d.message || 'Day timing saved.');
+      paintDayHints();
+      loadDaily();
+    } catch (err) {
+      document.getElementById('timingAlert').innerHTML = `<div class="alert error">${err.message}</div>`;
+    } finally { btn.disabled = false; }
+  });
+  // Header hint follows the setting.
+  function paintDayHints() {
+    const dp = document.getElementById('dayPick'); if (dp) dp.title = 'Daily view (' + dayWindowText() + ')';
+    const h = document.getElementById('dailyHint'); if (h) h.innerHTML = h.innerHTML.replace(/Day runs [^.]*\./, 'Day runs ' + dayWindowText() + '.');
+  }
+  timingReady.then(paintDayHints);
+
+  async function init(restoreScroll) {
+    currentMonth = document.getElementById('monthPick').value;
+    // Sequential, not parallel: renderDaily() reads monthRows and
+    // daysInMonth, both set by load(), so the day table must render after
+    // it. load() is a single local DB query, so this costs almost nothing —
+    // the slow part was the Shopify sync, which is now gone.
+    await load();
+    await loadDaily();
+    if (restoreScroll) window.scrollTo(0, restoreScroll);
+  }
+
+  loadCommissionRules();
+  const savedScroll = restoreTargetsState();
+  // The rule decides how many past days loadDaily() fetches, so it has to
+  // arrive first; it's one small local query.
+  loadTargetRule().then(() => init(savedScroll));
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>

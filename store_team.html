@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Store Team — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=260928b">
+<link rel="stylesheet" href="assets/css/store.css?v=6">
+<style>
+  .tm{display:grid;grid-template-columns:minmax(150px,1.3fr) 130px repeat(4,minmax(80px,1fr));gap:8px;align-items:center;padding:9px 4px;border-top:1px solid var(--sx-line);font-size:13px}
+  .tm.head{border-top:0;font-size:11px;font-weight:800;color:var(--sx-mut);letter-spacing:.05em;text-transform:uppercase}
+  .tm .nm b{display:block}.tm .nm small{color:var(--sx-mut)}.tm .r{text-align:right}.tm .r small{display:block;color:var(--sx-mut);font-size:11px}
+  .pn{display:inline-flex;gap:5px;align-items:center;padding:3px 10px;border-radius:999px;font-size:11.5px;font-weight:800;background:#eef0f3;color:#6b7280}.pn.in{background:var(--sx-aqua-t);color:#0d7a55}.pn.no{background:#fdecea;color:#b42318}
+  @media (max-width:900px){.tm{grid-template-columns:1fr 1fr 1fr}.tm.head{display:none}.tm .nm{grid-column:1/-1}.tm .pc{grid-column:1/-1}}
+  .tg{display:flex;gap:8px;align-items:flex-start;font-size:13px;margin:6px 0}.tg input{margin-top:3px}.tg small{display:block;color:var(--sx-mut)}
+  .lk{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.lk a{text-decoration:none}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><div><h1>Store Team</h1><div class="sub" style="font-size:12.5px;color:var(--muted);margin-top:2px" id="subLine">Punch, sales, commission and pay of the people who bill in the store</div></div></div>
+    <div class="content"><div class="sx-page" id="root"><div class="sx-card sx-mut">Loading…</div></div></div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=4"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script src="assets/js/store_common.js?v=3"></script>
+<script>
+  guardPage();
+  renderSidebar('store_team');
+  let D = null;
+  function draw() {
+    const T = D.totals;
+    $('subLine').textContent = `Store day ${D.day} · a new day starts at ${D.day_start} AM (online sales keep their own 10 AM day)`;
+    $('root').innerHTML = `
+      <div class="sx-kpis">
+        <div class="sx-kpi blue"><div class="ic">${sxi('user')}</div><div class="tx"><div class="lb">Punched in</div><b>${T.in} / ${T.people}</b><small>store people today</small></div></div>
+        <div class="sx-kpi violet"><div class="ic">${sxi('receipt')}</div><div class="tx"><div class="lb">Store sales today</div><b>${inr(T.sales)}</b><small>${T.bills} bill${T.bills === 1 ? '' : 's'}</small></div></div>
+        <div class="sx-kpi orange"><div class="ic">${sxi('ticket')}</div><div class="tx"><div class="lb">Commission today (≈)</div><b>${inr(T.commission)}</b><small>price chart estimate</small></div></div>
+      </div>
+      <div class="sx-card"><h3>${sxi('user')} People who bill <small>the list comes from Billing → “Who can bill”</small></h3>
+        <div class="tm head"><span>Person</span><span>Punch</span><span class="r">Sales today</span><span class="r">Commission ≈</span><span class="r">Pay today</span><span class="r">Month net pay</span></div>
+        ${D.people.length ? D.people.map((p) => { const pay = p.pay; return `<div class="tm"><span class="nm"><b>${esc(p.name)}</b><small>${esc(p.rule || 'no punch rule set')}</small></span>
+          <span class="pc">${p.punch ? `<span class="pn in">In ${esc(p.punch.in)}${p.punch.out ? ' · out ' + esc(p.punch.out) : ''}</span>` : '<span class="pn no">Not in</span>'}</span>
+          <span class="r"><b>${inr(p.sales)}</b><small>${p.bills_n} bill${p.bills_n === 1 ? '' : 's'} · ${p.ml} ml</small></span>
+          <span class="r"><b>${inr(p.commission)}</b></span>
+          <span class="r">${pay ? `<b>${inr(pay.today ? pay.today.amount : 0)}</b><small>${pay.today ? esc(pay.today.status) : 'no punch'}</small>` : '<small>no salary set</small>'}</span>
+          <span class="r">${pay ? `<b>${inr(pay.net_pay)}</b><small>${pay.penalty_total ? '− ' + inr(pay.penalty_total) + ' penalties' : 'no penalties'}</small>` : '<small>—</small>'}</span></div>`; }).join('') : '<div class="sx-mut" style="padding:10px 4px">Nobody is on the billing list yet. Tick people under Billing → “Who can bill”.</div>'}
+      </div>
+      <div class="sx-card"><h3>${sxi('ok')} Rules</h3>
+        <label class="tg"><input type="checkbox" id="np" ${+D.needs_punch ? 'checked' : ''}><span><b>Only punched-in people can bill</b><small>When on, “Billed by” lists punched-in people only and a bill for someone who has not punched in is refused. Off = anyone on the billing list.</small></span></label>
+        <button class="sx-btn" id="save" style="margin-top:6px">Save</button><span id="msg" style="margin-left:10px"></span>
+        <div class="sx-mut" style="font-size:12.5px;margin-top:12px">Pay is the same salary structure as the rest of the company: monthly salary ÷ 30 for each day, penalties from the Boss engine are taken off automatically. Store sales and commission are counted on the store day (3 AM to 3 AM); online sales stay on the 10 AM to 10 AM day.</div>
+        <div class="lk"><a class="sx-pill info" href="boss_engine.html" target="_top">Punch rules (Boss engine) →</a><a class="sx-pill info" href="offices.html" target="_top">Store punch location (Offices) →</a><a class="sx-pill info" href="salary.html" target="_top">Salary →</a></div>
+      </div>`;
+  }
+  document.addEventListener('click', async (e) => {
+    if (e.target.id !== 'save') return;
+    try { await api.post('st_team.save', { needs_punch: $('np').checked ? 1 : 0 }); D.needs_punch = $('np').checked ? 1 : 0; $('msg').innerHTML = `<span class="sx-pill good">Saved</span>`; } catch (err) { $('msg').innerHTML = `<span class="sx-pill bad">${esc(err.message)}</span>`; }
+  });
+  async function load() { try { D = await api.get('st_team.get'); draw(); } catch (e) { $('root').innerHTML = `<div class="sx-card"><div class="sx-msg bad">${sxi('xc')}<span>${esc(e.message)}</span></div></div>`; } }
+  load(); setInterval(() => { if (!document.hidden && !document.activeElement.matches('input')) load(); }, 60000);
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>

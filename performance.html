@@ -1,0 +1,1115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Performance — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=260929d">
+<style>
+  .rs{display:inline-flex; align-items:center; gap:6px; outline:none; border-radius:6px; vertical-align:middle;}
+  .rs:focus-visible{box-shadow:0 0 0 3px rgba(37,99,235,.35);}
+  .rs-stars{display:inline-flex; gap:2px; cursor:pointer; user-select:none; -webkit-user-select:none;
+            touch-action:manipulation; /* taps register instantly, no zoom */}
+  .rs-star{position:relative; width:20px; height:20px; display:inline-block; transition:transform .2s cubic-bezier(.34,1.56,.64,1);}
+  .rs-star svg{position:absolute; inset:0; width:20px; height:20px;}
+  .rs-fill{transition:clip-path .12s ease;}
+  .rs-preview .rs-fill{opacity:.6;}
+  .rs-stars:hover{filter:drop-shadow(0 1px 2px rgba(232,162,28,.35));}
+  .rs-pop{animation:rsPop .35s cubic-bezier(.34,1.56,.64,1);}
+  @keyframes rsPop{50%{transform:scale(1.35);}}
+  .rs-num{font-size:12px; color:var(--muted); min-width:18px; font-variant-numeric:tabular-nums;}
+  @media (max-width:820px){ .rs-star, .rs-star svg{width:24px; height:24px;} .rate-toggle{min-height:32px; padding:5px 12px;} }
+  @media (prefers-reduced-motion: reduce){ .rs-star, .rs-fill{transition:none;} .rs-pop{animation:none;} .rs-stars:hover{filter:none;} }
+</style>
+<style>
+  .rs-ro .rs-stars{cursor:default;} .rs-ro .rs-star, .rs-ro .rs-star svg{width:14px; height:14px;}
+  .rate-toggle{margin-top:4px; background:none; border:1px solid var(--line); border-radius:12px; padding:3px 9px; font-size:11.5px; color:var(--muted); cursor:pointer; min-height:0; white-space:nowrap;}
+  .rate-toggle b{color:var(--ink,#111827);}
+  .rate-toggle .chev{display:inline-block; transition:transform .2s ease; margin-left:2px;}
+  .rate-toggle.open{border-color:var(--accent); color:var(--accent);}
+  .rate-toggle.todo{border-color:#f0c36d; background:#fff8e6; color:#8a5a00;}
+  .rate-toggle.done{border-color:#bfe6cf; background:#effaf3; color:#0f7a41;}
+  .rate-toggle.todo b, .rate-toggle.done b{color:inherit;}
+  .rate-toggle.open .chev{transform:rotate(90deg);}
+  tr.ord-row > td{background:#fafbfd; padding:4px 14px 10px 28px !important;}
+  .ord-list{display:flex; flex-direction:column;}
+  .ord-line{display:grid; grid-template-columns:1.3fr 1fr 1fr 1.2fr; gap:12px; align-items:center; padding:9px 0; border-bottom:1px dashed var(--line); font-size:12.5px;}
+  .ord-line:last-child{border-bottom:none;}
+  .ord-id b{color:var(--accent);} .ord-meta{display:block; font-size:11px; color:var(--muted);}
+  .ord-f{display:flex; flex-direction:column; gap:2px;}
+  .ord-lbl{display:none; font-size:11px; color:var(--muted);}
+  .beh-chips{display:inline-flex; gap:4px; flex-wrap:wrap;}
+  .beh-chip{font-size:11.5px; font-weight:600; padding:3px 10px; border-radius:12px; border:1px solid var(--line); background:#fff; color:var(--muted); cursor:pointer; user-select:none;}
+  .beh-chip.on.g{background:#e7f7ee; color:#0f7a41; border-color:#0f7a41;}
+  .beh-chip.on.a{background:#fdf3e3; color:#b45f06; border-color:#b45f06;}
+  .beh-chip.on.b{background:#fdecec; color:#c81e1e; border-color:#c81e1e;}
+  .card-ratings{display:grid; grid-template-columns:1fr 1fr; gap:8px 12px; margin-top:10px; padding-top:9px; border-top:1px solid var(--line);}
+  /* Order code (Order Codes page / Shopify tag) on each order */
+  .ocode{display:inline-flex; align-items:center; padding:1px 7px; border-radius:10px; background:#eef2ff; color:#3730a3; font-weight:700; font-size:11px; font-family:ui-monospace,Menlo,Consolas,monospace; white-space:nowrap; vertical-align:middle; margin-left:4px;}
+  .ocode.none{background:#fff7ed; color:#b45f06; font-family:inherit; font-weight:600;}
+  /* Date-range view (From < To) */
+  .rg-exp{cursor:pointer; color:var(--accent); font-weight:600; background:none; border:none; padding:0; font-size:13px; min-height:0; text-align:left;}
+  .rg-exp .chev{display:inline-block; transition:transform .15s; margin-right:5px; font-size:11px;} .rg-exp.open .chev{transform:rotate(90deg);}
+  tr.rg-days > td{background:#fafbfd; padding:6px 14px 10px 28px !important;}
+  .rg-tbl{width:100%; border-collapse:collapse; font-size:12.5px;}
+  .rg-tbl th{font-size:11px; text-transform:uppercase; color:var(--muted); text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); font-weight:600; background:transparent;}
+  .rg-tbl td{padding:7px 8px; border-bottom:1px dashed var(--line); background:transparent;} .rg-tbl tr:last-child td{border-bottom:none;}
+  .rg-tbl .dt{font-weight:600; white-space:nowrap;} .rg-tbl .rg-edit{color:var(--accent); font-size:12px; text-decoration:underline; cursor:pointer; background:none; border:none; padding:0; min-height:0;}
+  .rg-tbl tr.tot td{font-weight:700; background:#f8fafc;}
+  .rg-pill{display:inline-flex; gap:6px; align-items:center; padding:4px 10px; border-radius:20px; background:#eef2ff; color:#3730a3; font-size:12px; font-weight:600; margin-left:8px; vertical-align:middle;}
+  .rg-beh{display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:600; margin-right:3px;} .rg-beh.g{background:#e7f7ee; color:#0f7a41;} .rg-beh.a{background:#fdf3e3; color:#b45f06;} .rg-beh.b{background:#fdecec; color:#c81e1e;}
+  .stat-card .value small{font-size:12px; font-weight:500; color:var(--muted);}
+  #rangeStats{display:none;}
+  @media (max-width:820px){
+    .rg-lbl{width:100%; margin:0 0 -6px; font-size:11px;}
+    #perfDailyCard #perfDailyCards .rg-tbl{display:block;}
+    .rg-tbl, .rg-tbl thead, .rg-tbl tbody, .rg-tbl tr, .rg-tbl td{display:block;}
+    .rg-tbl thead{display:none;}
+    .rg-tbl tr{border:1px solid var(--line); border-radius:10px; padding:8px 10px; margin-bottom:6px; background:#fff;}
+    .rg-tbl td{padding:3px 0; border:none;} .rg-tbl td[data-l]::before{content:attr(data-l) ": "; color:var(--muted); font-size:11px;}
+  }
+  .card-ratings .ord-lbl{display:block;}
+  @media (max-width:820px){
+    .ord-list{margin-top:8px;}
+    .ord-line{grid-template-columns:1fr; gap:6px; background:#fafbfd; border:1px solid var(--line); border-radius:10px; padding:10px; margin-bottom:6px;}
+    .ord-lbl{display:block;}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar">
+      <h1 id="pageTitle">Performance</h1>
+      <div style="display:flex; gap:10px; align-items:center;">
+        <input type="text" id="empSearch" placeholder="Search employee or order #..." style="padding:8px 10px; border:1px solid var(--line); border-radius:6px; font-size:13px; width:170px;">
+        <select id="groupPick" style="padding:8px 10px; border:1px solid var(--line); border-radius:6px; font-size:13px;">
+          <option value="">All houses</option>
+          <option value="tmph">TM Perfume House</option>
+          <option value="tm4u">TM4U</option>
+          <option value="tmsg">TM Shower Gel</option>
+        </select>
+        <span class="rg-lbl" style="font-size:11.5px; color:var(--muted);">From</span>
+        <input type="date" id="dayPick" title="From date" style="padding:8px 10px; border:1px solid var(--line); border-radius:6px; font-size:13px;">
+        <span class="rg-lbl" style="font-size:11.5px; color:var(--muted);">To</span>
+        <input type="date" id="dayTo" title="To date (same as From = single day)" style="padding:8px 10px; border:1px solid var(--line); border-radius:6px; font-size:13px;">
+        <button class="btn secondary" id="btnPerfToday" type="button" style="width:auto;">Today</button>
+        <input type="month" id="monthPick" style="padding:8px 10px; border:1px solid var(--line); border-radius:6px; font-size:13px;">
+      </div>
+    </div>
+    <div class="content">
+<div id="qaBanner" style="display:none; background:#fff7ed; border:1px solid #fdba74; color:#9a3412; border-radius:12px; padding:10px 14px; margin:0 0 12px; font-size:13px; font-weight:700;"></div>
+
+      <div id="alertBox"></div>
+      <div class="stat-grid" id="rangeStats"></div>
+
+      <div class="card" id="perfDailyCard">
+        <div class="card-head"><h2 id="dailyTitle">Daily</h2></div>
+        <table>
+          <thead>
+            <tr><th>Employee</th><th>Query</th><th>Orders</th><th>Ratio</th><th style="width:150px;">Add-on</th><th>Ticket size convincing</th><th style="width:150px;">Call rating</th><th style="width:150px;">Customer behaviour</th><th style="width:110px;">Rated</th></tr>
+          </thead>
+          <tbody id="dailyBody">
+            <tr><td colspan="9" class="loading">Loading...</td></tr>
+          </tbody>
+        </table>
+        <div id="perfDailyCards" style="display:none; padding:10px;"></div>
+        <div style="padding:12px 20px; display:flex; align-items:center; justify-content:center; gap:14px; flex-wrap:wrap;">
+          <span id="perfDailyShownCount" style="font-size:12.5px; color:var(--muted);"></span>
+          <button class="btn secondary" id="perfDailyLoadMore" style="width:auto; display:none;">Load more</button>
+        </div>
+      </div>
+
+      <div class="card" id="perfMonthCard">
+        <div class="card-head"><h2>Monthly — Sales Employees</h2></div>
+        <table>
+          <thead>
+            <tr><th>Employee</th><th>Queries</th><th>Avg/day</th><th>Ticket size convincing</th><th>Call rating</th><th>Customer behaviour</th></tr>
+          </thead>
+          <tbody id="tableBody">
+            <tr><td colspan="6" class="loading">Loading...</td></tr>
+          </tbody>
+        </table>
+        <div id="perfMonthCards" style="display:none; padding:10px;"></div>
+        <div style="padding:12px 20px; display:flex; align-items:center; justify-content:center; gap:14px; flex-wrap:wrap;">
+          <span id="perfMonthShownCount" style="font-size:12.5px; color:var(--muted);"></span>
+          <button class="btn secondary" id="perfMonthLoadMore" style="width:auto; display:none;">Load more</button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+
+<datalist id="mlSizes">
+  <option value="5 ML"><option value="10 ML"><option value="20 ML"><option value="30 ML">
+  <option value="50 ML"><option value="100 ML"><option value="200 ML">
+</datalist>
+
+<div class="modal-overlay" id="addonModal">
+  <div class="modal wide">
+    <h3 id="addonTitle">Add-on</h3>
+    <div id="addonSub" style="font-size:12px; color:var(--muted); margin:-12px 0 16px;"></div>
+    <div id="addonModalAlert"></div>
+    <input type="hidden" id="addonEmpId">
+    <input type="hidden" id="addonGroupKey">
+
+    <div class="field">
+      <label for="addonOrder">Original order</label>
+      <input type="text" id="addonOrder" placeholder="#14902">
+    </div>
+
+    <div style="margin-bottom:6px; font-size:12px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.03em;">Products added</div>
+    <div style="display:grid; grid-template-columns:1fr 92px 58px 30px; gap:8px; margin-bottom:5px;">
+      <span style="font-size:11px; color:var(--muted);">Product</span>
+      <span style="font-size:11px; color:var(--muted);">Size (ML)</span>
+      <span style="font-size:11px; color:var(--muted);">Qty</span>
+      <span></span>
+    </div>
+    <div id="addonItems"></div>
+    <button type="button" id="btnAddonAddRow" class="btn secondary" style="width:auto; font-size:12.5px; padding:6px 12px;">+ Another product</button>
+
+    <div class="field" style="margin-top:18px; padding-top:14px; border-top:1px solid var(--line);">
+      <label for="addonPrice">Total add-on price</label>
+      <div style="display:flex; align-items:center; gap:10px;">
+        <input type="number" id="addonPrice" min="0" step="1" placeholder="950" style="width:150px;">
+        <span id="addonCovers" style="font-size:11.5px; color:var(--muted);">for the products above</span>
+      </div>
+    </div>
+
+    <div class="actions" style="align-items:center; justify-content:space-between;">
+      <span style="font-size:12.5px; color:var(--muted);">Add-on total <b id="addonTotal" style="color:#0f7a41; font-size:15px;">₹0</b></span>
+      <span style="display:flex; gap:10px;">
+        <button type="button" class="btn secondary" id="btnAddonCancel">Cancel</button>
+        <button type="button" class="btn" id="btnAddonSave">Save add-on</button>
+      </span>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="addonListModal">
+  <div class="modal">
+    <h3 id="addonListTitle">Add-ons</h3>
+    <div id="addonListSub" style="font-size:12px; color:var(--muted); margin:-12px 0 14px;"></div>
+    <div id="addonListBody"></div>
+    <div class="actions">
+      <button type="button" class="btn secondary" id="btnAddonListClose">Close</button>
+    </div>
+  </div>
+</div>
+
+<script src="assets/js/config.js?v=260929d"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script>
+  guardPage();
+  renderSidebar('performance');
+
+  const alertBox = document.getElementById('alertBox');
+  let currentMonth = '';
+  const HOUSE_COLOR = { tmph: '#2563EB', tm4u: '#7C3AED', tmsg: '#0891B2', '': '#6B7280' };
+
+  function showAlert(msg, type = 'success') {
+    alertBox.innerHTML = `<div class="alert ${type}">${msg}</div>`;
+    setTimeout(() => (alertBox.innerHTML = ''), 4000);
+  }
+
+  function houseBadge(row) {
+    const color = HOUSE_COLOR[row.group_key] || HOUSE_COLOR[''];
+    return `<span style="display:inline-block; padding:2px 10px; border-radius:12px; font-size:12px; font-weight:600; color:${color}; background:${color}18;">${row.group_label}</span>`;
+  }
+
+  // Plain-number display for the monthly average (read-only) — no stars.
+  function numAvg(v) {
+    if (v === null || v === undefined) return '<span style="color:var(--muted); font-size:12px;">—</span>';
+    return `<span style="font-size:14px; font-weight:600;">${v}</span> <span style="font-size:11px; color:var(--muted);">/ 10</span>`;
+  }
+
+  let monthRows = [];
+  let dailyRows = [];
+  let currentDay = '';
+
+  // Search matches the employee's name/code, or an order number in their
+  // day's order list (e.g. "369910" or "#369910"). A row found through an
+  // order opens its order panel so the order is on screen.
+  function searchQ() { return (document.getElementById('empSearch').value || '').trim().toLowerCase(); }
+  function orderMatches(r, q) {
+    const qd = q.replace(/^#/, '');
+    return qd.length >= 3 && (r.order_list || []).some(o =>
+      String(o.order_name || '').toLowerCase().replace(/^#/, '').includes(qd)
+      || String(o.order_key || '').toLowerCase().includes(qd));
+  }
+  function matchesSearch(r) {
+    const q = searchQ();
+    if (!q) return true;
+    return (r.full_name || '').toLowerCase().includes(q)
+      || (r.employee_code || '').toLowerCase().includes(q)
+      || orderMatches(r, q);
+  }
+  function groupFilter() { return document.getElementById('groupPick').value || ''; }
+
+
+  // ---------- Business-day timing (Admin: Targets → Day timing) ----------
+  // Start time per weekday [Sun..Sat], default 10:00. A business day runs
+  // from its start until the next day's start. Loaded once per page.
+  let DAY_START = ['10:00', '10:00', '10:00', '10:00', '10:00', '10:00', '10:00'];
+  const timingReady = api.get('day_timing.get').then(d => { if (Array.isArray(d.start) && d.start.length === 7) DAY_START = d.start; }).catch(() => {});
+  function bizDayOf(dt) {           // Date -> 'YYYY-MM-DD'
+    const d = new Date(dt);
+    const hm = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+    if (hm < DAY_START[d.getDay()]) d.setDate(d.getDate() - 1);
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  const fmtHM = (t) => { const [h, m] = t.split(':').map(Number); return `${((h + 11) % 12) + 1}${m ? ':' + String(m).padStart(2, '0') : ''} ${h >= 12 ? 'PM' : 'AM'}`; };
+  function dayWindowText() {
+    const all = new Set(DAY_START);
+    if (all.size === 1) { const t = fmtHM(DAY_START[0]); return `${t} to next day ${t}`; }
+    const names = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    return 'each day from ' + DAY_START.map((t, i) => `${names[i]} ${fmtHM(t)}`).join(', ');
+  }
+  function bizToday() { return bizDayOf(new Date()); }
+
+  // Editable numeric box, 1-10 with one decimal place (e.g. 1.5, 5.6).
+  // ---------- Star rating (Convincing / Customer) ----------
+  // 5 stars with halves = 10 steps, the same 1–10 scale already stored,
+  // so each half-star is one point and no saved data changes.
+  // Option B: the left half of a star means half, the right half means
+  // full. Hover previews exactly what a click will save — no waiting.
+  const STAR_PATH = '<path d="M12 2.6l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.5l-5.9 3.2 1.3-6.6-4.9-4.6 6.6-.8z"/>';
+  const RATE_WORDS = ['Not rated','Very poor','Poor','Weak','Fair','Okay','Good','Very good','Great','Excellent','Outstanding'];
+
+  function starCells(v) {
+    return Array.from({ length: 5 }, (_, i) => {
+      const f = Math.max(0, Math.min(2, v - i * 2));          // 0 empty, 1 half, 2 full
+      return `<span class="rs-star" data-i="${i}"><svg viewBox="0 0 24 24" aria-hidden="true"><g fill="#D6D3DF">${STAR_PATH}</g></svg><svg class="rs-fill" viewBox="0 0 24 24" aria-hidden="true" style="clip-path:inset(0 ${100 - f * 50}% 0 0);"><g fill="#E8A21C">${STAR_PATH}</g></svg></span>`;
+    }).join('');
+  }
+
+  function ratingInput(empId, field, n, groupKey) {
+    // Older decimal ratings (e.g. 5.6) show at the nearest half star.
+    const v = n === null || n === undefined || n === '' ? 0 : Math.max(0, Math.min(10, Math.round(Number(n))));
+    const label = { convincing: 'Convincing', overall: 'Customer behaviour', call: 'Call rating' }[field] || 'Customer';
+    return `<span class="rs" data-emp="${empId}" data-field="${field}" data-val="${v}" data-group="${groupKey ?? ''}" tabindex="0" role="slider"
+              aria-label="${label} rating" aria-valuemin="0" aria-valuemax="10" aria-valuenow="${v}"
+              aria-valuetext="${v ? (v / 2) + ' stars, ' + RATE_WORDS[v] : 'Not rated'}" title="${RATE_WORDS[v]}">
+              <span class="rs-stars">${starCells(v)}</span><span class="rs-num">${v ? String(v / 2) : '—'}</span></span>`;
+  }
+
+  function paintStars(rs, v, preview) {
+    rs.querySelectorAll('.rs-star').forEach((st, i) => {
+      const f = Math.max(0, Math.min(2, v - i * 2));
+      st.querySelector('.rs-fill').style.clipPath = `inset(0 ${100 - f * 50}% 0 0)`;
+    });
+    rs.classList.toggle('rs-preview', !!preview);
+    rs.querySelector('.rs-num').textContent = v ? String(v / 2) : '—';
+    rs.title = RATE_WORDS[v] || '';
+  }
+
+  function saveStars(rs, v, starIdx) {
+    v = Math.max(1, Math.min(10, v));                          // 1–10 = half stars
+    // Tapping the value that's already set clears the rating (a mis-tap fix).
+    // Any other tap just changes the value, so a stray tap can't clear it.
+    if (Number(rs.dataset.val) === v) { v = 0; rs.title = (rs.title || '').replace(/ — .*$/, '') + ' — cleared'; setTimeout(() => { rs.title = (rs.title || '').replace(/ — cleared$/, ''); }, 1500); }
+    rs.dataset.val = v;
+    paintStars(rs, v, false);                                  // show it instantly (0 = empty)
+    const st = rs.querySelectorAll('.rs-star')[starIdx];
+    if (st) { st.classList.remove('rs-pop'); void st.offsetWidth; st.classList.add('rs-pop'); }
+    if (rs.dataset.okey) rateOrder(rs.dataset.okey, rs.dataset.field, v);   // per-order rating
+    else rateDaily(Number(rs.dataset.emp), rs.dataset.field, v, rs.dataset.group);
+  }
+
+  // ---------- Per-order ratings ----------
+  const orderIndex = {};          // order_key -> { row, order }
+  const openRows = new Set();     // "empId|groupKey" rows whose orders are shown
+
+  function orderStars(o, field) {
+    const v = o[field] == null ? 0 : Math.max(0, Math.min(10, Math.round(o[field])));
+    return `<span class="rs" data-okey="${o.order_key}" data-field="${field}" data-val="${v}" tabindex="0" role="slider"
+              aria-label="${field === 'ticket' ? 'Ticket size convincing' : 'Call rating'} for ${o.order_name}"
+              aria-valuemin="0" aria-valuemax="10" aria-valuenow="${v}" title="${RATE_WORDS[v]}">
+              <span class="rs-stars">${starCells(v)}</span><span class="rs-num">${v ? String(v / 2) : '—'}</span></span>`;
+  }
+  // Read-only small stars for the averages shown on the employee row.
+  function miniStars(v, title) {
+    if (v == null) return '<span style="color:var(--muted);">—</span>';
+    const r = Math.max(0, Math.min(10, Math.round(v)));
+    return `<span class="rs rs-ro" title="${title || ''}"><span class="rs-stars">${starCells(r)}</span><span class="rs-num">${(v / 2).toFixed(1)}</span></span>`;
+  }
+  const behWord = (v) => v == null ? null : (v >= 4 ? 'Good' : (v >= 2 ? 'Average' : 'Bad'));
+
+  // Averages for one employee row from its rated orders; falls back to the
+  // older once-a-day rating for days rated before per-order rating existed.
+  function rowRatings(r) {
+    const list = r.order_list || [];
+    const avg = (f) => { const x = list.filter(o => o[f] != null); return x.length ? x.reduce((a, o) => a + o[f], 0) / x.length : null; };
+    const rated = list.filter(o => o.ticket != null).length;   // per order only Ticket size is rated now
+    const t = avg('ticket'), c = avg('call'), b = avg('behaviour');
+    const anyOrderRating = list.some(o => o.ticket != null || o.call != null || o.behaviour != null);
+    return {
+      ticket: anyOrderRating ? t : (r.convincing ?? null),
+      call: anyOrderRating ? c : (r.customer_rating ?? null),
+      behaviour: behWord(anyOrderRating ? b : r.behavior_rating),
+      legacy: !anyOrderRating && (r.convincing != null || r.customer_rating != null || r.behavior_rating != null),
+      rated, total: list.length,
+    };
+  }
+
+  // The Overall rating is per employee PER HOUSE: someone in two houses
+  // has two rows and rates each one separately.
+  function overallCell(r) {
+    return ratingInput(r.employee_id, 'overall', r.overall_rating, r.group_key);
+  }
+
+  function ratedToggle(r, rr) {
+    const k = r.employee_id + '|' + r.group_key;
+    if (!rr.total) return '<span style="font-size:11.5px; color:var(--muted);">No orders</span>';
+    const done = rr.rated === rr.total;
+    return `<button type="button" class="rate-toggle ${openRows.has(k) ? 'open' : ''} ${done ? 'done' : (rr.rated ? '' : 'todo')}" onclick="toggleOrders('${k}')"
+              aria-expanded="${openRows.has(k)}">${done ? '✓ ' : ''}<b>${rr.rated}</b>/${rr.total} rated <span class="chev">›</span></button>`;
+  }
+
+  function orderRowsHtml(r) {
+    return (r.order_list || []).map(o => {
+      orderIndex[o.order_key] = { row: r, order: o };
+      const t = new Date(o.created_at).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
+      return `<div class="ord-line">
+        <span class="ord-id"><b>${o.order_name}</b> ₹${Number(o.total).toLocaleString('en-IN', { maximumFractionDigits: 0 })}${o.code ? `<span class="ocode">${o.code}</span>` : '<span class="ocode none">no code</span>'}
+          <span class="ord-meta">${o.customer} · ${t}</span></span>
+        <span class="ord-f"><span class="ord-lbl">Ticket size convincing</span>${orderStars(o, 'ticket')}</span>
+      </div>`;
+    }).join('');
+  }
+
+  // "6 coded" under the order count (only when the day has orders).
+  function codedNote(r) {
+    const list = r.order_list || [];
+    if (!list.length) return '';
+    const n = list.filter(o => o.code).length;
+    return n === list.length ? `<span style="color:#0f7a41;">${n} coded</span>` : `<span style="color:${n ? '#b45f06' : '#c81e1e'};">${n} coded</span>`;
+  }
+
+  window.toggleOrders = function (k) {
+    openRows.has(k) ? openRows.delete(k) : openRows.add(k);
+    renderDaily();
+  };
+
+  window.rateOrder = async function (orderKey, field, value) {
+    const hit = orderIndex[orderKey];
+    if (!hit) return;
+    const prev = hit.order[field];
+    hit.order[field] = value === 0 ? null : value;   // show it straight away (0 = cleared)
+    renderDaily();
+    try {
+      await api.post('order_ratings.save', {
+        order_key: orderKey, order_name: hit.order.order_name, employee_id: hit.row.employee_id,
+        group_key: hit.row.group_key, date: currentDay, field, value,
+      });
+    } catch (err) {
+      hit.order[field] = prev;             // put it back if it didn't save
+      renderDaily();
+      showAlert(err.message, 'error');
+    }
+  };
+
+  // One set of listeners for every star row on the page (they are
+  // re-rendered often, so per-element listeners would keep getting lost).
+  (function starEvents() {
+    // Which half-step is under the pointer: left half of star i → i*2+1,
+    // right half → i*2+2.
+    function stepAt(rs, clientX) {
+      const row = rs.querySelector('.rs-stars').getBoundingClientRect();
+      const x = Math.max(0, Math.min(row.width - 0.01, clientX - row.left));
+      const per = row.width / 5;
+      const i = Math.floor(x / per);
+      return { i, v: i * 2 + ((x - i * per) / per < 0.5 ? 1 : 2) };
+    }
+
+    document.addEventListener('mousemove', (e) => {
+      const stars = e.target.closest && e.target.closest('.rs-stars');
+      if (!stars || stars.closest('.rs-ro')) return;
+      const rs = stars.closest('.rs');
+      paintStars(rs, stepAt(rs, e.clientX).v, true);
+    });
+    document.addEventListener('mouseout', (e) => {
+      const rs = e.target.closest && e.target.closest('.rs');
+      if (!rs || rs.classList.contains('rs-ro') || (e.relatedTarget && rs.contains(e.relatedTarget))) return;
+      paintStars(rs, Number(rs.dataset.val), false);
+    });
+
+    // One click (or tap) saves exactly what the preview showed.
+    document.addEventListener('click', (e) => {
+      const stars = e.target.closest && e.target.closest('.rs-stars');
+      if (!stars || stars.closest('.rs-ro')) return;
+      const rs = stars.closest('.rs');
+      const { i, v } = stepAt(rs, e.clientX);
+      saveStars(rs, v, i);
+    });
+
+    // Keyboard: arrows move half a star.
+    document.addEventListener('keydown', (e) => {
+      const rs = e.target.closest && e.target.closest('.rs');
+      if (!rs || rs.classList.contains('rs-ro')) return;
+      const v = Number(rs.dataset.val);
+      if (e.key === 'ArrowRight' || e.key === 'ArrowUp') { e.preventDefault(); saveStars(rs, v + 1, Math.ceil((v + 1) / 2) - 1); }
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') { e.preventDefault(); if (v > 1) saveStars(rs, v - 1, Math.ceil((v - 1) / 2) - 1); }
+    });
+  })();
+
+  window.rateDaily = async function (empId, field, rawValue, groupKey) {
+    // Behavior comes from the Good/Average/Bad chips and is always 5/3/1;
+    // Convincing and Customer accept 1-10 with one decimal place.
+    let value = Number(rawValue);
+    if (field === 'behavior') {
+      if (![1, 3, 5].includes(value)) { renderDaily(); return; }
+    } else {
+      value = Math.round(value * 10) / 10;
+      if (!isFinite(value) || (value !== 0 && (value < 1 || value > 10))) {   // 0 = clear
+        showAlert('Enter a number from 1 to 10 (one decimal allowed, e.g. 5.6).', 'error');
+        renderDaily(); // reset the box back to its last known value
+        return;
+      }
+    }
+    try {
+      await api.post('performance.rate_daily', { date: currentDay, employee_id: empId, field, value, group_key: groupKey ?? '' });
+      // The Overall rating is per employee PER HOUSE — only that row changes.
+      // The older daily ratings are per person, so every house-row updates.
+      dailyRows.filter(r => r.employee_id === empId && ((field !== 'overall' && field !== 'call') || r.group_key === (groupKey ?? ''))).forEach(row => {
+        const stored = value === 0 ? null : value;
+        if (field === 'convincing') row.convincing = stored;
+        else if (field === 'customer') row.customer_rating = stored;
+        else if (field === 'overall') row.overall_rating = stored;
+        else if (field === 'call') row.call_day_rating = stored;
+        else row.behavior_rating = stored;
+      });
+      renderDaily();
+    } catch (err) {
+      showAlert(err.message, 'error');
+    }
+  };
+
+  window.editDayQueries = async function (empId, groupKey, current) {
+    const v = prompt('Queries handled on ' + currentDay + ':', current === null ? '' : current);
+    if (v === null) return;
+    try {
+      await api.post('queries.save', { employee_id: empId, date: currentDay, group_key: groupKey, query_count: Number(v || 0) });
+      // Only this specific house's row changes — queries are per-house.
+      const row = dailyRows.find(r => r.employee_id === empId && r.group_key === groupKey);
+      if (row) {
+        row.queries = Number(v || 0);
+        row.ratio = row.queries > 0 ? Math.round((row.orders / row.queries) * 1000) / 10 : null;
+      }
+      renderDaily();
+    } catch (err) {
+      showAlert(err.message, 'error');
+    }
+  };
+
+
+  // ===== Add-ons: extra products upsold onto an existing order =====
+  // Stored separately from achieved/commission on purpose — the customer
+  // pays one combined total, so the add-on value already arrives inside the
+  // Shopify order and counting it again would double-count the same rupees.
+  let addonSummary = {};   // employee_id -> { count, total }
+  let addonRows = [];      // full list for the selected day
+
+  async function loadAddons() {
+    if (!currentDay) return;
+    try {
+      const d = await api.get('addons.list', { date: currentDay });
+      addonSummary = d.by_employee || {};
+      addonRows = d.addons || [];
+    } catch (err) {
+      addonSummary = {}; addonRows = [];
+    }
+  }
+
+  function addonCell(r) {
+    const s = addonSummary[r.employee_id];
+    const summary = s
+      ? `<a href="#" onclick="showAddons(${r.employee_id}, '${(r.full_name || '').replace(/'/g, "\\'")}'); return false;" title="View this day's add-ons"><b>${inrShort(s.total)}</b> <span style="color:var(--muted);">· ${s.count}</span></a>`
+      : '<span style="color:var(--muted);">—</span>';
+    return `<div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+      ${summary}
+      <button onclick="openAddon(${r.employee_id}, '${(r.full_name || '').replace(/'/g, "\\'")}', '${r.group_key}', '${r.group_label}')"
+        style="font-size:11px; padding:4px 9px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--accent); font-weight:600; cursor:pointer; min-height:0;">+ Add</button>
+    </div>`;
+  }
+
+  const inrShort = (v) => '₹' + Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+
+  // ---- entry modal ----
+  function addonItemRow() {
+    return `<div class="addon-item" style="display:grid; grid-template-columns:1fr 92px 58px 30px; gap:8px; margin-bottom:7px;">
+      <input type="text" class="ad-name" placeholder="Product name" style="width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:6px; font-size:13px;">
+      <input type="text" class="ad-size" placeholder="" style="width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:6px; font-size:13px;">
+      <input type="number" class="ad-qty" value="1" min="1" style="width:100%; padding:8px 6px; border:1px solid var(--line); border-radius:6px; font-size:13px; text-align:center;">
+      <button type="button" onclick="this.closest('.addon-item').remove(); recalcAddonTotal();" title="Remove this product"
+        style="width:30px; height:34px; padding:0; border:1px solid var(--line); border-radius:6px; background:#fff; color:var(--bad-fg); cursor:pointer; font-size:14px; min-height:0;">&times;</button>
+    </div>`;
+  }
+
+  window.recalcAddonTotal = function () {
+    const named = [...document.querySelectorAll('#addonItems .addon-item')]
+      .filter(row => row.querySelector('.ad-name').value.trim()).length;
+    document.getElementById('addonCovers').textContent =
+      named === 0 ? 'for the products above' : `for ${named} product${named === 1 ? '' : 's'} above`;
+    const price = Number(document.getElementById('addonPrice').value || 0);
+    document.getElementById('addonTotal').textContent = price > 0 ? inrShort(price) : '₹0';
+  };
+
+  window.openAddon = function (empId, empName, groupKey, groupLabel) {
+    document.getElementById('addonEmpId').value = empId;
+    document.getElementById('addonGroupKey').value = groupKey || '';
+    document.getElementById('addonTitle').textContent = 'Add-on for ' + empName;
+    document.getElementById('addonSub').textContent =
+      new Date(currentDay + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' })
+      + (groupLabel ? ' · ' + groupLabel : '');
+    document.getElementById('addonOrder').value = '';
+    document.getElementById('addonItems').innerHTML = addonItemRow() + addonItemRow();
+    document.getElementById('addonPrice').value = '';
+    document.getElementById('addonModalAlert').innerHTML = '';
+    recalcAddonTotal();
+    document.getElementById('addonModal').classList.add('open');
+  };
+
+  function closeAddon() { document.getElementById('addonModal').classList.remove('open'); }
+
+  window.showAddons = function (empId, empName) {
+    const mine = addonRows.filter(a => Number(a.employee_id) === Number(empId));
+    const total = mine.reduce((t, a) => t + Number(a.price), 0);
+
+    // Products saved together share an addon_group and one price, so they
+    // are shown as a single add-on rather than loose rows.
+    const groups = {};
+    const order = [];
+    mine.forEach(a => {
+      const k = a.addon_group || ('single-' + a.addon_id);
+      if (!groups[k]) { groups[k] = { order_name: a.order_name, price: 0, items: [], key: k, addon_id: a.addon_id }; order.push(k); }
+      groups[k].price += Number(a.price);
+      groups[k].items.push(a);
+    });
+
+    document.getElementById('addonListTitle').textContent = empName + ' · add-ons';
+    document.getElementById('addonListSub').textContent =
+      `${order.length} add-on${order.length === 1 ? '' : 's'} · ${inrShort(total)}`;
+    document.getElementById('addonListBody').innerHTML = order.length
+      ? order.map(k => {
+          const g = groups[k];
+          return `<div style="padding:9px 0; border-bottom:1px solid var(--line);">
+            <div style="display:flex; justify-content:space-between; align-items:baseline; gap:10px;">
+              <span style="color:var(--accent); font-size:12.5px;">${g.order_name || 'No order ref'}</span>
+              <span style="display:flex; align-items:center; gap:10px;">
+                <b style="font-size:13px;">${inrShort(g.price)}</b>
+                <button onclick="deleteAddon('${g.key}', ${g.addon_id})" title="Remove this add-on"
+                  style="background:none; border:none; cursor:pointer; color:var(--bad-fg); font-size:14px; padding:0; min-height:0;">&times;</button>
+              </span>
+            </div>
+            <div style="font-size:12px; color:var(--muted); margin-top:3px;">
+              ${g.items.map(it => `${it.product_name}${it.size_ml ? ' ' + it.size_ml + ' ML' : ''}${Number(it.qty) > 1 ? ' ×' + it.qty : ''}`).join(' · ')}
+            </div>
+          </div>`;
+        }).join('')
+      : '<div class="empty-state" style="padding:20px;">No add-ons recorded for this day.</div>';
+    document.getElementById('addonListModal').classList.add('open');
+  };
+
+  window.deleteAddon = async function (groupKey, fallbackId) {
+    if (!confirm('Remove this add-on and all its products?')) return;
+    try {
+      const payload = String(groupKey).startsWith('single-')
+        ? { addon_id: fallbackId }
+        : { addon_group: groupKey };
+      await api.post('addons.delete', payload);
+      await loadAddons();
+      renderDaily();
+      document.getElementById('addonListModal').classList.remove('open');
+      showAlert('Add-on removed.');
+    } catch (err) {
+      showAlert(err.message, 'error');
+    }
+  };
+
+  // ---------- Date range (From < To): totals + averages per employee ----------
+  // Each day is fetched with the same performance.daily call the single-day
+  // view uses (a few at a time), then added up here. Ratings stay per day:
+  // the range view is read-only, "Edit rating" jumps to that one day.
+  let rangeMode = false;
+  let rangeDays = [];          // ['2026-09-20', ...]
+  let rangeRows = [];          // aggregated rows
+  const openRange = new Set(); // "emp|group" rows whose day table is open
+  const RANGE_MAX_DAYS = 31;
+  const fmtD = (d) => new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' });
+  const fmtShort = (d) => new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+
+  function daysBetween(a, b) {
+    const out = []; const d = new Date(a + 'T00:00:00'); const end = new Date(b + 'T00:00:00');
+    while (d <= end) { out.push(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')); d.setDate(d.getDate() + 1); }
+    return out;
+  }
+
+  async function loadRange(from, to) {
+    rangeMode = true; rangeDays = daysBetween(from, to);
+    const tbody = document.getElementById('dailyBody');
+    document.getElementById('dailyTitle').innerHTML = `Daily <span class="rg-pill">${fmtShort(from)} → ${fmtShort(to)} · ${rangeDays.length} days</span>`;
+    document.getElementById('perfDailyCards').innerHTML = '';
+    document.getElementById('rangeStats').style.display = 'none';
+    const perDay = {};   // date -> { rows, addons }
+    let done = 0;
+    const paint = () => { tbody.innerHTML = `<tr><td colspan="9" class="loading">Loading ${done} of ${rangeDays.length} days…</td></tr>`; };
+    paint();
+    const errors = [];
+    const fetchDay = async (date) => {
+      try {
+        const [d, a] = await Promise.all([
+          api.get('performance.daily', { date, store_group: groupFilter() }),
+          api.get('addons.list', { date }).catch(() => ({ by_employee: {} })),
+        ]);
+        (d.errors || []).forEach(e => errors.push(fmtShort(date) + ': ' + e));
+        perDay[date] = { rows: d.rows || [], addons: a.by_employee || {} };
+      } catch (err) { errors.push(fmtShort(date) + ': ' + err.message); perDay[date] = { rows: [], addons: {} }; }
+      done++; paint();
+    };
+    for (let i = 0; i < rangeDays.length; i += 4) await Promise.all(rangeDays.slice(i, i + 4).map(fetchDay));
+    if (!rangeMode) return;   // user switched back to a single day meanwhile
+    errors.slice(0, 3).forEach(e => showAlert(e, 'error'));
+
+    // Aggregate per employee|house.
+    const agg = {};
+    rangeDays.forEach(date => {
+      const { rows, addons } = perDay[date];
+      rows.forEach(r => {
+        const k = r.employee_id + '|' + r.group_key;
+        if (!agg[k]) agg[k] = { employee_id: r.employee_id, full_name: r.full_name, employee_code: r.employee_code, group_key: r.group_key, group_label: r.group_label,
+          queries: 0, qDays: 0, orders: 0, sales: 0, addonCount: 0, addonTotal: 0, order_list: [], days: [], tickets: [], calls: [], behs: [], ratedDays: 0 };
+        const g = agg[k];
+        const rr = rowRatings(r);
+        const ad = addons[r.employee_id] || null;
+        const dayRated = r.call_day_rating != null || r.overall_rating != null || rr.rated > 0;
+        if (r.queries !== null) { g.queries += Number(r.queries); g.qDays++; }
+        g.orders += Number(r.orders || 0); g.sales += Number(r.sales || 0);
+        if (ad) { g.addonCount += Number(ad.count || 0); g.addonTotal += Number(ad.total || 0); }
+        g.order_list = g.order_list.concat(r.order_list || []);
+        if (rr.ticket != null) g.tickets.push(Number(rr.ticket));
+        if (r.call_day_rating != null) g.calls.push(Number(r.call_day_rating));
+        if (r.overall_rating != null) g.behs.push(Number(r.overall_rating));
+        if (dayRated) g.ratedDays++;
+        g.days.push({ date, queries: r.queries, orders: r.orders, sales: r.sales, ratio: r.ratio, addon: ad, ticket: rr.ticket, call: r.call_day_rating, beh: behWord(r.overall_rating), rated: dayRated,
+          convincing: r.convincing, customer_rating: r.customer_rating, behavior_rating: r.behavior_rating });
+      });
+    });
+    rangeRows = Object.values(agg).map(g => {
+      g.ratio = g.queries > 0 ? Math.round(g.orders / g.queries * 1000) / 10 : null;
+      g.ticket = g.tickets.length ? g.tickets.reduce((a, b) => a + b, 0) / g.tickets.length : null;   // average of the days' ticket averages
+      g.call = g.calls.length ? g.calls.reduce((a, b) => a + b, 0) / g.calls.length : null;
+      g.behCounts = { Good: 0, Average: 0, Bad: 0 }; g.behs.forEach(v => { const w = behWord(v); if (w) g.behCounts[w]++; });
+      g.unratedDays = g.days.filter(d => !d.rated).map(d => d.date);
+      return g;
+    }).sort((a, b) => a.full_name.localeCompare(b.full_name) || a.group_key.localeCompare(b.group_key));
+    resetPerfLimit('daily');
+    renderRange();
+  }
+
+  const ratioBadgeHtml = (ratio) => ratio === null
+    ? '<span style="color:var(--muted); font-size:12px;">—</span>'
+    : `<span class="badge" style="background:${ratio >= 9 ? '#e7f7ee' : (ratio >= 6 ? '#fdf3e3' : '#fdecec')}; color:${ratio >= 9 ? '#0f7a41' : (ratio >= 6 ? '#b45f06' : '#c81e1e')};">${ratio}%</span>`;
+  const behChips = (c) => (c.Good || c.Average || c.Bad)
+    ? `${c.Good ? `<span class="rg-beh g">Good ×${c.Good}</span>` : ''}${c.Average ? `<span class="rg-beh a">Avg ×${c.Average}</span>` : ''}${c.Bad ? `<span class="rg-beh b">Bad ×${c.Bad}</span>` : ''}`
+    : '<span style="color:var(--muted);">—</span>';
+  const behOne = (w) => w ? `<span class="rg-beh ${w === 'Good' ? 'g' : (w === 'Average' ? 'a' : 'b')}">${w}</span>` : '<span style="color:var(--muted);">—</span>';
+
+  function rangeMatches(g) {
+    const q = searchQ();
+    if (!q) return true;
+    return (g.full_name || '').toLowerCase().includes(q) || (g.employee_code || '').toLowerCase().includes(q) || orderMatches({ order_list: g.order_list }, q);
+  }
+
+  window.toggleRange = function (k) { openRange.has(k) ? openRange.delete(k) : openRange.add(k); renderRange(); };
+  window.editRangeDay = function (date) {
+    document.getElementById('dayPick').value = date; document.getElementById('dayTo').value = date;
+    loadDaily();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  function dayTableHtml(g) {
+    return `<table class="rg-tbl"><thead><tr><th>Date</th><th>Query</th><th>Orders</th><th>Ratio</th><th>Add-on</th><th>Ticket size</th><th>Call</th><th>Behaviour</th><th></th></tr></thead><tbody>
+      ${g.days.map(d => `<tr>
+        <td class="dt">${fmtD(d.date)}</td>
+        <td data-l="Query">${d.queries !== null ? d.queries : '—'}</td>
+        <td data-l="Orders">${d.orders} · ${inrShort(d.sales)}</td>
+        <td data-l="Ratio">${ratioBadgeHtml(d.ratio)}</td>
+        <td data-l="Add-on">${d.addon ? `${d.addon.count} · ${inrShort(d.addon.total)}` : '—'}</td>
+        <td data-l="Ticket size">${miniStars(d.ticket)}</td>
+        <td data-l="Call">${miniStars(d.call)}</td>
+        <td data-l="Behaviour">${behOne(d.beh)}</td>
+        <td><button type="button" class="rg-edit" onclick="editRangeDay('${d.date}')">${d.rated ? 'Edit rating' : 'Rate this day'}</button></td>
+      </tr>`).join('')}
+      <tr class="tot"><td>Total / avg</td><td data-l="Query">${g.queries}</td><td data-l="Orders">${g.orders} · ${inrShort(g.sales)}</td><td data-l="Ratio">${g.ratio === null ? '—' : g.ratio + '%'}</td><td data-l="Add-on">${g.addonCount} · ${inrShort(g.addonTotal)}</td><td data-l="Ticket size">${g.ticket == null ? '—' : (g.ticket / 2).toFixed(1)}</td><td data-l="Call">${g.call == null ? '—' : (g.call / 2).toFixed(1)}</td><td data-l="Behaviour">${behChips(g.behCounts)}</td><td></td></tr>
+    </tbody></table>`;
+  }
+
+  function renderRange() {
+    const tbody = document.getElementById('dailyBody');
+    const matched = rangeRows.filter(rangeMatches);
+    const q = searchQ();
+    if (q) matched.forEach(g => { if (orderMatches({ order_list: g.order_list }, q)) openRange.add(g.employee_id + '|' + g.group_key); });
+    perfPaging.daily.matched = matched.length;
+    const shown = matched.slice(0, perfPaging.daily.limit);
+    updatePerfLoadMore('daily');
+
+    // Summary cards for the whole range.
+    const sum = (f) => rangeRows.reduce((t, g) => t + (g[f] || 0), 0);
+    const totQ = sum('queries'), totO = sum('orders'), totS = sum('sales');
+    const ratedAll = rangeRows.length ? Math.round(rangeRows.reduce((t, g) => t + g.ratedDays, 0) / rangeRows.length) : 0;
+    const stats = document.getElementById('rangeStats');
+    stats.innerHTML = `
+      <div class="stat-card"><div class="label">Days in range</div><div class="value">${rangeDays.length} <small>${fmtShort(rangeDays[0])} – ${fmtShort(rangeDays[rangeDays.length - 1])}</small></div></div>
+      <div class="stat-card"><div class="label">Queries</div><div class="value">${totQ.toLocaleString('en-IN')}</div></div>
+      <div class="stat-card"><div class="label">Orders</div><div class="value">${totO.toLocaleString('en-IN')} <small>/ ${inrShort(totS)}</small></div></div>
+      <div class="stat-card"><div class="label">Avg ratio</div><div class="value" style="color:${totQ ? (totO / totQ * 100 >= 9 ? '#0f7a41' : '#b45f06') : 'inherit'};">${totQ ? (Math.round(totO / totQ * 1000) / 10) + '%' : '—'}</div></div>
+      <div class="stat-card"><div class="label">Days rated</div><div class="value">${ratedAll} <small>/ ${rangeDays.length}</small></div></div>`;
+    stats.style.display = 'grid';
+
+    if (!shown.length) {
+      tbody.innerHTML = '<tr><td colspan="9" class="empty-state">No matching employees.</td></tr>';
+      document.getElementById('perfDailyCards').innerHTML = '<div class="empty-state">No matching employees.</div>';
+      return;
+    }
+    tbody.innerHTML = shown.map(g => {
+      const k = g.employee_id + '|' + g.group_key;
+      const open = openRange.has(k);
+      return `<tr>
+        <td><button type="button" class="rg-exp ${open ? 'open' : ''}" onclick="toggleRange('${k}')" aria-expanded="${open}"><span class="chev">▶</span>${g.full_name}</button>
+          <div style="font-size:11.5px; color:var(--muted);">${g.employee_code}</div><div style="margin-top:4px;">${houseBadge(g)}</div></td>
+        <td><b>${g.queries}</b><div style="font-size:11.5px; color:var(--muted);">${g.qDays ? Math.round(g.queries / g.qDays) + ' / day' : 'not entered'}</div></td>
+        <td><b>${g.orders}</b><div style="font-size:11.5px; color:var(--muted);">${inrShort(g.sales)}</div></td>
+        <td>${ratioBadgeHtml(g.ratio)}</td>
+        <td>${g.addonCount ? `<b>${inrShort(g.addonTotal)}</b> <span style="color:var(--muted);">· ${g.addonCount}</span>` : '<span style="color:var(--muted);">—</span>'}</td>
+        <td>${miniStars(g.ticket, 'Average of rated orders in the range')}</td>
+        <td>${miniStars(g.call, 'Average of the daily Call ratings')}</td>
+        <td>${behChips(g.behCounts)}</td>
+        <td><b>${g.ratedDays}</b> / ${rangeDays.length} days${g.unratedDays.length && g.unratedDays.length < rangeDays.length ? `<div style="font-size:11px; color:#b45f06;">${g.unratedDays.map(fmtShort).join(', ')} not rated</div>` : ''}</td>
+      </tr>${open ? `<tr class="rg-days"><td colspan="9">${dayTableHtml(g)}</td></tr>` : ''}`;
+    }).join('');
+
+    // Mobile cards.
+    document.getElementById('perfDailyCards').innerHTML = shown.map(g => {
+      const k = g.employee_id + '|' + g.group_key;
+      const open = openRange.has(k);
+      return `<div style="background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:11px 13px; margin-bottom:8px;">
+        <div style="display:flex; justify-content:space-between; align-items:baseline; gap:8px;">
+          <button type="button" class="rg-exp ${open ? 'open' : ''}" onclick="toggleRange('${k}')"><span class="chev">▶</span>${g.full_name}</button>
+          <span style="font-size:13px; font-weight:700; white-space:nowrap;">${g.ratio === null ? '—' : g.ratio + '%'}</span>
+        </div>
+        <div style="font-size:11px; color:var(--muted); margin-top:1px;">${g.employee_code} · ${houseBadge(g)}</div>
+        <div style="display:flex; gap:14px; margin-top:9px; font-size:12px; flex-wrap:wrap;">
+          <span><span style="color:var(--muted);">Query</span> ${g.queries}</span>
+          <span><span style="color:var(--muted);">Orders</span> ${g.orders}</span>
+          <span><span style="color:var(--muted);">Sales</span> ${inrShort(g.sales)}</span>
+          <span><span style="color:var(--muted);">Add-on</span> ${g.addonCount ? inrShort(g.addonTotal) : '—'}</span>
+        </div>
+        <div class="card-ratings">
+          <div><span class="ord-lbl">Ticket size convincing</span>${miniStars(g.ticket)}</div>
+          <div><span class="ord-lbl">Call rating</span>${miniStars(g.call)}</div>
+          <div><span class="ord-lbl">Customer behaviour</span>${behChips(g.behCounts)}</div>
+          <div><span class="ord-lbl">Rated</span><b>${g.ratedDays}</b> / ${rangeDays.length} days</div>
+        </div>
+        ${open ? `<div style="margin-top:10px;">${dayTableHtml(g)}</div>` : ''}
+      </div>`;
+    }).join('');
+  }
+
+  async function loadDaily() {
+    currentDay = document.getElementById('dayPick').value;
+    const toEl = document.getElementById('dayTo');
+    if (!currentDay) return;
+    if (!toEl.value || toEl.value < currentDay) toEl.value = currentDay;
+    const to = toEl.value;
+    if (to !== currentDay) {
+      if (daysBetween(currentDay, to).length > RANGE_MAX_DAYS) { showAlert('Pick a range of up to ' + RANGE_MAX_DAYS + ' days.', 'error'); return; }
+      return loadRange(currentDay, to);
+    }
+    rangeMode = false;
+    document.getElementById('rangeStats').style.display = 'none';
+    document.getElementById('dailyTitle').textContent = 'Daily — ' +
+      new Date(currentDay + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' });
+    const tbody = document.getElementById('dailyBody');
+    tbody.innerHTML = '<tr><td colspan="9" class="loading">Loading day data...</td></tr>';
+    try {
+      const data = await api.get('performance.daily', { date: currentDay, store_group: groupFilter() });
+      dailyRows = data.rows || [];
+      (data.errors || []).forEach(e => showAlert(e, 'error'));
+      await loadAddons();   // must land before the first render or the column reads empty
+      renderDaily();
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="9"><div class="alert error">${err.message}</div></td></tr>`;
+    }
+  }
+
+  // Paging for both lists: show 10, "Load more" adds 10. Stored as a row
+  // count (not appended HTML) because renderDaily() re-runs after every
+  // rating, query or add-on edit — re-rendering up to the current limit
+  // keeps an edit on row 25 from collapsing the list back to 10.
+  const PERF_PAGE_SIZE = 10;
+  const perfPaging = {
+    daily: { limit: PERF_PAGE_SIZE, matched: 0, prefix: 'perfDaily' },
+    month: { limit: PERF_PAGE_SIZE, matched: 0, prefix: 'perfMonth' },
+  };
+
+  function updatePerfLoadMore(key) {
+    const pg = perfPaging[key];
+    const label = document.getElementById(pg.prefix + 'ShownCount');
+    const btn = document.getElementById(pg.prefix + 'LoadMore');
+    if (!pg.matched) { label.textContent = ''; btn.style.display = 'none'; return; }
+    const showing = Math.min(pg.limit, pg.matched);
+    label.textContent = `Showing ${showing} of ${pg.matched}`;
+    btn.style.display = showing >= pg.matched ? 'none' : 'inline-block';
+  }
+
+  // Filter or data changed — start that list again from the first 10.
+  function resetPerfLimit(...keys) {
+    keys.forEach(k => { perfPaging[k].limit = PERF_PAGE_SIZE; });
+  }
+
+  function renderDaily() {
+    if (rangeMode) return renderRange();
+    const tbody = document.getElementById('dailyBody');
+    const matched = dailyRows.filter(matchesSearch);
+    // Rows found by order number: open their order panel automatically.
+    const q = searchQ();
+    if (q) matched.forEach(r => { if (orderMatches(r, q)) openRows.add(r.employee_id + '|' + r.group_key); });
+    perfPaging.daily.matched = matched.length;
+    const shown = matched.slice(0, perfPaging.daily.limit);
+    updatePerfLoadMore('daily');
+    if (!shown.length) {
+      tbody.innerHTML = '<tr><td colspan="9" class="empty-state">No matching employees.</td></tr>';
+      document.getElementById('perfDailyCards').innerHTML = '<div class="empty-state">No matching employees.</div>';
+      return;
+    }
+    tbody.innerHTML = shown.map(r => {
+      const ratioBadge = r.ratio === null
+        ? '<span style="color:var(--muted); font-size:12px;">—</span>'
+        : `<span class="badge" style="background:${r.ratio >= 9 ? '#e7f7ee' : (r.ratio >= 6 ? '#fdf3e3' : '#fdecec')}; color:${r.ratio >= 9 ? '#0f7a41' : (r.ratio >= 6 ? '#b45f06' : '#c81e1e')};">${r.ratio}%</span>`;
+      return `<tr>
+        <td><a href="employee_detail.html?id=${r.employee_id}">${r.full_name}</a><div style="font-size:11.5px; color:var(--muted);">${r.employee_code}</div><div style="margin-top:4px;">${houseBadge(r)}</div></td>
+        <td>${r.queries !== null ? r.queries : '<span style="color:var(--muted);">—</span>'}
+          <button style="background:none; border:none; cursor:pointer; color:var(--accent); font-size:12px; padding:0;" onclick="editDayQueries(${r.employee_id}, '${r.group_key}', ${r.queries === null ? 'null' : r.queries})">✎</button></td>
+        <td>${r.orders}<div style="font-size:11.5px; color:var(--muted);">${'₹' + Number(r.sales).toLocaleString('en-IN', { maximumFractionDigits: 0 })}${codedNote(r) ? ' · ' + codedNote(r) : ''}</div></td>
+        <td>${ratioBadge}</td>
+        <td>${addonCell(r)}</td>
+        ${(() => { const rr = rowRatings(r); const lg = rr.legacy ? 'Daily rating (given before per-order ratings)' : 'Average of rated orders';
+          return `<td>${miniStars(rr.ticket, lg)}</td>
+            <td>${ratingInput(r.employee_id, 'call', r.call_day_rating, r.group_key)}</td>
+            <td>${overallCell(r)}</td>
+            <td>${ratedToggle(r, rr)}</td>`; })()}
+      </tr>${openRows.has(r.employee_id + '|' + r.group_key) && (r.order_list || []).length
+        ? `<tr class="ord-row"><td colspan="9"><div class="ord-list">${orderRowsHtml(r)}</div></td></tr>` : ''}`;
+    }).join('');
+
+    // Mobile: one card per employee/house, with the ratings as the same
+    // editable controls the table uses.
+    document.getElementById('perfDailyCards').innerHTML = shown.map(r => {
+      const ratioTxt = r.ratio === null ? '—' : r.ratio + '%';
+      const ratioFg = r.ratio === null ? 'var(--muted)' : (r.ratio >= 9 ? '#0f7a41' : (r.ratio >= 6 ? '#b45f06' : '#c81e1e'));
+      return `<div style="background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:11px 13px; margin-bottom:8px;">
+        <div style="display:flex; justify-content:space-between; align-items:baseline; gap:8px;">
+          <a href="employee_detail.html?id=${r.employee_id}" style="font-size:13px; font-weight:600;">${r.full_name}</a>
+          <span style="font-size:13px; font-weight:700; color:${ratioFg}; white-space:nowrap;">${ratioTxt}</span>
+        </div>
+        <div style="font-size:11px; color:var(--muted); margin-top:1px;">${r.employee_code} · ${houseBadge(r)}</div>
+        <div style="display:flex; gap:14px; margin-top:9px; font-size:12px;">
+          <span><span style="color:var(--muted);">Query</span>
+            ${r.queries !== null ? r.queries : '—'}
+            <button style="background:none; border:none; cursor:pointer; color:var(--accent); font-size:12px; padding:0 0 0 2px;" onclick="editDayQueries(${r.employee_id}, '${r.group_key}', ${r.queries === null ? 'null' : r.queries})">✎</button>
+          </span>
+          <span><span style="color:var(--muted);">Orders</span> ${r.orders}${codedNote(r) ? ' <span style="font-size:11px;">(' + codedNote(r) + ')</span>' : ''}</span>
+          <span><span style="color:var(--muted);">Sales</span> ₹${Number(r.sales).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
+        </div>
+        ${(() => { const rr = rowRatings(r); const k = r.employee_id + '|' + r.group_key;
+          return `<div class="card-ratings">
+            <div><span class="ord-lbl">Ticket size convincing</span>${miniStars(rr.ticket)}</div>
+            <div>${ratedToggle(r, rr)}</div>
+            <div style="grid-column:1 / -1;"><span class="ord-lbl">Call rating</span>${ratingInput(r.employee_id, 'call', r.call_day_rating, r.group_key)}</div>
+            <div style="grid-column:1 / -1;"><span class="ord-lbl">Customer behaviour</span>${overallCell(r)}</div>
+          </div>${openRows.has(k) && rr.total ? `<div class="ord-list">${orderRowsHtml(r)}</div>` : ''}`; })()}
+      </div>`;
+    }).join('');
+  }
+
+  async function load() {
+    currentMonth = document.getElementById('monthPick').value;
+    if (!currentMonth) return;
+    document.getElementById('pageTitle').textContent = 'Performance — ' +
+      new Date(currentMonth + '-01T00:00:00').toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+    const tbody = document.getElementById('tableBody');
+    try {
+      const data = await api.get('performance.get', { month: currentMonth, store_group: groupFilter() });
+      monthRows = data.rows || [];
+      renderMonthly();
+    } catch (err) {
+      document.getElementById('tableBody').innerHTML = `<tr><td colspan="6"><div class="alert error">${err.message}</div></td></tr>`;
+    }
+  }
+
+  function renderMonthly() {
+    const tbody = document.getElementById('tableBody');
+    const matched = monthRows.filter(matchesSearch);
+    perfPaging.month.matched = matched.length;
+    const shown = matched.slice(0, perfPaging.month.limit);
+    updatePerfLoadMore('month');
+    if (shown.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No matching employees.</td></tr>';
+      document.getElementById('perfMonthCards').innerHTML = '<div class="empty-state">No matching employees.</div>';
+      return;
+    }
+    tbody.innerHTML = shown.map(r => {
+        return `<tr>
+          <td><a href="employee_detail.html?id=${r.employee_id}">${r.full_name}</a>
+            <div style="font-size:11.5px; color:var(--muted);">${r.employee_code}${r.sales_tag ? ' · tag ' + r.sales_tag : ''}</div>
+            <div style="margin-top:4px;">${houseBadge(r)}</div></td>
+          <td>${r.queries}<div style="font-size:11.5px; color:var(--muted);">${r.query_days} day${r.query_days === 1 ? '' : 's'} entered</div></td>
+          <td>${r.avg_per_day}</td>
+          <td>${numAvg(r.convincing)}</td>
+          <td>${miniStars(r.call_day_rating, 'Average of the daily Call ratings this month')}</td>
+          <td>${miniStars(r.overall_rating, 'Average of the daily Customer behaviour ratings this month')}</td>
+        </tr>`;
+      }).join('');
+
+    document.getElementById('perfMonthCards').innerHTML = shown.map(r => {
+      const behLabel = (v) => {
+        if (v === null || v === undefined) return '<span style="color:var(--muted);">—</span>';
+        const [label, fg, bg] = v >= 4 ? ['Good', '#0f7a41', '#e7f7ee'] : (v >= 2 ? ['Average', '#b45f06', '#fdf3e3'] : ['Bad', '#c81e1e', '#fdecec']);
+        return `<span class="badge" style="background:${bg}; color:${fg};">${label}</span>`;
+      };
+      const num = (v) => (v === null || v === undefined) ? '—' : v;
+      return `<div style="background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:11px 13px; margin-bottom:8px;">
+        <div style="display:flex; justify-content:space-between; align-items:baseline; gap:8px;">
+          <a href="employee_detail.html?id=${r.employee_id}" style="font-size:13px; font-weight:600;">${r.full_name}</a>
+          <span title="Customer behaviour">${miniStars(r.overall_rating)}</span>
+        </div>
+        <div style="font-size:11px; color:var(--muted); margin-top:1px;">${r.employee_code}${r.sales_tag ? ' · tag ' + r.sales_tag : ''} · ${houseBadge(r)}</div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px;">
+          <div><div style="font-size:11px; color:var(--muted); text-transform:uppercase;">Queries</div><div style="font-size:13px;">${r.queries} <span style="font-size:11px; color:var(--muted);">(${r.query_days}d)</span></div></div>
+          <div><div style="font-size:11px; color:var(--muted); text-transform:uppercase;">Avg / day</div><div style="font-size:13px;">${r.avg_per_day}</div></div>
+          <div><div style="font-size:11px; color:var(--muted); text-transform:uppercase;">Ticket size convincing</div><div style="font-size:13px;">${num(r.convincing)}</div></div>
+          <div><div style="font-size:11px; color:var(--muted); text-transform:uppercase;">Call rating</div><div style="font-size:13px;">${num(r.customer_rating)}</div></div>
+        </div>
+        <div style="margin-top:9px; padding-top:8px; border-top:1px solid var(--line); font-size:11.5px;">
+          <span style="color:var(--muted);">Customer behaviour</span> ${behLabel(r.behavior_rating)}
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  const now = new Date();
+  document.getElementById('monthPick').value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  document.getElementById('monthPick').addEventListener('change', () => { resetPerfLimit('month'); load(); });
+  document.getElementById('groupPick').addEventListener('change', () => { resetPerfLimit('month', 'daily'); load(); loadDaily(); });
+  document.getElementById('dayPick').value = bizToday();
+  document.getElementById('dayTo').value = bizToday();
+  document.getElementById('dayPick').addEventListener('change', () => {
+    // Moving From past To drags To along, so a single day stays a single day.
+    const toEl = document.getElementById('dayTo');
+    if (!toEl.value || toEl.value < document.getElementById('dayPick').value) toEl.value = document.getElementById('dayPick').value;
+    resetPerfLimit('daily'); loadDaily();
+  });
+  document.getElementById('dayTo').addEventListener('change', () => {
+    const fromEl = document.getElementById('dayPick');
+    if (document.getElementById('dayTo').value < fromEl.value) fromEl.value = document.getElementById('dayTo').value;
+    resetPerfLimit('daily'); loadDaily();
+  });
+  document.getElementById('btnPerfToday').addEventListener('click', () => {
+    document.getElementById('dayPick').value = bizToday(); document.getElementById('dayTo').value = bizToday();
+    resetPerfLimit('daily'); loadDaily();
+  });
+  document.getElementById('perfDailyLoadMore').addEventListener('click', () => {
+    perfPaging.daily.limit += PERF_PAGE_SIZE; renderDaily();
+  });
+  document.getElementById('perfMonthLoadMore').addEventListener('click', () => {
+    perfPaging.month.limit += PERF_PAGE_SIZE; renderMonthly();
+  });
+  let searchTimer = null;
+  document.getElementById('empSearch').addEventListener('input', () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => { resetPerfLimit('month', 'daily'); renderMonthly(); renderDaily(); }, 150);
+  });
+  // ---- add-on modal wiring ----
+  document.getElementById('btnAddonAddRow').addEventListener('click', () => {
+    document.getElementById('addonItems').insertAdjacentHTML('beforeend', addonItemRow());
+  });
+  document.getElementById('btnAddonCancel').addEventListener('click', closeAddon);
+  document.getElementById('addonModal').addEventListener('click', (e) => {
+    if (e.target.id === 'addonModal') closeAddon();
+  });
+  document.getElementById('btnAddonListClose').addEventListener('click', () => {
+    document.getElementById('addonListModal').classList.remove('open');
+  });
+  document.getElementById('addonListModal').addEventListener('click', (e) => {
+    if (e.target.id === 'addonListModal') e.currentTarget.classList.remove('open');
+  });
+  document.getElementById('addonItems').addEventListener('input', (e) => {
+    if (e.target.classList.contains('ad-name')) recalcAddonTotal();
+  });
+  document.getElementById('addonPrice').addEventListener('input', recalcAddonTotal);
+
+  document.getElementById('btnAddonSave').addEventListener('click', async () => {
+    const alertBox = document.getElementById('addonModalAlert');
+    const items = [];
+    document.querySelectorAll('#addonItems .addon-item').forEach(row => {
+      const name = row.querySelector('.ad-name').value.trim();
+      if (!name) return; // blank spare rows are ignored, not an error
+      items.push({
+        product_name: name,
+        size_ml: row.querySelector('.ad-size').value.trim(),
+        qty: Math.max(1, Number(row.querySelector('.ad-qty').value || 1)),
+      });
+    });
+    if (!items.length) {
+      alertBox.innerHTML = '<div class="alert error">Enter at least one product name.</div>';
+      return;
+    }
+    const totalPrice = Number(document.getElementById('addonPrice').value || 0);
+    if (!(totalPrice > 0)) {
+      alertBox.innerHTML = '<div class="alert error">Enter the total add-on price.</div>';
+      return;
+    }
+
+    const btn = document.getElementById('btnAddonSave');
+    btn.disabled = true;
+    try {
+      const d = await api.post('addons.save', {
+        employee_id: Number(document.getElementById('addonEmpId').value),
+        date: currentDay,
+        group_key: document.getElementById('addonGroupKey').value,
+        order_name: document.getElementById('addonOrder').value.trim(),
+        total_price: totalPrice,
+        items,
+      });
+      closeAddon();
+      showAlert(d.message || 'Add-on saved.');
+      await loadAddons();
+      renderDaily();
+    } catch (err) {
+      alertBox.innerHTML = `<div class="alert error">${err.message}</div>`;
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  load();
+  loadDaily();
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+<script>
+/* Old typed Sales counts ended on the WhatsApp Sales cut-over date: read-only banner (the server refuses every write; reads keep working). */
+(function () { try { if (typeof api === 'undefined') return; api.get('qa.status').then(function (s) { if (!s || !s.ended) return; var b = document.getElementById('qaBanner'); if (b) { b.textContent = s.message; b.style.display = ''; } }).catch(function () {}); } catch (e) {} })();
+</script>
+</body>
+</html>

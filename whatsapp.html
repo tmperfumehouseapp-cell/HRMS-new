@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0e1a15">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="WhatsApp">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>WhatsApp — HRMS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+<style id="waCss">
+/* wa_ui.css — the new look of the WhatsApp section (whatsapp.html).
+   Loaded after the screens' own styles. Everything is scoped under body.waui, so no other page is touched.
+   Only colours, spacing and layout are changed here; the screens' scripts (wa_inbox.js, wa_panels.js) are the same. */
+
+body.waui{
+  --g:#16a34a; --g2:#22c55e; --gd:#0f7a3a; --ink:#0f172a; --mut:#64748b; --line:#e8ecf2; --bg:#f4f6fa; --card:#fff;
+  --or:#f97316; --rd:#e5484d; --bl:#3b82f6; --pu:#7c5cfc; --font:Inter,"Segoe UI",system-ui,-apple-system,Arial,sans-serif;
+  font-family:var(--font); color:var(--ink); font-size:14px; line-height:1.45;
+  background:radial-gradient(900px 500px at 85% -10%,#e3f8ea 0,transparent 60%),radial-gradient(700px 500px at -5% 105%,#ffeadb 0,transparent 55%),var(--bg);
+}
+body.waui button, body.waui input, body.waui select, body.waui textarea{font-family:inherit;}
+body.waui svg.i{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;flex:none;}
+
+/* ============================================================ shell */
+body.waui .wc{display:flex;height:100vh;height:100dvh;}
+body.waui .rail{width:236px;flex:none;background:rgba(255,255,255,.78);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border-right:1px solid var(--line);color:#475569;padding:14px 12px 12px;display:flex;flex-direction:column;gap:2px;overflow-y:auto;}
+body.waui .brand{display:flex;align-items:center;gap:10px;padding:4px 8px 6px;font-weight:800;font-size:16px;color:var(--ink);}
+body.waui .brand b{width:34px;height:34px;border-radius:11px;background:linear-gradient(135deg,#25d366,#128c7e);display:grid;place-items:center;color:#fff;}
+body.waui .back{display:flex;align-items:center;gap:6px;margin:2px 4px 6px;padding:7px 10px;border-radius:10px;background:#f1f5f9;color:#475569;font-weight:700;font-size:12.5px;text-decoration:none;}
+body.waui .back:hover{background:#e8edf3;}
+body.waui .grp{font-size:11px;letter-spacing:.09em;color:#94a3b8;font-weight:800;padding:12px 10px 4px;}
+body.waui .it{display:flex;align-items:center;gap:11px;width:100%;padding:8px 10px;border:0;border-radius:11px;background:none;color:#475569;font-weight:600;font-size:13.5px;text-align:left;cursor:pointer;min-height:38px;}
+body.waui .it:hover{background:#f1f5f9;}
+body.waui .it.on{background:linear-gradient(90deg,#e7f9ee,#f2fcf6);color:var(--gd);box-shadow:inset 0 0 0 1px #c6efd5;}
+body.waui .it.on svg{stroke:var(--gd);}
+body.waui .it .bd{margin-left:auto;background:var(--g);color:#fff;border-radius:9px;font-size:11px;font-weight:800;padding:1px 7px;}
+body.waui .it .bd.q{background:#e2e8f0;color:#475569;}
+body.waui .it .bd.r{background:var(--rd);}
+body.waui .sp{flex:1;}
+
+body.waui .main{flex:1;min-width:0;display:flex;flex-direction:column;}
+body.waui .top{height:58px;flex:none;background:transparent;border:0;display:flex;align-items:center;gap:14px;padding:0 22px;}
+body.waui .top h1{font-size:19px;letter-spacing:-.2px;font-weight:800;margin:0;}
+body.waui .top .tsub{color:var(--mut);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}
+body.waui .top .live{display:inline-flex;align-items:center;gap:7px;background:#e7f9ee;color:var(--gd);padding:4px 11px;border-radius:99px;font-weight:700;font-size:12px;white-space:nowrap;}
+body.waui .pulse{width:8px;height:8px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 4px rgba(34,197,94,.22);}
+body.waui .top .wait{border:0;cursor:pointer;background:#fff3e8;color:#c2570c;padding:6px 13px;border-radius:99px;font-weight:800;font-size:12.5px;white-space:nowrap;}
+body.waui .top .hb{display:none;border:1px solid var(--line);background:#fff;border-radius:999px;padding:7px 13px;font-weight:700;font-size:13px;text-decoration:none;color:var(--ink);}
+body.waui .body{flex:1;min-height:0;position:relative;}
+body.waui #body > .sec{position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;}
+body.waui #body > .sec.pad{padding:6px 22px 28px;}
+body.waui #body > .sec.fill{overflow:hidden;padding:0 18px 16px 22px;}
+body.waui #body > .sec.frame{overflow:hidden;}
+body.waui #body > .sec iframe{width:100%;height:100%;border:0;display:block;background:transparent;}
+
+/* cards, chips, buttons (shared) */
+body.waui .card{background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:0 1px 2px rgba(15,23,42,.04),0 8px 24px rgba(15,23,42,.04);padding:16px 18px;}
+body.waui .muted{color:var(--mut);font-size:12px;}
+body.waui .chip{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:99px;font-size:11.5px;font-weight:700;background:#eef1f6;color:#475569;}
+body.waui .chip.g{background:#e7f9ee;color:var(--gd);} body.waui .chip.r{background:#fde8e8;color:#c2262b;} body.waui .chip.o{background:#fff0e0;color:#b45309;}
+body.waui .chip.b{background:#e8f0ff;color:#2563eb;} body.waui .chip.p{background:#f0ebff;color:#5b3fd6;}
+body.waui .lk{border:1px solid var(--line);background:#fff;border-radius:10px;padding:6px 12px;font-size:12.5px;font-weight:700;cursor:pointer;min-height:32px;color:var(--ink);}
+body.waui .lk:hover{background:#f8fafc;} body.waui .lk:disabled{opacity:.5;}
+body.waui .lk.p{background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;border-color:#16a34a;box-shadow:0 4px 12px rgba(22,163,74,.28);}
+body.waui .err{background:#fde8e8;color:#9a2620;border-radius:12px;padding:12px 14px;}
+
+/* ============================================================ overview */
+body.waui .ov-k{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:14px;}
+body.waui .ov-k .k{padding:16px 18px;position:relative;overflow:hidden;}
+body.waui .ov-k .k small{color:var(--mut);font-weight:600;display:flex;gap:8px;align-items:center;font-size:13px;}
+body.waui .ico{width:30px;height:30px;border-radius:10px;display:grid;place-items:center;flex:none;}
+body.waui .i-b{background:#e8f0ff;color:#3b82f6;} body.waui .i-g{background:#e7f9ee;color:#16a34a;} body.waui .i-o{background:#fff0e0;color:#f97316;} body.waui .i-p{background:#f0ebff;color:#7c5cfc;} body.waui .i-r{background:#fde8e8;color:#e5484d;}
+body.waui .ov-k .n{font-size:34px;font-weight:800;letter-spacing:-1px;margin-top:4px;line-height:1.1;}
+body.waui .ov-k .d{font-size:12px;font-weight:700;color:var(--mut);}
+body.waui .ov-k .d.up{color:#16a34a;} body.waui .ov-k .d.dn{color:#e5484d;}
+body.waui .ov-g{display:grid;grid-template-columns:1.35fr 1fr 1fr;gap:14px;margin-bottom:14px;align-items:start;}
+body.waui .ov-g>*,body.waui .ov-g2>*,body.waui .ov-k>*{min-width:0;}
+body.waui .ov-g2{display:grid;grid-template-columns:1.2fr 1fr;gap:14px;align-items:start;}
+body.waui .card h3{margin:0 0 12px;font-size:15px;font-weight:800;display:flex;align-items:center;gap:8px;}
+body.waui .card h3 .sp{flex:1;}
+body.waui .q{display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid #f0f3f7;}
+body.waui .q:first-of-type{border-top:0;}
+body.waui .q .t{flex:1;min-width:0;} body.waui .q .t b{display:block;font-size:13.5px;} body.waui .q .t span{color:var(--mut);font-size:12.5px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+body.waui .av2{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:13px;color:#fff;flex:none;background:linear-gradient(135deg,#60a5fa,#3b82f6);}
+body.waui .av2.c2{background:linear-gradient(135deg,#f472b6,#e11d74);} body.waui .av2.c3{background:linear-gradient(135deg,#a78bfa,#7c5cfc);} body.waui .av2.c4{background:linear-gradient(135deg,#fbbf24,#f59e0b);} body.waui .av2.c5{background:linear-gradient(135deg,#34d399,#059669);} body.waui .av2.c6{background:linear-gradient(135deg,#fb923c,#ea580c);}
+body.waui .bar{height:7px;background:#eef1f6;border-radius:9px;overflow:hidden;margin-top:7px;} body.waui .bar i{display:block;height:100%;border-radius:9px;background:linear-gradient(90deg,#22c55e,#16a34a);min-width:2px;} body.waui .bar i.w{background:#f0a500;} body.waui .bar i.b{background:#d92d20;}
+body.waui .num{display:flex;gap:12px;align-items:flex-start;padding:12px;border:1px solid var(--line);border-radius:14px;margin-bottom:10px;}
+body.waui .num .nb{width:42px;height:42px;border-radius:13px;background:linear-gradient(135deg,#25d366,#128c7e);color:#fff;display:grid;place-items:center;flex:none;}
+body.waui .num .t{flex:1;min-width:0;} body.waui .num .t b{font-size:14px;}
+body.waui .donut{width:120px;height:120px;flex:none;}
+body.waui .legend div{display:flex;align-items:center;gap:8px;font-size:12.5px;margin:6px 0;font-weight:600;} body.waui .legend i{width:10px;height:10px;border-radius:3px;display:inline-block;}
+body.waui .alert{display:flex;gap:11px;align-items:flex-start;padding:10px 12px;border-radius:13px;margin-bottom:8px;font-size:13px;}
+body.waui .alert.y{background:#fff8e6;border:1px solid #fde8a8;} body.waui .alert.r{background:#fff1f1;border:1px solid #fbcaca;} body.waui .alert.g{background:#f0fbf4;border:1px solid #c6efd5;}
+body.waui .alert .tx{flex:1;min-width:0;} body.waui .alert b{display:block;}
+body.waui .li{display:flex;justify-content:space-between;gap:10px;padding:9px 0;border-top:1px solid #f0f3f7;font-size:13.5px;} body.waui .li:first-of-type{border-top:0;} body.waui .li b{font-size:15px;}
+
+/* ============================================================ chats (wa_inbox.js) */
+body.waui .sec.fill .wi{height:100%;display:flex;flex-direction:column;}
+body.waui .wi{font-family:var(--font);color:var(--ink);}
+body.waui .wi-kpi{gap:10px;margin-bottom:12px;flex-wrap:nowrap;}
+body.waui .wi-kpi div{background:#fff;border:1px solid var(--line);border-radius:14px;padding:8px 14px;min-width:0;box-shadow:0 1px 2px rgba(15,23,42,.04);}
+body.waui .wi-kpi small{font-size:11px;letter-spacing:.06em;color:var(--mut);} body.waui .wi-kpi b{font-size:20px;letter-spacing:-.5px;}
+body.waui .sec.fill .wi .wi-box{flex:1;height:auto !important;min-height:0;}
+body.waui .wi-box{display:grid;grid-template-columns:440px minmax(0,1fr) 290px;gap:14px;background:transparent;border:0;border-radius:0;overflow:visible;}
+body.waui .wi.mine .wi-box{grid-template-columns:420px minmax(0,1fr) 270px;}
+body.waui .wi-col{background:#fff;border:1px solid var(--line);border-radius:18px;box-shadow:0 1px 2px rgba(15,23,42,.04),0 8px 24px rgba(15,23,42,.04);overflow:hidden;}
+body.waui .wi-col:last-child{border-right:1px solid var(--line);}
+body.waui .wi-tabs{background:#eef1f6;border-radius:12px;padding:3px;margin:14px 14px 10px;gap:0;flex-wrap:nowrap;}
+body.waui .wi-tab{flex:1;background:transparent;color:#64748b;border-radius:10px;padding:7px 4px;font-size:12.5px;text-align:center;}
+body.waui .wi-tab.on{background:#fff;color:var(--ink);box-shadow:0 1px 3px rgba(15,23,42,.12);}
+body.waui .wi-tab i{opacity:1;background:#e2e8f0;border-radius:8px;padding:0 6px;font-size:11px;margin-left:4px;}
+body.waui .wi-tab.on i{background:var(--g);color:#fff;}
+body.waui .wi-tabs.wi-feeds{background:transparent;border-radius:0;padding:0 14px 6px;margin:0;gap:6px;flex-wrap:wrap;}
+body.waui .wi-chip{border:1px solid var(--line);background:#fff;color:#475569;padding:4px 11px;font-size:12px;}
+body.waui .wi-chip.on{background:var(--ink);border-color:var(--ink);color:#fff;}
+body.waui .wi-find{padding:2px 14px 10px;}
+body.waui .wi-find input,body.waui .wi-find select{border:1px solid var(--line);border-radius:12px;padding:8px 12px;background:#f8fafc;}
+body.waui .wi-it{padding:11px 14px;border-bottom:1px solid #f0f3f7;border-left:3px solid transparent;}
+body.waui .wi-it:hover{background:#f8fafc;} body.waui .wi-it.sel{background:#f0fbf4;border-left-color:var(--g);}
+body.waui .wi-it .n{font-size:13.5px;} body.waui .wi-it .m{color:var(--mut);}
+body.waui .wi-it.wait .t{color:var(--rd);font-weight:800;}
+body.waui .wi-p{background:#eef1f6;color:#475569;}
+body.waui .wi-p.o{background:#fff0e0;color:#b45309;} body.waui .wi-p.g{background:#e7f9ee;color:var(--gd);} body.waui .wi-p.b{background:#e8f0ff;color:#2563eb;} body.waui .wi-p.r{background:#fde8e8;color:#c2262b;} body.waui .wi-p.p{background:#f0ebff;color:#5b3fd6;} body.waui .wi-p.y{background:#fff6d6;color:#8a6a00;}
+body.waui .wi-un{background:var(--g);}
+body.waui .wi-chat{background:#f1ece3;}
+body.waui .wi-head{padding:12px 16px;gap:8px;background:#fff;border-bottom:1px solid var(--line);}
+body.waui .wi-head b{font-size:16px;letter-spacing:-.2px;}
+body.waui .wi-b{border-radius:4px 14px 14px 14px;box-shadow:0 1px 1px rgba(0,0,0,.08);} body.waui .wi-b.out{border-radius:14px 4px 14px 14px;background:#d9fdd3;}
+body.waui .wi-hot{border-top:0;border-bottom:1px solid #fbcaca;}
+body.waui .wi-ub .u{border-radius:99px;font-weight:800;}
+body.waui .wi-quick{border-top:1px solid var(--line);} body.waui .wi-quick button{background:#fff;border:1px solid var(--line);border-radius:99px;}
+body.waui .wi-comp{border-top:1px solid var(--line);padding:12px 14px;}
+body.waui .wi-comp textarea{border:1px solid var(--line);border-radius:14px;background:#f8fafc;}
+body.waui .wi-btn{border:1px solid var(--line);background:#fff;border-radius:10px;padding:7px 13px;font-weight:700;}
+body.waui .wi-btn.p{background:linear-gradient(135deg,#22c55e,#16a34a);border-color:#16a34a;color:#fff;box-shadow:0 3px 10px rgba(22,163,74,.25);}
+body.waui .wi-btn.d{background:var(--ink);border-color:var(--ink);}
+body.waui .wi-tr{border:1px solid var(--line);border-radius:10px;}
+body.waui .wi-side{padding:16px;} body.waui .wi-side h4{color:#94a3b8;letter-spacing:.08em;}
+body.waui .wi-sb{background:#f8fafc;border:1px solid var(--line);}
+body.waui .wi-sug{border-radius:14px;} body.waui .wi-note{border-radius:12px;}
+body.waui .wi-empty{color:var(--mut);}
+body.waui .wi-seg button.on{background:var(--ink);} body.waui .wi-card{border-radius:14px;border-color:var(--line);}
+body.waui .wi-shb{border-radius:20px 20px 0 0;}
+
+/* ============================================================ the other screens (wa_panels.js) */
+body.waui .wp{max-width:1400px;margin:0;font-family:var(--font);color:var(--ink);}
+body.waui .wp.wp-md{max-width:none;margin:0;}
+body.waui .wp-top{margin-bottom:14px;} body.waui .wp-top h2{font-size:19px;letter-spacing:-.2px;font-weight:800;} body.waui .wp-top p{color:var(--mut);}
+body.waui .wp-cd{background:#fff;border:1px solid var(--line);border-radius:18px;box-shadow:0 1px 2px rgba(15,23,42,.04),0 8px 24px rgba(15,23,42,.04);padding:16px 18px;margin-bottom:14px;}
+body.waui .wp-cd h3{font-size:15px;}
+body.waui .wp-btn{border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:10px;padding:8px 15px;min-height:38px;font-weight:700;font-size:13px;}
+body.waui .wp-btn:hover{background:#f8fafc;}
+body.waui .wp-btn.p{background:linear-gradient(135deg,#22c55e,#16a34a);border-color:#16a34a;color:#fff;box-shadow:0 4px 12px rgba(22,163,74,.28);}
+body.waui .wp-btn.p:hover{background:linear-gradient(135deg,#1fb856,#15963f);}
+body.waui .wp-btn.o{background:linear-gradient(135deg,#fb923c,#f97316);border-color:#f97316;color:#fff;box-shadow:0 4px 12px rgba(249,115,22,.28);}
+body.waui .wp-btn.d{background:var(--ink);border-color:var(--ink);} body.waui .wp-btn.r{color:#b42318;border-color:#f0c4c0;} body.waui .wp-btn.s{min-height:32px;padding:5px 11px;font-size:12px;}
+body.waui .wp-in{border:1px solid var(--line);border-radius:12px;background:#fff;} body.waui .wp-in:focus{outline:2px solid #bbf7d0;border-color:#86efac;}
+body.waui .wp-fl{color:#94a3b8;font-size:11px;letter-spacing:.06em;text-transform:uppercase;font-weight:800;}
+body.waui .wp-chip{border:1px solid var(--line);background:#fff;color:#475569;min-height:32px;padding:5px 13px;}
+body.waui .wp-chip.on,body.waui .wp-seg button.on{background:var(--ink);border-color:var(--ink);color:#fff;}
+body.waui .wp-seg button{background:#eef1f6;color:#475569;border-radius:10px;}
+body.waui .wp-pill{background:#eef1f6;color:#475569;} body.waui .wp-pill.ok{background:#e7f9ee;color:var(--gd);} body.waui .wp-pill.warn{background:#fff6d6;color:#8a6a00;} body.waui .wp-pill.bad{background:#fde8e8;color:#c2262b;}
+body.waui .wp-pill.b{background:#e8f0ff;color:#2563eb;} body.waui .wp-pill.o{background:#fff0e0;color:#b45309;} body.waui .wp-pill.p{background:#f0ebff;color:#5b3fd6;}
+body.waui .wp-kpi{background:#fff;border:1px solid var(--line);border-radius:16px;padding:12px 16px;box-shadow:0 1px 2px rgba(15,23,42,.04);}
+body.waui .wp-kpi small{color:var(--mut);} body.waui .wp-kpi b{font-size:24px;letter-spacing:-.6px;}
+body.waui .wp-bar{background:#eef1f6;} body.waui .wp-bar i{background:linear-gradient(90deg,#22c55e,#16a34a);}
+body.waui .wp-note{background:#fff8e6;border:1px solid #fde8a8;color:#7a5200;border-radius:14px;}
+body.waui .wp-ok{background:#e7f9ee;color:var(--gd);} body.waui .wp-err{background:#fde8e8;}
+body.waui .wp-tb th{color:#94a3b8;letter-spacing:.06em;} body.waui .wp-tb td{border-bottom:1px solid #f0f3f7;}
+body.waui .wp-mb{border-radius:22px 22px 0 0;} body.waui .wp-bub{background:#d9fdd3;}
+body.waui .wp-li,body.waui .wp-lib .wp-li{border-radius:16px;border-color:var(--line);}
+body.waui .wp-av{background:linear-gradient(135deg,#25d366,#128c7e);color:#fff;}
+body.waui .wp-toast{background:var(--ink);}
+
+/* contacts: one row per customer, as a table-like list */
+body.waui .wp-cd.kc{padding:12px 16px;margin-bottom:8px;border-radius:16px;box-shadow:none;}
+body.waui .kc:hover{border-color:#c6efd5;}
+
+/* import dialog */
+body.waui .drop{border:2px dashed #b7e4c7;background:#f3fcf6;border-radius:16px;padding:18px;text-align:center;color:var(--gd);font-weight:700;cursor:pointer;}
+body.waui .drop small{display:block;color:var(--mut);font-weight:600;margin-top:4px;}
+body.waui .drop.over{background:#e7f9ee;border-color:#16a34a;}
+body.waui .stp{display:flex;align-items:center;gap:8px;margin-bottom:14px;}
+body.waui .stp .d{width:26px;height:26px;border-radius:50%;background:#e2e8f0;color:#475569;display:grid;place-items:center;font-weight:800;font-size:12px;flex:none;}
+body.waui .stp .d.on{background:var(--g);color:#fff;} body.waui .stp .l{font-weight:700;font-size:12.5px;white-space:nowrap;} body.waui .stp hr{flex:1;border:0;border-top:2px solid #e2e8f0;margin:0;}
+body.waui .cmap{display:grid;grid-template-columns:1fr 24px 1fr;gap:8px;align-items:center;font-size:13px;margin:6px 0 10px;}
+body.waui .cmap .a{background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:7px 10px;font-weight:600;word-break:break-all;}
+
+/* quick replies, pre-made, campaigns extras */
+body.waui .qr{display:flex;align-items:center;gap:12px;padding:12px 0;border-top:1px solid #f0f3f7;}
+body.waui .qr:first-of-type{border-top:0;}
+body.waui .qr .t{flex:1;min-width:0;} body.waui .qr .t b{display:block;font-size:14px;} body.waui .qr .t span{display:block;color:var(--mut);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+body.waui .qr .tg{background:#fff0e0;color:#b45309;border-radius:99px;font-weight:800;font-size:12px;padding:4px 12px;white-space:nowrap;}
+body.waui .cfun{display:flex;flex-direction:column;gap:8px;margin-top:6px;}
+body.waui .cfun div{display:flex;align-items:center;gap:10px;font-size:12.5px;font-weight:700;} body.waui .cfun span{width:74px;flex:none;} body.waui .cfun i{display:block;height:20px;border-radius:7px;background:linear-gradient(90deg,#22c55e,#16a34a);min-width:3px;} body.waui .cfun em{font-style:normal;color:var(--mut);font-weight:700;}
+body.waui .ck{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:14px;}
+body.waui .ck .wp-kpi{padding:14px 16px;} body.waui .ck .wp-kpi b{font-size:28px;}
+
+/* ============================================================ phone */
+body.waui .tabs,body.waui .more{display:none;}
+@media (max-width:1180px){
+  body.waui .ov-g{grid-template-columns:1fr 1fr;} body.waui .ov-g .card:first-child{grid-column:1 / -1;}
+  body.waui .wi-box,body.waui .wi.mine .wi-box{grid-template-columns:400px minmax(0,1fr);}
+}
+@media (max-width:860px){
+  body.waui .rail{display:none;}
+  body.waui .top{height:52px;padding:0 14px;} body.waui .top h1{font-size:17px;} body.waui .top .tsub,body.waui .top .live{display:none;} body.waui .top .hb{display:inline-block;} body.waui .top h1{flex:1;}
+  body.waui .sec.pad{padding:4px 14px calc(86px + env(safe-area-inset-bottom));}
+  body.waui .sec.fill{padding:0 8px calc(64px + env(safe-area-inset-bottom));}
+  body.waui .sec.frame{padding-bottom:calc(58px + env(safe-area-inset-bottom));}
+  body.waui .ov-k{grid-template-columns:1fr 1fr;gap:10px;} body.waui .ov-k .k{padding:13px 14px;} body.waui .ov-k .n{font-size:28px;}
+  body.waui .ov-g,body.waui .ov-g2{grid-template-columns:1fr;} body.waui .card{padding:14px;}
+  body.waui .top .wait{display:none;} body.waui .top h1{white-space:nowrap;}
+  body.waui .q .chip:not(:last-of-type){display:none;} body.waui .num{flex-wrap:wrap;}
+  body.waui .ck{grid-template-columns:repeat(2,minmax(0,1fr));}
+  body.waui .tabs{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:60;background:#fff;border-top:1px solid var(--line);padding:6px 0 calc(8px + env(safe-area-inset-bottom));}
+  body.waui .tb{flex:1;border:0;background:none;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;font-weight:700;color:#94a3b8;padding:4px 0;min-height:48px;position:relative;cursor:pointer;}
+  body.waui .tb.on{color:var(--g);} body.waui .tb svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;}
+  body.waui .tb .bd{position:absolute;top:0;left:calc(50% + 6px);background:var(--rd);color:#fff;border-radius:9px;font-size:11px;font-weight:800;padding:0 6px;min-width:17px;text-align:center;}
+  body.waui .sec.fill .wi.open .wi-box{z-index:70;}
+  body.waui .more{position:fixed;inset:0;z-index:80;background:#0008;} body.waui .more.open{display:block;}
+  body.waui .more .sh{position:absolute;left:0;right:0;bottom:0;background:var(--bg);border-radius:22px 22px 0 0;padding:14px 14px calc(20px + env(safe-area-inset-bottom));max-height:86vh;overflow-y:auto;}
+  body.waui .more h4{margin:2px 4px 10px;font-size:15px;}
+  body.waui .gr{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;}
+  body.waui .gi{background:#fff;border:1px solid var(--line);border-radius:16px;padding:14px 4px 12px;text-align:center;font-size:11.5px;font-weight:700;cursor:pointer;position:relative;min-height:86px;}
+  body.waui .gi svg{display:block;margin:0 auto 6px;width:24px;height:24px;stroke:var(--gd);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}
+  body.waui .gi i{display:block;font-style:normal;font-size:11px;color:#9aa8a1;font-weight:700;margin-top:2px;}
+  body.waui .more .bk{display:block;margin-top:12px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px;font-weight:800;color:var(--gd);text-align:center;text-decoration:none;min-height:48px;}
+  body.waui input,body.waui textarea,body.waui select{font-size:16px;}
+  body.waui .wi-box,body.waui .wi.mine .wi-box{grid-template-columns:1fr;gap:0;}
+  body.waui .wi.open .wi-box{border-radius:0;}
+  body.waui .wi-col{border-radius:16px;}
+  body.waui .wi.open .wi-col{border-radius:0;border:0;}
+  body.waui .wi-kpi{gap:6px;margin-bottom:8px;} body.waui .wi-kpi div{padding:6px 10px;border-radius:12px;}
+}
+
+
+/* the side panel chat (openChat from a list that is not Chats) */
+#waSide{position:fixed; top:0; right:0; bottom:0; width:min(560px, 50vw); background:#fff; z-index:900; display:flex; flex-direction:column; box-shadow:-14px 0 40px rgba(15,23,42,.18); border-left:1px solid #e4e7ec; animation:wsdIn .18s ease-out;}
+@keyframes wsdIn{from{transform:translateX(30px); opacity:0;} to{transform:none; opacity:1;}}
+#waSide .wsd-h{display:flex; align-items:center; gap:10px; padding:8px 12px; border-bottom:1px solid #eef0f3;} #waSide .wsd-h b{flex:1; font-size:14px;}
+#waSide .wsd-x{border:0; background:#f1f3f6; width:34px; height:34px; border-radius:50%; font-size:15px; cursor:pointer;} #waSide .wsd-f{border:1px solid #e4e7ec; background:#fff; border-radius:999px; padding:6px 12px; font-size:12.5px; font-weight:700; cursor:pointer;}
+#waSide iframe{flex:1; border:0; width:100%;}
+@media (min-width:861px){ body.side-on #body > .sec{right:min(560px, 50vw);} }
+@media (max-width:860px){ #waSide{width:100%; border-left:0; box-shadow:none;} }
+.wp-toast{z-index:1000 !important;} body.side-on .wp-toast{left:calc((100vw - min(560px, 50vw)) / 2) !important;}
+.wsd-on{outline:2px solid #22c55e; outline-offset:-2px; border-radius:12px;}
+
+/* the tabs of a grouped menu item (Waiting → Not taken · Late replies · Signals & bot …) */
+.gtabs{display:flex; gap:6px; padding:0 22px 8px; overflow-x:auto; scrollbar-width:none; flex:none;} .gtabs::-webkit-scrollbar{display:none;}
+.gtabs button{border:1px solid var(--line,#e4e7ec); background:#fff; color:#3b4a54; border-radius:999px; padding:6px 14px; font-size:13px; font-weight:700; white-space:nowrap; cursor:pointer; min-height:0;}
+.gtabs button.on{background:#111b21; border-color:#111b21; color:#fff;}
+@media (max-width:860px){ .gtabs{padding:6px 10px; background:#fff; border-bottom:1px solid #eef0f3;} .gtabs button{padding:5px 12px; font-size:12.5px;} }
+</style>
+<style>
+  *{box-sizing:border-box;} html,body{height:100%; margin:0;} [hidden]{display:none !important;} body{overflow:hidden; -webkit-font-smoothing:antialiased;}
+</style>
+<style id="wa-compact">
+/* ===== WhatsApp compact (v2): full screen, thin menu, tight spacing, chat like real WhatsApp ===== */
+body.waui{font-size:13.5px;}
+body.waui .top{height:46px;padding:0 12px;gap:10px;background:#fff;border-bottom:1px solid var(--line);}
+body.waui .top h1{font-size:16px;}
+body.waui .top .hb{display:inline-flex;align-items:center;padding:5px 12px;font-size:12.5px;order:-1;white-space:nowrap;}
+body.waui .top .live{padding:3px 9px;font-size:11.5px;} body.waui .top .wait{padding:5px 11px;font-size:12px;}
+body.waui .sec.pad{padding:8px 12px 18px;} body.waui .sec.fill{padding:0 8px 8px;}
+body.waui .card{padding:12px 14px;border-radius:14px;box-shadow:none;} body.waui .card h3{margin-bottom:8px;font-size:14px;}
+body.waui .wp-cd{padding:12px 14px;border-radius:14px;margin-bottom:10px;box-shadow:none;}
+body.waui .wp-top{margin-bottom:8px;} body.waui .wp-top h2{font-size:16px;}
+body.waui .wp-btn{min-height:32px;padding:5px 12px;font-size:12.5px;}
+body.waui .wp-kpi{padding:8px 12px;border-radius:12px;box-shadow:none;} body.waui .wp-kpi b{font-size:19px;}
+body.waui .ck{gap:8px;margin-bottom:8px;} body.waui .ck .wp-kpi{padding:8px 12px;} body.waui .ck .wp-kpi b{font-size:20px;}
+body.waui .ov-k{gap:8px;margin-bottom:8px;} body.waui .ov-k .k{padding:10px 12px;} body.waui .ov-k .n{font-size:24px;margin-top:2px;} body.waui .ov-k .k small{font-size:12px;}
+body.waui .ov-g,body.waui .ov-g2{gap:8px;margin-bottom:8px;}
+body.waui .q{padding:7px 0;gap:10px;} body.waui .av2{width:32px;height:32px;font-size:12px;}
+body.waui .num{padding:9px;margin-bottom:6px;} body.waui .alert{padding:7px 10px;margin-bottom:6px;font-size:12.5px;}
+body.waui .qr{padding:8px 0;} body.waui .wp-cd.kc{padding:8px 12px;margin-bottom:6px;}
+/* chats: stats as one slim line */
+body.waui .wi-kpi{display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap;}
+body.waui .wi-kpi div{flex:none;display:flex;align-items:baseline;gap:6px;padding:3px 11px;border-radius:99px;min-width:0;box-shadow:none;}
+body.waui .wi-kpi small{display:inline;font-size:11px;letter-spacing:0;text-transform:none;font-weight:700;} body.waui .wi-kpi b{font-size:13px;letter-spacing:0;}
+body.waui .wi-tabs{margin:8px 8px 6px;} body.waui .wi-tab{padding:5px 4px;font-size:12px;} body.waui .wi-tabs.wi-feeds{padding:0 8px 4px;margin:0;}
+body.waui .wi-find{padding:0 8px 6px;} body.waui .wi-find input,body.waui .wi-find select{padding:6px 10px;font-size:13px;border-radius:10px;}
+body.waui .wi-it{padding:8px 12px;} body.waui .wi-it .m{margin:1px 0 3px;}
+body.waui .wi-head{padding:7px 12px;gap:6px;} body.waui .wi-head b{font-size:14.5px;}
+body.waui .wi-msgs{padding:10px 14px;gap:5px;} body.waui .wi-b{padding:6px 10px 4px;font-size:13.5px;}
+body.waui .wi-ub{padding:4px 10px;gap:6px;} body.waui .wi-ub .u{min-height:30px;padding:4px 12px;font-size:12px;line-height:1.2;}
+body.waui .wi-sug{padding:6px 10px;margin:4px 10px;font-size:12.5px;}
+body.waui .wi-comp{padding:8px 10px;gap:6px;align-items:center;} body.waui .wi-comp textarea{min-height:38px;padding:8px 14px;border-radius:99px;}
+body.waui .wi-comp .wi-btn{min-height:36px;padding:5px 11px;border-radius:99px;}
+body.waui .wi-quick{padding:5px 10px;max-height:64px;}
+body.waui .wg-cb{margin:0 0 8px;} body.waui .wg-cb .wg-bar{padding:5px 10px;border-radius:12px;font-size:12.5px;}
+@media (min-width:861px){
+  /* the menu is a thin icon strip; the » button opens the labelled one */
+  body.waui .rail{width:56px;padding:8px 6px 54px;align-items:center;gap:2px;overflow-x:hidden;}
+  body.waui .brand{font-size:0;padding:0 0 6px;justify-content:center;gap:0;} body.waui .brand b{width:34px;height:34px;}
+  body.waui .rail .back{display:none;}
+  body.waui .grp{font-size:0;height:1px;padding:0;margin:6px 0;background:var(--line);width:28px;}
+  body.waui .it{width:40px;height:40px;min-height:40px;padding:0;justify-content:center;font-size:0;position:relative;gap:0;border-radius:12px;flex:none;}
+  body.waui .it svg{width:20px;height:20px;}
+  body.waui .it .bd{position:absolute;top:1px;right:0;margin:0;font-size:11px;padding:0 5px;min-width:16px;line-height:15px;text-align:center;}
+  body.waui .rxb{border:0;background:#f1f5f9;border-radius:10px;width:40px;height:32px;cursor:pointer;color:#475569;font-weight:800;margin-top:6px;flex:none;}
+  body.waui.rx .rail{width:220px;align-items:stretch;padding:10px 10px 54px;}
+  body.waui.rx .brand{font-size:16px;justify-content:flex-start;padding:4px 8px 6px;gap:10px;}
+  body.waui.rx .rail .back{display:flex;}
+  body.waui.rx .grp{font-size:11px;height:auto;padding:10px 10px 3px;margin:0;background:none;width:auto;}
+  body.waui.rx .it{width:100%;height:auto;min-height:36px;padding:7px 10px;justify-content:flex-start;font-size:13px;gap:10px;}
+  body.waui.rx .it .bd{position:static;margin-left:auto;}
+  body.waui.rx .rxb{width:100%;}
+  /* chats: list + conversation; the customer details open from the (i) button as a side sheet */
+  body.waui .wi-box,body.waui .wi.mine .wi-box{grid-template-columns:clamp(360px,31vw,460px) minmax(0,1fr);gap:8px;}   /* a wider list: names, the person picker and Filter fit without cutting */
+  body.waui .wi-col{border-radius:14px;box-shadow:none;}
+  body.waui .wi-col.side{display:none;}
+  body.waui .wi.det .wi-col.side{display:flex;flex-direction:column;position:fixed;top:0;right:0;bottom:0;left:auto;width:340px;max-width:92vw;z-index:50;background:#fff;border-radius:16px 0 0 16px;box-shadow:-12px 0 40px rgba(15,23,42,.18);overflow-y:auto;}
+  body.waui .wi-more{display:inline-flex;align-items:center;gap:4px;padding:4px 11px;}
+  /* the floating Claude button becomes a small round icon in the corner of the menu */
+  body.waui #b2Chip{left:11px !important;right:auto !important;bottom:10px !important;top:auto !important;}
+  body.waui #b2Fab{width:34px;height:34px;padding:0;font-size:0;border-radius:50%;justify-content:center;}
+}
+@media (max-width:860px){ body.waui #b2Chip{right:10px !important;left:auto !important;bottom:calc(70px + env(safe-area-inset-bottom)) !important;top:auto !important;} body.waui #b2Fab{width:34px;height:34px;padding:0;font-size:0;border-radius:50%;justify-content:center;} }
+
+/* ===== WhatsApp look ===== */
+body.waui{--wa-g:#008069;--wa-a:#00a884;--wa-out:#d9fdd3;--wa-bg:#efeae2;--wa-pn:#f0f2f5;--wa-tx:#111b21;--wa-mt:#667781;}
+body.waui .wi-av{width:44px;height:44px;border-radius:50%;display:inline-grid;place-items:center;color:#fff;font-weight:700;font-size:15px;flex:none;background:#6b7c93;}
+body.waui .wi-av.c0{background:#2f9e8f;} body.waui .wi-av.c1{background:#5b7bd5;} body.waui .wi-av.c2{background:#c2569b;} body.waui .wi-av.c3{background:#e08a2d;} body.waui .wi-av.c4{background:#7c5cc4;} body.waui .wi-av.c5{background:#4a9ad4;}
+body.waui .wi-it{display:flex;gap:12px;align-items:center;padding:9px 14px;border-left:0;border-bottom:1px solid #f0f2f5;}
+body.waui .wi-it.sel,body.waui .wi-it:hover{background:var(--wa-pn);}
+body.waui .wi-bd{flex:1;min-width:0;}
+body.waui .wi-it .n{font-size:15.5px;font-weight:500;color:var(--wa-tx);} body.waui .wi-it .n .t{font-size:12px;color:var(--wa-mt);font-weight:400;}
+body.waui .wi-it.unr .n .t{color:var(--wa-a);font-weight:600;} body.waui .wi-it.wait .n .t{color:#d33;}
+body.waui .wi-it .m2{display:flex;align-items:center;gap:8px;margin-top:1px;} body.waui .wi-it .m2 .m{flex:1;min-width:0;margin:0;font-size:13.5px;color:var(--wa-mt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+body.waui .wi-un{background:var(--wa-a);}
+body.waui .wi-it .pl{white-space:nowrap;overflow:hidden;margin-top:2px;max-height:20px;} body.waui .wi-it .pl .wi-p{font-size:11px;padding:1px 7px;margin:0 3px 0 0;}
+/* one scrollable strip of filters instead of three wrapped rows */
+body.waui .wi-tabs,body.waui .wi-tabs.wi-feeds{display:flex;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;gap:6px;background:none;border-radius:0;padding:0 10px;margin:8px 0 4px;}
+body.waui .wi-tabs::-webkit-scrollbar{display:none;}
+body.waui .wi-tab{flex:none;background:var(--wa-pn);border-radius:99px;padding:5px 12px;color:var(--wa-mt);font-weight:600;white-space:nowrap;box-shadow:none;}
+body.waui .wi-tab.on{background:#d9fdd3;color:#0a5c36;box-shadow:none;}
+body.waui .wi-tab i{background:none;padding:0;margin-left:5px;font-size:11.5px;} body.waui .wi-tab.on i{background:none;color:#0a5c36;}
+body.waui .wi-chip{flex:none;white-space:nowrap;border:0;background:var(--wa-pn);color:var(--wa-mt);} body.waui .wi-chip.on{background:#d9fdd3;color:#0a5c36;border:0;}
+body.waui .wi-find{display:flex;gap:6px;padding:2px 10px 8px;} body.waui .wi-find input{background:var(--wa-pn);border:0;border-radius:10px;padding:8px 12px;} body.waui .wi-find select{background:var(--wa-pn);border:0;border-radius:10px;flex:none;width:112px;}
+/* the conversation: wallpaper, light grey bars, green and white bubbles */
+body.waui .wi-chat,body.waui .wi-col.chat{background-color:var(--wa-bg);background-image:radial-gradient(rgba(11,20,26,.045) 1px,transparent 1.4px);background-size:22px 22px;}
+body.waui .wi-head{background:var(--wa-pn);border-bottom:0;gap:10px;align-items:center;}
+body.waui .wi-head .wi-av{width:38px;height:38px;font-size:13px;} body.waui .wi-head b{font-weight:600;color:var(--wa-tx);}
+body.waui .wi-b{border-radius:8px;background:#fff;box-shadow:0 1px .5px rgba(11,20,26,.13);color:var(--wa-tx);} body.waui .wi-b.out{background:var(--wa-out);border-radius:8px;}
+body.waui .wi-day{background:#fff;color:var(--wa-mt);box-shadow:0 1px .5px rgba(11,20,26,.1);} body.waui .wi-ev{background:rgba(255,255,255,.85);color:var(--wa-mt);}
+body.waui .wi-ub{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding:6px 10px 0;background:transparent;} body.waui .wi-ub::-webkit-scrollbar{display:none;}
+body.waui .wi-ub .u{flex:none;min-height:30px;padding:4px 13px;border-radius:99px;font-size:12px;box-shadow:0 1px 2px rgba(0,0,0,.15);}
+body.waui .wi-sug{margin:0 8px 6px;padding:6px 10px;border-radius:12px;background:#fff;border:1px solid #d9fdd3;}
+body.waui .wi-comp{background:var(--wa-pn);border-top:0;padding:8px 10px;gap:6px;}
+body.waui .wi-comp textarea{background:#fff;border:0;border-radius:22px;min-height:40px;padding:9px 16px;}
+body.waui .wi-comp #wiAt,body.waui .wi-comp #wiQb,body.waui .wi-comp #wiTb{background:none;border:0;box-shadow:none;width:36px;min-height:36px;padding:0;font-size:19px;color:var(--wa-mt);}
+body.waui .wi-comp #wiSend{width:42px;height:42px;min-height:42px;padding:0;border-radius:50%;font-size:0;background:var(--wa-a);border:0;box-shadow:none;flex:none;position:relative;}
+body.waui .wi-comp #wiSend:before{content:"\27A4";font-size:18px;color:#fff;position:absolute;inset:0;display:grid;place-items:center;}
+body.waui .wi-quick{background:var(--wa-pn);border-top:0;}
+@media (max-width:860px){
+  body.waui .top{background:var(--wa-g);border-bottom:0;color:#fff;} body.waui .top h1{color:#fff;font-weight:600;}
+  body.waui .top .hb{background:rgba(255,255,255,.16);border:0;color:#fff;font-weight:600;}
+  body.waui .top .wait{background:rgba(255,255,255,.2);color:#fff;}
+  body.waui .wi-kpi{display:none;}
+  body.waui .sec.fill{padding:0 0 calc(58px + env(safe-area-inset-bottom));}
+  body.waui .wi-box,body.waui .wi.mine .wi-box{gap:0;}
+  body.waui .wi-col{border-radius:0;border:0;}
+  body.waui .tabs{border-top:1px solid #e9edef;} body.waui .tb{color:var(--wa-mt);} body.waui .tb.on{color:var(--wa-tx);}
+  body.waui .tb.on svg{stroke:var(--wa-g);}
+  body.waui .wi.open .wi-head{background:var(--wa-g);color:#fff;} body.waui .wi.open .wi-head b{color:#fff;}
+  body.waui .wi.open .wi-head .wi-back,body.waui .wi.open .wi-head .wi-more,body.waui .wi.open .wi-head #wiCl,body.waui .wi.open .wi-head #wiRe{background:rgba(255,255,255,.16);color:#fff;border:0;}
+  body.waui .wi-comp #wiAt,body.waui .wi-comp #wiQb,body.waui .wi-comp #wiTb{width:32px;}
+}
+
+/* ===== phone: real-WhatsApp sizes (compact) ===== */
+@media (max-width:860px){
+  body.waui{font-size:13px;}
+  body.waui .top{height:46px;padding:0 10px;gap:8px;} body.waui .top h1{font-size:18px;}
+  body.waui .top .hb{padding:4px 10px;font-size:12px;min-height:0;}
+  body.waui .wi-tabs,body.waui .wi-tabs.wi-feeds{gap:5px;padding:0 8px;margin:6px 0 2px;}
+  body.waui .wi-tab,body.waui .wi-chip{padding:3px 10px;font-size:12px;min-height:0;line-height:20px;}
+  body.waui .wi-find{padding:2px 8px 6px;gap:5px;}
+  body.waui .wi-find input{padding:0 12px;height:34px;min-height:0;font-size:15px;border-radius:18px;}
+  body.waui .wi-find select{height:34px;min-height:0;width:92px;font-size:13px;padding:0 6px;border-radius:18px;}
+  body.waui .wi-it{padding:6px 12px;gap:11px;}
+  body.waui .wi-av{width:40px;height:40px;font-size:14px;}
+  body.waui .wi-it .n{font-size:15px;line-height:1.25;} body.waui .wi-it .n .t{font-size:11px;}
+  body.waui .wi-it .m2 .m{font-size:13px;line-height:1.3;margin:0;}
+  body.waui .wi-un{min-width:18px;height:18px;font-size:11px;padding:0 5px;}
+  body.waui .wi-it .pl{max-height:16px;margin-top:1px;} body.waui .wi-it .pl .wi-p{font-size:11px;padding:0 6px;line-height:15px;}
+  body.waui .wi-it .pl .wi-p:nth-child(n+3){display:none;}
+  body.waui .tabs{padding:3px 0 calc(4px + env(safe-area-inset-bottom));} body.waui .tb{min-height:40px;font-size:11px;gap:1px;padding:2px 0;} body.waui .tb svg{width:20px;height:20px;}
+  body.waui .sec.fill{padding-bottom:calc(46px + env(safe-area-inset-bottom));} body.waui .sec.pad{padding:6px 10px calc(60px + env(safe-area-inset-bottom));}
+  /* conversation */
+  body.waui .wi-head{padding:5px 8px;gap:8px;flex-wrap:nowrap;min-height:48px;}
+  body.waui .wi-head .wi-av{width:32px;height:32px;font-size:12px;} body.waui .wi-head b{font-size:15.5px;}
+  body.waui .wi-head .wi-back,body.waui .wi-head .wi-more,body.waui .wi-head #wiCl,body.waui .wi-head #wiRe{min-height:30px;height:30px;padding:0 11px;font-size:13px;border-radius:15px;}
+  body.waui .wi-head .wi-back,body.waui .wi-head .wi-more{padding:0 9px;font-size:16px;}
+  body.waui .wi-head{flex-wrap:wrap;row-gap:6px;} body.waui .wi-head b{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  body.waui .wi .wi-head .wi-pc{display:none !important;} body.waui .wi .wi-head .wi-ph{display:inline-flex;}
+  body.waui .wi-head .wi-ib,body.waui .wi-head #wiCl.wi-ib,body.waui .wi-head #wiRe.wi-ib,body.waui .wi-head .wi-more.wi-ib{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;height:auto;min-height:40px;min-width:44px;padding:2px 7px;font-size:15px;line-height:1.05;border-radius:12px;}
+  body.waui .wi-head .wi-ib .lb{display:block;font-size:11px;font-weight:700;margin-top:1px;}
+  body.waui .wi-head .wi-asg{order:10;flex-basis:100%;max-width:none;min-height:32px;} body.waui .wi-head #wiCxB{order:11;}
+  body.waui .wi.open .wi-head #wiPrc{background:rgba(255,255,255,.16);color:#fff;border:0;} body.waui .wi.open .wi-head .wi-asg{background:rgba(255,255,255,.92);border:0;}
+  body.waui .wi-msgs{padding:6px 8px;gap:3px;} body.waui .wi-b{padding:4px 8px 3px;font-size:14px;line-height:1.3;max-width:82%;} body.waui .wi-b small{font-size:11px;margin-top:1px;}
+  body.waui .wi-day{font-size:11px;padding:2px 10px;margin:3px 0;} body.waui .wi-ev{font-size:11px;padding:2px 10px;margin:1px 0;}
+  body.waui .wi-hot{padding:4px 10px;font-size:12px;}
+  body.waui .wi-ub{padding:4px 8px 0;gap:5px;} body.waui .wi-ub .u{min-height:26px;padding:2px 11px;font-size:11.5px;}
+  body.waui .wi-sug{margin:4px 8px;padding:4px 8px;} body.waui .wi-sug .lb{display:none;} body.waui .wi-sug .wi-btn{min-height:28px;padding:3px 12px;font-size:12px;}
+  body.waui .wi-comp{padding:5px 6px;gap:3px;}
+  body.waui .wi-comp textarea{min-height:36px;padding:7px 14px;font-size:16px;line-height:1.25;}
+  body.waui .wi-comp #wiAt,body.waui .wi-comp #wiQb,body.waui .wi-comp #wiTb{width:30px;min-height:34px;font-size:17px;}
+  body.waui .wi-comp #wiSend{width:38px;height:38px;min-height:38px;}
+  body.waui .wi-comp{flex-wrap:wrap;row-gap:5px;} body.waui .wi-comp textarea{order:20;flex:1 1 calc(100% - 52px);min-width:0;} body.waui .wi-comp #wiSend{order:21;}
+  body.waui .wi .wi-comp #wiAt,body.waui .wi .wi-comp #wiQb,body.waui .wi .wi-comp #wiTb,body.waui .wi .wi-comp #wiPf,body.waui .wi .wi-comp #wiOr,body.waui .wi .wi-comp #wiLs{width:auto;flex:1 1 15%;min-height:40px;font-size:16px;background:#fff;color:#3b4a54;border:0;border-radius:12px;box-shadow:0 1px .5px rgba(11,20,26,.13);padding:2px 0;}
+  /* the other screens */
+  body.waui .card,body.waui .wp-cd{padding:10px 12px;border-radius:12px;margin-bottom:8px;} body.waui .card h3{font-size:13.5px;margin-bottom:6px;}
+  body.waui .ov-k{gap:6px;margin-bottom:6px;} body.waui .ov-k .k{padding:8px 10px;} body.waui .ov-k .n{font-size:21px;} body.waui .ov-k .k small{font-size:11.5px;}
+  body.waui .wp-top h2{font-size:15px;} body.waui .wp-btn{min-height:30px;padding:4px 11px;font-size:12px;}
+  body.waui .wg-cb .wg-bar{padding:4px 8px;font-size:12px;} body.waui .wg-cb .wp-btn{min-height:28px;padding:0 10px;}
+  body.waui .gi{min-height:70px;padding:10px 4px 8px;font-size:11px;}
+}
+
+@media (max-width:860px){
+  /* beats the 44px tap sizes of the old sheets: lists stay roomy to tap, but not huge */
+  body.waui.waui .wp-btn,body.waui.waui .wp-btn.s,body.waui.waui .wp-chip,body.waui.waui .lk{min-height:32px;padding:3px 11px;}
+  body.waui.waui .wp-in,body.waui.waui select.wp-in,body.waui.waui .wp-cd select,body.waui.waui .wp-cd input:not([type=checkbox]){min-height:36px;font-size:15px;}
+  body.waui.waui .wg-it{padding:7px 0;font-size:12.5px;line-height:1.35;gap:8px;} body.waui.waui .wg-ch2{padding:7px 2px;}
+  body.waui.waui .wg-cb .box{padding:2px 10px 8px;margin-top:6px;}
+  body.waui.waui .wg-it .wp-btn{align-self:center;flex:none;}
+}
+
+/* ---- compact pass: admin pages on a computer (the page title is already in the top bar) ---- */
+@media (min-width:861px){
+  body.waui.waui .wp-top h2{display:none;} body.waui.waui .wp-top{margin:0 0 6px;gap:6px;align-items:center;} body.waui.waui .wp-top p{margin:0;font-size:12px;color:#667781;line-height:1.3;}
+  body.waui.waui .wp-cd{padding:8px 14px 10px;margin-bottom:8px;border-radius:12px;} body.waui.waui .wp-cd h3{margin:0 0 4px;font-size:14px;}
+  body.waui.waui .wg-ch2{align-items:center;padding:4px 4px;gap:8px;} body.waui.waui .wg-ch2 .t{display:flex;align-items:center;gap:8px;overflow:hidden;line-height:1.25;} body.waui.waui .wg-ch2 .t b{flex:none;font-size:13.5px;} body.waui.waui .wg-ch2 .t .wp-pill{flex:none;} body.waui.waui .wg-ch2 .t div{flex:1 1 auto;min-width:0;} body.waui.waui .wg-ch2 .t .wg-mini{flex:none;font-size:12px;}
+  body.waui.waui .wg-ch2 select{min-height:30px;height:30px;font-size:13px;padding:0 8px;width:150px;border-radius:8px;} body.waui.waui .wg-ch2 .wp-btn.s{min-height:30px;padding:0 12px;font-size:12.5px;}
+  body.waui.waui .wp-tb th,body.waui.waui .wp-tb td{padding:6px 8px;} body.waui.waui .wp-btn{min-height:32px;} body.waui.waui .wp-btn.s{min-height:28px;}
+  body.waui.waui .wp-row{gap:8px;} body.waui.waui .qr{padding:6px 0;}
+}
+</style>
+<style>
+/* 🌙 dark mode for the PC WhatsApp section: the whole page is turned dark in one go (works for every panel, also the ones other files draw);
+   photos, videos and emoji-free pictures are turned back so they keep their real colours */
+html.wapcdk{filter:invert(.92) hue-rotate(180deg);background:#111;}
+html.wapcdk img,html.wapcdk video,html.wapcdk canvas,html.wapcdk iframe,html.wapcdk [style*="background-image"],html.wapcdk .wi-av img{filter:invert(1) hue-rotate(180deg);}
+body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;width:36px;height:34px;cursor:pointer;font-size:16px;line-height:1;flex:none;margin-left:6px;}
+</style>
+<script>try { if (localStorage.getItem('wa_pc_dark') === '1') document.documentElement.classList.add('wapcdk'); } catch (e) { }</script>
+</head>
+<body class="waui">
+<div class="wc">
+  <aside class="rail" id="rail"></aside>
+  <div class="main">
+    <header class="top"><a class="hb" href="dashboard.html" target="_top" aria-label="Back to HRMS">‹ HRMS</a><h1 id="ttl">WhatsApp</h1><span class="tsub" id="tsub"></span><span class="sp"></span><span id="cbSlot"></span><span class="live" id="liveChip"><span class="pulse"></span>Live</span><button type="button" class="wait" id="waitPill" hidden></button><button type="button" class="dkb" id="dkBtn" title="Dark mode" aria-label="Dark mode">🌙</button></header>
+    <nav class="gtabs" id="gtabs" hidden></nav>
+    <div class="body" id="body"></div>
+  </div>
+</div>
+<nav class="tabs" id="tabs"></nav>
+<div class="more" id="more"><div class="sh"><h4>WhatsApp</h4><div class="gr" id="gr"></div><a class="bk" href="dashboard.html" target="_top">← Back to HRMS</a></div></div>
+
+<script src="assets/js/config.js"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/wa_icons.js?v=i1"></script>
+<script src="assets/js/cx_raise.js?v=cx9"></script>
+<script src="assets/js/wa_inbox.js?v=wa42"></script>
+<script src="assets/js/wa_panels.js?v=wa24"></script>
+<script src="assets/js/wa_cust_ui.js?v=k3"></script>
+<script src="assets/js/wa_kflow_ui.js?v=kf1"></script>
+<script src="assets/js/wa_bill_ui.js?v=b1"></script>
+<script src="assets/js/wa_ord_ui.js?v=6"></script>
+<script src="assets/js/wa_cx_ui.js?v=3"></script>
+<script src="assets/js/wa_lists_ui.js?v=l10"></script>
+<script src="assets/js/wa_camp_rep_ui.js?v=r2"></script>
+<script src="assets/js/wa_growth.js?v=g7"></script>
+<script src="assets/js/wa_prod_ui.js?v=pr4"></script>
+<script src="assets/js/wa_tpl_ui.js?v=t7"></script>
+<script src="assets/js/wa_camp_ui.js?v=c28"></script>
+<script src="assets/js/wa_seg_ui.js?v=1"></script>
+<script src="assets/js/wa_smart_ui.js?v=s4"></script>
+<script>
+  /* Upload check: if wa_panels.js is an older copy, say so on the page instead of showing broken screens. */
+  (function () {
+    if (window.WaPanels && WaPanels.ver === 'wa2') return;
+    var b = document.createElement('div');
+    b.style.cssText = 'position:fixed;left:50%;top:10px;transform:translateX(-50%);z-index:99999;background:#fff3dc;color:#7a4b00;border:1px solid #f0c36d;border-radius:12px;padding:10px 14px;font:600 13px Inter,system-ui,sans-serif;max-width:92vw;box-shadow:0 6px 20px rgba(0,0,0,.15)';
+    b.textContent = 'The old assets/js/wa_panels.js is still on the server. Upload the new wa_panels.js to public_html/assets/js/ and press Ctrl+F5.';
+    document.body.appendChild(b);
+  })();
+</script>
+<script>
+  if (typeof guardPage === 'function') guardPage(); else if (!api.token()) location.replace('index.html');
+
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const P = {
+    key: '<circle cx="7.5" cy="15.5" r="4.5"/><path d="M10.7 12.3L20 3M16 7l3 3M14 9l2 2"/>',
+    bell: '<path d="M6 17V11a6 6 0 1112 0v6l1.5 2h-15L6 17z"/><path d="M10 21h4"/>', clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>', wand: '<path d="M5 19L17 7"/><path d="M15 5l4 4"/><path d="M5 5v3M3.5 6.5h3M19 15v3M17.5 16.5h3"/>', dtick: '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/>',
+    bulb: '<path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 00-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0012 3z"/>', film: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M10 9.5v5l4.5-2.5-4.5-2.5z"/>', group: '<circle cx="8" cy="9" r="3"/><circle cx="17" cy="10" r="2.5"/><path d="M2.5 19c0-3 2.5-5 5.5-5s5.5 2 5.5 5"/><path d="M15 15c3 0 6 1.4 6 4"/>',
+    tag: '<path d="M3 12V4h8l10 10-8 8L3 12z"/><circle cx="7.5" cy="8.5" r="1.3"/>', dl: '<path d="M12 3v12M7 11l5 5 5-5M4 20h16"/>', okc: '<circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.5"/>', star: '<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9L12 3z"/>', bubbles: '<path d="M3 5h11v8H8l-3 3v-3H3V5z"/><path d="M17 9h4v8h-2v3l-3-3h-5v-2"/>',
+    home: '<path d="M3 11l9-8 9 8"/><path d="M5 10v10h5v-6h4v6h5V10"/>', chat: '<path d="M4 5h16v11H9l-5 4V5z"/>',
+    users: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.8-6 6.5-6s6.5 2.4 6.5 6"/><path d="M16 4.5a3.5 3.5 0 010 7"/>', send: '<path d="M3 11l18-8-8 18-2-8-8-2z"/>',
+    tpl: '<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/>', bolt: '<path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"/>',
+    img: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-8 8"/>', seq: '<circle cx="6" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="12" r="2"/><path d="M6 8v8M8 6h4a4 4 0 014 4M8 18h4a4 4 0 004-4"/>',
+    phone: '<rect x="7" y="2" width="10" height="20" rx="2.5"/><path d="M11 18h2"/>', team: '<circle cx="12" cy="7" r="3"/><path d="M5 20c0-3.6 3-6 7-6s7 2.4 7 6"/><path d="M3 9h3M18 9h3"/>',
+    chart: '<path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/>', cog: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/>',
+    wallet: '<path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/>',
+    flame: '<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.4-.5-2-1-3-1.1-2.1-.2-4.1 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.2.4-2.3 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>', inbox: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.1z"/>', clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>', trend: '<path d="m22 7-8.5 8.5-5-5L2 17"/><path d="M16 7h6v6"/>', shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/>', lock: '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>', file: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/>', arrow: '<path d="M5 12h14M12 5l7 7-7 7"/>',
+    more: '<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>', back: '<path d="M15 6l-6 6 6 6"/>',
+  };
+  const svg = (n) => '<svg class="i" viewBox="0 0 24 24" aria-hidden="true">' + (P[n] || P.more) + '</svg>';
+
+  // k = key · t = name · ic = icon · mode: native / frame (an existing page, shown inside)
+  const MENU = [
+    { g: 'INBOX' }, { k: 'overview', t: 'Overview', ic: 'home', mode: 'native', sub: 'How the numbers, chats and team are doing right now' },
+    { k: 'chats', t: 'Chats', ic: 'chat', mode: 'native', badge: true, sub: 'Every number, one customer list' },
+    { k: 'signals', t: 'Signals', ic: 'flame', mode: 'native', sub: 'Customers waiting too long — give them to someone free. Answering bot.' },
+    { k: 'grab', t: 'Late replies', ic: 'flame', mode: 'native', sub: 'Customers waiting longer than the alert minutes (Signals & bot) — anyone free can take one · who takes the most' },
+    { k: 'sgive', t: 'Give queries', ic: 'team', mode: 'native', badge2: 'unassigned', sub: 'Customers nobody has taken yet — give them out' },
+    { g: 'QUERIES' },
+    { k: 'queries', t: 'Queries', ic: 'inbox', mode: 'native', sub: 'New, community and campaign queries per person — counted automatically' },
+    { k: 'history', t: 'History', ic: 'clock', mode: 'native', sub: 'Chats older than 24 hours, with their result' },
+    { g: 'CUSTOMERS' }, { k: 'contacts', t: 'Contacts', ic: 'users', mode: 'native', sub: 'Every customer, all numbers together' },
+    { k: 'tags', t: 'Tags & audience', ic: 'tag', mode: 'native', sub: 'Who is who — and how many you can reach in 30 / 60 / 90 days' },
+    { k: 'ads', t: 'Ads', ic: 'chart', mode: 'native', sub: 'Which Meta ads bring chats and orders' },
+    { g: 'SEND' }, { k: 'campaigns', t: 'Campaigns', ic: 'send', mode: 'native', sub: 'Send to many customers — the best number is chosen for each' },
+    { k: 'kflows', t: 'Key flows', ic: 'key', mode: 'native', sub: 'Fixed answers for fixed messages — website texts, ads, campaign buttons. Built on a canvas · admin only' },
+    { k: 'flows', t: 'Flows', ic: 'seq', mode: 'native', sub: 'First message, then the next when they reply' },
+    { k: 'premade', t: 'Pre-made messages', ic: 'tpl', mode: 'native', sub: 'Messages Meta approves once, usable on every number' },
+    { k: 'builder', t: 'Message builder', ic: 'wand', mode: 'native', sub: 'Tell Claude what to send — Utility first' },
+    { k: 'fixed', t: 'Fixed messages', ic: 'dtick', mode: 'native', sub: 'The one approved message for each situation' },
+    { k: 'greet', t: 'Greetings', ic: 'chat', mode: 'native', sub: 'The decided hi / good morning answer per kind of customer + fixed replies — Claude writes, the Teach bot learns' },
+    { k: 'quick', t: 'Quick replies', ic: 'bolt', mode: 'native', sub: 'Your own saved answers — one tap in any chat' },
+    { k: 'lists', t: 'Lists', ic: 'tpl', mode: 'native', sub: 'Ready perfume lists from live sales — Top 5 winter, Best sellers… Claude makes and updates them' },
+    { k: 'gallery', t: 'Gallery & storage', ic: 'img', mode: 'native', sub: 'Photos and videos in topic folders — Claude shows what can go' },
+    { k: 'media', t: 'Media library', ic: 'film', mode: 'native', sub: 'Photos, videos and PDFs saved once' },
+    { k: 'followups', t: 'Follow-ups', ic: 'bell', mode: 'native', sub: 'Follow-up Autopilot: 6 paths, offers on day 2/4/7/10, festival box, teach each day, results' },
+    { k: 'orderupd', t: 'Order updates', ic: 'send', mode: 'native', sub: 'Thank-you, shipped, out for delivery, delivered — sent by themselves from Dispatch / Shiprocket. Read and approve the texts' },
+    { g: 'MANAGE' }, { k: 'golive', t: 'Go-live check', ic: 'okc', mode: 'native', sub: 'Live readiness list — engine, numbers, templates, bot, staff phones, backup' },
+    { k: 'numbers', t: 'Numbers', ic: 'phone', mode: 'native', sub: 'Photo, bio, who handles each number, and its health' },
+    { k: 'groups', t: 'Groups', ic: 'bubbles', mode: 'frame', src: 'whatsapp_groups.html?in=sales', sub: 'Your WhatsApp groups' },
+    { k: 'learn', t: 'Learning & Improvement', ic: 'bulb', mode: 'frame', src: 'learning.html?in=sales', sub: 'Teach the bot once — it follows it in the Practice chat and in WhatsApp' },
+    { k: 'team', t: 'Team & routing', ic: 'group', mode: 'native', sub: 'Who gets chats, the call-now alert and the sending engine' },
+    { k: 'reports', t: 'Reports', ic: 'trend', mode: 'native', sub: 'Replies, speed per person, cost and results' },
+    { k: 'cxboard', t: 'Complaints', ic: 'bell', mode: 'native', sub: 'Every complaint ticket: who answered last, red flag after 30 min with no reply, Claude says solved or not, team score card' },
+    { k: 'billing', t: 'Billing & spend', ic: 'wallet', mode: 'native', sub: 'What WhatsApp cost per day / month and what it brought back — best and worst days' },
+    { k: 'export', t: 'Export', ic: 'dl', mode: 'native', sub: 'Download chats or messages as CSV — every download is logged' },
+    { k: 'hq', t: 'Claude button', ic: 'star', mode: 'native', sub: 'Who gets the floating Claude button' },
+    { k: 'setup', t: 'Setup & connection', ic: 'cog', mode: 'frame', src: 'wa_setup.html?in=sales', sub: 'Server settings, webhook and first-time steps' },
+  ];
+  const ITEMS = MENU.filter((m) => m.k);
+  // ONE simpler menu (13 instead of 30): screens that do the same job sit together as tabs under one item. Every old screen key still works
+  // (#sgive, #premade, #team… open their tab), nothing was removed.
+  const GROUPS = [
+    { k: 'waiting', t: 'Waiting', ic: 'flame', badge2: 'unassigned', sub: 'Customers nobody has taken · waiting too long · the answering bot', tabs: [['sgive', 'Not taken'], ['grab', 'Late replies'], ['signals', 'Signals & bot']] },
+    { k: 'results', t: 'Queries & reports', ic: 'trend', sub: 'Queries per person, replies, speed, cost and past chats', tabs: [['queries', 'Queries'], ['reports', 'Reports'], ['history', 'History']] },
+    { k: 'customers', t: 'Customers', ic: 'users', sub: 'Every customer, tags and audiences, and the ads that bring them', tabs: [['contacts', 'Contacts'], ['tags', 'Tags & audience'], ['ads', 'Ads']] },
+    { k: 'templates', t: 'Templates', ic: 'tpl', sub: 'Messages Meta approves — make them, let Claude write them, one per situation', tabs: [['premade', 'Pre-made'], ['builder', 'Builder'], ['fixed', 'Fixed']] },
+    { k: 'replies', t: 'Replies', ic: 'bolt', sub: 'Quick replies, greetings, ready perfume lists, and and where to find every automatic message', tabs: [['quick', 'Quick replies'], ['greet', 'Greetings'], ['lists', 'Lists'], ['automsgs', 'Automatic messages']] },
+    { k: 'mediag', t: 'Media', ic: 'film', sub: 'Photos, videos and PDFs — one library, in topic folders', tabs: [['media', 'Library'], ['gallery', 'Folders & clean-up']] },
+    { k: 'automation', t: 'Automation', ic: 'seq', sub: 'Key flows on a canvas, the old flows and follow-ups', tabs: [['kflows', 'Key flows'], ['flows', 'Flows (old)'], ['followups', 'Follow-ups'], ['orderupd', 'Order updates']] },
+    { k: 'setupg', t: 'Numbers & setup', ic: 'phone', sub: 'Numbers, connection and the go-live check', tabs: [['numbers', 'Numbers'], ['setup', 'Setup & connection'], ['golive', 'Go-live check']] },
+    { k: 'rules', t: 'Team & rules', ic: 'group', sub: 'Who gets chats, the waiting limits, the Claude button and exports', tabs: [['team', 'Team & routing'], ['hq', 'Claude button'], ['export', 'Export']] },
+    { k: 'teach', t: 'Teach & groups', ic: 'bulb', sub: 'Teach the bot once · your WhatsApp groups', tabs: [['learn', 'Teach'], ['groups', 'Groups']] },
+  ];
+  const GOF = {}; GROUPS.forEach((g) => g.tabs.forEach(([k]) => { GOF[k] = g; }));
+  const groupOf = (k) => GROUPS.find((g) => g.k === k);
+  const RAIL = [{ g: 'INBOX' }, byKeyRaw('overview'), byKeyRaw('chats'), byKeyRaw('cxboard'), groupOf('waiting'), { g: 'RESULTS' }, groupOf('results'), byKeyRaw('billing'), { g: 'CUSTOMERS' }, groupOf('customers'),
+    { g: 'SEND' }, byKeyRaw('campaigns'), groupOf('templates'), groupOf('replies'), groupOf('mediag'), groupOf('automation'), { g: 'SETTINGS' }, groupOf('setupg'), groupOf('rules'), groupOf('teach')];
+  function byKeyRaw(k) { return MENU.find((m) => m.k === k); }
+  const byKey = (k) => ITEMS.find((m) => m.k === k) || ITEMS[0];
+  const TABS = ['overview', 'chats', 'waiting'];   // the phone's bottom bar; everything else is under "More"
+  let RX = false; try { RX = localStorage.getItem('wa_rx') === '1'; } catch (e) { /* private mode */ } document.body.classList.toggle('rx', RX);
+  let cur = '', badge = 0, OV = null, inboxStarted = false, feedNow = '', srcN = {}, unN = 0;
+  const secs = {}, reload = {};
+  // Contacts → "Open chat": show Chats, then open that customer
+  // the feeds (Query / Assigned / Community / Campaign) are the Chats screen with a filter
+  function openFeed(src) {
+    go('chats'); feedNow = src || '';
+    const t = () => { if (window.WaInbox && WaInbox.feed) WaInbox.feed(src, src ? 'all' : ''); else setTimeout(t, 120); }; t();
+    const m = ITEMS.find((x) => x.feed === src); $('ttl').textContent = m ? m.t : 'Chats'; $('tsub').textContent = m ? m.sub : (ITEMS.find((x) => x.k === 'chats') || {}).sub; drawRail();
+  }
+  function openChatFull(phone) { closeSide(true); go('chats'); const t = () => { if (window.WaInbox && WaInbox.open) WaInbox.open(String(phone).replace(/\D/g, '').slice(-10)); else setTimeout(t, 150); }; t(); }
+  // From any list that is not Chats (Give queries, Late replies, Signals, Contacts…) a chat opens in a SIDE PANEL: the list stays, you read, reply and assign
+  // right there. PC: the right half · phone: full screen, Back closes it. The chat inside is wa_one.html (the same chat screen, without the list).
+  function openChat(phone) {
+    const ph = String(phone).replace(/\D/g, '').slice(-10); if (!ph) return;
+    if (cur === 'chats') return openChatFull(ph);
+    let sd = document.getElementById('waSide');
+    if (!sd) {
+      sd = document.createElement('div'); sd.id = 'waSide'; sd.innerHTML = '<div class="wsd-h"><button type="button" class="wsd-x" aria-label="Close">✕</button><b id="wsdT">Chat</b><button type="button" class="wsd-f" id="wsdF" title="Open in the Chats screen">Open in Chats ↗</button></div><iframe id="wsdI" title="Chat" allow="microphone" src="wa_one.html?phone=' + ph + '"></iframe>';
+      document.body.appendChild(sd); sd.querySelector('.wsd-x').onclick = () => closeSide(); $('wsdF').onclick = () => openChatFull(sd.dataset.p);
+      try { history.pushState(Object.assign({}, history.state || {}, { waSide: 1 }), ''); } catch (e) { }
+    }
+    else { try { $('wsdI').contentWindow.location.replace('wa_one.html?phone=' + ph); } catch (e) { $('wsdI').src = 'wa_one.html?phone=' + ph; } }   // replace: switching customer adds no Back step
+    sd.dataset.p = ph; $('wsdT').textContent = '+91 ' + ph; document.body.classList.add('side-on');
+    document.querySelectorAll('.wsd-on').forEach((x) => x.classList.remove('wsd-on')); document.querySelectorAll('#body [data-p="' + ph + '"]').forEach((x) => x.classList.add('wsd-on'));
+  }
+  function closeSide(noBack) {
+    const sd = document.getElementById('waSide'); if (!sd) return; sd.remove(); document.body.classList.remove('side-on'); document.querySelectorAll('.wsd-on').forEach((x) => x.classList.remove('wsd-on'));
+    if (!noBack && history.state && history.state.waSide) { sideSkip = true; history.back(); }
+  }
+  let sideSkip = false;
+  window.addEventListener('popstate', () => { if (sideSkip) { sideSkip = false; return; } if (document.getElementById('waSide') && !(history.state && history.state.waSide)) closeSide(true); });
+  window.addEventListener('message', (e) => {
+    if (e.origin !== location.origin || !e.data || !e.data.wa) return; const d = e.data;
+    if (d.wa === 'close') { closeSide(); return; }
+    if (d.wa === 'assigned' || d.wa === 'changed') document.dispatchEvent(new CustomEvent('wa-side', { detail: d }));   // the list beside it refreshes (Give queries opens the next one)
+  });
+
+  // ---------- menus
+  function drawRail() {
+    let h = '<div class="brand"><b>' + svg('chat') + '</b>WhatsApp</div><a class="back" href="dashboard.html" target="_top">‹ Back to HRMS</a>';
+    RAIL.forEach((m) => {
+      if (!m) return;
+      if (m.g) { h += `<div class="grp">${m.g}</div>`; return; }
+      const on = m.feed != null ? (cur === 'chats' && feedNow === m.feed) : ((m.k === cur || (GOF[cur] && GOF[cur].k === m.k)) && !(m.k === 'chats' && feedNow));
+      const n2 = m.badge2 ? (m.badge2 === 'unassigned' ? unN : (srcN[m.badge2] || 0)) : 0;
+      h += `<button type="button" class="it ${on ? 'on' : ''}" data-k="${m.k}" title="${esc(m.t)}">${svg(m.ic)}${esc(m.t)}${(m.badge && badge > 0 ? `<span class="bd">${badge > 99 ? '99+' : badge}</span>` : '')}${(n2 > 0 ? `<span class="bd ${m.badge2 === 'unassigned' ? 'r' : 'q'}">${n2 > 99 ? '99+' : n2}</span>` : '')}</button>`;
+    });
+    h += '<span class="sp"></span><button type="button" class="rxb" id="rxb" title="Wide or thin menu" aria-label="Wide or thin menu">' + (RX ? '«' : '»') + '</button>';
+    $('rail').innerHTML = h;
+    $('tabs').innerHTML = TABS.map((k) => { const m = groupOf(k) || byKey(k); return `<button type="button" class="tb ${k === cur || (GOF[cur] && GOF[cur].k === k) ? 'on' : ''}" data-k="${k}">${svg(m.ic)}${esc(m.t)}${m.badge && badge > 0 ? `<span class="bd">${badge > 99 ? '99+' : badge}</span>` : ''}</button>`; }).join('')
+      + `<button type="button" class="tb ${TABS.includes(cur) || (GOF[cur] && TABS.includes(GOF[cur].k)) ? '' : 'on'}" data-more="1">${svg('more')}More</button>`;
+    $('gr').innerHTML = RAIL.filter((m) => m && m.k).map((m) => `<div class="gi" data-k="${m.k}">${svg(m.ic)}${esc(m.t)}</div>`).join('');
+  }
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('#rxb')) { RX = !RX; try { localStorage.setItem('wa_rx', RX ? '1' : '0'); } catch (x) { /* ignore */ } document.body.classList.toggle('rx', RX); drawRail(); return; }
+    const b = e.target.closest('[data-k]'); if (b && (b.closest('#rail') || b.closest('#tabs') || b.closest('#gr') || b.closest('#gtabs'))) { const k = b.dataset.k; if (k.indexOf('f_') === 0) openFeed(k.slice(2)); else { if (k === 'chats' && feedNow) openFeed(''); else go(k); } $('more').classList.remove('open'); return; }
+    if (e.target.closest('[data-more]')) { $('more').classList.add('open'); return; }
+    if (e.target === $('more')) $('more').classList.remove('open');
+  });
+
+  // ---------- sections
+  const ALIAS = { sfocus: 'signals', sboard: 'queries', f_query: 'queries', f_assigned: 'queries', f_community: 'queries', f_campaign: 'queries' };
+  let started = false;   // the first section replaces the entry; every section opened after it is one step Back can return to
+  function go(k, noPush) {
+    if (k !== cur && document.getElementById('waSide')) closeSide(true);   // another screen: the side chat closes
+    k = ALIAS[k] || k;
+    { const g = groupOf(k); if (g) { let last = ''; try { last = localStorage.getItem('wa_tab_' + g.k) || ''; } catch (e) { } k = g.tabs.some(([x]) => x === last) ? last : g.tabs[0][0]; } }
+    if (String(k).indexOf('f_') === 0) { const f = ITEMS.find((x) => x.k === k); if (f) { openFeed(f.feed); return; } }
+    const m = byKey(k); cur = m.k; const G = GOF[cur]; $('ttl').textContent = G ? G.t : m.t; $('tsub').textContent = m.sub || ''; document.title = (G ? G.t : m.t) + ' — WhatsApp';
+    const gt = $('gtabs'); if (G) { try { localStorage.setItem('wa_tab_' + G.k, cur); } catch (e) { } gt.hidden = false; gt.innerHTML = G.tabs.map(([x, l]) => `<button type="button" data-k="${x}" class="${x === cur ? 'on' : ''}">${esc(l)}</button>`).join(''); } else { gt.hidden = true; gt.innerHTML = ''; }
+    if (location.hash !== '#' + cur) { if (!started || noPush) history.replaceState(history.state, '', '#' + cur); else history.pushState({ waSec: cur }, '', '#' + cur); }
+    Object.keys(secs).forEach((x) => { secs[x].hidden = x !== cur; });
+    if (!secs[cur]) {
+      const d = document.createElement('div'); d.className = 'sec'; secs[cur] = d; $('body').appendChild(d);
+      if (m.mode === 'native' && cur === 'overview') { d.classList.add('pad'); d.innerHTML = '<div class="muted">Loading…</div>'; loadOverview(false); }
+      else if (m.mode === 'native' && cur === 'chats') { d.classList.add('fill'); d.innerHTML = '<div id="wi"></div>'; if (!inboxStarted) { inboxStarted = true; WaInbox.start({ mode: 'admin', root: 'wi', onFeed: (k) => { feedNow = k || ''; const m = ITEMS.find((x) => x.feed === feedNow); if (cur === 'chats') { $('ttl').textContent = m ? m.t : 'Chats'; } drawRail(); }, onCounts: (c) => { srcN = (c && c.src) || srcN; unN = (c && c.unassigned != null) ? c.unassigned : unN; drawRail(); } }); } }
+      else if (m.mode === 'frame') { d.classList.add('frame'); d.innerHTML = '<iframe allow="camera; microphone; geolocation; clipboard-read; clipboard-write; fullscreen" title="' + esc(m.t) + '" src="' + esc(m.src) + '"></iframe>'; }
+      else if (m.mode === 'native' && window.WaPanels && WaPanels.has(cur)) { reload[cur] = WaPanels.mount(cur, d, { go, openChat, closeSide }); if (window.WaGrowth) WaGrowth.claudeBar(d, cur, { go, openChat }); }
+      else { d.classList.add('pad'); d.innerHTML = '<div class="err">This screen could not load. Refresh the page.</div>'; }
+    } else if (cur === 'overview') loadOverview(true);
+    else if (reload[cur]) { try { reload[cur](); } catch (e) { } }
+    if (window.WaGrowth && WaGrowth.claudeShow) WaGrowth.claudeShow(secs[cur]);
+    drawRail();
+  }
+
+  // ---------- overview
+  const QL = { GREEN: ['Quality: High', 'ok'], YELLOW: ['Quality: Medium', 'warn'], RED: ['Quality: Low', 'bad'], UNKNOWN: ['New — not rated yet', ''] };
+  const TAGN = { price: 'Price', buy: 'Wants to buy', order_status: 'Order status', complaint: 'Complaint', other: 'Other' };
+  const AVC = ['', 'c2', 'c3', 'c4', 'c5', 'c6'];
+  const fmt = (n) => Number(n || 0).toLocaleString('en-IN');
+  const pdate = (s) => { const m = /^(\d{4})-(\d\d)-(\d\d)[ T](\d\d):(\d\d)(?::(\d\d))?/.exec(s || ''); return m ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0)) : null; };
+  const span = (min) => { min = Math.max(0, Math.round(min)); return min < 1 ? '< 1 min' : min < 60 ? min + ' min' : min < 1440 ? Math.floor(min / 60) + 'h ' + (min % 60) + 'm' : Math.floor(min / 1440) + ' d'; };
+  const waited = (s) => { const d = pdate(s); return d ? (Date.now() - d.getTime()) / 60000 : 0; };
+  const init = (n) => (String(n || '?').trim().split(/\s+/).map((x) => x.charAt(0)).join('').slice(0, 2) || '?').toUpperCase();
+  function donut(parts) {
+    const tot = parts.reduce((a, p) => a + p.v, 0); if (!tot) return '<div class="muted" style="padding:30px 0">No queries in the last 7 days yet.</div>';
+    const C = 2 * Math.PI * 40; let off = 0, segs = '';
+    parts.forEach((p) => { const len = C * p.v / tot; segs += `<circle cx="60" cy="60" r="40" fill="none" stroke="${p.c}" stroke-width="16" stroke-dasharray="${len.toFixed(2)} ${(C - len).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}" transform="rotate(-90 60 60)"/>`; off += len; });
+    return `<div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap"><svg class="donut" viewBox="0 0 120 120">${segs}</svg><div class="legend">${parts.map((p) => `<div><i style="background:${p.c}"></i>${esc(p.l)} <b>${Math.round(p.v * 100 / tot)}%</b> <span class="muted">· ${fmt(p.v)}</span></div>`).join('')}</div></div>`;
+  }
+  function drawOverview(d) {
+    const S = d.sources || {}, C = d.chats || {}, L = d.limit || {}, T = d.templates || {}, W = (d.extra || {}).waiting || [], BD = (d.extra || {}).board || null;
+    const longest = W.length ? span(waited(W[0].last_at)) : '';
+    const wk = (k) => (S[k] || {}).week || 0, tdy = (k) => (S[k] || {}).today || 0;
+    const team = BD ? BD.team : null, goal = BD && BD.cfg ? BD.cfg.goal : 0;
+    const conv = team && team.queries ? team.pct + '%' : '—';
+    const att = d.attention || [], LT = d.late || null;
+    const lateOf = (id) => LT ? (LT.today.find((p) => p.emp === id) || null) : null;
+    const attHtml = att.length ? att.map((a) => `<div class="alert ${a.level === 'bad' ? 'r' : 'y'}"><span class="tx">${esc(a.text)}${a.kind === 'late' && LT ? '<span class="muted" style="display:block;margin-top:4px">' + LT.now.slice(0, 4).map((p) => p.phones.map((c) => `<a href="#" data-chat="${esc(c.phone)}" style="margin-right:10px">${esc(c.name || '+91 ' + c.phone)} · ${c.mins} min (${esc(p.name.split(' ')[0])})</a>`).join('')).join('') + '</span>' : ''}</span><button type="button" class="lk" data-go="${esc(a.go)}">Open ›</button></div>`).join('') : '<div class="alert g"><span class="tx"><b>All clear</b>Nothing needs you right now.</span></div>';
+    let h = `<div class="card" style="margin-bottom:14px"><h3>Needs your attention${LT && LT.today_total ? ` <span class="sp"></span><span class="muted" style="font-weight:600">⏰ ${LT.today_total} late repl${LT.today_total === 1 ? 'y' : 'ies'} today (over ${LT.min} min)${LT.today.length ? ' · ' + LT.today.slice(0, 4).map((p) => esc(p.name.split(' ')[0]) + ' ' + p.n).join(', ') : ''}</span>` : ''}</h3>${attHtml}</div><div class="ov-k">
+      <div class="card k"><small><span class="ico i-r">${svg('clock')}</span>Waiting for a reply</small><div class="n" style="${C.waiting ? 'color:#c2262b' : ''}">${C.waiting || 0}</div><div class="d ${C.waiting ? 'dn' : 'up'}">${C.waiting ? 'Longest wait ' + longest : 'Nobody is waiting'}</div></div>
+      <div class="card k"><small><span class="ico i-g">${svg('chat')}</span>Open chats</small><div class="n">${C.all || 0}</div><div class="d">${C.unassigned || 0} not given to anyone yet</div></div>
+      <div class="card k"><small><span class="ico i-b">${svg('inbox')}</span>New queries today</small><div class="n">${tdy('query')}</div><div class="d">${wk('query')} in 7 days · ${tdy('campaign')} campaign replies today</div></div>
+      <div class="card k"><small><span class="ico i-p">${svg('trend')}</span>Query → order (7 days)</small><div class="n">${conv}</div><div class="d ${team && goal && team.pct >= goal ? 'up' : ''}">${team && team.queries ? (goal ? 'Goal ' + goal + '% · ' + (team.pct >= goal ? 'reached' : (Math.round((goal - team.pct) * 10) / 10) + ' pts short') : team.orders + ' of ' + team.queries + ' ordered') : 'No queries given out yet'}</div></div>
+    </div>`;
+    // live queue
+    const q = W.slice(0, 4).map((c, i) => `<div class="q" data-chat="${esc(c.phone)}" style="cursor:pointer"><div class="av2 ${AVC[i % 6]}">${esc(init(c.name || c.phone))}</div><div class="t"><b>${esc(c.name || ('+91 ' + c.phone))}</b><span>${esc(c.preview || '')}</span></div>${c.assigned_name ? `<span class="chip g">${esc(c.assigned_name)}</span>` : '<span class="chip">Unassigned</span>'}${c.hot ? '<span class="chip r">Hot</span>' : (c.tag && TAGN[c.tag] ? `<span class="chip ${c.tag === 'complaint' ? 'r' : 'p'}">${esc(TAGN[c.tag])}</span>` : '')}<span class="chip o">${span(waited(c.last_at))}</span></div>`).join('');
+    const rows = BD ? BD.rows.slice(0, 6) : []; const mx = Math.max(1, ...rows.map((r) => r.open));
+    const teamHtml = rows.length ? rows.map((r, i) => `<div class="q"><div class="av2 ${AVC[(i + 2) % 6]}">${esc(init(r.name))}</div><div class="t"><b>${esc(r.name)}</b><div class="bar" style="margin-top:4px"><i style="width:${Math.max(3, Math.round(r.open * 100 / mx))}%"></i></div></div><span class="muted" style="white-space:nowrap"><b style="color:var(--ink)">${r.open}</b> open${r.waiting ? ' · <span style="color:#c2262b">' + r.waiting + ' waiting</span>' : ''}${(() => { const lt = lateOf(r.emp_id); return lt ? ' · <span style="color:#c2262b" title="Chats that waited over ' + LT.min + ' min today' + (lt.avg != null ? ' · average answer ' + lt.avg + ' min' : '') + '">⏰ ' + lt.n + ' late today</span>' : ''; })()}</span></div>`).join('') : '<div class="muted">No salespeople found.</div>';
+    h += `<div class="ov-g">
+      <div class="card"><h3>Live queue — answer these first <span class="sp"></span><button type="button" class="lk" data-go="chats">Open Chats ›</button></h3>${q || '<div class="muted" style="padding:14px 0">Nothing is waiting. Well done.</div>'}</div>
+      <div class="card"><h3>Where queries come from <span class="muted" style="font-weight:600">last 7 days</span></h3>${donut([{ l: 'Meta ad', v: wk('query'), c: '#3b82f6' }, { l: 'Campaign', v: wk('campaign'), c: '#f97316' }, { l: 'Community', v: wk('community'), c: '#22c55e' }])}</div>
+      <div class="card"><h3>Team right now <span class="sp"></span><button type="button" class="lk" data-go="team">Routing ›</button></h3>${teamHtml}</div>
+    </div>`;
+    // numbers
+    const nums = d.numbers || []; let used = '';
+    if (L.tier === -1) used = '<div class="muted" style="margin-top:6px">Daily limit (all numbers together): <b>Unlimited</b> · ' + fmt(L.used) + ' customers started in the last 24 h</div>';
+    else if (L.tier > 0) { const p = Math.min(100, Math.round((L.used || 0) * 100 / L.tier)); used = `<div class="muted" style="margin-top:6px">Daily limit (all numbers together): <b>${fmt(L.tier)} customers</b> · used ${fmt(L.used)} (${p}%)</div><div class="bar"><i class="${p >= 90 ? 'b' : (p >= 70 ? 'w' : '')}" style="width:${Math.max(p, 1)}%"></i></div>`; }
+    else used = '<div class="muted" style="margin-top:6px">Daily limit: Meta did not say. ' + fmt(L.used) + ' customers started in the last 24 h.</div>';
+    const numHtml = nums.length ? nums.map((n) => {
+      const qq = QL[n.quality] || QL.UNKNOWN, ok = n.status === 'CONNECTED', noans = n.error && !n.status;
+      return `<div class="num"><div class="nb">${svg('chat')}</div><div class="t"><b>${esc(n.label)}</b><div class="muted">${esc(n.display || '')}${n.verified_name ? ' · ' + esc(n.verified_name) : ''}</div><div style="margin-top:6px"><span class="chip ${noans ? 'r' : (ok ? 'g' : 'r')}">${noans ? 'No answer from Meta' : (ok ? 'Connected' : esc(String(n.status || '—').toLowerCase().replace(/_/g, ' ')))}</span> <span class="chip ${qq[1] === 'ok' ? 'g' : (qq[1] === 'warn' ? 'o' : (qq[1] === 'bad' ? 'r' : ''))}">${qq[0]}</span></div>${n.error ? `<div class="muted" style="margin-top:6px;color:#9a2620">${esc(n.error)}</div>` : ''}</div></div>`;
+    }).join('') : '<div class="muted">No number is connected yet. Open Setup &amp; connection.</div>';
+    h += `<div class="ov-g2"><div class="card"><h3>Our WhatsApp numbers <span class="sp"></span><button type="button" class="lk" id="ovLive">Check with Meta</button></h3>${numHtml}${used}</div>
+      <div><div class="card"><h3>Pre-made messages <span class="sp"></span><button type="button" class="lk" data-go="premade">Open ›</button></h3><div class="li"><span>Approved</span><b>${T.approved || 0}</b></div><div class="li"><span>Waiting for Meta</span><b>${T.pending || 0}</b></div><div class="li"><span>Rejected</span><b style="${T.rejected ? 'color:#c2262b' : ''}">${T.rejected || 0}</b></div></div></div></div>
+      <div class="muted" style="margin:14px 0 0;text-align:center">Updated ${esc((d.at || '').slice(11, 16))} · number health is kept 10 minutes · <a href="#" id="ovRef">refresh</a></div>
+      <div class="muted" style="margin:6px 0 0;text-align:center">These counts come only from the new numbers. The AiSensy panels stay exactly as they are.</div>`;
+    const oldBar = secs.overview.querySelector(':scope > .wg-cb'); secs.overview.innerHTML = h;
+    if (oldBar) secs.overview.insertBefore(oldBar, secs.overview.firstChild); else if (window.WaGrowth) WaGrowth.claudeBar(secs.overview, 'home', { go, openChat }); if (window.WaGrowth && cur === 'overview') WaGrowth.claudeShow(secs.overview);
+    secs.overview.querySelectorAll('[data-go]').forEach((b) => { b.onclick = () => go(b.dataset.go); });
+    secs.overview.querySelectorAll('[data-chat]').forEach((b) => { b.onclick = () => openChat(b.dataset.chat); });
+    const lv = $('ovLive'); if (lv) lv.onclick = () => { lv.disabled = true; lv.textContent = 'Asking Meta…'; loadOverview(false, true); };
+    const rf = $('ovRef'); if (rf) rf.onclick = (e) => { e.preventDefault(); loadOverview(false); };
+  }
+  function drawWait() { const w = $('waitPill'); if (!w) return; w.hidden = !(badge > 0); w.textContent = badge + ' waiting for a reply'; w.onclick = () => go('chats'); }
+  let ovBusy = false;
+  async function loadOverview(quiet, live) {
+    if (ovBusy) return; ovBusy = true;
+    try {
+      OV = await api.get('wa.overview', live ? { live: 1 } : {});
+      const [wc, bd] = await Promise.all([api.get('wa.chats', { scope: 'all' }).catch(() => null), api.get('wa.sales_board', { days: 7 }).catch(() => null)]);
+      OV.extra = { waiting: ((wc && wc.chats) || []).filter((c) => c.waiting && c.status === 'open').sort((x, y) => String(x.last_at).localeCompare(String(y.last_at))), board: bd };
+      badge = ((OV.chats || {}).waiting) || 0; srcN = (OV.chats || {}).src || srcN; unN = ((OV.chats || {}).unassigned) || 0; if (cur === 'overview' || !quiet) drawOverview(OV); drawRail(); drawWait();
+    } catch (e) {
+      if (!quiet || !OV) secs.overview.innerHTML = `<div class="err">${/denied|permission|403/i.test(e.message) ? 'The WhatsApp console is for Admin. Salespeople open <b>My Chats</b> from their menu.' : esc(e.message)}</div>`;
+    } finally { ovBusy = false; }
+  }
+  // the Overview numbers refresh every 45 s while Overview is on screen; on any other screen only the menu badges need them: every 3 minutes
+  let ovAt = Date.now();
+  setInterval(() => { if (document.hidden) return; if (cur === 'overview' || Date.now() - ovAt > 180000) { ovAt = Date.now(); loadOverview(true); } }, 45000);
+  setInterval(() => { if (!document.hidden) api.get('wa.callnow').catch(() => {}); }, 60000);   // a light "keep the engine alive" ping (the minute cron is the real engine)
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && cur === 'overview') loadOverview(true); });
+
+  // ---------- start
+  const first = ALIAS[(location.hash || '').replace('#', '')] || (location.hash || '').replace('#', '');
+  if (first.indexOf('f_') === 0 && ITEMS.some((m) => m.k === first)) openFeed(first.slice(2)); else go(ITEMS.some((m) => m.k === first) ? first : 'overview');
+  if (cur !== 'overview') { secs.overview = document.createElement('div'); secs.overview.className = 'sec pad'; secs.overview.hidden = true; $('body').appendChild(secs.overview); loadOverview(true); }
+  started = true;
+  window.addEventListener('hashchange', () => { const k = (location.hash || '').replace('#', ''); if (k && k !== cur && ITEMS.some((m) => m.k === k)) go(k, true); });
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+<script>(function () { const b = document.getElementById('dkBtn'); if (!b) return; const draw = () => { const on = document.documentElement.classList.contains('wapcdk'); b.textContent = on ? '☀️' : '🌙'; b.title = on ? 'Light mode' : 'Dark mode'; }; draw();
+  b.onclick = () => { const on = document.documentElement.classList.toggle('wapcdk'); try { localStorage.setItem('wa_pc_dark', on ? '1' : '0'); } catch (e) { } draw(); }; })();</script>
+</body>
+</html>

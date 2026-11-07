@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Users — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=3">
+<style>
+  .login-summary{font-size:12.5px; color:var(--muted); margin-top:2px;}
+  .login-summary b{color:#b45f06;}
+  .login-summary.done b{color:#0f7a41;}
+  .need-code{font-size:11.5px; color:var(--muted);}
+  #addLoginCard.flash{animation:addFlash 1.4s ease;}
+  @keyframes addFlash{0%,100%{box-shadow:var(--shadow);} 25%{box-shadow:0 0 0 3px rgba(37,99,235,.35);}}
+  @media (prefers-reduced-motion: reduce){ #addLoginCard.flash{animation:none;} }
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><div><h1>Users</h1><div id="loginSummary" class="login-summary"></div></div></div>
+    <div class="content">
+      <div id="alertBox"></div>
+
+      <div class="card" id="addLoginCard">
+        <div class="card-head">
+          <h2>Add a login</h2>
+        </div>
+        <div style="padding:20px; max-width:420px;">
+          <div class="field">
+            <label for="newUsername">Username</label>
+            <input autocomplete="off" name="hrms-new-user" type="text" id="newUsername" maxlength="100">
+          </div>
+          <div class="field">
+            <label for="newPassword">Password (min 6 characters)</label>
+            <div style="position:relative;">
+              <input autocomplete="new-password" name="hrms-new-pass" type="password" id="newPassword" maxlength="100" style="padding-right:42px; width:100%; box-sizing:border-box;">
+              <button type="button" class="pw-toggle" data-target="newPassword" aria-label="Show password"
+                style="position:absolute; right:6px; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; padding:6px; display:flex; align-items:center; color:var(--muted); min-height:0;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+          <div class="field">
+            <label for="newRole">Role</label>
+            <select id="newRole">
+              <option value="Employee">Employee (attendance only)</option>
+              <option value="HR">HR</option>
+              <option value="Admin">Admin</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="newEmployee">Linked Employee <span style="text-transform:none; font-weight:400;">(required for Employee role)</span></label>
+            <select id="newEmployee" size="1">
+              <option value="">— None —</option>
+            </select>
+          </div>
+          <button type="button" class="btn" id="btnCreateUser" style="width:auto; margin-top:10px;">Create User</button>
+          <div id="createUserMsg" style="font-size:13px; margin-top:10px;"></div>
+        </div>
+      </div>
+
+      <div class="card" id="needLoginCard">
+        <div class="card-head">
+          <div>
+            <h2 id="needLoginTitle">Employees without a login</h2>
+            <div style="font-size:12px; color:var(--muted); margin-top:3px;">Active employees who can't sign in yet. Employees still waiting for Admin approval aren't listed.</div>
+          </div>
+          <div class="search-box"><input type="text" id="needLoginSearch" placeholder="Search name, code or department..." autocomplete="off"></div>
+        </div>
+        <table>
+          <thead><tr><th>Employee</th><th>Department</th><th style="width:140px;">Action</th></tr></thead>
+          <tbody id="needLoginBody"><tr><td colspan="3" class="loading">Loading...</td></tr></tbody>
+        </table>
+        <div style="padding:12px 20px; display:flex; align-items:center; justify-content:center; gap:14px; flex-wrap:wrap;">
+          <span id="needLoginCount" style="font-size:12.5px; color:var(--muted);"></span>
+          <button class="btn secondary" id="btnNeedLoginMore" style="width:auto; display:none;">Load more</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2 id="usersTitle">All Users</h2>
+          <div class="search-box"><input type="text" id="userSearch" placeholder="Search by username, role or employee..." autocomplete="off"></div>
+        </div>
+        <table>
+          <thead><tr><th>Username</th><th>Role</th><th>Linked employee</th><th style="width:100px;">Actions</th></tr></thead>
+          <tbody id="usersTableBody">
+            <tr><td colspan="4" class="loading">Loading...</td></tr>
+          </tbody>
+        </table>
+        <div style="padding:12px 20px; display:flex; align-items:center; justify-content:center; gap:14px;">
+          <span id="userShownCount" style="font-size:12.5px; color:var(--muted);"></span>
+          <button class="btn secondary" id="btnUserLoadMore" style="width:auto; display:none;">Load more</button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="assets/js/config.js?v=2"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script>
+  guardPage();
+
+  const currentUser = api.currentUser() || {};
+  if (currentUser.role !== 'Admin') {
+    // Non-admin roles may still have this page granted via Roles.
+    api.get('me.flags').then((d) => {
+      if (!(d.permissions || []).includes('users')) {
+        document.body.innerHTML = '<div style="padding:40px; font-family:sans-serif;">You do not have access to this page.</div>';
+      }
+    }).catch(() => {});
+  }
+
+  renderSidebar('users');
+
+  const alertBox = document.getElementById('alertBox');
+  function showAlert(msg, type = 'success') {
+    alertBox.innerHTML = `<div class="alert ${type}">${msg}</div>`;
+    setTimeout(() => (alertBox.innerHTML = ''), 4000);
+  }
+
+  /*
+   * Show/hide for any password field. Stored passwords are bcrypt hashes and
+   * can never be read back — not even by an Admin — so this reveals what is
+   * being TYPED, it does not display an existing password.
+   */
+  const EYE_OPEN = '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>';
+  const EYE_OFF = '<path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-7 0-11-8-11-8a18.5 18.5 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>';
+
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.pw-toggle');
+    if (!btn) return;
+    const input = document.getElementById(btn.dataset.target);
+    if (!input) return;
+    const showing = input.type === 'text';
+    input.type = showing ? 'password' : 'text';
+    const svg = btn.querySelector('svg');
+    if (svg) svg.innerHTML = showing ? EYE_OPEN : EYE_OFF;
+    btn.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
+  });
+
+  /*
+   * Search across the users list — match on username, role, or the linked
+   * employee's name, so a person can be found without scrolling the table.
+   * Rows are held in memory and re-rendered on each keystroke.
+   */
+  let allUsers = [];
+  let allEmployees = [];
+  let employeesLoaded = false;
+  let usersLoaded = false;
+  let employeeNames = {};   // employee_id -> "Name (CODE)"
+
+  function matchesUserSearch(u) {
+    const q = (document.getElementById('userSearch').value || '').trim().toLowerCase();
+    if (!q) return true;
+    const emp = employeeNames[u.employee_id] || '';
+    return (u.username || '').toLowerCase().includes(q)
+      || (u.role || '').toLowerCase().includes(q)
+      || emp.toLowerCase().includes(q);
+  }
+
+  const USER_PAGE_SIZE = 20;
+  let userShown = 0;
+  let userFiltered = [];
+
+  function userRowHtml(u) {
+    return `
+        <tr>
+          <td>${u.username}</td>
+          <td><span class="badge">${u.role}</span></td>
+          <td>${employeeNames[u.employee_id] || '<span style="color:var(--muted);">—</span>'}</td>
+          <td>
+            <div class="row-actions">
+              <button onclick="editUser(${u.user_id}, '${u.username.replace(/'/g, "\\'")}', '${u.role}', '${u.employee_id || ''}')">Edit</button>
+              <button class="danger-link" onclick="deleteUser(${u.user_id}, '${u.username.replace(/'/g, "\\'")}')">Delete</button>
+            </div>
+          </td>
+        </tr>`;
+  }
+
+  function updateUserLoadMoreUi() {
+    const label = document.getElementById('userShownCount');
+    const btn = document.getElementById('btnUserLoadMore');
+    if (!userFiltered.length) { label.textContent = ''; btn.style.display = 'none'; return; }
+    label.textContent = `Showing ${userShown} of ${userFiltered.length}`;
+    btn.style.display = userShown >= userFiltered.length ? 'none' : 'inline-block';
+  }
+
+  function renderUserNextPage() {
+    const next = userFiltered.slice(userShown, userShown + USER_PAGE_SIZE);
+    document.getElementById('usersTableBody').insertAdjacentHTML('beforeend', next.map(userRowHtml).join(''));
+    userShown += next.length;
+    updateUserLoadMoreUi();
+  }
+
+  function renderUsers() {
+    const tbody = document.getElementById('usersTableBody');
+    // Searching or reloading restarts from page one, so results always
+    // begin at the top rather than continuing a previous page count.
+    userFiltered = allUsers.filter(matchesUserSearch);
+    userShown = 0;
+
+    document.getElementById('usersTitle').textContent =
+      userFiltered.length === allUsers.length
+        ? `All Users (${allUsers.length})`
+        : `All Users (${userFiltered.length} of ${allUsers.length})`;
+
+    if (!userFiltered.length) {
+      tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No matching users.</td></tr>';
+      updateUserLoadMoreUi();
+      return;
+    }
+    tbody.innerHTML = '';
+    renderUserNextPage();
+  }
+
+  document.getElementById('btnUserLoadMore').addEventListener('click', renderUserNextPage);
+
+  let userSearchTimer = null;
+  document.getElementById('userSearch').addEventListener('input', () => {
+    clearTimeout(userSearchTimer);
+    userSearchTimer = setTimeout(renderUsers, 120);
+  });
+
+  async function loadUsers() {
+    const tbody = document.getElementById('usersTableBody');
+    try {
+      const data = await api.get('users.list');
+      allUsers = data.users || [];
+      usersLoaded = true;
+      renderUsers();
+      renderNeedLogin();
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="4"><div class="alert error">${err.message}</div></td></tr>`;
+    }
+  }
+
+  window.deleteUser = async function (id, username) {
+    if (!confirm(`Delete login "${username}"? This cannot be undone.`)) return;
+    try {
+      await api.post('users.delete', { user_id: id });
+      showAlert('User deleted.');
+      loadUsers();
+    } catch (err) {
+      showAlert(err.message, 'error');
+    }
+  };
+
+  document.getElementById('btnCreateUser').addEventListener('click', async () => {
+    const username = document.getElementById('newUsername').value.trim();
+    const password = document.getElementById('newPassword').value;
+    const role = document.getElementById('newRole').value;
+    const msg = document.getElementById('createUserMsg');
+    const btn = document.getElementById('btnCreateUser');
+
+    msg.textContent = '';
+    if (!username || !password) {
+      msg.style.color = '#c0392b';
+      msg.textContent = 'Username and password are required.';
+      return;
+    }
+
+    btn.disabled = true;
+    try {
+      const employeeId = document.getElementById('newEmployee').value || null;
+      await api.post('users.create', { username, password, role, employee_id: employeeId });
+      msg.style.color = '#1a7a3c';
+      msg.textContent = `"${username}" created as ${role}.`;
+      document.getElementById('newUsername').value = '';
+      document.getElementById('newPassword').value = '';
+      document.getElementById('newEmployee').value = '';
+      loadUsers();   // also refreshes "Employees without a login"
+    } catch (err) {
+      msg.style.color = '#c0392b';
+      msg.textContent = err.message;
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  // ---------- Employees without a login ----------
+  // Active employees with no login linked to them. Recomputed whenever the
+  // users or employees reload, so creating a login removes the person here.
+  const NEED_PAGE_SIZE = 10;
+  let needLimit = NEED_PAGE_SIZE;
+
+  function employeesWithoutLogin() {
+    const linked = new Set(allUsers.filter(u => u.employee_id).map(u => String(u.employee_id)));
+    return allEmployees.filter(e => e.status !== 'pending' && !linked.has(String(e.employee_id)));
+  }
+
+  function renderNeedLogin() {
+    // Both lists are needed: comparing against a users list that hasn't
+    // arrived yet would briefly show every employee as missing a login.
+    if (!employeesLoaded || !usersLoaded) return;
+    const all = employeesWithoutLogin();
+    const q = (document.getElementById('needLoginSearch').value || '').trim().toLowerCase();
+    const rows = !q ? all : all.filter(e =>
+      (e.full_name || '').toLowerCase().includes(q) ||
+      (e.employee_code || '').toLowerCase().includes(q) ||
+      (e.department_name || '').toLowerCase().includes(q));
+
+    const summary = document.getElementById('loginSummary');
+    summary.classList.toggle('done', all.length === 0);
+    summary.innerHTML = all.length
+      ? `<b>${all.length}</b> employee${all.length === 1 ? '' : 's'} still need${all.length === 1 ? 's' : ''} a login`
+      : '<b>Every active employee has a login</b>';
+
+    document.getElementById('needLoginTitle').textContent =
+      rows.length === all.length ? `Employees without a login (${all.length})` : `Employees without a login (${rows.length} of ${all.length})`;
+
+    const body = document.getElementById('needLoginBody');
+    const label = document.getElementById('needLoginCount');
+    const btn = document.getElementById('btnNeedLoginMore');
+    if (!rows.length) {
+      body.innerHTML = `<tr><td colspan="3" class="empty-state">${all.length ? 'No matching employees.' : 'Every active employee has a login.'}</td></tr>`;
+      label.textContent = ''; btn.style.display = 'none';
+      return;
+    }
+    const showing = Math.min(needLimit, rows.length);
+    body.innerHTML = rows.slice(0, showing).map(e => `
+      <tr>
+        <td><a href="employee_detail.html?id=${e.employee_id}">${e.full_name}</a><div class="need-code">${e.employee_code || ''}</div></td>
+        <td>${e.department_name || '<span style="color:var(--muted);">—</span>'}</td>
+        <td><div class="row-actions"><button onclick="prepareLogin(${e.employee_id})">Create login</button></div></td>
+      </tr>`).join('');
+    label.textContent = `Showing ${showing} of ${rows.length}`;
+    btn.style.display = showing >= rows.length ? 'none' : 'inline-block';
+  }
+
+  // Fill the "Add a login" form for this employee, then hand over to the
+  // password field. The username suggestion (their employee code) can be
+  // changed before saving.
+  window.prepareLogin = function (employeeId) {
+    const e = allEmployees.find(x => String(x.employee_id) === String(employeeId));
+    if (!e) return;
+    document.getElementById('newRole').value = 'Employee';
+    document.getElementById('newEmployee').value = String(e.employee_id);
+    document.getElementById('newUsername').value = String(e.employee_code || '').toLowerCase();
+    document.getElementById('newPassword').value = '';
+    const msg = document.getElementById('createUserMsg');
+    msg.style.color = 'var(--muted)';
+    msg.textContent = `Creating a login for ${e.full_name}. Set a password, then press Create User.`;
+    const card = document.getElementById('addLoginCard');
+    card.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+    card.classList.remove('flash'); void card.offsetWidth; card.classList.add('flash');
+    document.getElementById('newPassword').focus({ preventScroll: true });
+  };
+
+  document.getElementById('btnNeedLoginMore').addEventListener('click', () => { needLimit += NEED_PAGE_SIZE; renderNeedLogin(); });
+  let needSearchTimer = null;
+  document.getElementById('needLoginSearch').addEventListener('input', () => {
+    clearTimeout(needSearchTimer);
+    needSearchTimer = setTimeout(() => { needLimit = NEED_PAGE_SIZE; renderNeedLogin(); }, 120);
+  });
+
+  loadUsers();
+
+  (async function loadEmployeeOptions() {
+    try {
+      const data = await api.get('employees.list');
+      const sel = document.getElementById('newEmployee');
+      sel.innerHTML = '<option value="">— None —</option>' +
+        (data.employees || []).map(e => `<option value="${e.employee_id}">${e.full_name} (${e.employee_code})</option>`).join('');
+      (data.employees || []).forEach(e => {
+        employeeNames[e.employee_id] = `${e.full_name} (${e.employee_code})`;
+      });
+      allEmployees = data.employees || [];
+      employeesLoaded = true;
+      renderUsers();   // fill in the linked-employee column now names are known
+      renderNeedLogin();
+    } catch (e) {
+      document.getElementById('needLoginBody').innerHTML = `<tr><td colspan="3"><div class="alert error">Couldn't load employees: ${e.message}</div></td></tr>`;
+    }
+  })();
+
+  // ---- Edit user (username + role + linked employee + optional new password)
+  window.editUser = function (id, username, role, employeeId) {
+    let m = document.getElementById('editUserModal');
+    if (!m) {
+      document.body.insertAdjacentHTML('beforeend', `
+        <div class="modal-overlay" id="editUserModal">
+          <div class="modal" style="max-width:380px;">
+            <h3>Edit User</h3>
+            <div class="field"><label for="euName">Username</label><input type="text" id="euName"></div>
+            <div class="field"><label for="euRole">Role</label>
+              <select id="euRole">
+                <option value="Employee">Employee (attendance only)</option>
+                <option value="HR">HR</option>
+                <option value="Admin">Admin</option>
+              </select>
+            </div>
+            <div class="field"><label for="euEmployee">Linked Employee <span style="text-transform:none; font-weight:400;">(required for Employee role)</span></label>
+              <select id="euEmployee"><option value="">— None —</option></select>
+            </div>
+            <div class="field">
+              <label for="euPassword">New password <span style="text-transform:none; font-weight:400;">(leave blank to keep the current one)</span></label>
+              <div style="position:relative;">
+                <input type="password" id="euPassword" autocomplete="new-password" maxlength="100" placeholder="Leave blank to keep current password" style="padding-right:42px; width:100%; box-sizing:border-box;">
+                <button type="button" class="pw-toggle" data-target="euPassword" aria-label="Show password"
+                  style="position:absolute; right:6px; top:50%; transform:translateY(-50%); background:none; border:none; cursor:pointer; padding:6px; display:flex; align-items:center; color:var(--muted); min-height:0;">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+                  </svg>
+                </button>
+              </div>
+              <div style="font-size:11.5px; color:var(--muted); margin-top:5px;">Existing passwords are stored encrypted and can't be shown — you can only set a new one.</div>
+            </div>
+            <div class="actions">
+              <button type="button" class="btn secondary" id="euCancel">Cancel</button>
+              <button type="button" class="btn" id="euSave">Save</button>
+            </div>
+          </div>
+        </div>`);
+      m = document.getElementById('editUserModal');
+      document.getElementById('euCancel').addEventListener('click', () => m.classList.remove('open'));
+      document.getElementById('euSave').addEventListener('click', async () => {
+        const btn = document.getElementById('euSave');
+        const newPw = document.getElementById('euPassword').value;
+        // Catch a too-short password here so the user isn't told only after
+        // a round trip; the server enforces the same rule regardless.
+        if (newPw !== '' && newPw.length < 6) {
+          showAlert('Password must be at least 6 characters.', 'error');
+          return;
+        }
+        btn.disabled = true;
+        try {
+          await api.post('users.update', {
+            user_id: Number(m.dataset.userId),
+            username: document.getElementById('euName').value.trim(),
+            role: document.getElementById('euRole').value,
+            employee_id: document.getElementById('euEmployee').value || null,
+            password: newPw, // blank = leave the existing password alone
+          });
+          m.classList.remove('open');
+          showAlert(newPw ? 'User updated and password changed.' : 'User updated.');
+          loadUsers();
+        } catch (err) {
+          showAlert(err.message, 'error');
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    }
+    // Employee options: copy from the add-form select (already loaded)
+    document.getElementById('euEmployee').innerHTML = document.getElementById('newEmployee').innerHTML;
+    const euRole = document.getElementById('euRole');
+    if (window._customRoleOpts && !euRole.dataset.customsAdded) {
+      euRole.insertAdjacentHTML('beforeend', window._customRoleOpts);
+      euRole.dataset.customsAdded = '1';
+    }
+    m.dataset.userId = id;
+    document.getElementById('euName').value = username;
+    document.getElementById('euRole').value = role;
+    document.getElementById('euEmployee').value = employeeId || '';
+    // Always clear, and reset the eye to hidden — otherwise a password typed
+    // for one user would still be sitting there when another is opened.
+    const pw = document.getElementById('euPassword');
+    pw.value = '';
+    pw.type = 'password';
+    const pwSvg = document.querySelector('.pw-toggle[data-target="euPassword"] svg');
+    if (pwSvg) pwSvg.innerHTML = EYE_OPEN;
+
+    m.classList.add('open');
+  };
+
+  // Load custom roles into both role selects (system roles stay hardcoded).
+  (async function loadRoleOptions() {
+    try {
+      const data = await api.get('roles.list');
+      const customs = (data.roles || []).filter(r => !['Admin', 'HR', 'Employee'].includes(r.role_name));
+      if (!customs.length) return;
+      const opts = customs.map(r => `<option value="${r.role_name}">${r.role_name}</option>`).join('');
+      document.getElementById('newRole').insertAdjacentHTML('beforeend', opts);
+      window._customRoleOpts = opts; // used when the edit modal opens
+    } catch (e) { /* roles table not created yet — system roles still work */ }
+  })();
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>

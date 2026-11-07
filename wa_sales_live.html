@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>WhatsApp Sales — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=4">
+<style>
+/* WhatsApp Sales (module wq). The screens carry their own styles (assets/js/wq_ui.js), this only sets the page frame and the dark switch. */
+.wq-hsub{font-size:12.5px;color:var(--muted);margin-top:3px;max-width:60ch}
+.wq-top{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.wq-mode{min-height:40px;min-width:40px;border-radius:99px;border:1px solid var(--line);background:#fff;color:var(--ink);font-weight:700;font-size:13px;padding:0 14px;cursor:pointer}
+.content{max-width:1500px}
+html.wqdk body{background:#0b141a;color:#e9edef}
+html.wqdk .topbar h1{color:#e9edef}
+html.wqdk .wq-hsub{color:#8696a0}
+html.wqdk .wq-mode{background:#1f2c34;color:#e9edef;border-color:#25343e}
+@media (max-width:820px){#wqRoot{padding:0 10px}.topbar{padding-left:62px}.topbar h1{font-size:22px}.wq-top{width:100%;justify-content:space-between}.wq-top .wq-mode{width:auto !important;flex:none}.wq-top .wq-seg button{width:auto !important;flex:none}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><div><h1>WhatsApp Sales</h1><div class="wq-hsub" id="wqSub">Live view of every customer query. Updates every minute.</div></div><div class="wq-top"><span id="wqTopRt"></span><button type="button" class="wq-mode" id="wqMode" aria-label="Dark or light">Dark</button></div></div>
+    <div class="content"><div id="wqRoot"></div></div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=4"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script src="assets/js/wq_ui.js?v=q3"></script>
+<script src="assets/js/wq_admin.js?v=q2"></script>
+<script>
+  guardPage();
+  (function () {
+    // A salesperson never sees the admin board: their view is "My queries" inside the phone app.
+    let u = null; try { u = api.currentUser(); } catch (e) { u = null; }
+    if ((u && u.role === 'Employee') || /[?&]me=1(&|$)/.test(location.search)) { location.replace('my_chats.html?tab=queries'); return; }
+    renderSidebar('wasales');
+    // light / dark (the phone app uses the same wa_theme value)
+    const H = document.documentElement, btn = document.getElementById('wqMode');
+    const mode = () => { try { return localStorage.getItem('wq_theme') || 'light'; } catch (e) { return 'light'; } };
+    const apply = () => { const d = mode() === 'dark'; H.classList.toggle('wqdk', d); btn.textContent = d ? 'Light' : 'Dark'; };
+    btn.onclick = () => { try { localStorage.setItem('wq_theme', mode() === 'dark' ? 'light' : 'dark'); } catch (e) { /* private mode */ } apply(); };
+    apply();
+    const P = new URLSearchParams(location.search);
+    const root = document.getElementById('wqRoot');
+    if (!window.WaQ || !window.WaQAdmin) { root.innerHTML = '<div style="padding:20px;color:#d9423b">WhatsApp Sales could not load its script. Refresh the page.</div>'; return; }
+    WaQAdmin.mount(root, { topEl: document.getElementById('wqTopRt'), subEl: document.getElementById('wqSub'), tab: P.get('tab') || 'live' });
+  })();
+</script>
+</body>
+</html>

@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-store">
+<title>HRMS — reset this device</title>
+<style>
+  body{margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; background:#f3f4f6; color:#111827; display:flex; align-items:center; justify-content:center; min-height:100vh; padding:20px; box-sizing:border-box;}
+  .card{background:#fff; border-radius:16px; padding:24px 22px; max-width:420px; width:100%; box-shadow:0 10px 30px rgba(0,0,0,.08);}
+  h1{font-size:18px; margin:0 0 8px;} p{font-size:14px; line-height:1.5; margin:0 0 8px; color:#374151;}
+  .log{font-size:12.5px; color:#6b7280; line-height:1.7; margin-top:10px; white-space:pre-line;}
+  .ok{color:#0f7a41; font-weight:600;}
+  a.btn{display:inline-block; margin-top:14px; background:#2563eb; color:#fff; text-decoration:none; padding:11px 18px; border-radius:8px; font-weight:600; font-size:14px;}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Resetting HRMS on this device…</h1>
+  <p>Removes any old cached copy of the HRMS from this browser. Your login is kept.</p>
+  <div class="log" id="log"></div>
+  <a class="btn" id="go" href="dashboard.html" style="display:none;">Open HRMS</a>
+</div>
+<script>
+(async () => {
+  const log = (t) => { document.getElementById('log').textContent += t + '\n'; };
+  try {
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      for (const r of regs) { await r.unregister(); }
+      log('Old service worker removed: ' + regs.length);
+    } else log('No service worker support — nothing to remove.');
+  } catch (e) { log('Service worker: ' + e.message); }
+  try {
+    if ('caches' in window) { const keys = await caches.keys(); for (const k of keys) await caches.delete(k); log('Cached files deleted: ' + keys.length); }
+  } catch (e) { log('Cache: ' + e.message); }
+  try { localStorage.removeItem('hrms_push_day'); } catch (e) {}
+  log('Done ✓ — opening a fresh copy of the HRMS.');
+  document.querySelector('h1').textContent = 'This device is reset';
+  document.querySelector('h1').className = 'ok';
+  const go = document.getElementById('go');
+  go.style.display = 'inline-block';
+  setTimeout(() => { location.replace('dashboard.html?fresh=' + Date.now()); }, 1200);
+})();
+</script>
+</body>
+</html>

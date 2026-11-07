@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Admin team — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=4">
+<link rel="stylesheet" href="assets/css/boss.css?v=1">
+<style>
+  .pa-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;}
+  .pa-c{padding:16px;display:flex;flex-direction:column;gap:10px;}
+  .pa-top{display:flex;gap:12px;align-items:center;}
+  .pa-ph{width:58px;height:58px;border-radius:50%;background:#ffe2cc center/cover;color:#c2540a;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:18px;flex:none;position:relative;}
+  .pa-ph i{position:absolute;right:0;bottom:0;width:15px;height:15px;border-radius:50%;border:3px solid #fff;background:#b9bfca;} .pa-ph i.w{background:#16945a;} .pa-ph i.l{background:#e0a100;}
+  .pa-c b{font-size:15.5px;display:block;} .pa-c small{color:var(--muted);font-size:12.5px;display:block;line-height:1.4;}
+  .pa-st{display:inline-block;border-radius:99px;padding:3px 10px;font-size:12px;font-weight:800;background:#eef0f3;color:#555;} .pa-st.w{background:#e6f6ee;color:#0f6b43;} .pa-st.l{background:#fff3d6;color:#8a5a00;}
+  .pa-nums{display:flex;gap:18px;font-size:12.5px;color:var(--muted);} .pa-nums b{display:inline;font-size:15px;color:#111;}
+  .pa-sw{display:flex;align-items:center;justify-content:space-between;gap:10px;border-top:1px solid var(--line);padding-top:10px;font-size:13.5px;font-weight:700;}
+  .pa-tg{width:46px;height:27px;border-radius:99px;background:#cfd3da;border:0;position:relative;cursor:pointer;flex:none;transition:background .15s;} .pa-tg:after{content:"";position:absolute;left:3px;top:3px;width:21px;height:21px;border-radius:50%;background:#fff;transition:left .15s;} .pa-tg.on{background:#16945a;} .pa-tg.on:after{left:22px;} .pa-tg[disabled]{opacity:.5;cursor:default;}
+  .pa-note{background:#eef3ff;color:#2456b3;border-radius:14px;padding:11px 14px;font-size:13px;line-height:1.5;margin-bottom:14px;}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><div><h1>Admin team</h1><div class="bd-sub">Everyone who can approve and assign what people send to the boss</div></div><div id="topBtns"><button class="bd-btn pri" id="addP">+ Add a person</button></div></div>
+    <div class="content"><div class="bd" id="root"><div class="bd-empty">Loading…</div></div></div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=4"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script src="assets/js/boss_common.js?v=3"></script>
+<script>
+  guardPage();
+  renderSidebar('people_admin');
+  const { esc, $, toast } = BD;
+  let D = null;
+  const ini = (n) => String(n || '?').split(/\s+/).map((x) => x[0]).slice(0, 2).join('').toUpperCase();
+  async function load() {
+    try { D = await api.get('dp.tk_people'); } catch (e) { $('root').innerHTML = '<div class="bd-empty"><b>Could not load</b>' + esc(e.message) + '</div>'; return; }
+    draw();
+  }
+  function draw() {
+    const on = D.people.filter((p) => p.status === 'Working').length;
+    let h = '<div class="pa-note">Anyone who opens the Admin panel, and every boss seat, is listed here. Everyone with the switch on can open <b>Boss › Tasks</b>, read what Claude understood, and press Submit and assign. ' + (D.waiting ? '<b>' + D.waiting + ' message' + (D.waiting === 1 ? ' is' : 's are') + ' waiting now.</b>' : 'Nothing is waiting now.') + ' ' + on + ' of ' + D.people.length + ' are working today.</div>';
+    h += '<div class="pa-grid">' + D.people.map((p) => {
+      const c = p.status === 'Working' ? 'w' : (p.status === 'On leave' ? 'l' : '');
+      return '<div class="card pa-c"><div class="pa-top"><div class="pa-ph"' + (p.photo ? ' style="background-image:url(' + esc(api.buildUrl('files.view', { path: p.photo, token: api.token() })) + ')"' : '') + '>' + (p.photo ? '' : esc(ini(p.name))) + '<i class="' + c + '"></i></div><div style="min-width:0"><b>' + esc(p.name) + (p.me ? ' <small style="display:inline">(you)</small>' : '') + '</b><small>' + esc(p.role || p.dept || '') + '</small><span class="pa-st ' + c + '">' + esc(p.status) + '</span></div></div><small>Why listed: ' + esc(p.why) + '</small><div class="pa-nums"><span><b>' + p.sent + '</b> sent</span><span><b>' + p.approved + '</b> approved</span></div><div class="pa-sw"><span>Can approve tasks</span>' + (D.admin ? '<button class="pa-tg' + (p.can_approve ? ' on' : '') + '" data-sw="' + p.id + '"' + (p.me ? ' disabled title="You cannot switch yourself off"' : '') + ' aria-label="Can approve"></button>' : '<span class="bd-chip ' + (p.can_approve ? 'ok' : '') + '">' + (p.can_approve ? 'Yes' : 'No') + '</span>') + '</div>' + (D.admin && /Added by Admin/.test(p.why) ? '<button class="bd-btn sm" data-rm="' + p.id + '">Remove from the list</button>' : '') + '</div>';
+    }).join('') + '</div>';
+    $('root').innerHTML = h;
+    document.querySelectorAll('[data-sw]').forEach((b) => { b.onclick = async () => { const on = !b.classList.contains('on'); try { await api.post('dp.tk_people_save', { emp_id: +b.dataset.sw, can_approve: on }); toast(on ? 'Can approve tasks.' : 'Switched off.'); load(); } catch (e) { toast(e.message, true); } }; });
+    document.querySelectorAll('[data-rm]').forEach((b) => { b.onclick = async () => { try { await api.post('dp.tk_people_save', { emp_id: +b.dataset.rm, remove: 1 }); toast('Removed.'); load(); } catch (e) { toast(e.message, true); } }; });
+    $('addP').style.display = D.admin ? '' : 'none';
+  }
+  $('addP').onclick = () => {
+    const m = BD.modal('<h3>Add a person</h3><div class="bd-sub" style="margin-bottom:10px">Choose someone who works here. They get a notice and can open Boss › Tasks.</div><select class="bd-in" id="pp"><option value="0">— choose —</option>' + D.candidates.map((c) => '<option value="' + c.id + '">' + esc(c.name) + (c.designation ? ' · ' + esc(c.designation) : '') + '</option>').join('') + '</select><div class="acts"><button class="bd-btn" id="px">Cancel</button><button class="bd-btn go" id="pg">Add</button></div>');
+    m.querySelector('#px').onclick = BD.close;
+    m.querySelector('#pg').onclick = async () => { const v = +m.querySelector('#pp').value; if (!v) { toast('Choose a person.', true); return; } try { await api.post('dp.tk_people_save', { emp_id: v, add: 1 }); BD.close(); toast('Added.'); load(); } catch (e) { toast(e.message, true); } };
+  };
+  load();
+</script>
+</body>
+</html>

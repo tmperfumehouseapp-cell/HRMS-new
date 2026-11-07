@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Salary — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=1">
+<style>
+  /* Change-a-day chooser — same as the Order page's attendance chooser */
+  .stedit{border:1px solid var(--line); background:var(--bg); color:var(--accent); cursor:pointer; font-size:12px; font-weight:600; padding:4px 10px; border-radius:6px; min-height:0; width:auto; white-space:nowrap;}
+  .stpop{position:fixed; z-index:300; width:300px; background:#fff; border:1px solid var(--line); border-radius:12px; box-shadow:0 12px 36px rgba(15,23,42,.22); padding:14px 14px 12px; font-size:13px; text-align:left; white-space:normal;}
+  .stpop h4{margin:0 0 10px; font-size:14px;} .stpop h4 small{color:var(--muted); font-weight:500;}
+  .stpop .op{display:flex; gap:9px; align-items:flex-start; padding:8px 10px; border:1px solid var(--line); border-radius:8px; margin-bottom:7px; cursor:pointer; line-height:1.35;}
+  .stpop .op input{margin-top:3px; width:auto; min-height:0;} .stpop .op:has(input:checked){border-color:var(--accent); background:#f3f7ff;}
+  .stpop small{color:var(--muted); font-size:11.5px;}
+  .stpop .tin{display:none; margin:-2px 0 8px 28px; align-items:center; gap:8px; flex-wrap:wrap; font-size:12px; color:var(--muted);}
+  .stpop .tin.show{display:flex;} .stpop .tin input{padding:5px 8px; border:1px solid var(--line); border-radius:6px; font-size:13px; width:auto; min-height:0;}
+  .stpop .acts{display:flex; gap:8px; justify-content:flex-end; margin-top:10px;} .stpop .acts button{width:auto; min-height:0; padding:7px 14px;}
+  .stpop .err{color:var(--bad-fg); font-size:12px; margin-top:6px;}
+  @media (max-width:820px){ .stpop{left:10px !important; right:10px; width:auto;} }
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar">
+      <h1 id="pageTitle">Salary</h1>
+      <input type="month" id="monthPick" style="padding:8px 10px; border:1px solid var(--line); border-radius:6px; font-size:13px;">
+    </div>
+    <div class="content">
+      <div id="alertBox"></div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>Rules</h2>
+          <button class="btn" id="btnAddRule" style="padding:7px 14px; font-size:13px;">+ Add Rule</button>
+        </div>
+        <div id="rulesList"><div class="loading" style="padding:20px; text-align:center;">Loading...</div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2 id="ovTitle">Employees</h2><span style="font-size:12px; color:var(--muted);">Only employees with a Monthly Salary set are shown. Click a row for the day-wise view and to mark WFH / Leave / Holiday.</span></div>
+        <table>
+          <thead>
+            <tr><th>Employee</th><th>Monthly Salary</th><th>Present</th><th>WFH</th><th>Leave</th><th>Absent</th><th>Payable (so far)</th><th>Penalties</th><th>Final pay</th></tr>
+          </thead>
+          <tbody id="ovBody"><tr><td colspan="9" class="loading">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="modal-overlay" id="ruleModal">
+  <div class="modal" style="max-width:360px;">
+    <h3 id="ruleModalTitle">Add Rule</h3>
+    <div class="field">
+      <label for="ruleType">Rule Type</label>
+      <select id="ruleType">
+        <option value="free_leave">Free leave per month (days, no deduction)</option>
+        <option value="wfh">WFH day rate (% salary)</option>
+      </select>
+    </div>
+    <div class="field" id="occField" style="display:none;">
+      <label for="ruleOcc">WFH day number</label>
+      <input type="number" id="ruleOcc" min="1" step="1" placeholder="1 = first WFH day of the month">
+    </div>
+    <div class="field">
+      <label for="ruleValue" id="ruleValueLabel">Days</label>
+      <input type="number" id="ruleValue" min="0" step="0.5">
+    </div>
+    <div class="actions">
+      <button type="button" class="btn secondary" id="ruleCancel">Cancel</button>
+      <button type="button" class="btn" id="ruleSave">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="detailModal">
+  <div class="modal wide" style="max-width:560px;">
+    <h3 id="detailTitle">Day-wise</h3>
+    <div id="detailBody" style="max-height:60vh; overflow-y:auto;"></div>
+    <div class="actions"><button type="button" class="btn secondary" id="detailClose">Close</button></div>
+  </div>
+</div>
+
+<script src="assets/js/config.js?v=1"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script>
+  guardPage();
+  renderSidebar('salary');
+
+  const alertBox = document.getElementById('alertBox');
+  const inr = (v) => '₹' + Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+  let editingRuleId = 0;
+  let openEmpId = 0;
+
+  function showAlert(msg, type = 'success') {
+    alertBox.innerHTML = `<div class="alert ${type}">${msg}</div>`;
+    setTimeout(() => (alertBox.innerHTML = ''), 4000);
+  }
+  function month() { return document.getElementById('monthPick').value; }
+
+  // ---------- Rules ----------
+  const ruleModal = document.getElementById('ruleModal');
+  document.getElementById('ruleCancel').addEventListener('click', () => ruleModal.classList.remove('open'));
+  document.getElementById('ruleType').addEventListener('change', syncRuleFields);
+
+  function syncRuleFields() {
+    const isWfh = document.getElementById('ruleType').value === 'wfh';
+    document.getElementById('occField').style.display = isWfh ? '' : 'none';
+    document.getElementById('ruleValueLabel').textContent = isWfh ? 'Salary % for that day' : 'Free leave days per month';
+  }
+
+  document.getElementById('btnAddRule').addEventListener('click', () => {
+    editingRuleId = 0;
+    document.getElementById('ruleModalTitle').textContent = 'Add Rule';
+    document.getElementById('ruleType').value = 'free_leave';
+    document.getElementById('ruleType').disabled = false;
+    document.getElementById('ruleOcc').value = '';
+    document.getElementById('ruleValue').value = '';
+    syncRuleFields();
+    ruleModal.classList.add('open');
+  });
+
+  window.editRule = function (id, type, occ, value) {
+    editingRuleId = id;
+    document.getElementById('ruleModalTitle').textContent = 'Edit Rule';
+    document.getElementById('ruleType').value = type;
+    document.getElementById('ruleType').disabled = true;
+    document.getElementById('ruleOcc').value = occ || '';
+    document.getElementById('ruleValue').value = value;
+    syncRuleFields();
+    ruleModal.classList.add('open');
+  };
+
+  document.getElementById('ruleSave').addEventListener('click', async () => {
+    const btn = document.getElementById('ruleSave');
+    btn.disabled = true;
+    try {
+      await api.post('salary_rules.save', {
+        rule_id: editingRuleId,
+        rule_type: document.getElementById('ruleType').value,
+        occurrence: document.getElementById('ruleOcc').value,
+        value: Number(document.getElementById('ruleValue').value || 0),
+      });
+      ruleModal.classList.remove('open');
+      showAlert('Rule saved.');
+      loadRules();
+      loadOverview();
+    } catch (err) {
+      showAlert(err.message, 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  window.deleteRule = async function (id) {
+    if (!confirm('Delete this rule?')) return;
+    try {
+      await api.post('salary_rules.delete', { rule_id: id });
+      loadRules();
+      loadOverview();
+    } catch (err) {
+      showAlert(err.message, 'error');
+    }
+  };
+
+  async function loadRules() {
+    const box = document.getElementById('rulesList');
+    try {
+      const data = await api.get('salary_rules.list');
+      const rules = data.rules || [];
+      if (!rules.length) {
+        box.innerHTML = '<div class="empty-state" style="padding:18px; text-align:center;">No rules yet. Default: no free leaves, WFH = full salary, absent = no salary.</div>';
+        return;
+      }
+      box.innerHTML = rules.map(r => {
+        const label = r.rule_type === 'free_leave'
+          ? `Free leave per month: <b>${Number(r.value)} day${Number(r.value) === 1 ? '' : 's'}</b> (no deduction)`
+          : `WFH day ${r.occurrence} → <b>${Number(r.value)}%</b> salary`;
+        return `<div style="display:flex; justify-content:space-between; align-items:center; gap:10px; padding:10px 20px; border-bottom:1px solid var(--line); font-size:13.5px;">
+          <span>${label}</span>
+          <span class="row-actions">
+            <button onclick="editRule(${r.rule_id}, '${r.rule_type}', ${r.occurrence || 'null'}, ${Number(r.value)})">Edit</button>
+            <button class="danger-link" onclick="deleteRule(${r.rule_id})">Delete</button>
+          </span>
+        </div>`;
+      }).join('') + '<div style="padding:8px 20px; font-size:11.5px; color:var(--muted);">WFH days beyond the highest defined day use that day\'s percent. Leaves beyond the free pool are unpaid (half leave beyond pool pays 50%).</div>';
+    } catch (err) {
+      box.innerHTML = `<div style="padding:16px 20px;"><div class="alert error">${err.message}</div></div>`;
+    }
+  }
+
+  // ---------- Overview ----------
+  async function loadOverview() {
+    const m = month();
+    if (!m) return;
+    document.getElementById('ovTitle').textContent = 'Employees — ' +
+      new Date(m + '-01T00:00:00').toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+    const tbody = document.getElementById('ovBody');
+    try {
+      const data = await api.get('salary.overview', { month: m });
+      const rows = data.rows || [];
+      if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="9" class="empty-state">No employees have a Monthly Salary set. Add it in the employee\'s Edit form.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = rows.map(r => `<tr style="cursor:pointer;" onclick="openDetail(${r.employee_id})" title="Click for day-wise view">
+        <td><b>${r.full_name}</b><div style="font-size:11.5px; color:var(--muted);">${r.employee_code} · ${inr(r.daily_rate)}/day</div></td>
+        <td>${inr(r.monthly_salary)}</td>
+        <td>${r.counts.present}</td>
+        <td>${r.counts.wfh}</td>
+        <td>${r.counts.leave_units}</td>
+        <td style="color:${r.counts.absent > 0 ? '#c81e1e' : 'inherit'};">${r.counts.absent}</td>
+        <td>${inr(r.earned)}</td>
+        <td style="color:${r.penalty_total > 0 ? '#c81e1e' : 'var(--muted)'};">${r.penalty_total > 0 ? '− ' + inr(r.penalty_total) : '—'}</td>
+        <td style="font-weight:700;">${inr(r.net_pay)}</td>
+      </tr>`).join('');
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="9"><div class="alert error">${err.message}</div></td></tr>`;
+    }
+  }
+
+  // ---------- Day-wise detail + marking ----------
+  const detailModal = document.getElementById('detailModal');
+  document.getElementById('detailClose').addEventListener('click', () => {
+    closePop();
+    detailModal.classList.remove('open');
+    loadOverview();
+  });
+
+  window.openDetail = async function (empId) {
+    openEmpId = empId;
+    document.getElementById('detailBody').innerHTML = '<div class="loading" style="padding:20px; text-align:center;">Loading...</div>';
+    detailModal.classList.add('open');
+    await renderDetail();
+  };
+
+  async function renderDetail() {
+    try {
+      const data = await api.get('salary.detail', { month: month(), employee_id: openEmpId });
+      const d = data.detail;
+      document.getElementById('detailTitle').textContent = `${d.full_name} — ${inr(d.monthly_salary)}/month · ${inr(d.daily_rate)}/day`;
+      detailName = d.full_name; detailDays = d.days;
+      document.getElementById('detailBody').innerHTML = `
+        <table style="width:100%;">
+          <thead><tr><th>Date</th><th>Status</th><th>Pay</th><th>Amount</th><th>Mark</th></tr></thead>
+          <tbody>
+            ${d.days.map(day => {
+              const color = day.pct >= 100 ? '#0f7a41' : (day.pct > 0 ? '#b45f06' : '#c81e1e');
+              return `<tr>
+                <td style="white-space:nowrap;">${new Date(day.date + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit' })}</td>
+                <td>${day.status}${day.punch_in ? `<div style="font-size:11px; color:var(--muted);">in ${day.punch_in}${day.punch_out ? ' · out ' + day.punch_out : ''}</div>` : ''}${day.note ? `<div style="font-size:11px; color:var(--muted);">${day.note}</div>` : ''}</td>
+                <td style="color:${color};">${day.pct}%</td>
+                <td style="color:${color}; font-weight:600;">${inr(day.amount)}</td>
+                <td><button type="button" class="stedit" data-d="${day.date}" title="Change this day">${day.status === 'Present' ? 'Present' : (day.mark ? day.mark.replace('_', ' ') : (day.status === 'Absent' ? 'Absent' : 'Change'))} ✎</button></td>
+              </tr>`;
+            }).join('')}
+            ${d.extra_days > 0 ? `<tr><td colspan="3" style="font-size:12px; color:#0f7a41;">+ ${d.extra_days} paid day(s) — every month is paid as 30 days</td><td style="color:#0f7a41; font-weight:600;">${inr(d.extra_amount)}</td><td></td></tr>` : ''}
+            <tr><td colspan="3" style="font-weight:700;">Earned so far (original)</td><td style="font-weight:700;">${inr(d.earned)}</td><td></td></tr>
+            ${(d.penalties || []).map(p => `<tr><td colspan="3" style="font-size:12px; color:#c81e1e;">Penalty — ${escH(p.title)} <span style="color:var(--muted);">· ${new Date(p.date + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</span></td><td style="color:#c81e1e; font-weight:600;">− ${inr(p.amount)}</td><td></td></tr>`).join('')}
+            ${d.penalty_total > 0 ? `<tr><td colspan="3" style="font-weight:700;">Final salary after penalties</td><td style="font-weight:700;">${inr(d.net_pay)}</td><td></td></tr>` : ''}
+            <tr><td colspan="5" style="font-size:11.5px; color:var(--muted);">Free leave pool remaining: ${d.pool_left} day(s) · 30-day month · Sunday is a paid off day</td></tr>
+          </tbody>
+        </table>`;
+    } catch (err) {
+      document.getElementById('detailBody').innerHTML = `<div class="alert error">${err.message}</div>`;
+    }
+  }
+
+  // ---------- Change a day by hand (same chooser as the Order page: Present with punch times, WFH, Leave, Half leave, Absent) ----------
+  let dayPop = null, detailDays = [], detailName = '';
+  const closePop = () => { if (dayPop) { dayPop.remove(); dayPop = null; } };
+  const escH = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  function openDayPop(btn, date) {
+    closePop();
+    const day = detailDays.find(x => x.date === date); if (!day) return;
+    const present = day.status === 'Present';
+    const cur = present ? 'present' : (['wfh', 'leave', 'half_leave', 'holiday', 'week_off'].includes(day.mark) ? day.mark : 'absent');
+    const sunday = new Date(date + 'T00:00:00').getDay() === 0;
+    const opt = (v, label, note) => `<label class="op"><input type="radio" name="dpSt" value="${v}"><span><b>${label}</b>${note ? '<br><small>' + note + '</small>' : ''}</span></label>`;
+    dayPop = document.createElement('div'); dayPop.className = 'stpop';
+    dayPop.innerHTML = `<h4>${escH(detailName)} <small>· ${escH(date)}</small></h4>` +
+      opt('present', 'Present') +
+      `<div class="tin" id="dpTin">Punch in <input type="time" id="dpTinV" value="${escH(day.punch_in || '10:00')}"> out <input type="time" id="dpToutV" value="${escH(day.punch_out || '')}"></div>` +
+      opt('wfh', 'WFH') + opt('leave', 'Leave') + opt('half_leave', 'Half leave') + opt('holiday', 'Holiday') + opt('week_off', 'Week off') +
+      opt('absent', 'Absent', sunday ? 'No punch, no mark. (Sunday is a paid weekly off.)' : 'No punch, no mark.') +
+      `<div class="acts"><button type="button" class="btn secondary" data-pa="x">Cancel</button><button type="button" class="btn" data-pa="save">Save</button></div><div class="err" id="dpErr"></div>`;
+    document.body.appendChild(dayPop);
+    dayPop.querySelector(`input[value="${cur}"]`).checked = true;
+    const r = btn.getBoundingClientRect();
+    const place = () => { dayPop.style.top = Math.max(10, Math.min(innerHeight - dayPop.offsetHeight - 10, r.bottom + 6)) + 'px'; };
+    const sync = () => dayPop.querySelector('#dpTin').classList.toggle('show', dayPop.querySelector('input[value="present"]').checked);
+    dayPop.style.left = Math.max(10, Math.min(r.left, innerWidth - 310)) + 'px';
+    dayPop.addEventListener('change', () => { sync(); place(); }); sync(); place();
+    dayPop.addEventListener('click', async (ev) => {
+      const a = ev.target.closest('[data-pa]'); if (!a) return;
+      if (a.dataset.pa === 'x') return closePop();
+      const status = dayPop.querySelector('input[name="dpSt"]:checked').value;
+      const tin = dayPop.querySelector('#dpTinV').value, tout = dayPop.querySelector('#dpToutV').value;
+      const err = dayPop.querySelector('#dpErr');
+      const body = { employee_id: openEmpId, date, status };
+      if (status === 'present') {
+        if (!tin) { err.textContent = 'Type the punch in time.'; return; }
+        body.punch_in = tin; body.punch_out = tout;
+      } else if (present) {
+        if (!confirm(detailName + ' has a punch record on this day. Saving this removes it (and its photos). Continue?')) return;
+        body.remove_punch = true;
+      }
+      a.disabled = true;
+      try {
+        await api.post('attendance.set_day', body);
+        closePop();
+        await renderDetail();
+      } catch (er) { err.textContent = er.message; a.disabled = false; }
+    });
+  }
+  document.addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-d]');
+    if (b) { openDayPop(b, b.dataset.d); return; }
+    if (dayPop && !ev.target.closest('.stpop')) closePop();
+  });
+
+  const now = new Date();
+  document.getElementById('monthPick').value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  document.getElementById('monthPick').addEventListener('change', loadOverview);
+  loadRules();
+  loadOverview();
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>

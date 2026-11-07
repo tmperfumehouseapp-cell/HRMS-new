@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Products — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=260929d">
+<link rel="stylesheet" href="assets/css/sales_theme.css?v=1">
+<style>
+#pr{max-width:900px; --pl:var(--line,#e5e7eb); --pm:var(--muted,#6b7280); --pi:var(--ink,#111827);}
+#pr button{min-height:0; font:inherit;}
+#pr .sub{color:var(--pm); font-size:12.5px;}
+#pr .box{border:1px solid var(--pl); border-radius:14px; background:#fff; margin-bottom:12px; overflow:hidden;}
+#pr .box > h3{margin:0; padding:11px 14px; font-size:13px; font-weight:800; display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
+#pr .box > h3 .sub{font-weight:600;}
+#pr .pad{padding:2px 14px 14px; font-size:13px;}
+#pr .pri{padding:9px 16px; border-radius:11px; background:var(--pi); color:#fff; border:0; font-weight:800; font-size:13px; cursor:pointer;} #pr .pri:disabled{opacity:.5; cursor:default;}
+#pr .ghost{padding:6px 12px; border-radius:9px; background:#f3f4f6; color:var(--pi); border:0; font-weight:700; font-size:12px; cursor:pointer;}
+#pr .top{display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:14px;}
+#pr .top .sum{flex:1; min-width:220px;} #pr .top .sum b{font-size:15px;}
+#pr .ok{color:#15803d; font-weight:800;} #pr .bad{color:#b91c1c; font-weight:800;}
+#pr .err{background:#fef2f2; border-radius:12px; padding:9px 14px; font-size:12.5px; color:#991b1b; margin:0 14px 14px; line-height:1.45;}
+#pr .run{background:#eff6ff; border-radius:12px; padding:10px 14px; font-size:13px; font-weight:700; color:#1d4ed8; margin-bottom:12px;}
+#pr .stats{display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:8px; padding:0 14px 14px;}
+#pr .st{border:1px solid #eef0f3; border-radius:11px; padding:9px 11px; background:#fafbfc;} #pr .st b{display:block; font-size:19px; line-height:1.15;} #pr .st span{font-size:11.5px; color:var(--pm);}
+#pr .st.w b{color:#b45309;}
+#pr .sw{display:flex; align-items:center; gap:10px; padding:2px 14px 14px; font-size:13px;}
+#pr .tg{position:relative; width:42px; height:24px; border-radius:99px; background:#d1d5db; border:0; cursor:pointer; flex:none; padding:0;} #pr .tg i{position:absolute; top:3px; left:3px; width:18px; height:18px; border-radius:50%; background:#fff; transition:left .15s;} #pr .tg.on{background:#16a34a;} #pr .tg.on i{left:21px;}
+#pr .tg.sm{width:36px; height:20px;} #pr .tg.sm i{width:14px; height:14px;} #pr .tg.sm.on i{left:19px;}
+#pr .oc{display:flex; align-items:center; gap:10px; padding:9px 14px; border-top:1px solid #f1f2f5; font-size:13px;}
+#pr .oc .n{flex:1; min-width:0;} #pr .oc .n b{font-weight:800;} #pr .oc .n span{color:var(--pm); font-size:11.5px; margin-left:6px;}
+#pr .oc .h{font-size:12px; color:var(--pm); font-weight:700; white-space:nowrap;}
+#pr .oc.off .n{opacity:.5;}
+#pr .gp{padding:8px 14px 4px; font-size:11px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; color:var(--pm); border-top:1px solid #f1f2f5; background:#fafbfc;}
+#pr .gap{display:flex; align-items:center; gap:10px; padding:9px 14px; border-top:1px solid #f1f2f5; font-size:13px; flex-wrap:wrap;}
+#pr .gap .n{flex:1; min-width:180px; font-weight:700;} #pr .gap .m{font-size:12px; color:#b45309;}
+#pr .gap a{font-size:12px; font-weight:700; color:#1d4ed8; text-decoration:none; white-space:nowrap;}
+#pr .rules{margin:0; padding:0 14px 14px 32px; font-size:13px; line-height:1.6;}
+#pr .empty{padding:24px; text-align:center; color:var(--pm);}
+body > .pr-toast{position:fixed; left:50%; bottom:22px; transform:translateX(-50%); background:var(--pi,#111827); color:#fff; border-radius:11px; padding:9px 16px; font-size:13px; font-weight:700; z-index:60; max-width:90vw;}
+html.in-sales .topbar{display:none;}
+@media (max-width:560px){ #pr .oc{flex-wrap:wrap;} }
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar">
+      <div><h1>Products</h1><div class="sub">What the bot and your team know about your perfumes</div></div>
+    </div>
+    <div class="content">
+      <div id="pr"><div class="box"><div class="empty">Loading…</div></div></div>
+      <div id="wchCatalog" style="margin-top:14px"></div>
+    </div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=2"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script>
+(function () {
+  guardPage();
+  renderSidebar('sales');
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const root = $('pr');
+  let D = null, busy = '', note = '', toastT = null;
+  const toast = (m) => { let t = document.querySelector('body > .pr-toast'); if (t) t.remove(); t = document.createElement('div'); t.className = 'pr-toast'; t.textContent = m; document.body.appendChild(t); clearTimeout(toastT); toastT = setTimeout(() => t.remove(), 3200); };
+  const GROUPS = [['season', 'Season'], ['who', 'Who it is for'], ['occ', 'Occasion'], ['scent', 'Scent style'], ['quality', 'Quality']];
+  const SRC = { site: 'built in', seed: 'built in', chat: 'learned from chats', mined: 'learned from chats', manual: 'added by you', ai: 'added by AI' };
+
+  function ago(s) {
+    if (!s) return 'never';
+    const t = new Date(String(s).replace(' ', 'T')); if (isNaN(t)) return s;
+    const m = Math.round((Date.now() - t.getTime()) / 60000);
+    if (m < 1) return 'just now'; if (m < 60) return m + ' min ago'; if (m < 1440) return Math.round(m / 60) + ' h ago';
+    return t.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) + ' ' + t.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  }
+  const num = (n) => (n == null ? '–' : String(n));
+
+  async function load() {
+    try {
+      const d = await api.get('wa.prod_status');
+      if (!d || !d.counts) throw new Error('The server answered in an unexpected way. Upload the new wa_prod.php, then hard refresh.');
+      D = d; render();
+    } catch (e) { root.innerHTML = `<div class="box"><div class="empty" style="color:#b91c1c;">${esc(e.message || 'Could not load')}</div></div>`; }
+  }
+
+  function stat(v, label, warn) { return `<div class="st${warn ? ' w' : ''}"><b>${esc(v)}</b><span>${esc(label)}</span></div>`; }
+
+  function render() {
+    const c = D.counts, s = D.sync || {}, ai = D.ai || {}, sl = D.sales || {};
+    const pend = ai.pending || 0;
+    let h = '';
+    if (busy) h += `<div class="run">${esc(busy)}</div>`;
+    // 1. sync
+    const status = D.error ? `<span class="bad">Last refresh failed</span>` : D.last_sync_at ? (D.synced_today ? `<span class="ok">Up to date</span>` : `<span class="bad">Not refreshed today</span>`) : `<span class="bad">Not refreshed yet</span>`;
+    h += `<div class="box"><div class="top"><div class="sum"><b>Products from Shopify</b><div class="sub">${status} · last refresh: ${esc(ago(D.last_sync_at))}${s.added || s.updated ? ` · ${num(s.added)} new, ${num(s.updated)} changed, ${num(s.deactivated)} removed` : ''}</div></div>
+      <button class="pri" data-a="sync" ${busy ? 'disabled' : ''}>Refresh now</button></div>`;
+    if (D.error) {
+      const sc = /scope|access|403|401|denied/i.test(D.error) ? ' In Shopify, open your custom app, give it the <b>read_products</b> permission, then press Refresh now.' : '';
+      h += `<div class="err"><b>${esc(D.error)}</b>${sc}</div>`;
+    }
+    if (s.warning) h += `<div class="err">${esc(s.warning)}</div>`;
+    h += `<div class="sw"><button class="tg ${D.auto ? 'on' : ''}" data-a="auto" aria-label="Refresh every morning"><i></i></button><div><b>Refresh every morning</b><div class="sub">Runs by itself after 6:30 AM. Products, notes and sales are copied from Shopify.</div></div></div></div>`;
+    // 2. counts
+    const pf = c.perfumes || 0, gap = (n) => pf - n;
+    h += `<div class="box"><h3>What we know <span class="sub">${num(pf)} perfumes of ${num(c.products)} products</span></h3><div class="stats">`
+      + stat(num(c.with_photos), 'with photos', gap(c.with_photos) > 0) + stat(num(c.with_notes), 'with notes', gap(c.with_notes) > 0)
+      + stat(num(c.with_longevity), 'with longevity (hours)', gap(c.with_longevity) > 0) + stat(num(c.with_seasons), 'with season', gap(c.with_seasons) > 0)
+      + stat(num(c.with_original), 'original perfume known') + stat(num(c.low_conf), 'original not sure', c.low_conf > 0) + `</div>`
+      + `<div class="pad sub">The bot only says a perfume lasts a number of hours when Shopify has it. If it is missing, the bot says "I will confirm" and flags the chat for your team.</div></div>`;
+    // 2b. Photos tab pictures the bot can attach
+    const lb = D.library;
+    if (lb && lb.sections) {
+      h += `<div class="box"><h3>Photos too <span class="sub">${num(lb.total)} photos from the Photos tab</span></h3><div class="stats">` + lb.sections.map(x => stat(num(x.n), x.t, x.n === 0)).join('') + `</div>`
+        + `<div class="pad sub">When a customer asks for the price list, box photos, sizes, offers, gift sets, candles, the store or delivery proof, the bot also sends these. Registration papers and review screenshots are never sent by themselves. <a href="photos.html" style="color:#1d4ed8;font-weight:700;">Open Photos</a></div></div>`;
+    }
+    // 3. AI
+    const aiLine = !ai.configured ? `<span class="bad">No AI key set.</span> Simple rules are used instead.` : pend ? `${pend} products waiting to be checked.` : `<span class="ok">All products checked.</span>`;
+    h += `<div class="box"><h3>AI check</h3><div class="top" style="padding-top:0;"><div class="sum"><div>${aiLine}</div><div class="sub">AI reads each perfume once to find its best occasions and its original perfume. It runs again only when a product changes.</div></div>`
+      + (ai.configured && pend ? `<button class="ghost" data-a="enrich" ${busy ? 'disabled' : ''}>Check now</button>` : '') + `</div>`
+      + (ai.error ? `<div class="err">${esc(ai.error)}</div>` : '') + `</div>`;
+    // 4. request types
+    h += `<div class="box"><h3>Request types <span class="sub">What customers ask for. Switch one off to stop using it.</span></h3>`;
+    const occ = D.occ || [];
+    if (!occ.length) h += `<div class="empty">Nothing yet. Press Refresh now.</div>`;
+    GROUPS.forEach(([g, label]) => {
+      const rows = occ.filter(o => (o.group || 'occ') === g); if (!rows.length) return;
+      h += `<div class="gp">${esc(label)}</div>`;
+      rows.forEach(o => {
+        h += `<div class="oc ${o.active ? '' : 'off'}"><div class="n"><b>${esc(o.label)}</b><span>${esc(SRC[o.source] || o.source || '')}</span></div><div class="h">${o.hits ? o.hits + (o.hits === 1 ? ' ask' : ' asks') : 'no asks yet'}</div><button class="tg sm ${o.active ? 'on' : ''}" data-a="occ" data-s="${esc(o.slug)}" aria-label="${esc(o.label)}"><i></i></button></div>`;
+      });
+    });
+    h += `<div class="pad sub" style="padding-top:10px;">New phrases found in your chats are added here by themselves after they are seen several times. Last chat checked: message ${num((D.mine || {}).last_id)}.</div></div>`;
+    // 5. gaps
+    const gp = D.gaps || [];
+    h += `<div class="box"><h3>Fix in Shopify <span class="sub">${D.gaps_total || 0} perfumes with something missing</span></h3>`;
+    if (!gp.length) h += `<div class="empty">Nothing missing.</div>`;
+    gp.forEach(g => { h += `<div class="gap"><div class="n">${esc(g.name)}</div><div class="m">Missing: ${esc(g.missing.join(', '))}</div><a href="${esc(g.shopify_url)}" target="_blank" rel="noopener">Open in Shopify</a></div>`; });
+    if ((D.gaps_total || 0) > gp.length) h += `<div class="pad sub" style="padding-top:10px;">Showing the first ${gp.length}.</div>`;
+    h += `</div>`;
+    // 6. sales
+    h += `<div class="box"><h3>Sales</h3><div class="pad">${sl.note ? esc(sl.note) : `Best sellers use the last 90 days (${num(sl.with_90d)} perfumes have it).`}<div class="sub" style="margin-top:4px;">Daily copies saved: ${num(sl.snapshot_days)}</div></div></div>`;
+    // 7. rules
+    const r = D.rules || {};
+    h += `<div class="box"><h3>Photo rules</h3><ul class="rules"><li>Photos are sent only when the customer asks for a perfume.</li><li>At most ${num(r.max_per_reply)} photos in one reply, perfumes and Photos-tab pictures together.</li><li>The same photo is not sent again to the same customer within ${num(r.no_repeat_hours)} hours.</li><li>Nothing is sent when the 24 hour chat window is closed or the customer opted out.</li><li>Customers see the website name of a perfume, never the original brand name.</li><li>Your team can also find and send any perfume from the 🧴 button in a chat.</li></ul>`
+      + `<div class="pad sub">Everything the bot learned before is unchanged. This page only adds product knowledge.</div></div>`;
+    root.innerHTML = h;
+  }
+
+  async function doSync() {
+    if (busy) return;
+    busy = 'Reading products from Shopify… this can take a minute.'; render();
+    try {
+      const r = await api.post('wa.prod_sync', {});
+      if (!r || !r.ok) throw new Error((r && r.error) || 'Refresh failed.');
+      toast('Done. ' + ((r.result || {}).total || 0) + ' products.');
+      await enrichLoop();
+    } catch (e) { toast(e.message || 'Refresh failed.'); }
+    busy = ''; await load();
+  }
+  async function enrichLoop() {
+    for (let i = 0; i < 40; i++) {
+      busy = 'AI is checking products…'; render();
+      let r;
+      try { r = await api.post('wa.prod_enrich', {}); } catch (e) { toast(e.message || 'AI check stopped.'); return; }
+      if (!r || !r.ok || r.skipped || !(r.done > 0) || !(r.left > 0)) { if (r && r.error) toast(r.error); return; }
+    }
+  }
+  async function doEnrich() { if (busy) return; busy = 'AI is checking products…'; render(); try { await enrichLoop(); } catch (e) { toast(e.message || 'Failed'); } busy = ''; await load(); }
+
+  root.addEventListener('click', async (ev) => {
+    const b = ev.target.closest('[data-a]'); if (!b) return;
+    const a = b.dataset.a;
+    if (a === 'sync') return doSync();
+    if (a === 'enrich') return doEnrich();
+    if (a === 'auto') {
+      const on = !D.auto;
+      try { await api.post('wa.prod_auto', { on }); D.auto = on; render(); toast(on ? 'Morning refresh is on.' : 'Morning refresh is off.'); } catch (e) { toast(e.message || 'Could not save.'); }
+      return;
+    }
+    if (a === 'occ') {
+      const o = (D.occ || []).find(x => x.slug === b.dataset.s); if (!o) return; const act = o.active ? 0 : 1;
+      try { await api.post('wa.prod_occ_toggle', { slug: o.slug, active: act }); o.active = act; render(); } catch (e) { toast(e.message || 'Could not save.'); }
+    }
+  });
+
+  load();
+})();
+</script>
+<script>
+// Chain cart ("wch" module): catalog sync & mapping for the cart (chains vs perfumes, sizes, problems, price coverage). Additive; the box stays empty if the files are not installed.
+(function () {
+  const box = document.getElementById('wchCatalog'); if (!box) return;
+  const sc = document.createElement('script'); sc.src = 'assets/js/wch_setup_ui.js?v=ch4';
+  sc.onload = () => { if (window.WaCartSetup) { try { WaCartSetup.catalog(box, { api }); } catch (e) { box.style.display = 'none'; } } };
+  sc.onerror = () => { box.style.display = 'none'; };
+  document.head.appendChild(sc);
+})();
+</script>
+</body>
+</html>

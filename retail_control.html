@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Retail Control — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css">
+<style>
+  .sub{font-size:12px; color:var(--muted,#6b7280);}
+  .tabs{display:flex; gap:8px; margin:0 0 14px; flex-wrap:wrap;}
+  .tabs button{border:1px solid var(--line,#e5e7eb); background:#fff; color:var(--ink,#111827); border-radius:999px; padding:8px 16px; font-size:13px; font-weight:700; cursor:pointer; font-family:inherit; white-space:nowrap;}
+  .tabs button.on{background:#111827; color:#fff; border-color:#111827;}
+  .tabs button em{font-style:normal; background:#e02424; color:#fff; border-radius:10px; font-size:11px; font-weight:800; padding:1px 7px; margin-left:6px;}
+  .tabs button.on em{background:var(--accent,#ff7a2f);}
+  .ct .card{margin-bottom:16px;} .ct .tw{overflow-x:auto; -webkit-overflow-scrolling:touch;}
+  .ct table{width:100%; border-collapse:collapse; font-size:13.5px;}
+  .ct th{font-size:11px; text-transform:uppercase; color:var(--muted,#6b7280); font-weight:700; text-align:left; padding:9px 12px; white-space:nowrap;}
+  .ct td{padding:10px 12px; border-top:1px solid var(--line,#e5e7eb); vertical-align:top;}
+  .ct td.r, .ct th.r{text-align:right;} .ct td.c, .ct th.c{text-align:center;}
+  .pill{display:inline-block; padding:2px 10px; border-radius:99px; font-size:11px; font-weight:800; white-space:nowrap;}
+  .pill.ok{background:#e4f6ec; color:#16945a;} .pill.todo{background:#fff1e6; color:#c2570c;} .pill.bad{background:#fdecea; color:#d9423b;} .pill.na{background:#eceff3; color:#4b5563;} .pill.blue{background:#eaf0ff; color:#1d4ed8;} .pill.amber{background:#fff3df; color:#b45f06;}
+  .dot{display:inline-block; width:11px; height:11px; border-radius:50%; margin-right:7px; vertical-align:middle;} .dot.red{background:#d9423b;} .dot.amber{background:#e8a317;} .dot.green{background:#16945a;} .dot.new{background:#9ca3af;}
+  .pad{padding:4px 20px 18px;} .pad.t{padding-top:14px;}
+  .stats{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-bottom:16px;}
+  .st{background:#fff; border-radius:16px; padding:14px 16px; box-shadow:var(--shadow,0 1px 3px rgba(20,22,26,.08)); cursor:pointer; border:2px solid transparent;}
+  .st:hover{border-color:var(--accent,#ff7a2f);} .st .k{font-size:11px; letter-spacing:.07em; text-transform:uppercase; color:var(--muted,#6b7280); font-weight:800;} .st .v{font-size:25px; font-weight:800; margin-top:3px;} .st .v.red{color:#d9423b;} .st .v.org{color:#c2570c;}
+  .warn{background:#fff1e6; border:1px solid #f5d9ac; color:#7a4310; border-radius:14px; padding:11px 14px; margin-bottom:12px; font-size:13.5px; line-height:1.5; font-weight:600;}
+  .warn.bad{background:#fdecea; border-color:#f4c4c0; color:#8a2620;}
+  .q{display:grid; grid-template-columns:150px 1fr; gap:16px; padding:16px 20px; border-top:1px solid var(--line,#e5e7eb);}
+  @media (max-width:760px){ .q{grid-template-columns:1fr;} }
+  .q .ph{width:150px; height:150px; border-radius:14px; background:#eceff3 center/cover no-repeat; cursor:zoom-in; border:1px solid var(--line,#e5e7eb);}
+  .q .ttl{font-weight:800; font-size:15px;} .facts{display:flex; flex-wrap:wrap; gap:6px 14px; margin:8px 0; font-size:13px;} .facts b{color:var(--muted,#6b7280); font-weight:700; margin-right:4px;}
+  .lay{display:flex; flex-direction:column; gap:5px; margin:8px 0;} .lay > div{font-size:12.5px; line-height:1.45; background:#f8fafc; border-radius:10px; padding:7px 10px;} .lay b{margin-right:6px;}
+  .lay .y{border-left:3px solid #16945a;} .lay .n{border-left:3px solid #d9423b;}
+  .acts{display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; align-items:center;}
+  .acts .btn{width:auto; min-height:38px; padding:0 18px; border-radius:999px; font-weight:800; font-size:13.5px;}
+  .in{border:1px solid var(--line,#e5e7eb); border-radius:10px; padding:8px 11px; font-size:14px; font-family:inherit; background:#fff; box-sizing:border-box;}
+  .fld{display:grid; gap:4px; margin-bottom:12px;} .fld label{font-size:12px; color:var(--muted,#6b7280); font-weight:700;} .fld .in{width:100%;}
+  .grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:0 16px;}
+  .bar{height:8px; background:#ece6dc; border-radius:99px; overflow:hidden;} .bar > i{display:block; height:100%; background:var(--accent,#ff7a2f);}
+  .sel{display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:14px;}
+  .city{border:1px solid var(--line,#e5e7eb); background:#fff; border-radius:999px; padding:7px 14px; font-size:13px; font-weight:700; cursor:pointer;} .city.on{background:#111827; color:#fff; border-color:#111827;}
+  .empty{padding:34px 20px; text-align:center; color:var(--muted,#6b7280); line-height:1.6;}
+  #lb{position:fixed; inset:0; background:rgba(15,15,20,.88); z-index:9999; display:none; align-items:center; justify-content:center; padding:18px;} #lb.on{display:flex;} #lb img{max-width:100%; max-height:90vh; border-radius:12px;}
+  .link{background:none; border:none; color:#1d4ed8; font-weight:700; cursor:pointer; padding:0; font-size:inherit;}
+  .peo{display:flex; flex-wrap:wrap; gap:6px; margin:6px 0;} .peo label{display:flex; align-items:center; gap:6px; border:1px solid var(--line,#e5e7eb); border-radius:999px; padding:6px 12px; font-size:13px; cursor:pointer; background:#fff;}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><div><h1>Retail Control</h1><div class="sub" style="margin-top:2px;">The retail field, checked by Claude first. You see only what needs a person.</div></div></div>
+    <div class="content ct">
+      <div id="alertBox"></div>
+      <div class="tabs" id="tabs"></div>
+      <div id="pane"><div class="empty">Loading...</div></div>
+    </div>
+  </main>
+</div>
+<div class="modal-overlay" id="mdl"><div class="modal" id="mdlBox" style="max-width:560px;"></div></div>
+<div id="lb"><img id="lbImg" alt=""></div>
+
+<script src="assets/js/config.js"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script>
+  guardPage();
+  renderSidebar('retail_control');
+
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const inr = (n) => '₹' + Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+  const TABS = [['today', 'Today'], ['coverage', 'Coverage'], ['queue', 'Checker'], ['pay', 'Pay now'], ['calls', 'Payment calls'], ['score', 'Scorecard'], ['remove', 'Remove display'], ['guide', '12-day guide'], ['expand', 'Expand'], ['money', 'Money & parties'], ['setup', 'Setup']];
+  let tab = 'today', C = null, city = '', busy = false;
+  const blobs = {};
+  function say(msg, bad) { const a = $('alertBox'); a.innerHTML = msg ? `<div class="alert ${bad ? 'error' : 'success'}">${esc(msg)}</div>` : ''; if (msg && !bad) setTimeout(() => { if (a.firstChild) a.innerHTML = ''; }, 4000); if (msg) window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  const open = () => $('mdl').classList.add('open'), shut = () => $('mdl').classList.remove('open');
+  $('mdl').addEventListener('click', (e) => { if (e.target === $('mdl')) shut(); });
+  $('lb').addEventListener('click', () => $('lb').classList.remove('on'));
+  async function photoUrl(path) { if (!path) return ''; if (blobs[path]) return blobs[path]; try { const r = await fetch(api.buildUrl('rf.photo', { path }), { headers: { Authorization: 'Bearer ' + api.token() } }); if (!r.ok) return ''; return (blobs[path] = URL.createObjectURL(await r.blob())); } catch (e) { return ''; } }
+  function hydrate() { document.querySelectorAll('[data-p]').forEach(async (el) => { if (el.dataset.done) return; el.dataset.done = '1'; const u = await photoUrl(el.dataset.p); if (u) el.style.backgroundImage = `url("${u}")`; }); }
+  const chip = (s) => ({ missing: '<span class="pill bad">Not sent</span>', clear: '<span class="pill ok">✓ Claude OK</span>', approved: '<span class="pill ok">✓ Approved</span>', review: '<span class="pill blue">Needs a look</span>', rejected: '<span class="pill bad">Sent back</span>' }[s] || esc(s));
+
+  /* ---- tabs, with Back staying inside this page ---- */
+  function drawTabs() {
+    $('tabs').innerHTML = TABS.map((t) => { const n = badge(t[0]); return `<button data-t="${t[0]}" class="${tab === t[0] ? 'on' : ''}">${t[1]}${n ? '<em>' + n + '</em>' : ''}</button>`; }).join('');
+  }
+  function badge(t) { if (!C) return 0; return t === 'queue' ? C.queue : t === 'pay' ? C.pay.n : t === 'calls' ? C.pay.calls : t === 'remove' ? C.remove.suggested : t === 'expand' ? 0 : 0; }
+  function go(t, push) {
+    tab = t; if (push !== false) history.pushState({ rfTab: t }, '', '#' + t); drawTabs(); $('pane').innerHTML = '<div class="empty">Loading...</div>';
+    ({ today, coverage, queue, pay, calls, score, remove, guide, expand, money, setup })[t]().catch((e) => { $('pane').innerHTML = `<div class="card"><div class="empty"><b>${esc(e.message)}</b></div></div>`; });
+  }
+  $('tabs').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) go(b.dataset.t); });
+  window.addEventListener('popstate', (e) => { const t = (e.state && e.state.rfTab) || (location.hash || '#today').slice(1); if (TABS.some((x) => x[0] === t)) go(t, false); });
+  async function refreshBadges() { try { C = await api.get('rf.control'); drawTabs(); } catch (e) { /* the tab itself shows the error */ } }
+
+  /* ---- Today ---- */
+  async function today() {
+    C = await api.get('rf.control'); drawTabs(); const s = await api.get('rf.settings_get'), seats = await api.get('rf.seats_get');
+    let h = '';
+    if (C.ai !== 'on') h += '<div class="warn bad">Claude is not connected: the ANTHROPIC_API_KEY line is missing in config.php. Every photo will go to the Checker until it is added.</div>';
+    if (!(s.effective.base_20 > 0) || !(s.effective.base_50 > 0)) h += '<div class="warn bad">The base price of 20 ml or 50 ml is not set. Until it is, nobody is asked for money. Set it in <button class="link" data-go="setup">Setup</button>.</div>';
+    seats.seats.filter((x) => x.city && !x.people.length).forEach((x) => { h += `<div class="warn">No salesperson on the seat for <b>${esc(x.city)}</b>: its shops have no daily list. <button class="link" data-go="setup">Put a person on the seat</button></div>`; });
+    if (C.pay.calls) h += `<div class="warn bad">${C.pay.calls} shop${C.pay.calls === 1 ? ' needs' : 's need'} a payment call today. <button class="link" data-go="calls">Open Payment calls</button></div>`;
+    if (C.pay.urgent) h += `<div class="warn bad">${C.pay.urgent} unpaid request${C.pay.urgent === 1 ? ' is' : 's are'} past the checker step. <button class="link" data-go="pay">Open Pay now</button></div>`;
+    if (C.pay.left_unpaid && C.pay.left_unpaid.length) h += `<div class="warn bad"><b>Punched out with money unpaid:</b> ${C.pay.left_unpaid.map((x) => esc(x.name) + ' (' + inr(x.total) + ')').join(', ')}. <button class="link" data-go="pay">Open Pay now</button></div>`;
+    h += `<div class="stats"><div class="st" data-go="queue"><div class="k">Checker queue</div><div class="v ${C.queue ? 'org' : ''}">${C.queue}</div></div><div class="st" data-go="pay"><div class="k">Collect now</div><div class="v ${C.pay.n ? 'red' : ''}">${inr(C.pay.amount)}</div><div class="sub">${C.pay.n} shop${C.pay.n === 1 ? '' : 's'}</div></div>
+      <div class="st" data-go="remove"><div class="k">Displays to remove</div><div class="v">${C.remove.suggested}</div><div class="sub">${C.remove.approved} on the list</div></div><div class="st" data-go="money"><div class="k">Dealer orders today</div><div class="v">${C.orders.placed}</div><div class="sub">${C.orders.hold} on hold</div></div><div class="st" data-go="expand"><div class="k">New places to call</div><div class="v">${C.places_new}</div></div></div>`;
+    h += `<div class="card"><div class="card-head"><h2>Salespeople today</h2><span class="sub">Morning photo is due by ${esc(C.morning_by)}</span></div><div class="tw"><table><thead><tr><th>Person</th><th>City</th><th>Morning stock</th><th>Evening return</th><th class="c">Shops</th><th class="r">Cash</th><th class="r">Online</th></tr></thead><tbody>
+      ${C.people.map((p) => `<tr><td><b>${esc(p.name)}</b></td><td>${esc(p.cities.join(', '))}</td><td>${chip(p.morning)}${p.morning !== 'missing' ? ` <span class="sub">${p.q20}×20 · ${p.q50}×50</span>` : ''}</td><td>${chip(p.evening)}</td><td class="c">${p.done} / ${p.visits}</td><td class="r">${inr(p.collected.cash)}</td><td class="r">${inr(p.collected.online)}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">Nobody is on a Retail field seat yet. Open Setup.</td></tr>'}</tbody></table></div></div>`;
+    $('pane').innerHTML = h;
+  }
+
+  /* ---- Coverage: who was visited and who needs a person first ---- */
+  let covB = '', covC = '', covQ = '', covN = 60, callF = 'call', callQ = '', CL = [], CLX = null;
+  const BK = [['d1', 'Last '], ['d2', ''], ['d3', ''], ['over', 'More than '], ['never', 'Never visited']];
+  const COL = { red: ['Needs a person now', '#d9423b'], orange: ['Big outstanding / late', '#f08a24'], yellow: ['Some outstanding / a bit late', '#e8c21a'], green: ['All good', '#16945a'] };
+  const ago = (r) => r.days === null ? 'Never' : (r.days === 0 ? 'Today' : r.days + ' days ago');
+  const dispTxt = (d) => ({ full: '<span class="pill ok">Full</span>', short: `<span class="pill bad">Not full ${d.counted}/${d.expected}</span>`, empty: '<span class="pill bad">EMPTY</span>', unknown: '<span class="sub">no count yet</span>' }[d.state]);
+  async function coverage() {
+    const r = await api.get('rf.coverage', city ? { city } : {}); city = r.city; const L = r.limits;
+    const lab = { d1: `Visited in the last ${L.d1} days`, d2: `${L.d1 + 1} to ${L.d2} days ago`, d3: `${L.d2 + 1} to ${L.d3} days ago`, over: `More than ${L.d3} days ago`, never: 'Never visited' };
+    let rows = r.rows.filter((x) => (!covB || x.bucket === covB) && (!covC || x.color === covC) && (!covQ || (x.name + ' ' + x.area + ' ' + x.mobile).toLowerCase().includes(covQ.toLowerCase())));
+    const total = r.rows.length, shown = rows.slice(0, covN);
+    $('pane').innerHTML = `<div class="sel">${r.cities.map((c) => `<button class="city ${c === city ? 'on' : ''}" data-city="${esc(c)}">${esc(c)}</button>`).join('')}<span class="sub">${total} active shops. The shops that need a person first are at the top.</span></div>
+      ${r.people ? '' : `<div class="warn bad">Nobody is on the ${esc(city)} seat, so these shops have no daily list. <button class="link" data-go="setup">Put a person on the seat</button></div>`}
+      <div class="stats">${['d1', 'd2', 'd3', 'over', 'never'].map((k) => `<div class="st" data-cb="${k}" style="${covB === k ? 'border-color:#111827;' : ''}"><div class="k">${lab[k]}</div><div class="v ${k === 'over' || k === 'never' ? (r.buckets[k] ? 'red' : '') : ''}">${r.buckets[k]}</div></div>`).join('')}</div>
+      <div class="sel">${Object.keys(COL).map((k) => `<button class="city ${covC === k ? 'on' : ''}" data-cc="${k}"><span class="dot" style="background:${COL[k][1]};"></span>${COL[k][0]} · ${r.colors[k]}</button>`).join('')}${covB || covC || covQ ? '<button class="link" data-act="cov-clear">Clear filters</button>' : ''}<input class="in" id="covQ" placeholder="Search shop, area or mobile" value="${esc(covQ)}" style="flex:1; min-width:180px;"></div>
+      <div class="card"><div class="card-head"><h2>Shops by priority</h2><span class="sub">${rows.length} shown${rows.length !== total ? ' of ' + total : ''} · outstanding: yellow above ${inr(L.due_ok)}, orange from ${inr(L.due_high)}</span></div>
+      <div class="acts" style="padding:0 20px 10px; margin-top:0;"><button class="btn" data-act="cov-top" data-ids="${shown.filter((x) => x.on_today === '' && x.color === 'red').slice(0, 10).map((x) => x.shop_id).join(',')}">Send the top ${Math.min(10, shown.filter((x) => x.on_today === '' && x.color === 'red').length)} red shops to today's list</button></div>
+      <div class="tw"><table><thead><tr><th>Shop</th><th>Last visit</th><th>Display</th><th class="r">Owes</th><th>Why</th><th></th></tr></thead><tbody>
+      ${shown.map((x) => `<tr><td><span class="dot" style="background:${COL[x.color][1]};"></span><b>${esc(x.name)}</b><div class="sub">${esc(x.area)}${x.mobile ? ' · ' + esc(x.mobile) : ''}</div></td>
+        <td>${ago(x)}${x.check ? `<div>${{ checked: '<span class="pill ok">Checked ✓</span>', waiting: '<span class="pill blue">Waiting for check</span>', sent_back: '<span class="pill bad">Sent back</span>' }[x.check]}</div>` : ''}</td><td>${dispTxt(x.display)}</td>
+        <td class="r">${x.due > 0 ? inr(x.due) : '-'}${x.collect ? `<div><span class="pill bad">Collect ${inr(x.collect)}</span></div>` : ''}</td>
+        <td class="sub">${x.why.map(esc).join(' · ') || 'All good'}${x.hint ? `<div style="color:#b45f06; font-weight:700; margin-top:3px;">${esc(x.hint)}</div>` : ''}</td>
+        <td style="white-space:nowrap;">${x.on_today ? `<span class="pill ${x.on_today === 'done' ? 'ok' : 'blue'}">${x.on_today === 'done' ? 'Done today' : 'On today\'s list'}</span>` : `<button class="btn secondary" style="width:auto; min-height:34px; padding:0 14px;" data-act="cov-add" data-id="${x.shop_id}">Send today</button>`}${x.mobile ? ` <a class="btn secondary" style="display:inline-flex; width:auto; min-height:34px; padding:0 14px; text-decoration:none;" href="tel:${esc(x.mobile)}">Call</a>` : ''}</td></tr>`).join('') || '<tr><td colspan="6" class="empty"><b>No shop matches.</b></td></tr>'}</tbody></table></div>
+      ${rows.length > covN ? `<div class="pad"><button class="btn secondary" style="width:auto;" data-act="cov-more">Show 60 more (${rows.length - covN} left)</button></div>` : ''}</div>`;
+    const q = $('covQ'); q.addEventListener('input', () => { covQ = q.value.trim(); covN = 60; clearTimeout(window.__cq); window.__cq = setTimeout(() => { coverage().then(() => { const n = $('covQ'); if (n) { n.focus(); n.setSelectionRange(n.value.length, n.value.length); } }); }, 350); });
+  }
+  /* ---- Checker ---- */
+  async function queue() {
+    const r = await api.get('rf.queue'); let h = '<div class="card"><div class="card-head"><h2>Checker</h2><span class="sub">Claude looked at each photo in up to 3 layers and could not clear it. Also: salespeople who cannot fill a display ask you here.</span></div>';
+    h += r.items.map((it) => `<div class="q" ${it.photo ? '' : 'style="grid-template-columns:1fr;"'}>${it.photo ? `<div class="ph" data-p="${esc(it.photo)}" data-big="1"></div>` : ''}<div><div class="ttl">${esc(it.title)}</div><div class="sub">${esc(it.sub)}</div>
+      <div class="facts">${Object.keys(it.facts).map((k) => `<span><b>${esc(k)}</b>${esc(it.facts[k])}</span>`).join('')}</div>
+      ${it.note ? `<div class="warn" style="margin:6px 0;">${esc(it.note)}</div>` : ''}
+      ${it.lines ? `<div class="sub">${it.lines.map((l) => `${esc(l.product)} ${esc(l.ml)}ml: ${l.counted}/${l.expected}${l.reason ? ' (' + esc(l.reason) + ')' : ''}`).join(' · ')}</div>` : ''}
+      <div class="lay">${it.ai.layers.length ? it.ai.layers.map((l) => `<div class="${l.ok ? 'y' : 'n'}"><b>Layer ${l.layer} · ${l.ok ? 'OK' : 'doubt'} ${l.conf}%</b>${esc(l.reason)}${l.issues.length ? ' <span class="sub">(' + l.issues.map(esc).join('; ') + ')</span>' : ''}</div>`).join('') : `<div class="n"><b>${it.type === 'exception' ? 'Your decision' : 'No Claude answer'}</b> ${esc(it.ai.summary || 'Claude was not available.')}</div>`}</div>
+      <div class="acts"><button class="btn" data-act="approve" data-t="${it.type}" data-id="${it.id}">Approve</button><input class="in" id="n_${it.type}${it.id}" placeholder="Why send back? (the salesperson sees it)" style="flex:1; min-width:200px;"><button class="btn secondary" data-act="reject" data-t="${it.type}" data-id="${it.id}">${it.type === 'exception' ? 'No, fill it' : 'Send back'}</button></div></div></div>`).join('') || '<div class="empty"><b>Nothing to check.</b><br>Claude cleared everything.</div>';
+    $('pane').innerHTML = h + '</div>'; hydrate();
+  }
+  /* ---- Pay now ---- */
+  async function pay() {
+    const r = await api.get('rf.pay_list');
+    const wait = (x) => x.hours >= 48 ? Math.round(x.hours / 24) + ' days' : (x.hours >= 1 ? Math.round(x.hours) + ' h' : 'just now');
+    const step = (x) => x.level >= 3 ? '<span class="pill bad">Boss told</span>' : x.level === 2 ? '<span class="pill bad">Checker told</span>' : x.level === 1 ? '<span class="pill todo">Salesperson reminded</span>' : '<span class="pill na">New</span>';
+    $('pane').innerHTML = `<div class="warn">These shops sold more bottles than they paid for. The salesperson is reminded after a few hours, you are told next, then the Admin and top boss. If the salesperson punches out with this money still unpaid, you and the bosses get an urgent notice at that moment (punch out is never blocked). The times are in <button class="link" data-go="setup">Setup</button>. To call the shops and note what they promised, open <button class="link" data-go="calls">Payment calls</button>.</div>
+      <div class="card"><div class="card-head"><h2>Collect now</h2><span class="sub">Total ${inr(r.total)}</span></div><div class="tw"><table><thead><tr><th>Shop</th><th>What happened</th><th class="r">Collect now</th><th>Waiting</th><th>Salesperson</th><th></th></tr></thead><tbody>
+      ${r.items.map((i) => `<tr><td><b>${esc(i.shop)}</b><div class="sub">${esc(i.area)}</div></td><td>${esc(i.text || '')}<div class="sub">Owes ${inr(i.due)}, display worth ${inr(i.stock_value)}</div></td><td class="r"><b style="color:#d9423b;">${inr(i.ask)}</b></td><td>${wait(i)}<div>${step(i)}</div></td><td>${esc(i.who)}</td>
+        <td style="white-space:nowrap;">${i.mobile ? `<a class="btn secondary" style="display:inline-flex; width:auto; min-height:34px; padding:0 14px; text-decoration:none;" href="tel:${esc(i.mobile)}">Call</a> ` : ''}${i.wa ? `<a class="btn secondary" style="display:inline-flex; width:auto; min-height:34px; padding:0 14px; text-decoration:none;" target="_blank" rel="noopener" href="${esc(i.wa)}">WhatsApp</a> ` : ''}<button class="btn secondary" style="width:auto; min-height:34px; padding:0 14px;" data-act="pay-close" data-id="${i.id}">Close</button></td></tr>`).join('') || '<tr><td colspan="6" class="empty"><b>No shop is waiting to pay.</b></td></tr>'}</tbody></table></div></div>`;
+  }
+  /* ---- Payment calls ---- */
+  const CST = { call: ['Call today', 'todo'], broken: ['Promise broken', 'bad'], due_today: ['Promised today', 'todo'], cash_today: ['Cash visit today', 'ok'], promised: ['Promised', 'blue'], cash: ['Cash visit', 'ok'] };
+  const dShort = (d) => new Date(d + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+  const tStamp = (t) => new Date(String(t).replace(' ', 'T')).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+  async function calls() {
+    const r = await api.get('rf.call_list'), c = r.counts; CL = r.rows; CLX = r;
+    const F = [['call', 'Call today', c.call], ['due_today', 'Promise due today', c.due_today], ['promised', 'Promised for later', c.promised], ['cash', 'Cash visit set', c.cash], ['broken3', 'Broke ' + r.max + ' or more', c.broken3], ['all', 'All', c.all]];
+    const inF = (x) => callF === 'all' || (callF === 'call' ? ['call', 'broken', 'due_today', 'cash_today'].includes(x.state) : callF === 'due_today' ? ['due_today', 'cash_today'].includes(x.state) : callF === 'promised' ? x.state === 'promised' : callF === 'cash' ? x.state === 'cash' : x.broken >= r.max);
+    const rows = r.rows.filter((x) => inF(x) && (!callQ || (x.shop + ' ' + x.area + ' ' + x.mobile).toLowerCase().includes(callQ.toLowerCase())));
+    $('pane').innerHTML = `<div class="warn">Call the shops that have not paid and write down what they said. A promised date reminds you that morning; if the day ends unpaid the promise counts as broken. After ${r.max} broken promises Claude writes you a summary. When a shop will pay in cash, a visit is set for the salesperson: he counts the display and collects in the same stop.</div>
+      <div class="stats"><div class="st"><div class="k">Call today</div><div class="v ${c.call ? 'red' : ''}">${c.call}</div></div><div class="st"><div class="k">Promised for later</div><div class="v">${c.promised}</div></div><div class="st"><div class="k">Cash visits set</div><div class="v">${c.cash}</div></div><div class="st"><div class="k">Broke ${r.max} or more</div><div class="v ${c.broken3 ? 'red' : ''}">${c.broken3}</div></div><div class="st"><div class="k">Total unpaid</div><div class="v">${inr(r.total)}</div></div></div>
+      <div class="sel">${F.map((f) => `<button class="city ${callF === f[0] ? 'on' : ''}" data-cf="${f[0]}">${f[1]} · ${f[2]}</button>`).join('')}<input class="in" id="callQ" placeholder="Search a shop" value="${esc(callQ)}" style="max-width:220px;"></div>
+      <div class="card"><div class="card-head"><h2>Payment calls</h2><span class="sub">${rows.length} shown. The shops that need a call first are at the top.</span></div><div class="tw"><table><thead><tr><th>Shop</th><th>What happened</th><th class="r">Unpaid</th><th>Last call</th><th>Status</th><th></th></tr></thead><tbody>
+      ${rows.map((x) => { const st = CST[x.state] || CST.call, d = x.promise ? ' ' + dShort(x.promise.date) : '';
+        return `<tr><td><b>${esc(x.shop)}</b><div class="sub">${esc(x.area)}${x.mobile ? ' · ' + esc(x.mobile) : ''}</div></td><td>${esc(x.text || 'Promise only')}</td><td class="r"><b style="color:#d9423b;">${inr(x.ask)}</b></td>
+          <td>${x.last ? `${esc(x.last.text)}<div class="sub">${esc(x.last.by)} · ${tStamp(x.last.at)}${x.last.note ? ' · ' + esc(x.last.note) : ''}</div>` : '<span class="sub">Not called yet</span>'}</td>
+          <td><span class="pill ${st[1]}">${st[0]}${x.state === 'promised' || x.state === 'cash' ? d : ''}</span>${x.broken ? `<div style="margin-top:4px;"><span class="pill bad">Broke ${x.broken} promise${x.broken === 1 ? '' : 's'}</span></div>` : ''}</td>
+          <td style="white-space:nowrap;">${x.mobile ? `<a class="btn secondary" style="display:inline-flex; width:auto; min-height:34px; padding:0 14px; text-decoration:none;" href="tel:${esc(x.mobile)}">Call</a> ` : ''}<button class="btn" style="width:auto; min-height:34px; padding:0 14px;" data-act="call-log" data-id="${x.shop_id}">Log the call</button> <button class="btn secondary" style="width:auto; min-height:34px; padding:0 14px;" data-act="call-sum" data-id="${x.shop_id}">${x.summary ? 'New summary' : 'Claude summary'}</button></td></tr>
+          ${x.summary ? `<tr><td colspan="6" style="background:#fff8f0;"><b>${x.summary.by_claude ? 'Claude\'s summary' : 'Summary'}</b> <span class="sub">after ${x.summary.broken} broken promise${x.summary.broken === 1 ? '' : 's'} · ${tStamp(x.summary.at)}</span><div style="margin-top:4px; white-space:pre-line;">${esc(x.summary.body)}</div></td></tr>` : ''}`; }).join('') || '<tr><td colspan="6" class="empty"><b>No shop is waiting for a call.</b></td></tr>'}</tbody></table></div></div>`;
+  }
+  function callModal(x) {
+    const today = CLX.today, tom = new Date(new Date(today + 'T00:00:00').getTime() + 86400000).toLocaleDateString('en-CA');
+    $('mdlBox').innerHTML = `<h3>${esc(x.shop)} <span class="sub">${esc(x.area)}</span></h3><div class="sub" style="margin:-6px 0 10px;">${esc(x.text || '')}</div>
+      <div class="fld"><label>What did the shop say?</label><select class="in" id="cO"><option value="promise">Will pay on a date</option><option value="cash">Will pay in cash: send a person to visit and collect</option><option value="paid">Paid now (money received)</option><option value="nopick">Did not pick up</option><option value="refused">Refused or says it is not owed</option></select></div>
+      <div class="fld" id="cDateBox"><label>Date the shop promised</label><div style="display:flex; gap:8px; flex-wrap:wrap;"><button class="btn secondary" style="width:auto; min-height:36px; padding:0 14px;" data-act="c-day" data-d="${tom}">Tomorrow</button><button class="btn secondary" style="width:auto; min-height:36px; padding:0 14px;" data-act="c-day" data-d="${new Date(new Date(today + 'T00:00:00').getTime() + 2 * 86400000).toLocaleDateString('en-CA')}">Day after</button><input class="in" type="date" id="cD" min="${today}" value="${tom}" style="width:auto;"></div></div>
+      <div class="fld" id="cAmtBox" style="display:none;"><label>Amount received (₹)</label><div style="display:flex; gap:8px;"><input class="in" id="cA" type="number" value="${x.ask}"><select class="in" id="cM" style="width:auto;"><option value="cash">Cash</option><option value="online">Online</option></select></div></div>
+      <div class="fld"><label>Note</label><input class="in" id="cN" placeholder="e.g. owner is out of town"></div>
+      ${x.history.length ? `<div class="sub" style="margin-top:6px;"><b>Earlier calls</b><br>${x.history.map((h) => esc(tStamp(h.at) + ' · ' + h.text + (h.note ? ' · ' + h.note : ''))).join('<br>')}</div>` : ''}
+      <div class="actions"><button class="btn secondary" data-act="shut">Cancel</button><button class="btn" data-act="call-save" data-id="${x.shop_id}">Save the call</button></div>`;
+    open();
+  }
+  /* ---- Scorecard ---- */
+  async function score() {
+    const r = await api.get('rf.score', city ? { city } : {}); city = r.city;
+    $('pane').innerHTML = `<div class="sel">${r.cities.map((c) => `<button class="city ${c === city ? 'on' : ''}" data-city="${esc(c)}">${esc(c)}</button>`).join('')}<span class="sub">Selling is compared with the other shops: the slowest ${r.slow_pct}% turn red once a shop has ${r.slow_min_days} days of counts.</span></div>
+      <div class="stats"><div class="st"><div class="k">Red</div><div class="v red">${r.counts.red}</div></div><div class="st"><div class="k">Amber</div><div class="v org">${r.counts.amber}</div></div><div class="st"><div class="k">Green</div><div class="v">${r.counts.green}</div></div><div class="st"><div class="k">Too new</div><div class="v">${r.counts.new}</div></div></div>
+      <div class="card"><div class="card-head"><h2>Shop scorecard · ${esc(city)}</h2><button class="btn" style="width:auto;" data-act="scan-remove">Suggest displays to remove</button></div><div class="tw"><table><thead><tr><th>Shop</th><th class="c">Score</th><th class="c">Sells better than</th><th class="r">Overdue</th><th class="c">Neat</th><th>Why</th></tr></thead><tbody>
+      ${r.rows.map((x) => `<tr><td><span class="dot ${x.color}"></span><b>${esc(x.name)}</b><div class="sub">${esc(x.area)}</div></td><td class="c"><b>${x.score}</b></td><td class="c">${x.pct === null ? '<span class="sub">not enough days</span>' : x.pct + '% of shops'}</td><td class="r">${x.overdue_days ? x.overdue_days + ' days · ' + inr(x.balance) : '-'}</td><td class="c">${x.tidy_n ? (x.tidy_n - x.tidy_fails) + '/' + x.tidy_n : '-'}</td><td class="sub">${x.why.map(esc).join(' · ') || '-'}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">No shops in this city.</td></tr>'}</tbody></table></div></div>`;
+  }
+  /* ---- Remove display ---- */
+  async function remove() {
+    const r = await api.get('rf.remove_list');
+    $('pane').innerHTML = `<div class="card"><div class="card-head"><h2>Displays to take back</h2><span class="sub">Approve = it goes on the salesperson's list. He counts, takes the bottles back (a return order, so they are in stock again), the dues are cleared and the shop leaves the cycle.</span></div><div class="tw"><table><thead><tr><th>Shop</th><th class="c">Score</th><th>Why</th><th>Status</th><th></th></tr></thead><tbody>
+      ${r.items.map((i) => `<tr><td><b>${esc(i.shop)}</b><div class="sub">${esc(i.area)}${i.mobile ? ' · ' + esc(i.mobile) : ''}</div></td><td class="c">${i.score}</td><td class="sub">${i.reasons.map(esc).join(' · ')}</td><td>${{ suggested: '<span class="pill amber">Suggested</span>', approved: '<span class="pill blue">On the salesperson\'s list</span>', done: '<span class="pill ok">Taken back</span>', kept: '<span class="pill na">Kept</span>' }[i.status]}</td>
+        <td style="white-space:nowrap;">${i.status === 'suggested' ? `<button class="btn" style="width:auto; min-height:34px; padding:0 14px;" data-act="rm-ok" data-id="${i.id}">Take the display back</button> <button class="btn secondary" style="width:auto; min-height:34px; padding:0 14px;" data-act="rm-keep" data-id="${i.id}">Keep it</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="5" class="empty"><b>Nothing suggested.</b><br>Open the Scorecard and press "Suggest displays to remove".</td></tr>'}</tbody></table></div></div>`;
+  }
+  /* ---- 12-day guide ---- */
+  async function guide() {
+    const r = await api.get('rf.guide');
+    $('pane').innerHTML = r.cities.map((c) => `<div class="card"><div class="card-head"><h2>${esc(c.city)}</h2><span class="sub">${c.shops} shops · cycle ${r.cycle_days} days · ${c.people.length ? c.people.map((p) => esc(p.name)).join(', ') : '<b style="color:#d9423b;">nobody on the seat</b>'}</span></div><div class="pad t">
+      ${c.people_needed > c.people.length ? `<div class="warn bad">${c.shops} shops in ${r.cycle_days} days is about ${c.need_per_day} visits a day. One person does at most ${c.per_person_cap}. You need ${c.people_needed} salespeople for ${esc(c.city)}, you have ${c.people.length}.</div>` : ''}
+      <div class="stats" style="margin-bottom:12px;"><div class="st"><div class="k">Visited in the last ${r.cycle_days} days</div><div class="v">${c.coverage_pct}%</div><div class="bar" style="margin-top:8px;"><i style="width:${c.coverage_pct}%"></i></div></div><div class="st"><div class="k">Late shops</div><div class="v ${c.late ? 'red' : ''}">${c.late}</div><div class="sub">${c.never} never visited</div></div><div class="st"><div class="k">Needed per day</div><div class="v">${c.need_per_day}</div></div><div class="st"><div class="k">Today</div><div class="v">${c.done_today} / ${c.planned_today}</div><div class="sub">done / planned</div></div></div>
+      ${c.people.map((p) => `<button class="btn secondary" style="width:auto; min-height:36px; padding:0 16px; margin:0 8px 8px 0;" data-act="plan" data-city="${esc(c.city)}" data-emp="${p.emp_id}">+ Add more shops to ${esc(p.name)} today</button>`).join('')}
+      <div class="tw"><table><thead><tr><th>Area</th><th class="c">Shops</th><th class="c">Late</th></tr></thead><tbody>${c.areas.map((a) => `<tr><td>${esc(a.area)}</td><td class="c">${a.shops}</td><td class="c">${a.late ? '<span class="pill amber">' + a.late + '</span>' : '-'}</td></tr>`).join('')}</tbody></table></div></div></div>`).join('');
+  }
+  /* ---- Expand ---- */
+  const PST = [['new', 'New'], ['calling', 'Calling'], ['interested', 'Interested'], ['display_given', 'Display given'], ['no_phone', 'No phone'], ['rejected', 'Not interested']];
+  async function expand() {
+    const o = await api.get('rf.expand_overview', city ? { city } : {}); city = o.city; const pl = await api.get('rf.place_list', { city });
+    let h = `<div class="sel">${o.cities.map((c) => `<button class="city ${c === city ? 'on' : ''}" data-city="${esc(c)}">${esc(c)}</button>`).join('')}<span class="sub">${o.shops} shops · ${o.with_pin} with a location · ${o.units90} bottles in 90 days</span></div>
+      <div class="grid"><div class="card"><div class="card-head"><h2>Kinds of shop that sell most</h2></div><div class="tw"><table><thead><tr><th>Type</th><th class="c">Shops</th><th class="r">Bottles per shop</th></tr></thead><tbody>${o.types.map((t) => `<tr><td>${esc(t.label)}</td><td class="c">${t.shops}</td><td class="r"><b>${t.per_shop}</b></td></tr>`).join('') || '<tr><td colspan="3" class="empty">No data yet.</td></tr>'}</tbody></table></div></div>
+      <div class="card"><div class="card-head"><h2>Best areas</h2></div><div class="tw"><table><thead><tr><th>Area</th><th class="c">Shops</th><th class="r">Bottles per shop</th></tr></thead><tbody>${o.areas.slice(0, 8).map((a) => `<tr><td>${esc(a.area)}</td><td class="c">${a.shops}</td><td class="r"><b>${a.per_shop}</b></td></tr>`).join('') || '<tr><td colspan="3" class="empty">No data yet.</td></tr>'}</tbody></table></div></div></div>
+      <div class="card"><div class="card-head"><h2>Where to look next</h2><span class="sub">${o.centers.length} spots found: just outside your map (ring) and empty spots inside it (gap)</span></div><div class="pad t">
+        <div class="sub" style="margin-bottom:10px;">Google is searched around the best spots for the two best-selling kinds of shop. Each search costs a little. "Preview" shows what would be searched and sends nothing.</div>
+        <div class="acts" style="margin-top:0;"><label class="sub">Searches</label><input class="in" id="calls" type="number" min="1" max="40" value="6" style="width:80px;"><button class="btn secondary" data-act="scan" data-dry="1">Preview (free)</button><button class="btn" data-act="scan" data-dry="0" ${o.google ? '' : 'disabled'}>Search Google</button></div>
+        ${o.google ? '' : '<div class="warn" style="margin-top:12px;">Google Places is not connected. Add <code>define(\'GOOGLE_PLACES_KEY\', \'your key\');</code> to config.php.</div>'}<div id="scanRes"></div></div></div>`;
+    h += `<div class="card"><div class="card-head"><h2>Places to call</h2><span class="sub">${PST.map((s) => s[1] + ' ' + (pl.counts[s[0]] || 0)).join(' · ')}${pl.places.length > 60 ? ' · showing the best 60 of ' + pl.places.length : ''}</span></div><div class="tw"><table><thead><tr><th>Place</th><th class="c">Score</th><th>Why</th><th>Phone</th><th>After the call</th><th></th></tr></thead><tbody>
+      ${pl.places.slice(0, 60).map((p) => `<tr><td><b>${esc(p.name)}</b><div class="sub">${esc(p.address)}</div>${p.lat !== null ? `<a class="sub" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lng}">Map</a>` : ''}</td><td class="c"><b>${p.score}</b></td><td class="sub">${esc(p.why)}</td>
+        <td>${p.phone ? `<a href="tel:${esc(p.phone)}">${esc(p.phone)}</a>` : '<span class="sub">none</span>'}</td>
+        <td style="min-width:230px;"><input class="in" id="cn${p.id}" placeholder="Shop name (confirmed)" value="${esc(p.confirmed_name)}" style="width:100%; margin-bottom:5px;"><input class="in" id="cp${p.id}" placeholder="Owner mobile (confirmed)" value="${esc(p.confirmed_phone)}" style="width:100%; margin-bottom:5px;"><select class="in" id="cs${p.id}" style="width:100%;">${PST.map((s) => `<option value="${s[0]}" ${p.status === s[0] ? 'selected' : ''}>${s[1]}</option>`).join('')}</select></td>
+        <td style="white-space:nowrap;">${p.shop_id ? '<span class="pill ok">Shop made</span>' : `<button class="btn secondary" style="width:auto; min-height:34px; padding:0 14px;" data-act="place-save" data-id="${p.id}">Save</button> <button class="btn" style="width:auto; min-height:34px; padding:0 14px;" data-act="place-shop" data-id="${p.id}">Make shop</button>`}</td></tr>`).join('') || '<tr><td colspan="6" class="empty"><b>No places yet.</b><br>Run a search above.</td></tr>'}</tbody></table></div></div>`;
+    $('pane').innerHTML = h;
+  }
+  /* ---- Money & parties ---- */
+  let moneyDay = '';
+  async function money() {
+    const m = await api.get('rf.money_day', moneyDay ? { day: moneyDay } : {}); moneyDay = m.day; const p = await api.get('rf.party_list');
+    $('pane').innerHTML = `<div class="sel"><label class="sub">Day</label><input class="in" type="date" id="mDay" value="${esc(m.day)}"><span class="sub">Every rupee collected should be used or deposited the same day.</span></div>
+      <div class="stats"><div class="st"><div class="k">Collected</div><div class="v">${inr(m.collected)}</div></div><div class="st"><div class="k">Cash</div><div class="v">${inr(m.cash)}</div></div><div class="st"><div class="k">Online</div><div class="v">${inr(m.online)}</div></div><div class="st"><div class="k">Used / paid out</div><div class="v">${inr(m.used_total)}</div></div><div class="st"><div class="k">Not used yet</div><div class="v ${m.unused > 0 ? 'red' : ''}">${inr(m.unused)}</div></div></div>
+      <div class="grid"><div class="card"><div class="card-head"><h2>Collected by</h2></div><div class="tw"><table><thead><tr><th>Person</th><th class="r">Cash</th><th class="r">Online</th><th class="c">Receipts</th></tr></thead><tbody>${m.by_person.map((x) => `<tr><td>${esc(x.name)}</td><td class="r">${inr(x.cash)}</td><td class="r">${inr(x.online)}</td><td class="c">${x.n}</td></tr>`).join('') || '<tr><td colspan="4" class="empty">Nothing collected this day.</td></tr>'}</tbody></table></div></div>
+      <div class="card"><div class="card-head"><h2>Where it went</h2></div><div class="tw"><table><thead><tr><th>Party</th><th>Note</th><th class="r">Amount</th></tr></thead><tbody>${m.used.map((x) => `<tr><td>${esc(x.party)}<div class="sub">${esc(x.kind)} · ${esc(x.mode)}</div></td><td class="sub">${esc(x.note)}</td><td class="r">${inr(x.amount)}</td></tr>`).join('') || '<tr><td colspan="3" class="empty">Nothing paid out this day.</td></tr>'}</tbody></table></div></div></div>
+      <div class="card"><div class="card-head"><h2>Parties</h2><button class="btn" style="width:auto;" data-act="party-new">+ Add party</button></div><div class="sub" style="padding:0 20px 8px;">Shops: ${p.shops.count} shops owe ${inr(p.shops.owed)} in all. Their ledgers are on the Retail Shops page. Here are vendors, staff and expenses.</div><div class="tw"><table><thead><tr><th>Party</th><th>Type</th><th class="r">Received</th><th class="r">Paid</th><th></th></tr></thead><tbody>
+      ${p.parties.map((x) => `<tr><td><b>${esc(x.name)}</b><div class="sub">${esc(x.phone)}</div></td><td>${esc(x.kind)}</td><td class="r">${inr(x.in)}</td><td class="r">${inr(x.out)}</td><td><button class="btn secondary" style="width:auto; min-height:34px; padding:0 14px;" data-act="ledger" data-id="${x.id}">Ledger</button></td></tr>`).join('') || '<tr><td colspan="5" class="empty">No party yet.</td></tr>'}</tbody></table></div></div>`;
+    $('mDay').addEventListener('change', (e) => { moneyDay = e.target.value; money(); });
+  }
+  async function ledger(id) {
+    const r = await api.get('rf.ledger_get', { party_id: id });
+    $('mdlBox').innerHTML = `<h3>${esc(r.party.name)} <span class="sub">${esc(r.party.kind)}</span></h3><div class="sub" style="margin:-6px 0 10px;">Received ${inr(r.in)} · Paid ${inr(r.out)}</div>
+      <div style="max-height:34vh; overflow:auto;"><table style="width:100%; font-size:13px;"><tbody>${r.rows.map((x) => `<tr><td>${esc(x.day)}</td><td>${x.dir === 'in' ? '<span class="pill ok">In</span>' : '<span class="pill amber">Out</span>'} ${esc(x.mode)}</td><td class="sub">${esc(x.note)}</td><td class="r"><b>${inr(x.amount)}</b></td></tr>`).join('') || '<tr><td class="empty">No entry yet.</td></tr>'}</tbody></table></div>
+      <div class="fld" style="margin-top:12px;"><label>New entry</label><div style="display:grid; grid-template-columns:90px 1fr 90px; gap:8px;"><select class="in" id="lDir"><option value="out">Paid out</option><option value="in">Received</option></select><input class="in" id="lAmt" type="number" placeholder="Amount"><select class="in" id="lMode"><option value="cash">Cash</option><option value="upi">Online</option><option value="bank">Bank</option></select></div><input class="in" id="lNote" placeholder="Note (what was it for)" style="margin-top:8px;"></div>
+      <div class="actions"><button class="btn secondary" data-act="shut">Close</button><button class="btn" data-act="ledger-add" data-id="${id}">Save entry</button></div>`;
+    open();
+  }
+  /* ---- Setup ---- */
+  async function setup() {
+    const s = await api.get('rf.settings_get'), seats = await api.get('rf.seats_get'), c = s.settings; const bp = s.bill_prices.map((p) => p.ml + ' ml ' + inr(p.price)).join(' · ');
+    const f = (k, label, hint) => `<div class="fld"><label>${label}</label><input class="in" data-set="${k}" value="${esc(c[k])}"><div class="sub">${hint || ''}</div></div>`;
+    $('pane').innerHTML = `<div class="card"><div class="card-head"><h2>Who does the field work</h2><span class="sub">One seat per city. If a person leaves, put someone else on the seat: the list, the open payments and the history stay.</span></div><div class="pad t">
+      ${seats.seats.map((x) => `<div style="display:flex; justify-content:space-between; gap:12px; align-items:center; padding:10px 0; border-top:1px solid var(--line,#e5e7eb);"><div><b>${esc(x.title)}</b><div class="sub">${x.people.length ? x.people.map((p) => esc(p.name)).join(', ') : '<span style="color:#d9423b; font-weight:700;">Nobody</span>'}</div></div>${seats.admin && seats.boss ? `<button class="btn secondary" style="width:auto; min-height:36px; padding:0 16px;" data-act="seat" data-code="${esc(x.code)}">Change</button>` : ''}</div>`).join('')}
+      ${seats.boss ? '<div class="sub" style="margin-top:8px;">These seats are also in Boss &gt; People &amp; seats, section Retail Store. Changing them in either place is the same.</div>' : '<div class="warn bad">The Boss Engine is not installed, so seats cannot be used.</div>'}</div></div>
+    <div class="card"><div class="card-head"><h2>Prices for the money rule</h2></div><div class="pad t"><div class="sub" style="margin-bottom:10px;">A shop owes more than the bottles it still holds are worth -> it sold the rest and must pay now. The bottles are valued at the <b>base price</b> below (wholesale). The Retail price list (${bp || 'not set'}) is only what shops are billed and is not changed here.</div>
+      <div class="grid"><div class="fld"><label>Base price of one 20 ml (₹)</label><input class="in" data-set="base_20" value="${esc(c.base_20)}" placeholder="${s.effective.base_20}"><div class="sub">Using now: ${inr(s.effective.base_20)}${c.base_20 === '' ? ' (from the Retail price list)' : ''}</div></div><div class="fld"><label>Base price of one 50 ml (₹)</label><input class="in" data-set="base_50" value="${esc(c.base_50)}" placeholder="${s.effective.base_50}"><div class="sub">Using now: ${inr(s.effective.base_50)}${c.base_50 === '' ? ' (from the Retail price list)' : ''}</div></div></div></div></div>
+    <div class="card"><div class="card-head"><h2>Unpaid shops: reminders and punch-out alert</h2></div><div class="pad t"><div class="sub" style="margin-bottom:10px;">When a shop sold more than it paid for, the salesperson sees it in bottles and is reminded after the first time, you are told after the second, the Admin and top boss after the third. Nothing is sent between 9 pm and 8 am. Punching out is never blocked: if the salesperson punches out with old unpaid money, you and the bosses are told at once.</div>
+      <div class="grid">${f('pay_n1_h', 'Remind the salesperson after (hours)')}${f('pay_n2_h', 'Tell the checker after (hours)')}${f('pay_n3_h', 'Tell the Admin and top boss after (hours)')}${f('pay_po_after_h', 'At punch out, tell the bosses if unpaid for more than (hours)')}${f('pay_po_min', 'Only if the unpaid total is at least (₹)', 'Small amounts are not reported')}${f('promise_max', 'Claude writes a summary after this many broken promises', 'A promise is broken when the promised day ends unpaid')}</div>
+      <div class="acts"><button class="btn" data-act="save-set">Save</button></div></div></div>
+    <div class="card"><div class="card-head"><h2>Rules</h2></div><div class="pad t"><div class="grid">${f('cycle_days', 'Visit every shop within (days)', 'The 12-day cycle')}${f('per_day_cap', 'Most shops one person visits a day')}${f('slow_pct', 'Slowest shops that turn red (%)', 'Compared with the other shops')}${f('slow_min_days', 'Days of counts before judging', 'A new shop is not judged earlier')}${f('morning_by', 'Morning photo due by', 'e.g. 11:00')}${f('dealer_days', 'Dealer link is valid (days)')}${f('dealer_hold_days', 'Hold a dealer order when dues are overdue more than (days)')}${f('ring_km', 'Search square size (km)', 'For Expand')}${f('max_calls', 'Google searches per run')}${f('due_ok', 'Outstanding above this turns yellow (₹)', 'Small dues are fine')}${f('due_high', 'Outstanding from this turns orange (₹)', 'Big dues')}</div>
+      <div class="fld"><label>Claude checks the photos</label><select class="in" data-set="ai_on"><option value="1" ${c.ai_on !== '0' ? 'selected' : ''}>On (3 layers, all Claude)</option><option value="0" ${c.ai_on === '0' ? 'selected' : ''}>Off: every photo goes to the Checker</option></select><div class="sub">Claude: ${s.ai === 'on' ? '<b style="color:#16945a;">connected</b>' : '<b style="color:#d9423b;">not connected (ANTHROPIC_API_KEY in config.php)</b>'} · Google Places: ${s.google ? '<b style="color:#16945a;">connected</b>' : '<b style="color:#d9423b;">not connected (GOOGLE_PLACES_KEY in config.php)</b>'}</div></div>
+      <div class="acts"><button class="btn" data-act="save-set">Save</button></div></div></div>`;
+  }
+  async function seatPicker(code) {
+    const seats = await api.get('rf.seats_get'), seat = seats.seats.find((x) => x.code === code), has = new Set(seat.people.map((p) => p.emp_id));
+    $('mdlBox').innerHTML = `<h3>${esc(seat.title)}</h3><div class="sub" style="margin:-6px 0 8px;">Tick who holds this seat. The first one is the main person, the others are backups or share the city.</div><input class="in" id="spQ" placeholder="Search a name" style="width:100%; margin-bottom:8px;"><div class="peo" id="spL" style="max-height:44vh; overflow:auto;">
+      ${seats.employees.map((e) => `<label data-n="${esc(e.name.toLowerCase())}"><input type="checkbox" value="${e.id}" ${has.has(e.id) ? 'checked' : ''}>${esc(e.name)}</label>`).join('')}</div><div class="actions"><button class="btn secondary" data-act="shut">Cancel</button><button class="btn" data-act="seat-save" data-code="${esc(code)}">Save</button></div>`;
+    open(); $('spQ').addEventListener('input', (e) => { const q = e.target.value.toLowerCase(); document.querySelectorAll('#spL label').forEach((l) => { l.style.display = l.dataset.n.includes(q) ? '' : 'none'; }); });
+  }
+
+  document.addEventListener('change', (e) => { if (e.target.id === 'cO') { const o = e.target.value; $('cDateBox').style.display = (o === 'promise' || o === 'cash') ? '' : 'none'; $('cAmtBox').style.display = o === 'paid' ? '' : 'none'; } });
+  let callT = null; document.addEventListener('input', (e) => { if (e.target.id === 'callQ') { callQ = e.target.value; clearTimeout(callT); callT = setTimeout(() => calls().then(() => { const el = $('callQ'); if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }), 400); } });
+  /* ---- clicks ---- */
+  document.addEventListener('click', async (e) => {
+    const g = e.target.closest('[data-go]'); if (g) return go(g.dataset.go);
+    const big = e.target.closest('[data-big]'); if (big) { const u = await photoUrl(big.dataset.p); if (u) { $('lbImg').src = u; $('lb').classList.add('on'); } return; }
+    const cf = e.target.closest('[data-cf]'); if (cf) { callF = cf.dataset.cf; return calls(); }
+    const c = e.target.closest('[data-city]'); if (c) { city = c.dataset.city; return go(tab, false); }
+    const cb = e.target.closest('[data-cb]'); if (cb) { covB = covB === cb.dataset.cb ? '' : cb.dataset.cb; covN = 60; return coverage(); }
+    const cc = e.target.closest('[data-cc]'); if (cc) { covC = covC === cc.dataset.cc ? '' : cc.dataset.cc; covN = 60; return coverage(); }
+    const b = e.target.closest('[data-act]'); if (!b || busy) return; const a = b.dataset.act, id = +b.dataset.id;
+    const run = async (fn) => { busy = true; try { await fn(); } catch (x) { say(x.message, true); } busy = false; };
+    if (a === 'shut') return shut();
+    if (a === 'call-log') { const x = CL.find((r) => r.shop_id === id); if (x) callModal(x); return; }
+    if (a === 'c-day') { $('cD').value = b.dataset.d; return; }
+    if (a === 'call-save') return run(async () => { const o = $('cO').value; const r = await api.post('rf.call_log', { shop_id: id, outcome: o, date: $('cD').value, amount: $('cA').value, mode: $('cM').value, note: $('cN').value }); shut(); say(r.message); await refreshBadges(); await calls(); });
+    if (a === 'call-sum') return run(async () => { say('Claude is writing the summary…'); const r = await api.post('rf.call_summary', { shop_id: id }); say(r.message); await calls(); });
+    if (a === 'cov-clear') { covB = ''; covC = ''; covQ = ''; covN = 60; return coverage(); }
+    if (a === 'cov-more') { covN += 60; return coverage(); }
+    if (a === 'cov-add' || a === 'cov-top') return run(async () => { const ids = a === 'cov-add' ? [id] : b.dataset.ids.split(',').filter(Boolean).map(Number); if (!ids.length) { say('No red shop is waiting to be sent.', true); return; } const r = await api.post('rf.plan_add', { shop_ids: ids }); say(r.message); await coverage(); });
+    if (a === 'approve' || a === 'reject') return run(async () => { const note = ($('n_' + b.dataset.t + id) || {}).value || ''; const r = await api.post('rf.queue_decide', { type: b.dataset.t, id, decision: a, note }); say(r.message); await refreshBadges(); await queue(); });
+    if (a === 'pay-close') return run(async () => { await api.post('rf.pay_close', { id }); say('Closed.'); await refreshBadges(); await pay(); });
+    if (a === 'scan-remove') return run(async () => { const r = await api.post('rf.remove_scan', { city }); say(r.message); await refreshBadges(); });
+    if (a === 'rm-ok' || a === 'rm-keep') return run(async () => { const r = await api.post('rf.remove_decide', { id, decision: a === 'rm-ok' ? 'approve' : 'keep' }); say(r.message); await refreshBadges(); await remove(); });
+    if (a === 'plan') return run(async () => { const r = await api.post('rf.plan_generate', { city: b.dataset.city, emp_id: +b.dataset.emp, force: 1 }); say(r.message); await guide(); });
+    if (a === 'scan') return run(async () => { const box = $('scanRes'); box.innerHTML = '<div class="warn">Searching…</div>'; const r = await api.post('rf.place_scan', { city, calls: +$('calls').value || 6, dry: b.dataset.dry === '1' });
+      if (r.dry) box.innerHTML = `<div class="warn"><b>${esc(r.message)}</b><br>${r.queries.map((q) => esc(q.q) + ' near ' + q.lat + ', ' + q.lng + ' (' + q.kind + ')').join('<br>')}</div>`; else { say(r.message, !r.ok); await expand(); } });
+    if (a === 'place-save') return run(async () => { await api.post('rf.place_update', { id, confirmed_name: $('cn' + id).value, confirmed_phone: $('cp' + id).value, status: $('cs' + id).value }); say('Saved.'); await expand(); });
+    if (a === 'place-shop') return run(async () => { await api.post('rf.place_update', { id, confirmed_name: $('cn' + id).value, confirmed_phone: $('cp' + id).value, status: 'display_given' }); const r = await api.post('rf.place_to_shop', { id }); say(r.message); await expand(); });
+    if (a === 'party-new') { $('mdlBox').innerHTML = `<h3>New party</h3><div class="fld"><label>Name</label><input class="in" id="pN"></div><div class="fld"><label>Type</label><select class="in" id="pK"><option value="vendor">Vendor</option><option value="staff">Staff</option><option value="expense">Expense (coffee, fuel…)</option><option value="other">Other</option></select></div><div class="fld"><label>Phone</label><input class="in" id="pP"></div><div class="actions"><button class="btn secondary" data-act="shut">Cancel</button><button class="btn" data-act="party-save">Save</button></div>`; return open(); }
+    if (a === 'party-save') return run(async () => { await api.post('rf.party_save', { name: $('pN').value, kind: $('pK').value, phone: $('pP').value }); shut(); say('Saved.'); await money(); });
+    if (a === 'ledger') return run(() => ledger(id));
+    if (a === 'ledger-add') return run(async () => { await api.post('rf.ledger_add', { party_id: id, dir: $('lDir').value, amount: $('lAmt').value, mode: $('lMode').value, note: $('lNote').value, day: moneyDay }); say('Entry saved.'); await ledger(id); await refreshBadges(); });
+    if (a === 'save-set') return run(async () => { const o = {}; document.querySelectorAll('[data-set]').forEach((el) => { o[el.dataset.set] = el.value; }); await api.post('rf.settings_save', { settings: o }); say('Saved.'); await setup(); });
+    if (a === 'seat') return run(() => seatPicker(b.dataset.code));
+    if (a === 'seat-save') return run(async () => { const ids = [...document.querySelectorAll('#spL input:checked')].map((x) => +x.value); const r = await api.post('rf.seats_set', { code: b.dataset.code, emp_ids: ids }); shut(); say(r.message); await setup(); });
+  });
+  const first = (location.hash || '#today').slice(1);
+  history.replaceState({ rfTab: TABS.some((x) => x[0] === first) ? first : 'today' }, '', location.href);
+  go(TABS.some((x) => x[0] === first) ? first : 'today', false);
+</script>
+</body>
+</html>

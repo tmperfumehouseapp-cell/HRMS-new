@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="HRMS">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Price Chart — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=4">
+<style>
+  .pc{max-width:1000px;}
+  .pc .note{background:#f8fafc; border:1px solid var(--line); border-radius:12px; padding:8px 12px; font-size:12.5px; color:#475569; line-height:1.5; margin-bottom:10px;}
+  .pc .top{display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:10px;}
+  .pc .top .sp{flex:1;}
+  .pc button.b{width:auto; min-height:0; padding:7px 12px; border-radius:10px; font-weight:700; font-size:13px; cursor:pointer; border:1px solid var(--line); background:#fff; color:var(--ink);}
+  .pc button.b.p{background:#111827; color:#fff; border-color:#111827;}
+  .pc button.b.s{padding:3px 9px; font-size:12px; border-radius:8px;}
+  .pc .wrap{overflow-x:auto; background:#fff; border:1px solid var(--line); border-radius:14px;}
+  .pc table{border-collapse:collapse; width:100%; min-width:600px; font-size:13px;}
+  .pc th{background:#fafbfc; font-size:11px; text-transform:uppercase; letter-spacing:.03em; color:var(--muted); padding:6px 4px; border-bottom:1px solid var(--line); text-align:center; position:sticky; top:0; z-index:1;}
+  .pc th input{width:52px; text-align:center; font-weight:800; min-height:0; padding:3px; font-size:13px;}
+  .pc th .nm{display:block; width:78px; margin:3px auto 0; font-size:11px; font-weight:600; text-transform:none; min-height:0; padding:2px 4px;}
+  .pc td{padding:2px 3px; border-bottom:1px solid #f0f1f3; text-align:center;}
+  .pc td input{width:78px; text-align:right; min-height:0; padding:4px 6px; font-size:13px;}
+  .pc td.k{text-align:left; white-space:nowrap; padding-left:10px;}
+  .pc td.k input{width:52px; text-align:center; font-weight:800;}
+  .pc td.k small{color:var(--muted); margin-left:3px;}
+  .pc td.x button{width:auto; min-height:0; padding:0 6px; border:0; background:none; color:#b91c1c; font-size:15px; cursor:pointer;}
+  .pc tr.sec td{background:#f1f5f9; text-align:left; padding:7px 10px; font-weight:800; font-size:13px; border-top:2px solid #e2e8f0;}
+  .pc tr.sec td small{font-weight:600; color:var(--muted); margin-left:6px;}
+  .pc tr.sec td .acts{float:right; display:flex; gap:6px;}
+  .pc tr.bad td{background:#fef2f2;}
+  .pc tr.empty td{color:var(--muted); font-size:12px; text-align:left; padding:6px 12px;}
+  .pc .cust{display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin:14px 0 8px; font-size:13px;}
+  .pc .cust select{width:auto; min-height:0; padding:6px 8px;}
+  .pc .ph img{max-width:100%; border:1px solid var(--line); border-radius:12px;}
+  .pc .dirty{color:#b45309; font-weight:700; font-size:12px;}
+  @media (max-width:820px){ .pc{padding:0 6px; max-width:none;} }
+  .cb{background:#fff;border:1px solid var(--line,#e3e8ef);border-radius:14px;padding:10px 14px;margin:0 0 12px}.cb summary{cursor:pointer;font-size:14px}
+  .cbw{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;margin-top:10px}.cbw textarea{width:100%;box-sizing:border-box;font:14px/1.5 ui-monospace,Menlo,monospace;border:1px solid #d6dde6;border-radius:10px;padding:8px}
+  .cbs{display:flex;flex-direction:column;gap:8px;font-size:13px}.cbs small{color:var(--muted,#64748b)}
+  @media(max-width:700px){.cbw{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar">
+      <div><h1>Price Chart</h1><div class="sub" style="font-size:12.5px; color:var(--muted); margin-top:2px;">One price chart for the cart, the WhatsApp bot and commission. The % columns are for staff only — customers never see them.</div></div>
+    </div>
+    <div class="content">
+      <div id="alertBox"></div>
+      <div class="pc" id="pc"><div class="loading">Loading the price chart…</div></div>
+    </div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=2"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script>
+  guardPage();
+  renderSidebar('price_charts');
+
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const pct = (v) => String(Math.round(Number(v) * 100) / 100);
+  const root = document.getElementById('pc'), alertBox = document.getElementById('alertBox');
+  const say = (msg, bad) => { alertBox.innerHTML = '<div class="alert ' + (bad ? 'error' : 'success') + '">' + esc(msg) + '</div>'; setTimeout(() => { alertBox.innerHTML = ''; }, 6000); };
+  // One chart, five sections. Perfume = by TOTAL ml (the commission slab). Attar / shower gel / others = by pieces. Combos = 2+ kinds bought together (perfume added on top).
+  const SECS = [
+    ['perfume', '🧴 Perfume', 'by total ml — 100 ml + 50 ml = the 150 ml row'],
+    ['attar', '🫙 Attar', 'by pieces (fixed 3 ml)'],
+    ['gel', '🚿 Shower gel', 'by pieces (fixed 200 ml)'],
+    ['other', '➕ Others', 'by pieces (wax and the rest)'],
+    ['mix', '🧺 Combos', 'any mix (perfume ml + gel + attar + others) — one row for EXACTLY those amounts; the cart asks you to create a missing one'],
+  ];
+  const S = { charts: null, can: false, cust: 0, photo: '', dirty: {}, busy: false, hist: [], cb: null, cbText: '', cbBase: 6 };
+  const mixLabel = (r) => (Number(r.perf) > 0 ? ['perfume ' + r.perf + ' ml'] : []).concat([[r.gel, 'shower gel'], [r.attar, 'attar'], [r.other, 'other']].filter((x) => Number(x[0]) > 0).map((x) => x[0] + ' ' + x[1])).join(' + ');
+  const cols = () => S.charts.perfume.cols, names = () => S.charts.perfume.names;   // ONE set of % columns for every section
+
+  async function load() {
+    try { const d = await api.get('pc.get'); S.charts = d.charts; S.can = !!d.can_edit; S.cust = Number(d.cust_col || 0); S.photo = d.photo_url || ''; S.hist = d.hist || []; draw();
+      if (d.auto) { if (d.auto.error) say('Your combo list could not be put in: ' + d.auto.error, true); else say('✅ Your combo list was put in: ' + (d.auto.rows || []).length + ' rows at the 6% column, the other columns filled from your own prices. Press ↩ Undo on a section to take it back.'); } }
+    catch (e) { root.innerHTML = '<div class="alert error">' + esc(e.message) + '</div>'; }
+  }
+
+  function draw() {
+    const ro = !S.can, C0 = cols(), n = C0.length, anyDirty = Object.values(S.dirty).some(Boolean);
+    let h = '<div class="note">Each column is the salesperson\'s commission level at that price (left = highest price). Below the last column the floor ' + pct(S.charts.perfume.floor) + '% applies. A total between two rows uses the lower row. An empty section makes the cart say “No price” and your Teach board asks you to fill it.</div>';
+    if (!ro) {
+      h += '<details class="cb"' + (S.cb ? ' open' : '') + '><summary><b>🧮 Combo builder</b> — type your combos at ONE column, the other columns are filled from your own prices</summary>'
+        + '<div class="cbw"><textarea id="cbT" rows="7" placeholder="1 gel - 499\n1 gel + 1 20 - 899\n2 gel + 1 50 - 1799\n1 gel + 2 100 - 2599">' + esc(S.cbText) + '</textarea>'
+        + '<div class="cbs"><label>These prices are at the <select id="cbB">' + C0.map((c) => '<option value="' + c + '"' + (Number(c) === Number(S.cbBase) ? ' selected' : '') + '>' + pct(c) + '%</option>').join('') + '</select> column</label>'
+        + '<small>“2 gel + 1 50” = 2 shower gels + one 50 ml perfume · “1 gel + 2 100” = 1 gel + two 100 ml · lines with only gel go to Shower gel</small>'
+        + '<span><button type="button" class="b" data-a="cbpv">👀 Preview</button> <button type="button" class="b p" data-a="cbgo"' + (S.cb && S.cb.rows && S.cb.rows.length ? '' : ' disabled') + '>✅ Put in the chart</button></span></div></div>'
+        + (S.cb ? (S.cb.rows || []).length ? '<div class="wrap"><table><thead><tr><th style="text-align:left;padding-left:10px">Combo</th>' + S.cb.cols.map((c, i) => '<th>' + pct(c) + '%' + (i === S.cb.base ? ' ✍' : '') + '</th>').join('') + '</tr></thead><tbody>'
+          + S.cb.rows.map((r) => '<tr><td class="k" style="text-align:left">' + esc(r.label) + '<small style="display:block;color:var(--muted)">' + esc(r.seg === 'mix' ? 'Combos' : 'Shower gel / pieces') + ' · other columns from ' + esc(r.from) + '</small></td>' + r.p.map((v, i) => '<td' + (i === S.cb.base ? ' style="font-weight:800"' : '') + '>₹' + Number(v).toLocaleString('en-IN') + '</td>').join('') + '</tr>').join('') + '</tbody></table></div>' : '' : '')
+        + (S.cb && (S.cb.bad || []).length ? '<div class="alert error">Not understood: ' + S.cb.bad.map(esc).join(' · ') + '</div>' : '') + '</details>';
+      if (S.hist.length) h += '<details class="cb"><summary><b>↩ Changes</b> — the last ' + S.hist.length + ' changes; ↩ Undo on a section goes back one change</summary><div class="cbw" style="display:block">' + S.hist.slice(0, 15).map((x) => '<div style="font-size:13px;padding:3px 0">' + esc(x.at.slice(0, 16)) + ' · <b>' + esc((SECS.find((y) => y[0] === x.seg) || [0, x.seg])[1]) + '</b> · ' + esc(x.why) + (x.by ? ' · ' + esc(x.by) : '') + '</div>').join('') + '</div></details>';
+    }
+    if (!ro) h += '<div class="top"><span class="dirty">' + (anyDirty ? 'Not saved yet' : '') + '</span><span class="sp"></span><button type="button" class="b p" data-a="save"' + (S.busy ? ' disabled' : '') + '>' + (S.busy ? 'Saving…' : '💾 Save the price chart') + '</button></div>';
+    h += '<div class="wrap"><table><thead><tr><th style="text-align:left;padding-left:10px">Size / pieces</th>' + C0.map((c, i) => '<th>' + (ro ? pct(c) + '%' : '<input data-col="' + i + '" type="number" step="0.1" value="' + pct(c) + '">%') + (ro ? '<span class="nm">' + esc(names()[i] || '') + '</span>' : '<input class="nm" data-name="' + i + '" placeholder="name" value="' + esc(names()[i] || '') + '">') + '</th>').join('') + (ro ? '' : '<th></th>') + '</tr></thead><tbody>';
+    SECS.forEach(([seg, title, how]) => {
+      const C = S.charts[seg]; if (!C) return; const mix = seg === 'mix';
+      h += '<tr class="sec"><td colspan="' + (n + 2) + '">' + title + '<small>' + esc(how) + '</small>' + (ro ? '' : '<span class="acts">' + (S.hist.some((x) => x.seg === seg) ? '<button type="button" class="b s" data-a="undo" data-seg="' + seg + '">↩ Undo</button>' : '') + '<button type="button" class="b s" data-a="sug" data-seg="' + seg + '">✨ Suggest</button><button type="button" class="b s" data-a="row" data-seg="' + seg + '">+ Row</button></span>') + '</td></tr>';
+      if (!C.rows.length) h += '<tr class="empty"><td colspan="' + (n + 2) + '">Empty' + (ro ? '' : ' — press ✨ Suggest, then type the prices') + '.</td></tr>';
+      C.rows.forEach((r, ri) => {
+        const bad = r.p.some((v, i) => i > 0 && Number(v) > 0 && Number(r.p[i - 1]) > 0 && Number(v) > Number(r.p[i - 1]));
+        const key = mix ? (ro ? esc(mixLabel(r)) : ['perf', 'gel', 'attar', 'other'].map((k) => '<input data-seg="mix" data-r="' + ri + '" data-k="' + k + '" type="number" min="0" max="' + (k === 'perf' ? 5000 : 50) + '" value="' + esc(r[k] || 0) + '" title="' + ({ perf: 'perfume total ml (0 = none)', gel: 'shower gel', attar: 'attar', other: 'others' }[k]) + '"' + (k === 'perf' ? ' style="width:60px"' : ' style="width:42px"') + '><small>' + ({ perf: 'ml', gel: 'gel', attar: 'att', other: 'oth' }[k]) + '</small>').join(' '))
+          : (ro ? esc(r.ml) + (seg === 'perfume' ? ' ml' : ' pcs') : '<input data-seg="' + seg + '" data-r="' + ri + '" data-k="ml" type="number" min="0" value="' + esc(r.ml) + '"><small>' + (seg === 'perfume' ? 'ml' : 'pcs') + '</small>');
+        h += '<tr class="' + (bad ? 'bad' : '') + '"><td class="k">' + key + '</td>' + C0.map((_, i) => '<td>' + (ro ? (Number(r.p[i]) > 0 ? '₹' + Number(r.p[i]).toLocaleString('en-IN') : '–') : '<input data-seg="' + seg + '" data-r="' + ri + '" data-k="' + i + '" type="number" min="0" placeholder="₹" value="' + (Number(r.p[i]) > 0 ? r.p[i] : '') + '">') + '</td>').join('')
+          + (ro ? '' : '<td class="x"><button type="button" data-a="del" data-seg="' + seg + '" data-r="' + ri + '" aria-label="Remove row">×</button></td>') + '</tr>';
+      });
+    });
+    h += '</tbody></table></div>';
+    h += '<div class="cust"><b>Customer price photo</b><span style="color:var(--muted)">sizes + one column, no % — the bot sends it only when your Teach rules say so</span>'
+      + (S.can ? '<label>Column <select id="custCol">' + C0.map((c, i) => '<option value="' + i + '"' + (i === S.cust ? ' selected' : '') + '>' + pct(c) + '%' + (names()[i] ? ' — ' + esc(names()[i]) : '') + '</option>').join('') + '</select></label><button type="button" class="b" data-a="photo">📷 Make the photo now</button>' : '') + '</div>';
+    h += '<div class="ph">' + (S.photo ? '<img src="' + esc(S.photo) + '&_=' + Date.now() + '" alt="Customer price photo">' : '<div class="note">No customer photo yet. ' + (S.can ? 'It is made each time you save.' : 'Admin makes it here.') + '</div>') + '</div>';
+    root.innerHTML = h;
+  }
+  const mark = (seg) => { S.dirty[seg] = true; const d = root.querySelector('.dirty'); if (d) d.textContent = 'Not saved yet'; };
+
+  // typing goes straight into S (no redraw while typing)
+  root.addEventListener('input', (e) => {
+    const t = e.target;
+    if (t.dataset.col != null) { cols()[Number(t.dataset.col)] = Number(t.value); Object.keys(S.charts).forEach(mark); return; }
+    if (t.dataset.name != null) { names()[Number(t.dataset.name)] = t.value; Object.keys(S.charts).forEach(mark); return; }
+    if (t.dataset.r == null || !t.dataset.seg) return; const r = S.charts[t.dataset.seg].rows[Number(t.dataset.r)];
+    if (['ml', 'perf', 'gel', 'attar', 'other'].includes(t.dataset.k)) r[t.dataset.k] = Number(t.value) || 0; else r.p[Number(t.dataset.k)] = Number(t.value) || 0;
+    mark(t.dataset.seg);
+  });
+  root.addEventListener('change', async (e) => {
+    if (e.target.id !== 'custCol') return; const col = Number(e.target.value);
+    try { await api.post('pc.cust_col', { col }); S.cust = col; await makePhoto(); say('The customer photo now shows the ' + pct(cols()[col]) + '% column.'); draw(); } catch (er) { say(er.message, true); }
+  });
+  root.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-a]'); if (!b) return; const a = b.dataset.a, seg = b.dataset.seg, C = seg ? S.charts[seg] : null, blank = () => cols().map(() => 0);
+    if (a === 'sug' || a === 'row') {
+      if (seg === 'mix') { const k = (r) => (r.perf || 0) + '|' + r.gel + '|' + r.attar + '|' + r.other, seen = new Set(C.rows.map(k)); (a === 'sug' ? C.suggest : [{ perf: 100, gel: 1, attar: 1, other: 0 }]).forEach((x) => { const r = { perf: x.perf || 0, gel: x.gel, attar: x.attar, other: x.other, p: blank() }; if (a === 'row' || !seen.has(k(r))) { C.rows.push(r); seen.add(k(r)); } }); }
+      else { const have = new Set(C.rows.map((r) => Number(r.ml))); const last = C.rows.length ? Number(C.rows[C.rows.length - 1].ml) : 0; (a === 'sug' ? C.suggest : [last + (seg === 'perfume' ? 10 : 1)]).forEach((ml) => { if (ml > 0 && !have.has(ml)) { C.rows.push({ ml, p: blank() }); have.add(ml); } }); C.rows.sort((x, y) => x.ml - y.ml); }
+      mark(seg); draw(); return;
+    }
+    if (a === 'del') { C.rows.splice(Number(b.dataset.r), 1); mark(seg); draw(); return; }
+    if (a === 'cbpv' || a === 'cbgo') {
+      S.cbText = (root.querySelector('#cbT') || {}).value || ''; S.cbBase = Number((root.querySelector('#cbB') || {}).value || 6);
+      if (a === 'cbgo' && !confirm('Put these ' + ((S.cb && S.cb.rows) || []).length + ' rows in the price chart? (Rows with the same combo are replaced. ↩ Undo takes it back.)')) return;
+      try { const d = await api.post('pc.combo', { text: S.cbText, base: S.cbBase, apply: a === 'cbgo' }); S.cb = d;
+        if (a === 'cbgo') { say('✅ ' + d.rows.length + ' rows put in. The cart and the bot use them now. ↩ Undo takes it back.'); S.cb = null; S.cbText = ''; await load(); return; } draw(); }
+      catch (er) { say(er.message, true); } return;
+    }
+    if (a === 'undo') { if (Object.values(S.dirty).some(Boolean) && !confirm('You have changes that are not saved — Undo throws them away. Go on?')) return; if (!confirm('Take this section back to the version before its last change?')) return;
+      try { const d = await api.post('pc.undo', { seg }); S.dirty = {}; say(d.message || 'Done.'); await load(); } catch (er) { say(er.message, true); } return; }
+    if (a === 'photo') { try { await makePhoto(); say('Customer price photo made.'); draw(); } catch (er) { say(er.message, true); } return; }
+    if (a === 'save') {
+      const todo = SECS.map((x) => x[0]).filter((k) => S.dirty[k]); if (!todo.length) return say('Nothing changed.');
+      S.busy = true; draw(); const done = [];
+      try {
+        for (const k of todo) {   // perfume first (it is the commission chart): the other sections take its % columns
+          const C = S.charts[k]; const d = await api.post('pc.save', { seg: k, chart: { cols: cols(), names: names(), rows: C.rows, floor: S.charts.perfume.floor } });
+          S.charts[k] = d.chart; S.dirty[k] = false; done.push(C.label || k);
+        }
+        say('Saved: ' + done.join(', ') + '. The cart and the bot use it from now on.');
+        try { await makePhoto(); } catch (er) { say('Saved, but the customer photo could not be made: ' + er.message, true); }
+      } catch (er) { say((done.length ? 'Saved ' + done.join(', ') + ', but: ' : '') + er.message, true); }
+      S.busy = false; draw();
+    }
+  });
+
+  // The customer price photo: every section with rows — size / pieces / combo + the chosen column's price. No % anywhere.
+  async function makePhoto() {
+    const segs = SECS.filter(([k]) => S.charts[k] && S.charts[k].rows.length); if (!segs.length) throw new Error('Fill the chart first.');
+    const W = 1080, pad = 48, rowH = 46, headH = 70, gap = 28; let H = 170;
+    segs.forEach(([k]) => { H += headH + Math.ceil(S.charts[k].rows.length / 2) * rowH + gap; }); H += 60;
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const g = cv.getContext('2d'), F = (w, s) => w + ' ' + s + 'px system-ui, -apple-system, Segoe UI, Arial';
+    g.fillStyle = '#ffffff'; g.fillRect(0, 0, W, H);
+    g.fillStyle = '#111827'; g.font = F(800, 54); g.fillText('TM Perfume House', pad, 86);
+    g.fillStyle = '#6b7280'; g.font = F(500, 28); g.fillText('Price list', pad, 130);
+    let y = 170;
+    segs.forEach(([k, title]) => {
+      const C = S.charts[k], col = Math.min(S.cust, cols().length - 1);
+      g.fillStyle = '#0f6e7e'; g.fillRect(pad, y, W - pad * 2, 52); g.fillStyle = '#fff'; g.font = F(800, 30); g.fillText(title.replace(/^\S+\s/, '') + (k === 'perfume' ? ' — by total ml' : ''), pad + 18, y + 36); y += headH;
+      const half = Math.ceil(C.rows.length / 2), colW = (W - pad * 2) / 2;
+      C.rows.forEach((r, i) => {
+        const cx = pad + (i < half ? 0 : colW), cy = y + (i % half) * rowH, v = Number(r.p[col]) || Number(r.p.find((x) => Number(x) > 0)) || 0;
+        if ((i % half) % 2 === 0) { g.fillStyle = '#f3f4f6'; g.fillRect(cx, cy, colW - 12, rowH); }
+        g.fillStyle = '#111827'; g.font = F(700, k === 'mix' ? 22 : 28);
+        g.fillText(k === 'mix' ? mixLabel(r) : r.ml + (k === 'perfume' ? ' ml' : (Number(r.ml) === 1 ? ' piece' : ' pieces')), cx + 16, cy + 32);
+        g.textAlign = 'right'; g.font = F(700, 28); g.fillText(v > 0 ? '₹' + v.toLocaleString('en-IN') : '—', cx + colW - 28, cy + 32); g.textAlign = 'left';
+      });
+      y += half * rowH + gap;
+    });
+    g.fillStyle = '#9ca3af'; g.font = F(500, 22); g.fillText('Prices in rupees, GST included.', pad, H - 28);
+    const d = await api.post('pc.photo_save', { data: cv.toDataURL('image/jpeg', 0.9).split(',')[1] }); S.photo = d.url || '';
+  }
+  load();
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>

@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Customer follow-up — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=260928b">
+<link rel="stylesheet" href="assets/css/store.css?v=6">
+<style>
+  .crow{display:grid;grid-template-columns:1fr 1fr 110px 34px;gap:6px;margin-bottom:6px}
+  @media (max-width:640px){.crow{grid-template-columns:1fr 1fr}.crow .x{grid-column:auto}}
+  .crow .x{border:0;background:var(--sx-bg);border-radius:10px;cursor:pointer;font-weight:800;color:var(--sx-bad)}
+  .tg{display:flex;gap:8px;align-items:flex-start;font-size:13px;margin:8px 0}
+  .tg input{margin-top:3px}
+  .tg small{display:block;color:var(--sx-mut)}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><div><h1>Customer follow-up</h1><div class="sub" style="font-size:12.5px;color:var(--muted);margin-top:2px">What every customer gets after a bill: the bill page, our contacts, the community and a Google review</div></div></div>
+    <div class="content"><div class="sx-page" id="root"><div class="sx-card sx-mut">Loading…</div></div></div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=4"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script src="assets/js/store_common.js?v=3"></script>
+<script>
+  guardPage();
+  renderSidebar('store_contacts');
+  let S = null;
+  const crow = (c, i) => `<div class="crow" data-i="${i}"><input class="sx-in" data-f="name" placeholder="Name (e.g. Neil Bhatia)" value="${esc(c.name || '')}"><input class="sx-in" data-f="phone" placeholder="WhatsApp number" inputmode="tel" value="${esc(c.phone ? c.phone.slice(-10) : '')}"><input class="sx-in" data-f="role" placeholder="Role (Store / Sales)" value="${esc(c.role || '')}"><button class="x" data-del="${i}" aria-label="Remove">×</button></div>`;
+  function draw() {
+    $('root').innerHTML = `
+      <div class="sx-card"><h3>${sxi('user')} Store numbers <small>every customer gets these as one-tap contact cards</small></h3>
+        <label class="sx-f" style="margin-bottom:10px">Store name (shown on the bill page)<input class="sx-in" id="sname" value="${esc(S.store_name)}"></label>
+        <div id="crows">${S.contacts.map(crow).join('')}</div>
+        <button class="sx-btn ghost" id="addC" ${S.contacts.length >= 8 ? 'disabled' : ''}>+ Add a number</button>
+        <div class="sx-mut" style="font-size:12px;margin-top:6px">Add the store’s own number and each salesperson (up to 8). We cannot see whether a customer really saved them — we count who tapped “Save our contacts”.</div></div>
+      <div class="sx-card"><h3>${sxi('mega')} Links</h3>
+        <label class="sx-f">WhatsApp community invite link<input class="sx-in" id="comm" placeholder="https://chat.whatsapp.com/…" value="${esc(S.community_link)}"></label>
+        <label class="sx-f" style="margin-top:10px">Google review link<input class="sx-in" id="rev" placeholder="https://g.page/r/…/review" value="${esc(S.review_link)}"></label>
+        <label class="sx-f" style="margin-top:10px">Thank-you line on the bill page<input class="sx-in" id="thx" value="${esc(S.thanks_text)}"></label></div>
+      <div class="sx-card"><h3>${sxi('ok')} Rules</h3>
+        <label class="tg"><input type="checkbox" id="req" ${+S.require_phone ? 'checked' : ''}><span><b>Mobile number is required at billing</b><small>Salespeople must enter a number for every customer (or write why they declined).</small></span></label>
+        <label class="tg"><input type="checkbox" id="skip" ${+S.skip_returning ? 'checked' : ''}><span><b>Do not ask returning customers again</b><small>If the number already bought from us (this store or the old POS), their bill page says “Welcome back” and skips save-contacts / community / review, and the dashboard does not chase them.</small></span></label></div>
+      <div class="sx-card" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="sx-btn big" id="save">Save</button><a class="sx-pill info" style="text-decoration:none" id="sample" target="_blank" rel="noopener">See a sample bill page →</a><span id="msg" style="flex:1"></span></div>`;
+    $('sample').href = SAMPLE;
+  }
+  let SAMPLE = '#';
+  const grab = () => {
+    S.store_name = $('sname').value; S.community_link = $('comm').value; S.review_link = $('rev').value; S.thanks_text = $('thx').value; S.require_phone = $('req').checked ? 1 : 0; S.skip_returning = $('skip').checked ? 1 : 0;
+    document.querySelectorAll('#crows .crow').forEach((r) => { const c = S.contacts[+r.dataset.i]; r.querySelectorAll('[data-f]').forEach((i) => { c[i.dataset.f] = i.value; }); });
+  };
+  document.addEventListener('click', async (e) => {
+    if (e.target.id === 'addC') { grab(); S.contacts.push({ name: '', phone: '', role: 'Sales' }); draw(); return; }
+    const d = e.target.closest('[data-del]'); if (d) { grab(); S.contacts.splice(+d.dataset.del, 1); draw(); return; }
+    if (e.target.id === 'save') {
+      grab(); const b = e.target; b.disabled = true;
+      try { const r = await api.post('st_cs.save', S); S = r.settings; draw(); $('msg').innerHTML = `<div class="sx-msg ok">${sxi('ok')}<span>Saved.</span></div>`; }
+      catch (err) { $('msg').innerHTML = `<div class="sx-msg bad">${sxi('xc')}<span>${esc(err.message)}</span></div>`; b.disabled = false; }
+    }
+  });
+  (async () => {
+    try { const d = await api.get('st_cs.get'); S = d.settings; SAMPLE = d.sample; draw(); }
+    catch (e) { $('root').innerHTML = `<div class="sx-card"><div class="sx-msg bad">${sxi('xc')}<span>${esc(e.message)}</span></div></div>`; }
+  })();
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>

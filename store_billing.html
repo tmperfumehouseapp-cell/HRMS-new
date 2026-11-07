@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Store Billing — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=260928b">
+<link rel="stylesheet" href="assets/css/store.css?v=6">
+<style>
+  /* ---------- list view ---------- */
+  .bhero{padding:clamp(10px,1.4vw,16px) clamp(14px,2vw,24px)}
+  .bhero .sx-hero-row{align-items:center}.bhero .v{font-size:clamp(26px,3.4vw,40px)}
+  .newbtn{display:inline-flex;align-items:center;gap:8px;padding:12px 22px;font-size:15px;border-radius:16px}
+  .newbtn svg{width:18px;height:18px}
+  .brow{display:grid;grid-template-columns:42px minmax(120px,1.1fr) 64px 82px 90px 110px 96px 62px;gap:10px;align-items:center;padding:10px 4px;border-top:1px solid var(--sx-line);font-size:13px}
+  .brow:first-child{border-top:0}.brow.head{font-size:11px;font-weight:800;color:var(--sx-mut);letter-spacing:.05em;text-transform:uppercase;border-top:0;padding-bottom:4px}
+  .brow .nm small{display:block;color:var(--sx-mut)}
+  .brow.void{opacity:.45;text-decoration:line-through}
+  .x{border:0;background:none;color:var(--sx-bad);font-weight:800;cursor:pointer;font-size:12px}
+  @media (max-width:900px){.brow{grid-template-columns:38px 1fr auto auto;grid-template-areas:"av nm tot x" "av meta meta meta"}.brow.head{display:none}.brow .av{grid-area:av}.brow .nm{grid-area:nm}.brow .tot{grid-area:tot;font-size:15px}.brow .x{grid-area:x}.brow .meta{grid-area:meta;display:flex;gap:6px;flex-wrap:wrap}.brow .h{display:none}}
+  .brow .meta{display:contents}.brow .m{display:none}@media (max-width:900px){.brow .meta{display:flex}.brow .m{display:inline-flex}}
+  /* ---------- the "new bill" panel: side drawer on PC / medium, full screen on phones ---------- */
+  .ov{position:fixed;inset:0;background:rgba(20,22,26,.42);opacity:0;pointer-events:none;transition:opacity .18s;z-index:40}
+  .ov.on{opacity:1;pointer-events:auto}
+  .bc{position:fixed;top:0;right:0;bottom:0;width:min(520px,94vw);background:var(--sx-bg);z-index:41;display:flex;flex-direction:column;transform:translateX(104%);transition:transform .22s cubic-bezier(.2,.8,.2,1);box-shadow:-18px 0 50px rgba(20,22,26,.22);border-radius:26px 0 0 26px}
+  .bc.on{transform:none}
+  @media (max-width:760px){.bc{width:100%;border-radius:0;box-shadow:none}}
+  .bc-head{display:flex;align-items:center;gap:10px;padding:12px 16px;background:#fff;border-radius:26px 0 0 0;box-shadow:0 1px 0 var(--sx-line)}
+  @media (max-width:760px){.bc-head{border-radius:0}}
+  .bc-head b{font-size:16px}.bc-head .sub{font-size:12px;color:var(--sx-mut);margin-left:auto}
+  .bc-x{border:0;background:var(--sx-bg);width:34px;height:34px;border-radius:50%;cursor:pointer;font-size:18px;line-height:1;font-weight:700}
+  .bc-body{flex:1;overflow-y:auto;padding:12px 14px;display:grid;gap:10px;align-content:start}
+  .bc-foot{padding:10px 14px calc(12px + env(safe-area-inset-bottom));background:#fff;box-shadow:0 -1px 0 var(--sx-line)}
+  .bc .sx-card{padding:12px 14px;border-radius:18px;box-shadow:none;border:1px solid var(--sx-line)}
+  /* compact scan box */
+  .bscan{display:flex;align-items:center;gap:8px;border:2px solid var(--sx-ink);border-radius:14px;padding:2px 4px 2px 10px;background:#fff}
+  .bscan:focus-within{border-color:var(--sx-accent);box-shadow:0 0 0 4px rgba(255,122,47,.18)}
+  .bscan svg{width:18px;height:18px;color:var(--sx-accent);flex:0 0 auto}
+  .bscan input{flex:1;min-width:0;border:0;outline:0;background:transparent;font:700 15px/1.2 ui-monospace,Menlo,Consolas,monospace;letter-spacing:2px;padding:9px 0;color:var(--sx-ink)}
+  .bscan input::placeholder{letter-spacing:.5px;font-weight:600;color:#9aa0ab}
+  .chipbox{display:flex;gap:5px;flex-wrap:wrap;margin-top:8px}.chipbox:empty{display:none}
+  .bchip{--c:var(--sx-blue);--t:var(--sx-blue-t);display:inline-flex;align-items:center;gap:5px;background:var(--t);border-radius:999px;padding:3px 4px 3px 4px;font-size:12px;font-weight:700;max-width:100%}
+  .bchip .sz{background:var(--c);color:#fff;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:800}
+  .bchip .nm{max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .bchip button{border:0;background:#fff;border-radius:50%;width:20px;height:20px;line-height:18px;cursor:pointer;font-weight:800;color:var(--sx-bad);font-size:13px}
+  .bchip.s10{--c:var(--sx-aqua);--t:var(--sx-aqua-t)}.bchip.s20{--c:var(--sx-blue);--t:var(--sx-blue-t)}.bchip.s50{--c:var(--sx-violet);--t:var(--sx-violet-t)}.bchip.s100{--c:var(--sx-orange);--t:var(--sx-orange-t)}
+  .bchip.tester{--c:#b45309;--t:#fff4e0;border:1.5px dashed #e0a458}
+  .tot{display:flex;align-items:baseline;gap:10px;margin-top:8px;padding:8px 12px;border-radius:14px;background:linear-gradient(135deg,#14161a,#2a2e36);color:#fff}
+  .tot b{font-size:26px;letter-spacing:-.02em;line-height:1}.tot span{font-size:12px;opacity:.8}
+  .prices{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+  .pr{border:2px solid var(--sx-line);background:#fff;border-radius:12px;padding:5px 4px;text-align:center;font:inherit;cursor:pointer;transition:border-color .12s,transform .08s}
+  .pr:hover{border-color:var(--sx-accent)}.pr:active{transform:scale(.97)}
+  .pr b{display:block;font-size:15px}.pr small{color:var(--sx-mut);font-size:11px;font-weight:700}
+  .pr.on{border-color:transparent;background:linear-gradient(135deg,var(--sx-accent),var(--sx-accent-d));color:#fff;box-shadow:0 5px 14px rgba(255,122,47,.35)}.pr.on small{color:#ffe9dc}
+  .bc .sx-in{min-height:38px;padding:7px 10px;font-size:14px}
+  .duty label{display:inline-flex;gap:6px;align-items:center;margin:4px 12px 4px 0;font-size:13px}
+  /* customers on the bill */
+  .cust{display:grid;gap:6px}.cust .row{display:grid;grid-template-columns:20px minmax(0,1fr) minmax(0,1.1fr) auto;gap:5px;align-items:center}
+  .cust .no{background:var(--sx-ink);color:#fff;border-radius:50%;width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:800}
+  .cust .skip{display:inline-flex;gap:4px;align-items:center;font-size:11.5px;font-weight:700;color:var(--sx-mut);cursor:pointer;white-space:nowrap}
+  .cust .back{grid-column:2/-1}
+  @media (max-width:520px){.cust .row{grid-template-columns:20px minmax(0,1fr) minmax(0,1fr)}.cust .skip{grid-column:2/-1}}
+  .cstep{display:inline-flex;align-items:center;gap:2px;margin-left:auto}.cstep button{border:1.5px solid var(--sx-line);background:#fff;border-radius:10px;width:30px;height:30px;font-size:17px;font-weight:800;cursor:pointer}.cstep b{min-width:22px;text-align:center}
+  .back{display:inline-flex;gap:5px;align-items:center;padding:2px 10px;border-radius:999px;background:var(--sx-violet-t);color:var(--sx-violet);font-size:11px;font-weight:800;line-height:1.35}
+  .done{border:2px solid var(--sx-good);background:#f1fbf5}
+  .done h4{margin:0 0 8px;font-size:14px;display:flex;gap:6px;align-items:center}.done h4 svg{width:18px;height:18px;color:var(--sx-good);flex:0 0 auto}
+  .wa{display:flex;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--sx-line);flex-wrap:wrap}.wa:first-of-type{border-top:0}
+  .wa .n{flex:1;min-width:110px;font-size:13px}.wa .n small{display:block;color:var(--sx-mut)}
+  .wabtn{display:inline-flex;gap:6px;align-items:center;border:0;border-radius:12px;padding:9px 14px;font:800 13px inherit;background:#1fa855;color:#fff;cursor:pointer}
+  .wabtn.sent{background:#e6f4ec;color:#157a3c}
+  .lnk{border:1.5px solid var(--sx-line);background:#fff;border-radius:12px;padding:8px 10px;font:700 12px inherit;cursor:pointer}
+  .ppl{grid-column:1/-1;display:flex;gap:6px 14px;flex-wrap:wrap;padding:2px 0 4px 52px}
+  .pp{display:inline-flex;align-items:center;gap:5px;flex-wrap:wrap;font-size:11.5px}
+  .pp>b{font-size:12px}
+  .st{display:inline-flex;gap:3px;align-items:center;padding:1px 7px;border-radius:999px;font-weight:800;font-size:11px;background:#eef0f3;color:#6b7280}
+  .st.y{background:var(--sx-aqua-t);color:#0d7a55}.st.n{background:#fff4e0;color:#b45309}
+  .st.y::before{content:"✓"}.st.n::before{content:"○"}
+  .minibtn{border:0;background:#1fa855;color:#fff;border-radius:8px;padding:2px 9px;font:800 11px inherit;cursor:pointer}
+  /* ---------- compact: tighter everywhere; wide screens put the panel in two columns ---------- */
+  .bhero{padding:8px clamp(12px,1.6vw,20px)!important;border-radius:20px}.bhero .v{font-size:clamp(22px,2.6vw,32px)!important}.bhero .k{font-size:10.5px}
+  .newbtn{padding:9px 16px!important;font-size:14px!important;border-radius:14px!important}
+  .brow{padding:6px 4px;gap:8px;font-size:12.5px}.ppl{padding:0 0 4px 50px;gap:3px 12px}
+  .sx-page{gap:10px}.sx-card h3{margin-bottom:6px}
+  .bc-head{padding:8px 14px}.bc-body{padding:10px 12px;gap:8px}.bc .sx-card{padding:10px 12px;border-radius:16px}
+  .bc .sx-in{min-height:34px;padding:5px 9px;font-size:13.5px}
+  .bscan input{padding:7px 0;font-size:14px}.tot{margin-top:6px;padding:6px 10px}.tot b{font-size:22px}
+  .pr{padding:4px 3px}.pr b{font-size:14px}
+  .r3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}@media (max-width:520px){.r3{grid-template-columns:1fr 1fr}.r3 label:last-child{grid-column:1/-1}}
+  .cust .skip input{width:16px;height:16px;min-height:0;margin:0}
+  #doneBox{grid-column:1/-1}#doneBox:empty{display:none}
+  .bc-foot{padding:8px 12px calc(8px + env(safe-area-inset-bottom))}.bc-foot .sx-btn.big{padding:11px;font-size:15px}
+  @media (min-width:1000px){
+    .bc{width:min(900px,92vw)}
+    .bc-body{grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);align-items:start;grid-auto-flow:dense}
+    .c-scan{grid-column:1;grid-row:1}.c-price{grid-column:1;grid-row:2}.c-cust{grid-column:2;grid-row:1/span 2}
+  }
+  @media (min-width:1500px){.bc{width:min(1000px,70vw)}}
+  @media (max-width:380px){.bc-body{padding:8px}.bc .sx-card{padding:8px 10px}.bhero .v{font-size:22px!important}.pr b{font-size:13px}.prices{gap:4px}}
+  /* medium windows: the list keeps its room, hero wraps */
+  @media (max-width:760px){.bhero .mini{display:none}.newbtn{padding:10px 16px;font-size:14px}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><div><h1>Billing</h1><div class="sub" style="font-size:12.5px;color:var(--muted);margin-top:2px">Today's bills · start a new bill any time</div></div></div>
+    <div class="content"><div class="sx-page">
+
+      <div class="sx-hero bhero"><div class="sx-hero-row">
+        <div class="grow"><div class="k">Today's sales <span id="hDay" style="text-transform:none;letter-spacing:0;font-weight:600;opacity:.8"></span></div><div class="v" id="hTotal">₹0</div></div>
+        <div class="mini"><div><b id="hBills">0</b><span>bills</span></div><div><b id="hMl">0</b><span>ml sold</span></div><div><b id="hAvg">₹0</b><span>avg ticket</span></div></div>
+        <button class="sx-btn newbtn" id="btnNew"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>New bill</button>
+      </div></div>
+
+      <div class="sx-card">
+        <h3>Bills <input type="date" id="dayPick" class="sx-in" style="width:auto;min-height:32px;padding:3px 8px;font-size:12.5px;margin-left:6px"><small id="dayTot"></small></h3>
+        <div class="brow head h"><span></span><span>Bill</span><span>ml</span><span>Time</span><span>Payment</span><span>Order code</span><span style="text-align:right">Total</span><span></span></div>
+        <div id="bills"></div>
+        <div id="dutyCard" style="display:none;margin-top:12px"><details class="sx-d"><summary>Who can bill (manager)</summary><div class="duty" id="duty" style="margin-top:8px"></div></details></div>
+      </div>
+      <input class="sx-sr" id="scanList" inputmode="numeric" autocomplete="off" tabindex="-1" aria-label="Scan a barcode to start a new bill">
+    </div></div>
+  </main>
+</div>
+
+<!-- ============ NEW BILL ============ -->
+<div class="ov" id="ov"></div>
+<aside class="bc" id="bc" aria-hidden="true">
+  <div class="bc-head"><button class="bc-x" id="bcX" aria-label="Close">×</button><b>New bill</b><span class="sub" id="bcSub"></span></div>
+  <div class="bc-body">
+    <div class="sx-card c-scan">
+      <div class="bscan"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 5v14M8 5v14M12 5v14M16 5v14M20 5v14"/></svg><input id="scanIn" inputmode="numeric" autocomplete="off" placeholder="Scan barcode"></div>
+      <div id="scanMsg"></div>
+      <div class="chipbox" id="chips"></div>
+      <div id="chainBox"></div>
+      <div class="tot"><b id="totMl">0 ml</b><span id="totSub">Nothing scanned yet</span><span style="margin-left:auto"><button class="x" id="btnClear" style="color:#ffb3ae">Clear</button></span></div>
+    </div>
+    <div id="doneBox"></div>
+    <div class="sx-card c-cust">
+      <div class="sx-f" style="margin-bottom:6px;display:flex;align-items:center">Customers on this bill <span style="font-weight:600;margin-left:6px" id="custNeed"></span><span class="cstep"><button id="cMinus" aria-label="One customer fewer">−</button><b id="cCount">1</b><button id="cPlus" aria-label="One customer more">+</button></span></div>
+      <div class="cust" id="cust"></div>
+    </div>
+    <div class="sx-card c-price">
+      <div class="sx-f" style="margin-bottom:6px">Price for the total ml <span style="font-weight:600">(% = commission)</span></div>
+      <div class="prices" id="prices"><span class="sx-mut" style="grid-column:1/-1">Scan a bottle to see prices.</span></div>
+      <div id="customRow" style="display:none;margin-top:8px"><label class="sx-f">Price ₹ (manager — no chart row for this ml)<input class="sx-in" id="customPrice" type="number" min="0" inputmode="numeric"></label></div>
+      <div class="r3" style="margin-top:8px">
+        <label class="sx-f">Billed by<select class="sx-in" id="emp"></select></label>
+        <label class="sx-f">Order code<input class="sx-in" id="ocode" placeholder="First choose &quot;Billed by&quot;" autocapitalize="characters" autocomplete="off"></label>
+        <label class="sx-f" title="Normally today. Pick another date when the sale belongs to another day (for example the store was open after 3 AM)">Counts for day<input class="sx-in" id="bizDay" type="date"></label>
+        <label class="sx-f" title="Always the current time. Billing a sale from earlier today? Change the time.">Sold at <span style="font-weight:600">(now · change if earlier)</span><input class="sx-in" id="soldAt" type="time"></label>
+      </div>
+      <details class="sx-d" style="margin-top:10px"><summary>Discount · payment</summary>
+        <div class="sx-r2" style="margin-top:8px"><label class="sx-f">Discount ₹<input class="sx-in" id="disc" type="number" min="0" value="0" inputmode="numeric"></label>
+          <label class="sx-f">Payment<select class="sx-in" id="pay"><option value="cash">Cash</option><option value="online">Online / UPI</option><option value="split">Cash + online</option></select></label></div>
+        <div class="sx-r2" id="splitRow" style="display:none;margin-top:8px"><label class="sx-f">Cash ₹<input class="sx-in" id="cash" type="number" min="0" inputmode="numeric"></label><label class="sx-f">Online ₹<input class="sx-in" id="online" type="number" min="0" inputmode="numeric"></label></div>
+      </details>
+      <div id="billMsg"></div>
+    </div>
+  </div>
+  <div class="bc-foot"><button class="sx-btn big" id="btnBill" disabled>Make bill</button></div>
+</aside>
+
+<script src="assets/js/config.js?v=4"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script src="assets/js/store_common.js?v=3"></script>
+<script>
+  guardPage();
+  renderSidebar('store_billing');
+  const toast = (m, bad) => { $('billMsg').innerHTML = m ? `<div class="sx-msg ${bad ? 'bad' : 'ok'}">${sxi(bad ? 'xc' : 'ok')}<span>${esc(m)}</span></div>` : ''; };
+  let cart = [], chain = null, quote = null, pickedCol = null, isManager = false, open = false, needPhone = true, people = [{ name: '', phone: '', declined: false, reason: '', lk: null }];
+  // ---------- customers on this bill (1-4 people; every one needs a mobile number, or a reason)
+  const digits = (v) => String(v || '').replace(/\D/g, '').slice(-10);
+  const phoneOk = (v) => /^[6-9]\d{9}$/.test(digits(v));
+  const personOk = (p) => p.declined ? p.reason.trim().length > 1 : phoneOk(p.phone);
+  const custOk = () => !needPhone && people.every((p) => !p.name && !p.phone && !p.declined) ? true : people.every(personOk);
+  function renderCust() {
+    $('cCount').textContent = people.length;
+    $('custNeed').textContent = needPhone ? '(mobile number needed)' : '';
+    $('cust').innerHTML = people.map((p, i) => `<div class="row" data-i="${i}"><span class="no">${i + 1}</span>
+      <input class="sx-in" data-f="name" placeholder="Name" autocomplete="off" value="${esc(p.name)}">
+      ${p.declined ? `<input class="sx-in" data-f="reason" placeholder="Why no number? (required)" value="${esc(p.reason)}">` : `<input class="sx-in" data-f="phone" placeholder="Mobile number" inputmode="tel" autocomplete="off" value="${esc(p.phone)}">`}
+      <label class="skip"><input type="checkbox" data-f="declined" ${p.declined ? 'checked' : ''}> won’t share</label>
+      ${p.lk && p.lk.returning && !p.declined ? `<div class="back">↺ Returning · ${p.lk.visits} visit${p.lk.visits === 1 ? '' : 's'}${p.lk.last_visit ? ' · last ' + esc(String(p.lk.last_visit).slice(0, 10)) : ''} — don’t ask again for contacts / community / review</div>` : ''}
+    </div>`).join('');
+    updatePay();
+  }
+  let lkTimer = null;
+  $('cust').addEventListener('input', (e) => {
+    const f = e.target.dataset.f, i = +e.target.closest('[data-i]').dataset.i; if (!f || f === 'declined') return;
+    people[i][f] = e.target.value;
+    if (f === 'phone') {
+      people[i].lk = null; clearTimeout(lkTimer);
+      if (phoneOk(e.target.value)) lkTimer = setTimeout(async () => {
+        try { const d = await api.get('st_cust.lookup', { phone: digits(e.target.value) }); if (digits(people[i].phone) === digits(e.target.value)) { people[i].lk = d; if (d.returning && !people[i].name && d.name) people[i].name = d.name; const keep = document.activeElement && document.activeElement.dataset.f, row = i; renderCust(); if (keep) { const el = document.querySelector(`#cust [data-i="${row}"] [data-f="${keep}"]`); if (el) { el.focus(); el.setSelectionRange && el.setSelectionRange(el.value.length, el.value.length); } } }
+        } catch (err) { /* lookup is a nicety only */ }
+      }, 350);
+    }
+    updatePay();
+  });
+  $('cust').addEventListener('change', (e) => { if (e.target.dataset.f !== 'declined') return; const i = +e.target.closest('[data-i]').dataset.i; people[i].declined = e.target.checked; renderCust(); });
+  $('cPlus').onclick = () => { if (people.length < 4) { people.push({ name: '', phone: '', declined: false, reason: '', lk: null }); renderCust(); } };
+  $('cMinus').onclick = () => { if (people.length > 1) { people.pop(); renderCust(); } };
+  const resetCust = () => { people = [{ name: '', phone: '', declined: false, reason: '', lk: null }]; renderCust(); };
+
+  const szClass = (b) => b.kind === 'tester' ? 'tester' : 's' + b.ml;
+  const PAY = { cash: 'Cash', online: 'Online', split: 'Split' };
+
+  // ---------- open / close the New bill panel
+  function openBill() { open = true; $('bc').classList.add('on'); $('ov').classList.add('on'); $('bc').setAttribute('aria-hidden', 'false'); setTimeout(() => $('scanIn').focus(), 220); }
+  function closeBill() { open = false; $('bc').classList.remove('on'); $('ov').classList.remove('on'); $('bc').setAttribute('aria-hidden', 'true'); }
+  $('btnNew').onclick = openBill; $('bcX').onclick = closeBill; $('ov').onclick = closeBill;
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && open) closeBill(); });
+  $('btnClear').onclick = () => { cart = []; chain = null; quote = null; pickedCol = null; $('scanMsg').innerHTML = ''; renderCart(); renderQuote(); $('scanIn').focus(); };
+
+  // ---------- scanning: ONE server call checks the bottle and returns the new total ml + prices
+  async function addBottle(code) {
+    if (cart.some((b) => b.code === code)) { $('scanMsg').innerHTML = `<div class="sx-msg warn">${sxi('alert')}<span>Already on this bill.</span></div>`; return false; }
+    try {
+      const d = await api.post('st_bill.scan', { code, codes: cart.map((b) => b.code), emp_id: +$('emp').value || 0 });
+      if (d.chain) {          // a CHAIN label: the staff chose the chain, the system splits the bill (chain at its price, perfumes get the rest)
+        if (chain && chain.code === d.chain.code) { $('scanMsg').innerHTML = `<div class="sx-msg warn">${sxi('alert')}<span>Already on this bill.</span></div>`; return false; }
+        if (chain) { $('scanMsg').innerHTML = `<div class="sx-msg warn">${sxi('alert')}<span>This bill already has a chain (${esc(chain.name)}). Remove it first to change it.</span></div>`; return false; }
+        chain = d.chain; $('scanMsg').innerHTML = ''; $('billMsg').innerHTML = ''; renderCart(); renderQuote(); return true;
+      }
+      cart.push(d.bottle); quote = d.quote; $('scanMsg').innerHTML = ''; $('billMsg').innerHTML = '';
+      if (pickedCol !== null && !quote.columns[pickedCol]) pickedCol = null;
+      renderCart(); renderQuote(); return true;
+    } catch (err) { $('scanMsg').innerHTML = `<div class="sx-msg bad">${sxi('xc')}<span>${esc(err.message)}</span></div>`; return false; }
+  }
+  const scanner = scanBox($('scanIn'), addBottle);                       // the scan box inside the panel
+  scanBox($('scanList'), async (code) => { if (!open) openBill(); return addBottle(code); });   // a scan on the LIST starts a new bill by itself
+  $('chips').addEventListener('click', (e) => { if (e.target.closest('[data-xc]')) { chain = null; renderCart(); renderQuote(); return; } const x = e.target.closest('[data-x]'); if (!x) return; cart = cart.filter((b) => b.code !== x.dataset.x); refresh(); });
+
+  async function refresh() {          // only after removing a bottle / changing the salesperson (special-day chart is per person)
+    renderCart();
+    if (!cart.length) { quote = null; pickedCol = null; renderQuote(); return; }
+    try { quote = await api.post('st_bill.quote', { codes: cart.map((b) => b.code), emp_id: +$('emp').value || 0 }); } catch (e) { quote = null; toast(e.message, 1); }
+    if (quote && (pickedCol === null || !quote.columns[pickedCol])) pickedCol = null;
+    renderQuote();
+  }
+  function renderCart() {
+    $('chips').innerHTML = (chain ? `<span class="bchip"><span class="sz" style="background:#b8860b;color:#fff">CHAIN</span><span class="nm">${esc(chain.name)} · ${chain.split_pct || 50}% of bill</span><button data-xc="1" aria-label="Remove chain">×</button></span>` : '') + cart.map((b) => `<span class="bchip ${szClass(b)}"><span class="sz">${b.kind === 'tester' ? 'T ' : ''}${b.ml}</span><span class="nm">${esc(b.title)}</span><button data-x="${b.code}" aria-label="Remove">×</button></span>`).join('');
+    const sale = cart.filter((b) => b.kind !== 'tester'), ml = sale.reduce((a, b) => a + b.ml, 0), t = cart.length - sale.length;
+    $('totMl').textContent = ml + ' ml';
+    $('totSub').textContent = cart.length || chain ? `${sale.length} bottle${sale.length === 1 ? '' : 's'}${t ? ' + ' + t + ' tester' + (t > 1 ? 's' : '') : ''}` : 'Nothing scanned yet';
+    $('bcSub').textContent = cart.length ? ml + ' ml' : '';
+  }
+  const listPrice = () => (quote && pickedCol !== null && quote.columns[pickedCol]) ? quote.columns[pickedCol].price : ((!quote || !quote.in_chart) ? (+$('customPrice').value || 0) : 0);
+  function renderQuote() {
+    const noChart = quote && cart.some((b) => b.kind !== 'tester') && !quote.in_chart;
+    $('customRow').style.display = noChart && isManager ? '' : 'none';
+    $('prices').innerHTML = !quote ? '<span class="sx-mut" style="grid-column:1/-1">Scan a bottle to see prices.</span>'
+      : quote.in_chart ? quote.columns.map((c) => `<button class="pr ${pickedCol === c.col ? 'on' : ''}" data-c="${c.col}"><b>${inr(c.price)}</b><small>${c.pct == null ? '&nbsp;' : c.pct + '%'}</small></button>`).join('')
+      : `<span class="sx-mut" style="grid-column:1/-1">No price row for ${quote.total_ml} ml${isManager ? ' — type it below' : ' — ask a manager'}.</span>`;
+    updatePay();
+  }
+  $('prices').addEventListener('click', (e) => { const c = e.target.closest('[data-c]'); if (!c) return; pickedCol = +c.dataset.c; renderQuote(); });
+  const total = () => Math.max(0, listPrice() - (+$('disc').value || 0));
+  const chainShare = (t) => Math.round(t * (chain.split_pct || 50) / 100);
+  function chainInfo(t) {          // the split shown to staff; the real split is made again on the server with the same rule
+    if (!chain) return '';
+    const sale = cart.some((b) => b.kind !== 'tester');
+    if (!sale || t <= 0) return `<div class="sx-msg warn" style="margin-top:8px">${sxi('alert')}<span>Chain ${esc(chain.name)} is on the bill (it gets ${chain.split_pct || 50}% of the total). Scan the perfumes and pick the price to see the split.</span></div>`;
+    const cp = chainShare(t);
+    if (chain.mrp > 0 && cp > chain.mrp) return `<div class="sx-msg bad" style="margin-top:8px">${sxi('xc')}<span>The chain’s share is ${inr(cp)} but this chain’s MRP is only ${inr(chain.mrp)}. Take a chain with a higher MRP.</span></div>`;
+    if (cp <= 0 || cp >= t) return `<div class="sx-msg bad" style="margin-top:8px">${sxi('xc')}<span>The chain share (${inr(cp)}) does not fit this bill. Add more perfume.</span></div>`;
+    return `<div class="sx-card" style="margin:8px 0 0;padding:10px 12px;background:var(--sx-blue-t,#eef5ff)"><b>Split on the GST invoice</b><div style="display:flex;justify-content:space-between;margin-top:4px"><span>Perfumes</span><b>${inr(t - cp)}</b></div><div style="display:flex;justify-content:space-between"><span>Chain · ${esc(chain.name)}</span><b>${inr(cp)}</b></div><div style="display:flex;justify-content:space-between;border-top:1px solid var(--sx-line);margin-top:4px;padding-top:4px"><span>Bill total (does not change)</span><b>${inr(t)}</b></div></div>`;
+  }
+  function updatePay() {
+    const t = total();
+    $('chainBox').innerHTML = chainInfo(t);
+    $('splitRow').style.display = $('pay').value === 'split' ? '' : 'none';
+    $('btnBill').textContent = t > 0 ? 'Make bill · ' + inr(t) : 'Make bill';
+    $('btnBill').disabled = !(cart.some((b) => b.kind !== 'tester') && t > 0 && +$('emp').value && custOk() && !(chain && (chainShare(t) >= t || chainShare(t) <= 0 || (chain.mrp > 0 && chainShare(t) > chain.mrp))));
+    $('btnBill').title = custOk() ? '' : 'Add each customer’s mobile number first';
+  }
+  // the Order code box fills itself with the next code of the person who bills (KC00061); the cashier can still type another one
+  // "Counts for day": a calendar. Max = the store day (today, from the server's 3 AM rule). Min = yesterday for a cashier, 45 days back for a manager.
+  let storeToday = '';
+  const shiftDay = (iso, n) => { const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+  function setBizDay(today) {
+    storeToday = today; const el = $('bizDay'), cur = el.value;
+    el.max = today; el.min = shiftDay(today, isManager ? -45 : -1);
+    el.value = (cur && cur >= el.min && cur <= today) ? cur : today;
+  }
+  let ocodeAuto = true, codeSeq = 0;
+  async function fillCode() {
+    const e = +$('emp').value || 0; $('ocode').placeholder = e ? 'Getting the code…' : 'First choose "Billed by"'; if (!e || (!ocodeAuto && $('ocode').value)) return;
+    const my = ++codeSeq;
+    try { const d = await api.get('st_bill.next_code', { emp_id: e }); if (my === codeSeq && d.code && (ocodeAuto || !$('ocode').value)) { $('ocode').value = d.code; ocodeAuto = true; } else if (!d.code) $('ocode').placeholder = 'Type the code'; } catch (er) { $('ocode').placeholder = 'Type the code (auto code not available)'; }
+  }
+  $('ocode').addEventListener('input', () => { ocodeAuto = false; });
+  $('emp').addEventListener('change', () => { if (ocodeAuto) $('ocode').value = ''; fillCode(); });
+  $('emp').addEventListener('change', refresh);
+  ['disc', 'pay', 'customPrice'].forEach((id) => $(id).addEventListener('input', updatePay));
+
+  // ---------- "Sold at": always the current time by default (keeps ticking until the cashier types a different time)
+  let soldTouched = false;
+  const setSoldNow = () => { const d = new Date(); $('soldAt').value = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
+  $('soldAt').addEventListener('input', () => { soldTouched = true; });
+  setSoldNow(); setInterval(() => { if (!soldTouched) setSoldNow(); }, 20000);
+
+  // ---------- make the bill: saved, the panel resets and stays open for the next customer
+  $('btnBill').onclick = async () => {
+    $('btnBill').disabled = true;
+    const body = { codes: cart.map((b) => b.code), emp_id: +$('emp').value, people: people.filter((p) => p.name || p.phone || p.declined).map((p) => ({ name: p.name, phone: p.declined ? '' : p.phone, declined: p.declined, reason: p.reason })), order_code: $('ocode').value, sold_time: soldTouched ? ($('soldAt').value || '') : '', biz_date: ($('bizDay').value && $('bizDay').value !== storeToday) ? $('bizDay').value : '', discount: +$('disc').value || 0, pay_mode: $('pay').value, cash_amt: +$('cash').value || 0, online_amt: +$('online').value || 0 };
+    if (chain) body.chain_code = chain.code;
+    if (pickedCol !== null) body.price_col = pickedCol; else body.custom_price = +$('customPrice').value || 0;
+    try {
+      const d = await api.post('st_bill.create', body); beep(true);
+      showDone(d); resetCust();
+      cart = []; chain = null; quote = null; pickedCol = null; ['ocode', 'cash', 'online', 'customPrice'].forEach((i) => $(i).value = ''); ocodeAuto = true; fillCode(); soldTouched = false; setSoldNow(); $('bizDay').value = storeToday; $('disc').value = 0; $('scanMsg').innerHTML = '';
+      renderCart(); renderQuote();
+      toast(d.message + (d.commission_pct != null ? ` Commission ≈ ${d.commission_pct}%.` : '') + ' Scan the next customer’s bottles, or close.');
+      loadBills(); $('scanIn').focus();
+    } catch (e) { beep(false); toast(e.message, 1); updatePay(); }
+  };
+
+  // ---------- after the bill: send it to each customer on WhatsApp (opens WhatsApp in a new tab with the message ready)
+  const waRow = (p, bill) => `<div class="wa"><div class="n"><b>${esc(p.name || 'Customer ' + p.no)}</b><small>${p.declined ? 'did not want to share' + (p.reason ? ' — ' + esc(p.reason) : '') : '+' + esc(p.phone) + (p.returning ? ' · returning customer' : '')}</small></div>
+    ${p.wa_url ? `${p.auto && p.auto !== 'sent' ? `<small class="sx-mut" style="display:block">auto-send did not go: ${esc(p.auto)}</small>` : ''}<button class="wabtn ${p.sent_at ? 'sent' : ''}" data-wa="${p.person_id}" data-u="${esc(p.wa_url)}">${p.sent_at ? '✓ Sent · send again' : 'Send on WhatsApp'}</button><button class="lnk" data-copy="${esc(p.link)}">Copy link</button>` : ''}</div>`;
+  const invBox = (d) => !d.chain ? '' : (d.inv_ok ? `<div class="wa"><div class="n"><b>GST invoice ${esc(d.inv_no)}</b><small>Perfumes ${inr(d.perfume_amt)} + chain ${esc(d.chain)} ${inr(d.chain_amt)} · it is on the customer’s bill page</small></div><a class="lnk" href="${esc(d.inv_url)}" target="_blank" rel="noopener">View</a> <a class="lnk" href="${esc(d.inv_pdf)}" target="_blank" rel="noopener">PDF</a></div>`
+    : `<div class="wa"><div class="n"><b style="color:var(--sx-red,#c0392b)">GST invoice NOT made yet</b><small>${esc(d.inv_err || '')}</small></div><button class="lnk" data-inv="${d.bill_id}">Try again</button></div>`);
+  function showDone(d) {
+    const ps = (d.people || []); if (!ps.length && !d.chain) { $('doneBox').innerHTML = ''; return; }
+    $('doneBox').innerHTML = `<div class="sx-card done"><h4>${sxi('ok')} Bill ${esc(d.bill_no || '')} saved — ${ps.some((x) => x.auto === 'sent') ? 'sent to the customer on WhatsApp automatically' + (ps.some((x) => x.wa_url && x.auto !== 'sent') ? ' (send the rest below)' : '') : 'now send it to the customer' + (ps.length > 1 ? 's' : '')}</h4>${invBox(d)}${ps.map((p) => waRow(p)).join('')}<div class="wa" style="border-top:1px dashed var(--sx-line)"><div class="n"><b>More people with them?</b><small>Friends link: they save contacts, join the community and review — no need to bill them</small></div><button class="lnk" data-copy="${esc((ps.find((x) => x.link) || {}).link + '&g=1')}">Copy friends link</button></div><div class="sx-mut" style="margin-top:6px;font-size:11.5px">Tap <b>Send on WhatsApp</b>: WhatsApp opens with the message ready — just press send.</div><button class="lnk" id="doneX" style="margin-top:8px">Done</button></div>`;
+    $('doneBox').scrollIntoView({ block: 'start' });
+  }
+  async function doSend(btn) {
+    window.open(btn.dataset.u, '_blank', 'noopener');
+    try { await api.post('st_bill.mark_sent', { person_id: +btn.dataset.wa }); btn.classList.add('sent'); btn.textContent = '✓ Sent · send again'; loadBills(); } catch (e) { /* the message still opened */ }
+  }
+  document.addEventListener('click', async (e) => {
+    const iv = e.target.closest('[data-inv]'); if (iv) { iv.disabled = true; try { const r = await api.post('st_bill.invoice', { bill_id: +iv.dataset.inv }); toast(r.message); $('doneBox').innerHTML = ''; loadBills(); } catch (err) { toast(err.message, 1); iv.disabled = false; } return; }
+    const w = e.target.closest('[data-wa]'); if (w) return doSend(w);
+    const c = e.target.closest('[data-copy]'); if (c) { try { await navigator.clipboard.writeText(c.dataset.copy); c.textContent = 'Copied ✓'; } catch (err) { prompt('Copy this link', c.dataset.copy); } return; }
+    if (e.target.id === 'doneX') $('doneBox').innerHTML = '';
+  });
+  const stp = (at, label) => `<span class="st ${at ? 'y' : 'n'}">${label}</span>`;
+  const peopleRow = (b) => !(b.people && b.people.length) || b.status !== 'ok' ? '' : `<div class="ppl">${b.people.map((p) => p.declined ? `<span class="pp"><b>${esc(p.name || 'Customer')}</b><span class="st">no number${p.reason ? ' · ' + esc(p.reason) : ''}</span></span>`
+    : `<span class="pp"><b>${esc(p.name || '+' + p.phone.slice(-10))}</b>${p.returning ? '<span class="st y" style="background:var(--sx-violet-t);color:var(--sx-violet)">↺ returning</span>' : ''}${p.sent_at ? stp(1, 'Sent') : `<button class="minibtn" data-wa="${p.person_id}" data-u="${esc(p.wa_url || '')}">Send on WhatsApp</button>`}${stp(p.opened_at, 'Opened')}${p.returning ? '' : stp(p.contact_at, 'Contacts') + stp(p.community_at, 'Community') + stp(p.review_at, 'Review')}</span>`).join('')}</div>`;
+
+  // ---------- today's bills
+  let listDate = '', dayOpen = 0, payOpen = 0, payD = null, lastBills = [];
+  async function loadBills() {
+    try {
+      const d = await api.get('st_bill.list', listDate ? { date: listDate } : {}), ok = d.bills.filter((b) => b.status === 'ok');
+      if (!listDate || listDate === d.today) { $('hTotal').textContent = inr(d.total); $('hBills').textContent = ok.length; $('hMl').textContent = d.total_ml; $('hAvg').textContent = inr(ok.length ? d.total / ok.length : 0); }
+      $('hDay').textContent = '· ' + new Date(d.today + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }) + ' · a new day starts at ' + d.day_start + ' AM';
+      lastBills = d.bills; $('dayPick').value = d.date; $('dayPick').max = d.today; setBizDay(d.today);
+      $('dayTot').textContent = `${ok.length} bill${ok.length === 1 ? '' : 's'} · ${inr(d.total)} · ${d.total_ml} ml`;
+      $('bills').innerHTML = d.bills.length ? d.bills.map((b) => `<div class="brow ${b.status === 'void' ? 'void' : ''}"><span class="av">${sxAv(b.emp_name)}</span>
+        <span class="nm"><b>${esc(b.bill_no)}</b><small>${esc(b.emp_name)}${b.customer_name ? ' · ' + esc(b.customer_name) : ''}</small></span>
+        <span class="meta"><span class="h" style="font-weight:700">${b.total_ml}</span><span class="sx-pill m" style="background:var(--sx-blue-t);color:var(--sx-blue)">${b.total_ml} ml</span><span class="h sx-mut">${esc(b.created_at.slice(11, 16))}</span><span class="sx-pill">${PAY[b.pay_mode] || b.pay_mode}</span>${b.chain_name ? (b.inv_no ? `<span class="sx-pill good" title="Chain ${esc(b.chain_name)}">⛓ ${b.inv_url ? `<a href="${esc(b.inv_url)}" target="_blank" rel="noopener" style="color:inherit">${esc(b.inv_no)}</a>` : esc(b.inv_no)}</span>` : (b.status === 'ok' ? `<button class="minibtn" data-inv="${b.bill_id}" title="${esc(b.inv_err || '')}">⛓ Make GST invoice</button>` : '')) : ''}${b.order_code ? `<span class="sx-pill good">${esc(b.order_code)}</span>` : (b.status === 'ok' ? `<span class="sx-pill warn">${sxi('alert')} no code</span>` : '')}</span>
+        <b class="tot" style="text-align:right;background:none;color:inherit;padding:0;margin:0;display:block;font-size:14px">${inr(b.total)}</b>
+        ${b.status === 'ok' && (isManager || d.date === d.today) ? `<span style="display:flex;gap:6px;flex-wrap:wrap"><button class="x" data-p="${b.bill_id}" style="color:var(--sx-blue,#2a62c9)">Payment</button>${isManager ? `<button class="x" data-d="${b.bill_id}" title="Count this bill on another day">Change day</button><button class="x" data-v="${b.bill_id}">Cancel</button>` : ''}</span>` : '<span></span>'}${payOpen === b.bill_id && payD ? payEditor(b) : ''}${dayOpen === b.bill_id ? `<div style="grid-column:1/-1;display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;padding:8px 0"><label class="sx-f">This bill counts on<input class="sx-in" type="date" id="dayNew" min="${shiftDay(d.today, -45)}" max="${d.today}" value="${d.date}"></label><button class="sx-btn" data-dgo="${b.bill_id}">Move</button><button class="sx-btn ghost" data-dx="1">Cancel</button></div>` : ''}${peopleRow(b)}</div>`).join('') : '<div class="sx-mut" style="padding:10px 4px">No bills on this day. Press <b>New bill</b> or just scan a bottle.</div>';
+    } catch (e) { $('bills').textContent = e.message; }
+  }
+  // ---------- change the payment of a bill (Cash / Online / Cash + online); buttons redraw the list, typing only updates the message in place
+  const PAYN = { cash: 'Cash', online: 'Online / UPI', split: 'Cash + online' };
+  const payEditor = (b) => `<div style="grid-column:1/-1;border-top:1px dashed var(--sx-line);padding:10px 0;display:flex;flex-direction:column;gap:8px"><div style="display:flex;gap:6px;flex-wrap:wrap">${['cash', 'online', 'split'].map((m) => `<button class="sx-btn ${payD.mode === m ? '' : 'ghost'}" data-pm="${m}">${PAYN[m]}</button>`).join('')}</div>
+    ${payD.mode === 'split' ? `<div class="sx-r2"><label class="sx-f">Cash ₹<input class="sx-in" type="number" min="0" inputmode="numeric" id="pCash" value="${payD.cash}"></label><label class="sx-f">Online ₹<input class="sx-in" type="number" min="0" inputmode="numeric" id="pOnl" value="${payD.online}"></label></div>` : ''}
+    <div id="payMsg"></div><div style="display:flex;gap:8px"><button class="sx-btn" id="payGo" data-pgo="${b.bill_id}">Save payment</button><button class="sx-btn ghost" data-px="1">Cancel</button></div></div>`;
+  function payCheck() {
+    const b = lastBills.find((x) => x.bill_id === payOpen); if (!b || !payD) return; const go = $('payGo'), msg = $('payMsg'); if (!go || !msg) return;
+    if (payD.mode !== 'split') { msg.innerHTML = `<span class="sx-mut" style="font-size:12.5px">The whole ${inr(b.total)} counts as ${PAYN[payD.mode]}.</span>`; go.disabled = false; return; }
+    const s = (+payD.cash || 0) + (+payD.online || 0), ok = Math.abs(s - b.total) <= 0.5;
+    msg.innerHTML = `<div class="sx-msg ${ok ? 'ok' : 'bad'}">${sxi(ok ? 'ok' : 'xc')}<span>${ok ? 'Cash + online = ' + inr(b.total) : 'Cash + online = ' + inr(s) + ', the bill is ' + inr(b.total)}</span></div>`; go.disabled = !ok;
+  }
+  $('bills').addEventListener('input', (e) => {
+    if (e.target.id !== 'pCash' && e.target.id !== 'pOnl') return; const b = lastBills.find((x) => x.bill_id === payOpen); if (!b) return;
+    if (e.target.id === 'pCash') { payD.cash = +e.target.value || 0; payD.online = Math.max(0, b.total - payD.cash); $('pOnl').value = payD.online; } else { payD.online = +e.target.value || 0; payD.cash = Math.max(0, b.total - payD.online); $('pCash').value = payD.cash; }
+    payCheck();
+  });
+  $('bills').addEventListener('click', async (e) => {
+    const pb = e.target.closest('[data-p]'), pm = e.target.closest('[data-pm]'), pg = e.target.closest('[data-pgo]');
+    if (pb) { const id = +pb.dataset.p; if (payOpen === id) { payOpen = 0; payD = null; } else { const b = lastBills.find((x) => x.bill_id === id); payOpen = id; payD = { mode: b.pay_mode, cash: b.cash_amt, online: b.online_amt }; } dayOpen = 0; await loadBills(); payCheck(); return; }
+    if (pm) { const b = lastBills.find((x) => x.bill_id === payOpen); payD.mode = pm.dataset.pm; if (payD.mode === 'cash') { payD.cash = b.total; payD.online = 0; } else if (payD.mode === 'online') { payD.cash = 0; payD.online = b.total; } else if (!(payD.cash > 0 && payD.online > 0)) { payD.cash = Math.round(b.total / 2); payD.online = b.total - payD.cash; } await loadBills(); payCheck(); return; }
+    if (e.target.closest('[data-px]')) { payOpen = 0; payD = null; return loadBills(); }
+    if (pg) { pg.disabled = true; try { const r = await api.post('st_bill.set_pay', { bill_id: +pg.dataset.pgo, pay_mode: payD.mode, cash_amt: payD.cash, online_amt: payD.online }); payOpen = 0; payD = null; toast(r.message); loadBills(); } catch (err) { $('payMsg').innerHTML = `<div class="sx-msg bad">${sxi('xc')}<span>${esc(err.message)}</span></div>`; pg.disabled = false; } }
+  });
+  $('dayPick').addEventListener('change', () => { listDate = $('dayPick').value; loadBills(); });
+  $('bills').addEventListener('click', async (e) => {
+    const dd = e.target.closest('[data-d]'); if (dd) { dayOpen = dayOpen === +dd.dataset.d ? 0 : +dd.dataset.d; return loadBills(); }
+    if (e.target.closest('[data-dx]')) { dayOpen = 0; return loadBills(); }
+    const dg = e.target.closest('[data-dgo]');
+    if (dg) {
+      const to = $('dayNew').value, from = $('dayPick').value;
+      if (!to) { alert('Pick a date.'); return; }
+      if (to === from) { alert('The bill is already on that day.'); return; }
+      if (!confirm(`Count this bill on ${to} instead of ${from}? Its real time stays the same; the day totals and commission move with it.`)) return;
+      try { const r = await api.post('st_bill.set_day', { bill_id: +dg.dataset.dgo, date: to }); dayOpen = 0; toast(r.message); loadBills(); } catch (err) { alert(err.message); }
+      return;
+    }
+    const v = e.target.closest('[data-v]'); if (!v || !confirm('Cancel this bill? Bottles go back into stock and the sale stops counting.')) return;
+    try { await api.post('st_bill.void', { bill_id: +v.dataset.v }); loadBills(); } catch (err) { alert(err.message); }
+  });
+
+  // ---------- who can bill
+  async function loadDuty() {
+    const d = await api.get('st_bill.staff'), on = d.employees.filter((e) => e.on && (!+d.needs_punch || e.punched)), away = d.employees.filter((e) => e.on && +d.needs_punch && !e.punched);
+    $('emp').title = away.length ? 'Not punched in today: ' + away.map((e) => e.name).join(', ') : '';
+    $('emp').innerHTML = '<option value="">Choose…</option>' + on.map((e) => `<option value="${e.employee_id}">${esc(e.name)}</option>`).join('');
+    needPhone = !d.cs || !!+d.cs.require_phone; renderCust();
+    const u = api.currentUser() || {};
+    if (u.employee_id && on.some((e) => e.employee_id === +u.employee_id)) $('emp').value = u.employee_id;
+    fillCode();
+    if (isManager) { $('duty').innerHTML = d.employees.map((e) => `<label><input type="checkbox" data-e="${e.employee_id}" ${e.on ? 'checked' : ''}> ${esc(e.name)}</label>`).join(''); $('dutyCard').style.display = ''; }
+    updatePay();
+  }
+  $('duty').addEventListener('change', async (e) => {
+    const c = e.target.closest('[data-e]'); if (!c) return;
+    try { await api.post('st_duty.set', { employee_id: +c.dataset.e, on: c.checked ? 1 : 0 }); await loadDuty(); } catch (err) { alert(err.message); c.checked = !c.checked; }
+  });
+
+  (async () => {
+    const u = api.currentUser() || {}; isManager = ['Admin', 'HR'].includes(u.role); if (typeof storeToday !== 'undefined' && storeToday) setBizDay(storeToday);
+    try { await loadDuty(); } catch (e) { $('bills').textContent = e.message; }
+    loadBills(); $('scanList').focus();
+  })();
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>
