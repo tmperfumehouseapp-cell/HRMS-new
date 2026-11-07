@@ -163,6 +163,8 @@ window.PersonCard = (function () {
     let c, x = null, xerr = ''; try { const r = await Promise.all([api.get('person.card', { employee_id: id }), api.get('bd.pp_person', { id: id, month: new Date().toISOString().slice(0, 7) }).then((v) => ({ v }), (er) => ({ er }))]); c = r[0]; x = r[1].v || null; xerr = r[1].er ? String(r[1].er.message || r[1].er) : ''; } catch (e) { el.innerHTML = '<div class="pc-err">' + esc(e.message || 'Could not open this person.') + '</div>'; return null; }
     const again = () => { render(el, id, opts); if (opts.onChange) opts.onChange(); };
     el.innerHTML = body(c, opts, x, xerr);
+    // Total Budgeting passes paySetup / paySummary: the card then carries the Pay setup section too (how paid, group, department, timing, history, and the same window to change it)
+    if (opts.paySetup) { const sum = el.querySelector('#pcSum'); if (sum) { const sec = document.createElement('div'); sec.innerHTML = '<h4>Pay setup · Total Budgeting</h4>' + (opts.paySummary ? opts.paySummary(id) : '') + '<button class="pc-btn go" data-a="paysetup" type="button" style="margin-top:8px">Set pay, salary and timing…</button><div class="pc-note" style="margin-top:6px">A change counts from the day you choose; earlier days stay as they were.</div>'; sum.parentNode.insertBefore(sec, sum.nextSibling); } }
     api.get('person.summary', { employee_id: id }).then((r) => {
       const b = el.querySelector('#pcSum'); if (!b) return;
       b.innerHTML = '<b>Claude' + (r.by === 'claude' ? '' : ' (quick read)') + '</b>' + esc(r.summary) + ((r.fixes || []).length ? '<ul>' + r.fixes.map((x) => '<li>' + esc(x) + '</li>').join('') + '</ul>' : '');
@@ -171,6 +173,7 @@ window.PersonCard = (function () {
     const t = c.timing;
     el.onclick = async (ev) => {
       const b = ev.target.closest('button[data-a]'); if (!b) return; const a = b.dataset.a, pen = b.closest('.pc-pen');
+      if (a === 'paysetup') { if (opts.paySetup) opts.paySetup(id, again); return; }
       if (a === 'exit') {
         const nm = (el.querySelector('h2') || {}).textContent || 'this person';
         if (!confirm('Make ' + nm + ' an ex-employee?\n\nTheir login stops working, and they are removed from Total Budgeting, the store and every list. Their seats and open tasks go to Handover so you can give them to someone. Nothing is deleted: you can Rejoin them from Ex-Employees.')) return;
