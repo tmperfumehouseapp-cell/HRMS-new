@@ -1,0 +1,139 @@
+/* TM Perfume House POS — HRMS look (light grey canvas · white rounded tiles · orange accent · black active pills)
+   Same design language as the HRMS "B6 bento" UI so the POS looks native inside Store → POS. */
+:root {
+  --bg0:#eef0f3; --bg1:#e7eaee; --card:#ffffff; --card-solid:#ffffff;
+  --line:#e3e6eb; --line-strong:#d3d8df; --cardln:#eceef2;
+  /* orange accent (kept under the old --gold names so every page re-themes at once) */
+  --gold:#ff7a2f; --gold-2:#f06a1a; --gold-deep:#ff7a2f;
+  --acc-soft:#fff1e8; --acc-soft2:#fff7f1;
+  --ink:#14161a; --text:#14161a; --mut:#6b7280; --dim:#9aa0ab;
+  --good:#15803d; --bad:#e5383b;
+  --r:20px;
+  --shadow-1:0 1px 2px rgba(20,22,26,.04), 0 1px 3px rgba(20,22,26,.04);
+  --shadow-2:0 1px 2px rgba(20,22,26,.04), 0 8px 24px -12px rgba(20,22,26,.12);
+  --shadow-3:0 12px 30px -12px rgba(20,22,26,.28);
+  --shadow:0 10px 30px -14px rgba(20,22,26,.25);
+  --glow:0 0 0 3px rgba(255,122,47,.16); --ease:cubic-bezier(.22,.9,.28,1);
+  --spring:cubic-bezier(.34,1.56,.64,1);
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+html { -webkit-font-smoothing:antialiased; }
+body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,Arial,sans-serif; font-size:14px; color:var(--text); min-height:100vh; background:var(--bg0); }
+a { color:inherit; }
+
+/* ---------- header ---------- */
+.tm-header { display:flex; flex-wrap:wrap; row-gap:8px; align-items:center; justify-content:space-between; gap:14px; padding:14px 20px 6px; background:transparent; position:relative; z-index:20; }
+.tm-brand { display:flex; align-items:center; gap:11px; }
+.tm-brand h1 { white-space:nowrap; }
+.tm-logo { height:40px; min-width:40px; border-radius:13px; background:var(--gold); color:#fff; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:15px; overflow:hidden; }
+.tm-logo img { height:100%; width:auto; display:block; }
+.tm-logo.img-logo { background:transparent; border-radius:0; height:42px; padding:0; }
+.tm-brand h1 { font-size:18px; font-weight:800; letter-spacing:-.2px; color:var(--ink); }
+.tm-brand p { font-size:12px; color:var(--mut); font-weight:400; }
+.tm-nav { display:flex; flex-wrap:wrap; gap:8px; align-items:center; flex:1 0 100%; }
+.tm-nav a, .tm-nav button.navlike { padding:9px 16px; font-size:13.5px; font-weight:600; color:var(--ink); text-decoration:none; border:none; border-radius:999px; background:#fff; cursor:pointer; font-family:inherit; box-shadow:var(--shadow-1); white-space:nowrap; transition:background .15s var(--ease), color .15s var(--ease), box-shadow .15s var(--ease), transform .12s var(--ease); }
+.tm-nav a:hover, .tm-nav button.navlike:hover { background:var(--acc-soft); color:var(--gold-2); box-shadow:var(--shadow-2); }
+.tm-nav a:active, .tm-nav button.navlike:active { transform:scale(.97); }
+.tm-nav a.active { color:#fff; background:var(--ink); box-shadow:var(--shadow-2); }
+
+/* 📷 Scan button (added by camscan.js next to any scan box) — styled here so it looks right before the camera is first opened */
+.tmcam-btn { display:inline-flex; align-items:center; gap:6px; margin-left:8px; padding:9px 15px; border:1px solid var(--line); background:#fff; color:var(--gold-2); border-radius:999px; font-size:13px; font-weight:700; font-family:inherit; cursor:pointer; vertical-align:middle; box-shadow:var(--shadow-1); white-space:nowrap; }
+.tmcam-btn:hover { border-color:var(--gold); background:var(--acc-soft2); }
+.tmcam-btn:active { transform:scale(.97); }
+
+/* ---------- panels (white rounded tiles) ---------- */
+.panel { background:var(--card); border:1px solid var(--cardln); border-radius:var(--r); box-shadow:var(--shadow-2); position:relative; }
+
+/* ---------- buttons ---------- */
+.btn { display:inline-flex; align-items:center; justify-content:center; gap:8px; padding:12px 22px; font-size:14px; font-weight:700; font-family:inherit; color:#fff; border:none; border-radius:14px; cursor:pointer; background:var(--gold); box-shadow:0 8px 18px -8px rgba(255,122,47,.7); position:relative; transition:transform .14s var(--ease), box-shadow .2s var(--ease), filter .2s, background .2s; }
+.btn:hover { filter:brightness(1.05); box-shadow:0 12px 24px -10px rgba(255,122,47,.75); }
+.btn:active { transform:scale(.98); }
+.btn:disabled { opacity:.5; cursor:not-allowed; transform:none; box-shadow:none; }
+.btn.ghost { background:#fff; color:var(--ink); border:1px solid var(--line); box-shadow:var(--shadow-1); }
+.btn.ghost:hover { color:var(--gold-2); border-color:var(--gold); background:var(--acc-soft2); filter:none; }
+.btn.dark { background:var(--ink); box-shadow:var(--shadow-2); }
+.btn.big { padding:16px 26px; font-size:16px; letter-spacing:.2px; border-radius:16px; }
+
+/* ---------- inputs ---------- */
+.inp, input.inp, select.inp { width:100%; padding:12px 14px; font-size:14px; font-family:inherit; background:#f6f7f9; color:var(--text); border:1px solid var(--line); border-radius:12px; outline:none; transition:border-color .15s var(--ease), box-shadow .15s var(--ease), background .15s; }
+.inp::placeholder { color:var(--dim); }
+.inp:focus { border-color:var(--gold); box-shadow:var(--glow); background:#fff; }
+.inp.invalid { border-color:var(--bad); box-shadow:0 0 0 3px rgba(229,56,59,.12); }
+label.lbl { display:block; font-size:12.5px; color:var(--mut); margin:0 0 6px 2px; font-weight:600; }
+
+/* ---------- tables ---------- */
+.tbl { width:100%; border-collapse:collapse; font-size:13.5px; }
+.tbl th { text-align:left; font-size:11px; letter-spacing:.6px; text-transform:uppercase; color:var(--dim); font-weight:700; padding:9px 10px; border-bottom:1px solid var(--line); }
+.tbl td { padding:12px 10px; border-bottom:1px solid #f1f3f6; }
+.tbl tr { transition:background .15s var(--ease); }
+.tbl tbody tr:hover, .tbl tr.hoverable:hover { background:var(--acc-soft2); box-shadow:inset 3px 0 0 var(--gold); }
+
+/* ---------- tags ---------- */
+.tag { font-size:11px; font-weight:700; padding:4px 11px; border-radius:999px; }
+.tag.cash { background:#e6f6ec; color:#15803d; }
+.tag.online { background:#e7effd; color:#1d4ed8; }
+.tag.good { background:#e6f6ec; color:#15803d; }
+
+/* ---------- toast ---------- */
+#toast { position:fixed; bottom:26px; left:50%; background:#fff; border:1px solid var(--bad); color:var(--bad); padding:12px 20px; border-radius:14px; font-size:14px; font-weight:600; z-index:80; box-shadow:var(--shadow-3); transform:translate(-50%,20px); opacity:0; pointer-events:none; transition:transform .3s var(--ease), opacity .25s var(--ease); }
+#toast.show { transform:translate(-50%,0); opacity:1; }
+#toast.ok { border-color:var(--gold); color:var(--gold-2); }
+
+/* ---------- skeleton + motion ---------- */
+.skel { border-radius:14px; background:linear-gradient(100deg,#e9ecf0 40%,#f4f5f7 50%,#e9ecf0 60%); background-size:200% 100%; animation:shimmer 1.3s infinite linear; }
+@keyframes shimmer { to { background-position:-200% 0; } }
+.rise { animation:rise .45s var(--ease) both; }
+.rise.d1 { animation-delay:.05s; } .rise.d2 { animation-delay:.1s; } .rise.d3 { animation-delay:.15s; } .rise.d4 { animation-delay:.2s; }
+@keyframes rise { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:none; } }
+
+/* ---------- scrollbar ---------- */
+::-webkit-scrollbar { width:9px; height:9px; }
+::-webkit-scrollbar-thumb { background:rgba(20,22,26,.16); border-radius:6px; }
+::-webkit-scrollbar-thumb:hover { background:rgba(20,22,26,.3); }
+::-webkit-scrollbar-track { background:transparent; }
+.tm-menu-btn { display:none; align-items:center; gap:8px; padding:10px 16px; border:none; border-radius:999px; background:var(--ink); color:#fff; font:inherit; font-size:14px; font-weight:700; cursor:pointer; box-shadow:var(--shadow-2); }
+.tm-menu-btn .bars { width:16px; height:2px; background:#fff; border-radius:2px; position:relative; display:inline-block; }
+.tm-menu-btn .bars::before, .tm-menu-btn .bars::after { content:''; position:absolute; left:0; width:16px; height:2px; background:#fff; border-radius:2px; }
+.tm-menu-btn .bars::before { top:-5px; } .tm-menu-btn .bars::after { top:5px; }
+
+/* ===== Inside the HRMS (iframe): the HRMS already shows the logo + page title, so the POS keeps only its menu ===== */
+html.in-hrms .tm-brand { display:none; }
+html.in-hrms .tm-header { padding-top:8px; padding-bottom:4px; }
+html.in-hrms .tm-nav { flex-basis:100%; }
+@media (min-width:701px){ html.in-hrms .tm-nav { gap:6px; } html.in-hrms .tm-nav a { padding:8px 13px; font-size:13px; } html.in-hrms .tm-nav a[onclick] { display:none; } }
+
+/* ================= PHONES & SMALL TABLETS ================= */
+@media (max-width:700px){
+  html { -webkit-text-size-adjust:100%; }
+  body { padding-bottom:env(safe-area-inset-bottom); }
+  /* compact header: title left, Menu button right; pills open as a grid */
+  .tm-header { padding:calc(10px + env(safe-area-inset-top)) 12px 6px; position:sticky; top:0; background:var(--bg0); z-index:50; flex-wrap:nowrap; gap:10px; }
+  .tm-brand { min-width:0; flex:1; }
+  .tm-brand h1 { font-size:16px; overflow:hidden; text-overflow:ellipsis; }
+  .tm-brand p { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:52vw; }
+  .tm-logo.img-logo { height:34px; }
+  .tm-menu-btn { display:inline-flex; flex:none; }
+  html.in-hrms .tm-menu-btn { flex:1; justify-content:center; padding:12px 16px; }
+  html.in-hrms .tm-header { padding-top:6px; padding-bottom:6px; }
+  .tm-nav { display:none; position:absolute; left:10px; right:10px; top:100%; flex:none; flex-wrap:wrap; gap:8px; padding:12px; background:#fff; border:1px solid var(--cardln); border-radius:20px; box-shadow:var(--shadow-3); max-height:calc(100vh - 90px); overflow-y:auto; }
+  body.tm-menu-open .tm-nav { display:grid; grid-template-columns:1fr 1fr; }
+  .tm-nav a { text-align:center; padding:13px 10px; min-height:46px; display:flex; align-items:center; justify-content:center; background:var(--bg0); box-shadow:none; }
+  .tm-nav a.active { background:var(--ink); }
+  .tm-nav form { grid-column:1 / -1; display:block !important; }
+  .tm-nav form .inp { width:100%; }
+  /* touch-friendly controls; 16px inputs stop iOS zooming the page on focus */
+  input:not([type=checkbox]):not([type=radio]):not([type=file]), select, textarea { font-size:16px !important; }
+  .btn, .inp, select.inp { min-height:46px; }
+  .btn.ghost { min-height:44px; }
+  .quick a, .segs button, .tabs button { min-height:40px; display:inline-flex; align-items:center; }
+  .wrap { padding-left:12px !important; padding-right:12px !important; }
+  .wrap > table, .card > table, .panel > table { display:block; max-width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+  #toast { bottom:calc(20px + env(safe-area-inset-bottom)); max-width:92vw; text-align:center; }
+  .addrow .f { min-width:calc(50% - 6px) !important; }
+}
+@media (max-width:420px){
+  .addrow .f { min-width:100% !important; }
+}
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important; } }
+/* inside the HRMS the POS has no separate session to end */
+html.in-hrms .tm-nav a[href="logout.php"]{display:none}

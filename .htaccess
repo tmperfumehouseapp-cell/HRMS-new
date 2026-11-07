@@ -1,0 +1,6 @@
+# TM POS — always fetch the newest CSS / JS / pages (no stale copies after an upload)
+<IfModule mod_headers.c>
+  <FilesMatch "\.(css|js|php|json)$">
+    Header set Cache-Control "no-cache, must-revalidate"
+  </FilesMatch>
+</IfModule>

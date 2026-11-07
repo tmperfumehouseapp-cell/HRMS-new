@@ -1,0 +1,1 @@
+<?php return ['host'=>'localhost','name'=>'u897577217_tmpos','user'=>'u897577217_tmpos','pass'=>'Four12!1212!'];
