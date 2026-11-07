@@ -232,6 +232,9 @@ if ($__bg === 'budget.helpers') {
     $month = trim((string)($_GET['month'] ?? date('Y-m'))); if (!preg_match('/^\d{4}-\d{2}$/', $month)) json_response(['error' => 'month must be YYYY-MM.'], 422);
     $out = [];
     try {
+        // the Leaders Helper code is only loaded for lh.* requests: load it here too, otherwise this line of the budget stays 0
+        if (!function_exists('lh_month') && is_file(__DIR__ . '/leader_helper.php')) { require_once __DIR__ . '/leader_helper.php'; }
+        if (function_exists('lh_tables') && lh_tables($pdo)) { if (function_exists('lh_migrate')) lh_migrate($pdo); if (function_exists('lh_seed')) lh_seed($pdo); }
         if (function_exists('lh_month')) { $m = lh_month($pdo, $month);
             foreach ((array)($m['people'] ?? []) as $pe) $out[(int)$pe['id']] = ['employee_id' => (int)$pe['id'], 'name' => (string)($pe['name'] ?? ''), 'salary' => (float)($pe['salary'] ?? 0), 'perday' => [], 'earned' => (float)(($m['totals'][$pe['id']]['earned'] ?? 0))];
             foreach ((array)($m['rows'] ?? []) as $row) foreach ((array)($row['per'] ?? []) as $hid => $pp) if (isset($out[(int)$hid])) $out[(int)$hid]['perday'][(string)$row['date']] = round((float)($pp['amount'] ?? 0), 2); }
