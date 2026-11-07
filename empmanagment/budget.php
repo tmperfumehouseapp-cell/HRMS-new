@@ -33,6 +33,8 @@ if (!function_exists('budget_cfg')) {
         $j = json_decode((string)setting_get($pdo, 'budget_cfg', ''), true);
         if (!is_array($j)) $j = [];
         $rt = is_array($j['retail'] ?? null) ? $j['retail'] : [];
+        $lm = [];   // leader name (as written on the Leaders rule, e.g. "Ayazba") => the employee it is
+        foreach ((array)($j['leader_map'] ?? []) as $ln => $eid) if (trim((string)$ln) !== '' && (int)$eid > 0) $lm[mb_substr(trim((string)$ln), 0, 60)] = (int)$eid;
         $pp = [];   // per person: pay group (sales / retail / store / other), own retail % of collections, store commission on / off
         foreach ((array)($j['people'] ?? []) as $pid => $v) {
             if (!is_array($v) || (int)$pid <= 0) continue;
@@ -42,7 +44,7 @@ if (!function_exists('budget_cfg')) {
             if ($g !== '' || $rp !== null || $sc === 0) $pp[(string)(int)$pid] = ['grp' => $g, 'rpct' => $rp, 'sc' => $sc];
         }
         return ['expenses' => budget_cfg_from((array)($j['expenses'] ?? [])), 'months' => is_array($j['months'] ?? null) ? $j['months'] : [],
-            'retail' => ['pct' => round(max(0, min(50, (float)($rt['pct'] ?? 0))), 2), 'basis' => (($rt['basis'] ?? '') === 'billed') ? 'billed' : 'paid'], 'people' => $pp];
+            'retail' => ['pct' => round(max(0, min(50, (float)($rt['pct'] ?? 0))), 2), 'basis' => (($rt['basis'] ?? '') === 'billed') ? 'billed' : 'paid'], 'people' => $pp, 'leader_map' => $lm];
     }
 }
 
@@ -55,7 +57,7 @@ if ($__bg === 'budget.get') {
     $c = budget_cfg($pdo); $m = $c['months'][$month] ?? [];
     $duty = []; try { if (function_exists('ensure_st_tables')) ensure_st_tables($pdo); $duty = array_map('intval', $pdo->query("SELECT emp_id FROM st_duty")->fetchAll(PDO::FETCH_COLUMN)); } catch (Throwable $e) {}
     $gl = []; foreach (['sales', 'leader', 'retail', 'store', 'other'] as $gk) $gl[$gk] = (float)(($m['goals'] ?? [])[$gk] ?? 0);
-    json_response(['month' => $month, 'target' => (float)($m['target'] ?? 0), 'lump' => (float)($m['lump'] ?? 0), 'goals' => $gl, 'retail' => $c['retail'], 'people' => (object)$c['people'], 'duty' => $duty, 'expenses' => $c['expenses'], 'can_edit' => convo_is_admin($auth)]);
+    json_response(['month' => $month, 'target' => (float)($m['target'] ?? 0), 'lump' => (float)($m['lump'] ?? 0), 'goals' => $gl, 'retail' => $c['retail'], 'people' => (object)$c['people'], 'leader_map' => (object)$c['leader_map'], 'duty' => $duty, 'expenses' => $c['expenses'], 'can_edit' => convo_is_admin($auth)]);
 }
 if ($__bg === 'budget.save') {
     $auth = require_auth();
@@ -142,6 +144,20 @@ if ($__bg === 'budget.bill_assign') {
     if (!$b->fetchColumn()) json_response(['error' => 'Bill not found.'], 404);
     $pdo->prepare("UPDATE st_bills SET emp_id = ?, emp_name = ? WHERE bill_id = ?")->execute([$eid, (string)$nm, $bid]);
     json_response(['ok' => true, 'employee_id' => $eid, 'name' => (string)$nm]);
+}
+if ($__bg === 'budget.leader_link') {
+    // Tell the budget which employee a leader name on the Leaders rule is ("Ayazba" = Ayaz Ansari). employee_id 0 removes the link. A linked person is a leader only:
+    // no fixed salary, no salesperson commission; they are paid by the leader commission. Admin only.
+    $auth = require_auth();
+    if (!convo_is_admin($auth)) json_response(['error' => 'Only Admin can link a leader.'], 403);
+    if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
+    $in = json_input(); $name = mb_substr(trim((string)($in['name'] ?? '')), 0, 60); $eid = (int)($in['employee_id'] ?? 0);
+    if ($name === '') json_response(['error' => 'Which leader?'], 422);
+    if ($eid) { $ex = $pdo->prepare("SELECT COUNT(*) FROM employees WHERE employee_id = ? AND status != 'ex'"); $ex->execute([$eid]); if (!(int)$ex->fetchColumn()) json_response(['error' => 'Choose an employee.'], 422); }
+    $c = budget_cfg($pdo);
+    if ($eid) $c['leader_map'][$name] = $eid; else unset($c['leader_map'][$name]);
+    setting_set($pdo, 'budget_cfg', json_encode($c));
+    json_response(['ok' => true]);
 }
 if ($__bg === 'budget.person_save') {
     // One person's pay setup: which pay group (online sales / retail wholesale / store / other), their own retail % of collections, store commission on or off,

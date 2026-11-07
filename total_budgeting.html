@@ -214,7 +214,20 @@
     // team rows: sales-department employees + everybody who has commission
     const empAll = ((ok(2) || {}).employees || []).filter(e => e.status !== 'ex');
     const byName = {}; empAll.forEach(e => { byName[nk(e.full_name)] = e; });
-    const leadSet = new Set(((lr.rules || {}).leaders || []).map(nk));
+    // who is a leader: the names on the Leaders rule are nicknames ("Dipti Madam", "Ayazba"), so match them to an employee: linked by hand first, then the full name, then the
+    // name without Madam / Bhai / Ba / Sir that fits exactly ONE employee (a sales one first). Anything unclear stays "not linked" and can be linked on the Leaders tab.
+    const lmap = ((ok(5) || {}).leader_map) || {}, HON = /^(madam|mam|maam|sir|bhai|bhaiya|ji|ba|bhabhi|didi|ben|behen|saheb|sahab|shri)$/;
+    const toks = (t) => nk(t).replace(/[^a-z\u0900-\u097f ]/g, ' ').split(' ').filter(Boolean).map(w => (w.length > 4 && /(ba|bhai)$/.test(w)) ? w.replace(/(bhai|ba)$/, '') : w).filter(w => !HON.test(w));
+    const empById = {}; empAll.forEach(e => { empById[Number(e.employee_id)] = e; });
+    const linkOf = (name) => {
+      if (lmap[name] && empById[Number(lmap[name])]) return Number(lmap[name]);
+      if (byName[nk(name)]) return Number(byName[nk(name)].employee_id);
+      const t = toks(name); if (!t.length) return 0;
+      let c = empAll.filter(e => { const w = toks(e.full_name); return t.every(x => w.some(y => y === x || y.startsWith(x))); });
+      if (c.length > 1) c = c.filter(e => /sales/i.test(e.department_name || ''));
+      return c.length === 1 ? Number(c[0].employee_id) : 0;
+    };
+    const leadNames = (lr.rules || {}).leaders || [], leadIds = {}; leadNames.forEach(n => { const id = linkOf(n); if (id) leadIds[id] = n; });
     const rows = {}, add = (name, e) => { const k = e ? 'e' + e.employee_id : 'n' + nk(name); if (!rows[k]) rows[k] = { key: k, name: e ? e.full_name : name, empId: e ? Number(e.employee_id) : 0, role: e ? String(e.designation || '') : '', photo: e ? (e.photo || '') : '', dept: e ? String(e.department_name || '') : '', monthly: e ? Number(e.monthly_salary) || 0 : 0, inTeam: false, comm: {}, scomm: {}, rs: {}, pen: {}, why: {} }; return rows[k]; };
     const pplOv = ((ok(5) || {}).people) || {}, ovOf = (id) => pplOv[id] || {}, retailRx = /wholesale|retailer|dealer|retail field/i;
     const offline = (id, txt) => ovOf(id).grp ? ['store', 'retail'].indexOf(ovOf(id).grp) >= 0 : retailRx.test(txt || '');   // assigned to Retail or Store here (or a retail wholesale person by name): paid by their own rule, no online commission, no target
@@ -224,7 +237,7 @@
     [ok(3), ok(4)].forEach(p => ((p || {}).rows || []).forEach(x => { const r = byEmp[Number(x.employee_id)]; if (!r) return; r.pen[x.penalty_date] = (r.pen[x.penalty_date] || 0) + Number(x.amount || 0); r.why[x.penalty_date] = (r.why[x.penalty_date] ? r.why[x.penalty_date] + '; ' : '') + (x.title || x.category || 'Penalty'); }));
     const all = Object.values(rows).sort((a, b) => a.name.localeCompare(b.name));
     // group: a leader is paid by the leader commission, so their fixed salary on the employee card is NOT counted (no double pay)
-    all.forEach(r => { const og = ovOf(r.empId); r.rpct = og.rpct == null || og.rpct === '' ? null : Number(og.rpct); r.sc = og.sc === 0 ? 0 : 1; r.leader = leadSet.has(nk(r.name)); r.grp = r.leader ? 'leader' : og.grp ? og.grp : /wholesale|retailer|dealer|retail field/i.test(r.dept + ' ' + r.role) ? 'retail' : r.inTeam ? 'sales' : /store|retail|shop|counter|showroom/i.test(r.dept + ' ' + r.role) ? 'store' : 'other'; r.perDay = !r.leader && r.monthly > 0 ? r.monthly / PAYDAYS : 0; });
+    all.forEach(r => { const og = ovOf(r.empId); r.rpct = og.rpct == null || og.rpct === '' ? null : Number(og.rpct); r.sc = og.sc === 0 ? 0 : 1; r.leader = !!leadIds[r.empId]; if (r.leader) { r.inTeam = false; r.comm = {}; r.scomm = {}; } r.grp = r.leader ? 'leader' : og.grp ? og.grp : /wholesale|retailer|dealer|retail field/i.test(r.dept + ' ' + r.role) ? 'retail' : r.inTeam ? 'sales' : /store|retail|shop|counter|showroom/i.test(r.dept + ' ' + r.role) ? 'store' : 'other'; r.perDay = !r.leader && r.monthly > 0 ? r.monthly / PAYDAYS : 0; });
     // store commission: same price-by-ML chart as online, but a store has no sales limit, so no over-target extra. People in the Sales department already get their store bills inside the online commission, so they are skipped here (never counted twice).
     const byEmpAll = {}; all.forEach(r => { if (r.empId) byEmpAll[r.empId] = r; });
     ((ok(7) || {}).people || []).forEach(p => { const r = byEmpAll[Number(p.employee_id)]; if (!r || r.inTeam || r.leader || r.sc === 0 || r.grp === 'retail') return;   // retail wholesale is paid salary + collections %, never the store / online rules
@@ -233,7 +246,7 @@
     ((ok(8) || {}).people || []).forEach(p => { const r = byEmpAll[Number(p.employee_id)]; if (!r || r.leader) return; (p.perday || []).forEach(x => { r.rs[x.day] = { billed: Number(x.billed) || 0, paid: Number(x.paid) || 0 }; }); });
     const team = all.filter(r => r.inTeam);
 
-    const leaders = (lr.rules.leaders || []).map(n => ({ name: n, photo: byName[nk(n)] ? (byName[nk(n)].photo || '') : '', empId: byName[nk(n)] ? Number(byName[nk(n)].employee_id) : 0, role: byName[nk(n)] && byName[nk(n)].designation ? String(byName[nk(n)].designation) : 'Leader', fin: {}, sug: {}, set: {} }));
+    const leaders = leadNames.map(n => { const id = linkOf(n), e = id ? empById[id] : null; return { name: n, photo: e ? (e.photo || '') : '', empId: id, full: e ? String(e.full_name) : '', role: e && e.designation ? String(e.designation) : 'Leader', fin: {}, sug: {}, set: {} }; });
     const lrRow = {}; (lr.rows || []).forEach(x => { lrRow[x.date] = x; leaders.forEach(l => { const s = (x.set || {})[l.name]; if (s) { l.fin[x.date] = Number(s.amount) || 0; l.set[x.date] = true; } else if (x.sug_amt != null) l.sug[x.date] = Number(x.sug_amt); }); });
 
     const bud = ok(5) || { target: 0, lump: 0, expenses: [], goals: {}, can_edit: false };
@@ -241,7 +254,7 @@
     empAll.forEach(e => { const id = Number(e.department_id) || 0; if (id && !deptMap[id]) deptMap[id] = String(e.department_name || 'Department ' + id); });
     const depts = Object.keys(deptMap).map(id => ({ id: Number(id), name: deptMap[id] })).sort((a, b) => a.name.localeCompare(b.name));
     const people = empAll.map(e => ({ id: Number(e.employee_id), name: String(e.full_name || ''), code: String(e.employee_code || ''), role: String(e.designation || ''), deptId: Number(e.department_id) || 0, monthly: Number(e.monthly_salary) || 0, photo: e.photo || '', joined: String(e.joining_date || ''), pending: e.status && e.status !== 'approved' })).sort((a, b) => a.name.localeCompare(b.name));
-    S.M = { all, rowBy: byEmpAll, duty: new Set(((ok(5) || {}).duty || []).map(Number)), depts, people, month, from, last, dim, today, shown, days, team, leaders, lrRow, bud, roasKind: lr.rules };
+    S.M = { all, empAllLite: empAll.map(e => ({ id: Number(e.employee_id), name: String(e.full_name), sales: /sales/i.test(e.department_name || '') })), rowBy: byEmpAll, duty: new Set(((ok(5) || {}).duty || []).map(Number)), depts, people, month, from, last, dim, today, shown, days, team, leaders, lrRow, bud, roasKind: lr.rules };
     if (S.billsFor !== month) { S.bills = null; }
     S.warn = warn; S.edit = JSON.parse(JSON.stringify({ target: bud.target, lump: bud.lump, expenses: bud.expenses, goals: Object.assign({ sales: 0, leader: 0, retail: 0, store: 0, other: 0 }, bud.goals || {}), retail: Object.assign({ pct: 0, basis: 'paid' }, bud.retail || {}) }));
     S.claudeFor = '';
@@ -251,7 +264,8 @@
   /* ---------- the one set of numbers every tab reads ---------- */
   const penCut = (r, d) => r.pen[addDay(d, -1)] || 0;          // a penalty logged on a day is cut the next day
   const rc = (r, d) => { const x = r.rs && r.rs[d]; return x ? (x[S.edit.retail.basis === 'billed' ? 'billed' : 'paid'] || 0) * (r.rpct != null ? r.rpct : (Number(S.edit.retail.pct) || 0)) / 100 : 0; };   // retail wholesale commission: the % on that day's retail sales
-  const dayPay = (r, d) => (Number(d.slice(8)) <= PAYDAYS ? r.perDay : 0) + (r.comm[d] || 0) + (r.scomm[d] || 0) + rc(r, d) - penCut(r, d);
+  const lpay = (r, d) => { const l = r.leader && S.M.leaders.find(x => x.empId === r.empId); return l ? (l.fin[d] || 0) : 0; };   // a leader's set commission for the day (shown on their row; counted once in the Leaders line)
+  const dayPay = (r, d) => lpay(r, d) + (Number(d.slice(8)) <= PAYDAYS ? r.perDay : 0) + (r.comm[d] || 0) + (r.scomm[d] || 0) + rc(r, d) - penCut(r, d);
   const GK = ['sales', 'leader', 'retail', 'store', 'other'];
   const GL = { sales: 'Sales', leader: 'Leader', retail: 'Retail', store: 'Store', other: 'Other' };
   const GN = { sales: 'Sales team (commission + salary)', leader: 'Leaders', retail: 'Retail wholesale (commission + salary)', store: 'Store team (commission + salary)', other: 'Other employees salary' };
@@ -288,7 +302,7 @@
 
   function empView(all, forced) {
     const M = S.M, key = all ? 'ea' : 'emp', m = S[key], D = M.days;
-    const val = (r, d) => m === 'comm' ? (r.comm[d] || 0) + (r.scomm[d] || 0) + rc(r, d) : m === 'pen' ? (r.pen[d] || 0) : dayPay(r, d);
+    const val = (r, d) => m === 'comm' ? (r.comm[d] || 0) + (r.scomm[d] || 0) + rc(r, d) + lpay(r, d) : m === 'pen' ? (r.pen[d] || 0) : dayPay(r, d);
     const cell = (r, d) => {
       const v = val(r, d);
       if (m === 'pen') return v ? '<td class="neg ' + (d === M.today ? 'pend' : '') + '"' + (r.empId ? ' data-pc="' + r.empId + '|' + d + '"' : '') + ' title="' + esc(r.why[d] || '') + (d === M.today ? ' · cut tomorrow' : ' · cut next day') + ' · click to apply or remove">−' + f(v) + '</td>' : '<td class="z ' + tc(d) + '"' + (r.empId ? ' data-pc="' + r.empId + '|' + d + '" title="Add a penalty"' : '') + '>–</td>';
@@ -327,7 +341,7 @@
     if (!M.leaders.length) return '<div class="warn">No leaders are set up yet. Add them on the Leaders rule (lr.rules).</div>';
     const v = (l, d) => m === 'fin' ? (l.fin[d] || 0) : m === 'sug' ? (l.sug[d] != null ? l.sug[d] : (l.fin[d] || 0)) : 0;
     const tot = (l) => D.reduce((a, d) => a + v(l, d), 0);
-    const body = M.leaders.map((l, i) => '<tr><td class="i">' + (i + 1) + '</td><td class="n"' + (l.empId ? ' data-emp="' + l.empId + '" title="Open ' + esc(l.name) + '"' : '') + '>' + dp(l) + esc(l.name) + '</td><td class="role">' + esc(l.role) + '</td><td class="t">' + f(tot(l)) + '</td>' + D.map(d => {
+    const body = M.leaders.map((l, i) => '<tr><td class="i">' + (i + 1) + '</td><td class="n"' + (l.empId ? ' data-emp="' + l.empId + '" title="Open ' + esc(l.name) + '"' : '') + '>' + dp(l) + esc(l.name) + '</td><td class="role" style="max-width:none"><select data-llink="' + esc(l.name) + '" ' + (M.bud.can_edit ? '' : 'disabled ') + 'title="Which employee is this leader?" style="font:inherit;font-size:12px;padding:2px 4px;max-width:200px;' + (l.empId ? '' : 'border-color:#b3261e;color:#b3261e') + '"><option value="">' + (l.empId ? 'Not linked' : 'Not linked: choose') + '</option>' + [...M.empAllLite].sort((a, b) => (b.sales - a.sales) || a.name.localeCompare(b.name)).map(p => '<option value="' + p.id + '"' + (p.id === l.empId ? ' selected' : '') + '>' + esc(p.name) + '</option>').join('') + '</select></td><td class="t">' + f(tot(l)) + '</td>' + D.map(d => {
       if (m === 'roas') { const x = M.lrRow[d]; return '<td class="' + tc(d) + '">' + (x && x.roas != null ? x.roas.toFixed(2) : '–') + '</td>'; }
       if (m === 'fin') return l.set[d] ? '<td class="' + tc(d) + '">' + f(l.fin[d]) + '</td>' : '<td class="z ' + tc(d) + '" title="' + (l.sug[d] != null ? 'Not set yet. Suggested ' + f(l.sug[d]) + ' (not counted)' : 'No data') + '">–</td>';
       const isSet = l.set[d]; return '<td class="' + tc(d) + ' ' + (isSet ? '' : 'base') + '" title="' + (isSet ? 'Set amount' : 'Suggestion only, not counted') + '">' + (l.sug[d] != null || isSet ? f(v(l, d)) : '–') + '</td>';
@@ -744,6 +758,10 @@
     }
   });
   $('tb').addEventListener('change', (e) => {
+    const ll = e.target; if (ll.dataset && ll.dataset.llink !== undefined) {
+      api.post('budget.leader_link', { name: ll.dataset.llink, employee_id: Number(ll.value) || 0 }).then(() => { S.msg = ll.value ? ll.dataset.llink + ' linked. They are a leader only: no fixed salary, no salesperson commission.' : ll.dataset.llink + ' unlinked.'; S.msgBad = false; return load(); }).catch(err => { S.msg = (err && err.message) || 'Could not link.'; S.msgBad = true; render(); });
+      return;
+    }
     const bf = e.target; if (bf.dataset && bf.dataset.bf) { S[bf.dataset.bf] = bf.value; S.bn = 300; render(); return; }
     const sb = e.target; if (sb.dataset && sb.dataset.bill) {
       const b = (S.bills || []).find(x => x.bill_id === Number(sb.dataset.bill)), to = Number(sb.value);
