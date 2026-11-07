@@ -1149,14 +1149,21 @@ function orders_upsert(PDO $pdo, string $storeKey, array $orders): int
 /** 🤖 AUTO-ALLOCATION of ONE order — runs by itself the moment an order reaches HRMS (Shopify webhook / order sync → orders_upsert), when the Allocation
  *  page loads, and every few minutes from the WhatsApp engine (wa_auto_alloc), so nobody ever has to press anything.
  *  The order goes to the salesperson who holds the customer's WhatsApp chat (order mobile or the extra mobile), when the customer wrote to us in the
- *  7 days before the order. Type: chat source campaign / community → Campaign, everything else → Query. Panel: TM Perfume House for its own store.
+ *  7 days before the order. Type: chat source campaign / community, or a customer who ordered before (a repeat order) → Campaign, everything else → Query. Panel: TM Perfume House for its own store.
  *  Left PENDING (with the reason, shown on the Allocation page): no mobile, no chat, chat not given to a salesperson, last message too old, ₹0 order,
  *  older than 2 days. Never touches an order a person allocated, nor one the robot did once (a person's Undo / change is never redone).
  *  Returns ['emp','type','house','by','at'] when it allocated, the reason (string) when it left it, '' when there was nothing to do. */
 /** 📢 Query or Campaign for an order of this WhatsApp chat (one rule for the automatic allocation and the Manual order): the chat came on the
  *  campaign number, is marked Campaign / Community, or our campaign was sent to the customer in the 7 days before the order. $c = the wa_contacts row (+ camp_tag). */
+/** True when this phone already placed an order more than 2 minutes before $t (a repeat customer). Last 10 digits are compared; money-less (₹0) orders do not count. */
+function order_is_repeat_customer(PDO $pdo, string $phone, int $t): bool
+{
+    $d = preg_replace('/\D+/', '', $phone) ?? ''; if (strlen($d) < 10) return false; $k = substr($d, -10); $before = date('Y-m-d H:i:s', ($t ?: time()) - 120);
+    try { $q = $pdo->prepare("SELECT 1 FROM shop_orders WHERE phone LIKE ? AND created_at < ? AND total > 0 AND (tags IS NULL OR tags NOT LIKE '%cancel%') LIMIT 1"); $q->execute(['%' . $k, $before]); return (bool)$q->fetchColumn(); } catch (Throwable $e) { return false; }
+}
 function order_chat_type(PDO $pdo, array $c, int $t = 0): string
 {
+    if (order_is_repeat_customer($pdo, (string)($c['phone'] ?? ''), $t)) return 'campaign';   // owner (7 Nov): a customer who ordered before and orders again counts as Campaign
     return (in_array((string)($c['source'] ?? ''), ['campaign', 'community'], true) || (function_exists('wa_got_campaign') && wa_got_campaign($pdo, (string)($c['phone'] ?? ''), date('Y-m-d H:i:s', $t ?: time()), 7))) ? 'campaign' : 'query';
 }
 function order_auto_alloc(PDO $pdo, string $sk, array $o)
