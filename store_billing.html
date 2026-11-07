@@ -200,7 +200,7 @@
   guardPage();
   renderSidebar('store_billing');
   const toast = (m, bad) => { $('billMsg').innerHTML = m ? `<div class="sx-msg ${bad ? 'bad' : 'ok'}">${sxi(bad ? 'xc' : 'ok')}<span>${esc(m)}</span></div>` : ''; };
-  let cart = [], chain = null, quote = null, pickedCol = null, isManager = false, open = false, needPhone = true, people = [{ name: '', phone: '', bday: '', declined: false, reason: '', lk: null }];
+  let cart = [], chain = null, quote = null, pickedCol = null, isManager = false, open = false, needPhone = true, people = [{ name: '', phone: '', bd: '', bm: '', bday: '', declined: false, reason: '', lk: null }];
   // ---------- customers on this bill (1-4 people; every one needs a mobile number, or a reason)
   const digits = (v) => String(v || '').replace(/\D/g, '').slice(-10);
   const phoneOk = (v) => /^[6-9]\d{9}$/.test(digits(v));
@@ -259,7 +259,7 @@
       <input class="sx-in" data-f="name" placeholder="Name" autocomplete="off" value="${esc(p.name)}">
       ${p.declined ? `<input class="sx-in" data-f="reason" placeholder="Why no number? (required)" value="${esc(p.reason)}">` : `<input class="sx-in" data-f="phone" placeholder="Mobile number" inputmode="tel" autocomplete="off" value="${esc(p.phone)}">`}
       <label class="skip"><input type="checkbox" data-f="declined" ${p.declined ? 'checked' : ''}> won’t share</label>
-      ${p.declined ? '' : `<div class="bd">🎂 Birthday <select class="sx-in" data-f="bd">${'<option value="">Day</option>' + Array.from({ length: 31 }, (_, k) => `<option value="${String(k + 1).padStart(2, '0')}" ${(p.bday || '').slice(3) === String(k + 1).padStart(2, '0') ? 'selected' : ''}>${k + 1}</option>`).join('')}</select><select class="sx-in" data-f="bm">${'<option value="">Month</option>' + MONTHS.map((m, k) => `<option value="${String(k + 1).padStart(2, '0')}" ${(p.bday || '').slice(0, 2) === String(k + 1).padStart(2, '0') ? 'selected' : ''}>${m}</option>`).join('')}</select></div>`}
+      ${p.declined ? '' : `<div class="bd">🎂 Birthday <select class="sx-in" data-f="bd">${'<option value="">Day</option>' + Array.from({ length: 31 }, (_, k) => `<option value="${String(k + 1).padStart(2, '0')}" ${p.bd === String(k + 1).padStart(2, '0') ? 'selected' : ''}>${k + 1}</option>`).join('')}</select><select class="sx-in" data-f="bm">${'<option value="">Month</option>' + MONTHS.map((m, k) => `<option value="${String(k + 1).padStart(2, '0')}" ${p.bm === String(k + 1).padStart(2, '0') ? 'selected' : ''}>${m}</option>`).join('')}</select></div>`}
       ${p.bday && p.bday === todayMD() && !p.declined ? `<div class="back" style="background:#fff4e0;color:#b45309">🎂 Birthday today! ${p.lk && p.lk.gifted_year ? 'Already got this year’s gift.' : giftOk(p) ? 'Free 50 ml gift — scan a 50 ml and tap “🎁 gift?”.' : phoneOk(p.phone) ? 'Gift needs a manager (birthday was not saved earlier).' : 'Enter the mobile number to give the gift.'}</div>` : ''}
       ${p.lk && p.lk.returning && !p.declined ? `<div class="back">↺ Returning · ${p.lk.visits} visit${p.lk.visits === 1 ? '' : 's'}${p.lk.last_visit ? ' · last ' + esc(String(p.lk.last_visit).slice(0, 10)) : ''} — don’t ask again for contacts / community / review</div>` : ''}
     </div>`).join('');
@@ -272,7 +272,7 @@
     if (f === 'phone') {
       people[i].lk = null; clearTimeout(lkTimer);
       if (phoneOk(e.target.value)) lkTimer = setTimeout(async () => {
-        try { const d = await api.get('st_cust.lookup', { phone: digits(e.target.value) }); if (digits(people[i].phone) === digits(e.target.value)) { people[i].lk = d; if (d.returning && !people[i].name && d.name) people[i].name = d.name; if (d.bday && !people[i].bday) people[i].bday = d.bday; const keep = document.activeElement && document.activeElement.dataset.f, row = i; renderCust(); refresh(); if (keep) { const el = document.querySelector(`#cust [data-i="${row}"] [data-f="${keep}"]`); if (el) { el.focus(); el.setSelectionRange && el.setSelectionRange(el.value.length, el.value.length); } } }
+        try { const d = await api.get('st_cust.lookup', { phone: digits(e.target.value) }); if (digits(people[i].phone) === digits(e.target.value)) { people[i].lk = d; if (d.returning && !people[i].name && d.name) people[i].name = d.name; if (d.bday && !people[i].bday) { people[i].bday = d.bday; people[i].bm = d.bday.slice(0, 2); people[i].bd = d.bday.slice(3); } const keep = document.activeElement && document.activeElement.dataset.f, row = i; renderCust(); refresh(); if (keep) { const el = document.querySelector(`#cust [data-i="${row}"] [data-f="${keep}"]`); if (el) { el.focus(); el.setSelectionRange && el.setSelectionRange(el.value.length, el.value.length); } } }
         } catch (err) { /* lookup is a nicety only */ }
       }, 350);
     }
@@ -281,12 +281,16 @@
   $('cust').addEventListener('change', (e) => {
     const f = e.target.dataset.f; if (f !== 'bd' && f !== 'bm') return;
     const i = +e.target.closest('[data-i]').dataset.i, row = e.target.closest('[data-i]'), dd = row.querySelector('[data-f="bd"]').value, mm = row.querySelector('[data-f="bm"]').value;
-    people[i].bday = dd && mm ? mm + '-' + dd : ''; renderCust(); refresh();
+    const MAXD = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    people[i].bd = dd; people[i].bm = mm;
+    if (dd && mm && +dd > MAXD[+mm - 1]) people[i].bd = String(MAXD[+mm - 1]);      // 31 Apr / 30 Feb do not exist: take the last day of that month
+    people[i].bday = people[i].bd && people[i].bm ? people[i].bm + '-' + people[i].bd : '';
+    renderCust(); refresh();
   });
   $('cust').addEventListener('change', (e) => { if (e.target.dataset.f !== 'declined') return; const i = +e.target.closest('[data-i]').dataset.i; people[i].declined = e.target.checked; renderCust(); refresh(); });
-  $('cPlus').onclick = () => { if (people.length < 4) { people.push({ name: '', phone: '', bday: '', declined: false, reason: '', lk: null }); renderCust(); } };
+  $('cPlus').onclick = () => { if (people.length < 4) { people.push({ name: '', phone: '', bd: '', bm: '', bday: '', declined: false, reason: '', lk: null }); renderCust(); } };
   $('cMinus').onclick = () => { if (people.length > 1) { people.pop(); renderCust(); } };
-  const resetCust = () => { people = [{ name: '', phone: '', bday: '', declined: false, reason: '', lk: null }]; renderCust(); };
+  const resetCust = () => { people = [{ name: '', phone: '', bd: '', bm: '', bday: '', declined: false, reason: '', lk: null }]; renderCust(); };
 
   const free = (b) => b.kind === 'tester' || b.gift;
   const todayMD = () => String(storeToday || '').slice(5);
