@@ -197,6 +197,7 @@ function bd_need_manager(PDO $pdo, array $auth) {
 function bd_page_perms(string $action): array {
     static $map = [
         'bd.b2_cm_' => ['commission', 'commission_rules'],      // Sales → Team → Commission → Result & rules (commission_new.html): view, recount, chart, offers, boosts
+        'bd.b2_punch_set' => ['commission'],                    // Total Budgeting → person card → Set pay, salary and timing: the timing save (a Sales Head has the Commission tick)
     ];
     foreach ($map as $prefix => $perms) if (strpos($action, $prefix) === 0) return $perms;
     return [];
