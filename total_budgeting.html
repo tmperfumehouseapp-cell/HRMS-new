@@ -108,6 +108,15 @@
 #tb .lines small{display:block; color:var(--muted); font-weight:400; font-size:10.5px;}
 #tb .dp{position:relative; display:inline-flex; width:20px; height:20px; border-radius:50%; overflow:hidden; margin-right:7px; vertical-align:-5px; align-items:center; justify-content:center; font-size:10px; font-weight:800; color:#fff; flex:none;}
 #tb .dp img{position:absolute; inset:0; width:100%; height:100%; object-fit:cover;}
+#tb tr.gap td{height:14px; padding:0; background:#e9ecef; border-right:0; position:static;}
+#tb tr.sec td{background:#dbe8e0; font-weight:800; border-top:2px solid #b9c9bf;} #tb tr.sec td.n{background:#dbe8e0; font-weight:800;}
+#tb .dock{position:sticky; bottom:0; z-index:20; background:#fff; border:1.5px solid var(--ink); border-radius:14px; padding:8px 10px; margin-top:12px; box-shadow:0 -8px 24px -12px rgba(0,0,0,.35); max-height:38vh; overflow:auto;}
+#tb .dock-h{display:flex; flex-wrap:wrap; gap:6px 12px; align-items:center; margin-bottom:6px;} #tb .dock-h b{font-size:13px;}
+#tb .dock-h button{font:inherit; font-size:12px; font-weight:700; border:1px solid var(--line); background:#fff; border-radius:99px; padding:3px 12px; cursor:pointer;} #tb .dock-h button.on{background:var(--ink); color:#fff; border-color:var(--ink);}
+#tb .dz{display:inline-flex; align-items:center; gap:6px; border:1.5px dashed #b8bfc7; border-radius:99px; padding:4px 11px; margin:0 6px 6px 0; font-size:12px; font-weight:600; cursor:pointer; background:#f8f9fb;}
+#tb .dz i{font-style:normal; background:var(--ink); color:#fff; border-radius:99px; padding:0 7px; font-size:11px; font-weight:800;}
+#tb .dz.over,#tb .dz:hover{border-color:#ea580c; background:#fff7ed;} #tb .dz.over{box-shadow:0 0 0 3px #fed7aa;}
+#tb .st{position:relative;} #tb .st.sel .ring{box-shadow:0 0 0 3px #2563eb;} #tb .st.sel::after{content:'✓'; position:absolute; top:-2px; right:6px; background:#2563eb; color:#fff; border-radius:50%; width:18px; height:18px; font-size:12px; line-height:18px; font-weight:800;}
 </style>
 </head>
 <body>
@@ -141,7 +150,7 @@
   const WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const PAYDAYS = 30;                                   // salary and fixed expenses are split by 30, the same as the Salary page
 
-  const S = { tg: 'dept', q: '', msg: '', msgBad: false, tab: 'budget', emp: 'comm', ea: 'pay', eg: 'all', lead: 'fin', M: null, warn: [], edit: null };
+  const S = { mm: false, sel: new Set(), tg: 'dept', q: '', msg: '', msgBad: false, tab: 'budget', emp: 'comm', ea: 'pay', eg: 'all', lead: 'fin', M: null, warn: [], edit: null };
   const ymd = (y, m, d) => y + '-' + pad(m) + '-' + pad(d);
   const addDay = (iso, n) => { const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() + n); return ymd(d.getFullYear(), d.getMonth() + 1, d.getDate()); };
   const wdOf = (iso) => WD[new Date(iso + 'T12:00:00').getDay()];
@@ -267,9 +276,17 @@
     const tot = (r) => D.reduce((a, d) => a + val(r, d), 0);
     const base = all ? M.all.filter(r => S.eg === 'all' || r.grp === S.eg) : M.team;
     const list = m === 'pen' ? base.filter(r => D.some(d => r.pen[d])) : base;
-    const body = list.map((r, i) => '<tr><td class="i">' + (i + 1) + '</td><td class="n"' + (r.empId ? ' data-emp="' + r.empId + '" title="Open ' + esc(r.name) + '"' : '') + '>' + dp(r) + esc(r.name) + '</td><td class="role" title="' + (r.leader ? 'Leader: paid by the leader commission, so the fixed salary on the card is not counted' : '') + '">' + esc(r.role) + (all ? ' · <b>' + GL[r.grp] + '</b>' : '') + '</td><td class="t">' + (r.leader ? '<span title="Leader: not counted">–</span>' : r.monthly ? f(r.monthly) : '–') + '</td><td class="t">' + (r.perDay ? f(r.perDay) : '–') + '</td><td class="t">' + f(tot(r)) + '</td>' + D.map(d => cell(r, d)).join('') + '</tr>').join('')
+    const rowH = (r, i) => '<tr><td class="i">' + (i + 1) + '</td><td class="n"' + (r.empId ? ' data-emp="' + r.empId + '" title="Open ' + esc(r.name) + '"' : '') + '>' + dp(r) + esc(r.name) + '</td><td class="role" title="' + (r.leader ? 'Leader: paid by the leader commission, so the fixed salary on the card is not counted' : '') + '">' + esc(r.role) + (all ? ' · <b>' + GL[r.grp] + '</b>' : '') + '</td><td class="t">' + (r.leader ? '<span title="Leader: not counted">–</span>' : r.monthly ? f(r.monthly) : '–') + '</td><td class="t">' + (r.perDay ? f(r.perDay) : '–') + '</td><td class="t">' + f(tot(r)) + '</td>' + D.map(d => cell(r, d)).join('') + '</tr>';
+    // "All" is cut into spaced sections: the sales leaders first, then the sales team, then retail wholesale, store and the rest, each with its own subtotal
+    const secs = all && S.eg === 'all' ? [
+      ['Sales · leaders first, then the sales team', list.filter(r => r.grp === 'leader').concat(list.filter(r => r.grp === 'sales'))],
+      ['Retail wholesale', list.filter(r => r.grp === 'retail')], ['Store', list.filter(r => r.grp === 'store')], ['Other employees', list.filter(r => r.grp === 'other')]].filter(x => x[1].length) : null;
+    const subt = (title, rs2) => '<tr class="sec"><td class="i"></td><td class="n">' + esc(title) + ' · ' + rs2.length + '</td><td></td><td>' + f(rs2.reduce((a, r) => a + (r.leader ? 0 : r.monthly), 0)) + '</td><td>' + f(rs2.reduce((a, r) => a + r.perDay, 0)) + '</td><td>' + f(rs2.reduce((a, r) => a + tot(r), 0)) + '</td>' + D.map(d => '<td>' + f(rs2.reduce((a, r) => a + val(r, d), 0)) + '</td>').join('') + '</tr>';
+    let n0 = 0;
+    const body = secs ? secs.map(x => '<tr class="gap"><td colspan="60"></td></tr>' + subt(x[0], x[1]) + x[1].map(r => rowH(r, n0++)).join('')).join('')
+      : list.map(rowH).join('')
       || '<tr><td colspan="20" style="text-align:left;padding:14px">Nobody to show for this month.</td></tr>';
-    const foot = '<tr><td class="i"></td><td class="n">Total · ' + list.length + '</td><td></td><td>' + f(list.reduce((a, r) => a + (r.leader ? 0 : r.monthly), 0)) + '</td><td>' + f(list.reduce((a, r) => a + r.perDay, 0)) + '</td><td>' + f(list.reduce((a, r) => a + tot(r), 0)) + '</td>' + D.map(d => '<td>' + f(list.reduce((a, r) => a + val(r, d), 0)) + '</td>').join('') + '</tr>';
+    const foot = '<tr><td class="i"></td><td class="n">' + (secs ? 'All sections' : 'Total') + ' · ' + list.length + '</td><td></td><td>' + f(list.reduce((a, r) => a + (r.leader ? 0 : r.monthly), 0)) + '</td><td>' + f(list.reduce((a, r) => a + r.perDay, 0)) + '</td><td>' + f(list.reduce((a, r) => a + tot(r), 0)) + '</td>' + D.map(d => '<td>' + f(list.reduce((a, r) => a + val(r, d), 0)) + '</td>').join('') + '</tr>';
     const note = m === 'comm' ? 'Commission comes in automatically from the new <b>Commission → Result &amp; rules</b> engine. Store people show their <b>store commission</b>: the same price chart, but no sales limit and no extra. The newest day is next to the name.'
       : m === 'pen' ? 'Red cells are penalties logged that day. The dashed one is today and is cut tomorrow. The same penalties show on the Penalties tab and in the budget.'
       : '<b>Day pay = fixed salary ÷ 30 + commission − the penalty cut that day.</b> * marks a day with a penalty cut. Leaders show – because they are paid by the leader commission.';
@@ -413,8 +430,8 @@
   const hue = (s) => { let h = 0; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) % 360; return h; };
   const bubble = (p, drag) => {
     const u = photoUrl(p.photo), ini = esc((p.name.trim()[0] || '?').toUpperCase());
-    return '<div class="st' + (p.pending ? ' pend' : '') + '"' + (drag ? ' draggable="true"' : '') + ' data-emp="' + p.id + '" title="' + esc(p.name + (p.role ? ' · ' + p.role : '')) + (drag ? ' — click to open, drag to another department' : ' — click to open') + '"><div class="ring"><div class="av" style="background:hsl(' + hue(p.name) + ',45%,48%)">'
-      + (u ? '<img src="' + esc(u) + '" alt="" loading="lazy" onerror="this.remove()">' : '') + '<span style="position:absolute;z-index:0">' + ini + '</span></div></div><div class="nm">' + esc(p.name) + '</div><div class="rl">' + esc(p.role || '—') + '</div></div>';
+    return '<div class="st' + (p.pending ? ' pend' : '') + (S.sel.has(p.id) ? ' sel' : '') + '"' + (drag ? ' draggable="true"' : '') + ' data-emp="' + p.id + '" title="' + esc(p.name + (p.role ? ' · ' + p.role : '')) + (drag ? ' — click to open, drag to another department' : ' — click to open') + '"><div class="ring"><div class="av" style="background:hsl(' + hue(p.name) + ',45%,48%)">'
+      + (u ? '<img src="' + esc(u) + '" alt="" loading="lazy" onerror="this.remove()">' : '') + '<span>' + ini + '</span></div></div><div class="nm">' + esc(p.name) + '</div><div class="rl">' + esc(p.role || '—') + '</div></div>';
   };
   /* the same people grouped by how they are paid: sales, leaders, retail wholesale, store, other, with what each group costs */
   function payGroups() {
@@ -439,6 +456,22 @@
         + '<div class="strip">' + (g.list.length ? g.list.map(p => bubble(p, true)).join('') : '<div class="none">Nobody here yet. Drag a person onto this box.</div>') + '</div></section>';
     }).join('') || '<div class="card"><div class="empty">Nobody matches “' + esc(S.q) + '”.</div></div>';
   }
+  /* the dock stays on screen: drop a person on a department name (no scrolling), or switch on Move mode, tick many people and press a department once */
+  function dockInner() {
+    const M = S.M, n = S.sel.size, cnt = (id) => M.people.filter(p => p.deptId === id).length;
+    const chip = (id, name) => '<span class="dz" data-dept="' + id + '" title="' + (n ? 'Move the ' + n + ' selected here' : 'Drop a person here') + '">' + esc(name) + '<i>' + cnt(id) + '</i></span>';
+    return '<div class="dock-h"><b>' + (n ? 'Move ' + n + ' selected to:' : S.mm ? 'Move mode: tick people above, then press a department' : 'Drop a person on a department') + '</b>'
+      + '<button type="button" data-mm="1" class="' + (S.mm ? 'on' : '') + '">' + (S.mm ? 'Move mode ON' : 'Move mode (pick many)') + '</button>' + (n ? '<button type="button" data-clr="1">Clear ' + n + '</button>' : '') + '</div>'
+      + M.depts.map(d => chip(d.id, d.name)).join('') + chip(0, 'No department');
+  }
+  async function moveMany(ids, to) {
+    const M = S.M, nameOf = (id) => id ? (M.depts.find(d => d.id === id) || {}).name || 'that department' : 'No department';
+    const ps = ids.map(id => M.people.find(x => x.id === id)).filter(p => p && p.deptId !== to); if (!ps.length) return;
+    const prev = ps.map(p => p.deptId); ps.forEach(p => { p.deptId = to; }); S.msg = 'Moving ' + (ps.length === 1 ? ps[0].name : ps.length + ' people') + '…'; S.msgBad = false; render();
+    let bad = 0, why = '';
+    for (let i = 0; i < ps.length; i++) { try { await api.post('employees.set_department', { employee_id: ps[i].id, department_id: to }); } catch (err) { ps[i].deptId = prev[i]; bad++; why = (err && err.message) || 'Could not move.'; } }
+    S.msg = bad ? bad + ' could not be moved: ' + why : (ps.length === 1 ? ps[0].name : ps.length + ' people') + ' moved to ' + nameOf(to) + '.'; S.msgBad = !!bad; S.sel.clear(); render();
+  }
   function teamView() {
     const M = S.M, P = M.people, d30 = addDay(M.today, -30);
     const fresh = P.filter(p => p.joined && p.joined >= d30), pay = P.reduce((a, p) => a + p.monthly, 0);
@@ -450,7 +483,8 @@
       + kp('Joined last 30 days', fresh.length, fresh.slice(0, 3).map(p => esc(p.name.split(' ')[0])).join(', ') || 'no new joiners')
       + kp('No photo / no department', P.filter(p => !p.photo).length + ' / ' + P.filter(p => !p.deptId).length, 'worth completing') + '</div>'
       + '<div class="te-bar"><div class="seg">' + [['dept', 'By department'], ['grp', 'By pay: sales · leaders · retail · store']].map(x => '<button data-s="tg" data-v="' + x[0] + '" class="' + (S.tg === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</div><input id="teQ" type="search" placeholder="Find a person…" value="' + esc(S.q) + '" autocomplete="off"><span class="hint">Click a photo to open the person. ' + (S.tg === 'dept' ? '<b>Drag a photo onto another department</b> to move them.' : 'Everybody is here: sales, leaders, retail wholesale, store and the rest.') + '</span><span class="te-msg' + (S.msgBad ? ' bad' : '') + '" id="teMsg">' + esc(S.msg) + '</span></div>'
-      + '<div id="teGroups">' + teamGroups() + '</div>';
+      + '<div id="teGroups">' + teamGroups() + '</div>'
+      + (S.tg === 'dept' ? '<div class="dock" id="teDock">' + dockInner() + '</div>' : '');
   }
 
   function render() {
@@ -461,6 +495,10 @@
   }
 
   $('tb').addEventListener('click', async (e) => {
+    const dz = e.target.closest('.dz[data-dept]'); if (dz) { if (S.sel.size) moveMany([...S.sel], Number(dz.dataset.dept)); else { const m = $('teMsg'); if (m) { m.textContent = 'Drag a person here, or turn on Move mode and tick people first.'; m.className = 'te-msg'; } } return; }
+    const dm = e.target.closest('button[data-mm]'); if (dm) { S.mm = !S.mm; if (!S.mm) S.sel.clear(); render(); return; }
+    if (e.target.closest('button[data-clr]')) { S.sel.clear(); render(); return; }
+    const pk = e.target.closest('.st[data-emp]'); if (pk && S.mm) { const id = Number(pk.dataset.emp); S.sel.has(id) ? S.sel.delete(id) : S.sel.add(id); pk.classList.toggle('sel', S.sel.has(id)); const dk = $('teDock'); if (dk) dk.innerHTML = dockInner(); return; }
     const nm = e.target.closest('td.n[data-emp], .st[data-emp]'); if (nm && window.PersonCard) { PersonCard.open(Number(nm.dataset.emp), { onChange: () => load().catch(() => {}) }); return; }
     const b = e.target.closest('button'); if (!b) return;
     if (b.dataset.t) { S.tab = b.dataset.t; render(); return; }
@@ -485,20 +523,14 @@
   });
   /* drag a person onto another department */
   let dragId = 0;
-  const tb = $('tb'), grpOf = (e) => e.target.closest && e.target.closest('.grp[data-dept]');
+  const tb = $('tb'), grpOf = (e) => e.target.closest && e.target.closest('[data-dept]');
   tb.addEventListener('dragstart', (e) => { const st = e.target.closest && e.target.closest('.st[data-emp]'); if (!st) return; dragId = Number(st.dataset.emp); st.classList.add('drag'); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', String(dragId)); } catch (x) {} });
   tb.addEventListener('dragend', () => { dragId = 0; tb.querySelectorAll('.drag,.over').forEach(x => x.classList.remove('drag', 'over')); });
-  tb.addEventListener('dragover', (e) => { const g = grpOf(e); if (!g || !dragId) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move'; tb.querySelectorAll('.grp.over').forEach(x => { if (x !== g) x.classList.remove('over'); }); g.classList.add('over'); });
+  tb.addEventListener('dragover', (e) => { const g = grpOf(e); if (!g || !dragId) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move'; tb.querySelectorAll('.over').forEach(x => { if (x !== g) x.classList.remove('over'); }); g.classList.add('over'); });
   tb.addEventListener('dragleave', (e) => { const g = grpOf(e); if (g && !g.contains(e.relatedTarget)) g.classList.remove('over'); });
-  tb.addEventListener('drop', async (e) => {
+  tb.addEventListener('drop', (e) => {
     const g = grpOf(e); if (!g || !dragId) return; e.preventDefault(); g.classList.remove('over');
-    const p = S.M.people.find(x => x.id === dragId), to = Number(g.dataset.dept); dragId = 0;
-    if (!p || p.deptId === to) return;
-    const nameOf = (id) => id ? (S.M.depts.find(d => d.id === id) || {}).name || 'that department' : 'No department';
-    const from = p.deptId; p.deptId = to; S.msg = 'Moving ' + p.name + '…'; S.msgBad = false; render();
-    try { await api.post('employees.set_department', { employee_id: p.id, department_id: to }); S.msg = p.name + ' moved from ' + nameOf(from) + ' to ' + nameOf(to) + '.'; }
-    catch (err) { p.deptId = from; S.msg = (err && err.message) || 'Could not move.'; S.msgBad = true; }
-    render();
+    const ids = S.sel.has(dragId) ? [...S.sel] : [dragId]; dragId = 0; moveMany(ids, Number(g.dataset.dept));
   });
   tb.addEventListener('input', (e) => { if (e.target.id !== 'teQ') return; S.q = e.target.value; $('teGroups').innerHTML = teamGroups(); });
   $('mon').value = new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 7);
