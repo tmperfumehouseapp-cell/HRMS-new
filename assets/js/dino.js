@@ -4,7 +4,7 @@
    Pauses when the tab is hidden. The rules (TMDino.core) have no screen code, so they can be tested alone. */
 (function () {
   if (window.TMDino) return;
-  var W = 600, H = 150, GROUND = 124, DW = 42, DH = 45;
+  var W = 600, H = 150, GROUND = 124, DW = 42, DH = 48;
 
   // ---------- rules (no screen) ----------
   function newState() { return { y: 0, vy: 0, dist: 0, speed: 6, obs: [], gap: 260, dead: false, frames: 0 }; }
@@ -35,8 +35,31 @@
   window.TMDino = { core: { newState: newState, step: step, score: score } };
 
   // ---------- picture ----------
-  var SPR = ['......XXXXXX..', '.....XXXXXXXX.', '.....XXXXXXXX.', '.....XXXXXXXXX', '.....XXXX.....', '.X...XXXXXXX..', '.XX.XXXXXX....', '.XXXXXXXXXXX..', '..XXXXXXXXX...', '...XXXXXXX....', '....XXXXX.....'];
-  var LEG = [['.....X.X......', '.....X.X......', '.....XX.XX....'], ['.....XX.X.....', '.....X.XX.....', '.....XX.XX....']];
+  // a proper pixel T-rex (20 x 22 blocks, 2 px each), facing right
+  var SPR = [
+    '..............XXXXXX.',
+    '.............XXXXXXXX',
+    '.............XX.XXXXX',
+    '.............XXXXXXXX',
+    '.............XXXXXXXX',
+    '.............XXXXXXX.',
+    '.............XXXXXX..',
+    'X............XXXXXXXX',
+    'X...........XXXXXXX..',
+    'XX.........XXXXXXXXX.',
+    'XXX.......XXXXXXXXXX.',
+    'XXXX.....XXXXXXXXXXX.',
+    '.XXXXXXXXXXXXXXX.XX..',
+    '.XXXXXXXXXXXXXXX.X...',
+    '..XXXXXXXXXXXXXX.....',
+    '...XXXXXXXXXXXXX.....',
+    '....XXXXXXXXXXX......',
+    '.....XXXXXXXXXX......'
+  ];
+  var LEG = [
+    ['......XXX..XXX.......', '......XX...XX........', '......XX...XXX.......', '......XXX.............'],
+    ['......XXX..XXX.......', '......XX....XX.......', '.....XXX....XX.......', '.............XXX.....']
+  ];
   function mix(a, b, t) { return a.map(function (v, i) { return Math.round(v + (b[i] - v) * t); }); }
   function rgb(c) { return 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')'; }
   var DAY = { top: [147, 207, 255], bot: [255, 240, 214], hill: [214, 233, 214], hill2: [190, 220, 196], ground: [226, 214, 190], ink: [67, 56, 40] };
@@ -45,20 +68,28 @@
   function rr(ctx, x, y, w, h, r) { ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(x, y, w, h, r); else ctx.rect(x, y, w, h); ctx.fill(); }
 
   function drawDino(ctx, x, y, frame, dead, col, dark) {
-    var px = 3, rows = SPR.concat(LEG[frame]);
+    var px = 2.2, rows = SPR.concat(frame === 2 ? [] : LEG[frame]);
     ctx.fillStyle = col;
-    rows.forEach(function (r, j) { for (var i = 0; i < r.length; i++) if (r[i] === 'X') ctx.fillRect(x + i * px, y + j * px, px + 0.4, px + 0.4); });
-    ctx.fillStyle = dark; ctx.fillRect(x + 5 * px, y + 4 * px, px * 4, px * 0.8);   // mouth line
-    ctx.fillStyle = dead ? '#ef4444' : '#fff'; ctx.fillRect(x + 7 * px, y + 1 * px, px * 1.4, px * 1.4);   // the eye
-    if (!dead) { ctx.fillStyle = '#111827'; ctx.fillRect(x + 7.7 * px, y + 1.4 * px, px * 0.7, px * 0.8); }
+    rows.forEach(function (r, j) { for (var i = 0; i < r.length; i++) if (r[i] === 'X') ctx.fillRect(x + i * px, y + j * px, px + 0.35, px + 0.35); });
+    ctx.fillStyle = dark; ctx.fillRect(x + 15 * px, y + 6 * px, px * 4, px * 0.9);     // mouth
+    ctx.fillStyle = dead ? '#ef4444' : '#fff'; ctx.fillRect(x + 15 * px, y + 2 * px, px * 1.2, px * 1.2);   // the eye
+    if (!dead) { ctx.fillStyle = '#111827'; ctx.fillRect(x + 15.6 * px, y + 2.3 * px, px * 0.7, px * 0.8); }
+  }
+  // a bird that flaps (decoration, high above: it never hits the dino)
+  function drawBird(ctx, x, y, flap, col) {
+    ctx.fillStyle = col;
+    ctx.fillRect(x + 6, y + 4, 14, 4); ctx.fillRect(x + 18, y + 2, 6, 5); ctx.fillRect(x + 24, y + 4, 4, 2); ctx.fillRect(x, y + 5, 6, 2);
+    if (flap) { ctx.fillRect(x + 9, y - 2, 4, 6); ctx.fillRect(x + 12, y - 5, 3, 4); } else { ctx.fillRect(x + 9, y + 8, 4, 5); ctx.fillRect(x + 12, y + 11, 3, 3); }
+    ctx.fillStyle = '#fff'; ctx.fillRect(x + 21, y + 3, 1.6, 1.6);
   }
   function drawCactus(ctx, o, k) {
-    var base = GROUND, x = o.x, h = o.h, w = o.w, st = Math.max(7, Math.floor(w / 3));
-    var g1 = mix([34, 160, 84], [60, 180, 120], k), g2 = mix([21, 128, 61], [38, 140, 95], k);
-    ctx.fillStyle = rgb(g1); rr(ctx, x + w / 2 - st / 2, base - h, st, h, st / 2);
-    rr(ctx, x, base - h * 0.62, st, 8, 4); rr(ctx, x, base - h * 0.62 - 11, 6, 15, 3);
-    rr(ctx, x + w - st, base - h * 0.45, st, 8, 4); rr(ctx, x + w - 6, base - h * 0.45 - 13, 6, 17, 3);
-    ctx.fillStyle = rgb(g2); ctx.fillRect(x + w / 2 + 1, base - h + 4, 2, h - 6);
+    var base = GROUND, x = Math.round(o.x), h = o.h, w = o.w, st = Math.max(6, Math.floor(w / 3) | 0), cx = x + Math.round(w / 2 - st / 2);
+    var g1 = mix([40, 140, 70], [60, 170, 110], k), g2 = mix([24, 100, 52], [34, 120, 80], k);
+    ctx.fillStyle = rgb(g1);
+    ctx.fillRect(cx, base - h, st, h); ctx.fillRect(cx + 1, base - h - 2, st - 2, 2);                                   // trunk + round top
+    var ay = base - Math.round(h * 0.6); ctx.fillRect(x, ay, cx - x + 1, 6); ctx.fillRect(x, ay - 10, 5, 12);           // left arm
+    var by = base - Math.round(h * 0.42); ctx.fillRect(cx + st - 1, by, x + w - cx - st + 1, 6); ctx.fillRect(x + w - 5, by - 12, 5, 14);   // right arm
+    ctx.fillStyle = rgb(g2); ctx.fillRect(cx + st - 2, base - h + 2, 2, h - 2); ctx.fillRect(x + w - 2, by - 12, 2, 14);   // shaded edges
   }
 
   // ---------- the strip ----------
@@ -105,6 +136,8 @@
       ctx.fillStyle = rgb(P.ground); ctx.fillRect(0, GROUND, W, H - GROUND);
       ctx.fillStyle = rgb(mix(P.ground, P.ink, .25)); ctx.fillRect(0, GROUND, W, 2);
       for (var i = 0; i < 22; i++) { var gx = ((i * 71 - s.dist * 1.0) % W + W) % W; ctx.fillRect(gx, GROUND + 8 + (i % 4) * 5, 6 + (i % 3) * 4, 1.5); }
+      // two far-away birds (decoration)
+      [[0, 150, 22], [1, 380, 34]].forEach(function (b) { var bx = ((b[1] - s.dist * 0.22) % (W + 140) + W + 140) % (W + 140) - 60; drawBird(ctx, bx, b[2], (Math.floor(s.frames / 9) + b[0]) % 2, k < .5 ? 'rgba(55,65,81,.55)' : 'rgba(226,232,240,.6)'); });
       // obstacles
       s.obs.forEach(function (o) { ctx.fillStyle = 'rgba(0,0,0,.12)'; ctx.fillRect(o.x - 2, GROUND, o.w + 4, 3); drawCactus(ctx, o, k); });
       // dino shadow + dino
