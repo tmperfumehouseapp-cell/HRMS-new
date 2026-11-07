@@ -451,7 +451,7 @@ function action_permission(string $action): ?string
         'iv.' => 'inventory',                      // Smart Inventory (inventory.php): oils, perfumes, orders, dealers
         'fi.' => 'finance',                        // Finance step 1 (finance_in.php): incoming, receipts, outstanding
         'st_inv.' => 'rs_manage', 'st_chain.' => 'rs_manage', 'st_set.' => 'rs_manage', 'st_duty.' => 'rs_manage', 'st_dash.' => 'rs_manage', 'st_cs.' => 'rs_manage', 'st_team.' => 'rs_manage',   // Store: inventory, label size, who can bill
-        'st_bill.' => 'rs_counter', 'st_cust.' => 'rs_counter',               // Store: billing
+        'st_bill.' => 'rs_counter', 'st_cust.' => 'rs_counter', 'st_bday.' => 'rs_counter',               // Store: billing
         'dashboard.' => 'dashboard',
         'shopify.' => 'orders',
         'allocation.' => 'allocation',
@@ -18397,7 +18397,7 @@ if ($action !== 'login' && $action !== '') { try { penalties_auto_pass($pdo); } 
 if ($action !== 'login' && $action !== '') { try { retail_due_pass($pdo); } catch (Throwable $e) {} }
 
 // Store perfumes from Shopify, once a day by itself (first request after 5 AM; syncs after the answer is out; retries every 30 min if it failed).
-if ($action !== 'login' && $action !== '') { try { require_once __DIR__ . '/store_lib.php'; st_daily_sync($pdo); } catch (Throwable $e) {} }
+if ($action !== 'login' && $action !== '') { try { require_once __DIR__ . '/store_lib.php'; st_daily_sync($pdo); st_bday_daily($pdo); } catch (Throwable $e) {} }
 
 // Daily copy of everything the bot has learned (Learn & Setup → Backups): when the last copy is older than 24 hours it is made right after the response is sent.
 if ($action !== 'login' && $action !== '') { try { $__lbl = __DIR__ . '/learn_backups/.last'; if (!is_file($__lbl) || filemtime($__lbl) < time() - 86400) { require_once __DIR__ . '/learn_backup.php'; lb_schedule($pdo); } } catch (Throwable $e) {} }

@@ -299,7 +299,7 @@ function st_daily_sync(PDO $pdo): void
 function st_migrate(PDO $pdo): void
 {
     static $ran = false; if ($ran) return; $ran = true;
-    $flag = sys_get_temp_dir() . '/hrms_st_mig_v9';
+    $flag = sys_get_temp_dir() . '/hrms_st_mig_v10';
     if (is_file($flag)) return;
     try {
         foreach (['printed_at' => 'DATETIME NULL', 'print_count' => 'INT NOT NULL DEFAULT 0'] as $c => $def)
@@ -345,6 +345,12 @@ function st_migrate(PDO $pdo): void
         $pdo->exec("CREATE TABLE IF NOT EXISTS st_bday_gifts (
             gift_id INT AUTO_INCREMENT PRIMARY KEY, phone VARCHAR(20) NOT NULL, name VARCHAR(120) NOT NULL DEFAULT '', gift_year SMALLINT NOT NULL, bill_id INT NOT NULL, bottle_id INT NOT NULL,
             given_by VARCHAR(80) NOT NULL DEFAULT '', created_at DATETIME NOT NULL, UNIQUE KEY uq_st_bg (phone, gift_year), KEY idx_st_bg_bill (bill_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        $pdo->exec("CREATE TABLE IF NOT EXISTS st_bday_vouchers (
+            voucher_id INT AUTO_INCREMENT PRIMARY KEY, code VARCHAR(12) NOT NULL, phone VARCHAR(20) NOT NULL, name VARCHAR(120) NOT NULL DEFAULT '', bday CHAR(5) NOT NULL, bday_year SMALLINT NOT NULL,
+            valid_from DATE NOT NULL, valid_to DATE NOT NULL, status VARCHAR(10) NOT NULL DEFAULT 'active', wa_status VARCHAR(10) NOT NULL DEFAULT 'pending', wa_note VARCHAR(200) NOT NULL DEFAULT '', wa_at DATETIME NULL,
+            redeemed_at DATETIME NULL, redeemed_bill_id INT NULL, redeemed_by VARCHAR(80) NOT NULL DEFAULT '', created_at DATETIME NOT NULL,
+            UNIQUE KEY uq_st_bv_code (code), UNIQUE KEY uq_st_bv_phone_year (phone, bday_year)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         if (!$pdo->query("SHOW COLUMNS FROM st_bill_people LIKE 'bday'")->fetch()) $pdo->exec("ALTER TABLE st_bill_people ADD COLUMN bday CHAR(5) NOT NULL DEFAULT ''");      // customer birthday as MM-DD
         foreach (['source' => "VARCHAR(20) NOT NULL DEFAULT ''", 'source_note' => "VARCHAR(120) NOT NULL DEFAULT ''", 'area' => "VARCHAR(80) NOT NULL DEFAULT ''"] as $c => $def)
@@ -729,22 +735,27 @@ function st_wa_defs(): array
             'buttons' => [['type' => 'URL', 'text' => 'Join community', 'url' => $base . '?go=community&t={{1}}', 'example' => $suffix], ['type' => 'URL', 'text' => 'Review us on Google', 'url' => $base . '?go=review&t={{1}}', 'example' => $suffix]]],
         'tmph_store_bill_back' => ['body' => "Welcome back, {{1}}! Thank you for shopping at TM Perfume House again. Your bill {{2}} of Rs. {{3}} is ready, you can see it anytime at {{4}} . We are happy to see you again.",
             'ex' => $ex, 'lab' => $lab, 'buttons' => []],
+        // sent only when asked for (st_wa_seed with $only): a promotional message, so category MARKETING
+        'tmph_store_bday' => ['category' => 'MARKETING', 'folder' => 'Store birthdays', 'about' => 'A birthday gift for a store customer: a code for one free 50 ml perfume.',
+            'body' => "Hello {{1}}, your birthday is on {{2}} and TM Perfume House has a gift for you: a FREE 50 ml perfume of your choice! Show this code {{3}} at our store any time till {{4}} and collect it. Happy birthday in advance!",
+            'ex' => ['Rahul', '14 Dec', 'BD-7K3M9P', '21 Dec'], 'lab' => ['Name', 'Birthday', 'Gift code', 'Valid till'], 'buttons' => []],
     ];
 }
 /** Makes the two templates and sends them to Meta (safe to run again: what exists is not made twice, what is already at Meta is not sent twice). */
-function st_wa_seed(PDO $pdo): array
+function st_wa_seed(PDO $pdo, ?array $only = null): array
 {
     $res = ['created' => [], 'submitted' => [], 'skipped' => [], 'failed' => []];
     try {
         if (!st_wa_load() || !wa_tpl_tables($pdo) || !function_exists('wa_tpl_clean') || !function_exists('wa_tpl_insert') || !function_exists('wa_tpl_create_at')) { $res['error'] = 'The WhatsApp template module is not available.'; return $res; }
         $wabas = function_exists('wa_wabas') ? wa_wabas($pdo) : [];
         foreach (st_wa_defs() as $name => $d) {
+            if ($only === null ? $name === 'tmph_store_bday' : !in_array($name, $only, true)) continue;
             $q = $pdo->prepare("SELECT id FROM wa_templates WHERE name = ? AND language = 'en'"); $q->execute([$name]); $id = (int)$q->fetchColumn();
             if (!$id) {
-                [$t, $err] = wa_tpl_clean(['name' => $name, 'language' => 'en', 'category' => 'UTILITY', 'body' => $d['body'], 'footer' => 'TM Perfume House', 'buttons' => $d['buttons'], 'examples' => ['body' => $d['ex'], 'labels' => $d['lab']], 'folder' => 'Store bills']);
+                [$t, $err] = wa_tpl_clean(['name' => $name, 'language' => 'en', 'category' => $d['category'] ?? 'UTILITY', 'body' => $d['body'], 'footer' => 'TM Perfume House', 'buttons' => $d['buttons'], 'examples' => ['body' => $d['ex'], 'labels' => $d['lab']], 'folder' => $d['folder'] ?? 'Store bills']);
                 if ($err === '' && function_exists('wa_tpl_media_check')) $err = wa_tpl_media_check($pdo, $t);
                 if ($err !== '') { $res['failed'][$name] = $err; continue; }
-                $id = wa_tpl_insert($pdo, $t, 0, 'The bill of a customer who bought in the store: bill link, and buttons to join the community and review us.', 'Utility message about one store bill.'); $res['created'][] = $name;
+                $id = wa_tpl_insert($pdo, $t, 0, $d['about'] ?? 'The bill of a customer who bought in the store: bill link, and buttons to join the community and review us.', ($d['category'] ?? 'UTILITY') === 'MARKETING' ? 'Marketing message for a store customer.' : 'Utility message about one store bill.'); $res['created'][] = $name;
             }
             $r = wa_tpl_row($pdo, $id); if (!$r) { $res['failed'][$name] = 'Could not read the saved template.'; continue; }
             if (!$wabas) { $res['skipped'][$name] = 'No WhatsApp Business Account ID yet - saved, add one and run this again.'; continue; }
@@ -1250,7 +1261,7 @@ function st_next_order_code(PDO $pdo, int $empId): array
 
 
 /** Customers whose birthday falls in the next $days days (today included), from what the store collected at billing. */
-function st_birthdays(PDO $pdo, int $days = 7): array
+function st_birthdays(PDO $pdo, int $days = 14): array
 {
     $out = [];
     try {
@@ -1264,7 +1275,7 @@ function st_birthdays(PDO $pdo, int $days = 7): array
             if ($dt === null) continue;
             $left = (int)round(($dt - $today) / 86400); if ($left > $days) continue;
             $seen[$k] = 1;
-            $out[] = ['name' => (string)$r['name'], 'phone' => (string)$r['phone'], 'bday' => $r['bday'], 'date' => date('Y-m-d', $dt), 'in_days' => $left, 'last_visit' => $r['last'], 'gifted' => st_gift_given($pdo, (string)$r['phone'], (int)date('Y', $dt))];
+            $out[] = ['name' => (string)$r['name'], 'phone' => (string)$r['phone'], 'bday' => $r['bday'], 'date' => date('Y-m-d', $dt), 'in_days' => $left, 'last_visit' => $r['last'], 'gifted' => st_gift_given($pdo, (string)$r['phone'], (int)date('Y', $dt)), 'voucher' => st_bday_voucher_for($pdo, (string)$r['phone'], (int)date('Y', $dt))];
         }
     } catch (Throwable $e) { error_log('st_birthdays: ' . $e->getMessage()); }
     usort($out, fn($a, $b) => $a['in_days'] <=> $b['in_days'] ?: strcmp($a['name'], $b['name']));
@@ -1275,4 +1286,135 @@ function st_gift_given(PDO $pdo, string $phone, int $year): bool
 {
     if ($phone === '') return false;
     try { $q = $pdo->prepare("SELECT 1 FROM st_bday_gifts WHERE phone = ? AND gift_year = ?"); $q->execute([$phone, $year]); return (bool)$q->fetchColumn(); } catch (Throwable $e) { return false; }
+}
+
+
+/* ============================== BIRTHDAY GIFT: a WhatsApp code N days before the birthday, redeemed at billing for one free 50 ml ============================== */
+
+function st_bday_defaults(): array { return ['enabled' => 1, 'send_before' => 5, 'valid_after' => 7, 'auto_wa' => 1]; }
+function st_bday_cfg(PDO $pdo): array
+{
+    $d = st_bday_defaults();
+    try { $v = $pdo->query("SELECT svalue FROM st_cs_settings WHERE skey = 'bday'")->fetchColumn(); $j = $v ? json_decode($v, true) : null; if (is_array($j)) $d = array_merge($d, $j); } catch (Throwable $e) { }
+    return ['enabled' => empty($d['enabled']) ? 0 : 1, 'auto_wa' => empty($d['auto_wa']) ? 0 : 1, 'send_before' => max(1, min(30, (int)$d['send_before'])), 'valid_after' => max(0, min(60, (int)$d['valid_after']))];
+}
+function st_bday_cfg_save(PDO $pdo, array $in): array
+{
+    $c = ['enabled' => empty($in['enabled']) ? 0 : 1, 'auto_wa' => empty($in['auto_wa']) ? 0 : 1, 'send_before' => max(1, min(30, (int)($in['send_before'] ?? 5))), 'valid_after' => max(0, min(60, (int)($in['valid_after'] ?? 7)))];
+    $pdo->prepare("INSERT INTO st_cs_settings (skey, svalue) VALUES ('bday', ?) ON DUPLICATE KEY UPDATE svalue = VALUES(svalue)")->execute([json_encode($c)]);
+    return $c;
+}
+/** BD-XXXXXX: six letters/digits that cannot be mixed up (no 0 O 1 I L). */
+function st_bday_make_code(PDO $pdo): string
+{
+    $al = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+    for ($t = 0; $t < 20; $t++) {
+        $c = 'BD-'; for ($i = 0; $i < 6; $i++) $c .= $al[random_int(0, strlen($al) - 1)];
+        $q = $pdo->prepare("SELECT 1 FROM st_bday_vouchers WHERE code = ?"); $q->execute([$c]); if (!$q->fetchColumn()) return $c;
+    }
+    return 'BD-' . strtoupper(bin2hex(random_bytes(4)));
+}
+/** What the cashier typed → the stored code form ("bd 7k3m9p", "7K3M9P" and "BD-7K3M9P" all work). */
+function st_bday_norm(string $c): string
+{
+    $c = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $c)); if (strpos($c, 'BD') === 0) $c = substr($c, 2);
+    return $c === '' ? '' : 'BD-' . $c;
+}
+function st_bday_next(string $md, ?int $today = null): ?int      // the next time MM-DD comes round (today counts), as a day timestamp
+{
+    if (!preg_match('/^(\d\d)-(\d\d)$/', $md, $m)) return null; $today = $today ?? strtotime(date('Y-m-d'));
+    foreach ([(int)date('Y', $today), (int)date('Y', $today) + 1] as $y) { if (checkdate((int)$m[1], (int)$m[2], $y)) { $t = strtotime(sprintf('%04d-%02d-%02d', $y, $m[1], $m[2])); if ($t >= $today) return $t; } }
+    return null;
+}
+/** Makes a code for every customer whose birthday is within "send_before" days and has none this year, then sends the pending ones. Safe to run again and again. */
+function st_bday_run(PDO $pdo, bool $send = true, ?int $now = null): array
+{
+    $cfg = st_bday_cfg($pdo); $out = ['made' => 0, 'sent' => 0, 'failed' => 0, 'waiting' => 0, 'off' => !$cfg['enabled']];
+    if (!$cfg['enabled']) return $out;
+    $today = strtotime(date('Y-m-d', $now ?? time())); $seen = [];
+    $rows = $pdo->query("SELECT p.phone, p.name, p.bday FROM st_bill_people p JOIN st_bills b ON b.bill_id = p.bill_id AND b.status = 'ok' WHERE p.bday <> '' AND p.declined = 0 AND p.phone <> '' ORDER BY b.created_at DESC, p.person_id DESC")->fetchAll();
+    $ins = $pdo->prepare("INSERT IGNORE INTO st_bday_vouchers (code, phone, name, bday, bday_year, valid_from, valid_to, status, wa_status, created_at) VALUES (?,?,?,?,?,?,?, 'active', 'pending', ?)");
+    foreach ($rows as $r) {
+        $ph = (string)$r['phone']; if (isset($seen[$ph])) continue; $seen[$ph] = 1;      // the newest answer of that mobile number wins
+        $dt = st_bday_next((string)$r['bday'], $today); if ($dt === null) continue;
+        $left = (int)round(($dt - $today) / 86400); if ($left > $cfg['send_before']) continue;
+        $yr = (int)date('Y', $dt); $q = $pdo->prepare("SELECT 1 FROM st_bday_vouchers WHERE phone = ? AND bday_year = ?"); $q->execute([$ph, $yr]); if ($q->fetchColumn()) continue;
+        $ins->execute([st_bday_make_code($pdo), $ph, mb_substr((string)$r['name'], 0, 120), $r['bday'], $yr, date('Y-m-d', $today), date('Y-m-d', $dt + $cfg['valid_after'] * 86400), date('Y-m-d H:i:s', $now ?? time())]);
+        if ($ins->rowCount()) $out['made']++;
+    }
+    if ($send && $cfg['auto_wa']) {
+        foreach ($pdo->query("SELECT * FROM st_bday_vouchers WHERE status = 'active' AND wa_status IN ('pending') AND valid_to >= CURDATE() ORDER BY voucher_id LIMIT 40")->fetchAll() as $v) {
+            [$ok, $why] = st_bday_send($pdo, $v);
+            if ($ok) $out['sent']++; elseif (strpos($why, 'not approved') !== false || strpos($why, 'not available') !== false) $out['waiting']++; else $out['failed']++;
+        }
+    }
+    return $out;
+}
+/** One voucher → one WhatsApp template message from the shop's own number. Returns [ok, note]; the result is saved on the voucher. */
+function st_bday_send(PDO $pdo, array $v): array
+{
+    $note = function (bool $ok, string $why, string $state) use ($pdo, $v) {
+        $pdo->prepare("UPDATE st_bday_vouchers SET wa_status = ?, wa_note = ?, wa_at = ? WHERE voucher_id = ?")->execute([$state, mb_substr($why, 0, 200), date('Y-m-d H:i:s'), (int)$v['voucher_id']]);
+        return [$ok, $why];
+    };
+    try {
+        if (!st_wa_load() || !wa_tpl_tables($pdo)) return $note(false, 'WhatsApp is not available on this server', 'pending');
+        $key = wa_key((string)$v['phone']); if ($key === '' || strlen($key) !== 10) return $note(false, 'not an Indian mobile number', 'failed');
+        $t = st_wa_tpl($pdo, 'tmph_store_bday'); if (!$t) return $note(false, 'birthday template not approved yet', 'pending');
+        $num = null; foreach ($pdo->query("SELECT * FROM wa_numbers ORDER BY id")->fetchAll() as $n) if (in_array(wa_waba_of($n), $t['ok_wabas'], true)) { $num = $n; break; }
+        if (!$num) return $note(false, 'no WhatsApp number can send this template', 'pending');
+        $c = null; try { $q = $pdo->prepare("SELECT * FROM wa_contacts WHERE phone = ?"); $q->execute([$key]); $c = $q->fetch() ?: null; } catch (Throwable $e) { }
+        if ($c && (int)($c['optout'] ?? 0) === 1) return $note(false, 'customer opted out of WhatsApp', 'failed');
+        if (!$c) { $pdo->prepare("INSERT INTO wa_contacts (phone, wa_id, name, first_seen, state, status, source) VALUES (?, ?, ?, ?, 'unassigned', 'open', '')")->execute([$key, '91' . $key, mb_substr((string)$v['name'], 0, 120), date('Y-m-d H:i:s')]); }
+        $nm = trim((string)$v['name']); $first = $nm !== '' ? explode(' ', $nm)[0] : 'ji'; if (function_exists('wa_first_name')) $first = wa_first_name($nm);
+        $dt = st_bday_next((string)$v['bday'], strtotime((string)$v['valid_from'])) ?: strtotime((string)$v['valid_to']);
+        $vars = [$first, date('j M', $dt), (string)$v['code'], date('j M Y', strtotime((string)$v['valid_to']))];
+        $r = wa_tpl_send_components($pdo, $t, $vars, (string)$num['phone_id'], []);
+        if (empty($r['ok'])) return $note(false, (string)($r['error'] ?? 'could not build the message'), 'failed');
+        $pl = ['messaging_product' => 'whatsapp', 'to' => '91' . $key, 'type' => 'template', 'template' => ['name' => $t['name'], 'language' => ['code' => $t['language']]]];
+        if (!empty($r['components'])) $pl['template']['components'] = $r['components'];
+        [$code, $d] = wa_api('POST', '/' . $num['phone_id'] . '/messages', $pl); $wamid = (string)($d['messages'][0]['id'] ?? '');
+        if ($code < 200 || $code >= 300 || $wamid === '') return $note(false, function_exists('wa_err') ? wa_err(is_array($d) ? $d : null) : 'WhatsApp did not accept the message', 'failed');
+        try { $shown = function_exists('wa_tpl_render') ? wa_tpl_render((string)$t['body'], $vars) : (string)$v['code']; $pdo->prepare("INSERT INTO wa_messages (wamid, phone, number_id, dir, mtype, body, status, who, emp_id, ts) VALUES (?, ?, ?, 'out', 'template', ?, 'sent', 'store', 0, ?)")->execute([$wamid, $key, (int)$num['id'], $shown, date('Y-m-d H:i:s')]); } catch (Throwable $e) { }
+        return $note(true, 'sent', 'sent');
+    } catch (Throwable $e) { return $note(false, mb_substr($e->getMessage(), 0, 150), 'failed'); }
+}
+/** Is this code good for a free 50 ml today? Returns ['ok' => true, 'voucher' => row] or ['ok' => false, 'error' => text]. */
+function st_bday_check(PDO $pdo, string $code, ?string $today = null): array
+{
+    $code = st_bday_norm($code); if ($code === '') return ['ok' => false, 'error' => 'Type the birthday code the customer received on WhatsApp (like BD-7K3M9P).'];
+    $today = $today ?? date('Y-m-d');
+    $q = $pdo->prepare("SELECT * FROM st_bday_vouchers WHERE code = ?"); $q->execute([$code]); $v = $q->fetch();
+    if (!$v) return ['ok' => false, 'error' => 'Code ' . $code . ' is not a birthday code of ours. Check the spelling.'];
+    if ($v['status'] === 'redeemed') return ['ok' => false, 'error' => 'This code was already used on ' . substr((string)$v['redeemed_at'], 0, 10) . ' (' . $v['name'] . ').'];
+    if ($v['status'] !== 'active') return ['ok' => false, 'error' => 'This code is cancelled.'];
+    if ($today < $v['valid_from']) return ['ok' => false, 'error' => 'This code starts on ' . date('j M Y', strtotime($v['valid_from'])) . '.'];
+    if ($today > $v['valid_to']) return ['ok' => false, 'error' => 'This code expired on ' . date('j M Y', strtotime($v['valid_to'])) . '.'];
+    if (st_gift_given($pdo, (string)$v['phone'], (int)substr($today, 0, 4))) return ['ok' => false, 'error' => $v['name'] . ' already took this year’s birthday gift.'];
+    return ['ok' => true, 'voucher' => $v];
+}
+function st_bday_public(array $v): array
+{
+    $dt = st_bday_next((string)$v['bday'], strtotime((string)$v['valid_from'])) ?: strtotime((string)$v['valid_to']);
+    return ['id' => (int)$v['voucher_id'], 'code' => (string)$v['code'], 'name' => (string)$v['name'], 'phone' => (string)$v['phone'], 'bday' => (string)$v['bday'], 'birthday' => date('j M', $dt),
+        'valid_from' => (string)$v['valid_from'], 'valid_to' => (string)$v['valid_to'], 'status' => (string)$v['status'], 'wa_status' => (string)$v['wa_status'], 'wa_note' => (string)$v['wa_note'], 'wa_at' => $v['wa_at'], 'redeemed_at' => $v['redeemed_at']];
+}
+/** Once a day by itself (after 9 AM), like the daily sync: the first request claims the day and does the work after its own answer has gone out. */
+function st_bday_daily(PDO $pdo): void
+{
+    $day = sys_get_temp_dir() . '/hrms_st_bday_day'; $try = sys_get_temp_dir() . '/hrms_st_bday_try'; $today = date('Y-m-d');
+    if ((int)date('G') < 9 || @file_get_contents($day) === $today) return;
+    if (is_file($try) && time() - (int)@filemtime($try) < 1800) return;
+    @file_put_contents($try, (string)time());
+    register_shutdown_function(function () use ($pdo, $day, $today) {
+        if (function_exists('hrms_release')) hrms_release(); elseif (function_exists('fastcgi_finish_request')) @fastcgi_finish_request();
+        @ignore_user_abort(true); @set_time_limit(120);
+        try { ensure_st_tables($pdo); $r = st_bday_run($pdo, true); if (!$r['waiting'] && !$r['failed']) @file_put_contents($day, $today); else error_log('st_bday_daily: ' . json_encode($r)); }
+        catch (Throwable $e) { error_log('st_bday_daily: ' . $e->getMessage()); }
+    });
+}
+
+function st_bday_voucher_for(PDO $pdo, string $phone, int $year): ?array
+{
+    try { $q = $pdo->prepare("SELECT * FROM st_bday_vouchers WHERE phone = ? AND bday_year = ?"); $q->execute([$phone, $year]); $v = $q->fetch(); return $v ? st_bday_public($v) : null; } catch (Throwable $e) { return null; }
 }
