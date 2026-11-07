@@ -62,10 +62,25 @@ const LAYOUT_BUILD = '261102.2';   // shown under your name in the sidebar
   } catch (e) { /* the page keeps its own look */ }
 })();
 
+// Smaller on phones: the page is laid out at 90% size (one viewport setting, so every screen shrinks together). WhatsApp pages and frames are left alone.
+(function () {
+  try {
+    if (/whatsapp|\/wa_|wa_chats|wa_one|my_chats/i.test(location.pathname + location.search)) { document.documentElement.classList.add('wa-skip'); return; }   // WhatsApp: not touched (also skips the compact CSS)
+    if (window.self !== window.top) return;                                  // a frame follows its top page
+    if (!window.matchMedia('(max-width:820px)').matches) return;
+    var m = document.querySelector('meta[name="viewport"]'); if (!m) return;
+    var c = m.getAttribute('content') || 'width=device-width';
+    if (/initial-scale=0\.9/.test(c)) return;
+    c = c.replace(/,?\s*(initial-scale|minimum-scale|maximum-scale|user-scalable)=[^,]*/g, '');
+    m.setAttribute('content', c + ', initial-scale=0.9, minimum-scale=0.5');
+    document.documentElement.classList.add('tm-compact');
+  } catch (e) { /* the page keeps its normal size */ }
+})();
+
 // Compact phone layout: one shared stylesheet for every page, and every table gets its own sideways-scroll box on small screens.
 (function () {
   try {
-    const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = 'assets/css/mobile.css?v=6';
+    const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = 'assets/css/mobile.css?v=7';
     document.head.appendChild(l);
     const mq = window.matchMedia('(max-width:820px)');
     const wrap = () => {
