@@ -60,9 +60,12 @@ window.OrderHub = (function () {
 .oh-sk{height:14px;border-radius:7px;background:linear-gradient(90deg,#eceef2,#f6f7f9,#eceef2);margin:10px 0;animation:ohs 1.1s infinite linear;background-size:200% 100%}@keyframes ohs{to{background-position:-200% 0}}
 .oh-toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#14161a;color:#fff;padding:11px 18px;border-radius:14px;z-index:99999;font-size:14px}
 .oh-img{max-width:100%;border-radius:12px;margin-top:6px}
+.oh-ids{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:8px;margin-top:10px}.oh-ids div{background:#f6f7f9;border-radius:10px;padding:7px 10px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:0 8px;align-items:center;min-width:0}.oh-ids small{grid-column:1/-1;font-size:11px;color:#7a8499}.oh-ids b{font-size:13px;overflow-wrap:anywhere}
+.oh-tx{border:1px solid #eef0f3;border-radius:10px;padding:7px 10px;margin-top:6px;font-size:13px}.oh-tx em{color:#7a8499;font-style:normal;font-size:12px}.oh-tx small{display:block;color:#6b7280}.oh-tx small.bad{color:#b42318}.oh-rc{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;margin-top:6px;word-break:break-all}.oh-rc em{color:#7a8499;font-style:normal}
 @media (max-width:900px){.oh-cols{grid-template-columns:1fr}.oh-big{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:700px){.oh-bn{padding:6px 10px;font-size:12px}.oh-bar{gap:6px;margin-top:7px}.oh-ov{padding:0;align-items:stretch}.oh-pn{width:100%;height:100%;border-radius:0}.oh-g{grid-template-columns:repeat(2,minmax(0,1fr))}.oh-hd{padding:10px 12px 8px}.oh-bd{padding:10px 12px}.oh-tabs{padding:8px 12px 0}.oh-ft{padding:8px 12px calc(8px + env(safe-area-inset-bottom))}.oh-ft .sp{display:none}}
-/* Customers list */
+/* Customers strip + list */
+.ohs-w{margin:0 0 14px}.ohs-w .ohs{margin:0 0 8px}.ohs{display:flex;gap:10px;flex-wrap:wrap;align-items:stretch;text-decoration:none;color:inherit}.ohs>div{background:#fff;border:1px solid #eceef2;border-radius:14px;padding:9px 14px;min-width:120px}.ohs .ohs-m{background:#14161a;color:#fff;border-color:#14161a}.ohs small{display:block;font-size:11.5px;opacity:.75}.ohs b{font-size:20px;line-height:1.2}.ohs-sy{flex-basis:100%;display:flex;gap:6px;flex-wrap:wrap;margin-top:-4px}.ohs-sy .oh-chip{margin:0;font-weight:700;font-size:12px}.ohs-go{align-self:center;margin-left:auto;font-weight:700;font-size:13px;color:#ea580c}
 .ohc-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}.ohc-tiles div{background:#fff;border:1px solid #eceef2;border-radius:16px;padding:12px 14px}.ohc-tiles small{display:block;font-size:12px;color:#7a8499}.ohc-tiles b{font-size:22px}
 .ohc-bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center}.ohc-bar input,.ohc-bar select{border:1px solid #e3e6ec;border-radius:12px;padding:10px 12px;font:inherit;background:#fff;min-height:42px}.ohc-bar input{flex:1;min-width:200px}
 .ohc-f{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}.ohc-f button{border:1px solid #e3e6ec;background:#fff;border-radius:99px;padding:8px 14px;font:700 13px inherit;cursor:pointer}.ohc-f button.on{background:#14161a;color:#fff;border-color:#14161a}
@@ -100,7 +103,7 @@ window.OrderHub = (function () {
     if (!silent && S.dirty && window.OrderHub && typeof OrderHub.onClose === 'function') { try { OrderHub.onClose(S.d); } catch (e) { } }
   }
   async function load(S, req, quiet) {
-    S.req = req; S.items = null;
+    S.req = req; S.items = null; S.pay = null;
     if (!quiet) { const b = S.ov.querySelector('[data-bd]'); if (b && !S.d) b.innerHTML = '<div class="oh-sk"></div><div class="oh-sk" style="width:70%"></div>'; }
     try {
       const q = {}; ['id', 'case', 'phone', 'order', 'store', 'sid', 'bill'].forEach((k) => { if (req[k]) q[k] = req[k]; });
@@ -108,6 +111,7 @@ window.OrderHub = (function () {
     } catch (e) { if (CUR !== S) return; S.ov.querySelector('[data-bd]').innerHTML = '<div class="oh-empty"><b>Cannot open this</b>' + esc(errMsg(e)) + '</div>'; S.ov.querySelector('.oh-r1 h2').textContent = 'Not found'; return; }
     if (CUR !== S) return; draw(S);
     if (S.d.order && !S.d.order.manual) loadItems(S);
+    if (S.d.order && S.d.order.store && S.d.order.shopify_id && !S.d.order.manual) loadPay(S);
   }
   async function loadItems(S) {
     const o = S.d && S.d.order; if (!o || S.items) return; S.items = { line_items: null };
@@ -116,6 +120,38 @@ window.OrderHub = (function () {
     const x = S.ov.querySelector('[data-items]'); if (x) x.innerHTML = itemsHtml(S);
   }
 
+  async function loadPay(S) {
+    const o = S.d && S.d.order; if (!o || S.pay) return; S.pay = { loading: true };
+    try { const r = await api.get('dp.dsp_pay', { store: o.store, sid: o.shopify_id }); if (CUR !== S) return; S.pay = r; }
+    catch (e) { if (CUR !== S) return; S.pay = { err: errMsg(e) }; }
+    const x = S.ov.querySelector('[data-pay]'); if (x) x.innerHTML = payHtml(S); const g = S.ov.querySelector('[data-gw]'); if (g) g.textContent = gatewayOf(S) || '—';
+  }
+  const GW_RE = /gokwik|kwik|razorpay|cashfree|paytm|phonepe|payu|snapmint|simpl|cashe|zestmoney|upi|cod/i;
+  function gatewayOf(S) {
+    const o = S.d.order, pay = (o && o.pay) || {}, p = S.pay || {};
+    const names = (p.gateways && p.gateways.length ? p.gateways.join(', ') : '') || pay.gateway || '';
+    if (names) return names;
+    const tg = (p.tags && p.tags.length ? p.tags : String((o && o.tags) || '').split(',').map((x) => x.trim())).filter((x) => /gokwik|kwik|razorpay|cashfree|paytm|phonepe|payu|snapmint|simpl|ppcod|upi/i.test(x));
+    return tg.join(', ') || (o && o.manual ? 'UPI / QR' : '');
+  }
+  function payHtml(S) {
+    const p = S.pay; if (!p) return ''; if (p.loading) return '<div class="oh-sub" style="margin-top:8px">Reading the payment from the gateway…</div>';
+    if (p.err) return '<div class="oh-sub" style="margin-top:8px">Could not read the gateway details: ' + esc(p.err) + ' <button type="button" class="oh-ib sm" data-payretry>Try again</button></div>';
+    let h = '';
+    const ids = []; if (p.kwik) p.kwik.split(',').forEach((x) => { x = x.trim(); if (x) ids.push(['KWIK ID', x]); });
+    (p.tx || []).forEach((t) => { if (t.payment_id) ids.push([(t.gateway || 'Payment') + ' payment ID', t.payment_id]); if (t.auth) ids.push(['Authorization', t.auth]); if (t.id) ids.push(['Shopify transaction', t.id]); });
+    (p.attrs || []).forEach((a) => { if (/utr|txn|transaction|payment|rrn|ref|upi|kwik/i.test(a.k) && a.v) ids.push([a.k, a.v]); });
+    if (p.reference) ids.push(['Reference', p.reference]);
+    const seen = {}; const uniq = ids.filter((x) => { const k = x[1]; if (seen[k]) return false; seen[k] = 1; return true; });
+    if (uniq.length) h += '<div class="oh-ids">' + uniq.map((x) => '<div><small>' + esc(x[0]) + '</small><b>' + esc(x[1]) + '</b><button type="button" class="oh-ib sm" data-copy="' + esc(x[1]) + '">Copy</button></div>').join('') + '</div>';
+    if ((p.tx || []).length) h += '<div class="oh-sub" style="margin-top:8px"><b>Gateway transactions</b></div>' + p.tx.map((t) => '<div class="oh-tx"><div><b>' + esc([t.gateway, t.kind, t.status].filter(Boolean).join(' · ')) + '</b> <span>' + (t.amount ? rs(t.amount) : '') + '</span> <em>' + esc(fdt(t.at)) + '</em></div>'
+      + (t.message ? '<small>' + esc(t.message) + '</small>' : '') + (t.error ? '<small class="bad">Error: ' + esc(t.error) + '</small>' : '') + (t.test ? '<small>TEST payment</small>' : '')
+      + (Object.keys(t.receipt || {}).length ? '<details><summary>Everything the gateway sent</summary><div class="oh-rc">' + Object.keys(t.receipt).map((k) => '<span><em>' + esc(k) + '</em> ' + esc(t.receipt[k]) + '</span>').join('') + '</div></details>' : '') + '</div>').join('');
+    else if (p.tx_ok) h += '<div class="oh-sub" style="margin-top:8px">The gateway has no transaction on this order (COD, or not paid yet).</div>';
+    const other = (p.attrs || []).filter((a) => !/^_/.test(a.k)).slice(0, 12);
+    if (other.length) h += '<details style="margin-top:8px"><summary class="oh-sub" style="cursor:pointer">Order notes from checkout (' + other.length + ')</summary><div class="oh-rc">' + other.map((a) => '<span><em>' + esc(a.k) + '</em> ' + esc(a.v) + '</span>').join('') + '</div></details>';
+    return h;
+  }
   function draw(S) {
     const d = S.d, p = d.parcel, c = d.customer, o = d.order, bill = d.bill;
     const title = bill ? 'Store bill ' + esc(bill.bill_no) : p ? esc(p.order) : 'Customer';
@@ -137,7 +173,7 @@ window.OrderHub = (function () {
   function drawBody(S) {
     const d = S.d, bd = S.ov.querySelector('[data-bd]');
     if (S.tab === 'chat') {
-      const ph = d.phone; if (!ph) { bd.innerHTML = '<div class="oh-empty"><b>No phone number</b>This order has no customer number, so there is no chat.</div>'; return; }
+      const ph = d.chat_phone || d.phone; if (!ph) { bd.innerHTML = '<div class="oh-empty"><b>No phone number</b>This order has no customer number, so there is no chat.</div>'; return; }
       if (S.chatPhone !== ph) { bd.innerHTML = '<div class="oh-chat"><iframe title="Customer chat" allow="microphone" src="wa_one.html?phone=' + encodeURIComponent(ph) + '"></iframe></div>'; S.chatPhone = ph; }
       return;
     }
@@ -176,11 +212,11 @@ window.OrderHub = (function () {
     const pay = o.pay || {}, wm = o.wm, com = o.com, st = String(pay.status || '').replace(/_/g, ' ');
     const cod = pay.outstanding > 0 ? rs(pay.outstanding) + ' COD' : (wm && wm.cod > 0 ? rs(wm.cod) + ' COD' : 'Prepaid');
     h += '<div class="oh-sec"><div class="t">💳 Payment &amp; gateway</div><div class="oh-g">' + kv('Total', rs(pay.total != null ? pay.total : (wm && wm.total))) + kv('To collect', esc(cod), pay.outstanding > 0 || (wm && wm.cod > 0) ? 'bad' : 'ok')
-      + kv('Payment', esc(st || (wm ? (wm.pay === 'cod' ? 'COD' : wm.pay === 'partial' ? 'Part paid' : 'Paid') : '—'))) + kv('Gateway', esc(pay.gateway || (o.manual ? 'UPI / QR' : '—')))
+      + kv('Payment', esc(st || (wm ? (wm.pay === 'cod' ? 'COD' : wm.pay === 'partial' ? 'Part paid' : 'Paid') : '—'))) + kv('Gateway', '<span data-gw>' + esc(gatewayOf(S) || '—') + '</span>')
       + kv(o.manual ? 'UTR' : 'Transaction ID', esc((wm && wm.utr) || (pay.ref || '').split(',')[0] || '—')) + kv('Finance', pay.paid_amt != null ? rs(pay.paid_amt) + ' in' + (pay.paid_on ? ' · ' + esc(fd(pay.paid_on)) : '') : (pay.closed ? esc(pay.closed) : 'not received yet'), pay.paid_amt != null ? 'ok' : 'am')
       + kv('Order code', esc(o.code || '—')) + kv('ML', o.ml != null ? o.ml + ' ml' : '—') + (pay.refund ? kv('Refund', esc(pay.refund), 'bad') : '') + '</div>';
     if (wm) { const rd = wm.read || {}; h += '<div class="oh-sub" style="margin-top:8px">' + (wm.paid ? 'Paid ' + rs(wm.paid) + (wm.cod ? ' + ' + rs(wm.cod) + ' on delivery' : '') : 'Full COD') + (rd.amount ? ' · Claude read ' + rs(rd.amount) + (rd.date ? ' on ' + esc(rd.date) : '') + (rd.payer ? ' from ' + esc(rd.payer) : '') : '') + '</div>' + (wm.shot ? '<div data-shot><button type="button" class="oh-ib sm" data-shotbtn style="margin-top:6px">🖼 Show payment screenshot</button></div>' : ''); }
-    if ((pay.tx || []).length) h += '<div class="oh-sub" style="margin-top:8px">' + pay.tx.map((t) => esc([t.gateway, t.kind, t.status, t.amount !== '' && t.amount != null ? rs(t.amount) : '', t.payment_id, fdt(t.at)].filter(Boolean).join(' · '))).join('<br>') + '</div>';
+    if (!o.manual) h += '<div data-pay>' + payHtml(S) + (S.pay ? '' : ((pay.tx || []).length ? '<div class="oh-sub" style="margin-top:8px">' + pay.tx.map((t) => esc([t.gateway, t.kind, t.status, t.amount !== '' && t.amount != null ? rs(t.amount) : '', t.payment_id, fdt(t.at)].filter(Boolean).join(' · '))).join('<br>') + '</div>' : '')) + '</div>';
     h += '</div>';
     h += '<div class="oh-sec"><div class="t">👤 Salesperson &amp; commission</div><div class="oh-g">' + kv('Took the order', esc(o.sp || 'not allocated')) + kv('Type', o.sp_type ? (o.sp_type === 'campaign' ? 'Campaign' : 'Query') : '—')
       + kv('Commission', com ? rs(com.amt) + (com.pct ? ' · ' + com.pct + '%' : '') : 'not counted yet', com ? 'ok' : 'am') + (wm ? kv('Manual order by', esc(wm.by || '—')) : '') + (o.wa ? kv('Chat with', esc(o.wa.holder || '—')) : '') + '</div>'
@@ -216,6 +252,7 @@ window.OrderHub = (function () {
     const ini = (c.name || '?').trim().split(/\s+/).slice(0, 2).map((x) => x[0]).join('').toUpperCase() || '?';
     const chn = c.channel === 'both' ? 'Store + Online' : c.channel === 'store' ? 'Store' : c.channel === 'online' ? 'Online' : '';
     h += '<div class="oh-who"><div class="oh-av">' + esc(ini) + '</div><div style="min-width:0"><h3>' + esc(c.name || 'Customer') + '</h3><div class="ph"><a href="tel:+91' + esc(c.phone) + '">' + esc(tel(c.phone)) + '</a><button type="button" class="oh-ib sm" data-copy="' + esc(c.phone) + '">Copy</button>' + (chn ? '<span class="oh-chip ' + (c.channel === 'both' ? 'pu' : 'info') + '" style="margin:0">' + chn + '</span>' : '') + '</div></div></div>';
+    if ((c.phones || []).length > 1) h += '<div class="oh-sub" style="margin:-4px 0 8px">Also uses: ' + c.phones.slice(1).map((x) => esc(tel(x))).join(', ') + '</div>';
     if ((c.names_list || []).length > 1) h += '<div class="oh-sub" style="margin:-4px 0 10px">Also saved as: ' + c.names_list.slice(1).map(esc).join(', ') + '</div>';
     if ((c.flags || []).length) h += '<div style="margin-bottom:10px">' + c.flags.map((f) => '<span class="oh-chip ' + esc(f[0]) + '">' + (f[0] === 'bad' ? '🚩 ' : f[0] === 'warn' ? '⚠ ' : f[0] === 'ok' ? '⭐ ' : '') + esc(f[1]) + '</span>').join('') + '</div>';
     h += '<div class="oh-big"><div><small>Total orders</small><b>' + c.orders_n + '</b></div><div><small>Total spent</small><b>' + rs(c.spent) + '</b></div><div><small>Average order</small><b>' + rs(c.aov) + '</b></div><div><small>Last order</small><b>' + (c.days_since == null ? '—' : c.days_since === 0 ? 'today' : c.days_since + ' d ago') + '</b></div></div>';
@@ -245,6 +282,7 @@ window.OrderHub = (function () {
       try { await api.get('dp.dsp_live', { id: p.id, force: 1 }); S.dirty = true; await load(S, S.req, true); toast('Courier news updated'); } catch (er) { toast(errMsg(er)); b.disabled = false; b.textContent = '↻ Ask Shiprocket now'; }
       return;
     }
+    if (t.closest('[data-payretry]')) { S.pay = null; loadPay(S); const x = S.ov.querySelector('[data-pay]'); if (x) x.innerHTML = payHtml(S); return; }
     const sb = t.closest('[data-shotbtn]');
     if (sb && S.d.parcel) { sb.disabled = true; sb.textContent = 'Loading…';
       try { const r = await api.get('dp.dsp_card_shot', { id: S.d.parcel.id }); sb.parentNode.innerHTML = '<img class="oh-img" alt="Payment screenshot" src="data:' + esc(r.mime) + ';base64,' + String(r.b64).replace(/[^A-Za-z0-9+/=]/g, '') + '">'; } catch (er) { sb.textContent = errMsg(er); }
@@ -283,5 +321,20 @@ window.OrderHub = (function () {
     load(); return { refresh: () => load(true) };
   }
 
-  return { open, close, customers };
+  /* the strip at the top of the Dispatch page: how many customers we have in all */
+  function summary(el) {
+    css(); el.classList.add('ohs-w'); let busy = false;
+    async function load() {
+      if (busy) return; busy = true;
+      try {
+        const d = await api.get('dp.dsp_cust_list', { totals: 1 }); const n = (x) => Number(x || 0).toLocaleString('en-IN');
+        el.innerHTML = '<a class="ohs" href="customers.html" title="Open the Customers list"><div class="ohs-m"><small>👥 Total customers</small><b>' + n(d.people) + '</b></div><div><small>Repeat (2+ orders)</small><b>' + n(d.repeat) + '</b></div><div><small>New in last 30 days</small><b>' + n(d.new30) + '</b></div><div><small>Store + Online</small><b>' + n(d.both) + '</b></div><div><small>With a risk flag</small><b>' + n(d.risk) + '</b></div><div><small>Their total spend</small><b>' + rs(d.spent) + '</b></div><span class="ohs-go">All customers →</span></a>'
+          + ((d.sync || []).length ? '<div class="ohs-sy">' + d.sync.map((x) => '<span class="oh-chip ' + (x.state === 'ok' ? 'ok' : x.state === 'bad' ? 'bad' : x.state === 'warn' ? 'warn' : 'info') + '" title="' + esc(x.text) + '"><b>' + (x.state === 'ok' ? '●' : x.state === 'bad' ? '✕' : '▲') + ' ' + esc(x.label) + '</b>' + (x.state === 'ok' ? '' : ' · ' + esc(x.text)) + '</span>').join('') + '</div>' : '');
+      } catch (e) { el.innerHTML = ''; }
+      busy = false;
+    }
+    load(); return { refresh: load };
+  }
+
+  return { open, close, customers, summary };
 })();
