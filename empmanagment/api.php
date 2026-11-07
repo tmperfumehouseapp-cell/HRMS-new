@@ -18410,6 +18410,7 @@ $action = $_GET['action'] ?? '';
 if (is_file(__DIR__ . '/brain.php')) { require_once __DIR__ . '/brain.php'; }
 if (is_file(__DIR__ . '/price_charts.php')) { require_once __DIR__ . '/price_charts.php'; }   // ONE price chart section (perfume / attar / shower gel / others by total ml) for the cart, the bot and commission; answers pc.* itself   // the company brain: ONE Claude door + scopes (company / customer / internal); every module below can use it
 if (strpos((string)$action, 'leader.') === 0) { require __DIR__ . '/leader_pay.php'; }
+if (strpos((string)$action, 'lh.') === 0) { require __DIR__ . '/leader_helper.php'; }   // 👥 Leaders Helper: fixed salary, daily checklist, daily payout
        if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo)\./', (string)$action)) { require __DIR__ . '/wa.php'; }          // wq. = WhatsApp Sales (wq.php, loaded by wa.php → wa_more.php)
 
 // Phone reminders need no cron: once a minute, whichever request comes in
