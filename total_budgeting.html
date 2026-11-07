@@ -632,6 +632,12 @@
     return '<div class="todo"><b>Still to define: ' + todo.length + ' ' + (todo.length === 1 ? 'person has' : 'people have') + ' no salary or commission yet</b> <span class="hint">They count as ₹0 until you define them. Click a name to set how they are paid.</span><div class="chips">'
       + todo.slice(0, 40).map(r => '<span class="pay no" data-setup="' + r.empId + '">' + esc(r.name) + ' · ' + GL[r.grp] + '</span>').join('') + (todo.length > 40 ? '<span class="hint">+ ' + (todo.length - 40) + ' more (use the search box)</span>' : '') + '</div></div>';
   }
+  /* make someone an ex-employee: login off, out of every list and out of the budget; seats and open tasks go to Handover */
+  async function exitEmployee(id, name) {
+    if (!confirm('Make ' + name + ' an ex-employee?\n\nTheir login stops working, and they are removed from Total Budgeting, the store and every list. Their seats and open tasks go to Handover so you can give them to someone. Nothing is deleted: you can Rejoin them from Ex-Employees.')) return;
+    try { const r = await api.post('employees.delete', { employee_id: id }); S.msg = r.message || (name + ' moved to Ex-Employees.'); S.msgBad = false; S.sel.delete(id); await load(); }
+    catch (err) { say((err && err.message) || 'Could not do that.', true); }
+  }
   /* Pay setup: group, how they are paid (fixed / commission / both), the salary, and the rule of that group */
   function setupPopup(empId) {
     const M = S.M, r = M.rowBy[empId], p = M.people.find(x => x.id === empId); if (!r || !p) return;
@@ -650,7 +656,7 @@
         + '<label>Pay group</label><select id="suG">' + [['sales', 'Sales (online)'], ['retail', 'Retail wholesale'], ['store', 'Store (offline)'], ['other', 'Other']].map(x => '<option value="' + x[0] + '"' + (g === x[0] ? ' selected' : '') + '>' + x[1] + '</option>').join('') + '</select>'
         + '<label>How is this person paid?</label><div class="opts">' + opt('fixed', 'Fixed salary') + opt('comm', 'Commission based') + opt('both', 'Fixed + commission') + '</div>'
         + (pt === 'comm' ? '' : '<label>Fixed monthly salary (₹)</label><input type="text" id="suSal" inputmode="decimal" value="' + esc(sal) + '" placeholder="e.g. 20000">') + comm
-        + '<div id="suE"></div></div><div class="pk-f"><span class="hint">Today: ' + esc(pi.t) + '</span><button type="button" class="pk-go" id="suGo">Save</button></div></div>';
+        + '<div id="suE"></div></div><div class="pk-f"><button type="button" class="pk-go" id="suExit" style="background:#fff;color:#b3261e;border:1px solid #f3c5bf" title="No longer working here">Make ex-employee…</button><span class="hint">Today: ' + esc(pi.t) + '</span><button type="button" class="pk-go" id="suGo">Save</button></div></div>';
     };
     let g0 = r.grp === 'leader' ? 'other' : r.grp; draw(g0);
     const cur = () => ({ sal: (ov.querySelector('#suSal') || {}).value, rp: (ov.querySelector('#suR') || {}).value, du: (ov.querySelector('#suD') || {}).checked });
@@ -661,6 +667,7 @@
       else if (e.target.id === 'suG') { g0 = e.target.value; draw(g0, c.sal, c.rp, g0 === 'store' ? true : c.du); }
     });
     ov.addEventListener('click', async (e) => {
+      if (e.target.id === 'suExit') { close(); exitEmployee(empId, p.name); return; }
       if (e.target.id !== 'suGo') return; const g = ov.querySelector('#suG').value, c = cur(), E = ov.querySelector('#suE'), btn = e.target;
       const sal = pt === 'comm' ? 0 : Number(String(c.sal || '').replace(/,/g, ''));
       if (pt !== 'comm' && !(sal > 0)) { E.innerHTML = '<div class="err">Type the fixed monthly salary, or choose “Commission based”.</div>'; return; }

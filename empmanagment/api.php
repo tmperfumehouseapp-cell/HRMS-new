@@ -337,7 +337,7 @@ function refresh_auth(array $payload): array
     if ($uid <= 0) return $payload;
     if (!array_key_exists($uid, $cache)) {
         try {
-            $st = $pdo->prepare("SELECT username, role, employee_id FROM users WHERE user_id = ? LIMIT 1");
+            $st = $pdo->prepare("SELECT u.username, u.role, u.employee_id, e.status AS emp_status FROM users u LEFT JOIN employees e ON e.employee_id = u.employee_id WHERE u.user_id = ? LIMIT 1");
             $st->execute([$uid]);
             $cache[$uid] = $st->fetch() ?: null;
         } catch (PDOException $e) {
@@ -346,6 +346,7 @@ function refresh_auth(array $payload): array
     }
     $row = $cache[$uid];
     if ($row === null) json_response(['error' => 'This login no longer exists. Please log in again.'], 401);
+    if ($row && (string)($row['emp_status'] ?? '') === 'ex' && (string)$row['role'] !== 'Admin') json_response(['error' => 'This account is no longer active: the employee has left.'], 401);
     if ($row) {
         $payload['role'] = (string)$row['role'];
         $payload['employee_id'] = $row['employee_id'];
@@ -427,6 +428,7 @@ function action_page_perms(string $action): array
         'addons.' => ['allocation'],                    // Order Allocation: add-ons
         'employees.list' => ['dashboard', 'leave_requests', 'documents', 'agreements', 'approvals', 'targets', 'performance', 'commission', 'allocation'],
         'st_team.month' => ['commission'],               // Total Budgeting reads each store person's daily commission (same chart, no over-target extra)
+        'employees.delete' => ['commission'],   // make an ex-employee from Total Budgeting / the person card (still Admin / HR only)
         'employees.set_salary' => ['commission'], 'penalties.apply' => ['commission'], 'penalties.waive' => ['commission'], 'penalties.rules' => ['commission'],   // Total Budgeting: set a salary, add / remove a penalty (still Admin / HR only)
         'departments.save' => ['commission'], 'departments.delete' => ['commission'],   // create / rename / delete a section from Total Employees (still Admin / HR only)
         'departments.list' => ['commission'],            // Total Budgeting → Total Employees lists every department
@@ -18671,6 +18673,10 @@ switch ($action) {
         if (!$ok) {
             json_response(['error' => 'Invalid username or password.'], 401);
         }
+        if (!empty($user['employee_id']) && (string)$user['role'] !== 'Admin') {      // an ex-employee cannot log in
+            $es = $pdo->prepare("SELECT status FROM employees WHERE employee_id = ?"); $es->execute([(int)$user['employee_id']]);
+            if ((string)$es->fetchColumn() === 'ex') json_response(['error' => 'This account is no longer active: the employee has left.'], 401);
+        }
         if (!$isHash) {
             try { $pdo->prepare("UPDATE users SET password_hash = ? WHERE user_id = ?")->execute([password_hash((string)$password, PASSWORD_BCRYPT), $user['user_id']]); } catch (PDOException $e) {}
         }
@@ -19435,11 +19441,25 @@ switch ($action) {
         require_role(['Admin', 'HR'], $auth);
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
         $input = json_input();
-        $id = $input['employee_id'] ?? null;
+        $id = (int)($input['employee_id'] ?? 0);
         if (!$id) json_response(['error' => 'employee_id is required.'], 422);
-        $stmt = $pdo->prepare("UPDATE employees SET status = 'ex', left_at = NOW() WHERE employee_id = ?");
-        $stmt->execute([$id]);
-        json_response(['message' => 'Employee moved to Ex-Employees.']);
+        $q = $pdo->prepare("SELECT full_name FROM employees WHERE employee_id = ? AND status != 'ex'"); $q->execute([$id]); $nm = $q->fetchColumn();
+        if ($nm === false) json_response(['error' => 'This employee is already an ex-employee, or was not found.'], 404);
+        $pdo->prepare("UPDATE employees SET status = 'ex', left_at = NOW() WHERE employee_id = ?")->execute([$id]);
+        // What belongs to a CURRENT employee only goes with them. Their login stops working at once (see refresh_auth / login). Nothing is deleted from the database.
+        try { $pdo->prepare("DELETE FROM st_duty WHERE emp_id = ?")->execute([$id]); } catch (Throwable $e) {}        // no longer in the store POS "Billed by" list
+        try {                                                                                                        // Total Budgeting: pay setup and leader link
+            $c = json_decode((string)setting_get($pdo, 'budget_cfg', ''), true);
+            if (is_array($c)) { $ch = false;
+                if (isset($c['people'][(string)$id])) { unset($c['people'][(string)$id]); $ch = true; }
+                foreach ((array)($c['leader_map'] ?? []) as $ln => $eid) if ((int)$eid === $id) { unset($c['leader_map'][$ln]); $ch = true; }
+                if ($ch) setting_set($pdo, 'budget_cfg', json_encode($c)); }
+        } catch (Throwable $e) {}
+        $seats = 0; $tasks = 0;                                                                                      // seats and open work are NOT deleted: they go to the Handover list for a new owner
+        try { $s = $pdo->prepare("SELECT COUNT(*) FROM bd_holders WHERE emp_id = ?"); $s->execute([$id]); $seats = (int)$s->fetchColumn();
+              $s = $pdo->prepare("SELECT COUNT(*) FROM bd_tasks WHERE owner_emp = ? AND status IN ('open','unowned') AND task_date >= CURDATE()"); $s->execute([$id]); $tasks = (int)$s->fetchColumn(); } catch (Throwable $e) {}
+        json_response(['message' => $nm . ' moved to Ex-Employees. Their login is switched off and they are out of Total Budgeting, the store and every list.'
+            . ($seats || $tasks ? ' They still hold ' . $seats . ' seat' . ($seats === 1 ? '' : 's') . ' and ' . $tasks . ' open task' . ($tasks === 1 ? '' : 's') . ': give them to someone in Handover.' : ''), 'seats' => $seats, 'tasks' => $tasks]);
         break;
     }
 
