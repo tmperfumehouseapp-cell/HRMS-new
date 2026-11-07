@@ -68,8 +68,20 @@ function wmo_split(int $totalP, array $weights): array
     }
     return $out;
 }
-/** Query / Campaign for the allocation, from the chat's source. */
-function wmo_type_of(array $c): string { return ((string)($c['source'] ?? '')) === 'campaign' ? 'campaign' : 'query'; }
+/** Query / Campaign for the allocation: the same rule as every automatic allocation (order_chat_type: campaign number, Campaign / Community chat,
+ *  or our campaign sent in the 7 days before). Falls back to the chat's source saved on the order. */
+function wmo_alloc_type(PDO $pdo, array $r): string
+{
+    if (function_exists('order_chat_type')) {
+        try {
+            try { $q = $pdo->prepare("SELECT c.phone, c.source, COALESCE(n.camp_tag, 0) AS camp_tag FROM wa_contacts c LEFT JOIN wa_numbers n ON n.id = c.last_number_id WHERE c.phone = ?"); $q->execute([(string)$r['phone']]); }
+            catch (Throwable $e) { $q = $pdo->prepare("SELECT phone, source, 0 AS camp_tag FROM wa_contacts WHERE phone = ?"); $q->execute([(string)$r['phone']]); }
+            $c = $q->fetch(PDO::FETCH_ASSOC) ?: ['phone' => (string)$r['phone'], 'source' => (string)$r['src']];
+            return order_chat_type($pdo, $c, time());
+        } catch (Throwable $e) { }
+    }
+    return in_array((string)$r['src'], ['campaign', 'community'], true) ? 'campaign' : 'query';
+}
 function wmo_emp(PDO $pdo, int $id): array
 {
     if ($id <= 0) return ['name' => '', 'tag' => ''];
@@ -185,7 +197,7 @@ function wmo_finalize(PDO $pdo, array $r, array $cust): string
            'fulfillment_status' => 'unfulfilled', 'tags' => implode(', ', $tags), 'pay_ref' => (string)$r['utr']];
     foreach (['ensure_shop_orders_table', 'ensure_order_allocations_table', 'ensure_order_address_table', 'ensure_order_phones_table'] as $__f) if (function_exists($__f)) { try { $__f($pdo); } catch (Throwable $e) { } }      // the tables the order lands in exist
     orders_upsert($pdo, $store, [$row]);
-    try { $pdo->prepare("INSERT INTO order_allocations (source, order_id, house, order_type, employee_id, is_direct, allocated_by) VALUES (?, ?, 'tmph', ?, ?, 0, 'WhatsApp manual order') ON DUPLICATE KEY UPDATE order_type = VALUES(order_type), employee_id = VALUES(employee_id)")->execute([$store, (string)$sid, (string)$r['src'] === 'campaign' ? 'campaign' : 'query', (int)$r['assign_emp']]); } catch (Throwable $e) { error_log('wmo alloc: ' . $e->getMessage()); }
+    try { $pdo->prepare("INSERT INTO order_allocations (source, order_id, house, order_type, employee_id, is_direct, allocated_by) VALUES (?, ?, 'tmph', ?, ?, 0, 'WhatsApp manual order') ON DUPLICATE KEY UPDATE order_type = VALUES(order_type), employee_id = VALUES(employee_id)")->execute([$store, (string)$sid, wmo_alloc_type($pdo, $r), (int)$r['assign_emp']]); } catch (Throwable $e) { error_log('wmo alloc: ' . $e->getMessage()); }
     try {
         $extra = array_values(array_unique(array_filter([$cust['phone2'], $cust['phone'] !== $key ? $cust['phone'] : ''])));
         if ($extra) $pdo->prepare("INSERT INTO order_extra_phones (source, order_id, order_name, phone, updated_by) VALUES (?, ?, ?, ?, 'Customer link') ON DUPLICATE KEY UPDATE phone = VALUES(phone)")->execute([$store, (string)$sid, (string)$r['order_no'], implode(', ', $extra)]);

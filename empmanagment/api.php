@@ -1146,6 +1146,12 @@ function orders_upsert(PDO $pdo, string $storeKey, array $orders): int
  *  Left PENDING (with the reason, shown on the Allocation page): no mobile, no chat, chat not given to a salesperson, last message too old, ₹0 order,
  *  older than 2 days. Never touches an order a person allocated, nor one the robot did once (a person's Undo / change is never redone).
  *  Returns ['emp','type','house','by','at'] when it allocated, the reason (string) when it left it, '' when there was nothing to do. */
+/** 📢 Query or Campaign for an order of this WhatsApp chat (one rule for the automatic allocation and the Manual order): the chat came on the
+ *  campaign number, is marked Campaign / Community, or our campaign was sent to the customer in the 7 days before the order. $c = the wa_contacts row (+ camp_tag). */
+function order_chat_type(PDO $pdo, array $c, int $t = 0): string
+{
+    return ((int)($c['camp_tag'] ?? 0) === 1 || in_array((string)($c['source'] ?? ''), ['campaign', 'community'], true) || (function_exists('wa_got_campaign') && wa_got_campaign($pdo, (string)($c['phone'] ?? ''), date('Y-m-d H:i:s', $t ?: time()), 7))) ? 'campaign' : 'query';
+}
 function order_auto_alloc(PDO $pdo, string $sk, array $o)
 {
     static $ready = null, $q = [];
@@ -1187,7 +1193,7 @@ function order_auto_alloc(PDO $pdo, string $sk, array $o)
         if (empty($c['last_in_at'])) return $why('the customer never wrote to us on WhatsApp');
         $li = strtotime((string)$c['last_in_at']); if ($li < $t - 7 * 86400 && $li < time() - 7 * 86400) return $why('last WhatsApp message ' . date('j M', $li) . ' — older than 7 days');
         $house = $sk === 'tmperfumehouse' ? 'tmph' : order_house($sk, (string)($o['tags'] ?? '')); if ($house === '') return $why('panel not clear from the order');
-        $type = ((int)($c['camp_tag'] ?? 0) === 1 || in_array((string)$c['source'], ['campaign', 'community'], true) || (function_exists('wa_got_campaign') && wa_got_campaign($pdo, (string)$c['phone'], date('Y-m-d H:i:s', $t ?: time()), 7))) ? 'campaign' : 'query';   // 📢 Campaign = a real campaign reply (chat marked Campaign / Community, or our campaign sent in the 7 days before the order); website / ad texts stay Query
+        $type = order_chat_type($pdo, $c, $t);   // 📢 Campaign = a real campaign reply (chat marked Campaign / Community, or our campaign sent in the 7 days before the order); website / ad texts stay Query
         $emp = (int)$c['assigned_emp']; $q['ins']->execute([$sk, $oid, $house, $type, $emp]);
         if ($q['ins']->rowCount() < 1) return '';
         $now = date('Y-m-d H:i:s'); $q['mark']->execute([$sk, $oid, $now]);
@@ -1209,7 +1215,7 @@ function orders_sync_range(PDO $pdo, string $dateFrom, string $dateTo, int $roun
     }
     if (!$stores) return 0;
 
-    $results = shopify_fetch_all($stores, $tokens, $dateFrom, $dateTo, $rounds, false);
+    $results = shopify_fetch_all($stores, $tokens, $dateFrom, $dateTo, $rounds, false, false);   // only what Shopify has (the manual WM- orders are already in shop_orders)
     $total = 0;
     foreach ($results as $key => $st) {
         if ($st['error']) { $errors[] = $st['error']; continue; }
@@ -1798,6 +1804,36 @@ function ensure_shop_orders_table(PDO $pdo): bool
  * with nothing cached is fetched once. Returns null when the cache can't
  * be used (caller falls back to a live fetch).
  */
+/** One shop_orders row in the shape shopify_fetch_all() gives (the order lists read either one). */
+function shop_order_row(PDO $pdo, array $r): array
+{
+    return [
+                'id' => (string)$r['shopify_id'], 'store_key' => $r['store_key'], 'order_name' => $r['order_name'],
+                'created_at' => str_replace(' ', 'T', $r['created_at']) . '+05:30', 'customer' => $r['customer'] !== '' ? $r['customer'] : 'Guest',
+                'phone' => $r['phone'], 'items' => (int)$r['items'], 'total' => $r['total'], 'currency' => $r['currency'],
+                'financial_status' => $r['financial_status'], 'outstanding' => $r['outstanding'] === null ? null : (float)$r['outstanding'], 'fulfillment_status' => $r['fulfillment_status'], 'tags' => (string)$r['tags'],
+                'ml' => $r['ml_total'] !== null ? (int)$r['ml_total'] : null, 'ml10' => $r['ml10'] !== null ? (int)$r['ml10'] : null,
+                'dti' => $r['dti'] === null ? null : ($r['dti'] === '' ? 0 : json_decode($r['dti'], true)),   // null = not checked yet, 0 = none
+                'colors' => !empty($r['colors']) ? (json_decode((string)$r['colors'], true) ?: null) : null,
+            ] + order_x_com($pdo, json_decode((string)($r['xparts'] ?? ''), true), (int)($r['ml_total'] ?? 0), (float)($r['total'] ?? 0));
+}
+/**
+ * 🧾 Orders made in HRMS itself (WhatsApp Manual order, WM-00001 …) live only in shop_orders — Shopify never has them. A list read live from Shopify
+ * (Order allocation for up to 7 days, Targets, Commission …) adds them here, so they are seen everywhere a Shopify order is.
+ */
+function orders_add_manual(PDO $pdo, array &$state, string $ws, string $we): void
+{
+    try {
+        if (!$state || !ensure_shop_orders_table($pdo)) return;
+        $q = $pdo->prepare("SELECT shopify_id, store_key, order_name, created_at, customer, phone, items, total, currency, financial_status, fulfillment_status, tags, ml_total, ml10, dti, colors, outstanding, xparts FROM shop_orders WHERE shopify_id >= 7000000000000000 AND created_at >= ? AND created_at <= ? ORDER BY created_at");
+        $q->execute([$ws, $we]);
+        foreach ($q->fetchAll() as $r) {
+            $k = (string)$r['store_key']; if (!isset($state[$k]) || !empty($state[$k]['error'])) continue;
+            $have = false; foreach ($state[$k]['orders'] as $o) if ((string)$o['id'] === (string)$r['shopify_id']) { $have = true; break; }
+            if (!$have) { $row = shop_order_row($pdo, $r); unset($row['store_key']); $state[$k]['orders'][] = $row; }
+        }
+    } catch (Throwable $e) { error_log('orders_add_manual: ' . $e->getMessage()); }
+}
 function code_orders_cached(PDO $pdo, string $dateFrom, string $dateTo, array &$errors): ?array
 {
     if (!ensure_shop_orders_table($pdo)) return null;
@@ -1823,15 +1859,7 @@ function code_orders_cached(PDO $pdo, string $dateFrom, string $dateTo, array &$
         $knownStores = shopify_stores();   // rows cached from a store that was removed (TM Fragrance) are ignored
         foreach ($q->fetchAll() as $r) {
             if (!isset($knownStores[$r['store_key']])) continue;
-            $out[] = [
-                'id' => (string)$r['shopify_id'], 'store_key' => $r['store_key'], 'order_name' => $r['order_name'],
-                'created_at' => str_replace(' ', 'T', $r['created_at']) . '+05:30', 'customer' => $r['customer'] !== '' ? $r['customer'] : 'Guest',
-                'phone' => $r['phone'], 'items' => (int)$r['items'], 'total' => $r['total'], 'currency' => $r['currency'],
-                'financial_status' => $r['financial_status'], 'outstanding' => $r['outstanding'] === null ? null : (float)$r['outstanding'], 'fulfillment_status' => $r['fulfillment_status'], 'tags' => (string)$r['tags'],
-                'ml' => $r['ml_total'] !== null ? (int)$r['ml_total'] : null, 'ml10' => $r['ml10'] !== null ? (int)$r['ml10'] : null,
-                'dti' => $r['dti'] === null ? null : ($r['dti'] === '' ? 0 : json_decode($r['dti'], true)),   // null = not checked yet, 0 = none
-                'colors' => !empty($r['colors']) ? (json_decode((string)$r['colors'], true) ?: null) : null,
-            ] + order_x_com($pdo, json_decode((string)($r['xparts'] ?? ''), true), (int)($r['ml_total'] ?? 0), (float)($r['total'] ?? 0));
+            $out[] = shop_order_row($pdo, $r);
         }
         return $out;
     } catch (PDOException $e) {
@@ -11987,7 +12015,7 @@ function orders_ml_extra(PDO $pdo, array &$orders): void
     unset($o);
 }
 
-function shopify_fetch_all(array $targets, array $tokens, string $dateFrom, string $dateTo, int $maxRounds = 8, bool $slim = false): array
+function shopify_fetch_all(array $targets, array $tokens, string $dateFrom, string $dateTo, int $maxRounds = 8, bool $slim = false, bool $manual = true): array
 {
     $state = [];
     $win = biz_window($GLOBALS['pdo'], $dateFrom, $dateTo);
@@ -12097,6 +12125,7 @@ function shopify_fetch_all(array $targets, array $tokens, string $dateFrom, stri
         }
         curl_multi_close($mh);
     }
+    if ($manual) orders_add_manual($GLOBALS['pdo'], $state, $win[0], $win[1]);   // 🧾 + the manual (WM-) orders of the same days (not when copying Shopify into shop_orders)
 
     return $state;
 }

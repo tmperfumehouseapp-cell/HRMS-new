@@ -62,6 +62,10 @@ const DSP = (() => {
       '.dr-go{border:0;background:#12a150;color:#fff;border-radius:99px;padding:0 11px;height:21px;font:inherit;font-size:11px;font-weight:800;cursor:pointer;} .dr-go:hover{background:#0d8a43;} .dr-go.dk{background:#111827;} .dr-go[disabled]{opacity:.55;cursor:default;} .dr-no{border:1px solid #cfd5dd;background:#fff;color:#14161a;border-radius:99px;padding:0 9px;height:20px;font:inherit;font-size:11px;font-weight:800;cursor:pointer;}',
       '.dr-sel{height:22px;padding:0 4px;font:inherit;font-size:11.5px;border:1px solid #cfd5dd;border-radius:7px;background:#fff;max-width:130px;} .dr-tx{height:22px;padding:0 7px;font:inherit;font-size:11.5px;border:1px solid #cfd5dd;border-radius:7px;background:#fff;}',
       '.dr-f{display:flex;flex-direction:column;gap:5px;padding:3px 0;} .dr-f .dr-sel{max-width:82px;} .dr-f .l{gap:4px;} .dr-f .l{display:inline-flex;gap:5px;align-items:center;} .dr-f .tn{border:1.5px solid #111827;width:78px;font-family:ui-monospace,Menlo,Consolas,monospace;} .dr-f .lk2{width:160px;font-size:11px;color:#1d4ed8;font-family:ui-monospace,Menlo,Consolas,monospace;}',
+      '.dr-ord{border:0;background:none;padding:0;font:inherit;font-weight:800;color:#1d4ed8;cursor:pointer;text-decoration:underline;text-underline-offset:2px;} .dr-ord:hover{color:#0b3aa8;}',
+      '.dr-sp{font-size:11.5px;color:#4a505c;margin-top:2px;white-space:nowrap;} td a.dr-pill{text-decoration:none;margin-top:3px;}',
+      '#dsChat{display:none;} #dsChat.on{display:block;} #dsChat .dsc-bg{position:fixed;inset:0;background:rgba(20,22,26,.35);z-index:200;} #dsChat .dsc-p{position:fixed;top:0;right:0;bottom:0;width:min(520px,100%);background:#fff;z-index:201;display:flex;flex-direction:column;box-shadow:-8px 0 30px rgba(0,0,0,.15);}',
+      '#dsChat .dsc-h{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid #e6e8ec;font-size:13.5px;} #dsChat .dsc-h b{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;} #dsChat .dsc-x{border:0;background:#f1f3f6;border-radius:99px;width:32px;height:32px;cursor:pointer;font-size:14px;} #dsChat iframe{flex:1;border:0;width:100%;}',
       '.dr-pill{display:inline-flex;align-items:center;height:18px;padding:0 8px;border-radius:99px;font-size:11px;font-weight:800;background:#f1f3f6;color:#3a3f4a;} .dr-pill.ok{background:#dff5e8;color:#16794a;} .dr-pill.am{background:#fff3cd;color:#8a5a00;} .dr-pill.pu{background:#f0ebff;color:#5b3fd6;} .dr-pill.bad{background:#fdecea;color:#a02b25;}',
       '.dr-rm{border:1px solid #b7d9d4;background:#fff;color:#0f766e;border-radius:99px;padding:0 9px;height:17px;line-height:15px;font:inherit;font-size:11px;font-weight:800;cursor:pointer;white-space:nowrap;} .dr-rm:hover{background:#0f766e;color:#fff;} .dr-rm.on{background:#0f766e;color:#fff;border-color:#0f766e;} .dr-rm:disabled{opacity:.6;cursor:default;} .dr-cod{font-size:11px;color:#6b7280;margin-left:5px;}',
       '.dr-15{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:7px;margin-top:8px;} .dr-d{border:1px solid #dfe3e8;background:#fff;border-radius:14px;padding:7px 9px 8px;cursor:pointer;text-align:left;font:inherit;color:#14161a;} .dr-d:hover{background:#faf8f3;} .dr-d.on{background:#111827;color:#fff;border-color:#111827;} .dr-d.zero{opacity:.5;}',
@@ -83,8 +87,14 @@ const DSP = (() => {
       '.dr-leg{display:flex;gap:16px;flex-wrap:wrap;align-items:center;font-size:12px;color:#6b7280;margin:8px 2px 0;} .dr-leg .dr-dot{margin:0 4px 0 0;} .dr-leg .sp{flex:1;}',
       '.dr-two{display:grid;grid-template-columns:1fr 1fr;gap:10px;} .dr-two .bd-f{margin:0 0 10px;}',
       '.dl-b{display:inline-flex;align-items:center;gap:5px;height:17px;padding:0 8px 0 6px;margin-left:6px;border-radius:99px;border:1px solid #d5d9df;background:#fff;font:inherit;font-size:11px;font-weight:800;color:#5b6270;cursor:pointer;vertical-align:middle;white-space:nowrap;line-height:15px;} .dl-b:hover{background:#111827;color:#fff;border-color:#111827;} .dl-b i{width:7px;height:7px;border-radius:50%;background:#c3c8d1;flex:none;} .dl-b.on{border-color:#bfe6cf;background:#effaf3;color:#16794a;} .dl-b.on i{background:#16a34a;animation:dlp 1.8s infinite;} .dl-b.mid{border-color:#f3dd9a;background:#fff8e6;color:#8a5a00;} .dl-b.mid i{background:#f59e0b;} .dl-b.old{color:#7a8499;} @keyframes dlp{0%{box-shadow:0 0 0 0 rgba(22,163,74,.5)}70%{box-shadow:0 0 0 6px rgba(22,163,74,0)}100%{box-shadow:0 0 0 0 rgba(22,163,74,0)}} @media (pointer:coarse){.dl-b{height:28px;padding:0 11px 0 9px;font-size:11.5px}}',
-      '.dl-ov{position:fixed;inset:0;z-index:9000;background:rgba(17,24,39,.46);display:flex;justify-content:flex-end;animation:dlf .15s ease-out;} @keyframes dlf{from{opacity:0}to{opacity:1}} @keyframes dls{from{transform:translateX(40px);opacity:.4}to{transform:none;opacity:1}} @keyframes dlu{from{transform:translateY(40px)}to{transform:none}}',
-      '.dl-pn{width:min(470px,100%);height:100%;background:#fff;display:flex;flex-direction:column;box-shadow:-14px 0 44px rgba(0,0,0,.2);animation:dls .22s ease-out;color:#14161a;} @media (max-width:700px){.dl-ov{align-items:flex-end}.dl-pn{width:100%;height:auto;max-height:92%;border-radius:22px 22px 0 0;animation:dlu .22s ease-out;}}',
+      '.dl-ov{position:fixed;inset:0;z-index:9000;background:rgba(17,24,39,.46);display:flex;justify-content:center;align-items:center;padding:3vh 2vw;animation:dlf .15s ease-out;} @keyframes dlf{from{opacity:0}to{opacity:1}} @keyframes dls{from{transform:translateX(40px);opacity:.4}to{transform:none;opacity:1}} @keyframes dlu{from{transform:translateY(40px)}to{transform:none}}',
+      '.dl-pn{width:min(980px,100%);max-height:94vh;background:#fff;display:flex;flex-direction:column;border-radius:22px;box-shadow:0 24px 70px rgba(0,0,0,.28);animation:dlu .2s ease-out;color:#14161a;overflow:hidden;} @media (max-width:700px){.dl-ov{padding:0;align-items:stretch}.dl-pn{width:100%;max-height:none;height:100%;border-radius:0;}}',
+      '.dl-cols{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:18px;} @media (max-width:820px){.dl-cols{grid-template-columns:1fr;}} .dl-jr{border-left:1px solid #eef0f3;padding-left:18px;} @media (max-width:820px){.dl-jr{border-left:0;padding-left:0;border-top:1px solid #eef0f3;padding-top:12px;}}',
+      '.oc-sec{border:1px solid #eef0f3;border-radius:16px;padding:11px 13px;margin-bottom:10px;} .oc-sec .t{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#7a8499;margin-bottom:7px;display:flex;align-items:center;gap:8px;} .oc-sec .t span{margin-left:auto;text-transform:none;letter-spacing:0;font-weight:700;}',
+      '.oc-g{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px 12px;} @media (max-width:520px){.oc-g{grid-template-columns:repeat(2,minmax(0,1fr));}} .oc-g div{min-width:0;} .oc-g small{display:block;font-size:11px;color:#7a8499;line-height:1.3;} .oc-g b{display:block;font-size:13.5px;line-height:1.35;overflow-wrap:anywhere;} .oc-g .ok{color:#16794a;} .oc-g .bad{color:#b42318;}',
+      '.oc-li{display:flex;justify-content:space-between;gap:10px;font-size:13px;padding:3px 0;border-bottom:1px dashed #eef0f3;} .oc-li:last-child{border-bottom:0;} .oc-li em{font-style:normal;color:#7a8499;font-size:11.5px;} .oc-cx{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:13px;padding:4px 0;} .oc-cx a{font-weight:800;color:#1d4ed8;text-decoration:none;} .oc-chip{display:inline-block;border-radius:99px;padding:1px 9px;font-size:11px;font-weight:800;background:#f1f3f6;color:#3a3f4a;} .oc-chip.bad{background:#fdecea;color:#a02b25;} .oc-chip.ok{background:#dff5e8;color:#16794a;} .oc-chip.pu{background:#ede7ff;color:#5b34c4;}',
+      '.oc-shot img{max-width:100%;max-height:300px;border-radius:12px;border:1px solid #eef0f3;display:block;margin-top:8px;} .oc-btn{border:1px solid #cfd5dd;background:#fff;border-radius:99px;padding:0 12px;height:28px;font:inherit;font-size:12px;font-weight:800;cursor:pointer;} .oc-btn:hover{background:#111827;color:#fff;} .oc-tl{font-size:12.5px;line-height:1.5;} .oc-tl div{display:flex;gap:10px;padding:2px 0;} .oc-tl b{flex:none;width:122px;color:#4a505c;font-weight:700;}',
+      '.dl-tn{border:0;background:none;padding:0;font:inherit;font-weight:700;color:#1d4ed8;cursor:pointer;text-decoration:underline;text-underline-offset:2px;} .dl-tn:hover{color:#0b3aa8;} .dr-oc{border:1px solid #d5d9df;background:#fff;border-radius:99px;height:18px;padding:0 6px;font-size:11px;cursor:pointer;margin-left:4px;vertical-align:middle;line-height:16px;} .dr-oc:hover{background:#111827;color:#fff;}',
       '.dl-hd{padding:16px 64px 14px 18px;border-bottom:1px solid #eef0f3;position:relative;} .dl-x{position:absolute;top:6px;right:6px;width:44px;height:44px;border:0;background:none;font-size:20px;cursor:pointer;color:#6b7280;border-radius:12px;} .dl-x:hover{background:#f1f3f6;}',
       '.dl-ord{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#7a8499;} .dl-st{font-size:23px;font-weight:800;letter-spacing:-.02em;margin:5px 0 3px;line-height:1.15;} .dl-sub{font-size:12.5px;color:#4a505c;line-height:1.5;} .dl-sub a{color:#1d4ed8;font-weight:700;} .dl-eta{display:inline-block;margin-top:8px;background:#eef4ff;color:#1d4ed8;border-radius:99px;font-size:12px;font-weight:800;padding:3px 11px;} .dl-eta.ok{background:#e3f7ec;color:#16794a;} .dl-eta.bad{background:#fdecea;color:#a02b25;}',
       '.dl-steps{display:flex;margin:16px 0 2px;} .dl-s{flex:1;text-align:center;font-size:11px;font-weight:700;color:#9aa1ad;position:relative;line-height:1.25;padding:0 2px;} .dl-s i{display:block;width:14px;height:14px;border-radius:50%;background:#e3e6ea;margin:0 auto 6px;position:relative;z-index:1;} .dl-s:before{content:"";position:absolute;top:6px;left:-50%;width:100%;height:3px;background:#e3e6ea;} .dl-s:first-child:before{display:none;} .dl-s.done i,.dl-s.done:before{background:#16a34a;} .dl-s.done{color:#14161a;} .dl-s.now i{box-shadow:0 0 0 4px rgba(22,163,74,.22);} .dl-s.bad i,.dl-s.bad:before{background:#e5484d;} .dl-s.bad{color:#a02b25;}',
@@ -318,7 +328,7 @@ const DSP = (() => {
     function tnCell(r) {
       const tn = r.grp === 9 && r.pend ? r.pend.track : r.tracking_no, lk = r.grp === 9 && r.pend ? r.pend.link : r.link;
       if (!tn) return '';
-      return (lk ? '<a class="lk" href="' + esc(lk) + '" target="_blank" rel="noopener" title="Open the courier tracking page">' + esc(tn) + ' ↗</a>' : esc(tn)) + liveBadge(r);
+      return '<button type="button" class="dl-tn" data-trk="' + r.id + '" title="Open the Order card: payment, salesperson, commission, complaints, chat and the live journey">' + esc(tn) + '</button>' + (lk ? ' <a class="lk" href="' + esc(lk) + '" target="_blank" rel="noopener" title="Open the courier tracking page">↗</a>' : '') + liveBadge(r);
     }
     function actionCell(r) {
       const g = r.grp, ca = can();
@@ -365,7 +375,7 @@ const DSP = (() => {
       const c = rowColors(r), u = r.u;
       const dn = r.done_at ? '<button type="button" class="dr-dn on" data-dn="' + r.id + '" data-v="0"' + (can() ? '' : ' disabled') + ' title="Done by ' + esc(r.done_by) + ' · ' + esc(fdt(r.done_at)) + (can() ? ' — click to undo' : '') + '">✓ Done</button>' : (can() ? '<button type="button" class="dr-dn" data-dn="' + r.id + '" data-v="1" title="Mark this parcel as dealt with">Done</button>' : '<span style="color:#c3c8d1">—</span>');
       const lab = u.today ? '<b style="color:#16945a">' + esc(u.today.label) + '</b>' : (yMissed(r) ? '<b style="color:#d9423b">Yesterday missed</b>' : '<b style="color:#c2410c">Untraceable</b>');
-      return '<tr class="rw" data-id="' + r.id + '" style="--c:' + c[0] + ';background:' + c[1] + manEdge(r) + '" title="' + esc(r.customer + (r.phone ? ' · ' + r.phone : '')) + '"><td>' + (i + 1) + '</td><td>' + dn + '</td><td><b>' + esc(r.order) + '</b>' + manPill(r) + kwikTag(r) + '</td><td>' + esc(fd(r.created)) + '</td><td>day ' + u.days + (u.assigned ? ' <span class="dr-pill am" title="This parcel is with ' + esc(u.owner) + '">' + esc(String(u.owner).split(' ')[0]) + '</span>' : '') + '</td><td>' + esc(r.customer) + '</td><td>' + esc(sShort(r.store)) + '</td><td class="mono" style="overflow:visible;max-width:none">' + tnCell(r) + '</td><td>' + esc(r.courier) + '</td><td class="st" style="overflow:visible">' + lab + ' ' + dotsHtml(r) + '</td><td class="ac uc">' + todayCell(r) + '</td></tr>' + (S.hist[r.id] ? histPanel(r) : '');
+      return '<tr class="rw" data-id="' + r.id + '" style="--c:' + c[0] + ';background:' + c[1] + manEdge(r) + '" title="' + esc(r.customer + (r.phone ? ' · ' + r.phone : '')) + '"><td>' + (i + 1) + '</td><td>' + dn + '</td><td>' + ordCell(r) + '</td><td>' + esc(fdt(r.created)) + '</td><td>day ' + u.days + (u.assigned ? ' <span class="dr-pill am" title="This parcel is with ' + esc(u.owner) + '">' + esc(String(u.owner).split(' ')[0]) + '</span>' : '') + '</td><td>' + custCell(r) + '</td><td>' + esc(sShort(r.store)) + '</td><td class="mono" style="overflow:visible;max-width:none">' + tnCell(r) + '</td><td>' + esc(r.courier) + '</td><td class="st" style="overflow:visible">' + lab + ' ' + dotsHtml(r) + '</td><td class="ac uc">' + todayCell(r) + '</td></tr>' + (S.hist[r.id] ? histPanel(r) : '');
     }
     function statusCell(r) {
       const g = r.grp;
@@ -382,6 +392,25 @@ const DSP = (() => {
     }
     // orders made by hand in the WhatsApp chat (Manual order, name WM-00001) carry a purple edge and a MANUAL pill, so they are easy to tell from website orders
     const isMan = (r) => /^WM-\d+/i.test(String(r.order || '')), kwikTag = (r) => r.kwik ? '<div class="mono" style="font-size:11px;color:#64748b;font-weight:600" title="Payment gateway (KWIK) id: Finance matches the settlement file with it">' + esc(String(r.kwik).split(',')[0]) + '</div>' : '', manPill = (r) => isMan(r) ? ' <span class="dr-pill" style="background:#ede7ff;color:#5b34c4" title="Made by hand in the WhatsApp chat (QR / UPI / COD), not on the website">MANUAL</span>' : '', manEdge = (r) => isMan(r) ? ';box-shadow:inset 5px 0 0 #7c3aed' : '';
+    // 💬 the order number opens the customer's WhatsApp chat right here; 👤 who sold it and ⚠ an open complaint sit under the customer (Shopify and Manual orders alike)
+    const ordCell = (r) => (r.chat ? '<button type="button" class="dr-ord" data-chat="' + esc(r.chat) + '" data-oname="' + esc(r.order) + '" data-cust="' + esc(r.customer) + '" title="Open ' + esc(r.customer || 'the customer') + '’s WhatsApp chat">' + esc(r.order) + '</button>' : '<b>' + esc(r.order) + '</b>') + '<button type="button" class="dr-oc" data-trk="' + r.id + '" title="Order card">🧾</button>' + manPill(r) + kwikTag(r);
+    const custCell = (r) => esc(r.customer)
+      + (r.sp ? '<div class="dr-sp" title="Salesperson of this order">👤 ' + esc(r.sp) + (r.sp_type ? ' · ' + (r.sp_type === 'campaign' ? 'Campaign' : 'Query') : '') + '</div>' : '')
+      + (r.cx ? '<div><a class="dr-pill bad" href="complaints.html?case=' + (+r.cx.id) + '" target="_top" title="Open complaint ticket ' + esc(r.cx.code) + '">⚠ ' + esc(r.cx.code) + ' · ' + esc(r.cx.label) + '</a></div>' : '');
+    function openChat(ph, oname, cust) {
+      let d = document.getElementById('dsChat');
+      if (!d) {
+        d = document.createElement('div'); d.id = 'dsChat';
+        d.innerHTML = '<div class="dsc-bg"></div><div class="dsc-p"><div class="dsc-h"><b id="dscT"></b><button type="button" class="dsc-x" aria-label="Close">✕</button></div><iframe id="dscI" title="Customer chat"></iframe></div>';
+        document.body.appendChild(d);
+        const close = () => { d.classList.remove('on'); try { document.getElementById('dscI').src = 'about:blank'; } catch (e) {} };
+        d.querySelector('.dsc-bg').onclick = close; d.querySelector('.dsc-x').onclick = close;
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && d.classList.contains('on')) close(); });
+      }
+      document.getElementById('dscT').textContent = oname + (cust ? ' · ' + cust : '') + ' · ' + ph;
+      document.getElementById('dscI').src = 'wa_one.html?phone=' + encodeURIComponent(ph);
+      d.classList.add('on');
+    }
     function rowColors(r) {
       const g = r.grp;
       if (g === 1 && r.u) return r.u.today ? ['#16945a', '#f1faf5'] : (yMissed(r) ? ['#d9423b', '#fff1f1'] : ['#d97706', '#fff7e6']);
@@ -393,7 +422,7 @@ const DSP = (() => {
       const can_ = can(), c = rowColors(r), g = r.grp;
       const dn = r.done_at ? '<button type="button" class="dr-dn on" data-dn="' + r.id + '" data-v="0"' + (can_ ? '' : ' disabled') + ' title="Done by ' + esc(r.done_by) + ' · ' + esc(fdt(r.done_at)) + (can_ ? ' — click to undo' : '') + '">✓ Done</button>' : (can_ ? '<button type="button" class="dr-dn" data-dn="' + r.id + '" data-v="1" title="Mark this parcel as dealt with">Done</button>' : '<span style="color:#c3c8d1">—</span>');
       const courier = g === 9 && r.pend ? r.pend.courier : r.courier;
-      return '<tr class="rw' + (r.done_at ? ' dn' : '') + '" data-id="' + r.id + '" style="--c:' + c[0] + ';background:' + c[1] + manEdge(r) + '" title="' + esc(r.customer + (r.phone ? ' · ' + r.phone : '')) + '"><td>' + (i + 1) + '</td><td>' + dn + '</td><td><b>' + esc(r.order) + '</b>' + manPill(r) + kwikTag(r) + '</td><td>' + esc(fd(r.created)) + '</td><td>' + esc(ageTxt(r.age_h)) + '</td><td>' + esc(r.customer) + '</td><td>' + esc(sShort(r.store)) + '</td><td class="mono" style="overflow:visible;max-width:none">' + tnCell(r) + '</td><td>' + esc(courier) + '</td><td class="st">' + statusCell(r) + '</td><td class="ac">' + actionCell(r) + payChip(r) + '</td></tr>';
+      return '<tr class="rw' + (r.done_at ? ' dn' : '') + '" data-id="' + r.id + '" style="--c:' + c[0] + ';background:' + c[1] + manEdge(r) + '" title="' + esc(r.customer + (r.phone ? ' · ' + r.phone : '')) + '"><td>' + (i + 1) + '</td><td>' + dn + '</td><td>' + ordCell(r) + '</td><td>' + esc(fdt(r.created)) + '</td><td>' + esc(ageTxt(r.age_h)) + '</td><td>' + custCell(r) + '</td><td>' + esc(sShort(r.store)) + '</td><td class="mono" style="overflow:visible;max-width:none">' + tnCell(r) + '</td><td>' + esc(courier) + '</td><td class="st">' + statusCell(r) + '</td><td class="ac">' + actionCell(r) + payChip(r) + '</td></tr>';
     }
     function table() {
       const head = ['#', 'Done', 'Order', 'Ordered', 'Waiting', 'Customer', 'Store', 'Tracking no.', 'Courier', 'Status', 'Action'];
@@ -607,11 +636,15 @@ const DSP = (() => {
       hd.innerHTML = '<button type="button" class="dl-x" aria-label="Close">✕</button><div class="dl-ord">' + esc(p.order) + ' · ' + esc(sName(p.store)) + '</div><div class="dl-st" style="color:' + col + '">' + esc(head) + '</div>'
         + '<div class="dl-sub"><b>' + esc(p.customer || 'Customer') + '</b>' + (p.phone ? ' · ' + esc(p.phone) : '') + '<br>' + (p.courier ? esc(p.courier) + ' · ' : '') + tn + '</div>' + eta + (cancelled ? '' : steps);
       const body = LV.ov.querySelector('.dl-bd');
-      body.innerHTML = (d.note ? '<div class="dl-note"><b>Shiprocket:</b> ' + esc(d.note) + (ev.length ? ' Showing what we already have.' : '') + '</div>' : '')
+      const jr = (d.note ? '<div class="dl-note"><b>Shiprocket:</b> ' + esc(d.note) + (ev.length ? ' Showing what we already have.' : '') + '</div>' : '')
         + (ev.length ? '<div class="dl-h">Journey · ' + ev.length + ' scan' + (ev.length === 1 ? '' : 's') + '</div>' + ev.map((e) => '<div class="dl-ev"><i></i><div><b>' + esc(e.activity || e.label || 'Update') + '</b><span><em>' + esc(fdt(e.at)) + '</em>' + (e.label && e.activity && e.label !== e.activity ? ' · ' + esc(titleCase(e.label)) : '') + (e.location ? ' · ' + esc(e.location) : '') + '</span></div></div>').join('')
           : '<div class="dl-empty"><b>📦</b>' + (p.tracking_no ? 'No scans yet.<br>They appear here the moment the courier scans the parcel.' : 'This parcel has no tracking ID yet.') + '</div>');
+      if (d.card) LV.card = d.card;
+      body.innerHTML = LV.card ? '<div class="dl-cols"><div>' + cardHtml(LV.card, p) + '</div><div class="dl-jr">' + jr + '</div></div>' : jr;
+      if (LV.card && !LV.card.manual && !LV.items) loadItems();
       const fresh = p.live_at && (Date.now() - parseT(p.live_at)) < 30 * 60000;
       LV.ov.querySelector('.dl-ft').innerHTML = '<div class="lv' + (fresh ? ' on' : '') + '"><i></i>' + (p.live_at ? 'Updated ' + esc(agoTxt(p.live_at)) + (p.live_src === 'hook' ? ' · pushed by Shiprocket' : ' · asked Shiprocket') : 'Not updated yet') + '</div>'
+        + (LV.card && LV.card.chat ? '<button type="button" class="dl-btn" data-occhat="1">💬 Chat</button>' : '')
         + (p.tracking_no ? '<button type="button" class="dl-btn" data-lvr="1">Refresh now</button>' : '') + (p.link ? '<a class="dl-btn p" href="' + esc(p.link) + '" target="_blank" rel="noopener">Courier page ↗</a>' : '');
     }
     async function liveLoad(force) {
@@ -627,6 +660,56 @@ const DSP = (() => {
       if (L.status && L.status !== r.status) return load();   // the parcel moved on (for example delivered): put it in its new group
       if (L.live_at) { r.live_at = L.live_at; patch(L.id); }
     }
+    /* 🧾 The Order card: everything about this parcel's order (payment, salesperson, commission, complaints, chat, times), left of the live journey */
+    const rs = (n) => n == null || n === '' ? '—' : '₹' + Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+    const kv = (l, v, cls) => '<div><small>' + l + '</small><b' + (cls ? ' class="' + cls + '"' : '') + '>' + v + '</b></div>';
+    function cardHtml(c, p) {
+      const pay = c.pay || {}, wm = c.wm, t = c.times || {};
+      const st = String(pay.status || '').replace(/_/g, ' ');
+      const cod = pay.outstanding > 0 ? rs(pay.outstanding) + ' COD' : (wm && wm.cod > 0 ? rs(wm.cod) + ' COD' : 'Prepaid');
+      let h = '<div class="oc-sec"><div class="t">💳 Order &amp; payment' + (c.manual ? ' <span class="oc-chip pu">MANUAL</span>' : '') + '</div><div class="oc-g">'
+        + kv('Ordered', esc(fdt(t.ordered) || '—')) + kv('Total', rs(pay.total != null ? pay.total : (wm && wm.total))) + kv('To collect', esc(cod), pay.outstanding > 0 || (wm && wm.cod > 0) ? 'bad' : 'ok')
+        + kv('Payment', esc(st || (wm ? (wm.pay === 'cod' ? 'COD' : wm.pay === 'partial' ? 'Part paid' : 'Paid') : '—'))) + kv(c.manual ? 'UTR (payment ref.)' : 'Transaction ID', esc((wm && wm.utr) || (pay.ref || '').split(',')[0] || '—'))
+        + kv('Gateway', esc(pay.gateway || (c.manual ? 'UPI / QR' : '—'))) + kv('ML', c.ml != null ? c.ml + ' ml' : '—') + kv('Order code', esc(c.code || '—'))
+        + kv('Finance', pay.paid_amt != null ? rs(pay.paid_amt) + ' in' + (pay.paid_on ? ' · ' + esc(fd(pay.paid_on)) : '') : (pay.closed ? esc(pay.closed) : 'not received yet'), pay.paid_amt != null ? 'ok' : '') + '</div>';
+      if (wm) {
+        const rd = wm.read || {};
+        h += '<div style="margin-top:8px;font-size:12.5px;color:#4a505c">' + (wm.paid ? 'Paid ' + rs(wm.paid) + (wm.cod ? ' + ' + rs(wm.cod) + ' on delivery' : '') : 'Full COD') + (rd.amount ? ' · Claude read ' + rs(rd.amount) + (rd.date ? ' on ' + esc(rd.date) : '') + (rd.payer ? ' from ' + esc(rd.payer) : '') : '') + '</div>'
+          + (wm.shot ? '<div class="oc-shot" style="margin-top:6px"><button type="button" class="oc-btn" data-ocshot="1">🖼 Show payment screenshot</button></div>' : '');
+      }
+      h += '</div>';
+      // 👤 who sold it + commission
+      const com = c.com;
+      h += '<div class="oc-sec"><div class="t">👤 Salesperson &amp; commission</div><div class="oc-g">' + kv('Took the order', esc(c.sp || 'not allocated')) + kv('Type', c.sp_type ? (c.sp_type === 'campaign' ? 'Campaign' : 'Query') : '—')
+        + kv('Commission', com ? rs(com.amt) + (com.pct ? ' · ' + com.pct + '%' : '') : 'not counted yet', com ? 'ok' : '') + (wm ? kv('Manual order by', esc(wm.by || '—')) : '') + (c.wa ? kv('Chat with', esc(c.wa.holder || '—')) : '') + (c.wa ? kv('Customer wrote last', esc(fdt(c.wa.last_in) || '—')) : '') + '</div>'
+        + (c.tags ? '<div style="margin-top:7px">' + c.tags.split(',').map((x) => x.trim()).filter(Boolean).map((x) => '<span class="oc-chip" style="margin:0 4px 4px 0">' + esc(x) + '</span>').join('') + '</div>' : '') + '</div>';
+      // 📦 items + address
+      const lines = wm ? wm.lines : (LV.items ? LV.items.line_items : null), cu = wm ? wm.cust : (LV.items || null);
+      h += '<div class="oc-sec"><div class="t">📦 Items &amp; address</div>' + (lines ? lines.map((l) => '<div class="oc-li"><span>' + esc(l.name || ((l.title || '') + (l.variant ? ' · ' + l.variant : ''))) + (l.chain ? ' <em>chain</em>' : '') + ' <em>× ' + (l.qty || l.quantity || 1) + '</em></span><span>' + rs(l.total) + '</span></div>').join('') : '<div class="bd-sub" id="ocItems">' + (c.manual ? '—' : 'Reading the order from Shopify…') + '</div>');
+      if (cu) { const ad = wm ? [cu.addr1, cu.addr2, cu.landmark, [cu.city, cu.pin].filter(Boolean).join(' '), cu.state].filter(Boolean).join(', ') : (cu.address || []).join(', ');
+        h += '<div style="margin-top:8px;font-size:12.5px;line-height:1.5;color:#4a505c">' + (ad ? '📍 ' + esc(ad) : '') + (wm && (cu.phone || cu.phone2) ? '<br>📞 ' + esc([cu.phone, cu.phone2].filter(Boolean).join(' / ')) : '') + (cu.discount_codes && cu.discount_codes.length ? '<br>🏷 ' + cu.discount_codes.map((x) => esc(x.code)).join(', ') : '') + '</div>'; }
+      h += '</div>';
+      // ⚠ complaints
+      h += '<div class="oc-sec"><div class="t">⚠ Complaints<span>' + (c.cx.length ? c.cx.length : 'none') + '</span></div>' + (c.cx.length ? c.cx.map((x) => { const open = x.status === 'open' || x.status === 'reopened';
+        return '<div class="oc-cx"><a href="complaints.html?case=' + x.id + '" target="_top">' + esc(x.code) + '</a><span>' + esc(x.label) + '</span><span class="oc-chip ' + (open ? 'bad' : 'ok') + '">' + (open ? 'open' : esc(x.status)) + '</span>' + (x.owner ? '<span class="bd-sub">' + esc(x.owner) + '</span>' : '') + '<span class="bd-sub">' + esc(fdt(x.raised)) + (x.this_order ? '' : ' · other order') + '</span></div>'; }).join('') : '<div class="bd-sub">No complaint for this order or customer.</div>') + '</div>';
+      // ⏱ times
+      h += '<div class="oc-sec"><div class="t">⏱ Times</div><div class="oc-tl">' + (wm ? '<div><b>Manual order made</b><span>' + esc(fdt(wm.made)) + (wm.confirmed ? ' · customer confirmed ' + esc(fdt(wm.confirmed)) : '') + '</span></div>' : '')
+        + '<div><b>Ordered</b><span>' + esc(fdt(t.ordered) || '—') + '</span></div><div><b>Tracking ID</b><span>' + (t.tracked ? esc(fdt(t.tracked)) + (t.h_track != null ? ' · ' + t.h_track + ' h after the order' : '') + (t.tracked_by ? ' · by ' + esc(t.tracked_by) : '') : '—') + '</span></div>'
+        + '<div><b>In transit</b><span>' + esc(fdt(t.transit) || '—') + '</span></div><div><b>Delivered</b><span>' + (t.delivered ? esc(fdt(t.delivered)) + (t.h_deliver != null ? ' · ' + (Math.round(t.h_deliver / 2.4) / 10) + ' days' : '') : '—') + '</span></div><div><b>COD money in</b><span>' + esc(fdt(t.remit) || '—') + '</span></div>'
+        + (wm && wm.sr ? '<div><b>Shiprocket</b><span>' + esc(wm.sr) + '</span></div>' : '') + '</div></div>';
+      return h;
+    }
+    async function loadItems() {
+      const L = LV; if (!L || !L.card) return; L.items = { line_items: null };
+      try { const r = await api.get('shopify.order_detail', { store: L.card.store, id: L.card.shopify_id }); if (LV !== L) return; L.items = r.order || {}; }
+      catch (er) { if (LV !== L) return; const x = document.getElementById('ocItems'); if (x) x.textContent = 'Could not read the items from Shopify: ' + er.message; return; }
+      const b = L.ov.querySelector('.dl-cols > div'); if (b) b.innerHTML = cardHtml(L.card, {});
+    }
+    async function loadShot(btn) {
+      const L = LV; if (!L) return; btn.disabled = true; btn.textContent = 'Loading…';
+      try { const r = await api.get('dp.dsp_card_shot', { id: L.id }); const box = btn.parentNode; box.innerHTML = '<img alt="Payment screenshot" src="data:' + esc(r.mime) + ';base64,' + r.b64.replace(/[^A-Za-z0-9+/=]/g, '') + '">'; }
+      catch (er) { btn.textContent = er.message; }
+    }
     function openLive(id) {
       closeLive();
       const ov = document.createElement('div'); ov.className = 'dl-ov';
@@ -634,7 +717,9 @@ const DSP = (() => {
       document.body.appendChild(ov);
       const key = (e) => { if (e.key === 'Escape') closeLive(); };
       document.addEventListener('keydown', key);
-      ov.addEventListener('click', (e) => { if (e.target === ov || e.target.closest('.dl-x')) return closeLive(); if (e.target.closest('[data-lvr]')) liveLoad(true); });
+      ov.addEventListener('click', (e) => { if (e.target === ov || e.target.closest('.dl-x')) return closeLive(); if (e.target.closest('[data-lvr]')) liveLoad(true);
+        if (e.target.closest('[data-ocshot]')) loadShot(e.target.closest('[data-ocshot]'));
+        if (e.target.closest('[data-occhat]') && LV && LV.card) { const c = LV.card; closeLive(); openChat(c.chat, c.order, (c.wa && c.wa.name) || ''); } });
       LV = { id: +id, ov, key, busy: false, timer: setInterval(() => { if (!document.hidden) liveLoad(false); }, 30000) };
       liveLoad(false);
     }
@@ -673,6 +758,7 @@ const DSP = (() => {
       const b = e.target.closest('button,a,tr[data-band]'); if (!b || !el.contains(b)) return;
       if (b.tagName === 'A') return;
       const d = b.dataset;
+      if (d.chat) return openChat(d.chat, d.oname || '', d.cust || '');
       if (d.trk) return openLive(d.trk);
       if (d.lvinfo) return liveInfo(b);
       if (d.cp) { try { await navigator.clipboard.writeText(d.cp); BD.toast('Copied.'); } catch (er) { BD.toast('Select it and copy by hand.', true); } return; }

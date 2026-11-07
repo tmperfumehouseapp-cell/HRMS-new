@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Staff progress — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=4">
+<link rel="stylesheet" href="assets/css/boss.css?v=1">
+<style>
+  /* 📈 Staff progress: one card per complaint-team member — attendance, leave and ticket work, scored Good / Average / Weak */
+  .sp-top{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;}
+  .sp-top .bd-seg{margin-top:0;}
+  .sp-sum{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-bottom:14px;}
+  .sp-sum div{background:#fff;border-radius:18px;padding:12px 14px;}
+  .sp-sum b{display:block;font-size:24px;font-weight:800;letter-spacing:-.02em;line-height:1.1;}
+  .sp-sum span{font-size:12.5px;color:#6f7480;}
+  .sp-sum .g b{color:#16945a;} .sp-sum .a b{color:#c27c00;} .sp-sum .w b{color:#d9423b;}
+  .sp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px;align-items:start;}
+  .sp-card{background:#fff;border-radius:22px;padding:16px;border-left:6px solid #c9ccd3;}
+  .sp-card.good{border-left-color:#16945a;} .sp-card.average{border-left-color:#f2b33d;} .sp-card.weak{border-left-color:#d9423b;}
+  .sp-h{display:flex;gap:12px;align-items:center;}
+  .sp-score{width:52px;height:52px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:18px;color:#fff;background:#7a8499;}
+  .good .sp-score{background:#16945a;} .average .sp-score{background:#e0a000;} .weak .sp-score{background:#d9423b;}
+  .sp-name{font-weight:800;font-size:16px;line-height:1.2;}
+  .sp-lab{font-size:12.5px;font-weight:700;margin-top:2px;}
+  .good .sp-lab{color:#16945a;} .average .sp-lab{color:#b07200;} .weak .sp-lab{color:#d9423b;}
+  .sp-now{margin-left:auto;font-size:12px;font-weight:700;border-radius:99px;padding:5px 10px;background:#f1f3f6;color:#4a505c;text-align:right;max-width:46%;}
+  .sp-now.in{background:#e4f6ec;color:#16945a;} .sp-now.leave{background:#eaf1ff;color:#2f5fd0;} .sp-now.none{background:#fdecea;color:#d9423b;}
+  .sp-sec{margin-top:12px;}
+  .sp-sec .t{font-size:11.5px;font-weight:800;color:#6f7480;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;}
+  .sp-kv{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;}
+  .sp-kv div{background:#f6f7f9;border-radius:12px;padding:7px 8px;min-width:0;}
+  .sp-kv b{display:block;font-size:15px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .sp-kv span{display:block;font-size:11px;color:#6f7480;line-height:1.25;}
+  .sp-kv .bad b{color:#d9423b;} .sp-kv .ok b{color:#16945a;}
+  .sp-why{margin-top:10px;font-size:13px;line-height:1.5;}
+  .sp-why .n{background:#fdecea;color:#8f2a24;border-radius:12px;padding:7px 10px;}
+  .sp-why .y{background:#e4f6ec;color:#11683f;border-radius:12px;padding:7px 10px;margin-top:6px;}
+  .sp-more{margin-top:10px;width:100%;}
+  .sp-days{margin-top:10px;}
+  .sp-days table{width:100%;border-collapse:collapse;font-size:12.5px;table-layout:auto;}
+  .sp-days table th,.sp-days table td{padding:6px 4px;text-align:left;}
+  .sp-days table th{font-size:11px;color:#6f7480;font-weight:700;border-bottom:1px solid #e6e8ec;white-space:nowrap;}
+  .sp-days table td{border-bottom:1px solid #f0f1f4;white-space:nowrap;}
+  .sp-days .dd{display:block;font-weight:600;} .sp-days .wd{display:block;font-size:10.5px;color:#8a8f99;}
+  .sp-days table td.lv{white-space:normal;font-size:11.5px;}
+  .sp-days .late{color:#d9423b;font-weight:700;} .sp-days .lv{color:#2f5fd0;font-weight:600;} .sp-days .ab{color:#d9423b;}
+  .sp-note{font-size:12.5px;color:#6f7480;margin-top:14px;line-height:1.5;}
+  @media (max-width:520px){
+    .sp-grid{grid-template-columns:1fr;}
+    .sp-kv{grid-template-columns:repeat(2,1fr);}
+    .sp-now{max-width:40%;}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><div><h1>Staff progress</h1><div class="bd-sub">Complaint team: punch in / out, leave and ticket work — who is doing well and who needs help</div></div></div>
+    <div class="content"><div class="bd" id="root"><div class="bd-empty">Loading…</div></div></div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=4"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=20"></script>
+<script src="assets/js/boss_common.js?v=2"></script>
+<script>
+  guardPage();
+  renderSidebar('staff_progress');
+  (function () {
+    const { esc, $ } = BD;
+    const S = { days: 7, open: {}, D: null, seq: 0 };
+    const PER = [[1, 'Today'], [7, '7 days'], [30, '30 days']];
+    const mins = (m) => m == null ? '—' : (m >= 120 ? (Math.round(m / 6) / 10) + ' h' : m + ' min');
+    const kv = (v, l, cls) => '<div class="' + (cls || '') + '"><b>' + esc(v) + '</b><span>' + esc(l) + '</span></div>';
+    const fmtD = (d) => { const x = new Date(d + 'T00:00:00'); return x.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' }).replace(',', ''); };
+
+    async function load() {
+      const my = ++S.seq;
+      try {
+        const D = await api.get('bd.staff_report', { days: S.days });
+        if (my !== S.seq) return;
+        S.D = D; draw();
+      } catch (e) { if (my === S.seq) $('root').innerHTML = '<div class="bd-card"><div class="bd-empty"><b>Cannot open the staff report</b>' + esc(e.message) + '</div></div>'; }
+    }
+    function card(p) {
+      const many = S.days > 1;
+      const att = [
+        kv(p.present + (many ? ' / ' + (p.present + p.absent) : ''), many ? 'days present' : 'present', p.absent ? 'bad' : ''),
+        kv(p.late_days ? p.late_days + (p.late_days > 1 ? ' days' : ' day') : '0', 'late' + (p.late_min ? ' (' + p.late_min + ' min)' : ''), p.late_days ? 'bad' : 'ok'),
+        kv(p.avg_in || '—', many ? 'average in · shift ' + p.shift : 'in · shift ' + p.shift),
+        kv(p.hours + ' h', 'worked' + (p.avg_out ? ' · out ~' + p.avg_out : '')),
+      ];
+      if (many || p.leave_days || p.absent) { att.push(kv(p.leave_days || 0, 'leave days')); att.push(kv(p.absent || 0, 'absent, no leave', p.absent ? 'bad' : '')); }
+      const work = [
+        kv(p.got, 'tickets got'), kv(p.solved, 'solved', p.got && p.solved >= p.got * 0.8 ? 'ok' : ''),
+        kv(p.open, 'open now'), kv(p.open2d, 'open > 2 days', p.open2d ? 'bad' : ''),
+        kv(mins(p.first_reply), 'first reply (avg)', p.first_reply != null && p.first_reply > 60 ? 'bad' : (p.first_reply != null && p.first_reply <= 15 ? 'ok' : '')),
+        kv(p.happy_pct == null ? '—' : p.happy_pct + '%', 'customers happy', p.happy_pct != null && p.happy_pct < 70 ? 'bad' : ''),
+        kv(p.missed, 'promises missed', p.missed ? 'bad' : ''), kv(p.late_replies, 'replies > 1 h', p.late_replies ? 'bad' : ''),
+      ];
+      const why = (p.why.length ? '<div class="n">⚠ ' + p.why.map(esc).join(' · ') + '</div>' : '') + (p.good_points.length ? '<div class="y">✓ ' + p.good_points.map(esc).join(' · ') + '</div>' : '');
+      const open = !!S.open[p.id];
+      // one row per day: In – Out (or leave / absent / Sunday) · hours · late · tickets got / solved — fits a phone without scrolling sideways
+      const days = open ? '<div class="sp-days"><table><tr><th>Day</th><th>In – Out</th><th>Hours</th><th title="minutes late">Late</th><th title="tickets got / solved that day">Tickets</th></tr>' + p.daily.map((d) => {
+        const sun = new Date(d.date + 'T00:00:00').getDay() === 0, today = d.date === S.D.to;
+        const lv = d.leave ? '<span class="lv">🏖 ' + esc(d.leave.replace(/_/g, ' ')) + '</span>' : '';
+        const io = d.in ? esc(d.in) + ' – ' + esc(d.out || (today ? 'now' : '?')) + (lv ? '<br>' + lv : '') : (lv || (sun ? 'Sunday' : (today ? 'not in yet' : '<span class="ab">absent</span>')));
+        const dt = new Date(d.date + 'T00:00:00');
+        return '<tr><td><b class="dd">' + dt.getDate() + ' ' + dt.toLocaleDateString('en-IN', { month: 'short' }) + '</b><span class="wd">' + dt.toLocaleDateString('en-IN', { weekday: 'short' }) + '</span></td><td' + (d.leave && !d.in ? ' class="lv"' : '') + '>' + io + '</td><td>' + (d.in ? d.hours + ' h' : '—') + '</td><td' + (d.late ? ' class="late">' + d.late + 'm' : '>—') + '</td><td>' + (d.got || d.solved ? (d.got || 0) + ' / ' + (d.solved || 0) : '—') + '</td></tr>';
+      }).join('') + '</table></div>' : '';
+      return '<div class="sp-card ' + esc(p.label) + '"><div class="sp-h"><div class="sp-score">' + p.score + '</div><div style="min-width:0"><div class="sp-name">' + esc(p.name) + '</div><div class="sp-lab">' + ({ good: '🟢 Good', average: '🟡 Average', weak: '🔴 Weak' }[p.label] || '') + '</div></div><div class="sp-now ' + esc(p.today_state) + '">' + esc(p.today) + '</div></div>'
+        + '<div class="sp-sec"><div class="t">⏱ Attendance' + (many ? '' : ' today') + '</div><div class="sp-kv">' + att.join('') + '</div></div>'
+        + '<div class="sp-sec"><div class="t">🎫 Complaint work</div><div class="sp-kv">' + work.join('') + '</div></div>'
+        + (why ? '<div class="sp-why">' + why + '</div>' : '')
+        + '<button class="bd-btn sm sp-more" type="button" data-open="' + p.id + '">' + (open ? 'Hide days' : '📅 Day by day') + '</button>' + days + '</div>';
+    }
+    function draw() {
+      const D = S.D, P = D.people || [];
+      const n = (k) => P.filter((p) => p.label === k).length;
+      const st = (k) => P.filter((p) => p.today_state === k).length;
+      const seg = '<span class="bd-seg">' + PER.map(([d, l]) => '<button type="button" data-days="' + d + '" class="' + (S.days === d ? 'on' : '') + '">' + l + '</button>').join('') + '</span>';
+      const range = D.from === D.to ? fmtD(D.to) : fmtD(D.from) + ' – ' + fmtD(D.to);
+      let h = '<div class="sp-top">' + seg + '<span class="bd-sub">' + esc(range) + ' · ' + P.length + ' people</span></div>';
+      if (!P.length) { $('root').innerHTML = h + '<div class="bd-card"><div class="bd-empty"><b>Nobody on the complaint team yet</b>Put people on a desk in Complaints → Settings.</div></div>'; return; }
+      h += '<div class="sp-sum"><div class="g"><b>' + n('good') + '</b><span>🟢 Good</span></div><div class="a"><b>' + n('average') + '</b><span>🟡 Average</span></div><div class="w"><b>' + n('weak') + '</b><span>🔴 Weak</span></div>'
+        + '<div><b>' + (st('in') + st('out')) + '</b><span>came in today</span></div><div><b>' + st('leave') + '</b><span>on leave today</span></div><div><b style="color:' + (st('none') ? '#d9423b' : 'inherit') + '">' + st('none') + '</b><span>not punched in</span></div></div>';
+      h += '<div class="sp-grid">' + P.map(card).join('') + '</div>';
+      h += '<div class="sp-note">Score out of 100: solving tickets 30 · first reply speed 25 · nothing left open over 2 days 15 · happy customers 15 · on time at work 15; each missed promise takes 5 off. 75+ = Good, 50–74 = Average, under 50 = Weak. Late = punched in after the shift start plus the allowed minutes. Sundays are not counted as absent.</div>';
+      $('root').innerHTML = h;
+    }
+    $('root').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-days]'); if (b) { S.days = Number(b.dataset.days); S.open = {}; $('root').querySelectorAll('[data-days]').forEach((x) => x.classList.toggle('on', x === b)); load(); return; }
+      const o = e.target.closest('[data-open]'); if (o) { const id = o.dataset.open; S.open[id] = !S.open[id]; draw(); }
+    });
+    load();
+  })();
+</script>
+</body>
+</html>
