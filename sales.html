@@ -12,7 +12,7 @@
 <link rel="apple-touch-icon" href="icons/icon-192.png">
 <title>Sales — HRMS</title>
 <link rel="stylesheet" href="assets/css/style.css?v=260929d">
-<link rel="stylesheet" href="assets/css/sales_theme.css?v=3">
+<link rel="stylesheet" href="assets/css/sales_theme.css?v=4">
 <script>document.documentElement.classList.add('sx');</script>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap">
 <style>
@@ -2539,7 +2539,7 @@
       const myKey = cur.key;
       f.addEventListener('load', () => {
         const l = $('slLoad'); if (l && cur && myKey === cur.key) l.hidden = true;
-        try { const d = f.contentDocument; if (d && d.head && !d.getElementById('sxTheme')) { d.documentElement.classList.add('sx'); const k = d.createElement('link'); k.id = 'sxTheme'; k.rel = 'stylesheet'; k.href = 'assets/css/sales_theme.css?v=3'; d.head.appendChild(k); } } catch (e) { /* the page keeps its own look */ }
+        try { const d = f.contentDocument; if (d && d.head && !d.getElementById('sxTheme')) { d.documentElement.classList.add('sx'); const k = d.createElement('link'); k.id = 'sxTheme'; k.rel = 'stylesheet'; k.href = 'assets/css/sales_theme.css?v=4'; d.head.appendChild(k); } } catch (e) { /* the page keeps its own look */ }
         // a link inside a page to another Sales page (e.g. Targets -> Commission rules) switches the tab instead of loading a second page in the frame
         try { f.contentDocument.addEventListener('click', (ev) => {
           const a = ev.target && ev.target.closest ? ev.target.closest('a[href]') : null; if (!a || a.target === '_blank' || ev.ctrlKey || ev.metaKey || ev.shiftKey) return;

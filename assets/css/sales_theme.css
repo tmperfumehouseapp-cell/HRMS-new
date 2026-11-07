@@ -87,3 +87,29 @@ html:is(.sx,.tm) .btn:active{ transform:scale(.97); }
 .tm-clear b{ color:var(--sx-ink,#111827); font-size:16px; font-weight:800; }
 .tm-clear-ic{ width:48px; height:48px; border-radius:50%; display:grid; place-items:center; background:var(--sx-ok-bg,#e4f6ec); color:var(--sx-ok-fg,#16945a); font-size:24px; font-weight:800; }
 @media (prefers-reduced-motion:reduce){ .tm-win{ transition:opacity .2s; transform:translate(-50%,0); } .tm-coin{ display:none; } .tm-pop{ animation:none; } }
+
+/* ---- department colour, soft: layout.js sets <html data-dept="..."> from the workspace a page belongs to. One light touch per department: a faint tint at the top of the page,
+   the active tab, the main buttons, a soft line on cards and a light tint on table headers. WhatsApp pages (data-dept="whatsapp" / wa-skip) are left alone. ---- */
+html.tm[data-dept]{ --dc:#f97316; }
+html.tm[data-dept="people"]{ --dc:#0d9488; }
+html.tm[data-dept="budget"]{ --dc:#16a34a; }
+html.tm[data-dept="finance"]{ --dc:#059669; }
+html.tm[data-dept="store"]{ --dc:#2563eb; }
+html.tm[data-dept="inventory"]{ --dc:#0891b2; }
+html.tm[data-dept="dispatch"]{ --dc:#d97706; }
+html.tm[data-dept="boss"]{ --dc:#7c3aed; }
+html.tm[data-dept="complaints"]{ --dc:#e11d48; }
+html.tm[data-dept="inbox"]{ --dc:#0284c7; }
+html.tm[data-dept="analytics"]{ --dc:#4f46e5; }
+html.tm[data-dept="admin"]{ --dc:#475569; }
+html.tm[data-dept="offices"]{ --dc:#a16207; }
+html.tm[data-dept="home"], html.tm[data-dept="sales"], html.tm[data-dept="help"]{ --dc:#f97316; }
+html.tm[data-dept]:not([data-dept="whatsapp"]):not(.wa-skip){
+  --dcs:color-mix(in srgb,var(--dc) 8%,#fff);
+  --sx-accent:color-mix(in srgb,var(--dc) 82%,#334155);
+}
+html.tm[data-dept="home"]:not(.wa-skip), html.tm[data-dept="sales"]:not(.wa-skip){ --sx-accent:#f97316; }
+html.tm[data-dept]:not([data-dept="whatsapp"]):not(.wa-skip) body{ background:linear-gradient(180deg,color-mix(in srgb,var(--dc) 5%,#eef0f3) 0,#eef0f3 240px) fixed; }
+html.tm[data-dept]:not([data-dept="whatsapp"]):not(.wa-skip) .ws-pill.on{ background:var(--dc); color:#fff; }
+html.tm[data-dept]:not([data-dept="whatsapp"]):not(.wa-skip) :is(.card,.bd-card,.panel){ border-top:2px solid color-mix(in srgb,var(--dc) 38%,#fff); }
+html.tm[data-dept]:not([data-dept="whatsapp"]):not(.wa-skip) table th{ background:var(--dcs); }
