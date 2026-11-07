@@ -1,10 +1,9 @@
-/* sales_theme.css — ONE look for the whole Sales area.
+/* sales_theme.css — ONE look for the whole HRMS (Sales pages via html.sx, every other page via html.tm set by layout.js).
    Loaded by sales.html itself and pushed into every page it shows in a frame (orders, targets, commission, retail …),
    so cards, tables, buttons, pills and boxes look the same everywhere. Only shapes, colours and type are set here —
    never sizes of layouts — so no page breaks. Change a value here and every Sales page follows. */
-@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
 
-html.sx, html.sx{
+html:is(.sx,.tm){
   --sx-card-r:18px;      /* cards and tiles */
   --sx-ctl-r:12px;       /* inputs, selects */
   --sx-pill-r:999px;     /* buttons, pills, chips */
@@ -19,43 +18,57 @@ html.sx, html.sx{
   --ink:var(--sx-ink); --muted:var(--sx-muted); --line:var(--sx-line); --accent:var(--sx-accent);
   --ok-bg:var(--sx-ok-bg); --ok-fg:var(--sx-ok-fg); --bad-bg:var(--sx-bad-bg); --bad-fg:var(--sx-bad-fg);
 }
-html.sx body, html.sx body{ font-family:'Manrope','Inter','Segoe UI',system-ui,-apple-system,sans-serif; color:var(--sx-ink); -webkit-font-smoothing:antialiased; }
+html:is(.sx,.tm) body{ font-family:'Manrope','Inter','Segoe UI',system-ui,-apple-system,sans-serif; color:var(--sx-ink); -webkit-font-smoothing:antialiased; }
 
 /* cards and tiles */
-html.sx .card, html.sx .card, html.sx .stat-card, html.sx .kpi, html.sx .panel{
+html:is(.sx,.tm) .card, html:is(.sx,.tm) .stat-card, html:is(.sx,.tm) .kpi, html:is(.sx,.tm) .panel{
   border-radius:var(--sx-card-r); border:1px solid var(--sx-line); background:#fff; box-shadow:none; }
-html.sx .card h2, html.sx .card h2, html.sx .card > h3:first-child{ font-weight:800; letter-spacing:-.01em; }
-html.sx .sub, html.sx .sub{ color:var(--sx-muted); }
-html.sx .stat-card .label, html.sx .kpi .l, html.sx .kpi .k{ font-size:11px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:var(--sx-muted); }
-html.sx .stat-card .value, html.sx .kpi .v{ font-weight:800; }
+html:is(.sx,.tm) .card h2, html:is(.sx,.tm) .card > h3:first-child{ font-weight:800; letter-spacing:-.01em; }
+html:is(.sx,.tm) .sub{ color:var(--sx-muted); }
+html:is(.sx,.tm) .stat-card .label, html:is(.sx,.tm) .kpi .l, html:is(.sx,.tm) .kpi .k{ font-size:11px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:var(--sx-muted); }
+html:is(.sx,.tm) .stat-card .value, html:is(.sx,.tm) .kpi .v{ font-weight:800; }
 
 /* tables */
-html.sx table th, html.sx table th{ font-size:11px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:var(--sx-muted); }
-html.sx table td, html.sx table td{ border-color:#f0f1f4; }
-html.sx table th{ border-color:var(--sx-line); }
+html:is(.sx,.tm) table th{ font-size:11px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:var(--sx-muted); }
+html:is(.sx,.tm) table td{ border-color:#f0f1f4; }
+html:is(.sx,.tm) table th{ border-color:var(--sx-line); }
 
 /* buttons */
-html.sx .btn, html.sx .btn{ border-radius:var(--sx-pill-r); font-weight:700; }
-html.sx .btn:not(.secondary):not(.green):not(.wa):not(.danger):not(.red){ background:var(--sx-accent); border-color:var(--sx-accent); color:#fff; }
-html.sx .btn.secondary{ background:#fff; color:var(--sx-ink); border:1px solid var(--sx-line); }
-html.sx .btn.secondary:hover{ background:#f4f5f7; }
+html:is(.sx,.tm) .btn{ border-radius:var(--sx-pill-r); font-weight:700; }
+html:is(.sx,.tm) .btn:not(.secondary):not(.green):not(.wa):not(.danger):not(.red){ background:var(--sx-accent); border-color:var(--sx-accent); color:#fff; }
+html:is(.sx,.tm) .btn.secondary{ background:#fff; color:var(--sx-ink); border:1px solid var(--sx-line); }
+html:is(.sx,.tm) .btn.secondary:hover{ background:#f4f5f7; }
 
 /* pills, chips, badges — one shape */
-html.sx .pill, html.sx .pill, html.sx .tgt-pill, html.sx .tgt-chip, html.sx .chip, html.sx .badge{
+html:is(.sx,.tm) .pill, html:is(.sx,.tm) .tgt-pill, html:is(.sx,.tm) .tgt-chip, html:is(.sx,.tm) .chip, html:is(.sx,.tm) .badge{
   border-radius:var(--sx-pill-r); font-weight:700; }
-html.sx .pill.on, html.sx .tgt-pill.on{ background:var(--sx-ink); color:#fff; border-color:var(--sx-ink); }
+html:is(.sx,.tm) .pill.on, html:is(.sx,.tm) .tgt-pill.on{ background:var(--sx-ink); color:#fff; border-color:var(--sx-ink); }
 
 /* form controls */
-html.sx .field input, html.sx .field select, html.sx .field textarea,
-html.sx input[type=text], html.sx input[type=number], html.sx input[type=date], html.sx input[type=search], html.sx select, html.sx textarea{
+html:is(.sx,.tm) .field input, html:is(.sx,.tm) .field select, html:is(.sx,.tm) .field textarea,
+html:is(.sx,.tm) input[type=text], html:is(.sx,.tm) input[type=number], html:is(.sx,.tm) input[type=date], html:is(.sx,.tm) input[type=search], html:is(.sx,.tm) select, html:is(.sx,.tm) textarea{
   border-radius:var(--sx-ctl-r); border-color:var(--sx-line); font-family:inherit; }
-html.sx .field input:focus, html.sx .field select:focus, html.sx .field textarea:focus,
-html.sx input:focus, html.sx select:focus, html.sx textarea:focus{ outline:2px solid rgba(249,115,22,.30); outline-offset:0; border-color:var(--sx-accent); }
-html.sx .field label{ font-weight:700; color:var(--sx-muted); }
+html:is(.sx,.tm) .field input:focus, html:is(.sx,.tm) .field select:focus, html:is(.sx,.tm) .field textarea:focus,
+html:is(.sx,.tm) input:focus, html:is(.sx,.tm) select:focus, html:is(.sx,.tm) textarea:focus{ outline:2px solid color-mix(in srgb, var(--sx-accent) 30%, transparent); outline-offset:0; border-color:var(--sx-accent); }
+html:is(.sx,.tm) .field label{ font-weight:700; color:var(--sx-muted); }
 
 /* messages, pop-ups, empty states */
-html.sx .alert, html.sx .alert{ border-radius:14px; font-weight:600; }
-html.sx .alert.error{ background:var(--sx-bad-bg); color:var(--sx-bad-fg); }
-html.sx .alert.success{ background:var(--sx-ok-bg); color:var(--sx-ok-fg); }
-html.sx .modal{ border-radius:20px; }
-html.sx .empty, html.sx .empty, html.sx .empty-state, html.sx .loading{ color:var(--sx-muted); text-align:center; padding:26px 14px; font-size:13px; }
+html:is(.sx,.tm) .alert{ border-radius:14px; font-weight:600; }
+html:is(.sx,.tm) .alert.error{ background:var(--sx-bad-bg); color:var(--sx-bad-fg); }
+html:is(.sx,.tm) .alert.success{ background:var(--sx-ok-bg); color:var(--sx-ok-fg); }
+html:is(.sx,.tm) .modal{ border-radius:20px; }
+html:is(.sx,.tm) .empty, html:is(.sx,.tm) .empty-state, html:is(.sx,.tm) .loading{ color:var(--sx-muted); text-align:center; padding:26px 14px; font-size:13px; }
+
+/* ---- role accents: same shape for everyone, one colour per area (layout.js sets <html data-role>) ---- */
+html.tm[data-role="admin"]{ --sx-accent:#334155; }
+html.tm[data-role="hr"]{ --sx-accent:#0d9488; }
+html.tm[data-role="employee"], html.tm[data-role="sales"]{ --sx-accent:#f97316; }
+
+/* ---- small joys shared by every page ---- */
+html:is(.sx,.tm) :focus-visible{ outline:2px solid var(--sx-accent); outline-offset:2px; }
+html:is(.sx,.tm) .btn, html:is(.sx,.tm) .card{ transition:transform .12s ease, box-shadow .15s ease, background .15s ease; }
+html:is(.sx,.tm) .btn:active{ transform:scale(.97); }
+@media (hover:hover){ html:is(.sx,.tm) .card:hover{ box-shadow:0 6px 20px rgba(17,24,39,.06); } }
+@keyframes tmShimmer{ from{ background-position:200% 0 } to{ background-position:-200% 0 } }
+.tm-skel{ border-radius:12px; min-height:14px; background:linear-gradient(90deg,#eef0f3 25%,#f7f8fa 37%,#eef0f3 63%); background-size:200% 100%; animation:tmShimmer 1.4s linear infinite; }
+@media (prefers-reduced-motion:reduce){ html:is(.sx,.tm) *{ transition:none !important; animation:none !important; } }

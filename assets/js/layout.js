@@ -42,10 +42,29 @@ const LAYOUT_BUILD = '261102.2';   // shown under your name in the sidebar
   } catch (e) { /* voice is optional */ }
 })();
 
+// One look for every panel: shared theme (cards, tables, buttons, inputs), font, and a per-role accent colour (data-role on <html>).
+(function () {
+  try {
+    const h = document.documentElement;
+    if (h.classList.contains('no-theme')) return;
+    let role = '';
+    try { role = String((JSON.parse(localStorage.getItem('hrms_user') || '{}') || {}).role || '').toLowerCase().replace(/[^a-z]/g, ''); } catch (e) {}
+    if (role) h.setAttribute('data-role', role);
+    h.classList.add('tm');
+    if (!document.getElementById('tmFont')) {
+      const pc = document.createElement('link'); pc.rel = 'preconnect'; pc.href = 'https://fonts.gstatic.com'; pc.crossOrigin = ''; document.head.appendChild(pc);
+      const f = document.createElement('link'); f.id = 'tmFont'; f.rel = 'stylesheet'; f.href = 'https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap'; document.head.appendChild(f);
+    }
+    if (!document.getElementById('sxTheme')) {
+      const t = document.createElement('link'); t.id = 'sxTheme'; t.rel = 'stylesheet'; t.href = 'assets/css/sales_theme.css?v=2'; document.head.appendChild(t);
+    }
+  } catch (e) { /* the page keeps its own look */ }
+})();
+
 // Compact phone layout: one shared stylesheet for every page, and every table gets its own sideways-scroll box on small screens.
 (function () {
   try {
-    const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = 'assets/css/mobile.css?v=5';
+    const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = 'assets/css/mobile.css?v=6';
     document.head.appendChild(l);
     const mq = window.matchMedia('(max-width:820px)');
     const wrap = () => {
@@ -164,7 +183,7 @@ function startPunchReminder() {
     } catch (e) {}
   }
   poll();
-  setInterval(poll, 60000);
+  setInterval(() => { if (!document.hidden) poll(); }, 60000);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') poll(); });
 }
 
@@ -209,7 +228,7 @@ function startPenaltyNotice() {
     } catch (e) {}
   }
   poll();
-  setInterval(poll, 90000);
+  setInterval(() => { if (!document.hidden) poll(); }, 90000);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') poll(); });
 }
 
@@ -226,7 +245,7 @@ function startChatBadge() {
       if (a && !em && n > 0) a.insertAdjacentHTML('beforeend', '<em>' + (n > 99 ? '99+' : n) + '</em>'); else if (em) { em.textContent = n > 99 ? '99+' : String(n); em.style.display = n > 0 ? '' : 'none'; }
     } catch (e) { /* the badge is optional */ }
   };
-  tick(); setInterval(tick, 45000);
+  tick(); setInterval(() => { if (!document.hidden) tick(); }, 45000);
 }
 
 /*BD-START bossMenu: adds the Boss Engine links to a menu. Managers see Board, Inbox, Duties and Setup; staff with duties see My Day. */
