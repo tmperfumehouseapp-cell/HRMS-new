@@ -55,8 +55,9 @@ const LAYOUT_BUILD = '261102.2';   // shown under your name in the sidebar
       const pc = document.createElement('link'); pc.rel = 'preconnect'; pc.href = 'https://fonts.gstatic.com'; pc.crossOrigin = ''; document.head.appendChild(pc);
       const f = document.createElement('link'); f.id = 'tmFont'; f.rel = 'stylesheet'; f.href = 'https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap'; document.head.appendChild(f);
     }
+    if (!window.TMWin && !document.getElementById('tmWinJs')) { const w = document.createElement('script'); w.id = 'tmWinJs'; w.src = 'assets/js/win.js?v=1'; w.defer = true; (document.head || document.documentElement).appendChild(w); }
     if (!document.getElementById('sxTheme')) {
-      const t = document.createElement('link'); t.id = 'sxTheme'; t.rel = 'stylesheet'; t.href = 'assets/css/sales_theme.css?v=2'; document.head.appendChild(t);
+      const t = document.createElement('link'); t.id = 'sxTheme'; t.rel = 'stylesheet'; t.href = 'assets/css/sales_theme.css?v=3'; document.head.appendChild(t);
     }
   } catch (e) { /* the page keeps its own look */ }
 })();
