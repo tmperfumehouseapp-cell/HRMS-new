@@ -177,16 +177,40 @@ function wa_auto_alloc(PDO $pdo): int
     catch (Throwable $e) { return 0; }
     setting_set($pdo, 'wa_alloc_seen', (string)count($rows));
     $n = 0; foreach ($rows as $o) { try { if (is_array(order_auto_alloc($pdo, (string)$o['store_key'], $o))) $n++; } catch (Throwable $e) { } }   // the same rule as a new order (api.php)
-    if ((string)setting_get($pdo, 'camp2_on_v1', '') !== '1') {   // 📢 owner's instruction (6 Nov): the second number ("… second") is the campaign number — switched on once; the switch in Numbers can turn it off again
-        setting_set($pdo, 'camp2_on_v1', '1');
-        try { $ids = $pdo->query("SELECT id FROM wa_numbers WHERE camp_tag = 0 AND LOWER(label) LIKE '%second%'")->fetchAll(PDO::FETCH_COLUMN); $now = date('Y-m-d H:i:s');
-            foreach ($ids as $nid) { $pdo->prepare("UPDATE wa_numbers SET camp_tag = 1 WHERE id = ?")->execute([(int)$nid]); $st = $pdo->prepare("SELECT phone FROM wa_contacts WHERE last_number_id = ? AND last_in_at IS NOT NULL"); $st->execute([(int)$nid]); foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $ph) wa_camp_mark($pdo, (string)$ph, $now); }
-            if ($ids) wa_camp_requery($pdo, 30); } catch (Throwable $e) { }
+    if ((string)setting_get($pdo, 'camp2_off_v1', '') !== '1') {   // 📢 owner (6 Nov, evening): the second number is NOT "everything = Campaign" — only a customer we really sent a campaign to is Campaign; website / ad texts are New queries
+        setting_set($pdo, 'camp2_off_v1', '1');
+        try { wa_camp_unmark($pdo); } catch (Throwable $e) { error_log('camp2 off: ' . $e->getMessage()); }
     }
     try { wa_camp_requery($pdo, 7); } catch (Throwable $e) { }
     return $n;
 }
-/** 📢 Orders the robot typed "Query" for a customer who came on the campaign number (or whose chat is Campaign) become "Campaign".
+/** 📢 Did we really send this customer a campaign (our campaign template, or a sent campaign item) in the $days days before $before? */
+function wa_got_campaign(PDO $pdo, string $key, string $before, int $days = 7): bool
+{
+    $from = date('Y-m-d H:i:s', strtotime($before) - $days * 86400);
+    try { $q = $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND dir = 'out' AND who = 'campaign' AND ts BETWEEN ? AND ? LIMIT 1"); $q->execute([$key, $from, $before]); if ($q->fetchColumn()) return true; } catch (Throwable $e) { }
+    try { $q = $pdo->prepare("SELECT 1 FROM wa_camp_items WHERE phone = ? AND status = 'sent' AND sent_at BETWEEN ? AND ? LIMIT 1"); $q->execute([$key, $from, $before]); if ($q->fetchColumn()) return true; } catch (Throwable $e) { }
+    return false;
+}
+/** Undo "every chat on the campaign number = Campaign" (6 Nov): the switch goes off; a chat it marked Campaign WITHOUT a real campaign sent to it goes back to a New query,
+ *  and the robot's Campaign allocations of those chats (last 30 days) go back to Query. Hand-made allocations are never touched. */
+function wa_camp_unmark(PDO $pdo): array
+{
+    $ids = array_map('intval', $pdo->query("SELECT id FROM wa_numbers WHERE camp_tag = 1")->fetchAll(PDO::FETCH_COLUMN)); $back = 0; $alloc = 0;
+    if (!$ids) return ['contacts' => 0, 'orders' => 0];
+    $pdo->exec("UPDATE wa_numbers SET camp_tag = 0 WHERE id IN (" . implode(',', $ids) . ")");
+    $st = $pdo->query("SELECT phone, COALESCE(last_in_at, NOW()) li FROM wa_contacts WHERE source = 'campaign' AND last_number_id IN (" . implode(',', $ids) . ")");
+    $up = $pdo->prepare("UPDATE wa_contacts SET source = 'query' WHERE phone = ? AND source = 'campaign'");
+    foreach ($st->fetchAll() as $r) { $k = (string)$r['phone']; if (wa_got_campaign($pdo, $k, (string)$r['li'], 30)) continue;
+        $up->execute([$k]); if ($up->rowCount() > 0) { $back++; try { $pdo->prepare("DELETE FROM wa_ctags WHERE phone = ? AND tag = 'campaign' AND src = 'auto'")->execute([$k]); $pdo->prepare("DELETE FROM wa_tagidx WHERE phone = ? AND tag = 'campaign'")->execute([$k]); } catch (Throwable $e) { } } }
+    try { $st = $pdo->prepare("SELECT a.alloc_id, o.phone, o.created_at FROM order_allocations a JOIN shop_orders o ON o.store_key = a.source AND CAST(o.shopify_id AS CHAR) = a.order_id WHERE a.allocated_by = 'auto (WhatsApp)' AND a.order_type = 'campaign' AND o.created_at >= ?"); $st->execute([date('Y-m-d H:i:s', time() - 30 * 86400)]);
+        $src = $pdo->prepare("SELECT source FROM wa_contacts WHERE phone = ?"); $fix = $pdo->prepare("UPDATE order_allocations SET order_type = 'query' WHERE alloc_id = ? AND allocated_by = 'auto (WhatsApp)' AND order_type = 'campaign'");
+        foreach ($st->fetchAll() as $r) { $d = preg_replace('/\D+/', '', (string)$r['phone']); $k = strlen($d) > 10 ? substr($d, -10) : $d; if (strlen($k) !== 10) continue;
+            $src->execute([$k]); if (in_array((string)$src->fetchColumn(), ['campaign', 'community'], true)) continue; if (wa_got_campaign($pdo, $k, (string)$r['created_at'], 7)) continue;
+            $fix->execute([(int)$r['alloc_id']]); $alloc += $fix->rowCount(); } } catch (Throwable $e) { }
+    return ['contacts' => $back, 'orders' => $alloc];
+}
+/** 📢 Orders the robot typed "Query" for a customer whose chat is Campaign / Community (a real campaign reply) become "Campaign".
  *  Only the robot's own allocations of the last $days days — an allocation made by a person is never changed. Returns how many were changed. */
 function wa_camp_requery(PDO $pdo, int $days = 7): int
 {
@@ -199,7 +223,7 @@ function wa_camp_requery(PDO $pdo, int $days = 7): int
     $up = $pdo->prepare("UPDATE order_allocations SET order_type = 'campaign' WHERE alloc_id = ? AND order_type = 'query' AND allocated_by = 'auto (WhatsApp)'");
     foreach ($rows as $r) { $d = preg_replace('/\D+/', '', (string)$r['phone']); $k = strlen($d) > 10 ? substr($d, -10) : $d; if (strlen($k) !== 10) continue;
         $src->execute([$k]); $camp = in_array((string)$src->fetchColumn(), ['campaign', 'community'], true);
-        if (!$camp && $cn) { $cn->execute([$k, $since]); $camp = (bool)$cn->fetchColumn(); }
+    
         if (!$camp) continue; $up->execute([(int)$r['alloc_id']]);
         if ($up->rowCount() > 0) { $n++; if (function_exists('wa_event')) { try { wa_event($pdo, $k, '📢 Order ' . $r['order_name'] . ' counted as Campaign (the customer came on the campaign number)'); } catch (Throwable $e) { } } } }
     return $n;

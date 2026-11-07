@@ -1187,8 +1187,7 @@ function order_auto_alloc(PDO $pdo, string $sk, array $o)
         if (empty($c['last_in_at'])) return $why('the customer never wrote to us on WhatsApp');
         $li = strtotime((string)$c['last_in_at']); if ($li < $t - 7 * 86400 && $li < time() - 7 * 86400) return $why('last WhatsApp message ' . date('j M', $li) . ' — older than 7 days');
         $house = $sk === 'tmperfumehouse' ? 'tmph' : order_house($sk, (string)($o['tags'] ?? '')); if ($house === '') return $why('panel not clear from the order');
-        $viaCamp = false; if ($q['cn']) { try { $q['cn']->execute([(string)$c['phone'], date('Y-m-d H:i:s', time() - 60 * 86400)]); $viaCamp = (bool)$q['cn']->fetchColumn(); } catch (Throwable $e) { } }
-        $type = ((int)($c['camp_tag'] ?? 0) === 1 || $viaCamp || in_array((string)$c['source'], ['campaign', 'community'], true)) ? 'campaign' : 'query';   // 📢 a customer who came on the campaign number counts as Campaign — even when the order comes days later
+        $type = ((int)($c['camp_tag'] ?? 0) === 1 || in_array((string)$c['source'], ['campaign', 'community'], true) || (function_exists('wa_got_campaign') && wa_got_campaign($pdo, (string)$c['phone'], date('Y-m-d H:i:s', $t ?: time()), 7))) ? 'campaign' : 'query';   // 📢 Campaign = a real campaign reply (chat marked Campaign / Community, or our campaign sent in the 7 days before the order); website / ad texts stay Query
         $emp = (int)$c['assigned_emp']; $q['ins']->execute([$sk, $oid, $house, $type, $emp]);
         if ($q['ins']->rowCount() < 1) return '';
         $now = date('Y-m-d H:i:s'); $q['mark']->execute([$sk, $oid, $now]);

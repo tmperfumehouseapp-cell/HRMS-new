@@ -400,8 +400,8 @@ try {
             $id = (int)($in['chain_id'] ?? 0); $name = mb_substr(trim((string)($in['name'] ?? '')), 0, 120);
             $mrp = round((float)($in['mrp'] ?? 0), 2); $price = round((float)($in['price'] ?? 0), 2);
             if ($name === '') json_response(['error' => 'Give the chain a name.'], 400);
-            if ($price <= 0) json_response(['error' => 'Type the selling price of the chain.'], 400);
-            if ($mrp > 0 && $mrp < $price) json_response(['error' => 'The MRP cannot be lower than the selling price.'], 400);
+            if ($price <= 0) $price = $mrp;      // the price is only a note now: at the counter the chain gets its share of the bill
+            if ($mrp <= 0) json_response(['error' => 'Type the MRP of the chain (the bill gives the chain 50% of its total, and never more than the MRP).'], 400);
             $photo = (string)($in['photo'] ?? '');
             if ($photo !== '' && (strpos($photo, 'data:image/') !== 0 || strlen($photo) > 400000)) json_response(['error' => 'The photo is not valid or too big. Choose it again.'], 400);
             if ($id) {
@@ -703,11 +703,11 @@ try {
             $total = round($list - $discount, 2);
             $chainRow = null; $chainSplit = null;
             if ($chainCode !== '') {      // a chain on the bill: it is billed at its own price, the perfumes get the rest of the SAME total
-                $cq = $pdo->prepare("SELECT p.piece_id, p.status, c.chain_id, c.name, c.price FROM st_chain_pieces p JOIN st_chains c ON c.chain_id = p.chain_id WHERE p.code = ? FOR UPDATE"); $cq->execute([$chainCode]); $chainRow = $cq->fetch();
+                $cq = $pdo->prepare("SELECT p.piece_id, p.status, c.chain_id, c.name, c.price, c.mrp FROM st_chain_pieces p JOIN st_chains c ON c.chain_id = p.chain_id WHERE p.code = ? FOR UPDATE"); $cq->execute([$chainCode]); $chainRow = $cq->fetch();
                 if (!$chainRow) { $pdo->rollBack(); json_response(['error' => 'Chain code ' . $chainCode . ' is not one of our barcodes.'], 400); }
                 if ($chainRow['status'] !== 'stock') { $pdo->rollBack(); json_response(['error' => 'Chain ' . $chainRow['name'] . ' (' . $chainCode . ') is ' . $chainRow['status'] . ', not in stock.'], 409); }
                 $saleBots = array_values(array_filter($found, fn($b) => $b['kind'] === 'sale'));
-                $chainSplit = st_chain_split($total, (float)$chainRow['price'], $saleBots);
+                $chainSplit = st_chain_split($total, st_chain_share($total, st_chain_pct($pdo)), $saleBots, (float)$chainRow['mrp']);      // 50% of the bill is the chain, the rest the perfumes
                 if (isset($chainSplit['error'])) { $pdo->rollBack(); json_response(['error' => $chainSplit['error']], 400); }
             }
 
@@ -768,7 +768,7 @@ try {
         case 'st_bill.list': {
             require_auth();
             $d = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($_GET['date'] ?? '')) ? $_GET['date'] : st_day();
-            $st = $pdo->prepare("SELECT bill_id, bill_no, created_at, emp_name, customer_name, total_ml, bottles, testers, total, order_code, pay_mode, status, chain_name, chain_amt, inv_no, inv_token, inv_err FROM st_bills WHERE biz_date = ? ORDER BY bill_id DESC");
+            $st = $pdo->prepare("SELECT bill_id, bill_no, created_at, emp_name, customer_name, total_ml, bottles, testers, total, order_code, pay_mode, cash_amt, online_amt, status, chain_name, chain_amt, inv_no, inv_token, inv_err FROM st_bills WHERE biz_date = ? ORDER BY bill_id DESC");
             $st->execute([$d]);
             $rows = $st->fetchAll();
             $sum = 0.0; $ml = 0;
@@ -776,13 +776,34 @@ try {
             $cs = st_cs_get($pdo); $pp = st_people_status($pdo, array_map(fn($r) => $r['bill_id'], $rows));
             $hasInv = false; foreach ($rows as $r0) if ($r0['inv_token'] !== '') $hasInv = true; if ($hasInv) st_wch_load($pdo);
             foreach ($rows as &$r) {
-                $r['chain_amt'] = (float)$r['chain_amt']; $r['inv_url'] = ($r['inv_token'] !== '' && function_exists('wch_view_url')) ? wch_view_url($r['inv_token']) : ''; $r['inv_pdf'] = ($r['inv_token'] !== '' && function_exists('wch_pdf_url')) ? wch_pdf_url($r['inv_token']) : ''; unset($r['inv_token']);
+                $r['chain_amt'] = (float)$r['chain_amt']; $r['cash_amt'] = (float)$r['cash_amt']; $r['online_amt'] = (float)$r['online_amt']; $r['inv_url'] = ($r['inv_token'] !== '' && function_exists('wch_view_url')) ? wch_view_url($r['inv_token']) : ''; $r['inv_pdf'] = ($r['inv_token'] !== '' && function_exists('wch_pdf_url')) ? wch_pdf_url($r['inv_token']) : ''; unset($r['inv_token']);
                 $r['people'] = $pp[$r['bill_id']] ?? [];
                 foreach ($r['people'] as &$x) if ($x['phone'] !== '') { $tok = substr($x['link'], strrpos($x['link'], '=') + 1); $x['wa_url'] = st_wa_message(['name' => $x['name'], 'phone' => $x['phone'], 'token' => $tok, 'returning' => $x['returning']], ['bill_no' => $r['bill_no'], 'total' => $r['total']], $cs)['url']; }
                 unset($x);
             }
             unset($r);
             json_response(['date' => $d, 'today' => st_day(), 'day_start' => ST_DAY_START_HOUR, 'bills' => $rows, 'total' => round($sum, 2), 'total_ml' => $ml]);
+            break;
+        }
+
+        case 'st_bill.set_pay': {          // changed his mind / pressed the wrong one: Cash <-> Online <-> Cash + Online. A manager any day; a cashier only the bills of today.
+            $auth = require_auth(); $in = json_input(); $id = (int)($in['bill_id'] ?? 0);
+            $q = $pdo->prepare("SELECT bill_no, biz_date, status, total, pay_mode, cash_amt, online_amt FROM st_bills WHERE bill_id = ?"); $q->execute([$id]); $b = $q->fetch();
+            if (!$b) json_response(['error' => 'Bill not found.'], 404);
+            if ($b['status'] !== 'ok') json_response(['error' => 'This bill is cancelled; its payment cannot be changed.'], 409);
+            $isMgr = in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true) || user_can($auth, 'rs_manage');
+            if (!$isMgr && $b['biz_date'] !== st_day()) json_response(['error' => 'Only a manager can change the payment of an earlier day. Today’s bills you can change yourself.'], 403);
+            $mode = (string)($in['pay_mode'] ?? ''); if (!in_array($mode, ['cash', 'online', 'split'], true)) json_response(['error' => 'Choose Cash, Online or Cash + online.'], 400);
+            $total = (float)$b['total']; $cash = max(0.0, (float)($in['cash_amt'] ?? 0)); $online = max(0.0, (float)($in['online_amt'] ?? 0));
+            if ($mode === 'cash') { $cash = $total; $online = 0.0; }
+            elseif ($mode === 'online') { $online = $total; $cash = 0.0; }
+            elseif (abs($cash + $online - $total) > 0.5) json_response(['error' => 'Cash + online (₹' . number_format($cash + $online) . ') must equal the bill (₹' . number_format($total) . ').'], 400);
+            $name = ['cash' => 'Cash', 'online' => 'Online', 'split' => 'Cash + online'];
+            $was = $name[$b['pay_mode']] ?? $b['pay_mode']; if ($b['pay_mode'] === 'split') $was .= ' (₹' . number_format((float)$b['cash_amt']) . ' + ₹' . number_format((float)$b['online_amt']) . ')';
+            $now = $name[$mode] . ($mode === 'split' ? ' (₹' . number_format($cash) . ' + ₹' . number_format($online) . ')' : '');
+            $pdo->prepare("UPDATE st_bills SET pay_mode = ?, cash_amt = ?, online_amt = ? WHERE bill_id = ? AND status = 'ok'")->execute([$mode, $cash, $online, $id]);
+            if (function_exists('bd_log')) { try { bd_log('store', $id, 'Bill ' . $b['bill_no'] . ' payment changed: ' . $was . ' -> ' . $now, (string)($auth['username'] ?? '')); } catch (Throwable $e) { } }
+            json_response(['ok' => true, 'message' => $b['bill_no'] . ': ' . $was . ' → ' . $now . '.']);
             break;
         }
 

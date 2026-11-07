@@ -4,7 +4,7 @@ window.CXR = (function () {
   'use strict';
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const PROB = [['missing', '🧩', 'Missing item'], ['leak', '💧', 'Leak / damaged'], ['notdispatched', '🚚', 'Not dispatched'], ['notdelivered', '📦', 'Not delivered'], ['tracking', '📍', 'Tracking ID'], ['ndr', '⚠️', 'NDR'], ['rto', '↩️', 'RTO'], ['wrong', '🔁', 'Wrong item'], ['notliked', '🙁', 'Not liked / return'], ['quality', '👃', 'Smell / quality'], ['refund', '💰', 'Refund'], ['staff', '🙍', 'Staff'], ['other', '…', 'Other']];
-  const SRC = [['whatsapp', 'WhatsApp'], ['call', 'Call'], ['store', 'Store'], ['order', 'Order'], ['social', 'Instagram'], ['email', 'Email'], ['other', 'Other']];
+  const SRC = [['whatsapp', 'WhatsApp'], ['oldphone', '📱 Old phone'], ['call', 'Call'], ['store', 'Store'], ['order', 'Order'], ['social', 'Instagram'], ['email', 'Email'], ['other', 'Other']];
   let cssDone = false;
   function css() {
     if (cssDone) return; cssDone = true;
@@ -60,7 +60,7 @@ textarea.cxr-in{min-height:72px;resize:vertical}
       if (!st.can_raise) { body.innerHTML = '<div class="cxr-open">This chat is not yours, so you cannot raise a complaint from it.</div>'; return; }
       // the problem is never pre-chosen: Claude reads the chat and suggests one (a new type when nothing fits); the person confirms it
       const LIST = (st.problems && st.problems.length ? st.problems.map((p) => [p.k, p.icon, p.label, !!p.serious]) : PROB.map((p) => [p[0], p[1], p[2], ['missing', 'leak', 'wrong', 'notdispatched', 'notdelivered', 'rto', 'refund'].indexOf(p[0]) >= 0]));
-      let prob = o.problem || '', src = o.source || 'whatsapp', guess = null, reading = !!o.phone, ordSel = st.order ? String(st.order.name) : '';
+      let quiet = o.source === 'oldphone', prob = o.problem || '', src = o.source || 'whatsapp', guess = null, reading = !!o.phone, ordSel = st.order ? String(st.order.name) : '';
       const pInfo = (k) => { if (k === 'new' && guess) return [guess.label, guess.icon, !!guess.serious]; const p = LIST.find((x) => x[0] === k); return p ? [p[2], p[1], p[3]] : null; };
       const draw = () => {
         body.style.color = '#111b21'; body.style.padding = '0';
@@ -74,13 +74,15 @@ textarea.cxr-in{min-height:72px;resize:vertical}
           '<div class="cxr-l">What is the problem?</div><div class="cxr-chips">' + chips.join('') + '</div>' +
           (pi ? '<div class="cxr-sev' + (pi[2] ? ' s' : '') + '">' + (pi[2] ? '🔴 Serious — reply in 15 min' : 'Basic — reply in 60 min') + '</div>' : '') +
           (o.askCustomer ? '<div class="cxr-l">Customer</div><input class="cxr-in" id="cxrName" placeholder="Name" value="' + esc(o.name || '') + '" style="margin-bottom:8px"><input class="cxr-in" id="cxrPhone" inputmode="tel" placeholder="Phone number (WhatsApp)" value="' + esc(o.phone || '') + '">' + (dup ? '<div class="cxr-open" style="margin-top:8px">This customer already has an open ticket: <b>' + esc(dup.code) + '</b> (' + esc(dup.problem_label) + '), with <b>' + esc(dup.owner_name || dup.desk_label) + '</b>. <a href="' + (st.team ? 'complaints.html' : 'my_complaints.html') + '?case=' + dup.id + '" target="_top">Open it</a><br><small>Raising it again only adds your note to that ticket — never a second ticket.</small></div>' : '') +
-            '<div class="cxr-l">Where did it come from?</div><div class="cxr-chips">' + SRC.map((p) => '<button type="button" class="cxr-c' + (src === p[0] ? ' on' : '') + '" data-s="' + p[0] + '">' + p[1] + '</button>').join('') + '</div>' : '') +
+            '<div class="cxr-l">Where did it come from?</div><div class="cxr-chips">' + SRC.map((p) => '<button type="button" class="cxr-c' + (src === p[0] ? ' on' : '') + '" data-s="' + p[0] + '">' + p[1] + '</button>').join('') + '</div>'
+            + '<label style="display:flex;gap:10px;align-items:flex-start;margin-top:10px;font-size:13.5px;line-height:1.4;background:' + (quiet ? '#fff7ed' : '#f8fafc') + ';border-radius:12px;padding:10px 12px;cursor:pointer"><input type="checkbox" id="cxrQ"' + (quiet ? ' checked' : '') + ' style="margin-top:3px;width:18px;height:18px"><span><b>📱 The customer talks on our OLD phone</b><br><small style="color:#667781">HRMS sends them no WhatsApp for this ticket (no ticket messages) — the team answers on the old phone. Use it while we are moving customers to the new number.</small></span></label>' : '') +
           '<div class="cxr-l">Which order?</div>' + (orders.length > 1 ? '<div class="cxr-chips" style="flex-direction:column;align-items:stretch">' + orders.map((x) => '<button type="button" class="cxr-c cxr-o' + (ordSel === String(x.name) ? ' on' : '') + '" data-o="' + esc(x.name) + '" style="text-align:left;border-radius:14px">' + oLine(x) + '</button>').join('') + '</div>'
             : orders.length ? '<div class="cxr-o">' + oLine(orders[0]) + '</div>' : '<input class="cxr-in" id="cxrOrd" placeholder="Order number (if you know it)">') +
           '<div class="cxr-l">Note for the team</div><textarea class="cxr-in" id="cxrNote" placeholder="What happened, in a few words"></textarea>' +
           '<button class="cxr-go" type="button" id="cxrGo"' + (prob ? '' : ' disabled') + '>' + (prob ? (dup ? 'Add my note to ' + esc(dup.code) : 'Raise complaint') : 'Choose the problem first') + '</button>';
         body.querySelectorAll('[data-p]').forEach((b) => b.onclick = () => { prob = b.dataset.p; keep(); draw(); });
-        body.querySelectorAll('[data-s]').forEach((b) => b.onclick = () => { src = b.dataset.s; keep(); draw(); });
+        body.querySelectorAll('[data-s]').forEach((b) => b.onclick = () => { src = b.dataset.s; if (src === 'oldphone') quiet = true; keep(); draw(); });
+        { const qb = body.querySelector('#cxrQ'); if (qb) qb.onchange = () => { quiet = qb.checked; keep(); draw(); }; }
         body.querySelectorAll('[data-o]').forEach((b) => b.onclick = () => { ordSel = b.dataset.o; keep(); draw(); });
         body.querySelector('#cxrGo').onclick = go;
         const pIn = body.querySelector('#cxrPhone'); if (pIn) pIn.oninput = () => { clearTimeout(lt); const d = pIn.value.replace(/\D+/g, '').slice(-10); if (d.length === 10 && d !== looked) lt = setTimeout(() => lookup(d), 450); };   // 🔎 the number is complete: find the customer's open ticket and orders
@@ -94,7 +96,7 @@ textarea.cxr-in{min-height:72px;resize:vertical}
         const extra = prob === 'new' && guess ? { new_label: guess.label, new_icon: guess.icon, new_dept: guess.dept, new_serious: guess.serious ? 1 : 0 } : {};
         const ai = guess ? { ai_problem: guess.problem, ai_label: guess.label, ai_icon: guess.icon, ai_why: guess.why || '', ai_dept: guess.dept, ai_serious: guess.serious ? 1 : 0 } : {};
         try {
-          const r = await api.post('bd.cx_raise', Object.assign({ phone: o.askCustomer ? (kept.phone || '') : (o.phone || ''), name: o.askCustomer ? (kept.name || '') : (o.name || ''), source: src, problem: prob, urgency: 'normal', summary: kept.note || '', order_name: kept.ord || ordSel || '' }, extra, ai));
+          const r = await api.post('bd.cx_raise', Object.assign({ phone: o.askCustomer ? (kept.phone || '') : (o.phone || ''), name: o.askCustomer ? (kept.name || '') : (o.name || ''), source: src, problem: prob, urgency: 'normal', summary: kept.note || '', order_name: kept.ord || ordSel || '', quiet: o.askCustomer && quiet ? 1 : 0 }, extra, ai));
           close(); toast(r.message || 'Complaint raised'); if (o.onDone) o.onDone(r);
         } catch (e) { b.disabled = false; b.textContent = 'Raise complaint'; toast(e.message || 'Could not raise it'); }
       };

@@ -246,6 +246,23 @@ function wa_store_in(PDO $pdo, array $m, string $name, int $numberId): string
     if (function_exists('wa_origin_in')) wa_origin_in($pdo, $key, $m, $ex ? (string)$ex['last_in_at'] : null, $ref);   // 📍 a new enquiry: "where did you find us?" / reads the answer (never blocks)
     return $key;
 }
+/** 📱 A message from the WhatsApp Business app on the phone (coexistence): an echo of what a salesperson typed in the app (out), or a past message Meta shares (history, in/out).
+ *  Stored once (same wamid = skipped). It never starts the bot, the follow-ups or the assignment — it only completes the chat. A history-only customer is added as a closed chat. */
+function wa_store_phone_msg(PDO $pdo, array $m, string $key, int $numberId, string $dir, bool $history): string
+{
+    if ($key === '' || (string)($m['id'] ?? '') === '') return '';
+    $ts = wa_ts($m['timestamp'] ?? 0); [$t, $body, $mid, $mime] = wa_parse_msg($m);
+    $q = $pdo->prepare("SELECT phone, last_in_at, last_out_at FROM wa_contacts WHERE phone = ?"); $q->execute([$key]); $ex = $q->fetch();
+    if (!$ex) { try { $pdo->prepare("INSERT INTO wa_contacts (phone, wa_id, name, first_seen, last_in_at, last_out_at, last_number_id, state, status) VALUES (?, ?, '', ?, ?, ?, ?, 'human', ?)")
+        ->execute([$key, $key, $ts, $dir === 'in' ? $ts : null, $dir === 'out' ? $ts : null, $numberId, $history ? 'closed' : 'open']); } catch (PDOException $e) { } }
+    try {
+        $pdo->prepare("INSERT INTO wa_messages (wamid, phone, number_id, dir, mtype, body, media_id, media_mime, status, who, ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+            ->execute([(string)$m['id'], $key, $numberId, $dir, mb_substr($t, 0, 16), $body, $mid, mb_substr($mime, 0, 60), $dir === 'in' ? 'received' : 'sent', $dir === 'in' ? 'customer' : 'phone', $ts]);
+    } catch (PDOException $e) { return ''; }   // already stored (Meta repeats) — nothing more to do
+    if ($dir === 'out' && $ex && (empty($ex['last_out_at']) || (string)$ex['last_out_at'] < $ts)) $pdo->prepare("UPDATE wa_contacts SET last_out_at = ? WHERE phone = ?")->execute([$ts, $key]);
+    if ($dir === 'in' && $ex && $history && (empty($ex['last_in_at']) || (string)$ex['last_in_at'] < $ts)) $pdo->prepare("UPDATE wa_contacts SET last_in_at = ? WHERE phone = ?")->execute([$ts, $key]);
+    return $key;
+}
 function wa_status_rank(string $s): int { return ['sent' => 1, 'delivered' => 2, 'read' => 3, 'failed' => 4][$s] ?? 0; }
 
 function wa_sig_ok(string $raw): bool
@@ -586,6 +603,10 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo)\./', $__wa)) {
                 if (($ch['field'] ?? '') === 'template_category_update') { if (wa_tpl_tables($pdo)) wa_tpl_category_event($pdo, $v); continue; }   // Meta changed the category of a pre-made message (Utility → Marketing: the mix stops using it as Utility)
                 if (($ch['field'] ?? '') === 'message_template_quality_update') { if (wa_tpl_tables($pdo)) wa_tpl_quality_event($pdo, $v); continue; }   // the quality rating of a pre-made message changed
                 $nid = wa_number_id($pdo, (string)($md['phone_number_id'] ?? ''), (string)($md['display_phone_number'] ?? ''));
+                // 📱 the WhatsApp Business APP on the phone (coexistence): messages a salesperson types in the app (echoes) and the chat history Meta shares — kept like any other message
+                if (($ch['field'] ?? '') === 'smb_message_echoes') { foreach ((array)($v['message_echoes'] ?? []) as $m) { $k = wa_store_phone_msg($pdo, (array)$m, wa_key($m['to'] ?? ''), $nid, 'out', false); if ($k !== '') { $n++; } } continue; }
+                if (($ch['field'] ?? '') === 'history') { foreach ((array)($v['history'] ?? []) as $hh) foreach ((array)($hh['threads'] ?? []) as $th) { $ck = wa_key($th['id'] ?? ''); if ($ck === '') continue;
+                    foreach ((array)($th['messages'] ?? []) as $m) { $out = wa_key($m['from'] ?? '') !== $ck; if (wa_store_phone_msg($pdo, (array)$m, $ck, $nid, $out ? 'out' : 'in', true) !== '') $n++; } } continue; }
                 $names = []; foreach ((array)($v['contacts'] ?? []) as $ct) $names[wa_key($ct['wa_id'] ?? '')] = (string)($ct['profile']['name'] ?? '');
                 foreach ((array)($v['messages'] ?? []) as $m) { $k = wa_store_in($pdo, (array)$m, $names[wa_key($m['from'] ?? '')] ?? '', $nid); if ($k !== '') { $n++; $__keys[$k] = true; } }
                 foreach ((array)($v['statuses'] ?? []) as $s) {
@@ -798,7 +819,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo)\./', $__wa)) {
             $sig = md5(json_encode([$sg, $c['assigned_emp'] ?? 0, $c['status'] ?? '', $c['tag'] ?? '', $c['optout'] ?? 0, $c['cx_id'] ?? 0, $c['hot'] ?? 0, $c['summary'] ?? '', $c['last_in_at'] ?? '', $c['state'] ?? '', $c['remind_at'] ?? '']));
             if (empty($_GET['before']) && (string)($_GET['sig'] ?? '') === $sig) json_response(['same' => 1, 'sig' => $sig]);
             $lim = max(1, min(300, (int)($_GET['limit'] ?? 100))); $before = (int)($_GET['before'] ?? 0);
-            $st = $pdo->prepare("SELECT m.id, m.dir, m.mtype, m.body, m.media_id, m.media_mime, m.status, m.who, m.emp_id, m.ts, m.number_id, m.reply_to FROM wa_messages m WHERE m.phone = ?" . ($before ? ' AND m.id < ?' : '') . " ORDER BY m.id DESC LIMIT $lim");
+            $st = $pdo->prepare("SELECT m.id, m.dir, m.mtype, m.body, m.media_id, m.media_mime, m.status, m.who, m.emp_id, m.ts, m.number_id, m.reply_to FROM wa_messages m WHERE m.phone = ?" . ($before ? ' AND m.id < ?' : '') . " ORDER BY m.ts DESC, m.id DESC LIMIT $lim");   // by time: past chats Meta shares later (📱 phone app history) sit in their right place
             $st->execute($before ? [$key, $before] : [$key]); $msgs = array_reverse($st->fetchAll());
             $nums = []; foreach ($pdo->query("SELECT id, display, label, panel FROM wa_numbers")->fetchAll() as $n) $nums[(int)$n['id']] = $n['label'] !== '' ? $n['label'] : ($n['display'] !== '' ? $n['display'] : 'Number ' . $n['id']);
             $names = employee_names_by_id($pdo);

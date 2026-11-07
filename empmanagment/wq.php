@@ -1372,14 +1372,14 @@ function wq_grab_board(PDO $pdo, int $days): array
     $L = array_values($P); usort($L, fn($a, $b) => [$b['taken'], $b['q_orders'], $a['lost']] <=> [$a['taken'], $a['q_orders'], $b['lost']]);
     return ['ok' => true, 'days' => $days, 'total_taken' => $total, 'people' => $L];
 }
-/** Every customer whose 24-hour chat window has closed gets the 'campaign' tag (we can now only reach them with a campaign), at most every 10 minutes.
+/** Every customer who has not written for 30 hours gets the 'campaign' tag (owner's rule, 6 Nov: 30 h, was 24 h — a fresh query stays a New query for its first 30 hours), at most every 10 minutes.
  *  The tag stays: every later query of theirs is typed as a campaign query (wq_decide). Opted-out customers are skipped. Returns how many were newly tagged. */
 function wq_window_tag(PDO $pdo): int
 {
     if (wq_ts(wq_meta_get($pdo, 'camptag_at', '')) > wq_now() - 600) return 0;
-    $n = 0; $cut = wq_dt(wq_now() - 86400);
+    $n = 0; $cut = wq_dt(wq_now() - 30 * 3600);
     try {
-        $st = $pdo->prepare("INSERT IGNORE INTO wa_ctags (phone, tag, src, at) SELECT phone, 'campaign', 'wq', DATE_ADD(last_in_at, INTERVAL 24 HOUR) FROM wa_contacts WHERE optout = 0 AND last_in_at IS NOT NULL AND last_in_at < ?");
+        $st = $pdo->prepare("INSERT IGNORE INTO wa_ctags (phone, tag, src, at) SELECT phone, 'campaign', 'wq', DATE_ADD(last_in_at, INTERVAL 30 HOUR) FROM wa_contacts WHERE optout = 0 AND last_in_at IS NOT NULL AND last_in_at < ?");
         $st->execute([$cut]); $n = $st->rowCount();
         if ($n > 0) $pdo->exec("INSERT IGNORE INTO wa_tagidx (phone, tag) SELECT phone, tag FROM wa_ctags WHERE tag = 'campaign'");
     } catch (Throwable $e) { error_log('wq_window_tag: ' . $e->getMessage()); }
