@@ -92,8 +92,10 @@ window.PersonCard = (function () {
     return ['ok', 'OK' + (d.expiry ? ' · till ' + whenY(d.expiry) : '')];
   }
 
-  function body(c, o, x) {
-    const e = c.employee, t = c.timing, p = c.pay, st = c.stats, pr = c.profile || {};
+  function body(c, o, x, xerr) {
+    const e = c.employee, t = c.timing, p = c.pay, st = c.stats, xp = (x && x.person) || {}, pr = Object.assign({}, c.profile || {});
+    // anything the person card did not have, the Boss People data fills in (same employee record)
+    if (!pr.photo) pr.photo = xp.photo || ''; if (!pr.joining_date) pr.joining_date = xp.joining_date || ''; if (!pr.mobile) pr.mobile = xp.mobile || ''; if (!pr.email) pr.email = xp.email || ''; if (!pr.role) pr.role = xp.designation || e.designation || '';
     const docs = x && x.documents ? x.documents.map((d) => ({ d, s: docState(d, c.today) })).filter((q) => q.s) : [];
     const missing = docs.filter((q) => q.s[1] === 'Missing').map((q) => q.d.name), ending = docs.filter((q) => /^(Expired|Ends)/.test(q.s[1])).map((q) => q.d.name + ' (' + q.s[1].toLowerCase() + ')'), waiting = docs.filter((q) => q.s[1] === 'Waiting for approval').map((q) => q.d.name);
     const agrOpen = x && x.agreements ? x.agreements.filter((a) => a.status && !/sign|accept|approved|done|complete/i.test(a.status)) : [];
@@ -104,7 +106,7 @@ window.PersonCard = (function () {
     if (agrOpen.length) att.push(['warn', 'Agreement not signed: ' + agrOpen.map((a) => a.name).join(', ')]);
     if (p.type === 'commission' && !t.own) att.push(['', 'No timing set']);
     const pend = c.penalties.filter((q) => q.pending); if (pend.length) att.push(['warn', pend.length + ' penalty cut tomorrow']);
-    if (!x) att.push(['', 'Documents and agreements could not be read']);
+    if (!x) att.push(['bad', 'Documents could not be read' + (xerr ? ': ' + xerr : '')]);
 
     let h = '<div class="pc">';
     const initial = esc((e.name || '?').trim()[0] || '?'), ph = photoUrl(pr.photo);
@@ -132,6 +134,7 @@ window.PersonCard = (function () {
     if (ts) h += row('Tasks today', (ts.done || 0) + ' of ' + (ts.today || 0) + ' done' + (ts.late ? ' · <span style="color:#b3261e">' + ts.late + ' late</span>' : ''));
     if (c.days.length) h += '<details style="margin-top:6px"><summary style="cursor:pointer;color:#6b7280;font-size:12.5px">Last punches</summary>' + c.days.map((d) => '<div class="pc-row"><span>' + when(d.date) + '</span><span>' + esc(d.in) + ' to ' + esc(d.out || '…') + (d.flag ? ' <span class="pc-chip bad">' + (d.flag === 'late' ? 'late' : 'short') + '</span>' : '') + '</span></div>').join('') + '</details>';
 
+    if (!x) h += '<h4>Documents</h4><div class="pc-err">Documents, agreements and leave could not be loaded' + (xerr ? ' (' + esc(xerr) + ')' : '') + '. Refresh the page (Ctrl+Shift+R). If it stays, tell Claude this message.</div>';
     if (x) {
       h += '<h4>Documents</h4>' + (docs.length ? docs.map((q) => '<div class="pc-row"><span>' + esc(q.d.name) + (q.d.number ? ' <span style="color:#9aa1ad">' + esc(q.d.number) + '</span>' : '') + '</span><span class="pc-chip ' + q.s[0] + '">' + esc(q.s[1]) + '</span></div>').join('') : '<div class="sub">No documents are required for this person.</div>');
       if (x.agreements && x.agreements.length) h += '<h4>Agreements</h4>' + x.agreements.slice(0, 5).map((a) => row(esc(a.name), '<span class="pc-chip ' + (/sign|accept|approved|done|complete/i.test(a.status) ? 'ok' : 'warn') + '">' + esc(a.status || '') + '</span>')).join('');
@@ -150,9 +153,9 @@ window.PersonCard = (function () {
 
   async function render(el, id, opts) {
     css(); opts = opts || {}; el.innerHTML = '<div class="pc-load">Loading…</div>';
-    let c, x = null; try { [c, x] = await Promise.all([api.get('person.card', { employee_id: id }), api.get('bd.pp_person', { id: id, month: new Date().toISOString().slice(0, 7) }).catch(() => null)]); } catch (e) { el.innerHTML = '<div class="pc-err">' + esc(e.message || 'Could not open this person.') + '</div>'; return null; }
+    let c, x = null, xerr = ''; try { const r = await Promise.all([api.get('person.card', { employee_id: id }), api.get('bd.pp_person', { id: id, month: new Date().toISOString().slice(0, 7) }).then((v) => ({ v }), (er) => ({ er }))]); c = r[0]; x = r[1].v || null; xerr = r[1].er ? String(r[1].er.message || r[1].er) : ''; } catch (e) { el.innerHTML = '<div class="pc-err">' + esc(e.message || 'Could not open this person.') + '</div>'; return null; }
     const again = () => { render(el, id, opts); if (opts.onChange) opts.onChange(); };
-    el.innerHTML = body(c, opts, x);
+    el.innerHTML = body(c, opts, x, xerr);
     api.get('person.summary', { employee_id: id }).then((r) => {
       const b = el.querySelector('#pcSum'); if (!b) return;
       b.innerHTML = '<b>Claude' + (r.by === 'claude' ? '' : ' (quick read)') + '</b>' + esc(r.summary) + ((r.fixes || []).length ? '<ul>' + r.fixes.map((x) => '<li>' + esc(x) + '</li>').join('') + '</ul>' : '');
