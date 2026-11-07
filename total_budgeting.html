@@ -117,6 +117,15 @@
 #tb .dz i{font-style:normal; background:var(--ink); color:#fff; border-radius:99px; padding:0 7px; font-size:11px; font-weight:800;}
 #tb .dz.over,#tb .dz:hover{border-color:#ea580c; background:#fff7ed;} #tb .dz.over{box-shadow:0 0 0 3px #fed7aa;}
 #tb .st{position:relative;} #tb .st.sel .ring{box-shadow:0 0 0 3px #2563eb;} #tb .st.sel::after{content:'✓'; position:absolute; top:-2px; right:6px; background:#2563eb; color:#fff; border-radius:50%; width:18px; height:18px; font-size:12px; line-height:18px; font-weight:800;}
+#tb .grp-h .acts{margin-left:auto; display:flex; gap:6px;} #tb .grp-h .acts button{font:inherit; font-size:11.5px; font-weight:700; border:1px solid var(--line); background:#fff; border-radius:99px; padding:2px 10px; cursor:pointer; color:var(--ink);} #tb .grp-h .acts button:hover{border-color:#ea580c; background:#fff7ed;}
+.pk-ov{position:fixed; inset:0; background:rgba(17,24,39,.45); z-index:9990; display:flex; align-items:center; justify-content:center; padding:12px;}
+.pk{background:#fff; border-radius:16px; width:min(560px,100%); max-height:86vh; display:flex; flex-direction:column; padding:14px 14px 12px; color:#14161a; font-size:13px;}
+.pk-h{display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;} .pk-h b{font-size:15px;} .pk-h button{border:0; background:#f1f2f5; border-radius:50%; width:28px; height:28px; font-size:18px; cursor:pointer; line-height:1;}
+.pk input[type=search]{font:inherit; border:1px solid #d9dde3; border-radius:10px; padding:7px 10px; width:100%;}
+.pk-l{overflow:auto; flex:1; margin:8px 0; min-height:120px;}
+.pk-r{display:flex; align-items:center; gap:8px; padding:6px 4px; border-bottom:1px solid #f0f1f4; cursor:pointer;} .pk-r i{font-style:normal; color:#6b7280; font-size:11.5px; margin-left:4px;} .pk-r em{margin-left:auto; font-style:normal; color:#6b7280; font-size:11.5px; text-align:right;}
+.pk-r .dp{position:relative; display:inline-flex; width:24px; height:24px; border-radius:50%; overflow:hidden; align-items:center; justify-content:center; font-size:11px; font-weight:800; color:#fff; flex:none;} .pk-r .dp img{position:absolute; inset:0; width:100%; height:100%; object-fit:cover;}
+.pk-f{display:flex; justify-content:space-between; align-items:center; gap:10px;} .pk-go{font:inherit; font-weight:800; font-size:13px; background:#14161a; color:#fff; border:0; border-radius:10px; padding:8px 18px; cursor:pointer;} .pk-go:disabled{opacity:.4; cursor:default;}
 </style>
 </head>
 <body>
@@ -452,8 +461,8 @@
     const shown = gs.filter(g => !q || g.list.length);
     return shown.map(g => {
       const pay = g.all.reduce((a, p) => a + p.monthly, 0);
-      return '<section class="grp" data-dept="' + g.id + '"><div class="grp-h"><b>' + esc(g.name) + '</b><span class="cnt">' + g.all.length + '</span><span>' + (pay ? rs(pay) + ' fixed salary a month' : 'No fixed salary (commission-based)') + '</span></div>'
-        + '<div class="strip">' + (g.list.length ? g.list.map(p => bubble(p, true)).join('') : '<div class="none">Nobody here yet. Drag a person onto this box.</div>') + '</div></section>';
+      return '<section class="grp" data-dept="' + g.id + '"><div class="grp-h"><b>' + esc(g.name) + '</b><span class="cnt">' + g.all.length + '</span><span>' + (pay ? rs(pay) + ' fixed salary a month' : 'No fixed salary (commission-based)') + '</span><span class="acts"><button type="button" data-do="add" data-did="' + g.id + '">+ Add people</button>' + (g.id ? '<button type="button" data-do="ren" data-did="' + g.id + '">Rename</button>' + (g.all.length ? '' : '<button type="button" data-do="del" data-did="' + g.id + '">Delete</button>') : '') + '</span></div>'
+        + '<div class="strip">' + (g.list.length ? g.list.map(p => bubble(p, true)).join('') : '<div class="none">Nobody here yet. Drag a person onto this box, or press + Add people.</div>') + '</div></section>';
     }).join('') || '<div class="card"><div class="empty">Nobody matches “' + esc(S.q) + '”.</div></div>';
   }
   /* the dock stays on screen: drop a person on a department name (no scrolling), or switch on Move mode, tick many people and press a department once */
@@ -472,6 +481,37 @@
     for (let i = 0; i < ps.length; i++) { try { await api.post('employees.set_department', { employee_id: ps[i].id, department_id: to }); } catch (err) { ps[i].deptId = prev[i]; bad++; why = (err && err.message) || 'Could not move.'; } }
     S.msg = bad ? bad + ' could not be moved: ' + why : (ps.length === 1 ? ps[0].name : ps.length + ' people') + ' moved to ' + nameOf(to) + '.'; S.msgBad = !!bad; S.sel.clear(); render();
   }
+  const deptName = (id) => id ? ((S.M.depts.find(d => d.id === id) || {}).name || '') : 'No department';
+  const say = (t, bad) => { S.msg = t; S.msgBad = !!bad; const m = $('teMsg'); if (m) { m.textContent = t; m.className = 'te-msg' + (bad ? ' bad' : ''); } };
+  /* pick people from the whole company and add them to one section */
+  function pickPeople(to) {
+    const sel = new Set(), ov = document.createElement('div'); ov.className = 'pk-ov';
+    ov.innerHTML = '<div class="pk" role="dialog"><div class="pk-h"><b>Add people to ' + esc(deptName(to)) + '</b><button type="button" data-x="1" aria-label="Close">×</button></div><input type="search" id="pkQ" placeholder="Find a person by name, role or department…" autocomplete="off"><div class="pk-l" id="pkL"></div><div class="pk-f"><span id="pkN">Nobody picked yet</span><button type="button" class="pk-go" id="pkGo" disabled>Add</button></div></div>';
+    document.body.appendChild(ov);
+    const close = () => ov.remove(), q = ov.querySelector('#pkQ'), L = ov.querySelector('#pkL'), N = ov.querySelector('#pkN'), G = ov.querySelector('#pkGo');
+    const list = () => { const k = nk(q.value), P = S.M.people.filter(p => p.deptId !== to && (!k || nk(p.name + ' ' + p.role + ' ' + p.code + ' ' + deptName(p.deptId)).includes(k)));
+      L.innerHTML = P.slice(0, 300).map(p => '<label class="pk-r"><input type="checkbox" data-id="' + p.id + '"' + (sel.has(p.id) ? ' checked' : '') + '>' + dp({ name: p.name, photo: p.photo }) + '<span><b>' + esc(p.name) + '</b><i>' + esc(p.role || '') + '</i></span><em>' + esc(deptName(p.deptId) || 'No department') + '</em></label>').join('') || '<div class="none" style="padding:16px;color:#6b7280">Nobody to show.</div>'; };
+    ov.addEventListener('click', (e) => { if (e.target === ov || e.target.closest('[data-x]')) close(); });
+    ov.addEventListener('change', (e) => { const c = e.target.closest('input[data-id]'); if (!c) return; const id = Number(c.dataset.id); c.checked ? sel.add(id) : sel.delete(id); N.textContent = sel.size ? sel.size + ' picked' : 'Nobody picked yet'; G.disabled = !sel.size; G.textContent = sel.size ? 'Add ' + sel.size : 'Add'; });
+    q.addEventListener('input', list); G.addEventListener('click', () => { const ids = [...sel]; close(); moveMany(ids, to); });
+    list(); q.focus();
+  }
+  async function deptAction(what, id) {
+    try {
+      if (what === 'new') {
+        const name = (prompt('Name of the new section (department):') || '').trim(); if (!name) return;
+        if (S.M.depts.some(d => nk(d.name) === nk(name))) { say('A section called “' + name + '” already exists.', true); return; }
+        const r = await api.post('departments.save', { department_name: name }); const nid = Number(r.department_id);
+        S.M.depts.push({ id: nid, name }); S.M.depts.sort((a, b) => a.name.localeCompare(b.name)); say('Section “' + name + '” created. Add people to it.'); render(); pickPeople(nid);
+      } else if (what === 'ren') {
+        const d = S.M.depts.find(x => x.id === id); const name = (prompt('New name for this section:', d.name) || '').trim(); if (!name || name === d.name) return;
+        await api.post('departments.save', { department_id: id, department_name: name }); d.name = name; S.M.depts.sort((a, b) => a.name.localeCompare(b.name)); S.M.people.forEach(p => { if (p.deptId === id) p.dept = name; }); say('Renamed to “' + name + '”.'); render();
+      } else if (what === 'del') {
+        const d = S.M.depts.find(x => x.id === id); if (!confirm('Delete the empty section “' + d.name + '”?')) return;
+        await api.post('departments.delete', { department_id: id }); S.M.depts = S.M.depts.filter(x => x.id !== id); say('Section “' + d.name + '” deleted.'); render();
+      } else if (what === 'add') pickPeople(id);
+    } catch (err) { say((err && err.message) || 'Could not do that.', true); }
+  }
   function teamView() {
     const M = S.M, P = M.people, d30 = addDay(M.today, -30);
     const fresh = P.filter(p => p.joined && p.joined >= d30), pay = P.reduce((a, p) => a + p.monthly, 0);
@@ -482,7 +522,7 @@
       + kp('Fixed salary a month', lakh(pay), P.filter(p => !p.monthly).length + ' are commission-only')
       + kp('Joined last 30 days', fresh.length, fresh.slice(0, 3).map(p => esc(p.name.split(' ')[0])).join(', ') || 'no new joiners')
       + kp('No photo / no department', P.filter(p => !p.photo).length + ' / ' + P.filter(p => !p.deptId).length, 'worth completing') + '</div>'
-      + '<div class="te-bar"><div class="seg">' + [['dept', 'By department'], ['grp', 'By pay: sales · leaders · retail · store']].map(x => '<button data-s="tg" data-v="' + x[0] + '" class="' + (S.tg === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</div><input id="teQ" type="search" placeholder="Find a person…" value="' + esc(S.q) + '" autocomplete="off"><span class="hint">Click a photo to open the person. ' + (S.tg === 'dept' ? '<b>Drag a photo onto another department</b> to move them.' : 'Everybody is here: sales, leaders, retail wholesale, store and the rest.') + '</span><span class="te-msg' + (S.msgBad ? ' bad' : '') + '" id="teMsg">' + esc(S.msg) + '</span></div>'
+      + '<div class="te-bar">' + (S.tg === 'dept' ? '<button class="tbtn" type="button" data-do="new">+ New section</button>' : '') + '<div class="seg">' + [['dept', 'By department'], ['grp', 'By pay: sales · leaders · retail · store']].map(x => '<button data-s="tg" data-v="' + x[0] + '" class="' + (S.tg === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</div><input id="teQ" type="search" placeholder="Find a person…" value="' + esc(S.q) + '" autocomplete="off"><span class="hint">Click a photo to open the person. ' + (S.tg === 'dept' ? '<b>Drag a photo onto another department</b> to move them.' : 'Everybody is here: sales, leaders, retail wholesale, store and the rest.') + '</span><span class="te-msg' + (S.msgBad ? ' bad' : '') + '" id="teMsg">' + esc(S.msg) + '</span></div>'
       + '<div id="teGroups">' + teamGroups() + '</div>'
       + (S.tg === 'dept' ? '<div class="dock" id="teDock">' + dockInner() + '</div>' : '');
   }
@@ -495,6 +535,7 @@
   }
 
   $('tb').addEventListener('click', async (e) => {
+    const act = e.target.closest('button[data-do]'); if (act) { deptAction(act.dataset.do, Number(act.dataset.did || 0)); return; }
     const dz = e.target.closest('.dz[data-dept]'); if (dz) { if (S.sel.size) moveMany([...S.sel], Number(dz.dataset.dept)); else { const m = $('teMsg'); if (m) { m.textContent = 'Drag a person here, or turn on Move mode and tick people first.'; m.className = 'te-msg'; } } return; }
     const dm = e.target.closest('button[data-mm]'); if (dm) { S.mm = !S.mm; if (!S.mm) S.sel.clear(); render(); return; }
     if (e.target.closest('button[data-clr]')) { S.sel.clear(); render(); return; }

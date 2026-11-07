@@ -427,6 +427,7 @@ function action_page_perms(string $action): array
         'addons.' => ['allocation'],                    // Order Allocation: add-ons
         'employees.list' => ['dashboard', 'leave_requests', 'documents', 'agreements', 'approvals', 'targets', 'performance', 'commission', 'allocation'],
         'st_team.month' => ['commission'],               // Total Budgeting reads each store person's daily commission (same chart, no over-target extra)
+        'departments.save' => ['commission'], 'departments.delete' => ['commission'],   // create / rename / delete a section from Total Employees (still Admin / HR only)
         'departments.list' => ['commission'],            // Total Budgeting → Total Employees lists every department
         'employees.set_department' => ['commission'],    // ...and moves a person between them by drag and drop (still Admin / HR only)
         'document_types.list' => ['dashboard', 'approvals'],
