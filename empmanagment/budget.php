@@ -3,8 +3,8 @@
  * budget.php — Sales → Total Budgeting: the numbers YOU type (target, lump sum, fixed expenses).
  * Loaded by api.php only for  budget.*  actions (keep this file in the SAME folder as api.php).
  *
- *   budget.get   GET  month=YYYY-MM          → { month, target, lump, expenses:[{name, amount}] }
- *   budget.save  POST {month, target, lump, expenses:[{name, amount}]}   → saves them (Admin only)
+ *   budget.get   GET  month=YYYY-MM          → { month, target, lump, goals:{sales,leader,store,other}, expenses:[{name, amount}] }
+ *   budget.save  POST {month, target, lump, goals?, expenses:[{name, amount}]}   → saves them (Admin only)
  *   budget.summary POST {facts}              → Claude's few plain lines for the top of the page
  *
  * Fixed expenses (electricity, rent ...) are monthly amounts, kept for every month until you change them.
@@ -38,7 +38,8 @@ if ($__bg === 'budget.get') {
     $month = trim((string)($_GET['month'] ?? date('Y-m')));
     if (!preg_match('/^\d{4}-\d{2}$/', $month)) json_response(['error' => 'month must be YYYY-MM.'], 422);
     $c = budget_cfg($pdo); $m = $c['months'][$month] ?? [];
-    json_response(['month' => $month, 'target' => (float)($m['target'] ?? 0), 'lump' => (float)($m['lump'] ?? 0), 'expenses' => $c['expenses'], 'can_edit' => convo_is_admin($auth)]);
+    $gl = []; foreach (['sales', 'leader', 'store', 'other'] as $gk) $gl[$gk] = (float)(($m['goals'] ?? [])[$gk] ?? 0);
+    json_response(['month' => $month, 'target' => (float)($m['target'] ?? 0), 'lump' => (float)($m['lump'] ?? 0), 'goals' => $gl, 'expenses' => $c['expenses'], 'can_edit' => convo_is_admin($auth)]);
 }
 if ($__bg === 'budget.save') {
     $auth = require_auth();
@@ -52,6 +53,13 @@ if ($__bg === 'budget.save') {
         $v = $in[$k] ?? 0;
         if (!is_numeric($v) || (float)$v < 0 || (float)$v > 1000000000) json_response(['error' => 'Type ' . $k . ' as an amount in rupees.'], 422);
         $c['months'][$month][$k] = round((float)$v, 2);
+    }
+    if (isset($in['goals']) && is_array($in['goals'])) {   // monthly goals per line: sales team, leaders, store salaries, other salaries
+        foreach (['sales', 'leader', 'store', 'other'] as $gk) {
+            $v = $in['goals'][$gk] ?? 0;
+            if (!is_numeric($v) || (float)$v < 0 || (float)$v > 1000000000) json_response(['error' => 'Type the ' . $gk . ' goal as an amount in rupees.'], 422);
+            $c['months'][$month]['goals'][$gk] = round((float)$v, 2);
+        }
     }
     if (isset($in['expenses']) && is_array($in['expenses'])) {
         $c['expenses'] = budget_cfg_from($in['expenses']);
