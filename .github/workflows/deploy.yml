@@ -81,6 +81,19 @@ jobs:
             README_TMPH.md
             gitignore
 
+      - name: Check the files really arrived (size on the server vs here)
+        if: ${{ always() && (steps.fast.outcome == 'success' || steps.fast.outcome == 'failure') }}
+        continue-on-error: true
+        env:
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          FTP_DIR: ${{ secrets.FTP_DIR }}
+          FTP_HOST_HSTGR: ${{ secrets.FTP_HOST_HSTGR }}
+        run: |
+          sudo apt-get install -y -qq lftp dnsutils >/dev/null
+          bash .github/deploy_verify.sh
+
       - name: Why the fast upload did not run (only shown when it was skipped)
         if: ${{ always() && steps.fast.outcome == 'failure' }}
         env:
