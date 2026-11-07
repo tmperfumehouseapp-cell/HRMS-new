@@ -9,7 +9,8 @@
 (function () {
   'use strict';
   if (window.WaCust) return;
-  const CSS = `
+  const CSS = `.wcs-t{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}.wcs-t>div{background:#fff;border:1px solid #eceef2;border-radius:14px;padding:9px 14px;min-width:120px}.wcs-t .m{background:#14161a;color:#fff;border-color:#14161a}.wcs-t small{display:block;font-size:11.5px;opacity:.75}.wcs-t b{font-size:20px;line-height:1.2}
+
 .wcs{--ln:#e3e8ef; --mut:#64748b; --g:#12794a; --gb:#e7f6ee; --r:#b42318; --rb:#fde8e8; display:grid; grid-template-columns:minmax(0,1fr); gap:12px; align-items:start;}
 .wcs > *{min-width:0;}
 @media(min-width:1100px){ .wcs{grid-template-columns:340px minmax(0,1fr);} .wcs-f{position:sticky; top:8px; max-height:calc(100vh - 140px); overflow:auto;} }
@@ -168,7 +169,12 @@ html.wxdk .wcs{--ln:#25343e; --gb:#0f2e20; --rb:#3a1515;} html.wxdk .wcs-r,html.
     const keep = () => { try { localStorage.setItem(LS, JSON.stringify({ cf: S.cf, sort: S.sort, per: S.per, view: S.view })); } catch (e) { } };
     // ---------------------------------------------------------------------------------------------------------- shell
     el.innerHTML = `<div class="wp"><div class="wp-top"><div style="flex:1;min-width:200px"><h2>Customers</h2><p>Pick a date range, add tags, and act on the people who match: campaign, tag or save as a segment.</p></div><button type="button" class="wp-btn" id="cxExp">⬇ Download all matching</button><button type="button" class="wp-btn p" id="cxAdd">＋ Add customers</button></div>
-      <div class="wcs"><div class="wp-cd wcs-f ${S.shut ? 'shut' : ''}" id="cxF"></div><div><div class="wp-cd" style="margin-bottom:10px"><div id="cxV"></div><div id="cxC" style="margin-top:10px"></div></div><div id="cxL"></div><div id="cxB"></div></div></div></div>`;
+      <div id="cxT" class="wcs-t"></div><div class="wcs"><div class="wp-cd wcs-f ${S.shut ? 'shut' : ''}" id="cxF"></div><div><div class="wp-cd" style="margin-bottom:10px"><div id="cxV"></div><div id="cxC" style="margin-top:10px"></div></div><div id="cxL"></div><div id="cxB"></div></div></div></div>`;
+    (async () => {   // how many customers we have in all (customer_facts: the same numbers as Dispatch -> Customers)
+      try { const d = await api.get('wa.cs_totals', {}); const n = (x) => Number(x || 0).toLocaleString('en-IN'); const t = $(el, '#cxT'); if (!t) return;
+        t.innerHTML = '<div class="m"><small>👥 Total customers</small><b>' + n(d.people) + '</b></div><div><small>Repeat (2+ orders)</small><b>' + n(d.repeat) + '</b></div><div><small>New in last 30 days</small><b>' + n(d.new30) + '</b></div><div><small>Store + Online</small><b>' + n(d.both) + '</b></div><div><small>With a risk flag</small><b>' + n(d.risk) + '</b></div>' + (d.spent != null ? '<div><small>Their total spend</small><b>₹' + n(d.spent) + '</b></div>' : '');
+      } catch (e) { }
+    })();
     $(el, '#cxAdd').onclick = () => opts.addCustomers(() => { loadMeta(); load(); });
     $(el, '#cxExp').onclick = function () { exportCsv({ all: 1, cf: cfOut(), q: S.q, except: [] }, S.total, this); };
     // ---------------------------------------------------------------------------------------------------------- filters (left)
