@@ -185,10 +185,10 @@ function wq_campaign_before(PDO $pdo, string $phone, int $ts, int $days): ?array
     } catch (Throwable $e) { }
     return null;
 }
-/** True when the customer had written to us in the 24 hours BEFORE $ts: their query was still open (inside its 24 hours), so a campaign we send then does not turn it into a Campaign. */
+/** True when the customer had written to us in the 30 hours BEFORE $ts (a query stays a New query for 30 hours): their query was still open, so a campaign we send then does not turn it into a Campaign. */
 function wq_chat_was_live(PDO $pdo, string $phone, int $ts): bool
 {
-    try { $q = $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND dir = 'in' AND ts BETWEEN ? AND ? LIMIT 1"); $q->execute([$phone, wq_dt($ts - 86400), wq_dt($ts)]); return (bool)$q->fetchColumn(); } catch (Throwable $e) { return false; }
+    try { $q = $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND dir = 'in' AND ts BETWEEN ? AND ? LIMIT 1"); $q->execute([$phone, wq_dt($ts - 30 * 3600), wq_dt($ts)]); return (bool)$q->fetchColumn(); } catch (Throwable $e) { return false; }
 }
 /** Context of one query for typing and rules. */
 function wq_ctx(PDO $pdo, array $q, array $opt = []): array

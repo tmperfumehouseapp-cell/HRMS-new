@@ -1157,7 +1157,7 @@ function orders_upsert(PDO $pdo, string $storeKey, array $orders): int
  *  campaign number, is marked Campaign / Community, or our campaign was sent to the customer in the 7 days before the order. $c = the wa_contacts row (+ camp_tag). */
 function order_chat_type(PDO $pdo, array $c, int $t = 0): string
 {
-    return ((int)($c['camp_tag'] ?? 0) === 1 || in_array((string)($c['source'] ?? ''), ['campaign', 'community'], true) || (function_exists('wa_got_campaign') && wa_got_campaign($pdo, (string)($c['phone'] ?? ''), date('Y-m-d H:i:s', $t ?: time()), 7))) ? 'campaign' : 'query';
+    return (in_array((string)($c['source'] ?? ''), ['campaign', 'community'], true) || (function_exists('wa_got_campaign') && wa_got_campaign($pdo, (string)($c['phone'] ?? ''), date('Y-m-d H:i:s', $t ?: time()), 7))) ? 'campaign' : 'query';
 }
 function order_auto_alloc(PDO $pdo, string $sk, array $o)
 {
