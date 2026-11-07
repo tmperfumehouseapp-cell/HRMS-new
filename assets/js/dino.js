@@ -23,13 +23,15 @@
     + '.tmd-rh{display:flex;justify-content:space-between;align-items:baseline;gap:8px}.tmd-rh b{font-size:clamp(15px,4.4vw,19px);font-weight:800}.tmd-rh span{font-size:11.5px;font-weight:800;color:#fdba74}'
     + '.tmd-rs{display:flex;gap:8px;align-items:center}.tmd-rs b{font-size:clamp(20px,6vw,28px);font-variant-numeric:tabular-nums;font-weight:800;line-height:1}.tmd-rs small{font-size:11px;font-weight:700;opacity:.85}'
     + '.tmd-tag{display:inline-block;background:var(--gacc);color:#fff;font-size:9.5px;font-weight:800;padding:2px 7px;border-radius:999px;letter-spacing:.05em}.tmd[data-w="neon"] .tmd-tag{color:#04121a}'
-    + '.tmd-rp{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}.tmd-rp div{background:rgba(255,255,255,.14);border-radius:10px;padding:4px 7px;min-width:0}.tmd-rp small{display:block;font-size:9.5px;font-weight:800;opacity:.85;white-space:nowrap}.tmd-rp b{display:block;font-size:12px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.tmd-rp i{font-style:normal;font-size:12px;font-weight:800;color:#fde68a;font-variant-numeric:tabular-nums}.tmd-rp .me{outline:2px solid var(--gacc)}'
+    + '.tmd-rp{display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:5px}.tmd-rp div{background:rgba(255,255,255,.14);border-radius:10px;padding:4px 7px;min-width:0}.tmd-rp small{display:block;font-size:9.5px;font-weight:800;opacity:.85;white-space:nowrap}.tmd-rp b{display:block;font-size:12px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.tmd-rp i{font-style:normal;font-size:12px;font-weight:800;color:#fde68a;font-variant-numeric:tabular-nums}.tmd-rp .me{outline:2px solid var(--gacc)}'
+    + '.tmd-top{display:flex;justify-content:space-between;align-items:center;gap:8px;background:linear-gradient(90deg,#f59e0b,#f97316);color:#fff;border-radius:11px;padding:5px 9px;font-size:12px;font-weight:800}.tmd-top b{font-size:13px}.tmd-top i{font-style:normal;font-variant-numeric:tabular-nums;font-size:15px}'
     + '.tmd-rb{font-size:10.5px;font-weight:700;opacity:.85;text-align:center}'
     + '.tmd-sj{position:absolute;right:9px;bottom:9px;width:54px;height:54px;border-radius:50%;border:0;cursor:pointer;color:#fff;font:800 9.5px Manrope,system-ui,sans-serif;letter-spacing:.06em;display:flex;flex-direction:column;align-items:center;justify-content:center;touch-action:manipulation;z-index:3;opacity:.92;transition:transform .08s}.tmd-sj span{font-size:18px;line-height:1}.tmd-sj:active,.tmd-sj.on{transform:scale(.92)}'
     + '.tmd[data-w="candy"] .tmd-sj{background:radial-gradient(circle at 35% 28%,#fdba74,#f97316 60%,#c2410c);box-shadow:0 4px 0 #9a3412,0 8px 14px rgba(0,0,0,.3)}.tmd[data-w="neon"] .tmd-sj{background:radial-gradient(circle at 35% 28%,#67e8f9,#0891b2 60%,#164e63);box-shadow:0 0 0 2px #22d3ee,0 0 18px rgba(34,211,238,.7)}'
     + '.tmd-ctl{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 11px 10px}.tmd-champ{display:flex;flex-wrap:wrap;gap:5px;min-width:0}.tmd-chip{font-size:11px;font-weight:800;padding:4px 9px;border-radius:999px;background:var(--gchip);white-space:nowrap}'
     + '@media (prefers-reduced-motion:reduce){.tmd-pulse{animation:none}.tmd-rep{animation:none}}';
 
+  var LOCKCSS = 'html.tmd-lock,html.tmd-lock body{overflow:hidden !important;overscroll-behavior:none}';
   var P = {
     candy: { skyA: '#8fd3ff', skyB: '#fff1d6', hill1: '#bfe3b4', hill2: '#9fd49a', ground: '#e8d3a8', line: '#c7a86b', cactus: '#2f9e5a', cactus2: '#1f7a43', dino: '#f97316', belly: '#ffe3c2' },
     neon: { skyA: '#12002e', skyB: '#6b21a8', grid: '#d946ef', ground: '#12002e', line: '#22d3ee', cactus: '#f0abfc', dino: '#22d3ee' }
@@ -37,12 +39,12 @@
 
   function mount(host) {
     if (!host || host.dataset.tmd) return; host.dataset.tmd = '1';
-    if (!document.getElementById('tmdCss')) { var st = document.createElement('style'); st.id = 'tmdCss'; st.textContent = CSS; document.head.appendChild(st); }
+    if (!document.getElementById('tmdCss')) { var st = document.createElement('style'); st.id = 'tmdCss'; st.textContent = CSS; st.textContent += LOCKCSS; document.head.appendChild(st); }
     var world = 'candy'; try { if (localStorage.getItem('tm_dino_world') === 'neon') world = 'neon'; } catch (e) {}
     host.innerHTML = '<div class="tmd" data-w="' + world + '"><div class="tmd-gh"><div class="tmd-t"><b>🦖 Dino Run</b><small>Collect coins · jump the cacti</small></div>'
       + '<div class="tmd-sc"><div><small>Score</small><b class="sc">0</b></div><div><small>Best</small><b class="best">0</b></div><button type="button" class="tmd-wb" aria-label="Switch look"></button></div></div>'
-      + '<div class="tmd-stage"><canvas aria-label="Dino game: tap to jump"></canvas><div class="tmd-ov tmd-start"><div class="big tmd-pulse">Tap to run ▶</div><small>Jump the cacti · grab the coins</small></div>'
-      + '<div class="tmd-ov tmd-goov" style="display:none"><div class="tmd-rep"><div class="tmd-rh"><b>Game over</b><span class="gr-r"></span></div><div class="tmd-rs"></div><div class="tmd-rp"></div><div class="tmd-rb">Tap the game or JUMP to play again</div></div></div>'
+      + '<div class="tmd-stage"><canvas aria-label="Dino game: tap to jump"></canvas><div class="tmd-ov tmd-start"><div class="big tmd-pulse">Tap to run ▶</div><small>Jump the cacti · grab the coins · the screen stays still while you play</small></div>'
+      + '<div class="tmd-ov tmd-goov" style="display:none"><div class="tmd-rep"><div class="tmd-rh"><b>Game over</b><span class="gr-r"></span></div><div class="tmd-rs"></div><div class="tmd-top" style="display:none"></div><div class="tmd-rp"></div><div class="tmd-rb">Tap the game or JUMP to play again</div></div></div>'
       + '<button type="button" class="tmd-sj" aria-label="Jump"><span>⬆</span>JUMP</button></div>'
       + '<div class="tmd-ctl"><div class="tmd-champ"><span class="tmd-chip">Loading the company board…</span></div></div></div>';
     var root = host.querySelector('.tmd'), q = function (c) { return host.querySelector(c); };
@@ -53,7 +55,13 @@
     function setWorld(w) { world = w; root.dataset.w = w; wb.textContent = w === 'candy' ? '🌙' : '☀️'; wb.title = w === 'candy' ? 'Night look' : 'Day look'; try { localStorage.setItem('tm_dino_world', w); } catch (e) {} if (state !== 'run') paint(); }
 
     /* ---------- rules ---------- */
-    var s, state = 'idle', last = 0, raf = 0, jumpQ = false, parts = [], tShake = 0, startAt = 0;
+    var s, state = 'idle', last = 0, raf = 0, jumpQ = false, parts = [], tShake = 0, startAt = 0, locked = false;
+    function lock(on) {   // the page is stuck while you play, so a tap or swipe on the game never scrolls it; it is free again when the run ends
+      if (on === locked) return; locked = on; document.documentElement.classList.toggle('tmd-lock', on);
+      if (on) { try { cv.scrollIntoView({ block: 'center' }); } catch (e) {} }
+    }
+    document.addEventListener('touchmove', function (e) { if (locked) e.preventDefault(); }, { passive: false });
+    document.addEventListener('wheel', function (e) { if (locked) e.preventDefault(); }, { passive: false });
     function fresh() { return { y: 0, vy: 0, dist: 0, coins: 0, speed: 6.2, obs: [], gold: [], gap: 300, f: 0, dead: false }; }
     function step(f) {
       if (jumpQ && s.y === 0) { s.vy = 9.4; for (var i = 0; i < 5; i++) parts.push({ x: 92, y: GROUND, vx: -1 - Math.random(), vy: -.6 * Math.random(), a: .6, r: 2, k: 'dust' }); }
@@ -157,7 +165,7 @@
 
     /* ---------- flow + company board ---------- */
     function loop(now) { if (state !== 'run') return; var f = Math.min(3, (now - last) / 16.67); last = now; step(f); fx(f); paint(); if (s.dead) return over(); raf = requestAnimationFrame(loop); }
-    function begin() { s = fresh(); parts = []; state = 'run'; start.style.display = 'none'; goov.style.display = 'none'; startAt = performance.now(); last = startAt; jumpQ = true; cancelAnimationFrame(raf); raf = requestAnimationFrame(loop); }
+    function begin() { lock(true); s = fresh(); parts = []; state = 'run'; start.style.display = 'none'; goov.style.display = 'none'; startAt = performance.now(); last = startAt; jumpQ = true; cancelAnimationFrame(raf); raf = requestAnimationFrame(loop); }
     function press() { if (state === 'run') { jumpQ = true; return; } begin(); }
     function cell(ic, lbl, r) { return '<div' + (r.mine ? ' class="me"' : '') + '><small>' + ic + ' ' + lbl + '</small><b>' + esc(r.who) + (r.mine ? ' (you)' : '') + '</b><i>' + r.best + '</i></div>'; }
     function board(showResult, sc, ms) {
@@ -170,21 +178,24 @@
         if (showResult) showReport(sc, d);
       }).catch(function () { q('.tmd-champ').innerHTML = ''; if (showResult) showReport(sc, null); });
     }
-    function showReport(sc, d) {   // the report lives on the game screen itself
-      q('.gr-r').textContent = sc < 20 ? 'Score 20+ joins the board' : (d && d.mine_rank ? '#' + d.mine_rank + ' of ' + d.players + ' today' : '');
+    function showReport(sc, d) {   // the report lives on the game screen itself; the top scorer of today (all employees, every panel) is always on it
+      q('.gr-r').textContent = sc < 20 ? 'Score 20+ joins the board' : (d && d.mine_rank ? 'You: #' + d.mine_rank + ' of ' + d.players : '');
+      var top = q('.tmd-top');
+      if (d && d.top && d.top[0]) { var t = d.top[0]; top.style.display = 'flex'; top.innerHTML = '<span>🏆 Top scorer today · <b>' + esc(t.who) + (t.mine ? ' (you!)' : '') + '</b></span><i>' + t.best + '</i>'; if (t.mine && window.TMWin && sc >= 50) TMWin.win({ title: "You are today's top scorer!", ms: 2600 }); }
+      else top.style.display = 'none';
       var h = '';
-      if (d && d.top && d.top[0]) h += cell('🥇', 'First today', d.top[0]);
       if (d && d.month_top) h += cell('👑', 'Top of month', d.month_top);
       if (d && d.last) h += cell('🐢', 'Last today', d.last);
+      if (d && d.mine_rank) h += '<div class="me"><small>🎯 Your rank</small><b>#' + d.mine_rank + ' of ' + d.players + '</b><i>' + (d.mine_today || sc) + '</i></div>';
       q('.tmd-rp').innerHTML = h;
     }
     function over() {
-      state = 'dead'; if (!rm) { tShake = 10; (function sh() { if (tShake > 0 && state === 'dead') { tShake = Math.max(0, tShake - 1.2); paint(); requestAnimationFrame(sh); } else { tShake = 0; if (state === 'dead') paint(); } })(); }
+      lock(false); state = 'dead'; if (!rm) { tShake = 10; (function sh() { if (tShake > 0 && state === 'dead') { tShake = Math.max(0, tShake - 1.2); paint(); requestAnimationFrame(sh); } else { tShake = 0; if (state === 'dead') paint(); } })(); }
       try { navigator.vibrate && navigator.vibrate(40); } catch (e) {}
       var sc = score(), ms = Math.round(performance.now() - startAt), nb = sc > best;
       q('.best').dataset.nb = nb ? '1' : '0';
       if (nb) { best = sc; q('.best').textContent = best; try { localStorage.setItem('tm_dino_best', String(best)); } catch (e) {} if (window.TMWin && sc >= 50) TMWin.win({ title: 'New best: ' + sc, ms: 2200, from: cv }); }
-      q('.tmd-rs').innerHTML = '<b>' + sc + '</b>' + (nb ? '<span class="tmd-tag">NEW BEST</span>' : '') + '<small>' + s.coins + ' coins</small>'; q('.tmd-rp').innerHTML = ''; q('.gr-r').textContent = ''; goov.style.display = 'flex';
+      q('.tmd-rs').innerHTML = '<b>' + sc + '</b>' + (nb ? '<span class="tmd-tag">NEW BEST</span>' : '') + '<small>' + s.coins + ' coins</small>'; q('.tmd-rp').innerHTML = ''; q('.tmd-top').style.display = 'none'; q('.gr-r').textContent = ''; goov.style.display = 'flex';
       var after = function () { board(true, sc, ms); };
       if (sc >= 20 && window.api && api.post) api.post('play.dino_score', { score: sc, ms: ms }).then(after).catch(after); else after();
     }
@@ -198,7 +209,7 @@
       var r = cv.getBoundingClientRect(); if (r.bottom < 0 || r.top > innerHeight) return;
       e.preventDefault(); press();
     });
-    document.addEventListener('visibilitychange', function () { if (document.hidden && state === 'run') { state = 'idle'; start.style.display = ''; cancelAnimationFrame(raf); } });
+    document.addEventListener('visibilitychange', function () { if (document.hidden && state === 'run') { state = 'idle'; lock(false); start.style.display = ''; cancelAnimationFrame(raf); } });
     setWorld(world); s = fresh(); paint(); board(false);
     return { state: function () { return { s: s, st: state, score: score() }; }, press: press };
   }
