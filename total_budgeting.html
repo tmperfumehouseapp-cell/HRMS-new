@@ -162,6 +162,7 @@
       api.get('penalties.list', { month: prev, status: 'applied' }),
       api.get('budget.get', { month }),
       api.get('departments.list'),
+      api.get('st_team.month', { date_from: from, date_to: last < clientToday ? last : clientToday }),
     ]);
     const ok = (i) => R[i].status === 'fulfilled' ? R[i].value : null;
     const why = (i) => R[i].status === 'rejected' ? (R[i].reason && R[i].reason.message || 'failed') : '';
@@ -172,6 +173,7 @@
     if (!ok(3)) warn.push('Penalties could not be read (' + why(3) + ').');
     if (!ok(5)) warn.push('The budget numbers could not be read (' + why(5) + ').');
     if (!ok(6)) warn.push('The department list could not be read (' + why(6) + '). Total Employees groups by the departments it finds on people.');
+    if (!ok(7)) warn.push('Store commission could not be read (' + why(7) + '). Store commission shows as 0.');
     const lr = ok(0) || { rows: [], rules: { leaders: [] }, today: clientToday }, cm = ok(1) || { people: [] };
     const today = lr.today || clientToday;
     const shown = today.slice(0, 7) === month ? today : (today > last ? last : (today < from ? from : last));
@@ -181,7 +183,7 @@
     const empAll = ((ok(2) || {}).employees || []).filter(e => e.status !== 'ex');
     const byName = {}; empAll.forEach(e => { byName[nk(e.full_name)] = e; });
     const leadSet = new Set(((lr.rules || {}).leaders || []).map(nk));
-    const rows = {}, add = (name, e) => { const k = e ? 'e' + e.employee_id : 'n' + nk(name); if (!rows[k]) rows[k] = { key: k, name: e ? e.full_name : name, empId: e ? Number(e.employee_id) : 0, role: e ? String(e.designation || '') : '', dept: e ? String(e.department_name || '') : '', monthly: e ? Number(e.monthly_salary) || 0 : 0, inTeam: false, comm: {}, pen: {}, why: {} }; return rows[k]; };
+    const rows = {}, add = (name, e) => { const k = e ? 'e' + e.employee_id : 'n' + nk(name); if (!rows[k]) rows[k] = { key: k, name: e ? e.full_name : name, empId: e ? Number(e.employee_id) : 0, role: e ? String(e.designation || '') : '', dept: e ? String(e.department_name || '') : '', monthly: e ? Number(e.monthly_salary) || 0 : 0, inTeam: false, comm: {}, scomm: {}, pen: {}, why: {} }; return rows[k]; };
     empAll.forEach(e => { const r = add(e.full_name, e); if (/sales/i.test(r.dept)) r.inTeam = true; });          // every employee is a row; the sales ones are also the Sales Employees list
     (cm.people || []).forEach(p => { const e = byName[nk(p.name)]; const r = add(p.name, e); r.inTeam = true; (p.perday || []).forEach(x => { r.comm[x.day] = (r.comm[x.day] || 0) + (Number(x.new) || 0); }); });
     const byEmp = {}; Object.values(rows).forEach(r => { if (r.empId) byEmp[r.empId] = r; });
@@ -189,6 +191,9 @@
     const all = Object.values(rows).sort((a, b) => a.name.localeCompare(b.name));
     // group: a leader is paid by the leader commission, so their fixed salary on the employee card is NOT counted (no double pay)
     all.forEach(r => { r.leader = leadSet.has(nk(r.name)); r.grp = r.leader ? 'leader' : r.inTeam ? 'sales' : /store|retail|shop|counter|showroom/i.test(r.dept + ' ' + r.role) ? 'store' : 'other'; r.perDay = !r.leader && r.monthly > 0 ? r.monthly / PAYDAYS : 0; });
+    // store commission: same price-by-ML chart as online, but a store has no sales limit, so no over-target extra. People in the Sales department already get their store bills inside the online commission, so they are skipped here (never counted twice).
+    const byEmpAll = {}; all.forEach(r => { if (r.empId) byEmpAll[r.empId] = r; });
+    ((ok(7) || {}).people || []).forEach(p => { const r = byEmpAll[Number(p.employee_id)]; if (!r || r.inTeam || r.leader) return; (p.perday || []).forEach(x => { r.scomm[x.day] = (r.scomm[x.day] || 0) + (Number(x.commission) || 0); }); });
     const team = all.filter(r => r.inTeam);
 
     const leaders = (lr.rules.leaders || []).map(n => ({ name: n, empId: byName[nk(n)] ? Number(byName[nk(n)].employee_id) : 0, role: byName[nk(n)] && byName[nk(n)].designation ? String(byName[nk(n)].designation) : 'Leader', fin: {}, sug: {}, set: {} }));
@@ -207,23 +212,23 @@
 
   /* ---------- the one set of numbers every tab reads ---------- */
   const penCut = (r, d) => r.pen[addDay(d, -1)] || 0;          // a penalty logged on a day is cut the next day
-  const dayPay = (r, d) => (Number(d.slice(8)) <= PAYDAYS ? r.perDay : 0) + (r.comm[d] || 0) - penCut(r, d);
+  const dayPay = (r, d) => (Number(d.slice(8)) <= PAYDAYS ? r.perDay : 0) + (r.comm[d] || 0) + (r.scomm[d] || 0) - penCut(r, d);
   const GK = ['sales', 'leader', 'store', 'other'];
   const GL = { sales: 'Sales', leader: 'Leader', store: 'Store', other: 'Other' };
-  const GN = { sales: 'Sales team (commission + salary)', leader: 'Leaders', store: 'Store team salary', other: 'Other employees salary' };
+  const GN = { sales: 'Sales team (commission + salary)', leader: 'Leaders', store: 'Store team (commission + salary)', other: 'Other employees salary' };
   function figures() {
     const M = S.M, exp = (S.edit.expenses || []).reduce((a, x) => a + (Number(x.amount) || 0), 0), by = {};
-    const tot = { leaders: 0, comm: 0, salary: 0, fixed: 0, pen: 0 };
+    const tot = { leaders: 0, comm: 0, scomm: 0, salary: 0, fixed: 0, pen: 0 };
     const L = {}; GK.forEach(k => { L[k] = { gross: 0, pen: 0, fix: 0, fixFull: M.all.filter(r => r.grp === k).reduce((a, r) => a + r.perDay * PAYDAYS, 0), pend: M.all.filter(r => r.grp === k).reduce((a, r) => a + (r.pen[M.today] || 0), 0) }; });
     M.days.forEach(d => {
       const inPay = Number(d.slice(8)) <= PAYDAYS, g = {}; GK.forEach(k => { g[k] = { gross: 0, pen: 0 }; });
       const lead = M.leaders.reduce((a, l) => a + (l.fin[d] || 0), 0); g.leader.gross += lead;
-      M.all.forEach(r => { const x = g[r.grp], c = r.comm[d] || 0, sal = inPay ? r.perDay : 0; x.gross += c + sal; x.pen += penCut(r, d); L[r.grp].fix += sal; });
-      const b = { leaders: lead, comm: M.all.reduce((a, r) => a + (r.comm[d] || 0), 0), salary: inPay ? M.all.reduce((a, r) => a + r.perDay, 0) : 0, fixed: inPay ? exp / PAYDAYS : 0, pen: M.all.reduce((a, r) => a + penCut(r, d), 0), g };
-      b.net = b.leaders + b.comm + b.salary + b.fixed - b.pen; by[d] = b; Object.keys(tot).forEach(k => { tot[k] += b[k]; });
+      M.all.forEach(r => { const x = g[r.grp], c = r.comm[d] || 0, sal = inPay ? r.perDay : 0; x.gross += c + sal; g.store.gross += r.scomm[d] || 0; x.pen += penCut(r, d); L[r.grp].fix += sal; });
+      const b = { leaders: lead, comm: M.all.reduce((a, r) => a + (r.comm[d] || 0), 0), scomm: M.all.reduce((a, r) => a + (r.scomm[d] || 0), 0), salary: inPay ? M.all.reduce((a, r) => a + r.perDay, 0) : 0, fixed: inPay ? exp / PAYDAYS : 0, pen: M.all.reduce((a, r) => a + penCut(r, d), 0), g };
+      b.net = b.leaders + b.comm + b.scomm + b.salary + b.fixed - b.pen; by[d] = b; Object.keys(tot).forEach(k => { tot[k] += b[k]; });
       GK.forEach(k => { L[k].gross += g[k].gross; L[k].pen += g[k].pen; });
     });
-    const spent = tot.leaders + tot.comm + tot.salary + tot.fixed - tot.pen, elapsed = Math.min(M.days.length, PAYDAYS);
+    const spent = tot.leaders + tot.comm + tot.scomm + tot.salary + tot.fixed - tot.pen, elapsed = Math.min(M.days.length, PAYDAYS);
     const projected = elapsed ? spent / elapsed * PAYDAYS : 0;
     const showPend = S.M.today.slice(0, 7) === S.M.month;
     GK.forEach(k => {
@@ -243,13 +248,13 @@
 
   function empView(all) {
     const M = S.M, key = all ? 'ea' : 'emp', m = S[key], D = M.days;
-    const val = (r, d) => m === 'comm' ? (r.comm[d] || 0) : m === 'pen' ? (r.pen[d] || 0) : dayPay(r, d);
+    const val = (r, d) => m === 'comm' ? (r.comm[d] || 0) + (r.scomm[d] || 0) : m === 'pen' ? (r.pen[d] || 0) : dayPay(r, d);
     const cell = (r, d) => {
       const v = val(r, d);
       if (m === 'pen') return v ? '<td class="neg ' + (d === M.today ? 'pend' : '') + '" title="' + esc(r.why[d] || '') + (d === M.today ? ' · cut tomorrow' : ' · cut next day') + '">−' + f(v) + '</td>' : '<td class="z ' + tc(d) + '">–</td>';
       if (m === 'comm') return v ? '<td class="' + tc(d) + '">' + f(v) + '</td>' : '<td class="z ' + tc(d) + '">–</td>';
       const c = penCut(r, d);
-      return '<td class="' + tc(d) + '" title="' + f(Number(d.slice(8)) <= PAYDAYS ? r.perDay : 0) + ' day salary + ' + f(r.comm[d] || 0) + ' commission − ' + f(c) + ' penalty">' + f(v) + (c ? '<sup style="color:#b3261e">*</sup>' : '') + '</td>';
+      return '<td class="' + tc(d) + '" title="' + f(Number(d.slice(8)) <= PAYDAYS ? r.perDay : 0) + ' day salary + ' + f(r.comm[d] || 0) + ' commission + ' + f(r.scomm[d] || 0) + ' store commission − ' + f(c) + ' penalty">' + f(v) + (c ? '<sup style="color:#b3261e">*</sup>' : '') + '</td>';
     };
     const tot = (r) => D.reduce((a, d) => a + val(r, d), 0);
     const base = all ? M.all.filter(r => S.eg === 'all' || r.grp === S.eg) : M.team;
@@ -257,7 +262,7 @@
     const body = list.map((r, i) => '<tr><td class="i">' + (i + 1) + '</td><td class="n"' + (r.empId ? ' data-emp="' + r.empId + '" title="Open ' + esc(r.name) + '"' : '') + '>' + esc(r.name) + '</td><td class="role" title="' + (r.leader ? 'Leader: paid by the leader commission, so the fixed salary on the card is not counted' : '') + '">' + esc(r.role) + (all ? ' · <b>' + GL[r.grp] + '</b>' : '') + '</td><td class="t">' + (r.leader ? '<span title="Leader: not counted">–</span>' : r.monthly ? f(r.monthly) : '–') + '</td><td class="t">' + (r.perDay ? f(r.perDay) : '–') + '</td><td class="t">' + f(tot(r)) + '</td>' + D.map(d => cell(r, d)).join('') + '</tr>').join('')
       || '<tr><td colspan="20" style="text-align:left;padding:14px">Nobody to show for this month.</td></tr>';
     const foot = '<tr><td class="i"></td><td class="n">Total · ' + list.length + '</td><td></td><td>' + f(list.reduce((a, r) => a + (r.leader ? 0 : r.monthly), 0)) + '</td><td>' + f(list.reduce((a, r) => a + r.perDay, 0)) + '</td><td>' + f(list.reduce((a, r) => a + tot(r), 0)) + '</td>' + D.map(d => '<td>' + f(list.reduce((a, r) => a + val(r, d), 0)) + '</td>').join('') + '</tr>';
-    const note = m === 'comm' ? 'Commission comes in automatically from the new <b>Commission → Result &amp; rules</b> engine. The newest day is next to the name.'
+    const note = m === 'comm' ? 'Commission comes in automatically from the new <b>Commission → Result &amp; rules</b> engine. Store people show their <b>store commission</b>: the same price chart, but no sales limit and no extra. The newest day is next to the name.'
       : m === 'pen' ? 'Red cells are penalties logged that day. The dashed one is today and is cut tomorrow. The same penalties show on the Penalties tab and in the budget.'
       : '<b>Day pay = fixed salary ÷ 30 + commission − the penalty cut that day.</b> * marks a day with a penalty cut. Leaders show – because they are paid by the leader commission.';
     const modes = [['pay', 'Day pay'], ['comm', 'Commission'], ['pen', 'Penalty']];
@@ -340,7 +345,7 @@
     const sg = (n) => n === 0 ? '<span>on goal</span>' : n > 0 ? '<span class="ov">' + rs(n) + ' over</span>' : '<span class="un">' + rs(-n) + ' under</span>';
     const rows = GK.map(k => {
       const x = F.L[k], goal = x.goal;
-      return '<tr class="' + (goal ? (x.proj > goal ? 'bad' : 'good') : '') + '"><td>' + GN[k] + '<small>' + (k === 'leader' ? 'Set leader commission. Their fixed salary on the card is not counted.' : k === 'sales' ? 'Commission plus fixed salaries of the sales team' : 'Fixed salaries ÷ 30 a day') + '</small></td>'
+      return '<tr class="' + (goal ? (x.proj > goal ? 'bad' : 'good') : '') + '"><td>' + GN[k] + '<small>' + (k === 'leader' ? 'Set leader commission. Their fixed salary on the card is not counted.' : k === 'sales' ? 'Commission plus fixed salaries of the sales team' : k === 'store' ? 'Store commission (same chart, no limit, no extra) plus fixed salaries' : 'Fixed salaries ÷ 30 a day') + '</small></td>'
         + '<td>' + g(k, E.goals[k]) + '</td><td>' + f(x.official) + '<small>before penalties</small></td><td class="' + (x.pen + x.pendCut ? 'ov' : '') + '">' + (x.pen + x.pendCut ? '−' + f(x.pen) : '–') + (x.pendCut ? '<small>and −' + f(x.pendCut) + ' tomorrow</small>' : '') + '</td>'
         + '<td>' + f(x.net) + '<small>' + (goal ? sg(Math.round(x.gap)) + ' for ' + F.elapsed + ' days' : 'no goal set') + '</small></td><td><b>' + f(x.proj) + '</b></td><td>' + (goal ? sg(Math.round(x.projGap)) : '–') + '</td></tr>';
     }).join('');
@@ -367,7 +372,7 @@
   const thdShort = (d) => Number(d.slice(8)) + ' ' + ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][Number(d.slice(5, 7)) - 1] + (d === S.M.today ? ' (today)' : '');
 
   function budView() {
-    const M = S.M, F = figures(), E = S.edit, t = F.by[M.today] || { leaders: 0, comm: 0, salary: 0, fixed: 0, pen: 0, net: 0 }, yd = F.by[addDay(M.today, -1)] || { leaders: 0, comm: 0, salary: 0, fixed: 0, pen: 0, net: 0 };
+    const M = S.M, F = figures(), E = S.edit, t = F.by[M.today] || { leaders: 0, comm: 0, scomm: 0, salary: 0, fixed: 0, pen: 0, net: 0 }, yd = F.by[addDay(M.today, -1)] || { leaders: 0, comm: 0, scomm: 0, salary: 0, fixed: 0, pen: 0, net: 0 };
     const over = F.projected - E.target, pct = E.target ? Math.min(100, F.spent / E.target * 100) : 0, mark = E.target ? Math.min(100, F.projected / E.target * 100) : 0;
     const line = (label, k, src, neg) => '<tr><td>' + label + '</td><td>' + (neg && t[k] ? '−' : '') + f(t[k]) + '</td><td>' + (neg && yd[k] ? '−' : '') + f(yd[k]) + '</td><td>' + (neg && F.tot[k] ? '−' : '') + f(F.tot[k]) + '</td><td class="src">' + src + '</td></tr>';
     const ed = M.bud.can_edit;
@@ -380,7 +385,7 @@
       + (E.target ? '<div class="alert ' + (over > 0 ? '' : 'good') + '">' + (over > 0 ? 'Projected ' + lakh(F.projected) + ' against a ' + lakh(E.target) + ' target. ' + lakh(over) + ' to cut, or raise the target.' : 'On track to finish inside the target.') + '</div>' : '<div class="warn">Type this month\'s target below and press Save to see the over / under figure.</div>')
       + '<div class="meter"><i style="width:' + pct + '%"></i><u style="left:' + mark + '%" title="Projected"></u></div><div class="meter-l"><span>Spent ' + pct.toFixed(0) + '% of target</span><span>Black marker: projected month end</span></div>'
       + '<div class="cols"><section><h3>Day by day</h3><div class="sheet plain"><table><thead><tr><th>Item</th><th class="tod">Today</th><th>Yesterday</th><th>Month so far</th><th style="text-align:left">Comes from</th></tr></thead><tbody>'
-      + line('Leaders commission (set amounts)', 'leaders', 'Leaders page') + line('Salespeople commission', 'comm', 'Commission → Result &amp; rules')
+      + line('Leaders commission (set amounts)', 'leaders', 'Leaders page') + line('Salespeople commission', 'comm', 'Commission → Result &amp; rules') + line('Store commission (no limit, no extra)', 'scomm', 'Store bills, same price chart')
       + line('Fixed salaries (÷ 30 a day)', 'salary', 'Employee salary') + line('Fixed expenses (÷ 30 a day)', 'fixed', 'List on the right') + line('Penalties cut', 'pen', 'Penalties', true)
       + '<tr class="sum"><td>Net spend</td><td>' + f(t.net) + '</td><td>' + f(yd.net) + '</td><td>' + f(F.spent) + '</td><td class="src"></td></tr></tbody></table></div></section>'
       + '<section><h3>Target, lump sum and fixed expenses (Save also saves the goals)</h3><div class="sheet plain ed"><table><thead><tr><th>Item</th><th>Amount</th><th>Per day</th>' + (ed ? '<th></th>' : '') + '</tr></thead><tbody>'
