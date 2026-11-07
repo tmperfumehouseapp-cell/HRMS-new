@@ -102,9 +102,9 @@
       const r = await api.get('of.pl_list', { office_id: OID }); const all = r.places || [];
       CF.place = all.find((p) => p.name === 'Cafeteria') || null; CF.others = all.filter((p) => p.name !== 'Cafeteria' && p.state === 'on');
       if (CF.place) {
-        const d = await api.get('of.pl_get', { zone_id: CF.place.zone_id }); CF.photos = d.photos || []; CF.items = d.counts || [];
-        try { CF.today = await api.get('of.pl_today', { zone_id: CF.place.zone_id }); } catch (e) { CF.today = null; }
-        try { CF.form = await api.get('of.pl_form', { zone_id: CF.place.zone_id }); } catch (e) { CF.form = null; }
+        const zq = { zone_id: CF.place.zone_id };   // the three calls do not depend on each other: ask together (faster on a phone)
+        const [d, td, fm] = await Promise.all([api.get('of.pl_get', zq), api.get('of.pl_today', zq).catch(() => null), api.get('of.pl_form', zq).catch(() => null)]);
+        CF.photos = d.photos || []; CF.items = d.counts || []; CF.today = td; CF.form = fm;
       }
     } catch (e) { CF.place = null; }
     CF.edit = false; CF.draft = null; drawCafe();
@@ -121,7 +121,7 @@
     const D = CF.draft, empOpt = '<option value="">Choose…</option>' + G.employees.map((e) => '<option value="' + e.id + '"' + (e.id === D.emp ? ' selected' : '') + '>' + esc(e.name) + '</option>').join('');
     let h = '';
     h += '<div class="bd-card"><div class="bd-h"><h2>1 · Reference photos (3)</h2></div><div class="bd-sub" style="margin:6px 0 10px">Take 3 photos of how the cafeteria should look when it is ready (for example the counter, the shelf and the sink). The person sees them and takes the same photos every day. Tap a box to choose a photo.</div><div class="cf-ph">'
-      + D.photos.map((p, i) => '<div class="cf-s">' + (p.url ? '<img alt="" src="' + esc(p.url) + '">' : '<span>📷 Photo ' + (i + 1) + '</span>') + '<span class="t">Photo ' + (i + 1) + '</span><input type="file" accept="image/*" data-cfp="' + i + '"></div>').join('') + '</div></div>';
+      + D.photos.map((p, i) => '<div class="cf-s">' + (p.url ? '<img alt="Reference photo ' + (i + 1) + '" loading="lazy" decoding="async" src="' + esc(p.url) + '">' : '<span>📷 Photo ' + (i + 1) + '</span>') + '<span class="t">Photo ' + (i + 1) + '</span><input type="file" accept="image/*" data-cfp="' + i + '"></div>').join('') + '</div></div>';
     h += '<div class="bd-card"><div class="bd-h"><h2>2 · What must be there</h2></div><div class="bd-sub" style="margin:6px 0 10px">Add each thing, how it is counted, and the number that <b>must be there at least</b>. Example: <b>Milk · Bag · 4</b> means at least 4 bags must always be there. Coffee can be in grams or kg or packets. Anything below its number goes to the <b>"To bring"</b> list.</div>'
       + D.items.map((x, i) => '<div class="cf-r"><label>Name<input class="bd-in" data-cfn="' + i + '" value="' + esc(x.name) + '" placeholder="e.g. Milk"></label><label>Counted in<select class="bd-in" data-cfu="' + i + '">' + CF_UNITS.map((u) => '<option value="' + u[0] + '"' + (u[0] === x.unit ? ' selected' : '') + '>' + u[1] + '</option>').join('') + '</select></label><label>Must have at least<input class="bd-in" type="number" min="0" step="any" inputmode="decimal" data-cfm="' + i + '" value="' + esc(x.min) + '"></label><button class="bd-btn sm" type="button" data-cfx="' + i + '" aria-label="remove">✕</button></div>').join('')
       + '<button class="bd-btn sm" type="button" id="cfAdd">+ Add a thing</button></div>';
@@ -143,7 +143,7 @@
     if (done) h += low.length ? '<div class="cf-bring"><b style="font-size:15px">To bring (' + low.length + ')</b><div class="bd-sub" style="margin:2px 0 6px">These are below the number that must be there. Bring them, and the person types the new count tomorrow.</div>' + low.map((r) => '<div style="font-size:15px;padding:3px 0">• <b>' + esc(r.name) + '</b>: bring <b>' + cfNum(r.need_qty != null ? r.need_qty : Math.max(0, r.min - r.value)) + '</b> ' + esc((CF.items.find((i) => i.id === r.item_id) || {}).unit || '') + ' <span class="bd-sub">(has ' + cfNum(r.value) + ', must have ' + cfNum(r.min) + ')</span></div>').join('') + '</div>' : '<div class="bd-card"><div class="cf-ok">Nothing is missing today ✓</div></div>';
     // photos: what it should look like, and what was taken today
     const fp = (CF.form && CF.form.photos) || [];
-    h += '<div class="bd-card"><div class="bd-h"><h2>Photos</h2></div><div class="cf-ph" style="margin-top:8px">' + CF.photos.map((p, i) => { const f = fp.find((x) => x.point_id === p.point_id); const today = f && f.status === 'done' && f.task_id ? '<img alt="" data-photo="' + f.task_id + '">' : ''; return '<div><div class="bd-sub" style="margin-bottom:4px">Photo ' + (i + 1) + ' · should look like</div><div class="cf-s" style="cursor:default">' + (p.has_ref ? '<img alt="" src="' + esc(cfRef(p.point_id)) + '">' : '<span>no photo</span>') + '</div>' + '<div class="bd-sub" style="margin:6px 0 4px">Today</div><div class="cf-s" style="cursor:default">' + (today || '<span>not taken yet</span>') + '</div></div>'; }).join('') + '</div></div>';
+    h += '<div class="bd-card"><div class="bd-h"><h2>Photos</h2></div><div class="cf-ph" style="margin-top:8px">' + CF.photos.map((p, i) => { const f = fp.find((x) => x.point_id === p.point_id); const today = f && f.status === 'done' && f.task_id ? '<img alt="Photo taken today" data-photo="' + f.task_id + '">' : ''; return '<div><div class="bd-sub" style="margin-bottom:4px">Photo ' + (i + 1) + ' · should look like</div><div class="cf-s" style="cursor:default">' + (p.has_ref ? '<img alt="Reference photo ' + (i + 1) + '" loading="lazy" decoding="async" src="' + esc(cfRef(p.point_id)) + '">' : '<span>no photo</span>') + '</div>' + '<div class="bd-sub" style="margin:6px 0 4px">Today</div><div class="cf-s" style="cursor:default">' + (today || '<span>not taken yet</span>') + '</div></div>'; }).join('') + '</div></div>';
     if (P.state !== 'on') h += '<div class="bd-card"><button class="bd-btn pri" id="cfOn" type="button">Switch ON</button></div>';
     return h;
   }
@@ -224,7 +224,7 @@
     if (!G.admin) return '';
     return '<div class="bd-card"><div class="bd-h"><h2>Show Claude the office</h2></div><div class="bd-sub">Walk through the office with your phone for 30–60 seconds, slowly, every corner (entrance, desks, pantry, washroom, floor). Or choose a few photos. Claude proposes zones and checkpoints; <b>nothing goes live until you approve it</b>.</div>'
       + '<div class="of-row"><label class="bd-btn">Choose video<input type="file" id="fVid" accept="video/*" hidden></label><label class="bd-btn">Choose photos<input type="file" id="fPh" accept="image/*" multiple hidden></label></div>'
-      + '<div class="of-frames" id="frames">' + FR.map((f) => '<img src="' + f + '" alt="">').join('') + '</div>'
+      + '<div class="of-frames" id="frames">' + FR.map((f) => '<img src="' + f + '" alt="Frame from the walk-through">').join('') + '</div>'
       + '<div class="bd-f"><label>Anything Claude should know? (optional)</label><textarea class="bd-in" id="dNotes" placeholder="e.g. Marble floor. The pantry is shared with the next office. Cleaner comes at 9."></textarea></div>'
       + '<div class="of-row"><button class="bd-btn pri" id="draft" type="button"' + (FR.length ? '' : ' disabled') + '>Claude, draw up the zones' + (FR.length ? ' (' + FR.length + ' pictures)' : '') + '</button></div></div>';
   }
@@ -260,7 +260,7 @@
     const mode = G.judge === 'live';
     return '<div class="bd-card"><div class="bd-h"><h2>To check <span class="bd-chip ' + (G.checks.length ? 'info' : '') + '">' + G.checks.length + '</span></h2>' + (G.admin ? '<span class="bd-seg" id="judge"><button type="button" data-j="shadow" class="' + (!mode ? 'on' : '') + '">Checker sees every cleaning</button><button type="button" data-j="live" class="' + (mode ? 'on' : '') + '">Claude decides</button></span>' : '') + '</div>'
       + '<div class="bd-sub">' + (mode ? 'Claude\'s verdict is final. You only see what Claude was unsure about, plus a 5% sample on the Daily Summary.' : 'While you build trust, every finished cleaning waits here for a quick glance. Switch to "Claude decides" when you are happy.') + '</div>'
-      + (G.checks.length ? G.checks.map((c) => '<div class="of-chk"><img data-photo="' + c.task_id + '" alt=""><div style="flex:1;min-width:200px"><b>' + esc(c.zone) + '</b> <span class="bd-chip ' + (c.ai === 'clear' ? 'ok' : 'warn') + '">Claude: ' + (c.ai === 'clear' ? 'clear' : 'unsure') + '</span><div class="bd-sub">' + esc(c.who) + ' · ' + esc(String(c.at).slice(5, 16)) + '</div><div style="font-size:13px;margin-top:4px">' + esc(c.reason || '') + '</div>'
+      + (G.checks.length ? G.checks.map((c) => '<div class="of-chk"><img data-photo="' + c.task_id + '" alt="Photo to check"><div style="flex:1;min-width:200px"><b>' + esc(c.zone) + '</b> <span class="bd-chip ' + (c.ai === 'clear' ? 'ok' : 'warn') + '">Claude: ' + (c.ai === 'clear' ? 'clear' : 'unsure') + '</span><div class="bd-sub">' + esc(c.who) + ' · ' + esc(String(c.at).slice(5, 16)) + '</div><div style="font-size:13px;margin-top:4px">' + esc(c.reason || '') + '</div>'
         + '<div class="of-row"><button class="bd-btn sm go" data-ck="ok|' + c.id + '">Fine</button><button class="bd-btn sm bad" data-ck="redo|' + c.id + '">Send back — retake</button></div></div></div>').join('') : '<div class="bd-empty" style="padding:14px 0">Nothing waiting.</div>') + '</div>';
   }
   function issuesCard() {
@@ -353,7 +353,21 @@
     if (e.target.id === 'newOff') newOffice();
     else if (e.target.id === 'back') loadList();
   });
-  new MutationObserver(() => { document.querySelectorAll('img[data-photo]:not([src])').forEach(async (im) => { im.src = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=='; try { im.src = await BD.photo(im.dataset.photo); } catch (er) { im.style.visibility = 'hidden'; } }); }).observe($('root'), { childList: true, subtree: true });
+  /* Photos taken by staff (img[data-photo]): loaded only when they scroll into view, 3 at a time, each one once.
+     A photo that cannot load shows a small grey "Photo not available" tile instead of an empty or broken picture. */
+  const PH_BLANK = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
+  const phQueue = []; let phBusy = 0;
+  function phNext() {
+    while (phBusy < 3 && phQueue.length) {
+      const im = phQueue.shift(); phBusy++;
+      BD.photo(im.dataset.photo).then((u) => { im.src = u; }).catch(() => {
+        im.src = PH_BLANK; im.alt = 'Photo not available'; im.title = 'Photo not available';
+        const t = document.createElement('span'); t.className = 'bd-sub'; t.textContent = 'Photo not available'; t.style.cssText = 'display:grid;place-items:center;width:100%;height:100%;font-size:12px'; if (im.parentNode) { im.style.display = 'none'; im.parentNode.insertBefore(t, im); }
+      }).finally(() => { phBusy--; phNext(); });
+    }
+  }
+  const phSeen = 'IntersectionObserver' in window ? new IntersectionObserver((es) => { es.forEach((en) => { if (en.isIntersecting) { phSeen.unobserve(en.target); phQueue.push(en.target); } }); phNext(); }, { rootMargin: '200px' }) : null;
+  new MutationObserver(() => { document.querySelectorAll('img[data-photo]:not([data-q])').forEach((im) => { im.dataset.q = '1'; im.src = PH_BLANK; im.alt = 'Photo'; im.decoding = 'async'; if (phSeen) phSeen.observe(im); else { phQueue.push(im); phNext(); } }); }).observe($('root'), { childList: true, subtree: true });
   /* Store door: Store > Cleaning & Pantry opens THIS page on the store office (one system, two doors). Not registered yet = one button. */
   async function openStore() {
     try {
