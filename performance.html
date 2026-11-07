@@ -94,7 +94,6 @@
         <select id="groupPick" style="padding:8px 10px; border:1px solid var(--line); border-radius:6px; font-size:13px;">
           <option value="">All houses</option>
           <option value="tmph">TM Perfume House</option>
-          <option value="tm4u">TM4U</option>
           <option value="tmsg">TM Shower Gel</option>
         </select>
         <span class="rg-lbl" style="font-size:11.5px; color:var(--muted);">From</span>
@@ -215,7 +214,7 @@
 
   const alertBox = document.getElementById('alertBox');
   let currentMonth = '';
-  const HOUSE_COLOR = { tmph: '#2563EB', tm4u: '#7C3AED', tmsg: '#0891B2', '': '#6B7280' };
+  const HOUSE_COLOR = { tmph: '#2563EB', tmsg: '#0891B2', '': '#6B7280' };
 
   function showAlert(msg, type = 'success') {
     alertBox.innerHTML = `<div class="alert ${type}">${msg}</div>`;

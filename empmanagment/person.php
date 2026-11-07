@@ -9,6 +9,7 @@
  *   person.card          GET  employee_id            → employee, pay, timing, month stats, salary so far, penalties
  *   person.summary       GET  employee_id            → Claude's short summary + what to fix (plain fallback if Claude is not set up)
  *   person.penalty_edit  POST {penalty_id, amount, note}  → change the amount of an applied penalty (Admin / HR)
+ *   person.suggest_penalty GET employee_id, date → Claude's SUGGESTION for one day from the punch data (Admin / HR). It saves nothing: a penalty is only ever added by hand with penalties.apply.
  * Adding a penalty and waiving one still use penalties.apply / penalties.waive (the Penalty list uses them too).
  * Timing is saved with bd.b2_punch_set (the Boss Engine "Who punches how" save), so there is one save, not two.
  */
@@ -119,6 +120,7 @@ if ($__pc === 'person.card' || $__pc === 'person.summary') {
     if ($__pc === 'person.card') {
         $card['can_edit'] = convo_is_admin($auth);   // only Admin changes anything on the card: add / change / waive penalties and timing
         $card['is_admin'] = $card['can_edit'];
+        $card['can_docs'] = $card['can_edit'] || in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true);   // upload is Admin / HR (employee_documents.upload); approve / decline is Admin only
         $isHr = in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true);
         if (!$isHr && !$card['can_edit']) { $card['salary_history'] = []; $card['salary'] = null; $card['pay']['monthly'] = null; $card['pay']['per_day'] = null; }   // house rule: salary figures are for Admin and HR only
         json_response($card);
@@ -142,6 +144,59 @@ if ($__pc === 'person.card' || $__pc === 'person.summary') {
         if (is_array($r) && !empty($r[0]) && is_array($r[1]) && trim((string)($r[1]['summary'] ?? '')) !== '') { $sum = mb_substr(trim((string)$r[1]['summary']), 0, 400); $fallback = array_slice(array_map(function ($x) { return mb_substr(trim((string)$x), 0, 200); }, array_filter((array)($r[1]['fixes'] ?? []), 'is_string')), 0, 3); $by = 'claude'; }
     } catch (Throwable $x) {}
     json_response(['summary' => $sum, 'fixes' => array_values($fallback), 'by' => $by]);
+}
+if ($__pc === 'person.suggest_penalty') {
+    $auth = require_auth();
+    if (!convo_is_admin($auth) && !in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true)) json_response(['error' => 'Only Admin or HR can ask for a suggestion.'], 403);
+    $e = person_load($pdo, (int)($_GET['employee_id'] ?? 0));
+    if (!$e) json_response(['error' => 'Employee not found.'], 404);
+    ensure_penalty_tables($pdo);
+    $id = (int)$e['employee_id']; $today = biz_today($pdo); $date = (string)($_GET['date'] ?? '');
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) || $date > $today) $date = $today;
+    $card = person_build($pdo, $e); $t = $card['timing'];
+    // the punch of that day
+    $punch = null;
+    try { $q = $pdo->prepare("SELECT punch_in, punch_out FROM attendance WHERE employee_id = ? AND punch_date = ? LIMIT 1"); $q->execute([$id, $date]); $punch = $q->fetch() ?: null; } catch (Throwable $x) {}
+    $in = $punch && $punch['punch_in'] ? strtotime((string)$punch['punch_in']) : 0; $out = $punch && $punch['punch_out'] ? strtotime((string)$punch['punch_out']) : 0;
+    $facts = ['date' => $date, 'rule' => $t['label'], 'punched_in' => $in ? date('H:i', $in) : null, 'punched_out' => $out ? date('H:i', $out) : null, 'late_minutes' => 0, 'hours_worked' => null, 'hours_needed' => null, 'on_leave' => false, 'penalised' => (bool)$t['penalised']];
+    if ($in && $out > $in) $facts['hours_worked'] = round(($out - $in) / 3600, 2);
+    if ($t['penalised'] && $in && $t['mode'] === 'fixed' && $t['shift_start'] !== '') {
+        $due = strtotime($date . ' ' . $t['shift_start'] . ':00') + 60 * $t['late_after'];
+        if ($in > $due) $facts['late_minutes'] = (int)round(($in - strtotime($date . ' ' . $t['shift_start'] . ':00')) / 60);
+    }
+    if ($t['penalised'] && $t['mode'] === 'hours') $facts['hours_needed'] = $t['hours_full'] ?: null;
+    try { $q = $pdo->prepare("SELECT COUNT(*) FROM leave_requests WHERE employee_id = ? AND status = 'approved' AND date_from <= ? AND date_to >= ?"); $q->execute([$id, $date, $date]); $facts['on_leave'] = (int)$q->fetchColumn() > 0; } catch (Throwable $x) {}
+    $already = [];
+    foreach ($card['penalties'] as $p) if ($p['date'] === $date && $p['status'] === 'applied') $already[] = $p['title'] . ' ₹' . (int)$p['amount'];
+    $facts['already_penalised_that_day'] = $already;
+    $rules = [];
+    try { foreach ($pdo->query("SELECT rule_id, name, amount, category, department FROM penalty_rules WHERE active = 1 ORDER BY name")->fetchAll() as $r) $rules[] = ['rule_id' => (int)$r['rule_id'], 'name' => (string)$r['name'], 'amount' => (float)$r['amount'], 'category' => (string)$r['category']]; } catch (Throwable $x) {}
+    // plain read of the day (also the answer when Claude is not set up)
+    $issue = null;
+    if (!$in) $issue = $t['penalised'] && !$facts['on_leave'] ? 'No punch on ' . $date . '.' : null;
+    elseif ($facts['late_minutes'] > 0) $issue = 'Punched in at ' . $facts['punched_in'] . ', ' . $facts['late_minutes'] . ' minutes after the start (' . $t['shift_start'] . ', grace ' . $t['late_after'] . ' min).';
+    elseif ($t['penalised'] && $t['mode'] === 'hours' && $out > $in && $t['hours_full'] > 0 && $facts['hours_worked'] + 1e-9 < $t['hours_full']) $issue = 'Worked ' . $facts['hours_worked'] . ' hours, needs ' . $t['hours_full'] . '.';
+    $sugg = null; $by = 'rules';
+    if ($issue === null) { $reason = !$t['penalised'] ? 'This person has no punch rule, so nothing to suggest.' : ($facts['on_leave'] ? 'On approved leave that day.' : 'Nothing wrong in the punch data for ' . $date . '.'); }
+    else {
+        $reason = $issue; $pick = null;
+        foreach ($rules as $r) { if (!$in ? preg_match('/absent|no.?punch|missed/i', $r['name']) : ($facts['late_minutes'] > 0 ? preg_match('/late/i', $r['name']) : preg_match('/short|hours/i', $r['name']))) { $pick = $r; break; } }
+        if ($pick) $sugg = ['rule_id' => $pick['rule_id'], 'title' => $pick['name'], 'amount' => $pick['amount']];
+        try {
+            $sys = "You help the owner of a perfume business decide a penalty for ONE day of ONE employee. You only SUGGEST: a person decides. You get JSON: the punch facts of that day, the punch rule, penalties already given that day, and the list of saved penalty rules. "
+                . "Pick at most one saved rule that fits what the punch data shows (use its exact name and amount) or none. If the data shows nothing wrong, or the person is on leave, or already penalised for it that day, return rule_id 0. "
+                . "reason = one short plain sentence for the owner. Do not invent facts.";
+            $schema = ['type' => 'OBJECT', 'properties' => ['rule_id' => ['type' => 'INTEGER'], 'reason' => ['type' => 'STRING']], 'required' => ['rule_id', 'reason']];
+            $r = convo_ai($sys, [['text' => "DATA:\n" . json_encode(['facts' => $facts, 'rules' => $rules], JSON_UNESCAPED_UNICODE)]], $schema, false, 400, 'claude');
+            if (is_array($r) && !empty($r[0]) && is_array($r[1])) {
+                $rid = (int)($r[1]['rule_id'] ?? 0); $why = mb_substr(trim((string)($r[1]['reason'] ?? '')), 0, 240); $found = null;
+                foreach ($rules as $x) if ($x['rule_id'] === $rid) $found = $x;
+                $sugg = $found ? ['rule_id' => $found['rule_id'], 'title' => $found['name'], 'amount' => $found['amount']] : null; if ($why !== '') $reason = $why; $by = 'claude';
+            }
+        } catch (Throwable $x) {}
+        if ($sugg) { try { $q = $pdo->prepare("SELECT * FROM penalty_rules WHERE rule_id = ?"); $q->execute([$sugg['rule_id']]); $rule = $q->fetch(); $step = $rule ? penalty_ladder_pick($pdo, $rule, $id, $date) : null; if ($step && !empty($step['amount'])) { $sugg['amount'] = (float)$step['amount']; $sugg['step'] = (string)($step['label'] ?? ''); } } catch (Throwable $x) {} }
+    }
+    json_response(['date' => $date, 'facts' => $facts, 'issue' => $issue, 'suggestion' => $sugg, 'reason' => $reason, 'by' => $by, 'saved' => false]);
 }
 if ($__pc === 'person.penalty_edit') {
     $auth = require_auth();

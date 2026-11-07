@@ -3,7 +3,8 @@
  * wa_origin.php — 📍 "Where did you find us?" asked automatically when a new enquiry starts.
  *
  *   When   a NEW enquiry (first message ever, or the first one after 24 hours of silence) and we do NOT already know where the customer came
- *          from: no Meta ad click, not a reply to our campaign of the last 3 days, not the campaign number, not "community" in their own words,
+ *          from, and the first message is ONLY a hello ("Hi", "Hello", "Good morning"): a message with a real request ("I want to buy … perfume")
+ *          is answered by the normal greeting instead. Also: no Meta ad click, not a reply to our campaign of the last 3 days, not the campaign number, not "community" in their own words,
  *          no open complaint. Asked once: not again within 30 days of asking / an answer.
  *   What   one WhatsApp list message ("Choose one") with 5 options. Free: it is sent inside the 24-hour window the customer just opened.
  *   Answer a tap on an option, or the customer's own words within 24 hours ("insta", "community se", "offer dekha", "ad", "friend" …):
@@ -48,6 +49,20 @@ function wa_origin_words(string $t): string
     if (preg_match('/campaign|camp\b|offer|broadcast|your (message|msg)|aapka (message|msg)|ऑफर|ઓફર|મેસેજ/iu', $t)) return 'campaign';
     if (preg_match('/friend|dost|relative|family|reference|refer\w*|google|youtube|website|दोस्त|મિત્ર|ભાઈબંધ/iu', $t)) return 'friend';
     return '';
+}
+/** True when the message is ONLY a hello ("hi", "hello", "hey TM Perfume House", "good morning", "namaste"…): no product, no question. Only then do we ask "where did you find us?". */
+function wa_origin_bare_hello(string $body): bool
+{
+    $t = mb_strtolower(trim($body)); if ($t === '' || mb_strlen($t) > 60) return false;
+    $w = preg_split('/[^\p{L}\p{M}\p{N}]+/u', $t, -1, PREG_SPLIT_NO_EMPTY); if (!$w || count($w) > 5) return false;
+    $ok = ['hi', 'hii', 'hiii', 'hy', 'hey', 'heyy', 'hello', 'hlo', 'helo', 'hellow', 'hola', 'heya', 'yo', 'there', 'good', 'morning', 'afternoon', 'evening', 'night', 'gm', 'gn', 'ji', 'sir', 'madam', 'mam', 'bhai', 'team', 'tm', 'perfume', 'perfumes', 'house', 'namaste', 'namaskar', 'jsk', 'jai', 'jay', 'shri', 'shree', 'krishna', 'ram', 'kem', 'cho', 'hai', 'ha', 'haan',
+        'हाय', 'हैलो', 'हेलो', 'नमस्ते', 'जय', 'श्री', 'कृष्ण', 'राम', 'हाई', 'हेल्लो', 'હાય', 'હાઈ', 'હેલો', 'હેલ્લો', 'નમસ્તે', 'જય', 'શ્રી', 'કૃષ્ણ', 'રામ', 'કેમ', 'છો'];
+    foreach ($w as $x) {
+        if (in_array($x, $ok, true)) continue;
+        if (preg_match('/^h+i+$|^h+e+y+$|^h+e+l+o+w*$/u', $x)) continue;   // hiiii, heyyy, hellooo
+        return false;
+    }
+    return true;
 }
 function wa_camp_number_safe(PDO $pdo, array $c): bool { return function_exists('wa_camp_number') && wa_camp_number($pdo, (int)($c['last_number_id'] ?? 0)); }
 function wa_origin_label(PDO $pdo, string $k): string { $o = wa_origin_cfg($pdo)['opts']; return (string)($o[$k] ?? ''); }
@@ -105,10 +120,13 @@ function wa_origin_in(PDO $pdo, string $key, array $m, ?string $prevIn, array $r
         if ($t === 'reaction' || $t === 'unsupported') return;
         if ($o && ((!empty($o['asked_at']) && strtotime((string)$o['asked_at']) > time() - 30 * 86400) || (!empty($o['answered_at']) && strtotime((string)$o['answered_at']) > time() - 30 * 86400))) return;   // asked / answered lately
         if ($ref) return;                                                                                     // clicked a Meta ad: we know
+        if ($body !== '' && function_exists('wa_is_ad_text') && wa_is_ad_text($body)) return;   // a promotion / ad ready-made text ("I need the Diwali special offer: 4 × 50ml for 2350") is a Query: never guess Campaign from the word "offer"
+        $w0 = wa_origin_words($body);
+        if ($w0 === '' && !wa_origin_bare_hello($body)) return;   // a real message (e.g. "I want to buy … perfume") or a photo/voice: the normal greeting answers it — we ask only after a bare "Hi"
         if ($body !== '' && preg_match('/more info(rmation)? (on|about) this|interested in this|saw (your|this) ad|can i get more info|i\'?m interested in this/iu', $body)) return;   // Meta's ready-made ad text ("I want to order" is NOT enough: we ask)
         $c = wa_contact($pdo, $key); if (!$c || (int)($c['optout'] ?? 0) === 1 || (int)($c['cx_id'] ?? 0) > 0) return;
         if ($body !== '' && preg_match('/complain|complaint|refund|damage|broken|leak|wrong (item|product)|शिकायत|ફરિયાદ/iu', $body)) return;   // a problem, not a new enquiry
-        $w = wa_origin_words($body); if ($w !== '' && $w !== 'community' && !wa_camp_number_safe($pdo, $c)) { wa_origin_apply($pdo, $key, $w, 'first'); return; }   // they said it themselves ("saw you on insta")
+        $w = wa_origin_words($body); if ($w !== '' && $w !== 'community' && $w !== 'campaign' && !wa_camp_number_safe($pdo, $c)) { wa_origin_apply($pdo, $key, $w, 'first'); return; }   // they said it themselves ("saw you on insta")
         if (in_array((string)$c['source'], ['campaign', 'community'], true)) return;                         // campaign reply / campaign number / said community
         if (function_exists('wa_camp_number') && wa_camp_number($pdo, (int)($c['last_number_id'] ?? 0))) return;
         $cq = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE phone = ? AND dir = 'out' AND mtype = 'template' AND who = 'campaign' AND ts >= ?"); $cq->execute([$key, date('Y-m-d H:i:s', time() - 3 * 86400)]); if ((int)$cq->fetchColumn() > 0) return;

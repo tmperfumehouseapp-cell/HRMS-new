@@ -114,7 +114,7 @@
   root.innerHTML = '<div class="mcard"><div class="muted">Loading manual commission rules…</div></div>';
   mount.appendChild(root);
 
-  const PANELS = [['tmph', 'TM Perfume House'], ['tm4u', 'TM4U'], ['tmsg', 'TM Shower Gel'], ['tmh4', 'TM House 4th']];
+  const PANELS = [['tmph', 'TM Perfume House'], ['tmsg', 'TM Shower Gel'], ['tmh4', 'TM House 4th']];
   const panelName = (k) => (PANELS.find((x) => x[0] === k) || [k, k])[1];
   const ymd = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];

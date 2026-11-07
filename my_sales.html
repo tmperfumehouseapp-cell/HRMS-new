@@ -281,8 +281,8 @@
   const STORE_TO_GROUP = { tmperfumehouse: 'tmph' };
   // ---------- Panels: a person on 2+ panels has a separate target (and sales) in each ----------
   const PN = { list: [], sel: '', tgt: {}, labels: {}, sales: {}, today: '', repaint: null };
-  const PORDER = ['tmph', 'tm4u', 'tmsg'];
-  const PCOL = { tmph: '#1d4ed8', tm4u: '#7e22ce', tmsg: '#15803d' };
+  const PORDER = ['tmph', 'tmsg'];
+  const PCOL = { tmph: '#1d4ed8', tmsg: '#15803d' };
   const panelOfOrder = (o) => o.house || STORE_TO_GROUP[o.store_key] || '';
   const pLabel = (k) => PN.labels[k] || k;
   const pSales = (k, day) => ((PN.sales[k] || {})[day] || { ach: 0 }).ach;
@@ -381,7 +381,7 @@
       if (!STORE_TO_GROUP[o.store_key] && !(o.allocated && o.house)) return;       // only the house stores (+ MySales orders moved to a panel)
       const day = o.biz_date || bizDayOf(o.created_at, dayStart);
       if (day < from || day > to) return;
-      const rk = o.house === 'tm4u' ? 'tm4u' : '';
+      const rk = '';
       const amt = Number(o.total || 0), pre = isPre(o.financial_status);
       const x = { key: (o.store_key || o.source || '') + ':' + o.id, house: o.house || STORE_TO_GROUP[o.store_key] || '', code: o.code || '', amt, pre, ml: o.ml == null ? null : Number(o.ml), x_amt: Number(o.x_amt) || 0, x_com: Number(o.x_com) || 0, x_note: o.x_note || '', x_all: !!o.x_all, x_pct: o.x_pct == null ? null : Number(o.x_pct), day, rk, created: o.created_at };
       const p = calcPrice(x); x.eff = p.eff; x.flat = p.flat;
@@ -440,7 +440,7 @@
     return { ach, n, target, rate: c ? c.rate : 0, amount, rated: !!c || slabN > 0 };
   }
   function period(days, useManual) {
-    const rows = ['', 'tm4u'].map((rk) => aggRow(rk, days, useManual));
+    const rows = [''].map((rk) => aggRow(rk, days, useManual));
     const sum = (k) => rows.reduce((a, r) => a + r[k], 0);
     const live = rows.filter((r) => (r.ach > 0 || r.manual) && r.rated);
     return { ach: sum('ach'), n: sum('n'), target: sum('target'), amount: sum('amount'), rate: live.length === 1 ? live[0].rate : null, rated: live.length > 0, manual: rows.some((r) => r.manual) };

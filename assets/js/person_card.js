@@ -92,8 +92,10 @@ window.PersonCard = (function () {
     return ['ok', 'OK' + (d.expiry ? ' · till ' + whenY(d.expiry) : '')];
   }
 
-  function body(c, o, x) {
-    const e = c.employee, t = c.timing, p = c.pay, st = c.stats, pr = c.profile || {};
+  function body(c, o, x, xerr) {
+    const e = c.employee, t = c.timing, p = c.pay, st = c.stats, xp = (x && x.person) || {}, pr = Object.assign({}, c.profile || {});
+    // anything the person card did not have, the Boss People data fills in (same employee record)
+    if (!pr.photo) pr.photo = xp.photo || ''; if (!pr.joining_date) pr.joining_date = xp.joining_date || ''; if (!pr.mobile) pr.mobile = xp.mobile || ''; if (!pr.email) pr.email = xp.email || ''; if (!pr.role) pr.role = xp.designation || e.designation || '';
     const docs = x && x.documents ? x.documents.map((d) => ({ d, s: docState(d, c.today) })).filter((q) => q.s) : [];
     const missing = docs.filter((q) => q.s[1] === 'Missing').map((q) => q.d.name), ending = docs.filter((q) => /^(Expired|Ends)/.test(q.s[1])).map((q) => q.d.name + ' (' + q.s[1].toLowerCase() + ')'), waiting = docs.filter((q) => q.s[1] === 'Waiting for approval').map((q) => q.d.name);
     const agrOpen = x && x.agreements ? x.agreements.filter((a) => a.status && !/sign|accept|approved|done|complete/i.test(a.status)) : [];
@@ -104,7 +106,7 @@ window.PersonCard = (function () {
     if (agrOpen.length) att.push(['warn', 'Agreement not signed: ' + agrOpen.map((a) => a.name).join(', ')]);
     if (p.type === 'commission' && !t.own) att.push(['', 'No timing set']);
     const pend = c.penalties.filter((q) => q.pending); if (pend.length) att.push(['warn', pend.length + ' penalty cut tomorrow']);
-    if (!x) att.push(['', 'Documents and agreements could not be read']);
+    if (!x) att.push(['bad', 'Documents could not be read' + (xerr ? ': ' + xerr : '')]);
 
     let h = '<div class="pc">';
     const initial = esc((e.name || '?').trim()[0] || '?'), ph = photoUrl(pr.photo);
@@ -132,8 +134,15 @@ window.PersonCard = (function () {
     if (ts) h += row('Tasks today', (ts.done || 0) + ' of ' + (ts.today || 0) + ' done' + (ts.late ? ' · <span style="color:#b3261e">' + ts.late + ' late</span>' : ''));
     if (c.days.length) h += '<details style="margin-top:6px"><summary style="cursor:pointer;color:#6b7280;font-size:12.5px">Last punches</summary>' + c.days.map((d) => '<div class="pc-row"><span>' + when(d.date) + '</span><span>' + esc(d.in) + ' to ' + esc(d.out || '…') + (d.flag ? ' <span class="pc-chip bad">' + (d.flag === 'late' ? 'late' : 'short') + '</span>' : '') + '</span></div>').join('') + '</details>';
 
+    if (!x) h += '<h4>Documents</h4><div class="pc-err">Documents, agreements and leave could not be loaded' + (xerr ? ' (' + esc(xerr) + ')' : '') + '. Refresh the page (Ctrl+Shift+R). If it stays, tell Claude this message.</div>';
     if (x) {
-      h += '<h4>Documents</h4>' + (docs.length ? docs.map((q) => '<div class="pc-row"><span>' + esc(q.d.name) + (q.d.number ? ' <span style="color:#9aa1ad">' + esc(q.d.number) + '</span>' : '') + '</span><span class="pc-chip ' + q.s[0] + '">' + esc(q.s[1]) + '</span></div>').join('') : '<div class="sub">No documents are required for this person.</div>');
+      const canDoc = c.can_docs, canOk = c.can_edit;
+      h += '<h4>Documents</h4>' + (x.documents && x.documents.length ? x.documents.map((d) => { const s = docState(d, c.today);
+        return '<div class="pc-row" style="flex-wrap:wrap;align-items:center"><span>' + esc(d.name) + (d.number ? ' <span style="color:#9aa1ad">' + esc(d.number) + '</span>' : '') + '</span><span style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end">'
+          + (s ? '<span class="pc-chip ' + s[0] + '">' + esc(s[1]) + '</span>' : '<span class="pc-chip">not needed</span>')
+          + (d.doc_id && d.file ? '<button class="pc-btn" data-a="dview" data-id="' + d.doc_id + '" type="button">View</button>' : '')
+          + (canOk && d.doc_id && d.file && d.status && d.status !== 'approved' ? '<button class="pc-btn go" data-a="dok" data-id="' + d.doc_id + '" type="button">Approve</button><button class="pc-btn red" data-a="dno" data-id="' + d.doc_id + '" type="button">Decline</button>' : '')
+          + (canDoc ? '<button class="pc-btn" data-a="dup" data-type="' + d.type_id + '" type="button">' + (d.doc_id && d.file ? 'Replace' : 'Upload') + '</button><input type="file" accept=".pdf,.jpg,.jpeg,.png" data-file="' + d.type_id + '" hidden>' : '') + '</span></div>'; }).join('') : '<div class="sub">No documents are required for this person.</div>');
       if (x.agreements && x.agreements.length) h += '<h4>Agreements</h4>' + x.agreements.slice(0, 5).map((a) => row(esc(a.name), '<span class="pc-chip ' + (/sign|accept|approved|done|complete/i.test(a.status) ? 'ok' : 'warn') + '">' + esc(a.status || '') + '</span>')).join('');
       if (x.leave && x.leave.length) h += '<h4>Leave</h4>' + x.leave.slice(0, 4).map((l) => row(esc(l.leave_type || 'Leave') + ' · ' + when(String(l.date_from).slice(0, 10)) + (l.date_to && l.date_to !== l.date_from ? ' to ' + when(String(l.date_to).slice(0, 10)) : ''), esc(l.status || ''))).join('');
     }
@@ -150,9 +159,9 @@ window.PersonCard = (function () {
 
   async function render(el, id, opts) {
     css(); opts = opts || {}; el.innerHTML = '<div class="pc-load">Loading…</div>';
-    let c, x = null; try { [c, x] = await Promise.all([api.get('person.card', { employee_id: id }), api.get('bd.pp_person', { id: id, month: new Date().toISOString().slice(0, 7) }).catch(() => null)]); } catch (e) { el.innerHTML = '<div class="pc-err">' + esc(e.message || 'Could not open this person.') + '</div>'; return null; }
+    let c, x = null, xerr = ''; try { const r = await Promise.all([api.get('person.card', { employee_id: id }), api.get('bd.pp_person', { id: id, month: new Date().toISOString().slice(0, 7) }).then((v) => ({ v }), (er) => ({ er }))]); c = r[0]; x = r[1].v || null; xerr = r[1].er ? String(r[1].er.message || r[1].er) : ''; } catch (e) { el.innerHTML = '<div class="pc-err">' + esc(e.message || 'Could not open this person.') + '</div>'; return null; }
     const again = () => { render(el, id, opts); if (opts.onChange) opts.onChange(); };
-    el.innerHTML = body(c, opts, x);
+    el.innerHTML = body(c, opts, x, xerr);
     api.get('person.summary', { employee_id: id }).then((r) => {
       const b = el.querySelector('#pcSum'); if (!b) return;
       b.innerHTML = '<b>Claude' + (r.by === 'claude' ? '' : ' (quick read)') + '</b>' + esc(r.summary) + ((r.fixes || []).length ? '<ul>' + r.fixes.map((x) => '<li>' + esc(x) + '</li>').join('') + '</ul>' : '');
@@ -175,11 +184,38 @@ window.PersonCard = (function () {
       if (a === 'padd') {
         const box = el.querySelector('#pcAdd'); if (!box.hidden) { box.hidden = true; return; }
         let rules = []; try { rules = ((await api.get('penalties.rules')).rules || []).filter((r) => r.active); } catch (x) {}
-        box.innerHTML = '<label>Pick a saved rule (or type your own below)</label><select id="paRule"><option value="">Write my own</option>' + rules.map((r) => '<option value="' + r.rule_id + '" data-t="' + esc(r.name) + '" data-a="' + r.amount + '">' + esc(r.name) + ' · ' + inr(r.amount) + '</option>').join('') + '</select>'
+        box.innerHTML = '<div class="pc-note" id="paAsk"><div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap"><div style="flex:1;min-width:130px"><label>Day to look at</label><input id="paSugDate" type="date" value="' + c.today + '"></div><button class="pc-btn" data-a="psug" type="button">Ask Claude to suggest</button></div><div id="paSug" style="margin-top:6px">Claude reads that day\'s punches and suggests. Nothing is saved until you press Apply.</div></div>'
+          + '<label>Pick a saved rule (or type your own below)</label><select id="paRule"><option value="">Write my own</option>' + rules.map((r) => '<option value="' + r.rule_id + '" data-t="' + esc(r.name) + '" data-a="' + r.amount + '">' + esc(r.name) + ' · ' + inr(r.amount) + '</option>').join('') + '</select>'
           + '<label>What is it for</label><input id="paTitle" placeholder="Late punch-in"><div class="two"><div><label>Amount ₹</label><input id="paAmt" type="number" min="1" inputmode="decimal"></div><div><label>Date</label><input id="paDate" type="date" value="' + c.today + '"></div></div>'
           + '<label>Note (optional)</label><input id="paNote"><div class="sub">It is cut from ' + (c.pay.type === 'commission' || c.pay.sales ? 'the commission' : 'the salary') + ' on the next day, and the person is told.</div><div style="display:flex;gap:8px;justify-content:flex-end"><button class="pc-btn go" data-a="padd-ok" type="button">Apply penalty</button></div>';
         box.hidden = false; const sel = box.querySelector('#paRule'); sel.onchange = () => { const o = sel.selectedOptions[0]; if (o && o.dataset.t) { box.querySelector('#paTitle').value = o.dataset.t; box.querySelector('#paAmt').value = o.dataset.a; } };
         return;
+      }
+      if (a === 'psug') {
+        const box = el.querySelector('#paSug'), d = el.querySelector('#paSugDate').value; box.textContent = 'Reading the punches…'; b.disabled = true;
+        try {
+          const r = await api.get('person.suggest_penalty', { employee_id: id, date: d }); const sg = r.suggestion; let h2 = '<b>' + esc(r.reason) + '</b>';
+          if (sg) { h2 += '<div style="margin-top:6px">Suggested: ' + esc(sg.title) + ' · ' + inr(sg.amount) + (sg.step ? ' (' + esc(sg.step) + ')' : '') + '</div><div style="margin-top:6px"><button class="pc-btn go" data-a="psug-use" type="button">Use this suggestion</button></div>'; } else h2 += '<div style="margin-top:4px;color:#6b7280">No penalty suggested.</div>';
+          box.innerHTML = h2; box._s = sg; box._d = r.date;
+        } catch (x) { box.innerHTML = '<span style="color:#b3261e">' + esc(x.message || 'Could not get a suggestion.') + '</span>'; }
+        b.disabled = false; return;
+      }
+      if (a === 'psug-use') {
+        const box = el.querySelector('#paSug'), sg = box._s; if (!sg) return; const f = el.querySelector('#pcAdd');
+        f.querySelector('#paTitle').value = sg.title; f.querySelector('#paAmt').value = sg.amount; f.querySelector('#paDate').value = box._d || c.today;
+        const sel = f.querySelector('#paRule'); if (sel) sel.value = String(sg.rule_id || ''); msg('Filled in. Check it, then press Apply penalty.'); return;
+      }
+      if (a === 'dview') {
+        try { const r = await fetch(api.buildUrl('bd.pp_doc_file', { id: b.dataset.id }), { headers: { Authorization: 'Bearer ' + api.token() } }); if (!r.ok) throw new Error('The file could not be opened.'); window.open(URL.createObjectURL(await r.blob()), '_blank'); } catch (x) { msg(x.message, true); }
+        return;
+      }
+      if (a === 'dok') { try { await api.post('employee_documents.approve', { employee_document_id: Number(b.dataset.id) }); again(); } catch (x) { msg(x.message, true); } return; }
+      if (a === 'dno') { const why = window.prompt('Why is it declined? (the file is removed and the person is told)'); if (why === null) return; try { await api.post('employee_documents.decline', { employee_document_id: Number(b.dataset.id), reason: why }); again(); } catch (x) { msg(x.message, true); } return; }
+      if (a === 'dup') {
+        const inp = el.querySelector('input[data-file="' + b.dataset.type + '"]');
+        inp.onchange = async () => { if (!inp.files[0]) return; const fd = new FormData(); fd.append('employee_id', id); fd.append('document_type_id', b.dataset.type); fd.append('document_file', inp.files[0]); b.disabled = true; b.textContent = 'Uploading…';
+          try { await api.upload('employee_documents.upload', fd); again(); } catch (x) { b.disabled = false; b.textContent = 'Upload'; msg(x.message, true); } };
+        inp.click(); return;
       }
       if (a === 'padd-ok') {
         try { const r = await api.post('penalties.apply', { employee_id: id, title: el.querySelector('#paTitle').value.trim(), amount: Number(el.querySelector('#paAmt').value), date: el.querySelector('#paDate').value, note: el.querySelector('#paNote').value.trim(), notify: true }); again(); } catch (x) { msg(x.message, true); }
