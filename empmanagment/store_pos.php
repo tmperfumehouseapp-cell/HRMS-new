@@ -254,7 +254,7 @@ try {
                 $plan[] = [$pid, $ml, $qty, $kind]; $n += $qty;
             }
             if (!$plan) json_response(['error' => 'Add at least one perfume with a quantity.'], 400);
-            if ($n > 500) json_response(['error' => 'At most 500 barcodes in one go (you asked for ' . $n . ').'], 400);
+            if ($n > 5000) json_response(['error' => 'At most 5000 barcodes in one go (you asked for ' . $n . '). Make the rest in a second go.'], 400);
             $chk = $pdo->prepare("SELECT COUNT(*) FROM st_products WHERE product_id = ? AND active = 1");
             foreach ($plan as $p) { $chk->execute([$p[0]]); if (!$chk->fetchColumn()) json_response(['error' => 'A chosen perfume is no longer on the list. Press Sync from Shopify.'], 400); }
             $mfg = date('Y-m-d'); $exp = date('Y-m-d', strtotime($mfg . ' +4 years'));
