@@ -39,6 +39,8 @@ function ohub_ensure(PDO $pdo): bool
             channel VARCHAR(8) NOT NULL DEFAULT '', refreshed_at DATETIME NULL,
             KEY idx_cf_spent (spent), KEY idx_cf_n (orders_n), KEY idx_cf_last (last_at), KEY idx_cf_name (name)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        // Shopify's own lifetime numbers per customer (the order copy here only goes back a few weeks)
+        foreach (["ALTER TABLE customer_facts ADD COLUMN shop_n INT NOT NULL DEFAULT 0", "ALTER TABLE customer_facts ADD COLUMN shop_amt DECIMAL(14,2) NOT NULL DEFAULT 0", "ALTER TABLE customer_facts ADD COLUMN shop_first DATETIME NULL", "ALTER TABLE customer_facts ADD COLUMN shop_last DATETIME NULL", "ALTER TABLE customer_facts ADD COLUMN shop_at DATETIME NULL"] as $a) { try { $pdo->exec($a); } catch (Throwable $e) { } }
         return $ok = true;
     } catch (Throwable $e) { error_log('customer_facts: ' . $e->getMessage()); return $ok = false; }
 }
@@ -102,18 +104,83 @@ function ohub_save(PDO $pdo, array $rows): int
     }
     return $n;
 }
+/** Put Shopify's lifetime numbers together with ours: online = the bigger of (orders we hold, orders Shopify counts); first / last order = the widest span. */
+function ohub_recalc(PDO $pdo): void
+{
+    try {
+        $pdo->exec("UPDATE customer_facts SET
+            orders_n = GREATEST(online_n, shop_n) + store_n + pos_n,
+            spent = GREATEST(online_amt, shop_amt) + store_amt + pos_amt,
+            first_at = CASE WHEN shop_first IS NOT NULL AND (first_at IS NULL OR shop_first < first_at) THEN shop_first ELSE first_at END,
+            last_at = CASE WHEN shop_last IS NOT NULL AND (last_at IS NULL OR shop_last > last_at) THEN shop_last ELSE last_at END,
+            channel = CASE WHEN GREATEST(online_n, shop_n) > 0 AND (store_n + pos_n) > 0 THEN 'both' WHEN (store_n + pos_n) > 0 THEN 'store' WHEN GREATEST(online_n, shop_n) > 0 THEN 'online' ELSE channel END
+            WHERE shop_n > 0");
+    } catch (Throwable $e) { error_log('ohub_recalc: ' . $e->getMessage()); }
+}
 /** the whole Customers list, rebuilt. Returns the number of people. */
 function ohub_rebuild(PDO $pdo): int
 {
     if (!ohub_ensure($pdo)) return 0; @set_time_limit(120);
     $C = ohub_bulk($pdo); $rows = []; foreach ($C as $p => $c) $rows[] = ohub_row((string)$p, $c);
-    return ohub_save($pdo, $rows);
+    $n = ohub_save($pdo, $rows); ohub_recalc($pdo);
+    return $n;
 }
-/** background: once every 6 hours */
+/** Every customer Shopify knows (even from years ago), with how many orders and how much they spent in all.
+ *  Reads 250 at a time by id (since_id), a few seconds per call, remembers where it stopped (per store) and comes back round once a day for the changes.
+ *  Customers without a phone number cannot be matched to a person here; they are counted and shown, not added. */
+function ohub_shop_import(PDO $pdo, float $budget = 7.0): array
+{
+    $r = ['n' => 0, 'done' => false, 'error' => '', 'noph' => 0, 'total' => 0];
+    if (!ohub_ensure($pdo) || !function_exists('shopify_stores') || !function_exists('shopify_get_token') || !function_exists('dp_dsp_shop_get')) { $r['error'] = 'The Shopify connection is not part of this server.'; return $r; }
+    $t0 = microtime(true); $now = date('Y-m-d H:i:s'); $alldone = true; $total = 0;
+    $up = $pdo->prepare("INSERT INTO customer_facts (p10, name, names, shop_n, shop_amt, shop_first, shop_last, shop_at, refreshed_at) VALUES (?,?,?,?,?,?,?,?,?)
+        ON DUPLICATE KEY UPDATE shop_n = GREATEST(shop_n, VALUES(shop_n)), shop_amt = GREATEST(shop_amt, VALUES(shop_amt)), shop_first = COALESCE(LEAST(shop_first, VALUES(shop_first)), VALUES(shop_first), shop_first), shop_last = COALESCE(GREATEST(shop_last, VALUES(shop_last)), VALUES(shop_last), shop_last), shop_at = VALUES(shop_at),
+        name = IF(name = '', VALUES(name), name), names = IF(names = '', VALUES(names), names)");
+    foreach (shopify_stores() as $key => $st) {
+        if (strpos((string)($st['client_id'] ?? ''), 'PASTE_') !== false) continue;
+        $tok = shopify_get_token($key, $st); if (is_array($tok)) { $r['error'] = (string)($tok['error'] ?? 'No Shopify token.'); continue; }
+        $cur = (int)dp_get('ohub_cur_' . $key, '0'); $fin = (int)dp_get('ohub_fin_' . $key, '0');
+        if ($fin > 0 && time() - $fin < 86400) { $total += (int)dp_get('ohub_tot_' . $key, '0'); continue; }   // finished less than a day ago
+        if ($fin > 0) { $cur = 0; dp_put('ohub_fin_' . $key, '0'); dp_put('ohub_cur_' . $key, '0'); dp_put('ohub_noph_' . $key, '0'); }   // a new round for the changes
+        list($cc, $cj) = dp_dsp_shop_get($st['domain'], $tok, '/admin/api/2024-10/customers/count.json', []);
+        if ($cc === 401 || $cc === 403) { $r['error'] = 'Shopify has not given the HRMS permission to read customers. In the Shopify app add read_customers (and read_orders), then try again.'; dp_put('ohub_err', $r['error']); return $r; }
+        if ($cc === 200 && is_array($cj)) dp_put('ohub_tot_' . $key, (string)(int)($cj['count'] ?? 0));
+        $total += (int)dp_get('ohub_tot_' . $key, '0'); $noph = (int)dp_get('ohub_noph_' . $key, '0');
+        while (microtime(true) - $t0 < $budget) {
+            list($code, $j, $err, $retry) = dp_dsp_shop_get($st['domain'], $tok, '/admin/api/2024-10/customers.json', ['limit' => 250, 'since_id' => $cur, 'fields' => 'id,first_name,last_name,phone,orders_count,total_spent,created_at,last_order_id,default_address']);
+            if ($code === 401 || $code === 403) { $r['error'] = 'Shopify has not given the HRMS permission to read customers. In the Shopify app add read_customers (and read_orders), then try again.'; dp_put('ohub_err', $r['error']); return $r; }
+            if ($code === 429) { $r['error'] = 'Shopify says too many requests; it carries on by itself.'; break; }
+            if ($code !== 200 || !is_array($j)) { $r['error'] = 'Shopify answered ' . ($code ?: 'nothing') . ($err !== '' ? ' (' . $err . ')' : '') . '.'; break; }
+            $list = (array)($j['customers'] ?? []);
+            if (!$list) { dp_put('ohub_fin_' . $key, (string)time()); dp_put('ohub_noph_' . $key, (string)$noph); break; }
+            foreach ($list as $c) {
+                $cur = max($cur, (int)($c['id'] ?? 0)); $r['n']++;
+                $ph = ohub_keys([(string)($c['phone'] ?? ''), (string)($c['default_address']['phone'] ?? '')]); if (!$ph) { $noph++; continue; }
+                $n = (int)($c['orders_count'] ?? 0); if ($n < 1) continue;
+                $nm = trim(((string)($c['first_name'] ?? '')) . ' ' . ((string)($c['last_name'] ?? ''))); if (preg_match('/^(guest|na|null)$/i', $nm)) $nm = '';
+                $fa = !empty($c['created_at']) ? date('Y-m-d H:i:s', strtotime((string)$c['created_at'])) : null;
+                try { $up->execute([$ph[0], mb_substr($nm, 0, 120), mb_substr($nm, 0, 400), $n, ohub_num($c['total_spent'] ?? 0), $fa, null, $now, $now]); } catch (Throwable $e) { }
+            }
+            dp_put('ohub_cur_' . $key, (string)$cur); dp_put('ohub_noph_' . $key, (string)$noph);
+            if (count($list) < 250) { dp_put('ohub_fin_' . $key, (string)time()); break; }
+        }
+        if ((int)dp_get('ohub_fin_' . $key, '0') === 0) $alldone = false;
+        $r['noph'] += $noph;
+    }
+    $r['total'] = $total; $r['done'] = $alldone; ohub_recalc($pdo);
+    dp_put('ohub_err', $r['error']); dp_put('ohub_imp_ts', (string)time()); dp_put('ohub_imp_done', $alldone ? '1' : '0');
+    return $r;
+}
+/** background: the list is rebuilt every 6 hours; the Shopify customer history is imported a few seconds at a time until it is complete, then once a day for the changes */
 function ohub_tick(PDO $pdo, int $now): array
 {
-    $out = ['n' => 0, 'ran' => false, 'error' => ''];
-    if (!function_exists('dp_get') || $now - (int)dp_get('ohub_last_ts', '0') < 6 * 3600) return $out;
+    $out = ['n' => 0, 'ran' => false, 'error' => '', 'imp' => 0];
+    if (!function_exists('dp_get')) return $out;
+    if ($now - (int)dp_get('ohub_imp_try', '0') >= 120) {
+        dp_put('ohub_imp_try', (string)$now);
+        try { $i = ohub_shop_import($pdo, 6.0); $out['imp'] = $i['n']; if ($i['error'] !== '') $out['error'] = $i['error']; } catch (Throwable $e) { $out['error'] = $e->getMessage(); }
+    }
+    if ($now - (int)dp_get('ohub_last_ts', '0') < 6 * 3600) return $out;
     dp_put('ohub_last_ts', (string)$now); $out['ran'] = true;
     try { $out['n'] = ohub_rebuild($pdo); } catch (Throwable $e) { $out['error'] = $e->getMessage(); }
     return $out;
@@ -173,6 +240,9 @@ function ohub_customer(PDO $pdo, $phones, string $nameHint = ''): array
     if ($nameHint !== '' && !in_array($nameHint, $c['names'], true)) array_unshift($c['names'], $nameHint);
     $rows = []; foreach ($ph as $k) if (!empty($bulk[$k])) { $r1 = ohub_row($k, $bulk[$k]); if ($r1['orders_n'] > 0 || $r1['cx_n'] > 0) $rows[] = $r1; } if ($rows) ohub_save($pdo, $rows);
     $row = ohub_row($p10, $c);
+    $row['shop_n'] = 0; $row['shop_amt'] = 0.0;
+    if ($ph) { try { $q = $pdo->prepare("SELECT SUM(shop_n) n, SUM(shop_amt) a, MIN(shop_first) f, MAX(shop_last) l FROM customer_facts WHERE p10 IN (" . implode(',', array_fill(0, count($ph), '?')) . ")"); $q->execute($ph); $z = $q->fetch();
+        if ($z && (int)$z['n'] > 0) { $row['shop_n'] = (int)$z['n']; $row['shop_amt'] = (float)$z['a']; $on = max($row['online_n'], $row['shop_n']); $row['orders_n'] += $on - $row['online_n']; $row['spent'] = round($row['spent'] + max($row['online_amt'], $row['shop_amt']) - $row['online_amt'], 2); $row['online_n'] = $on; $row['online_amt'] = max($row['online_amt'], $row['shop_amt']); if ($z['f'] && (!$row['first_at'] || $z['f'] < $row['first_at'])) $row['first_at'] = (string)$z['f']; } } catch (Throwable $e) { } }
     $row['aov'] = $row['orders_n'] ? round($row['spent'] / $row['orders_n']) : 0;
     $row['days_since'] = $row['last_at'] ? (int)floor(($now - strtotime((string)$row['last_at'])) / 86400) : null;
     $row['names_list'] = $c['names']; $row['flags'] = ohub_flags($row, $now); $row['phone'] = $p10; $row['phones'] = $ph;
@@ -313,7 +383,7 @@ function ohub_list(PDO $pdo, array $g): array
     if (!empty($g['totals'])) {   // only the numbers (the strip at the top of the Dispatch page)
         $n = (int)$pdo->query("SELECT COUNT(*) FROM customer_facts")->fetchColumn(); if ($n === 0) ohub_rebuild($pdo);
         $t = $pdo->query("SELECT COUNT(*) a, SUM(orders_n >= 2) rep, SUM(channel = 'both') b, SUM(rto_n >= 1 OR cx_n >= 2 OR cx_open > 0) risk, SUM(first_at >= (NOW() - INTERVAL 30 DAY)) new30, SUM(spent) spent, MAX(refreshed_at) at FROM customer_facts")->fetch();
-        return ['ok' => true, 'people' => (int)$t['a'], 'repeat' => (int)$t['rep'], 'both' => (int)$t['b'], 'risk' => (int)$t['risk'], 'new30' => (int)$t['new30'], 'spent' => (float)$t['spent'], 'at' => (string)$t['at'], 'sync' => ohub_sync_health()];
+        return ['ok' => true, 'people' => (int)$t['a'], 'repeat' => (int)$t['rep'], 'both' => (int)$t['b'], 'risk' => (int)$t['risk'], 'new30' => (int)$t['new30'], 'spent' => (float)$t['spent'], 'at' => (string)$t['at'], 'shop_total' => ohub_shop_total(), 'sync' => ohub_sync_health()];
     }
     $n = (int)$pdo->query("SELECT COUNT(*) FROM customer_facts")->fetchColumn(); $built = $n > 0;
     if (!$built) { ohub_rebuild($pdo); }
@@ -388,5 +458,29 @@ function ohub_sync_health(): array
     $sts = (int)dp_get('shop_last_ts', '0'); $serr = (string)dp_get('shop_last_err', ''); $fts = (int)dp_get('sf_last_ts', '0'); $ferr = (string)dp_get('sf_last_err', '');
     if ($serr !== '' || $ferr !== '') $L[] = ['shop', 'Shopify', 'bad', 'Failing: ' . mb_substr($serr !== '' ? $serr : $ferr, 0, 220), max($sts, $fts)];
     else $L[] = ['shop', 'Shopify', $sts && $now - $sts < 3600 ? 'ok' : 'warn', $sts ? 'Orders read ' . $age($sts) : 'Has not been read yet', $sts];
+    // Customer history from Shopify (lifetime orders and spend per customer)
+    $ie = (string)dp_get('ohub_err', ''); $its = (int)dp_get('ohub_imp_ts', '0'); $idone = (string)dp_get('ohub_imp_done', '0') === '1'; $tot = function_exists('ohub_shop_total') ? ohub_shop_total() : 0;
+    if ($ie !== '') $L[] = ['cust', 'Customer history (Shopify)', 'bad', $ie, $its];
+    elseif (!$its) $L[] = ['cust', 'Customer history (Shopify)', 'warn', 'Not imported yet. It starts by itself within a few minutes.', 0];
+    elseif (!$idone) { $have = 0; try { $have = (int)$GLOBALS['pdo']->query("SELECT COUNT(*) FROM customer_facts WHERE shop_n > 0")->fetchColumn(); } catch (Throwable $e) { } $L[] = ['cust', 'Customer history (Shopify)', 'warn', 'Importing… ' . number_format($have) . ' of about ' . number_format($tot) . ' customers so far.', $its]; }
+    else $L[] = ['cust', 'Customer history (Shopify)', 'ok', 'All ' . number_format($tot) . ' Shopify customers imported, checked ' . $age($its), $its];
     return array_map(function ($x) { return ['key' => $x[0], 'label' => $x[1], 'state' => $x[2], 'text' => $x[3], 'ts' => $x[4]]; }, $L);
+}
+
+function ohub_shop_total(): int { if (!function_exists('dp_get') || !function_exists('shopify_stores')) return 0; $n = 0; foreach (array_keys(shopify_stores()) as $k) $n += (int)dp_get('ohub_tot_' . $k, '0'); return $n; }
+
+/** the customer card straight from the saved copy (no scan of the order tables): for the WhatsApp side panel, which opens on every chat */
+function ohub_card_fast(PDO $pdo, array $ph): array
+{
+    $in = implode(',', array_fill(0, count($ph), '?')); $q = $pdo->prepare("SELECT * FROM customer_facts WHERE p10 IN ($in)"); $q->execute($ph); $rows = $q->fetchAll();
+    $c = ['phone' => $ph[0], 'phones' => $ph, 'name' => '', 'names_list' => [], 'online_n' => 0, 'online_amt' => 0.0, 'store_n' => 0, 'store_amt' => 0.0, 'pos_n' => 0, 'pos_amt' => 0.0, 'orders_n' => 0, 'spent' => 0.0, 'first_at' => null, 'last_at' => null, 'rto_n' => 0, 'cx_n' => 0, 'cx_open' => 0, 'shop_n' => 0, 'shop_amt' => 0.0];
+    foreach ($rows as $r) {
+        foreach (['online_n', 'online_amt', 'store_n', 'store_amt', 'pos_n', 'pos_amt', 'orders_n', 'spent', 'rto_n', 'cx_n', 'cx_open', 'shop_n', 'shop_amt'] as $f) $c[$f] += $r[$f];
+        if ($c['name'] === '' && $r['name'] !== '') $c['name'] = $r['name'];
+        foreach (explode(' | ', (string)$r['names']) as $n) if ($n !== '' && !in_array($n, $c['names_list'], true) && count($c['names_list']) < 6) $c['names_list'][] = $n;
+        if ($r['first_at'] && (!$c['first_at'] || $r['first_at'] < $c['first_at'])) $c['first_at'] = $r['first_at']; if ($r['last_at'] && (!$c['last_at'] || $r['last_at'] > $c['last_at'])) $c['last_at'] = $r['last_at'];
+    }
+    $c['channel'] = ($c['online_n'] > 0 && ($c['store_n'] + $c['pos_n']) > 0) ? 'both' : (($c['store_n'] + $c['pos_n']) > 0 ? 'store' : ($c['online_n'] > 0 ? 'online' : ''));
+    $c['aov'] = $c['orders_n'] ? round($c['spent'] / $c['orders_n']) : 0; $c['days_since'] = $c['last_at'] ? (int)floor((time() - strtotime((string)$c['last_at'])) / 86400) : null; $c['flags'] = ohub_flags($c);
+    return $c;
 }

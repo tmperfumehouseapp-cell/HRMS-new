@@ -110,6 +110,9 @@
   .wi-comp textarea{flex:1; min-height:42px; max-height:140px; resize:none; border:1px solid var(--line,#e4e7ec); border-radius:12px; padding:9px 12px; margin:0;}
   .wi-btn{border:1px solid var(--line,#e4e7ec); background:#fff; color:#2b2f3a; border-radius:999px; padding:8px 15px; font-size:12.5px; font-weight:700; cursor:pointer; width:auto; min-height:0;}
   .wi-btn.p{background:#f58220; border-color:#f58220; color:#fff;} .wi-btn.d{background:#1c2430; border-color:#1c2430; color:#fff;} .wi-btn:disabled{opacity:.5; cursor:default;}
+  .wi-cu-top b{font-size:15px;} .wi-cu-ch{display:inline-block;margin-left:8px;border-radius:99px;padding:1px 9px;font-size:11px;font-weight:800;background:#efe7fd;color:#6d28d9;} .wi-cu-big{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:8px 0;} .wi-cu-big div{background:#f6f7f9;border-radius:10px;padding:7px 8px;} .wi-cu-big small{display:block;font-size:11px;color:#6b7684;} .wi-cu-big b{font-size:15px;}
+  .wi-cu-fl{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;} .wi-cu-fl span{border-radius:99px;padding:2px 9px;font-size:11.5px;font-weight:800;background:#eef0f3;color:#4b5563;} .wi-cu-fl .ok{background:#dcf5e8;color:#157a3c;} .wi-cu-fl .warn{background:#fff4e0;color:#a15c07;} .wi-cu-fl .bad{background:#fdecea;color:#b42318;} .wi-cu-fl .info{background:#e8f0fe;color:#1d4ed8;}
+  .wi-cu-ol div{display:flex;gap:8px;align-items:baseline;padding:5px 0;border-top:1px solid #eef0f3;font-size:12.5px;} .wi-cu-ol span{color:#6b7684;flex:1;min-width:0;} .wi-cu-ol em{font-style:normal;font-weight:800;} .wi-cu-new{display:flex;flex-direction:column;gap:2px;} .wi-cu-new span{color:#6b7684;font-size:12.5px;}
   .wi-side{overflow-y:auto; padding:14px;} .wi-side h4{margin:14px 0 6px; font-size:11px; color:#6b7684; text-transform:uppercase; letter-spacing:.5px;} .wi-side h4:first-child{margin-top:0;}
   .wi-sb{background:#f7f9fc; border-radius:10px; padding:10px 12px; line-height:1.5;}
   .wi-kv{display:flex; justify-content:space-between; gap:10px; padding:4px 0; border-bottom:1px dashed #e9ecf1;} .wi-kv:last-child{border-bottom:0;} .wi-kv span{color:#6b7684;} .wi-kv b{text-align:right; word-break:break-word;}
@@ -650,6 +653,7 @@
     function drawSide() {
       const c = S.cur.contact; const W = $('wiS');
       let h = '<button type="button" class="wi-back wi-x" id="wiX" style="margin-bottom:10px">‹ Back to chat</button>';
+      h += '<h4>Customer</h4><div class="wi-sb wi-cu" id="wiCu"><span style="color:#8a94a3">Reading this customer…</span></div>';
       h += '<h4>Chain cart</h4><div class="wi-sb"><button type="button" class="wi-btn" id="wiCart" style="min-height:44px">🛒 Make cart</button><div id="wiCtS" style="margin-top:8px"></div></div>';
       h += '<h4>Journey</h4><div id="wiJr"></div>';
       h += '<h4>Query type and tags</h4><div class="wi-sb" id="wiQt"></div>';
@@ -673,12 +677,31 @@
       if (admin && S.cur.assign_log && S.cur.assign_log.length) h += '<h4>History — who had this chat</h4><div class="wi-sb" style="font-size:12.5px">' + S.cur.assign_log.map((l) => { const d = parse(l.at); return `<div class="wi-kv"><span>${d ? esc(d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) + ' ' + hhmm(d)) : ''}</span><b>${esc(l.to || 'Unassigned')}${({ auto: ' · auto', transfer: ' · handed over' + (l.from ? ' by ' + l.from : ''), grab: ' · took a late reply', takeover: ' · took over' + (l.from ? ' from ' + l.from : ''), take: ' · took it', manual: l.by ? ' · by ' + l.by : '' })[l.how] || ''}</b></div>`; }).join('') + '</div>';
       h += '<div id="wiFuS"></div>';
       W.innerHTML = h; drawFuSide();
+      loadCust(c.phone);
       segReady(() => { const el = $('wiJr'); if (el && window.WaSeg) WaSeg.journey(el, { phone: c.phone }); });
       $('wiCart').onclick = () => openCart(c); drawCartChip(c);
       qReady(() => { const el = $('wiQt'); if (el && window.WaQ) WaQ.tags(el, { noTransfer: true, noHistory: true, phone: c.phone, name: c.name || '', api, onTransferred: () => { refreshChat().then(() => loadList(true)); } }); else if (el) el.parentNode.removeChild(el.previousElementSibling), el.remove(); });
       $('wiX').onclick = () => { layerDone('det', false); root.classList.remove('det'); };
       $('wiTag').onclick = () => runTag(true);
       $('wiOpt').onchange = async function () { const on = this.checked; if (!on && !confirm('Stop all messages to this customer?')) { this.checked = true; return; } try { await api.post('wa.optin', { phone: c.phone, opted_in: on }); await refreshChat(); loadList(true); } catch (e) { alert(e.message); this.checked = !on; } };
+    }
+    // ---------- 👤 the customer card of this chat: lifetime orders, spend and flags (customer_facts: the same numbers as Dispatch -> Customers)
+    const CU = { orders: null };
+    const inr = (n) => '₹' + Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+    const dmy = (t) => { const d = parse(t); return d ? d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: '2-digit' }) : '—'; };
+    async function loadCust(phone, withOrders) {
+      let r; try { r = await api.get('wa.cs_card', withOrders ? { phone, orders: 1 } : { phone }); } catch (e) { const el = $('wiCu'); if (el) el.style.display = 'none'; if (el && el.previousElementSibling) el.previousElementSibling.style.display = 'none'; return; }
+      const el = $('wiCu'); if (!el || !S.cur || S.cur.contact.phone !== phone) return;
+      const c = r.customer; if (!c || r.none || (!c.orders_n && !c.cx_n)) { el.innerHTML = '<div class="wi-cu-new"><b>New customer</b><span>No order found for this number yet.</span></div>'; return; }
+      const ch = c.channel === 'both' ? 'Store + Online' : c.channel === 'store' ? 'Store' : c.channel === 'online' ? 'Online' : '';
+      let h = '<div class="wi-cu-top"><div><b>' + esc(c.name || 'Customer') + '</b>' + (ch ? '<span class="wi-cu-ch">' + ch + '</span>' : '') + '</div></div>';
+      h += '<div class="wi-cu-big"><div><small>Orders</small><b>' + c.orders_n + '</b></div><div><small>Spent</small><b>' + inr(c.spent) + '</b></div><div><small>Average</small><b>' + inr(c.aov) + '</b></div></div>';
+      h += '<div class="wi-kv"><span>First order</span><b>' + dmy(c.first_at) + '</b></div><div class="wi-kv"><span>Last order</span><b>' + (c.last_at ? dmy(c.last_at) + (c.days_since != null ? ' · ' + c.days_since + ' d ago' : '') : '—') + '</b></div>';
+      if (c.rto_n || c.cx_n) h += '<div class="wi-kv"><span>Returned · Complaints</span><b style="color:' + (c.rto_n || c.cx_open ? '#b42318' : 'inherit') + '">' + c.rto_n + ' · ' + c.cx_n + (c.cx_open ? ' (' + c.cx_open + ' open)' : '') + '</b></div>';
+      if ((c.flags || []).length) h += '<div class="wi-cu-fl">' + c.flags.map((f) => '<span class="' + f[0] + '">' + (f[0] === 'bad' ? '🚩 ' : f[0] === 'ok' ? '⭐ ' : f[0] === 'warn' ? '⚠ ' : '') + esc(f[1]) + '</span>').join('') + '</div>';
+      if (r.orders) h += '<div class="wi-cu-ol">' + (r.orders.length ? r.orders.map((o) => '<div><b>' + esc(o.name) + '</b><span>' + esc(dmy(o.at)) + (o.status === 'cancelled' ? ' · cancelled' : '') + (o.src === 'store' || o.src === 'pos' ? ' · store' : '') + '</span><em>' + inr(o.total) + '</em></div>').join('') : '<span style="color:#8a94a3">No orders listed.</span>') + '</div>';
+      else h += '<div class="wi-act"><button type="button" class="wi-btn" id="wiCuO">Show recent orders</button></div>';
+      el.innerHTML = h; const b = $('wiCuO'); if (b) b.onclick = () => { b.disabled = true; b.textContent = 'Loading…'; loadCust(phone, true); };
     }
     async function drawAssign() {
       const box = $('wiAs'); if (!box) return; const c = S.cur.contact;
