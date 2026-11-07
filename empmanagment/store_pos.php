@@ -752,6 +752,8 @@ try {
             $billNo = 'ST-' . str_pad((string)$billId, 6, '0', STR_PAD_LEFT);
             $pdo->prepare("UPDATE st_bills SET bill_no = ? WHERE bill_id = ?")->execute([$billNo, $billId]);
             $srcKey = (string)($in['source'] ?? ''); if (!isset(ST_SOURCES[$srcKey])) $srcKey = '';      // where the customer came from (optional)
+            $areaIn = mb_substr(trim(preg_replace('/\s+/u', ' ', (string)($in['area'] ?? ''))), 0, 80);      // which area the customer is from (optional)
+            if ($areaIn !== '') $pdo->prepare("UPDATE st_bills SET area = ? WHERE bill_id = ?")->execute([$areaIn, $billId]);
             if ($srcKey !== '') $pdo->prepare("UPDATE st_bills SET source = ?, source_note = ? WHERE bill_id = ?")->execute([$srcKey, mb_substr(trim((string)($in['source_note'] ?? '')), 0, 120), $billId]);
             $item = $pdo->prepare("INSERT INTO st_bill_items (bill_id, bottle_id, ml, kind) VALUES (?, ?, ?, ?)");
             $sold = $pdo->prepare("UPDATE st_bottles SET status = 'sold', sold_at = ?, bill_id = ? WHERE bottle_id = ? AND status = 'stock'");
@@ -787,13 +789,22 @@ try {
             break;
         }
 
+        case 'st_bill.areas': {           // the areas used most in the last 120 days: suggestions for the Area box
+            require_auth();
+            $q = $pdo->query("SELECT MIN(area) area, COUNT(*) n FROM st_bills WHERE status = 'ok' AND area <> '' AND biz_date >= DATE_SUB(CURDATE(), INTERVAL 120 DAY) GROUP BY LOWER(area) ORDER BY n DESC LIMIT 14");
+            json_response(['areas' => array_map(fn($r) => ['area' => (string)$r['area'], 'n' => (int)$r['n']], $q->fetchAll())]);
+            break;
+        }
+
         case 'st_bill.sources': {         // how many bills came from each source on a day (default: today's store day)
             require_auth();
             $d = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($_GET['date'] ?? '')) ? $_GET['date'] : st_day();
             $q = $pdo->prepare("SELECT source, COUNT(*) n, COALESCE(SUM(total),0) amt FROM st_bills WHERE biz_date = ? AND status = 'ok' GROUP BY source"); $q->execute([$d]);
             $by = []; $all = 0; foreach ($q->fetchAll() as $r) { $by[(string)$r['source']] = ['n' => (int)$r['n'], 'amt' => round((float)$r['amt'])]; $all += (int)$r['n']; }
             $rows = []; foreach (ST_SOURCES as $k => $lab) if (isset($by[$k])) $rows[] = ['key' => $k, 'label' => $lab] + $by[$k];
-            json_response(['date' => $d, 'total' => $all, 'asked' => $all - ($by['']['n'] ?? 0), 'rows' => $rows, 'list' => ST_SOURCES]);
+            $aq = $pdo->prepare("SELECT MIN(area) area, COUNT(*) n, COALESCE(SUM(total),0) amt FROM st_bills WHERE biz_date = ? AND status = 'ok' AND area <> '' GROUP BY LOWER(area) ORDER BY n DESC, amt DESC"); $aq->execute([$d]);
+            $areas = array_map(fn($r) => ['area' => (string)$r['area'], 'n' => (int)$r['n'], 'amt' => round((float)$r['amt'])], $aq->fetchAll());
+            json_response(['date' => $d, 'total' => $all, 'asked' => $all - ($by['']['n'] ?? 0), 'rows' => $rows, 'areas' => $areas, 'area_asked' => array_sum(array_column($areas, 'n')), 'list' => ST_SOURCES]);
             break;
         }
 

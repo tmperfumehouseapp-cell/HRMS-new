@@ -127,7 +127,7 @@
 
       <div class="sx-card bdcard" id="bdCard" style="display:none"><h3>🎂 Birthdays <small id="bdSub">next 7 days</small></h3><div id="bdList"></div></div>
 
-      <div class="sx-card" id="srcCard" style="display:none"><h3>📣 Where customers came from <small id="srcSub"></small></h3><div id="srcList"></div></div>
+      <div class="sx-card" id="srcCard" style="display:none"><h3>📣 Where customers came from <small id="srcSub"></small></h3><div id="srcList"></div><h3 style="margin-top:14px">📍 Areas <small id="areaSub"></small></h3><div id="areaList"></div></div>
 
       <div class="sx-card">
         <h3>Bills <input type="date" id="dayPick" class="sx-in" style="width:auto;min-height:32px;padding:3px 8px;font-size:12.5px;margin-left:6px"><small id="dayTot"></small></h3>
@@ -161,6 +161,9 @@
       <div class="sx-f" style="margin-bottom:6px">How did the customer find us? <span style="font-weight:600">(optional)</span></div>
       <div class="srcs" id="srcs"></div>
       <input class="sx-in" id="srcNote" placeholder="Write it here (e.g. which ad, who told them)…" style="margin-top:6px;display:none" maxlength="120" autocomplete="off">
+      <div class="sx-f" style="margin:12px 0 6px">Which area is the customer from? <span style="font-weight:600">(optional)</span></div>
+      <input class="sx-in" id="areaIn" list="areaDL" placeholder="Type the area (e.g. Vesu, Adajan, Varachha)…" maxlength="80" autocomplete="off"><datalist id="areaDL"></datalist>
+      <div class="srcs" id="areaChips" style="margin-top:6px"></div>
     </div>
     <div class="sx-card c-price">
       <div class="sx-f" style="margin-bottom:6px">Price for the total ml <span style="font-weight:600">(% = commission)</span></div>
@@ -206,6 +209,16 @@
   }
   $('srcs').addEventListener('click', (e) => { const b = e.target.closest('[data-s]'); if (!b) return; source = source === b.dataset.s ? '' : b.dataset.s; if (!source) $('srcNote').value = ''; renderSrc(); if (source === 'other') $('srcNote').focus(); });
   renderSrc();
+  let areaList = [];
+  async function loadAreas() { try { areaList = (await api.get('st_bill.areas')).areas || []; } catch (e) { areaList = []; } renderAreas(); }
+  function renderAreas() {
+    $('areaDL').innerHTML = areaList.map((a) => `<option value="${esc(a.area)}">`).join('');
+    const cur = $('areaIn').value.trim().toLowerCase();
+    $('areaChips').innerHTML = areaList.slice(0, 8).map((a) => `<button type="button" class="src ${cur === a.area.toLowerCase() ? 'on' : ''}" data-a="${esc(a.area)}">${esc(a.area)}</button>`).join('');
+  }
+  $('areaChips').addEventListener('click', (e) => { const b = e.target.closest('[data-a]'); if (!b) return; $('areaIn').value = $('areaIn').value.trim().toLowerCase() === b.dataset.a.toLowerCase() ? '' : b.dataset.a; renderAreas(); });
+  $('areaIn').addEventListener('input', renderAreas);
+  loadAreas();
   const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   function renderCust() {
     $('cCount').textContent = people.length;
@@ -350,12 +363,12 @@
   // ---------- make the bill: saved, the panel resets and stays open for the next customer
   $('btnBill').onclick = async () => {
     $('btnBill').disabled = true;
-    const body = { source, source_note: source ? $('srcNote').value.trim() : '', codes: cart.map((b) => b.code), gift_codes: cart.filter((b) => b.gift).map((b) => b.code), emp_id: +$('emp').value, people: people.filter((p) => p.name || p.phone || p.declined).map((p) => ({ name: p.name, phone: p.declined ? '' : p.phone, declined: p.declined, reason: p.reason, bday: p.declined ? '' : (p.bday || '') })), order_code: $('ocode').value, sold_time: soldTouched ? ($('soldAt').value || '') : '', biz_date: ($('bizDay').value && $('bizDay').value !== storeToday) ? $('bizDay').value : '', discount: +$('disc').value || 0, pay_mode: $('pay').value, cash_amt: +$('cash').value || 0, online_amt: +$('online').value || 0 };
+    const body = { source, source_note: source ? $('srcNote').value.trim() : '', area: $('areaIn').value.trim(), codes: cart.map((b) => b.code), gift_codes: cart.filter((b) => b.gift).map((b) => b.code), emp_id: +$('emp').value, people: people.filter((p) => p.name || p.phone || p.declined).map((p) => ({ name: p.name, phone: p.declined ? '' : p.phone, declined: p.declined, reason: p.reason, bday: p.declined ? '' : (p.bday || '') })), order_code: $('ocode').value, sold_time: soldTouched ? ($('soldAt').value || '') : '', biz_date: ($('bizDay').value && $('bizDay').value !== storeToday) ? $('bizDay').value : '', discount: +$('disc').value || 0, pay_mode: $('pay').value, cash_amt: +$('cash').value || 0, online_amt: +$('online').value || 0 };
     if (chain) body.chain_code = chain.code;
     if (pickedCol !== null) body.price_col = pickedCol; else body.custom_price = +$('customPrice').value || 0;
     try {
       const d = await api.post('st_bill.create', body); beep(true);
-      showDone(d); resetCust(); source = ''; $('srcNote').value = ''; renderSrc();
+      showDone(d); resetCust(); source = ''; $('srcNote').value = ''; $('areaIn').value = ''; renderSrc(); loadAreas();
       cart = []; chain = null; quote = null; pickedCol = null; ['ocode', 'cash', 'online', 'customPrice'].forEach((i) => $(i).value = ''); ocodeAuto = true; fillCode(); soldTouched = false; setSoldNow(); $('bizDay').value = storeToday; $('disc').value = 0; $('scanMsg').innerHTML = '';
       renderCart(); renderQuote();
       toast(d.message + (d.commission_pct != null ? ` Commission ≈ ${d.commission_pct}%.` : '') + ' Scan the next customer’s bottles, or close.');
@@ -400,9 +413,12 @@
   async function loadSources() {
     try {
       const d = await api.get('st_bill.sources', listDate ? { date: listDate } : {}), mx = Math.max(1, ...d.rows.map((r) => r.n));
-      $('srcCard').style.display = d.rows.length ? '' : 'none';
+      $('srcCard').style.display = d.rows.length || (d.areas || []).length ? '' : 'none';
       $('srcSub').textContent = `${d.asked} of ${d.total} bill${d.total === 1 ? '' : 's'} answered`;
       $('srcList').innerHTML = d.rows.map((r) => `<div class="srcrow"><b style="min-width:150px">${esc(r.key ? ((SOURCES.find((x) => x[0] === r.key) || [0, r.label])[1]) : 'Not asked')}</b><span class="bar"><i style="width:${Math.round(r.n / mx * 100)}%"></i></span><span>${r.n} · ${inr(r.amt)}</span></div>`).join('');
+      const A = d.areas || [], am = Math.max(1, ...A.map((r) => r.n));
+      $('areaSub').textContent = A.length ? `${d.area_asked} of ${d.total} bill${d.total === 1 ? '' : 's'} answered` : 'not asked yet today';
+      $('areaList').innerHTML = A.map((r) => `<div class="srcrow"><b style="min-width:150px">${esc(r.area)}</b><span class="bar"><i style="width:${Math.round(r.n / am * 100)}%"></i></span><span>${r.n} · ${inr(r.amt)}</span></div>`).join('');
     } catch (e) { $('srcCard').style.display = 'none'; }
   }
   async function loadBills() {
