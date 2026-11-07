@@ -275,6 +275,67 @@ function pc_photo_url(PDO $pdo): string
     return pc_base_url() . '/empmanagment/api.php?action=pc.photo_view&t=' . $t;
 }
 
+
+// ------------------------------------------------------------------ ONE pricing: Commission → Pricing (cm_chart) and Learn & Setup → Pricing (perfume = ml_slab_chart) stay the same prices.
+// The two charts do not have the same % columns (commission: 7 · 6.5 · 6 · 5 · 4 · 3, price chart: 7 · 6.5 · 6 · 4 · 3.5 · 3), so rows are matched by ML and prices by the SAME % column.
+// First time: the commission price wins for every ML in both; an ML in only one chart is added to the other. After that, every save on one side pushes its prices to the other (add / overwrite, never delete).
+// Shower gel, attar, others and the combos have ONE store (price_chart_<seg> / price_chart_mix): the Commission Pricing tab shows and the Price Chart page edits the very same data.
+/** which old-column index each new column has (same % value), null when there is none */
+function price_col_map(array $from, array $to): array
+{
+    $m = []; foreach ($from as $i => $fc) { $m[$i] = null; foreach ($to as $j => $tc) if (abs((float)$fc - (float)$tc) < 0.001) { $m[$i] = $j; break; } } return $m;
+}
+/** prices must never rise from left to right (a blank 0 is skipped) */
+function price_clamp(array $p): array
+{
+    $last = 0; foreach ($p as $i => $v) { $v = (float)$v; if ($v > 0) { if ($last > 0 && $v > $last) $v = $last; $last = $v; } $p[$i] = $v > 0 ? round($v) : 0; } return $p;
+}
+function price_cm_raw(PDO $pdo): ?array { $s = json_decode((string)setting_get($pdo, 'cm_chart', ''), true); return is_array($s) && !empty($s['rows']) && !empty($s['cols']) ? $s : null; }
+/** Push the prices of one chart to the other. $from 'cm' (commission → price chart) or 'pc' (price chart → commission). $onlyMissing = add the ML rows the other chart lacks, never overwrite. */
+function price_sync(PDO $pdo, string $from, string $by, bool $onlyMissing = false): array
+{
+    $cm = price_cm_raw($pdo); $pc = pc_perfume($pdo);
+    if (!$cm || empty($pc['rows'])) return ['changed' => 0, 'added' => 0, 'error' => ''];      // one of them is not set up yet: nothing to match
+    $cmCols = array_map('floatval', (array)$cm['cols']); $pcCols = array_map('floatval', (array)$pc['cols']);
+    $map = $from === 'cm' ? price_col_map($cmCols, $pcCols) : price_col_map($pcCols, $cmCols);       // source column index => target column index
+    $src = []; foreach ((array)($from === 'cm' ? $cm['rows'] : $pc['rows']) as $r) if (is_array($r)) $src[(string)round((float)$r['ml'], 1)] = array_map('floatval', (array)($r['p'] ?? []));
+    $dstRows = []; foreach ((array)($from === 'cm' ? $pc['rows'] : $cm['rows']) as $r) if (is_array($r)) $dstRows[(string)round((float)$r['ml'], 1)] = ['ml' => $r['ml'], 'p' => array_map('floatval', (array)($r['p'] ?? []))];
+    $nDst = count($from === 'cm' ? $pcCols : $cmCols); $changed = 0; $added = 0;
+    foreach ($src as $ml => $sp) {
+        $exists = isset($dstRows[$ml]);
+        if ($exists && $onlyMissing) continue;
+        $row = $exists ? $dstRows[$ml] : ['ml' => (float)$ml, 'p' => array_fill(0, $nDst, 0.0)]; $before = $row['p'];
+        foreach ($map as $si => $di) if ($di !== null && isset($sp[$si]) && $sp[$si] > 0) $row['p'][$di] = $sp[$si];
+        if ($from === 'cm') {   // price chart rows must have every column priced: a column the commission chart does not have is filled between its neighbours
+            foreach ($row['p'] as $i => $v) if ($v <= 0) { $prev = 0; for ($k = $i - 1; $k >= 0; $k--) if ($row['p'][$k] > 0) { $prev = $row['p'][$k]; break; } $next = 0; for ($k = $i + 1; $k < $nDst; $k++) if ($row['p'][$k] > 0) { $next = $row['p'][$k]; break; } $row['p'][$i] = $prev > 0 && $next > 0 ? round(($prev + $next) / 2) : ($prev > 0 ? $prev : $next); }
+        }
+        $row['p'] = price_clamp($row['p']);
+        if (!$exists) $added++; elseif ($row['p'] != $before) $changed++;
+        $dstRows[$ml] = $row;
+    }
+    if (!$changed && !$added) return ['changed' => 0, 'added' => 0, 'error' => ''];
+    $rows = array_values($dstRows); usort($rows, function ($a, $b) { return (float)$a['ml'] <=> (float)$b['ml']; });
+    if ($from === 'cm') {      // → the price chart (perfume = the slab chart)
+        [$C, $err] = pc_clean(['cols' => $pc['cols'], 'names' => $pc['names'], 'rows' => $rows, 'floor' => $pc['floor']]); if ($err) return ['changed' => 0, 'added' => 0, 'error' => 'Price chart not updated: ' . $err];
+        pc_hist_push($pdo, 'perfume', $by, 'Synced from the Commission pricing'); $e = pc_save($pdo, 'perfume', $C, $by); if ($e) return ['changed' => 0, 'added' => 0, 'error' => 'Price chart not updated: ' . $e];
+    } else {                   // → the commission chart
+        $cm['rows'] = array_map(function ($r) { return ['ml' => (int)round((float)$r['ml']), 'p' => array_map('floatval', $r['p'])]; }, $rows); $cm['updated_at'] = date('Y-m-d H:i:s'); $cm['updated_by'] = $by . ' (synced from the price chart)';
+        setting_set($pdo, 'cm_chart', json_encode($cm, JSON_UNESCAPED_UNICODE));
+    }
+    return ['changed' => $changed, 'added' => $added, 'error' => ''];
+}
+/** the first time: back both charts up, commission wins for ML sizes in both, an ML in one only is added to the other */
+function price_sync_once(PDO $pdo): void
+{
+    if ((string)setting_get($pdo, 'price_sync_v1', '') === '1') return;
+    setting_set($pdo, 'price_sync_v1', '1');
+    try {
+        if (!price_cm_raw($pdo)) { setting_set($pdo, 'price_sync_v1', ''); return; }      // the commission chart is not saved yet: try again later
+        setting_set($pdo, 'price_sync_backup', json_encode(['at' => date('Y-m-d H:i:s'), 'ml_slab_chart' => (string)setting_get($pdo, 'ml_slab_chart', ''), 'cm_chart' => (string)setting_get($pdo, 'cm_chart', '')], JSON_UNESCAPED_UNICODE));
+        $a = price_sync($pdo, 'cm', 'One pricing (first sync)'); $b = price_sync($pdo, 'pc', 'One pricing (first sync)', true);
+        if ($a['error'] || $b['error']) error_log('price_sync_once: ' . $a['error'] . ' ' . $b['error']);
+    } catch (Throwable $e) { error_log('price_sync_once: ' . $e->getMessage()); }
+}
 }   // function_exists guard
 
 // ------------------------------------------------------------------------------------------------------------------ actions
@@ -291,6 +352,7 @@ if (strpos($__pc, 'pc.') === 0) {
     $seg = (string)($in['seg'] ?? 'perfume'); if (!isset(pc_segs()[$seg]) && $seg !== 'mix') json_response(['error' => 'Unknown segment.'], 422);
     switch ($__pc) {
         case 'pc.get': {   // every segment (the screen shows tabs); salespeople may read the charts, only Admin / HR may change them
+            if ($canEdit) price_sync_once($pdo);   // one pricing: the first time, the commission prices win and the two charts get each other's missing sizes
             $o = []; foreach (pc_segs() as $k => $lb) $o[$k] = pc_get($pdo, $k) + ['label' => $lb, 'unit' => pc_unit($k), 'suggest' => pc_suggest_rows($k)];
             $auto = null; if ($canEdit && (string)setting_get($pdo, 'pc_owner_combos_v1', '') !== '1') { setting_set($pdo, 'pc_owner_combos_v1', '1'); $auto = pc_combo_plan($pdo, pc_owner_combos_v1(), 6, true, 'Owner list (5 Nov)'); }   // 🧮 the owner's list, put in once
             if ($auto) { foreach (pc_segs() as $k => $lb) $o[$k] = pc_get($pdo, $k) + ['label' => $lb, 'unit' => pc_unit($k), 'suggest' => pc_suggest_rows($k)]; }
@@ -315,7 +377,8 @@ if (strpos($__pc, 'pc.') === 0) {
                 json_response(['ok' => true, 'chart' => pc_mix_get($pdo) + ['label' => 'Mix (combos)', 'unit' => 'mix', 'suggest' => pc_mix_suggest()], 'message' => 'Mix prices saved. The cart and the bot use them from now on.']); }
             [$C, $err] = pc_clean((array)($in['chart'] ?? [])); if ($err) json_response(['error' => $err], 422);
             $by = (string)($auth['full_name'] ?? $auth['username'] ?? ''); $e2 = pc_save($pdo, $seg, $C, $by); if ($e2) json_response(['error' => $e2], 422); if (function_exists('kb_touch')) kb_touch($pdo, 'Prices: ' . pc_segs()[$seg]);
-            json_response(['ok' => true, 'chart' => pc_get($pdo, $seg) + ['label' => pc_segs()[$seg], 'unit' => pc_unit($seg), 'suggest' => pc_suggest_rows($seg)], 'message' => pc_segs()[$seg] . ' price chart saved. The cart and the bot use it from now on.']);
+            $sy = $seg === 'perfume' ? price_sync($pdo, 'pc', $by) : null;   // perfume prices also go to the Commission pricing (same ML, same % column)
+            json_response(['ok' => true, 'chart' => pc_get($pdo, $seg) + ['label' => pc_segs()[$seg], 'unit' => pc_unit($seg), 'suggest' => pc_suggest_rows($seg)], 'message' => pc_segs()[$seg] . ' price chart saved. The cart and the bot use it from now on.' . ($sy && ($sy['changed'] || $sy['added']) ? ' The Commission pricing now has the same prices (' . ($sy['changed'] + $sy['added']) . ' size' . (($sy['changed'] + $sy['added']) === 1 ? '' : 's') . ').' : '') . ($sy && $sy['error'] ? ' ' . $sy['error'] : '')]);
         }
         case 'pc.cust_col': {
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); if (!$canEdit) json_response(['error' => 'Only Admin / HR can change this.'], 403);

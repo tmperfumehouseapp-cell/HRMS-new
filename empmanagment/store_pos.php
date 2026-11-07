@@ -788,6 +788,17 @@ try {
             foreach ($giftFor as $gp) { $gb = $found[$giftWant[$gi++]]; $pdo->prepare("INSERT INTO st_bday_gifts (phone, name, gift_year, bill_id, bottle_id, given_by, created_at) VALUES (?,?,?,?,?,?,?)")->execute([$gp['phone'], $gp['name'], (int)date('Y'), $billId, (int)$gb['bottle_id'], $empName, $now]); }
             $pdo->commit();
             $pc = st_pct_for($pdo, $t['total_ml'], $total, $empId, $code !== '');
+            // The bill's commission by the SAME rules as online sales, incl. the order-code ("no code") rule: a bill without an order code pays the reduced share
+            // unless enough of the day's bills have one. Shown to the biller right after saving. Falls back to the older chart estimate if the engine is not here.
+            $cmx = null; $codeRule = null;
+            try {
+                if (function_exists('budget_engine_ready') && budget_engine_ready()) {
+                    $rr = budget_store_calc($pdo, st_day(), st_day());
+                    foreach ($rr['bills'] as $bb) if ((int)$bb['bill_id'] === (int)$billId) { $cmx = $bb; break; }
+                    $chc = cm_chart($pdo); $codeRule = ['codepct' => (float)$chc['codepct'], 'nocode' => (float)$chc['nocode']];
+                }
+            } catch (Throwable $e) { error_log('st_bill.create commission: ' . $e->getMessage()); }
+            if ($cmx && $cmx['pct'] !== null) { $pc = ['pct' => round((float)$cmx['pct'] * ($cmx['reduced'] ? $codeRule['nocode'] / 100 : 1), 2), 'source' => 'online rules' . ($cmx['reduced'] ? ' · no order code: reduced' : '')]; }
             $invOut = [];
             if ($chainRow) {      // the numbered GST invoice (same series as the online orders); if it fails the bill stays and the bill list offers "Make GST invoice"
                 $iv = st_chain_invoice($pdo, $billId);
@@ -799,7 +810,7 @@ try {
             foreach ($ppl as &$ax) { $ax['auto'] = $autoWa[$ax['person_id']] ?? ''; } unset($ax);
             foreach ($ppl as &$x) { if ($x['phone'] !== '') { $tok = substr($x['link'], strrpos($x['link'], '=') + 1); $m = st_wa_message(['name' => $x['name'], 'phone' => $x['phone'], 'token' => $tok, 'returning' => $x['returning']], ['bill_no' => $billNo, 'total' => $total], $cs); $x['wa_url'] = $m['url']; } }
             unset($x);
-            json_response(['ok' => true, 'bill_id' => $billId, 'bill_no' => $billNo, 'total' => $total, 'total_ml' => $t['total_ml'], 'commission_pct' => $pc['pct'], 'commission_from' => $pc['source'], 'people' => $ppl] + $invOut + [
+            json_response(['ok' => true, 'bill_id' => $billId, 'bill_no' => $billNo, 'total' => $total, 'total_ml' => $t['total_ml'], 'commission_pct' => $pc['pct'], 'commission_from' => $pc['source'], 'commission_amount' => $cmx ? (float)$cmx['com'] : null, 'no_code' => $code === '', 'code_rule' => $codeRule, 'people' => $ppl] + $invOut + [
                 'message' => 'Bill ' . $billNo . ' saved: ' . $t['total_ml'] . ' ml, ₹' . number_format($total) . '.']);
             break;
         }
