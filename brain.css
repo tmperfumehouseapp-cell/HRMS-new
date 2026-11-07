@@ -1,0 +1,68 @@
+/* Brain page (brain.html + brain_page.js). Loads after style.css, boss.css, boss2.css. Mobile first. */
+.br{max-width:1100px}
+.br *{box-sizing:border-box}
+.br-shelves{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:0 0 14px}
+@media (max-width:760px){.br-shelves{grid-template-columns:minmax(0,1fr)}}
+.br-shelf{border:0;text-align:left;font:inherit;cursor:pointer;border-radius:22px;padding:15px 16px;background:var(--surface,#fff);box-shadow:0 1px 2px rgba(20,22,26,.04),0 6px 18px -10px rgba(20,22,26,.12);display:flex;flex-direction:column;gap:5px;border-top:5px solid #cfd4de}
+.br-shelf.company{border-top-color:#2456b3} .br-shelf.customer{border-top-color:#16945a} .br-shelf.internal{border-top-color:#b9770e}
+.br-shelf .who{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#6a7280}
+.br-shelf b.n{font-size:30px;line-height:1.05;font-weight:800;letter-spacing:-.02em}
+.br-shelf .d{font-size:13px;line-height:1.45;color:#4a505c}
+.br-shelf .go{font-size:12.5px;font-weight:800;color:var(--ink,#14161a);margin-top:2px}
+.br-sw{display:flex;gap:14px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;padding:13px 0;border-top:1px solid var(--line,#e6e8ec)}
+.br-sw:first-of-type{border-top:0}
+.br-sw .l{flex:1 1 260px;min-width:0}
+.br-sw .l>b{display:block;font-size:14.5px;font-weight:800;line-height:1.3}
+.br-sw .l>span{display:block;font-size:13px;line-height:1.5;color:#4a505c;margin-top:3px}
+.br-sw .r{display:flex;flex-direction:column;gap:7px;align-items:flex-start}
+.br-sw .bd-seg{margin-top:0}
+.br-mode{border-radius:16px;padding:10px 13px;font-size:13px;line-height:1.5;margin:8px 0 0;background:#eef0f3;color:#3a3f4a}
+.br-mode.trial{background:#fff3dc;color:#7a4c00} .br-mode.live{background:#e6f6ee;color:#0f6e43}
+.br-use{display:flex;flex-direction:column}
+.br-use .u{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:8px 0;border-top:1px solid var(--line,#e6e8ec);font-size:13.5px;flex-wrap:wrap}
+.br-use .u:first-child{border-top:0}
+.br-use .u small{display:block;color:var(--muted,#6f7480);font-size:12px}
+.br-use .u .cnt{font-weight:800;font-size:12.5px;white-space:nowrap}
+.br-use .u .cnt i{font-style:normal;color:var(--muted,#6f7480);font-weight:600}
+.br-fact{display:flex;gap:10px;align-items:flex-start;justify-content:space-between;padding:12px 0;border-top:1px solid var(--line,#e6e8ec);flex-wrap:wrap}
+.br-fact:first-child{border-top:0}
+.br-fact .t{flex:1 1 280px;min-width:0;font-size:14px;line-height:1.5;overflow-wrap:anywhere}
+.br-fact .m{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:5px;font-size:12px;color:var(--muted,#6f7480)}
+.br-fact .a{display:flex;gap:6px;flex:none}
+.br-sum{background:#f7f8fa;border-radius:16px;padding:12px 14px;font-size:13.5px;line-height:1.55;color:#33373f;margin:0 0 12px;white-space:pre-wrap}
+.br-sum small{display:block;color:var(--muted,#6f7480);font-size:11.5px;margin-top:6px}
+.br-ta{width:100%;min-height:110px;padding:12px;border:1px solid var(--line,#e6e8ec);border-radius:16px;font:inherit;font-size:16px;line-height:1.5;resize:vertical;background:#fff;color:var(--ink,#14161a)}
+.br-item{border:1px solid var(--line,#e6e8ec);border-radius:18px;padding:12px 13px;margin:10px 0;background:#fff}
+.br-item .ta{width:100%;min-height:64px;padding:9px 11px;border:1px solid var(--line,#e6e8ec);border-radius:12px;font:inherit;font-size:16px;line-height:1.45;resize:vertical}
+.br-item .rw{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px}
+.br-item select{padding:8px 10px;border:1px solid var(--line,#e6e8ec);border-radius:12px;font:inherit;font-size:14px;background:#fff;min-height:38px}
+.br-item label.ck{display:flex;gap:6px;align-items:center;font-size:13px;color:#4a505c}
+.br-q{border:2px solid #f2b33d;background:#fffaf0;border-radius:20px;padding:13px 15px;margin:0 0 12px}
+.br-q h3{margin:0 0 4px;font-size:14.5px;font-weight:800;line-height:1.35}
+.br-q p{margin:0 0 8px;font-size:12.5px;color:#7a4c00}
+.br-q textarea{width:100%;min-height:54px;padding:9px 11px;border:1px solid #e6c98a;border-radius:12px;font:inherit;font-size:16px;background:#fff}
+.br-tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:0 0 12px}
+@media (max-width:760px){.br-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.br-tile{background:var(--surface,#fff);border-radius:18px;padding:11px 13px;box-shadow:0 1px 2px rgba(20,22,26,.04)}
+.br-tile small{display:block;font-size:11.5px;color:var(--muted,#6f7480);font-weight:700}
+.br-tile b{display:block;font-size:24px;font-weight:800;line-height:1.15;letter-spacing:-.02em}
+.br-tile.bad b{color:#d9423b} .br-tile.ok b{color:#16945a}
+.br-pair{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;margin-top:8px}
+@media (max-width:700px){.br-pair{grid-template-columns:minmax(0,1fr)}}
+.br-bub{border-radius:16px;padding:10px 12px;font-size:13.5px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
+.br-bub small{display:block;font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px;opacity:.7}
+.br-bub.old{background:#eef0f3} .br-bub.new{background:#dcf8c6}
+.br-bub.cus{background:#fff;border:1px solid var(--line,#e6e8ec)}
+.br-tr{border-top:1px solid var(--line,#e6e8ec);padding:14px 0}
+.br-tr:first-child{border-top:0}
+.br-tr .hd{display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:12px;color:var(--muted,#6f7480);margin-bottom:6px}
+.br-tr .rate{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px;align-items:center}
+.br-tr .rate .bd-btn.on{background:var(--ink,#14161a);color:#fff}
+.br-leak{display:flex;gap:9px;align-items:flex-start;padding:7px 0;border-top:1px solid var(--line,#e6e8ec);font-size:13.5px;line-height:1.4}
+.br-leak:first-child{border-top:0}
+.br-leak i{font-style:normal;flex:none;width:20px}
+.br-old{display:flex;gap:10px;align-items:flex-start;justify-content:space-between;padding:11px 0;border-top:1px solid var(--line,#e6e8ec);flex-wrap:wrap}
+.br-old:first-child{border-top:0}
+.br-old .t{flex:1 1 280px;min-width:0;font-size:13.5px;line-height:1.5;overflow-wrap:anywhere}
+.br-old.rep .t{color:#8a909b;text-decoration:line-through}
+.br-old .a{display:flex;gap:6px;flex:none;flex-wrap:wrap}

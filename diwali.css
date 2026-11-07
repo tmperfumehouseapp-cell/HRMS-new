@@ -1,0 +1,64 @@
+/* Diwali theme — switched on from Control Tower > Settings (On / Off / Auto by dates).
+   Purely decorative: pointer-events are off everywhere, motion respects "reduce motion". */
+html.diwali{
+  --accent:#f08a00; --accent-dark:#c96a00;
+  --dw-gold:#f5b301; --dw-deep:#7a1f0b; --dw-maroon:#9c1d2e; --dw-glow:rgba(245,179,1,.35);
+}
+html.diwali body{
+  background:
+    radial-gradient(900px 380px at 12% -80px, rgba(245,179,1,.20), transparent 70%),
+    radial-gradient(800px 360px at 92% -60px, rgba(240,100,30,.16), transparent 70%),
+    var(--bg);
+}
+html.diwali .rail-logo, html.diwali aside.sidebar .brand{filter:drop-shadow(0 0 6px var(--dw-glow));}
+html.diwali .btn.primary, html.diwali button.primary{background:linear-gradient(135deg,#f59e0b,#e8651a); box-shadow:0 4px 14px rgba(232,101,26,.28);}
+html.diwali .sh-hero{background:linear-gradient(135deg,#5b1408 0%,#9a2f0c 52%,#d9820b 135%);}
+html.diwali .sh-hero.tone-win{background:linear-gradient(135deg,#5b3a05 0%,#b7791f 55%,#e8a317 135%);}
+html.diwali .sh-hero::after{background:radial-gradient(circle,rgba(255,214,102,.30),transparent 70%); width:210px; height:210px;}
+
+/* My Sales: a little Diwali in the new layout (story bubbles, cards, title) — only while the theme is ON */
+html.diwali .topbar h1::after{content:" 🪔"; font-size:.8em;}
+html.diwali .sh-sb:not(.done):not(.seen) .ring{background:conic-gradient(#f5b301,#e8651a,#c1121f,#f5b301); box-shadow:0 0 10px rgba(245,179,1,.55);}
+html.diwali .sh-sb .bd{background:#7a1f0b;} html.diwali .sh-sb.done .bd{background:#15803d;}
+html.diwali .sh-hero .sh-hi::after{content:" 🪔";}
+html.diwali .sh-q, html.diwali .sh-lead, html.diwali .rtc{border-top:3px solid #f5b301;}
+html.diwali .sh-lead .sh-ph h2::after, html.diwali .rtc .hd h2::after{content:" ✨"; font-size:.85em;}
+html.diwali .sh-bar i{background:linear-gradient(90deg,#f5b301,#e8651a);}
+html.diwali .sh-lr.me{background:#fff4d6; box-shadow:0 0 0 1.5px #f5b301;}
+
+/* My Sales "my day" card: a gold edge, a little diya and a warm glow at the end of the green line */
+html.diwali .sh-now{box-shadow:0 0 0 1.5px #fbbf24 inset, 0 6px 18px rgba(20,83,45,.25);}
+html.diwali .sh-now::after{content:"🪔"; position:absolute; right:9px; bottom:5px; font-size:15px; filter:drop-shadow(0 0 5px #fbbf24);}
+html.diwali .sh-now .fill{background:linear-gradient(90deg,#bbf7d0,#4ade80,#fde68a); box-shadow:0 0 8px rgba(253,230,138,.7);}
+html.diwali .sh-now .nn .cm b{color:#fde68a;} html.diwali .sh-now .rl{padding-right:22px; padding-left:22px;}
+
+/* garland across the top */
+#dwGarland{position:fixed; left:0; right:0; top:0; height:40px; z-index:998; pointer-events:none; overflow:hidden;}
+#dwGarland svg{width:100%; height:40px; display:block;}
+#dwGarland .b{animation:dwTwinkle 2.4s ease-in-out infinite;}
+#dwGarland .b:nth-child(3n){animation-delay:.6s;} #dwGarland .b:nth-child(3n+1){animation-delay:1.3s;}
+@keyframes dwTwinkle{0%,100%{opacity:1} 50%{opacity:.35}}
+
+/* diya, bottom corner */
+#dwDiya{position:fixed; right:14px; bottom:12px; width:54px; height:44px; z-index:997; pointer-events:none; opacity:.95;}
+#dwDiya .fl{transform-origin:50% 100%; animation:dwFlame 1.1s ease-in-out infinite alternate;}
+#dwDiya .gl{animation:dwGlow 2.2s ease-in-out infinite;}
+@keyframes dwFlame{0%{transform:scale(1,1) rotate(-2deg)} 100%{transform:scale(.88,1.12) rotate(3deg)}}
+@keyframes dwGlow{0%,100%{opacity:.55} 50%{opacity:.95}}
+
+/* sparkles */
+.dw-spark{position:fixed; z-index:996; pointer-events:none; width:6px; height:6px; border-radius:50%; background:radial-gradient(circle,#fff6c9,#f5b301 60%,transparent 72%); opacity:0; animation:dwSpark 3.4s ease-in-out infinite;}
+@keyframes dwSpark{0%{opacity:0; transform:scale(.3)} 40%{opacity:1; transform:scale(1.1)} 100%{opacity:0; transform:scale(.3) translateY(-14px)}}
+
+/* greeting pill */
+#dwHello{position:fixed; left:50%; bottom:22px; transform:translate(-50%,30px); z-index:2500; pointer-events:none; opacity:0;
+  background:linear-gradient(135deg,#7a1f0b,#b4410c); color:#ffe9a8; border:1px solid rgba(245,179,1,.6); border-radius:999px; padding:10px 18px; font-weight:700; font-size:14px;
+  box-shadow:0 10px 30px rgba(122,31,11,.35); transition:opacity .5s, transform .5s; white-space:nowrap;}
+#dwHello.on{opacity:1; transform:translate(-50%,0);}
+
+@media (max-width:760px){ #dwGarland, #dwGarland svg{height:30px;} #dwDiya{width:42px; height:34px; bottom:8px; right:8px;} }
+@media (prefers-reduced-motion:reduce){
+  #dwGarland .b, #dwDiya .fl, #dwDiya .gl, .dw-spark{animation:none !important;}
+  .dw-spark{display:none;}
+}
+@media print{ #dwGarland, #dwDiya, .dw-spark, #dwHello{display:none !important;} }

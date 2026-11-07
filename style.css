@@ -1,0 +1,576 @@
+:root{
+  /* "Bento rail" look: soft grey canvas, white rounded tiles, near-black ink,
+     one orange accent. Pages read these variables, so changing them here
+     restyles every page at once. */
+  --navy-900:#14161a;
+  --navy-700:#2a2e36;
+  --ink:#14161a;
+  --muted:#6f7480;
+  --line:#e6e8ec;
+  --bg:#eef0f3;
+  --surface:#ffffff;
+  --accent:#ff7a2f;
+  --accent-dark:#e8651a;
+  --ok-bg:#e4f6ec; --ok-fg:#16945a;
+  --bad-bg:#fdecea; --bad-fg:#d9423b;
+  --radius:26px;
+  --shadow:0 1px 2px rgba(20,22,26,.04);
+  --font:"Inter","Segoe UI",-apple-system,BlinkMacSystemFont,Roboto,"Helvetica Neue",Arial,sans-serif;
+  --rail-w:74px;
+}
+*{box-sizing:border-box;}
+html,body{height:100%;}
+/* Nothing should push the page sideways — a single over-wide element would
+   otherwise let the whole layout slide left/right on a phone. */
+/* Horizontal-overflow guard. overflow-x on <html> propagates to the
+   viewport, so the WINDOW still does the scrolling (window.scrollY and
+   scrollTo keep working). The previous version also set it on <body>, which
+   silently made body its own scroll container — mobile browsers still let
+   the page pan sideways, and window.scrollTo stopped restoring position.
+   "clip" on body/main trims overflow without creating a scroll container. */
+html{overflow-x:hidden;}
+body, .main{overflow-x:clip;}
+body{
+  margin:0;
+  font-family:var(--font);
+  background:var(--bg); color:var(--ink); font-size:14px; line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:var(--accent-dark); text-decoration:none;}
+
+.auth-wrap{
+  min-height:100vh; display:flex; align-items:center; justify-content:center;
+  background:var(--bg); padding:20px;
+}
+.auth-card{
+  background:var(--surface); width:100%; max-width:380px; border-radius:var(--radius);
+  padding:36px 32px; box-shadow:0 12px 40px rgba(20,22,26,.10);
+}
+.auth-card h1{font-size:22px; font-weight:800; letter-spacing:-.02em; margin:0 0 4px;}
+.auth-card p.sub{margin:0 0 24px; color:var(--muted); font-size:13px;}
+
+.field{margin-bottom:16px;}
+.field label{
+  display:block; font-size:12px; font-weight:600; color:var(--muted);
+  text-transform:uppercase; letter-spacing:.03em; margin-bottom:6px;
+}
+.field input, .field select, .field textarea{
+  width:100%; padding:10px 14px; border:1px solid var(--line); border-radius:14px;
+  font-size:14px; background:#fff; color:var(--ink); font-family:inherit;
+}
+.field input:focus, .field select:focus, .field textarea:focus{
+  outline:2px solid rgba(255,122,47,.35); outline-offset:0; border-color:var(--accent);
+}
+.field-grid{display:grid; grid-template-columns:1fr 1fr; gap:0 16px;}
+
+.btn{
+  display:inline-flex; align-items:center; justify-content:center; gap:6px;
+  border:none; border-radius:999px; padding:10px 20px; font-size:14px; font-weight:700;
+  cursor:pointer; background:var(--accent); color:#fff;
+}
+.btn:hover{background:var(--accent-dark);}
+.btn.block{width:100%;}
+.btn.secondary{background:#fff; color:var(--ink); border:1px solid var(--line);}
+.btn.secondary:hover{background:#f4f5f7;}
+.btn:disabled{opacity:.6; cursor:not-allowed;}
+
+.alert{padding:11px 16px; border-radius:16px; font-size:13px; margin-bottom:16px;}
+.alert.error{background:var(--bad-bg); color:var(--bad-fg);}
+.alert.success{background:var(--ok-bg); color:var(--ok-fg);}
+
+.app{display:flex; min-height:100vh;}
+/* ---- Icon rail ----
+   A floating white pill down the left edge: logo on top, one icon per page,
+   the signed-in user at the bottom. The active page is a black tile. Labels
+   show as tooltips; the arrow button at the foot widens the rail to icon +
+   label (remembered per browser). On phones the same element is the drawer
+   and always shows labels. layout.js builds the markup. */
+.sidebar{width:var(--rail-w); background:#fff; color:var(--muted); flex-shrink:0; display:flex; flex-direction:column; border-radius:30px; box-shadow:var(--shadow); padding:14px 0; align-items:stretch;}
+.sidebar .brand{display:flex; align-items:center; justify-content:center; gap:10px; padding:0 0 10px; font-weight:800; font-size:16px; color:var(--ink); letter-spacing:-.02em;}
+.sidebar .brand span{color:var(--accent);}
+.sidebar .brand img{width:44px; height:44px; border-radius:14px; display:block; flex:none; object-fit:cover; background:#faf1e2;}
+.sidebar .brand .logo-fb{width:44px; height:44px; border-radius:14px; background:#faf1e2; color:#ff914a; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:15px; flex:none;}
+.sidebar .brand .brand-txt{display:none;}
+.sidebar nav{padding:6px 10px 6px 14px; flex:1; min-height:0; overflow-y:auto; overflow-x:hidden; scrollbar-width:thin; scrollbar-color:#d9dce2 transparent; display:flex; flex-direction:column; align-items:center;}
+/* Wheel / touch scrolling over the menu moves the menu only, never the page behind it. */
+.sidebar nav{overscroll-behavior:contain;}
+.sidebar{overscroll-behavior:contain;}
+.sidebar nav::-webkit-scrollbar{width:4px;}
+.sidebar nav::-webkit-scrollbar-thumb{background:#d9dce2; border-radius:4px;}
+.sidebar nav > .nav-cat, .sidebar nav > span{width:100%;}
+.sidebar .nav-label{font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:#a0a5b0; padding:12px 8px 6px; display:none;}
+.sidebar a{position:relative; display:flex; align-items:center; justify-content:center; width:44px; height:44px; margin:0 auto 4px; border-radius:15px; color:#8b909c; font-size:13.5px; font-weight:600; padding:0; transition:background .15s,color .15s;}
+.sidebar a .ico{display:flex; width:22px; height:22px; flex:none;}
+.sidebar a .ico svg{width:22px; height:22px; stroke:currentColor; fill:none; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round;}
+.sidebar a .lbl{display:none;}
+.sidebar a #approvalBadge{position:absolute; top:1px; right:1px; margin:0 !important; padding:0 5px !important; font-size:11px !important; line-height:16px;}
+.sidebar.wide a #approvalBadge{position:static; margin-left:auto !important;}
+.sidebar a:hover{background:#f1f3f6; color:var(--ink); text-decoration:none;}
+.sidebar a.active{background:var(--ink); color:#fff;}
+.sidebar a.active:hover{background:var(--ink);}
+/* Tooltip (collapsed rail, desktop only) — one floating label placed by layout.js next to the hovered icon */
+.rail-tip{position:fixed; z-index:2000; background:var(--ink); color:#fff; font-size:12px; font-weight:600; white-space:nowrap; padding:6px 11px; border-radius:10px; pointer-events:none; transform:translateY(-50%); opacity:0; transition:opacity .12s;}
+.rail-tip.show{opacity:1;}
+@media (max-width:820px){ .rail-tip{display:none !important;} }
+/* Collapsed rail: every group is open, groups are separated by a hairline. */
+.sidebar .nav-cat{border-top:1px solid var(--line); padding-top:8px; margin-top:4px;}
+.sidebar .nav-cat:first-child{border-top:none; padding-top:0; margin-top:0;}
+.sidebar .nav-cat-toggle{display:none !important;}
+.sidebar:not(.wide) .nav-cat-body{display:block !important;}
+.sidebar .rail-tools{display:flex; justify-content:center; padding:6px 0 4px;}
+.sidebar .rail-tools button{width:34px; height:34px; border-radius:12px; border:none; background:#f1f3f6; color:#6f7480; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0; min-height:0;}
+.sidebar .rail-tools button:hover{background:#e6e8ec; color:var(--ink);}
+.sidebar .rail-tools svg{width:16px; height:16px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; transition:transform .2s;}
+.sidebar .user-box{padding:10px 0 0; border-top:1px solid var(--line); margin:4px 14px 0; display:flex; flex-direction:column; align-items:center; gap:0; font-size:12.5px;}
+.sidebar .user-box .avatar{width:44px; height:44px; border-radius:50%; background:var(--accent); color:#fff; font-weight:800; font-size:14px; display:flex; align-items:center; justify-content:center; flex:none; letter-spacing:.02em;}
+.sidebar .user-box .name{display:none; color:var(--ink); font-weight:700;}
+.sidebar .user-box .role{display:none; color:var(--muted);}
+.sidebar .user-box button{display:none;}
+.sidebar .user-box .build{display:none !important;}
+.sidebar .user-box .rail-out{display:flex; width:34px; height:34px; margin-top:8px; border-radius:12px; background:#f1f3f6; color:#6f7480; align-items:center; justify-content:center; border:none; cursor:pointer; padding:0; min-height:0;}
+.sidebar .user-box .rail-out:hover{background:#fdecea; color:var(--bad-fg);}
+.sidebar .user-box .rail-out svg{width:16px; height:16px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round;}
+.sidebar .user-box .who{display:none;}
+
+/* Wide rail: icon + label, group headings. Used on desktop when toggled, and
+   always inside the phone drawer. */
+body.rail-wide{--rail-w:236px;}
+.sidebar.wide .brand{justify-content:flex-start; padding:0 16px 10px;}
+.sidebar.wide .brand .brand-txt{display:inline;}
+.sidebar.wide nav{align-items:stretch; padding:6px 12px;}
+.sidebar.wide a{width:auto; height:auto; justify-content:flex-start; gap:12px; padding:10px 12px; margin:0 0 3px; border-radius:14px;}
+.sidebar.wide a .lbl{display:inline;}
+.sidebar.wide .nav-cat{border-top:none; padding-top:0; margin-top:2px;}
+.sidebar.wide .nav-cat-toggle{display:flex !important; color:#a0a5b0 !important; padding:12px 8px 6px; font-size:11px; font-weight:700 !important; letter-spacing:.08em;}
+.sidebar.wide .nav-label{display:block;}
+.sidebar.wide .rail-tools{justify-content:flex-end; padding-right:16px;}
+.sidebar.wide .rail-tools svg{transform:rotate(180deg);}
+.sidebar.wide .user-box{flex-direction:row; align-items:center; gap:10px; margin:4px 12px 0; padding:12px 4px 0;}
+.sidebar.wide .user-box .who{display:block; flex:1; min-width:0; line-height:1.25;}
+.sidebar.wide .user-box .who .name,.sidebar.wide .user-box .who .role{display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.sidebar.wide .user-box .who .name{font-size:13px;}
+.sidebar.wide .user-box .who .role{font-size:11.5px;}
+.sidebar.wide .user-box .rail-out{margin-top:0;}
+.sidebar .user-box .who .name,.sidebar .user-box .who .role{display:block;}
+
+.main{flex:1; min-width:0; display:flex; flex-direction:column;}
+.topbar{background:transparent; border-bottom:none; padding:22px 8px 8px; display:flex; align-items:center; justify-content:space-between;}
+/* Every control in the page header shares one height so the row reads as a
+   single baseline. Without this each control derives its own height from
+   padding + font-size — inputs land at ~35px and .btn at ~41px, which is
+   what makes the header look jagged. Scoped to .topbar so buttons in page
+   bodies and modals keep their larger default size. */
+.topbar input, .topbar select, .topbar .btn, .topbar a.btn, .topbar button{
+  height:36px; box-sizing:border-box; font-size:13px; line-height:1;
+  padding-top:0; padding-bottom:0;
+}
+.topbar .btn, .topbar a.btn, .topbar button{padding-left:14px; padding-right:14px;}
+.topbar input, .topbar select{padding-left:10px; padding-right:10px;}
+/* Filters / search fields in card headers and the page header read as pills. */
+.card-head select, .card-head input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=color]):not([type=range]){border-radius:999px;}
+.card-head select, .card-head input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=color]):not([type=range]){border-color:var(--line);}
+.topbar h1{font-size:28px; font-weight:800; letter-spacing:-.02em; margin:0; line-height:1.15;}
+.topbar input, .topbar select{border:1px solid var(--line); background:#fff; border-radius:999px; color:var(--ink); font-family:inherit;}
+.topbar .btn.secondary, .topbar button.secondary{border-radius:999px;}
+/* Tablet / small laptop: a header with many controls (Targets, Performance, Attendance …) wraps onto a second line
+   instead of running off the right edge. */
+.topbar{flex-wrap:wrap; gap:10px 16px;}
+.topbar > div{flex-wrap:wrap; justify-content:flex-end; row-gap:8px; min-width:0;}
+.content{padding:12px 8px 24px; flex:1;}
+
+.stat-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:16px; margin-bottom:24px;}
+.stat-card{background:var(--surface); border:none; border-radius:var(--radius); padding:18px 22px; box-shadow:var(--shadow);}
+.stat-card .label{font-size:12.5px; color:var(--muted); font-weight:600;}
+.stat-card .value{font-size:30px; font-weight:800; letter-spacing:-.02em; margin-top:4px;}
+/* Stat cards carry both a full and a short label/amount; only the full one
+   shows until the mobile breakpoint swaps them (see the media query below). */
+.lbl-short, .amt-short{display:none;}
+
+.card{background:var(--surface); border:none; border-radius:var(--radius); box-shadow:var(--shadow); margin-bottom:16px;}
+.card-head{padding:18px 22px 12px; border-bottom:none; display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;}
+.card-head h2{font-size:16px; font-weight:800; letter-spacing:-.01em; margin:0;}
+.search-box input{padding:8px 14px; border:1px solid var(--line); border-radius:999px; font-size:13px; min-width:220px;}
+table{width:100%; border-collapse:collapse;}
+/* Sticky column headers: in long lists (200 employees, hundreds of orders)
+   the labels otherwise scroll away immediately, leaving unlabelled columns.
+   The header cell carries the sticky position rather than the <tr>, since
+   position:sticky doesn't apply to table rows in every browser. An opaque
+   background is required so rows don't show through as they pass beneath. */
+thead th{text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:#9096a3; font-weight:600; padding:11px 10px; background:#fff; border-top:1px solid var(--line); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:2;}
+/* Cells top-align so every value in a row starts on the same baseline.
+   With default middle alignment, a tall cell (the Progress bar with its
+   legend) pushes short values in the same row down to the middle, breaking
+   the horizontal scan line across the row. */
+tbody td{padding:12px 10px; border-bottom:1px solid var(--line); font-size:13.5px; vertical-align:top;}
+tbody tr:last-child td{border-bottom:none;}
+tbody tr:hover{background:#f7f8fa;}
+.badge{display:inline-block; padding:3px 10px; border-radius:20px; font-size:11.5px; font-weight:600; background:#f1f3f6; color:#3a3f4a;}
+/* Row actions (Edit / Delete / View) read as buttons and have a real hit
+   area — bare text with padding:0 gives a ~15px tall target that's hard to
+   hit accurately and easy to overlook. Outline style keeps them from
+   competing with primary actions on the page. */
+.row-actions{display:flex; gap:8px; flex-wrap:wrap;}
+.row-actions button, .row-actions a{
+  background:#fff; border:1px solid var(--line); border-radius:999px;
+  padding:6px 14px; cursor:pointer; font-size:13px; font-weight:700;
+  color:var(--ink); line-height:1.3; text-decoration:none; display:inline-block;
+}
+.row-actions button.danger-link, .row-actions a.danger-link{color:var(--bad-fg); border-color:#f6cfcb;}
+.row-actions button:hover, .row-actions a:hover{background:#f4f5f7; text-decoration:none;}
+.row-actions button.danger-link:hover, .row-actions a.danger-link:hover{background:var(--bad-bg);}
+.empty-state{padding:40px 20px; text-align:center; color:var(--muted);}
+.loading{padding:40px 20px; text-align:center; color:var(--muted); font-size:12.5px;}
+/* Ring spinner shown above every "Loading..." text (tables, cards, popups). */
+.loading::before{content:""; display:block; width:34px; height:34px; margin:0 auto 10px; border:4px solid #e6e8ec; border-top-color:var(--accent); border-radius:50%; animation:hrmsSpin .8s linear infinite;}
+.loading.sm{padding:16px 10px;}
+.loading.sm::before{width:22px; height:22px; border-width:3px; margin-bottom:6px;}
+@keyframes hrmsSpin{to{transform:rotate(360deg);}}
+@media (prefers-reduced-motion: reduce){ .loading::before{animation-duration:2s;} }
+
+.modal-overlay{position:fixed; inset:0; background:rgba(20,22,26,.45); display:none; align-items:center; justify-content:center; z-index:100; padding:20px;}
+.modal-overlay.open{display:flex;}
+.modal{background:#fff; border-radius:var(--radius); width:100%; max-width:460px; padding:26px; box-shadow:0 20px 60px rgba(20,22,26,.25); max-height:90vh; overflow-y:auto;}
+.modal.wide{max-width:640px;}
+.modal h3{margin:0 0 18px; font-size:18px; font-weight:800; letter-spacing:-.01em;}
+.modal .actions{display:flex; justify-content:flex-end; gap:10px; margin-top:22px;}
+
+/* ===== Mobile responsive ===== */
+#menuToggle{display:none;}
+#sidebarBackdrop{display:none;}
+
+@media (max-width:820px){
+  .app{display:block;}
+
+  /* Sidebar becomes a slide-in drawer, opened by the menu button (layout.js
+     toggles the sidebar-open class on <body>). */
+  :root{--radius:20px;}
+  .sidebar{
+    position:fixed; left:-300px; top:0; bottom:0; width:272px; z-index:1000;
+    transition:left .25s ease; overflow-y:auto; border-radius:0 30px 30px 0; padding-top:18px;
+  }
+  body.sidebar-open .sidebar{left:0;}
+
+  #sidebarBackdrop{
+    display:block; position:fixed; inset:0;
+    background:rgba(20,22,26,.45);
+    opacity:0; pointer-events:none;
+    transition:opacity .25s ease; z-index:999;
+  }
+  body.sidebar-open #sidebarBackdrop{opacity:1; pointer-events:auto;}
+  body.sidebar-open #menuToggle{opacity:0; pointer-events:none;}
+  /* A popup is open: the floating menu button would sit on top of it. */
+  body:has(.modal-overlay.open) #menuToggle{display:none;}
+
+  #menuToggle{
+    display:flex; align-items:center; justify-content:center;
+    position:fixed; top:11px; left:12px; z-index:1001;
+    width:42px; height:42px;
+    border:none; border-radius:14px;
+    background:#fff; color:var(--ink);
+    font-size:19px; cursor:pointer;
+    box-shadow:0 2px 10px rgba(20,22,26,.12);
+  }
+
+  .topbar{padding:14px 10px 6px 62px; flex-wrap:wrap; gap:10px; min-height:66px;}
+  .topbar h1{font-size:22px;}
+  .content{padding:10px 0 16px;}
+
+  /* Filter/control rows in the topbar (search box + house dropdown + date
+     pickers + buttons) wrap onto multiple lines instead of overflowing —
+     every page that puts a plain flex row directly inside .topbar (Targets,
+     Performance, Assign Queries, etc.) gets this automatically. flex-basis
+     here takes priority over each control's own inline width, so they also
+     shrink/grow to sit two-per-row cleanly on a phone instead of staying
+     locked at their desktop pixel width. */
+  .topbar > div{display:flex; flex-wrap:wrap; row-gap:8px; column-gap:8px; width:100%;}
+  .topbar > div > input, .topbar > div > select, .topbar > div > button, .topbar > div > a.btn{
+    flex:1 1 140px;
+  }
+  .topbar > div > span{flex:0 0 auto;} /* status text stays its own size */
+  /* A title block (h1 + subtitle) is not a control row: keep it stacked at the left. */
+  .topbar > div:has(h1){justify-content:flex-start; flex:1 1 100%;}
+  .topbar > div:has(> h1){display:block;}
+  .topbar > div:has(> h1) > p, .topbar > div:has(> h1) > .sub{margin-top:2px;}
+
+  /* Tables scroll sideways inside their card instead of squeezing.
+     The scroll sits on the table itself (display:block makes it scrollable)
+     rather than on .card, so the sticky headers keep working — an overflow
+     on the card would clip them. */
+  /* Tables that opt out of stacking (.no-stack) keep the old sideways
+     scroll; everything else is handled by the stacking rules further down. */
+  .card > table.no-stack{display:block; overflow-x:auto; min-width:0;}
+  .card table.no-stack{min-width:640px;}
+
+  /* Orders table specifically switches to stacked cards instead of
+     horizontal scroll — 10 columns is too many fields per row to stay
+     readable even with sideways scrolling. #ordersCards is populated by
+     orders.html's own JS with the same data as the table. */
+  #ordersCard table{display:none;}
+  #ordersCard #ordersCards{display:block !important;}
+  /* Long customer names, phone numbers and salesman names run together on
+     one line in the card — let them wrap instead of stretching the card. */
+  #ordersCards > div{max-width:100%; overflow-wrap:anywhere;}
+  /* Pager: page-size, Prev, "Page 1 / 3", Next is ~380px in one row —
+     wider than a phone. Let it wrap and share the width instead. */
+  #pagerBar{padding:12px 10px !important; justify-content:center !important;}
+  .pager-controls{width:100%; justify-content:space-between;}
+  .pager-controls .btn{flex:1 1 0; min-width:0; padding-left:8px; padding-right:8px;}
+  .pager-controls #pageLabel{min-width:0 !important; flex:0 0 auto;}
+  .pager-controls #pageSize{flex:1 1 100%;}
+
+  /* Attendance switches to two-column labelled cards for the same reason —
+     seven columns can't stay readable at phone width. */
+  #attCard table{display:none;}
+  #attCard #attCards{display:block !important;}
+
+  /* Targets: nine columns is the widest table in the app — switches to
+     progress-led cards rather than sideways scrolling. */
+  #targetsCard table{display:none;}
+  #targetsCard #dailyCards{display:block !important;}
+
+  /* Employees: eight columns including a photo and two row actions —
+     stacks into cards rather than scrolling sideways. */
+  #empCard table{display:none;}
+  #empCard #empCards{display:block !important;}
+
+  /* Performance: two eight-column tables — both stack into cards. */
+  #perfDailyCard table, #perfMonthCard table{display:none;}
+  #perfDailyCard #perfDailyCards, #perfMonthCard #perfMonthCards{display:block !important;}
+
+  /* ---- Generic responsive tables ----
+     Every remaining table (Assign Queries, Salary, Commission Rules,
+     Agreements, Departments, WhatsApp Groups, Excel Files, Ex-Employees,
+     Decline History, Approvals, Users, Roles) becomes a stack of labelled
+     cards instead of scrolling sideways. layout.js stamps each cell with a
+     data-label from its column header, which is what the ::before below
+     prints. Tables with a purpose-built card view opt out by hiding
+     themselves at this breakpoint, so they never reach these rules. */
+  .card table:not(.no-stack){display:block; min-width:0; width:100%; overflow-x:visible;}
+  .card table:not(.no-stack) thead{display:none;}
+  .card table:not(.no-stack) tbody,
+  .card table:not(.no-stack) tbody tr,
+  .card table:not(.no-stack) tbody td{display:block; width:auto;}
+  .card table:not(.no-stack) tbody tr{
+    border:1px solid var(--line); border-radius:16px;
+    padding:6px 12px; margin:0 12px 8px;
+  }
+  .card table:not(.no-stack) tbody tr:hover{background:var(--surface);}
+  .card table:not(.no-stack) tbody td{
+    border:none; padding:6px 0; font-size:13px;
+    display:flex; align-items:flex-start; gap:10px;
+  }
+  .card table:not(.no-stack) tbody td + td{border-top:1px solid var(--line);}
+  .card table:not(.no-stack) tbody td[data-label]::before{
+    content:attr(data-label);
+    flex:none; width:104px; font-size:11px; color:var(--muted);
+    text-transform:uppercase; letter-spacing:.03em; padding-top:2px;
+  }
+  /* A cell with no label (empty header, e.g. a photo column) spans full width */
+  .card table:not(.no-stack) tbody td:not([data-label]){display:block;}
+  /* Rows that span the table — day-group headers, empty states, loading —
+     stay as plain full-width blocks rather than pretending to be cards. */
+  .card table:not(.no-stack) tbody td[colspan]{
+    display:block; padding:10px 0;
+  }
+  .card table:not(.no-stack) tbody tr:has(td[colspan]){
+    border:none; padding:0; margin:0;
+  }
+
+  .search-box input{min-width:0; width:100%;}
+  /* Card headers stack: heading on its own line, then any controls
+     (search box, filter dropdowns) full-width beneath it — an input
+     squeezed onto the heading's line ends up ~130px wide with a
+     truncated placeholder and a cramped tap target. */
+  .card-head{align-items:stretch; flex-direction:column; gap:10px;}
+  .card-head > *{width:100%;}
+  .card-head .search-box input{width:100%;}
+  .card-head select, .card-head input[type="text"]{flex:1 1 140px;}
+  /* Controls nested one level deep (a flex wrapper holding a search box and
+     a date picker) also need to fill the row rather than keep a fixed px
+     width set inline for desktop. */
+  .card-head > div{display:flex; flex-wrap:wrap; gap:8px;}
+  .card-head > div > input, .card-head > div > select, .card-head > div > button{flex:1 1 140px; width:auto; min-width:0;}
+  /* Orders' filter row wraps each field in its own label+input div, so the
+     control sits two levels down and needs constraining too — otherwise the
+     date pickers keep their natural width and push the page sideways. */
+  .card-head > div > div{flex:1 1 140px; min-width:0;}
+  .card-head > div > div > input, .card-head > div > div > select{width:100%; min-width:0;}
+
+  .field-grid{grid-template-columns:1fr;}
+
+  /* Stat cards: 3 per row, using the short label/amount variants so the
+     numbers actually fit in a third of a phone screen. */
+  .stat-grid{grid-template-columns:repeat(3, minmax(0, 1fr)); gap:6px;}
+  .stat-card{padding:10px 11px; border-radius:16px;}
+  .stat-card .label{font-size:11px;}
+  .stat-card .value{font-size:17px; margin-top:3px;}
+  .lbl-full, .amt-full{display:none;}
+  .lbl-short{display:inline;}
+  .amt-short{display:block; font-size:11px; font-weight:400; color:var(--muted); margin-top:1px;}
+  .detail-grid{grid-template-columns:1fr 1fr !important;}
+
+  .modal{width:100%; max-width:none; max-height:92vh;}
+  .modal.wide{max-width:none;}
+
+  /* Comfortable tap targets on touch screens — topbar controls step up to
+     match, keeping the header's single-baseline alignment on mobile too. */
+  .btn, .btn.secondary, button{min-height:38px;}
+  .topbar input, .topbar select, .topbar .btn, .topbar a.btn, .topbar button{height:38px;}
+  .row-actions button, .row-actions a{padding:8px 14px;}
+}
+
+/* Phones narrower than ~400px: tables need every pixel, so trim padding
+   further and let long badges/labels wrap instead of forcing extra width. */
+@media (max-width:400px){
+  .content{padding:10px 0 12px;}
+  .card-head{padding:14px 14px 8px;}
+  thead th, tbody td{padding-left:6px; padding-right:6px; font-size:12px;}
+  /* Stay 3-up even on the narrowest phones — just tighten the cards further. */
+  .stat-grid{gap:5px;}
+  .stat-card{padding:7px;}
+  .stat-card .value{font-size:15px;}
+  .badge{white-space:normal;}
+}
+
+/* ===== Popup scrolling: keep scroll inside the popup =====
+   No scroll lock on the page behind it. Locking (overflow:hidden on body or
+   html) made browsers snap the page to the top when a popup opened, so
+   closing it left the user at the top of the list. The overlay is fixed
+   and covers the page anyway; contain stops scroll chaining out of it. */
+.modal{overscroll-behavior:contain;}
+
+/* ===== Fixed sidebar: stays in place while the page scrolls (desktop) ===== */
+@media (min-width: 821px) {
+  .app{padding:14px 14px 14px 0;}
+  .sidebar{position:fixed; top:14px; left:14px; bottom:14px; overflow:hidden; z-index:50;}
+  .main{margin-left:calc(var(--rail-w) + 28px); transition:margin-left .2s;}
+}
+
+/* ===== Tables fit their card: compact cells, safety scroll only if truly needed =====
+   Note: the horizontal scroll lives on a wrapper INSIDE the card, not on the
+   card itself — setting overflow on .card would create a scroll container and
+   silently break the sticky table headers above. */
+.card > table{display:table; width:100%;}
+
+/* The card no longer uses overflow:hidden (it would clip sticky headers),
+   so the header row rounds its own outer corners to match the card. */
+
+
+/* First column keeps a little extra breathing room */
+thead th:first-child, tbody td:first-child{padding-left:20px;}
+thead th:last-child, tbody td:last-child{padding-right:20px;}
+/* Slightly tighter still on smaller laptop windows */
+@media (max-width:1300px){
+  thead th, tbody td{padding-left:6px; padding-right:6px; font-size:12.5px;}
+  thead th:first-child, tbody td:first-child{padding-left:14px;}
+  thead th:last-child, tbody td:last-child{padding-right:14px;}
+}
+
+/* ===== Responsive hardening (all pages) =====
+   Appended last so it only tops up the rules above. */
+
+/* Media never forces a page wider than its container. */
+img, video, canvas, svg{max-width:100%;}
+.sidebar svg, .btn svg, button svg{max-width:none;}
+
+/* Long words / IDs / URLs wrap instead of stretching a card or table cell. */
+.card, .modal, .stat-card, .alert{overflow-wrap:break-word;}
+.card, .stat-card, .modal{min-width:0;}
+
+/* Popups: use the *visible* viewport height (phone address bar) when the
+   browser knows it, and never grow taller than it. */
+.modal{max-height:90vh; max-height:90dvh;}
+.modal-overlay{overflow-y:auto; overscroll-behavior:contain;}
+
+/* Very wide monitors: keep the content block readable instead of stretching
+   edge to edge. Starts above 1900px so laptops/desktops are unchanged. */
+@media (min-width:1900px){
+  .topbar, .content{max-width:1780px; width:100%; margin-left:auto; margin-right:auto;}
+}
+
+/* Phones */
+@media (max-width:820px){
+  .modal-overlay{padding:10px; align-items:center;}
+  .modal{padding:20px 16px; border-radius:22px; max-height:94vh; max-height:94dvh;}
+  .modal h3{font-size:17px; margin-bottom:14px;}
+  .modal .actions{flex-wrap:wrap; gap:8px;}
+  .modal .actions .btn, .modal .actions button{flex:1 1 120px;}
+  .modal input, .modal select, .modal textarea{max-width:100%;}
+  /* Wide helper panels that were sized in px for desktop. */
+  .modal [style*="min-width"]{min-width:0 !important;}
+  /* Checkbox/radio rows get a real hit area. */
+  label:has(> input[type=checkbox]), label:has(> input[type=radio]){min-height:32px;}
+}
+
+/* iPhone Safari zooms the page when an input under 16px is focused, and then
+   leaves it zoomed. Only iOS needs the bigger size. */
+@supports (-webkit-touch-callout:none){
+  @media (max-width:820px){
+    input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]):not([type=file]), select, textarea{font-size:16px !important;}
+  }
+}
+
+/* Narrow phones: login / reset card */
+@media (max-width:400px){
+  .auth-wrap{padding:12px;}
+  .auth-card{padding:26px 20px; border-radius:22px;}
+  .auth-card h1{font-size:20px;}
+}
+
+/* Phone held sideways: short screens, so popups use the whole height and the
+   drawer scrolls. */
+@media (max-height:480px) and (max-width:900px){
+  .modal{max-height:96vh; max-height:96dvh; padding:14px 16px;}
+  .modal-overlay{padding:6px;}
+  .topbar{padding-top:8px; min-height:56px;}
+}
+
+/* Tablet portrait / small laptops: stat cards keep a comfortable minimum. */
+@media (min-width:821px) and (max-width:1100px){
+  .stat-grid{grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:12px;}
+  .content{padding-left:6px; padding-right:6px;}
+}
+
+/* ===== Phone table-cards: multi-part cells stack, label sits at the left =====
+   A cell holding a title + sub-line (name + code, amount + note…) used to turn
+   into two side-by-side columns inside the card. Now the cell is a block with
+   the label pinned in a left gutter, so its contents stack naturally. */
+@media (max-width:820px){
+  .card table:not(.no-stack) tbody td[data-label]{display:block; position:relative; padding-left:114px; min-height:26px; text-align:left !important;}
+  .card table:not(.no-stack) tbody td[data-label]::before{position:absolute; left:0; top:6px; width:104px; text-align:left; padding-top:2px;}
+  /* Stat tiles / tab rows sitting straight in the page body keep a side gutter. */
+  .content > .stat-grid, .content > .tabs, #statsArea{margin-left:10px; margin-right:10px;}
+  /* Control rows under the title use the space left of the menu button. */
+  .topbar > div:not(:has(h1)){margin-left:-52px; width:calc(100% + 52px);}
+}
+/* Small tablets: stacked cards sit two across instead of one very wide column. */
+@media (min-width:640px) and (max-width:820px){
+  .card table:not(.no-stack) tbody{display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:0 12px 8px;}
+  .card table:not(.no-stack) tbody tr{margin:0; min-width:0;}
+  .card table:not(.no-stack) tbody tr:has(td[colspan]){grid-column:1/-1;}
+}
+
+/* === MOBILE PASS v1 === */
+/* Phone pass: bigger thumb targets, readable small text, nothing hidden under the menu button.
+   Only inside a phone-width media query, so the desktop layout is untouched. */
+@media (max-width:820px){
+  /* the control row under a title must clear the floating menu button (it ends at y=53) */
+  .topbar{row-gap:16px;}
+  /* thumb-size controls (36-40px) */
+  .btn, a.btn, button.btn, .row-actions button, .row-actions a{min-height:40px;}
+  input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]):not([type=file]):not([type=hidden]), select{min-height:40px;}
+  /* plain text links inside the stacked table cards (department, name...) get a 36px tap area */
+  .card table:not(.no-stack) tbody td a:not(.btn){display:inline-block; padding:9px 0;}
+  /* segmented / pill tab rows made of <button>s */
+  .content :is(.ldseg,.rt-seg,.tabs,.pill-tabs,.seg,.lsel,.mcseg,.ct-tabs) button{min-height:40px;}
+  /* small labels stay at 12px or more */
+  .badge, .chip, .pill, .lbl-short, .stat-card .label, .content small, .content thead th{font-size:12px;}
+  /* leave room for the phone's home bar under the last card */
+  .content{padding-bottom:calc(16px + env(safe-area-inset-bottom, 0px));}
+  /* popups stay inside the screen and clear the home bar */
+  .modal-overlay{padding-bottom:max(10px, env(safe-area-inset-bottom, 0px));}
+}
+/* === END MOBILE PASS v1 === */
+
+/* phone text floor: the default <small> (0.83em of 13 px = 10.8 px) was flagged as too small */
+small,sub,sup{font-size:max(11px,.83em)}

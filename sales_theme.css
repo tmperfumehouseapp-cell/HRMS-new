@@ -1,0 +1,61 @@
+/* sales_theme.css — ONE look for the whole Sales area.
+   Loaded by sales.html itself and pushed into every page it shows in a frame (orders, targets, commission, retail …),
+   so cards, tables, buttons, pills and boxes look the same everywhere. Only shapes, colours and type are set here —
+   never sizes of layouts — so no page breaks. Change a value here and every Sales page follows. */
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
+
+html.sx, html.sx{
+  --sx-card-r:18px;      /* cards and tiles */
+  --sx-ctl-r:12px;       /* inputs, selects */
+  --sx-pill-r:999px;     /* buttons, pills, chips */
+  --sx-ink:#111827;
+  --sx-muted:#6b7280;
+  --sx-line:#e7e9ee;
+  --sx-bg:#f3f4f6;
+  --sx-accent:#f97316;
+  --sx-ok:#16a34a;  --sx-ok-bg:#e4f6ec;  --sx-ok-fg:#16945a;
+  --sx-warn:#f59e0b; --sx-warn-bg:#fef3c7; --sx-warn-fg:#92400e;
+  --sx-bad:#dc2626; --sx-bad-bg:#fdecea;  --sx-bad-fg:#d9423b;
+  --ink:var(--sx-ink); --muted:var(--sx-muted); --line:var(--sx-line); --accent:var(--sx-accent);
+  --ok-bg:var(--sx-ok-bg); --ok-fg:var(--sx-ok-fg); --bad-bg:var(--sx-bad-bg); --bad-fg:var(--sx-bad-fg);
+}
+html.sx body, html.sx body{ font-family:'Manrope','Inter','Segoe UI',system-ui,-apple-system,sans-serif; color:var(--sx-ink); -webkit-font-smoothing:antialiased; }
+
+/* cards and tiles */
+html.sx .card, html.sx .card, html.sx .stat-card, html.sx .kpi, html.sx .panel{
+  border-radius:var(--sx-card-r); border:1px solid var(--sx-line); background:#fff; box-shadow:none; }
+html.sx .card h2, html.sx .card h2, html.sx .card > h3:first-child{ font-weight:800; letter-spacing:-.01em; }
+html.sx .sub, html.sx .sub{ color:var(--sx-muted); }
+html.sx .stat-card .label, html.sx .kpi .l, html.sx .kpi .k{ font-size:11px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:var(--sx-muted); }
+html.sx .stat-card .value, html.sx .kpi .v{ font-weight:800; }
+
+/* tables */
+html.sx table th, html.sx table th{ font-size:11px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:var(--sx-muted); }
+html.sx table td, html.sx table td{ border-color:#f0f1f4; }
+html.sx table th{ border-color:var(--sx-line); }
+
+/* buttons */
+html.sx .btn, html.sx .btn{ border-radius:var(--sx-pill-r); font-weight:700; }
+html.sx .btn:not(.secondary):not(.green):not(.wa):not(.danger):not(.red){ background:var(--sx-accent); border-color:var(--sx-accent); color:#fff; }
+html.sx .btn.secondary{ background:#fff; color:var(--sx-ink); border:1px solid var(--sx-line); }
+html.sx .btn.secondary:hover{ background:#f4f5f7; }
+
+/* pills, chips, badges — one shape */
+html.sx .pill, html.sx .pill, html.sx .tgt-pill, html.sx .tgt-chip, html.sx .chip, html.sx .badge{
+  border-radius:var(--sx-pill-r); font-weight:700; }
+html.sx .pill.on, html.sx .tgt-pill.on{ background:var(--sx-ink); color:#fff; border-color:var(--sx-ink); }
+
+/* form controls */
+html.sx .field input, html.sx .field select, html.sx .field textarea,
+html.sx input[type=text], html.sx input[type=number], html.sx input[type=date], html.sx input[type=search], html.sx select, html.sx textarea{
+  border-radius:var(--sx-ctl-r); border-color:var(--sx-line); font-family:inherit; }
+html.sx .field input:focus, html.sx .field select:focus, html.sx .field textarea:focus,
+html.sx input:focus, html.sx select:focus, html.sx textarea:focus{ outline:2px solid rgba(249,115,22,.30); outline-offset:0; border-color:var(--sx-accent); }
+html.sx .field label{ font-weight:700; color:var(--sx-muted); }
+
+/* messages, pop-ups, empty states */
+html.sx .alert, html.sx .alert{ border-radius:14px; font-weight:600; }
+html.sx .alert.error{ background:var(--sx-bad-bg); color:var(--sx-bad-fg); }
+html.sx .alert.success{ background:var(--sx-ok-bg); color:var(--sx-ok-fg); }
+html.sx .modal{ border-radius:20px; }
+html.sx .empty, html.sx .empty, html.sx .empty-state, html.sx .loading{ color:var(--sx-muted); text-align:center; padding:26px 14px; font-size:13px; }
