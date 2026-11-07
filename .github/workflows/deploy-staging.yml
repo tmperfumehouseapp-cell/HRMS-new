@@ -1,0 +1,62 @@
+# Auto-deploy to the STAGING site on the VPS (CloudPanel): staging.fourpirates.space.
+# Every push to main copies the files that differ (by content) over SSH. It never deletes anything on the server and never touches
+# config.php, uploads, backups or data folders. The live Hostinger deploy (deploy.yml) is separate and unchanged.
+# Needs 4 repository secrets: STAGING_HOST (IP), STAGING_USER (SSH user), STAGING_PATH (web folder, trailing slash), STAGING_SSH_KEY (private key).
+name: Deploy to staging (VPS)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+jobs:
+  staging:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Connect (key + host fingerprint)
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          test -s ~/.ssh/known_hosts || { echo "::error::Cannot reach $STAGING_HOST on port 22 (firewall?)"; exit 1; }
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+          ssh "${{ secrets.STAGING_USER }}@$STAGING_HOST" 'echo "login ok as $(whoami) in $(pwd)"' || { echo "::error::SSH login failed (key not accepted for this user?)"; exit 1; }
+
+      - name: Upload changed files (rsync over SSH, compared by content)
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          set -o pipefail
+          rsync -rlcz --no-perms --no-owner --no-group --omit-dir-times --itemize-changes \
+                        --exclude='.git*' --exclude='.github/' --exclude='config.php' --exclude='config.js' --exclude='uploads/' \
+            --exclude='help_data/' --exclude='learn_backups/' --exclude='backups/' --exclude='analytics/data/' \
+            --exclude='docs/' --exclude='DEPLOY_NOTES.md' --exclude='README_TMPH.md' --exclude='gitignore' \
+            ./ "$STAGING_USER@$STAGING_HOST:$STAGING_PATH" | tee /tmp/rsync.log
+          echo "files sent: $(grep -c '^>f' /tmp/rsync.log || true)"
+
+      - name: Check the files really arrived (checksum on the server vs here)
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          set -o pipefail
+          bad=0
+          for f in help.html index.html empmanagment/api.php assets/js/layout.js; do
+            [ -f "$f" ] || continue
+            here=$(sha256sum "$f" | cut -d' ' -f1)
+            there=$(ssh "$STAGING_USER@$STAGING_HOST" "sha256sum '${STAGING_PATH}${f}' 2>/dev/null" | cut -d' ' -f1)
+            if [ "$here" = "$there" ]; then echo "MATCH      $f"; else echo "DIFFERENT  $f"; bad=1; fi
+          done
+          exit $bad
