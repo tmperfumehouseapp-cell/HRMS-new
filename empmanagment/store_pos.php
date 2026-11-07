@@ -639,6 +639,8 @@ try {
             require_auth();
             $in = json_input();
             $found = st_find_bottles($pdo, (array)($in['codes'] ?? []));
+            $giftWant = array_values(array_unique(array_filter(array_map('st_clean_code', (array)($in['gift_codes'] ?? [])), 'strlen')));
+            foreach ($giftWant as $gc) { if (isset($found[$gc])) $found[$gc]['kind'] = 'gift'; }
             $t = st_totals($found);
             json_response(array_merge($t, st_quote($pdo, $t['total_ml'], (int)($in['emp_id'] ?? 0))));
             break;
@@ -659,9 +661,9 @@ try {
             $cs = st_cs_get($pdo); $people = [];
             foreach ((array)($in['people'] ?? []) as $x) {
                 if (count($people) >= 8) break; if (!is_array($x)) continue;
-                $people[] = ['name' => mb_substr(trim((string)($x['name'] ?? '')), 0, 120), 'phone' => st_phone_clean($x['phone'] ?? ''), 'raw' => trim((string)($x['phone'] ?? '')), 'declined' => empty($x['declined']) ? 0 : 1, 'reason' => mb_substr(trim((string)($x['reason'] ?? '')), 0, 60)];
+                $people[] = ['name' => mb_substr(trim((string)($x['name'] ?? '')), 0, 120), 'phone' => st_phone_clean($x['phone'] ?? ''), 'raw' => trim((string)($x['phone'] ?? '')), 'declined' => empty($x['declined']) ? 0 : 1, 'reason' => mb_substr(trim((string)($x['reason'] ?? '')), 0, 60), 'bday' => (preg_match('/^(\d\d)-(\d\d)$/', (string)($x['bday'] ?? ''), $bm) && checkdate((int)$bm[1], (int)$bm[2], 2000)) ? $bm[0] : ''];
             }
-            if (!$people && ($name !== '' || $phone !== '')) $people[] = ['name' => $name, 'phone' => st_phone_clean($phone), 'raw' => $phone, 'declined' => 0, 'reason' => ''];      // an older screen sends one customer the old way
+            if (!$people && ($name !== '' || $phone !== '')) $people[] = ['name' => $name, 'phone' => st_phone_clean($phone), 'raw' => $phone, 'declined' => 0, 'reason' => '', 'bday' => ''];      // an older screen sends one customer the old way
             $seen = [];
             foreach ($people as $i => $pp) {
                 if ($pp['declined']) continue;
@@ -686,6 +688,22 @@ try {
                 $b = $found[$c] ?? null;
                 if (!$b) { $pdo->rollBack(); json_response(['error' => 'Code ' . $c . ' is not one of our barcodes.'], 400); }
                 if ($b['status'] !== 'stock') { $pdo->rollBack(); json_response(['error' => 'Code ' . $c . ' (' . $b['title'] . ' ' . $b['ml'] . ' ml) is ' . $b['status'] . ', not in stock.'], 409); }
+            }
+            $giftWant = array_values(array_unique(array_filter(array_map('st_clean_code', (array)($in['gift_codes'] ?? [])), 'strlen')));
+            foreach ($giftWant as $gc) { if (isset($found[$gc])) $found[$gc]['kind'] = 'gift'; }
+            $giftFor = [];
+            if ($giftWant) {      // BIRTHDAY GIFT: one free 50 ml for a customer ON their birthday, once a year per mobile number
+                $todayMD = date('m-d', strtotime(st_day())); $isMgr = in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true) || user_can($auth, 'rs_manage');
+                foreach ($giftWant as $gc) { $gb = $found[$gc] ?? null; if (!$gb || (int)$gb['ml'] !== 50 || ($gb['status'] ?? '') !== 'stock') { $pdo->rollBack(); json_response(['error' => 'A birthday gift must be a 50 ml bottle that is in stock.'], 400); } }
+                foreach ($people as $pp) {
+                    if (count($giftFor) >= count($giftWant)) break;
+                    if ($pp['declined'] || $pp['phone'] === '' || ($pp['bday'] ?? '') !== $todayMD) continue;
+                    if (st_gift_given($pdo, $pp['phone'], (int)date('Y'))) continue;
+                    $lk = st_customer_lookup($pdo, $pp['phone']);
+                    if (($lk['bday'] ?? '') !== $todayMD && !$isMgr) continue;      // a birthday first told today needs a manager to approve the gift
+                    $giftFor[] = $pp;
+                }
+                if (count($giftFor) < count($giftWant)) { $pdo->rollBack(); json_response(['error' => 'No customer on this bill is eligible for a birthday gift (birthday must be today, saved earlier, and not gifted already this year).'], 400); }
             }
             $t = st_totals($found);
             if ($t['sale_bottles'] < 1) { $pdo->rollBack(); json_response(['error' => 'A bill needs at least one bottle for sale (testers alone cannot be billed).'], 400); }
@@ -745,8 +763,10 @@ try {
                 $cs2 = $pdo->prepare("UPDATE st_chain_pieces SET status = 'sold', sold_at = ?, bill_id = ? WHERE piece_id = ? AND status = 'stock'"); $cs2->execute([$now, $billId, (int)$chainRow['piece_id']]);
                 if ($cs2->rowCount() !== 1) { $pdo->rollBack(); json_response(['error' => 'The chain was just sold on another bill.'], 409); }
             }
-            $ip = $pdo->prepare("INSERT INTO st_bill_people (bill_id, person_no, name, phone, token, declined, reason, returning_c, visit_no, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)");
-            foreach ($people as $i => $pp) $ip->execute([$billId, $i + 1, $pp['name'], $pp['phone'], bin2hex(random_bytes(10)), $pp['declined'], $pp['reason'], $pp['returning'], $pp['visit_no'], $now]);
+            $ip = $pdo->prepare("INSERT INTO st_bill_people (bill_id, person_no, name, phone, token, declined, reason, returning_c, visit_no, created_at, bday) VALUES (?,?,?,?,?,?,?,?,?,?,?)");
+            foreach ($people as $i => $pp) $ip->execute([$billId, $i + 1, $pp['name'], $pp['phone'], bin2hex(random_bytes(10)), $pp['declined'], $pp['reason'], $pp['returning'], $pp['visit_no'], $now, $pp['bday'] ?? '']);
+            $gi = 0;
+            foreach ($giftFor as $gp) { $gb = $found[$giftWant[$gi++]]; $pdo->prepare("INSERT INTO st_bday_gifts (phone, name, gift_year, bill_id, bottle_id, given_by, created_at) VALUES (?,?,?,?,?,?,?)")->execute([$gp['phone'], $gp['name'], (int)date('Y'), $billId, (int)$gb['bottle_id'], $empName, $now]); }
             $pdo->commit();
             $pc = st_pct_for($pdo, $t['total_ml'], $total, $empId, $code !== '');
             $invOut = [];
@@ -837,6 +857,12 @@ try {
             require_auth();
             $ph = st_phone_clean($_GET['phone'] ?? '');
             json_response($ph === '' ? ['phone' => '', 'returning' => false] : st_customer_lookup($pdo, $ph));
+            break;
+        }
+
+        case 'st_cust.birthdays': {       // customers with a birthday in the next N days (default 7)
+            require_auth();
+            json_response(['days' => max(1, min(60, (int)($_GET['days'] ?? 7))), 'list' => st_birthdays($pdo, max(1, min(60, (int)($_GET['days'] ?? 7))))]);
             break;
         }
 
