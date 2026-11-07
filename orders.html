@@ -3522,9 +3522,12 @@
   const esPayPc = (v, coll) => coll > 0 ? ` <small class="es-pc">${Math.round(v / coll * 100)}%</small>` : '';
   // ---- 🧾 the orders behind a count, opened RIGHT UNDER that person (table row or phone card): which order, when, how much, COD / prepaid, code, kind, bottles
   function esOrdersInline(lk) {
-    const old = esEl('esXp'); const same = old && old.dataset.k === (lk.dataset.n + '|' + lk.dataset.b + '|' + lk.dataset.lk); if (old) old.remove(); if (same) return;
+    const isOt = !!lk.dataset.ot;   // the "Other / unassigned" row: orders whose salesman has no row on the sheet (manual orders, ex-staff, not allocated)
+    const old = esEl('esXp'); const same = old && old.dataset.k === ((isOt ? '*other*' : lk.dataset.n) + '|' + lk.dataset.b + '|' + lk.dataset.lk); if (old) old.remove(); if (same) return;
     const nm = String(lk.dataset.n || '').trim().toLowerCase(), b = lk.dataset.b || '', kind = lk.dataset.lk;
-    const list = allOrders.filter(o => !o.cancelled && isCounted(o) && String(o.salesman || '').trim().toLowerCase() === nm && (!b || panelOf(o) === b) && (kind === 'orders' || orderTagType(o.tags) === kind))
+    const sheetNames = isOt ? new Set(teamData ? teamData.rows.map(r => String(r.full_name || '').trim().toLowerCase()) : []) : null;
+    const mine = (o) => isOt ? (!sheetNames.has(String(o.salesman || '').trim().toLowerCase()) || !PANELS.some(([k]) => k === panelOf(o))) : String(o.salesman || '').trim().toLowerCase() === nm;
+    const list = allOrders.filter(o => !o.cancelled && isCounted(o) && mine(o) && (!b || panelOf(o) === b) && (kind === 'orders' || orderTagType(o.tags) === kind))
       .sort((x, y) => String(x.created_at) < String(y.created_at) ? -1 : 1);
     let tot = 0, pre = 0, cod = 0, codeN = 0;
     const KN = { query: 'Query', campaign: 'Campaign', other: 'Other' }, inr = (v) => '₹' + Math.round(v).toLocaleString('en-IN');
@@ -3543,9 +3546,9 @@
     const tr = lk.closest('tr'); let box;
     if (tr) { const cols = [...tr.children].reduce((a, td) => a + (td.colSpan || 1), 0); box = document.createElement('tr'); box.className = 'es-xpr'; box.innerHTML = `<td colspan="${cols}" class="l"><div class="es-xp">${html}</div></td>`; tr.after(box); }
     else { const card = lk.closest('.mt') || lk.closest('.tob') || lk.parentElement; box = document.createElement('div'); box.className = 'es-xp'; box.innerHTML = html; card.after(box); }
-    box.id = 'esXp'; box.dataset.k = lk.dataset.n + '|' + lk.dataset.b + '|' + lk.dataset.lk;
+    box.id = 'esXp'; box.dataset.k = (isOt ? '*other*' : lk.dataset.n) + '|' + lk.dataset.b + '|' + lk.dataset.lk;
     box.querySelector('.xp-x').onclick = (ev) => { ev.stopPropagation(); box.remove(); };
-    box.querySelector('.xp-all').onclick = (ev) => { ev.stopPropagation(); box.remove(); esPick(lk.dataset.n, '', lk.dataset.b, false, false); esView(kind); window.scrollTo({ top: esEl('vtabs').offsetTop - 10, behavior: 'smooth' }); };
+    box.querySelector('.xp-all').onclick = (ev) => { ev.stopPropagation(); box.remove(); esPick(lk.dataset.n, '', lk.dataset.b, false, isOt); esView(kind); window.scrollTo({ top: esEl('vtabs').offsetTop - 10, behavior: 'smooth' }); };
     try { box.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (x) { }
   }
   // ---- Pending target, under Orders / Total query / Ratio (the chat-proof and call-recording lines ended on 1 Nov 2026)
@@ -3977,7 +3980,7 @@
       }
       const lk = ev.target.closest('.es-lk, a.es-tm');
       if (lk && ev.target.closest('#esXp')) return;
-      if (lk && !lk.dataset.ot && ['orders', 'query', 'campaign'].includes(lk.dataset.lk)) { ev.preventDefault(); esOrdersInline(lk); return; }   // 🧾 opens right under that person
+      if (lk && ['orders', 'query', 'campaign'].includes(lk.dataset.lk)) { ev.preventDefault(); esOrdersInline(lk); return; }   // 🧾 opens right under that person
       if (lk) { ev.preventDefault(); esPick(lk.dataset.n, '', lk.dataset.b, false, !!lk.dataset.ot); esView(lk.dataset.lk); window.scrollTo({ top: esEl('vtabs').offsetTop - 10, behavior: 'smooth' }); return; }
       const a = ev.target.closest('.es-nm'); if (!a) return;
       ev.preventDefault(); esPick(a.dataset.n, '', a.dataset.b); esView('orders');
