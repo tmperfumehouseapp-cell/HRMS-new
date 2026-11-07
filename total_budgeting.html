@@ -222,7 +222,7 @@
     // team rows: sales-department employees + everybody who has commission
     const empAll = ((ok(2) || {}).employees || []).filter(e => e.status !== 'ex');
     const byName = {}; empAll.forEach(e => { byName[nk(e.full_name)] = e; });
-    // who is a leader: the names on the Leaders rule are nicknames ("Dipti Madam", "Ayazba"), so match them to an employee: linked by hand first, then the full name, then the
+    // who is a leader: the names on the Leaders rule are nicknames ("Dipti Madam", "Ayaz Bhai"), so match them to an employee: linked by hand first, then the full name, then the
     // name without Madam / Bhai / Ba / Sir that fits exactly ONE employee (a sales one first). Anything unclear stays "not linked" and can be linked on the Leaders tab.
     const lmap = ((ok(5) || {}).leader_map) || {}, HON = /^(madam|mam|maam|sir|bhai|bhaiya|ji|ba|bhabhi|didi|ben|behen|saheb|sahab|shri)$/;
     const toks = (t) => nk(t).replace(/[^a-z\u0900-\u097f ]/g, ' ').split(' ').filter(Boolean).map(w => (w.length > 4 && /(ba|bhai)$/.test(w)) ? w.replace(/(bhai|ba)$/, '') : w).filter(w => !HON.test(w));

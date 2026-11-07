@@ -1,6 +1,6 @@
 <?php
 /**
- * leader_pay.php — "👑 Leader pay": the sales leaders' (Dipti, Ayazba, Pradeep) pay for the last 30 days, worked out from the day's ROAS.
+ * leader_pay.php — "👑 Leader pay": the sales leaders' (Dipti, Ayaz Bhai, Pradeep) pay for the last 30 days, worked out from the day's ROAS.
  * Included from api.php (one line, see the install note) and answers only the actions that start with "leader.".
  *
  *   leader.get        GET  ?days=30            → rule, leaders, one row per day, totals per leader   (Admin / HR)
