@@ -169,7 +169,7 @@
   const WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const PAYDAYS = 30;                                   // salary and fixed expenses are split by 30, the same as the Salary page
 
-  const S = { bf: 'today', bills: null, billsFor: '', mm: false, sel: new Set(), tg: 'dept', q: '', msg: '', msgBad: false, tab: 'budget', emp: 'comm', ea: 'pay', eg: 'all', lead: 'fin', M: null, warn: [], edit: null };
+  const S = { bd: '', bp: '', bq: '', bn: 300, bills: null, billsFor: '', mm: false, sel: new Set(), tg: 'dept', q: '', msg: '', msgBad: false, tab: 'budget', emp: 'comm', ea: 'pay', eg: 'all', lead: 'fin', M: null, warn: [], edit: null };
   const ymd = (y, m, d) => y + '-' + pad(m) + '-' + pad(d);
   const addDay = (iso, n) => { const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() + n); return ymd(d.getFullYear(), d.getMonth() + 1, d.getDate()); };
   const wdOf = (iso) => WD[new Date(iso + 'T12:00:00').getDay()];
@@ -362,17 +362,29 @@
       : 'Pay = fixed salary + a % of collections (the money received from the shops they sold to). Set the % per person with Pay setup, or the shared rate in the box on the Total Budgeting tab.';
     return strip + '<div class="hint" style="margin-bottom:8px">' + how + ' Click a name to open the person, a pay label to set how they are paid.</div>' + empView(true, k) + (k === 'store' ? billsView() : '');
   }
-  /* store bills with who billed each: fix a wrong or missing person, the commission follows */
+  /* every store bill of the month (all days) with the commission it pays; Admin can change who billed it, and everything recounts */
+  const MON3 = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'], dnice = (d) => Number(d.slice(8)) + ' ' + MON3[Number(d.slice(5, 7)) - 1];
   function billsView() {
     const M = S.M;
-    if (!S.bills) { loadBills(); return '<h3 style="margin-top:14px">Store bills · who billed</h3><div class="hint">Loading the bills…</div>'; }
-    const all = S.bills, un = all.filter(b => !b.employee_id), today = all.filter(b => b.day === M.today), f2 = S.bf;
-    const list = (f2 === 'un' ? un : f2 === 'month' ? all : today).slice(0, 250);
+    if (!S.bills) { loadBills(); return '<h3 style="margin-top:14px">Store orders · all days · who billed</h3><div class="hint">Loading the bills and their commission…</div>'; }
+    const all = S.bills, days = [...new Set(all.map(b => b.day))].sort().reverse(), who = {}; all.forEach(b => { const k = b.employee_id || 'un'; who[k] = (who[k] || 0) + 1; });
+    const ed = M.bud.can_edit, sel = (v, o) => ' value="' + o + '"' + (String(v) === String(o) ? ' selected' : '');
+    return '<h3 style="margin-top:16px">Store orders · all days · who billed</h3><div class="bar"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
+      + '<select data-bf="bd" style="font:inherit;font-size:12.5px;padding:5px 8px;border:1px solid var(--line);border-radius:8px"><option' + sel(S.bd, '') + '>All days (' + all.length + ')</option>' + days.map(d => '<option' + sel(S.bd, d) + '>' + dnice(d) + ' (' + all.filter(b => b.day === d).length + ')</option>').join('').replace(/<option value="(\d{4}-\d\d-\d\d)">/g, '<option value="$1">') + '</select>'
+      + '<select data-bf="bp" style="font:inherit;font-size:12.5px;padding:5px 8px;border:1px solid var(--line);border-radius:8px"><option' + sel(S.bp, '') + '>Everybody</option>' + (who.un ? '<option' + sel(S.bp, 'un') + '>Not assigned (' + who.un + ')</option>' : '') + M.people.filter(p => who[p.id]).map(p => '<option' + sel(S.bp, p.id) + '>' + esc(p.name) + ' (' + who[p.id] + ')</option>').join('') + '</select>'
+      + '<input id="bq" type="search" placeholder="Find a bill number…" value="' + esc(S.bq) + '" autocomplete="off" style="font:inherit;font-size:12.5px;padding:5px 12px;border:1px solid var(--line);border-radius:99px;min-width:180px">'
+      + '<button class="tbtn" type="button" data-recount="1" style="padding:5px 12px">↻ Recount</button></div><span class="hint">' + (ed ? 'Change “Billed by” on any bill: the commission moves to that person and the budget recounts.' : 'Only Admin can change who billed.') + '</span></div><div id="billsBox">' + billsInner() + '</div>';
+  }
+  function billsInner() {
+    const M = S.M, ed = M.bud.can_edit, q = nk(S.bq);
+    const list = S.bills.filter(b => (!S.bd || b.day === S.bd) && (S.bp === '' || (S.bp === 'un' ? !b.employee_id : b.employee_id === Number(S.bp))) && (!q || nk(b.bill_no).includes(q)));
+    const sum = (k) => list.reduce((a, b) => a + (Number(b[k]) || 0), 0), shown = list.slice(0, S.bn);
     const opts = (sel) => '<option value="">Not assigned</option>' + M.people.map(p => '<option value="' + p.id + '"' + (p.id === sel ? ' selected' : '') + '>' + esc(p.name) + '</option>').join('');
-    const rows = list.map(b => '<tr class="' + (b.employee_id ? '' : 'bad') + '"><td style="text-align:left">' + esc(b.bill_no) + '</td><td style="text-align:left">' + Number(b.day.slice(8)) + ' ' + ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][Number(b.day.slice(5, 7)) - 1] + ' ' + esc(b.time) + '</td><td>' + b.ml + ' ml</td><td>' + rs(b.total) + '</td><td style="text-align:left"><select data-bill="' + b.bill_id + '" style="font:inherit;font-size:12px;padding:2px 4px;max-width:220px">' + opts(b.employee_id) + '</select>' + (b.employee_id ? '' : ' <span class="ov">written: ' + esc(b.name || '—') + '</span>') + '</td></tr>').join('')
-      || '<tr><td colspan="5" style="text-align:left;padding:12px">No bills ' + (f2 === 'un' ? 'without a person.' : f2 === 'month' ? 'this month.' : 'today.') + '</td></tr>';
-    return '<h3 style="margin-top:16px">Store bills · who billed</h3><div class="bar"><div class="seg">' + [['today', 'Today (' + today.length + ')'], ['month', 'This month (' + all.length + ')'], ['un', 'Not assigned (' + un.length + ')']].map(x => '<button data-s="bf" data-v="' + x[0] + '" class="' + (f2 === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</div><span class="hint">Change the person on a bill and its commission moves to them straight away.</span></div>'
-      + '<div class="sheet plain"><table><thead><tr><th style="text-align:left">Bill</th><th style="text-align:left">When</th><th>Size</th><th>Amount</th><th style="text-align:left">Billed by</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+    const rule = (b) => b.com == null ? '–' : b.rule === 'chart' || b.rule === 'offer' ? (b.pct != null ? b.pct + '%' : '') + ' <small style="display:inline;color:var(--muted)">' + b.rule + (b.reduced ? ' · no code, reduced' : '') + '</small>' : '<small class="ov" style="display:inline">' + esc(b.rule) + '</small>';
+    const rows = shown.map(b => '<tr class="' + (b.employee_id ? '' : 'bad') + '"><td style="text-align:left">' + esc(b.bill_no) + '</td><td style="text-align:left">' + dnice(b.day) + ' ' + esc(b.time) + '</td><td>' + b.ml + ' ml</td><td>' + rs(b.total) + '</td><td>' + (b.code ? 'yes' : '–') + '</td><td>' + rule(b) + '</td><td><b>' + (b.com == null ? '–' : rs(b.com)) + '</b></td><td style="text-align:left"><select data-bill="' + b.bill_id + '" ' + (ed ? '' : 'disabled ') + 'style="font:inherit;font-size:12px;padding:2px 4px;max-width:210px">' + opts(b.employee_id) + '</select>' + (b.employee_id ? '' : ' <span class="ov">written: ' + esc(b.name || '—') + '</span>') + '</td></tr>').join('')
+      || '<tr><td colspan="8" style="text-align:left;padding:12px">No bills match.</td></tr>';
+    return '<div class="sheet plain" style="max-height:min(70vh,720px);overflow:auto"><table><thead><tr><th style="text-align:left">Bill</th><th style="text-align:left">When</th><th>Size</th><th>Amount</th><th>Code</th><th>Rule</th><th>Commission</th><th style="text-align:left">Billed by</th></tr></thead><tbody>' + rows + '</tbody><tfoot><tr class="sum"><td style="text-align:left">' + list.length + ' bills</td><td></td><td>' + f(sum('ml')) + ' ml</td><td>' + rs(sum('total')) + '</td><td></td><td></td><td>' + rs(sum('com')) + '</td><td></td></tr></tfoot></table></div>'
+      + (list.length > shown.length ? '<div style="margin-top:8px"><button class="tbtn" type="button" data-more="1">Show 300 more (' + (list.length - shown.length) + ' left)</button></div>' : '');
   }
   async function loadBills() {
     if (S.billsBusy) return; S.billsBusy = true;
@@ -700,6 +712,8 @@
     const su = e.target.closest('[data-setup]'); if (su) { e.stopPropagation(); setupPopup(Number(su.dataset.setup)); return; }
     const pnb = e.target.closest('[data-pen]'); if (pnb) { e.stopPropagation(); penPopup(Number(pnb.dataset.pen), ''); return; }
     const pc = e.target.closest('td[data-pc]'); if (pc) { const x = pc.dataset.pc.split('|'); penPopup(Number(x[0]), x[1]); return; }
+    if (e.target.closest('[data-more]')) { S.bn += 300; const bx = $('billsBox'); if (bx) bx.innerHTML = billsInner(); return; }
+    if (e.target.closest('[data-recount]')) { S.bills = null; render(); return; }
     const act = e.target.closest('button[data-do]'); if (act) { if (act.dataset.do === 'penadd') { penPopup(0, ''); return; } deptAction(act.dataset.do, Number(act.dataset.did || 0)); return; }
     const dz = e.target.closest('.dz[data-dept], .dz[data-pg]'); if (dz) { if (S.sel.size) { if (dz.dataset.pg) regroup([...S.sel], dz.dataset.pg); else moveMany([...S.sel], Number(dz.dataset.dept)); } else { const m = $('teMsg'); if (m) { m.textContent = 'Drag a person here, or turn on Move mode and tick people first.'; m.className = 'te-msg'; } } return; }
     const dm = e.target.closest('button[data-mm]'); if (dm) { S.mm = !S.mm; if (!S.mm) S.sel.clear(); render(); return; }
@@ -718,10 +732,11 @@
     }
   });
   $('tb').addEventListener('change', (e) => {
+    const bf = e.target; if (bf.dataset && bf.dataset.bf) { S[bf.dataset.bf] = bf.value; S.bn = 300; render(); return; }
     const sb = e.target; if (sb.dataset && sb.dataset.bill) {
       const b = (S.bills || []).find(x => x.bill_id === Number(sb.dataset.bill)), to = Number(sb.value);
       if (!b || !to) { render(); return; }
-      api.post('budget.bill_assign', { bill_id: b.bill_id, employee_id: to }).then(() => { const p = S.M.people.find(x => x.id === to); b.employee_id = to; b.name = p ? p.name : b.name; S.msg = 'Bill ' + b.bill_no + ' now belongs to ' + (p ? p.name : 'them') + '. Its commission moved with it.'; S.msgBad = false; return load(); }).catch(err => { S.msg = (err && err.message) || 'Could not change the person.'; S.msgBad = true; render(); });
+      api.post('budget.bill_assign', { bill_id: b.bill_id, employee_id: to }).then(() => { const p = S.M.people.find(x => x.id === to); b.employee_id = to; b.name = p ? p.name : b.name; S.msg = 'Bill ' + b.bill_no + ' now belongs to ' + (p ? p.name : 'them') + '. Commission recounted.'; S.msgBad = false; S.bills = null; return load(); }).catch(err => { S.msg = (err && err.message) || 'Could not change the person.'; S.msgBad = true; render(); });
       return;
     }
     const i = e.target; if (i.dataset && i.dataset.rbasis) { S.edit.retail.basis = i.value; render(); return; }
@@ -744,7 +759,7 @@
     const g = grpOf(e); if (!g || !dragId) return; e.preventDefault(); g.classList.remove('over');
     const ids = S.sel.has(dragId) ? [...S.sel] : [dragId]; dragId = 0; if (g.dataset.pg) regroup(ids, g.dataset.pg); else moveMany(ids, Number(g.dataset.dept));
   });
-  tb.addEventListener('input', (e) => { if (e.target.id !== 'teQ') return; S.q = e.target.value; $('teGroups').innerHTML = teamGroups(); });
+  tb.addEventListener('input', (e) => { if (e.target.id === 'bq') { S.bq = e.target.value; S.bn = 300; const bx = $('billsBox'); if (bx) bx.innerHTML = billsInner(); return; } if (e.target.id !== 'teQ') return; S.q = e.target.value; $('teGroups').innerHTML = teamGroups(); });
   $('mon').value = new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 7);
   $('mon').onchange = () => load().catch(err => { $('tb').innerHTML = '<div class="card"><div class="empty">' + esc(err.message) + '</div></div>'; });
   $('btnReload').onclick = () => $('mon').onchange();

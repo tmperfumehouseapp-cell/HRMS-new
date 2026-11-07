@@ -46,6 +46,38 @@ if (!function_exists('budget_cfg')) {
     }
 }
 
+/** Every store bill of a range with the commission the ONLINE engine's rules pay for it (price chart, a matching offer, the order-code rule), no over-target extra.
+ *  The code rule works per person per day, so changing who billed one bill recounts the other bills of both people. Returns [] rows + counters. */
+if (!function_exists('budget_store_calc')) {
+    function budget_store_calc(PDO $pdo, string $from, string $to): array
+    {
+        $ch = cm_chart($pdo); $offers = cm_offers($pdo); $rows = []; $groups = []; $noMl = 0; $unpriced = 0;
+        if (function_exists('ensure_st_tables')) ensure_st_tables($pdo);
+        $q = $pdo->prepare("SELECT b.bill_id, b.bill_no, b.biz_date, b.created_at, b.emp_id, b.emp_name, b.order_code, b.total_ml, b.total, e.employee_id AS real_id
+            FROM st_bills b LEFT JOIN employees e ON e.employee_id = b.emp_id AND e.status != 'ex' WHERE b.status = 'ok' AND b.biz_date BETWEEN ? AND ? ORDER BY b.bill_id");
+        $q->execute([$from, $to]);
+        foreach ($q->fetchAll() as $i => $b) { $rows[$i] = $b; $groups[(int)$b['emp_id'] . '|' . $b['biz_date']][] = $i; }
+        $out = [];
+        foreach ($groups as $k => $idx) {
+            $n = count($idx); $nCode = 0;
+            foreach ($idx as $i) if (trim((string)$rows[$i]['order_code']) !== '') $nCode++;
+            $need = cm_code_need($n, (float)$ch['codepct']); $codeOk = $need > 0 && $nCode >= $need; $nocodeF = (float)$ch['nocode'] / 100;
+            foreach ($idx as $i) {
+                $b = $rows[$i]; $day = (string)$b['biz_date']; $gross = (float)$b['total']; $ml = (int)$b['total_ml']; $hasCode = trim((string)$b['order_code']) !== '';
+                $f = ($hasCode || $codeOk) ? 1.0 : $nocodeF; $com = 0.0; $pct = null; $rule = '';
+                $of = $ml ? cm_offer_match($offers, $ml, $gross, $day, (float)$ch['window']) : null;
+                if ($of) { $pct = (float)$of['pct']; $rule = 'offer'; $com = $gross * $pct / 100 * $f; }
+                elseif (!$ml) { $noMl++; $rule = 'no ML'; }
+                else { $pc = cm_pct($ch, $ml, $gross); if ($pc === null) { $unpriced++; $rule = 'ML not priced'; } else { $pct = (float)$pc; $rule = 'chart'; $com = $gross * $pct / 100 * $f; } }
+                $out[$i] = ['bill_id' => (int)$b['bill_id'], 'bill_no' => (string)$b['bill_no'], 'day' => $day, 'time' => substr((string)$b['created_at'], 11, 5), 'emp_id' => (int)$b['emp_id'],
+                    'employee_id' => $b['real_id'] ? (int)$b['emp_id'] : 0, 'name' => (string)$b['emp_name'], 'code' => $hasCode, 'total' => $gross, 'ml' => $ml,
+                    'pct' => $pct, 'rule' => $rule, 'reduced' => $f < 1.0, 'com' => round($com, 2)];
+            }
+        }
+        ksort($out);
+        return ['bills' => array_values($out), 'no_ml' => $noMl, 'unpriced' => $unpriced];
+    }
+}
 $__bg = (string)($action ?? '');
 if ($__bg === 'budget.get') {
     $auth = require_auth();
@@ -90,56 +122,45 @@ if ($__bg === 'budget.save') {
 }
 if ($__bg === 'budget.store_comm') {
     // Store commission per person per day by the SAME rules as the online sales commission engine (Commission → Result & rules):
-    // the price-by-ML chart, an offer that matches the bill, and the order-code rule (not enough bills with a code = the no-code bills pay the reduced share).
-    // The only difference: a store has no sales limit, so no over-target extra and no boost. Commission = what the same engine pays for that bill, extras left out.
+    // the price-by-ML chart, an offer that matches the bill, and the order-code rule. The only difference: a store has no sales limit,
+    // so no over-target extra and no boost.
     $auth = require_auth();
     if (!user_can($auth, 'commission')) json_response(['error' => 'You do not have permission to do this.'], 403);
     $from = (string)($_GET['date_from'] ?? ''); $to = (string)($_GET['date_to'] ?? '');
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $from) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $to) || $to < $from || (strtotime($to) - strtotime($from)) > 62 * 86400) json_response(['error' => 'date_from and date_to must be YYYY-MM-DD, at most 62 days apart.'], 422);
     try { if (is_file(__DIR__ . '/boss.php')) require_once __DIR__ . '/boss.php'; } catch (Throwable $e) { error_log('budget.store_comm boss: ' . $e->getMessage()); }
     if (!function_exists('cm_chart') || !function_exists('cm_pct') || !function_exists('cm_offers') || !function_exists('cm_offer_match') || !function_exists('cm_code_need')) json_response(['error' => 'The commission engine is not available on this server.'], 500);
-    $ch = cm_chart($pdo); $offers = cm_offers($pdo); $by = []; $noMl = 0; $unpriced = 0; $groups = [];
-    try {
-        if (function_exists('ensure_st_tables')) ensure_st_tables($pdo);
-        $q = $pdo->prepare("SELECT emp_id, emp_name, biz_date, order_code, total_ml, total FROM st_bills WHERE status = 'ok' AND biz_date BETWEEN ? AND ? ORDER BY bill_id");
-        $q->execute([$from, $to]);
-        foreach ($q->fetchAll() as $b) $groups[(int)$b['emp_id'] . '|' . $b['biz_date']][] = $b;
-    } catch (Throwable $e) { error_log('budget.store_comm: ' . $e->getMessage()); json_response(['from' => $from, 'to' => $to, 'people' => [], 'note' => 'The store tables are not there yet.']); }
-    foreach ($groups as $k => $list) {
-        [$emp, $day] = explode('|', $k, 2); $emp = (int)$emp; $n = count($list); $nCode = 0;
-        foreach ($list as $b) if (trim((string)$b['order_code']) !== '') $nCode++;
-        $need = cm_code_need($n, (float)$ch['codepct']); $codeOk = $need > 0 && $nCode >= $need; $nocodeF = (float)$ch['nocode'] / 100;
-        $com = 0.0; $sales = 0.0;
-        foreach ($list as $b) {
-            $gross = (float)$b['total']; $ml = (int)$b['total_ml']; $sales += $gross; $f = (trim((string)$b['order_code']) !== '' || $codeOk) ? 1.0 : $nocodeF;
-            $of = $ml ? cm_offer_match($offers, $ml, $gross, $day, (float)$ch['window']) : null;
-            if ($of) { $com += $gross * (float)$of['pct'] / 100 * $f; continue; }
-            if (!$ml) { $noMl++; continue; }
-            $pc = cm_pct($ch, $ml, $gross); if ($pc === null) { $unpriced++; continue; }
-            $com += $gross * $pc / 100 * $f;
-        }
-        if (!isset($by[$emp])) $by[$emp] = ['employee_id' => $emp, 'name' => (string)$list[0]['emp_name'], 'sales' => 0.0, 'commission' => 0.0, 'bills' => 0, 'perday' => []];
-        $by[$emp]['perday'][] = ['day' => $day, 'sales' => round($sales, 2), 'commission' => round($com, 2), 'bills' => $n, 'codes' => $nCode, 'code_ok' => $codeOk];
-        $by[$emp]['sales'] += $sales; $by[$emp]['commission'] += $com; $by[$emp]['bills'] += $n;
+    try { $r = budget_store_calc($pdo, $from, $to); } catch (Throwable $e) { error_log('budget.store_comm: ' . $e->getMessage()); json_response(['from' => $from, 'to' => $to, 'people' => [], 'note' => 'The store tables are not there yet.']); }
+    $by = [];
+    foreach ($r['bills'] as $b) {
+        $e = $b['emp_id']; if (!isset($by[$e])) $by[$e] = ['employee_id' => $e, 'name' => $b['name'], 'sales' => 0.0, 'commission' => 0.0, 'bills' => 0, 'days' => []];
+        if (!isset($by[$e]['days'][$b['day']])) $by[$e]['days'][$b['day']] = ['day' => $b['day'], 'sales' => 0.0, 'commission' => 0.0, 'bills' => 0];
+        $by[$e]['days'][$b['day']]['sales'] += $b['total']; $by[$e]['days'][$b['day']]['commission'] += $b['com']; $by[$e]['days'][$b['day']]['bills']++;
+        $by[$e]['sales'] += $b['total']; $by[$e]['commission'] += $b['com']; $by[$e]['bills']++;
     }
-    foreach ($by as &$x) { $x['sales'] = round($x['sales'], 2); $x['commission'] = round($x['commission'], 2); } unset($x);
-    json_response(['from' => $from, 'to' => $to, 'people' => array_values($by), 'no_ml_bills' => $noMl, 'unpriced_bills' => $unpriced]);
+    foreach ($by as &$x) { $x['sales'] = round($x['sales'], 2); $x['commission'] = round($x['commission'], 2); $x['perday'] = array_values(array_map(function ($d) { $d['sales'] = round($d['sales'], 2); $d['commission'] = round($d['commission'], 2); return $d; }, $x['days'])); unset($x['days']); } unset($x);
+    json_response(['from' => $from, 'to' => $to, 'people' => array_values($by), 'no_ml_bills' => $r['no_ml'], 'unpriced_bills' => $r['unpriced']]);
 }
 if ($__bg === 'budget.store_bills') {
-    // Store bills of a range with who billed each one, so a wrong or missing "Billed by" can be fixed (commission follows the person on the bill).
+    // Every store bill of the range (all days) with who billed it and the commission it pays, newest first. Admin can change the person (budget.bill_assign).
     $auth = require_auth();
     if (!user_can($auth, 'commission')) json_response(['error' => 'You do not have permission to do this.'], 403);
     $from = (string)($_GET['date_from'] ?? ''); $to = (string)($_GET['date_to'] ?? '');
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $from) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $to) || $to < $from || (strtotime($to) - strtotime($from)) > 62 * 86400) json_response(['error' => 'date_from and date_to must be YYYY-MM-DD, at most 62 days apart.'], 422);
+    try { if (is_file(__DIR__ . '/boss.php')) require_once __DIR__ . '/boss.php'; } catch (Throwable $e) {}
+    $engine = function_exists('cm_chart') && function_exists('cm_pct') && function_exists('cm_offers') && function_exists('cm_offer_match') && function_exists('cm_code_need');
     $rows = [];
     try {
-        if (function_exists('ensure_st_tables')) ensure_st_tables($pdo);
-        $q = $pdo->prepare("SELECT b.bill_id, b.bill_no, b.biz_date, b.created_at, b.emp_id, b.emp_name, b.total, b.total_ml, e.employee_id AS real_id FROM st_bills b LEFT JOIN employees e ON e.employee_id = b.emp_id AND e.status != 'ex'
-            WHERE b.status = 'ok' AND b.biz_date BETWEEN ? AND ? ORDER BY b.bill_id DESC LIMIT 800");
-        $q->execute([$from, $to]);
-        foreach ($q->fetchAll() as $b) $rows[] = ['bill_id' => (int)$b['bill_id'], 'bill_no' => (string)$b['bill_no'], 'day' => (string)$b['biz_date'], 'time' => substr((string)$b['created_at'], 11, 5), 'employee_id' => $b['real_id'] ? (int)$b['emp_id'] : 0, 'name' => (string)$b['emp_name'], 'total' => (float)$b['total'], 'ml' => (int)$b['total_ml']];
+        if ($engine) { $r = budget_store_calc($pdo, $from, $to); foreach (array_reverse($r['bills']) as $b) $rows[] = $b; }
+        else {   // no engine here: still list the bills so the person can be fixed; no commission shown
+            if (function_exists('ensure_st_tables')) ensure_st_tables($pdo);
+            $q = $pdo->prepare("SELECT b.bill_id, b.bill_no, b.biz_date, b.created_at, b.emp_id, b.emp_name, b.order_code, b.total, b.total_ml, e.employee_id AS real_id FROM st_bills b LEFT JOIN employees e ON e.employee_id = b.emp_id AND e.status != 'ex' WHERE b.status = 'ok' AND b.biz_date BETWEEN ? AND ? ORDER BY b.bill_id DESC");
+            $q->execute([$from, $to]);
+            foreach ($q->fetchAll() as $b) $rows[] = ['bill_id' => (int)$b['bill_id'], 'bill_no' => (string)$b['bill_no'], 'day' => (string)$b['biz_date'], 'time' => substr((string)$b['created_at'], 11, 5), 'employee_id' => $b['real_id'] ? (int)$b['emp_id'] : 0, 'name' => (string)$b['emp_name'], 'code' => trim((string)$b['order_code']) !== '', 'total' => (float)$b['total'], 'ml' => (int)$b['total_ml'], 'pct' => null, 'rule' => '', 'reduced' => false, 'com' => null];
+        }
     } catch (Throwable $e) { error_log('budget.store_bills: ' . $e->getMessage()); }
-    json_response(['from' => $from, 'to' => $to, 'bills' => $rows]);
+    $out = []; foreach (array_slice($rows, 0, 3000) as $b) $out[] = ['bill_id' => $b['bill_id'], 'bill_no' => $b['bill_no'], 'day' => $b['day'], 'time' => $b['time'], 'employee_id' => $b['employee_id'], 'name' => $b['name'], 'code' => $b['code'], 'total' => $b['total'], 'ml' => $b['ml'], 'pct' => $b['pct'], 'rule' => $b['rule'], 'reduced' => $b['reduced'], 'com' => $b['com']];
+    json_response(['from' => $from, 'to' => $to, 'bills' => $out, 'engine' => $engine]);
 }
 if ($__bg === 'budget.bill_assign') {
     // Change who a store bill belongs to. The commission of that bill moves to the new person at once (it is worked out from the bill).
