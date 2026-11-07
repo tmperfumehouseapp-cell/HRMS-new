@@ -1,0 +1,91 @@
+# Auto-deploy: every push to main uploads the changed files to Hostinger (FTP).
+# Needs 3 repository secrets (GitHub → Settings → Secrets and variables → Actions):
+#   FTP_SERVER    e.g. ftp.fourpirates.space  (Hostinger → Files → FTP Accounts)
+#   FTP_USERNAME  the FTP account name
+#   FTP_PASSWORD  its password
+# Optional secret FTP_DIR: the folder on the server that holds index.html, with a trailing slash
+#   (default "./" = the FTP account's own folder; use "public_html/" if the account starts above it).
+name: Deploy to Hostinger
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      full:
+        description: "Upload every file (slow, ~8 min) instead of only what changed"
+        type: boolean
+        default: false
+
+concurrency:
+  group: deploy-hostinger
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check PHP files before uploading (a broken file must never go live)
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq php-cli >/dev/null
+          fail=0
+          while IFS= read -r f; do php -l "$f" >/dev/null || { echo "::error file=$f::PHP syntax error"; fail=1; }; done < <(find . -name '*.php' -not -path './.git/*')
+          exit $fail
+
+      # FAST PATH: upload only the files changed since the last successful deploy (seconds). If anything is unclear or fails
+      # (also a certificate problem), the full upload below runs instead, so a deploy can never be skipped.
+      - name: Fast upload (changed files only)
+        id: fast
+        continue-on-error: true
+        if: ${{ !inputs.full }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          FTP_DIR: ${{ secrets.FTP_DIR }}
+          FTP_HOST_HSTGR: ${{ secrets.FTP_HOST_HSTGR }}   # optional: the server's *.hstgr.io name (hPanel), used when reverse DNS does not give it
+        run: |
+          sudo apt-get install -y -qq lftp dnsutils >/dev/null
+          prev=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/deploy.yml/runs?status=success&branch=main&per_page=1" --jq '.workflow_runs[0].head_sha' || true)
+          echo "last successful deploy: ${prev:-none}"
+          bash .github/deploy_fast.sh "$prev" 2>&1 | tee /tmp/fast.log; test "${PIPESTATUS[0]}" -eq 0
+
+      - name: Upload to Hostinger (full)
+        if: ${{ steps.fast.outcome != 'success' }}
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          server-dir: ${{ secrets.FTP_DIR || './' }}
+          protocol: ftps
+          exclude: |
+            **/.git*
+            **/.git*/**
+            .github/**
+            **/config.php
+            **/config.js
+            **/uploads/**
+            **/help_data/**
+            **/learn_backups/**
+            **/backups/**
+            analytics/data/**
+            docs/**
+            DEPLOY_NOTES.md
+            README_TMPH.md
+            gitignore
+
+      - name: Why the fast upload did not run (only shown when it was skipped)
+        if: ${{ always() && steps.fast.outcome == 'failure' }}
+        env:
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+        run: |
+          echo "Name on the server's FTP certificate (the FTP_SERVER secret must be one of these names for the fast upload to work):"
+          echo | timeout 20 openssl s_client -starttls ftp -connect "$FTP_SERVER:21" -servername "$FTP_SERVER" 2>/dev/null | openssl x509 -noout -subject -ext subjectAltName 2>&1 | sed 's/^/   cert: /' || true
+          echo "::warning::Fast upload not used, the full upload ran instead. Reason (last lines):"
+          tail -n 15 /tmp/fast.log || true

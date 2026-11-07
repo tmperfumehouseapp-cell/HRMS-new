@@ -1,0 +1,81 @@
+# Nightly review: Claude Code reads the last 24 hours of answers and corrections (phone numbers and emails already hidden by the server)
+# and suggests what the bots should learn. The suggestions go to Brain -> Suggestions in the HRMS; NOTHING changes until the owner taps Approve.
+# Customer chats are never written into this repository: the export is downloaded to the runner, used, and thrown away with it.
+#
+# Needs three repository secrets (GitHub -> Settings -> Secrets and variables -> Actions):
+#   ANTHROPIC_API_KEY   your Anthropic key
+#   LEARN_EXPORT_URL    https://<your domain>/empmanagment/api.php
+#   LEARN_LOOP_KEY      a long random password (20+ characters); the SAME text goes into config.php:  define('LEARN_LOOP_KEY', '...');
+# Until all three exist the job ends quietly without doing anything.
+name: Nightly review of the bots
+
+on:
+  schedule:
+    - cron: '30 20 * * *'      # 20:30 UTC = 02:00 in India
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: learn-review
+  cancel-in-progress: false
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      LEARN_EXPORT_URL: ${{ secrets.LEARN_EXPORT_URL }}
+      LEARN_LOOP_KEY: ${{ secrets.LEARN_LOOP_KEY }}
+      HAS_ANTHROPIC: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download the last 24 hours (masked)
+        id: dl
+        run: |
+          if [ -z "$LEARN_EXPORT_URL" ] || [ -z "$LEARN_LOOP_KEY" ] || [ "$HAS_ANTHROPIC" != "true" ]; then echo "Secrets are not set up yet: nothing to do."; echo "go=no" >> "$GITHUB_OUTPUT"; exit 0; fi
+          code=$(curl -sS -o export.json -w '%{http_code}' -H "X-Learn-Key: $LEARN_LOOP_KEY" "$LEARN_EXPORT_URL?action=ll.export&hours=24" || true)
+          if [ "$code" != "200" ]; then echo "Export answered $code: stopping."; echo "go=no" >> "$GITHUB_OUTPUT"; exit 0; fi
+          n=$(python3 -c "import json;d=json.load(open('export.json'));print(len(d.get('items',[])))")
+          echo "items: $n"
+          if [ "$n" -lt 3 ]; then echo "Too few exchanges today: skipping."; echo "go=no" >> "$GITHUB_OUTPUT"; exit 0; fi
+          echo "go=yes" >> "$GITHUB_OUTPUT"
+
+      - name: Claude Code reviews
+        if: steps.dl.outputs.go == 'yes'
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          prompt: |
+            You are the nightly reviewer of a perfume company's bots (WhatsApp replies, the Teach bot, the owner's assistant and Boss chat).
+            Read `export.json` (the last 24 hours, phone numbers already hidden) and `empmanagment/house_rules.md`.
+            Each item has: src, asked, answered, outcome (accepted / edited / replaced / rejected / none), fix (what the person wrote instead), note.
+            `known_notes` lists what the bot already knows: never suggest something that is already there.
+
+            Find what the bots should LEARN:
+            - Where a person edited, replaced or rejected an answer, work out the missing rule or fact from the difference (answered vs fix).
+            - Questions the bot could not answer or guessed.
+            - The same mistake three or more times.
+            Write at most 15 suggestions to the file `suggestions.json`, exactly this shape and nothing else:
+            {"items":[{"kind":"note|example|bug","scope":"customer|company","area":"","text":"","evidence":""}]}
+            - note: one short, plain fact or rule in the owner's voice, ready to be a Brain note (scope customer = may be told to customers; company = plain business facts).
+            - example: for a good correction, `text` = the better reply, `evidence` = the customer's message that triggered it.
+            - bug: something wrong in the HRMS itself (a missing lookup, a wrong number); `text` = a clear request for the builder.
+            - evidence: one short line saying which exchanges show it. No names, no numbers, no phone digits.
+            Never suggest anything about salaries, penalties, costs or staff matters. Never copy private details. If nothing is clearly worth learning, write {"items":[]}.
+          claude_args: |
+            --model claude-opus-5-5
+            --max-turns 20
+            --allowedTools "Read,Write(suggestions.json),Glob,Grep"
+
+      - name: Send the suggestions to the HRMS
+        if: steps.dl.outputs.go == 'yes'
+        run: |
+          if [ ! -f suggestions.json ]; then echo "No suggestions file."; exit 0; fi
+          python3 -c "import json;d=json.load(open('suggestions.json'));assert isinstance(d.get('items'),list);print(len(d['items']),'suggestions')"
+          curl -sS -X POST -H "X-Learn-Key: $LEARN_LOOP_KEY" -H "Content-Type: application/json" --data @suggestions.json "$LEARN_EXPORT_URL?action=ll.suggest"
+          echo

@@ -1,0 +1,40 @@
+# Every night at 02:05 India time this asks the HRMS to run its study pass. The pass rewrites the WhatsApp bot's guidebook from the saved chats
+# and the owner's Teach rules, and makes the new one live (see lib_guide_nightly in empmanagment/api.php).
+# A Hostinger cron job on the same address, every 5 minutes, does the same: https://<your domain>/empmanagment/api.php?action=lib.cron&key=API_KEY
+#
+# Needs two repository secrets (GitHub -> Settings -> Secrets and variables -> Actions):
+#   LEARN_EXPORT_URL   https://<your domain>/empmanagment/api.php      (the same secret the nightly review of the bots already uses)
+#   HRMS_CRON_KEY      the API_KEY written in config.php
+# Until both exist the job ends quietly without doing anything.
+name: Nightly guidebook
+
+on:
+  schedule:
+    - cron: '35 20 * * *'      # 20:35 UTC = 02:05 in India
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-guidebook
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      URL: ${{ secrets.LEARN_EXPORT_URL }}
+      KEY: ${{ secrets.HRMS_CRON_KEY }}
+    steps:
+      - name: "Run the study pass (up to three passes - old chats first, then the guidebook)"
+        run: |
+          if [ -z "$URL" ] || [ -z "$KEY" ]; then echo "Secrets are not set up yet: nothing to do."; exit 0; fi
+          for i in 1 2 3; do
+            code=$(curl -sS -m 290 -o out.json -w '%{http_code}' --get "$URL" --data-urlencode "action=lib.cron" --data-urlencode "key=$KEY" || true)
+            echo "pass $i: HTTP $code"
+            head -c 400 out.json 2>/dev/null || true; echo
+            [ "$code" = "200" ] || break
+            sleep 20
+          done

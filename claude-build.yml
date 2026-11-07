@@ -1,0 +1,64 @@
+# "Request a change": the owner asks for a change in the HRMS (Admin -> Changes, or by voice to the assistant).
+# That creates a GitHub Issue with the label "claude-build". This workflow then lets Claude Code build it
+# and open a Pull Request. It never merges: the owner taps "Approve & deploy" in Admin -> Changes
+# (that merges the Pull Request, and the normal "Deploy to Hostinger" workflow uploads it).
+#
+# Needs ONE repository secret: ANTHROPIC_API_KEY   (GitHub -> Settings -> Secrets and variables -> Actions)
+name: Claude builds a requested change
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  id-token: write
+
+concurrency:
+  group: claude-build-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.event.label.name == 'claude-build' && github.event.sender.type == 'User'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: PHP and Node for the checks
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq php-cli >/dev/null
+          node --version && php --version | head -1
+
+      - name: Claude Code builds the change
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          prompt: |
+            You are the builder for the owner of this HRMS (a PHP 7.4 + plain JavaScript web app).
+            The request is GitHub issue #${{ github.event.issue.number }}: "${{ github.event.issue.title }}".
+            Read the full issue text first (use `gh issue view ${{ github.event.issue.number }}`).
+
+            Before you change anything read `empmanagment/house_rules.md` and `docs/hrms-map.md`, and look for an existing screen,
+            table or action that already does part of this. ONE place per job: connect to it, never make a second copy.
+
+            Then:
+            1. Create a branch named `claude/chg-${{ github.event.issue.number }}` from main.
+            2. Build the change, small and focused. Match the existing design. Phone width must work.
+            3. Run `php -l` on every PHP file you changed and `node --check` on every JS file you changed. Fix what fails.
+               If you can test the logic with a small script, do.
+            4. Commit with a clear message, push the branch, and open a Pull Request to main with
+               `gh pr create`. The description must say, in plain words, what changed, where the owner will see it,
+               and anything he must check. It must contain the line `Closes #${{ github.event.issue.number }}`.
+            5. Do NOT merge. Do NOT edit anything under `.github/`. Never print, log or commit secrets or config.php.
+            If the request is unclear or unsafe, do not guess: comment on the issue with one short question and stop.
+          claude_args: |
+            --model claude-opus-5-5
+            --max-turns 60
+            --allowedTools "Edit,Write,Read,Glob,Grep,Bash(php -l:*),Bash(php:*),Bash(node --check:*),Bash(node:*),Bash(git:*),Bash(gh pr create:*),Bash(gh pr view:*),Bash(gh issue view:*),Bash(gh issue comment:*),Bash(ls:*),Bash(cat:*),Bash(grep:*),Bash(sed:*),Bash(find:*),Bash(mkdir:*)"
