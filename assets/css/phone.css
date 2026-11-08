@@ -7,9 +7,16 @@
   /* HEADER, one rule for every page: row 1 = [title + one-line subtitle] [search] [bell]; anything else in the header (month picker, Download / Refresh buttons ...) drops to a full-width row 2.
      Nothing sits beside the title any more, so text can never run under a button. */
   html.ph .topbar{display:flex !important; flex-wrap:wrap !important; align-items:center !important; gap:6px 8px !important;}
-  html.ph .topbar > div:first-child{order:0; flex:1 1 200px !important; min-width:0 !important;}   /* 200px basis: the full-width row below can never share the line and squeeze the title */
+  html.ph .topbar > div:first-child{order:0; flex:1 1 60px !important; min-width:0 !important;}   /* 200px basis: the full-width row below can never share the line and squeeze the title */
   html.ph .topbar > #wsTools{order:1; flex:none !important; margin-left:auto !important;}
   html.ph .topbar > :not(:first-child):not(#wsTools){order:2; flex:1 0 100% !important; min-width:0 !important; max-width:100% !important;}
+  /* search always rides on the title line; a long title is cut with ... instead of pushing the search down */
+  html.ph .topbar > :not(:first-child):not(#wsTools):has(> input:not([type=month]):not([type=date]):not([type=checkbox]), > input[type=search]),
+  html.ph .topbar > .search-box, html.ph .topbar > .lsearch{order:1; flex:0 1 150px !important; min-width:90px !important;}
+  html.ph .topbar > div:first-child:has(~ .search-box, ~ .lsearch, ~ :has(> input[type=search])){flex:1 1 60px !important;}
+  html.ph .topbar > div:first-child h1{white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%;}
+  html.ph .topbar > div:first-child > .bd-sub, html.ph .topbar > div:first-child > .sub{white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  html.ph .topbar .search-box input, html.ph .topbar .lsearch input{width:100% !important; min-width:0 !important; max-width:none !important;}
   html.ph .topbar > div:not(:has(h1)){margin-left:0 !important; width:auto !important;}   /* style.css pulled these rows 52px left under the menu button: that shoved text and the month picker off-screen */
   html.ph .topbar input[type=month], html.ph .topbar input[type=date], html.ph .topbar select{flex:1 1 auto; min-width:0;}
   html.ph .ws-top{display:flex !important; flex-wrap:nowrap !important; align-items:center !important; gap:8px !important;}

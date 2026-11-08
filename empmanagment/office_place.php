@@ -1031,6 +1031,8 @@ function ofp_dispatch(PDO $pdo, $action) {
             }
             $sp = [];
             if ($isAdmin && function_exists('dp_su_ensure')) { foreach ($pdo->query("SELECT code, name, office_id FROM dp_su_places WHERE active = 1 AND (office_id IS NULL OR office_id = 0) ORDER BY sort_no, id")->fetchAll() as $p) $sp[] = ['code' => $p['code'], 'name' => $p['name'], 'office_id' => null]; }
+            $have = array_map(function ($of) { return mb_strtolower($of['name']); }, $offices);   // a place that already has an office (the Surat store) is not "other"
+            $sp = array_values(array_filter($sp, function ($p) use ($have) { return !in_array(mb_strtolower($p['name']), $have, true); }));
             json_response(['offices' => $offices, 'supply_places' => $sp]);
         }
         case 'of.pl_list': {

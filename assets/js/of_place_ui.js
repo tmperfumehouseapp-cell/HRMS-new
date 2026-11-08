@@ -699,7 +699,7 @@
   OP.mountOther = function (host, o) {
     GET('of.pl_offices').then(function (r) {
       var sp = r.supply_places || []; if (!sp.length || !o.admin) { host.innerHTML = ''; return; }
-      host.innerHTML = '<div class="bd-card ofp-other"><div class="bd-h"><h2>Other locations</h2></div><div class="bd-sub">The store, RJD Hub and other locations of Supplies have no office yet. Register a place there and Claude makes the office and its Boss Engine section for you (once).</div>'
+      host.innerHTML = '<div class="bd-card ofp-other"><div class="bd-h"><h2>Other locations</h2></div><div class="bd-sub">The Surat store, Oberon, Nishal office, RJD Hub and other places of Supplies have no office yet. Register a place there and Claude makes the office and its Boss Engine section for you (once).</div>'
         + sp.map(function (p) { return '<div class="bd-row"><div class="l"><div class="t">' + esc(p.name) + '</div></div><div class="r"><button class="bd-btn sm pri" type="button" data-sup="' + esc(p.code) + '" data-nm="' + esc(p.name) + '">Register a place</button></div></div>'; }).join('') + '</div>';
       host.onclick = function (e) { var b = e.target.closest('[data-sup]'); if (!b) return; o.start({ supplyCode: b.dataset.sup, supplyName: b.dataset.nm }); };
     }).catch(function () { host.innerHTML = ''; });
