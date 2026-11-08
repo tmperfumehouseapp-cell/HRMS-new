@@ -228,7 +228,7 @@
   function start(root) {
     if (!document.getElementById('wxCss')) { const s = document.createElement('style'); s.id = 'wxCss'; s.textContent = CSS; document.head.appendChild(s); }
     themeApply();
-    try { if (!window.WaNotices) { const sc = document.createElement('script'); sc.src = 'assets/js/wa_notices.js?v=2'; document.head.appendChild(sc); } } catch (e) { }   // 🔔 "X took over your chat" bar (your own chats only)
+    try { if (!window.WaNotices) { const sc = document.createElement('script'); sc.src = 'assets/js/wa_notices.js?v=3'; document.head.appendChild(sc); } } catch (e) { }   // 🔔 "X took over your chat" bar (your own chats only)
     root.innerHTML = ''; const R = document.createElement('div'); R.className = 'wx'; root.appendChild(R);
     const EMB = new URLSearchParams(location.search).get('embed') === '1'; if (EMB) { R.classList.add('emb'); document.documentElement.classList.add('wx-emb'); }
     const CXID = EMB ? (Number(new URLSearchParams(location.search).get('cx')) || 0) : 0; if (CXID) R.classList.add('cxm');   // 🎫 inside a complaint ticket: voice + attach + ✨ Replies (Claude's suggestion + the complaint pre-made messages); no sales tools   // 🎫 ONE chat inside another page (the complaint ticket): the same chat box — voice notes, photos, videos, "/" quick replies, pre-made messages — no list

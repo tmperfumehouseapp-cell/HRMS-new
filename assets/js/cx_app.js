@@ -411,7 +411,7 @@ window.CX = (function () {
     items.forEach((it) => {
       const day = it.t.slice(0, 10); if (day !== last) { last = day; h += '<div class="cx-s">' + (day === new Date().toISOString().slice(0, 10) || day === localDay() ? 'Today' : dm(day)) + '</div>'; }
       if (it.e) { const e = it.e; if (e.kind === 'note') h += '<div class="cx-s n">🔒 ' + esc(e.by) + ': ' + esc(e.text) + '</div>'; else h += '<div class="cx-s">' + (e.kind === 'alert' ? '⏰ ' : '') + esc(e.text.length > 140 ? e.text.slice(0, 139) + '…' : e.text) + '</div>'; return; }
-      const m = it.m; if (m.dir === 'sys') { h += '<div class="cx-s">' + esc(m.body) + '</div>'; return; }
+      const m = it.m; if (m.dir === 'sys') { h += '<div class="cx-s">' + esc(m.body) + (m.ts ? ' · <b>' + esc(hm(m.ts)) + '</b>' : '') + '</div>'; return; }
       const mine = m.dir === 'out'; let inner = '';
       if (m.mtype === 'image') inner = '<img data-mid="' + esc(m.media_id) + '" alt="photo" style="min-width:120px;min-height:80px;background:#e9edef">' + (m.body ? '<div>' + linkify(esc(m.body)) + '</div>' : '');
       else if (m.mtype === 'audio') inner = '<audio controls data-mid="' + esc(m.media_id) + '"></audio>';
