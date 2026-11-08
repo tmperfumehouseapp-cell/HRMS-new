@@ -82,6 +82,17 @@
 #tb .cl{background:#f3f0ff; border-radius:12px; padding:10px 14px; margin-bottom:10px; line-height:1.5; font-size:13px;} #tb .cl b.h{display:block; font-size:11px; text-transform:uppercase; letter-spacing:.07em; color:#6d4fd6; margin-bottom:2px;} #tb .cl ul{margin:6px 0 0; padding-left:18px;} #tb .cl li.bad{color:#b3261e;} #tb .cl li.warn{color:#8a5a00;} #tb .cl .ok{color:#1d6b47; font-weight:700;}
 #tb .tbtn{padding:6px 14px; border-radius:10px; background:var(--ink); color:#fff; font:inherit; font-weight:800; font-size:12.5px; border:0; cursor:pointer;} #tb .tbtn:disabled{opacity:.5; cursor:default;}
 #tb .te-k{margin-bottom:12px;}
+#tb .te-find{position:relative;margin-bottom:12px}
+#tb .te-find>input[type=search],#tb .te-find>input{width:100%;padding-left:44px!important;box-sizing:border-box;font:inherit;font-size:15px;font-weight:600;padding:12px 16px 12px 42px;border:2px solid var(--ink,#14161a);border-radius:16px;background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2.4' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='M21 21l-4.3-4.3'/%3E%3C/svg%3E") no-repeat 14px center}
+#tb .te-find>input:focus{outline:0;box-shadow:0 0 0 4px rgba(255,122,47,.2);border-color:#ff7a2f}
+#tb .te-res{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:40;background:#fff;border:1px solid var(--line,#e5e7eb);border-radius:16px;box-shadow:0 14px 34px rgba(0,0,0,.16);padding:6px;max-height:420px;overflow-y:auto}
+#tb .te-r{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:12px;cursor:pointer}
+#tb .te-r.on,#tb .te-r:hover{background:#f3f4f8}
+#tb .te-r .av{width:36px;height:36px;border-radius:50%;background:#eceef2;display:flex;align-items:center;justify-content:center;font-weight:800;overflow:hidden;flex:0 0 auto}
+#tb .te-r .av img{width:100%;height:100%;object-fit:cover}
+#tb .te-r .who{flex:1;min-width:0}.te-r .who b{display:block;font-size:14px}.te-r .who small{color:var(--mut,#6b7280);font-size:12px}
+#tb .te-r .pay{display:inline-block;margin:0 0 0 4px;cursor:default}
+#tb .te-r .go{border:0;background:#14161a;color:#fff;border-radius:10px;padding:6px 12px;font:700 12.5px inherit;cursor:pointer;white-space:nowrap}
 #tb .te-bar{display:flex; flex-wrap:wrap; gap:8px 12px; align-items:center; margin-bottom:12px;}
 #tb .te-bar input{font:inherit; font-size:13px; padding:7px 12px; border:1px solid var(--line); border-radius:99px; min-width:230px; background:#fff;}
 #tb .te-msg{font-size:12.5px; font-weight:600; color:#1d6b47;} #tb .te-msg.bad{color:#b3261e;}
@@ -975,7 +986,8 @@ body.emb .tabs{display:none;}
     const fresh = P.filter(p => p.joined && p.joined >= d30), pay = P.reduce((a, p) => { const rr = M.rowBy[p.id]; return a + (rr && (rr.leader || rr.np) ? 0 : p.monthly); }, 0);
     const kp = (l, v, n) => '<div class="kpi"><span>' + l + '</span><b>' + v + '</b><em>' + n + '</em></div>';
     const biggest = M.depts.map(d => ({ n: d.name, c: P.filter(p => p.deptId === d.id).length })).sort((a, b) => b.c - a.c)[0];
-    return '<div class="kpis te-k">' + kp('Total employees', P.length, 'working with you now')
+    return '<div class="te-find"><input id="teFind" type="search" placeholder="Search an employee by name, then set their rule…" autocomplete="off" aria-label="Search an employee"><div class="te-res" id="teFindRes" hidden></div></div>'
+      + '<div class="kpis te-k">' + kp('Total employees', P.length, 'working with you now')
       + kp('Departments', M.depts.length, biggest && biggest.c ? 'biggest: ' + esc(biggest.n) + ' (' + biggest.c + ')' : '')
       + kp('Fixed salary a month', lakh(pay), P.filter(p => !p.monthly).length + ' are commission-only')
       + kp('Joined last 30 days', fresh.length, fresh.slice(0, 3).map(p => esc(p.name.split(' ')[0])).join(', ') || 'no new joiners')
@@ -1107,6 +1119,40 @@ body.emb .tabs{display:none;}
     const ids = S.sel.has(dragId) ? [...S.sel] : [dragId]; dragId = 0; if (g.dataset.pgday) dayAssign(ids); else if (g.dataset.pg) regroup(ids, g.dataset.pg); else moveMany(ids, Number(g.dataset.dept));
   });
   tb.addEventListener('change', (e) => { if (e.target.id === 'dayPick') S.dayDate = e.target.value; });
+
+  /* quick search on top of Total Employees: type a name → pick → set the pay rule (or open the full card) */
+  let feItems = [], fePos = -1;
+  const feSearch = (raw) => {
+    const q = nk(raw); if (!q) return [];
+    const rank = (p) => { const n = nk(p.name); return n.startsWith(q) ? 0 : n.split(' ').some(w => w.startsWith(q)) ? 1 : n.includes(q) ? 2 : nk(p.role + ' ' + p.code + ' ' + (p.dept || '')).includes(q) ? 3 : 9; };
+    return S.M.people.map(p => [rank(p), p]).filter(x => x[0] < 9).sort((a, b) => a[0] - b[0] || a[1].name.localeCompare(b[1].name)).slice(0, 8).map(x => x[1]);
+  };
+  const feDraw = () => {
+    const box = $('teFindRes'), inp = $('teFind'); if (!box || !inp) return;
+    feItems = feSearch(inp.value);
+    if (!inp.value.trim()) { box.hidden = true; return; }
+    box.hidden = false;
+    box.innerHTML = feItems.length ? feItems.map((p, i) => {
+      const r = S.M.rowBy[p.id], pi = payInfo(r), tm = tmInfo(p.id), u = photoUrl(p.photo), dep = (S.M.depts.find(d => d.id === p.deptId) || {}).name || 'No department';
+      return '<div class="te-r' + (i === fePos ? ' on' : '') + '" data-fopen="' + p.id + '"><span class="av">' + (u ? '<img src="' + esc(u) + '" alt="" onerror="this.remove()">' : esc((p.name.trim()[0] || '?').toUpperCase())) + '</span>'
+        + '<span class="who"><b>' + esc(p.name) + '</b><small>' + esc(p.role || '—') + ' · ' + esc(dep) + '</small></span>'
+        + '<span><span class="pay ' + pi.c + '">' + esc(pi.t) + (pi.sub ? ' · ' + pi.sub : '') + '</span><span class="pay ' + tm.c + '">' + esc(tm.t) + '</span></span>'
+        + '<button type="button" class="go" data-setup="' + p.id + '">Set rule</button></div>';
+    }).join('') + '<div class="hint" style="padding:6px 10px">Click a name for the full card · “Set rule” opens pay + timing · Enter sets the first one</div>'
+      : '<div class="hint" style="padding:10px 12px">Nobody matches “' + esc(inp.value) + '”.</div>';
+  };
+  tb.addEventListener('input', (e) => { if (e.target.id === 'teFind') { fePos = -1; feDraw(); } });
+  tb.addEventListener('keydown', (e) => {
+    if (e.target.id !== 'teFind') return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); if (!feItems.length) return; fePos = (fePos + (e.key === 'ArrowDown' ? 1 : -1) + feItems.length) % feItems.length; feDraw(); }
+    else if (e.key === 'Enter') { e.preventDefault(); const p = feItems[fePos >= 0 ? fePos : 0]; if (p) { $('teFindRes').hidden = true; setupPopup(p.id, { after: () => load().catch(() => {}) }); } }
+    else if (e.key === 'Escape') { $('teFindRes').hidden = true; }
+  });
+  tb.addEventListener('click', (e) => {
+    const r = e.target.closest('.te-r[data-fopen]');
+    if (r && !e.target.closest('[data-setup]') && window.PersonCard) { $('teFindRes').hidden = true; PersonCard.open(Number(r.dataset.fopen), { onChange: () => load().catch(() => {}), paySetup: (id, done) => setupPopup(id, { after: done }), paySummary: (id) => paySummaryHtml(id) }); return; }
+    if (!e.target.closest('.te-find') && $('teFindRes')) $('teFindRes').hidden = true;
+  });
   tb.addEventListener('input', (e) => { if (e.target.id === 'xq') { S.xq = e.target.value; const xb = $('exBox'); if (xb) xb.innerHTML = exBody(); return; } if (e.target.id === 'bq') { S.bq = e.target.value; S.bn = 300; const bx = $('billsBox'); if (bx) bx.innerHTML = billsInner(); return; } if (e.target.id !== 'teQ') return; S.q = e.target.value; $('teGroups').innerHTML = teamGroups(); });
   $('mon').value = new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 7);
   $('mon').onchange = () => load().catch(err => { $('tb').innerHTML = '<div class="card"><div class="empty">' + esc(err.message) + '</div></div>'; });
