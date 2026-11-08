@@ -1164,11 +1164,12 @@ function orders_upsert(PDO $pdo, string $storeKey, array $orders): int
 function order_is_repeat_customer(PDO $pdo, string $phone, int $t): bool
 {
     $d = preg_replace('/\D+/', '', $phone) ?? ''; if (strlen($d) < 10) return false; $k = substr($d, -10); $before = date('Y-m-d H:i:s', ($t ?: time()) - 120);
-    try { $q = $pdo->prepare("SELECT 1 FROM shop_orders WHERE phone LIKE ? AND created_at < ? AND total > 0 AND (tags IS NULL OR tags NOT LIKE '%cancel%') LIMIT 1"); $q->execute(['%' . $k, $before]); return (bool)$q->fetchColumn(); } catch (Throwable $e) { return false; }
+    try { $q = $pdo->prepare("SELECT 1 FROM shop_orders WHERE RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(phone,' ',''),'-',''),'+',''),'(',''), 10) = ? AND created_at < ? AND total > 0 AND (tags IS NULL OR tags NOT LIKE '%cancel%') LIMIT 1"); $q->execute([$k, $before]); return (bool)$q->fetchColumn(); } catch (Throwable $e) { return false; }   // phones are compared without spaces / + / - (a stored '+91 97960 04321' used to miss)
 }
 function order_chat_type(PDO $pdo, array $c, int $t = 0): string
 {
     if (order_is_repeat_customer($pdo, (string)($c['phone'] ?? ''), $t)) return 'campaign';   // owner (7 Nov): a customer who ordered before and orders again counts as Campaign
+    try { $ph = (string)($c['phone'] ?? ''); if ($ph !== '') { $qq = $pdo->prepare("SELECT type FROM wq_qtype WHERE phone = ? ORDER BY opened_at DESC LIMIT 1"); $qq->execute([$ph]); if ((string)$qq->fetchColumn() === 'campaign') return 'campaign'; } } catch (Throwable $e) { }   // the chat's latest query is typed Campaign (they answered our campaign / came back after 30 h) → the order follows it
     return (in_array((string)($c['source'] ?? ''), ['campaign', 'community'], true) || (function_exists('wa_got_campaign') && wa_got_campaign($pdo, (string)($c['phone'] ?? ''), date('Y-m-d H:i:s', $t ?: time()), 7))) ? 'campaign' : 'query';
 }
 function order_auto_alloc(PDO $pdo, string $sk, array $o)
