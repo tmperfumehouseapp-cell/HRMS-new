@@ -220,7 +220,14 @@ function wo_view(PDO $pdo, ?array $p, ?array $s, string $match, array $sent): ar
         'status' => $cls, 'status_label' => wo_class_label($cls), 'status_text' => wo_status_text($cls, $arr), 'sr_status' => $p ? (string)$p['sr_status'] : '', 'etd' => $etd, 'etd_text' => $etdText,
         'delivered_at' => $p && !empty($p['delivered_at']) ? (string)$p['delivered_at'] : null, 'last_scan' => $last ? ['at' => $last['at'], 'label' => $last['label'], 'place' => $last['place']] : null,
         'timeline' => $ev, 'match' => $match, 'update_sent' => $p ? ($sent[(int)$p['id']] ?? []) : [], 'parcel_id' => $p ? (int)$p['id'] : 0, 'customer' => $p ? (string)$p['customer'] : (string)$s['customer'],
-        'live_at' => $p && !empty($p['live_at']) ? (string)$p['live_at'] : null];
+        'live_at' => $p && !empty($p['live_at']) ? (string)$p['live_at'] : null,
+        'tracked_at' => $p && !empty($p['tracked_at']) ? (string)$p['tracked_at'] : null, 'transit_at' => $p && !empty($p['transit_at']) ? (string)$p['transit_at'] : null, 'ofd_at' => wo_ofd_at($ev)];
+}
+/** When the courier first said "out for delivery" (from the scans we hold), or null. */
+function wo_ofd_at(array $ev): ?string
+{
+    $t = null; foreach ($ev as $e) { if (preg_match('/out for delivery/i', (string)$e['label'] . ' ' . (string)$e['activity'])) { if ($t === null || (string)$e['at'] < $t) $t = (string)$e['at']; } }
+    return $t;
 }
 /** Everything the chat panel needs: {orders, linked, none, phone}. Reads the database only. */
 function wa_ord_for(PDO $pdo, $phone): array

@@ -25,6 +25,13 @@ window.WaOrd = (function () {
   const tel = (p) => (p ? p.replace(/^(\d{5})(\d{5})$/, '$1 $2') : '');
 
   const CSS = `
+  .wor-pg{display:grid;grid-template-columns:repeat(5,1fr);margin:12px 0 4px;position:relative} .wor-pg>div{text-align:center;position:relative;padding:0 2px}
+  .wor-pg>div:before{content:"";position:absolute;top:10px;left:-50%;width:100%;height:3px;background:#e3e7ea;z-index:0} .wor-pg>div:first-child:before{display:none}
+  .wor-pg>div.done:before,.wor-pg>div.now:before{background:#00a884} .wor-pg>div.bad:before{background:#00a884}
+  .wor-pg i{position:relative;z-index:1;width:22px;height:22px;border-radius:50%;background:#fff;border:3px solid #d5dade;display:grid;place-items:center;margin:0 auto;font-style:normal;font-size:11px;font-weight:900;color:#fff}
+  .wor-pg .done i{background:#00a884;border-color:#00a884} .wor-pg .now i{border-color:#00a884;background:#fff;box-shadow:0 0 0 4px rgba(0,168,132,.18)} .wor-pg .now i:after{content:"";width:8px;height:8px;border-radius:50%;background:#00a884} .wor-pg .bad i{border-color:#e5484d;background:#e5484d;box-shadow:0 0 0 4px rgba(229,72,77,.18)}
+  .wor-pg b{display:block;font-size:10.5px;font-weight:800;margin-top:5px;color:#8696a0;line-height:1.15} .wor-pg .done b,.wor-pg .now b{color:#111b21} .wor-pg .bad b{color:#b3261e}
+  .wor-pg small{display:block;font-size:9.5px;color:#667781;line-height:1.2;margin-top:2px;min-height:22px}
   .wor{font-family:Inter,"Segoe UI",system-ui,-apple-system,Arial,sans-serif;color:#111b21;-webkit-tap-highlight-color:transparent} .wor *{box-sizing:border-box}
   .wor-card{background:#fff;border:1px solid #e9edef;border-radius:16px;padding:12px;margin:8px 0}
   .wor-hd{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px} .wor-hd b{font-size:15px;font-weight:800} .wor-hd small{color:#667781;font-weight:600;margin-left:4px}
@@ -108,9 +115,9 @@ window.WaOrd = (function () {
   // ====================================================================================================== the little order pill under the phone number + the hero card
   const initials = (n) => { const w = String(n || '').replace(/[^\p{L}\p{N} ]/gu, '').trim().split(/\s+/).filter(Boolean); return ((w[0] || '?')[0] + (w[1] ? w[1][0] : '')).toUpperCase(); };
   function pillText(m) {
-    if (!m.n && !m.open_cases) return { t: m.latest ? 'No active order' : 'No orders yet', dot: 'new' };
+    if (!m.n && !m.open_cases) return { t: 'Orders & tracking · none yet', dot: 'new' };
     const dot = (m.problem || m.open_cases) ? 'bad' : m.active ? 'on' : '';
-    return { t: m.n + (m.n === 1 ? ' order' : ' orders') + (m.total ? ' · ' + inr(m.total) : ''), dot };
+    return { t: 'Orders & tracking · ' + m.n, dot };
   }
   /** Draws the pill into `el` (under the phone number). Tapping it opens the hero card. Never throws. opts: { phone, name, light, onChange } */
   function badge(el, opts) {
@@ -153,10 +160,24 @@ window.WaOrd = (function () {
   }
 
   // ====================================================================================================== the order card in a chat
+  const STEPS = ['Ordered', 'Packed', 'Shipped', 'Out for delivery', 'Delivered'];
+  const STAGE = { placed: 0, packed: 1, fulfilled: 1, shipped: 2, delayed: 2, failed: 2, rto: 2, lost: 2, damaged: 2, ofd: 3, delivered: 4 };
+  /** The progress line: when it was ordered, packed, shipped, out for delivery and delivered. */
+  function progressHtml(o) {
+    if (o.status === 'cancelled') return '';
+    const at = STAGE[o.status] != null ? STAGE[o.status] : 0, bad = ['failed', 'rto', 'lost', 'damaged', 'delayed'].includes(o.status);
+    const when = [o.placed_at, o.tracked_at, o.transit_at, o.ofd_at, o.delivered_at];
+    const lbl = bad ? { failed: 'Delivery failed', rto: 'Returning', lost: 'Lost', damaged: 'Damaged', delayed: 'Delayed' }[o.status] : '';
+    return '<div class="wor-pg">' + STEPS.map((t, i) => {
+      const cls = i < at ? 'done' : i === at ? (o.status === 'delivered' ? 'done' : bad ? 'bad' : 'now') : '';
+      const w = when[i] && (i <= at) ? fmt(when[i]) : '';
+      return '<div class="' + cls + '"><i>' + (cls === 'done' ? '✓' : cls === 'bad' ? '!' : '') + '</i><b>' + esc(i === at && bad ? lbl : t) + '</b><small>' + esc(w) + '</small></div>';
+    }).join('') + '</div>';
+  }
   function orderHtml(o) {
     const bad = ['failed', 'rto', 'lost', 'damaged', 'delayed'].includes(o.status), good = o.status === 'delivered';
     let h = '<div class="wor-ord' + (bad ? ' bad' : good ? ' ok' : '') + '"><div class="wor-top"><span class="wor-nm">' + esc(o.order_name) + '</span><span class="wor-pill ' + esc(o.status) + '">' + esc(o.status_label) + '</span></div>';
-    h += '<div class="wor-tx">' + esc(o.status_text) + '</div><div class="wor-mt">';
+    h += '<div class="wor-tx">' + esc(o.status_text) + '</div>' + progressHtml(o) + '<div class="wor-mt">';
     if (o.courier) h += '<span class="wor-ch">🚚 ' + esc(o.courier) + '</span>';
     if (o.tracking_no) h += (o.track_link ? '<a class="wor-ch link" target="_blank" rel="noopener" href="' + esc(o.track_link) + '">AWB ' + esc(o.tracking_no) + ' ↗</a>' : '<span class="wor-ch" data-copy="' + esc(o.tracking_no) + '">AWB ' + esc(o.tracking_no) + '</span>');
     if (o.total != null) h += '<span class="wor-ch">' + esc(inr(o.total)) + (o.payment ? ' · ' + esc(o.payment) : '') + '</span>';
@@ -198,7 +219,7 @@ window.WaOrd = (function () {
 
   function open(o) {
     o = o || {}; let c = null;
-    sheet('Customer orders', '<div data-hero></div><div data-slot></div>', (el) => {
+    sheet('Orders & tracking', '<div data-hero></div><div data-slot></div>', (el) => {
       c = card(el.querySelector('[data-slot]'), o);
       api.get('wa.ord_sum', { phone: String(o.phone || '').replace(/\D/g, '').slice(-10) }).then((m) => { const hx = el.querySelector('[data-hero]'); if (hx && m) hx.innerHTML = heroHtml(m, o); }).catch(() => { });
     });
