@@ -81,8 +81,8 @@ window.WaOrd = (function () {
   .wor-now{display:inline-block;border-radius:99px;padding:5px 12px;font-size:12.5px;font-weight:800;background:#eef0f2;color:#3a3f4a} .wor-now.open{background:#d9fdd3;color:#005c4b} .wor-now.shut{background:#fde4e4;color:#b3261e}
   .wor-say{background:#f4f5f7;border-radius:14px;padding:10px 13px;font-size:13.5px;line-height:1.5;white-space:pre-wrap;color:#3a3f4a}
 
-  .wor-pillb{display:inline-flex;align-items:center;gap:6px;max-width:100%;border:0;border-radius:999px;padding:3px 10px 3px 8px;margin-top:3px;font:inherit;font-size:11.5px;font-weight:800;line-height:1.3;cursor:pointer;background:rgba(255,255,255,.2);color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .wor-pillb.lt{background:#e7fbf3;color:#007a62} .wor-pillb .dot{width:8px;height:8px;border-radius:50%;background:#9aa5ad;flex:none} .wor-pillb .dot.on{background:#25d366;box-shadow:0 0 0 3px rgba(37,211,102,.28)} .wor-pillb .dot.bad{background:#ff5a4f;box-shadow:0 0 0 3px rgba(255,90,79,.3)} .wor-pillb .dot.new{background:#f5b400}
+  .wor .wor-pillb,.wx .wor-pillb,.wi .wor-pillb{display:inline-flex !important;align-items:center;gap:6px;width:auto !important;min-width:0 !important;min-height:0 !important;max-width:100%;border:0 !important;border-radius:999px !important;padding:3px 10px 3px 8px !important;margin:3px 0 0 !important;font:inherit;font-size:12px !important;font-weight:800 !important;line-height:1.3 !important;cursor:pointer;background:rgba(255,255,255,.22) !important;color:#fff !important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:none !important}
+  .wor .wor-pillb.lt,.wi .wor-pillb.lt{background:#e7fbf3 !important;color:#007a62 !important} .wor-pillb .dot{width:8px;height:8px;border-radius:50%;background:#c3cbd1;flex:none} .wor-pillb .dot.on{background:#25d366;box-shadow:0 0 0 3px rgba(37,211,102,.35)} .wor-pillb .dot.bad{background:#ff5a4f;box-shadow:0 0 0 3px rgba(255,90,79,.35)} .wor-pillb .dot.new{background:#f5b400}
   .wor-hero{border-radius:20px;padding:16px 16px 14px;color:#fff;background:linear-gradient(135deg,#0b6e5f 0%,#00a884 55%,#25d366 120%);box-shadow:0 8px 22px rgba(0,128,105,.28);position:relative;overflow:hidden}
   .wor-hero:after{content:"";position:absolute;right:-40px;top:-40px;width:150px;height:150px;border-radius:50%;background:rgba(255,255,255,.09)}
   .wor-hero .who{display:flex;align-items:center;gap:10px;position:relative;z-index:1} .wor-hero .av{width:42px;height:42px;border-radius:50%;background:rgba(255,255,255,.22);display:grid;place-items:center;font-weight:800;font-size:16px;flex:none}
@@ -110,7 +110,7 @@ window.WaOrd = (function () {
   function pillText(m) {
     if (!m.n && !m.open_cases) return { t: m.latest ? 'No active order' : 'No orders yet', dot: 'new' };
     const dot = (m.problem || m.open_cases) ? 'bad' : m.active ? 'on' : '';
-    return { t: '📦 ' + m.n + (m.n === 1 ? ' order' : ' orders') + (m.total ? ' · ' + inr(m.total) : '') + (m.active ? ' · ' + m.active + ' on the way' : ''), dot };
+    return { t: m.n + (m.n === 1 ? ' order' : ' orders') + (m.total ? ' · ' + inr(m.total) : ''), dot };
   }
   /** Draws the pill into `el` (under the phone number). Tapping it opens the hero card. Never throws. opts: { phone, name, light, onChange } */
   function badge(el, opts) {
