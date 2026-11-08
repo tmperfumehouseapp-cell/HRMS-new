@@ -717,12 +717,12 @@
       const v = $('.wx-chat'), c = S.cur.contact, r = S.cur.row;
       S.cur.watch = !!(S.me && S.me.team && r.emp && r.emp !== S.me.emp_id);   // a colleague's chat opened from 👥 Team: read only until "Take over"
       v.innerHTML = `<div class="wx-ch"><button class="bk" id="wxBk" aria-label="Back">‹</button><div class="wx-av" style="background:hsl(${hue(c.phone)} 55% 48%);width:34px;height:34px;font-size:12px">${esc(initials(c.name, c.phone))}</div>
-        <div class="wx-mid" id="wxCi" style="cursor:pointer"><div class="wx-nm" id="wxCn">${esc(c.name || pretty(c.phone))} ${badgeOf(r)}</div><div class="wx-sub" id="wxCs">${esc(pretty(c.phone))}</div></div>
+        <div class="wx-mid" id="wxCi" style="cursor:pointer"><div class="wx-nm" id="wxCn">${esc(c.name || pretty(c.phone))} ${badgeOf(r)}</div><div class="wx-sub" id="wxCs">${esc(pretty(c.phone))}</div><div id="wxOs"></div></div>
         <button class="wx-ib" id="wxPrc" title="Send the price photo">💰<small>Price</small></button><button class="wx-ib g" id="wxFin" title="Finish this chat">✔<small>Done</small></button><button class="wx-ib" id="wxMore" aria-haspopup="dialog" title="More: complaint, report, journey, customer">⋯<small>More</small></button></div>
         <div id="wxCxB"></div><div id="wxOdB"></div>${S.cur.peek === 'tag' ? `<div class="wx-banner y" id="wxPkB">🏷 This chat was yours first — now with <b>${esc(((S.chats || []).find((y) => y.phone === S.cur.phone) || {}).emp_name || 'someone else')}</b>. You can read it; only they can reply.</div>` : S.cur.peek ? `<div class="wx-banner b" id="wxPkB">🙋 A ${S.cur.peek === 'grab' ? 'late chat (nobody replied)' : 'new chat — not given to anyone yet'}. Read it, then take it with the button below.</div>` : ''}${S.cur.watch ? `<div class="wx-banner b" id="wxTo" style="display:flex;gap:8px;align-items:center">👀 <span style="flex:1">With <b>${esc(r.emp_name || 'a colleague')}</b> — you are watching.</span>${r.heat === 'cx' ? '<small>Complaint chat</small>' : '<button class="wx-btn" id="wxToB">🔄 Take over</button>'}</div>` : ''}<div class="wx-sw" id="wxNum" hidden></div><div class="wx-msgs" id="wxMs"><div class="wx-sk"></div></div><div class="wx-qm" id="wxQk" hidden></div><div id="wxSug"></div><div id="wxPp"></div><div id="wxFoot"></div>`;
       $('#wxBk').onclick = () => { if (history.state && history.state.wxChat) history.back(); else closeChat(); }; $('#wxCi').onclick = openCustomer; $('#wxFin').onclick = openFinish; $('#wxMore').onclick = openMore;
       if ($('#wxToB')) $('#wxToB').onclick = takeOver;
-      $('#wxPrc').onclick = async function () { if (!confirm('Send the price photo to this customer?')) return; this.disabled = true; try { const r = await api.post('wa.price_photo', { phone: S.cur.phone }); toast(r.message || 'Price photo sent.'); } catch (e) { toast(e.message, true); } this.disabled = false; }; cxBanner(); odBanner();
+      $('#wxPrc').onclick = async function () { if (!confirm('Send the price photo to this customer?')) return; this.disabled = true; try { const r = await api.post('wa.price_photo', { phone: S.cur.phone }); toast(r.message || 'Price photo sent.'); } catch (e) { toast(e.message, true); } this.disabled = false; }; cxBanner(); odBanner(); orderPill();
       $('#wxMs').onclick = async (e) => {
         const rb0 = e.target.closest('[data-rb]'); if (rb0) { rpSet(rb0.dataset.rb); return; }
         const rt = e.target.closest('[data-rt]'); if (rt) { const m = S.cur && S.cur.msgs.find((x) => x.cid === rt.dataset.rt); if (m) sendText(m.body, null, false, m); return; }   // Retry: same id, so it can never go twice
@@ -956,8 +956,13 @@
     let ordLd = null;
     function ordReady(cb) {
       if (window.WaOrd) return cb(); if (ordLd) { ordLd.push(cb); return; } ordLd = [cb];
-      const sc = document.createElement('script'); sc.src = 'assets/js/wa_ord_ui.js?v=2';
+      const sc = document.createElement('script'); sc.src = 'assets/js/wa_ord_ui.js?v=8';
       sc.onload = () => { const q = ordLd || []; ordLd = null; q.forEach((f) => f()); }; sc.onerror = () => { const q = ordLd || []; ordLd = null; q.forEach((f) => f()); }; document.head.appendChild(sc);
+    }
+    // the little "📦 3 orders · ₹4,200" pill under the phone number; tap = the customer's order card (copy of the Dispatch tracking data)
+    function orderPill() {
+      const el = $('#wxOs'); if (!el || !S.cur) return; const c = S.cur.contact || {}, p = c.phone || S.cur.phone, nm = (c.name || '').trim();
+      ordReady(() => { if (window.WaOrd && $('#wxOs') === el) WaOrd.badge(el, { phone: p, name: nm, onChange: () => { try { pollChat(); } catch (e) { } } }); });
     }
     function openOrders() {
       if (!S.cur) return; const c = S.cur.contact || {}, p = c.phone || S.cur.phone, nm = (c.name || (S.cur.row && S.cur.row.name) || '').trim() || pretty(p);

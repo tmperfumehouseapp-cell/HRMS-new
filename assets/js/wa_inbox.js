@@ -619,11 +619,11 @@
     }
     function drawHead() {
       const c = S.cur.contact;
-      $('wiH').innerHTML = `<button type="button" class="wi-back" id="wiBack" aria-label="Back to chats">‹<span class="lb"> Chats</span></button>${av(c)}<b>${esc(title(c))}</b>${c.name ? `<span class="ph" style="color:#6b7684">${esc(pretty(c.phone))}</span>` : ''}${asgHtml(c)}${pills(Object.assign({}, c, { assigned_name: '' }))}<span class="wi-fu-p" id="wiFuP"></span><span class="sp"></span>${admin && c.status !== 'closed' && c.assigned_emp !== meId() ? `<button type="button" class="wi-btn wi-ib" id="wiTo" title="Take this chat into your own panel" style="background:linear-gradient(135deg,#6366f1,#4f46e5);color:#fff;font-weight:800">🔄<span class="lb"> Take over</span></button>` : ''}<button type="button" class="wi-btn wi-ib" id="wiPrc" title="Send the price photo">💰<span class="lb"> Price</span></button><button type="button" class="wi-btn wi-ib" id="wiCartH" title="Make a cart with a chain (same as the salesperson app) — 🩺 Diagnose is inside">🛒<span class="lb"> Cart</span></button><button type="button" class="wi-btn wi-ib wi-pc" id="wiMoH" title="Manual order: the customer paid by QR / UPI (or pays on delivery) — no website">🧾<span class="lb"> Manual order</span></button>
+      $('wiH').innerHTML = `<button type="button" class="wi-back" id="wiBack" aria-label="Back to chats">‹<span class="lb"> Chats</span></button>${av(c)}<b>${esc(title(c))}</b>${c.name ? `<span class="ph" style="color:#6b7684">${esc(pretty(c.phone))}</span>` : ''}${asgHtml(c)}${pills(Object.assign({}, c, { assigned_name: '' }))}<span class="wi-fu-p" id="wiFuP"></span><span class="wi-os" id="wiOs"></span><span class="sp"></span>${admin && c.status !== 'closed' && c.assigned_emp !== meId() ? `<button type="button" class="wi-btn wi-ib" id="wiTo" title="Take this chat into your own panel" style="background:linear-gradient(135deg,#6366f1,#4f46e5);color:#fff;font-weight:800">🔄<span class="lb"> Take over</span></button>` : ''}<button type="button" class="wi-btn wi-ib" id="wiPrc" title="Send the price photo">💰<span class="lb"> Price</span></button><button type="button" class="wi-btn wi-ib" id="wiCartH" title="Make a cart with a chain (same as the salesperson app) — 🩺 Diagnose is inside">🛒<span class="lb"> Cart</span></button><button type="button" class="wi-btn wi-ib wi-pc" id="wiMoH" title="Manual order: the customer paid by QR / UPI (or pays on delivery) — no website">🧾<span class="lb"> Manual order</span></button>
         <button type="button" class="wi-btn wi-ib wi-pc" id="wiCx" title="Mark as complaint" style="background:#f3efff;color:#6d4fc2">🎫<span class="lb"> Complaint</span></button>${c.status === 'closed' ? '<button type="button" class="wi-btn wi-ib" id="wiRe" title="Open this chat again">↺<span class="lb"> Re-open</span></button>' : '<button type="button" class="wi-btn wi-ib" id="wiCl" title="Resolve (finish) this chat">✓<span class="lb"> Resolve</span></button>'}<button type="button" class="wi-more wi-ib wi-pc" id="wiMore" aria-label="Details">ⓘ<span class="lb"> Details</span></button><button type="button" class="wi-more wi-ib wi-ph" id="wiMo2" aria-label="More">⋯<span class="lb"> More</span></button><div id="wiCxB" style="flex-basis:100%"></div>`;
       const cx = () => { if (!window.CXR) { alert('Complaints are not installed yet. Refresh the page.'); return; } CXR.open({ phone: c.phone, name: c.name || '', source: 'whatsapp', onDone: () => cxBan(c.phone) }); };
       $('wiCx').onclick = cx; if ($('wiCartH')) $('wiCartH').onclick = () => openCart(c); if ($('wiMoH')) $('wiMoH').onclick = () => openManual(c);   // 🛒 the chain cart, one tap from the chat (also in Details)
-      cxBan(c.phone);
+      cxBan(c.phone); orderPill(c);
       if ($('wiAsg')) $('wiAsg').onclick = openAssign;
       if ($('wiTo')) $('wiTo').onclick = async function () {   // 🔄 take this chat into MY panel (whoever holds it now; they get a note at the top of their WhatsApp)
         this.disabled = true; this.textContent = 'Taking over…';
@@ -1058,7 +1058,7 @@
     const OR = { ld: null };
     function ordReady(cb) {
       if (window.WaOrd) return cb(); if (OR.ld) { OR.ld.push(cb); return; } OR.ld = [cb];
-      const sc = document.createElement('script'); sc.src = 'assets/js/wa_ord_ui.js?v=2';
+      const sc = document.createElement('script'); sc.src = 'assets/js/wa_ord_ui.js?v=8';
       sc.onload = () => { const q = OR.ld || []; OR.ld = null; q.forEach((f) => f()); }; sc.onerror = () => { OR.ld = null; }; document.head.appendChild(sc);
     }
     // ✅ Order completed (wa_done.php): one thank-you, then no automatic messages today and tomorrow
@@ -1067,6 +1067,10 @@
       if (st && st.muted) { if (confirm('Order already completed' + (st.order ? ' (' + st.order + ')' : '') + ' — automatic messages are off until ' + String(st.until).slice(0, 10) + ' night.\n\nSwitch automatic messages back on?')) { try { await api.post('wa.order_done', { phone: ph, undo: 1 }); alert('Automatic messages are on again.'); } catch (e) { alert(e.message); } } return; }
       const o = prompt('✅ Order completed (address + payment received)?\n\nThe customer gets ONE thank-you message, then no automatic messages today and tomorrow.\n\nOrder number (optional):', ''); if (o === null) return;
       try { const r = await api.post('wa.order_done', { phone: ph, order: o.trim() }); alert('✅ Order completed' + (r.thanks ? ' · ' + r.thanks : '')); refreshChat(true); } catch (e) { alert(e.message); }
+    }
+    function orderPill(c) {   // "📦 3 orders · ₹4,200" next to the name; tap = the customer's order card
+      const el = $('wiOs'); if (!el) return;
+      ordReady(() => { if (window.WaOrd && $('wiOs') === el) WaOrd.badge(el, { phone: c.phone, name: (c.name || '').trim(), light: true, onChange: () => { refreshChat(true); loadList(true); } }); });
     }
     function openOrders() {
       if (!S.cur) return; const c = S.cur.contact;

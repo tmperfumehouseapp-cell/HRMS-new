@@ -3,6 +3,7 @@
  * Talks to wa_orders.php (wa.ord_*, wa.store_*). Nothing here sends a customer message; a person always taps a button.
  *
  *   WaOrd.card(container, { phone, name, onChange })     the orders of this chat's customer (live status, scans, "Link an order", "Needs attention").  -> { refresh(), destroy() }
+ *   WaOrd.badge(el, { phone, name, light, onChange })   the little "📦 3 orders · ₹4,200" pill under the phone number; tap = the hero card (open)
  *   WaOrd.open({ phone, name, onChange })                the same card in a bottom sheet (for a "📦 Orders" button in the chat header)
  *   WaOrd.urgent({ phone, name, order, onDone })         the "Needs attention" form (Delivery / order problem -> Dispatch, Complaint -> Complaints)
  *   WaOrd.link({ phone, onDone })                        find an order by number or phone and link it to this chat
@@ -24,6 +25,13 @@ window.WaOrd = (function () {
   const tel = (p) => (p ? p.replace(/^(\d{5})(\d{5})$/, '$1 $2') : '');
 
   const CSS = `
+  .wor-pg{display:grid;grid-template-columns:repeat(5,1fr);margin:12px 0 4px;position:relative} .wor-pg>div{text-align:center;position:relative;padding:0 2px}
+  .wor-pg>div:before{content:"";position:absolute;top:10px;left:-50%;width:100%;height:3px;background:#e3e7ea;z-index:0} .wor-pg>div:first-child:before{display:none}
+  .wor-pg>div.done:before,.wor-pg>div.now:before{background:#00a884} .wor-pg>div.bad:before{background:#00a884}
+  .wor-pg i{position:relative;z-index:1;width:22px;height:22px;border-radius:50%;background:#fff;border:3px solid #d5dade;display:grid;place-items:center;margin:0 auto;font-style:normal;font-size:11px;font-weight:900;color:#fff}
+  .wor-pg .done i{background:#00a884;border-color:#00a884} .wor-pg .now i{border-color:#00a884;background:#fff;box-shadow:0 0 0 4px rgba(0,168,132,.18)} .wor-pg .now i:after{content:"";width:8px;height:8px;border-radius:50%;background:#00a884} .wor-pg .bad i{border-color:#e5484d;background:#e5484d;box-shadow:0 0 0 4px rgba(229,72,77,.18)}
+  .wor-pg b{display:block;font-size:10.5px;font-weight:800;margin-top:5px;color:#8696a0;line-height:1.15} .wor-pg .done b,.wor-pg .now b{color:#111b21} .wor-pg .bad b{color:#b3261e}
+  .wor-pg small{display:block;font-size:9.5px;color:#667781;line-height:1.2;margin-top:2px;min-height:22px}
   .wor{font-family:Inter,"Segoe UI",system-ui,-apple-system,Arial,sans-serif;color:#111b21;-webkit-tap-highlight-color:transparent} .wor *{box-sizing:border-box}
   .wor-card{background:#fff;border:1px solid #e9edef;border-radius:16px;padding:12px;margin:8px 0}
   .wor-hd{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px} .wor-hd b{font-size:15px;font-weight:800} .wor-hd small{color:#667781;font-weight:600;margin-left:4px}
@@ -79,6 +87,19 @@ window.WaOrd = (function () {
   .wor-hrs{display:grid;grid-template-columns:44px minmax(0,1fr) minmax(0,1fr);gap:4px 8px;align-items:center} .wor-hrs span{font-size:13.5px;font-weight:700} .wor-hrs .wor-cl{grid-column:2/4;margin:0 0 8px} .wor-hrs .wor-in{padding:8px 8px;font-size:15px;border-radius:12px} .wor-hrs label{font-size:12.5px;font-weight:600;text-transform:none;letter-spacing:0;display:flex;align-items:center;gap:5px;margin:0;color:#3a3f4a}
   .wor-now{display:inline-block;border-radius:99px;padding:5px 12px;font-size:12.5px;font-weight:800;background:#eef0f2;color:#3a3f4a} .wor-now.open{background:#d9fdd3;color:#005c4b} .wor-now.shut{background:#fde4e4;color:#b3261e}
   .wor-say{background:#f4f5f7;border-radius:14px;padding:10px 13px;font-size:13.5px;line-height:1.5;white-space:pre-wrap;color:#3a3f4a}
+
+  .wor .wor-pillb,.wx .wor-pillb,.wi .wor-pillb{display:inline-flex !important;align-items:center;gap:6px;width:auto !important;min-width:0 !important;min-height:0 !important;max-width:100%;border:0 !important;border-radius:999px !important;padding:3px 10px 3px 8px !important;margin:3px 0 0 !important;font:inherit;font-size:12px !important;font-weight:800 !important;line-height:1.3 !important;cursor:pointer;background:rgba(255,255,255,.22) !important;color:#fff !important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:none !important}
+  .wor .wor-pillb.lt,.wi .wor-pillb.lt{background:#e7fbf3 !important;color:#007a62 !important} .wor-pillb .dot{width:8px;height:8px;border-radius:50%;background:#c3cbd1;flex:none} .wor-pillb .dot.on{background:#25d366;box-shadow:0 0 0 3px rgba(37,211,102,.35)} .wor-pillb .dot.bad{background:#ff5a4f;box-shadow:0 0 0 3px rgba(255,90,79,.35)} .wor-pillb .dot.new{background:#f5b400}
+  .wor-hero{border-radius:20px;padding:16px 16px 14px;color:#fff;background:linear-gradient(135deg,#0b6e5f 0%,#00a884 55%,#25d366 120%);box-shadow:0 8px 22px rgba(0,128,105,.28);position:relative;overflow:hidden}
+  .wor-hero:after{content:"";position:absolute;right:-40px;top:-40px;width:150px;height:150px;border-radius:50%;background:rgba(255,255,255,.09)}
+  .wor-hero .who{display:flex;align-items:center;gap:10px;position:relative;z-index:1} .wor-hero .av{width:42px;height:42px;border-radius:50%;background:rgba(255,255,255,.22);display:grid;place-items:center;font-weight:800;font-size:16px;flex:none}
+  .wor-hero .who b{display:block;font-size:16px;font-weight:800;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .wor-hero .who small{opacity:.85;font-size:12.5px}
+  .wor-hero .big{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin-top:14px;position:relative;z-index:1} .wor-hero .big div{font-size:30px;font-weight:900;letter-spacing:-.5px;line-height:1} .wor-hero .big div small{display:block;font-size:11.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;opacity:.85;margin-bottom:5px}
+  .wor-hero .tag{border-radius:999px;background:rgba(255,255,255,.2);padding:4px 11px;font-size:12px;font-weight:800;white-space:nowrap}
+  .wor-kp{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px;position:relative;z-index:1} .wor-kp div{background:rgba(255,255,255,.16);border-radius:13px;padding:8px 6px;text-align:center} .wor-kp b{display:block;font-size:17px;font-weight:900} .wor-kp small{font-size:10.5px;font-weight:700;opacity:.88;letter-spacing:.03em}
+  .wor-mix{display:flex;height:8px;border-radius:99px;overflow:hidden;margin-top:12px;background:rgba(255,255,255,.2);position:relative;z-index:1} .wor-mix i{display:block;height:100%} .wor-mix .pp{background:#fff} .wor-mix .cd{background:#ffd166}
+  .wor-mixl{display:flex;justify-content:space-between;font-size:11.5px;font-weight:700;margin-top:5px;opacity:.95;position:relative;z-index:1}
+  .wor-alert{margin-top:10px;border-radius:12px;background:rgba(255,255,255,.95);color:#b3261e;font-size:12.5px;font-weight:800;padding:7px 11px;position:relative;z-index:1}
   `;
   function css() { if (document.getElementById('worCss')) return; const s = document.createElement('style'); s.id = 'worCss'; s.textContent = CSS; document.head.appendChild(s); }
   function toast(t, bad) { css(); const e = document.createElement('div'); e.className = 'wor-toast' + (bad ? ' bad' : ''); e.textContent = t; document.body.appendChild(e); setTimeout(() => e.remove(), 3400); }
@@ -90,11 +111,155 @@ window.WaOrd = (function () {
     document.body.appendChild(ov); if (mount) mount(ov.querySelector('[data-body]'), close); return { el: ov, close };
   }
 
+
+  // ====================================================================================================== the little order pill under the phone number + the hero card
+  const initials = (n) => { const w = String(n || '').replace(/[^\p{L}\p{N} ]/gu, '').trim().split(/\s+/).filter(Boolean); return ((w[0] || '?')[0] + (w[1] ? w[1][0] : '')).toUpperCase(); };
+  function pillText(m) {
+    if (!m.n && !m.open_cases) return { t: 'Orders & tracking · none yet', dot: 'new' };
+    const dot = (m.problem || m.open_cases) ? 'bad' : m.active ? 'on' : '';
+    return { t: 'Orders & tracking · ' + m.n, dot };
+  }
+  /** Draws the pill into `el` (under the phone number). Tapping it opens the hero card. Never throws. opts: { phone, name, light, onChange } */
+  function badge(el, opts) {
+    css(); opts = opts || {}; if (!el) return { destroy() { } };
+    const phone = String(opts.phone || '').replace(/\D/g, '').slice(-10); let dead = false;
+    const draw = (m) => {
+      if (dead) return; const t = pillText(m);
+      el.innerHTML = '<button type="button" class="wor-pillb' + (opts.light ? ' lt' : '') + '" title="This customer\'s orders — tap for the full card"><span class="dot ' + t.dot + '"></span>' + esc(t.t) + '</button>';
+      el.firstChild.onclick = (e) => { e.stopPropagation(); open({ phone, name: opts.name, onChange: opts.onChange }); };
+    };
+    el.classList.add('wor'); el.innerHTML = '';
+    api.get('wa.ord_sum', { phone }).then(draw).catch(() => { if (!dead) el.innerHTML = ''; });
+    return { destroy() { dead = true; el.innerHTML = ''; } };
+  }
+  function heroHtml(m, o) {
+    const nm = (o.name || '').trim(), ph = tel(String(o.phone || '').replace(/\D/g, '').slice(-10));
+    const pp = m.prepaid, cd = m.cod, sum = pp + cd || 1;
+    let h = '<div class="wor-hero"><div class="who"><div class="av">' + esc(initials(nm || ph)) + '</div><div style="min-width:0"><b>' + esc(nm || ('+91 ' + ph)) + '</b><small>+91 ' + esc(ph) + (m.first_at ? ' · customer since ' + esc(day(m.first_at)) : '') + '</small></div></div>';
+    h += '<div class="big"><div><small>Total ordered</small>' + esc(inr(m.total || 0)) + '</div><span class="tag">' + m.n + (m.n === 1 ? ' order' : ' orders') + (m.more ? '+' : '') + '</span></div>';
+    h += '<div class="wor-kp"><div><b>' + m.delivered + '</b><small>Delivered</small></div><div><b>' + m.active + '</b><small>On the way</small></div><div><b>' + m.problem + '</b><small>Problem</small></div><div><b>' + esc(inr(m.aov || 0)) + '</b><small>Average</small></div></div>';
+    if (pp + cd) h += '<div class="wor-mix"><i class="pp" style="width:' + Math.round(pp * 100 / sum) + '%"></i><i class="cd" style="width:' + Math.round(cd * 100 / sum) + '%"></i></div><div class="wor-mixl"><span>⚪ Prepaid ' + pp + '</span><span>🟡 Pay on delivery ' + cd + '</span></div>';
+    if (m.open_cases) h += '<div class="wor-alert">⚠ ' + m.open_cases + ' open case' + (m.open_cases === 1 ? '' : 's') + ' with Dispatch for this customer</div>';
+    return h + '</div>';
+  }
+
+
+  // ====================================================================================================== the card for the CUSTOMER (a picture, sent with one tap)
+  // Only what wa.ord_share returns is drawn: status, progress with times, courier, tracking number, expected date, amount / how to pay.
+  // Never commission, salesperson, payment ids, complaints, other orders or the customer's address.
+  const shortWhen = (t) => { const f = fmt(t); const i = f.indexOf(', '); return i < 0 ? [f, ''] : [f.slice(0, i), f.slice(i + 2)]; };
+  function wrapText(ctx, text, maxW) { const out = []; let line = ''; String(text || '').split(/\s+/).forEach((w) => { const t = line ? line + ' ' + w : w; if (ctx.measureText(t).width > maxW && line) { out.push(line); line = w; } else line = t; }); if (line) out.push(line); return out; }
+  function rr(ctx, x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+  function drawCustomerCard(c) {
+    const W = 1080, F = '"Inter","Segoe UI",system-ui,-apple-system,"Noto Sans",Arial,sans-serif', L = 40, CW = W - 80;
+    const bad = ['failed', 'rto', 'lost', 'damaged', 'delayed'].includes(c.status), cancelled = c.status === 'cancelled', at = STAGE[c.status] != null ? STAGE[c.status] : 0;
+    const accent = cancelled ? '#8696a0' : bad ? '#e8890c' : '#00a884';
+    const rows = []; if (c.courier) rows.push(['Courier', c.courier]); if (c.tracking_no) rows.push(['Tracking ID', c.tracking_no]);
+    if (c.status === 'delivered' && c.delivered_at) rows.push(['Delivered on', fmt(c.delivered_at)]); else if (!cancelled && c.etd) rows.push(['Expected by', day(c.etd) + '  (courier date)']);
+    if (c.last_place && c.status !== 'delivered' && !cancelled) rows.push(['Last seen at', c.last_place]);
+    if (c.amount != null) rows.push(['Order value', inr(c.amount)]); if (c.pay) rows.push(['Payment', c.pay]);
+    const m = document.createElement('canvas').getContext('2d'); m.font = '500 31px ' + F; const lines = wrapText(m, c.text, CW - 112);
+    const top = 40, hdr = 190, headY = top + hdr + 62;                                   // body starts under the header
+    const pgY = headY + 62 + lines.length * 46 + 36, pgH = cancelled ? 0 : 226;         // progress block
+    const rowsY = pgY + pgH + 10, rowsH = rows.length ? rows.length * 76 + 36 : 0, footY = rowsY + rowsH + 24, H = footY + 140 + 40;
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const x = cv.getContext('2d');
+    x.fillStyle = '#e6efec'; x.fillRect(0, 0, W, H);
+    // white card
+    x.save(); x.shadowColor = 'rgba(0,0,0,.10)'; x.shadowBlur = 30; x.shadowOffsetY = 8; x.fillStyle = '#fff'; rr(x, L, top, CW, H - top - 40, 44); x.fill(); x.restore();
+    // header band
+    x.save(); rr(x, L, top, CW, H - top - 40, 44); x.clip(); const g = x.createLinearGradient(L, top, L + CW, top + hdr); g.addColorStop(0, '#0b6e5f'); g.addColorStop(.6, '#00a884'); g.addColorStop(1, '#25d366'); x.fillStyle = g; x.fillRect(L, top, CW, hdr);
+    x.fillStyle = 'rgba(255,255,255,.1)'; x.beginPath(); x.arc(L + CW - 30, top - 20, 160, 0, 7); x.fill(); x.restore();
+    x.fillStyle = '#fff'; x.font = '800 48px ' + F; x.fillText(c.brand, L + 52, top + 84); x.font = '600 31px ' + F; x.globalAlpha = .92; x.fillText('Order update  ·  ' + c.order_name, L + 52, top + 138); x.globalAlpha = 1;
+    // headline + text
+    x.fillStyle = bad ? '#b45f06' : cancelled ? '#54656f' : '#0b3d35'; x.font = '800 56px ' + F; x.fillText(c.headline, L + 56, headY + 30);
+    x.fillStyle = '#54656f'; x.font = '500 31px ' + F; lines.forEach((ln, i) => x.fillText(ln, L + 56, headY + 30 + 56 + i * 46));
+    // progress line
+    if (!cancelled) {
+      const cols = 5, x0 = L + 56 + 60, x1 = L + CW - 56 - 60, step = (x1 - x0) / (cols - 1), cy = pgY + 40, r = 28; const when = [c.placed_at, c.tracked_at, c.transit_at, c.ofd_at, c.delivered_at];
+      for (let i = 0; i < cols - 1; i++) { x.strokeStyle = i < at ? accent : '#dfe5e8'; x.lineWidth = 9; x.lineCap = 'round'; x.beginPath(); x.moveTo(x0 + i * step, cy); x.lineTo(x0 + (i + 1) * step, cy); x.stroke(); }
+      STEPS.forEach((t, i) => {
+        const cx = x0 + i * step, done = i < at || (i === at && c.status === 'delivered'), now = i === at && !done;
+        if (now) { x.fillStyle = accent + '33'; x.beginPath(); x.arc(cx, cy, r + 12, 0, 7); x.fill(); }
+        x.fillStyle = done ? accent : '#fff'; x.strokeStyle = done || now ? accent : '#d5dade'; x.lineWidth = 7; x.beginPath(); x.arc(cx, cy, r, 0, 7); x.fill(); x.stroke();
+        if (done) { x.strokeStyle = '#fff'; x.lineWidth = 8; x.lineCap = 'round'; x.lineJoin = 'round'; x.beginPath(); x.moveTo(cx - 12, cy + 1); x.lineTo(cx - 3, cy + 11); x.lineTo(cx + 14, cy - 10); x.stroke(); } else if (now) { x.fillStyle = accent; x.beginPath(); x.arc(cx, cy, 11, 0, 7); x.fill(); }
+        x.textAlign = 'center'; x.fillStyle = (done || now) ? '#111b21' : '#8696a0'; x.font = '800 25px ' + F; const lab = t === 'Out for delivery' ? ['Out for', 'delivery'] : [t]; lab.forEach((w, k) => x.fillText(w, cx, cy + 68 + k * 29));
+        const w = when[i] && i <= at ? shortWhen(when[i]) : null; if (w) { x.fillStyle = '#667781'; x.font = '500 22px ' + F; const yy = cy + 68 + (lab.length - 1) * 29 + 30; x.fillText(w[0], cx, yy); if (w[1]) x.fillText(w[1], cx, yy + 26); }
+        x.textAlign = 'left';
+      });
+    }
+    // details panel
+    if (rows.length) {
+      x.fillStyle = '#f4f7f6'; rr(x, L + 40, rowsY, CW - 80, rowsH, 30); x.fill();
+      rows.forEach((rw, i) => { const ry = rowsY + 18 + i * 76 + 50; x.fillStyle = '#667781'; x.font = '600 27px ' + F; x.fillText(rw[0], L + 76, ry); x.fillStyle = '#111b21'; x.font = '800 30px ' + F; x.textAlign = 'right'; x.fillText(rw[1], L + CW - 76, ry); x.textAlign = 'left'; if (i < rows.length - 1) { x.strokeStyle = '#e3e9e7'; x.lineWidth = 2; x.beginPath(); x.moveTo(L + 76, ry + 24); x.lineTo(L + CW - 76, ry + 24); x.stroke(); } });
+    }
+    // footer
+    x.textAlign = 'center'; x.fillStyle = '#0b6e5f'; x.font = '800 31px ' + F; x.fillText('Questions? Just reply to this message 💬', W / 2, footY + 62); x.fillStyle = '#8696a0'; x.font = '500 25px ' + F; x.fillText(c.brand + (c.store_phone ? '  ·  ' + c.store_phone : ''), W / 2, footY + 106); x.textAlign = 'left';
+    return cv;
+  }
+  function cardCaption(c, name) {
+    const first = String(name || '').trim().split(/\s+/)[0]; const hi = first && !/^\+?\d/.test(first) ? 'Hi ' + first + ', ' : 'Hello, ';
+    return hi + 'here is the latest on your order ' + c.order_name + ': ' + c.headline + '.' + (c.track_link && c.status !== 'delivered' && c.status !== 'cancelled' ? '\n\nTrack it live: ' + c.track_link : '') + '\n\nReply here if you need anything 🙏';
+  }
+  /** The preview sheet: the card exactly as the customer will see it + one "Send to customer" button. o: { phone, name, order, onDone } */
+  function shareCard(o) {
+    const phone = String(o.phone || '').replace(/\D/g, '').slice(-10);
+    sheet('Send to customer', '<div class="wor-sc" style="margin-bottom:8px">This is exactly what the customer will receive on WhatsApp. Only customer-safe details: no commission, no staff names, no internal notes.</div><div data-pv><div class="wor-sc">Preparing the card…</div></div>', (el, close) => {
+      const pv = el.querySelector('[data-pv]');
+      api.get('wa.ord_share', { phone, order: o.order }).then((r) => {
+        const c = r.card, cv = drawCustomerCard(c); const cap = cardCaption(c, o.name); const img = new Image(); img.src = cv.toDataURL('image/png'); img.alt = 'Order card'; img.style.cssText = 'width:100%;border-radius:16px;display:block';
+        pv.innerHTML = ''; pv.appendChild(img);
+        const t = document.createElement('textarea'); t.value = cap; t.rows = 6; t.className = 'wor-in'; t.style.cssText = 'width:100%;margin-top:10px;border:1px solid #e0e3e6;border-radius:12px;padding:10px;font:inherit;font-size:14px;box-sizing:border-box'; pv.appendChild(t);
+        const b = document.createElement('button'); b.className = 'wor-btn pri'; b.style.cssText = 'width:100%;margin-top:10px'; b.textContent = '📤 Send to customer'; pv.appendChild(b);
+        const msg = document.createElement('div'); msg.className = 'wor-sc'; msg.style.marginTop = '8px'; pv.appendChild(msg);
+        b.onclick = () => {
+          b.disabled = true; b.textContent = 'Sending…'; msg.textContent = '';
+          cv.toBlob(async (blob) => {
+            try {
+              if (!blob) throw new Error('Could not make the picture. Try again.');
+              const fd = new FormData(); fd.append('phone', phone); fd.append('caption', t.value.trim()); fd.append('file', blob, 'order-' + String(c.order_name).replace(/[^\w-]/g, '') + '.png');
+              await api.upload('wa.send_media', fd); toast('Order card sent ✔'); close(); if (o.onDone) o.onDone();
+            } catch (e) { b.disabled = false; b.textContent = '📤 Send to customer'; msg.innerHTML = '<div class="wor-err">' + esc(errMsg(e)) + '</div>'; }
+          }, 'image/png');
+        };
+      }).catch((e) => { pv.innerHTML = '<div class="wor-err">' + esc(errMsg(e)) + '</div>'; });
+    });
+  }
+  const send = (phone, name, order, onDone) => shareCard({ phone, name, order, onDone });
+  // ====================================================================================================== the full order popup (same card as Dispatch's Track popup)
+  let hubLd = null;
+  function hubReady(cb) {
+    if (window.OrderHub) return cb(true); if (hubLd) { hubLd.push(cb); return; } hubLd = [cb];
+    const sc = document.createElement('script'); sc.src = 'assets/js/order_hub.js?v=6';
+    sc.onload = () => { const q = hubLd || []; hubLd = null; q.forEach((f) => f(!!window.OrderHub)); }; sc.onerror = () => { const q = hubLd || []; hubLd = null; q.forEach((f) => f(false)); }; document.head.appendChild(sc);
+  }
+  /** Opens payment, prepaid / COD, who sold it, commission, where the parcel is, every scan, complaints and this customer's other orders. */
+  function details(phone, order, store, sid) {
+    hubReady((ok) => {
+      if (!ok) { toast('Could not open the full details. Refresh the page.', true); return; }
+      const req = { wa: true, phone: String(phone || '').replace(/\D/g, '').slice(-10) }; if (order) { req.order = order; if (store) req.store = store; if (sid) req.sid = sid; }
+      OrderHub.open(req); const ov = document.querySelector('.oh-ov'); if (ov) ov.style.zIndex = '2147483001';   // above the Orders sheet
+    });
+  }
+
   // ====================================================================================================== the order card in a chat
+  const STEPS = ['Ordered', 'Packed', 'Shipped', 'Out for delivery', 'Delivered'];
+  const STAGE = { placed: 0, packed: 1, fulfilled: 1, shipped: 2, delayed: 2, failed: 2, rto: 2, lost: 2, damaged: 2, ofd: 3, delivered: 4 };
+  /** The progress line: when it was ordered, packed, shipped, out for delivery and delivered. */
+  function progressHtml(o) {
+    if (o.status === 'cancelled') return '';
+    const at = STAGE[o.status] != null ? STAGE[o.status] : 0, bad = ['failed', 'rto', 'lost', 'damaged', 'delayed'].includes(o.status);
+    const when = [o.placed_at, o.tracked_at, o.transit_at, o.ofd_at, o.delivered_at];
+    const lbl = bad ? { failed: 'Delivery failed', rto: 'Returning', lost: 'Lost', damaged: 'Damaged', delayed: 'Delayed' }[o.status] : '';
+    return '<div class="wor-pg">' + STEPS.map((t, i) => {
+      const cls = i < at ? 'done' : i === at ? (o.status === 'delivered' ? 'done' : bad ? 'bad' : 'now') : '';
+      const w = when[i] && (i <= at) ? fmt(when[i]) : '';
+      return '<div class="' + cls + '"><i>' + (cls === 'done' ? '✓' : cls === 'bad' ? '!' : '') + '</i><b>' + esc(i === at && bad ? lbl : t) + '</b><small>' + esc(w) + '</small></div>';
+    }).join('') + '</div>';
+  }
   function orderHtml(o) {
     const bad = ['failed', 'rto', 'lost', 'damaged', 'delayed'].includes(o.status), good = o.status === 'delivered';
     let h = '<div class="wor-ord' + (bad ? ' bad' : good ? ' ok' : '') + '"><div class="wor-top"><span class="wor-nm">' + esc(o.order_name) + '</span><span class="wor-pill ' + esc(o.status) + '">' + esc(o.status_label) + '</span></div>';
-    h += '<div class="wor-tx">' + esc(o.status_text) + '</div><div class="wor-mt">';
+    h += '<div class="wor-tx">' + esc(o.status_text) + '</div>' + progressHtml(o) + '<div class="wor-mt">';
     if (o.courier) h += '<span class="wor-ch">🚚 ' + esc(o.courier) + '</span>';
     if (o.tracking_no) h += (o.track_link ? '<a class="wor-ch link" target="_blank" rel="noopener" href="' + esc(o.track_link) + '">AWB ' + esc(o.tracking_no) + ' ↗</a>' : '<span class="wor-ch" data-copy="' + esc(o.tracking_no) + '">AWB ' + esc(o.tracking_no) + '</span>');
     if (o.total != null) h += '<span class="wor-ch">' + esc(inr(o.total)) + (o.payment ? ' · ' + esc(o.payment) : '') + '</span>';
@@ -104,6 +269,7 @@ window.WaOrd = (function () {
     if (o.last_scan) h += '<div class="wor-sc">Last scan: <b>' + esc(o.last_scan.label) + '</b>' + (o.last_scan.place ? ' · ' + esc(o.last_scan.place) : '') + ' · ' + esc(fmt(o.last_scan.at)) + '</div>';
     (o.update_sent || []).forEach((u) => { h += '<div class="wor-mt"><span class="wor-ch sent">' + (u.state === 'sent' ? '✔ ' : '⏳ ') + esc(u.text) + '</span></div>'; });
     if ((o.timeline || []).length > 1) h += '<details class="wor-tl"><summary>Scan history (' + o.timeline.length + ')</summary><ol>' + o.timeline.map((e) => '<li><b>' + esc(e.label || e.activity) + '</b>' + (e.place ? ' · ' + esc(e.place) : '') + '<small>' + esc(fmt(e.at)) + (e.activity && e.label ? ' · ' + esc(e.activity) : '') + '</small></li>').join('') + '</ol></details>';
+    h += '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><button class="wor-btn sm" data-full="' + esc(o.order_name) + '" data-store="' + esc(o.store) + '">📋 Full details</button>' + (o.status === 'cancelled' ? '' : '<button class="wor-btn sm pri" data-send="' + esc(o.order_name) + '">📤 Send to customer</button>') + '</div>';
     if (o.match === 'linked') h += '<div class="wor-lk">🔗 Linked by hand (not under this number)<button data-unlink="' + esc(o.order_name) + '" data-store="' + esc(o.store) + '">Unlink</button></div>';
     return h + '</div>';
   }
@@ -125,6 +291,8 @@ window.WaOrd = (function () {
       if (e.target.closest('[data-re]')) { S.d = null; load(); return; }
       if (e.target.closest('[data-link]')) { link({ phone: S.phone, onDone: () => { load(); if (o.onChange) o.onChange(); } }); return; }
       if (e.target.closest('[data-urgent]')) { urgent({ phone: S.phone, name: o.name, orders: S.d ? S.d.orders : [], onDone: () => { load(); if (o.onChange) o.onChange(); } }); return; }
+      const sd = e.target.closest('[data-send]'); if (sd) { send(S.phone, o.name, sd.getAttribute('data-send'), o.onChange); return; }
+      const fu = e.target.closest('[data-full]'); if (fu) { details(S.phone, fu.getAttribute('data-full'), fu.getAttribute('data-store')); return; }
       const c = e.target.closest('[data-copy]'); if (c) { try { navigator.clipboard.writeText(c.getAttribute('data-copy')); toast('Tracking number copied'); } catch (x) { } return; }
       const u = e.target.closest('[data-unlink]'); if (u) { if (!confirm('Remove the link to order ' + u.getAttribute('data-unlink') + ' from this chat?')) return; api.post('wa.ord_unlink', { phone: S.phone, order_name: u.getAttribute('data-unlink'), store: u.getAttribute('data-store') }).then(() => { toast('Link removed'); load(); }).catch((x) => toast(errMsg(x), true)); }
     };
@@ -134,7 +302,10 @@ window.WaOrd = (function () {
 
   function open(o) {
     o = o || {}; let c = null;
-    sheet('Orders · ' + (o.name || ('+91 ' + tel(String(o.phone || '').replace(/\D/g, '').slice(-10)))), '<div data-slot></div>', (el) => { c = card(el.querySelector('[data-slot]'), o); });
+    sheet('Orders & tracking', '<div data-hero></div><div data-slot></div>', (el) => {
+      c = card(el.querySelector('[data-slot]'), o);
+      api.get('wa.ord_sum', { phone: String(o.phone || '').replace(/\D/g, '').slice(-10) }).then((m) => { const hx = el.querySelector('[data-hero]'); if (hx && m) hx.innerHTML = heroHtml(m, o); }).catch(() => { });
+    });
   }
 
   // ====================================================================================================== Link an order
@@ -340,7 +511,7 @@ window.WaOrd = (function () {
     load(); return { refresh: load };
   }
 
-  return { card, open, urgent, link, attention, count, storeForm, settings, _fmt: fmt };
+  return { card, badge, open, send, urgent, link, attention, count, storeForm, settings, _fmt: fmt };
 })();
 // 📦 the WhatsApp section's "Order updates" page (Automation → Order updates)
 if (window.WaPanels && WaPanels.add) WaPanels.add('orderupd', (el) => { const s = WaOrd.settings(el); return () => s.refresh(); });
