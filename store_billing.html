@@ -211,7 +211,7 @@
 
 <script src="assets/js/config.js?v=4"></script>
 <script src="assets/js/api.js?v=9"></script>
-<script src="assets/js/store_bday.js?v=3"></script>
+<script src="assets/js/store_bday.js?v=4"></script>
 <script src="assets/js/layout.js?v=23"></script>
 <script src="assets/js/store_common.js?v=4"></script>
 <script>
@@ -447,36 +447,36 @@
 
   // ---------- after the bill: send it to each customer on WhatsApp (opens WhatsApp in a new tab with the message ready)
   const waRow = (p, bill) => `<div class="wa"><div class="n"><b>${esc(p.name || 'Customer ' + p.no)}</b><small>${p.declined ? 'did not want to share' + (p.reason ? ' — ' + esc(p.reason) : '') : '+' + esc(p.phone) + (p.returning ? ' · returning customer' : '')}</small></div>
-    ${p.wa_url ? `${p.auto && p.auto !== 'sent' ? `<small class="sx-mut" style="display:block">auto-send did not go: ${esc(p.auto)}</small>` : ''}<button class="wabtn ${p.sent_at ? 'sent' : ''}" data-wa="${p.person_id}" data-u="${esc(p.wa_url)}">${p.sent_at ? '✓ Sent · send again' : 'Send on WhatsApp'}</button><button class="lnk" data-copy="${esc(p.link)}">Copy link</button>` : ''}</div>`;
+    ${p.wa_url ? `${p.auto && p.auto !== 'sent' ? `<small class="sx-mut" style="display:block">auto-send did not go: ${esc(p.auto)}</small>` : ''}<button class="wabtn ${p.sent_at ? 'sent' : ''}" data-wa="${p.person_id}" data-ret="${p.returning ? 1 : 0}" data-u="${esc(p.wa_url)}">${p.sent_at ? '✓ Sent · send again' : 'Send on WhatsApp'}</button><button class="lnk" data-copy="${esc(p.link)}">Copy link</button>` : ''}</div>`;
   const invBox = (d) => !d.chain ? '' : (d.inv_ok ? `<div class="wa"><div class="n"><b>GST invoice ${esc(d.inv_no)}</b><small>Perfumes ${inr(d.perfume_amt)} + chain ${esc(d.chain)} ${inr(d.chain_amt)} · it is on the customer’s bill page</small></div><a class="lnk" href="${esc(d.inv_url)}" target="_blank" rel="noopener">View</a> <a class="lnk" href="${esc(d.inv_pdf)}" target="_blank" rel="noopener">PDF</a></div>`
     : `<div class="wa"><div class="n"><b style="color:var(--sx-red,#c0392b)">GST invoice NOT made yet</b><small>${esc(d.inv_err || '')}</small></div><button class="lnk" data-inv="${d.bill_id}">Try again</button></div>`);
   function showDone(d) {
     const ps = (d.people || []); if (!ps.length && !d.chain) { $('doneBox').innerHTML = ''; return; }
-    $('doneBox').innerHTML = `<div class="sx-card done"><h4>${sxi('ok')} Bill ${esc(d.bill_no || '')} saved — ${ps.some((x) => x.auto === 'sent') ? 'sent to the customer on WhatsApp automatically' + (ps.some((x) => x.wa_url && x.auto !== 'sent') ? ' (send the rest below)' : '') : 'now send it to the customer' + (ps.length > 1 ? 's' : '')}</h4>${invBox(d)}${ps.map((p) => waRow(p)).join('')}${billImg ? '<div class="wa"><div class="n"><b>📷 Picture for the message</b><small>It is copied by itself when you press Send on WhatsApp. In the chat: send the text, then press Ctrl+V and Enter for the picture. (Button = copy again.)</small></div><button class="wabtn" data-copyimg="1">📷 Copy image</button></div>' : ''}<div class="wa" style="border-top:1px dashed var(--sx-line)"><div class="n"><b>More people with them?</b><small>Friends link: they save contacts, join the community and review — no need to bill them</small></div><button class="lnk" data-copy="${esc((ps.find((x) => x.link) || {}).link + '&g=1')}">Copy friends link</button></div><div class="sx-mut" style="margin-top:6px;font-size:11.5px">Tap <b>Send on WhatsApp</b>: WhatsApp opens with the message ready — just press send.</div><button class="lnk" id="doneX" style="margin-top:8px">Done</button></div>`;
+    $('doneBox').innerHTML = `<div class="sx-card done"><h4>${sxi('ok')} Bill ${esc(d.bill_no || '')} saved — ${ps.some((x) => x.auto === 'sent') ? 'sent to the customer on WhatsApp automatically' + (ps.some((x) => x.wa_url && x.auto !== 'sent') ? ' (send the rest below)' : '') : 'now send it to the customer' + (ps.length > 1 ? 's' : '')}</h4>${invBox(d)}${ps.map((p) => waRow(p)).join('')}${billImg ? '<div class="wa"><div class="n"><b>📷 Picture for the message</b><small>It is copied by itself when you press Send on WhatsApp. In the chat: send the text, then press Ctrl+V and Enter for the picture. (Button = copy again.)</small></div><button class="wabtn" data-copyimg="' + ((ps.find((x) => x.wa_url) || {}).returning ? 'back' : 'new') + '">📷 Copy image</button></div>' : ''}<div class="wa" style="border-top:1px dashed var(--sx-line)"><div class="n"><b>More people with them?</b><small>Friends link: they save contacts, join the community and review — no need to bill them</small></div><button class="lnk" data-copy="${esc((ps.find((x) => x.link) || {}).link + '&g=1')}">Copy friends link</button></div><div class="sx-mut" style="margin-top:6px;font-size:11.5px">Tap <b>Send on WhatsApp</b>: WhatsApp opens with the message ready — just press send.</div><button class="lnk" id="doneX" style="margin-top:8px">Done</button></div>`;
     $('doneBox').scrollIntoView({ block: 'start' });
   }
   // ---------- 📷 a picture to send with the bill message (copied, then pasted into the WhatsApp chat)
   let billImg = false, billCustom = false;
   const imgUi = () => { const m = $('imgCard'); if (!m) return; m.style.display = isManager ? '' : 'none'; $('imgDel').style.display = billCustom ? '' : 'none'; $('imgSub').textContent = billImg ? (billCustom ? '· your own picture is set ✓' : '· the default picture is used ✓ (upload one to replace it)') : '· no picture yet'; };
-  async function loadBillImg() { try { { const r = await api.get('st_bill.image_get'); billImg = !!r.has_image; billCustom = !!r.custom; } billPhoto = ''; } catch (e) { billImg = false; } imgUi(); }
+  async function loadBillImg() { try { { const r = await api.get('st_bill.image_get'); billImg = !!r.has_image; billCustom = !!r.custom; } billPhoto = {}; } catch (e) { billImg = false; } imgUi(); }
   const shrinkImg = (file, max) => new Promise((ok, no) => { const fr = new FileReader(); fr.onerror = no; fr.onload = () => { const im = new Image(); im.onerror = no; im.onload = () => { const k = Math.min(1, max / Math.max(im.width, im.height)), c = document.createElement('canvas'); c.width = Math.round(im.width * k); c.height = Math.round(im.height * k); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); ok(c.toDataURL('image/jpeg', 0.85)); }; im.src = fr.result; }; fr.readAsDataURL(file); });
   document.addEventListener('change', async (e) => {
     if (e.target.id !== 'imgFile' || !e.target.files[0]) return; const n = $('imgNote'); n.textContent = 'Saving…';
-    try { const d = await stShrinkImg(e.target.files[0], 900, 120); await api.post('st_bill.image_save', { photo: d }); n.textContent = 'Saved.'; billPhoto = ''; await loadBillImg(); } catch (err) { n.textContent = (err && err.message) || 'Could not use this picture.'; }
+    try { const d = await stShrinkImg(e.target.files[0], 900, 120); await api.post('st_bill.image_save', { photo: d }); n.textContent = 'Saved.'; billPhoto = {}; await loadBillImg(); } catch (err) { n.textContent = (err && err.message) || 'Could not use this picture.'; }
   });
-  let billPhoto = '';
-  async function billBlobPng() {   // the picture as PNG (what the clipboard accepts)
-    if (!billPhoto) { const r = await api.get('st_bill.image_get', { photo: 1 }); billPhoto = r.photo || ''; } if (!billPhoto) throw new Error('No picture is set.');
-    const img = new Image(); await new Promise((ok, no) => { img.onload = ok; img.onerror = no; img.src = billPhoto; });
+  let billPhoto = {};
+  async function billBlobPng(kind) {   // the picture as PNG (what the clipboard accepts)
+    const kk = kind === 'back' ? 'back' : 'new'; if (!billPhoto[kk]) { const r = await api.get('st_bill.image_get', kk === 'back' ? { photo: 1, kind: 'back' } : { photo: 1 }); billPhoto[kk] = r.photo || ''; } if (!billPhoto[kk]) throw new Error('No picture is set.');
+    const img = new Image(); await new Promise((ok, no) => { img.onload = ok; img.onerror = no; img.src = billPhoto[kk]; });
     const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight; c.getContext('2d').drawImage(img, 0, 0);
     return await new Promise((ok) => c.toBlob(ok, 'image/png'));
   }
   async function copyBillImg(btn) {
-    try { await navigator.clipboard.write([new ClipboardItem({ 'image/png': await billBlobPng() })]); btn.textContent = 'Copied ✓ — now Ctrl+V in the chat'; }
+    try { await navigator.clipboard.write([new ClipboardItem({ 'image/png': await billBlobPng(btn.dataset.copyimg) })]); btn.textContent = 'Copied ✓ — now Ctrl+V in the chat'; }
     catch (err) { toast('Could not copy the picture: ' + ((err && err.message) || 'try again') + ' (use Chrome on the PC, over https).', 1); }
   }
   async function doSend(btn) {
-    if (billImg) { try { await navigator.clipboard.write([new ClipboardItem({ 'image/png': await billBlobPng() })]); toast('📷 Picture copied — in the chat press Ctrl+V, then Enter.'); } catch (err) { /* the message still opens; use the Copy image button */ } }   // the picture is copied at the same click, so the cashier only pastes it
+    if (billImg) { try { await navigator.clipboard.write([new ClipboardItem({ 'image/png': await billBlobPng(btn.dataset.ret === '1' ? 'back' : 'new') })]); toast('📷 Picture copied — in the chat press Ctrl+V, then Enter.'); } catch (err) { /* the message still opens; use the Copy image button */ } }   // the picture is copied at the same click, so the cashier only pastes it
     // WhatsApp Web opens in its OWN window on the right half of the screen (the same window the birthday messages use), so this page stays visible on the left
     const w = (screen.availWidth || 1200), h = (screen.availHeight || 800); const win = window.open(btn.dataset.u, 'tmpwa', 'popup=yes,width=' + Math.round(w / 2) + ',height=' + h + ',left=' + Math.round(w / 2) + ',top=0'); if (!win) { alert('Please allow pop-ups for this site, then tap again.'); return; }
     try { await api.post('st_bill.mark_sent', { person_id: +btn.dataset.wa }); btn.classList.add('sent'); btn.textContent = '✓ Sent · send again'; loadBills(); } catch (e) { /* the message still opened */ }
@@ -491,7 +491,7 @@
   });
   const stp = (at, label) => `<span class="st ${at ? 'y' : 'n'}">${label}</span>`;
   const peopleRow = (b) => !(b.people && b.people.length) || b.status !== 'ok' ? '' : `<div class="ppl">${b.people.map((p) => p.declined ? `<span class="pp"><b>${esc(p.name || 'Customer')}</b><span class="st">no number${p.reason ? ' · ' + esc(p.reason) : ''}</span></span>`
-    : `<span class="pp"><b>${esc(p.name || '+' + p.phone.slice(-10))}</b>${p.returning ? '<span class="st y" style="background:var(--sx-violet-t);color:var(--sx-violet)">↺ returning</span>' : ''}${p.sent_at ? stp(1, 'Sent') : `<button class="minibtn" data-wa="${p.person_id}" data-u="${esc(p.wa_url || '')}">Send on WhatsApp</button>`}${stp(p.opened_at, 'Opened')}${p.returning ? '' : stp(p.contact_at, 'Contacts') + stp(p.community_at, 'Community') + stp(p.review_at, 'Review')}</span>`).join('')}</div>`;
+    : `<span class="pp"><b>${esc(p.name || '+' + p.phone.slice(-10))}</b>${p.returning ? '<span class="st y" style="background:var(--sx-violet-t);color:var(--sx-violet)">↺ returning</span>' : ''}${p.sent_at ? stp(1, 'Sent') : `<button class="minibtn" data-wa="${p.person_id}" data-ret="${p.returning ? 1 : 0}" data-u="${esc(p.wa_url || '')}">Send on WhatsApp</button>`}${stp(p.opened_at, 'Opened')}${p.returning ? '' : stp(p.contact_at, 'Contacts') + stp(p.community_at, 'Community') + stp(p.review_at, 'Review')}</span>`).join('')}</div>`;
 
   // ---------- today's bills
   let listDate = '', dayOpen = 0, payOpen = 0, payD = null, lastBills = [];

@@ -843,18 +843,19 @@ try {
             break;
         }
 
-        case 'st_bill.image_get': {       // the picture that goes with the bill message (the cashier copies it and pastes it in the WhatsApp chat). The picture itself only when asked.
-            require_auth(); $v = ''; try { $x = $pdo->query("SELECT svalue FROM st_cs_settings WHERE skey = 'bill_image'")->fetchColumn(); $j = $x ? json_decode((string)$x, true) : null; $v = is_array($j) ? (string)($j['photo'] ?? '') : ''; } catch (Throwable $e) { }
-            $custom = $v !== '';
-            if (!$custom) { $df = dirname(__DIR__) . '/assets/img/store_bill_default.jpg'; if (is_file($df)) $v = 'data:image/jpeg;base64,' . base64_encode((string)file_get_contents($df)); }   // no picture uploaded: the default picture that comes with the HRMS
+        case 'st_bill.image_get': {       // the picture that goes with the bill message (the cashier copies it and pastes it in the WhatsApp chat). kind=back: the returning customer's own picture (falls back to the new customer's). The picture itself only when asked.
+            require_auth(); $back = (($_GET['kind'] ?? '') === 'back'); $get = function (string $k) use ($pdo): string { try { $x = $pdo->query("SELECT svalue FROM st_cs_settings WHERE skey = '" . $k . "'")->fetchColumn(); $j = $x ? json_decode((string)$x, true) : null; return is_array($j) ? (string)($j['photo'] ?? '') : ''; } catch (Throwable $e) { return ''; } };
+            $v = $back ? $get('bill_image_back') : $get('bill_image'); $custom = $v !== '';
+            if (!$custom && $back) $v = $get('bill_image');       // no returning-customer picture: the new customer's picture is used
+            if ($v === '') { $df = dirname(__DIR__) . '/assets/img/store_bill_default.jpg'; if (is_file($df)) $v = 'data:image/jpeg;base64,' . base64_encode((string)file_get_contents($df)); }   // no picture uploaded: the default picture that comes with the HRMS
             json_response(['has_image' => $v !== '', 'custom' => $custom] + (!empty($_GET['photo']) ? ['photo' => $v] : []));
             break;
         }
-        case 'st_bill.image_save': {      // managers: set or remove that picture
+        case 'st_bill.image_save': {      // managers: set or remove that picture (kind=back: the returning customer's)
             $auth = require_auth(); if (!(in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true) || user_can($auth, 'rs_manage'))) json_response(['error' => 'Only a manager can change the bill picture.'], 403);
-            $p = (string)(json_input()['photo'] ?? '');
+            $in = json_input(); $p = (string)($in['photo'] ?? ''); $key = (($in['kind'] ?? '') === 'back') ? 'bill_image_back' : 'bill_image';
             if ($p !== '' && !(preg_match('#^data:image/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$#', $p) && strlen($p) <= 900000)) json_response(['error' => 'The picture must be a JPG, PNG or WEBP under about 600 KB.'], 422);
-            $pdo->prepare("INSERT INTO st_cs_settings (skey, svalue) VALUES ('bill_image', ?) ON DUPLICATE KEY UPDATE svalue = VALUES(svalue)")->execute([json_encode(['photo' => $p], JSON_UNESCAPED_UNICODE)]);
+            $pdo->prepare("INSERT INTO st_cs_settings (skey, svalue) VALUES (?, ?) ON DUPLICATE KEY UPDATE svalue = VALUES(svalue)")->execute([$key, json_encode(['photo' => $p], JSON_UNESCAPED_UNICODE)]);
             json_response(['ok' => true, 'has_image' => $p !== '']);
             break;
         }

@@ -37,11 +37,7 @@
   const crow = (c, i) => `<div class="crow" data-i="${i}"><input class="sx-in" data-f="name" placeholder="Name (e.g. Neil Bhatia)" value="${esc(c.name || '')}"><input class="sx-in" data-f="phone" placeholder="WhatsApp number" inputmode="tel" value="${esc(c.phone ? c.phone.slice(-10) : '')}"><input class="sx-in" data-f="role" placeholder="Role (Store / Sales)" value="${esc(c.role || '')}"><button class="x" data-del="${i}" aria-label="Remove">×</button></div>`;
   function draw() {
     $('root').innerHTML = `
-      <div class="sx-card"><h3>${sxi('user')} Store numbers <small>every customer gets these as one-tap contact cards</small></h3>
-        <label class="sx-f" style="margin-bottom:10px">Store name (shown on the bill page)<input class="sx-in" id="sname" value="${esc(S.store_name)}"></label>
-        <div id="crows">${S.contacts.map(crow).join('')}</div>
-        <button class="sx-btn ghost" id="addC" ${S.contacts.length >= 8 ? 'disabled' : ''}>+ Add a number</button>
-        <div class="sx-mut" style="font-size:12px;margin-top:6px">Add the store’s own number and each salesperson (up to 8). We cannot see whether a customer really saved them — we count who tapped “Save our contacts”.</div></div>
+      <div class="sx-card"><h3>${sxi('user')} Store name &amp; numbers</h3><div class="sx-mut" style="font-size:13px">The store name, the store numbers (one-tap contact cards) and the links are now set in <a href="store_messages.html"><b>Store → Messages</b></a>, next to the messages that carry them.</div></div>
       <div class="sx-card"><h3>${sxi('mega')} Links</h3><div class="sx-mut" style="font-size:13px">The community link, the Google review link and the thank-you line are now set in <a href="store_messages.html"><b>Store → Messages</b></a>, next to the messages that carry them, so you see the message with the links on it.</div></div>
       <div class="sx-card"><h3>${sxi('ok')} Rules</h3>
         <label class="tg"><input type="checkbox" id="req" ${+S.require_phone ? 'checked' : ''}><span><b>Mobile number is required at billing</b><small>Salespeople must enter a number for every customer (or write why they declined).</small></span></label>
@@ -51,8 +47,7 @@
   }
   let SAMPLE = '#';
   const grab = () => {
-    S.store_name = $('sname').value; S.require_phone = $('req').checked ? 1 : 0; S.skip_returning = $('skip').checked ? 1 : 0;
-    document.querySelectorAll('#crows .crow').forEach((r) => { const c = S.contacts[+r.dataset.i]; r.querySelectorAll('[data-f]').forEach((i) => { c[i.dataset.f] = i.value; }); });
+    S.require_phone = $('req').checked ? 1 : 0; S.skip_returning = $('skip').checked ? 1 : 0;
   };
   document.addEventListener('click', async (e) => {
     if (e.target.id === 'addC') { grab(); S.contacts.push({ name: '', phone: '', role: 'Sales' }); draw(); return; }
