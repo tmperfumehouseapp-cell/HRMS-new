@@ -867,7 +867,7 @@ function wa_camp_people_rows(PDO $pdo, array $camp, ?array $tpl, string $f, stri
 
 // ---------------------------------------------------------------------------------------------------------------- router
 $__wk = (string)($action ?? ($_GET['action'] ?? ''));
-if (in_array($__wk, ['wa.fu_list', 'wa.fu_save', 'wa.fu_del', 'wa.fu_preset', 'wa.camp_list', 'wa.camp_get', 'wa.camp_preview', 'wa.camp_save', 'wa.camp_start', 'wa.camp_send_now', 'wa.camp_stop_all', 'wa.camp_pause', 'wa.camp_resume', 'wa.camp_cancel', 'wa.camp_del', 'wa.camp_tick', 'wa.camp_suggest', 'wa.camp_best_time', 'wa.camp_people', 'wa.camp_people_csv', 'wa.reports', 'wa.mix_state', 'wa.camp_mix_set'], true) && !($__wk === 'wa.camp_suggest' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST')) {
+if (in_array($__wk, ['wa.fu_list', 'wa.fu_save', 'wa.fu_del', 'wa.fu_preset', 'wa.camp_list', 'wa.camp_get', 'wa.camp_preview', 'wa.camp_save', 'wa.camp_start', 'wa.camp_send_now', 'wa.camp_stop_all', 'wa.camp_pause', 'wa.camp_resume', 'wa.camp_cancel', 'wa.camp_del', 'wa.camp_tick', 'wa.camp_suggest', 'wa.camp_best_time', 'wa.camp_people', 'wa.camp_people_csv', 'wa.camp_thread', 'wa.reports', 'wa.mix_state', 'wa.camp_mix_set'], true) && !($__wk === 'wa.camp_suggest' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST')) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     $auth = require_auth(); wa_guard_admin($pdo, $auth);
     if (!wa_tables($pdo) || !wa_more_tables($pdo) || !function_exists('wa_tpl_tables') || !wa_tpl_tables($pdo)) json_response(['error' => 'WhatsApp storage is not available — check database permissions.'], 500);
@@ -1091,6 +1091,17 @@ if (in_array($__wk, ['wa.fu_list', 'wa.fu_save', 'wa.fu_del', 'wa.fu_preset', 'w
             $o = ['rows' => $rows, 'more' => $more, 'page' => $page, 'f' => $f];
             if ($page <= 1) { $o['counts'] = wa_camp_people_counts($pdo, (int)$c['id']); $o['reasons'] = wa_camp_people_reasons($pdo, (int)$c['id']); $o['wait'] = $o['counts']['queued'] > 0 ? wa_camp_wait_reason($pdo, $c) : ''; }
             json_response($o);
+        }
+        case 'wa.camp_thread': {   // the chat of ONE customer of this campaign: our campaign message, then what happened after it (their reply and ours)
+            $c = wa_camp_row($pdo, (int)($_GET['id'] ?? 0)); if (!$c) json_response(['error' => 'Campaign not found.'], 404);
+            $ph = preg_replace('/\D+/', '', (string)($_GET['phone'] ?? '')); if ($ph === '') json_response(['error' => 'Choose a customer.'], 422);
+            $it = $pdo->prepare("SELECT sent_at FROM wa_camp_items WHERE camp_id = ? AND phone = ? ORDER BY id DESC LIMIT 1"); $it->execute([(int)$c['id'], $ph]); $sa = (string)$it->fetchColumn();
+            if ($sa === '') json_response(['error' => 'This customer is not in this campaign.'], 404);
+            $st = $pdo->prepare("SELECT id, ts, dir, who, mtype, body FROM wa_messages WHERE phone = ? AND ts >= DATE_SUB(?, INTERVAL 5 MINUTE) ORDER BY id LIMIT 80"); $st->execute([$ph, $sa]);
+            $nm = ['image' => '📷 Photo', 'audio' => '🎤 Voice note', 'voice' => '🎤 Voice note', 'video' => '🎥 Video', 'document' => '📄 Document', 'sticker' => '🙂 Sticker', 'location' => '📍 Location', 'contacts' => '👤 Contact', 'template' => ''];
+            $out = []; foreach ($st->fetchAll() as $m) { $ty = strtolower((string)$m['mtype']); $b = trim((string)$m['body']); $pre = $nm[$ty] ?? ''; $out[] = ['id' => (int)$m['id'], 'ts' => (string)$m['ts'], 'dir' => (string)$m['dir'], 'who' => (string)$m['who'], 'text' => $pre !== '' ? ($b !== '' && !preg_match('/^\[.*\]$/', $b) ? $pre . ' · ' . $b : $pre) : ($b !== '' ? $b : '[' . $ty . ']')]; }
+            $nr = $pdo->prepare("SELECT name FROM wa_contacts WHERE phone = ?"); $nr->execute([$ph]);
+            json_response(['ok' => true, 'phone' => $ph, 'name' => (string)$nr->fetchColumn(), 'sent_at' => $sa, 'messages' => $out]);
         }
         case 'wa.camp_people_csv': {
             $c = wa_camp_row($pdo, (int)($_GET['id'] ?? 0)); if (!$c) json_response(['error' => 'Campaign not found.'], 404);
