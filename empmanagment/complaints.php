@@ -156,7 +156,11 @@ function cx_role(PDO $pdo, array $w) {
     $emp = (int)$w['emp']; $desks = [];
     if ($emp) foreach (cx_desks() as $k => $d) if (in_array($emp, cx_desk_people($pdo, $k), true)) $desks[] = $k;
     $boss = $emp && in_array($emp, cx_manager_ids($pdo), true);
-    $mgr = !empty($w['admin']) || !empty($w['top']) || $boss;
+    $head = false;      // 🧑‍💼 owner (8 Nov): the Sales Head may resolve / work every complaint too
+    if ($emp && !$boss && empty($w['admin']) && empty($w['top']) && function_exists('sales_role_kind')) {
+        try { $hq = $pdo->prepare("SELECT d.department_name, e.designation FROM employees e LEFT JOIN departments d ON d.department_id = e.department_id WHERE e.employee_id = ?"); $hq->execute([$emp]); $hr = $hq->fetch(); $head = $hr && sales_role_kind((string)($hr['department_name'] ?? ''), (string)($hr['designation'] ?? '')) === 'head'; } catch (Throwable $e) { $head = false; }
+    }
+    $mgr = !empty($w['admin']) || !empty($w['top']) || $boss || $head;
     $team = $mgr || !empty($desks) || ($emp && in_array($emp, cx_holders_code($pdo, 'complaints.worker'), true));
     return ['emp' => $emp, 'admin' => !empty($w['admin']), 'mgr' => $mgr, 'team' => $team, 'desks' => $desks];
 }
