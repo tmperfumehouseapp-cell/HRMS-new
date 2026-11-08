@@ -1085,13 +1085,15 @@ try {
             break;
         }
 
-        case 'st_price.card': {           // the price chart + every offer running now, read-only, for the billing screen (same figures as Learning → Pricing and Commission Rules)
-            require_auth(); $out = ['cols' => [], 'rows' => [], 'offers' => [], 'flash' => [], 'live' => true];
+        case 'st_price.card': {           // the price chart + every offer running now + the commission rules, read-only, for the Store pages (same figures as Learning → Pricing and Commission Rules)
+            $auth = require_auth(); $out = ['cols' => [], 'rows' => [], 'offers' => [], 'flash' => [], 'live' => true];
             if (budget_engine_ready()) {
-                try { $ch = cm_chart($pdo); $out['cols'] = array_map('floatval', (array)$ch['cols']); $out['rows'] = array_map(fn($r) => ['ml' => (int)$r['ml'], 'p' => array_map('floatval', (array)$r['p'])], (array)$ch['rows']); $out['window'] = (float)($ch['window'] ?? 20); $out['floor'] = (float)($ch['floor'] ?? 0); } catch (Throwable $e) { }
+                try { $ch = cm_chart($pdo); $out['cols'] = array_map('floatval', (array)$ch['cols']); $out['rows'] = array_map(fn($r) => ['ml' => (int)$r['ml'], 'p' => array_map('floatval', (array)$r['p'])], (array)$ch['rows']); $out['window'] = (float)($ch['window'] ?? 20); $out['floor'] = (float)($ch['floor'] ?? 0); $out['rules'] = ['codepct' => (float)($ch['codepct'] ?? 0), 'nocode' => (float)($ch['nocode'] ?? 0), 'prepaid' => (float)($ch['prepaid'] ?? 0)]; } catch (Throwable $e) { }
                 try { $day = st_day(); foreach (cm_offers($pdo) as $o) { if (empty($o['active'])) continue; if ($o['from_date'] && $day < $o['from_date']) continue; if ($o['to_date'] && $day > $o['to_date']) continue; $out['offers'][] = ['ml' => (int)$o['ml'], 'price' => (float)$o['price'], 'pct' => (float)$o['pct'], 'from' => (string)$o['from_date'], 'to' => (string)($o['to_date'] ?? ''), 'note' => (string)($o['note'] ?? '')]; } usort($out['offers'], fn($a, $b) => $a['ml'] <=> $b['ml']); } catch (Throwable $e) { }
                 try { $out['live'] = cm_is_live($pdo); if (!$out['live']) foreach (flash_offer_running(flash_offer_list_get($pdo)) as $x) $out['flash'][] = ['pct' => (float)$x['pct'], 'ends_at' => (string)$x['ends_at'], 'sizes' => array_values(array_map(fn($i) => (int)($i['ml'] ?? 0), (array)($x['items'] ?? [])))]; } catch (Throwable $e) { }
             }
+            try { $ids = st_pool_ids($pdo); if ($ids) { $in = implode(',', array_map('intval', $ids)); $out['team'] = array_map(fn($r) => (string)$r['full_name'], $pdo->query("SELECT full_name FROM employees WHERE employee_id IN ($in) AND status != 'ex' ORDER BY full_name")->fetchAll()); } } catch (Throwable $e) { }
+            $out['can_edit'] = in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true) || user_can($auth, 'commission');
             json_response($out);
             break;
         }

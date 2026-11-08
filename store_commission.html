@@ -16,7 +16,8 @@
   <div id="sidebar"></div>
   <main class="main">
     <div class="topbar"><div><h1>Store Commission</h1><div class="sub" style="font-size:12.5px;color:var(--muted);margin-top:2px">Collection, commission and total salary of the people who bill in the store — the same page as Total Budgeting → Store</div></div></div>
-    <div class="content"><div class="sx-page"><div class="sx-card"><h3>Store Commission <small>the same Store view as Total Budgeting → Store. Change anything here and it is changed there too.</small></h3>
+    <div class="content"><div class="sx-page"><div class="sx-card" id="rules"><h3>📘 Commission rules &amp; offers <small>read-only · the same rules the online sales follow</small></h3><div id="rulesMount"></div></div>
+      <div class="sx-card"><h3>Store Commission <small>the same Store view as Total Budgeting → Store. Change anything here and it is changed there too.</small></h3>
       <iframe id="tbf" src="total_budgeting.html?embed=store" title="Store commission and pay" style="width:100%;height:1400px;min-height:520px;border:1px solid var(--sx-line);border-radius:10px;background:#fff"></iframe>
       <div class="lk"><a class="sx-pill info" href="total_budgeting.html" target="_top">Open Total Budgeting →</a><a class="sx-pill info" href="store_messages.html" target="_top">Store messages (order thank-you &amp; birthdays) →</a></div></div></div></div>
   </main>
@@ -24,9 +25,12 @@
 <script src="assets/js/config.js?v=4"></script>
 <script src="assets/js/api.js?v=9"></script>
 <script src="assets/js/layout.js?v=23"></script>
+<script src="assets/js/store_common.js?v=4"></script>
+<script src="assets/js/store_rules.js?v=1"></script>
 <script>
   guardPage();
   renderSidebar('store_commission');
+  StoreRules.mount(document.getElementById('rulesMount'));
   window.addEventListener('message', (e) => { if (e.origin === location.origin && e.data && e.data.tbHeight) document.getElementById('tbf').style.height = Math.max(520, e.data.tbHeight + 24) + 'px'; });
 </script>
 </body>
