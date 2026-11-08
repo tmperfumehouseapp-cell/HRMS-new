@@ -56,11 +56,11 @@
   if (!document.getElementById('cuCss')) { const st = document.createElement('style'); st.id = 'cuCss'; st.textContent = `
 /* wa_camp_ui */
 body.waui .wp-mb.cu-x, body.waui .cu-wide .wp-mb{max-width:980px;}
-body.waui .cu-wide .wp-mb{width:100%;}
-body.waui .cu-rp{display:grid;grid-template-columns:minmax(220px,34%) 1fr;gap:12px;min-height:420px;max-height:68vh} body.waui .cu-rp .l{overflow:auto;border:1px solid #e3e8ef;border-radius:12px} body.waui .cu-rp .r{overflow:auto;border:1px solid #e3e8ef;border-radius:12px;background:#efeae2;padding:10px;display:flex;flex-direction:column;gap:6px}
+body.waui .cu-wide .wp-mb{width:100%;} body.waui .cu-wide.cu-xl .wp-mb{max-width:1280px;}
+body.waui .cu-rp{display:grid;grid-template-columns:minmax(220px,30%) 1fr;gap:12px;height:74vh;min-height:520px} body.waui .cu-rp .l{overflow:auto;border:1px solid #e3e8ef;border-radius:12px} body.waui .cu-rp .r{overflow:hidden;border:1px solid #e3e8ef;border-radius:12px;background:#efeae2;padding:0;display:flex;flex-direction:column}
 body.waui .cu-rp .it{padding:9px 11px;border-bottom:1px solid #eef1f4;cursor:pointer} body.waui .cu-rp .it:hover{background:#f6f8fa} body.waui .cu-rp .it.on{background:#e3f5ec;box-shadow:inset 3px 0 #1a8f5a} body.waui .cu-rp .it small{display:block;color:#64748b;font-size:12px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 body.waui .cu-rp .bb{max-width:82%;padding:7px 10px;border-radius:10px;font-size:13.5px;line-height:1.45;white-space:pre-wrap;word-break:break-word;background:#fff;align-self:flex-start} body.waui .cu-rp .bb.o{background:#d9fdd3;align-self:flex-end} body.waui .cu-rp .bb.c{outline:2px solid #1a8f5a33} body.waui .cu-rp .bb em{display:block;font-style:normal;font-size:11px;color:#667781;margin-top:3px;text-align:right}
-@media (max-width:700px){body.waui .cu-rp{grid-template-columns:1fr;max-height:none} body.waui .cu-rp .l{max-height:220px}}
+@media (max-width:700px){body.waui .cu-rp{grid-template-columns:1fr;grid-template-rows:200px 1fr;height:80vh}}
 body.waui .cu-pcts{display:flex;gap:6px;flex-wrap:wrap} body.waui .cu-pcts button{border:1px solid #d6dde6;background:#fff;border-radius:99px;padding:8px 14px;font-weight:700;font-size:14px;min-height:38px;cursor:pointer} body.waui .cu-pcts button.on{background:#128c7e;border-color:#128c7e;color:#fff}
 body.waui .cu-guard{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:10px;padding:8px 10px;font-size:12.5px;line-height:1.45}
 body.waui .cu-uv{border:1px solid #e3e8ef;border-radius:12px;padding:10px;margin-top:8px;background:#fff} body.waui .cu-uv.off{opacity:.6} body.waui .cu-ub{font-size:13.5px;line-height:1.5;white-space:pre-wrap;word-break:break-word} body.waui .cu-v{background:#ede9fe;color:#5b21b6;border-radius:5px;padding:0 3px}
@@ -329,21 +329,19 @@ body.waui .cu-pc{display:flex;align-items:center;gap:10px;padding:9px 0;border-t
     }
     // 💬 everybody who replied: the list on the left, the picked customer's chat (campaign message + their reply) on the right — it stays open until the window is closed
     async function replies(c) {
-      const m = modal('💬 Replies — ' + c.name); m.el.classList.add('cu-wide'); m.body.innerHTML = loading; let rows = [], sel = '', page = 1, more = false, busy = false;
+      const m = modal('💬 Replies — ' + c.name); m.el.classList.add('cu-wide', 'cu-xl'); m.body.innerHTML = loading; let rows = [], sel = '', page = 1, more = false, busy = false;
       const load = async (reset) => { if (busy) return; busy = true; if (reset) { page = 1; rows = []; } try { const d = await api.get('wa.camp_people', { id: c.id, f: 'replied', page }); rows = rows.concat(d.rows); more = d.more; } catch (e) { busy = false; m.body.innerHTML = errBox(e.message); return false; } busy = false; return true; };
       if (!(await load(true))) return;
-      m.body.innerHTML = `<div class="wp-hint" style="margin:0 0 8px"><b>${fmt(rows.length)}${more ? '+' : ''}</b> customers replied (within 2 days of the message). Tap a customer to read the chat — it stays open until you close this window.</div><div class="cu-rp"><div class="l" id="rpL"></div><div class="r" id="rpR"><div class="wp-empty" style="margin:auto">Tap a customer on the left.</div></div></div><div class="wp-row" style="margin-top:8px"><button type="button" class="wp-btn s" id="rpBack">‹ Back to details</button></div>`;
+      m.body.innerHTML = `<div class="wp-hint" style="margin:0 0 8px"><b>${fmt(rows.length)}${more ? '+' : ''}</b> customers replied (within 2 days of the message). Tap a customer: their full chat opens on the right — reply, take over or assign right there. It stays until you close this window.</div><div class="cu-rp"><div class="l" id="rpL"></div><div class="r" id="rpR"><div class="wp-empty" style="margin:auto">Tap a customer on the left.</div></div></div><div class="wp-row" style="margin-top:8px"><button type="button" class="wp-btn s" id="rpBack">‹ Back to details</button></div>`;
       const L = $(m.body, '#rpL'), R = $(m.body, '#rpR');
       const drawL = () => { L.innerHTML = rows.length ? rows.map((r) => `<div class="it ${sel === r.phone ? 'on' : ''}" data-p="${esc(r.phone)}"><b>${esc(r.name || pretty(r.phone))}</b> <span class="cu-ph">${esc(pretty(r.phone))}</span><small>${esc((r.why || '').replace(/^Wrote back: /, ''))}</small></div>`).join('') + (more ? '<div class="wp-row" style="justify-content:center;padding:8px"><button type="button" class="wp-btn s" id="rpMore">Show more</button></div>' : '') : '<div class="wp-empty">Nobody replied yet.</div>';
         L.querySelectorAll('[data-p]').forEach((el) => { el.onclick = () => open(el.dataset.p); }); const mb = $(L, '#rpMore'); if (mb) mb.onclick = async () => { page++; if (await load(false)) drawL(); }; };
-      async function open(ph) {
-        sel = ph; drawL(); R.innerHTML = '<div class="wp-hint">Loading the chat…</div>';
-        let d; try { d = await api.get('wa.camp_thread', { id: c.id, phone: ph }); } catch (e) { if (sel === ph) R.innerHTML = errBox(e.message); return; } if (sel !== ph) return;
-        const camp = d.messages.find((x) => x.dir === 'out');
-        R.innerHTML = `<div style="display:flex;gap:8px;align-items:center;margin-bottom:4px"><b>${esc(d.name || pretty(ph))}</b><span class="cu-ph">${esc(pretty(ph))}</span><span style="flex:1"></span><button type="button" class="wp-btn s" id="rpChat">Open full chat</button></div>`
-          + (d.messages.length ? d.messages.map((x) => `<div class="bb ${x.dir === 'out' ? 'o' : ''} ${x.dir === 'in' ? 'c' : ''}">${esc(x.text)}<em>${x.dir === 'out' ? (x === camp ? 'Campaign message · ' : (x.who === 'campaign' ? 'Campaign · ' : 'We · ')) : 'Customer · '}${esc(when(x.ts))}</em></div>`).join('') : '<div class="wp-empty">No messages found.</div>');
-        const ob = $(R, '#rpChat'); if (ob) ob.onclick = () => { if (ctx && ctx.openChat) { ctx.openChat(ph); } };
-        R.scrollTop = 0;
+      // the right side is the REAL WhatsApp chat (my_chats.html in embedded mode): reply, voice, photo, Take over, Assign — exactly like the chat window. It stays until the window is closed.
+      let fr = null;
+      function open(ph) {
+        sel = ph; drawL(); const key = String(ph).replace(/\D/g, '').slice(-10);
+        R.innerHTML = '<iframe title="WhatsApp chat" style="width:100%;height:100%;min-height:560px;border:0;display:block;background:#efeae2" allow="microphone; clipboard-write"></iframe>'; fr = R.querySelector('iframe');
+        fr.src = 'my_chats.html?embed=1&phone=' + encodeURIComponent(key);
       }
       drawL(); $(m.body, '#rpBack').onclick = () => { m.close(); details(c); };
     }
