@@ -741,7 +741,7 @@ function st_short_link(string $token, string $extra = ''): string
 /** The store numbers as lines of text: "• Neil (Store): +91 98765 43210". */
 function st_contacts_text(array $cs): string
 {
-    $o = []; foreach ((array)($cs['contacts'] ?? []) as $c) { $ph = substr(preg_replace('/\D/', '', (string)($c['phone'] ?? '')), -10); if ($ph === '') continue; $nm = trim((string)($c['name'] ?? '')); $rl = trim((string)($c['role'] ?? '')); $o[] = '• ' . ($nm !== '' ? $nm : $cs['store_name']) . ($rl !== '' ? ' (' . $rl . ')' : '') . ': +91 ' . substr($ph, 0, 5) . ' ' . substr($ph, 5); }
+    $o = []; foreach ((array)($cs['contacts'] ?? []) as $c) { $ph = substr(preg_replace('/\D/', '', (string)($c['phone'] ?? '')), -10); if ($ph === '') continue; $nm = trim((string)($c['name'] ?? '')); $rl = trim((string)($c['role'] ?? '')); $o[] = '• ' . st_contact_label($c, $cs) . ': +91 ' . substr($ph, 0, 5) . ' ' . substr($ph, 5); }
     return implode("\n", $o);
 }
 /** The WhatsApp message (and the web.whatsapp link that opens it ready to send, in the side window) for one customer. */
@@ -908,11 +908,17 @@ function st_people_status(PDO $pdo, array $billIds): array
 function st_vcf_esc(string $t): string { return str_replace(["\\", ",", ";", "\r", "\n"], ["\\\\", "\\,", "\\;", '', "\\n"], $t); }
 
 /** One .vcf with every store contact (the store number + each salesperson): opening it on a phone offers "Add contacts". */
+/** The name a number is saved under on the customer's phone: "<name> <store name>", e.g. "Neil Bhatia TM Perfume House", "Surat Store TM Perfume House" — so searching the store name finds every number. */
+function st_contact_label(array $c, array $cs): string
+{
+    $sn = trim((string)($cs['store_name'] ?? '')); $nm = trim((string)($c['name'] ?? '')); if ($nm === '') $nm = 'Store';
+    return ($sn === '' || stripos($nm, $sn) !== false) ? $nm : $nm . ' ' . $sn;
+}
 function st_vcf(array $cs): string
 {
     $out = '';
     foreach ($cs['contacts'] as $c) {
-        $fn = trim($c['name'] . ($c['role'] !== '' ? ' (' . $c['role'] . ')' : ''));
+        $fn = st_contact_label($c, $cs);
         $out .= "BEGIN:VCARD\r\nVERSION:3.0\r\nN:;" . st_vcf_esc($fn) . ";;;\r\nFN:" . st_vcf_esc($fn) . "\r\nORG:" . st_vcf_esc($cs['store_name']) . "\r\nTEL;TYPE=CELL,VOICE:+" . $c['phone'] . "\r\nEND:VCARD\r\n";
     }
     return $out;
