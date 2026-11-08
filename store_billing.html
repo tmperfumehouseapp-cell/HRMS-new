@@ -143,6 +143,8 @@
 
       <div class="sx-card" id="srcCard" style="display:none"><h3>📣 Where customers came from <small id="srcSub"></small></h3><div id="srcList"></div><h3 style="margin-top:14px">📍 Areas <small id="areaSub"></small></h3><div id="areaList"></div></div>
 
+      <div class="sx-card" id="prCard"><h3>💰 Prices &amp; offers <small id="prSub">the same price chart and offers the online sales use</small></h3><div id="prOffers"></div>
+        <details class="sx-d" style="margin-top:8px"><summary>Show the full price chart</summary><div id="prChart" style="margin-top:8px;overflow:auto"></div></details></div>
       <div class="sx-card" id="imgCard" style="display:none"><h3>📷 Picture for the bill message <small id="imgSub"></small></h3>
         <div class="sx-mut" style="font-size:12.5px;margin-bottom:6px">After a bill is saved the cashier can press <b>📷 Copy image</b>, open the customer's WhatsApp chat and press Ctrl+V to send this picture with the bill message. (Managers only.)</div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input type="file" id="imgFile" accept="image/*"><button class="lnk" id="imgDel" style="display:none">Go back to the default picture</button><span id="imgNote" class="sx-mut"></span></div></div>
@@ -379,7 +381,7 @@
     const noChart = quote && cart.some((b) => !free(b)) && !quote.in_chart;
     $('customRow').style.display = noChart && isManager ? '' : 'none';
     $('prices').innerHTML = !quote ? '<span class="sx-mut" style="grid-column:1/-1">Scan a bottle to see prices.</span>'
-      : quote.in_chart ? quote.columns.map((c) => `<button class="pr ${pickedCol === c.col ? 'on' : ''}" data-c="${c.col}"><b>${inr(c.price)}</b><small>${c.pct == null ? '&nbsp;' : c.pct + '%'}</small></button>`).join('')
+      : quote.in_chart ? quote.columns.map((c) => `<button class="pr ${pickedCol === c.col ? 'on' : ''}" data-c="${c.col}" ${c.offer ? 'style="border-color:#f59e0b;background:#fff8e6" title="' + esc(c.note || 'Offer running now') + '"' : ''}><b>${inr(c.price)}</b><small>${c.offer ? '🎁 Offer · ' : ''}${c.pct == null ? '&nbsp;' : c.pct + '%'}</small></button>`).join('')
       : `<span class="sx-mut" style="grid-column:1/-1">No price row for ${quote.total_ml} ml${isManager ? ' — type it below' : ' — ask a manager'}.</span>`;
     updatePay();
   }
@@ -458,6 +460,18 @@
   // ---------- 📷 a picture to send with the bill message (copied, then pasted into the WhatsApp chat)
   let billImg = false, billCustom = false;
   const imgUi = () => { const m = $('imgCard'); if (!m) return; m.style.display = isManager ? '' : 'none'; $('imgDel').style.display = billCustom ? '' : 'none'; $('imgSub').textContent = billImg ? (billCustom ? '· your own picture is set ✓' : '· the default picture is used ✓ (upload one to replace it)') : '· no picture yet'; };
+  // ---------- 💰 the price chart + the offers running now (read-only; managed in Learning → Pricing and Commission Rules)
+  async function loadPriceCard() {
+    try {
+      const d = await api.get('st_price.card'), f = (n) => Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+      const dd = (x) => x ? new Date(x + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '';
+      const offers = (d.offers || []).map((o) => `<span class="sx-pill" style="background:#fff8e6;color:#9a5b00;border:1px solid #f5d79a;margin:2px 4px 2px 0">🎁 ${o.ml} ml at ${inr(o.price)} → <b>${f(o.pct)}%</b>${o.to ? ' · till ' + dd(o.to) : ''}${o.note ? ' · ' + esc(o.note) : ''}</span>`).join('');
+      const flash = (d.flash || []).map((x) => `<span class="sx-pill" style="background:#fff1e6;color:#b45309;border:1px solid #f9c79a;margin:2px 4px 2px 0">⚡ Flash offer ${(x.sizes || []).join(' / ')} ml → <b>${f(x.pct)}%</b> till ${esc(String(x.ends_at).slice(11, 16))}</span>`).join('');
+      $('prOffers').innerHTML = (offers || flash) ? `<div style="font-size:12.5px;margin-bottom:2px"><b>Offers running now</b> <span class="sx-mut">(a bill of exactly that size at about that price pays the offer’s %; pick the 🎁 price when billing)</span></div>${offers}${flash}` : '<div class="sx-mut" style="font-size:12.5px">No offer is running now — the normal price chart applies.</div>';
+      const cols = d.cols || [], rows = d.rows || [];
+      $('prChart').innerHTML = rows.length ? `<table style="border-collapse:collapse;font-size:12.5px;min-width:420px"><thead><tr><th style="text-align:left;padding:4px 8px">ML</th>${cols.map((c) => `<th style="padding:4px 8px;text-align:right">pays ${f(c)}%</th>`).join('')}</tr></thead><tbody>${rows.map((r) => `<tr style="border-top:1px solid var(--sx-line)"><td style="padding:4px 8px"><b>${r.ml}</b></td>${cols.map((c, i) => `<td style="padding:4px 8px;text-align:right">${r.p[i] > 0 ? inr(r.p[i]) : '–'}</td>`).join('')}</tr>`).join('')}</tbody></table><div class="sx-mut" style="font-size:12px;margin-top:6px">A price between two columns pays the nearer column’s %; below the last column it pays ${f(d.floor || 0)}%.</div>` : '<div class="sx-mut">The price chart is not available.</div>';
+    } catch (e) { $('prOffers').innerHTML = '<div class="sx-mut" style="font-size:12.5px">The price chart could not be read.</div>'; }
+  }
   async function loadBillImg() { try { { const r = await api.get('st_bill.image_get'); billImg = !!r.has_image; billCustom = !!r.custom; } billPhoto = {}; } catch (e) { billImg = false; } imgUi(); }
   const shrinkImg = (file, max) => new Promise((ok, no) => { const fr = new FileReader(); fr.onerror = no; fr.onload = () => { const im = new Image(); im.onerror = no; im.onload = () => { const k = Math.min(1, max / Math.max(im.width, im.height)), c = document.createElement('canvas'); c.width = Math.round(im.width * k); c.height = Math.round(im.height * k); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); ok(c.toDataURL('image/jpeg', 0.85)); }; im.src = fr.result; }; fr.readAsDataURL(file); });
   document.addEventListener('change', async (e) => {
@@ -597,7 +611,7 @@
   });
 
   (async () => {
-    const u = api.currentUser() || {}; isManager = ['Admin', 'HR'].includes(u.role); loadBillImg(); if (typeof storeToday !== 'undefined' && storeToday) setBizDay(storeToday);
+    const u = api.currentUser() || {}; isManager = ['Admin', 'HR'].includes(u.role); loadBillImg(); loadPriceCard(); if (typeof storeToday !== 'undefined' && storeToday) setBizDay(storeToday);
     try { await loadDuty(); } catch (e) { $('bills').textContent = e.message; }
     loadBills(); $('scanList').focus();
   })();

@@ -458,7 +458,7 @@ function action_permission(string $action): ?string
         'iv.' => 'inventory',                      // Smart Inventory (inventory.php): oils, perfumes, orders, dealers
         'fi.' => 'finance',                        // Finance step 1 (finance_in.php): incoming, receipts, outstanding
         'st_inv.' => 'rs_manage', 'st_chain.' => 'rs_manage', 'st_set.' => 'rs_manage', 'st_duty.' => 'rs_manage', 'st_dash.' => 'rs_manage', 'st_cs.' => 'rs_manage', 'st_team.' => 'rs_manage',   // Store: inventory, label size, who can bill
-        'st_bill.' => 'rs_counter', 'st_cust.' => 'rs_counter', 'st_bday.' => 'rs_counter', 'st_msgs.' => 'rs_counter',               // Store: billing
+        'st_bill.' => 'rs_counter', 'st_cust.' => 'rs_counter', 'st_bday.' => 'rs_counter', 'st_msgs.' => 'rs_counter', 'st_price.' => 'rs_counter',               // Store: billing
         'dashboard.' => 'dashboard',
         'shopify.' => 'orders',
         'allocation.' => 'allocation',

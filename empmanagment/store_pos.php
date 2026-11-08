@@ -112,16 +112,25 @@ function st_quote(PDO $pdo, int $totalMl, int $empId): array
             $cols[] = ['col' => $i, 'price' => (float)$p, 'pct' => $pct === null ? null : round($pct, 2), 'label' => (string)($chart['cols'][$i] ?? '')];
         }
     }
-    return ['total_ml' => $totalMl, 'in_chart' => $prices !== null, 'columns' => $cols, 'chart_on' => !empty($chart['on'])];
+    // the OFFERS of Commission Rules (the same list the online sales use): an offer on this exact size is one more price to pick, with its own commission %
+    $offers = []; $flash = null;
+    if ($totalMl > 0 && budget_engine_ready()) {
+        try { foreach (cm_offers($pdo) as $o) { if (empty($o['active']) || (int)$o['ml'] !== $totalMl) continue; if ($o['from_date'] && $day < $o['from_date']) continue; if ($o['to_date'] && $day > $o['to_date']) continue;
+            $cols[] = ['col' => count($cols), 'price' => (float)$o['price'], 'pct' => round((float)$o['pct'], 2), 'label' => 'Offer', 'offer' => true, 'note' => (string)($o['note'] ?? '')]; $offers[] = (int)$o['id']; } } catch (Throwable $e) { error_log('st_quote offers: ' . $e->getMessage()); }
+        try { if (!cm_is_live($pdo)) { $fp = flash_offer_pct_for(flash_offer_list_get($pdo), $totalMl, 0.0, time()); if ($fp !== null) $flash = ['pct' => (float)$fp['pct']]; } } catch (Throwable $e) { }
+    }
+    return ['total_ml' => $totalMl, 'in_chart' => $prices !== null || $offers, 'columns' => $cols, 'chart_on' => !empty($chart['on']), 'flash' => $flash];
 }
 
-/** Commission % this bill pays on its final price — the chart band, or a Flash Offer's flat % when one is running. */
-function st_pct_for(PDO $pdo, int $totalMl, float $amt, int $empId, bool $hasCode): array
+/** Commission % this bill pays on its final price — the SAME order the online sales use: a matching Offer (Commission Rules: size + price) → a Flash Offer (only while the old engine pays) → the price chart. */
+function st_pct_for(PDO $pdo, int $totalMl, float $amt, int $empId, bool $hasCode, ?string $day = null, ?int $ts = null): array
 {
-    $day = st_day();
+    $day = $day ?: st_day(); $ts = $ts ?: time();
     $chart = ml_slab_for(ml_slab_get($pdo), $day, $empId);
-    $flash = flash_offer_pct_for(flash_offer_list_get($pdo), $totalMl, $amt, time());
-    if ($flash !== null) return ['pct' => (float)$flash['pct'], 'source' => 'flash offer'];
+    if ($totalMl > 0 && budget_engine_ready()) {
+        try { $of = cm_offer_match(cm_offers($pdo), $totalMl, $amt, $day, (float)cm_chart($pdo)['window']); if ($of) return ['pct' => (float)$of['pct'], 'source' => 'offer'];
+            if (!cm_is_live($pdo)) { $flash = flash_offer_pct_for(flash_offer_list_get($pdo), $totalMl, $amt, $ts); if ($flash !== null) return ['pct' => (float)$flash['pct'], 'source' => 'flash offer']; } } catch (Throwable $e) { error_log('st_pct_for offers: ' . $e->getMessage()); }
+    } else { $flash = flash_offer_pct_for(flash_offer_list_get($pdo), $totalMl, $amt, $ts); if ($flash !== null) return ['pct' => (float)$flash['pct'], 'source' => 'flash offer']; }
     $pc = !empty($chart['on']) ? coach_slab_pct($chart, $totalMl, $amt, false) : null;
     return ['pct' => $pc === null ? null : round($pc, 2), 'source' => 'price chart'];
 }
@@ -1076,6 +1085,16 @@ try {
             break;
         }
 
+        case 'st_price.card': {           // the price chart + every offer running now, read-only, for the billing screen (same figures as Learning → Pricing and Commission Rules)
+            require_auth(); $out = ['cols' => [], 'rows' => [], 'offers' => [], 'flash' => [], 'live' => true];
+            if (budget_engine_ready()) {
+                try { $ch = cm_chart($pdo); $out['cols'] = array_map('floatval', (array)$ch['cols']); $out['rows'] = array_map(fn($r) => ['ml' => (int)$r['ml'], 'p' => array_map('floatval', (array)$r['p'])], (array)$ch['rows']); $out['window'] = (float)($ch['window'] ?? 20); $out['floor'] = (float)($ch['floor'] ?? 0); } catch (Throwable $e) { }
+                try { $day = st_day(); foreach (cm_offers($pdo) as $o) { if (empty($o['active'])) continue; if ($o['from_date'] && $day < $o['from_date']) continue; if ($o['to_date'] && $day > $o['to_date']) continue; $out['offers'][] = ['ml' => (int)$o['ml'], 'price' => (float)$o['price'], 'pct' => (float)$o['pct'], 'from' => (string)$o['from_date'], 'to' => (string)($o['to_date'] ?? ''), 'note' => (string)($o['note'] ?? '')]; } usort($out['offers'], fn($a, $b) => $a['ml'] <=> $b['ml']); } catch (Throwable $e) { }
+                try { $out['live'] = cm_is_live($pdo); if (!$out['live']) foreach (flash_offer_running(flash_offer_list_get($pdo)) as $x) $out['flash'][] = ['pct' => (float)$x['pct'], 'ends_at' => (string)$x['ends_at'], 'sizes' => array_values(array_map(fn($i) => (int)($i['ml'] ?? 0), (array)($x['items'] ?? [])))]; } catch (Throwable $e) { }
+            }
+            json_response($out);
+            break;
+        }
         case 'st_cs.team_numbers': {      // the mobile numbers already saved on the store team (Store → Team) and the store's own number, to fill the contact cards
             require_auth(); $out = ['store' => '', 'people' => []];
             try { $co = st_company($pdo); $sp = st_phone_clean((string)($co['phone'] ?? '')); if ($sp !== '' && strlen($sp) <= 12) $out['store'] = $sp; } catch (Throwable $e) { }
