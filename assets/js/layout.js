@@ -62,6 +62,32 @@ const LAYOUT_BUILD = '261102.2';   // shown under your name in the sidebar
   } catch (e) { /* the page keeps its own look */ }
 })();
 
+// 🌙 Dark mode for the whole HRMS (button at the top right of every page; the choice is remembered per browser in localStorage 'hrms_dark').
+// The page is turned dark in one go (colours inverted, photos / videos / charts' canvases turned back so they keep their real colours). WhatsApp pages have their own night mode.
+(function () {
+  try {
+    if (/whatsapp|\/wa_|wa_chats|wa_one|my_chats/i.test(location.pathname + location.search)) return;
+    var de = document.documentElement, on = false;
+    try { on = localStorage.getItem('hrms_dark') === '1'; } catch (e) { }
+    if (on) de.classList.add('hrms-dk');
+    if (!document.getElementById('hrmsDkCss')) { var st = document.createElement('style'); st.id = 'hrmsDkCss';
+      st.textContent = 'html.hrms-dk{filter:invert(.92) hue-rotate(180deg);background:#111;}html.hrms-dk img,html.hrms-dk video,html.hrms-dk canvas,html.hrms-dk iframe,html.hrms-dk [style*="background-image"]{filter:invert(1) hue-rotate(180deg);}'
+        + '#hrmsDkBtn{position:fixed;top:10px;right:14px;z-index:2147483000;width:38px;height:38px;border-radius:50%;border:1px solid rgba(0,0,0,.12);background:#fff;color:#14161a;font-size:18px;line-height:1;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.12);padding:0;display:flex;align-items:center;justify-content:center}'
+        + '@media (max-width:820px){#hrmsDkBtn{top:9px;right:62px;width:34px;height:34px;font-size:16px}}@media print{#hrmsDkBtn{display:none}}';
+      (document.head || de).appendChild(st); }
+    window.addEventListener('storage', function (e) { if (e.key === 'hrms_dark') de.classList.toggle('hrms-dk', e.newValue === '1'); });
+    if (window.self !== window.top) return;      // the button lives in the top page only; frames follow the saved choice
+    var add = function () {
+      if (document.getElementById('hrmsDkBtn') || !document.body) return;
+      var b = document.createElement('button'); b.type = 'button'; b.id = 'hrmsDkBtn'; b.title = 'Dark mode'; b.setAttribute('aria-label', 'Dark mode');
+      var draw = function () { b.textContent = de.classList.contains('hrms-dk') ? '☀️' : '🌙'; }; draw();
+      b.onclick = function () { var v = de.classList.toggle('hrms-dk'); try { localStorage.setItem('hrms_dark', v ? '1' : '0'); } catch (e) { } draw(); };
+      document.body.appendChild(b);
+    };
+    if (document.body) add(); else document.addEventListener('DOMContentLoaded', add);
+  } catch (e) { }
+})();
+
 // Smaller on phones: the page is laid out at 90% size (one viewport setting, so every screen shrinks together). WhatsApp pages and frames are left alone.
 (function () {
   try {
