@@ -159,6 +159,7 @@ function cx2_wa_tagged(PDO $pdo, $force = false) {
     foreach ($rows as $r) {
         $key = (string)$r['phone']; if ($key === '' || ($done[$key] ?? '') === (string)$r['tagged_at']) continue; $done[$key] = (string)$r['tagged_at'];
         if (cx2_find_open($pdo, $key, '')) continue;
+        if (!cx_orders($pdo, $key)) continue;      // a customer who has never ordered cannot have a wrong-item / delivery complaint — a sales chat (price, payment link) must not become a ticket by a guess
         $m = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' AND mtype = 'text' AND body <> '' ORDER BY id DESC LIMIT 4"); $m->execute([$key]); $said = implode(' · ', array_reverse(array_column($m->fetchAll(), 'body')));
         $g = cx2_guess(trim((string)$r['summary']) . ' ' . $said); if ($g === '' || !isset($P[$g])) $g = 'other';
         $sum = trim((string)$r['summary']) !== '' ? (string)$r['summary'] : cx_short($said, 300); if (trim($sum) === '') $sum = 'The customer complained on WhatsApp.';
