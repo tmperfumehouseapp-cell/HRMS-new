@@ -797,22 +797,7 @@ function ofp_photo_cards(PDO $pdo, array $z, $day) {
     }
     return $out;
 }
-/** Who may open and do a place check: Admin / HR, the person it was given to, a colleague who holds the SAME seat (the cleaning team: whoever is at the store does it), and the section's boss / top boss. */
-function ofp_may_open_task(array $auth, array $w, array $t) {
-    if (ofp_is_admin($auth)) return true;
-    $emp = (int)$w['emp']; if (!$emp) return false;
-    if ((int)$t['owner_emp'] === $emp) return true;
-    if (!empty($w['top'])) return true;
-    if ((int)($t['section_id'] ?? 0) && in_array((int)$t['section_id'], array_map('intval', (array)($w['sections'] ?? [])), true)) return true;
-    global $pdo;
-    try {
-        if (isset($pdo) && (int)($t['duty_id'] ?? 0)) {
-            $d = $pdo->prepare("SELECT seat_id FROM bd_duties WHERE id = ?"); $d->execute([(int)$t['duty_id']]); $seat = (int)$d->fetchColumn();
-            if ($seat) { $h = $pdo->prepare("SELECT 1 FROM bd_holders WHERE seat_id = ? AND emp_id = ?"); $h->execute([$seat, $emp]); if ($h->fetchColumn()) return true; }
-        }
-    } catch (Throwable $e) { error_log('ofp_may_open_task: ' . $e->getMessage()); }
-    return false;
-}
+function ofp_may_open_task(array $auth, array $w, array $t) { return ofp_is_admin($auth) || ((int)$w['emp'] && (int)$t['owner_emp'] === (int)$w['emp']); }
 
 /** the submit. Returns the reply array. */
 function ofp_submit(PDO $pdo, array $auth, array $w, array $t, array $z, array $o, array $pl, array $in, $by) {
@@ -1001,14 +986,14 @@ function ofp_dispatch(PDO $pdo, $action) {
             if (!$tid && (int)($_GET['zone_id'] ?? 0)) { $s = $pdo->prepare("SELECT t.id FROM bd_tasks t JOIN bd_duties d ON d.id = t.duty_id WHERE d.lib_key = ? AND t.task_date = ? AND t.status != 'excused' ORDER BY t.id LIMIT 1"); $s->execute(['ofc:' . (int)$_GET['zone_id'], bd_today()]); $tid = (int)$s->fetchColumn(); }
             if (!$tid) json_response(['error' => 'There is no count task for this place today.'], 404);
             list($t, $z, $o, $pl) = ofp_task_ctx($pdo, $tid);
-            if (!ofp_may_open_task($auth, $w, $t)) json_response(['error' => 'This check belongs to ' . ($t['owner_emp'] ? bd_emp_name($pdo, $t['owner_emp']) : 'someone else') . '. Only that person, the people on the same cleaning seat, or a manager can open it. Ask a manager to put you on the seat (Boss → Seats), or to give you today\'s check.'], 403);
+            if (!ofp_may_open_task($auth, $w, $t)) json_response(['error' => 'This check belongs to ' . ($t['owner_emp'] ? bd_emp_name($pdo, $t['owner_emp']) : 'someone else') . '.'], 403);
             json_response(ofp_form($pdo, $t, $z, $o, $pl, ofp_lang($pdo, $emp)));
         }
         case 'of.pl_check_submit': {
             $needPost();
             if (!$emp && !$isAdmin) json_response(['error' => 'This login is not linked to an employee.'], 400);
             list($t, $z, $o, $pl) = ofp_task_ctx($pdo, (int)($in['task_id'] ?? 0));
-            if (!ofp_may_open_task($auth, $w, $t)) json_response(['error' => 'This check belongs to ' . ($t['owner_emp'] ? bd_emp_name($pdo, $t['owner_emp']) : 'someone else') . '. Only that person, the people on the same cleaning seat, or a manager can open it. Ask a manager to put you on the seat (Boss → Seats), or to give you today\'s check.'], 403);
+            if (!ofp_may_open_task($auth, $w, $t)) json_response(['error' => 'This check belongs to ' . ($t['owner_emp'] ? bd_emp_name($pdo, $t['owner_emp']) : 'someone else') . '.'], 403);
             if (bd_mode() === 'shadow' && !$isAdmin) json_response(['error' => 'The Boss Engine is in test mode. Duties are not live yet.'], 409);
             if ($t['task_date'] !== bd_today()) json_response(['error' => 'Only today\'s check can be done.'], 409);
             if ($t['status'] === 'done') json_response(['error' => 'This check is already done.'], 409);
