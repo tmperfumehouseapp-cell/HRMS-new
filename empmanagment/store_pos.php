@@ -1078,7 +1078,7 @@ try {
 
         case 'st_cs.get': {
             require_auth();
-            json_response(['settings' => st_cs_get($pdo), 'sample' => st_bill_link('SAMPLE')]);
+            json_response(['settings' => st_cs_get($pdo), 'sample' => st_bill_link('SAMPLE'), 'short' => st_short_link('SAMPLE')]);
             break;
         }
 
