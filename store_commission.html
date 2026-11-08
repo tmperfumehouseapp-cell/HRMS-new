@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Store Commission — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=260928b">
+<link rel="stylesheet" href="assets/css/store.css?v=6">
+<style>.lk{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.lk a{text-decoration:none}</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><div><h1>Store Commission</h1><div class="sub" style="font-size:12.5px;color:var(--muted);margin-top:2px">Collection, commission and total salary of the people who bill in the store — the same page as Total Budgeting → Store</div></div></div>
+    <div class="content"><div class="sx-page"><div class="sx-card"><h3>Store Commission <small>the same Store view as Total Budgeting → Store. Change anything here and it is changed there too.</small></h3>
+      <iframe id="tbf" src="total_budgeting.html?embed=store" title="Store commission and pay" style="width:100%;height:1400px;min-height:520px;border:1px solid var(--sx-line);border-radius:10px;background:#fff"></iframe>
+      <div class="lk"><a class="sx-pill info" href="total_budgeting.html" target="_top">Open Total Budgeting →</a></div></div></div></div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=4"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=23"></script>
+<script>
+  guardPage();
+  renderSidebar('store_commission');
+  window.addEventListener('message', (e) => { if (e.origin === location.origin && e.data && e.data.tbHeight) document.getElementById('tbf').style.height = Math.max(520, e.data.tbHeight + 24) + 'px'; });
+</script>
+</body>
+</html>

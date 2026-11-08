@@ -1487,15 +1487,52 @@ if (!function_exists('budget_store_calc')) {
         try { if (!function_exists('cm_chart') && is_file(__DIR__ . '/boss.php')) require_once __DIR__ . '/boss.php'; } catch (Throwable $e) { error_log('commission engine: ' . $e->getMessage()); }
         return function_exists('cm_chart') && function_exists('cm_pct') && function_exists('cm_offers') && function_exists('cm_offer_match') && function_exists('cm_code_need');
     }
+    /** The people whose store bills count as ONE team for the order-code rule (default: Neil, Krish and Anil). Saved by Total Budgeting → Store; anybody else who bills is counted alone. */
+    function st_pool_ids(PDO $pdo): array
+    {
+        $j = null; try { if (function_exists('setting_get')) $j = json_decode((string)setting_get($pdo, 'store_pool', ''), true); } catch (Throwable $e) {}
+        if (is_array($j)) return array_values(array_unique(array_filter(array_map('intval', $j))));
+        $ids = [];
+        try { foreach ($pdo->query("SELECT employee_id, full_name FROM employees WHERE status != 'ex'")->fetchAll() as $r) { $fn = strtolower((string)strtok(trim((string)$r['full_name']), ' ')); if (in_array($fn, ['neil', 'krish', 'anil'], true)) $ids[] = (int)$r['employee_id']; } } catch (Throwable $e) {}
+        return $ids;
+    }
+    /** Old POS bills (pos_orders, kept in this database) of the days in the range that have NO bill in the new store POS, shaped like st_bills rows. So the days before the new POS started (e.g. 1–3 November) still count. */
+    function budget_oldpos_rows(PDO $pdo, string $from, string $to, array $newDays): array
+    {
+        $h = function_exists('st_day_hour') ? st_day_hour() : 3; $dd = "DATE(DATE_SUB(o.created_at, INTERVAL $h HOUR))";
+        $lo = $from . sprintf(' %02d:00:00', $h); $hi = date('Y-m-d', strtotime($to . ' +1 day')) . sprintf(' %02d:00:00', $h);
+        $rows = [];
+        try {
+            $hasCode = false; try { $hasCode = (bool)$pdo->query("SHOW COLUMNS FROM pos_orders LIKE 'order_code'")->fetch(); } catch (Throwable $e) {}
+            $q = $pdo->prepare("SELECT o.id, $dd d, o.created_at, o.total, o.billed_by" . ($hasCode ? ", o.order_code" : "") . " FROM pos_orders o WHERE o.created_at >= ? AND o.created_at < ? ORDER BY o.id");
+            $q->execute([$lo, $hi]); $ord = $q->fetchAll(); if (!$ord) return [];
+            $ml = [];
+            $qi = $pdo->prepare("SELECT oi.order_id, oi.variant_title vt, oi.title t, oi.qty q FROM pos_order_items oi JOIN pos_orders o ON o.id = oi.order_id WHERE o.created_at >= ? AND o.created_at < ?");
+            $qi->execute([$lo, $hi]);
+            foreach ($qi->fetchAll() as $r) { if (preg_match('/(\d+)\s*ml/i', (string)$r['vt'], $m) || preg_match('/(\d+)\s*ml/i', (string)$r['t'], $m)) $ml[(int)$r['order_id']] = ($ml[(int)$r['order_id']] ?? 0) + (int)$m[1] * (int)$r['q']; }
+            $emps = $pdo->query("SELECT employee_id, full_name FROM employees WHERE status != 'ex'")->fetchAll(); $byFull = []; $byFirst = [];
+            foreach ($emps as $e) { $fn = strtolower(trim(preg_replace('/\s+/', ' ', (string)$e['full_name']))); $byFull[$fn] = $e; $f1 = (string)strtok($fn, ' '); $byFirst[$f1][] = $e; }
+            foreach ($ord as $o) {
+                if (isset($newDays[(string)$o['d']])) continue;
+                $nm = trim((string)$o['billed_by']); $k = strtolower(trim(preg_replace('/\s+/', ' ', $nm))); $e = $byFull[$k] ?? null;
+                if (!$e) { $f1 = (string)strtok($k, ' '); if (isset($byFirst[$f1]) && count($byFirst[$f1]) === 1) $e = $byFirst[$f1][0]; }
+                $rows[] = ['bill_id' => -(int)$o['id'], 'bill_no' => 'POS-' . (int)$o['id'], 'biz_date' => (string)$o['d'], 'created_at' => (string)$o['created_at'], 'emp_id' => $e ? (int)$e['employee_id'] : 0,
+                    'emp_name' => $e ? (string)$e['full_name'] : ($nm !== '' ? $nm : 'Old POS'), 'order_code' => $hasCode ? (string)($o['order_code'] ?? '') : '', 'total_ml' => (int)($ml[(int)$o['id']] ?? 0), 'total' => (float)$o['total'], 'real_id' => $e ? (int)$e['employee_id'] : null, 'src' => 'old_pos'];
+            }
+        } catch (Throwable $e) { error_log('budget_oldpos_rows: ' . $e->getMessage()); return []; }
+        return $rows;
+    }
     function budget_store_calc(PDO $pdo, string $from, string $to): array
     {
         static $memo = []; $mk = $from . '|' . $to; if (isset($memo[$mk])) return $memo[$mk];
-        $ch = cm_chart($pdo); $offers = cm_offers($pdo); $rows = []; $groups = []; $noMl = 0; $unpriced = 0;
+        $ch = cm_chart($pdo); $offers = cm_offers($pdo); $rows = []; $groups = []; $noMl = 0; $unpriced = 0; $pool = array_flip(st_pool_ids($pdo));
         if (function_exists('ensure_st_tables')) ensure_st_tables($pdo);
         $q = $pdo->prepare("SELECT b.bill_id, b.bill_no, b.biz_date, b.created_at, b.emp_id, b.emp_name, b.order_code, b.total_ml, b.total, e.employee_id AS real_id
             FROM st_bills b LEFT JOIN employees e ON e.employee_id = b.emp_id AND e.status != 'ex' WHERE b.status = 'ok' AND b.biz_date BETWEEN ? AND ? ORDER BY b.bill_id");
         $q->execute([$from, $to]);
-        foreach ($q->fetchAll() as $i => $b) { $rows[$i] = $b; $groups[(int)$b['emp_id'] . '|' . $b['biz_date']][] = $i; }
+        $all = $q->fetchAll(); $newDays = []; foreach ($all as $b) $newDays[(string)$b['biz_date']] = 1;
+        foreach (budget_oldpos_rows($pdo, $from, $to, $newDays) as $b) $all[] = $b;     // days with no bill in the new POS come from the old POS
+        foreach ($all as $i => $b) { $rows[$i] = $b; $eid = (int)$b['emp_id']; $gk = isset($pool[$eid]) ? 'pool' : ($eid > 0 ? (string)$eid : 'n:' . $b['emp_name']); $groups[$gk . '|' . $b['biz_date']][] = $i; }
         $out = [];
         foreach ($groups as $k => $idx) {
             $n = count($idx); $nCode = 0;
@@ -1510,7 +1547,7 @@ if (!function_exists('budget_store_calc')) {
                 else { $pc = cm_pct($ch, $ml, $gross); if ($pc === null) { $unpriced++; $rule = 'ML not priced'; } else { $pct = (float)$pc; $rule = 'chart'; $com = $gross * $pct / 100 * $f; } }
                 $out[$i] = ['bill_id' => (int)$b['bill_id'], 'bill_no' => (string)$b['bill_no'], 'day' => $day, 'time' => substr((string)$b['created_at'], 11, 5), 'emp_id' => (int)$b['emp_id'],
                     'employee_id' => $b['real_id'] ? (int)$b['emp_id'] : 0, 'name' => (string)$b['emp_name'], 'code' => $hasCode, 'total' => $gross, 'ml' => $ml,
-                    'pct' => $pct, 'rule' => $rule, 'reduced' => $f < 1.0, 'com' => round($com, 2)];
+                    'pct' => $pct, 'rule' => $rule, 'reduced' => $f < 1.0, 'com' => round($com, 2), 'pooled' => isset($pool[(int)$b['emp_id']]), 'src' => (string)($b['src'] ?? 'new_pos')];
             }
         }
         ksort($out);
