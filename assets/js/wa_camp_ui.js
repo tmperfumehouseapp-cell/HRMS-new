@@ -336,12 +336,12 @@ body.waui .cu-pc{display:flex;align-items:center;gap:10px;padding:9px 0;border-t
       const L = $(m.body, '#rpL'), R = $(m.body, '#rpR');
       const drawL = () => { L.innerHTML = rows.length ? rows.map((r) => `<div class="it ${sel === r.phone ? 'on' : ''}" data-p="${esc(r.phone)}"><b>${esc(r.name || pretty(r.phone))}</b> <span class="cu-ph">${esc(pretty(r.phone))}</span><small>${esc((r.why || '').replace(/^Wrote back: /, ''))}</small></div>`).join('') + (more ? '<div class="wp-row" style="justify-content:center;padding:8px"><button type="button" class="wp-btn s" id="rpMore">Show more</button></div>' : '') : '<div class="wp-empty">Nobody replied yet.</div>';
         L.querySelectorAll('[data-p]').forEach((el) => { el.onclick = () => open(el.dataset.p); }); const mb = $(L, '#rpMore'); if (mb) mb.onclick = async () => { page++; if (await load(false)) drawL(); }; };
-      // the right side is the REAL WhatsApp chat (my_chats.html in embedded mode): reply, voice, photo, Take over, Assign — exactly like the chat window. It stays until the window is closed.
+      // the right side is the REAL PC chat screen (wa_one.html): reply, voice, photo, Take over, Assign — exactly like the chat window. It stays until the window is closed.
       let fr = null;
       function open(ph) {
         sel = ph; drawL(); const key = String(ph).replace(/\D/g, '').slice(-10);
         R.innerHTML = '<iframe title="WhatsApp chat" style="width:100%;height:100%;min-height:560px;border:0;display:block;background:#efeae2" allow="microphone; clipboard-write"></iframe>'; fr = R.querySelector('iframe');
-        fr.src = 'my_chats.html?embed=1&phone=' + encodeURIComponent(key);
+        fr.src = 'wa_one.html?phone=' + encodeURIComponent(key);   // the PC chat screen (same as the Chats screen: Take over, Assign, tags, replies)
       }
       drawL(); $(m.body, '#rpBack').onclick = () => { m.close(); details(c); };
     }
