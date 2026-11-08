@@ -226,8 +226,11 @@ function wl_ai(PDO $pdo, string $sys, string $user, int $max = 3000, bool $web =
     if (!function_exists('brain_ai_json')) return null;
     $big = function_exists('tmph_cfg') ? (string)tmph_cfg('TMPH_MODEL_BIG', 'claude-opus-5-5') : 'claude-opus-5-5';   // the owner's list instructions: the strongest model, it must understand every part in one go
     if ($web) $sys .= "\nYou may use web search to look up perfume facts (original perfume, long lasting, notes) the owner asks for; then give the final answer as the JSON only.";
-    try { $j = brain_ai_json('internal', 'whatsapp', $sys, $user, $max, ['ctx' => false, 'model' => $big, 'timeout' => $web ? 170 : 110] + ($web ? ['web' => 5] : [])); } catch (Throwable $e) { $j = null; }
-    if (!is_array($j)) { try { $j = brain_ai_json('internal', 'whatsapp', $sys, $user, $max, ['ctx' => false]); } catch (Throwable $e) { return null; } }   // the usual model when the strong one is not available
+    $GLOBALS['wl_ai_why'] = '';
+    try { $j = brain_ai_json('internal', 'whatsapp', $sys, $user, $max, ['ctx' => false, 'model' => $big, 'timeout' => $web ? 170 : 110] + ($web ? ['web' => 5] : [])); } catch (Throwable $e) { $j = null; $GLOBALS['wl_ai_why'] = $e->getMessage(); }
+    $w1 = (string)($GLOBALS['brain_last_error'] ?? '');
+    if (!is_array($j)) { try { $j = brain_ai_json('internal', 'whatsapp', $sys, $user, $max, ['ctx' => false, 'timeout' => 110]); } catch (Throwable $e) { $GLOBALS['wl_ai_why'] = $e->getMessage(); return null; } }   // the usual model when the strong one is not available
+    if (!is_array($j)) $GLOBALS['wl_ai_why'] = trim((string)($GLOBALS['brain_last_error'] ?? '') ?: $w1 ?: ($GLOBALS['wl_ai_why'] ?? '')) ?: 'Claude answered, but not in a form HRMS can read (the answer may be too long — ask for fewer lists at once)';
     return is_array($j) ? $j : null;
 }
 function wl_list_schema_txt(): string
@@ -305,7 +308,7 @@ function wl_plan(PDO $pdo, string $summary, string $mode = 'plan', array $turns 
     $user .= "\n\nCATALOG (#id website name · price · sold 90d / all · gender · words — use the ids for rename):\n" . wl_catalog_brief($pdo, 120)
           . "\n\nALL PERFUMES — for matching any name the owner says (#id website name / our name / website spelling of the original = real original):\n" . wl_names_brief($pdo);
     $askWeb = (bool)preg_match('/\b(internet|online|google|web|search|look\s*up|fetch|find out|check)\b/i', implode(' ', $turns) . ' ' . $summary);   // "fetch the long lasting from the internet"
-    $j = wl_ai($pdo, $sys, $user, 5000, $askWeb); if (!$j || (empty($j['groups']) && empty($j['update']) && empty($j['delete']) && empty($j['products']) && empty($j['questions']))) return ['error' => 'Claude could not plan the lists right now — try again in a minute.'];
+    $j = wl_ai($pdo, $sys, $user, 5000, $askWeb); if (!$j || (empty($j['groups']) && empty($j['update']) && empty($j['delete']) && empty($j['products']) && empty($j['questions']))) return ['error' => 'Claude could not plan the lists right now. Reason: ' . ((string)($GLOBALS['wl_ai_why'] ?? '') !== '' ? $GLOBALS['wl_ai_why'] : 'no answer') . ' — try again in a minute.'];
     $fixes = wl_fixes($pdo, $j['products'] ?? []); $known = wl_prods($pdo); $kp = fn($a) => array_values(array_filter(wl_ids($a), fn($i) => isset($known[$i])));
     $okWords = array_flip(array_column($words, 'word')); $groups = [];
     foreach ((array)($j['groups'] ?? []) as $g) {
@@ -356,7 +359,7 @@ function wl_ai_edit(PDO $pdo, int $id, string $say): array
           . "\n\nALL PERFUMES — for matching names (#id website name / our name / website spelling = real original):\n" . wl_names_brief($pdo);
     $j = wl_ai($pdo, $sys, $user, 2500, (bool)preg_match('/\b(internet|online|google|web|search|look\s*up|fetch|find out|check)\b/i', $say));
     if ($j && !empty($j['delete'])) return ['ok' => true, 'delete' => true, 'understood' => mb_substr((string)($j['understood'] ?? 'Delete this list.'), 0, 400), 'list' => ['id' => $id, 'name' => $l['name']], 'before' => $before, 'after' => []];
-    if (!$j || !is_array($j['list'] ?? null)) return ['error' => 'Claude could not understand that right now — try again or change it by hand.'];
+    if (!$j || !is_array($j['list'] ?? null)) return ['error' => 'Claude could not understand that right now' . ((string)($GLOBALS['wl_ai_why'] ?? '') !== '' ? ' (' . $GLOBALS['wl_ai_why'] . ')' : '') . ' — try again or change it by hand.'];
     $x = $j['list'] + ['pins' => $j['pins'] ?? ($j['list']['pins'] ?? $l['pins']), 'drops' => $j['drops'] ?? ($j['list']['drops'] ?? $l['drops']), 'manual' => $j['manual'] ?? ($j['list']['manual'] ?? false), 'items' => $j['items'] ?? ($j['list']['items'] ?? [])];
     $x += ['grp' => $l['grp'], 'name' => $l['name'], 'auto' => $l['auto'], 'sort' => $l['sort'], 'opts' => $l['opts']];   // what Claude leaves out stays as it is (show / names / renames)
     $c = wl_clean($x); if ($c['name'] === '') $c['name'] = $l['name']; $c['opts'] = wl_apply_wants($c['opts'], wl_owner_wants([$say]));
