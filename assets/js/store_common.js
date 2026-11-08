@@ -71,3 +71,27 @@ function sxTips(root) {
   const show = (e) => { const t = e.target.closest('[data-tip]'); if (!t || !root.contains(t)) return hide(); if (!tip) { tip = document.createElement('div'); tip.className = 'sx-tip'; document.body.appendChild(tip); } tip.textContent = t.dataset.tip; const r = t.getBoundingClientRect(); tip.style.left = (r.left + r.width / 2) + 'px'; tip.style.top = r.top + 'px'; };
   root.addEventListener('mouseover', show); root.addEventListener('mouseleave', hide); root.addEventListener('click', show); document.addEventListener('scroll', hide, true);
 }
+
+/* One picture for a WhatsApp message: scaled down and squeezed (JPEG on a white background) until it is small, so it is quick to save, load and paste.
+   stShrinkImg(file, maxSidePx = 900, maxKB = 120) → data URL. */
+function stShrinkImg(file, max, maxKB) {
+  max = max || 900; maxKB = maxKB || 120;
+  return new Promise((ok, no) => {
+    const fr = new FileReader(); fr.onerror = () => no(new Error('Could not read this file.'));
+    fr.onload = () => {
+      const im = new Image(); im.onerror = () => no(new Error('This file is not a picture.'));
+      im.onload = () => {
+        let side = max, q = 0.85, out = '';
+        for (let i = 0; i < 12; i++) {
+          const k = Math.min(1, side / Math.max(im.naturalWidth, im.naturalHeight)), c = document.createElement('canvas'); c.width = Math.max(1, Math.round(im.naturalWidth * k)); c.height = Math.max(1, Math.round(im.naturalHeight * k));
+          const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(im, 0, 0, c.width, c.height);
+          out = c.toDataURL('image/jpeg', q); if (out.length <= maxKB * 1024 * 1.37) break;
+          if (q > 0.55) q -= 0.1; else { side = Math.round(side * 0.85); q = 0.7; }
+        }
+        ok(out);
+      };
+      im.src = fr.result;
+    };
+    fr.readAsDataURL(file);
+  });
+}

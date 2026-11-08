@@ -93,7 +93,7 @@ window.StoreBday = (function () {
   $('bdCard').addEventListener('input', (e) => { if (e.target.id === 'bmText' || e.target.id === 'bdText') bmPrev(); });
   $('bdCard').addEventListener('change', async (e) => {
     if (e.target.id !== 'bmFile' || !e.target.files[0]) return; const n = $('bmNote');
-    try { const d = await resizeImg(e.target.files[0], 900); await api.post('st_bday.msg_save', { photo: d }); bdPhoto = null; if (n) n.textContent = 'Photo saved.'; loadBirthdays(); } catch (err) { if (n) { n.textContent = err.message || 'Could not use this picture.'; n.style.color = 'var(--sx-bad)'; } }
+    try { const d = await (window.stShrinkImg ? stShrinkImg(e.target.files[0], 900, 120) : resizeImg(e.target.files[0], 900)); await api.post('st_bday.msg_save', { photo: d }); bdPhoto = null; if (n) n.textContent = 'Photo saved.'; loadBirthdays(); } catch (err) { if (n) { n.textContent = err.message || 'Could not use this picture.'; n.style.color = 'var(--sx-bad)'; } }
   });
   $('bdCard').addEventListener('click', async (e) => {
     const note = (m, bad) => { const el = $('bsMsg'); if (el) { el.textContent = m; el.style.color = bad ? 'var(--sx-bad)' : 'var(--sx-good)'; } };

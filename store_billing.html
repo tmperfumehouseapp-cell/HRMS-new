@@ -211,9 +211,9 @@
 
 <script src="assets/js/config.js?v=4"></script>
 <script src="assets/js/api.js?v=9"></script>
-<script src="assets/js/store_bday.js?v=2"></script>
+<script src="assets/js/store_bday.js?v=3"></script>
 <script src="assets/js/layout.js?v=23"></script>
-<script src="assets/js/store_common.js?v=3"></script>
+<script src="assets/js/store_common.js?v=4"></script>
 <script>
   guardPage();
   renderSidebar('store_billing');
@@ -462,7 +462,7 @@
   const shrinkImg = (file, max) => new Promise((ok, no) => { const fr = new FileReader(); fr.onerror = no; fr.onload = () => { const im = new Image(); im.onerror = no; im.onload = () => { const k = Math.min(1, max / Math.max(im.width, im.height)), c = document.createElement('canvas'); c.width = Math.round(im.width * k); c.height = Math.round(im.height * k); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); ok(c.toDataURL('image/jpeg', 0.85)); }; im.src = fr.result; }; fr.readAsDataURL(file); });
   document.addEventListener('change', async (e) => {
     if (e.target.id !== 'imgFile' || !e.target.files[0]) return; const n = $('imgNote'); n.textContent = 'Saving…';
-    try { const d = await shrinkImg(e.target.files[0], 900); await api.post('st_bill.image_save', { photo: d }); n.textContent = 'Saved.'; billPhoto = ''; await loadBillImg(); } catch (err) { n.textContent = (err && err.message) || 'Could not use this picture.'; }
+    try { const d = await stShrinkImg(e.target.files[0], 900, 120); await api.post('st_bill.image_save', { photo: d }); n.textContent = 'Saved.'; billPhoto = ''; await loadBillImg(); } catch (err) { n.textContent = (err && err.message) || 'Could not use this picture.'; }
   });
   let billPhoto = '';
   async function billBlobPng() {   // the picture as PNG (what the clipboard accepts)
