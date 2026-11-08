@@ -217,7 +217,7 @@ function wo_view(PDO $pdo, ?array $p, ?array $s, string $match, array $sent): ar
     $etdText = ''; if ($cls !== 'delivered' && $cls !== 'cancelled' && $cls !== 'rto') $etdText = $etd ? 'Courier date: ' . date('D j M', strtotime($etd)) : 'no date from the courier yet';
     $fin = $s ? (string)$s['financial_status'] : ''; $cod = preg_match('/pending|cod|cash/i', $fin) ? 'Pay on delivery / pending' : ($fin !== '' ? ucfirst(str_replace('_', ' ', $fin)) : '');
     return ['order_name' => $name, 'store' => $store, 'placed_at' => $p ? (string)$p['created_at'] : (string)$s['created_at'], 'total' => $s ? (float)$s['total'] : null, 'payment' => $cod, 'fin' => strtolower($fin),
-        'courier' => $p ? (string)$p['courier'] : '', 'tracking_no' => $p ? (string)$p['tracking_no'] : '', 'track_link' => $p ? (string)$p['track_link'] : '',
+        'courier' => $p ? (string)$p['courier'] : '', 'tracking_no' => $p ? (string)$p['tracking_no'] : '', 'track_link' => $p ? ((string)$p['track_link'] !== '' ? (string)$p['track_link'] : ((string)$p['tracking_no'] !== '' && function_exists('dp_dsp_link_for') ? (string)@dp_dsp_link_for($pdo, (string)$p['courier'], (string)$p['tracking_no']) : '')) : '',
         'status' => $cls, 'status_label' => wo_class_label($cls), 'status_text' => wo_status_text($cls, $arr), 'sr_status' => $p ? (string)$p['sr_status'] : '', 'etd' => $etd, 'etd_text' => $etdText,
         'delivered_at' => $p && !empty($p['delivered_at']) ? (string)$p['delivered_at'] : null, 'last_scan' => $last ? ['at' => $last['at'], 'label' => $last['label'], 'place' => $last['place']] : null,
         'timeline' => $ev, 'match' => $match, 'update_sent' => $p ? ($sent[(int)$p['id']] ?? []) : [], 'parcel_id' => $p ? (int)$p['id'] : 0, 'customer' => $p ? (string)$p['customer'] : (string)$s['customer'],
@@ -248,6 +248,9 @@ function wo_share_view(PDO $pdo, array $v): array
     $cod = (bool)preg_match('/pending|cod|cash/i', (string)($v['payment'] ?? '')); $due = $cod ? ($v['due'] !== null ? (float)$v['due'] : (float)($v['total'] ?? 0)) : 0.0;
     $pay = $st === 'cancelled' ? '' : ($cod && $due > 0 && $st !== 'delivered' ? 'Pay ₹' . number_format($due, 0, '.', ',') . ' on delivery' : (($v['payment'] ?? '') !== '' ? ($cod ? 'Pay on delivery' : 'Paid') : ''));
     $info = function_exists('wa_store_info') ? wa_store_info($pdo) : [];
+    $lk = trim((string)$v['track_link']);      // no saved link → build the courier's own tracking page from the courier name + tracking number (Blue Dart, Delhivery...)
+    if ($lk === '' && trim((string)$v['tracking_no']) !== '' && function_exists('dp_dsp_link_for')) { try { $lk = (string)dp_dsp_link_for($pdo, (string)$v['courier'], (string)$v['tracking_no']); } catch (Throwable $e) { } }
+    $v['track_link'] = $lk;
     return ['order_name' => (string)$v['order_name'], 'status' => $st, 'headline' => $m[0], 'text' => $m[1], 'placed_at' => (string)$v['placed_at'], 'tracked_at' => $v['tracked_at'], 'transit_at' => $v['transit_at'], 'ofd_at' => $v['ofd_at'], 'delivered_at' => $v['delivered_at'],
         'courier' => (string)$v['courier'], 'tracking_no' => (string)$v['tracking_no'], 'track_link' => (string)$v['track_link'], 'etd' => $v['etd'], 'amount' => $v['total'], 'pay' => $pay,
         'last_place' => !empty($v['last_scan']['place']) ? (string)$v['last_scan']['place'] : '', 'brand' => trim((string)($info['name'] ?? '')) !== '' ? (string)$info['name'] : 'TM Perfume House', 'store_phone' => (string)($info['phone'] ?? '')];
