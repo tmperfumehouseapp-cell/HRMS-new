@@ -248,7 +248,9 @@ body.emb .tabs{display:none;}
     const prev = (() => { const d = new Date(Y, Mo - 2, 1); return d.getFullYear() + '-' + pad(d.getMonth() + 1); })();
     const shownDay = clientToday.slice(0, 7) === month ? clientToday : (clientToday > last ? last : from);   // last day of the month to read (any past month works)
     const daysBack = Number(shownDay.slice(8));
-    $('tb').innerHTML = '<div class="card"><div class="empty">Loading the month…</div></div>';
+    // the first load shows "Loading…"; a RELOAD after a save keeps the page as it is (the "Loading" box made the page short, so the scroll jumped to the top) and puts the scroll back
+    const keepY = window.scrollY, mainEl = document.querySelector('.main'), keepM = mainEl ? mainEl.scrollTop : 0, firstLoad = !S.M;
+    if (firstLoad) $('tb').innerHTML = '<div class="card"><div class="empty">Loading the month…</div></div>';
     const R = await Promise.allSettled([
       api.get('lr.get', { date_from: from, date_to: last < clientToday ? last : clientToday }),
       api.get('bd.b2_cm_recount', { days: daysBack, end: shownDay }),
@@ -341,6 +343,7 @@ body.emb .tabs{display:none;}
     S.warn = warn; S.edit = JSON.parse(JSON.stringify({ target: bud.target, lump: bud.lump, expenses: bud.expenses, goals: Object.assign({ sales: 0, leader: 0, helper: 0, retail: 0, store: 0, other: 0 }, bud.goals || {}), retail: Object.assign({ pct: 0, basis: 'paid', target: 0, bonus_type: 'flat', bonus_v: 0, minus_type: 'flat', minus_v: 0 }, bud.retail || {}) }));
     S.claudeFor = '';
     render(); askClaude();
+    if (!firstLoad) { const back = () => { window.scrollTo(0, keepY); if (mainEl) mainEl.scrollTop = keepM; }; back(); requestAnimationFrame(back); setTimeout(back, 120); }
   }
 
   /* ---------- the one set of numbers every tab reads ---------- */
