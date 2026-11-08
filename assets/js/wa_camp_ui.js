@@ -56,7 +56,11 @@
   if (!document.getElementById('cuCss')) { const st = document.createElement('style'); st.id = 'cuCss'; st.textContent = `
 /* wa_camp_ui */
 body.waui .wp-mb.cu-x, body.waui .cu-wide .wp-mb{max-width:980px;}
-body.waui .cu-wide .wp-mb{width:100%;}
+body.waui .cu-wide .wp-mb{width:100%;} body.waui .cu-wide.cu-xl .wp-mb{max-width:1280px;}
+body.waui .cu-rp{display:grid;grid-template-columns:minmax(220px,30%) 1fr;gap:12px;height:74vh;min-height:520px} body.waui .cu-rp .l{overflow:auto;border:1px solid #e3e8ef;border-radius:12px} body.waui .cu-rp .r{overflow:hidden;border:1px solid #e3e8ef;border-radius:12px;background:#efeae2;padding:0;display:flex;flex-direction:column}
+body.waui .cu-rp .it{padding:9px 11px;border-bottom:1px solid #eef1f4;cursor:pointer} body.waui .cu-rp .it:hover{background:#f6f8fa} body.waui .cu-rp .it.on{background:#e3f5ec;box-shadow:inset 3px 0 #1a8f5a} body.waui .cu-rp .it small{display:block;color:#64748b;font-size:12px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body.waui .cu-rp .bb{max-width:82%;padding:7px 10px;border-radius:10px;font-size:13.5px;line-height:1.45;white-space:pre-wrap;word-break:break-word;background:#fff;align-self:flex-start} body.waui .cu-rp .bb.o{background:#d9fdd3;align-self:flex-end} body.waui .cu-rp .bb.c{outline:2px solid #1a8f5a33} body.waui .cu-rp .bb em{display:block;font-style:normal;font-size:11px;color:#667781;margin-top:3px;text-align:right}
+@media (max-width:700px){body.waui .cu-rp{grid-template-columns:1fr;grid-template-rows:200px 1fr;height:80vh}}
 body.waui .cu-pcts{display:flex;gap:6px;flex-wrap:wrap} body.waui .cu-pcts button{border:1px solid #d6dde6;background:#fff;border-radius:99px;padding:8px 14px;font-weight:700;font-size:14px;min-height:38px;cursor:pointer} body.waui .cu-pcts button.on{background:#128c7e;border-color:#128c7e;color:#fff}
 body.waui .cu-guard{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:10px;padding:8px 10px;font-size:12.5px;line-height:1.45}
 body.waui .cu-uv{border:1px solid #e3e8ef;border-radius:12px;padding:10px;margin-top:8px;background:#fff} body.waui .cu-uv.off{opacity:.6} body.waui .cu-ub{font-size:13.5px;line-height:1.5;white-space:pre-wrap;word-break:break-word} body.waui .cu-v{background:#ede9fe;color:#5b21b6;border-radius:5px;padding:0 3px}
@@ -295,7 +299,7 @@ body.waui .cu-pc{display:flex;align-items:center;gap:10px;padding:9px 0;border-t
     async function details(c) {
       const m = modal(c.name); m.body.innerHTML = loading; let d;
       try { d = (await api.get('wa.camp_get', { id: c.id })).campaign; } catch (e) { m.body.innerHTML = errBox(e.message); return; } const r = d.result, k = d.counts;
-      m.body.innerHTML = `<div class="wp-bub">${esc(d.tpl_body)}</div><div class="wp-kpis"><div class="wp-kpi"><small>Sent</small><b>${fmt(k.sent)}</b><span>of ${fmt(k.total)}${k.sent_free ? ' · ' + fmt(k.sent_free) + ' free' : ''}</span></div><div class="wp-kpi"><small>Delivered</small><b>${fmt(k.delivered)}</b></div><div class="wp-kpi"><small>Read</small><b>${fmt(k.read)}</b></div><div class="wp-kpi"><small>Replied</small><b>${fmt(r.replied)}</b></div><div class="wp-kpi"><small>Orders</small><b>${r.orders}</b><span>${money(r.revenue)}</span></div><div class="wp-kpi"><small>Cost ≈</small><b>${money(r.cost)}</b></div></div>
+      m.body.innerHTML = `<div class="wp-bub">${esc(d.tpl_body)}</div><div class="wp-kpis"><div class="wp-kpi"><small>Sent</small><b>${fmt(k.sent)}</b><span>of ${fmt(k.total)}${k.sent_free ? ' · ' + fmt(k.sent_free) + ' free' : ''}</span></div><div class="wp-kpi"><small>Delivered</small><b>${fmt(k.delivered)}</b></div><div class="wp-kpi"><small>Read</small><b>${fmt(k.read)}</b></div><div class="wp-kpi" id="dRep" style="${r.replied ? 'cursor:pointer;outline:2px solid #1a8f5a33' : ''}" title="See who replied and what they wrote"><small>Replied ${r.replied ? '›' : ''}</small><b>${fmt(r.replied)}</b></div><div class="wp-kpi"><small>Orders</small><b>${r.orders}</b><span>${money(r.revenue)}</span></div><div class="wp-kpi"><small>Cost ≈</small><b>${money(r.cost)}</b></div></div>
         <div class="wp-kv"><span>Failed</span><b>${fmt(k.failed)}</b></div><div class="wp-kv"><span>Trying again</span><b>${fmt((k.retry || 0) - (k.held_r || 0))}</b></div><div class="wp-kv"><span>Skipped by our rules (opted out, bought in the last 10 days, ignored 2 campaigns…)</span><b>${fmt(k.skipped - ((k.held || 0) - (k.held_r || 0)))}</b></div><div class="wp-kv"><span>Held by Meta (customer got too many marketing messages — not charged; one more try 1 day later)</span><b>${fmt(k.held || 0)}</b></div><div class="wp-kv"><span>Still waiting to be sent</span><b>${fmt(k.queued)}</b></div>
         <div class="wp-kv"><span>How pushy</span><b>${esc((PUSH.find((p) => p[0] === d.push) || PUSH[1])[1])}</b></div><div class="wp-kv"><span>Send time</span><b>${d.own_hour ? 'each person’s own usual hour' : 'everyone together'}</b></div><div class="wp-kv"><span>Auto retry</span><b>${d.retry ? 'on (3 tries)' : 'off'}</b></div>
         ${d.mix && (d.mix.tpl_u || (d.mix.per_number || []).length) ? `<div class="wmx-sw ${d.mix.on ? '' : 'off'}"><label><input type="checkbox" id="dMix" ${d.mix.on ? 'checked' : ''} ${['done', 'cancelled'].includes(d.status) ? 'disabled' : ''}><span>Mix in the utility version<small>${d.mix.on ? 'On - it takes effect on the next batch, nothing restarts.' : 'Off - everyone gets the marketing message.'}</small></span></label></div>` : ''}<div id="dMixBox">${mixPanel(d.mix, r)}</div>
@@ -303,6 +307,7 @@ body.waui .cu-pc{display:flex;align-items:center;gap:10px;padding:9px 0;border-t
         ${(d.errors || []).length ? '<h3 style="font-size:14px;margin:14px 0 4px">Why some were not sent</h3>' + d.errors.map((x) => `<div class="wp-kv"><span>${esc(x.err)}</span><b>${fmt(x.n)}</b></div>`).join('') : ''}
         ${k.total ? '<div class="wp-row" style="margin-top:12px"><button type="button" class="wp-btn p" id="dWho">Who got what</button></div>' : ''}<div class="wp-hint">Replies: within 2 days of each message. Orders: Shopify orders within 7 days after the message.</div>`;
       const b = $(m.body, '#dWho'); if (b) b.onclick = () => { m.close(); people(c); };
+      const rp = $(m.body, '#dRep'); if (rp && r.replied) rp.onclick = () => { m.close(); replies(c); };
       const mxs = $(m.body, '#dMix'); if (mxs) mxs.onchange = async () => { mxs.disabled = true; try { const x = await api.post('wa.camp_mix_set', { id: c.id, on: mxs.checked }); d.mix = x.mix; $(m.body, '#dMixBox').innerHTML = mixPanel(d.mix, r); mxs.closest('.wmx-sw').classList.toggle('off', !x.mix.on); mxs.closest('.wmx-sw').querySelector('small').textContent = x.mix.on ? 'On - it takes effect on the next batch, nothing restarts.' : 'Off - everyone gets the marketing message.'; toast(x.mix.on ? 'Utility mix is on ✓' : 'Utility mix is off'); } catch (e) { mxs.checked = !mxs.checked; toast(e.message, true); } mxs.disabled = false; };
     }
 
@@ -322,6 +327,24 @@ body.waui .cu-pc{display:flex;align-items:center;gap:10px;padding:9px 0;border-t
         <div class="wp-row" style="margin-top:10px"><button type="button" class="wp-btn p" id="cuDgC">📋 Copy the report</button></div>`;
       $(m.body, '#cuDgC').onclick = async () => { try { await navigator.clipboard.writeText(d.report); toast('Copied ✓'); } catch (e) { const r = document.createRange(); r.selectNodeContents($(m.body, '#cuDgR')); const sl = getSelection(); sl.removeAllRanges(); sl.addRange(r); toast('Selected — press Ctrl + C'); } };
     }
+    // 💬 everybody who replied: the list on the left, the picked customer's chat (campaign message + their reply) on the right — it stays open until the window is closed
+    async function replies(c) {
+      const m = modal('💬 Replies — ' + c.name); m.el.classList.add('cu-wide', 'cu-xl'); m.body.innerHTML = loading; let rows = [], sel = '', page = 1, more = false, busy = false;
+      const load = async (reset) => { if (busy) return; busy = true; if (reset) { page = 1; rows = []; } try { const d = await api.get('wa.camp_people', { id: c.id, f: 'replied', page }); rows = rows.concat(d.rows); more = d.more; } catch (e) { busy = false; m.body.innerHTML = errBox(e.message); return false; } busy = false; return true; };
+      if (!(await load(true))) return;
+      m.body.innerHTML = `<div class="wp-hint" style="margin:0 0 8px"><b>${fmt(rows.length)}${more ? '+' : ''}</b> customers replied (within 2 days of the message). Tap a customer: their full chat opens on the right — reply, take over or assign right there. It stays until you close this window.</div><div class="cu-rp"><div class="l" id="rpL"></div><div class="r" id="rpR"><div class="wp-empty" style="margin:auto">Tap a customer on the left.</div></div></div><div class="wp-row" style="margin-top:8px"><button type="button" class="wp-btn s" id="rpBack">‹ Back to details</button></div>`;
+      const L = $(m.body, '#rpL'), R = $(m.body, '#rpR');
+      const drawL = () => { L.innerHTML = rows.length ? rows.map((r) => `<div class="it ${sel === r.phone ? 'on' : ''}" data-p="${esc(r.phone)}"><b>${esc(r.name || pretty(r.phone))}</b> <span class="cu-ph">${esc(pretty(r.phone))}</span><small>${esc((r.why || '').replace(/^Wrote back: /, ''))}</small></div>`).join('') + (more ? '<div class="wp-row" style="justify-content:center;padding:8px"><button type="button" class="wp-btn s" id="rpMore">Show more</button></div>' : '') : '<div class="wp-empty">Nobody replied yet.</div>';
+        L.querySelectorAll('[data-p]').forEach((el) => { el.onclick = () => open(el.dataset.p); }); const mb = $(L, '#rpMore'); if (mb) mb.onclick = async () => { page++; if (await load(false)) drawL(); }; };
+      // the right side is the REAL WhatsApp chat (my_chats.html in embedded mode): reply, voice, photo, Take over, Assign — exactly like the chat window. It stays until the window is closed.
+      let fr = null;
+      function open(ph) {
+        sel = ph; drawL(); const key = String(ph).replace(/\D/g, '').slice(-10);
+        R.innerHTML = '<iframe title="WhatsApp chat" style="width:100%;height:100%;min-height:560px;border:0;display:block;background:#efeae2" allow="microphone; clipboard-write"></iframe>'; fr = R.querySelector('iframe');
+        fr.src = 'my_chats.html?embed=1&phone=' + encodeURIComponent(key);
+      }
+      drawL(); $(m.body, '#rpBack').onclick = () => { m.close(); details(c); };
+    }
     async function people(c) {
       const m = modal(c.name); m.el.classList.add('cu-wide'); let f = 'all', q = '', page = 1, rows = [], more = false, counts = null, reasons = [], res = null, busy = false, qt = null, wait = '';
       m.body.innerHTML = loading;
@@ -333,11 +356,12 @@ body.waui .cu-pc{display:flex;align-items:center;gap:10px;padding:9px 0;border-t
       }
       function shell() {
         const k = counts || { all: 0 };
-        m.body.innerHTML = `<div class="cu-kp"><div class="wp-kpi"><small>Sent</small><b>${fmt(res.sent)}</b></div><div class="wp-kpi"><small>Delivered</small><b>${fmt(res.delivered)}</b></div><div class="wp-kpi"><small>Read</small><b>${fmt(res.read)}</b></div><div class="wp-kpi"><small>Replied</small><b>${fmt(res.replied)}</b></div><div class="wp-kpi"><small>Orders</small><b>${fmt(res.orders)}</b></div><div class="wp-kpi"><small>Failed</small><b style="${res.failed ? 'color:#b42318' : ''}">${fmt(res.failed)}</b></div></div>
+        m.body.innerHTML = `<div class="cu-kp"><div class="wp-kpi"><small>Sent</small><b>${fmt(res.sent)}</b></div><div class="wp-kpi"><small>Delivered</small><b>${fmt(res.delivered)}</b></div><div class="wp-kpi"><small>Read</small><b>${fmt(res.read)}</b></div><div class="wp-kpi" id="cuRep" style="${res.replied ? 'cursor:pointer;outline:2px solid #1a8f5a33' : ''}"><small>Replied ${res.replied ? '›' : ''}</small><b>${fmt(res.replied)}</b></div><div class="wp-kpi"><small>Orders</small><b>${fmt(res.orders)}</b></div><div class="wp-kpi"><small>Failed</small><b style="${res.failed ? 'color:#b42318' : ''}">${fmt(res.failed)}</b></div></div>
           <div class="cu-fl"><div class="cu-chips" id="cuCh"></div><button type="button" class="wp-btn p s" id="cuNowAll" hidden>⚡ Send all waiting now</button><button type="button" class="wp-btn s" id="cuDiag" title="Find out why messages failed — checks the message, the numbers, every Meta error code and the webhook">🩺 Diagnose</button><button type="button" class="wp-btn s" id="cuCsv">⬇ Download list (CSV)</button></div><div id="cuNowN"></div>
           <input class="wp-in" id="cuQ" type="search" placeholder="Search name or number…" style="margin:8px 0" value="${esc(q)}"><div id="cuL"></div><div id="cuR"></div>`;
         $(m.body, '#cuQ').oninput = function () { clearTimeout(qt); q = this.value.trim(); qt = setTimeout(() => fetchRows(true), 350); };
         $(m.body, '#cuCsv').onclick = csv;
+        const rq = $(m.body, '#cuRep'); if (rq && res.replied) rq.onclick = () => { m.close(); replies(c); };
         $(m.body, '#cuNowAll').onclick = () => sendNow('');
         $(m.body, '#cuDiag').onclick = () => diagnose(c);
       }

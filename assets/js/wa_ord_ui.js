@@ -198,7 +198,7 @@ window.WaOrd = (function () {
   }
   function cardCaption(c, name) {
     const first = String(name || '').trim().split(/\s+/)[0]; const hi = first && !/^\+?\d/.test(first) ? 'Hi ' + first + ', ' : 'Hello, ';
-    return hi + 'here is the latest on your order ' + c.order_name + ': ' + c.headline + '.' + (c.track_link && c.status !== 'delivered' && c.status !== 'cancelled' ? '\n\nTrack it live: ' + c.track_link : '') + '\n\nReply here if you need anything 🙏';
+    return hi + 'here is the latest on your order ' + c.order_name + ': ' + c.headline + '.' + (c.status !== 'cancelled' && (c.courier || c.tracking_no) ? '\n\n' + (c.courier ? '🚚 Courier: ' + c.courier : '') + (c.courier && c.tracking_no ? '\n' : '') + (c.tracking_no ? '🔢 Tracking ID: ' + c.tracking_no : '') : '') + (c.track_link && c.status !== 'delivered' && c.status !== 'cancelled' ? '\n\n📍 Track it live: ' + c.track_link : '') + '\n\nReply here if you need anything 🙏';
   }
   /** The preview sheet: the card exactly as the customer will see it + one "Send to customer" button. o: { phone, name, order, onDone } */
   function shareCard(o) {

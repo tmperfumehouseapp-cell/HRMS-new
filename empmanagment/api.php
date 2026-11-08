@@ -1164,11 +1164,12 @@ function orders_upsert(PDO $pdo, string $storeKey, array $orders): int
 function order_is_repeat_customer(PDO $pdo, string $phone, int $t): bool
 {
     $d = preg_replace('/\D+/', '', $phone) ?? ''; if (strlen($d) < 10) return false; $k = substr($d, -10); $before = date('Y-m-d H:i:s', ($t ?: time()) - 120);
-    try { $q = $pdo->prepare("SELECT 1 FROM shop_orders WHERE phone LIKE ? AND created_at < ? AND total > 0 AND (tags IS NULL OR tags NOT LIKE '%cancel%') LIMIT 1"); $q->execute(['%' . $k, $before]); return (bool)$q->fetchColumn(); } catch (Throwable $e) { return false; }
+    try { $q = $pdo->prepare("SELECT 1 FROM shop_orders WHERE RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(phone,' ',''),'-',''),'+',''),'(',''), 10) = ? AND created_at < ? AND total > 0 AND (tags IS NULL OR tags NOT LIKE '%cancel%') LIMIT 1"); $q->execute([$k, $before]); return (bool)$q->fetchColumn(); } catch (Throwable $e) { return false; }   // phones are compared without spaces / + / - (a stored '+91 97960 04321' used to miss)
 }
 function order_chat_type(PDO $pdo, array $c, int $t = 0): string
 {
     if (order_is_repeat_customer($pdo, (string)($c['phone'] ?? ''), $t)) return 'campaign';   // owner (7 Nov): a customer who ordered before and orders again counts as Campaign
+    try { $ph = (string)($c['phone'] ?? ''); if ($ph !== '') { $qq = $pdo->prepare("SELECT type FROM wq_qtype WHERE phone = ? ORDER BY opened_at DESC LIMIT 1"); $qq->execute([$ph]); if ((string)$qq->fetchColumn() === 'campaign') return 'campaign'; } } catch (Throwable $e) { }   // the chat's latest query is typed Campaign (they answered our campaign / came back after 30 h) → the order follows it
     return (in_array((string)($c['source'] ?? ''), ['campaign', 'community'], true) || (function_exists('wa_got_campaign') && wa_got_campaign($pdo, (string)($c['phone'] ?? ''), date('Y-m-d H:i:s', $t ?: time()), 7))) ? 'campaign' : 'query';
 }
 function order_auto_alloc(PDO $pdo, string $sk, array $o)
@@ -1304,7 +1305,19 @@ function day_timing_get(PDO $pdo): array
 /** Start-of-day time for a calendar date, 'HH:MM'. */
 function day_start_for(PDO $pdo, string $date): string
 {
+    $ov = day_timing_overrides($pdo);
+    if (isset($ov[$date])) return $ov[$date];
     return day_timing_get($pdo)[(int)date('w', strtotime($date))];
+}
+/** Date-specific start times that beat the weekday ones: ['2026-11-08' => '12:00', ...]. Owner (8 Nov): 8–15 Nov the business day runs 12 PM → next day 12 PM
+ *  (the 16th is listed too, so the 15th ends at 12 PM on the 16th). Setting 'day_timing_overrides' (JSON) replaces this list when it is saved. */
+function day_timing_overrides(PDO $pdo): array
+{
+    static $ov = null; if ($ov !== null) return $ov;
+    $ov = [];
+    for ($d = strtotime('2026-11-08'); $d <= strtotime('2026-11-16'); $d += 86400) $ov[date('Y-m-d', $d)] = '12:00';
+    try { $raw = (string)setting_get($pdo, 'day_timing_overrides', ''); if ($raw !== '') { $j = json_decode($raw, true); if (is_array($j)) { $ov = []; foreach ($j as $k => $v) if (preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$k) && preg_match('/^\d{2}:\d{2}$/', (string)$v)) $ov[(string)$k] = (string)$v; } } } catch (Throwable $e) { }
+    return $ov;
 }
 /** Business day a moment (local time, 'Y-m-d H:i:s' or a timestamp) belongs to. */
 function biz_day_of(PDO $pdo, $when): string
@@ -11104,11 +11117,12 @@ function ct_eval(PDO $pdo, string $day): array
     // problems that are gone close themselves (meet-admin, digest, Message Doctor and idea alerts wait for a human / their own rules)
     $q = $pdo->prepare("SELECT id, akey FROM ct_alerts WHERE day = ? AND status = 'open' AND meet_admin = 0 AND kind NOT IN ('digest', 'md_ignored', 'idea_rigid')"); $q->execute([$day]);
     foreach ($q->fetchAll() as $r) if (empty($want[$r['akey']])) $pdo->prepare("UPDATE ct_alerts SET status = 'auto', resolved_at = NOW(), resolved_by = 'auto' WHERE id = ?")->execute([$r['id']]);
-    // a "meet admin" alert stays until a human presses Resolved — but when the problem has gone it says so (✅ Improving) and drops to info, and after 2 days it closes itself
-    $q = $pdo->prepare("SELECT id, akey, title, created_at FROM ct_alerts WHERE day = ? AND status = 'open' AND meet_admin = 1"); $q->execute([$day]);
+    // a "meet admin" alert used to wait for a human even after the problem was gone ("✅ Improving now"). Owner (8 Nov): fix them by themselves — the moment the problem is gone
+    // (target set, punched in, ticket back up...) the alert closes; while the problem is still there it stays for the Admin. Still closes after 2 days at the latest.
+    $q = $pdo->prepare("SELECT id, akey FROM ct_alerts WHERE day = ? AND status = 'open' AND meet_admin = 1 AND kind NOT IN ('digest', 'md_ignored', 'idea_rigid')"); $q->execute([$day]);
     foreach ($q->fetchAll() as $r) {
-        if (!empty($want[$r['akey']]) || strpos((string)$r['title'], '✅') === 0) continue;
-        $pdo->prepare("UPDATE ct_alerts SET severity = 'info', title = ?, updated_at = NOW() WHERE id = ?")->execute(['✅ Improving now — ' . mb_substr((string)$r['title'], 0, 190), $r['id']]);
+        if (!empty($want[$r['akey']])) continue;
+        $pdo->prepare("UPDATE ct_alerts SET status = 'auto', resolved_at = NOW(), resolved_by = 'auto (problem gone)' WHERE id = ?")->execute([$r['id']]);
     }
     $pdo->prepare("UPDATE ct_alerts SET status = 'auto', resolved_at = NOW(), resolved_by = 'auto (2 days)' WHERE status = 'open' AND meet_admin = 1 AND created_at < ?")->execute([date('Y-m-d H:i:s', time() - 2 * 86400)]);
     return ['red_new' => $newRed];
@@ -16389,10 +16403,16 @@ function tmph_month_spend(): float
         return (float)$q->fetchColumn();
     } catch (Throwable $e) { return 0.0; }
 }
-/** true = the monthly budget (TMPH_MONTH_BUDGET_USD, default 180) is spent: no more AI calls this month. */
+/** true = the monthly budget (TMPH_MONTH_BUDGET_USD, default 300) is spent: no more AI calls this month. */
+/** The monthly AI budget in USD. The owner decided it is never below 300 (an older, lower number left in config.php is ignored); 0 in config.php = no limit. */
+function tmph_budget_usd(): float
+{
+    $b = (float)tmph_cfg('TMPH_MONTH_BUDGET_USD', 300);
+    return $b > 0 ? max($b, 300.0) : 0.0;
+}
 function tmph_over_budget(): bool
 {
-    $b = (float)tmph_cfg('TMPH_MONTH_BUDGET_USD', 180);
+    $b = tmph_budget_usd();
     return $b > 0 && tmph_month_spend() >= $b;
 }
 /** Gemini schema (OBJECT / STRING …) -> JSON schema (object / string …). */
@@ -29140,7 +29160,7 @@ switch ($action) {
 
     case 'day_timing.get': {
         require_auth();
-        json_response(['start' => day_timing_get($pdo)]);
+        json_response(['start' => day_timing_get($pdo), 'overrides' => (object)day_timing_overrides($pdo)]);
         break;
     }
 
@@ -33424,7 +33444,7 @@ switch ($action) {
         $rows = $q->fetchAll(); $tot = ['calls' => 0, 'in' => 0, 'out' => 0, 'usd' => 0.0]; $byP = [];
         foreach ($rows as $r) { $tot['calls'] += (int)$r['calls']; $tot['in'] += (int)$r['in_tokens']; $tot['out'] += (int)$r['out_tokens']; $tot['usd'] += (float)$r['cost_usd'];
             $byP[$r['purpose']] = ($byP[$r['purpose']] ?? 0) + (float)$r['cost_usd']; }
-        $budget = (float)tmph_cfg('TMPH_MONTH_BUDGET_USD', 180);
+        $budget = tmph_budget_usd();
         json_response(['month' => $month, 'provider' => tmph_provider(), 'rows' => $rows, 'total' => $tot, 'by_purpose' => $byP, 'budget_usd' => $budget, 'left_usd' => max(0, $budget - $tot['usd'])]);
     }
 

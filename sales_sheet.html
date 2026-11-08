@@ -125,12 +125,13 @@
   const dayInfo = (ymd) => { const d = new Date(ymd + 'T12:00:00'); return { n: d.getDate(), m: MON[d.getMonth()], w: WD[d.getDay()], wd: d.getDay() }; };
 
   // Business day: starts at the time set under Targets > Day timing (default 10:00); an order after midnight belongs to the day before.
-  let DAY_START = ['10:00', '10:00', '10:00', '10:00', '10:00', '10:00', '10:00'];
-  const timingReady = api.get('day_timing.get').then((d) => { if (Array.isArray(d.start) && d.start.length === 7) DAY_START = d.start; }).catch(() => {});
+  let DAY_START = ['10:00', '10:00', '10:00', '10:00', '10:00', '10:00', '10:00'], DAY_OV = {};
+  const dsOn = (d) => DAY_OV[d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')] || DAY_START[d.getDay()];   // a date-specific start (e.g. 12 PM for 8–15 Nov) beats the weekday one
+  const timingReady = api.get('day_timing.get').then((d) => { if (Array.isArray(d.start) && d.start.length === 7) DAY_START = d.start; if (d.overrides) DAY_OV = d.overrides; }).catch(() => {});
   function bizDayOf(dt) {
     const d = new Date(dt);
     const hm = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
-    if (hm < DAY_START[d.getDay()]) d.setDate(d.getDate() - 1);
+    if (hm < dsOn(d)) d.setDate(d.getDate() - 1);
     return ymdOf(d);
   }
 

@@ -214,16 +214,16 @@ function wa_camp_unmark(PDO $pdo): array
  *  Only the robot's own allocations of the last $days days — an allocation made by a person is never changed. Returns how many were changed. */
 function wa_camp_requery(PDO $pdo, int $days = 7): int
 {
-    $ids = []; try { $ids = array_map('intval', $pdo->query("SELECT id FROM wa_numbers WHERE camp_tag = 1")->fetchAll(PDO::FETCH_COLUMN)); } catch (Throwable $e) { return 0; }
-    try { $st = $pdo->prepare("SELECT a.alloc_id, a.source, a.order_id, o.phone, o.order_name FROM order_allocations a JOIN shop_orders o ON o.store_key = a.source AND CAST(o.shopify_id AS CHAR) = a.order_id
+    $ids = []; try { $ids = array_map('intval', $pdo->query("SELECT id FROM wa_numbers WHERE camp_tag = 1")->fetchAll(PDO::FETCH_COLUMN)); } catch (Throwable $e) { }
+    try { $st = $pdo->prepare("SELECT a.alloc_id, a.source, a.order_id, o.phone, o.order_name, o.created_at FROM order_allocations a JOIN shop_orders o ON o.store_key = a.source AND CAST(o.shopify_id AS CHAR) = a.order_id
             WHERE a.allocated_by = 'auto (WhatsApp)' AND a.order_type = 'query' AND o.created_at >= ? LIMIT 500"); $st->execute([date('Y-m-d H:i:s', time() - $days * 86400)]); $rows = $st->fetchAll(PDO::FETCH_ASSOC); } catch (Throwable $e) { return 0; }
     if (!$rows) return 0; $since = date('Y-m-d H:i:s', time() - 60 * 86400); $n = 0;
     $src = $pdo->prepare("SELECT source FROM wa_contacts WHERE phone = ?");
     $cn = $ids ? $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND dir = 'in' AND number_id IN (" . implode(',', $ids) . ") AND ts >= ? LIMIT 1") : null;
     $up = $pdo->prepare("UPDATE order_allocations SET order_type = 'campaign' WHERE alloc_id = ? AND order_type = 'query' AND allocated_by = 'auto (WhatsApp)'");
     foreach ($rows as $r) { $d = preg_replace('/\D+/', '', (string)$r['phone']); $k = strlen($d) > 10 ? substr($d, -10) : $d; if (strlen($k) !== 10) continue;
-        $src->execute([$k]); $camp = in_array((string)$src->fetchColumn(), ['campaign', 'community'], true);
-    
+        $src->execute([$k]); $sv = (string)$src->fetchColumn(); $camp = in_array($sv, ['campaign', 'community'], true);
+        if (!$camp && function_exists('order_chat_type')) { try { $camp = order_chat_type($pdo, ['phone' => $k, 'source' => $sv], (int)strtotime((string)$r['created_at'])) === 'campaign'; } catch (Throwable $e) { } }   // repeat customer / campaign sent / latest query typed Campaign
         if (!$camp) continue; $up->execute([(int)$r['alloc_id']]);
         if ($up->rowCount() > 0) { $n++; if (function_exists('wa_event')) { try { wa_event($pdo, $k, '📢 Order ' . $r['order_name'] . ' counted as Campaign (the customer came on the campaign number)'); } catch (Throwable $e) { } } } }
     return $n;
