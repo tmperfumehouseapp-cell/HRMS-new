@@ -125,8 +125,23 @@ function wa_mfile_sig(PDO $pdo, string $id, int $e): string
     return substr(hash_hmac('sha256', 'wamf|' . $id . '|' . $e, $k), 0, 40);
 }
 /** Sends a cached file in pieces, with HTTP byte ranges (iPhone / Android play and seek videos only with ranges). */
+/** The real type of a cached file. Meta says "audio/ogg; codecs=opus" for voice notes: that was refused as "not a plain type" and saved as application/octet-stream, which (with nosniff) browsers will not PLAY. Strip the parameters, and when the type is unknown read the file's first bytes. */
+function wa_mime_fix(string $path, string $mime): string
+{
+    $m = strtolower(trim(explode(';', $mime)[0]));
+    if ($m !== '' && $m !== 'application/octet-stream' && preg_match('#^[a-z]+/[a-z0-9.+-]+$#', $m)) return $m === 'audio/ogg' ? 'audio/ogg; codecs=opus' : $m;
+    $h = ''; try { $fh = @fopen($path, 'rb'); if ($fh) { $h = (string)fread($fh, 16); fclose($fh); } } catch (Throwable $e) { }
+    if (strncmp($h, 'OggS', 4) === 0) return 'audio/ogg; codecs=opus';
+    if (strncmp($h, 'ID3', 3) === 0 || (strlen($h) > 1 && ord($h[0]) === 0xFF && (ord($h[1]) & 0xE0) === 0xE0)) return 'audio/mpeg';
+    if (strlen($h) >= 12 && substr($h, 4, 4) === 'ftyp') return 'video/mp4';
+    if (strncmp($h, 'RIFF', 4) === 0 && substr($h, 8, 4) === 'WAVE') return 'audio/wav';
+    if (strncmp($h, "\x89PNG", 4) === 0) return 'image/png'; if (strncmp($h, "\xFF\xD8", 2) === 0) return 'image/jpeg'; if (strncmp($h, 'RIFF', 4) === 0 && substr($h, 8, 4) === 'WEBP') return 'image/webp'; if (strncmp($h, '%PDF', 4) === 0) return 'application/pdf';
+    if (strncmp($h, "\x1A\x45\xDF\xA3", 4) === 0) return 'audio/webm'; if (strncmp($h, '#!AMR', 5) === 0) return 'audio/amr';
+    return $mime !== '' ? $mime : 'application/octet-stream';
+}
 function wa_mcache_send(string $path, string $mime): void
 {
+    $mime = wa_mime_fix($path, $mime);
     $size = (int)filesize($path); $start = 0; $end = $size - 1;
     while (ob_get_level() > 0) @ob_end_clean();
     header('Content-Type: ' . $mime); header('Accept-Ranges: bytes'); header('Cache-Control: private, max-age=86400'); header('X-Content-Type-Options: nosniff');
