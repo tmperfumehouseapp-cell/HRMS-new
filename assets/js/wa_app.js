@@ -510,9 +510,10 @@
       h += grab + rem + men + pushPrompt();
       if (!list.length) h += `<div class="wx-empty"><b>🎉</b>${all.length ? 'Nothing in this filter.' : 'No chats right now.<br>A new query will pop up here with an alert.'}</div>`;
       else {
-        const late = FL.sort ? [] : list.filter((c) => c.overdue), rest = FL.sort ? list : list.filter((c) => !c.overdue);   // a chosen order is kept as it is
+        const nw = FL.sort ? [] : list.filter((c) => c.fresh), late = FL.sort ? [] : list.filter((c) => c.overdue && !c.fresh), rest = FL.sort ? list : list.filter((c) => !c.overdue && !c.fresh);   // a chosen order is kept as it is
+        if (nw.length) h += `<div class="wx-h" style="color:#15803d">🟢 New for you — reply to clear</div><div class="wx-card wx-lst">${nw.map(row).join('')}</div>`;   // 🟢 given to me, no person has answered yet: the very top, in the PC view and on the phone
         if (late.length) h += `<div class="wx-h r">⏱ Waiting too long</div><div class="wx-card wx-lst">${late.map(row).join('')}</div>`;
-        if (rest.length) h += `${late.length ? '<div class="wx-h">Others</div>' : ''}<div class="wx-card wx-lst">${rest.map(row).join('')}</div>`;
+        if (rest.length) h += `${late.length || nw.length ? '<div class="wx-h">Others</div>' : ''}<div class="wx-card wx-lst">${rest.map(row).join('')}</div>`;
       }
       M.innerHTML = h; M.onclick = async (e) => { const g = e.target.closest('[data-grab]'); if (g) { g.disabled = true; g.textContent = '…'; try { await api.post('wq.grab', { phone: g.dataset.grab }); S.grab = (S.grab || []).filter((x) => x.phone !== g.dataset.grab); await loadList(true); openChat(g.dataset.grab); } catch (er) { alert(er.message); loadList(true); } return; } const p = e.target.closest('[data-p]'); if (p) { const cx = (S.chats || []).find((y) => y.phone === p.dataset.p); openChat(p.dataset.p, cx && cx.not_mine ? { peek: 'tag', name: cx.name || '' } : undefined); } const a = e.target.closest('[data-push]'); if (a) pushAction(a.dataset.push); };
     }
