@@ -405,9 +405,25 @@ function wa_send_text(PDO $pdo, array $c, string $text, string $who, int $empId,
     }
     [$code, $d] = wa_api('POST', '/' . $pid . '/messages', ['messaging_product' => 'whatsapp', 'to' => (string)($c['wa_id'] ?: '91' . $c['phone']), 'type' => 'text', 'text' => ['body' => $text, 'preview_url' => false]] + ($replyTo !== '' ? ['context' => ['message_id' => $replyTo]] : []));
     $wamid = (string)($d['messages'][0]['id'] ?? '');
-    if ($code < 200 || $code >= 300 || $wamid === '') { $e = wa_err($d); wa_log($pdo, 'send', false, $c['phone'] . ' · ' . $e); return [false, $e]; }
+    $useNum = (int)$c['last_number_id'];
+    if ($code < 200 || $code >= 300 || $wamid === '') {
+        $e = wa_err($d); $ec = (int)($d['error']['code'] ?? 0); wa_log($pdo, 'send', false, $c['phone'] . ' · ' . $e);
+        if ($ec === 131042) {   // Meta: the WhatsApp account of this number has a payment problem — every message from it fails
+            $lab = ''; try { $q2 = $pdo->prepare("SELECT label, display FROM wa_numbers WHERE id = ?"); $q2->execute([$useNum]); $r2 = $q2->fetch(); $lab = $r2 ? trim((string)($r2['label'] ?: $r2['display'])) : ''; } catch (Throwable $e2) { }
+            try { setting_set($pdo, 'wa_payblock_' . $useNum, date('Y-m-d H:i:s')); } catch (Throwable $e2) { }   // the Numbers page shows a red 'Payment problem' tag on this number
+            $alt = null;   // another number the customer wrote to in the last 24 hours can still answer (WhatsApp allows free text only inside that window, per number)
+            try { $q3 = $pdo->prepare("SELECT n.id, n.phone_id FROM wa_messages m JOIN wa_numbers n ON n.id = m.number_id WHERE m.phone = ? AND m.dir = 'in' AND m.number_id <> ? AND m.ts >= ? ORDER BY m.ts DESC LIMIT 1"); $q3->execute([$c['phone'], $useNum, date('Y-m-d H:i:s', time() - 86400)]); $alt = $q3->fetch() ?: null; } catch (Throwable $e2) { }
+            if ($alt) {
+                [$code2, $d2] = wa_api('POST', '/' . $alt['phone_id'] . '/messages', ['messaging_product' => 'whatsapp', 'to' => (string)($c['wa_id'] ?: '91' . $c['phone']), 'type' => 'text', 'text' => ['body' => $text, 'preview_url' => false]] + ($replyTo !== '' ? ['context' => ['message_id' => $replyTo]] : []));
+                $wamid2 = (string)($d2['messages'][0]['id'] ?? '');
+                if ($code2 >= 200 && $code2 < 300 && $wamid2 !== '') { $wamid = $wamid2; $useNum = (int)$alt['id']; $replyTo = ''; $pdo->prepare("UPDATE wa_contacts SET last_number_id = ? WHERE phone = ?")->execute([$useNum, $c['phone']]); wa_log($pdo, 'send', true, $c['phone'] . ' · answered from another number because ' . ($lab !== '' ? $lab : 'the first number') . ' has a payment problem'); }
+            }
+            if ($wamid === '') return [false, 'Payment problem on ' . ($lab !== '' ? '“' . $lab . '”' : 'this number') . ' (Meta code 131042): its WhatsApp account has no working payment method. Fix it in Meta → WhatsApp Manager → that account → Settings → Payment settings. This customer has not written to another number in the last 24 hours, so it cannot be answered from another number yet.'];
+        } else return [false, $e];
+    }
     $now = date('Y-m-d H:i:s');
-    $pdo->prepare("INSERT INTO wa_messages (wamid, phone, number_id, dir, mtype, body, status, who, emp_id, ts) VALUES (?, ?, ?, 'out', 'text', ?, 'sent', ?, ?, ?)")->execute([$wamid, $c['phone'], (int)$c['last_number_id'], $text, $who, $empId, $now]);
+    try { if ((string)setting_get($pdo, 'wa_payblock_' . $useNum, '') !== '') setting_set($pdo, 'wa_payblock_' . $useNum, ''); } catch (Throwable $e2) { }   // a message went out: the payment problem is gone
+    $pdo->prepare("INSERT INTO wa_messages (wamid, phone, number_id, dir, mtype, body, status, who, emp_id, ts) VALUES (?, ?, ?, 'out', 'text', ?, 'sent', ?, ?, ?)")->execute([$wamid, $c['phone'], $useNum, $text, $who, $empId, $now]);
     if ($replyTo !== '') { try { $pdo->prepare("UPDATE wa_messages SET reply_to = ? WHERE wamid = ?")->execute([mb_substr($replyTo, 0, 120), $wamid]); } catch (Throwable $e) { } }
     $pdo->prepare("UPDATE wa_contacts SET last_out_at = ? WHERE phone = ?")->execute([$now, $c['phone']]);
     return [true, $wamid];
@@ -721,7 +737,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo)\./', $__wa)) {
             $out['log'] = $pdo->query("SELECT at, kind, ok, info FROM wa_log ORDER BY id DESC LIMIT 15")->fetchAll();
             wa_numbers_sync($pdo);
             $out['numbers'] = $pdo->query("SELECT id, phone_id, display, label, panel, waba_id, provider FROM wa_numbers ORDER BY id")->fetchAll();
-            foreach ($out['numbers'] as &$nn) { $nn['id'] = (int)$nn['id']; $nn['messages'] = (int)$pdo->query("SELECT COUNT(*) FROM wa_messages WHERE number_id = " . (int)$nn['id'])->fetchColumn(); } unset($nn);
+            foreach ($out['numbers'] as &$nn) { $nn['id'] = (int)$nn['id']; $nn['pay_blocked'] = (string)setting_get($pdo, 'wa_payblock_' . (int)$nn['id'], '') !== ''; $nn['messages'] = (int)$pdo->query("SELECT COUNT(*) FROM wa_messages WHERE number_id = " . (int)$nn['id'])->fetchColumn(); } unset($nn);
             if (!empty($_GET['test'])) {
                 foreach ($out['numbers'] as &$nn) $nn['check'] = wa_number_check($nn); unset($nn);
                 $f = $out['numbers'][0] ?? null;   // the first number also fills the older single-number fields
