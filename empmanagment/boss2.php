@@ -2712,11 +2712,12 @@ function cm_pct(array $ch, $ml, $gross) {
         if ($gross >= $pairs[$k + 1][0]) return $gross >= ($pairs[$k][0] + $pairs[$k + 1][0]) / 2 ? $pairs[$k][1] : $pairs[$k + 1][1];
     return (float)($ch['floor'] ?? 0);
 }
-/** the offer an order falls in: same ML, price within +-window of the offer price, on a day the offer runs. null = none. */
+/** the offer an order falls in: same ML, price within +-window of the offer price, on a day the offer runs (a stopped offer: up to the day it was stopped). null = none. */
 function cm_offer_match(array $offers, $ml, $gross, $day, $window = 20) {
     $ml = (int)round((float)$ml); if ($ml <= 0) return null;
     foreach ($offers as $o) {
-        if (empty($o['active']) || (int)$o['ml'] !== $ml) continue;
+        if ((int)$o['ml'] !== $ml) continue;
+        if (empty($o['active'])) { $sa = substr((string)($o['stopped_at'] ?? ''), 0, 10); if ($sa === '' || $day > $sa) continue; }      // a STOPPED offer still counts for the days it was running (up to the day it was stopped), so past days are not recounted without it
         if ($o['from_date'] && $day < $o['from_date']) continue; if ($o['to_date'] && $day > $o['to_date']) continue;
         if (abs((float)$gross - (float)$o['price']) <= $window + 1e-9) return $o;
     }
