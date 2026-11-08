@@ -19,10 +19,13 @@ if (is_file(__DIR__ . '/office_place.php')) { require_once __DIR__ . '/office_pl
 
 /** An office may be a STORE (kind = 'store'): the same cleaning, pantry and Boss Engine system, opened from Store > Cleaning & Pantry too. Added once, never touches data. */
 function of_kind_col(PDO $pdo) {
-    $flag = sys_get_temp_dir() . '/hrms_of_kind_v1_' . substr(md5(__DIR__), 0, 8);
+    $flag = sys_get_temp_dir() . '/hrms_of_kind_v2_' . substr(md5(__DIR__), 0, 8);
     if (is_file($flag)) return;
     try {
         if (!$pdo->query("SHOW COLUMNS FROM of_offices LIKE 'kind'")->fetch()) $pdo->exec("ALTER TABLE of_offices ADD COLUMN kind VARCHAR(8) NOT NULL DEFAULT 'office'");
+        // the store is the Surat store (the only one): rename the plain "Store" office and its Boss Engine section, once
+        $pdo->exec("UPDATE of_offices SET name = 'Surat store' WHERE kind = 'store' AND name = 'Store'");
+        $pdo->exec("UPDATE bd_sections s JOIN of_offices o ON o.section_id = s.id SET s.name = 'Surat store' WHERE o.kind = 'store' AND o.name = 'Surat store' AND s.name = 'Store'");
         @file_put_contents($flag, '1');
     } catch (Throwable $e) { error_log('of_kind_col: ' . $e->getMessage()); }
 }
