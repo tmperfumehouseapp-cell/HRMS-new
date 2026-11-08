@@ -247,7 +247,15 @@ function fa_summary(PDO $pdo, string $text, bool $more = false, string $scope = 
     $hist = ''; foreach (array_slice($turns, -8) as $t) $hist .= ($t['who'] === 'you' ? 'OWNER: ' : 'YOU UNDERSTOOD: ') . $t['text'] . "\n";
     $ask = ($scope !== '' ? "THIS IS ABOUT: " . $scope . " (change only this path unless the owner clearly asks for more; you may move this day's time, change it, add or remove days of this path)\n" : '')
          . ($hist !== '' ? "EARLIER IN THIS CONVERSATION (the owner is correcting / adding to it — build on it):\n" . $hist : '') . "THE OWNER SAYS NOW:\n" . mb_substr($text, 0, 2000);
-    try { [$ok, $v] = convo_ai($sys, [['text' => "OFFER LADDER:\n$ol\nCURRENT PLAN:\n$plan\n" . $ask]], $sch, false, 4000, 'claude'); } catch (Throwable $e) { return [false, 'Claude could not answer — try again.']; }
+    // 🧠 everything the owner has already taught (store facts, selling rules, price chart, limits, the perfume lists): Claude reads it before it changes a day or writes a message
+    $know = '';
+    try {
+        if (function_exists('teach_facts_prompt')) { [$kf] = teach_facts_prompt($pdo, []); $know .= (string)$kf . "\n"; }
+        if (function_exists('teach_limits_text')) $know .= (string)teach_limits_text($pdo) . "\n";
+        $KL = $pdo->query("SELECT name FROM wa_lists ORDER BY grp, name LIMIT 30")->fetchAll(PDO::FETCH_COLUMN); if ($KL) $know .= "READY PERFUME LISTS (a day may say: send the “…” list): " . implode(' · ', $KL) . "\n";
+    } catch (Throwable $e) { /* the teach pieces are not on this install: Claude works with the plan only */ }
+    $sys .= " Follow the facts, prices and rules the owner has ALREADY TAUGHT (shown below); never invent a price, an offer or a store fact that is not there — ask instead.";
+    try { [$ok, $v] = convo_ai($sys, [['text' => ($know !== '' ? "WHAT THE OWNER HAS ALREADY TAUGHT (store facts, selling rules, price chart, limits):\n" . mb_substr($know, 0, 6000) . "\n" : '') . "OFFER LADDER:\n$ol\nCURRENT PLAN:\n$plan\n" . $ask]], $sch, false, 4000, 'claude'); } catch (Throwable $e) { return [false, 'Claude could not answer — try again.']; }
     if (!$ok || !is_array($v) || (empty($v['paths']) && trim((string)($v['understood'] ?? '')) === '' && empty($v['questions']))) return [false, 'Claude could not make a plan from that — ' . (is_string($v) ? $v : 'say it a little more clearly.')];
     // Claude may only have QUESTIONS (nothing clear enough to change yet) — a valid answer: the pop-up shows them and the owner replies
     if (trim((string)($v['understood'] ?? '')) === '') $v['understood'] = 'I need a little more detail before I can change anything.';
