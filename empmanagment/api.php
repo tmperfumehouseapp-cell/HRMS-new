@@ -429,7 +429,7 @@ function action_page_perms(string $action): array
         'employees.list' => ['dashboard', 'leave_requests', 'documents', 'agreements', 'approvals', 'targets', 'performance', 'commission', 'allocation'],
         'employees.rejoin' => ['commission'],   // Rejoin from the Ex-Employees tab in Total Budgeting (still Admin / HR only)
         'employees.delete' => ['commission'],   // make an ex-employee from Total Budgeting / the person card (still Admin / HR only)
-        'employees.set_salary' => ['commission'], 'penalties.apply' => ['commission'], 'penalties.waive' => ['commission'], 'penalties.rules' => ['commission'],   // Total Budgeting: set a salary, add / remove a penalty (still Admin / HR only)
+        'employees.set_salary' => ['commission'], 'penalties.apply' => ['commission'], 'penalties.waive' => ['commission'], 'penalties.waive_many' => ['commission'], 'penalties.rules' => ['commission'],   // Total Budgeting: set a salary, add / remove a penalty (still Admin / HR only)
         'departments.save' => ['commission'], 'departments.delete' => ['commission'],   // create / rename / delete a section from Total Employees (still Admin / HR only)
         'departments.list' => ['commission'],            // Total Budgeting → Total Employees lists every department
         'employees.set_department' => ['commission'],    // ...and moves a person between them by drag and drop (still Admin / HR only)
@@ -31155,6 +31155,38 @@ switch ($action) {
             ->execute([(string)($auth['username'] ?? 'Admin'), date('Y-m-d H:i:s'), mb_substr($why, 0, 255), $id]);
         penalty_notify($pdo, (int)$p['employee_id'], $id, 'waived', 'Penalty waived', 'Your penalty of ' . penalty_inr((float)$p['amount']) . ' for ' . $p['title'] . ' has been waived.' . ($why !== '' ? ' ' . $why : ''));
         json_response(['message' => 'Penalty waived and the employee was told.']);
+        break;
+    }
+
+    case 'penalties.waive_many': {
+        // Waive several penalties at once (the person card's "Select all / Waive selected"). Each one is waived like penalties.waive; every employee gets ONE message for all of theirs.
+        $auth = require_auth();
+        require_role(['Admin', 'HR'], $auth);
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
+        ensure_penalty_tables($pdo);
+        $in = json_input();
+        $ids = array_values(array_unique(array_filter(array_map('intval', (array)($in['penalty_ids'] ?? [])))));
+        if (!$ids) json_response(['error' => 'Pick at least one penalty.'], 422);
+        if (count($ids) > 200) json_response(['error' => 'At most 200 penalties at a time.'], 422);
+        $why = trim((string)($in['reason'] ?? ''));
+        $sel = $pdo->prepare("SELECT * FROM employee_penalties WHERE penalty_id = ?");
+        $upd = $pdo->prepare("UPDATE employee_penalties SET status = 'waived', resolved_by = ?, resolved_at = ?, resolve_note = ? WHERE penalty_id = ? AND status = 'applied'");
+        $by = (string)($auth['username'] ?? 'Admin'); $now = date('Y-m-d H:i:s');
+        $done = 0; $skipped = 0; $sum = 0.0; $per = [];
+        foreach ($ids as $id) {
+            $sel->execute([$id]); $p = $sel->fetch();
+            if (!$p || $p['status'] !== 'applied') { $skipped++; continue; }
+            $upd->execute([$by, $now, mb_substr($why, 0, 255), $id]);
+            if ($upd->rowCount() !== 1) { $skipped++; continue; }
+            $done++; $sum += (float)$p['amount'];
+            $e = (int)$p['employee_id']; if (!isset($per[$e])) $per[$e] = ['n' => 0, 'sum' => 0.0, 'first' => $id, 'title' => (string)$p['title']];
+            $per[$e]['n']++; $per[$e]['sum'] += (float)$p['amount'];
+        }
+        foreach ($per as $e => $x) {
+            penalty_notify($pdo, (int)$e, (int)$x['first'], 'waived', $x['n'] > 1 ? 'Penalties waived' : 'Penalty waived',
+                ($x['n'] > 1 ? $x['n'] . ' penalties totalling ' . penalty_inr($x['sum']) . ' have been waived.' : 'Your penalty of ' . penalty_inr($x['sum']) . ' for ' . $x['title'] . ' has been waived.') . ($why !== '' ? ' ' . $why : ''));
+        }
+        json_response(['ok' => true, 'waived' => $done, 'skipped' => $skipped, 'amount' => round($sum, 2), 'message' => $done ? $done . ' penalt' . ($done === 1 ? 'y' : 'ies') . ' waived (' . penalty_inr($sum) . ') and the employee was told.' . ($skipped ? ' ' . $skipped . ' skipped (already waived or removed).' : '') : 'Nothing was waived: ' . ($skipped === 1 ? 'that penalty is' : 'those penalties are') . ' already waived or removed.']);
         break;
     }
 

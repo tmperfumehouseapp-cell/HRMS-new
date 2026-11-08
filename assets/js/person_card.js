@@ -25,6 +25,7 @@ window.PersonCard = (function () {
       + '.pc-tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:6px}.pc-tile{background:#f6f7f9;border-radius:12px;padding:8px 6px;text-align:center}.pc-tile b{display:block;font-size:17px}.pc-tile small{color:#6b7280;font-size:11px}'
       + '.pc-btn{font:inherit;font-size:12.5px;font-weight:700;border:1px solid #d9dde3;background:#fff;border-radius:10px;padding:6px 12px;cursor:pointer}.pc-btn.go{background:#14161a;color:#fff;border-color:#14161a}.pc-btn.red{color:#b3261e}.pc-btn:disabled{opacity:.5;cursor:default}'
       + '.pc-pen{border:1px solid #eceef1;border-radius:12px;padding:8px 10px;margin-bottom:6px}.pc-pen .t{display:flex;justify-content:space-between;gap:8px;font-weight:700}.pc-pen .n{color:#6b7280;font-size:12px;margin-top:2px}.pc-pen .a{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}'
+      + '.pc-bulk{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;background:#f7f9fb;border:1px solid #eceef1;border-radius:12px;padding:7px 10px;margin-bottom:6px;font-size:12.5px;font-weight:700}.pc-bulk label{display:inline-flex;gap:6px;align-items:center;cursor:pointer}.pc-bulk input,.pc-pen .t input.pcs{width:auto;margin:0 6px 0 0;cursor:pointer}.pc-btn[disabled]{opacity:.45;cursor:not-allowed}'
       + '.pc-f{display:grid;gap:6px;margin-top:6px}.pc-f input,.pc-f select{font:inherit;border:1px solid #d9dde3;border-radius:10px;padding:7px 10px;width:100%;background:#fff}.pc-f .two{display:grid;grid-template-columns:1fr 1fr;gap:8px}.pc-f label{font-size:11.5px;color:#6b7280;font-weight:700}'
       + '.pc-modes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:10px 0}.pc-mode{border:1.5px solid #e1e4ea;border-radius:14px;padding:10px;cursor:pointer}.pc-mode.on{border-color:#16945a;background:#f1faf5}.pc-mode b{display:block;font-size:13px}.pc-mode span{font-size:11.5px;color:#6b7280}'
       + '.pc-err{background:#fde8e6;color:#b3261e;border-radius:12px;padding:10px 12px}.pc-load{color:#6b7280;padding:14px 0}.pc-msg{font-size:12.5px;color:#16784a;margin-top:6px}.pc-note{background:#f6f7f9;border-radius:12px;padding:9px 11px;font-size:12.5px;color:#4a505c;line-height:1.5}'
@@ -147,9 +148,10 @@ window.PersonCard = (function () {
       if (x.leave && x.leave.length) h += '<h4>Leave</h4>' + x.leave.slice(0, 4).map((l) => row(esc(l.leave_type || 'Leave') + ' · ' + when(String(l.date_from).slice(0, 10)) + (l.date_to && l.date_to !== l.date_from ? ' to ' + when(String(l.date_to).slice(0, 10)) : ''), esc(l.status || ''))).join('');
     }
 
-    h += '<h4>Penalties</h4><div id="pcPens">' + (c.penalties.length ? c.penalties.map((q) => {
+    const pApplied = c.penalties.filter((q) => q.status === 'applied'), pTotal = pApplied.reduce((a, q) => a + Number(q.amount || 0), 0);
+    h += '<h4>Penalties</h4>' + (c.can_edit && pApplied.length ? '<div class="pc-bulk"><label><input type="checkbox" id="pcSelAll"> Select all (' + pApplied.length + ' · ' + inr(pTotal) + ')</label><button class="pc-btn red" data-a="pbulk" id="pcBulkGo" type="button" disabled>Waive selected</button></div><div class="pc-f" id="pcBulkSlot" hidden></div>' : '') + '<div id="pcPens">' + (c.penalties.length ? c.penalties.map((q) => {
       const chip = q.status === 'applied' ? (q.pending ? '<span class="pc-chip warn">cut ' + when(q.cut_on) + '</span>' : '<span class="pc-chip bad">applied</span>') : '<span class="pc-chip">' + esc(q.status) + '</span>';
-      return '<div class="pc-pen" data-id="' + q.id + '"><div class="t"><span>' + esc(q.title) + '</span><span>' + (q.orig_amount != null && q.orig_amount !== q.amount ? '<s style="color:#9aa1ad;font-weight:500">' + inr(q.orig_amount) + '</s> ' : '') + inr(q.amount) + '</span></div>'
+      return '<div class="pc-pen" data-id="' + q.id + '"><div class="t"><span>' + (c.can_edit && q.status === 'applied' ? '<input type="checkbox" class="pcs" data-pid="' + q.id + '" aria-label="Select this penalty">' : '') + esc(q.title) + '</span><span>' + (q.orig_amount != null && q.orig_amount !== q.amount ? '<s style="color:#9aa1ad;font-weight:500">' + inr(q.orig_amount) + '</s> ' : '') + inr(q.amount) + '</span></div>'
         + '<div class="n">' + when(q.date) + ' · ' + (q.source === 'auto' ? 'automatic' : 'by hand') + ' · from ' + esc(q.from) + ' ' + chip + (q.note ? '<br>' + esc(q.note) : '') + (q.resolve_note ? '<br>' + esc(q.resolve_note) : '') + '</div>'
         + (c.can_edit && q.status === 'applied' ? '<div class="a"><button class="pc-btn" data-a="pedit" type="button">Change amount</button><button class="pc-btn red" data-a="pwaive" type="button">Waive</button></div><div class="pc-f" data-slot hidden></div>' : '') + '</div>';
     }).join('') : '<div class="sub">No penalties in the last two months.</div>') + '</div>'
@@ -171,8 +173,34 @@ window.PersonCard = (function () {
     }).catch(() => { const b = el.querySelector('#pcSum'); if (b) b.innerHTML = '<b>Claude</b>The summary is not available right now.'; });
     const msg = (t, bad) => { const m = el.querySelector('#pcMsg'); if (m) m.innerHTML = '<div class="' + (bad ? 'pc-err' : 'pc-msg') + '">' + esc(t) + '</div>'; };
     const t = c.timing;
+    // select penalties (one by one, or "Select all") and waive them together
+    const pSel = () => [...el.querySelectorAll('.pcs:checked')].map((x) => Number(x.dataset.pid));
+    const pSync = () => {
+      const all = [...el.querySelectorAll('.pcs')], on = all.filter((x) => x.checked), go = el.querySelector('#pcBulkGo'), sa = el.querySelector('#pcSelAll'); if (!go) return;
+      const sum = on.reduce((a, x) => { const q = c.penalties.find((z) => z.id === Number(x.dataset.pid)); return a + (q ? Number(q.amount || 0) : 0); }, 0);
+      go.disabled = !on.length; go.textContent = on.length ? 'Waive selected (' + on.length + ' · ' + inr(sum) + ')' : 'Waive selected';
+      if (sa) { sa.checked = on.length > 0 && on.length === all.length; sa.indeterminate = on.length > 0 && on.length < all.length; }
+      const slot = el.querySelector('#pcBulkSlot'); if (slot && !slot.hidden && !on.length) slot.hidden = true;
+    };
+    el.onchange = (ev) => {
+      if (ev.target.id === 'pcSelAll') { el.querySelectorAll('.pcs').forEach((x) => { x.checked = ev.target.checked; }); pSync(); }
+      else if (ev.target.classList && ev.target.classList.contains('pcs')) pSync();
+    };
     el.onclick = async (ev) => {
       const b = ev.target.closest('button[data-a]'); if (!b) return; const a = b.dataset.a, pen = b.closest('.pc-pen');
+      if (a === 'pbulk') {
+        const ids = pSel(); if (!ids.length) return; const slot = el.querySelector('#pcBulkSlot'); if (!slot.hidden && slot.dataset.n === String(ids.length)) { slot.hidden = true; return; }
+        const sum = ids.reduce((s2, i) => s2 + Number((c.penalties.find((z) => z.id === i) || {}).amount || 0), 0);
+        slot.dataset.n = String(ids.length); slot.hidden = false;
+        slot.innerHTML = '<label>Why are these ' + ids.length + ' penalties waived? (the person is told, one message for all)</label><input data-f="bwhy" placeholder="e.g. Approved by the boss"><div style="display:flex;justify-content:flex-end;gap:8px"><button class="pc-btn go" data-a="pbulk-ok" type="button">Waive ' + ids.length + ' penalt' + (ids.length === 1 ? 'y' : 'ies') + ' · ' + inr(sum) + '</button></div>';
+        return;
+      }
+      if (a === 'pbulk-ok') {
+        const ids = pSel(); if (!ids.length) return; const why = (el.querySelector('#pcBulkSlot [data-f="bwhy"]') || {}).value || '';
+        b.disabled = true; b.textContent = 'Waiving…';
+        try { const r = await api.post('penalties.waive_many', { penalty_ids: ids, reason: why.trim() }); again(); setTimeout(() => { const m = document.querySelector('#pcMsg'); if (m) m.innerHTML = '<div class="pc-msg">' + esc(r.message || 'Done.') + '</div>'; }, 700); } catch (x) { b.disabled = false; b.textContent = 'Waive'; msg((x && x.message) || 'Could not waive them.', true); }
+        return;
+      }
       if (a === 'paysetup') { if (opts.paySetup) opts.paySetup(id, again); return; }
       if (a === 'exit') {
         const nm = (el.querySelector('h2') || {}).textContent || 'this person';
