@@ -801,6 +801,22 @@ function wo_cfg(PDO $pdo): array
     foreach (wo_send_defs() as $k => $d) $o[$k] = in_array($k, ['review', 'review_nudge', 'bday_ask', 'birthday'], true) ? !empty($st[$k]) : (!isset($st[$k]) || !empty($st[$k]));   // the rating request stays OFF until Admin switches it on
     return ['on' => wo_get($pdo, 'wa_ord_auto_on', '1') !== '0', 'statuses' => $o];
 }
+/** The messages whose timing the owner can change in Automation (the others go when the courier's status changes). */
+function wo_timing_defs(): array
+{
+    return ['review' => ['unit' => 'days after the parcel is delivered', 'min' => 1, 'max' => 30, 'def' => 5, 'label' => 'Send the rating request'],
+            'review_nudge' => ['unit' => 'days after the 5-star rating', 'min' => 1, 'max' => 9, 'def' => 2, 'label' => 'Send the reminder'],
+            'bday_ask' => ['unit' => 'minutes after the order', 'min' => 5, 'max' => 1440, 'def' => 60, 'label' => 'Ask for the birthday'],
+            'birthday' => ['unit' => 'days before the birthday (0 = on the day)', 'min' => 0, 'max' => 7, 'def' => 1, 'label' => 'Send the gift message']];
+}
+function wo_timing(PDO $pdo, string $k): int
+{
+    $d = wo_timing_defs(); if (!isset($d[$k])) return 0;
+    if ($k === 'birthday' && function_exists('st_bday_cfg')) { try { return (int)st_bday_cfg($pdo)['send_before']; } catch (Throwable $e) { } }
+    $j = json_decode(wo_get($pdo, 'wa_ord_timing', ''), true); $v = is_array($j) && isset($j[$k]) ? (int)$j[$k] : $d[$k]['def'];
+    return max($d[$k]['min'], min($d[$k]['max'], $v));
+}
+function wo_titles(PDO $pdo): array { $j = json_decode(wo_get($pdo, 'wa_ord_titles', ''), true); return is_array($j) ? $j : []; }
 function wo_first_name(string $name): string
 {
     if (function_exists('wa_first_name')) return wa_first_name($name);
@@ -939,7 +955,7 @@ function wo_photo_info(PDO $pdo, string $status): ?array
 function wo_settings(PDO $pdo): array
 {
     $cfg = wo_cfg($pdo); $stat = wo_stats($pdo); $tpl = wo_tpl_state($pdo); $defs = wo_send_defs(); $st = [];
-    $vers = wo_ver_sync($pdo); $bodies = wo_tpl_defs(); foreach ($defs as $k => $d) $st[] = ['key' => $k, 'body' => wo_live_body($pdo, $k), 'edit' => wo_ver_info($pdo, $k, $vers), 'when' => ['received' => 'when the order is completed (Shopify order or ✅ Order completed in the chat)', 'shipped' => 'when Shiprocket shows it picked up / in transit', 'out_for_delivery' => 'when the courier marks it out for delivery', 'delivered' => 'when the courier marks it delivered', 'failed' => 'when a delivery attempt fails', 'delayed' => 'when the courier\'s date has passed', 'bday_ask' => 'once per customer, within about an hour after an order, only if no birthday is saved yet (the reply "14/12" is saved by itself and the gift goes on the birthday)', 'birthday' => 'the day BEFORE the customer\'s birthday, for online customers only (birthdays told when an order was made); the gift code is made at that moment and works online on an order above ₹1,500, or at the store. Store customers get their own message from the cashier (Store → Birthdays)', 'review_nudge' => 'once, 2 days after a 5-star rating if the review screenshot has not come (only while the offer is open)', 'review' => 'about 5 days after the courier marks it delivered (only orders delivered after you switch this on; never to a customer with an open complaint)'][$k] ?? '', 'label' => $d[1], 'template' => $d[0], 'on' => $cfg['statuses'][$k], 'photo' => wo_photo_info($pdo, $k), 'template_status' => $tpl[$d[0]]['status'] ?? 'missing', 'template_reason' => $tpl[$d[0]]['reason'] ?? '', 'sent_today' => $stat['by'][$k]['today'], 'sent_month' => $stat['by'][$k]['month'], 'queued' => $stat['by'][$k]['queued']];
+    $vers = wo_ver_sync($pdo); $bodies = wo_tpl_defs(); foreach ($defs as $k => $d) $st[] = ['key' => $k, 'vars' => array_values($bodies[$d[0]]['lab'] ?? []), 'body' => wo_live_body($pdo, $k), 'edit' => wo_ver_info($pdo, $k, $vers), 'when' => ['received' => 'when the order is completed (Shopify order or ✅ Order completed in the chat)', 'shipped' => 'when Shiprocket shows it picked up / in transit', 'out_for_delivery' => 'when the courier marks it out for delivery', 'delivered' => 'when the courier marks it delivered', 'failed' => 'when a delivery attempt fails', 'delayed' => 'when the courier\'s date has passed', 'bday_ask' => 'once per customer, within about an hour after an order, only if no birthday is saved yet (the reply "14/12" is saved by itself and the gift goes on the birthday)', 'birthday' => 'the day BEFORE the customer\'s birthday, for online customers only (birthdays told when an order was made); the gift code is made at that moment and works online on an order above ₹1,500, or at the store. Store customers get their own message from the cashier (Store → Birthdays)', 'review_nudge' => 'once, 2 days after a 5-star rating if the review screenshot has not come (only while the offer is open)', 'review' => 'about 5 days after the courier marks it delivered (only orders delivered after you switch this on; never to a customer with an open complaint)'][$k] ?? '', 'label' => (string)(wo_titles($pdo)[$k] ?? $d[1]), 'default_label' => $d[1], 'timing' => isset(wo_timing_defs()[$k]) ? ['value' => wo_timing($pdo, $k)] + wo_timing_defs()[$k] : null, 'template' => $d[0], 'on' => $cfg['statuses'][$k], 'photo' => wo_photo_info($pdo, $k), 'template_status' => $tpl[$d[0]]['status'] ?? 'missing', 'template_reason' => $tpl[$d[0]]['reason'] ?? '', 'sent_today' => $stat['by'][$k]['today'], 'sent_month' => $stat['by'][$k]['month'], 'queued' => $stat['by'][$k]['queued']];
     return ['on' => $cfg['on'], 'statuses' => $st, 'sent_today' => $stat['today'], 'sent_month' => $stat['month'], 'rate' => $stat['rate'], 'cost_month' => $stat['cost_month'], 'cost_text' => $stat['cost_text'],
         'review' => function_exists('wr_cfg') ? wr_cfg($pdo) : ['link' => '', 'good_from' => 5],
         'quiet' => '9 PM - 8 AM India time: messages wait and go out at 8 AM', 'seeded' => wo_get($pdo, 'wa_ord_seeded', '') !== '', 'since' => (int)wo_get($pdo, 'wa_ord_send_since', '0') ? date('Y-m-d H:i', (int)wo_get($pdo, 'wa_ord_send_since', '0')) : ''];
@@ -1152,6 +1168,11 @@ if (in_array($__woa, ['wa.bday_get', 'wa.bday_set', 'wa.ord_for', 'wa.ord_share'
             wa_guard_admin($pdo, $auth);
             if ($isPost) {
                 if (array_key_exists('on', $in)) wo_put($pdo, 'wa_ord_auto_on', !empty($in['on']) ? '1' : '0');
+                if (is_array($in['timing'] ?? null)) { $TD = wo_timing_defs(); $cur = json_decode(wo_get($pdo, 'wa_ord_timing', ''), true); $cur = is_array($cur) ? $cur : [];
+                    foreach ($in['timing'] as $k => $v) { if (!isset($TD[$k]) || !is_numeric($v)) continue; $v = (int)$v; if ($v < $TD[$k]['min'] || $v > $TD[$k]['max']) json_response(['error' => $TD[$k]['label'] . ': choose between ' . $TD[$k]['min'] . ' and ' . $TD[$k]['max'] . '.'], 422);
+                        if ($k === 'birthday') { if (function_exists('st_bday_cfg') && function_exists('st_bday_cfg_save')) { $c0 = st_bday_cfg($pdo); $c0['send_before'] = $v; st_bday_cfg_save($pdo, $c0); } } else $cur[$k] = $v; }
+                    wo_put($pdo, 'wa_ord_timing', json_encode($cur)); }
+                if (is_array($in['titles'] ?? null)) { $tt = wo_titles($pdo); foreach ($in['titles'] as $k => $v) { if (!isset(wo_send_defs()[$k])) continue; $v = trim(mb_substr((string)$v, 0, 80)); if ($v === '' || $v === wo_send_defs()[$k][1]) unset($tt[$k]); else $tt[$k] = $v; } wo_put($pdo, 'wa_ord_titles', json_encode($tt, JSON_UNESCAPED_UNICODE)); }
                 if (array_key_exists('review_link', $in) && function_exists('wr_clean_link')) { $rl = trim((string)$in['review_link']); if ($rl !== '' && wr_clean_link($rl) === '') json_response(['error' => 'The review link must start with https://'], 422); wo_put($pdo, 'wa_review_link', $rl); }
                 if (array_key_exists('review_good', $in)) { $g = (int)$in['review_good']; if ($g >= 2 && $g <= 5) wo_put($pdo, 'wa_review_good', (string)$g); }
                 if (is_array($in['statuses'] ?? null)) { $cur = wo_cfg($pdo)['statuses']; foreach ($in['statuses'] as $k => $v) if (isset($cur[$k])) $cur[$k] = !empty($v); wo_put($pdo, 'wa_ord_status_on', json_encode($cur)); }
