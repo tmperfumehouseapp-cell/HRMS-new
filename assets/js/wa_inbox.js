@@ -435,7 +435,7 @@
     }
     // ⏷ Filter: the order of the list + show only … (like Quick Engage), applied together
     const SORTS = [['', 'Waiting first (default)'], ['new', 'Newest first'], ['old', 'Oldest first'], ['az', 'Name A → Z'], ['za', 'Name Z → A']];
-    const FLTS = [['noreply', 'Not responded — no salesperson reply'], ['late', 'Waiting too long'], ['unassigned', 'Unassigned'], ['hot', '🔥 Hot — ready to buy'], ['complaint', 'Complaint']];
+    const FLTS = [['noreply', 'Not responded — no salesperson reply'], ['late', 'Waiting too long'], ['unassigned', 'Unassigned'], ['hot', '🔥 Hot — ready to buy'], ['complaint', 'Complaint'], ['today', '📅 Today’s chats'], ['yesterday', '🗓 Yesterday’s chats']];
     function flLabel() { const b = $('wiFb'); if (!b) return; const n = S.flt.length + (S.sort ? 1 : 0); b.textContent = '⏷ Filter' + (n ? ' · ' + n : ''); b.classList.toggle('on', n > 0); }
     function flDraw() {
       $('wiFp').innerHTML = '<b class="wi-flh">Sort by</b>' + SORTS.map(([k, l]) => `<label class="wi-flo"><input type="radio" name="wiFs" value="${k}"${S.sort === k ? ' checked' : ''}> ${l}</label>`).join('')
