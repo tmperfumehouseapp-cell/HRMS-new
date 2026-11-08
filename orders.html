@@ -1473,7 +1473,7 @@
     if (!shown.length || (!base.length && !Object.keys(platformQueries).length)) { card.style.display = 'none'; return; }
     const stats = {};
     [...PLATFORMS.map(p => p[0]), 'all'].forEach(k => stats[k] = { q: 0, c: 0, qo: 0, qc: 0, co: 0, cc: 0, to: 0, tc: 0, pre: 0, cod: 0, bn: 0, bt: 0, an: 0, at: 0, col: [0, 0, 0, 0], ml: 0, mlo: 0 });
-    PLATFORMS.forEach(([k]) => { const pq = platformQueries[k] || {}; stats[k].q = pq.query || 0; stats[k].c = pq.campaign || 0; });
+    PLATFORMS.forEach(([k]) => { const pq = platformQueries[k] || {}; stats[k].q = (pq.query || 0) + (k === 'tmph' ? ((platformQueries[''] || {}).query || 0) : 0); stats[k].c = pq.campaign || 0; });   // queries given without a house (Give queries) belong to TM Perfume House
     base.forEach(o => {
       const h = o.house || STORE_HOUSE_MAP[o.store_key]; if (!stats[h]) return;
       const t = orderTagType(o.tags), amt = Number(o.total) || 0;
@@ -2505,7 +2505,7 @@
           <div class="tkr"><span>Ticket size</span> <b>${ticket(s.total, s.count, s.currency)}</b></div>
           ${(() => { const pk = (PANELS.find(p => p[1] === label && p[0] !== 'none') || [])[0]; if (!pk) return ''; const x = pQC[pk] || { qo: 0, co: 0 };
             return `<div class="tkr"><span>Query order</span> <b class="n">${x.qo}</b></div>` +
-              (EMP_VIEW ? '' : `<div class="tkr"><span>Query ratio</span> ${qRatio(x.qo, (platformQueries[pk] || {}).query || 0)}</div>`) + `<div class="tkr"><span>Campaign order</span> <b class="n">${x.co}</b></div>`; })()}
+              (EMP_VIEW ? '' : `<div class="tkr"><span>Query ratio</span> ${qRatio(x.qo, ((platformQueries[pk] || {}).query || 0) + (pk === 'tmph' ? ((platformQueries[''] || {}).query || 0) : 0))}</div>`) + `<div class="tkr"><span>Campaign order</span> <b class="n">${x.co}</b></div>`; })()}
           ${codeHtml(cdList(base, label), label)}
           ${teamHtml((PANELS.find(p => p[1] === label && p[0] !== 'none') || [])[0])}
           ${empTargetHtml(label, s)}
