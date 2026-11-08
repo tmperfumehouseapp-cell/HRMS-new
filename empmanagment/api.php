@@ -11117,12 +11117,12 @@ function ct_eval(PDO $pdo, string $day): array
     // problems that are gone close themselves (meet-admin, digest, Message Doctor and idea alerts wait for a human / their own rules)
     $q = $pdo->prepare("SELECT id, akey FROM ct_alerts WHERE day = ? AND status = 'open' AND meet_admin = 0 AND kind NOT IN ('digest', 'md_ignored', 'idea_rigid')"); $q->execute([$day]);
     foreach ($q->fetchAll() as $r) if (empty($want[$r['akey']])) $pdo->prepare("UPDATE ct_alerts SET status = 'auto', resolved_at = NOW(), resolved_by = 'auto' WHERE id = ?")->execute([$r['id']]);
-    // a "meet admin" alert stays until a human presses Resolved — but when the problem has gone it says so (✅ Improving) and drops to info, and after 2 days it closes itself
-    $q = $pdo->prepare("SELECT id, akey, title, created_at FROM ct_alerts WHERE day = ? AND status = 'open' AND meet_admin = 1"); $q->execute([$day]);
+    // a "meet admin" alert used to wait for a human even after the problem was gone ("✅ Improving now"). Owner (8 Nov): fix them by themselves — the moment the problem is gone
+    // (target set, punched in, ticket back up...) the alert closes; while the problem is still there it stays for the Admin. Still closes after 2 days at the latest.
+    $q = $pdo->prepare("SELECT id, akey FROM ct_alerts WHERE day = ? AND status = 'open' AND meet_admin = 1 AND kind NOT IN ('digest', 'md_ignored', 'idea_rigid')"); $q->execute([$day]);
     foreach ($q->fetchAll() as $r) {
-        if (!empty($want[$r['akey']]) || strpos((string)$r['title'], '✅') === 0) continue;
-        if (strpos((string)$r['akey'], 'no_target|') === 0) { $pdo->prepare("UPDATE ct_alerts SET status = 'auto', resolved_at = NOW(), resolved_by = 'auto (target set)' WHERE id = ?")->execute([$r['id']]); continue; }   // the target is there now: nothing left to confirm — it must not keep saying "no target"
-        $pdo->prepare("UPDATE ct_alerts SET severity = 'info', title = ?, updated_at = NOW() WHERE id = ?")->execute(['✅ Improving now — ' . mb_substr((string)$r['title'], 0, 190), $r['id']]);
+        if (!empty($want[$r['akey']])) continue;
+        $pdo->prepare("UPDATE ct_alerts SET status = 'auto', resolved_at = NOW(), resolved_by = 'auto (problem gone)' WHERE id = ?")->execute([$r['id']]);
     }
     $pdo->prepare("UPDATE ct_alerts SET status = 'auto', resolved_at = NOW(), resolved_by = 'auto (2 days)' WHERE status = 'open' AND meet_admin = 1 AND created_at < ?")->execute([date('Y-m-d H:i:s', time() - 2 * 86400)]);
     return ['red_new' => $newRed];
