@@ -56,8 +56,8 @@
   if (!document.getElementById('cuCss')) { const st = document.createElement('style'); st.id = 'cuCss'; st.textContent = `
 /* wa_camp_ui */
 body.waui .wp-mb.cu-x, body.waui .cu-wide .wp-mb{max-width:980px;}
-body.waui .cu-wide .wp-mb{width:100%;} body.waui .cu-wide.cu-xl .wp-mb{max-width:1280px;}
-body.waui .cu-rp{display:grid;grid-template-columns:minmax(220px,30%) 1fr;gap:12px;height:74vh;min-height:520px} body.waui .cu-rp .l{overflow:auto;border:1px solid #e3e8ef;border-radius:12px} body.waui .cu-rp .r{overflow:hidden;border:1px solid #e3e8ef;border-radius:12px;background:#efeae2;padding:0;display:flex;flex-direction:column}
+body.waui .cu-wide .wp-mb{width:100%;} body.waui .cu-wide.cu-xl .wp-mb{max-width:98vw;width:98vw;max-height:96vh;max-height:96dvh;height:96vh;height:96dvh;} body.waui .cu-wide.cu-xl .wp-mb .wp-mc{flex:1;min-height:0;overflow:auto}
+body.waui .cu-rp{display:grid;grid-template-columns:minmax(220px,30%) 1fr;gap:12px;height:calc(96vh - 150px);min-height:520px} body.waui .cu-rp .l{overflow:auto;border:1px solid #e3e8ef;border-radius:12px} body.waui .cu-rp .r{overflow:hidden;border:1px solid #e3e8ef;border-radius:12px;background:#efeae2;padding:0;display:flex;flex-direction:column}
 body.waui .cu-rp .it{padding:9px 11px;border-bottom:1px solid #eef1f4;cursor:pointer} body.waui .cu-rp .it:hover{background:#f6f8fa} body.waui .cu-rp .it.on{background:#e3f5ec;box-shadow:inset 3px 0 #1a8f5a} body.waui .cu-rp .it small{display:block;color:#64748b;font-size:12px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 body.waui .cu-rp .bb{max-width:82%;padding:7px 10px;border-radius:10px;font-size:13.5px;line-height:1.45;white-space:pre-wrap;word-break:break-word;background:#fff;align-self:flex-start} body.waui .cu-rp .bb.o{background:#d9fdd3;align-self:flex-end} body.waui .cu-rp .bb.c{outline:2px solid #1a8f5a33} body.waui .cu-rp .bb em{display:block;font-style:normal;font-size:11px;color:#667781;margin-top:3px;text-align:right}
 @media (max-width:700px){body.waui .cu-rp{grid-template-columns:1fr;grid-template-rows:200px 1fr;height:80vh}}
@@ -336,12 +336,12 @@ body.waui .cu-pc{display:flex;align-items:center;gap:10px;padding:9px 0;border-t
       const L = $(m.body, '#rpL'), R = $(m.body, '#rpR');
       const drawL = () => { L.innerHTML = rows.length ? rows.map((r) => `<div class="it ${sel === r.phone ? 'on' : ''}" data-p="${esc(r.phone)}"><b>${esc(r.name || pretty(r.phone))}</b> <span class="cu-ph">${esc(pretty(r.phone))}</span><small>${esc((r.why || '').replace(/^Wrote back: /, ''))}</small></div>`).join('') + (more ? '<div class="wp-row" style="justify-content:center;padding:8px"><button type="button" class="wp-btn s" id="rpMore">Show more</button></div>' : '') : '<div class="wp-empty">Nobody replied yet.</div>';
         L.querySelectorAll('[data-p]').forEach((el) => { el.onclick = () => open(el.dataset.p); }); const mb = $(L, '#rpMore'); if (mb) mb.onclick = async () => { page++; if (await load(false)) drawL(); }; };
-      // the right side is the REAL WhatsApp chat (my_chats.html in embedded mode): reply, voice, photo, Take over, Assign — exactly like the chat window. It stays until the window is closed.
+      // the right side is the REAL PC chat screen (wa_one.html): reply, voice, photo, Take over, Assign — exactly like the chat window. It stays until the window is closed.
       let fr = null;
       function open(ph) {
         sel = ph; drawL(); const key = String(ph).replace(/\D/g, '').slice(-10);
         R.innerHTML = '<iframe title="WhatsApp chat" style="width:100%;height:100%;min-height:560px;border:0;display:block;background:#efeae2" allow="microphone; clipboard-write"></iframe>'; fr = R.querySelector('iframe');
-        fr.src = 'my_chats.html?embed=1&phone=' + encodeURIComponent(key);
+        fr.src = 'wa_one.html?phone=' + encodeURIComponent(key);   // the PC chat screen (same as the Chats screen: Take over, Assign, tags, replies)
       }
       drawL(); $(m.body, '#rpBack').onclick = () => { m.close(); details(c); };
     }
