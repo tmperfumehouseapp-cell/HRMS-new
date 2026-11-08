@@ -29,7 +29,8 @@ window.StoreBday = (function () {
   let bdInfo = null, bdPhoto = null, bdOpened = {}, flow = false, lastTodo = [], reminded = false;
   // WhatsApp Web opens in its OWN window on the right half of the screen (the same window is reused for every customer), so this page stays visible on the left
   const openWA = (url) => { const w = (screen.availWidth || 1200), h = (screen.availHeight || 800); const win = window.open(url, 'tmpwa', 'popup=yes,width=' + Math.round(w / 2) + ',height=' + h + ',left=' + Math.round(w / 2) + ',top=0'); if (!win) alert('Please allow pop-ups for this site, then tap again.'); return win; };
-  const openFor = (v) => { openWA(waWeb(v.phone, fillMsg((bdInfo && bdInfo.msg || {}).text, v))); bdOpened[v.id] = 1; const dn = document.querySelector('[data-bdone="' + v.id + '"]'); if (dn) { dn.disabled = false; dn.style.opacity = '1'; } };
+  const openFor = async (v) => { if (bdInfo && bdInfo.msg && bdInfo.msg.has_photo) { try { await navigator.clipboard.write([new ClipboardItem({ 'image/png': await bdPhotoBlob() })]); toast2('📷 Photo copied — in the chat press Ctrl+V, then Enter.'); } catch (err) { /* the button 📷 Copy photo still works */ } }   // the photo is copied at the same click
+    openWA(waWeb(v.phone, fillMsg((bdInfo && bdInfo.msg || {}).text, v))); bdOpened[v.id] = 1; const dn = document.querySelector('[data-bdone="' + v.id + '"]'); if (dn) { dn.disabled = false; dn.style.opacity = '1'; } };
   const toast2 = (m) => { const t = document.createElement('div'); t.textContent = m; t.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#111b21;color:#fff;padding:10px 16px;border-radius:12px;font-weight:700;z-index:99999'; document.body.appendChild(t); setTimeout(() => t.remove(), 2600); };
   async function loadBirthdays() {
     try {
