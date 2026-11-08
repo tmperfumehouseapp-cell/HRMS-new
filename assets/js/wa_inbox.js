@@ -43,6 +43,12 @@
 
   function parse(s) { const m = /^(\d{4})-(\d\d)-(\d\d)[ T](\d\d):(\d\d)(?::(\d\d))?/.exec(s || ''); return m ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0)) : null; }
   function hhmm(d) { return d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }); }
+  /** WhatsApp style stamp for the chat list: the clock time of the LAST message (ours or the customer's) today ("1:58 pm"), "Yesterday", else the date. */
+  function stamp(s) {
+    const d = parse(s); if (!d) return ''; const n = new Date(), d0 = new Date(n.getFullYear(), n.getMonth(), n.getDate()), days = Math.round((d0 - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 86400000);
+    if (days <= 0) return d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }).replace(/\s?(am|pm)$/i, (m) => ' ' + m.trim().toLowerCase()); if (days === 1) return 'Yesterday';
+    return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+  }
   function ago(s) {
     const d = parse(s); if (!d) return ''; const m = Math.floor((Date.now() - d.getTime()) / 60000);
     if (m < 1) return 'now'; if (m < 60) return m + ' min'; if (m < 1440) return Math.floor(m / 60) + ' h';
@@ -284,7 +290,7 @@
       const en = S.emp && $('wiE') ? (($('wiE').selectedOptions[0] || {}).text || '').replace(/ \(absent\)$/, '') : '', fn = en.split(' ')[0];
       const tgb = admin && S.emp ? `<div class="wi-tgb"><button type="button" data-tg="0" class="${S.empTag ? '' : 'on'}">Now with ${esc(fn)}${S.counts.emp_now != null ? ' (' + S.counts.emp_now + ')' : ''}</button><button type="button" data-tg="1" class="${S.empTag ? 'on' : ''}">🏷 ${esc(fn)}'s tag — all${S.counts.emp_tag != null ? ' (' + S.counts.emp_tag + ')' : ''}</button></div>` : '';
       L.innerHTML = tgb + bkBarHtml() + (admin ? '' : lg) + grab + rows.map((c) => { const un = c.unread && c.phone !== S.sel, bs = S.bulk.on && S.bulk.set.has(c.phone); return `<div class="wi-it ${c.phone === S.sel && !S.bulk.on ? 'sel' : ''} ${bs ? 'bsel' : ''} ${c.waiting ? 'wait' : ''} ${un ? 'unr' : ''} ${c.heat ? 'h-' + c.heat : ''}" data-p="${esc(c.phone)}">${S.bulk.on ? '<span class="wi-ck ' + (bs ? 'on' : '') + '"></span>' : ''}${av(c)}<div class="wi-bd">
-          <div class="n"><span>${esc(title(c))}</span><span class="t">${c.waiting ? '● ' : ''}${esc(ago(c.last_at))}</span></div>
+          <div class="n"><span>${esc(title(c))}</span><span class="t">${c.waiting ? '● ' : ''}${esc(stamp(c.last_msg_at || c.last_at))}</span></div>
           <div class="m2"><span class="m">${esc(c.preview || '')}</span>${un ? `<span class="wi-un">${c.unread > 9 ? '9+' : c.unread}</span>` : ''}</div><div class="pl">${pills(c)}</div></div></div>`; }).join('');
       L.querySelectorAll('.wi-it').forEach((el) => { el.onclick = () => (S.bulk.on ? bkToggle(el.dataset.p) : openChat(el.dataset.p)); }); bkWire(L);
       L.querySelectorAll('[data-tg]').forEach((b) => { b.onclick = () => { S.empTag = b.dataset.tg === '1'; loadList(); }; });
@@ -896,7 +902,7 @@
         if (!msg) { b.hidden = true; return; } b.hidden = false; b.className = 'wi-fu slim'; b.innerHTML = esc(msg); return;
       }
       b.hidden = false; b.className = 'wi-fu';
-      const key = c.phone; const small = window.matchMedia && window.matchMedia('(max-width:760px)').matches; const open = S.fuOpen[key] != null ? S.fuOpen[key] : !small;
+      const key = c.phone; const small = window.matchMedia && window.matchMedia('(max-width:760px)').matches; const open = S.fuOpen[key] != null ? S.fuOpen[key] : false;   // always one thin line until the person taps it (it covered the chat on every open); it keeps working in the background
       const auto = f.mode === 'auto24' || f.mode === 'autotpl';
       const who = f.mode === 'suggest' ? 'suggestion only — nothing is sent by itself' : (f.human ? 'a person is handling this chat, so the bot only suggests' : 'the bot is handling this');
       let h = `<div class="fh" id="wiFuH"><b>📨 Follow-up plan</b><span class="sm">${esc(f.title || '')} · nudge ${f.step_n} of ${f.step_total} · ${esc(f.due_in ? (f.due_min <= 0 ? 'due now' : 'in ' + f.due_in) : '')}</span><button type="button" class="tg" aria-label="Show or hide">${open ? '▾' : '▸'}</button></div>`;

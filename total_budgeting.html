@@ -115,6 +115,7 @@
 #tb .dock-h button{font:inherit; font-size:12px; font-weight:700; border:1px solid var(--line); background:#fff; border-radius:99px; padding:3px 12px; cursor:pointer;} #tb .dock-h button.on{background:var(--ink); color:#fff; border-color:var(--ink);}
 #tb .dz{display:inline-flex; align-items:center; gap:6px; border:1.5px dashed #b8bfc7; border-radius:99px; padding:4px 11px; margin:0 6px 6px 0; font-size:12px; font-weight:600; cursor:pointer; background:#f8f9fb;}
 #tb .dz i{font-style:normal; background:var(--ink); color:#fff; border-radius:99px; padding:0 7px; font-size:11px; font-weight:800;}
+#tb .dz.on{background:var(--ink); color:#fff; border:1.5px solid var(--ink);} #tb .dz.on i{background:#fff; color:var(--ink);}
 #tb .dz.over,#tb .dz:hover{border-color:#ea580c; background:#fff7ed;} #tb .dz.over{box-shadow:0 0 0 3px #fed7aa;}
 #tb .st{position:relative;} #tb .st.sel .ring{box-shadow:0 0 0 3px #2563eb;} #tb .st.sel::after{content:'✓'; position:absolute; top:-2px; right:6px; background:#2563eb; color:#fff; border-radius:50%; width:18px; height:18px; font-size:12px; line-height:18px; font-weight:800;}
 #tb .grp-h .acts{margin-left:auto; display:flex; gap:6px;} #tb .grp-h .acts button{font:inherit; font-size:11.5px; font-weight:700; border:1px solid var(--line); background:#fff; border-radius:99px; padding:2px 10px; cursor:pointer; color:var(--ink);} #tb .grp-h .acts button:hover{border-color:#ea580c; background:#fff7ed;}
@@ -248,7 +249,9 @@ body.emb .tabs{display:none;}
     const prev = (() => { const d = new Date(Y, Mo - 2, 1); return d.getFullYear() + '-' + pad(d.getMonth() + 1); })();
     const shownDay = clientToday.slice(0, 7) === month ? clientToday : (clientToday > last ? last : from);   // last day of the month to read (any past month works)
     const daysBack = Number(shownDay.slice(8));
-    $('tb').innerHTML = '<div class="card"><div class="empty">Loading the month…</div></div>';
+    // the first load shows "Loading…"; a RELOAD after a save keeps the page as it is (the "Loading" box made the page short, so the scroll jumped to the top) and puts the scroll back
+    const keepY = window.scrollY, mainEl = document.querySelector('.main'), keepM = mainEl ? mainEl.scrollTop : 0, firstLoad = !S.M;
+    if (firstLoad) $('tb').innerHTML = '<div class="card"><div class="empty">Loading the month…</div></div>';
     const R = await Promise.allSettled([
       api.get('lr.get', { date_from: from, date_to: last < clientToday ? last : clientToday }),
       api.get('bd.b2_cm_recount', { days: daysBack, end: shownDay }),
@@ -341,6 +344,7 @@ body.emb .tabs{display:none;}
     S.warn = warn; S.edit = JSON.parse(JSON.stringify({ target: bud.target, lump: bud.lump, expenses: bud.expenses, goals: Object.assign({ sales: 0, leader: 0, helper: 0, retail: 0, store: 0, other: 0 }, bud.goals || {}), retail: Object.assign({ pct: 0, basis: 'paid', target: 0, bonus_type: 'flat', bonus_v: 0, minus_type: 'flat', minus_v: 0 }, bud.retail || {}) }));
     S.claudeFor = '';
     render(); askClaude();
+    if (!firstLoad) { const back = () => { window.scrollTo(0, keepY); if (mainEl) mainEl.scrollTop = keepM; }; back(); requestAnimationFrame(back); setTimeout(back, 120); }
   }
 
   /* ---------- the one set of numbers every tab reads ---------- */
@@ -720,7 +724,8 @@ body.emb .tabs{display:none;}
     const gs = M.depts.map(d => ({ id: d.id, name: d.name, all: M.people.filter(p => p.deptId === d.id), list: P.filter(p => p.deptId === d.id) }));
     const nod = { id: 0, name: 'No department', all: M.people.filter(p => !p.deptId), list: P.filter(p => !p.deptId) };
     if (nod.all.length) gs.push(nod);
-    const shown = gs.filter(g => !(q || S.nc) || g.list.length);
+    let shown = gs.filter(g => !(q || S.nc) || g.list.length);
+    if (S.dOnly != null) shown = gs.filter(g => g.id === S.dOnly);   // 🎯 one department picked from the bar below: only that section
     return shown.map(g => {
       const pay = g.all.reduce((a, p) => { const rr = S.M.rowBy[p.id]; return a + (rr && (rr.leader || rr.np) ? 0 : p.monthly); }, 0);
       return '<section class="grp" data-dept="' + g.id + '"><div class="grp-h"><b>' + esc(g.name) + '</b><span class="cnt">' + g.all.length + '</span><span>' + (pay ? rs(pay) + ' fixed salary a month' : 'No fixed salary (commission-based)') + '</span><span class="acts"><button type="button" data-do="add" data-did="' + g.id + '">+ Add people</button>' + (g.id ? '<button type="button" data-do="ren" data-did="' + g.id + '">Rename</button>' + (g.all.length ? '' : '<button type="button" data-do="del" data-did="' + g.id + '">Delete</button>') : '') + '</span></div>'
@@ -730,7 +735,7 @@ body.emb .tabs{display:none;}
   /* the dock stays on screen: drop a person on a department name (no scrolling), or switch on Move mode, tick many people and press a department once */
   function dockInner() {
     const M = S.M, n = S.sel.size, pg = S.tg === 'grp', cnt = (id) => M.people.filter(p => p.deptId === id).length;
-    const chip = (id, name) => '<span class="dz" data-dept="' + id + '" title="' + (n ? 'Move the ' + n + ' selected here' : 'Drop a person here') + '">' + esc(name) + '<i>' + cnt(id) + '</i></span>';
+    const chip = (id, name) => '<span class="dz' + (S.dOnly === id ? ' on' : '') + '" data-dept="' + id + '" title="' + (n ? 'Move the ' + n + ' selected here' : 'Drop a person here') + '">' + esc(name) + '<i>' + cnt(id) + '</i></span>';
     const gchip = (k, name) => '<span class="dz" data-pg="' + k + '" title="' + (n ? 'Assign the ' + n + ' selected here' : 'Drop a person here') + '">' + esc(name) + '<i>' + M.all.filter(r => r.grp === k).length + '</i></span>';
     return '<div class="dock-h"><b>' + (n ? (pg ? 'Assign ' : 'Move ') + n + ' selected to:' : S.mm ? 'Move mode: tick people above, then press a ' + (pg ? 'pay group' : 'department') : 'Drop a person on a ' + (pg ? 'pay group' : 'department')) + '</b>'
       + '<button type="button" data-mm="1" class="' + (S.mm ? 'on' : '') + '">' + (S.mm ? 'Move mode ON' : 'Move mode (pick many)') + '</button>' + (n ? '<button type="button" data-clr="1">Clear ' + n + '</button>' : '') + '</div>'
@@ -976,7 +981,7 @@ body.emb .tabs{display:none;}
       + kp('Joined last 30 days', fresh.length, fresh.slice(0, 3).map(p => esc(p.name.split(' ')[0])).join(', ') || 'no new joiners')
       + kp('Pay rules checked', (() => { const a = M.all.filter(r => r.empId && !r.leader); return a.filter(r => r.ok).length + ' of ' + a.length; })(), 'green = checked, red = still to set and check', (() => { const a = M.all.filter(r => r.empId && !r.leader); return a.some(r => !r.ok); })())
       + kp('No photo / no department', P.filter(p => !p.photo).length + ' / ' + P.filter(p => !p.deptId).length, 'worth completing') + '</div>'
-      + '<div class="te-bar"><button type="button" data-do="nc" class="tbtn" style="' + (S.nc ? '' : 'background:#fff;color:var(--ink);border:1px solid var(--line)') + '">' + (S.nc ? 'Showing not checked only' : 'Not checked only') + '</button>' + (S.tg === 'dept' ? '<button class="tbtn" type="button" data-do="new">+ New section</button>' : '') + '<div class="seg">' + [['dept', 'By department'], ['grp', 'By pay: sales · leaders · retail · store']].map(x => '<button data-s="tg" data-v="' + x[0] + '" class="' + (S.tg === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</div><input id="teQ" type="search" placeholder="Find a person…" value="' + esc(S.q) + '" autocomplete="off"><span class="hint">Click a photo to open the person. ' + (S.tg === 'dept' ? '<b>Drag a photo onto another department</b> to move them.' : 'Everybody is here: sales, leaders, retail wholesale, store and the rest.') + '</span><span class="te-msg' + (S.msgBad ? ' bad' : '') + '" id="teMsg">' + esc(S.msg) + '</span></div>'
+      + '<div class="te-bar"><button type="button" data-do="nc" class="tbtn" style="' + (S.nc ? '' : 'background:#fff;color:var(--ink);border:1px solid var(--line)') + '">' + (S.nc ? 'Showing not checked only' : 'Not checked only') + '</button>' + (S.dOnly != null && S.tg === 'dept' ? '<button class="tbtn" type="button" data-do="dall" style="background:#fff;color:var(--ink);border:1px solid var(--line)">✕ Show all departments</button>' : '') + (S.tg === 'dept' ? '<button class="tbtn" type="button" data-do="new">+ New section</button>' : '') + '<div class="seg">' + [['dept', 'By department'], ['grp', 'By pay: sales · leaders · retail · store']].map(x => '<button data-s="tg" data-v="' + x[0] + '" class="' + (S.tg === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</div><input id="teQ" type="search" placeholder="Find a person…" value="' + esc(S.q) + '" autocomplete="off"><span class="hint">Click a photo to open the person. ' + (S.tg === 'dept' ? '<b>Drag a photo onto another department</b> to move them.' : 'Everybody is here: sales, leaders, retail wholesale, store and the rest.') + '</span><span class="te-msg' + (S.msgBad ? ' bad' : '') + '" id="teMsg">' + esc(S.msg) + '</span></div>'
       + reviewCard() + (S.tg === 'grp' ? dayCard() : '') + '<div id="teGroups">' + teamGroups() + '</div>'
       + '<div class="dock" id="teDock">' + dockInner() + '</div>';
   }
@@ -1037,7 +1042,7 @@ body.emb .tabs{display:none;}
     if (e.target.closest('[data-ball]')) { S.bAll = !!e.target.closest('[data-ball]').checked; const bx = $('billsBox'); if (bx) bx.innerHTML = billsInner(); return; }
     if (e.target.closest('[data-more]')) { S.bn += 300; const bx = $('billsBox'); if (bx) bx.innerHTML = billsInner(); return; }
     if (e.target.closest('[data-recount]')) { S.bills = null; render(); return; }
-    const act = e.target.closest('button[data-do]'); if (act && !['csv', 'closemonth', 'openmonth', 'showlog', 'engine'].includes(act.dataset.do)) { if (act.dataset.do === 'nc') { S.nc = !S.nc; render(); return; }
+    const act = e.target.closest('button[data-do]'); if (act && !['csv', 'closemonth', 'openmonth', 'showlog', 'engine'].includes(act.dataset.do)) { if (act.dataset.do === 'dall') { S.dOnly = null; render(); return; } if (act.dataset.do === 'nc') { S.nc = !S.nc; render(); return; }
       if (act.dataset.do === 'rvstart') { const nx = nextReview(0); if (nx) setupPopup(nx, { review: true }); return; }
       if (act.dataset.do === 'rvreset') { if (!confirm('Start again?\n\nEveryone goes back to red (not checked). Their pay setup stays as the suggestion, and you confirm each person one by one.')) return; api.post('budget.reset_review', {}).then(r => { S.msg = 'Fresh start: everyone is red again (' + (r.reset || 0) + ' were green).'; S.msgBad = false; return load(); }).catch(err => say((err && err.message) || 'Could not restart.', true)); return; } if (act.dataset.do === 'penadd') { penPopup(0, ''); return; } deptAction(act.dataset.do, Number(act.dataset.did || 0)); return; }
     const sm = e.target.closest('button[data-sal]'); if (sm) { S.salMode = sm.dataset.sal; try { localStorage.setItem('tb_salmode', S.salMode); } catch (x) {} load().catch(() => {}); return; }
@@ -1052,7 +1057,7 @@ body.emb .tabs{display:none;}
     const rj = e.target.closest('button[data-rejoin]'); if (rj) { if (!confirm('Rejoin ' + rj.dataset.nm + '?\n\nThey come back to every list and the budget. Their login works again. You will need to set their pay rules again.')) return; rj.disabled = true; api.post('employees.rejoin', { employee_id: Number(rj.dataset.rejoin) }).then(() => { S.msg = rj.dataset.nm + ' has rejoined.'; S.msgBad = false; return load(); }).catch(err => { rj.disabled = false; S.msg = (err && err.message) || 'Could not rejoin.'; S.msgBad = true; render(); }); return; }
     const stl = e.target.closest('button[data-settle]'); if (stl) { stl.disabled = true; api.post('budget.settle', { employee_id: Number(stl.dataset.settle), settled: stl.dataset.v === '1', amount: Number(stl.dataset.amt) || 0 }).then(() => { S.msg = stl.dataset.v === '1' ? 'Marked settled.' : 'Back to pending.'; S.msgBad = false; return load(); }).catch(err => { stl.disabled = false; S.msg = (err && err.message) || 'Could not save.'; S.msgBad = true; render(); }); return; }
     const dx = e.target.closest('[data-dayx]'); if (dx) { const x = dx.dataset.dayx.split('|'); api.post('budget.day_assign', { employee_id: Number(x[0]), day: x[1], grp: '' }).then(() => { S.msg = 'Taken back: that day counts as normal again.'; S.msgBad = false; return load(); }).catch(err => say((err && err.message) || 'Could not undo.', true)); return; }
-    const dz = e.target.closest('.dz[data-dept], .dz[data-pg], .dz[data-pgday]'); if (dz) { if (S.sel.size) { if (dz.dataset.pgday) dayAssign([...S.sel]); else if (dz.dataset.pg) regroup([...S.sel], dz.dataset.pg); else moveMany([...S.sel], Number(dz.dataset.dept)); } else { const m = $('teMsg'); if (m) { m.textContent = 'Drag a person here, or turn on Move mode and tick people first.'; m.className = 'te-msg'; } } return; }
+    const dz = e.target.closest('.dz[data-dept], .dz[data-pg], .dz[data-pgday]'); if (dz) { if (S.sel.size) { if (dz.dataset.pgday) dayAssign([...S.sel]); else if (dz.dataset.pg) regroup([...S.sel], dz.dataset.pg); else moveMany([...S.sel], Number(dz.dataset.dept)); } else if (dz.dataset.dept !== undefined && !dz.dataset.pg && !dz.dataset.pgday) { const id = Number(dz.dataset.dept); S.dOnly = S.dOnly === id ? null : id; render(); const g0 = $('teGroups'); if (g0) g0.scrollIntoView({ block: 'start', behavior: 'smooth' }); } else { const m = $('teMsg'); if (m) { m.textContent = 'Drag a person here, or turn on Move mode and tick people first.'; m.className = 'te-msg'; } } return; }
     const dm = e.target.closest('button[data-mm]'); if (dm) { S.mm = !S.mm; if (!S.mm) S.sel.clear(); render(); return; }
     if (e.target.closest('button[data-clr]')) { S.sel.clear(); render(); return; }
     const pk = e.target.closest('.st[data-emp]'); if (pk && S.mm) { const id = Number(pk.dataset.emp); S.sel.has(id) ? S.sel.delete(id) : S.sel.add(id); pk.classList.toggle('sel', S.sel.has(id)); const dk = $('teDock'); if (dk) dk.innerHTML = dockInner(); return; }
