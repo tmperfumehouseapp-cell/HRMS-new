@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Store messages — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=260928b">
+<link rel="stylesheet" href="assets/css/store.css?v=6">
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><div><h1>Store messages</h1><div class="sub" style="font-size:12.5px;color:var(--muted);margin-top:2px">The messages the store sends to its own customers: birthdays to send today, the message wording and photo, and each customer’s gifts</div></div></div>
+    <div class="content"><div class="sx-page" id="root">
+      <div class="sx-card"><h3>📋 How the store messages work</h3>
+        <div class="sx-mut" style="font-size:13px;line-height:1.5">
+          <b>🎂 Birthday gift</b> — the day before a customer’s birthday the code is made and the customer appears in <b>To send today</b> below with the message already written. Tap <b>💬 Open WhatsApp</b>, send it, then tap <b>✔ Done</b>: it leaves the list, so everyone can see it was sent. <b>📷 Copy photo</b> puts the photo on your clipboard to paste into the chat.<br>
+          <b>🎁 Gifts</b> — a customer with a review gift or a birthday code: type the phone number or code in <b>Check a customer’s gifts</b>, give the free perfume and tap <b>Mark used</b>.<br>
+          <b>After every bill</b> — the customer gets the bill message with the community and Google-review buttons (set in <a href="store_contacts.html">Customer follow-up</a>, managers only).
+        </div></div>
+      <div id="bdMount"></div>
+    </div></div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=4"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=23"></script>
+<script src="assets/js/store_common.js?v=3"></script>
+<script src="assets/js/store_bday.js?v=1"></script>
+<script>
+  guardPage();
+  renderSidebar('store_messages');
+  StoreBday.mount(document.getElementById('bdMount'));
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+</script>
+</body>
+</html>
