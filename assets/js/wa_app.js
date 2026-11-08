@@ -640,7 +640,7 @@
     const failWhy = (m) => { const c = +m.err_code || 0, t = String(m.err || '').slice(0, 90); const h = { 131053: 'WhatsApp could not use this file (format / size)', 131052: 'WhatsApp could not download this file', 131047: 'the customer has not written in 24 hours', 131026: 'the customer cannot receive it (not on WhatsApp / blocked)', 131049: 'Meta limit for this customer', 130429: 'sending too fast, wait a minute', 131051: 'unsupported message type' }[c]; return (h || t) ? ' — ' + (h || t) + (c ? ' (' + c + ')' : '') : ''; };
     function tick(m) { if (m.dir !== 'out') return ''; const s = m.status; return s === 'failed' ? (m.retry ? ` <button type="button" class="wx-rt" data-rt="${esc(m.cid)}">⚠ Not sent · Retry</button>` : ` <span class="f">⚠ failed${esc(failWhy(m))}</span>`) : s === 'read' ? ' <span class="r">✓✓</span>' : s === 'delivered' ? ' ✓✓' : s === 'sending' ? ' …' : ' ✓'; }
     function bubble(m) {
-      if (m.dir === 'sys') return `<div class="wx-ev">${esc(m.body || '')}</div>`;
+      if (m.dir === 'sys') { const t0 = hhmm(m.ts); return `<div class="wx-ev">${esc(m.body || '')}${t0 ? ' · <b>' + t0 + '</b>' : ''}</div>`; }   // 🕒 who took / moved the chat AND at what time
       const cls = m.dir === 'in' ? 'in' : (m.who === 'bot' ? 'out bot' : m.mtype === 'template' ? 'out tpl' : 'out'); let b = '';
       const cap = (m.mtype === 'image' || m.mtype === 'video') ? capOf(m) : '';
       if (m.media_id && (m.mtype === 'image' || m.mtype === 'sticker')) b = (MEDIA[m.media_id] ? `<img src="${MEDIA[m.media_id]}" alt="">` : `<div class="wx-ld" data-m="${esc(m.media_id)}" data-k="img">📷 Photo</div>`) + (cap ? linkify(esc(cap)) : '');

@@ -468,7 +468,7 @@
     }
     const capOf = (m) => { const x = /^[^:]{1,20}:\s*([\s\S]+)$/.exec(m.body || ''); return x ? x[1] : ''; };
     function bubble(m) {
-      if (m.dir === 'sys') return `<div class="wi-ev">${esc(m.body || '')}</div>`;
+      if (m.dir === 'sys') { const d0 = parse(m.ts), t0 = d0 ? d0.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }) : ''; return `<div class="wi-ev">${esc(m.body || '')}${t0 ? ' · <b>' + t0 + '</b>' : ''}</div>`; }   // 🕒 who took / moved the chat AND at what time
       const cls = m.dir === 'in' ? '' : (m.who === 'bot' ? 'out bot' : 'out');
       let body = ''; const cap = (m.mtype === 'image' || m.mtype === 'video') ? capOf(m) : '';
       if (m.media_id && (m.mtype === 'image' || m.mtype === 'sticker')) body = (MEDIA[m.media_id] ? `<img src="${MEDIA[m.media_id]}" alt="photo">` : `<div class="ld" data-m="${esc(m.media_id)}" data-k="img">📷 Tap to open photo</div>`) + (cap ? `<div class="wi-cap">${linkify(esc(cap))}</div>` : '');
