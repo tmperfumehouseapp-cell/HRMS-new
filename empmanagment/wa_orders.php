@@ -683,6 +683,11 @@ function wa_ord_seed_templates(PDO $pdo, array $opt = []): array
             }
             if ($errs) $res['failed'][$name] = $errs[0]; elseif ($sent) $res['submitted'][] = $name; else $res['skipped'][$name] = 'Already at Meta.';
         }
+        foreach (wo_photo_cfg($pdo) as $st => $lib) {   // a photo is chosen for this message: make its photo version too (once) and send it to Meta
+            $pn = wo_photo_name($st); if ($pn === '') continue;
+            $pq = $pdo->prepare("SELECT id FROM wa_templates WHERE name = ? AND language = 'en'"); $pq->execute([$pn]); if ((int)$pq->fetchColumn()) continue;
+            [$pok, $pmsg] = wo_photo_make($pdo, $st, $lib); if ($pok) $res['submitted'][] = $pn; else $res['failed'][$pn] = $pmsg;
+        }
         if (function_exists('wa_log')) wa_log($pdo, 'orders', !$res['failed'], 'Order-update templates: ' . count($res['created']) . ' made, ' . count($res['submitted']) . ' sent to Meta, ' . count($res['failed']) . ' failed' . ($res['failed'] ? ' — ' . mb_substr((string)reset($res['failed']), 0, 120) : ''));
     } catch (Throwable $e) { $res['error'] = $e->getMessage(); if (function_exists('wa_log')) wa_log($pdo, 'orders', false, 'Order-update templates: ' . $e->getMessage()); }
     return $res;
@@ -695,6 +700,10 @@ function wo_photo_cfg(PDO $pdo): array
 {
     $c = json_decode(wo_get($pdo, 'wa_ord_photo', ''), true); $o = []; if (!is_array($c)) return $o;
     foreach (wo_send_defs() as $k => $d) if ($k !== 'received' && (int)($c[$k] ?? 0) > 0) $o[$k] = (int)$c[$k];
+    // the same message can also have its photo set in the chat-messages screen (wch_msg): one connected system, so that photo counts here too
+    if (function_exists('wch_msg_row')) foreach (['shipped' => 'order_shipped', 'out_for_delivery' => 'order_ofd', 'delivered' => 'order_delivered', 'delayed' => 'order_delayed', 'failed' => 'delivery_failed'] as $st => $mk) {
+        if (isset($o[$st])) continue; try { $r = wch_msg_row($pdo, $mk); if ((int)($r['photo_lib_id'] ?? 0) > 0) $o[$st] = (int)$r['photo_lib_id']; } catch (Throwable $e) { }
+    }
     return $o;
 }
 function wo_photo_name(string $status): string { $d = wo_send_defs(); return isset($d[$status]) && $status !== 'received' ? $d[$status][0] . '_photo' : ''; }
