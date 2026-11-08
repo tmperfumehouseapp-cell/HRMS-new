@@ -304,7 +304,7 @@
     }
     async function loadList(quiet) {
       try {
-        const d = await api.get('wa.g_inbox', S.fl && S.fl.tag ? { tag: 1 } : {}); const old = new Set(S.chats.map((c) => c.phone + '|' + c.last_at));
+        const d = await api.get('wa.g_inbox', Object.assign(S.fl && S.fl.tag ? { tag: 1 } : {}, S.fl && S.fl.only && (S.fl.only.includes('today') || S.fl.only.includes('yesterday')) ? { wide: 1 } : {})); const old = new Set(S.chats.map((c) => c.phone + '|' + c.last_at));
         const firstLoad = !S.loaded; S.chats = d.chats || []; S.counts = d.counts || {}; S.stats = d.stats || {}; S.cfg = d.cfg || S.cfg; S.me = d.me || {}; S.results = d.results || []; S.mentions = d.mentions || []; S.reminders = d.reminders || []; S.fetched = Date.now(); S.loaded = true;
         if (!firstLoad && S.chats.some((c) => c.waiting && !old.has(c.phone + '|' + c.last_at) && !(S.cur && S.cur.phone === c.phone))) beepNew();
         if (S.tab === 'chats' && (!S.cur || wide())) { if (quiet && held()) pend = 1; else drawList(); } drawTop(); drawTabs();
@@ -470,9 +470,11 @@
     }
     // ⏷ Filter (same as the admin Chats): the order of my list + show only … — works on top of All / Waiting / From ad / 🔥
     const FL_SORT = [['', 'Waiting first (default)'], ['new', 'Newest first'], ['old', 'Oldest first'], ['az', 'Name A → Z'], ['za', 'Name Z → A']];
-    const FL_ONLY = [['noresp', 'Not responded — I have not answered yet'], ['late', 'Waiting too long'], ['hot', '🔥 Hot — ready to buy'], ['cx', 'Complaint'], ['ad', '📣 From ad']];
+    const FL_ONLY = [['noresp', 'Not responded — I have not answered yet'], ['late', 'Waiting too long'], ['hot', '🔥 Hot — ready to buy'], ['cx', 'Complaint'], ['ad', '📣 From ad'], ['today', '📅 Today’s chats'], ['yesterday', '🗓 Yesterday’s chats']];
     function flApply(list, F) {
-      const has = (k) => F.only.includes(k); let L = list.filter((c) => (!has('noresp') || c.noresp) && (!has('late') || c.overdue) && (!has('hot') || c.hot) && (!has('cx') || c.cx) && (!has('ad') || c.src === 'query'));
+      const has = (k) => F.only.includes(k), ymd = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'), d0 = ymd(new Date()), d1 = ymd(new Date(Date.now() - 86400000));
+      const dayOk = (c) => { if (!has('today') && !has('yesterday')) return true; const d = String(c.last_at || '').slice(0, 10); return (has('today') && d === d0) || (has('yesterday') && d === d1); };   // 📅 the customer wrote today / yesterday (both ticked = both days)
+      let L = list.filter((c) => (!has('noresp') || c.noresp) && (!has('late') || c.overdue) && (!has('hot') || c.hot) && (!has('cx') || c.cx) && (!has('ad') || c.src === 'query') && dayOk(c));
       const nm = (c) => String(c.name || '').trim().toLowerCase(), t = (c) => String(c.last_at || '');
       if (F.sort === 'new') L = L.slice().sort((a, b) => t(b).localeCompare(t(a))); else if (F.sort === 'old') L = L.slice().sort((a, b) => t(a).localeCompare(t(b)));
       else if (F.sort === 'az' || F.sort === 'za') { const d = F.sort === 'az' ? 1 : -1; L = L.slice().sort((a, b) => (!nm(a)) - (!nm(b)) || d * nm(a).localeCompare(nm(b)) || d * String(a.phone).localeCompare(String(b.phone))); }
@@ -486,8 +488,8 @@
         + '<div style="font-size:12px;font-weight:800;letter-spacing:.05em;color:var(--mut);margin:14px 0 4px">SHOW ONLY</div>' + FL_ONLY.map(([k, l]) => opt('checkbox', 'flo', k, l, F.only.includes(k), k === 'noresp' ? `<b style="color:#dc2626">${nr}</b>` : '')).join('')
         + '<div style="display:flex;gap:10px;margin-top:16px"><button type="button" class="wx-btn" data-x="reset" style="flex:1;min-height:48px;border-radius:99px;background:#fff;color:#111827;border:1px solid #d1d5db;font-weight:700">Reset</button><button type="button" class="wx-btn" data-x="go" style="flex:2;min-height:48px;border-radius:99px;background:#00a884;color:#fff;border:0;font-weight:800">Apply</button></div>';
       sh.body.onclick = (e) => { const b = e.target.closest('[data-x]'); if (!b) return;
-        const wasTag = !!F.tag; if (b.dataset.x === 'reset') { F.sort = ''; F.only = []; F.tag = false; } else { const r = sh.body.querySelector('input[name=fls]:checked'); F.sort = r ? r.value : ''; F.only = [...sh.body.querySelectorAll('input[name=flo]:checked')].map((x) => x.value); const tg = sh.body.querySelector('input[name=flt]:checked'); F.tag = !!(tg && tg.value === 'tag'); }
-        try { localStorage.setItem('wx_fl', JSON.stringify(F)); } catch (er) { } sh.close(); if (wasTag !== !!F.tag) { S.loaded = false; drawList(); loadList(); } else drawList(); };
+        const wasTag = !!F.tag, wasDay = F.only.includes('today') || F.only.includes('yesterday'); if (b.dataset.x === 'reset') { F.sort = ''; F.only = []; F.tag = false; } else { const r = sh.body.querySelector('input[name=fls]:checked'); F.sort = r ? r.value : ''; F.only = [...sh.body.querySelectorAll('input[name=flo]:checked')].map((x) => x.value); const tg = sh.body.querySelector('input[name=flt]:checked'); F.tag = !!(tg && tg.value === 'tag'); }
+        try { localStorage.setItem('wx_fl', JSON.stringify(F)); } catch (er) { } sh.close(); const isDay = F.only.includes('today') || F.only.includes('yesterday'); if (wasTag !== !!F.tag || wasDay !== isDay) { S.loaded = false; drawList(); loadList(); } else drawList(); };
     }
     try { const sv = JSON.parse(localStorage.getItem('wx_fl') || 'null'); if (sv && Array.isArray(sv.only)) S.fl = { sort: String(sv.sort || ''), only: sv.only.map(String), tag: !!sv.tag }; } catch (e) { }
     function drawList() {
