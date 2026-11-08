@@ -1321,6 +1321,15 @@ function wq_req_list(PDO $pdo, int $me = 0, int $limit = 200): array
     // ⏱ pinned on top: customers waiting wq_grab_min (4) min+ with no reply from anyone — unassigned ones AND ones with a person who did not answer (taken with wq.grab)
     $late = []; try { $g = wq_grab_list($pdo, $me); foreach ($g['items'] as $x) if (empty($x['mine'])) $late[] = $x; } catch (Throwable $e) { }
     $lp = array_flip(array_column($late, 'phone')); $o = array_values(array_filter($o, fn($x) => !isset($lp[$x['phone']])));
+    // 🛍 a customer who already has an order is not a new request (after-sale questions: delivery, order id…) — they stay with their order's team, not in the open Requests list
+    $all = array_values(array_unique(array_merge(array_column($o, 'phone'), array_column($late, 'phone'))));
+    if ($all) { try {
+        $l10 = []; foreach ($all as $ph) $l10[substr(preg_replace('/\D/', '', (string)$ph), -10)] = 1;
+        $q = $pdo->prepare("SELECT DISTINCT RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(phone,' ',''),'-',''),'+',''),'(',''), 10) p FROM shop_orders WHERE RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(phone,' ',''),'-',''),'+',''),'(',''), 10) IN (" . wq_in(array_keys($l10)) . ")"); $q->execute(array_map('strval', array_keys($l10)));
+        $has = array_flip(array_map('strval', $q->fetchAll(PDO::FETCH_COLUMN)));
+        $hasOrd = fn($x) => isset($has[substr(preg_replace('/\D/', '', (string)$x['phone']), -10)]);
+        $o = array_values(array_filter($o, fn($x) => !$hasOrd($x))); $late = array_values(array_filter($late, fn($x) => !$hasOrd($x)));
+    } catch (Throwable $e) { } }
     $lab = wq_req_last($pdo, array_merge(array_column($o, 'phone'), array_column($late, 'phone')));   // 💬 the customer's last message, readable from the list (photo / voice named)
     foreach ($o as &$x) $x['last_in'] = $lab[$x['phone']] ?? ''; unset($x); foreach ($late as &$x) $x['last_in'] = $lab[$x['phone']] ?? ''; unset($x);
     return ['ok' => true, 'count' => count($o) + count($late), 'items' => $o, 'late' => $late, 'late_min' => wq_late_min($pdo)];
