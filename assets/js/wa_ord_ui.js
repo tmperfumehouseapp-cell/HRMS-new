@@ -488,7 +488,9 @@ window.WaOrd = (function () {
       sheet(x.label, h, (box, close) => {
         { const vb = box.querySelector('[data-evars]'); (x.vars || []).forEach((l, i) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'wor-b'; b.style.cssText = 'min-height:30px;padding:3px 10px;font-size:12px;background:#efe7fd;border-color:#c9b6f2;color:#5b21b6'; b.textContent = '＋ [' + l + ']'; b.title = (VLAB[l] || l) + ' → {{' + (i + 1) + '}}'; b.onclick = () => { const t = box.querySelector('[data-ebody]'), a = t.selectionStart == null ? t.value.length : t.selectionStart, z = t.selectionEnd == null ? a : t.selectionEnd; t.value = t.value.slice(0, a) + '{{' + (i + 1) + '}}' + t.value.slice(z); t.focus(); }; vb.appendChild(b); }); if ((x.vars || []).length) { const lg = document.createElement('small'); lg.style.cssText = 'color:#667781;flex-basis:100%'; lg.innerHTML = (x.vars || []).map((l, i) => '<b>' + esc(l) + '</b> = {{' + (i + 1) + '}}').join(' · '); vb.appendChild(lg); } }
         const ta = box.querySelector('[data-ebody]'), ph = box.querySelector('[data-ephoto]'), msg = box.querySelector('[data-emsg]'), pp = box.querySelector('[data-epp]');
-        ta.value = pd ? pd.body : (live.edited ? live.body : (HAPPY[key] || live.body || x.body));   // ✨ the happy version is ready in the box; remove emojis if you like const drawPh = () => { ph.innerHTML = photoOf(lib, libTitle); }; drawPh();
+        ta.value = pd ? pd.body : (live.edited ? live.body : (HAPPY[key] || live.body || x.body));
+        // ✨ the happy version is ready in the box; remove emojis if you like
+        const drawPh = () => { ph.innerHTML = photoOf(lib, libTitle); }; drawPh();
         const done = async (fn, ok) => { try { const r = await fn(); toast(r.message || ok); close(); await load(); } catch (err) { msg.textContent = ''; toast(errMsg(err), true); } };
         box.addEventListener('click', async (ev) => {
           if (ev.target.closest('[data-enone]')) { lib = 0; libTitle = ''; drawPh(); return; }
