@@ -19,7 +19,30 @@
   .wi.one .wi-col.side{display:none;}
   .wi.one.det .wi-col.side{display:flex; position:fixed; inset:0; z-index:50; background:#fff; overflow-y:auto;}
   .wi.one .wi-head .wi-more.wi-pc{display:inline-flex !important;}
+  /* 🌙 WhatsApp's own night colours (same as the WhatsApp app): chat #0b141a, bars #202c33, received bubble #202c33, sent bubble #005c4b, text #e9edef.
+     The choice is the one made with the 🌙 button on the WhatsApp PC page (localStorage 'wa_pc_dark'). */
+  html.wapcdk, html.wapcdk body{background:#0b141a !important; color:#e9edef; color-scheme:dark;}
+  html.wapcdk .wi, html.wapcdk .wi-box, html.wapcdk .wi-col, html.wapcdk .wi-chat{background:#0b141a !important; color:#e9edef; border-color:#222d34 !important;}
+  html.wapcdk .wi-head, html.wapcdk .wi-comp, html.wapcdk .wi-tray, html.wapcdk .wi-quick, html.wapcdk .wi-rpb, html.wapcdk .wi-tabs, html.wapcdk .wi-seg{background:#202c33 !important; color:#e9edef; border-color:#222d34 !important;}
+  html.wapcdk .wi-b{background:#202c33 !important; color:#e9edef !important; box-shadow:none !important;}
+  html.wapcdk .wi-b.out, html.wapcdk .wi-b.bot{background:#005c4b !important;} html.wapcdk .wi-b.tpl{background:#0b3a4a !important;}
+  html.wapcdk .wi-b small, html.wapcdk .wi-b .tg, html.wapcdk .wi-b .ld{color:#8696a0 !important;}
+  html.wapcdk .wi-day, html.wapcdk .wi-ev{background:#182229 !important; color:#8696a0 !important;}
+  html.wapcdk .wi-btn, html.wapcdk .wi-more, html.wapcdk .wi-chip, html.wapcdk .wi-tab, html.wapcdk .wi-asg, html.wapcdk .wi-seg button, html.wapcdk .wi-head .wi-ib, html.wapcdk .wi-tgb button, html.wapcdk .wi-ep>button, html.wapcdk .wi-fla button{background:#2a3942 !important; color:#e9edef !important; border-color:#2a3942 !important;}
+  html.wapcdk .wi-btn.p, html.wapcdk .wi-btn.d, html.wapcdk .wi-fla button.pri, html.wapcdk .wi-chip.on, html.wapcdk .wi-tab.on, html.wapcdk .wi-seg button.on{background:#00a884 !important; border-color:#00a884 !important; color:#06241c !important;}
+  html.wapcdk .wi-in, html.wapcdk .wi input, html.wapcdk .wi textarea, html.wapcdk .wi select, html.wapcdk .wi-comp textarea{background:#2a3942 !important; color:#e9edef !important; border-color:#2a3942 !important;}
+  html.wapcdk .wi input::placeholder, html.wapcdk .wi textarea::placeholder{color:#8696a0;}
+  html.wapcdk .wi-sh{background:#000a;} html.wapcdk .wi-shb, html.wapcdk .wi-epp, html.wapcdk .wi-card, html.wapcdk .wi-fu .box, html.wapcdk .wi-slash, html.wapcdk .wi-col.side, html.wapcdk .wi-lb{background:#111b21 !important; color:#e9edef !important; border-color:#222d34 !important;}
+  html.wapcdk .wi-fu{background:#1b1630 !important; border-color:#6d4fc2 !important; color:#e9edef;} html.wapcdk .wi-sug, html.wapcdk .wi-und{background:#16212a !important; border-color:#2a3942 !important; color:#e9edef;}
+  html.wapcdk .wi-note{background:#3a2f12 !important; color:#f2d48a !important;} html.wapcdk .wi-err{background:#3b1d1d !important; color:#fca5a5 !important;}
+  html.wapcdk .wi-it:hover, html.wapcdk .wi-flo:hover, html.wapcdk #wiEl button:hover{background:#202c33 !important;} html.wapcdk .wi-it.sel{background:#2a3942 !important;}
+  html.wapcdk .wi-hs, html.wapcdk .wi-kv{border-color:#222d34 !important;} html.wapcdk .wi-p{background:#2a3942 !important; color:#c7d0d6 !important;}
+  html.wapcdk .wi-p.g{background:#0b3d2e !important; color:#7ee3b8 !important;} html.wapcdk .wi-p.r{background:#4a1d1d !important; color:#fca5a5 !important;} html.wapcdk .wi-p.y, html.wapcdk .wi-p.o{background:#4a3a12 !important; color:#f2d48a !important;} html.wapcdk .wi-p.b, html.wapcdk .wi-p.biz{background:#12304a !important; color:#9cc9f5 !important;}
+  html.wapcdk .wi small, html.wapcdk .wi-empty, html.wapcdk .wi-flh, html.wapcdk .wi-lb small{color:#8696a0 !important;}
+  html.wapcdk .wi [style*="background:#fff"], html.wapcdk .wi [style*="background: #fff"], html.wapcdk .wi [style*="background:white"]{background:#202c33 !important; color:#e9edef !important;}
+  html.wapcdk .wi a{color:#53bdeb;}
 </style>
+<script>try { if (localStorage.getItem('wa_pc_dark') === '1') document.documentElement.classList.add('wapcdk'); } catch (e) { } window.addEventListener('storage', function (e) { if (e.key === 'wa_pc_dark') document.documentElement.classList.toggle('wapcdk', e.newValue === '1'); });</script>
 </head>
 <body>
 <div id="wi"></div>
