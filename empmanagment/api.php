@@ -11121,6 +11121,7 @@ function ct_eval(PDO $pdo, string $day): array
     $q = $pdo->prepare("SELECT id, akey, title, created_at FROM ct_alerts WHERE day = ? AND status = 'open' AND meet_admin = 1"); $q->execute([$day]);
     foreach ($q->fetchAll() as $r) {
         if (!empty($want[$r['akey']]) || strpos((string)$r['title'], '✅') === 0) continue;
+        if (strpos((string)$r['akey'], 'no_target|') === 0) { $pdo->prepare("UPDATE ct_alerts SET status = 'auto', resolved_at = NOW(), resolved_by = 'auto (target set)' WHERE id = ?")->execute([$r['id']]); continue; }   // the target is there now: nothing left to confirm — it must not keep saying "no target"
         $pdo->prepare("UPDATE ct_alerts SET severity = 'info', title = ?, updated_at = NOW() WHERE id = ?")->execute(['✅ Improving now — ' . mb_substr((string)$r['title'], 0, 190), $r['id']]);
     }
     $pdo->prepare("UPDATE ct_alerts SET status = 'auto', resolved_at = NOW(), resolved_by = 'auto (2 days)' WHERE status = 'open' AND meet_admin = 1 AND created_at < ?")->execute([date('Y-m-d H:i:s', time() - 2 * 86400)]);
