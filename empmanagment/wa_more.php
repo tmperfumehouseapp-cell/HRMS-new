@@ -553,6 +553,7 @@ require_once __DIR__ . '/wa_brain.php';   // follow-up plans + engine (wa_follow
 require_once __DIR__ . '/wa_fu_coach.php';   // 🔁 Learning → Follow-ups: Claude builds the whole follow-up plan from one summary (fu.coach_*) — after wa_brain.php (needs the follow-up engine)
 require_once __DIR__ . '/wa_autopilot.php';   // 🔁 Follow-up Autopilot: 6 paths, offers on day 2/4/7/10, festival box, teach each day, results (fu.ap_*) — after wa_fu_coach.php
 require_once __DIR__ . '/wa_orders.php';   // live orders in the chat, Needs attention cases for Dispatch, order-update messages, Store info (wa.ord_*, wa.store_*)
+if (is_file(__DIR__ . '/cust_bday.php')) require_once __DIR__ . '/cust_bday.php';   // 🎂 birthdays collected at ordering
 if (is_file(__DIR__ . '/wa_review.php')) require_once __DIR__ . '/wa_review.php';   // ⭐ rating request 5 days after delivery → Judge.me (5) or a complaint (lower)
 require_once __DIR__ . '/wa_smart.php';    // Smart campaigns (Claude plans a campaign from one line) + the Normal-campaign upgrade (wa.smart_*, wa.camp_suggest POST, wa.camp_speed)
 require_once __DIR__ . '/wa_util.php';
