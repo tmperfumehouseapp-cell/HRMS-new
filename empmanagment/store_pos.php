@@ -816,7 +816,7 @@ try {
             $autoWa = st_wa_auto($pdo, $billId, $billNo, (float)$total, $cs);      // the bill goes to the customer's WhatsApp by itself (bill link + community + review); a failure only leaves the manual button
             $ppl = st_people_status($pdo, [$billId])[$billId] ?? [];
             foreach ($ppl as &$ax) { $ax['auto'] = $autoWa[$ax['person_id']] ?? ''; } unset($ax);
-            foreach ($ppl as &$x) { if ($x['phone'] !== '') { $tok = substr($x['link'], strrpos($x['link'], '=') + 1); $m = st_wa_message(['name' => $x['name'], 'phone' => $x['phone'], 'token' => $tok, 'returning' => $x['returning']], ['bill_no' => $billNo, 'total' => $total], $cs); $x['wa_url'] = $m['url']; } }
+            foreach ($ppl as &$x) { if ($x['phone'] !== '') { $tok = substr($x['link'], strrpos($x['link'], '=') + 1); $m = st_wa_message(['name' => $x['name'], 'phone' => $x['phone'], 'token' => $tok, 'returning' => $x['returning']], ['bill_no' => $billNo, 'total' => $total], $cs); $x['wa_url'] = $m['url']; $x['wa_url2'] = $m['url2']; } }
             unset($x);
             json_response(['ok' => true, 'bill_id' => $billId, 'bill_no' => $billNo, 'total' => $total, 'total_ml' => $t['total_ml'], 'commission_pct' => $pc['pct'], 'commission_from' => $pc['source'], 'commission_amount' => $cmx ? (float)$cmx['com'] : null, 'no_code' => $code === '', 'code_rule' => $codeRule, 'people' => $ppl] + $invOut + [
                 'message' => 'Bill ' . $billNo . ' saved: ' . $t['total_ml'] . ' ml, ₹' . number_format($total) . '.']);
@@ -969,7 +969,7 @@ try {
             foreach ($rows as &$r) {
                 $r['chain_amt'] = (float)$r['chain_amt']; $r['cash_amt'] = (float)$r['cash_amt']; $r['online_amt'] = (float)$r['online_amt']; $r['inv_url'] = ($r['inv_token'] !== '' && function_exists('wch_view_url')) ? wch_view_url($r['inv_token']) : ''; $r['inv_pdf'] = ($r['inv_token'] !== '' && function_exists('wch_pdf_url')) ? wch_pdf_url($r['inv_token']) : ''; unset($r['inv_token']);
                 $r['people'] = $pp[$r['bill_id']] ?? [];
-                foreach ($r['people'] as &$x) if ($x['phone'] !== '') { $tok = substr($x['link'], strrpos($x['link'], '=') + 1); $x['wa_url'] = st_wa_message(['name' => $x['name'], 'phone' => $x['phone'], 'token' => $tok, 'returning' => $x['returning']], ['bill_no' => $r['bill_no'], 'total' => $r['total']], $cs)['url']; }
+                foreach ($r['people'] as &$x) if ($x['phone'] !== '') { $tok = substr($x['link'], strrpos($x['link'], '=') + 1); $wm = st_wa_message(['name' => $x['name'], 'phone' => $x['phone'], 'token' => $tok, 'returning' => $x['returning']], ['bill_no' => $r['bill_no'], 'total' => $r['total']], $cs); $x['wa_url'] = $wm['url']; $x['wa_url2'] = $wm['url2']; }
                 unset($x);
             }
             unset($r);

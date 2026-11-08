@@ -447,7 +447,7 @@
 
   // ---------- after the bill: send it to each customer on WhatsApp (opens WhatsApp in a new tab with the message ready)
   const waRow = (p, bill) => `<div class="wa"><div class="n"><b>${esc(p.name || 'Customer ' + p.no)}</b><small>${p.declined ? 'did not want to share' + (p.reason ? ' — ' + esc(p.reason) : '') : '+' + esc(p.phone) + (p.returning ? ' · returning customer' : '')}</small></div>
-    ${p.wa_url ? `${p.auto && p.auto !== 'sent' ? `<small class="sx-mut" style="display:block">auto-send did not go: ${esc(p.auto)}</small>` : ''}<button class="wabtn ${p.sent_at ? 'sent' : ''}" data-wa="${p.person_id}" data-ret="${p.returning ? 1 : 0}" data-u="${esc(p.wa_url)}">${p.sent_at ? '✓ Sent · send again' : 'Send on WhatsApp'}</button><button class="lnk" data-copy="${esc(p.link)}">Copy link</button>` : ''}</div>`;
+    ${p.wa_url ? `${p.auto && p.auto !== 'sent' ? `<small class="sx-mut" style="display:block">auto-send did not go: ${esc(p.auto)}</small>` : ''}<button class="wabtn ${p.sent_at ? 'sent' : ''}" data-wa="${p.person_id}" data-ret="${p.returning ? 1 : 0}" data-u="${esc(p.wa_url)}">${p.sent_at ? '✓ Sent · send again' : 'Send on WhatsApp'}</button><button class="wabtn" data-wa2="1" data-u="${esc(p.wa_url2 || '')}" style="background:#6d4fc2;${p.wa_url2 ? '' : 'display:none'}" title="A second message: all our numbers as one tap-to-save contact file">📞 Send numbers</button><button class="lnk" data-copy="${esc(p.link)}">Copy link</button>` : ''}</div>`;
   const invBox = (d) => !d.chain ? '' : (d.inv_ok ? `<div class="wa"><div class="n"><b>GST invoice ${esc(d.inv_no)}</b><small>Perfumes ${inr(d.perfume_amt)} + chain ${esc(d.chain)} ${inr(d.chain_amt)} · it is on the customer’s bill page</small></div><a class="lnk" href="${esc(d.inv_url)}" target="_blank" rel="noopener">View</a> <a class="lnk" href="${esc(d.inv_pdf)}" target="_blank" rel="noopener">PDF</a></div>`
     : `<div class="wa"><div class="n"><b style="color:var(--sx-red,#c0392b)">GST invoice NOT made yet</b><small>${esc(d.inv_err || '')}</small></div><button class="lnk" data-inv="${d.bill_id}">Try again</button></div>`);
   function showDone(d) {
@@ -475,6 +475,8 @@
     try { await navigator.clipboard.write([new ClipboardItem({ 'image/png': await billBlobPng(btn.dataset.copyimg) })]); btn.textContent = 'Copied ✓ — now Ctrl+V in the chat'; }
     catch (err) { toast('Could not copy the picture: ' + ((err && err.message) || 'try again') + ' (use Chrome on the PC, over https).', 1); }
   }
+  // the same WhatsApp Web side window the other messages use
+  function openSide(url) { const w = (screen.availWidth || 1200), h = (screen.availHeight || 800); const win = window.open(url, 'tmpwa', 'popup=yes,width=' + Math.round(w / 2) + ',height=' + h + ',left=' + Math.round(w / 2) + ',top=0'); if (!win) alert('Please allow pop-ups for this site, then tap again.'); return win; }
   async function doSend(btn) {
     if (billImg) { try { await navigator.clipboard.write([new ClipboardItem({ 'image/png': await billBlobPng(btn.dataset.ret === '1' ? 'back' : 'new') })]); toast('📷 Picture copied — in the chat press Ctrl+V, then Enter.'); } catch (err) { /* the message still opens; use the Copy image button */ } }   // the picture is copied at the same click, so the cashier only pastes it
     // WhatsApp Web opens in its OWN window on the right half of the screen (the same window the birthday messages use), so this page stays visible on the left
@@ -485,13 +487,14 @@
     const iv = e.target.closest('[data-inv]'); if (iv) { iv.disabled = true; try { const r = await api.post('st_bill.invoice', { bill_id: +iv.dataset.inv }); toast(r.message); $('doneBox').innerHTML = ''; loadBills(); } catch (err) { toast(err.message, 1); iv.disabled = false; } return; }
     const ci = e.target.closest('[data-copyimg]'); if (ci) return copyBillImg(ci);
     if (e.target.id === 'imgDel') { try { await api.post('st_bill.image_save', { photo: '' }); await loadBillImg(); } catch (err) { toast(err.message, 1); } return; }
+    const w2 = e.target.closest('[data-wa2]'); if (w2) { if (w2.dataset.u) openSide(w2.dataset.u); return; }
     const w = e.target.closest('[data-wa]'); if (w) return doSend(w);
     const c = e.target.closest('[data-copy]'); if (c) { try { await navigator.clipboard.writeText(c.dataset.copy); c.textContent = 'Copied ✓'; } catch (err) { prompt('Copy this link', c.dataset.copy); } return; }
     if (e.target.id === 'doneX') $('doneBox').innerHTML = '';
   });
   const stp = (at, label) => `<span class="st ${at ? 'y' : 'n'}">${label}</span>`;
   const peopleRow = (b) => !(b.people && b.people.length) || b.status !== 'ok' ? '' : `<div class="ppl">${b.people.map((p) => p.declined ? `<span class="pp"><b>${esc(p.name || 'Customer')}</b><span class="st">no number${p.reason ? ' · ' + esc(p.reason) : ''}</span></span>`
-    : `<span class="pp"><b>${esc(p.name || '+' + p.phone.slice(-10))}</b>${p.returning ? '<span class="st y" style="background:var(--sx-violet-t);color:var(--sx-violet)">↺ returning</span>' : ''}${p.sent_at ? stp(1, 'Sent') : `<button class="minibtn" data-wa="${p.person_id}" data-ret="${p.returning ? 1 : 0}" data-u="${esc(p.wa_url || '')}">Send on WhatsApp</button>`}${stp(p.opened_at, 'Opened')}${p.returning ? '' : stp(p.contact_at, 'Contacts') + stp(p.community_at, 'Community') + stp(p.review_at, 'Review')}</span>`).join('')}</div>`;
+    : `<span class="pp"><b>${esc(p.name || '+' + p.phone.slice(-10))}</b>${p.returning ? '<span class="st y" style="background:var(--sx-violet-t);color:var(--sx-violet)">↺ returning</span>' : ''}${p.sent_at ? stp(1, 'Sent') : `<button class="minibtn" data-wa="${p.person_id}" data-ret="${p.returning ? 1 : 0}" data-u="${esc(p.wa_url || '')}">Send on WhatsApp</button>${p.wa_url2 ? `<button class="minibtn" data-wa2="1" data-u="${esc(p.wa_url2)}" style="background:#6d4fc2">📞 Numbers</button>` : ''}`}${stp(p.opened_at, 'Opened')}${p.returning ? '' : stp(p.contact_at, 'Contacts') + stp(p.community_at, 'Community') + stp(p.review_at, 'Review')}</span>`).join('')}</div>`;
 
   // ---------- today's bills
   let listDate = '', dayOpen = 0, payOpen = 0, payD = null, lastBills = [];

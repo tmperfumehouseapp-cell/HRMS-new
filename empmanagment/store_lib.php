@@ -699,16 +699,18 @@ function st_bill_link(string $token): string
     return $base . ($dir === '' || $dir === '.' ? '' : $dir) . '/store_bill.php?t=' . $token;
 }
 /** The wording the cashier sends BY HAND on web.whatsapp after a bill (editable in Store → Messages). {name} {store} {bill_no} {amount} {bill_link} {community_link} {review_link} {friends_link} fill themselves in. */
-function st_msgs_legacy(): array      // the earlier standard wording: a saved copy of it is treated as "standard" so people get the new one
+function st_msgs_legacy(): array      // earlier standard wordings: a saved copy of one of them is treated as "standard", so people get the newest standard
 {
     return [md5("Hi {name}, thank you for shopping at {store}! Your bill {bill_no} (₹{amount}) is here: {bill_link}\nSave our contacts and join our community from the same page.\n\nCame with friends? Send them this link so they can save our contacts, join the community and review us too: {friends_link}"),
-        md5("Welcome back, {name}! Thank you for shopping at {store} again. Your bill {bill_no} (₹{amount}) is here: {bill_link}\n\nCame with friends? Send them this link so they can save our contacts, join the community and review us too: {friends_link}")];
+        md5("Welcome back, {name}! Thank you for shopping at {store} again. Your bill {bill_no} (₹{amount}) is here: {bill_link}\n\nCame with friends? Send them this link so they can save our contacts, join the community and review us too: {friends_link}"),
+        md5("Hi {name}, thank you for shopping at {store}! 🙏\n\n🧾 Your bill {bill_no} (₹{amount}) — see it here:\n{bill_link}\n\n📞 Please save our numbers, so you never miss an offer:\n{contacts}\nSave all in one tap: {contacts_link}\n\n👥 Please join our community:\n{community_link}\n\n⭐ Please give us a 5-star review on Google:\n{review_link}\n\nCame with friends? Send them this: {friends_link}")];
 }
 function st_msgs_defaults(): array
 {
     return [
-        'thanks' => "Hi {name}, thank you for shopping at {store}! 🙏\n\n🧾 Your bill {bill_no} (₹{amount}) — see it here:\n{bill_link}\n\n📞 Please save our numbers, so you never miss an offer:\n{contacts}\nSave all in one tap: {contacts_link}\n\n👥 Please join our community:\n{community_link}\n\n⭐ Please give us a 5-star review on Google:\n{review_link}\n\nCame with friends? Send them this: {friends_link}",
+        'thanks' => "Hi {name}, thank you for shopping at {store}! 🙏\n\n🧾 Your bill {bill_no} (₹{amount}) — see it here:\n{bill_link}\n\n📞 Save all our numbers in one tap (they come together as one contact file):\n{contacts_link}\n\n👥 Please join our community:\n{community_link}\n\n⭐ Please give us a 5-star review on Google:\n{review_link}\n\nCame with friends? Send them this: {friends_link}",
         'thanks_back' => "Welcome back, {name}! 🙏 Thank you for shopping at {store} again.\n\n🧾 Your bill {bill_no} (₹{amount}) — see it here:\n{bill_link}\n\nCame with friends? Send them this: {friends_link}",
+        'contacts' => "Hi {name}! 📞 Please save our numbers so you never miss an offer — one tap adds all of them to your phone together:\n{contacts_link}",
     ];
 }
 function st_msgs_get(PDO $pdo): array
@@ -722,7 +724,7 @@ function st_msgs_save(PDO $pdo, array $in): array
 {
     $cur = st_msgs_get($pdo); $def = st_msgs_defaults();
     if (!empty($in['reset'])) { $cur = $def; }
-    else foreach (['thanks', 'thanks_back'] as $k) if (isset($in[$k])) {
+    else foreach (['thanks', 'thanks_back', 'contacts'] as $k) if (isset($in[$k])) {
         $t = trim(str_replace("\r", '', (string)$in[$k])); if ($t === '') return ['error' => 'A message cannot be empty.']; if (mb_strlen($t) > 900) return ['error' => 'A message is too long (900 letters at most).']; $cur[$k] = $t;
     }
     $pdo->prepare("INSERT INTO st_cs_settings (skey, svalue) VALUES ('msgs', ?) ON DUPLICATE KEY UPDATE svalue = VALUES(svalue)")->execute([json_encode($cur, JSON_UNESCAPED_UNICODE)]);
@@ -753,7 +755,10 @@ function st_wa_message(array $person, array $bill, array $cs): array
         '{community_link}' => trim((string)($cs['community_link'] ?? '')) !== '' ? st_short_link($tk, 'c') : '', '{review_link}' => trim((string)($cs['review_link'] ?? '')) !== '' ? st_short_link($tk, 'r') : '',
         '{contacts}' => st_contacts_text($cs), '{contacts_link}' => !empty($cs['contacts']) ? st_short_link($tk, 's') : '', '{friends_link}' => st_short_link($tk, 'g')]);
     $text = trim(preg_replace("/\n{3,}/", "\n\n", $text));
-    return ['text' => $text, 'url' => 'https://web.whatsapp.com/send?phone=' . $person['phone'] . '&text=' . rawurlencode($text)];
+    $tc = (string)($m['contacts'] ?? ''); if (trim($tc) === '') $tc = st_msgs_defaults()['contacts'];
+    $text2 = !empty($cs['contacts']) ? trim(strtr($tc, ['{name}' => $first, '{store}' => (string)$cs['store_name'], '{contacts}' => st_contacts_text($cs), '{contacts_link}' => st_short_link($tk, 's')])) : '';
+    return ['text' => $text, 'url' => 'https://web.whatsapp.com/send?phone=' . $person['phone'] . '&text=' . rawurlencode($text),
+        'text2' => $text2, 'url2' => $text2 !== '' ? 'https://web.whatsapp.com/send?phone=' . $person['phone'] . '&text=' . rawurlencode($text2) : ''];
 }
 function st_event(PDO $pdo, int $personId, int $billId, string $kind, string $who = ''): void
 {
