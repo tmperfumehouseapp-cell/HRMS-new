@@ -1052,7 +1052,7 @@
     const OR = { ld: null };
     function ordReady(cb) {
       if (window.WaOrd) return cb(); if (OR.ld) { OR.ld.push(cb); return; } OR.ld = [cb];
-      const sc = document.createElement('script'); sc.src = 'assets/js/wa_ord_ui.js?v=8';
+      const sc = document.createElement('script'); sc.src = 'assets/js/wa_ord_ui.js?v=9';
       sc.onload = () => { const q = OR.ld || []; OR.ld = null; q.forEach((f) => f()); }; sc.onerror = () => { OR.ld = null; }; document.head.appendChild(sc);
     }
     // ✅ Order completed (wa_done.php): one thank-you, then no automatic messages today and tomorrow
