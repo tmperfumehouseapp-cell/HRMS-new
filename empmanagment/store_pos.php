@@ -845,7 +845,9 @@ try {
 
         case 'st_bill.image_get': {       // the picture that goes with the bill message (the cashier copies it and pastes it in the WhatsApp chat). The picture itself only when asked.
             require_auth(); $v = ''; try { $x = $pdo->query("SELECT svalue FROM st_cs_settings WHERE skey = 'bill_image'")->fetchColumn(); $j = $x ? json_decode((string)$x, true) : null; $v = is_array($j) ? (string)($j['photo'] ?? '') : ''; } catch (Throwable $e) { }
-            json_response(['has_image' => $v !== ''] + (!empty($_GET['photo']) ? ['photo' => $v] : []));
+            $custom = $v !== '';
+            if (!$custom) { $df = dirname(__DIR__) . '/assets/img/store_bill_default.jpg'; if (is_file($df)) $v = 'data:image/jpeg;base64,' . base64_encode((string)file_get_contents($df)); }   // no picture uploaded: the default picture that comes with the HRMS
+            json_response(['has_image' => $v !== '', 'custom' => $custom] + (!empty($_GET['photo']) ? ['photo' => $v] : []));
             break;
         }
         case 'st_bill.image_save': {      // managers: set or remove that picture
