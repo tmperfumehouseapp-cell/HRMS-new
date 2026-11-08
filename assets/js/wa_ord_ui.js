@@ -3,6 +3,7 @@
  * Talks to wa_orders.php (wa.ord_*, wa.store_*). Nothing here sends a customer message; a person always taps a button.
  *
  *   WaOrd.card(container, { phone, name, onChange })     the orders of this chat's customer (live status, scans, "Link an order", "Needs attention").  -> { refresh(), destroy() }
+ *   WaOrd.badge(el, { phone, name, light, onChange })   the little "📦 3 orders · ₹4,200" pill under the phone number; tap = the hero card (open)
  *   WaOrd.open({ phone, name, onChange })                the same card in a bottom sheet (for a "📦 Orders" button in the chat header)
  *   WaOrd.urgent({ phone, name, order, onDone })         the "Needs attention" form (Delivery / order problem -> Dispatch, Complaint -> Complaints)
  *   WaOrd.link({ phone, onDone })                        find an order by number or phone and link it to this chat
@@ -79,6 +80,19 @@ window.WaOrd = (function () {
   .wor-hrs{display:grid;grid-template-columns:44px minmax(0,1fr) minmax(0,1fr);gap:4px 8px;align-items:center} .wor-hrs span{font-size:13.5px;font-weight:700} .wor-hrs .wor-cl{grid-column:2/4;margin:0 0 8px} .wor-hrs .wor-in{padding:8px 8px;font-size:15px;border-radius:12px} .wor-hrs label{font-size:12.5px;font-weight:600;text-transform:none;letter-spacing:0;display:flex;align-items:center;gap:5px;margin:0;color:#3a3f4a}
   .wor-now{display:inline-block;border-radius:99px;padding:5px 12px;font-size:12.5px;font-weight:800;background:#eef0f2;color:#3a3f4a} .wor-now.open{background:#d9fdd3;color:#005c4b} .wor-now.shut{background:#fde4e4;color:#b3261e}
   .wor-say{background:#f4f5f7;border-radius:14px;padding:10px 13px;font-size:13.5px;line-height:1.5;white-space:pre-wrap;color:#3a3f4a}
+
+  .wor-pillb{display:inline-flex;align-items:center;gap:6px;max-width:100%;border:0;border-radius:999px;padding:3px 10px 3px 8px;margin-top:3px;font:inherit;font-size:11.5px;font-weight:800;line-height:1.3;cursor:pointer;background:rgba(255,255,255,.2);color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .wor-pillb.lt{background:#e7fbf3;color:#007a62} .wor-pillb .dot{width:8px;height:8px;border-radius:50%;background:#9aa5ad;flex:none} .wor-pillb .dot.on{background:#25d366;box-shadow:0 0 0 3px rgba(37,211,102,.28)} .wor-pillb .dot.bad{background:#ff5a4f;box-shadow:0 0 0 3px rgba(255,90,79,.3)} .wor-pillb .dot.new{background:#f5b400}
+  .wor-hero{border-radius:20px;padding:16px 16px 14px;color:#fff;background:linear-gradient(135deg,#0b6e5f 0%,#00a884 55%,#25d366 120%);box-shadow:0 8px 22px rgba(0,128,105,.28);position:relative;overflow:hidden}
+  .wor-hero:after{content:"";position:absolute;right:-40px;top:-40px;width:150px;height:150px;border-radius:50%;background:rgba(255,255,255,.09)}
+  .wor-hero .who{display:flex;align-items:center;gap:10px;position:relative;z-index:1} .wor-hero .av{width:42px;height:42px;border-radius:50%;background:rgba(255,255,255,.22);display:grid;place-items:center;font-weight:800;font-size:16px;flex:none}
+  .wor-hero .who b{display:block;font-size:16px;font-weight:800;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .wor-hero .who small{opacity:.85;font-size:12.5px}
+  .wor-hero .big{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin-top:14px;position:relative;z-index:1} .wor-hero .big div{font-size:30px;font-weight:900;letter-spacing:-.5px;line-height:1} .wor-hero .big div small{display:block;font-size:11.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;opacity:.85;margin-bottom:5px}
+  .wor-hero .tag{border-radius:999px;background:rgba(255,255,255,.2);padding:4px 11px;font-size:12px;font-weight:800;white-space:nowrap}
+  .wor-kp{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px;position:relative;z-index:1} .wor-kp div{background:rgba(255,255,255,.16);border-radius:13px;padding:8px 6px;text-align:center} .wor-kp b{display:block;font-size:17px;font-weight:900} .wor-kp small{font-size:10.5px;font-weight:700;opacity:.88;letter-spacing:.03em}
+  .wor-mix{display:flex;height:8px;border-radius:99px;overflow:hidden;margin-top:12px;background:rgba(255,255,255,.2);position:relative;z-index:1} .wor-mix i{display:block;height:100%} .wor-mix .pp{background:#fff} .wor-mix .cd{background:#ffd166}
+  .wor-mixl{display:flex;justify-content:space-between;font-size:11.5px;font-weight:700;margin-top:5px;opacity:.95;position:relative;z-index:1}
+  .wor-alert{margin-top:10px;border-radius:12px;background:rgba(255,255,255,.95);color:#b3261e;font-size:12.5px;font-weight:800;padding:7px 11px;position:relative;z-index:1}
   `;
   function css() { if (document.getElementById('worCss')) return; const s = document.createElement('style'); s.id = 'worCss'; s.textContent = CSS; document.head.appendChild(s); }
   function toast(t, bad) { css(); const e = document.createElement('div'); e.className = 'wor-toast' + (bad ? ' bad' : ''); e.textContent = t; document.body.appendChild(e); setTimeout(() => e.remove(), 3400); }
@@ -88,6 +102,38 @@ window.WaOrd = (function () {
     const close = () => { ov.remove(); };
     ov.addEventListener('click', (e) => { if (e.target === ov || e.target.closest('[data-x]')) close(); });
     document.body.appendChild(ov); if (mount) mount(ov.querySelector('[data-body]'), close); return { el: ov, close };
+  }
+
+
+  // ====================================================================================================== the little order pill under the phone number + the hero card
+  const initials = (n) => { const w = String(n || '').replace(/[^\p{L}\p{N} ]/gu, '').trim().split(/\s+/).filter(Boolean); return ((w[0] || '?')[0] + (w[1] ? w[1][0] : '')).toUpperCase(); };
+  function pillText(m) {
+    if (!m.n && !m.open_cases) return { t: m.latest ? 'No active order' : 'No orders yet', dot: 'new' };
+    const dot = (m.problem || m.open_cases) ? 'bad' : m.active ? 'on' : '';
+    return { t: '📦 ' + m.n + (m.n === 1 ? ' order' : ' orders') + (m.total ? ' · ' + inr(m.total) : '') + (m.active ? ' · ' + m.active + ' on the way' : ''), dot };
+  }
+  /** Draws the pill into `el` (under the phone number). Tapping it opens the hero card. Never throws. opts: { phone, name, light, onChange } */
+  function badge(el, opts) {
+    css(); opts = opts || {}; if (!el) return { destroy() { } };
+    const phone = String(opts.phone || '').replace(/\D/g, '').slice(-10); let dead = false;
+    const draw = (m) => {
+      if (dead) return; const t = pillText(m);
+      el.innerHTML = '<button type="button" class="wor-pillb' + (opts.light ? ' lt' : '') + '" title="This customer\'s orders — tap for the full card"><span class="dot ' + t.dot + '"></span>' + esc(t.t) + '</button>';
+      el.firstChild.onclick = (e) => { e.stopPropagation(); open({ phone, name: opts.name, onChange: opts.onChange }); };
+    };
+    el.classList.add('wor'); el.innerHTML = '';
+    api.get('wa.ord_sum', { phone }).then(draw).catch(() => { if (!dead) el.innerHTML = ''; });
+    return { destroy() { dead = true; el.innerHTML = ''; } };
+  }
+  function heroHtml(m, o) {
+    const nm = (o.name || '').trim(), ph = tel(String(o.phone || '').replace(/\D/g, '').slice(-10));
+    const pp = m.prepaid, cd = m.cod, sum = pp + cd || 1;
+    let h = '<div class="wor-hero"><div class="who"><div class="av">' + esc(initials(nm || ph)) + '</div><div style="min-width:0"><b>' + esc(nm || ('+91 ' + ph)) + '</b><small>+91 ' + esc(ph) + (m.first_at ? ' · customer since ' + esc(day(m.first_at)) : '') + '</small></div></div>';
+    h += '<div class="big"><div><small>Total ordered</small>' + esc(inr(m.total || 0)) + '</div><span class="tag">' + m.n + (m.n === 1 ? ' order' : ' orders') + (m.more ? '+' : '') + '</span></div>';
+    h += '<div class="wor-kp"><div><b>' + m.delivered + '</b><small>Delivered</small></div><div><b>' + m.active + '</b><small>On the way</small></div><div><b>' + m.problem + '</b><small>Problem</small></div><div><b>' + esc(inr(m.aov || 0)) + '</b><small>Average</small></div></div>';
+    if (pp + cd) h += '<div class="wor-mix"><i class="pp" style="width:' + Math.round(pp * 100 / sum) + '%"></i><i class="cd" style="width:' + Math.round(cd * 100 / sum) + '%"></i></div><div class="wor-mixl"><span>⚪ Prepaid ' + pp + '</span><span>🟡 Pay on delivery ' + cd + '</span></div>';
+    if (m.open_cases) h += '<div class="wor-alert">⚠ ' + m.open_cases + ' open case' + (m.open_cases === 1 ? '' : 's') + ' with Dispatch for this customer</div>';
+    return h + '</div>';
   }
 
   // ====================================================================================================== the full order popup (same card as Dispatch's Track popup)
@@ -152,7 +198,10 @@ window.WaOrd = (function () {
 
   function open(o) {
     o = o || {}; let c = null;
-    sheet('Orders · ' + (o.name || ('+91 ' + tel(String(o.phone || '').replace(/\D/g, '').slice(-10)))), '<div data-slot></div>', (el) => { c = card(el.querySelector('[data-slot]'), o); });
+    sheet('Customer orders', '<div data-hero></div><div data-slot></div>', (el) => {
+      c = card(el.querySelector('[data-slot]'), o);
+      api.get('wa.ord_sum', { phone: String(o.phone || '').replace(/\D/g, '').slice(-10) }).then((m) => { const hx = el.querySelector('[data-hero]'); if (hx && m) hx.innerHTML = heroHtml(m, o); }).catch(() => { });
+    });
   }
 
   // ====================================================================================================== Link an order
@@ -358,7 +407,7 @@ window.WaOrd = (function () {
     load(); return { refresh: load };
   }
 
-  return { card, open, urgent, link, attention, count, storeForm, settings, _fmt: fmt };
+  return { card, badge, open, urgent, link, attention, count, storeForm, settings, _fmt: fmt };
 })();
 // 📦 the WhatsApp section's "Order updates" page (Automation → Order updates)
 if (window.WaPanels && WaPanels.add) WaPanels.add('orderupd', (el) => { const s = WaOrd.settings(el); return () => s.refresh(); });

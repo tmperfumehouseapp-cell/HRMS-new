@@ -215,7 +215,7 @@ function wo_view(PDO $pdo, ?array $p, ?array $s, string $match, array $sent): ar
     $etd = $p && !empty($p['etd']) ? (string)$p['etd'] : null;
     $etdText = ''; if ($cls !== 'delivered' && $cls !== 'cancelled' && $cls !== 'rto') $etdText = $etd ? 'Courier date: ' . date('D j M', strtotime($etd)) : 'no date from the courier yet';
     $fin = $s ? (string)$s['financial_status'] : ''; $cod = preg_match('/pending|cod|cash/i', $fin) ? 'Pay on delivery / pending' : ($fin !== '' ? ucfirst(str_replace('_', ' ', $fin)) : '');
-    return ['order_name' => $name, 'store' => $store, 'placed_at' => $p ? (string)$p['created_at'] : (string)$s['created_at'], 'total' => $s ? (float)$s['total'] : null, 'payment' => $cod,
+    return ['order_name' => $name, 'store' => $store, 'placed_at' => $p ? (string)$p['created_at'] : (string)$s['created_at'], 'total' => $s ? (float)$s['total'] : null, 'payment' => $cod, 'fin' => strtolower($fin),
         'courier' => $p ? (string)$p['courier'] : '', 'tracking_no' => $p ? (string)$p['tracking_no'] : '', 'track_link' => $p ? (string)$p['track_link'] : '',
         'status' => $cls, 'status_label' => wo_class_label($cls), 'status_text' => wo_status_text($cls, $arr), 'sr_status' => $p ? (string)$p['sr_status'] : '', 'etd' => $etd, 'etd_text' => $etdText,
         'delivered_at' => $p && !empty($p['delivered_at']) ? (string)$p['delivered_at'] : null, 'last_scan' => $last ? ['at' => $last['at'], 'label' => $last['label'], 'place' => $last['place']] : null,
@@ -907,7 +907,7 @@ function wa_ord_tick(PDO $pdo): array
 
 // ------------------------------------------------------------------------------------------------------------------ router
 $__woa = (string)($action ?? ($_GET['action'] ?? ''));
-if (in_array($__woa, ['wa.ord_for', 'wa.ord_hub', 'wa.ord_search', 'wa.ord_link', 'wa.ord_unlink', 'wa.ord_urgent', 'wa.ord_cases', 'wa.ord_case_take', 'wa.ord_case_done', 'wa.ord_case_note', 'wa.store_get', 'wa.store_save', 'wa.ord_seed', 'wa.ord_photo', 'wa.ord_edit', 'wa.ord_edit_cancel', 'wa.ord_edit_revert', 'wa.ord_settings'], true)) {
+if (in_array($__woa, ['wa.ord_for', 'wa.ord_sum', 'wa.ord_hub', 'wa.ord_search', 'wa.ord_link', 'wa.ord_unlink', 'wa.ord_urgent', 'wa.ord_cases', 'wa.ord_case_take', 'wa.ord_case_done', 'wa.ord_case_note', 'wa.store_get', 'wa.store_save', 'wa.ord_seed', 'wa.ord_photo', 'wa.ord_edit', 'wa.ord_edit_cancel', 'wa.ord_edit_revert', 'wa.ord_settings'], true)) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'; $auth = require_auth(); $me = (int)($auth['employee_id'] ?? 0);
     if (!function_exists('wa_tables') || !wa_tables($pdo) || !wo_tables($pdo)) json_response(['error' => 'Order storage is not available — check database permissions.'], 500);
     $in = $isPost ? json_input() : $_GET; $adm = wa_is_admin($pdo, $auth); $needPost = function () use ($isPost) { if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); };
@@ -924,6 +924,21 @@ if (in_array($__woa, ['wa.ord_for', 'wa.ord_hub', 'wa.ord_search', 'wa.ord_link'
         case 'wa.ord_for': {
             [$k] = $chat(); $r = wa_ord_for($pdo, $k); $r['can_urgent'] = true; $r['reasons'] = wo_manual_reasons(); $r['open_case'] = ($oc = wa_ord_case_open($pdo, $k, '')) ? wo_case_view($pdo, $oc, false) : null;
             $q = $pdo->prepare("SELECT COUNT(*) FROM wa_ord_cases WHERE phone = ? AND status = 'open'"); $q->execute([$k]); $r['open_cases'] = (int)$q->fetchColumn(); json_response($r);
+        }
+        case 'wa.ord_sum': {   // the small summary under the phone number in the chat header: how many orders, how much, what is on the way
+            [$k] = $chat(); $r = wa_ord_for($pdo, $k);
+            $S = ['n' => 0, 'total' => 0.0, 'delivered' => 0, 'active' => 0, 'problem' => 0, 'cancelled' => 0, 'prepaid' => 0, 'cod' => 0, 'last_at' => null, 'first_at' => null, 'latest' => null, 'more' => count($r['orders']) >= 12];
+            foreach ($r['orders'] as $o) {
+                $at = (string)$o['placed_at']; if ($S['last_at'] === null || $at > $S['last_at']) $S['last_at'] = $at; if ($S['first_at'] === null || ($at !== '' && $at < $S['first_at'])) $S['first_at'] = $at;
+                if ($S['latest'] === null) $S['latest'] = ['order_name' => $o['order_name'], 'status' => $o['status'], 'status_label' => $o['status_label']];
+                if ($o['status'] === 'cancelled') { $S['cancelled']++; continue; }
+                $S['n']++; $S['total'] += (float)($o['total'] ?? 0);
+                if ($o['status'] === 'delivered') $S['delivered']++; elseif (in_array($o['status'], ['failed', 'rto', 'lost', 'damaged', 'delayed'], true)) $S['problem']++; else $S['active']++;
+                if (preg_match('/paid/', (string)$o['fin']) && !preg_match('/partial|unpaid/', (string)$o['fin'])) $S['prepaid']++; elseif ($o['fin'] !== '') $S['cod']++;
+            }
+            $S['aov'] = $S['n'] ? round($S['total'] / $S['n']) : 0; $S['total'] = round($S['total']);
+            $q = $pdo->prepare("SELECT COUNT(*) FROM wa_ord_cases WHERE phone = ? AND status = 'open'"); $q->execute([$k]); $S['open_cases'] = (int)$q->fetchColumn();
+            json_response(['ok' => true] + $S);
         }
         case 'wa.ord_hub': {   // the full Order + Customer card (same as Dispatch's big popup) for the customer of THIS chat; only their own orders
             [$k] = $chat();
