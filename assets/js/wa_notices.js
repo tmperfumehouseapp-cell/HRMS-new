@@ -7,10 +7,11 @@
   document.head.appendChild(st);
   let box = null, shown = new Set(), busy = false;
   const ago = (t) => { const m = Math.max(0, Math.round((Date.now() - new Date(String(t).replace(' ', 'T')).getTime()) / 60000)); return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : Math.round(m / 60) + ' h ago'; };
+  const clock = (t) => { const d = new Date(String(t).replace(' ', 'T')); return isNaN(d) ? '' : d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }); };
   const pretty = (p) => '+91 ' + String(p).replace(/^(\d{5})(\d{5})$/, '$1 $2');
   function draw(list) {
     if (!box) { box = document.createElement('div'); box.id = 'wnBox'; document.body.appendChild(box); }
-    box.innerHTML = list.map((n) => `<div class="wn" data-p="${esc(n.phone)}"><span class="t">🔄 <b>${esc(n.by)}</b> took over ${n.name ? '<b>' + esc(n.name) + '</b>’s' : 'your'} chat${n.name ? '' : ' ' + esc(pretty(n.phone))}<small>${esc(ago(n.at))} · it is no longer in your list</small></span><button type="button" data-x="${n.id}" aria-label="Close">✕</button></div>`).join('');
+    box.innerHTML = list.map((n) => `<div class="wn" data-p="${esc(n.phone)}"><span class="t">🔄 <b>${esc(n.by)}</b> took over ${n.name ? '<b>' + esc(n.name) + '</b>’s' : 'your'} chat${n.name ? '' : ' ' + esc(pretty(n.phone))}<small>at <b>${esc(clock(n.at))}</b> · ${esc(ago(n.at))} · it is no longer in your list</small></span><button type="button" data-x="${n.id}" aria-label="Close">✕</button></div>`).join('');
     box.querySelectorAll('[data-x]').forEach((b) => { b.onclick = async (e) => { e.stopPropagation(); const id = +b.dataset.x; b.closest('.wn').remove(); try { await api.post('wa.notice_seen', { ids: [id] }); } catch (er) { } }; });
   }
   async function poll() {
