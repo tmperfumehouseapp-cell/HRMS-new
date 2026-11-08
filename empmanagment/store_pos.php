@@ -833,13 +833,61 @@ try {
         case 'st_bday.list': {            // codes made / sent / used (newest first) + the settings and whether the WhatsApp template is approved
             $auth = require_auth();
             $cfg = st_bday_cfg($pdo);
-            $rows = array_map('st_bday_public', $pdo->query("SELECT * FROM st_bday_vouchers ORDER BY (status = 'active') DESC, valid_to ASC, voucher_id DESC LIMIT 100")->fetchAll());
+            try { if (!is_file(__DIR__ . '/cust_bday.php') || (require_once __DIR__ . '/cust_bday.php') || true) st_bday_run($pdo, false); } catch (Throwable $e) { error_log('st_bday.list run: ' . $e->getMessage()); }   // today's codes exist before the cashier opens the list (nothing is sent here)
+            $onl = []; if (function_exists('cbd_all')) foreach (cbd_all($pdo) as $cb) $onl[(string)$cb['phone']] = 1;
+            $rows = array_map(function ($v) use ($onl) { $r = st_bday_public($v); $r['online'] = isset($onl[(string)$v['phone']]); return $r; }, $pdo->query("SELECT * FROM st_bday_vouchers ORDER BY (status = 'active') DESC, valid_to ASC, voucher_id DESC LIMIT 100")->fetchAll());
             $tpl = st_wa_status($pdo)['templates']['tmph_store_bday'] ?? ['status' => 'missing', 'reason' => ''];
             $known = (int)$pdo->query("SELECT COUNT(DISTINCT phone) FROM st_bill_people WHERE bday <> '' AND declined = 0 AND phone <> ''")->fetchColumn();
-            json_response(['cfg' => $cfg, 'vouchers' => $rows, 'template' => $tpl, 'customers_with_birthday' => $known, 'can_manage' => in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true) || user_can($auth, 'rs_manage')]);
+            json_response(['msg' => st_bday_msg($pdo), 'cfg' => $cfg, 'vouchers' => $rows, 'template' => $tpl, 'customers_with_birthday' => $known, 'can_manage' => in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true) || user_can($auth, 'rs_manage')]);
             break;
         }
 
+        case 'st_bday.msg_get': {         // the wording + the photo (the photo only when asked: it is a big picture)
+            require_auth(); json_response(st_bday_msg($pdo, !empty($_GET['photo'])));
+            break;
+        }
+        case 'st_bday.msg_save': {        // managers: change the wording / the photo
+            $auth = require_auth(); if (!(in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true) || user_can($auth, 'rs_manage'))) json_response(['error' => 'Only a manager can change the birthday message.'], 403);
+            $r = st_bday_msg_save($pdo, json_input()); if (!empty($r['error'])) json_response(['error' => $r['error']], 422); json_response(['ok' => true] + st_bday_msg($pdo));
+            break;
+        }
+        case 'st_bday.mark_sent': {       // the cashier sent the wish by hand (web.whatsapp): it leaves the "to send today" list
+            $auth = require_auth(); $in = json_input(); $who = (string)($auth['username'] ?? 'cashier');
+            $u = $pdo->prepare("UPDATE st_bday_vouchers SET wa_status = 'sent', wa_note = ?, wa_at = ? WHERE voucher_id = ? AND wa_status <> 'sent'"); $u->execute([mb_substr('sent by hand by ' . $who, 0, 200), date('Y-m-d H:i:s'), (int)($in['id'] ?? 0)]);
+            json_response(['ok' => true]);
+            break;
+        }
+        case 'st_bday.gifts': {           // a customer's other gifts (review / goodwill, in ml) by phone or code: the cashier checks and marks them used
+            require_auth(); $q = trim((string)($_GET['q'] ?? '')); $ph = substr(preg_replace('/\D+/', '', $q), -10); $out = [];
+            if (is_file(__DIR__ . '/complaints_rewards.php') && !function_exists('cxrw_ensure')) { /* loaded with the Complaints module only */ }
+            try {
+                $pdo->exec("CREATE TABLE IF NOT EXISTS rw_reward (id INT AUTO_INCREMENT PRIMARY KEY, phone VARCHAR(12) NOT NULL, kind VARCHAR(10) NOT NULL DEFAULT 'goodwill', ml INT NOT NULL DEFAULT 20, min_order INT NOT NULL DEFAULT 0, code VARCHAR(14) NOT NULL DEFAULT '', status VARCHAR(6) NOT NULL DEFAULT 'ok', src VARCHAR(10) NOT NULL DEFAULT 'case', src_ref VARCHAR(40) NOT NULL DEFAULT '', order_name VARCHAR(40) NOT NULL DEFAULT '', reason VARCHAR(300) NOT NULL DEFAULT '', choice VARCHAR(120) NOT NULL DEFAULT '', expires_at DATETIME NULL, by_emp INT NOT NULL DEFAULT 0, ok_by INT NOT NULL DEFAULT 0, created_at DATETIME NOT NULL, used_at DATETIME NULL, used_ref VARCHAR(60) NOT NULL DEFAULT '', used_by INT NOT NULL DEFAULT 0, UNIQUE KEY uq_code (code), KEY k_phone (phone, id), KEY k_status (status, expires_at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+                $s = $pdo->prepare("SELECT * FROM rw_reward WHERE status = 'ok' AND (expires_at IS NULL OR expires_at >= ?) AND (" . ($ph !== '' && strlen($ph) === 10 ? 'phone = ? OR ' : '') . "code = ?) ORDER BY expires_at LIMIT 20");
+                $s->execute(array_merge([date('Y-m-d H:i:s')], $ph !== '' && strlen($ph) === 10 ? [$ph] : [], [strtoupper(preg_replace('/[^A-Za-z0-9\-]/', '', $q))]));
+                foreach ($s->fetchAll() as $r) $out[] = ['id' => (int)$r['id'], 'kind' => 'rw', 'ml' => (int)$r['ml'], 'code' => (string)$r['code'], 'phone' => (string)$r['phone'], 'min_order' => (int)$r['min_order'], 'valid_to' => $r['expires_at'] ? substr((string)$r['expires_at'], 0, 10) : '', 'what' => ['review' => 'Review gift', 'birthday' => 'Birthday gift', 'goodwill' => 'Goodwill gift'][$r['kind']] ?? 'Gift', 'reason' => (string)$r['reason']];
+                $v = $pdo->prepare("SELECT * FROM st_bday_vouchers WHERE status = 'active' AND valid_from <= ? AND valid_to >= ? AND (" . ($ph !== '' && strlen($ph) === 10 ? 'phone = ? OR ' : '') . "code = ?) LIMIT 5");
+                $v->execute(array_merge([date('Y-m-d'), date('Y-m-d')], $ph !== '' && strlen($ph) === 10 ? [$ph] : [], [st_bday_norm($q)]));
+                foreach ($v->fetchAll() as $r) $out[] = ['id' => (int)$r['voucher_id'], 'kind' => 'bd', 'ml' => 50, 'code' => (string)$r['code'], 'phone' => (string)$r['phone'], 'min_order' => 1500, 'valid_to' => (string)$r['valid_to'], 'what' => 'Birthday gift', 'reason' => 'Free 50 ml. At the store: bill it with the birthday code. Online: order above ₹1,500.'];
+            } catch (Throwable $e) { error_log('st_bday.gifts: ' . $e->getMessage()); }
+            json_response(['gifts' => $out]);
+            break;
+        }
+        case 'st_bday.gift_use': {        // a gift was handed over / applied online: record it so it cannot be used twice
+            $auth = require_auth(); $in = json_input(); $who = (string)($auth['username'] ?? 'cashier'); $ref = mb_substr(trim((string)($in['ref'] ?? '')), 0, 60); $choice = mb_substr(trim((string)($in['choice'] ?? '')), 0, 120);
+            if ($ref === '') json_response(['error' => 'Write the bill or order number it was used on.'], 422);
+            $id = (int)($in['id'] ?? 0); $now = date('Y-m-d H:i:s');
+            if (($in['kind'] ?? '') === 'bd') {
+                $q = $pdo->prepare("SELECT * FROM st_bday_vouchers WHERE voucher_id = ? AND status = 'active'"); $q->execute([$id]); $v = $q->fetch(); if (!$v) json_response(['error' => 'This birthday code is not active.'], 404);
+                if (st_gift_given($pdo, (string)$v['phone'], (int)$v['bday_year'])) json_response(['error' => 'This customer already took this year’s birthday gift.'], 409);
+                $pdo->prepare("UPDATE st_bday_vouchers SET status = 'redeemed', redeemed_at = ?, redeemed_by = ? WHERE voucher_id = ? AND status = 'active'")->execute([$now, mb_substr($who . ' (online/hand: ' . $ref . ')', 0, 80), $id]);
+                try { $pdo->prepare("INSERT IGNORE INTO st_bday_gifts (phone, name, gift_year, bill_id, bottle_id, given_by, created_at) VALUES (?,?,?,0,0,?,?)")->execute([(string)$v['phone'], (string)$v['name'], (int)$v['bday_year'], mb_substr($who, 0, 80), $now]); } catch (Throwable $e) { }
+                json_response(['ok' => true, 'message' => 'Birthday gift marked as used.']);
+            }
+            $u = $pdo->prepare("UPDATE rw_reward SET status = 'used', used_at = ?, used_ref = ?, choice = ? WHERE id = ? AND status = 'ok' AND (expires_at IS NULL OR expires_at >= ?)"); $u->execute([$now, $ref, $choice, $id, $now]);
+            if ($u->rowCount() !== 1) json_response(['error' => 'This gift is not active (used, cancelled or expired).'], 409);
+            json_response(['ok' => true, 'message' => 'Gift marked as used.']);
+            break;
+        }
         case 'st_bday.send': {            // send (or send again) one code on WhatsApp now
             require_auth();
             $in = json_input(); $q = $pdo->prepare("SELECT * FROM st_bday_vouchers WHERE voucher_id = ?"); $q->execute([(int)($in['id'] ?? 0)]); $v = $q->fetch();

@@ -663,4 +663,5 @@ function cx_dispatch(PDO $pdo, $action, array $auth, array $w, $by, array $in, $
     }
 }
 
-if (is_file(__DIR__ . '/complaints_more.php')) { require_once __DIR__ . '/complaints_more.php'; }   // Complaints v2 (stages, call log, Claude flag, return check, store credit)
+if (is_file(__DIR__ . '/complaints_more.php')) { require_once __DIR__ . '/complaints_more.php'; }
+if (is_file(__DIR__ . '/complaints_rewards.php')) { require_once __DIR__ . '/complaints_rewards.php'; }   // 🎁 free-perfume rewards (ml) + ⭐ Reviews tab (bd.cx_rw_*)   // Complaints v2 (stages, call log, Claude flag, return check, store credit)

@@ -963,7 +963,7 @@
     let ordLd = null;
     function ordReady(cb) {
       if (window.WaOrd) return cb(); if (ordLd) { ordLd.push(cb); return; } ordLd = [cb];
-      const sc = document.createElement('script'); sc.src = 'assets/js/wa_ord_ui.js?v=8';
+      const sc = document.createElement('script'); sc.src = 'assets/js/wa_ord_ui.js?v=9';
       sc.onload = () => { const q = ordLd || []; ordLd = null; q.forEach((f) => f()); }; sc.onerror = () => { const q = ordLd || []; ordLd = null; q.forEach((f) => f()); }; document.head.appendChild(sc);
     }
     // the little "📦 3 orders · ₹4,200" pill under the phone number; tap = the customer's order card (copy of the Dispatch tracking data)
