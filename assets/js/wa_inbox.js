@@ -435,7 +435,7 @@
     }
     // ⏷ Filter: the order of the list + show only … (like Quick Engage), applied together
     const SORTS = [['', 'Waiting first (default)'], ['new', 'Newest first'], ['old', 'Oldest first'], ['az', 'Name A → Z'], ['za', 'Name Z → A']];
-    const FLTS = [['noreply', 'Not responded — no salesperson reply'], ['late', 'Waiting too long'], ['unassigned', 'Unassigned'], ['hot', '🔥 Hot — ready to buy'], ['complaint', 'Complaint']];
+    const FLTS = [['noreply', 'Not responded — no salesperson reply'], ['late', 'Waiting too long'], ['unassigned', 'Unassigned'], ['hot', '🔥 Hot — ready to buy'], ['complaint', 'Complaint'], ['today', '📅 Today’s chats'], ['yesterday', '🗓 Yesterday’s chats']];
     function flLabel() { const b = $('wiFb'); if (!b) return; const n = S.flt.length + (S.sort ? 1 : 0); b.textContent = '⏷ Filter' + (n ? ' · ' + n : ''); b.classList.toggle('on', n > 0); }
     function flDraw() {
       $('wiFp').innerHTML = '<b class="wi-flh">Sort by</b>' + SORTS.map(([k, l]) => `<label class="wi-flo"><input type="radio" name="wiFs" value="${k}"${S.sort === k ? ' checked' : ''}> ${l}</label>`).join('')
@@ -468,7 +468,7 @@
     }
     const capOf = (m) => { const x = /^[^:]{1,20}:\s*([\s\S]+)$/.exec(m.body || ''); return x ? x[1] : ''; };
     function bubble(m) {
-      if (m.dir === 'sys') return `<div class="wi-ev">${esc(m.body || '')}</div>`;
+      if (m.dir === 'sys') { const d0 = parse(m.ts), t0 = d0 ? d0.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }) : ''; return `<div class="wi-ev">${esc(m.body || '')}${t0 ? ' · <b>' + t0 + '</b>' : ''}</div>`; }   // 🕒 who took / moved the chat AND at what time
       const cls = m.dir === 'in' ? '' : (m.who === 'bot' ? 'out bot' : 'out');
       let body = ''; const cap = (m.mtype === 'image' || m.mtype === 'video') ? capOf(m) : '';
       if (m.media_id && (m.mtype === 'image' || m.mtype === 'sticker')) body = (MEDIA[m.media_id] ? `<img src="${MEDIA[m.media_id]}" alt="photo">` : `<div class="ld" data-m="${esc(m.media_id)}" data-k="img">📷 Tap to open photo</div>`) + (cap ? `<div class="wi-cap">${linkify(esc(cap))}</div>` : '');
@@ -620,7 +620,6 @@
       cxBan(c.phone);
       if ($('wiAsg')) $('wiAsg').onclick = openAssign;
       if ($('wiTo')) $('wiTo').onclick = async function () {   // 🔄 take this chat into MY panel (whoever holds it now; they get a note at the top of their WhatsApp)
-        const was = c.assigned_name ? ' from ' + c.assigned_name : ''; if (!confirm('Take over this chat' + was + '? It moves to your own panel.')) return;
         this.disabled = true; this.textContent = 'Taking over…';
         try { const r = await api.post('wa.takeover', { phone: c.phone }); await refreshChat(true); await loadList(true); const n = $('wiN'); if (n) n.innerHTML = '<div class="wi-note">✅ The chat is yours now' + (r && r.from ? ' (taken from ' + esc(r.from) + ')' : '') + '. Reply below.</div>'; }
         catch (e) { alert(e.message); this.disabled = false; this.textContent = '🔄 Take over'; }
@@ -1411,7 +1410,7 @@
       pickList();
     }
 
-    try { if (!admin && !window.WaNotices) { const s = document.createElement('script'); s.src = 'assets/js/wa_notices.js?v=1'; document.head.appendChild(s); } } catch (e) { }   // 🔔 "X took over your chat" bar (your own chats only)
+    try { if (!admin && !window.WaNotices) { const s = document.createElement('script'); s.src = 'assets/js/wa_notices.js?v=3'; document.head.appendChild(s); } } catch (e) { }   // 🔔 "X took over your chat" bar (your own chats only)
     // ---------- start
     (async function init() {
       if (!admin) { try { S.people = (await api.get('wa.people')).people || []; } catch (e) { S.people = []; } }

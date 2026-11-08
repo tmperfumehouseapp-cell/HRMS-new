@@ -214,7 +214,7 @@ function wag_number_info(PDO $pdo, array $c): array
 }
 
 // ---------------------------------------------------------------------------------------------------------------- the phone inbox
-function wag_inbox(PDO $pdo, int $emp, bool $all, array $cfg, bool $tag = false): array
+function wag_inbox(PDO $pdo, int $emp, bool $all, array $cfg, bool $tag = false, bool $wide = false): array
 {
     $now = time(); $cut = $now - $cfg['unans_min'] * 60; $names = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : [];
     // the last message is looked up ONCE per chat (it was three identical look-ups per chat, every 4 seconds per phone)
@@ -222,7 +222,7 @@ function wag_inbox(PDO $pdo, int $emp, bool $all, array $cfg, bool $tag = false)
             (SELECT COUNT(*) FROM wa_messages u WHERE u.phone = c.phone AND u.dir = 'in' AND u.id > c.seen_msg_id) AS unread
             FROM wa_contacts c LEFT JOIN wa_messages lm ON lm.id = (SELECT m.id FROM wa_messages m WHERE m.phone = c.phone AND m.dir != 'sys' ORDER BY m.id DESC LIMIT 1) WHERE " . ($tag ? "c.last_in_at IS NOT NULL AND c.last_in_at >= '" . date('Y-m-d H:i:s', $now - 30 * 86400) . "' AND (c.assigned_emp = " . (int)$emp . " OR c.phone IN (SELECT l.phone FROM wa_assign_log l WHERE l.to_emp = " . (int)$emp . "))"   // 🏷 my tag: every chat that was ever mine (30 days), wherever it is now
                 : ($all ? "c.status = 'open' AND c.last_in_at IS NOT NULL AND c.last_in_at >= '" . date('Y-m-d H:i:s', $now - 86400) . "' AND c.assigned_emp > 0"
-                    : "c.status = 'open' AND c.assigned_emp = " . (int)$emp . " AND ((c.last_in_at IS NOT NULL AND c.last_in_at >= '" . date('Y-m-d H:i:s', $now - 86400) . "') OR (c.assigned_at IS NOT NULL AND c.assigned_at >= '" . date('Y-m-d H:i:s', $now - 86400) . "'))"))   // 📥 a chat given to me in the last 24 h shows here even if the customer wrote long ago
+                    : "c.status = 'open' AND c.assigned_emp = " . (int)$emp . " AND ((c.last_in_at IS NOT NULL AND c.last_in_at >= '" . ($wide ? date('Y-m-d 00:00:00', strtotime('-1 day')) : date('Y-m-d H:i:s', $now - 86400)) . "') OR (c.assigned_at IS NOT NULL AND c.assigned_at >= '" . date('Y-m-d H:i:s', $now - 86400) . "'))"))   // 📥 a chat given to me in the last 24 h shows here even if the customer wrote long ago
             . " ORDER BY GREATEST(COALESCE(c.last_in_at, '1970-01-01'), IF(c.assigned_at IS NOT NULL AND c.assigned_at >= '" . date('Y-m-d H:i:s', $now - 86400) . "' AND (c.last_out_at IS NULL OR c.last_out_at < c.assigned_at), c.assigned_at, '1970-01-01')) DESC LIMIT " . ($tag ? 400 : 250);   // 24 hours after the customer's last message a chat leaves the inbox and sits in History
     $rows = $pdo->query($sql)->fetchAll(); $om = wa_order_map($pdo); $oc = wag_outcome_map($pdo); $ct = wag_ctag_map($pdo); $ks = array_column($rows, 'phone'); $om->prefetch($ks); $oc->prefetch($ks); $ct->prefetch($ks); $nums = wag_nums($pdo); $out = []; $cnt = ['all' => 0, 'waiting' => 0, 'overdue' => 0, 'hot' => 0];
     $hf = function_exists('wa_heat_flags') ? wa_heat_flags($pdo, $ks) : [];
@@ -902,7 +902,7 @@ if (strpos($__wg, 'wa.g_') === 0 && strpos($__wg, 'wa.g_flow') !== 0) {
             $mgr = function_exists('wa_is_manager') && wa_is_manager($pdo, $auth);   // a WhatsApp manager sees the whole team (filter by person), like an admin
             $pick = ($adm || $mgr) && !empty($_GET['emp']) ? (int)$_GET['emp'] : 0;   // one person picked in the filter → ONLY their chats ('all' used to win and showed everyone)
             $all = ($adm || $mgr) && !empty($_GET['all']) && $pick === 0; $emp = $pick !== 0 ? $pick : $me;
-            [$rows, $cnt] = wag_inbox($pdo, $emp > 0 ? $emp : -1, $all, $cfg, !empty($_GET['tag']) && !$all);
+            [$rows, $cnt] = wag_inbox($pdo, $emp > 0 ? $emp : -1, $all, $cfg, !empty($_GET['tag']) && !$all, !empty($_GET['wide']) && !$all);
             $men = []; try { $q = $pdo->prepare("SELECT n.id, n.phone, n.body, n.emp_id, n.at FROM wa_notes n WHERE n.mention = ? AND n.at >= ? ORDER BY n.id DESC LIMIT 10"); $q->execute([$me, date('Y-m-d H:i:s', time() - 3 * 86400)]); $nm = employee_names_by_id($pdo);
                 foreach ($q->fetchAll() as $r) $men[] = ['id' => (int)$r['id'], 'phone' => $r['phone'], 'text' => $r['body'], 'from' => $nm[(int)$r['emp_id']] ?? '', 'at' => $r['at']]; } catch (Throwable $e) { }
             $rem = []; try { $q = $pdo->prepare("SELECT phone, name, remind_at FROM wa_contacts WHERE assigned_emp = ? AND remind_at IS NOT NULL AND remind_at <= ? ORDER BY remind_at LIMIT 10"); $q->execute([$me, date('Y-m-d H:i:s')]); $rem = $q->fetchAll(); } catch (Throwable $e) { }
