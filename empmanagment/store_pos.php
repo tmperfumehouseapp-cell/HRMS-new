@@ -867,6 +867,15 @@ try {
             $r = st_bday_msg_save($pdo, json_input()); if (!empty($r['error'])) json_response(['error' => $r['error']], 422); json_response(['ok' => true] + st_bday_msg($pdo));
             break;
         }
+        case 'st_msgs.get': {             // the wording of the order thank-you the cashier sends by hand after a bill
+            require_auth(); json_response(['msgs' => st_msgs_get($pdo), 'defaults' => st_msgs_defaults(), 'cs' => ['store_name' => st_cs_get($pdo)['store_name']]]);
+            break;
+        }
+        case 'st_msgs.save': {            // managers: change the order thank-you wording
+            $auth = require_auth(); if (!(in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true) || user_can($auth, 'rs_manage'))) json_response(['error' => 'Only a manager can change the messages.'], 403);
+            $r = st_msgs_save($pdo, json_input()); if (!empty($r['error'])) json_response(['error' => $r['error']], 422); json_response($r);
+            break;
+        }
         case 'st_bday.mark_sent': {       // the cashier sent the wish by hand (web.whatsapp): it leaves the "to send today" list
             $auth = require_auth(); $in = json_input(); $who = (string)($auth['username'] ?? 'cashier');
             $u = $pdo->prepare("UPDATE st_bday_vouchers SET wa_status = 'sent', wa_note = ?, wa_at = ? WHERE voucher_id = ? AND wa_status <> 'sent'"); $u->execute([mb_substr('sent by hand by ' . $who, 0, 200), date('Y-m-d H:i:s'), (int)($in['id'] ?? 0)]);
