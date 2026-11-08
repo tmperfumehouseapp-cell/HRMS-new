@@ -112,12 +112,17 @@
           <div class="wp-kv"><span>Messages this week</span><b>${fmt(n.in_7d)} in · ${fmt(n.out_7d)} out</b></div>
           <div class="wp-kv"><span>Room today <small class="wp-hint">${esc(n.cap.why || '')}</small></span><b>${fmt(n.cap.left)} of ${fmt(n.cap.cap)}</b></div><div class="wp-bar"><i class="${bar >= 90 ? 'b' : (bar >= 70 ? 'w' : '')}" style="width:${Math.max(bar, 1)}%"></i></div>
           <div class="wp-kv"><span>Who handles it</span><b>${n.handler_names.length ? esc(n.handler_names.join(', ')) : 'Automatic (everyone)'}</b></div>
-          <div class="wp-row" style="margin-top:10px"><button type="button" class="wp-btn p s" data-o="profile" data-i="${i}">Profile &amp; photo</button><button type="button" class="wp-btn s" data-o="people" data-i="${i}">Who handles</button><button type="button" class="wp-btn s" data-o="conn" data-i="${i}">Connection</button></div></div>`;
+          <div class="wp-row" style="margin-top:10px"><button type="button" class="wp-btn p s" data-o="profile" data-i="${i}">Profile &amp; photo</button><button type="button" class="wp-btn s" data-o="people" data-i="${i}">Who handles</button><button type="button" class="wp-btn s" data-o="conn" data-i="${i}">Connection</button>${n.is_main || n.main ? '' : `<button type="button" class="wp-btn r s" data-o="del" data-i="${i}">Remove</button>`}</div></div>`;
       }).join('') + '</div></div>';
       el.innerHTML = h;
       $(el, '#nLive').onclick = function () { this.disabled = true; this.textContent = 'Asking Meta…'; load(true); };
       $(el, '#nAdd').onclick = addNumber;
-      el.querySelectorAll('[data-o]').forEach((b) => { b.onclick = () => openNumber(D.numbers[+b.dataset.i], b.dataset.o); });
+      el.querySelectorAll('[data-o]').forEach((b) => { b.onclick = async () => {
+        const n = D.numbers[+b.dataset.i];
+        if (b.dataset.o !== 'del') { openNumber(n, b.dataset.o); return; }
+        if (!confirm('Remove “' + n.label + '” from the list? (A number that already has chats cannot be removed.)')) return;
+        try { await api.post('wa.number_del', { id: n.id }); toast('Removed'); load(false); } catch (e) { toast(e.message, true); }
+      }; });
     }
     function addNumber() {
       const m = modal('Add a number');
