@@ -447,8 +447,8 @@
       catch (e) { toast(e.message, true); if (b) { b.disabled = false; b.textContent = '🔄 Take over'; } }
     }
     // ---- ↪️ Hand over (every salesperson): give your own chat to a colleague — search by name, see who is at work / full
-    function openHandover() {
-      if (!S.cur) return; const phone = S.cur.phone, sh = sheet('Hand over this chat'); let people = null, q = '';
+    function openHandover(mgr) {
+      if (!S.cur) return; const phone = S.cur.phone, sh = sheet(mgr ? 'Assign this chat to…' : 'Hand over this chat'); let people = null, q = '';
       const draw = () => {
         if (!people) { sh.body.innerHTML = '<div class="wx-sk"></div>'; return; }
         const me = S.me && S.me.emp_id, l = people.filter((p) => p.emp_id !== me && (!q || p.name.toLowerCase().includes(q)));
@@ -458,6 +458,11 @@
       sh.body.onclick = async (e) => {
         const b = e.target.closest('[data-e]'); if (!b) return; const p = people.find((x) => x.emp_id === +b.dataset.e); if (!p) return;
         if (!confirm('Hand this chat to ' + p.name + '?' + (p.present ? (p.full ? '\n' + p.name + ' already has many open chats.' : '') : '\n' + p.name + ' is not at work right now.'))) return;
+        if (mgr) {      // manager / admin: assign straight away; a manager who is not a WhatsApp admin takes the chat first, then hands it on — the chat stays open here
+          try { try { await api.post('wa.assign', { phone, emp_id: p.emp_id }); } catch (e1) { if (!/only an admin|only the person/i.test(e1.message || '')) throw e1; await api.post('wa.takeover', { phone }); await api.post('wa.transfer', { phone, emp_id: p.emp_id }); }
+            sh.close(); toast('Assigned to ' + p.name + ' ✓'); loadList(true); openChat(phone); }
+          catch (er) { toast(er.message, true); } return;
+        }
         try { await api.post('wa.transfer', { phone, emp_id: p.emp_id }); sh.close(); toast('Handed over to ' + p.name + ' ✓'); if (history.state && history.state.wxChat) history.back(); else closeChat(); }
         catch (er) { toast(er.message, true); }
       };
@@ -718,10 +723,12 @@
       S.cur.watch = !!(S.me && S.me.team && r.emp && r.emp !== S.me.emp_id);   // a colleague's chat opened from 👥 Team: read only until "Take over"
       v.innerHTML = `<div class="wx-ch"><button class="bk" id="wxBk" aria-label="Back">‹</button><div class="wx-av" style="background:hsl(${hue(c.phone)} 55% 48%);width:34px;height:34px;font-size:12px">${esc(initials(c.name, c.phone))}</div>
         <div class="wx-mid" id="wxCi" style="cursor:pointer"><div class="wx-nm" id="wxCn">${esc(c.name || pretty(c.phone))} ${badgeOf(r)}</div><div class="wx-sub" id="wxCs">${esc(pretty(c.phone))}</div><div id="wxOs"></div></div>
-        <button class="wx-ib" id="wxPrc" title="Send the price photo">💰<small>Price</small></button><button class="wx-ib g" id="wxFin" title="Finish this chat">✔<small>Done</small></button><button class="wx-ib" id="wxMore" aria-haspopup="dialog" title="More: complaint, report, journey, customer">⋯<small>More</small></button></div>
+        ${S.me && S.me.team ? `${r.emp && r.emp === S.me.emp_id ? '' : '<button class="wx-ib g" id="wxTk" title="Take this chat for yourself — one tap">✋<small>Take over</small></button>'}<button class="wx-ib" id="wxAs" title="Give this chat to a salesperson">👤<small>Assign</small></button>` : ''}<button class="wx-ib" id="wxPrc" title="Send the price photo">💰<small>Price</small></button><button class="wx-ib g" id="wxFin" title="Finish this chat">✔<small>Done</small></button><button class="wx-ib" id="wxMore" aria-haspopup="dialog" title="More: complaint, report, journey, customer">⋯<small>More</small></button></div>
         <div id="wxCxB"></div><div id="wxOdB"></div>${S.cur.peek === 'tag' ? `<div class="wx-banner y" id="wxPkB">🏷 This chat was yours first — now with <b>${esc(((S.chats || []).find((y) => y.phone === S.cur.phone) || {}).emp_name || 'someone else')}</b>. You can read it; only they can reply.</div>` : S.cur.peek ? `<div class="wx-banner b" id="wxPkB">🙋 A ${S.cur.peek === 'grab' ? 'late chat (nobody replied)' : 'new chat — not given to anyone yet'}. Read it, then take it with the button below.</div>` : ''}${S.cur.watch ? `<div class="wx-banner b" id="wxTo" style="display:flex;gap:8px;align-items:center">👀 <span style="flex:1">With <b>${esc(r.emp_name || 'a colleague')}</b> — you are watching.</span>${r.heat === 'cx' ? '<small>Complaint chat</small>' : '<button class="wx-btn" id="wxToB">🔄 Take over</button>'}</div>` : ''}<div class="wx-sw" id="wxNum" hidden></div><div class="wx-msgs" id="wxMs"><div class="wx-sk"></div></div><div class="wx-qm" id="wxQk" hidden></div><div id="wxSug"></div><div id="wxPp"></div><div id="wxFoot"></div>`;
       $('#wxBk').onclick = () => { if (history.state && history.state.wxChat) history.back(); else closeChat(); }; $('#wxCi').onclick = openCustomer; $('#wxFin').onclick = openFinish; $('#wxMore').onclick = openMore;
       if ($('#wxToB')) $('#wxToB').onclick = takeOver;
+      if ($('#wxTk')) $('#wxTk').onclick = function () { this.disabled = true; takeOver().then(() => { const t = $('#wxTk'); if (S.cur && S.cur.row && S.cur.row.emp === (S.me && S.me.emp_id) && t) t.remove(); else if (t) t.disabled = false; }); };   // ✋ manager / admin: one tap, no confirmation
+      if ($('#wxAs')) $('#wxAs').onclick = () => openHandover(true);   // 👤 give this chat to anybody
       $('#wxPrc').onclick = async function () { if (!confirm('Send the price photo to this customer?')) return; this.disabled = true; try { const r = await api.post('wa.price_photo', { phone: S.cur.phone }); toast(r.message || 'Price photo sent.'); } catch (e) { toast(e.message, true); } this.disabled = false; }; cxBanner(); odBanner(); orderPill();
       $('#wxMs').onclick = async (e) => {
         const rb0 = e.target.closest('[data-rb]'); if (rb0) { rpSet(rb0.dataset.rb); return; }
