@@ -143,6 +143,10 @@
 
       <div class="sx-card" id="srcCard" style="display:none"><h3>📣 Where customers came from <small id="srcSub"></small></h3><div id="srcList"></div><h3 style="margin-top:14px">📍 Areas <small id="areaSub"></small></h3><div id="areaList"></div></div>
 
+      <div class="sx-card" id="imgCard" style="display:none"><h3>📷 Picture for the bill message <small id="imgSub"></small></h3>
+        <div class="sx-mut" style="font-size:12.5px;margin-bottom:6px">After a bill is saved the cashier can press <b>📷 Copy image</b>, open the customer's WhatsApp chat and press Ctrl+V to send this picture with the bill message. (Managers only.)</div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input type="file" id="imgFile" accept="image/*"><button class="lnk" id="imgDel" style="display:none">Remove the picture</button><span id="imgNote" class="sx-mut"></span></div></div>
+
       <div class="sx-card">
         <h3>Bills <input type="date" id="dayPick" class="sx-in" style="width:auto;min-height:32px;padding:3px 8px;font-size:12.5px;margin-left:6px"><small id="dayTot"></small></h3>
         <div style="display:flex;align-items:center;gap:8px;margin:4px 0 8px;flex-wrap:wrap"><label for="payF" class="sx-f" style="margin:0">Show</label><select class="sx-in" id="payF" style="width:auto;min-width:280px;font-weight:700"></select></div>
@@ -448,8 +452,26 @@
     : `<div class="wa"><div class="n"><b style="color:var(--sx-red,#c0392b)">GST invoice NOT made yet</b><small>${esc(d.inv_err || '')}</small></div><button class="lnk" data-inv="${d.bill_id}">Try again</button></div>`);
   function showDone(d) {
     const ps = (d.people || []); if (!ps.length && !d.chain) { $('doneBox').innerHTML = ''; return; }
-    $('doneBox').innerHTML = `<div class="sx-card done"><h4>${sxi('ok')} Bill ${esc(d.bill_no || '')} saved — ${ps.some((x) => x.auto === 'sent') ? 'sent to the customer on WhatsApp automatically' + (ps.some((x) => x.wa_url && x.auto !== 'sent') ? ' (send the rest below)' : '') : 'now send it to the customer' + (ps.length > 1 ? 's' : '')}</h4>${invBox(d)}${ps.map((p) => waRow(p)).join('')}<div class="wa" style="border-top:1px dashed var(--sx-line)"><div class="n"><b>More people with them?</b><small>Friends link: they save contacts, join the community and review — no need to bill them</small></div><button class="lnk" data-copy="${esc((ps.find((x) => x.link) || {}).link + '&g=1')}">Copy friends link</button></div><div class="sx-mut" style="margin-top:6px;font-size:11.5px">Tap <b>Send on WhatsApp</b>: WhatsApp opens with the message ready — just press send.</div><button class="lnk" id="doneX" style="margin-top:8px">Done</button></div>`;
+    $('doneBox').innerHTML = `<div class="sx-card done"><h4>${sxi('ok')} Bill ${esc(d.bill_no || '')} saved — ${ps.some((x) => x.auto === 'sent') ? 'sent to the customer on WhatsApp automatically' + (ps.some((x) => x.wa_url && x.auto !== 'sent') ? ' (send the rest below)' : '') : 'now send it to the customer' + (ps.length > 1 ? 's' : '')}</h4>${invBox(d)}${ps.map((p) => waRow(p)).join('')}${billImg ? '<div class="wa"><div class="n"><b>📷 Picture for the message</b><small>Press Copy image, open the chat, press Ctrl+V and send it.</small></div><button class="wabtn" data-copyimg="1">📷 Copy image</button></div>' : ''}<div class="wa" style="border-top:1px dashed var(--sx-line)"><div class="n"><b>More people with them?</b><small>Friends link: they save contacts, join the community and review — no need to bill them</small></div><button class="lnk" data-copy="${esc((ps.find((x) => x.link) || {}).link + '&g=1')}">Copy friends link</button></div><div class="sx-mut" style="margin-top:6px;font-size:11.5px">Tap <b>Send on WhatsApp</b>: WhatsApp opens with the message ready — just press send.</div><button class="lnk" id="doneX" style="margin-top:8px">Done</button></div>`;
     $('doneBox').scrollIntoView({ block: 'start' });
+  }
+  // ---------- 📷 a picture to send with the bill message (copied, then pasted into the WhatsApp chat)
+  let billImg = false;
+  const imgUi = () => { const m = $('imgCard'); if (!m) return; m.style.display = isManager ? '' : 'none'; $('imgDel').style.display = billImg ? '' : 'none'; $('imgSub').textContent = billImg ? '· picture is set ✓' : '· no picture yet'; };
+  async function loadBillImg() { try { billImg = !!(await api.get('st_bill.image_get')).has_image; } catch (e) { billImg = false; } imgUi(); }
+  const shrinkImg = (file, max) => new Promise((ok, no) => { const fr = new FileReader(); fr.onerror = no; fr.onload = () => { const im = new Image(); im.onerror = no; im.onload = () => { const k = Math.min(1, max / Math.max(im.width, im.height)), c = document.createElement('canvas'); c.width = Math.round(im.width * k); c.height = Math.round(im.height * k); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height); ok(c.toDataURL('image/jpeg', 0.85)); }; im.src = fr.result; }; fr.readAsDataURL(file); });
+  document.addEventListener('change', async (e) => {
+    if (e.target.id !== 'imgFile' || !e.target.files[0]) return; const n = $('imgNote'); n.textContent = 'Saving…';
+    try { const d = await shrinkImg(e.target.files[0], 900); await api.post('st_bill.image_save', { photo: d }); n.textContent = 'Saved.'; await loadBillImg(); } catch (err) { n.textContent = (err && err.message) || 'Could not use this picture.'; }
+  });
+  async function copyBillImg(btn) {
+    try {
+      const r = await api.get('st_bill.image_get', { photo: 1 }); if (!r.photo) throw new Error('No picture is set.');
+      const img = new Image(); await new Promise((ok, no) => { img.onload = ok; img.onerror = no; img.src = r.photo; });
+      const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight; c.getContext('2d').drawImage(img, 0, 0);
+      const b = await new Promise((ok) => c.toBlob(ok, 'image/png')); await navigator.clipboard.write([new ClipboardItem({ 'image/png': b })]);
+      btn.textContent = 'Copied ✓ — now Ctrl+V in the chat';
+    } catch (err) { toast('Could not copy the picture: ' + ((err && err.message) || 'try again') + ' (use Chrome on the PC, over https).', 1); }
   }
   async function doSend(btn) {
     window.open(btn.dataset.u, '_blank', 'noopener');
@@ -457,6 +479,8 @@
   }
   document.addEventListener('click', async (e) => {
     const iv = e.target.closest('[data-inv]'); if (iv) { iv.disabled = true; try { const r = await api.post('st_bill.invoice', { bill_id: +iv.dataset.inv }); toast(r.message); $('doneBox').innerHTML = ''; loadBills(); } catch (err) { toast(err.message, 1); iv.disabled = false; } return; }
+    const ci = e.target.closest('[data-copyimg]'); if (ci) return copyBillImg(ci);
+    if (e.target.id === 'imgDel') { try { await api.post('st_bill.image_save', { photo: '' }); await loadBillImg(); } catch (err) { toast(err.message, 1); } return; }
     const w = e.target.closest('[data-wa]'); if (w) return doSend(w);
     const c = e.target.closest('[data-copy]'); if (c) { try { await navigator.clipboard.writeText(c.dataset.copy); c.textContent = 'Copied ✓'; } catch (err) { prompt('Copy this link', c.dataset.copy); } return; }
     if (e.target.id === 'doneX') $('doneBox').innerHTML = '';
@@ -566,7 +590,7 @@
   });
 
   (async () => {
-    const u = api.currentUser() || {}; isManager = ['Admin', 'HR'].includes(u.role); if (typeof storeToday !== 'undefined' && storeToday) setBizDay(storeToday);
+    const u = api.currentUser() || {}; isManager = ['Admin', 'HR'].includes(u.role); loadBillImg(); if (typeof storeToday !== 'undefined' && storeToday) setBizDay(storeToday);
     try { await loadDuty(); } catch (e) { $('bills').textContent = e.message; }
     loadBills(); $('scanList').focus();
   })();
