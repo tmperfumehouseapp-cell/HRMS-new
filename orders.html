@@ -483,6 +483,7 @@
   .ohsp.ohz{color:#cbd5e1; font-weight:600;}
   /* Total column: the running total through this hour (this hour's amount + every hour before it). */
   .ohtot{text-align:right; font-weight:800; font-size:11.5px; color:#15803d; background:#f0fdf4; border-radius:6px; padding:3px 6px; white-space:nowrap;}
+  .ohtot .ohy{display:block; font-size:10px; font-weight:700; color:#64748b; margin-top:1px;}
   .ohtot.ohz{color:#cbd5e1; background:none; font-weight:600; padding:3px 0;}
   .ohr.hd .ohsp, .ohr.hd .ohtot{text-align:right;}
   .ohr.hd .ohtot{background:none; color:var(--muted); padding:3px 6px 3px 0;}
@@ -1061,6 +1062,7 @@
       loadPlatformQueries(from, to);
       loadHourly(from, to);
       loadTeamSheet(from, to);
+      loadYday(from, to, store);
       const data = await api.get('shopify.orders', { date_from: from, date_to: to, store });
       if (reqId !== ordersReqId) return;
       const orders = (data.orders || []).filter(o => o.store_key !== 'mysales4p');   // MySales 4P is not shown or counted here
@@ -1413,6 +1415,19 @@
   let hourData = {}, hourFor = '', hourReq = 0;      // panel key -> queries.hourly reply, for the single day picked
   const HOUR_KEYS = ['tmph', 'tmsg'];
   const qhOpen = new Set();                          // boxes whose hour list is open (kept across redraws)
+  // Yesterday's orders (one-day view only) → the "Y" line under each running total in Orders by hour, to compare today with yesterday at the same hour.
+  let ydayOrders = [], ydayFor = '';
+  async function loadYday(from, to, store) {
+    if (EMP_VIEW || from !== to) { ydayOrders = []; ydayFor = ''; return; }
+    const d = new Date(from + 'T12:00:00'); d.setDate(d.getDate() - 1);
+    const y = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    try {
+      const data = await api.get('shopify.orders', { date_from: y, date_to: y, store });
+      if (document.getElementById('dateFrom').value !== from || document.getElementById('dateTo').value !== to) return;
+      ydayOrders = (data.orders || []).filter(o => o.store_key !== 'mysales4p' && !o.cancelled && isCounted(o)); ydayFor = from;
+      summaryRefresh();
+    } catch (e) { ydayOrders = []; ydayFor = ''; }
+  }
   async function loadHourly(from, to, force) {
     if (EMP_VIEW) return;
     if (from !== to) { hourData = {}; hourFor = ''; hourReq++; summaryRefresh(); return; }     // hours only make sense for one day
@@ -1803,18 +1818,24 @@
     const today = bizDayOf(new Date()), onlyToday = df === today && dt === today, nowH = new Date().getHours();
     const peak = OH_ROWS.filter(k => k !== 'night').reduce((a, k) => by[k].n > (a ? by[a].n : 0) ? k : a, null);
     const tot = list.reduce((a, o) => a + (Number(o.total) || 0), 0);
+    const yAmt = {}; let yOn = false;
+    if (ydayFor && ydayFor === df && df === dt) { yOn = true; OH_ROWS.forEach(k => { yAmt[k] = 0; });
+      ydayOrders.filter(o => (!urlSalesman || o.salesman === urlSalesman) && (!panelPick || panelOf(o) === panelPick) && (!ohPanel || panelOf(o) === ohPanel)).forEach(o => { yAmt[ohSlot(o)] += Number(o.total) || 0; }); }
+    let yRun = 0;
     let ohRun = 0;             // running total: the hours are already in chronological order (10 AM ... 11 PM, then Overnight last)
     const rows = OH_ROWS.map(k => {
       const b = by[k], night = k === 'night', future = onlyToday && !night && nowH >= 10 && k > nowH, now = onlyToday && !night && k === nowH;
       const lab = night ? '🌙 Overnight<small>12 AM – 10 AM</small>' : ohHr(k) + (now ? ' ●' : '');
       const cell = (v, t, cls) => v ? `<a href="#" class="ohn ${cls}" data-oh="${k}" data-oht="${t}">${v}</a>` : `<span class="ohz">${future ? '—' : 0}</span>`;
       let split = `<span class="ohsp ohz">—</span>`, total = `<span class="ohtot ohz">—</span>`;
+      yRun += yAmt[k] || 0; const yl = yOn ? `<small class="ohy" title="Yesterday, same hour">Y ${fmtMoney(yRun, 'INR')}</small>` : '';
+      if (future && yOn) total = `<span class="ohtot ohz">—${yl}</span>`;
       if (!future) {
         ohRun += b.amt;
         split = b.n
           ? `<span class="ohsp">${b.q ? `<i class="q">${fmtMoney(b.qamt, 'INR')}<u>/${b.q}Q</u></i>` : ''}${b.c ? `<i class="c">${fmtMoney(b.camt, 'INR')}<u>/${b.c}C</u></i>` : ''}</span>`
           : `<span class="ohsp ohz">—</span>`;
-        total = `<span class="ohtot">${fmtMoney(ohRun, 'INR')}</span>`;      // running total: this hour + every hour before it (even hours with 0 orders still carry it forward)
+        total = `<span class="ohtot">${fmtMoney(ohRun, 'INR')}${yl}</span>`;      // running total: this hour + every hour before it (even hours with 0 orders still carry it forward)
       }
       return `<div class="ohr${future ? ' fu' : ''}${now ? ' now' : ''}${k === peak && b.n ? ' pk' : ''}${night ? ' nt' : ''}"><span class="ohl">${lab}</span><div class="ohb"><i style="width:${b.n / max * 100}%"></i></div>${cell(b.q, 'query', 'q')}${cell(b.c, 'campaign', 'c')}${cell(b.n, '', 't')}<span class="oha">${b.n ? fmtMoney(b.amt, 'INR') : (future ? '—' : '')}</span>${split}${total}</div>`;
     }).join('');
