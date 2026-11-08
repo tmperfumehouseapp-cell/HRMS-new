@@ -1593,6 +1593,7 @@ if (!function_exists('budget_store_calc')) {
     {
         static $memo = []; $mk = $from . '|' . $to; if (isset($memo[$mk])) return $memo[$mk];
         $ch = cm_chart($pdo); $offers = cm_offers($pdo); $rows = []; $groups = []; $noMl = 0; $unpriced = 0; $pool = array_flip(st_pool_ids($pdo));
+        $flashList = []; try { if (function_exists('cm_is_live') && !cm_is_live($pdo) && function_exists('flash_offer_list_get')) $flashList = flash_offer_list_get($pdo); } catch (Throwable $e) { }     // a Flash Offer only counts while the old engine pays (the new engine has no flash offers)
         if (function_exists('ensure_st_tables')) ensure_st_tables($pdo);
         $q = $pdo->prepare("SELECT b.bill_id, b.bill_no, b.biz_date, b.created_at, b.emp_id, b.emp_name, b.order_code, b.total_ml, b.total, e.employee_id AS real_id
             FROM st_bills b LEFT JOIN employees e ON e.employee_id = b.emp_id AND e.status != 'ex' WHERE b.status = 'ok' AND b.biz_date BETWEEN ? AND ? ORDER BY b.bill_id");
@@ -1609,7 +1610,9 @@ if (!function_exists('budget_store_calc')) {
                 $b = $rows[$i]; $day = (string)$b['biz_date']; $gross = (float)$b['total']; $ml = (int)$b['total_ml']; $hasCode = trim((string)$b['order_code']) !== '';
                 $f = ($hasCode || $codeOk) ? 1.0 : $nocodeF; $com = 0.0; $pct = null; $rule = '';
                 $of = $ml ? cm_offer_match($offers, $ml, $gross, $day, (float)$ch['window']) : null;
+                $fl = (!$of && $flashList && $ml) ? flash_offer_pct_for($flashList, $ml, $gross, (int)strtotime((string)$b['created_at'])) : null;
                 if ($of) { $pct = (float)$of['pct']; $rule = 'offer'; $com = $gross * $pct / 100 * $f; }
+                elseif ($fl !== null) { $pct = (float)$fl['pct']; $rule = 'flash offer'; $com = $gross * $pct / 100 * (($hasCode || $codeOk) ? 1.0 : (float)$fl['nocode'] / 100); }
                 elseif (!$ml) { $noMl++; $rule = 'no ML'; }
                 else { $pc = cm_pct($ch, $ml, $gross); if ($pc === null) { $unpriced++; $rule = 'ML not priced'; } else { $pct = (float)$pc; $rule = 'chart'; $com = $gross * $pct / 100 * $f; } }
                 $out[$i] = ['bill_id' => (int)$b['bill_id'], 'bill_no' => (string)$b['bill_no'], 'day' => $day, 'time' => substr((string)$b['created_at'], 11, 5), 'emp_id' => (int)$b['emp_id'],
