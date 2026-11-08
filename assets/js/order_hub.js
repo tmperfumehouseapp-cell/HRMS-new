@@ -5,6 +5,7 @@
  *   OrderHub.open({ phone })         a customer (any number format) -> their latest order
  *   OrderHub.open({ order, store })  an order by number         OrderHub.open({ bill })  a store bill
  *   OrderHub.open({ ..., tab:'chat' })  opens on the WhatsApp chat
+ *   OrderHub.open({ phone, order?, store?, wa:true })  opened FROM a WhatsApp chat (wa.ord_hub): only that chat's customer, no chat tab, no Dispatch-only buttons
  *   OrderHub.customers(el)           the Customers list (customers.html)
  *
  * Reads dp.dsp_hub / dp.dsp_cust_list (empmanagment/order_hub.php). The chat inside is wa_one.html, the same chat screen as everywhere.
@@ -33,6 +34,7 @@ window.OrderHub = (function () {
 .oh-bar{display:flex;gap:8px;flex-wrap:wrap;margin-top:9px}
 .oh-bn{display:flex;gap:8px;align-items:center;border-radius:12px;padding:8px 12px;font-size:13px;font-weight:700;border:1px solid}.oh-bn.bad{background:#fdecea;border-color:#f5c2bd;color:#b42318}.oh-bn.amber{background:#fff4e0;border-color:#f6d9a7;color:#a15c07}.oh-bn.ok{background:#e8f7ee;border-color:#bfe6cd;color:#157a3c}
 .oh-bn b{font-weight:800}
+.oh-tabs button[hidden]{display:none}
 .oh-tabs{display:flex;gap:6px;padding:10px 18px 0;background:#fff}.oh-tabs button{border:0;background:transparent;font:700 14px inherit;color:#6b7280;padding:9px 14px;border-radius:12px 12px 0 0;cursor:pointer;border-bottom:3px solid transparent}.oh-tabs button.on{color:#14161a;border-bottom-color:#ea580c}.oh-tabs .n,.oh-tabs .nrw{display:none}@media (max-width:900px){.oh-tabs .w{display:none}.oh-tabs .n{display:inline}.oh-tabs .nrw{display:inline-block}}
 .oh-bd{flex:1;min-height:0;overflow:auto;padding:14px 18px;-webkit-overflow-scrolling:touch}
 .oh-cols{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:16px;align-items:start}
@@ -90,9 +92,9 @@ window.OrderHub = (function () {
     css(); close(true); req = req || {};
     const ov = document.createElement('div'); ov.className = 'oh-ov';
     ov.innerHTML = '<div class="oh-pn" role="dialog" aria-modal="true" aria-label="Order and customer"><div class="oh-hd"><div class="oh-r1"><h2>Loading…</h2><button type="button" class="oh-ib" data-x aria-label="Close">✕</button></div></div>'
-      + '<div class="oh-tabs"><button type="button" class="on" data-tab="main"><span class="w">Order &amp; customer</span><span class="n">🧾 Order</span></button><button type="button" class="nrw" data-tab="cust">👤 Customer</button><button type="button" data-tab="chat">💬 WhatsApp chat</button></div><div class="oh-bd" data-bd><div class="oh-sk"></div><div class="oh-sk" style="width:70%"></div><div class="oh-sk" style="width:85%"></div></div><div class="oh-ft" data-ft></div></div>';
+      + '<div class="oh-tabs"><button type="button" class="on" data-tab="main"><span class="w">Order &amp; customer</span><span class="n">🧾 Order</span></button><button type="button" class="nrw" data-tab="cust">👤 Customer</button><button type="button" data-tab="chat"' + (req.wa ? ' hidden' : '') + '>💬 WhatsApp chat</button></div><div class="oh-bd" data-bd><div class="oh-sk"></div><div class="oh-sk" style="width:70%"></div><div class="oh-sk" style="width:85%"></div></div><div class="oh-ft" data-ft></div></div>';
     document.body.appendChild(ov); document.documentElement.style.overflow = 'hidden';
-    const S = { ov, req, d: null, tab: req.tab === 'chat' ? 'chat' : req.tab === 'cust' ? 'cust' : 'main', stack: [], items: null, chatPhone: '' };
+    const S = { ov, req, d: null, tab: req.tab === 'chat' && !req.wa ? 'chat' : req.tab === 'cust' ? 'cust' : 'main', stack: [], items: null, chatPhone: '' };
     CUR = S;
     S.key = (e) => { if (e.key === 'Escape') close(); }; document.addEventListener('keydown', S.key);
     ov.addEventListener('click', (e) => onClick(e, S));
@@ -107,11 +109,11 @@ window.OrderHub = (function () {
     if (!quiet) { const b = S.ov.querySelector('[data-bd]'); if (b && !S.d) b.innerHTML = '<div class="oh-sk"></div><div class="oh-sk" style="width:70%"></div>'; }
     try {
       const q = {}; ['id', 'case', 'phone', 'order', 'store', 'sid', 'bill'].forEach((k) => { if (req[k]) q[k] = req[k]; });
-      S.d = await api.get('dp.dsp_hub', q);
+      S.d = await api.get(req.wa ? 'wa.ord_hub' : 'dp.dsp_hub', q);   // wa = opened from a WhatsApp chat: same card, checked against that chat's customer
     } catch (e) { if (CUR !== S) return; S.ov.querySelector('[data-bd]').innerHTML = '<div class="oh-empty"><b>Cannot open this</b>' + esc(errMsg(e)) + '</div>'; S.ov.querySelector('.oh-r1 h2').textContent = 'Not found'; return; }
     if (CUR !== S) return; draw(S);
     if (S.d.order && !S.d.order.manual) loadItems(S);
-    if (S.d.order && S.d.order.store && S.d.order.shopify_id && !S.d.order.manual) loadPay(S);
+    if (!S.req.wa && S.d.order && S.d.order.store && S.d.order.shopify_id && !S.d.order.manual) loadPay(S);
   }
   async function loadItems(S) {
     const o = S.d && S.d.order; if (!o || S.items) return; S.items = { line_items: null };
@@ -184,10 +186,10 @@ window.OrderHub = (function () {
   }
   function drawFoot(S) {
     const d = S.d, p = d.parcel, f = S.ov.querySelector('[data-ft]'); let h = '';
-    if (d.phone) h += '<button type="button" class="oh-ib sm pri" data-tab="chat">💬 Open chat</button>';
+    if (d.phone && !S.req.wa) h += '<button type="button" class="oh-ib sm pri" data-tab="chat">💬 Open chat</button>';
     if (p && p.tracking_no) h += '<button type="button" class="oh-ib sm" data-copy="' + esc(p.tracking_no) + '">📋 Copy AWB</button>';
     if (p && p.link) h += '<a class="oh-ib sm" href="' + esc(p.link) + '" target="_blank" rel="noopener">Courier page ↗</a>';
-    if (p && p.id && p.tracking_no) h += '<button type="button" class="oh-ib sm" data-refresh>↻ Ask Shiprocket now</button>';
+    if (p && p.id && p.tracking_no && !S.req.wa) h += '<button type="button" class="oh-ib sm" data-refresh>↻ Ask Shiprocket now</button>';
     if (d.case && d.case.id) h += '<span class="oh-chip warn" style="margin:0">Case #' + d.case.id + ' · ' + esc(d.case.status) + '</span>';
     h += '<span class="sp">' + (p && p.live_at ? 'Courier news last read ' + esc(fdt(p.live_at)) : '') + '</span><button type="button" class="oh-ib sm" data-x>Close</button>';
     f.innerHTML = h;
@@ -276,7 +278,7 @@ window.OrderHub = (function () {
     const cp = t.closest('[data-copy]'); if (cp) return copy(cp.getAttribute('data-copy'));
     const od = t.closest('[data-ord]');
     if (od) { const x = S.d.orders[+od.getAttribute('data-ord')]; if (!x) return; S.stack.push(S.req); S.tab = 'main';
-      return load(S, x.src === 'store' ? { bill: x.bill, phone: S.d.phone } : { order: x.name, store: x.store, sid: x.sid, phone: S.d.phone }); }
+      return load(S, x.src === 'store' ? { bill: x.bill, phone: S.req.wa ? S.req.phone : S.d.phone, wa: S.req.wa } : { order: x.name, store: x.store, sid: x.sid, phone: S.req.wa ? S.req.phone : S.d.phone, wa: S.req.wa }); }
     if (t.closest('[data-refresh]')) {
       const b = t.closest('[data-refresh]'); const p = S.d.parcel; if (!p || !p.id) return; b.disabled = true; b.textContent = 'Asking Shiprocket…';
       try { await api.get('dp.dsp_live', { id: p.id, force: 1 }); S.dirty = true; await load(S, S.req, true); toast('Courier news updated'); } catch (er) { toast(errMsg(er)); b.disabled = false; b.textContent = '↻ Ask Shiprocket now'; }

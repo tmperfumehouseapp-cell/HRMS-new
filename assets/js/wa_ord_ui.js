@@ -90,6 +90,22 @@ window.WaOrd = (function () {
     document.body.appendChild(ov); if (mount) mount(ov.querySelector('[data-body]'), close); return { el: ov, close };
   }
 
+  // ====================================================================================================== the full order popup (same card as Dispatch's Track popup)
+  let hubLd = null;
+  function hubReady(cb) {
+    if (window.OrderHub) return cb(true); if (hubLd) { hubLd.push(cb); return; } hubLd = [cb];
+    const sc = document.createElement('script'); sc.src = 'assets/js/order_hub.js?v=6';
+    sc.onload = () => { const q = hubLd || []; hubLd = null; q.forEach((f) => f(!!window.OrderHub)); }; sc.onerror = () => { const q = hubLd || []; hubLd = null; q.forEach((f) => f(false)); }; document.head.appendChild(sc);
+  }
+  /** Opens payment, prepaid / COD, who sold it, commission, where the parcel is, every scan, complaints and this customer's other orders. */
+  function details(phone, order, store, sid) {
+    hubReady((ok) => {
+      if (!ok) { toast('Could not open the full details. Refresh the page.', true); return; }
+      const req = { wa: true, phone: String(phone || '').replace(/\D/g, '').slice(-10) }; if (order) { req.order = order; if (store) req.store = store; if (sid) req.sid = sid; }
+      OrderHub.open(req); const ov = document.querySelector('.oh-ov'); if (ov) ov.style.zIndex = '2147483001';   // above the Orders sheet
+    });
+  }
+
   // ====================================================================================================== the order card in a chat
   function orderHtml(o) {
     const bad = ['failed', 'rto', 'lost', 'damaged', 'delayed'].includes(o.status), good = o.status === 'delivered';
@@ -104,6 +120,7 @@ window.WaOrd = (function () {
     if (o.last_scan) h += '<div class="wor-sc">Last scan: <b>' + esc(o.last_scan.label) + '</b>' + (o.last_scan.place ? ' · ' + esc(o.last_scan.place) : '') + ' · ' + esc(fmt(o.last_scan.at)) + '</div>';
     (o.update_sent || []).forEach((u) => { h += '<div class="wor-mt"><span class="wor-ch sent">' + (u.state === 'sent' ? '✔ ' : '⏳ ') + esc(u.text) + '</span></div>'; });
     if ((o.timeline || []).length > 1) h += '<details class="wor-tl"><summary>Scan history (' + o.timeline.length + ')</summary><ol>' + o.timeline.map((e) => '<li><b>' + esc(e.label || e.activity) + '</b>' + (e.place ? ' · ' + esc(e.place) : '') + '<small>' + esc(fmt(e.at)) + (e.activity && e.label ? ' · ' + esc(e.activity) : '') + '</small></li>').join('') + '</ol></details>';
+    h += '<div style="margin-top:8px"><button class="wor-btn sm" data-full="' + esc(o.order_name) + '" data-store="' + esc(o.store) + '">📋 Full details</button></div>';
     if (o.match === 'linked') h += '<div class="wor-lk">🔗 Linked by hand (not under this number)<button data-unlink="' + esc(o.order_name) + '" data-store="' + esc(o.store) + '">Unlink</button></div>';
     return h + '</div>';
   }
@@ -125,6 +142,7 @@ window.WaOrd = (function () {
       if (e.target.closest('[data-re]')) { S.d = null; load(); return; }
       if (e.target.closest('[data-link]')) { link({ phone: S.phone, onDone: () => { load(); if (o.onChange) o.onChange(); } }); return; }
       if (e.target.closest('[data-urgent]')) { urgent({ phone: S.phone, name: o.name, orders: S.d ? S.d.orders : [], onDone: () => { load(); if (o.onChange) o.onChange(); } }); return; }
+      const fu = e.target.closest('[data-full]'); if (fu) { details(S.phone, fu.getAttribute('data-full'), fu.getAttribute('data-store')); return; }
       const c = e.target.closest('[data-copy]'); if (c) { try { navigator.clipboard.writeText(c.getAttribute('data-copy')); toast('Tracking number copied'); } catch (x) { } return; }
       const u = e.target.closest('[data-unlink]'); if (u) { if (!confirm('Remove the link to order ' + u.getAttribute('data-unlink') + ' from this chat?')) return; api.post('wa.ord_unlink', { phone: S.phone, order_name: u.getAttribute('data-unlink'), store: u.getAttribute('data-store') }).then(() => { toast('Link removed'); load(); }).catch((x) => toast(errMsg(x), true)); }
     };

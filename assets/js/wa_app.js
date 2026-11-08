@@ -952,7 +952,7 @@
     let ordLd = null;
     function ordReady(cb) {
       if (window.WaOrd) return cb(); if (ordLd) { ordLd.push(cb); return; } ordLd = [cb];
-      const sc = document.createElement('script'); sc.src = 'assets/js/wa_ord_ui.js?v=2';
+      const sc = document.createElement('script'); sc.src = 'assets/js/wa_ord_ui.js?v=8';
       sc.onload = () => { const q = ordLd || []; ordLd = null; q.forEach((f) => f()); }; sc.onerror = () => { const q = ordLd || []; ordLd = null; q.forEach((f) => f()); }; document.head.appendChild(sc);
     }
     function openOrders() {

@@ -7,6 +7,7 @@
  * existing template module (wa_tpl.php) and the campaign sender internals (wa_camp.php).
  *
  *   wa.ord_for          GET   ?phone=      orders of this customer, matched by the LAST 10 DIGITS of the phone, plus orders linked by hand
+ *   wa.ord_hub          GET   ?phone= [&order= &store= &sid= &bill=]   the full Order + Customer card (payment, prepaid/COD, salesperson, commission, parcel + every scan, complaints, other orders) for this chat's customer; only their own orders
  *   wa.ord_search       GET   ?phone=&q=   find an order by number / phone to link (staff pick one)
  *   wa.ord_link         POST  {phone, order_name | shopify_id, store?}      link an order to this customer (stays linked)
  *   wa.ord_unlink       POST  {phone, order_name, store?}
@@ -906,7 +907,7 @@ function wa_ord_tick(PDO $pdo): array
 
 // ------------------------------------------------------------------------------------------------------------------ router
 $__woa = (string)($action ?? ($_GET['action'] ?? ''));
-if (in_array($__woa, ['wa.ord_for', 'wa.ord_search', 'wa.ord_link', 'wa.ord_unlink', 'wa.ord_urgent', 'wa.ord_cases', 'wa.ord_case_take', 'wa.ord_case_done', 'wa.ord_case_note', 'wa.store_get', 'wa.store_save', 'wa.ord_seed', 'wa.ord_photo', 'wa.ord_edit', 'wa.ord_edit_cancel', 'wa.ord_edit_revert', 'wa.ord_settings'], true)) {
+if (in_array($__woa, ['wa.ord_for', 'wa.ord_hub', 'wa.ord_search', 'wa.ord_link', 'wa.ord_unlink', 'wa.ord_urgent', 'wa.ord_cases', 'wa.ord_case_take', 'wa.ord_case_done', 'wa.ord_case_note', 'wa.store_get', 'wa.store_save', 'wa.ord_seed', 'wa.ord_photo', 'wa.ord_edit', 'wa.ord_edit_cancel', 'wa.ord_edit_revert', 'wa.ord_settings'], true)) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'; $auth = require_auth(); $me = (int)($auth['employee_id'] ?? 0);
     if (!function_exists('wa_tables') || !wa_tables($pdo) || !wo_tables($pdo)) json_response(['error' => 'Order storage is not available — check database permissions.'], 500);
     $in = $isPost ? json_input() : $_GET; $adm = wa_is_admin($pdo, $auth); $needPost = function () use ($isPost) { if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); };
@@ -923,6 +924,29 @@ if (in_array($__woa, ['wa.ord_for', 'wa.ord_search', 'wa.ord_link', 'wa.ord_unli
         case 'wa.ord_for': {
             [$k] = $chat(); $r = wa_ord_for($pdo, $k); $r['can_urgent'] = true; $r['reasons'] = wo_manual_reasons(); $r['open_case'] = ($oc = wa_ord_case_open($pdo, $k, '')) ? wo_case_view($pdo, $oc, false) : null;
             $q = $pdo->prepare("SELECT COUNT(*) FROM wa_ord_cases WHERE phone = ? AND status = 'open'"); $q->execute([$k]); $r['open_cases'] = (int)$q->fetchColumn(); json_response($r);
+        }
+        case 'wa.ord_hub': {   // the full Order + Customer card (same as Dispatch's big popup) for the customer of THIS chat; only their own orders
+            [$k] = $chat();
+            if (!wo_env()) json_response(['error' => 'The full order view is not available on this server.'], 500);
+            foreach (['dp_ensure', 'dp_dsp_ensure'] as $fn) { if (function_exists($fn)) { try { $fn($pdo); } catch (Throwable $e) { } } }
+            if (!function_exists('ohub_view')) json_response(['error' => 'order_hub.php is missing on this server.'], 500);
+            $g = ['phone' => $k, 'order' => trim((string)($in['order'] ?? '')), 'store' => trim((string)($in['store'] ?? '')), 'sid' => trim((string)($in['sid'] ?? '')), 'bill' => (int)($in['bill'] ?? 0)];
+            if ($g['bill'] > 0) {   // a store bill: only if it is this customer's
+                $bq = $pdo->prepare("SELECT customer_phone FROM st_bills WHERE bill_id = ?"); $bq->execute([$g['bill']]);
+                if (wo_key((string)$bq->fetchColumn()) !== $k) json_response(['error' => 'That bill is not this customer\'s.'], 403);
+            } elseif ($g['order'] !== '' || $g['sid'] !== '') {   // an order: only if this chat's number is on it (order number, extra number, hand link)
+                $pr = function_exists('ohub_parcel') ? ohub_parcel($pdo, $g) : null; $ok = false;
+                if ($pr) {
+                    $keys = wo_keys_of($pr['phone'] ?? '');
+                    try { $xq = $pdo->prepare("SELECT phone FROM order_extra_phones WHERE order_id = ? OR (order_name <> '' AND LOWER(TRIM(LEADING '#' FROM order_name)) = ?)"); $xq->execute([(string)$pr['shopify_id'], strtolower(ltrim((string)$pr['order_name'], '#'))]); foreach ($xq->fetchAll() as $x) $keys = array_merge($keys, wo_keys_of($x['phone'])); } catch (Throwable $e) { }
+                    try { $lq = $pdo->prepare("SELECT phone FROM wa_ord_links WHERE shopify_id = ? OR LOWER(TRIM(LEADING '#' FROM order_name)) = ?"); $lq->execute([(string)$pr['shopify_id'], strtolower(ltrim((string)$pr['order_name'], '#'))]); foreach ($lq->fetchAll() as $x) $keys[] = (string)$x['phone']; } catch (Throwable $e) { }
+                    $ok = in_array($k, array_map('wo_key', $keys), true);
+                }
+                if (!$ok) json_response(['error' => 'That order is not linked to this customer.'], 403);
+            }
+            $r = ohub_view($pdo, $g);
+            if (empty($r['ok'])) json_response(['error' => $r['error'] ?? 'No order found for this customer.'], 404);
+            json_response($r);
         }
         case 'wa.ord_search': {
             [$k] = $chat(); $qs = trim((string)($in['q'] ?? '')); if (mb_strlen($qs) < 3) json_response(['results' => [], 'note' => 'Type at least 3 characters: an order number or a phone number.']);
