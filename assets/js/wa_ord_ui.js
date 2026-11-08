@@ -443,7 +443,7 @@ window.WaOrd = (function () {
         + '<div style="margin-top:8px"><button class="wor-b" data-rvsave>Save</button></div></div>';
       if (opts.extra) h += opts.extra;
       h += '<p class="wor-sub" style="margin-top:10px"><b>' + s.sent_today + '</b> sent today · <b>' + s.sent_month + '</b> this month. ' + esc(s.cost_text) + '</p>';
-      h += '<button class="wor-b" data-seed>' + (s.statuses.every((x) => x.template_status !== 'missing') ? 'Check the templates at Meta' : 'Create the missing messages and send them to Meta') + '</button> <span class="wor-sub" data-sm></span></div>'; el.innerHTML = h; loadThumbs();
+      h += '<button class="wor-b" data-seed>' + (s.statuses.every((x) => x.template_status !== 'missing' && !(x.photo && x.photo.lib_id > 0 && x.photo.template_status === 'missing' && !(x.edit && x.edit.live && x.edit.live.lib > 0))) ? 'Check the templates at Meta' : 'Create the missing messages and send them to Meta') + '</button> <span class="wor-sub" data-sm></span></div>'; el.innerHTML = h; loadThumbs();
     }
     // 🔤 what each {{1}} {{2}} stands for, in words (the same names in the card, the editor and Meta's sample)
     const VLAB = { Name: 'the customer\'s name', Order: 'the order number', Courier: 'the courier\'s name', Tracking: 'the tracking number', 'Review link': 'your Judge.me review link', Birthday: 'the birthday date', 'Gift code': 'the gift code', 'Valid till': 'the date the gift is valid until' };
