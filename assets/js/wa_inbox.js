@@ -1410,7 +1410,7 @@
       pickList();
     }
 
-    try { if (!admin && !window.WaNotices) { const s = document.createElement('script'); s.src = 'assets/js/wa_notices.js?v=1'; document.head.appendChild(s); } } catch (e) { }   // 🔔 "X took over your chat" bar (your own chats only)
+    try { if (!admin && !window.WaNotices) { const s = document.createElement('script'); s.src = 'assets/js/wa_notices.js?v=2'; document.head.appendChild(s); } } catch (e) { }   // 🔔 "X took over your chat" bar (your own chats only)
     // ---------- start
     (async function init() {
       if (!admin) { try { S.people = (await api.get('wa.people')).people || []; } catch (e) { S.people = []; } }

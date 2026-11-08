@@ -3,7 +3,7 @@
 (function () {
   if (window.WaNotices) return; window.WaNotices = { on: true };
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const st = document.createElement('style'); st.textContent = '#wnBox{position:fixed;left:50%;top:8px;transform:translateX(-50%);z-index:9400;display:flex;flex-direction:column;gap:6px;width:min(96vw,560px);pointer-events:none}#wnBox .wn{pointer-events:auto;display:flex;align-items:center;gap:10px;background:linear-gradient(135deg,#7c2d12,#b45309);color:#fff;border-radius:14px;padding:9px 12px;box-shadow:0 10px 30px rgba(124,45,18,.35);font:600 13px system-ui,sans-serif}#wnBox .wn b{font-weight:800}#wnBox .wn span.t{flex:1;line-height:1.35}#wnBox .wn small{display:block;font-weight:500;opacity:.8;font-size:11.5px}#wnBox .wn button{border:0;background:rgba(255,255,255,.2);color:#fff;border-radius:99px;width:26px;height:26px;font-size:14px;cursor:pointer;flex:0 0 auto}';
+  const st = document.createElement('style'); st.textContent = '#wnBox{position:fixed;left:50%;top:8px;transform:translateX(-50%);z-index:2147483000;display:flex;flex-direction:column;gap:6px;width:min(96vw,560px);pointer-events:none}#wnBox .wn{pointer-events:auto;display:flex;align-items:center;gap:10px;background:linear-gradient(135deg,#fb923c,#ea580c);color:#fff;border-radius:14px;padding:10px 12px;box-shadow:0 10px 30px rgba(234,88,12,.45);border:1px solid rgba(255,255,255,.35);font:600 13px system-ui,sans-serif}#wnBox .wn b{font-weight:800}#wnBox .wn span.t{flex:1;line-height:1.35}#wnBox .wn small{display:block;font-weight:500;opacity:.8;font-size:11.5px}#wnBox .wn button{border:0;background:rgba(255,255,255,.2);color:#fff;border-radius:99px;width:26px;height:26px;font-size:14px;cursor:pointer;flex:0 0 auto}';
   document.head.appendChild(st);
   let box = null, shown = new Set(), busy = false;
   const ago = (t) => { const m = Math.max(0, Math.round((Date.now() - new Date(String(t).replace(' ', 'T')).getTime()) / 60000)); return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : Math.round(m / 60) + ' h ago'; };
@@ -18,5 +18,5 @@
     try { const d = await api.get('wa.notices'); const list = d.notices || []; draw(list); if (list.some((n) => !shown.has(n.id))) { try { navigator.vibrate && navigator.vibrate(60); } catch (e) { } list.forEach((n) => shown.add(n.id)); } }
     catch (e) { } finally { busy = false; }
   }
-  poll(); setInterval(poll, 15000); document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
+  poll(); setInterval(poll, 8000); document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
 })();
