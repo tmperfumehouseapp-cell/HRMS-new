@@ -16403,10 +16403,10 @@ function tmph_month_spend(): float
         return (float)$q->fetchColumn();
     } catch (Throwable $e) { return 0.0; }
 }
-/** true = the monthly budget (TMPH_MONTH_BUDGET_USD, default 180) is spent: no more AI calls this month. */
+/** true = the monthly budget (TMPH_MONTH_BUDGET_USD, default 300) is spent: no more AI calls this month. */
 function tmph_over_budget(): bool
 {
-    $b = (float)tmph_cfg('TMPH_MONTH_BUDGET_USD', 180);
+    $b = (float)tmph_cfg('TMPH_MONTH_BUDGET_USD', 300);
     return $b > 0 && tmph_month_spend() >= $b;
 }
 /** Gemini schema (OBJECT / STRING …) -> JSON schema (object / string …). */
@@ -33438,7 +33438,7 @@ switch ($action) {
         $rows = $q->fetchAll(); $tot = ['calls' => 0, 'in' => 0, 'out' => 0, 'usd' => 0.0]; $byP = [];
         foreach ($rows as $r) { $tot['calls'] += (int)$r['calls']; $tot['in'] += (int)$r['in_tokens']; $tot['out'] += (int)$r['out_tokens']; $tot['usd'] += (float)$r['cost_usd'];
             $byP[$r['purpose']] = ($byP[$r['purpose']] ?? 0) + (float)$r['cost_usd']; }
-        $budget = (float)tmph_cfg('TMPH_MONTH_BUDGET_USD', 180);
+        $budget = (float)tmph_cfg('TMPH_MONTH_BUDGET_USD', 300);
         json_response(['month' => $month, 'provider' => tmph_provider(), 'rows' => $rows, 'total' => $tot, 'by_purpose' => $byP, 'budget_usd' => $budget, 'left_usd' => max(0, $budget - $tot['usd'])]);
     }
 

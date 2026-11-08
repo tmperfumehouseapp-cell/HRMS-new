@@ -1271,7 +1271,8 @@
   }
   // An order counts (in every box, card, the sheet and the lists) only once it is allocated on the Order Allocation page.
   // Manual counter orders cannot be allocated there, so they always count.
-  const isCounted = (o) => o.store_key === 'manual' || Number(o.allocated) === 1;
+  // Order Allocation lists only Shopify + MySales, so other personal-site stores (e.g. MySales 4P) can never be allocated there — they count like manual orders.
+  const isCounted = (o) => o.store_key === 'manual' || (o.custom_store && o.store_key !== 'mysales') || Number(o.allocated) === 1;
   // Cancelled orders are left out of every total, card and the sheet; they only show under "Cancelled orders".
   // Orders not allocated yet are left out the same way; they only show under "Not allocated".
   function scopedOrders() {
