@@ -7,6 +7,7 @@
  * existing template module (wa_tpl.php) and the campaign sender internals (wa_camp.php).
  *
  *   wa.ord_for          GET   ?phone=      orders of this customer, matched by the LAST 10 DIGITS of the phone, plus orders linked by hand
+ *   wa.ord_share        GET   ?phone=&order=   the CUSTOMER-SAFE view of one order (whitelist: status, progress times, courier, tracking no., expected date, amount, how to pay) for the card sent to the customer
  *   wa.ord_hub          GET   ?phone= [&order= &store= &sid= &bill=]   the full Order + Customer card (payment, prepaid/COD, salesperson, commission, parcel + every scan, complaints, other orders) for this chat's customer; only their own orders
  *   wa.ord_search       GET   ?phone=&q=   find an order by number / phone to link (staff pick one)
  *   wa.ord_link         POST  {phone, order_name | shopify_id, store?}      link an order to this customer (stays linked)
@@ -221,13 +222,35 @@ function wo_view(PDO $pdo, ?array $p, ?array $s, string $match, array $sent): ar
         'delivered_at' => $p && !empty($p['delivered_at']) ? (string)$p['delivered_at'] : null, 'last_scan' => $last ? ['at' => $last['at'], 'label' => $last['label'], 'place' => $last['place']] : null,
         'timeline' => $ev, 'match' => $match, 'update_sent' => $p ? ($sent[(int)$p['id']] ?? []) : [], 'parcel_id' => $p ? (int)$p['id'] : 0, 'customer' => $p ? (string)$p['customer'] : (string)$s['customer'],
         'live_at' => $p && !empty($p['live_at']) ? (string)$p['live_at'] : null,
-        'tracked_at' => $p && !empty($p['tracked_at']) ? (string)$p['tracked_at'] : null, 'transit_at' => $p && !empty($p['transit_at']) ? (string)$p['transit_at'] : null, 'ofd_at' => wo_ofd_at($ev)];
+        'tracked_at' => $p && !empty($p['tracked_at']) ? (string)$p['tracked_at'] : null, 'transit_at' => $p && !empty($p['transit_at']) ? (string)$p['transit_at'] : null, 'ofd_at' => wo_ofd_at($ev),
+        'due' => ($s && isset($s['outstanding']) && $s['outstanding'] !== null && $s['outstanding'] !== '') ? (float)$s['outstanding'] : null];
 }
 /** When the courier first said "out for delivery" (from the scans we hold), or null. */
 function wo_ofd_at(array $ev): ?string
 {
     $t = null; foreach ($ev as $e) { if (preg_match('/out for delivery/i', (string)$e['label'] . ' ' . (string)$e['activity'])) { if ($t === null || (string)$e['at'] < $t) $t = (string)$e['at']; } }
     return $t;
+}
+
+/**
+ * What the CUSTOMER may see of an order — a strict whitelist. Never: commission, salesperson, gateway / payment ids, complaints,
+ * Dispatch cases, other orders, lifetime numbers, raw courier remarks, the customer's address or phone.
+ */
+function wo_share_view(PDO $pdo, array $v): array
+{
+    $say = ['placed' => ['Order confirmed', 'We have received your order and are getting it ready.'], 'fulfilled' => ['Packed', 'Your order is packed. The courier details will follow shortly.'], 'packed' => ['Packed and ready to ship', 'Your order is packed and waiting for the courier to collect it.'],
+        'shipped' => ['On the way to you', 'Your order has been handed to the courier and is on its way.'], 'ofd' => ['Out for delivery today', 'The courier is on the way to your address today. Please keep your phone nearby.'],
+        'delivered' => ['Delivered', 'Your order has been delivered. Thank you for shopping with us!'], 'delayed' => ['Slightly delayed', 'Your parcel is taking longer than planned. We are following it up with the courier.'],
+        'failed' => ['Delivery attempt unsuccessful', 'The courier could not deliver on the last try. Our team will contact you to fix it.'], 'rto' => ['Being checked by our team', 'Our team is checking your parcel with the courier and will contact you shortly.'],
+        'lost' => ['Being checked by our team', 'Our team is checking your parcel with the courier and will contact you shortly.'], 'damaged' => ['Being checked by our team', 'Our team is checking your parcel with the courier and will contact you shortly.'],
+        'cancelled' => ['Order cancelled', 'This order has been cancelled.']];
+    $st = (string)$v['status']; $m = $say[$st] ?? ['Order update', ''];
+    $cod = (bool)preg_match('/pending|cod|cash/i', (string)($v['payment'] ?? '')); $due = $cod ? ($v['due'] !== null ? (float)$v['due'] : (float)($v['total'] ?? 0)) : 0.0;
+    $pay = $st === 'cancelled' ? '' : ($cod && $due > 0 && $st !== 'delivered' ? 'Pay ₹' . number_format($due, 0, '.', ',') . ' on delivery' : (($v['payment'] ?? '') !== '' ? ($cod ? 'Pay on delivery' : 'Paid') : ''));
+    $info = function_exists('wa_store_info') ? wa_store_info($pdo) : [];
+    return ['order_name' => (string)$v['order_name'], 'status' => $st, 'headline' => $m[0], 'text' => $m[1], 'placed_at' => (string)$v['placed_at'], 'tracked_at' => $v['tracked_at'], 'transit_at' => $v['transit_at'], 'ofd_at' => $v['ofd_at'], 'delivered_at' => $v['delivered_at'],
+        'courier' => (string)$v['courier'], 'tracking_no' => (string)$v['tracking_no'], 'track_link' => (string)$v['track_link'], 'etd' => $v['etd'], 'amount' => $v['total'], 'pay' => $pay,
+        'last_place' => !empty($v['last_scan']['place']) ? (string)$v['last_scan']['place'] : '', 'brand' => trim((string)($info['name'] ?? '')) !== '' ? (string)$info['name'] : 'TM Perfume House', 'store_phone' => (string)($info['phone'] ?? '')];
 }
 /** Everything the chat panel needs: {orders, linked, none, phone}. Reads the database only. */
 function wa_ord_for(PDO $pdo, $phone): array
@@ -914,7 +937,7 @@ function wa_ord_tick(PDO $pdo): array
 
 // ------------------------------------------------------------------------------------------------------------------ router
 $__woa = (string)($action ?? ($_GET['action'] ?? ''));
-if (in_array($__woa, ['wa.ord_for', 'wa.ord_sum', 'wa.ord_hub', 'wa.ord_search', 'wa.ord_link', 'wa.ord_unlink', 'wa.ord_urgent', 'wa.ord_cases', 'wa.ord_case_take', 'wa.ord_case_done', 'wa.ord_case_note', 'wa.store_get', 'wa.store_save', 'wa.ord_seed', 'wa.ord_photo', 'wa.ord_edit', 'wa.ord_edit_cancel', 'wa.ord_edit_revert', 'wa.ord_settings'], true)) {
+if (in_array($__woa, ['wa.ord_for', 'wa.ord_share', 'wa.ord_sum', 'wa.ord_hub', 'wa.ord_search', 'wa.ord_link', 'wa.ord_unlink', 'wa.ord_urgent', 'wa.ord_cases', 'wa.ord_case_take', 'wa.ord_case_done', 'wa.ord_case_note', 'wa.store_get', 'wa.store_save', 'wa.ord_seed', 'wa.ord_photo', 'wa.ord_edit', 'wa.ord_edit_cancel', 'wa.ord_edit_revert', 'wa.ord_settings'], true)) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'; $auth = require_auth(); $me = (int)($auth['employee_id'] ?? 0);
     if (!function_exists('wa_tables') || !wa_tables($pdo) || !wo_tables($pdo)) json_response(['error' => 'Order storage is not available — check database permissions.'], 500);
     $in = $isPost ? json_input() : $_GET; $adm = wa_is_admin($pdo, $auth); $needPost = function () use ($isPost) { if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); };
@@ -931,6 +954,11 @@ if (in_array($__woa, ['wa.ord_for', 'wa.ord_sum', 'wa.ord_hub', 'wa.ord_search',
         case 'wa.ord_for': {
             [$k] = $chat(); $r = wa_ord_for($pdo, $k); $r['can_urgent'] = true; $r['reasons'] = wo_manual_reasons(); $r['open_case'] = ($oc = wa_ord_case_open($pdo, $k, '')) ? wo_case_view($pdo, $oc, false) : null;
             $q = $pdo->prepare("SELECT COUNT(*) FROM wa_ord_cases WHERE phone = ? AND status = 'open'"); $q->execute([$k]); $r['open_cases'] = (int)$q->fetchColumn(); json_response($r);
+        }
+        case 'wa.ord_share': {   // the customer-safe version of one order, for the card that is sent to the customer
+            [$k] = $chat(); $want = wo_norm_order((string)($in['order'] ?? '')); if ($want === '') json_response(['error' => 'Pick an order.'], 422);
+            foreach (wa_ord_for($pdo, $k)['orders'] as $o) if (wo_norm_order((string)$o['order_name']) === $want) json_response(['ok' => true, 'card' => wo_share_view($pdo, $o)]);
+            json_response(['error' => 'That order is not linked to this customer.'], 404);
         }
         case 'wa.ord_sum': {   // the small summary under the phone number in the chat header: how many orders, how much, what is on the way
             [$k] = $chat(); $r = wa_ord_for($pdo, $k);

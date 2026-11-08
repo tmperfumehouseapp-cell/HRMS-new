@@ -143,6 +143,88 @@ window.WaOrd = (function () {
     return h + '</div>';
   }
 
+
+  // ====================================================================================================== the card for the CUSTOMER (a picture, sent with one tap)
+  // Only what wa.ord_share returns is drawn: status, progress with times, courier, tracking number, expected date, amount / how to pay.
+  // Never commission, salesperson, payment ids, complaints, other orders or the customer's address.
+  const shortWhen = (t) => { const f = fmt(t); const i = f.indexOf(', '); return i < 0 ? [f, ''] : [f.slice(0, i), f.slice(i + 2)]; };
+  function wrapText(ctx, text, maxW) { const out = []; let line = ''; String(text || '').split(/\s+/).forEach((w) => { const t = line ? line + ' ' + w : w; if (ctx.measureText(t).width > maxW && line) { out.push(line); line = w; } else line = t; }); if (line) out.push(line); return out; }
+  function rr(ctx, x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+  function drawCustomerCard(c) {
+    const W = 1080, F = '"Inter","Segoe UI",system-ui,-apple-system,"Noto Sans",Arial,sans-serif', L = 40, CW = W - 80;
+    const bad = ['failed', 'rto', 'lost', 'damaged', 'delayed'].includes(c.status), cancelled = c.status === 'cancelled', at = STAGE[c.status] != null ? STAGE[c.status] : 0;
+    const accent = cancelled ? '#8696a0' : bad ? '#e8890c' : '#00a884';
+    const rows = []; if (c.courier) rows.push(['Courier', c.courier]); if (c.tracking_no) rows.push(['Tracking ID', c.tracking_no]);
+    if (c.status === 'delivered' && c.delivered_at) rows.push(['Delivered on', fmt(c.delivered_at)]); else if (!cancelled && c.etd) rows.push(['Expected by', day(c.etd) + '  (courier date)']);
+    if (c.last_place && c.status !== 'delivered' && !cancelled) rows.push(['Last seen at', c.last_place]);
+    if (c.amount != null) rows.push(['Order value', inr(c.amount)]); if (c.pay) rows.push(['Payment', c.pay]);
+    const m = document.createElement('canvas').getContext('2d'); m.font = '500 31px ' + F; const lines = wrapText(m, c.text, CW - 112);
+    const top = 40, hdr = 190, headY = top + hdr + 62;                                   // body starts under the header
+    const pgY = headY + 62 + lines.length * 46 + 36, pgH = cancelled ? 0 : 226;         // progress block
+    const rowsY = pgY + pgH + 10, rowsH = rows.length ? rows.length * 76 + 36 : 0, footY = rowsY + rowsH + 24, H = footY + 140 + 40;
+    const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const x = cv.getContext('2d');
+    x.fillStyle = '#e6efec'; x.fillRect(0, 0, W, H);
+    // white card
+    x.save(); x.shadowColor = 'rgba(0,0,0,.10)'; x.shadowBlur = 30; x.shadowOffsetY = 8; x.fillStyle = '#fff'; rr(x, L, top, CW, H - top - 40, 44); x.fill(); x.restore();
+    // header band
+    x.save(); rr(x, L, top, CW, H - top - 40, 44); x.clip(); const g = x.createLinearGradient(L, top, L + CW, top + hdr); g.addColorStop(0, '#0b6e5f'); g.addColorStop(.6, '#00a884'); g.addColorStop(1, '#25d366'); x.fillStyle = g; x.fillRect(L, top, CW, hdr);
+    x.fillStyle = 'rgba(255,255,255,.1)'; x.beginPath(); x.arc(L + CW - 30, top - 20, 160, 0, 7); x.fill(); x.restore();
+    x.fillStyle = '#fff'; x.font = '800 48px ' + F; x.fillText(c.brand, L + 52, top + 84); x.font = '600 31px ' + F; x.globalAlpha = .92; x.fillText('Order update  ·  ' + c.order_name, L + 52, top + 138); x.globalAlpha = 1;
+    // headline + text
+    x.fillStyle = bad ? '#b45f06' : cancelled ? '#54656f' : '#0b3d35'; x.font = '800 56px ' + F; x.fillText(c.headline, L + 56, headY + 30);
+    x.fillStyle = '#54656f'; x.font = '500 31px ' + F; lines.forEach((ln, i) => x.fillText(ln, L + 56, headY + 30 + 56 + i * 46));
+    // progress line
+    if (!cancelled) {
+      const cols = 5, x0 = L + 56 + 60, x1 = L + CW - 56 - 60, step = (x1 - x0) / (cols - 1), cy = pgY + 40, r = 28; const when = [c.placed_at, c.tracked_at, c.transit_at, c.ofd_at, c.delivered_at];
+      for (let i = 0; i < cols - 1; i++) { x.strokeStyle = i < at ? accent : '#dfe5e8'; x.lineWidth = 9; x.lineCap = 'round'; x.beginPath(); x.moveTo(x0 + i * step, cy); x.lineTo(x0 + (i + 1) * step, cy); x.stroke(); }
+      STEPS.forEach((t, i) => {
+        const cx = x0 + i * step, done = i < at || (i === at && c.status === 'delivered'), now = i === at && !done;
+        if (now) { x.fillStyle = accent + '33'; x.beginPath(); x.arc(cx, cy, r + 12, 0, 7); x.fill(); }
+        x.fillStyle = done ? accent : '#fff'; x.strokeStyle = done || now ? accent : '#d5dade'; x.lineWidth = 7; x.beginPath(); x.arc(cx, cy, r, 0, 7); x.fill(); x.stroke();
+        if (done) { x.strokeStyle = '#fff'; x.lineWidth = 8; x.lineCap = 'round'; x.lineJoin = 'round'; x.beginPath(); x.moveTo(cx - 12, cy + 1); x.lineTo(cx - 3, cy + 11); x.lineTo(cx + 14, cy - 10); x.stroke(); } else if (now) { x.fillStyle = accent; x.beginPath(); x.arc(cx, cy, 11, 0, 7); x.fill(); }
+        x.textAlign = 'center'; x.fillStyle = (done || now) ? '#111b21' : '#8696a0'; x.font = '800 25px ' + F; const lab = t === 'Out for delivery' ? ['Out for', 'delivery'] : [t]; lab.forEach((w, k) => x.fillText(w, cx, cy + 68 + k * 29));
+        const w = when[i] && i <= at ? shortWhen(when[i]) : null; if (w) { x.fillStyle = '#667781'; x.font = '500 22px ' + F; const yy = cy + 68 + (lab.length - 1) * 29 + 30; x.fillText(w[0], cx, yy); if (w[1]) x.fillText(w[1], cx, yy + 26); }
+        x.textAlign = 'left';
+      });
+    }
+    // details panel
+    if (rows.length) {
+      x.fillStyle = '#f4f7f6'; rr(x, L + 40, rowsY, CW - 80, rowsH, 30); x.fill();
+      rows.forEach((rw, i) => { const ry = rowsY + 18 + i * 76 + 50; x.fillStyle = '#667781'; x.font = '600 27px ' + F; x.fillText(rw[0], L + 76, ry); x.fillStyle = '#111b21'; x.font = '800 30px ' + F; x.textAlign = 'right'; x.fillText(rw[1], L + CW - 76, ry); x.textAlign = 'left'; if (i < rows.length - 1) { x.strokeStyle = '#e3e9e7'; x.lineWidth = 2; x.beginPath(); x.moveTo(L + 76, ry + 24); x.lineTo(L + CW - 76, ry + 24); x.stroke(); } });
+    }
+    // footer
+    x.textAlign = 'center'; x.fillStyle = '#0b6e5f'; x.font = '800 31px ' + F; x.fillText('Questions? Just reply to this message 💬', W / 2, footY + 62); x.fillStyle = '#8696a0'; x.font = '500 25px ' + F; x.fillText(c.brand + (c.store_phone ? '  ·  ' + c.store_phone : ''), W / 2, footY + 106); x.textAlign = 'left';
+    return cv;
+  }
+  function cardCaption(c, name) {
+    const first = String(name || '').trim().split(/\s+/)[0]; const hi = first && !/^\+?\d/.test(first) ? 'Hi ' + first + ', ' : 'Hello, ';
+    return hi + 'here is the latest on your order ' + c.order_name + ': ' + c.headline + '.' + (c.track_link && c.status !== 'delivered' && c.status !== 'cancelled' ? '\n\nTrack it live: ' + c.track_link : '') + '\n\nReply here if you need anything 🙏';
+  }
+  /** The preview sheet: the card exactly as the customer will see it + one "Send to customer" button. o: { phone, name, order, onDone } */
+  function shareCard(o) {
+    const phone = String(o.phone || '').replace(/\D/g, '').slice(-10);
+    sheet('Send to customer', '<div class="wor-sc" style="margin-bottom:8px">This is exactly what the customer will receive on WhatsApp. Only customer-safe details: no commission, no staff names, no internal notes.</div><div data-pv><div class="wor-sc">Preparing the card…</div></div>', (el, close) => {
+      const pv = el.querySelector('[data-pv]');
+      api.get('wa.ord_share', { phone, order: o.order }).then((r) => {
+        const c = r.card, cv = drawCustomerCard(c); const cap = cardCaption(c, o.name); const img = new Image(); img.src = cv.toDataURL('image/png'); img.alt = 'Order card'; img.style.cssText = 'width:100%;border-radius:16px;display:block';
+        pv.innerHTML = ''; pv.appendChild(img);
+        const t = document.createElement('textarea'); t.value = cap; t.rows = 6; t.className = 'wor-in'; t.style.cssText = 'width:100%;margin-top:10px;border:1px solid #e0e3e6;border-radius:12px;padding:10px;font:inherit;font-size:14px;box-sizing:border-box'; pv.appendChild(t);
+        const b = document.createElement('button'); b.className = 'wor-btn pri'; b.style.cssText = 'width:100%;margin-top:10px'; b.textContent = '📤 Send to customer'; pv.appendChild(b);
+        const msg = document.createElement('div'); msg.className = 'wor-sc'; msg.style.marginTop = '8px'; pv.appendChild(msg);
+        b.onclick = () => {
+          b.disabled = true; b.textContent = 'Sending…'; msg.textContent = '';
+          cv.toBlob(async (blob) => {
+            try {
+              if (!blob) throw new Error('Could not make the picture. Try again.');
+              const fd = new FormData(); fd.append('phone', phone); fd.append('caption', t.value.trim()); fd.append('file', blob, 'order-' + String(c.order_name).replace(/[^\w-]/g, '') + '.png');
+              await api.upload('wa.send_media', fd); toast('Order card sent ✔'); close(); if (o.onDone) o.onDone();
+            } catch (e) { b.disabled = false; b.textContent = '📤 Send to customer'; msg.innerHTML = '<div class="wor-err">' + esc(errMsg(e)) + '</div>'; }
+          }, 'image/png');
+        };
+      }).catch((e) => { pv.innerHTML = '<div class="wor-err">' + esc(errMsg(e)) + '</div>'; });
+    });
+  }
+  const send = (phone, name, order, onDone) => shareCard({ phone, name, order, onDone });
   // ====================================================================================================== the full order popup (same card as Dispatch's Track popup)
   let hubLd = null;
   function hubReady(cb) {
@@ -187,7 +269,7 @@ window.WaOrd = (function () {
     if (o.last_scan) h += '<div class="wor-sc">Last scan: <b>' + esc(o.last_scan.label) + '</b>' + (o.last_scan.place ? ' · ' + esc(o.last_scan.place) : '') + ' · ' + esc(fmt(o.last_scan.at)) + '</div>';
     (o.update_sent || []).forEach((u) => { h += '<div class="wor-mt"><span class="wor-ch sent">' + (u.state === 'sent' ? '✔ ' : '⏳ ') + esc(u.text) + '</span></div>'; });
     if ((o.timeline || []).length > 1) h += '<details class="wor-tl"><summary>Scan history (' + o.timeline.length + ')</summary><ol>' + o.timeline.map((e) => '<li><b>' + esc(e.label || e.activity) + '</b>' + (e.place ? ' · ' + esc(e.place) : '') + '<small>' + esc(fmt(e.at)) + (e.activity && e.label ? ' · ' + esc(e.activity) : '') + '</small></li>').join('') + '</ol></details>';
-    h += '<div style="margin-top:8px"><button class="wor-btn sm" data-full="' + esc(o.order_name) + '" data-store="' + esc(o.store) + '">📋 Full details</button></div>';
+    h += '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><button class="wor-btn sm" data-full="' + esc(o.order_name) + '" data-store="' + esc(o.store) + '">📋 Full details</button>' + (o.status === 'cancelled' ? '' : '<button class="wor-btn sm pri" data-send="' + esc(o.order_name) + '">📤 Send to customer</button>') + '</div>';
     if (o.match === 'linked') h += '<div class="wor-lk">🔗 Linked by hand (not under this number)<button data-unlink="' + esc(o.order_name) + '" data-store="' + esc(o.store) + '">Unlink</button></div>';
     return h + '</div>';
   }
@@ -209,6 +291,7 @@ window.WaOrd = (function () {
       if (e.target.closest('[data-re]')) { S.d = null; load(); return; }
       if (e.target.closest('[data-link]')) { link({ phone: S.phone, onDone: () => { load(); if (o.onChange) o.onChange(); } }); return; }
       if (e.target.closest('[data-urgent]')) { urgent({ phone: S.phone, name: o.name, orders: S.d ? S.d.orders : [], onDone: () => { load(); if (o.onChange) o.onChange(); } }); return; }
+      const sd = e.target.closest('[data-send]'); if (sd) { send(S.phone, o.name, sd.getAttribute('data-send'), o.onChange); return; }
       const fu = e.target.closest('[data-full]'); if (fu) { details(S.phone, fu.getAttribute('data-full'), fu.getAttribute('data-store')); return; }
       const c = e.target.closest('[data-copy]'); if (c) { try { navigator.clipboard.writeText(c.getAttribute('data-copy')); toast('Tracking number copied'); } catch (x) { } return; }
       const u = e.target.closest('[data-unlink]'); if (u) { if (!confirm('Remove the link to order ' + u.getAttribute('data-unlink') + ' from this chat?')) return; api.post('wa.ord_unlink', { phone: S.phone, order_name: u.getAttribute('data-unlink'), store: u.getAttribute('data-store') }).then(() => { toast('Link removed'); load(); }).catch((x) => toast(errMsg(x), true)); }
@@ -428,7 +511,7 @@ window.WaOrd = (function () {
     load(); return { refresh: load };
   }
 
-  return { card, badge, open, urgent, link, attention, count, storeForm, settings, _fmt: fmt };
+  return { card, badge, open, send, urgent, link, attention, count, storeForm, settings, _fmt: fmt };
 })();
 // 📦 the WhatsApp section's "Order updates" page (Automation → Order updates)
 if (window.WaPanels && WaPanels.add) WaPanels.add('orderupd', (el) => { const s = WaOrd.settings(el); return () => s.refresh(); });
