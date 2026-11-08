@@ -582,5 +582,5 @@ if (window.WaPanels && WaPanels.add) {
   });
 }
 // 📦 the WhatsApp section's "Order updates" page (Automation → Order updates)
-if (window.WaPanels && WaPanels.add) WaPanels.add('orderupd', (el) => { const s = WaOrd.settings(el); return () => s.refresh(); });
+if (window.WaPanels && WaPanels.add) WaPanels.add('orderupd', (el) => { const s = WaOrd.settings(el, { only: ['received', 'shipped', 'out_for_delivery', 'delivered', 'failed', 'delayed'] }); return () => s.refresh(); });
 
