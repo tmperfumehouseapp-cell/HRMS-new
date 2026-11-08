@@ -748,7 +748,7 @@
     const el = $('storeInfo'); if (!el) return;
     const go = () => { const e2 = $('storeInfo'); if (!e2 || S.tab !== 'store') return; if (!window.WaOrd) { e2.innerHTML = '<div class="sub">⚙️ The store form is not installed yet — copy assets/js/wa_ord_ui.js and empmanagment/wa_orders.php to the server.</div>'; return; } try { WaOrd.storeForm(e2); } catch (er) { e2.innerHTML = '<div class="sub">⚠️ ' + esc(er.message || 'Could not open the form.') + '</div>'; } };
     if (window.WaOrd) return go(); if (storeLd) { storeLd.push(go); return; } storeLd = [go];
-    const sc = document.createElement('script'); sc.src = 'assets/js/wa_ord_ui.js?v=10';
+    const sc = document.createElement('script'); sc.src = 'assets/js/wa_ord_ui.js?v=11';
     sc.onload = () => { const q = storeLd || []; storeLd = null; q.forEach((f) => f()); }; sc.onerror = () => { const q = storeLd || []; storeLd = null; q.forEach((f) => f()); }; document.head.appendChild(sc);
   }
   // 🔗 chain cart ("wch" module, wch.php + wch_setup_ui.js): Products = catalog sync & mapping, Billing = GST bill details, Cart messages = the customer messages of the cart flow.
