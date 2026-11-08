@@ -99,9 +99,25 @@ function wcr_report(PDO $pdo, int $id, bool $fresh = false): ?array
 }
 function wcr_ai(string $sys, string $user, int $max = 2500): ?array
 {
-    if (!function_exists('brain_ai_json')) return null;
-    try { $j = brain_ai_json('internal', 'whatsapp', $sys, $user, $max, ['ctx' => false]); } catch (Throwable $e) { return null; }
+    $GLOBALS['wcr_ai_why'] = '';
+    if (!function_exists('brain_ai_json')) { $GLOBALS['wcr_ai_why'] = 'Claude is not installed on this server.'; return null; }
+    try { $j = brain_ai_json('internal', 'whatsapp', $sys, $user, $max, ['ctx' => false, 'timeout' => 100]); } catch (Throwable $e) { $GLOBALS['wcr_ai_why'] = $e->getMessage(); return null; }
+    if (!is_array($j)) $GLOBALS['wcr_ai_why'] = (string)($GLOBALS['brain_last_error'] ?? '') ?: 'Claude answered in a form HRMS cannot read.';
     return is_array($j) ? $j : null;
+}
+/** Claude's read of ALL recent campaigns together (numbers sent by the Summary screen + each message text): what works, what to change. Not stored. */
+function wcr_summary_ai(PDO $pdo, array $rows): array
+{
+    $rows = array_slice(array_values(array_filter($rows, 'is_array')), 0, 14); if (!$rows) return ['error' => 'No campaign with numbers yet.'];
+    $out = []; foreach ($rows as $r) {
+        $sm = max(0, (int)($r['sent_to_meta'] ?? 0)); $msg = ''; try { $t = function_exists('wa_tpl_row') ? wa_tpl_row($pdo, (int)($r['tpl_id'] ?? 0)) : null; if ($t) $msg = mb_substr(trim((string)($t['header_text'] ?? '') . ' ' . (string)$t['body']), 0, 500); } catch (Throwable $e) { }
+        $out[] = ['campaign' => mb_substr((string)($r['name'] ?? ''), 0, 80), 'started' => (string)($r['started'] ?? ''), 'sent_to_meta' => $sm, 'delivered_pct' => wcr_pct((int)($r['delivered'] ?? 0), $sm), 'read_pct' => wcr_pct((int)($r['read'] ?? 0), $sm), 'replied_pct' => wcr_pct((int)($r['replied'] ?? 0), $sm), 'held_by_meta_pct' => wcr_pct((int)($r['held'] ?? 0), $sm), 'failed_pct' => wcr_pct((int)($r['failed'] ?? 0), $sm), 'message' => $msg];
+    }
+    $sys = "You are the WhatsApp marketing analyst of TM Perfume House (perfumes, India). You get the recent campaigns with their delivered / read / replied / held-by-Meta percentages (of everyone Meta accepted) and the message text of each. "
+         . "Meta holds marketing messages to customers who got many from businesses (held_by_meta_pct): that is Meta's decision, so advise on audience (recent chatters, spacing) and timing, not on forcing it. Compare the campaigns with each other: what is different in the winners' message (first line, length, offer, question, photo) and audience. "
+         . "Only claim what the numbers and messages show. Plain simple English, concrete changes. Answer {\"headline\":\"one line verdict\",\"did_well\":[\"...\"],\"do_better\":[\"specific change to a named campaign or message, with the number it should lift\"],\"next_time\":{\"send_at\":\"e.g. 7 pm\",\"audience\":\"who to send to / leave out\",\"message\":\"the exact first line or ending to try\",\"avoid\":\"what to stop\"}}. Max 5 items per list.";
+    $j = wcr_ai($sys, json_encode($out, JSON_UNESCAPED_UNICODE), 2500); if (!$j || empty($j['headline'])) return ['error' => 'Claude could not review the campaigns right now. Reason: ' . ((string)($GLOBALS['wcr_ai_why'] ?? '') ?: 'no answer') . ' — try again in a minute.'];
+    return ['ok' => true, 'advice' => ['headline' => mb_substr((string)$j['headline'], 0, 240), 'did_well' => array_slice(array_map('strval', (array)($j['did_well'] ?? [])), 0, 5), 'do_better' => array_slice(array_map('strval', (array)($j['do_better'] ?? [])), 0, 5), 'next_time' => array_map('strval', (array)($j['next_time'] ?? []))]];
 }
 /** Claude's advice for one campaign (kept). */
 function wcr_advice(PDO $pdo, int $id): array
@@ -200,7 +216,7 @@ function wcr_pvb_run(PDO $pdo, bool $force = false): array
 }   // function_exists guard
 
 $__wcr = (string)($action ?? ($_GET['action'] ?? ''));
-if (in_array($__wcr, ['wa.camp_report', 'wa.camp_advice', 'wa.camp_report_tag', 'wa.camp_learn', 'wa.camp_learn_build', 'wa.pvb_run'], true)) {
+if (in_array($__wcr, ['wa.camp_report', 'wa.camp_advice', 'wa.camp_report_tag', 'wa.camp_learn', 'wa.camp_learn_build', 'wa.pvb_run', 'wa.camp_summary_ai'], true)) {
     $auth = require_auth(); $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     if (!function_exists('wa_tables') || !wa_tables($pdo)) json_response(['error' => 'WhatsApp storage is not available.'], 500);
     if (function_exists('wa_guard_admin')) wa_guard_admin($pdo, $auth);
@@ -210,6 +226,7 @@ if (in_array($__wcr, ['wa.camp_report', 'wa.camp_advice', 'wa.camp_report_tag', 
     if ($__wcr === 'wa.camp_learn') json_response(['ok' => true, 'learn' => wcr_get($pdo, 'camp_learnings'), 'cards' => count(wcr_advice_ids($pdo))]);
     $in = json_input();
     if ($__wcr === 'wa.camp_advice') { $id = (int)($in['id'] ?? 0); $old = wcr_get($pdo, 'camp_adv_' . $id); if ($old && empty($in['force'])) json_response(['ok' => true, 'advice' => $old]); $r = wcr_advice($pdo, $id); if (isset($r['error'])) json_response($r, 422); json_response($r); }
+    if ($__wcr === 'wa.camp_summary_ai') { $r = wcr_summary_ai($pdo, (array)($in['rows'] ?? [])); if (isset($r['error'])) json_response($r, 422); json_response($r); }
     if ($__wcr === 'wa.camp_report_tag') { $r = wcr_tag_group($pdo, (int)($in['id'] ?? 0), (string)($in['group'] ?? '')); if (isset($r['error'])) json_response($r, 422); json_response($r); }
     if ($__wcr === 'wa.camp_learn_build') { $r = wcr_learn_build($pdo); if (isset($r['error'])) json_response($r, 422); json_response($r); }
     if ($__wcr === 'wa.pvb_run') json_response(wcr_pvb_run($pdo, true));
