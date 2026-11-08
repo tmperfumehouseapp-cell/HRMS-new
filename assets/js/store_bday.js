@@ -20,12 +20,16 @@ window.StoreBday = (function () {
   const CARDS = `      <div class="sx-card bdcard" id="bdCard"><h3>🎂 Birthdays &amp; gift codes <small id="bdSub">next 14 days</small></h3><div id="bdAuto" style="margin:2px 0 8px"></div><div id="bdList"></div>
         <details class="sx-d" id="bdSet" style="margin-top:10px"><summary>⚙ Birthday gift settings</summary><div id="bdSetBody" style="margin-top:10px"></div></details></div>
       <div class="sx-card bdcard" id="gfCard"><h3>🎁 Check a customer’s gifts <small>review gifts, goodwill gifts and birthday codes</small></h3><div style="display:flex;gap:8px;flex-wrap:wrap"><input class="sx-in" id="gfQ" placeholder="Phone number or gift code" style="flex:1;min-width:180px"><button class="sx-btn" id="gfGo" style="padding:8px 16px">Check</button></div><div id="gfOut" style="margin-top:8px"></div></div>`;
-  function css() { if (document.getElementById('sbdCss')) return; const st = document.createElement('style'); st.id = 'sbdCss'; st.textContent = CSS; document.head.appendChild(st); }
+  const CSS2 = '.sbd-ov{position:fixed;inset:0;background:rgba(17,24,39,.55);z-index:99998;display:flex;align-items:center;justify-content:center;padding:16px}.sbd-md{background:#fff;border-radius:22px;padding:22px 20px;max-width:380px;width:100%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.3)}.sbd-md h3{margin:6px 0 6px;font-size:19px}.sbd-md p{color:#54656f;font-size:14px;line-height:1.45;margin:0 0 14px}.sbd-ac{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}.sbd-go{border:0;background:#1fa855;color:#fff;border-radius:999px;padding:11px 22px;font:800 15px inherit;cursor:pointer}.sbd-later{border:1.5px solid #d5dade;background:#fff;color:#3b4a54;border-radius:999px;padding:10px 18px;font:700 14px inherit;cursor:pointer}';
+  function css() { if (document.getElementById('sbdCss')) return; const st = document.createElement('style'); st.id = 'sbdCss'; st.textContent = CSS + CSS2; document.head.appendChild(st); }
   // ---------- 🎂 birthdays: today's list to send BY HAND on web.whatsapp (message + photo), the 14-day list, settings
   const ymd = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   const fillMsg = (t, x) => String(t || '').replace(/\{name\}/g, ((x.name || '').trim().split(/\s+/)[0]) || 'there').replace(/\{code\}/g, x.code || '').replace(/\{birthday\}/g, x.birthday || '').replace(/\{from\}/g, dm(x.valid_from)).replace(/\{till\}/g, dm(x.valid_to));
   const waWeb = (phone, text) => 'https://web.whatsapp.com/send?phone=91' + String(phone || '').replace(/\D/g, '').slice(-10) + '&text=' + encodeURIComponent(text);
-  let bdInfo = null, bdPhoto = null, bdOpened = {};
+  let bdInfo = null, bdPhoto = null, bdOpened = {}, flow = false, lastTodo = [], reminded = false;
+  // WhatsApp Web opens in its OWN window on the right half of the screen (the same window is reused for every customer), so this page stays visible on the left
+  const openWA = (url) => { const w = (screen.availWidth || 1200), h = (screen.availHeight || 800); const win = window.open(url, 'tmpwa', 'popup=yes,width=' + Math.round(w / 2) + ',height=' + h + ',left=' + Math.round(w / 2) + ',top=0'); if (!win) alert('Please allow pop-ups for this site, then tap again.'); return win; };
+  const openFor = (v) => { openWA(waWeb(v.phone, fillMsg((bdInfo && bdInfo.msg || {}).text, v))); bdOpened[v.id] = 1; const dn = document.querySelector('[data-bdone="' + v.id + '"]'); if (dn) { dn.disabled = false; dn.style.opacity = '1'; } };
   const toast2 = (m) => { const t = document.createElement('div'); t.textContent = m; t.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#111b21;color:#fff;padding:10px 16px;border-radius:12px;font-weight:700;z-index:99999'; document.body.appendChild(t); setTimeout(() => t.remove(), 2600); };
   async function loadBirthdays() {
     try {
@@ -36,7 +40,7 @@ window.StoreBday = (function () {
       const done = mine.filter((v) => v.wa_status === 'sent' && String(v.wa_at || '').slice(0, 10) === today).length;
       $('bdSub').textContent = info ? `${info.customers_with_birthday} store customer${info.customers_with_birthday === 1 ? '' : 's'} with a birthday saved · online ones are sent by themselves` : '';
       $('bdAuto').innerHTML = !info ? '' : !info.cfg.enabled ? '<span class="pill bad">Birthday gift is switched OFF</span>' : '<span class="pill ok">🏬 Store customers: send from “To send today” below · 🤖 Online customers: their own message goes by itself the day before the birthday</span>';
-      let h = `<div class="bdtoday"><h4>📤 To send today <span class="pill today">${todo.length}</span> <small style="font-weight:600;color:var(--sx-mut)">${done} done today</small></h4>`;
+      let h = `<div class="bdtoday"><h4>📤 To send today <span class="pill today">${todo.length}</span> <small style="font-weight:600;color:var(--sx-mut)">${done} done today</small>${todo.length ? ' <button class="minibtn" data-bstart style="background:#0b6ef6;padding:6px 12px;font-size:12.5px;margin-left:8px">▶ Start sending</button>' : ''}</h4>`;
       h += todo.length ? todo.map((v) => { const t = fillMsg(msg.text, v), op = bdOpened[v.id];
         return `<div class="bdr bdq" data-v="${v.id}"><div class="n"><b>${esc(v.name || 'Customer')}</b><small>+${esc(v.phone)} · 🎂 ${esc(v.birthday)} · code <span class="code">${esc(v.code)}</span></small><small class="bdmsg">${esc(t)}</small></div><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${msg.has_photo ? `<button class="minibtn" data-bcopy="${v.id}" style="background:#6d4fc2">📷 Copy photo</button>` : ''}<button class="minibtn" data-bopen="${v.id}" style="background:#0b6ef6;padding:6px 12px;font-size:12.5px">💬 Open WhatsApp</button><button class="minibtn" data-bdone="${v.id}" style="padding:6px 12px;font-size:12.5px;${op ? '' : 'opacity:.45'}" ${op ? '' : 'disabled'}>✔ Done</button></div></div>`; }).join('')
         : `<div class="sx-mut" style="padding:6px 0;font-size:13px">${done ? '🎉 All done — every birthday message for today is sent.' : 'No store customer has a birthday today. Ask every customer for their birthday at billing.'}</div>`;
@@ -49,7 +53,7 @@ window.StoreBday = (function () {
         else g = '<small style="color:var(--sx-mut)">the code is made the day before the birthday</small>';
         return `<div class="bdr"><div class="n"><b>${esc(x.name || 'Customer')}</b><small>${x.phone ? '+' + esc(x.phone) + ' · ' : ''}${dt.getDate()} ${MONTHS[dt.getMonth()]}</small></div>${when}<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${g}</div></div>`;
       }).join('') : '<div class="sx-mut" style="padding:6px 0;font-size:13px">No birthday in the next 14 days.</div>';
-      $('bdList').innerHTML = h; renderBdSet();
+      lastTodo = todo; $('bdList').innerHTML = h; renderBdSet(); maybeRemind(todo.length);
     } catch (e) { $('bdList').innerHTML = ''; }
   }
   async function bdPhotoBlob() {   // the photo as PNG (what the clipboard accepts)
@@ -87,10 +91,11 @@ window.StoreBday = (function () {
     const note = (m, bad) => { const el = $('bsMsg'); if (el) { el.textContent = m; el.style.color = bad ? 'var(--sx-bad)' : 'var(--sx-good)'; } };
     const nm = (m, bad) => { const el = $('bmNote'); if (el) { el.textContent = m; el.style.color = bad ? 'var(--sx-bad)' : 'var(--sx-good)'; } };
     const t = e.target, V = (bdInfo && bdInfo.vouchers) || [], vc = (id) => V.find((x) => x.id === +id);
+    if ('bstart' in t.dataset) { if (lastTodo.length) { flow = true; openFor(lastTodo[0]); } return; }
     if (t.dataset.bvar) { const ta = $('bmText'); if (ta) { const a = ta.selectionStart || ta.value.length; ta.value = ta.value.slice(0, a) + t.dataset.bvar + ta.value.slice(ta.selectionEnd || a); ta.focus(); bmPrev(); } return; }
     if (t.dataset.bcopy) { try { const b = await bdPhotoBlob(); await navigator.clipboard.write([new ClipboardItem({ 'image/png': b })]); toast2('Photo copied. Open the chat and press Ctrl+V.'); } catch (err) { toast2('Could not copy the photo — right-click it in settings and save it instead.'); } return; }
-    if (t.dataset.bopen) { const v = vc(t.dataset.bopen); if (!v) return; window.open(waWeb(v.phone, fillMsg((bdInfo.msg || {}).text, v)), 'tmpwa'); bdOpened[v.id] = 1; const dn = t.closest('.bdq').querySelector('[data-bdone]'); if (dn) { dn.disabled = false; dn.style.opacity = '1'; } return; }
-    if (t.dataset.bdone) { t.disabled = true; try { await api.post('st_bday.mark_sent', { id: +t.dataset.bdone }); delete bdOpened[+t.dataset.bdone]; } catch (err) { alert(err.message); } loadBirthdays(); return; }
+    if (t.dataset.bopen) { const v = vc(t.dataset.bopen); if (!v) return; openFor(v); return; }
+    if (t.dataset.bdone) { t.disabled = true; try { await api.post('st_bday.mark_sent', { id: +t.dataset.bdone }); delete bdOpened[+t.dataset.bdone]; } catch (err) { alert(err.message); } await loadBirthdays(); if (flow) { if (lastTodo.length) openFor(lastTodo[0]); else { flow = false; toast2('🎉 All birthday messages are sent'); } } return; }
     if (t.id === 'bmSave') { try { await api.post('st_bday.msg_save', { text: $('bmText').value }); nm('Saved.'); loadBirthdays(); } catch (err) { nm(err.message, 1); } return; }
     if (t.id === 'bmReset') { if (!confirm('Go back to the standard birthday message?')) return; try { await api.post('st_bday.msg_save', { reset: 1 }); loadBirthdays(); } catch (err) { nm(err.message, 1); } return; }
     if (t.id === 'bmDel') { try { await api.post('st_bday.msg_save', { photo: '' }); bdPhoto = null; loadBirthdays(); } catch (err) { nm(err.message, 1); } return; }
@@ -118,6 +123,16 @@ window.StoreBday = (function () {
   document.addEventListener('keydown', (e) => { if (e.target.id === 'gfQ' && e.key === 'Enter') gfCheck(); });
   }
 
+  // 🎂 the daily reminder: once a day, the first time a store page is opened and there are birthday messages to send
+  function maybeRemind(n) {
+    if (reminded || n < 1) return; reminded = true; const today = ymd(new Date()); let seen = ''; try { seen = localStorage.getItem('sbdRemind') || ''; } catch (e) { /* private window */ } if (seen === today) return;
+    const ov = document.createElement('div'); ov.className = 'sbd-ov';
+    ov.innerHTML = '<div class="sbd-md"><div style="font-size:42px">🎂</div><h3>' + n + ' birthday message' + (n === 1 ? '' : 's') + ' to send today</h3><p>A small birthday wish makes a customer smile — and come back. It takes one tap each: the message is already written and WhatsApp opens beside this page.</p><div class="sbd-ac"><button type="button" class="sbd-go">▶ Start sending</button><button type="button" class="sbd-later">Later</button></div></div>';
+    document.body.appendChild(ov);
+    const shut = () => { try { localStorage.setItem('sbdRemind', today); } catch (e) { /* ok */ } ov.remove(); };
+    ov.querySelector('.sbd-later').onclick = shut;
+    ov.querySelector('.sbd-go').onclick = () => { shut(); const c = $('bdCard'); if (c) { c.scrollIntoView({ behavior: 'smooth', block: 'start' }); c.style.boxShadow = '0 0 0 3px #f5a623'; setTimeout(() => { c.style.boxShadow = ''; }, 2200); } if (lastTodo.length) { flow = true; openFor(lastTodo[0]); } };
+  }
   function mount(el) { css(); el.innerHTML = CARDS; wire(); wireDoc(); return loadBirthdays(); }
   return { mount, load: () => ($('bdList') ? loadBirthdays() : null) };
 })();

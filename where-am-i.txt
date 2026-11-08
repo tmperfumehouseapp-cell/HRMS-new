@@ -1,1 +1,0 @@
-MARKER: this file was deployed by the automatic deploy at 12:27 UTC. If you can read it at fourpirates.space/where-am-i.txt then fourpirates.space is served from the same folder as staging.
