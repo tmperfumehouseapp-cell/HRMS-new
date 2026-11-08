@@ -12,6 +12,7 @@ function cbd_tables(PDO $pdo): bool
     static $ok = null; if ($ok !== null) return $ok;
     try {
         $pdo->exec("CREATE TABLE IF NOT EXISTS cust_bday (phone VARCHAR(12) NOT NULL PRIMARY KEY, md CHAR(5) NOT NULL, name VARCHAR(120) NOT NULL DEFAULT '', src VARCHAR(16) NOT NULL DEFAULT '', created_at DATETIME NOT NULL, updated_at DATETIME NOT NULL, KEY k_md (md)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        try { $pdo->exec("ALTER TABLE cust_bday ADD COLUMN emp INT NOT NULL DEFAULT 0"); } catch (Throwable $e) { /* already there */ }
         $ok = true;
     } catch (Throwable $e) { error_log('cbd_tables: ' . $e->getMessage()); $ok = false; }
     return $ok;
@@ -28,11 +29,11 @@ function cbd_parse(string $s): ?string
     return preg_match('/^\s*(\d{1,2})\s*[\/\-.]\s*(\d{1,2})\s*$/', $s, $m) ? cbd_md($m[1], $m[2]) : null;
 }
 /** Saves (or corrects) the birthday of a phone number. The newest answer wins. Returns true when saved. */
-function cbd_set(PDO $pdo, string $phone, string $name, ?string $md, string $src): bool
+function cbd_set(PDO $pdo, string $phone, string $name, ?string $md, string $src, int $emp = 0): bool
 {
     $ph = substr(preg_replace('/\D+/', '', $phone), -10); if (strlen($ph) !== 10 || $md === null || !preg_match('/^\d\d-\d\d$/', $md) || !cbd_tables($pdo)) return false;
     $now = date('Y-m-d H:i:s');
-    try { $pdo->prepare("INSERT INTO cust_bday (phone, md, name, src, created_at, updated_at) VALUES (?,?,?,?,?,?) ON DUPLICATE KEY UPDATE md = VALUES(md), name = IF(VALUES(name) <> '', VALUES(name), name), src = VALUES(src), updated_at = VALUES(updated_at)")->execute([$ph, $md, mb_substr($name, 0, 120), mb_substr($src, 0, 16), $now, $now]); return true; }
+    try { $pdo->prepare("INSERT INTO cust_bday (phone, md, name, src, created_at, updated_at, emp) VALUES (?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE md = VALUES(md), name = IF(VALUES(name) <> '', VALUES(name), name), src = VALUES(src), updated_at = VALUES(updated_at), emp = VALUES(emp)")->execute([$ph, $md, mb_substr($name, 0, 120), mb_substr($src, 0, 16), $now, $now, $emp]); return true; }
     catch (Throwable $e) { error_log('cbd_set: ' . $e->getMessage()); return false; }
 }
 /** Rows for the birthday engine: [phone, name, bday (MM-DD)] of every birthday collected at ordering. */
@@ -49,6 +50,19 @@ function wa_bday_sync(PDO $pdo): void
     catch (Throwable $e) { /* the store tables are not on this install */ }
 }
 
+/** Birthdays received between two moments (Y-m-d H:i:s): the customer told us by WhatsApp, or the team saved it (button, order screen). */
+function cbd_count(PDO $pdo, string $from, string $to): array
+{
+    $o = ['total' => 0, 'by_customer' => 0, 'by_team' => 0];
+    try { if (!cbd_tables($pdo)) return $o; $q = $pdo->prepare("SELECT COUNT(*) n, SUM(src = 'whatsapp') c FROM cust_bday WHERE updated_at >= ? AND updated_at <= ?"); $q->execute([$from, $to]); $r = $q->fetch(); $o['total'] = (int)$r['n']; $o['by_customer'] = (int)$r['c']; $o['by_team'] = $o['total'] - $o['by_customer']; } catch (Throwable $e) { }
+    return $o;
+}
+/** The saved birthday (MM-DD) of a phone number, or ''. */
+function cbd_get(PDO $pdo, string $phone): string
+{
+    $ph = substr(preg_replace('/\D+/', '', $phone), -10); if (strlen($ph) !== 10) return '';
+    try { if (!cbd_tables($pdo)) return ''; $q = $pdo->prepare("SELECT md FROM cust_bday WHERE phone = ?"); $q->execute([$ph]); return (string)$q->fetchColumn(); } catch (Throwable $e) { return ''; }
+}
 /** Has this phone number a birthday saved (told at ordering, or on a store bill since the feature started)? */
 function cbd_has(PDO $pdo, string $phone): bool
 {
@@ -88,14 +102,14 @@ function wa_bday_recent(PDO $pdo, string $key): bool
 {
     try { if (!cbd_tables($pdo)) return false; $q = $pdo->prepare("SELECT 1 FROM cust_bday WHERE phone = ? AND src = 'whatsapp' AND updated_at >= ? LIMIT 1"); $q->execute([substr($key, -10), date('Y-m-d H:i:s', time() - 180)]); return (bool)$q->fetchColumn(); } catch (Throwable $e) { return false; }
 }
-/** Queues ONE birthday question per customer, 1 day after an order (never before the switch was turned on; never to someone who has a birthday, an open complaint, or was asked before). Called by wa_ord_autosend. */
+/** Queues ONE birthday question per customer, 1 hour after an order (never before the switch was turned on; never to someone who has a birthday, an open complaint, or was asked before). Called by wa_ord_autosend. */
 function wa_bdayask_queue(PDO $pdo, int $nowTs, array $cfg, string $sk = ''): array
 {
     $res = ['queued' => 0];
     if (empty($cfg['statuses']['bday_ask']) || !cbd_tables($pdo)) return $res;
     $since = (int)wo_get($pdo, 'wa_bdayask_since', '0'); if ($since <= 0) { $since = $nowTs; wo_put($pdo, 'wa_bdayask_since', (string)$since); }
     if (wo_tpl_for($pdo, 'bday_ask') === null) return $res;   // the template is not approved yet
-    $q = $pdo->prepare("SELECT * FROM dp_dsp_parcels WHERE created_at >= ? AND created_at <= ? AND phone IS NOT NULL AND phone <> ''$sk ORDER BY id DESC LIMIT 200"); $q->execute([wo_dt(max($since, $nowTs - 5 * 86400)), wo_dt($nowTs - 86400)]);
+    $q = $pdo->prepare("SELECT * FROM dp_dsp_parcels WHERE created_at >= ? AND created_at <= ? AND phone IS NOT NULL AND phone <> ''$sk ORDER BY id DESC LIMIT 200"); $q->execute([wo_dt(max($since, $nowTs - 5 * 86400)), wo_dt($nowTs - 3600)]);   // an hour after the order
     foreach ($q->fetchAll() as $p) {
         if (in_array(wo_class($p, $nowTs), ['cancelled', 'rto', 'lost', 'damaged'], true)) continue;
         if (function_exists('wo_is_cx_parcel') && wo_is_cx_parcel($pdo, $p)) continue;

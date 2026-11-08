@@ -666,7 +666,7 @@
     function drawSide() {
       const c = S.cur.contact; const W = $('wiS');
       let h = '<button type="button" class="wi-back wi-x" id="wiX" style="margin-bottom:10px">‹ Back to chat</button>';
-      h += '<h4>Customer</h4><div class="wi-sb wi-cu" id="wiCu"><span style="color:#8a94a3">Reading this customer…</span></div><div class="wi-sb" id="wiBd" style="margin-top:6px"></div>';
+      h += '<h4>Customer</h4><div class="wi-sb wi-cu" id="wiCu"><span style="color:#8a94a3">Reading this customer…</span></div>';
       h += '<h4>Chain cart</h4><div class="wi-sb"><button type="button" class="wi-btn" id="wiCart" style="min-height:44px">🛒 Make cart</button><div id="wiCtS" style="margin-top:8px"></div></div>';
       h += '<h4>Journey</h4><div id="wiJr"></div>';
       h += '<h4>Query type and tags</h4><div class="wi-sb" id="wiQt"></div>';
@@ -689,7 +689,7 @@
         <div class="wi-kv"><span>Opted in</span><label class="wi-sw"><input type="checkbox" id="wiOpt" ${c.optout ? '' : 'checked'}><span></span></label></div></div>`;
       if (admin && S.cur.assign_log && S.cur.assign_log.length) h += '<h4>History — who had this chat</h4><div class="wi-sb" style="font-size:12.5px">' + S.cur.assign_log.map((l) => { const d = parse(l.at); return `<div class="wi-kv"><span>${d ? esc(d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) + ' ' + hhmm(d)) : ''}</span><b>${esc(l.to || 'Unassigned')}${({ auto: ' · auto', transfer: ' · handed over' + (l.from ? ' by ' + l.from : ''), grab: ' · took a late reply', takeover: ' · took over' + (l.from ? ' from ' + l.from : ''), take: ' · took it', manual: l.by ? ' · by ' + l.by : '' })[l.how] || ''}</b></div>`; }).join('') + '</div>';
       h += '<div id="wiFuS"></div>';
-      W.innerHTML = h; drawFuSide(); ordReady(() => { const b = $('wiBd'); if (b && window.WaOrd) WaOrd.birthday(b, { phone: c.phone, name: (c.name || '').trim() }); });
+      W.innerHTML = h; drawFuSide();
       loadCust(c.phone);
       segReady(() => { const el = $('wiJr'); if (el && window.WaSeg) WaSeg.journey(el, { phone: c.phone }); });
       $('wiCart').onclick = () => openCart(c); drawCartChip(c);
@@ -1058,7 +1058,7 @@
     const OR = { ld: null };
     function ordReady(cb) {
       if (window.WaOrd) return cb(); if (OR.ld) { OR.ld.push(cb); return; } OR.ld = [cb];
-      const sc = document.createElement('script'); sc.src = 'assets/js/wa_ord_ui.js?v=10';
+      const sc = document.createElement('script'); sc.src = 'assets/js/wa_ord_ui.js?v=12';
       sc.onload = () => { const q = OR.ld || []; OR.ld = null; q.forEach((f) => f()); }; sc.onerror = () => { OR.ld = null; }; document.head.appendChild(sc);
     }
     // ✅ Order completed (wa_done.php): one thank-you, then no automatic messages today and tomorrow

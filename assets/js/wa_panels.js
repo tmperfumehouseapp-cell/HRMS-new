@@ -416,7 +416,7 @@
   const inT = (m) => (m <= 0 ? 'now' : m < 60 ? m + ' min' : m < 1440 ? (Math.round(m / 6) / 10) + ' h' : (Math.round(m / 144) / 10) + ' d');
   const TST = { approved: ['Approved', 'ok'], partial: ['Approved (1 account)', 'ok'], pending: ['Pending at Meta', 'warn'], rejected: ['Rejected', 'bad'], paused: ['Paused', 'warn'], draft: ['Draft', 'b'], missing: ['Not at Meta', 'warn'] };
   // 🔁 the Follow-up Autopilot (fa_ui.js) replaces the old Live plan / ladder screen; Replies → Follow-up messages / Complaint messages
-  const faReady = (fn) => { if (window.FuAuto) return fn(); const sc = document.createElement('script'); sc.src = 'assets/js/fa_ui.js?v=fa2'; sc.onload = fn; document.head.appendChild(sc); };
+  const faReady = (fn) => { if (window.FuAuto) return fn(); const sc = document.createElement('script'); sc.src = 'assets/js/fa_ui.js?v=fa3'; sc.onload = fn; document.head.appendChild(sc); };
   P.followups = (el) => { let re = null; faReady(() => { re = FuAuto.mount(el, {}); }); return () => { if (re) re(); }; };
   // 🧭 Automatic messages live in ONE place each (no second editor here): follow-ups → Automation → Follow-ups · complaints → Complaints → Settings
   P.automsgs = (el) => { el.innerHTML = '<div class="wp-card"><h3 style="margin:0 0 6px">Automatic messages</h3><div class="wp-sub" style="margin-bottom:10px">Each automatic message has one home, so there is never a second copy to keep in step.</div>'

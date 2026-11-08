@@ -67,7 +67,7 @@
       h += '</div><div class="fa-card"><div class="fa-h">🛤 The paths<span class="sp"></span><button class="fa-b s" type="button" id="faReset" title="Put the Autopilot plan back to its starting days">Reset to the starting plan</button></div><div class="fa-sub">Claude reads each quiet chat and puts the customer on one path. Open a path to change its days, teach a day, or add one (up to 10 days, up to 30 days long).</div>';
       for (const p of D.paths) {
         const op = open[p.id];
-        h += '<div class="fa-path" data-p="' + esc(p.id) + '"><div class="fa-ph" data-open="' + esc(p.id) + '"><b>' + esc(p.title) + '</b><span class="fa-st">' + esc(p.desc) + '</span><span class="sp"></span><label class="fa-st" style="display:flex;gap:4px;align-items:center" onclick="event.stopPropagation()"><input type="checkbox" data-on="' + esc(p.id) + '"' + (p.on ? ' checked' : '') + '> on</label><span>' + (op ? '▲' : '▼') + '</span></div>'
+        h += '<div class="fa-path" data-p="' + esc(p.id) + '"><div class="fa-ph" data-open="' + esc(p.id) + '"><b>' + esc(p.title) + '</b><span class="fa-st">' + esc(p.desc) + '</span><span class="sp"></span><button type="button" class="fa-b s p" data-ptpop="' + esc(p.id) + '" onclick="event.stopPropagation()">🎤 Teach</button><label class="fa-st" style="display:flex;gap:4px;align-items:center" onclick="event.stopPropagation()"><input type="checkbox" data-on="' + esc(p.id) + '"' + (p.on ? ' checked' : '') + '> on</label><span>' + (op ? '▲' : '▼') + '</span></div>'
           + '<div class="fa-tl">' + p.steps.map((x) => '<span class="fa-pill' + (x.kind === 'offer' ? ' o' : '') + '">' + when(x.after_h) + (x.kind === 'offer' ? ' · 🎁 ' + esc(((D.offers || []).find((o) => o.k === x.offer) || {}).label || x.offer) : ' · 💬') + '</span>').join('') + '</div>'
           + (op ? '<div class="fa-days">' + p.steps.map((x, i) => dayCard(p, x, i)).join('') + '<div class="fa-row"><button class="fa-b" type="button" data-add="' + esc(p.id) + '">＋ Add a day</button><button class="fa-b p" type="button" data-save="' + esc(p.id) + '">Save this path</button></div>'
             + '<div class="fa-teach" style="margin-top:6px"><input class="fa-in" data-pt="' + esc(p.id) + '" placeholder="🧠 Teach this WHOLE path — e.g. be friendly, no pressure, small discount on the last day"><button class="fa-b s p" type="button" data-pteach="' + esc(p.id) + '">Teach whole path</button></div></div>' : '') + '</div>';
@@ -113,6 +113,7 @@
       $$('[data-mode]').forEach((b) => b.onclick = async () => { const m = b.dataset.mode; if (m === 'autotpl' && !confirm('Auto: follow-ups and offers go to customers by themselves. Did you check the wording in Suggest only?')) return; const r = await call(() => api.post('fu.ap_mode', { mode: m })); if (r) { D = r; draw(); toast(m === 'off' ? 'Follow-ups are off' : m === 'suggest' ? 'Suggest only — nothing is sent' : 'Auto is on ✓'); } });
       const inst = $('#faInst'); if (inst) inst.onclick = async () => { inst.disabled = true; const r = await call(() => api.post('fu.ap_install', {})); if (r) { D = r; draw(); toast('The Autopilot is set up ✓ — Suggest only'); } else inst.disabled = false; };
       const rs = $('#faReset'); if (rs) rs.onclick = async () => { if (!confirm('Put every path back to its starting days? Your own changes to the days are replaced (the old plan is kept as a backup).')) return; const r = await call(() => api.post('fu.ap_install', {})); if (r) { D = r; draw(); toast('Back to the starting plan'); } };
+      { const sm = $('#faSum'); if (sm) sm.after(mic(sm)); }   // 🎤 say it instead of typing
       const sg = $('#faSumGo'); if (sg) sg.onclick = async () => { const t = $('#faSum').value.trim(); if (!t) return; sg.disabled = true; sg.textContent = 'Claude is reading…'; const r = await call(() => api.post('fu.ap_summary', { text: t })); sg.disabled = false; sg.textContent = 'Ask Claude'; if (r) { D = r; draw(); popup(); } };
       const op = $('#faOpenProp'); if (op) op.onclick = popup;
       $$('[data-open]').forEach((b) => b.onclick = () => { open[b.dataset.open] = !open[b.dataset.open]; draw(); });
@@ -126,11 +127,45 @@
         const r = await call(() => api.post('fu.ap_step_teach', { sid, n: i + 1, text: t })); if (r) { D = r; draw(); if (r.popup) popup(); } else { b.disabled = false; b.textContent = 'Teach'; } });
       $$('[data-pteach]').forEach((b) => b.onclick = async () => { const sid = b.dataset.pteach, inp = el.querySelector('[data-pt="' + sid + '"]'), t = inp.value.trim(); if (!t) { toast('Write what this path should do', true); return; } b.disabled = true; b.textContent = 'Claude is reading…';
         const r = await call(() => api.post('fu.ap_path_teach', { sid, text: t })); b.disabled = false; b.textContent = 'Teach whole path'; if (r) { D = r; draw(); if (r.popup) popup(); } });
+      $$('[data-ptpop]').forEach((b) => b.onclick = (e) => { e.stopPropagation(); teachPop(b.dataset.ptpop); });
       $$('[data-msave]').forEach((b) => b.onclick = async () => { const sid = b.dataset.msave, p = D.paths.find((x) => x.id === sid), st = p.steps.map((x) => Object.assign({}, x)); b.closest('.fa-path').querySelectorAll('[data-mi]').forEach((d) => { st[Number(d.dataset.mi)].text = d.querySelector('[data-f="text"]').value; });
         b.disabled = true; const r = await call(() => api.post('fu.ap_path_save', { sid, steps: st })); b.disabled = false; if (r) { D = r; draw(); } });
       const os = $('#faOfSave'); if (os) os.onclick = async () => { const offers = $$('[data-of]').map((d) => ({ k: d.dataset.of, label: d.querySelector('[data-f="label"]').value, rule: d.querySelector('[data-f="rule"]').value, body: d.querySelector('[data-f="body"]').value })); os.disabled = true; const r = await call(() => api.post('fu.ap_offers_save', { offers })); os.disabled = false; if (r) { D = r; draw(); } };
       $$('[data-tpl]').forEach((b) => b.onclick = async () => { b.disabled = true; const r = await call(() => api.post('fu.ap_tpl', { k: b.dataset.tpl })); b.disabled = false; if (r) { D = r; draw(); } });
       const ss = $('#faSSave'); if (ss) ss.onclick = async () => { const r = await call(() => api.post('fu.ap_season_save', { on: $('#faSOn').checked, text: $('#faSText').value, from: $('#faSF').value, to: $('#faST').value })); if (r) { D = r; draw(); } };
+    }
+    // 🎤 voice typing: Start / Stop, in Hindi, Gujarati or English (Chrome's built-in speech reader; nothing is recorded or kept)
+    function mic(target) {
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition; const w = document.createElement('div'); w.className = 'fa-mic';
+      if (!document.getElementById('faMicCss')) { const st = document.createElement('style'); st.id = 'faMicCss'; st.textContent = '.fa-mic{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px}.fa-mic select{width:auto;min-width:90px}'; document.head.appendChild(st); }
+      if (!SR) { w.innerHTML = '<span class="fa-st">🎤 Voice typing works in Google Chrome — you can still write here.</span>'; return w; }
+      w.innerHTML = '<select class="fa-in" data-lg><option value="hi-IN">हिन्दी</option><option value="gu-IN">ગુજરાતી</option><option value="en-IN">English</option></select><button type="button" class="fa-b s" data-mic>🎤 Start</button><span class="fa-st" data-ms></span>';
+      const btn = w.querySelector('[data-mic]'), ms = w.querySelector('[data-ms]'), lg = w.querySelector('[data-lg]'); let rec = null, on = false, base = '', fin = '';
+      try { lg.value = localStorage.getItem('faLang') || 'hi-IN'; } catch (e) { /* ok */ }
+      const stop = () => { on = false; if (rec) { try { rec.stop(); } catch (e) { /* ok */ } } btn.textContent = '🎤 Start'; btn.classList.remove('r'); };
+      btn.onclick = () => {
+        if (on) { stop(); ms.textContent = ' Stopped. You can edit the text, or press Start to add more.'; return; }
+        rec = new SR(); rec.lang = lg.value; rec.continuous = true; rec.interimResults = true; try { localStorage.setItem('faLang', lg.value); } catch (e) { /* ok */ }
+        base = target.value ? target.value.replace(/\s+$/, '') + ' ' : ''; fin = '';
+        rec.onresult = (e) => { let interim = ''; for (let i = e.resultIndex; i < e.results.length; i++) { const r = e.results[i]; if (r.isFinal) fin += r[0].transcript + ' '; else interim += r[0].transcript; } target.value = (base + fin + interim).trim(); };
+        rec.onerror = (e) => { ms.textContent = e.error === 'not-allowed' ? ' Please allow the microphone for this site.' : ' ' + e.error; stop(); };
+        rec.onend = () => { if (on) { try { base = target.value.replace(/\s+$/, '') + ' '; fin = ''; rec.start(); } catch (e) { stop(); } } };   // keeps listening until you press Stop
+        try { rec.start(); on = true; btn.textContent = '⏹ Stop'; btn.classList.add('r'); ms.textContent = ' Listening… speak, then press Stop.'; } catch (e) { ms.textContent = ' Could not start the microphone.'; }
+      };
+      return w;
+    }
+    // 🧠 the teaching pop-up of one path: say (or write) everything once; Claude reads the Teach bot + store facts and prepares days, hours and messages; answer / correct as many times as needed
+    function teachPop(sid) {
+      const pth = D.paths.find((x) => x.id === sid); if (!pth) return; document.querySelectorAll('.fa-ov').forEach((x) => x.remove());
+      const ov = document.createElement('div'); ov.className = 'fa-ov';
+      ov.innerHTML = '<div class="fa-pop fa"><div class="fa-h">🧠 Teach · ' + esc(pth.title) + '<span class="sp"></span><button class="fa-b s" type="button" data-x>✕</button></div>'
+        + '<div class="fa-sub">Tap <b>Start</b>, say the whole summary of what this path should do differently — days and hours, what to say, offers, what to stop — then tap <b>Stop</b>. Claude reads everything already taught (Teach bot, store facts, price chart, limits) and prepares the new days and messages. <b>Nothing changes until you press Approve.</b> If Claude does not understand, just say it again.</div>'
+        + '<textarea class="fa-ta" id="faTp" style="margin-top:8px;min-height:130px" placeholder="Tap Start and speak, or write here…"></textarea><div id="faTpMic"></div>'
+        + '<div class="fa-row" style="margin-top:10px"><button class="fa-b p" type="button" id="faTpGo">Send to Claude</button></div></div>';
+      document.body.appendChild(ov); const ta = ov.querySelector('#faTp'); ov.querySelector('#faTpMic').appendChild(mic(ta)); setTimeout(() => ta.focus(), 50);
+      ov.onclick = (e) => { if (e.target === ov) ov.remove(); }; ov.querySelector('[data-x]').onclick = () => ov.remove();
+      ov.querySelector('#faTpGo').onclick = async function () { const t = ta.value.trim(); if (!t) { toast('Say or write what this path should do', true); return; } this.disabled = true; this.textContent = 'Claude is reading…';
+        const r = await call(() => api.post('fu.ap_path_teach', { sid, text: t })); if (r) { D = r; ov.remove(); draw(); if (r.popup) popup(); } else { this.disabled = false; this.textContent = 'Send to Claude'; } };
     }
     // 🧠 the pop-up: what Claude understood, its questions, every change — reply until it is right, then Approve (nothing changes before)
     function popup() {
@@ -143,7 +178,7 @@
         + ((pr.turns || []).length > 2 ? '<details style="margin-top:6px"><summary class="fa-st">The conversation so far</summary>' + pr.turns.map((t) => '<div class="fa-turn"><b>' + (t.who === 'you' ? 'You' : 'Claude') + ':</b> ' + esc(t.text) + '</div>').join('') + '</details>' : '')
         + '<textarea class="fa-ta" id="faRep" style="margin-top:10px" placeholder="' + ((pr.questions || []).length ? 'Answer Claude\'s questions, or correct what it understood…' : 'Correct or add something (optional)…') + '"></textarea>'
         + '<div class="fa-row" style="margin-top:8px"><button class="fa-b" type="button" id="faRepGo">Send to Claude</button><span class="sp" style="flex:1"></span><button class="fa-b r" type="button" id="faDrop2">Drop</button>' + ((pr.changes || []).length ? '<button class="fa-b p" type="button" id="faApr2">✓ Approve the changes</button>' : '') + '</div></div>';
-      document.body.appendChild(ov); const close = () => ov.remove();
+      document.body.appendChild(ov); const close = () => ov.remove(); { const rb = ov.querySelector('#faRep'); if (rb) rb.after(mic(rb)); }   // 🎤 answer / correct by voice, as many times as needed
       ov.onclick = (e) => { if (e.target === ov) close(); }; ov.querySelector('[data-x]').onclick = close;
       ov.querySelector('#faRepGo').onclick = async function () { const t = ov.querySelector('#faRep').value.trim(); if (!t) { toast('Write your answer first', true); return; } this.disabled = true; this.textContent = 'Claude is reading…';
         const r = await call(() => api.post('fu.ap_summary', { text: t, more: 1 })); if (r) { D = r; draw(); popup(); } else { this.disabled = false; this.textContent = 'Send to Claude'; } };

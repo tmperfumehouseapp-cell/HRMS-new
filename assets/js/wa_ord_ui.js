@@ -25,6 +25,7 @@ window.WaOrd = (function () {
   const tel = (p) => (p ? p.replace(/^(\d{5})(\d{5})$/, '$1 $2') : '');
 
   const CSS = `
+  .wor-bdrow{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap} .wor .wor-pillb.wor-bdb,.wx .wor-pillb.wor-bdb,.wi .wor-pillb.wor-bdb{padding:3px 8px !important;font-size:12px !important;background:rgba(255,255,255,.3) !important} .wor .wor-pillb.wor-bdb.lt,.wi .wor-pillb.wor-bdb.lt{background:#fff2d6 !important;color:#8a5a00 !important} .wor-pillb.wor-bdb.set{background:#fff2d6 !important;color:#8a5a00 !important}
   .wor-bd{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#fff8ec;border:1px solid #f3dfb7;border-radius:12px;padding:8px 10px} .wor-bd b{font-size:13.5px} .wor-bd span{font-weight:800;color:#8a5a00} .wor-bd select{border:1px solid #e3c98c;border-radius:8px;padding:5px 6px;font:inherit;font-size:13px;background:#fff;max-width:110px} .wor-bd button{border:1.5px solid #008069;background:#fff;color:#008069;border-radius:999px;padding:4px 12px;font:inherit;font-size:12.5px;font-weight:800;cursor:pointer} .wor-bd button.pri{background:#008069;color:#fff}
   .wor-pg{display:grid;grid-template-columns:repeat(5,1fr);margin:12px 0 4px;position:relative} .wor-pg>div{text-align:center;position:relative;padding:0 2px}
   .wor-pg>div:before{content:"";position:absolute;top:10px;left:-50%;width:100%;height:3px;background:#e3e7ea;z-index:0} .wor-pg>div:first-child:before{display:none}
@@ -130,7 +131,7 @@ window.WaOrd = (function () {
     el.onclick = async (e) => {
       if (e.target.closest('[data-bdedit]')) { edit = true; draw(); return; }
       const sv = e.target.closest('[data-bdsave]'); if (!sv) return; const d = +el.querySelector('[data-bdd]').value, m = +el.querySelector('[data-bdm]').value; if (!d || !m) { toast('Choose the day and the month.', true); return; }
-      sv.disabled = true; try { const r = await api.post('wa.bday_set', { phone, name: opts.name || '', day: d, month: m }); md = r.bday; edit = false; toast('Birthday saved ✓'); draw(); } catch (x) { toast(errMsg(x), true); sv.disabled = false; }
+      sv.disabled = true; try { const r = await api.post('wa.bday_set', { phone, name: opts.name || '', day: d, month: m }); md = r.bday; edit = false; toast('Birthday saved ✓'); draw(); if (opts.onSaved) opts.onSaved(md); } catch (x) { toast(errMsg(x), true); sv.disabled = false; }
     };
     el.innerHTML = '<div class="wor-bd"><span class="wor-sc">Reading the birthday…</span></div>';
     api.get('wa.bday_get', { phone }).then((r) => { md = r.md || ''; draw(); }).catch(() => { md = ''; draw(); });
@@ -145,10 +146,15 @@ window.WaOrd = (function () {
   function badge(el, opts) {
     css(); opts = opts || {}; if (!el) return { destroy() { } };
     const phone = String(opts.phone || '').replace(/\D/g, '').slice(-10); let dead = false;
+    const MN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const draw = (m) => {
       if (dead) return; const t = pillText(m);
-      el.innerHTML = '<button type="button" class="wor-pillb' + (opts.light ? ' lt' : '') + '" title="This customer\'s orders — tap for the full card"><span class="dot ' + t.dot + '"></span>' + esc(t.t) + '</button>';
-      el.firstChild.onclick = (e) => { e.stopPropagation(); open({ phone, name: opts.name, onChange: opts.onChange }); };
+      // 🎂 a very small birthday button, only once the customer has placed an order: tap, choose day + month, Save
+      const hasOrder = (m.n || 0) + (m.cancelled || 0) > 0, bm = /^(\d\d)-(\d\d)$/.exec(m.bday || '');
+      const bd = hasOrder ? '<button type="button" class="wor-pillb wor-bdb' + (opts.light ? ' lt' : '') + (bm ? ' set' : '') + '" data-bd title="' + (bm ? 'Birthday saved — tap to change' : 'Ask the customer for their birthday (free 50 ml gift)') + '">🎂' + (bm ? ' ' + (+bm[2]) + ' ' + MN[+bm[1] - 1] : '') + '</button>' : '';
+      el.innerHTML = '<span class="wor-bdrow"><button type="button" class="wor-pillb' + (opts.light ? ' lt' : '') + '" data-ord title="This customer\'s orders — tap for the full card"><span class="dot ' + t.dot + '"></span>' + esc(t.t) + '</button>' + bd + '</span>';
+      el.querySelector('[data-ord]').onclick = (e) => { e.stopPropagation(); open({ phone, name: opts.name, onChange: opts.onChange }); };
+      const bb = el.querySelector('[data-bd]'); if (bb) bb.onclick = (e) => { e.stopPropagation(); sheet('🎂 Birthday', '<div data-slot></div>', (box, close) => { birthday(box.querySelector('[data-slot]'), { phone, name: opts.name, onSaved: (md) => { m.bday = md; close(); draw(m); } }); }); };
     };
     el.classList.add('wor'); el.innerHTML = '';
     api.get('wa.ord_sum', { phone }).then(draw).catch(() => { if (!dead) el.innerHTML = ''; });
@@ -422,18 +428,20 @@ window.WaOrd = (function () {
   }
 
   // ====================================================================================================== automatic order-update messages (Admin)
-  function settings(el) {
-    css(); el.classList.add('wor');
+  function settings(el, opts) {
+    opts = opts || {}; css(); el.classList.add('wor');
     async function load() {
       let s; try { s = await api.get('wa.ord_settings'); } catch (e) { el.innerHTML = '<div class="wor-tile"><div class="wor-err">' + esc(errMsg(e)) + '</div></div>'; return; }
-      let h = '<div class="wor-tile"><h2>Order-update messages</h2><p class="wor-sub">WhatsApp messages sent by themselves when the courier status of an order changes. Each order gets each message once. Nothing goes out between 9 PM and 8 AM (it waits and goes at 8 AM), or to a customer who opted out. A message is sent only when Meta has approved its template.</p>';
-      h += '<div class="wor-row"><div><b>Send order updates automatically</b><small>Master switch</small></div><label class="wor-sw"><input type="checkbox" data-master ' + (s.on ? 'checked' : '') + '><i></i></label></div>';
-      CUR = s.statuses; s.statuses.forEach((x) => { h += '<div class="wor-row" style="align-items:flex-start"><div style="flex:1;min-width:0"><b>' + esc(x.label) + '</b>' + (x.when ? '<small style="display:block;color:#667781">Sent ' + esc(x.when) + '</small>' : '') + (x.body ? '<div style="background:#d9fdd3;border-radius:10px;padding:8px 10px;margin:6px 0;font-size:13px;line-height:1.45;white-space:pre-wrap">' + esc(x.body).replace(/\{\{(\d)\}\}/g, '<b style="color:#5b21b6">{{$1}}</b>') + '</div>' : '') + '<small><span class="wor-ts ' + esc(x.template_status) + '">' + esc(x.template_status === 'approved' ? 'Approved by Meta' : x.template_status === 'missing' ? 'Not created yet' : x.template_status.charAt(0).toUpperCase() + x.template_status.slice(1)) + '</span> · today ' + x.sent_today + ' · this month ' + x.sent_month + (x.queued ? ' · waiting ' + x.queued : '') + (x.template_reason ? '<br>' + esc(x.template_reason) : '') + '</small><div style="margin-top:6px"><button class="wor-b" style="min-height:32px;padding:4px 14px;font-size:12px" data-edit="' + esc(x.key) + '">✏️ Edit</button>' + badge(x) + '</div></div><label class="wor-sw"><input type="checkbox" data-st="' + esc(x.key) + '" ' + (x.on ? 'checked' : '') + '><i></i></label></div>'; });
+      const ONLY = Array.isArray(opts.only) ? opts.only : null; const view = ONLY ? s.statuses.filter((x) => ONLY.includes(x.key)) : s.statuses;
+      let h = '<div class="wor-tile"><h2>' + esc(opts.title || 'Order-update messages') + '</h2>' + (opts.intro ? '<p class="wor-sub">' + opts.intro + '</p>' : '') + (opts.intro ? '' : '<p class="wor-sub">WhatsApp messages sent by themselves when the courier status of an order changes. Each order gets each message once. Nothing goes out between 9 PM and 8 AM (it waits and goes at 8 AM), or to a customer who opted out. A message is sent only when Meta has approved its template.</p>');
+      if (!ONLY) h += '<div class="wor-row"><div><b>Send order updates automatically</b><small>Master switch</small></div><label class="wor-sw"><input type="checkbox" data-master ' + (s.on ? 'checked' : '') + '><i></i></label></div>';
+      CUR = s.statuses; view.forEach((x) => { h += '<div class="wor-row" style="align-items:flex-start"><div style="flex:1;min-width:0"><b>' + esc(x.label) + '</b>' + (x.when ? '<small style="display:block;color:#667781">Sent ' + esc(x.when) + '</small>' : '') + (x.body ? '<div style="background:#d9fdd3;border-radius:10px;padding:8px 10px;margin:6px 0;font-size:13px;line-height:1.45;white-space:pre-wrap">' + esc(x.body).replace(/\{\{(\d)\}\}/g, '<b style="color:#5b21b6">{{$1}}</b>') + '</div>' : '') + '<small><span class="wor-ts ' + esc(x.template_status) + '">' + esc(x.template_status === 'approved' ? 'Approved by Meta' : x.template_status === 'missing' ? 'Not created yet' : x.template_status.charAt(0).toUpperCase() + x.template_status.slice(1)) + '</span> · today ' + x.sent_today + ' · this month ' + x.sent_month + (x.queued ? ' · waiting ' + x.queued : '') + (x.template_reason ? '<br>' + esc(x.template_reason) : '') + '</small><div style="margin-top:6px"><button class="wor-b" style="min-height:32px;padding:4px 14px;font-size:12px" data-edit="' + esc(x.key) + '">✏️ Edit</button>' + badge(x) + '</div></div><label class="wor-sw"><input type="checkbox" data-st="' + esc(x.key) + '" ' + (x.on ? 'checked' : '') + '><i></i></label></div>'; });
       const rv = s.review || { link: '', good_from: 5 };
-      h += '<div class="wor-row" style="display:block;margin-top:12px"><b>⭐ Rating request: where each rating goes</b><small style="display:block;color:#667781;margin:2px 0 8px">The customer taps 5 to 1. A good rating gets your Judge.me review link; a lower one opens a Complaints ticket and our team contacts them. Switch the "Rating request" message above on to start. It only goes to orders delivered after you switch it on.</small>'
+      if (!ONLY || ONLY.includes('review')) h += '<div class="wor-row" style="display:block;margin-top:12px"><b>⭐ Rating request: where each rating goes</b><small style="display:block;color:#667781;margin:2px 0 8px">The customer taps 5 to 1. A good rating gets your Judge.me review link; a lower one opens a Complaints ticket and our team contacts them. Switch the "Rating request" message above on to start. It only goes to orders delivered after you switch it on.</small>'
         + '<label class="wor-l">Judge.me review link (https://…)</label><input class="wor-in" data-rvlink value="' + esc(rv.link) + '" placeholder="https://judge.me/reviews/stores/your-store" style="width:100%;box-sizing:border-box">'
         + '<label class="wor-l" style="margin-top:8px">Send the Judge.me link when the rating is at least</label><select class="wor-in" data-rvgood>' + [5, 4, 3, 2].map((n) => '<option value="' + n + '"' + (+rv.good_from === n ? ' selected' : '') + '>' + n + ' of 5 (lower ratings → complaint)</option>').join('') + '</select>'
         + '<div style="margin-top:8px"><button class="wor-b" data-rvsave>Save</button></div></div>';
+      if (opts.extra) h += opts.extra;
       h += '<p class="wor-sub" style="margin-top:10px"><b>' + s.sent_today + '</b> sent today · <b>' + s.sent_month + '</b> this month. ' + esc(s.cost_text) + '</p>';
       h += '<button class="wor-b" data-seed>' + (s.statuses.every((x) => x.template_status !== 'missing') ? 'Check the templates at Meta' : 'Create the missing messages and send them to Meta') + '</button> <span class="wor-sub" data-sm></span></div>'; el.innerHTML = h;
     }
@@ -539,8 +547,27 @@ window.WaOrd = (function () {
     load(); return { refresh: load };
   }
 
-  return { card, badge, birthday, open, send, urgent, link, attention, count, storeForm, settings, _fmt: fmt };
+  return { _esc: esc, _toast: toast, _err: errMsg, card, badge, birthday, open, send, urgent, link, attention, count, storeForm, settings, _fmt: fmt };
 })();
+// 🎁 the three extra Automation pages: After delivery, Birthdays, Complaints messages
+const LINK = (href, t) => '<a class="wor-b" style="text-decoration:none;display:inline-block;margin:4px 6px 0 0" href="' + href + '" target="_top">' + t + '</a>';
+if (window.WaPanels && WaPanels.add) {
+  WaPanels.add('afterdel', (el) => { const s = WaOrd.settings(el, { only: ['review', 'review_nudge'], title: '⭐ After delivery', intro: 'What goes to the customer after the parcel is delivered: first a rating request (5 days later), then, only for 5-star customers who have not sent their review screenshot, one reminder. Ratings, screenshots and gifts are handled in Complaints → ⭐ Reviews.', extra: '<div style="margin-top:10px">' + LINK('complaints.html?tab=reviews', '⭐ Open Reviews (who rated, screenshots, gifts)') + LINK('complaints.html?tab=credit', '🎁 Free perfume gifts') + '</div>' }); return () => s.refresh(); });
+  WaPanels.add('birthdays', (el) => { const s = WaOrd.settings(el, { only: ['bday_ask', 'birthday'], title: '🎂 Birthdays', intro: 'The question goes within an hour after an order (the customer replies like 14/12, or the team taps the small 🎂 button in the chat), then their gift message the day before the birthday (use it online above ₹1,500, or collect at the store). Store customers get a different message, from the cashier, one by one, in Store → Birthdays → “To send today” (its wording and photo are set there).', extra: '<div style="margin-top:10px">' + LINK('store_billing.html', '🏬 Store: birthdays to send today') + LINK('complaints.html?tab=credit', '🎁 Free perfume gifts used / waiting') + '</div>' }); return () => s.refresh(); });
+  WaPanels.add('cxmsgs', (el) => {
+    const { _esc: esc, _toast: toast, _err: errMsg } = WaOrd; el.classList.add('wor');
+    const pill = (st) => '<span class="wor-pill ' + (st === 'APPROVED' ? 'delivered' : st === 'REJECTED' ? 'failed' : st === 'PENDING' ? 'ofd' : '') + '">' + esc({ APPROVED: 'Approved by Meta', PENDING: 'Waiting for Meta', REJECTED: 'Meta said no', MISSING: 'Not created yet' }[String(st || 'missing').toUpperCase()] || st) + '</span>';
+    async function load() {
+      let d; try { d = await api.get('bd.cx_tpls'); } catch (e) { el.innerHTML = '<div class="wor-tile"><div class="wor-err">' + esc(errMsg(e)) + '</div></div>'; return; }
+      const T = d.tpls || [];
+      el.innerHTML = '<div class="wor-tile"><h2>🎫 Complaint messages</h2><p class="wor-sub">Pre-made messages the Complaints desk sends after the 24-hour chat window is closed (a complaint update, a request for photos or details). The wording and photo of the normal complaint messages are set in Complaints → Settings.</p>'
+        + (T.length ? T.map((t) => '<div class="wor-row" style="align-items:flex-start;display:block"><b>' + esc(t.label) + '</b> ' + pill(t.status) + (t.reason ? '<small style="display:block;color:#b3261e">' + esc(t.reason) + '</small>' : '') + '<div style="background:#d9fdd3;border-radius:10px;padding:8px 10px;margin:6px 0;font-size:13px;line-height:1.45;white-space:pre-wrap">' + esc(t.body).replace(/\{\{(\d)\}\}/g, '<b style="color:#4338ca">{{$1}}</b>') + '</div></div>').join('') : '<p class="wor-sub">No complaint messages are set up yet.</p>')
+        + '<div style="margin-top:10px"><button class="wor-b" data-cxseed>' + (T.every((t) => String(t.status).toUpperCase() !== 'MISSING') ? 'Check the messages at Meta' : 'Create the missing messages and send them to Meta') + '</button> ' + LINK('complaints.html?tab=settings&go=msgs', '🎫 Change the words and photo') + '<span class="wor-sub" data-cxm></span></div></div>';
+    }
+    el.onclick = async (e) => { const b = e.target.closest('[data-cxseed]'); if (!b) return; b.disabled = true; const m = el.querySelector('[data-cxm]'); if (m) m.textContent = ' Working…'; try { await api.post('bd.cx_tpls', {}); toast('Done'); } catch (x) { toast(errMsg(x), true); } load(); };
+    load(); return load;
+  });
+}
 // 📦 the WhatsApp section's "Order updates" page (Automation → Order updates)
 if (window.WaPanels && WaPanels.add) WaPanels.add('orderupd', (el) => { const s = WaOrd.settings(el); return () => s.refresh(); });
 
