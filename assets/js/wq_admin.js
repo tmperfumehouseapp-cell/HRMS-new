@@ -178,7 +178,8 @@
           + statTile('Replied', num(t.replied), q > 0 ? Math.round(100 * num(t.replied) / q) + '% of queries' : 'No queries yet', 'ok')
           + statTile('Unanswered', num(t.unanswered), attnCount() > 0 ? attnCount() + ' need you' : 'None need you', num(t.unanswered) > 0 ? 'bad' : '')
           + statTile('Orders', num(t.orders), has(t.conversion) ? U.pct(t.conversion, 0) + ' conversion' : 'No conversion yet')
-          + statTile('Revenue', money(t.revenue), num(t.orders) > 0 ? money(num(t.revenue) / num(t.orders)) + ' per order' : 'No orders yet') + '</div>';
+          + statTile('Revenue', money(t.revenue), num(t.orders) > 0 ? money(num(t.revenue) / num(t.orders)) + ' per order' : 'No orders yet')
+          + (S.board.birthdays ? statTile('🎂 Birthdays', num(S.board.birthdays.total), num(S.board.birthdays.by_customer) + ' by customers · ' + num(S.board.birthdays.by_team) + ' by the team', num(S.board.birthdays.total) > 0 ? 'ok' : '') : '') + '</div>';
         h += liveBoard(S.board);
       }
       body.innerHTML = h;
