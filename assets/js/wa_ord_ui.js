@@ -25,6 +25,7 @@ window.WaOrd = (function () {
   const tel = (p) => (p ? p.replace(/^(\d{5})(\d{5})$/, '$1 $2') : '');
 
   const CSS = `
+  .wor-bd{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#fff8ec;border:1px solid #f3dfb7;border-radius:12px;padding:8px 10px} .wor-bd b{font-size:13.5px} .wor-bd span{font-weight:800;color:#8a5a00} .wor-bd select{border:1px solid #e3c98c;border-radius:8px;padding:5px 6px;font:inherit;font-size:13px;background:#fff;max-width:110px} .wor-bd button{border:1.5px solid #008069;background:#fff;color:#008069;border-radius:999px;padding:4px 12px;font:inherit;font-size:12.5px;font-weight:800;cursor:pointer} .wor-bd button.pri{background:#008069;color:#fff}
   .wor-pg{display:grid;grid-template-columns:repeat(5,1fr);margin:12px 0 4px;position:relative} .wor-pg>div{text-align:center;position:relative;padding:0 2px}
   .wor-pg>div:before{content:"";position:absolute;top:10px;left:-50%;width:100%;height:3px;background:#e3e7ea;z-index:0} .wor-pg>div:first-child:before{display:none}
   .wor-pg>div.done:before,.wor-pg>div.now:before{background:#00a884} .wor-pg>div.bad:before{background:#00a884}
@@ -113,6 +114,27 @@ window.WaOrd = (function () {
 
 
   // ====================================================================================================== the little order pill under the phone number + the hero card
+  // ====================================================================================================== 🎂 the birthday box in the customer panel
+  /** el = a div in the customer panel. Shows the saved birthday (day + month) or two small boxes to save it. opts: { phone, name } */
+  function birthday(el, opts) {
+    css(); opts = opts || {}; if (!el) return; el.classList.add('wor'); const phone = String(opts.phone || '').replace(/\D/g, '').slice(-10);
+    const MN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    const nice = (md) => { const m = /^(\d\d)-(\d\d)$/.exec(md || ''); return m ? (+m[2]) + ' ' + MN[+m[1] - 1] : ''; };
+    let md = '', edit = false;
+    const draw = () => {
+      if (md && !edit) { el.innerHTML = '<div class="wor-bd"><b>🎂 Birthday</b><span>' + esc(nice(md)) + '</span><button type="button" data-bdedit>Change</button></div>'; return; }
+      const sel = (id, a, b, lab, f) => '<select data-' + id + '><option value="">' + lab + '</option>' + Array.from({ length: b - a + 1 }, (_, i) => a + i).map((n) => '<option value="' + n + '">' + (f ? f(n) : n) + '</option>').join('') + '</select>';
+      el.innerHTML = '<div class="wor-bd"><b>🎂 Birthday</b>' + sel('bdd', 1, 31, 'Day') + sel('bdm', 1, 12, 'Month', (n) => MN[n - 1]) + '<button type="button" class="pri" data-bdsave>Save</button></div><div class="wor-sc" style="margin-top:4px">Ask the customer once. They get a FREE 50 ml gift on their birthday.</div>';
+      if (md) { const m = /^(\d\d)-(\d\d)$/.exec(md); el.querySelector('[data-bdd]').value = +m[2]; el.querySelector('[data-bdm]').value = +m[1]; }
+    };
+    el.onclick = async (e) => {
+      if (e.target.closest('[data-bdedit]')) { edit = true; draw(); return; }
+      const sv = e.target.closest('[data-bdsave]'); if (!sv) return; const d = +el.querySelector('[data-bdd]').value, m = +el.querySelector('[data-bdm]').value; if (!d || !m) { toast('Choose the day and the month.', true); return; }
+      sv.disabled = true; try { const r = await api.post('wa.bday_set', { phone, name: opts.name || '', day: d, month: m }); md = r.bday; edit = false; toast('Birthday saved ✓'); draw(); } catch (x) { toast(errMsg(x), true); sv.disabled = false; }
+    };
+    el.innerHTML = '<div class="wor-bd"><span class="wor-sc">Reading the birthday…</span></div>';
+    api.get('wa.bday_get', { phone }).then((r) => { md = r.md || ''; draw(); }).catch(() => { md = ''; draw(); });
+  }
   const initials = (n) => { const w = String(n || '').replace(/[^\p{L}\p{N} ]/gu, '').trim().split(/\s+/).filter(Boolean); return ((w[0] || '?')[0] + (w[1] ? w[1][0] : '')).toUpperCase(); };
   function pillText(m) {
     if (!m.n && !m.open_cases) return { t: 'Orders & tracking · none yet', dot: 'new' };
@@ -517,7 +539,7 @@ window.WaOrd = (function () {
     load(); return { refresh: load };
   }
 
-  return { card, badge, open, send, urgent, link, attention, count, storeForm, settings, _fmt: fmt };
+  return { card, badge, birthday, open, send, urgent, link, attention, count, storeForm, settings, _fmt: fmt };
 })();
 // 📦 the WhatsApp section's "Order updates" page (Automation → Order updates)
 if (window.WaPanels && WaPanels.add) WaPanels.add('orderupd', (el) => { const s = WaOrd.settings(el); return () => s.refresh(); });
