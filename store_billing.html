@@ -477,7 +477,8 @@
   }
   async function doSend(btn) {
     if (billImg) { try { await navigator.clipboard.write([new ClipboardItem({ 'image/png': await billBlobPng() })]); toast('📷 Picture copied — in the chat press Ctrl+V, then Enter.'); } catch (err) { /* the message still opens; use the Copy image button */ } }   // the picture is copied at the same click, so the cashier only pastes it
-    window.open(btn.dataset.u, '_blank', 'noopener');
+    // WhatsApp Web opens in its OWN window on the right half of the screen (the same window the birthday messages use), so this page stays visible on the left
+    const w = (screen.availWidth || 1200), h = (screen.availHeight || 800); const win = window.open(btn.dataset.u, 'tmpwa', 'popup=yes,width=' + Math.round(w / 2) + ',height=' + h + ',left=' + Math.round(w / 2) + ',top=0'); if (!win) { alert('Please allow pop-ups for this site, then tap again.'); return; }
     try { await api.post('st_bill.mark_sent', { person_id: +btn.dataset.wa }); btn.classList.add('sent'); btn.textContent = '✓ Sent · send again'; loadBills(); } catch (e) { /* the message still opened */ }
   }
   document.addEventListener('click', async (e) => {

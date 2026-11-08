@@ -26,11 +26,12 @@ window.StoreBday = (function () {
   const ymd = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   const fillMsg = (t, x) => String(t || '').replace(/\{name\}/g, ((x.name || '').trim().split(/\s+/)[0]) || 'there').replace(/\{code\}/g, x.code || '').replace(/\{birthday\}/g, x.birthday || '').replace(/\{from\}/g, dm(x.valid_from)).replace(/\{till\}/g, dm(x.valid_to));
   const waWeb = (phone, text) => 'https://web.whatsapp.com/send?phone=91' + String(phone || '').replace(/\D/g, '').slice(-10) + '&text=' + encodeURIComponent(text);
+  const msgFor = (m, v) => (v.bday === ymd(new Date()).slice(5) && m && m.day_text) ? m.day_text : ((m && m.text) || '');   // the birthday itself → the birthday message; the day before → "your birthday is tomorrow"
   let bdInfo = null, bdPhoto = null, bdOpened = {}, flow = false, lastTodo = [], reminded = false;
   // WhatsApp Web opens in its OWN window on the right half of the screen (the same window is reused for every customer), so this page stays visible on the left
   const openWA = (url) => { const w = (screen.availWidth || 1200), h = (screen.availHeight || 800); const win = window.open(url, 'tmpwa', 'popup=yes,width=' + Math.round(w / 2) + ',height=' + h + ',left=' + Math.round(w / 2) + ',top=0'); if (!win) alert('Please allow pop-ups for this site, then tap again.'); return win; };
   const openFor = async (v) => { if (bdInfo && bdInfo.msg && bdInfo.msg.has_photo) { try { await navigator.clipboard.write([new ClipboardItem({ 'image/png': await bdPhotoBlob() })]); toast2('📷 Photo copied — in the chat press Ctrl+V, then Enter.'); } catch (err) { /* the button 📷 Copy photo still works */ } }   // the photo is copied at the same click
-    openWA(waWeb(v.phone, fillMsg((bdInfo && bdInfo.msg || {}).text, v))); bdOpened[v.id] = 1; const dn = document.querySelector('[data-bdone="' + v.id + '"]'); if (dn) { dn.disabled = false; dn.style.opacity = '1'; } };
+    openWA(waWeb(v.phone, fillMsg(msgFor(bdInfo && bdInfo.msg, v), v))); bdOpened[v.id] = 1; const dn = document.querySelector('[data-bdone="' + v.id + '"]'); if (dn) { dn.disabled = false; dn.style.opacity = '1'; } };
   const toast2 = (m) => { const t = document.createElement('div'); t.textContent = m; t.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#111b21;color:#fff;padding:10px 16px;border-radius:12px;font-weight:700;z-index:99999'; document.body.appendChild(t); setTimeout(() => t.remove(), 2600); };
   async function loadBirthdays() {
     try {
@@ -42,7 +43,7 @@ window.StoreBday = (function () {
       $('bdSub').textContent = info ? `${info.customers_with_birthday} store customer${info.customers_with_birthday === 1 ? '' : 's'} with a birthday saved · online ones are sent by themselves` : '';
       $('bdAuto').innerHTML = !info ? '' : !info.cfg.enabled ? '<span class="pill bad">Birthday gift is switched OFF</span>' : '<span class="pill ok">🏬 Store customers: send from “To send today” below · 🤖 Online customers: their own message goes by itself the day before the birthday</span>';
       let h = `<div class="bdtoday"><h4>📤 To send today <span class="pill today">${todo.length}</span> <small style="font-weight:600;color:var(--sx-mut)">${done} done today</small>${todo.length ? ' <button class="minibtn" data-bstart style="background:#0b6ef6;padding:6px 12px;font-size:12.5px;margin-left:8px">▶ Start sending</button>' : ''}</h4>`;
-      h += todo.length ? todo.map((v) => { const t = fillMsg(msg.text, v), op = bdOpened[v.id];
+      h += todo.length ? todo.map((v) => { const t = fillMsg(msgFor(msg, v), v), op = bdOpened[v.id];
         return `<div class="bdr bdq" data-v="${v.id}"><div class="n"><b>${esc(v.name || 'Customer')}</b><small>+${esc(v.phone)} · 🎂 ${esc(v.birthday)} · code <span class="code">${esc(v.code)}</span></small><small class="bdmsg">${esc(t)}</small></div><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">${msg.has_photo ? `<button class="minibtn" data-bcopy="${v.id}" style="background:#6d4fc2">📷 Copy photo</button>` : ''}<button class="minibtn" data-bopen="${v.id}" style="background:#0b6ef6;padding:6px 12px;font-size:12.5px">💬 Open WhatsApp</button><button class="minibtn" data-bdone="${v.id}" style="padding:6px 12px;font-size:12.5px;${op ? '' : 'opacity:.45'}" ${op ? '' : 'disabled'}>✔ Done</button></div></div>`; }).join('')
         : `<div class="sx-mut" style="padding:6px 0;font-size:13px">${done ? '🎉 All done — every birthday message for today is sent.' : 'No store customer has a birthday today. Ask every customer for their birthday at billing.'}</div>`;
       h += '</div><h4 style="margin:12px 0 4px">Coming in the next 14 days</h4>';
@@ -70,20 +71,26 @@ window.StoreBday = (function () {
       <div class="r"><label><input type="checkbox" id="bsOn" ${c.enabled ? 'checked' : ''}> Birthday gift is ON</label><label><input type="checkbox" id="bsWa" ${c.auto_wa ? 'checked' : ''}> Send the message by itself to online customers</label></div>
       <div class="r">Make the code <input type="number" class="sx-in" id="bsBefore" min="0" max="30" value="${c.send_before}"> days before the birthday (1 = the day before) · valid <input type="number" class="sx-in" id="bsAfter" min="0" max="60" value="${c.valid_after}"> days after it</div>
       <div class="r"><button class="sx-btn" id="bsSave" style="padding:8px 16px">Save</button><button class="lnk" id="bsRun">Make today’s codes now</button><span id="bsMsg" class="sx-mut"></span></div>
-      <div class="gok" style="background:#f7f9fb;border-color:var(--sx-line)"><b>✏️ The message you send by hand</b><div class="sx-mut" style="font-size:12px;margin:2px 0 6px">The words in { } fill themselves in for each customer:</div>
+      <div class="gok" style="background:#f7f9fb;border-color:var(--sx-line)"><b>✏️ The birthday messages you send by hand</b><div class="sx-mut" style="font-size:12px;margin:2px 0 6px">The words in { } fill themselves in for each customer. They open in the WhatsApp Web window beside this page (the same WhatsApp number as the bill message).</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">${['{name}', '{code}', '{birthday}', '{from}', '{till}'].map((t) => `<button type="button" class="minibtn" data-bvar="${t}" style="background:#e8eef7;color:#25364d">${t}</button>`).join('')}</div>
+        <b style="font-size:12.5px">1 · The day before the birthday — “your birthday is tomorrow”</b>
         <textarea id="bmText" rows="5" style="width:100%;box-sizing:border-box;border:1px solid var(--sx-line);border-radius:10px;padding:8px;font:inherit">${esc(m.text)}</textarea>
+        <div id="bmPrev" style="white-space:pre-wrap;background:#e7fbf3;border-radius:10px;padding:8px 10px;font-size:13px;margin:4px 0 10px"></div>
+        <b style="font-size:12.5px">2 · On the birthday itself</b>
+        <textarea id="bdText" rows="5" style="width:100%;box-sizing:border-box;border:1px solid var(--sx-line);border-radius:10px;padding:8px;font:inherit">${esc(m.day_text || '')}</textarea>
+        <div id="bdPrev" style="white-space:pre-wrap;background:#e7fbf3;border-radius:10px;padding:8px 10px;font-size:13px;margin:4px 0 6px"></div>
         <div class="r" style="margin-top:6px">📷 Photo: <input type="file" id="bmFile" accept="image/*" style="max-width:210px"> ${m.has_photo ? '<button class="lnk" id="bmDel">Remove the photo</button><span class="pill ok">photo set</span>' : '<span class="sx-mut">none</span>'}</div>
-        <div class="sx-mut" style="font-size:12px;margin:6px 0 2px">What it looks like:</div><div id="bmPrev" style="white-space:pre-wrap;background:#e7fbf3;border-radius:10px;padding:8px 10px;font-size:13px"></div>
         <div class="r" style="margin-top:6px"><button class="sx-btn" id="bmSave" style="padding:8px 16px">Save message</button><button class="lnk" id="bmReset">Back to the standard message</button><span id="bmNote" class="sx-mut"></span></div>
         <div class="sx-mut" style="font-size:12px;margin-top:4px">A photo cannot travel inside a web.whatsapp link, so the “📷 Copy photo” button copies it: open the chat, press Ctrl+V and send.</div></div>
       <div class="sx-mut" style="font-size:12px">Online customers (birthday asked when the order was made) get their own automatic WhatsApp message (different from this store message) the day before the birthday: see and change its words in WhatsApp → Order-update messages → “Birthday gift”. A customer gets one code a year; one code = one free 50 ml.</div></div>`
       : `<div class="bdset"><div class="sx-mut">The code is made ${c.send_before === 0 ? 'on the birthday' : c.send_before === 1 ? 'the day before the birthday' : c.send_before + ' days before it'} and is valid ${c.valid_after} days after it. A manager can change this and the message.</div></div>`;
     bmPrev();
   }
-  const bmPrev = () => { const t = $('bmText'), p = $('bmPrev'); if (!t || !p) return; const d0 = new Date(), e2 = new Date(d0.getTime() + ((bdInfo && bdInfo.cfg.valid_after) || 15) * 864e5); p.textContent = fillMsg(t.value, { name: 'Rahul Sharma', code: 'BD-7K3M9P', birthday: d0.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }), valid_from: ymd(d0), valid_to: ymd(e2) }); };
+  const bmPrev = () => { const d0 = new Date(), e2 = new Date(d0.getTime() + ((bdInfo && bdInfo.cfg.valid_after) || 15) * 864e5), x = { name: 'Rahul Sharma', code: 'BD-7K3M9P', birthday: d0.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }), valid_from: ymd(d0), valid_to: ymd(e2) };
+    [['bmText', 'bmPrev'], ['bdText', 'bdPrev']].forEach((q) => { const t = $(q[0]), p = $(q[1]); if (t && p) p.textContent = fillMsg(t.value, x); }); };
   function wire() {
-  $('bdCard').addEventListener('input', (e) => { if (e.target.id === 'bmText') bmPrev(); });
+  $('bdCard').addEventListener('focusin', (e) => { if (e.target.id === 'bmText' || e.target.id === 'bdText') window.__bdLast = e.target.id; });
+  $('bdCard').addEventListener('input', (e) => { if (e.target.id === 'bmText' || e.target.id === 'bdText') bmPrev(); });
   $('bdCard').addEventListener('change', async (e) => {
     if (e.target.id !== 'bmFile' || !e.target.files[0]) return; const n = $('bmNote');
     try { const d = await resizeImg(e.target.files[0], 900); await api.post('st_bday.msg_save', { photo: d }); bdPhoto = null; if (n) n.textContent = 'Photo saved.'; loadBirthdays(); } catch (err) { if (n) { n.textContent = err.message || 'Could not use this picture.'; n.style.color = 'var(--sx-bad)'; } }
@@ -93,11 +100,11 @@ window.StoreBday = (function () {
     const nm = (m, bad) => { const el = $('bmNote'); if (el) { el.textContent = m; el.style.color = bad ? 'var(--sx-bad)' : 'var(--sx-good)'; } };
     const t = e.target, V = (bdInfo && bdInfo.vouchers) || [], vc = (id) => V.find((x) => x.id === +id);
     if ('bstart' in t.dataset) { if (lastTodo.length) { flow = true; openFor(lastTodo[0]); } return; }
-    if (t.dataset.bvar) { const ta = $('bmText'); if (ta) { const a = ta.selectionStart || ta.value.length; ta.value = ta.value.slice(0, a) + t.dataset.bvar + ta.value.slice(ta.selectionEnd || a); ta.focus(); bmPrev(); } return; }
+    if (t.dataset.bvar) { const ta = (document.activeElement && document.activeElement.id === 'bdText') ? $('bdText') : ((window.__bdLast === 'bdText') ? $('bdText') : $('bmText')); if (ta) { const a = ta.selectionStart || ta.value.length; ta.value = ta.value.slice(0, a) + t.dataset.bvar + ta.value.slice(ta.selectionEnd || a); ta.focus(); bmPrev(); } return; }
     if (t.dataset.bcopy) { try { const b = await bdPhotoBlob(); await navigator.clipboard.write([new ClipboardItem({ 'image/png': b })]); toast2('Photo copied. Open the chat and press Ctrl+V.'); } catch (err) { toast2('Could not copy the photo — right-click it in settings and save it instead.'); } return; }
     if (t.dataset.bopen) { const v = vc(t.dataset.bopen); if (!v) return; openFor(v); return; }
     if (t.dataset.bdone) { t.disabled = true; try { await api.post('st_bday.mark_sent', { id: +t.dataset.bdone }); delete bdOpened[+t.dataset.bdone]; } catch (err) { alert(err.message); } await loadBirthdays(); if (flow) { if (lastTodo.length) openFor(lastTodo[0]); else { flow = false; toast2('🎉 All birthday messages are sent'); } } return; }
-    if (t.id === 'bmSave') { try { await api.post('st_bday.msg_save', { text: $('bmText').value }); nm('Saved.'); loadBirthdays(); } catch (err) { nm(err.message, 1); } return; }
+    if (t.id === 'bmSave') { try { await api.post('st_bday.msg_save', { text: $('bmText').value, day_text: $('bdText').value }); nm('Saved.'); loadBirthdays(); } catch (err) { nm(err.message, 1); } return; }
     if (t.id === 'bmReset') { if (!confirm('Go back to the standard birthday message?')) return; try { await api.post('st_bday.msg_save', { reset: 1 }); loadBirthdays(); } catch (err) { nm(err.message, 1); } return; }
     if (t.id === 'bmDel') { try { await api.post('st_bday.msg_save', { photo: '' }); bdPhoto = null; loadBirthdays(); } catch (err) { nm(err.message, 1); } return; }
     if (t.id === 'bsSave') { const b0 = +$('bsBefore').value, a0 = +$('bsAfter').value; try { await api.post('st_bday.cfg_save', { enabled: $('bsOn').checked ? 1 : 0, auto_wa: $('bsWa').checked ? 1 : 0, send_before: isNaN(b0) ? 0 : b0, valid_after: isNaN(a0) ? 15 : a0 }); note('Saved.'); loadBirthdays(); } catch (err) { note(err.message, 1); } return; }

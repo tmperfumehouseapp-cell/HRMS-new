@@ -672,6 +672,7 @@ function st_cs_get(PDO $pdo): array
 {
     $d = st_cs_defaults();
     try { $v = $pdo->query("SELECT svalue FROM st_cs_settings WHERE skey = 'cs'")->fetchColumn(); $j = $v ? json_decode($v, true) : null; if (is_array($j)) $d = array_merge($d, $j); } catch (Throwable $e) { }
+    $d['msgs'] = st_msgs_get($pdo);
     return $d;
 }
 function st_cs_save(PDO $pdo, array $in): array
@@ -697,15 +698,41 @@ function st_bill_link(string $token): string
     $dir = isset($_SERVER['SCRIPT_NAME']) ? rtrim(dirname((string)$_SERVER['SCRIPT_NAME']), '/\\') : '/empmanagment';
     return $base . ($dir === '' || $dir === '.' ? '' : $dir) . '/store_bill.php?t=' . $token;
 }
-/** The WhatsApp message (and the wa.me link that opens it ready to send) for one customer. */
+/** The wording the cashier sends BY HAND on web.whatsapp after a bill (editable in Store → Messages). {name} {store} {bill_no} {amount} {bill_link} {community_link} {review_link} {friends_link} fill themselves in. */
+function st_msgs_defaults(): array
+{
+    return [
+        'thanks' => "Hi {name}, thank you for shopping at {store}! Your bill {bill_no} (₹{amount}) is here: {bill_link}\nSave our contacts and join our community from the same page.\n\nCame with friends? Send them this link so they can save our contacts, join the community and review us too: {friends_link}",
+        'thanks_back' => "Welcome back, {name}! Thank you for shopping at {store} again. Your bill {bill_no} (₹{amount}) is here: {bill_link}\n\nCame with friends? Send them this link so they can save our contacts, join the community and review us too: {friends_link}",
+    ];
+}
+function st_msgs_get(PDO $pdo): array
+{
+    $d = st_msgs_defaults(); $j = null;
+    try { $v = $pdo->query("SELECT svalue FROM st_cs_settings WHERE skey = 'msgs'")->fetchColumn(); $j = $v ? json_decode((string)$v, true) : null; } catch (Throwable $e) { }
+    if (is_array($j)) foreach ($d as $k => $def) if (trim((string)($j[$k] ?? '')) !== '') $d[$k] = (string)$j[$k];
+    return $d;
+}
+function st_msgs_save(PDO $pdo, array $in): array
+{
+    $cur = st_msgs_get($pdo); $def = st_msgs_defaults();
+    if (!empty($in['reset'])) { $cur = $def; }
+    else foreach (['thanks', 'thanks_back'] as $k) if (isset($in[$k])) {
+        $t = trim(str_replace("\r", '', (string)$in[$k])); if ($t === '') return ['error' => 'A message cannot be empty.']; if (mb_strlen($t) > 900) return ['error' => 'A message is too long (900 letters at most).']; $cur[$k] = $t;
+    }
+    $pdo->prepare("INSERT INTO st_cs_settings (skey, svalue) VALUES ('msgs', ?) ON DUPLICATE KEY UPDATE svalue = VALUES(svalue)")->execute([json_encode($cur, JSON_UNESCAPED_UNICODE)]);
+    return ['ok' => true, 'msgs' => $cur, 'defaults' => $def];
+}
+/** The WhatsApp message (and the web.whatsapp link that opens it ready to send, in the side window) for one customer. */
 function st_wa_message(array $person, array $bill, array $cs): array
 {
     $name = trim((string)$person['name']); $first = $name !== '' ? explode(' ', $name)[0] : 'there';
     $skip = !empty($person['returning']) && !empty($cs['skip_returning']);      // someone who already shops with us is not asked to save / join / review again
-    $text = $skip ? 'Welcome back, ' . $first . '! Thank you for shopping at ' . $cs['store_name'] . ' again. Your bill ' . $bill['bill_no'] . ' (₹' . number_format((float)$bill['total']) . ') is here: ' . st_bill_link((string)$person['token'])
-        : 'Hi ' . $first . ', thank you for shopping at ' . $cs['store_name'] . '! Your bill ' . $bill['bill_no'] . ' (₹' . number_format((float)$bill['total']) . ') is here: ' . st_bill_link((string)$person['token']) . "\nSave our contacts and join our community from the same page.";
-    $text .= "\n\nCame with friends? Send them this link so they can save our contacts, join the community and review us too: " . st_bill_link((string)$person['token']) . '&g=1';
-    return ['text' => $text, 'url' => 'https://wa.me/' . $person['phone'] . '?text=' . rawurlencode($text)];
+    $m = is_array($cs['msgs'] ?? null) ? $cs['msgs'] : st_msgs_defaults(); $tpl = (string)($skip ? ($m['thanks_back'] ?? '') : ($m['thanks'] ?? '')); if (trim($tpl) === '') { $d = st_msgs_defaults(); $tpl = $skip ? $d['thanks_back'] : $d['thanks']; }
+    $link = st_bill_link((string)$person['token']);
+    $text = strtr($tpl, ['{name}' => $first, '{store}' => (string)$cs['store_name'], '{bill_no}' => (string)$bill['bill_no'], '{amount}' => number_format((float)$bill['total']), '{bill_link}' => $link,
+        '{community_link}' => (string)($cs['community_link'] ?? ''), '{review_link}' => (string)($cs['review_link'] ?? ''), '{friends_link}' => $link . '&g=1']);
+    return ['text' => $text, 'url' => 'https://web.whatsapp.com/send?phone=' . $person['phone'] . '&text=' . rawurlencode($text)];
 }
 function st_event(PDO $pdo, int $personId, int $billId, string $kind, string $who = ''): void
 {
@@ -1420,22 +1447,30 @@ function st_bday_send(PDO $pdo, array $v): array
 /** The wording the cashier sends BY HAND (web.whatsapp) and its optional photo. {name} {code} {birthday} {from} {till} are filled in for each customer by the screen. */
 function st_bday_msg_default(): string
 {
-    return "Hello {name}! 🎂 Your birthday is on {birthday}, and TM Perfume House has a FREE 50 ml perfume gift for you. Collect it from our store any time between {from} and {till} by showing this code: {code}. Happy birthday in advance! 💖";   // the STORE message (said by hand); the online customers get their own automatic message
+    return "Hello {name}! 🎂 Your birthday is tomorrow ({birthday}), and TM Perfume House has a FREE 50 ml perfume gift for you. Collect it from our store any time between {from} and {till} by showing this code: {code}. Happy birthday in advance! 💖";   // the STORE message (said by hand); the online customers get their own automatic message
+}
+function st_bday_msg_day_default(): string
+{
+    return "Happy birthday {name}! 🎂🎉 TM Perfume House has a FREE 50 ml perfume gift for you today. Collect it from our store any time between {from} and {till} by showing this code: {code}. Have a wonderful day! 💖";
 }
 function st_bday_msg(PDO $pdo, bool $withPhoto = false): array
 {
     $j = null; try { $v = $pdo->query("SELECT svalue FROM st_cs_settings WHERE skey = 'bday_msg'")->fetchColumn(); $j = $v ? json_decode((string)$v, true) : null; } catch (Throwable $e) { }
     $text = is_array($j) && trim((string)($j['text'] ?? '')) !== '' ? (string)$j['text'] : st_bday_msg_default(); $photo = is_array($j) ? (string)($j['photo'] ?? '') : '';
-    $o = ['text' => $text, 'has_photo' => $photo !== '', 'default' => st_bday_msg_default()]; if ($withPhoto) $o['photo'] = $photo;
+    $dt = is_array($j) && trim((string)($j['day_text'] ?? '')) !== '' ? (string)$j['day_text'] : st_bday_msg_day_default();
+    $o = ['text' => $text, 'day_text' => $dt, 'has_photo' => $photo !== '', 'default' => st_bday_msg_default(), 'day_default' => st_bday_msg_day_default()]; if ($withPhoto) $o['photo'] = $photo;
     return $o;
 }
 function st_bday_msg_save(PDO $pdo, array $in): array
 {
-    $cur = st_bday_msg($pdo, true); $text = $cur['text']; $photo = (string)($cur['photo'] ?? '');
-    if (!empty($in['reset'])) { $text = st_bday_msg_default(); }
-    elseif (isset($in['text'])) { $t = trim(str_replace("\r", '', (string)$in['text'])); if ($t === '') return ['error' => 'The message cannot be empty.']; if (mb_strlen($t) > 900) return ['error' => 'The message is too long (900 letters at most).']; $text = $t; }
+    $cur = st_bday_msg($pdo, true); $text = $cur['text']; $day = $cur['day_text']; $photo = (string)($cur['photo'] ?? '');
+    if (!empty($in['reset'])) { $text = st_bday_msg_default(); $day = st_bday_msg_day_default(); }
+    else foreach (['text', 'day_text'] as $k) if (isset($in[$k])) {
+        $t = trim(str_replace("\r", '', (string)$in[$k])); if ($t === '') return ['error' => 'The message cannot be empty.']; if (mb_strlen($t) > 900) return ['error' => 'The message is too long (900 letters at most).'];
+        if ($k === 'text') $text = $t; else $day = $t;
+    }
     if (array_key_exists('photo', $in)) { $p = (string)$in['photo']; if ($p === '') $photo = ''; elseif (preg_match('#^data:image/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$#', $p) && strlen($p) <= 900000) $photo = $p; else return ['error' => 'The photo must be a JPG / PNG picture under about 600 KB.']; }
-    $pdo->prepare("INSERT INTO st_cs_settings (skey, svalue) VALUES ('bday_msg', ?) ON DUPLICATE KEY UPDATE svalue = VALUES(svalue)")->execute([json_encode(['text' => $text, 'photo' => $photo], JSON_UNESCAPED_UNICODE)]);
+    $pdo->prepare("INSERT INTO st_cs_settings (skey, svalue) VALUES ('bday_msg', ?) ON DUPLICATE KEY UPDATE svalue = VALUES(svalue)")->execute([json_encode(['text' => $text, 'day_text' => $day, 'photo' => $photo], JSON_UNESCAPED_UNICODE)]);
     return ['ok' => true];
 }
 /** Is this code good for a free 50 ml today? Returns ['ok' => true, 'voucher' => row] or ['ok' => false, 'error' => text]. */
