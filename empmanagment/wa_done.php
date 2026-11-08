@@ -35,6 +35,7 @@ function wa_auto_muted(PDO $pdo, string $key): bool
 {
     static $c = []; $key = substr(preg_replace('/\D+/', '', $key), -10); if ($key === '') return false; if (array_key_exists($key, $c)) return $c[$key];
     if (function_exists('wa_cxself_state') && wa_cxself_state($pdo, $key)) return $c[$key] = true;   // 🎫 the customer is raising a ticket: the bot waits
+    if (function_exists('wa_bday_recent') && wa_bday_recent($pdo, $key)) return $c[$key] = true;   // 🎂 the customer just told us their birthday: only our own thank-you goes out
     if (function_exists('wa_review_recent') && wa_review_recent($pdo, $key)) return $c[$key] = true;   // ⭐ the customer just answered our rating request: only our own thank-you goes out
     $r = wa_done_row($pdo, $key); return $c[$key] = $r && strtotime((string)$r['mute_until']) > time();
 }

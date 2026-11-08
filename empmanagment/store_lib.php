@@ -1366,6 +1366,7 @@ function st_bday_run(PDO $pdo, bool $send = true, ?int $now = null): array
                 $qi->execute([-(int)$v['voucher_id'], wo_key((string)$v['phone']), (string)$v['code'], 'birthday', wo_send_defs()['birthday'][0], wo_dt($nw), wo_dt(wo_next_open($nw))]);
                 $pdo->prepare("UPDATE st_bday_vouchers SET wa_status = 'queued', wa_note = 'waiting in the automatic messages', wa_at = ? WHERE voucher_id = ?")->execute([date('Y-m-d H:i:s'), (int)$v['voucher_id']]); $out['sent']++; continue;
             }
+            $out['waiting']++; continue;   // an online customer waits until the automatic Birthday gift message is approved and switched ON (it never goes out by the old sender)
             [$ok, $why] = st_bday_send($pdo, $v);
             if ($ok) $out['sent']++; elseif (strpos($why, 'not approved') !== false || strpos($why, 'not available') !== false) $out['waiting']++; else $out['failed']++;
         }
