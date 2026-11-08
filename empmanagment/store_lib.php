@@ -699,18 +699,23 @@ function st_bill_link(string $token): string
     return $base . ($dir === '' || $dir === '.' ? '' : $dir) . '/store_bill.php?t=' . $token;
 }
 /** The wording the cashier sends BY HAND on web.whatsapp after a bill (editable in Store → Messages). {name} {store} {bill_no} {amount} {bill_link} {community_link} {review_link} {friends_link} fill themselves in. */
+function st_msgs_legacy(): array      // the earlier standard wording: a saved copy of it is treated as "standard" so people get the new one
+{
+    return [md5("Hi {name}, thank you for shopping at {store}! Your bill {bill_no} (₹{amount}) is here: {bill_link}\nSave our contacts and join our community from the same page.\n\nCame with friends? Send them this link so they can save our contacts, join the community and review us too: {friends_link}"),
+        md5("Welcome back, {name}! Thank you for shopping at {store} again. Your bill {bill_no} (₹{amount}) is here: {bill_link}\n\nCame with friends? Send them this link so they can save our contacts, join the community and review us too: {friends_link}")];
+}
 function st_msgs_defaults(): array
 {
     return [
-        'thanks' => "Hi {name}, thank you for shopping at {store}! Your bill {bill_no} (₹{amount}) is here: {bill_link}\nSave our contacts and join our community from the same page.\n\nCame with friends? Send them this link so they can save our contacts, join the community and review us too: {friends_link}",
-        'thanks_back' => "Welcome back, {name}! Thank you for shopping at {store} again. Your bill {bill_no} (₹{amount}) is here: {bill_link}\n\nCame with friends? Send them this link so they can save our contacts, join the community and review us too: {friends_link}",
+        'thanks' => "Hi {name}, thank you for shopping at {store}! 🙏\n\n🧾 Your bill {bill_no} (₹{amount}) — see it here:\n{bill_link}\n\n📞 Please save our numbers, so you never miss an offer:\n{contacts}\nSave all in one tap: {contacts_link}\n\n👥 Please join our community:\n{community_link}\n\n⭐ Please give us a 5-star review on Google:\n{review_link}\n\nCame with friends? Send them this: {friends_link}",
+        'thanks_back' => "Welcome back, {name}! 🙏 Thank you for shopping at {store} again.\n\n🧾 Your bill {bill_no} (₹{amount}) — see it here:\n{bill_link}\n\nCame with friends? Send them this: {friends_link}",
     ];
 }
 function st_msgs_get(PDO $pdo): array
 {
     $d = st_msgs_defaults(); $j = null;
     try { $v = $pdo->query("SELECT svalue FROM st_cs_settings WHERE skey = 'msgs'")->fetchColumn(); $j = $v ? json_decode((string)$v, true) : null; } catch (Throwable $e) { }
-    if (is_array($j)) foreach ($d as $k => $def) if (trim((string)($j[$k] ?? '')) !== '') $d[$k] = (string)$j[$k];
+    if (is_array($j)) foreach ($d as $k => $def) if (trim((string)($j[$k] ?? '')) !== '' && !in_array(md5((string)$j[$k]), st_msgs_legacy(), true)) $d[$k] = (string)$j[$k];
     return $d;
 }
 function st_msgs_save(PDO $pdo, array $in): array
@@ -723,15 +728,31 @@ function st_msgs_save(PDO $pdo, array $in): array
     $pdo->prepare("INSERT INTO st_cs_settings (skey, svalue) VALUES ('msgs', ?) ON DUPLICATE KEY UPDATE svalue = VALUES(svalue)")->execute([json_encode($cur, JSON_UNESCAPED_UNICODE)]);
     return ['ok' => true, 'msgs' => $cur, 'defaults' => $def];
 }
+/** The SHORT address of a customer's bill page (b.php in the main folder): https://domain/b.php?t=TOKEN + &c=1 community · &r=1 Google review · &s=1 save our numbers · &g=1 friends. Counts the same taps as the long address. */
+function st_short_link(string $token, string $extra = ''): string
+{
+    $base = defined('APP_URL') && APP_URL ? rtrim((string)APP_URL, '/') : ((!empty($_SERVER['HTTPS']) || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https' ? 'https://' : 'http://') . ($_SERVER['HTTP_HOST'] ?? 'localhost'));
+    $dir = isset($_SERVER['SCRIPT_NAME']) ? rtrim(dirname((string)$_SERVER['SCRIPT_NAME']), '/\\') : '/empmanagment';
+    $root = rtrim(dirname($dir === '' ? '/' : $dir), '/\\');      // the main folder, one above empmanagment
+    return $base . ($root === '.' ? '' : $root) . '/b.php?t=' . $token . ($extra !== '' ? '&' . $extra . '=1' : '');
+}
+/** The store numbers as lines of text: "• Neil (Store): +91 98765 43210". */
+function st_contacts_text(array $cs): string
+{
+    $o = []; foreach ((array)($cs['contacts'] ?? []) as $c) { $ph = substr(preg_replace('/\D/', '', (string)($c['phone'] ?? '')), -10); if ($ph === '') continue; $nm = trim((string)($c['name'] ?? '')); $rl = trim((string)($c['role'] ?? '')); $o[] = '• ' . ($nm !== '' ? $nm : $cs['store_name']) . ($rl !== '' ? ' (' . $rl . ')' : '') . ': +91 ' . substr($ph, 0, 5) . ' ' . substr($ph, 5); }
+    return implode("\n", $o);
+}
 /** The WhatsApp message (and the web.whatsapp link that opens it ready to send, in the side window) for one customer. */
 function st_wa_message(array $person, array $bill, array $cs): array
 {
     $name = trim((string)$person['name']); $first = $name !== '' ? explode(' ', $name)[0] : 'there';
     $skip = !empty($person['returning']) && !empty($cs['skip_returning']);      // someone who already shops with us is not asked to save / join / review again
     $m = is_array($cs['msgs'] ?? null) ? $cs['msgs'] : st_msgs_defaults(); $tpl = (string)($skip ? ($m['thanks_back'] ?? '') : ($m['thanks'] ?? '')); if (trim($tpl) === '') { $d = st_msgs_defaults(); $tpl = $skip ? $d['thanks_back'] : $d['thanks']; }
-    $link = st_bill_link((string)$person['token']);
-    $text = strtr($tpl, ['{name}' => $first, '{store}' => (string)$cs['store_name'], '{bill_no}' => (string)$bill['bill_no'], '{amount}' => number_format((float)$bill['total']), '{bill_link}' => $link,
-        '{community_link}' => (string)($cs['community_link'] ?? ''), '{review_link}' => (string)($cs['review_link'] ?? ''), '{friends_link}' => $link . '&g=1']);
+    $tk = (string)$person['token'];      // short, counted links: the bill page, the community, the Google review, "save our numbers", the friends link
+    $text = strtr($tpl, ['{name}' => $first, '{store}' => (string)$cs['store_name'], '{bill_no}' => (string)$bill['bill_no'], '{amount}' => number_format((float)$bill['total']), '{bill_link}' => st_short_link($tk),
+        '{community_link}' => trim((string)($cs['community_link'] ?? '')) !== '' ? st_short_link($tk, 'c') : '', '{review_link}' => trim((string)($cs['review_link'] ?? '')) !== '' ? st_short_link($tk, 'r') : '',
+        '{contacts}' => st_contacts_text($cs), '{contacts_link}' => !empty($cs['contacts']) ? st_short_link($tk, 's') : '', '{friends_link}' => st_short_link($tk, 'g')]);
+    $text = trim(preg_replace("/\n{3,}/", "\n\n", $text));
     return ['text' => $text, 'url' => 'https://web.whatsapp.com/send?phone=' . $person['phone'] . '&text=' . rawurlencode($text)];
 }
 function st_event(PDO $pdo, int $personId, int $billId, string $kind, string $who = ''): void
