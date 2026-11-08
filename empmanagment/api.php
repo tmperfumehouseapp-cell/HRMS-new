@@ -16471,6 +16471,12 @@ function tmph_claude_request(string $model, array $body, bool $stream): array
         $req['tool_choice'] = ['type' => 'tool', 'name' => 'answer'];
     }
     if ($tools) $req['tools'] = $tools;
+    // 💾 second cache breakpoint on the newest user turn: in a tool loop / long chat the whole earlier conversation is read from cache (0.1x price) instead of being billed in full each step
+    if (count($msgs) > 1 || $tools) {
+        $li = count($req['messages']) - 1; $lb = count($req['messages'][$li]['content']) - 1;
+        if ($lb >= 0 && is_array($req['messages'][$li]['content'][$lb]) && in_array($req['messages'][$li]['content'][$lb]['type'] ?? '', ['text', 'tool_result'], true))
+            $req['messages'][$li]['content'][$lb]['cache_control'] = ['type' => 'ephemeral'];
+    }
     return $req;
 }
 /** Claude call in the same result shape as tmph_call_gemini(): text, parts (functionCall with _id), calls, blocked, status, detail, curl. */
@@ -33470,7 +33476,7 @@ switch ($action) {
 
         $models = tmph_chat_models();           // main model + backups, tried in order when one is overloaded / rate-limited
         if (tmph_is_claude()) {                 // the assistant gets the strongest model (TMPH_ASSISTANT_MODEL in config.php changes or switches this off with '')
-            $am = (string)tmph_cfg('TMPH_ASSISTANT_MODEL', 'claude-opus-5-5');
+            $am = (string)tmph_cfg('TMPH_ASSISTANT_MODEL', 'claude-haiku-5-5');   // routine chat replies run on Haiku (≈40x cheaper than Opus); set TMPH_ASSISTANT_MODEL to 'claude-sonnet-5-5' / 'claude-opus-5-5' for heavier work
             if ($am !== '' && preg_match('/^claude[A-Za-z0-9._-]{2,55}$/', $am) && !in_array($am, [$models[0]], true)) array_unshift($models, $am);
         }
         $GLOBALS['tmph_purpose'] = 'chat';

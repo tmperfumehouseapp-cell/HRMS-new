@@ -37,8 +37,9 @@ define('API_KEY', 'optional-dev-api-key');
 // Request a change (Admin -> Changes): lets the Admin ask for new features that Claude Code builds and he approves.
 //   define('GITHUB_TOKEN', 'github_pat_...');   // fine-grained token for THIS repository only: Contents, Issues, Pull requests = read & write
 //   define('GITHUB_REPO',  'owner/name');       // optional, default jaimin69-tm/HRMS
-// The assistant's strongest model and step budget (defaults: claude-opus-5-5, 8 steps; '' = use TMPH_MODEL):
-//   define('TMPH_ASSISTANT_MODEL', 'claude-opus-5-5');
+// The assistant's model and step budget (defaults: claude-haiku-5-5 for cheap routine chat, 8 steps; '' = use TMPH_MODEL):
+//   define('TMPH_ASSISTANT_MODEL', 'claude-haiku-5-5');   // use 'claude-opus-5-5' only for heavy work
+// Monthly AI spend limit in USD (default 180, 0 = no limit): define('TMPH_MONTH_BUDGET_USD', 300);
 //   define('TMPH_MAX_STEPS', 8);
 
 // Nightly review of the bots (Brain -> Suggestions). Make up a long random password (20+ characters) and put the SAME text
