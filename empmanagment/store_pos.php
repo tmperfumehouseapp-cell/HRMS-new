@@ -1076,6 +1076,17 @@ try {
             break;
         }
 
+        case 'st_cs.team_numbers': {      // the mobile numbers already saved on the store team (Store → Team) and the store's own number, to fill the contact cards
+            require_auth(); $out = ['store' => '', 'people' => []];
+            try { $co = st_company($pdo); $sp = st_phone_clean((string)($co['phone'] ?? '')); if ($sp !== '' && strlen($sp) <= 12) $out['store'] = $sp; } catch (Throwable $e) { }
+            try {
+                $ids = array_map('intval', $pdo->query("SELECT emp_id FROM st_duty")->fetchAll(PDO::FETCH_COLUMN));
+                $q = $pdo->query("SELECT employee_id, full_name, mobile FROM employees WHERE status != 'ex'");
+                foreach ($q->fetchAll() as $e) { $ph = st_phone_clean((string)$e['mobile']); $out['people'][] = ['employee_id' => (int)$e['employee_id'], 'name' => (string)$e['full_name'], 'phone' => $ph, 'on_team' => in_array((int)$e['employee_id'], $ids, true)]; }
+            } catch (Throwable $e) { error_log('st_cs.team_numbers: ' . $e->getMessage()); }
+            json_response($out);
+            break;
+        }
         case 'st_cs.get': {
             require_auth();
             json_response(['settings' => st_cs_get($pdo), 'sample' => st_bill_link('SAMPLE'), 'short' => st_short_link('SAMPLE')]);
