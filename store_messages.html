@@ -23,7 +23,9 @@
           <b>After every bill</b> — Store → Billing shows <b>Send on WhatsApp</b>: WhatsApp Web opens in a window beside the page with the <b>order thank-you</b> below already written (bill link, community and review links). Birthdays open in the same window, from the same WhatsApp number. Links are set in <a href="store_contacts.html">Customer follow-up</a>, managers only.
         </div></div>
       <div class="sx-card" id="pxCard"><h3>📷 Pictures for the messages <small>pressed small automatically · copied when WhatsApp opens, you just press Ctrl+V then Enter</small></h3><div id="pxBody"><div class="sx-mut">Loading…</div></div></div>
+      <div class="sx-card" id="lnCard"><h3>🔗 Links in the messages <small>set once here · they fill {community_link}, {review_link} and {friends_link} in every message below</small></h3><div id="lnBody"><div class="sx-mut">Loading…</div></div></div>
       <div class="sx-card" id="tkCard"><h3>🧾 Order thank-you message <small>sent by hand from Store → Billing, right after the bill</small></h3><div id="tkBody"><div class="sx-mut">Loading…</div></div></div>
+      <div class="sx-card" id="blCard"><h3>🧾 The bill the customer gets <small>the same bill details as Learning → Cart setup → Billing · what the customer sees when the bill link is opened</small></h3><div id="blMount"><div class="sx-mut">Loading…</div></div></div>
       <div id="bdMount"></div>
     </div></div>
   </main>
@@ -68,7 +70,13 @@
     const VARS = [['{name}', 'customer'], ['{store}', 'store'], ['{bill_no}', 'bill no.'], ['{amount}', 'amount'], ['{bill_link}', 'bill page'], ['{community_link}', 'community'], ['{review_link}', 'Google review'], ['{friends_link}', 'friends link']];
     const SAMPLE = { '{name}': 'Rahul', '{store}': 'TM Perfume House', '{bill_no}': 'ST-000123', '{amount}': '4,310', '{bill_link}': 'https://…/store_bill.php?t=abc123', '{community_link}': 'https://chat.whatsapp.com/…', '{review_link}': 'https://g.page/…', '{friends_link}': 'https://…/store_bill.php?t=abc123&g=1' };
     const fill = (t) => String(t || '').replace(/\{[a-z_]+\}/g, (m) => SAMPLE[m] != null ? SAMPLE[m] : m);
-    let M = null, last = 'tkA', can = true;
+    let M = null, last = 'tkA', can = true, CS = null;
+    const linkDraw = () => { $('lnBody').innerHTML = `<label class="sx-f">WhatsApp community invite link<input class="sx-in" id="lnComm" placeholder="https://chat.whatsapp.com/…" value="${esc(CS.community_link || '')}"></label>
+        <label class="sx-f" style="margin-top:10px">Google review link<input class="sx-in" id="lnRev" placeholder="https://g.page/r/…/review" value="${esc(CS.review_link || '')}"></label>
+        <label class="sx-f" style="margin-top:10px">Thank-you line on the bill page<input class="sx-in" id="lnThx" value="${esc(CS.thanks_text || '')}"></label>
+        <label class="sx-f" style="margin-top:10px">Friends link <small>(automatic — every bill makes its own, for friends who came along: they save contacts, join the community and review)</small><input class="sx-in" value="${esc(SAMPLE['{friends_link}'])}" disabled></label>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px"><button class="sx-btn" id="lnSave" style="padding:8px 16px">Save links</button><span id="lnNote" class="sx-mut"></span></div>`; linkSample(); };
+    const linkSample = () => { SAMPLE['{community_link}'] = (CS && CS.community_link) || 'https://chat.whatsapp.com/… (add the community link above)'; SAMPLE['{review_link}'] = (CS && CS.review_link) || 'https://g.page/… (add the Google review link above)'; if (M) prev(); };
     function draw() {
       const box = (id, title, val) => `<b style="font-size:12.5px">${title}</b><textarea id="${id}" rows="5" ${can ? '' : 'disabled'} style="width:100%;box-sizing:border-box;border:1px solid var(--sx-line);border-radius:10px;padding:8px;font:inherit">${esc(val)}</textarea><div id="${id}P" style="white-space:pre-wrap;background:#e7fbf3;border-radius:10px;padding:8px 10px;font-size:13px;margin:4px 0 10px"></div>`;
       $('tkBody').innerHTML = `<div class="sx-mut" style="font-size:12px;margin-bottom:6px">Tap a word to put it in the message; it fills itself in for each customer. The window opens beside the page, on the same WhatsApp Web as the birthday messages.</div>
@@ -79,6 +87,12 @@
     }
     const prev = () => { ['tkA', 'tkB'].forEach((id) => { const t = $(id), p = $(id + 'P'); if (t && p) p.textContent = fill(t.value); }); };
     const note = (m, bad) => { const n = $('tkNote'); if (n) { n.textContent = m; n.style.color = bad ? 'var(--sx-bad)' : 'var(--sx-good)'; } };
+    $('lnCard').addEventListener('input', (e) => { if (!CS) return; if (e.target.id === 'lnComm') CS.community_link = e.target.value.trim(); else if (e.target.id === 'lnRev') CS.review_link = e.target.value.trim(); else if (e.target.id === 'lnThx') CS.thanks_text = e.target.value; linkSample(); });
+    $('lnCard').addEventListener('click', async (e) => {
+      if (e.target.id !== 'lnSave') return; const n = $('lnNote'); n.style.color = 'var(--sx-mut)'; n.textContent = 'Saving…';
+      try { const r = await api.post('st_cs.save', CS); CS = r.settings; n.textContent = 'Saved. Every message now carries these links.'; n.style.color = 'var(--sx-good)'; linkSample(); } catch (err) { n.textContent = (err && err.message) || 'Could not save.'; n.style.color = 'var(--sx-bad)'; }
+    });
+    api.get('st_cs.get').then((d) => { CS = d.settings; if (d.sample) SAMPLE['{friends_link}'] = String(d.sample).replace(/SAMPLE/, '<each bill’s own code>') + '&g=1'; linkDraw(); }).catch((err) => { $('lnBody').innerHTML = '<div class="sx-mut" style="color:var(--sx-bad)">' + esc(err.message || 'Could not load the links.') + '</div>'; });
     $('tkCard').addEventListener('focusin', (e) => { if (e.target.id === 'tkA' || e.target.id === 'tkB') last = e.target.id; });
     $('tkCard').addEventListener('input', (e) => { if (e.target.id === 'tkA' || e.target.id === 'tkB') prev(); });
     $('tkCard').addEventListener('click', async (e) => {
@@ -87,7 +101,14 @@
       if (t.id === 'tkSave') { try { const r = await api.post('st_msgs.save', { thanks: $('tkA').value, thanks_back: $('tkB').value }); M = r.msgs; note('Saved.'); } catch (err) { note(err.message || 'Could not save.', 1); } return; }
       if (t.id === 'tkReset') { if (!confirm('Go back to the standard order messages?')) return; try { const r = await api.post('st_msgs.save', { reset: 1 }); M = r.msgs; draw(); note('Back to the standard messages.'); } catch (err) { note(err.message || 'Could not reset.', 1); } }
     });
+    api.get('st_cs.get').then((d) => { if (d.sample) { SAMPLE['{bill_link}'] = d.sample; if (M) prev(); } }).catch(() => {});
     api.get('st_msgs.get').then((r) => { M = r.msgs; draw(); }).catch((err) => { $('tkBody').innerHTML = '<div class="sx-mut" style="color:var(--sx-bad)">' + esc(err.message || 'Could not load.') + '</div>'; });
+  })();
+  // ---------- 🧾 the bill: the online "Cart setup → Billing" screen (company / GST details, LIVE bill preview), shown here too
+  (function () {
+    const box = document.getElementById('blMount'), sc = document.createElement('script'); sc.src = 'assets/js/wch_setup_ui.js?v=ch4';
+    const go = () => { if (!window.WaCartSetup) { box.innerHTML = '<div class="sx-mut">The bill screen is not installed on this server (assets/js/wch_setup_ui.js and empmanagment/wch.php).</div>'; return; } box.innerHTML = ''; try { WaCartSetup.billing(box, { api }); } catch (err) { box.innerHTML = '<div class="sx-mut" style="color:var(--sx-bad)">' + (err.message || 'Could not open the bill screen.') + '</div>'; } };
+    sc.onload = go; sc.onerror = go; document.head.appendChild(sc);
   })();
   StoreBday.mount(document.getElementById('bdMount'));
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
