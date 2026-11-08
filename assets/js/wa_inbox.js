@@ -620,7 +620,6 @@
       cxBan(c.phone);
       if ($('wiAsg')) $('wiAsg').onclick = openAssign;
       if ($('wiTo')) $('wiTo').onclick = async function () {   // 🔄 take this chat into MY panel (whoever holds it now; they get a note at the top of their WhatsApp)
-        const was = c.assigned_name ? ' from ' + c.assigned_name : ''; if (!confirm('Take over this chat' + was + '? It moves to your own panel.')) return;
         this.disabled = true; this.textContent = 'Taking over…';
         try { const r = await api.post('wa.takeover', { phone: c.phone }); await refreshChat(true); await loadList(true); const n = $('wiN'); if (n) n.innerHTML = '<div class="wi-note">✅ The chat is yours now' + (r && r.from ? ' (taken from ' + esc(r.from) + ')' : '') + '. Reply below.</div>'; }
         catch (e) { alert(e.message); this.disabled = false; this.textContent = '🔄 Take over'; }
