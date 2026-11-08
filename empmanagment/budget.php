@@ -156,15 +156,33 @@ if ($__bg === 'budget.store_comm') {
     try { if (is_file(__DIR__ . '/boss.php')) require_once __DIR__ . '/boss.php'; } catch (Throwable $e) { error_log('budget.store_comm boss: ' . $e->getMessage()); }
     if (!function_exists('cm_chart') || !function_exists('cm_pct') || !function_exists('cm_offers') || !function_exists('cm_offer_match') || !function_exists('cm_code_need')) json_response(['error' => 'The commission engine is not available on this server.'], 500);
     try { $r = budget_store_calc($pdo, $from, $to); } catch (Throwable $e) { error_log('budget.store_comm: ' . $e->getMessage()); json_response(['from' => $from, 'to' => $to, 'people' => [], 'note' => 'The store tables are not there yet.']); }
-    $by = [];
+    $by = []; $pool = ['sales' => 0.0, 'commission' => 0.0, 'bills' => 0, 'code_bills' => 0, 'ids' => st_pool_ids($pdo)]; $old = ['bills' => 0, 'sales' => 0.0, 'unmatched' => 0]; $days = [];
     foreach ($r['bills'] as $b) {
-        $e = $b['emp_id']; if (!isset($by[$e])) $by[$e] = ['employee_id' => $e, 'name' => $b['name'], 'sales' => 0.0, 'commission' => 0.0, 'bills' => 0, 'days' => []];
+        $e = $b['emp_id'] > 0 ? $b['emp_id'] : 'n:' . $b['name']; if (!isset($by[$e])) $by[$e] = ['employee_id' => $b['emp_id'], 'name' => $b['name'], 'pooled' => !empty($b['pooled']), 'sales' => 0.0, 'commission' => 0.0, 'bills' => 0, 'code_bills' => 0, 'days' => []];
         if (!isset($by[$e]['days'][$b['day']])) $by[$e]['days'][$b['day']] = ['day' => $b['day'], 'sales' => 0.0, 'commission' => 0.0, 'bills' => 0];
         $by[$e]['days'][$b['day']]['sales'] += $b['total']; $by[$e]['days'][$b['day']]['commission'] += $b['com']; $by[$e]['days'][$b['day']]['bills']++;
-        $by[$e]['sales'] += $b['total']; $by[$e]['commission'] += $b['com']; $by[$e]['bills']++;
+        $by[$e]['sales'] += $b['total']; $by[$e]['commission'] += $b['com']; $by[$e]['bills']++; if (!empty($b['code'])) $by[$e]['code_bills']++;
+        if (!empty($b['pooled'])) { $pool['sales'] += $b['total']; $pool['commission'] += $b['com']; $pool['bills']++; if (!empty($b['code'])) $pool['code_bills']++; }
+        if (($b['src'] ?? '') === 'old_pos') { $old['bills']++; $old['sales'] += $b['total']; if ($b['emp_id'] <= 0) $old['unmatched']++; $days[$b['day']] = 'old_pos'; } else $days[$b['day']] = $days[$b['day']] ?? 'new_pos';
     }
-    foreach ($by as &$x) { $x['sales'] = round($x['sales'], 2); $x['commission'] = round($x['commission'], 2); $x['perday'] = array_values(array_map(function ($d) { $d['sales'] = round($d['sales'], 2); $d['commission'] = round($d['commission'], 2); return $d; }, $x['days'])); unset($x['days']); } unset($x);
-    json_response(['from' => $from, 'to' => $to, 'people' => array_values($by), 'no_ml_bills' => $r['no_ml'], 'unpriced_bills' => $r['unpriced']]);
+    foreach ($by as &$x) { $x['sales'] = round($x['sales'], 2); $x['commission'] = round($x['commission'], 2); $x['pct'] = $x['sales'] > 0 ? round($x['commission'] / $x['sales'] * 100, 2) : 0; $x['perday'] = array_values(array_map(function ($d) { $d['sales'] = round($d['sales'], 2); $d['commission'] = round($d['commission'], 2); return $d; }, $x['days'])); unset($x['days']); } unset($x);
+    $pool['sales'] = round($pool['sales'], 2); $pool['commission'] = round($pool['commission'], 2); $pool['pct'] = $pool['sales'] > 0 ? round($pool['commission'] / $pool['sales'] * 100, 2) : 0; $old['sales'] = round($old['sales'], 2);
+    ksort($days);
+    json_response(['from' => $from, 'to' => $to, 'people' => array_values($by), 'pool' => $pool, 'old_pos' => $old, 'sources' => $days, 'no_ml_bills' => $r['no_ml'], 'unpriced_bills' => $r['unpriced']]);
+}
+if ($__bg === 'budget.store_pool') {
+    // Who counts as ONE store team for the order-code rule (default Neil, Krish and Anil). Anybody else who bills in the store is counted on their own. Admin / Commission role.
+    $auth = require_auth();
+    if (!user_can($auth, 'commission')) json_response(['error' => 'You do not have permission to do this.'], 403);
+    if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
+    $in = json_input(); $id = (int)($in['employee_id'] ?? 0); if (!function_exists('st_pool_ids')) require_once __DIR__ . '/store_lib.php';
+    $n = $pdo->prepare("SELECT full_name FROM employees WHERE employee_id = ? AND status != 'ex'"); $n->execute([$id]); $nm = $n->fetchColumn();
+    if (!$id || $nm === false) json_response(['error' => 'Choose an employee.'], 422);
+    budget_lock($pdo); $ids = st_pool_ids($pdo); $has = in_array($id, $ids, true);
+    if (!empty($in['in']) && !$has) $ids[] = $id; elseif (empty($in['in']) && $has) $ids = array_values(array_diff($ids, [$id]));
+    setting_set($pdo, 'store_pool', json_encode(array_values($ids)));
+    budget_audit($pdo, $auth, ($nm) . (!empty($in['in']) ? ' now counts in the one store team (order-code rule)' : ' now counts alone in the store (order-code rule)'), $id);
+    json_response(['ok' => true, 'ids' => array_values($ids)]);
 }
 if ($__bg === 'budget.store_bills') {
     // Every store bill of the range (all days) with who billed it and the commission it pays, newest first. Admin can change the person (budget.bill_assign).
@@ -184,7 +202,7 @@ if ($__bg === 'budget.store_bills') {
             foreach ($q->fetchAll() as $b) $rows[] = ['bill_id' => (int)$b['bill_id'], 'bill_no' => (string)$b['bill_no'], 'day' => (string)$b['biz_date'], 'time' => substr((string)$b['created_at'], 11, 5), 'employee_id' => $b['real_id'] ? (int)$b['emp_id'] : 0, 'name' => (string)$b['emp_name'], 'code' => trim((string)$b['order_code']) !== '', 'total' => (float)$b['total'], 'ml' => (int)$b['total_ml'], 'pct' => null, 'rule' => '', 'reduced' => false, 'com' => null];
         }
     } catch (Throwable $e) { error_log('budget.store_bills: ' . $e->getMessage()); }
-    $out = []; foreach (array_slice($rows, 0, 3000) as $b) $out[] = ['bill_id' => $b['bill_id'], 'bill_no' => $b['bill_no'], 'day' => $b['day'], 'time' => $b['time'], 'employee_id' => $b['employee_id'], 'name' => $b['name'], 'code' => $b['code'], 'total' => $b['total'], 'ml' => $b['ml'], 'pct' => $b['pct'], 'rule' => $b['rule'], 'reduced' => $b['reduced'], 'com' => $b['com']];
+    $out = []; foreach (array_slice($rows, 0, 3000) as $b) $out[] = ['bill_id' => $b['bill_id'], 'bill_no' => $b['bill_no'], 'day' => $b['day'], 'time' => $b['time'], 'employee_id' => $b['employee_id'], 'name' => $b['name'], 'code' => $b['code'], 'total' => $b['total'], 'ml' => $b['ml'], 'pct' => $b['pct'], 'rule' => $b['rule'], 'reduced' => $b['reduced'], 'com' => $b['com'], 'src' => $b['src'] ?? 'new_pos'];
     json_response(['from' => $from, 'to' => $to, 'bills' => $out, 'engine' => $engine]);
 }
 if ($__bg === 'budget.bill_assign') {
