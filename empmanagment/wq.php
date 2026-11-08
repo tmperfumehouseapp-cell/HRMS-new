@@ -800,7 +800,9 @@ function wq_board(PDO $pdo, int $days): array
     $people = []; foreach (array_unique($ids) as $e) $people[] = wq_person_out($pdo, (int)$e, $S['rows'][$e], $team, $cfg, $list, $f, $t, $names);
     usort($people, fn($a, $b) => [$b['queries'], $a['name']] <=> [$a['queries'], $b['name']]);
     $T = $S['total'];
-    return ['ok' => true, 'on' => (bool)$cfg['wq_on'], 'days' => $days, 'from' => wq_dt($f), 'to' => wq_dt(wq_now()), 'min_n' => $cfg['wq_min_n'],
+    if (!function_exists('cbd_count') && is_file(__DIR__ . '/cust_bday.php')) { try { require_once __DIR__ . '/cust_bday.php'; } catch (Throwable $e) { } }
+    $bd = function_exists('cbd_count') ? cbd_count($pdo, wq_dt($f), wq_dt(wq_now())) : ['total' => 0, 'by_customer' => 0, 'by_team' => 0];   // 🎂 birthdays received in this period
+    return ['ok' => true, 'on' => (bool)$cfg['wq_on'], 'days' => $days, 'from' => wq_dt($f), 'to' => wq_dt(wq_now()), 'min_n' => $cfg['wq_min_n'], 'birthdays' => $bd,
         'totals' => ['queries' => $T['queries'], 'by_type' => $T['by_type'], 'replied' => $T['replied'], 'unanswered' => $T['unanswered'], 'orders' => $T['orders'], 'converted' => $T['converted'], 'revenue' => round($T['revenue']),
             'conversion' => wq_pct($T['converted'], $T['queries']), 'first_reply_min' => wq_num(wq_median($T['fpm']), 1)],
         'team_median' => ['conversion' => wq_num($team['conv'], 1), 'first_reply_min' => wq_num($team['reply'], 1)], 'people' => $people, 'unassigned' => ['queries' => $S['unassigned']]];
