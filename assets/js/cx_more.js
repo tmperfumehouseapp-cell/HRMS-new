@@ -297,7 +297,7 @@ window.CXM = (function () {
     }
     if (v.phone && (w || (X.credits && X.credits.length))) {
       const bl = X.balance || {};
-      h += '<div class="cx-box"><h4>💳 Store credit</h4><div style="margin-bottom:6px">' + K.pill('Balance ' + money(bl.balance || 0), bl.balance > 0 ? 'g' : '') + (bl.waiting ? ' ' + K.pill(money(bl.waiting) + ' waiting for the boss', 'o') : '') + '</div>' + (X.credits && X.credits.length ? X.credits.map((c) => '<div class="cx-ord" style="margin-bottom:6px"><b>' + money(c.amount) + '</b> · ' + esc(BASIS[c.basis] || c.basis) + ' · ' + K.pill(c.status === 'ok' ? 'active' : c.status === 'wait' ? 'waiting for the boss' : c.status, c.status === 'ok' ? 'g' : 'o') + '<small>' + [(c.status === 'ok' && c.code ? 'Code <b>' + esc(c.code) + '</b>' : ''), esc(c.by), K.dm(c.at), c.reason ? esc(c.reason) : ''].filter(Boolean).join(' · ') + '</small>' + (X.mgr && c.status === 'wait' ? '<div style="margin-top:6px"><button class="cx-btn s" type="button" data-cok="' + c.id + '">Approve</button> <button class="cx-btn red s" type="button" data-cno="' + c.id + '">Reject</button></div>' : '') + '</div>').join('') : '') + (w && (open || X.mgr) ? '<button class="cx-btn gh s" type="button" id="cmCr">＋ Give store credit</button>' : '') + '</div>';
+      h += '<div class="cx-box"><h4>💳 Store credit</h4><div style="margin-bottom:6px">' + K.pill('Balance ' + money(bl.balance || 0), bl.balance > 0 ? 'g' : '') + (bl.waiting ? ' ' + K.pill(money(bl.waiting) + ' waiting for the boss', 'o') : '') + '</div>' + (X.credits && X.credits.length ? X.credits.map((c) => '<div class="cx-ord" style="margin-bottom:6px"><b>' + money(c.amount) + '</b> · ' + esc(BASIS[c.basis] || c.basis) + ' · ' + K.pill(c.status === 'ok' ? 'active' : c.status === 'wait' ? 'waiting for the boss' : c.status, c.status === 'ok' ? 'g' : 'o') + '<small>' + [(c.status === 'ok' && c.code ? 'Code <b>' + esc(c.code) + '</b>' : ''), esc(c.by), K.dm(c.at), c.reason ? esc(c.reason) : ''].filter(Boolean).join(' · ') + '</small>' + (X.mgr && c.status === 'wait' ? '<div style="margin-top:6px"><button class="cx-btn s" type="button" data-cok="' + c.id + '">Approve</button> <button class="cx-btn red s" type="button" data-cno="' + c.id + '">Reject</button></div>' : '') + '</div>').join('') : '') + (w && (open || X.mgr) ? '<button class="cx-btn gh s" type="button" id="cmCr">＋ Give store credit</button> <button class="cx-btn gh s" type="button" id="cmRw">🎁 Give free perfume</button>' : '') + '</div>';
     }
     if (w || v.cause || v.claim) {
       h += '<div class="cx-box"><h4>🏷 Root cause &amp; courier claim</h4><label style="display:block;font-size:11px;font-weight:800;color:var(--mut);margin:0 0 4px">Why did it happen?</label><select class="cx-sel" id="cmCause"' + (w ? '' : ' disabled') + ' style="width:100%;border-radius:12px"><option value="">— not set (you can fix this later) —</option>' + Object.keys(X.causes || {}).map((k) => '<option value="' + k + '"' + (v.cause === k ? ' selected' : '') + '>' + esc(X.causes[k]) + '</option>').join('') + '</select>'
@@ -324,6 +324,7 @@ window.CXM = (function () {
     const rf = el.querySelector('#cmReflag'); if (rf) rf.onclick = async () => { rf.disabled = true; await K.call(() => api.post('bd.cx_flag', { id: v.id, refresh: 1 })); K.refresh(); };
     const qc = el.querySelector('#cmQc'); if (qc) qc.onclick = () => qcSheet(X);
     const cr = el.querySelector('#cmCr'); if (cr) cr.onclick = () => creditSheet(X);
+    const rw = el.querySelector('#cmRw'); if (rw) rw.onclick = () => { if (window.CXRW) CXRW.give({ caseId: X.case.id, code: X.case.code, done: () => K.refresh() }); };
     const ca = el.querySelector('#cmCause'); if (ca) ca.onchange = async () => { await K.call(() => api.post('bd.cx_cause', { id: v.id, cause: ca.value }), 'Saved.'); };
     const cs = el.querySelector('#cmClS'); if (cs) cs.onclick = async () => { const r = await K.call(() => api.post('bd.cx_claim', { id: v.id, status: el.querySelector('#cmCl').value, amount: Number(el.querySelector('#cmClA').value) || 0, ref: el.querySelector('#cmClR').value.trim() })); if (r) K.refresh(); };
   }
@@ -371,6 +372,6 @@ window.CXM = (function () {
     host.appendChild(div);
   }
 
-  const M = { ready: false, init, tabs: { today, custs, qc: qcTab, credit, guide }, callSheet, top, mid, timeline, bind, causeSelect, settingsBox, settingsVals, reportExtra, qcSheet, creditSheet, planSheet };
+  const M = { ready: false, init, kit: () => K, tabs: { today, custs, qc: qcTab, credit, guide }, callSheet, top, mid, timeline, bind, causeSelect, settingsBox, settingsVals, reportExtra, qcSheet, creditSheet, planSheet };
   return M;
 })();

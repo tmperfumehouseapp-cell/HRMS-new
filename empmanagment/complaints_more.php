@@ -875,6 +875,7 @@ function cx2_dispatch(PDO $pdo, $action, array $auth, array $w, $by, array $in, 
     $gid = function () use ($in) { return (int)($in['id'] ?? $_GET['id'] ?? $_POST['id'] ?? 0); };
     $load = function ($work = true) use ($pdo, $role, $gid) { $r = cx_row($pdo, $gid()); if (!$r) json_response(['error' => 'Complaint not found.'], 404); if (!cx_can_see($role, $r)) json_response(['error' => 'This complaint is not yours to open.'], 403); if ($work && !cx_can_work($role, $r)) json_response(['error' => 'Only the Complaint team can do this.'], 403); return $r; };
     $open = ['open', 'reopened']; $P = cx_problems(); $D = cx_desks();
+    if (strpos((string)$action, 'bd.cx_rw_') === 0 && function_exists('cxrw_dispatch')) cxrw_dispatch($pdo, (string)$action, $auth, $role, $in, (bool)$isPost, $meName);   // 🎁 free-perfume rewards + ⭐ Reviews (complaints_rewards.php)
     switch ($action) {
 
     case 'bd.cx_tpls': {   // the after-24-hours complaint messages: their state (GET) / make + send them to Meta (POST)
