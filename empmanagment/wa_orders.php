@@ -192,7 +192,7 @@ function wo_events(PDO $pdo, int $pid, int $limit = 10): array
 function wo_send_defs(): array
 {
     return ['received' => ['tmph_order_received', 'Order received — thank you'], 'shipped' => ['tmph_order_shipped', 'Shipped'], 'out_for_delivery' => ['tmph_order_out_for_delivery', 'Out for delivery'], 'delivered' => ['tmph_order_delivered', 'Delivered'],
-            'failed' => ['tmph_delivery_attempt_failed', 'Delivery attempt failed'], 'delayed' => ['tmph_delivery_delayed', 'Delayed'], 'dispatch_late' => ['tmph_order_dispatch_late', 'Sorry for the delay — not shipped in 72 hours'], 'review' => ['tmph_review_request', 'Rating request (5 days after delivery)'], 'review_nudge' => ['tmph_review_nudge', 'Review reminder (2 days after a 5-star rating)'], 'birthday' => ['tmph_birthday_gift', 'Birthday gift (on the birthday)'], 'bday_ask' => ['tmph_birthday_ask', 'Birthday question (1 hour after the order)']];
+            'failed' => ['tmph_delivery_attempt_failed', 'Delivery attempt failed'], 'delayed' => ['tmph_delivery_delayed', 'Delayed'], 'dispatch_late' => ['tmph_order_dispatch_late', 'Sorry for the delay — not shipped in 72 hours'], 'care_d2' => ['tmph_care_d2', 'Check-in (2 days after delivery)'], 'return_d15' => ['tmph_return_d15', 'Take-back offer (15 days after delivery)'], 'return_d30' => ['tmph_return_d30', 'No-questions return offer (30 days after delivery)'], 'review' => ['tmph_review_request', 'Rating request (5 days after delivery)'], 'review_nudge' => ['tmph_review_nudge', 'Review reminder (2 days after a 5-star rating)'], 'birthday' => ['tmph_birthday_gift', 'Birthday gift (on the birthday)'], 'bday_ask' => ['tmph_birthday_ask', 'Birthday question (1 hour after the order)']];
 }
 /** Which automatic message belongs to a parcel word ('' = none). */
 function wo_send_status(string $cls): string { $m = ['shipped' => 'shipped', 'ofd' => 'out_for_delivery', 'delivered' => 'delivered', 'failed' => 'failed', 'delayed' => 'delayed']; return $m[$cls] ?? ''; }
@@ -645,6 +645,9 @@ function wo_tpl_defs(): array
         'tmph_review_nudge' => ['body' => "Hello {{1}}, thank you for rating your order {{2}} 5 stars! 💖 Please share your review here: {{3}} Then send us a screenshot in this chat and we will add 20 ml FREE perfume of your choice to your next order above ₹1,500 (valid 15 days).", 'ex' => ['Rahul', '1042', 'https://judge.me/reviews/stores/tmperfumehouse'], 'lab' => ['Name', 'Order', 'Review link'], 'category' => 'MARKETING', 'buttons' => []],
         'tmph_birthday_ask' => ['body' => "Hello {{1}}, thank you for your order {{2}} from TM Perfume House! 🎂 Reply with your birthday (day and month, like 14/12) and we will send you a FREE 50 ml perfume gift on your birthday.", 'ex' => ['Rahul', '1042'], 'lab' => ['Name', 'Order'], 'category' => 'MARKETING', 'buttons' => []],
         'tmph_birthday_gift' => ['body' => "Hello {{1}}! 🎂 Your birthday is coming up on {{2}}, and TM Perfume House has a FREE 50 ml perfume gift for you. Your gift code is {{3}}. Use it online on any order above ₹1,500, or collect it from our store. It is valid until {{4}}. Just reply here and tell us which perfume you would like 💖", 'ex' => ['Rahul', '14 Dec', 'BD-7K3M9P', '29 Dec'], 'lab' => ['Name', 'Birthday', 'Gift code', 'Valid till'], 'category' => 'MARKETING', 'buttons' => []],
+        'tmph_care_d2' => ['body' => "Hello {{1}}, it has been 2 days since your order {{2}} from TM Perfume House reached you. We hope you are enjoying your perfume! 💖 If you do not like it, or something is not right, just reply here and tell us. We will take care of it.", 'ex' => ['Rahul', '1042'], 'lab' => ['Name', 'Order'], 'category' => 'MARKETING', 'buttons' => []],
+        'tmph_return_d15' => ['body' => "Hello {{1}}, it has been 15 days with your order {{2}} from TM Perfume House. If you still do not like the perfume, just reply here and we will take it back. 🙏", 'ex' => ['Rahul', '1042'], 'lab' => ['Name', 'Order'], 'category' => 'MARKETING', 'buttons' => []],
+        'tmph_return_d30' => ['body' => "Hello {{1}}, it has been 30 days with your order {{2}} from TM Perfume House. If you are still not happy with it, you can send it back to us, no questions asked. Just reply here and we will arrange it. 💖", 'ex' => ['Rahul', '1042'], 'lab' => ['Name', 'Order'], 'category' => 'MARKETING', 'buttons' => []],
         'tmph_order_dispatch_late' => ['body' => "Hello {{1}}, we are sorry! Your order {{2}} from TM Perfume House has not left our warehouse yet and it is taking longer than we promised. We are packing it as fast as we can and will send your tracking details the moment it ships. Thank you for your patience. Please use the buttons below if you need help.", 'ex' => array_slice($ex, 0, 2), 'lab' => array_slice($lab, 0, 2), 'buttons' => $qr],
         'tmph_delivery_delayed' => ['body' => "Hello {{1}}, your order {{2}} with {{3}} is taking longer than planned. We are following it up with the courier and are sorry for the wait. Please use the buttons below if you need help.", 'ex' => array_slice($ex, 0, 3), 'lab' => array_slice($lab, 0, 3), 'buttons' => $qr],
     ];
@@ -808,13 +811,16 @@ function wo_ver_info(PDO $pdo, string $status, array $all): array
 function wo_cfg(PDO $pdo): array
 {
     $st = json_decode(wo_get($pdo, 'wa_ord_status_on', ''), true); $st = is_array($st) ? $st : []; $o = [];
-    foreach (wo_send_defs() as $k => $d) $o[$k] = in_array($k, ['review', 'review_nudge', 'bday_ask', 'birthday', 'dispatch_late'], true) ? !empty($st[$k]) : (!isset($st[$k]) || !empty($st[$k]));   // the rating request stays OFF until Admin switches it on
+    foreach (wo_send_defs() as $k => $d) $o[$k] = in_array($k, ['review', 'review_nudge', 'bday_ask', 'birthday', 'dispatch_late', 'care_d2', 'return_d15', 'return_d30'], true) ? !empty($st[$k]) : (!isset($st[$k]) || !empty($st[$k]));   // the rating request stays OFF until Admin switches it on
     return ['on' => wo_get($pdo, 'wa_ord_auto_on', '1') !== '0', 'statuses' => $o];
 }
 /** The messages whose timing the owner can change in Automation (the others go when the courier's status changes). */
 function wo_timing_defs(): array
 {
-    return ['dispatch_late' => ['unit' => 'hours after the order, if it has not been shipped', 'min' => 24, 'max' => 240, 'def' => 72, 'label' => 'Say sorry for the delay'],
+    return ['care_d2' => ['unit' => 'days after the parcel is delivered', 'min' => 1, 'max' => 10, 'def' => 2, 'label' => 'Send the check-in'],
+            'return_d15' => ['unit' => 'days after the parcel is delivered', 'min' => 7, 'max' => 28, 'def' => 15, 'label' => 'Send the take-back offer'],
+            'return_d30' => ['unit' => 'days after the parcel is delivered', 'min' => 20, 'max' => 60, 'def' => 30, 'label' => 'Send the no-questions return offer'],
+            'dispatch_late' => ['unit' => 'hours after the order, if it has not been shipped', 'min' => 24, 'max' => 240, 'def' => 72, 'label' => 'Say sorry for the delay'],
             'review' => ['unit' => 'days after the parcel is delivered', 'min' => 1, 'max' => 30, 'def' => 5, 'label' => 'Send the rating request'],
             'review_nudge' => ['unit' => 'days after the 5-star rating', 'min' => 1, 'max' => 9, 'def' => 2, 'label' => 'Send the reminder'],
             'bday_ask' => ['unit' => 'minutes after the order', 'min' => 5, 'max' => 1440, 'def' => 60, 'label' => 'Ask for the birthday'],
@@ -848,7 +854,7 @@ function wo_tpl_for(PDO $pdo, string $status): ?array
 function wo_vars(array $p, string $status): array
 {
     $co = trim((string)$p['courier']); $co = $co !== '' ? $co : 'the courier'; $vars = [wo_first_name((string)$p['customer']), (string)$p['order_name'], $co, (string)$p['tracking_no']];
-    return array_slice($vars, 0, $status === 'shipped' ? 4 : (in_array($status, ['delivered', 'review', 'review_nudge', 'bday_ask', 'dispatch_late'], true) ? 2 : 3));
+    return array_slice($vars, 0, $status === 'shipped' ? 4 : (in_array($status, ['delivered', 'review', 'review_nudge', 'bday_ask', 'dispatch_late', 'care_d2', 'return_d15', 'return_d30'], true) ? 2 : 3));
 }
 /** Looks at parcels whose courier word changed recently, queues one message per order + status (never twice), then sends what is due. Called by wa_tick every minute. */
 function wa_ord_autosend(PDO $pdo, ?int $nowTs = null, string $onlyStore = ''): array
@@ -872,6 +878,7 @@ function wa_ord_autosend(PDO $pdo, ?int $nowTs = null, string $onlyStore = ''): 
             $ins = $pdo->prepare("INSERT IGNORE INTO wa_ord_sent (parcel_id, phone, order_name, status, tpl_name, state, created_at, due_at) VALUES (?,?,?,?,?, 'queued', ?, ?)");
             $ins->execute([(int)$p['id'], $key, (string)$p['order_name'], $st, wo_send_defs()[$st][0], wo_dt($nowTs), wo_dt($due)]); if ($ins->rowCount() > 0) $res['queued']++;
         }
+        try { $res['after'] = wa_ord_after_queue($pdo, $nowTs, $cfg, $sk, $go); } catch (Throwable $e) { error_log('wa_ord_after_queue: ' . $e->getMessage()); }   // 💬 2 / 15 / 30 days after delivery
         try { $res['late'] = wa_ord_late_queue($pdo, $nowTs, $cfg, $sk, $go); } catch (Throwable $e) { error_log('wa_ord_late_queue: ' . $e->getMessage()); }   // 🙏 not shipped after N hours: say sorry
         if (function_exists('wa_review_tick')) { try { $res['review_read'] = wa_review_tick($pdo, $nowTs); } catch (Throwable $e) { error_log('wa_review_tick: ' . $e->getMessage()); } }   // ⭐ reads review screenshots (always, even if the request message is off)
         if (function_exists('wa_bdayask_queue')) { try { $res['bday_ask'] = wa_bdayask_queue($pdo, $nowTs, $cfg, $sk); } catch (Throwable $e) { error_log('wa_bdayask_queue: ' . $e->getMessage()); } }   // 🎂 the birthday question, 1 day after an order
@@ -885,6 +892,29 @@ function wa_ord_autosend(PDO $pdo, ?int $nowTs = null, string $onlyStore = ''): 
         }
     } catch (Throwable $e) { $res['error'] = $e->getMessage(); if (function_exists('wa_log')) wa_log($pdo, 'orders', false, 'order updates: ' . mb_substr($e->getMessage(), 0, 200)); }
     return $res;
+}
+/** 💬 The check-in (2 days), the take-back offer (15 days) and the no-questions return offer (30 days) after a parcel was delivered. ONE of each per order; only parcels delivered after the switch was turned on;
+ *  never to a customer with an open complaint / Dispatch case. The days are set in Automation → After delivery. Returns how many were queued. */
+function wa_ord_after_queue(PDO $pdo, int $nowTs, array $cfg, string $sk, int $go): int
+{
+    $n = 0;
+    foreach (['care_d2', 'return_d15', 'return_d30'] as $k) {
+        if (empty($cfg['statuses'][$k])) continue;
+        $sk2 = 'wa_ord_since_' . $k; $since = (int)wo_get($pdo, $sk2, '0'); if ($since <= 0) { $since = $nowTs; wo_put($pdo, $sk2, (string)$since); }
+        if (wo_tpl_for($pdo, $k) === null) continue;   // the template is not approved yet: nothing is queued
+        $dly = wo_timing($pdo, $k);
+        $q = $pdo->prepare("SELECT * FROM dp_dsp_parcels WHERE status = 'delivered' AND delivered_at >= ? AND delivered_at <= ? AND phone IS NOT NULL AND phone <> ''$sk ORDER BY delivered_at LIMIT 200");
+        $q->execute([wo_dt(max($since, $nowTs - ($dly + 9) * 86400)), wo_dt($nowTs - $dly * 86400)]);
+        foreach ($q->fetchAll() as $p) {
+            if (wo_class($p, $nowTs) !== 'delivered' || wo_is_cx_parcel($pdo, $p)) continue;
+            $key = wo_key($p['phone']); if ($key === '' || (function_exists('wa_valid_phone') && !wa_valid_phone($key))) continue;
+            if (function_exists('wr_blocked_open_case') && wr_blocked_open_case($pdo, $key, (string)$p['order_name'])) continue;
+            $due = wo_next_open(max($nowTs, strtotime((string)$p['delivered_at']) + $dly * 86400));
+            $ins = $pdo->prepare("INSERT IGNORE INTO wa_ord_sent (parcel_id, phone, order_name, status, tpl_name, state, created_at, due_at) VALUES (?,?,?,?,?, 'queued', ?, ?)");
+            $ins->execute([(int)$p['id'], $key, (string)$p['order_name'], $k, wo_send_defs()[$k][0], wo_dt($nowTs), wo_dt($due)]); if ($ins->rowCount() > 0) $n++;
+        }
+    }
+    return $n;
 }
 /** 🙏 Orders still not shipped (no courier scan) N hours after they were made (72 by default): ONE sorry message per order. Only orders made after the switch was turned on. Returns how many were queued. */
 function wa_ord_late_queue(PDO $pdo, int $nowTs, array $cfg, string $sk, int $go): int
@@ -921,7 +951,7 @@ function wo_send_one(PDO $pdo, array $row, int $nowTs, array &$ctxCache): array
         $p = ['id' => 0, 'customer' => (string)$bdV['name'], 'phone' => (string)$bdV['phone'], 'order_name' => (string)$bdV['code'], 'courier' => '', 'tracking_no' => ''];
     } else {
     $q = $pdo->prepare("SELECT * FROM dp_dsp_parcels WHERE id = ?"); $q->execute([(int)$row['parcel_id']]); $p = $q->fetch(); if (!$p) return $fin('skipped', 'Parcel not found', 'skipped');
-    if (($st === 'dispatch_late' ? (!in_array((string)$p['status'], ['placed', 'tracked'], true) || !empty($p['transit_at'])) : ($st === 'bday_ask' ? in_array(wo_class($p, $nowTs), ['cancelled', 'rto', 'lost', 'damaged'], true) : ($st === 'review' || $st === 'review_nudge' ? wo_class($p, $nowTs) !== 'delivered' : wo_send_status(wo_class($p, $nowTs)) !== $st)))) return $fin('skipped', 'The parcel has moved on - this update is no longer true', 'skipped');
+    if (($st === 'dispatch_late' ? (!in_array((string)$p['status'], ['placed', 'tracked'], true) || !empty($p['transit_at'])) : ($st === 'bday_ask' ? in_array(wo_class($p, $nowTs), ['cancelled', 'rto', 'lost', 'damaged'], true) : (in_array($st, ['review', 'review_nudge', 'care_d2', 'return_d15', 'return_d30'], true) ? wo_class($p, $nowTs) !== 'delivered' : wo_send_status(wo_class($p, $nowTs)) !== $st)))) return $fin('skipped', 'The parcel has moved on - this update is no longer true', 'skipped');
     if (wo_is_cx_parcel($pdo, $p)) return $fin('skipped', 'A complaint replacement - the ticket tells the customer itself', 'skipped');
     }
     $t = wo_tpl_for($pdo, $st); if (!$t) return $fin('skipped', 'The template is not approved', 'skipped');
@@ -983,7 +1013,7 @@ function wo_photo_info(PDO $pdo, string $status): ?array
 function wo_settings(PDO $pdo): array
 {
     $cfg = wo_cfg($pdo); $stat = wo_stats($pdo); $tpl = wo_tpl_state($pdo); $defs = wo_send_defs(); $st = [];
-    $vers = wo_ver_sync($pdo); $bodies = wo_tpl_defs(); foreach ($defs as $k => $d) $st[] = ['key' => $k, 'vars' => array_values($bodies[$d[0]]['lab'] ?? []), 'body' => wo_live_body($pdo, $k), 'edit' => wo_ver_info($pdo, $k, $vers), 'when' => ['received' => 'when the order is completed (Shopify order or ✅ Order completed in the chat)', 'shipped' => 'when Shiprocket shows it picked up / in transit', 'out_for_delivery' => 'when the courier marks it out for delivery', 'delivered' => 'when the courier marks it delivered', 'failed' => 'when a delivery attempt fails', 'delayed' => 'when the courier\'s date has passed', 'dispatch_late' => 'once per order, when it still has not been shipped (no courier scan) after the hours you set below — 72 by default. Counts from when the order was made, and only for orders made after you switch this on', 'bday_ask' => 'once per customer, within about an hour after an order, only if no birthday is saved yet (the reply "14/12" is saved by itself and the gift goes on the birthday)', 'birthday' => 'the day BEFORE the customer\'s birthday, for online customers only (birthdays told when an order was made); the gift code is made at that moment and works online on an order above ₹1,500, or at the store. Store customers get their own message from the cashier (Store → Birthdays)', 'review_nudge' => 'once, 2 days after a 5-star rating if the review screenshot has not come (only while the offer is open)', 'review' => 'about 5 days after the courier marks it delivered (only orders delivered after you switch this on; never to a customer with an open complaint)'][$k] ?? '', 'label' => (string)(wo_titles($pdo)[$k] ?? $d[1]), 'default_label' => $d[1], 'timing' => isset(wo_timing_defs()[$k]) ? ['value' => wo_timing($pdo, $k)] + wo_timing_defs()[$k] : null, 'template' => $d[0], 'on' => $cfg['statuses'][$k], 'photo' => wo_photo_info($pdo, $k), 'template_status' => $tpl[$d[0]]['status'] ?? 'missing', 'template_reason' => $tpl[$d[0]]['reason'] ?? '', 'sent_today' => $stat['by'][$k]['today'], 'sent_month' => $stat['by'][$k]['month'], 'queued' => $stat['by'][$k]['queued']];
+    $vers = wo_ver_sync($pdo); $bodies = wo_tpl_defs(); foreach ($defs as $k => $d) $st[] = ['key' => $k, 'vars' => array_values($bodies[$d[0]]['lab'] ?? []), 'body' => wo_live_body($pdo, $k), 'edit' => wo_ver_info($pdo, $k, $vers), 'when' => ['received' => 'when the order is completed (Shopify order or ✅ Order completed in the chat)', 'shipped' => 'when Shiprocket shows it picked up / in transit', 'out_for_delivery' => 'when the courier marks it out for delivery', 'delivered' => 'when the courier marks it delivered', 'failed' => 'when a delivery attempt fails', 'delayed' => 'when the courier\'s date has passed', 'care_d2' => 'about 2 days after the courier marks it delivered: how is the perfume, tell us here if you do not like it', 'return_d15' => 'about 15 days after delivery: if you still do not like it, we take it back', 'return_d30' => 'about 30 days after delivery: still not happy? send it back, no questions asked', 'dispatch_late' => 'once per order, when it still has not been shipped (no courier scan) after the hours you set below — 72 by default. Counts from when the order was made, and only for orders made after you switch this on', 'bday_ask' => 'once per customer, within about an hour after an order, only if no birthday is saved yet (the reply "14/12" is saved by itself and the gift goes on the birthday)', 'birthday' => 'the day BEFORE the customer\'s birthday, for online customers only (birthdays told when an order was made); the gift code is made at that moment and works online on an order above ₹1,500, or at the store. Store customers get their own message from the cashier (Store → Birthdays)', 'review_nudge' => 'once, 2 days after a 5-star rating if the review screenshot has not come (only while the offer is open)', 'review' => 'about 5 days after the courier marks it delivered (only orders delivered after you switch this on; never to a customer with an open complaint)'][$k] ?? '', 'label' => (string)(wo_titles($pdo)[$k] ?? $d[1]), 'default_label' => $d[1], 'timing' => isset(wo_timing_defs()[$k]) ? ['value' => wo_timing($pdo, $k)] + wo_timing_defs()[$k] : null, 'template' => $d[0], 'on' => $cfg['statuses'][$k], 'photo' => wo_photo_info($pdo, $k), 'template_status' => $tpl[$d[0]]['status'] ?? 'missing', 'template_reason' => $tpl[$d[0]]['reason'] ?? '', 'sent_today' => $stat['by'][$k]['today'], 'sent_month' => $stat['by'][$k]['month'], 'queued' => $stat['by'][$k]['queued']];
     return ['on' => $cfg['on'], 'statuses' => $st, 'sent_today' => $stat['today'], 'sent_month' => $stat['month'], 'rate' => $stat['rate'], 'cost_month' => $stat['cost_month'], 'cost_text' => $stat['cost_text'],
         'review' => function_exists('wr_cfg') ? wr_cfg($pdo) : ['link' => '', 'good_from' => 5],
         'quiet' => '9 PM - 8 AM India time: messages wait and go out at 8 AM', 'seeded' => wo_get($pdo, 'wa_ord_seeded', '') !== '', 'since' => (int)wo_get($pdo, 'wa_ord_send_since', '0') ? date('Y-m-d H:i', (int)wo_get($pdo, 'wa_ord_send_since', '0')) : ''];
