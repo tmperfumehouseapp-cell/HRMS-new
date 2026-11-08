@@ -1063,7 +1063,7 @@
       loadTeamSheet(from, to);
       const data = await api.get('shopify.orders', { date_from: from, date_to: to, store });
       if (reqId !== ordersReqId) return;
-      const orders = data.orders || [];   // MySales and MySales 4P both count in the collection
+      const orders = (data.orders || []).filter(o => o.store_key !== 'mysales4p');   // MySales 4P is not shown or counted here
       (data.errors || []).forEach(e => showAlert(e, 'error'));
       render(orders);
       renderEmpZero(data.scope, orders);
@@ -1268,8 +1268,7 @@
   }
   // An order counts (in every box, card, the sheet and the lists) only once it is allocated on the Order Allocation page.
   // Manual counter orders cannot be allocated there, so they always count.
-  // Order Allocation lists only Shopify + MySales, so other personal-site stores (e.g. MySales 4P) can never be allocated there — they count like manual orders.
-  const isCounted = (o) => o.store_key === 'manual' || (o.custom_store && o.store_key !== 'mysales') || Number(o.allocated) === 1;
+  const isCounted = (o) => o.store_key === 'manual' || Number(o.allocated) === 1;
   // Cancelled orders are left out of every total, card and the sheet; they only show under "Cancelled orders".
   // Orders not allocated yet are left out the same way; they only show under "Not allocated".
   function scopedOrders() {
