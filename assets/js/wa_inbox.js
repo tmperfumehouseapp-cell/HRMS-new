@@ -902,7 +902,7 @@
         if (!msg) { b.hidden = true; return; } b.hidden = false; b.className = 'wi-fu slim'; b.innerHTML = esc(msg); return;
       }
       b.hidden = false; b.className = 'wi-fu';
-      const key = c.phone; const small = window.matchMedia && window.matchMedia('(max-width:760px)').matches; const open = S.fuOpen[key] != null ? S.fuOpen[key] : !small;
+      const key = c.phone; const small = window.matchMedia && window.matchMedia('(max-width:760px)').matches; const open = S.fuOpen[key] != null ? S.fuOpen[key] : false;   // always one thin line until the person taps it (it covered the chat on every open); it keeps working in the background
       const auto = f.mode === 'auto24' || f.mode === 'autotpl';
       const who = f.mode === 'suggest' ? 'suggestion only — nothing is sent by itself' : (f.human ? 'a person is handling this chat, so the bot only suggests' : 'the bot is handling this');
       let h = `<div class="fh" id="wiFuH"><b>📨 Follow-up plan</b><span class="sm">${esc(f.title || '')} · nudge ${f.step_n} of ${f.step_total} · ${esc(f.due_in ? (f.due_min <= 0 ? 'due now' : 'in ' + f.due_in) : '')}</span><button type="button" class="tg" aria-label="Show or hide">${open ? '▾' : '▸'}</button></div>`;
