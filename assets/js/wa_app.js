@@ -146,6 +146,7 @@
   .wx-row.h-hot{background:#effbf3;box-shadow:inset 3px 0 0 #22c55e}.wx-row.h-late{background:#fff8e6;box-shadow:inset 3px 0 0 #f59e0b}.wx-row.h-active{background:#f3f8ff;box-shadow:inset 3px 0 0 #60a5fa}.wx-row.h-slow{background:#f6f7f9;box-shadow:inset 3px 0 0 #c4c9d1}.wx-row.h-cx{background:#f7f4ff;box-shadow:inset 3px 0 0 #a78bfa}.wx-row.h-biz{background:#f1f1f1;box-shadow:inset 3px 0 0 #9ca3af;opacity:.8}
   html.wxdk .wx-row.h-hot{background:#10261a}html.wxdk .wx-row.h-late{background:#2a220e}html.wxdk .wx-row.h-active{background:#0f1e2e}html.wxdk .wx-row.h-slow{background:#1a2026}html.wxdk .wx-row.h-cx{background:#201a33}html.wxdk .wx-row.h-biz{background:#1c1f22}
   .wx-lg{display:flex;gap:9px;flex-wrap:wrap;padding:5px 14px;font-size:11px;color:#667781}.wx-lg i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:3px}
+  .wx-new{display:inline-block;width:13px;height:13px;border-radius:50%;background:#22c55e;margin-right:6px;box-shadow:0 0 0 0 rgba(34,197,94,.55);animation:wxnew 1.6s infinite}@keyframes wxnew{0%{box-shadow:0 0 0 0 rgba(34,197,94,.55)}70%{box-shadow:0 0 0 9px rgba(34,197,94,0)}100%{box-shadow:0 0 0 0 rgba(34,197,94,0)}}
   .wx-tm{display:flex;gap:6px;padding:8px 12px 0}.wx-tm select{flex:0 0 40%;min-width:0;border:1px solid #d0d5dd;border-radius:10px;padding:8px;font-size:14px;background:#fff}.wx-tm input{flex:1;margin:0 !important}
   .wx .wx-rt{border:0;background:#fde4e4;color:#b3261e;border-radius:10px;padding:2px 8px;font-size:11.5px;font-weight:700;margin-left:4px}
   .wx .wx-ch .wx-ib{display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:44px;height:42px;padding:0 4px;border-radius:12px;font-size:17px;line-height:1.05;background:rgba(255,255,255,.16);color:#fff;flex:none;border:0}.wx .wx-ch .wx-ib small{font-size:11px;font-weight:600;margin-top:2px;letter-spacing:.1px}.wx .wx-ch .wx-ib.g{background:#fff;color:#0f6e7e}
@@ -228,7 +229,7 @@
   function start(root) {
     if (!document.getElementById('wxCss')) { const s = document.createElement('style'); s.id = 'wxCss'; s.textContent = CSS; document.head.appendChild(s); }
     themeApply();
-    try { if (!window.WaNotices) { const sc = document.createElement('script'); sc.src = 'assets/js/wa_notices.js?v=2'; document.head.appendChild(sc); } } catch (e) { }   // 🔔 "X took over your chat" bar (your own chats only)
+    try { if (!window.WaNotices) { const sc = document.createElement('script'); sc.src = 'assets/js/wa_notices.js?v=3'; document.head.appendChild(sc); } } catch (e) { }   // 🔔 "X took over your chat" bar (your own chats only)
     root.innerHTML = ''; const R = document.createElement('div'); R.className = 'wx'; root.appendChild(R);
     const EMB = new URLSearchParams(location.search).get('embed') === '1'; if (EMB) { R.classList.add('emb'); document.documentElement.classList.add('wx-emb'); }
     const CXID = EMB ? (Number(new URLSearchParams(location.search).get('cx')) || 0) : 0; if (CXID) R.classList.add('cxm');   // 🎫 inside a complaint ticket: voice + attach + ✨ Replies (Claude's suggestion + the complaint pre-made messages); no sales tools   // 🎫 ONE chat inside another page (the complaint ticket): the same chat box — voice notes, photos, videos, "/" quick replies, pre-made messages — no list
@@ -304,7 +305,7 @@
     }
     async function loadList(quiet) {
       try {
-        const d = await api.get('wa.g_inbox', S.fl && S.fl.tag ? { tag: 1 } : {}); const old = new Set(S.chats.map((c) => c.phone + '|' + c.last_at));
+        const d = await api.get('wa.g_inbox', Object.assign(S.fl && S.fl.tag ? { tag: 1 } : {}, S.fl && S.fl.only && (S.fl.only.includes('today') || S.fl.only.includes('yesterday')) ? { wide: 1 } : {})); const old = new Set(S.chats.map((c) => c.phone + '|' + c.last_at));
         const firstLoad = !S.loaded; S.chats = d.chats || []; S.counts = d.counts || {}; S.stats = d.stats || {}; S.cfg = d.cfg || S.cfg; S.me = d.me || {}; S.results = d.results || []; S.mentions = d.mentions || []; S.reminders = d.reminders || []; S.fetched = Date.now(); S.loaded = true;
         if (!firstLoad && S.chats.some((c) => c.waiting && !old.has(c.phone + '|' + c.last_at) && !(S.cur && S.cur.phone === c.phone))) beepNew();
         if (S.tab === 'chats' && (!S.cur || wide())) { if (quiet && held()) pend = 1; else drawList(); } drawTop(); drawTabs();
@@ -466,13 +467,15 @@
       const src = SRC[c.src], h = hue(c.phone);
       return `<div class="wx-row ${c.heat ? 'h-' + c.heat : ''}${S.cur && S.cur.phone === c.phone ? ' sel' : ''}" data-p="${c.phone}"><div class="wx-av" style="background:hsl(${h} 55% 48%)">${esc(initials(c.name, c.phone))}</div><div class="wx-mid"><div class="wx-nm">${esc(c.name || pretty(c.phone))} ${badgeOf(c)}</div>
         <div class="wx-sub">${c.mine ? '✓ ' : ''}${esc(c.preview)}</div><div style="margin-top:2px">${c.not_mine ? `<span class="wx-chip" style="background:#fef3c7;color:#92400e">🏷 now with ${esc(c.emp_name || 'nobody')}</span>` : ''}${src ? `<span class="wx-chip ${src[1]}">${src[0]}</span>` : ''}${c.origin ? `<span class="wx-chip" style="background:#fdf2f8;color:#9d174d">${esc(c.origin)}</span>` : ''}${c.num ? `<span class="wx-chip m">${esc(String(c.num).replace(/^Number\s*/i, 'N').slice(0, 8))}</span>` : ''}${c.hot ? '<span class="wx-chip r">PAY NOW</span>' : ''}${c.biz ? '<span class="wx-chip m">🏢 Business</span>' : ''}${c.team && c.emp_name ? `<span class="wx-chip b">👤 ${esc(c.emp_name)}</span>` : ''}</div></div>
-        <div class="wx-tm">${timerOf(c)}${c.unread ? `<span class="wx-dot">${c.unread}</span>` : ''}</div></div>`;
+        <div class="wx-tm">${c.fresh ? '<span class="wx-new" title="New for you — it stays until you reply"></span>' : ''}${timerOf(c)}${c.unread ? `<span class="wx-dot">${c.unread}</span>` : ''}</div></div>`;
     }
     // ⏷ Filter (same as the admin Chats): the order of my list + show only … — works on top of All / Waiting / From ad / 🔥
     const FL_SORT = [['', 'Waiting first (default)'], ['new', 'Newest first'], ['old', 'Oldest first'], ['az', 'Name A → Z'], ['za', 'Name Z → A']];
-    const FL_ONLY = [['noresp', 'Not responded — I have not answered yet'], ['late', 'Waiting too long'], ['hot', '🔥 Hot — ready to buy'], ['cx', 'Complaint'], ['ad', '📣 From ad']];
+    const FL_ONLY = [['noresp', 'Not responded — I have not answered yet'], ['late', 'Waiting too long'], ['hot', '🔥 Hot — ready to buy'], ['cx', 'Complaint'], ['ad', '📣 From ad'], ['today', '📅 Today’s chats'], ['yesterday', '🗓 Yesterday’s chats']];
     function flApply(list, F) {
-      const has = (k) => F.only.includes(k); let L = list.filter((c) => (!has('noresp') || c.noresp) && (!has('late') || c.overdue) && (!has('hot') || c.hot) && (!has('cx') || c.cx) && (!has('ad') || c.src === 'query'));
+      const has = (k) => F.only.includes(k), ymd = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'), d0 = ymd(new Date()), d1 = ymd(new Date(Date.now() - 86400000));
+      const dayOk = (c) => { if (!has('today') && !has('yesterday')) return true; const d = String(c.last_at || '').slice(0, 10); return (has('today') && d === d0) || (has('yesterday') && d === d1); };   // 📅 the customer wrote today / yesterday (both ticked = both days)
+      let L = list.filter((c) => (!has('noresp') || c.noresp) && (!has('late') || c.overdue) && (!has('hot') || c.hot) && (!has('cx') || c.cx) && (!has('ad') || c.src === 'query') && dayOk(c));
       const nm = (c) => String(c.name || '').trim().toLowerCase(), t = (c) => String(c.last_at || '');
       if (F.sort === 'new') L = L.slice().sort((a, b) => t(b).localeCompare(t(a))); else if (F.sort === 'old') L = L.slice().sort((a, b) => t(a).localeCompare(t(b)));
       else if (F.sort === 'az' || F.sort === 'za') { const d = F.sort === 'az' ? 1 : -1; L = L.slice().sort((a, b) => (!nm(a)) - (!nm(b)) || d * nm(a).localeCompare(nm(b)) || d * String(a.phone).localeCompare(String(b.phone))); }
@@ -486,8 +489,8 @@
         + '<div style="font-size:12px;font-weight:800;letter-spacing:.05em;color:var(--mut);margin:14px 0 4px">SHOW ONLY</div>' + FL_ONLY.map(([k, l]) => opt('checkbox', 'flo', k, l, F.only.includes(k), k === 'noresp' ? `<b style="color:#dc2626">${nr}</b>` : '')).join('')
         + '<div style="display:flex;gap:10px;margin-top:16px"><button type="button" class="wx-btn" data-x="reset" style="flex:1;min-height:48px;border-radius:99px;background:#fff;color:#111827;border:1px solid #d1d5db;font-weight:700">Reset</button><button type="button" class="wx-btn" data-x="go" style="flex:2;min-height:48px;border-radius:99px;background:#00a884;color:#fff;border:0;font-weight:800">Apply</button></div>';
       sh.body.onclick = (e) => { const b = e.target.closest('[data-x]'); if (!b) return;
-        const wasTag = !!F.tag; if (b.dataset.x === 'reset') { F.sort = ''; F.only = []; F.tag = false; } else { const r = sh.body.querySelector('input[name=fls]:checked'); F.sort = r ? r.value : ''; F.only = [...sh.body.querySelectorAll('input[name=flo]:checked')].map((x) => x.value); const tg = sh.body.querySelector('input[name=flt]:checked'); F.tag = !!(tg && tg.value === 'tag'); }
-        try { localStorage.setItem('wx_fl', JSON.stringify(F)); } catch (er) { } sh.close(); if (wasTag !== !!F.tag) { S.loaded = false; drawList(); loadList(); } else drawList(); };
+        const wasTag = !!F.tag, wasDay = F.only.includes('today') || F.only.includes('yesterday'); if (b.dataset.x === 'reset') { F.sort = ''; F.only = []; F.tag = false; } else { const r = sh.body.querySelector('input[name=fls]:checked'); F.sort = r ? r.value : ''; F.only = [...sh.body.querySelectorAll('input[name=flo]:checked')].map((x) => x.value); const tg = sh.body.querySelector('input[name=flt]:checked'); F.tag = !!(tg && tg.value === 'tag'); }
+        try { localStorage.setItem('wx_fl', JSON.stringify(F)); } catch (er) { } sh.close(); const isDay = F.only.includes('today') || F.only.includes('yesterday'); if (wasTag !== !!F.tag || wasDay !== isDay) { S.loaded = false; drawList(); loadList(); } else drawList(); };
     }
     try { const sv = JSON.parse(localStorage.getItem('wx_fl') || 'null'); if (sv && Array.isArray(sv.only)) S.fl = { sort: String(sv.sort || ''), only: sv.only.map(String), tag: !!sv.tag }; } catch (e) { }
     function drawList() {
@@ -507,9 +510,10 @@
       h += grab + rem + men + pushPrompt();
       if (!list.length) h += `<div class="wx-empty"><b>🎉</b>${all.length ? 'Nothing in this filter.' : 'No chats right now.<br>A new query will pop up here with an alert.'}</div>`;
       else {
-        const late = FL.sort ? [] : list.filter((c) => c.overdue), rest = FL.sort ? list : list.filter((c) => !c.overdue);   // a chosen order is kept as it is
+        const late = FL.sort ? [] : list.filter((c) => c.overdue), nw = FL.sort ? [] : list.filter((c) => c.fresh && !c.overdue), rest = FL.sort ? list : list.filter((c) => !c.overdue && !c.fresh);   // a chosen order is kept as it is. Order: Waiting too long → New for you → Others (a late chat that is also new stays in Waiting too long, with its green dot)
         if (late.length) h += `<div class="wx-h r">⏱ Waiting too long</div><div class="wx-card wx-lst">${late.map(row).join('')}</div>`;
-        if (rest.length) h += `${late.length ? '<div class="wx-h">Others</div>' : ''}<div class="wx-card wx-lst">${rest.map(row).join('')}</div>`;
+        if (nw.length) h += `<div class="wx-h" style="color:#15803d">🟢 New for you — reply to clear</div><div class="wx-card wx-lst">${nw.map(row).join('')}</div>`;   // 🟢 given to me, no person has answered yet
+        if (rest.length) h += `${late.length || nw.length ? '<div class="wx-h">Others</div>' : ''}<div class="wx-card wx-lst">${rest.map(row).join('')}</div>`;
       }
       M.innerHTML = h; M.onclick = async (e) => { const g = e.target.closest('[data-grab]'); if (g) { g.disabled = true; g.textContent = '…'; try { await api.post('wq.grab', { phone: g.dataset.grab }); S.grab = (S.grab || []).filter((x) => x.phone !== g.dataset.grab); await loadList(true); openChat(g.dataset.grab); } catch (er) { alert(er.message); loadList(true); } return; } const p = e.target.closest('[data-p]'); if (p) { const cx = (S.chats || []).find((y) => y.phone === p.dataset.p); openChat(p.dataset.p, cx && cx.not_mine ? { peek: 'tag', name: cx.name || '' } : undefined); } const a = e.target.closest('[data-push]'); if (a) pushAction(a.dataset.push); };
     }
@@ -640,7 +644,7 @@
     const failWhy = (m) => { const c = +m.err_code || 0, t = String(m.err || '').slice(0, 90); const h = { 131053: 'WhatsApp could not use this file (format / size)', 131052: 'WhatsApp could not download this file', 131047: 'the customer has not written in 24 hours', 131026: 'the customer cannot receive it (not on WhatsApp / blocked)', 131049: 'Meta limit for this customer', 130429: 'sending too fast, wait a minute', 131051: 'unsupported message type' }[c]; return (h || t) ? ' — ' + (h || t) + (c ? ' (' + c + ')' : '') : ''; };
     function tick(m) { if (m.dir !== 'out') return ''; const s = m.status; return s === 'failed' ? (m.retry ? ` <button type="button" class="wx-rt" data-rt="${esc(m.cid)}">⚠ Not sent · Retry</button>` : ` <span class="f">⚠ failed${esc(failWhy(m))}</span>`) : s === 'read' ? ' <span class="r">✓✓</span>' : s === 'delivered' ? ' ✓✓' : s === 'sending' ? ' …' : ' ✓'; }
     function bubble(m) {
-      if (m.dir === 'sys') return `<div class="wx-ev">${esc(m.body || '')}</div>`;
+      if (m.dir === 'sys') { const t0 = hhmm(m.ts); return `<div class="wx-ev">${esc(m.body || '')}${t0 ? ' · <b>' + t0 + '</b>' : ''}</div>`; }   // 🕒 who took / moved the chat AND at what time
       const cls = m.dir === 'in' ? 'in' : (m.who === 'bot' ? 'out bot' : m.mtype === 'template' ? 'out tpl' : 'out'); let b = '';
       const cap = (m.mtype === 'image' || m.mtype === 'video') ? capOf(m) : '';
       if (m.media_id && (m.mtype === 'image' || m.mtype === 'sticker')) b = (MEDIA[m.media_id] ? `<img src="${MEDIA[m.media_id]}" alt="">` : `<div class="wx-ld" data-m="${esc(m.media_id)}" data-k="img">📷 Photo</div>`) + (cap ? linkify(esc(cap)) : '');

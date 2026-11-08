@@ -43,6 +43,12 @@
 
   function parse(s) { const m = /^(\d{4})-(\d\d)-(\d\d)[ T](\d\d):(\d\d)(?::(\d\d))?/.exec(s || ''); return m ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0)) : null; }
   function hhmm(d) { return d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }); }
+  /** WhatsApp style stamp for the chat list: the clock time of the LAST message (ours or the customer's) today ("1:58 pm"), "Yesterday", else the date. */
+  function stamp(s) {
+    const d = parse(s); if (!d) return ''; const n = new Date(), d0 = new Date(n.getFullYear(), n.getMonth(), n.getDate()), days = Math.round((d0 - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 86400000);
+    if (days <= 0) return d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }).replace(/\s?(am|pm)$/i, (m) => ' ' + m.trim().toLowerCase()); if (days === 1) return 'Yesterday';
+    return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+  }
   function ago(s) {
     const d = parse(s); if (!d) return ''; const m = Math.floor((Date.now() - d.getTime()) / 60000);
     if (m < 1) return 'now'; if (m < 60) return m + ' min'; if (m < 1440) return Math.floor(m / 60) + ' h';
@@ -220,7 +226,7 @@
     const S = { sort: '', flt: [], admin, scope: admin ? 'unassigned' : 'mine', src: '', q: '', emp: 0, chats: [], counts: {}, sel: '', cur: null, people: [], quick: [], busyList: false, lastMsgId: 0, tagFor: '', files: [], sug: {}, sugBusy: false, tsug: {}, fu: null, fuOpen: {}, fuEdit: false, fuBusy: false };
     const root = $(opts.root || 'wi'); root.className = 'wi ' + (admin ? 'admin' : 'mine') + (opts.one ? ' one' : '');
     const tellParent = (m) => { if (opts.one && window.parent !== window) { try { window.parent.postMessage(Object.assign({ wa: '' }, m), location.origin); } catch (e) { } } };   // wa_one.html: the side panel around this chat
-    const st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st);
+    const st = document.createElement('style'); st.textContent = CSS + '.wi-new{display:inline-block;width:12px;height:12px;border-radius:50%;background:#22c55e;margin-right:6px;vertical-align:-1px;box-shadow:0 0 0 0 rgba(34,197,94,.55);animation:winew 1.6s infinite}@keyframes winew{0%{box-shadow:0 0 0 0 rgba(34,197,94,.55)}70%{box-shadow:0 0 0 8px rgba(34,197,94,0)}100%{box-shadow:0 0 0 0 rgba(34,197,94,0)}}'; document.head.appendChild(st);
     const tabs = admin ? [['unassigned', '🙋 Requests'], ['all', 'All open'], ['closed', 'Closed']] : [['mine', 'Open'], ['closed', 'Closed']];
     root.innerHTML = `
       <div class="wi-kpi" id="wiK"></div>
@@ -284,7 +290,7 @@
       const en = S.emp && $('wiE') ? (($('wiE').selectedOptions[0] || {}).text || '').replace(/ \(absent\)$/, '') : '', fn = en.split(' ')[0];
       const tgb = admin && S.emp ? `<div class="wi-tgb"><button type="button" data-tg="0" class="${S.empTag ? '' : 'on'}">Now with ${esc(fn)}${S.counts.emp_now != null ? ' (' + S.counts.emp_now + ')' : ''}</button><button type="button" data-tg="1" class="${S.empTag ? 'on' : ''}">🏷 ${esc(fn)}'s tag — all${S.counts.emp_tag != null ? ' (' + S.counts.emp_tag + ')' : ''}</button></div>` : '';
       L.innerHTML = tgb + bkBarHtml() + (admin ? '' : lg) + grab + rows.map((c) => { const un = c.unread && c.phone !== S.sel, bs = S.bulk.on && S.bulk.set.has(c.phone); return `<div class="wi-it ${c.phone === S.sel && !S.bulk.on ? 'sel' : ''} ${bs ? 'bsel' : ''} ${c.waiting ? 'wait' : ''} ${un ? 'unr' : ''} ${c.heat ? 'h-' + c.heat : ''}" data-p="${esc(c.phone)}">${S.bulk.on ? '<span class="wi-ck ' + (bs ? 'on' : '') + '"></span>' : ''}${av(c)}<div class="wi-bd">
-          <div class="n"><span>${esc(title(c))}</span><span class="t">${c.waiting ? '● ' : ''}${esc(ago(c.last_at))}</span></div>
+          <div class="n"><span>${esc(title(c))}</span><span class="t">${!admin && c.fresh_agent ? '<span class="wi-new" title="New for you — it stays until you reply"></span>' : ''}${c.waiting ? '● ' : ''}${esc(stamp(c.last_msg_at || c.last_at))}</span></div>
           <div class="m2"><span class="m">${esc(c.preview || '')}</span>${un ? `<span class="wi-un">${c.unread > 9 ? '9+' : c.unread}</span>` : ''}</div><div class="pl">${pills(c)}</div></div></div>`; }).join('');
       L.querySelectorAll('.wi-it').forEach((el) => { el.onclick = () => (S.bulk.on ? bkToggle(el.dataset.p) : openChat(el.dataset.p)); }); bkWire(L);
       L.querySelectorAll('[data-tg]').forEach((b) => { b.onclick = () => { S.empTag = b.dataset.tg === '1'; loadList(); }; });
@@ -435,7 +441,7 @@
     }
     // ⏷ Filter: the order of the list + show only … (like Quick Engage), applied together
     const SORTS = [['', 'Waiting first (default)'], ['new', 'Newest first'], ['old', 'Oldest first'], ['az', 'Name A → Z'], ['za', 'Name Z → A']];
-    const FLTS = [['noreply', 'Not responded — no salesperson reply'], ['late', 'Waiting too long'], ['unassigned', 'Unassigned'], ['hot', '🔥 Hot — ready to buy'], ['complaint', 'Complaint']];
+    const FLTS = [['noreply', 'Not responded — no salesperson reply'], ['late', 'Waiting too long'], ['unassigned', 'Unassigned'], ['hot', '🔥 Hot — ready to buy'], ['complaint', 'Complaint'], ['today', '📅 Today’s chats'], ['yesterday', '🗓 Yesterday’s chats']];
     function flLabel() { const b = $('wiFb'); if (!b) return; const n = S.flt.length + (S.sort ? 1 : 0); b.textContent = '⏷ Filter' + (n ? ' · ' + n : ''); b.classList.toggle('on', n > 0); }
     function flDraw() {
       $('wiFp').innerHTML = '<b class="wi-flh">Sort by</b>' + SORTS.map(([k, l]) => `<label class="wi-flo"><input type="radio" name="wiFs" value="${k}"${S.sort === k ? ' checked' : ''}> ${l}</label>`).join('')
@@ -468,7 +474,7 @@
     }
     const capOf = (m) => { const x = /^[^:]{1,20}:\s*([\s\S]+)$/.exec(m.body || ''); return x ? x[1] : ''; };
     function bubble(m) {
-      if (m.dir === 'sys') return `<div class="wi-ev">${esc(m.body || '')}</div>`;
+      if (m.dir === 'sys') { const d0 = parse(m.ts), t0 = d0 ? d0.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }) : ''; return `<div class="wi-ev">${esc(m.body || '')}${t0 ? ' · <b>' + t0 + '</b>' : ''}</div>`; }   // 🕒 who took / moved the chat AND at what time
       const cls = m.dir === 'in' ? '' : (m.who === 'bot' ? 'out bot' : 'out');
       let body = ''; const cap = (m.mtype === 'image' || m.mtype === 'video') ? capOf(m) : '';
       if (m.media_id && (m.mtype === 'image' || m.mtype === 'sticker')) body = (MEDIA[m.media_id] ? `<img src="${MEDIA[m.media_id]}" alt="photo">` : `<div class="ld" data-m="${esc(m.media_id)}" data-k="img">📷 Tap to open photo</div>`) + (cap ? `<div class="wi-cap">${linkify(esc(cap))}</div>` : '');
@@ -896,7 +902,7 @@
         if (!msg) { b.hidden = true; return; } b.hidden = false; b.className = 'wi-fu slim'; b.innerHTML = esc(msg); return;
       }
       b.hidden = false; b.className = 'wi-fu';
-      const key = c.phone; const small = window.matchMedia && window.matchMedia('(max-width:760px)').matches; const open = S.fuOpen[key] != null ? S.fuOpen[key] : !small;
+      const key = c.phone; const small = window.matchMedia && window.matchMedia('(max-width:760px)').matches; const open = S.fuOpen[key] != null ? S.fuOpen[key] : false;   // always one thin line until the person taps it (it covered the chat on every open); it keeps working in the background
       const auto = f.mode === 'auto24' || f.mode === 'autotpl';
       const who = f.mode === 'suggest' ? 'suggestion only — nothing is sent by itself' : (f.human ? 'a person is handling this chat, so the bot only suggests' : 'the bot is handling this');
       let h = `<div class="fh" id="wiFuH"><b>📨 Follow-up plan</b><span class="sm">${esc(f.title || '')} · nudge ${f.step_n} of ${f.step_total} · ${esc(f.due_in ? (f.due_min <= 0 ? 'due now' : 'in ' + f.due_in) : '')}</span><button type="button" class="tg" aria-label="Show or hide">${open ? '▾' : '▸'}</button></div>`;
@@ -1414,7 +1420,7 @@
       pickList();
     }
 
-    try { if (!admin && !window.WaNotices) { const s = document.createElement('script'); s.src = 'assets/js/wa_notices.js?v=2'; document.head.appendChild(s); } } catch (e) { }   // 🔔 "X took over your chat" bar (your own chats only)
+    try { if (!admin && !window.WaNotices) { const s = document.createElement('script'); s.src = 'assets/js/wa_notices.js?v=3'; document.head.appendChild(s); } } catch (e) { }   // 🔔 "X took over your chat" bar (your own chats only)
     // ---------- start
     (async function init() {
       if (!admin) { try { S.people = (await api.get('wa.people')).people || []; } catch (e) { S.people = []; } }

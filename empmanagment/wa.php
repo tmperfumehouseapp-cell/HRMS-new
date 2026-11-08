@@ -125,8 +125,23 @@ function wa_mfile_sig(PDO $pdo, string $id, int $e): string
     return substr(hash_hmac('sha256', 'wamf|' . $id . '|' . $e, $k), 0, 40);
 }
 /** Sends a cached file in pieces, with HTTP byte ranges (iPhone / Android play and seek videos only with ranges). */
+/** The real type of a cached file. Meta says "audio/ogg; codecs=opus" for voice notes: that was refused as "not a plain type" and saved as application/octet-stream, which (with nosniff) browsers will not PLAY. Strip the parameters, and when the type is unknown read the file's first bytes. */
+function wa_mime_fix(string $path, string $mime): string
+{
+    $m = strtolower(trim(explode(';', $mime)[0]));
+    if ($m !== '' && $m !== 'application/octet-stream' && preg_match('#^[a-z]+/[a-z0-9.+-]+$#', $m)) return $m === 'audio/ogg' ? 'audio/ogg; codecs=opus' : $m;
+    $h = ''; try { $fh = @fopen($path, 'rb'); if ($fh) { $h = (string)fread($fh, 16); fclose($fh); } } catch (Throwable $e) { }
+    if (strncmp($h, 'OggS', 4) === 0) return 'audio/ogg; codecs=opus';
+    if (strncmp($h, 'ID3', 3) === 0 || (strlen($h) > 1 && ord($h[0]) === 0xFF && (ord($h[1]) & 0xE0) === 0xE0)) return 'audio/mpeg';
+    if (strlen($h) >= 12 && substr($h, 4, 4) === 'ftyp') return 'video/mp4';
+    if (strncmp($h, 'RIFF', 4) === 0 && substr($h, 8, 4) === 'WAVE') return 'audio/wav';
+    if (strncmp($h, "\x89PNG", 4) === 0) return 'image/png'; if (strncmp($h, "\xFF\xD8", 2) === 0) return 'image/jpeg'; if (strncmp($h, 'RIFF', 4) === 0 && substr($h, 8, 4) === 'WEBP') return 'image/webp'; if (strncmp($h, '%PDF', 4) === 0) return 'application/pdf';
+    if (strncmp($h, "\x1A\x45\xDF\xA3", 4) === 0) return 'audio/webm'; if (strncmp($h, '#!AMR', 5) === 0) return 'audio/amr';
+    return $mime !== '' ? $mime : 'application/octet-stream';
+}
 function wa_mcache_send(string $path, string $mime): void
 {
+    $mime = wa_mime_fix($path, $mime);
     $size = (int)filesize($path); $start = 0; $end = $size - 1;
     while (ob_get_level() > 0) @ob_end_clean();
     header('Content-Type: ' . $mime); header('Accept-Ranges: bytes'); header('Cache-Control: private, max-age=86400'); header('X-Content-Type-Options: nosniff');
@@ -808,18 +823,22 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo)\./', $__wa)) {
             if (isset($flt['hot'])) $w[] = 'c.hot = 1';
             if (isset($flt['late'])) { $w[] = $noRep; $w[] = 'c.last_in_at <= ?'; $p[] = date('Y-m-d H:i:s', time() - 60 * (function_exists('wa_team_cfg') ? max(1, (int)(wa_team_cfg($pdo)['unans_min'] ?? 5)) : 5)); }
             if (isset($flt['complaint'])) $w[] = "(c.cx_id > 0 OR c.tag = 'complaint')";
+            // 📅 Today's chats / Yesterday's chats (the customer wrote that calendar day); both ticked = today AND yesterday together
+            { $dC = []; $d0 = date('Y-m-d 00:00:00'); $d1 = date('Y-m-d 00:00:00', strtotime('-1 day'));
+              if (isset($flt['today'])) $dC[] = "c.last_in_at >= '$d0'"; if (isset($flt['yesterday'])) $dC[] = "(c.last_in_at >= '$d1' AND c.last_in_at < '$d0')"; if ($dC) $w[] = '(' . implode(' OR ', $dC) . ')'; }
             $sort = (string)($_GET['sort'] ?? '');
             $ord = ['new' => 'COALESCE(c.last_in_at, c.last_out_at) DESC', 'old' => 'COALESCE(c.last_in_at, c.last_out_at) ASC', 'az' => "(c.name = '') ASC, c.name ASC, c.phone ASC", 'za' => "(c.name = '') ASC, c.name DESC, c.phone DESC"][$sort] ?? null;
             // a chat that was just GIVEN to this person (transfer, take over, admin assign) and not answered by them yet sits at the very top, like a fresh customer message
-            $boost = "(c.assigned_emp > 0 AND c.assigned_at IS NOT NULL AND c.assigned_at >= '" . date('Y-m-d H:i:s', time() - 86400) . "' AND (c.last_out_at IS NULL OR c.last_out_at < c.assigned_at))";
-            $sql = "SELECT c.*, (SELECT body FROM wa_messages m WHERE m.phone = c.phone AND m.dir != 'sys' ORDER BY m.id DESC LIMIT 1) AS last_body,
+            $boost = "(c.assigned_emp > 0 AND c.assigned_at IS NOT NULL AND c.assigned_at >= '" . date('Y-m-d H:i:s', time() - 7 * 86400) . "' AND NOT EXISTS (SELECT 1 FROM wa_messages hm WHERE hm.phone = c.phone AND hm.dir = 'out' AND hm.who IN ('emp','phone') AND hm.ts >= c.assigned_at))";   // 🟢 given to a person, and no PERSON has written in it since (bots do not count)
+            $boostOrd = (!$adm || $scope === 'mine') ? $boost : '0';
+            $sql = "SELECT c.*, IF(" . $boost . ", 1, 0) AS fresh_agent, (SELECT body FROM wa_messages m WHERE m.phone = c.phone AND m.dir != 'sys' ORDER BY m.id DESC LIMIT 1) AS last_body, (SELECT m2.ts FROM wa_messages m2 WHERE m2.phone = c.phone AND m2.dir != 'sys' ORDER BY m2.id DESC LIMIT 1) AS last_ts,
                     (SELECT COUNT(*) FROM wa_messages u WHERE u.phone = c.phone AND u.dir = 'in' AND u.id > c.seen_msg_id) AS unread
-                    FROM wa_contacts c WHERE " . implode(' AND ', $w) . " ORDER BY " . ($ord ? $ord . ', ' : '') . "CASE WHEN (c.last_in_at IS NOT NULL AND (c.last_out_at IS NULL OR c.last_out_at < c.last_in_at) AND c.last_in_at >= '" . date('Y-m-d H:i:s', time() - 86400) . "') OR " . $boost . " THEN 0 ELSE 1 END, GREATEST(COALESCE(c.last_in_at, c.last_out_at, '1970-01-01'), IF(" . $boost . ", c.assigned_at, '1970-01-01')) DESC LIMIT " . (!empty($_GET['ids']) ? 3000 : ($flt || $ord ? 400 : 150));   // a customer waiting for a reply first; our own sends / campaigns never move a chat
+                    FROM wa_contacts c WHERE " . implode(' AND ', $w) . " ORDER BY " . ($ord ? $ord . ', ' : '') . "CASE WHEN (c.last_in_at IS NOT NULL AND (c.last_out_at IS NULL OR c.last_out_at < c.last_in_at) AND c.last_in_at >= '" . date('Y-m-d H:i:s', time() - 86400) . "') OR " . $boostOrd . " THEN 0 ELSE 1 END, GREATEST(COALESCE(c.last_in_at, c.last_out_at, '1970-01-01'), IF(" . $boostOrd . ", c.assigned_at, '1970-01-01')) DESC LIMIT " . (!empty($_GET['ids']) ? 3000 : (isset($flt['today']) || isset($flt['yesterday']) ? 1500 : ($flt || $ord ? 400 : 150)));   // a customer waiting for a reply first; our own sends / campaigns never move a chat
             $st = $pdo->prepare($sql); $st->execute($p); $rows = $st->fetchAll(); $names = employee_names_by_id($pdo);
             $fl = wa_heat_flags($pdo, array_column($rows, 'phone')); $lm = function_exists('wa_team_cfg') ? max(1, (int)(wa_team_cfg($pdo)['unans_min'] ?? 5)) : 5;
             if (!empty($_GET['ids'])) json_response(['ids' => array_map(fn($r) => ['phone' => (string)$r['phone'], 'name' => (string)($r['name'] ?? '')], $rows)]);   // ☑ "Select all" in the bulk bar: just the phones of the whole view
             $ot = wa_owner_tags($pdo, array_column($rows, 'phone'));
-            $out = array_map(function ($r) use ($names, $fl, $lm, $ot) { $x = wa_contact_row($r, $names); $f = (int)($ot[(string)$r['phone']]['first'] ?? 0); $x['first_emp'] = $f; $x['first_name'] = $f ? ($names[$f] ?? '') : ''; $x['preview'] = mb_substr((string)$r['last_body'], 0, 90); $x['heat'] = wa_heat($r, $fl[(string)$r['phone']] ?? [], $lm); $x['biz'] = !empty($fl[(string)$r['phone']]['biz']); return $x; }, $rows);
+            $out = array_map(function ($r) use ($names, $fl, $lm, $ot) { $x = wa_contact_row($r, $names); $f = (int)($ot[(string)$r['phone']]['first'] ?? 0); $x['first_emp'] = $f; $x['first_name'] = $f ? ($names[$f] ?? '') : ''; $x['preview'] = mb_substr((string)$r['last_body'], 0, 90); $x['last_msg_at'] = (string)($r['last_ts'] ?? ''); $x['fresh_agent'] = (int)($r['fresh_agent'] ?? 0) === 1; $x['heat'] = wa_heat($r, $fl[(string)$r['phone']] ?? [], $lm); $x['biz'] = !empty($fl[(string)$r['phone']]['biz']); return $x; }, $rows);
             $cn = wa_counts($pdo, $adm, $emp); $cn['src'] = wa_src_counts($pdo, $adm, $emp);
             if ($adm && $scope === 'emp') { try { $ee = (int)($_GET['emp'] ?? 0); $a = $pdo->prepare("SELECT COUNT(*) FROM wa_contacts WHERE assigned_emp = ? AND status = 'open' AND COALESCE(last_in_at, last_out_at) >= ?"); $a->execute([$ee, date('Y-m-d H:i:s', time() - 90 * 86400)]); $cn['emp_now'] = (int)$a->fetchColumn();
                 $b = $pdo->prepare("SELECT COUNT(*) FROM wa_contacts c WHERE (c.assigned_emp = ? OR c.phone IN (SELECT l.phone FROM wa_assign_log l WHERE l.to_emp = ?)) AND COALESCE(c.last_in_at, c.last_out_at) >= ?"); $b->execute([$ee, $ee, date('Y-m-d H:i:s', time() - 90 * 86400)]); $cn['emp_tag'] = (int)$b->fetchColumn(); } catch (Throwable $e) { } }

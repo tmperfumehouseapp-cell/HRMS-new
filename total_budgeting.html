@@ -82,6 +82,17 @@
 #tb .cl{background:#f3f0ff; border-radius:12px; padding:10px 14px; margin-bottom:10px; line-height:1.5; font-size:13px;} #tb .cl b.h{display:block; font-size:11px; text-transform:uppercase; letter-spacing:.07em; color:#6d4fd6; margin-bottom:2px;} #tb .cl ul{margin:6px 0 0; padding-left:18px;} #tb .cl li.bad{color:#b3261e;} #tb .cl li.warn{color:#8a5a00;} #tb .cl .ok{color:#1d6b47; font-weight:700;}
 #tb .tbtn{padding:6px 14px; border-radius:10px; background:var(--ink); color:#fff; font:inherit; font-weight:800; font-size:12.5px; border:0; cursor:pointer;} #tb .tbtn:disabled{opacity:.5; cursor:default;}
 #tb .te-k{margin-bottom:12px;}
+#tb .te-find{position:relative;margin-bottom:12px}
+#tb .te-find>input[type=search],#tb .te-find>input{width:100%;padding-left:44px!important;box-sizing:border-box;font:inherit;font-size:15px;font-weight:600;padding:12px 16px 12px 42px;border:2px solid var(--ink,#14161a);border-radius:16px;background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2.4' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='M21 21l-4.3-4.3'/%3E%3C/svg%3E") no-repeat 14px center}
+#tb .te-find>input:focus{outline:0;box-shadow:0 0 0 4px rgba(255,122,47,.2);border-color:#ff7a2f}
+#tb .te-res{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:40;background:#fff;border:1px solid var(--line,#e5e7eb);border-radius:16px;box-shadow:0 14px 34px rgba(0,0,0,.16);padding:6px;max-height:420px;overflow-y:auto}
+#tb .te-r{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:12px;cursor:pointer}
+#tb .te-r.on,#tb .te-r:hover{background:#f3f4f8}
+#tb .te-r .av{width:36px;height:36px;border-radius:50%;background:#eceef2;display:flex;align-items:center;justify-content:center;font-weight:800;overflow:hidden;flex:0 0 auto}
+#tb .te-r .av img{width:100%;height:100%;object-fit:cover}
+#tb .te-r .who{flex:1;min-width:0}.te-r .who b{display:block;font-size:14px}.te-r .who small{color:var(--mut,#6b7280);font-size:12px}
+#tb .te-r .pay{display:inline-block;margin:0 0 0 4px;cursor:default}
+#tb .te-r .go{border:0;background:#14161a;color:#fff;border-radius:10px;padding:6px 12px;font:700 12.5px inherit;cursor:pointer;white-space:nowrap}
 #tb .te-bar{display:flex; flex-wrap:wrap; gap:8px 12px; align-items:center; margin-bottom:12px;}
 #tb .te-bar input{font:inherit; font-size:13px; padding:7px 12px; border:1px solid var(--line); border-radius:99px; min-width:230px; background:#fff;}
 #tb .te-msg{font-size:12.5px; font-weight:600; color:#1d6b47;} #tb .te-msg.bad{color:#b3261e;}
@@ -115,6 +126,7 @@
 #tb .dock-h button{font:inherit; font-size:12px; font-weight:700; border:1px solid var(--line); background:#fff; border-radius:99px; padding:3px 12px; cursor:pointer;} #tb .dock-h button.on{background:var(--ink); color:#fff; border-color:var(--ink);}
 #tb .dz{display:inline-flex; align-items:center; gap:6px; border:1.5px dashed #b8bfc7; border-radius:99px; padding:4px 11px; margin:0 6px 6px 0; font-size:12px; font-weight:600; cursor:pointer; background:#f8f9fb;}
 #tb .dz i{font-style:normal; background:var(--ink); color:#fff; border-radius:99px; padding:0 7px; font-size:11px; font-weight:800;}
+#tb .dz.on{background:var(--ink); color:#fff; border:1.5px solid var(--ink);} #tb .dz.on i{background:#fff; color:var(--ink);}
 #tb .dz.over,#tb .dz:hover{border-color:#ea580c; background:#fff7ed;} #tb .dz.over{box-shadow:0 0 0 3px #fed7aa;}
 #tb .st{position:relative;} #tb .st.sel .ring{box-shadow:0 0 0 3px #2563eb;} #tb .st.sel::after{content:'✓'; position:absolute; top:-2px; right:6px; background:#2563eb; color:#fff; border-radius:50%; width:18px; height:18px; font-size:12px; line-height:18px; font-weight:800;}
 #tb .grp-h .acts{margin-left:auto; display:flex; gap:6px;} #tb .grp-h .acts button{font:inherit; font-size:11.5px; font-weight:700; border:1px solid var(--line); background:#fff; border-radius:99px; padding:2px 10px; cursor:pointer; color:var(--ink);} #tb .grp-h .acts button:hover{border-color:#ea580c; background:#fff7ed;}
@@ -216,7 +228,7 @@ body.emb .tabs{display:none;}
 <script src="assets/js/config.js?v=2"></script>
 <script src="assets/js/api.js?v=9"></script>
 <script src="assets/js/layout.js?v=23"></script>
-<script src="assets/js/person_card.js?v=pc3"></script>
+<script src="assets/js/person_card.js?v=pc4"></script>
 <script>
 (function () {
   guardPage();
@@ -248,7 +260,9 @@ body.emb .tabs{display:none;}
     const prev = (() => { const d = new Date(Y, Mo - 2, 1); return d.getFullYear() + '-' + pad(d.getMonth() + 1); })();
     const shownDay = clientToday.slice(0, 7) === month ? clientToday : (clientToday > last ? last : from);   // last day of the month to read (any past month works)
     const daysBack = Number(shownDay.slice(8));
-    $('tb').innerHTML = '<div class="card"><div class="empty">Loading the month…</div></div>';
+    // the first load shows "Loading…"; a RELOAD after a save keeps the page as it is (the "Loading" box made the page short, so the scroll jumped to the top) and puts the scroll back
+    const keepY = window.scrollY, mainEl = document.querySelector('.main'), keepM = mainEl ? mainEl.scrollTop : 0, firstLoad = !S.M;
+    if (firstLoad) $('tb').innerHTML = '<div class="card"><div class="empty">Loading the month…</div></div>';
     const R = await Promise.allSettled([
       api.get('lr.get', { date_from: from, date_to: last < clientToday ? last : clientToday }),
       api.get('bd.b2_cm_recount', { days: daysBack, end: shownDay }),
@@ -341,6 +355,7 @@ body.emb .tabs{display:none;}
     S.warn = warn; S.edit = JSON.parse(JSON.stringify({ target: bud.target, lump: bud.lump, expenses: bud.expenses, goals: Object.assign({ sales: 0, leader: 0, helper: 0, retail: 0, store: 0, other: 0 }, bud.goals || {}), retail: Object.assign({ pct: 0, basis: 'paid', target: 0, bonus_type: 'flat', bonus_v: 0, minus_type: 'flat', minus_v: 0 }, bud.retail || {}) }));
     S.claudeFor = '';
     render(); askClaude();
+    if (!firstLoad) { const back = () => { window.scrollTo(0, keepY); if (mainEl) mainEl.scrollTop = keepM; }; back(); requestAnimationFrame(back); setTimeout(back, 120); }
   }
 
   /* ---------- the one set of numbers every tab reads ---------- */
@@ -720,7 +735,8 @@ body.emb .tabs{display:none;}
     const gs = M.depts.map(d => ({ id: d.id, name: d.name, all: M.people.filter(p => p.deptId === d.id), list: P.filter(p => p.deptId === d.id) }));
     const nod = { id: 0, name: 'No department', all: M.people.filter(p => !p.deptId), list: P.filter(p => !p.deptId) };
     if (nod.all.length) gs.push(nod);
-    const shown = gs.filter(g => !(q || S.nc) || g.list.length);
+    let shown = gs.filter(g => !(q || S.nc) || g.list.length);
+    if (S.dOnly != null) shown = gs.filter(g => g.id === S.dOnly);   // 🎯 one department picked from the bar below: only that section
     return shown.map(g => {
       const pay = g.all.reduce((a, p) => { const rr = S.M.rowBy[p.id]; return a + (rr && (rr.leader || rr.np) ? 0 : p.monthly); }, 0);
       return '<section class="grp" data-dept="' + g.id + '"><div class="grp-h"><b>' + esc(g.name) + '</b><span class="cnt">' + g.all.length + '</span><span>' + (pay ? rs(pay) + ' fixed salary a month' : 'No fixed salary (commission-based)') + '</span><span class="acts"><button type="button" data-do="add" data-did="' + g.id + '">+ Add people</button>' + (g.id ? '<button type="button" data-do="ren" data-did="' + g.id + '">Rename</button>' + (g.all.length ? '' : '<button type="button" data-do="del" data-did="' + g.id + '">Delete</button>') : '') + '</span></div>'
@@ -730,7 +746,7 @@ body.emb .tabs{display:none;}
   /* the dock stays on screen: drop a person on a department name (no scrolling), or switch on Move mode, tick many people and press a department once */
   function dockInner() {
     const M = S.M, n = S.sel.size, pg = S.tg === 'grp', cnt = (id) => M.people.filter(p => p.deptId === id).length;
-    const chip = (id, name) => '<span class="dz" data-dept="' + id + '" title="' + (n ? 'Move the ' + n + ' selected here' : 'Drop a person here') + '">' + esc(name) + '<i>' + cnt(id) + '</i></span>';
+    const chip = (id, name) => '<span class="dz' + (S.dOnly === id ? ' on' : '') + '" data-dept="' + id + '" title="' + (n ? 'Move the ' + n + ' selected here' : 'Drop a person here') + '">' + esc(name) + '<i>' + cnt(id) + '</i></span>';
     const gchip = (k, name) => '<span class="dz" data-pg="' + k + '" title="' + (n ? 'Assign the ' + n + ' selected here' : 'Drop a person here') + '">' + esc(name) + '<i>' + M.all.filter(r => r.grp === k).length + '</i></span>';
     return '<div class="dock-h"><b>' + (n ? (pg ? 'Assign ' : 'Move ') + n + ' selected to:' : S.mm ? 'Move mode: tick people above, then press a ' + (pg ? 'pay group' : 'department') : 'Drop a person on a ' + (pg ? 'pay group' : 'department')) + '</b>'
       + '<button type="button" data-mm="1" class="' + (S.mm ? 'on' : '') + '">' + (S.mm ? 'Move mode ON' : 'Move mode (pick many)') + '</button>' + (n ? '<button type="button" data-clr="1">Clear ' + n + '</button>' : '') + '</div>'
@@ -845,8 +861,7 @@ body.emb .tabs{display:none;}
   function setupPopup(empId, opts) {
     opts = opts || {};
     const M = S.M, r = M.rowBy[empId], p = M.people.find(x => x.id === empId); if (!r || !p) return;
-    if (r.helper) { say('This person is a Leaders Helper: paid by the Leaders Helper payout (the work done each day). The card salary is not counted.'); return; }
-    if (r.leader) { say('Leaders are paid by the leader commission set on the Leaders tab. Their card salary is not counted.'); return; }
+    const lead = !!(r.leader || r.helper);      // a Leader / Helper opens the same window, but only for the department, the punch timing and the green tick: their pay comes from the Leaders tab / Helper payout
     const gp = Number(S.edit.retail.pct) || 0, pi = payInfo(r), T0 = M.timing[empId] || null, R = S.edit.retail;
     const sugPt = (() => { if (r.np) return 'none'; if (pi.t !== 'Not assigned') return null; const hasSal = r.monthly > 0, comm = r.grp === 'sales' || r.grp === 'store' || r.grp === 'retail'; return hasSal ? (comm ? 'both' : 'fixed') : (comm ? 'comm' : 'none'); })();   // a suggestion for people with no rule yet, from what the card already says
     const firstSetup = !(r.hist && r.hist.length);
@@ -860,12 +875,13 @@ body.emb .tabs{display:none;}
       const tt = T0 ? (T0.mode === 'fixed' ? 'Strict timing: in ' + (T0.start || '?') + (T0.end ? ', out ' + T0.end : '') + ', late after ' + T0.late + ' min' : T0.mode === 'hours' ? 'Flexible hours: ' + (T0.hours || '?') + ' h a day' + (T0.win_from || T0.win_to ? ' (punch ' + (T0.win_from || 'any time') + ' to ' + (T0.win_to || 'any time') + ')' : '') : 'No timing (punch optional)') : 'timing was not set';
       const dn = (M.depts.find(d => d.id === (p.deptId || 0)) || {}).name || 'No department';
       return '<div class="su-before"><b>Before this review</b>'
-        + '<div class="ub"><span><b>Salary:</b> ' + (r.np ? 'No pay' : r.monthly > 0 ? rs(r.monthly) + ' a month' : 'no fixed salary on the card') + ' · <b>paid:</b> ' + esc(pi.t) + '</span><button type="button" data-use="salary">Use this salary</button></div>'
+        + '<div class="ub"><span><b>Salary:</b> ' + (r.np ? 'No pay' : r.monthly > 0 ? rs(r.monthly) + ' a month' : 'no fixed salary on the card') + ' · <b>paid:</b> ' + esc(pi.t) + '</span>' + (lead ? '' : '<button type="button" data-use="salary">Use this salary</button>') + '</div>'
         + '<div class="ub"><span><b>Timing:</b> ' + esc(tt) + '</span>' + (T0 ? '<button type="button" data-use="timing">Use this timing</button>' : '') + '</div>'
         + '<div class="ub"><span><b>Group:</b> ' + esc(GL[r.grp] || '') + ' · <b>department:</b> ' + esc(dn) + '</span><button type="button" data-use="all">Keep it all as before</button></div></div>';
     };
     const sync = () => { const g = (i, k, num) => { const e = q(i); if (e) st[k] = e.type === 'checkbox' ? e.checked : e.value; }; g('#suG', 'g'); g('#suDept', 'd'); g('#suFrom', 'from'); g('#suFD', 'fd'); g('#suSal', 'sal'); g('#suR', 'rp'); g('#suRT', 'rt'); g('#suD', 'du'); g('#suOk', 'ok'); g('#tS', 's'); g('#tE', 'e'); g('#tL', 'l'); g('#tH', 'h'); g('#tHF', 'hf'); g('#tWA', 'wa'); g('#tWB', 'wb'); };
     const draw = () => {
+      const leadNote = '<div class="note"><b>' + (r.helper ? 'Leaders Helper' : 'Leader') + ':</b> ' + (r.helper ? 'paid by the Leaders Helper payout (the work done each day).' : 'paid by the leader commission set on the Leaders tab.') + ' A fixed salary on the card is not counted. You can set the <b>department</b> and the <b>punch timing</b> here.</div>';
       const g = st.g, pt = st.pt, paid = pt !== 'none', hasFix = pt === 'fixed' || pt === 'both', hasCom = pt === 'comm' || pt === 'both';
       const opt = (v, t) => '<label class="' + (pt === v ? 'on' : '') + '"><input type="radio" name="pt" value="' + v + '"' + (pt === v ? ' checked' : '') + '>' + t + '</label>';
       const tmo = (v, t, sub) => '<label class="' + (st.tm === v ? 'on' : '') + '"><input type="radio" name="tm" value="' + v + '"' + (st.tm === v ? ' checked' : '') + '><span>' + t + '<small style="display:block;font-weight:400;color:#6b7280;font-size:11px">' + sub + '</small></span></label>';
@@ -880,12 +896,12 @@ body.emb .tabs{display:none;}
         : st.tm === 'free' ? '<div class="note">No timing: punching is optional. Never late.</div>' : '<div class="note" style="background:#fff1e6;color:#b45309">Timing not set yet: choose one of the three.</div>';
       ov.innerHTML = '<div class="pk" role="dialog"><div class="pk-h"><b>Pay setup · ' + esc(p.name) + '</b><button type="button" data-x="1" aria-label="Close">×</button></div>' + beforeBox() + '<div class="su">'
         + (opts.review ? '<div class="note" style="background:#eff6ff;color:#1d4ed8"><b>Fresh start review:</b> ' + reviewDone() + ' of ' + reviewTotal() + ' checked. Set this person, then press <b>Save &amp; next</b>.<br><span style="color:#4b5563">' + (sugPt ? 'Suggested now: ' + ({ none: 'No pay', fixed: 'Fixed salary', comm: 'Commission based', both: 'Fixed + commission' })[sugPt] + ' (from their card).' : '') + '</span></div>' : '')
-        + '<label>This setup counts</label><select id="suFrom"><option value="start"' + (st.from === 'start' ? ' selected' : '') + '>from the start (every day so far is recounted with it)</option><option value="today"' + (st.from === 'today' ? ' selected' : '') + '>from today (earlier days stay as they were)</option><option value="date"' + (st.from === 'date' ? ' selected' : '') + '>from a date…</option></select>' + (st.from === 'date' ? '<input type="date" id="suFD" value="' + esc(st.fd) + '" max="' + addDay(S.M.today, 2) + '">' : '')
-        + ((r.hist || []).length ? '<div class="note"><b>Earlier setups</b> (old days count as before):<br>' + r.hist.map((h, i) => (i ? 'From ' + dnice(h.from) : 'From the start') + ': ' + (h.np ? 'No pay' : (Number(h.monthly) > 0 ? 'Fixed ' + rs(h.monthly) : 'Commission') ) + ' · ' + (GL[h.grp || r.guess] || '')).join('<br>') + '</div>' : '')
+        + (lead ? '' : '<label>This setup counts</label><select id="suFrom"><option value="start"' + (st.from === 'start' ? ' selected' : '') + '>from the start (every day so far is recounted with it)</option><option value="today"' + (st.from === 'today' ? ' selected' : '') + '>from today (earlier days stay as they were)</option><option value="date"' + (st.from === 'date' ? ' selected' : '') + '>from a date…</option></select>' + (st.from === 'date' ? '<input type="date" id="suFD" value="' + esc(st.fd) + '" max="' + addDay(S.M.today, 2) + '">' : '')
+        + ((r.hist || []).length ? '<div class="note"><b>Earlier setups</b> (old days count as before):<br>' + r.hist.map((h, i) => (i ? 'From ' + dnice(h.from) : 'From the start') + ': ' + (h.np ? 'No pay' : (Number(h.monthly) > 0 ? 'Fixed ' + rs(h.monthly) : 'Commission') ) + ' · ' + (GL[h.grp || r.guess] || '')).join('<br>') + '</div>' : ''))
         + '<label>Department</label><select id="suDept"><option value="0">No department</option>' + M.depts.map(d => '<option value="' + d.id + '"' + (Number(st.d) === d.id ? ' selected' : '') + '>' + esc(d.name) + '</option>').join('') + '</select>'
-        + '<label>Pay group</label><select id="suG">' + [['sales', 'Sales (online)'], ['retail', 'Retail wholesale'], ['store', 'Store (offline)'], ['other', 'Other']].map(x => '<option value="' + x[0] + '"' + (g === x[0] ? ' selected' : '') + '>' + x[1] + '</option>').join('') + '</select>'
+        + (lead ? leadNote : '<label>Pay group</label><select id="suG">' + [['sales', 'Sales (online)'], ['retail', 'Retail wholesale'], ['store', 'Store (offline)'], ['other', 'Other']].map(x => '<option value="' + x[0] + '"' + (g === x[0] ? ' selected' : '') + '>' + x[1] + '</option>').join('') + '</select>'
         + '<label>How is this person paid?</label><div class="opts" style="grid-template-columns:repeat(2,1fr)">' + opt('none', 'No pay') + opt('fixed', 'Fixed salary') + opt('comm', 'Commission based') + opt('both', 'Fixed + commission') + '</div>'
-        + (hasFix ? '<label>Fixed monthly salary (₹)</label><input type="text" id="suSal" inputmode="decimal" value="' + esc(st.sal) + '" placeholder="e.g. 20000">' : '') + comm
+        + (hasFix ? '<label>Fixed monthly salary (₹)</label><input type="text" id="suSal" inputmode="decimal" value="' + esc(st.sal) + '" placeholder="e.g. 20000">' : '') + comm)
         + '<label>Timing</label><div class="opts">' + tmo('fixed', 'Strict timing', 'time in and time out') + tmo('hours', 'Flexible hours', 'just the hours') + tmo('free', 'No timing', 'punch optional') + '</div>' + tmf
         + '<label class="su-ok' + (st.ok ? ' on' : '') + '"><input type="checkbox" id="suOk"' + (st.ok ? ' checked' : '') + ' style="width:auto;margin-top:2px"><span>✓ I have set and checked this person\'s pay rules and timing.<br><span style="font-weight:400;color:#6b7280">Turns their line <b style="color:#16a34a">green</b> everywhere in Total Budgeting. Red means not checked yet.</span></span></label>'
         + '<div id="suLog">' + logHtml + '</div><div id="suE"></div></div><div class="pk-f"><button type="button" class="pk-go" id="suExit" style="background:#fff;color:#b3261e;border:1px solid #f3c5bf" title="No longer working here">Make ex-employee…</button><span class="hint">Today: ' + esc(pi.t) + ' · ' + esc(tmInfo(empId).t) + '</span>' + (opts.review ? '<button type="button" class="pk-go" id="suSkip" style="background:#fff;color:#14161a;border:1px solid #d9dde3">Skip</button><button type="button" class="pk-go" id="suGo">Save &amp; next ▶</button>' : '<button type="button" class="pk-go" id="suGo">Save</button>') + '</div></div>';
@@ -915,18 +931,20 @@ body.emb .tabs{display:none;}
       if (st.tm === 'fixed' && !st.s) return err('Type the time they must come in (and the time they go out).');
       if (st.tm === 'hours' && !(num(st.h) > 0)) return err('Type how many hours they must complete each day.');
       if (st.ok && !st.tm) return err('Choose the timing first, then tick “checked”.');
-      const body = { employee_id: empId, grp: g, np: pt === 'none' ? 1 : 0, ok: st.ok ? 1 : 0, monthly: sal, from: st.from === 'start' ? 'start' : st.from === 'today' ? S.M.today : st.fd, prev: { grp: r.grp === 'leader' ? '' : r.grp, np: r.np ? 1 : 0, monthly: r.monthly, rpct: r.rpct, rtarget: r.rtarget, sc: r.sc } };
-      body.rpct = g === 'retail' ? (pt === 'fixed' || pt === 'none' ? 0 : String(st.rp == null ? '' : st.rp).replace(/,/g, '')) : '';
-      body.rtarget = g === 'retail' && hasCom ? String(st.rt == null ? '' : st.rt).replace(/,/g, '') : '';
-      body.sc = g === 'store' && (pt === 'fixed' || pt === 'none') ? 0 : 1; if (g === 'store') body.duty = !!st.du;
+      const body = lead ? { employee_id: empId, ok: st.ok ? 1 : 0 } : { employee_id: empId, grp: g, np: pt === 'none' ? 1 : 0, ok: st.ok ? 1 : 0, monthly: sal, from: st.from === 'start' ? 'start' : st.from === 'today' ? S.M.today : st.fd, prev: { grp: r.grp === 'leader' ? '' : r.grp, np: r.np ? 1 : 0, monthly: r.monthly, rpct: r.rpct, rtarget: r.rtarget, sc: r.sc } };
+      if (!lead) {
+        body.rpct = g === 'retail' ? (pt === 'fixed' || pt === 'none' ? 0 : String(st.rp == null ? '' : st.rp).replace(/,/g, '')) : '';
+        body.rtarget = g === 'retail' && hasCom ? String(st.rt == null ? '' : st.rt).replace(/,/g, '') : '';
+        body.sc = g === 'store' && (pt === 'fixed' || pt === 'none') ? 0 : 1; if (g === 'store') body.duty = !!st.du;
+      }
       btn.disabled = true;
       try {
         if (Number(st.d) !== (p.deptId || 0)) await api.post('employees.set_department', { employee_id: empId, department_id: Number(st.d) || 0 });
-        if (pt !== 'none' && sal !== r.monthly) await api.post('employees.set_salary', { employee_id: empId, monthly_salary: sal });
+        if (!lead && pt !== 'none' && sal !== r.monthly) await api.post('employees.set_salary', { employee_id: empId, monthly_salary: sal });
         await api.post('budget.person_save', body);
         const tb = { ids: [empId], mode: st.tm }, chg = !T0 || T0.mode !== st.tm || (st.tm === 'fixed' && (T0.start !== st.s || (T0.end || '') !== st.e || Number(T0.late) !== num(st.l))) || (st.tm === 'hours' && (Number(T0.hours) !== num(st.h) || Number(T0.hours_full || 0) !== num(st.hf) || (T0.win_from || '') !== st.wa || (T0.win_to || '') !== st.wb));
         if (st.tm && chg) { if (st.tm === 'fixed') { tb.shift_start = st.s; tb.shift_end = st.e; tb.late_after = num(st.l) || 15; } if (st.tm === 'hours') { tb.hours_target = num(st.h) || 8; tb.hours_full = num(st.hf); tb.win_from = st.wa; tb.win_to = st.wb; } await api.post('bd.b2_punch_set', tb); }
-        close(); if (opts.after) setTimeout(opts.after, 600); S.msg = p.name + ': saved (' + (pt === 'none' ? 'no pay' : pt === 'fixed' ? 'fixed salary' : pt === 'comm' ? 'commission based' : 'fixed + commission') + ', ' + GL[g] + (st.tm ? ', ' + (st.tm === 'fixed' ? 'strict timing' : st.tm === 'hours' ? 'flexible hours' : 'no timing') : ', timing not set') + ')' + (body.ok ? ' and marked checked (green).' : '. Still red: tick “checked” when you are sure.'); S.msgBad = false; await load();
+        close(); if (opts.after) setTimeout(opts.after, 600); S.msg = lead ? p.name + ': saved (' + (r.helper ? 'Leaders Helper' : 'Leader') + (st.tm ? ', ' + (st.tm === 'fixed' ? 'strict timing' : st.tm === 'hours' ? 'flexible hours' : 'no timing') : ', timing not set') + (body.ok ? ', checked ✓' : '') + ')' : p.name + ': saved (' + (pt === 'none' ? 'no pay' : pt === 'fixed' ? 'fixed salary' : pt === 'comm' ? 'commission based' : 'fixed + commission') + ', ' + GL[g] + (st.tm ? ', ' + (st.tm === 'fixed' ? 'strict timing' : st.tm === 'hours' ? 'flexible hours' : 'no timing') : ', timing not set') + ')' + (body.ok ? ' and marked checked (green).' : '. Still red: tick “checked” when you are sure.'); S.msgBad = false; await load();
         if (opts.review) { const nx = nextReview(empId, false); if (nx) setupPopup(nx, { review: true }); else { S.msg = 'Everyone is reviewed. The whole setup is fresh from today.'; S.msgBad = false; render(); } }
       } catch (er) { btn.disabled = false; err(esc((er && er.message) || 'Could not save.')); }
     });
@@ -970,13 +988,14 @@ body.emb .tabs{display:none;}
     const fresh = P.filter(p => p.joined && p.joined >= d30), pay = P.reduce((a, p) => { const rr = M.rowBy[p.id]; return a + (rr && (rr.leader || rr.np) ? 0 : p.monthly); }, 0);
     const kp = (l, v, n) => '<div class="kpi"><span>' + l + '</span><b>' + v + '</b><em>' + n + '</em></div>';
     const biggest = M.depts.map(d => ({ n: d.name, c: P.filter(p => p.deptId === d.id).length })).sort((a, b) => b.c - a.c)[0];
-    return '<div class="kpis te-k">' + kp('Total employees', P.length, 'working with you now')
+    return '<div class="te-find"><input id="teFind" type="search" placeholder="Search an employee by name, then set their rule…" autocomplete="off" aria-label="Search an employee"><div class="te-res" id="teFindRes" hidden></div></div>'
+      + '<div class="kpis te-k">' + kp('Total employees', P.length, 'working with you now')
       + kp('Departments', M.depts.length, biggest && biggest.c ? 'biggest: ' + esc(biggest.n) + ' (' + biggest.c + ')' : '')
       + kp('Fixed salary a month', lakh(pay), P.filter(p => !p.monthly).length + ' are commission-only')
       + kp('Joined last 30 days', fresh.length, fresh.slice(0, 3).map(p => esc(p.name.split(' ')[0])).join(', ') || 'no new joiners')
       + kp('Pay rules checked', (() => { const a = M.all.filter(r => r.empId && !r.leader); return a.filter(r => r.ok).length + ' of ' + a.length; })(), 'green = checked, red = still to set and check', (() => { const a = M.all.filter(r => r.empId && !r.leader); return a.some(r => !r.ok); })())
       + kp('No photo / no department', P.filter(p => !p.photo).length + ' / ' + P.filter(p => !p.deptId).length, 'worth completing') + '</div>'
-      + '<div class="te-bar"><button type="button" data-do="nc" class="tbtn" style="' + (S.nc ? '' : 'background:#fff;color:var(--ink);border:1px solid var(--line)') + '">' + (S.nc ? 'Showing not checked only' : 'Not checked only') + '</button>' + (S.tg === 'dept' ? '<button class="tbtn" type="button" data-do="new">+ New section</button>' : '') + '<div class="seg">' + [['dept', 'By department'], ['grp', 'By pay: sales · leaders · retail · store']].map(x => '<button data-s="tg" data-v="' + x[0] + '" class="' + (S.tg === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</div><input id="teQ" type="search" placeholder="Find a person…" value="' + esc(S.q) + '" autocomplete="off"><span class="hint">Click a photo to open the person. ' + (S.tg === 'dept' ? '<b>Drag a photo onto another department</b> to move them.' : 'Everybody is here: sales, leaders, retail wholesale, store and the rest.') + '</span><span class="te-msg' + (S.msgBad ? ' bad' : '') + '" id="teMsg">' + esc(S.msg) + '</span></div>'
+      + '<div class="te-bar"><button type="button" data-do="nc" class="tbtn" style="' + (S.nc ? '' : 'background:#fff;color:var(--ink);border:1px solid var(--line)') + '">' + (S.nc ? 'Showing not checked only' : 'Not checked only') + '</button>' + (S.dOnly != null && S.tg === 'dept' ? '<button class="tbtn" type="button" data-do="dall" style="background:#fff;color:var(--ink);border:1px solid var(--line)">✕ Show all departments</button>' : '') + (S.tg === 'dept' ? '<button class="tbtn" type="button" data-do="new">+ New section</button>' : '') + '<div class="seg">' + [['dept', 'By department'], ['grp', 'By pay: sales · leaders · retail · store']].map(x => '<button data-s="tg" data-v="' + x[0] + '" class="' + (S.tg === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</div><input id="teQ" type="search" placeholder="Find a person…" value="' + esc(S.q) + '" autocomplete="off"><span class="hint">Click a photo to open the person. ' + (S.tg === 'dept' ? '<b>Drag a photo onto another department</b> to move them.' : 'Everybody is here: sales, leaders, retail wholesale, store and the rest.') + '</span><span class="te-msg' + (S.msgBad ? ' bad' : '') + '" id="teMsg">' + esc(S.msg) + '</span></div>'
       + reviewCard() + (S.tg === 'grp' ? dayCard() : '') + '<div id="teGroups">' + teamGroups() + '</div>'
       + '<div class="dock" id="teDock">' + dockInner() + '</div>';
   }
@@ -1037,7 +1056,7 @@ body.emb .tabs{display:none;}
     if (e.target.closest('[data-ball]')) { S.bAll = !!e.target.closest('[data-ball]').checked; const bx = $('billsBox'); if (bx) bx.innerHTML = billsInner(); return; }
     if (e.target.closest('[data-more]')) { S.bn += 300; const bx = $('billsBox'); if (bx) bx.innerHTML = billsInner(); return; }
     if (e.target.closest('[data-recount]')) { S.bills = null; render(); return; }
-    const act = e.target.closest('button[data-do]'); if (act && !['csv', 'closemonth', 'openmonth', 'showlog', 'engine'].includes(act.dataset.do)) { if (act.dataset.do === 'nc') { S.nc = !S.nc; render(); return; }
+    const act = e.target.closest('button[data-do]'); if (act && !['csv', 'closemonth', 'openmonth', 'showlog', 'engine'].includes(act.dataset.do)) { if (act.dataset.do === 'dall') { S.dOnly = null; render(); return; } if (act.dataset.do === 'nc') { S.nc = !S.nc; render(); return; }
       if (act.dataset.do === 'rvstart') { const nx = nextReview(0); if (nx) setupPopup(nx, { review: true }); return; }
       if (act.dataset.do === 'rvreset') { if (!confirm('Start again?\n\nEveryone goes back to red (not checked). Their pay setup stays as the suggestion, and you confirm each person one by one.')) return; api.post('budget.reset_review', {}).then(r => { S.msg = 'Fresh start: everyone is red again (' + (r.reset || 0) + ' were green).'; S.msgBad = false; return load(); }).catch(err => say((err && err.message) || 'Could not restart.', true)); return; } if (act.dataset.do === 'penadd') { penPopup(0, ''); return; } deptAction(act.dataset.do, Number(act.dataset.did || 0)); return; }
     const sm = e.target.closest('button[data-sal]'); if (sm) { S.salMode = sm.dataset.sal; try { localStorage.setItem('tb_salmode', S.salMode); } catch (x) {} load().catch(() => {}); return; }
@@ -1052,7 +1071,7 @@ body.emb .tabs{display:none;}
     const rj = e.target.closest('button[data-rejoin]'); if (rj) { if (!confirm('Rejoin ' + rj.dataset.nm + '?\n\nThey come back to every list and the budget. Their login works again. You will need to set their pay rules again.')) return; rj.disabled = true; api.post('employees.rejoin', { employee_id: Number(rj.dataset.rejoin) }).then(() => { S.msg = rj.dataset.nm + ' has rejoined.'; S.msgBad = false; return load(); }).catch(err => { rj.disabled = false; S.msg = (err && err.message) || 'Could not rejoin.'; S.msgBad = true; render(); }); return; }
     const stl = e.target.closest('button[data-settle]'); if (stl) { stl.disabled = true; api.post('budget.settle', { employee_id: Number(stl.dataset.settle), settled: stl.dataset.v === '1', amount: Number(stl.dataset.amt) || 0 }).then(() => { S.msg = stl.dataset.v === '1' ? 'Marked settled.' : 'Back to pending.'; S.msgBad = false; return load(); }).catch(err => { stl.disabled = false; S.msg = (err && err.message) || 'Could not save.'; S.msgBad = true; render(); }); return; }
     const dx = e.target.closest('[data-dayx]'); if (dx) { const x = dx.dataset.dayx.split('|'); api.post('budget.day_assign', { employee_id: Number(x[0]), day: x[1], grp: '' }).then(() => { S.msg = 'Taken back: that day counts as normal again.'; S.msgBad = false; return load(); }).catch(err => say((err && err.message) || 'Could not undo.', true)); return; }
-    const dz = e.target.closest('.dz[data-dept], .dz[data-pg], .dz[data-pgday]'); if (dz) { if (S.sel.size) { if (dz.dataset.pgday) dayAssign([...S.sel]); else if (dz.dataset.pg) regroup([...S.sel], dz.dataset.pg); else moveMany([...S.sel], Number(dz.dataset.dept)); } else { const m = $('teMsg'); if (m) { m.textContent = 'Drag a person here, or turn on Move mode and tick people first.'; m.className = 'te-msg'; } } return; }
+    const dz = e.target.closest('.dz[data-dept], .dz[data-pg], .dz[data-pgday]'); if (dz) { if (S.sel.size) { if (dz.dataset.pgday) dayAssign([...S.sel]); else if (dz.dataset.pg) regroup([...S.sel], dz.dataset.pg); else moveMany([...S.sel], Number(dz.dataset.dept)); } else if (dz.dataset.dept !== undefined && !dz.dataset.pg && !dz.dataset.pgday) { const id = Number(dz.dataset.dept); S.dOnly = S.dOnly === id ? null : id; render(); const g0 = $('teGroups'); if (g0) g0.scrollIntoView({ block: 'start', behavior: 'smooth' }); } else { const m = $('teMsg'); if (m) { m.textContent = 'Drag a person here, or turn on Move mode and tick people first.'; m.className = 'te-msg'; } } return; }
     const dm = e.target.closest('button[data-mm]'); if (dm) { S.mm = !S.mm; if (!S.mm) S.sel.clear(); render(); return; }
     if (e.target.closest('button[data-clr]')) { S.sel.clear(); render(); return; }
     const pk = e.target.closest('.st[data-emp]'); if (pk && S.mm) { const id = Number(pk.dataset.emp); S.sel.has(id) ? S.sel.delete(id) : S.sel.add(id); pk.classList.toggle('sel', S.sel.has(id)); const dk = $('teDock'); if (dk) dk.innerHTML = dockInner(); return; }
@@ -1102,6 +1121,40 @@ body.emb .tabs{display:none;}
     const ids = S.sel.has(dragId) ? [...S.sel] : [dragId]; dragId = 0; if (g.dataset.pgday) dayAssign(ids); else if (g.dataset.pg) regroup(ids, g.dataset.pg); else moveMany(ids, Number(g.dataset.dept));
   });
   tb.addEventListener('change', (e) => { if (e.target.id === 'dayPick') S.dayDate = e.target.value; });
+
+  /* quick search on top of Total Employees: type a name → pick → set the pay rule (or open the full card) */
+  let feItems = [], fePos = -1;
+  const feSearch = (raw) => {
+    const q = nk(raw); if (!q) return [];
+    const rank = (p) => { const n = nk(p.name); return n.startsWith(q) ? 0 : n.split(' ').some(w => w.startsWith(q)) ? 1 : n.includes(q) ? 2 : nk(p.role + ' ' + p.code + ' ' + (p.dept || '')).includes(q) ? 3 : 9; };
+    return S.M.people.map(p => [rank(p), p]).filter(x => x[0] < 9).sort((a, b) => a[0] - b[0] || a[1].name.localeCompare(b[1].name)).slice(0, 8).map(x => x[1]);
+  };
+  const feDraw = () => {
+    const box = $('teFindRes'), inp = $('teFind'); if (!box || !inp) return;
+    feItems = feSearch(inp.value);
+    if (!inp.value.trim()) { box.hidden = true; return; }
+    box.hidden = false;
+    box.innerHTML = feItems.length ? feItems.map((p, i) => {
+      const r = S.M.rowBy[p.id], pi = payInfo(r), tm = tmInfo(p.id), u = photoUrl(p.photo), dep = (S.M.depts.find(d => d.id === p.deptId) || {}).name || 'No department';
+      return '<div class="te-r' + (i === fePos ? ' on' : '') + '" data-fopen="' + p.id + '"><span class="av">' + (u ? '<img src="' + esc(u) + '" alt="" onerror="this.remove()">' : esc((p.name.trim()[0] || '?').toUpperCase())) + '</span>'
+        + '<span class="who"><b>' + esc(p.name) + '</b><small>' + esc(p.role || '—') + ' · ' + esc(dep) + '</small></span>'
+        + '<span><span class="pay ' + pi.c + '">' + esc(pi.t) + (pi.sub ? ' · ' + pi.sub : '') + '</span><span class="pay ' + tm.c + '">' + esc(tm.t) + '</span></span>'
+        + '<button type="button" class="go" data-setup="' + p.id + '">Set rule</button></div>';
+    }).join('') + '<div class="hint" style="padding:6px 10px">Click a name for the full card · “Set rule” opens pay + timing · Enter sets the first one</div>'
+      : '<div class="hint" style="padding:10px 12px">Nobody matches “' + esc(inp.value) + '”.</div>';
+  };
+  tb.addEventListener('input', (e) => { if (e.target.id === 'teFind') { fePos = -1; feDraw(); } });
+  tb.addEventListener('keydown', (e) => {
+    if (e.target.id !== 'teFind') return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); if (!feItems.length) return; fePos = (fePos + (e.key === 'ArrowDown' ? 1 : -1) + feItems.length) % feItems.length; feDraw(); }
+    else if (e.key === 'Enter') { e.preventDefault(); const p = feItems[fePos >= 0 ? fePos : 0]; if (p) { $('teFindRes').hidden = true; setupPopup(p.id, { after: () => load().catch(() => {}) }); } }
+    else if (e.key === 'Escape') { $('teFindRes').hidden = true; }
+  });
+  tb.addEventListener('click', (e) => {
+    const r = e.target.closest('.te-r[data-fopen]');
+    if (r && !e.target.closest('[data-setup]') && window.PersonCard) { $('teFindRes').hidden = true; PersonCard.open(Number(r.dataset.fopen), { onChange: () => load().catch(() => {}), paySetup: (id, done) => setupPopup(id, { after: done }), paySummary: (id) => paySummaryHtml(id) }); return; }
+    if (!e.target.closest('.te-find') && $('teFindRes')) $('teFindRes').hidden = true;
+  });
   tb.addEventListener('input', (e) => { if (e.target.id === 'xq') { S.xq = e.target.value; const xb = $('exBox'); if (xb) xb.innerHTML = exBody(); return; } if (e.target.id === 'bq') { S.bq = e.target.value; S.bn = 300; const bx = $('billsBox'); if (bx) bx.innerHTML = billsInner(); return; } if (e.target.id !== 'teQ') return; S.q = e.target.value; $('teGroups').innerHTML = teamGroups(); });
   $('mon').value = new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 7);
   $('mon').onchange = () => load().catch(err => { $('tb').innerHTML = '<div class="card"><div class="empty">' + esc(err.message) + '</div></div>'; });
