@@ -1299,7 +1299,7 @@ function st_bday_start(PDO $pdo): string
     $s = (string)setting_get($pdo, 'st_bday_start', ''); if ($s === '') { $s = '2026-11-08 00:00:00'; setting_set($pdo, 'st_bday_start', $s); }   // the day the owner started it (fixed, so a late first request cannot move it)
     return $v = $s;
 }
-function st_bday_defaults(): array { return ['enabled' => 1, 'send_before' => 0, 'valid_after' => 15, 'auto_wa' => 1]; }   // the gift goes out ON the birthday and stays valid 15 days
+function st_bday_defaults(): array { return ['enabled' => 1, 'send_before' => 1, 'valid_after' => 14, 'auto_wa' => 1]; }   // the gift goes out the day BEFORE the birthday and stays valid about 15 days in all
 function st_bday_cfg(PDO $pdo): array
 {
     $d = st_bday_defaults();
@@ -1340,6 +1340,9 @@ function st_bday_run(PDO $pdo, bool $send = true, ?int $now = null): array
     if (is_file(__DIR__ . '/cust_bday.php')) require_once __DIR__ . '/cust_bday.php';
     if ((string)setting_get($pdo, 'st_bday_v2', '') === '') {   // once: the owner's new rule - the gift goes on the birthday itself and stays valid 15 days
         setting_set($pdo, 'st_bday_v2', date('Y-m-d H:i:s')); $o0 = st_bday_cfg($pdo); st_bday_cfg_save($pdo, ['enabled' => $o0['enabled'], 'auto_wa' => 1, 'send_before' => 0, 'valid_after' => 15]);
+    }
+    if ((string)setting_get($pdo, 'st_bday_v3', '') === '') {   // once more: the owner wants the message the day BEFORE the birthday (valid until 14 days after it)
+        setting_set($pdo, 'st_bday_v3', date('Y-m-d H:i:s')); $o1 = st_bday_cfg($pdo); st_bday_cfg_save($pdo, ['enabled' => $o1['enabled'], 'auto_wa' => 1, 'send_before' => 1, 'valid_after' => 14]);
     }
     $cfg = st_bday_cfg($pdo); $out = ['made' => 0, 'sent' => 0, 'failed' => 0, 'waiting' => 0, 'off' => !$cfg['enabled']];
     if (!$cfg['enabled']) return $out;
@@ -1417,7 +1420,7 @@ function st_bday_send(PDO $pdo, array $v): array
 /** The wording the cashier sends BY HAND (web.whatsapp) and its optional photo. {name} {code} {birthday} {from} {till} are filled in for each customer by the screen. */
 function st_bday_msg_default(): string
 {
-    return "Happy Birthday {name}! 🎂🎉 TM Perfume House has a FREE 50 ml perfume gift for you. Your gift code is {code}. Collect it from our store any time between {from} and {till}, or use it online on any order above ₹1,500. Just tell us which perfume you would like 💖";
+    return "Hello {name}! 🎂 Your birthday is on {birthday}, and TM Perfume House has a FREE 50 ml perfume gift for you. Collect it from our store any time between {from} and {till} by showing this code: {code}. Happy birthday in advance! 💖";   // the STORE message (said by hand); the online customers get their own automatic message
 }
 function st_bday_msg(PDO $pdo, bool $withPhoto = false): array
 {
