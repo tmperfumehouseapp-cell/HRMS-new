@@ -204,6 +204,18 @@ function wa_numbers_sync(PDO $pdo): void
     $pdo->prepare("UPDATE wa_numbers SET label = 'Main number' WHERE id = ? AND label = ''")->execute([$id]);
 }
 function wa_number_row(PDO $pdo, int $id): ?array { $q = $pdo->prepare("SELECT * FROM wa_numbers WHERE id = ?"); $q->execute([$id]); $r = $q->fetch(); return $r ?: null; }
+/** Which WhatsApp Business Account holds this Phone number ID? Looks only in the accounts the HRMS already knows (the ones saved on other numbers + WA_WABA_ID), asking Meta for each account's phone numbers. '' = not found. */
+function wa_find_waba(PDO $pdo, string $phoneId): string
+{
+    $cands = [];
+    foreach ($pdo->query("SELECT DISTINCT waba_id FROM wa_numbers WHERE waba_id <> ''")->fetchAll() as $r) $cands[(string)$r['waba_id']] = 1;
+    $cfg = wa_cfg_val('WA_WABA_ID'); if ($cfg !== '') $cands[$cfg] = 1;
+    foreach (array_keys($cands) as $w) {
+        [$c, $d] = wa_api('GET', '/' . $w . '/phone_numbers?fields=id&limit=100');
+        if ($c >= 200 && $c < 300 && is_array($d)) foreach ((array)($d['data'] ?? []) as $x) if ((string)($x['id'] ?? '') === $phoneId) return $w;
+    }
+    return '';
+}
 function wa_waba_of(array $n): string { return trim((string)($n['waba_id'] ?? '')) !== '' ? trim((string)$n['waba_id']) : wa_cfg_val('WA_WABA_ID'); }
 /** Asks Meta about one number (name approval, quality, status) and whether its WhatsApp account is connected to the webhook. */
 function wa_number_check(array $n): array
@@ -723,7 +735,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo)\./', $__wa)) {
             $nid = (int)(json_input()['id'] ?? 0); $nr = $nid > 0 ? wa_number_row($pdo, $nid) : null;
             $wb = $nr ? wa_waba_of($nr) : wa_cfg_val('WA_WABA_ID'); if ($wb === '') json_response(['error' => 'No WhatsApp Business Account ID — set WA_WABA_ID in config.php or fill it for this number.'], 422);
             [$c, $d] = wa_api('POST', '/' . $wb . '/subscribed_apps', []);
-            if ($c < 200 || $c >= 300) { $e = wa_err($d); wa_log($pdo, 'subscribe', false, $e); json_response(['error' => $e], 502); }
+            if ($c < 200 || $c >= 300) { $e = wa_err($d); wa_log($pdo, 'subscribe', false, $e); if ($nr && ($wb === (string)$nr['phone_id'] || stripos($e, 'nonexisting field') !== false || stripos($e, 'does not exist') !== false)) $e = 'The WhatsApp Business Account ID saved for this number (' . $wb . ') is not an account. Fix the second box: it must be the account ID from Meta (Business settings → Messaging accounts), not the Phone number ID. (Meta said: ' . mb_substr($e, 0, 120) . ')'; json_response(['error' => $e], 502); }
             wa_log($pdo, 'subscribe', true, 'This WhatsApp account is now connected to the webhook.'); json_response(['ok' => true, 'message' => 'Connected. Messages to this number now reach the HRMS.']);
         }
         case 'wa.register': {
@@ -740,10 +752,14 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo)\./', $__wa)) {
             $in = json_input(); $id = (int)($in['id'] ?? 0); $label = trim(mb_substr((string)($in['label'] ?? ''), 0, 60)); $panel = trim(mb_substr((string)($in['panel'] ?? ''), 0, 20));
             $pid = preg_replace('/\D+/', '', (string)($in['phone_id'] ?? '')); $wb = preg_replace('/\D+/', '', (string)($in['waba_id'] ?? ''));
             if ($id > 0) {
-                if (!wa_number_row($pdo, $id)) json_response(['error' => 'Number not found.'], 404);
+                $cur = wa_number_row($pdo, $id); if (!$cur) json_response(['error' => 'Number not found.'], 404);
+                if ($wb !== '' && $wb === (string)$cur['phone_id']) json_response(['error' => 'The WhatsApp Business Account ID cannot be the same as the Phone number ID. Use the account ID from Meta (Business settings → Messaging accounts → the long ID under the account name).'], 422);
+                if ($wb === '') $wb = wa_find_waba($pdo, (string)$cur['phone_id']);
                 $pdo->prepare("UPDATE wa_numbers SET label = ?, panel = ?, waba_id = ? WHERE id = ?")->execute([$label, $panel, $wb, $id]);   // the Phone number ID of a saved number never changes
             } else {
                 if (strlen($pid) < 8 || strlen($pid) > 20) json_response(['error' => 'Paste the Phone number ID from Meta (digits only, about 15 long) — not the phone number itself.'], 422);
+                if ($wb !== '' && $wb === $pid) json_response(['error' => 'The WhatsApp Business Account ID is the same as the Phone number ID — they are two different numbers. The account ID is the one shown under the account name in Meta (Business settings → Messaging accounts). Leave that box empty and the HRMS will try to find the account by itself.'], 422);
+                if ($wb === '') $wb = wa_find_waba($pdo, $pid);   // not typed: find the account among the ones already known
                 $q = $pdo->prepare("SELECT id FROM wa_numbers WHERE phone_id = ?"); $q->execute([$pid]); if ($q->fetch()) json_response(['error' => 'This number is already in the list.'], 422);
                 if ($label === '') json_response(['error' => 'Give the number a name, e.g. “TM Perfume House One”.'], 422);
                 $pdo->prepare("INSERT INTO wa_numbers (phone_id, label, panel, waba_id, created_at) VALUES (?, ?, ?, ?, ?)")->execute([$pid, $label, $panel, $wb, date('Y-m-d H:i:s')]); $id = (int)$pdo->lastInsertId();
