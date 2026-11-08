@@ -226,7 +226,7 @@
     const S = { sort: '', flt: [], admin, scope: admin ? 'unassigned' : 'mine', src: '', q: '', emp: 0, chats: [], counts: {}, sel: '', cur: null, people: [], quick: [], busyList: false, lastMsgId: 0, tagFor: '', files: [], sug: {}, sugBusy: false, tsug: {}, fu: null, fuOpen: {}, fuEdit: false, fuBusy: false };
     const root = $(opts.root || 'wi'); root.className = 'wi ' + (admin ? 'admin' : 'mine') + (opts.one ? ' one' : '');
     const tellParent = (m) => { if (opts.one && window.parent !== window) { try { window.parent.postMessage(Object.assign({ wa: '' }, m), location.origin); } catch (e) { } } };   // wa_one.html: the side panel around this chat
-    const st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st);
+    const st = document.createElement('style'); st.textContent = CSS + '.wi-new{display:inline-block;width:12px;height:12px;border-radius:50%;background:#22c55e;margin-right:6px;vertical-align:-1px;box-shadow:0 0 0 0 rgba(34,197,94,.55);animation:winew 1.6s infinite}@keyframes winew{0%{box-shadow:0 0 0 0 rgba(34,197,94,.55)}70%{box-shadow:0 0 0 8px rgba(34,197,94,0)}100%{box-shadow:0 0 0 0 rgba(34,197,94,0)}}'; document.head.appendChild(st);
     const tabs = admin ? [['unassigned', '🙋 Requests'], ['all', 'All open'], ['closed', 'Closed']] : [['mine', 'Open'], ['closed', 'Closed']];
     root.innerHTML = `
       <div class="wi-kpi" id="wiK"></div>
@@ -290,7 +290,7 @@
       const en = S.emp && $('wiE') ? (($('wiE').selectedOptions[0] || {}).text || '').replace(/ \(absent\)$/, '') : '', fn = en.split(' ')[0];
       const tgb = admin && S.emp ? `<div class="wi-tgb"><button type="button" data-tg="0" class="${S.empTag ? '' : 'on'}">Now with ${esc(fn)}${S.counts.emp_now != null ? ' (' + S.counts.emp_now + ')' : ''}</button><button type="button" data-tg="1" class="${S.empTag ? 'on' : ''}">🏷 ${esc(fn)}'s tag — all${S.counts.emp_tag != null ? ' (' + S.counts.emp_tag + ')' : ''}</button></div>` : '';
       L.innerHTML = tgb + bkBarHtml() + (admin ? '' : lg) + grab + rows.map((c) => { const un = c.unread && c.phone !== S.sel, bs = S.bulk.on && S.bulk.set.has(c.phone); return `<div class="wi-it ${c.phone === S.sel && !S.bulk.on ? 'sel' : ''} ${bs ? 'bsel' : ''} ${c.waiting ? 'wait' : ''} ${un ? 'unr' : ''} ${c.heat ? 'h-' + c.heat : ''}" data-p="${esc(c.phone)}">${S.bulk.on ? '<span class="wi-ck ' + (bs ? 'on' : '') + '"></span>' : ''}${av(c)}<div class="wi-bd">
-          <div class="n"><span>${esc(title(c))}</span><span class="t">${c.waiting ? '● ' : ''}${esc(stamp(c.last_msg_at || c.last_at))}</span></div>
+          <div class="n"><span>${esc(title(c))}</span><span class="t">${!admin && c.fresh_agent ? '<span class="wi-new" title="New for you — it stays until you reply"></span>' : ''}${c.waiting ? '● ' : ''}${esc(stamp(c.last_msg_at || c.last_at))}</span></div>
           <div class="m2"><span class="m">${esc(c.preview || '')}</span>${un ? `<span class="wi-un">${c.unread > 9 ? '9+' : c.unread}</span>` : ''}</div><div class="pl">${pills(c)}</div></div></div>`; }).join('');
       L.querySelectorAll('.wi-it').forEach((el) => { el.onclick = () => (S.bulk.on ? bkToggle(el.dataset.p) : openChat(el.dataset.p)); }); bkWire(L);
       L.querySelectorAll('[data-tg]').forEach((b) => { b.onclick = () => { S.empTag = b.dataset.tg === '1'; loadList(); }; });
