@@ -1073,7 +1073,7 @@ function st_customer_lookup(PDO $pdo, string $phone, int $exceptBill = 0): array
         if ($rows) {
             $r['returning'] = true; $r['source'] = 'store'; $r['visits'] = count(array_unique(array_column($rows, 'bill_id'))); $r['last_visit'] = $rows[0]['created_at'];
             foreach ($rows as $x) if (trim((string)$x['name']) !== '') { $r['name'] = $x['name']; break; }
-            foreach ($rows as $x) if (!empty($x['bday'])) { $r['bday'] = (string)$x['bday']; break; }
+            $bs0 = st_bday_start($pdo); foreach ($rows as $x) if (!empty($x['bday']) && (string)$x['created_at'] >= $bs0) { $r['bday'] = (string)$x['bday']; break; }   // a birthday told before the feature started is not used: it is asked again
             $ids = implode(',', array_map('intval', array_column($rows, 'person_id')));
             foreach ($pdo->query("SELECT DISTINCT kind FROM st_bill_events WHERE person_id IN ($ids) AND kind IN ('contact','community','review')")->fetchAll() as $e) $r['done'][$e['kind']] = true;
         }
@@ -1265,7 +1265,7 @@ function st_birthdays(PDO $pdo, int $days = 14): array
 {
     $out = [];
     try {
-        $rows = $pdo->query("SELECT p.phone, p.name, p.bday, MAX(b.created_at) last FROM st_bill_people p JOIN st_bills b ON b.bill_id = p.bill_id AND b.status = 'ok' WHERE p.bday <> '' AND p.declined = 0 GROUP BY p.phone, p.name, p.bday")->fetchAll();
+        $rq = $pdo->prepare("SELECT p.phone, p.name, p.bday, MAX(b.created_at) last FROM st_bill_people p JOIN st_bills b ON b.bill_id = p.bill_id AND b.status = 'ok' WHERE p.bday <> '' AND p.declined = 0 AND b.created_at >= ? GROUP BY p.phone, p.name, p.bday"); $rq->execute([st_bday_start($pdo)]); $rows = $rq->fetchAll();   // only birthdays told since the feature started
         if (is_file(__DIR__ . '/cust_bday.php')) require_once __DIR__ . '/cust_bday.php'; if (function_exists('cbd_all')) foreach (cbd_all($pdo) as $cb) $rows[] = ['phone' => $cb['phone'], 'name' => $cb['name'], 'bday' => $cb['bday'], 'last' => $cb['last']];   // 🎂 birthdays collected when an order was made
         $seen = []; $today = strtotime(date('Y-m-d'));
         foreach ($rows as $r) {
@@ -1292,6 +1292,13 @@ function st_gift_given(PDO $pdo, string $phone, int $year): bool
 
 /* ============================== BIRTHDAY GIFT: a WhatsApp code N days before the birthday, redeemed at billing for one free 50 ml ============================== */
 
+/** The day the birthday feature started ("from now on"): only birthdays told at or after it count. */
+function st_bday_start(PDO $pdo): string
+{
+    static $v = null; if ($v !== null) return $v;
+    $s = (string)setting_get($pdo, 'st_bday_start', ''); if ($s === '') { $s = '2026-11-08 00:00:00'; setting_set($pdo, 'st_bday_start', $s); }   // the day the owner started it (fixed, so a late first request cannot move it)
+    return $v = $s;
+}
 function st_bday_defaults(): array { return ['enabled' => 1, 'send_before' => 0, 'valid_after' => 15, 'auto_wa' => 1]; }   // the gift goes out ON the birthday and stays valid 15 days
 function st_bday_cfg(PDO $pdo): array
 {
@@ -1337,7 +1344,9 @@ function st_bday_run(PDO $pdo, bool $send = true, ?int $now = null): array
     $cfg = st_bday_cfg($pdo); $out = ['made' => 0, 'sent' => 0, 'failed' => 0, 'waiting' => 0, 'off' => !$cfg['enabled']];
     if (!$cfg['enabled']) return $out;
     $today = strtotime(date('Y-m-d', $now ?? time())); $seen = [];
-    $rows = $pdo->query("SELECT p.phone, p.name, p.bday FROM st_bill_people p JOIN st_bills b ON b.bill_id = p.bill_id AND b.status = 'ok' WHERE p.bday <> '' AND p.declined = 0 AND p.phone <> '' ORDER BY b.created_at DESC, p.person_id DESC")->fetchAll();
+    $start = st_bday_start($pdo);   // the feature starts now: birthdays told before it are not used, and codes made before it that were never sent are cancelled (codes already sent stay valid)
+    $pdo->prepare("UPDATE st_bday_vouchers SET status = 'cancelled', wa_note = 'Before the new birthday rule started' WHERE status = 'active' AND wa_status IN ('pending','failed','queued') AND created_at < ?")->execute([$start]);
+    $rq = $pdo->prepare("SELECT p.phone, p.name, p.bday FROM st_bill_people p JOIN st_bills b ON b.bill_id = p.bill_id AND b.status = 'ok' WHERE p.bday <> '' AND p.declined = 0 AND p.phone <> '' AND b.created_at >= ? ORDER BY b.created_at DESC, p.person_id DESC"); $rq->execute([$start]); $rows = $rq->fetchAll();
     if (st_wa_load() && !function_exists('wo_cfg') && is_file(__DIR__ . '/wa_orders.php')) { try { require_once __DIR__ . '/wa_orders.php'; } catch (Throwable $e) { error_log('st_bday_run wa_orders: ' . $e->getMessage()); } }   // the automatic-message queue
     $online = []; if (function_exists('cbd_all')) foreach (cbd_all($pdo) as $cb) { $online[(string)$cb['phone']] = 1; $rows[] = ['phone' => $cb['phone'], 'name' => $cb['name'], 'bday' => $cb['bday']]; }   // 🎂 birthdays collected at ordering: these customers get the message by themselves
     $ins = $pdo->prepare("INSERT IGNORE INTO st_bday_vouchers (code, phone, name, bday, bday_year, valid_from, valid_to, status, wa_status, created_at) VALUES (?,?,?,?,?,?,?, 'active', 'pending', ?)");

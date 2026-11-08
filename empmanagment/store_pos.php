@@ -837,7 +837,8 @@ try {
             $onl = []; if (function_exists('cbd_all')) foreach (cbd_all($pdo) as $cb) $onl[(string)$cb['phone']] = 1;
             $rows = array_map(function ($v) use ($onl) { $r = st_bday_public($v); $r['online'] = isset($onl[(string)$v['phone']]); return $r; }, $pdo->query("SELECT * FROM st_bday_vouchers ORDER BY (status = 'active') DESC, valid_to ASC, voucher_id DESC LIMIT 100")->fetchAll());
             $tpl = st_wa_status($pdo)['templates']['tmph_store_bday'] ?? ['status' => 'missing', 'reason' => ''];
-            $known = (int)$pdo->query("SELECT COUNT(DISTINCT phone) FROM st_bill_people WHERE bday <> '' AND declined = 0 AND phone <> ''")->fetchColumn();
+            $kq = $pdo->prepare("SELECT COUNT(DISTINCT p.phone) FROM st_bill_people p JOIN st_bills b ON b.bill_id = p.bill_id AND b.status = 'ok' WHERE p.bday <> '' AND p.declined = 0 AND p.phone <> '' AND b.created_at >= ?"); $kq->execute([st_bday_start($pdo)]); $known = (int)$kq->fetchColumn();
+            if (function_exists('cbd_all')) { $k2 = []; foreach (cbd_all($pdo) as $cb) $k2[(string)$cb['phone']] = 1; $known += count($k2); }   // + birthdays asked when an order was made
             json_response(['msg' => st_bday_msg($pdo), 'cfg' => $cfg, 'vouchers' => $rows, 'template' => $tpl, 'customers_with_birthday' => $known, 'can_manage' => in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true) || user_can($auth, 'rs_manage')]);
             break;
         }
