@@ -1063,7 +1063,7 @@
       loadTeamSheet(from, to);
       const data = await api.get('shopify.orders', { date_from: from, date_to: to, store });
       if (reqId !== ordersReqId) return;
-      const orders = data.orders || [];   // MySales and MySales 4P both count in the collection
+      const orders = (data.orders || []).filter(o => o.store_key !== 'mysales4p');   // MySales 4P is not shown or counted here
       (data.errors || []).forEach(e => showAlert(e, 'error'));
       render(orders);
       renderEmpZero(data.scope, orders);
