@@ -19,7 +19,11 @@
   .wi.one .wi-col.side{display:none;}
   .wi.one.det .wi-col.side{display:flex; position:fixed; inset:0; z-index:50; background:#fff; overflow-y:auto;}
   .wi.one .wi-head .wi-more.wi-pc{display:inline-flex !important;}
+  /* 🌙 same dark mode as the WhatsApp PC page (whatsapp.html keeps the choice in localStorage 'wa_pc_dark'): this chat is shown inside it, so it must turn dark too */
+  html.wapcdk{filter:invert(.92) hue-rotate(180deg); background:#111;}
+  html.wapcdk img,html.wapcdk video,html.wapcdk canvas,html.wapcdk iframe,html.wapcdk [style*="background-image"],html.wapcdk .wi-av img{filter:invert(1) hue-rotate(180deg);}
 </style>
+<script>try { if (localStorage.getItem('wa_pc_dark') === '1') document.documentElement.classList.add('wapcdk'); } catch (e) { } window.addEventListener('storage', function (e) { if (e.key === 'wa_pc_dark') document.documentElement.classList.toggle('wapcdk', e.newValue === '1'); });</script>
 </head>
 <body>
 <div id="wi"></div>
