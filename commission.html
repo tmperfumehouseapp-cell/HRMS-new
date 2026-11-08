@@ -271,16 +271,17 @@
 
   // ---------- Business-day timing (Admin: Targets → Day timing) ----------
   // A day runs from its start time (default 10:00) to the next day's start, so "Today" is the day running now.
-  let DAY_START = ['10:00', '10:00', '10:00', '10:00', '10:00', '10:00', '10:00'];
+  let DAY_START = ['10:00', '10:00', '10:00', '10:00', '10:00', '10:00', '10:00'], DAY_OV = {};
+  const dsOn = (d) => DAY_OV[d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')] || DAY_START[d.getDay()];   // a date-specific start (e.g. 12 PM for 8–15 Nov) beats the weekday one
   // The rule lists do not depend on the date, so they start loading right away — in parallel with the day timing and the orders.
   const PRE = { rules: api.get('commission_rules.list'), codeList: api.get('commission_rules.code_list'), manual: api.get('commission_rules.manual_list'), slab: api.get('ml_slab.get'), flash: api.get('flash_offer.get') };
   Object.keys(PRE).forEach((k) => PRE[k].catch(() => {}));
-  const timingReady = api.get('day_timing.get').then((d) => { if (Array.isArray(d.start) && d.start.length === 7) DAY_START = d.start; }).catch(() => {});
+  const timingReady = api.get('day_timing.get').then((d) => { if (Array.isArray(d.start) && d.start.length === 7) DAY_START = d.start; if (d.overrides) DAY_OV = d.overrides; }).catch(() => {});
   const ymd = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   function bizDayOf(dt) {
     const d = new Date(dt);
     const hm = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
-    if (hm < DAY_START[d.getDay()]) d.setDate(d.getDate() - 1);
+    if (hm < dsOn(d)) d.setDate(d.getDate() - 1);
     return ymd(d);
   }
   const fmtHM = (t) => { const [h, m] = t.split(':').map(Number); return `${((h + 11) % 12) + 1}${m ? ':' + String(m).padStart(2, '0') : ''} ${h >= 12 ? 'PM' : 'AM'}`; };

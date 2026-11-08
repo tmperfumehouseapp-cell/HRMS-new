@@ -293,12 +293,13 @@
   // ---------- Business-day timing (Admin: Targets → Day timing) ----------
   // Start time per weekday [Sun..Sat], default 10:00. A business day runs
   // from its start until the next day's start. Loaded once per page.
-  let DAY_START = ['10:00', '10:00', '10:00', '10:00', '10:00', '10:00', '10:00'];
-  const timingReady = api.get('day_timing.get').then(d => { if (Array.isArray(d.start) && d.start.length === 7) DAY_START = d.start; }).catch(() => {});
+  let DAY_START = ['10:00', '10:00', '10:00', '10:00', '10:00', '10:00', '10:00'], DAY_OV = {};
+  const dsOn = (d) => DAY_OV[d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')] || DAY_START[d.getDay()];   // a date-specific start (e.g. 12 PM for 8–15 Nov) beats the weekday one
+  const timingReady = api.get('day_timing.get').then(d => { if (Array.isArray(d.start) && d.start.length === 7) DAY_START = d.start; if (d.overrides) DAY_OV = d.overrides; }).catch(() => {});
   function bizDayOf(dt) {           // Date -> 'YYYY-MM-DD'
     const d = new Date(dt);
     const hm = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
-    if (hm < DAY_START[d.getDay()]) d.setDate(d.getDate() - 1);
+    if (hm < dsOn(d)) d.setDate(d.getDate() - 1);
     return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   }
   const fmtHM = (t) => { const [h, m] = t.split(':').map(Number); return `${((h + 11) % 12) + 1}${m ? ':' + String(m).padStart(2, '0') : ''} ${h >= 12 ? 'PM' : 'AM'}`; };

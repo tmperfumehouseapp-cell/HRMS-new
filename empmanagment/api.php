@@ -1305,7 +1305,19 @@ function day_timing_get(PDO $pdo): array
 /** Start-of-day time for a calendar date, 'HH:MM'. */
 function day_start_for(PDO $pdo, string $date): string
 {
+    $ov = day_timing_overrides($pdo);
+    if (isset($ov[$date])) return $ov[$date];
     return day_timing_get($pdo)[(int)date('w', strtotime($date))];
+}
+/** Date-specific start times that beat the weekday ones: ['2026-11-08' => '12:00', ...]. Owner (8 Nov): 8–15 Nov the business day runs 12 PM → next day 12 PM
+ *  (the 16th is listed too, so the 15th ends at 12 PM on the 16th). Setting 'day_timing_overrides' (JSON) replaces this list when it is saved. */
+function day_timing_overrides(PDO $pdo): array
+{
+    static $ov = null; if ($ov !== null) return $ov;
+    $ov = [];
+    for ($d = strtotime('2026-11-08'); $d <= strtotime('2026-11-16'); $d += 86400) $ov[date('Y-m-d', $d)] = '12:00';
+    try { $raw = (string)setting_get($pdo, 'day_timing_overrides', ''); if ($raw !== '') { $j = json_decode($raw, true); if (is_array($j)) { $ov = []; foreach ($j as $k => $v) if (preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$k) && preg_match('/^\d{2}:\d{2}$/', (string)$v)) $ov[(string)$k] = (string)$v; } } } catch (Throwable $e) { }
+    return $ov;
 }
 /** Business day a moment (local time, 'Y-m-d H:i:s' or a timestamp) belongs to. */
 function biz_day_of(PDO $pdo, $when): string
@@ -29141,7 +29153,7 @@ switch ($action) {
 
     case 'day_timing.get': {
         require_auth();
-        json_response(['start' => day_timing_get($pdo)]);
+        json_response(['start' => day_timing_get($pdo), 'overrides' => (object)day_timing_overrides($pdo)]);
         break;
     }
 
