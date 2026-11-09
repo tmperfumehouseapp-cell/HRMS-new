@@ -18495,6 +18495,24 @@ if ($action !== 'login' && $action !== '') { try { retail_due_pass($pdo); } catc
 // Store perfumes from Shopify, once a day by itself (first request after 5 AM; syncs after the answer is out; retries every 30 min if it failed).
 if ($action !== 'login' && $action !== '') { try { require_once __DIR__ . '/store_lib.php'; st_daily_sync($pdo); st_bday_daily($pdo); } catch (Throwable $e) {} }
 
+// Campaign heartbeat: while a WhatsApp campaign is running, any request from the HRMS wakes the sending engine (at most every 30 seconds), so campaigns never wait for a cron job or an open Campaigns page.
+if ($action !== 'login' && $action !== '' && strpos((string)$action, 'wa.cron') !== 0 && function_exists('curl_init')) {
+    try {
+        $hbAt = (int)setting_get($pdo, 'wa_hb_at', '0');
+        if ($hbAt < time() - 30) {
+            $hbRun = false; try { $hbRun = (bool)$pdo->query("SELECT 1 FROM wa_campaigns WHERE status = 'running' LIMIT 1")->fetchColumn(); } catch (Throwable $e) { }
+            if ($hbRun) {
+                setting_set($pdo, 'wa_hb_at', (string)time());
+                $hbKey = (string)setting_get($pdo, 'wa_cron_key', ''); if ($hbKey === '') { $hbKey = bin2hex(random_bytes(16)); setting_set($pdo, 'wa_cron_key', $hbKey); }
+                $hbHost = (string)($_SERVER['HTTP_HOST'] ?? ''); if ($hbHost !== '') {
+                    $hbUrl = ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https://' : 'http://') . $hbHost . rtrim(dirname((string)($_SERVER['SCRIPT_NAME'] ?? '/empmanagment/api.php')), '/') . '/api.php?action=wa.cron&key=' . urlencode($hbKey);
+                    $hbCh = curl_init($hbUrl); curl_setopt_array($hbCh, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT_MS => 400, CURLOPT_CONNECTTIMEOUT_MS => 300, CURLOPT_NOSIGNAL => true]); @curl_exec($hbCh); curl_close($hbCh);   // fire and forget: the engine finishes on its own
+                }
+            }
+        }
+    } catch (Throwable $e) { }
+}
+
 // Daily copy of everything the bot has learned (Learn & Setup → Backups): when the last copy is older than 24 hours it is made right after the response is sent.
 if ($action !== 'login' && $action !== '') { try { $__lbl = __DIR__ . '/learn_backups/.last'; if (!is_file($__lbl) || filemtime($__lbl) < time() - 86400) { require_once __DIR__ . '/learn_backup.php'; lb_schedule($pdo); } } catch (Throwable $e) {} }
 

@@ -484,7 +484,7 @@ function wa_camp_auto_cap(PDO $pdo, int $tier, array $health): array
     foreach ($hq as $nid => $h) if (($h['status'] ?? '') !== '' && $h['status'] !== 'CONNECTED') unset($hq[$nid]);   // a number that cannot send (pending at Meta / switched off for campaigns) is not listed
     if (($A['hour'] ?? '') !== $hour) {
         $from = date('Y-m-d H:i:s', time() - 7200); $to = date('Y-m-d H:i:s', time() - 3600); $st = [];
-        try { $q = $pdo->prepare("SELECT number_id, status, COUNT(*) AS c FROM wa_messages WHERE dir = 'out' AND who = 'campaign' AND ts >= ? AND ts < ? AND err_code NOT IN (131049, 131026, 130472) GROUP BY number_id, status"); $q->execute([$from, $to]);
+        try { $q = $pdo->prepare("SELECT number_id, status, COUNT(*) AS c FROM wa_messages WHERE dir = 'out' AND who = 'campaign' AND ts >= ? AND ts < ? AND err_code NOT IN (131049, 131026, 130472, 131042, 131031) GROUP BY number_id, status"); $q->execute([$from, $to]);
             foreach ($q->fetchAll() as $r) { $nid = (int)$r['number_id']; $st[$nid] = $st[$nid] ?? [0, 0, 0]; $c = (int)$r['c']; $st[$nid][0] += $c; if (in_array($r['status'], ['delivered', 'read'], true)) $st[$nid][1] += $c; if ($r['status'] === 'failed') $st[$nid][2] += $c; } } catch (Throwable $e) { }
         foreach ($hq as $nid => $h) {
             if (($h['status'] ?? '') !== '' && $h['status'] !== 'CONNECTED') continue;
@@ -582,6 +582,7 @@ $__wm = (string)($action ?? ($_GET['action'] ?? ''));
 if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.num_photo', 'wa.num_set', 'wa.team', 'wa.team_save', 'wa.callnow', 'wa.callnow_done', 'wa.suggest', 'wa.contacts', 'wa.contact_import', 'wa.contact_fix', 'wa.cron', 'wa.alloc_why', 'wa.alloc_run'], true)) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     if ($__wm === 'wa.cron') {   // Hostinger cron: no login, a secret key instead
+        ignore_user_abort(true); @set_time_limit(180);   // the caller may hang up (the heartbeat does): the run still finishes
         if (!wa_tables($pdo) || !wa_more_tables($pdo)) json_response(['error' => 'storage'], 500);
         $key = (string)setting_get($pdo, 'wa_cron_key', ''); if ($key === '' || !hash_equals($key, (string)($_GET['key'] ?? ''))) json_response(['error' => 'Wrong key.'], 403);
         // speed indexes, added ONCE by the cron (never inside someone's page request): template counts, the call-now scan, per-customer

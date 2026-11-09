@@ -568,6 +568,7 @@ function wa_camp_tick(PDO $pdo): array
         $dueN = (int)$pdo->query("SELECT COUNT(*) FROM wa_camp_items WHERE camp_id = $id AND $due")->fetchColumn();
         if ($dueN === 0) { $pdo->prepare("UPDATE wa_campaigns SET last_tick = ?, note = '' WHERE id = ?")->execute([$now, $id]); $res[$id] = ['sent' => 0, 'failed' => 0, 'skipped' => 0, 'stop' => '']; continue; }
         $push = wa_camp_push((string)$c['push']); $rate = (int)$c['rate'] * $push['mult']; if ($c['win_end']) { $left = max(1, (strtotime((string)$c['win_end']) - $nowTs) / 60); $rate = (int)ceil($rem / $left); }
+        if (!$c['win_end'] && (int)$c['own_hour'] !== 1 && !empty($c['started_at'])) { $tm = (int)setting_get($pdo, 'wa_camp_target_min', '6'); if ($tm > 0) { $leftMin = max(1.0, $tm - ($nowTs - strtotime((string)$c['started_at'])) / 60); $rate = max($rate, (int)ceil($rem / $leftMin)); } }   // "everyone together" campaigns aim to be finished about 6 minutes after the start (setting wa_camp_target_min; 0 = use the slow speed)
         $el = $c['last_tick'] ? min(5, max(0.5, ($nowTs - strtotime((string)$c['last_tick'])) / 60)) : 1; $quota = min(1500, max(1, (int)ceil($rate * $el)));
         // one panel for all numbers: the message (or an approved alternative version of it) must be approved on a number's WhatsApp account for that number to send
         $by = []; foreach ((array)$t['ok_wabas'] as $wb) $by[(string)$wb] = $t;
@@ -604,7 +605,7 @@ function wa_camp_tick(PDO $pdo): array
             foreach ($pdo->query("SELECT number_id, COUNT(*) AS n FROM wa_camp_items WHERE camp_id = $id AND status = 'sent' GROUP BY number_id")->fetchAll() as $nr) $ctx['wsent'][(int)$nr['number_id']] = (int)$nr['n']; }
         $resolveM = function (array $tm, array $ct, array $it, int $iid) use ($pdo, $specs, &$usedPieces) { return wa_camp_resolve_vars($pdo, (int)$tm['nvars'], $specs, $ct, (string)($it['name'] ?: $ct['name']), $iid, $usedPieces); };
         while ($sent + $failed + $skipped < $quota && microtime(true) - $t0 < 42 && !$stop) {
-            $take = min(25, $quota - ($sent + $failed + $skipped));
+            $take = min(40, $quota - ($sent + $failed + $skipped));
             $pick = $pdo->query("SELECT id, status FROM wa_camp_items WHERE camp_id = $id AND $due ORDER BY id LIMIT $take")->fetchAll(); if (!$pick) break;
             if ($mixOn) {   // per batch (not per person): who can carry the utility version right now - a number whose utility version was just approved joins at once, a re-labelled one drops out at once
                 $plan = wa_mix_plan($pdo, $c, $ctx['nums'], $rem, $plan, false, $env); $ctx['u_nums'] = array_keys(array_filter($plan['per_number'], fn($p) => !empty($p['u']) && (int)$p['share'] > 0));
@@ -996,7 +997,7 @@ if (in_array($__wk, ['wa.fu_list', 'wa.fu_save', 'wa.fu_del', 'wa.fu_preset', 'w
             $rate = max(1, min(1500, (int)($in['rate'] ?? 60))); $win = trim((string)($in['win_end'] ?? '')); $win = $win !== '' && strtotime($win) ? date('Y-m-d H:i:s', strtotime($win)) : null; $start = trim((string)($in['start_at'] ?? '')); $start = $start !== '' && strtotime($start) ? date('Y-m-d H:i:s', strtotime($start)) : null;
             $push = in_array((string)($in['push'] ?? ''), ['careful', 'normal', 'aggressive', 'very'], true) ? (string)$in['push'] : 'normal';
             $freq = isset($in['push']) ? wa_camp_push($push)['freq'] : max(0, min(60, (int)($in['freq_days'] ?? 3))); $sw = max(1, min(5, (int)($in['switch_after'] ?? 2)));
-            $retry = !array_key_exists('retry', $in) || !empty($in['retry']) ? 1 : 0; $own = !empty($in['own_hour']) ? 1 : 0; $defH = max(0, min(23, (int)($in['def_hour'] ?? 19))); $folder = preg_replace('/[^a-z0-9_]/', '', strtolower((string)($in['media_folder'] ?? ''))) ?: '';
+            $retry = !empty($in['retry']) ? 1 : 0; $own = !empty($in['own_hour']) ? 1 : 0; $defH = max(0, min(23, (int)($in['def_hour'] ?? 19))); $folder = preg_replace('/[^a-z0-9_]/', '', strtolower((string)($in['media_folder'] ?? ''))) ?: '';
             $prevEx = []; if ($id > 0) { $c = wa_camp_row($pdo, $id); if (!$c) json_response(['error' => 'Campaign not found.'], 404); if (!in_array($c['status'], ['draft', 'paused'], true)) json_response(['error' => 'Only a draft or a paused campaign can be changed.'], 422); $prevEx = is_array($c['extra'] ?? null) ? $c['extra'] : []; }
             $twinsNow = wa_mix_twins($pdo, (int)$t['id']);   // mix: on unless switched off (an old campaign that never had it stays as it was); tpl_u: the utility twin it is linked to (0 = Claude picks the best approved one)
             $extra['mix'] = array_key_exists('mix', $in) ? !empty($in['mix']) : (array_key_exists('mix', $prevEx) ? !empty($prevEx['mix']) : true); $tu = (int)($in['tpl_u'] ?? ($prevEx['tpl_u'] ?? 0)); $okTu = false; foreach ($twinsNow as $tw) if ((int)$tw['id'] === $tu) $okTu = true; $bt = wa_mix_best_twin($pdo, $twinsNow); $extra['tpl_u'] = $okTu ? $tu : ($bt ? (int)$bt['id'] : 0);
