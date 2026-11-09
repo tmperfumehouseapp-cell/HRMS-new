@@ -343,7 +343,7 @@ function wk_guide_text(PDO $pdo, int $max = 3500): string
 function fu_base_out(PDO $pdo, array $c): string
 {
     $lo = (string)$c['last_out_at'];
-    try { $q = $pdo->prepare("SELECT MAX(ts) FROM wa_messages WHERE phone = ? AND dir = 'out' AND who <> 'campaign' AND ts >= ?"); $q->execute([(string)$c['phone'], (string)($c['last_in_at'] ?? '')]); $m = $q->fetchColumn(); if ($m) return (string)$m; } catch (Throwable $e) { }
+    try { $q = $pdo->prepare("SELECT MAX(ts) FROM wa_messages WHERE phone = ? AND dir = 'out' AND who NOT IN ('campaign','order') AND ts >= ?"); $q->execute([(string)$c['phone'], (string)($c['last_in_at'] ?? '')]); $m = $q->fetchColumn(); if ($m) return (string)$m; } catch (Throwable $e) { }
     return $lo;
 }
 /** Make (or remake) the plan state of a quiet chat. Skips the steps whose time has long passed (a chat that was quiet before the engine existed does not get a burst). */
