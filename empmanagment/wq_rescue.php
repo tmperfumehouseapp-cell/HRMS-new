@@ -43,6 +43,10 @@ function wq_rescue_tables(PDO $pdo): bool
             foreach (['skip_reason' => "VARCHAR(20) NOT NULL DEFAULT ''", 'ai_state' => "VARCHAR(10) NOT NULL DEFAULT ''", 'ai_note' => "VARCHAR(240) NOT NULL DEFAULT ''"] as $col => $def) { try { $pdo->query("SELECT $col FROM wq_rescue LIMIT 0"); } catch (Throwable $e) { try { $pdo->exec("ALTER TABLE wq_rescue ADD COLUMN $col $def"); } catch (Throwable $e2) { } } }
             wq_meta_put($pdo, 'rescue_ai1', '1');
         }
+        if (function_exists('wq_meta_get') && wq_meta_get($pdo, 'rescue_want1', '') !== '1') {   // what the customer wants (shared list) - once
+            try { $pdo->query("SELECT want FROM wq_rescue LIMIT 0"); } catch (Throwable $e) { try { $pdo->exec("ALTER TABLE wq_rescue ADD COLUMN want VARCHAR(24) NOT NULL DEFAULT ''"); } catch (Throwable $e2) { } }
+            wq_meta_put($pdo, 'rescue_want1', '1');
+        }
         if (function_exists('wq_meta_get') && wq_meta_get($pdo, 'rescue_skipby1', '') !== '1') {   // who pressed Not a chance (once)
             try { $pdo->query("SELECT skipped_by FROM wq_rescue LIMIT 0"); } catch (Throwable $e) { try { $pdo->exec("ALTER TABLE wq_rescue ADD COLUMN skipped_by INT NOT NULL DEFAULT 0"); } catch (Throwable $e2) { } }
             wq_meta_put($pdo, 'rescue_skipby1', '1');
@@ -127,6 +131,31 @@ function wq_rescue_human_on(PDO $pdo, string $key): bool
     static $set = null; if ($set === null) { $set = []; try { foreach ($pdo->query("SELECT phone FROM wq_rescue WHERE status IN ('taken','given') AND taken_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)")->fetchAll(PDO::FETCH_COLUMN) as $p) $set[substr(preg_replace('/\D+/', '', (string)$p), -10)] = 1; } catch (Throwable $e) { } }
     return isset($set[substr(preg_replace('/\D+/', '', $key), -10)]);
 }
+/** THE ONE LIST of what a customer wants (the 60-day Journey's topic keys). Rescue, the Autopilot paths, the Journey, the chat chips, the messages and the AI drafts all use these words. key => [label, emoji]. */
+function wq_want_list(): array
+{
+    return ['buying' => ['Ready to buy', '🔥'], 'price' => ['Price', '💰'], 'thinking' => ['Needs time / asking family', '🤔'], 'sample' => ['Small size / sample', '🧪'], 'longlasting' => ['Long-lasting', '⏳'],
+        'authentic' => ['Is it original', '✅'], 'gifting' => ['Gift', '🎁'], 'delivery' => ['Delivery / COD', '🚚'], 'recommend' => ['Wants a suggestion', '💡'], 'general' => ['General enquiry', '💬']];
+}
+function wq_want_label(string $k): string { $L = wq_want_list(); return $k === '' ? '' : (isset($L[$k]) ? $L[$k][1] . ' ' . $L[$k][0] : ucfirst(str_replace('_', ' ', $k))); }
+/** The topic Claude saved for these customers (the Journey's nightly reading, table wa_wj_topic): phone => key. */
+function wq_want_saved(PDO $pdo, array $phones): array
+{
+    $o = []; $phones = array_values(array_unique(array_map('strval', $phones))); if (!$phones) return $o;
+    try { foreach (array_chunk($phones, 400) as $ch) { $st = $pdo->prepare("SELECT phone, topic FROM wa_wj_topic WHERE topic <> '' AND phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $st->execute($ch); foreach ($st->fetchAll() as $r) $o[(string)$r['phone']] = (string)$r['topic']; } } catch (Throwable $e) { }
+    return $o;
+}
+/** What this customer wants: wanted to pay -> ready to buy; else the topic saved for them; else plain words in what they wrote (the Journey's own word rules). */
+function wq_want_of(string $saved, array $why, string $custText): string
+{
+    if (in_array('hot', $why, true)) return 'buying'; if ($saved !== '') return $saved;
+    return function_exists('wj_kw_topic') && trim($custText) !== '' ? wj_kw_topic($custText) : (in_array('price', $why, true) ? 'price' : 'general');
+}
+/** The ready Rescue message that fits a want (topic keys of wq_rescue_topics()). */
+function wq_want_message(string $want): string
+{
+    return ['buying' => 'pay', 'price' => 'price', 'thinking' => 'offer', 'sample' => 'small', 'longlasting' => 'choose', 'authentic' => 'choose', 'gifting' => 'combo', 'delivery' => 'delivery', 'recommend' => 'choose', 'general' => 'unanswered'][$want] ?? 'unanswered';
+}
 /** The labels, in order of urgency. */
 function wq_rescue_tiers(): array { return ['act' => ['🔴 Act now', 1], 'today' => ['🟠 Today', 2], 'week' => ['🟡 This week', 3], 'long' => ['⚪ Long shot', 4]]; }
 /** Read a chat's messages (oldest first) → what the customer wanted and how often a person tried since their last message. */
@@ -200,10 +229,10 @@ function wq_rescue_scan(PDO $pdo, float $deadline = 0.0, int $beforeId = 0, bool
         if (isset($doneM[$k10]) && $doneM[$k10] >= $op) { $o['ordered']++; continue; }
         $keep[] = $r;
     }
-    $rows = $keep; $fu = wq_rescue_fu_map($pdo, array_column($rows, 'phone'));
+    $rows = $keep; $fu = wq_rescue_fu_map($pdo, array_column($rows, 'phone')); $wsaved = wq_want_saved($pdo, array_column($rows, 'phone'));
     $o['candidates'] = count($rows);
     $msgs = $pdo->prepare("SELECT dir, who, body, ts FROM wa_messages WHERE phone = ? AND ts >= ? ORDER BY id LIMIT 80");
-    $ins = $pdo->prepare("INSERT IGNORE INTO wq_rescue (phone, query_id, flagged_at, why, why_text, last_in_at, last_text, status, orig_emp, score, tier) VALUES (?,?,?,?,?,?,?, 'open', ?, ?, ?)"); $repQ = $pdo->prepare("SELECT 1 FROM wq_ord WHERE phone = ? LIMIT 1");
+    $ins = $pdo->prepare("INSERT IGNORE INTO wq_rescue (phone, query_id, flagged_at, why, why_text, last_in_at, last_text, status, orig_emp, score, tier, want) VALUES (?,?,?,?,?,?,?, 'open', ?, ?, ?, ?)"); $repQ = $pdo->prepare("SELECT 1 FROM wq_ord WHERE phone = ? LIMIT 1");
     $seen = $pdo->prepare("INSERT INTO wq_rescue_seen (query_id, in_at, chk) VALUES (?, ?, NOW()) ON DUPLICATE KEY UPDATE in_at = VALUES(in_at), chk = NOW()");
     $nameOfWhy = ['hot' => 'wanted to pay / order', 'price' => 'asked the price, no order yet', 'ignored' => 'wrote 2+ times, no person answered'];
     foreach ($rows as $r) {
@@ -217,7 +246,7 @@ function wq_rescue_scan(PDO $pdo, float $deadline = 0.0, int $beforeId = 0, bool
         if (wq_rescue_bot_active($f, $why)) { $o['bot']++; continue; }                                            // it is the bot's turn (plan running / it just wrote): not yet
         if ($f && stripos((string)$f['stop_why'], 'frustrat') !== false) continue;                                  // the bot saw an upset customer: not a sales chance
         $txt = implode('; ', array_map(fn($w) => $nameOfWhy[$w], $why)); if ($f && (string)$f['status'] === 'done') $txt .= '; the bot follow-ups got no answer';
-        $ins->execute([(string)$r['phone'], (int)$r['id'], date('Y-m-d H:i:s'), implode(',', $why), $txt, (string)$r['last_in_at'], mb_substr(trim($lastText), 0, 200), (int)$r['assigned_emp'], ...(function () use ($why, $r, $ev, $repQ) { $repQ->execute([(string)$r['phone']]); return wq_rescue_prio($why, (string)$r['last_in_at'], (int)$ev['attempts'], (bool)$repQ->fetchColumn()); })()]);
+        $ins->execute([(string)$r['phone'], (int)$r['id'], date('Y-m-d H:i:s'), implode(',', $why), $txt, (string)$r['last_in_at'], mb_substr(trim($lastText), 0, 200), (int)$r['assigned_emp'], ...(function () use ($why, $r, $ev, $repQ) { $repQ->execute([(string)$r['phone']]); return array_merge(wq_rescue_prio($why, (string)$r['last_in_at'], (int)$ev['attempts'], (bool)$repQ->fetchColumn()), [wq_want_of((string)($wsaved[(string)$r['phone']] ?? ''), $why, implode(' ', array_map(fn($m) => (string)$m['body'], array_filter($list, fn($m) => $m['dir'] === 'in'))))]); })()]);
         if ($ins->rowCount() > 0) { $o['flagged']++; $hasOpen[(string)$r['phone']] = 1; if (function_exists('wq_tag_put')) wq_tag_put($pdo, (string)$r['phone'], 'effort_missed'); }
     }
     return $o;
@@ -389,7 +418,7 @@ function wq_rescue_item(array $r, array $names): array
         'last_in_at' => (string)$r['last_in_at'], 'last_text' => (string)$r['last_text'], 'status' => $st, 'flagged_at' => (string)$r['flagged_at'],
         'window_open' => !empty($r['last_in_at']) && strtotime((string)$r['last_in_at']) > time() - 86400,
         'orig' => ['emp_id' => (int)$r['orig_emp'], 'name' => (string)($names[(int)$r['orig_emp']] ?? '')], 'taken_by' => ['emp_id' => (int)$r['taken_by'], 'name' => (string)($names[(int)$r['taken_by']] ?? '')],
-        'bot' => !empty($r['bot']) && wq_rescue_bot_active($r['bot'], array_values(array_filter(explode(',', (string)$r['why'])))) ? ['step' => (int)$r['bot']['step'], 'due_at' => (string)$r['bot']['due_at'], 'last_bot' => (string)($r['bot']['last_bot'] ?? '')] : null, 'bot_gave_up' => !empty($r['bot']) && (string)$r['bot']['status'] === 'done', 'skip_reason' => (string)($r['skip_reason'] ?? ''), 'ai_state' => (string)($r['ai_state'] ?? ''), 'ai_note' => (string)($r['ai_note'] ?? ''), 'skipped_by' => ['emp_id' => (int)($r['skipped_by'] ?? 0), 'name' => (string)($names[(int)($r['skipped_by'] ?? 0)] ?? '')], 'tier' => (string)($r['tier'] ?? 'week'), 'tier_label' => (wq_rescue_tiers()[(string)($r['tier'] ?? 'week')] ?? ['', 0])[0], 'score' => (int)($r['score'] ?? 0), 'returns' => (int)($r['returns'] ?? 0), 'taken_at' => (string)$r['taken_at'], 'order_name' => (string)$r['order_name'], 'order_total' => round((float)$r['order_total'], 2)];
+        'bot' => !empty($r['bot']) && wq_rescue_bot_active($r['bot'], array_values(array_filter(explode(',', (string)$r['why'])))) ? ['step' => (int)$r['bot']['step'], 'due_at' => (string)$r['bot']['due_at'], 'last_bot' => (string)($r['bot']['last_bot'] ?? '')] : null, 'bot_gave_up' => !empty($r['bot']) && (string)$r['bot']['status'] === 'done', 'want' => (string)($r['want'] ?? ''), 'want_label' => wq_want_label((string)($r['want'] ?? '')), 'skip_reason' => (string)($r['skip_reason'] ?? ''), 'ai_state' => (string)($r['ai_state'] ?? ''), 'ai_note' => (string)($r['ai_note'] ?? ''), 'skipped_by' => ['emp_id' => (int)($r['skipped_by'] ?? 0), 'name' => (string)($names[(int)($r['skipped_by'] ?? 0)] ?? '')], 'tier' => (string)($r['tier'] ?? 'week'), 'tier_label' => (wq_rescue_tiers()[(string)($r['tier'] ?? 'week')] ?? ['', 0])[0], 'score' => (int)($r['score'] ?? 0), 'returns' => (int)($r['returns'] ?? 0), 'taken_at' => (string)$r['taken_at'], 'order_name' => (string)$r['order_name'], 'order_total' => round((float)$r['order_total'], 2)];
 }
 function wq_rescue_list(PDO $pdo, int $me, bool $adm, int $days, string $status, int $page = 1): array
 {
@@ -450,10 +479,10 @@ function wq_rescue_req_items(PDO $pdo, int $me): array
     $ph = wq_rescue_chat_phones($pdo, $me, false); if (!$ph) return [];
     try {
         $in = implode(',', array_fill(0, count($ph), '?'));
-        $q = $pdo->prepare("SELECT r.phone, r.last_in_at, r.last_text, r.why_text, r.tier, r.score FROM wq_rescue r WHERE r.status = 'open' AND r.phone IN ($in)"); $q->execute($ph); $byPhone = []; foreach ($q->fetchAll() as $r) $byPhone[(string)$r['phone']] = $r;
+        $q = $pdo->prepare("SELECT r.phone, r.last_in_at, r.last_text, r.why_text, r.tier, r.score, r.want FROM wq_rescue r WHERE r.status = 'open' AND r.phone IN ($in)"); $q->execute($ph); $byPhone = []; foreach ($q->fetchAll() as $r) $byPhone[(string)$r['phone']] = $r;
         $cn = wq_rescue_cnames($pdo, $ph); $T = wq_rescue_tiers(); $o = [];
         foreach ($ph as $p) { if (!isset($byPhone[$p])) continue; $r = $byPhone[$p];   // $ph is already in priority order
-            $o[] = ['phone' => $p, 'name' => (string)($cn[$p] ?? ''), 'mins' => max(0, (int)floor((time() - strtotime((string)$r['last_in_at'])) / 60)), 'answered' => false, 'last_in' => mb_substr((string)$r['last_text'], 0, 120), 'src' => 'rescue', 'rescue' => true, 'tier' => (string)$r['tier'], 'tier_label' => ($T[(string)$r['tier']] ?? ['', 0])[0], 'why' => (string)$r['why_text']]; }
+            $o[] = ['phone' => $p, 'name' => (string)($cn[$p] ?? ''), 'mins' => max(0, (int)floor((time() - strtotime((string)$r['last_in_at'])) / 60)), 'answered' => false, 'last_in' => mb_substr((string)$r['last_text'], 0, 120), 'src' => 'rescue', 'rescue' => true, 'want_label' => wq_want_label((string)($r['want'] ?? '')), 'tier' => (string)$r['tier'], 'tier_label' => ($T[(string)$r['tier']] ?? ['', 0])[0], 'why' => (string)$r['why_text']]; }
         return array_slice($o, 0, 100);
     } catch (Throwable $e) { return []; }
 }
@@ -546,7 +575,8 @@ if (strpos($__wqr, 'wq.rescue_') === 0 && in_array($__wqr, ['wq.rescue_list', 'w
             $aiS = $adm ? "'final'" : "IF(ai_state = 'returned', 'final', 'pending')";
             $u = $adm ? $pdo->prepare("UPDATE wq_rescue SET status = 'skipped', skipped_by = ?, skip_reason = ?, ai_state = $aiS, ai_note = '', closed_at = ? WHERE phone = ? AND status IN ('open','given','taken','stale')")
                       : $pdo->prepare("UPDATE wq_rescue SET status = 'skipped', skipped_by = ?, skip_reason = ?, ai_state = $aiS, ai_note = '', closed_at = ? WHERE phone = ? AND (status = 'open' OR (status IN ('taken','given','stale') AND taken_by = " . (int)$me . "))");
-            $u->execute([$me, $rs, date('Y-m-d H:i:s'), $k]); wq_rescue_req_forget($pdo, $adm ? 0 : $me); if ($u->rowCount() === 0) json_response(['error' => 'This customer is not in the rescue list any more.'], 409);
+            $u->execute([$me, $rs, date('Y-m-d H:i:s'), $k]); wq_rescue_req_forget($pdo, $adm ? 0 : $me);
+            if ($rs === 'price' && $u->rowCount() > 0) { try { $pdo->prepare("INSERT INTO wa_wj_topic (phone, topic, perfume, hook, at) VALUES (?, 'price', '', '', ?) ON DUPLICATE KEY UPDATE topic = IF(topic IN ('', 'general'), 'price', topic)")->execute([$k, date('Y-m-d H:i:s')]); } catch (Throwable $e) { } }   // the Journey's price path takes over if ($u->rowCount() === 0) json_response(['error' => 'This customer is not in the rescue list any more.'], 409);
             json_response(['ok' => true]);
         }
         case 'wq.rescue_team': {

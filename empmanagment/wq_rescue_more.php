@@ -89,13 +89,18 @@ function wq_rescue_chat_text(PDO $pdo, string $phone, int $n = 30): string
     foreach (array_reverse($q->fetchAll()) as $m) { $w = $m['dir'] === 'in' ? 'Customer' : (in_array((string)$m['who'], ['emp', 'person'], true) ? 'Salesperson' : 'Bot'); $lines[] = $w . ': ' . mb_substr(trim((string)$m['body']), 0, 220); }
     return implode("\n", $lines);
 }
+/** What this customer wants (label), from their rescue row, else the topic saved for them. */
+function wq_rescue_want_for(PDO $pdo, string $phone): string
+{
+    try { $q = $pdo->prepare("SELECT want FROM wq_rescue WHERE phone = ? AND want <> '' ORDER BY id DESC LIMIT 1"); $q->execute([$phone]); $w = (string)$q->fetchColumn(); if ($w === '') $w = (string)(wq_want_saved($pdo, [$phone])[$phone] ?? ''); return wq_want_label($w); } catch (Throwable $e) { return ''; }
+}
 /** One short message for this chat, written by the AI. [text, error]. */
 function wq_rescue_ai_draft(PDO $pdo, string $phone): array
 {
     if (!function_exists('wq_ai')) return ['', 'The AI is not available.'];
     $name = ''; try { $q = $pdo->prepare("SELECT name FROM wa_contacts WHERE phone = ?"); $q->execute([$phone]); $name = trim((string)$q->fetchColumn()); } catch (Throwable $e) { }
     $sch = ['type' => 'OBJECT', 'properties' => ['text' => ['type' => 'STRING']], 'required' => ['text']];
-    [$ok, $v] = wq_ai($pdo, "You write WhatsApp messages for TM Perfume House, an Indian perfume shop. Write ONE short follow-up message (2 to 3 sentences) to this customer, in the same language and style the customer used (Hinglish / English / Hindi / Gujarati in Latin script). Be warm, never pushy, mention what they asked about, do not invent prices, discounts or stock, and end with ONE clear question that makes it easy to answer. No emojis except at most one.", "Customer name: " . ($name !== '' ? $name : 'unknown') . "\nThe chat, oldest first:\n" . wq_rescue_chat_text($pdo, $phone), $sch);
+    [$ok, $v] = wq_ai($pdo, "You write WhatsApp messages for TM Perfume House, an Indian perfume shop. Write ONE short follow-up message (2 to 3 sentences) to this customer, in the same language and style the customer used (Hinglish / English / Hindi / Gujarati in Latin script). Be warm, never pushy, mention what they asked about, do not invent prices, discounts or stock, and end with ONE clear question that makes it easy to answer. No emojis except at most one.", "Customer name: " . ($name !== '' ? $name : 'unknown') . (($wl = wq_rescue_want_for($pdo, $phone)) !== '' ? "\nWhat the customer mainly wants: " . $wl : '') . "\nThe chat, oldest first:\n" . wq_rescue_chat_text($pdo, $phone), $sch);
     if (!$ok || !is_array($v) || trim((string)($v['text'] ?? '')) === '') return ['', 'The AI could not write a message now. Try again in a minute.'];
     return [mb_substr(trim((string)$v['text']), 0, 600), ''];
 }
@@ -189,9 +194,10 @@ function wq_lifecycle_map(PDO $pdo, array $phones): array
     $now = time(); $cut24 = date('Y-m-d H:i:s', $now - 86400); $cut10 = date('Y-m-d H:i:s', $now - 600);
     try {
         foreach (array_chunk($phones, 400) as $ch) {
-            $in = implode(',', array_fill(0, count($ch), '?')); $cmap = []; $resc = []; $done = [];
+            $in = implode(',', array_fill(0, count($ch), '?')); $cmap = []; $resc = []; $done = []; $rwant = [];
             $st = $pdo->prepare("SELECT phone, last_in_at, last_out_at, assigned_emp, hot, cx_id, tag, optout FROM wa_contacts WHERE phone IN ($in)"); $st->execute($ch); foreach ($st->fetchAll() as $x) $cmap[(string)$x['phone']] = $x;
-            try { $st = $pdo->prepare("SELECT phone, status FROM wq_rescue WHERE status IN ('open','taken','given') AND phone IN ($in)"); $st->execute($ch); foreach ($st->fetchAll() as $x) $resc[(string)$x['phone']] = (string)$x['status']; } catch (Throwable $e) { }
+            try { $st = $pdo->prepare("SELECT phone, status, want FROM wq_rescue WHERE status IN ('open','taken','given') AND phone IN ($in)"); $st->execute($ch); foreach ($st->fetchAll() as $x) { $resc[(string)$x['phone']] = (string)$x['status']; $rwant[(string)$x['phone']] = (string)$x['want']; } } catch (Throwable $e) { }
+            $wsv = wq_want_saved($pdo, $ch);
             try { $st = $pdo->prepare("SELECT phone FROM wa_order_done WHERE mute_until > NOW() AND phone IN ($in)"); $st->execute($ch); foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $x) $done[(string)$x] = 1; } catch (Throwable $e) { }
             $fu = wq_rescue_fu_map($pdo, $ch);
             foreach ($ch as $ph) {
@@ -206,7 +212,8 @@ function wq_lifecycle_map(PDO $pdo, array $phones): array
                 elseif ($in_ >= $cut24 && $out_ >= $cut10) $r = ['talking', '💬 In conversation'];
                 elseif ($in_ >= $cut24) $r = ['replied', '💬 Replied'];
                 else $r = ['quiet', '😴 Quiet'];
-                $o[$ph] = ['key' => $r[0], 'label' => $r[1]];
+                $wk = (string)($rwant[$ph] ?? '') !== '' ? $rwant[$ph] : (string)($wsv[$ph] ?? ''); $dd = $in_ !== '' ? (int)floor(($now - strtotime($in_)) / 86400) : null;
+                $o[$ph] = ['key' => $r[0], 'label' => $r[1], 'want' => $wk, 'want_label' => wq_want_label($wk), 'day' => $dd];
             }
         }
     } catch (Throwable $e) { error_log('wq_lifecycle_map: ' . $e->getMessage()); }
@@ -269,8 +276,9 @@ if (strpos($__wqm, 'wq.rescue_') === 0 && in_array($__wqm, ['wq.rescue_tpl_list'
         }
         case 'wq.rescue_templates': {
             $needGet(); $needTeam(); $k = preg_replace('/\D+/', '', (string)($in['phone'] ?? '')); $k = strlen($k) >= 10 ? substr($k, -10) : ''; $list = wq_rescue_tpl_sendable($pdo); $best = '';
-            if ($k !== '') { try { $q = $pdo->prepare("SELECT why FROM wq_rescue WHERE phone = ? ORDER BY id DESC LIMIT 1"); $q->execute([$k]); $why = array_filter(explode(',', (string)$q->fetchColumn()));
-                foreach (wq_rescue_topics() as $tk => $t) if (isset($list[$tk]) && array_intersect($t[1], $why)) { $best = $tk; break; } } catch (Throwable $e) { } }
+            if ($k !== '') { try { $q = $pdo->prepare("SELECT why, want FROM wq_rescue WHERE phone = ? ORDER BY id DESC LIMIT 1"); $q->execute([$k]); $rw = $q->fetch() ?: ['why' => '', 'want' => '']; $why = array_filter(explode(',', (string)$rw['why']));
+                $pick = wq_want_message((string)$rw['want']); if ((string)$rw['want'] !== '' && isset($list[$pick])) $best = $pick;   // the message that fits what the customer wants
+                if ($best === '') foreach (wq_rescue_topics() as $tk => $t) if (isset($list[$tk]) && array_intersect($t[1], $why)) { $best = $tk; break; } } catch (Throwable $e) { } }
             $nm = ''; if ($k !== '') { try { $q = $pdo->prepare("SELECT name FROM wa_contacts WHERE phone = ?"); $q->execute([$k]); $nm = trim((string)$q->fetchColumn()); } catch (Throwable $e) { } }
             $first = $nm !== '' ? preg_split('/\s+/u', $nm)[0] : 'there';
             json_response(['ok' => true, 'name' => $first, 'best' => $best, 'items' => array_values(array_map(fn($x) => $x + ['preview' => str_replace('{{1}}', $first, $x['body'])], $list))]);

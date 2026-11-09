@@ -21,6 +21,9 @@
 .wj-ban{border-radius:12px;padding:10px 12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}.wj-ban.v{background:var(--pb);border:1px solid #d9d0ff}.wj-ban.y{background:var(--yb);border:1px solid #fde3a7}.wj-ban.g{background:var(--gb);border:1px solid #bfe5cd}.wj-ban .sp{flex:1;min-width:140px}
 .wj-pill{font-size:11.5px;font-weight:700;border-radius:999px;padding:2px 8px;background:#eef0f3;color:#334155;white-space:nowrap}.wj-pill.g{background:var(--gb);color:#065f46}.wj-pill.o{background:var(--ob);color:var(--o)}.wj-pill.r{background:#fff1f0;color:#b42318}
 .wj-strip{display:grid;grid-template-columns:repeat(60,minmax(0,1fr));gap:2px;margin:4px 0}.wj-strip i{height:14px;border-radius:3px;background:#eef0f3;display:block}.wj-strip i.a{background:#c4b5fd}.wj-strip i.m{background:#34d399}.wj-strip i.f{background:#fb923c}
+.wj-strip i.t{background:#7c3aed;box-shadow:0 0 0 1px #5b3fd6 inset}.wj-lane{border:1px solid var(--ln);border-radius:14px;padding:12px 14px;display:grid;gap:6px;background:#fff}.wj-lane.all{background:var(--pb);border-color:#d9d0ff}
+.wj-lg{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--mut)}.wj-lg i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:4px;vertical-align:-2px}
+.wj-ch{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--ln);border-radius:999px;padding:2px 9px;font-size:12px;background:#fff;margin:2px 4px 2px 0}.wj-ch.t{background:#f3e8ff;border-color:#d8b4fe;font-weight:700}
 .wj-scale{display:flex;justify-content:space-between;font-size:10.5px;color:var(--mut)}
 .wj-row{display:grid;grid-template-columns:92px minmax(150px,1.1fr) minmax(110px,.8fr) minmax(140px,1.4fr) auto auto auto;gap:6px;align-items:center;border-top:1px solid var(--ln);padding:7px 0}.wj-row.off{opacity:.5}
 .wj-row input[type=number]{width:62px}.wj-row .wj-sel,.wj-row .wj-in{width:100%}.wj-auto{background:var(--pb);border:1px dashed #d9d0ff;border-radius:10px;padding:8px 10px;margin:6px 0}
@@ -55,7 +58,7 @@
   }
 
   function mount(el) {
-    css(); let D = null, tab = 'journey', R = null, Q = null, rdays = 30, TR = { lead: [], buyer: [] }, dirty = { lead: false, buyer: false }, busy = false;
+    css(); let D = null, tab = 'lanes', R = null, Q = null, rdays = 30, TR = { lead: [], buyer: [] }, dirty = { lead: false, buyer: false }, busy = false;
     el.innerHTML = '<div class="wj"><div class="wj-card">Loading…</div></div>';
     const take = (d) => { D = d; if (!dirty.lead) TR.lead = JSON.parse(JSON.stringify(d.steps.lead)); if (!dirty.buyer) TR.buyer = JSON.parse(JSON.stringify(d.steps.buyer)); };
     async function load() { try { take(await api.get('fu.wj_get')); } catch (e) { el.innerHTML = '<div class="wj"><div class="wj-err">' + esc(e.message) + '</div></div>'; return; } draw(); }
@@ -64,7 +67,7 @@
     function head() {
       const s = D.stats || {}, m = D.mode;
       const kp = [['In the journey now', (s.lead || 0) + (s.buyer || 0)], ['Joined in 24 h', s.joined || 0], ['Leaving (day 60)', s.leaving || 0], ['Sent today', s.sent_today || 0], ['Sent in 7 days', s.sent_7 || 0]];
-      const tabs = [['journey', '🗓 Journey'], ['claude', '🧠 Claude'], ['topics', '💡 Topics'], ['msgs', '🎁 Messages & offers'], ['fest', '🪔 Festivals'], ['results', '📊 Results']];
+      const tabs = [['lanes', '🗺 By topic'], ['journey', '🗓 Journey'], ['claude', '🧠 Claude'], ['topics', '💡 Topics'], ['msgs', '🎁 Messages & offers'], ['fest', '🪔 Festivals'], ['results', '📊 Results']];
       let h = '<div class="wj-card"><div class="wj-h">🗓 60-day Journey<span class="sp"></span><span class="wj-seg">' + [['off', 'Off'], ['suggest', 'Preview'], ['auto', 'Auto']].map(([k, l]) => '<button type="button" data-mode="' + k + '" class="m-' + k + (m === k ? ' on' : '') + '">' + l + '</button>').join('') + '</span>'
         + (D.hist.length ? '<button class="wj-b s" type="button" data-undo title="' + esc(D.hist[0].why) + '">↩ Undo</button>' : '') + '</div>'
         + '<div class="wj-sub">One plan for every customer for 60 days. Every day new people enter (their day arrives) and people past day 60 simply leave. '
@@ -101,6 +104,32 @@
         + '<div class="wj-sub" style="margin-top:6px">Also always respected: opt-outs, quiet hours and the daily limits of Teach, an open complaint, an order message in the last 2 days, a follow-up in the last 36 hours, and the sender’s own safety brake. A day that came before Auto was switched on is never caught up.</div></div>';
     }
     const journeyTab = () => trackCard('lead') + trackCard('buyer') + cfgCard();
+
+    // 🗺 One picture of the whole plan: a lane per topic. Every lane shows days 1–60: the Autopilot days (1–10), the steps for everyone, and the steps only for that topic.
+    function laneStrip(key) {
+      const cells = []; for (let d = 1; d <= 60; d++) cells.push({ c: '', t: 'Day ' + d });
+      for (const a of D.auto10) { const c = cells[a.day - 1]; if (c) { c.c = 'a'; c.t = 'Day ' + a.day + ' · Follow-up Autopilot (' + (a.msg ? a.msg + ' message' : '') + (a.msg && a.offer ? ', ' : '') + (a.offer ? a.offer + ' offer' : '') + ')'; } }
+      for (const s of TR.lead) { if (!s.on || (s.topic && s.topic !== key)) continue; const c = cells[s.day - 1]; if (!c) continue; c.c = s.topic ? 't' : (s.icon === '🎁' ? 'f' : 'm'); c.t = 'Day ' + s.day + ' · ' + s.label + (s.topic ? ' (only this topic)' : ''); }
+      return '<div class="wj-strip">' + cells.map((c) => '<i class="' + c.c + '" title="' + esc(c.t) + '"></i>').join('') + '</div><div class="wj-scale"><span>day 1</span><span>15</span><span>30</span><span>45</span><span>60</span></div>';
+    }
+    function lane(key, title, sub, all) {
+      const mine = TR.lead.filter((s) => s.on && (!s.topic || s.topic === key)).sort((a, b) => a.day - b.day), own = mine.filter((s) => s.topic === key).length;
+      return '<div class="wj-lane' + (all ? ' all' : '') + '"><div class="wj-row2"><b style="font-size:15px">' + (all ? '👥 ' : '💡 ') + esc(title) + '</b>' + sub + '<span style="flex:1"></span>'
+        + (all ? '' : '<button class="wj-b s" type="button" data-lane-add="' + esc(key) + '">＋ A step only for this topic</button><button class="wj-b s v" type="button" data-lane-ask="' + esc(key) + '" data-title="' + esc(title) + '">🧠 Ask Claude to plan this topic</button>') + '</div>'
+        + laneStrip(key) + '<div>' + (mine.length ? mine.map((s) => '<span class="wj-ch' + (s.topic ? ' t' : '') + '" title="' + (s.topic ? 'Only for this topic' : 'Everyone gets this') + '">Day ' + s.day + ' · ' + s.icon + ' ' + esc(s.label) + (s.topic ? ' ★' : '') + '</span>').join('') : '<span class="wj-sub">No steps yet.</span>') + '</div>'
+        + (!all ? '<div class="wj-sub">' + (own ? '★ ' + own + ' step' + (own === 1 ? '' : 's') + ' made only for this topic, plus the steps for everyone.' : 'No step is made only for this topic yet — these customers get the steps for everyone. Add one, or ask Claude.') + '</div>' : '') + '</div>';
+    }
+    function lanesTab() {
+      const rows = (D.topics.rows || []).slice().sort((a, b) => (b.n30 || 0) - (a.n30 || 0)).slice(0, 12);
+      let h = '<div class="wj-card"><div class="wj-h">🗺 The whole plan, topic by topic</div><div class="wj-sub">Each customer who did not order follows <b>one lane</b>: the topic Claude found in their chats (it reads new chats every night). '
+        + 'Days 1–10 belong to the Follow-up Autopilot; from day 11 the Journey carries on. Anything marked ★ is made only for that topic. A customer who is ready to pay is not left to the bot — people step in through 🛟 Rescue, and while a person has taken a chat no automatic message goes out.'
+        + (D.season_now ? '<br>🪔 Festival theme right now: <b>' + esc(D.season_now) + '</b> · <button class="wj-b s" type="button" data-go="fest">change it</button> or tell Claude in the 🧠 Claude tab.' : '<br>🪔 No festival theme is on. Tell Claude when a festival or season starts and it will change the plan for you (nothing changes before you press Start).')
+        + '</div><div class="wj-lg" style="margin-top:8px"><span><i style="background:#c4b5fd"></i>Follow-up Autopilot</span><span><i style="background:#86efac"></i>Message</span><span><i style="background:#fdba74"></i>Offer</span><span><i style="background:#7c3aed"></i>Only this topic</span></div></div>';
+      h += lane('', 'Everyone (every topic)', '<span class="wj-pill">' + TR.lead.filter((x) => x.on && !x.topic).length + ' steps</span>', true);
+      h += rows.length ? rows.map((t) => lane(t.key, t.title, '<span class="wj-pill">' + (t.n30 || 0) + ' chats · 30 days</span><span class="wj-pill">' + (t.n7 || 0) + ' this week</span>', false)).join('') : '<div class="wj-card"><div class="wj-sub">No topics learned yet. Press “Read chats now” in the 💡 Topics tab, or wait for tonight.</div></div>';
+      return h;
+    }
+
 
     function propBlock() {
       const P = D.proposal || {}; if (!P.understood) return '';
@@ -160,7 +189,7 @@
     }
     function draw() {
       if (!D) return; const scroll = el.scrollTop;
-      el.innerHTML = '<div class="wj">' + head() + (tab === 'journey' ? journeyTab() : tab === 'claude' ? claudeTab() : tab === 'topics' ? topicsTab() : tab === 'msgs' ? msgsTab() : tab === 'fest' ? festTab() : resultsTab()) + '</div>'; bind(); el.scrollTop = scroll;
+      el.innerHTML = '<div class="wj">' + head() + (tab === 'lanes' ? lanesTab() : tab === 'journey' ? journeyTab() : tab === 'claude' ? claudeTab() : tab === 'topics' ? topicsTab() : tab === 'msgs' ? msgsTab() : tab === 'fest' ? festTab() : resultsTab()) + '</div>'; bind(); el.scrollTop = scroll;
     }
     async function loadResults() { R = null; draw(); try { R = await api.get('fu.wj_results', { days: rdays }); } catch (e) { R = { total: { sent: 0, replied: 0, ordered: 0, sales: 0 }, steps: [] }; } draw(); }
     async function ask(text, more) { const r = await act('fu.wj_brain', { text, more: !!more }, 'keep'); if (r && r.steps) { tab = 'claude'; draw(); } return r; }
@@ -180,6 +209,8 @@
           f.oninput = apply; f.onchange = () => { apply(); if (f.dataset.f !== 'idea') setTimeout(draw, 0); }; }); });
       $$('[data-rm]').forEach((b) => b.onclick = () => { const [tk, i] = b.dataset.rm.split(':'); TR[tk].splice(+i, 1); dirty[tk] = true; draw(); });
       $$('[data-add]').forEach((b) => b.onclick = () => { const tk = b.dataset.add, last = TR[tk].reduce((a, x) => Math.max(a, x.day), tk === 'lead' ? 10 : 0), m = D.messages[0]; TR[tk].push({ id: '', day: Math.min(60, last + 3), ref: m.k, idea: '', topic: '', on: true, label: m.label, icon: m.icon, tpl: m.status }); dirty[tk] = true; draw(); });
+      $$('[data-lane-add]').forEach((b) => b.onclick = () => { const key = b.dataset.laneAdd, last = TR.lead.reduce((a, x) => Math.max(a, x.day), 10), m = D.messages[0]; TR.lead.push({ id: '', day: Math.min(60, last + 3), ref: m.k, idea: '', topic: key, on: true, label: m.label, icon: m.icon, tpl: m.status }); dirty.lead = true; tab = 'journey'; draw(); toast('A new day was added at the bottom of the Didn\'t order track, for this topic only. Pick the day and the message, then press Save.'); });
+      $$('[data-lane-ask]').forEach((b) => b.onclick = () => ask('Many customers are in the topic "' + b.dataset.title + '" (' + b.dataset.laneAsk + '). Make a careful plan for them up to day 60: a few steps made ONLY for this topic (send each only to this topic) on good days of the lead track, using existing registry messages or a new one (key starting w_) with a short approved wording. Ask me first if you need to know an offer.', false));
       $$('[data-save]').forEach((b) => b.onclick = async () => { const tk = b.dataset.save; const r = await act('fu.wj_steps_save', { track: tk, steps: TR[tk].map((x) => ({ id: x.id, day: x.day, ref: x.ref, idea: x.idea, topic: x.topic, on: x.on })) }); if (r) { dirty[tk] = false; } });
       $$('[data-ask]').forEach((b) => b.onclick = () => ask('Look at the "' + TRACK[b.dataset.ask][0] + '" track of the journey. Using the topics, the results and the festival calendar, suggest careful improvements (gaps, days with no answers, a message for a growing topic).', false));
       const cs = $('#cfSave'); if (cs) cs.onclick = () => act('fu.wj_cfg', { gap_days: +$('#cfGap').value, day_cap: +$('#cfDay').value, from: $('#cfFrom').value, to: $('#cfTo').value, lead_days: +$('#cfLead').value }, 'keep');

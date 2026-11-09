@@ -165,12 +165,12 @@ function wj_kw_topic(string $text): string
 {
     $t = mb_strtolower($text);
     $map = ['price' => '/price|costly|expensive|mehang|kitne ka|kitna|discount|rate\b|budget|₹/u', 'longlasting' => '/long ?last|tikta|tikt|stay|projection|kitni der|lasting/u', 'gifting' => '/gift|birthday|anniversary|wedding|shaadi|surprise|bhai|wife|husband/u',
-        'sample' => '/sample|trial|small size|10 ?ml|decant|try first/u', 'delivery' => '/deliver|courier|kab tak|shipping|\bcod\b|cash on|tracking/u', 'authentic' => '/original|authentic|fake|genuine|real\b|duplicate/u',
+        'sample' => '/sample|trial|small size|10 ?ml|decant|try first/u', 'delivery' => '/deliver|courier|kab tak|shipping|\bcod\b|cash on|tracking/u', 'authentic' => '/original|authentic|fake|genuine|real\b|duplicate/u', 'thinking' => '/ghar (pe|par|mein)|family|pooch|puch(ta|ti|unga|ungi)|soch|sochna|baad mein|later|think|ask my|wife se|husband se|mummy|papa se|decide/u',
         'recommend' => '/suggest|recommend|which|konsa|kaunsa|options|best/u', 'buying' => '/order|buy|book|payment|\bpay\b|upi|address/u'];
     foreach ($map as $k => $re) if (preg_match($re, $t)) return $k;
     return 'general';
 }
-function wj_topic_titles(): array { return ['price' => 'Asks the price / wants a discount', 'longlasting' => 'Asks how long it lasts', 'gifting' => 'Looking for a gift', 'sample' => 'Wants a sample or small size', 'delivery' => 'Delivery / COD questions', 'authentic' => 'Asks if it is original', 'recommend' => 'Wants a suggestion', 'buying' => 'Ready to buy', 'general' => 'General enquiry']; }
+function wj_topic_titles(): array { return ['price' => 'Asks the price / wants a discount', 'longlasting' => 'Asks how long it lasts', 'gifting' => 'Looking for a gift', 'sample' => 'Wants a sample or small size', 'delivery' => 'Delivery / COD questions', 'authentic' => 'Asks if it is original', 'thinking' => 'Needs time / asking family', 'recommend' => 'Wants a suggestion', 'buying' => 'Ready to buy', 'general' => 'General enquiry']; }
 /** Read one batch of chats → each chat gets a topic, the perfume it liked and the one angle that would win it. Claude when available, plain words otherwise. */
 function wj_classify_batch(PDO $pdo, array $phones): int
 {
