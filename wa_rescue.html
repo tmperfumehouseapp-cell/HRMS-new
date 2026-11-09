@@ -69,6 +69,8 @@ guardPage();
       if (S.tab === 'bonus') S.bonus = await api.get('wq.rescue_bonus', {});
     } catch (e) { root.innerHTML = '<div class="rq-err">' + esc(e.message || 'Could not load.') + ' <button class="btn" id="rqRetry">Try again</button></div>'; document.getElementById('rqRetry').onclick = load; return; }
     draw();
+    // the check runs in the background (the list above is already on screen); when it found something new the list is refreshed
+    if (!S.scanned) { S.scanned = true; api.post('wq.rescue_scan', {}).then((r) => { if (r && r.scan) load(); }, () => { }); }
   }
   function chips(it) {
     return (it.why || []).map((w) => { const x = WHY[w] || [w, '']; return '<span class="rq-chip ' + x[1] + '">' + esc(x[0]) + '</span>'; }).join('') + '<span class="rq-chip st">' + esc(ST[it.status] || it.status) + '</span>';
