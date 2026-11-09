@@ -200,7 +200,7 @@ function wq_lifecycle_map(PDO $pdo, array $phones): array
                 elseif ((int)($c['cx_id'] ?? 0) > 0 || (string)($c['tag'] ?? '') === 'complaint') $r = ['complaint', '⚠ Complaint'];
                 elseif (isset($done[$ph])) $r = ['ordered', '✅ Ordered'];
                 elseif (isset($resc[$ph])) $r = ['rescue', $resc[$ph] === 'open' ? '🛟 Rescue — win back' : '🛟 Rescue — taken'];
-                elseif (wq_rescue_bot_active($fu[$ph] ?? null)) $r = ['bot', '🤖 Bot following up'];
+                elseif (wq_rescue_bot_active($fu[$ph] ?? null, (int)($c['hot'] ?? 0) === 1 ? ['hot'] : [])) $r = ['bot', '🤖 Bot following up'];
                 elseif ((int)($c['hot'] ?? 0) === 1 && $in_ >= $cut24) $r = ['hot', '🔥 Ready to pay'];
                 elseif ($waiting && $in_ >= $cut24) $r = (int)$c['assigned_emp'] > 0 ? ['waiting', '⏱ Waiting for a reply'] : ['new', '🆕 New — nobody has it'];
                 elseif ($in_ >= $cut24 && $out_ >= $cut10) $r = ['talking', '💬 In conversation'];
