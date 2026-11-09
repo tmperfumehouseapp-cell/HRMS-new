@@ -699,7 +699,7 @@ window.WS = (function () {
       else if (e.key === 'Escape') close();
     });
     document.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); open(); } else if (e.key === 'Escape') { close(); document.getElementById('wsPop').classList.remove('on'); } });
-    { const pb = document.getElementById('wsPace'); if (pb) pb.onclick = (e) => { e.stopPropagation(); const go = () => window.WaPace && window.WaPace.open(); if (window.WaPace) go(); else { const sc = document.createElement('script'); sc.src = 'assets/js/wq_pace_ui.js?v=4'; sc.onload = go; document.head.appendChild(sc); } }; }   // ⚡ reply pace pop-up
+    { const pb = document.getElementById('wsPace'); if (pb) pb.onclick = (e) => { e.stopPropagation(); const go = () => window.WaPace && window.WaPace.open(); if (window.WaPace) go(); else { const sc = document.createElement('script'); sc.src = 'assets/js/wq_pace_ui.js?v=5'; sc.onload = go; document.head.appendChild(sc); } }; }   // ⚡ reply pace pop-up
     if (only) { document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); }); return; }   // employees: search only, no bell
     // bell
     const pop = document.getElementById('wsPop'), bell = document.getElementById('wsBell');
