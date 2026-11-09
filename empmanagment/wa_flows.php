@@ -393,7 +393,7 @@ function wag_flow_advance(PDO $pdo, array $run): void
                 $to = $yes ? ($s['yes'] ?: $nextId) : ($s['no'] ?: $nextId); $upd('run', '', null); if ($to === '') { wag_flow_stop($pdo, $run, 'done', 'Finished.'); return; } $cur = $to; break;
             }
             case 'tag': $pdo->prepare("INSERT IGNORE INTO wa_ctags (phone, tag, src, at) VALUES (?, ?, 'flow', ?)")->execute([$key, $s['tag'], $now]); $upd('run', '', null); $cur = $nextId; break;
-            case 'assign': { $e = (int)$s['emp_id']; if ($e > 0 && (int)$c['assigned_emp'] !== $e) wa_assign_to($pdo, $key, $e, 0, 'auto'); $upd('run', '', null); $cur = $nextId; break; }
+            case 'assign': { $e = (int)$s['emp_id']; if ($e > 0 && !(function_exists('wa_manual_assign') && wa_manual_assign($pdo)) && (int)$c['assigned_emp'] !== $e) wa_assign_to($pdo, $key, $e, 0, 'auto'); $upd('run', '', null); $cur = $nextId; break; }
             case 'notify': { $e = (int)($s['emp_id'] ?? 0) ?: (int)$c['assigned_emp']; if ($e > 0 && function_exists('ct_push')) { try { ct_push($pdo, [$e], 'Flow alert', ($s['text'] ?? '') !== '' ? $s['text'] : ($c['name'] !== '' ? $c['name'] : '+91 ' . $key) . ' needs you.', '/my_chats.html?phone=' . $key, 'wa-fl-' . $key); } catch (Throwable $x) { } } $upd('run', '', null); $cur = $nextId; break; }
             case 'stop': wag_flow_stop($pdo, $run, 'done', 'Ended by the flow.'); return;
         }

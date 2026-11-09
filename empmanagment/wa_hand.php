@@ -59,6 +59,7 @@ function wa_hot_flag(PDO $pdo, array $c, string $why): bool
     $cu = trim((string)($c['name'] ?? '')) !== '' ? (string)$c['name'] : '+91 ' . $key;
     wa_event($pdo, $key, '🔥 HOT — ' . $why . '. A person must reply now.');
     if ($emp <= 0 && (int)($c['cx_id'] ?? 0) > 0) { /* a complaint chat with nobody on its desk yet: the Complaint team gets it, never a salesperson */ }
+    elseif ($emp <= 0 && function_exists('wa_manual_assign') && wa_manual_assign($pdo)) { /* manual assignment only: it stays in Waiting / Requests with the HOT mark until somebody gives or takes it */ }
     elseif ($emp <= 0) {   // nobody has it: the best present person gets it right now (this also opens the call-now alert)
         $pick = null; foreach (wa_people($pdo, (int)($c['last_number_id'] ?? 0)) as $p) if (!empty($p['present'])) { if (empty($p['full'])) { $pick = $p; break; } if (!$pick) $pick = $p; }
         if ($pick) { wa_assign_to($pdo, $key, (int)$pick['emp_id'], 0, 'auto'); $emp = (int)$pick['emp_id']; }
