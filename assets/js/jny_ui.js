@@ -7,7 +7,7 @@
   if (!window.WaPanels || !WaPanels.add) return;
   const { esc, toast, modal, errBox, loading } = WaPanels.util;
   const MAP = { price: 'price', thinking: 'ask', buying: 'pay' };   // a Journey topic that sits in the same lane as an Autopilot path (the path key it belongs to)
-  const MAXAP = 240 * 60;   // minutes: the Autopilot owns the first 10 days
+  const MAXAP = 1440 * 60;   // minutes: one plan now runs to day 60
   const TPL = { approved: ['✅', 'approved'], approved_old: ['✅⏳', 'old one approved, new waiting'], partial: ['✅', 'approved on some numbers'], pending: ['⏳', 'waiting for Meta'], rejected: ['❌', 'rejected by Meta'], none: ['📨', 'not sent to Meta yet'] };
   let CSS = false;
   function css() {
@@ -44,19 +44,20 @@
         const tp = Object.keys(MAP).find((t) => MAP[t] === p.key && topics.some((r) => r.key === t)) || ''; if (tp) used.add(tp);
         L.push({ id: 'p:' + p.id, title: p.title, desc: p.desc, path: p, topic: tp, n: tp ? ((topics.find((r) => r.key === tp) || {}).n30 || 0) : null });
       }
-      for (const r of topics) if (!used.has(r.key)) L.push({ id: 't:' + r.key, title: r.title, desc: 'Customers whose chats are about this (found by Claude)', path: null, topic: r.key, n: r.n30 || 0 });
+      if (!WJ.unified) for (const r of topics) if (!used.has(r.key)) L.push({ id: 't:' + r.key, title: r.title, desc: 'Customers whose chats are about this (found by Claude)', path: null, topic: r.key, n: r.n30 || 0 });
       return L;
     }
     function rowsOf(L) {   // [{src, ref idx, min, ...}]
       const out = [];
       if (L.path) L.path.steps.forEach((s, i) => out.push({ src: 'ap', i, min: Math.round(s.after_h * 60), kind: s.kind, offer: s.offer, text: s.text, on: true, step: s }));
-      LEAD.forEach((s, i) => { if ((s.topic || '') === (L.topic || '') && (L.topic || L.every)) out.push({ src: 'wj', i, min: s.day * 1440, ref: s.ref, idea: s.idea, on: s.on, step: s, tk: 'lead' }); });
+      if (!WJ.unified) LEAD.forEach((s, i) => { if ((s.topic || '') === (L.topic || '') && (L.topic || L.every)) out.push({ src: 'wj', i, min: s.day * 1440, ref: s.ref, idea: s.idea, on: s.on, step: s, tk: 'lead' }); });
       return out.sort((a, b) => a.min - b.min);
     }
     function rowHtml(r, lid) {
       const [v, u] = fmtT(r.min); const key = lid + '|' + r.src + '|' + (r.tk || '') + '|' + r.i;
       let h = '<div class="jt-row' + (r.on ? '' : ' off') + '" data-k="' + esc(key) + '"><span class="jt-tag ' + (r.src === 'ap' ? 'a' : 'w') + '">' + (r.src === 'ap' ? (r.min < 1440 ? 'text' : 'early') : 'later') + '</span>'
         + '<input class="jt-in jt-t" type="number" min="1" step="any" data-f="v" value="' + v + '"><select class="jt-in" data-f="u"><option value="min"' + (u === 'min' ? ' selected' : '') + '>minutes</option><option value="h"' + (u === 'h' ? ' selected' : '') + '>hours</option><option value="d"' + (u === 'd' ? ' selected' : '') + '>days</option></select>';
+      if (r.src === 'ap') h += '<select class="jt-in" data-f="kind"><option value="nudge"' + (r.kind !== 'offer' ? ' selected' : '') + '>💬 text</option><option value="offer"' + (r.kind === 'offer' ? ' selected' : '') + '>📨 message</option></select>';
       if (r.src === 'ap' && r.kind !== 'offer') h += '<input class="jt-in jt-msg" data-f="text" maxlength="700" placeholder="What Claude should say (idea)" value="' + esc(r.text) + '">';
       else h += '<select class="jt-in jt-msg" data-f="ref">' + msgOpts(r.src === 'ap' ? r.offer : r.ref) + '</select>' + (r.src === 'wj' ? '<input class="jt-in" data-f="idea" maxlength="300" placeholder="Extra idea (optional)" value="' + esc(r.idea) + '" style="flex:1;min-width:120px">' : '');
       if (r.src === 'wj') h += '<label style="white-space:nowrap"><input type="checkbox" data-f="on"' + (r.on ? ' checked' : '') + '> On</label>';
@@ -88,6 +89,7 @@
         + '<div class="jt-sub">One plan for every customer, from the first minutes to day 60. The clock runs from our last message (bot or person). ' + (m === 'mixed' ? '<b>Autopilot and Journey are in different modes</b> — press one button above to put both the same. ' : '')
         + (m === 'suggest' ? '<b>Preview</b>: nothing is sent — press “Who gets what now”. ' : m === 'auto' ? '<b>Auto</b>: messages go by themselves, never in quiet hours. ' : '<b>Off</b>: nothing is sent. ') + 'After day 60 only your campaigns go.</div>'
         + '<div class="jt-row" style="border:0"><span class="jt-tag">' + (s.lead || 0) + ' in the journey</span><span class="jt-tag">sent today ' + (s.sent_today || 0) + '</span><span class="jt-tag">sent in 7 days ' + (s.sent_7 || 0) + '</span><span class="jt-sp"></span><button class="jt-b s" type="button" data-queue>👀 Who gets what now</button></div></div>';
+      if (WJ.unified) h += '<div class="jt-ban">✅ <b>One engine.</b> Every customer who did not order follows ONE plan for their situation, from the first minutes to day 60. The situation is read again at every new message. The older “Journey days” were moved into these lanes.</div>';
       if (!AP.installed) h += '<div class="jt-ban"><b>Start the Autopilot paths</b> — the six ready-made paths for the first 10 days are not set up yet. <button class="jt-b p s" type="button" data-install>Set them up</button></div>';
       if (D && D.at) h += '<div class="jt-ban">🌙 <b>Claude’s update</b> <span class="jt-sub">(' + esc(String(D.at).slice(0, 16)) + ')</span><div class="jt-sub">' + esc(D.understood || D.note || '') + '</div>' + ((D.lines || []).length ? '<ul>' + D.lines.map((x) => '<li>' + esc(x) + '</li>').join('') + '</ul><div class="jt-sub">These were added by itself — change or remove anything you do not like. ↩ Undo is in the 🧠 Claude tab.</div>' : '') + (D.kept ? '<div class="jt-sub">' + D.kept + ' bigger suggestion(s) are waiting in the 🧠 Claude tab because they change something that already exists.</div>' : '') + '</div>';
       const dirtyN = dirty.ap.size + (dirty.lead ? 1 : 0) + (dirty.buyer ? 1 : 0);
@@ -97,7 +99,7 @@
     }
     function draw() {
       if (!AP || !WJ) return; const sc = el.scrollTop;
-      el.innerHTML = '<div class="jt">' + head() + everyoneHtml() + lanes().map(laneHtml).join('') + orderHtml() + '</div>'; bind(); el.scrollTop = sc;
+      el.innerHTML = '<div class="jt">' + head() + (WJ.unified ? '' : everyoneHtml()) + lanes().map(laneHtml).join('') + orderHtml() + '</div>'; bind(); el.scrollTop = sc;
     }
     // ---- find the data of a row from its key
     function find(key) {
@@ -107,7 +109,7 @@
     }
     const markDirty = (f) => { if (f.src === 'ap') dirty.ap.add(f.p.id); else dirty[f.tk] = true; const b = el.querySelector('#jtSave'); if (b) b.disabled = false; };
     function setTime(f, min) {
-      if (f.src === 'ap') { if (min > MAXAP) { toast('The first 10 days belong to the early steps. For a later day add a new step instead.', true); return false; } f.st.after_h = Math.max(1 / 60, min / 60); }
+      if (f.src === 'ap') { if (min > MAXAP) { toast('The plan runs to day 60.', true); return false; } f.st.after_h = Math.max(1 / 60, min / 60); }
       else { f.st.day = Math.max(1, Math.min(60, Math.round(min / 1440))); }
       return true;
     }
@@ -123,22 +125,27 @@
       q('#nmGo').onclick = async () => { const label = q('#nmN').value.trim(), rule = q('#nmR').value.trim(); if (!label || !rule) { toast('Give it a name and a rule.', true); return; } q('#nmGo').disabled = true;
         const r = await call(() => api.post('fu.wj_msg_new', { label, rule, body: q('#nmB').value.trim(), offer: q('input[name=nmT]:checked').value === 'offer' })); if (r && r.new_key) { WJ = r; close(r.new_key); } else q('#nmGo').disabled = false; };
     }
-    function askTime(done) {
+    function askTime(done, noAll) {
       const o = document.createElement('div'); o.style.cssText = 'position:fixed;inset:0;z-index:300;background:#0008;display:flex;align-items:flex-end;justify-content:center';
-      o.innerHTML = '<div class="jt" style="background:#fff;width:100%;max-width:420px;border-radius:18px 18px 0 0;padding:16px"><div class="jt-h">＋ New step — when?</div><div class="jt-sub">After our last message to this customer.</div><div class="jt-row" style="border:0"><input class="jt-in jt-t" id="atV" type="number" min="1" value="2"><select class="jt-in" id="atU"><option value="min">minutes</option><option value="h">hours</option><option value="d">days</option></select></div>'
+      o.innerHTML = '<div class="jt" style="background:#fff;width:100%;max-width:420px;border-radius:18px 18px 0 0;padding:16px"><div class="jt-h">＋ New step — when?</div><div class="jt-sub">After our last message to this customer. Within 24 hours it is a short text Claude writes; later it is an approved message (you choose which).</div><div class="jt-row" style="border:0"><input class="jt-in jt-t" id="atV" type="number" min="1" value="2"><select class="jt-in" id="atU"><option value="min">minutes</option><option value="h">hours</option><option value="d">days</option></select></div>'
+        + (WJ.unified && !arguments[1] ? '<label class="jt-sub" style="display:block;margin:4px 0"><input type="checkbox" id="atAll"> Add it to <b>every lane</b></label>' : '')
         + '<div class="jt-row" style="border:0"><button class="jt-b p" type="button" id="atGo">Add</button><button class="jt-b" type="button" id="atX">Cancel</button></div></div>'; document.body.appendChild(o);
-      o.querySelector('#atX').onclick = () => { o.remove(); }; o.onclick = (e) => { if (e.target === o) o.remove(); }; o.querySelector('#atGo').onclick = () => { const m = toMin(o.querySelector('#atV').value, o.querySelector('#atU').value); o.remove(); done(m); };
+      o.querySelector('#atX').onclick = () => { o.remove(); }; o.onclick = (e) => { if (e.target === o) o.remove(); }; o.querySelector('#atGo').onclick = () => { const m = toMin(o.querySelector('#atV').value, o.querySelector('#atU').value); const all = !!(o.querySelector('#atAll') && o.querySelector('#atAll').checked); o.remove(); done(m, all); };
     }
     function addStep(lid) {
-      askTime((min) => {
+      askTime((min, all) => {
         const defRef = (WJ.messages.find((m) => m.k === 'w_miss') || WJ.messages[0] || {}).k || '';
         if (lid === 'b') { BUYER.push({ id: '', day: Math.max(1, Math.min(60, Math.round(min / 1440))), ref: defRef, idea: '', topic: '', on: true, label: '', icon: '💬', tpl: 'none' }); dirty.buyer = true; return draw(); }
+        if (WJ.unified) {
+          const targets = all ? PATHS.filter((p) => p.kind !== 'stop') : PATHS.filter((p) => 'p:' + p.id === lid);
+          targets.forEach((p) => { if (min < 1410) p.steps.push({ after_h: min / 60, kind: 'nudge', offer: '', text: '', remark: '', ch: 'free' }); else p.steps.push({ after_h: min / 60, kind: 'offer', offer: defRef, text: '', remark: '', ch: 'tpl' }); dirty.ap.add(p.id); });
+          return draw();
+        }
         const lane = lid === 'e' ? null : lanes().find((x) => x.id === lid);
-        if (lane && lane.path && min <= MAXAP) { lane.path.steps.push({ after_h: min / 60, kind: min < 1440 ? 'nudge' : 'nudge', offer: '', text: '', remark: '', ch: min >= 1410 ? 'tpl' : 'free' }); dirty.ap.add(lane.path.id); return draw(); }
-        if (lane && lane.path && !lane.topic && min > MAXAP) { toast('This lane has no later steps of its own yet — add it under “Everyone”.', true); return; }
-        if (min < 1440) { toast('A step under a minute-or-hour time needs one of the six early lanes.', true); return; }
+        if (lane && lane.path && min <= 240 * 60) { lane.path.steps.push({ after_h: min / 60, kind: 'nudge', offer: '', text: '', remark: '', ch: min >= 1410 ? 'tpl' : 'free' }); dirty.ap.add(lane.path.id); return draw(); }
+        if (min < 1440) { toast('A step under a day needs one of the early lanes.', true); return; }
         LEAD.push({ id: '', day: Math.max(1, Math.min(60, Math.round(min / 1440))), ref: defRef, idea: '', topic: lane ? lane.topic : '', on: true, label: '', icon: '💬', tpl: 'none' }); dirty.lead = true; draw();
-      });
+      }, lid === 'b');
     }
     async function saveAll() {
       if (busy) return; busy = true; let ok = true;
@@ -164,11 +171,12 @@
           const upd = () => { const k = inp.dataset.f;
             if (k === 'v' || k === 'u') { const m = toMin(row.querySelector('[data-f=v]').value, row.querySelector('[data-f=u]').value); if (!setTime(f, m)) { draw(); return; } }
             else if (k === 'text') f.st.text = inp.value;
+            else if (k === 'kind') { f.st.kind = inp.value; if (inp.value === 'offer' && !f.st.offer) f.st.offer = (WJ.messages.find((m) => m.k === 'w_miss') || WJ.messages[0] || {}).k || ''; }
             else if (k === 'idea') f.st.idea = inp.value;
             else if (k === 'on') f.st.on = inp.checked;
             else if (k === 'ref') { if (inp.value === '__new') { newMsg((key) => { if (key) { if (f.src === 'ap') { f.st.kind = 'offer'; f.st.offer = key; } else f.st.ref = key; markDirty(f); } draw(); }); return; } if (f.src === 'ap') { f.st.kind = 'offer'; f.st.offer = inp.value; } else f.st.ref = inp.value; }
             markDirty(f); };
-          inp.oninput = k0(inp) ? null : upd; inp.onchange = () => { upd(); if (['u', 'ref', 'on'].includes(inp.dataset.f)) setTimeout(draw, 0); }; });
+          inp.oninput = k0(inp) ? null : upd; inp.onchange = () => { upd(); if (['u', 'ref', 'on', 'kind'].includes(inp.dataset.f)) setTimeout(draw, 0); }; });
         row.querySelector('[data-rm]').onclick = () => {
           if (f.src === 'ap') { if (f.p.steps.length <= 1) { toast('Keep at least one step in this lane.', true); return; } f.p.steps.splice(f.idx, 1); dirty.ap.add(f.p.id); } else { f.arr.splice(f.idx, 1); dirty[f.tk] = true; }
           draw(); }; });
