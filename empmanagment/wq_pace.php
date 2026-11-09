@@ -292,6 +292,30 @@ function wq_pace_corr(array $s): ?array
     return ['r' => round($k, 2), 'n' => (int)$n, 'label' => $lab];
 }
 
+/** The actual replies of one person: what the customer wrote, what the person answered and how many minutes it took (same rules as the pace: a bare "ok" does not count, complaint chats are left out). Admin only. */
+function wq_pace_replies(PDO $pdo, int $emp, int $days): array
+{
+    $days = in_array($days, [1, 7, 30], true) ? $days : 7; $from = strtotime(date('Y-m-d 00:00:00')) - ($days - 1) * 86400; $fromS = date('Y-m-d H:i:s', $from);
+    $ph = $pdo->prepare("SELECT DISTINCT phone FROM wa_messages WHERE emp_id = ? AND dir = 'out' AND who = 'emp' AND ts >= ? LIMIT 400"); $ph->execute([$emp, $fromS]); $phones = array_column($ph->fetchAll(), 'phone');
+    $info = []; if ($phones) { $in = implode(',', array_fill(0, count($phones), '?')); foreach (["SELECT phone, name, cx_id FROM wa_contacts WHERE phone IN ($in)", "SELECT phone, name, 0 cx_id FROM wa_contacts WHERE phone IN ($in)"] as $sql) { try { $q = $pdo->prepare($sql); $q->execute($phones); foreach ($q->fetchAll() as $r) $info[(string)$r['phone']] = $r; break; } catch (Throwable $e) { } } }
+    $m = $pdo->prepare("SELECT dir, who, emp_id, ts, mtype, LEFT(body, 140) b FROM wa_messages WHERE phone = ? AND dir IN ('in','out') AND ts >= ? ORDER BY id LIMIT 600"); $o = [];
+    foreach ($phones as $p) {
+        if ((int)($info[$p]['cx_id'] ?? 0) > 0) continue;   // a complaint chat: the complaint team answers it
+        $m->execute([$p, date('Y-m-d H:i:s', $from - 86400)]); $pend = 0; $pt = '';
+        foreach ($m->fetchAll() as $r) {
+            $t = strtotime((string)$r['ts']); if (!$t) continue; $txt = (string)$r['b']; if ($txt === '' && (string)$r['mtype'] !== 'text') $txt = '[' . $r['mtype'] . ']';
+            if ($r['dir'] === 'in') { if ($pend === 0) { $pend = $t; $pt = $txt; } continue; }
+            if ($pend === 0) continue; $who = (string)$r['who']; $e = (int)$r['emp_id'];
+            if ($who === 'emp' && $e > 0) { if (wq_pace_trivial((string)$r['mtype'], (string)$r['b'])) continue; }
+            elseif (!in_array($who, ['bot', 'auto', 'flow'], true)) continue;
+            if ($who === 'emp' && $e === $emp && $t >= $from) { $mins = max(0, $t - $pend) / 60.0; $o[] = ['phone' => $p, 'name' => (string)($info[$p]['name'] ?? ''), 'in_at' => date('Y-m-d H:i:s', $pend), 'in_text' => $pt, 'out_at' => (string)$r['ts'], 'out_text' => $txt, 'mins' => round($mins, 1), 'night' => $mins >= 480]; }
+            $pend = 0;
+        }
+    }
+    usort($o, function ($a, $b) { return strcmp($b['out_at'], $a['out_at']); }); $slow = array_values(array_filter($o, function ($x) { return !$x['night']; })); usort($slow, function ($a, $b) { return $b['mins'] <=> $a['mins']; });
+    return ['ok' => true, 'emp_id' => $emp, 'days' => $days, 'n' => count($o), 'recent' => array_slice($o, 0, 60), 'slowest' => array_slice($slow, 0, 15)];
+}
+
 /** Cached for 2 minutes per period (the scan reads a lot of messages). */
 function wq_pace_get(PDO $pdo, int $days): array
 {
@@ -315,11 +339,12 @@ function wq_pace_for_self(array $d, int $me): array
 
 // ------------------------------------------------------------------------------------------------------------------ router
 $__wqp = (string)($action ?? ($_GET['action'] ?? ''));
-if (in_array($__wqp, ['wq.pace_waiting', 'wq.pace_nudge', 'wq.pace_cfg'], true)) {
+if (in_array($__wqp, ['wq.pace_waiting', 'wq.pace_nudge', 'wq.pace_cfg', 'wq.pace_replies'], true)) {
     $auth = require_auth(); $me = (int)($auth['employee_id'] ?? 0); $post = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     if (!function_exists('wa_tables') || !wa_tables($pdo)) json_response(['error' => 'WhatsApp storage is not available - check database permissions.'], 500);
     if (!function_exists('wa_is_admin') || !wa_is_admin($pdo, $auth)) json_response(['error' => 'Only Admin, HR or the control tower can do this.'], 403);
     try {
+        if ($__wqp === 'wq.pace_replies') { if ($post) json_response(['error' => 'Method not allowed.'], 405); json_response(wq_pace_replies($pdo, (int)($_GET['emp_id'] ?? 0), (int)($_GET['days'] ?? 7))); }
         if ($__wqp === 'wq.pace_waiting') { if ($post) json_response(['error' => 'Method not allowed.'], 405); json_response(wq_pace_waiting($pdo)); }
         $in = $post ? json_input() : [];
         if ($__wqp === 'wq.pace_nudge') { if (!$post) json_response(['error' => 'Method not allowed.'], 405); $r = wq_pace_nudge($pdo, (int)($in['emp_id'] ?? 0), $me); json_response($r, isset($r['error']) ? 409 : 200); }
