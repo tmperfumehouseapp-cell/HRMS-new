@@ -196,8 +196,8 @@ function fu_due_c(PDO $pdo, string $key, array $L, array $sit, int $idx, int $ba
 function jn_cold_tag(PDO $pdo, string $key, bool $on): void
 {
     try {
-        if ($on) { $pdo->prepare("INSERT IGNORE INTO wa_ctags (phone, tag, src, at) VALUES (?, 'cold', 'journey', ?)")->execute([$key, date('Y-m-d H:i:s')]); $pdo->prepare("INSERT IGNORE INTO wa_tagidx (phone, tag) VALUES (?, 'cold')")->execute([$key]); }
-        else { $pdo->prepare("DELETE FROM wa_ctags WHERE phone = ? AND tag = 'cold'")->execute([$key]); $pdo->prepare("DELETE FROM wa_tagidx WHERE phone = ? AND tag = 'cold'")->execute([$key]); }
+        if ($on) { $pdo->prepare("INSERT IGNORE INTO wa_ctags (phone, tag, src, at) VALUES (?, 'ignored_fu', 'journey', ?)")->execute([$key, date('Y-m-d H:i:s')]); $pdo->prepare("INSERT IGNORE INTO wa_tagidx (phone, tag) VALUES (?, 'ignored_fu')")->execute([$key]); }
+        else { $pdo->prepare("DELETE FROM wa_ctags WHERE phone = ? AND tag = 'ignored_fu'")->execute([$key]); $pdo->prepare("DELETE FROM wa_tagidx WHERE phone = ? AND tag = 'ignored_fu'")->execute([$key]); }
     } catch (Throwable $e) { }
 }
 /** What the writers should know about a customer who comes back: orders, what they liked, what we already sent (so the same words are not repeated). */
