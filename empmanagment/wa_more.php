@@ -247,7 +247,6 @@ function wa_tick(PDO $pdo, bool $force = false): array
     try { if (function_exists('wq_tick')) $o['wq'] = wq_tick($pdo, ['light' => true]); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'whatsapp sales: ' . $e->getMessage()); }   // no-answer flow + typing of new queries
     try { if (function_exists('wch_tick')) $o['wch'] = wch_tick($pdo, ['light' => true]); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'chain cart: ' . $e->getMessage()); }   // chain cart: reminders
     try { if (function_exists('wa_ord_tick')) $o['orders'] = wa_ord_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'orders: ' . $e->getMessage()); }   // order-update messages (and the one-time template setup)
-    try { if (function_exists('wj_tick') && $force && !defined('WA_IN_WEBHOOK')) $o['journey'] = wj_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'journey: ' . $e->getMessage()); }   // 🗓 60-day Journey: today's messages, the night's topic learning, festival watch
     setting_set($pdo, 'wa_tick_at', date('Y-m-d H:i:s'));
     return $o;
 }
@@ -557,7 +556,6 @@ require_once __DIR__ . '/wa_growth.php';  // growth engine: phone panel, results
 require_once __DIR__ . '/wa_brain.php';   // follow-up plans + engine (wa_follow.php), template ladder, quality guard, Learning & Improvement endpoints (learn.*)
 require_once __DIR__ . '/wa_fu_coach.php';   // 🔁 Learning → Follow-ups: Claude builds the whole follow-up plan from one summary (fu.coach_*) — after wa_brain.php (needs the follow-up engine)
 require_once __DIR__ . '/wa_autopilot.php';   // 🔁 Follow-up Autopilot: 6 paths, offers on day 2/4/7/10, festival box, teach each day, results (fu.ap_*) — after wa_fu_coach.php
-require_once __DIR__ . '/wa_journey.php';   // 🗓 60-day Journey: two tracks, rolling entry / exit, central offer registry, nightly topics, festival watcher, general brain (fu.wj_*) — after wa_autopilot.php
 require_once __DIR__ . '/wa_orders.php';   // live orders in the chat, Needs attention cases for Dispatch, order-update messages, Store info (wa.ord_*, wa.store_*)
 if (is_file(__DIR__ . '/cust_bday.php')) require_once __DIR__ . '/cust_bday.php';   // 🎂 birthdays collected at ordering
 if (is_file(__DIR__ . '/wa_review.php')) require_once __DIR__ . '/wa_review.php';   // ⭐ rating request 5 days after delivery → Judge.me (5) or a complaint (lower)
