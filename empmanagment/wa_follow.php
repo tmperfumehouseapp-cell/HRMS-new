@@ -243,6 +243,7 @@ function jn_customer_timeline(PDO $pdo, string $key): array
                         $o['next'][] = ['at' => date('Y-m-d H:i', $at), 'label' => ($s['kind'] === 'offer' ? '📨 ' . ($reg[$s['offer']][0] ?? $s['offer']) : '💬 ' . ($s['text'] !== '' ? mb_substr($s['text'], 0, 50) : 'a short message'))]; } } }
         }
         if ($why !== '') $o['pause'] = $why; $o['next'] = array_slice($o['next'], 0, 8);
+        if (function_exists('jt_customer_tags')) $o['tags'] = jt_customer_tags($pdo, $key);
     } catch (Throwable $e) { error_log('jn_customer_timeline: ' . $e->getMessage()); }
     return $o;
 }
@@ -489,6 +490,7 @@ function jn_not_prospect(PDO $pdo, array $c): string
 {
     $k = (string)$c['phone']; if ((string)($c['tag'] ?? '') === 'complaint') return 'complaint chat';
     try { if (function_exists('wr_blocked_open_case') && wr_blocked_open_case($pdo, $k, '')) return 'open complaint'; } catch (Throwable $e) { }
+    try { $q = $pdo->prepare("SELECT 1 FROM wa_auto_tags WHERE phone = ? AND tag = 'not_interested' AND src = 'auto' AND (until IS NULL OR until > NOW()) LIMIT 1"); $q->execute([$k]); if ($q->fetchColumn()) return 'said they are not interested'; } catch (Throwable $e) { }
     try { $q = $pdo->prepare("SELECT 1 FROM wq_rescue WHERE phone = ? AND status = 'skipped' AND (ai_state = 'auto' OR (ai_state = 'agreed' AND skip_reason <> 'price') OR (skip_reason = 'other' AND ai_state = 'final')) LIMIT 1"); $q->execute([$k]); if ($q->fetchColumn()) return 'not a prospect'; } catch (Throwable $e) { }
     return '';
 }
