@@ -247,6 +247,19 @@ function wa_parse_msg(array $m): array
     return [$t, $body, $mid, $mime];
 }
 
+/** 🔀 Owner (9 Nov): a customer who writes to a number that has the Meta payment problem (131042) is answered from another number — the chat is switched to it at once.
+ *  The new number has no 24-hour window with this customer yet, so the first message from it must be a pre-made message (the chat opens the list by itself). Returns the new number id or 0. */
+function wa_redirect_target(PDO $pdo, int $numberId): int
+{
+    try {
+        $pb = (string)setting_get($pdo, 'wa_payblock_' . $numberId, ''); if ($pb === '' || strtotime($pb) < time() - 3 * 3600) return 0;
+        $best = 0; foreach ($pdo->query("SELECT id, label, display FROM wa_numbers ORDER BY id")->fetchAll() as $n) {
+            $id = (int)$n['id']; if ($id === $numberId) continue; $b2 = (string)setting_get($pdo, 'wa_payblock_' . $id, ''); if ($b2 !== '' && strtotime($b2) > time() - 3 * 3600) continue;
+            if ($best === 0 || preg_match('/main/i', (string)$n['label'] . ' ' . (string)$n['display'])) $best = $id;
+        }
+        return $best;
+    } catch (Throwable $e) { return 0; }
+}
 /** Stores one incoming message (one customer = one row, whichever number it came on). Returns the customer key. */
 function wa_store_in(PDO $pdo, array $m, string $name, int $numberId): string
 {
@@ -259,6 +272,7 @@ function wa_store_in(PDO $pdo, array $m, string $name, int $numberId): string
         $pdo->prepare("UPDATE wa_contacts SET wa_id = ?, name = CASE WHEN name = '' THEN ? ELSE name END, last_in_at = ?, last_number_id = ?, status = 'open', closed_at = NULL WHERE phone = ?")->execute([(string)($m['from'] ?? ''), mb_substr($name, 0, 120), $now, $numberId, $key]);   // a closed chat re-opens when the customer writes again
         if ($ref && (string)$ex['source'] === '') $pdo->prepare("UPDATE wa_contacts SET source = 'query', ref_text = ? WHERE phone = ?")->execute([$refTxt, $key]);
     }
+    try { $rt = wa_redirect_target($pdo, $numberId); if ($rt > 0) { $pdo->prepare("UPDATE wa_contacts SET last_number_id = ? WHERE phone = ?")->execute([$rt, $key]); $ln = $pdo->prepare("SELECT label, display FROM wa_numbers WHERE id = ?"); $ln->execute([$rt]); $lr = $ln->fetch(); $dup = $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND dir = 'sys' AND body LIKE '🔀%' AND ts >= ? LIMIT 1"); $dup->execute([$key, date('Y-m-d H:i:s', time() - 86400)]); if (!$dup->fetchColumn()) wa_event($pdo, $key, '🔀 The customer wrote to a number with a payment problem — the chat now answers from ' . trim((string)($lr['label'] ?: $lr['display'])) . '. Start with a pre-made message (WhatsApp allows free text there only after the customer answers).'); } } catch (Throwable $e) { }
     try {
         $pdo->prepare("INSERT INTO wa_messages (wamid, phone, number_id, dir, mtype, body, media_id, media_mime, status, who, ts) VALUES (?, ?, ?, 'in', ?, ?, ?, ?, 'received', 'customer', ?)")
             ->execute([(string)($m['id'] ?? ''), $key, $numberId, mb_substr($t, 0, 16), $body, $mid, mb_substr($mime, 0, 60), $now]);
