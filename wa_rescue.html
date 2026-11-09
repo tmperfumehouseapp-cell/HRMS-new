@@ -69,6 +69,8 @@ guardPage();
       if (S.tab === 'bonus') S.bonus = await api.get('wq.rescue_bonus', {});
     } catch (e) { root.innerHTML = '<div class="rq-err">' + esc(e.message || 'Could not load.') + ' <button class="btn" id="rqRetry">Try again</button></div>'; document.getElementById('rqRetry').onclick = load; return; }
     draw();
+    // the check runs in the background (the list above is already on screen); when it found something new the list is refreshed
+    if (!S.scanned) { S.scanned = true; api.post('wq.rescue_scan', {}).then((r) => { if (r && r.scan) load(); }, () => { }); }
   }
   function chips(it) {
     return (it.why || []).map((w) => { const x = WHY[w] || [w, '']; return '<span class="rq-chip ' + x[1] + '">' + esc(x[0]) + '</span>'; }).join('') + '<span class="rq-chip st">' + esc(ST[it.status] || it.status) + '</span>';
@@ -93,7 +95,8 @@ guardPage();
     if (!S.admin && !d.member) { root.innerHTML = '<div class="rq-empty">You are not on today\'s rescue team. Ask the owner to add you — then the missed queries show up here and every order you win earns +' + esc(cfg.pct) + '% extra.</div>'; return; }
     h += '<div class="rq-cards"><div class="rq-card"><b>' + (s.open || 0) + '</b><span>Waiting to be taken</span></div><div class="rq-card"><b>' + (s.taken || 0) + '</b><span>Being worked</span></div>' +
       '<div class="rq-card"><b>' + (s.won || 0) + '</b><span>Orders won</span></div><div class="rq-card"><b>' + (s.silent || 0) + '</b><span>Gone silent</span></div><div class="rq-card"><b>' + money(s.revenue) + '</b><span>Won revenue</span></div><div class="rq-card"><b>' + money(s.bonus) + '</b><span>Bonus earned (' + esc(cfg.pct) + '%)</span></div></div>';
-    { const ls = d.last_scan, sc = ls && ls.scan; if (S.admin && sc) h += '<div class="rq-sub" style="margin-bottom:10px">Last check ' + esc(ago(ls.at)) + ': looked at <b>' + (sc.candidates || 0) + '</b> queries, <b>' + (sc.flagged || 0) + '</b> new opportunities, ' + (sc.silent || 0) + ' gone silent (tried ' + esc(cfg.attempts) + '+ times).' + (sc.error ? ' <span style="color:#d9423b">Problem: ' + esc(sc.error) + '</span>' : '') + ' It runs by itself every time WhatsApp opens.</div>'; }
+    { const ls = d.last_scan, sc = ls && ls.scan;
+      if (S.admin) h += '<div class="rq-sub" style="margin-bottom:10px">' + (sc ? 'Last check ' + esc(ago(ls.at)) + ' (last ' + esc(cfg.days) + ' days): <b>' + (sc.all || 0) + '</b> queries · <b>' + (sc.quiet || 0) + '</b> quiet for ' + esc(cfg.wait_h) + '+ h · <b>' + (sc.ordered || 0) + '</b> already ordered · looked at <b>' + (sc.candidates || 0) + '</b> · <b>' + (sc.flagged || 0) + '</b> new opportunities · ' + (sc.no_signal || 0) + ' showed no interest · ' + (sc.silent || 0) + ' gone silent.' + (sc.error ? ' <span style="color:#d9423b">Problem: ' + esc(sc.error) + '</span>' : '') : 'No check has run yet — it runs by itself when WhatsApp opens.') + '</div>'; }
     if (S.admin) h += '<div class="rq-tabs"><button data-tab="list" class="' + (S.tab === 'list' ? 'on' : '') + '">Queries</button><button data-tab="team" class="' + (S.tab === 'team' ? 'on' : '') + '">Rescue team</button><button data-tab="bonus" class="' + (S.tab === 'bonus' ? 'on' : '') + '">Bonus report</button><button data-tab="cfg" class="' + (S.tab === 'cfg' ? 'on' : '') + '">Settings</button></div>';
     else h += '<div class="rq-tabs"><button data-tab="list" class="' + (S.tab === 'list' ? 'on' : '') + '">Queries</button><button data-tab="bonus" class="' + (S.tab === 'bonus' ? 'on' : '') + '">My bonus</button></div>';
     if (S.tab === 'list') {
@@ -107,7 +110,7 @@ guardPage();
         '<div class="rq-row"><button class="btn" id="rqTeamDay">Save for today</button><button class="btn secondary" id="rqTeamAlways">Save for every day</button></div>' + (t.always ? '<div class="rq-sub">Today uses the “every day” list.</div>' : '') + '</div>';
     } else if (S.tab === 'bonus' && S.bonus) {
       const b = S.bonus;
-      h += '<div class="card" style="padding:14px 18px"><b>Rescue bonus ' + esc(b.from) + ' → ' + esc(b.to) + ': ' + money(b.total_bonus) + '</b><div class="rq-sub">Extra on top of the normal commission – ' + esc(cfg.pct) + '% of each order's total — per order. Every order the customer places after the query was taken earns it.</div></div>' +
+      h += '<div class="card" style="padding:14px 18px"><b>Rescue bonus ' + esc(b.from) + ' → ' + esc(b.to) + ': ' + money(b.total_bonus) + '</b><div class="rq-sub">Extra on top of the normal commission – ' + esc(cfg.pct) + '% of each order\'s total — per order. Every order the customer places after the query was taken earns it.</div></div>' +
         (S.admin && b.people.length ? '<table><thead><tr><th>Person</th><th>Orders</th><th>Revenue</th><th>Bonus</th></tr></thead><tbody>' + b.people.map((p) => '<tr><td>' + esc(p.name) + '</td><td>' + p.orders + '</td><td>' + money(p.revenue) + '</td><td><b>' + money(p.bonus) + '</b></td></tr>').join('') + '</tbody></table>' : '') +
         (b.orders.length ? '<table style="margin-top:10px"><thead><tr><th>Order</th><th>Customer</th><th>Person</th><th>Total</th><th>Bonus</th><th>Date</th></tr></thead><tbody>' + b.orders.map((o) => '<tr><td>' + esc(o.order_name) + '</td><td>' + esc(o.customer || o.phone) + '</td><td>' + esc(o.name) + '</td><td>' + money(o.total) + '</td><td>' + money(o.bonus) + '</td><td>' + esc(o.won_at) + '</td></tr>').join('') + '</tbody></table>' : '<div class="rq-empty">No rescued orders in this period yet.</div>');
     } else if (S.tab === 'cfg' && S.admin) {
