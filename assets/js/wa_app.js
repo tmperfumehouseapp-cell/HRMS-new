@@ -1040,7 +1040,8 @@
       catch (e) {
         if (auto && /already (been )?(answered|replied|claimed)|someone else/i.test(e.message || '')) { if (S.cur) { S.cur.msgs = S.cur.msgs.filter((m) => m !== tmp); $('#wxMs').innerHTML = msgsHtml(); } toast('Already answered by the bot or a colleague. Nothing was sent twice.'); return; }   // HTTP 409 from wq: quiet
         if (/open complaint/i.test(e.message || '')) { S.cur.cxLock = true; S.cur.msgs = S.cur.msgs.filter((m) => m !== tmp); $('#wxMs').innerHTML = msgsHtml(); const t = $('#wxTx'); if (t) { t.value = text; t.placeholder = '📝 Note for the complaint team (the customer will not see it)'; t.classList.add('cxl'); } toast(e.message, true); return; }   // the server says: complaint team only — keep the words, send them as a note
-        tmp.status = 'failed'; tmp.retry = !auto && !/opted out|window is closed|assigned to someone/i.test(e.message || ''); if (S.cur && S.cur.phone === phone) redrawBubble(tmp); toast(e.message, true);
+        tmp.status = 'failed'; tmp.retry = !auto && !/opted out|window is closed|assigned to someone|not written to this number/i.test(e.message || ''); if (/not written to this number|window is closed/i.test(e.message || '') && S.cur && S.cur.phone === phone) setTimeout(() => { try { openTemplates(); } catch (x) { } }, 400);   // a chat on another number has no window yet → open the pre-made messages straight away
+         if (S.cur && S.cur.phone === phone) redrawBubble(tmp); toast(e.message, true);
       }
     }
     function upload(f, phone, caption, onp) {
