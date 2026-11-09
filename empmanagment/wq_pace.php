@@ -114,11 +114,12 @@ function wq_pace_calc(PDO $pdo, int $days): array
         foreach ($o->fetchAll() as $r) {
             $f = $r['fpm']; $k = $f === null ? 'none' : ((float)$f <= 5 ? 'fast' : ((float)$f <= 30 ? 'mid' : 'slow')); $won = (int)$r['orders'] > 0;
             $B[$k][0]++; if ($won) { $B[$k][1]++; if ($r['closemin'] !== null && (int)$r['closemin'] >= 0) $B[$k][2][] = (int)$r['closemin']; }
-            $e = (int)$r['emp_id']; if ($e > 0) { if (!isset($E[$e])) $E[$e] = [0, 0, []]; $E[$e][0]++; if ($won) { $E[$e][1]++; if ($r['closemin'] !== null && (int)$r['closemin'] >= 0) $E[$e][2][] = (int)$r['closemin']; } }
+            $e = (int)$r['emp_id']; if ($e > 0) { if (!isset($E[$e])) $E[$e] = [0, 0, [], ['fast' => [0, 0], 'mid' => [0, 0], 'slow' => [0, 0], 'none' => [0, 0]]]; $E[$e][0]++; $E[$e][3][$k][0]++; if ($won) { $E[$e][1]++; $E[$e][3][$k][1]++; if ($r['closemin'] !== null && (int)$r['closemin'] >= 0) $E[$e][2][] = (int)$r['closemin']; } }
         }
         $lab = ['fast' => 'Answered in 5 min or less', 'mid' => 'Answered in 5 - 30 min', 'slow' => 'Answered after 30 min', 'none' => 'No person answered'];
         foreach ($B as $k => $v) $ord['buckets'][] = ['key' => $k, 'label' => $lab[$k], 'queries' => $v[0], 'orders' => $v[1], 'conversion' => $v[0] > 0 ? round(100 * $v[1] / $v[0], 1) : null, 'close_median_min' => $v[2] ? (int)round(wq_pace_med($v[2])) : null];
-        foreach ($E as $e => $v) $ord['by_emp'][$e] = ['queries' => $v[0], 'orders' => $v[1], 'conversion' => $v[0] > 0 ? round(100 * $v[1] / $v[0], 1) : null, 'close_median_min' => $v[2] ? (int)round(wq_pace_med($v[2])) : null];
+        foreach ($E as $e => $v) { $bk = []; foreach ($v[3] as $kk => $z) $bk[$kk] = ['queries' => $z[0], 'orders' => $z[1], 'conversion' => $z[0] > 0 ? round(100 * $z[1] / $z[0], 1) : null];
+            $ord['by_emp'][$e] = ['queries' => $v[0], 'orders' => $v[1], 'conversion' => $v[0] > 0 ? round(100 * $v[1] / $v[0], 1) : null, 'close_median_min' => $v[2] ? (int)round(wq_pace_med($v[2])) : null, 'buckets' => $bk]; }
         $fa = $ord['buckets'][0]; $sl = $ord['buckets'][2];
         $ord['verdict'] = ['fast_vs_slow_conversion' => ($fa['conversion'] !== null && $sl['conversion'] !== null && $sl['conversion'] > 0) ? round($fa['conversion'] / $sl['conversion'], 2) : null,
             'fast_vs_slow_close' => ($fa['close_median_min'] && $sl['close_median_min']) ? round($sl['close_median_min'] / $fa['close_median_min'], 2) : null,

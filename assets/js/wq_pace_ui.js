@@ -68,6 +68,17 @@ html.wqdk .wp,html.wxdk .wp{--wp-ink:#e9edef;--wp-card:#1f2c34;--wp-line:#2a3942
     else h += '<div class="wp-verdict">Not enough queries yet to judge (needs 20 answered within 5 min and 20 answered after 30 min). The table fills as orders come in.</div>';
     return h + '</div>';
   }
+  // one table that joins the two things: how fast each person answers AND how many orders those fast / slow answers brought
+  function linkCard(d) {
+    const ps = (d.people || []).filter((p) => p.orders && p.orders.buckets), o = d.orders || {}, b = o.buckets || []; if (!ps.length && !b.length) return '';
+    const cell = (x) => !x || !x.queries ? '<span class="wp-sub">-</span>' : '<b>' + x.orders + '</b> <span class="wp-sub">of ' + x.queries + '</span><div class="wp-sub">' + (has(x.conversion) ? x.conversion + '%' : '-') + '</div>';
+    const link = (bk) => { const f = bk.fast, s = bk.slow; if (!f || !s || f.queries < 5 || s.queries < 5) return '<span class="wp-sub">too few</span>'; const fc = f.conversion || 0, sc = s.conversion || 0; return fc > sc ? '<span class="dn">✅ Good: fast replies win more</span>' : fc < sc ? '<span class="up">⚠ Bad: slow replies win more</span>' : '<span class="wp-sub">Same</span>'; };
+    const tb = {}; b.forEach((x) => { tb[x.key] = x; });
+    let h = '<div class="wp-card"><h3>⚡ Reply speed × orders</h3><div class="wp-sub">Each person: how fast they answer, and how many orders came from their fast answers (first reply within 5 min) and from their slow answers (after 30 min). Queries from the last 30 days. "7 of 20" = 7 orders from 20 queries.</div><div class="wp-sc"><table><thead><tr><th>Person</th><th>Typical reply</th><th>Fast replies<br>(≤ 5 min)</th><th>Medium<br>(5 - 30 min)</th><th>Slow replies<br>(30+ min)</th><th>Not answered</th><th>Connection</th></tr></thead><tbody>';
+    ps.forEach((p) => { const bk = p.orders.buckets; h += '<tr><td><b>' + esc(p.name) + '</b></td><td>' + chip(p) + '</td><td>' + cell(bk.fast) + '</td><td>' + cell(bk.mid) + '</td><td>' + cell(bk.slow) + '</td><td>' + cell(bk.none) + '</td><td style="text-align:left">' + link(bk) + '</td></tr>'; });
+    if (b.length) h += '<tr><td><b>Whole team</b></td><td>' + (d.team ? chip(d.team.pace) : '-') + '</td><td>' + cell(tb.fast) + '</td><td>' + cell(tb.mid) + '</td><td>' + cell(tb.slow) + '</td><td>' + cell(tb.none) + '</td><td style="text-align:left">' + link(tb) + '</td></tr>';
+    return h + '</tbody></table></div></div>';
+  }
   function board(d) {
     const ps = d.people || []; if (!ps.length) return '';
     let h = '<div class="wp-card"><h3>Who is fast, who is slow</h3><div class="wp-sub">Sorted fastest first. Median = the typical reply. "Slow %" = replies later than 30 min. ▼ means faster than the period before. People with under 5 replies are listed last.</div><div class="wp-sc"><table><thead><tr><th>#</th><th>Person</th><th>Typical reply</th><th>Average</th><th>Within 5 min</th><th>Slow %</th><th>Replies</th><th>vs before</th><th>Trend</th><th>After taking</th><th>Orders %</th><th>Time to order</th></tr></thead><tbody>';
@@ -92,7 +103,7 @@ html.wqdk .wp,html.wxdk .wp{--wp-ink:#e9edef;--wp-card:#1f2c34;--wp-line:#2a3942
         + '<div class="wp-tile"><small>Within 5 minutes</small><b>' + (has(tp.fast_pct) ? tp.fast_pct + '%' : '-') + '</b><span>slow (30+ min) ' + (has(tp.slow_pct) ? tp.slow_pct + '%' : '-') + '</span></div>'
         + '<div class="wp-tile"><small>Before</small><b>' + fm(pv.median) + '</b><span>' + delta(has(tp.median) && has(pv.median) ? Math.round((tp.median - pv.median) * 10) / 10 : null) + '</span></div>'
         + '<div class="wp-tile"><small>Auto-bot reply</small><b>' + fm(d.team.bot.median) + '</b><span>' + d.team.bot.n + ' auto replies</span></div></div>';
-      h += '<div class="wp-card"><h3>Daily pace (everyone together)</h3>' + graph(d.team.series, d.team.bot_series) + '</div>' + board(d) + takeBlock(d, true, null) + orderBlock(d);
+      h += linkCard(d) + '<div class="wp-card"><h3>Daily pace (everyone together)</h3>' + graph(d.team.series, d.team.bot_series) + '</div>' + board(d) + takeBlock(d, true, null) + orderBlock(d);
     }
     h += '<div class="wp-sub">How it is measured: the clock starts at the first customer message nobody has answered, and stops at the next message a person sends (typed, quick-reply or template). All queries (Meta, Campaign, Community, Regenerated, New) are counted together. Auto-bot and holding messages are timed separately and never count for a person. Gaps of 8+ hours (night / next day) are left out. Grades: Fast up to 3 min · Good up to 10 · Slow up to 30 · Very slow above 30.</div>';
     return h;
@@ -114,5 +125,5 @@ html.wqdk .wp,html.wxdk .wp{--wp-ink:#e9edef;--wp-card:#1f2c34;--wp-line:#2a3942
     ov.addEventListener('click', (e) => { if (e.target === ov || e.target.closest('.wp-x')) close(); }); document.addEventListener('keydown', esck);
     document.body.appendChild(ov); mount(ov.querySelector('#wpBody'), { days: 7 });
   }
-  window.WaPace = { mount, open, load, chip, fm, css };
+  window.WaPace = { mount, open, load, chip, fm, css, linkCard };
 })();

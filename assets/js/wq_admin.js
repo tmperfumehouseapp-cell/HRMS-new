@@ -71,7 +71,7 @@
     function loadAttn() { return get('wq.attention').then((d) => { S.attn = d; S.attnErr = null; }, (e) => { S.attnErr = e; }); }
     function loadBoard() { return get('wq.board', { days: S.days }).then((d) => { S.board = d; S.boardErr = null; }, (e) => { S.boardErr = e; }); }
     // ⚡ pace of every person (the Pace column on the board); a failure just leaves the column empty
-    function loadPace() { return get('wq.pace', { days: S.days }).then((d) => { S.pace = {}; (d.people || []).forEach((p) => { S.pace[p.emp_id] = p; }); S.paceTeam = d.team; }, () => { S.pace = S.pace || {}; }); }
+    function loadPace() { return get('wq.pace', { days: S.days }).then((d) => { S.pace = {}; (d.people || []).forEach((p) => { S.pace[p.emp_id] = p; }); S.paceTeam = d.team; S.paceFull = d; if (window.WaPace) window.WaPace.css(); }, () => { S.pace = S.pace || {}; }); }
     const paceCell = (p) => { const x = S.pace && S.pace[p.emp_id]; return x && window.WaPace ? window.WaPace.chip(x) + (x.rank ? '<div class="wq-sub" style="font-size:11px">#' + x.rank + '</div>' : '') : '<span class="wq-sub">-</span>'; };
     const holderNote = (it) => {
       const h = it.holder || {}; if (!h.emp_id) return 'Nobody holds it';
@@ -183,7 +183,7 @@
           + statTile('Orders', num(t.orders), has(t.conversion) ? U.pct(t.conversion, 0) + ' conversion' : 'No conversion yet')
           + statTile('Revenue', money(t.revenue), num(t.orders) > 0 ? money(num(t.revenue) / num(t.orders)) + ' per order' : 'No orders yet')
           + (S.board.birthdays ? statTile('🎂 Birthdays', num(S.board.birthdays.total), num(S.board.birthdays.by_customer) + ' by customers · ' + num(S.board.birthdays.by_team) + ' by the team', num(S.board.birthdays.total) > 0 ? 'ok' : '') : '') + '</div>';
-        h += liveBoard(S.board);
+        h += (S.paceFull && window.WaPace ? '<div class="wp">' + window.WaPace.linkCard(S.paceFull) + '</div>' : '') + liveBoard(S.board);
       }
       body.innerHTML = h;
     }
