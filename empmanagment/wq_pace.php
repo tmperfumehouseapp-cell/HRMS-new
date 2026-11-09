@@ -52,6 +52,16 @@ function wq_pace_how_label(string $how): string
     return $m[$how] ?? ($how === '' ? 'Other' : ucfirst($how));
 }
 
+/** "ok", "hmm", "haan", a lone emoji ... is not an answer: it does not stop the clock and is not counted as a fast reply. Photos, voice notes and documents always count. */
+function wq_pace_trivial(string $mtype, string $body): bool
+{
+    if ($mtype !== '' && $mtype !== 'text') return false;
+    $t = mb_strtolower(trim($body)); if ($t === '') return false;
+    $w = trim(preg_replace('/[^\p{L}\p{N}]+/u', ' ', $t));
+    if ($w === '') return true;                                        // only emojis / punctuation
+    return in_array($w, ['ok', 'okay', 'okk', 'okkk', 'k', 'kk', 'hmm', 'hmmm', 'hm', 'mm', 'mmm', 'yes', 'yeah', 'yep', 'haan', 'ha', 'han', 'ji', 'hanji', 'haji', 'haan ji', 'han ji', 'ha ji', 'haan haan', 'theek', 'thik', 'thik hai', 'theek hai', 'ok ok', 'ok sir', 'ok mam', 'ok madam', 'ok ji', 'ok thanks', 'thanks', 'thank you', 'ty'], true);
+}
+
 /** All the numbers for a period. days = 1 (today) | 7 | 30. */
 function wq_pace_calc(PDO $pdo, int $days): array
 {
@@ -72,7 +82,7 @@ function wq_pace_calc(PDO $pdo, int $days): array
     } catch (Throwable $e) { $cx = []; }
     $inCx = function (string $ph, int $t1, int $t2) use (&$cx): bool { foreach ($cx[substr($ph, -10)] ?? [] as $iv) { if (($t1 >= $iv[0] && $t1 <= $iv[1]) || ($t2 >= $iv[0] && $t2 <= $iv[1])) return true; } return false; };
     $cxSkipped = 0;
-    $st = $pdo->prepare("SELECT phone, dir, who, emp_id, ts FROM wa_messages WHERE ts >= ? AND dir IN ('in','out') ORDER BY phone, id LIMIT 900000");
+    $st = $pdo->prepare("SELECT phone, dir, who, emp_id, ts, mtype, LEFT(body, 40) FROM wa_messages WHERE ts >= ? AND dir IN ('in','out') ORDER BY phone, id LIMIT 900000");
     $st->execute([date('Y-m-d H:i:s', $scanFrom)]);
     $curPhone = null; $pend = 0;
     while (($r = $st->fetch(PDO::FETCH_NUM)) !== false) {
@@ -82,7 +92,8 @@ function wq_pace_calc(PDO $pdo, int $days): array
         if ($pend === 0) continue;                                    // a message we sent on our own, nobody was waiting
         $who = (string)$r[2]; $e = (int)$r[3];
         $isPerson = $who === 'emp' && $e > 0; $isBot = in_array($who, ['bot', 'auto', 'flow'], true);
-        if (!$isPerson && !$isBot) { continue; }                      // campaigns / system lines neither start nor stop the clock
+        if (!$isPerson && !$isBot) { continue; }
+        if ($isPerson && wq_pace_trivial((string)$r[5], (string)$r[6])) continue;   // a bare "ok" / "hmm" is not an answer: the customer is still waiting                      // campaigns / system lines neither start nor stop the clock
         $gap = max(0, $t - $pend) / 60.0; $p0 = $pend; $pend = 0;
         if ($cx && $isPerson && $inCx((string)$curPhone, $p0, $t)) { $cxSkipped++; continue; }   // a complaint reply: counted by the complaint team, not here
         $per = $t >= $curFrom ? 'cur' : ($t >= $prevFrom && $t < $curFrom ? 'prev' : '');
@@ -237,8 +248,10 @@ function wq_pace_tick(PDO $pdo): array
     if ((int)setting_get($pdo, 'wq_pace_tick_at', '0') > time() - 50) return $o; setting_set($pdo, 'wq_pace_tick_at', (string)time());
     try { $pdo->exec("CREATE TABLE IF NOT EXISTS wq_pace_alert (phone VARCHAR(12) NOT NULL, in_at DATETIME NOT NULL, lvl TINYINT NOT NULL, at DATETIME NULL, PRIMARY KEY (phone, in_at, lvl)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"); } catch (Throwable $e) { return $o; }
     $names = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : []; $ins = $pdo->prepare("INSERT IGNORE INTO wq_pace_alert (phone, in_at, lvl, at) VALUES (?,?,?,?)"); $sent = 0;
+    $onShift = []; $shift = null; try { $shift = $pdo->prepare("SELECT COUNT(*) FROM attendance WHERE employee_id = ? AND punch_in IS NOT NULL AND punch_out IS NULL AND punch_in >= ?"); } catch (Throwable $e) { $shift = null; }
     foreach (wq_pace_waiting_rows($pdo) as $r) {
         if ($sent >= 30) break;
+        if ($shift) { if (!isset($onShift[$r['emp']])) { try { $shift->execute([$r['emp'], date('Y-m-d H:i:s', time() - 20 * 3600)]); $onShift[$r['emp']] = (int)$shift->fetchColumn() > 0; } catch (Throwable $e) { $onShift[$r['emp']] = true; } } if (!$onShift[$r['emp']]) continue; }   // not punched in: the chat is not theirs to answer right now
         if ($r['mins'] >= $cfg['alert']) { $ins->execute([$r['phone'], $r['in_at'], 2, date('Y-m-d H:i:s')]); if ($ins->rowCount() && function_exists('ct_push') && function_exists('wq_admin_ids')) { ct_push($pdo, wq_admin_ids($pdo), '🚨 ' . ($names[$r['emp']] ?? 'Someone') . ' - customer waiting ' . $r['mins'] . ' min', ($r['name'] !== '' ? $r['name'] : $r['phone']) . ' has not been answered.', '/sales.html', 'wq-pace-alert-' . $r['phone']); $o['alert']++; $sent++; } }
         if ($r['mins'] >= $cfg['warn']) { $ins->execute([$r['phone'], $r['in_at'], 1, date('Y-m-d H:i:s')]); if ($ins->rowCount() && function_exists('ct_push')) { ct_push($pdo, [$r['emp']], '⏰ Customer waiting ' . $r['mins'] . ' min', ($r['name'] !== '' ? $r['name'] : $r['phone']) . ' is waiting for your reply. Please answer now.', '/my_chats.html?tab=chats', 'wq-pace-warn-' . $r['phone']); $o['warn']++; $sent++; } }
     }

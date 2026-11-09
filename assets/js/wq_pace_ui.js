@@ -117,7 +117,7 @@ html.wqdk .wp,html.wxdk .wp{--wp-ink:#e9edef;--wp-card:#1f2c34;--wp-line:#2a3942
         + '<div class="wp-tile"><small>Auto-bot reply</small><b>' + fm(d.team.bot.median) + '</b><span>' + d.team.bot.n + ' auto replies</span></div></div>';
       h += linkCard(d) + cfgCard(d) + '<div class="wp-card"><h3>Daily pace (everyone together)</h3>' + graph(d.team.series, d.team.bot_series) + '</div>' + board(d) + takeBlock(d, true, null) + orderBlock(d);
     }
-    h += '<div class="wp-sub">How it is measured: the clock starts at the first customer message nobody has answered, and stops at the next message a person sends (typed, quick-reply or template). All queries (Meta, Campaign, Community, Regenerated, New) are counted together. Auto-bot and holding messages are timed separately and never count for a person. Chats with an open complaint are left out: the complaint team answers those. Gaps of 8+ hours (night / next day) are left out. Grades: Fast up to 3 min · Good up to 10 · Slow up to 30 · Very slow above 30.</div>';
+    h += '<div class="wp-sub">How it is measured: the clock starts at the first customer message nobody has answered, and stops at the next message a person sends (typed, quick-reply or template). All queries (Meta, Campaign, Community, Regenerated, New) are counted together. Auto-bot and holding messages are timed separately and never count for a person. Chats with an open complaint are left out: the complaint team answers those. A bare "ok" or "hmm" is not counted as an answer. Gaps of 8+ hours (night / next day) are left out; a night worker who answers within 8 hours is counted as usual. Grades: Fast up to 3 min · Good up to 10 · Slow up to 30 · Very slow above 30.</div>';
     return h;
   }
   function mount(el, o) {
