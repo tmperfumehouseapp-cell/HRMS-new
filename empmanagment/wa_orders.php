@@ -843,7 +843,10 @@ function wo_tpl_for(PDO $pdo, string $status): ?array
 {
     $defs = wo_send_defs(); if (!isset($defs[$status]) || !function_exists('wa_camp_tpl') || !function_exists('wa_tpl_tables') || !wa_tpl_tables($pdo)) return null;
     $act = wo_ver_sync($pdo)[$status]['active'] ?? null;   // an edited version that Meta approved wins over everything else
-    if (is_array($act) && trim((string)($act['name'] ?? '')) !== '') { $aid = wo_ver_id($pdo, (string)$act['name']); $at = $aid ? wa_camp_tpl($pdo, $aid, true, (int)($act['lib'] ?? 0)) : null; if ($at) return $at; }
+    $GLOBALS['wo_photo_why'] = '';
+    if (is_array($act) && trim((string)($act['name'] ?? '')) !== '') { $aid = wo_ver_id($pdo, (string)$act['name']); $at = $aid ? wa_camp_tpl($pdo, $aid, true, (int)($act['lib'] ?? 0)) : null; if ($at) return $at;
+        // the edited version (new words / photo) cannot be used → the plain text message goes out instead; say WHY, so it is not a silent fallback
+        if ((int)($act['lib'] ?? 0) > 0) { $why = !$aid ? 'the photo version "' . $act['name'] . '" is not in the template list' : 'the photo version is not approved on this WhatsApp account yet, or its photo cannot be read from the media library'; $GLOBALS['wo_photo_why'] = $why; try { wa_log($pdo, 'orders', false, 'Order-update "' . $status . '" went WITHOUT its photo: ' . $why); } catch (Throwable $e) { } } }
     $lib = wo_photo_cfg($pdo)[$status] ?? 0;
     if ($lib > 0) {   // a photo is chosen: use the photo version once Meta approved it; until then the plain text version keeps going out
         $q = $pdo->prepare("SELECT id FROM wa_templates WHERE name = ? AND language = 'en'"); $q->execute([wo_photo_name($status)]); $pid = (int)$q->fetchColumn();
