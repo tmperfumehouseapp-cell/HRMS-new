@@ -436,12 +436,26 @@
       const [ap, wj, rs] = await Promise.all([g('fu.ap_results', { days: kd }), g('fu.wj_results', { days: kd }), g('wq.rescue_list', { days: kd, status: 'won' })]);
       const t = (r) => (r && r.total) || {}; const A = t(ap), J = t(wj), R = (rs && rs.summary) || {};
       const tile = (ic, name, n, s, sub) => '<div style="flex:1 1 150px;border:1px solid var(--line,#e6e8ef);border-radius:12px;padding:10px 12px;background:#fff"><div style="font-size:12px;color:#64748b;font-weight:700">' + ic + ' ' + name + '</div><div style="font-size:24px;font-weight:800;letter-spacing:-.02em">' + (n == null ? '—' : n) + ' <span style="font-size:13px;font-weight:700;color:#64748b">orders</span></div><div style="font-size:12.5px;color:#475569">' + (s == null ? '' : inr(s) + ' · ') + sub + '</div></div>';
-      KP.innerHTML = '<div class="wp-card" style="margin-bottom:10px"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px"><b style="font-size:15px">🎯 Orders from follow-ups</b><span style="flex:1"></span>'
+      KP.innerHTML = '<div class="wp-card" style="margin-bottom:10px"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px"><b style="font-size:15px">🎯 Orders from follow-ups</b><span style="flex:1"></span><button type="button" id="fuKnows" class="wp-btn" title="What Claude reads before it writes a message">🧠 What Claude knows</button>'
         + [7, 30, 90].map((d) => '<button type="button" data-kd="' + d + '" class="wp-btn ' + (kd === d ? 'p' : '') + '">' + d + ' days</button>').join('') + '</div>'
         + '<div style="display:flex;gap:8px;flex-wrap:wrap">' + tile('🔁', 'Autopilot (days 1–10)', ap ? (A.ordered || 0) : null, ap ? A.sales : null, (A.sent || 0) + ' messages sent')
         + tile('🗓', 'Journey (days 11–60)', wj ? (J.ordered || 0) : null, wj ? J.sales : null, (J.sent || 0) + ' messages sent') + tile('🛟', 'Rescue (people)', rs ? (R.won || 0) : null, rs ? R.revenue : null, 'chats won after a person took them') + '</div>'
         + '<div class="wp-sub" style="margin-top:6px">An order counts for the last follow-up sent in the 7 days before it. Rescue counts orders after a person took the chat. The same order can show in two boxes, so I do not add them up.</div></div>';
       KP.querySelectorAll('[data-kd]').forEach((b) => { b.onclick = () => { kd = +b.dataset.kd; loadK(); }; });
+      const kb = KP.querySelector('#fuKnows'); if (kb) kb.onclick = async () => {
+        const m = modal('🧠 What Claude knows when it writes'); m.body.innerHTML = loading;
+        try {
+          const d = await api.get('wq.rescue_knows'), p = d.parts || {}, ok = (v) => v ? '✅' : '⚠️ nothing yet';
+          m.body.innerHTML = '<div class="wp-sub" style="margin-bottom:8px">Every message Claude writes (follow-ups, offers, Journey, Rescue drafts) reads the same things. Change them in Teach — all writers change together.</div>'
+            + '<div class="wp-kv"><span>📚 Facts, price chart &amp; selling rules (Teach)</span><b>' + ok(p.facts) + '</b></div>'
+            + '<div class="wp-kv"><span>🚧 Limits (lowest price, max discount…)</span><b>' + ok(p.limits) + '</b></div>'
+            + '<div class="wp-kv"><span>🎓 Lessons you taught (' + fmt(d.lessons_total) + ' in all)</span><b>' + (p.lessons ? p.lessons + ' used for a typical chat' : '⚠️ none') + '</b></div>'
+            + '<div class="wp-kv"><span>📖 Live guidebook</span><b>' + (d.guidebook ? 'v' + d.guidebook.version + ' · ' + esc(d.guidebook.source) + (d.guidebook.at ? ' · ' + esc(String(d.guidebook.at).slice(0, 10)) : '') : '⚠️ no live guidebook') + '</b></div>'
+            + '<div class="wp-kv"><span>🔢 Numbers a message may state</span><b>' + fmt(d.numbers) + '</b></div>'
+            + '<h3 style="font-size:14px;margin:12px 0 4px">Who reads it</h3>' + (d.writers || []).map((w) => '<div class="wp-kv"><span>' + esc(w[0]) + '</span><b>' + (w[1] ? '✅ connected' : '⚠️ not connected') + '</b></div>').join('')
+            + '<h3 style="font-size:14px;margin:12px 0 4px">What it reads (the start)</h3><pre style="white-space:pre-wrap;font-size:12px;max-height:260px;overflow:auto;background:#f8fafc;border-radius:8px;padding:8px">' + esc(d.preview || '(nothing)') + '</pre>';
+        } catch (e) { m.body.innerHTML = errBox(e.message); }
+      };
     };
     loadK();
     const A = el.querySelector('#fuOneA'), B = el.querySelector('#fuOneB'), X = el.querySelector('#fuOneX'), TT = el.querySelector('#fuOneT'), re = {};

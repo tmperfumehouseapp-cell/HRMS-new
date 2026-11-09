@@ -106,9 +106,14 @@ function wq_rescue_ai_draft(PDO $pdo, string $phone): array
     if (!function_exists('wq_ai')) return ['', 'The AI is not available.'];
     $name = ''; try { $q = $pdo->prepare("SELECT name FROM wa_contacts WHERE phone = ?"); $q->execute([$phone]); $name = trim((string)$q->fetchColumn()); } catch (Throwable $e) { }
     $sch = ['type' => 'OBJECT', 'properties' => ['text' => ['type' => 'STRING']], 'required' => ['text']];
-    [$ok, $v] = wq_ai($pdo, "You write WhatsApp messages for TM Perfume House, an Indian perfume shop. Write ONE short follow-up message (2 to 3 sentences) to this customer, in the same language and style the customer used (Hinglish / English / Hindi / Gujarati in Latin script). Be warm, never pushy, mention what they asked about, do not invent prices, discounts or stock, and end with ONE clear question that makes it easy to answer. No emojis except at most one.", "Customer name: " . ($name !== '' ? $name : 'unknown') . (($wl = wq_rescue_want_for($pdo, $phone)) !== '' ? "\nWhat the customer mainly wants: " . $wl : '') . "\nThe chat, oldest first:\n" . wq_rescue_chat_text($pdo, $phone), $sch);
+    $cm = []; try { $q = $pdo->prepare("SELECT dir, body FROM wa_messages WHERE phone = ? AND dir IN ('in','out') ORDER BY id DESC LIMIT 30"); $q->execute([$phone]); foreach (array_reverse($q->fetchAll()) as $m) if (trim((string)$m['body']) !== '') $cm[] = ['who' => $m['dir'] === 'in' ? 'customer' : 'bot', 'text' => (string)$m['body']]; } catch (Throwable $e) { }
+    $K = function_exists('wk_knowledge') ? wk_knowledge($pdo, $cm) : ['text' => '', 'allowed' => []]; $why = [];
+    for ($try = 0; $try < 2; $try++) {
+        [$ok, $v] = wq_ai($pdo, "You write WhatsApp messages for TM Perfume House, an Indian perfume shop. Write ONE short follow-up message (2 to 3 sentences) to this customer, in the same language and style the customer used (Hinglish / English / Hindi / Gujarati in Latin script). Be warm, never pushy, mention what they asked about, do not invent prices, discounts or stock, and end with ONE clear question that makes it easy to answer. No emojis except at most one.", ($K['text'] !== '' ? $K['text'] . "\n\n" : '') . "Customer name: " . ($name !== '' ? $name : 'unknown') . (($wl = wq_rescue_want_for($pdo, $phone)) !== '' ? "\nWhat the customer mainly wants: " . $wl : '') . "\nThe chat, oldest first:\n" . wq_rescue_chat_text($pdo, $phone), $sch);
     if (!$ok || !is_array($v) || trim((string)($v['text'] ?? '')) === '') return ['', 'The AI could not write a message now. Try again in a minute.'];
-    return [mb_substr(trim((string)$v['text']), 0, 600), ''];
+    $why = []; $t = mb_substr(trim((string)$v['text']), 0, 600); if (!function_exists('fu_text_ok') || fu_text_ok($pdo, $t, $K['allowed'], $why)) return [$t, ''];   // same check as every follow-up: no invented price, offer or promise
+    }
+    return ['', 'The draft had a number or promise that is not in your Teach facts (' . implode(', ', array_slice($why, 0, 3)) . '). Write this one by hand, or press again.'];
 }
 /** Every newly found 🔴 / 🟠 chat is read once: clearly not a buyer → removed (visible under Not a chance, "removed by the AI"). Max $max per call. */
 function wq_rescue_ai_verify(PDO $pdo, float $deadline, int $max = 5): array
@@ -248,7 +253,7 @@ function wq_rescue_lost(PDO $pdo, int $days): array
 
 // ------------------------------------------------------------------------------------------------------------------ router
 $__wqm = (string)($action ?? ($_GET['action'] ?? ''));
-if (strpos($__wqm, 'wq.rescue_') === 0 && in_array($__wqm, ['wq.rescue_tpl_list', 'wq.rescue_tpl_save', 'wq.rescue_tpl_submit', 'wq.rescue_templates', 'wq.rescue_draft', 'wq.rescue_stats', 'wq.rescue_start', 'wq.rescue_lost'], true)) {
+if (strpos($__wqm, 'wq.rescue_') === 0 && in_array($__wqm, ['wq.rescue_tpl_list', 'wq.rescue_tpl_save', 'wq.rescue_tpl_submit', 'wq.rescue_templates', 'wq.rescue_draft', 'wq.rescue_stats', 'wq.rescue_start', 'wq.rescue_lost', 'wq.rescue_knows'], true)) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'; $auth = require_auth(); $me = (int)($auth['employee_id'] ?? 0);
     if (!function_exists('wa_tables') || !wa_tables($pdo)) json_response(['error' => 'WhatsApp storage is not available - check database permissions.'], 500);
     if (function_exists('wq_deps')) wq_deps($pdo); if (!wq_rescue_tables($pdo)) json_response(['error' => 'Rescue storage is not available.'], 500);
@@ -299,6 +304,13 @@ if (strpos($__wqm, 'wq.rescue_') === 0 && in_array($__wqm, ['wq.rescue_tpl_list'
         case 'wq.rescue_draft': {
             $needPost(); $needTeam(); $k = preg_replace('/\D+/', '', (string)($in['phone'] ?? '')); $k = strlen($k) >= 10 ? substr($k, -10) : ''; if ($k === '') json_response(['error' => 'Chat not found.'], 404); if (!wq_rescue_may_use($pdo, $adm, $me, $k)) json_response(['error' => 'This chat is not in your rescue list.'], 403);
             [$txt, $err] = wq_rescue_ai_draft($pdo, $k); if ($err !== '') json_response(['error' => $err], 503); json_response(['ok' => true, 'text' => $txt]);
+        }
+        case 'wq.rescue_knows': {   // 🧠 what Claude knows when it writes a follow-up: Teach facts / limits / price chart, lessons, the live guidebook, and who uses them
+            $needGet(); $needAdmin(); $K = function_exists('wk_knowledge') ? wk_knowledge($pdo, []) : ['text' => '', 'allowed' => [], 'parts' => []]; $gb = null;
+            try { if (function_exists('lib_guide_row') && ($r = lib_guide_row($pdo, 'live'))) $gb = ['version' => (int)$r['version'], 'source' => (string)$r['source'], 'at' => (string)($r['created_at'] ?? $r['updated_at'] ?? ''), 'chars' => mb_strlen((string)$r['body'])]; } catch (Throwable $e) { }
+            $lc = 0; try { $lc = (int)$pdo->query("SELECT COUNT(*) FROM lib_teach WHERE status = 'taught'")->fetchColumn(); } catch (Throwable $e) { }
+            json_response(['ok' => true, 'parts' => $K['parts'], 'numbers' => count($K['allowed']), 'lessons_total' => $lc, 'guidebook' => $gb, 'preview' => mb_substr($K['text'], 0, 6000),
+                'writers' => [['🔁 Follow-up Autopilot (days 1–10)', function_exists('fu_write') && function_exists('wk_guide_text')], ['🎁 Autopilot offers', function_exists('fa_offer_fill') && function_exists('wk_knowledge')], ['🗓 Journey (days 11–60)', function_exists('wj_fill') && function_exists('wk_knowledge')], ['🛟 Rescue AI draft', function_exists('wq_rescue_ai_draft') && function_exists('wk_knowledge')], ['🤖 Teach bot (chat replies)', function_exists('lib_bot_reply')]]]);
         }
         case 'wq.rescue_lost': { $needGet(); $needAdmin(); json_response(['ok' => true] + wq_rescue_lost($pdo, max(1, min(365, (int)($in['days'] ?? 30))))); }
         case 'wq.rescue_stats': { $needGet(); $needAdmin(); json_response(wq_rescue_stats($pdo, max(1, min(90, (int)($in['days'] ?? 14))))); }
