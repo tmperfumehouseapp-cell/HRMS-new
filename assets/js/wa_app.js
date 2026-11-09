@@ -503,7 +503,7 @@
     // 🙋 a Requests chat read before taking it: the big button at the bottom takes it (new chat → wq.req_take, a late one → wq.grab)
     async function takeReq() {
       if (!S.cur || !S.cur.peek) return; const phone = S.cur.phone, pkk = S.cur.peek, b = $('#wxPk'); if (b) { b.disabled = true; b.textContent = 'Taking…'; }
-      try { await api.post(pkk === 'grab' ? 'wq.grab' : pkk === 'rescue' ? 'wq.rescue_take' : 'wq.req_take', { phone }); S.req = (S.req || []).filter((x) => x.phone !== phone); S.reqLate = (S.reqLate || []).filter((x) => x.phone !== phone); S.grab = (S.grab || []).filter((x) => x.phone !== phone);
+      try { await api.post(pkk === 'grab' ? 'wq.grab' : pkk === 'rescue' ? 'wq.rescue_take' : 'wq.req_take', { phone }); S.req = (S.req || []).filter((x) => x.phone !== phone); S.reqLate = (S.reqLate || []).filter((x) => x.phone !== phone); S.grab = (S.grab || []).filter((x) => x.phone !== phone); S.rescue = (S.rescue || []).filter((x) => x.phone !== phone);
         if (S.cur && S.cur.phone === phone) { S.cur.peek = ''; S.cur.row.emp = S.me && S.me.emp_id; const bx = $('#wxPkB'); if (bx) bx.remove(); drawFoot(); } toast('The chat is yours now ✓ — reply below'); loadList(true); }
       catch (er) { toast(er.message, true); if (b) { b.disabled = false; b.textContent = '✋ Take over this chat'; } loadReq(); }
     }

@@ -83,10 +83,16 @@ function wq_rescue_tpl_sendable(PDO $pdo): array
 }
 
 // ------------------------------------------------------------------------------------------------------------------ AI
+/** May this person use the AI draft / messages for this chat? The owner always; a team member for the open pool and the chats they took. */
+function wq_rescue_may_use(PDO $pdo, bool $adm, int $me, string $phone): bool
+{
+    if ($adm) return true;
+    try { $q = $pdo->prepare("SELECT 1 FROM wq_rescue WHERE phone = ? AND (status = 'open' OR taken_by = ?) LIMIT 1"); $q->execute([$phone, $me]); return (bool)$q->fetchColumn(); } catch (Throwable $e) { return false; }
+}
 function wq_rescue_chat_text(PDO $pdo, string $phone, int $n = 30): string
 {
     $q = $pdo->prepare("SELECT dir, who, body FROM wa_messages WHERE phone = ? AND dir IN ('in','out') ORDER BY id DESC LIMIT " . (int)$n); $q->execute([$phone]); $lines = [];
-    foreach (array_reverse($q->fetchAll()) as $m) { $w = $m['dir'] === 'in' ? 'Customer' : (in_array((string)$m['who'], ['emp', 'person'], true) ? 'Salesperson' : 'Bot'); $lines[] = $w . ': ' . mb_substr(trim((string)$m['body']), 0, 220); }
+    foreach (array_reverse($q->fetchAll()) as $m) { $w = $m['dir'] === 'in' ? 'Customer' : (in_array((string)$m['who'], ['emp', 'person', 'phone'], true) ? 'Salesperson' : 'Bot'); $lines[] = $w . ': ' . mb_substr(trim((string)$m['body']), 0, 220); }
     return implode("\n", $lines);
 }
 /** What this customer wants (label), from their rescue row, else the topic saved for them. */
@@ -157,7 +163,7 @@ function wq_rescue_stats(PDO $pdo, int $days): array
     $names = function_exists('wq_names') ? wq_names($pdo) : []; $since = date('Y-m-d H:i:s', time() - max(1, $days) * 86400); $by = [];
     $get = function (int $e) use (&$by, $names) { if (!isset($by[$e])) $by[$e] = ['emp_id' => $e, 'name' => (string)($names[$e] ?? ('#' . $e)), 'taken' => 0, 'won' => 0, 'not_a_chance' => 0, 'returned' => 0, 'mins' => []]; return $by[$e]; };
     try {
-        $fm = $pdo->prepare("SELECT MIN(ts) FROM wa_messages WHERE phone = ? AND dir = 'out' AND who IN ('emp','person') AND ts >= ?");
+        $fm = $pdo->prepare("SELECT MIN(ts) FROM wa_messages WHERE phone = ? AND dir = 'out' AND who IN ('emp','person','phone') AND ts >= ?");
         $q = $pdo->prepare("SELECT phone, taken_by, taken_at, status, returns FROM wq_rescue WHERE taken_by > 0 AND taken_at >= ? LIMIT 3000"); $q->execute([$since]);
         foreach ($q->fetchAll() as $r) { $e = (int)$r['taken_by']; $x = $get($e); $x['taken']++; if ($r['status'] === 'won') $x['won']++; $x['returned'] += (int)$r['returns'];
             $fm->execute([(string)$r['phone'], (string)$r['taken_at']]); $t = (string)$fm->fetchColumn(); if ($t !== '') $x['mins'][] = max(0, (strtotime($t) - strtotime((string)$r['taken_at'])) / 60); $by[$e] = $x; }
@@ -275,16 +281,16 @@ if (strpos($__wqm, 'wq.rescue_') === 0 && in_array($__wqm, ['wq.rescue_tpl_list'
             json_response(['ok' => !$fails, 'sent' => $sent, 'errors' => $fails, 'items' => wq_rescue_tpl_view($pdo)]);
         }
         case 'wq.rescue_templates': {
-            $needGet(); $needTeam(); $k = preg_replace('/\D+/', '', (string)($in['phone'] ?? '')); $k = strlen($k) >= 10 ? substr($k, -10) : ''; $list = wq_rescue_tpl_sendable($pdo); $best = '';
+            $needGet(); $needTeam(); $k = preg_replace('/\D+/', '', (string)($in['phone'] ?? '')); $k = strlen($k) >= 10 ? substr($k, -10) : ''; if ($k !== '' && !wq_rescue_may_use($pdo, $adm, $me, $k)) json_response(['error' => 'This chat is not in your rescue list.'], 403); $list = wq_rescue_tpl_sendable($pdo); $best = '';
             if ($k !== '') { try { $q = $pdo->prepare("SELECT why, want FROM wq_rescue WHERE phone = ? ORDER BY id DESC LIMIT 1"); $q->execute([$k]); $rw = $q->fetch() ?: ['why' => '', 'want' => '']; $why = array_filter(explode(',', (string)$rw['why']));
                 $pick = wq_want_message((string)$rw['want']); if ((string)$rw['want'] !== '' && isset($list[$pick])) $best = $pick;   // the message that fits what the customer wants
-                if ($best === '') foreach (wq_rescue_topics() as $tk => $t) if (isset($list[$tk]) && array_intersect($t[1], $why)) { $best = $tk; break; } } catch (Throwable $e) { } }
+                if ($best === '') foreach (['pay', 'price', 'unanswered'] as $tk) if (isset($list[$tk]) && array_intersect(wq_rescue_topics()[$tk][1], $why)) { $best = $tk; break; } } catch (Throwable $e) { } }
             $nm = ''; if ($k !== '') { try { $q = $pdo->prepare("SELECT name FROM wa_contacts WHERE phone = ?"); $q->execute([$k]); $nm = trim((string)$q->fetchColumn()); } catch (Throwable $e) { } }
             $first = $nm !== '' ? preg_split('/\s+/u', $nm)[0] : 'there';
             json_response(['ok' => true, 'name' => $first, 'best' => $best, 'items' => array_values(array_map(fn($x) => $x + ['preview' => str_replace('{{1}}', $first, $x['body'])], $list))]);
         }
         case 'wq.rescue_draft': {
-            $needPost(); $needTeam(); $k = preg_replace('/\D+/', '', (string)($in['phone'] ?? '')); $k = strlen($k) >= 10 ? substr($k, -10) : ''; if ($k === '') json_response(['error' => 'Chat not found.'], 404);
+            $needPost(); $needTeam(); $k = preg_replace('/\D+/', '', (string)($in['phone'] ?? '')); $k = strlen($k) >= 10 ? substr($k, -10) : ''; if ($k === '') json_response(['error' => 'Chat not found.'], 404); if (!wq_rescue_may_use($pdo, $adm, $me, $k)) json_response(['error' => 'This chat is not in your rescue list.'], 403);
             [$txt, $err] = wq_rescue_ai_draft($pdo, $k); if ($err !== '') json_response(['error' => $err], 503); json_response(['ok' => true, 'text' => $txt]);
         }
         case 'wq.rescue_lost': { $needGet(); $needAdmin(); json_response(['ok' => true] + wq_rescue_lost($pdo, max(1, min(365, (int)($in['days'] ?? 30))))); }
