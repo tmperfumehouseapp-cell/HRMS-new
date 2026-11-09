@@ -467,8 +467,8 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
 <script src="assets/js/api.js?v=9"></script>
 <script src="assets/js/wa_icons.js?v=i1"></script>
 <script src="assets/js/cx_raise.js?v=cx9"></script>
-<script src="assets/js/wa_inbox.js?v=wa46"></script>
-<script src="assets/js/wa_panels.js?v=wa29"></script>
+<script src="assets/js/wa_inbox.js?v=wa47"></script>
+<script src="assets/js/wa_panels.js?v=wa30"></script>
 <script src="assets/js/wa_cust_ui.js?v=k4"></script>
 <script src="assets/js/wa_kflow_ui.js?v=kf1"></script>
 <script src="assets/js/wj_ui.js?v=wj2"></script>
@@ -480,7 +480,7 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
 <script src="assets/js/wa_growth.js?v=g7"></script>
 <script src="assets/js/wa_prod_ui.js?v=pr4"></script>
 <script src="assets/js/wa_tpl_ui.js?v=t7"></script>
-<script src="assets/js/wa_camp_ui.js?v=c29"></script>
+<script src="assets/js/wa_camp_ui.js?v=c30"></script>
 <script src="assets/js/wa_seg_ui.js?v=1"></script>
 <script src="assets/js/wa_smart_ui.js?v=s4"></script>
 <script>
@@ -540,11 +540,8 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
     { k: 'gallery', t: 'Gallery & storage', ic: 'img', mode: 'native', sub: 'Photos and videos in topic folders — Claude shows what can go' },
     { k: 'media', t: 'Media library', ic: 'film', mode: 'native', sub: 'Photos, videos and PDFs saved once' },
     { k: 'followups', t: 'Follow-ups · 60 days', ic: 'bell', mode: 'native', sub: 'One plan for every customer for 60 days: the Autopilot in the first 10 days (6 paths, offers on day 2/4/7/10), then the Journey to day 60 — one offer registry, festival box, Claude as the general brain' },
-    { k: 'afterdel', t: 'After delivery', ic: 'send', mode: 'native', sub: 'Rating request 5 days after delivery, the review reminder, and where ratings and gifts go' },
-    { k: 'birthdays', t: 'Birthdays', ic: 'send', mode: 'native', sub: 'The birthday question after an order and the birthday gift message — plus the store list to send by hand' },
     { k: 'cxmsgs', t: 'Complaint messages', ic: 'send', mode: 'frame', src: 'complaints.html?in=sales&tab=settings&go=msgs', sub: 'The photo and words of every message the Complaints desk sends — the same screen as Complaints → Settings' },
     { k: 'allmsgs', t: 'All messages', ic: 'send', mode: 'native', sub: 'Every automatic message in one list, with a button to its editor' },
-    { k: 'orderupd', t: 'Order updates', ic: 'send', mode: 'native', sub: 'Thank-you, shipped, out for delivery, delivered — sent by themselves from Dispatch / Shiprocket. Read and approve the texts' },
     { g: 'MANAGE' }, { k: 'golive', t: 'Go-live check', ic: 'okc', mode: 'native', sub: 'Live readiness list — engine, numbers, templates, bot, staff phones, backup' },
     { k: 'numbers', t: 'Numbers', ic: 'phone', mode: 'native', sub: 'Photo, bio, who handles each number, and its health' },
     { k: 'groups', t: 'Groups', ic: 'bubbles', mode: 'frame', src: 'whatsapp_groups.html?in=sales', sub: 'Your WhatsApp groups' },
@@ -568,7 +565,7 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
     { k: 'templates', t: 'Templates', ic: 'tpl', sub: 'Messages Meta approves — make them, let Claude write them, one per situation', tabs: [['premade', 'Pre-made'], ['builder', 'Builder'], ['fixed', 'Fixed']] },
     { k: 'replies', t: 'Replies', ic: 'bolt', sub: 'Quick replies, greetings, ready perfume lists, and and where to find every automatic message', tabs: [['quick', 'Quick replies'], ['greet', 'Greetings'], ['lists', 'Lists'], ['automsgs', 'Automatic messages']] },
     { k: 'mediag', t: 'Media', ic: 'film', sub: 'Photos, videos and PDFs — one library, in topic folders', tabs: [['media', 'Library'], ['gallery', 'Folders & clean-up']] },
-    { k: 'automation', t: 'Automation', ic: 'seq', sub: 'Key flows on a canvas, the old flows and follow-ups', tabs: [['kflows', 'Key flows'], ['flows', 'Flows (old)'], ['followups', 'Follow-ups · 60 days'], ['orderupd', 'Order updates'], ['afterdel', 'After delivery'], ['birthdays', 'Birthdays'], ['cxmsgs', 'Complaints'], ['allmsgs', 'All messages']] },
+    { k: 'automation', t: 'Automation', ic: 'seq', sub: 'Key flows on a canvas, the old flows and follow-ups', tabs: [['kflows', 'Key flows'], ['flows', 'Flows (old)'], ['followups', 'Follow-ups · 60 days'], ['cxmsgs', 'Complaints'], ['allmsgs', 'All messages']] },
     { k: 'setupg', t: 'Numbers & setup', ic: 'phone', sub: 'Numbers, connection and the go-live check', tabs: [['numbers', 'Numbers'], ['setup', 'Setup & connection'], ['golive', 'Go-live check']] },
     { k: 'rules', t: 'Team & rules', ic: 'group', sub: 'Who gets chats, the waiting limits, the Claude button and exports', tabs: [['team', 'Team & routing'], ['hq', 'Claude button'], ['export', 'Export']] },
     { k: 'teach', t: 'Teach & groups', ic: 'bulb', sub: 'Teach the bot once · your WhatsApp groups', tabs: [['learn', 'Teach'], ['groups', 'Groups']] },
@@ -647,6 +644,7 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
   let started = false;   // the first section replaces the entry; every section opened after it is one step Back can return to
   function go(k, noPush) {
     if (k !== cur && document.getElementById('waSide')) closeSide(true);   // another screen: the side chat closes
+    if (['orderupd', 'afterdel', 'birthdays'].indexOf(k) >= 0) { try { localStorage.setItem('wa_fu_sub', k); } catch (e) { } k = 'followups'; }   // moved into Follow-ups · 60 days (old links still work)
     k = ALIAS[k] || k;
     { const g = groupOf(k); if (g) { let last = ''; try { last = localStorage.getItem('wa_tab_' + g.k) || ''; } catch (e) { } k = g.tabs.some(([x]) => x === last) ? last : g.tabs[0][0]; } }
     if (String(k).indexOf('f_') === 0) { const f = ITEMS.find((x) => x.k === k); if (f) { openFeed(f.feed); return; } }
@@ -746,6 +744,7 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
   document.addEventListener('visibilitychange', () => { if (!document.hidden && cur === 'overview') loadOverview(true); });
 
   // ---------- start
+  const first0 = (location.hash || '').replace('#', ''); if (['orderupd', 'afterdel', 'birthdays'].indexOf(first0) >= 0) { try { localStorage.setItem('wa_fu_sub', first0); } catch (e) { } location.hash = '#followups'; }
   const first = ALIAS[(location.hash || '').replace('#', '')] || (location.hash || '').replace('#', '');
   if (first.indexOf('f_') === 0 && ITEMS.some((m) => m.k === first)) openFeed(first.slice(2)); else go(ITEMS.some((m) => m.k === first) ? first : 'overview');
   if (cur !== 'overview') { secs.overview = document.createElement('div'); secs.overview.className = 'sec pad'; secs.overview.hidden = true; $('body').appendChild(secs.overview); loadOverview(true); }

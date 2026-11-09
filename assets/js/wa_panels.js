@@ -425,8 +425,8 @@
   const faReady = (fn) => { if (window.FuAuto) return fn(); const sc = document.createElement('script'); sc.src = 'assets/js/fa_ui.js?v=fa4'; sc.onload = fn; document.head.appendChild(sc); };
   // 🔁 ONE follow-up section: days 1–10 = the Follow-up Autopilot (fa_ui.js), days 11–60 = the 60-day Journey (wj_ui.js). They share the offers and the festival box, so they are shown together.
   P.followups = (el, ctx) => {
-    const T = [['ap', '🔁 Days 1–10 · Autopilot'], ['wj', '🗓 Days 11–60 · Journey']]; let cur = 'ap'; try { cur = localStorage.getItem('wa_fu_sub') === 'wj' ? 'wj' : 'ap'; } catch (e) { /* private mode */ }
-    el.innerHTML = '<div id="fuOneK"></div><div id="fuOneT" style="display:flex;gap:6px;margin:0 0 10px;flex-wrap:wrap;align-items:center"></div><div id="fuOneA"></div><div id="fuOneB" hidden></div>';
+    const T = [['ap', '🔁 Days 1–10 · Autopilot'], ['wj', '🗓 Days 11–60 · Journey'], ['orderupd', '📦 Order updates'], ['afterdel', '⭐ After delivery'], ['birthdays', '🎂 Birthdays']]; let cur = 'ap'; try { const sv = localStorage.getItem('wa_fu_sub'); cur = T.some((x) => x[0] === sv) ? sv : 'ap'; } catch (e) { /* private mode */ }
+    el.innerHTML = '<div id="fuOneK"></div><div id="fuOneT" style="display:flex;gap:6px;margin:0 0 10px;flex-wrap:wrap;align-items:center"></div><div id="fuOneA"></div><div id="fuOneB" hidden></div><div id="fuOneX"></div>';
     // 🎯 THE number that matters: orders that came from follow-ups (Autopilot, Journey, and chats people won through Rescue)
     const KP = el.querySelector('#fuOneK'); let kd = 30;
     const inr = (n) => '₹' + Math.round(Number(n) || 0).toLocaleString('en-IN');
@@ -444,15 +444,16 @@
       KP.querySelectorAll('[data-kd]').forEach((b) => { b.onclick = () => { kd = +b.dataset.kd; loadK(); }; });
     };
     loadK();
-    const A = el.querySelector('#fuOneA'), B = el.querySelector('#fuOneB'), TT = el.querySelector('#fuOneT'), re = {};
+    const A = el.querySelector('#fuOneA'), B = el.querySelector('#fuOneB'), X = el.querySelector('#fuOneX'), TT = el.querySelector('#fuOneT'), re = {};
     const show = () => {
       if (re[cur] !== undefined) return; re[cur] = null;
       if (cur === 'ap') faReady(() => { re.ap = FuAuto.mount(A, {}); });
+      else if (cur !== 'wj') { const hb = document.createElement('div'); hb.dataset.x = cur; X.appendChild(hb); re[cur] = P[cur] ? P[cur](hb, ctx || {}) : (hb.innerHTML = '<div class="wp-sub">This screen could not load. Refresh the page.</div>'); }
       else if (P.journey) re.wj = P.journey(B, ctx || {}); else B.innerHTML = '<div class="wp-sub">The 60-day Journey screen could not load. Refresh the page.</div>';
     };
     const draw = () => {
-      TT.innerHTML = T.map(([k, l]) => '<button type="button" data-s="' + k + '" class="wp-btn ' + (cur === k ? 'p' : '') + '">' + l + '</button>').join('') + '<span class="wp-sub" style="margin-left:6px">One plan for every customer: the Autopilot follows up in the first 10 days, the Journey carries on to day 60.</span>';
-      A.hidden = cur !== 'ap'; B.hidden = cur !== 'wj'; show();
+      TT.innerHTML = T.map(([k, l]) => '<button type="button" data-s="' + k + '" class="wp-btn ' + (cur === k ? 'p' : '') + '">' + l + '</button>').join('') + '<span class="wp-sub" style="margin-left:6px">One plan for every customer: the Autopilot follows up in the first 10 days, the Journey carries on to day 60 — and the order, delivery and birthday messages sit here too.</span>';
+      A.hidden = cur !== 'ap'; B.hidden = cur !== 'wj'; X.querySelectorAll('[data-x]').forEach((d) => { d.hidden = d.dataset.x !== cur; }); show();
     };
     TT.onclick = (e) => { const b = e.target.closest('[data-s]'); if (!b) return; cur = b.dataset.s; try { localStorage.setItem('wa_fu_sub', cur); } catch (x) { /* private mode */ } draw(); };
     draw();

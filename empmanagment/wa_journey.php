@@ -279,6 +279,7 @@ function wj_blocked(PDO $pdo, array $c, int $now): string
 {
     $k = (string)$c['phone'];
     if (function_exists('wa_auto_muted') && wa_auto_muted($pdo, $k)) return 'order completed today';
+    if (function_exists('wq_plan_paused')) { $pz = wq_plan_paused($pdo, $k, $now); if ($pz !== '') return $pz; }
     try { if (function_exists('wr_blocked_open_case') && wr_blocked_open_case($pdo, $k, '')) return 'open complaint'; } catch (Throwable $e) { }
     try { $q = $pdo->prepare("SELECT 1 FROM wa_fu_ev WHERE phone = ? AND status = 'sent' AND sent_at >= ? LIMIT 1"); $q->execute([$k, wj_dt($now - 36 * 3600)]); if ($q->fetchColumn()) return 'a follow-up went in the last 36 h'; } catch (Throwable $e) { }
     try { $q = $pdo->prepare("SELECT 1 FROM wa_ord_sent WHERE phone = ? AND created_at >= ? LIMIT 1"); $q->execute([$k, wj_dt($now - 2 * 86400)]); if ($q->fetchColumn()) return 'an order message went in the last 2 days'; } catch (Throwable $e) { }

@@ -205,7 +205,9 @@ function wq_lifecycle_map(PDO $pdo, array $phones): array
             try { $st = $pdo->prepare("SELECT phone, status, want FROM wq_rescue WHERE status IN ('open','taken','given') AND phone IN ($in)"); $st->execute($ch); foreach ($st->fetchAll() as $x) { $resc[(string)$x['phone']] = (string)$x['status']; $rwant[(string)$x['phone']] = (string)$x['want']; } } catch (Throwable $e) { }
             $wsv = wq_want_saved($pdo, $ch);
             try { $st = $pdo->prepare("SELECT phone FROM wa_order_done WHERE mute_until > NOW() AND phone IN ($in)"); $st->execute($ch); foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $x) $done[(string)$x] = 1; } catch (Throwable $e) { }
-            $fu = wq_rescue_fu_map($pdo, $ch);
+            $fu = wq_rescue_fu_map($pdo, $ch); $pz = [];
+            try { $st = $pdo->prepare("SELECT phone, who, MAX(ts) m FROM wa_messages WHERE dir = 'out' AND status <> 'failed' AND (who IN ('emp','person','phone') OR who = 'campaign') AND ts >= ? AND phone IN ($in) GROUP BY phone, who"); $st->execute(array_merge([date('Y-m-d H:i:s', $now - 2 * 86400)], $ch));
+                foreach ($st->fetchAll() as $x) { if ($x['who'] === 'campaign') $pz[(string)$x['phone']] = 'a campaign went in the last 2 days'; elseif (strtotime((string)$x['m']) >= $now - 36 * 3600 && !isset($pz[(string)$x['phone']])) $pz[(string)$x['phone']] = 'a person wrote in the last 36 h'; } } catch (Throwable $e) { }
             foreach ($ch as $ph) {
                 $c = $cmap[$ph] ?? null; if (!$c) continue; $in_ = (string)$c['last_in_at']; $out_ = (string)$c['last_out_at']; $waiting = $in_ !== '' && ($out_ === '' || $out_ < $in_);
                 if ((int)$c['optout'] === 1) $r = ['closed', '🚫 Opted out'];
@@ -219,7 +221,12 @@ function wq_lifecycle_map(PDO $pdo, array $phones): array
                 elseif ($in_ >= $cut24) $r = ['replied', '💬 Replied'];
                 else $r = ['quiet', '😴 Quiet'];
                 $wk = (string)($rwant[$ph] ?? '') !== '' ? $rwant[$ph] : (string)($wsv[$ph] ?? ''); $dd = $in_ !== '' ? (int)floor(($now - strtotime($in_)) / 86400) : null;
-                $o[$ph] = ['key' => $r[0], 'label' => $r[1], 'want' => $wk, 'want_label' => wq_want_label($wk), 'day' => $dd];
+                // 📍 where the customer is in the 60-day plan
+                if (in_array($r[0], ['closed', 'complaint', 'ordered'], true) || $dd === null) $plan = '';
+                elseif ($r[0] === 'rescue') $plan = 'A person is working this chat — no automatic message';
+                elseif ($dd > 60) $plan = 'After day 60 — campaigns only';
+                else { $plan = ($dd <= 10 ? 'Autopilot (day ' . $dd . ')' : 'Journey (day ' . $dd . ' of 60)'); if (isset($pz[$ph])) $plan .= ' · paused: ' . $pz[$ph]; }
+                $o[$ph] = ['key' => $r[0], 'label' => $r[1], 'want' => $wk, 'want_label' => wq_want_label($wk), 'day' => $dd, 'plan' => $plan];
             }
         }
     } catch (Throwable $e) { error_log('wq_lifecycle_map: ' . $e->getMessage()); }

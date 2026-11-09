@@ -316,15 +316,22 @@ function fu_ev(PDO $pdo, string $key, string $sid, int $step, string $channel, s
 {
     $pdo->prepare("INSERT INTO wa_fu_ev (phone, sid, step, channel, status, body, ladder_id, in_id, who, sent_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")->execute([$key, $sid, $step, $channel, $status, mb_substr($body, 0, 1500), $ladder, $inId, $who, fu_now()]);
 }
+/** The time the plan counts from: our last message that was NOT a campaign (a campaign must not restart the follow-up clock). */
+function fu_base_out(PDO $pdo, array $c): string
+{
+    $lo = (string)$c['last_out_at'];
+    try { $q = $pdo->prepare("SELECT MAX(ts) FROM wa_messages WHERE phone = ? AND dir = 'out' AND who <> 'campaign' AND ts >= ?"); $q->execute([(string)$c['phone'], (string)($c['last_in_at'] ?? '')]); $m = $q->fetchColumn(); if ($m) return (string)$m; } catch (Throwable $e) { }
+    return $lo;
+}
 /** Make (or remake) the plan state of a quiet chat. Skips the steps whose time has long passed (a chat that was quiet before the engine existed does not get a burst). */
 function fu_state_make(PDO $pdo, array $c, array $P, array $L, int $inId, array $inTexts): array
 {
     $now = time(); $read = fu_read_chat($pdo, $c, $inTexts); $sit = fu_pick_sit($pdo, $P, $read, $c, $inTexts);
-    $s = ['phone' => (string)$c['phone'], 'in_id' => $inId, 'sid' => $sit ? (string)$sit['id'] : '', 'step' => 0, 'base_at' => (string)$c['last_out_at'], 'due_at' => null, 'temp' => $read['temp'], 'why' => $read['why'], 'angle' => $read['angle'],
+    $s = ['phone' => (string)$c['phone'], 'in_id' => $inId, 'sid' => $sit ? (string)$sit['id'] : '', 'step' => 0, 'base_at' => fu_base_out($pdo, $c), 'due_at' => null, 'temp' => $read['temp'], 'why' => $read['why'], 'angle' => $read['angle'],
         'draft' => null, 'edited' => 0, 'status' => 'plan', 'stop_why' => '', 'hint_at' => $read['hint'] ? date('Y-m-d H:i:s', $read['hint']) : null];
     if (!$sit) { $s['status'] = 'none'; $s['stop_why'] = 'no saved situation fits'; return $s; }
     if ($sit['kind'] === 'stop' || $read['key'] === 'angry') { $s['status'] = 'stopped'; $s['stop_why'] = 'sounded frustrated — no follow-ups'; return $s; }
-    $base = (int)strtotime((string)$c['last_out_at']); $n = count($sit['steps']); $idx = 0;
+    $base = (int)strtotime(fu_base_out($pdo, $c)); $n = count($sit['steps']); $idx = 0;
     while ($idx < $n && fu_due($L, $sit, $idx, $base, $read['hint'], 0) < $now - 3 * 3600) $idx++;
     if ($idx >= $n) { $s['status'] = 'done'; $s['stop_why'] = 'too late for the plan'; $s['step'] = $n; return $s; }
     $s['step'] = $idx; $s['due_at'] = date('Y-m-d H:i:s', fu_due($L, $sit, $idx, $base, $read['hint'], 0)); return $s;
@@ -386,6 +393,7 @@ function fu_engine(PDO $pdo): array
     $q->execute([date('Y-m-d H:i:s', $now - 14 * 86400), date('Y-m-d H:i:s', $now - $firstMin * 60)]);
     foreach ($q->fetchAll() as $c) {
         $key = (string)$c['phone']; if (function_exists('wa_auto_muted') && wa_auto_muted($pdo, $key)) continue;   // ✅ order completed: no follow-ups today and tomorrow
+        if (function_exists('wq_plan_paused') && wq_plan_paused($pdo, $key) !== '') continue;   // ⏸ a person wrote lately / a campaign went in: the plan waits (due steps are skipped, not caught up)
         $inId = fu_in_id($pdo, $key); if ($inId === 0) continue; $st = fu_state_get($pdo, $key);
         if (!$st || (int)$st['in_id'] !== $inId) {
             if ($out['made'] >= $makeCap) continue; $o = $om[$key] ?? null;
