@@ -423,87 +423,28 @@
   const TST = { approved: ['Approved', 'ok'], partial: ['Approved (1 account)', 'ok'], pending: ['Pending at Meta', 'warn'], rejected: ['Rejected', 'bad'], paused: ['Paused', 'warn'], draft: ['Draft', 'b'], missing: ['Not at Meta', 'warn'] };
   // 🔁 the Follow-up Autopilot (fa_ui.js) replaces the old Live plan / ladder screen; Replies → Follow-up messages / Complaint messages
   const faReady = (fn) => { if (window.FuAuto) return fn(); const sc = document.createElement('script'); sc.src = 'assets/js/fa_ui.js?v=fa4'; sc.onload = fn; document.head.appendChild(sc); };
-  P.followups = (el) => { let re = null; faReady(() => { re = FuAuto.mount(el, {}); }); return () => { if (re) re(); }; };
+  // 🔁 ONE follow-up section: days 1–10 = the Follow-up Autopilot (fa_ui.js), days 11–60 = the 60-day Journey (wj_ui.js). They share the offers and the festival box, so they are shown together.
+  P.followups = (el, ctx) => {
+    const T = [['ap', '🔁 Days 1–10 · Autopilot'], ['wj', '🗓 Days 11–60 · Journey']]; let cur = 'ap'; try { cur = localStorage.getItem('wa_fu_sub') === 'wj' ? 'wj' : 'ap'; } catch (e) { /* private mode */ }
+    el.innerHTML = '<div id="fuOneT" style="display:flex;gap:6px;margin:0 0 10px;flex-wrap:wrap;align-items:center"></div><div id="fuOneA"></div><div id="fuOneB" hidden></div>';
+    const A = el.querySelector('#fuOneA'), B = el.querySelector('#fuOneB'), TT = el.querySelector('#fuOneT'), re = {};
+    const show = () => {
+      if (re[cur] !== undefined) return; re[cur] = null;
+      if (cur === 'ap') faReady(() => { re.ap = FuAuto.mount(A, {}); });
+      else if (P.journey) re.wj = P.journey(B, ctx || {}); else B.innerHTML = '<div class="wp-sub">The 60-day Journey screen could not load. Refresh the page.</div>';
+    };
+    const draw = () => {
+      TT.innerHTML = T.map(([k, l]) => '<button type="button" data-s="' + k + '" class="wp-btn ' + (cur === k ? 'p' : '') + '">' + l + '</button>').join('') + '<span class="wp-sub" style="margin-left:6px">One plan for every customer: the Autopilot follows up in the first 10 days, the Journey carries on to day 60.</span>';
+      A.hidden = cur !== 'ap'; B.hidden = cur !== 'wj'; show();
+    };
+    TT.onclick = (e) => { const b = e.target.closest('[data-s]'); if (!b) return; cur = b.dataset.s; try { localStorage.setItem('wa_fu_sub', cur); } catch (x) { /* private mode */ } draw(); };
+    draw();
+    return () => { const f = re[cur]; if (typeof f === 'function') f(); };
+  };
   // 🧭 Automatic messages live in ONE place each (no second editor here): follow-ups → Automation → Follow-ups · complaints → Complaints → Settings
   P.automsgs = (el) => { el.innerHTML = '<div class="wp-card"><h3 style="margin:0 0 6px">Automatic messages</h3><div class="wp-sub" style="margin-bottom:10px">Each automatic message has one home, so there is never a second copy to keep in step.</div>'
       + '<div class="wp-row" style="flex-wrap:wrap;gap:8px"><a class="wp-btn p" href="whatsapp.html#followups" target="_top">🔁 Follow-up &amp; offer messages</a><a class="wp-btn p" href="complaints.html?tab=settings&amp;go=msgs" target="_top">🎫 Complaint messages (photo &amp; words)</a><a class="wp-btn" href="whatsapp.html#orderupd" target="_top">📦 Order update messages</a></div></div>'; };
   P.fumsgs = P.automsgs; P.cxmsgs = P.automsgs;   // old saved tabs open the same page
-  P.followups_old = (el, ctx) => {
-    let tab = 'live', D = null, LD = null, busy = false; el.innerHTML = loading;
-    const host = document.createElement('div'); el.innerHTML = ''; el.appendChild(host);
-    const tabs = () => `<div class="wp-seg" style="margin-bottom:12px">${[['live', '📨 Live plan'], ['ladder', '🪜 After-24-hours templates'], ['classic', 'Classic steps']].map(([k, l]) => `<button type="button" data-tab="${k}" class="${tab === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
-    function bindTabs() { host.querySelectorAll('[data-tab]').forEach((b) => { b.onclick = () => { tab = b.dataset.tab; render(); }; }); }
-    async function render() {
-      if (tab === 'classic') { host.innerHTML = '<div class="wp">' + tabs() + '<div class="wp-note">Classic steps (one pre-made message after a set time) run only while the <b>Live plan</b> is <b>Off</b>. When you switch the Live plan on, the new engine takes over and these steps pause.</div><div id="fuC"></div></div>'; bindTabs(); const c = $(host, '#fuC'); classicFu(c, ctx); return; }
-      if (tab === 'ladder') { host.innerHTML = '<div class="wp">' + tabs() + loading + '</div>'; bindTabs(); try { LD = await api.get('fu.ladder'); } catch (e) { host.innerHTML = '<div class="wp">' + tabs() + needServer(e) + '</div>'; bindTabs(); return; } drawLadder(); return; }
-      host.innerHTML = '<div class="wp">' + tabs() + loading + '</div>'; bindTabs();
-      try { D = await api.get('fu.panel'); } catch (e) { host.innerHTML = '<div class="wp">' + tabs() + needServer(e) + '</div>'; bindTabs(); return; } drawLive();
-    }
-    const needServer = (e) => `<div class="wp-note"><b>The follow-up engine needs the new server files.</b> ${esc(e.message || '')}<br>Upload <b>wa_follow.php, wa_brain.php, wa_hist.php</b> and the changed wa.php / wa_more.php / wa_learn.php / wa_camp.php, and do the api.php edits 8–11. Until then the <b>Classic steps</b> tab keeps working.</div>`;
-    // ---------------------------------------------------------------- screen B
-    function drawLive() {
-      const t = D.tiles, g = D.guard || {}, mode = D.mode; let h = '<div class="wp">' + tabs();
-      h += `<div class="wp-cd"><h3 style="font-size:17px">📨 Follow-ups<span class="sp"></span></h3><div class="wp-seg" style="margin:6px 0 8px" id="fuM">${FU_MODES.map(([k, l]) => `<button type="button" data-m="${k}" class="${mode === k ? 'on' : ''}">${l}</button>`).join('')}</div>
-        <div class="wp-hint" style="margin:0">${esc((FU_MODES.find((x) => x[0] === mode) || FU_MODES[0])[2])} Hot, unpaid customers get the strongest sequence; everyone else a gentle one. Limits come from Teach by talking.</div></div>`;
-      if (mode !== 'off' && !D.plans.saved) h += `<div class="wp-note"><b>No follow-up plan is saved yet.</b> Open <a href="#" id="fuGo" style="font-weight:800">Learning &amp; Improvement → Teach → Set up follow-ups</a>, review the situations and press <b>Got it</b>. Until then nothing is prepared.</div>`;
-      if ((mode === 'auto24' || mode === 'autotpl') && !D.engine.fresh) h += '<div class="wp-note"><b>The sending engine is not running by itself yet.</b> Automatic follow-ups need it: set it up once in <b>Team &amp; routing → Engine</b> (a one-line Hostinger cron job).</div>';
-      if (mode === 'autotpl' && !(D.ladder && D.ladder.rungs_with_templates)) h += '<div class="wp-note">No approved template is ready for after 24 hours. Open the <b>After-24-hours templates</b> tab: <b>Draft templates from my rules</b>, then <b>Send drafts to Meta</b>.</div>';
-      h += `<div class="wp-kpis"><div class="wp-kpi"><small>Follow-ups sent (7 days)</small><b>${fmt(t.sent)}</b></div><div class="wp-kpi"><small>Replied</small><b>${t.reply_pct == null ? '—' : t.reply_pct + '%'}</b>${t.reply_delta != null ? `<span style="font-size:11px;color:${t.reply_delta >= 0 ? '#12794a' : '#b42318'}">${t.reply_delta >= 0 ? '▲' : '▼'} ${Math.abs(t.reply_delta)}% vs last week</span>` : ''}</div>
-        <div class="wp-kpi"><small>Orders after a follow-up</small><b>${fmt(t.orders)}</b></div><div class="wp-kpi"><small>Waiting to go</small><b>${fmt(t.waiting)}</b></div>
-        <div class="wp-kpi" style="${g.state === 'ok' ? 'background:#effaf3;border-color:#bfe8d1' : g.state === 'slow' ? 'background:#fff7e6;border-color:#f5d28a' : 'background:#fdecec;border-color:#f0c4c0'}"><small>Quality guard</small><b style="color:${g.state === 'ok' ? '#12794a' : g.state === 'slow' ? '#a15c00' : '#b42318'}">${g.state === 'ok' ? 'Good' : g.state === 'slow' ? 'Slowed' : 'Paused'}</b></div></div>`;
-      // 7 days bars
-      const mx = Math.max(1, ...D.days.map((d) => d.sent));
-      h += `<div class="wp-2"><div class="wp-cd"><h3>Last 7 days</h3><div class="wp-bars">${D.days.map((d) => `<div title="${d.sent} sent · ${d.replied} replied"><i style="height:${d.sent ? Math.max(4, Math.round(d.sent * 100 / mx)) : 0}%;background:#c9d7ff;position:relative;border-radius:4px 4px 0 0"><b style="position:absolute;left:0;right:0;bottom:0;height:${d.sent ? Math.round(d.replied * 100 / d.sent) : 0}%;background:#25d366;border-radius:4px 4px 0 0"></b></i></div>`).join('')}</div><div class="wp-leg" style="justify-content:space-between">${D.days.map((d) => `<span>${esc(d.d)}</span>`).join('')}</div><div class="wp-leg"><span><i style="background:#c9d7ff"></i>sent</span><span><i style="background:#25d366"></i>replied</span></div></div>`;
-      const fm = Math.max(1, ...D.funnel.map((x) => x.n));
-      h += `<div class="wp-cd"><h3>Funnel · 14 days</h3>${D.funnel.map((x, i) => `<div style="font-size:13px;margin-top:${i ? 8 : 0}px">${esc(x.label)} <b>${fmt(x.n)}</b></div><div class="wp-bar"><i class="${i === 3 ? '' : ''}" style="width:${Math.max(2, Math.round(x.n * 100 / fm))}%;${i === 3 ? 'background:#7c3aed' : i === 2 ? 'background:#f0a500' : ''}"></i></div>`).join('')}</div></div>`;
-      // coming up
-      h += `<div class="wp-cd"><h3>Coming up<span class="sp"></span><span class="wp-pill">next 48 hours</span></h3>`;
-      if (!D.coming.length) h += '<div class="wp-empty" style="padding:16px">Nothing is due in the next 48 hours.</div>';
-      else h += `<div style="overflow-x:auto"><table class="wp-tb"><thead><tr><th>Customer</th><th>Temp</th><th>Why quiet</th><th>Next</th><th>In</th><th></th></tr></thead><tbody>${D.coming.map((x, i) => { const tc = TEMPC[x.temp] || ['', '']; return `<tr><td><a href="#" data-chat="${esc(x.phone)}" style="font-weight:800;color:inherit">${esc(x.name || pretty(x.phone))}</a></td><td><span class="wp-pill ${tc[1]}">${esc(tc[0])}</span></td><td>${esc(x.why)}</td>
-        <td>${esc(x.title)} · ${x.step}/${x.total}<div class="wp-hint" style="margin:2px 0 0;max-width:260px">${x.channel === 'tpl' ? '<span class="wp-pill b">template · after 24 h</span>' : ''}${x.human ? '<span class="wp-pill">person handles — suggestion only</span>' : ''}${x.ready ? '“' + esc(x.text.length > 70 ? x.text.slice(0, 70) + '…' : x.text) + '”' : ''}</div></td><td style="white-space:nowrap">${esc(inT(x.in_min))}</td>
-        <td style="white-space:nowrap">${x.channel === 'free' ? `<button type="button" class="wp-btn s p" data-now="${i}">Send now</button> ` : ''}<button type="button" class="wp-btn s" data-skip="${i}">Skip</button></td></tr>`; }).join('')}</tbody></table></div>`;
-      h += '</div>';
-      h += `<div class="wp-cd" style="border-color:${g.state === 'ok' ? '#f5c98a' : g.state === 'slow' ? '#f5d28a' : '#f0a39c'}"><h3>🛡 Quality guard</h3><div style="line-height:1.55;font-size:13px">${esc(g.note || '')} <span style="color:#6b7a73">It slows down by itself if customers opt out after a follow-up or Meta lowers a number's rating, and stops if the rating turns red.</span></div>
-        <div class="wp-hint">Last 7 days: ${fmt(g.sent || 0)} sent · ${fmt(g.optouts || 0)} opted out${g.optout_pct ? ' (' + g.optout_pct + '%)' : ''} · ${fmt(g.failed || 0)} failed · worst number rating: ${esc(g.quality === 'GREEN' ? 'High' : g.quality === 'YELLOW' ? 'Medium' : g.quality === 'RED' ? 'Low' : 'not rated')}</div></div>
-        <div class="wp-cd"><h3>Your plans &amp; limits</h3><div style="font-size:13px;line-height:1.6">${D.plans.saved} of ${D.plans.total} situations are saved and on · limits: ${esc((D.limits || []).join(' · '))}</div><div class="wp-row" style="margin-top:8px"><button type="button" class="wp-btn s" id="fuGo2">Edit plans &amp; limits in Learning &amp; Improvement</button></div></div></div>`;
-      host.innerHTML = h; bindTabs();
-      const go = (e) => { e.preventDefault(); if (ctx.go) ctx.go('learn'); }; if ($(host, '#fuGo')) $(host, '#fuGo').onclick = go; $(host, '#fuGo2').onclick = go;
-      host.querySelectorAll('[data-m]').forEach((b) => { b.onclick = async () => {
-        const m = b.dataset.m; if (m === D.mode) return;
-        if ((m === 'auto24' || m === 'autotpl') && !confirm(m === 'autotpl' ? 'Switch on automatic follow-ups, including approved templates after 24 hours? Customers will receive messages without a person pressing Send.' : 'Switch on automatic follow-ups inside the 24-hour window? Customers will receive messages without a person pressing Send.')) return;
-        try { await api.post('fu.mode', { mode: m }); toast('Follow-ups: ' + (FU_MODES.find((x) => x[0] === m) || [])[1]); render(); } catch (e) { toast(e.message, true); } }; });
-      host.querySelectorAll('[data-chat]').forEach((a) => { a.onclick = (e) => { e.preventDefault(); if (ctx.openChat) ctx.openChat(a.dataset.chat); }; });
-      host.querySelectorAll('[data-now]').forEach((b) => { b.onclick = async () => { const x = D.coming[+b.dataset.now]; b.disabled = true; try { await api.post('fu.send_now', { phone: x.phone }); toast('Sent ✓'); render(); } catch (e) { toast(e.message, true); b.disabled = false; } }; });
-      host.querySelectorAll('[data-skip]').forEach((b) => { b.onclick = async () => { const x = D.coming[+b.dataset.skip]; b.disabled = true; try { await api.post('fu.skip', { phone: x.phone }); render(); } catch (e) { toast(e.message, true); b.disabled = false; } }; });
-    }
-    // ---------------------------------------------------------------- screen C
-    function drawLadder() {
-      const L = LD, drafts = L.rungs.reduce((n, g) => n + g.versions.filter((v) => v.status === 'draft').length, 0), total = L.rungs.reduce((n, g) => n + g.versions.length, 0);
-      let h = '<div class="wp">' + tabs();
-      h += `<div class="wp-cd"><div class="wp-row"><div class="wp-grow"><h3 style="font-size:17px;margin:0">🪜 After-24-hours ladder</h3><div class="wp-hint" style="margin-top:4px">Only approved templates can be sent after 24 hours. The bot drafts them from what you taught. You read them, then they go to Meta. Several versions per step are tried and the one that gets more replies is used more often.</div></div>
-        <button type="button" class="wp-btn" id="ldDr">🤖 Draft templates from my rules</button><button type="button" class="wp-btn p" id="ldSend" ${drafts ? '' : 'disabled'}>Send drafts to Meta${drafts ? ' (' + drafts + ')' : ''}</button></div><div id="ldE"></div></div>`;
-      if (L.guard && L.guard.state !== 'ok') h += `<div class="wp-note"><b>Quality guard:</b> ${esc(L.guard.note)}</div>`;
-      if (!L.accounts) h += '<div class="wp-note"><b>No WhatsApp Business Account ID yet.</b> Add one in Setup &amp; connection before sending templates to Meta.</div>';
-      h += '<div class="wp-cd">' + L.rungs.map((g, gi) => `<div style="display:grid;grid-template-columns:120px 1fr;gap:12px;padding:12px 0;${gi ? 'border-top:1px solid #edf1ee' : ''}"><div><b style="font-size:14px">Step ${g.rung}</b><div class="wp-hint" style="margin:2px 0">${esc(g.label)}<br>${esc(g.when)}</div></div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px">${g.versions.length ? g.versions.map((v) => { const st = TST[v.status] || [v.status, '']; return `<div class="wp-cd" style="margin:0;padding:11px 12px;${v.off ? 'opacity:.5' : ''}"><div><span class="wp-pill ${st[1]}">${esc(st[0])}</span><span class="wp-pill">${esc(v.ver)}</span></div>
-          <div style="margin:6px 0;line-height:1.45;font-size:13px;white-space:pre-wrap">“${esc(v.body)}”</div>${v.status === 'rejected' && v.reason ? `<div class="wp-hint" style="color:#b42318">Meta: ${esc(v.reason)}</div>` : ''}
-          ${v.sent ? `<div class="wp-bar"><i style="width:${Math.max(2, v.pct || 0)}%"></i></div><div class="wp-hint" style="margin:0">${v.pct == null ? '—' : v.pct + '% replied'} · ${v.sent} sent</div>` : (v.status === 'approved' || v.status === 'partial' ? '<div class="wp-hint" style="margin:0">Not sent yet — it gets its first 20 sends soon.</div>' : '')}
-          ${v.status === 'draft' ? `<div class="wp-row" style="margin-top:6px"><button type="button" class="wp-btn s" data-ed="${v.id}">✏️ Edit</button><button type="button" class="wp-btn s r" data-del="${v.id}">Delete</button></div>` : (v.status === 'rejected' || (v.status !== 'draft' && !v.off) ? `<div class="wp-row" style="margin-top:6px"><button type="button" class="wp-btn s r" data-del="${v.id}">${v.status === 'rejected' ? 'Remove' : 'Stop using'}</button></div>` : '')}</div>`; }).join('') : '<div class="wp-hint" style="border:1px dashed #cfd8d3;border-radius:12px;padding:14px">No version yet — press “Draft templates from my rules”.</div>'}</div></div>`).join('') + '</div>';
-      h += `<div class="wp-cd" style="background:#f3efff;border-color:#e3d9ff"><b style="color:#6b3fc0;font-size:11px;letter-spacing:.05em">🤖 WEEKLY INSIGHT</b><div style="margin-top:4px;line-height:1.5">${esc(L.insight || (total ? 'After about 20 sends per version, the bot starts using the better one more often and tells you here.' : 'Draft the templates first. Then each version gets a fair number of sends before the bot picks favourites.'))}</div></div></div>`;
-      host.innerHTML = h; bindTabs();
-      const E = (m) => { $(host, '#ldE').innerHTML = errBox(m); };
-      $(host, '#ldDr').onclick = async function () { this.disabled = true; this.textContent = 'Drafting…'; try { LD = await api.post('fu.ladder_draft', {}); toast('Drafted ' + LD.made + ' template(s) — read them, then send to Meta'); drawLadder(); } catch (e) { E(e.message); this.disabled = false; this.textContent = '🤖 Draft templates from my rules'; } };
-      $(host, '#ldSend').onclick = async function () { if (!confirm('Send ' + drafts + ' draft template(s) to Meta for approval? Approval usually takes minutes to a day.')) return; this.disabled = true; this.textContent = 'Sending…'; try { LD = await api.post('fu.ladder_send', {}); toast('Sent ' + LD.sent + ' to Meta ✓'); drawLadder(); if (LD.errors && LD.errors.length) E(LD.errors.join(' · ')); } catch (e) { E(e.message); this.disabled = false; } };
-      host.querySelectorAll('[data-del]').forEach((b) => { b.onclick = async () => { if (!confirm('Remove this version from the ladder?')) return; try { LD = await api.post('fu.ladder_del', { id: +b.dataset.del }); drawLadder(); } catch (e) { E(e.message); } }; });
-      host.querySelectorAll('[data-ed]').forEach((b) => { b.onclick = () => {
-        const v = LD.rungs.flatMap((g) => g.versions).find((x) => x.id === +b.dataset.ed); const m = modal('Edit version ' + v.ver);
-        m.body.innerHTML = `<label class="wp-fl" style="margin-top:0">Message <small>— {{1}} is the customer's first name (one variable at most, not at the very start or end)</small></label><textarea class="wp-in" id="edB" rows="5">${esc(v.body)}</textarea><div id="edE"></div><div class="wp-row" style="margin-top:10px"><button type="button" class="wp-btn p" id="edS">Save</button></div>`;
-        $(m.body, '#edS').onclick = async function () { this.disabled = true; try { LD = await api.post('fu.ladder_edit', { id: v.id, body: $(m.body, '#edB').value }); m.close(); drawLadder(); } catch (e) { $(m.body, '#edE').innerHTML = errBox(e.message); this.disabled = false; } }; }; });
-    }
-    render(); return () => render();
-  };
-
-  // ================================================================================================================ TEAM & ROUTING
   P.team = (el, ctx) => {
     let D = null; el.innerHTML = loading;
     async function load() { try { D = await api.get('wa.team'); } catch (e) { el.innerHTML = errBox(e.message); return; } draw(); }
