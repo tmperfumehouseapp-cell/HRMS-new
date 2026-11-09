@@ -24,14 +24,17 @@ if (!function_exists('wag_tables')) {
 
 function wag_defaults(): array
 {
-    return ['unans_min' => 3, 'unans_push' => true, 'bot' => 'off', 'bot_after' => 12, 'bot_max_day' => 8, 'target' => 5, 'vip_orders' => 4, 'vip_ltv' => 10000, 'ai_tags' => true, 'sound' => true];
+    return ['unans_min' => 3, 'unans_push' => true, 'bot' => 'on', 'bot_after' => 10, 'bot_max_day' => 200, 'target' => 5, 'vip_orders' => 4, 'vip_ltv' => 10000, 'ai_tags' => true, 'sound' => true];
 }
 function wag_cfg(PDO $pdo): array
 {
     $d = wag_defaults();
     try { $j = json_decode((string)setting_get($pdo, 'wa_g_cfg', ''), true); } catch (Throwable $e) { $j = null; }
+    // once: the bot answers every unanswered customer 10 s after their message (no daily cap); the holding reply for chats a person must take also waits 10 s
+    try { if (setting_get($pdo, 'wag_bot10', '') !== '1') { setting_set($pdo, 'wag_bot10', '1'); $j = is_array($j) ? $j : []; $j['bot'] = 'on'; $j['bot_after'] = 10; $j['bot_max_day'] = 200; setting_set($pdo, 'wa_g_cfg', json_encode($j));
+        if (function_exists('wq_put')) { wq_put($pdo, 'wq_auto_on', '1'); wq_put($pdo, 'wq_hold_sec', '10'); } } } catch (Throwable $e) { }
     if (is_array($j)) foreach ($d as $k => $v) if (array_key_exists($k, $j)) $d[$k] = $j[$k];
-    $d['unans_min'] = max(1, min(60, (int)$d['unans_min'])); $d['bot_after'] = max(5, min(600, (int)$d['bot_after'])); $d['bot_max_day'] = max(1, min(40, (int)$d['bot_max_day']));
+    $d['unans_min'] = max(1, min(60, (int)$d['unans_min'])); $d['bot_after'] = max(5, min(600, (int)$d['bot_after'])); $d['bot_max_day'] = max(1, min(500, (int)$d['bot_max_day']));
     $d['target'] = max(1, min(200, (int)$d['target'])); $d['vip_orders'] = max(2, min(50, (int)$d['vip_orders'])); $d['vip_ltv'] = max(1000, (int)$d['vip_ltv']);
     $d['bot'] = $d['bot'] === 'on' ? 'on' : 'off'; foreach (['unans_push', 'ai_tags', 'sound'] as $b) $d[$b] = !empty($d[$b]);
     return $d;
@@ -370,10 +373,7 @@ function wag_bot_scan(PDO $pdo, int $max = 4): array
         if ($o['sent'] + $o['handoff'] >= $max) break; $key = (string)$c['phone']; $age = $now - strtotime((string)$c['last_in_at']);
         if (!empty($c['cx_id'])) continue;   // the chat is with the Complaint team: the bot never answers it
         if (function_exists('wa_auto_muted') && wa_auto_muted($pdo, $key)) continue;   // ✅ order completed: the bot stays quiet today and tomorrow (a person answers)
-        if ((int)$c['assigned_emp'] > 0) {   // a present salesperson gets a fair chance first
-            if ($people === null) { $people = []; foreach (wa_people($pdo) as $p) $people[(int)$p['emp_id']] = !empty($p['present']); }
-            if (!empty($people[(int)$c['assigned_emp']]) && $age < $unans) continue;
-        }
+        // no grace for a present salesperson any more: 10 s without a person's answer and the bot replies (it never answers once a person has)
         $li = $pdo->prepare("SELECT id, mtype, body FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $li->execute([$key]); $m = $li->fetch();
         if (!$m || !in_array((string)$m['mtype'], ['text', 'button', 'interactive'], true)) continue;   // photos / voice notes / documents are for a person
         if (function_exists('wa_hot_intent') && wa_hot_intent((string)$m['body']) !== '') continue;      // wants to pay: a person, not the bot (wa_hot_scan flags it)
