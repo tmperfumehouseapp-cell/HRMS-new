@@ -50,7 +50,7 @@ guardPage();
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const money = (n) => '₹' + Math.round(Number(n) || 0).toLocaleString('en-IN');
   const WHY = { hot: ['🔥 Wanted to pay / order', 'hot'], price: ['💬 Asked the price – no follow-up', ''], ignored: ['🔕 Wrote 2+ times – no person answered', ''] };
-  const ST = { open: 'Open', taken: 'Taken', given: 'Taken', won: '✅ Order won', ordered: 'Ordered anyway', expired: 'Expired' };
+  const ST = { open: 'Open', taken: 'Taken', given: 'Taken', won: '✅ Order won', ordered: 'Ordered anyway', expired: 'Expired', silent: '🔇 Gone silent' };
   let u = null; try { u = api.currentUser(); } catch (e) { u = null; }
   const S = { admin: false, d: null, team: null, bonus: null, tab: 'list', status: 'all', days: 7, busy: false };
 
@@ -86,12 +86,13 @@ guardPage();
     let h = '';
     if (!S.admin && !d.member) { root.innerHTML = '<div class="rq-empty">You are not on today\'s rescue team. Ask the owner to add you — then the missed queries show up here and every order you win earns +' + esc(cfg.pct) + '% extra.</div>'; return; }
     h += '<div class="rq-cards"><div class="rq-card"><b>' + (s.open || 0) + '</b><span>Waiting to be taken</span></div><div class="rq-card"><b>' + (s.taken || 0) + '</b><span>Being worked</span></div>' +
-      '<div class="rq-card"><b>' + (s.won || 0) + '</b><span>Orders won</span></div><div class="rq-card"><b>' + money(s.revenue) + '</b><span>Won revenue</span></div><div class="rq-card"><b>' + money(s.bonus) + '</b><span>Bonus earned (' + esc(cfg.pct) + '%)</span></div></div>';
+      '<div class="rq-card"><b>' + (s.won || 0) + '</b><span>Orders won</span></div><div class="rq-card"><b>' + (s.silent || 0) + '</b><span>Gone silent</span></div><div class="rq-card"><b>' + money(s.revenue) + '</b><span>Won revenue</span></div><div class="rq-card"><b>' + money(s.bonus) + '</b><span>Bonus earned (' + esc(cfg.pct) + '%)</span></div></div>';
+    { const ls = d.last_scan, sc = ls && ls.scan; if (S.admin && sc) h += '<div class="rq-sub" style="margin-bottom:10px">Last check ' + esc(ago(ls.at)) + ': looked at <b>' + (sc.candidates || 0) + '</b> queries, <b>' + (sc.flagged || 0) + '</b> new opportunities, ' + (sc.silent || 0) + ' gone silent (tried ' + esc(cfg.attempts) + '+ times).' + (sc.error ? ' <span style="color:#d9423b">Problem: ' + esc(sc.error) + '</span>' : '') + ' It runs by itself every time WhatsApp opens.</div>'; }
     if (S.admin) h += '<div class="rq-tabs"><button data-tab="list" class="' + (S.tab === 'list' ? 'on' : '') + '">Queries</button><button data-tab="team" class="' + (S.tab === 'team' ? 'on' : '') + '">Rescue team</button><button data-tab="bonus" class="' + (S.tab === 'bonus' ? 'on' : '') + '">Bonus report</button><button data-tab="cfg" class="' + (S.tab === 'cfg' ? 'on' : '') + '">Settings</button></div>';
     else h += '<div class="rq-tabs"><button data-tab="list" class="' + (S.tab === 'list' ? 'on' : '') + '">Queries</button><button data-tab="bonus" class="' + (S.tab === 'bonus' ? 'on' : '') + '">My bonus</button></div>';
     if (S.tab === 'list') {
-      if (S.admin) h += '<div class="rq-row"><select id="rqSt">' + ['all', 'open', 'taken', 'won', 'ordered', 'expired'].map((x) => '<option value="' + x + '"' + (S.status === x ? ' selected' : '') + '>' + (x === 'all' ? 'All' : (ST[x] || x)) + '</option>').join('') + '</select>' +
-        '<select id="rqDays">' + [1, 3, 7, 14, 30].map((x) => '<option value="' + x + '"' + (S.days === x ? ' selected' : '') + '>Last ' + x + ' day' + (x > 1 ? 's' : '') + '</option>').join('') + '</select><button class="btn secondary" id="rqScan">Scan now</button></div>';
+      if (S.admin) h += '<div class="rq-row"><select id="rqSt">' + ['all', 'open', 'taken', 'won', 'ordered', 'expired', 'silent'].map((x) => '<option value="' + x + '"' + (S.status === x ? ' selected' : '') + '>' + (x === 'all' ? 'All' : (ST[x] || x)) + '</option>').join('') + '</select>' +
+        '<select id="rqDays">' + [1, 3, 7, 14, 30].map((x) => '<option value="' + x + '"' + (S.days === x ? ' selected' : '') + '>Last ' + x + ' day' + (x > 1 ? 's' : '') + '</option>').join('') + '</select></div>';
       h += d.items.length ? d.items.map(itemHtml).join('') : '<div class="rq-empty">Nothing here right now. 🎉</div>';
     } else if (S.tab === 'team' && S.team) {
       const t = S.team;
@@ -105,7 +106,7 @@ guardPage();
         (b.orders.length ? '<table style="margin-top:10px"><thead><tr><th>Order</th><th>Customer</th><th>Person</th><th>Total</th><th>Bonus</th><th>Date</th></tr></thead><tbody>' + b.orders.map((o) => '<tr><td>' + esc(o.order_name) + '</td><td>' + esc(o.customer || o.phone) + '</td><td>' + esc(o.name) + '</td><td>' + money(o.total) + '</td><td>' + money(o.bonus) + '</td><td>' + esc(o.won_at) + '</td></tr>').join('') + '</tbody></table>' : '<div class="rq-empty">No rescued orders in this period yet.</div>');
     } else if (S.tab === 'cfg' && S.admin) {
       h += '<div class="card" style="padding:14px 18px;margin-bottom:12px"><b>Which queries count as missed</b>' +
-        '<div class="rq-row"><label>Look back (days) <input type="number" id="cDays" min="1" max="30" value="' + esc(cfg.days) + '"></label>' +
+        '<div class="rq-row"><label>Stop after (attempts) <input type="number" id="cAtt" min="1" max="30" value="' + esc(cfg.attempts) + '"></label><span class="rq-sub">a person tried this many times since the customer last wrote, no answer → goes silent</span></div><div class="rq-row"><label>Look back (days) <input type="number" id="cDays" min="1" max="30" value="' + esc(cfg.days) + '"></label>' +
         '<label>No follow-up for (hours) <input type="number" id="cWait" step="0.5" min="0.5" max="48" value="' + esc(cfg.wait_h) + '"></label><button class="btn" id="cSave">Save</button></div>' +
         '<div class="rq-sub">A price query counts as missed after this long without a person answering.</div></div>' +
         '<div class="rq-sub" style="margin-bottom:6px">The extra bonus % and ON/OFF are in Commission Rules — the same page as in Sales (shown below):</div>' +
@@ -131,12 +132,11 @@ guardPage();
       }, (er) => alert(er.message));
       return;
     }
-    if (t.id === 'rqScan') act(() => api.post('wq.rescue_scan', { force: true }), (r) => 'Checked ' + ((r.scan || {}).checked || 0) + ' queries, ' + ((r.scan || {}).flagged || 0) + ' new rescue queries.');
     if (t.id === 'rqTeamDay' || t.id === 'rqTeamAlways') {
       const ids = [...root.querySelectorAll('[data-emp]:checked')].map((c) => +c.dataset.emp);
       act(() => api.post('wq.rescue_team', { emp_ids: ids, always: t.id === 'rqTeamAlways' }), () => ids.length + ' people saved.');
     }
-    if (t.id === 'cSave') act(() => api.post('wq.rescue_cfg', { days: +document.getElementById('cDays').value, wait_h: +document.getElementById('cWait').value }), () => 'Saved.');
+    if (t.id === 'cSave') act(() => api.post('wq.rescue_cfg', { attempts: +document.getElementById('cAtt').value, days: +document.getElementById('cDays').value, wait_h: +document.getElementById('cWait').value }), () => 'Saved.');
   });
   root.addEventListener('change', (e) => {
     if (e.target.id === 'rqSt') { S.status = e.target.value; load(); } if (e.target.id === 'rqDays') { S.days = +e.target.value; load(); }
