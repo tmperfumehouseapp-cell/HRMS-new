@@ -104,11 +104,12 @@ guardPage();
         (S.admin && b.people.length ? '<table><thead><tr><th>Person</th><th>Orders</th><th>Revenue</th><th>Bonus</th></tr></thead><tbody>' + b.people.map((p) => '<tr><td>' + esc(p.name) + '</td><td>' + p.orders + '</td><td>' + money(p.revenue) + '</td><td><b>' + money(p.bonus) + '</b></td></tr>').join('') + '</tbody></table>' : '') +
         (b.orders.length ? '<table style="margin-top:10px"><thead><tr><th>Order</th><th>Customer</th><th>Person</th><th>Total</th><th>Bonus</th><th>Date</th></tr></thead><tbody>' + b.orders.map((o) => '<tr><td>' + esc(o.order_name) + '</td><td>' + esc(o.customer || o.phone) + '</td><td>' + esc(o.name) + '</td><td>' + money(o.total) + '</td><td>' + money(o.bonus) + '</td><td>' + esc(o.won_at) + '</td></tr>').join('') + '</tbody></table>' : '<div class="rq-empty">No rescued orders in this period yet.</div>');
     } else if (S.tab === 'cfg' && S.admin) {
-      h += '<div class="card" style="padding:14px 18px"><div class="rq-row"><label><input type="checkbox" id="cOn"' + (cfg.on ? ' checked' : '') + '> Rescue is ON</label></div>' +
-        '<div class="rq-row"><label>Extra bonus % <input type="number" id="cPct" step="0.1" min="0" max="20" value="' + esc(cfg.pct) + '"></label><span class="rq-sub">of the order total, paid on top of the normal commission</span></div>' +
-        '<div class="rq-row"><label>Look back (days) <input type="number" id="cDays" min="1" max="30" value="' + esc(cfg.days) + '"></label></div>' +
-        '<div class="rq-row"><label>No follow-up for (hours) <input type="number" id="cWait" step="0.5" min="0.5" max="48" value="' + esc(cfg.wait_h) + '"></label><span class="rq-sub">a price query counts as missed after this long without a person answering</span></div>' +
-        '<button class="btn" id="cSave">Save settings</button></div>';
+      h += '<div class="card" style="padding:14px 18px;margin-bottom:12px"><b>Which queries count as missed</b>' +
+        '<div class="rq-row"><label>Look back (days) <input type="number" id="cDays" min="1" max="30" value="' + esc(cfg.days) + '"></label>' +
+        '<label>No follow-up for (hours) <input type="number" id="cWait" step="0.5" min="0.5" max="48" value="' + esc(cfg.wait_h) + '"></label><button class="btn" id="cSave">Save</button></div>' +
+        '<div class="rq-sub">A price query counts as missed after this long without a person answering.</div></div>' +
+        '<div class="rq-sub" style="margin-bottom:6px">The extra bonus % and ON/OFF are in Commission Rules — the same page as in Sales (shown below):</div>' +
+        '<iframe title="Commission Rules" src="commission_rules.html?in=sales" style="width:100%;height:calc(100vh - 330px);min-height:520px;border:1px solid var(--line);border-radius:12px;background:#fff"></iframe>';
     }
     root.innerHTML = h;
   }
@@ -130,12 +131,12 @@ guardPage();
       }, (er) => alert(er.message));
       return;
     }
-    if (t.id === 'rqScan') act(() => api.post('wq.rescue_scan', {}), (r) => 'Checked ' + ((r.scan || {}).checked || 0) + ' queries, ' + ((r.scan || {}).flagged || 0) + ' new rescue queries.');
+    if (t.id === 'rqScan') act(() => api.post('wq.rescue_scan', { force: true }), (r) => 'Checked ' + ((r.scan || {}).checked || 0) + ' queries, ' + ((r.scan || {}).flagged || 0) + ' new rescue queries.');
     if (t.id === 'rqTeamDay' || t.id === 'rqTeamAlways') {
       const ids = [...root.querySelectorAll('[data-emp]:checked')].map((c) => +c.dataset.emp);
       act(() => api.post('wq.rescue_team', { emp_ids: ids, always: t.id === 'rqTeamAlways' }), () => ids.length + ' people saved.');
     }
-    if (t.id === 'cSave') act(() => api.post('wq.rescue_cfg', { on: document.getElementById('cOn').checked, pct: +document.getElementById('cPct').value, days: +document.getElementById('cDays').value, wait_h: +document.getElementById('cWait').value }), () => 'Saved.');
+    if (t.id === 'cSave') act(() => api.post('wq.rescue_cfg', { days: +document.getElementById('cDays').value, wait_h: +document.getElementById('cWait').value }), () => 'Saved.');
   });
   root.addEventListener('change', (e) => {
     if (e.target.id === 'rqSt') { S.status = e.target.value; load(); } if (e.target.id === 'rqDays') { S.days = +e.target.value; load(); }
