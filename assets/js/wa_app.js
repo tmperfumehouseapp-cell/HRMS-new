@@ -67,7 +67,7 @@
   .wx-sp{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:#fff;border:1px solid var(--line);color:var(--ink);flex:none;text-decoration:none}.wx-sp:active{background:var(--bg)}
   .wx-top{padding-left:10px;padding-right:10px}.wx-row{padding:8px 0}
   .wx-h{font-size:11px;font-weight:800;letter-spacing:.4px;color:var(--mut);padding:8px 16px 4px;text-transform:uppercase}.wx-h.r{color:var(--rd)}
-  .wx-rd1{font-size:11.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}.wx-rd{display:flex;flex-direction:column;border-left:4px solid var(--c);background:color-mix(in srgb,var(--c) 9%,transparent);border-bottom:1px solid var(--line)}.wx-rd div{padding:3px 10px;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}.wx-rd .u{font-weight:700}.wx-rd .d{border-top:1px dashed var(--line);font-weight:800;color:var(--c)}
+  .wx-rd1{font-size:11.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}.wx-rd{display:flex;flex-direction:column;border-left:4px solid var(--c);background:color-mix(in srgb,var(--c) 13%,#fff);border-bottom:1px solid var(--line)}html.wxdk .wx-rd{background:color-mix(in srgb,var(--c) 22%,#111b21)}.wx-rd .u{display:flex;gap:8px;align-items:center;color:#111b21}html.wxdk .wx-rd .u{color:#e9edef}.wx-rd .u .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}.wx-rd .u em{flex:none;font-style:normal;font-size:.85em;font-weight:800;background:#eef2ff;color:#3730a3;border-radius:99px;padding:0 8px;white-space:nowrap}.wx-rd .d{color:color-mix(in srgb,var(--c) 65%,#000)}html.wxdk .wx-rd .d{color:color-mix(in srgb,var(--c) 55%,#fff)}.wx-rd div{padding:3px 10px;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}.wx-rd .u{font-weight:700}.wx-rd .d{border-top:1px dashed var(--line);font-weight:800}
   .wx-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);cursor:pointer}.wx-row:last-child{border:0}
   .wx-av{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:800;font-size:13px;flex:none;position:relative}
   .wx-nm{font-weight:700;font-size:14px;display:flex;gap:5px;align-items:center}.wx-sub{font-size:12.5px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.wx-mid{flex:1;min-width:0}
@@ -488,8 +488,12 @@
 
     // ------------------------------------------------------------------ chats list
     const SRC = { query: ['Query', 'o'], community: ['Community', 'g'], campaign: ['Campaign', 'b'] };
-    const RDC = { pay: '#16a34a', addr: '#0284c7', neg: '#d97706', think: '#7c3aed', ask: '#64748b', cold: '#94a3b8', cx: '#7c3aed' };
-    function readLines() { const el = document.getElementById('wxRd'); if (!el) return; const ph = S.cur && S.cur.phone, c = ph && ((S.chats || []).find((y) => y.phone === ph) || S.cur.row); const r = c && c.read; if (!r) { el.innerHTML = ''; return; } const col = RDC[r.k] || '#64748b'; el.innerHTML = '<div class="wx-rd" style="--c:' + col + '"><div class="u">' + esc(r.u) + '</div><div class="d">👉 Do: ' + esc(r.d) + '</div></div>'; }
+    const RDC = { pay: '#16a34a', addr: '#0284c7', neg: '#d97706', think: '#7c3aed', ask: '#475569', cold: '#64748b', cx: '#7c3aed' };
+    function readLines() {
+      const el = document.getElementById('wxRd'); if (!el) return; const ph = S.cur && S.cur.phone, c = ph && ((S.chats || []).find((y) => y.phone === ph) || S.cur.row), r = c && c.read, life = (S.cur && S.cur.life) || '';
+      if (!r && !life) { el.innerHTML = ''; return; } const col = r ? (RDC[r.k] || '#64748b') : '#3730a3';
+      el.innerHTML = '<div class="wx-rd" style="--c:' + col + '"><div class="u"><span class="t">' + esc(r ? r.u : life) + '</span>' + (r && life ? '<em>' + esc(life) + '</em>' : '') + '</div>' + (r ? '<div class="d">👉 Do: ' + esc(r.d) + '</div>' : '') + '</div>';
+    }
     function badgeOf(c) { const b = c.badge || {}; return b.k === 'vip' ? '<span title="Very good customer">⭐</span>' : b.k === 'hot' ? '<span title="Ready to pay">🔥</span>' : b.k === 'repeat' ? '<span title="Repeat buyer">🔁</span>' : ''; }
     function timerOf(c) {
       if (!c.waiting || !c.window) return `<div>${hhmm(c.last_at)}</div>`;
@@ -901,7 +905,7 @@
     async function loadChat() {
       const phone = S.cur.phone;
       try {
-        const d = await api.get('wa.chat', { phone, limit: 40 }); if (!S.cur || S.cur.phone !== phone) return; S.cur.contact = d.contact; try { const lf = $('#wxLife'), L = d.contact && d.contact.life; if (lf) lf.innerHTML = L ? `<div style="padding:6px 12px;font-size:12.5px;font-weight:800;background:#eef2ff;color:#3730a3">${esc(L.label)}</div>` : ''; } catch (e) { } S.cur.msgs = d.messages; S.cur.moreOld = !!d.more; S.cur.last = Math.max(0, ...d.messages.map((m) => m.id)); S.cur.row = Object.assign({}, S.cur.row, { name: d.contact.name });
+        const d = await api.get('wa.chat', { phone, limit: 40 }); if (!S.cur || S.cur.phone !== phone) return; S.cur.contact = d.contact; try { const lf = $('#wxLife'), L = d.contact && d.contact.life; S.cur.life = L ? String(L.label || '') : ''; if (lf) lf.innerHTML = ''; readLines(); } catch (e) { } S.cur.msgs = d.messages; S.cur.moreOld = !!d.more; S.cur.last = Math.max(0, ...d.messages.map((m) => m.id)); S.cur.row = Object.assign({}, S.cur.row, { name: d.contact.name });
         const c = d.contact; $('#wxCn').innerHTML = esc(c.name || pretty(c.phone)) + ' ' + badgeOf(S.cur.row); $('#wxMs').innerHTML = msgsHtml(); scrollEnd(true); { const mb = $('#wxMs'); mb.onscroll = () => { if (mb.scrollTop < 60) loadOlder(); }; mb.onclick = (e) => { if (e.target.closest('#wxOld')) loadOlder(); }; } drawFoot(); loadSugg(false); loadInfo();
         autoMedia(S.cur.msgs);
       } catch (e) { toast(e.message, true); closeChat(); }
