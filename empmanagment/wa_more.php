@@ -521,6 +521,7 @@ function wa_number_caps(PDO $pdo, array $health): array
     foreach ($fc as $k => $v) if ($k !== '_t' && $v) $first[(int)$k] = (string)$v;
     $port = $lu['all'];
     $rows = $pdo->query("SELECT id, camp_ok FROM wa_numbers")->fetchAll(); $camp = []; foreach ($rows as $r) $camp[(int)$r['id']] = (int)$r['camp_ok'] === 1;
+    $allBlocked = true; foreach ($health as $h0) { $pb0 = (string)setting_get($pdo, 'wa_payblock_' . (int)$h0['id'], ''); if ($pb0 === '' || strtotime($pb0) <= time() - 3 * 3600) { $allBlocked = false; break; } }   // EVERY number marked → none is skipped (each is still tried; Meta decides) so a campaign never sits idle behind my own rule
     $out = [];
     foreach ($health as $h) {
         $id = (int)$h['id']; $age = isset($first[$id]) ? (int)floor((time() - strtotime($first[$id])) / 86400) : 0;
@@ -532,7 +533,7 @@ function wa_number_caps(PDO $pdo, array $health): array
         if ($h['quality'] === 'RED') { $cap = 0; $why = 'quality is Low — stopped'; }
         if ($h['status'] !== '' && $h['status'] !== 'CONNECTED') { $cap = 0; $why = 'not connected'; }
         if (empty($camp[$id])) { $cap = 0; $why = 'switched off for campaigns'; }
-        try { $pb = (string)setting_get($pdo, 'wa_payblock_' . $id, ''); if ($pb !== '' && strtotime($pb) > time() - 3 * 3600) { $cap = 0; $why = 'payment problem at Meta (131042) — campaigns go through the other number(s) now; tried again after 3 hours'; } } catch (Throwable $e) { }   // owner (9 Nov): when one number has the payment problem, everything moves to the other number by itself
+        try { $pb = (string)setting_get($pdo, 'wa_payblock_' . $id, ''); if ($allBlocked === false && $pb !== '' && strtotime($pb) > time() - 3 * 3600) { $cap = 0; $why = 'payment problem at Meta (131042) — campaigns go through the other number(s) now; tried again after 3 hours'; } } catch (Throwable $e) { }   // owner (9 Nov): when one number has the payment problem, everything moves to the other number by itself
         $u = $used[$id] ?? 0; $out[$id] = ['cap' => $cap, 'used' => $u, 'left' => max(0, $cap - $u), 'why' => $why, 'age' => $age];
     }
     $out['_port'] = ['tier' => $tier, 'assumed' => $tierAssumed, 'used' => $port, 'left' => max(0, (int)floor($tier * 0.9) - $port)];
