@@ -200,6 +200,11 @@ function wa_camp_diagnose(PDO $pdo, int $id): array
     $L[] = 'AUDIENCE: ' . implode(' · ', array_map(fn($k, $v) => str_replace('_', ' ', $k) . ' ' . $v, array_keys($A), $A));
     $L[] = 'RAW META ANSWERS KEPT: ' . $F['raw_answers']['count'] . ($F['raw_answers']['example'] !== '' ? "\n   example: " . $F['raw_answers']['example'] : '');
     $L[] = 'CAMPAIGN: ' . $F['campaign']['status'] . ' · started ' . $start . ' · ' . $F['campaign']['send_time'] . ' · retry ' . ($F['campaign']['retry'] ? 'on' : 'off') . ($F['campaign']['note'] !== '' ? ' · note: ' . $F['campaign']['note'] : '');
+    try {   // is the sending engine running at all? (last round of the engine, last round of the cron, and what the engine wrote in its log)
+        global $pdo; $ct = $pdo->prepare("SELECT last_tick, rate, push, win_end, start_at FROM wa_campaigns WHERE id = ?"); $ct->execute([(int)($F['campaign']['id'] ?? $F['id'] ?? 0)]); $cr = $ct->fetch();
+        $L[] = 'ENGINE: this campaign last checked by the engine ' . ($cr && $cr['last_tick'] ? $cr['last_tick'] : 'NEVER') . ' · speed ' . ($cr ? (int)$cr['rate'] . '/min × ' . (wa_camp_push((string)$cr['push'])['mult'] ?? 1) : '?') . ' · cron last ran ' . (string)setting_get($pdo, 'wa_cron_at', 'never') . ' · heartbeat last woke it ' . (($hb = (int)setting_get($pdo, 'wa_hb_at', '0')) ? date('Y-m-d H:i:s', $hb) : 'never') . ' · now ' . date('Y-m-d H:i:s');
+        $lg = $pdo->query("SELECT at, kind, ok, info FROM wa_log WHERE kind IN ('campaign','engine','template') ORDER BY id DESC LIMIT 8")->fetchAll(); foreach ($lg as $g) $L[] = '   log ' . $g['at'] . ' ' . $g['kind'] . ($g['ok'] ? '' : ' FAILED') . ': ' . $g['info'];
+    } catch (Throwable $e) { $L[] = 'ENGINE: could not read (' . $e->getMessage() . ')'; }
     return ['ok' => true, 'verdict' => $V, 'facts' => $F, 'report' => implode("\n", $L)];
 }
 
