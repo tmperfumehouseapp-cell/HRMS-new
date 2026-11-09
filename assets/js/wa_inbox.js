@@ -527,12 +527,16 @@
             const u = (k === 'vid' || k === 'doc') && !/^prod:/.test(id) && !MEDIA[id] ? await streamUrl(id) : await mediaUrl(id);   // ⚡ videos / documents stream from our server
             if (k === 'img') { el.outerHTML = `<img src="${u}" alt="photo">`; box.querySelectorAll('img').forEach((im) => { im.onclick = () => lightbox(im.src); }); }
             else if (k === 'aud') el.outerHTML = `<audio controls autoplay src="${u}"></audio>`;
-            else if (k === 'vid') { MEDIA[id] = u; el.outerHTML = `<video controls autoplay playsinline preload="auto" src="${u}"></video>`; }
+            else if (k === 'vid') { MEDIA[id] = u; el.outerHTML = `<video controls ${el.dataset.auto ? '' : 'autoplay'} playsinline preload="${el.dataset.auto ? 'metadata' : 'auto'}" src="${u}"></video>`; }
             else { const w = window.open(u, '_blank'); if (!w) { const a = document.createElement('a'); a.href = u; a.download = el.dataset.n || 'whatsapp-file'; document.body.appendChild(a); a.click(); a.remove(); } el.textContent = '📄 ' + (el.dataset.n || 'Document') + ' — opened'; }
           } catch (e) { el.textContent = '⚠ ' + e.message; }
         };
       });
       box.querySelectorAll('.ld[data-m^="prod:"]').forEach((el) => el.click());   // product photos show at once
+      // 🖼 like normal WhatsApp: photos (sent or received) and videos (their first frame, not playing) load by themselves — nothing to tap. Voice notes and documents stay tap-to-open.
+      { const pend = [...box.querySelectorAll('.ld[data-k="img"], .ld[data-k="vid"]')].filter((el) => !/^prod:/.test(el.dataset.m || '')); let i = 0, run = 0;
+        const next = () => { while (run < 3 && i < pend.length) { const el = pend[i++]; if (!el.isConnected) continue; run++; if (el.dataset.k === 'vid') el.dataset.auto = '1'; el.click(); setTimeout(() => { run--; next(); }, 350); } };
+        next(); }
     }
     // ⬆ older messages: the page opens with the newest 100; scrolling to the top (or tapping the bar) loads the 100 before them, again and again until the first message
     async function loadOlder() {

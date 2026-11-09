@@ -638,6 +638,11 @@
 
     // ------------------------------------------------------------------ one chat
     const MEDIA = {};
+    // 🖼 like normal WhatsApp: photos and videos (sent or received) show by themselves — no tap. Photos: the last 16 of the chat load first; videos show their first frame (not playing). Voice notes / documents stay tap-to-open.
+    function autoMedia(list) {
+      (list || []).filter((m) => m.media_id && m.mtype === 'image' && !MEDIA[m.media_id]).slice(-16).forEach((m) => mediaUrl(m.media_id).then((u) => { const el = $('.wx-ld[data-m="' + m.media_id + '"]'); if (el) el.outerHTML = `<img src="${u}" alt="">`; }).catch(() => { }));
+      (list || []).filter((m) => m.media_id && m.mtype === 'video' && !MEDIA[m.media_id]).slice(-4).forEach((m) => streamUrl(m.media_id).then((u) => { MEDIA[m.media_id] = u; const el = $('.wx-ld[data-m="' + m.media_id + '"]'); if (el) el.outerHTML = `<video controls playsinline preload="metadata" src="${u}"></video>`; }).catch(() => { }));
+    }
     async function streamUrl(id) { const d = await api.get('wa.media_link', { id }); return api.buildUrl('wa.mfile', { id: d.id, e: d.e, s: d.s }); }   // ⚡ a signed link the browser streams (videos start at once, seek works)
     async function mediaUrl(id) {
       if (MEDIA[id]) return MEDIA[id];
@@ -802,7 +807,7 @@
       try {
         const d = await api.get('wa.chat', { phone, limit: 80 }); if (!S.cur || S.cur.phone !== phone) return; S.cur.contact = d.contact; S.cur.msgs = d.messages; S.cur.moreOld = !!d.more; S.cur.last = Math.max(0, ...d.messages.map((m) => m.id)); S.cur.row = Object.assign({}, S.cur.row, { name: d.contact.name });
         const c = d.contact; $('#wxCn').innerHTML = esc(c.name || pretty(c.phone)) + ' ' + badgeOf(S.cur.row); $('#wxMs').innerHTML = msgsHtml(); scrollEnd(true); { const mb = $('#wxMs'); mb.onscroll = () => { if (mb.scrollTop < 60) loadOlder(); }; mb.onclick = (e) => { if (e.target.closest('#wxOld')) loadOlder(); }; } drawFoot(); loadSugg(false); loadInfo();
-        const imgs = S.cur.msgs.filter((m) => m.media_id && (m.mtype === 'image') && !MEDIA[m.media_id]).slice(-4); imgs.forEach((m) => mediaUrl(m.media_id).then((u) => { const el = $('.wx-ld[data-m="' + m.media_id + '"]'); if (el) { el.outerHTML = `<img src="${u}" alt="">`; } }).catch(() => { }));
+        autoMedia(S.cur.msgs);
       } catch (e) { toast(e.message, true); closeChat(); }
     }
     async function loadInfo() {
@@ -828,7 +833,7 @@
           if (full) box.innerHTML = msgsHtml(); else add.forEach((f) => box.insertAdjacentHTML('beforeend', bubble(f))); scrollEnd(false); if (fresh.some((m) => m.dir === 'in')) { beepNew(); loadSugg(true); } }
         (d.status || []).forEach((u) => { const m = S.cur.msgs.find((x) => x.id === u.id); if (m && m.status !== u.status) { m.status = u.status; redrawBubble(m); } });   // ticks: only that bubble changes
         if (S.cur.contact.window_open !== d.window_open || (d.optout != null && !!S.cur.contact.optout !== !!d.optout)) { S.cur.contact.window_open = d.window_open; if (d.optout != null) S.cur.contact.optout = !!d.optout; drawFoot(); }   // STOP while the chat is open locks the box at once
-        const imgs = fresh.filter((m) => m.media_id && m.mtype === 'image'); imgs.forEach((m) => mediaUrl(m.media_id).then((u) => { const el = $('.wx-ld[data-m="' + m.media_id + '"]'); if (el) el.outerHTML = `<img src="${u}" alt="">`; }).catch(() => { }));
+        autoMedia(fresh);
       } catch (e) {
         if (/assigned to someone else|not found/i.test(e.message || '') && S.cur && S.cur.phone === phone && !S.cur.lost) {   // a colleague took this chat (late-reply pick-up / transfer): say so, stop typing into it
           S.cur.lost = true; const f = $('#wxFoot'); if (f) f.innerHTML = '<div class="wx-banner y" style="margin:8px">🔒 This chat was given to a colleague. You can no longer reply here. <button class="wx-btn gh" id="wxLostBk" style="margin-left:6px">Back to chats</button></div>';
