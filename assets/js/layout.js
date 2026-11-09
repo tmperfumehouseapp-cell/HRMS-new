@@ -672,6 +672,7 @@ window.WS = (function () {
     const host = document.getElementById('wsTools'); if (!host) return;
     toolsCss();
     host.innerHTML = '<button type="button" class="ws-srch" id="wsSrch" aria-label="Search pages">&#128269;<span class="t">Search</span><kbd>Ctrl K</kbd></button>'
+      + '<button type="button" class="ws-bell" id="wsPace" aria-label="Reply pace" title="Reply pace - how fast we answer customers">&#9889; Pace</button>'
       + (only ? '' : '<span style="position:relative"><button type="button" class="ws-bell" id="wsBell" aria-label="What needs you">&#128276; <span id="wsBellN">0</span></button><div class="ws-pop" id="wsPop"></div></span>');
     // palette
     const pages = pagesFor(ctx);
@@ -698,6 +699,7 @@ window.WS = (function () {
       else if (e.key === 'Escape') close();
     });
     document.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) { e.preventDefault(); open(); } else if (e.key === 'Escape') { close(); document.getElementById('wsPop').classList.remove('on'); } });
+    { const pb = document.getElementById('wsPace'); if (pb) pb.onclick = (e) => { e.stopPropagation(); const go = () => window.WaPace && window.WaPace.open(); if (window.WaPace) go(); else { const sc = document.createElement('script'); sc.src = 'assets/js/wq_pace_ui.js?v=1'; sc.onload = go; document.head.appendChild(sc); } }; }   // ⚡ reply pace pop-up
     if (only) { document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); }); return; }   // employees: search only, no bell
     // bell
     const pop = document.getElementById('wsPop'), bell = document.getElementById('wsBell');
