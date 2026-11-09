@@ -242,11 +242,15 @@ function wa_tick(PDO $pdo, bool $force = false): array
     try { $o['assigned'] = wa_auto_assign($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'auto-assign: ' . $e->getMessage()); }
     try { if (!defined('WA_IN_WEBHOOK')) $o['alloc'] = wa_auto_alloc($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'auto-allocate: ' . $e->getMessage()); }   // 🤖 orders → the salesperson of the chat
     try { wa_callnow_scan($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'call-now: ' . $e->getMessage()); }
+    try { if (function_exists('wq_urgent_push') && !defined('WA_IN_WEBHOOK')) $o['urgent'] = wq_urgent_push($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'urgent: ' . $e->getMessage()); }   // 🔴 nobody answered a ready-to-pay chat in time: everyone present is told at once
     try { if (function_exists('wa_proof_scan')) { $pr = wa_proof_scan($pdo); $o['proofs'] = $pr['made']; } } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'order proof: ' . $e->getMessage()); }
     try { if (function_exists('wag_tick')) $o['growth'] = wag_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'growth: ' . $e->getMessage()); }
     try { if (function_exists('wq_tick')) $o['wq'] = wq_tick($pdo, ['light' => true]); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'whatsapp sales: ' . $e->getMessage()); }   // no-answer flow + typing of new queries
     try { if (function_exists('wch_tick')) $o['wch'] = wch_tick($pdo, ['light' => true]); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'chain cart: ' . $e->getMessage()); }   // chain cart: reminders
     try { if (function_exists('wa_ord_tick')) $o['orders'] = wa_ord_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'orders: ' . $e->getMessage()); }   // order-update messages (and the one-time template setup)
+    try { if (function_exists('jt_tick') && $force && !defined('WA_IN_WEBHOOK')) $o['tags'] = jt_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'tags: ' . $e->getMessage()); }
+    try { if (function_exists('wj_tick') && $force && !defined('WA_IN_WEBHOOK')) $o['journey'] = wj_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'journey: ' . $e->getMessage()); }   // 🗓 60-day Journey: today's messages, the night's topic learning, festival watch
+    try { if (function_exists('wlr_nightly') && $force && !defined('WA_IN_WEBHOOK')) wlr_nightly($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'learning: ' . $e->getMessage()); }   // 🧠 after 02:00, once a day: lost chats saved, guidebook rewritten from won + lost chats
     setting_set($pdo, 'wa_tick_at', date('Y-m-d H:i:s'));
     return $o;
 }
@@ -556,6 +560,7 @@ require_once __DIR__ . '/wa_growth.php';  // growth engine: phone panel, results
 require_once __DIR__ . '/wa_brain.php';   // follow-up plans + engine (wa_follow.php), template ladder, quality guard, Learning & Improvement endpoints (learn.*)
 require_once __DIR__ . '/wa_fu_coach.php';   // 🔁 Learning → Follow-ups: Claude builds the whole follow-up plan from one summary (fu.coach_*) — after wa_brain.php (needs the follow-up engine)
 require_once __DIR__ . '/wa_autopilot.php';   // 🔁 Follow-up Autopilot: 6 paths, offers on day 2/4/7/10, festival box, teach each day, results (fu.ap_*) — after wa_fu_coach.php
+require_once __DIR__ . '/wa_journey.php';   // 🗓 60-day Journey: two tracks, rolling entry / exit, central offer registry, nightly topics, festival watcher, general brain (fu.wj_*) — after wa_autopilot.php
 require_once __DIR__ . '/wa_orders.php';   // live orders in the chat, Needs attention cases for Dispatch, order-update messages, Store info (wa.ord_*, wa.store_*)
 if (is_file(__DIR__ . '/cust_bday.php')) require_once __DIR__ . '/cust_bday.php';   // 🎂 birthdays collected at ordering
 if (is_file(__DIR__ . '/wa_review.php')) require_once __DIR__ . '/wa_review.php';   // ⭐ rating request 5 days after delivery → Judge.me (5) or a complaint (lower)
@@ -575,6 +580,10 @@ require_once __DIR__ . '/wa_bill.php';     // 💰 Billing & spend: what WhatsAp
 require_once __DIR__ . '/wq.php';         // WhatsApp Sales (query types, tags, no-answer flow, board, cut-over adapter): wq.* — BEFORE wa_seg.php
 require_once __DIR__ . '/wq_rescue.php';   // 🛟 Rescue queries: effort-missed queries, a daily rescue team, +2% bonus on won orders (wq.rescue_*) - BEFORE wa_seg.php
 require_once __DIR__ . '/wq_rescue_more.php';   // 🛟 Rescue part 2: ready messages for Meta, AI draft, per-person table, alerts, AI check (wq.rescue_tpl_*, wq.rescue_stats …) - BEFORE wa_seg.php
+require_once __DIR__ . '/wq_learn.php';   // 🧠 lost chats saved for the guidebook, the nightly study pass from the engine, learning status
+require_once __DIR__ . '/wq_speed.php';   // ⚡ timing of the WhatsApp calls, server health, live switch (wq.speed, wa.g_wait)
+require_once __DIR__ . '/wq_tags.php';   // 🏷 One tag system: registry, automatic tags with why / until, patterns of staff-made tags, Claude's own new tags (wq.tags_*)
+require_once __DIR__ . '/wq_pace.php';   // ⚡ Reply pace of every salesperson: per-message pace, 7-day comparison, after-taking-a-query pace, fast reply vs order closing (wq.pace) - BEFORE wa_seg.php
 require_once __DIR__ . '/wch.php';        // Chain + perfume cart, GST bill, catalog sync (wch.*) - BEFORE wa_seg.php
 require_once __DIR__ . '/wmo.php';        // 🧾 Manual order from a chat: QR / UPI payment first, customer address link, the order lands in Orders + Dispatch (wmo.*) - BEFORE wa_seg.php
 require_once __DIR__ . '/wa_seg.php';      // customer journey, stage / value filters, Claude context pack, decisions (wa.seg_*, wa.dec_*) — MUST stay the LAST require: its router runs at include time

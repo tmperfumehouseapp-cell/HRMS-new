@@ -249,6 +249,18 @@ body.waui .tabs,body.waui .more{display:none;}
 #waSide iframe{flex:1; border:0; width:100%;}
 @media (min-width:861px){ body.side-on #body > .sec{right:min(560px, 50vw);} }
 @media (max-width:860px){ #waSide{width:100%; border-left:0; box-shadow:none;} }
+/* 📱 phone: wide tables scroll sideways instead of being cut, buttons are easy to tap, long rows wrap */
+@media (max-width:860px){
+  #body table, .wp table, .wj-card table{display:block;max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap}
+  .wp-btn, .wj-b, .wp-chip{min-height:38px}
+  .wp-kv{flex-wrap:wrap}
+  .wp-row{flex-wrap:wrap}
+  .wj-lane .wj-row2{flex-wrap:wrap;gap:6px}
+  .wj-strip{overflow-x:auto}
+  #body pre{white-space:pre-wrap;word-break:break-word}
+  #body input, #body select, #body textarea{font-size:16px}   /* no zoom-in when a field is tapped on iPhone */
+}
+
 .wp-toast{z-index:1000 !important;} body.side-on .wp-toast{left:calc((100vw - min(560px, 50vw)) / 2) !important;}
 .wsd-on{outline:2px solid #22c55e; outline-offset:-2px; border-radius:12px;}
 
@@ -467,19 +479,23 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
 <script src="assets/js/api.js?v=9"></script>
 <script src="assets/js/wa_icons.js?v=i1"></script>
 <script src="assets/js/cx_raise.js?v=cx9"></script>
-<script src="assets/js/wa_inbox.js?v=wa44"></script>
-<script src="assets/js/wa_panels.js?v=wa27"></script>
+<script src="assets/js/wa_inbox.js?v=wa49"></script>
+<script src="assets/js/wa_panels.js?v=wa35"></script>
 <script src="assets/js/wa_cust_ui.js?v=k4"></script>
 <script src="assets/js/wa_kflow_ui.js?v=kf1"></script>
+<script src="assets/js/wj_ui.js?v=wj7"></script>
+<script src="assets/js/jny_ui.js?v=jt8"></script>
+<script src="assets/js/wq_tags_ui.js?v=tg1"></script>
+<script src="assets/js/wq_speed_ui.js?v=sp2"></script>
 <script src="assets/js/wa_bill_ui.js?v=b1"></script>
-<script src="assets/js/wa_ord_ui.js?v=20"></script>
+<script src="assets/js/wa_ord_ui.js?v=21"></script>
 <script src="assets/js/wa_cx_ui.js?v=3"></script>
 <script src="assets/js/wa_lists_ui.js?v=l10"></script>
 <script src="assets/js/wa_camp_rep_ui.js?v=r2"></script>
-<script src="assets/js/wa_growth.js?v=g7"></script>
+<script src="assets/js/wa_growth.js?v=g8"></script>
 <script src="assets/js/wa_prod_ui.js?v=pr4"></script>
 <script src="assets/js/wa_tpl_ui.js?v=t7"></script>
-<script src="assets/js/wa_camp_ui.js?v=c29"></script>
+<script src="assets/js/wa_camp_ui.js?v=c30"></script>
 <script src="assets/js/wa_seg_ui.js?v=1"></script>
 <script src="assets/js/wa_smart_ui.js?v=s4"></script>
 <script>
@@ -525,11 +541,12 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
     { k: 'queries', t: 'Queries', ic: 'inbox', mode: 'native', sub: 'New, community and campaign queries per person — counted automatically' },
     { k: 'history', t: 'History', ic: 'clock', mode: 'native', sub: 'Chats older than 24 hours, with their result' },
     { g: 'CUSTOMERS' }, { k: 'contacts', t: 'Contacts', ic: 'users', mode: 'native', sub: 'Every customer, all numbers together' },
+    { k: 'speed', t: 'Speed', ic: 'chart', mode: 'native', sub: 'Which WhatsApp calls are slow, whether the server is healthy, and the live switch' },
+    { k: 'autotags', t: 'Auto tags', ic: 'tag', mode: 'native', sub: 'Every tag: what it means, who sets it, when it goes — the patterns learned from your tags and the tags Claude made' },
     { k: 'tags', t: 'Tags & audience', ic: 'tag', mode: 'native', sub: 'Who is who — and how many you can reach in 30 / 60 / 90 days' },
     { k: 'ads', t: 'Ads', ic: 'chart', mode: 'native', sub: 'Which Meta ads bring chats and orders' },
     { g: 'SEND' }, { k: 'campaigns', t: 'Campaigns', ic: 'send', mode: 'native', sub: 'Send to many customers — the best number is chosen for each' },
     { k: 'kflows', t: 'Key flows', ic: 'key', mode: 'native', sub: 'Fixed answers for fixed messages — website texts, ads, campaign buttons. Built on a canvas · admin only' },
-    { k: 'flows', t: 'Flows', ic: 'seq', mode: 'native', sub: 'First message, then the next when they reply' },
     { k: 'premade', t: 'Pre-made messages', ic: 'tpl', mode: 'native', sub: 'Messages Meta approves once, usable on every number' },
     { k: 'builder', t: 'Message builder', ic: 'wand', mode: 'native', sub: 'Tell Claude what to send — Utility first' },
     { k: 'fixed', t: 'Fixed messages', ic: 'dtick', mode: 'native', sub: 'The one approved message for each situation' },
@@ -538,12 +555,11 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
     { k: 'lists', t: 'Lists', ic: 'tpl', mode: 'native', sub: 'Ready perfume lists from live sales — Top 5 winter, Best sellers… Claude makes and updates them' },
     { k: 'gallery', t: 'Gallery & storage', ic: 'img', mode: 'native', sub: 'Photos and videos in topic folders — Claude shows what can go' },
     { k: 'media', t: 'Media library', ic: 'film', mode: 'native', sub: 'Photos, videos and PDFs saved once' },
-    { k: 'followups', t: 'Follow-ups', ic: 'bell', mode: 'native', sub: 'Follow-up Autopilot: 6 paths, offers on day 2/4/7/10, festival box, teach each day, results' },
-    { k: 'afterdel', t: 'After delivery', ic: 'send', mode: 'native', sub: 'Rating request 5 days after delivery, the review reminder, and where ratings and gifts go' },
-    { k: 'birthdays', t: 'Birthdays', ic: 'send', mode: 'native', sub: 'The birthday question after an order and the birthday gift message — plus the store list to send by hand' },
+    { k: 'followups', t: 'Journey', ic: 'bell', mode: 'native', sub: 'One plan for every customer for 60 days: the Autopilot in the first 10 days (6 paths, offers on day 2/4/7/10), then the Journey to day 60 — one offer registry, festival box, Claude as the general brain' },
     { k: 'cxmsgs', t: 'Complaint messages', ic: 'send', mode: 'frame', src: 'complaints.html?in=sales&tab=settings&go=msgs', sub: 'The photo and words of every message the Complaints desk sends — the same screen as Complaints → Settings' },
+    { k: 'fixedb', t: 'Fixed messages & builder', ic: 'wand', mode: 'native', sub: 'Say what you want to send — Claude writes it — and the one approved message for each situation' },
+    { k: 'mymsgs', t: 'My messages', ic: 'tpl', mode: 'native', sub: 'Every offer and message you or Claude made for the 60-day plan — pick them on any day, add new ones, see what Meta approved' },
     { k: 'allmsgs', t: 'All messages', ic: 'send', mode: 'native', sub: 'Every automatic message in one list, with a button to its editor' },
-    { k: 'orderupd', t: 'Order updates', ic: 'send', mode: 'native', sub: 'Thank-you, shipped, out for delivery, delivered — sent by themselves from Dispatch / Shiprocket. Read and approve the texts' },
     { g: 'MANAGE' }, { k: 'golive', t: 'Go-live check', ic: 'okc', mode: 'native', sub: 'Live readiness list — engine, numbers, templates, bot, staff phones, backup' },
     { k: 'numbers', t: 'Numbers', ic: 'phone', mode: 'native', sub: 'Photo, bio, who handles each number, and its health' },
     { k: 'groups', t: 'Groups', ic: 'bubbles', mode: 'frame', src: 'whatsapp_groups.html?in=sales', sub: 'Your WhatsApp groups' },
@@ -562,19 +578,19 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
   // (#sgive, #premade, #team… open their tab), nothing was removed.
   const GROUPS = [
     { k: 'waiting', t: 'Waiting', ic: 'flame', badge2: 'unassigned', sub: 'Customers nobody has taken · waiting too long · the answering bot', tabs: [['sgive', 'Not taken'], ['grab', 'Late replies'], ['signals', 'Signals & bot']] },
-    { k: 'results', t: 'Queries & reports', ic: 'trend', sub: 'Queries per person, replies, speed, cost and past chats', tabs: [['queries', 'Queries'], ['reports', 'Reports'], ['history', 'History']] },
-    { k: 'customers', t: 'Customers', ic: 'users', sub: 'Every customer, tags and audiences, and the ads that bring them', tabs: [['contacts', 'Contacts'], ['tags', 'Tags & audience'], ['ads', 'Ads']] },
-    { k: 'templates', t: 'Templates', ic: 'tpl', sub: 'Messages Meta approves — make them, let Claude write them, one per situation', tabs: [['premade', 'Pre-made'], ['builder', 'Builder'], ['fixed', 'Fixed']] },
-    { k: 'replies', t: 'Replies', ic: 'bolt', sub: 'Quick replies, greetings, ready perfume lists, and and where to find every automatic message', tabs: [['quick', 'Quick replies'], ['greet', 'Greetings'], ['lists', 'Lists'], ['automsgs', 'Automatic messages']] },
+    { k: 'results', t: 'Queries & reports', ic: 'trend', sub: 'Queries per person, replies, speed, what WhatsApp costs and past chats', tabs: [['queries', 'Queries'], ['reports', 'Reports'], ['billing', 'Billing & spend'], ['history', 'History'], ['speed', 'Speed']] },
+    { k: 'customers', t: 'Customers', ic: 'users', sub: 'Every customer, tags and audiences, and the ads that bring them', tabs: [['contacts', 'Contacts'], ['tags', 'Tags & audience'], ['autotags', 'Auto tags'], ['ads', 'Ads']] },
+    { k: 'templates', t: 'Messages', ic: 'tpl', sub: 'The message library: Meta-approved messages, the builder, one per situation, every automatic message in one list, and the complaint messages', tabs: [['mymsgs', 'Plan messages'], ['premade', 'Pre-made'], ['fixedb', 'Fixed & builder'], ['allmsgs', 'Where each message lives'], ['cxmsgs', 'Complaint messages']] },
+    { k: 'replies', t: 'Replies', ic: 'bolt', sub: 'Quick replies, greetings, ready perfume lists, and and where to find every automatic message', tabs: [['quick', 'Quick replies'], ['greet', 'Greetings'], ['lists', 'Lists']] },
     { k: 'mediag', t: 'Media', ic: 'film', sub: 'Photos, videos and PDFs — one library, in topic folders', tabs: [['media', 'Library'], ['gallery', 'Folders & clean-up']] },
-    { k: 'automation', t: 'Automation', ic: 'seq', sub: 'Key flows on a canvas, the old flows and follow-ups', tabs: [['kflows', 'Key flows'], ['flows', 'Flows (old)'], ['followups', 'Follow-ups'], ['orderupd', 'Order updates'], ['afterdel', 'After delivery'], ['birthdays', 'Birthdays'], ['cxmsgs', 'Complaints'], ['allmsgs', 'All messages']] },
+    { k: 'automation', t: 'Automation', ic: 'seq', sub: 'Key flows on a canvas, the old flows and follow-ups', tabs: [['kflows', 'Key flows'], ['followups', 'Journey']] },
     { k: 'setupg', t: 'Numbers & setup', ic: 'phone', sub: 'Numbers, connection and the go-live check', tabs: [['numbers', 'Numbers'], ['setup', 'Setup & connection'], ['golive', 'Go-live check']] },
     { k: 'rules', t: 'Team & rules', ic: 'group', sub: 'Who gets chats, the waiting limits, the Claude button and exports', tabs: [['team', 'Team & routing'], ['hq', 'Claude button'], ['export', 'Export']] },
     { k: 'teach', t: 'Teach & groups', ic: 'bulb', sub: 'Teach the bot once · your WhatsApp groups', tabs: [['learn', 'Teach'], ['groups', 'Groups']] },
   ];
   const GOF = {}; GROUPS.forEach((g) => g.tabs.forEach(([k]) => { GOF[k] = g; }));
   const groupOf = (k) => GROUPS.find((g) => g.k === k);
-  const RAIL = [{ g: 'INBOX' }, byKeyRaw('overview'), byKeyRaw('chats'), byKeyRaw('cxboard'), groupOf('waiting'), { g: 'RESULTS' }, groupOf('results'), byKeyRaw('rescue'), byKeyRaw('billing'), { g: 'CUSTOMERS' }, groupOf('customers'),
+  const RAIL = [{ g: 'INBOX' }, byKeyRaw('overview'), byKeyRaw('chats'), byKeyRaw('cxboard'), groupOf('waiting'), { g: 'RESULTS' }, groupOf('results'), byKeyRaw('rescue'), { g: 'CUSTOMERS' }, groupOf('customers'),
     { g: 'SEND' }, byKeyRaw('campaigns'), groupOf('templates'), groupOf('replies'), groupOf('mediag'), groupOf('automation'), { g: 'SETTINGS' }, groupOf('setupg'), groupOf('rules'), groupOf('teach')];
   function byKeyRaw(k) { return MENU.find((m) => m.k === k); }
   const byKey = (k) => ITEMS.find((m) => m.k === k) || ITEMS[0];
@@ -642,10 +658,11 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
   });
 
   // ---------- sections
-  const ALIAS = { sfocus: 'signals', sboard: 'queries', f_query: 'queries', f_assigned: 'queries', f_community: 'queries', f_campaign: 'queries' };
+  const ALIAS = { fixed: 'fixedb', builder: 'fixedb', flows: 'kflows', automsgs: 'allmsgs', journey: 'followups', sfocus: 'signals', sboard: 'queries', f_query: 'queries', f_assigned: 'queries', f_community: 'queries', f_campaign: 'queries' };
   let started = false;   // the first section replaces the entry; every section opened after it is one step Back can return to
   function go(k, noPush) {
     if (k !== cur && document.getElementById('waSide')) closeSide(true);   // another screen: the side chat closes
+    if (['orderupd', 'afterdel', 'birthdays'].indexOf(k) >= 0) { try { localStorage.setItem('wa_fu_sub2', k); } catch (e) { } k = 'followups'; }   // moved into Journey (old links still work)
     k = ALIAS[k] || k;
     { const g = groupOf(k); if (g) { let last = ''; try { last = localStorage.getItem('wa_tab_' + g.k) || ''; } catch (e) { } k = g.tabs.some(([x]) => x === last) ? last : g.tabs[0][0]; } }
     if (String(k).indexOf('f_') === 0) { const f = ITEMS.find((x) => x.k === k); if (f) { openFeed(f.feed); return; } }
@@ -745,6 +762,7 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
   document.addEventListener('visibilitychange', () => { if (!document.hidden && cur === 'overview') loadOverview(true); });
 
   // ---------- start
+  const first0 = (location.hash || '').replace('#', ''); if (['orderupd', 'afterdel', 'birthdays'].indexOf(first0) >= 0) { try { localStorage.setItem('wa_fu_sub2', first0); } catch (e) { } location.hash = '#followups'; }
   const first = ALIAS[(location.hash || '').replace('#', '')] || (location.hash || '').replace('#', '');
   if (first.indexOf('f_') === 0 && ITEMS.some((m) => m.k === first)) openFeed(first.slice(2)); else go(ITEMS.some((m) => m.k === first) ? first : 'overview');
   if (cur !== 'overview') { secs.overview = document.createElement('div'); secs.overview.className = 'sec pad'; secs.overview.hidden = true; $('body').appendChild(secs.overview); loadOverview(true); }

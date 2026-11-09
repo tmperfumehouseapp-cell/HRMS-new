@@ -123,7 +123,7 @@ function wq_type_label(string $t): string { return wq_types()[$t] ?? ($t === 'un
 function wq_type_tag(string $t): string { return $t . '_query'; }
 function wq_tag_labels(): array
 {
-    return ['meta_query' => 'Meta query', 'campaign_query' => 'Campaign query', 'community_query' => 'Community query', 'regenerated_query' => 'Regenerated query', 'new_query' => 'New query', 'other_query' => 'Other query',
+    return ['ignored_fu' => '❄ Ignored our follow-ups (cold group)', 'hot' => 'Ready to pay now', 'interested' => 'Interested', 'considering' => 'Thinking / asking family', 'premium_buyer' => 'Premium buyer', 'budget_buyer' => 'Budget buyer', 'order_query' => 'Order from a query', 'order_campaign' => 'Order from a campaign', 'returning_enquiry' => 'Asking again after ordering', 'meta_query' => 'Meta query', 'campaign_query' => 'Campaign query', 'community_query' => 'Community query', 'regenerated_query' => 'Regenerated query', 'new_query' => 'New query', 'other_query' => 'Other query',
         'arrive_morning' => 'Morning (5-12)', 'arrive_afternoon' => 'Afternoon (12-17)', 'arrive_evening' => 'Evening (17-22)', 'arrive_night' => 'Night (22-5)', 'premium_vip' => 'Premium: VIP', 'premium_high' => 'Premium: high', 'campaign' => 'Campaign (chat closed 24h+ / imported)', 'business_autoreply' => '🏢 Business (auto-reply, not a customer)'];
 }
 function wq_tag_group(string $tag): string { return preg_match('/_query$/', $tag) ? 'type' : (strpos($tag, 'arrive_') === 0 ? 'time' : (strpos($tag, 'premium_') === 0 ? 'value' : 'other')); }
@@ -1245,6 +1245,7 @@ function wq_tick(PDO $pdo, array $opt = []): array
                 }
                 if (microtime(true) < $deadline) { wq_boss_seed($pdo); $r['cq'] = wq_cq_mirror($pdo); }
                 if (microtime(true) < $deadline) $r['campaign_tag'] = wq_window_tag($pdo);
+                if (microtime(true) < $deadline && function_exists('wq_pace_tick')) { try { $r['pace'] = wq_pace_tick($pdo); } catch (Throwable $e) { } }   // ⚡ waiting-customer nudges / admin alerts
                 if (microtime(true) < $deadline && function_exists('wq_rescue_tick')) $r['rescue'] = wq_rescue_tick($pdo, $deadline);   // 🛟 effort-missed queries + rescue bonus
                 if (wq_ts(wq_meta_get($pdo, 'house_at', '')) < wq_now() - 3600) {
                     $pdo->prepare("DELETE FROM wq_guard WHERE at < ?")->execute([wq_dt(wq_now() - 3 * 86400)]); $pdo->prepare("DELETE FROM wq_meta WHERE k LIKE 'typing:%' AND v < ?")->execute([wq_dt(wq_now() - 3600)]); wq_meta_put($pdo, 'house_at', wq_dt());
@@ -1257,6 +1258,8 @@ function wq_tick(PDO $pdo, array $opt = []): array
 }
 /** ONE "waiting too long" limit for the whole panel: the Signals alert minutes (Waiting → Signals & bot). Late replies, the red "waiting" in Not taken
  *  and the Signals list all use it, so every screen calls the same customers late. (wq_grab_min still wins if someone set it on purpose.) */
+/** 🔴 A chat that must be answered NOW (customer ready to pay / bot handed it over): after this many minutes with no answer it shows to EVERYONE at once. Default 1. */
+function wq_urgent_min(PDO $pdo): int { $v = wq_get($pdo, 'wq_urgent_min', null); return ($v !== null && (int)$v > 0) ? max(1, min(30, (int)$v)) : 1; }
 function wq_late_min(PDO $pdo): int
 {
     $own = wq_get($pdo, 'wq_grab_min', null); if ($own !== null && (int)$own > 0) return max(1, (int)$own);
@@ -1266,11 +1269,11 @@ function wq_late_min(PDO $pdo): int
  *  the customer's last message, chats where someone is typing right now (last 90 s), Complaint-team chats, opted-out customers and closed 24-hour windows. Anybody can take one. */
 function wq_grab_list(PDO $pdo, int $me, int $limit = 60): array
 {
-    $min = wq_late_min($pdo); $now = wq_now(); $names = wq_names($pdo);
-    $st = $pdo->prepare("SELECT phone, name, assigned_emp, assigned_at, last_in_at, last_out_at FROM wa_contacts WHERE status = 'open' AND optout = 0 AND last_in_at IS NOT NULL AND last_in_at >= ? AND last_in_at <= ?
+    $min = wq_late_min($pdo); $um = min($min, wq_urgent_min($pdo)); $now = wq_now(); $names = wq_names($pdo);
+    $st = $pdo->prepare("SELECT phone, name, assigned_emp, assigned_at, last_in_at, last_out_at, hot FROM wa_contacts WHERE status = 'open' AND optout = 0 AND last_in_at IS NOT NULL AND last_in_at >= ? AND last_in_at <= ?
         AND (last_out_at IS NULL OR last_out_at < last_in_at) AND (cx_id IS NULL OR cx_id = 0) AND (tag IS NULL OR tag != 'complaint') AND NOT EXISTS (SELECT 1 FROM cx_cases cxx WHERE cxx.phone = wa_contacts.phone AND (cxx.status IN ('open','reopened') OR (cxx.status = 'resolved' AND cxx.raised_at >= DATE_SUB(NOW(), INTERVAL 3 DAY)))) ORDER BY last_in_at LIMIT " . (int)($limit * 2));
-    try { $st->execute([wq_dt($now - 86400), wq_dt($now - $min * 60)]); $rows = $st->fetchAll(); }
-    catch (Throwable $e) { $st = $pdo->prepare("SELECT phone, name, assigned_emp, assigned_at, last_in_at, last_out_at FROM wa_contacts WHERE status = 'open' AND optout = 0 AND last_in_at IS NOT NULL AND last_in_at >= ? AND last_in_at <= ? AND (last_out_at IS NULL OR last_out_at < last_in_at) ORDER BY last_in_at LIMIT " . (int)($limit * 2)); $st->execute([wq_dt($now - 86400), wq_dt($now - $min * 60)]); $rows = $st->fetchAll(); }
+    try { $st->execute([wq_dt($now - 86400), wq_dt($now - $um * 60)]); $rows = $st->fetchAll(); }
+    catch (Throwable $e) { $st = $pdo->prepare("SELECT phone, name, assigned_emp, assigned_at, last_in_at, last_out_at, hot FROM wa_contacts WHERE status = 'open' AND optout = 0 AND last_in_at IS NOT NULL AND last_in_at >= ? AND last_in_at <= ? AND (last_out_at IS NULL OR last_out_at < last_in_at) ORDER BY last_in_at LIMIT " . (int)($limit * 2)); $st->execute([wq_dt($now - 86400), wq_dt($now - $um * 60)]); $rows = $st->fetchAll(); }
     // typing marks and last messages for ALL rows in 2 queries (it was 2 queries per row: 120+ per refresh)
     $phs = array_values(array_map(fn($r) => (string)$r['phone'], $rows)); $typing = []; $lastIn = [];
     if ($phs) {
@@ -1281,19 +1284,38 @@ function wq_grab_list(PDO $pdo, int $me, int $limit = 60): array
     $o = [];
     foreach ($rows as $r) {
         $ph = (string)$r['phone']; if (wq_ts($typing[$ph] ?? '') > $now - 90) continue;   // somebody is writing to them right now
-        if ((int)$r['assigned_emp'] > 0 && wq_ts($r['assigned_at'] ?? '') > $now - $min * 60) continue;   // just given / taken: that person gets their own few minutes
+        $urg = (int)($r['hot'] ?? 0) === 1; $need = $urg ? $um : $min; if ($now - wq_ts($r['last_in_at']) < $need * 60) continue;   // ready-to-pay chats go to everyone after 1 minute, the rest after the normal minutes
+        if ((int)$r['assigned_emp'] > 0 && wq_ts($r['assigned_at'] ?? '') > $now - $need * 60) continue;   // just given / taken: that person gets their own minute   // just given / taken: that person gets their own few minutes
         $o[] = ['phone' => $ph, 'name' => (string)$r['name'], 'holder' => wq_person($names, (int)$r['assigned_emp']), 'mine' => (int)$r['assigned_emp'] === $me && $me > 0,
-            'waiting_min' => max(0, (int)floor(($now - wq_ts($r['last_in_at'])) / 60)), 'last_in' => mb_substr((string)($lastIn[$ph] ?? ''), 0, 120)];
+            'urgent' => $urg, 'waiting_min' => max(0, (int)floor(($now - wq_ts($r['last_in_at'])) / 60)), 'waiting_sec' => max(0, $now - wq_ts($r['last_in_at'])), 'last_in' => mb_substr((string)($lastIn[$ph] ?? ''), 0, 120)];
         if (count($o) >= $limit) break;
     }
     return ['ok' => true, 'min' => $min, 'count' => count($o), 'items' => $o];
+}
+/** 🔴 Chats that must be answered now and nobody answered in time: ONE push to every present salesperson at the same moment (again each time the chat comes back to the pool). Called from wa_tick. */
+function wq_urgent_push(PDO $pdo): int
+{
+    $n = 0; if (!function_exists('ct_push') || !function_exists('wa_people')) return 0;
+    try {
+        $g = wq_grab_list($pdo, 0, 20); $emps = []; foreach (wa_people($pdo) as $p) if (!empty($p['present'])) $emps[] = (int)$p['emp_id'];
+        if (!$emps) return 0;
+        foreach ($g['items'] as $x) {
+            if (empty($x['urgent'])) continue; $ph = (string)$x['phone']; $c = wq_contact($pdo, $ph); if (!$c) continue;
+            $stamp = md5((string)$c['last_in_at'] . '|' . (string)$c['assigned_at'] . '|' . (int)$c['assigned_emp']); if (wq_meta_get($pdo, 'urg:' . $ph, '') === $stamp) continue;
+            wq_meta_put($pdo, 'urg:' . $ph, $stamp);
+            $cu = trim((string)$x['name']) !== '' ? (string)$x['name'] : '+91 ' . $ph;
+            ct_push($pdo, $emps, '🔴 Needs you now', $cu . ' wants to buy and nobody has answered. Take it.', '/my_chats.html?phone=' . $ph, 'wa-urg-' . $ph); $n++;
+            wa_event($pdo, $ph, '🔴 Nobody answered in time — shown to every salesperson');
+        }
+    } catch (Throwable $e) { }
+    return $n;
 }
 /** Take one late chat: checked again at the moment of taking (somebody may have just answered or taken it). */
 function wq_grab(PDO $pdo, string $phone, int $me): array
 {
     if ($me <= 0) return ['error' => 'Only a logged-in employee can take a chat.'];
     $c = wq_contact($pdo, $phone); if (!$c) return ['error' => 'Chat not found.'];
-    $min = wq_late_min($pdo); $in = wq_ts($c['last_in_at'] ?? ''); $out = wq_ts($c['last_out_at'] ?? '');
+    $min = wq_late_min($pdo); if ((int)($c['hot'] ?? 0) === 1) $min = min($min, wq_urgent_min($pdo)); $in = wq_ts($c['last_in_at'] ?? ''); $out = wq_ts($c['last_out_at'] ?? '');
     if ((int)$c['assigned_emp'] === $me) return ['ok' => true, 'already' => true];
     // everyone in the chat app may take a late chat (owner's rule)
     if ((int)($c['optout'] ?? 0) === 1) return ['error' => 'This customer opted out — nobody may message them.'];

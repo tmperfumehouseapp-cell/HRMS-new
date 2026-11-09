@@ -23,6 +23,19 @@
   </FilesMatch>
 </IfModule>
 
+# 2b. Files asked WITH a version (?v=…) may be kept by the browser for a day: the page link changes whenever the file changes,
+#     so people still get new code at once — but the 1.2 MB of WhatsApp scripts is no longer downloaded on every open.
+<IfModule mod_setenvif.c>
+  SetEnvIf Query_String "(^|&)v=" VERSIONED_ASSET
+</IfModule>
+<IfModule mod_headers.c>
+  <FilesMatch "\.(js|css)$">
+    Header always set Cache-Control "public, max-age=86400" env=VERSIONED_ASSET
+    Header always unset Pragma env=VERSIONED_ASSET
+    Header always unset Expires env=VERSIONED_ASSET
+  </FilesMatch>
+</IfModule>
+
 # 3. Override Hostinger's default "expires in 1 month" for these types.
 <IfModule mod_expires.c>
   ExpiresActive On

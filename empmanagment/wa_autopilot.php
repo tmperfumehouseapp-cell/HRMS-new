@@ -62,14 +62,14 @@ function fa_season_text(PDO $pdo): string
 /** Did we send a price after the customer's last message? */
 function fa_sent_price(PDO $pdo, array $c): bool
 {
-    try { $q = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'out' AND ts >= ? ORDER BY id DESC LIMIT 6"); $q->execute([(string)$c['phone'], (string)($c['last_in_at'] ?? '')]);
+    try { $q = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'out' AND who NOT IN ('campaign','order') AND ts >= ? ORDER BY id DESC LIMIT 6"); $q->execute([(string)$c['phone'], (string)($c['last_in_at'] ?? '')]);
         foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $b) if (preg_match('/₹\s?\d|\brs\.?\s?\d|\binr\s?\d|\d{3,5}\s?(rs|rupees|\/-)/iu', (string)$b)) return true; } catch (Throwable $e) { }
     return false;
 }
 /** Did we send suggestions (photos / documents / a list of perfumes) after the customer's last message? */
 function fa_sent_suggestions(PDO $pdo, array $c): bool
 {
-    try { $q = $pdo->prepare("SELECT mtype, body FROM wa_messages WHERE phone = ? AND dir = 'out' AND ts >= ? ORDER BY id DESC LIMIT 6"); $q->execute([(string)$c['phone'], (string)($c['last_in_at'] ?? '')]);
+    try { $q = $pdo->prepare("SELECT mtype, body FROM wa_messages WHERE phone = ? AND dir = 'out' AND who NOT IN ('campaign','order') AND ts >= ? ORDER BY id DESC LIMIT 6"); $q->execute([(string)$c['phone'], (string)($c['last_in_at'] ?? '')]);
         foreach ($q->fetchAll() as $m) { if (in_array((string)$m['mtype'], ['image', 'video', 'document'], true)) return true; if (preg_match('/suggest|option|recommend|try (this|these)|best for you|👉|1\.|①/iu', (string)$m['body']) && substr_count((string)$m['body'], "\n") >= 2) return true; }
     } catch (Throwable $e) { }
     return false;
@@ -91,7 +91,8 @@ function fa_tpl_make(PDO $pdo, string $k, int $by = 0): array
     if (!function_exists('wa_tpl_clean') || !function_exists('wa_tpl_insert') || !function_exists('wa_tpl_create_at')) return [false, 'The WhatsApp message module is not available.'];
     $body = fa_tpl_body($pdo, $k); $names = json_decode((string)setting_get($pdo, 'fa_tplnames_' . $k, '[]'), true); if (!is_array($names)) $names = [];
     $name = fa_tpl_name($k) . ($names ? '_v' . (count($names) + 1) : '');
-    [$t, $err] = wa_tpl_clean(['name' => $name, 'language' => 'en', 'category' => 'MARKETING', 'body' => $body, 'footer' => 'TM Perfume House',
+    $ph = (int)setting_get($pdo, 'fa_tplphoto_' . $k, '0');   // 📷 an optional photo on top of the message (from the media library); a new photo = a new version at Meta
+    [$t, $err] = wa_tpl_clean(['name' => $name, 'language' => 'en', 'category' => 'MARKETING', 'body' => $body, 'footer' => 'TM Perfume House'] + ($ph > 0 ? ['header_format' => 'IMAGE', 'header_lib_id' => $ph] : []) + [
         'buttons' => [['type' => 'QUICK_REPLY', 'text' => 'Yes, I want it'], ['type' => 'QUICK_REPLY', 'text' => 'Not now']],
         'examples' => ['body' => ['Rahul', 'Dior Sauvage 50 ml', 'a free 10 ml decant with your order at ₹899'], 'labels' => ['Name', 'Perfume', 'Offer']], 'folder' => 'Follow-ups']);
     if ($err !== '') return [false, $err];
@@ -129,9 +130,8 @@ function fa_tpl_setup(PDO $pdo): int
 function fa_offer_fill(PDO $pdo, array $c, string $k): array
 {
     $perf = ''; $line = ''; $msgs = function_exists('fu_conv') ? fu_conv($pdo, (string)$c['phone']) : [];
-    $facts = ''; $allowed = []; if (function_exists('teach_facts_prompt')) { [$facts, $allowed] = teach_facts_prompt($pdo, $msgs); $allowed = (array)$allowed; }
-    if (function_exists('teach_limits_text')) $facts .= "\n" . teach_limits_text($pdo);
-    if (function_exists('brain_allowed_nums')) $allowed += brain_allowed_nums($pdo);
+    $facts = ''; $allowed = []; if (function_exists('wk_knowledge')) { $K = wk_knowledge($pdo, $msgs); $facts = $K['text']; $allowed = $K['allowed']; }   // 🧠 one knowledge for every writer
+    if (function_exists('jn_context_note')) $facts .= "\n" . jn_context_note($pdo, (string)$c['phone']);
     $season = fa_season_text($pdo); $rule = fa_offer_rule($pdo, $k);
     if (function_exists('convo_ai') && $msgs) {
         $conv = ''; foreach (array_slice($msgs, -14) as $m) $conv .= ($m['who'] === 'customer' ? 'Customer: ' : 'Shop: ') . $m['text'] . "\n";
@@ -207,8 +207,8 @@ function fa_path_save(PDO $pdo, string $sid, array $steps, ?bool $on = null): ar
 {
     $P = fu_plans_get($pdo); $i = fu_sit_find($P, $sid); if ($i === null) return [false, 'Path not found.'];
     $O = fa_offers($pdo); $clean = [];
-    foreach (array_slice($steps, 0, 10) as $x) {
-        $h = (float)($x['after_h'] ?? 0); if ($h <= 0 || $h > 24 * 30) return [false, 'Every day needs a time between a few minutes and 30 days.'];
+    foreach (array_slice($steps, 0, 24) as $x) {
+        $h = (float)($x['after_h'] ?? 0); if ($h <= 0 || $h > 24 * 60) return [false, 'Every step needs a time between a few minutes and 60 days.'];
         $kind = ($x['kind'] ?? '') === 'offer' ? 'offer' : 'nudge'; $ok = (string)($x['offer'] ?? ''); if ($kind === 'offer' && !isset($O[$ok])) return [false, 'Choose which offer goes on that day.'];
         $clean[] = ['after_h' => $h, 'kind' => $kind, 'offer' => $kind === 'offer' ? $ok : '', 'text' => mb_substr(trim((string)($x['text'] ?? '')), 0, 700), 'remark' => mb_substr(trim((string)($x['remark'] ?? '')), 0, 200), 'ch' => $h >= 23.5 ? 'tpl' : 'free'];
     }

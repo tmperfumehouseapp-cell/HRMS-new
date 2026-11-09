@@ -39,7 +39,7 @@
     let seq = 0, liveTimer = 0, rsz = 0;
     el.innerHTML = '<div id="wqTabs" class="wq-tabs" role="tablist"></div><div id="wqBody"></div>';
     const tabsEl = el.querySelector('#wqTabs'), body = el.querySelector('#wqBody');
-    const TABS = [['live', 'Live'], ['attention', 'Attention'], ['types', 'Types'], ['compare', 'Bot vs person'], ['analytics', 'Analytics'], ['settings', 'Settings']];
+    const TABS = [['live', 'Live'], ['pace', 'Pace'], ['attention', 'Attention'], ['types', 'Types'], ['compare', 'Bot vs person'], ['analytics', 'Analytics'], ['settings', 'Settings']];
     const get = (a, p) => U.call(opt, a, p); const post = (a, b) => U.post(opt, a, b);
     const attnCount = () => S.attn ? num(S.attn.count, (S.attn.items || []).length) : 0;
     const when = (...a) => U.when(...a);
@@ -70,6 +70,9 @@
     // ---------------------------------------------------------------- shared loads
     function loadAttn() { return get('wq.attention').then((d) => { S.attn = d; S.attnErr = null; }, (e) => { S.attnErr = e; }); }
     function loadBoard() { return get('wq.board', { days: S.days }).then((d) => { S.board = d; S.boardErr = null; }, (e) => { S.boardErr = e; }); }
+    // ⚡ pace of every person (the Pace column on the board); a failure just leaves the column empty
+    function loadPace() { return get('wq.pace', { days: S.days }).then((d) => { S.pace = {}; (d.people || []).forEach((p) => { S.pace[p.emp_id] = p; }); S.paceTeam = d.team; S.paceFull = d; if (window.WaPace) window.WaPace.css(); }, () => { S.pace = S.pace || {}; }); }
+    const paceCell = (p) => { const x = S.pace && S.pace[p.emp_id]; return x && window.WaPace ? window.WaPace.chip(x) + (x.rank ? '<div class="wq-sub" style="font-size:11px">#' + x.rank + '</div>' : '') : '<span class="wq-sub">-</span>'; };
     const holderNote = (it) => {
       const h = it.holder || {}; if (!h.emp_id) return 'Nobody holds it';
       const p = S.board && (S.board.people || []).find((x) => Number(x.emp_id) === Number(h.emp_id)); const st = p && p.duty ? p.duty.state : '';
@@ -145,18 +148,18 @@
       let h = '<div class="wq-card"><div class="wq-ch"><h2>Team board <span class="wq-sub" style="font-weight:600">' + (S.days === 1 ? 'Today' : 'Last ' + S.days + ' days') + '</span></h2><span class="wq-sub">Each query is counted once. A transfer moves it: -1 from the old holder, +1 to the new one.</span></div>';
       h += '<div class="wq-legend">' + ['meta', 'campaign', 'community', 'regenerated', 'new'].map((k) => '<span class="wq-tp ' + ANCH[k] + '">' + U.tinfo(k).label + '</span>').join('') + '</div>';
       // desktop table
-      h += '<div class="wq-only-d"><table class="wq-board"><thead><tr><th>Person</th>' + ['meta', 'campaign', 'community', 'regenerated', 'new'].map((k) => '<th class="c"><i class="wq-i-' + ANCH[k] + '"></i>' + U.tinfo(k).label + '</th>').join('') + '<th class="c">Total</th><th class="c">Orders</th><th class="c">Conv.</th><th class="c">First reply</th><th class="c">Hours</th><th>Status</th></tr></thead><tbody>';
+      h += '<div class="wq-only-d"><table class="wq-board"><thead><tr><th>Person</th>' + ['meta', 'campaign', 'community', 'regenerated', 'new'].map((k) => '<th class="c"><i class="wq-i-' + ANCH[k] + '"></i>' + U.tinfo(k).label + '</th>').join('') + '<th class="c">Total</th><th class="c">Orders</th><th class="c">Conv.</th><th class="c">First reply</th><th class="c">⚡ Pace</th><th class="c">Hours</th><th>Status</th></tr></thead><tbody>';
       people.forEach((p) => { const bt = p.by_type || {};
-        h += '<tr><td><div class="who"><span class="wq-av s wq-a' + U.hue(p.name) + '">' + esc(U.initials(p.name)) + '</span><div><b>' + esc(p.name || 'Unknown') + '</b>' + dutyLine(p) + '</div></div></td>' + ['meta', 'campaign', 'community', 'regenerated', 'new'].map((k) => '<td class="c num">' + num(bt[k]) + '</td>').join('') + '<td class="c num"><b>' + num(p.queries) + '</b>' + (num(p.transferred_in) || num(p.transferred_out) ? '<div class="wq-sub" style="font-size:11px">+' + num(p.transferred_in) + ' / -' + num(p.transferred_out) + '</div>' : '') + '</td><td class="c num">' + num(p.orders) + '</td><td class="c num">' + U.pct(p.conversion, 0) + '</td><td class="c num">' + esc(fmtMin(p.first_reply_min)) + '</td><td class="c num">' + esc(U.fmtHrs(p.hours_worked)) + '</td><td>' + statusCell(p) + '</td></tr>'; });
-      if (bot) { const bt = bot.by_type || {}; h += '<tr class="bot"><td><div class="who"><span class="wq-av s wq-a8">' + ico('bot', 's') + '</span><div><b>Bot only</b><span class="wq-sub">no person joined</span></div></div></td>' + ['meta', 'campaign', 'community', 'regenerated', 'new'].map((k) => '<td class="c num">' + num(bt[k]) + '</td>').join('') + '<td class="c num"><b>' + num(bot.queries) + '</b></td><td class="c num">' + num(bot.orders) + '</td><td class="c num">' + U.pct(bot.conversion, 0) + '</td><td class="c num">' + esc(fmtMin(bot.first_reply_min)) + '</td><td class="c num">-</td><td></td></tr>'; }
-      if (unas) h += '<tr class="bot"><td><div class="who"><span class="wq-av s wq-a8">?</span><div><b>Not held by a person</b><span class="wq-sub">bot or nobody yet</span></div></div></td><td class="c" colspan="5"></td><td class="c num"><b>' + num(unas.queries) + '</b></td><td class="c">-</td><td class="c">-</td><td class="c">-</td><td class="c">-</td><td></td></tr>';
-      if (!people.length && !bot && !unas) h += '<tr><td colspan="12"><div class="wq-empty"><b>No queries in this period</b>New customer chats will appear here as they come in.</div></td></tr>';
-      h += '<tr class="tot"><td>All typed queries</td>' + ['meta', 'campaign', 'community', 'regenerated', 'new'].map((k) => '<td class="c num">' + num(tb[k]) + '</td>').join('') + '<td class="c num">' + typedTotal + '</td><td class="c num">' + num(t.orders) + '</td><td class="c num">' + U.pct(t.conversion, 0) + '</td><td class="c num">' + esc(fmtMin(t.first_reply_min)) + '</td><td class="c">-</td><td></td></tr></tbody></table></div>';
+        h += '<tr><td><div class="who"><span class="wq-av s wq-a' + U.hue(p.name) + '">' + esc(U.initials(p.name)) + '</span><div><b>' + esc(p.name || 'Unknown') + '</b>' + dutyLine(p) + '</div></div></td>' + ['meta', 'campaign', 'community', 'regenerated', 'new'].map((k) => '<td class="c num">' + num(bt[k]) + '</td>').join('') + '<td class="c num"><b>' + num(p.queries) + '</b>' + (num(p.transferred_in) || num(p.transferred_out) ? '<div class="wq-sub" style="font-size:11px">+' + num(p.transferred_in) + ' / -' + num(p.transferred_out) + '</div>' : '') + '</td><td class="c num">' + num(p.orders) + '</td><td class="c num">' + U.pct(p.conversion, 0) + '</td><td class="c num">' + esc(fmtMin(p.first_reply_min)) + '</td><td class="c">' + paceCell(p) + '</td><td class="c num">' + esc(U.fmtHrs(p.hours_worked)) + '</td><td>' + statusCell(p) + '</td></tr>'; });
+      if (bot) { const bt = bot.by_type || {}; h += '<tr class="bot"><td><div class="who"><span class="wq-av s wq-a8">' + ico('bot', 's') + '</span><div><b>Bot only</b><span class="wq-sub">no person joined</span></div></div></td>' + ['meta', 'campaign', 'community', 'regenerated', 'new'].map((k) => '<td class="c num">' + num(bt[k]) + '</td>').join('') + '<td class="c num"><b>' + num(bot.queries) + '</b></td><td class="c num">' + num(bot.orders) + '</td><td class="c num">' + U.pct(bot.conversion, 0) + '</td><td class="c num">' + esc(fmtMin(bot.first_reply_min)) + '</td><td class="c num">' + (S.paceTeam && S.paceTeam.bot && window.WaPace ? esc(window.WaPace.fm(S.paceTeam.bot.median)) : '-') + '</td><td class="c num">-</td><td></td></tr>'; }
+      if (unas) h += '<tr class="bot"><td><div class="who"><span class="wq-av s wq-a8">?</span><div><b>Not held by a person</b><span class="wq-sub">bot or nobody yet</span></div></div></td><td class="c" colspan="5"></td><td class="c num"><b>' + num(unas.queries) + '</b></td><td class="c">-</td><td class="c">-</td><td class="c">-</td><td class="c">-</td><td class="c">-</td><td></td></tr>';
+      if (!people.length && !bot && !unas) h += '<tr><td colspan="13"><div class="wq-empty"><b>No queries in this period</b>New customer chats will appear here as they come in.</div></td></tr>';
+      h += '<tr class="tot"><td>All typed queries</td>' + ['meta', 'campaign', 'community', 'regenerated', 'new'].map((k) => '<td class="c num">' + num(tb[k]) + '</td>').join('') + '<td class="c num">' + typedTotal + '</td><td class="c num">' + num(t.orders) + '</td><td class="c num">' + U.pct(t.conversion, 0) + '</td><td class="c num">' + esc(fmtMin(t.first_reply_min)) + '</td><td class="c">' + (S.paceTeam && window.WaPace ? window.WaPace.chip(S.paceTeam.pace) : '-') + '</td><td class="c">-</td><td></td></tr></tbody></table></div>';
       // phone cards
       h += '<div class="wq-only-m">';
       if (!people.length && !bot && !unas) h += '<div class="wq-empty"><b>No queries in this period</b>New customer chats will appear here as they come in.</div>';
       people.forEach((p) => { const bh = p.behind && p.behind.is, slow = bh && /reply|slow|minutes/i.test((p.behind.reasons || []).join(' ')) && !/unanswered|queue/i.test((p.behind.reasons || []).join(' '));
-        h += '<div class="wq-pc' + (bh ? (slow ? ' slow' : ' behind') : '') + '"><div class="top"><span class="wq-av wq-a' + U.hue(p.name) + '">' + esc(U.initials(p.name)) + '</span><span class="nm"><b>' + esc(p.name || 'Unknown') + '</b>' + dutyLine(p) + '</span>' + (bh ? '<span class="wq-chip ' + (slow ? 'warn' : 'bad') + '"><i class="dot"></i>Behind</span>' : (num(p.queries) > 0 ? '<span class="wq-chip ok"><i class="dot"></i>On track</span>' : '')) + '</div><div class="wq-cnts">' + cnts(p) + '</div><div class="wq-kv4"><div><b>' + num(p.orders) + '</b><small>Orders</small></div><div><b>' + U.pct(p.conversion, 0) + '</b><small>Conv.</small></div><div><b>' + esc(fmtMin(p.first_reply_min)) + '</b><small>1st reply</small></div><div><b>' + esc(U.fmtHrs(p.hours_worked)) + '</b><small>Hours</small></div></div>'
+        h += '<div class="wq-pc' + (bh ? (slow ? ' slow' : ' behind') : '') + '"><div class="top"><span class="wq-av wq-a' + U.hue(p.name) + '">' + esc(U.initials(p.name)) + '</span><span class="nm"><b>' + esc(p.name || 'Unknown') + '</b>' + dutyLine(p) + '</span>' + (bh ? '<span class="wq-chip ' + (slow ? 'warn' : 'bad') + '"><i class="dot"></i>Behind</span>' : (num(p.queries) > 0 ? '<span class="wq-chip ok"><i class="dot"></i>On track</span>' : '')) + '</div><div class="wq-cnts">' + cnts(p) + '</div><div class="wq-kv4"><div><b>' + num(p.orders) + '</b><small>Orders</small></div><div><b>' + U.pct(p.conversion, 0) + '</b><small>Conv.</small></div><div><b>' + esc(fmtMin(p.first_reply_min)) + '</b><small>1st reply</small></div><div><b>' + esc(U.fmtHrs(p.hours_worked)) + '</b><small>Hours</small></div></div><div class="wq-sub" style="margin-top:6px">⚡ Pace ' + paceCell(p) + '</div>'
           + (num(p.transferred_in) || num(p.transferred_out) ? '<div class="wq-sub" style="margin-top:6px">Transfers +' + num(p.transferred_in) + ' in / -' + num(p.transferred_out) + ' out</div>' : '') + (bh ? '<div class="wq-why" style="max-width:none;display:flex;gap:6px">' + ico('warn', 's') + '<span>' + esc((p.behind.reasons || []).join('. ')) + '</span></div>' : '') + '</div>'; });
       if (bot) { h += '<div class="wq-pc"><div class="top"><span class="wq-av wq-a8">' + ico('bot') + '</span><span class="nm"><b>Bot only</b><span class="wq-sub">no person joined</span></span></div><div class="wq-cnts">' + cnts(bot) + '</div><div class="wq-kv4"><div><b>' + num(bot.orders) + '</b><small>Orders</small></div><div><b>' + U.pct(bot.conversion, 0) + '</b><small>Conv.</small></div><div><b>' + esc(fmtMin(bot.first_reply_min)) + '</b><small>1st reply</small></div><div><b>-</b><small>Hours</small></div></div></div>'; }
       if (unas) h += '<div class="wq-pc"><div class="top"><span class="wq-av wq-a8">?</span><span class="nm"><b>Not held by a person</b><span class="wq-sub">bot or nobody yet</span></span><span class="wq-chip">' + num(unas.queries) + ' queries</span></div></div>';
@@ -180,7 +183,7 @@
           + statTile('Orders', num(t.orders), has(t.conversion) ? U.pct(t.conversion, 0) + ' conversion' : 'No conversion yet')
           + statTile('Revenue', money(t.revenue), num(t.orders) > 0 ? money(num(t.revenue) / num(t.orders)) + ' per order' : 'No orders yet')
           + (S.board.birthdays ? statTile('🎂 Birthdays', num(S.board.birthdays.total), num(S.board.birthdays.by_customer) + ' by customers · ' + num(S.board.birthdays.by_team) + ' by the team', num(S.board.birthdays.total) > 0 ? 'ok' : '') : '') + '</div>';
-        h += liveBoard(S.board);
+        h += (S.paceFull && window.WaPace ? '<div class="wp">' + window.WaPace.linkCard(S.paceFull) + '</div>' : '') + liveBoard(S.board);
       }
       body.innerHTML = h;
     }
@@ -191,7 +194,10 @@
       if (my !== seq || !alive()) return; drawTabs(); drawLive(); setSub();
       await loadAttn();
       if (my !== seq || !alive()) return; drawTabs(); drawLive();
+      await loadPace();
+      if (my !== seq || !alive() || S.tab !== 'live') return; drawLive();
     }
+    function renderPace() { body.innerHTML = '<div id="wqPaceHost"></div>'; if (window.WaPace) window.WaPace.mount(body.querySelector('#wqPaceHost'), { days: 7 }); else body.innerHTML = '<div class="wq-card">The pace script could not load. Refresh the page.</div>'; }
     function setSub() {
       if (!opt.subEl) return; const b = S.board; const d = new Date();
       opt.subEl.textContent = 'Live view of every customer query. ' + d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }) + ', ' + U.hhmm(d) + '. ' + (S.tab === 'live' ? 'Updates every minute.' : '');
@@ -495,6 +501,7 @@
     function render(quiet) {
       clearInterval(liveTimer); seq++;
       if (S.tab === 'live') { renderLive(quiet); liveTimer = setInterval(() => { if (!alive()) { clearInterval(liveTimer); return; } if (U.visible() && S.tab === 'live' && !document.querySelector('.wq-ov')) renderLive(true); }, 60000); }
+      else if (S.tab === 'pace') renderPace();
       else if (S.tab === 'attention') renderAttention();
       else if (S.tab === 'types') renderTypes();
       else if (S.tab === 'compare') renderCompare();

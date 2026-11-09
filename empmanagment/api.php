@@ -9082,6 +9082,13 @@ function lib_guide_write(PDO $pdo): array
     // what the owner taught on the Teach board (selling rules + limits) WINS over the chats: a guidebook point that contradicts it is rewritten or dropped
     $ownT = ''; try { $tf0 = function_exists('teach_facts_get') ? teach_facts_get($pdo) : []; $ownT = trim((string)($tf0['style'] ?? '')) . "\n" . (function_exists('teach_limits_text') ? teach_limits_text($pdo) : ''); } catch (Throwable $e) {}
     if (trim($ownT) !== '') $text .= "\n\nTHE OWNER'S OWN SELLING RULES AND LIMITS (taught on the Teach board — they WIN over the chats and over the previous guidebook: when a point of the guidebook contradicts one of them, rewrite or drop that point, and say so in change_note):\n" . mb_substr(trim($ownT), 0, 6000);
+    // 📚 everything the shop knows goes in too: the price chart / products / offers (Teach facts), the lessons the owner taught, and what the team really answers on WhatsApp now
+    try { if (function_exists('teach_facts_prompt')) { [$tfp] = teach_facts_prompt($pdo, []); if (trim((string)$tfp) !== '') $text .= "\n\nTHE SHOP'S FACTS (price chart, products, offers, delivery rules — a guidebook point must FIT these; the guidebook itself never states a price or number from here, prices stay in the price chart):\n" . mb_substr((string)$tfp, 0, 5000); } } catch (Throwable $e) {}
+    try { $ls = $pdo->query("SELECT customer, better, remark FROM lib_teach WHERE status = 'taught' ORDER BY id DESC LIMIT 30")->fetchAll(); $lt = ''; foreach ($ls as $l) $lt .= "- Customer: " . mb_substr((string)$l['customer'], 0, 160) . " → better: " . mb_substr((string)$l['better'], 0, 260) . ((string)$l['remark'] !== '' ? " (why: " . mb_substr((string)$l['remark'], 0, 160) . ")" : '') . "\n";
+        if ($lt !== '') $text .= "\n\nLESSONS THE OWNER TAUGHT (replies he corrected — they WIN over the chats; make sure the guidebook agrees with them):\n" . $lt; } catch (Throwable $e) {}
+    try { $tq = $pdo->prepare("SELECT m.body AS reply, (SELECT i.body FROM wa_messages i WHERE i.phone = m.phone AND i.dir = 'in' AND i.id < m.id ORDER BY i.id DESC LIMIT 1) AS cust FROM wa_messages m WHERE m.dir = 'out' AND m.who IN ('emp','person','phone') AND m.mtype = 'text' AND m.ts >= ? ORDER BY m.id DESC LIMIT 40");
+        $tq->execute([date('Y-m-d H:i:s', time() - 14 * 86400)]); $tm = ''; foreach ($tq->fetchAll() as $r) if (trim((string)$r['cust']) !== '' && mb_strlen((string)$r['reply']) > 12) $tm .= "Customer: " . mb_substr(convo_mask((string)$r['cust']), 0, 160) . "\nTeam answered: " . mb_substr(convo_mask((string)$r['reply']), 0, 260) . "\n\n";
+        if ($tm !== '') $text .= "\n\nWHAT OUR TEAM ANSWERED ON WHATSAPP IN THE LAST 14 DAYS (real replies by people). If the team does something the guidebook does not say yet, and it shows at least 3 times, add it as a 'do' or an objection reply, in their words. Never let it override the owner's rules or lessons above:\n" . $tm; } catch (Throwable $e) {}
     $strs = fn($a, $n, $l) => array_slice(array_values(array_filter(array_map(fn($s) => mb_substr(convo_mask(trim((string)$s)), 0, $l), (array)$a), fn($s) => $s !== '')), 0, $n);
     [$ok, $v, $why] = convo_ai($sys, [['text' => $text]], $schema, false, 16000, 'claude');
     if ($ok) {
@@ -9727,6 +9734,7 @@ function teach_facts_prompt(PDO $pdo, array $msgs): array
     $lt = teach_limits_text($pdo); if ($lt !== '') $t = $lt . $t;
     $bt = teach_budget_text($F['budget']); if ($bt !== '') $t .= $bt;
     $t .= function_exists('pc_bot_text') ? pc_bot_text($pdo) : teach_slab_text($pdo);   // one price chart: the Price & Commission slab chart is also the bot's perfume price list
+    if (function_exists('wj_bot_note')) $t .= wj_bot_note($pdo);   // the 60-day Journey's current offers + festival: one brain for the Teach bot and the journey
     $free = []; if (!empty($F['pl']) && !empty($F['pl']['free']['on'])) foreach ($F['pl']['rows'] as $r) if ($r['lowest']) for ($x = pl_floor_free($F['pl'], (int)$r['lowest']); $x < $r['lowest']; $x++) $free[(string)(float)$x] = 1;
     if ($hit) { $t .= "Products from our catalogue that match the customer's words:\n"; foreach ($hit as [, $p]) { $vs = []; foreach (array_slice((array)($p['v'] ?? []), 0, 8) as $v) $vs[] = trim(($v[0] ?? '') . ' ₹' . ($v[1] ?? '')); $t .= '- ' . ($p['t'] ?? '') . ($vs ? ': ' . implode('; ', $vs) : '') . "\n"; } }
     elseif ($F['products']) $t .= "(No catalogue product matches the customer's words yet — do not quote a product price; ask which product.)\n";
@@ -9908,6 +9916,14 @@ function lib_requeue_calls(PDO $pdo): void
     } catch (Throwable $e) { error_log('lib_requeue_calls: ' . $e->getMessage()); }
 }
 /** Make a draft guidebook the LIVE one (what the WhatsApp bot follows). The version it replaces is kept once, for a roll-back; every older one is removed. */
+/** How much of the guidebook changed: [added points, removed points, percent]. Compares every text point (not the summary). */
+function lib_guide_change(array $old, array $new): array
+{
+    $flat = function ($v, array &$out) use (&$flat) { if (is_array($v)) { foreach ($v as $k => $x) { if (in_array((string)$k, ['summary', 'confidence', 'change_note', 'owner_corrections'], true)) continue; $flat($x, $out); } } elseif (is_string($v) && mb_strlen(trim($v)) >= 8) $out[md5(mb_strtolower(trim($v)))] = 1; };
+    $a = []; $b = []; $flat($old, $a); $flat($new, $b);
+    $add = count(array_diff_key($b, $a)); $del = count(array_diff_key($a, $b));
+    return [$add, $del, (int)round(100 * max($del / max(1, count($a)), $add / max(1, count($b))))];
+}
 function lib_guide_go_live(PDO $pdo, array $draft, string $who): void
 {
     $prev = lib_guide_row($pdo, 'live'); $keep = $prev ? (int)$prev['id'] : 0;
@@ -9931,7 +9947,11 @@ function lib_guide_nightly(PDO $pdo, int $budget): ?string
     } else {
         if ($budget < 100) return null;      // not enough time left in this pass: the next pass tries again
         [$ok, $msg, $ver] = lib_guide_write($pdo);
-        if ($ok) { $d2 = lib_guide_row($pdo, 'draft'); if ($d2 && ($d2['source'] ?? '') === 'ai') { lib_guide_go_live($pdo, $d2, 'Auto (2 AM)'); $note = 'New guidebook v' . (int)$d2['version'] . ' went live.'; } else $note = 'Written from numbers only, kept as a draft.'; }
+        if ($ok) { $d2 = lib_guide_row($pdo, 'draft'); if ($d2 && ($d2['source'] ?? '') === 'ai') {
+                $lv = lib_guide_public(lib_guide_row($pdo, 'live')); $dp = lib_guide_public($d2); [$ad, $de, $pc] = $lv ? lib_guide_change($lv['body'], $dp['body']) : [0, 0, 0];
+                if ($lv && $pc > 60) $note = 'The new guidebook v' . (int)$d2['version'] . ' changes ' . $pc . '% of the points (+' . $ad . ' / −' . $de . ') — kept as a DRAFT for you to check; the live one is unchanged.';
+                else { lib_guide_go_live($pdo, $d2, 'Auto (2 AM)'); $note = 'New guidebook v' . (int)$d2['version'] . ' went live' . ($lv ? ' (+' . $ad . ' new, −' . $de . ' removed points)' : '') . '.'; }
+            } else $note = 'Written from numbers only, kept as a draft.'; }
         else $note = 'Not updated: ' . $msg;
     }
     setting_set($pdo, 'lib_guide_nightly', $today); setting_set($pdo, 'lib_guide_nightly_note', date('Y-m-d H:i') . ' — ' . $note);

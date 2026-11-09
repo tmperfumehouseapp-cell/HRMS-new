@@ -37,7 +37,33 @@ function wa_auto_muted(PDO $pdo, string $key): bool
     if (function_exists('wa_cxself_state') && wa_cxself_state($pdo, $key)) return $c[$key] = true;   // 🎫 the customer is raising a ticket: the bot waits
     if (function_exists('wa_bday_recent') && wa_bday_recent($pdo, $key)) return $c[$key] = true;   // 🎂 the customer just told us their birthday: only our own thank-you goes out
     if (function_exists('wa_review_recent') && wa_review_recent($pdo, $key)) return $c[$key] = true;   // ⭐ the customer just answered our rating request: only our own thank-you goes out
+    if (function_exists('wq_rescue_human_on') && wq_rescue_human_on($pdo, $key)) return $c[$key] = true;   // 🛟 a person took this customer in Rescue: no automatic message while they work it
     $r = wa_done_row($pdo, $key); return $c[$key] = $r && strtotime((string)$r['mute_until']) > time();
+}
+/** ⏸ The follow-up plan (Autopilot + Journey) steps aside for a while when a PERSON wrote to the customer (36 h) or a campaign went to them (2 days). Bot replies do not count. Steps due meanwhile are skipped, not caught up.
+ *  Returns '' (go on) or the reason in plain words. */
+function wq_plan_paused(PDO $pdo, string $key, ?int $now = null): string
+{
+    static $c = []; $key = substr(preg_replace('/\D+/', '', $key), -10); if ($key === '') return ''; $now = $now ?: time(); $ck = $key . '|' . intdiv($now, 60); if (isset($c[$ck])) return $c[$ck];
+    if (isset($GLOBALS['__wq_pz'][intdiv($now, 60)][$key])) return $GLOBALS['__wq_pz'][intdiv($now, 60)][$key] === '-' ? '' : $GLOBALS['__wq_pz'][intdiv($now, 60)][$key];   // answered by the batch below
+    $r = '';
+    try { $q = $pdo->prepare("SELECT who, MAX(ts) m FROM wa_messages WHERE phone = ? AND dir = 'out' AND status <> 'failed' AND ((who IN ('emp','person','phone')) OR who = 'campaign') AND ts >= ? GROUP BY who"); $q->execute([$key, date('Y-m-d H:i:s', $now - 2 * 86400)]);
+        foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $x) { $t = strtotime((string)$x['m']);
+            if ($x['who'] === 'campaign') $r = 'a campaign went in the last 2 days';
+            elseif ($t >= $now - 36 * 3600 && $r === '') $r = 'a person wrote in the last 36 h'; }
+    } catch (Throwable $e) { }
+    return $c[$ck] = $r;
+}
+/** One query for a whole batch of customers (the engines check hundreds per round): fills the answer wq_plan_paused() gives for each. */
+function wq_plan_paused_prefetch(PDO $pdo, array $phones, ?int $now = null): void
+{
+    $now = $now ?: time(); $m = intdiv($now, 60); $ph = []; foreach ($phones as $p) { $k = substr(preg_replace('/\D+/', '', (string)$p), -10); if ($k !== '') $ph[$k] = '-'; }
+    if (!$ph) return;
+    try { foreach (array_chunk(array_keys($ph), 400) as $ch) { $in = implode(',', array_fill(0, count($ch), '?'));
+            $q = $pdo->prepare("SELECT phone, who, MAX(ts) m FROM wa_messages WHERE dir = 'out' AND status <> 'failed' AND (who IN ('emp','person','phone') OR who = 'campaign') AND ts >= ? AND phone IN ($in) GROUP BY phone, who"); $q->execute(array_merge([date('Y-m-d H:i:s', $now - 2 * 86400)], $ch));
+            foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $x) { $k = (string)$x['phone']; if ($x['who'] === 'campaign') $ph[$k] = 'a campaign went in the last 2 days'; elseif (strtotime((string)$x['m']) >= $now - 36 * 3600 && ($ph[$k] ?? '-') === '-') $ph[$k] = 'a person wrote in the last 36 h'; } }
+        $GLOBALS["__wq_pz"] = [$m => array_replace($GLOBALS["__wq_pz"][$m] ?? [], $ph)];   // only this minute is kept
+    } catch (Throwable $e) { }
 }
 /** Marks the order completed: silence until the end of tomorrow, follow-ups stopped, ONE thank-you (once per day). Returns the state. */
 function wa_done_mark(PDO $pdo, string $key, int $by, string $how, string $order = ''): array
@@ -64,12 +90,12 @@ function wa_done_thanks(PDO $pdo, string $key, string $order): string
         if ($body === '') $body = 'Hello {{1}}, thank you! We have received your order {{2}} at TM Perfume House. We will pack it with care and send you the tracking details as soon as it is shipped.';
         $mark = function () use ($pdo, $key) { $pdo->prepare("UPDATE wa_order_done SET thanks_at = ? WHERE phone = ?")->execute([date('Y-m-d H:i:s'), $key]); };
         if (!$withPhoto && !empty($c['last_in_at']) && strtotime((string)$c['last_in_at']) > time() - 23 * 3600 && function_exists('wa_send_text')) {
-            [$ok] = wa_send_text($pdo, $c, str_replace(['{{1}}', '{{2}}'], [$name, $ord], $body), 'order', 0); if ($ok) { $mark(); return 'thank-you sent'; }
+            [$ok] = wa_send_text($pdo, $c, str_replace(['{{1}}', '{{2}}'], [$name, $ord], $body), 'order', 0); if ($ok) { $mark(); return 'thank-you sent' . (function_exists('wo_send_pending_photo') ? wo_send_pending_photo($pdo, $c, 'received') : ''); }
         }
         if (function_exists('wo_tpl_for') && function_exists('wa_send_tpl_one')) {
             $t = wo_tpl_for($pdo, 'received'); if (!$t) return 'thank-you template not approved yet';
             $ctx = wa_camp_ctx($pdo, $t, 99); [$nid] = wa_pick_number($pdo, $c, $ctx); if ($nid === 0) return 'no number free for the thank-you';
-            $num = $ctx['nums'][$nid]; [$ok, $r2] = wa_send_tpl_one($pdo, $c, $t, $num, array_slice([$name, $ord], 0, (int)$t['nvars']), 'order'); if ($ok) { $mark(); $pw = (string)($GLOBALS['wo_photo_why'] ?? ''); return 'thank-you sent' . ($withPhoto && $pw !== '' ? ' WITHOUT the photo — ' . $pw : ''); } if (!$ok && $withPhoto) {   // the photo version could not go (photo upload / Meta refused): the plain approved text must still reach the customer
+            $num = $ctx['nums'][$nid]; [$ok, $r2] = wa_send_tpl_one($pdo, $c, $t, $num, array_slice([$name, $ord], 0, (int)$t['nvars']), 'order'); if ($ok) { $mark(); $pw = (string)($GLOBALS['wo_photo_why'] ?? ''); return 'thank-you sent' . ($withPhoto && $pw !== '' ? ' WITHOUT the photo — ' . $pw : '') . (empty($t['header_lib_id']) && function_exists('wo_send_pending_photo') ? wo_send_pending_photo($pdo, $c, 'received') : ''); } if (!$ok && $withPhoto) {   // the photo version could not go (photo upload / Meta refused): the plain approved text must still reach the customer
                 $why2 = is_string($r2) ? $r2 : 'Meta refused it'; $bq = $pdo->prepare("SELECT id FROM wa_templates WHERE name = ? AND language = 'en'"); $bq->execute([wo_send_defs()['received'][0]]); $bid = (int)$bq->fetchColumn(); $bt = $bid ? wa_camp_tpl($pdo, $bid) : null;
                 if ($bt) { [$ok2] = wa_send_tpl_one($pdo, $c, $bt, $num, array_slice([$name, $ord], 0, (int)$bt['nvars']), 'order'); if ($ok2) { $mark(); return 'thank-you sent WITHOUT the photo — the photo could not be sent: ' . $why2; } }
                 return 'thank-you NOT sent: ' . $why2;
