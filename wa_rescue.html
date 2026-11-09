@@ -54,6 +54,11 @@ guardPage();
   let u = null; try { u = api.currentUser(); } catch (e) { u = null; }
   const S = { admin: false, d: null, team: null, bonus: null, tab: 'list', status: 'all', days: 7, busy: false };
 
+  // Open the customer's chat: inside WhatsApp it opens in the side panel (the list stays); on its own it goes to the chat app.
+  function openChat(phone) {
+    try { if (window.parent !== window && typeof window.parent.waOpenChat === 'function') { window.parent.waOpenChat(phone); return; } } catch (e) { /* cross-frame */ }
+    location.href = 'my_chats.html?phone=' + phone;
+  }
   const ago = (s) => { if (!s) return ''; const t = new Date(String(s).replace(' ', 'T')); const m = Math.max(0, Math.round((Date.now() - t.getTime()) / 60000)); return m < 60 ? m + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : Math.round(m / 1440) + ' d ago'; };
 
   async function load() {
@@ -74,10 +79,11 @@ guardPage();
     const win = it.window_open ? '' : '<div class="rq-meta" style="color:#b45309">24-hour chat window closed – use an approved template to reach them.</div>';
     let act = '';
     if (it.status === 'open') {
+      act += '<button class="btn secondary" data-open="' + it.phone + '">Read chat</button>';
       if (S.d.member || S.admin) act += '<button class="btn" data-take="' + it.phone + '">Take this query</button>';
       if (S.admin) act += '<button class="btn secondary" data-give="' + it.phone + '">Give to…</button><button class="btn secondary" data-skip="' + it.phone + '">Not a chance</button>';
-    } else if (it.status === 'taken' || it.status === 'given') act = '<a class="btn" href="my_chats.html?phone=' + it.phone + '">Open chat</a>';
-    return '<div class="rq-item"><div class="rq-main"><div class="rq-name">' + esc(it.name || ('+91 ' + it.phone)) + ' <span class="rq-meta">+91 ' + esc(it.phone) + '</span></div>' +
+    } else if (it.status === 'taken' || it.status === 'given') act = '<button class="btn" data-open="' + it.phone + '">Open chat</button>';
+    return '<div class="rq-item"><div class="rq-main"><div class="rq-name" style="cursor:pointer" data-open="' + it.phone + '">' + esc(it.name || ('+91 ' + it.phone)) + ' <span class="rq-meta">+91 ' + esc(it.phone) + '</span></div>' +
       '<div>' + chips(it) + '</div><div class="rq-meta">' + esc(it.why_text) + ' · last message ' + esc(ago(it.last_in_at)) + (it.orig && it.orig.name ? ' · was with ' + esc(it.orig.name) : '') + '</div>' +
       (it.last_text ? '<div class="rq-text">“' + esc(it.last_text) + '”</div>' : '') + who + won + win + '</div><div class="rq-act">' + act + '</div></div>';
   }
@@ -101,7 +107,7 @@ guardPage();
         '<div class="rq-row"><button class="btn" id="rqTeamDay">Save for today</button><button class="btn secondary" id="rqTeamAlways">Save for every day</button></div>' + (t.always ? '<div class="rq-sub">Today uses the “every day” list.</div>' : '') + '</div>';
     } else if (S.tab === 'bonus' && S.bonus) {
       const b = S.bonus;
-      h += '<div class="card" style="padding:14px 18px"><b>Rescue bonus ' + esc(b.from) + ' → ' + esc(b.to) + ': ' + money(b.total_bonus) + '</b><div class="rq-sub">Extra on top of the normal commission – ' + esc(cfg.pct) + '% of the order total, for orders won from a rescued query.</div></div>' +
+      h += '<div class="card" style="padding:14px 18px"><b>Rescue bonus ' + esc(b.from) + ' → ' + esc(b.to) + ': ' + money(b.total_bonus) + '</b><div class="rq-sub">Extra on top of the normal commission – ' + esc(cfg.pct) + '% of each order's total — per order. Every order the customer places after the query was taken earns it.</div></div>' +
         (S.admin && b.people.length ? '<table><thead><tr><th>Person</th><th>Orders</th><th>Revenue</th><th>Bonus</th></tr></thead><tbody>' + b.people.map((p) => '<tr><td>' + esc(p.name) + '</td><td>' + p.orders + '</td><td>' + money(p.revenue) + '</td><td><b>' + money(p.bonus) + '</b></td></tr>').join('') + '</tbody></table>' : '') +
         (b.orders.length ? '<table style="margin-top:10px"><thead><tr><th>Order</th><th>Customer</th><th>Person</th><th>Total</th><th>Bonus</th><th>Date</th></tr></thead><tbody>' + b.orders.map((o) => '<tr><td>' + esc(o.order_name) + '</td><td>' + esc(o.customer || o.phone) + '</td><td>' + esc(o.name) + '</td><td>' + money(o.total) + '</td><td>' + money(o.bonus) + '</td><td>' + esc(o.won_at) + '</td></tr>').join('') + '</tbody></table>' : '<div class="rq-empty">No rescued orders in this period yet.</div>');
     } else if (S.tab === 'cfg' && S.admin) {
@@ -122,7 +128,8 @@ guardPage();
   root.addEventListener('click', (e) => {
     const t = e.target.closest('button,a'); if (!t) return;
     if (t.dataset.tab) { S.tab = t.dataset.tab; load(); return; }
-    if (t.dataset.take) { act(() => api.post('wq.rescue_take', { phone: t.dataset.take }).then((r) => { location.href = 'my_chats.html?phone=' + t.dataset.take; return r; })); return; }
+    if (t.dataset.open) { openChat(t.dataset.open); return; }
+    if (t.dataset.take) { act(() => api.post('wq.rescue_take', { phone: t.dataset.take }).then((r) => { openChat(t.dataset.take); return r; })); return; }
     if (t.dataset.skip) { if (confirm('Hide this query – not a real chance?')) act(() => api.post('wq.rescue_skip', { phone: t.dataset.skip })); return; }
     if (t.dataset.give) {
       api.get('wq.rescue_team').then((tm) => {

@@ -605,6 +605,7 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
     sd.dataset.p = ph; $('wsdT').textContent = '+91 ' + ph; document.body.classList.add('side-on');
     document.querySelectorAll('.wsd-on').forEach((x) => x.classList.remove('wsd-on')); document.querySelectorAll('#body [data-p="' + ph + '"]').forEach((x) => x.classList.add('wsd-on'));
   }
+  window.waOpenChat = openChat;   // used by the Rescue queries screen (inside its frame)
   function closeSide(noBack) {
     const sd = document.getElementById('waSide'); if (!sd) return; sd.remove(); document.body.classList.remove('side-on'); document.querySelectorAll('.wsd-on').forEach((x) => x.classList.remove('wsd-on'));
     if (!noBack && history.state && history.state.waSide) { sideSkip = true; history.back(); }
