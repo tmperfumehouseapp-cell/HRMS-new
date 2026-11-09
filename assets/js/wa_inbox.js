@@ -1309,12 +1309,25 @@
       const allSel = loaded > 0 && S.chats.every((c) => S.bulk.set.has(c.phone));
       return `<div class="bk-bar" id="bkBar"><div class="bk-top"><div class="bk-n">${n ? bkFmt(n) + ' selected' : 'Select chats'}<small>${n ? 'Tap a chat to add or remove it' : 'Tap chats, or select everything in this view'}</small></div><button type="button" class="bk-x" id="bkOff">✕ Done</button></div>
         <div class="bk-row"><button type="button" class="bk-link" id="bkAll">${allSel ? '☑ All ' + bkFmt(loaded) + ' shown are selected' : '☐ Select all in this view'}${tot > loaded ? ' (up to ' + bkFmt(Math.min(3000, tot)) + ')' : ''}</button>${n ? '<button type="button" class="bk-link" id="bkNone" style="margin-left:auto">Clear</button>' : ''}</div>
-        <div class="bk-row"><button type="button" class="bk-b send" id="bkSend" ${n ? '' : 'disabled'}>📨 Send message</button><button type="button" class="bk-b move" id="bkMove" ${n ? '' : 'disabled'}>👤 Transfer</button></div></div>`;
+        <div class="bk-row"><button type="button" class="bk-b send" id="bkSend" ${n ? '' : 'disabled'}>📨 Send message</button><button type="button" class="bk-b move" id="bkMove" ${n ? '' : 'disabled'}>👤 Transfer</button><button type="button" class="bk-b move" id="bkNum" ${n ? '' : 'disabled'} title="Answer these customers from another of your numbers">📱 Move to number</button></div></div>`;
     }
     function bkWire(L) {
       const b = $('bkBar'); if (!b) return;
       $('bkOff').onclick = () => bkToggleMode(false); $('bkAll').onclick = bkSelectAll; if ($('bkNone')) $('bkNone').onclick = () => { S.bulk.set.clear(); drawList(); };
-      $('bkSend').onclick = bkSendOpen; $('bkMove').onclick = bkMoveOpen;
+      $('bkSend').onclick = bkSendOpen; $('bkMove').onclick = bkMoveOpen; if ($('bkNum')) $('bkNum').onclick = bkNumOpen;
+    }
+    // ---------- 📱 move many chats to another of our numbers (the Second number has a payment problem → Main)
+    async function bkNumOpen() {
+      const n = bkN(); if (!n) return; const box = sheet('Move chats to a number'); box.className = (box.className || '') + ' bk-sh'; box.innerHTML = '<div class="wi-empty">Loading numbers…</div>'; let nums = [];
+      nums = ((S.counts || {}).src || {}).nums || [];
+      box.innerHTML = `<div class="wi-note" style="margin:0 0 10px">${bkFmt(n)} chat${n === 1 ? '' : 's'} will be answered from the number you pick. WhatsApp allows free text only on the number the customer wrote to, so the first message from the new number must be a <b>pre-made message</b> (the customer’s window on that number opens after they answer).</div>`
+        + (nums.length ? nums.map((x) => `<button type="button" class="wi-btn" data-nid="${x.id}" style="display:block;width:100%;text-align:left;margin:0 0 6px;padding:11px 14px">📱 ${esc(x.label)}</button>`).join('') : '<div class="wi-empty">No number found.</div>');
+      box.querySelectorAll('[data-nid]').forEach((b) => { b.onclick = async () => {
+        const lab = b.textContent.replace('📱', '').trim(); if (!confirm('Move ' + bkFmt(n) + ' chat' + (n === 1 ? '' : 's') + ' to “' + lab + '”?')) return;
+        b.disabled = true; const phones = [...S.bulk.set]; let moved = 0, same = 0;
+        try { for (let i = 0; i < phones.length; i += 400) { const r = await api.post('wa.bulk_number', { phones: phones.slice(i, i + 400), number_id: +b.dataset.nid }); moved += r.moved || 0; same += r.same || 0; }
+          S.bulk.set.clear(); box.innerHTML = `<div class="wi-note" style="background:#e3f6ec;color:#12794a">✅ Moved ${bkFmt(moved)} chat${moved === 1 ? '' : 's'} to “${esc(lab)}”${same ? ' · ' + bkFmt(same) + ' were already there' : ''}. Open a chat and send a pre-made message from this number first.</div><div class="wi-act"><button type="button" class="wi-btn p" id="bkNumOk">OK</button></div>`; $('bkNumOk').onclick = () => closeSheet(); loadList(); }
+        catch (e) { box.insertAdjacentHTML('afterbegin', `<div class="wi-err">${esc(e.message)}</div>`); b.disabled = false; } }; });
     }
     // ---------- 👤 transfer many chats to one person
     async function bkMoveOpen() {
