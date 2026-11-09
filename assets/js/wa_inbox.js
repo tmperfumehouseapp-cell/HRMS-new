@@ -422,7 +422,7 @@
       if (opts.one) return;   // one chat only (side panel): no list to load
       if (S.busyList) return; S.busyList = true;
       try {
-        const p = { scope: S.emp ? 'emp' : S.scope, q: S.q }; if (S.src) p.src = S.src; if (S.emp) p.emp = S.emp; if (!admin) p.mine = 1; if (S.emp && S.empTag) p.tag = 1; if (S.sort) p.sort = S.sort; if (S.flt.length) p.flt = S.flt.join(',');
+        const p = { scope: S.emp ? 'emp' : S.scope, q: S.q }; if (S.src) p.src = S.src; if (S.emp) p.emp = S.emp; if (!admin) p.mine = 1; if (S.emp && S.empTag) p.tag = 1; if (S.sort) p.sort = S.sort; if (S.flt.length) p.flt = S.flt.join(','); if (admin && S.bulk && S.bulk.on) { const f = S.bulk.f || {}; if (f.bd) p.bd = f.bd; if (f.ob) p.ob = f.ob; if ((f.bn || []).length) p.bn = f.bn.join(','); }
         const d = await api.get('wa.chats', p); S.chats = d.chats || []; S.counts = d.counts || {};
         if (!admin) try { const g = await api.get('wq.grab_list'); S.grab = (g.items || []).filter((x) => !x.mine); S.grabMin = g.min || 4; } catch (e) { S.grab = []; }
         auCfg(d.rules && d.rules.auto); rulesCheck(d.rules); drawTabs(); drawFeeds(); drawKpi(); drawList(); if (opts.onCounts) { try { opts.onCounts(S.counts); } catch (e) { } } auNext();
@@ -1269,10 +1269,12 @@
     // ============================================================================================================================
     // ☑ BULK: select many chats (one by one, or "all in this view") → send one pre-made message to all of them, or move them all to one person
     // ============================================================================================================================
-    S.bulk = { on: false, set: new Set(), info: {}, total: 0 };
+    S.bulk = { on: false, set: new Set(), info: {}, total: 0, f: { bd: '', ob: 'no', bn: [] } };
     const bkStyle = () => {
       if (document.getElementById('bkStyle')) return; const st = document.createElement('style'); st.id = 'bkStyle';
       st.textContent = `
+      .bk-fl{margin:4px 0 2px}.bk-fl .lb{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:#94a3b8;margin:6px 0 3px}.bk-chs{display:flex;gap:5px;flex-wrap:wrap}
+      .bk-chs button{border:1px solid #475569;background:transparent;color:#e2e8f0;border-radius:99px;padding:4px 10px;font-size:11.5px;font-weight:700;cursor:pointer;min-height:0;width:auto}.bk-chs button.on{background:#22c55e;border-color:#22c55e;color:#052e16}.bk-chs button.ex.on{background:#f59e0b;border-color:#f59e0b;color:#3a2200}
       .bk-bar{position:sticky;top:0;z-index:6;background:linear-gradient(135deg,#0f172a,#1e293b);color:#fff;padding:10px 12px;display:flex;flex-direction:column;gap:8px;box-shadow:0 6px 20px rgba(15,23,42,.25)}
       .bk-top{display:flex;align-items:center;gap:10px}.bk-n{font-weight:800;font-size:15px;flex:1}.bk-n small{display:block;font-weight:500;font-size:11.5px;opacity:.7;margin-top:1px}
       .bk-x{border:0;background:rgba(255,255,255,.14);color:#fff;border-radius:99px;padding:7px 12px;font-weight:700;font-size:12.5px;cursor:pointer}
@@ -1300,8 +1302,8 @@
       `; document.head.appendChild(st);
     };
     const bkN = () => S.bulk.set.size, bkFmt = (n) => Number(n).toLocaleString('en-IN');
-    function bkParams() { const p = { scope: S.emp ? 'emp' : S.scope, q: S.q }; if (S.src) p.src = S.src; if (S.emp) p.emp = S.emp; if (S.emp && S.empTag) p.tag = 1; if (S.flt.length) p.flt = S.flt.join(','); return p; }
-    function bkToggleMode(on) { bkStyle(); S.bulk.on = on == null ? !S.bulk.on : on; if (!S.bulk.on) { S.bulk.set.clear(); S.bulk.info = {}; } root.classList.toggle('bkon', S.bulk.on); drawFeeds(); drawList(); }
+    function bkParams() { const p = { scope: S.emp ? 'emp' : S.scope, q: S.q }; if (S.src) p.src = S.src; if (S.emp) p.emp = S.emp; if (S.emp && S.empTag) p.tag = 1; if (S.flt.length) p.flt = S.flt.join(','); if (S.bulk.on) { const f = S.bulk.f || {}; if (f.bd) p.bd = f.bd; if (f.ob) p.ob = f.ob; if ((f.bn || []).length) p.bn = f.bn.join(','); } return p; }
+    function bkToggleMode(on) { bkStyle(); S.bulk.on = on == null ? !S.bulk.on : on; if (!S.bulk.on) { S.bulk.set.clear(); S.bulk.info = {}; S.bulk.f = { bd: '', ob: 'no', bn: [] }; } root.classList.toggle('bkon', S.bulk.on); drawFeeds(); if (S.bulk.on) loadList(); else drawList(); }
     function bkToggle(ph) { if (S.bulk.set.has(ph)) S.bulk.set.delete(ph); else { S.bulk.set.add(ph); const c = S.chats.find((x) => x.phone === ph); if (c) S.bulk.info[ph] = { name: c.name || '' }; } drawList(); }
     async function bkSelectAll() {
       const btn = $('bkAll'); if (btn) { btn.textContent = 'Selecting…'; btn.disabled = true; }
@@ -1313,13 +1315,17 @@
       if (!S.bulk.on) return ''; const n = bkN(), loaded = S.chats.length, tot = Math.max(loaded, (S.counts && (S.scope === 'unassigned' ? S.counts.unassigned : S.scope === 'closed' ? S.counts.closed : S.counts.all)) || 0);
       const allSel = loaded > 0 && S.chats.every((c) => S.bulk.set.has(c.phone));
       return `<div class="bk-bar" id="bkBar"><div class="bk-top"><div class="bk-n">${n ? bkFmt(n) + ' selected' : 'Select chats'}<small>${n ? 'Tap a chat to add or remove it' : 'Tap chats, or select everything in this view'}</small></div><button type="button" class="bk-x" id="bkOff">✕ Done</button></div>
+        ${admin ? `<div class="bk-fl"><div class="lb">Show only</div><div class="bk-chs">${[['', 'All'], ['today', 'Today’s queries'], ['yesterday', 'Yesterday’s queries'], ['7d', 'Last 7 days'], ['camp', 'Campaign replies']].map(([k, l]) => `<button type="button" data-bf="bd:${k}" class="${(S.bulk.f.bd || '') === k ? 'on' : ''}">${l}</button>`).join('')}</div>
+          <div class="lb">Order status</div><div class="bk-chs">${[['no', '🆕 Not ordered yet'], ['yes', '✅ Order done'], ['', 'All']].map(([k, l]) => `<button type="button" data-bf="ob:${k}" class="${(S.bulk.f.ob || '') === k ? 'on' : ''}${k === 'yes' ? ' ex' : ''}">${l}</button>`).join('')}</div>
+          <div class="lb">Number</div><div class="bk-chs">${(((S.counts || {}).src || {}).nums || []).map((x) => `<button type="button" data-bf="bn:${x.id}" class="${(S.bulk.f.bn || []).includes(x.id) ? 'on' : ''}">${esc(String(x.label || 'Number ' + x.id))}</button>`).join('')}</div></div>` : ''}
         <div class="bk-row"><button type="button" class="bk-link" id="bkAll">${allSel ? '☑ All ' + bkFmt(loaded) + ' shown are selected' : '☐ Select all in this view'}${tot > loaded ? ' (up to ' + bkFmt(Math.min(3000, tot)) + ')' : ''}</button>${n ? '<button type="button" class="bk-link" id="bkNone" style="margin-left:auto">Clear</button>' : ''}</div>
         <div class="bk-row"><button type="button" class="bk-b send" id="bkSend" ${n ? '' : 'disabled'}>📨 Send message</button><button type="button" class="bk-b move" id="bkMove" ${n ? '' : 'disabled'}>👤 Transfer</button><button type="button" class="bk-b move" id="bkNum" ${n ? '' : 'disabled'} title="Answer these customers from another of your numbers">📱 Move to number</button></div></div>`;
     }
     function bkWire(L) {
       const b = $('bkBar'); if (!b) return;
       $('bkOff').onclick = () => bkToggleMode(false); $('bkAll').onclick = bkSelectAll; if ($('bkNone')) $('bkNone').onclick = () => { S.bulk.set.clear(); drawList(); };
-      $('bkSend').onclick = bkSendOpen; $('bkMove').onclick = bkMoveOpen; if ($('bkNum')) $('bkNum').onclick = bkNumOpen;
+      $('bkSend').onclick = bkSendOpen; $('bkMove').onclick = bkMoveOpen;
+      b.querySelectorAll('[data-bf]').forEach((x) => { x.onclick = () => { const [k, v] = x.dataset.bf.split(':'); const f = S.bulk.f; if (k === 'bn') { const id = +v, i = f.bn.indexOf(id); if (i >= 0) f.bn.splice(i, 1); else f.bn.push(id); } else f[k] = v; S.bulk.set.clear(); S.bulk.info = {}; loadList(); }; });   // a different filter = a different list: the ticks start again if ($('bkNum')) $('bkNum').onclick = bkNumOpen;
     }
     // ---------- 📱 move many chats to another of our numbers (the Second number has a payment problem → Main)
     async function bkNumOpen() {
@@ -1404,7 +1410,7 @@
           let h = `<div class="bk-sh"><button type="button" class="wi-btn" id="bkBack" style="margin-bottom:8px">‹ Back</button><h4>${esc(t.name.replace(/_/g, ' '))}</h4><div class="sub">Fill each blank. "First name" gives every customer their own name.</div>`;
           if (hv) h += `<div class="bk-map"><label>Head</label><select data-h="how"><option value="name"${hmap.how === 'name' ? ' selected' : ''}>First name</option><option value="text"${hmap.how === 'text' ? ' selected' : ''}>Same text</option></select>${hmap.how === 'text' ? `<input class="wi-in" data-h="text" value="${esc(hmap.text)}" placeholder="Heading text">` : ''}</div>`;
           for (let i = 0; i < nv; i++) h += `<div class="bk-map"><label>{{${i + 1}}}</label><select data-i="${i}" data-k="how"><option value="name"${map[i].how === 'name' ? ' selected' : ''}>First name</option><option value="text"${map[i].how === 'text' ? ' selected' : ''}>Same text</option></select>${map[i].how === 'text' ? `<input class="wi-in" data-i="${i}" data-k="text" value="${esc(map[i].text)}" placeholder="${H[i].eg ? 'e.g. ' + esc(H[i].eg) : 'Write it here'}">` : '<span style="color:#64748b;font-size:12.5px">e.g. ' + esc(sample ? firstName({ name: sample }) || 'ji' : 'Rahul') + '</span>'}</div>`;
-          h += `<div class="bk-prev" id="bkPrev"></div><div id="bkMsg"></div><div class="wi-act"><button type="button" class="wi-btn p" id="bkGo">📨 Send to ${bkFmt(n)} chat${n === 1 ? '' : 's'}</button></div><div class="ft" style="color:#64748b;font-size:12px;margin-top:8px">Customers who opted out are skipped automatically.</div></div>`;
+          h += `<div class="bk-prev" id="bkPrev"></div><div id="bkMsg"></div><label class="bk-safe" style="display:flex;gap:8px;align-items:center;margin:10px 0;font-size:13px;font-weight:700"><input type="checkbox" id="bkSafe" ${S.bulk.safe === false ? '' : 'checked'} style="width:18px;height:18px"> Leave out customers who already ordered <span style="font-weight:600;color:#64748b">(also opted-out and complaint chats)</span></label><div class="wi-act"><button type="button" class="wi-btn p" id="bkGo">📨 Send to ${bkFmt(n)} chat${n === 1 ? '' : 's'}</button></div><div class="ft" style="color:#64748b;font-size:12px;margin-top:8px">Customers who opted out are skipped automatically.</div></div>`;
           box.innerHTML = h;
           const prev = () => { const v = vals(firstName({ name: sample })); $('bkPrev').textContent = (t.header_text ? fill(t.header_text, [hmap.how === 'name' ? (firstName({ name: sample }) || 'ji') : hmap.text]) + '\n' : '') + fill(t.body, v) + (t.footer ? '\n' + t.footer : ''); }; prev();
           $('bkBack').onclick = pickList;
@@ -1413,8 +1419,15 @@
           $('bkGo').onclick = () => {
             for (let i = 0; i < nv; i++) if (map[i].how === 'text') { if (!map[i].text.trim()) { $('bkMsg').innerHTML = `<div class="wi-err">Fill {{${i + 1}}} first.</div>`; return; } const bad = tplVarBad(H[i] || {}, map[i].text.trim()); if (bad) { $('bkMsg').innerHTML = `<div class="wi-err">${esc(bad)}</div>`; return; } }
             if (hv && hmap.how === 'text' && !hmap.text.trim()) { $('bkMsg').innerHTML = '<div class="wi-err">Fill the heading first.</div>'; return; }
-            if (!confirm('Send "' + t.name.replace(/_/g, ' ') + '" to ' + bkFmt(n) + ' chat' + (n === 1 ? '' : 's') + ' now?')) return;
-            run(t, map, hmap, [...S.bulk.set]);
+            S.bulk.safe = $('bkSafe') ? $('bkSafe').checked : true; const all = [...S.bulk.set]; $('bkGo').disabled = true; $('bkMsg').innerHTML = '<div class="wi-note">Checking who already ordered…</div>';
+            api.post('wa.bulk_ordered', { phones: all }).then((r) => {
+              $('bkGo').disabled = false; $('bkMsg').innerHTML = ''; const ord = new Set(r.ordered || []), blk = r.blocked || {}; let go = all.filter((ph) => blk[ph] !== 'optout' && blk[ph] !== 'complaint'); const nBlk = all.length - go.length, nOrd = go.filter((ph) => ord.has(ph)).length;
+              if (S.bulk.safe) go = go.filter((ph) => !ord.has(ph));
+              if (!go.length) { $('bkMsg').innerHTML = '<div class="wi-err">Nobody is left to send to — everyone selected already ordered, opted out or has a complaint.</div>'; return; }
+              const note = (S.bulk.safe ? bkFmt(go.length) + ' will get it · left out: ' + bkFmt(nOrd) + ' already ordered' : '⚠️ ' + bkFmt(nOrd) + ' of ' + bkFmt(go.length) + ' ALREADY ORDERED and will also get this message') + (nBlk ? ' · ' + bkFmt(nBlk) + ' opted out / complaint (always left out)' : '');
+              if (!confirm('Send "' + t.name.replace(/_/g, ' ') + '" now?\n\n' + note)) return;
+              run(t, map, hmap, go);
+            }).catch((e) => { $('bkGo').disabled = false; $('bkMsg').innerHTML = `<div class="wi-err">${esc(e.message)}</div>`; });
           };
         };
         draw();

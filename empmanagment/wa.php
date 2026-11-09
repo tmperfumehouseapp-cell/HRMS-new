@@ -885,6 +885,19 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo)\./', $__wa)) {
             $src = (string)($_GET['src'] ?? '');   // Stage B: feed filter — query | community | campaign | assigned
             if ($src === 'query') { if (function_exists('wa_ad_backfill')) wa_ad_backfill($pdo); $w[] = "c.source = 'query'"; $w[] = 'c.last_in_at >= ?'; $p[] = wa_bizday_start($pdo); }   // 📢 fresh Meta-ad queries of this business day (10:00 → 10:00); campaign / community have their own feeds
             elseif (in_array($src, ['community', 'campaign'], true)) { $w[] = 'c.source = ?'; $p[] = $src; } elseif ($src === 'assigned') $w[] = 'c.assigned_emp > 0';
+            // ☑ Select-chats filters: day of the query · ordered or not · numbers (admin)
+            if ($adm) {
+                $bd = (string)($_GET['bd'] ?? ''); $bs = wa_bizday_start($pdo);
+                if ($bd === 'today') { $w[] = "c.source = 'query'"; $w[] = 'c.last_in_at >= ?'; $p[] = $bs; }
+                elseif ($bd === 'yesterday') { $w[] = "c.source = 'query'"; $w[] = 'c.last_in_at >= ?'; $p[] = date('Y-m-d H:i:s', strtotime($bs) - 86400); $w[] = 'c.last_in_at < ?'; $p[] = $bs; }
+                elseif ($bd === '7d') { $w[] = 'c.last_in_at >= ?'; $p[] = date('Y-m-d H:i:s', time() - 7 * 86400); }
+                elseif ($bd === 'camp') { $w[] = "c.source = 'campaign'"; }
+                $ob = (string)($_GET['ob'] ?? '');
+                if ($ob === 'no') $w[] = "NOT EXISTS (SELECT 1 FROM wa_cust so WHERE so.phone = c.phone AND so.n > 0)";
+                elseif ($ob === 'yes') $w[] = "EXISTS (SELECT 1 FROM wa_cust so WHERE so.phone = c.phone AND so.n > 0)";
+                $bn = array_values(array_filter(array_map('intval', explode(',', (string)($_GET['bn'] ?? ''))), fn($x) => $x > 0));
+                if ($bn) { $w[] = 'c.last_number_id IN (' . implode(',', $bn) . ')'; }
+            }
             if ($q !== '') { $w[] = '(c.phone LIKE ? OR c.name LIKE ?)'; $p[] = wa_q_like($q); $p[] = '%' . addcslashes($q, '%_\\') . '%'; }
             // 🔽 the Filter menu: show only … (any mix) and the order
             $wBase = $w; $pBase = $p;   // the view without the Filter menu: tab (All open / Closed / …) + chip (Query / Community / …) + person + search — the Not-responded count is for THIS view
@@ -998,6 +1011,14 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo)\./', $__wa)) {
             $ids = array_column(wa_people($pdo), 'emp_id'); if (!in_array($to, $ids, true)) json_response(['error' => 'Pick a salesperson from the list.'], 422);
             if ($to === (int)$c['assigned_emp']) json_response(['error' => 'The chat is already with this person.'], 422);
             wa_assign_to($pdo, $key, $to, $me, 'transfer'); json_response(['ok' => true]);
+        }
+        case 'wa.bulk_ordered': {   // ☑ which of these chats already ordered (the bulk-send safety): returns their phones
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
+            if (!wa_is_admin($pdo, $auth)) json_response(['error' => 'Only an admin can bulk send.'], 403);
+            $in = json_input(); $phones = array_slice(array_values(array_unique(array_filter(array_map(fn($p) => wa_key($p), (array)($in['phones'] ?? []))))), 0, 3000); $out = [];
+            foreach (array_chunk($phones, 400) as $ch) { try { $q = $pdo->prepare("SELECT phone FROM wa_cust WHERE n > 0 AND phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $q->execute($ch); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $ph) $out[(string)$ph] = 1; } catch (Throwable $e) { } }
+            $oq = []; foreach (array_chunk($phones, 400) as $ch) { try { $q = $pdo->prepare("SELECT phone, optout, (cx_id > 0 OR tag = 'complaint') AS cx FROM wa_contacts WHERE (optout = 1 OR cx_id > 0 OR tag = 'complaint') AND phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $q->execute($ch); foreach ($q->fetchAll() as $r) $oq[(string)$r['phone']] = ((int)$r['optout'] === 1 ? 'optout' : 'complaint'); } catch (Throwable $e) { } }
+            json_response(['ok' => true, 'ordered' => array_keys($out), 'blocked' => $oq]);
         }
         case 'wa.bulk_number': {   // 📱 many chats → answer from ANOTHER of our numbers (e.g. the Second number has a payment problem → move them to Main). Admin only.
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
