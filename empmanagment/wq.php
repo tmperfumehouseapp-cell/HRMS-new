@@ -1434,7 +1434,7 @@ if (strpos($__wqa, 'wq.') === 0 && in_array($__wqa, ['wq.board', 'wq.mine', 'wq.
     switch ($__wqa) {
         case 'wq.board': { $needGet(); $needAdmin(); json_response(wq_board($pdo, $days(1))); }
         case 'wq.grab_list': { $needGet(); $g = wq_grab_list($pdo, $me); if (!$adm) foreach ($g['items'] as &$x0) $x0['last_in'] = ''; unset($x0); json_response($g); }   // 🔒 a salesperson sees the customer's words only after taking the chat (no picking and choosing)
-        case 'wq.req_list': { $needGet(); json_response(wq_req_list($pdo, $me)); }   // everyone reads the customer's last message here: these chats are with nobody (or nobody answered), so the team decides from the list
+        case 'wq.req_list': { $needGet(); $rl = wq_req_list($pdo, $me); if (function_exists('wq_rescue_req_items') && $me > 0) { $ri = wq_rescue_req_items($pdo, $me); if ($ri) { $rl['items'] = array_merge($ri, $rl['items']); $rl['count'] = (int)($rl['count'] ?? 0) + count($ri); } } json_response($rl); }   // everyone reads the customer's last message here: these chats are with nobody (or nobody answered), so the team decides from the list
         case 'wq.req_take': { $needPost(); $k = $phoneIn(); if ($k === '') json_response(['error' => 'Chat not found.'], 404); $r = wq_req_take($pdo, $k, $me); if (isset($r['error'])) json_response($r, 409); json_response($r); }
         case 'wq.grab_board': { $needGet(); json_response(wq_grab_board($pdo, $days(7))); }
         case 'wq.grab': { $needPost(); $k = $phoneIn(); if ($k === '') json_response(['error' => 'Chat not found.'], 404); $r = wq_grab($pdo, $k, $me); if (isset($r['error'])) json_response($r, 409); json_response($r); }

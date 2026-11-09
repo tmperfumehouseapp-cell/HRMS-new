@@ -287,10 +287,10 @@
       const since = (m) => m < 1 ? 'just now' : m < 60 ? m + ' min' : Math.floor(m / 60) + ' h ' + (m % 60) + ' min';
       // one request: name · the time the query came · how long ago   [✋ Take over]  /  the customer's last message under it
       const line = (x, late) => { const m = late ? +x.waiting_min || 0 : +x.mins || 0, red = late || m >= (S.reqMin || 4);
-        return `<div data-peek="${esc(x.phone)}" data-pk="${late ? 'grab' : 'req'}" role="button" tabindex="0" style="display:flex;gap:10px;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line);cursor:pointer"><div style="flex:1;min-width:0">`
-        + `<div style="display:flex;align-items:baseline;gap:6px;min-width:0"><b style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0">${esc(x.name || pretty(x.phone))}</b>${!late && SRC[x.src] ? `<small style="flex:none;font-weight:700;color:#7c3aed;background:#ede9fe;border-radius:99px;padding:1px 7px">${SRC[x.src]}</small>` : ''}<small style="flex:none;font-weight:700;color:${red ? '#dc2626' : '#667781'};white-space:nowrap">🕒 ${clock(m)} · ${since(m)}</small></div>`
+        return `<div data-peek="${esc(x.phone)}" data-pk="${x.rescue ? 'rescue' : late ? 'grab' : 'req'}" role="button" tabindex="0" style="display:flex;gap:10px;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line);cursor:pointer"><div style="flex:1;min-width:0">`
+        + `<div style="display:flex;align-items:baseline;gap:6px;min-width:0"><b style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0">${x.rescue ? '🛟 ' : ''}${esc(x.name || pretty(x.phone))}</b>${!late && SRC[x.src] ? `<small style="flex:none;font-weight:700;color:#7c3aed;background:#ede9fe;border-radius:99px;padding:1px 7px">${SRC[x.src]}</small>` : ''}<small style="flex:none;font-weight:700;color:${red ? '#dc2626' : '#667781'};white-space:nowrap">🕒 ${clock(m)} · ${since(m)}</small></div>`
         + `<div style="color:var(--ink,#111827);font-size:14.5px;line-height:1.4;margin-top:3px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word">${x.last_in ? esc(x.last_in) : '…'}</div></div>`
-        + `<button type="button" data-tk="${esc(x.phone)}" data-pk="${late ? 'grab' : 'req'}" style="flex:none;border:0;border-radius:99px;background:#00a884;color:#fff;font-weight:800;font-size:13.5px;padding:9px 14px;min-height:40px;cursor:pointer">✋ Take over</button></div>`; };
+        + `<button type="button" data-tk="${esc(x.phone)}" data-pk="${x.rescue ? 'rescue' : late ? 'grab' : 'req'}" style="flex:none;border:0;border-radius:99px;background:#00a884;color:#fff;font-weight:800;font-size:13.5px;padding:9px 14px;min-height:40px;cursor:pointer">✋ Take over</button></div>`; };
       const byNew = (a, b) => (+a.mins || 0) - (+b.mins || 0), byNewL = (a, b) => (+a.waiting_min || 0) - (+b.waiting_min || 0);
       let h = '';   // 🆕 the newest query is always on top; the ones nobody answered for 4+ min come after
       h += '<div class="wx-h">🆕 New — not given to anyone · ' + L.length + '</div>' + (L.length ? '<div class="wx-card wx-lst">' + L.slice().sort(byNew).map((x) => line(x, false)).join('') + '</div>' : '<div class="wx-empty"><b>🙋</b>No new requests — every chat has someone.</div>');
@@ -298,8 +298,8 @@
       M.innerHTML = h;
       M.onclick = async (e) => {
         const t = e.target.closest('[data-tk]');
-        if (t) { e.stopPropagation(); const ph = t.dataset.tk, late = t.dataset.pk === 'grab'; t.disabled = true; t.textContent = 'Taking…';
-          try { await api.post(late ? 'wq.grab' : 'wq.req_take', { phone: ph }); const x = (S.req || []).concat(S.reqLate || []).find((y) => y.phone === ph) || {}; S.req = (S.req || []).filter((y) => y.phone !== ph); S.reqLate = (S.reqLate || []).filter((y) => y.phone !== ph); S.grab = (S.grab || []).filter((y) => y.phone !== ph); toast('The chat is yours now ✓'); loadList(true); openChat(ph, { name: x.name || '' }); }
+        if (t) { e.stopPropagation(); const ph = t.dataset.tk, pk = t.dataset.pk; t.disabled = true; t.textContent = 'Taking…';
+          try { await api.post(pk === 'grab' ? 'wq.grab' : pk === 'rescue' ? 'wq.rescue_take' : 'wq.req_take', { phone: ph }); const x = (S.req || []).concat(S.reqLate || []).find((y) => y.phone === ph) || {}; S.req = (S.req || []).filter((y) => y.phone !== ph); S.reqLate = (S.reqLate || []).filter((y) => y.phone !== ph); S.grab = (S.grab || []).filter((y) => y.phone !== ph); toast('The chat is yours now ✓'); loadList(true); openChat(ph, { name: x.name || '' }); }
           catch (er) { toast(er.message, true); t.disabled = false; t.textContent = '✋ Take over'; loadReq(); } return; }
         const b = e.target.closest('[data-peek]'); if (!b) return; const ph = b.dataset.peek, x = (S.req || []).concat(S.reqLate || []).find((y) => y.phone === ph) || {}; openChat(ph, { peek: b.dataset.pk, name: x.name || '' }); };
     }
@@ -436,8 +436,8 @@
     }
     // 🙋 a Requests chat read before taking it: the big button at the bottom takes it (new chat → wq.req_take, a late one → wq.grab)
     async function takeReq() {
-      if (!S.cur || !S.cur.peek) return; const phone = S.cur.phone, late = S.cur.peek === 'grab', b = $('#wxPk'); if (b) { b.disabled = true; b.textContent = 'Taking…'; }
-      try { await api.post(late ? 'wq.grab' : 'wq.req_take', { phone }); S.req = (S.req || []).filter((x) => x.phone !== phone); S.reqLate = (S.reqLate || []).filter((x) => x.phone !== phone); S.grab = (S.grab || []).filter((x) => x.phone !== phone);
+      if (!S.cur || !S.cur.peek) return; const phone = S.cur.phone, pkk = S.cur.peek, b = $('#wxPk'); if (b) { b.disabled = true; b.textContent = 'Taking…'; }
+      try { await api.post(pkk === 'grab' ? 'wq.grab' : pkk === 'rescue' ? 'wq.rescue_take' : 'wq.req_take', { phone }); S.req = (S.req || []).filter((x) => x.phone !== phone); S.reqLate = (S.reqLate || []).filter((x) => x.phone !== phone); S.grab = (S.grab || []).filter((x) => x.phone !== phone);
         if (S.cur && S.cur.phone === phone) { S.cur.peek = ''; S.cur.row.emp = S.me && S.me.emp_id; const bx = $('#wxPkB'); if (bx) bx.remove(); drawFoot(); } toast('The chat is yours now ✓ — reply below'); loadList(true); }
       catch (er) { toast(er.message, true); if (b) { b.disabled = false; b.textContent = '✋ Take over this chat'; } loadReq(); }
     }
