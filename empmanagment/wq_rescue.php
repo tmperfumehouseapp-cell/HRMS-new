@@ -79,19 +79,19 @@ function wq_rescue_price_intent(string $t): bool
     return (bool)preg_match('/(price|prize|rate\b|rates\b|cost|kitne|kitna|kimat|kimmat|keemat|bhav|bhaav|how much|\bmrp\b|\boffer\b|\bdiscount\b|\bcod\b|₹|\brs\.?\s*\d|\d+\s*ml\b|catalog|catalogue|list bhej|price list|ketla|ketlu|કિંમત|ભાવ|કેટલા|कीमत|कितना|कितने|भाव|दाम)/u', $t);
 }
 /** Scan recent queries and flag the effort-missed ones. Time-boxed; returns ['flagged' => n, 'checked' => n]. */
-function wq_rescue_scan(PDO $pdo, float $deadline = 0.0): array
+function wq_rescue_scan(PDO $pdo, float $deadline = 0.0, int $beforeId = 0, bool $all = false): array
 {
-    $o = ['flagged' => 0, 'checked' => 0, 'candidates' => 0, 'silent' => 0, 'no_signal' => 0, 'all' => 0, 'quiet' => 0, 'ordered' => 0, 'error' => '']; if (!wq_rescue_tables($pdo)) { $o['error'] = 'storage'; return $o; } $cfg = wq_rescue_cfg($pdo); if (!$cfg['on']) return $o;
-    $now = time(); $since = date('Y-m-d H:i:s', $now - $cfg['days'] * 86400); $quiet = date('Y-m-d H:i:s', $now - (int)round($cfg['wait_h'] * 3600));
+    $o = ['flagged' => 0, 'checked' => 0, 'candidates' => 0, 'silent' => 0, 'no_signal' => 0, 'all' => 0, 'quiet' => 0, 'ordered' => 0, 'partial' => false, 'error' => '']; if (!wq_rescue_tables($pdo)) { $o['error'] = 'storage'; return $o; } $cfg = wq_rescue_cfg($pdo); if (!$cfg['on']) return $o;
+    $now = time(); $since = $all ? '2000-01-01 00:00:00' : date('Y-m-d H:i:s', $now - $cfg['days'] * 86400); $span = 2500; $idSql = $all ? ' AND q.id < ' . (int)$beforeId . ' AND q.id >= ' . max(0, (int)$beforeId - $span) : ''; $quiet = date('Y-m-d H:i:s', $now - (int)round($cfg['wait_h'] * 3600));
     $rows = [];
     try {
-        $c1 = $pdo->prepare("SELECT COUNT(*) FROM wa_queries WHERE opened_at >= ?"); $c1->execute([$since]); $o['all'] = (int)$c1->fetchColumn();
+        if (!$all) { $c1 = $pdo->prepare("SELECT COUNT(*) FROM wa_queries WHERE opened_at >= ?"); $c1->execute([$since]); $o['all'] = (int)$c1->fetchColumn(); }
         $q = $pdo->prepare("SELECT q.id, q.phone, q.opened_at, c.last_in_at, c.last_out_at, c.assigned_emp, c.tag, c.cx_id FROM wa_queries q JOIN wa_contacts c ON c.phone = q.phone
-            WHERE q.opened_at >= ? AND c.optout = 0 AND c.last_in_at IS NOT NULL AND c.last_in_at <= ? ORDER BY q.id DESC LIMIT 3000");
+            WHERE q.opened_at >= ? AND c.optout = 0 AND c.last_in_at IS NOT NULL AND c.last_in_at <= ?" . $idSql . " ORDER BY q.id DESC LIMIT 3000");
         try { $q->execute([$since, $quiet]); $rows = $q->fetchAll(); }
         catch (Throwable $e0) {   // an old install without the tag / cx_id columns
             $q = $pdo->prepare("SELECT q.id, q.phone, q.opened_at, c.last_in_at, c.last_out_at, c.assigned_emp FROM wa_queries q JOIN wa_contacts c ON c.phone = q.phone
-                WHERE q.opened_at >= ? AND c.optout = 0 AND c.last_in_at IS NOT NULL AND c.last_in_at <= ? ORDER BY q.id DESC LIMIT 3000"); $q->execute([$since, $quiet]); $rows = $q->fetchAll();
+                WHERE q.opened_at >= ? AND c.optout = 0 AND c.last_in_at IS NOT NULL AND c.last_in_at <= ?" . $idSql . " ORDER BY q.id DESC LIMIT 3000"); $q->execute([$since, $quiet]); $rows = $q->fetchAll();
         }
     } catch (Throwable $e) { $o['error'] = 'queries: ' . mb_substr($e->getMessage(), 0, 160); return $o; }
     $o['quiet'] = count($rows);
@@ -99,12 +99,14 @@ function wq_rescue_scan(PDO $pdo, float $deadline = 0.0): array
     $flagged = []; $seenM = []; $ordM = []; $doneM = [];
     try { foreach ($pdo->query("SELECT query_id FROM wq_rescue")->fetchAll(PDO::FETCH_COLUMN) as $x) $flagged[(int)$x] = 1; } catch (Throwable $e) { }
     try { foreach ($pdo->query("SELECT query_id, in_at, chk FROM wq_rescue_seen WHERE chk >= DATE_SUB(NOW(), INTERVAL 30 MINUTE)")->fetchAll() as $x) $seenM[(int)$x['query_id']] = (string)$x['in_at']; } catch (Throwable $e) { }
-    try { $st = $pdo->prepare("SELECT phone, MAX(created_at) m FROM wq_ord WHERE created_at >= ? GROUP BY phone"); $st->execute([date('Y-m-d H:i:s', $now - ($cfg['days'] + 2) * 86400)]); foreach ($st->fetchAll() as $x) $ordM[substr(preg_replace('/\D+/', '', (string)$x['phone']), -10)] = (string)$x['m']; } catch (Throwable $e) { }
-    try { $st = $pdo->prepare("SELECT phone, MAX(at) m FROM wa_order_done WHERE at >= ? GROUP BY phone"); $st->execute([date('Y-m-d H:i:s', $now - ($cfg['days'] + 2) * 86400)]); foreach ($st->fetchAll() as $x) $doneM[substr(preg_replace('/\D+/', '', (string)$x['phone']), -10)] = (string)$x['m']; } catch (Throwable $e) { }
+    try { $st = $pdo->prepare("SELECT phone, MAX(created_at) m FROM wq_ord WHERE created_at >= ? GROUP BY phone"); $st->execute([$all ? '2000-01-01 00:00:00' : date('Y-m-d H:i:s', $now - ($cfg['days'] + 2) * 86400)]); foreach ($st->fetchAll() as $x) $ordM[substr(preg_replace('/\D+/', '', (string)$x['phone']), -10)] = (string)$x['m']; } catch (Throwable $e) { }
+    try { $st = $pdo->prepare("SELECT phone, MAX(at) m FROM wa_order_done WHERE at >= ? GROUP BY phone"); $st->execute([$all ? '2000-01-01 00:00:00' : date('Y-m-d H:i:s', $now - ($cfg['days'] + 2) * 86400)]); foreach ($st->fetchAll() as $x) $doneM[substr(preg_replace('/\D+/', '', (string)$x['phone']), -10)] = (string)$x['m']; } catch (Throwable $e) { }
+    $hasOpen = []; try { foreach ($pdo->query("SELECT DISTINCT phone FROM wq_rescue WHERE status IN ('open','taken','given')")->fetchAll(PDO::FETCH_COLUMN) as $x) $hasOpen[(string)$x] = 1; } catch (Throwable $e) { }
     $keep = [];
     foreach ($rows as $r) {
         $qid = (int)$r['id']; $k10 = substr(preg_replace('/\D+/', '', (string)$r['phone']), -10); $op = (string)$r['opened_at'];
         if (isset($flagged[$qid])) continue;
+        if (isset($hasOpen[(string)$r['phone']])) continue;   // this customer is already on the list (an older query of theirs)
         if (isset($r['tag']) && (string)$r['tag'] === 'complaint') continue; if (!empty($r['cx_id'])) continue;
         if (isset($seenM[$qid]) && $seenM[$qid] === (string)$r['last_in_at']) continue;
         if (isset($ordM[$k10]) && $ordM[$k10] >= date('Y-m-d H:i:s', strtotime($op) - 3600)) { $o['ordered']++; continue; }
@@ -118,7 +120,7 @@ function wq_rescue_scan(PDO $pdo, float $deadline = 0.0): array
     $seen = $pdo->prepare("INSERT INTO wq_rescue_seen (query_id, in_at, chk) VALUES (?, ?, NOW()) ON DUPLICATE KEY UPDATE in_at = VALUES(in_at), chk = NOW()");
     $nameOfWhy = ['hot' => 'wanted to pay / order', 'price' => 'asked the price, no order yet', 'ignored' => 'wrote 2+ times, no person answered'];
     foreach ($rows as $r) {
-        if ($deadline > 0 && microtime(true) > $deadline) break; $o['checked']++;
+        if ($deadline > 0 && microtime(true) > $deadline) { $o['partial'] = true; break; } $o['checked']++;
         $msgs->execute([(string)$r['phone'], (string)$r['opened_at']]); $list = $msgs->fetchAll(); try { $seen->execute([(int)$r['id'], (string)$r['last_in_at']]); } catch (Throwable $e) { } if (!$list) continue;
         $inN = 0; $hot = false; $price = false; $person = false; $lastInTs = 0; $lastText = ''; $attempts = 0;
         foreach ($list as $m) {
@@ -137,12 +139,12 @@ function wq_rescue_scan(PDO $pdo, float $deadline = 0.0): array
         if (!$why) { $o['no_signal']++; continue; }
         $txt = implode('; ', array_map(fn($w) => $nameOfWhy[$w], $why));
         $ins->execute([(string)$r['phone'], (int)$r['id'], date('Y-m-d H:i:s'), implode(',', $why), $txt, (string)$r['last_in_at'], mb_substr(trim($lastText), 0, 200), (int)$r['assigned_emp']]);
-        if ($ins->rowCount() > 0) { $o['flagged']++; if (function_exists('wq_tag_put')) wq_tag_put($pdo, (string)$r['phone'], 'effort_missed'); }
+        if ($ins->rowCount() > 0) { $o['flagged']++; $hasOpen[(string)$r['phone']] = 1; if (function_exists('wq_tag_put')) wq_tag_put($pdo, (string)$r['phone'], 'effort_missed'); }
     }
     return $o;
 }
 /** Close the loop: a rescue query somebody took (the chat was given / taken after it was flagged) → taken; an order after that → won (a count, nothing about pay);
- *  an order without anybody taking it → "ordered anyway"; N follow-up attempts with no answer → silent; too old → expired. */
+ *  an order without anybody taking it → "ordered anyway"; N follow-up attempts with no answer → silent; the list never expires by age. */
 function wq_rescue_settle(PDO $pdo): array
 {
     $o = ['taken' => 0, 'won' => 0, 'ordered' => 0, 'expired' => 0, 'silent' => 0]; if (!wq_rescue_tables($pdo)) return $o; $cfg = wq_rescue_cfg($pdo);
@@ -171,26 +173,47 @@ function wq_rescue_settle(PDO $pdo): array
             }
             if ($r['status'] === 'won') continue;
             if ($r['last_in_at']) { $att->execute([(string)$r['phone'], (string)$r['last_in_at']]); if ((int)$att->fetchColumn() >= $cfg['attempts']) { $upS->execute([$now, (int)$r['id']]); $o['silent'] += $upS->rowCount(); continue; } }
-            if (in_array($r['status'], ['open', 'given'], true) && strtotime((string)$r['flagged_at']) < time() - ($cfg['days'] + 2) * 86400) { $upE->execute([$now, (int)$r['id']]); $o['expired'] += $upE->rowCount(); }
+            // (no expiry: a customer stays on the list until an order, N unanswered attempts, or the owner hides it)
         }
     } catch (Throwable $e) { error_log('wq_rescue_settle: ' . $e->getMessage()); $o['error'] = mb_substr($e->getMessage(), 0, 160); }
     return $o;
 }
-/** Look at every recent query now (throttled): used when WhatsApp / the Rescue screen opens. */
+/** Preload ALL earlier chats: walks every query ever made (newest first, in id windows), resumable, a few windows per call. State in wq_meta rescue_bf. */
+function wq_rescue_backfill(PDO $pdo, float $deadline): array
+{
+    $st = json_decode(wq_meta_get($pdo, 'rescue_bf', 'null'), true);
+    if (!is_array($st)) { $mx = (int)$pdo->query("SELECT COALESCE(MAX(id),0) FROM wa_queries")->fetchColumn(); $st = ['cursor' => $mx + 1, 'total' => $mx, 'done' => false, 'flagged' => 0, 'checked' => 0, 'at' => date('Y-m-d H:i:s')]; }
+    if (!empty($st['done'])) return $st;
+    $guard = 0;
+    while (!$st['done'] && microtime(true) < $deadline && $guard++ < 40) {
+        $r = wq_rescue_scan($pdo, $deadline, (int)$st['cursor'], true);
+        if ($r['error'] !== '') { $st['error'] = $r['error']; break; }
+        $st['flagged'] += $r['flagged']; $st['checked'] += $r['checked']; unset($st['error']);
+        if (!empty($r['partial'])) break;                       // out of time inside a window: it is done again next call
+        $st['cursor'] = max(0, (int)$st['cursor'] - 2500); if ($st['cursor'] <= 1) $st['done'] = true;
+    }
+    $st['pct'] = $st['total'] > 0 ? (int)round(100 * ($st['total'] - min($st['total'], (int)$st['cursor'])) / $st['total']) : 100; if (!empty($st['done'])) $st['pct'] = 100;
+    wq_meta_put($pdo, 'rescue_bf', json_encode($st)); return $st;
+}
+/** Look at every recent query now (throttled): WhatsApp calls it when it opens and every 5 minutes; earlier chats are preloaded in the same calls. */
 function wq_rescue_refresh(PDO $pdo, int $minGap = 60): array
 {
     if (!function_exists('wq_meta_get') || !wq_rescue_tables($pdo) || !wq_rescue_cfg($pdo)['on']) return [];
     if (strtotime(wq_meta_get($pdo, 'rescue_scan_at', '2000-01-01')) > time() - $minGap) return ['skipped' => 'recent'];
-    wq_meta_put($pdo, 'rescue_scan_at', date('Y-m-d H:i:s'));
-    $r = ['scan' => wq_rescue_scan($pdo, microtime(true) + 6), 'settle' => wq_rescue_settle($pdo)]; wq_meta_put($pdo, 'rescue_last', json_encode(['at' => date('Y-m-d H:i:s')] + $r)); return $r;
+    $lk = 0; try { $lk = (int)$pdo->query("SELECT GET_LOCK('wq_rescue_scan', 0)")->fetchColumn(); } catch (Throwable $e) { $lk = 1; }
+    if ($lk !== 1) return ['skipped' => 'busy'];
+    try {
+        wq_meta_put($pdo, 'rescue_scan_at', date('Y-m-d H:i:s')); $t0 = microtime(true);
+        $r = ['scan' => wq_rescue_scan($pdo, $t0 + 3), 'settle' => wq_rescue_settle($pdo)];
+        $r['backfill'] = wq_rescue_backfill($pdo, $t0 + 8);
+        wq_meta_put($pdo, 'rescue_last', json_encode(['at' => date('Y-m-d H:i:s')] + $r)); return $r;
+    } finally { try { $pdo->query("SELECT RELEASE_LOCK('wq_rescue_scan')"); } catch (Throwable $e) { } }
 }
 /** Called from wq_tick() (full run): scan at most every 10 minutes, settle every time. */
 function wq_rescue_tick(PDO $pdo, float $deadline): array
 {
-    $r = [];
-    if (!wq_rescue_tables($pdo)) return $r; if (!wq_rescue_cfg($pdo)['on']) return ['off' => true];
-    if (function_exists('wq_meta_get') && strtotime(wq_meta_get($pdo, 'rescue_scan_at', '2000-01-01')) < time() - 600) { $r['scan'] = wq_rescue_scan($pdo, $deadline); wq_meta_put($pdo, 'rescue_scan_at', date('Y-m-d H:i:s')); }
-    $r['settle'] = wq_rescue_settle($pdo); return $r;
+    if (!wq_rescue_tables($pdo)) return []; if (!wq_rescue_cfg($pdo)['on']) return ['off' => true];
+    return wq_rescue_refresh($pdo, 270);   // every 5 minutes (by the cron / WhatsApp tick, even when nobody has the screen open)
 }
 
 // ------------------------------------------------------------------------------------------------------------------ reads
@@ -217,21 +240,21 @@ function wq_rescue_list(PDO $pdo, int $me, bool $adm, int $days, string $status)
     if (!$adm) {   // a team member sees the open chances + the ones they took; nothing else
         $where .= " AND (r.status = 'open' OR r.taken_by = ?) AND r.status NOT IN ('ordered','expired','silent')"; $par[] = $me;
     } elseif ($status !== '' && $status !== 'all') { $where .= " AND r.status = ?"; $par[] = $status; }
-    $q = $pdo->prepare("SELECT r.* FROM wq_rescue r WHERE $where ORDER BY FIELD(r.status,'open','given','taken','won','ordered','expired','silent'), r.last_in_at DESC LIMIT 400");
+    $q = $pdo->prepare("SELECT r.* FROM wq_rescue r WHERE $where ORDER BY FIELD(r.status,'open','given','taken','won','ordered','expired','silent'), r.last_in_at DESC LIMIT 1000");
     $q->execute($par); $rowsL = $q->fetchAll(); $cn = wq_rescue_cnames($pdo, array_column($rowsL, 'phone')); foreach ($rowsL as &$rl) $rl['cname'] = $cn[(string)$rl['phone']] ?? ''; unset($rl);
     $items = array_map(fn($r) => wq_rescue_item($r, $names), $rowsL);
     $st = $pdo->prepare("SELECT status, COUNT(*) n, COALESCE(SUM(order_total),0) rev FROM wq_rescue WHERE flagged_at >= ? AND status <> 'skipped' GROUP BY status"); $st->execute([$since]);
     $sum = ['open' => 0, 'taken' => 0, 'won' => 0, 'ordered' => 0, 'expired' => 0, 'silent' => 0, 'revenue' => 0.0];
     foreach ($st->fetchAll() as $s) { $k = (string)$s['status']; if ($k === 'given') $k = 'taken'; if (isset($sum[$k])) $sum[$k] += (int)$s['n']; if ($k === 'won') $sum['revenue'] = round((float)$s['rev'], 2); }
-    return ['ok' => true, 'cfg' => $cfg, 'days' => $days, 'admin' => $adm, 'member' => wq_rescue_is_member($pdo, $me), 'last_scan' => function_exists('wq_meta_get') ? json_decode(wq_meta_get($pdo, 'rescue_last', 'null'), true) : null, 'summary' => $sum, 'items' => $items];
+    return ['ok' => true, 'cfg' => $cfg, 'days' => $days, 'admin' => $adm, 'member' => wq_rescue_is_member($pdo, $me), 'last_scan' => function_exists('wq_meta_get') ? json_decode(wq_meta_get($pdo, 'rescue_last', 'null'), true) : null, 'backfill' => function_exists('wq_meta_get') ? json_decode(wq_meta_get($pdo, 'rescue_bf', 'null'), true) : null, 'summary' => $sum, 'items' => $items];
 }
 /** The phones of the 🛟 Rescue chip: admin = every open / taken rescue chat; team member = the open pool + the ones they took. Empty for anybody else. */
 function wq_rescue_chat_phones(PDO $pdo, int $me, bool $adm): array
 {
     if (!wq_rescue_tables($pdo) || !wq_rescue_cfg($pdo)['on'] || (!$adm && !wq_rescue_is_member($pdo, $me))) return [];
     try {
-        $q = $adm ? $pdo->query("SELECT phone FROM wq_rescue WHERE status IN ('open','taken','given') ORDER BY last_in_at DESC LIMIT 400")
-                  : $pdo->prepare("SELECT phone FROM wq_rescue WHERE status = 'open' OR (status IN ('taken','given') AND taken_by = ?) ORDER BY last_in_at DESC LIMIT 400");
+        $q = $adm ? $pdo->query("SELECT phone FROM wq_rescue WHERE status IN ('open','taken','given') ORDER BY last_in_at DESC LIMIT 1500")
+                  : $pdo->prepare("SELECT phone FROM wq_rescue WHERE status = 'open' OR (status IN ('taken','given') AND taken_by = ?) ORDER BY last_in_at DESC LIMIT 1500");
         if (!$adm) $q->execute([$me]); return array_values(array_unique(array_map('strval', $q->fetchAll(PDO::FETCH_COLUMN))));
     } catch (Throwable $e) { return []; }
 }

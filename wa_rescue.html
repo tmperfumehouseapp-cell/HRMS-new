@@ -57,15 +57,25 @@ guardPage();
     try { if (window.parent !== window && typeof window.parent.waOpenChat === 'function') { window.parent.waOpenChat(phone); return; } } catch (e) { /* cross-frame */ }
     location.href = 'my_chats.html?phone=' + phone;
   }
-  async function load() {
+  async function load(quiet) {
     try {
       S.d = await api.get('wq.rescue_list', { days: S.days, status: S.status });
       if (S.tab === 'team') S.team = await api.get('wq.rescue_team');
     } catch (e) { root.innerHTML = '<div class="rq-err">' + esc(e.message || 'Could not load.') + ' <button class="btn" id="rqRetry">Try again</button></div>'; document.getElementById('rqRetry').onclick = load; return; }
-    draw();
-    // the check of recent queries runs in the background (the list is already on screen); when it ran, the list is refreshed once
-    if (!S.scanned) { S.scanned = true; api.post('wq.rescue_scan', {}).then((r) => { if (r && r.scan) load(); }, () => { }); }
+    if (!quiet || !S.busy) draw();
+    // the check runs in the background (the list is already on screen); earlier chats are preloaded in steps until every chat is checked
+    if (!S.scanned) { S.scanned = true; kick(false); }
   }
+  let kicking = false;
+  function kick(force) {
+    if (kicking) return; kicking = true;
+    api.post('wq.rescue_scan', force ? { force: true } : {}).then((r) => {
+      kicking = false; if (!r) return; if (r.scan || r.backfill) load(true);
+      const bf = (r.backfill || (S.d && S.d.backfill)); if (bf && !bf.done && !bf.error) setTimeout(() => { if (document.visibilityState === 'visible') kick(true); else setTimeout(() => kick(true), 5000); }, 1500);
+    }, () => { kicking = false; });
+  }
+  // refresh every 5 minutes while the screen is open: check again and reload the list
+  setInterval(() => { if (document.visibilityState === 'visible') kick(true); }, 300000);
   function chips(it) {
     return (it.why || []).map((w) => { const x = WHY[w] || [w, '']; return '<span class="rq-chip ' + x[1] + '">' + esc(x[0]) + '</span>'; }).join('') + '<span class="rq-chip st">' + esc(ST[it.status] || it.status) + '</span>';
   }
@@ -83,8 +93,10 @@ guardPage();
     const d = S.d, s = d.summary || {}, cfg = d.cfg || {};
     let h = '<div class="rq-cards"><div class="rq-card"><b>' + (s.open || 0) + '</b><span>Waiting to be taken</span></div><div class="rq-card"><b>' + (s.taken || 0) + '</b><span>Being worked</span></div>' +
       '<div class="rq-card"><b>' + (s.won || 0) + '</b><span>Orders placed</span></div><div class="rq-card"><b>' + (s.silent || 0) + '</b><span>Gone silent</span></div></div>';
+    const bf = d.backfill;
+    if (bf) h += '<div class="rq-sub" style="margin-bottom:6px">' + (bf.done ? '✅ Every earlier chat has been checked (' + (bf.checked || 0) + ' queries).' : '⏳ Loading all earlier chats… <b>' + (bf.pct || 0) + '%</b> — ' + (bf.flagged || 0) + ' opportunities found so far. You can keep working; the list fills up by itself.') + (bf.error ? ' <span style="color:#d9423b">Problem: ' + esc(bf.error) + '</span>' : '') + '</div>';
     const ls = d.last_scan, sc = ls && ls.scan;
-    h += '<div class="rq-sub" style="margin-bottom:10px">' + (sc ? 'Last check ' + esc(ago(ls.at)) + ' (last ' + esc(cfg.days) + ' days): <b>' + (sc.all || 0) + '</b> queries · <b>' + (sc.quiet || 0) + '</b> quiet for ' + esc(cfg.wait_h) + '+ h · <b>' + (sc.ordered || 0) + '</b> already ordered · looked at <b>' + (sc.candidates || 0) + '</b> · <b>' + (sc.flagged || 0) + '</b> new opportunities · ' + (sc.no_signal || 0) + ' showed no interest · ' + (sc.silent || 0) + ' gone silent.' + (sc.error ? ' <span style="color:#d9423b">Problem: ' + esc(sc.error) + '</span>' : '') : 'No check has run yet — it runs by itself when WhatsApp opens.') + '</div>';
+    h += '<div class="rq-sub" style="margin-bottom:10px">' + (sc ? 'Last check ' + esc(ago(ls.at)) + ' (last ' + esc(cfg.days) + ' days): <b>' + (sc.all || 0) + '</b> queries · <b>' + (sc.quiet || 0) + '</b> quiet for ' + esc(cfg.wait_h) + '+ h · <b>' + (sc.ordered || 0) + '</b> already ordered · looked at <b>' + (sc.candidates || 0) + '</b> · <b>' + (sc.flagged || 0) + '</b> new opportunities · ' + (sc.no_signal || 0) + ' showed no interest · ' + (sc.silent || 0) + ' gone silent.' + (sc.error ? ' <span style="color:#d9423b">Problem: ' + esc(sc.error) + '</span>' : '') : 'No check has run yet — it runs by itself when WhatsApp opens and every 5 minutes.') + '</div>';
     h += '<div class="rq-tabs"><button data-tab="list" class="' + (S.tab === 'list' ? 'on' : '') + '">Queries</button><button data-tab="team" class="' + (S.tab === 'team' ? 'on' : '') + '">Rescue team</button><button data-tab="cfg" class="' + (S.tab === 'cfg' ? 'on' : '') + '">Settings</button></div>';
     if (S.tab === 'list') {
       h += '<div class="rq-row"><select id="rqSt">' + ['all', 'open', 'taken', 'won', 'ordered', 'expired', 'silent'].map((x) => '<option value="' + x + '"' + (S.status === x ? ' selected' : '') + '>' + (x === 'all' ? 'All' : (ST[x] || x)) + '</option>').join('') + '</select>' +

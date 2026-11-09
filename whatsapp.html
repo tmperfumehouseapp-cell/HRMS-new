@@ -751,6 +751,7 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
   started = true;
   // 🛟 every time WhatsApp opens: look at all recent queries and tag the ones nobody followed up (server throttles it to once a minute)
   try { api.post('wq.rescue_scan', {}).catch(() => { }); } catch (e) { /* optional */ }
+  setInterval(() => { try { if (document.visibilityState === 'visible') api.post('wq.rescue_scan', {}).catch(() => { }); } catch (e) { /* optional */ } }, 300000);   // and again every 5 minutes while WhatsApp is open
   window.addEventListener('hashchange', () => { const k = (location.hash || '').replace('#', ''); if (k && k !== cur && ITEMS.some((m) => m.k === k)) go(k, true); });
 </script>
 <script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
