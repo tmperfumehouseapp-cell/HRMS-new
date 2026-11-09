@@ -555,8 +555,10 @@ function wa_camp_tick(PDO $pdo): array
     // a campaign is FINISHED as soon as everyone has had their first try (owner, 7 Nov: not "Sending" for 3 days while Meta-held people wait for their one extra try).
     // The waiting retries stay in the queue: the moment one is due, the campaign is reopened for it and finishes again.
     try { $pdo->exec("UPDATE wa_campaigns SET status = 'running', finished_at = NULL WHERE status = 'done' AND id IN (SELECT camp_id FROM wa_camp_items WHERE status = 'retry' AND next_try <= '$now')"); } catch (Throwable $e) { }
-    foreach ($pdo->query("SELECT id FROM wa_campaigns WHERE status = 'running' ORDER BY id")->fetchAll() as $row) {
-        $c = wa_camp_row($pdo, (int)$row['id']); if (!$c) continue; $id = (int)$c['id'];
+    $runRows = $pdo->query("SELECT id FROM wa_campaigns WHERE status = 'running' ORDER BY COALESCE(last_tick, '1970-01-01 00:00:00'), id")->fetchAll();   // the campaign that waited longest goes first: an older big campaign can never starve a new one
+    $slice = max(8.0, 42.0 / max(1, count($runRows)));   // every running campaign gets its own share of this round's time (before: the first one could use all of it)
+    foreach ($runRows as $row) {
+        $c = wa_camp_row($pdo, (int)$row['id']); if (!$c) continue; $id = (int)$c['id']; $cDead = microtime(true) + $slice;
         $rem = (int)$pdo->query("SELECT COUNT(*) FROM wa_camp_items WHERE camp_id = $id AND (status = 'queued' OR (status = 'retry' AND next_try <= '$now'))")->fetchColumn();
         if ($rem === 0) { if ((int)$pdo->query("SELECT COUNT(*) FROM wa_camp_items WHERE camp_id = $id AND status = 'sending'")->fetchColumn() === 0) $pdo->prepare("UPDATE wa_campaigns SET status = 'done', finished_at = ?, note = '' WHERE id = ?")->execute([$now, $id]); continue; }
         $t = wa_camp_tpl($pdo, (int)$c['tpl_id'], true, (int)$c['media_lib_id']);
@@ -604,7 +606,7 @@ function wa_camp_tick(PDO $pdo): array
         if ($wts) { $ctx['w'] = []; foreach ($wts as $nid0 => $w0) if (isset($ctx['nums'][(int)$nid0])) $ctx['w'][(int)$nid0] = $w0; $ctx['wsent'] = [];
             foreach ($pdo->query("SELECT number_id, COUNT(*) AS n FROM wa_camp_items WHERE camp_id = $id AND status = 'sent' GROUP BY number_id")->fetchAll() as $nr) $ctx['wsent'][(int)$nr['number_id']] = (int)$nr['n']; }
         $resolveM = function (array $tm, array $ct, array $it, int $iid) use ($pdo, $specs, &$usedPieces) { return wa_camp_resolve_vars($pdo, (int)$tm['nvars'], $specs, $ct, (string)($it['name'] ?: $ct['name']), $iid, $usedPieces); };
-        while ($sent + $failed + $skipped < $quota && microtime(true) - $t0 < 42 && !$stop) {
+        while ($sent + $failed + $skipped < $quota && microtime(true) < $cDead && !$stop) {
             $take = min(40, $quota - ($sent + $failed + $skipped));
             $pick = $pdo->query("SELECT id, status FROM wa_camp_items WHERE camp_id = $id AND $due ORDER BY id LIMIT $take")->fetchAll(); if (!$pick) break;
             if ($mixOn) {   // per batch (not per person): who can carry the utility version right now - a number whose utility version was just approved joins at once, a re-labelled one drops out at once
