@@ -31,6 +31,8 @@
   .wb-tip{position:absolute; pointer-events:none; background:#1b2430; color:#fff; font-size:12px; border-radius:8px; padding:6px 9px; white-space:nowrap; transform:translate(-50%,-110%); display:none; z-index:2; line-height:1.45;}
   .wb-tw{overflow-x:auto;} .wb-tw .wp-tb td,.wb-tw .wp-tb th{white-space:nowrap;} .wb-tw .wp-tb td.n,.wb-tw .wp-tb th.n{text-align:right;} .wb-tw tr.t td{font-weight:800; border-top:2px solid #d8dfdb;} .wb-tw tr.z td{color:#9aa6a0;}
   .wb-tw tr.hb td:first-child{box-shadow:inset 3px 0 #16a34a;} .wb-tw tr.hw td:first-child{box-shadow:inset 3px 0 #dc2626;}
+  .wb-hero{display:flex; gap:18px; flex-wrap:wrap; align-items:center; background:linear-gradient(135deg,#0f5a3a,#16945a); color:#fff; border-radius:16px; padding:16px 20px; margin-bottom:12px;} .wb-hero .l small{display:block; font-size:11.5px; font-weight:800; letter-spacing:.06em; opacity:.85;} .wb-hero .l b{display:block; font-size:34px; font-weight:900; line-height:1.1; margin:2px 0;} .wb-hero .l span{font-size:12.5px; opacity:.9;}
+  .wb-hero .r{display:flex; gap:22px; flex-wrap:wrap; margin-left:auto;} .wb-hero .r b{display:block; font-size:19px; font-weight:800;} .wb-hero .r small{font-size:11px; opacity:.85;}
   .wb-mut{font-size:12px; color:#6b7a73; line-height:1.5;}`;
   if (!document.getElementById('wbCss')) { const s = document.createElement('style'); s.id = 'wbCss'; s.textContent = css; document.head.appendChild(s); }
 
@@ -48,7 +50,7 @@
     const S = { pre: 'month', from: '', to: '', by: 'day', src: 'all', d: null }; [S.from, S.to] = range('month');
     try { const o = JSON.parse(localStorage.getItem('wb_state') || 'null'); if (o && o.pre) { Object.assign(S, o); if (S.pre !== 'custom') [S.from, S.to] = range(S.pre); } } catch (e) { }
     const save = () => { try { localStorage.setItem('wb_state', JSON.stringify({ pre: S.pre, from: S.from, to: S.to, by: S.by, src: S.src })); } catch (e) { } };
-    el.innerHTML = `<div class="wb-bar" id="wbPre">${PRE.map(([k, t]) => `<button type="button" class="wp-chip" data-p="${k}">${t}</button>`).join('')}</div>
+    el.innerHTML = `<div id="wbToday"></div><div class="wb-bar" id="wbPre">${PRE.map(([k, t]) => `<button type="button" class="wp-chip" data-p="${k}">${t}</button>`).join('')}</div>
       <div class="wb-bar"><input type="date" class="wp-in" id="wbF"><span>to</span><input type="date" class="wp-in" id="wbT">
         <div class="wp-seg" style="margin:0" id="wbBy"><button type="button" data-b="day">Day by day</button><button type="button" data-b="month">Month by month</button></div>
         <select class="wp-in" id="wbS">${SRC.map(([k, t]) => `<option value="${k}">${t}</option>`).join('')}</select><span class="wp-grow"></span><button type="button" class="wp-btn" id="wbCsv">⬇ CSV</button></div><div id="wbOut"><div class="wp-empty">Loading…</div></div>`;
@@ -65,11 +67,18 @@
       const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv' })); a.download = `whatsapp-billing-${d.from}-to-${d.to}-${d.by}.csv`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
     };
     function metaFor(d) { if (!d.meta || d.meta.error || !d.meta.days) return null; const o = {}; Object.entries(d.meta.days).forEach(([k, v]) => { const kk = d.by === 'month' ? k.slice(0, 7) : k; o[kk] = Math.round(((o[kk] || 0) + v) * 100) / 100; }); return o; }
+    // 💰 the clear box: how much TODAY's campaigns cost (always today, whatever range is picked below)
+    async function loadToday() {
+      const box = $('#wbToday'); if (!box) return; const [tf] = range('today'); let d; try { d = await api.get('wa.bill', { from: tf, to: tf, by: 'day', src: 'all', meta: 0 }); } catch (e) { box.innerHTML = ''; return; }
+      if (!el.isConnected) return; const camp = (d.sources || []).find((x) => /campaign/i.test(String(x.label || x.key || ''))) || null, cs = (d.total.cost_src && d.total.cost_src.campaign) || (camp ? camp.cost : 0) || 0, tot = d.total.cost || 0;
+      box.innerHTML = `<div class="wb-hero"><div class="l"><small>💰 TODAY’S CAMPAIGN SPEND · ${esc(label(tf, true))}</small><b>${rs(cs)}</b><span>${tot ? Math.round(100 * cs / tot) + '% of today’s total WhatsApp spend (' + rs(tot) + ')' : 'no paid messages yet today'}</span></div>
+        <div class="r"><div><b>${fmt(camp ? camp.delivered : 0)}</b><small>campaign messages delivered</small></div><div><b>${fmt(camp ? camp.replied : 0)}</b><small>replies</small></div><div><b>${fmt(camp ? camp.orders : 0)}</b><small>orders</small></div><div><b>${rs(camp ? camp.revenue : 0)}</b><small>revenue from them</small></div></div></div>`;
+    }
     let seq = 0;
     async function load() {
       sync(); save(); const my = ++seq; out.innerHTML = '<div class="wp-empty">Adding up the bill…</div>';
       let d; try { d = await api.get('wa.bill', { from: S.from, to: S.to, by: S.by, src: S.src, meta: 1 }); } catch (e) { if (my === seq) out.innerHTML = `<div class="wp-err">${esc(e.message)}</div>`; return; }
-      if (my !== seq || !el.isConnected) return; S.d = d; draw(d);
+      if (my !== seq || !el.isConnected) return; S.d = d; draw(d); loadToday();
     }
     function draw(d) {
       const t = d.total, m = metaFor(d), rows = d.rows, oneDay = d.from === d.to;
