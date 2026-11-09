@@ -899,7 +899,7 @@
     async function loadChat() {
       const phone = S.cur.phone;
       try {
-        const d = await api.get('wa.chat', { phone, limit: 80 }); if (!S.cur || S.cur.phone !== phone) return; S.cur.contact = d.contact; try { const lf = $('#wxLife'), L = d.contact && d.contact.life; if (lf) lf.innerHTML = L ? `<div style="padding:6px 12px;font-size:12.5px;font-weight:800;background:#eef2ff;color:#3730a3">${esc(L.label)}</div>` : ''; } catch (e) { } S.cur.msgs = d.messages; S.cur.moreOld = !!d.more; S.cur.last = Math.max(0, ...d.messages.map((m) => m.id)); S.cur.row = Object.assign({}, S.cur.row, { name: d.contact.name });
+        const d = await api.get('wa.chat', { phone, limit: 40 }); if (!S.cur || S.cur.phone !== phone) return; S.cur.contact = d.contact; try { const lf = $('#wxLife'), L = d.contact && d.contact.life; if (lf) lf.innerHTML = L ? `<div style="padding:6px 12px;font-size:12.5px;font-weight:800;background:#eef2ff;color:#3730a3">${esc(L.label)}</div>` : ''; } catch (e) { } S.cur.msgs = d.messages; S.cur.moreOld = !!d.more; S.cur.last = Math.max(0, ...d.messages.map((m) => m.id)); S.cur.row = Object.assign({}, S.cur.row, { name: d.contact.name });
         const c = d.contact; $('#wxCn').innerHTML = esc(c.name || pretty(c.phone)) + ' ' + badgeOf(S.cur.row); $('#wxMs').innerHTML = msgsHtml(); scrollEnd(true); { const mb = $('#wxMs'); mb.onscroll = () => { if (mb.scrollTop < 60) loadOlder(); }; mb.onclick = (e) => { if (e.target.closest('#wxOld')) loadOlder(); }; } drawFoot(); loadSugg(false); loadInfo();
         autoMedia(S.cur.msgs);
       } catch (e) { toast(e.message, true); closeChat(); }
