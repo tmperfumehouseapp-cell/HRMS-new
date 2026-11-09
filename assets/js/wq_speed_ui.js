@@ -25,5 +25,20 @@
     }
     load(); return () => { };
   }
+  function mountHandoffs(el) {
+    el.innerHTML = '<div style="display:grid;gap:10px;font-size:14px"><div style="background:#fff;border:1px solid #e6e8ef;border-radius:14px;padding:12px">' + loading + '</div></div>';
+    const card = 'background:#fff;border:1px solid #e6e8ef;border-radius:14px;padding:12px 14px', mm = (s) => s == null ? '—' : (s < 90 ? s + ' s' : Math.round(s / 60) + ' min');
+    async function load() {
+      let d; try { d = await api.get('wq.needs_board'); } catch (e) { el.innerHTML = errBox(e.message); return; }
+      const sc = (k, t) => { const x = d.sum[k]; return '<div style="flex:1;min-width:150px;border:1px solid #eef0f5;border-radius:12px;padding:10px"><b>' + t + '</b><div style="color:#64748b;font-size:12.5px;margin-top:4px">' + x.n + ' came up · ' + x.taken + ' taken · ' + x.answered + ' answered by a person · <b>' + x.ordered + ' ordered</b>' + (k === 'orange' ? ' · ' + x.dismissed + ' marked not a lead' : '') + '</div><div style="font-size:12.5px;margin-top:4px">Average to take: <b>' + mm(x.take_s) + '</b> · to answer: <b>' + mm(x.reply_s) + '</b></div></div>'; };
+      el.innerHTML = '<div style="display:grid;gap:10px;font-size:14px">'
+        + '<div style="' + card + '"><b style="font-size:15px">🔴🟠 Waiting for a person right now</b>' + (d.live.length ? d.live.map((x) => '<div style="display:flex;gap:8px;padding:6px 0;border-top:1px solid #f0f2f7"><span>' + (x.level === 'red' ? '🔴' : '🟠') + '</span><div style="flex:1;min-width:0"><b>' + esc(x.name || x.phone) + '</b> <span style="color:#64748b">' + esc(x.txt || '') + '</span></div><b style="color:' + (x.sec >= 300 ? '#b91c1c' : '#334155') + '">' + mm(x.sec) + '</b></div>').join('') : '<div style="color:#64748b;margin-top:6px">Nobody is waiting. 🎉</div>') + '</div>'
+        + '<div style="' + card + '"><b style="font-size:15px">Last 7 days</b><div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px">' + sc('red', '🔴 Ready to pay') + sc('orange', '🟠 Interested') + '</div></div>'
+        + '<div style="' + card + '"><b style="font-size:15px">Latest chats</b><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:6px"><tr style="text-align:left;color:#64748b"><th></th><th>Customer</th><th>Taken by</th><th>To take</th><th>To answer</th><th>Order</th></tr>'
+        + d.rows.map((r) => '<tr style="border-top:1px solid #f0f2f7"><td>' + (r.level === 'red' ? '🔴' : '🟠') + '</td><td>' + esc(r.name || r.phone) + (r.dismissed ? ' <span style="color:#92400e">(not a lead)</span>' : '') + '</td><td>' + esc(r.taken_by || '—') + '</td><td>' + mm(r.take_s) + '</td><td style="font-weight:700;color:' + (r.reply_s == null ? '#b91c1c' : '#166534') + '">' + (r.reply_s == null ? 'nobody' : mm(r.reply_s)) + '</td><td>' + (r.ordered ? '✅' : '') + '</td></tr>').join('') + '</table></div></div></div>';
+    }
+    load(); const iv = setInterval(() => { if (el.isConnected) load(); else clearInterval(iv); }, 30000); return () => clearInterval(iv);
+  }
   WaPanels.add('speed', (el) => mount(el));
+  WaPanels.add('handoffs', (el) => mountHandoffs(el));
 })();
