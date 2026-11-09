@@ -58,10 +58,10 @@
   }
 
   function mount(el, solo) {
-    css(); let D = null, CHG = null, tab = solo === 'msgs' ? 'msgs' : 'lanes', R = null, Q = null, rdays = 30, TR = { lead: [], buyer: [] }, dirty = { lead: false, buyer: false }, busy = false;
+    css(); let D = null, CHG = null, tab = solo || 'lanes', R = null, Q = null, rdays = 30, TR = { lead: [], buyer: [] }, dirty = { lead: false, buyer: false }, busy = false;
     el.innerHTML = '<div class="wj"><div class="wj-card">Loading…</div></div>';
     const take = (d) => { D = d; if (!CHG || !d.change || d.change.at !== CHG.at) CHG = d.change && (d.change.rows || []).length ? JSON.parse(JSON.stringify(d.change)) : null; if (!dirty.lead) TR.lead = JSON.parse(JSON.stringify(d.steps.lead)); if (!dirty.buyer) TR.buyer = JSON.parse(JSON.stringify(d.steps.buyer)); };
-    async function load() { try { take(await api.get('fu.wj_get')); } catch (e) { el.innerHTML = '<div class="wj"><div class="wj-err">' + esc(e.message) + '</div></div>'; return; } draw(); }
+    async function load() { try { take(await api.get('fu.wj_get')); } catch (e) { el.innerHTML = '<div class="wj"><div class="wj-err">' + esc(e.message) + '</div></div>'; return; } draw(); if (solo === 'results') loadResults(); }
     const act = async (action, body, after) => { if (busy) return null; busy = true; const r = await call(() => api.post(action, body || {})); busy = false; if (r && r.steps) { if (after !== 'keep') { dirty.lead = dirty.buyer = false; } take(r); if (r.popup) tab = 'claude'; draw(); } else if (r) { await load(); } return r; };
 
     function head() {
@@ -290,6 +290,7 @@
     load(); return load;
   }
   WaPanels.add('journey', (el) => mount(el));
-  WaPanels.add('mymsgs', (el) => mount(el, 'msgs'));   // Messages → My messages: the same registry, on its own
+  WaPanels.add('mymsgs', (el) => mount(el, 'msgs'));
+  WaPanels.add('wjclaude', (el) => mount(el, 'claude')); WaPanels.add('wjtopics', (el) => mount(el, 'topics')); WaPanels.add('wjfest', (el) => mount(el, 'fest')); WaPanels.add('wjresults', (el) => mount(el, 'results'));   // the Journey's own screens, as tabs of the one Journey section   // Messages → My messages: the same registry, on its own
   window.WaJourney = { mount };
 })();

@@ -425,7 +425,7 @@
   const faReady = (fn) => { if (window.FuAuto) return fn(); const sc = document.createElement('script'); sc.src = 'assets/js/fa_ui.js?v=fa4'; sc.onload = fn; document.head.appendChild(sc); };
   // 🔁 ONE follow-up section: days 1–10 = the Follow-up Autopilot (fa_ui.js), days 11–60 = the 60-day Journey (wj_ui.js). They share the offers and the festival box, so they are shown together.
   P.followups = (el, ctx) => {
-    const T = [['jtimeline', '⏱ Timeline'], ['orderupd', '📦 Order updates'], ['afterdel', '⭐ After delivery'], ['birthdays', '🎂 Birthdays'], ['ap', '⚙ Early steps (advanced)'], ['wj', '⚙ Later steps &amp; Claude (advanced)']]; let cur = 'jtimeline'; try { const sv = localStorage.getItem('wa_fu_sub2'); cur = T.some((x) => x[0] === sv) ? sv : 'jtimeline'; } catch (e) { /* private mode */ }
+    const T = [['jtimeline', '⏱ Timeline'], ['wjclaude', '🧠 Claude'], ['wjtopics', '💡 Topics'], ['wjfest', '🪔 Festivals'], ['wjresults', '📊 Results'], ['orderupd', '📦 Order updates'], ['afterdel', '⭐ After delivery'], ['birthdays', '🎂 Birthdays']]; let cur = 'jtimeline'; try { const sv = localStorage.getItem('wa_fu_sub2'); cur = T.some((x) => x[0] === sv) ? sv : 'jtimeline'; } catch (e) { /* private mode */ }
     el.innerHTML = '<div id="fuOneK"></div><div id="fuOneT" style="display:flex;gap:6px;margin:0 0 10px;flex-wrap:wrap;align-items:center"></div><div id="fuOneA"></div><div id="fuOneB" hidden></div><div id="fuOneX"></div>';
     // 🎯 THE number that matters: orders that came from follow-ups (Autopilot, Journey, and chats people won through Rescue)
     const KP = el.querySelector('#fuOneK'); let kd = 30;
