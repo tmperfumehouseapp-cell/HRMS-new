@@ -1,5 +1,5 @@
 /**
- * HRMS service worker — ALWAYS-FRESH, but cheap: every file is revalidated, so an unchanged file costs a tiny "304 not modified" instead of a full download. + phone notifications. (v261108.1)
+ * HRMS service worker — pages are always checked with the server; scripts and styles are served from the phone at once and refreshed in the background (so opening a page no longer waits for 5-8 network round trips). + phone notifications. (v261110.1)
  *
  * It stores NOTHING. Its jobs:
  *   - every HRMS page / script / style is checked with the server on every load
@@ -12,6 +12,21 @@
  */
 self.addEventListener('install', () => self.skipWaiting());
 
+// ⚡ scripts / styles: the copy kept on the phone answers at once; the server is asked in the background and the new copy is kept for the next load.
+// A changed file also comes with a new ?v= number, which is a different address — so it is fetched fresh the first time. Any failure falls back to the network.
+const ASSET_CACHE = 'hrms-a-v1';
+async function assetFast(event, req, url) {
+  try {
+    const cache = await caches.open(ASSET_CACHE); const hit = await cache.match(req.url);
+    const net = () => fetch(req.url, { cache: 'no-cache', credentials: 'same-origin' }).then(async (r) => {
+      if (r && r.ok && r.status === 200) { try { for (const k of await cache.keys()) { const u = new URL(k.url); if (u.pathname === url.pathname && u.search !== url.search) await cache.delete(k); } await cache.put(req.url, r.clone()); } catch (e) {} }
+      return r;
+    });
+    if (hit) { event.waitUntil(net().catch(() => {})); return hit; }
+    return await net().catch(() => new Promise((ok) => setTimeout(ok, 350)).then(() => fetch(req.url, { cache: 'no-cache', credentials: 'same-origin' })));
+  } catch (e) { return fetch(req); }
+}
+
 // Pages, scripts and styles from this site: always from the server, never
 // from the browser cache. Anything else (API calls, images, other sites)
 // is left alone.
@@ -21,6 +36,8 @@ self.addEventListener('fetch', (event) => {
   let url;
   try { url = new URL(req.url); } catch (e) { return; }
   if (url.origin !== self.location.origin) return;
+  const isAsset = /\.(js|css)$/i.test(url.pathname) && req.mode !== 'navigate';
+  if (isAsset) { event.respondWith(assetFast(event, req, url)); return; }
   const fresh = req.mode === 'navigate' || /\.(html|js|css)$/i.test(url.pathname) || url.pathname.endsWith('/');
   if (!fresh) return;
   event.respondWith(
@@ -36,7 +53,7 @@ self.addEventListener('fetch', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
     let hadOldCache = false;
-    try { const keys = await caches.keys(); hadOldCache = keys.length > 0; await Promise.all(keys.map((k) => caches.delete(k))); } catch (e) {}
+    try { const keys = await caches.keys(); hadOldCache = keys.some((k) => k.indexOf('hrms-a-') !== 0); await Promise.all(keys.filter((k) => k !== ASSET_CACHE).map((k) => caches.delete(k))); } catch (e) {}
     await self.clients.claim();
     // Replacing an old caching worker: reload every open HRMS tab once so
     // it stops showing the cached copies and loads the real files.
