@@ -242,6 +242,7 @@ function wa_tick(PDO $pdo, bool $force = false): array
     try { $o['assigned'] = wa_auto_assign($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'auto-assign: ' . $e->getMessage()); }
     try { if (!defined('WA_IN_WEBHOOK')) $o['alloc'] = wa_auto_alloc($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'auto-allocate: ' . $e->getMessage()); }   // 🤖 orders → the salesperson of the chat
     try { wa_callnow_scan($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'call-now: ' . $e->getMessage()); }
+    try { if (function_exists('wq_urgent_push') && !defined('WA_IN_WEBHOOK')) $o['urgent'] = wq_urgent_push($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'urgent: ' . $e->getMessage()); }   // 🔴 nobody answered a ready-to-pay chat in time: everyone present is told at once
     try { if (function_exists('wa_proof_scan')) { $pr = wa_proof_scan($pdo); $o['proofs'] = $pr['made']; } } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'order proof: ' . $e->getMessage()); }
     try { if (function_exists('wag_tick')) $o['growth'] = wag_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'growth: ' . $e->getMessage()); }
     try { if (function_exists('wq_tick')) $o['wq'] = wq_tick($pdo, ['light' => true]); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'whatsapp sales: ' . $e->getMessage()); }   // no-answer flow + typing of new queries
