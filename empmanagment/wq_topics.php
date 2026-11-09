@@ -59,7 +59,9 @@ function wtp_view(PDO $pdo): array
 {
     $c = wtp_cfg($pdo); $reg = function_exists('fa_offers') ? fa_offers($pdo) : []; $names = [];
     foreach ($c['topics'] as &$t) { $ms = []; foreach ((array)$t['msgs'] as $k) { $st = function_exists('wj_tpl_state') ? wj_tpl_state($pdo, $k) : 'none'; $ms[] = ['key' => $k, 'body' => function_exists('fa_tpl_body') ? fa_tpl_body($pdo, $k) : '', 'status' => $st, 'held' => (int)setting_get($pdo, 'fa_tpltry_' . $k, '0') > time() + 86400, 'reason' => ($st === 'rejected' && function_exists('jn_tpl_reason')) ? jn_tpl_reason($pdo, $k) : '']; } $t['messages'] = $ms; } unset($t);
-    return ['ok' => true, 'rungs' => $c['rungs'], 'topics' => $c['topics']];
+    foreach ($c['topics'] as &$t) { $rv = array_flip((array)($t['by_rung'] ?? [])); foreach ($t['messages'] as &$m) $m['rung'] = isset($rv[$m['key']]) ? (string)$rv[$m['key']] : ''; unset($m); } unset($t);
+    $g = wtp_gen_state($pdo);
+    return ['ok' => true, 'rungs' => $c['rungs'], 'topics' => $c['topics'], 'gen' => ['left' => count((array)$g['queue']), 'done' => (int)$g['done'], 'total' => (int)$g['total'], 'made' => (int)$g['made'], 'sent' => (int)$g['sent'], 'errors' => array_slice((array)$g['errors'], -6), 'at' => (string)$g['at']]];
 }
 function wtp_save(PDO $pdo, array $in): array
 {
@@ -137,10 +139,67 @@ function wtp_apply(PDO $pdo, array $rows, string $ask, int $by): array
     return wj_change_apply($pdo, $out, $by);
 }
 
+
+/** The campaign messages already sent (pricing, Diwali …): the wording and the offers Claude learns from. [text, allowed numbers] */
+function wtp_campaign_text(PDO $pdo): array
+{
+    $t = ''; $allowed = [];
+    try {
+        $q = $pdo->query("SELECT c.name, tpl.body, COUNT(i.id) sent FROM wa_campaigns c JOIN wa_templates tpl ON tpl.id = c.tpl_id LEFT JOIN wa_camp_items i ON i.camp_id = c.id AND i.status <> 'queued' AND i.err = '' WHERE c.created_at >= DATE_SUB(NOW(), INTERVAL 150 DAY) GROUP BY c.id, c.name, tpl.body ORDER BY sent DESC, c.id DESC LIMIT 25");
+        $seen = []; foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) { $b = trim((string)$r['body']); $k = md5($b); if ($b === '' || isset($seen[$k])) continue; $seen[$k] = 1; $t .= '- "' . mb_substr($r['name'], 0, 50) . '" (sent to ' . (int)$r['sent'] . '): ' . mb_substr(preg_replace('/\s+/u', ' ', $b), 0, 420) . "\n"; }
+    } catch (Throwable $e) { }
+    if ($t !== '' && function_exists('teach_nums')) $allowed = teach_nums($t);
+    return [$t, $allowed];
+}
+function wtp_gen_state(PDO $pdo): array { $j = json_decode((string)setting_get($pdo, 'wtp_gen', ''), true); return is_array($j) ? $j : ['queue' => [], 'done' => 0, 'total' => 0, 'errors' => [], 'made' => 0, 'sent' => 0, 'at' => '']; }
+/** Queue the topics (all that are ON, or one) — the engine (cron) writes them one by one: messages for every time window the topic suits, offers learned from the campaigns, and sends them to Meta. */
+function wtp_gen_queue(PDO $pdo, string $which): array
+{
+    $c = wtp_cfg($pdo); $q = []; foreach ($c['topics'] as $t) { if (empty($t['on'])) continue; if ($which !== 'all' && $t['id'] !== $which) continue; $q[] = $t['id']; }
+    if (!$q) return [false, 'No topic is switched on.'];
+    setting_set($pdo, 'wtp_gen', json_encode(['queue' => $q, 'done' => 0, 'total' => count($q), 'errors' => [], 'made' => 0, 'sent' => 0, 'at' => date('Y-m-d H:i')], JSON_UNESCAPED_UNICODE));
+    return [true, 'Claude will write ' . count($q) . ' topic(s) in the background — about a minute each. You can leave this screen.'];
+}
+/** One topic per engine run. */
+function wtp_gen_tick(PDO $pdo): void
+{
+    if ((string)setting_get($pdo, 'wtp_auto_gen', '') !== '1') { setting_set($pdo, 'wtp_auto_gen', '1'); wtp_gen_queue($pdo, 'all'); return; }   // once, as the owner asked: the first time the engine runs after this update, Claude writes every topic's messages
+    $S = wtp_gen_state($pdo); if (empty($S['queue'])) return; if ((int)setting_get($pdo, 'wtp_gen_at', '0') > time() - 40) return; setting_set($pdo, 'wtp_gen_at', (string)time());
+    $id = array_shift($S['queue']); $c = wtp_cfg($pdo); $ti = null; foreach ($c['topics'] as $i => $t) if ($t['id'] === $id) $ti = $i;
+    if ($ti === null || !function_exists('convo_ai')) { $S['done']++; setting_set($pdo, 'wtp_gen', json_encode($S, JSON_UNESCAPED_UNICODE)); return; }
+    setting_set($pdo, 'wtp_gen', json_encode($S, JSON_UNESCAPED_UNICODE));   // taken off the queue first: a slow run is never started twice
+    @set_time_limit(240); $t = $c['topics'][$ti]; $def = null; foreach (wtp_default()['topics'] as $d) if ($d['id'] === $id) $def = $d;
+    $R = []; foreach ($t['rungs'] as $rid) foreach ($c['rungs'] as $r) if ($r['id'] === $rid) $R[] = $r; if (!$R) { $S['done']++; setting_set($pdo, 'wtp_gen', json_encode($S, JSON_UNESCAPED_UNICODE)); return; }
+    [$camp, $campNums] = wtp_campaign_text($pdo); $K = function_exists('wk_knowledge') ? wk_knowledge($pdo, [], $t['title'] . ' ' . $t['summary']) : ['text' => '', 'allowed' => []]; $allowed = $K['allowed'] + $campNums;
+    $rl = ''; foreach ($R as $r) $rl .= '- ' . $r['id'] . ' = ' . $r['label'] . ' after our last reply (' . $r['from_h'] . '–' . $r['to_h'] . " hours)\n";
+    $sch = ['type' => 'OBJECT', 'properties' => ['summary' => ['type' => 'STRING'], 'rows' => ['type' => 'ARRAY', 'items' => ['type' => 'OBJECT', 'properties' => ['rung' => ['type' => 'STRING'], 'body' => ['type' => 'STRING']], 'required' => ['rung', 'body']]]], 'required' => ['summary', 'rows']];
+    $sys = "You write WhatsApp follow-up templates for TM Perfume House (Indian perfume brand) for ONE topic. Each message has three blanks: {{1}} = customer's first name, {{2}} = the perfume they asked about, {{3}} = ONE short line written for each customer later (the offer or a friendly line, following the topic's rule). "
+        . "Write ONE message for EACH time window listed, with wording that fits THAT moment (a few hours after our reply: 'just checking in'; days later: 'it has been a few days'; weeks later: 'it has been a while'). Never repeat the same sentence in two windows. "
+        . "Short (max 280 letters), warm, simple English / Hinglish like the shop's own campaign messages, one or two emojis at most, keep {{1}} {{2}} {{3}} exactly, end by inviting a reply. "
+        . "LEARN from the REAL CAMPAIGN MESSAGES the shop already sent: use their style and their real offers/prices; you may reuse a price or offer that appears there or in the STORE FACTS, but NEVER invent a number, discount, date or product. "
+        . "'summary' = 2–3 plain sentences: what this topic says and the rule for the {{3}} line (which real offer or fact it may use). Topic: " . $t['title'] . ". Current summary: " . $t['summary'];
+    try { [$ok, $v] = convo_ai($sys, [['text' => ($K['text'] !== '' ? "STORE FACTS:\n" . $K['text'] . "\n\n" : '') . ($camp !== '' ? "REAL CAMPAIGN MESSAGES ALREADY SENT:\n" . $camp . "\n" : '') . "TIME WINDOWS:\n" . $rl . "\nWrite the summary and one message per window."]], $sch, false, 4000, 'claude'); } catch (Throwable $e) { $ok = false; $v = null; }
+    $S = wtp_gen_state($pdo); $S['done']++; $reg = function_exists('fa_offers') ? fa_offers($pdo) : []; $c = wtp_cfg($pdo);
+    $summary = ($ok && is_array($v) && trim((string)($v['summary'] ?? '')) !== '') ? mb_substr(trim((string)$v['summary']), 0, 400) : $t['summary']; $by = []; foreach ((array)($ok && is_array($v) ? ($v['rows'] ?? []) : []) as $x) $by[(string)($x['rung'] ?? '')] = trim((string)($x['body'] ?? ''));
+    $keys = []; $byRung = []; $made = 0; $sent = 0; $oldKeys = (array)$c['topics'][$ti]['msgs'];
+    foreach ($R as $r) {
+        $b = $by[$r['id']] ?? ''; $why = $b !== '' ? (wtp_body_ok($b) ?: (function_exists('wj_change_check') ? wj_change_check($pdo, $summary, $b, $allowed) : '')) : 'no message'; if ($why !== '') { $b = $def ? (string)$def['seed'][$id] : ''; $S['errors'][] = $t['title'] . ' · ' . $r['label'] . ': ' . mb_substr((string)$why, 0, 80) . ' (a plain message was used)'; }
+        if ($b === '') continue; $k = substr($id . preg_replace('/[^a-z0-9]/', '', (string)$r['id']), 0, 12);
+        $reg[$k] = [mb_substr($t['icon'] . ' ' . $t['title'] . ' · ' . $r['label'], 0, 40), mb_substr($summary, 0, 300)]; setting_set($pdo, 'fa_tplbody_' . $k, $b); $keys[] = $k; $byRung[$r['id']] = $k; $made++;
+        setting_set($pdo, 'fa_tpltry_' . $k, '0');   // the owner said: send everything to Meta
+        if (function_exists('fa_tpl_make') && function_exists('fa_tpl_status') && fa_tpl_status($pdo, $k) === 'none') { try { [$o2] = fa_tpl_make($pdo, $k, 0); if ($o2) $sent++; else setting_set($pdo, 'fa_tpltry_' . $k, (string)(time() + 3600)); } catch (Throwable $e) { setting_set($pdo, 'fa_tpltry_' . $k, (string)(time() + 3600)); } }
+    }
+    foreach ($oldKeys as $ok0) if (!in_array($ok0, $keys, true) && $ok0 === $id && function_exists('fa_tpl_status') && fa_tpl_status($pdo, $ok0) === 'none') unset($reg[$ok0]);   // the first draft that never went anywhere is replaced
+    foreach ($oldKeys as $ok0) if (!in_array($ok0, $keys, true) && isset($reg[$ok0]) && $ok0 !== $id) $keys[] = $ok0;   // variants the owner added stay
+    $c['topics'][$ti]['summary'] = $summary; $c['topics'][$ti]['msgs'] = array_values(array_unique($keys)); $c['topics'][$ti]['by_rung'] = $byRung;
+    $S['made'] += $made; $S['sent'] += $sent; if (!$ok) $S['errors'][] = $t['title'] . ': Claude could not answer — plain messages were used.';
+    setting_set($pdo, 'fa_offers', json_encode(array_map(function ($x) { return [$x[0], $x[1]]; }, $reg), JSON_UNESCAPED_UNICODE)); setting_set($pdo, 'wtp_cfg', json_encode($c, JSON_UNESCAPED_UNICODE)); setting_set($pdo, 'wtp_gen', json_encode($S, JSON_UNESCAPED_UNICODE));
+}
+
 }
 
 $__wtp = (string)($action ?? ($_GET['action'] ?? ''));
-if (in_array($__wtp, ['wq.topics', 'wq.topics_save', 'wq.topics_msg', 'wq.topics_approve', 'wq.topics_ask', 'wq.topics_apply'], true)) {
+if (in_array($__wtp, ['wq.topics', 'wq.topics_save', 'wq.topics_msg', 'wq.topics_approve', 'wq.topics_ask', 'wq.topics_apply', 'wq.topics_generate'], true)) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'; $auth = require_auth();
     if (!function_exists('wa_tables') || !wa_tables($pdo)) json_response(['error' => 'WhatsApp storage is not available.'], 500);
     if (!wa_is_admin($pdo, $auth)) json_response(['error' => 'Only Admin, HR or the control tower can do this.'], 403);
@@ -151,5 +210,6 @@ if (in_array($__wtp, ['wq.topics', 'wq.topics_save', 'wq.topics_msg', 'wq.topics
     if ($__wtp === 'wq.topics_msg') { if (!empty($in['add'])) [$ok, $m] = wtp_add_variant($pdo, (string)($in['topic'] ?? '')); else [$ok, $m] = wtp_msg_save($pdo, preg_replace('/[^a-z0-9_]/', '', (string)($in['key'] ?? '')), (string)($in['body'] ?? '')); json_response(['ok' => $ok, 'message' => $m], $ok ? 200 : 422); }
     if ($__wtp === 'wq.topics_approve') { [$ok, $m] = wtp_approve($pdo, preg_replace('/[^a-z0-9_]/', '', (string)($in['key'] ?? '')), $by); json_response(['ok' => $ok, 'message' => $m], $ok ? 200 : 422); }
     if ($__wtp === 'wq.topics_ask') { $ask = trim((string)($in['ask'] ?? '')); if ($ask === '') json_response(['error' => 'Tell Claude what to change.'], 422); [$ok, $m, $rows] = wtp_ask($pdo, preg_replace('/[^a-z0-9_]/', '', (string)($in['scope'] ?? 'all')) ?: 'all', mb_substr($ask, 0, 600)); json_response(['ok' => $ok, 'message' => $m, 'rows' => $rows], $ok ? 200 : 422); }
+    if ($__wtp === 'wq.topics_generate') { [$ok, $m] = wtp_gen_queue($pdo, preg_replace('/[^a-z0-9_]/', '', (string)($in['topic'] ?? 'all')) ?: 'all'); json_response(['ok' => $ok, 'message' => $m], $ok ? 200 : 422); }
     if ($__wtp === 'wq.topics_apply') { [$ok, $m] = wtp_apply($pdo, (array)($in['rows'] ?? []), (string)($in['ask'] ?? ''), $by); json_response(['ok' => $ok, 'message' => $m], $ok ? 200 : 422); }
 }
