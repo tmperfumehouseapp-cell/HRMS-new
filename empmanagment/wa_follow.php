@@ -417,6 +417,7 @@ function fu_engine(PDO $pdo): array
     $__rows = $q->fetchAll(); if (function_exists('wq_plan_paused_prefetch')) wq_plan_paused_prefetch($pdo, array_column($__rows, 'phone'));
     foreach ($__rows as $c) {
         $key = (string)$c['phone']; if (function_exists('wa_auto_muted') && wa_auto_muted($pdo, $key)) continue;   // ✅ order completed: no follow-ups today and tomorrow
+        if (!empty($om[$key]['last']) && strtotime((string)$om[$key]['last']) > $now - 7 * 86400) continue;   // 📦 an order is on the way: only the order messages go, no selling
         if (function_exists('wq_plan_paused') && wq_plan_paused($pdo, $key) !== '') continue;   // ⏸ a person wrote lately / a campaign went in: the plan waits (due steps are skipped, not caught up)
         $inId = fu_in_id($pdo, $key); if ($inId === 0) continue; $st = fu_state_get($pdo, $key);
         if (!$st || (int)$st['in_id'] !== $inId) {
