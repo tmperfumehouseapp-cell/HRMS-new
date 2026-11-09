@@ -361,6 +361,21 @@ function dp_fhash_ready(PDO $pdo) {
     return $ok;
 }
 
+/** Refusals of a screenshot (Claude said no) for one person and one step, today: after two, the third try is let through (see dp_proof_screen_check). */
+function dp_rej_ready(PDO $pdo) {
+    static $ok = null; if ($ok !== null) return $ok;
+    try { $pdo->exec("CREATE TABLE IF NOT EXISTS dp_proof_rej (id INT AUTO_INCREMENT PRIMARY KEY, emp_id INT NOT NULL, rule_id INT NOT NULL, day DATE NOT NULL, created_at DATETIME NOT NULL, KEY idx_dp_rej (emp_id, rule_id, day)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"); return $ok = true; }
+    catch (Throwable $e) { error_log('dp_proof_rej: ' . $e->getMessage()); return $ok = false; }
+}
+function dp_rej_count(PDO $pdo, $empId, $ruleId) {
+    if (!dp_rej_ready($pdo)) return 0;
+    try { $q = $pdo->prepare("SELECT COUNT(*) FROM dp_proof_rej WHERE emp_id = ? AND rule_id = ? AND day = ?"); $q->execute([(int)$empId, (int)$ruleId, date('Y-m-d')]); return (int)$q->fetchColumn(); } catch (Throwable $e) { return 0; }
+}
+function dp_rej_add(PDO $pdo, $empId, $ruleId) {
+    if (!dp_rej_ready($pdo)) return;
+    try { $pdo->prepare("INSERT INTO dp_proof_rej (emp_id, rule_id, day, created_at) VALUES (?,?,?,?)")->execute([(int)$empId, (int)$ruleId, date('Y-m-d'), date('Y-m-d H:i:s')]); } catch (Throwable $e) { }
+}
+
 /* ============================== screenshots: look-alike and "is this really the comment" ============================== */
 /**
  * Called from api.php proofs.upload (installer adds the call) after the exact-copy check.
@@ -393,8 +408,11 @@ function dp_proof_screen_check(PDO $pdo, $empId, array $item, $absPath) {
         if ($img) {
             $name = bd_emp_name($pdo, $empId);
             $sys = "You check a screenshot an employee sends as proof that he/she commented on our company's " . ($kind === 'instagram' ? 'Instagram reel' : 'YouTube video') . ". "
-                . "Say comment_visible=true only if the screenshot clearly shows a comment written by the person. Say wrong_app=true if it is not " . ($kind === 'instagram' ? 'Instagram' : 'YouTube') . ". "
-                . "Say edited=true if it looks edited, cropped to hide the date or username, or is a photo of another screen with signs of fakery. Give ONE short plain sentence 'reason' telling the employee what to fix. Be fair: normal screenshots pass.";
+                . "Say comment_visible=true if the screenshot shows the " . ($kind === 'instagram' ? 'reel' : 'video') . "'s comments and at least one comment is visible. "
+                . "IMPORTANT: you cannot know the employee's own " . ($kind === 'instagram' ? 'Instagram' : 'YouTube') . " user name. It is a handle that is different from the name we give you, so NEVER reject because the name of a commenter does not match the employee's name, and never ask for it. "
+                . "Say wrong_app=true only if it is clearly not " . ($kind === 'instagram' ? 'Instagram' : 'YouTube') . ". "
+                . "Say edited=true only if it clearly looks edited (cropped to hide the date or user names, pasted text, or a photo of another screen with signs of fakery). "
+                . "Give ONE short plain sentence 'reason' telling the employee what to fix. Be fair and lenient: normal screenshots pass.";
             $schema = ['type' => 'OBJECT', 'properties' => ['comment_visible' => ['type' => 'BOOLEAN'], 'wrong_app' => ['type' => 'BOOLEAN'], 'edited' => ['type' => 'BOOLEAN'], 'reason' => ['type' => 'STRING']], 'required' => ['comment_visible', 'wrong_app', 'edited']];
             try { $r = convo_ai($sys, [['text' => 'Employee: ' . $name . '. Screenshot:'], ['inlineData' => ['mimeType' => 'image/jpeg', 'data' => $img]]], $schema, false, 400); } catch (Throwable $e) { $r = null; }
             if (is_array($r) && !empty($r[0]) && is_array($r[1])) {
@@ -403,7 +421,14 @@ function dp_proof_screen_check(PDO $pdo, $empId, array $item, $absPath) {
             }
         }
     }
-    if ($why !== '') return $why;
+    if ($why !== '') {
+        // Never lock a person out of punching because of Claude: the first two refusals of the day for this step are shown, the THIRD try goes through and the boss is told to look.
+        $n = dp_rej_count($pdo, $empId, $ruleId);
+        if ($n >= 2) {
+            try { bd_inbox('dp_note', bd_emp_name($pdo, $empId) . ' sent a screenshot Claude was not sure about (3rd try)', 'Accepted so that he/she can punch in. Claude said: ' . $why . ' Please look at the screenshot.', ['emp_id' => (int)$empId], null, null, 'dp_shotpass:' . $empId . ':' . $ruleId . ':' . date('Ymd')); } catch (Throwable $e) { }
+            $why = '';
+        } else { dp_rej_add($pdo, $empId, $ruleId); return $why; }
+    }
     if ($f) { $pdo->prepare("INSERT INTO dp_proof_hash (emp_id, rule_id, ahash, fhash, created_at) VALUES (?,?,?,?,?)")->execute([(int)$empId, $ruleId, $h ?: str_repeat('0', 64), $f, bd_now()]); }
     elseif ($h) { $pdo->prepare("INSERT INTO dp_proof_hash (emp_id, rule_id, ahash, created_at) VALUES (?,?,?,?)")->execute([(int)$empId, $ruleId, $h, bd_now()]); }
     return '';
