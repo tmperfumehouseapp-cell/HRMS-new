@@ -224,7 +224,7 @@ function wj_night_step(PDO $pdo, bool $force = false): array
     if (!$S || ($S['day'] ?? '') !== date('Y-m-d')) { if (!$force && (int)date('G') < 2) return ['idle' => 1]; $S = wj_night_start($pdo); }
     $stage = (string)($S['stage'] ?? 'done'); if ($stage === 'done') return ['done' => 1];
     if ($stage === 'topics') {
-        $batch = array_splice($S['queue'], 0, 15); try { wj_classify_batch($pdo, $batch); } catch (Throwable $e) { error_log('wj_classify: ' . $e->getMessage()); }
+        $batch = array_splice($S['queue'], 0, 6); try { wj_classify_batch($pdo, $batch); } catch (Throwable $e) { error_log('wj_classify: ' . $e->getMessage()); }
         if (!$S['queue']) $S['stage'] = 'fest'; wj_put($pdo, 'wj_night', $S); return ['topics' => count($batch), 'left' => count($S['queue'])];
     }
     if ($stage === 'fest') { try { wj_fest_check($pdo); } catch (Throwable $e) { } $S['stage'] = 'suggest'; wj_put($pdo, 'wj_night', $S); return ['fest' => 1]; }
@@ -534,11 +534,13 @@ function wj_steps_save(PDO $pdo, string $tk, array $rows): array
 // ---------------------------------------------------------------------------------------------------------------------- the background part
 function wj_tick(PDO $pdo): array
 {
-    $o = []; if (!function_exists('fa_offers') || !wj_tables($pdo)) return $o;
+    $o = []; if ((string)setting_get($pdo, 'wj_bg', '1') === '0') return $o;   // kill switch: setting wj_bg = 0 stops all background work of the Journey
+    if (!function_exists('fa_offers') || !wj_tables($pdo)) return $o;
     try { wj_install($pdo); } catch (Throwable $e) { error_log('wj_install: ' . $e->getMessage()); }
     if ((int)setting_get($pdo, 'wj_tpl_at', '0') < time() - 600 && function_exists('fa_tpl_setup')) { setting_set($pdo, 'wj_tpl_at', (string)time()); try { $o['tpl'] = fa_tpl_setup($pdo); } catch (Throwable $e) { error_log('wj tpl: ' . $e->getMessage()); } }
     if (wj_mode($pdo) === 'auto' && wa_lock($pdo, 'wjrun', 240)) { try { $o['run'] = wj_run($pdo); } catch (Throwable $e) { wa_log($pdo, 'followup', false, 'journey: ' . $e->getMessage()); } }
-    if (wa_lock($pdo, 'wjnight', 40)) { try { $o['night'] = wj_night_step($pdo); } catch (Throwable $e) { error_log('wj_night: ' . $e->getMessage()); } }
+    /* a slow Claude call must never let a second copy start (wa_lock is only a time window) */
+    if (wa_lock($pdo, 'wjnight', 300)) { try { $o['night'] = wj_night_step($pdo); } catch (Throwable $e) { error_log('wj_night: ' . $e->getMessage()); } }
     return $o;
 }
 
