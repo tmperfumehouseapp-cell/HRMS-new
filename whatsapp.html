@@ -249,6 +249,18 @@ body.waui .tabs,body.waui .more{display:none;}
 #waSide iframe{flex:1; border:0; width:100%;}
 @media (min-width:861px){ body.side-on #body > .sec{right:min(560px, 50vw);} }
 @media (max-width:860px){ #waSide{width:100%; border-left:0; box-shadow:none;} }
+/* 📱 phone: wide tables scroll sideways instead of being cut, buttons are easy to tap, long rows wrap */
+@media (max-width:860px){
+  #body table, .wp table, .wj-card table{display:block;max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap}
+  .wp-btn, .wj-b, .wp-chip{min-height:38px}
+  .wp-kv{flex-wrap:wrap}
+  .wp-row{flex-wrap:wrap}
+  .wj-lane .wj-row2{flex-wrap:wrap;gap:6px}
+  .wj-strip{overflow-x:auto}
+  #body pre{white-space:pre-wrap;word-break:break-word}
+  #body input, #body select, #body textarea{font-size:16px}   /* no zoom-in when a field is tapped on iPhone */
+}
+
 .wp-toast{z-index:1000 !important;} body.side-on .wp-toast{left:calc((100vw - min(560px, 50vw)) / 2) !important;}
 .wsd-on{outline:2px solid #22c55e; outline-offset:-2px; border-radius:12px;}
 
@@ -560,12 +572,12 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
   // (#sgive, #premade, #team… open their tab), nothing was removed.
   const GROUPS = [
     { k: 'waiting', t: 'Waiting', ic: 'flame', badge2: 'unassigned', sub: 'Customers nobody has taken · waiting too long · the answering bot', tabs: [['sgive', 'Not taken'], ['grab', 'Late replies'], ['signals', 'Signals & bot']] },
-    { k: 'results', t: 'Queries & reports', ic: 'trend', sub: 'Queries per person, replies, speed, cost and past chats', tabs: [['queries', 'Queries'], ['reports', 'Reports'], ['history', 'History']] },
+    { k: 'results', t: 'Queries & reports', ic: 'trend', sub: 'Queries per person, replies, speed, what WhatsApp costs and past chats', tabs: [['queries', 'Queries'], ['reports', 'Reports'], ['billing', 'Billing & spend'], ['history', 'History']] },
     { k: 'customers', t: 'Customers', ic: 'users', sub: 'Every customer, tags and audiences, and the ads that bring them', tabs: [['contacts', 'Contacts'], ['tags', 'Tags & audience'], ['ads', 'Ads']] },
-    { k: 'templates', t: 'Templates', ic: 'tpl', sub: 'Messages Meta approves — make them, let Claude write them, one per situation', tabs: [['premade', 'Pre-made'], ['builder', 'Builder'], ['fixed', 'Fixed']] },
-    { k: 'replies', t: 'Replies', ic: 'bolt', sub: 'Quick replies, greetings, ready perfume lists, and and where to find every automatic message', tabs: [['quick', 'Quick replies'], ['greet', 'Greetings'], ['lists', 'Lists'], ['automsgs', 'Automatic messages']] },
+    { k: 'templates', t: 'Messages', ic: 'tpl', sub: 'The message library: Meta-approved messages, the builder, one per situation, every automatic message in one list, and the complaint messages', tabs: [['premade', 'Pre-made'], ['builder', 'Builder'], ['fixed', 'Fixed'], ['allmsgs', 'All messages'], ['cxmsgs', 'Complaint messages']] },
+    { k: 'replies', t: 'Replies', ic: 'bolt', sub: 'Quick replies, greetings, ready perfume lists, and and where to find every automatic message', tabs: [['quick', 'Quick replies'], ['greet', 'Greetings'], ['lists', 'Lists']] },
     { k: 'mediag', t: 'Media', ic: 'film', sub: 'Photos, videos and PDFs — one library, in topic folders', tabs: [['media', 'Library'], ['gallery', 'Folders & clean-up']] },
-    { k: 'automation', t: 'Automation', ic: 'seq', sub: 'Key flows on a canvas, the old flows and follow-ups', tabs: [['kflows', 'Key flows'], ['flows', 'Flows (old)'], ['followups', 'Follow-ups · 60 days'], ['cxmsgs', 'Complaints'], ['allmsgs', 'All messages']] },
+    { k: 'automation', t: 'Automation', ic: 'seq', sub: 'Key flows on a canvas, the old flows and follow-ups', tabs: [['kflows', 'Key flows'], ['flows', 'Flows (old — use Key flows)'], ['followups', 'Follow-ups · 60 days']] },
     { k: 'setupg', t: 'Numbers & setup', ic: 'phone', sub: 'Numbers, connection and the go-live check', tabs: [['numbers', 'Numbers'], ['setup', 'Setup & connection'], ['golive', 'Go-live check']] },
     { k: 'rules', t: 'Team & rules', ic: 'group', sub: 'Who gets chats, the waiting limits, the Claude button and exports', tabs: [['team', 'Team & routing'], ['hq', 'Claude button'], ['export', 'Export']] },
     { k: 'teach', t: 'Teach & groups', ic: 'bulb', sub: 'Teach the bot once · your WhatsApp groups', tabs: [['learn', 'Teach'], ['groups', 'Groups']] },
@@ -640,7 +652,7 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
   });
 
   // ---------- sections
-  const ALIAS = { journey: 'followups', sfocus: 'signals', sboard: 'queries', f_query: 'queries', f_assigned: 'queries', f_community: 'queries', f_campaign: 'queries' };
+  const ALIAS = { automsgs: 'allmsgs', journey: 'followups', sfocus: 'signals', sboard: 'queries', f_query: 'queries', f_assigned: 'queries', f_community: 'queries', f_campaign: 'queries' };
   let started = false;   // the first section replaces the entry; every section opened after it is one step Back can return to
   function go(k, noPush) {
     if (k !== cur && document.getElementById('waSide')) closeSide(true);   // another screen: the side chat closes
