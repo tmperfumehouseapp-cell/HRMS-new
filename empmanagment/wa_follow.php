@@ -161,8 +161,16 @@ function fu_limits(PDO $pdo): array
     $own = json_decode((string)setting_get($pdo, 'fu_plan_limits', ''), true);   // set in Learning → Follow-ups (they are about follow-ups only)
     if (is_array($own)) { foreach (['max', 'day_max', 'gap_min'] as $k) if ((int)($own[$k] ?? 0) > 0) { $L[$k] = (int)$own[$k]; $L['set'][$k === 'day_max' ? 'day' : ($k === 'gap_min' ? 'gap' : 'max')] = 1; }
         if (is_array($own['quiet'] ?? null) && count($own['quiet']) === 2) { $L['quiet'] = [(int)$own['quiet'][0], (int)$own['quiet'][1]]; $L['set']['quiet'] = 1; } }
+    $w = jn_window($pdo); $L['quiet'] = [$w['to'], $w['from']]; $L['set']['quiet'] = 1;   // ⏰ one window: quiet from "to" until "from" (default 02:00–10:00)
     return $L;
 }
+/** ⏰ ONE sending window for everything (before and after an order): messages go from "from" to "to" (minutes since midnight; "to" may be after midnight). Default 10:00 → 02:00. */
+function jn_window(PDO $pdo): array
+{
+    $j = json_decode((string)setting_get($pdo, 'jn_window', ''), true); $f = is_array($j) && isset($j['from']) ? (int)$j['from'] : 600; $t = is_array($j) && isset($j['to']) ? (int)$j['to'] : 120;
+    $f = max(0, min(1439, $f)); $t = max(0, min(1439, $t)); if ($f === $t) { $f = 600; $t = 120; } return ['from' => $f, 'to' => $t];
+}
+function jn_in_window(array $w, int $ts): bool { $m = (int)date('G', $ts) * 60 + (int)date('i', $ts); return $w['from'] < $w['to'] ? ($m >= $w['from'] && $m < $w['to']) : ($m >= $w['from'] || $m < $w['to']); }
 function fu_limit_lines(PDO $pdo): array
 {
     $L = fu_limits($pdo); $f = fn($m) => sprintf('%02d:%02d', intdiv($m, 60), $m % 60);
@@ -440,7 +448,7 @@ function fu_engine(PDO $pdo): array
     $byId = []; foreach ($P['situations'] as $s) $byId[$s['id']] = $s;
     $L = fu_limits($pdo); $L['max'] = 999; $L['day_max'] = 99; $L['gap_min'] = 1;   // ⏱ the timeline decides how often a customer is messaged (only quiet hours stay)
     $now = time(); $guard = function_exists('fu_guard') ? fu_guard($pdo)['state'] : 'ok'; $sendCap = $guard === 'slow' ? 3 : 12; $genCap = 15; $makeCap = array_filter($saved, function ($s) { return strpos((string)$s['id'], 'f_') !== 0 && $s['kind'] === 'nudge'; }) ? 8 : 25; $om = function_exists('wa_order_map') ? wa_order_map($pdo) : [];
-    $q = $pdo->prepare("SELECT * FROM wa_contacts WHERE status = 'open' AND optout = 0 AND last_in_at IS NOT NULL AND last_out_at IS NOT NULL AND last_out_at >= last_in_at AND last_in_at >= ? AND last_in_at <= ? ORDER BY last_in_at DESC LIMIT 200");
+    $q = $pdo->prepare("SELECT * FROM wa_contacts WHERE optout = 0 AND last_in_at IS NOT NULL AND last_out_at IS NOT NULL AND last_out_at >= last_in_at AND last_in_at >= ? AND last_in_at <= ? ORDER BY last_in_at DESC LIMIT 200");
     $firstMin = 20; foreach ($saved as $s0) if ($s0['kind'] === 'nudge' && !empty($s0['steps'])) $firstMin = min($firstMin, max(2, (int)floor($s0['steps'][0]['after_h'] * 60)));
     $q->execute([date('Y-m-d H:i:s', $now - 14 * 86400), date('Y-m-d H:i:s', $now - $firstMin * 60)]);
     $__rows = $q->fetchAll(); $__seen = []; foreach ($__rows as $__r) $__seen[(string)$__r['phone']] = 1;
@@ -449,10 +457,10 @@ function fu_engine(PDO $pdo): array
         foreach ($dq->fetchAll(PDO::FETCH_COLUMN) as $ph) if (!isset($__seen[(string)$ph])) $need[] = (string)$ph;
         // older chats (14–62 days) that never got a plan: a few at a time, at most every 5 minutes
         if ((int)setting_get($pdo, 'fu_sweep_at', '0') < $now - 300) { setting_set($pdo, 'fu_sweep_at', (string)$now);
-            $oq = $pdo->prepare("SELECT phone FROM wa_contacts WHERE status = 'open' AND optout = 0 AND last_in_at IS NOT NULL AND last_out_at >= last_in_at AND last_in_at >= ? AND last_in_at < ? ORDER BY last_in_at DESC LIMIT 600"); $oq->execute([date('Y-m-d H:i:s', $now - 62 * 86400), date('Y-m-d H:i:s', $now - 14 * 86400)]); $old = array_map('strval', $oq->fetchAll(PDO::FETCH_COLUMN)); $have = [];
+            $oq = $pdo->prepare("SELECT phone FROM wa_contacts WHERE optout = 0 AND last_in_at IS NOT NULL AND last_out_at >= last_in_at AND last_in_at >= ? AND last_in_at < ? ORDER BY last_in_at DESC LIMIT 600"); $oq->execute([date('Y-m-d H:i:s', $now - 62 * 86400), date('Y-m-d H:i:s', $now - 14 * 86400)]); $old = array_map('strval', $oq->fetchAll(PDO::FETCH_COLUMN)); $have = [];
             foreach (array_chunk($old, 300) as $ch) { $sq = $pdo->prepare("SELECT phone FROM wa_fu_state WHERE phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $sq->execute($ch); foreach ($sq->fetchAll(PDO::FETCH_COLUMN) as $ph) $have[(string)$ph] = 1; }
             foreach ($old as $ph) if (!isset($have[$ph]) && !isset($__seen[$ph])) { $need[] = $ph; if (count($need) >= 180) break; } }
-        foreach (array_chunk(array_values(array_unique($need)), 300) as $ch) { $cq = $pdo->prepare("SELECT * FROM wa_contacts WHERE status = 'open' AND optout = 0 AND last_in_at IS NOT NULL AND last_out_at IS NOT NULL AND phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $cq->execute($ch); foreach ($cq->fetchAll() as $__r) { $__rows[] = $__r; $__seen[(string)$__r['phone']] = 1; } }
+        foreach (array_chunk(array_values(array_unique($need)), 300) as $ch) { $cq = $pdo->prepare("SELECT * FROM wa_contacts WHERE optout = 0 AND last_in_at IS NOT NULL AND last_out_at IS NOT NULL AND phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $cq->execute($ch); foreach ($cq->fetchAll() as $__r) { $__rows[] = $__r; $__seen[(string)$__r['phone']] = 1; } }
     } catch (Throwable $e) { error_log('fu_engine due: ' . $e->getMessage()); }
     if (function_exists('wq_plan_paused_prefetch')) wq_plan_paused_prefetch($pdo, array_column($__rows, 'phone'));
     foreach ($__rows as $c) {
