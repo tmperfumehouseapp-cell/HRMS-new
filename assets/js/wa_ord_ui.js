@@ -576,7 +576,7 @@ if (window.WaPanels && WaPanels.add) {
       + card('⭐', 'After delivery', 'Rating request a few days after delivery, then one reminder for 5-star customers', 'Words · photo · title · timing (days) · Judge.me link and where each rating goes', 'whatsapp.html#afterdel', 'Open After delivery')
       + card('🎂', 'Birthdays', 'The birthday question after an order, the gift message before the birthday, and the store\'s message that is sent by hand', 'Words · photo · title · timing · the store list is inside the same screen', 'whatsapp.html#birthdays', 'Open Birthdays')
       + card('🎫', 'Complaint messages', 'Ticket created (one per problem), the return and new-goods journey, parcel and delivery updates, the end of the ticket', 'Photo on top · words · Meta approval — the same screen as in Complaints → Settings', 'whatsapp.html#cxmsgs', 'Open Complaint messages')
-      + card('🔁', 'Follow-ups', 'For customers who asked but did not order: days, hours and offers per path', 'Teach by voice · every day\'s words · offers & festival', 'whatsapp.html#followups', 'Open Follow-ups')
+      + card('🔁', 'Journey', 'One timeline: customers who asked but did not order (minutes to day 60) and every customer after an order (to day 365)', 'Every step · message · photo · results', 'whatsapp.html#followups', 'Open the Journey')
       + card('🔑', 'Key flows and pre-made messages', 'Fixed answers for fixed messages (website, ads, campaign buttons) and the library of pre-made messages', 'Words · photo · approval', 'whatsapp.html#kflows', 'Open Key flows') + '</div>';
     return () => { };
   });

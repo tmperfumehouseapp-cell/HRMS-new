@@ -123,7 +123,7 @@ function wq_type_label(string $t): string { return wq_types()[$t] ?? ($t === 'un
 function wq_type_tag(string $t): string { return $t . '_query'; }
 function wq_tag_labels(): array
 {
-    return ['meta_query' => 'Meta query', 'campaign_query' => 'Campaign query', 'community_query' => 'Community query', 'regenerated_query' => 'Regenerated query', 'new_query' => 'New query', 'other_query' => 'Other query',
+    return ['cold' => '❄ Cold — ignored our follow-ups', 'meta_query' => 'Meta query', 'campaign_query' => 'Campaign query', 'community_query' => 'Community query', 'regenerated_query' => 'Regenerated query', 'new_query' => 'New query', 'other_query' => 'Other query',
         'arrive_morning' => 'Morning (5-12)', 'arrive_afternoon' => 'Afternoon (12-17)', 'arrive_evening' => 'Evening (17-22)', 'arrive_night' => 'Night (22-5)', 'premium_vip' => 'Premium: VIP', 'premium_high' => 'Premium: high', 'campaign' => 'Campaign (chat closed 24h+ / imported)', 'business_autoreply' => '🏢 Business (auto-reply, not a customer)'];
 }
 function wq_tag_group(string $tag): string { return preg_match('/_query$/', $tag) ? 'type' : (strpos($tag, 'arrive_') === 0 ? 'time' : (strpos($tag, 'premium_') === 0 ? 'value' : 'other')); }

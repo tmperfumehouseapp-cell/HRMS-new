@@ -210,7 +210,9 @@ function wq_lifecycle_map(PDO $pdo, array $phones): array
             try { $st = $pdo->prepare("SELECT phone, status, want FROM wq_rescue WHERE status IN ('open','taken','given') AND phone IN ($in)"); $st->execute($ch); foreach ($st->fetchAll() as $x) { $resc[(string)$x['phone']] = (string)$x['status']; $rwant[(string)$x['phone']] = (string)$x['want']; } } catch (Throwable $e) { }
             $wsv = wq_want_saved($pdo, $ch);
             try { $st = $pdo->prepare("SELECT phone FROM wa_order_done WHERE mute_until > NOW() AND phone IN ($in)"); $st->execute($ch); foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $x) $done[(string)$x] = 1; } catch (Throwable $e) { }
-            $fu = wq_rescue_fu_map($pdo, $ch); $pz = [];
+            $fu = wq_rescue_fu_map($pdo, $ch); $pz = []; $fst = [];
+            try { $st = $pdo->prepare("SELECT phone, sid, step, status, due_at, stop_why FROM wa_fu_state WHERE phone IN ($in)"); $st->execute($ch); foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $x) $fst[(string)$x['phone']] = $x; } catch (Throwable $e) { }
+            static $sitT = null; if ($sitT === null) { $sitT = []; try { foreach (fu_plans_get($pdo)['situations'] as $sx) $sitT[(string)$sx['id']] = [$sx['title'], count($sx['steps'])]; } catch (Throwable $e) { } }
             try { $st = $pdo->prepare("SELECT phone, who, MAX(ts) m FROM wa_messages WHERE dir = 'out' AND status <> 'failed' AND (who IN ('emp','person','phone') OR who = 'campaign') AND ts >= ? AND phone IN ($in) GROUP BY phone, who"); $st->execute(array_merge([date('Y-m-d H:i:s', $now - 2 * 86400)], $ch));
                 foreach ($st->fetchAll() as $x) { if ($x['who'] === 'campaign') $pz[(string)$x['phone']] = 'a campaign went in the last 2 days'; elseif (strtotime((string)$x['m']) >= $now - 36 * 3600 && !isset($pz[(string)$x['phone']])) $pz[(string)$x['phone']] = 'a person wrote in the last 36 h'; } } catch (Throwable $e) { }
             foreach ($ch as $ph) {
@@ -230,7 +232,11 @@ function wq_lifecycle_map(PDO $pdo, array $phones): array
                 if (in_array($r[0], ['closed', 'complaint', 'ordered'], true) || $dd === null) $plan = '';
                 elseif ($r[0] === 'rescue') $plan = 'A person is working this chat — no automatic message';
                 elseif ($dd > 60) $plan = 'After day 60 — campaigns only';
-                else { $plan = ($dd <= 10 ? 'Autopilot (day ' . $dd . ')' : 'Journey (day ' . $dd . ' of 60)'); if (isset($pz[$ph])) $plan .= ' · paused: ' . $pz[$ph]; }
+                else { $f = $fst[$ph] ?? null; $tt = $f ? ($sitT[(string)$f['sid']] ?? null) : null;
+                    if ($f && strpos((string)$f['stop_why'], 'cold') === 0) $plan = '❄ Cold group — ignored our follow-ups';
+                    elseif ($tt) $plan = $tt[0] . ' · step ' . min($tt[1], (int)$f['step'] + 1) . ' of ' . $tt[1] . (in_array($f['status'], ['plan', 'ready', 'tpl'], true) && $f['due_at'] ? ' · next ' . date('j M H:i', strtotime((string)$f['due_at'])) : ($f['status'] === 'done' ? ' · finished' : ''));
+                    else $plan = 'Day ' . $dd . ' of 60';
+                    if (isset($pz[$ph])) $plan .= ' · paused: ' . $pz[$ph]; }
                 $o[$ph] = ['key' => $r[0], 'label' => $r[1], 'want' => $wk, 'want_label' => wq_want_label($wk), 'day' => $dd, 'plan' => $plan];
             }
         }
@@ -253,7 +259,7 @@ function wq_rescue_lost(PDO $pdo, int $days): array
 
 // ------------------------------------------------------------------------------------------------------------------ router
 $__wqm = (string)($action ?? ($_GET['action'] ?? ''));
-if (strpos($__wqm, 'wq.rescue_') === 0 && in_array($__wqm, ['wq.rescue_tpl_list', 'wq.rescue_tpl_save', 'wq.rescue_tpl_submit', 'wq.rescue_templates', 'wq.rescue_draft', 'wq.rescue_stats', 'wq.rescue_start', 'wq.rescue_lost', 'wq.rescue_knows'], true)) {
+if (strpos($__wqm, 'wq.rescue_') === 0 && in_array($__wqm, ['wq.rescue_tpl_list', 'wq.rescue_tpl_save', 'wq.rescue_tpl_submit', 'wq.rescue_templates', 'wq.rescue_draft', 'wq.rescue_stats', 'wq.rescue_start', 'wq.rescue_lost', 'wq.rescue_knows', 'wq.rescue_plan'], true)) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'; $auth = require_auth(); $me = (int)($auth['employee_id'] ?? 0);
     if (!function_exists('wa_tables') || !wa_tables($pdo)) json_response(['error' => 'WhatsApp storage is not available - check database permissions.'], 500);
     if (function_exists('wq_deps')) wq_deps($pdo); if (!wq_rescue_tables($pdo)) json_response(['error' => 'Rescue storage is not available.'], 500);
@@ -312,6 +318,7 @@ if (strpos($__wqm, 'wq.rescue_') === 0 && in_array($__wqm, ['wq.rescue_tpl_list'
             json_response(['ok' => true, 'parts' => $K['parts'], 'numbers' => count($K['allowed']), 'lessons_total' => $lc, 'guidebook' => $gb, 'preview' => mb_substr($K['text'], 0, 6000),
                 'writers' => [['🔁 Follow-up Autopilot (days 1–10)', function_exists('fu_write') && function_exists('wk_guide_text')], ['🎁 Autopilot offers', function_exists('fa_offer_fill') && function_exists('wk_knowledge')], ['🗓 Journey (days 11–60)', function_exists('wj_fill') && function_exists('wk_knowledge')], ['🛟 Rescue AI draft', function_exists('wq_rescue_ai_draft') && function_exists('wk_knowledge')], ['🤖 Teach bot (chat replies)', function_exists('lib_bot_reply')]]]);
         }
+        case 'wq.rescue_plan': { $needGet(); $needTeam(); $k = preg_replace('/\D+/', '', (string)($_GET['phone'] ?? '')); $k = strlen($k) >= 10 ? substr($k, -10) : ''; if ($k === '') json_response(['error' => 'Chat not found.'], 404); json_response(['ok' => true] + jn_customer_timeline($pdo, $k)); }
         case 'wq.rescue_lost': { $needGet(); $needAdmin(); json_response(['ok' => true] + wq_rescue_lost($pdo, max(1, min(365, (int)($in['days'] ?? 30))))); }
         case 'wq.rescue_stats': { $needGet(); $needAdmin(); json_response(wq_rescue_stats($pdo, max(1, min(90, (int)($in['days'] ?? 14))))); }
         case 'wq.rescue_start': { $needGet(); $needAdmin(); wq_rescue_tpl_seed($pdo, $me); json_response(wq_rescue_start($pdo)); }

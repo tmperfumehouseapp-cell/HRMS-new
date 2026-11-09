@@ -350,9 +350,9 @@ function wj_collect(PDO $pdo, array $plan, array $cfg, int $now, int $limit = 40
                 $q = $pdo->prepare("SELECT phone, ref, MAX(sent_at) m FROM wa_wj_ev WHERE status = 'sent' AND sent_at >= ? AND phone IN ($in) GROUP BY phone, ref"); $q->execute(array_merge([wj_dt($now - 60 * 86400)], $ph));
                 foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $e) { $t0 = strtotime((string)$e['m']); $refSent[$e['phone'] . '|' . $e['ref']] = $t0; if (strpos((string)$e['ref'], 'w_') !== 0 && $t0 > ($offerAt[$e['phone']] ?? 0)) $offerAt[$e['phone']] = $t0; }
                 $q = $pdo->prepare("SELECT phone, topic, perfume, hook FROM wa_wj_topic WHERE phone IN ($in)"); $q->execute($ph); foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $e) $top[$e['phone']] = $e; } catch (Throwable $e) { }
-            $segOf = []; if ($tk === 'buyer') { try { $cuts = jn_cuts($pdo); $sq = $pdo->prepare("SELECT phone, n, spent FROM wa_cust WHERE phone IN ($in)"); $sq->execute($ph); foreach ($sq->fetchAll(PDO::FETCH_ASSOC) as $e) $segOf[(string)$e['phone']] = jn_seg_of((int)$e['n'], (float)$e['spent'], $cuts); } catch (Throwable $e) { } }
+            $dead = $tk === 'buyer' ? jn_dead_orders($pdo, $ph) : []; $segOf = []; if ($tk === 'buyer') { try { $cuts = jn_cuts($pdo); $sq = $pdo->prepare("SELECT phone, n, spent FROM wa_cust WHERE phone IN ($in)"); $sq->execute($ph); foreach ($sq->fetchAll(PDO::FETCH_ASSOC) as $e) $segOf[(string)$e['phone']] = jn_seg_of((int)$e['n'], (float)$e['spent'], $cuts); } catch (Throwable $e) { } }
             foreach ($chunk as $c) {
-                $ph0 = (string)$c['phone']; $a = strtotime((string)$c['anchor_at']); if (!$a) continue; $age = (int)floor(($now - $a) / 86400); $ak = date('Ymd', $a); $due = []; $topic = $top[$ph0] ?? null;
+                $ph0 = (string)$c['phone']; if (isset($dead[$ph0])) continue; $a = strtotime((string)$c['anchor_at']); if (!$a) continue; $age = (int)floor(($now - $a) / 86400); $ak = date('Ymd', $a); $due = []; $topic = $top[$ph0] ?? null;
                 if ($tk === 'buyer') $topic = array_merge($topic ?: ['perfume' => '', 'hook' => ''], ['topic' => $segOf[$ph0] ?? '']);   // the customer's type
                 foreach ($steps as $s) {
                     if ($age < $s['day'] || $age - $s['day'] > $cfg['grace'] || isset($done[$ph0 . '|' . $tk . '|' . $s['id'] . '|' . $ak])) continue;
@@ -443,6 +443,18 @@ function wj_run(PDO $pdo): array
 }
 
 // ---------------------------------------------------------------------------------------------------------------------- the general brain
+/** Phones whose LATEST order was cancelled, refunded or came back (RTO): no "buy again" for them. Returns phone => true. */
+function jn_dead_orders(PDO $pdo, array $phones): array
+{
+    $o = []; $phones = array_values(array_unique(array_map('strval', $phones))); if (!$phones) return $o;
+    try { $in = implode(',', array_fill(0, count($phones), '?')); $q = $pdo->prepare("SELECT RIGHT(REGEXP_REPLACE(phone, '[^0-9]', ''), 10) p, shopify_id, created_at, tags, financial_status FROM shop_orders WHERE created_at >= ? AND RIGHT(REGEXP_REPLACE(phone, '[^0-9]', ''), 10) IN ($in) ORDER BY created_at");
+        $q->execute(array_merge([date('Y-m-d H:i:s', time() - 400 * 86400)], $phones)); $last = [];
+        foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $last[(string)$r['p']] = $r;
+        $ids = []; foreach ($last as $p => $r) { if (stripos((string)$r['tags'], 'cancel') !== false || in_array(strtolower((string)$r['financial_status']), ['refunded', 'voided'], true)) $o[$p] = true; else $ids[(string)$r['shopify_id']] = $p; }
+        if ($ids) { $in2 = implode(',', array_fill(0, count($ids), '?')); $q = $pdo->prepare("SELECT shopify_id FROM dp_dsp_parcels WHERE shopify_id IN ($in2) AND status IN ('cancelled', 'rto')"); $q->execute(array_keys($ids)); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $sid) if (isset($ids[(string)$sid])) $o[$ids[(string)$sid]] = true; }
+    } catch (Throwable $e) { }
+    return $o;
+}
 // ---------------------------------------------------------------------------------------------------------------------- AFTER AN ORDER: 12 customer types
 /** After an order a customer is one of 12 types: how many times they ordered (1st, 2nd, 3rd, 4th or more) × what they spend per order (premium / standard / budget).
  *  Each type has its own timeline (days counted from the LAST order, up to day 365). Ordering again moves the customer to the next type and the clock starts again from that order. */
@@ -770,7 +782,7 @@ function wj_view(PDO $pdo): array
     $messages = []; foreach ($reg as $k => $x) $messages[] = ['k' => $k, 'label' => $x[0], 'rule' => $x[1], 'body' => function_exists('fa_tpl_body') ? fa_tpl_body($pdo, $k) : '', 'status' => wj_tpl_state($pdo, $k), 'icon' => wj_icon($k), 'photo' => (int)setting_get($pdo, 'fa_tplphoto_' . $k, '0'), 'uses' => count(array_filter(array_merge($plan['tracks']['lead']['steps'], $plan['tracks']['buyer']['steps']), function ($s) use ($k) { return $s['ref'] === $k; }))];
     $auto = []; try { if (function_exists('fu_plans_get')) foreach (fu_plans_get($pdo)['situations'] as $p) { if (($p['kind'] ?? '') === 'stop') continue; foreach ((array)$p['steps'] as $x) { $d = max(1, (int)ceil($x['after_h'] / 24)); if ($d > 10) continue; $auto[$d] = $auto[$d] ?? ['day' => $d, 'msg' => 0, 'offer' => 0]; $auto[$d][$x['kind'] === 'offer' ? 'offer' : 'msg']++; } } } catch (Throwable $e) { }
     ksort($auto); $hist = []; foreach (array_reverse(wj_json($pdo, 'wj_hist', [])) as $h) $hist[] = ['at' => $h['at'], 'why' => $h['why']];
-    return ['ok' => true, 'window' => ['from' => wj_hm(jn_window($pdo)['from']), 'to' => wj_hm(jn_window($pdo)['to'])], 'segments' => jn_segments_view($pdo), 'unified' => jn_unified($pdo), 'daily' => wj_json($pdo, 'wj_daily', []), 'change' => wj_json($pdo, 'wj_change', []), 'can_undo_change' => !empty(wj_json($pdo, 'wj_change_undo', [])['items']), 'mode' => wj_mode($pdo), 'cfg' => wj_cfg($pdo), 'ai' => function_exists('convo_ai'), 'ready' => function_exists('fa_offers'), 'steps' => $steps, 'messages' => $messages, 'auto10' => array_values($auto), 'season' => function_exists('fa_season') ? fa_season($pdo) : [], 'season_now' => function_exists('fa_season_text') ? fa_season_text($pdo) : '',
+    return ['ok' => true, 'window' => ['from' => wj_hm(jn_window($pdo)['from']), 'to' => wj_hm(jn_window($pdo)['to']), 'cold_after' => (int)setting_get($pdo, 'jn_cold_after', '8')], 'segments' => jn_segments_view($pdo), 'unified' => jn_unified($pdo), 'daily' => wj_json($pdo, 'wj_daily', []), 'change' => wj_json($pdo, 'wj_change', []), 'can_undo_change' => !empty(wj_json($pdo, 'wj_change_undo', [])['items']), 'mode' => wj_mode($pdo), 'cfg' => wj_cfg($pdo), 'ai' => function_exists('convo_ai'), 'ready' => function_exists('fa_offers'), 'steps' => $steps, 'messages' => $messages, 'auto10' => array_values($auto), 'season' => function_exists('fa_season') ? fa_season($pdo) : [], 'season_now' => function_exists('fa_season_text') ? fa_season_text($pdo) : '',
         'proposal' => wj_json($pdo, 'wj_proposal', []), 'fest_sug' => wj_json($pdo, 'wj_fest_sug', []), 'festivals' => wj_fest_upcoming($pdo, 10), 'topics' => wj_topics_view($pdo), 'night' => wj_json($pdo, 'wj_night', []), 'stats' => wj_stats($pdo), 'hist' => array_slice($hist, 0, 6),
         'auto_since' => (int)setting_get($pdo, 'wj_auto_since', '0'), 'autopilot_mode' => function_exists('fu_mode') ? fu_mode($pdo) : 'off'];
 }
@@ -833,7 +845,7 @@ if (strpos($__wj, 'fu.wj_') === 0) {
     }
     if ($__wj === 'fu.jn_window') {
         if ($isPost) { $p = function ($v) { return preg_match('/^(\d{1,2}):(\d{2})$/', (string)$v, $mm) ? max(0, min(1439, (int)$mm[1] * 60 + (int)$mm[2])) : null; }; $f = $p($in['from'] ?? ''); $t = $p($in['to'] ?? '');
-            if ($f === null || $t === null || $f === $t) json_response(['error' => 'Give two different times like 10:00 and 02:00.'], 422); setting_set($pdo, 'jn_window', json_encode(['from' => $f, 'to' => $t])); }
+            if ($f === null || $t === null || $f === $t) json_response(['error' => 'Give two different times like 10:00 and 02:00.'], 422); setting_set($pdo, 'jn_window', json_encode(['from' => $f, 'to' => $t])); if (isset($in['cold_after']) && is_numeric($in['cold_after'])) setting_set($pdo, 'jn_cold_after', (string)max(0, min(40, (int)$in['cold_after']))); }
         $w = jn_window($pdo); json_response(['message' => $isPost ? 'Saved ✓ — messages go between ' . wj_hm($w['from']) . ' and ' . wj_hm($w['to']) . '.' : '', 'from' => wj_hm($w['from']), 'to' => wj_hm($w['to'])]);
     }
     if ($__wj === 'fu.wj_queue') json_response(['ok' => true] + wj_queue($pdo));

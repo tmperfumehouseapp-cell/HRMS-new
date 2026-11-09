@@ -131,6 +131,7 @@ function fa_offer_fill(PDO $pdo, array $c, string $k): array
 {
     $perf = ''; $line = ''; $msgs = function_exists('fu_conv') ? fu_conv($pdo, (string)$c['phone']) : [];
     $facts = ''; $allowed = []; if (function_exists('wk_knowledge')) { $K = wk_knowledge($pdo, $msgs); $facts = $K['text']; $allowed = $K['allowed']; }   // 🧠 one knowledge for every writer
+    if (function_exists('jn_context_note')) $facts .= "\n" . jn_context_note($pdo, (string)$c['phone']);
     $season = fa_season_text($pdo); $rule = fa_offer_rule($pdo, $k);
     if (function_exists('convo_ai') && $msgs) {
         $conv = ''; foreach (array_slice($msgs, -14) as $m) $conv .= ($m['who'] === 'customer' ? 'Customer: ' : 'Shop: ') . $m['text'] . "\n";

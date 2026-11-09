@@ -273,10 +273,23 @@
         : `<div><small>My open chats</small><b>${c.mine || 0}</b></div><div class="${c.waiting ? 'hot' : ''}"><small>Waiting for my reply</small><b>${c.waiting || 0}</b></div><div><small>Closed by me</small><b>${c.closed || 0}</b></div>`;
     }
     const LC = { new: '#fee2e2;color:#991b1b', waiting: '#ffedd5;color:#9a3412', hot: '#fee2e2;color:#991b1b', rescue: '#ede9fe;color:#5b21b6', bot: '#e0f2fe;color:#075985', ordered: '#dcfce7;color:#166534', complaint: '#f3e8ff;color:#6b21a8', talking: '#dcfce7;color:#166534', replied: '#f1f5f9;color:#334155', quiet: '#f1f5f9;color:#64748b', closed: '#f1f5f9;color:#64748b' };
+  // 📍 one customer's own timeline: where they are, what went, what comes next, why something waits (tap the 📍 chip)
+  window.waPlanOpen = async (phone) => {
+    const o = document.createElement('div'); o.style.cssText = 'position:fixed;inset:0;z-index:400;background:#0008;display:flex;align-items:flex-end;justify-content:center';
+    o.innerHTML = '<div style="background:#fff;width:100%;max-width:520px;border-radius:18px 18px 0 0;padding:16px;max-height:88vh;overflow:auto;font-size:14px"><div style="display:flex;align-items:center;gap:8px"><b style="font-size:16px;flex:1">📍 Where this customer is</b><button type="button" id="wpX" style="border:0;background:#f1f5f9;border-radius:8px;padding:6px 10px;cursor:pointer">✕</button></div><div id="wpB" style="margin-top:8px;color:#64748b">Loading…</div></div>';
+    document.body.appendChild(o); const close = () => o.remove(); o.querySelector('#wpX').onclick = close; o.onclick = (e) => { if (e.target === o) close(); };
+    try {
+      const d = await api.get('wq.rescue_plan', { phone }); const row = (a, b) => '<div style="display:flex;gap:10px;padding:5px 0;border-top:1px solid #f0f2f7"><span style="color:#64748b;min-width:92px;font-size:12.5px">' + esc(a) + '</span><span>' + b + '</span></div>';
+      let h = '<div style="color:#0f172a;font-weight:800">' + esc(d.title || 'No plan yet') + '</div>' + (d.pause ? '<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:8px 10px;margin:8px 0">⏸ ' + esc(d.pause) + '</div>' : '') + (d.note ? '<div style="color:#64748b;font-size:12.5px;margin-top:4px">⏰ ' + esc(d.note) + '</div>' : '');
+      h += '<div style="font-weight:800;margin:12px 0 2px">Coming next</div>' + ((d.next || []).length ? d.next.map((x) => row(x.at, esc(x.label))).join('') : '<div style="color:#64748b">Nothing is planned.</div>');
+      h += '<div style="font-weight:800;margin:12px 0 2px">Already sent</div>' + ((d.sent || []).length ? d.sent.map((x) => row(String(x.at).slice(0, 16), esc(x.text))).join('') : '<div style="color:#64748b">Nothing yet.</div>');
+      o.querySelector('#wpB').innerHTML = h;
+    } catch (e) { o.querySelector('#wpB').textContent = e.message || 'Could not load.'; }
+  };
     function pills(c) {
       let h = c.life ? `<span class="wi-p" style="background:${LC[c.life.key] || '#f1f5f9'};font-weight:800" title="Where this customer is right now">${esc(c.life.label)}</span>` : '';
       if (c.life && (c.life.want_label || c.life.day != null)) h += `<span class="wi-p" style="background:#f1f5f9" title="What the customer wants · days since their last message">${esc(c.life.want_label || '')}${c.life.day != null ? (c.life.want_label ? ' · ' : '') + 'day ' + c.life.day : ''}</span>`;
-      if (c.life && c.life.plan) h += `<span class="wi-p" style="background:#ede9fe;color:#5b21b6" title="Where this customer is in the 60-day follow-up plan">📍 ${esc(c.life.plan)}</span>`;
+      if (c.life && c.life.plan) h += `<span class="wi-p" style="background:#ede9fe;color:#5b21b6;cursor:pointer" title="Tap: this customer’s timeline — what is next, what already went" onclick="event.stopPropagation();window.waPlanOpen&&waPlanOpen('${esc(c.phone || '')}')">📍 ${esc(c.life.plan)}</span>`;
       h += c.hot ? '<span class="wi-p r">🔥 Hot</span>' : '';
       if (c.state === 'bot' && !c.assigned_emp) h += '<span class="wi-p o">Bot</span>';
       if (c.biz) h += '<span class="wi-p biz" title="Answered our campaign with an automatic business reply — not a customer">🏢 Business</span>';

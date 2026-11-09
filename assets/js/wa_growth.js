@@ -318,6 +318,8 @@
   });
 
   // ============================================================================================================== Fixed messages
+  // ✉️ Fixed messages and the builder are one screen: build on top, the approved message of each situation below
+  P('fixedb', (el, ctx) => { const a = document.createElement('div'), b = document.createElement('div'); b.style.marginTop = '14px'; el.appendChild(a); el.appendChild(b); WaPanels.mount('builder', a, ctx); return WaPanels.mount('fixed', b, ctx); });
   P('fixed', (el, ctx) => {
     let D = null; el.innerHTML = loading;
     async function load() { try { D = await api.get('wa.g_lib'); } catch (e) { el.innerHTML = errBox(e.message); return; } draw(); }
