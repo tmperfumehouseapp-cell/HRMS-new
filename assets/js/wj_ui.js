@@ -56,10 +56,10 @@
   }
 
   function mount(el, solo) {
-    css(); let D = null, CHG = null, tab = solo || 'claude', R = null, Q = null, rdays = 30, busy = false;
+    css(); let D = null, CHG = null, tab = solo || 'claude', busy = false;
     el.innerHTML = '<div class="wj"><div class="wj-card">Loading…</div></div>';
     const take = (d) => { D = d; if (!CHG || !d.change || d.change.at !== CHG.at) CHG = d.change && (d.change.rows || []).length ? JSON.parse(JSON.stringify(d.change)) : null; };
-    async function load() { try { take(await api.get('fu.wj_get')); } catch (e) { el.innerHTML = '<div class="wj"><div class="wj-err">' + esc(e.message) + '</div></div>'; return; } draw(); if (solo === 'results') loadResults(); }
+    async function load() { try { take(await api.get('fu.wj_get')); } catch (e) { el.innerHTML = '<div class="wj"><div class="wj-err">' + esc(e.message) + '</div></div>'; return; } draw(); }
     const act = async (action, body, after) => { if (busy) return null; busy = true; const r = await call(() => api.post(action, body || {})); busy = false; if (r && r.steps) { take(r); if (r.popup) tab = 'claude'; draw(); } else if (r) { await load(); } return r; };
 
     const hm = (m) => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
@@ -137,23 +137,10 @@
         + '<div class="wj-row2" style="margin-top:10px"><input class="wj-in" id="faName" placeholder="Festival or sale name" style="min-width:160px"><input class="wj-in" type="date" id="faDate"><input class="wj-in" id="faTheme" placeholder="Theme words (optional)" style="min-width:200px"><button class="wj-b s" type="button" id="faAdd">＋ Add</button></div></div>';
       return h;
     }
-    function resultsTab() {
-      let h = '<div class="wj-card"><div class="wj-h">📊 Results<span class="sp"></span><span class="wj-seg">' + [7, 30, 90].map((d) => '<button type="button" data-rd="' + d + '" class="' + (rdays === d ? 'on' : '') + '">' + d + ' days</button>').join('') + '</span></div>';
-      if (!R) h += '<div class="wj-sub">Loading…</div>';
-      else { const t = R.total, lab = {}; for (const tk of ['lead', 'buyer']) for (const s of D.steps[tk]) lab[tk + '|' + s.id] = [tk === 'lead' ? "Didn't order" : 'Ordered', s.day, s.label];
-        h += '<div class="wj-kpi" style="grid-template-columns:repeat(4,minmax(0,1fr))">' + [['Sent', t.sent], ['Replied', t.replied + (t.sent ? ' (' + Math.round(t.replied * 100 / t.sent) + '%)' : '')], ['Ordered after', t.ordered], ['Sales after', inr(t.sales)]].map(([a, b]) => '<div class="wj-k"><small>' + a + '</small><b>' + b + '</b></div>').join('') + '</div>'
-          + '<div class="wj-sub" style="margin:6px 0">Replied = wrote within 2 days. Ordered = an order within 7 days after the last journey message.</div>'
-          + (R.steps.length ? '<table class="wj-tbl"><tr><th>Track</th><th class="n">Day</th><th>Message</th><th class="n">Sent</th><th class="n">Replied</th><th class="n">Ordered</th><th class="n">₹</th></tr>' + R.steps.sort((a, b) => ((lab[a.track + '|' + a.step] || [0, 0])[1] - (lab[b.track + '|' + b.step] || [0, 0])[1])).map((s) => { const l = lab[s.track + '|' + s.step] || ['?', '?', s.step]; return '<tr><td>' + l[0] + '</td><td class="n">' + l[1] + '</td><td>' + esc(l[2]) + '</td><td class="n">' + s.sent + '</td><td class="n">' + s.replied + (s.sent ? ' · ' + Math.round(s.replied * 100 / s.sent) + '%' : '') + '</td><td class="n">' + s.ordered + '</td><td class="n">' + inr(s.sales) + '</td></tr>'; }).join('') + '</table>' : '<div class="wj-sub">Nothing sent yet in this period.</div>'); }
-      h += '</div><div class="wj-card"><div class="wj-h">👀 Who gets what now<span class="sp"></span><button class="wj-b s" type="button" data-queue>Show</button></div><div class="wj-sub">Everyone whose day has come right now (nothing is sent from here).</div>';
-      if (Q) { h += '<div style="margin:8px 0"><b>' + Q.total + '</b> customer(s) are due' + (Q.blocked ? ' · ' + Q.blocked + ' held back (complaint, recent message…)' : '') + (Q.waiting_meta ? ' · ' + Q.waiting_meta + ' wait for Meta to approve their message' : '') + '</div>'
-        + (Q.rows.length ? '<table class="wj-tbl"><tr><th>Customer</th><th>Track</th><th class="n">Day</th><th>Message</th><th>Topic</th></tr>' + Q.rows.map((r) => '<tr><td>' + esc(r.name) + ' …' + esc(r.tail) + '</td><td>' + (r.track === 'lead' ? "Didn't order" : 'Ordered') + '</td><td class="n">' + r.day + '</td><td>' + esc(r.label) + ' ' + tplPill(r.tpl) + '</td><td>' + esc(r.topic) + '</td></tr>').join('') + '</table>' : '<div class="wj-sub">Nobody is due right now.</div>'); }
-      return h + '</div>';
-    }
     function draw() {
       if (!D) return; const scroll = el.scrollTop;
-      el.innerHTML = '<div class="wj">' + (tab === 'claude' ? claudeTab() : tab === 'topics' ? topicsTab() : tab === 'msgs' ? msgsTab() : tab === 'fest' ? festTab() : resultsTab()) + '</div>'; bind(); el.scrollTop = scroll;
+      el.innerHTML = '<div class="wj">' + (tab === 'claude' ? claudeTab() : tab === 'topics' ? topicsTab() : tab === 'msgs' ? msgsTab() : tab === 'fest' ? festTab() : '') + '</div>'; bind(); el.scrollTop = scroll;
     }
-    async function loadResults() { R = null; draw(); try { R = await api.get('fu.wj_results', { days: rdays }); } catch (e) { R = { total: { sent: 0, replied: 0, ordered: 0, sales: 0 }, steps: [] }; } draw(); }
     async function ask(text, more) { const r = await act('fu.wj_brain', { text, more: !!more }, 'keep'); if (r && r.steps) { tab = 'claude'; draw(); } return r; }
     // ➕ make a new message / offer without leaving the day: it is saved in the message library and chosen for that day
     function newMsg(done) {
@@ -199,12 +186,9 @@
       const ss = $('#seSave'); if (ss) ss.onclick = async () => { const r = await call(() => api.post('fu.ap_season_save', { on: $('#seOn').checked, text: $('#seText').value, from: $('#seFrom').value, to: $('#seTo').value })); if (r) load(); };
       const fa = $('#faAdd'); if (fa) fa.onclick = () => act('fu.wj_fest', { act: 'add', name: $('#faName').value, date: $('#faDate').value, theme: $('#faTheme').value }, 'keep');
       $$('[data-fdel]').forEach((b) => b.onclick = () => { const [n, d] = b.dataset.fdel.split('|'); act('fu.wj_fest', { act: 'del', name: n, date: d }, 'keep'); });
-      // results
-      $$('[data-rd]').forEach((b) => b.onclick = () => { rdays = +b.dataset.rd; loadResults(); });
-      $$('[data-queue]').forEach((b) => b.onclick = async () => { b.disabled = true; try { Q = await api.get('fu.wj_queue'); } catch (e) { toast(e.message, true); } draw(); });
     }
     load(); return load;
   }
   WaPanels.add('mymsgs', (el) => mount(el, 'msgs'));
-  WaPanels.add('wjclaude', (el) => mount(el, 'claude')); WaPanels.add('wjtopics', (el) => mount(el, 'topics')); WaPanels.add('wjfest', (el) => mount(el, 'fest')); WaPanels.add('wjresults', (el) => mount(el, 'results'));   // the Journey's own screens, as tabs of the one Journey section   // Messages → My messages: the same registry, on its own
+  WaPanels.add('wjclaude', (el) => mount(el, 'claude')); WaPanels.add('wjtopics', (el) => mount(el, 'topics')); WaPanels.add('wjfest', (el) => mount(el, 'fest'));   // the Journey's own screens, as tabs of the one Journey section   // Messages → My messages: the same registry, on its own
 })();
