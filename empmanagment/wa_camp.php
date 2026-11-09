@@ -191,7 +191,8 @@ function wa_send_tpl_one(PDO $pdo, array $c, array $t, array $num, array $vars, 
     } else $req = wa_tpl_request($t, $num, $to, $vars);
     [$code, $d] = wa_api('POST', $req['path'], $req['json']); $wamid = (string)($d['messages'][0]['id'] ?? '');
     if ($code < 200 || $code >= 300 || $wamid === '') return [false, wa_err($d), (int)($d['error']['code'] ?? 0)];
-    wa_log_template_msg($pdo, $wamid, (string)$c['phone'], (int)$num['id'], wa_tpl_shown($t, $vars), $who); return [true, $wamid, 0];
+    $hfm = strtoupper((string)($t['header_format'] ?? '')); $mk = ['IMAGE' => '🖼 Photo on top', 'VIDEO' => '🎥 Video on top', 'DOCUMENT' => '📄 PDF on top'][$hfm] ?? '';   // the chat shows text only: say that the photo / video / PDF went with it
+    wa_log_template_msg($pdo, $wamid, (string)$c['phone'], (int)$num['id'], ($mk !== '' ? '[' . $mk . ']' . "\n" : '') . wa_tpl_shown($t, $vars), $who); return [true, $wamid, 0];
 }
 
 // ---------------------------------------------------------------------------------------------------------------- follow-ups
