@@ -382,7 +382,7 @@
     async function loadList(quiet) {
       try {
         const d = await api.get('wa.g_inbox', Object.assign(S.fl && S.fl.tag ? { tag: 1 } : {}, S.fl && S.fl.only && (S.fl.only.includes('today') || S.fl.only.includes('yesterday')) ? { wide: 1 } : {})); const old = new Set(S.chats.map((c) => c.phone + '|' + c.last_at));
-        const firstLoad = !S.loaded; S.chats = d.chats || []; S.counts = d.counts || {}; S.stats = d.stats || {}; S.cfg = d.cfg || S.cfg; S.me = d.me || {}; S.results = d.results || []; S.mentions = d.mentions || []; S.reminders = d.reminders || []; S.fetched = Date.now(); S.loaded = true;
+        const firstLoad = !S.loaded; S.sig = d.sig || ''; S.fullAt = Date.now(); S.chats = d.chats || []; S.counts = d.counts || {}; S.stats = d.stats || {}; S.cfg = d.cfg || S.cfg; S.me = d.me || {}; S.results = d.results || []; S.mentions = d.mentions || []; S.reminders = d.reminders || []; S.fetched = Date.now(); S.loaded = true;
         if (!firstLoad && S.chats.some((c) => c.waiting && !old.has(c.phone + '|' + c.last_at) && !(S.cur && S.cur.phone === c.phone))) beepNew();
         if (S.tab === 'chats' && (!S.cur || wide())) { if (quiet && held()) pend = 1; else drawList(); } drawTop(); drawTabs(); try { readLines(); } catch (e) { }
         if (Date.now() - (S.reqAt || 0) > 5000) loadReq();
@@ -409,7 +409,13 @@
     document.addEventListener('touchend', letGo, { passive: true }); document.addEventListener('touchcancel', letGo, { passive: true });
     document.addEventListener('scroll', () => holdFor(1200), { passive: true, capture: true });
     setInterval(() => { if (!pend || held()) return; pend = 0; if (S.cur) return; if (S.tab === 'chats') drawList(); else if (S.tab === 'history') drawHistory(false); }, 400);
-    function loop() { clearInterval(POLL); POLL = setInterval(() => { if (document.hidden) return; beat++; if (S.cur) once('poll', pollChat); if ((!S.cur && S.tab === 'chats') || beat % 2 === 0) once('list', () => loadList(true)); if (!S.cur && S.tab === 'chats' && S.filter === 'team' && beat % 2 === 0) once('team', loadTeam); }, 5000); }   // ⚡ every 5 s (was 4 s): 20% fewer requests from every salesperson
+    // ⚡ one light check first; the whole list (many queries) is downloaded only when it changed — or once a minute
+    async function smartList() {
+      const plain = S.sig && !(S.fl && (S.fl.tag || (S.fl.only && (S.fl.only.includes('today') || S.fl.only.includes('yesterday'))))) && S.filter !== 'team' && Date.now() - (S.fullAt || 0) < 60000;
+      if (plain) { try { const g = await api.get('wa.g_sig'); if (g && g.sig && g.sig === S.sig) { if (Date.now() - (S.reqAt || 0) > 5000) loadReq(); return; } } catch (e) { } }
+      return loadList(true);
+    }
+    function loop() { clearInterval(POLL); POLL = setInterval(() => { if (document.hidden) return; beat++; if (S.cur) once('poll', pollChat); if ((!S.cur && S.tab === 'chats') || beat % 2 === 0) once('list', smartList); if (!S.cur && S.tab === 'chats' && S.filter === 'team' && beat % 2 === 0) once('team', loadTeam); }, 5000); }   // ⚡ every 5 s (was 4 s): 20% fewer requests from every salesperson
     document.addEventListener('visibilitychange', () => { if (!document.hidden) { if (S.cur) pollChat(); loadList(true); } });
 
     function wide() { return !!(window.matchMedia && matchMedia('(min-width:1000px)').matches); }   // 🖥 PC: list + chat side by side

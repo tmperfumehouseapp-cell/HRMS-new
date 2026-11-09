@@ -216,6 +216,15 @@ function wag_number_info(PDO $pdo, array $c): array
     return ['reply_from' => $from, 'earlier' => $earlier, 'next_utility' => $next, 'why' => $why, 'switch' => $next !== $from && $from !== ''];
 }
 
+/** ⚡ A tiny fingerprint of "my" chat list (one light query). The phone asks for it every few seconds and only downloads the whole list when it changed. */
+function wag_sig(PDO $pdo, int $emp): string
+{
+    $now = time(); $fa = "(c.assigned_emp > 0 AND c.assigned_at IS NOT NULL AND c.assigned_at >= '" . date('Y-m-d H:i:s', $now - 86400) . "' AND NOT EXISTS (SELECT 1 FROM wa_messages hm WHERE hm.phone = c.phone AND hm.dir = 'out' AND hm.who IN ('emp','phone') AND hm.ts >= c.assigned_at))";
+    try {
+        $q = $pdo->prepare("SELECT COUNT(*) n, COALESCE(SUM(CRC32(CONCAT_WS('|', c.phone, c.assigned_emp, c.hot, c.status, c.last_in_at, c.last_out_at, c.tag, c.cx_id, c.optout, c.seen_msg_id, c.assigned_at, c.remind_at, c.name, c.summary))), 0) s FROM wa_contacts c WHERE c.status = 'open' AND c.assigned_emp = ? AND ((c.last_in_at IS NOT NULL AND c.last_in_at >= ?) OR " . $fa . ")");
+        $q->execute([$emp, date('Y-m-d H:i:s', $now - 86400)]); $r = $q->fetch(PDO::FETCH_ASSOC); return (int)$r['n'] . ':' . $r['s'];
+    } catch (Throwable $e) { return 'x' . mt_rand(); }
+}
 // ---------------------------------------------------------------------------------------------------------------- the phone inbox
 function wag_inbox(PDO $pdo, int $emp, bool $all, array $cfg, bool $tag = false, bool $wide = false): array
 {
@@ -233,7 +242,7 @@ function wag_inbox(PDO $pdo, int $emp, bool $all, array $cfg, bool $tag = false,
     $hf = function_exists('wa_heat_flags') ? wa_heat_flags($pdo, $ks) : [];
     $ot = function_exists('wa_owner_tags') ? wa_owner_tags($pdo, $ks) : [];
     $org = function_exists('wa_origin_chips') ? wa_origin_chips($pdo, $ks) : [];   // 📍 where the customer said they came from (Instagram / ad / friend)
-    $hum = []; if ($ks) { try { $hq = $pdo->prepare("SELECT phone, MAX(ts) t FROM wa_messages WHERE dir = 'out' AND emp_id > 0 AND phone IN (" . implode(',', array_fill(0, count($ks), '?')) . ") GROUP BY phone"); $hq->execute($ks); foreach ($hq->fetchAll() as $h) $hum[(string)$h['phone']] = strtotime((string)$h['t']); } catch (Throwable $e) { } }   // the last answer a PERSON gave (bot / auto messages do not count)
+    $hum = []; if ($ks) { try { $hq = $pdo->prepare("SELECT phone, MAX(ts) t FROM wa_messages WHERE dir = 'out' AND emp_id > 0 AND ts >= ? AND phone IN (" . implode(',', array_fill(0, count($ks), '?')) . ") GROUP BY phone"); $hq->execute(array_merge([date('Y-m-d H:i:s', $now - 10 * 86400)], $ks)); foreach ($hq->fetchAll() as $h) $hum[(string)$h['phone']] = strtotime((string)$h['t']); } catch (Throwable $e) { } }   // the last answer a PERSON gave (bot / auto messages do not count)
     foreach ($rows as $r) {
         $in = strtotime((string)$r['last_in_at']); $o = $r['last_out_at'] ? strtotime((string)$r['last_out_at']) : 0;
         $waiting = $in > $o && (int)$r['optout'] === 0; $win = $in > $now - 86400; $overdue = $waiting && $win && $in <= $cut;
@@ -924,13 +933,17 @@ if (strpos($__wg, 'wa.g_') === 0 && strpos($__wg, 'wa.g_flow') !== 0) {
             $mgr = function_exists('wa_is_manager') && wa_is_manager($pdo, $auth);   // a WhatsApp manager sees the whole team (filter by person), like an admin
             $pick = ($adm || $mgr) && !empty($_GET['emp']) ? (int)$_GET['emp'] : 0;   // one person picked in the filter → ONLY their chats ('all' used to win and showed everyone)
             $all = ($adm || $mgr) && !empty($_GET['all']) && $pick === 0; $emp = $pick !== 0 ? $pick : $me;
+            $__sig = (!$all && $pick === 0 && empty($_GET['tag']) && empty($_GET['wide']) && $emp > 0) ? wag_sig($pdo, $emp) : '';   // taken BEFORE the list is read: a change in between simply makes the next check reload
             [$rows, $cnt] = wag_inbox($pdo, $emp > 0 ? $emp : -1, $all, $cfg, !empty($_GET['tag']) && !$all, !empty($_GET['wide']) && !$all);
             $men = []; try { $q = $pdo->prepare("SELECT n.id, n.phone, n.body, n.emp_id, n.at FROM wa_notes n WHERE n.mention = ? AND n.at >= ? ORDER BY n.id DESC LIMIT 10"); $q->execute([$me, date('Y-m-d H:i:s', time() - 3 * 86400)]); $nm = employee_names_by_id($pdo);
                 foreach ($q->fetchAll() as $r) $men[] = ['id' => (int)$r['id'], 'phone' => $r['phone'], 'text' => $r['body'], 'from' => $nm[(int)$r['emp_id']] ?? '', 'at' => $r['at']]; } catch (Throwable $e) { }
             $rem = []; try { $q = $pdo->prepare("SELECT phone, name, remind_at FROM wa_contacts WHERE assigned_emp = ? AND remind_at IS NOT NULL AND remind_at <= ? ORDER BY remind_at LIMIT 10"); $q->execute([$me, date('Y-m-d H:i:s')]); $rem = $q->fetchAll(); } catch (Throwable $e) { }
             if (function_exists('wq_lifecycle_map')) { try { $lm = wq_lifecycle_map($pdo, array_column($rows, 'phone')); foreach ($rows as &$rw) $rw['life'] = $lm[(string)$rw['phone']] ?? null; unset($rw); } catch (Throwable $e) { } }   // one stage per chat
-            json_response(['chats' => $rows, 'counts' => $cnt, 'stats' => wag_stats($pdo, $me, $cfg), 'cfg' => ['unans_min' => $cfg['unans_min'], 'target' => $cfg['target'], 'sound' => $cfg['sound']], 'me' => ['emp_id' => $me, 'manager' => $mgr || $adm, 'team' => $mgr || $adm, 'name' => (employee_names_by_id($pdo)[$me] ?? ($adm ? 'Admin' : ''))],
+            json_response(['sig' => $__sig, 'chats' => $rows, 'counts' => $cnt, 'stats' => wag_stats($pdo, $me, $cfg), 'cfg' => ['unans_min' => $cfg['unans_min'], 'target' => $cfg['target'], 'sound' => $cfg['sound']], 'me' => ['emp_id' => $me, 'manager' => $mgr || $adm, 'team' => $mgr || $adm, 'name' => (employee_names_by_id($pdo)[$me] ?? ($adm ? 'Admin' : ''))],
                 'mentions' => $men, 'reminders' => $rem, 'results' => array_map(fn($k, $v) => ['k' => $k, 't' => $v[0], 'i' => $v[1], 'g' => $v[2]], array_keys(wag_outcomes()), array_values(wag_outcomes())), 'now' => date('Y-m-d H:i:s')]);
+        }
+        case 'wa.g_sig': {   // ⚡ light check: has my chat list changed since the last full download?
+            $e0 = (int)$me; json_response(['sig' => ($e0 > 0 && empty($_GET['all']) && empty($_GET['emp'])) ? wag_sig($pdo, $e0) : '']);
         }
         case 'wa.g_poll': {   // light refresh of ONE open chat: only messages after $after
             $c = $chatOf((string)($_GET['phone'] ?? '')); $after = (int)($_GET['after'] ?? 0); $key = (string)$c['phone'];
