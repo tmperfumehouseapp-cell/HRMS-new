@@ -1295,6 +1295,12 @@ function wq_grab_list(PDO $pdo, int $me, int $limit = 60): array
 /** 🔴🟠 "Needs you now": every open chat of the team (24-hour window) where the customer is ready to pay (RED) or interested (ORANGE) and NO PERSON has answered their last message — the bot may be chatting, that does not count.
  *  Everybody sees it at once and anybody can take it. A chat somebody just took (assigned_at in the last 2 minutes) leaves the others' list for those 2 minutes; silent after that, it is back for everyone.
  *  Computed at most every 10 seconds for the whole team (kept in one setting), so 15 phones refreshing cost one query. */
+function wq_need_tables(PDO $pdo): bool
+{
+    static $ok = null; if ($ok !== null) return $ok;
+    try { $pdo->exec("CREATE TABLE IF NOT EXISTS wq_need_log (id BIGINT AUTO_INCREMENT PRIMARY KEY, phone VARCHAR(12) NOT NULL, level VARCHAR(8) NOT NULL, seen_at DATETIME NOT NULL, in_at DATETIME NOT NULL, taken_at DATETIME NULL, taken_by INT NOT NULL DEFAULT 0, dismissed TINYINT NOT NULL DEFAULT 0, UNIQUE KEY u_pi (phone, in_at), KEY k_seen (seen_at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"); return $ok = true; }
+    catch (Throwable $e) { return $ok = false; }
+}
 function wq_needs(PDO $pdo, int $me): array
 {
     $now = time(); $raw = json_decode((string)setting_get($pdo, 'wq_needs', ''), true);
@@ -1306,13 +1312,17 @@ function wq_needs(PDO $pdo, int $me): array
             $st->execute([wq_dt($now - 86400)]); $rows = $st->fetchAll();
             $phs = array_values(array_map(fn($r) => (string)$r['phone'], $rows)); $last = [];
             if ($phs) { $q = $pdo->prepare("SELECT m.phone, m.body FROM wa_messages m JOIN (SELECT phone, MAX(id) mid FROM wa_messages WHERE dir = 'in' AND phone IN (" . wq_in($phs) . ") GROUP BY phone) x ON x.mid = m.id"); $q->execute($phs); foreach ($q->fetchAll() as $t) $last[(string)$t['phone']] = (string)$t['body']; }
+            $dis = []; if ($phs && wq_need_tables($pdo)) { try { $q = $pdo->prepare("SELECT phone, in_at FROM wq_need_log WHERE dismissed = 1 AND seen_at >= ? AND phone IN (" . wq_in($phs) . ")"); $q->execute(array_merge([wq_dt($now - 86400)], $phs)); foreach ($q->fetchAll() as $t) $dis[(string)$t['phone'] . '|' . wq_ts($t['in_at'])] = 1; } catch (Throwable $e) { } }
             foreach ($rows as $r) {
-                $ph = (string)$r['phone']; $body = (string)($last[$ph] ?? '');
+                $ph = (string)$r['phone']; $body = (string)($last[$ph] ?? ''); if (isset($dis[$ph . '|' . wq_ts($r['last_in_at'])])) continue;   // somebody marked it "not a real lead"
+
                 $rd = function_exists('wag_read') ? wag_read(['last_in_at' => $r['last_in_at'], 'last_body' => $body, 'last_dir' => 'in'], true, true, (int)$r['hot'] === 1, false, 0, $now) : ['i' => ''];
                 $lv = (string)($rd['i'] ?? ''); if ($lv === '') continue;
                 $items[] = ['phone' => $ph, 'name' => (string)$r['name'], 'level' => $lv, 'emp' => (int)$r['assigned_emp'], 'at' => wq_ts($r['assigned_at'] ?? ''), 'in' => wq_ts($r['last_in_at']), 'txt' => mb_substr(trim($body), 0, 90), 'why' => (string)($rd['u'] ?? '')];
                 if (count($items) >= 40) break;
             }
+            if ($items && wq_need_tables($pdo)) { $ins = $pdo->prepare("INSERT IGNORE INTO wq_need_log (phone, level, seen_at, in_at) VALUES (?, ?, ?, ?)"); foreach ($items as $x) { try { $ins->execute([$x['phone'], $x['level'], wq_dt($now), wq_dt($x['in'])]); } catch (Throwable $e) { } } }   // for the "Bot handoffs" board
+            if (wq_need_tables($pdo) && mt_rand(1, 300) === 1) { try { $pdo->exec("DELETE FROM wq_need_log WHERE seen_at < DATE_SUB(NOW(), INTERVAL 30 DAY)"); } catch (Throwable $e) { } }
         } catch (Throwable $e) { }
         $raw = ['at' => $now, 'items' => $items]; setting_set($pdo, 'wq_needs', json_encode($raw, JSON_UNESCAPED_UNICODE));
     }
@@ -1343,6 +1353,33 @@ function wq_urgent_push(PDO $pdo): int
     } catch (Throwable $e) { }
     return $n;
 }
+/** An ORANGE chat that is not a real lead (just curious, wrong person): hidden for everyone; counted on the board so the rules can be tightened. */
+function wq_need_dismiss(PDO $pdo, string $phone, int $me): array
+{
+    if ($me <= 0) return ['error' => 'Only a logged-in employee can do this.']; $c = wq_contact($pdo, $phone); if (!$c || !wq_need_tables($pdo)) return ['error' => 'Chat not found.'];
+    $pdo->prepare("UPDATE wq_need_log SET dismissed = 1 WHERE phone = ? AND in_at = ? AND level = 'orange'")->execute([$phone, wq_dt(wq_ts($c['last_in_at'] ?? ''))]);
+    try { setting_set($pdo, 'wq_needs', ''); } catch (Throwable $e) { } return ['ok' => true];
+}
+/** Admin board: what came up as red / orange in the last 7 days, who took it, how fast, and whether an order followed. */
+function wq_needs_board(PDO $pdo): array
+{
+    $o = ['ok' => true, 'rows' => [], 'sum' => ['red' => ['n' => 0, 'taken' => 0, 'answered' => 0, 'ordered' => 0, 'dismissed' => 0, 'take_s' => 0, 'reply_s' => 0], 'orange' => ['n' => 0, 'taken' => 0, 'answered' => 0, 'ordered' => 0, 'dismissed' => 0, 'take_s' => 0, 'reply_s' => 0]], 'live' => []];
+    if (!wq_need_tables($pdo)) return $o; $names = wq_names($pdo);
+    try {
+        $ord = []; foreach ($pdo->query("SELECT DISTINCT RIGHT(phone, 10) FROM shop_orders WHERE created_at >= DATE_SUB(NOW(), INTERVAL 8 DAY) AND phone <> ''")->fetchAll(PDO::FETCH_COLUMN) as $p) $ord[(string)$p] = 1;
+        $st = $pdo->query("SELECT l.phone, l.level, l.seen_at, l.in_at, l.taken_at, l.taken_by, l.dismissed, c.name, (SELECT MIN(h.ts) FROM wa_messages h WHERE h.phone = l.phone AND h.dir = 'out' AND h.emp_id > 0 AND h.ts >= l.in_at) reply_at FROM wq_need_log l LEFT JOIN wa_contacts c ON c.phone = l.phone WHERE l.seen_at >= DATE_SUB(NOW(), INTERVAL 7 DAY) ORDER BY l.id DESC LIMIT 300");
+        $n = 0; $cnt = ['red' => ['t' => 0, 'r' => 0], 'orange' => ['t' => 0, 'r' => 0]];
+        foreach ($st->fetchAll() as $r) {
+            $lv = $r['level'] === 'red' ? 'red' : 'orange'; $S = &$o['sum'][$lv]; $S['n']++; $seen = wq_ts($r['seen_at']);
+            $tk = $r['taken_at'] ? max(0, wq_ts($r['taken_at']) - $seen) : null; $rp = $r['reply_at'] ? max(0, wq_ts($r['reply_at']) - $seen) : null; $od = isset($ord[$r['phone']]);
+            if ($r['taken_at']) { $S['taken']++; $S['take_s'] += $tk; $cnt[$lv]['t']++; } if ($rp !== null) { $S['answered']++; $S['reply_s'] += $rp; $cnt[$lv]['r']++; } if ($od) $S['ordered']++; if ((int)$r['dismissed'] === 1) $S['dismissed']++; unset($S);
+            if (++$n <= 60) $o['rows'][] = ['phone' => $r['phone'], 'name' => (string)$r['name'], 'level' => $lv, 'seen' => (string)$r['seen_at'], 'taken_by' => (int)$r['taken_by'] > 0 ? wq_person($names, (int)$r['taken_by']) : '', 'take_s' => $tk, 'reply_s' => $rp, 'ordered' => $od, 'dismissed' => (int)$r['dismissed'] === 1];
+        }
+        foreach (['red', 'orange'] as $lv) { $o['sum'][$lv]['take_s'] = $cnt[$lv]['t'] ? (int)round($o['sum'][$lv]['take_s'] / $cnt[$lv]['t']) : null; $o['sum'][$lv]['reply_s'] = $cnt[$lv]['r'] ? (int)round($o['sum'][$lv]['reply_s'] / $cnt[$lv]['r']) : null; }
+        foreach (wq_needs($pdo, 0) as $x) $o['live'][] = ['phone' => $x['phone'], 'name' => $x['name'], 'level' => $x['level'], 'holder' => $x['holder'], 'sec' => $x['sec'], 'txt' => $x['txt']];
+    } catch (Throwable $e) { }
+    return $o;
+}
 /** Take a "Needs you now" chat (the bot may have answered it — only a PERSON's answer counts). Checked again at the moment of taking. */
 function wq_need_take(PDO $pdo, string $phone, int $me): array
 {
@@ -1355,10 +1392,11 @@ function wq_need_take(PDO $pdo, string $phone, int $me): array
     $q = $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND dir = 'out' AND emp_id > 0 AND ts >= ? LIMIT 1"); $q->execute([$phone, wq_dt($in)]); if ($q->fetchColumn()) return ['error' => 'A person has already answered this customer.'];
     $from = (int)$c['assigned_emp'];
     if ($from > 0 && wq_ts($c['assigned_at'] ?? '') > wq_now() - 120) return ['error' => wq_name(wq_names($pdo), $from) . ' just took this chat — give them 2 minutes.'];
+    $mineN = 0; foreach (wq_needs($pdo, $me) as $x) if (!empty($x['own'])) $mineN++; if ($mineN >= 3) return ['error' => 'You already have ' . $mineN . ' customers waiting for your answer — answer them first, then take another.'];   // one person never collects everything
     $u = $pdo->prepare("UPDATE wa_contacts SET assigned_emp = ? WHERE phone = ? AND assigned_emp = ?"); $u->execute([$me, $phone, $from]);
     if ($u->rowCount() === 0) return ['error' => 'Somebody else just took this chat.'];
     $pdo->prepare("UPDATE wa_contacts SET assigned_emp = ? WHERE phone = ?")->execute([$from, $phone]);   // put it back for one line: wa_assign_to writes the log, the event and moves the query from $from
-    wa_assign_to($pdo, $phone, $me, $me, 'grab'); try { setting_set($pdo, 'wq_needs', ''); } catch (Throwable $e) { }
+    wa_assign_to($pdo, $phone, $me, $me, 'grab'); try { setting_set($pdo, 'wq_needs', ''); if (wq_need_tables($pdo)) { $lg = $pdo->prepare("UPDATE wq_need_log SET taken_at = ?, taken_by = ? WHERE phone = ? AND in_at = ? AND taken_at IS NULL"); $lg->execute([wq_dt(wq_now()), $me, $phone, wq_dt($in)]); } } catch (Throwable $e) { }
     return ['ok' => true, 'from' => wq_person(wq_names($pdo), $from)];
 }
 /** Take one late chat: checked again at the moment of taking (somebody may have just answered or taken it). */
@@ -1494,7 +1532,7 @@ function wq_bot_context(PDO $pdo, array $c): string
 // ------------------------------------------------------------------------------------------------------------------ router (pinned at the end of the file; answers at include time like wa_orders.php / wa_seg.php)
 $__wqa = (string)($action ?? ($_GET['action'] ?? ''));
 if (strpos($__wqa, 'wq.') === 0 && in_array($__wqa, ['wq.board', 'wq.mine', 'wq.attention', 'wq.assign', 'wq.on_duty', 'wq.queries', 'wq.query', 'wq.retype', 'wq.tags_for', 'wq.types_state', 'wq.types_next', 'wq.types_answer', 'wq.rules',
-    'wq.compare', 'wq.whatwon', 'wq.whatwon_act', 'wq.summary', 'wq.analytics', 'wq.settings', 'wq.cutover', 'wq.status', 'wq.tick', 'wq.typing', 'wq.grab_list', 'wq.grab', 'wq.grab_board', 'wq.req_list', 'wq.req_take', 'wq.need_take'], true)) {
+    'wq.compare', 'wq.whatwon', 'wq.whatwon_act', 'wq.summary', 'wq.analytics', 'wq.settings', 'wq.cutover', 'wq.status', 'wq.tick', 'wq.typing', 'wq.grab_list', 'wq.grab', 'wq.grab_board', 'wq.req_list', 'wq.req_take', 'wq.need_take', 'wq.need_dismiss', 'wq.needs_board'], true)) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'; $auth = require_auth(); $me = (int)($auth['employee_id'] ?? 0);
     if (!function_exists('wa_tables') || !wa_tables($pdo)) json_response(['error' => 'WhatsApp storage is not available - check database permissions.'], 500);
     wq_deps($pdo); if (!wq_tables($pdo)) json_response(['error' => 'WhatsApp Sales storage is not available - check database permissions.'], 500);
@@ -1511,6 +1549,8 @@ if (strpos($__wqa, 'wq.') === 0 && in_array($__wqa, ['wq.board', 'wq.mine', 'wq.
         case 'wq.req_take': { $needPost(); $k = $phoneIn(); if ($k === '') json_response(['error' => 'Chat not found.'], 404); $r = wq_req_take($pdo, $k, $me); if (isset($r['error'])) json_response($r, 409); json_response($r); }
         case 'wq.grab_board': { $needGet(); json_response(wq_grab_board($pdo, $days(7))); }
         case 'wq.need_take': { $needPost(); $k = $phoneIn(); if ($k === '') json_response(['error' => 'Chat not found.'], 404); $r = wq_need_take($pdo, $k, $me); if (isset($r['error'])) json_response($r, 409); json_response($r); }
+        case 'wq.need_dismiss': { $needPost(); $k = $phoneIn(); if ($k === '') json_response(['error' => 'Chat not found.'], 404); $r = wq_need_dismiss($pdo, $k, $me); if (isset($r['error'])) json_response($r, 409); json_response($r); }
+        case 'wq.needs_board': { $needGet(); $needAdmin(); json_response(wq_needs_board($pdo)); }
         case 'wq.grab': { $needPost(); $k = $phoneIn(); if ($k === '') json_response(['error' => 'Chat not found.'], 404); $r = wq_grab($pdo, $k, $me); if (isset($r['error'])) json_response($r, 409); json_response($r); }
         case 'wq.mine': { $needGet(); json_response(wq_mine($pdo, $me, $days(1))); }
         case 'wq.attention': { $needGet(); $needAdmin(); $l = wq_attention_list($pdo); json_response(['ok' => true, 'on' => (bool)$cfg['wq_on'], 'count' => count($l), 'items' => $l]); }
