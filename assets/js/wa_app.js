@@ -265,7 +265,7 @@
       try { const r = await api.get('wq.req_list'); const n = r.items || [], lt = r.late || []; const key = (a) => JSON.stringify(a.map((x) => x.phone + '|' + (x.mins ?? x.waiting_min)));
         const ch = key(n) !== key(S.req || []) || key(lt) !== key(S.reqLate || []);
         if (S.req && S.sound !== false && n.some((x) => !S.req.some((y) => y.phone === x.phone))) beepNew();   // 🔔 a new request came in
-        S.req = n; S.reqLate = lt; S.reqMin = r.late_min || 4;
+        S.req = n; S.reqLate = lt; S.reqMin = r.late_min || 4; { const rk = JSON.stringify((r.rescue || []).map((x) => x.phone + '|' + x.tier)); if (rk !== S.rescueKey) { S.rescueKey = rk; if (S.tab === 'chats' && S.filter === 'rescue' && (!S.cur || wide())) pend = 1; } S.rescue = r.rescue || []; S.rescueOn = !!r.rescue_member; }
         if (ch && S.tab === 'chats' && (!S.cur || wide())) { if (held()) pend = 1; else drawList(); } } catch (e) { }
     }
     // ⚠ my customers' complaint tickets (read-only — the Complaint team handles them): status, who answered last, Claude's line (bd.cx_wa_board)
@@ -277,6 +277,33 @@
       M.innerHTML = '<div style="padding:10px 12px 2px"><button type="button" id="wxCxNew" style="width:100%;padding:12px;border-radius:14px;border:0;background:#00a884;color:#fff;font:inherit;font-weight:800;font-size:15px;cursor:pointer">＋ Raise a complaint</button><div style="font-size:12px;color:#667781;margin-top:5px;text-align:center">Any customer — just the phone number. It goes straight to the Complaint team (no group needed).</div></div>'
         + '<div class="wx-h">🎫 Complaints of my customers · ' + d.items.length + ' <small style="font-weight:600;text-transform:none;letter-spacing:0">(read-only — the Complaint team replies)</small></div>' + (d.err ? '<div class="wx-empty">' + esc(d.err) + '</div>' : d.items.length ? '<div class="wx-card wx-lst">' + d.items.map((x) => { const a = x.ai ? AI[x.ai.state] || AI.in_progress : null; return `<div data-p="${esc(x.phone)}" style="padding:11px 14px;border-bottom:1px solid var(--line);cursor:pointer;${x.flag ? 'background:#fff7f7' : ''}"><div style="display:flex;gap:6px;align-items:baseline;flex-wrap:wrap"><b style="font-family:ui-monospace,Menlo,monospace;background:#eef2ff;color:#3730a3;border-radius:6px;padding:0 5px;font-size:12px">${esc(x.code)}</b><b>${esc(x.name)}</b><span style="color:var(--mut);font-size:13px">${x.icon} ${esc(x.problem)} · ${esc(x.owner)}</span></div><div style="font-size:12.5px;color:var(--mut);margin-top:2px">${x.status === 'resolved' || x.status === 'closed' ? '✅ ' + esc(x.status) + ' · ' : ''}${x.status === 'reopened' ? '<b style="color:#c2410c">🔁 re-opened' + (x.repeat ? ' (repeat ×' + x.repeat.n + ')' : '') + '</b> · ' : ''}${x.flag ? '<b style="color:#c2410c">❌ waiting for a reply</b> · ' : ''}${x.last_out ? 'last reply ' + esc(x.last_who || '') + ' ' + ago(x.last_out) : 'no reply yet'}</div>${a ? `<div style="margin-top:5px;font-size:12.5px;border-radius:9px;padding:5px 8px;background:${a[0]};color:${a[1]}">🤖 <b>${a[2]}</b> — ${esc(x.ai.line)}</div>` : ''}</div>`; }).join('') + '</div>' : '<div class="wx-empty"><b>🎉</b>None of your customers has an open complaint.</div>');
       M.onclick = (e) => { if (e.target.closest('#wxCxNew')) { if (!window.CXR) { toast('Refresh the page and try again.', true); return; } CXR.open({ askCustomer: true, source: 'whatsapp', onDone: () => loadCxB() }); return; } const p = e.target.closest('[data-p]'); if (p && p.dataset.p) openChat(p.dataset.p); };
+    }
+
+    // 🛟 Rescue (only for the people the owner put on the Rescue team): interested customers nobody followed up, most urgent first. Tap a row to READ the chat, press Take to make it yours.
+    function drawRescue() {
+      const M = $('#wxM'), L = S.rescue;
+      if (!L) { M.innerHTML = '<div class="wx-sk"></div><div class="wx-sk"></div>'; return; }
+      const TC = { act: '#fee2e2', today: '#ffedd5', week: '#fef9c3', long: '#e5e7eb' };
+      const ago = (m) => m < 1 ? 'just now' : m < 60 ? m + ' min ago' : m < 1440 ? Math.floor(m / 60) + ' h ago' : Math.floor(m / 1440) + ' d ago';
+      const row = (x) => `<div data-peek="${esc(x.phone)}" data-pk="rescue" role="button" tabindex="0" style="display:flex;gap:10px;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line);cursor:pointer"><div style="flex:1;min-width:0">`
+        + `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><b style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0">${esc(x.name || pretty(x.phone))}</b><span style="font-size:11px;font-weight:800;border-radius:99px;padding:2px 8px;background:${TC[x.tier] || '#e5e7eb'};color:#1f2937">${esc(x.tier_label || '🛟')}</span></div>`
+        + `<div style="font-size:14.5px;line-height:1.4;margin-top:3px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word">${x.last_in ? '“' + esc(x.last_in) + '”' : ''}</div>`
+        + `<div style="font-size:12px;color:#6b7280;margin-top:2px">${esc(x.why || '')} · wrote ${ago(+x.mins || 0)}</div></div>`
+        + `<div style="flex:none;display:flex;flex-direction:column;gap:6px;align-items:stretch"><button type="button" data-tk="${esc(x.phone)}" data-pk="rescue" style="border:0;border-radius:99px;background:#00a884;color:#fff;font-weight:800;font-size:13.5px;padding:9px 14px;min-height:40px">✋ Take</button>`
+        + `<button type="button" data-no="${esc(x.phone)}" style="border:1px solid #d1d5db;border-radius:99px;background:#fff;color:#6b7280;font-weight:700;font-size:12px;padding:6px 10px">Not a chance</button></div></div>`;
+      M.innerHTML = `<div class="wx-h">🛟 Rescue — interested customers nobody followed up · ${L.length}</div>`
+        + (L.length ? `<div class="wx-card wx-lst">${L.map(row).join('')}</div>` : '<div class="wx-empty"><b>🎉</b>Nothing to rescue right now.</div>')
+        + '<div style="padding:10px 14px;font-size:12.5px;color:#6b7280">Most urgent first. Tap a customer to read the chat, then press Take. A chat somebody is already talking with is not shown for a few minutes.</div>';
+      M.onclick = async (e) => {
+        const no = e.target.closest('[data-no]');
+        if (no) { e.stopPropagation(); if (!confirm('Remove this customer from Rescue — not a chance?')) return; no.disabled = true;
+          try { await api.post('wq.rescue_skip', { phone: no.dataset.no }); S.rescue = (S.rescue || []).filter((y) => y.phone !== no.dataset.no); toast('Removed from Rescue'); drawRescue(); drawTabs(); drawList(); } catch (er) { toast(er.message, true); no.disabled = false; loadReq(); } return; }
+        const t = e.target.closest('[data-tk]');
+        if (t) { e.stopPropagation(); const ph = t.dataset.tk; t.disabled = true; t.textContent = 'Taking…';
+          try { await api.post('wq.rescue_take', { phone: ph }); const x = (S.rescue || []).find((y) => y.phone === ph) || {}; S.rescue = (S.rescue || []).filter((y) => y.phone !== ph); toast('The chat is yours now ✓'); loadList(true); openChat(ph, { name: x.name || '' }); }
+          catch (er) { toast(er.message, true); t.disabled = false; t.textContent = '✋ Take'; loadReq(); } return; }
+        const b = e.target.closest('[data-peek]'); if (!b) return; const ph = b.dataset.peek, x = (S.rescue || []).find((y) => y.phone === ph) || {}; openChat(ph, { peek: 'rescue', name: x.name || '' });
+      };
     }
     const reqN = () => (S.req ? S.req.length : 0) + (S.reqLate ? S.reqLate.length : 0);
     function drawReq() {
@@ -502,12 +529,13 @@
       $('#wxSeg').hidden = false; const M = $('#wxM'); if (!S.loaded) { M.innerHTML = '<div class="wx-sk"></div><div class="wx-sk"></div><div class="wx-sk"></div>'; $('#wxSeg').innerHTML = ''; return; }
       const f = S.filter; const all = S.chats; let list = all.filter((c) => !f || (f === 'wait' ? c.waiting : f === 'new' ? c.src === 'query' : f === 'hot' ? c.hot : true));
       const FL = S.fl || (S.fl = { sort: '', only: [] }); list = flApply(list, FL);
-      const segs = [['', 'All ' + all.length], ['wait', '⏱ Waiting ' + (S.counts.waiting || 0)], ['req', '🙋 Requests ' + (S.req ? reqN() : '')], ['cx', '⚠ Complaints' + (S.cxB && S.cxB.items.length ? ' ' + S.cxB.items.length : '')], ['new', '📣 From ad'], ['hot', '🔥 ' + (S.counts.hot || 0)]]; if (S.me && S.me.team) segs.push(['team', '👥 Team']);
+      const segs = [['', 'All ' + all.length], ['wait', '⏱ Waiting ' + (S.counts.waiting || 0)], ['req', '🙋 Requests ' + (S.req ? reqN() : '')], ['cx', '⚠ Complaints' + (S.cxB && S.cxB.items.length ? ' ' + S.cxB.items.length : '')], ['new', '📣 From ad'], ['hot', '🔥 ' + (S.counts.hot || 0)]]; if (S.rescueOn) segs.splice(3, 0, ['rescue', '🛟 Rescue ' + (S.rescue ? S.rescue.length : '')]); if (S.me && S.me.team) segs.push(['team', '👥 Team']);
       const fln = FL.only.length + (FL.sort ? 1 : 0) + (FL.tag ? 1 : 0);
-      $('#wxSeg').innerHTML = `<button data-fl="1" class="${fln ? 'on' : ''}" style="${fln ? 'background:#00a884;color:#fff;border-color:#00a884;' : ''}font-weight:700">⏷ Filter${fln ? ' · ' + fln : ''}</button>` + segs.map(([k, l]) => `<button data-f="${k}" class="${f === k ? 'on' : ''}"${k === 'req' && f !== k && S.req && reqN() ? ' style="background:#f97316;color:#fff;border-color:#f97316;font-weight:800"' : ''}>${l}</button>`).join('');   // 🙋 orange while chats are waiting for someone
-      $('#wxSeg').onclick = (e) => { if (e.target.closest('[data-fl]')) { openFilter(); return; } const b = e.target.closest('button'); if (b) { S.filter = b.dataset.f; if (S.filter === 'team') loadTeam(); if (S.filter === 'req') loadReq(); if (S.filter === 'cx') loadCxB(); drawList(); } };
+      $('#wxSeg').innerHTML = `<button data-fl="1" class="${fln ? 'on' : ''}" style="${fln ? 'background:#00a884;color:#fff;border-color:#00a884;' : ''}font-weight:700">⏷ Filter${fln ? ' · ' + fln : ''}</button>` + segs.map(([k, l]) => `<button data-f="${k}" class="${f === k ? 'on' : ''}"${k === 'req' && f !== k && S.req && reqN() ? ' style="background:#f97316;color:#fff;border-color:#f97316;font-weight:800"' : (k === 'rescue' && f !== k && S.rescue && S.rescue.length ? ' style="background:#dc2626;color:#fff;border-color:#dc2626;font-weight:800"' : '')}>${l}</button>`).join('');   // 🙋 orange while chats are waiting for someone
+      $('#wxSeg').onclick = (e) => { if (e.target.closest('[data-fl]')) { openFilter(); return; } const b = e.target.closest('button'); if (b) { S.filter = b.dataset.f; if (S.filter === 'team') loadTeam(); if (S.filter === 'req' || S.filter === 'rescue') loadReq(); if (S.filter === 'cx') loadCxB(); drawList(); } };
       if (f === 'team') { drawTeam(); return; }
       if (f === 'req') { drawReq(); return; }
+      if (f === 'rescue') { drawRescue(); return; }
       if (f === 'cx') { drawCxB(); return; }
       let h = false ? '<div class="wx-lg"><span><i style="background:#22c55e"></i>Hot</span><span><i style="background:#f59e0b"></i>Waiting</span><span><i style="background:#60a5fa"></i>Talking</span><span><i style="background:#c4c9d1"></i>Quiet</span><span><i style="background:#a78bfa"></i>Complaint</span><span><i style="background:#9ca3af"></i>Business</span></div>' : '';
       const rem = (S.reminders || []).map((r) => `<div class="wx-banner y" data-p="${r.phone}" style="cursor:pointer">⏰ Remind: <b>${esc(r.name || pretty(r.phone))}</b></div>`).join(''); const men = (S.mentions || []).slice(0, 2).map((m) => `<div class="wx-banner b" data-p="${m.phone}" style="cursor:pointer">💬 ${esc(m.from)}: ${esc(m.text)}</div>`).join('');
@@ -720,7 +748,7 @@
       setTimeout(markSel, 0);
       S.cur = { phone, msgs: [], contact: { phone, name: row.name || (opt && opt.name) || '', window_open: true }, row, sugg: undefined, info: null, last: 0, tmp: 0, files: [], peek: (opt && opt.peek) || '' };
       const v = document.createElement('div'); v.className = 'wx-chat'; R.appendChild(v); drawChatShell(); loadChat();
-      if (wide() && S.tab === 'chats' && !['team', 'req', 'cx'].includes(S.filter)) { try { drawList(); } catch (e) { } }
+      if (wide() && S.tab === 'chats' && !['team', 'req', 'rescue', 'cx'].includes(S.filter)) { try { drawList(); } catch (e) { } }
       try { if (!(history.state && history.state.wxChat)) history.pushState({ wxChat: phone }, ''); } catch (e) { }   // phone Back closes the chat (back to the list), not the app
     }
     function drawChatShell() {

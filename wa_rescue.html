@@ -50,7 +50,7 @@ guardPage();
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const WHY = { hot: ['🔥 Wanted to pay / order', 'hot'], price: ['💬 Asked the price', ''], ignored: ['🔕 Wrote 2+ times – no person answered', ''] };
   const TIERC = { act: '#fee2e2', today: '#ffedd5', week: '#fef9c3', long: '#e5e7eb' };
-  const ST = { open: 'Open', taken: 'Taken', given: 'Taken', won: '✅ Order placed', ordered: 'Ordered anyway', expired: 'Expired', silent: '🔇 Gone silent' };
+  const ST = { open: 'Open', taken: 'Taken', given: 'Taken', won: '✅ Order placed', ordered: 'Ordered anyway', expired: 'Expired', silent: '🔇 Gone silent', skipped: '🚫 Not a chance' };
   const S = { d: null, team: null, tab: 'list', status: 'all', days: 7, busy: false, scanned: false };
   const ago = (s) => { if (!s) return ''; const t = new Date(String(s).replace(' ', 'T')); const m = Math.max(0, Math.round((Date.now() - t.getTime()) / 60000)); return m < 60 ? m + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : Math.round(m / 1440) + ' d ago'; };
   // Read a customer's chat: inside WhatsApp it opens in the side panel (the list stays); on its own it goes to the chat app.
@@ -82,18 +82,20 @@ guardPage();
   }
   function itemHtml(it) {
     const who = it.taken_by && it.taken_by.emp_id ? '<div class="rq-meta">Taken by <b>' + esc(it.taken_by.name) + '</b> ' + esc(ago(it.taken_at)) + '</div>' : '';
+    const skp = it.status === 'skipped' && it.skipped_by && it.skipped_by.emp_id ? '<div class="rq-meta">Marked “not a chance” by <b>' + esc(it.skipped_by.name) + '</b></div>' : '';
     const won = it.status === 'won' ? '<div class="rq-meta">Order ' + esc(it.order_name) + ' placed after it was taken ✅</div>' : '';
     const win = it.window_open ? '' : '<div class="rq-meta" style="color:#b45309">24-hour chat window closed – an approved template is needed to reach them.</div>';
     let act = '<button class="btn secondary" data-open="' + it.phone + '">Read chat</button>';
+    if (it.status === 'skipped') act += '<button class="btn secondary" data-undo="' + it.phone + '">Put back</button>';
     if (it.status === 'open') act += '<button class="btn secondary" data-give="' + it.phone + '">Give to…</button><button class="btn secondary" data-skip="' + it.phone + '">Not a chance</button>';
     return '<div class="rq-item"><div class="rq-main"><div class="rq-name" style="cursor:pointer" data-open="' + it.phone + '">' + esc(it.name || ('+91 ' + it.phone)) + ' <span class="rq-meta">+91 ' + esc(it.phone) + '</span></div>' +
       '<div>' + chips(it) + '</div><div class="rq-meta">' + esc(it.why_text) + ' · last message ' + esc(ago(it.last_in_at)) + (it.orig && it.orig.name ? ' · was with ' + esc(it.orig.name) : '') + '</div>' +
-      (it.last_text ? '<div class="rq-text">“' + esc(it.last_text) + '”</div>' : '') + who + won + win + '</div><div class="rq-act">' + act + '</div></div>';
+      (it.last_text ? '<div class="rq-text">“' + esc(it.last_text) + '”</div>' : '') + who + skp + won + win + '</div><div class="rq-act">' + act + '</div></div>';
   }
   function draw() {
     const d = S.d, s = d.summary || {}, cfg = d.cfg || {};
     let h = '<div class="rq-cards"><div class="rq-card"><b>' + (s.open || 0) + '</b><span>Waiting to be taken</span></div><div class="rq-card"><b>' + (s.taken || 0) + '</b><span>Being worked</span></div>' +
-      '<div class="rq-card"><b>' + (s.won || 0) + '</b><span>Orders placed</span></div><div class="rq-card"><b>' + (s.silent || 0) + '</b><span>Gone silent</span></div></div>';
+      '<div class="rq-card"><b>' + (s.won || 0) + '</b><span>Orders placed</span></div><div class="rq-card"><b>' + (s.silent || 0) + '</b><span>Gone silent</span></div><div class="rq-card" data-gostatus="skipped" style="cursor:pointer" title="Open the list of removed customers"><b>' + (s.skipped || 0) + '</b><span>🚫 Not a chance — tap to see</span></div></div>';
     const bf = d.backfill;
     if (bf) h += '<div class="rq-sub" style="margin-bottom:6px">' + (bf.done ? '✅ Every earlier chat has been checked (' + (bf.checked || 0) + ' queries).' : '⏳ Loading all earlier chats… <b>' + (bf.pct || 0) + '%</b> — ' + (bf.flagged || 0) + ' opportunities found so far. You can keep working; the list fills up by itself.') + (bf.error ? ' <span style="color:#d9423b">Problem: ' + esc(bf.error) + '</span>' : '') + '</div>';
     const tc = (s.tiers || {}); h += '<div class="rq-sub" style="margin-bottom:8px">Waiting by urgency: 🔴 Act now <b>' + (tc.act || 0) + '</b> · 🟠 Today <b>' + (tc.today || 0) + '</b> · 🟡 This week <b>' + (tc.week || 0) + '</b> · ⚪ Long shot <b>' + (tc.long || 0) + '</b> — listed most urgent first, then how interested, then newest. A chat somebody is working on (4-minute rule) is not offered; if the person who took it does not talk with the customer, it comes back.</div>';
@@ -101,7 +103,7 @@ guardPage();
     h += '<div class="rq-sub" style="margin-bottom:10px">' + (sc ? 'Last check ' + esc(ago(ls.at)) + ' (last ' + esc(cfg.days) + ' days): <b>' + (sc.all || 0) + '</b> queries · <b>' + (sc.quiet || 0) + '</b> quiet for ' + esc(cfg.wait_h) + '+ h · <b>' + (sc.ordered || 0) + '</b> already ordered · looked at <b>' + (sc.candidates || 0) + '</b> · <b>' + (sc.flagged || 0) + '</b> new opportunities · ' + (sc.no_signal || 0) + ' showed no interest · ' + (sc.silent || 0) + ' gone silent.' + (sc.error ? ' <span style="color:#d9423b">Problem: ' + esc(sc.error) + '</span>' : '') : 'No check has run yet — it runs by itself when WhatsApp opens and every 5 minutes.') + '</div>';
     h += '<div class="rq-tabs"><button data-tab="list" class="' + (S.tab === 'list' ? 'on' : '') + '">Queries</button><button data-tab="team" class="' + (S.tab === 'team' ? 'on' : '') + '">Rescue team</button><button data-tab="cfg" class="' + (S.tab === 'cfg' ? 'on' : '') + '">Settings</button></div>';
     if (S.tab === 'list') {
-      h += '<div class="rq-row"><select id="rqSt">' + ['all', 'open', 'taken', 'won', 'ordered', 'expired', 'silent'].map((x) => '<option value="' + x + '"' + (S.status === x ? ' selected' : '') + '>' + (x === 'all' ? 'All' : (ST[x] || x)) + '</option>').join('') + '</select>' +
+      h += '<div class="rq-row"><select id="rqSt">' + ['all', 'open', 'taken', 'won', 'ordered', 'expired', 'silent', 'skipped'].map((x) => '<option value="' + x + '"' + (S.status === x ? ' selected' : '') + '>' + (x === 'all' ? 'All' : (ST[x] || x)) + '</option>').join('') + '</select>' +
         '<select id="rqDays">' + [1, 3, 7, 14, 30].map((x) => '<option value="' + x + '"' + (S.days === x ? ' selected' : '') + '>Last ' + x + ' day' + (x > 1 ? 's' : '') + '</option>').join('') + '</select></div>';
       h += d.items.length ? d.items.map(itemHtml).join('') : '<div class="rq-empty">Nothing here right now. 🎉</div>';
     } else if (S.tab === 'team' && S.team) {
@@ -124,9 +126,11 @@ guardPage();
     S.busy = false; load();
   }
   root.addEventListener('click', (e) => {
-    const t = e.target.closest('button,a,[data-open]'); if (!t) return;
+    const t = e.target.closest('button,a,[data-open],[data-gostatus]'); if (!t) return;
+    if (t.dataset.gostatus) { S.tab = 'list'; S.status = t.dataset.gostatus; load(); return; }
     if (t.dataset.tab) { S.tab = t.dataset.tab; load(); return; }
     if (t.dataset.open) { openChat(t.dataset.open); return; }
+    if (t.dataset.undo) { act(() => api.post('wq.rescue_skip', { phone: t.dataset.undo, undo: true })); return; }
     if (t.dataset.skip) { if (confirm('Hide this query – not a real chance?')) act(() => api.post('wq.rescue_skip', { phone: t.dataset.skip })); return; }
     if (t.dataset.give) {
       api.get('wq.rescue_team').then((tm) => {
