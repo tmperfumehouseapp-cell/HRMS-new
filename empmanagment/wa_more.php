@@ -578,6 +578,7 @@ require_once __DIR__ . '/wa_bill.php';     // 💰 Billing & spend: what WhatsAp
 require_once __DIR__ . '/wq.php';         // WhatsApp Sales (query types, tags, no-answer flow, board, cut-over adapter): wq.* — BEFORE wa_seg.php
 require_once __DIR__ . '/wq_rescue.php';   // 🛟 Rescue queries: effort-missed queries, a daily rescue team, +2% bonus on won orders (wq.rescue_*) - BEFORE wa_seg.php
 require_once __DIR__ . '/wq_rescue_more.php';   // 🛟 Rescue part 2: ready messages for Meta, AI draft, per-person table, alerts, AI check (wq.rescue_tpl_*, wq.rescue_stats …) - BEFORE wa_seg.php
+require_once __DIR__ . '/wq_speed.php';   // ⚡ timing of the WhatsApp calls, server health, live switch (wq.speed, wa.g_wait)
 require_once __DIR__ . '/wq_tags.php';   // 🏷 One tag system: registry, automatic tags with why / until, patterns of staff-made tags, Claude's own new tags (wq.tags_*)
 require_once __DIR__ . '/wq_pace.php';   // ⚡ Reply pace of every salesperson: per-message pace, 7-day comparison, after-taking-a-query pace, fast reply vs order closing (wq.pace) - BEFORE wa_seg.php
 require_once __DIR__ . '/wch.php';        // Chain + perfume cart, GST bill, catalog sync (wch.*) - BEFORE wa_seg.php

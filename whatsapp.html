@@ -486,6 +486,7 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
 <script src="assets/js/wj_ui.js?v=wj7"></script>
 <script src="assets/js/jny_ui.js?v=jt8"></script>
 <script src="assets/js/wq_tags_ui.js?v=tg1"></script>
+<script src="assets/js/wq_speed_ui.js?v=sp1"></script>
 <script src="assets/js/wa_bill_ui.js?v=b1"></script>
 <script src="assets/js/wa_ord_ui.js?v=21"></script>
 <script src="assets/js/wa_cx_ui.js?v=3"></script>
@@ -540,6 +541,7 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
     { k: 'queries', t: 'Queries', ic: 'inbox', mode: 'native', sub: 'New, community and campaign queries per person — counted automatically' },
     { k: 'history', t: 'History', ic: 'clock', mode: 'native', sub: 'Chats older than 24 hours, with their result' },
     { g: 'CUSTOMERS' }, { k: 'contacts', t: 'Contacts', ic: 'users', mode: 'native', sub: 'Every customer, all numbers together' },
+    { k: 'speed', t: 'Speed', ic: 'chart', mode: 'native', sub: 'Which WhatsApp calls are slow, whether the server is healthy, and the live switch' },
     { k: 'autotags', t: 'Auto tags', ic: 'tag', mode: 'native', sub: 'Every tag: what it means, who sets it, when it goes — the patterns learned from your tags and the tags Claude made' },
     { k: 'tags', t: 'Tags & audience', ic: 'tag', mode: 'native', sub: 'Who is who — and how many you can reach in 30 / 60 / 90 days' },
     { k: 'ads', t: 'Ads', ic: 'chart', mode: 'native', sub: 'Which Meta ads bring chats and orders' },
@@ -576,7 +578,7 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
   // (#sgive, #premade, #team… open their tab), nothing was removed.
   const GROUPS = [
     { k: 'waiting', t: 'Waiting', ic: 'flame', badge2: 'unassigned', sub: 'Customers nobody has taken · waiting too long · the answering bot', tabs: [['sgive', 'Not taken'], ['grab', 'Late replies'], ['signals', 'Signals & bot']] },
-    { k: 'results', t: 'Queries & reports', ic: 'trend', sub: 'Queries per person, replies, speed, what WhatsApp costs and past chats', tabs: [['queries', 'Queries'], ['reports', 'Reports'], ['billing', 'Billing & spend'], ['history', 'History']] },
+    { k: 'results', t: 'Queries & reports', ic: 'trend', sub: 'Queries per person, replies, speed, what WhatsApp costs and past chats', tabs: [['queries', 'Queries'], ['reports', 'Reports'], ['billing', 'Billing & spend'], ['history', 'History'], ['speed', 'Speed']] },
     { k: 'customers', t: 'Customers', ic: 'users', sub: 'Every customer, tags and audiences, and the ads that bring them', tabs: [['contacts', 'Contacts'], ['tags', 'Tags & audience'], ['autotags', 'Auto tags'], ['ads', 'Ads']] },
     { k: 'templates', t: 'Messages', ic: 'tpl', sub: 'The message library: Meta-approved messages, the builder, one per situation, every automatic message in one list, and the complaint messages', tabs: [['mymsgs', 'Plan messages'], ['premade', 'Pre-made'], ['fixedb', 'Fixed & builder'], ['allmsgs', 'Where each message lives'], ['cxmsgs', 'Complaint messages']] },
     { k: 'replies', t: 'Replies', ic: 'bolt', sub: 'Quick replies, greetings, ready perfume lists, and and where to find every automatic message', tabs: [['quick', 'Quick replies'], ['greet', 'Greetings'], ['lists', 'Lists']] },
