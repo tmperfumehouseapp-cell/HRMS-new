@@ -585,7 +585,7 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
   ];
   const GOF = {}; GROUPS.forEach((g) => g.tabs.forEach(([k]) => { GOF[k] = g; }));
   const groupOf = (k) => GROUPS.find((g) => g.k === k);
-  const RAIL = [{ g: 'INBOX' }, byKeyRaw('overview'), byKeyRaw('chats'), byKeyRaw('cxboard'), groupOf('waiting'), { g: 'RESULTS' }, groupOf('results'), byKeyRaw('rescue'), byKeyRaw('billing'), { g: 'CUSTOMERS' }, groupOf('customers'),
+  const RAIL = [{ g: 'INBOX' }, byKeyRaw('overview'), byKeyRaw('chats'), byKeyRaw('cxboard'), groupOf('waiting'), { g: 'RESULTS' }, groupOf('results'), byKeyRaw('rescue'), { g: 'CUSTOMERS' }, groupOf('customers'),
     { g: 'SEND' }, byKeyRaw('campaigns'), groupOf('templates'), groupOf('replies'), groupOf('mediag'), groupOf('automation'), { g: 'SETTINGS' }, groupOf('setupg'), groupOf('rules'), groupOf('teach')];
   function byKeyRaw(k) { return MENU.find((m) => m.k === k); }
   const byKey = (k) => ITEMS.find((m) => m.k === k) || ITEMS[0];
