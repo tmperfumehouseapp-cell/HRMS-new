@@ -1329,8 +1329,8 @@ function wq_needs(PDO $pdo, int $me): array
 function wq_urgent_push(PDO $pdo): int
 {
     $n = 0; if (!function_exists('ct_push') || !function_exists('wa_people')) return 0;
-    $qf = wq_get($pdo, 'wq_push_quiet_from', null); $qt = wq_get($pdo, 'wq_push_quiet_to', null); $qf = $qf === null ? 1 : (int)$qf; $qt = $qt === null ? 8 : (int)$qt; $hr = (int)date('G');
-    if ($qf !== $qt && ($qf < $qt ? ($hr >= $qf && $hr < $qt) : ($hr >= $qf || $hr < $qt))) return 0;   // quiet hours (default 01:00-08:00): no phone rings; the card still shows, and anything still waiting is pushed when the quiet hours end
+    $qf = wq_get($pdo, 'wq_push_quiet_from', null); $qt = wq_get($pdo, 'wq_push_quiet_to', null); $qf = $qf === null ? 1 : (int)$qf; $qt = $qt === null ? 10 : (int)$qt; $hr = (int)date('G');
+    if ($qf !== $qt && ($qf < $qt ? ($hr >= $qf && $hr < $qt) : ($hr >= $qf || $hr < $qt))) return 0;   // quiet hours (default 01:00-10:00): no phone rings; the card still shows, and anything still waiting is pushed when the quiet hours end
     try {
         $emps = []; foreach (wa_people($pdo) as $p) if (!empty($p['present'])) $emps[] = (int)$p['emp_id']; if (!$emps) return 0;
         foreach (wq_needs($pdo, 0) as $x) {
