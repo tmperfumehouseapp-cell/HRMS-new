@@ -80,8 +80,13 @@ function wq_rescue_price_intent(string $t): bool
 /** Scan recent queries and flag the effort-missed ones. Time-boxed; returns ['flagged' => n, 'checked' => n]. */
 function wq_rescue_scan(PDO $pdo, float $deadline = 0.0): array
 {
-    $o = ['flagged' => 0, 'checked' => 0, 'candidates' => 0, 'silent' => 0, 'error' => '']; if (!wq_rescue_tables($pdo)) { $o['error'] = 'storage'; return $o; } $cfg = wq_rescue_cfg($pdo); if (!$cfg['on']) return $o;
+    $o = ['flagged' => 0, 'checked' => 0, 'candidates' => 0, 'silent' => 0, 'no_signal' => 0, 'all' => 0, 'quiet' => 0, 'ordered' => 0, 'error' => '']; if (!wq_rescue_tables($pdo)) { $o['error'] = 'storage'; return $o; } $cfg = wq_rescue_cfg($pdo); if (!$cfg['on']) return $o;
     $now = time(); $since = date('Y-m-d H:i:s', $now - $cfg['days'] * 86400); $quiet = date('Y-m-d H:i:s', $now - (int)round($cfg['wait_h'] * 3600));
+    try {   // where do the queries drop out? (shown on the screen so an empty list can be explained)
+        $c1 = $pdo->prepare("SELECT COUNT(*) FROM wa_queries WHERE opened_at >= ?"); $c1->execute([$since]); $o['all'] = (int)$c1->fetchColumn();
+        $c2 = $pdo->prepare("SELECT COUNT(*) FROM wa_queries q JOIN wa_contacts c ON c.phone COLLATE utf8mb4_general_ci = q.phone COLLATE utf8mb4_general_ci WHERE q.opened_at >= ? AND c.optout = 0 AND c.last_in_at IS NOT NULL AND c.last_in_at <= ?"); $c2->execute([$since, $quiet]); $o['quiet'] = (int)$c2->fetchColumn();
+        $c3 = $pdo->prepare("SELECT COUNT(*) FROM wa_queries q WHERE q.opened_at >= ? AND EXISTS (SELECT 1 FROM wq_ord x WHERE x.phone COLLATE utf8mb4_general_ci = q.phone COLLATE utf8mb4_general_ci AND x.created_at >= DATE_SUB(q.opened_at, INTERVAL 1 HOUR))"); $c3->execute([$since]); $o['ordered'] = (int)$c3->fetchColumn();
+    } catch (Throwable $e) { $o['error'] = 'counts: ' . mb_substr($e->getMessage(), 0, 160); }
     try {
         $q = $pdo->prepare("SELECT q.id, q.phone, q.opened_at, q.emp_id, c.last_in_at, c.last_out_at, c.assigned_emp
             FROM wa_queries q JOIN wa_contacts c ON c.phone COLLATE utf8mb4_general_ci = q.phone COLLATE utf8mb4_general_ci
@@ -123,7 +128,7 @@ function wq_rescue_scan(PDO $pdo, float $deadline = 0.0): array
         if ($hot) $why[] = 'hot';                                              // wanted to pay / order
         if ($price) $why[] = 'price';                                          // asked the price
         if ($inN >= 2 && !$person) $why[] = 'ignored';                         // wrote 2+ times, no person ever answered
-        if (!$why) continue;
+        if (!$why) { $o['no_signal']++; continue; }
         $txt = implode('; ', array_map(fn($w) => $nameOfWhy[$w], $why));
         $ins->execute([(string)$r['phone'], (int)$r['id'], date('Y-m-d H:i:s'), implode(',', $why), $txt, (string)$r['last_in_at'], mb_substr(trim($lastText), 0, 200), (int)$r['assigned_emp']]);
         if ($ins->rowCount() > 0) { $o['flagged']++; if (function_exists('wq_tag_put')) wq_tag_put($pdo, (string)$r['phone'], 'effort_missed'); }
