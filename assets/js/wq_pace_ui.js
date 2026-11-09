@@ -32,6 +32,9 @@ html.wqdk .wp,html.wxdk .wp{--wp-ink:#e9edef;--wp-card:#1f2c34;--wp-line:#2a3942
   function css() { if (document.getElementById('wpCss')) return; const s = document.createElement('style'); s.id = 'wpCss'; s.textContent = CSS; document.head.appendChild(s); }
   const chip = (p) => { const pc = p && p.pace ? p.pace : p; if (!pc || !has(pc.median)) return '<span class="wp-sub">-</span>'; return '<span class="wp-chip" style="background:' + COL[pc.grade || 'none'] + '" title="' + esc(GL[pc.grade]) + ' · ' + pc.n + ' replies · average ' + fm(pc.avg) + '">' + fm(pc.median) + '</span>'; };
   const delta = (d) => !has(d) ? '<span class="wp-sub">-</span>' : (d === 0 ? '<span class="wp-sub">same</span>' : '<span class="' + (d < 0 ? 'dn' : 'up') + '">' + (d < 0 ? '▼ ' : '▲ ') + fm(Math.abs(d)) + '</span>');
+  const LINK = { strong: ['Strong link', 'Faster replies clearly bring more orders.', '#16a34a'], some: ['Some link', 'Faster replies bring somewhat more orders.', '#65a30d'], none: ['No clear link', 'Reply speed does not show a difference in orders yet.', '#94a3b8'], reverse: ['Reverse', 'Slower replies are winning more orders - check the quality of the fast replies.', '#dc2626'] };
+  const linkTxt = (l) => !l ? '<span class="wp-sub">too few</span>' : '<span style="color:' + LINK[l.label][2] + ';font-weight:700" title="' + esc(LINK[l.label][1]) + ' (' + l.n + ' queries)">' + (l.r > 0 ? '+' : '') + l.r.toFixed(2) + ' · ' + LINK[l.label][0] + '</span>';
+  const lossTxt = (x) => !x || !has(x.orders) ? '<span class="wp-sub">-</span>' : (x.orders < 0.5 ? '<span class="wp-sub">none</span>' : '<b class="up" title="Estimated: ' + x.slow_queries + ' slow-answered queries x (what ' + (x.basis === 'own' ? 'their own' : 'the team\'s') + ' fast answers win - what the slow ones won). Last 30 days.">≈ ' + x.orders + ' orders' + (x.revenue ? '<div class="wp-sub">₹' + Number(x.revenue).toLocaleString('en-IN') + '</div>' : '') + '</b>');
   function load(days) { return window.api.get('wq.pace', { days: days || 7 }); }
 
   function spark(series, w, h) {
@@ -74,10 +77,18 @@ html.wqdk .wp,html.wxdk .wp{--wp-ink:#e9edef;--wp-card:#1f2c34;--wp-line:#2a3942
     const cell = (x) => !x || !x.queries ? '<span class="wp-sub">-</span>' : '<b>' + x.orders + '</b> <span class="wp-sub">of ' + x.queries + '</span><div class="wp-sub">' + (has(x.conversion) ? x.conversion + '%' : '-') + '</div>';
     const link = (bk) => { const f = bk.fast, s = bk.slow; if (!f || !s || f.queries < 5 || s.queries < 5) return '<span class="wp-sub">too few</span>'; const fc = f.conversion || 0, sc = s.conversion || 0; return fc > sc ? '<span class="dn">✅ Good: fast replies win more</span>' : fc < sc ? '<span class="up">⚠ Bad: slow replies win more</span>' : '<span class="wp-sub">Same</span>'; };
     const tb = {}; b.forEach((x) => { tb[x.key] = x; });
-    let h = '<div class="wp-card"><h3>⚡ Reply speed × orders</h3><div class="wp-sub">Each person: how fast they answer, and how many orders came from their fast answers (first reply within 5 min) and from their slow answers (after 30 min). Queries from the last 30 days. "7 of 20" = 7 orders from 20 queries.</div><div class="wp-sc"><table><thead><tr><th>Person</th><th>Typical reply</th><th>Fast replies<br>(≤ 5 min)</th><th>Medium<br>(5 - 30 min)</th><th>Slow replies<br>(30+ min)</th><th>Not answered</th><th>Connection</th></tr></thead><tbody>';
-    ps.forEach((p) => { const bk = p.orders.buckets; h += '<tr><td><b>' + esc(p.name) + '</b></td><td>' + chip(p) + '</td><td>' + cell(bk.fast) + '</td><td>' + cell(bk.mid) + '</td><td>' + cell(bk.slow) + '</td><td>' + cell(bk.none) + '</td><td style="text-align:left">' + link(bk) + '</td></tr>'; });
-    if (b.length) h += '<tr><td><b>Whole team</b></td><td>' + (d.team ? chip(d.team.pace) : '-') + '</td><td>' + cell(tb.fast) + '</td><td>' + cell(tb.mid) + '</td><td>' + cell(tb.slow) + '</td><td>' + cell(tb.none) + '</td><td style="text-align:left">' + link(tb) + '</td></tr>';
-    return h + '</tbody></table></div></div>';
+    let h = '<div class="wp-card"><h3>⚡ Reply speed × orders</h3><div class="wp-sub">Each person: how fast they answer, and how many orders came from their fast answers (first reply within 5 min) and from their slow answers (after 30 min). Queries from the last 30 days. "7 of 20" = 7 orders from 20 queries.</div><div class="wp-sc"><table><thead><tr><th>Person</th><th>Typical reply</th><th>Fast replies<br>(≤ 5 min)</th><th>Medium<br>(5 - 30 min)</th><th>Slow replies<br>(30+ min)</th><th>Not answered</th><th>Lost to slow replies<br>(30 days)</th><th>Speed ↔ orders link</th></tr></thead><tbody>';
+    ps.forEach((p) => { const bk = p.orders.buckets; h += '<tr><td><b>' + esc(p.name) + '</b></td><td>' + chip(p) + '</td><td>' + cell(bk.fast) + '</td><td>' + cell(bk.mid) + '</td><td>' + cell(bk.slow) + '</td><td>' + cell(bk.none) + '</td><td>' + lossTxt(p.loss) + '</td><td style="text-align:left">' + link(bk) + '<div>' + linkTxt(p.link) + '</div></td></tr>'; });
+    if (b.length) h += '<tr><td><b>Whole team</b></td><td>' + (d.team ? chip(d.team.pace) : '-') + '</td><td>' + cell(tb.fast) + '</td><td>' + cell(tb.mid) + '</td><td>' + cell(tb.slow) + '</td><td>' + cell(tb.none) + '</td><td>' + (() => { const t = (d.people || []).reduce((a, p) => { if (p.loss && has(p.loss.orders)) { a.o += p.loss.orders; a.r += p.loss.revenue || 0; } return a; }, { o: 0, r: 0 }); return t.o >= 0.5 ? '<b class="up">≈ ' + Math.round(t.o * 10) / 10 + ' orders<div class="wp-sub">₹' + Math.round(t.r).toLocaleString('en-IN') + '</div></b>' : '<span class="wp-sub">-</span>'; })() + '</td><td style="text-align:left">' + link(tb) + '<div>' + linkTxt(o.link) + '</div></td></tr>';
+    h += '</tbody></table></div>';
+    if (o.link) h += '<div class="wp-verdict">📈 Speed ↔ orders link: <b>' + (o.link.r > 0 ? '+' : '') + o.link.r.toFixed(2) + '</b> (' + LINK[o.link.label][0] + '). ' + LINK[o.link.label][1] + ' <span class="wp-sub">Scale: +1 = every faster reply brings an order, 0 = no connection, below 0 = slower replies win. It shows that the two move together, not that one causes the other.</span></div>';
+    return h + '</div>';
+  }
+  function cfgCard(d) {
+    const c = d.cfg; if (!c || d.self) return '';
+    return '<div class="wp-card"><h3>Reply target and alerts</h3><div class="wp-sub">When a customer waits longer than the warn time, the salesperson gets a push once. At the alert time the admin gets one. Minutes.</div><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:8px">'
+      + [['target', 'Target reply', c.target], ['warn', 'Warn the person at', c.warn], ['alert', 'Tell admin at', c.alert]].map((x) => '<label class="wp-sub">' + x[1] + '<br><input type="number" min="1" max="480" data-cfg="' + x[0] + '" value="' + x[2] + '" style="width:80px;padding:6px;border:1px solid var(--wp-line);border-radius:8px;background:transparent;color:inherit"></label>').join('')
+      + '<label class="wp-sub"><input type="checkbox" data-cfg="on"' + (c.on ? ' checked' : '') + '> Alerts on</label><button type="button" class="wp-save" style="border:0;background:#0f6e7e;color:#fff;border-radius:99px;padding:8px 16px;font-weight:700;cursor:pointer">Save</button><span class="wp-sub wp-saved"></span></div></div>';
   }
   function board(d) {
     const ps = d.people || []; if (!ps.length) return '';
@@ -94,7 +105,8 @@ html.wqdk .wp,html.wxdk .wp{--wp-ink:#e9edef;--wp-card:#1f2c34;--wp-line:#2a3942
         + '<div class="wp-tile"><small>Team typical reply</small><b>' + fm(tp.median) + '</b><span>' + tp.n + ' replies</span></div>'
         + '<div class="wp-tile"><small>Your rank</small><b>' + (me && me.rank ? '#' + me.rank : '-') + '</b><span>of ' + d.ranked + ' people' + (me && !me.rank ? ' (needs 5 replies)' : '') + '</span></div>'
         + '<div class="wp-tile"><small>Compared with before</small><b>' + (me ? delta(me.delta) : '-') + '</b><span>previous ' + (days === 1 ? 'day' : days + ' days') + '</span></div>'
-        + '<div class="wp-tile"><small>Within 5 minutes</small><b>' + (mp && has(mp.fast_pct) ? mp.fast_pct + '%' : '-') + '</b><span>team ' + (has(tp.fast_pct) ? tp.fast_pct + '%' : '-') + '</span></div></div>';
+        + '<div class="wp-tile"><small>Within 5 minutes</small><b>' + (mp && has(mp.fast_pct) ? mp.fast_pct + '%' : '-') + '</b><span>team ' + (has(tp.fast_pct) ? tp.fast_pct + '%' : '-') + '</span></div>'
+        + '<div class="wp-tile"><small>Speed ↔ orders link</small><b style="font-size:16px">' + linkTxt(me && me.link ? me.link : (d.orders || {}).link) + '</b><span>' + (me && me.loss && me.loss.orders >= 0.5 ? 'Slow replies cost you ≈ ' + me.loss.orders + ' orders' : 'last 30 days') + '</span></div></div>';
       if (me) h += '<div class="wp-card"><h3>Your last days</h3>' + graph(me.series, d.team.series) + '<div class="wp-sub" style="margin-top:4px">Dotted line = team.</div></div>';
       h += takeBlock(d, false, me) + orderBlock(d);
     } else {
@@ -103,7 +115,7 @@ html.wqdk .wp,html.wxdk .wp{--wp-ink:#e9edef;--wp-card:#1f2c34;--wp-line:#2a3942
         + '<div class="wp-tile"><small>Within 5 minutes</small><b>' + (has(tp.fast_pct) ? tp.fast_pct + '%' : '-') + '</b><span>slow (30+ min) ' + (has(tp.slow_pct) ? tp.slow_pct + '%' : '-') + '</span></div>'
         + '<div class="wp-tile"><small>Before</small><b>' + fm(pv.median) + '</b><span>' + delta(has(tp.median) && has(pv.median) ? Math.round((tp.median - pv.median) * 10) / 10 : null) + '</span></div>'
         + '<div class="wp-tile"><small>Auto-bot reply</small><b>' + fm(d.team.bot.median) + '</b><span>' + d.team.bot.n + ' auto replies</span></div></div>';
-      h += linkCard(d) + '<div class="wp-card"><h3>Daily pace (everyone together)</h3>' + graph(d.team.series, d.team.bot_series) + '</div>' + board(d) + takeBlock(d, true, null) + orderBlock(d);
+      h += linkCard(d) + cfgCard(d) + '<div class="wp-card"><h3>Daily pace (everyone together)</h3>' + graph(d.team.series, d.team.bot_series) + '</div>' + board(d) + takeBlock(d, true, null) + orderBlock(d);
     }
     h += '<div class="wp-sub">How it is measured: the clock starts at the first customer message nobody has answered, and stops at the next message a person sends (typed, quick-reply or template). All queries (Meta, Campaign, Community, Regenerated, New) are counted together. Auto-bot and holding messages are timed separately and never count for a person. Gaps of 8+ hours (night / next day) are left out. Grades: Fast up to 3 min · Good up to 10 · Slow up to 30 · Very slow above 30.</div>';
     return h;
@@ -115,7 +127,7 @@ html.wqdk .wp,html.wxdk .wp{--wp-ink:#e9edef;--wp-card:#1f2c34;--wp-line:#2a3942
       const my = ++seq; el.innerHTML = '<div class="wp-card wp-sub">Loading pace…</div>';
       return load(days).then((d) => { if (my !== seq) return; el.innerHTML = html(d, days); }, (e) => { if (my !== seq) return; el.innerHTML = '<div class="wp-card" style="color:#dc2626">Pace could not load. ' + esc(e && e.message ? e.message : '') + ' <button type="button" class="wp-retry">Try again</button></div>'; });
     };
-    el.addEventListener('click', (e) => { const b = e.target.closest('[data-d]'); if (b) { days = +b.dataset.d; run(); return; } if (e.target.closest('.wp-retry')) run(); });
+    el.addEventListener('click', (e) => { const sv = e.target.closest('.wp-save'); if (sv) { const body = {}; el.querySelectorAll('[data-cfg]').forEach((i) => { body[i.dataset.cfg] = i.type === 'checkbox' ? i.checked : +i.value; }); const note = el.querySelector('.wp-saved'); window.api.post('wq.pace_cfg', body).then(() => { if (note) note.textContent = 'Saved ✓'; }, (er) => { if (note) note.textContent = (er && er.message) || 'Could not save'; }); return; } const b = e.target.closest('[data-d]'); if (b) { days = +b.dataset.d; run(); return; } if (e.target.closest('.wp-retry')) run(); });
     return run();
   }
   function open() {
