@@ -16,25 +16,6 @@
     </div>
     <div class="content">
       <div id="alertBox"></div>
-      <div class="card" id="rescueCard" style="padding:14px 18px;margin-bottom:14px;border:2px solid #f59e0b;background:#fffbeb">
-        <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
-          <b>🛟 Rescue bonus — extra on TOP of every other rule</b>
-          <a href="wa_rescue.html" style="font-weight:700">Open Rescue Queries →</a>
-        </div>
-        <div style="font-size:13px;color:var(--muted);margin:6px 0 10px;line-height:1.55">
-          When a salesperson takes a <b>rescue query</b> (an interested WhatsApp customer nobody followed up) and an order is placed from it, they earn this % of <b>each order's total — per order</b> (every order that customer places after the query was taken)
-          <b>in addition to</b> the normal commission. The normal commission is not changed: slab, fixed offers, flash offers, code rule and target bonus all work exactly as before.
-          <b>Online (Shopify) orders only — Store POS / store billing orders never earn it.</b>
-        </div>
-        <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
-          <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="rcOn"> Rescue bonus is ON</label>
-          <label>Extra % per order <input type="number" id="rcPct" step="0.1" min="0" max="20" style="width:80px"></label>
-          <button class="btn" id="rcSave" style="width:auto">Save</button>
-          <span id="rcMsg" style="font-size:12px;color:var(--muted)"></span>
-        </div>
-        <div id="rcMonth" style="font-size:13px;margin-top:10px"></div>
-      </div>
-
       <div class="card" style="padding:12px 16px;margin-bottom:14px;background:#f8fafc">
         <b>💰 Prices are in one place: Learn &amp; Setup → Pricing.</b>
         <div style="font-size:13px;color:var(--muted);margin-top:3px">The Price chart (perfume by total ml, attar / shower gel / others by pieces, and combos) is used by the bot, the WhatsApp cart and commission. This page keeps the commission rules; the ML price slab card below holds its commission settings (on / off, cap, bonus, no-code %, special days).</div>
@@ -157,24 +138,6 @@
 <script>
   guardPage();
   renderSidebar('commission_rules');
-
-
-  // 🛟 Rescue bonus (extra on top of every rule; online orders only, never Store POS)
-  (function () {
-    const $ = (id) => document.getElementById(id), money = (n) => '₹' + Math.round(Number(n) || 0).toLocaleString('en-IN');
-    async function load() {
-      try {
-        const c = (await api.get('wq.rescue_cfg')).cfg; $('rcOn').checked = !!c.on; $('rcPct').value = c.pct;
-        const b = await api.get('wq.rescue_bonus', {});
-        $('rcMonth').innerHTML = 'This month (' + b.from + ' → ' + b.to + '): <b>' + money(b.total_bonus) + '</b> bonus on ' + (b.orders || []).length + ' rescued order(s).';
-      } catch (e) { $('rcMsg').textContent = e.message || 'Could not load.'; }
-    }
-    $('rcSave').onclick = async () => {
-      try { await api.post('wq.rescue_cfg', { on: $('rcOn').checked, pct: +$('rcPct').value }); $('rcMsg').textContent = 'Saved.'; load(); }
-      catch (e) { $('rcMsg').textContent = e.message || 'Could not save.'; }
-    };
-    load();
-  })();
 
   const alertBox = document.getElementById('alertBox');
   const modal = document.getElementById('ruleModal');
