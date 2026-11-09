@@ -551,6 +551,7 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
     { k: 'team', t: 'Team & routing', ic: 'group', mode: 'native', sub: 'Who gets chats, the call-now alert and the sending engine' },
     { k: 'reports', t: 'Reports', ic: 'trend', mode: 'native', sub: 'Replies, speed per person, cost and results' },
     { k: 'cxboard', t: 'Complaints', ic: 'bell', mode: 'native', sub: 'Every complaint ticket: who answered last, red flag after 30 min with no reply, Claude says solved or not, team score card' },
+    { k: 'rescue', t: 'Rescue queries', ic: 'flame', mode: 'frame', src: 'wa_rescue.html?in=sales', sub: 'Interested customers nobody followed up — pick the rescue team, they take a query, a won order earns the extra bonus' },
     { k: 'billing', t: 'Billing & spend', ic: 'wallet', mode: 'native', sub: 'What WhatsApp cost per day / month and what it brought back — best and worst days' },
     { k: 'export', t: 'Export', ic: 'dl', mode: 'native', sub: 'Download chats or messages as CSV — every download is logged' },
     { k: 'hq', t: 'Claude button', ic: 'star', mode: 'native', sub: 'Who gets the floating Claude button' },
@@ -573,7 +574,7 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
   ];
   const GOF = {}; GROUPS.forEach((g) => g.tabs.forEach(([k]) => { GOF[k] = g; }));
   const groupOf = (k) => GROUPS.find((g) => g.k === k);
-  const RAIL = [{ g: 'INBOX' }, byKeyRaw('overview'), byKeyRaw('chats'), byKeyRaw('cxboard'), groupOf('waiting'), { g: 'RESULTS' }, groupOf('results'), byKeyRaw('billing'), { g: 'CUSTOMERS' }, groupOf('customers'),
+  const RAIL = [{ g: 'INBOX' }, byKeyRaw('overview'), byKeyRaw('chats'), byKeyRaw('cxboard'), groupOf('waiting'), { g: 'RESULTS' }, groupOf('results'), byKeyRaw('rescue'), byKeyRaw('billing'), { g: 'CUSTOMERS' }, groupOf('customers'),
     { g: 'SEND' }, byKeyRaw('campaigns'), groupOf('templates'), groupOf('replies'), groupOf('mediag'), groupOf('automation'), { g: 'SETTINGS' }, groupOf('setupg'), groupOf('rules'), groupOf('teach')];
   function byKeyRaw(k) { return MENU.find((m) => m.k === k); }
   const byKey = (k) => ITEMS.find((m) => m.k === k) || ITEMS[0];
