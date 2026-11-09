@@ -480,11 +480,11 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
 <script src="assets/js/wa_icons.js?v=i1"></script>
 <script src="assets/js/cx_raise.js?v=cx9"></script>
 <script src="assets/js/wa_inbox.js?v=wa47"></script>
-<script src="assets/js/wa_panels.js?v=wa33"></script>
+<script src="assets/js/wa_panels.js?v=wa34"></script>
 <script src="assets/js/wa_cust_ui.js?v=k4"></script>
 <script src="assets/js/wa_kflow_ui.js?v=kf1"></script>
-<script src="assets/js/wj_ui.js?v=wj5"></script>
-<script src="assets/js/jny_ui.js?v=jt3"></script>
+<script src="assets/js/wj_ui.js?v=wj6"></script>
+<script src="assets/js/jny_ui.js?v=jt4"></script>
 <script src="assets/js/wa_bill_ui.js?v=b1"></script>
 <script src="assets/js/wa_ord_ui.js?v=20"></script>
 <script src="assets/js/wa_cx_ui.js?v=3"></script>
@@ -543,7 +543,6 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
     { k: 'ads', t: 'Ads', ic: 'chart', mode: 'native', sub: 'Which Meta ads bring chats and orders' },
     { g: 'SEND' }, { k: 'campaigns', t: 'Campaigns', ic: 'send', mode: 'native', sub: 'Send to many customers — the best number is chosen for each' },
     { k: 'kflows', t: 'Key flows', ic: 'key', mode: 'native', sub: 'Fixed answers for fixed messages — website texts, ads, campaign buttons. Built on a canvas · admin only' },
-    { k: 'flows', t: 'Flows', ic: 'seq', mode: 'native', sub: 'First message, then the next when they reply' },
     { k: 'premade', t: 'Pre-made messages', ic: 'tpl', mode: 'native', sub: 'Messages Meta approves once, usable on every number' },
     { k: 'builder', t: 'Message builder', ic: 'wand', mode: 'native', sub: 'Tell Claude what to send — Utility first' },
     { k: 'fixed', t: 'Fixed messages', ic: 'dtick', mode: 'native', sub: 'The one approved message for each situation' },
@@ -579,7 +578,7 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
     { k: 'templates', t: 'Messages', ic: 'tpl', sub: 'The message library: Meta-approved messages, the builder, one per situation, every automatic message in one list, and the complaint messages', tabs: [['mymsgs', 'My messages'], ['premade', 'Pre-made'], ['builder', 'Builder'], ['fixed', 'Fixed'], ['allmsgs', 'All messages'], ['cxmsgs', 'Complaint messages']] },
     { k: 'replies', t: 'Replies', ic: 'bolt', sub: 'Quick replies, greetings, ready perfume lists, and and where to find every automatic message', tabs: [['quick', 'Quick replies'], ['greet', 'Greetings'], ['lists', 'Lists']] },
     { k: 'mediag', t: 'Media', ic: 'film', sub: 'Photos, videos and PDFs — one library, in topic folders', tabs: [['media', 'Library'], ['gallery', 'Folders & clean-up']] },
-    { k: 'automation', t: 'Automation', ic: 'seq', sub: 'Key flows on a canvas, the old flows and follow-ups', tabs: [['kflows', 'Key flows'], ['flows', 'Flows (old — use Key flows)'], ['followups', 'Journey']] },
+    { k: 'automation', t: 'Automation', ic: 'seq', sub: 'Key flows on a canvas, the old flows and follow-ups', tabs: [['kflows', 'Key flows'], ['followups', 'Journey']] },
     { k: 'setupg', t: 'Numbers & setup', ic: 'phone', sub: 'Numbers, connection and the go-live check', tabs: [['numbers', 'Numbers'], ['setup', 'Setup & connection'], ['golive', 'Go-live check']] },
     { k: 'rules', t: 'Team & rules', ic: 'group', sub: 'Who gets chats, the waiting limits, the Claude button and exports', tabs: [['team', 'Team & routing'], ['hq', 'Claude button'], ['export', 'Export']] },
     { k: 'teach', t: 'Teach & groups', ic: 'bulb', sub: 'Teach the bot once · your WhatsApp groups', tabs: [['learn', 'Teach'], ['groups', 'Groups']] },
@@ -654,7 +653,7 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
   });
 
   // ---------- sections
-  const ALIAS = { automsgs: 'allmsgs', journey: 'followups', sfocus: 'signals', sboard: 'queries', f_query: 'queries', f_assigned: 'queries', f_community: 'queries', f_campaign: 'queries' };
+  const ALIAS = { flows: 'kflows', automsgs: 'allmsgs', journey: 'followups', sfocus: 'signals', sboard: 'queries', f_query: 'queries', f_assigned: 'queries', f_community: 'queries', f_campaign: 'queries' };
   let started = false;   // the first section replaces the entry; every section opened after it is one step Back can return to
   function go(k, noPush) {
     if (k !== cur && document.getElementById('waSide')) closeSide(true);   // another screen: the side chat closes

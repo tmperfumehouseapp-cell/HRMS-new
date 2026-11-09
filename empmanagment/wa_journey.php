@@ -303,8 +303,6 @@ function wj_blocked(PDO $pdo, array $c, int $now): string
     if ((string)($c['tag'] ?? '') === 'complaint') return 'complaint chat';   // a complaint is never sold to
     try { $q = $pdo->prepare("SELECT 1 FROM wq_rescue WHERE phone = ? AND status = 'skipped' AND (ai_state = 'auto' OR (ai_state = 'agreed' AND skip_reason <> 'price') OR (skip_reason = 'other' AND ai_state = 'final')) LIMIT 1"); $q->execute([$k]); if ($q->fetchColumn()) return 'not a prospect (wrong number / spam / complaint — marked in Rescue)'; } catch (Throwable $e) { }
     try { if (function_exists('wr_blocked_open_case') && wr_blocked_open_case($pdo, $k, '')) return 'open complaint'; } catch (Throwable $e) { }
-    try { $q = $pdo->prepare("SELECT 1 FROM wa_fu_ev WHERE phone = ? AND status = 'sent' AND sent_at >= ? LIMIT 1"); $q->execute([$k, wj_dt($now - 36 * 3600)]); if ($q->fetchColumn()) return 'a follow-up went in the last 36 h'; } catch (Throwable $e) { }
-    try { $q = $pdo->prepare("SELECT 1 FROM wa_ord_sent WHERE phone = ? AND created_at >= ? LIMIT 1"); $q->execute([$k, wj_dt($now - 2 * 86400)]); if ($q->fetchColumn()) return 'an order message went in the last 2 days'; } catch (Throwable $e) { }
     try { $q = $pdo->prepare("SELECT 1 FROM wa_flow_runs WHERE phone = ? AND state IN ('run', 'wait', 'ready') LIMIT 1"); $q->execute([$k]); if ($q->fetchColumn()) return 'a flow is running'; } catch (Throwable $e) { }
     return '';
 }
@@ -358,11 +356,9 @@ function wj_collect(PDO $pdo, array $plan, array $cfg, int $now, int $limit = 40
                     if ($age < $s['day'] || $age - $s['day'] > $cfg['grace'] || isset($done[$ph0 . '|' . $tk . '|' . $s['id'] . '|' . $ak])) continue;
                     if ($autoSince && $a + $s['day'] * 86400 < $autoSince - $cfg['catchup'] * 86400) continue;   // a day that came before Auto was switched on is not caught up
                     if ($s['topic'] !== '' && (!$topic || $topic['topic'] !== $s['topic'])) continue;
-                    if (isset($refSent[$ph0 . '|' . $s['ref']])) continue;   // 🧠 the same message never goes twice to one customer within 60 days
-                    if (strpos((string)$s['ref'], 'w_') !== 0 && isset($offerAt[$ph0]) && $now - $offerAt[$ph0] < 3 * 86400) continue;   // two different offers at least 3 days apart
                     $due[] = $s;
                 }
-                if (!$due) continue; if (isset($last[$ph0]) && $now - $last[$ph0] < $cfg['gap_days'] * 86400) continue;
+                if (!$due) continue;
                 usort($due, function ($x, $y) { return ($y['topic'] !== '') <=> ($x['topic'] !== '') ?: $y['day'] <=> $x['day']; });
                 $out[] = ['c' => $c, 'track' => $tk, 'anchor' => date('Y-m-d H:i:s', $a), 'ak' => $ak, 'age' => $age, 'step' => $due[0], 'others' => array_slice($due, 1), 'topic' => $topic];
             }

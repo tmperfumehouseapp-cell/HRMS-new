@@ -408,17 +408,7 @@ function jn_not_prospect(PDO $pdo, array $c): string
     try { $q = $pdo->prepare("SELECT 1 FROM wq_rescue WHERE phone = ? AND status = 'skipped' AND (ai_state = 'auto' OR (ai_state = 'agreed' AND skip_reason <> 'price') OR (skip_reason = 'other' AND ai_state = 'final')) LIMIT 1"); $q->execute([$k]); if ($q->fetchColumn()) return 'not a prospect'; } catch (Throwable $e) { }
     return '';
 }
-/** 🧠 Memory of what already went (the table wa_wj_ev, shared with the Journey's earlier sends): the same message / offer never goes twice to one customer within 60 days, and two different offers are at least 3 days apart.
- *  Returns ['skip' => true] (already sent), ['wait' => timestamp] (too soon after another offer) or []. */
-function jn_offer_seen(PDO $pdo, string $key, string $ref, int $now): array
-{
-    if ($ref === '') return [];
-    try { $q = $pdo->prepare("SELECT ref, MAX(sent_at) m FROM wa_wj_ev WHERE phone = ? AND status = 'sent' AND sent_at >= ? GROUP BY ref"); $q->execute([$key, date('Y-m-d H:i:s', $now - 60 * 86400)]); $last = 0;
-        foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) { $t = (int)strtotime((string)$r['m']); if ((string)$r['ref'] === $ref) return ['skip' => true]; if (strpos((string)$r['ref'], 'w_') !== 0) $last = max($last, $t); }
-        if (strpos($ref, 'w_') !== 0 && $last && $now - $last < 3 * 86400) return ['wait' => $last + 3 * 86400];
-    } catch (Throwable $e) { }
-    return [];
-}
+/** What went out is written to wa_wj_ev (one log for the results: orders from follow-ups). The timeline alone decides how often a message goes. */
 function jn_offer_note(PDO $pdo, string $key, array $sit, array $st, string $ref, int $now): void
 {
     if ($ref === '') return;
@@ -435,7 +425,8 @@ function fu_engine(PDO $pdo): array
     $P = fu_plans_get($pdo); $saved = array_filter($P['situations'], fn($s) => $s['stage'] === 'saved' && $s['on']); $out = ['mode' => $mode, 'made' => 0, 'drafted' => 0, 'sent' => 0, 'stopped' => 0];
     if (!$saved) return $out;
     $byId = []; foreach ($P['situations'] as $s) $byId[$s['id']] = $s;
-    $L = fu_limits($pdo); $now = time(); $guard = function_exists('fu_guard') ? fu_guard($pdo)['state'] : 'ok'; $sendCap = $guard === 'slow' ? 3 : 12; $genCap = 15; $makeCap = array_filter($saved, function ($s) { return strpos((string)$s['id'], 'f_') !== 0 && $s['kind'] === 'nudge'; }) ? 8 : 25; $om = function_exists('wa_order_map') ? wa_order_map($pdo) : [];
+    $L = fu_limits($pdo); $L['max'] = 999; $L['day_max'] = 99; $L['gap_min'] = 1;   // ⏱ the timeline decides how often a customer is messaged (only quiet hours stay)
+    $now = time(); $guard = function_exists('fu_guard') ? fu_guard($pdo)['state'] : 'ok'; $sendCap = $guard === 'slow' ? 3 : 12; $genCap = 15; $makeCap = array_filter($saved, function ($s) { return strpos((string)$s['id'], 'f_') !== 0 && $s['kind'] === 'nudge'; }) ? 8 : 25; $om = function_exists('wa_order_map') ? wa_order_map($pdo) : [];
     $q = $pdo->prepare("SELECT * FROM wa_contacts WHERE status = 'open' AND optout = 0 AND last_in_at IS NOT NULL AND last_out_at IS NOT NULL AND last_out_at >= last_in_at AND last_in_at >= ? AND last_in_at <= ? ORDER BY last_in_at DESC LIMIT 200");
     $firstMin = 20; foreach ($saved as $s0) if ($s0['kind'] === 'nudge' && !empty($s0['steps'])) $firstMin = min($firstMin, max(2, (int)floor($s0['steps'][0]['after_h'] * 60)));
     $q->execute([date('Y-m-d H:i:s', $now - 14 * 86400), date('Y-m-d H:i:s', $now - $firstMin * 60)]);
@@ -474,9 +465,6 @@ function fu_engine(PDO $pdo): array
         $gapM = $L['gap_min']; $si = (int)$st['step']; if ($si > 0 && isset($sit['steps'][$si], $sit['steps'][$si - 1])) $gapM = min($gapM, max(1, (int)round(($sit['steps'][$si]['after_h'] - $sit['steps'][$si - 1]['after_h']) * 60)));
         $last = fu_last_sent_ts($pdo, $key, $inId); if ($last && $last + $gapM * 60 > $now) { $st['due_at'] = date('Y-m-d H:i:s', $last + $gapM * 60); fu_state_save($pdo, $st); continue; }
         $stepNow = $sit['steps'][(int)$st['step']] ?? []; $winNow = strtotime((string)$c['last_in_at']) > $now - 86400;
-        if (($stepNow['kind'] ?? '') === 'offer') { $seen = jn_offer_seen($pdo, $key, (string)$stepNow['offer'], $now);
-            if (!empty($seen['skip'])) { fu_ev($pdo, $key, (string)$sit['id'], (int)$st['step'], 'tpl', 'skipped', '(this message already went to this customer in the last 60 days)', 0, $inId, 'bot'); $st = fu_advance($pdo, $st, $sit, $L, $c); fu_state_save($pdo, $st); continue; }
-            if (!empty($seen['wait'])) { $st['due_at'] = date('Y-m-d H:i:s', (int)$seen['wait']); fu_state_save($pdo, $st); continue; } }
         if (trim((string)$st['draft']) === '' && ($stepNow['kind'] ?? '') === 'offer' && !$winNow) $st['draft'] = '(offer — the approved offer message goes, Claude fills its blanks)';   // 🎁 no free text to write after 24 h
         if (trim((string)$st['draft']) === '') {
             if ($out['drafted'] >= $genCap) continue;
