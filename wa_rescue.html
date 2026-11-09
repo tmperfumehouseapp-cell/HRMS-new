@@ -92,6 +92,7 @@ guardPage();
     const won = it.status === 'won' ? '<div class="rq-meta">Order ' + esc(it.order_name) + ' placed after it was taken ✅</div>' : '';
     const win = it.window_open ? '' : '<div class="rq-meta" style="color:#b45309">24-hour chat window closed – an approved template is needed to reach them.</div>';
     let act = '<button class="btn secondary" data-open="' + it.phone + '">Read chat</button>';
+    if (['taken', 'given', 'stale'].indexOf(it.status) >= 0) act += '<button class="btn secondary" data-skip="' + it.phone + '">Not a chance</button>' + (it.status === 'stale' ? '<button class="btn secondary" data-give="' + it.phone + '">Give to…</button>' : '');
     if (it.status === 'skipped') act += '<button class="btn secondary" data-undo="' + it.phone + '">Put back</button>';
     if (it.status === 'open') act += '<button class="btn secondary" data-give="' + it.phone + '">Give to…</button><button class="btn secondary" data-skip="' + it.phone + '">Not a chance</button>';
     return '<div class="rq-item"><div class="rq-main"><div class="rq-name" style="cursor:pointer" data-open="' + it.phone + '">' + esc(it.name || ('+91 ' + it.phone)) + ' <span class="rq-meta">+91 ' + esc(it.phone) + '</span></div>' +
