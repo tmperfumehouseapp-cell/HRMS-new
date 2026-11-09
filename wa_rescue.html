@@ -34,7 +34,7 @@
 <div class="app">
   <div id="sidebar"></div>
   <main class="main">
-    <div class="topbar"><div><h1>🛟 Rescue Queries</h1><div class="rq-sub" id="rqSub">Interested customers nobody followed up. Take one, win the order, earn the extra bonus.</div></div></div>
+    <div class="topbar"><div><h1>🛟 Rescue Queries</h1><div class="rq-sub" id="rqSub">Interested customers nobody followed up. The team works on them in WhatsApp → Chats → 🛟 Rescue; this is the control panel.</div></div></div>
     <div class="content"><div id="rqRoot"><div class="rq-empty">Loading…</div></div></div>
   </main>
 </div>
@@ -48,28 +48,22 @@ guardPage();
   renderSidebar('wasales');
   const root = document.getElementById('rqRoot');
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const money = (n) => '₹' + Math.round(Number(n) || 0).toLocaleString('en-IN');
-  const WHY = { hot: ['🔥 Wanted to pay / order', 'hot'], price: ['💬 Asked the price – no follow-up', ''], ignored: ['🔕 Wrote 2+ times – no person answered', ''] };
-  const ST = { open: 'Open', taken: 'Taken', given: 'Taken', won: '✅ Order won', ordered: 'Ordered anyway', expired: 'Expired', silent: '🔇 Gone silent' };
-  let u = null; try { u = api.currentUser(); } catch (e) { u = null; }
-  const S = { admin: false, d: null, team: null, bonus: null, tab: 'list', status: 'all', days: 7, busy: false };
-
-  // Open the customer's chat: inside WhatsApp it opens in the side panel (the list stays); on its own it goes to the chat app.
+  const WHY = { hot: ['🔥 Wanted to pay / order', 'hot'], price: ['💬 Asked the price', ''], ignored: ['🔕 Wrote 2+ times – no person answered', ''] };
+  const ST = { open: 'Open', taken: 'Taken', given: 'Taken', won: '✅ Order placed', ordered: 'Ordered anyway', expired: 'Expired', silent: '🔇 Gone silent' };
+  const S = { d: null, team: null, tab: 'list', status: 'all', days: 7, busy: false, scanned: false };
+  const ago = (s) => { if (!s) return ''; const t = new Date(String(s).replace(' ', 'T')); const m = Math.max(0, Math.round((Date.now() - t.getTime()) / 60000)); return m < 60 ? m + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : Math.round(m / 1440) + ' d ago'; };
+  // Read a customer's chat: inside WhatsApp it opens in the side panel (the list stays); on its own it goes to the chat app.
   function openChat(phone) {
     try { if (window.parent !== window && typeof window.parent.waOpenChat === 'function') { window.parent.waOpenChat(phone); return; } } catch (e) { /* cross-frame */ }
     location.href = 'my_chats.html?phone=' + phone;
   }
-  const ago = (s) => { if (!s) return ''; const t = new Date(String(s).replace(' ', 'T')); const m = Math.max(0, Math.round((Date.now() - t.getTime()) / 60000)); return m < 60 ? m + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : Math.round(m / 1440) + ' d ago'; };
-
   async function load() {
     try {
       S.d = await api.get('wq.rescue_list', { days: S.days, status: S.status });
-      S.admin = !!S.d.admin;
-      if (S.admin && S.tab === 'team') S.team = await api.get('wq.rescue_team');
-      if (S.tab === 'bonus') S.bonus = await api.get('wq.rescue_bonus', {});
+      if (S.tab === 'team') S.team = await api.get('wq.rescue_team');
     } catch (e) { root.innerHTML = '<div class="rq-err">' + esc(e.message || 'Could not load.') + ' <button class="btn" id="rqRetry">Try again</button></div>'; document.getElementById('rqRetry').onclick = load; return; }
     draw();
-    // the check runs in the background (the list above is already on screen); when it found something new the list is refreshed
+    // the check of recent queries runs in the background (the list is already on screen); when it ran, the list is refreshed once
     if (!S.scanned) { S.scanned = true; api.post('wq.rescue_scan', {}).then((r) => { if (r && r.scan) load(); }, () => { }); }
   }
   function chips(it) {
@@ -77,49 +71,36 @@ guardPage();
   }
   function itemHtml(it) {
     const who = it.taken_by && it.taken_by.emp_id ? '<div class="rq-meta">Taken by <b>' + esc(it.taken_by.name) + '</b> ' + esc(ago(it.taken_at)) + '</div>' : '';
-    const won = it.status === 'won' ? '<div class="rq-meta">Order ' + esc(it.order_name) + ' · ' + money(it.order_total) + ' · bonus <b>' + money(it.bonus_amt) + '</b> (' + it.bonus_pct + '%)</div>' : '';
-    const win = it.window_open ? '' : '<div class="rq-meta" style="color:#b45309">24-hour chat window closed – use an approved template to reach them.</div>';
-    let act = '';
-    if (it.status === 'open') {
-      act += '<button class="btn secondary" data-open="' + it.phone + '">Read chat</button>';
-      if (S.d.member || S.admin) act += '<button class="btn" data-take="' + it.phone + '">Take this query</button>';
-      if (S.admin) act += '<button class="btn secondary" data-give="' + it.phone + '">Give to…</button><button class="btn secondary" data-skip="' + it.phone + '">Not a chance</button>';
-    } else if (it.status === 'taken' || it.status === 'given') act = '<button class="btn" data-open="' + it.phone + '">Open chat</button>';
+    const won = it.status === 'won' ? '<div class="rq-meta">Order ' + esc(it.order_name) + ' placed after it was taken ✅</div>' : '';
+    const win = it.window_open ? '' : '<div class="rq-meta" style="color:#b45309">24-hour chat window closed – an approved template is needed to reach them.</div>';
+    let act = '<button class="btn secondary" data-open="' + it.phone + '">Read chat</button>';
+    if (it.status === 'open') act += '<button class="btn secondary" data-give="' + it.phone + '">Give to…</button><button class="btn secondary" data-skip="' + it.phone + '">Not a chance</button>';
     return '<div class="rq-item"><div class="rq-main"><div class="rq-name" style="cursor:pointer" data-open="' + it.phone + '">' + esc(it.name || ('+91 ' + it.phone)) + ' <span class="rq-meta">+91 ' + esc(it.phone) + '</span></div>' +
       '<div>' + chips(it) + '</div><div class="rq-meta">' + esc(it.why_text) + ' · last message ' + esc(ago(it.last_in_at)) + (it.orig && it.orig.name ? ' · was with ' + esc(it.orig.name) : '') + '</div>' +
       (it.last_text ? '<div class="rq-text">“' + esc(it.last_text) + '”</div>' : '') + who + won + win + '</div><div class="rq-act">' + act + '</div></div>';
   }
   function draw() {
     const d = S.d, s = d.summary || {}, cfg = d.cfg || {};
-    let h = '';
-    if (!S.admin && !d.member) { root.innerHTML = '<div class="rq-empty">You are not on today\'s rescue team. Ask the owner to add you — then the missed queries show up here and every order you win earns +' + esc(cfg.pct) + '% extra.</div>'; return; }
-    h += '<div class="rq-cards"><div class="rq-card"><b>' + (s.open || 0) + '</b><span>Waiting to be taken</span></div><div class="rq-card"><b>' + (s.taken || 0) + '</b><span>Being worked</span></div>' +
-      '<div class="rq-card"><b>' + (s.won || 0) + '</b><span>Orders won</span></div><div class="rq-card"><b>' + (s.silent || 0) + '</b><span>Gone silent</span></div><div class="rq-card"><b>' + money(s.revenue) + '</b><span>Won revenue</span></div><div class="rq-card"><b>' + money(s.bonus) + '</b><span>Bonus earned (' + esc(cfg.pct) + '%)</span></div></div>';
-    { const ls = d.last_scan, sc = ls && ls.scan;
-      if (S.admin) h += '<div class="rq-sub" style="margin-bottom:10px">' + (sc ? 'Last check ' + esc(ago(ls.at)) + ' (last ' + esc(cfg.days) + ' days): <b>' + (sc.all || 0) + '</b> queries · <b>' + (sc.quiet || 0) + '</b> quiet for ' + esc(cfg.wait_h) + '+ h · <b>' + (sc.ordered || 0) + '</b> already ordered · looked at <b>' + (sc.candidates || 0) + '</b> · <b>' + (sc.flagged || 0) + '</b> new opportunities · ' + (sc.no_signal || 0) + ' showed no interest · ' + (sc.silent || 0) + ' gone silent.' + (sc.error ? ' <span style="color:#d9423b">Problem: ' + esc(sc.error) + '</span>' : '') : 'No check has run yet — it runs by itself when WhatsApp opens.') + '</div>'; }
-    if (S.admin) h += '<div class="rq-tabs"><button data-tab="list" class="' + (S.tab === 'list' ? 'on' : '') + '">Queries</button><button data-tab="team" class="' + (S.tab === 'team' ? 'on' : '') + '">Rescue team</button><button data-tab="bonus" class="' + (S.tab === 'bonus' ? 'on' : '') + '">Bonus report</button><button data-tab="cfg" class="' + (S.tab === 'cfg' ? 'on' : '') + '">Settings</button></div>';
-    else h += '<div class="rq-tabs"><button data-tab="list" class="' + (S.tab === 'list' ? 'on' : '') + '">Queries</button><button data-tab="bonus" class="' + (S.tab === 'bonus' ? 'on' : '') + '">My bonus</button></div>';
+    let h = '<div class="rq-cards"><div class="rq-card"><b>' + (s.open || 0) + '</b><span>Waiting to be taken</span></div><div class="rq-card"><b>' + (s.taken || 0) + '</b><span>Being worked</span></div>' +
+      '<div class="rq-card"><b>' + (s.won || 0) + '</b><span>Orders placed</span></div><div class="rq-card"><b>' + (s.silent || 0) + '</b><span>Gone silent</span></div></div>';
+    const ls = d.last_scan, sc = ls && ls.scan;
+    h += '<div class="rq-sub" style="margin-bottom:10px">' + (sc ? 'Last check ' + esc(ago(ls.at)) + ' (last ' + esc(cfg.days) + ' days): <b>' + (sc.all || 0) + '</b> queries · <b>' + (sc.quiet || 0) + '</b> quiet for ' + esc(cfg.wait_h) + '+ h · <b>' + (sc.ordered || 0) + '</b> already ordered · looked at <b>' + (sc.candidates || 0) + '</b> · <b>' + (sc.flagged || 0) + '</b> new opportunities · ' + (sc.no_signal || 0) + ' showed no interest · ' + (sc.silent || 0) + ' gone silent.' + (sc.error ? ' <span style="color:#d9423b">Problem: ' + esc(sc.error) + '</span>' : '') : 'No check has run yet — it runs by itself when WhatsApp opens.') + '</div>';
+    h += '<div class="rq-tabs"><button data-tab="list" class="' + (S.tab === 'list' ? 'on' : '') + '">Queries</button><button data-tab="team" class="' + (S.tab === 'team' ? 'on' : '') + '">Rescue team</button><button data-tab="cfg" class="' + (S.tab === 'cfg' ? 'on' : '') + '">Settings</button></div>';
     if (S.tab === 'list') {
-      if (S.admin) h += '<div class="rq-row"><select id="rqSt">' + ['all', 'open', 'taken', 'won', 'ordered', 'expired', 'silent'].map((x) => '<option value="' + x + '"' + (S.status === x ? ' selected' : '') + '>' + (x === 'all' ? 'All' : (ST[x] || x)) + '</option>').join('') + '</select>' +
+      h += '<div class="rq-row"><select id="rqSt">' + ['all', 'open', 'taken', 'won', 'ordered', 'expired', 'silent'].map((x) => '<option value="' + x + '"' + (S.status === x ? ' selected' : '') + '>' + (x === 'all' ? 'All' : (ST[x] || x)) + '</option>').join('') + '</select>' +
         '<select id="rqDays">' + [1, 3, 7, 14, 30].map((x) => '<option value="' + x + '"' + (S.days === x ? ' selected' : '') + '>Last ' + x + ' day' + (x > 1 ? 's' : '') + '</option>').join('') + '</select></div>';
       h += d.items.length ? d.items.map(itemHtml).join('') : '<div class="rq-empty">Nothing here right now. 🎉</div>';
     } else if (S.tab === 'team' && S.team) {
       const t = S.team;
-      h += '<div class="card" style="padding:14px 18px"><b>Who sees the rescue queries? (' + esc(t.day) + ')</b><div class="rq-sub">Pick up to 40 people. Only they see this list and can take a query.</div><div class="rq-team">' +
+      h += '<div class="card" style="padding:14px 18px"><b>Who sees the 🛟 Rescue chip in Chats? (' + esc(t.day) + ')</b><div class="rq-sub">Pick up to 40 people. Only they (and you) see the rescue chats and can take one.</div><div class="rq-team">' +
         (t.people || []).map((p) => '<label><input type="checkbox" data-emp="' + p.emp_id + '"' + (p.in ? ' checked' : '') + '> ' + esc(p.name) + '</label>').join('') + '</div>' +
         '<div class="rq-row"><button class="btn" id="rqTeamDay">Save for today</button><button class="btn secondary" id="rqTeamAlways">Save for every day</button></div>' + (t.always ? '<div class="rq-sub">Today uses the “every day” list.</div>' : '') + '</div>';
-    } else if (S.tab === 'bonus' && S.bonus) {
-      const b = S.bonus;
-      h += '<div class="card" style="padding:14px 18px"><b>Rescue bonus ' + esc(b.from) + ' → ' + esc(b.to) + ': ' + money(b.total_bonus) + '</b><div class="rq-sub">Extra on top of the normal commission – ' + esc(cfg.pct) + '% of each order\'s total — per order. Every order the customer places after the query was taken earns it.</div></div>' +
-        (S.admin && b.people.length ? '<table><thead><tr><th>Person</th><th>Orders</th><th>Revenue</th><th>Bonus</th></tr></thead><tbody>' + b.people.map((p) => '<tr><td>' + esc(p.name) + '</td><td>' + p.orders + '</td><td>' + money(p.revenue) + '</td><td><b>' + money(p.bonus) + '</b></td></tr>').join('') + '</tbody></table>' : '') +
-        (b.orders.length ? '<table style="margin-top:10px"><thead><tr><th>Order</th><th>Customer</th><th>Person</th><th>Total</th><th>Bonus</th><th>Date</th></tr></thead><tbody>' + b.orders.map((o) => '<tr><td>' + esc(o.order_name) + '</td><td>' + esc(o.customer || o.phone) + '</td><td>' + esc(o.name) + '</td><td>' + money(o.total) + '</td><td>' + money(o.bonus) + '</td><td>' + esc(o.won_at) + '</td></tr>').join('') + '</tbody></table>' : '<div class="rq-empty">No rescued orders in this period yet.</div>');
-    } else if (S.tab === 'cfg' && S.admin) {
-      h += '<div class="card" style="padding:14px 18px;margin-bottom:12px"><b>Which queries count as missed</b>' +
-        '<div class="rq-row"><label>Stop after (attempts) <input type="number" id="cAtt" min="1" max="30" value="' + esc(cfg.attempts) + '"></label><span class="rq-sub">a person tried this many times since the customer last wrote, no answer → goes silent</span></div><div class="rq-row"><label>Look back (days) <input type="number" id="cDays" min="1" max="30" value="' + esc(cfg.days) + '"></label>' +
-        '<label>No follow-up for (hours) <input type="number" id="cWait" step="0.5" min="0.5" max="48" value="' + esc(cfg.wait_h) + '"></label><button class="btn" id="cSave">Save</button></div>' +
-        '<div class="rq-sub">A price query counts as missed after this long without a person answering.</div></div>' +
-        '<div class="rq-sub" style="margin-bottom:6px">The extra bonus % and ON/OFF are in Commission Rules — the same page as in Sales (shown below):</div>' +
-        '<iframe title="Commission Rules" src="commission_rules.html?in=sales" style="width:100%;height:calc(100vh - 330px);min-height:520px;border:1px solid var(--line);border-radius:12px;background:#fff"></iframe>';
+    } else if (S.tab === 'cfg') {
+      h += '<div class="card" style="padding:14px 18px"><div class="rq-row"><label><input type="checkbox" id="cOn"' + (cfg.on ? ' checked' : '') + '> Rescue is ON</label></div>' +
+        '<div class="rq-row"><label>Stop after (attempts) <input type="number" id="cAtt" min="1" max="30" value="' + esc(cfg.attempts) + '"></label><span class="rq-sub">a person tried this many times since the customer last wrote, no answer → goes silent</span></div>' +
+        '<div class="rq-row"><label>Look back (days) <input type="number" id="cDays" min="1" max="30" value="' + esc(cfg.days) + '"></label></div>' +
+        '<div class="rq-row"><label>Quiet for (hours) <input type="number" id="cWait" step="0.5" min="0.5" max="48" value="' + esc(cfg.wait_h) + '"></label><span class="rq-sub">a customer counts as not followed up after this long without a message from them</span></div>' +
+        '<button class="btn" id="cSave">Save settings</button></div>';
     }
     root.innerHTML = h;
   }
@@ -129,10 +110,9 @@ guardPage();
     S.busy = false; load();
   }
   root.addEventListener('click', (e) => {
-    const t = e.target.closest('button,a'); if (!t) return;
+    const t = e.target.closest('button,a,[data-open]'); if (!t) return;
     if (t.dataset.tab) { S.tab = t.dataset.tab; load(); return; }
     if (t.dataset.open) { openChat(t.dataset.open); return; }
-    if (t.dataset.take) { act(() => api.post('wq.rescue_take', { phone: t.dataset.take }).then((r) => { openChat(t.dataset.take); return r; })); return; }
     if (t.dataset.skip) { if (confirm('Hide this query – not a real chance?')) act(() => api.post('wq.rescue_skip', { phone: t.dataset.skip })); return; }
     if (t.dataset.give) {
       api.get('wq.rescue_team').then((tm) => {
@@ -146,7 +126,7 @@ guardPage();
       const ids = [...root.querySelectorAll('[data-emp]:checked')].map((c) => +c.dataset.emp);
       act(() => api.post('wq.rescue_team', { emp_ids: ids, always: t.id === 'rqTeamAlways' }), () => ids.length + ' people saved.');
     }
-    if (t.id === 'cSave') act(() => api.post('wq.rescue_cfg', { attempts: +document.getElementById('cAtt').value, days: +document.getElementById('cDays').value, wait_h: +document.getElementById('cWait').value }), () => 'Saved.');
+    if (t.id === 'cSave') act(() => api.post('wq.rescue_cfg', { on: document.getElementById('cOn').checked, attempts: +document.getElementById('cAtt').value, days: +document.getElementById('cDays').value, wait_h: +document.getElementById('cWait').value }), () => 'Saved.');
   });
   root.addEventListener('change', (e) => {
     if (e.target.id === 'rqSt') { S.status = e.target.value; load(); } if (e.target.id === 'rqDays') { S.days = +e.target.value; load(); }

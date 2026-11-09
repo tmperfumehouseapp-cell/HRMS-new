@@ -556,6 +556,12 @@ function wa_bizday_start(PDO $pdo): string
 }
 function wa_src_counts(PDO $pdo, bool $adm, int $emp): array
 {
+    $o = wa_src_counts_base($pdo, $adm, $emp);
+    if (function_exists('wq_rescue_chip_count')) { try { $rc = wq_rescue_chip_count($pdo, $emp, $adm); if ($rc !== null) $o['rescue'] = $rc; } catch (Throwable $e) { } }   // 🛟 only people who see the Rescue chip get a number
+    return $o;
+}
+function wa_src_counts_base(PDO $pdo, bool $adm, int $emp): array
+{
     $base = "status = 'open' AND last_in_at IS NOT NULL" . ($adm ? '' : ' AND assigned_emp = ' . ($emp > 0 ? $emp : -1)); $o = [];
     try {
         foreach (['community', 'campaign'] as $s) { $q = $pdo->prepare("SELECT COUNT(*) FROM wa_contacts WHERE $base AND source = ?"); $q->execute([$s]); $o[$s] = (int)$q->fetchColumn(); }
@@ -865,7 +871,9 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo)\./', $__wa)) {
         case 'wa.chats': {
             $scope = (string)($_GET['scope'] ?? 'mine'); $q = trim((string)($_GET['q'] ?? '')); $emp = (int)($auth['employee_id'] ?? 0); $adm = wa_is_admin($pdo, $auth) && empty($_GET['mine']);   // mine=1 → the My Chats page: even an admin sees only their own
             $w = []; $p = []; $srcQ = (string)($_GET['src'] ?? ''); $numFeed = $adm && preg_match('/^num:(\d+)$/', $srcQ, $numM) ? (int)$numM[1] : 0;
-            if ($numFeed) { $w[] = 'c.phone IN (SELECT m0.phone FROM wa_messages m0 WHERE m0.dir = \'in\' AND m0.number_id = ?)'; $p[] = $numFeed; }   // 📱 everybody who ever wrote to this number (since it was deployed), open or closed
+            $rescueFeed = $srcQ === 'rescue' && function_exists('wq_rescue_chat_phones') ? wq_rescue_chat_phones($pdo, $emp, $adm) : null;   // 🛟 the Rescue chip: interested customers nobody followed up
+            if ($rescueFeed !== null) { if ($rescueFeed) { $w[] = 'c.phone IN (' . implode(',', array_fill(0, count($rescueFeed), '?')) . ')'; foreach ($rescueFeed as $rp) $p[] = $rp; } else $w[] = '1 = 0'; }
+            elseif ($numFeed) { $w[] = 'c.phone IN (SELECT m0.phone FROM wa_messages m0 WHERE m0.dir = \'in\' AND m0.number_id = ?)'; $p[] = $numFeed; }   // 📱 everybody who ever wrote to this number (since it was deployed), open or closed
             elseif (!$adm) { $w[] = 'c.assigned_emp = ?'; $p[] = $emp; $w[] = $scope === 'closed' ? "c.status = 'closed'" : "c.status = 'open'"; }
             elseif ($scope === 'mine') { $w[] = 'c.assigned_emp = ?'; $p[] = $emp > 0 ? $emp : -1; $w[] = "c.status = 'open'"; }
             elseif ($scope === 'unassigned') { $w[] = 'c.assigned_emp = 0'; $w[] = "c.status = 'open'"; }
@@ -911,7 +919,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo)\./', $__wa)) {
         case 'wa.chat': {
             $key = wa_key($_GET['phone'] ?? ''); $c = $key !== '' ? wa_contact($pdo, $key) : null;
             if (!$c) json_response(['error' => 'Chat not found.'], 404);
-            $peek = ''; if (!wa_can_watch($pdo, $auth, $c)) { $peek = wa_req_peek($pdo, $c); if ($peek === '' && wa_was_mine($pdo, $key, (int)($auth['employee_id'] ?? 0))) $peek = 'tag'; if ($peek === '') json_response(['error' => 'This chat is assigned to someone else.'], 403); }   // 🙋 a Requests chat may be READ before taking it; replying needs Take over
+            $peek = ''; if (!wa_can_watch($pdo, $auth, $c)) { $peek = wa_req_peek($pdo, $c); if ($peek === '' && function_exists('wq_rescue_may_read') && wq_rescue_may_read($pdo, $auth, $key)) $peek = 'rescue'; if ($peek === '' && wa_was_mine($pdo, $key, (int)($auth['employee_id'] ?? 0))) $peek = 'tag'; if ($peek === '') json_response(['error' => 'This chat is assigned to someone else.'], 403); }   // 🙋 a Requests chat may be READ before taking it; replying needs Take over
             // "anything new?" — one small query: the newest message, the delivery ticks and the chat's own fields. Same as the page has → {same:1} (the 10-second
             // refresh of an open chat used to re-load 100 messages and ~11 queries every time)
             $sq = $pdo->prepare("SELECT MAX(id) mx, COUNT(*) n, SUM(status = 'read') r, SUM(status = 'delivered') dl, SUM(status = 'failed') f FROM wa_messages WHERE phone = ?"); $sq->execute([$key]); $sg = $sq->fetch() ?: [];
