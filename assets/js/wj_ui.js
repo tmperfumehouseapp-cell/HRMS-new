@@ -39,8 +39,6 @@
   async function call(fn) { try { const r = await fn(); if (r && r.message) toast(r.message); return r; } catch (e) { toast(e.message || 'Something went wrong', true); return null; } }
   const TPL = { approved: ['🟢 Approved', 'g'], approved_old: ['🟡 Older words approved', ''], pending: ['🟡 Waiting for Meta', ''], rejected: ['🔴 Meta said no', 'r'], none: ['Not at Meta yet', 'o'] };
   const tplPill = (s) => { const t = TPL[s] || ['…', '']; return '<span class="wj-pill ' + t[1] + '">' + t[0] + '</span>'; };
-  const TRACK = { lead: ["Didn't order", 'Day counted from the customer’s last message. When they write again, the count starts again.'], buyer: ['Ordered', 'Day counted from the customer’s last order. Order updates and After-delivery messages keep running as they are.'] };
-
   function mic(ta) {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition; const w = document.createElement('div'); w.className = 'wj-row2'; w.style.marginTop = '6px';
     if (!SR) { w.innerHTML = '<span class="wj-sub">🎤 Voice typing works in Google Chrome — you can still write here.</span>'; return w; }
@@ -58,80 +56,15 @@
   }
 
   function mount(el, solo) {
-    css(); let D = null, CHG = null, tab = solo || 'lanes', R = null, Q = null, rdays = 30, TR = { lead: [], buyer: [] }, dirty = { lead: false, buyer: false }, busy = false;
+    css(); let D = null, CHG = null, tab = solo || 'claude', R = null, Q = null, rdays = 30, busy = false;
     el.innerHTML = '<div class="wj"><div class="wj-card">Loading…</div></div>';
-    const take = (d) => { D = d; if (!CHG || !d.change || d.change.at !== CHG.at) CHG = d.change && (d.change.rows || []).length ? JSON.parse(JSON.stringify(d.change)) : null; if (!dirty.lead) TR.lead = JSON.parse(JSON.stringify(d.steps.lead)); if (!dirty.buyer) TR.buyer = JSON.parse(JSON.stringify(d.steps.buyer)); };
+    const take = (d) => { D = d; if (!CHG || !d.change || d.change.at !== CHG.at) CHG = d.change && (d.change.rows || []).length ? JSON.parse(JSON.stringify(d.change)) : null; };
     async function load() { try { take(await api.get('fu.wj_get')); } catch (e) { el.innerHTML = '<div class="wj"><div class="wj-err">' + esc(e.message) + '</div></div>'; return; } draw(); if (solo === 'results') loadResults(); }
-    const act = async (action, body, after) => { if (busy) return null; busy = true; const r = await call(() => api.post(action, body || {})); busy = false; if (r && r.steps) { if (after !== 'keep') { dirty.lead = dirty.buyer = false; } take(r); if (r.popup) tab = 'claude'; draw(); } else if (r) { await load(); } return r; };
+    const act = async (action, body, after) => { if (busy) return null; busy = true; const r = await call(() => api.post(action, body || {})); busy = false; if (r && r.steps) { take(r); if (r.popup) tab = 'claude'; draw(); } else if (r) { await load(); } return r; };
 
-    function head() {
-      const s = D.stats || {}, m = D.mode;
-      const kp = [['In the journey now', (s.lead || 0) + (s.buyer || 0)], ['Joined in 24 h', s.joined || 0], ['Leaving (day 60)', s.leaving || 0], ['Sent today', s.sent_today || 0], ['Sent in 7 days', s.sent_7 || 0]];
-      const tabs = [['lanes', '🗺 By topic'], ['journey', '🗓 Journey'], ['claude', '🧠 Claude'], ['topics', '💡 Topics'], ['msgs', '🎁 Messages & offers'], ['fest', '🪔 Festivals'], ['results', '📊 Results']];
-      let h = '<div class="wj-card"><div class="wj-h">🗓 60-day Journey<span class="sp"></span><span class="wj-seg">' + [['off', 'Off'], ['suggest', 'Preview'], ['auto', 'Auto']].map(([k, l]) => '<button type="button" data-mode="' + k + '" class="m-' + k + (m === k ? ' on' : '') + '">' + l + '</button>').join('') + '</span>'
-        + (D.hist.length ? '<button class="wj-b s" type="button" data-undo title="' + esc(D.hist[0].why) + '">↩ Undo</button>' : '') + '</div>'
-        + '<div class="wj-sub">One plan for every customer for 60 days. Every day new people enter (their day arrives) and people past day 60 simply leave. '
-        + (m === 'auto' ? '<b>Auto</b>: messages go by themselves, between ' + esc(hm(D.cfg.from)) + ' and ' + esc(hm(D.cfg.to)) + ', never in quiet hours.' : m === 'suggest' ? '<b>Preview</b>: nothing is sent — see who would get what in Results → “Who gets what now”. Switch to <b>Auto</b> when it looks right.' : '<b>Off</b>: nothing is sent (Claude still learns the topics at night).') + '</div>'
-        + '<div class="wj-kpi" style="margin-top:10px">' + kp.map(([a, b]) => '<div class="wj-k"><small>' + a + '</small><b>' + Number(b).toLocaleString('en-IN') + '</b></div>').join('') + '</div></div>';
-      const bans = [];
-      if (D.proposal && (D.proposal.ops || []).length) bans.push('<div class="wj-ban v"><span class="sp">🧠 <b>Claude has ' + D.proposal.ops.length + ' change(s) waiting</b>' + (D.proposal.source === 'night' ? ' — from last night’s review' : D.proposal.source === 'festival' ? ' — for the festival' : '') + '. Nothing changes before you press Start.</span><button class="wj-b v" type="button" data-go="claude">Review</button></div>');
-      if (D.fest_sug && D.fest_sug.name) bans.push('<div class="wj-ban y"><span class="sp">🪔 <b>' + esc(D.fest_sug.name) + '</b> is ' + (D.fest_sug.days_left <= 0 ? 'today' : 'in ' + D.fest_sug.days_left + ' days') + '. Switch the festival theme?</span><button class="wj-b" type="button" data-go="fest">Look</button></div>');
-      const wait = D.messages.filter((x) => x.uses && x.status === 'none').length; if (wait) bans.push('<div class="wj-ban y"><span class="sp">📨 <b>' + wait + ' message(s) are not at Meta yet</b> — they go by themselves in a few minutes (or press the button).</span><button class="wj-b" type="button" data-tpl>Send them now</button></div>');
-      if (!D.ready) bans.push('<div class="wj-err">The Follow-up Autopilot module is missing on this server, so the journey cannot run.</div>');
-      return h + bans.join('') + '<div class="wj-card" style="padding:10px 12px"><div class="wj-seg">' + tabs.map(([k, l]) => '<button type="button" data-tab="' + k + '" class="' + (tab === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div></div>';
-    }
     const hm = (m) => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
-    function strip(tk) {
-      const cells = []; for (let d = 1; d <= 60; d++) cells.push({ c: '', t: 'Day ' + d });
-      if (tk === 'lead') for (const a of D.auto10) { const c = cells[a.day - 1]; if (c) { c.c = 'a'; c.t = 'Day ' + a.day + ' · Follow-up Autopilot (' + (a.msg ? a.msg + ' message' : '') + (a.msg && a.offer ? ', ' : '') + (a.offer ? a.offer + ' offer' : '') + ')'; } }
-      for (const s of TR[tk]) { const c = cells[s.day - 1]; if (c && s.on) { c.c = s.icon === '🎁' ? 'f' : 'm'; c.t = 'Day ' + s.day + ' · ' + s.label; } }
-      return '<div class="wj-strip">' + cells.map((c) => '<i class="' + c.c + '" title="' + esc(c.t) + '"></i>').join('') + '</div><div class="wj-scale"><span>day 1</span><span>15</span><span>30</span><span>45</span><span>60</span></div>';
-    }
     const stMark = (s) => s === 'approved_old' ? '✅⏳ ' : s === 'approved' || s === 'partial' ? '✅ ' : s === 'pending' ? '⏳ ' : s === 'rejected' ? '❌ ' : '📨 ';   // ✅ approved · ⏳ waiting for Meta · ❌ rejected · 📨 not sent yet (a day with a message that is not approved sends nothing)
     const refOpts = (sel) => '<optgroup label="💬 Messages">' + D.messages.filter((x) => x.icon === '💬').map((x) => '<option value="' + esc(x.k) + '"' + (x.k === sel ? ' selected' : '') + '>' + stMark(x.status) + esc(x.label) + '</option>').join('') + '</optgroup><optgroup label="🎁 Offers">' + D.messages.filter((x) => x.icon !== '💬').map((x) => '<option value="' + esc(x.k) + '"' + (x.k === sel ? ' selected' : '') + '>' + stMark(x.status) + esc(x.label) + '</option>').join('') + '</optgroup><optgroup label="➕ Make a new one"><option value="__new">➕ New message or offer…</option></optgroup>';
-    const topicOpts = (sel) => '<option value="">Everyone</option>' + D.topics.rows.map((t) => '<option value="' + esc(t.key) + '"' + (t.key === sel ? ' selected' : '') + '>Only: ' + esc(t.title) + '</option>').join('') + (sel && !D.topics.rows.some((t) => t.key === sel) ? '<option value="' + esc(sel) + '" selected>Only: ' + esc(sel) + '</option>' : '');
-    function trackCard(tk) {
-      const T = TRACK[tk], rows = TR[tk];
-      let h = '<div class="wj-card"><div class="wj-h">' + (tk === 'lead' ? '🙋' : '🛍') + ' ' + T[0] + '<span class="wj-pill">' + rows.filter((x) => x.on).length + ' messages</span><span class="sp"></span>' + (dirty[tk] ? '<span class="wj-pill o">not saved</span>' : '') + '</div><div class="wj-sub">' + T[1] + '</div>' + strip(tk);
-      if (tk === 'lead') h += '<div class="wj-auto"><b>Days 1–10 · Follow-up Autopilot.</b> ' + (D.auto10.length ? D.auto10.map((a) => 'day ' + a.day + ': ' + (a.msg ? a.msg + ' msg' : '') + (a.msg && a.offer ? ' + ' : '') + (a.offer ? a.offer + ' offer' : '')).join(' · ') : 'not set up yet') + ' <a href="whatsapp.html#followups" target="_top">Edit in Follow-ups →</a></div>';
-      h += rows.map((x, i) => '<div class="wj-row' + (x.on ? '' : ' off') + '" data-t="' + tk + '" data-i="' + i + '"><span>Day <input class="wj-in" type="number" min="1" max="60" data-f="day" value="' + x.day + '"></span><select class="wj-sel" data-f="ref">' + refOpts(x.ref) + '</select><select class="wj-sel" data-f="topic">' + topicOpts(x.topic) + '</select><input class="wj-in" data-f="idea" maxlength="300" placeholder="Extra idea for Claude (optional)" value="' + esc(x.idea) + '"><label style="white-space:nowrap"><input type="checkbox" data-f="on"' + (x.on ? ' checked' : '') + '> On</label>' + tplPill(x.tpl) + '<button class="wj-b s r" type="button" data-rm="' + tk + ':' + i + '" title="Remove this day">✕</button></div>').join('')
-        || '<div class="wj-sub" style="padding:8px 0">No days yet.</div>';
-      return h + '<div class="wj-row2" style="margin-top:10px"><button class="wj-b" type="button" data-add="' + tk + '">＋ Add a day</button><button class="wj-b p" type="button" data-save="' + tk + '"' + (dirty[tk] ? '' : ' disabled') + '>Save this track</button><button class="wj-b s" type="button" data-ask="' + tk + '">🧠 Ask Claude to improve it</button></div></div>';
-    }
-    function cfgCard() {
-      const c = D.cfg; return '<div class="wj-card"><div class="wj-h">⚙️ Sending rules</div><div class="wj-row2"><label class="wj-sub">At least <input class="wj-in" style="width:56px" type="number" min="1" max="14" id="cfGap" value="' + c.gap_days + '"> days between two journey messages</label>'
-        + '<label class="wj-sub">Max <input class="wj-in" style="width:76px" type="number" min="10" id="cfDay" value="' + c.day_cap + '"> a day</label><label class="wj-sub">Between <input class="wj-in" type="time" id="cfFrom" value="' + hm(c.from) + '"> and <input class="wj-in" type="time" id="cfTo" value="' + hm(c.to) + '"></label>'
-        + '<label class="wj-sub">Festival reminder <input class="wj-in" style="width:56px" type="number" min="7" max="45" id="cfLead" value="' + c.lead_days + '"> days before</label><button class="wj-b s" type="button" id="cfSave">Save</button></div>'
-        + '<div class="wj-sub" style="margin-top:6px">Also always respected: opt-outs, quiet hours and the daily limits of Teach, an open complaint, an order message in the last 2 days, a follow-up in the last 36 hours, and the sender’s own safety brake. A day that came before Auto was switched on is never caught up.</div></div>';
-    }
-    const journeyTab = () => trackCard('lead') + trackCard('buyer') + cfgCard();
-
-    // 🗺 One picture of the whole plan: a lane per topic. Every lane shows days 1–60: the Autopilot days (1–10), the steps for everyone, and the steps only for that topic.
-    function laneStrip(key) {
-      const cells = []; for (let d = 1; d <= 60; d++) cells.push({ c: '', t: 'Day ' + d });
-      for (const a of D.auto10) { const c = cells[a.day - 1]; if (c) { c.c = 'a'; c.t = 'Day ' + a.day + ' · Follow-up Autopilot (' + (a.msg ? a.msg + ' message' : '') + (a.msg && a.offer ? ', ' : '') + (a.offer ? a.offer + ' offer' : '') + ')'; } }
-      for (const s of TR.lead) { if (!s.on || (s.topic && s.topic !== key)) continue; const c = cells[s.day - 1]; if (!c) continue; c.c = s.topic ? 't' : (s.icon === '🎁' ? 'f' : 'm'); c.t = 'Day ' + s.day + ' · ' + s.label + (s.topic ? ' (only this topic)' : ''); }
-      return '<div class="wj-strip">' + cells.map((c) => '<i class="' + c.c + '" title="' + esc(c.t) + '"></i>').join('') + '</div><div class="wj-scale"><span>day 1</span><span>15</span><span>30</span><span>45</span><span>60</span></div>';
-    }
-    function lane(key, title, sub, all) {
-      const mine = TR.lead.filter((s) => s.on && (!s.topic || s.topic === key)).sort((a, b) => a.day - b.day), own = mine.filter((s) => s.topic === key).length;
-      return '<div class="wj-lane' + (all ? ' all' : '') + '"><div class="wj-row2"><b style="font-size:15px">' + (all ? '👥 ' : '💡 ') + esc(title) + '</b>' + sub + '<span style="flex:1"></span>'
-        + (all ? '' : '<button class="wj-b s" type="button" data-lane-add="' + esc(key) + '">＋ A step only for this topic</button><button class="wj-b s v" type="button" data-lane-ask="' + esc(key) + '" data-title="' + esc(title) + '">🧠 Ask Claude to plan this topic</button>') + '</div>'
-        + laneStrip(key) + '<div>' + (mine.length ? mine.map((s) => '<span class="wj-ch' + (s.topic ? ' t' : '') + '" title="' + (s.topic ? 'Only for this topic' : 'Everyone gets this') + '">Day ' + s.day + ' · ' + s.icon + ' ' + esc(s.label) + (s.topic ? ' ★' : '') + '</span>').join('') : '<span class="wj-sub">No steps yet.</span>') + '</div>'
-        + (!all ? '<div class="wj-sub">' + (own ? '★ ' + own + ' step' + (own === 1 ? '' : 's') + ' made only for this topic, plus the steps for everyone.' : 'No step is made only for this topic yet — these customers get the steps for everyone. Add one, or ask Claude.') + '</div>' : '') + '</div>';
-    }
-    function lanesTab() {
-      const rows = (D.topics.rows || []).slice().sort((a, b) => (b.n30 || 0) - (a.n30 || 0)).slice(0, 12);
-      let h = '<div class="wj-card"><div class="wj-h">🗺 The whole plan, topic by topic</div><div class="wj-sub">Each customer who did not order follows <b>one lane</b>: the topic Claude found in their chats (it reads new chats every night). '
-        + 'Days 1–10 belong to the Follow-up Autopilot; from day 11 the Journey carries on. Anything marked ★ is made only for that topic. A customer who is ready to pay is not left to the bot — people step in through 🛟 Rescue, and while a person has taken a chat no automatic message goes out.'
-        + (D.season_now ? '<br>🪔 Festival theme right now: <b>' + esc(D.season_now) + '</b> · <button class="wj-b s" type="button" data-go="fest">change it</button> or tell Claude in the 🧠 Claude tab.' : '<br>🪔 No festival theme is on. Tell Claude when a festival or season starts and it will change the plan for you (nothing changes before you press Start).')
-        + '</div><div class="wj-lg" style="margin-top:8px"><span><i style="background:#c4b5fd"></i>Follow-up Autopilot</span><span><i style="background:#86efac"></i>Message</span><span><i style="background:#fdba74"></i>Offer</span><span><i style="background:#7c3aed"></i>Only this topic</span></div></div>';
-      h += lane('', 'Everyone (every topic)', '<span class="wj-pill">' + TR.lead.filter((x) => x.on && !x.topic).length + ' steps</span>', true);
-      h += rows.length ? rows.map((t) => lane(t.key, t.title, '<span class="wj-pill">' + (t.n30 || 0) + ' chats · 30 days</span><span class="wj-pill">' + (t.n7 || 0) + ' this week</span>', false)).join('') : '<div class="wj-card"><div class="wj-sub">No topics learned yet. Press “Read chats now” in the 💡 Topics tab, or wait for tonight.</div></div>';
-      return h;
-    }
-
-
     function propBlock() {
       const P = D.proposal || {}; if (!P.understood) return '';
       let h = '<div class="wj-prop"><div class="wj-h" style="margin-bottom:4px">🧠 What Claude understood</div><div>' + esc(P.understood) + '</div>';
@@ -144,7 +77,7 @@
     }
     function claudeTab() {
       const has = D.proposal && D.proposal.understood;
-      return '<div class="wj-card"><div class="wj-h">🧠 Talk to Claude about the whole journey</div><div class="wj-sub">Say it in your own words (Hindi / Gujarati / English) — e.g. “Diwali ke baad New Year ka theme lagao”, “add a day 14 message for gift customers”, “make Offer 2 a buy-2-get-1”, “remove the last-note on day 60”. '
+      return (D.hist && D.hist.length ? '<div class="wj-card"><button class="wj-b s" type="button" data-undo title="' + esc(D.hist[0].why) + '">↩ Undo the last change Claude made</button></div>' : '') + '<div class="wj-card"><div class="wj-h">🧠 Talk to Claude about the whole journey</div><div class="wj-sub">Say it in your own words (Hindi / Gujarati / English) — e.g. “Diwali ke baad New Year ka theme lagao”, “add a day 14 message for gift customers”, “make Offer 2 a buy-2-get-1”, “remove the last-note on day 60”. '
         + 'Claude reads everything the Teach bot knows, the topics, the results and the festival calendar. It asks you questions first when it is unsure, shows every change, and nothing happens before you press ▶ Start.</div>'
         + '<textarea class="wj-ta" id="wjSum" style="margin-top:8px" placeholder="' + (has && (D.proposal.questions || []).length ? 'Answer Claude’s questions…' : 'Write what to change…') + '"></textarea><div id="wjMic"></div><div class="wj-row2" style="margin-top:6px"><button class="wj-b v" type="button" id="wjSumGo">' + (has ? 'Send to Claude' : 'Ask Claude') + '</button>'
         + (D.ai ? '' : '<span class="wj-sub">Claude is not set up on this server.</span>') + '</div></div>' + (has ? propBlock() : '');
@@ -218,7 +151,7 @@
     }
     function draw() {
       if (!D) return; const scroll = el.scrollTop;
-      el.innerHTML = '<div class="wj">' + (solo ? '' : head()) + (tab === 'lanes' ? lanesTab() : tab === 'journey' ? journeyTab() : tab === 'claude' ? claudeTab() : tab === 'topics' ? topicsTab() : tab === 'msgs' ? msgsTab() : tab === 'fest' ? festTab() : resultsTab()) + '</div>'; bind(); el.scrollTop = scroll;
+      el.innerHTML = '<div class="wj">' + (tab === 'claude' ? claudeTab() : tab === 'topics' ? topicsTab() : tab === 'msgs' ? msgsTab() : tab === 'fest' ? festTab() : resultsTab()) + '</div>'; bind(); el.scrollTop = scroll;
     }
     async function loadResults() { R = null; draw(); try { R = await api.get('fu.wj_results', { days: rdays }); } catch (e) { R = { total: { sent: 0, replied: 0, ordered: 0, sales: 0 }, steps: [] }; } draw(); }
     async function ask(text, more) { const r = await act('fu.wj_brain', { text, more: !!more }, 'keep'); if (r && r.steps) { tab = 'claude'; draw(); } return r; }
@@ -238,25 +171,8 @@
     }
     function bind() {
       const $ = (s) => el.querySelector(s), $$ = (s) => [...el.querySelectorAll(s)];
-      $$('[data-tab]').forEach((b) => b.onclick = () => { tab = b.dataset.tab; draw(); if (tab === 'results') loadResults(); });
-      $$('[data-go]').forEach((b) => b.onclick = () => { tab = b.dataset.go; draw(); });
-      $$('[data-mode]').forEach((b) => b.onclick = async () => { const m = b.dataset.mode; if (m === D.mode) return; if (m === 'auto' && !confirm('Auto: journey messages go to customers by themselves, from today (earlier days are not caught up). Did you check “Who gets what now” and the message words?')) return; await act('fu.wj_mode', { mode: m }, 'keep'); });
       const un = $('[data-undo]'); if (un) un.onclick = async () => { if (confirm('Undo the last change (' + D.hist[0].why + ')?')) await act('fu.wj_undo'); };
       $$('[data-tpl]').forEach((b) => b.onclick = () => act('fu.wj_tpl', {}, 'keep'));
-      // journey rows
-      $$('.wj-row').forEach((row) => { const tk = row.dataset.t, i = +row.dataset.i;
-        row.querySelectorAll('[data-f]').forEach((f) => {
-          const apply = () => { const k = f.dataset.f, x = TR[tk][i]; x[k] = k === 'day' ? Math.max(1, Math.min(60, +f.value || 1)) : (k === 'on' ? f.checked : f.value);
-            if (k === 'ref') { const m = D.messages.find((z) => z.k === f.value); x.label = m ? m.label : f.value; x.icon = m ? m.icon : '🎁'; x.tpl = m ? m.status : 'none'; }
-            dirty[tk] = true; const sb = el.querySelector('[data-save="' + tk + '"]'); if (sb) sb.disabled = false; };
-          f.oninput = apply; f.onchange = () => { if (f.dataset.f === 'ref' && f.value === '__new') { newMsg((key) => { if (key) { const x = TR[tk][i]; x.ref = key; const m = D.messages.find((z) => z.k === key); if (m) { x.label = m.label; x.icon = m.icon; x.tpl = m.status; } dirty[tk] = true; } draw(); }); return; } apply(); if (f.dataset.f !== 'idea') setTimeout(draw, 0); }; }); });
-      $$('[data-rm]').forEach((b) => b.onclick = () => { const [tk, i] = b.dataset.rm.split(':'); TR[tk].splice(+i, 1); dirty[tk] = true; draw(); });
-      $$('[data-add]').forEach((b) => b.onclick = () => { const tk = b.dataset.add, last = TR[tk].reduce((a, x) => Math.max(a, x.day), tk === 'lead' ? 10 : 0), m = D.messages[0]; TR[tk].push({ id: '', day: Math.min(60, last + 3), ref: m.k, idea: '', topic: '', on: true, label: m.label, icon: m.icon, tpl: m.status }); dirty[tk] = true; draw(); });
-      $$('[data-lane-add]').forEach((b) => b.onclick = () => { const key = b.dataset.laneAdd, last = TR.lead.reduce((a, x) => Math.max(a, x.day), 10), m = D.messages[0]; TR.lead.push({ id: '', day: Math.min(60, last + 3), ref: m.k, idea: '', topic: key, on: true, label: m.label, icon: m.icon, tpl: m.status }); dirty.lead = true; tab = 'journey'; draw(); toast('A new day was added at the bottom of the Didn\'t order track, for this topic only. Pick the day and the message, then press Save.'); });
-      $$('[data-lane-ask]').forEach((b) => b.onclick = () => ask('Many customers are in the topic "' + b.dataset.title + '" (' + b.dataset.laneAsk + '). Make a careful plan for them up to day 60: a few steps made ONLY for this topic (send each only to this topic) on good days of the lead track, using existing registry messages or a new one (key starting w_) with a short approved wording. Ask me first if you need to know an offer.', false));
-      $$('[data-save]').forEach((b) => b.onclick = async () => { const tk = b.dataset.save; const r = await act('fu.wj_steps_save', { track: tk, steps: TR[tk].map((x) => ({ id: x.id, day: x.day, ref: x.ref, idea: x.idea, topic: x.topic, on: x.on })) }); if (r) { dirty[tk] = false; } });
-      $$('[data-ask]').forEach((b) => b.onclick = () => ask('Look at the "' + TRACK[b.dataset.ask][0] + '" track of the journey. Using the topics, the results and the festival calendar, suggest careful improvements (gaps, days with no answers, a message for a growing topic).', false));
-      const cs = $('#cfSave'); if (cs) cs.onclick = () => act('fu.wj_cfg', { gap_days: +$('#cfGap').value, day_cap: +$('#cfDay').value, from: $('#cfFrom').value, to: $('#cfTo').value, lead_days: +$('#cfLead').value }, 'keep');
       // claude
       const sm = $('#wjSum'); if (sm) { $('#wjMic').appendChild(mic(sm)); const go = $('#wjSumGo'); go.onclick = async () => { const t = sm.value.trim(); if (!t) return; go.disabled = true; go.textContent = 'Claude is reading…'; const r = await ask(t, !!(D.proposal && D.proposal.understood)); if (!r) { go.disabled = false; go.textContent = 'Ask Claude'; } }; }
       const st = $('[data-start]'); if (st) st.onclick = async () => { st.disabled = true; await act('fu.wj_apply', {}); };
@@ -289,8 +205,6 @@
     }
     load(); return load;
   }
-  WaPanels.add('journey', (el) => mount(el));
   WaPanels.add('mymsgs', (el) => mount(el, 'msgs'));
   WaPanels.add('wjclaude', (el) => mount(el, 'claude')); WaPanels.add('wjtopics', (el) => mount(el, 'topics')); WaPanels.add('wjfest', (el) => mount(el, 'fest')); WaPanels.add('wjresults', (el) => mount(el, 'results'));   // the Journey's own screens, as tabs of the one Journey section   // Messages → My messages: the same registry, on its own
-  window.WaJourney = { mount };
 })();

@@ -421,12 +421,10 @@
   const TEMPC = { hot: ['hot', 'bad'], warm: ['warm', 'warn'], cold: ['cold', 'b'] };
   const inT = (m) => (m <= 0 ? 'now' : m < 60 ? m + ' min' : m < 1440 ? (Math.round(m / 6) / 10) + ' h' : (Math.round(m / 144) / 10) + ' d');
   const TST = { approved: ['Approved', 'ok'], partial: ['Approved (1 account)', 'ok'], pending: ['Pending at Meta', 'warn'], rejected: ['Rejected', 'bad'], paused: ['Paused', 'warn'], draft: ['Draft', 'b'], missing: ['Not at Meta', 'warn'] };
-  // 🔁 the Follow-up Autopilot (fa_ui.js) replaces the old Live plan / ladder screen; Replies → Follow-up messages / Complaint messages
-  const faReady = (fn) => { if (window.FuAuto) return fn(); const sc = document.createElement('script'); sc.src = 'assets/js/fa_ui.js?v=fa4'; sc.onload = fn; document.head.appendChild(sc); };
-  // 🔁 ONE follow-up section: days 1–10 = the Follow-up Autopilot (fa_ui.js), days 11–60 = the 60-day Journey (wj_ui.js). They share the offers and the festival box, so they are shown together.
+  // ⏱ ONE Journey: the Timeline (jny_ui.js) is the plan; the rest of the tabs are its own screens (wj_ui.js) and the order messages.
   P.followups = (el, ctx) => {
     const T = [['jtimeline', '⏱ Timeline'], ['wjclaude', '🧠 Claude'], ['wjtopics', '💡 Topics'], ['wjfest', '🪔 Festivals'], ['wjresults', '📊 Results'], ['orderupd', '📦 Order updates'], ['afterdel', '⭐ After delivery'], ['birthdays', '🎂 Birthdays']]; let cur = 'jtimeline'; try { const sv = localStorage.getItem('wa_fu_sub2'); cur = T.some((x) => x[0] === sv) ? sv : 'jtimeline'; } catch (e) { /* private mode */ }
-    el.innerHTML = '<div id="fuOneK"></div><div id="fuOneT" style="display:flex;gap:6px;margin:0 0 10px;flex-wrap:wrap;align-items:center"></div><div id="fuOneA"></div><div id="fuOneB" hidden></div><div id="fuOneX"></div>';
+    el.innerHTML = '<div id="fuOneK"></div><div id="fuOneT" style="display:flex;gap:6px;margin:0 0 10px;flex-wrap:wrap;align-items:center"></div><div id="fuOneX"></div>';
     // 🎯 THE number that matters: orders that came from follow-ups (Autopilot, Journey, and chats people won through Rescue)
     const KP = el.querySelector('#fuOneK'); let kd = 30;
     const inr = (n) => '₹' + Math.round(Number(n) || 0).toLocaleString('en-IN');
@@ -458,16 +456,14 @@
       };
     };
     loadK();
-    const A = el.querySelector('#fuOneA'), B = el.querySelector('#fuOneB'), X = el.querySelector('#fuOneX'), TT = el.querySelector('#fuOneT'), re = {};
+    const X = el.querySelector('#fuOneX'), TT = el.querySelector('#fuOneT'), re = {};
     const show = () => {
       if (re[cur] !== undefined) return; re[cur] = null;
-      if (cur === 'ap') faReady(() => { re.ap = FuAuto.mount(A, {}); });
-      else if (cur !== 'wj') { const hb = document.createElement('div'); hb.dataset.x = cur; X.appendChild(hb); re[cur] = P[cur] ? P[cur](hb, ctx || {}) : (hb.innerHTML = '<div class="wp-sub">This screen could not load. Refresh the page.</div>'); }
-      else if (P.journey) re.wj = P.journey(B, ctx || {}); else B.innerHTML = '<div class="wp-sub">The 60-day Journey screen could not load. Refresh the page.</div>';
+      { const hb = document.createElement('div'); hb.dataset.x = cur; X.appendChild(hb); re[cur] = P[cur] ? P[cur](hb, ctx || {}) : (hb.innerHTML = '<div class="wp-sub">This screen could not load. Refresh the page.</div>'); }
     };
     const draw = () => {
       TT.innerHTML = T.map(([k, l]) => '<button type="button" data-s="' + k + '" class="wp-btn ' + (cur === k ? 'p' : '') + '">' + l + '</button>').join('') + '<span class="wp-sub" style="margin-left:6px">One Journey for every customer: the Timeline shows every step from the first minutes to day 60 — and the order, delivery and birthday messages sit here too.</span>';
-      A.hidden = cur !== 'ap'; B.hidden = cur !== 'wj'; X.querySelectorAll('[data-x]').forEach((d) => { d.hidden = d.dataset.x !== cur; }); show();
+      X.querySelectorAll('[data-x]').forEach((d) => { d.hidden = d.dataset.x !== cur; }); show();
     };
     TT.onclick = (e) => { const b = e.target.closest('[data-s]'); if (!b) return; cur = b.dataset.s; try { localStorage.setItem('wa_fu_sub2', cur); } catch (x) { /* private mode */ } draw(); };
     draw();
