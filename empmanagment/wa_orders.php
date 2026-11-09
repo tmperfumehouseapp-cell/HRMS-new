@@ -821,7 +821,7 @@ function wo_timing_defs(): array
             'return_d15' => ['unit' => 'days after the parcel is delivered', 'min' => 7, 'max' => 28, 'def' => 15, 'label' => 'Send the take-back offer'],
             'return_d30' => ['unit' => 'days after the parcel is delivered', 'min' => 20, 'max' => 60, 'def' => 30, 'label' => 'Send the no-questions return offer'],
             'dispatch_late' => ['unit' => 'hours after the order, if it has not been shipped', 'min' => 24, 'max' => 240, 'def' => 72, 'label' => 'Say sorry for the delay'],
-            'review' => ['unit' => 'days after the parcel is delivered', 'min' => 1, 'max' => 30, 'def' => 5, 'label' => 'Send the rating request'],
+            'review' => ['unit' => 'days after the parcel is delivered (0 = the delivery day)', 'min' => 0, 'max' => 30, 'def' => 0, 'label' => 'Send the rating request'],
             'review_nudge' => ['unit' => 'days after the 5-star rating', 'min' => 1, 'max' => 9, 'def' => 2, 'label' => 'Send the reminder'],
             'bday_ask' => ['unit' => 'minutes after the order', 'min' => 5, 'max' => 1440, 'def' => 60, 'label' => 'Ask for the birthday'],
             'birthday' => ['unit' => 'days before the birthday (0 = on the day)', 'min' => 0, 'max' => 7, 'def' => 1, 'label' => 'Send the gift message']];
