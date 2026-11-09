@@ -500,6 +500,76 @@ function wj_brain(PDO $pdo, string $text, bool $more = false, string $source = '
     wj_put($pdo, 'wj_proposal', $prop); return [true, $prop];
 }
 
+// ---------------------------------------------------------------------------------------------------------------------- ✏️ change many messages at once
+/** The owner says anything ("Diwali theme", "20% extra on every offer", "new perfume launched"): Claude lists EVERY related message of the library with a suggested new rule / words.
+ *  Nothing is changed here. Each suggestion is checked against the Teach facts + limits (a discount over the limit is blocked). [ok, rows|error] */
+function wj_change_scan(PDO $pdo, string $text): array
+{
+    if (!function_exists('convo_ai')) return [false, 'Claude is not available.'];
+    $reg = wj_reg($pdo); $plan = wj_plan_get($pdo); $uses = [];
+    foreach ($plan['tracks'] as $tk => $T) foreach ($T['steps'] as $s) $uses[$s['ref']][] = ($tk === 'lead' ? 'day ' : 'buyer day ') . $s['day'];
+    $lib = ''; foreach ($reg as $k => $x) $lib .= "[$k] " . $x[0] . ' | RULE: ' . $x[1] . ' | WORDS: ' . (function_exists('fa_tpl_body') ? fa_tpl_body($pdo, $k) : '') . ' | USED: ' . (isset($uses[$k]) ? implode(', ', array_slice($uses[$k], 0, 8)) : 'not used yet') . "\n";
+    $K = function_exists('wk_knowledge') ? wk_knowledge($pdo, [], $text) : ['text' => '', 'allowed' => []];
+    $sch = ['type' => 'OBJECT', 'properties' => ['understood' => ['type' => 'STRING'], 'rows' => ['type' => 'ARRAY', 'items' => ['type' => 'OBJECT', 'properties' => ['key' => ['type' => 'STRING'], 'why' => ['type' => 'STRING'], 'new_rule' => ['type' => 'STRING'], 'new_body' => ['type' => 'STRING']], 'required' => ['key', 'why', 'new_rule', 'new_body']]]], 'required' => ['understood', 'rows']];
+    $sys = "You help the owner of TM Perfume House (Indian perfume brand) change many WhatsApp follow-up messages at once. The owner says something in Hindi / Gujarati / English: a festival, a season, a new offer, an extra discount, a new perfume, a change of tone — anything. "
+        . "You get the whole message library (key, rule = what Claude writes in {{3}} for each customer, words = the approved message). Pick EVERY message that this change really touches (no others) and, for each, suggest the new RULE (max 300 letters) and the new WORDS. "
+        . "If only the rule must change keep new_body = '' (the words stay). WORDS must keep {{1}} (customer name), {{2}} (perfume) and {{3}} (the line) once each IN THIS ORDER, never at the very start or end, warm, short, English with a little Hinglish. "
+        . "A message that does not fit the change is left out. Obey the STORE FACTS and LIMITS: never go below the lowest price or above the maximum discount; if the owner asks for something over a limit, still suggest it (the system will block it and tell the owner). "
+        . "why = one plain line. understood = 1-2 plain sentences of what you understood.";
+    try { [$ok, $v] = convo_ai($sys, [['text' => ($K['text'] !== '' ? $K['text'] . "\n\n" : '') . "MESSAGE LIBRARY:\n" . $lib . "\nTODAY: " . date('Y-m-d') . "\nTHE OWNER SAYS:\n" . mb_substr($text, 0, 2000)]], $sch, false, 6000, 'claude'); } catch (Throwable $e) { return [false, 'Claude could not answer — try again.']; }
+    if (!$ok || !is_array($v)) return [false, 'Claude could not read that — say it a little more clearly.'];
+    $allowed = $K['allowed'] + (function_exists('teach_nums') ? teach_nums($text) : []); $rows = [];
+    foreach ((array)($v['rows'] ?? []) as $r) {
+        $k = (string)($r['key'] ?? ''); if (!isset($reg[$k]) || count($rows) >= 40) continue;
+        $nr = mb_substr(trim((string)($r['new_rule'] ?? '')), 0, 300); $nb = trim((string)($r['new_body'] ?? '')); $cur = function_exists('fa_tpl_body') ? fa_tpl_body($pdo, $k) : '';
+        $row = ['key' => $k, 'label' => $reg[$k][0], 'old_rule' => $reg[$k][1], 'old_body' => $cur, 'rule' => $nr !== '' ? $nr : $reg[$k][1], 'body' => $nb !== '' ? $nb : $cur, 'why' => mb_substr(trim((string)($r['why'] ?? '')), 0, 200), 'photo' => (int)setting_get($pdo, 'fa_tplphoto_' . $k, '0'), 'used' => isset($uses[$k]) ? array_slice($uses[$k], 0, 6) : [], 'blocked' => '', 'on' => true];
+        $row['blocked'] = wj_change_check($pdo, $row['rule'], $row['body'], $allowed);
+        if ($row['blocked'] !== '') $row['on'] = false;
+        $rows[] = $row;
+    }
+    $out = ['asked' => mb_substr($text, 0, 2000), 'understood' => mb_substr(trim((string)($v['understood'] ?? '')), 0, 400), 'rows' => $rows, 'at' => date('Y-m-d H:i:s')];
+    wj_put($pdo, 'wj_change', $out); return [true, $out];
+}
+/** '' when a new rule / words are fine, else the plain reason. Numbers must come from the Teach facts / price chart / the owner's own request, and no hard limit may be broken. */
+function wj_change_check(PDO $pdo, string $rule, string $body, array $allowed): string
+{
+    if ($body !== '') {
+        preg_match_all('/\{\{\s*(\d+)\s*\}\}/', $body, $mm); if (array_map('intval', $mm[1]) !== [1, 2, 3]) return 'The words must keep {{1}} name, {{2}} perfume, {{3}} line once each, in this order.';
+        if (preg_match('/^\s*\{\{|\}\}\s*$/', $body)) return 'Meta does not allow {{…}} at the very start or end — add a word before / after it.';
+    }
+    $why = []; if (function_exists('fu_text_ok') && !fu_text_ok($pdo, $rule . ' ' . $body, $allowed, $why)) return 'Not allowed by your Teach facts / limits: ' . implode(', ', array_slice(array_map('strval', $why), 0, 4)) . '. Change the limit in Teach first, or change this suggestion.';
+    return '';
+}
+/** Apply the ticked rows: the new rule / words / photo are saved in the library; changed words or photo go to Meta as a NEW version (the old approved one keeps working until the new one is approved). The old values are kept for Undo. */
+function wj_change_apply(PDO $pdo, array $rows, int $by): array
+{
+    $reg = wj_reg($pdo); $K = function_exists('wk_knowledge') ? wk_knowledge($pdo, [], '') : ['allowed' => []]; $asked = (string)(wj_json($pdo, 'wj_change', [])['asked'] ?? '');
+    $allowed = $K['allowed'] + (function_exists('teach_nums') ? teach_nums($asked) : []); $undo = []; $n = 0; $sent = 0; $bad = [];
+    foreach ($rows as $r) {
+        if (empty($r['on'])) continue; $k = preg_replace('/[^a-z0-9_]/', '', (string)($r['key'] ?? '')); if (!isset($reg[$k])) continue;
+        $label = mb_substr(trim((string)($r['label'] ?? $reg[$k][0])), 0, 40) ?: $reg[$k][0]; $rule = mb_substr(trim((string)($r['rule'] ?? '')), 0, 300); $body = trim((string)($r['body'] ?? '')); $photo = max(0, (int)($r['photo'] ?? 0));
+        if ($rule === '') $rule = $reg[$k][1]; $chk = wj_change_check($pdo, $rule, $body, $allowed); if ($chk !== '') { $bad[] = $label . ': ' . $chk; continue; }
+        $curBody = fa_tpl_body($pdo, $k); $curPhoto = (int)setting_get($pdo, 'fa_tplphoto_' . $k, '0');
+        $undo[$k] = ['label' => $reg[$k][0], 'rule' => $reg[$k][1], 'body' => $curBody, 'photo' => $curPhoto];
+        $reg[$k] = [$label, $rule]; $n++;
+        if (($body !== '' && $body !== $curBody) || $photo !== $curPhoto) {
+            if ($body !== '' && $body !== $curBody) setting_set($pdo, 'fa_tplbody_' . $k, mb_substr($body, 0, 900)); setting_set($pdo, 'fa_tplphoto_' . $k, (string)$photo); setting_set($pdo, 'fa_tpltry_' . $k, '0');
+            [$ok] = fa_tpl_make($pdo, $k, $by); if ($ok) $sent++;
+        }
+    }
+    if ($n) { setting_set($pdo, 'fa_offers', json_encode(array_map(function ($x) { return [$x[0], $x[1]]; }, $reg), JSON_UNESCAPED_UNICODE)); wj_put($pdo, 'wj_change_undo', ['at' => date('Y-m-d H:i:s'), 'asked' => mb_substr($asked, 0, 200), 'items' => $undo]); wj_put($pdo, 'wj_change', []); wj_put($pdo, 'wj_res_cache', []); }
+    return [$n > 0 || !$bad, ($n ? $n . ' message(s) updated ✓' . ($sent ? ' — ' . $sent . ' new version(s) sent to Meta; the old approved one keeps working until the new one is approved' : '') : 'Nothing was changed.') . ($bad ? ' Skipped: ' . implode(' | ', $bad) : '')];
+}
+function wj_change_undo(PDO $pdo, int $by): array
+{
+    $u = wj_json($pdo, 'wj_change_undo', []); if (empty($u['items'])) return [false, 'There is nothing to undo.'];
+    $reg = wj_reg($pdo); $sent = 0;
+    foreach ($u['items'] as $k => $o) { if (!isset($reg[$k])) continue; $reg[$k] = [(string)$o['label'], (string)$o['rule']]; $curB = fa_tpl_body($pdo, $k); $curP = (int)setting_get($pdo, 'fa_tplphoto_' . $k, '0');
+        if ((string)$o['body'] !== $curB || (int)$o['photo'] !== $curP) { setting_set($pdo, 'fa_tplbody_' . $k, (string)$o['body']); setting_set($pdo, 'fa_tplphoto_' . $k, (string)(int)$o['photo']); setting_set($pdo, 'fa_tpltry_' . $k, '0'); if (fa_tpl_make($pdo, $k, $by)[0]) $sent++; } }
+    setting_set($pdo, 'fa_offers', json_encode(array_map(function ($x) { return [$x[0], $x[1]]; }, $reg), JSON_UNESCAPED_UNICODE)); wj_put($pdo, 'wj_change_undo', []); wj_put($pdo, 'wj_res_cache', []);
+    return [true, 'Changes undone' . ($sent ? ' — ' . $sent . ' old wording(s) sent to Meta again' : '') . '.'];
+}
+
 // ---------------------------------------------------------------------------------------------------------------------- the Teach bot reads the offers + festival back
 function wj_bot_note(PDO $pdo): string
 {
@@ -516,10 +586,10 @@ function wj_view(PDO $pdo): array
 {
     $reg = wj_reg($pdo); $plan = wj_plan_get($pdo); $steps = ['lead' => [], 'buyer' => []];
     foreach ($plan['tracks'] as $tk => $T) foreach ($T['steps'] as $s) $steps[$tk][] = $s + ['label' => $reg[$s['ref']][0] ?? $s['ref'], 'icon' => wj_icon($s['ref']), 'tpl' => wj_tpl_state($pdo, $s['ref']), 'missing' => !isset($reg[$s['ref']])];
-    $messages = []; foreach ($reg as $k => $x) $messages[] = ['k' => $k, 'label' => $x[0], 'rule' => $x[1], 'body' => function_exists('fa_tpl_body') ? fa_tpl_body($pdo, $k) : '', 'status' => wj_tpl_state($pdo, $k), 'icon' => wj_icon($k), 'uses' => count(array_filter(array_merge($plan['tracks']['lead']['steps'], $plan['tracks']['buyer']['steps']), function ($s) use ($k) { return $s['ref'] === $k; }))];
+    $messages = []; foreach ($reg as $k => $x) $messages[] = ['k' => $k, 'label' => $x[0], 'rule' => $x[1], 'body' => function_exists('fa_tpl_body') ? fa_tpl_body($pdo, $k) : '', 'status' => wj_tpl_state($pdo, $k), 'icon' => wj_icon($k), 'photo' => (int)setting_get($pdo, 'fa_tplphoto_' . $k, '0'), 'uses' => count(array_filter(array_merge($plan['tracks']['lead']['steps'], $plan['tracks']['buyer']['steps']), function ($s) use ($k) { return $s['ref'] === $k; }))];
     $auto = []; try { if (function_exists('fu_plans_get')) foreach (fu_plans_get($pdo)['situations'] as $p) { if (($p['kind'] ?? '') === 'stop') continue; foreach ((array)$p['steps'] as $x) { $d = max(1, (int)ceil($x['after_h'] / 24)); if ($d > 10) continue; $auto[$d] = $auto[$d] ?? ['day' => $d, 'msg' => 0, 'offer' => 0]; $auto[$d][$x['kind'] === 'offer' ? 'offer' : 'msg']++; } } } catch (Throwable $e) { }
     ksort($auto); $hist = []; foreach (array_reverse(wj_json($pdo, 'wj_hist', [])) as $h) $hist[] = ['at' => $h['at'], 'why' => $h['why']];
-    return ['ok' => true, 'mode' => wj_mode($pdo), 'cfg' => wj_cfg($pdo), 'ai' => function_exists('convo_ai'), 'ready' => function_exists('fa_offers'), 'steps' => $steps, 'messages' => $messages, 'auto10' => array_values($auto), 'season' => function_exists('fa_season') ? fa_season($pdo) : [], 'season_now' => function_exists('fa_season_text') ? fa_season_text($pdo) : '',
+    return ['ok' => true, 'change' => wj_json($pdo, 'wj_change', []), 'can_undo_change' => !empty(wj_json($pdo, 'wj_change_undo', [])['items']), 'mode' => wj_mode($pdo), 'cfg' => wj_cfg($pdo), 'ai' => function_exists('convo_ai'), 'ready' => function_exists('fa_offers'), 'steps' => $steps, 'messages' => $messages, 'auto10' => array_values($auto), 'season' => function_exists('fa_season') ? fa_season($pdo) : [], 'season_now' => function_exists('fa_season_text') ? fa_season_text($pdo) : '',
         'proposal' => wj_json($pdo, 'wj_proposal', []), 'fest_sug' => wj_json($pdo, 'wj_fest_sug', []), 'festivals' => wj_fest_upcoming($pdo, 10), 'topics' => wj_topics_view($pdo), 'night' => wj_json($pdo, 'wj_night', []), 'stats' => wj_stats($pdo), 'hist' => array_slice($hist, 0, 6),
         'auto_since' => (int)setting_get($pdo, 'wj_auto_since', '0'), 'autopilot_mode' => function_exists('fu_mode') ? fu_mode($pdo) : 'off'];
 }
@@ -569,6 +639,9 @@ if (strpos($__wj, 'fu.wj_') === 0) {
         setting_set($pdo, 'fa_offers', json_encode(array_map(function ($x) { return [$x[0], $x[1]]; }, $reg), JSON_UNESCAPED_UNICODE)); setting_set($pdo, 'fa_tplbody_' . $k, mb_substr($body, 0, 900)); setting_set($pdo, 'fa_tpltry_' . $k, '0');
         json_response(['message' => 'Saved in the message library ✓ — it goes to Meta by itself in a few minutes.', 'new_key' => $k] + wj_view($pdo));
     }
+    if ($__wj === 'fu.wj_change') { if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $t = trim((string)($in['text'] ?? '')); if ($t === '') json_response(['error' => 'Write what you want to change.'], 422); [$ok, $r] = wj_change_scan($pdo, $t); if (!$ok) json_response(['error' => $r], 422); json_response(['message' => count($r['rows']) ? count($r['rows']) . ' related message(s) found — check, edit, then press Apply.' : 'No message in the library is touched by this.'] + wj_view($pdo)); }
+    if ($__wj === 'fu.wj_change_apply') { if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); if (!empty($in['discard'])) { wj_put($pdo, 'wj_change', []); json_response(['message' => 'Dropped — nothing was changed.'] + wj_view($pdo)); } [$ok, $m] = wj_change_apply($pdo, (array)($in['rows'] ?? []), $me); json_response(['message' => $m] + wj_view($pdo)); }
+    if ($__wj === 'fu.wj_change_undo') { if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); [$ok, $m] = wj_change_undo($pdo, $me); if (!$ok) json_response(['error' => $m], 422); json_response(['message' => $m] + wj_view($pdo)); }
     if ($__wj === 'fu.wj_queue') json_response(['ok' => true] + wj_queue($pdo));
     if ($__wj === 'fu.wj_results') json_response(['ok' => true] + wj_results($pdo, max(1, min(90, (int)($_GET['days'] ?? 30)))));
     if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);

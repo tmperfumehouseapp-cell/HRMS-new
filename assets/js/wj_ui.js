@@ -58,9 +58,9 @@
   }
 
   function mount(el, solo) {
-    css(); let D = null, tab = solo === 'msgs' ? 'msgs' : 'lanes', R = null, Q = null, rdays = 30, TR = { lead: [], buyer: [] }, dirty = { lead: false, buyer: false }, busy = false;
+    css(); let D = null, CHG = null, tab = solo === 'msgs' ? 'msgs' : 'lanes', R = null, Q = null, rdays = 30, TR = { lead: [], buyer: [] }, dirty = { lead: false, buyer: false }, busy = false;
     el.innerHTML = '<div class="wj"><div class="wj-card">Loading…</div></div>';
-    const take = (d) => { D = d; if (!dirty.lead) TR.lead = JSON.parse(JSON.stringify(d.steps.lead)); if (!dirty.buyer) TR.buyer = JSON.parse(JSON.stringify(d.steps.buyer)); };
+    const take = (d) => { D = d; if (!CHG || !d.change || d.change.at !== CHG.at) CHG = d.change && (d.change.rows || []).length ? JSON.parse(JSON.stringify(d.change)) : null; if (!dirty.lead) TR.lead = JSON.parse(JSON.stringify(d.steps.lead)); if (!dirty.buyer) TR.buyer = JSON.parse(JSON.stringify(d.steps.buyer)); };
     async function load() { try { take(await api.get('fu.wj_get')); } catch (e) { el.innerHTML = '<div class="wj"><div class="wj-err">' + esc(e.message) + '</div></div>'; return; } draw(); }
     const act = async (action, body, after) => { if (busy) return null; busy = true; const r = await call(() => api.post(action, body || {})); busy = false; if (r && r.steps) { if (after !== 'keep') { dirty.lead = dirty.buyer = false; } take(r); if (r.popup) tab = 'claude'; draw(); } else if (r) { await load(); } return r; };
 
@@ -87,7 +87,7 @@
       for (const s of TR[tk]) { const c = cells[s.day - 1]; if (c && s.on) { c.c = s.icon === '🎁' ? 'f' : 'm'; c.t = 'Day ' + s.day + ' · ' + s.label; } }
       return '<div class="wj-strip">' + cells.map((c) => '<i class="' + c.c + '" title="' + esc(c.t) + '"></i>').join('') + '</div><div class="wj-scale"><span>day 1</span><span>15</span><span>30</span><span>45</span><span>60</span></div>';
     }
-    const stMark = (s) => s === 'approved' || s === 'partial' ? '✅ ' : s === 'pending' ? '⏳ ' : s === 'rejected' ? '❌ ' : '📨 ';   // ✅ approved · ⏳ waiting for Meta · ❌ rejected · 📨 not sent yet (a day with a message that is not approved sends nothing)
+    const stMark = (s) => s === 'approved_old' ? '✅⏳ ' : s === 'approved' || s === 'partial' ? '✅ ' : s === 'pending' ? '⏳ ' : s === 'rejected' ? '❌ ' : '📨 ';   // ✅ approved · ⏳ waiting for Meta · ❌ rejected · 📨 not sent yet (a day with a message that is not approved sends nothing)
     const refOpts = (sel) => '<optgroup label="💬 Messages">' + D.messages.filter((x) => x.icon === '💬').map((x) => '<option value="' + esc(x.k) + '"' + (x.k === sel ? ' selected' : '') + '>' + stMark(x.status) + esc(x.label) + '</option>').join('') + '</optgroup><optgroup label="🎁 Offers">' + D.messages.filter((x) => x.icon !== '💬').map((x) => '<option value="' + esc(x.k) + '"' + (x.k === sel ? ' selected' : '') + '>' + stMark(x.status) + esc(x.label) + '</option>').join('') + '</optgroup><optgroup label="➕ Make a new one"><option value="__new">➕ New message or offer…</option></optgroup>';
     const topicOpts = (sel) => '<option value="">Everyone</option>' + D.topics.rows.map((t) => '<option value="' + esc(t.key) + '"' + (t.key === sel ? ' selected' : '') + '>Only: ' + esc(t.title) + '</option>').join('') + (sel && !D.topics.rows.some((t) => t.key === sel) ? '<option value="' + esc(sel) + '" selected>Only: ' + esc(sel) + '</option>' : '');
     function trackCard(tk) {
@@ -158,11 +158,39 @@
       return h;
     }
     function msgsTab() {
-      let h = '<div class="wj-card"><div class="wj-h">🎁 Messages & offers — one registry<span class="sp"></span><button class="wj-b s" type="button" data-tpl>Send all waiting to Meta</button></div><div class="wj-sub">Every journey day (and every Follow-up offer day) points to one entry here. Change an entry and every day that uses it changes. Each entry is ONE message Meta approves once; '
+      let h = changeCard() + '<div class="wj-card"><div class="wj-h">🎁 Messages & offers — one registry<span class="sp"></span><button class="wj-b s" type="button" data-tpl>Send all waiting to Meta</button></div><div class="wj-sub">Every journey day (and every Follow-up offer day) points to one entry here. Change an entry and every day that uses it changes. Each entry is ONE message Meta approves once; '
         + '<b>{{1}}</b> = the customer’s name, <b>{{2}}</b> = their perfume, <b>{{3}}</b> = the line Claude writes for each customer from your rule — it never goes below your price chart. Changing the words sends a new version to Meta.</div></div>';
       h += D.messages.map((m) => '<div class="wj-msg" data-mk="' + esc(m.k) + '"><div class="wj-row2"><b>' + m.icon + '</b><input class="wj-in" data-mf="label" style="flex:1;min-width:140px" value="' + esc(m.label) + '" maxlength="40">' + tplPill(m.status) + '<span class="wj-pill">' + m.uses + ' day(s) use it</span>' + (m.uses || ['o1', 'o2', 'o3', 'mega'].includes(m.k) ? '' : '<button class="wj-b s r" type="button" data-mdel="' + esc(m.k) + '">Delete</button>') + '</div>'
         + '<label class="wj-sub">Rule — what Claude puts in {{3}} for each customer</label><textarea class="wj-ta" data-mf="rule" style="min-height:52px" maxlength="300">' + esc(m.rule) + '</textarea><label class="wj-sub">Approved message words</label><textarea class="wj-ta" data-mf="body" style="min-height:60px" maxlength="900">' + esc(m.body) + '</textarea></div>').join('');
       return h + '<div class="wj-card"><div class="wj-row2"><button class="wj-b p" type="button" id="mSave">Save all messages</button><button class="wj-b" type="button" id="mNew">＋ New offer or message</button></div><div id="mNewBox"></div></div>';
+    }
+
+    // ✏️ say anything → every related message with a suggestion beside it → edit / photo → Apply
+    function changeCard() {
+      let h = '<div class="wj-card"><div class="wj-h">✏️ Change many messages at once</div><div class="wj-sub">Tell Claude anything — a festival, “20% extra on every offer”, a new perfume, a softer tone. It finds <b>every related message</b> in this library and suggests the change beside each one. Edit it, add a photo if you like, then press Apply. <b>Nothing changes before you press Apply.</b></div>'
+        + '<textarea class="wj-ta" id="chT" style="min-height:60px;margin-top:8px" maxlength="2000" placeholder="e.g. Diwali is coming — make all offers festive.   or:   give 20% extra discount in every offer"></textarea>'
+        + '<div class="wj-row2" style="margin-top:6px"><button class="wj-b p" type="button" id="chGo">🔎 Find related messages</button>' + (D.can_undo_change ? '<button class="wj-b" type="button" id="chUndo">↩ Undo the last change</button>' : '') + '</div></div>';
+      if (CHG && (CHG.rows || []).length) {
+        h += '<div class="wj-card"><div class="wj-h">📝 ' + CHG.rows.length + ' related message(s)</div><div class="wj-sub">' + esc(CHG.understood || '') + '</div>';
+        h += CHG.rows.map((r, i) => '<div class="wj-msg" data-ci="' + i + '"><div class="wj-row2"><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" data-cf="on"' + (r.on ? ' checked' : '') + (r.blocked ? ' disabled' : '') + '> <b>' + esc(r.label) + '</b></label>' + ((r.used || []).length ? '<span class="wj-pill">used: ' + esc(r.used.join(', ')) + '</span>' : '<span class="wj-pill">not used yet</span>') + '</div>'
+          + '<div class="wj-sub">💡 ' + esc(r.why || '') + '</div>' + (r.blocked ? '<div class="wj-err">⛔ ' + esc(r.blocked) + '</div>' : '')
+          + '<label class="wj-sub">Rule (was: ' + esc(r.old_rule) + ')</label><textarea class="wj-ta" data-cf="rule" style="min-height:48px" maxlength="300">' + esc(r.rule) + '</textarea>'
+          + '<label class="wj-sub">Message words</label><textarea class="wj-ta" data-cf="body" style="min-height:64px" maxlength="900">' + esc(r.body) + '</textarea>'
+          + '<div class="wj-row2"><button class="wj-b s" type="button" data-cphoto="' + i + '">📷 ' + (r.photo ? 'Change photo' : 'Add a photo') + '</button>' + (r.photo ? '<img data-cth="' + r.photo + '" alt="" style="height:44px;border-radius:6px"><button class="wj-b s r" type="button" data-cnophoto="' + i + '">Remove photo</button>' : '') + '</div></div>').join('');
+        h += '<div class="wj-row2" style="margin-top:10px"><button class="wj-b p" type="button" id="chApply">✅ Apply ticked messages</button><button class="wj-b" type="button" id="chDrop">Drop all</button></div><div class="wj-sub">Changed words or a photo go to Meta as a new version; the old approved message keeps working until the new one is approved. Nothing is sent to customers by this.</div></div>';
+      }
+      return h;
+    }
+    const thumbCache = {};
+    async function thumbInto(img, id) { try { if (!thumbCache[id]) { const r = await fetch(api.buildUrl('wa.lib_file', { id }), { headers: { Authorization: 'Bearer ' + api.token() } }); if (!r.ok) return; thumbCache[id] = URL.createObjectURL(await r.blob()); } img.src = thumbCache[id]; } catch (e) { /* no preview */ } }
+    async function pickPhoto(done) {
+      const o = document.createElement('div'); o.style.cssText = 'position:fixed;inset:0;z-index:300;background:#0008;display:flex;align-items:flex-end;justify-content:center';
+      o.innerHTML = '<div class="wj" style="background:#fff;width:100%;max-width:640px;border-radius:18px 18px 0 0;padding:16px;max-height:90vh;overflow:auto"><div class="wj-h">📷 Choose a photo<span class="sp"></span><button class="wj-b s" type="button" id="phX">Close</button></div><div class="wj-sub">From your Media library. Upload new ones in Media → Library.</div><div id="phG" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px;margin-top:8px">Loading…</div></div>';
+      document.body.appendChild(o); o.querySelector('#phX').onclick = () => { o.remove(); }; o.onclick = (e) => { if (e.target === o) o.remove(); };
+      try { const items = ((await api.get('wa.lib_list')).items || []).filter((x) => x.kind === 'image'); const g = o.querySelector('#phG');
+        g.innerHTML = items.length ? items.map((x) => '<button type="button" data-pid="' + x.id + '" style="border:1px solid #e2e8f0;border-radius:10px;background:#fff;padding:4px;cursor:pointer"><img data-th="' + x.id + '" alt="" style="width:100%;height:80px;object-fit:cover;border-radius:6px"><div style="font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(x.name || x.title || ('#' + x.id)) + '</div></button>').join('') : '<div class="wj-sub">No photos in the Media library yet.</div>';
+        g.querySelectorAll('[data-th]').forEach((im) => thumbInto(im, im.dataset.th)); g.querySelectorAll('[data-pid]').forEach((b) => { b.onclick = () => { o.remove(); done(+b.dataset.pid); }; });
+      } catch (e) { o.querySelector('#phG').textContent = e.message || 'Could not load the library.'; }
     }
     function festTab() {
       const S = D.season || {}, F = D.fest_sug || {}; let h = '';
@@ -239,6 +267,15 @@
       // messages
       const ms = $('#mSave'); if (ms) ms.onclick = async () => { const items = $$('.wj-msg').map((c) => ({ k: c.dataset.mk, label: c.querySelector('[data-mf=label]').value, rule: c.querySelector('[data-mf=rule]').value, body: c.querySelector('[data-mf=body]').value })); await act('fu.ap_offers_save', { offers: items }, 'keep'); };
       $$('[data-mdel]').forEach((b) => b.onclick = async () => { if (!confirm('Delete this message from the registry?')) return; const items = $$('.wj-msg').filter((c) => c.dataset.mk !== b.dataset.mdel).map((c) => ({ k: c.dataset.mk, label: c.querySelector('[data-mf=label]').value, rule: c.querySelector('[data-mf=rule]').value, body: c.querySelector('[data-mf=body]').value })); await act('fu.ap_offers_save', { offers: items }, 'keep'); });
+
+      const chT = $('#chT'); if (chT) { const go = $('#chGo'); go.onclick = async () => { const text = chT.value.trim(); if (!text) { toast('Write what you want to change.', true); return; } go.disabled = true; CHG = null; await act('fu.wj_change', { text }, 'keep'); };
+        const un = $('#chUndo'); if (un) un.onclick = async () => { if (confirm('Undo the last applied change?')) await act('fu.wj_change_undo', {}, 'keep'); };
+        const dr = $('#chDrop'); if (dr) dr.onclick = async () => { CHG = null; await act('fu.wj_change_apply', { discard: 1 }, 'keep'); };
+        const ap = $('#chApply'); if (ap) ap.onclick = async () => { ap.disabled = true; const rows = CHG.rows.map((r) => ({ key: r.key, label: r.label, rule: r.rule, body: r.body, photo: r.photo || 0, on: r.on })); CHG = null; await act('fu.wj_change_apply', { rows }, 'keep'); };
+        $$('[data-ci]').forEach((box) => { const r = CHG.rows[+box.dataset.ci]; box.querySelectorAll('[data-cf]').forEach((f) => { f.oninput = f.onchange = () => { const k = f.dataset.cf; r[k] = k === 'on' ? f.checked : f.value; }; }); });
+        $$('[data-cphoto]').forEach((b) => b.onclick = () => pickPhoto((id) => { CHG.rows[+b.dataset.cphoto].photo = id; draw(); }));
+        $$('[data-cnophoto]').forEach((b) => b.onclick = () => { CHG.rows[+b.dataset.cnophoto].photo = 0; draw(); });
+        $$('[data-cth]').forEach((im) => thumbInto(im, im.dataset.cth)); }
       const mn = $('#mNew'); if (mn) mn.onclick = () => { $('#mNewBox').innerHTML = '<div class="wj-msg" style="margin-top:10px"><input class="wj-in f" id="nNm" placeholder="Name, e.g. Buy 2 get 1" maxlength="40"><textarea class="wj-ta" id="nRule" style="min-height:52px" placeholder="Rule — what Claude puts in {{3}} for each customer, e.g. Buy two perfumes and get a third 10 ml free"></textarea><div class="wj-row2"><button class="wj-b p s" type="button" id="nGo">Create</button><span class="wj-sub">Claude writes the approved wording and sends it to Meta.</span></div></div>';
         $('#nGo').onclick = async () => { const nm = $('#nNm').value.trim(), rule = $('#nRule').value.trim(); if (!nm || !rule) { toast('Give it a name and a rule.', true); return; } await ask('Create a new registry entry named "' + nm + '" with this rule: ' + rule + '. Write the approved message words for it (key starting o_ if it is an offer, w_ if it is only a message). Do not add it to the journey yet unless I ask.', false); }; };
       // festivals
