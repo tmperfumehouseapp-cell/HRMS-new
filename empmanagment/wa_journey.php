@@ -218,6 +218,23 @@ function wj_night_start(PDO $pdo, bool $manual = false): array
     $S = ['day' => date('Y-m-d'), 'stage' => $ph ? 'topics' : 'fest', 'queue' => array_values($ph), 'total' => count($ph), 'started' => date('Y-m-d H:i:s'), 'note' => ''];
     if (!$manual) setting_set($pdo, 'wj_topic_cursor', date('Y-m-d H:i:s')); wj_put($pdo, 'wj_night', $S); return $S;
 }
+/** 🌙 What Claude suggests at night is put in place by itself — but ONLY additions (a new message / offer, a new day). Nothing existing is changed, turned off or deleted.
+ *  It is one history entry (↩ Undo in the Journey) and one line in the daily update. Returns the lines that were added. */
+function wj_night_autoapply(PDO $pdo, array $prop): array
+{
+    $reg = wj_reg($pdo); $add = []; $left = [];
+    foreach ((array)($prop['ops'] ?? []) as $o) {
+        if (!is_array($o)) continue; $op = (string)($o['op'] ?? '');
+        if (($op === 'offer_set' && !isset($reg[(string)($o['key'] ?? '')])) || ($op === 'step_set' && (string)($o['id'] ?? '') === '')) $add[] = $o; else $left[] = $o;
+    }
+    $lines = [];
+    if ($add) {
+        [$lines, $cl] = wj_ops_clean($pdo, $add);
+        if ($cl) { [$ok] = wj_ops_apply($pdo, $cl, '🌙 Claude added these overnight'); if (!$ok) $lines = []; }
+    }
+    $prop['ops'] = $left; $prop['changes'] = []; wj_put($pdo, 'wj_proposal', $left ? $prop : []);
+    return [$lines, count($left)];
+}
 function wj_night_step(PDO $pdo, bool $force = false): array
 {
     $S = wj_json($pdo, 'wj_night', []);
@@ -234,7 +251,9 @@ function wj_night_step(PDO $pdo, bool $force = false): array
         if (function_exists('convo_ai') && (empty($P['ops']) || ($P['source'] ?? '') === 'night')) {
             [$ok, $r] = wj_brain($pdo, "NIGHTLY REVIEW. Read the TOPICS (what customers talked about), the RESULTS of each step, the festival calendar and the plan. Suggest at most 6 careful improvements: a new or changed message for a topic that is growing, moving or turning off a step "
                 . "that many customers got and nobody answered, a festival touch coming up. Keep it small. If nothing is worth changing, return no ops and say so in 'understood'.", false, 'night');
-            $S['note'] = $ok ? ((empty($r['ops']) ? 'Reviewed — no change needed.' : 'New suggestion ready.')) : 'Review skipped: ' . mb_substr((string)$r, 0, 80); wj_put($pdo, 'wj_night', $S);
+            $lines = []; $kept = 0; if ($ok && !empty($r['ops'])) { try { [$lines, $kept] = wj_night_autoapply($pdo, $r); } catch (Throwable $e) { error_log('wj_autoapply: ' . $e->getMessage()); } }
+            $S['note'] = $ok ? (empty($r['ops']) ? 'Reviewed — no change needed.' : ($lines ? count($lines) . ' addition(s) put in place.' : 'New suggestion ready.')) : 'Review skipped: ' . mb_substr((string)$r, 0, 80); wj_put($pdo, 'wj_night', $S);
+            wj_put($pdo, 'wj_daily', ['at' => date('Y-m-d H:i:s'), 'understood' => $ok ? mb_substr((string)($r['understood'] ?? ''), 0, 300) : '', 'lines' => array_slice($lines, 0, 12), 'kept' => $kept, 'note' => $S['note']]);
         }
         return ['suggest' => 1];
     }
@@ -297,13 +316,15 @@ function wj_collect(PDO $pdo, array $plan, array $cfg, int $now, int $limit = 40
         $col = $tk === 'lead' ? 'c.last_in_at' : 'u.last_order'; $conds = []; $args = [];
         foreach (array_unique(array_column($steps, 'day')) as $d) { $conds[] = "($col <= ? AND $col > ?)"; $args[] = wj_dt($now - $d * 86400); $args[] = wj_dt($now - ($d + $cfg['grace'] + 1) * 86400); }
         $sql = $tk === 'lead'
-            ? "SELECT c.*, c.last_in_at AS anchor_at FROM wa_contacts c WHERE c.optout = 0 AND c.last_in_at IS NOT NULL AND (" . implode(' OR ', $conds) . ") AND NOT EXISTS (SELECT 1 FROM wa_cust u WHERE u.phone = c.phone AND u.n > 0 AND u.last_order >= DATE_SUB(c.last_in_at, INTERVAL 2 DAY)) ORDER BY c.last_in_at LIMIT " . (int)$limit
+            ? "SELECT c.*, c.last_in_at AS anchor_at FROM wa_contacts c WHERE c.optout = 0 AND c.last_in_at IS NOT NULL AND (" . implode(' OR ', $conds) . ") AND NOT EXISTS (SELECT 1 FROM wa_cust u WHERE u.phone = c.phone AND u.n > 0 AND (u.last_order >= DATE_SUB(c.last_in_at, INTERVAL 2 DAY) OR u.last_order >= DATE_SUB(NOW(), INTERVAL 7 DAY))) ORDER BY c.last_in_at LIMIT " . (int)$limit
             : "SELECT c.*, u.last_order AS anchor_at FROM wa_cust u JOIN wa_contacts c ON c.phone = u.phone WHERE u.n > 0 AND c.optout = 0 AND (" . implode(' OR ', $conds) . ") AND (c.last_in_at IS NULL OR u.last_order >= DATE_SUB(c.last_in_at, INTERVAL 2 DAY)) ORDER BY u.last_order LIMIT " . (int)$limit;
         try { $q = $pdo->prepare($sql); $q->execute($args); $rows = $q->fetchAll(PDO::FETCH_ASSOC); } catch (Throwable $e) { error_log('wj_collect ' . $tk . ': ' . $e->getMessage()); continue; }
         foreach (array_chunk($rows, 300) as $chunk) {
-            $ph = array_map(function ($r) { return (string)$r['phone']; }, $chunk); $in = implode(',', array_fill(0, count($ph), '?')); $done = []; $last = []; $top = []; if (function_exists('wq_plan_paused_prefetch')) wq_plan_paused_prefetch($pdo, $ph, $now);
+            $ph = array_map(function ($r) { return (string)$r['phone']; }, $chunk); $in = implode(',', array_fill(0, count($ph), '?')); $done = []; $last = []; $top = []; $refSent = []; $offerAt = []; if (function_exists('wq_plan_paused_prefetch')) wq_plan_paused_prefetch($pdo, $ph, $now);
             try { $q = $pdo->prepare("SELECT phone, track, step_id, anchor FROM wa_wj_ev WHERE phone IN ($in)"); $q->execute($ph); foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $e) $done[$e['phone'] . '|' . $e['track'] . '|' . $e['step_id'] . '|' . $e['anchor']] = 1;
                 $q = $pdo->prepare("SELECT phone, MAX(sent_at) m FROM wa_wj_ev WHERE status = 'sent' AND phone IN ($in) GROUP BY phone"); $q->execute($ph); foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $e) $last[$e['phone']] = strtotime((string)$e['m']);
+                $q = $pdo->prepare("SELECT phone, ref, MAX(sent_at) m FROM wa_wj_ev WHERE status = 'sent' AND sent_at >= ? AND phone IN ($in) GROUP BY phone, ref"); $q->execute(array_merge([wj_dt($now - 60 * 86400)], $ph));
+                foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $e) { $t0 = strtotime((string)$e['m']); $refSent[$e['phone'] . '|' . $e['ref']] = $t0; if (strpos((string)$e['ref'], 'w_') !== 0 && $t0 > ($offerAt[$e['phone']] ?? 0)) $offerAt[$e['phone']] = $t0; }
                 $q = $pdo->prepare("SELECT phone, topic, perfume, hook FROM wa_wj_topic WHERE phone IN ($in)"); $q->execute($ph); foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $e) $top[$e['phone']] = $e; } catch (Throwable $e) { }
             foreach ($chunk as $c) {
                 $ph0 = (string)$c['phone']; $a = strtotime((string)$c['anchor_at']); if (!$a) continue; $age = (int)floor(($now - $a) / 86400); $ak = date('Ymd', $a); $due = []; $topic = $top[$ph0] ?? null;
@@ -311,6 +332,8 @@ function wj_collect(PDO $pdo, array $plan, array $cfg, int $now, int $limit = 40
                     if ($age < $s['day'] || $age - $s['day'] > $cfg['grace'] || isset($done[$ph0 . '|' . $tk . '|' . $s['id'] . '|' . $ak])) continue;
                     if ($autoSince && $a + $s['day'] * 86400 < $autoSince - $cfg['catchup'] * 86400) continue;   // a day that came before Auto was switched on is not caught up
                     if ($s['topic'] !== '' && (!$topic || $topic['topic'] !== $s['topic'])) continue;
+                    if (isset($refSent[$ph0 . '|' . $s['ref']])) continue;   // 🧠 the same message never goes twice to one customer within 60 days
+                    if (strpos((string)$s['ref'], 'w_') !== 0 && isset($offerAt[$ph0]) && $now - $offerAt[$ph0] < 3 * 86400) continue;   // two different offers at least 3 days apart
                     $due[] = $s;
                 }
                 if (!$due) continue; if (isset($last[$ph0]) && $now - $last[$ph0] < $cfg['gap_days'] * 86400) continue;
@@ -591,7 +614,7 @@ function wj_view(PDO $pdo): array
     $messages = []; foreach ($reg as $k => $x) $messages[] = ['k' => $k, 'label' => $x[0], 'rule' => $x[1], 'body' => function_exists('fa_tpl_body') ? fa_tpl_body($pdo, $k) : '', 'status' => wj_tpl_state($pdo, $k), 'icon' => wj_icon($k), 'photo' => (int)setting_get($pdo, 'fa_tplphoto_' . $k, '0'), 'uses' => count(array_filter(array_merge($plan['tracks']['lead']['steps'], $plan['tracks']['buyer']['steps']), function ($s) use ($k) { return $s['ref'] === $k; }))];
     $auto = []; try { if (function_exists('fu_plans_get')) foreach (fu_plans_get($pdo)['situations'] as $p) { if (($p['kind'] ?? '') === 'stop') continue; foreach ((array)$p['steps'] as $x) { $d = max(1, (int)ceil($x['after_h'] / 24)); if ($d > 10) continue; $auto[$d] = $auto[$d] ?? ['day' => $d, 'msg' => 0, 'offer' => 0]; $auto[$d][$x['kind'] === 'offer' ? 'offer' : 'msg']++; } } } catch (Throwable $e) { }
     ksort($auto); $hist = []; foreach (array_reverse(wj_json($pdo, 'wj_hist', [])) as $h) $hist[] = ['at' => $h['at'], 'why' => $h['why']];
-    return ['ok' => true, 'change' => wj_json($pdo, 'wj_change', []), 'can_undo_change' => !empty(wj_json($pdo, 'wj_change_undo', [])['items']), 'mode' => wj_mode($pdo), 'cfg' => wj_cfg($pdo), 'ai' => function_exists('convo_ai'), 'ready' => function_exists('fa_offers'), 'steps' => $steps, 'messages' => $messages, 'auto10' => array_values($auto), 'season' => function_exists('fa_season') ? fa_season($pdo) : [], 'season_now' => function_exists('fa_season_text') ? fa_season_text($pdo) : '',
+    return ['ok' => true, 'daily' => wj_json($pdo, 'wj_daily', []), 'change' => wj_json($pdo, 'wj_change', []), 'can_undo_change' => !empty(wj_json($pdo, 'wj_change_undo', [])['items']), 'mode' => wj_mode($pdo), 'cfg' => wj_cfg($pdo), 'ai' => function_exists('convo_ai'), 'ready' => function_exists('fa_offers'), 'steps' => $steps, 'messages' => $messages, 'auto10' => array_values($auto), 'season' => function_exists('fa_season') ? fa_season($pdo) : [], 'season_now' => function_exists('fa_season_text') ? fa_season_text($pdo) : '',
         'proposal' => wj_json($pdo, 'wj_proposal', []), 'fest_sug' => wj_json($pdo, 'wj_fest_sug', []), 'festivals' => wj_fest_upcoming($pdo, 10), 'topics' => wj_topics_view($pdo), 'night' => wj_json($pdo, 'wj_night', []), 'stats' => wj_stats($pdo), 'hist' => array_slice($hist, 0, 6),
         'auto_since' => (int)setting_get($pdo, 'wj_auto_since', '0'), 'autopilot_mode' => function_exists('fu_mode') ? fu_mode($pdo) : 'off'];
 }

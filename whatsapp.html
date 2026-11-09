@@ -480,10 +480,11 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
 <script src="assets/js/wa_icons.js?v=i1"></script>
 <script src="assets/js/cx_raise.js?v=cx9"></script>
 <script src="assets/js/wa_inbox.js?v=wa47"></script>
-<script src="assets/js/wa_panels.js?v=wa31"></script>
+<script src="assets/js/wa_panels.js?v=wa32"></script>
 <script src="assets/js/wa_cust_ui.js?v=k4"></script>
 <script src="assets/js/wa_kflow_ui.js?v=kf1"></script>
 <script src="assets/js/wj_ui.js?v=wj4"></script>
+<script src="assets/js/jny_ui.js?v=jt1"></script>
 <script src="assets/js/wa_bill_ui.js?v=b1"></script>
 <script src="assets/js/wa_ord_ui.js?v=20"></script>
 <script src="assets/js/wa_cx_ui.js?v=3"></script>
@@ -551,7 +552,7 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
     { k: 'lists', t: 'Lists', ic: 'tpl', mode: 'native', sub: 'Ready perfume lists from live sales — Top 5 winter, Best sellers… Claude makes and updates them' },
     { k: 'gallery', t: 'Gallery & storage', ic: 'img', mode: 'native', sub: 'Photos and videos in topic folders — Claude shows what can go' },
     { k: 'media', t: 'Media library', ic: 'film', mode: 'native', sub: 'Photos, videos and PDFs saved once' },
-    { k: 'followups', t: 'Follow-ups · 60 days', ic: 'bell', mode: 'native', sub: 'One plan for every customer for 60 days: the Autopilot in the first 10 days (6 paths, offers on day 2/4/7/10), then the Journey to day 60 — one offer registry, festival box, Claude as the general brain' },
+    { k: 'followups', t: 'Journey', ic: 'bell', mode: 'native', sub: 'One plan for every customer for 60 days: the Autopilot in the first 10 days (6 paths, offers on day 2/4/7/10), then the Journey to day 60 — one offer registry, festival box, Claude as the general brain' },
     { k: 'cxmsgs', t: 'Complaint messages', ic: 'send', mode: 'frame', src: 'complaints.html?in=sales&tab=settings&go=msgs', sub: 'The photo and words of every message the Complaints desk sends — the same screen as Complaints → Settings' },
     { k: 'mymsgs', t: 'My messages', ic: 'tpl', mode: 'native', sub: 'Every offer and message you or Claude made for the 60-day plan — pick them on any day, add new ones, see what Meta approved' },
     { k: 'allmsgs', t: 'All messages', ic: 'send', mode: 'native', sub: 'Every automatic message in one list, with a button to its editor' },
@@ -578,7 +579,7 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
     { k: 'templates', t: 'Messages', ic: 'tpl', sub: 'The message library: Meta-approved messages, the builder, one per situation, every automatic message in one list, and the complaint messages', tabs: [['mymsgs', 'My messages'], ['premade', 'Pre-made'], ['builder', 'Builder'], ['fixed', 'Fixed'], ['allmsgs', 'All messages'], ['cxmsgs', 'Complaint messages']] },
     { k: 'replies', t: 'Replies', ic: 'bolt', sub: 'Quick replies, greetings, ready perfume lists, and and where to find every automatic message', tabs: [['quick', 'Quick replies'], ['greet', 'Greetings'], ['lists', 'Lists']] },
     { k: 'mediag', t: 'Media', ic: 'film', sub: 'Photos, videos and PDFs — one library, in topic folders', tabs: [['media', 'Library'], ['gallery', 'Folders & clean-up']] },
-    { k: 'automation', t: 'Automation', ic: 'seq', sub: 'Key flows on a canvas, the old flows and follow-ups', tabs: [['kflows', 'Key flows'], ['flows', 'Flows (old — use Key flows)'], ['followups', 'Follow-ups · 60 days']] },
+    { k: 'automation', t: 'Automation', ic: 'seq', sub: 'Key flows on a canvas, the old flows and follow-ups', tabs: [['kflows', 'Key flows'], ['flows', 'Flows (old — use Key flows)'], ['followups', 'Journey']] },
     { k: 'setupg', t: 'Numbers & setup', ic: 'phone', sub: 'Numbers, connection and the go-live check', tabs: [['numbers', 'Numbers'], ['setup', 'Setup & connection'], ['golive', 'Go-live check']] },
     { k: 'rules', t: 'Team & rules', ic: 'group', sub: 'Who gets chats, the waiting limits, the Claude button and exports', tabs: [['team', 'Team & routing'], ['hq', 'Claude button'], ['export', 'Export']] },
     { k: 'teach', t: 'Teach & groups', ic: 'bulb', sub: 'Teach the bot once · your WhatsApp groups', tabs: [['learn', 'Teach'], ['groups', 'Groups']] },
@@ -657,7 +658,7 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
   let started = false;   // the first section replaces the entry; every section opened after it is one step Back can return to
   function go(k, noPush) {
     if (k !== cur && document.getElementById('waSide')) closeSide(true);   // another screen: the side chat closes
-    if (['orderupd', 'afterdel', 'birthdays'].indexOf(k) >= 0) { try { localStorage.setItem('wa_fu_sub', k); } catch (e) { } k = 'followups'; }   // moved into Follow-ups · 60 days (old links still work)
+    if (['orderupd', 'afterdel', 'birthdays'].indexOf(k) >= 0) { try { localStorage.setItem('wa_fu_sub2', k); } catch (e) { } k = 'followups'; }   // moved into Journey (old links still work)
     k = ALIAS[k] || k;
     { const g = groupOf(k); if (g) { let last = ''; try { last = localStorage.getItem('wa_tab_' + g.k) || ''; } catch (e) { } k = g.tabs.some(([x]) => x === last) ? last : g.tabs[0][0]; } }
     if (String(k).indexOf('f_') === 0) { const f = ITEMS.find((x) => x.k === k); if (f) { openFeed(f.feed); return; } }
@@ -757,7 +758,7 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
   document.addEventListener('visibilitychange', () => { if (!document.hidden && cur === 'overview') loadOverview(true); });
 
   // ---------- start
-  const first0 = (location.hash || '').replace('#', ''); if (['orderupd', 'afterdel', 'birthdays'].indexOf(first0) >= 0) { try { localStorage.setItem('wa_fu_sub', first0); } catch (e) { } location.hash = '#followups'; }
+  const first0 = (location.hash || '').replace('#', ''); if (['orderupd', 'afterdel', 'birthdays'].indexOf(first0) >= 0) { try { localStorage.setItem('wa_fu_sub2', first0); } catch (e) { } location.hash = '#followups'; }
   const first = ALIAS[(location.hash || '').replace('#', '')] || (location.hash || '').replace('#', '');
   if (first.indexOf('f_') === 0 && ITEMS.some((m) => m.k === first)) openFeed(first.slice(2)); else go(ITEMS.some((m) => m.k === first) ? first : 'overview');
   if (cur !== 'overview') { secs.overview = document.createElement('div'); secs.overview.className = 'sec pad'; secs.overview.hidden = true; $('body').appendChild(secs.overview); loadOverview(true); }
