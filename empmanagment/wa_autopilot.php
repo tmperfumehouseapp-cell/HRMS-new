@@ -62,14 +62,14 @@ function fa_season_text(PDO $pdo): string
 /** Did we send a price after the customer's last message? */
 function fa_sent_price(PDO $pdo, array $c): bool
 {
-    try { $q = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'out' AND who <> 'campaign' AND ts >= ? ORDER BY id DESC LIMIT 6"); $q->execute([(string)$c['phone'], (string)($c['last_in_at'] ?? '')]);
+    try { $q = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'out' AND who NOT IN ('campaign','order') AND ts >= ? ORDER BY id DESC LIMIT 6"); $q->execute([(string)$c['phone'], (string)($c['last_in_at'] ?? '')]);
         foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $b) if (preg_match('/₹\s?\d|\brs\.?\s?\d|\binr\s?\d|\d{3,5}\s?(rs|rupees|\/-)/iu', (string)$b)) return true; } catch (Throwable $e) { }
     return false;
 }
 /** Did we send suggestions (photos / documents / a list of perfumes) after the customer's last message? */
 function fa_sent_suggestions(PDO $pdo, array $c): bool
 {
-    try { $q = $pdo->prepare("SELECT mtype, body FROM wa_messages WHERE phone = ? AND dir = 'out' AND who <> 'campaign' AND ts >= ? ORDER BY id DESC LIMIT 6"); $q->execute([(string)$c['phone'], (string)($c['last_in_at'] ?? '')]);
+    try { $q = $pdo->prepare("SELECT mtype, body FROM wa_messages WHERE phone = ? AND dir = 'out' AND who NOT IN ('campaign','order') AND ts >= ? ORDER BY id DESC LIMIT 6"); $q->execute([(string)$c['phone'], (string)($c['last_in_at'] ?? '')]);
         foreach ($q->fetchAll() as $m) { if (in_array((string)$m['mtype'], ['image', 'video', 'document'], true)) return true; if (preg_match('/suggest|option|recommend|try (this|these)|best for you|👉|1\.|①/iu', (string)$m['body']) && substr_count((string)$m['body'], "\n") >= 2) return true; }
     } catch (Throwable $e) { }
     return false;
