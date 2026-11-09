@@ -90,12 +90,12 @@ function wa_done_thanks(PDO $pdo, string $key, string $order): string
         if ($body === '') $body = 'Hello {{1}}, thank you! We have received your order {{2}} at TM Perfume House. We will pack it with care and send you the tracking details as soon as it is shipped.';
         $mark = function () use ($pdo, $key) { $pdo->prepare("UPDATE wa_order_done SET thanks_at = ? WHERE phone = ?")->execute([date('Y-m-d H:i:s'), $key]); };
         if (!$withPhoto && !empty($c['last_in_at']) && strtotime((string)$c['last_in_at']) > time() - 23 * 3600 && function_exists('wa_send_text')) {
-            [$ok] = wa_send_text($pdo, $c, str_replace(['{{1}}', '{{2}}'], [$name, $ord], $body), 'order', 0); if ($ok) { $mark(); return 'thank-you sent'; }
+            [$ok] = wa_send_text($pdo, $c, str_replace(['{{1}}', '{{2}}'], [$name, $ord], $body), 'order', 0); if ($ok) { $mark(); return 'thank-you sent' . (function_exists('wo_send_pending_photo') ? wo_send_pending_photo($pdo, $c, 'received') : ''); }
         }
         if (function_exists('wo_tpl_for') && function_exists('wa_send_tpl_one')) {
             $t = wo_tpl_for($pdo, 'received'); if (!$t) return 'thank-you template not approved yet';
             $ctx = wa_camp_ctx($pdo, $t, 99); [$nid] = wa_pick_number($pdo, $c, $ctx); if ($nid === 0) return 'no number free for the thank-you';
-            $num = $ctx['nums'][$nid]; [$ok, $r2] = wa_send_tpl_one($pdo, $c, $t, $num, array_slice([$name, $ord], 0, (int)$t['nvars']), 'order'); if ($ok) { $mark(); $pw = (string)($GLOBALS['wo_photo_why'] ?? ''); return 'thank-you sent' . ($withPhoto && $pw !== '' ? ' WITHOUT the photo — ' . $pw : ''); } if (!$ok && $withPhoto) {   // the photo version could not go (photo upload / Meta refused): the plain approved text must still reach the customer
+            $num = $ctx['nums'][$nid]; [$ok, $r2] = wa_send_tpl_one($pdo, $c, $t, $num, array_slice([$name, $ord], 0, (int)$t['nvars']), 'order'); if ($ok) { $mark(); $pw = (string)($GLOBALS['wo_photo_why'] ?? ''); return 'thank-you sent' . ($withPhoto && $pw !== '' ? ' WITHOUT the photo — ' . $pw : '') . (empty($t['header_lib_id']) && function_exists('wo_send_pending_photo') ? wo_send_pending_photo($pdo, $c, 'received') : ''); } if (!$ok && $withPhoto) {   // the photo version could not go (photo upload / Meta refused): the plain approved text must still reach the customer
                 $why2 = is_string($r2) ? $r2 : 'Meta refused it'; $bq = $pdo->prepare("SELECT id FROM wa_templates WHERE name = ? AND language = 'en'"); $bq->execute([wo_send_defs()['received'][0]]); $bid = (int)$bq->fetchColumn(); $bt = $bid ? wa_camp_tpl($pdo, $bid) : null;
                 if ($bt) { [$ok2] = wa_send_tpl_one($pdo, $c, $bt, $num, array_slice([$name, $ord], 0, (int)$bt['nvars']), 'order'); if ($ok2) { $mark(); return 'thank-you sent WITHOUT the photo — the photo could not be sent: ' . $why2; } }
                 return 'thank-you NOT sent: ' . $why2;

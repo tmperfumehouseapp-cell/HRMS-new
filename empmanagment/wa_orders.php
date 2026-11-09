@@ -839,6 +839,27 @@ function wo_first_name(string $name): string
     if (function_exists('wa_first_name')) return wa_first_name($name);
     $w = preg_split('/\s+/u', trim($name))[0] ?? ''; $w = trim(preg_replace('/[^\p{L}\p{N}\'.\-]/u', '', $w) ?? ''); return mb_strlen($w) < 2 ? 'ji' : mb_convert_case(mb_substr($w, 0, 30), MB_CASE_TITLE, 'UTF-8');
 }
+/** The photo the owner chose for this message that Meta has NOT approved yet (a new version is waiting, or its photo template is not approved) — 0 when none. */
+function wo_pending_photo(PDO $pdo, string $status): int
+{
+    $v = wo_ver_all($pdo)[$status] ?? null; if (is_array($v) && (int)($v['active']['lib'] ?? 0) > 0) return 0;
+    if (is_array($v) && (int)($v['pending']['lib'] ?? 0) > 0) return (int)$v['pending']['lib'];
+    return (int)(wo_photo_cfg($pdo)[$status] ?? 0);
+}
+/** While the photo version waits for Meta the customer used to get the text only. Now, when they wrote to us in the last 23 hours, the photo itself goes right after the text as a normal picture message. Returns a short note ('' = nothing sent). */
+function wo_send_pending_photo(PDO $pdo, array $c, string $status): string
+{
+    try {
+        $lib = wo_pending_photo($pdo, $status); if ($lib <= 0 || empty($c['last_in_at']) || strtotime((string)$c['last_in_at']) < time() - 23 * 3600) return '';
+        if (!function_exists('wa_lib_row') || !function_exists('wa_lib_media_id') || !function_exists('wa_send_media')) return '';
+        $r = wa_lib_row($pdo, $lib); if (!$r || (string)$r['kind'] !== 'image') return '';
+        $q = $pdo->prepare("SELECT phone_id FROM wa_numbers WHERE id = ?"); $q->execute([(int)($c['last_number_id'] ?? 0)]); $pid = (string)$q->fetchColumn(); if ($pid === '' && function_exists('wa_cfg_val')) $pid = (string)wa_cfg_val('WA_PHONE_ID'); if ($pid === '') return '';
+        [$mid] = wa_lib_media_id($pdo, $r, $pid); if ($mid === '') return '';
+        [$ok] = wa_send_media($pdo, $c, 'image', $mid, (string)$r['mime'], '', (string)$r['filename'], 0);
+        if ($ok) { try { $pdo->prepare("UPDATE wa_messages SET who = 'order' WHERE phone = ? AND dir = 'out' AND who = 'emp' AND emp_id = 0 AND mtype = 'image' ORDER BY id DESC LIMIT 1")->execute([(string)$c['phone']]); } catch (Throwable $e) { } }   // an automatic order picture is not a person's reply (no pause, no pace)
+        return $ok ? ' · the photo went as a separate picture (its template is waiting for Meta)' : '';
+    } catch (Throwable $e) { return ''; }
+}
 function wo_tpl_for(PDO $pdo, string $status): ?array
 {
     $defs = wo_send_defs(); if (!isset($defs[$status]) || !function_exists('wa_camp_tpl') || !function_exists('wa_tpl_tables') || !wa_tpl_tables($pdo)) return null;
@@ -976,7 +997,7 @@ function wo_send_one(PDO $pdo, array $row, int $nowTs, array &$ctxCache): array
     [$code, $d] = wa_api('POST', $req['path'], $req['json']); $wamid = (string)($d['messages'][0]['id'] ?? ''); $ec = (int)($d['error']['code'] ?? 0); $tries = (int)$row['tries'] + 1;
     if ($code >= 200 && $code < 300 && $wamid !== '') {
         $pdo->prepare("UPDATE wa_ord_sent SET state = 'sent', wamid = ?, number_id = ?, tries = ?, err = '', err_code = 0, sent_at = ?, at = ? WHERE id = ?")->execute([$wamid, $nid, $tries, wo_dt($nowTs), wo_dt($nowTs), $id]);
-        wa_log_template_msg($pdo, $wamid, $key, $nid, wa_tpl_shown($t, $vars), 'order'); return ['out' => 'sent'];
+        wa_log_template_msg($pdo, $wamid, $key, $nid, wa_tpl_shown($t, $vars), 'order'); if (empty($t['header_lib_id'])) wo_send_pending_photo($pdo, $ct, $st); return ['out' => 'sent'];
     }
     $msg = mb_substr(function_exists('wa_err') ? wa_err(is_array($d) ? $d : null) : 'Meta did not accept this.', 0, 190);
     if (in_array($ec, [130429, 131056, 131042, 132000, 132001, 132005, 132007, 132012, 132015, 132016, 190, 131031], true) || $code === 401) { $pdo->prepare("UPDATE wa_ord_sent SET err = ?, err_code = ?, due_at = ? WHERE id = ?")->execute([$msg, $ec, wo_dt($nowTs + 600), $id]); if (function_exists('wa_log')) wa_log($pdo, 'orders', false, 'order updates stopped: ' . $msg); return ['out' => 'waiting', 'stop' => $msg]; }
