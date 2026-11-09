@@ -102,13 +102,13 @@ function wj_plan_get(PDO $pdo): array { $j = wj_json($pdo, 'wj_plan', []); retur
 /** Keep what is about to change (plan + registry + festival) so ↩ Undo can bring it back. */
 function wj_hist_push(PDO $pdo, string $why, string $who = ''): void
 {
-    $h = wj_json($pdo, 'wj_hist', []); $h[] = ['at' => date('Y-m-d H:i:s'), 'why' => mb_substr($why, 0, 200), 'who' => $who, 'plan' => wj_plan_get($pdo), 'offers' => (string)setting_get($pdo, 'fa_offers', ''), 'season' => (string)setting_get($pdo, 'fa_season', '')];
-    wj_put($pdo, 'wj_hist', array_slice($h, -12));
+    $h = wj_json($pdo, 'wj_hist', []); $h[] = ['at' => date('Y-m-d H:i:s'), 'why' => mb_substr($why, 0, 200), 'who' => $who, 'plan' => wj_plan_get($pdo), 'offers' => (string)setting_get($pdo, 'fa_offers', ''), 'season' => (string)setting_get($pdo, 'fa_season', ''), 'fu' => function_exists('fu_plans_get') ? fu_plans_get($pdo) : null];
+    wj_put($pdo, 'wj_hist', array_slice($h, -6));
 }
 function wj_undo(PDO $pdo): array
 {
     $h = wj_json($pdo, 'wj_hist', []); $e = array_pop($h); if (!$e) return [false, 'Nothing to undo.'];
-    wj_put($pdo, 'wj_plan', $e['plan']); setting_set($pdo, 'fa_offers', (string)$e['offers']); setting_set($pdo, 'fa_season', (string)$e['season']); wj_put($pdo, 'wj_hist', $h);
+    wj_put($pdo, 'wj_plan', $e['plan']); setting_set($pdo, 'fa_offers', (string)$e['offers']); setting_set($pdo, 'fa_season', (string)$e['season']); if (!empty($e['fu']['situations']) && function_exists('fu_plans_put')) fu_plans_put($pdo, ['situations' => $e['fu']['situations']]); wj_put($pdo, 'wj_hist', $h);
     return [true, 'Undone ✓ — back to how it was before “' . (string)$e['why'] . '”.'];
 }
 /** First run: the ten ready-made touch messages join the central registry (their words are made at Meta by the Autopilot's background job). */
@@ -423,7 +423,7 @@ function wj_run(PDO $pdo): array
 {
     $cfg = wj_cfg($pdo); $now = time(); $o = ['sent' => 0, 'failed' => 0, 'waiting' => 0, 'blocked' => 0, 'deferred' => 0];
     $L = function_exists('fu_limits') ? fu_limits($pdo) : null; if ($L && function_exists('fu_in_quiet') && fu_in_quiet($L, $now)) return $o + ['quiet' => 1];
-    $m = (int)date('G', $now) * 60 + (int)date('i', $now); if ($m < $cfg['from'] || $m >= $cfg['to']) return $o + ['off_hours' => 1];
+    if (!jn_in_window(jn_window($pdo), $now)) return $o + ['off_hours' => 1];
     $guard = function_exists('fu_guard') ? fu_guard($pdo)['state'] : 'ok'; if ($guard === 'stop') return $o + ['guard' => 'stop']; $cap = $guard === 'slow' ? min(3, $cfg['run_cap']) : $cfg['run_cap'];
     $today = 0; try { $today = (int)$pdo->query("SELECT COUNT(*) FROM wa_wj_ev WHERE status = 'sent' AND sent_at >= '" . date('Y-m-d 00:00:00', $now) . "'")->fetchColumn(); } catch (Throwable $e) { } if ($today >= $cfg['day_cap']) return $o + ['day_cap' => 1];
     $list = wj_collect($pdo, wj_plan_get($pdo), $cfg, $now, 300); if (!$list) return $o;
@@ -770,7 +770,7 @@ function wj_view(PDO $pdo): array
     $messages = []; foreach ($reg as $k => $x) $messages[] = ['k' => $k, 'label' => $x[0], 'rule' => $x[1], 'body' => function_exists('fa_tpl_body') ? fa_tpl_body($pdo, $k) : '', 'status' => wj_tpl_state($pdo, $k), 'icon' => wj_icon($k), 'photo' => (int)setting_get($pdo, 'fa_tplphoto_' . $k, '0'), 'uses' => count(array_filter(array_merge($plan['tracks']['lead']['steps'], $plan['tracks']['buyer']['steps']), function ($s) use ($k) { return $s['ref'] === $k; }))];
     $auto = []; try { if (function_exists('fu_plans_get')) foreach (fu_plans_get($pdo)['situations'] as $p) { if (($p['kind'] ?? '') === 'stop') continue; foreach ((array)$p['steps'] as $x) { $d = max(1, (int)ceil($x['after_h'] / 24)); if ($d > 10) continue; $auto[$d] = $auto[$d] ?? ['day' => $d, 'msg' => 0, 'offer' => 0]; $auto[$d][$x['kind'] === 'offer' ? 'offer' : 'msg']++; } } } catch (Throwable $e) { }
     ksort($auto); $hist = []; foreach (array_reverse(wj_json($pdo, 'wj_hist', [])) as $h) $hist[] = ['at' => $h['at'], 'why' => $h['why']];
-    return ['ok' => true, 'segments' => jn_segments_view($pdo), 'unified' => jn_unified($pdo), 'daily' => wj_json($pdo, 'wj_daily', []), 'change' => wj_json($pdo, 'wj_change', []), 'can_undo_change' => !empty(wj_json($pdo, 'wj_change_undo', [])['items']), 'mode' => wj_mode($pdo), 'cfg' => wj_cfg($pdo), 'ai' => function_exists('convo_ai'), 'ready' => function_exists('fa_offers'), 'steps' => $steps, 'messages' => $messages, 'auto10' => array_values($auto), 'season' => function_exists('fa_season') ? fa_season($pdo) : [], 'season_now' => function_exists('fa_season_text') ? fa_season_text($pdo) : '',
+    return ['ok' => true, 'window' => ['from' => wj_hm(jn_window($pdo)['from']), 'to' => wj_hm(jn_window($pdo)['to'])], 'segments' => jn_segments_view($pdo), 'unified' => jn_unified($pdo), 'daily' => wj_json($pdo, 'wj_daily', []), 'change' => wj_json($pdo, 'wj_change', []), 'can_undo_change' => !empty(wj_json($pdo, 'wj_change_undo', [])['items']), 'mode' => wj_mode($pdo), 'cfg' => wj_cfg($pdo), 'ai' => function_exists('convo_ai'), 'ready' => function_exists('fa_offers'), 'steps' => $steps, 'messages' => $messages, 'auto10' => array_values($auto), 'season' => function_exists('fa_season') ? fa_season($pdo) : [], 'season_now' => function_exists('fa_season_text') ? fa_season_text($pdo) : '',
         'proposal' => wj_json($pdo, 'wj_proposal', []), 'fest_sug' => wj_json($pdo, 'wj_fest_sug', []), 'festivals' => wj_fest_upcoming($pdo, 10), 'topics' => wj_topics_view($pdo), 'night' => wj_json($pdo, 'wj_night', []), 'stats' => wj_stats($pdo), 'hist' => array_slice($hist, 0, 6),
         'auto_since' => (int)setting_get($pdo, 'wj_auto_since', '0'), 'autopilot_mode' => function_exists('fu_mode') ? fu_mode($pdo) : 'off'];
 }
@@ -830,6 +830,11 @@ if (strpos($__wj, 'fu.wj_') === 0) {
         $bs = array_values(array_filter($b['steps'], function ($s) { return $s['track'] === 'buyer'; })); $bt = ['sent' => 0, 'replied' => 0, 'ordered' => 0, 'sales' => 0.0]; foreach ($bs as $s) foreach ($bt as $k => $_) $bt[$k] += $s[$k];
         $at = $a['total'] + ['sent' => 0, 'replied' => 0, 'ordered' => 0, 'sales' => 0.0]; json_response(['ok' => true, 'days' => $days, 'lanes' => $a['steps'], 'buyer' => $bs, 'lane_total' => $at, 'buyer_total' => $bt,
             'total' => ['sent' => $at['sent'] + $bt['sent'], 'replied' => $at['replied'] + $bt['replied'], 'ordered' => $at['ordered'] + $bt['ordered'], 'sales' => $at['sales'] + $bt['sales']]]);
+    }
+    if ($__wj === 'fu.jn_window') {
+        if ($isPost) { $p = function ($v) { return preg_match('/^(\d{1,2}):(\d{2})$/', (string)$v, $mm) ? max(0, min(1439, (int)$mm[1] * 60 + (int)$mm[2])) : null; }; $f = $p($in['from'] ?? ''); $t = $p($in['to'] ?? '');
+            if ($f === null || $t === null || $f === $t) json_response(['error' => 'Give two different times like 10:00 and 02:00.'], 422); setting_set($pdo, 'jn_window', json_encode(['from' => $f, 'to' => $t])); }
+        $w = jn_window($pdo); json_response(['message' => $isPost ? 'Saved ✓ — messages go between ' . wj_hm($w['from']) . ' and ' . wj_hm($w['to']) . '.' : '', 'from' => wj_hm($w['from']), 'to' => wj_hm($w['to'])]);
     }
     if ($__wj === 'fu.wj_queue') json_response(['ok' => true] + wj_queue($pdo));
     if ($__wj === 'fu.wj_results') json_response(['ok' => true] + wj_results($pdo, max(1, min(90, (int)($_GET['days'] ?? 30)))));
