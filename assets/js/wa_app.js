@@ -265,7 +265,7 @@
       try { const r = await api.get('wq.req_list'); const n = r.items || [], lt = r.late || []; const key = (a) => JSON.stringify(a.map((x) => x.phone + '|' + (x.mins ?? x.waiting_min)));
         const ch = key(n) !== key(S.req || []) || key(lt) !== key(S.reqLate || []);
         if (S.req && S.sound !== false && n.some((x) => !S.req.some((y) => y.phone === x.phone))) beepNew();   // 🔔 a new request came in
-        S.req = n; S.reqLate = lt; S.reqMin = r.late_min || 4; { const rk = JSON.stringify((r.rescue || []).map((x) => x.phone + '|' + x.tier)); if (rk !== S.rescueKey) { S.rescueKey = rk; if (S.tab === 'chats' && S.filter === 'rescue' && (!S.cur || wide())) pend = 1; } S.rescue = r.rescue || []; S.rescueOn = !!r.rescue_member; }
+        S.req = n; S.reqLate = lt; S.reqMin = r.late_min || 4; { const rk = JSON.stringify((r.rescue || []).map((x) => x.phone + '|' + x.tier)); if (rk !== S.rescueKey) { S.rescueKey = rk; if (S.tab === 'chats' && S.filter === 'rescue' && (!S.cur || wide())) pend = 1; } S.rescue = r.rescue || []; S.rescueMine = r.rescue_mine || []; S.rescueCfg = r.rescue_cfg || null; S.rescueOn = !!r.rescue_member; }
         if (ch && S.tab === 'chats' && (!S.cur || wide())) { if (held()) pend = 1; else drawList(); } } catch (e) { }
     }
     // ⚠ my customers' complaint tickets (read-only — the Complaint team handles them): status, who answered last, Claude's line (bd.cx_wa_board)
@@ -279,30 +279,48 @@
       M.onclick = (e) => { if (e.target.closest('#wxCxNew')) { if (!window.CXR) { toast('Refresh the page and try again.', true); return; } CXR.open({ askCustomer: true, source: 'whatsapp', onDone: () => loadCxB() }); return; } const p = e.target.closest('[data-p]'); if (p && p.dataset.p) openChat(p.dataset.p); };
     }
 
-    // 🛟 Rescue (only for the people the owner put on the Rescue team): interested customers nobody followed up, most urgent first. Tap a row to READ the chat, press Take to make it yours.
+    // 🛟 Rescue (only for the people the owner put on the Rescue team). Two tabs: "To take" = interested customers nobody followed up (most urgent first), "I took" = the ones this person took
+    // (an order → ✅; after the decide days with no order → "decide": not a chance, or keep working). "Not a chance" asks why, then the AI double-checks it.
     function drawRescue() {
-      const M = $('#wxM'), L = S.rescue;
+      const M = $('#wxM'), L = S.rescue, MI = S.rescueMine || [];
       if (!L) { M.innerHTML = '<div class="wx-sk"></div><div class="wx-sk"></div>'; return; }
+      const tab = S.rescueTab === 'mine' ? 'mine' : 'take', dd = (S.rescueCfg && S.rescueCfg.decide_days) || 4;
       const TC = { act: '#fee2e2', today: '#ffedd5', week: '#fef9c3', long: '#e5e7eb' };
       const ago = (m) => m < 1 ? 'just now' : m < 60 ? m + ' min ago' : m < 1440 ? Math.floor(m / 60) + ' h ago' : Math.floor(m / 1440) + ' d ago';
-      const row = (x) => `<div data-peek="${esc(x.phone)}" data-pk="rescue" role="button" tabindex="0" style="display:flex;gap:10px;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line);cursor:pointer"><div style="flex:1;min-width:0">`
+      const noBtn = (ph) => S.skipFor === ph
+        ? `<div style="display:flex;flex-direction:column;gap:5px"><div style="font-size:11.5px;color:#6b7280;font-weight:700">Why?</div><button type="button" data-rs="price" data-no="${esc(ph)}" style="border:1px solid #d1d5db;border-radius:99px;background:#fff;font-weight:700;font-size:12px;padding:6px 10px">Price</button><button type="button" data-rs="no_reply" data-no="${esc(ph)}" style="border:1px solid #d1d5db;border-radius:99px;background:#fff;font-weight:700;font-size:12px;padding:6px 10px">Stopped replying</button><button type="button" data-rs="other" data-no="${esc(ph)}" style="border:1px solid #d1d5db;border-radius:99px;background:#fff;font-weight:700;font-size:12px;padding:6px 10px">Other</button><button type="button" data-rs-cancel="1" style="border:0;background:none;color:#6b7280;font-size:12px">Cancel</button></div>`
+        : `<button type="button" data-ask="${esc(ph)}" style="border:1px solid #d1d5db;border-radius:99px;background:#fff;color:#6b7280;font-weight:700;font-size:12px;padding:6px 10px">Not a chance</button>`;
+      const rowTake = (x) => `<div data-peek="${esc(x.phone)}" data-pk="rescue" role="button" tabindex="0" style="display:flex;gap:10px;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line);cursor:pointer"><div style="flex:1;min-width:0">`
         + `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><b style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0">${esc(x.name || pretty(x.phone))}</b><span style="font-size:11px;font-weight:800;border-radius:99px;padding:2px 8px;background:${TC[x.tier] || '#e5e7eb'};color:#1f2937">${esc(x.tier_label || '🛟')}</span></div>`
         + `<div style="font-size:14.5px;line-height:1.4;margin-top:3px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word">${x.last_in ? '“' + esc(x.last_in) + '”' : ''}</div>`
         + `<div style="font-size:12px;color:#6b7280;margin-top:2px">${esc(x.why || '')} · wrote ${ago(+x.mins || 0)}</div></div>`
-        + `<div style="flex:none;display:flex;flex-direction:column;gap:6px;align-items:stretch"><button type="button" data-tk="${esc(x.phone)}" data-pk="rescue" style="border:0;border-radius:99px;background:#00a884;color:#fff;font-weight:800;font-size:13.5px;padding:9px 14px;min-height:40px">✋ Take</button>`
-        + `<button type="button" data-no="${esc(x.phone)}" style="border:1px solid #d1d5db;border-radius:99px;background:#fff;color:#6b7280;font-weight:700;font-size:12px;padding:6px 10px">Not a chance</button></div></div>`;
-      M.innerHTML = `<div class="wx-h">🛟 Rescue — interested customers nobody followed up · ${L.length}</div>`
-        + (L.length ? `<div class="wx-card wx-lst">${L.map(row).join('')}</div>` : '<div class="wx-empty"><b>🎉</b>Nothing to rescue right now.</div>')
-        + '<div style="padding:10px 14px;font-size:12.5px;color:#6b7280">Most urgent first. Tap a customer to read the chat, then press Take. A chat somebody is already talking with is not shown for a few minutes.</div>';
+        + `<div style="flex:none;display:flex;flex-direction:column;gap:6px;align-items:stretch"><button type="button" data-tk="${esc(x.phone)}" data-pk="rescue" style="border:0;border-radius:99px;background:#00a884;color:#fff;font-weight:800;font-size:13.5px;padding:9px 14px;min-height:40px">✋ Take</button>${noBtn(x.phone)}</div></div>`;
+      const rowMine = (x) => `<div data-peek="${esc(x.phone)}" data-pk="mine" role="button" tabindex="0" style="display:flex;gap:10px;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line);cursor:pointer;${x.decide ? 'background:#fef2f2' : ''}"><div style="flex:1;min-width:0">`
+        + `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><b style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0">${esc(x.name || pretty(x.phone))}</b>${x.ordered ? '<span style="font-size:11px;font-weight:800;border-radius:99px;padding:2px 8px;background:#dcfce7;color:#166534">✅ Order placed</span>' : ''}</div>`
+        + `<div style="font-size:12.5px;color:#6b7280;margin-top:3px">Taken ${x.days < 1 ? 'today' : x.days + ' day' + (x.days === 1 ? '' : 's') + ' ago'}${x.ordered && x.order_name ? ' · ' + esc(x.order_name) : ''}</div>`
+        + (x.decide ? `<div style="font-size:13px;color:#b91c1c;font-weight:800;margin-top:3px">⏰ ${dd}+ days, no order — decide: not a chance, or keep working</div>` : '') + '</div>'
+        + (x.ordered ? '' : `<div style="flex:none;display:flex;flex-direction:column;gap:6px;align-items:stretch">${noBtn(x.phone)}</div>`) + '</div>';
+      const mineOpen = MI.filter((x) => !x.ordered).length, mineDecide = MI.filter((x) => x.decide).length;
+      const tabs = `<div style="display:flex;gap:6px;padding:8px 12px"><button type="button" data-rtab="take" style="flex:1;border-radius:99px;border:1px solid #d1d5db;padding:9px;font-weight:800;${tab === 'take' ? 'background:#111827;color:#fff;border-color:#111827' : 'background:#fff'}">To take · ${L.length}</button><button type="button" data-rtab="mine" style="flex:1;border-radius:99px;border:1px solid #d1d5db;padding:9px;font-weight:800;${tab === 'mine' ? 'background:#111827;color:#fff;border-color:#111827' : 'background:#fff'}">I took · ${MI.length}${mineDecide ? ' ⏰' + mineDecide : ''}</button></div>`;
+      M.innerHTML = tabs + (tab === 'take'
+        ? `<div class="wx-h">🛟 Interested customers nobody followed up · most urgent first</div>` + (L.length ? `<div class="wx-card wx-lst">${L.map(rowTake).join('')}</div>` : '<div class="wx-empty"><b>🎉</b>Nothing to rescue right now.</div>')
+          + '<div style="padding:10px 14px;font-size:12.5px;color:#6b7280">Tap a customer to read the chat, then press Take. A chat somebody is already talking with is not shown for a few minutes.</div>'
+        : `<div class="wx-h">✋ Rescue chats I took · ${mineOpen} still open</div>` + (MI.length ? `<div class="wx-card wx-lst">${MI.map(rowMine).join('')}</div>` : '<div class="wx-empty"><b>✋</b>You have not taken any rescue chat yet.</div>')
+          + `<div style="padding:10px 14px;font-size:12.5px;color:#6b7280">If an order comes, it shows ✅. After ${dd} days with no order, press Not a chance (the AI double-checks it) or keep working the customer.</div>`);
       M.onclick = async (e) => {
+        const rt = e.target.closest('[data-rtab]'); if (rt) { S.rescueTab = rt.dataset.rtab; S.skipFor = ''; drawRescue(); return; }
+        if (e.target.closest('[data-rs-cancel]')) { S.skipFor = ''; drawRescue(); return; }
+        const ask = e.target.closest('[data-ask]'); if (ask) { e.stopPropagation(); S.skipFor = ask.dataset.ask; drawRescue(); return; }
         const no = e.target.closest('[data-no]');
-        if (no) { e.stopPropagation(); if (!confirm('Remove this customer from Rescue — not a chance?')) return; no.disabled = true;
-          try { await api.post('wq.rescue_skip', { phone: no.dataset.no }); S.rescue = (S.rescue || []).filter((y) => y.phone !== no.dataset.no); toast('Removed from Rescue'); drawRescue(); drawTabs(); drawList(); } catch (er) { toast(er.message, true); no.disabled = false; loadReq(); } return; }
+        if (no) { e.stopPropagation(); const ph = no.dataset.no; no.disabled = true;
+          try { await api.post('wq.rescue_skip', { phone: ph, reason: no.dataset.rs || 'other' }); S.skipFor = ''; S.rescue = (S.rescue || []).filter((y) => y.phone !== ph); S.rescueMine = (S.rescueMine || []).filter((y) => y.phone !== ph); toast('Removed — the AI will double-check it'); drawRescue(); drawTabs(); } catch (er) { toast(er.message, true); no.disabled = false; loadReq(); } return; }
         const t = e.target.closest('[data-tk]');
         if (t) { e.stopPropagation(); const ph = t.dataset.tk; t.disabled = true; t.textContent = 'Taking…';
-          try { await api.post('wq.rescue_take', { phone: ph }); const x = (S.rescue || []).find((y) => y.phone === ph) || {}; S.rescue = (S.rescue || []).filter((y) => y.phone !== ph); toast('The chat is yours now ✓'); loadList(true); openChat(ph, { name: x.name || '' }); }
+          try { await api.post('wq.rescue_take', { phone: ph }); const x = (S.rescue || []).find((y) => y.phone === ph) || {}; S.rescue = (S.rescue || []).filter((y) => y.phone !== ph); toast('The chat is yours now ✓'); loadList(true); loadReq(); openChat(ph, { name: x.name || '' }); }
           catch (er) { toast(er.message, true); t.disabled = false; t.textContent = '✋ Take'; loadReq(); } return; }
-        const b = e.target.closest('[data-peek]'); if (!b) return; const ph = b.dataset.peek, x = (S.rescue || []).find((y) => y.phone === ph) || {}; openChat(ph, { peek: 'rescue', name: x.name || '' });
+        const b = e.target.closest('[data-peek]'); if (!b) return; const ph = b.dataset.peek;
+        if (b.dataset.pk === 'mine') { const x = (S.rescueMine || []).find((y) => y.phone === ph) || {}; openChat(ph, { name: x.name || '' }); return; }
+        const x = (S.rescue || []).find((y) => y.phone === ph) || {}; openChat(ph, { peek: 'rescue', name: x.name || '' });
       };
     }
     const reqN = () => (S.req ? S.req.length : 0) + (S.reqLate ? S.reqLate.length : 0);
@@ -529,7 +547,7 @@
       $('#wxSeg').hidden = false; const M = $('#wxM'); if (!S.loaded) { M.innerHTML = '<div class="wx-sk"></div><div class="wx-sk"></div><div class="wx-sk"></div>'; $('#wxSeg').innerHTML = ''; return; }
       const f = S.filter; const all = S.chats; let list = all.filter((c) => !f || (f === 'wait' ? c.waiting : f === 'new' ? c.src === 'query' : f === 'hot' ? c.hot : true));
       const FL = S.fl || (S.fl = { sort: '', only: [] }); list = flApply(list, FL);
-      const segs = [['', 'All ' + all.length], ['wait', '⏱ Waiting ' + (S.counts.waiting || 0)], ['req', '🙋 Requests ' + (S.req ? reqN() : '')], ['cx', '⚠ Complaints' + (S.cxB && S.cxB.items.length ? ' ' + S.cxB.items.length : '')], ['new', '📣 From ad'], ['hot', '🔥 ' + (S.counts.hot || 0)]]; if (S.rescueOn) segs.splice(3, 0, ['rescue', '🛟 Rescue ' + (S.rescue ? S.rescue.length : '')]); if (S.me && S.me.team) segs.push(['team', '👥 Team']);
+      const segs = [['', 'All ' + all.length], ['wait', '⏱ Waiting ' + (S.counts.waiting || 0)], ['req', '🙋 Requests ' + (S.req ? reqN() : '')], ['cx', '⚠ Complaints' + (S.cxB && S.cxB.items.length ? ' ' + S.cxB.items.length : '')], ['new', '📣 From ad'], ['hot', '🔥 ' + (S.counts.hot || 0)]]; if (S.rescueOn) segs.splice(3, 0, ['rescue', '🛟 Rescue ' + (S.rescue ? S.rescue.length : '') + ((S.rescueMine || []).some((x) => x.decide) ? ' ⏰' : '')]); if (S.me && S.me.team) segs.push(['team', '👥 Team']);
       const fln = FL.only.length + (FL.sort ? 1 : 0) + (FL.tag ? 1 : 0);
       $('#wxSeg').innerHTML = `<button data-fl="1" class="${fln ? 'on' : ''}" style="${fln ? 'background:#00a884;color:#fff;border-color:#00a884;' : ''}font-weight:700">⏷ Filter${fln ? ' · ' + fln : ''}</button>` + segs.map(([k, l]) => `<button data-f="${k}" class="${f === k ? 'on' : ''}"${k === 'req' && f !== k && S.req && reqN() ? ' style="background:#f97316;color:#fff;border-color:#f97316;font-weight:800"' : (k === 'rescue' && f !== k && S.rescue && S.rescue.length ? ' style="background:#dc2626;color:#fff;border-color:#dc2626;font-weight:800"' : '')}>${l}</button>`).join('');   // 🙋 orange while chats are waiting for someone
       $('#wxSeg').onclick = (e) => { if (e.target.closest('[data-fl]')) { openFilter(); return; } const b = e.target.closest('button'); if (b) { S.filter = b.dataset.f; if (S.filter === 'team') loadTeam(); if (S.filter === 'req' || S.filter === 'rescue') loadReq(); if (S.filter === 'cx') loadCxB(); drawList(); } };
