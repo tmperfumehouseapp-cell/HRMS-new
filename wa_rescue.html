@@ -49,6 +49,7 @@ guardPage();
   const root = document.getElementById('rqRoot');
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const WHY = { hot: ['🔥 Wanted to pay / order', 'hot'], price: ['💬 Asked the price', ''], ignored: ['🔕 Wrote 2+ times – no person answered', ''] };
+  const TIERC = { act: '#fee2e2', today: '#ffedd5', week: '#fef9c3', long: '#e5e7eb' };
   const ST = { open: 'Open', taken: 'Taken', given: 'Taken', won: '✅ Order placed', ordered: 'Ordered anyway', expired: 'Expired', silent: '🔇 Gone silent' };
   const S = { d: null, team: null, tab: 'list', status: 'all', days: 7, busy: false, scanned: false };
   const ago = (s) => { if (!s) return ''; const t = new Date(String(s).replace(' ', 'T')); const m = Math.max(0, Math.round((Date.now() - t.getTime()) / 60000)); return m < 60 ? m + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : Math.round(m / 1440) + ' d ago'; };
@@ -77,7 +78,7 @@ guardPage();
   // refresh every 5 minutes while the screen is open: check again and reload the list
   setInterval(() => { if (document.visibilityState === 'visible') kick(true); }, 300000);
   function chips(it) {
-    return (it.why || []).map((w) => { const x = WHY[w] || [w, '']; return '<span class="rq-chip ' + x[1] + '">' + esc(x[0]) + '</span>'; }).join('') + '<span class="rq-chip st">' + esc(ST[it.status] || it.status) + '</span>';
+    return (it.tier_label && (it.status === 'open' || it.status === 'taken') ? '<span class="rq-chip" style="background:' + (TIERC[it.tier] || '#e5e7eb') + ';color:#1f2937">' + esc(it.tier_label) + '</span>' : '') + (it.why || []).map((w) => { const x = WHY[w] || [w, '']; return '<span class="rq-chip ' + x[1] + '">' + esc(x[0]) + '</span>'; }).join('') + '<span class="rq-chip st">' + esc(ST[it.status] || it.status) + '</span>';
   }
   function itemHtml(it) {
     const who = it.taken_by && it.taken_by.emp_id ? '<div class="rq-meta">Taken by <b>' + esc(it.taken_by.name) + '</b> ' + esc(ago(it.taken_at)) + '</div>' : '';
@@ -95,6 +96,7 @@ guardPage();
       '<div class="rq-card"><b>' + (s.won || 0) + '</b><span>Orders placed</span></div><div class="rq-card"><b>' + (s.silent || 0) + '</b><span>Gone silent</span></div></div>';
     const bf = d.backfill;
     if (bf) h += '<div class="rq-sub" style="margin-bottom:6px">' + (bf.done ? '✅ Every earlier chat has been checked (' + (bf.checked || 0) + ' queries).' : '⏳ Loading all earlier chats… <b>' + (bf.pct || 0) + '%</b> — ' + (bf.flagged || 0) + ' opportunities found so far. You can keep working; the list fills up by itself.') + (bf.error ? ' <span style="color:#d9423b">Problem: ' + esc(bf.error) + '</span>' : '') + '</div>';
+    const tc = (s.tiers || {}); h += '<div class="rq-sub" style="margin-bottom:8px">Waiting by urgency: 🔴 Act now <b>' + (tc.act || 0) + '</b> · 🟠 Today <b>' + (tc.today || 0) + '</b> · 🟡 This week <b>' + (tc.week || 0) + '</b> · ⚪ Long shot <b>' + (tc.long || 0) + '</b> — listed most urgent first, then how interested, then newest. A chat somebody is working on (4-minute rule) is not offered; if the person who took it does not talk with the customer, it comes back.</div>';
     const ls = d.last_scan, sc = ls && ls.scan;
     h += '<div class="rq-sub" style="margin-bottom:10px">' + (sc ? 'Last check ' + esc(ago(ls.at)) + ' (last ' + esc(cfg.days) + ' days): <b>' + (sc.all || 0) + '</b> queries · <b>' + (sc.quiet || 0) + '</b> quiet for ' + esc(cfg.wait_h) + '+ h · <b>' + (sc.ordered || 0) + '</b> already ordered · looked at <b>' + (sc.candidates || 0) + '</b> · <b>' + (sc.flagged || 0) + '</b> new opportunities · ' + (sc.no_signal || 0) + ' showed no interest · ' + (sc.silent || 0) + ' gone silent.' + (sc.error ? ' <span style="color:#d9423b">Problem: ' + esc(sc.error) + '</span>' : '') : 'No check has run yet — it runs by itself when WhatsApp opens and every 5 minutes.') + '</div>';
     h += '<div class="rq-tabs"><button data-tab="list" class="' + (S.tab === 'list' ? 'on' : '') + '">Queries</button><button data-tab="team" class="' + (S.tab === 'team' ? 'on' : '') + '">Rescue team</button><button data-tab="cfg" class="' + (S.tab === 'cfg' ? 'on' : '') + '">Settings</button></div>';
