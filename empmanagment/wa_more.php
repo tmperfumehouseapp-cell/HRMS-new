@@ -250,6 +250,7 @@ function wa_tick(PDO $pdo, bool $force = false): array
     try { if (function_exists('wa_ord_tick')) $o['orders'] = wa_ord_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'orders: ' . $e->getMessage()); }   // order-update messages (and the one-time template setup)
     try { if (function_exists('jt_tick') && $force && !defined('WA_IN_WEBHOOK')) $o['tags'] = jt_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'tags: ' . $e->getMessage()); }
     try { if (function_exists('wj_tick') && $force && !defined('WA_IN_WEBHOOK')) $o['journey'] = wj_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'journey: ' . $e->getMessage()); }   // 🗓 60-day Journey: today's messages, the night's topic learning, festival watch
+    try { if (function_exists('wlr_nightly') && $force && !defined('WA_IN_WEBHOOK')) wlr_nightly($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'learning: ' . $e->getMessage()); }   // 🧠 after 02:00, once a day: lost chats saved, guidebook rewritten from won + lost chats
     setting_set($pdo, 'wa_tick_at', date('Y-m-d H:i:s'));
     return $o;
 }
@@ -579,6 +580,7 @@ require_once __DIR__ . '/wa_bill.php';     // 💰 Billing & spend: what WhatsAp
 require_once __DIR__ . '/wq.php';         // WhatsApp Sales (query types, tags, no-answer flow, board, cut-over adapter): wq.* — BEFORE wa_seg.php
 require_once __DIR__ . '/wq_rescue.php';   // 🛟 Rescue queries: effort-missed queries, a daily rescue team, +2% bonus on won orders (wq.rescue_*) - BEFORE wa_seg.php
 require_once __DIR__ . '/wq_rescue_more.php';   // 🛟 Rescue part 2: ready messages for Meta, AI draft, per-person table, alerts, AI check (wq.rescue_tpl_*, wq.rescue_stats …) - BEFORE wa_seg.php
+require_once __DIR__ . '/wq_learn.php';   // 🧠 lost chats saved for the guidebook, the nightly study pass from the engine, learning status
 require_once __DIR__ . '/wq_speed.php';   // ⚡ timing of the WhatsApp calls, server health, live switch (wq.speed, wa.g_wait)
 require_once __DIR__ . '/wq_tags.php';   // 🏷 One tag system: registry, automatic tags with why / until, patterns of staff-made tags, Claude's own new tags (wq.tags_*)
 require_once __DIR__ . '/wq_pace.php';   // ⚡ Reply pace of every salesperson: per-message pace, 7-day comparison, after-taking-a-query pace, fast reply vs order closing (wq.pace) - BEFORE wa_seg.php
