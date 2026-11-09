@@ -228,6 +228,9 @@
   try { if (window.matchMedia) matchMedia('(prefers-color-scheme: dark)').addEventListener('change', themeApply); } catch (e) { }
 
   function start(root) {
+    if (!document.getElementById('wxCss')) { const s = document.createElement('style'); s.id = 'wxCss'; s.textContent = CSS; document.head.appendChild(s); }
+    // 📐 fluid + compact: sizes follow the screen width (clamp), chat room tighter
+    if (!document.getElementById('wxFluid')) { const s = document.createElement('style'); s.id = 'wxFluid'; s.textContent =
       '.wx .wx-ch{padding:calc(clamp(3px,1vw,6px) + env(safe-area-inset-top)) clamp(4px,1.6vw,8px) clamp(3px,1vw,6px);gap:clamp(5px,1.8vw,8px)}.wx .wx-ch .wx-av{width:clamp(30px,8.5vw,36px)!important;height:clamp(30px,8.5vw,36px)!important}.wx .wx-ch .wx-nm{font-size:clamp(14px,4vw,16px)}.wx .wx-ch .wx-ic{width:clamp(30px,8.4vw,34px);height:clamp(30px,8.4vw,34px)}'
       + '.wx .wx-b{font-size:clamp(13px,3.7vw,14.2px);line-height:1.28;padding:clamp(4px,1.2vw,6px) clamp(6px,2vw,8px) 3px;margin:1px clamp(6px,2.4vw,10px);max-width:84%}.wx .wx-b small{font-size:clamp(9.5px,2.6vw,11px)}.wx .wx-day{margin:5px auto 3px;padding:2px 9px;font-size:clamp(10.5px,3vw,12px)}.wx .wx-ev{margin:3px auto;padding:2px 9px;font-size:clamp(10.5px,2.9vw,11.5px)}.wx .wx-msgs{padding:3px 0}'
       + '.wx .wx-tools{gap:clamp(3px,1vw,6px);padding:3px clamp(5px,1.6vw,8px) 0}.wx .wx-tl{height:clamp(32px,8.6vw,40px);font-size:clamp(14px,4vw,16px);border-radius:10px}.wx .wx-tl small{font-size:clamp(8.5px,2.4vw,10.5px)}'
@@ -236,9 +239,6 @@
       + '.wx .wx-row{padding:clamp(5px,1.5vw,8px) clamp(8px,2.6vw,12px);gap:clamp(8px,2.6vw,12px)}.wx .wx-row .wx-av{width:clamp(38px,11vw,46px);height:clamp(38px,11vw,46px);font-size:clamp(13px,3.8vw,15px)}.wx .wx-nm{font-size:clamp(14px,4vw,16px)}.wx .wx-sub{font-size:clamp(12px,3.4vw,13.5px)}.wx .wx-chip{font-size:clamp(9.5px,2.7vw,11px);padding:1px 7px}'
       + '#wxQk{padding:2px clamp(5px,1.6vw,8px)}#wxQk button{font-size:clamp(11.5px,3.2vw,13px);padding:3px 10px}';
       document.head.appendChild(s); }
-    if (!document.getElementById('wxCss')) { const s = document.createElement('style'); s.id = 'wxCss'; s.textContent = CSS; document.head.appendChild(s); }
-    // 📐 fluid + compact: sizes follow the screen width (clamp), chat room tighter
-    if (!document.getElementById('wxFluid')) { const s = document.createElement('style'); s.id = 'wxFluid'; s.textContent =
     themeApply();
     try { if (!window.WaNotices) { const sc = document.createElement('script'); sc.src = 'assets/js/wa_notices.js?v=3'; document.head.appendChild(sc); } } catch (e) { }   // 🔔 "X took over your chat" bar (your own chats only)
     root.innerHTML = ''; const R = document.createElement('div'); R.className = 'wx'; root.appendChild(R);
