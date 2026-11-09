@@ -261,6 +261,7 @@ function fu_write(PDO $pdo, array $c, array $sit, int $idx, array $st, array $ms
     if (function_exists('teach_lessons') && function_exists('teach_lessons_text')) { $tl = teach_lessons($pdo, $lastCust, false); $facts .= "\n" . teach_lessons_text($tl); foreach ($tl as $o) $allowed += teach_nums((string)$o['better'] . ' ' . (string)$o['remark']); }   // OWNER CORRECTIONS / TEACHER LESSONS
     if (function_exists('teach_nums')) $allowed += teach_nums($idea . ' ' . (string)$step['remark'] . ' ' . (string)$sit['remark_all']);
     if (function_exists('brain_allowed_nums')) $allowed += brain_allowed_nums($pdo);   // numbers the owner taught the company brain
+    if (function_exists('wk_guide_text') && ($gb = wk_guide_text($pdo)) !== '') $facts .= "\nSALES GUIDEBOOK (how this shop sells — tone and approach only, never a number):\n" . $gb . "\n";
     $why = [];
     if (function_exists('convo_ai')) {
         $conv = ''; foreach (array_slice($msgs, -14) as $m) $conv .= ($m['who'] === 'customer' ? 'Customer: ' : 'Shop: ') . $m['text'] . "\n";
@@ -315,6 +316,28 @@ function fu_last_sent_ts(PDO $pdo, string $key, int $inId): int { $q = $pdo->pre
 function fu_ev(PDO $pdo, string $key, string $sid, int $step, string $channel, string $status, string $body, int $ladder, int $inId, string $who): void
 {
     $pdo->prepare("INSERT INTO wa_fu_ev (phone, sid, step, channel, status, body, ladder_id, in_id, who, sent_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")->execute([$key, $sid, $step, $channel, $status, mb_substr($body, 0, 1500), $ladder, $inId, $who, fu_now()]);
+}
+/** 🧠 ONE knowledge for every AI writer (Autopilot, Journey, Rescue draft, offers): Teach facts + limits + price chart, the owner's lessons, and the LIVE guidebook (how to sell).
+ *  Returns ['text' => prompt block, 'allowed' => numbers a message may state (facts, price chart, lessons, what the customer said), 'parts' => what went in]. The guidebook gives style, never numbers. */
+function wk_knowledge(PDO $pdo, array $msgs, string $extra = ''): array
+{
+    $text = ''; $allowed = []; $parts = ['facts' => false, 'limits' => false, 'lessons' => 0, 'guidebook' => 0];
+    if (function_exists('teach_facts_prompt')) { try { [$f, $a] = teach_facts_prompt($pdo, $msgs); $text .= (string)$f; $allowed = (array)$a; $parts['facts'] = trim((string)$f) !== ''; } catch (Throwable $e) { } }
+    if (function_exists('teach_limits_text')) { try { $lt = (string)teach_limits_text($pdo); if ($lt !== '' && strpos($text, $lt) === false) $text .= "\n" . $lt; $parts['limits'] = $lt !== ''; } catch (Throwable $e) { } }
+    $last = ''; foreach (array_reverse($msgs) as $m) if (($m['who'] ?? '') === 'customer') { $last = (string)$m['text']; break; }
+    if (function_exists('teach_lessons') && function_exists('teach_lessons_text')) { try { $tl = teach_lessons($pdo, $last, false); if ($tl) { $text .= "\n" . teach_lessons_text($tl); $parts['lessons'] = count($tl); foreach ($tl as $o) $allowed += teach_nums((string)$o['better'] . ' ' . (string)$o['remark']); } } catch (Throwable $e) { } }
+    $g = wk_guide_text($pdo); if ($g !== '') { $text .= "\nSALES GUIDEBOOK (how this shop sells — use it for tone and approach; never take a price or number from it):\n" . $g . "\n"; $parts['guidebook'] = mb_strlen($g); }
+    if ($extra !== '' && function_exists('teach_nums')) $allowed += teach_nums($extra);
+    if (function_exists('brain_allowed_nums')) { try { $allowed += brain_allowed_nums($pdo); } catch (Throwable $e) { } }
+    return ['text' => $text, 'allowed' => $allowed, 'parts' => $parts];
+}
+/** The live guidebook as short plain text (owner corrections are left out: they already come as lessons). '' when there is none. */
+function wk_guide_text(PDO $pdo, int $max = 3500): string
+{
+    static $c = null; if ($c !== null) return mb_substr($c, 0, $max);
+    $c = '';
+    try { if (function_exists('lib_guide_row')) { $r = lib_guide_row($pdo, 'live'); if ($r) { $b = json_decode((string)$r['body'], true); if (is_array($b)) { unset($b['owner_corrections']); $c = trim((string)json_encode($b, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)); } } } } catch (Throwable $e) { $c = ''; }
+    return mb_substr($c, 0, $max);
 }
 /** The time the plan counts from: our last message that was NOT a campaign (a campaign must not restart the follow-up clock). */
 function fu_base_out(PDO $pdo, array $c): string

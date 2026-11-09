@@ -129,9 +129,7 @@ function fa_tpl_setup(PDO $pdo): int
 function fa_offer_fill(PDO $pdo, array $c, string $k): array
 {
     $perf = ''; $line = ''; $msgs = function_exists('fu_conv') ? fu_conv($pdo, (string)$c['phone']) : [];
-    $facts = ''; $allowed = []; if (function_exists('teach_facts_prompt')) { [$facts, $allowed] = teach_facts_prompt($pdo, $msgs); $allowed = (array)$allowed; }
-    if (function_exists('teach_limits_text')) $facts .= "\n" . teach_limits_text($pdo);
-    if (function_exists('brain_allowed_nums')) $allowed += brain_allowed_nums($pdo);
+    $facts = ''; $allowed = []; if (function_exists('wk_knowledge')) { $K = wk_knowledge($pdo, $msgs); $facts = $K['text']; $allowed = $K['allowed']; }   // 🧠 one knowledge for every writer
     $season = fa_season_text($pdo); $rule = fa_offer_rule($pdo, $k);
     if (function_exists('convo_ai') && $msgs) {
         $conv = ''; foreach (array_slice($msgs, -14) as $m) $conv .= ($m['who'] === 'customer' ? 'Customer: ' : 'Shop: ') . $m['text'] . "\n";

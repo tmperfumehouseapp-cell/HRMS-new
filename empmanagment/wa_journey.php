@@ -339,7 +339,7 @@ function wj_fill(PDO $pdo, array $c, array $x): array
     $step = $x['step']; $ref = $step['ref']; $reg = wj_reg($pdo); $topic = $x['topic']; $perf = trim((string)($topic['perfume'] ?? '')); $line = '';
     $rule = isset($reg[$ref]) ? $reg[$ref][0] . ' — ' . $reg[$ref][1] : 'a gentle message'; $season = function_exists('fa_season_text') ? fa_season_text($pdo) : '';
     $msgs = function_exists('fu_conv') ? fu_conv($pdo, (string)$c['phone']) : []; $facts = ''; $allowed = [];
-    if (function_exists('teach_facts_prompt')) { [$facts, $allowed] = teach_facts_prompt($pdo, $msgs); $allowed = (array)$allowed; } if (function_exists('teach_limits_text')) $facts .= "\n" . teach_limits_text($pdo); if (function_exists('brain_allowed_nums')) $allowed += brain_allowed_nums($pdo);
+    if (function_exists('wk_knowledge')) { $K = wk_knowledge($pdo, $msgs, $rule . ' ' . (string)($step['idea'] ?? '')); $facts = $K['text']; $allowed = $K['allowed']; }   // 🧠 the same knowledge as every other writer
     if (function_exists('convo_ai') && $msgs) {
         $conv = ''; foreach (array_slice($msgs, -14) as $m) $conv .= ($m['who'] === 'customer' ? 'Customer: ' : 'Shop: ') . $m['text'] . "\n";
         $sch = ['type' => 'OBJECT', 'properties' => ['perfume' => ['type' => 'STRING'], 'line' => ['type' => 'STRING']], 'required' => ['perfume', 'line']];
