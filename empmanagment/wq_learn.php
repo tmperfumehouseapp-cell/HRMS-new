@@ -83,6 +83,8 @@ function wlr_status(PDO $pdo): array
     try { foreach ($pdo->query("SELECT kind, COUNT(*) n FROM convo_uploads WHERE msgs_sig = 'wa' GROUP BY kind")->fetchAll(PDO::FETCH_ASSOC) as $r) { if ($r['kind'] === 'order') $o['won'] = (int)$r['n']; if ($r['kind'] === 'lost') $o['lost'] = (int)$r['n']; } } catch (Throwable $e) { }
     $o['cron_ok'] = $o['cron_at'] !== '' && strtotime($o['cron_at']) > time() - 180;
     $o['stale'] = $o['last_day'] === '' || ($o['last_day'] < date('Y-m-d') && (int)date('G') >= 4);   // tonight's run (after 02:00) is missing
+    try { $k = (string)setting_get($pdo, 'wa_cron_key', ''); if ($k === '') { $k = bin2hex(random_bytes(16)); setting_set($pdo, 'wa_cron_key', $k); } $h = (string)($_SERVER['HTTP_HOST'] ?? '');
+        if ($h !== '') $o['cron_cmd'] = 'curl -s "' . ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https://' : 'http://') . $h . rtrim(dirname((string)($_SERVER['SCRIPT_NAME'] ?? '/empmanagment/api.php')), '/') . '/api.php?action=wa.cron&key=' . $k . '" > /dev/null 2>&1'; } catch (Throwable $e) { }   // admin only (wq.speed): the line to paste into the server's cron list
     $cs = (int)setting_get($pdo, 'wa_cron_start', '0'); $fin = (int)strtotime($o['cron_at']);
     $o['stuck_min'] = ($cs > 0 && $cs > $fin && time() - $cs > 300) ? (int)((time() - $cs) / 60) : 0;   // a run started, did not finish
     return $o;
