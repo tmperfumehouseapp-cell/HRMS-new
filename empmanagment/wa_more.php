@@ -247,6 +247,7 @@ function wa_tick(PDO $pdo, bool $force = false): array
     try { if (function_exists('wq_tick')) $o['wq'] = wq_tick($pdo, ['light' => true]); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'whatsapp sales: ' . $e->getMessage()); }   // no-answer flow + typing of new queries
     try { if (function_exists('wch_tick')) $o['wch'] = wch_tick($pdo, ['light' => true]); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'chain cart: ' . $e->getMessage()); }   // chain cart: reminders
     try { if (function_exists('wa_ord_tick')) $o['orders'] = wa_ord_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'orders: ' . $e->getMessage()); }   // order-update messages (and the one-time template setup)
+    try { if (function_exists('jt_tick') && $force && !defined('WA_IN_WEBHOOK')) $o['tags'] = jt_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'tags: ' . $e->getMessage()); }
     try { if (function_exists('wj_tick') && $force && !defined('WA_IN_WEBHOOK')) $o['journey'] = wj_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'journey: ' . $e->getMessage()); }   // 🗓 60-day Journey: today's messages, the night's topic learning, festival watch
     setting_set($pdo, 'wa_tick_at', date('Y-m-d H:i:s'));
     return $o;
@@ -577,6 +578,7 @@ require_once __DIR__ . '/wa_bill.php';     // 💰 Billing & spend: what WhatsAp
 require_once __DIR__ . '/wq.php';         // WhatsApp Sales (query types, tags, no-answer flow, board, cut-over adapter): wq.* — BEFORE wa_seg.php
 require_once __DIR__ . '/wq_rescue.php';   // 🛟 Rescue queries: effort-missed queries, a daily rescue team, +2% bonus on won orders (wq.rescue_*) - BEFORE wa_seg.php
 require_once __DIR__ . '/wq_rescue_more.php';   // 🛟 Rescue part 2: ready messages for Meta, AI draft, per-person table, alerts, AI check (wq.rescue_tpl_*, wq.rescue_stats …) - BEFORE wa_seg.php
+require_once __DIR__ . '/wq_tags.php';   // 🏷 One tag system: registry, automatic tags with why / until, patterns of staff-made tags, Claude's own new tags (wq.tags_*)
 require_once __DIR__ . '/wq_pace.php';   // ⚡ Reply pace of every salesperson: per-message pace, 7-day comparison, after-taking-a-query pace, fast reply vs order closing (wq.pace) - BEFORE wa_seg.php
 require_once __DIR__ . '/wch.php';        // Chain + perfume cart, GST bill, catalog sync (wch.*) - BEFORE wa_seg.php
 require_once __DIR__ . '/wmo.php';        // 🧾 Manual order from a chat: QR / UPI payment first, customer address link, the order lands in Orders + Dispatch (wmo.*) - BEFORE wa_seg.php

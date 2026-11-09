@@ -515,7 +515,7 @@ function wag_tag_counts_calc(PDO $pdo): array
     $out = []; foreach ($cat as $k => $label) if (isset($cnt[$k])) $out[] = ['k' => $k, 't' => $label, 'kind' => 'auto'] + $cnt[$k];
     $cl = []; foreach ($cnt as $k => $v) if (!isset($cat[$k])) $cl[] = ['k' => $k, 't' => $k, 'kind' => 'claude'] + $v;
     usort($cl, fn($a, $b) => $b['all'] <=> $a['all']);
-    if (function_exists('wq_tag_labels')) foreach ($cl as &$x0) { $x0['t'] = wq_tag_labels()[$x0['k']] ?? (strpos($x0['k'], 'import_') === 0 ? 'Imported ' . substr($x0['k'], 7) : $x0['k']); $x0['kind'] = preg_match('/_query$/', $x0['k']) ? 'query' : (strpos($x0['k'], 'import_') === 0 ? 'import' : $x0['kind']); } unset($x0);
+    if (function_exists('wq_tag_labels')) foreach ($cl as &$x0) { $x0['t'] = wq_tag_labels()[$x0['k']] ?? ((function_exists('jt_label') && ($jl = jt_label($pdo, $x0['k'])) !== '') ? $jl : (strpos($x0['k'], 'import_') === 0 ? 'Imported ' . substr($x0['k'], 7) : $x0['k'])); $x0['kind'] = preg_match('/_query$/', $x0['k']) ? 'query' : (strpos($x0['k'], 'import_') === 0 ? 'import' : $x0['kind']); } unset($x0);
     $sg = function_exists('wcs_seg_names') ? wcs_seg_names($pdo) : []; foreach ($cl as &$x1) if (isset($sg[$x1['k']])) { $x1['t'] = $sg[$x1['k']]; $x1['kind'] = 'segment'; } unset($x1);
     $segs = array_values(array_filter($cl, fn($x) => $x['kind'] === 'segment')); $cl = array_values(array_filter($cl, fn($x) => $x['kind'] !== 'segment'));
     return ['tags' => array_merge($out, $segs, array_slice($cl, 0, 120)), 'customers' => $tot, 'as_of' => (string)setting_get($pdo, 'wa_cust_at', '')];

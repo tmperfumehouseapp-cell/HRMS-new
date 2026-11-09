@@ -89,10 +89,11 @@ function wa_cust_refresh(PDO $pdo, int $maxAge = 600, bool $force = false): bool
             'cold' => "c.last_in_at IS NOT NULL AND c.last_in_at < '$cut30'", 'from_ad' => "c.source = 'query'", 'came_back' => "c.source = 'campaign'",
         ];
         foreach ($rules as $tag => $w) $pdo->exec("INSERT IGNORE INTO wa_tagidx_new (phone, tag) SELECT c.phone, '$tag' $base WHERE $w");
-        $outRules = ['wants_buy' => "(c.tag = 'buy' OR $oc = 'later')", 'price_issue' => "(c.tag = 'price' OR $oc = 'price')", 'not_interested' => "$oc = 'no_interest'", 'wrong_number' => "$oc = 'wrong'", 'complaint' => "(c.tag = 'complaint' OR $oc = 'complaint')"];
+        $outRules = ['wants_buy' => "(c.tag = 'buy' OR $oc = 'later')", 'price_issue' => "(c.tag = 'price' OR $oc = 'price')", 'not_interested' => "($oc = 'no_interest' AND COALESCE(s.n,0) = 0)", 'wrong_number' => "$oc = 'wrong'", 'complaint' => "(c.tag = 'complaint' OR $oc = 'complaint')"];
         foreach ($outRules as $tag => $w) { try { $pdo->exec("INSERT IGNORE INTO wa_tagidx_new (phone, tag) SELECT c.phone, '$tag' $base WHERE $w"); } catch (Throwable $e) { } }
         try { if (function_exists('wag_cod_map')) { $st = $pdo->prepare("INSERT IGNORE INTO wa_tagidx_new (phone, tag) VALUES (?, 'cod_pending')"); foreach (array_keys(wag_cod_map($pdo)) as $k) $st->execute([$k]); } } catch (Throwable $e) { }
         try { $pdo->exec("INSERT IGNORE INTO wa_tagidx_new (phone, tag) SELECT phone, tag FROM wa_ctags"); } catch (Throwable $e) { }
+        try { $pdo->exec("INSERT IGNORE INTO wa_tagidx_new (phone, tag) SELECT phone, tag FROM wa_auto_tags WHERE until IS NULL OR until > NOW()"); } catch (Throwable $e) { }   // 🏷 automatic tags (wq_tags.php)
         // 6. swap in one step
         $pdo->exec("DROP TABLE IF EXISTS wa_cust_old"); $pdo->exec("DROP TABLE IF EXISTS wa_tagidx_old");
         $pdo->exec("RENAME TABLE wa_cust TO wa_cust_old, wa_cust_new TO wa_cust, wa_tagidx TO wa_tagidx_old, wa_tagidx_new TO wa_tagidx");

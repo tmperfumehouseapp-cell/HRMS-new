@@ -283,6 +283,7 @@
       let h = '<div style="color:#0f172a;font-weight:800">' + esc(d.title || 'No plan yet') + '</div>' + (d.pause ? '<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:8px 10px;margin:8px 0">⏸ ' + esc(d.pause) + '</div>' : '') + (d.note ? '<div style="color:#64748b;font-size:12.5px;margin-top:4px">⏰ ' + esc(d.note) + '</div>' : '');
       h += '<div style="font-weight:800;margin:12px 0 2px">Coming next</div>' + ((d.next || []).length ? d.next.map((x) => row(x.at, esc(x.label))).join('') : '<div style="color:#64748b">Nothing is planned.</div>');
       h += '<div style="font-weight:800;margin:12px 0 2px">Already sent</div>' + ((d.sent || []).length ? d.sent.map((x) => row(String(x.at).slice(0, 16), esc(x.text))).join('') : '<div style="color:#64748b">Nothing yet.</div>');
+      h += '<div style="font-weight:800;margin:12px 0 2px">Tags — and why</div>' + ((d.tags || []).length ? d.tags.map((x) => row(x.auto ? '🤖 auto' : '👤', '<b>' + esc(x.label) + '</b> <span style="color:#64748b">' + esc(x.why) + (x.until ? ' · until ' + esc(x.until) : '') + '</span>')).join('') : '<div style="color:#64748b">No tags yet.</div>');
       o.querySelector('#wpB').innerHTML = h;
     } catch (e) { o.querySelector('#wpB').textContent = e.message || 'Could not load.'; }
   };
