@@ -774,12 +774,19 @@ function wj_bot_note(PDO $pdo): string
 }
 
 // ---------------------------------------------------------------------------------------------------------------------- the screen's data
+/** Why Meta said no to the newest version of a registry message ('' when there is no reason or it is not rejected). */
+function jn_tpl_reason(PDO $pdo, string $k): string
+{
+    try { $names = json_decode((string)setting_get($pdo, 'fa_tplnames_' . $k, '[]'), true); if (!is_array($names) || !$names || !function_exists('wa_tpl_status') || !function_exists('wa_wabas')) return '';
+        $q = $pdo->prepare("SELECT id FROM wa_templates WHERE name = ? AND language = 'en'"); $q->execute([(string)end($names)]); $id = (int)$q->fetchColumn(); if (!$id) return '';
+        $r = wa_tpl_status($pdo, $id, wa_wabas($pdo)); return mb_substr(trim((string)($r['reason'] ?? '')), 0, 160); } catch (Throwable $e) { return ''; }
+}
 function wj_view(PDO $pdo): array
 {
     try { jn_unify($pdo); jn_buyer_seed($pdo); } catch (Throwable $e) { }
     $reg = wj_reg($pdo); $plan = wj_plan_get($pdo); $steps = ['lead' => [], 'buyer' => []];
     foreach ($plan['tracks'] as $tk => $T) foreach ($T['steps'] as $s) $steps[$tk][] = $s + ['label' => $reg[$s['ref']][0] ?? $s['ref'], 'icon' => wj_icon($s['ref']), 'tpl' => wj_tpl_state($pdo, $s['ref']), 'missing' => !isset($reg[$s['ref']])];
-    $messages = []; foreach ($reg as $k => $x) $messages[] = ['k' => $k, 'label' => $x[0], 'rule' => $x[1], 'body' => function_exists('fa_tpl_body') ? fa_tpl_body($pdo, $k) : '', 'status' => wj_tpl_state($pdo, $k), 'icon' => wj_icon($k), 'photo' => (int)setting_get($pdo, 'fa_tplphoto_' . $k, '0'), 'uses' => count(array_filter(array_merge($plan['tracks']['lead']['steps'], $plan['tracks']['buyer']['steps']), function ($s) use ($k) { return $s['ref'] === $k; }))];
+    $messages = []; foreach ($reg as $k => $x) $messages[] = ['k' => $k, 'label' => $x[0], 'rule' => $x[1], 'body' => function_exists('fa_tpl_body') ? fa_tpl_body($pdo, $k) : '', 'status' => ($__ts = wj_tpl_state($pdo, $k)), 'reason' => $__ts === 'rejected' ? jn_tpl_reason($pdo, $k) : '', 'icon' => wj_icon($k), 'photo' => (int)setting_get($pdo, 'fa_tplphoto_' . $k, '0'), 'uses' => count(array_filter(array_merge($plan['tracks']['lead']['steps'], $plan['tracks']['buyer']['steps']), function ($s) use ($k) { return $s['ref'] === $k; }))];
     $auto = []; try { if (function_exists('fu_plans_get')) foreach (fu_plans_get($pdo)['situations'] as $p) { if (($p['kind'] ?? '') === 'stop') continue; foreach ((array)$p['steps'] as $x) { $d = max(1, (int)ceil($x['after_h'] / 24)); if ($d > 10) continue; $auto[$d] = $auto[$d] ?? ['day' => $d, 'msg' => 0, 'offer' => 0]; $auto[$d][$x['kind'] === 'offer' ? 'offer' : 'msg']++; } } } catch (Throwable $e) { }
     ksort($auto); $hist = []; foreach (array_reverse(wj_json($pdo, 'wj_hist', [])) as $h) $hist[] = ['at' => $h['at'], 'why' => $h['why']];
     return ['ok' => true, 'window' => ['from' => wj_hm(jn_window($pdo)['from']), 'to' => wj_hm(jn_window($pdo)['to']), 'cold_after' => (int)setting_get($pdo, 'jn_cold_after', '8')], 'segments' => jn_segments_view($pdo), 'unified' => jn_unified($pdo), 'daily' => wj_json($pdo, 'wj_daily', []), 'change' => wj_json($pdo, 'wj_change', []), 'can_undo_change' => !empty(wj_json($pdo, 'wj_change_undo', [])['items']), 'mode' => wj_mode($pdo), 'cfg' => wj_cfg($pdo), 'ai' => function_exists('convo_ai'), 'ready' => function_exists('fa_offers'), 'steps' => $steps, 'messages' => $messages, 'auto10' => array_values($auto), 'season' => function_exists('fa_season') ? fa_season($pdo) : [], 'season_now' => function_exists('fa_season_text') ? fa_season_text($pdo) : '',

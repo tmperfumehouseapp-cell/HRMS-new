@@ -74,6 +74,22 @@
       segs.forEach((g) => { h += buyLane('b:' + g.k, '💎 ' + esc(g.title) + '<span class="jt-tag">' + g.n + ' customers</span>', 'Customers of this type, days from their last order.', g.k, false); });
       return h;
     }
+    // 📨 Meta status of every message the steps use (only steps after 24 hours need Meta; a short text inside 24 hours does not)
+    function metaCard() {
+      const use = {}; const add = (k, where) => { if (!k) return; (use[k] = use[k] || []).push(where); };
+      PATHS.filter((p) => p.kind !== 'stop').forEach((p) => p.steps.forEach((s) => { if (s.kind === 'offer') add(s.offer, p.title); }));
+      BUYER.forEach((s) => { if (s.on) add(s.ref, 'After an order' + (s.topic ? ' · ' + s.topic : '')); });
+      const by = { approved: 0, waiting: 0, rejected: 0, none: 0 }; const bad = [];
+      Object.keys(use).forEach((k) => { const m = (WJ.messages || []).find((x) => x.k === k); if (!m) return; const st = m.status;
+        if (st === 'approved' || st === 'approved_old' || st === 'partial') by.approved++; else if (st === 'pending') { by.waiting++; bad.push([m, use[k]]); } else if (st === 'rejected') { by.rejected++; bad.push([m, use[k]]); } else { by.none++; bad.push([m, use[k]]); } });
+      const total = by.approved + by.waiting + by.rejected + by.none; if (!total) return '';
+      const lab = { pending: '⏳ waiting for Meta', rejected: '❌ Meta said no', none: '📨 not sent to Meta yet' };
+      let h = '<div class="jt-card"><div class="jt-h">📨 Meta status of the messages used in the steps<span class="jt-sp"></span>' + (by.none || by.waiting ? '<button class="jt-b s" type="button" data-metasend>Send waiting ones to Meta</button>' : '') + '</div>'
+        + '<div class="jt-row" style="border:0"><span class="jt-tag a">✅ ' + by.approved + ' approved</span><span class="jt-tag">⏳ ' + by.waiting + ' waiting</span><span class="jt-tag" style="background:#fee2e2;color:#991b1b">❌ ' + by.rejected + ' rejected</span><span class="jt-tag">📨 ' + by.none + ' not sent yet</span></div>'
+        + '<div class="jt-sub">A step whose message is not approved yet sends nothing; the rest of the plan goes on. (Steps inside 24 hours are short texts and need no approval.)</div>';
+      if (bad.length) h += '<details style="margin-top:6px"' + (by.rejected ? ' open' : '') + '><summary style="cursor:pointer;font-weight:700">Not approved yet (' + bad.length + ')</summary>' + bad.map(([m, w]) => '<div class="jt-row"><b>' + esc(m.label) + '</b><span class="jt-tag">' + (lab[m.status] || m.status) + '</span><span class="jt-sub">used in: ' + esc([...new Set(w)].slice(0, 4).join(', ')) + (new Set(w).size > 4 ? '…' : '') + '</span>' + (m.reason ? '<div style="flex-basis:100%" class="jt-sub">Why: ' + esc(m.reason) + '</div>' : '') + (m.status === 'rejected' ? '<div style="flex-basis:100%"><button class="jt-b s" type="button" data-sub="msgs">✏️ Edit the words (a new version goes to Meta)</button></div>' : '') + '</div>').join('') + '</details>';
+      return h + '</div>';
+    }
     function head() {
       const m = modeOf(), s = WJ.stats || {}, D = WJ.daily || {};
       let h = '<div class="jt-card"><div class="jt-h">⏱ Journey<span class="jt-sp"></span><span class="jt-seg">' + [['off', 'Off'], ['suggest', 'Preview'], ['auto', 'Auto']].map(([k, l]) => '<button type="button" data-mode="' + k + '" class="' + (m === k ? 'on' : '') + '">' + l + '</button>').join('') + '</span></div>'
@@ -82,6 +98,7 @@
         + '<div class="jt-row" style="border:0">' + (RES && RES.total ? '<span class="jt-tag">30 days: sent ' + (RES.total.sent || 0) + '</span><span class="jt-tag">replied ' + (RES.total.replied || 0) + '</span><span class="jt-tag a">orders ' + (RES.total.ordered || 0) + ' · ₹' + Math.round(RES.total.sales || 0).toLocaleString('en-IN') + '</span>' : '<span class="jt-tag">sent today ' + (s.sent_today || 0) + '</span>') + '<span class="jt-sp"></span><button class="jt-b s" type="button" data-queue>👀 Who gets what now</button></div></div>';
       const W = WJ.window || { from: '10:00', to: '02:00' }, C = WJ.cfg || {};
       h += '<div class="jt-card"><div class="jt-row" style="border:0;padding:0"><b>⏰ Messages go between</b><input class="jt-in" type="time" id="jtFrom" value="' + esc(W.from) + '"><span>and</span><input class="jt-in" type="time" id="jtTo" value="' + esc(W.to) + '"><span class="jt-sub">(the next morning is quiet)</span><span class="jt-sp"></span><span class="jt-sub" title="A customer who ignored this many follow-ups in a row stops getting the plan and goes to the Cold group (a tag you can use for campaigns). 0 = never.">❄ cold after</span><input class="jt-in jt-t" type="number" min="0" max="40" id="jtCold" value="' + (W.cold_after == null ? 8 : W.cold_after) + '"><span class="jt-sub">ignored</span><span class="jt-sp"></span><span class="jt-sub">after-order: at most</span><input class="jt-in jt-t" type="number" min="10" id="jtCap" value="' + (C.day_cap || 300) + '"><span class="jt-sub">a day</span><button class="jt-b s" type="button" id="jtWin">Save</button></div></div>';
+      h += metaCard();
       if (!WJ.unified) h += '<div class="jt-ban">⏳ <b>Setting up the one plan…</b> It is being prepared on the server. <button class="jt-b s" type="button" data-reload>Check again</button></div>';
       else h += '<div class="jt-ban">✅ <b>One engine.</b> Every customer who did not order follows ONE plan for their situation, from the first minutes to day 60; the situation is read again at every new message.</div>';
       if (!AP.installed) h += '<div class="jt-ban"><b>Start the paths</b> — the ready-made lanes are not set up yet. <button class="jt-b p s" type="button" data-install>Set them up</button></div>';
@@ -147,6 +164,7 @@
       const sv = $('#jtSave'); if (sv) sv.onclick = saveAll;
       const wb = $('#jtWin'); if (wb) wb.onclick = async () => { const a = await call(() => api.post('fu.jn_window', { from: $('#jtFrom').value, to: $('#jtTo').value, cold_after: +$('#jtCold').value })); if (!a) return; if ((+$('#jtCap').value || 0) !== ((WJ.cfg || {}).day_cap || 300)) await call(() => api.post('fu.wj_cfg', { day_cap: +$('#jtCap').value })); await load(true); };
       const rl = $('[data-reload]'); if (rl) rl.onclick = () => load(true);
+      const ms = $('[data-metasend]'); if (ms) ms.onclick = async () => { ms.disabled = true; await call(() => api.post('fu.wj_tpl', {})); await load(true); };
       const ins = $('[data-install]'); if (ins) ins.onclick = async () => { ins.disabled = true; await call(() => api.post('fu.ap_install', {})); await load(false); };
       const qb = $('[data-queue]'); if (qb) qb.onclick = async () => { const m = modal('👀 Who gets what now'); m.body.innerHTML = loading;
         try { const q = await api.get('fu.wj_queue'); m.body.innerHTML = '<div class="jt-sub">After an order — who is due now' + (WJ.mode === 'auto' ? '.' : ' (nothing is sent in Preview).') + ' Total ' + q.total + ' · paused ' + q.blocked + ' · waiting for Meta ' + q.waiting_meta + '</div>'
