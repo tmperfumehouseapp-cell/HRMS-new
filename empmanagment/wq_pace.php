@@ -120,7 +120,7 @@ function wq_pace_calc(PDO $pdo, int $days): array
 
     // ---- 2. days of the graph
     $dayList = []; for ($i = $span - 1; $i >= 0; $i--) $dayList[] = date('Y-m-d', $today - $i * 86400);
-    $teamDay = []; foreach ($dayList as $d) { $all = []; foreach ($emp as $x) if (!empty($x['day'][$d])) $all = array_merge($all, $x['day'][$d]); $teamDay[] = ['day' => $d, 'n' => count($all), 'median' => $all ? round(wq_pace_med($all), 1) : null]; }
+    $teamDay = []; foreach ($dayList as $d) { $all = []; foreach ($emp as $x) if (!empty($x['day'][$d])) $all = array_merge($all, $x['day'][$d]); $teamDay[] = ['day' => $d, 'n' => count($all), 'median' => $all ? round(wq_pace_med($all), 1) : null, 'avg' => $all ? round(array_sum(array_map(function ($v) { return min(120.0, $v); }, $all)) / count($all), 1) : null]; }
     $botSeries = []; foreach ($dayList as $d) $botSeries[] = ['day' => $d, 'n' => count($botDay[$d] ?? []), 'median' => !empty($botDay[$d]) ? round(wq_pace_med($botDay[$d]), 1) : null];
 
     // ---- 3. after taking a query (grab / rescue / take over / given)
@@ -172,6 +172,18 @@ function wq_pace_calc(PDO $pdo, int $days): array
         foreach ($cq->fetchAll() as $r) if ((int)$r['emp_id'] > 0) $closeCur[(int)$r['emp_id']] = ['n' => (int)$r['n'], 'avg' => round((float)$r['av'], 1)];
     } catch (Throwable $e) { }
 
+    // average minutes to close an order, per person and per day (the second line of the Pace page graphs)
+    $closeDay = []; $closeTeamDay = [];
+    try {
+        $dq = $pdo->prepare("SELECT q.emp_id, DATE(s.first_order_at) d, COUNT(*) n, AVG(TIMESTAMPDIFF(MINUTE, s.opened_at, s.first_order_at)) av FROM wq_qstat s JOIN wa_queries q ON q.id = s.query_id
+            WHERE s.first_order_at >= ? AND s.orders > 0 AND TIMESTAMPDIFF(MINUTE, s.opened_at, s.first_order_at) BETWEEN 0 AND 10080 GROUP BY q.emp_id, DATE(s.first_order_at)");
+        $dq->execute([date('Y-m-d 00:00:00', $today - ($span - 1) * 86400)]);
+        foreach ($dq->fetchAll() as $r) { $ee = (int)$r['emp_id']; $dd = (string)$r['d']; $n0 = (int)$r['n']; $a0 = round((float)$r['av'], 1);
+            if ($ee > 0) $closeDay[$ee][$dd] = ['n' => $n0, 'avg' => $a0];
+            if (!isset($closeTeamDay[$dd])) $closeTeamDay[$dd] = [0, 0.0]; $closeTeamDay[$dd][0] += $n0; $closeTeamDay[$dd][1] += $n0 * (float)$r['av']; }
+    } catch (Throwable $e) { }
+    $closeSeries = []; foreach ($dayList as $d) $closeSeries[] = ['day' => $d, 'n' => $closeTeamDay[$d][0] ?? 0, 'avg' => !empty($closeTeamDay[$d][0]) ? round($closeTeamDay[$d][1] / $closeTeamDay[$d][0], 1) : null];
+
     // ---- 5. people
     $ids = array_keys($emp); foreach ($take as $e => $_) $ids[] = $e; foreach ($ord['by_emp'] as $e => $_) $ids[] = $e; foreach ($closeCur as $e => $_) $ids[] = $e;
     if (function_exists('wq_sales_people')) { try { foreach (wq_sales_people($pdo) as $p) $ids[] = (int)$p['employee_id']; } catch (Throwable $e) { } }
@@ -182,7 +194,7 @@ function wq_pace_calc(PDO $pdo, int $days): array
         $x = $emp[$e] ?? ['cur' => [], 'prev' => [], 'day' => []];
         $cur = wq_pace_sum($x['cur'], $empNext[$e] ?? 0); $prev = wq_pace_sum($x['prev']);
         $delta = ($cur['median'] !== null && $prev['median'] !== null) ? round($cur['median'] - $prev['median'], 1) : null;   // minus = got faster
-        $ser = []; foreach ($dayList as $d) { $g = $x['day'][$d] ?? []; $ser[] = ['day' => $d, 'n' => count($g), 'median' => $g ? round(wq_pace_med($g), 1) : null]; }
+        $ser = []; foreach ($dayList as $d) { $g = $x['day'][$d] ?? []; $ser[] = ['day' => $d, 'n' => count($g), 'median' => $g ? round(wq_pace_med($g), 1) : null, 'avg' => $g ? round(array_sum(array_map(function ($v) { return min(120.0, $v); }, $g)) / count($g), 1) : null, 'close' => $closeDay[$e][$d] ?? null]; }
         $tk = $take[$e] ?? ['by' => [], 'all' => [], 'none' => 0]; $tb = [];
         foreach ($tk['by'] as $h => $g) $tb[] = ['how' => $h, 'label' => wq_pace_how_label((string)$h), 'n' => count($g), 'median' => round(wq_pace_med($g), 1), 'avg' => round(array_sum(array_map(function ($v) { return min(120.0, $v); }, $g)) / count($g), 1)];
         $oe = $ord['by_emp'][$e] ?? null; $loss = null;
@@ -204,7 +216,7 @@ function wq_pace_calc(PDO $pdo, int $days): array
     $takeTeam = []; foreach ($takeAll as $h => $g) $takeTeam[] = ['how' => $h, 'label' => wq_pace_how_label((string)$h), 'n' => count($g), 'median' => round(wq_pace_med($g), 1)];
     return ['ok' => true, 'days' => $days, 'from' => date('Y-m-d', $curFrom), 'to' => date('Y-m-d'), 'built' => date('Y-m-d H:i:s'),
         'complaint_replies_left_out' => $cxSkipped, 'cfg' => wq_pace_cfg($pdo), 'rules' => ['grades' => ['fast' => 3, 'good' => 10, 'slow' => 30], 'cap_min' => 120, 'next_day_hours' => 8, 'min_readings' => 5],
-        'team' => ['pace' => wq_pace_sum($team['cur'], $nextDay['cur']), 'prev' => wq_pace_sum($team['prev']), 'series' => $teamDay, 'bot' => wq_pace_sum($botG), 'bot_series' => $botSeries],
+        'team' => ['pace' => wq_pace_sum($team['cur'], $nextDay['cur']), 'prev' => wq_pace_sum($team['prev']), 'series' => $teamDay, 'close_series' => $closeSeries, 'bot' => wq_pace_sum($botG), 'bot_series' => $botSeries],
         'people' => $people, 'after_take_team' => $takeTeam, 'orders' => $ord];
 }
 
@@ -286,7 +298,7 @@ function wq_pace_get(PDO $pdo, int $days): array
     $k = 'pace_' . $days;
     if (wq_pace_tables($pdo)) {
         try { $q = $pdo->prepare("SELECT js, at FROM wq_pace_cache WHERE k = ?"); $q->execute([$k]); $r = $q->fetch();
-            if ($r && $r['js'] && strtotime((string)$r['at']) > time() - 120) { $j = json_decode((string)$r['js'], true); if (is_array($j)) return $j; } } catch (Throwable $e) { }
+            if ($r && $r['js'] && strtotime((string)$r['at']) > time() - ($days === 30 ? 600 : 120)) { $j = json_decode((string)$r['js'], true); if (is_array($j)) return $j; } } catch (Throwable $e) { }
     }
     $d = wq_pace_calc($pdo, $days);
     if (wq_pace_tables($pdo)) { try { $pdo->prepare("REPLACE INTO wq_pace_cache (k, js, at) VALUES (?,?,?)")->execute([$k, json_encode($d, JSON_UNESCAPED_UNICODE), date('Y-m-d H:i:s')]); } catch (Throwable $e) { } }

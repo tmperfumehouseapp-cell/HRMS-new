@@ -37,7 +37,7 @@ html.wqdk .wp,html.wxdk .wp{--wp-ink:#e9edef;--wp-card:#1f2c34;--wp-line:#2a3942
   const lossTxt = (x) => !x || !has(x.orders) ? '<span class="wp-sub">-</span>' : (x.orders < 0.5 ? '<span class="wp-sub">none</span>' : '<b class="up" title="Estimated: ' + x.slow_queries + ' slow-answered queries x (what ' + (x.basis === 'own' ? 'their own' : 'the team\'s') + ' fast answers win - what the slow ones won). Last 30 days.">≈ ' + x.orders + ' orders' + (x.revenue ? '<div class="wp-sub">₹' + Number(x.revenue).toLocaleString('en-IN') + '</div>' : '') + '</b>');
   const VD = { star: '#16a34a', ok: '#64748b', quality: '#d97706', red: '#dc2626', few: '#94a3b8' };
   const vdChip = (v) => !v ? '' : '<span class="wp-chip" style="background:' + VD[v.key] + '" title="' + esc(v.why) + '">' + esc(v.label) + '</span>';
-  function load(days) { return window.api.get('wq.pace', { days: days || 7 }); }
+  function load(days) { return api.get('wq.pace', { days: days || 7 }); }
 
   function spark(series, w, h) {
     w = w || 90; h = h || 26; const v = (series || []).map((x) => (has(x.median) ? Math.min(60, +x.median) : null)); const ok = v.filter((x) => x !== null); if (ok.length < 2) return '<span class="wp-sub">-</span>';
@@ -130,7 +130,7 @@ html.wqdk .wp,html.wxdk .wp{--wp-ink:#e9edef;--wp-card:#1f2c34;--wp-line:#2a3942
       const my = ++seq; el.innerHTML = '<div class="wp-card wp-sub">Loading pace…</div>';
       return load(days).then((d) => { if (my !== seq) return; el.innerHTML = html(d, days); }, (e) => { if (my !== seq) return; el.innerHTML = '<div class="wp-card" style="color:#dc2626">Pace could not load. ' + esc(e && e.message ? e.message : '') + ' <button type="button" class="wp-retry">Try again</button></div>'; });
     };
-    el.addEventListener('click', (e) => { const sv = e.target.closest('.wp-save'); if (sv) { const body = {}; el.querySelectorAll('[data-cfg]').forEach((i) => { body[i.dataset.cfg] = i.type === 'checkbox' ? i.checked : +i.value; }); const note = el.querySelector('.wp-saved'); window.api.post('wq.pace_cfg', body).then(() => { if (note) note.textContent = 'Saved ✓'; }, (er) => { if (note) note.textContent = (er && er.message) || 'Could not save'; }); return; } const b = e.target.closest('[data-d]'); if (b) { days = +b.dataset.d; run(); return; } if (e.target.closest('.wp-retry')) run(); });
+    el.addEventListener('click', (e) => { const sv = e.target.closest('.wp-save'); if (sv) { const body = {}; el.querySelectorAll('[data-cfg]').forEach((i) => { body[i.dataset.cfg] = i.type === 'checkbox' ? i.checked : +i.value; }); const note = el.querySelector('.wp-saved'); api.post('wq.pace_cfg', body).then(() => { if (note) note.textContent = 'Saved ✓'; }, (er) => { if (note) note.textContent = (er && er.message) || 'Could not save'; }); return; } const b = e.target.closest('[data-d]'); if (b) { days = +b.dataset.d; run(); return; } if (e.target.closest('.wp-retry')) run(); });
     return run();
   }
   function open() {
@@ -140,5 +140,5 @@ html.wqdk .wp,html.wxdk .wp{--wp-ink:#e9edef;--wp-card:#1f2c34;--wp-line:#2a3942
     ov.addEventListener('click', (e) => { if (e.target === ov || e.target.closest('.wp-x')) close(); }); document.addEventListener('keydown', esck);
     document.body.appendChild(ov); mount(ov.querySelector('#wpBody'), { days: 7 });
   }
-  window.WaPace = { mount, open, load, chip, fm, css, linkCard };
+  window.WaPace = { mount, open, load, chip, fm, css, linkCard, cfgCard };
 })();
