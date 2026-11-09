@@ -253,9 +253,12 @@ function wa_redirect_target(PDO $pdo, int $numberId): int
 {
     try {
         $pb = (string)setting_get($pdo, 'wa_payblock_' . $numberId, ''); if ($pb === '' || strtotime($pb) < time() - 3 * 3600) return 0;
-        $best = 0; foreach ($pdo->query("SELECT id, label, display FROM wa_numbers ORDER BY id")->fetchAll() as $n) {
+        // every other number that is not payment-blocked (Main, 3rd, 4th, 5th …) shares the redirected customers: the one holding the fewest of today's chats takes the next
+        $cnt = []; foreach ($pdo->query("SELECT last_number_id AS n, COUNT(*) c FROM wa_contacts WHERE last_in_at >= '" . date('Y-m-d 00:00:00') . "' GROUP BY last_number_id")->fetchAll() as $r) $cnt[(int)$r['n']] = (int)$r['c'];
+        $best = 0; $bc = PHP_INT_MAX;
+        foreach ($pdo->query("SELECT id FROM wa_numbers ORDER BY id")->fetchAll() as $n) {
             $id = (int)$n['id']; if ($id === $numberId) continue; $b2 = (string)setting_get($pdo, 'wa_payblock_' . $id, ''); if ($b2 !== '' && strtotime($b2) > time() - 3 * 3600) continue;
-            if ($best === 0 || preg_match('/main/i', (string)$n['label'] . ' ' . (string)$n['display'])) $best = $id;
+            $c = $cnt[$id] ?? 0; if ($c < $bc) { $bc = $c; $best = $id; }
         }
         return $best;
     } catch (Throwable $e) { return 0; }
