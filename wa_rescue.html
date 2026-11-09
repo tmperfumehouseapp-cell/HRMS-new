@@ -62,6 +62,9 @@ guardPage();
     try {
       S.d = await api.get('wq.rescue_list', { days: S.days, status: S.status });
       if (S.tab === 'team') S.team = await api.get('wq.rescue_team');
+      if (S.tab === 'start') S.start = await api.get('wq.rescue_start');
+      if (S.tab === 'msgs') S.msgs = await api.get('wq.rescue_tpl_list');
+      if (S.tab === 'people') S.people = await api.get('wq.rescue_stats', { days: S.pdays || 14 });
     } catch (e) { root.innerHTML = '<div class="rq-err">' + esc(e.message || 'Could not load.') + ' <button class="btn" id="rqRetry">Try again</button></div>'; document.getElementById('rqRetry').onclick = load; return; }
     if (!quiet || !S.busy) draw();
     // the check runs in the background (the list is already on screen); earlier chats are preloaded in steps until every chat is checked
@@ -83,7 +86,7 @@ guardPage();
   function itemHtml(it) {
     const who = it.taken_by && it.taken_by.emp_id ? '<div class="rq-meta">Taken by <b>' + esc(it.taken_by.name) + '</b> ' + esc(ago(it.taken_at)) + '</div>' : '';
     const RS = { price: 'the price', no_reply: 'the customer stopped replying', other: 'another reason' };
-    const AIS = { pending: '🤖 The AI is checking this…', agreed: '🤖 The AI agrees — no chance', returned: '🤖 The AI saw a chance and put it back', unreviewed: '🤖 The AI could not check it', final: '' };
+    const AIS = { auto: '🤖 Removed by the AI — not a buyer', pending: '🤖 The AI is checking this…', agreed: '🤖 The AI agrees — no chance', returned: '🤖 The AI saw a chance and put it back', unreviewed: '🤖 The AI could not check it', final: '' };
     const skp = (it.status === 'skipped' && it.skipped_by && it.skipped_by.emp_id ? '<div class="rq-meta">Marked “not a chance” by <b>' + esc(it.skipped_by.name) + '</b>' + (it.skip_reason ? ' — ' + esc(RS[it.skip_reason] || it.skip_reason) : '') + '</div>' : '')
       + ((it.status === 'skipped' || it.ai_state === 'returned') && AIS[it.ai_state] ? '<div class="rq-meta" style="color:#4338ca">' + AIS[it.ai_state] + (it.ai_note ? ': ' + esc(it.ai_note) : '') + '</div>' : '');
     const won = it.status === 'won' ? '<div class="rq-meta">Order ' + esc(it.order_name) + ' placed after it was taken ✅</div>' : '';
@@ -104,7 +107,7 @@ guardPage();
     const tc = (s.tiers || {}); h += '<div class="rq-sub" style="margin-bottom:8px">Waiting by urgency: 🔴 Act now <b>' + (tc.act || 0) + '</b> · 🟠 Today <b>' + (tc.today || 0) + '</b> · 🟡 This week <b>' + (tc.week || 0) + '</b> · ⚪ Long shot <b>' + (tc.long || 0) + '</b> — listed most urgent first, then how interested, then newest. A chat somebody is working on (4-minute rule) is not offered; if the person who took it does not talk with the customer, it comes back.</div>';
     const ls = d.last_scan, sc = ls && ls.scan;
     h += '<div class="rq-sub" style="margin-bottom:10px">' + (sc ? 'Last check ' + esc(ago(ls.at)) + ' (last ' + esc(cfg.days) + ' days): <b>' + (sc.all || 0) + '</b> queries · <b>' + (sc.quiet || 0) + '</b> quiet for ' + esc(cfg.wait_h) + '+ h · <b>' + (sc.ordered || 0) + '</b> already ordered · looked at <b>' + (sc.candidates || 0) + '</b> · <b>' + (sc.flagged || 0) + '</b> new opportunities · ' + (sc.no_signal || 0) + ' showed no interest · ' + (sc.silent || 0) + ' gone silent.' + (sc.error ? ' <span style="color:#d9423b">Problem: ' + esc(sc.error) + '</span>' : '') : 'No check has run yet — it runs by itself when WhatsApp opens and every 5 minutes.') + '</div>';
-    h += '<div class="rq-tabs"><button data-tab="list" class="' + (S.tab === 'list' ? 'on' : '') + '">Queries</button><button data-tab="team" class="' + (S.tab === 'team' ? 'on' : '') + '">Rescue team</button><button data-tab="cfg" class="' + (S.tab === 'cfg' ? 'on' : '') + '">Settings</button></div>';
+    h += '<div class="rq-tabs"><button data-tab="list" class="' + (S.tab === 'list' ? 'on' : '') + '">Queries</button><button data-tab="start" class="' + (S.tab === 'start' ? 'on' : '') + '">Getting started</button><button data-tab="team" class="' + (S.tab === 'team' ? 'on' : '') + '">Rescue team</button><button data-tab="msgs" class="' + (S.tab === 'msgs' ? 'on' : '') + '">Messages</button><button data-tab="people" class="' + (S.tab === 'people' ? 'on' : '') + '">People</button><button data-tab="cfg" class="' + (S.tab === 'cfg' ? 'on' : '') + '">Settings</button></div>';
     if (S.tab === 'list') {
       h += '<div class="rq-row"><select id="rqSt">' + ['all', 'open', 'taken', 'stale', 'won', 'ordered', 'silent', 'skipped'].map((x) => '<option value="' + x + '"' + (S.status === x ? ' selected' : '') + '>' + (x === 'all' ? 'All' : (ST[x] || x)) + '</option>').join('') + '</select>' +
         '<select id="rqDays">' + [1, 3, 7, 14, 30].map((x) => '<option value="' + x + '"' + (S.days === x ? ' selected' : '') + '>Last ' + x + ' day' + (x > 1 ? 's' : '') + '</option>').join('') + '</select></div>';
@@ -114,10 +117,25 @@ guardPage();
       h += '<div class="card" style="padding:14px 18px"><b>Who sees the 🛟 Rescue chip in Chats? (' + esc(t.day) + ')</b><div class="rq-sub">Pick up to 40 people. Only they (and you) see the rescue chats and can take one.</div><div class="rq-team">' +
         (t.people || []).map((p) => '<label><input type="checkbox" data-emp="' + p.emp_id + '"' + (p.in ? ' checked' : '') + '> ' + esc(p.name) + '</label>').join('') + '</div>' +
         '<div class="rq-row"><button class="btn" id="rqTeamDay">Save for today</button><button class="btn secondary" id="rqTeamAlways">Save for every day</button></div>' + (t.always ? '<div class="rq-sub">Today uses the “every day” list.</div>' : '') + '</div>';
+    } else if (S.tab === 'start' && S.start) {
+      h += '<div class="card" style="padding:14px 18px"><b>Start small: 2 or 3 people for 2–3 days</b><div class="rq-sub" style="margin-bottom:8px">Tick everything below, then watch one customer go through: Take → message → order → ✅.</div>' +
+        S.start.steps.map((x) => '<div style="padding:7px 0;border-bottom:1px solid var(--line)">' + (x.done ? '✅ ' : '⬜ ') + esc(x.text) + '</div>').join('') + '</div>';
+    } else if (S.tab === 'msgs' && S.msgs) {
+      const SM = { missing: 'Draft — not sent to Meta', pending: '⏳ Waiting for Meta', approved: '✅ Approved', partial: '✅ Approved on some numbers', rejected: '❌ Rejected', paused: '⏸ Paused' };
+      const drafts = S.msgs.items.filter((m) => m.status === 'missing').length;
+      h += '<div class="card" style="padding:14px 18px;margin-bottom:12px"><b>Ready messages for customers whose 24-hour window is closed</b><div class="rq-sub">I wrote 12, one per situation (the customer\'s first name goes where {{1}} is). Read them, change what you like, then press <b>Send all to Meta</b>. After Meta approves, a salesperson sends one with one tap. Once a message is at Meta it cannot be edited: saving a change makes a new version, and the old one keeps working until the new one is approved.</div>' +
+        '<div class="rq-row"><button class="btn" id="msgSubmit"' + (drafts ? '' : ' disabled') + '>' + (drafts ? 'Send all ' + drafts + ' drafts to Meta' : 'All sent to Meta') + '</button></div></div>' +
+        S.msgs.items.map((m) => '<div class="rq-item"><div class="rq-main"><div class="rq-name">' + esc(m.title) + ' <span class="rq-chip st">' + esc(SM[m.status] || m.status) + '</span></div>' +
+          '<textarea data-body="' + m.topic + '" rows="3" style="width:100%;margin-top:6px;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:14px">' + esc(m.body) + '</textarea>' +
+          (m.reason ? '<div class="rq-meta" style="color:#b91c1c">Meta says: ' + esc(m.reason) + '</div>' : '') + '</div><div class="rq-act"><button class="btn secondary" data-savemsg="' + m.topic + '">' + (m.editable ? 'Save' : 'Save as new version') + '</button></div></div>').join('');
+    } else if (S.tab === 'people' && S.people) {
+      h += '<div class="rq-row"><select id="pdays">' + [7, 14, 30, 90].map((x) => '<option value="' + x + '"' + ((S.pdays || 14) === x ? ' selected' : '') + '>Last ' + x + ' days</option>').join('') + '</select></div>' +
+        (S.people.people.length ? '<table><thead><tr><th>Person</th><th>Taken</th><th>Orders placed</th><th>Win %</th><th>First message after</th><th>Not a chance</th><th>Sent back</th></tr></thead><tbody>' +
+        S.people.people.map((p) => '<tr><td>' + esc(p.name) + '</td><td>' + p.taken + '</td><td><b>' + p.won + '</b></td><td>' + (p.win_pct == null ? '—' : p.win_pct + '%') + '</td><td>' + (p.median_min == null ? '—' : p.median_min + ' min') + '</td><td>' + p.not_a_chance + '</td><td>' + p.returned + '</td></tr>').join('') + '</tbody></table>' : '<div class="rq-empty">Nobody has taken a rescue chat in this period yet.</div>');
     } else if (S.tab === 'cfg') {
       h += '<div class="card" style="padding:14px 18px"><div class="rq-row"><label><input type="checkbox" id="cOn"' + (cfg.on ? ' checked' : '') + '> Rescue is ON</label></div>' +
         '<div class="rq-row"><label>Stop after (attempts) <input type="number" id="cAtt" min="1" max="30" value="' + esc(cfg.attempts) + '"></label><span class="rq-sub">a person tried this many times since the customer last wrote, no answer → goes silent</span></div>' +
-        '<div class="rq-row"><label>Ask “not a chance?” after (days) <input type="number" id="cDec" min="1" max="30" value="' + esc(cfg.decide_days) + '"></label><label>Send to you after (days) <input type="number" id="cStale" min="2" max="60" value="' + esc(cfg.stale_days) + '"></label><span class="rq-sub">a chat a person took and did not close: after the first number it is marked red for them; after the second it waits for your decision</span></div><div class="rq-row"><label>Look back (days) <input type="number" id="cDays" min="1" max="30" value="' + esc(cfg.days) + '"></label></div>' +
+        '<div class="rq-row"><label>Ask “not a chance?” after (days) <input type="number" id="cDec" min="1" max="30" value="' + esc(cfg.decide_days) + '"></label><label>Send to you after (days) <input type="number" id="cStale" min="2" max="60" value="' + esc(cfg.stale_days) + '"></label><span class="rq-sub">a chat a person took and did not close: after the first number it is marked red for them; after the second it waits for your decision</span></div><div class="rq-row"><label>Most chats one person can have open <input type="number" id="cMax" min="1" max="100" value="' + esc(cfg.max_open) + '"></label><label>The team sees chats from the last (days) <input type="number" id="cView" min="1" max="365" value="' + esc(cfg.view_days) + '"></label><label><input type="checkbox" id="cLong"' + (cfg.hide_long ? ' checked' : '') + '> Hide ⚪ Long shot from the team</label></div><div class="rq-row"><label>Look back (days) <input type="number" id="cDays" min="1" max="30" value="' + esc(cfg.days) + '"></label></div>' +
         '<div class="rq-row"><label>Quiet for (hours) <input type="number" id="cWait" step="0.5" min="0.5" max="48" value="' + esc(cfg.wait_h) + '"></label><span class="rq-sub">a customer counts as not followed up after this long without a message from them</span></div>' +
         '<button class="btn" id="cSave">Save settings</button></div>';
     }
@@ -147,10 +165,12 @@ guardPage();
       const ids = [...root.querySelectorAll('[data-emp]:checked')].map((c) => +c.dataset.emp);
       act(() => api.post('wq.rescue_team', { emp_ids: ids, always: t.id === 'rqTeamAlways' }), () => ids.length + ' people saved.');
     }
-    if (t.id === 'cSave') act(() => api.post('wq.rescue_cfg', { on: document.getElementById('cOn').checked, attempts: +document.getElementById('cAtt').value, decide_days: +document.getElementById('cDec').value, stale_days: +document.getElementById('cStale').value, days: +document.getElementById('cDays').value, wait_h: +document.getElementById('cWait').value }), () => 'Saved.');
+    if (t.id === 'msgSubmit') { if (!confirm('Send all draft messages to Meta for approval now?')) return; act(() => api.post('wq.rescue_tpl_submit', {}), (r) => r.errors && r.errors.length ? 'Sent ' + r.sent + '. Problems:\n' + r.errors.slice(0, 6).join('\n') : 'Sent ' + r.sent + ' to Meta. Approval usually takes minutes to a day.'); return; }
+    if (t.dataset.savemsg) { const ta = root.querySelector('[data-body="' + t.dataset.savemsg + '"]'); act(() => api.post('wq.rescue_tpl_save', { topic: t.dataset.savemsg, body: ta ? ta.value : '' }), (r) => r.version === 'new' ? 'Saved as a new version — send it to Meta again.' : 'Saved.'); return; }
+    if (t.id === 'cSave') act(() => api.post('wq.rescue_cfg', { on: document.getElementById('cOn').checked, attempts: +document.getElementById('cAtt').value, decide_days: +document.getElementById('cDec').value, max_open: +document.getElementById('cMax').value, view_days: +document.getElementById('cView').value, hide_long: document.getElementById('cLong').checked, stale_days: +document.getElementById('cStale').value, days: +document.getElementById('cDays').value, wait_h: +document.getElementById('cWait').value }), () => 'Saved.');
   });
   root.addEventListener('change', (e) => {
-    if (e.target.id === 'rqSt') { S.status = e.target.value; load(); } if (e.target.id === 'rqDays') { S.days = +e.target.value; load(); }
+    if (e.target.id === 'pdays') { S.pdays = +e.target.value; load(); } if (e.target.id === 'rqSt') { S.status = e.target.value; load(); } if (e.target.id === 'rqDays') { S.days = +e.target.value; load(); }
   });
   load();
 })();
