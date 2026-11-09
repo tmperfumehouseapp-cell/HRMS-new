@@ -1245,6 +1245,7 @@ function wq_tick(PDO $pdo, array $opt = []): array
                 }
                 if (microtime(true) < $deadline) { wq_boss_seed($pdo); $r['cq'] = wq_cq_mirror($pdo); }
                 if (microtime(true) < $deadline) $r['campaign_tag'] = wq_window_tag($pdo);
+                if (microtime(true) < $deadline && function_exists('wq_rescue_tick')) $r['rescue'] = wq_rescue_tick($pdo, $deadline);   // 🛟 effort-missed queries + rescue bonus
                 if (wq_ts(wq_meta_get($pdo, 'house_at', '')) < wq_now() - 3600) {
                     $pdo->prepare("DELETE FROM wq_guard WHERE at < ?")->execute([wq_dt(wq_now() - 3 * 86400)]); $pdo->prepare("DELETE FROM wq_meta WHERE k LIKE 'typing:%' AND v < ?")->execute([wq_dt(wq_now() - 3600)]); wq_meta_put($pdo, 'house_at', wq_dt());
                 }
