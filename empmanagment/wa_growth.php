@@ -242,7 +242,7 @@ function wag_inbox(PDO $pdo, int $emp, bool $all, array $cfg, bool $tag = false,
         $out[] = ['phone' => $k, 'name' => (string)$r['name'], 'preview' => mb_substr($prev, 0, 70), 'mine' => $r['last_dir'] === 'out', 'unread' => (int)$r['unread'], 'waiting' => $waiting, 'overdue' => $overdue, 'wait_min' => $waiting ? max(0, (int)floor(($now - $in) / 60)) : 0,
             'fresh' => (int)($r['fresh_agent'] ?? 0) === 1, 'wait_sec' => $waiting ? max(0, $now - $in) : 0, 'last_at' => (string)$r['last_in_at'], 'hot' => (int)$r['hot'] === 1, 'remind_at' => $r['remind_at'], 'window' => $win, 'src' => (string)$r['source'], 'ad' => (string)$r['ad_head'],
             'heat' => function_exists('wa_heat') ? wa_heat($r, ($hf[$k] ?? []) + (($bdg['k'] ?? '') === 'bad' ? ['cx' => 1] : []), (int)$cfg['unans_min']) : '', 'biz' => !empty($hf[$k]['biz']),
-            'badge' => $bdg, 'origin' => (string)($org[$k] ?? ''), 'noresp' => ($hum[(string)$r['phone']] ?? 0) < $in, 'first_emp' => (int)($ot[$k]['first'] ?? 0), 'first_name' => $names[(int)($ot[$k]['first'] ?? 0)] ?? '', 'not_mine' => $tag && (int)$r['assigned_emp'] !== $emp, 'cx' => (int)($r['cx_id'] ?? 0) > 0 || (string)$r['tag'] === 'complaint', 'num' => $nums[(int)$r['last_number_id']] ?? '', 'emp' => (int)$r['assigned_emp'], 'emp_name' => $names[(int)$r['assigned_emp']] ?? '', 'result' => $oc[$k]['code'] ?? '', 'tags' => array_slice($tags, 0, 3)];
+            'read' => wag_read($r, $waiting, $win, (int)$r['hot'] === 1, (int)($r['cx_id'] ?? 0) > 0 || (string)$r['tag'] === 'complaint', (int)($x['n'] ?? 0), $now), 'badge' => $bdg, 'origin' => (string)($org[$k] ?? ''), 'noresp' => ($hum[(string)$r['phone']] ?? 0) < $in, 'first_emp' => (int)($ot[$k]['first'] ?? 0), 'first_name' => $names[(int)($ot[$k]['first'] ?? 0)] ?? '', 'not_mine' => $tag && (int)$r['assigned_emp'] !== $emp, 'cx' => (int)($r['cx_id'] ?? 0) > 0 || (string)$r['tag'] === 'complaint', 'num' => $nums[(int)$r['last_number_id']] ?? '', 'emp' => (int)$r['assigned_emp'], 'emp_name' => $names[(int)$r['assigned_emp']] ?? '', 'result' => $oc[$k]['code'] ?? '', 'tags' => array_slice($tags, 0, 3)];
         if ($tag && (int)$r['assigned_emp'] !== $emp) continue;   // someone else's now: in the list, not in my counters
         $cnt['all']++; if ($waiting) $cnt['waiting']++; if ($overdue) $cnt['overdue']++; if ((int)$r['hot'] === 1) $cnt['hot']++;
     }
@@ -359,6 +359,26 @@ function wag_presuggest(PDO $pdo, int $max = 6): int
         }
     } catch (Throwable $e) { wag_log($pdo, 'engine', false, 'suggestions: ' . $e->getMessage()); }
     return $n;
+}
+/** 🧠 The "Claude line" of a chat: what the customer means (u) and what the salesperson should do (d), one colour (c). Rules only (no AI call per chat), so the list stays fast. */
+function wag_read(array $r, bool $waiting, bool $win, bool $hot, bool $cx, int $orders, int $now): array
+{
+    $in = strtotime((string)$r['last_in_at']) ?: 0; $txt = mb_strtolower(trim((string)$r['last_body'])); $mine = $r['last_dir'] === 'out'; $left = $win ? max(0, (int)floor((86400 - ($now - $in)) / 3600)) : 0;
+    $w = $win ? ' · window ' . $left . ' h' : ' · window closed';
+    if ($cx) return ['k' => 'cx', 'u' => '⚠ Complaint' . $w, 'd' => 'Complaint team answers this chat'];
+    if ($hot || (!$mine && function_exists('wa_hot_intent') && wa_hot_intent($txt) !== '')) return ['k' => 'pay', 'u' => '💳 Ready to pay now' . $w, 'd' => 'Send the payment link / confirm the order now'];
+    if (!$waiting) {
+        $days = $in ? (int)floor(($now - $in) / 86400) : 0;
+        if ($days >= 3) return ['k' => 'cold', 'u' => '❄ Quiet for ' . $days . ' days', 'd' => 'Leave to the Journey plan'];
+        return ['k' => 'ask', 'u' => '✓ We replied — waiting for the customer' . $w, 'd' => 'Wait; the plan nudges later'];
+    }
+    if ($txt === '' || preg_match('/^\[/u', $txt)) return ['k' => 'ask', 'u' => '📎 Sent a photo / voice / file' . $w, 'd' => 'Open it and answer'];
+    if (preg_match('/(\b\d{6}\b|flat|house no|street|road|nagar|society|apartment|address|pin ?code|landmark|pata)/u', $txt)) return ['k' => 'addr', 'u' => '📍 Giving the delivery address' . $w, 'd' => 'Confirm the address and create the order'];
+    if (preg_match('/(kab aayega|where is my|tracking|order status|not received|nahi mila|nahi aaya|delivery kab)/u', $txt)) return ['k' => 'ask', 'u' => '📦 Asking about an order' . $w, 'd' => 'Check the order status and tell them'];
+    if (preg_match('/(discount|less|kam kar|kam hoga|costly|mehang|expensive|best price|last price|offer|cheap|sasta|10 ?%|price kam)/u', $txt)) return ['k' => 'neg', 'u' => '🤝 Negotiating — wants a better price' . $w, 'd' => 'Offer a free sample / best price; do not drop the price fast'];
+    if (preg_match('/(think|family|ask (my|ghar)|baad me|later|sochta|sochti|dekh(ta|ti|unga|ungi)|let me|will tell|batata|batati|kal bataunga)/u', $txt)) return ['k' => 'think', 'u' => '🤔 Thinking / asking family' . $w, 'd' => 'Reply short; the plan nudges later'];
+    if (preg_match('/\?|(price|rate|kitna|kya|kaun|which|how|available|stock|best|longest|lasts?)/u', $txt)) return ['k' => 'ask', 'u' => '❓ Asking about a product' . $w, 'd' => ($orders > 0 ? 'Answer and suggest a repeat pick' : 'Answer and show 2 picks')];
+    return ['k' => 'ask', 'u' => '💬 New message' . $w, 'd' => 'Reply now'];
 }
 /** The 24/7 bot: answers a waiting customer by itself — only from the taught guidebook, only text chats inside the 24-hour window, never a HOT chat. */
 function wag_bot_scan(PDO $pdo, int $max = 4): array
