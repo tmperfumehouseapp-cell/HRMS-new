@@ -91,7 +91,8 @@ function fa_tpl_make(PDO $pdo, string $k, int $by = 0): array
     if (!function_exists('wa_tpl_clean') || !function_exists('wa_tpl_insert') || !function_exists('wa_tpl_create_at')) return [false, 'The WhatsApp message module is not available.'];
     $body = fa_tpl_body($pdo, $k); $names = json_decode((string)setting_get($pdo, 'fa_tplnames_' . $k, '[]'), true); if (!is_array($names)) $names = [];
     $name = fa_tpl_name($k) . ($names ? '_v' . (count($names) + 1) : '');
-    [$t, $err] = wa_tpl_clean(['name' => $name, 'language' => 'en', 'category' => 'MARKETING', 'body' => $body, 'footer' => 'TM Perfume House',
+    $ph = (int)setting_get($pdo, 'fa_tplphoto_' . $k, '0');   // 📷 an optional photo on top of the message (from the media library); a new photo = a new version at Meta
+    [$t, $err] = wa_tpl_clean(['name' => $name, 'language' => 'en', 'category' => 'MARKETING', 'body' => $body, 'footer' => 'TM Perfume House'] + ($ph > 0 ? ['header_format' => 'IMAGE', 'header_lib_id' => $ph] : []) + [
         'buttons' => [['type' => 'QUICK_REPLY', 'text' => 'Yes, I want it'], ['type' => 'QUICK_REPLY', 'text' => 'Not now']],
         'examples' => ['body' => ['Rahul', 'Dior Sauvage 50 ml', 'a free 10 ml decant with your order at ₹899'], 'labels' => ['Name', 'Perfume', 'Offer']], 'folder' => 'Follow-ups']);
     if ($err !== '') return [false, $err];
