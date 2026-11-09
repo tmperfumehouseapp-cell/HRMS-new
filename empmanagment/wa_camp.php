@@ -685,7 +685,8 @@ function wa_camp_tick(PDO $pdo): array
                     if (in_array($ec, [130429, 131056], true)) { $pdo->prepare("UPDATE wa_camp_items SET status = ?, err = '' WHERE id = ?")->execute([$back, $it['id']]); $stop = 'Meta asked us to slow down'; continue; }
                     if (in_array($ec, [131042, 132000, 132001, 132005, 132007, 132012, 132015, 132016, 190, 131031], true) || $code === 401) {
                         $pdo->prepare("UPDATE wa_camp_items SET status = ?, err = '' WHERE id = ?")->execute([$back, $it['id']]);
-                        $stop = $ec === 131042 ? 'Meta says the WhatsApp account has no payment method — add one in Meta Business settings (code 131042).' : 'Meta stopped the sending: ' . $msg; $hard = true; continue;
+if ($ec === 131042) { try { setting_set($pdo, 'wa_payblock_' . (int)$nid, date('Y-m-d H:i:s')); } catch (Throwable $e9) { } }   // this number: no campaign sends for 3 hours — the other number takes everything
+                                                $stop = $ec === 131042 ? 'Meta says the WhatsApp account has no payment method — add one in Meta Business settings (code 131042).' : 'Meta stopped the sending: ' . $msg; $hard = true; continue;
                     }
                     [$plan_, $why] = wa_camp_fail_plan($ec, $attempt, $retryOn, (int)($c['extra']['retries'] ?? 3));
                     if ($plan_ === 'pause') { $pdo->prepare("UPDATE wa_camp_items SET status = ?, err = '' WHERE id = ?")->execute([$back, $it['id']]); $stop = $why; $hard = true; continue; }
