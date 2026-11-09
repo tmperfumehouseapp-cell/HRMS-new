@@ -237,6 +237,7 @@
       + '.wx .wx-bar{padding:4px clamp(5px,1.6vw,8px) calc(5px + env(safe-area-inset-bottom));gap:clamp(4px,1.2vw,6px)}.wx .wx-bar textarea{padding:clamp(6px,1.8vw,9px) clamp(11px,3.4vw,15px);font-size:clamp(15px,4vw,15.5px)}.wx .wx-bar .wx-ic{width:clamp(38px,10.5vw,44px);height:clamp(38px,10.5vw,44px);font-size:clamp(17px,5vw,20px)}'
       + '.wx .wx-sug .r{padding:3px 8px}.wx .wx-sug button{min-height:28px}.wx .wx-rd div{padding:2px 10px;font-size:clamp(11px,3.1vw,12.5px)}'
       + '.wx .wx-row{padding:clamp(5px,1.5vw,8px) clamp(8px,2.6vw,12px);gap:clamp(8px,2.6vw,12px)}.wx .wx-row .wx-av{width:clamp(38px,11vw,46px);height:clamp(38px,11vw,46px);font-size:clamp(13px,3.8vw,15px)}.wx .wx-nm{font-size:clamp(14px,4vw,16px)}.wx .wx-sub{font-size:clamp(12px,3.4vw,13.5px)}.wx .wx-chip{font-size:clamp(9.5px,2.7vw,11px);padding:1px 7px}'
+      + '.wx .wx-ch .wx-mid{overflow:hidden}.wx #wxOs{min-width:0;max-width:100%;overflow:hidden}.wx #wxOs>*{max-width:100%;box-sizing:border-box;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'
       + '#wxQk{padding:2px clamp(5px,1.6vw,8px)}#wxQk button{font-size:clamp(11.5px,3.2vw,13px);padding:3px 10px}';
       document.head.appendChild(s); }
     themeApply();
