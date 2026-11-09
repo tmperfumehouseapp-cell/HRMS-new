@@ -365,7 +365,7 @@ function wa_camp_extra_filter(array $rows, array $f): array
 /** The people a campaign would message: [rowsToSend, stats]. Opted-out customers and anyone messaged by a campaign in the last N days are left out. */
 function wa_camp_audience(PDO $pdo, array $aud, int $freq): array
 {
-    $freq = max(0, (int)setting_get($pdo, 'wa_camp_gap_days', '0'));   // no "already got a campaign lately" rule: the owner sends to whoever they pick (setting wa_camp_gap_days > 0 would bring it back)
+    $freq = max(0, (int)setting_get($pdo, 'wa_camp_gap_days', '3'));   // no "already got a campaign lately" rule: the owner sends to whoever they pick (setting wa_camp_gap_days > 0 would bring it back)
     $src = in_array($aud['src'] ?? '', ['contacts', 'all', 'paste'], true) ? $aud['src'] : 'contacts';
     $f = (array)($aud['f'] ?? []); if (!empty($f['gtag']) && empty($f['gtags'])) { $f['gtags'] = [(string)$f['gtag']]; unset($f['gtag']); }   // old campaigns had one tag
     $cfBad = false;
@@ -629,7 +629,7 @@ function wa_camp_tick(PDO $pdo): array
                     foreach (['wa_fu_ev', 'wa_wj_ev'] as $fuT) { try { $fq = $pdo->prepare("SELECT 1 FROM $fuT WHERE phone = ? AND status = 'sent' AND sent_at >= ? LIMIT 1"); $fq->execute([(string)$it['phone'], $fuFrom]); if ($fq->fetchColumn()) { $fuHit = true; break; } } catch (Throwable $e) { } }
                     if ($fuHit) { $pdo->prepare("UPDATE wa_camp_items SET status = 'skipped', err = ? WHERE id = ?")->execute(['Got a follow-up in the last day', $iid]); $skipped++; continue; }
                 }
-                $gapDays = max(0, (int)setting_get($pdo, 'wa_camp_gap_days', '0'));   // off by default (owner's choice): a customer can get campaigns any day; setting wa_camp_gap_days = 7 brings back "one per 7 days"
+                $gapDays = max(0, (int)setting_get($pdo, 'wa_camp_gap_days', '3'));   // off by default (owner's choice): a customer can get campaigns any day; setting wa_camp_gap_days = 7 brings back "one per 7 days"
                 $q = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE phone = ? AND dir = 'out' AND mtype IN ('template', 'text') AND who = 'campaign' AND status <> 'failed' AND ts >= ?"); $q->execute([$it['phone'], date('Y-m-d H:i:s', $nowTs - max(0, $gapDays) * 86400)]);
                 if ((int)$ct['optout'] === 1) { $pdo->prepare("UPDATE wa_camp_items SET status = 'skipped', err = 'Opted out' WHERE id = ?")->execute([$iid]); $skipped++; continue; }
                 if (!$isRetry && $gapDays > 0 && (int)$q->fetchColumn() > 0) { $pdo->prepare("UPDATE wa_camp_items SET status = 'skipped', err = ? WHERE id = ?")->execute(['Already got a campaign message in the last ' . $gapDays . ' days', $iid]); $skipped++; continue; }

@@ -414,7 +414,8 @@ function fu_engine(PDO $pdo): array
     $q = $pdo->prepare("SELECT * FROM wa_contacts WHERE status = 'open' AND optout = 0 AND last_in_at IS NOT NULL AND last_out_at IS NOT NULL AND last_out_at >= last_in_at AND last_in_at >= ? AND last_in_at <= ? ORDER BY last_in_at DESC LIMIT 300");
     $firstMin = 20; foreach ($saved as $s0) if ($s0['kind'] === 'nudge' && !empty($s0['steps'])) $firstMin = min($firstMin, max(2, (int)floor($s0['steps'][0]['after_h'] * 60)));
     $q->execute([date('Y-m-d H:i:s', $now - 14 * 86400), date('Y-m-d H:i:s', $now - $firstMin * 60)]);
-    foreach ($q->fetchAll() as $c) {
+    $__rows = $q->fetchAll(); if (function_exists('wq_plan_paused_prefetch')) wq_plan_paused_prefetch($pdo, array_column($__rows, 'phone'));
+    foreach ($__rows as $c) {
         $key = (string)$c['phone']; if (function_exists('wa_auto_muted') && wa_auto_muted($pdo, $key)) continue;   // ✅ order completed: no follow-ups today and tomorrow
         if (function_exists('wq_plan_paused') && wq_plan_paused($pdo, $key) !== '') continue;   // ⏸ a person wrote lately / a campaign went in: the plan waits (due steps are skipped, not caught up)
         $inId = fu_in_id($pdo, $key); if ($inId === 0) continue; $st = fu_state_get($pdo, $key);

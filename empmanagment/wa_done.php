@@ -45,6 +45,7 @@ function wa_auto_muted(PDO $pdo, string $key): bool
 function wq_plan_paused(PDO $pdo, string $key, ?int $now = null): string
 {
     static $c = []; $key = substr(preg_replace('/\D+/', '', $key), -10); if ($key === '') return ''; $now = $now ?: time(); $ck = $key . '|' . intdiv($now, 60); if (isset($c[$ck])) return $c[$ck];
+    if (isset($GLOBALS['__wq_pz'][intdiv($now, 60)][$key])) return $GLOBALS['__wq_pz'][intdiv($now, 60)][$key] === '-' ? '' : $GLOBALS['__wq_pz'][intdiv($now, 60)][$key];   // answered by the batch below
     $r = '';
     try { $q = $pdo->prepare("SELECT who, MAX(ts) m FROM wa_messages WHERE phone = ? AND dir = 'out' AND status <> 'failed' AND ((who IN ('emp','person','phone')) OR who = 'campaign') AND ts >= ? GROUP BY who"); $q->execute([$key, date('Y-m-d H:i:s', $now - 2 * 86400)]);
         foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $x) { $t = strtotime((string)$x['m']);
@@ -52,6 +53,17 @@ function wq_plan_paused(PDO $pdo, string $key, ?int $now = null): string
             elseif ($t >= $now - 36 * 3600 && $r === '') $r = 'a person wrote in the last 36 h'; }
     } catch (Throwable $e) { }
     return $c[$ck] = $r;
+}
+/** One query for a whole batch of customers (the engines check hundreds per round): fills the answer wq_plan_paused() gives for each. */
+function wq_plan_paused_prefetch(PDO $pdo, array $phones, ?int $now = null): void
+{
+    $now = $now ?: time(); $m = intdiv($now, 60); $ph = []; foreach ($phones as $p) { $k = substr(preg_replace('/\D+/', '', (string)$p), -10); if ($k !== '') $ph[$k] = '-'; }
+    if (!$ph) return;
+    try { foreach (array_chunk(array_keys($ph), 400) as $ch) { $in = implode(',', array_fill(0, count($ch), '?'));
+            $q = $pdo->prepare("SELECT phone, who, MAX(ts) m FROM wa_messages WHERE dir = 'out' AND status <> 'failed' AND (who IN ('emp','person','phone') OR who = 'campaign') AND ts >= ? AND phone IN ($in) GROUP BY phone, who"); $q->execute(array_merge([date('Y-m-d H:i:s', $now - 2 * 86400)], $ch));
+            foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $x) { $k = (string)$x['phone']; if ($x['who'] === 'campaign') $ph[$k] = 'a campaign went in the last 2 days'; elseif (strtotime((string)$x['m']) >= $now - 36 * 3600 && ($ph[$k] ?? '-') === '-') $ph[$k] = 'a person wrote in the last 36 h'; } }
+        $GLOBALS["__wq_pz"] = [$m => array_replace($GLOBALS["__wq_pz"][$m] ?? [], $ph)];   // only this minute is kept
+    } catch (Throwable $e) { }
 }
 /** Marks the order completed: silence until the end of tomorrow, follow-ups stopped, ONE thank-you (once per day). Returns the state. */
 function wa_done_mark(PDO $pdo, string $key, int $by, string $how, string $order = ''): array
