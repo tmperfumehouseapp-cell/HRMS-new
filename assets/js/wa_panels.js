@@ -426,7 +426,24 @@
   // 🔁 ONE follow-up section: days 1–10 = the Follow-up Autopilot (fa_ui.js), days 11–60 = the 60-day Journey (wj_ui.js). They share the offers and the festival box, so they are shown together.
   P.followups = (el, ctx) => {
     const T = [['ap', '🔁 Days 1–10 · Autopilot'], ['wj', '🗓 Days 11–60 · Journey']]; let cur = 'ap'; try { cur = localStorage.getItem('wa_fu_sub') === 'wj' ? 'wj' : 'ap'; } catch (e) { /* private mode */ }
-    el.innerHTML = '<div id="fuOneT" style="display:flex;gap:6px;margin:0 0 10px;flex-wrap:wrap;align-items:center"></div><div id="fuOneA"></div><div id="fuOneB" hidden></div>';
+    el.innerHTML = '<div id="fuOneK"></div><div id="fuOneT" style="display:flex;gap:6px;margin:0 0 10px;flex-wrap:wrap;align-items:center"></div><div id="fuOneA"></div><div id="fuOneB" hidden></div>';
+    // 🎯 THE number that matters: orders that came from follow-ups (Autopilot, Journey, and chats people won through Rescue)
+    const KP = el.querySelector('#fuOneK'); let kd = 30;
+    const inr = (n) => '₹' + Math.round(Number(n) || 0).toLocaleString('en-IN');
+    const loadK = async () => {
+      KP.innerHTML = '<div class="wp-card" style="margin-bottom:10px"><div class="wp-sub">Counting orders from follow-ups…</div></div>';
+      const g = async (a, p) => { try { return await api.get(a, p); } catch (e) { return null; } };
+      const [ap, wj, rs] = await Promise.all([g('fu.ap_results', { days: kd }), g('fu.wj_results', { days: kd }), g('wq.rescue_list', { days: kd, status: 'won' })]);
+      const t = (r) => (r && r.total) || {}; const A = t(ap), J = t(wj), R = (rs && rs.summary) || {};
+      const tile = (ic, name, n, s, sub) => '<div style="flex:1 1 150px;border:1px solid var(--line,#e6e8ef);border-radius:12px;padding:10px 12px;background:#fff"><div style="font-size:12px;color:#64748b;font-weight:700">' + ic + ' ' + name + '</div><div style="font-size:24px;font-weight:800;letter-spacing:-.02em">' + (n == null ? '—' : n) + ' <span style="font-size:13px;font-weight:700;color:#64748b">orders</span></div><div style="font-size:12.5px;color:#475569">' + (s == null ? '' : inr(s) + ' · ') + sub + '</div></div>';
+      KP.innerHTML = '<div class="wp-card" style="margin-bottom:10px"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px"><b style="font-size:15px">🎯 Orders from follow-ups</b><span style="flex:1"></span>'
+        + [7, 30, 90].map((d) => '<button type="button" data-kd="' + d + '" class="wp-btn ' + (kd === d ? 'p' : '') + '">' + d + ' days</button>').join('') + '</div>'
+        + '<div style="display:flex;gap:8px;flex-wrap:wrap">' + tile('🔁', 'Autopilot (days 1–10)', ap ? (A.ordered || 0) : null, ap ? A.sales : null, (A.sent || 0) + ' messages sent')
+        + tile('🗓', 'Journey (days 11–60)', wj ? (J.ordered || 0) : null, wj ? J.sales : null, (J.sent || 0) + ' messages sent') + tile('🛟', 'Rescue (people)', rs ? (R.won || 0) : null, rs ? R.revenue : null, 'chats won after a person took them') + '</div>'
+        + '<div class="wp-sub" style="margin-top:6px">An order counts for the last follow-up sent in the 7 days before it. Rescue counts orders after a person took the chat. The same order can show in two boxes, so I do not add them up.</div></div>';
+      KP.querySelectorAll('[data-kd]').forEach((b) => { b.onclick = () => { kd = +b.dataset.kd; loadK(); }; });
+    };
+    loadK();
     const A = el.querySelector('#fuOneA'), B = el.querySelector('#fuOneB'), TT = el.querySelector('#fuOneT'), re = {};
     const show = () => {
       if (re[cur] !== undefined) return; re[cur] = null;

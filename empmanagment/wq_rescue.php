@@ -67,8 +67,8 @@ function wq_rescue_tables(PDO $pdo): bool
 function wq_rescue_cfg(PDO $pdo): array
 {
     $g = function (string $k, string $d) use ($pdo): string { return function_exists('wq_get') ? (string)wq_get($pdo, $k, $d) : (string)setting_get($pdo, $k, $d); };
-    $days = (int)$g('wq_rescue_days', '7'); $wait = (float)$g('wq_rescue_wait_h', '3'); $att = (int)$g('wq_rescue_attempts', '5'); $dd = (int)$g('wq_rescue_decide_days', '4'); $mo = (int)$g('wq_rescue_max_open', '10'); $vd = (int)$g('wq_rescue_view_days', '30'); $hl = $g('wq_rescue_hide_long', '1') !== '0'; $bf1 = $g('wq_rescue_bot_first', '1') !== '0'; $sd = (int)$g('wq_rescue_stale_days', '7');
-    return ['on' => $g('wq_rescue_on', '1') !== '0', 'days' => $days >= 1 && $days <= 30 ? $days : 7, 'wait_h' => $wait >= 0.5 && $wait <= 48 ? $wait : 3.0, 'attempts' => $att >= 1 && $att <= 30 ? $att : 5, 'decide_days' => $dd >= 1 && $dd <= 30 ? $dd : 4, 'stale_days' => $sd >= 2 && $sd <= 60 ? $sd : 7, 'max_open' => $mo >= 1 && $mo <= 100 ? $mo : 10, 'view_days' => $vd >= 1 && $vd <= 365 ? $vd : 30, 'hide_long' => $hl, 'bot_first' => $bf1];
+    $days = (int)$g('wq_rescue_days', '7'); $wait = (float)$g('wq_rescue_wait_h', '3'); $att = (int)$g('wq_rescue_attempts', '5'); $dd = (int)$g('wq_rescue_decide_days', '4'); $mo = (int)$g('wq_rescue_max_open', '10'); $vd = (int)$g('wq_rescue_view_days', '60'); $hl = $g('wq_rescue_hide_long', '0') !== '0'; $bf1 = $g('wq_rescue_bot_first', '1') !== '0'; $sd = (int)$g('wq_rescue_stale_days', '7');
+    return ['on' => $g('wq_rescue_on', '1') !== '0', 'days' => $days >= 1 && $days <= 30 ? $days : 7, 'wait_h' => $wait >= 0.5 && $wait <= 48 ? $wait : 3.0, 'attempts' => $att >= 1 && $att <= 30 ? $att : 5, 'decide_days' => $dd >= 1 && $dd <= 30 ? $dd : 4, 'stale_days' => $sd >= 2 && $sd <= 60 ? $sd : 7, 'max_open' => $mo >= 1 && $mo <= 100 ? $mo : 10, 'view_days' => $vd >= 1 && $vd <= 365 ? $vd : 60, 'hide_long' => $hl, 'bot_first' => $bf1];
 }
 function wq_rescue_save_cfg(PDO $pdo, array $in): void
 {
