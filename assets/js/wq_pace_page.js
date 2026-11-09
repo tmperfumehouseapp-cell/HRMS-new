@@ -80,6 +80,33 @@
   }
   const sugHtml = (a, title) => '<div class="wp-card"><h3>' + esc(title) + '</h3><div class="wp-sub">Automatic suggestions from the numbers on this page.</div><ul class="pp-sug">' + (a.length ? a.map((x) => '<li class="' + x[0] + '">' + x[1] + '</li>').join('') : '<li>Not enough data yet.</li>') + '</ul></div>';
 
+  // ---------------------------------------------------------------- compare people side by side + a person's actual replies
+  const CMP = ['#0f6e7e', '#7c3aed', '#e11d48', '#d97706', '#16a34a', '#2563eb'];
+  function defaultCmp(D) {
+    const r = D.people.filter((p) => p.rank), ids = []; r.slice(0, 2).concat(r.slice(-2)).forEach((p) => { if (ids.indexOf(p.emp_id) < 0) ids.push(p.emp_id); });
+    D.people.forEach((p) => { if (ids.length < 4 && ids.indexOf(p.emp_id) < 0) ids.push(p.emp_id); }); return ids;
+  }
+  function compareCard(D, S) {
+    const sel = (S.cmp || []).map((id) => D.people.find((p) => p.emp_id === id)).filter(Boolean), range = S.days;
+    let h = '<div class="wp-card"><h3>Compare people</h3><div class="wp-sub">Tick the people you want to compare. Their lines are drawn together, day by day. Up to 6.</div><div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0">'
+      + D.people.map((p) => { const i = (S.cmp || []).indexOf(p.emp_id), on = i >= 0; return '<label style="display:inline-flex;gap:6px;align-items:center;border:1px solid var(--wp-line);border-radius:99px;padding:5px 11px;font-size:13px;cursor:pointer' + (on ? ';border-color:' + CMP[i % 6] + ';font-weight:700' : '') + '"><input type="checkbox" data-cmp="' + p.emp_id + '"' + (on ? ' checked' : '') + '>' + (on ? '<span style="color:' + CMP[i % 6] + '">●</span>' : '') + esc(p.name) + '</label>'; }).join('') + '</div></div>';
+    if (!sel.length) return h;
+    const lines = sel.map((p, i) => ({ name: p.name, color: CMP[i % 6], pts: lastN(p.series, range).map((x) => ({ day: x.day, v: x.avg, n: x.n })) }));
+    const clines = sel.map((p, i) => ({ name: p.name, color: CMP[i % 6], pts: lastN(p.series, range).map((x) => ({ day: x.day, v: x.close ? x.close.avg : null, n: x.close ? x.close.n : 0 })) }));
+    return h + '<div class="pp-two">' + chart(lines, 'Average reply time — compared', 'Lower is better.') + chart(clines, 'Average order-closing time — compared', 'Orders closed that day.') + '</div><div style="height:12px"></div>';
+  }
+  const hm = (s) => { const d = new Date(String(s).replace(' ', 'T')); return isNaN(d) ? '' : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) + ' ' + d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }); };
+  const mcol = (m) => m > 30 ? '#dc2626' : m > 10 ? '#d97706' : '#16a34a';
+  function repsCard(p, S) {
+    const R = S.rep && S.rep.emp === p.emp_id ? S.rep : null, first = esc(p.name.split(' ')[0]);
+    if (!R) return '<div class="wp-card"><h3>💬 ' + first + '\'s replies</h3><div class="wp-sub">What the customer wrote, what ' + first + ' answered and how many minutes it took.</div><button type="button" class="pp-btn" data-replies="' + p.emp_id + '" style="margin-top:8px">Show replies (' + S.days + ' days)</button></div>';
+    if (R.err) return '<div class="wp-card" style="color:#dc2626">Could not load the replies. ' + esc(R.err) + ' <button type="button" class="pp-btn gh" data-replies="' + p.emp_id + '">Try again</button></div>';
+    if (!R.data) return '<div class="wp-card wp-sub">Loading replies…</div>';
+    const rows = R.tab === 'slow' ? R.data.slowest : R.data.recent;
+    return '<div class="wp-card"><h3>💬 ' + first + '\'s replies <span class="wp-sub">(' + R.data.n + ' in ' + R.data.days + ' days)</span></h3><div class="pp-top" style="margin:8px 0"><div class="wp-seg">' + [['slow', 'Slowest 15'], ['recent', 'Latest 60']].map((x) => '<button type="button" data-reptab="' + x[0] + '" class="' + (R.tab === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</div><span class="wp-sub">A bare "ok" is not counted as a reply. Complaint chats are not listed.</span></div>'
+      + (rows.length ? '<div class="wp-sc"><table><thead><tr><th>Customer</th><th>Customer wrote</th><th>' + first + ' replied</th><th>Time taken</th></tr></thead><tbody>' + rows.map((x) => '<tr><td style="white-space:normal;min-width:110px">' + esc(x.name || ('…' + String(x.phone).slice(-4))) + '<div class="wp-sub">' + esc(hm(x.in_at)) + '</div></td><td style="white-space:normal;text-align:left;max-width:260px">' + esc(x.in_text) + '</td><td style="white-space:normal;text-align:left;max-width:260px">' + esc(x.out_text) + '<div class="wp-sub">' + esc(hm(x.out_at)) + '</div></td><td><b style="color:' + (x.night ? '#64748b' : mcol(x.mins)) + '">' + (x.night ? 'next day' : W.fm(x.mins)) + '</b></td></tr>').join('') + '</tbody></table></div>' : '<div class="wp-sub">No replies in this period.</div>') + '</div>';
+  }
+
   // ---------------------------------------------------------------- views
   function tiles(arr) { return '<div class="wp-tiles">' + arr.map((t) => '<div class="wp-tile"><small>' + esc(t[0]) + '</small><b>' + t[1] + '</b><span>' + (t[2] || '') + '</span></div>').join('') + '</div>'; }
   const dl = (d) => !has(d) ? '' : (d === 0 ? 'same as before' : (d < 0 ? '<span style="color:#16a34a">▼ ' : '<span style="color:#dc2626">▲ ') + W.fm(Math.abs(d)) + '</span> vs before');
@@ -94,6 +121,7 @@
       ['Waiting right now', wait ? wait.total : '-', wait && wait.total ? 'longest ' + wait.longest + ' min' : 'nobody waiting'], ['Auto-bot reply', W.fm(T.bot.median), T.bot.n + ' auto replies']]);
     h += '<div class="pp-two">' + chart([{ name: 'Average reply time (people)', color: '#0f6e7e', pts: ser.map((x) => ({ day: x.day, v: x.avg, n: x.n })) }, { name: 'Auto-bot', color: '#94a3b8', dash: true, pts: lastN(T.bot_series || [], range).map((x) => ({ day: x.day, v: x.median, n: x.n })) }], 'Average reply time, day by day', 'How long customers waited for a person, per day. Lower is better.')
       + chart([{ name: 'Average time to close an order', color: '#7c3aed', pts: cser.map((x) => ({ day: x.day, v: x.avg, n: x.n })) }], 'Average order-closing time, day by day', 'From the query arriving to its first order, for orders closed that day.') + '</div><div style="height:12px"></div>';
+    h += compareCard(D, S);
     h += sugHtml(teamSuggestions(D, wait), '💡 Suggestions');
     h += peopleTable(D);
     h += W.linkCard ? '<div class="wp">' + W.linkCard(D) + '</div>' : '';
@@ -127,30 +155,34 @@
     if (bk.fast) { const cell = (x) => !x || !x.queries ? '-' : '<b>' + x.orders + '</b> <span class="wp-sub">of ' + x.queries + ' · ' + (has(x.conversion) ? x.conversion + '%' : '-') + '</span>'; h += '<div class="wp-card"><h3>Orders by how fast ' + esc(p.name.split(' ')[0]) + ' answered (30 days)</h3><div class="wp-sc"><table><thead><tr><th>Within 5 min</th><th>5 – 30 min</th><th>Over 30 min</th><th>Not answered</th></tr></thead><tbody><tr><td>' + cell(bk.fast) + '</td><td>' + cell(bk.mid) + '</td><td>' + cell(bk.slow) + '</td><td>' + cell(bk.none) + '</td></tr></tbody></table></div></div>'; }
     if (p.after_take && p.after_take.by && p.after_take.by.length) h += '<div class="wp-card"><h3>After taking a query</h3><div class="wp-sc"><table><thead><tr><th>How it was taken</th><th>Taken</th><th>Median to first message</th></tr></thead><tbody>' + p.after_take.by.map((x) => '<tr><td>' + esc(x.label) + '</td><td>' + x.n + '</td><td>' + W.fm(x.median) + '</td></tr>').join('') + '</tbody></table></div></div>';
     if (waitP && waitP.n) h += '<div class="wp-card"><h3>⏳ Waiting for ' + esc(p.name.split(' ')[0]) + ' right now</h3><div class="wp-sc"><table><tbody>' + waitP.items.map((i) => '<tr><td>' + esc(i.name || ('…' + String(i.phone).slice(-4))) + '</td><td><b>' + i.mins + ' min</b></td></tr>').join('') + '</tbody></table></div><button type="button" class="pp-btn red" data-nudge="' + p.emp_id + '" style="margin-top:10px">🔔 Tell ' + esc(p.name.split(' ')[0]) + ' to reply now</button> <span class="wp-sub" id="ppNudgeMsg"></span></div>';
+    h += repsCard(p, S);
     // the daily table
     h += '<div class="wp-card"><h3>Day by day</h3><div class="wp-sc"><table><thead><tr><th>Date</th><th>Replies</th><th>Typical</th><th>Average</th><th>Orders closed</th><th>Avg closing</th></tr></thead><tbody>' + p.series.slice().reverse().map((x) => '<tr><td>' + esc(x.day) + '</td><td>' + x.n + '</td><td>' + (has(x.median) ? W.fm(x.median) : '-') + '</td><td>' + (has(x.avg) ? W.fm(x.avg) : '-') + '</td><td>' + (x.close ? x.close.n : '-') + '</td><td>' + (x.close ? W.fm(x.close.avg) : '-') + '</td></tr>').join('') + '</tbody></table></div></div>';
     return h;
   }
 
   function mount(el, o) {
-    css(); el.classList.add('wp', 'pp'); const S = { emp: o.emp || 0, days: o.days || 30 }; let D = null, WT = null;
+    css(); el.classList.add('wp', 'pp'); const S = { emp: o.emp || 0, days: o.days || 30 }; let D = null, WT = null; S.cmp = null; S.rep = null;
     const setUrl = () => { try { history.replaceState(null, '', 'pace.html' + (S.emp ? '?emp=' + S.emp : '') + (S.days === 7 ? (S.emp ? '&' : '?') + 'days=7' : '')); } catch (e) { /* ignore */ } };
     const draw = () => {
       if (!D) return; const p = S.emp ? D.people.find((x) => x.emp_id === S.emp) : null; if (S.emp && !p) S.emp = 0;
       let wait = null; if (WT) { const by = WT.by_emp || {}; let total = 0, longest = 0; Object.keys(by).forEach((k) => { total += by[k].n; longest = Math.max(longest, by[k].longest); }); wait = { total, longest }; }
       el.innerHTML = S.emp ? personView(D, p, S, WT && WT.by_emp ? WT.by_emp[S.emp] : null) : teamView(D, S, wait); setUrl();
     };
-    const load = () => { el.innerHTML = '<div class="wp-card wp-sub">Loading pace…</div>'; return Promise.all([api.get('wq.pace', { days: 30 }), api.get('wq.pace_waiting').catch(() => null)]).then((r) => { D = r[0]; WT = r[1]; draw(); }, (e) => { el.innerHTML = '<div class="wp-card" style="color:#dc2626">Pace could not load. ' + esc(e && e.message ? e.message : '') + ' <button type="button" class="pp-btn gh" data-retry="1">Try again</button></div>'; }); };
+    const loadReps = (id) => { S.rep = { emp: id, days: S.days, data: null, tab: 'slow' }; draw(); api.get('wq.pace_replies', { emp_id: id, days: S.days }).then((d) => { if (S.rep && S.rep.emp === id) { S.rep.data = d; draw(); } }, (er) => { if (S.rep && S.rep.emp === id) { S.rep = { emp: id, err: (er && er.message) || '' }; draw(); } }); };
+    const load = () => { el.innerHTML = '<div class="wp-card wp-sub">Loading pace…</div>'; return Promise.all([api.get('wq.pace', { days: 30 }), api.get('wq.pace_waiting').catch(() => null)]).then((r) => { D = r[0]; WT = r[1]; if (!S.cmp) S.cmp = defaultCmp(D); draw(); }, (e) => { el.innerHTML = '<div class="wp-card" style="color:#dc2626">Pace could not load. ' + esc(e && e.message ? e.message : '') + ' <button type="button" class="pp-btn gh" data-retry="1">Try again</button></div>'; }); };
     el.addEventListener('click', (e) => {
       const t = e.target;
       if (t.closest('[data-retry]')) { load(); return; }
       const r = t.closest('[data-range]'); if (r) { S.days = +r.dataset.range; draw(); return; }
+      const rp = t.closest('[data-replies]'); if (rp) { loadReps(+rp.dataset.replies); return; }
+      const rt = t.closest('[data-reptab]'); if (rt && S.rep) { S.rep.tab = rt.dataset.reptab; draw(); return; }
       const n = t.closest('[data-emp]'); if (n) { S.emp = +n.dataset.emp; draw(); window.scrollTo(0, 0); return; }
       if (t.closest('[data-back]')) { S.emp = 0; draw(); window.scrollTo(0, 0); return; }
       const nb = t.closest('[data-nudge]'); if (nb) { nb.disabled = true; api.post('wq.pace_nudge', { emp_id: +nb.dataset.nudge }).then((x) => { const m = el.querySelector('#ppNudgeMsg'); if (m) m.textContent = x.sent ? 'Reminder sent ✓' : 'Sent, but this phone has not allowed alerts.'; }, (er) => { const m = el.querySelector('#ppNudgeMsg'); if (m) m.textContent = er.message || 'Could not send'; nb.disabled = false; }); return; }
       const sv = t.closest('.wp-save'); if (sv) { const body = {}; el.querySelectorAll('[data-cfg]').forEach((i) => { body[i.dataset.cfg] = i.type === 'checkbox' ? i.checked : +i.value; }); const note = el.querySelector('.wp-saved'); api.post('wq.pace_cfg', body).then(() => { if (note) note.textContent = 'Saved ✓'; }, (er) => { if (note) note.textContent = (er && er.message) || 'Could not save'; }); }
     });
-    el.addEventListener('change', (e) => { if (e.target.id === 'ppSel' && +e.target.value) { S.emp = +e.target.value; draw(); window.scrollTo(0, 0); } });
+    el.addEventListener('change', (e) => { const c = e.target.closest && e.target.closest('[data-cmp]'); if (c) { const id = +c.dataset.cmp, i = S.cmp.indexOf(id); if (i >= 0) S.cmp.splice(i, 1); else if (S.cmp.length < 6) S.cmp.push(id); draw(); return; } if (e.target.id === 'ppSel' && +e.target.value) { S.emp = +e.target.value; draw(); window.scrollTo(0, 0); } });
     setInterval(() => { if (!document.hidden) api.get('wq.pace_waiting').then((w) => { WT = w; if (!el.querySelector('input:focus')) draw(); }, () => {}); }, 60000);   // who is waiting is live
     return load();
   }
