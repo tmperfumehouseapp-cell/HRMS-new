@@ -156,7 +156,7 @@ function wq_rescue_scan(PDO $pdo, float $deadline = 0.0, int $beforeId = 0, bool
     try { foreach ($pdo->query("SELECT query_id, in_at, chk FROM wq_rescue_seen WHERE chk >= DATE_SUB(NOW(), INTERVAL 30 MINUTE)")->fetchAll() as $x) $seenM[(int)$x['query_id']] = (string)$x['in_at']; } catch (Throwable $e) { }
     try { $st = $pdo->prepare("SELECT phone, MAX(created_at) m FROM wq_ord WHERE created_at >= ? GROUP BY phone"); $st->execute([$all ? '2000-01-01 00:00:00' : date('Y-m-d H:i:s', $now - ($cfg['days'] + 2) * 86400)]); foreach ($st->fetchAll() as $x) $ordM[substr(preg_replace('/\D+/', '', (string)$x['phone']), -10)] = (string)$x['m']; } catch (Throwable $e) { }
     try { $st = $pdo->prepare("SELECT phone, MAX(at) m FROM wa_order_done WHERE at >= ? GROUP BY phone"); $st->execute([$all ? '2000-01-01 00:00:00' : date('Y-m-d H:i:s', $now - ($cfg['days'] + 2) * 86400)]); foreach ($st->fetchAll() as $x) $doneM[substr(preg_replace('/\D+/', '', (string)$x['phone']), -10)] = (string)$x['m']; } catch (Throwable $e) { }
-    $hasOpen = []; try { foreach ($pdo->query("SELECT DISTINCT phone FROM wq_rescue WHERE status IN ('open','taken','given')")->fetchAll(PDO::FETCH_COLUMN) as $x) $hasOpen[(string)$x] = 1; } catch (Throwable $e) { }
+    $hasOpen = []; try { foreach ($pdo->query("SELECT DISTINCT phone FROM wq_rescue WHERE status IN ('open','taken','given','stale') OR (status = 'skipped' AND closed_at >= DATE_SUB(NOW(), INTERVAL 90 DAY))")->fetchAll(PDO::FETCH_COLUMN) as $x) $hasOpen[(string)$x] = 1; } catch (Throwable $e) { }
     $keep = [];
     foreach ($rows as $r) {
         $qid = (int)$r['id']; $k10 = substr(preg_replace('/\D+/', '', (string)$r['phone']), -10); $op = (string)$r['opened_at'];
@@ -359,14 +359,14 @@ function wq_rescue_item(array $r, array $names): array
 function wq_rescue_list(PDO $pdo, int $me, bool $adm, int $days, string $status, int $page = 1): array
 {
     $names = function_exists('wq_names') ? wq_names($pdo) : []; $cfg = wq_rescue_cfg($pdo); $since = date('Y-m-d H:i:s', time() - max(1, $days) * 86400);
-    $where = "r.flagged_at >= ?"; if (!($adm && $status === 'skipped')) $where .= " AND r.status <> 'skipped'"; if ($adm && $status !== 'silent') $where .= " AND r.status <> 'silent'"; $par = [$since];
+    $where = "(r.flagged_at >= ? OR r.status IN ('open','taken','given','stale'))"; if (!($adm && $status === 'skipped')) $where .= " AND r.status <> 'skipped'"; if ($adm && $status !== 'silent') $where .= " AND r.status <> 'silent'"; $par = [$since];
     if (!$adm) {   // a team member sees the open chances + the ones they took; nothing else
         $where .= " AND (r.status = 'open' OR r.taken_by = ?) AND r.status NOT IN ('ordered','expired','silent','skipped')"; $par[] = $me;
     } elseif ($status !== '' && $status !== 'all') { $where .= " AND r.status = ?"; $par[] = $status; }
     $q = $pdo->prepare("SELECT r.* FROM wq_rescue r WHERE $where ORDER BY FIELD(r.status,'open','given','taken','stale','won','ordered','expired','silent','skipped'), FIELD(r.tier,'act','today','week','long'), r.score DESC, r.last_in_at DESC LIMIT " . ($PS = 100) . " OFFSET " . (max(1, $page) - 1) * 100);
     $q->execute($par); $rowsL = $q->fetchAll(); $cq = $pdo->prepare("SELECT COUNT(*) FROM wq_rescue r WHERE $where"); $cq->execute($par); $total = (int)$cq->fetchColumn(); $cn = wq_rescue_cnames($pdo, array_column($rowsL, 'phone')); foreach ($rowsL as &$rl) $rl['cname'] = $cn[(string)$rl['phone']] ?? ''; unset($rl);
     $items = array_map(fn($r) => wq_rescue_item($r, $names), $rowsL);
-    $st = $pdo->prepare("SELECT status, COUNT(*) n, COALESCE(SUM(order_total),0) rev FROM wq_rescue WHERE flagged_at >= ? GROUP BY status"); $st->execute([$since]);
+    $st = $pdo->prepare("SELECT status, COUNT(*) n, COALESCE(SUM(order_total),0) rev FROM wq_rescue WHERE flagged_at >= ? OR status IN ('open','taken','given','stale') GROUP BY status"); $st->execute([$since]);
     $tc = ['act' => 0, 'today' => 0, 'week' => 0, 'long' => 0]; try { foreach ($pdo->query("SELECT tier, COUNT(*) n FROM wq_rescue WHERE status = 'open' GROUP BY tier")->fetchAll() as $t) $tc[(string)$t['tier']] = (int)$t['n']; } catch (Throwable $e) { }
     $sum = ['tiers' => $tc, 'open' => 0, 'taken' => 0, 'won' => 0, 'ordered' => 0, 'expired' => 0, 'silent' => 0, 'skipped' => 0, 'stale' => 0, 'revenue' => 0.0];
     foreach ($st->fetchAll() as $s) { $k = (string)$s['status']; if ($k === 'given') $k = 'taken'; if (isset($sum[$k])) $sum[$k] += (int)$s['n']; if ($k === 'won') $sum['revenue'] = round((float)$s['rev'], 2); }
