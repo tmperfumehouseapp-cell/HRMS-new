@@ -1392,7 +1392,8 @@ function wq_need_take(PDO $pdo, string $phone, int $me): array
     $q = $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND dir = 'out' AND emp_id > 0 AND ts >= ? LIMIT 1"); $q->execute([$phone, wq_dt($in)]); if ($q->fetchColumn()) return ['error' => 'A person has already answered this customer.'];
     $from = (int)$c['assigned_emp'];
     if ($from > 0 && wq_ts($c['assigned_at'] ?? '') > wq_now() - 120) return ['error' => wq_name(wq_names($pdo), $from) . ' just took this chat — give them 2 minutes.'];
-    $mineN = 0; foreach (wq_needs($pdo, $me) as $x) if (!empty($x['own'])) $mineN++; if ($mineN >= 3) return ['error' => 'You already have ' . $mineN . ' customers waiting for your answer — answer them first, then take another.'];   // one person never collects everything
+    $mineN = 0; $isRed = false; foreach (wq_needs($pdo, $me) as $x) { if (!empty($x['own'])) $mineN++; if ((string)$x['phone'] === $phone && $x['level'] === 'red') $isRed = true; }
+    if ($mineN >= 3 && !$isRed) return ['error' => 'You already have ' . $mineN . ' customers waiting for your answer — answer them first, then take another. (A customer who is ready to pay can always be taken.)'];   // the limit holds for ORANGE chats only: an order waiting is never left because someone is full
     $u = $pdo->prepare("UPDATE wa_contacts SET assigned_emp = ? WHERE phone = ? AND assigned_emp = ?"); $u->execute([$me, $phone, $from]);
     if ($u->rowCount() === 0) return ['error' => 'Somebody else just took this chat.'];
     $pdo->prepare("UPDATE wa_contacts SET assigned_emp = ? WHERE phone = ?")->execute([$from, $phone]);   // put it back for one line: wa_assign_to writes the log, the event and moves the query from $from
