@@ -57,8 +57,8 @@
     return w;
   }
 
-  function mount(el) {
-    css(); let D = null, tab = 'lanes', R = null, Q = null, rdays = 30, TR = { lead: [], buyer: [] }, dirty = { lead: false, buyer: false }, busy = false;
+  function mount(el, solo) {
+    css(); let D = null, tab = solo === 'msgs' ? 'msgs' : 'lanes', R = null, Q = null, rdays = 30, TR = { lead: [], buyer: [] }, dirty = { lead: false, buyer: false }, busy = false;
     el.innerHTML = '<div class="wj"><div class="wj-card">Loading…</div></div>';
     const take = (d) => { D = d; if (!dirty.lead) TR.lead = JSON.parse(JSON.stringify(d.steps.lead)); if (!dirty.buyer) TR.buyer = JSON.parse(JSON.stringify(d.steps.buyer)); };
     async function load() { try { take(await api.get('fu.wj_get')); } catch (e) { el.innerHTML = '<div class="wj"><div class="wj-err">' + esc(e.message) + '</div></div>'; return; } draw(); }
@@ -87,7 +87,8 @@
       for (const s of TR[tk]) { const c = cells[s.day - 1]; if (c && s.on) { c.c = s.icon === '🎁' ? 'f' : 'm'; c.t = 'Day ' + s.day + ' · ' + s.label; } }
       return '<div class="wj-strip">' + cells.map((c) => '<i class="' + c.c + '" title="' + esc(c.t) + '"></i>').join('') + '</div><div class="wj-scale"><span>day 1</span><span>15</span><span>30</span><span>45</span><span>60</span></div>';
     }
-    const refOpts = (sel) => '<optgroup label="💬 Messages">' + D.messages.filter((x) => x.icon === '💬').map((x) => '<option value="' + esc(x.k) + '"' + (x.k === sel ? ' selected' : '') + '>' + esc(x.label) + '</option>').join('') + '</optgroup><optgroup label="🎁 Offers">' + D.messages.filter((x) => x.icon !== '💬').map((x) => '<option value="' + esc(x.k) + '"' + (x.k === sel ? ' selected' : '') + '>' + esc(x.label) + '</option>').join('') + '</optgroup>';
+    const stMark = (s) => s === 'approved' || s === 'partial' ? '✅ ' : s === 'pending' ? '⏳ ' : s === 'rejected' ? '❌ ' : '📨 ';   // ✅ approved · ⏳ waiting for Meta · ❌ rejected · 📨 not sent yet (a day with a message that is not approved sends nothing)
+    const refOpts = (sel) => '<optgroup label="💬 Messages">' + D.messages.filter((x) => x.icon === '💬').map((x) => '<option value="' + esc(x.k) + '"' + (x.k === sel ? ' selected' : '') + '>' + stMark(x.status) + esc(x.label) + '</option>').join('') + '</optgroup><optgroup label="🎁 Offers">' + D.messages.filter((x) => x.icon !== '💬').map((x) => '<option value="' + esc(x.k) + '"' + (x.k === sel ? ' selected' : '') + '>' + stMark(x.status) + esc(x.label) + '</option>').join('') + '</optgroup><optgroup label="➕ Make a new one"><option value="__new">➕ New message or offer…</option></optgroup>';
     const topicOpts = (sel) => '<option value="">Everyone</option>' + D.topics.rows.map((t) => '<option value="' + esc(t.key) + '"' + (t.key === sel ? ' selected' : '') + '>Only: ' + esc(t.title) + '</option>').join('') + (sel && !D.topics.rows.some((t) => t.key === sel) ? '<option value="' + esc(sel) + '" selected>Only: ' + esc(sel) + '</option>' : '');
     function trackCard(tk) {
       const T = TRACK[tk], rows = TR[tk];
@@ -189,10 +190,24 @@
     }
     function draw() {
       if (!D) return; const scroll = el.scrollTop;
-      el.innerHTML = '<div class="wj">' + head() + (tab === 'lanes' ? lanesTab() : tab === 'journey' ? journeyTab() : tab === 'claude' ? claudeTab() : tab === 'topics' ? topicsTab() : tab === 'msgs' ? msgsTab() : tab === 'fest' ? festTab() : resultsTab()) + '</div>'; bind(); el.scrollTop = scroll;
+      el.innerHTML = '<div class="wj">' + (solo ? '' : head()) + (tab === 'lanes' ? lanesTab() : tab === 'journey' ? journeyTab() : tab === 'claude' ? claudeTab() : tab === 'topics' ? topicsTab() : tab === 'msgs' ? msgsTab() : tab === 'fest' ? festTab() : resultsTab()) + '</div>'; bind(); el.scrollTop = scroll;
     }
     async function loadResults() { R = null; draw(); try { R = await api.get('fu.wj_results', { days: rdays }); } catch (e) { R = { total: { sent: 0, replied: 0, ordered: 0, sales: 0 }, steps: [] }; } draw(); }
     async function ask(text, more) { const r = await act('fu.wj_brain', { text, more: !!more }, 'keep'); if (r && r.steps) { tab = 'claude'; draw(); } return r; }
+    // ➕ make a new message / offer without leaving the day: it is saved in the message library and chosen for that day
+    function newMsg(done) {
+      const o = document.createElement('div'); o.style.cssText = 'position:fixed;inset:0;z-index:300;background:#0008;display:flex;align-items:flex-end;justify-content:center';
+      o.innerHTML = '<div class="wj" style="background:#fff;width:100%;max-width:560px;border-radius:18px 18px 0 0;padding:16px;max-height:92vh;overflow:auto"><div class="wj-h">➕ New message or offer</div><div class="wj-sub">It is saved in <b>Messages → My messages</b> with this name, so you can pick it on any day, in any topic.</div>'
+        + '<label class="wj-sub">Name (title)</label><input class="wj-in f" id="nmN" maxlength="40" placeholder="e.g. Diwali buy 2 get 1">'
+        + '<div class="wj-row2" style="margin-top:6px"><label><input type="radio" name="nmT" value="msg" checked> 💬 Message (no discount)</label><label><input type="radio" name="nmT" value="offer"> 🎁 Offer</label></div>'
+        + '<label class="wj-sub">Rule — what Claude writes in {{3}} for each customer</label><textarea class="wj-ta" id="nmR" style="min-height:60px" maxlength="300" placeholder="e.g. Buy two perfumes and get a 10 ml free"></textarea>'
+        + '<label class="wj-sub">Message words (optional — if empty a friendly default is used). Keep {{1}} name, {{2}} perfume, {{3}} the line, once each in this order.</label><textarea class="wj-ta" id="nmB" style="min-height:70px" maxlength="900"></textarea>'
+        + '<div class="wj-row2" style="margin-top:10px"><button class="wj-b p" type="button" id="nmGo">Save in library &amp; use here</button><button class="wj-b" type="button" id="nmX">Cancel</button></div></div>';
+      document.body.appendChild(o); const q = (s) => o.querySelector(s); const close = (k) => { o.remove(); done(k || ''); };
+      q('#nmX').onclick = () => close(''); o.onclick = (e) => { if (e.target === o) close(''); };
+      q('#nmGo').onclick = async () => { const label = q('#nmN').value.trim(), rule = q('#nmR').value.trim(); if (!label || !rule) { toast('Give it a name and a rule.', true); return; }
+        q('#nmGo').disabled = true; const r = await act('fu.wj_msg_new', { label, rule, body: q('#nmB').value.trim(), offer: q('input[name=nmT]:checked').value === 'offer' }, 'keep'); if (r && r.new_key) close(r.new_key); else q('#nmGo').disabled = false; };
+    }
     function bind() {
       const $ = (s) => el.querySelector(s), $$ = (s) => [...el.querySelectorAll(s)];
       $$('[data-tab]').forEach((b) => b.onclick = () => { tab = b.dataset.tab; draw(); if (tab === 'results') loadResults(); });
@@ -206,7 +221,7 @@
           const apply = () => { const k = f.dataset.f, x = TR[tk][i]; x[k] = k === 'day' ? Math.max(1, Math.min(60, +f.value || 1)) : (k === 'on' ? f.checked : f.value);
             if (k === 'ref') { const m = D.messages.find((z) => z.k === f.value); x.label = m ? m.label : f.value; x.icon = m ? m.icon : '🎁'; x.tpl = m ? m.status : 'none'; }
             dirty[tk] = true; const sb = el.querySelector('[data-save="' + tk + '"]'); if (sb) sb.disabled = false; };
-          f.oninput = apply; f.onchange = () => { apply(); if (f.dataset.f !== 'idea') setTimeout(draw, 0); }; }); });
+          f.oninput = apply; f.onchange = () => { if (f.dataset.f === 'ref' && f.value === '__new') { newMsg((key) => { if (key) { const x = TR[tk][i]; x.ref = key; const m = D.messages.find((z) => z.k === key); if (m) { x.label = m.label; x.icon = m.icon; x.tpl = m.status; } dirty[tk] = true; } draw(); }); return; } apply(); if (f.dataset.f !== 'idea') setTimeout(draw, 0); }; }); });
       $$('[data-rm]').forEach((b) => b.onclick = () => { const [tk, i] = b.dataset.rm.split(':'); TR[tk].splice(+i, 1); dirty[tk] = true; draw(); });
       $$('[data-add]').forEach((b) => b.onclick = () => { const tk = b.dataset.add, last = TR[tk].reduce((a, x) => Math.max(a, x.day), tk === 'lead' ? 10 : 0), m = D.messages[0]; TR[tk].push({ id: '', day: Math.min(60, last + 3), ref: m.k, idea: '', topic: '', on: true, label: m.label, icon: m.icon, tpl: m.status }); dirty[tk] = true; draw(); });
       $$('[data-lane-add]').forEach((b) => b.onclick = () => { const key = b.dataset.laneAdd, last = TR.lead.reduce((a, x) => Math.max(a, x.day), 10), m = D.messages[0]; TR.lead.push({ id: '', day: Math.min(60, last + 3), ref: m.k, idea: '', topic: key, on: true, label: m.label, icon: m.icon, tpl: m.status }); dirty.lead = true; tab = 'journey'; draw(); toast('A new day was added at the bottom of the Didn\'t order track, for this topic only. Pick the day and the message, then press Save.'); });
@@ -238,5 +253,6 @@
     load(); return load;
   }
   WaPanels.add('journey', (el) => mount(el));
+  WaPanels.add('mymsgs', (el) => mount(el, 'msgs'));   // Messages → My messages: the same registry, on its own
   window.WaJourney = { mount };
 })();

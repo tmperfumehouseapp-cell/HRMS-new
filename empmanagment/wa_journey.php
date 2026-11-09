@@ -556,6 +556,19 @@ if (strpos($__wj, 'fu.wj_') === 0) {
     $me = (int)($auth['employee_id'] ?? 0); $in = $isPost ? json_input() : [];
     try { wj_install($pdo); } catch (Throwable $e) { }
     if ($__wj === 'fu.wj_get') json_response(wj_view($pdo));
+    if ($__wj === 'fu.wj_msg_new') {   // ➕ a new message or offer made straight from a journey day: it lives in the one registry (Messages → My messages) and is chosen in every dropdown
+        if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
+        $label = mb_substr(trim((string)($in['label'] ?? '')), 0, 40); $rule = mb_substr(trim((string)($in['rule'] ?? '')), 0, 300); $offer = !empty($in['offer']); $body = trim((string)($in['body'] ?? ''));
+        if ($label === '' || $rule === '') json_response(['error' => 'Give it a name (title) and a rule.'], 422);
+        $reg = fa_offers($pdo); foreach ($reg as $x) if (mb_strtolower($x[0]) === mb_strtolower($label)) json_response(['error' => 'A message called "' . $label . '" already exists — pick it from the list, or use another name.'], 422);
+        $k = ($offer ? 'o_' : 'w_') . substr(md5($label . microtime(true)), 0, 6); $reg[$k] = [$label, $rule];
+        if ($body !== '') {
+            preg_match_all('/\{\{\s*(\d+)\s*\}\}/', $body, $mm); if (array_map('intval', $mm[1]) !== [1, 2, 3]) json_response(['error' => 'Keep {{1}} (name), {{2}} (perfume) and {{3}} (the line) once each, in this order.'], 422);
+            if (preg_match('/^\s*\{\{|\}\}\s*$/', $body)) json_response(['error' => 'Meta does not allow {{…}} at the very start or end — add a word before / after it.'], 422);
+        } else $body = 'Hi {{1}} 🙏 About {{2}}: {{3}} Reply here and we will help you right away.';
+        setting_set($pdo, 'fa_offers', json_encode(array_map(function ($x) { return [$x[0], $x[1]]; }, $reg), JSON_UNESCAPED_UNICODE)); setting_set($pdo, 'fa_tplbody_' . $k, mb_substr($body, 0, 900)); setting_set($pdo, 'fa_tpltry_' . $k, '0');
+        json_response(['message' => 'Saved in the message library ✓ — it goes to Meta by itself in a few minutes.', 'new_key' => $k] + wj_view($pdo));
+    }
     if ($__wj === 'fu.wj_queue') json_response(['ok' => true] + wj_queue($pdo));
     if ($__wj === 'fu.wj_results') json_response(['ok' => true] + wj_results($pdo, max(1, min(90, (int)($_GET['days'] ?? 30)))));
     if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
