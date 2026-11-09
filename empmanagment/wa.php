@@ -542,7 +542,10 @@ function wa_src_counts(PDO $pdo, bool $adm, int $emp): array
         if (function_exists('wa_ad_backfill')) wa_ad_backfill($pdo); $q = $pdo->prepare("SELECT COUNT(*) FROM wa_contacts WHERE $base AND source = 'query' AND last_in_at >= ?"); $q->execute([wa_bizday_start($pdo)]); $o['query'] = (int)$q->fetchColumn();
         $o['assigned'] = (int)$pdo->query("SELECT COUNT(*) FROM wa_contacts WHERE $base AND assigned_emp > 0")->fetchColumn();
         // 📱 queries of this business day per WhatsApp number (TM Perfume House Main / Second …) — a permanent row of chips beside Query / Assigned / Community / Campaign
-        $bd = wa_bizday_start($pdo); $nq = $pdo->prepare("SELECT last_number_id, COUNT(*) n FROM wa_contacts WHERE $base AND source = 'query' AND last_in_at >= ? GROUP BY last_number_id"); $nq->execute([$bd]); $per = []; foreach ($nq->fetchAll() as $r) $per[(int)$r['last_number_id']] = (int)$r['n'];
+        // since the number was deployed: every customer who EVER wrote to the number (all-time, open or closed). Counting them is heavy, so it is cached for 5 minutes.
+        $per = []; $cache = json_decode((string)setting_get($pdo, 'wa_numq_cache', ''), true);
+        if (is_array($cache) && (int)($cache['t'] ?? 0) > time() - 300 && is_array($cache['v'] ?? null)) { foreach ($cache['v'] as $k => $v) $per[(int)$k] = (int)$v; }
+        else { foreach ($pdo->query("SELECT number_id, COUNT(DISTINCT phone) n FROM wa_messages WHERE dir = 'in' AND number_id > 0 GROUP BY number_id")->fetchAll() as $r) $per[(int)$r['number_id']] = (int)$r['n']; setting_set($pdo, 'wa_numq_cache', json_encode(['t' => time(), 'v' => $per])); }
         $o['nums'] = []; foreach ($pdo->query("SELECT id, label, display FROM wa_numbers ORDER BY id")->fetchAll() as $n) $o['nums'][] = ['id' => (int)$n['id'], 'label' => trim((string)$n['label']) !== '' ? (string)$n['label'] : (string)$n['display'], 'n' => $per[(int)$n['id']] ?? 0];
     } catch (Throwable $e) { }
     return $o;
@@ -841,19 +844,19 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo)\./', $__wa)) {
         }
         case 'wa.chats': {
             $scope = (string)($_GET['scope'] ?? 'mine'); $q = trim((string)($_GET['q'] ?? '')); $emp = (int)($auth['employee_id'] ?? 0); $adm = wa_is_admin($pdo, $auth) && empty($_GET['mine']);   // mine=1 → the My Chats page: even an admin sees only their own
-            $w = []; $p = [];
-            if (!$adm) { $w[] = 'c.assigned_emp = ?'; $p[] = $emp; $w[] = $scope === 'closed' ? "c.status = 'closed'" : "c.status = 'open'"; }
+            $w = []; $p = []; $srcQ = (string)($_GET['src'] ?? ''); $numFeed = $adm && preg_match('/^num:(\d+)$/', $srcQ, $numM) ? (int)$numM[1] : 0;
+            if ($numFeed) { $w[] = 'c.phone IN (SELECT m0.phone FROM wa_messages m0 WHERE m0.dir = \'in\' AND m0.number_id = ?)'; $p[] = $numFeed; }   // 📱 everybody who ever wrote to this number (since it was deployed), open or closed
+            elseif (!$adm) { $w[] = 'c.assigned_emp = ?'; $p[] = $emp; $w[] = $scope === 'closed' ? "c.status = 'closed'" : "c.status = 'open'"; }
             elseif ($scope === 'mine') { $w[] = 'c.assigned_emp = ?'; $p[] = $emp > 0 ? $emp : -1; $w[] = "c.status = 'open'"; }
             elseif ($scope === 'unassigned') { $w[] = 'c.assigned_emp = 0'; $w[] = "c.status = 'open'"; }
             elseif ($scope === 'closed') $w[] = "c.status = 'closed'";
             elseif ($scope === 'emp') { $ee = (int)($_GET['emp'] ?? 0); if (!empty($_GET['tag'])) { $w[] = '(c.assigned_emp = ? OR c.phone IN (SELECT l.phone FROM wa_assign_log l WHERE l.to_emp = ?))'; $p[] = $ee; $p[] = $ee; } else { $w[] = 'c.assigned_emp = ?'; $p[] = $ee; $w[] = "c.status = 'open'"; } }   // 🏷 tag=1: every chat this person ever had, wherever it is now
             else $w[] = "c.status = 'open'";
             if ($adm && $scope !== 'mine') $w[] = 'c.last_in_at IS NOT NULL';   // people a campaign reached but who never wrote are in Contacts, not in Chats
-            if ($scope !== 'closed' && trim((string)($_GET['q'] ?? '')) === '') { $w[] = 'COALESCE(c.last_in_at, c.last_out_at) >= ?'; $p[] = date('Y-m-d H:i:s', time() - 90 * 86400); }   // the list sorts only the last 90 days (it sorted every open contact ever); search still finds anyone
+            if (!$numFeed && $scope !== 'closed' && trim((string)($_GET['q'] ?? '')) === '') { $w[] = 'COALESCE(c.last_in_at, c.last_out_at) >= ?'; $p[] = date('Y-m-d H:i:s', time() - 90 * 86400); }   // the list sorts only the last 90 days (it sorted every open contact ever); search still finds anyone
             $src = (string)($_GET['src'] ?? '');   // Stage B: feed filter — query | community | campaign | assigned
             if ($src === 'query') { if (function_exists('wa_ad_backfill')) wa_ad_backfill($pdo); $w[] = "c.source = 'query'"; $w[] = 'c.last_in_at >= ?'; $p[] = wa_bizday_start($pdo); }   // 📢 fresh Meta-ad queries of this business day (10:00 → 10:00); campaign / community have their own feeds
             elseif (in_array($src, ['community', 'campaign'], true)) { $w[] = 'c.source = ?'; $p[] = $src; } elseif ($src === 'assigned') $w[] = 'c.assigned_emp > 0';
-            elseif (preg_match('/^num:(\d+)$/', $src, $nm)) { $w[] = "c.source = 'query'"; $w[] = 'c.last_number_id = ?'; $p[] = (int)$nm[1]; $w[] = 'c.last_in_at >= ?'; $p[] = wa_bizday_start($pdo); }   // queries of today that came on ONE number
             if ($q !== '') { $w[] = '(c.phone LIKE ? OR c.name LIKE ?)'; $p[] = wa_q_like($q); $p[] = '%' . addcslashes($q, '%_\\') . '%'; }
             // 🔽 the Filter menu: show only … (any mix) and the order
             $wBase = $w; $pBase = $p;   // the view without the Filter menu: tab (All open / Closed / …) + chip (Query / Community / …) + person + search — the Not-responded count is for THIS view
