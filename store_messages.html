@@ -20,8 +20,12 @@
         <div class="sx-mut" style="font-size:13px;line-height:1.5">
           <b>🎂 Birthday gift</b> — the day before a customer’s birthday the code is made and the customer appears in <b>To send today</b> below with the message already written. Tap <b>💬 Open WhatsApp</b>, send it, then tap <b>✔ Done</b>: it leaves the list, so everyone can see it was sent. <b>📷 Copy photo</b> puts the photo on your clipboard to paste into the chat.<br>
           <b>🎁 Gifts</b> — a customer with a review gift or a birthday code: type the phone number or code in <b>Check a customer’s gifts</b>, give the free perfume and tap <b>Mark used</b>.<br>
-          <b>After every bill</b> — the customer gets the bill message with the community and Google-review buttons (set in <a href="store_contacts.html">Customer follow-up</a>, managers only).
+          <b>After every bill</b> — Store → Billing shows <b>Send on WhatsApp</b>: WhatsApp Web opens in a window beside the page with the <b>order thank-you</b> below already written (bill link, community and review links). Birthdays open in the same window, from the same WhatsApp number. Links are set in <a href="store_contacts.html">Customer follow-up</a>, managers only.
         </div></div>
+      <div class="sx-card" id="pxCard"><h3>📷 Pictures for the messages <small>pressed small automatically · copied when WhatsApp opens, you just press Ctrl+V then Enter</small></h3><div id="pxBody"><div class="sx-mut">Loading…</div></div></div>
+      <div class="sx-card" id="lnCard"><h3>🔗 Links in the messages <small>set once here · they fill {community_link}, {review_link} and {friends_link} in every message below</small></h3><div id="lnBody"><div class="sx-mut">Loading…</div></div></div>
+      <div class="sx-card" id="tkCard"><h3>🧾 Order thank-you message <small>sent by hand from Store → Billing, right after the bill</small></h3><div id="tkBody"><div class="sx-mut">Loading…</div></div></div>
+      <div class="sx-card" id="blCard"><h3>🧾 The bill the customer gets <small>the same bill details as Learning → Cart setup → Billing · what the customer sees when the bill link is opened</small></h3><div id="blMount"><div class="sx-mut">Loading…</div></div></div>
       <div id="bdMount"></div>
     </div></div>
   </main>
@@ -29,11 +33,104 @@
 <script src="assets/js/config.js?v=4"></script>
 <script src="assets/js/api.js?v=9"></script>
 <script src="assets/js/layout.js?v=23"></script>
-<script src="assets/js/store_common.js?v=3"></script>
-<script src="assets/js/store_bday.js?v=1"></script>
+<script src="assets/js/store_common.js?v=4"></script>
+<script src="assets/js/store_bday.js?v=4"></script>
 <script>
   guardPage();
   renderSidebar('store_messages');
+
+
+  // ---------- 📷 pictures: one for the order thank-you (new AND returning customer), one for the birthday messages (day before AND the day itself)
+  (function () {
+    const KINDS = [
+      { id: 'bill', title: 'Picture 1 · new customer (order thank-you)', sub: 'goes with “Send on WhatsApp” in Billing for a customer who is new to the store', get: () => api.get('st_bill.image_get', { photo: 1 }).then((r) => ({ photo: r.photo || '', custom: !!r.custom })), save: (d) => api.post('st_bill.image_save', { photo: d }), clear: 'Go back to the default picture' },
+      { id: 'back', title: 'Picture 2 · returning customer (welcome back)', sub: 'goes with “Send on WhatsApp” in Billing for a customer who has shopped with us before (until you add one, picture 1 is used)', get: () => api.get('st_bill.image_get', { photo: 1, kind: 'back' }).then((r) => ({ photo: r.photo || '', custom: !!r.custom })), save: (d) => api.post('st_bill.image_save', { photo: d, kind: 'back' }), clear: 'Use picture 1 for returning customers too' },
+      { id: 'bday', title: 'Picture 3 · birthday', sub: 'goes with both birthday messages — the day before and the birthday itself', get: () => api.get('st_bday.msg_get', { photo: 1 }).then((r) => ({ photo: r.photo || '', custom: !!r.photo })), save: (d) => api.post('st_bday.msg_save', { photo: d }), clear: 'Remove the picture' },
+    ];
+    const S = {};
+    const row = (k) => { const s = S[k.id] || { photo: '', custom: false };
+      return `<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;padding:10px 0;border-top:1px solid var(--sx-line)"><div style="width:86px;height:86px;border-radius:12px;background:#f1f3f5;border:1px solid var(--sx-line);display:flex;align-items:center;justify-content:center;overflow:hidden;font-size:11px;color:var(--sx-mut)">${s.photo ? `<img src="${s.photo}" alt="" style="width:100%;height:100%;object-fit:cover">` : 'no picture'}</div>
+        <div style="flex:1;min-width:220px"><b>${k.title}</b> ${s.photo ? (s.custom ? '<span class="sx-pill ok">your picture</span>' : '<span class="sx-pill info">default picture</span>') : ''}<div class="sx-mut" style="font-size:12px;margin:2px 0 6px">${k.sub}</div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><label class="sx-btn" style="padding:7px 14px;cursor:pointer;display:inline-block">📤 ${s.photo ? 'Change picture' : 'Add picture'}<input type="file" accept="image/*" data-px="${k.id}" style="display:none"></label>${s.custom ? `<button class="lnk" data-pxdel="${k.id}">${k.clear}</button>` : ''}<span class="sx-mut" id="pxn_${k.id}" style="font-size:12px"></span></div></div></div>`; };
+    const draw = () => { $('pxBody').innerHTML = KINDS.map(row).join('') + '<div class="sx-mut" style="font-size:12px;margin-top:6px">Any photo works (JPG, PNG, WEBP). It is scaled down and compressed to about 100 KB when you pick it. Managers only.</div>'; };
+    const note = (id, m, bad) => { const n = $('pxn_' + id); if (n) { n.textContent = m; n.style.color = bad ? 'var(--sx-bad)' : 'var(--sx-good)'; } };
+    const load = () => Promise.all(KINDS.map((k) => k.get().then((r) => { S[k.id] = r; window.__px = window.__px || {}; window.__px[k.id] = r.photo || ''; }).catch(() => { S[k.id] = { photo: '', custom: false }; }))).then(() => { draw(); document.dispatchEvent(new Event('pxchange')); });
+    $('pxCard').addEventListener('change', async (e) => {
+      const id = e.target.dataset && e.target.dataset.px; if (!id || !e.target.files[0]) return; const k = KINDS.find((x) => x.id === id); note(id, 'Compressing and saving…');
+      try { const d = await stShrinkImg(e.target.files[0], 900, 120); await k.save(d); await load(); note(id, 'Saved (' + Math.round(d.length / 1370) + ' KB).'); } catch (err) { note(id, (err && err.message) || 'Could not use this picture.', 1); }
+    });
+    $('pxCard').addEventListener('click', async (e) => {
+      const id = e.target.dataset && e.target.dataset.pxdel; if (!id) return; const k = KINDS.find((x) => x.id === id);
+      try { await k.save(''); await load(); } catch (err) { note(id, (err && err.message) || 'Could not remove.', 1); }
+    });
+    load();
+  })();
+  // ---------- 🧾 the order thank-you (manual): wording, variables, live preview
+  (function () {
+    const $ = (id) => document.getElementById(id), esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const VARS = [['{name}', 'customer'], ['{store}', 'store'], ['{bill_no}', 'bill no.'], ['{amount}', 'amount'], ['{bill_link}', 'bill page'], ['{community_link}', 'community'], ['{review_link}', 'Google review'], ['{friends_link}', 'friends link'], ['{contacts}', 'store numbers (list)'], ['{contacts_link}', 'save all numbers in one tap']];
+    const SH = { base: 'https://your-site/b.php?t=1a2b3c4d5e' };
+    const SAMPLE = { '{name}': 'Rahul', '{store}': 'TM Perfume House', '{bill_no}': 'ST-000123', '{amount}': '4,310', '{bill_link}': SH.base, '{community_link}': SH.base + '&c=1', '{review_link}': SH.base + '&r=1', '{friends_link}': SH.base + '&g=1', '{contacts}': '• Neil (Store): +91 98765 43210', '{contacts_link}': SH.base + '&s=1' };
+    const fill = (t) => String(t || '').replace(/\{[a-z_]+\}/g, (m) => SAMPLE[m] != null ? SAMPLE[m] : m);
+    let M = null, last = 'tkA', can = true, CS = null;
+    const crow = (c, i) => `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px" data-ci="${i}"><input class="sx-in" data-cf="name" placeholder="Name (e.g. Neil Bhatia)" value="${esc(c.name || '')}" style="flex:1 1 140px"><input class="sx-in" data-cf="phone" placeholder="WhatsApp number" inputmode="tel" value="${esc(c.phone ? String(c.phone).slice(-10) : '')}" style="flex:1 1 130px"><input class="sx-in" data-cf="role" placeholder="Role (Store / Sales)" value="${esc(c.role || '')}" style="flex:1 1 110px"><button class="lnk" data-cdel="${i}" title="Remove">✕</button></div>`;
+    const linkDraw = () => { $('lnBody').innerHTML = `<label class="sx-f">Store name <small>(in the messages as {store}, and on the bill page)</small><input class="sx-in" id="lnName" value="${esc(CS.store_name || '')}"></label>
+        <div style="margin-top:10px"><b style="font-size:12.5px">Store numbers</b> <small class="sx-mut">every customer gets these as one-tap contact cards (“Save our contacts” on the bill page)</small><div id="lnRows" style="margin-top:6px">${(CS.contacts || []).map(crow).join('')}</div><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center"><button class="lnk" id="lnAdd" ${(CS.contacts || []).length >= 8 ? 'disabled' : ''}>+ Add a number</button><button class="lnk" id="lnStd" title="Adds Surat Store, Neil Bhatia and Krish Champaneria with the numbers already saved on the Store team">+ Add the standard cards</button></div><div class="sx-mut" style="font-size:12px;margin-top:4px">Saved on the customer’s phone as <b>“name + store name”</b> — Surat Store TM Perfume House, Neil Bhatia TM Perfume House, Krish Champaneria TM Perfume House — so searching “TM Perfume House” finds every number. Write only the name here; the store name is added by itself.</div></div>
+        <label class="sx-f" style="margin-top:10px">WhatsApp community invite link<input class="sx-in" id="lnComm" placeholder="https://chat.whatsapp.com/…" value="${esc(CS.community_link || '')}"></label>
+        <label class="sx-f" style="margin-top:10px">Google review link<input class="sx-in" id="lnRev" placeholder="https://g.page/r/…/review" value="${esc(CS.review_link || '')}"></label>
+        <label class="sx-f" style="margin-top:10px">Thank-you line on the bill page<input class="sx-in" id="lnThx" value="${esc(CS.thanks_text || '')}"></label>
+        <label class="sx-f" style="margin-top:10px">Friends link <small>(automatic — every bill makes its own, for friends who came along: they save contacts, join the community and review)</small><input class="sx-in" value="${esc(SH.base.replace(/t=.*$/, 't=<each bill’s own code>') + '&g=1')}" disabled></label>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px"><button class="sx-btn" id="lnSave" style="padding:8px 16px">Save links</button><span id="lnNote" class="sx-mut"></span></div>`; linkSample(); };
+    const lab = (x, c) => { const sn = String(c.store_name || '').trim(), nm = String(x.name || '').trim() || 'Store'; return (!sn || nm.toLowerCase().indexOf(sn.toLowerCase()) >= 0) ? nm : nm + ' ' + sn; };
+    const linkSample = () => { const c = CS || {}; SAMPLE['{bill_link}'] = SH.base; SAMPLE['{store}'] = c.store_name || 'TM Perfume House'; SAMPLE['{friends_link}'] = SH.base + '&g=1';
+      SAMPLE['{community_link}'] = c.community_link ? SH.base + '&c=1' : '(add the community link above)'; SAMPLE['{review_link}'] = c.review_link ? SH.base + '&r=1' : '(add the Google review link above)';
+      const rows = (c.contacts || []).filter((x) => String(x.phone || '').replace(/\D/g, '').length >= 10).map((x) => { const p = String(x.phone).replace(/\D/g, '').slice(-10); return '• ' + lab(x, c) + ': +91 ' + p.slice(0, 5) + ' ' + p.slice(5); });
+      SAMPLE['{contacts}'] = rows.length ? rows.join('\n') : '(add the store numbers above)'; SAMPLE['{contacts_link}'] = rows.length ? SH.base + '&s=1' : ''; if (M) prev(); };
+    function draw() {
+      const box = (id, title, val, pic) => `<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start;margin-bottom:12px"><div style="flex:1 1 300px;min-width:260px"><b style="font-size:12.5px">${title}</b><textarea id="${id}" rows="13" ${can ? '' : 'disabled'} style="width:100%;box-sizing:border-box;border:1px solid var(--sx-line);border-radius:10px;padding:8px;font:inherit;margin-top:4px">${esc(val)}</textarea></div>
+        <div style="flex:0 1 300px;min-width:240px"><div class="sx-mut" style="font-size:11.5px;margin-bottom:4px">👁 How the customer sees it</div><div style="background:#efeae2;border-radius:14px;padding:10px"><div id="${id}P" data-pic="${pic}" style="background:#d9fdd3;border-radius:10px 10px 10px 2px;padding:6px;font-size:13px;line-height:1.4;word-break:break-word;box-shadow:0 1px 1px rgba(0,0,0,.12)"></div></div></div></div>`;
+      $('tkBody').innerHTML = `<div class="sx-mut" style="font-size:12px;margin-bottom:6px">Tap a word to put it in the message; it fills itself in for each customer. The window opens beside the page, on the same WhatsApp Web as the birthday messages.</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">${VARS.map((v) => `<button type="button" data-tv="${v[0]}" style="border:0;background:#e8eef7;color:#25364d;border-radius:8px;padding:3px 9px;font:700 11.5px inherit;cursor:pointer" title="${v[1]}">${v[0]}</button>`).join('')}</div>
+        ${box('tkA', '1 · New customer — thank you, bill, community, review', M.thanks, 'bill')}${box('tkB', '2 · Returning customer — welcome back (they are not asked to join / review again)', M.thanks_back, 'back')}${box('tkC', '3 · Our numbers — a separate second message (billing button “📞 Send numbers”): all your numbers arrive together as one tap-to-save contact file', M.contacts, '')}
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button class="sx-btn" id="tkSave" style="padding:8px 16px" ${can ? '' : 'disabled'}>Save messages</button><button class="lnk" id="tkReset" ${can ? '' : 'disabled'}>Back to the standard messages</button><span id="tkNote" class="sx-mut"></span></div>${can ? '' : '<div class="sx-mut" style="font-size:12px;margin-top:6px">A manager can change these words.</div>'}`;
+      prev();
+    }
+    const linkify = (t) => esc(t).replace(/(https?:\/\/[^\s<]+)/g, '<span style="color:#027eb5;text-decoration:underline">$1</span>');
+    const prev = () => { ['tkA', 'tkB', 'tkC'].forEach((id) => { const t = $(id), p = $(id + 'P'); if (!t || !p) return; const ph = (window.__px || {})[p.dataset.pic] || ''; p.innerHTML = (ph ? '<img src="' + ph + '" alt="" style="width:100%;border-radius:8px;display:block;margin-bottom:4px">' : '') + '<div style="padding:0 4px 2px;white-space:pre-wrap">' + linkify(fill(t.value)) + '</div>'; }); };
+    document.addEventListener('pxchange', () => { if (M) prev(); });
+    const note = (m, bad) => { const n = $('tkNote'); if (n) { n.textContent = m; n.style.color = bad ? 'var(--sx-bad)' : 'var(--sx-good)'; } };
+    $('lnCard').addEventListener('input', (e) => { if (!CS) return; const cf = e.target.dataset && e.target.dataset.cf; if (cf) { const r = e.target.closest('[data-ci]'); (CS.contacts[+r.dataset.ci] || {})[cf] = e.target.value; linkSample(); return; } if (e.target.id === 'lnName') { CS.store_name = e.target.value; linkSample(); return; } if (e.target.id === 'lnComm') CS.community_link = e.target.value.trim(); else if (e.target.id === 'lnRev') CS.review_link = e.target.value.trim(); else if (e.target.id === 'lnThx') CS.thanks_text = e.target.value; linkSample(); });
+    $('lnCard').addEventListener('click', async (e) => {
+      if (e.target.id === 'lnStd') {
+        const b = e.target; b.disabled = true; let T = { store: '', people: [] }; try { T = await api.get('st_cs.team_numbers'); } catch (err) { /* the cards are still added, type the numbers */ }
+        const find = (first) => { const hit = (T.people || []).filter((p) => String(p.name || '').toLowerCase().split(/\s+/)[0] === first); return hit.find((p) => p.on_team && p.phone) || hit.find((p) => p.phone) || hit[0] || null; };
+        const std = [{ name: 'Surat Store', role: 'Store', phone: T.store || '' }, { name: 'Neil Bhatia', role: 'Store', first: 'neil' }, { name: 'Krish Champaneria', role: 'Sales', first: 'krish' }];
+        std.forEach((q) => { const p = q.first ? find(q.first) : null; const ph = q.phone || (p ? p.phone : ''); const nm = (p && p.name) || q.name; const ex = (CS.contacts || []).find((x) => String(x.name || '').toLowerCase().indexOf(q.name.split(' ')[0].toLowerCase()) === 0);
+          if (ex) { if (!String(ex.phone || '').trim() && ph) ex.phone = ph; } else if (CS.contacts.length < 8) CS.contacts.push({ name: q.first ? nm : q.name, phone: ph, role: q.role }); });
+        linkDraw(); const n = $('lnNote'); if (n) { const miss = (CS.contacts || []).filter((x) => !String(x.phone || '').trim()).length; n.textContent = miss ? miss + ' number' + (miss > 1 ? 's' : '') + ' not found on the team — type ' + (miss > 1 ? 'them' : 'it') + ', then Save links.' : 'Numbers filled from the Store team. Press Save links.'; n.style.color = miss ? 'var(--sx-bad)' : 'var(--sx-good)'; }
+        return; }
+      if (e.target.id === 'lnAdd') { CS.contacts.push({ name: '', phone: '', role: 'Sales' }); linkDraw(); return; }
+      const dl = e.target.dataset && e.target.dataset.cdel; if (dl !== undefined && dl !== '') { CS.contacts.splice(+dl, 1); linkDraw(); return; }
+      if (e.target.id !== 'lnSave') return; const n = $('lnNote'); n.style.color = 'var(--sx-mut)'; n.textContent = 'Saving…';
+      try { const r = await api.post('st_cs.save', CS); CS = r.settings; n.textContent = 'Saved. Every message now carries these links.'; n.style.color = 'var(--sx-good)'; linkSample(); } catch (err) { n.textContent = (err && err.message) || 'Could not save.'; n.style.color = 'var(--sx-bad)'; }
+    });
+    api.get('st_cs.get').then((d) => { CS = d.settings; if (d.short) SH.base = String(d.short).replace(/SAMPLE$/, '1a2b3c4d5e'); linkDraw(); }).catch((err) => { $('lnBody').innerHTML = '<div class="sx-mut" style="color:var(--sx-bad)">' + esc(err.message || 'Could not load the links.') + '</div>'; });
+    $('tkCard').addEventListener('focusin', (e) => { if (e.target.id === 'tkA' || e.target.id === 'tkB' || e.target.id === 'tkC') last = e.target.id; });
+    $('tkCard').addEventListener('input', (e) => { if (e.target.id === 'tkA' || e.target.id === 'tkB' || e.target.id === 'tkC') prev(); });
+    $('tkCard').addEventListener('click', async (e) => {
+      const t = e.target;
+      if (t.dataset && t.dataset.tv) { const ta = $(last); if (ta && !ta.disabled) { const a = ta.selectionStart == null ? ta.value.length : ta.selectionStart; ta.value = ta.value.slice(0, a) + t.dataset.tv + ta.value.slice(ta.selectionEnd == null ? a : ta.selectionEnd); ta.focus(); prev(); } return; }
+      if (t.id === 'tkSave') { try { const r = await api.post('st_msgs.save', { thanks: $('tkA').value, thanks_back: $('tkB').value, contacts: $('tkC').value }); M = r.msgs; note('Saved.'); } catch (err) { note(err.message || 'Could not save.', 1); } return; }
+      if (t.id === 'tkReset') { if (!confirm('Go back to the standard order messages?')) return; try { const r = await api.post('st_msgs.save', { reset: 1 }); M = r.msgs; draw(); note('Back to the standard messages.'); } catch (err) { note(err.message || 'Could not reset.', 1); } }
+    });
+    api.get('st_msgs.get').then((r) => { M = r.msgs; draw(); }).catch((err) => { $('tkBody').innerHTML = '<div class="sx-mut" style="color:var(--sx-bad)">' + esc(err.message || 'Could not load.') + '</div>'; });
+  })();
+  // ---------- 🧾 the bill: the online "Cart setup → Billing" screen (company / GST details, LIVE bill preview), shown here too
+  (function () {
+    const box = document.getElementById('blMount'), sc = document.createElement('script'); sc.src = 'assets/js/wch_setup_ui.js?v=ch4';
+    const go = () => { if (!window.WaCartSetup) { box.innerHTML = '<div class="sx-mut">The bill screen is not installed on this server (assets/js/wch_setup_ui.js and empmanagment/wch.php).</div>'; return; } box.innerHTML = ''; try { WaCartSetup.billing(box, { api }); } catch (err) { box.innerHTML = '<div class="sx-mut" style="color:var(--sx-bad)">' + (err.message || 'Could not open the bill screen.') + '</div>'; } };
+    sc.onload = go; sc.onerror = go; document.head.appendChild(sc);
+  })();
   StoreBday.mount(document.getElementById('bdMount'));
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 </script>

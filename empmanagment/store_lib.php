@@ -672,6 +672,7 @@ function st_cs_get(PDO $pdo): array
 {
     $d = st_cs_defaults();
     try { $v = $pdo->query("SELECT svalue FROM st_cs_settings WHERE skey = 'cs'")->fetchColumn(); $j = $v ? json_decode($v, true) : null; if (is_array($j)) $d = array_merge($d, $j); } catch (Throwable $e) { }
+    $d['msgs'] = st_msgs_get($pdo);
     return $d;
 }
 function st_cs_save(PDO $pdo, array $in): array
@@ -697,15 +698,67 @@ function st_bill_link(string $token): string
     $dir = isset($_SERVER['SCRIPT_NAME']) ? rtrim(dirname((string)$_SERVER['SCRIPT_NAME']), '/\\') : '/empmanagment';
     return $base . ($dir === '' || $dir === '.' ? '' : $dir) . '/store_bill.php?t=' . $token;
 }
-/** The WhatsApp message (and the wa.me link that opens it ready to send) for one customer. */
+/** The wording the cashier sends BY HAND on web.whatsapp after a bill (editable in Store → Messages). {name} {store} {bill_no} {amount} {bill_link} {community_link} {review_link} {friends_link} fill themselves in. */
+function st_msgs_legacy(): array      // earlier standard wordings: a saved copy of one of them is treated as "standard", so people get the newest standard
+{
+    return [md5("Hi {name}, thank you for shopping at {store}! Your bill {bill_no} (₹{amount}) is here: {bill_link}\nSave our contacts and join our community from the same page.\n\nCame with friends? Send them this link so they can save our contacts, join the community and review us too: {friends_link}"),
+        md5("Welcome back, {name}! Thank you for shopping at {store} again. Your bill {bill_no} (₹{amount}) is here: {bill_link}\n\nCame with friends? Send them this link so they can save our contacts, join the community and review us too: {friends_link}"),
+        md5("Hi {name}, thank you for shopping at {store}! 🙏\n\n🧾 Your bill {bill_no} (₹{amount}) — see it here:\n{bill_link}\n\n📞 Please save our numbers, so you never miss an offer:\n{contacts}\nSave all in one tap: {contacts_link}\n\n👥 Please join our community:\n{community_link}\n\n⭐ Please give us a 5-star review on Google:\n{review_link}\n\nCame with friends? Send them this: {friends_link}")];
+}
+function st_msgs_defaults(): array
+{
+    return [
+        'thanks' => "Hi {name}, thank you for shopping at {store}! 🙏\n\n🧾 Your bill {bill_no} (₹{amount}) — see it here:\n{bill_link}\n\n📞 Save all our numbers in one tap (they come together as one contact file):\n{contacts_link}\n\n👥 Please join our community:\n{community_link}\n\n⭐ Please give us a 5-star review on Google:\n{review_link}\n\nCame with friends? Send them this: {friends_link}",
+        'thanks_back' => "Welcome back, {name}! 🙏 Thank you for shopping at {store} again.\n\n🧾 Your bill {bill_no} (₹{amount}) — see it here:\n{bill_link}\n\nCame with friends? Send them this: {friends_link}",
+        'contacts' => "Hi {name}! 📞 Please save our numbers so you never miss an offer — one tap adds all of them to your phone together:\n{contacts_link}",
+    ];
+}
+function st_msgs_get(PDO $pdo): array
+{
+    $d = st_msgs_defaults(); $j = null;
+    try { $v = $pdo->query("SELECT svalue FROM st_cs_settings WHERE skey = 'msgs'")->fetchColumn(); $j = $v ? json_decode((string)$v, true) : null; } catch (Throwable $e) { }
+    if (is_array($j)) foreach ($d as $k => $def) if (trim((string)($j[$k] ?? '')) !== '' && !in_array(md5((string)$j[$k]), st_msgs_legacy(), true)) $d[$k] = (string)$j[$k];
+    return $d;
+}
+function st_msgs_save(PDO $pdo, array $in): array
+{
+    $cur = st_msgs_get($pdo); $def = st_msgs_defaults();
+    if (!empty($in['reset'])) { $cur = $def; }
+    else foreach (['thanks', 'thanks_back', 'contacts'] as $k) if (isset($in[$k])) {
+        $t = trim(str_replace("\r", '', (string)$in[$k])); if ($t === '') return ['error' => 'A message cannot be empty.']; if (mb_strlen($t) > 900) return ['error' => 'A message is too long (900 letters at most).']; $cur[$k] = $t;
+    }
+    $pdo->prepare("INSERT INTO st_cs_settings (skey, svalue) VALUES ('msgs', ?) ON DUPLICATE KEY UPDATE svalue = VALUES(svalue)")->execute([json_encode($cur, JSON_UNESCAPED_UNICODE)]);
+    return ['ok' => true, 'msgs' => $cur, 'defaults' => $def];
+}
+/** The SHORT address of a customer's bill page (b.php in the main folder): https://domain/b.php?t=TOKEN + &c=1 community · &r=1 Google review · &s=1 save our numbers · &g=1 friends. Counts the same taps as the long address. */
+function st_short_link(string $token, string $extra = ''): string
+{
+    $base = defined('APP_URL') && APP_URL ? rtrim((string)APP_URL, '/') : ((!empty($_SERVER['HTTPS']) || ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https' ? 'https://' : 'http://') . ($_SERVER['HTTP_HOST'] ?? 'localhost'));
+    $dir = isset($_SERVER['SCRIPT_NAME']) ? rtrim(dirname((string)$_SERVER['SCRIPT_NAME']), '/\\') : '/empmanagment';
+    $root = rtrim(dirname($dir === '' ? '/' : $dir), '/\\');      // the main folder, one above empmanagment
+    return $base . ($root === '.' ? '' : $root) . '/b.php?t=' . $token . ($extra !== '' ? '&' . $extra . '=1' : '');
+}
+/** The store numbers as lines of text: "• Neil (Store): +91 98765 43210". */
+function st_contacts_text(array $cs): string
+{
+    $o = []; foreach ((array)($cs['contacts'] ?? []) as $c) { $ph = substr(preg_replace('/\D/', '', (string)($c['phone'] ?? '')), -10); if ($ph === '') continue; $nm = trim((string)($c['name'] ?? '')); $rl = trim((string)($c['role'] ?? '')); $o[] = '• ' . st_contact_label($c, $cs) . ': +91 ' . substr($ph, 0, 5) . ' ' . substr($ph, 5); }
+    return implode("\n", $o);
+}
+/** The WhatsApp message (and the web.whatsapp link that opens it ready to send, in the side window) for one customer. */
 function st_wa_message(array $person, array $bill, array $cs): array
 {
     $name = trim((string)$person['name']); $first = $name !== '' ? explode(' ', $name)[0] : 'there';
     $skip = !empty($person['returning']) && !empty($cs['skip_returning']);      // someone who already shops with us is not asked to save / join / review again
-    $text = $skip ? 'Welcome back, ' . $first . '! Thank you for shopping at ' . $cs['store_name'] . ' again. Your bill ' . $bill['bill_no'] . ' (₹' . number_format((float)$bill['total']) . ') is here: ' . st_bill_link((string)$person['token'])
-        : 'Hi ' . $first . ', thank you for shopping at ' . $cs['store_name'] . '! Your bill ' . $bill['bill_no'] . ' (₹' . number_format((float)$bill['total']) . ') is here: ' . st_bill_link((string)$person['token']) . "\nSave our contacts and join our community from the same page.";
-    $text .= "\n\nCame with friends? Send them this link so they can save our contacts, join the community and review us too: " . st_bill_link((string)$person['token']) . '&g=1';
-    return ['text' => $text, 'url' => 'https://wa.me/' . $person['phone'] . '?text=' . rawurlencode($text)];
+    $m = is_array($cs['msgs'] ?? null) ? $cs['msgs'] : st_msgs_defaults(); $tpl = (string)($skip ? ($m['thanks_back'] ?? '') : ($m['thanks'] ?? '')); if (trim($tpl) === '') { $d = st_msgs_defaults(); $tpl = $skip ? $d['thanks_back'] : $d['thanks']; }
+    $tk = (string)$person['token'];      // short, counted links: the bill page, the community, the Google review, "save our numbers", the friends link
+    $text = strtr($tpl, ['{name}' => $first, '{store}' => (string)$cs['store_name'], '{bill_no}' => (string)$bill['bill_no'], '{amount}' => number_format((float)$bill['total']), '{bill_link}' => st_short_link($tk),
+        '{community_link}' => trim((string)($cs['community_link'] ?? '')) !== '' ? st_short_link($tk, 'c') : '', '{review_link}' => trim((string)($cs['review_link'] ?? '')) !== '' ? st_short_link($tk, 'r') : '',
+        '{contacts}' => st_contacts_text($cs), '{contacts_link}' => !empty($cs['contacts']) ? st_short_link($tk, 's') : '', '{friends_link}' => st_short_link($tk, 'g')]);
+    $text = trim(preg_replace("/\n{3,}/", "\n\n", $text));
+    $tc = (string)($m['contacts'] ?? ''); if (trim($tc) === '') $tc = st_msgs_defaults()['contacts'];
+    $text2 = !empty($cs['contacts']) ? trim(strtr($tc, ['{name}' => $first, '{store}' => (string)$cs['store_name'], '{contacts}' => st_contacts_text($cs), '{contacts_link}' => st_short_link($tk, 's')])) : '';
+    return ['text' => $text, 'url' => 'https://web.whatsapp.com/send?phone=' . $person['phone'] . '&text=' . rawurlencode($text),
+        'text2' => $text2, 'url2' => $text2 !== '' ? 'https://web.whatsapp.com/send?phone=' . $person['phone'] . '&text=' . rawurlencode($text2) : ''];
 }
 function st_event(PDO $pdo, int $personId, int $billId, string $kind, string $who = ''): void
 {
@@ -855,11 +908,17 @@ function st_people_status(PDO $pdo, array $billIds): array
 function st_vcf_esc(string $t): string { return str_replace(["\\", ",", ";", "\r", "\n"], ["\\\\", "\\,", "\\;", '', "\\n"], $t); }
 
 /** One .vcf with every store contact (the store number + each salesperson): opening it on a phone offers "Add contacts". */
+/** The name a number is saved under on the customer's phone: "<name> <store name>", e.g. "Neil Bhatia TM Perfume House", "Surat Store TM Perfume House" — so searching the store name finds every number. */
+function st_contact_label(array $c, array $cs): string
+{
+    $sn = trim((string)($cs['store_name'] ?? '')); $nm = trim((string)($c['name'] ?? '')); if ($nm === '') $nm = 'Store';
+    return ($sn === '' || stripos($nm, $sn) !== false) ? $nm : $nm . ' ' . $sn;
+}
 function st_vcf(array $cs): string
 {
     $out = '';
     foreach ($cs['contacts'] as $c) {
-        $fn = trim($c['name'] . ($c['role'] !== '' ? ' (' . $c['role'] . ')' : ''));
+        $fn = st_contact_label($c, $cs);
         $out .= "BEGIN:VCARD\r\nVERSION:3.0\r\nN:;" . st_vcf_esc($fn) . ";;;\r\nFN:" . st_vcf_esc($fn) . "\r\nORG:" . st_vcf_esc($cs['store_name']) . "\r\nTEL;TYPE=CELL,VOICE:+" . $c['phone'] . "\r\nEND:VCARD\r\n";
     }
     return $out;
@@ -1420,22 +1479,30 @@ function st_bday_send(PDO $pdo, array $v): array
 /** The wording the cashier sends BY HAND (web.whatsapp) and its optional photo. {name} {code} {birthday} {from} {till} are filled in for each customer by the screen. */
 function st_bday_msg_default(): string
 {
-    return "Hello {name}! 🎂 Your birthday is on {birthday}, and TM Perfume House has a FREE 50 ml perfume gift for you. Collect it from our store any time between {from} and {till} by showing this code: {code}. Happy birthday in advance! 💖";   // the STORE message (said by hand); the online customers get their own automatic message
+    return "Hello {name}! 🎂 Your birthday is tomorrow ({birthday}), and TM Perfume House has a FREE 50 ml perfume gift for you. Collect it from our store any time between {from} and {till} by showing this code: {code}. Happy birthday in advance! 💖";   // the STORE message (said by hand); the online customers get their own automatic message
+}
+function st_bday_msg_day_default(): string
+{
+    return "Happy birthday {name}! 🎂🎉 TM Perfume House has a FREE 50 ml perfume gift for you today. Collect it from our store any time between {from} and {till} by showing this code: {code}. Have a wonderful day! 💖";
 }
 function st_bday_msg(PDO $pdo, bool $withPhoto = false): array
 {
     $j = null; try { $v = $pdo->query("SELECT svalue FROM st_cs_settings WHERE skey = 'bday_msg'")->fetchColumn(); $j = $v ? json_decode((string)$v, true) : null; } catch (Throwable $e) { }
     $text = is_array($j) && trim((string)($j['text'] ?? '')) !== '' ? (string)$j['text'] : st_bday_msg_default(); $photo = is_array($j) ? (string)($j['photo'] ?? '') : '';
-    $o = ['text' => $text, 'has_photo' => $photo !== '', 'default' => st_bday_msg_default()]; if ($withPhoto) $o['photo'] = $photo;
+    $dt = is_array($j) && trim((string)($j['day_text'] ?? '')) !== '' ? (string)$j['day_text'] : st_bday_msg_day_default();
+    $o = ['text' => $text, 'day_text' => $dt, 'has_photo' => $photo !== '', 'default' => st_bday_msg_default(), 'day_default' => st_bday_msg_day_default()]; if ($withPhoto) $o['photo'] = $photo;
     return $o;
 }
 function st_bday_msg_save(PDO $pdo, array $in): array
 {
-    $cur = st_bday_msg($pdo, true); $text = $cur['text']; $photo = (string)($cur['photo'] ?? '');
-    if (!empty($in['reset'])) { $text = st_bday_msg_default(); }
-    elseif (isset($in['text'])) { $t = trim(str_replace("\r", '', (string)$in['text'])); if ($t === '') return ['error' => 'The message cannot be empty.']; if (mb_strlen($t) > 900) return ['error' => 'The message is too long (900 letters at most).']; $text = $t; }
+    $cur = st_bday_msg($pdo, true); $text = $cur['text']; $day = $cur['day_text']; $photo = (string)($cur['photo'] ?? '');
+    if (!empty($in['reset'])) { $text = st_bday_msg_default(); $day = st_bday_msg_day_default(); }
+    else foreach (['text', 'day_text'] as $k) if (isset($in[$k])) {
+        $t = trim(str_replace("\r", '', (string)$in[$k])); if ($t === '') return ['error' => 'The message cannot be empty.']; if (mb_strlen($t) > 900) return ['error' => 'The message is too long (900 letters at most).'];
+        if ($k === 'text') $text = $t; else $day = $t;
+    }
     if (array_key_exists('photo', $in)) { $p = (string)$in['photo']; if ($p === '') $photo = ''; elseif (preg_match('#^data:image/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$#', $p) && strlen($p) <= 900000) $photo = $p; else return ['error' => 'The photo must be a JPG / PNG picture under about 600 KB.']; }
-    $pdo->prepare("INSERT INTO st_cs_settings (skey, svalue) VALUES ('bday_msg', ?) ON DUPLICATE KEY UPDATE svalue = VALUES(svalue)")->execute([json_encode(['text' => $text, 'photo' => $photo], JSON_UNESCAPED_UNICODE)]);
+    $pdo->prepare("INSERT INTO st_cs_settings (skey, svalue) VALUES ('bday_msg', ?) ON DUPLICATE KEY UPDATE svalue = VALUES(svalue)")->execute([json_encode(['text' => $text, 'day_text' => $day, 'photo' => $photo], JSON_UNESCAPED_UNICODE)]);
     return ['ok' => true];
 }
 /** Is this code good for a free 50 ml today? Returns ['ok' => true, 'voucher' => row] or ['ok' => false, 'error' => text]. */
@@ -1487,15 +1554,53 @@ if (!function_exists('budget_store_calc')) {
         try { if (!function_exists('cm_chart') && is_file(__DIR__ . '/boss.php')) require_once __DIR__ . '/boss.php'; } catch (Throwable $e) { error_log('commission engine: ' . $e->getMessage()); }
         return function_exists('cm_chart') && function_exists('cm_pct') && function_exists('cm_offers') && function_exists('cm_offer_match') && function_exists('cm_code_need');
     }
+    /** The people whose store bills count as ONE team for the order-code rule (default: Neil, Krish and Anil). Saved by Total Budgeting → Store; anybody else who bills is counted alone. */
+    function st_pool_ids(PDO $pdo): array
+    {
+        $j = null; try { if (function_exists('setting_get')) $j = json_decode((string)setting_get($pdo, 'store_pool', ''), true); } catch (Throwable $e) {}
+        if (is_array($j)) return array_values(array_unique(array_filter(array_map('intval', $j))));
+        $ids = [];
+        try { foreach ($pdo->query("SELECT employee_id, full_name FROM employees WHERE status != 'ex'")->fetchAll() as $r) { $fn = strtolower((string)strtok(trim((string)$r['full_name']), ' ')); if (in_array($fn, ['neil', 'krish', 'anil'], true)) $ids[] = (int)$r['employee_id']; } } catch (Throwable $e) {}
+        return $ids;
+    }
+    /** Old POS bills (pos_orders, kept in this database) of the days in the range that have NO bill in the new store POS, shaped like st_bills rows. So the days before the new POS started (e.g. 1–3 November) still count. */
+    function budget_oldpos_rows(PDO $pdo, string $from, string $to, array $newDays): array
+    {
+        $h = function_exists('st_day_hour') ? st_day_hour() : 3; $dd = "DATE(DATE_SUB(o.created_at, INTERVAL $h HOUR))";
+        $lo = $from . sprintf(' %02d:00:00', $h); $hi = date('Y-m-d', strtotime($to . ' +1 day')) . sprintf(' %02d:00:00', $h);
+        $rows = [];
+        try {
+            $hasCode = false; try { $hasCode = (bool)$pdo->query("SHOW COLUMNS FROM pos_orders LIKE 'order_code'")->fetch(); } catch (Throwable $e) {}
+            $q = $pdo->prepare("SELECT o.id, $dd d, o.created_at, o.total, o.billed_by" . ($hasCode ? ", o.order_code" : "") . " FROM pos_orders o WHERE o.created_at >= ? AND o.created_at < ? ORDER BY o.id");
+            $q->execute([$lo, $hi]); $ord = $q->fetchAll(); if (!$ord) return [];
+            $ml = [];
+            $qi = $pdo->prepare("SELECT oi.order_id, oi.variant_title vt, oi.title t, oi.qty q FROM pos_order_items oi JOIN pos_orders o ON o.id = oi.order_id WHERE o.created_at >= ? AND o.created_at < ?");
+            $qi->execute([$lo, $hi]);
+            foreach ($qi->fetchAll() as $r) { if (preg_match('/(\d+)\s*ml/i', (string)$r['vt'], $m) || preg_match('/(\d+)\s*ml/i', (string)$r['t'], $m)) $ml[(int)$r['order_id']] = ($ml[(int)$r['order_id']] ?? 0) + (int)$m[1] * (int)$r['q']; }
+            $emps = $pdo->query("SELECT employee_id, full_name FROM employees WHERE status != 'ex'")->fetchAll(); $byFull = []; $byFirst = [];
+            foreach ($emps as $e) { $fn = strtolower(trim(preg_replace('/\s+/', ' ', (string)$e['full_name']))); $byFull[$fn] = $e; $f1 = (string)strtok($fn, ' '); $byFirst[$f1][] = $e; }
+            foreach ($ord as $o) {
+                if (isset($newDays[(string)$o['d']])) continue;
+                $nm = trim((string)$o['billed_by']); $k = strtolower(trim(preg_replace('/\s+/', ' ', $nm))); $e = $byFull[$k] ?? null;
+                if (!$e) { $f1 = (string)strtok($k, ' '); if (isset($byFirst[$f1]) && count($byFirst[$f1]) === 1) $e = $byFirst[$f1][0]; }
+                $rows[] = ['bill_id' => -(int)$o['id'], 'bill_no' => 'POS-' . (int)$o['id'], 'biz_date' => (string)$o['d'], 'created_at' => (string)$o['created_at'], 'emp_id' => $e ? (int)$e['employee_id'] : 0,
+                    'emp_name' => $e ? (string)$e['full_name'] : ($nm !== '' ? $nm : 'Old POS'), 'order_code' => $hasCode ? (string)($o['order_code'] ?? '') : '', 'total_ml' => (int)($ml[(int)$o['id']] ?? 0), 'total' => (float)$o['total'], 'real_id' => $e ? (int)$e['employee_id'] : null, 'src' => 'old_pos'];
+            }
+        } catch (Throwable $e) { error_log('budget_oldpos_rows: ' . $e->getMessage()); return []; }
+        return $rows;
+    }
     function budget_store_calc(PDO $pdo, string $from, string $to): array
     {
         static $memo = []; $mk = $from . '|' . $to; if (isset($memo[$mk])) return $memo[$mk];
-        $ch = cm_chart($pdo); $offers = cm_offers($pdo); $rows = []; $groups = []; $noMl = 0; $unpriced = 0;
+        $ch = cm_chart($pdo); $offers = cm_offers($pdo); $rows = []; $groups = []; $noMl = 0; $unpriced = 0; $pool = array_flip(st_pool_ids($pdo));
+        $flashList = []; try { if (function_exists('cm_is_live') && !cm_is_live($pdo) && function_exists('flash_offer_list_get')) $flashList = flash_offer_list_get($pdo); } catch (Throwable $e) { }     // a Flash Offer only counts while the old engine pays (the new engine has no flash offers)
         if (function_exists('ensure_st_tables')) ensure_st_tables($pdo);
         $q = $pdo->prepare("SELECT b.bill_id, b.bill_no, b.biz_date, b.created_at, b.emp_id, b.emp_name, b.order_code, b.total_ml, b.total, e.employee_id AS real_id
             FROM st_bills b LEFT JOIN employees e ON e.employee_id = b.emp_id AND e.status != 'ex' WHERE b.status = 'ok' AND b.biz_date BETWEEN ? AND ? ORDER BY b.bill_id");
         $q->execute([$from, $to]);
-        foreach ($q->fetchAll() as $i => $b) { $rows[$i] = $b; $groups[(int)$b['emp_id'] . '|' . $b['biz_date']][] = $i; }
+        $all = $q->fetchAll(); $newDays = []; foreach ($all as $b) $newDays[(string)$b['biz_date']] = 1;
+        foreach (budget_oldpos_rows($pdo, $from, $to, $newDays) as $b) $all[] = $b;     // days with no bill in the new POS come from the old POS
+        foreach ($all as $i => $b) { $rows[$i] = $b; $eid = (int)$b['emp_id']; $gk = isset($pool[$eid]) ? 'pool' : ($eid > 0 ? (string)$eid : 'n:' . $b['emp_name']); $groups[$gk . '|' . $b['biz_date']][] = $i; }
         $out = [];
         foreach ($groups as $k => $idx) {
             $n = count($idx); $nCode = 0;
@@ -1505,12 +1610,14 @@ if (!function_exists('budget_store_calc')) {
                 $b = $rows[$i]; $day = (string)$b['biz_date']; $gross = (float)$b['total']; $ml = (int)$b['total_ml']; $hasCode = trim((string)$b['order_code']) !== '';
                 $f = ($hasCode || $codeOk) ? 1.0 : $nocodeF; $com = 0.0; $pct = null; $rule = '';
                 $of = $ml ? cm_offer_match($offers, $ml, $gross, $day, (float)$ch['window']) : null;
+                $fl = (!$of && $flashList && $ml) ? flash_offer_pct_for($flashList, $ml, $gross, (int)strtotime((string)$b['created_at'])) : null;
                 if ($of) { $pct = (float)$of['pct']; $rule = 'offer'; $com = $gross * $pct / 100 * $f; }
+                elseif ($fl !== null) { $pct = (float)$fl['pct']; $rule = 'flash offer'; $com = $gross * $pct / 100 * (($hasCode || $codeOk) ? 1.0 : (float)$fl['nocode'] / 100); }
                 elseif (!$ml) { $noMl++; $rule = 'no ML'; }
                 else { $pc = cm_pct($ch, $ml, $gross); if ($pc === null) { $unpriced++; $rule = 'ML not priced'; } else { $pct = (float)$pc; $rule = 'chart'; $com = $gross * $pct / 100 * $f; } }
                 $out[$i] = ['bill_id' => (int)$b['bill_id'], 'bill_no' => (string)$b['bill_no'], 'day' => $day, 'time' => substr((string)$b['created_at'], 11, 5), 'emp_id' => (int)$b['emp_id'],
                     'employee_id' => $b['real_id'] ? (int)$b['emp_id'] : 0, 'name' => (string)$b['emp_name'], 'code' => $hasCode, 'total' => $gross, 'ml' => $ml,
-                    'pct' => $pct, 'rule' => $rule, 'reduced' => $f < 1.0, 'com' => round($com, 2)];
+                    'pct' => $pct, 'rule' => $rule, 'reduced' => $f < 1.0, 'com' => round($com, 2), 'pooled' => isset($pool[(int)$b['emp_id']]), 'src' => (string)($b['src'] ?? 'new_pos')];
             }
         }
         ksort($out);

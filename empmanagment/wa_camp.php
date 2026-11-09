@@ -1033,7 +1033,10 @@ if (in_array($__wk, ['wa.fu_list', 'wa.fu_save', 'wa.fu_del', 'wa.fu_preset', 'w
                 catch (Throwable $e) { if ($pdo->inTransaction()) $pdo->rollBack(); throw $e; }
             }
             $pdo->prepare("UPDATE wa_campaigns SET status = ?, started_at = ?, note = '' WHERE id = ?")->execute([$future ? 'scheduled' : 'running', $future ? null : $now, $c['id']]);
-            wa_log($pdo, 'campaign', true, '#' . $c['id'] . ' ' . $c['name'] . ' started for ' . count($send) . ' customers.'); json_response(['ok' => true, 'queued' => count($send), 'status' => $future ? 'scheduled' : 'running']);
+            wa_log($pdo, 'campaign', true, '#' . $c['id'] . ' ' . $c['name'] . ' started for ' . count($send) . ' customers.');
+            $out = ['ok' => true, 'queued' => count($send), 'status' => $future ? 'scheduled' : 'running'];
+            if (!$future) { wa_reply_early($out); try { ignore_user_abort(true); wa_camp_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'campaign', false, 'first round: ' . $e->getMessage()); } exit; }   // START = the first round goes out NOW, in this same request (it no longer waits for the cron or for the next 30-second tick of an open page)
+            json_response($out);
         }
         case 'wa.camp_send_now': {   // ⚡ the waiting people go out now instead of at their best hour — everyone waiting, or one person
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
@@ -1047,8 +1050,10 @@ if (in_array($__wk, ['wa.fu_list', 'wa.fu_save', 'wa.fu_del', 'wa.fu_preset', 'w
             wa_log($pdo, 'campaign', true, '#' . $c['id'] . ' ' . $c['name'] . ': ' . $n . ' moved to send now');
             $dq = $pdo->prepare("SELECT COUNT(*) FROM wa_camp_items WHERE camp_id = ? AND status = 'queued' AND (send_at IS NULL OR send_at <= ?)"); $dq->execute([(int)$c['id'], $now]); $dueN = (int)$dq->fetchColumn();
             $c2 = wa_camp_row($pdo, (int)$c['id']) ?: $c; $wait = wa_camp_wait_reason($pdo, $c2);
-            json_response(['ok' => true, 'moved' => $n, 'due' => $dueN, 'paused' => $c['status'] === 'paused', 'night' => $night, 'wait' => $wait,
-                'note' => $wait !== '' ? $wait : ($dueN . ' are due now — they go out over the next minutes.')]);
+            $out = ['ok' => true, 'moved' => $n, 'due' => $dueN, 'paused' => $c['status'] === 'paused', 'night' => $night, 'wait' => $wait,
+                'note' => $wait !== '' ? $wait : ($dueN . ' are due now — the first round goes out right now, the rest at the campaign speed.')];
+            if ($c['status'] !== 'paused' && $dueN > 0 && $wait === '') { wa_reply_early($out); try { ignore_user_abort(true); wa_camp_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'campaign', false, 'send now round: ' . $e->getMessage()); } exit; }   // SEND NOW = the round starts at once, not at the next cron / page tick
+            json_response($out);
         }
         case 'wa.camp_stop_all': {   // ⏹ the owner stops EVERY campaign that is still running, scheduled or paused; their waiting people are dropped (nothing more is sent)
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $now = date('Y-m-d H:i:s', wa_camp_now());

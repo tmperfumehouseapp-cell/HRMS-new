@@ -112,16 +112,25 @@ function st_quote(PDO $pdo, int $totalMl, int $empId): array
             $cols[] = ['col' => $i, 'price' => (float)$p, 'pct' => $pct === null ? null : round($pct, 2), 'label' => (string)($chart['cols'][$i] ?? '')];
         }
     }
-    return ['total_ml' => $totalMl, 'in_chart' => $prices !== null, 'columns' => $cols, 'chart_on' => !empty($chart['on'])];
+    // the OFFERS of Commission Rules (the same list the online sales use): an offer on this exact size is one more price to pick, with its own commission %
+    $offers = []; $flash = null;
+    if ($totalMl > 0 && budget_engine_ready()) {
+        try { foreach (cm_offers($pdo) as $o) { if (empty($o['active']) || (int)$o['ml'] !== $totalMl) continue; if ($o['from_date'] && $day < $o['from_date']) continue; if ($o['to_date'] && $day > $o['to_date']) continue;
+            $cols[] = ['col' => count($cols), 'price' => (float)$o['price'], 'pct' => round((float)$o['pct'], 2), 'label' => 'Offer', 'offer' => true, 'note' => (string)($o['note'] ?? '')]; $offers[] = (int)$o['id']; } } catch (Throwable $e) { error_log('st_quote offers: ' . $e->getMessage()); }
+        try { if (!cm_is_live($pdo)) { $fp = flash_offer_pct_for(flash_offer_list_get($pdo), $totalMl, 0.0, time()); if ($fp !== null) $flash = ['pct' => (float)$fp['pct']]; } } catch (Throwable $e) { }
+    }
+    return ['total_ml' => $totalMl, 'in_chart' => $prices !== null || $offers, 'columns' => $cols, 'chart_on' => !empty($chart['on']), 'flash' => $flash];
 }
 
-/** Commission % this bill pays on its final price — the chart band, or a Flash Offer's flat % when one is running. */
-function st_pct_for(PDO $pdo, int $totalMl, float $amt, int $empId, bool $hasCode): array
+/** Commission % this bill pays on its final price — the SAME order the online sales use: a matching Offer (Commission Rules: size + price) → a Flash Offer (only while the old engine pays) → the price chart. */
+function st_pct_for(PDO $pdo, int $totalMl, float $amt, int $empId, bool $hasCode, ?string $day = null, ?int $ts = null): array
 {
-    $day = st_day();
+    $day = $day ?: st_day(); $ts = $ts ?: time();
     $chart = ml_slab_for(ml_slab_get($pdo), $day, $empId);
-    $flash = flash_offer_pct_for(flash_offer_list_get($pdo), $totalMl, $amt, time());
-    if ($flash !== null) return ['pct' => (float)$flash['pct'], 'source' => 'flash offer'];
+    if ($totalMl > 0 && budget_engine_ready()) {
+        try { $of = cm_offer_match(cm_offers($pdo), $totalMl, $amt, $day, (float)cm_chart($pdo)['window']); if ($of) return ['pct' => (float)$of['pct'], 'source' => 'offer'];
+            if (!cm_is_live($pdo)) { $flash = flash_offer_pct_for(flash_offer_list_get($pdo), $totalMl, $amt, $ts); if ($flash !== null) return ['pct' => (float)$flash['pct'], 'source' => 'flash offer']; } } catch (Throwable $e) { error_log('st_pct_for offers: ' . $e->getMessage()); }
+    } else { $flash = flash_offer_pct_for(flash_offer_list_get($pdo), $totalMl, $amt, $ts); if ($flash !== null) return ['pct' => (float)$flash['pct'], 'source' => 'flash offer']; }
     $pc = !empty($chart['on']) ? coach_slab_pct($chart, $totalMl, $amt, false) : null;
     return ['pct' => $pc === null ? null : round($pc, 2), 'source' => 'price chart'];
 }
@@ -816,7 +825,7 @@ try {
             $autoWa = st_wa_auto($pdo, $billId, $billNo, (float)$total, $cs);      // the bill goes to the customer's WhatsApp by itself (bill link + community + review); a failure only leaves the manual button
             $ppl = st_people_status($pdo, [$billId])[$billId] ?? [];
             foreach ($ppl as &$ax) { $ax['auto'] = $autoWa[$ax['person_id']] ?? ''; } unset($ax);
-            foreach ($ppl as &$x) { if ($x['phone'] !== '') { $tok = substr($x['link'], strrpos($x['link'], '=') + 1); $m = st_wa_message(['name' => $x['name'], 'phone' => $x['phone'], 'token' => $tok, 'returning' => $x['returning']], ['bill_no' => $billNo, 'total' => $total], $cs); $x['wa_url'] = $m['url']; } }
+            foreach ($ppl as &$x) { if ($x['phone'] !== '') { $tok = substr($x['link'], strrpos($x['link'], '=') + 1); $m = st_wa_message(['name' => $x['name'], 'phone' => $x['phone'], 'token' => $tok, 'returning' => $x['returning']], ['bill_no' => $billNo, 'total' => $total], $cs); $x['wa_url'] = $m['url']; $x['wa_url2'] = $m['url2']; } }
             unset($x);
             json_response(['ok' => true, 'bill_id' => $billId, 'bill_no' => $billNo, 'total' => $total, 'total_ml' => $t['total_ml'], 'commission_pct' => $pc['pct'], 'commission_from' => $pc['source'], 'commission_amount' => $cmx ? (float)$cmx['com'] : null, 'no_code' => $code === '', 'code_rule' => $codeRule, 'people' => $ppl] + $invOut + [
                 'message' => 'Bill ' . $billNo . ' saved: ' . $t['total_ml'] . ' ml, ₹' . number_format($total) . '.']);
@@ -843,6 +852,22 @@ try {
             break;
         }
 
+        case 'st_bill.image_get': {       // the picture that goes with the bill message (the cashier copies it and pastes it in the WhatsApp chat). kind=back: the returning customer's own picture (falls back to the new customer's). The picture itself only when asked.
+            require_auth(); $back = (($_GET['kind'] ?? '') === 'back'); $get = function (string $k) use ($pdo): string { try { $x = $pdo->query("SELECT svalue FROM st_cs_settings WHERE skey = '" . $k . "'")->fetchColumn(); $j = $x ? json_decode((string)$x, true) : null; return is_array($j) ? (string)($j['photo'] ?? '') : ''; } catch (Throwable $e) { return ''; } };
+            $v = $back ? $get('bill_image_back') : $get('bill_image'); $custom = $v !== '';
+            if (!$custom && $back) $v = $get('bill_image');       // no returning-customer picture: the new customer's picture is used
+            if ($v === '') { $df = dirname(__DIR__) . '/assets/img/store_bill_default.jpg'; if (is_file($df)) $v = 'data:image/jpeg;base64,' . base64_encode((string)file_get_contents($df)); }   // no picture uploaded: the default picture that comes with the HRMS
+            json_response(['has_image' => $v !== '', 'custom' => $custom] + (!empty($_GET['photo']) ? ['photo' => $v] : []));
+            break;
+        }
+        case 'st_bill.image_save': {      // managers: set or remove that picture (kind=back: the returning customer's)
+            $auth = require_auth(); if (!(in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true) || user_can($auth, 'rs_manage'))) json_response(['error' => 'Only a manager can change the bill picture.'], 403);
+            $in = json_input(); $p = (string)($in['photo'] ?? ''); $key = (($in['kind'] ?? '') === 'back') ? 'bill_image_back' : 'bill_image';
+            if ($p !== '' && !(preg_match('#^data:image/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$#', $p) && strlen($p) <= 900000)) json_response(['error' => 'The picture must be a JPG, PNG or WEBP under about 600 KB.'], 422);
+            $pdo->prepare("INSERT INTO st_cs_settings (skey, svalue) VALUES (?, ?) ON DUPLICATE KEY UPDATE svalue = VALUES(svalue)")->execute([$key, json_encode(['photo' => $p], JSON_UNESCAPED_UNICODE)]);
+            json_response(['ok' => true, 'has_image' => $p !== '']);
+            break;
+        }
         case 'st_bday.msg_get': {         // the wording + the photo (the photo only when asked: it is a big picture)
             require_auth(); json_response(st_bday_msg($pdo, !empty($_GET['photo'])));
             break;
@@ -850,6 +875,15 @@ try {
         case 'st_bday.msg_save': {        // managers: change the wording / the photo
             $auth = require_auth(); if (!(in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true) || user_can($auth, 'rs_manage'))) json_response(['error' => 'Only a manager can change the birthday message.'], 403);
             $r = st_bday_msg_save($pdo, json_input()); if (!empty($r['error'])) json_response(['error' => $r['error']], 422); json_response(['ok' => true] + st_bday_msg($pdo));
+            break;
+        }
+        case 'st_msgs.get': {             // the wording of the order thank-you the cashier sends by hand after a bill
+            require_auth(); json_response(['msgs' => st_msgs_get($pdo), 'defaults' => st_msgs_defaults(), 'cs' => ['store_name' => st_cs_get($pdo)['store_name']]]);
+            break;
+        }
+        case 'st_msgs.save': {            // managers: change the order thank-you wording
+            $auth = require_auth(); if (!(in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true) || user_can($auth, 'rs_manage'))) json_response(['error' => 'Only a manager can change the messages.'], 403);
+            $r = st_msgs_save($pdo, json_input()); if (!empty($r['error'])) json_response(['error' => $r['error']], 422); json_response($r);
             break;
         }
         case 'st_bday.mark_sent': {       // the cashier sent the wish by hand (web.whatsapp): it leaves the "to send today" list
@@ -944,7 +978,7 @@ try {
             foreach ($rows as &$r) {
                 $r['chain_amt'] = (float)$r['chain_amt']; $r['cash_amt'] = (float)$r['cash_amt']; $r['online_amt'] = (float)$r['online_amt']; $r['inv_url'] = ($r['inv_token'] !== '' && function_exists('wch_view_url')) ? wch_view_url($r['inv_token']) : ''; $r['inv_pdf'] = ($r['inv_token'] !== '' && function_exists('wch_pdf_url')) ? wch_pdf_url($r['inv_token']) : ''; unset($r['inv_token']);
                 $r['people'] = $pp[$r['bill_id']] ?? [];
-                foreach ($r['people'] as &$x) if ($x['phone'] !== '') { $tok = substr($x['link'], strrpos($x['link'], '=') + 1); $x['wa_url'] = st_wa_message(['name' => $x['name'], 'phone' => $x['phone'], 'token' => $tok, 'returning' => $x['returning']], ['bill_no' => $r['bill_no'], 'total' => $r['total']], $cs)['url']; }
+                foreach ($r['people'] as &$x) if ($x['phone'] !== '') { $tok = substr($x['link'], strrpos($x['link'], '=') + 1); $wm = st_wa_message(['name' => $x['name'], 'phone' => $x['phone'], 'token' => $tok, 'returning' => $x['returning']], ['bill_no' => $r['bill_no'], 'total' => $r['total']], $cs); $x['wa_url'] = $wm['url']; $x['wa_url2'] = $wm['url2']; }
                 unset($x);
             }
             unset($r);
@@ -1051,9 +1085,32 @@ try {
             break;
         }
 
+        case 'st_price.card': {           // the price chart + every offer running now + the commission rules, read-only, for the Store pages (same figures as Learning → Pricing and Commission Rules)
+            $auth = require_auth(); $out = ['cols' => [], 'rows' => [], 'offers' => [], 'flash' => [], 'live' => true];
+            if (budget_engine_ready()) {
+                try { $ch = cm_chart($pdo); $out['cols'] = array_map('floatval', (array)$ch['cols']); $out['rows'] = array_map(fn($r) => ['ml' => (int)$r['ml'], 'p' => array_map('floatval', (array)$r['p'])], (array)$ch['rows']); $out['window'] = (float)($ch['window'] ?? 20); $out['floor'] = (float)($ch['floor'] ?? 0); $out['rules'] = ['codepct' => (float)($ch['codepct'] ?? 0), 'nocode' => (float)($ch['nocode'] ?? 0), 'prepaid' => (float)($ch['prepaid'] ?? 0)]; } catch (Throwable $e) { }
+                try { $day = st_day(); foreach (cm_offers($pdo) as $o) { if (empty($o['active'])) continue; if ($o['from_date'] && $day < $o['from_date']) continue; if ($o['to_date'] && $day > $o['to_date']) continue; $out['offers'][] = ['ml' => (int)$o['ml'], 'price' => (float)$o['price'], 'pct' => (float)$o['pct'], 'from' => (string)$o['from_date'], 'to' => (string)($o['to_date'] ?? ''), 'note' => (string)($o['note'] ?? '')]; } usort($out['offers'], fn($a, $b) => $a['ml'] <=> $b['ml']); } catch (Throwable $e) { }
+                try { $out['live'] = cm_is_live($pdo); if (!$out['live']) foreach (flash_offer_running(flash_offer_list_get($pdo)) as $x) $out['flash'][] = ['pct' => (float)$x['pct'], 'ends_at' => (string)$x['ends_at'], 'sizes' => array_values(array_map(fn($i) => (int)($i['ml'] ?? 0), (array)($x['items'] ?? [])))]; } catch (Throwable $e) { }
+            }
+            try { $ids = st_pool_ids($pdo); if ($ids) { $in = implode(',', array_map('intval', $ids)); $out['team'] = array_map(fn($r) => (string)$r['full_name'], $pdo->query("SELECT full_name FROM employees WHERE employee_id IN ($in) AND status != 'ex' ORDER BY full_name")->fetchAll()); } } catch (Throwable $e) { }
+            $out['can_edit'] = in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true) || user_can($auth, 'commission');
+            json_response($out);
+            break;
+        }
+        case 'st_cs.team_numbers': {      // the mobile numbers already saved on the store team (Store → Team) and the store's own number, to fill the contact cards
+            require_auth(); $out = ['store' => '', 'people' => []];
+            try { $co = st_company($pdo); $sp = st_phone_clean((string)($co['phone'] ?? '')); if ($sp !== '' && strlen($sp) <= 12) $out['store'] = $sp; } catch (Throwable $e) { }
+            try {
+                $ids = array_map('intval', $pdo->query("SELECT emp_id FROM st_duty")->fetchAll(PDO::FETCH_COLUMN));
+                $q = $pdo->query("SELECT employee_id, full_name, mobile FROM employees WHERE status != 'ex'");
+                foreach ($q->fetchAll() as $e) { $ph = st_phone_clean((string)$e['mobile']); $out['people'][] = ['employee_id' => (int)$e['employee_id'], 'name' => (string)$e['full_name'], 'phone' => $ph, 'on_team' => in_array((int)$e['employee_id'], $ids, true)]; }
+            } catch (Throwable $e) { error_log('st_cs.team_numbers: ' . $e->getMessage()); }
+            json_response($out);
+            break;
+        }
         case 'st_cs.get': {
             require_auth();
-            json_response(['settings' => st_cs_get($pdo), 'sample' => st_bill_link('SAMPLE')]);
+            json_response(['settings' => st_cs_get($pdo), 'sample' => st_bill_link('SAMPLE'), 'short' => st_short_link('SAMPLE')]);
             break;
         }
 

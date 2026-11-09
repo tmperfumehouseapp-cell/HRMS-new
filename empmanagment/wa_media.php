@@ -14,6 +14,21 @@
  */
 if (!function_exists('wa_lib_dir')) {
 
+/** Makes a photo much smaller so the library uses little space: longest side 1280 px (plenty for a WhatsApp photo), JPEG quality 70, progressive, no EXIF.
+ *  Returns [bytes, 'image/jpeg'] only when the result is really smaller than the original; null = keep the original (not a JPG/PNG, no GD, too big to open safely, or nothing gained). */
+function wa_lib_shrink(string $raw, string $mime, int $maxSide = 1280, int $quality = 70): ?array
+{
+    if (!in_array($mime, ['image/jpeg', 'image/png'], true) || !function_exists('imagecreatefromstring') || !function_exists('imagejpeg') || $raw === '') return null;
+    $info = @getimagesizefromstring($raw); if (!$info || $info[0] < 1 || $info[1] < 1 || $info[0] * $info[1] > 36000000) return null;   // too big to open safely
+    $im = @imagecreatefromstring($raw); if (!$im) return null;
+    if ($mime === 'image/jpeg' && function_exists('exif_read_data')) {   // phone photos: turn them upright first, because the re-saved file loses the EXIF turn flag
+        try { $ex = @exif_read_data('data://image/jpeg;base64,' . base64_encode($raw)); $o = (int)($ex['Orientation'] ?? 1); $deg = [3 => 180, 6 => -90, 8 => 90][$o] ?? 0; if ($deg !== 0 && ($rot = @imagerotate($im, $deg, 0))) { imagedestroy($im); $im = $rot; } } catch (Throwable $e) { }
+    }
+    $w = imagesx($im); $h = imagesy($im); $sc = min(1.0, $maxSide / max($w, $h)); $nw = max(1, (int)round($w * $sc)); $nh = max(1, (int)round($h * $sc));
+    $c = imagecreatetruecolor($nw, $nh); imagefill($c, 0, 0, imagecolorallocate($c, 255, 255, 255)); imagecopyresampled($c, $im, 0, 0, 0, 0, $nw, $nh, $w, $h); imagedestroy($im);
+    imageinterlace($c, true); ob_start(); imagejpeg($c, null, $quality); $out = (string)ob_get_clean(); imagedestroy($c);
+    return ($out !== '' && strlen($out) < strlen($raw) * 0.95) ? [$out, 'image/jpeg'] : null;
+}
 function wa_lib_dir(): string
 {
     $d = __DIR__ . '/wa_files';
@@ -40,7 +55,7 @@ function wa_lib_media_id(PDO $pdo, array $r, string $phoneId, bool $fresh = fals
 }
 
 $__wl = (string)($action ?? ($_GET['action'] ?? ''));
-if (in_array($__wl, ['wa.lib_list', 'wa.lib_add', 'wa.lib_file', 'wa.lib_rename', 'wa.lib_del', 'wa.lib_send'], true)) {
+if (in_array($__wl, ['wa.lib_list', 'wa.lib_add', 'wa.lib_shrink', 'wa.lib_file', 'wa.lib_rename', 'wa.lib_del', 'wa.lib_send'], true)) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     $auth = require_auth();
     if (!wa_tables($pdo) || !wa_more_tables($pdo)) json_response(['error' => 'WhatsApp storage is not available — check database permissions.'], 500);
@@ -92,10 +107,31 @@ if (in_array($__wl, ['wa.lib_list', 'wa.lib_add', 'wa.lib_file', 'wa.lib_rename'
             $title = trim(mb_substr((string)($_POST['title'] ?? ''), 0, 80)); if ($title === '') $title = pathinfo($name, PATHINFO_FILENAME);
             $dir = wa_lib_dir(); if (!is_dir($dir) || !is_writable($dir)) json_response(['error' => 'The server cannot save files in the wa_files folder. Create it next to api.php and allow writing (permission 755).'], 500);
             $stored = date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.' . (strtolower(pathinfo($name, PATHINFO_EXTENSION)) ?: 'bin');
-            $okMove = is_uploaded_file($tmp) ? @move_uploaded_file($tmp, $dir . '/' . $stored) : @copy($tmp, $dir . '/' . $stored);
+            $shr = $r['kind'] === 'image' ? wa_lib_shrink((string)@file_get_contents($tmp), (string)$r['mime']) : null;   // 🗜 photos are made smaller before they are saved
+            if ($shr) {
+                $stored = date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.jpg'; $name = (pathinfo($name, PATHINFO_FILENAME) ?: 'photo') . '.jpg'; $r['mime'] = $shr[1]; $size = strlen($shr[0]);
+                $okMove = @file_put_contents($dir . '/' . $stored, $shr[0]) !== false;
+            } else $okMove = is_uploaded_file($tmp) ? @move_uploaded_file($tmp, $dir . '/' . $stored) : @copy($tmp, $dir . '/' . $stored);
             if (!$okMove) json_response(['error' => 'Could not save the file on the server.'], 500);
             $pdo->prepare("INSERT INTO wa_media_lib (title, kind, mime, filename, size, path, mids, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, '{}', ?, ?)")->execute([$title, $r['kind'], $r['mime'], $name, $size, $stored, $me, date('Y-m-d H:i:s')]);
             json_response(['ok' => true, 'id' => (int)$pdo->lastInsertId()]);
+        }
+        case 'wa.lib_shrink': {   // 🗜 makes the photos that are already in the library smaller, 20 at a time (press again until "0 left")
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
+            $dir = wa_lib_dir(); $done = 0; $saved = 0; $left = 0; $q = $pdo->query("SELECT * FROM wa_media_lib WHERE kind = 'image' AND mime IN ('image/jpeg','image/png') ORDER BY id");
+            foreach ($q->fetchAll() as $row) {
+                $meta = json_decode((string)($row['mids'] ?? ''), true); if (is_array($meta) && !empty($meta['_shrunk'])) continue;
+                if ($done >= 20) { $left++; continue; }
+                $p = $dir . '/' . basename((string)$row['path']); $raw = is_file($p) ? (string)@file_get_contents($p) : '';
+                $mark = ['_shrunk' => 1]; $res = $raw !== '' ? wa_lib_shrink($raw, (string)$row['mime']) : null; $done++;
+                if (!$res) { $pdo->prepare("UPDATE wa_media_lib SET mids = ? WHERE id = ?")->execute([json_encode(is_array($meta) ? $meta + $mark : $mark), (int)$row['id']]); continue; }   // nothing to gain: do not look at it again
+                $new = date('Ymd_His') . '_' . bin2hex(random_bytes(4)) . '.jpg';
+                if (@file_put_contents($dir . '/' . $new, $res[0]) === false) continue;
+                $fn = (pathinfo((string)$row['filename'], PATHINFO_FILENAME) ?: 'photo') . '.jpg';
+                $pdo->prepare("UPDATE wa_media_lib SET path = ?, mime = 'image/jpeg', filename = ?, size = ?, mids = ? WHERE id = ?")->execute([$new, $fn, strlen($res[0]), json_encode($mark), (int)$row['id']]);   // Meta's old copy id is dropped: it is uploaded again from the small file
+                @unlink($p); $saved += max(0, (int)$row['size'] - strlen($res[0]));
+            }
+            json_response(['ok' => true, 'done' => $done, 'left' => $left, 'saved_mb' => round($saved / 1048576, 1), 'message' => $done . ' photos checked, ' . round($saved / 1048576, 1) . ' MB saved' . ($left ? ', ' . $left . ' left — press again' : '.')]);
         }
         case 'wa.lib_rename': {
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);

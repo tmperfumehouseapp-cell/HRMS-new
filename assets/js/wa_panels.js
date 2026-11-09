@@ -108,16 +108,21 @@
       h += '<div class="wp-grid">' + nums.map((n, i) => {
         const q = QL[n.quality] || QL.UNKNOWN, ok = n.status === 'CONNECTED', bar = n.cap.cap > 0 ? Math.min(100, Math.round(n.cap.used * 100 / n.cap.cap)) : 100;
         return `<div class="wp-cd"><div class="wp-row" style="flex-wrap:nowrap;align-items:flex-start"><div class="wp-av" style="background-color:${['#25d366', '#7cc4f2', '#f6b26b', '#c9a7f0'][i % 4]}">${esc((n.label || '?').charAt(0).toUpperCase())}</div><div class="wp-grow"><b style="font-size:15px">${esc(n.label)}</b>${n.is_main ? ' <span class="wp-pill">main</span>' : ''}<div class="wp-hint" style="margin:0">${esc(n.display)}${n.verified_name ? ' · ' + esc(n.verified_name) : ''}</div>
-          <div><span class="wp-pill ${n.error && !n.status ? 'bad' : (ok ? 'ok' : 'bad')}">${n.error && !n.status ? 'No answer from Meta' : (ok ? 'Connected' : esc(String(n.status || '—').toLowerCase().replace(/_/g, ' ')))}</span><span class="wp-pill ${q[1]}">${q[0]}</span>${n.name_status && !['APPROVED', 'AVAILABLE_WITHOUT_REVIEW'].includes(n.name_status) ? `<span class="wp-pill warn">Name: ${esc(n.name_status.toLowerCase().replace(/_/g, ' '))}</span>` : ''}${n.subscribed === true ? '<span class="wp-pill ok">Receiving messages</span>' : (n.subscribed === false ? '<span class="wp-pill bad">Webhook not connected</span>' : '')}${n.camp_ok ? '' : '<span class="wp-pill warn">Off for campaigns</span>'}</div></div></div>
+          <div><span class="wp-pill ${n.error && !n.status ? 'bad' : (ok ? 'ok' : 'bad')}">${n.error && !n.status ? 'No answer from Meta' : (ok ? 'Connected' : esc(String(n.status || '—').toLowerCase().replace(/_/g, ' ')))}</span>${n.pay_blocked ? '<span class="wp-pill bad">Payment problem — fix in Meta</span>' : ''}<span class="wp-pill ${q[1]}">${q[0]}</span>${n.name_status && !['APPROVED', 'AVAILABLE_WITHOUT_REVIEW'].includes(n.name_status) ? `<span class="wp-pill warn">Name: ${esc(n.name_status.toLowerCase().replace(/_/g, ' '))}</span>` : ''}${n.subscribed === true ? '<span class="wp-pill ok">Receiving messages</span>' : (n.subscribed === false ? '<span class="wp-pill bad">Webhook not connected</span>' : '')}${n.camp_ok ? '' : '<span class="wp-pill warn">Off for campaigns</span>'}</div></div></div>
           <div class="wp-kv"><span>Messages this week</span><b>${fmt(n.in_7d)} in · ${fmt(n.out_7d)} out</b></div>
           <div class="wp-kv"><span>Room today <small class="wp-hint">${esc(n.cap.why || '')}</small></span><b>${fmt(n.cap.left)} of ${fmt(n.cap.cap)}</b></div><div class="wp-bar"><i class="${bar >= 90 ? 'b' : (bar >= 70 ? 'w' : '')}" style="width:${Math.max(bar, 1)}%"></i></div>
           <div class="wp-kv"><span>Who handles it</span><b>${n.handler_names.length ? esc(n.handler_names.join(', ')) : 'Automatic (everyone)'}</b></div>
-          <div class="wp-row" style="margin-top:10px"><button type="button" class="wp-btn p s" data-o="profile" data-i="${i}">Profile &amp; photo</button><button type="button" class="wp-btn s" data-o="people" data-i="${i}">Who handles</button><button type="button" class="wp-btn s" data-o="conn" data-i="${i}">Connection</button></div></div>`;
+          <div class="wp-row" style="margin-top:10px"><button type="button" class="wp-btn p s" data-o="profile" data-i="${i}">Profile &amp; photo</button><button type="button" class="wp-btn s" data-o="people" data-i="${i}">Who handles</button><button type="button" class="wp-btn s" data-o="conn" data-i="${i}">Connection</button>${n.is_main || n.main ? '' : `<button type="button" class="wp-btn r s" data-o="del" data-i="${i}">Remove</button>`}</div></div>`;
       }).join('') + '</div></div>';
       el.innerHTML = h;
       $(el, '#nLive').onclick = function () { this.disabled = true; this.textContent = 'Asking Meta…'; load(true); };
       $(el, '#nAdd').onclick = addNumber;
-      el.querySelectorAll('[data-o]').forEach((b) => { b.onclick = () => openNumber(D.numbers[+b.dataset.i], b.dataset.o); });
+      el.querySelectorAll('[data-o]').forEach((b) => { b.onclick = async () => {
+        const n = D.numbers[+b.dataset.i];
+        if (b.dataset.o !== 'del') { openNumber(n, b.dataset.o); return; }
+        if (!confirm('Remove “' + n.label + '” from the list? (A number that already has chats cannot be removed.)')) return;
+        try { await api.post('wa.number_del', { id: n.id }); toast('Removed'); load(false); } catch (e) { toast(e.message, true); }
+      }; });
     }
     function addNumber() {
       const m = modal('Add a number');
@@ -361,7 +366,7 @@
     el.innerHTML = loading;
     async function load() { try { const d = await api.get('wa.lib_list'); items = d.items || []; can = !!d.can_edit; } catch (e) { el.innerHTML = errBox(e.message); return; } draw(); }
     function draw() {
-      el.innerHTML = `<div class="wp"><div class="wp-top"><div style="flex:1;min-width:200px"><h2>Media library</h2><p>Photos, videos and PDFs saved once. In any chat tap 📎 → “From the library” to send one.</p></div><button type="button" class="wp-btn p" id="mAdd">＋ Add files</button><input type="file" id="mF" multiple hidden accept="image/jpeg,image/png,video/mp4,video/3gpp,application/pdf,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"></div>
+      el.innerHTML = `<div class="wp"><div class="wp-top"><div style="flex:1;min-width:200px"><h2>Media library</h2><p>Photos, videos and PDFs saved once. In any chat tap 📎 → “From the library” to send one.</p></div><button type="button" class="wp-btn" id="mShr" title="Make every saved photo smaller so the library uses less space">🗜 Make photos smaller</button><button type="button" class="wp-btn p" id="mAdd">＋ Add files</button><input type="file" id="mF" multiple hidden accept="image/jpeg,image/png,video/mp4,video/3gpp,application/pdf,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"></div>
         <div class="wp-note">WhatsApp takes photos as JPG/PNG up to 5 MB, videos as MP4 up to 16 MB and documents up to 100 MB. Meta keeps its own copy for only 30 days — we keep the original here and send it again automatically.</div><div id="mUp"></div>
         ${items.length ? '<div class="wp-lib">' + items.map((x) => `<div class="wp-li"><div class="im" data-id="${x.id}" data-k="${x.kind}">${x.kind === 'image' ? '' : (x.kind === 'video' ? '🎬' : '📄')}</div><div class="nm">${esc(x.title)}</div><div class="mt">${esc(x.kind)} · ${(x.size / 1048576).toFixed(1)} MB</div><div class="ac"><button type="button" class="wp-btn s" data-r="${x.id}">Rename</button><button type="button" class="wp-btn s r" data-d="${x.id}">Delete</button></div></div>`).join('') + '</div>' : '<div class="wp-empty">The library is empty. Press “Add files”.</div>'}</div>`;
       el.querySelectorAll('.im[data-k="image"]').forEach(async (e) => { try { e.style.backgroundImage = 'url(' + (await url(e.dataset.id)) + ')'; } catch (x) { e.textContent = '🖼️'; } });
@@ -369,6 +374,7 @@
       el.querySelectorAll('[data-r]').forEach((b) => { b.onclick = async () => { const x = items.find((i) => i.id === +b.dataset.r), t = prompt('Name', x.title); if (t == null || !t.trim()) return; try { await api.post('wa.lib_rename', { id: x.id, title: t.trim() }); load(); } catch (e) { toast(e.message, true); } }; });
       el.querySelectorAll('[data-d]').forEach((b) => { b.onclick = async () => { const x = items.find((i) => i.id === +b.dataset.d); if (!confirm('Delete “' + x.title + '” from the library?')) return; try { await api.post('wa.lib_del', { id: x.id }); load(); } catch (e) { toast(e.message, true); } }; });
       $(el, '#mAdd').onclick = () => $(el, '#mF').click();
+      $(el, '#mShr').onclick = async (ev) => { const bt = ev.currentTarget; bt.disabled = true; bt.textContent = 'Working…'; try { const r = await api.post('wa.lib_shrink', {}); toast(r.message || 'Done'); load(); } catch (e) { toast(e.message, true); bt.disabled = false; bt.textContent = '🗜 Make photos smaller'; } };
       $(el, '#mF').onchange = async function () {
         const files = [...this.files]; this.value = ''; const box = $(el, '#mUp'); let errs = [];
         for (let i = 0; i < files.length; i++) {
@@ -416,7 +422,7 @@
   const inT = (m) => (m <= 0 ? 'now' : m < 60 ? m + ' min' : m < 1440 ? (Math.round(m / 6) / 10) + ' h' : (Math.round(m / 144) / 10) + ' d');
   const TST = { approved: ['Approved', 'ok'], partial: ['Approved (1 account)', 'ok'], pending: ['Pending at Meta', 'warn'], rejected: ['Rejected', 'bad'], paused: ['Paused', 'warn'], draft: ['Draft', 'b'], missing: ['Not at Meta', 'warn'] };
   // 🔁 the Follow-up Autopilot (fa_ui.js) replaces the old Live plan / ladder screen; Replies → Follow-up messages / Complaint messages
-  const faReady = (fn) => { if (window.FuAuto) return fn(); const sc = document.createElement('script'); sc.src = 'assets/js/fa_ui.js?v=fa3'; sc.onload = fn; document.head.appendChild(sc); };
+  const faReady = (fn) => { if (window.FuAuto) return fn(); const sc = document.createElement('script'); sc.src = 'assets/js/fa_ui.js?v=fa4'; sc.onload = fn; document.head.appendChild(sc); };
   P.followups = (el) => { let re = null; faReady(() => { re = FuAuto.mount(el, {}); }); return () => { if (re) re(); }; };
   // 🧭 Automatic messages live in ONE place each (no second editor here): follow-ups → Automation → Follow-ups · complaints → Complaints → Settings
   P.automsgs = (el) => { el.innerHTML = '<div class="wp-card"><h3 style="margin:0 0 6px">Automatic messages</h3><div class="wp-sub" style="margin-bottom:10px">Each automatic message has one home, so there is never a second copy to keep in step.</div>'

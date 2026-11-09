@@ -468,11 +468,11 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
 <script src="assets/js/wa_icons.js?v=i1"></script>
 <script src="assets/js/cx_raise.js?v=cx9"></script>
 <script src="assets/js/wa_inbox.js?v=wa43"></script>
-<script src="assets/js/wa_panels.js?v=wa24"></script>
+<script src="assets/js/wa_panels.js?v=wa27"></script>
 <script src="assets/js/wa_cust_ui.js?v=k4"></script>
 <script src="assets/js/wa_kflow_ui.js?v=kf1"></script>
 <script src="assets/js/wa_bill_ui.js?v=b1"></script>
-<script src="assets/js/wa_ord_ui.js?v=12"></script>
+<script src="assets/js/wa_ord_ui.js?v=20"></script>
 <script src="assets/js/wa_cx_ui.js?v=3"></script>
 <script src="assets/js/wa_lists_ui.js?v=l10"></script>
 <script src="assets/js/wa_camp_rep_ui.js?v=r2"></script>
@@ -541,7 +541,8 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
     { k: 'followups', t: 'Follow-ups', ic: 'bell', mode: 'native', sub: 'Follow-up Autopilot: 6 paths, offers on day 2/4/7/10, festival box, teach each day, results' },
     { k: 'afterdel', t: 'After delivery', ic: 'send', mode: 'native', sub: 'Rating request 5 days after delivery, the review reminder, and where ratings and gifts go' },
     { k: 'birthdays', t: 'Birthdays', ic: 'send', mode: 'native', sub: 'The birthday question after an order and the birthday gift message — plus the store list to send by hand' },
-    { k: 'cxmsgs', t: 'Complaint messages', ic: 'send', mode: 'native', sub: 'The pre-made messages the Complaints desk sends after the 24-hour window' },
+    { k: 'cxmsgs', t: 'Complaint messages', ic: 'send', mode: 'frame', src: 'complaints.html?in=sales&tab=settings&go=msgs', sub: 'The photo and words of every message the Complaints desk sends — the same screen as Complaints → Settings' },
+    { k: 'allmsgs', t: 'All messages', ic: 'send', mode: 'native', sub: 'Every automatic message in one list, with a button to its editor' },
     { k: 'orderupd', t: 'Order updates', ic: 'send', mode: 'native', sub: 'Thank-you, shipped, out for delivery, delivered — sent by themselves from Dispatch / Shiprocket. Read and approve the texts' },
     { g: 'MANAGE' }, { k: 'golive', t: 'Go-live check', ic: 'okc', mode: 'native', sub: 'Live readiness list — engine, numbers, templates, bot, staff phones, backup' },
     { k: 'numbers', t: 'Numbers', ic: 'phone', mode: 'native', sub: 'Photo, bio, who handles each number, and its health' },
@@ -565,7 +566,7 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
     { k: 'templates', t: 'Templates', ic: 'tpl', sub: 'Messages Meta approves — make them, let Claude write them, one per situation', tabs: [['premade', 'Pre-made'], ['builder', 'Builder'], ['fixed', 'Fixed']] },
     { k: 'replies', t: 'Replies', ic: 'bolt', sub: 'Quick replies, greetings, ready perfume lists, and and where to find every automatic message', tabs: [['quick', 'Quick replies'], ['greet', 'Greetings'], ['lists', 'Lists'], ['automsgs', 'Automatic messages']] },
     { k: 'mediag', t: 'Media', ic: 'film', sub: 'Photos, videos and PDFs — one library, in topic folders', tabs: [['media', 'Library'], ['gallery', 'Folders & clean-up']] },
-    { k: 'automation', t: 'Automation', ic: 'seq', sub: 'Key flows on a canvas, the old flows and follow-ups', tabs: [['kflows', 'Key flows'], ['flows', 'Flows (old)'], ['followups', 'Follow-ups'], ['orderupd', 'Order updates'], ['afterdel', 'After delivery'], ['birthdays', 'Birthdays'], ['cxmsgs', 'Complaints']] },
+    { k: 'automation', t: 'Automation', ic: 'seq', sub: 'Key flows on a canvas, the old flows and follow-ups', tabs: [['kflows', 'Key flows'], ['flows', 'Flows (old)'], ['followups', 'Follow-ups'], ['orderupd', 'Order updates'], ['afterdel', 'After delivery'], ['birthdays', 'Birthdays'], ['cxmsgs', 'Complaints'], ['allmsgs', 'All messages']] },
     { k: 'setupg', t: 'Numbers & setup', ic: 'phone', sub: 'Numbers, connection and the go-live check', tabs: [['numbers', 'Numbers'], ['setup', 'Setup & connection'], ['golive', 'Go-live check']] },
     { k: 'rules', t: 'Team & rules', ic: 'group', sub: 'Who gets chats, the waiting limits, the Claude button and exports', tabs: [['team', 'Team & routing'], ['hq', 'Claude button'], ['export', 'Export']] },
     { k: 'teach', t: 'Teach & groups', ic: 'bulb', sub: 'Teach the bot once · your WhatsApp groups', tabs: [['learn', 'Teach'], ['groups', 'Groups']] },
