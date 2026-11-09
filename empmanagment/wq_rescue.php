@@ -39,6 +39,10 @@ function wq_rescue_tables(PDO $pdo): bool
             foreach (['score' => 'INT NOT NULL DEFAULT 0', 'tier' => "VARCHAR(8) NOT NULL DEFAULT 'week'", 'returns' => 'INT NOT NULL DEFAULT 0'] as $col => $def) { try { $pdo->query("SELECT $col FROM wq_rescue LIMIT 0"); } catch (Throwable $e) { try { $pdo->exec("ALTER TABLE wq_rescue ADD COLUMN $col $def"); } catch (Throwable $e2) { } } }
             wq_meta_put($pdo, 'rescue_prio1', '1');
         }
+        if (function_exists('wq_meta_get') && wq_meta_get($pdo, 'rescue_skipby1', '') !== '1') {   // who pressed Not a chance (once)
+            try { $pdo->query("SELECT skipped_by FROM wq_rescue LIMIT 0"); } catch (Throwable $e) { try { $pdo->exec("ALTER TABLE wq_rescue ADD COLUMN skipped_by INT NOT NULL DEFAULT 0"); } catch (Throwable $e2) { } }
+            wq_meta_put($pdo, 'rescue_skipby1', '1');
+        }
         if (function_exists('wq_meta_get') && wq_meta_get($pdo, 'rescue_nobonus', '') !== '1') {   // the bonus idea was removed: drop what it left behind (once)
             try { $pdo->exec("DROP TABLE IF EXISTS wq_rescue_orders"); } catch (Throwable $e) { }
             foreach (['bonus_pct', 'bonus_amt'] as $col) { try { $pdo->query("SELECT $col FROM wq_rescue LIMIT 0"); $pdo->exec("ALTER TABLE wq_rescue DROP COLUMN $col"); } catch (Throwable $e) { } }
@@ -286,21 +290,21 @@ function wq_rescue_item(array $r, array $names): array
         'last_in_at' => (string)$r['last_in_at'], 'last_text' => (string)$r['last_text'], 'status' => $st, 'flagged_at' => (string)$r['flagged_at'],
         'window_open' => !empty($r['last_in_at']) && strtotime((string)$r['last_in_at']) > time() - 86400,
         'orig' => ['emp_id' => (int)$r['orig_emp'], 'name' => (string)($names[(int)$r['orig_emp']] ?? '')], 'taken_by' => ['emp_id' => (int)$r['taken_by'], 'name' => (string)($names[(int)$r['taken_by']] ?? '')],
-        'tier' => (string)($r['tier'] ?? 'week'), 'tier_label' => (wq_rescue_tiers()[(string)($r['tier'] ?? 'week')] ?? ['', 0])[0], 'score' => (int)($r['score'] ?? 0), 'returns' => (int)($r['returns'] ?? 0), 'taken_at' => (string)$r['taken_at'], 'order_name' => (string)$r['order_name'], 'order_total' => round((float)$r['order_total'], 2)];
+        'skipped_by' => ['emp_id' => (int)($r['skipped_by'] ?? 0), 'name' => (string)($names[(int)($r['skipped_by'] ?? 0)] ?? '')], 'tier' => (string)($r['tier'] ?? 'week'), 'tier_label' => (wq_rescue_tiers()[(string)($r['tier'] ?? 'week')] ?? ['', 0])[0], 'score' => (int)($r['score'] ?? 0), 'returns' => (int)($r['returns'] ?? 0), 'taken_at' => (string)$r['taken_at'], 'order_name' => (string)$r['order_name'], 'order_total' => round((float)$r['order_total'], 2)];
 }
 function wq_rescue_list(PDO $pdo, int $me, bool $adm, int $days, string $status): array
 {
     $names = function_exists('wq_names') ? wq_names($pdo) : []; $cfg = wq_rescue_cfg($pdo); $since = date('Y-m-d H:i:s', time() - max(1, $days) * 86400);
-    $where = "r.flagged_at >= ? AND r.status <> 'skipped'"; if ($adm && $status !== 'silent') $where .= " AND r.status <> 'silent'"; $par = [$since];
+    $where = "r.flagged_at >= ?"; if (!($adm && $status === 'skipped')) $where .= " AND r.status <> 'skipped'"; if ($adm && $status !== 'silent') $where .= " AND r.status <> 'silent'"; $par = [$since];
     if (!$adm) {   // a team member sees the open chances + the ones they took; nothing else
-        $where .= " AND (r.status = 'open' OR r.taken_by = ?) AND r.status NOT IN ('ordered','expired','silent')"; $par[] = $me;
+        $where .= " AND (r.status = 'open' OR r.taken_by = ?) AND r.status NOT IN ('ordered','expired','silent','skipped')"; $par[] = $me;
     } elseif ($status !== '' && $status !== 'all') { $where .= " AND r.status = ?"; $par[] = $status; }
-    $q = $pdo->prepare("SELECT r.* FROM wq_rescue r WHERE $where ORDER BY FIELD(r.status,'open','given','taken','won','ordered','expired','silent'), FIELD(r.tier,'act','today','week','long'), r.score DESC, r.last_in_at DESC LIMIT 1000");
+    $q = $pdo->prepare("SELECT r.* FROM wq_rescue r WHERE $where ORDER BY FIELD(r.status,'open','given','taken','won','ordered','expired','silent','skipped'), FIELD(r.tier,'act','today','week','long'), r.score DESC, r.last_in_at DESC LIMIT 1000");
     $q->execute($par); $rowsL = $q->fetchAll(); $cn = wq_rescue_cnames($pdo, array_column($rowsL, 'phone')); foreach ($rowsL as &$rl) $rl['cname'] = $cn[(string)$rl['phone']] ?? ''; unset($rl);
     $items = array_map(fn($r) => wq_rescue_item($r, $names), $rowsL);
-    $st = $pdo->prepare("SELECT status, COUNT(*) n, COALESCE(SUM(order_total),0) rev FROM wq_rescue WHERE flagged_at >= ? AND status <> 'skipped' GROUP BY status"); $st->execute([$since]);
+    $st = $pdo->prepare("SELECT status, COUNT(*) n, COALESCE(SUM(order_total),0) rev FROM wq_rescue WHERE flagged_at >= ? GROUP BY status"); $st->execute([$since]);
     $tc = ['act' => 0, 'today' => 0, 'week' => 0, 'long' => 0]; try { foreach ($pdo->query("SELECT tier, COUNT(*) n FROM wq_rescue WHERE status = 'open' GROUP BY tier")->fetchAll() as $t) $tc[(string)$t['tier']] = (int)$t['n']; } catch (Throwable $e) { }
-    $sum = ['tiers' => $tc, 'open' => 0, 'taken' => 0, 'won' => 0, 'ordered' => 0, 'expired' => 0, 'silent' => 0, 'revenue' => 0.0];
+    $sum = ['tiers' => $tc, 'open' => 0, 'taken' => 0, 'won' => 0, 'ordered' => 0, 'expired' => 0, 'silent' => 0, 'skipped' => 0, 'revenue' => 0.0];
     foreach ($st->fetchAll() as $s) { $k = (string)$s['status']; if ($k === 'given') $k = 'taken'; if (isset($sum[$k])) $sum[$k] += (int)$s['n']; if ($k === 'won') $sum['revenue'] = round((float)$s['rev'], 2); }
     return ['ok' => true, 'cfg' => $cfg, 'days' => $days, 'admin' => $adm, 'member' => wq_rescue_is_member($pdo, $me), 'last_scan' => function_exists('wq_meta_get') ? json_decode(wq_meta_get($pdo, 'rescue_last', 'null'), true) : null, 'backfill' => function_exists('wq_meta_get') ? json_decode(wq_meta_get($pdo, 'rescue_bf', 'null'), true) : null, 'summary' => $sum, 'items' => $items];
 }
@@ -395,10 +399,13 @@ if (strpos($__wqr, 'wq.rescue_') === 0 && in_array($__wqr, ['wq.rescue_list', 'w
             $needPost(); $needAdmin(); $k = $phoneIn(); $emp = (int)($in['emp_id'] ?? 0); if ($k === '' || $emp <= 0) json_response(['error' => 'Choose a chat and a person.'], 422);
             $r = wq_rescue_take($pdo, $k, $emp, $me, 'rescue'); if (isset($r['error'])) json_response($r, 409); json_response($r);
         }
-        case 'wq.rescue_skip': {
-            $needPost(); $needAdmin(); $k = $phoneIn(); if ($k === '') json_response(['error' => 'Chat not found.'], 404);
-            if (!empty($in['undo'])) $pdo->prepare("UPDATE wq_rescue SET status = 'open', closed_at = NULL WHERE phone = ? AND status = 'skipped'")->execute([$k]);
-            else $pdo->prepare("UPDATE wq_rescue SET status = 'skipped', closed_at = ? WHERE phone = ? AND status IN ('open','given')")->execute([date('Y-m-d H:i:s'), $k]);
+        case 'wq.rescue_skip': {   // "Not a chance": the owner or a rescue-team member removes a chat from the list (the owner can see who did it and put it back)
+            $needPost(); $k = $phoneIn(); if ($k === '') json_response(['error' => 'Chat not found.'], 404);
+            if (!empty($in['undo'])) { $needAdmin(); $pdo->prepare("UPDATE wq_rescue SET status = 'open', skipped_by = 0, closed_at = NULL, flagged_at = ? WHERE phone = ? AND status = 'skipped'")->execute([date('Y-m-d H:i:s'), $k]); json_response(['ok' => true]); }
+            if (!$adm && !wq_rescue_is_member($pdo, $me)) json_response(['error' => 'You are not on the rescue team.'], 403);
+            $u = $adm ? $pdo->prepare("UPDATE wq_rescue SET status = 'skipped', skipped_by = ?, closed_at = ? WHERE phone = ? AND status IN ('open','given','taken')")
+                      : $pdo->prepare("UPDATE wq_rescue SET status = 'skipped', skipped_by = ?, closed_at = ? WHERE phone = ? AND (status = 'open' OR (status IN ('taken','given') AND taken_by = " . (int)$me . "))");
+            $u->execute([$me, date('Y-m-d H:i:s'), $k]); if ($u->rowCount() === 0) json_response(['error' => 'This customer is not in the rescue list any more.'], 409);
             json_response(['ok' => true]);
         }
         case 'wq.rescue_team': {
