@@ -400,6 +400,10 @@ function wa_send_text(PDO $pdo, array $c, string $text, string $who, int $empId,
     if (empty($c['last_in_at']) || strtotime((string)$c['last_in_at']) < time() - 86400) return [false, 'The 24-hour reply window is closed. Only an approved template can be sent now.'];
     $q = $pdo->prepare("SELECT phone_id FROM wa_numbers WHERE id = ?"); $q->execute([(int)$c['last_number_id']]); $pid = (string)$q->fetchColumn();
     if ($pid === '') $pid = wa_cfg_val('WA_PHONE_ID'); if ($pid === '') return [false, 'WA_PHONE_ID is missing in config.php.'];
+    if ((int)$c['last_number_id'] > 0) {   // WhatsApp's 24-hour window belongs to ONE number: a chat moved to another number has no window there yet → only a pre-made message can open it
+        try { $wq = $pdo->prepare("SELECT SUM(number_id = ?) AS here, COUNT(*) AS tot FROM wa_messages WHERE phone = ? AND dir = 'in' AND ts >= ?"); $wq->execute([(int)$c['last_number_id'], $c['phone'], date('Y-m-d H:i:s', time() - 86400)]); $wr = $wq->fetch();
+            if ($wr && (int)$wr['tot'] > 0 && (int)$wr['here'] === 0) return [false, 'This customer has not written to this number in the last 24 hours — send a pre-made message from it first (WhatsApp only allows that here).']; } catch (Throwable $e) { }
+    }
     if ($who !== 'emp') {   // the bot / flows / auto-replies: never the same words to the same customer twice within a minute (two engines answering one message)
         try { $q = $pdo->prepare("SELECT wamid FROM wa_messages WHERE phone = ? AND dir = 'out' AND body = ? AND ts >= ? LIMIT 1"); $q->execute([$c['phone'], $text, date('Y-m-d H:i:s', time() - 60)]); $w = $q->fetchColumn(); if ($w !== false) return [true, (string)$w]; } catch (Throwable $e) { }
     }
@@ -961,6 +965,16 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo)\./', $__wa)) {
             $ids = array_column(wa_people($pdo), 'emp_id'); if (!in_array($to, $ids, true)) json_response(['error' => 'Pick a salesperson from the list.'], 422);
             if ($to === (int)$c['assigned_emp']) json_response(['error' => 'The chat is already with this person.'], 422);
             wa_assign_to($pdo, $key, $to, $me, 'transfer'); json_response(['ok' => true]);
+        }
+        case 'wa.bulk_number': {   // 📱 many chats → answer from ANOTHER of our numbers (e.g. the Second number has a payment problem → move them to Main). Admin only.
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
+            if (!wa_is_admin($pdo, $auth)) json_response(['error' => 'Only an admin can move chats to another number.'], 403);
+            $in = json_input(); $nid = (int)($in['number_id'] ?? 0); $nq = $pdo->prepare("SELECT id, label, display FROM wa_numbers WHERE id = ?"); $nq->execute([$nid]); $nr = $nq->fetch(); if (!$nr) json_response(['error' => 'Pick one of your numbers.'], 422);
+            $lab = trim((string)($nr['label'] ?: $nr['display']));
+            $phones = array_slice(array_values(array_unique(array_filter(array_map(fn($p) => wa_key($p), (array)($in['phones'] ?? []))))), 0, 1500); if (!$phones) json_response(['error' => 'Select at least one chat.'], 422);
+            $moved = 0; $same = 0; $up = $pdo->prepare("UPDATE wa_contacts SET last_number_id = ? WHERE phone = ? AND last_number_id <> ?");
+            foreach ($phones as $key) { $c = wa_contact($pdo, $key); if (!$c) continue; if ((int)$c['last_number_id'] === $nid) { $same++; continue; } $up->execute([$nid, $key, $nid]); if ($up->rowCount() > 0) { $moved++; try { wa_event($pdo, $key, '📱 Moved to the ' . $lab . ' number by ' . ($auth['username'] ?? 'Admin') . ' — replies now go from it. The customer has not written to this number yet, so start with a pre-made message.'); } catch (Throwable $e) { } } }
+            json_response(['ok' => true, 'moved' => $moved, 'same' => $same, 'number' => $lab]);
         }
         case 'wa.bulk_assign': {   // ☑ many chats at once → one person. Admin: any chat. A salesperson: only the chats they hold (same rule as Transfer). Max 1500 per call.
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
