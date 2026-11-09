@@ -172,9 +172,8 @@
         <div class="wp-row" style="margin-top:10px"><div class="wp-grow"><b>Claude tags chats by itself</b></div>${sw('sgA', c.ai_tags)}</div>
         <div class="wp-row" style="margin-top:10px"><div class="wp-grow"><b>Sound &amp; celebration in the app</b></div>${sw('sgS', c.sound)}</div>
         <div class="wp-row" style="margin-top:14px"><button type="button" class="wp-btn p" id="sgSave">Save</button></div></div>
-      <div class="wp-cd"><h3>Answering bot <span class="wp-pill ${c.bot === 'on' ? 'ok' : ''}">${c.bot === 'on' ? 'ON' : 'OFF'}</span></h3>
+      <div class="wp-cd"><h3>Answering bot <span class="wp-pill ok">ALWAYS ON</span></h3>
         <div class="wp-hint">Answers 24 hours a day, only from what you taught it in Learning &amp; Improvement. ${C.taught ? '' : '<b style="color:#b42318">Nothing is taught yet — it will stay silent.</b>'} Today it sent ${D.bot.today || 0} answers.</div>
-        <div class="wp-row" style="margin-top:10px"><div class="wp-grow"><b>Bot on</b></div>${sw('sgB', c.bot === 'on')}</div>
         <div class="wp-2"><div><label class="wp-fl">Answer when nobody replied for (seconds, 5–600)</label><input class="wp-in" id="sgBa" type="number" min="5" max="600" value="${c.bot_after}"></div><div><label class="wp-fl">Max answers per customer per day</label><input class="wp-in" id="sgBm" type="number" min="1" value="${c.bot_max_day}"></div></div>
         <div class="wp-hint" style="margin-top:10px">The scheduled engine (cron): ${cron ? 'last ran ' + cron + ' ago' : '<b style="color:#b42318">has not run yet</b>'}. Without it the bot, follow-ups and flows with waits only work while a page is open.</div></div></div>`;
       el.innerHTML = h;
@@ -186,7 +185,7 @@
       const all = $(el, '#sgAll'); if (all) all.onclick = async () => { all.disabled = true; try { const r = await api.post('wa.g_reassign_all', {}); toast(r.moved + ' chat' + (r.moved === 1 ? '' : 's') + ' moved ✓'); load(); } catch (e) { toast(e.message, true); all.disabled = false; } };
       $(el, '#sgSave').onclick = async (e) => {
         e.currentTarget.disabled = true;
-        try { const r = await api.post('wa.g_cfg_save', { unans_min: +$(el, '#sgM').value, unans_push: $(el, '#sgP').checked, target: +$(el, '#sgT').value, ai_tags: $(el, '#sgA').checked, sound: $(el, '#sgS').checked, bot: $(el, '#sgB').checked ? 'on' : 'off', bot_after: +$(el, '#sgBa').value, bot_max_day: +$(el, '#sgBm').value }); const gv = +$(el, '#sgG').value; if (gv > 0) await api.post('wa.sales_cfg', { goal: gv }); toast('Saved ✓'); load(); } catch (er) { toast(er.message, true); e.currentTarget.disabled = false; }
+        try { const r = await api.post('wa.g_cfg_save', { unans_min: +$(el, '#sgM').value, unans_push: $(el, '#sgP').checked, target: +$(el, '#sgT').value, ai_tags: $(el, '#sgA').checked, sound: $(el, '#sgS').checked, bot: 'on', bot_after: +$(el, '#sgBa').value, bot_max_day: +$(el, '#sgBm').value }); const gv = +$(el, '#sgG').value; if (gv > 0) await api.post('wa.sales_cfg', { goal: gv }); toast('Saved ✓'); load(); } catch (er) { toast(er.message, true); e.currentTarget.disabled = false; }
       };
     }
     async function mv(phone, emp, node) { node.disabled = true; try { const r = await api.post('wa.g_reassign', { phone, emp_id: emp }); toast('Given to ' + r.to + ' ✓'); load(); } catch (e) { toast(e.message, true); node.disabled = false; } }

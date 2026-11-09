@@ -36,7 +36,7 @@ function wag_cfg(PDO $pdo): array
     if (is_array($j)) foreach ($d as $k => $v) if (array_key_exists($k, $j)) $d[$k] = $j[$k];
     $d['unans_min'] = max(1, min(60, (int)$d['unans_min'])); $d['bot_after'] = max(5, min(600, (int)$d['bot_after'])); $d['bot_max_day'] = max(1, min(500, (int)$d['bot_max_day']));
     $d['target'] = max(1, min(200, (int)$d['target'])); $d['vip_orders'] = max(2, min(50, (int)$d['vip_orders'])); $d['vip_ltv'] = max(1000, (int)$d['vip_ltv']);
-    $d['bot'] = $d['bot'] === 'on' ? 'on' : 'off'; foreach (['unans_push', 'ai_tags', 'sound'] as $b) $d[$b] = !empty($d[$b]);
+    $d['bot'] = 'on'; foreach (['unans_push', 'ai_tags', 'sound'] as $b) $d[$b] = !empty($d[$b]);
     return $d;
 }
 
