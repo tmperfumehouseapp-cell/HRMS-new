@@ -1000,6 +1000,7 @@ function renderSidebarCore(active) {
         <a href="my_sales.html" class="${on(['my_sales'])}">My Sales</a>
         <a href="my_chats.html" class="${on(['my_chats'])}">My Chats <span id="chatBadge" style="display:none; background:#e02424; color:#fff; border-radius:10px; padding:1px 7px; font-size:11px; font-weight:700; margin-left:6px;"></span></a>
         <a href="my_chats.html?tab=queries" class="${on(['wasales'])}">My Queries</a>
+        <a href="wa_rescue.html" class="${on(['wa_rescue'])}">🛟 Rescue Queries</a>
         <a href="my_orders.html" class="${on(['orders', 'order_allocation', 'my_orders'])}">Orders</a>`;
         }
         // Admin-side pages granted to the Employee role via Roles page (Orders / Allocation / Punch / Leave already live in the sections above).

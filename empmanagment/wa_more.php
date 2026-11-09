@@ -573,6 +573,7 @@ require_once __DIR__ . '/wa_camp_report.php';   // 📊 campaign report card + l
 require_once __DIR__ . '/wa_late.php';     // ⏰ late replies: every chat that waits 10+ minutes for its salesperson is marked (wa_late)
 require_once __DIR__ . '/wa_bill.php';     // 💰 Billing & spend: what WhatsApp cost per day / month and what it brought back (wa.bill)
 require_once __DIR__ . '/wq.php';         // WhatsApp Sales (query types, tags, no-answer flow, board, cut-over adapter): wq.* — BEFORE wa_seg.php
+require_once __DIR__ . '/wq_rescue.php';   // 🛟 Rescue queries: effort-missed queries, a daily rescue team, +2% bonus on won orders (wq.rescue_*) - BEFORE wa_seg.php
 require_once __DIR__ . '/wch.php';        // Chain + perfume cart, GST bill, catalog sync (wch.*) - BEFORE wa_seg.php
 require_once __DIR__ . '/wmo.php';        // 🧾 Manual order from a chat: QR / UPI payment first, customer address link, the order lands in Orders + Dispatch (wmo.*) - BEFORE wa_seg.php
 require_once __DIR__ . '/wa_seg.php';      // customer journey, stage / value filters, Claude context pack, decisions (wa.seg_*, wa.dec_*) — MUST stay the LAST require: its router runs at include time

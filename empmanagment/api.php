@@ -7994,6 +7994,16 @@ function coach_day(PDO $pdo, string $day, bool $hist = true, bool $raw = false):
         $ySame = 0.0;
         foreach ($sale[$yday . '|' . $id] ?? [] as $o) if ($o['ts'] - $yStart <= $elapsed) $ySame += $o['amt'];
         if ($cmMap !== null) $com = cm_live_pick($cmMap[(int)$id] ?? null, $com, pay_off_at($pdo, (int)$id, $day) || isset(pay_day_assign($pdo)[$day][(int)$id]));
+        // 🛟 Rescue bonus (extra % per order from rescued WhatsApp queries): already inside the new engine's day total (cm_day); added here only when that figure was not used
+        $rescB = 0.0;
+        if (!$raw) {
+            if (!function_exists('wq_rescue_day_bonus') && is_file(__DIR__ . '/wq_rescue_bonus.php')) require_once __DIR__ . '/wq_rescue_bonus.php';
+            if (function_exists('wq_rescue_day_bonus')) {
+                $rescB = wq_rescue_day_bonus($pdo, $day, (int)$id); $cmRow = $cmMap[(int)$id] ?? null;
+                $inEngine = $cmMap !== null && $cmRow !== null && ((int)($cmRow['no_ml'] ?? 0) + (int)($cmRow['not_priced'] ?? 0)) === 0;
+                if (!$inEngine) $com += $rescB;
+            }
+        }
         $pct = $target > 0 ? $sales / $target : null;
         $should = $target > 0 ? $target * $exp : null;
         $out[$id] = ['id' => $id, 'name' => trim((string)$e['full_name']), 'role_kind' => sales_role_kind($e['department_name'] ?? '', $e['designation'] ?? ''), 'target' => round($target, 2), 'target_parts' => (object)array_map(fn($v) => round($v), $tparts[$id] ?? []), 'sales' => round($sales, 2), 'orders' => $n,
@@ -8002,7 +8012,7 @@ function coach_day(PDO $pdo, string $day, bool $hist = true, bool $raw = false):
             'gap' => $should !== null ? round($sales - $should, 2) : null,
             'ticket' => $n ? round($sales / $n, 2) : 0.0, 'code' => $nCode, 'nocode' => $nNo, 'nocode_orders' => array_slice($noCodeNames, 0, 5), 'code_lost' => round($lost),
             'code_pct' => $codePct, 'code_need' => $codeNeed, 'code_ok' => $codeOk, 'code_left' => max(0, $codeNeed - $codeHave),
-            'floor' => $nFloor, 'cod' => $nCod, 'avg_pct' => $comBase > 0 ? round($comAmt / $comBase * 100, 2) : null, 'com_today' => round($com), 'order_com' => $ordCom,
+            'floor' => $nFloor, 'cod' => $nCod, 'avg_pct' => $comBase > 0 ? round($comAmt / $comBase * 100, 2) : null, 'com_today' => round($com), 'rescue_bonus' => round($rescB, 2), 'order_com' => $ordCom,
             'last_order' => $last ? date('Y-m-d H:i:s', $last) : null, 'streak' => $stk,
             'best_hour' => $byHour ? max($byHour) : 0, 'yest_same' => round($ySame), 'best_day' => round($best), 'best_day_date' => $bestDay, 'best_orders' => $bestOrd,
             'avg_day' => $daysSold ? round(array_sum($daysSold) / count($daysSold)) : 0,
