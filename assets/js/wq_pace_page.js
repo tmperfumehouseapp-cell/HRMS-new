@@ -20,23 +20,26 @@
   const css = () => { W.css(); if (!document.getElementById('ppCss')) { const s = document.createElement('style'); s.id = 'ppCss'; s.textContent = CSS; document.head.appendChild(s); } };
 
   // ---------------------------------------------------------------- a line chart with hover values: lines = [{ name, color, dash, pts: [{ day, v, n }] }]
-  function chart(lines, title, sub) {
+  function chart(lines, title, sub, o) {
+    const tg = o && has(o.target) ? +o.target : null;
     const Wd = 640, Hd = 210, L = 46, B = 26, T = 12, days = (lines[0] || { pts: [] }).pts.length; if (days < 2) return '';
-    const vals = []; lines.forEach((l) => l.pts.forEach((p) => { if (has(p.v)) vals.push(+p.v); }));
+    const vals = []; lines.forEach((l) => l.pts.forEach((p) => { if (has(p.v)) vals.push(+p.v); })); if (tg !== null && vals.length) vals.push(tg);
     if (!vals.length) return '<div class="wp-card"><h3>' + esc(title) + '</h3><div class="wp-sub">No data in this period yet.</div></div>';
     const raw = Math.max.apply(null, vals), step = raw <= 10 ? 2 : raw <= 30 ? 5 : raw <= 90 ? 15 : raw <= 300 ? 60 : raw <= 1500 ? 240 : 1440; const mx = Math.max(step, Math.ceil(raw / step) * step);
     const X = (i) => L + (i * (Wd - L - 10)) / (days - 1), Y = (v) => T + (Hd - T - B) * (1 - Math.min(v, mx) / mx);
     let g = ''; for (let k = 0; k <= 4; k++) { const v = (mx * k) / 4; g += '<line x1="' + L + '" x2="' + (Wd - 10) + '" y1="' + Y(v) + '" y2="' + Y(v) + '" stroke="currentColor" opacity=".12"/><text x="' + (L - 6) + '" y="' + (Y(v) + 4) + '" font-size="11" text-anchor="end" fill="currentColor" opacity=".6">' + esc(W.fm(v)) + '</text>'; }
     const pts0 = lines[0].pts; pts0.forEach((p, i) => { if (days <= 8 || i % Math.ceil(days / 8) === 0 || i === days - 1) g += '<text x="' + X(i) + '" y="' + (Hd - 8) + '" font-size="11" text-anchor="middle" fill="currentColor" opacity=".6">' + esc(String(p.day).slice(5).replace('-', '/')) + '</text>'; });
-    let body = '';
+    let body = tg !== null ? '<line x1="' + L + '" x2="' + (Wd - 10) + '" y1="' + Y(tg) + '" y2="' + Y(tg) + '" stroke="#16a34a" stroke-width="1.6" stroke-dasharray="2 4"/><text x="' + (Wd - 12) + '" y="' + (Y(tg) - 4) + '" font-size="11" text-anchor="end" fill="#16a34a">target ' + esc(W.fm(tg)) + '</text>' : '';
     lines.forEach((l) => {
       let d = '', pen = false; l.pts.forEach((p, i) => { if (!has(p.v)) { pen = false; return; } d += (pen ? 'L' : 'M') + X(i).toFixed(1) + ' ' + Y(+p.v).toFixed(1); pen = true; });
       if (d) body += '<path d="' + d + '" fill="none" stroke="' + l.color + '" stroke-width="2.4" ' + (l.dash ? 'stroke-dasharray="5 4" ' : '') + 'stroke-linecap="round" stroke-linejoin="round"/>';
       l.pts.forEach((p, i) => { if (has(p.v)) body += '<circle cx="' + X(i).toFixed(1) + '" cy="' + Y(+p.v).toFixed(1) + '" r="' + (l.dash ? 2.6 : 3.6) + '" fill="' + l.color + '"><title>' + esc(l.name + ' · ' + p.day + ': ' + W.fm(p.v) + (p.n ? ' (' + p.n + ')' : '')) + '</title></circle>'; });
     });
     return '<div class="wp-card"><h3>' + esc(title) + '</h3>' + (sub ? '<div class="wp-sub">' + esc(sub) + '</div>' : '') + '<svg viewBox="0 0 ' + Wd + ' ' + Hd + '" style="width:100%;height:auto;margin-top:6px" role="img" aria-label="' + esc(title) + '">' + g + body + '</svg>'
-      + '<div class="pp-lg">' + lines.map((l) => '<span><span style="color:' + l.color + '">' + (l.dash ? '╌' : '●') + '</span> ' + esc(l.name) + '</span>').join('') + '<span>lower is better · tap a dot for the value</span></div></div>';
+      + '<div class="pp-lg">' + lines.map((l) => '<span><span style="color:' + l.color + '">' + (l.dash ? '╌' : '●') + '</span> ' + esc(l.name) + '</span>').join('') + (tg !== null ? '<span><span style="color:#16a34a">┈</span> target</span>' : '') + '<span>lower is better · tap a dot for the value</span></div></div>';
   }
+  const smoothPts = (pts, on) => !on ? pts : pts.map((p, i) => { let s = 0, n = 0; for (let k = Math.max(0, i - 6); k <= i; k++) { const q = pts[k]; if (has(q.v) && q.n) { s += q.v * q.n; n += q.n; } } return { day: p.day, v: n ? s / n : null, n }; });
+  const smoothCb = (S) => '<label class="wp-sub" style="display:inline-flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" data-smooth="1"' + (S.smooth ? ' checked' : '') + '> 7-day average (smooths the order-closing line)</label>';
   const lastN = (a, n) => a.slice(Math.max(0, a.length - n));
   const wavg = (a, key) => { let n = 0, s = 0; a.forEach((x) => { if (has(x[key]) && x.n) { n += x.n; s += x.n * x[key]; } }); return n ? s / n : null; };
   const closeOf = (x) => (x && x.close ? { n: x.close.n, avg: x.close.avg } : null);   // per-day close entries are { n, avg }
@@ -92,8 +95,26 @@
       + D.people.map((p) => { const i = (S.cmp || []).indexOf(p.emp_id), on = i >= 0; return '<label style="display:inline-flex;gap:6px;align-items:center;border:1px solid var(--wp-line);border-radius:99px;padding:5px 11px;font-size:13px;cursor:pointer' + (on ? ';border-color:' + CMP[i % 6] + ';font-weight:700' : '') + '"><input type="checkbox" data-cmp="' + p.emp_id + '"' + (on ? ' checked' : '') + '>' + (on ? '<span style="color:' + CMP[i % 6] + '">●</span>' : '') + esc(p.name) + '</label>'; }).join('') + '</div></div>';
     if (!sel.length) return h;
     const lines = sel.map((p, i) => ({ name: p.name, color: CMP[i % 6], pts: lastN(p.series, range).map((x) => ({ day: x.day, v: x.avg, n: x.n })) }));
-    const clines = sel.map((p, i) => ({ name: p.name, color: CMP[i % 6], pts: lastN(p.series, range).map((x) => ({ day: x.day, v: x.close ? x.close.avg : null, n: x.close ? x.close.n : 0 })) }));
-    return h + '<div class="pp-two">' + chart(lines, 'Average reply time — compared', 'Lower is better.') + chart(clines, 'Average order-closing time — compared', 'Orders closed that day.') + '</div><div style="height:12px"></div>';
+    const clines = sel.map((p, i) => ({ name: p.name, color: CMP[i % 6], pts: smoothPts(lastN(p.series, range).map((x) => ({ day: x.day, v: x.close ? x.close.avg : null, n: x.close ? x.close.n : 0 })), S.smooth) }));
+    return h + '<div class="pp-two">' + chart(lines, 'Average reply time — compared', 'Lower is better.', { target: (D.cfg || {}).target }) + chart(clines, 'Average order-closing time — compared', 'Orders closed that day.') + '</div><div style="height:12px"></div>';
+  }
+  // every person at a glance: one small card each, the worst group first
+  function mini(vals, color, tgt, w, h) {
+    const v = vals.map((x) => (has(x) ? +x : null)), ok = v.filter((x) => x !== null); if (ok.length < 2) return '<div class="wp-sub" style="height:' + h + 'px;display:flex;align-items:center">not enough days</div>';
+    const mx = Math.max.apply(null, ok.concat(tgt !== null ? [tgt] : [])) || 1, st = (w - 4) / Math.max(1, v.length - 1), Y = (x) => 3 + (h - 6) * (1 - Math.min(x, mx) / mx); let d = '', pen = false;
+    v.forEach((x, i) => { if (x === null) { pen = false; return; } d += (pen ? 'L' : 'M') + (2 + i * st).toFixed(1) + ' ' + Y(x).toFixed(1); pen = true; });
+    return '<svg viewBox="0 0 ' + w + ' ' + h + '" style="width:100%;height:auto" aria-hidden="true">' + (tgt !== null ? '<line x1="0" x2="' + w + '" y1="' + Y(tgt) + '" y2="' + Y(tgt) + '" stroke="#16a34a" stroke-width="1.2" stroke-dasharray="2 3"/>' : '') + '<path d="' + d + '" fill="none" stroke="' + color + '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  }
+  function gridCard(D, S) {
+    const order = { red: 0, quality: 1, ok: 2, few: 3, star: 4 }, tgt = (D.cfg || {}).target; const ps = D.people.slice().sort((a, b) => (order[(a.verdict || {}).key] ?? 3) - (order[(b.verdict || {}).key] ?? 3) || (b.pace.median || 0) - (a.pace.median || 0));
+    if (!ps.length) return '';
+    return '<div class="wp-card"><h3>Everyone\'s graphs, last ' + S.days + ' days</h3><div class="wp-sub">One card per person, the ones to look at first on top (🔴 slow and low orders, then 🟠, then the rest, ⭐ last). Teal = reply time (green dotted line = target), purple = order-closing time. Tap a card to open the person.</div>'
+      + '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px;margin-top:10px">' + ps.map((p) => {
+        const sr = lastN(p.series, S.days), cl = smoothPts(sr.map((x) => ({ day: x.day, v: x.close ? x.close.avg : null, n: x.close ? x.close.n : 0 })), S.smooth).map((x) => x.v), v = p.verdict;
+        return '<div data-emp="' + p.emp_id + '" role="button" tabindex="0" style="cursor:pointer;border:1px solid ' + (v ? VD[v.key] : 'var(--wp-line)') + ';border-radius:12px;padding:10px"><div style="display:flex;justify-content:space-between;gap:6px;align-items:center"><b class="nm" style="text-decoration:none">' + esc(p.name) + '</b>' + W.chip(p) + '</div>'
+          + (v && v.key !== 'few' ? '<div class="wp-sub" style="margin:2px 0 4px">' + esc(v.label) + '</div>' : '<div class="wp-sub" style="margin:2px 0 4px">Not enough data yet</div>')
+          + '<div class="wp-sub">⚡ reply · ' + (has(p.pace.avg) ? W.fm(p.pace.avg) + ' avg' : '-') + '</div>' + mini(sr.map((x) => x.avg), '#0f6e7e', tgt !== undefined ? tgt : null, 230, 44)
+          + '<div class="wp-sub" style="margin-top:4px">🧾 closing · ' + (p.close ? W.fm(p.close.avg) + ' avg' : '-') + '</div>' + mini(cl, '#7c3aed', null, 230, 44) + '</div>'; }).join('') + '</div></div>';
   }
   const hm = (s) => { const d = new Date(String(s).replace(' ', 'T')); return isNaN(d) ? '' : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) + ' ' + d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', hour12: true }); };
   const mcol = (m) => m > 30 ? '#dc2626' : m > 10 ? '#d97706' : '#16a34a';
@@ -115,13 +136,13 @@
     const T = D.team, tp = T.pace, range = S.days, ser = lastN(T.series, range), cser = lastN(T.close_series || [], range);
     const cAvg = wavg(cser, 'avg'), cN = cser.reduce((a, x) => a + (x.n || 0), 0), rAvg = wavg(ser, 'avg');
     let h = '<div class="pp-top" style="margin-bottom:12px"><div class="wp-seg" role="group" aria-label="Range">' + [[7, '7 days'], [30, '30 days']].map((x) => '<button type="button" data-range="' + x[0] + '" class="' + (range === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</div>'
-      + '<label class="wp-sub">Open a person: <select id="ppSel"><option value="0">— choose —</option>' + D.people.map((p) => '<option value="' + p.emp_id + '">' + esc(p.name) + '</option>').join('') + '</select></label></div>';
+      + smoothCb(S) + '<label class="wp-sub">Open a person: <select id="ppSel"><option value="0">— choose —</option>' + D.people.map((p) => '<option value="' + p.emp_id + '">' + esc(p.name) + '</option>').join('') + '</select></label></div>';
     h += tiles([['Typical reply (30 days)', W.fm(tp.median), W.chip(tp) + ' · ' + tp.n + ' replies'], ['Average reply (' + range + ' d)', W.fm(rAvg), dl(has(tp.median) && has(D.team.prev.median) ? Math.round((tp.median - D.team.prev.median) * 10) / 10 : null)],
       ['Within 5 minutes', has(tp.fast_pct) ? tp.fast_pct + '%' : '-', 'slow (30+ min) ' + (has(tp.slow_pct) ? tp.slow_pct + '%' : '-')], ['Average order closing (' + range + ' d)', W.fm(cAvg), cN + ' orders closed'],
       ['Waiting right now', wait ? wait.total : '-', wait && wait.total ? 'longest ' + wait.longest + ' min' : 'nobody waiting'], ['Auto-bot reply', W.fm(T.bot.median), T.bot.n + ' auto replies']]);
-    h += '<div class="pp-two">' + chart([{ name: 'Average reply time (people)', color: '#0f6e7e', pts: ser.map((x) => ({ day: x.day, v: x.avg, n: x.n })) }, { name: 'Auto-bot', color: '#94a3b8', dash: true, pts: lastN(T.bot_series || [], range).map((x) => ({ day: x.day, v: x.median, n: x.n })) }], 'Average reply time, day by day', 'How long customers waited for a person, per day. Lower is better.')
-      + chart([{ name: 'Average time to close an order', color: '#7c3aed', pts: cser.map((x) => ({ day: x.day, v: x.avg, n: x.n })) }], 'Average order-closing time, day by day', 'From the query arriving to its first order, for orders closed that day.') + '</div><div style="height:12px"></div>';
-    h += compareCard(D, S);
+    h += '<div class="pp-two">' + chart([{ name: 'Average reply time (people)', color: '#0f6e7e', pts: ser.map((x) => ({ day: x.day, v: x.avg, n: x.n })) }, { name: 'Auto-bot', color: '#94a3b8', dash: true, pts: lastN(T.bot_series || [], range).map((x) => ({ day: x.day, v: x.median, n: x.n })) }], 'Average reply time, day by day', 'How long customers waited for a person, per day. Lower is better.', { target: (D.cfg || {}).target })
+      + chart([{ name: 'Average time to close an order' + (S.smooth ? ' (7-day avg)' : ''), color: '#7c3aed', pts: smoothPts(cser.map((x) => ({ day: x.day, v: x.avg, n: x.n })), S.smooth) }], 'Average order-closing time, day by day', 'From the query arriving to its first order, for orders closed that day.') + '</div><div style="height:12px"></div>';
+    h += compareCard(D, S) + gridCard(D, S);
     h += sugHtml(teamSuggestions(D, wait), '💡 Suggestions');
     h += peopleTable(D);
     h += W.linkCard ? '<div class="wp">' + W.linkCard(D) + '</div>' : '';
@@ -145,11 +166,11 @@
     const range = S.days, T = D.team, ser = lastN(p.series, range), tser = lastN(T.series, range), cser = lastN(p.series.map((x) => ({ day: x.day, n: x.close ? x.close.n : 0, avg: x.close ? x.close.avg : null })), range), tcs = lastN(T.close_series || [], range);
     const o = p.orders || {}, bk = o.buckets || {}; const vd = p.verdict;
     let h = '<div class="pp-top" style="margin-bottom:10px"><button type="button" class="pp-back" data-back="1">← Team</button><h2 style="margin:0;font-size:20px">' + esc(p.name) + '</h2>' + (vd ? '<span class="wp-chip" style="background:' + VD[vd.key] + '" title="' + esc(vd.why) + '">' + esc(vd.label) + '</span>' : '')
-      + '<span style="flex:1"></span><div class="wp-seg" role="group" aria-label="Range">' + [[7, '7 days'], [30, '30 days']].map((x) => '<button type="button" data-range="' + x[0] + '" class="' + (range === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</div></div>';
+      + '<span style="flex:1"></span>' + smoothCb(S) + '<div class="wp-seg" role="group" aria-label="Range">' + [[7, '7 days'], [30, '30 days']].map((x) => '<button type="button" data-range="' + x[0] + '" class="' + (range === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</div></div>';
     h += tiles([['Typical reply (30 d)', W.fm(p.pace.median), W.chip(p) + ' · ' + p.pace.n + ' replies'], ['Team typical', W.fm(T.pace.median), 'rank ' + (p.rank ? '#' + p.rank + ' of ' + D.people.filter((x) => x.rank).length : '—')], ['Within 5 minutes', has(p.pace.fast_pct) ? p.pace.fast_pct + '%' : '-', 'team ' + (has(T.pace.fast_pct) ? T.pace.fast_pct + '%' : '-')],
       ['Order closing (30 d)', p.close ? W.fm(p.close.avg) : '-', p.close ? p.close.n + ' orders' : 'no order closed'], ['Orders % (30 d)', has(o.conversion) ? o.conversion + '%' : '-', has(o.queries) ? o.queries + ' queries' : ''], ['Lost to slow replies', p.loss && p.loss.orders >= 0.5 ? '≈ ' + p.loss.orders : '-', p.loss && p.loss.revenue ? '₹' + Number(p.loss.revenue).toLocaleString('en-IN') : ''], ['Waiting now', waitP ? waitP.n : '-', waitP && waitP.n ? 'longest ' + waitP.longest + ' min' : 'nobody']]);
-    h += '<div class="pp-two">' + chart([{ name: p.name, color: '#0f6e7e', pts: ser.map((x) => ({ day: x.day, v: x.avg, n: x.n })) }, { name: 'Team', color: '#94a3b8', dash: true, pts: tser.map((x) => ({ day: x.day, v: x.avg, n: x.n })) }], 'Average reply time, day by day', 'This person against the whole team.')
-      + chart([{ name: p.name, color: '#7c3aed', pts: cser.map((x) => ({ day: x.day, v: x.avg, n: x.n })) }, { name: 'Team', color: '#94a3b8', dash: true, pts: tcs.map((x) => ({ day: x.day, v: x.avg, n: x.n })) }], 'Average order-closing time, day by day', 'Orders closed that day, from the query arriving.') + '</div><div style="height:12px"></div>';
+    h += '<div class="pp-two">' + chart([{ name: p.name, color: '#0f6e7e', pts: ser.map((x) => ({ day: x.day, v: x.avg, n: x.n })) }, { name: 'Team', color: '#94a3b8', dash: true, pts: tser.map((x) => ({ day: x.day, v: x.avg, n: x.n })) }], 'Average reply time, day by day', 'This person against the whole team.', { target: (D.cfg || {}).target })
+      + chart([{ name: p.name, color: '#7c3aed', pts: smoothPts(cser.map((x) => ({ day: x.day, v: x.avg, n: x.n })), S.smooth) }, { name: 'Team', color: '#94a3b8', dash: true, pts: smoothPts(tcs.map((x) => ({ day: x.day, v: x.avg, n: x.n })), S.smooth) }], 'Average order-closing time, day by day', 'Orders closed that day, from the query arriving.') + '</div><div style="height:12px"></div>';
     h += sugHtml(personSuggestions(D, p), '💡 What to do with ' + p.name.split(' ')[0]);
     // orders by reply speed
     if (bk.fast) { const cell = (x) => !x || !x.queries ? '-' : '<b>' + x.orders + '</b> <span class="wp-sub">of ' + x.queries + ' · ' + (has(x.conversion) ? x.conversion + '%' : '-') + '</span>'; h += '<div class="wp-card"><h3>Orders by how fast ' + esc(p.name.split(' ')[0]) + ' answered (30 days)</h3><div class="wp-sc"><table><thead><tr><th>Within 5 min</th><th>5 – 30 min</th><th>Over 30 min</th><th>Not answered</th></tr></thead><tbody><tr><td>' + cell(bk.fast) + '</td><td>' + cell(bk.mid) + '</td><td>' + cell(bk.slow) + '</td><td>' + cell(bk.none) + '</td></tr></tbody></table></div></div>'; }
@@ -182,7 +203,7 @@
       const nb = t.closest('[data-nudge]'); if (nb) { nb.disabled = true; api.post('wq.pace_nudge', { emp_id: +nb.dataset.nudge }).then((x) => { const m = el.querySelector('#ppNudgeMsg'); if (m) m.textContent = x.sent ? 'Reminder sent ✓' : 'Sent, but this phone has not allowed alerts.'; }, (er) => { const m = el.querySelector('#ppNudgeMsg'); if (m) m.textContent = er.message || 'Could not send'; nb.disabled = false; }); return; }
       const sv = t.closest('.wp-save'); if (sv) { const body = {}; el.querySelectorAll('[data-cfg]').forEach((i) => { body[i.dataset.cfg] = i.type === 'checkbox' ? i.checked : +i.value; }); const note = el.querySelector('.wp-saved'); api.post('wq.pace_cfg', body).then(() => { if (note) note.textContent = 'Saved ✓'; }, (er) => { if (note) note.textContent = (er && er.message) || 'Could not save'; }); }
     });
-    el.addEventListener('change', (e) => { const c = e.target.closest && e.target.closest('[data-cmp]'); if (c) { const id = +c.dataset.cmp, i = S.cmp.indexOf(id); if (i >= 0) S.cmp.splice(i, 1); else if (S.cmp.length < 6) S.cmp.push(id); draw(); return; } if (e.target.id === 'ppSel' && +e.target.value) { S.emp = +e.target.value; draw(); window.scrollTo(0, 0); } });
+    el.addEventListener('change', (e) => { if (e.target.closest && e.target.closest('[data-smooth]')) { S.smooth = e.target.checked; draw(); return; } const c = e.target.closest && e.target.closest('[data-cmp]'); if (c) { const id = +c.dataset.cmp, i = S.cmp.indexOf(id); if (i >= 0) S.cmp.splice(i, 1); else if (S.cmp.length < 6) S.cmp.push(id); draw(); return; } if (e.target.id === 'ppSel' && +e.target.value) { S.emp = +e.target.value; draw(); window.scrollTo(0, 0); } });
     setInterval(() => { if (!document.hidden) api.get('wq.pace_waiting').then((w) => { WT = w; if (!el.querySelector('input:focus')) draw(); }, () => {}); }, 60000);   // who is waiting is live
     return load();
   }
