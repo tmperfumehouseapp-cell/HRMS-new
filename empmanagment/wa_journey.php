@@ -34,6 +34,7 @@ function wj_tables(PDO $pdo): bool
         $pdo->exec("CREATE TABLE IF NOT EXISTS wa_wj_ev (id BIGINT AUTO_INCREMENT PRIMARY KEY, phone VARCHAR(12) NOT NULL, track VARCHAR(8) NOT NULL DEFAULT '', step_id VARCHAR(12) NOT NULL DEFAULT '', day INT NOT NULL DEFAULT 0,
             anchor VARCHAR(10) NOT NULL DEFAULT '', ref VARCHAR(16) NOT NULL DEFAULT '', status VARCHAR(10) NOT NULL DEFAULT 'sent', body TEXT NULL, why VARCHAR(160) NOT NULL DEFAULT '', sent_at DATETIME NULL,
             UNIQUE KEY uq_step (phone, track, step_id, anchor), KEY k_at (sent_at), KEY k_phone (phone, sent_at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        foreach (['ALTER TABLE wa_contacts ADD COLUMN wj_anchor DATETIME NULL', 'ALTER TABLE wa_contacts ADD COLUMN wj_anchor_in DATETIME NULL'] as $__alt) { try { $pdo->exec($__alt); } catch (Throwable $e) { /* already there */ } }
         $pdo->exec("CREATE TABLE IF NOT EXISTS wa_wj_topic (phone VARCHAR(12) NOT NULL PRIMARY KEY, topic VARCHAR(32) NOT NULL DEFAULT '', perfume VARCHAR(60) NOT NULL DEFAULT '', hook VARCHAR(200) NOT NULL DEFAULT '',
             at DATETIME NULL, KEY k_topic (topic)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         $ok = true; if (function_exists('schema_mark')) schema_mark($pdo, __FUNCTION__, __FILE__);
@@ -307,16 +308,40 @@ function wj_blocked(PDO $pdo, array $c, int $now): string
     try { $q = $pdo->prepare("SELECT 1 FROM wa_flow_runs WHERE phone = ? AND state IN ('run', 'wait', 'ready') LIMIT 1"); $q->execute([$k]); if ($q->fetchColumn()) return 'a flow is running'; } catch (Throwable $e) { }
     return '';
 }
+/** ⏱ The Journey's clock for a customer who did not order = OUR reply to their last message (bot or person), not their message itself.
+ *  Kept in wa_contacts.wj_anchor (for the last_in_at it was worked out for, wj_anchor_in). A campaign, an order message or the Journey's own messages never move it. */
+function wj_anchor_ready(PDO $pdo): bool
+{
+    static $ok = null; if ($ok !== null) return $ok;
+    try { $pdo->query("SELECT wj_anchor, wj_anchor_in FROM wa_contacts LIMIT 1")->fetchAll(); return $ok = true; } catch (Throwable $e) { return $ok = false; }
+}
+function wj_anchor_refresh(PDO $pdo, int $max = 600): int
+{
+    if (!wj_anchor_ready($pdo)) return 0; $n = 0;
+    try {
+        $rows = $pdo->query("SELECT phone, last_in_at FROM wa_contacts WHERE optout = 0 AND last_in_at >= DATE_SUB(NOW(), INTERVAL 62 DAY) AND last_out_at IS NOT NULL AND last_out_at >= last_in_at AND (wj_anchor_in IS NULL OR wj_anchor_in <> last_in_at) ORDER BY last_in_at DESC LIMIT " . (int)$max)->fetchAll(PDO::FETCH_ASSOC);
+        $up = $pdo->prepare("UPDATE wa_contacts SET wj_anchor = ?, wj_anchor_in = ? WHERE phone = ?");
+        foreach (array_chunk($rows, 200) as $ch) {
+            $ph = array_map(function ($r) { return (string)$r['phone']; }, $ch); $min = min(array_map(function ($r) { return (string)$r['last_in_at']; }, $ch)); $in = implode(',', array_fill(0, count($ph), '?')); $first = [];
+            $q = $pdo->prepare("SELECT phone, ts FROM wa_messages WHERE dir = 'out' AND status <> 'failed' AND who NOT IN ('campaign','order','followup','flow') AND ts >= ? AND phone IN ($in) ORDER BY ts"); $q->execute(array_merge([$min], $ph));
+            $li = []; foreach ($ch as $r) $li[(string)$r['phone']] = (string)$r['last_in_at'];
+            foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $m) { $p = (string)$m['phone']; if (!isset($first[$p]) && (string)$m['ts'] >= $li[$p]) $first[$p] = (string)$m['ts']; }
+            foreach ($ch as $r) { $p = (string)$r['phone']; if (isset($first[$p])) { $up->execute([$first[$p], (string)$r['last_in_at'], $p]); $n++; } }
+        }
+    } catch (Throwable $e) { error_log('wj_anchor_refresh: ' . $e->getMessage()); }
+    return $n;
+}
 /** Everyone whose day has come: [{c, track, anchor, age, step, others[], topic}] — the same list feeds the preview and the sender. */
 function wj_collect(PDO $pdo, array $plan, array $cfg, int $now, int $limit = 400): array
 {
     $out = []; $autoSince = (int)setting_get($pdo, 'wj_auto_since', '0'); $reg = wj_reg($pdo); if (function_exists('wa_cust_ready')) { try { wa_cust_ready($pdo); } catch (Throwable $e) { } }
     foreach (['lead', 'buyer'] as $tk) {
         $steps = array_values(array_filter($plan['tracks'][$tk]['steps'], function ($s) use ($reg) { return !empty($s['on']) && isset($reg[$s['ref']]); })); if (!$steps) continue;
-        $col = $tk === 'lead' ? 'c.last_in_at' : 'u.last_order'; $conds = []; $args = [];
+        $aex = wj_anchor_ready($pdo) ? 'IF(c.wj_anchor_in = c.last_in_at AND c.wj_anchor IS NOT NULL, c.wj_anchor, c.last_in_at)' : 'c.last_in_at';   // our reply to their last message
+        $col = $tk === 'lead' ? $aex : 'u.last_order'; $conds = []; $args = [];
         foreach (array_unique(array_column($steps, 'day')) as $d) { $conds[] = "($col <= ? AND $col > ?)"; $args[] = wj_dt($now - $d * 86400); $args[] = wj_dt($now - ($d + $cfg['grace'] + 1) * 86400); }
         $sql = $tk === 'lead'
-            ? "SELECT c.*, c.last_in_at AS anchor_at FROM wa_contacts c WHERE c.optout = 0 AND c.last_in_at IS NOT NULL AND (" . implode(' OR ', $conds) . ") AND NOT EXISTS (SELECT 1 FROM wa_cust u WHERE u.phone = c.phone AND u.n > 0 AND (u.last_order >= DATE_SUB(c.last_in_at, INTERVAL 2 DAY) OR u.last_order >= DATE_SUB(NOW(), INTERVAL 7 DAY))) ORDER BY c.last_in_at LIMIT " . (int)$limit
+            ? "SELECT c.*, $aex AS anchor_at FROM wa_contacts c WHERE c.optout = 0 AND c.last_in_at IS NOT NULL AND (" . implode(' OR ', $conds) . ") AND NOT EXISTS (SELECT 1 FROM wa_cust u WHERE u.phone = c.phone AND u.n > 0 AND (u.last_order >= DATE_SUB(c.last_in_at, INTERVAL 2 DAY) OR u.last_order >= DATE_SUB(NOW(), INTERVAL 7 DAY))) ORDER BY c.last_in_at LIMIT " . (int)$limit
             : "SELECT c.*, u.last_order AS anchor_at FROM wa_cust u JOIN wa_contacts c ON c.phone = u.phone WHERE u.n > 0 AND c.optout = 0 AND (" . implode(' OR ', $conds) . ") AND (c.last_in_at IS NULL OR u.last_order >= DATE_SUB(c.last_in_at, INTERVAL 2 DAY)) ORDER BY u.last_order LIMIT " . (int)$limit;
         try { $q = $pdo->prepare($sql); $q->execute($args); $rows = $q->fetchAll(PDO::FETCH_ASSOC); } catch (Throwable $e) { error_log('wj_collect ' . $tk . ': ' . $e->getMessage()); continue; }
         foreach (array_chunk($rows, 300) as $chunk) {
@@ -371,7 +396,8 @@ function wj_fill(PDO $pdo, array $c, array $x): array
         $sys = "You fill two blanks of an approved WhatsApp message of TM Perfume House (Indian perfume brand) for ONE customer. perfume = the perfume (and size) THIS customer asked about, liked most" . ($x['track'] === 'buyer' ? ' or bought' : '')
             . ", as they would recognise it, max 40 letters (if unclear: 'your favourite perfume'). line = ONE short phrase for {{3}}, max 90 letters, no new lines, following the MESSAGE RULE exactly, in the customer's language style (simple Hinglish / English), with a real price ONLY from the STORE FACTS when a price is part of the rule. "
             . "Never invent a number, never go below the owner's lowest price, never mention percentages, never write a greeting or the customer's name (those are already in the message)." . ($season !== '' ? " The festival / season now: " . $season . ' — use it when the rule allows.' : '');
-        $ask = ($facts !== '' ? $facts . "\n" : '') . "MESSAGE RULE: $rule\n" . ($step['idea'] !== '' ? "OWNER'S IDEA FOR THIS DAY: " . $step['idea'] . "\n" : '') . ($topic && $topic['hook'] !== '' ? "WHAT WOULD WIN THIS CUSTOMER (read from their chat): " . $topic['hook'] . "\n" : '')
+        $rep = ''; try { $rq = $pdo->prepare("SELECT n FROM wa_cust WHERE phone = ?"); $rq->execute([(string)$c['phone']]); if ((int)$rq->fetchColumn() > 0 && $x['track'] === 'lead') $rep = "THIS IS A REPEAT CUSTOMER (they ordered from us before and now asked again): welcome them back warmly, no first-time introductions.\n"; } catch (Throwable $e) { }
+        $ask = $rep . ($facts !== '' ? $facts . "\n" : '') . "MESSAGE RULE: $rule\n" . ($step['idea'] !== '' ? "OWNER'S IDEA FOR THIS DAY: " . $step['idea'] . "\n" : '') . ($topic && $topic['hook'] !== '' ? "WHAT WOULD WIN THIS CUSTOMER (read from their chat): " . $topic['hook'] . "\n" : '')
             . "THIS IS DAY " . $step['day'] . " of the " . ($x['track'] === 'buyer' ? 'customer who ordered (counted from the order)' : 'customer who did not order (counted from their last message)') . ".\nCONVERSATION:\n$conv\nFill the blanks.";
         for ($i = 0; $i < 2; $i++) {
             try { [$ok, $v] = convo_ai($sys, [['text' => $ask]], $sch, false, 400, 'claude'); } catch (Throwable $e) { $ok = false; $v = null; } if (!$ok || !is_array($v)) break;
@@ -634,6 +660,7 @@ function wj_tick(PDO $pdo): array
     if (!function_exists('fa_offers') || !wj_tables($pdo)) return $o;
     try { wj_install($pdo); } catch (Throwable $e) { error_log('wj_install: ' . $e->getMessage()); }
     if ((int)setting_get($pdo, 'wj_tpl_at', '0') < time() - 600 && function_exists('fa_tpl_setup')) { setting_set($pdo, 'wj_tpl_at', (string)time()); try { $o['tpl'] = fa_tpl_setup($pdo); } catch (Throwable $e) { error_log('wj tpl: ' . $e->getMessage()); } }
+    try { $o['anchor'] = wj_anchor_refresh($pdo); } catch (Throwable $e) { error_log('wj anchor: ' . $e->getMessage()); }
     if (wj_mode($pdo) === 'auto' && wa_lock($pdo, 'wjrun', 240)) { try { $o['run'] = wj_run($pdo); } catch (Throwable $e) { wa_log($pdo, 'followup', false, 'journey: ' . $e->getMessage()); } }
     /* a slow Claude call must never let a second copy start (wa_lock is only a time window) */
     if (wa_lock($pdo, 'wjnight', 300)) { try { $o['night'] = wj_night_step($pdo); } catch (Throwable $e) { error_log('wj_night: ' . $e->getMessage()); } }
