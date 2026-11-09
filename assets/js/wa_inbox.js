@@ -275,6 +275,7 @@
     const LC = { new: '#fee2e2;color:#991b1b', waiting: '#ffedd5;color:#9a3412', hot: '#fee2e2;color:#991b1b', rescue: '#ede9fe;color:#5b21b6', bot: '#e0f2fe;color:#075985', ordered: '#dcfce7;color:#166534', complaint: '#f3e8ff;color:#6b21a8', talking: '#dcfce7;color:#166534', replied: '#f1f5f9;color:#334155', quiet: '#f1f5f9;color:#64748b', closed: '#f1f5f9;color:#64748b' };
     function pills(c) {
       let h = c.life ? `<span class="wi-p" style="background:${LC[c.life.key] || '#f1f5f9'};font-weight:800" title="Where this customer is right now">${esc(c.life.label)}</span>` : '';
+      if (c.life && (c.life.want_label || c.life.day != null)) h += `<span class="wi-p" style="background:#f1f5f9" title="What the customer wants · days since their last message">${esc(c.life.want_label || '')}${c.life.day != null ? (c.life.want_label ? ' · ' : '') + 'day ' + c.life.day : ''}</span>`;
       h += c.hot ? '<span class="wi-p r">🔥 Hot</span>' : '';
       if (c.state === 'bot' && !c.assigned_emp) h += '<span class="wi-p o">Bot</span>';
       if (c.biz) h += '<span class="wi-p biz" title="Answered our campaign with an automatic business reply — not a customer">🏢 Business</span>';
