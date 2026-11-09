@@ -121,10 +121,14 @@ function jt_store(PDO $pdo, string $phone, array $tags, array $managed, string $
 {
     $now = date('Y-m-d H:i:s'); $keep = array_keys($tags);
     try {
-        $q = $pdo->prepare("SELECT tag FROM wa_auto_tags WHERE phone = ? AND src = ?"); $q->execute([$phone, $src]); $have = $q->fetchAll(PDO::FETCH_COLUMN);
+        $q = $pdo->prepare("SELECT tag, why, until FROM wa_auto_tags WHERE phone = ? AND src = ?"); $q->execute([$phone, $src]); $ex = []; foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $x) $ex[(string)$x['tag']] = $x; $have = array_keys($ex);
         foreach ($have as $h) if (in_array($h, $managed, true) && !in_array($h, $keep, true)) $pdo->prepare("DELETE FROM wa_auto_tags WHERE phone = ? AND tag = ? AND src = ?")->execute([$phone, $h, $src]);
         $up = $pdo->prepare("INSERT INTO wa_auto_tags (phone, tag, why, at, until, src) VALUES (?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE why = VALUES(why), until = VALUES(until), at = IF(src = VALUES(src), at, VALUES(at)), src = VALUES(src)");
-        foreach ($tags as $k => $v) $up->execute([$phone, $k, mb_substr((string)$v[0], 0, 220), $now, $v[1] ? date('Y-m-d H:i:s', (int)$v[1]) : null, $src]);
+        foreach ($tags as $k => $v) {
+            $why = mb_substr((string)$v[0], 0, 220); $un = $v[1] ? date('Y-m-d H:i:s', (int)$v[1]) : null;
+            if (isset($ex[$k]) && (string)$ex[$k]['why'] === $why && (string)$ex[$k]['until'] === (string)$un) continue;   // nothing changed: no write (this ran for every customer every minute)
+            $up->execute([$phone, $k, $why, $now, $un, $src]);
+        }
     } catch (Throwable $e) { }
 }
 /** Order source of the customer's last order (query / campaign), from the same rule the order allocation uses. */
@@ -245,11 +249,11 @@ function jt_run_batch(PDO $pdo, array $phones): int
 function jt_tick(PDO $pdo, bool $force = false): array
 {
     $o = []; if ((string)setting_get($pdo, 'jt_bg', '1') === '0' || !jt_tables($pdo)) return $o;
-    if (!$force && (int)setting_get($pdo, 'jt_at', '0') > time() - 55) return $o; setting_set($pdo, 'jt_at', (string)time());
+    if (!$force && (int)setting_get($pdo, 'jt_at', '0') > time() - 300) return $o; setting_set($pdo, 'jt_at', (string)time());   // every 5 minutes at most (it used to run every minute for ~700 customers)
     if (function_exists('wa_lock') && !wa_lock($pdo, 'jttick', 200)) return ['locked' => 1];
     try { $pdo->exec("DELETE FROM wa_auto_tags WHERE until IS NOT NULL AND until < NOW()"); } catch (Throwable $e) { }
-    $lim = $force ? 600 : 250; $ph = [];
-    try { $q = $pdo->prepare("SELECT phone FROM wa_contacts WHERE last_in_at >= ? ORDER BY last_in_at DESC LIMIT 120"); $q->execute([date('Y-m-d H:i:s', time() - 26 * 3600)]); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $x) $ph[(string)$x] = 1;   // changed in the last day
+    $lim = $force ? 200 : 150; $ph = [];
+    try { $q = $pdo->prepare("SELECT phone FROM wa_contacts WHERE last_in_at >= ? ORDER BY last_in_at DESC LIMIT 60"); $q->execute([date('Y-m-d H:i:s', time() - 26 * 3600)]); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $x) $ph[(string)$x] = 1;   // changed in the last day
         $cur = (string)setting_get($pdo, 'jt_cursor', ''); $q = $pdo->prepare("SELECT phone FROM wa_contacts WHERE phone > ? AND (last_in_at >= ? OR phone IN (SELECT phone FROM wa_cust WHERE n > 0 AND last_order >= ?)) ORDER BY phone LIMIT " . (int)$lim);
         $q->execute([$cur, date('Y-m-d H:i:s', time() - 62 * 86400), date('Y-m-d H:i:s', time() - 400 * 86400)]); $rows = $q->fetchAll(PDO::FETCH_COLUMN); foreach ($rows as $x) $ph[(string)$x] = 1; setting_set($pdo, 'jt_cursor', count($rows) < $lim ? '' : (string)end($rows));
     } catch (Throwable $e) { error_log('jt_tick select: ' . $e->getMessage()); }

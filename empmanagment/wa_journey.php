@@ -809,9 +809,10 @@ function wj_tick(PDO $pdo): array
     if (!function_exists('fa_offers') || !wj_tables($pdo)) return $o;
     try { wj_install($pdo); } catch (Throwable $e) { error_log('wj_install: ' . $e->getMessage()); }
     if ((int)setting_get($pdo, 'wj_tpl_at', '0') < time() - 600 && function_exists('fa_tpl_setup')) { setting_set($pdo, 'wj_tpl_at', (string)time()); try { $o['tpl'] = fa_tpl_setup($pdo); } catch (Throwable $e) { error_log('wj tpl: ' . $e->getMessage()); } }
-    try { jn_unify($pdo); jn_buyer_seed($pdo); } catch (Throwable $e) { }
+    $__heavy = (int)setting_get($pdo, 'wj_heavy_at', '0') < time() - 300; if ($__heavy) setting_set($pdo, 'wj_heavy_at', (string)time());   // plan merge / seeding / anchors: every 5 minutes is plenty
+    if ($__heavy) { try { jn_unify($pdo); jn_buyer_seed($pdo); } catch (Throwable $e) { } }
     try { if ((string)setting_get($pdo, 'jn_coldtag_fix', '') === '') { $pdo->exec("UPDATE IGNORE wa_ctags SET tag = 'ignored_fu' WHERE tag = 'cold' AND src = 'journey'"); $pdo->exec("DELETE FROM wa_ctags WHERE tag = 'cold' AND src = 'journey'"); setting_set($pdo, 'jn_coldtag_fix', date('Y-m-d H:i:s')); } } catch (Throwable $e) { }
-    try { $o['anchor'] = wj_anchor_refresh($pdo); } catch (Throwable $e) { error_log('wj anchor: ' . $e->getMessage()); }
+    try { if ($__heavy) $o['anchor'] = wj_anchor_refresh($pdo); } catch (Throwable $e) { error_log('wj anchor: ' . $e->getMessage()); }
     if (wj_mode($pdo) === 'auto' && wa_lock($pdo, 'wjrun', 240)) { try { $o['run'] = wj_run($pdo); } catch (Throwable $e) { wa_log($pdo, 'followup', false, 'journey: ' . $e->getMessage()); } }
     /* a slow Claude call must never let a second copy start (wa_lock is only a time window) */
     if (wa_lock($pdo, 'wjnight', 300)) { try { $o['night'] = wj_night_step($pdo); } catch (Throwable $e) { error_log('wj_night: ' . $e->getMessage()); } }
