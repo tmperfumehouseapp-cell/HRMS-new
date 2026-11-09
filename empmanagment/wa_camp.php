@@ -391,9 +391,7 @@ function wa_camp_counts(PDO $pdo, int $id): array
 {
     $o = ['queued' => 0, 'sent' => 0, 'failed' => 0, 'skipped' => 0, 'sending' => 0, 'retry' => 0];
     $q = $pdo->prepare("SELECT status, COUNT(*) AS n FROM wa_camp_items WHERE camp_id = ? GROUP BY status"); $q->execute([$id]); foreach ($q->fetchAll() as $r) $o[(string)$r['status']] = (int)$r['n'];
-    // Meta accepted the message and told us LATER that it failed ("accepted then failed", e.g. the payment problem 131042 on the number): it is a FAILED message, not a sent one — it must not count in Sent
-    try { $fq = $pdo->prepare("SELECT COUNT(*) FROM wa_camp_items i LEFT JOIN wa_messages m ON m.wamid = i.wamid AND i.wamid <> '' WHERE i.camp_id = ? AND i.status = 'sent' AND (i.last_status = 'failed' OR m.status = 'failed')"); $fq->execute([$id]); $af = min((int)$fq->fetchColumn(), (int)$o['sent']); $o['sent'] -= $af; $o['failed'] += $af; $o['accepted_failed'] = $af; } catch (Throwable $e) { }
-    $o['total'] = array_sum(array_filter($o, fn($k) => $k !== 'accepted_failed', ARRAY_FILTER_USE_KEY));
+    $o['total'] = array_sum($o);
     // 🛑 held by Meta (131049: the customer got too many marketing messages from businesses — Meta's decision, not charged): part of "skipped", shown on its own
     $o['held'] = 0; $o['held_r'] = 0; try { $q = $pdo->prepare("SELECT status, COUNT(*) AS n FROM wa_camp_items WHERE camp_id = ? AND status IN ('skipped', 'retry') AND err_code = 131049 GROUP BY status"); $q->execute([$id]); foreach ($q->fetchAll() as $r) { $o['held'] += (int)$r['n']; if ($r['status'] === 'retry') $o['held_r'] = (int)$r['n']; } } catch (Throwable $e) { }
     return $o;
@@ -418,7 +416,7 @@ function wa_camp_public(PDO $pdo, array $c, bool $deep = false, ?array $cfg = nu
     try { $o['mix'] = wa_mix_report($pdo, $c, $cfg ?? ['rate_marketing' => 0, 'rate_utility' => 0], false); } catch (Throwable $e) { $o['mix'] = ['on' => false, 'u_status' => 'none']; }   // light: the twin and its state; the numbers and variant counts come with wa.camp_get
     if ($deep) {
         $q = $pdo->prepare("SELECT err, COUNT(*) AS n FROM wa_camp_items WHERE camp_id = ? AND err != '' AND status IN ('failed', 'skipped', 'retry') GROUP BY err ORDER BY n DESC LIMIT 6"); $q->execute([(int)$c['id']]); $o['errors'] = $q->fetchAll();
-        $q = $pdo->prepare("SELECT i.number_id, COUNT(*) AS n FROM wa_camp_items i LEFT JOIN wa_messages m ON m.wamid = i.wamid AND i.wamid <> '' WHERE i.camp_id = ? AND i.status = 'sent' AND COALESCE(i.last_status, '') <> 'failed' AND COALESCE(m.status, '') <> 'failed' GROUP BY i.number_id"); $q->execute([(int)$c['id']]); $nm = [];
+        $q = $pdo->prepare("SELECT number_id, COUNT(*) AS n FROM wa_camp_items WHERE camp_id = ? AND status = 'sent' GROUP BY number_id"); $q->execute([(int)$c['id']]); $nm = [];
         foreach ($pdo->query("SELECT id, label, display FROM wa_numbers")->fetchAll() as $n) $nm[(int)$n['id']] = $n['label'] !== '' ? $n['label'] : $n['display'];
         $o['by_number'] = array_map(fn($r) => ['number' => $nm[(int)$r['number_id']] ?? ('Number ' . $r['number_id']), 'sent' => (int)$r['n']], $q->fetchAll());
     }
