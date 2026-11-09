@@ -748,6 +748,8 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
   if (first.indexOf('f_') === 0 && ITEMS.some((m) => m.k === first)) openFeed(first.slice(2)); else go(ITEMS.some((m) => m.k === first) ? first : 'overview');
   if (cur !== 'overview') { secs.overview = document.createElement('div'); secs.overview.className = 'sec pad'; secs.overview.hidden = true; $('body').appendChild(secs.overview); loadOverview(true); }
   started = true;
+  // 🛟 every time WhatsApp opens: look at all recent queries and tag the ones nobody followed up (server throttles it to once a minute)
+  try { api.post('wq.rescue_scan', {}).catch(() => { }); } catch (e) { /* optional */ }
   window.addEventListener('hashchange', () => { const k = (location.hash || '').replace('#', ''); if (k && k !== cur && ITEMS.some((m) => m.k === k)) go(k, true); });
 </script>
 <script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
