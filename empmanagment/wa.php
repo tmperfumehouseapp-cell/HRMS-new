@@ -976,7 +976,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo)\./', $__wa)) {
             $lab = trim((string)($nr['label'] ?: $nr['display']));
             $phones = array_slice(array_values(array_unique(array_filter(array_map(fn($p) => wa_key($p), (array)($in['phones'] ?? []))))), 0, 1500); if (!$phones) json_response(['error' => 'Select at least one chat.'], 422);
             $moved = 0; $same = 0; $up = $pdo->prepare("UPDATE wa_contacts SET last_number_id = ? WHERE phone = ? AND last_number_id <> ?");
-            foreach ($phones as $key) { $c = wa_contact($pdo, $key); if (!$c) continue; if ((int)$c['last_number_id'] === $nid) { $same++; continue; } $up->execute([$nid, $key, $nid]); if ($up->rowCount() > 0) { $moved++; try { wa_event($pdo, $key, '📱 Moved to the ' . $lab . ' number by ' . ($auth['username'] ?? 'Admin') . ' — replies now go from it. The customer has not written to this number yet, so start with a pre-made message.'); } catch (Throwable $e) { } } }
+            foreach ($phones as $key) { $c = wa_contact($pdo, $key); if (!$c) continue; if ((int)$c['last_number_id'] === $nid) { $same++; continue; } $up->execute([$nid, $key, $nid]); if ($up->rowCount() > 0) { $moved++; try { wa_event($pdo, $key, '📱 Moved to ' . $lab . ' by ' . ($auth['username'] ?? 'Admin') . ' — replies now go from it. The customer has not written to this number yet, so start with a pre-made message.'); } catch (Throwable $e) { } } }
             json_response(['ok' => true, 'moved' => $moved, 'same' => $same, 'number' => $lab]);
         }
         case 'wa.bulk_assign': {   // ☑ many chats at once → one person. Admin: any chat. A salesperson: only the chats they hold (same rule as Transfer). Max 1500 per call.
