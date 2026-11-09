@@ -40,6 +40,19 @@ function wa_auto_muted(PDO $pdo, string $key): bool
     if (function_exists('wq_rescue_human_on') && wq_rescue_human_on($pdo, $key)) return $c[$key] = true;   // 🛟 a person took this customer in Rescue: no automatic message while they work it
     $r = wa_done_row($pdo, $key); return $c[$key] = $r && strtotime((string)$r['mute_until']) > time();
 }
+/** ⏸ The follow-up plan (Autopilot + Journey) steps aside for a while when a PERSON wrote to the customer (36 h) or a campaign went to them (2 days). Bot replies do not count. Steps due meanwhile are skipped, not caught up.
+ *  Returns '' (go on) or the reason in plain words. */
+function wq_plan_paused(PDO $pdo, string $key, ?int $now = null): string
+{
+    static $c = []; $key = substr(preg_replace('/\D+/', '', $key), -10); if ($key === '') return ''; $now = $now ?: time(); $ck = $key . '|' . intdiv($now, 60); if (isset($c[$ck])) return $c[$ck];
+    $r = '';
+    try { $q = $pdo->prepare("SELECT who, MAX(ts) m FROM wa_messages WHERE phone = ? AND dir = 'out' AND status <> 'failed' AND ((who IN ('emp','person','phone')) OR who = 'campaign') AND ts >= ? GROUP BY who"); $q->execute([$key, date('Y-m-d H:i:s', $now - 2 * 86400)]);
+        foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $x) { $t = strtotime((string)$x['m']);
+            if ($x['who'] === 'campaign') $r = 'a campaign went in the last 2 days';
+            elseif ($t >= $now - 36 * 3600 && $r === '') $r = 'a person wrote in the last 36 h'; }
+    } catch (Throwable $e) { }
+    return $c[$ck] = $r;
+}
 /** Marks the order completed: silence until the end of tomorrow, follow-ups stopped, ONE thank-you (once per day). Returns the state. */
 function wa_done_mark(PDO $pdo, string $key, int $by, string $how, string $order = ''): array
 {

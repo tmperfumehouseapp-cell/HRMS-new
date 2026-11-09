@@ -276,6 +276,7 @@
     function pills(c) {
       let h = c.life ? `<span class="wi-p" style="background:${LC[c.life.key] || '#f1f5f9'};font-weight:800" title="Where this customer is right now">${esc(c.life.label)}</span>` : '';
       if (c.life && (c.life.want_label || c.life.day != null)) h += `<span class="wi-p" style="background:#f1f5f9" title="What the customer wants · days since their last message">${esc(c.life.want_label || '')}${c.life.day != null ? (c.life.want_label ? ' · ' : '') + 'day ' + c.life.day : ''}</span>`;
+      if (c.life && c.life.plan) h += `<span class="wi-p" style="background:#ede9fe;color:#5b21b6" title="Where this customer is in the 60-day follow-up plan">📍 ${esc(c.life.plan)}</span>`;
       h += c.hot ? '<span class="wi-p r">🔥 Hot</span>' : '';
       if (c.state === 'bot' && !c.assigned_emp) h += '<span class="wi-p o">Bot</span>';
       if (c.biz) h += '<span class="wi-p biz" title="Answered our campaign with an automatic business reply — not a customer">🏢 Business</span>';

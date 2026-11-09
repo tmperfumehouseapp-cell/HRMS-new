@@ -624,6 +624,11 @@ function wa_camp_tick(PDO $pdo): array
                 $iid = (int)$it['id']; $back = $was[$iid] ?? 'queued'; $isRetry = $back === 'retry'; $attempt = $isRetry ? (int)$it['tries'] + 1 : max(1, (int)$it['tries']);
                 $ct = wa_ensure_contact($pdo, (string)$it['phone'], (string)$it['name']);
                 if (function_exists('wa_auto_muted') && wa_auto_muted($pdo, (string)$it['phone'])) { $pdo->prepare("UPDATE wa_camp_items SET status = 'skipped', err = ? WHERE id = ?")->execute(['Just completed an order — no messages today and tomorrow', $iid]); $skipped++; continue; }   // ✅ order completed
+                if (!$isRetry && (int)($c['extra']['leave_fu'] ?? 1) !== 0) {   // 🔁 leave out customers a follow-up (Autopilot / Journey) messaged in the last day (default on)
+                    $fuHit = false; $fuFrom = date('Y-m-d H:i:s', $nowTs - 86400);
+                    foreach (['wa_fu_ev', 'wa_wj_ev'] as $fuT) { try { $fq = $pdo->prepare("SELECT 1 FROM $fuT WHERE phone = ? AND status = 'sent' AND sent_at >= ? LIMIT 1"); $fq->execute([(string)$it['phone'], $fuFrom]); if ($fq->fetchColumn()) { $fuHit = true; break; } } catch (Throwable $e) { } }
+                    if ($fuHit) { $pdo->prepare("UPDATE wa_camp_items SET status = 'skipped', err = ? WHERE id = ?")->execute(['Got a follow-up in the last day', $iid]); $skipped++; continue; }
+                }
                 $gapDays = max(0, (int)setting_get($pdo, 'wa_camp_gap_days', '0'));   // off by default (owner's choice): a customer can get campaigns any day; setting wa_camp_gap_days = 7 brings back "one per 7 days"
                 $q = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE phone = ? AND dir = 'out' AND mtype IN ('template', 'text') AND who = 'campaign' AND status <> 'failed' AND ts >= ?"); $q->execute([$it['phone'], date('Y-m-d H:i:s', $nowTs - max(0, $gapDays) * 86400)]);
                 if ((int)$ct['optout'] === 1) { $pdo->prepare("UPDATE wa_camp_items SET status = 'skipped', err = 'Opted out' WHERE id = ?")->execute([$iid]); $skipped++; continue; }
