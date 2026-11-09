@@ -408,12 +408,25 @@ function jn_not_prospect(PDO $pdo, array $c): string
     try { $q = $pdo->prepare("SELECT 1 FROM wq_rescue WHERE phone = ? AND status = 'skipped' AND (ai_state = 'auto' OR (ai_state = 'agreed' AND skip_reason <> 'price') OR (skip_reason = 'other' AND ai_state = 'final')) LIMIT 1"); $q->execute([$k]); if ($q->fetchColumn()) return 'not a prospect'; } catch (Throwable $e) { }
     return '';
 }
-/** What went out is written to wa_wj_ev (one log for the results: orders from follow-ups). The timeline alone decides how often a message goes. */
-function jn_offer_note(PDO $pdo, string $key, array $sit, array $st, string $ref, int $now): void
+/** "ok", "thanks", "👍" … : an acknowledgement, not a new enquiry. "ok" after OUR question ("shall I book it?") is an answer, so only thanks / emoji count then. */
+function fu_trivial_text(string $t, bool $afterQuestion): bool
 {
-    if ($ref === '') return;
-    try { $pdo->prepare("INSERT IGNORE INTO wa_wj_ev (phone, track, step_id, day, anchor, ref, status, why, sent_at) VALUES (?, 'lead', ?, ?, ?, ?, 'sent', '', ?)")
-        ->execute([$key, substr(md5((string)$sit['id'] . '|' . (int)$st['step']), 0, 12), (int)round(((float)($sit['steps'][(int)$st['step']]['after_h'] ?? 0)) / 24), date('Ymd', $now), $ref, date('Y-m-d H:i:s', $now)]); } catch (Throwable $e) { }
+    $x = mb_strtolower(trim($t)); $x = trim(preg_replace('/[\p{So}\p{Sk}\p{Cs}\x{FE0F}\x{200D}]+/u', ' ', $x)); $x = trim(preg_replace('/[^\p{L}\p{N}\s]+/u', '', $x)); $x = preg_replace('/\s+/u', ' ', $x);
+    if ($x === '') return true;   // only an emoji
+    if (preg_match('/^(thanks|thank you|thankyou|thx|thnx|ty|dhanyavad|shukriya|thanks a lot|ok thanks|ok thank you|okay thanks|ok dhanyavad)( (sir|ji|bhai|mam|madam))?$/u', $x)) return true;
+    return !$afterQuestion && (bool)preg_match('/^(ok|okay|okk+|okey|k|kk|hmm+|hm+|achha|accha|acha|theek hai|thik hai|thik|noted|got it|alright|ji)( (sir|ji|bhai|mam|madam))?$/u', $x);
+}
+/** Is everything the customer wrote since $afterId / $afterTs only an acknowledgement? (at least one message, all text) */
+function fu_trivial_since(PDO $pdo, string $key, int $afterId, string $afterTs = ''): bool
+{
+    try {
+        if ($afterId > 0) { $q = $pdo->prepare("SELECT mtype, body FROM wa_messages WHERE phone = ? AND dir = 'in' AND id > ? ORDER BY id LIMIT 6"); $q->execute([$key, $afterId]); }
+        else { $q = $pdo->prepare("SELECT mtype, body FROM wa_messages WHERE phone = ? AND dir = 'in' AND ts > ? ORDER BY id LIMIT 6"); $q->execute([$key, $afterTs]); }
+        $rows = $q->fetchAll(PDO::FETCH_ASSOC); if (!$rows || count($rows) > 5) return false;
+        $lq = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'out' AND who NOT IN ('campaign','order') ORDER BY id DESC LIMIT 1"); $lq->execute([$key]); $aq = mb_strpos((string)$lq->fetchColumn(), '?') !== false;
+        foreach ($rows as $r) { if ((string)$r['mtype'] !== 'text' || !fu_trivial_text((string)$r['body'], $aq)) return false; }
+        return true;
+    } catch (Throwable $e) { return false; }
 }
 // ---------------------------------------------------------------------------------------------------------------------- the engine (called every minute from wa_tick)
 function fu_engine(PDO $pdo): array
@@ -439,15 +452,18 @@ function fu_engine(PDO $pdo): array
             $oq = $pdo->prepare("SELECT phone FROM wa_contacts WHERE status = 'open' AND optout = 0 AND last_in_at IS NOT NULL AND last_out_at >= last_in_at AND last_in_at >= ? AND last_in_at < ? ORDER BY last_in_at DESC LIMIT 600"); $oq->execute([date('Y-m-d H:i:s', $now - 62 * 86400), date('Y-m-d H:i:s', $now - 14 * 86400)]); $old = array_map('strval', $oq->fetchAll(PDO::FETCH_COLUMN)); $have = [];
             foreach (array_chunk($old, 300) as $ch) { $sq = $pdo->prepare("SELECT phone FROM wa_fu_state WHERE phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $sq->execute($ch); foreach ($sq->fetchAll(PDO::FETCH_COLUMN) as $ph) $have[(string)$ph] = 1; }
             foreach ($old as $ph) if (!isset($have[$ph]) && !isset($__seen[$ph])) { $need[] = $ph; if (count($need) >= 180) break; } }
-        foreach (array_chunk(array_values(array_unique($need)), 300) as $ch) { $cq = $pdo->prepare("SELECT * FROM wa_contacts WHERE status = 'open' AND optout = 0 AND last_in_at IS NOT NULL AND last_out_at IS NOT NULL AND last_out_at >= last_in_at AND phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $cq->execute($ch); foreach ($cq->fetchAll() as $__r) { $__rows[] = $__r; $__seen[(string)$__r['phone']] = 1; } }
+        foreach (array_chunk(array_values(array_unique($need)), 300) as $ch) { $cq = $pdo->prepare("SELECT * FROM wa_contacts WHERE status = 'open' AND optout = 0 AND last_in_at IS NOT NULL AND last_out_at IS NOT NULL AND phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $cq->execute($ch); foreach ($cq->fetchAll() as $__r) { $__rows[] = $__r; $__seen[(string)$__r['phone']] = 1; } }
     } catch (Throwable $e) { error_log('fu_engine due: ' . $e->getMessage()); }
     if (function_exists('wq_plan_paused_prefetch')) wq_plan_paused_prefetch($pdo, array_column($__rows, 'phone'));
     foreach ($__rows as $c) {
         $key = (string)$c['phone']; if (function_exists('wa_auto_muted') && wa_auto_muted($pdo, $key)) continue;   // ✅ order completed: no follow-ups today and tomorrow
+        if (strtotime((string)$c['last_in_at']) > strtotime((string)$c['last_out_at']) && !fu_trivial_since($pdo, $key, 0, (string)$c['last_out_at'])) continue;   // the customer is waiting for an answer: the bot / a person answers first
         if (!empty($om[$key]['last']) && strtotime((string)$om[$key]['last']) > $now - 7 * 86400) continue;   // 📦 an order is on the way: only the order messages go, no selling
         if (jn_not_prospect($pdo, $c) !== '') continue;   // 🚫 complaint / wrong number / spam: never sold to
         if (function_exists('wq_plan_paused') && wq_plan_paused($pdo, $key) !== '') continue;   // ⏸ a person wrote lately / a campaign went in: the plan waits (due steps are skipped, not caught up)
         $inId = fu_in_id($pdo, $key); if ($inId === 0) continue; $st = fu_state_get($pdo, $key);
+        if ($st && (int)$st['in_id'] !== $inId && fu_trivial_since($pdo, $key, (int)$st['in_id'])) { $st['in_id'] = $inId; fu_state_save($pdo, $st); }   // 👍 "ok / thanks" does not restart the plan
+        elseif (!$st && strtotime((string)$c['last_in_at']) > strtotime((string)$c['last_out_at'])) continue;
         if (!$st || (int)$st['in_id'] !== $inId) {
             if ($out['made'] >= $makeCap) continue; $o = $om[$key] ?? null;
             $s = fu_state_make($pdo, $c, $P, $L, $inId, fu_in_texts($pdo, $key)); if ($o && !empty($o['last']) && strtotime((string)$o['last']) > strtotime((string)$c['last_in_at'])) { $s['status'] = 'done'; $s['stop_why'] = 'ordered'; }
@@ -481,7 +497,7 @@ function fu_engine(PDO $pdo): array
         else { $st['status'] = 'tpl'; }
         if ($auto && ($window || $mode === 'autotpl')) {
             [$ok, $res] = fu_send($pdo, $c, $st, $sit, (string)$st['draft'], 'bot', 0, $mode);
-            if ($ok) { $out['sent']++; if (($stepNow['kind'] ?? '') === 'offer') jn_offer_note($pdo, $key, $sit, $st, (string)$stepNow['offer'], $now); $st = fu_advance($pdo, $st, $sit, $L, $c); }
+            if ($ok) { $out['sent']++; $st = fu_advance($pdo, $st, $sit, $L, $c); }
             elseif (!$window && (($sit['steps'][(int)$st['step']]['kind'] ?? 'nudge') !== 'offer') && preg_match('/No approved template/i', (string)$res)) {   // a free message whose 24 hours passed: skipped, the plan goes on (to the offers) — it never sticks here
                 fu_ev($pdo, $key, (string)$sit['id'], (int)$st['step'], 'tpl', 'skipped', '(24 hours passed — free message skipped)', 0, $inId, 'bot'); $st = fu_advance($pdo, $st, $sit, $L, $c);
             }

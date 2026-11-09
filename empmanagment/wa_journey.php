@@ -88,13 +88,13 @@ function wj_plan_clean(array $p, ?array $reg): array
     foreach (['lead' => "Didn't order", 'buyer' => 'Ordered'] as $tk => $title) {
         $steps = []; $seen = [];
         foreach ((array)($p['tracks'][$tk]['steps'] ?? []) as $s) {
-            if (!is_array($s)) continue; $day = (int)($s['day'] ?? 0); if ($day < 1 || $day > 60) continue;
+            if (!is_array($s)) continue; $day = (int)($s['day'] ?? 0); if ($day < 1 || $day > ($tk === 'buyer' ? 365 : 60)) continue;
             $ref = preg_replace('/[^a-z0-9_]/', '', strtolower((string)($s['ref'] ?? ''))); if ($ref === '' || ($reg !== null && !isset($reg[$ref]))) continue;
             $id = preg_replace('/[^a-z0-9]/i', '', (string)($s['id'] ?? '')); if ($id === '' || isset($seen[$id])) $id = 's' . substr(md5(uniqid('', true)), 0, 6); $id = substr($id, 0, 10); $seen[$id] = 1;
             $steps[] = ['id' => $id, 'day' => $day, 'ref' => $ref, 'idea' => mb_substr(trim((string)($s['idea'] ?? '')), 0, 300), 'topic' => substr(preg_replace('/[^a-z0-9_]/', '', strtolower((string)($s['topic'] ?? ''))), 0, 24), 'on' => !array_key_exists('on', $s) || !empty($s['on'])];
         }
         usort($steps, function ($a, $b) { return $a['day'] <=> $b['day'] ?: strcmp($a['id'], $b['id']); });
-        $out['tracks'][$tk] = ['title' => $title, 'steps' => array_slice($steps, 0, 30)];
+        $out['tracks'][$tk] = ['title' => $title, 'steps' => array_slice($steps, 0, $tk === 'buyer' ? 150 : 30)];
     }
     return $out;
 }
@@ -350,12 +350,15 @@ function wj_collect(PDO $pdo, array $plan, array $cfg, int $now, int $limit = 40
                 $q = $pdo->prepare("SELECT phone, ref, MAX(sent_at) m FROM wa_wj_ev WHERE status = 'sent' AND sent_at >= ? AND phone IN ($in) GROUP BY phone, ref"); $q->execute(array_merge([wj_dt($now - 60 * 86400)], $ph));
                 foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $e) { $t0 = strtotime((string)$e['m']); $refSent[$e['phone'] . '|' . $e['ref']] = $t0; if (strpos((string)$e['ref'], 'w_') !== 0 && $t0 > ($offerAt[$e['phone']] ?? 0)) $offerAt[$e['phone']] = $t0; }
                 $q = $pdo->prepare("SELECT phone, topic, perfume, hook FROM wa_wj_topic WHERE phone IN ($in)"); $q->execute($ph); foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $e) $top[$e['phone']] = $e; } catch (Throwable $e) { }
+            $segOf = []; if ($tk === 'buyer') { try { $cuts = jn_cuts($pdo); $sq = $pdo->prepare("SELECT phone, n, spent FROM wa_cust WHERE phone IN ($in)"); $sq->execute($ph); foreach ($sq->fetchAll(PDO::FETCH_ASSOC) as $e) $segOf[(string)$e['phone']] = jn_seg_of((int)$e['n'], (float)$e['spent'], $cuts); } catch (Throwable $e) { } }
             foreach ($chunk as $c) {
                 $ph0 = (string)$c['phone']; $a = strtotime((string)$c['anchor_at']); if (!$a) continue; $age = (int)floor(($now - $a) / 86400); $ak = date('Ymd', $a); $due = []; $topic = $top[$ph0] ?? null;
+                if ($tk === 'buyer') $topic = array_merge($topic ?: ['perfume' => '', 'hook' => ''], ['topic' => $segOf[$ph0] ?? '']);   // the customer's type
                 foreach ($steps as $s) {
                     if ($age < $s['day'] || $age - $s['day'] > $cfg['grace'] || isset($done[$ph0 . '|' . $tk . '|' . $s['id'] . '|' . $ak])) continue;
                     if ($autoSince && $a + $s['day'] * 86400 < $autoSince - $cfg['catchup'] * 86400) continue;   // a day that came before Auto was switched on is not caught up
-                    if ($s['topic'] !== '' && (!$topic || $topic['topic'] !== $s['topic'])) continue;
+                    if ($tk === 'buyer') { if (!jn_seg_match((string)$s['topic'], (string)($topic['topic'] ?? ''))) continue; }
+                    elseif ($s['topic'] !== '' && (!$topic || $topic['topic'] !== $s['topic'])) continue;
                     $due[] = $s;
                 }
                 if (!$due) continue;
@@ -440,6 +443,74 @@ function wj_run(PDO $pdo): array
 }
 
 // ---------------------------------------------------------------------------------------------------------------------- the general brain
+// ---------------------------------------------------------------------------------------------------------------------- AFTER AN ORDER: 12 customer types
+/** After an order a customer is one of 12 types: how many times they ordered (1st, 2nd, 3rd, 4th or more) × what they spend per order (premium / standard / budget).
+ *  Each type has its own timeline (days counted from the LAST order, up to day 365). Ordering again moves the customer to the next type and the clock starts again from that order. */
+function jn_seg_keys(): array { $o = []; foreach ([1, 2, 3, 4] as $c) foreach (['prem', 'std', 'bud'] as $t) $o[] = 'c' . $c . '_' . $t; return $o; }
+function jn_seg_title(string $k): string
+{
+    if (!preg_match('/^c([1-4])_(prem|std|bud)$/', $k, $m)) return $k;
+    return ['1' => '1st order', '2' => '2nd order', '3' => '3rd order', '4' => '4th+ order (loyal)'][$m[1]] . ' · ' . ['prem' => 'Premium', 'std' => 'Standard', 'bud' => 'Budget'][$m[2]];
+}
+/** Percentile cuts of "spent per order" (top quarter = premium, bottom quarter = budget), refreshed once a day. */
+function jn_cuts(PDO $pdo): array
+{
+    $c = wj_json($pdo, 'jn_cuts', []); if (!empty($c['at']) && $c['at'] > time() - 86400) return $c;
+    $hi = 3000.0; $lo = 800.0;
+    try { $v = array_map('floatval', $pdo->query("SELECT spent / n FROM wa_cust WHERE n > 0 AND spent > 0 ORDER BY spent / n LIMIT 200000")->fetchAll(PDO::FETCH_COLUMN)); $n = count($v);
+        if ($n >= 40) { $lo = round($v[(int)floor($n * 0.25)]); $hi = round($v[(int)floor($n * 0.75)]); if ($hi <= $lo) $hi = $lo + 1; } } catch (Throwable $e) { }
+    $c = ['hi' => $hi, 'lo' => $lo, 'at' => time()]; wj_put($pdo, 'jn_cuts', $c); return $c;
+}
+function jn_seg_of(int $n, float $spent, array $cuts): string
+{
+    $c = min(4, max(1, $n)); $avg = $n > 0 ? $spent / $n : 0.0; $t = $avg >= $cuts['hi'] ? 'prem' : ($avg < $cuts['lo'] ? 'bud' : 'std'); return 'c' . $c . '_' . $t;
+}
+/** A step's "topic" for the after-order track: '' = every type, a type key, a value group (prem / std / bud) or an order-count group (c1 … c4). */
+function jn_seg_match(string $stepTopic, string $seg): bool
+{
+    if ($stepTopic === '') return true; if ($seg === '') return false; if ($stepTopic === $seg) return true;
+    if (in_array($stepTopic, ['prem', 'std', 'bud'], true)) return substr($seg, 3) === $stepTopic;
+    if (preg_match('/^c[1-4]$/', $stepTopic)) return substr($seg, 0, 2) === $stepTopic; return false;
+}
+/** Starting timelines, days counted from the last order, to day 200. Claude and the owner change them afterwards. */
+function jn_buyer_defaults(): array
+{
+    return [
+        'c1_std' => [[15, 'w_tip'], [30, 'w_collect'], [60, 'w_reorder'], [90, 'w_new'], [120, 'w_fest'], [150, 'o1'], [200, 'w_miss']],
+        'c1_prem' => [[15, 'w_tip'], [30, 'w_vip'], [60, 'w_collect'], [90, 'w_reorder'], [120, 'w_vip'], [150, 'w_new'], [200, 'w_miss']],
+        'c1_bud' => [[15, 'w_tip'], [30, 'w_sample'], [60, 'w_reorder'], [90, 'o1'], [120, 'w_new'], [150, 'o2'], [200, 'w_miss']],
+        'c2_std' => [[30, 'w_collect'], [60, 'w_new'], [90, 'w_reorder'], [120, 'w_fest'], [150, 'w_vip'], [200, 'w_miss']],
+        'c2_prem' => [[30, 'w_vip'], [60, 'w_collect'], [90, 'w_reorder'], [120, 'w_vip'], [150, 'w_new'], [200, 'w_fest']],
+        'c2_bud' => [[30, 'w_sample'], [60, 'w_reorder'], [90, 'o1'], [120, 'w_new'], [150, 'o2'], [200, 'w_miss']],
+        'c3_std' => [[30, 'w_collect'], [60, 'w_vip'], [90, 'w_reorder'], [120, 'w_new'], [150, 'w_fest'], [200, 'w_miss']],
+        'c3_prem' => [[30, 'w_vip'], [60, 'w_new'], [90, 'w_reorder'], [120, 'w_vip'], [150, 'w_collect'], [200, 'w_fest']],
+        'c3_bud' => [[30, 'w_new'], [60, 'w_reorder'], [90, 'o2'], [120, 'w_sample'], [150, 'o3'], [200, 'w_miss']],
+        'c4_std' => [[30, 'w_vip'], [60, 'w_new'], [90, 'w_reorder'], [120, 'w_fest'], [150, 'w_vip'], [200, 'w_miss']],
+        'c4_prem' => [[30, 'w_vip'], [60, 'w_collect'], [90, 'w_vip'], [120, 'w_new'], [150, 'w_reorder'], [200, 'w_fest']],
+        'c4_bud' => [[30, 'w_vip'], [60, 'w_reorder'], [90, 'o2'], [120, 'w_new'], [150, 'o3'], [200, 'w_miss']],
+    ];
+}
+/** Once: give each of the 12 types its starting timeline (additions only; what is there stays). One history entry, ↩ Undo in the Claude tab. */
+function jn_buyer_seed(PDO $pdo): void
+{
+    if ((string)setting_get($pdo, 'jn_buyer_seeded', '') !== '' || (string)setting_get($pdo, 'wj_installed', '') === '') return;
+    $reg = wj_reg($pdo); $plan = wj_plan_get($pdo); wj_hist_push($pdo, '🛍 After-order timelines set up (12 customer types)'); $have = [];
+    foreach ($plan['tracks']['buyer']['steps'] as $s) $have[$s['topic'] . '|' . $s['day'] . '|' . $s['ref']] = 1;
+    foreach (jn_buyer_defaults() as $seg => $rows) foreach ($rows as $r) { if (!isset($reg[$r[1]]) || isset($have[$seg . '|' . $r[0] . '|' . $r[1]])) continue;
+        $plan['tracks']['buyer']['steps'][] = ['id' => 'g' . substr(md5($seg . $r[0] . $r[1]), 0, 8), 'day' => $r[0], 'ref' => $r[1], 'idea' => '', 'topic' => $seg, 'on' => true]; }
+    wj_put($pdo, 'wj_plan', wj_plan_clean($plan, $reg)); setting_set($pdo, 'jn_buyer_seeded', date('Y-m-d H:i:s'));
+}
+/** How many customers sit in each type now (cached 10 minutes). */
+function jn_segments_view(PDO $pdo): array
+{
+    $ck = wj_json($pdo, 'jn_segcount', []); $cuts = jn_cuts($pdo); $cnt = [];
+    if (!empty($ck['t']) && $ck['t'] > time() - 600) $cnt = (array)$ck['n'];
+    else { try { $q = $pdo->prepare("SELECT LEAST(n, 4) c, CASE WHEN spent / n >= ? THEN 'prem' WHEN spent / n < ? THEN 'bud' ELSE 'std' END t, COUNT(*) k FROM wa_cust WHERE n > 0 GROUP BY c, t"); $q->execute([$cuts['hi'], $cuts['lo']]);
+            foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $cnt['c' . (int)$r['c'] . '_' . $r['t']] = (int)$r['k']; } catch (Throwable $e) { } wj_put($pdo, 'jn_segcount', ['t' => time(), 'n' => $cnt]); }
+    $o = []; foreach (jn_seg_keys() as $k) $o[] = ['k' => $k, 'title' => jn_seg_title($k), 'n' => (int)($cnt[$k] ?? 0)];
+    return ['rows' => $o, 'hi' => $cuts['hi'], 'lo' => $cuts['lo']];
+}
+
 // ---------------------------------------------------------------------------------------------------------------------- ONE ENGINE (before an order)
 /** From now ONE engine (the follow-up engine, wa_follow.php) runs every customer who did not order, from the first minutes to day 60: one plan per situation, the situation is read again at every new
  *  customer message, one clock (our last message), one state, one set of rules. The 60-day Journey's "didn't order" days were moved INTO those plans once (jn_unify) and its own sender is switched off for them.
@@ -514,7 +585,7 @@ function wj_context(PDO $pdo): string
 {
     $reg = wj_reg($pdo); $plan = wj_plan_get($pdo); $c = '';
     try { if (function_exists('teach_facts_prompt')) { [$kf] = teach_facts_prompt($pdo, []); $c .= "WHAT THE OWNER HAS ALREADY TAUGHT (store facts, selling rules, price chart, limits):\n" . mb_substr((string)$kf, 0, 5000) . "\n"; } if (function_exists('teach_limits_text')) $c .= (string)teach_limits_text($pdo) . "\n"; } catch (Throwable $e) { }
-    $c .= "\nTODAY: " . date('Y-m-d (l)') . "\nMESSAGE & OFFER REGISTRY (key — label: rule; each has ONE approved Meta message with {{1}} name {{2}} perfume {{3}} line):\n";
+    $c .= "\nAFTER-ORDER CUSTOMER TYPES (the 'buyer' track, days counted from the LAST order, up to day 365): c1_prem c1_std c1_bud c2_* c3_* c4_* = 1st / 2nd / 3rd / 4th+ order × premium / standard / budget (spend per order). A buyer step's topic = one type, or a group: prem / std / bud / c1 … c4, '' = every type. A customer who orders again moves to the next type and the clock restarts from that order.\n" . "\nTODAY: " . date('Y-m-d (l)') . "\nMESSAGE & OFFER REGISTRY (key — label: rule; each has ONE approved Meta message with {{1}} name {{2}} perfume {{3}} line):\n";
     foreach ($reg as $k => $x) $c .= "  $k — " . $x[0] . ': ' . $x[1] . ' [Meta: ' . wj_tpl_state($pdo, $k) . ']' . "\n";
     $c .= "\nTHE 60-DAY JOURNEY:\n" . wj_plan_text($pdo, $plan, $reg) . "\nFOLLOW-UP AUTOPILOT (days 1–10, owned by the Follow-ups tab — do not duplicate):\n" . wj_autopilot_lines($pdo);
     $S = function_exists('fa_season') ? fa_season($pdo) : []; $c .= "\nFESTIVAL BOX NOW: " . (!empty($S['on']) && trim((string)$S['text']) !== '' ? $S['text'] . ' (' . $S['from'] . ' → ' . $S['to'] . ')' : 'off') . "\nUPCOMING FESTIVALS: ";
@@ -545,7 +616,7 @@ function wj_ops_clean(PDO $pdo, array $ops): array
     foreach ($ops as $o) {
         if (!is_array($o)) continue; $op = (string)($o['op'] ?? ''); $tk = (string)($o['track'] ?? '');
         if ($op === 'step_set' && isset($tn[$tk])) {
-            $day = (int)($o['day'] ?? 0); $ref = preg_replace('/[^a-z0-9_]/', '', strtolower((string)($o['ref'] ?? ''))); if ($day < 1 || $day > 60 || !isset($reg[$ref])) continue; $id = preg_replace('/[^a-z0-9]/i', '', (string)($o['id'] ?? '')); $old = $id !== '' ? $find($tk, $id) : null;
+            $day = (int)($o['day'] ?? 0); $ref = preg_replace('/[^a-z0-9_]/', '', strtolower((string)($o['ref'] ?? ''))); if ($day < 1 || $day > ($tk === 'buyer' ? 365 : 60) || !isset($reg[$ref])) continue; $id = preg_replace('/[^a-z0-9]/i', '', (string)($o['id'] ?? '')); $old = $id !== '' ? $find($tk, $id) : null;
             $new = ['op' => 'step_set', 'track' => $tk, 'id' => $old ? $id : '', 'day' => $day, 'ref' => $ref, 'idea' => mb_substr(trim((string)($o['idea'] ?? '')), 0, 300), 'topic' => substr(preg_replace('/[^a-z0-9_]/', '', strtolower((string)($o['topic'] ?? ''))), 0, 24), 'on' => !array_key_exists('on', $o) || !empty($o['on'])];
             if ($old) { $ch = []; if ($old['day'] !== $day) $ch[] = 'day ' . $old['day'] . ' → ' . $day; if ($old['ref'] !== $ref) $ch[] = ($reg[$old['ref']][0] ?? $old['ref']) . ' → ' . $reg[$ref][0]; if ($old['idea'] !== $new['idea']) $ch[] = 'idea “' . mb_substr($new['idea'], 0, 80) . '”'; if ($old['topic'] !== $new['topic']) $ch[] = 'topic ' . ($new['topic'] ?: 'everyone'); if ($old['on'] !== $new['on']) $ch[] = $new['on'] ? 'turned on' : 'turned off';
                 if (!$ch) continue; $lines[] = '✏️ ' . $tn[$tk] . ' · day ' . $old['day'] . ': ' . implode('; ', $ch); }
@@ -693,13 +764,13 @@ function wj_bot_note(PDO $pdo): string
 // ---------------------------------------------------------------------------------------------------------------------- the screen's data
 function wj_view(PDO $pdo): array
 {
-    try { jn_unify($pdo); } catch (Throwable $e) { }
+    try { jn_unify($pdo); jn_buyer_seed($pdo); } catch (Throwable $e) { }
     $reg = wj_reg($pdo); $plan = wj_plan_get($pdo); $steps = ['lead' => [], 'buyer' => []];
     foreach ($plan['tracks'] as $tk => $T) foreach ($T['steps'] as $s) $steps[$tk][] = $s + ['label' => $reg[$s['ref']][0] ?? $s['ref'], 'icon' => wj_icon($s['ref']), 'tpl' => wj_tpl_state($pdo, $s['ref']), 'missing' => !isset($reg[$s['ref']])];
     $messages = []; foreach ($reg as $k => $x) $messages[] = ['k' => $k, 'label' => $x[0], 'rule' => $x[1], 'body' => function_exists('fa_tpl_body') ? fa_tpl_body($pdo, $k) : '', 'status' => wj_tpl_state($pdo, $k), 'icon' => wj_icon($k), 'photo' => (int)setting_get($pdo, 'fa_tplphoto_' . $k, '0'), 'uses' => count(array_filter(array_merge($plan['tracks']['lead']['steps'], $plan['tracks']['buyer']['steps']), function ($s) use ($k) { return $s['ref'] === $k; }))];
     $auto = []; try { if (function_exists('fu_plans_get')) foreach (fu_plans_get($pdo)['situations'] as $p) { if (($p['kind'] ?? '') === 'stop') continue; foreach ((array)$p['steps'] as $x) { $d = max(1, (int)ceil($x['after_h'] / 24)); if ($d > 10) continue; $auto[$d] = $auto[$d] ?? ['day' => $d, 'msg' => 0, 'offer' => 0]; $auto[$d][$x['kind'] === 'offer' ? 'offer' : 'msg']++; } } } catch (Throwable $e) { }
     ksort($auto); $hist = []; foreach (array_reverse(wj_json($pdo, 'wj_hist', [])) as $h) $hist[] = ['at' => $h['at'], 'why' => $h['why']];
-    return ['ok' => true, 'unified' => jn_unified($pdo), 'daily' => wj_json($pdo, 'wj_daily', []), 'change' => wj_json($pdo, 'wj_change', []), 'can_undo_change' => !empty(wj_json($pdo, 'wj_change_undo', [])['items']), 'mode' => wj_mode($pdo), 'cfg' => wj_cfg($pdo), 'ai' => function_exists('convo_ai'), 'ready' => function_exists('fa_offers'), 'steps' => $steps, 'messages' => $messages, 'auto10' => array_values($auto), 'season' => function_exists('fa_season') ? fa_season($pdo) : [], 'season_now' => function_exists('fa_season_text') ? fa_season_text($pdo) : '',
+    return ['ok' => true, 'segments' => jn_segments_view($pdo), 'unified' => jn_unified($pdo), 'daily' => wj_json($pdo, 'wj_daily', []), 'change' => wj_json($pdo, 'wj_change', []), 'can_undo_change' => !empty(wj_json($pdo, 'wj_change_undo', [])['items']), 'mode' => wj_mode($pdo), 'cfg' => wj_cfg($pdo), 'ai' => function_exists('convo_ai'), 'ready' => function_exists('fa_offers'), 'steps' => $steps, 'messages' => $messages, 'auto10' => array_values($auto), 'season' => function_exists('fa_season') ? fa_season($pdo) : [], 'season_now' => function_exists('fa_season_text') ? fa_season_text($pdo) : '',
         'proposal' => wj_json($pdo, 'wj_proposal', []), 'fest_sug' => wj_json($pdo, 'wj_fest_sug', []), 'festivals' => wj_fest_upcoming($pdo, 10), 'topics' => wj_topics_view($pdo), 'night' => wj_json($pdo, 'wj_night', []), 'stats' => wj_stats($pdo), 'hist' => array_slice($hist, 0, 6),
         'auto_since' => (int)setting_get($pdo, 'wj_auto_since', '0'), 'autopilot_mode' => function_exists('fu_mode') ? fu_mode($pdo) : 'off'];
 }
@@ -707,8 +778,8 @@ function wj_view(PDO $pdo): array
 function wj_steps_save(PDO $pdo, string $tk, array $rows): array
 {
     if (!in_array($tk, ['lead', 'buyer'], true)) return [false, 'Unknown track.']; $reg = wj_reg($pdo); $plan = wj_plan_get($pdo); $days = [];
-    foreach ($rows as $r) { $d = (int)($r['day'] ?? 0); if ($d < 1 || $d > 60) return [false, 'Every day must be between 1 and 60.']; if (!isset($reg[(string)($r['ref'] ?? '')])) return [false, 'Choose a message for day ' . $d . '.']; $days[] = $d; }
-    if (count($rows) > 30) return [false, 'At most 30 steps in a track.'];
+    foreach ($rows as $r) { $d = (int)($r['day'] ?? 0); if ($d < 1 || $d > ($tk === 'buyer' ? 365 : 60)) return [false, $tk === 'buyer' ? 'Every day must be between 1 and 365.' : 'Every day must be between 1 and 60.']; if (!isset($reg[(string)($r['ref'] ?? '')])) return [false, 'Choose a message for day ' . $d . '.']; $days[] = $d; }
+    if (count($rows) > ($tk === 'buyer' ? 150 : 30)) return [false, 'At most ' . ($tk === 'buyer' ? 150 : 30) . ' steps in a track.'];
     wj_hist_push($pdo, 'You edited the ' . ($tk === 'lead' ? "“Didn't order”" : '“Ordered”') . ' track'); $plan['tracks'][$tk]['steps'] = $rows; wj_put($pdo, 'wj_plan', wj_plan_clean($plan, $reg)); return [true, 'Saved ✓'];
 }
 
@@ -719,7 +790,7 @@ function wj_tick(PDO $pdo): array
     if (!function_exists('fa_offers') || !wj_tables($pdo)) return $o;
     try { wj_install($pdo); } catch (Throwable $e) { error_log('wj_install: ' . $e->getMessage()); }
     if ((int)setting_get($pdo, 'wj_tpl_at', '0') < time() - 600 && function_exists('fa_tpl_setup')) { setting_set($pdo, 'wj_tpl_at', (string)time()); try { $o['tpl'] = fa_tpl_setup($pdo); } catch (Throwable $e) { error_log('wj tpl: ' . $e->getMessage()); } }
-    try { jn_unify($pdo); } catch (Throwable $e) { }
+    try { jn_unify($pdo); jn_buyer_seed($pdo); } catch (Throwable $e) { }
     try { $o['anchor'] = wj_anchor_refresh($pdo); } catch (Throwable $e) { error_log('wj anchor: ' . $e->getMessage()); }
     if (wj_mode($pdo) === 'auto' && wa_lock($pdo, 'wjrun', 240)) { try { $o['run'] = wj_run($pdo); } catch (Throwable $e) { wa_log($pdo, 'followup', false, 'journey: ' . $e->getMessage()); } }
     /* a slow Claude call must never let a second copy start (wa_lock is only a time window) */
@@ -754,6 +825,12 @@ if (strpos($__wj, 'fu.wj_') === 0) {
     if ($__wj === 'fu.wj_change') { if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $t = trim((string)($in['text'] ?? '')); if ($t === '') json_response(['error' => 'Write what you want to change.'], 422); [$ok, $r] = wj_change_scan($pdo, $t); if (!$ok) json_response(['error' => $r], 422); json_response(['message' => count($r['rows']) ? count($r['rows']) . ' related message(s) found — check, edit, then press Apply.' : 'No message in the library is touched by this.'] + wj_view($pdo)); }
     if ($__wj === 'fu.wj_change_apply') { if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); if (!empty($in['discard'])) { wj_put($pdo, 'wj_change', []); json_response(['message' => 'Dropped — nothing was changed.'] + wj_view($pdo)); } [$ok, $m] = wj_change_apply($pdo, (array)($in['rows'] ?? []), $me); json_response(['message' => $m] + wj_view($pdo)); }
     if ($__wj === 'fu.wj_change_undo') { if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); [$ok, $m] = wj_change_undo($pdo, $me); if (!$ok) json_response(['error' => $m], 422); json_response(['message' => $m] + wj_view($pdo)); }
+    if ($__wj === 'fu.jn_results') {   // real results: every lane step of the one engine + every after-order step
+        $days = max(1, min(90, (int)($_GET['days'] ?? 30))); $a = function_exists('fa_results') ? fa_results($pdo, $days) : ['total' => [], 'steps' => []]; $b = wj_results($pdo, $days);
+        $bs = array_values(array_filter($b['steps'], function ($s) { return $s['track'] === 'buyer'; })); $bt = ['sent' => 0, 'replied' => 0, 'ordered' => 0, 'sales' => 0.0]; foreach ($bs as $s) foreach ($bt as $k => $_) $bt[$k] += $s[$k];
+        $at = $a['total'] + ['sent' => 0, 'replied' => 0, 'ordered' => 0, 'sales' => 0.0]; json_response(['ok' => true, 'days' => $days, 'lanes' => $a['steps'], 'buyer' => $bs, 'lane_total' => $at, 'buyer_total' => $bt,
+            'total' => ['sent' => $at['sent'] + $bt['sent'], 'replied' => $at['replied'] + $bt['replied'], 'ordered' => $at['ordered'] + $bt['ordered'], 'sales' => $at['sales'] + $bt['sales']]]);
+    }
     if ($__wj === 'fu.wj_queue') json_response(['ok' => true] + wj_queue($pdo));
     if ($__wj === 'fu.wj_results') json_response(['ok' => true] + wj_results($pdo, max(1, min(90, (int)($_GET['days'] ?? 30)))));
     if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
