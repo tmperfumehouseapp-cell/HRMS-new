@@ -22,13 +22,13 @@
           <a href="wa_rescue.html" style="font-weight:700">Open Rescue Queries →</a>
         </div>
         <div style="font-size:13px;color:var(--muted);margin:6px 0 10px;line-height:1.55">
-          When a salesperson takes a <b>rescue query</b> (an interested WhatsApp customer nobody followed up) and an order is placed from it, they earn this % of the order total
+          When a salesperson takes a <b>rescue query</b> (an interested WhatsApp customer nobody followed up) and an order is placed from it, they earn this % of <b>each order's total — per order</b> (every order that customer places after the query was taken)
           <b>in addition to</b> the normal commission. The normal commission is not changed: slab, fixed offers, flash offers, code rule and target bonus all work exactly as before.
           <b>Online (Shopify) orders only — Store POS / store billing orders never earn it.</b>
         </div>
         <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center">
           <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="rcOn"> Rescue bonus is ON</label>
-          <label>Extra % of order total <input type="number" id="rcPct" step="0.1" min="0" max="20" style="width:80px"></label>
+          <label>Extra % per order <input type="number" id="rcPct" step="0.1" min="0" max="20" style="width:80px"></label>
           <button class="btn" id="rcSave" style="width:auto">Save</button>
           <span id="rcMsg" style="font-size:12px;color:var(--muted)"></span>
         </div>
