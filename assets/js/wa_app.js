@@ -412,6 +412,7 @@
     // ⚡ one light check first; the whole list (many queries) is downloaded only when it changed — or once a minute
     async function smartList() {
       const plain = S.sig && !(S.fl && (S.fl.tag || (S.fl.only && (S.fl.only.includes('today') || S.fl.only.includes('yesterday'))))) && S.filter !== 'team' && Date.now() - (S.fullAt || 0) < 60000;
+      if (plain && !(S.noLive && Date.now() - S.noLive < 300000)) { try { const w = await api.get('wa.g_wait', { sig: S.sig }); if (w && w.live) { if (w.sig && w.sig === S.sig) { if (Date.now() - (S.reqAt || 0) > 5000) loadReq(); return; } } else S.noLive = Date.now(); } catch (e) { S.noLive = Date.now(); } }
       if (plain) { try { const g = await api.get('wa.g_sig'); if (g && g.sig && g.sig === S.sig) { if (Date.now() - (S.reqAt || 0) > 5000) loadReq(); return; } } catch (e) { } }
       return loadList(true);
     }
