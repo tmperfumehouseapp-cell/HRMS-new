@@ -190,7 +190,16 @@ function wa_send_tpl_one(PDO $pdo, array $c, array $t, array $num, array $vars, 
         [$okR, $rq] = wa_camp_request($pdo, $t, $num, $to, $vars, []); if (!$okR) return [false, (string)$rq, 0]; $req = $rq;
     } else $req = wa_tpl_request($t, $num, $to, $vars);
     [$code, $d] = wa_api('POST', $req['path'], $req['json']); $wamid = (string)($d['messages'][0]['id'] ?? '');
-    if ($code < 200 || $code >= 300 || $wamid === '') return [false, wa_err($d), (int)($d['error']['code'] ?? 0)];
+    if ($code < 200 || $code >= 300 || $wamid === '') {
+        $ec = (int)($d['error']['code'] ?? 0);
+        if ($ec === 131042 && empty($GLOBALS['wa_tpl_one_retry'])) {   // this number's WhatsApp account has a payment problem: mark it (every sender then skips it for 3 hours) and answer THIS customer from another number that can send the same message
+            try { setting_set($pdo, 'wa_payblock_' . (int)$num['id'], date('Y-m-d H:i:s')); } catch (Throwable $e9) { }
+            $GLOBALS['wa_tpl_one_retry'] = 1;
+            try { $ctx9 = wa_camp_ctx($pdo, $t, 99); $ctx9['port_left'] = max(1, (int)$ctx9['port_left']); unset($ctx9['nums'][(int)$num['id']]); if ($ctx9['nums']) { [$nid9] = wa_pick_number($pdo, $c, $ctx9); if ($nid9 && isset($ctx9['nums'][$nid9])) { $r9 = wa_send_tpl_one($pdo, $c, $t, $ctx9['nums'][$nid9], $vars, $who); $GLOBALS['wa_tpl_one_retry'] = 0; if ($r9[0]) return $r9; } } } catch (Throwable $e9) { }
+            $GLOBALS['wa_tpl_one_retry'] = 0;
+        }
+        return [false, wa_err($d), $ec];
+    }
     $hfm = strtoupper((string)($t['header_format'] ?? '')); $mk = ['IMAGE' => '🖼 Photo on top', 'VIDEO' => '🎥 Video on top', 'DOCUMENT' => '📄 PDF on top'][$hfm] ?? '';   // the chat shows text only: say that the photo / video / PDF went with it
     wa_log_template_msg($pdo, $wamid, (string)$c['phone'], (int)$num['id'], ($mk !== '' ? '[' . $mk . ']' . "\n" : '') . wa_tpl_shown($t, $vars), $who); return [true, $wamid, 0];
 }
