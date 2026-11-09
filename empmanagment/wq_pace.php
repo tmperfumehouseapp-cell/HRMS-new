@@ -126,8 +126,17 @@ function wq_pace_calc(PDO $pdo, int $days): array
             'enough' => $fa['queries'] >= 20 && $sl['queries'] >= 20];
     } catch (Throwable $e) { $ord['error'] = 'not available'; }
 
+    // average minutes from "query opened" to its first order, for orders that closed in this period (shown on the Sales cards)
+    $closeCur = [];
+    try {
+        $cq = $pdo->prepare("SELECT q.emp_id, COUNT(*) n, AVG(TIMESTAMPDIFF(MINUTE, s.opened_at, s.first_order_at)) av FROM wq_qstat s JOIN wa_queries q ON q.id = s.query_id
+            WHERE s.first_order_at >= ? AND s.orders > 0 AND TIMESTAMPDIFF(MINUTE, s.opened_at, s.first_order_at) BETWEEN 0 AND 10080 GROUP BY q.emp_id");
+        $cq->execute([date('Y-m-d H:i:s', $curFrom)]);
+        foreach ($cq->fetchAll() as $r) if ((int)$r['emp_id'] > 0) $closeCur[(int)$r['emp_id']] = ['n' => (int)$r['n'], 'avg' => round((float)$r['av'], 1)];
+    } catch (Throwable $e) { }
+
     // ---- 5. people
-    $ids = array_keys($emp); foreach ($take as $e => $_) $ids[] = $e; foreach ($ord['by_emp'] as $e => $_) $ids[] = $e;
+    $ids = array_keys($emp); foreach ($take as $e => $_) $ids[] = $e; foreach ($ord['by_emp'] as $e => $_) $ids[] = $e; foreach ($closeCur as $e => $_) $ids[] = $e;
     if (function_exists('wq_sales_people')) { try { foreach (wq_sales_people($pdo) as $p) $ids[] = (int)$p['employee_id']; } catch (Throwable $e) { } }
     $people = [];
     foreach (array_unique($ids) as $e) {
@@ -141,7 +150,7 @@ function wq_pace_calc(PDO $pdo, int $days): array
         $oe = $ord['by_emp'][$e] ?? null;
         $people[] = ['emp_id' => $e, 'name' => (string)($names[$e] ?? ('#' . $e)), 'pace' => $cur, 'prev' => $prev, 'delta' => $delta, 'series' => $ser,
             'after_take' => ['n' => count($tk['all']), 'median' => $tk['all'] ? round(wq_pace_med($tk['all']), 1) : null, 'no_reply' => $tk['none'], 'by' => $tb],
-            'orders' => $oe];
+            'close' => $closeCur[$e] ?? null, 'orders' => $oe];
     }
     // ranking: fastest median first; people with fewer than 5 readings are listed last (not enough to judge)
     usort($people, function ($a, $b) {
