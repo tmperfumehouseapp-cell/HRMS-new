@@ -403,6 +403,7 @@ function wag_bot_scan(PDO $pdo, int $max = 4): array
     foreach ($st->fetchAll() as $c) {
         if ($o['sent'] + $o['handoff'] >= $max) break; $key = (string)$c['phone']; $age = $now - strtotime((string)$c['last_in_at']);
         if (!empty($c['cx_id'])) continue;   // the chat is with the Complaint team: the bot never answers it
+        if (function_exists('wq_meta_get') && function_exists('wq_ts') && wq_ts(wq_meta_get($pdo, 'typing:' . $key, '')) > time() - 90) continue;   // a person is typing an answer right now: the bot never talks over them
         if (function_exists('wa_auto_muted') && wa_auto_muted($pdo, $key)) continue;   // ✅ order completed: the bot stays quiet today and tomorrow (a person answers)
         // nobody attends the chat: the bot answers after bot_after (10 s). A salesperson who is present and has the chat (took it over / was given it) gets 2 minutes — silent after that, the bot is on again.
         if ((int)$c['assigned_emp'] > 0) {
