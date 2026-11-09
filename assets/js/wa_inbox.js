@@ -272,8 +272,10 @@
         ? `<div class="${c.unassigned ? 'hot' : ''}"><small>Unassigned</small><b>${c.unassigned || 0}</b></div><div class="${c.waiting ? 'hot' : ''}"><small>Waiting for a reply</small><b>${c.waiting || 0}</b></div><div><small>Open chats</small><b>${c.all || 0}</b></div><div><small>Closed</small><b>${c.closed || 0}</b></div>`
         : `<div><small>My open chats</small><b>${c.mine || 0}</b></div><div class="${c.waiting ? 'hot' : ''}"><small>Waiting for my reply</small><b>${c.waiting || 0}</b></div><div><small>Closed by me</small><b>${c.closed || 0}</b></div>`;
     }
+    const LC = { new: '#fee2e2;color:#991b1b', waiting: '#ffedd5;color:#9a3412', hot: '#fee2e2;color:#991b1b', rescue: '#ede9fe;color:#5b21b6', bot: '#e0f2fe;color:#075985', ordered: '#dcfce7;color:#166534', complaint: '#f3e8ff;color:#6b21a8', talking: '#dcfce7;color:#166534', replied: '#f1f5f9;color:#334155', quiet: '#f1f5f9;color:#64748b', closed: '#f1f5f9;color:#64748b' };
     function pills(c) {
-      let h = c.hot ? '<span class="wi-p r">🔥 Hot</span>' : '';
+      let h = c.life ? `<span class="wi-p" style="background:${LC[c.life.key] || '#f1f5f9'};font-weight:800" title="Where this customer is right now">${esc(c.life.label)}</span>` : '';
+      h += c.hot ? '<span class="wi-p r">🔥 Hot</span>' : '';
       if (c.state === 'bot' && !c.assigned_emp) h += '<span class="wi-p o">Bot</span>';
       if (c.biz) h += '<span class="wi-p biz" title="Answered our campaign with an automatic business reply — not a customer">🏢 Business</span>';
       if (c.assigned_name) h += `<span class="wi-p g">${esc(c.assigned_name)}</span>`;
