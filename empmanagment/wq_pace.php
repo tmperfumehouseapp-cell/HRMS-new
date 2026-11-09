@@ -63,6 +63,15 @@ function wq_pace_calc(PDO $pdo, int $days): array
 
     // ---- 1. every answer gap, one pass over the messages, chat by chat
     $emp = []; $botG = []; $botDay = []; $team = ['cur' => [], 'prev' => []]; $nextDay = ['cur' => 0, 'prev' => 0]; $empNext = [];
+    // Complaint chats: the complaint team answers them, so those answers are NOT the salesperson's pace. A gap is left out when the customer wrote, or we answered, while the chat had an open complaint.
+    $cx = [];
+    try {
+        $cq = $pdo->prepare("SELECT phone, raised_at, status, COALESCE(closed_at, resolved_at, updated_at) done FROM cx_cases WHERE phone <> '' AND raised_at <= ? AND (status IN ('open','reopened') OR COALESCE(closed_at, resolved_at, updated_at) >= ?)");
+        $cq->execute([date('Y-m-d H:i:s'), date('Y-m-d H:i:s', $scanFrom - 86400)]);
+        foreach ($cq->fetchAll() as $x) { $a = strtotime((string)$x['raised_at']); $b = in_array((string)$x['status'], ['open', 'reopened'], true) ? PHP_INT_MAX : (int)strtotime((string)$x['done']); $cx[substr(preg_replace('/\D+/', '', (string)$x['phone']), -10)][] = [$a, $b]; }
+    } catch (Throwable $e) { $cx = []; }
+    $inCx = function (string $ph, int $t1, int $t2) use (&$cx): bool { foreach ($cx[substr($ph, -10)] ?? [] as $iv) { if (($t1 >= $iv[0] && $t1 <= $iv[1]) || ($t2 >= $iv[0] && $t2 <= $iv[1])) return true; } return false; };
+    $cxSkipped = 0;
     $st = $pdo->prepare("SELECT phone, dir, who, emp_id, ts FROM wa_messages WHERE ts >= ? AND dir IN ('in','out') ORDER BY phone, id LIMIT 900000");
     $st->execute([date('Y-m-d H:i:s', $scanFrom)]);
     $curPhone = null; $pend = 0;
@@ -74,7 +83,8 @@ function wq_pace_calc(PDO $pdo, int $days): array
         $who = (string)$r[2]; $e = (int)$r[3];
         $isPerson = $who === 'emp' && $e > 0; $isBot = in_array($who, ['bot', 'auto', 'flow'], true);
         if (!$isPerson && !$isBot) { continue; }                      // campaigns / system lines neither start nor stop the clock
-        $gap = max(0, $t - $pend) / 60.0; $pend = 0;
+        $gap = max(0, $t - $pend) / 60.0; $p0 = $pend; $pend = 0;
+        if ($cx && $isPerson && $inCx((string)$curPhone, $p0, $t)) { $cxSkipped++; continue; }   // a complaint reply: counted by the complaint team, not here
         $per = $t >= $curFrom ? 'cur' : ($t >= $prevFrom && $t < $curFrom ? 'prev' : '');
         $inSeries = $t >= $today - ($span - 1) * 86400;
         if ($gap >= 480) { if ($isPerson && $per !== '') { $nextDay[$per]++; if ($per === 'cur') $empNext[$e] = ($empNext[$e] ?? 0) + 1; } continue; }
@@ -169,7 +179,7 @@ function wq_pace_calc(PDO $pdo, int $days): array
 
     $takeTeam = []; foreach ($takeAll as $h => $g) $takeTeam[] = ['how' => $h, 'label' => wq_pace_how_label((string)$h), 'n' => count($g), 'median' => round(wq_pace_med($g), 1)];
     return ['ok' => true, 'days' => $days, 'from' => date('Y-m-d', $curFrom), 'to' => date('Y-m-d'), 'built' => date('Y-m-d H:i:s'),
-        'cfg' => wq_pace_cfg($pdo), 'rules' => ['grades' => ['fast' => 3, 'good' => 10, 'slow' => 30], 'cap_min' => 120, 'next_day_hours' => 8, 'min_readings' => 5],
+        'complaint_replies_left_out' => $cxSkipped, 'cfg' => wq_pace_cfg($pdo), 'rules' => ['grades' => ['fast' => 3, 'good' => 10, 'slow' => 30], 'cap_min' => 120, 'next_day_hours' => 8, 'min_readings' => 5],
         'team' => ['pace' => wq_pace_sum($team['cur'], $nextDay['cur']), 'prev' => wq_pace_sum($team['prev']), 'series' => $teamDay, 'bot' => wq_pace_sum($botG), 'bot_series' => $botSeries],
         'people' => $people, 'after_take_team' => $takeTeam, 'orders' => $ord];
 }
@@ -185,8 +195,13 @@ function wq_pace_cfg(PDO $pdo): array
 function wq_pace_waiting_rows(PDO $pdo): array
 {
     $now = time(); $old = date('Y-m-d H:i:s', $now - 86400); $o = [];
-    $q = $pdo->prepare("SELECT phone, name, assigned_emp, last_out_at FROM wa_contacts WHERE assigned_emp > 0 AND status = 'open' AND optout = 0 AND last_in_at IS NOT NULL AND last_in_at >= ? AND (last_out_at IS NULL OR last_out_at < last_in_at) ORDER BY last_in_at LIMIT 1500");
-    $q->execute([$old]); $first = $pdo->prepare("SELECT MIN(ts) FROM wa_messages WHERE phone = ? AND dir = 'in' AND ts > ? AND ts >= ?");
+    $base = "SELECT phone, name, assigned_emp, last_out_at FROM wa_contacts WHERE assigned_emp > 0 AND status = 'open' AND optout = 0 AND last_in_at IS NOT NULL AND last_in_at >= ? AND (last_out_at IS NULL OR last_out_at < last_in_at)";
+    // chats with an open complaint belong to the complaint team (cx_id is added by the complaints module; without it only the tag is checked)
+    foreach ([" AND (cx_id IS NULL OR cx_id = 0) AND (tag IS NULL OR tag <> 'complaint') ORDER BY last_in_at LIMIT 1500", " AND (tag IS NULL OR tag <> 'complaint') ORDER BY last_in_at LIMIT 1500", " ORDER BY last_in_at LIMIT 1500"] as $tail) {
+        try { $q = $pdo->prepare($base . $tail); $q->execute([$old]); break; } catch (Throwable $e) { $q = null; }
+    }
+    if (!$q) return [];
+    $first = $pdo->prepare("SELECT MIN(ts) FROM wa_messages WHERE phone = ? AND dir = 'in' AND ts > ? AND ts >= ?");
     foreach ($q->fetchAll() as $c) {
         $first->execute([$c['phone'], (string)($c['last_out_at'] ?: '2000-01-01 00:00:00'), $old]); $in = (string)$first->fetchColumn(); $t = $in !== '' ? strtotime($in) : 0; if (!$t) continue;
         $m = max(0, (int)floor(($now - $t) / 60)); if ($m >= 480) continue;
