@@ -228,7 +228,17 @@
   try { if (window.matchMedia) matchMedia('(prefers-color-scheme: dark)').addEventListener('change', themeApply); } catch (e) { }
 
   function start(root) {
+      '.wx .wx-ch{padding:calc(clamp(3px,1vw,6px) + env(safe-area-inset-top)) clamp(4px,1.6vw,8px) clamp(3px,1vw,6px);gap:clamp(5px,1.8vw,8px)}.wx .wx-ch .wx-av{width:clamp(30px,8.5vw,36px)!important;height:clamp(30px,8.5vw,36px)!important}.wx .wx-ch .wx-nm{font-size:clamp(14px,4vw,16px)}.wx .wx-ch .wx-ic{width:clamp(30px,8.4vw,34px);height:clamp(30px,8.4vw,34px)}'
+      + '.wx .wx-b{font-size:clamp(13px,3.7vw,14.2px);line-height:1.28;padding:clamp(4px,1.2vw,6px) clamp(6px,2vw,8px) 3px;margin:1px clamp(6px,2.4vw,10px);max-width:84%}.wx .wx-b small{font-size:clamp(9.5px,2.6vw,11px)}.wx .wx-day{margin:5px auto 3px;padding:2px 9px;font-size:clamp(10.5px,3vw,12px)}.wx .wx-ev{margin:3px auto;padding:2px 9px;font-size:clamp(10.5px,2.9vw,11.5px)}.wx .wx-msgs{padding:3px 0}'
+      + '.wx .wx-tools{gap:clamp(3px,1vw,6px);padding:3px clamp(5px,1.6vw,8px) 0}.wx .wx-tl{height:clamp(32px,8.6vw,40px);font-size:clamp(14px,4vw,16px);border-radius:10px}.wx .wx-tl small{font-size:clamp(8.5px,2.4vw,10.5px)}'
+      + '.wx .wx-bar{padding:4px clamp(5px,1.6vw,8px) calc(5px + env(safe-area-inset-bottom));gap:clamp(4px,1.2vw,6px)}.wx .wx-bar textarea{padding:clamp(6px,1.8vw,9px) clamp(11px,3.4vw,15px);font-size:clamp(15px,4vw,15.5px)}.wx .wx-bar .wx-ic{width:clamp(38px,10.5vw,44px);height:clamp(38px,10.5vw,44px);font-size:clamp(17px,5vw,20px)}'
+      + '.wx .wx-sug .r{padding:3px 8px}.wx .wx-sug button{min-height:28px}.wx .wx-rd div{padding:2px 10px;font-size:clamp(11px,3.1vw,12.5px)}'
+      + '.wx .wx-row{padding:clamp(5px,1.5vw,8px) clamp(8px,2.6vw,12px);gap:clamp(8px,2.6vw,12px)}.wx .wx-row .wx-av{width:clamp(38px,11vw,46px);height:clamp(38px,11vw,46px);font-size:clamp(13px,3.8vw,15px)}.wx .wx-nm{font-size:clamp(14px,4vw,16px)}.wx .wx-sub{font-size:clamp(12px,3.4vw,13.5px)}.wx .wx-chip{font-size:clamp(9.5px,2.7vw,11px);padding:1px 7px}'
+      + '#wxQk{padding:2px clamp(5px,1.6vw,8px)}#wxQk button{font-size:clamp(11.5px,3.2vw,13px);padding:3px 10px}';
+      document.head.appendChild(s); }
     if (!document.getElementById('wxCss')) { const s = document.createElement('style'); s.id = 'wxCss'; s.textContent = CSS; document.head.appendChild(s); }
+    // 📐 fluid + compact: sizes follow the screen width (clamp), chat room tighter
+    if (!document.getElementById('wxFluid')) { const s = document.createElement('style'); s.id = 'wxFluid'; s.textContent =
     themeApply();
     try { if (!window.WaNotices) { const sc = document.createElement('script'); sc.src = 'assets/js/wa_notices.js?v=3'; document.head.appendChild(sc); } } catch (e) { }   // 🔔 "X took over your chat" bar (your own chats only)
     root.innerHTML = ''; const R = document.createElement('div'); R.className = 'wx'; root.appendChild(R);
@@ -950,7 +960,8 @@
       const q = $('#wxQk'); if (!q || !S.cur) return; const phone = S.cur.phone, c = S.cur.contact, last = S.cur.msgs.filter((m) => m.dir !== 'sys').slice(-1)[0];
       if (!c.window_open || c.optout || !last || last.dir !== 'in' || !last.body) { q.hidden = true; return; }
       if (!S.quick) { try { S.quick = (await api.get('wa.quick_list')).items || []; } catch (e) { S.quick = []; } }
-      if (!S.cur || S.cur.phone !== phone) return; const hit = qkMatch(last.body, S.quick), t = $('#wxTx');
+      if (!S.cur || S.cur.phone !== phone) return; let hit = qkMatch(last.body, S.quick); const t = $('#wxTx');
+      if (!hit.length) { const rk = ((S.chats || []).find((y) => y.phone === phone) || S.cur.row || {}).read, RQ = { pay: /pay|link|upi|order|confirm/i, addr: /address|confirm|order|deliver/i, neg: /discount|offer|price|sample|best/i, think: /think|follow|time|wait|ok/i, ask: /price|best|available|photo|list|recommend/i }[rk && rk.k]; if (RQ) hit = S.quick.filter((x) => RQ.test(x.title || '')).slice(0, 3); }
       if (!hit.length || (t && t.value.trim())) { q.hidden = true; return; }
       const fn = first(c.name); q.hidden = false; q.innerHTML = '<span>⚡</span>' + hit.map((x, i) => `<button data-i="${i}">${esc(x.title)}</button>`).join('');
       q.onclick = (e) => { const b = e.target.closest('button'); if (!b) return; const x = hit[+b.dataset.i], tx = $('#wxTx'); if (!x || !tx) return; suggStop(); if (S.cur.sg) S.auDone[S.cur.phone + ':' + S.cur.sg.li] = 1; tx.value = x.body.replace(/\{name\}/gi, fn).replace(/\s+([!,.])/g, '$1').replace(/  +/g, ' '); autoGrow(tx); swapSend(); tx.focus(); q.hidden = true; if (S.cur.sg) { suggDraw(); } };
