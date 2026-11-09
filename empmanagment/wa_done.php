@@ -37,6 +37,7 @@ function wa_auto_muted(PDO $pdo, string $key): bool
     if (function_exists('wa_cxself_state') && wa_cxself_state($pdo, $key)) return $c[$key] = true;   // 🎫 the customer is raising a ticket: the bot waits
     if (function_exists('wa_bday_recent') && wa_bday_recent($pdo, $key)) return $c[$key] = true;   // 🎂 the customer just told us their birthday: only our own thank-you goes out
     if (function_exists('wa_review_recent') && wa_review_recent($pdo, $key)) return $c[$key] = true;   // ⭐ the customer just answered our rating request: only our own thank-you goes out
+    if (function_exists('wq_rescue_human_on') && wq_rescue_human_on($pdo, $key)) return $c[$key] = true;   // 🛟 a person took this customer in Rescue: no automatic message while they work it
     $r = wa_done_row($pdo, $key); return $c[$key] = $r && strtotime((string)$r['mute_until']) > time();
 }
 /** Marks the order completed: silence until the end of tomorrow, follow-ups stopped, ONE thank-you (once per day). Returns the state. */

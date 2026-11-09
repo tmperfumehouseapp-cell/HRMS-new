@@ -137,6 +137,11 @@ function wq_rescue_alerts_tick(PDO $pdo, float $deadline): array
             ct_push($pdo, wq_admin_ids($pdo), '🛟 Rescue — today', "Found $found · taken $took · orders placed $won · not a chance $no · still waiting $open.", '/whatsapp.html#rescue', 'wq-rescue-day');
             wq_meta_put($pdo, 'rescue_sum_day', $today); $o['summary'] = true;
         }
+        $wk = date('o-W'); if ((int)date('N') === 1 && (int)date('G') >= 9 && wq_meta_get($pdo, 'rescue_week', '') !== $wk && function_exists('wq_admin_ids')) {   // Monday: how last week went and why chats were lost
+            $L = wq_rescue_lost($pdo, 7); $w0 = date('Y-m-d H:i:s', time() - 7 * 86400); $c7 = function (string $sql) use ($pdo, $w0): int { $s = $pdo->prepare($sql); $s->execute([$w0]); return (int)$s->fetchColumn(); };
+            ct_push($pdo, wq_admin_ids($pdo), '🛟 Rescue — last 7 days', 'Found ' . $c7("SELECT COUNT(*) FROM wq_rescue WHERE flagged_at >= ?") . ' · orders placed ' . $c7("SELECT COUNT(*) FROM wq_rescue WHERE won_at >= ?") . ' · not a chance ' . $L['total'] . ' (price ' . $L['by_reason']['price'] . ', stopped replying ' . $L['by_reason']['no_reply'] . ', other ' . $L['by_reason']['other'] . ').', '/whatsapp.html#rescue', 'wq-rescue-week');
+            wq_meta_put($pdo, 'rescue_week', $wk);
+        }
     } catch (Throwable $e) { error_log('wq_rescue_alerts_tick: ' . $e->getMessage()); $o['error'] = mb_substr($e->getMessage(), 0, 160); }
     return $o;
 }
@@ -175,11 +180,55 @@ function wq_rescue_start(PDO $pdo): array
     ]];
 }
 
+
+// ------------------------------------------------------------------------------------------------------------------ one lifecycle for every chat
+/** Where is this customer right now? ONE stage per chat, the first that fits: opted out · complaint · ordered · rescue · bot following up · hot · new · waiting · talking · quiet. phone => [key, label]. */
+function wq_lifecycle_map(PDO $pdo, array $phones): array
+{
+    $o = []; $phones = array_values(array_unique(array_map('strval', $phones))); if (!$phones) return $o;
+    $now = time(); $cut24 = date('Y-m-d H:i:s', $now - 86400); $cut10 = date('Y-m-d H:i:s', $now - 600);
+    try {
+        foreach (array_chunk($phones, 400) as $ch) {
+            $in = implode(',', array_fill(0, count($ch), '?')); $cmap = []; $resc = []; $done = [];
+            $st = $pdo->prepare("SELECT phone, last_in_at, last_out_at, assigned_emp, hot, cx_id, tag, optout FROM wa_contacts WHERE phone IN ($in)"); $st->execute($ch); foreach ($st->fetchAll() as $x) $cmap[(string)$x['phone']] = $x;
+            try { $st = $pdo->prepare("SELECT phone, status FROM wq_rescue WHERE status IN ('open','taken','given') AND phone IN ($in)"); $st->execute($ch); foreach ($st->fetchAll() as $x) $resc[(string)$x['phone']] = (string)$x['status']; } catch (Throwable $e) { }
+            try { $st = $pdo->prepare("SELECT phone FROM wa_order_done WHERE mute_until > NOW() AND phone IN ($in)"); $st->execute($ch); foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $x) $done[(string)$x] = 1; } catch (Throwable $e) { }
+            $fu = wq_rescue_fu_map($pdo, $ch);
+            foreach ($ch as $ph) {
+                $c = $cmap[$ph] ?? null; if (!$c) continue; $in_ = (string)$c['last_in_at']; $out_ = (string)$c['last_out_at']; $waiting = $in_ !== '' && ($out_ === '' || $out_ < $in_);
+                if ((int)$c['optout'] === 1) $r = ['closed', '🚫 Opted out'];
+                elseif ((int)($c['cx_id'] ?? 0) > 0 || (string)($c['tag'] ?? '') === 'complaint') $r = ['complaint', '⚠ Complaint'];
+                elseif (isset($done[$ph])) $r = ['ordered', '✅ Ordered'];
+                elseif (isset($resc[$ph])) $r = ['rescue', $resc[$ph] === 'open' ? '🛟 Rescue — win back' : '🛟 Rescue — taken'];
+                elseif (wq_rescue_bot_active($fu[$ph] ?? null, (int)($c['hot'] ?? 0) === 1 ? ['hot'] : [])) $r = ['bot', '🤖 Bot following up'];
+                elseif ((int)($c['hot'] ?? 0) === 1 && $in_ >= $cut24) $r = ['hot', '🔥 Ready to pay'];
+                elseif ($waiting && $in_ >= $cut24) $r = (int)$c['assigned_emp'] > 0 ? ['waiting', '⏱ Waiting for a reply'] : ['new', '🆕 New — nobody has it'];
+                elseif ($in_ >= $cut24 && $out_ >= $cut10) $r = ['talking', '💬 In conversation'];
+                elseif ($in_ >= $cut24) $r = ['replied', '💬 Replied'];
+                else $r = ['quiet', '😴 Quiet'];
+                $o[$ph] = ['key' => $r[0], 'label' => $r[1]];
+            }
+        }
+    } catch (Throwable $e) { error_log('wq_lifecycle_map: ' . $e->getMessage()); }
+    return $o;
+}
+/** Why chats were lost (last N days): the reasons people gave + the AI's verdicts. */
+function wq_rescue_lost(PDO $pdo, int $days): array
+{
+    $since = date('Y-m-d H:i:s', time() - max(1, $days) * 86400); $o = ['days' => $days, 'total' => 0, 'by_reason' => ['price' => 0, 'no_reply' => 0, 'other' => 0, 'none' => 0], 'ai' => ['agreed' => 0, 'returned' => 0, 'auto' => 0], 'notes' => []];
+    try {
+        $q = $pdo->prepare("SELECT skip_reason, ai_state, COUNT(*) n FROM wq_rescue WHERE (status = 'skipped' OR ai_state = 'returned') AND closed_at >= ? OR (ai_state = 'returned' AND flagged_at >= ?) GROUP BY skip_reason, ai_state"); $q->execute([$since, $since]);
+        foreach ($q->fetchAll() as $r) { $n = (int)$r['n']; $k = (string)$r['skip_reason'] !== '' ? (string)$r['skip_reason'] : 'none'; if (isset($o['by_reason'][$k])) $o['by_reason'][$k] += $n; $o['total'] += $n; if (isset($o['ai'][(string)$r['ai_state']])) $o['ai'][(string)$r['ai_state']] += $n; }
+        $q = $pdo->prepare("SELECT ai_note FROM wq_rescue WHERE status = 'skipped' AND ai_note <> '' AND closed_at >= ? ORDER BY closed_at DESC LIMIT 8"); $q->execute([$since]); $o['notes'] = array_map('strval', $q->fetchAll(PDO::FETCH_COLUMN));
+    } catch (Throwable $e) { }
+    return $o;
+}
+
 }   // function_exists guard
 
 // ------------------------------------------------------------------------------------------------------------------ router
 $__wqm = (string)($action ?? ($_GET['action'] ?? ''));
-if (strpos($__wqm, 'wq.rescue_') === 0 && in_array($__wqm, ['wq.rescue_tpl_list', 'wq.rescue_tpl_save', 'wq.rescue_tpl_submit', 'wq.rescue_templates', 'wq.rescue_draft', 'wq.rescue_stats', 'wq.rescue_start'], true)) {
+if (strpos($__wqm, 'wq.rescue_') === 0 && in_array($__wqm, ['wq.rescue_tpl_list', 'wq.rescue_tpl_save', 'wq.rescue_tpl_submit', 'wq.rescue_templates', 'wq.rescue_draft', 'wq.rescue_stats', 'wq.rescue_start', 'wq.rescue_lost'], true)) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'; $auth = require_auth(); $me = (int)($auth['employee_id'] ?? 0);
     if (!function_exists('wa_tables') || !wa_tables($pdo)) json_response(['error' => 'WhatsApp storage is not available - check database permissions.'], 500);
     if (function_exists('wq_deps')) wq_deps($pdo); if (!wq_rescue_tables($pdo)) json_response(['error' => 'Rescue storage is not available.'], 500);
@@ -230,6 +279,7 @@ if (strpos($__wqm, 'wq.rescue_') === 0 && in_array($__wqm, ['wq.rescue_tpl_list'
             $needPost(); $needTeam(); $k = preg_replace('/\D+/', '', (string)($in['phone'] ?? '')); $k = strlen($k) >= 10 ? substr($k, -10) : ''; if ($k === '') json_response(['error' => 'Chat not found.'], 404);
             [$txt, $err] = wq_rescue_ai_draft($pdo, $k); if ($err !== '') json_response(['error' => $err], 503); json_response(['ok' => true, 'text' => $txt]);
         }
+        case 'wq.rescue_lost': { $needGet(); $needAdmin(); json_response(['ok' => true] + wq_rescue_lost($pdo, max(1, min(365, (int)($in['days'] ?? 30))))); }
         case 'wq.rescue_stats': { $needGet(); $needAdmin(); json_response(wq_rescue_stats($pdo, max(1, min(90, (int)($in['days'] ?? 14))))); }
         case 'wq.rescue_start': { $needGet(); $needAdmin(); wq_rescue_tpl_seed($pdo, $me); json_response(wq_rescue_start($pdo)); }
     } } catch (Throwable $e) { error_log('wq_rescue_more: ' . $e->getMessage()); json_response(['error' => 'Rescue: ' . mb_substr($e->getMessage(), 0, 240)], 500); }
