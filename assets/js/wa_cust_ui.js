@@ -72,7 +72,7 @@ html.wxdk .wcs{--ln:#25343e; --gb:#0f2e20; --rb:#3a1515;} html.wxdk .wcs-r,html.
   const IGN = [['', 'Any'], ['2', 'Ignored 2+ of our messages'], ['3', 'Ignored 3+']];
   const SORT = [['latest', 'Latest message'], ['spent', 'Highest ₹ spent'], ['orders', 'Most orders'], ['order_new', 'Newest order'], ['order_old', 'Oldest order'], ['added', 'Newest customer'], ['name', 'Name A–Z']];
   const PER = [25, 50, 100, 200, 500];
-  const BLANK = () => ({ dk: 'in', dp: '', df: '', dt: '', tags: [], match: 'any', st: '', ord: '', dsl: '', sp_min: '', sp_max: '', num: '', emp: '', src: '', ign: '' });
+  const BLANK = () => ({ dk: 'in', dp: '', df: '', dt: '', tags: [], nums: [], match: 'any', st: '', ord: '', dsl: '', sp_min: '', sp_max: '', num: '', emp: '', src: '', ign: '' });
   const VIEWS = [
     { k: 'new7', t: '🆕 New this week', cf: { dk: 'added', dp: '7' } },
     { k: 'wrote7', t: '💬 Wrote in 7 days', cf: { dk: 'in', dp: '7' } },
@@ -106,10 +106,11 @@ html.wxdk .wcs{--ln:#25343e; --gb:#0f2e20; --rb:#3a1515;} html.wxdk .wcs-r,html.
     // what goes to the server
     function cfOut() {
       const c = S.cf, o = { dk: c.dk, df: c.df, dt: c.dt }; const inc = c.tags.filter((t) => t.m === 'in').map((t) => t.k), out = c.tags.filter((t) => t.m === 'out').map((t) => t.k);
+      if ((c.nums || []).length) o.nums = c.nums;
       if (inc.length) o[c.match === 'all' ? 'tags_all' : 'tags_any'] = inc; if (out.length) o.tags_not = out;
       ['st', 'ord', 'dsl', 'sp_min', 'sp_max', 'num', 'emp', 'src', 'ign'].forEach((k) => { if (c[k] !== '' && c[k] != null) o[k] = c[k]; }); return o;
     }
-    const nOn = () => { const c = S.cf; let n = (c.df || c.dt ? 1 : 0) + c.tags.length; ['st', 'ord', 'dsl', 'num', 'emp', 'src', 'ign'].forEach((k) => { if (c[k] !== '') n++; }); if (c.sp_min !== '' || c.sp_max !== '') n++; return n + (S.q ? 1 : 0); };
+    const nOn = () => { const c = S.cf; let n = (c.df || c.dt ? 1 : 0) + c.tags.length + ((c.nums || []).length ? 1 : 0); ['st', 'ord', 'dsl', 'num', 'emp', 'src', 'ign'].forEach((k) => { if (c[k] !== '') n++; }); if (c.sp_min !== '' || c.sp_max !== '') n++; return n + (S.q ? 1 : 0); };
     const tagLabel = (k) => { const x = S.meta.tags.find((t) => t.k === k); return x ? x.t : String(k).replace(/_/g, ' '); };
     function drawF(F) {
       const c = S.cf; const n = nOn();
@@ -118,6 +119,9 @@ html.wxdk .wcs{--ln:#25343e; --gb:#0f2e20; --rb:#3a1515;} html.wxdk .wcs-r,html.
         <div class="wcs-sec"><div class="wcs-h">📅 Date range</div><select class="wp-in" id="cxDk">${optsOf(DK, c.dk)}</select>
           <div class="wcs-pre">${PRE.map(([k, l]) => `<button type="button" data-dp="${k}" class="${c.dp === k ? 'on' : ''}">${l}</button>`).join('')}</div>
           <div class="wcs-2"><label class="wcs-note">From<input class="wp-in" type="date" id="cxDf" value="${esc(c.df)}"></label><label class="wcs-note">To<input class="wp-in" type="date" id="cxDt" value="${esc(c.dt)}"></label></div></div>
+        <div class="wcs-sec"><div class="wcs-h">📱 Number <span class="wcs-note" style="margin-left:auto;text-transform:none;letter-spacing:0">customers who wrote on…</span></div>
+          <div class="wcs-pre">${(S.meta.numbers || []).map((x) => `<button type="button" data-nm="${x.id}" class="${(c.nums || []).includes(x.id) ? 'on' : ''}">${esc(String(x.label || x.display || 'Number ' + x.id))}</button>`).join('') || '<span class="wcs-note">No numbers found.</span>'}</div>
+          ${(c.nums || []).length ? '<div class="wcs-note" style="margin-top:6px">Tap a number again to remove it. Everyone who wrote on the picked number(s) is included.</div>' : ''}</div>
         <div class="wcs-sec"><div class="wcs-h">🏷 Tags ${c.tags.filter((t) => t.m === 'in').length > 1 ? `<span class="wcs-seg" style="margin-left:auto;text-transform:none;letter-spacing:0">${[['any', 'Any of'], ['all', 'All of']].map(([k, l]) => `<button type="button" data-mt="${k}" class="${c.match === k ? 'on' : ''}">${l}</button>`).join('')}</span>` : ''}</div>
           <div class="wcs-pick"><input class="wp-in" id="cxTq" placeholder="＋ Add a tag — type to search" autocomplete="off"><div id="cxDd"></div></div>
           <div class="wcs-tg">${c.tags.map((t, i) => `<span class="t ${t.m}" data-ti="${i}" title="Tap to switch: include ✅ / leave out 🚫">${t.m === 'in' ? '✅' : '🚫'} ${esc(tagLabel(t.k))}<i data-tx="${i}">✕</i></span>`).join('')}</div>
@@ -138,6 +142,7 @@ html.wxdk .wcs{--ln:#25343e; --gb:#0f2e20; --rb:#3a1515;} html.wxdk .wcs-r,html.
       $(F, '#cxDt').onchange = function () { c.dt = this.value; c.dp = c.df || c.dt ? 'custom' : ''; onChange(true); };
       F.querySelectorAll('[data-mt]').forEach((b) => { b.onclick = () => { c.match = b.dataset.mt; onChange(true); }; });
       F.querySelectorAll('[data-ti]').forEach((x) => { x.onclick = (e) => { const i = +x.dataset.ti; if (e.target.dataset.tx !== undefined) c.tags.splice(i, 1); else c.tags[i].m = c.tags[i].m === 'in' ? 'out' : 'in'; onChange(true); }; });
+      F.querySelectorAll('[data-nm]').forEach((b) => { b.onclick = () => { const id = +b.dataset.nm; c.nums = c.nums || []; const i = c.nums.indexOf(id); if (i >= 0) c.nums.splice(i, 1); else c.nums.push(id); onChange(true); }; });
       const tq = $(F, '#cxTq'); tq.onfocus = () => { S.dd = tq.value; drawDd(F); }; tq.oninput = () => { S.dd = tq.value; drawDd(F); };
       tq.onkeydown = (e) => { if (e.key === 'Escape') { tq.blur(); $(F, '#cxDd').innerHTML = ''; } if (e.key === 'Enter') { const b = $(F, '#cxDd button'); if (b) b.click(); } };
       [['cxSt', 'st'], ['cxOrd', 'ord'], ['cxDsl', 'dsl'], ['cxNum', 'num'], ['cxEmp', 'emp'], ['cxSrc', 'src'], ['cxIgn', 'ign']].forEach(([id, k]) => { $(F, '#' + id).onchange = function () { c[k] = this.value; onChange(); }; });
@@ -195,6 +200,7 @@ html.wxdk .wcs{--ln:#25343e; --gb:#0f2e20; --rb:#3a1515;} html.wxdk .wcs-r,html.
       const lab = (L, v) => (L.find((x) => String(x[0]) === String(v)) || ['', v])[1];
       if (c.st) on.push(['st', lab(ST, c.st)]); if (c.ord) on.push(['ord', lab(ORD, c.ord)]); if (c.dsl) on.push(['dsl', lab(DSL, c.dsl)]);
       if (c.sp_min !== '' || c.sp_max !== '') on.push(['sp', '₹ ' + (c.sp_min || 0) + ' – ' + (c.sp_max || 'any')]);
+      if ((c.nums || []).length) on.push(['nums', '📱 ' + c.nums.map((id) => ((S.meta.numbers.find((x) => x.id === id) || {}).label || id)).join(' + ')]);
       if (c.num) on.push(['num', 'Number: ' + ((S.meta.numbers.find((x) => String(x.id) === String(c.num)) || {}).label || c.num)]);
       if (c.emp) on.push(['emp', c.emp === '-1' ? 'Not given to anyone' : 'With ' + ((S.meta.people.find((x) => String(x.emp_id) === String(c.emp)) || {}).name || c.emp)]);
       if (c.src) on.push(['src', lab(SRC, c.src)]); if (c.ign) on.push(['ign', lab(IGN, c.ign)]); if (S.q) on.push(['q', '“' + S.q + '”']);
@@ -204,7 +210,7 @@ html.wxdk .wcs{--ln:#25343e; --gb:#0f2e20; --rb:#3a1515;} html.wxdk .wcs-r,html.
       const cl = $(el, '#cxClr'); if (cl) cl.onclick = () => { S.cf = BLANK(); S.q = ''; S.view = ''; changed(true, true); };
       $(el, '#cxSave').onclick = () => segSave('live');
       el.querySelectorAll('[data-off]').forEach((b) => { b.onclick = () => { const k = b.dataset.off;
-        if (k === 'date') { c.dp = ''; c.df = ''; c.dt = ''; } else if (k[0] === 't' && k !== 'q') c.tags.splice(+k.slice(1), 1); else if (k === 'sp') { c.sp_min = ''; c.sp_max = ''; } else if (k === 'q') S.q = ''; else c[k] = '';
+        if (k === 'date') { c.dp = ''; c.df = ''; c.dt = ''; } else if (k[0] === 't' && k !== 'q') c.tags.splice(+k.slice(1), 1); else if (k === 'sp') { c.sp_min = ''; c.sp_max = ''; } else if (k === 'nums') c.nums = []; else if (k === 'q') S.q = ''; else c[k] = '';
         changed(true, k === 'q'); }; });
     }
     // ---------------------------------------------------------------------------------------------------------- list

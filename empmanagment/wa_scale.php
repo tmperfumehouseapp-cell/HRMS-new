@@ -156,6 +156,8 @@ function wa_aud_where(string $src, array $f, string $q = ''): array
     if ($cf0 !== '' || $ct0 !== '') { $w[] = "EXISTS (SELECT 1 FROM wa_messages cm WHERE cm.phone = $P AND cm.dir = 'out' AND cm.who = 'campaign'" . ($cf0 !== '' ? ' AND cm.ts >= ?' : '') . ($ct0 !== '' ? ' AND cm.ts <= ?' : '') . ")"; if ($cf0 !== '') $p[] = $cf0; if ($ct0 !== '') $p[] = $ct0; }
     foreach ([['ord_min', 'COALESCE(s.n, 0) >= ?'], ['ord_max', 'COALESCE(s.n, 0) <= ?'], ['sp_min', 'COALESCE(s.spent, 0) >= ?'], ['sp_max', 'COALESCE(s.spent, 0) <= ?']] as [$k0, $sq0]) if (isset($f[$k0]) && is_numeric($f[$k0])) { $w[] = $sq0; $p[] = (int)$f[$k0]; }
     if (isset($f['num']) && (int)$f['num'] > 0) { $w[] = 'c.last_number_id = ?'; $p[] = (int)$f['num']; }
+    $nl0 = array_values(array_unique(array_filter(array_map('intval', is_array($f['nums'] ?? null) ? $f['nums'] : []), fn($x) => $x > 0)));   // 📱 customers who wrote on ANY of these numbers (the number they last used, or any message they ever sent to it)
+    if ($nl0) { $in0 = wa_in($nl0); $w[] = "(c.last_number_id IN ($in0) OR EXISTS (SELECT 1 FROM wa_messages mn WHERE mn.phone = $P AND mn.dir = 'in' AND mn.number_id IN ($in0)))"; foreach ($nl0 as $x) $p[] = $x; foreach ($nl0 as $x) $p[] = $x; }
     if (isset($f['emp']) && is_numeric($f['emp']) && (int)$f['emp'] !== 0) { if ((int)$f['emp'] < 0) $w[] = 'COALESCE(c.assigned_emp, 0) = 0'; else { $w[] = 'c.assigned_emp = ?'; $p[] = (int)$f['emp']; } }
     $o = (string)($f['ord'] ?? ''); if ($o === '0') $w[] = 'COALESCE(s.n, 0) = 0'; elseif ($o === '1') $w[] = 's.n = 1'; elseif ($o === '2') $w[] = 's.n = 2'; elseif ($o === '3') $w[] = 's.n >= 3';
     $ds = (string)($f['dsl'] ?? '');

@@ -56,6 +56,7 @@ function wcs_clean($raw): array
         if (isset($raw[$k]) && in_array((string)$raw[$k], $ok, true)) $f[$k] = (string)$raw[$k];
     foreach (['ord_min', 'ord_max', 'sp_min', 'sp_max', 'num', 'emp', 'ign'] as $k) if (isset($raw[$k]) && $raw[$k] !== '' && is_numeric($raw[$k])) $f[$k] = (int)$raw[$k];
     if (isset($f['ign']) && $f['ign'] <= 0) unset($f['ign']);
+    if (isset($raw['nums']) && is_array($raw['nums'])) { $nl = array_values(array_unique(array_filter(array_map('intval', $raw['nums']), fn($x) => $x > 0))); if ($nl) $f['nums'] = array_slice($nl, 0, 20); }   // 📱 customers of these WhatsApp numbers (Main / Second / 3rd / 4th …)
     return $f;
 }
 function wcs_sorts(): array { return ['latest', 'spent', 'orders', 'order_old', 'order_new', 'added', 'name']; }
