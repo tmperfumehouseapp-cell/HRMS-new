@@ -9916,6 +9916,14 @@ function lib_requeue_calls(PDO $pdo): void
     } catch (Throwable $e) { error_log('lib_requeue_calls: ' . $e->getMessage()); }
 }
 /** Make a draft guidebook the LIVE one (what the WhatsApp bot follows). The version it replaces is kept once, for a roll-back; every older one is removed. */
+/** How much of the guidebook changed: [added points, removed points, percent]. Compares every text point (not the summary). */
+function lib_guide_change(array $old, array $new): array
+{
+    $flat = function ($v, array &$out) use (&$flat) { if (is_array($v)) { foreach ($v as $k => $x) { if (in_array((string)$k, ['summary', 'confidence', 'change_note', 'owner_corrections'], true)) continue; $flat($x, $out); } } elseif (is_string($v) && mb_strlen(trim($v)) >= 8) $out[md5(mb_strtolower(trim($v)))] = 1; };
+    $a = []; $b = []; $flat($old, $a); $flat($new, $b);
+    $add = count(array_diff_key($b, $a)); $del = count(array_diff_key($a, $b));
+    return [$add, $del, (int)round(100 * max($del / max(1, count($a)), $add / max(1, count($b))))];
+}
 function lib_guide_go_live(PDO $pdo, array $draft, string $who): void
 {
     $prev = lib_guide_row($pdo, 'live'); $keep = $prev ? (int)$prev['id'] : 0;
@@ -9939,7 +9947,11 @@ function lib_guide_nightly(PDO $pdo, int $budget): ?string
     } else {
         if ($budget < 100) return null;      // not enough time left in this pass: the next pass tries again
         [$ok, $msg, $ver] = lib_guide_write($pdo);
-        if ($ok) { $d2 = lib_guide_row($pdo, 'draft'); if ($d2 && ($d2['source'] ?? '') === 'ai') { lib_guide_go_live($pdo, $d2, 'Auto (2 AM)'); $note = 'New guidebook v' . (int)$d2['version'] . ' went live.'; } else $note = 'Written from numbers only, kept as a draft.'; }
+        if ($ok) { $d2 = lib_guide_row($pdo, 'draft'); if ($d2 && ($d2['source'] ?? '') === 'ai') {
+                $lv = lib_guide_public(lib_guide_row($pdo, 'live')); $dp = lib_guide_public($d2); [$ad, $de, $pc] = $lv ? lib_guide_change($lv['body'], $dp['body']) : [0, 0, 0];
+                if ($lv && $pc > 60) $note = 'The new guidebook v' . (int)$d2['version'] . ' changes ' . $pc . '% of the points (+' . $ad . ' / −' . $de . ') — kept as a DRAFT for you to check; the live one is unchanged.';
+                else { lib_guide_go_live($pdo, $d2, 'Auto (2 AM)'); $note = 'New guidebook v' . (int)$d2['version'] . ' went live' . ($lv ? ' (+' . $ad . ' new, −' . $de . ' removed points)' : '') . '.'; }
+            } else $note = 'Written from numbers only, kept as a draft.'; }
         else $note = 'Not updated: ' . $msg;
     }
     setting_set($pdo, 'lib_guide_nightly', $today); setting_set($pdo, 'lib_guide_nightly_note', date('Y-m-d H:i') . ' — ' . $note);

@@ -39,7 +39,7 @@ function wsp_report(PDO $pdo): array
     try { $sl = $pdo->query("SHOW VARIABLES LIKE 'slow_query_log'")->fetch(PDO::FETCH_NUM); if ($sl) $h[] = ['k' => 'MySQL slow-query log', 'v' => (string)$sl[1], 'ok' => strtoupper((string)$sl[1]) === 'ON', 'tip' => 'Turn it on to see exactly which query is slow.']; } catch (Throwable $e) { }
     try { $mm = $pdo->query("SELECT COUNT(*) FROM wa_messages")->fetchColumn(); $h[] = ['k' => 'Messages stored', 'v' => number_format((int)$mm, 0, '.', ','), 'ok' => true, 'tip' => '']; } catch (Throwable $e) { }
     $h[] = ['k' => 'PHP', 'v' => PHP_VERSION, 'ok' => true, 'tip' => ''];
-    return ['rows' => $rows, 'samples' => $total, 'health' => $h, 'live' => (string)setting_get($pdo, 'wa_live', '0') === '1'];
+    return ['rows' => $rows, 'samples' => $total, 'health' => $h, 'live' => (string)setting_get($pdo, 'wa_live', '0') === '1', 'learn' => function_exists('wlr_status') ? wlr_status($pdo) : null];
 }
 
 }
