@@ -62,6 +62,18 @@ function wq_pace_trivial(string $mtype, string $body): bool
     return in_array($w, ['ok', 'okay', 'okk', 'okkk', 'k', 'kk', 'hmm', 'hmmm', 'hm', 'mm', 'mmm', 'yes', 'yeah', 'yep', 'haan', 'ha', 'han', 'ji', 'hanji', 'haji', 'haan ji', 'han ji', 'ha ji', 'haan haan', 'theek', 'thik', 'thik hai', 'theek hai', 'ok ok', 'ok sir', 'ok mam', 'ok madam', 'ok ji', 'ok thanks', 'thanks', 'thank you', 'ty'], true);
 }
 
+/** Speed AND orders together: star = fast + orders fine, ok = slow but orders fine, quality = fast but orders low, red = slow and orders low.
+ *  Slow = typical reply over 10 min. Orders low = under 85% of the team's order rate (30 days). Needs 5 replies and 10 queries, else "few". */
+function wq_pace_verdict($median, int $replies, $queries, $conv, $teamConv): array
+{
+    if ($median === null || $replies < 5 || (int)$queries < 10 || $conv === null || $teamConv === null || $teamConv <= 0) return ['key' => 'few', 'label' => 'Not enough data yet', 'why' => 'Needs 5 replies and 10 queries to judge.'];
+    $slow = $median > 10; $low = $conv < 0.85 * $teamConv;
+    if (!$slow && !$low) return ['key' => 'star', 'label' => '⭐ Fast and winning orders', 'why' => 'Typical reply ' . round($median, 1) . ' min, orders ' . $conv . '% (team ' . round($teamConv, 1) . '%).'];
+    if ($slow && !$low) return ['key' => 'ok', 'label' => 'Slow, but orders are fine', 'why' => 'Typical reply ' . round($median, 1) . ' min, but orders ' . $conv . '% (team ' . round($teamConv, 1) . '%). No problem for now.'];
+    if (!$slow && $low) return ['key' => 'quality', 'label' => '🟠 Fast, but orders are low', 'why' => 'Replies fast (' . round($median, 1) . ' min) but orders ' . $conv . '% (team ' . round($teamConv, 1) . '%). Check what is being said, not the speed.'];
+    return ['key' => 'red', 'label' => '🔴 Slow and orders low', 'why' => 'Typical reply ' . round($median, 1) . ' min and orders ' . $conv . '% (team ' . round($teamConv, 1) . '%). Needs coaching.'];
+}
+
 /** All the numbers for a period. days = 1 (today) | 7 | 30. */
 function wq_pace_calc(PDO $pdo, int $days): array
 {
@@ -163,6 +175,7 @@ function wq_pace_calc(PDO $pdo, int $days): array
     // ---- 5. people
     $ids = array_keys($emp); foreach ($take as $e => $_) $ids[] = $e; foreach ($ord['by_emp'] as $e => $_) $ids[] = $e; foreach ($closeCur as $e => $_) $ids[] = $e;
     if (function_exists('wq_sales_people')) { try { foreach (wq_sales_people($pdo) as $p) $ids[] = (int)$p['employee_id']; } catch (Throwable $e) { } }
+    $tq = 0; $to = 0; foreach ($ord['buckets'] as $bk0) { $tq += (int)$bk0['queries']; $to += (int)$bk0['orders']; } $teamConv = $tq >= 30 ? round(100 * $to / $tq, 1) : null;
     $people = [];
     foreach (array_unique($ids) as $e) {
         $e = (int)$e; if ($e <= 0) continue;
@@ -179,7 +192,7 @@ function wq_pace_calc(PDO $pdo, int $days): array
         }
         $people[] = ['emp_id' => $e, 'name' => (string)($names[$e] ?? ('#' . $e)), 'pace' => $cur, 'prev' => $prev, 'delta' => $delta, 'series' => $ser,
             'after_take' => ['n' => count($tk['all']), 'median' => $tk['all'] ? round(wq_pace_med($tk['all']), 1) : null, 'no_reply' => $tk['none'], 'by' => $tb],
-            'close' => $closeCur[$e] ?? null, 'loss' => $loss, 'link' => $ord['link_emp'][$e] ?? null, 'orders' => $oe];
+            'close' => $closeCur[$e] ?? null, 'verdict' => wq_pace_verdict($cur['median'], (int)$cur['n'], $oe['queries'] ?? 0, $oe['conversion'] ?? null, $teamConv), 'loss' => $loss, 'link' => $ord['link_emp'][$e] ?? null, 'orders' => $oe];
     }
     // ranking: fastest median first; people with fewer than 5 readings are listed last (not enough to judge)
     usort($people, function ($a, $b) {
