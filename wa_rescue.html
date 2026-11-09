@@ -60,7 +60,7 @@ guardPage();
   }
   async function load(quiet) {
     try {
-      S.d = await api.get('wq.rescue_list', { days: S.days, status: S.status });
+      S.d = await api.get('wq.rescue_list', { days: S.days, status: S.status, page: S.page || 1 });
       if (S.tab === 'team') S.team = await api.get('wq.rescue_team');
       if (S.tab === 'start') S.start = await api.get('wq.rescue_start');
       if (S.tab === 'msgs') S.msgs = await api.get('wq.rescue_tpl_list');
@@ -73,7 +73,7 @@ guardPage();
   let kicking = false;
   function kick(force) {
     if (kicking) return; kicking = true;
-    api.post('wq.rescue_scan', force ? { force: true } : {}).then((r) => {
+    api.post('wq.rescue_scan', force ? { backfill: true } : {}).then((r) => {
       kicking = false; if (!r) return; if (r.scan || r.backfill) load(true);
       const bf = (r.backfill || (S.d && S.d.backfill)); if (bf && !bf.done && !bf.error) setTimeout(() => { if (document.visibilityState === 'visible') kick(true); else setTimeout(() => kick(true), 5000); }, 1500);
     }, () => { kicking = false; });
@@ -110,8 +110,9 @@ guardPage();
     h += '<div class="rq-tabs"><button data-tab="list" class="' + (S.tab === 'list' ? 'on' : '') + '">Queries</button><button data-tab="start" class="' + (S.tab === 'start' ? 'on' : '') + '">Getting started</button><button data-tab="team" class="' + (S.tab === 'team' ? 'on' : '') + '">Rescue team</button><button data-tab="msgs" class="' + (S.tab === 'msgs' ? 'on' : '') + '">Messages</button><button data-tab="people" class="' + (S.tab === 'people' ? 'on' : '') + '">People</button><button data-tab="cfg" class="' + (S.tab === 'cfg' ? 'on' : '') + '">Settings</button></div>';
     if (S.tab === 'list') {
       h += '<div class="rq-row"><select id="rqSt">' + ['all', 'open', 'taken', 'stale', 'won', 'ordered', 'silent', 'skipped'].map((x) => '<option value="' + x + '"' + (S.status === x ? ' selected' : '') + '>' + (x === 'all' ? 'All' : (ST[x] || x)) + '</option>').join('') + '</select>' +
-        '<select id="rqDays">' + [1, 3, 7, 14, 30].map((x) => '<option value="' + x + '"' + (S.days === x ? ' selected' : '') + '>Last ' + x + ' day' + (x > 1 ? 's' : '') + '</option>').join('') + '</select></div>';
+        '<select id="rqDays">' + [1, 3, 7, 14, 30, 90, 365].map((x) => '<option value="' + x + '"' + (S.days === x ? ' selected' : '') + '>Last ' + x + ' day' + (x > 1 ? 's' : '') + '</option>').join('') + '</select></div>';
       h += d.items.length ? d.items.map(itemHtml).join('') : '<div class="rq-empty">Nothing here right now. 🎉</div>';
+      if ((d.total || 0) > (d.page_size || 100)) { const pg = d.page || 1, last = Math.ceil(d.total / d.page_size); h += '<div class="rq-row" style="justify-content:center"><button class="btn secondary" data-pg="' + (pg - 1) + '"' + (pg <= 1 ? ' disabled' : '') + '>← Newer</button><span class="rq-sub">Page ' + pg + ' of ' + last + ' · ' + d.total + ' chats</span><button class="btn secondary" data-pg="' + (pg + 1) + '"' + (pg >= last ? ' disabled' : '') + '>Older →</button></div>'; }
     } else if (S.tab === 'team' && S.team) {
       const t = S.team;
       h += '<div class="card" style="padding:14px 18px"><b>Who sees the 🛟 Rescue chip in Chats? (' + esc(t.day) + ')</b><div class="rq-sub">Pick up to 40 people. Only they (and you) see the rescue chats and can take one.</div><div class="rq-team">' +
@@ -149,7 +150,8 @@ guardPage();
   root.addEventListener('click', (e) => {
     const t = e.target.closest('button,a,[data-open],[data-gostatus]'); if (!t) return;
     if (t.dataset.gostatus) { S.tab = 'list'; S.status = t.dataset.gostatus; load(); return; }
-    if (t.dataset.tab) { S.tab = t.dataset.tab; load(); return; }
+    if (t.dataset.pg) { S.page = +t.dataset.pg; load(); return; }
+    if (t.dataset.tab) { S.tab = t.dataset.tab; S.page = 1; load(); return; }
     if (t.dataset.open) { openChat(t.dataset.open); return; }
     if (t.dataset.undo) { act(() => api.post('wq.rescue_skip', { phone: t.dataset.undo, undo: true })); return; }
     if (t.dataset.skip) { if (confirm('Hide this query – not a real chance?')) act(() => api.post('wq.rescue_skip', { phone: t.dataset.skip })); return; }
@@ -170,7 +172,7 @@ guardPage();
     if (t.id === 'cSave') act(() => api.post('wq.rescue_cfg', { on: document.getElementById('cOn').checked, attempts: +document.getElementById('cAtt').value, decide_days: +document.getElementById('cDec').value, max_open: +document.getElementById('cMax').value, view_days: +document.getElementById('cView').value, hide_long: document.getElementById('cLong').checked, stale_days: +document.getElementById('cStale').value, days: +document.getElementById('cDays').value, wait_h: +document.getElementById('cWait').value }), () => 'Saved.');
   });
   root.addEventListener('change', (e) => {
-    if (e.target.id === 'pdays') { S.pdays = +e.target.value; load(); } if (e.target.id === 'rqSt') { S.status = e.target.value; load(); } if (e.target.id === 'rqDays') { S.days = +e.target.value; load(); }
+    if (e.target.id === 'pdays') { S.pdays = +e.target.value; load(); } if (e.target.id === 'rqSt') { S.status = e.target.value; S.page = 1; load(); } if (e.target.id === 'rqDays') { S.days = +e.target.value; S.page = 1; load(); }
   });
   load();
 })();
