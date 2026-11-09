@@ -2838,9 +2838,12 @@ function cm_day(PDO $pdo, $day, array $ch = null, array $offers = null, array $b
         $old = null;
         if (function_exists('coach_day')) { try { $cd = coach_day($pdo, $day, false, true); $old = isset($cd[$id]) ? (float)$cd[$id]['com_today'] : null; } catch (Throwable $e) {} }
         $total = round($chartCom + $offerCom + $extra + $xcomTotal, 2);
+        if (!function_exists('wq_rescue_day_bonus') && is_file(__DIR__ . '/wq_rescue_bonus.php')) require_once __DIR__ . '/wq_rescue_bonus.php';
+        $resc = function_exists('wq_rescue_day_bonus') ? wq_rescue_day_bonus($pdo, (string)$day, (int)$id) : 0.0;      // 🛟 Rescue bonus: extra on top of this day's commission
+        $total = round($total + $resc, 2);
         $rows[] = ['id' => $id, 'name' => trim((string)$e['full_name']), 'target' => round($target), 'sales' => round($sales), 'pct' => $target > 0 ? round($sales / $target * 100, 1) : null, 'orders' => $n,
             'codes' => $nCode, 'code_pct' => $n ? round($nCode / $n * 100) : null, 'code_ok' => $codeOk, 'code_need' => $need, 'chart_com' => round($chartCom, 2), 'offer_com' => round($offerCom, 2), 'x_com' => round($xcomTotal, 2),
-            'bonus' => $bonus, 'boost' => $bo ? $bo['name'] : '', 'extra' => round($extra, 2), 'total' => $total, 'old' => $old, 'diff' => $old === null ? null : round($total - $old, 2), 'no_ml' => $noMl, 'not_priced' => $noPrice, 'lines' => $lines];
+            'bonus' => $bonus, 'boost' => $bo ? $bo['name'] : '', 'extra' => round($extra, 2), 'total' => $total, 'rescue_bonus' => $resc, 'old' => $old, 'diff' => $old === null ? null : round($total - $old, 2), 'no_ml' => $noMl, 'not_priced' => $noPrice, 'lines' => $lines];
     }
     usort($rows, function ($a, $b) { return $b['sales'] <=> $a['sales']; });
     return ['rows' => $rows, 'error' => ''];
