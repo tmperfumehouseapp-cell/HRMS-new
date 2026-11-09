@@ -247,6 +247,9 @@ function wa_parse_msg(array $m): array
     return [$t, $body, $mid, $mime];
 }
 
+/** Owner (9 Nov): chats are given to salespeople BY HAND only (Waiting → Choose person, the chat's Assign button). While this is on (the default; setting wa_manual_assign = 0 turns the robots back on),
+ *  no engine — routing, hot chats, flows, re-assignment — gives a chat to anybody by itself. */
+function wa_manual_assign(PDO $pdo): bool { try { return (string)setting_get($pdo, 'wa_manual_assign', '1') !== '0'; } catch (Throwable $e) { return true; } }
 /** 🔀 Owner (9 Nov): a customer who writes to a number that has the Meta payment problem (131042) is answered from another number — the chat is switched to it at once.
  *  The new number has no 24-hour window with this customer yet, so the first message from it must be a pre-made message (the chat opens the list by itself). Returns the new number id or 0. */
 function wa_redirect_target(PDO $pdo, int $numberId): int

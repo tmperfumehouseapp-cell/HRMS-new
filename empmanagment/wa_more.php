@@ -109,6 +109,7 @@ function wa_person_stats(PDO $pdo, int $days = 30): array
 /** A chat nobody has taken: after N customer messages or M minutes it goes to the best present salesperson (the number's own handlers first). */
 function wa_auto_assign(PDO $pdo): int
 {
+    if (wa_manual_assign($pdo)) return 0;
     $cfg = wa_team_cfg($pdo); if (!$cfg['auto_assign']) return 0;
     $st = $pdo->prepare("SELECT phone, last_number_id, last_out_at, hot FROM wa_contacts WHERE assigned_emp = 0 AND (cx_id IS NULL OR cx_id = 0) AND status = 'open' AND optout = 0 AND last_in_at IS NOT NULL AND last_in_at >= ? AND (last_out_at IS NULL OR last_out_at < last_in_at) ORDER BY last_in_at LIMIT 40");
     $st->execute([date('Y-m-d H:i:s', time() - 2 * 86400)]); $n = 0;
@@ -142,7 +143,7 @@ function wa_callnow_scan(PDO $pdo): void
         if ((int)$out->fetchColumn() > 0 || (int)$r['assigned_emp'] <= 0) { $pdo->prepare("UPDATE wa_contacts SET callnow = 9 WHERE phone = ?")->execute([$r['phone']]); continue; }
         if ((int)$r['callnow'] === 1 && $r['callnow_at'] && time() - strtotime((string)$r['callnow_at']) >= $cfg['escalate_min'] * 60) {
             $isCx = (int)($r['cx_id'] ?? 0) > 0 || (string)($r['tag'] ?? '') === 'complaint';   // a complaint chat stays with its person — it is never moved by itself (the alert still goes up)
-            if (!$isCx && (string)setting_get($pdo, 'wa_reassign', '0') === '1' && (int)$r['reassigns'] < 2 && function_exists('wa_next_person')) {   // not accepted in time → the next present person gets it
+            if (!$isCx && !wa_manual_assign($pdo) && (string)setting_get($pdo, 'wa_reassign', '0') === '1' && (int)$r['reassigns'] < 2 && function_exists('wa_next_person')) {   // not accepted in time → the next present person gets it
                 $nx = wa_next_person($pdo, (int)$r['assigned_emp']);
                 if ($nx) {
                     $from = $names[(int)$r['assigned_emp']] ?? 'the salesperson'; wa_assign_to($pdo, (string)$r['phone'], (int)$nx['emp_id'], 0, 'auto');
