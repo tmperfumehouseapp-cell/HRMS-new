@@ -537,6 +537,9 @@ function wa_src_counts(PDO $pdo, bool $adm, int $emp): array
         foreach (['community', 'campaign'] as $s) { $q = $pdo->prepare("SELECT COUNT(*) FROM wa_contacts WHERE $base AND source = ?"); $q->execute([$s]); $o[$s] = (int)$q->fetchColumn(); }
         if (function_exists('wa_ad_backfill')) wa_ad_backfill($pdo); $q = $pdo->prepare("SELECT COUNT(*) FROM wa_contacts WHERE $base AND source = 'query' AND last_in_at >= ?"); $q->execute([wa_bizday_start($pdo)]); $o['query'] = (int)$q->fetchColumn();
         $o['assigned'] = (int)$pdo->query("SELECT COUNT(*) FROM wa_contacts WHERE $base AND assigned_emp > 0")->fetchColumn();
+        // 📱 queries of this business day per WhatsApp number (TM Perfume House Main / Second …) — a permanent row of chips beside Query / Assigned / Community / Campaign
+        $bd = wa_bizday_start($pdo); $nq = $pdo->prepare("SELECT last_number_id, COUNT(*) n FROM wa_contacts WHERE $base AND source = 'query' AND last_in_at >= ? GROUP BY last_number_id"); $nq->execute([$bd]); $per = []; foreach ($nq->fetchAll() as $r) $per[(int)$r['last_number_id']] = (int)$r['n'];
+        $o['nums'] = []; foreach ($pdo->query("SELECT id, label, display FROM wa_numbers ORDER BY id")->fetchAll() as $n) $o['nums'][] = ['id' => (int)$n['id'], 'label' => trim((string)$n['label']) !== '' ? (string)$n['label'] : (string)$n['display'], 'n' => $per[(int)$n['id']] ?? 0];
     } catch (Throwable $e) { }
     return $o;
 }
@@ -846,6 +849,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo)\./', $__wa)) {
             $src = (string)($_GET['src'] ?? '');   // Stage B: feed filter — query | community | campaign | assigned
             if ($src === 'query') { if (function_exists('wa_ad_backfill')) wa_ad_backfill($pdo); $w[] = "c.source = 'query'"; $w[] = 'c.last_in_at >= ?'; $p[] = wa_bizday_start($pdo); }   // 📢 fresh Meta-ad queries of this business day (10:00 → 10:00); campaign / community have their own feeds
             elseif (in_array($src, ['community', 'campaign'], true)) { $w[] = 'c.source = ?'; $p[] = $src; } elseif ($src === 'assigned') $w[] = 'c.assigned_emp > 0';
+            elseif (preg_match('/^num:(\d+)$/', $src, $nm)) { $w[] = "c.source = 'query'"; $w[] = 'c.last_number_id = ?'; $p[] = (int)$nm[1]; $w[] = 'c.last_in_at >= ?'; $p[] = wa_bizday_start($pdo); }   // queries of today that came on ONE number
             if ($q !== '') { $w[] = '(c.phone LIKE ? OR c.name LIKE ?)'; $p[] = wa_q_like($q); $p[] = '%' . addcslashes($q, '%_\\') . '%'; }
             // 🔽 the Filter menu: show only … (any mix) and the order
             $wBase = $w; $pBase = $p;   // the view without the Filter menu: tab (All open / Closed / …) + chip (Query / Community / …) + person + search — the Not-responded count is for THIS view

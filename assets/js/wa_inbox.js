@@ -251,7 +251,8 @@
     const FEEDS = admin ? [['', 'All'], ['query', 'Query'], ['assigned', 'Assigned'], ['community', 'Community'], ['campaign', 'Campaign']] : [['', 'All'], ['query', 'Query'], ['community', 'Community'], ['campaign', 'Campaign']];
     function drawFeeds() {
       const c = (S.counts || {}).src || {};
-      $('wiF').innerHTML = FEEDS.map(([k, l]) => `<button type="button" class="wi-chip ${S.src === k ? 'on' : ''}" data-k="${k}">${l}${k && c[k] != null ? '<i>' + c[k] + '</i>' : ''}</button>`).join('');
+      const NUMF = admin ? (c.nums || []).map((x) => ['num:' + x.id, '📱 ' + String(x.label || 'Number').replace(/^TMPerfumehouse/i, 'TM Perfume House').slice(0, 26) + ' · queries', x.n]) : [];      // queries of today per WhatsApp number (Main / Second …)
+      $('wiF').innerHTML = FEEDS.map(([k, l]) => `<button type="button" class="wi-chip ${S.src === k ? 'on' : ''}" data-k="${k}">${l}${k && c[k] != null ? '<i>' + c[k] + '</i>' : ''}</button>`).join('') + NUMF.map(([k, l, n]) => `<button type="button" class="wi-chip ${S.src === k ? 'on' : ''}" data-k="${k}" title="Queries of today that came on this number">${esc(l)}<i>${n}</i></button>`).join('');
       $('wiF').querySelectorAll('button').forEach((b) => { b.onclick = () => setFeed(b.dataset.k); });
       let x = ''; if (AU.allowed) x += `<button type="button" class="wi-chip wi-auc ${AU.on ? 'on' : ''}" id="wiAuT" title="The suggested reply counts down 10 seconds and sends itself unless you press Cancel">⚡ Auto-reply ${AU.on ? 'ON' : 'OFF'}</button>`;
       if (admin) x += `<button type="button" class="wi-chip ${S.bulk && S.bulk.on ? 'on' : ''}" id="wiBkT" title="Select many chats: send one message to all of them, or move them to another person">☑ Select chats</button>`;
@@ -260,7 +261,7 @@
     }
     function setFeed(k, scope) {
       S.src = k || ''; S.emp = 0; if ($('wiE')) { $('wiE').value = '0'; ebSync(); }
-      if (scope) S.scope = scope; else if (admin && S.src === 'assigned' && S.scope === 'unassigned') S.scope = 'all';
+      if (scope) S.scope = scope; else if (admin && (S.src === 'assigned' || /^num:/.test(S.src)) && S.scope === 'unassigned') S.scope = 'all';
       if (opts.onFeed) { try { opts.onFeed(S.src); } catch (e) { } }
       loadList();
     }
