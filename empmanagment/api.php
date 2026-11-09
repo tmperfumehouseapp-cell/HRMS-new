@@ -9727,6 +9727,7 @@ function teach_facts_prompt(PDO $pdo, array $msgs): array
     $lt = teach_limits_text($pdo); if ($lt !== '') $t = $lt . $t;
     $bt = teach_budget_text($F['budget']); if ($bt !== '') $t .= $bt;
     $t .= function_exists('pc_bot_text') ? pc_bot_text($pdo) : teach_slab_text($pdo);   // one price chart: the Price & Commission slab chart is also the bot's perfume price list
+    if (function_exists('wj_bot_note')) $t .= wj_bot_note($pdo);   // the 60-day Journey's current offers + festival: one brain for the Teach bot and the journey
     $free = []; if (!empty($F['pl']) && !empty($F['pl']['free']['on'])) foreach ($F['pl']['rows'] as $r) if ($r['lowest']) for ($x = pl_floor_free($F['pl'], (int)$r['lowest']); $x < $r['lowest']; $x++) $free[(string)(float)$x] = 1;
     if ($hit) { $t .= "Products from our catalogue that match the customer's words:\n"; foreach ($hit as [, $p]) { $vs = []; foreach (array_slice((array)($p['v'] ?? []), 0, 8) as $v) $vs[] = trim(($v[0] ?? '') . ' ₹' . ($v[1] ?? '')); $t .= '- ' . ($p['t'] ?? '') . ($vs ? ': ' . implode('; ', $vs) : '') . "\n"; } }
     elseif ($F['products']) $t .= "(No catalogue product matches the customer's words yet — do not quote a product price; ask which product.)\n";

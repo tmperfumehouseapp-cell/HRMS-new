@@ -925,6 +925,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo)\./', $__wa)) {
             $ot = wa_owner_tags($pdo, array_column($rows, 'phone'));
             $out = array_map(function ($r) use ($names, $fl, $lm, $ot) { $x = wa_contact_row($r, $names); $f = (int)($ot[(string)$r['phone']]['first'] ?? 0); $x['first_emp'] = $f; $x['first_name'] = $f ? ($names[$f] ?? '') : ''; $x['preview'] = mb_substr((string)$r['last_body'], 0, 90); $x['last_msg_at'] = (string)($r['last_ts'] ?? ''); $x['fresh_agent'] = (int)($r['fresh_agent'] ?? 0) === 1; $x['heat'] = wa_heat($r, $fl[(string)$r['phone']] ?? [], $lm); $x['biz'] = !empty($fl[(string)$r['phone']]['biz']); return $x; }, $rows);
             if ($rescueFeed !== null && function_exists('wq_rescue_tier_map')) { $tm = wq_rescue_tier_map($pdo, array_column($out, 'phone')); foreach ($out as &$ox) $ox['rescue'] = $tm[(string)$ox['phone']] ?? null; unset($ox); }   // the label of each rescue chat
+            if (function_exists('wq_lifecycle_map')) { $lm = wq_lifecycle_map($pdo, array_column($out, 'phone')); foreach ($out as &$ox2) $ox2['life'] = $lm[(string)$ox2['phone']] ?? null; unset($ox2); }   // one stage per chat (new · waiting · hot · bot · rescue · ordered …)
             $cn = wa_counts($pdo, $adm, $emp); $cn['src'] = wa_src_counts($pdo, $adm, $emp);
             if ($adm && $scope === 'emp') { try { $ee = (int)($_GET['emp'] ?? 0); $a = $pdo->prepare("SELECT COUNT(*) FROM wa_contacts WHERE assigned_emp = ? AND status = 'open' AND COALESCE(last_in_at, last_out_at) >= ?"); $a->execute([$ee, date('Y-m-d H:i:s', time() - 90 * 86400)]); $cn['emp_now'] = (int)$a->fetchColumn();
                 $b = $pdo->prepare("SELECT COUNT(*) FROM wa_contacts c WHERE (c.assigned_emp = ? OR c.phone IN (SELECT l.phone FROM wa_assign_log l WHERE l.to_emp = ?)) AND COALESCE(c.last_in_at, c.last_out_at) >= ?"); $b->execute([$ee, $ee, date('Y-m-d H:i:s', time() - 90 * 86400)]); $cn['emp_tag'] = (int)$b->fetchColumn(); } catch (Throwable $e) { } }
@@ -957,6 +958,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo)\./', $__wa)) {
             $ct['first_message'] = mb_substr((string)$one("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id LIMIT 1"), 0, 120); $ct['first_seen'] = $c['first_seen'];
             $log = []; if (wa_is_admin($pdo, $auth)) { $q2 = $pdo->prepare("SELECT from_emp, to_emp, by_emp, how, at FROM wa_assign_log WHERE phone = ? ORDER BY id DESC LIMIT 10"); $q2->execute([$key]);
                 foreach ($q2->fetchAll() as $l) $log[] = ['at' => $l['at'], 'how' => $l['how'], 'from' => $names[(int)$l['from_emp']] ?? '', 'to' => $names[(int)$l['to_emp']] ?? '', 'by' => $names[(int)$l['by_emp']] ?? '']; }
+            if (function_exists('wq_lifecycle_map') && is_array($ct)) { $lf = wq_lifecycle_map($pdo, [$key]); $ct['life'] = $lf[$key] ?? null; }
             json_response(['contact' => $ct, 'messages' => $msgs, 'more' => $more, 'assign_log' => $log, 'sig' => $sig, 'peek' => $peek]);
         }
         case 'wa.cx_note': {   // 📝 the salesperson's note for the complaint team (goes into the case history; the customer never sees it)
