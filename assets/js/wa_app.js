@@ -279,6 +279,25 @@
       M.onclick = (e) => { if (e.target.closest('#wxCxNew')) { if (!window.CXR) { toast('Refresh the page and try again.', true); return; } CXR.open({ askCustomer: true, source: 'whatsapp', onDone: () => loadCxB() }); return; } const p = e.target.closest('[data-p]'); if (p && p.dataset.p) openChat(p.dataset.p); };
     }
 
+    // 📨 Rescue message sheet: an AI-written draft (copy it into the chat — works inside the 24-hour window) and the owner's approved messages (work after 24 hours too: one tap sends it)
+    async function rescueMsg(phone, name) {
+      const sh = sheet('Message ' + (name || 'the customer')), B = sh.body; B.innerHTML = '<div class="wx-sk"></div><div class="wx-sk"></div>';
+      let t = null; try { t = await api.get('wq.rescue_templates', { phone }); } catch (er) { B.innerHTML = '<div class="wx-empty"><b>⚠</b>' + esc(er.message) + '</div>'; return; }
+      const items = t.items || [];
+      const draw = (draft, busy) => {
+        B.innerHTML = '<div style="padding:12px 14px"><div style="font-weight:800;margin-bottom:6px">✨ A message written for this chat</div>'
+          + (draft ? `<textarea id="wxRd" rows="5" style="width:100%;border:1px solid #d1d5db;border-radius:10px;padding:10px;font-size:15px">${esc(draft)}</textarea><div style="display:flex;gap:8px;margin-top:8px"><button type="button" id="wxRc" class="wx-btn" style="flex:1;min-height:44px">Copy</button><button type="button" id="wxRw" class="wx-btn" style="flex:1;min-height:44px;background:#fff;color:#111827;border:1px solid #d1d5db">Write again</button></div><div style="font-size:12.5px;color:#6b7280;margin-top:6px">Copy it, open the chat and paste. This works while the customer's 24-hour window is open.</div>`
+            : `<button type="button" id="wxRw" class="wx-btn" style="width:100%;min-height:46px" ${busy ? 'disabled' : ''}>${busy ? 'Writing…' : '✨ Write a message for me'}</button>`)
+          + '</div><div style="padding:4px 14px 14px;border-top:1px solid var(--line)"><div style="font-weight:800;margin:10px 0 6px">📨 Approved messages — send after 24 hours too</div>'
+          + (items.length ? items.map((x) => `<div style="border:1px solid var(--line);border-radius:12px;padding:10px;margin-bottom:8px;${x.topic === t.best ? 'background:#f0fdf4;border-color:#86efac' : ''}"><div style="font-weight:800;font-size:13px">${x.topic === t.best ? '⭐ Best for this chat · ' : ''}${esc(x.title)}</div><div style="font-size:14px;line-height:1.4;margin:4px 0 8px;white-space:pre-wrap">${esc(x.preview)}</div><button type="button" data-send="${x.id}" class="wx-btn" style="min-height:42px;width:100%">Send this message</button></div>`).join('')
+            : '<div style="font-size:13.5px;color:#6b7280">No approved message yet. The owner sends them to Meta from WhatsApp → Rescue team &amp; settings → Messages; Meta usually approves within minutes to a day.</div>') + '</div>';
+        const w = $('#wxRw', B); if (w) w.onclick = async () => { draw('', true); try { const r = await api.post('wq.rescue_draft', { phone }); draw(r.text || '', false); } catch (er) { toast(er.message, true); draw('', false); } };
+        const c = $('#wxRc', B); if (c) c.onclick = async () => { const v = ($('#wxRd', B) || {}).value || ''; try { await navigator.clipboard.writeText(v); toast('Copied ✓ — paste it in the chat'); } catch (e) { const ta = $('#wxRd', B); if (ta) { ta.select(); document.execCommand('copy'); toast('Copied ✓'); } } };
+        B.querySelectorAll('[data-send]').forEach((b) => { b.onclick = async () => { if (!confirm('Send this message to ' + (name || 'the customer') + '?')) return; b.disabled = true; b.textContent = 'Sending…';
+          try { await api.post('wa.tpl_send', { phone, id: +b.dataset.send, vars: [t.name || 'there'] }); toast('Sent ✓'); sh.close(); loadList(true); } catch (er) { toast(er.message, true); b.disabled = false; b.textContent = 'Send this message'; } }; });
+      };
+      draw('', false);
+    }
     // 🛟 Rescue (only for the people the owner put on the Rescue team). Two tabs: "To take" = interested customers nobody followed up (most urgent first), "I took" = the ones this person took
     // (an order → ✅; after the decide days with no order → "decide": not a chance, or keep working). "Not a chance" asks why, then the AI double-checks it.
     function drawRescue() {
@@ -299,7 +318,7 @@
         + `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap"><b style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0">${esc(x.name || pretty(x.phone))}</b>${x.ordered ? '<span style="font-size:11px;font-weight:800;border-radius:99px;padding:2px 8px;background:#dcfce7;color:#166534">✅ Order placed</span>' : ''}</div>`
         + `<div style="font-size:12.5px;color:#6b7280;margin-top:3px">Taken ${x.days < 1 ? 'today' : x.days + ' day' + (x.days === 1 ? '' : 's') + ' ago'}${x.ordered && x.order_name ? ' · ' + esc(x.order_name) : ''}</div>`
         + (x.decide ? `<div style="font-size:13px;color:#b91c1c;font-weight:800;margin-top:3px">⏰ ${dd}+ days, no order — decide: not a chance, or keep working</div>` : '') + '</div>'
-        + (x.ordered ? '' : `<div style="flex:none;display:flex;flex-direction:column;gap:6px;align-items:stretch">${noBtn(x.phone)}</div>`) + '</div>';
+        + (x.ordered ? '' : `<div style="flex:none;display:flex;flex-direction:column;gap:6px;align-items:stretch"><button type="button" data-msg="${esc(x.phone)}" style="border:0;border-radius:99px;background:#00a884;color:#fff;font-weight:800;font-size:13px;padding:8px 12px">📨 Message</button>${noBtn(x.phone)}</div>`) + '</div>';
       const mineOpen = MI.filter((x) => !x.ordered).length, mineDecide = MI.filter((x) => x.decide).length;
       const tabs = `<div style="display:flex;gap:6px;padding:8px 12px"><button type="button" data-rtab="take" style="flex:1;border-radius:99px;border:1px solid #d1d5db;padding:9px;font-weight:800;${tab === 'take' ? 'background:#111827;color:#fff;border-color:#111827' : 'background:#fff'}">To take · ${L.length}</button><button type="button" data-rtab="mine" style="flex:1;border-radius:99px;border:1px solid #d1d5db;padding:9px;font-weight:800;${tab === 'mine' ? 'background:#111827;color:#fff;border-color:#111827' : 'background:#fff'}">I took · ${MI.length}${mineDecide ? ' ⏰' + mineDecide : ''}</button></div>`;
       M.innerHTML = tabs + (tab === 'take'
@@ -308,6 +327,7 @@
         : `<div class="wx-h">✋ Rescue chats I took · ${mineOpen} still open</div>` + (MI.length ? `<div class="wx-card wx-lst">${MI.map(rowMine).join('')}</div>` : '<div class="wx-empty"><b>✋</b>You have not taken any rescue chat yet.</div>')
           + `<div style="padding:10px 14px;font-size:12.5px;color:#6b7280">If an order comes, it shows ✅. After ${dd} days with no order, press Not a chance (the AI double-checks it) or keep working the customer.</div>`);
       M.onclick = async (e) => {
+        const mg = e.target.closest('[data-msg]'); if (mg) { e.stopPropagation(); const ph = mg.dataset.msg, x = (S.rescueMine || []).find((y) => y.phone === ph) || {}; rescueMsg(ph, x.name || ''); return; }
         const rt = e.target.closest('[data-rtab]'); if (rt) { S.rescueTab = rt.dataset.rtab; S.skipFor = ''; drawRescue(); return; }
         if (e.target.closest('[data-rs-cancel]')) { S.skipFor = ''; drawRescue(); return; }
         const ask = e.target.closest('[data-ask]'); if (ask) { e.stopPropagation(); S.skipFor = ask.dataset.ask; drawRescue(); return; }
