@@ -80,18 +80,18 @@ function wq_rescue_scan(PDO $pdo, float $deadline = 0.0): array
     $now = time(); $since = date('Y-m-d H:i:s', $now - $cfg['days'] * 86400); $quiet = date('Y-m-d H:i:s', $now - (int)round($cfg['wait_h'] * 3600));
     try {
         $q = $pdo->prepare("SELECT q.id, q.phone, q.opened_at, q.emp_id, c.last_in_at, c.last_out_at, c.assigned_emp
-            FROM wa_queries q JOIN wa_contacts c ON c.phone = q.phone
+            FROM wa_queries q JOIN wa_contacts c ON c.phone COLLATE utf8mb4_general_ci = q.phone COLLATE utf8mb4_general_ci
             WHERE q.opened_at >= ? AND c.optout = 0 AND (c.tag IS NULL OR c.tag <> 'complaint') AND (c.cx_id IS NULL OR c.cx_id = 0) AND c.last_in_at IS NOT NULL AND c.last_in_at <= ?
-              AND NOT EXISTS (SELECT 1 FROM wq_rescue r WHERE r.phone = q.phone AND r.query_id = q.id)
-              AND NOT EXISTS (SELECT 1 FROM wq_ord o WHERE o.phone = q.phone AND o.created_at >= DATE_SUB(q.opened_at, INTERVAL 1 HOUR))
-              AND NOT EXISTS (SELECT 1 FROM wa_order_done d WHERE d.phone = q.phone AND d.at >= q.opened_at)
+              AND NOT EXISTS (SELECT 1 FROM wq_rescue r WHERE r.phone COLLATE utf8mb4_general_ci = q.phone COLLATE utf8mb4_general_ci AND r.query_id = q.id)
+              AND NOT EXISTS (SELECT 1 FROM wq_ord o WHERE o.phone COLLATE utf8mb4_general_ci = q.phone COLLATE utf8mb4_general_ci AND o.created_at >= DATE_SUB(q.opened_at, INTERVAL 1 HOUR))
+              AND NOT EXISTS (SELECT 1 FROM wa_order_done d WHERE d.phone COLLATE utf8mb4_general_ci = q.phone COLLATE utf8mb4_general_ci AND d.at >= q.opened_at)
             ORDER BY q.id DESC LIMIT 400");
         $q->execute([$since, $quiet]); $rows = $q->fetchAll();
     } catch (Throwable $e) {
         // wa_order_done / wq_ord may not exist on an old install: try the simpler form
         try {
-            $q = $pdo->prepare("SELECT q.id, q.phone, q.opened_at, q.emp_id, c.last_in_at, c.last_out_at, c.assigned_emp FROM wa_queries q JOIN wa_contacts c ON c.phone = q.phone
-                WHERE q.opened_at >= ? AND c.optout = 0 AND c.last_in_at IS NOT NULL AND c.last_in_at <= ? AND NOT EXISTS (SELECT 1 FROM wq_rescue r WHERE r.phone = q.phone AND r.query_id = q.id) ORDER BY q.id DESC LIMIT 400");
+            $q = $pdo->prepare("SELECT q.id, q.phone, q.opened_at, q.emp_id, c.last_in_at, c.last_out_at, c.assigned_emp FROM wa_queries q JOIN wa_contacts c ON c.phone COLLATE utf8mb4_general_ci = q.phone COLLATE utf8mb4_general_ci
+                WHERE q.opened_at >= ? AND c.optout = 0 AND c.last_in_at IS NOT NULL AND c.last_in_at <= ? AND NOT EXISTS (SELECT 1 FROM wq_rescue r WHERE r.phone COLLATE utf8mb4_general_ci = q.phone COLLATE utf8mb4_general_ci AND r.query_id = q.id) ORDER BY q.id DESC LIMIT 400");
             $q->execute([$since, $quiet]); $rows = $q->fetchAll();
         } catch (Throwable $e2) { error_log('wq_rescue_scan: ' . $e2->getMessage()); return $o; }
     }
@@ -168,7 +168,7 @@ function wq_rescue_list(PDO $pdo, int $me, bool $adm, int $days, string $status)
     if (!$adm) {   // a team member sees the open chances + the ones they took; nothing else
         $where .= " AND (r.status = 'open' OR r.taken_by = ?) AND r.status NOT IN ('ordered','expired')"; $par[] = $me;
     } elseif ($status !== '' && $status !== 'all') { $where .= " AND r.status = ?"; $par[] = $status; }
-    $q = $pdo->prepare("SELECT r.*, c.name AS cname FROM wq_rescue r LEFT JOIN wa_contacts c ON c.phone = r.phone WHERE $where ORDER BY FIELD(r.status,'open','given','taken','won','ordered','expired'), r.last_in_at DESC LIMIT 400");
+    $q = $pdo->prepare("SELECT r.*, c.name AS cname FROM wq_rescue r LEFT JOIN wa_contacts c ON c.phone COLLATE utf8mb4_general_ci = r.phone COLLATE utf8mb4_general_ci WHERE $where ORDER BY FIELD(r.status,'open','given','taken','won','ordered','expired'), r.last_in_at DESC LIMIT 400");
     $q->execute($par); $items = array_map(fn($r) => wq_rescue_item($r, $names), $q->fetchAll());
     $st = $pdo->prepare("SELECT status, COUNT(*) n, COALESCE(SUM(order_total),0) rev, COALESCE(SUM(bonus_amt),0) bonus FROM wq_rescue WHERE flagged_at >= ? AND status <> 'skipped' GROUP BY status"); $st->execute([$since]);
     $sum = ['open' => 0, 'taken' => 0, 'won' => 0, 'ordered' => 0, 'expired' => 0, 'revenue' => 0.0, 'bonus' => 0.0];
@@ -186,7 +186,7 @@ function wq_rescue_bonus_report(PDO $pdo, string $from, string $to, int $only = 
     $names = function_exists('wq_names') ? wq_names($pdo) : []; $w = "r.status = 'won' AND r.won_at >= ? AND r.won_at <= ?"; $p = [$from . ' 00:00:00', $to . ' 23:59:59']; if ($only > 0) { $w .= " AND r.taken_by = ?"; $p[] = $only; }
     $q = $pdo->prepare("SELECT r.taken_by, COUNT(*) orders, COALESCE(SUM(r.order_total),0) revenue, COALESCE(SUM(r.bonus_amt),0) bonus FROM wq_rescue r WHERE $w GROUP BY r.taken_by ORDER BY bonus DESC"); $q->execute($p); $rows = [];
     foreach ($q->fetchAll() as $r) $rows[] = ['emp_id' => (int)$r['taken_by'], 'name' => (string)($names[(int)$r['taken_by']] ?? ('#' . $r['taken_by'])), 'orders' => (int)$r['orders'], 'revenue' => round((float)$r['revenue'], 2), 'bonus' => round((float)$r['bonus'], 2)];
-    $l = $pdo->prepare("SELECT r.phone, r.taken_by, r.order_name, r.order_total, r.bonus_pct, r.bonus_amt, r.won_at, c.name cname FROM wq_rescue r LEFT JOIN wa_contacts c ON c.phone = r.phone WHERE $w ORDER BY r.won_at DESC LIMIT 300"); $l->execute($p);
+    $l = $pdo->prepare("SELECT r.phone, r.taken_by, r.order_name, r.order_total, r.bonus_pct, r.bonus_amt, r.won_at, c.name cname FROM wq_rescue r LEFT JOIN wa_contacts c ON c.phone COLLATE utf8mb4_general_ci = r.phone COLLATE utf8mb4_general_ci WHERE $w ORDER BY r.won_at DESC LIMIT 300"); $l->execute($p);
     $orders = array_map(fn($r) => ['phone' => (string)$r['phone'], 'customer' => (string)$r['cname'], 'emp_id' => (int)$r['taken_by'], 'name' => (string)($names[(int)$r['taken_by']] ?? ''), 'order_name' => (string)$r['order_name'], 'total' => round((float)$r['order_total'], 2), 'pct' => (float)$r['bonus_pct'], 'bonus' => round((float)$r['bonus_amt'], 2), 'won_at' => (string)$r['won_at']], $l->fetchAll());
     return ['ok' => true, 'from' => $from, 'to' => $to, 'people' => $rows, 'orders' => $orders, 'total_bonus' => round(array_sum(array_column($rows, 'bonus')), 2)];
 }
@@ -222,7 +222,7 @@ if (strpos($__wqr, 'wq.rescue_') === 0 && in_array($__wqr, ['wq.rescue_list', 'w
     $needAdmin = function () use ($adm) { if (!$adm) json_response(['error' => 'Only Admin, HR or the control tower can do this.'], 403); };
     $phoneIn = function () use ($in) { $k = preg_replace('/\D+/', '', (string)($in['phone'] ?? '')); return strlen($k) >= 10 ? substr($k, -10) : ''; };
     $dateIn = function ($v, string $d): string { $v = (string)$v; return preg_match('/^\d{4}-\d{2}-\d{2}$/', $v) ? $v : $d; };
-    switch ($__wqr) {
+    try { switch ($__wqr) {
         case 'wq.rescue_list': {
             $needGet(); if (!$adm && !wq_rescue_is_member($pdo, $me)) json_response(['ok' => true, 'cfg' => $cfgR, 'admin' => false, 'member' => false, 'summary' => ['open' => 0, 'taken' => 0, 'won' => 0, 'ordered' => 0, 'expired' => 0, 'revenue' => 0, 'bonus' => 0], 'items' => []]);
             if ($adm && strtotime(function_exists('wq_meta_get') ? wq_meta_get($pdo, 'rescue_scan_at', '2000-01-01') : '2000-01-01') < time() - 600) { wq_rescue_scan($pdo, microtime(true) + 5); wq_rescue_settle($pdo); if (function_exists('wq_meta_put')) wq_meta_put($pdo, 'rescue_scan_at', date('Y-m-d H:i:s')); }
@@ -267,5 +267,5 @@ if (strpos($__wqr, 'wq.rescue_') === 0 && in_array($__wqr, ['wq.rescue_list', 'w
         case 'wq.rescue_scan': {
             $needPost(); $needAdmin(); $r = ['scan' => wq_rescue_scan($pdo, microtime(true) + 8), 'settle' => wq_rescue_settle($pdo)]; if (function_exists('wq_meta_put')) wq_meta_put($pdo, 'rescue_scan_at', date('Y-m-d H:i:s')); json_response(['ok' => true] + $r);
         }
-    }
+    } } catch (Throwable $e) { error_log('wq_rescue: ' . $e->getMessage()); json_response(['error' => 'Rescue queries: ' . mb_substr($e->getMessage(), 0, 240)], 500); }
 }
