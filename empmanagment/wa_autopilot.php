@@ -206,8 +206,8 @@ function fa_path_save(PDO $pdo, string $sid, array $steps, ?bool $on = null): ar
 {
     $P = fu_plans_get($pdo); $i = fu_sit_find($P, $sid); if ($i === null) return [false, 'Path not found.'];
     $O = fa_offers($pdo); $clean = [];
-    foreach (array_slice($steps, 0, 10) as $x) {
-        $h = (float)($x['after_h'] ?? 0); if ($h <= 0 || $h > 24 * 30) return [false, 'Every day needs a time between a few minutes and 30 days.'];
+    foreach (array_slice($steps, 0, 24) as $x) {
+        $h = (float)($x['after_h'] ?? 0); if ($h <= 0 || $h > 24 * 60) return [false, 'Every step needs a time between a few minutes and 60 days.'];
         $kind = ($x['kind'] ?? '') === 'offer' ? 'offer' : 'nudge'; $ok = (string)($x['offer'] ?? ''); if ($kind === 'offer' && !isset($O[$ok])) return [false, 'Choose which offer goes on that day.'];
         $clean[] = ['after_h' => $h, 'kind' => $kind, 'offer' => $kind === 'offer' ? $ok : '', 'text' => mb_substr(trim((string)($x['text'] ?? '')), 0, 700), 'remark' => mb_substr(trim((string)($x['remark'] ?? '')), 0, 200), 'ch' => $h >= 23.5 ? 'tpl' : 'free'];
     }

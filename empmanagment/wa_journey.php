@@ -336,6 +336,7 @@ function wj_collect(PDO $pdo, array $plan, array $cfg, int $now, int $limit = 40
 {
     $out = []; $autoSince = (int)setting_get($pdo, 'wj_auto_since', '0'); $reg = wj_reg($pdo); if (function_exists('wa_cust_ready')) { try { wa_cust_ready($pdo); } catch (Throwable $e) { } }
     foreach (['lead', 'buyer'] as $tk) {
+        if ($tk === 'lead' && jn_unified($pdo)) continue;   // one engine: the follow-up engine runs the didn't-order flow
         $steps = array_values(array_filter($plan['tracks'][$tk]['steps'], function ($s) use ($reg) { return !empty($s['on']) && isset($reg[$s['ref']]); })); if (!$steps) continue;
         $aex = wj_anchor_ready($pdo) ? 'IF(c.wj_anchor_in = c.last_in_at AND c.wj_anchor IS NOT NULL, c.wj_anchor, c.last_in_at)' : 'c.last_in_at';   // our reply to their last message
         $col = $tk === 'lead' ? $aex : 'u.last_order'; $conds = []; $args = [];
@@ -443,6 +444,66 @@ function wj_run(PDO $pdo): array
 }
 
 // ---------------------------------------------------------------------------------------------------------------------- the general brain
+// ---------------------------------------------------------------------------------------------------------------------- ONE ENGINE (before an order)
+/** From now ONE engine (the follow-up engine, wa_follow.php) runs every customer who did not order, from the first minutes to day 60: one plan per situation, the situation is read again at every new
+ *  customer message, one clock (our last message), one state, one set of rules. The 60-day Journey's "didn't order" days were moved INTO those plans once (jn_unify) and its own sender is switched off for them.
+ *  The Journey's "ordered" track (counted from the order) keeps its own sender — that is the after-order flow. The old plan is kept in settings jn_backup_* . */
+function jn_unified(PDO $pdo, ?bool $set = null): bool { static $u = null; if ($set !== null) $u = $set; if ($u === null) $u = (string)setting_get($pdo, 'jn_unified', '') !== ''; return $u; }
+/** PURE: put the Journey's lead steps into the situations' plans. A step for a topic goes to that topic's situation (price → price felt high, thinking → ask family, buying → agreed / address) or to a lane of its own;
+ *  a step for everyone goes into every situation. Returns the new list of situations (not yet cleaned). */
+function jn_merge_plan(array $sits, array $leadSteps, callable $label): array
+{
+    $map = ['price' => 'price', 'thinking' => 'ask', 'buying' => 'pay']; $byKey = [];
+    foreach ($sits as $i => $s) if (($s['kind'] ?? '') !== 'stop') $byKey[(string)$s['key']] = $i;
+    $early = []; if (isset($byKey['quiet'])) foreach ((array)$sits[$byKey['quiet']]['steps'] as $x) if ((float)$x['after_h'] < 240) $early[] = $x;
+    $mk = function (array $s) { return ['after_h' => (float)$s['day'] * 24, 'text' => '', 'remark' => (string)($s['idea'] ?? ''), 'ch' => 'tpl', 'kind' => 'offer', 'offer' => (string)$s['ref']]; };
+    $add = function (array &$sit, array $st) { foreach ((array)$sit['steps'] as $x) if (abs((float)$x['after_h'] - (float)$st['after_h']) < 12 && (string)($x['offer'] ?? '') === (string)$st['offer']) return; $sit['steps'][] = $st; };
+    $on = array_values(array_filter($leadSteps, function ($s) { return !empty($s['on']) && (int)($s['day'] ?? 0) >= 1 && (string)($s['ref'] ?? '') !== ''; }));
+    foreach ($on as $s) {
+        $t = (string)($s['topic'] ?? ''); if ($t === '') continue;
+        if (isset($map[$t]) && isset($byKey[$map[$t]])) $idx = $byKey[$map[$t]];
+        else {
+            $cid = 't_' . substr(preg_replace('/[^a-z0-9]/', '', strtolower($t)), 0, 14); $idx = null; foreach ($sits as $i => $x) if ($x['id'] === $cid) $idx = $i;
+            if ($idx === null) { $lb = trim((string)$label($t)); $sits[] = ['id' => $cid, 'key' => $t, 'title' => $lb !== '' ? $lb : $t, 'desc' => 'Customers whose chats are about: ' . ($lb !== '' ? $lb : $t), 'kind' => 'nudge', 'stage' => 'saved', 'on' => true, 'priority' => 4, 'remark_all' => '', 'steps' => $early]; $idx = count($sits) - 1; }
+        }
+        $add($sits[$idx], $mk($s));
+    }
+    foreach ($on as $s) { if ((string)($s['topic'] ?? '') !== '') continue; foreach ($sits as $i => $x) if (($x['kind'] ?? '') !== 'stop') $add($sits[$i], $mk($s)); }
+    return $sits;
+}
+/** Once: move the Journey's "didn't order" days into the plans and switch the Journey's lead sender off. Safe to call again (does nothing). */
+function jn_unify(PDO $pdo): bool
+{
+    if (jn_unified($pdo)) return true;
+    if (!function_exists('fu_plans_get') || !function_exists('fa_install') || !function_exists('wa_lock') || !wa_lock($pdo, 'jnunify', 120)) return false;
+    try {
+        if ((string)setting_get($pdo, 'fa_installed', '') === '') fa_install($pdo, false);
+        $P = fu_plans_get($pdo); if (!array_filter($P['situations'], function ($s) { return ($s['kind'] ?? '') !== 'stop'; })) return false;
+        setting_set($pdo, 'jn_backup_plan', json_encode($P, JSON_UNESCAPED_UNICODE)); $plan = wj_plan_get($pdo); setting_set($pdo, 'jn_backup_wj', json_encode($plan, JSON_UNESCAPED_UNICODE));
+        $sits = jn_merge_plan($P['situations'], (array)$plan['tracks']['lead']['steps'], function ($t) { return function_exists('wq_want_label') ? wq_want_label($t) : ucfirst(str_replace('_', ' ', $t)); });
+        $clean = []; foreach ($sits as $s) $clean[] = fu_sit_clean($s); fu_plans_put($pdo, ['situations' => $clean]);
+        setting_set($pdo, 'jn_unified', date('Y-m-d H:i:s')); jn_unified($pdo, true); return true;
+    } catch (Throwable $e) { error_log('jn_unify: ' . $e->getMessage()); return false; }
+}
+/** The situations a Journey "topic" belongs to: [] = every situation. */
+function jn_sits_for_topic(array $sits, string $t): array
+{
+    if ($t === '') { $o = []; foreach ($sits as $i => $s) if (($s['kind'] ?? '') !== 'stop') $o[] = $i; return $o; }
+    $map = ['price' => 'price', 'thinking' => 'ask', 'buying' => 'pay']; $key = $map[$t] ?? null;
+    foreach ($sits as $i => $s) if (($key !== null && $s['key'] === $key) || $s['id'] === 't_' . substr(preg_replace('/[^a-z0-9]/', '', strtolower($t)), 0, 14)) return [$i];
+    return [];
+}
+/** Claude's "add / change a day of the didn't-order track" now changes the situation plans. Returns how many plans were touched. */
+function jn_lead_op(PDO $pdo, array $o): int
+{
+    if (($o['op'] ?? '') !== 'step_set') return 0; $P = fu_plans_get($pdo); $sits = $P['situations']; $n = 0; $h = (float)$o['day'] * 24;
+    foreach (jn_sits_for_topic($sits, (string)($o['topic'] ?? '')) as $i) {
+        $hit = false; foreach ($sits[$i]['steps'] as $k => $x) if (abs((float)$x['after_h'] - $h) < 12 && ($x['kind'] ?? '') === 'offer') { $sits[$i]['steps'][$k]['offer'] = (string)$o['ref']; $sits[$i]['steps'][$k]['remark'] = (string)$o['idea']; $hit = true; }
+        if (!$hit) $sits[$i]['steps'][] = ['after_h' => $h, 'text' => '', 'remark' => (string)$o['idea'], 'ch' => 'tpl', 'kind' => 'offer', 'offer' => (string)$o['ref']]; $n++;
+    }
+    if ($n) { $c = []; foreach ($sits as $s) $c[] = fu_sit_clean($s); fu_plans_put($pdo, ['situations' => $c]); }
+    return $n;
+}
 function wj_autopilot_lines(PDO $pdo): string
 {
     $s = ''; try { if (function_exists('fu_plans_get')) foreach (fu_plans_get($pdo)['situations'] as $p) { if (($p['kind'] ?? '') === 'stop') continue; $d = []; foreach ((array)$p['steps'] as $x) $d[] = 'day ' . round($x['after_h'] / 24, 1) . ($x['kind'] === 'offer' ? ' offer ' . $x['offer'] : ' message'); $s .= '  ' . $p['title'] . ': ' . implode(', ', $d) . "\n"; } } catch (Throwable $e) { }
@@ -450,7 +511,7 @@ function wj_autopilot_lines(PDO $pdo): string
 }
 function wj_plan_text(PDO $pdo, array $plan, array $reg): string
 {
-    $s = ''; foreach ($plan['tracks'] as $tk => $T) { $s .= strtoupper($tk) . ' TRACK (' . ($tk === 'lead' ? 'day counted from the customer\'s last message; days 1–10 are the Follow-up Autopilot' : 'day counted from the last order') . "):\n"; foreach ($T['steps'] as $x) $s .= '  [' . $x['id'] . '] day ' . $x['day'] . ' · ' . $x['ref'] . ' (' . ($reg[$x['ref']][0] ?? '?') . ')' . ($x['topic'] !== '' ? ' · only topic ' . $x['topic'] : '') . ($x['on'] ? '' : ' · OFF') . ($x['idea'] !== '' ? ' · idea: ' . $x['idea'] : '') . "\n"; }
+    $s = ''; foreach ($plan['tracks'] as $tk => $T) { if ($tk === 'lead' && jn_unified($pdo)) { $s .= "LEAD TRACK (before an order) is now ONE plan per situation, listed below (FOLLOW-UP AUTOPILOT = all steps from minutes to day 60). To add or change a day use step_set with track 'lead', day, ref and topic = the situation (price / thinking / buying / a topic key; '' = every situation). The ids of old lead steps no longer exist.\n"; continue; } $s .= strtoupper($tk) . ' TRACK (' . ($tk === 'lead' ? 'day counted from the customer\'s last message; days 1–10 are the Follow-up Autopilot' : 'day counted from the last order') . "):\n"; foreach ($T['steps'] as $x) $s .= '  [' . $x['id'] . '] day ' . $x['day'] . ' · ' . $x['ref'] . ' (' . ($reg[$x['ref']][0] ?? '?') . ')' . ($x['topic'] !== '' ? ' · only topic ' . $x['topic'] : '') . ($x['on'] ? '' : ' · OFF') . ($x['idea'] !== '' ? ' · idea: ' . $x['idea'] : '') . "\n"; }
     return $s;
 }
 function wj_context(PDO $pdo): string
@@ -515,6 +576,7 @@ function wj_ops_apply(PDO $pdo, array $ops, string $why): array
         elseif ($isNew && (string)setting_get($pdo, 'fa_tplbody_' . $k, '') === '') setting_set($pdo, 'fa_tplbody_' . $k, "Hi {{1}} 🙏 Something for you about {{2}}: {{3}} Reply here and we will help you.");
     }
     foreach ($ops as $o) {
+        if (jn_unified($pdo) && ($o['track'] ?? '') === 'lead' && in_array($o['op'], ['step_set', 'step_del'], true)) { $n += jn_lead_op($pdo, $o); continue; }   // one engine: a day of the didn't-order flow lives in the situation plans
         if ($o['op'] === 'step_set') { $steps = $plan['tracks'][$o['track']]['steps']; $hit = false; foreach ($steps as $i => $s) if ($o['id'] !== '' && $s['id'] === $o['id']) { $steps[$i] = array_merge($s, ['day' => $o['day'], 'ref' => $o['ref'], 'idea' => $o['idea'], 'topic' => $o['topic'], 'on' => $o['on']]); $hit = true; }
             if (!$hit) $steps[] = ['id' => '', 'day' => $o['day'], 'ref' => $o['ref'], 'idea' => $o['idea'], 'topic' => $o['topic'], 'on' => $o['on']]; $plan['tracks'][$o['track']]['steps'] = $steps; $n++; }
         elseif ($o['op'] === 'step_del') { $plan['tracks'][$o['track']]['steps'] = array_values(array_filter($plan['tracks'][$o['track']]['steps'], function ($s) use ($o) { return $s['id'] !== $o['id']; })); $n++; }
@@ -635,12 +697,13 @@ function wj_bot_note(PDO $pdo): string
 // ---------------------------------------------------------------------------------------------------------------------- the screen's data
 function wj_view(PDO $pdo): array
 {
+    try { jn_unify($pdo); } catch (Throwable $e) { }
     $reg = wj_reg($pdo); $plan = wj_plan_get($pdo); $steps = ['lead' => [], 'buyer' => []];
     foreach ($plan['tracks'] as $tk => $T) foreach ($T['steps'] as $s) $steps[$tk][] = $s + ['label' => $reg[$s['ref']][0] ?? $s['ref'], 'icon' => wj_icon($s['ref']), 'tpl' => wj_tpl_state($pdo, $s['ref']), 'missing' => !isset($reg[$s['ref']])];
     $messages = []; foreach ($reg as $k => $x) $messages[] = ['k' => $k, 'label' => $x[0], 'rule' => $x[1], 'body' => function_exists('fa_tpl_body') ? fa_tpl_body($pdo, $k) : '', 'status' => wj_tpl_state($pdo, $k), 'icon' => wj_icon($k), 'photo' => (int)setting_get($pdo, 'fa_tplphoto_' . $k, '0'), 'uses' => count(array_filter(array_merge($plan['tracks']['lead']['steps'], $plan['tracks']['buyer']['steps']), function ($s) use ($k) { return $s['ref'] === $k; }))];
     $auto = []; try { if (function_exists('fu_plans_get')) foreach (fu_plans_get($pdo)['situations'] as $p) { if (($p['kind'] ?? '') === 'stop') continue; foreach ((array)$p['steps'] as $x) { $d = max(1, (int)ceil($x['after_h'] / 24)); if ($d > 10) continue; $auto[$d] = $auto[$d] ?? ['day' => $d, 'msg' => 0, 'offer' => 0]; $auto[$d][$x['kind'] === 'offer' ? 'offer' : 'msg']++; } } } catch (Throwable $e) { }
     ksort($auto); $hist = []; foreach (array_reverse(wj_json($pdo, 'wj_hist', [])) as $h) $hist[] = ['at' => $h['at'], 'why' => $h['why']];
-    return ['ok' => true, 'daily' => wj_json($pdo, 'wj_daily', []), 'change' => wj_json($pdo, 'wj_change', []), 'can_undo_change' => !empty(wj_json($pdo, 'wj_change_undo', [])['items']), 'mode' => wj_mode($pdo), 'cfg' => wj_cfg($pdo), 'ai' => function_exists('convo_ai'), 'ready' => function_exists('fa_offers'), 'steps' => $steps, 'messages' => $messages, 'auto10' => array_values($auto), 'season' => function_exists('fa_season') ? fa_season($pdo) : [], 'season_now' => function_exists('fa_season_text') ? fa_season_text($pdo) : '',
+    return ['ok' => true, 'unified' => jn_unified($pdo), 'daily' => wj_json($pdo, 'wj_daily', []), 'change' => wj_json($pdo, 'wj_change', []), 'can_undo_change' => !empty(wj_json($pdo, 'wj_change_undo', [])['items']), 'mode' => wj_mode($pdo), 'cfg' => wj_cfg($pdo), 'ai' => function_exists('convo_ai'), 'ready' => function_exists('fa_offers'), 'steps' => $steps, 'messages' => $messages, 'auto10' => array_values($auto), 'season' => function_exists('fa_season') ? fa_season($pdo) : [], 'season_now' => function_exists('fa_season_text') ? fa_season_text($pdo) : '',
         'proposal' => wj_json($pdo, 'wj_proposal', []), 'fest_sug' => wj_json($pdo, 'wj_fest_sug', []), 'festivals' => wj_fest_upcoming($pdo, 10), 'topics' => wj_topics_view($pdo), 'night' => wj_json($pdo, 'wj_night', []), 'stats' => wj_stats($pdo), 'hist' => array_slice($hist, 0, 6),
         'auto_since' => (int)setting_get($pdo, 'wj_auto_since', '0'), 'autopilot_mode' => function_exists('fu_mode') ? fu_mode($pdo) : 'off'];
 }
@@ -660,6 +723,7 @@ function wj_tick(PDO $pdo): array
     if (!function_exists('fa_offers') || !wj_tables($pdo)) return $o;
     try { wj_install($pdo); } catch (Throwable $e) { error_log('wj_install: ' . $e->getMessage()); }
     if ((int)setting_get($pdo, 'wj_tpl_at', '0') < time() - 600 && function_exists('fa_tpl_setup')) { setting_set($pdo, 'wj_tpl_at', (string)time()); try { $o['tpl'] = fa_tpl_setup($pdo); } catch (Throwable $e) { error_log('wj tpl: ' . $e->getMessage()); } }
+    try { jn_unify($pdo); } catch (Throwable $e) { }
     try { $o['anchor'] = wj_anchor_refresh($pdo); } catch (Throwable $e) { error_log('wj anchor: ' . $e->getMessage()); }
     if (wj_mode($pdo) === 'auto' && wa_lock($pdo, 'wjrun', 240)) { try { $o['run'] = wj_run($pdo); } catch (Throwable $e) { wa_log($pdo, 'followup', false, 'journey: ' . $e->getMessage()); } }
     /* a slow Claude call must never let a second copy start (wa_lock is only a time window) */
