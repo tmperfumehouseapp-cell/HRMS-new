@@ -3887,7 +3887,7 @@ function ot_auto_hours(PDO $pdo, string $date): array
     foreach ((array)$sale as $k => $list) {
         $kp = explode('|', (string)$k, 2); if (($kp[0] ?? '') !== $date) continue; $id = (int)($kp[1] ?? 0); if ($id <= 0) continue;
         foreach ((array)$list as $o) {
-            $h = (int)date('G', (int)($o['ts'] ?? 0)); $t = (string)($o['type'] ?? ''); if (!isset($out[$id][$h])) $out[$id][$h] = ['o' => 0, 'q' => 0, 'c' => 0];
+            $h = (int)date('G', (int)($o['ts'] ?? 0)); $t = (string)($o['type'] ?? ''); if (!isset($out[$id][$h])) $out[$id][$h] = ['o' => 0, 'q' => 0, 'c' => 0, 't' => 0]; $out[$id][$h]['t'] = max($out[$id][$h]['t'], (int)($o['ts'] ?? 0));
             $out[$id][$h]['o']++; if ($t === 'query') $out[$id][$h]['q']++; elseif ($t === 'campaign' || $t === 'community') $out[$id][$h]['c']++;
         }
     }
@@ -28725,7 +28725,7 @@ switch ($action) {
         // Orders per hour are NOT typed any more: they come from the allocated orders (the numbers Sales → Live counts).
         $hours = []; $qh = []; $ch = []; $last = []; $extra = [];
         foreach (ot_auto_hours($pdo, $date) as $aid => $byH) foreach ($byH as $ah => $ax) {
-            $hours[$aid][$ah] = $ax['o']; if ($ax['q'] > 0) $qh[$aid][$ah] = $ax['q']; if ($ax['c'] > 0) $ch[$aid][$ah] = $ax['c']; if ($ah < $s || $ah >= $e) $extra[$ah] = true; $last[$aid] = date('Y-m-d H:i:s');
+            $hours[$aid][$ah] = $ax['o']; if ($ax['q'] > 0) $qh[$aid][$ah] = $ax['q']; if ($ax['c'] > 0) $ch[$aid][$ah] = $ax['c']; if ($ah < $s || $ah >= $e) $extra[$ah] = true; if ($ax['t'] > 0 && (!isset($last[$aid]) || date('Y-m-d H:i:s', $ax['t']) > $last[$aid])) $last[$aid] = date('Y-m-d H:i:s', $ax['t']);
         }
         $rows = [];
         foreach (ot_people($pdo, $ids) as $p) {
@@ -28795,7 +28795,7 @@ switch ($action) {
             if ((string)$r['updated_at'] > $last) $last = (string)$r['updated_at'];
         }
         // The tracked window, plus any other hour of the day that has numbers (orders can be entered for any hour).
-        $by = []; $last = ''; foreach ((ot_auto_hours($pdo, $today)[$emp] ?? []) as $ah => $ax) { $by[$ah] = ['orders' => $ax['o'], 'q' => $ax['q'], 'c' => $ax['c']]; $last = date('Y-m-d H:i:s'); }   // from the allocated orders, not typed
+        $by = []; $last = ''; foreach ((ot_auto_hours($pdo, $today)[$emp] ?? []) as $ah => $ax) { $by[$ah] = ['orders' => $ax['o'], 'q' => $ax['q'], 'c' => $ax['c']]; if ($ax['t'] > 0 && date('Y-m-d H:i:s', $ax['t']) > $last) $last = date('Y-m-d H:i:s', $ax['t']); }   // from the allocated orders, not typed
         $list = range($s, $e - 1);
         foreach (ot_all_hours($s) as $h) if (isset($by[$h]) && !in_array($h, $list, true)) $list[] = $h;
         $hours = []; $ach = 0; $qq = 0; $cc = 0; $nowHour = null;

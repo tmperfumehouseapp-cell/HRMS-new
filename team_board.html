@@ -53,7 +53,7 @@ table.tb{border-collapse:collapse;width:100%;font-size:13px;white-space:nowrap}
   <div id="sidebar"></div>
   <main class="main">
     <div class="topbar"><div><h1>👥 Team</h1><div style="font-size:12.5px;color:var(--muted);margin-top:3px;max-width:75ch">Everyone in one table. Tap a person for their whole picture: today, queries, speed, tone, complaints, attendance, rating and Claude's note. Same numbers and day timing as Sales → Live. <b>Orders</b> = all allocated orders; <b>Query orders</b> = orders that came from queries. Pick a period (today, week, month, your own dates): queries, ratio, ticket, speed, rating and attendance follow it; today's target and punch-in always show today. Set a person's target right here.</div></div></div>
-    <div class="content"><div id="tbRoot"><div class="sk" style="height:46px"></div><div class="sk" style="height:46px"></div><div class="sk" style="height:46px"></div><div class="sk" style="height:46px"></div><div class="sk" style="height:46px"></div></div><div id="tbTools"></div></div>
+    <div class="content"><div id="tbRoot"><div class="sk" style="height:46px"></div><div class="sk" style="height:46px"></div><div class="sk" style="height:46px"></div><div class="sk" style="height:46px"></div><div class="sk" style="height:46px"></div></div><div id="tbTools"></div><div style="margin:14px 0 30px"><button class="btn" id="tbCheck">🩺 Self-check this page</button><div id="tbCheckOut" style="margin-top:8px;font-size:13px"></div></div></div>
   </main>
 </div>
 <div class="dr-bg" id="drBg"></div><aside class="dr" id="dr" aria-hidden="true"></aside>
@@ -192,6 +192,11 @@ guardPage();
     const out = [cols.map((c) => q(c[0])).join(',')].concat(rows.map((r) => cols.map((c) => q(typeof c[1] === 'function' ? c[1](r) : r[c[1]])).join(','))).join('\r\n');
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['\ufeff' + out], { type: 'text/csv;charset=utf-8' })); a.download = 'team-' + ((D.period && D.period.from) || '') + '_' + ((D.period && D.period.to) || '') + '.csv'; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
   }
+  document.addEventListener('click', async (e) => {
+    const cb = e.target.closest('#tbCheck'); if (!cb) return; const out = document.getElementById('tbCheckOut'); cb.disabled = true; cb.textContent = 'Checking… (can take a minute)';
+    try { const d = await api.get('team.check'); out.innerHTML = '<div style="margin:6px 0"><b>' + (d.all_ok ? '✔ All steps work' : '✖ Something fails') + '</b> · business day ' + esc(d.today) + ' starts at ' + esc(d.day_start || '?') + ' · table kept ready at ' + esc(d.tick_last || 'never') + '</div><table class="tb" style="width:auto"><thead><tr><th>Step</th><th>Result</th><th class="num">ms</th></tr></thead><tbody>' + (d.steps || []).map((x) => '<tr><td>' + esc(x.step) + '</td><td>' + (x.ok ? '✔ ' : '<span class="bad">✖ </span>') + esc(x.note) + '</td><td class="num">' + esc(x.ms) + '</td></tr>').join('') + '</tbody></table>'; }
+    catch (er) { out.innerHTML = '<span class="bad">' + esc(er.message) + '</span>'; } cb.disabled = false; cb.textContent = '🩺 Self-check this page';
+  });
   root.addEventListener('click', (e) => { if (e.target.closest('#tbFresh')) load(true); if (e.target.closest('#tbCsv')) csvDownload(); });
   root.addEventListener('click', async (e) => { const rb = e.target.closest('#tbRun'); if (!rb || busy) return; busy = true; rb.disabled = true; rb.textContent = 'Claude is reading the team…'; try { await api.post('wq.mgr_run', {}); await load(); } catch (er) { alert(er.message); } busy = false; });
   root.addEventListener('click', (e) => {
