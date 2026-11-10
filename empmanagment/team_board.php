@@ -211,6 +211,12 @@ if ($__tbA === 'team.check') {   // 🩺 self-check (admin): runs every builder 
     $run('Daily rating (rating_days, 7 days)', function () use ($pdo, $today) { return rating_days($pdo, date('Y-m-d', strtotime($today . ' -6 day')), $today); });
     $run('Reply pace (wq_pace_get, 7 days)', function () use ($pdo) { return (array)(wq_pace_get($pdo, 7)['people'] ?? []); });
     $run('Orders per hour from allocated orders (today)', function () use ($pdo, $today) { return ot_auto_hours($pdo, $today); });
+    $run('Team vs Live today (orders, query orders, queries, target)', function () use ($pdo, $today) {
+        $live = cp_day_rows($pdo, $today); $bad = []; foreach (tb_light($pdo, tb_range($pdo, 'today', '', '')) as $x) { $l = $live[(int)$x['emp_id']] ?? null; if (!$l || !empty($l['off'])) continue;
+            if ((int)$x['all_orders'] !== (int)$l['n'] || (int)$x['orders_30d'] !== (int)$l['qo'] || (int)$x['queries_30d'] !== (int)$l['q']) $bad[] = $x['name']; }
+        if ($bad) throw new RuntimeException('Different from Live for: ' . implode(', ', array_slice($bad, 0, 6)));
+        return 'same as Live for everybody';
+    });
     $run('Team table, today (light)', function () use ($pdo) { return tb_light($pdo, tb_range($pdo, 'today', '', '')); });
     $run('Team table, this month (light)', function () use ($pdo) { return tb_light($pdo, tb_range($pdo, 'month', '', '')); });
     $run('Person details, today (full)', function () use ($pdo) { return tb_full($pdo, tb_range($pdo, 'today', '', ''))['rows']; });
