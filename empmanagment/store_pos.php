@@ -784,6 +784,12 @@ try {
             $srcKey = (string)($in['source'] ?? ''); if (!isset(ST_SOURCES[$srcKey])) $srcKey = '';      // where the customer came from (optional)
             $areaIn = mb_substr(trim(preg_replace('/\s+/u', ' ', (string)($in['area'] ?? ''))), 0, 80);      // which area the customer is from (optional)
             if ($areaIn !== '') $pdo->prepare("UPDATE st_bills SET area = ? WHERE bill_id = ?")->execute([$areaIn, $billId]);
+            // a SECOND salesperson who also helped with this customer (optional): only shown / tracked, the sale and commission stay with "Billed by"
+            $helperId = (int)($in['helper_emp_id'] ?? 0);
+            if ($helperId && $helperId !== $empId) {
+                $hn = $pdo->prepare("SELECT full_name FROM employees WHERE employee_id = ? AND status != 'ex'"); $hn->execute([$helperId]); $helperName = (string)$hn->fetchColumn();
+                if ($helperName !== '') $pdo->prepare("UPDATE st_bills SET helper_emp_id = ?, helper_emp_name = ? WHERE bill_id = ?")->execute([$helperId, mb_substr($helperName, 0, 120), $billId]);
+            }
             if ($srcKey !== '') $pdo->prepare("UPDATE st_bills SET source = ?, source_note = ? WHERE bill_id = ?")->execute([$srcKey, mb_substr(trim((string)($in['source_note'] ?? '')), 0, 120), $billId]);
             $item = $pdo->prepare("INSERT INTO st_bill_items (bill_id, bottle_id, ml, kind) VALUES (?, ?, ?, ?)");
             $sold = $pdo->prepare("UPDATE st_bottles SET status = 'sold', sold_at = ?, bill_id = ? WHERE bottle_id = ? AND status = 'stock'");
@@ -968,7 +974,7 @@ try {
         case 'st_bill.list': {
             require_auth();
             $d = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($_GET['date'] ?? '')) ? $_GET['date'] : st_day();
-            $st = $pdo->prepare("SELECT bill_id, bill_no, created_at, emp_name, customer_name, total_ml, bottles, testers, total, order_code, pay_mode, cash_amt, online_amt, status, chain_name, chain_amt, inv_no, inv_token, inv_err FROM st_bills WHERE biz_date = ? ORDER BY bill_id DESC");
+            $st = $pdo->prepare("SELECT bill_id, bill_no, created_at, emp_name, helper_emp_name, customer_name, total_ml, bottles, testers, total, order_code, pay_mode, cash_amt, online_amt, status, chain_name, chain_amt, inv_no, inv_token, inv_err FROM st_bills WHERE biz_date = ? ORDER BY bill_id DESC");
             $st->execute([$d]);
             $rows = $st->fetchAll();
             $sum = 0.0; $ml = 0;
