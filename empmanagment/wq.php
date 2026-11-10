@@ -1372,12 +1372,18 @@ function wq_needs(PDO $pdo, int $me, bool $waves = true): array
             if ($items && wq_need_tables($pdo)) { $ins = $pdo->prepare("INSERT IGNORE INTO wq_need_log (phone, level, seen_at, in_at) VALUES (?, ?, ?, ?)"); foreach ($items as $x) { try { $ins->execute([$x['phone'], $x['level'], wq_dt($now), wq_dt($x['in'])]); } catch (Throwable $e) { } } }   // for the "Bot handoffs" board
             if (wq_need_tables($pdo) && mt_rand(1, 300) === 1) { try { $pdo->exec("DELETE FROM wq_need_log WHERE seen_at < DATE_SUB(NOW(), INTERVAL 30 DAY)"); } catch (Throwable $e) { } }
         } catch (Throwable $e) { }
-        // ⏳ who still has answers pending: chats of theirs whose customer has waited 4+ minutes with no person's answer, and open complaints of theirs in the same state — they do not get NEW red / orange chats until these are answered
-        $bk = []; $bkMin = wq_get($pdo, 'wq_backlog_min', null); $bkMin = ($bkMin !== null && (int)$bkMin > 0) ? max(1, min(30, (int)$bkMin)) : 5;
-        $hum = "NOT EXISTS (SELECT 1 FROM wa_messages h WHERE h.phone = c.phone AND " . wq_human_sql() . ")"; $bkc = [];
-        try { $q = $pdo->prepare("SELECT c.assigned_emp e, COUNT(*) n FROM wa_contacts c WHERE c.status = 'open' AND c.optout = 0 AND c.assigned_emp > 0 AND c.last_in_at >= ? AND c.last_in_at <= ? AND $hum GROUP BY c.assigned_emp"); $q->execute([wq_dt($now - 86400), wq_dt($now - $bkMin * 60)]); foreach ($q->fetchAll() as $r1) $bk[(int)$r1['e']] = (int)$r1['n']; } catch (Throwable $e) { }
-        try { $q = $pdo->prepare("SELECT cc.owner_emp e, COUNT(*) n FROM cx_cases cc JOIN wa_contacts c ON c.phone = cc.phone WHERE cc.status IN ('open', 'reopened') AND cc.owner_emp > 0 AND c.last_in_at >= ? AND c.last_in_at <= ? AND $hum GROUP BY cc.owner_emp"); $q->execute([wq_dt($now - 86400), wq_dt($now - $bkMin * 60)]); foreach ($q->fetchAll() as $r1) { $bk[(int)$r1['e']] = ($bk[(int)$r1['e']] ?? 0) + (int)$r1['n']; $bkc[(int)$r1['e']] = (int)$r1['n']; } } catch (Throwable $e) { }
-        $raw = ['at' => $now, 'items' => $items, 'backlog' => $bk, 'bk_cx' => $bkc]; setting_set($pdo, 'wq_needs', json_encode($raw, JSON_UNESCAPED_UNICODE));
+        // ⏳ who still has answers pending: their chats (and open complaints they raised / own / hold) where the customer has waited 5+ minutes with no PROPER answer by a person and the customer's last message is more than an "ok / thanks".
+        //    They do not get NEW red / orange chats until these are answered (an answer takes the chat off the list at once). The list itself is shown to that person only.
+        $bk = []; $bkc = []; $bki = []; $bkMin = wq_get($pdo, 'wq_backlog_min', null); $bkMin = ($bkMin !== null && (int)$bkMin > 0) ? max(1, min(30, (int)$bkMin)) : 5;
+        $hum = "NOT EXISTS (SELECT 1 FROM wa_messages h WHERE h.phone = c.phone AND " . wq_human_sql() . ")"; $pend = [];
+        try { $q = $pdo->prepare("SELECT c.phone, c.name, c.assigned_emp, c.last_in_at FROM wa_contacts c WHERE c.status = 'open' AND c.optout = 0 AND c.assigned_emp > 0 AND (c.cx_id IS NULL OR c.cx_id = 0) AND c.last_in_at >= ? AND c.last_in_at <= ? AND $hum ORDER BY c.last_in_at LIMIT 400"); $q->execute([wq_dt($now - 86400), wq_dt($now - $bkMin * 60)]);
+            foreach ($q->fetchAll() as $r1) $pend[(string)$r1['phone']] = ['name' => (string)$r1['name'], 'in' => wq_ts($r1['last_in_at']), 'emps' => [(int)$r1['assigned_emp']], 'cx' => 0]; } catch (Throwable $e) { }
+        try { $q = $pdo->prepare("SELECT cc.id cid, cc.phone, cc.owner_emp, cc.raised_by, c.assigned_emp, c.name, c.last_in_at FROM cx_cases cc JOIN wa_contacts c ON c.phone = cc.phone WHERE cc.status IN ('open', 'reopened') AND c.last_in_at >= ? AND c.last_in_at <= ? AND $hum ORDER BY c.last_in_at LIMIT 300"); $q->execute([wq_dt($now - 86400), wq_dt($now - $bkMin * 60)]);
+            foreach ($q->fetchAll() as $r1) { $es = []; foreach ([(int)$r1['owner_emp'], (int)$r1['raised_by'], (int)$r1['assigned_emp']] as $e1) if ($e1 > 0) $es[$e1] = $e1; if (!$es) continue; $pend[(string)$r1['phone']] = ['name' => (string)$r1['name'], 'in' => wq_ts($r1['last_in_at']), 'emps' => array_values($es), 'cx' => (int)$r1['cid']]; } } catch (Throwable $e) { }
+        if ($pend) { try { $pp = array_keys($pend); $q = $pdo->prepare("SELECT m.phone, m.body, m.mtype FROM wa_messages m JOIN (SELECT phone, MAX(id) mid FROM wa_messages WHERE dir = 'in' AND phone IN (" . wq_in($pp) . ") GROUP BY phone) x ON x.mid = m.id"); $q->execute($pp);
+                foreach ($q->fetchAll() as $t) { $ph1 = (string)$t['phone']; if (!isset($pend[$ph1])) continue; if (function_exists('wq_pace_trivial') && wq_pace_trivial((string)$t['mtype'], (string)$t['body'])) { unset($pend[$ph1]); continue; } $pend[$ph1]['txt'] = mb_substr(trim((string)$t['body']) !== '' ? trim((string)$t['body']) : '[' . (string)$t['mtype'] . ']', 0, 90); } } catch (Throwable $e) { }
+            foreach ($pend as $ph1 => $p1) foreach ($p1['emps'] as $e1) { $bk[$e1] = ($bk[$e1] ?? 0) + 1; if ($p1['cx']) $bkc[$e1] = ($bkc[$e1] ?? 0) + 1; if (count($bki[$e1] ?? []) < 30) $bki[$e1][] = ['phone' => (string)$ph1, 'name' => $p1['name'], 'kind' => $p1['cx'] ? 'cx' : 'chat', 'in' => $p1['in'], 'txt' => (string)($p1['txt'] ?? '')]; } }
+        $raw = ['at' => $now, 'items' => $items, 'backlog' => $bk, 'bk_cx' => $bkc, 'bk_items' => $bki];
     }
     $names = wq_names($pdo); $o = []; $rkT = ($waves && $me > 0) ? wq_rank_today($pdo) : ['rank' => []]; [$wsz, $wmin] = wq_wave_cfg($pdo);
     foreach ((array)$raw['items'] as $x) {
@@ -1391,6 +1397,13 @@ function wq_needs(PDO $pdo, int $me, bool $waves = true): array
     return $o;
 }
 /** How many pending answers (chats waiting 4+ minutes, open complaints) each person has — from the last rebuild of the Needs you now list. [emp_id => n] */
+/** The chats / complaints this person still has to answer (their own list only): [{phone, name, kind: chat|cx, sec, txt}], complaints first, then the longest wait. */
+function wq_needs_backlog_items(PDO $pdo, int $me): array
+{
+    $j = json_decode((string)setting_get($pdo, 'wq_needs', ''), true); $l = is_array($j) && is_array($j['bk_items'][$me] ?? null) ? $j['bk_items'][$me] : []; $now = wq_now(); $o = [];
+    foreach ($l as $x) $o[] = ['phone' => $x['phone'], 'name' => $x['name'], 'kind' => $x['kind'], 'sec' => max(0, $now - (int)$x['in']), 'txt' => $x['txt']];
+    usort($o, fn($a, $b) => ($a['kind'] === $b['kind'] ? 0 : ($a['kind'] === 'cx' ? -1 : 1)) ?: $b['sec'] <=> $a['sec']); return $o;
+}
 function wq_needs_backlog_cx(PDO $pdo): array { $j = json_decode((string)setting_get($pdo, 'wq_needs', ''), true); return is_array($j) && is_array($j['bk_cx'] ?? null) ? $j['bk_cx'] : []; }
 function wq_needs_backlog(PDO $pdo): array { $j = json_decode((string)setting_get($pdo, 'wq_needs', ''), true); return is_array($j) && is_array($j['backlog'] ?? null) ? $j['backlog'] : []; }
 /** 🔴 Chats that must be answered now and nobody answered in time: ONE push to every present salesperson at the same moment (again each time the chat comes back to the pool). Called from wa_tick. */
@@ -1519,7 +1532,7 @@ function wq_req_list(PDO $pdo, int $me = 0, int $limit = 200): array
     } catch (Throwable $e) { } }
     $lab = wq_req_last($pdo, array_merge(array_column($o, 'phone'), array_column($late, 'phone')));   // 💬 the customer's last message, readable from the list (photo / voice named)
     foreach ($o as &$x) $x['last_in'] = $lab[$x['phone']] ?? ''; unset($x); foreach ($late as &$x) $x['last_in'] = $lab[$x['phone']] ?? ''; unset($x);
-    return ['ok' => true, 'count' => count($o) + count($late), 'items' => $o, 'late' => $late, 'late_min' => wq_late_min($pdo), 'needs' => function_exists('wq_needs') ? wq_needs($pdo, $me) : [], 'needs_hold' => ($me > 0 && function_exists('wq_needs_backlog')) ? (int)(wq_needs_backlog($pdo)[$me] ?? 0) : 0, 'needs_hold_cx' => ($me > 0 && function_exists('wq_needs_backlog_cx')) ? (int)(wq_needs_backlog_cx($pdo)[$me] ?? 0) : 0, 'backlog_min' => (int)(wq_get($pdo, 'wq_backlog_min', null) ?: 5)];
+    return ['ok' => true, 'count' => count($o) + count($late), 'items' => $o, 'late' => $late, 'late_min' => wq_late_min($pdo), 'needs' => function_exists('wq_needs') ? wq_needs($pdo, $me) : [], 'needs_hold' => ($me > 0 && function_exists('wq_needs_backlog')) ? (int)(wq_needs_backlog($pdo)[$me] ?? 0) : 0, 'needs_hold_cx' => ($me > 0 && function_exists('wq_needs_backlog_cx')) ? (int)(wq_needs_backlog_cx($pdo)[$me] ?? 0) : 0, 'backlog_min' => (int)(wq_get($pdo, 'wq_backlog_min', null) ?: 5), 'needs_hold_items' => $me > 0 ? wq_needs_backlog_items($pdo, $me) : []];
 }
 /** The customer's last message per phone, for the Requests list: text (or the caption), else 📷 Photo / 🎤 Voice note / … */
 function wq_req_last(PDO $pdo, array $phs): array
