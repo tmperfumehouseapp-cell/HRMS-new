@@ -586,6 +586,7 @@ require_once __DIR__ . '/wq_learn.php';   // 🧠 lost chats saved for the guide
 require_once __DIR__ . '/wq_speed.php';   // ⚡ timing of the WhatsApp calls, server health, live switch (wq.speed, wa.g_wait)
 require_once __DIR__ . '/wq_tags.php';   // 🏷 One tag system: registry, automatic tags with why / until, patterns of staff-made tags, Claude's own new tags (wq.tags_*)
 require_once __DIR__ . '/wq_pace.php';   // ⚡ Reply pace of every salesperson: per-message pace, 7-day comparison, after-taking-a-query pace, fast reply vs order closing (wq.pace) - BEFORE wa_seg.php
+require_once __DIR__ . '/wq_manager.php';   // 🧭 Team manager (Autobot): Claude decides who sees new orange / red chats first, from every number together (wq.mgr_*)
 require_once __DIR__ . '/wch.php';        // Chain + perfume cart, GST bill, catalog sync (wch.*) - BEFORE wa_seg.php
 require_once __DIR__ . '/wmo.php';        // 🧾 Manual order from a chat: QR / UPI payment first, customer address link, the order lands in Orders + Dispatch (wmo.*) - BEFORE wa_seg.php
 require_once __DIR__ . '/wa_seg.php';      // customer journey, stage / value filters, Claude context pack, decisions (wa.seg_*, wa.dec_*) — MUST stay the LAST require: its router runs at include time
