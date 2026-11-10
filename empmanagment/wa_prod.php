@@ -1397,12 +1397,19 @@ function wa_prod_try(PDO $pdo, string $customer, string $reply = ''): array
     $o['why'] = $why ? 'The customer ' . implode(' and ', $why) . '.' : 'Nothing in this message asks for a photo.'; return $o;
 }
 /** Server bot only: after its text went out, the same pictures follow. Called from wag_bot_scan (one guarded line). Returns the number of photos sent. */
-function wa_prod_bot_after(PDO $pdo, array $c): int
+function wa_prod_bot_after(PDO $pdo, array $c, string $botText = ''): int
 {
     try {
-        $c = wa_contact($pdo, (string)$c['phone']) ?: $c; $a = wa_prod_attached($pdo, $c); if (!$a['items']) return 0;
-        $why = []; foreach ($a['products'] as $p) $why[$p['id']] = (string)$p['why'];
-        $r = wa_prod_send_items($pdo, $c, array_column($a['items'], 'id'), 'why', 'bot', 0, ['why' => $why]); return count($r['sent'] ?? []);
+        $c = wa_contact($pdo, (string)$c['phone']) ?: $c; $a = wa_prod_attached($pdo, $c); $ids = []; $why = [];
+        foreach ($a['items'] as $it) $ids[] = $it['id']; foreach ($a['products'] as $p) $why[$p['id']] = (string)$p['why'];
+        // 📸 FIXED RULE (owner, 10 Nov): whenever the bot's own words name a perfume of ours, its photo goes with it — even when the customer's message alone did not match the catalogue (e.g. "Azz The Most Desired")
+        if ($botText !== '' && count($ids) < 3) {
+            $f = ' ' . wa_prod_fold($botText, false) . ' '; $hits = [];
+            foreach (wa_prod_all($pdo) as $p) { if ($p['kind'] !== 'perfume') continue; $n = wa_prod_fold((string)$p['name'], false); if (strlen($n) < 5) continue; $pos = strpos($f, ' ' . $n . ' '); if ($pos !== false) $hits[$pos] = $p; }
+            ksort($hits); foreach ($hits as $p) { if (count($ids) >= 3) break; if (!in_array((int)$p['id'], array_map('intval', array_filter($ids, 'is_numeric')), true)) { $ids[] = (int)$p['id']; $why[(int)$p['id']] = 'I suggested this perfume'; } }
+        }
+        if (!$ids) return 0;
+        $r = wa_prod_send_items($pdo, $c, $ids, 'why', 'bot', 0, ['why' => $why]); return count($r['sent'] ?? []);
     } catch (Throwable $e) { error_log('wa_prod_bot_after: ' . $e->getMessage()); return 0; }
 }
 // ------------------------------------------------------------------------------------------------------------------ status (Products tab)
