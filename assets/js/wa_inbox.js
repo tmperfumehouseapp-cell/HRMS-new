@@ -801,7 +801,7 @@
       $('wiLs').onclick = () => {   // 🗒️ Lists (wa_lists_ui.js, loaded the first time)
         if (!S.cur) return; const phone = S.cur.contact.phone;
         const go = () => { const box = sheet('Lists'); WaLists.sheet(box, { phone, close: () => closeSheet(), onSent: () => { refreshChat(true); loadList(true); } }); };
-        if (window.WaLists) return go(); const sc = document.createElement('script'); sc.src = 'assets/js/wa_lists_ui.js?v=l10'; sc.onload = go; document.head.appendChild(sc);
+        if (window.WaLists) return go(); const sc = document.createElement('script'); sc.src = 'assets/js/wa_lists_ui.js?v=l12'; sc.onload = go; document.head.appendChild(sc);
       };
       $('wiSend').onclick = send;
       $('wiTx').onkeydown = (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); } };
