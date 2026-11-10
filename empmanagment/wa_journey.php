@@ -412,7 +412,8 @@ function wj_fill(PDO $pdo, array $c, array $x): array
 function wj_send(PDO $pdo, array $c, array $x): array
 {
     $ref = $x['step']['ref']; $t = function_exists('fa_tpl_pick') ? fa_tpl_pick($pdo, $ref) : null; if (!$t) return [false, 'The message is not approved by Meta yet.', 'wait'];
-    [$perf, $line] = wj_fill($pdo, $c, $x); $name = function_exists('fu_first_name') ? fu_first_name((string)($c['name'] ?? '')) : ''; if ($name === '') $name = 'there';
+    [$perf, $line] = wj_fill($pdo, $c, $x); if (function_exists('fa_perfume_lib')) { $t2 = fa_tpl_pick($pdo, $ref, fa_perfume_lib($pdo, (string)$perf, $c)); if ($t2) $t = $t2; }   // 📸 the photo version with THIS customer's perfume card on top when there is one
+    $name = function_exists('fu_first_name') ? fu_first_name((string)($c['name'] ?? '')) : ''; if ($name === '') $name = 'there';
     $ctx = wa_camp_ctx($pdo, $t, 2); [$nid, $why] = wa_pick_number($pdo, $c, $ctx); if (!$nid) return [false, 'No number has room now (' . $why . ').', 'nonumber'];
     $vars = array_slice([$name, $perf, $line], 0, (int)$t['nvars']); [$ok, $res] = wa_send_tpl_one($pdo, $c, $t, $ctx['nums'][$nid], $vars, 'followup');
     $shown = function_exists('cx6_render') ? cx6_render((string)$t['body'], $vars) : (string)$t['body']; if (!function_exists('cx6_render')) foreach ($vars as $i => $v) $shown = str_replace('{{' . ($i + 1) . '}}', $v, $shown);
