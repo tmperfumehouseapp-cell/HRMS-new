@@ -215,11 +215,11 @@ body.waui .cu-pc{display:flex;align-items:center;gap:10px;padding:9px 0;border-t
     return `<details style="margin-top:6px"><summary style="cursor:pointer;font-weight:600">🔎 See how much room is left</summary>${all}${rows}<div class="wp-hint">Room is counted over the last 24 hours, so it frees up by itself as old sends pass 24 hours. Press 🔄 Refresh for the latest numbers.</div></details>`;
   }
   function screen(el, ctx) {
-    let D = null, tick = null, smart = null; el.innerHTML = loading;
+    let D = null, tick = null, smart = null, TPLX = null; el.innerHTML = loading;
     const ST = { draft: ['Draft', ''], scheduled: ['Scheduled', 'b'], running: ['Sending', 'ok'], paused: ['Paused', 'warn'], done: ['Finished', 'p'], cancelled: ['Stopped', 'bad'] };
     async function load(quiet, fresh) {
       if (smart) return;   // the Smart campaign is open in this area: do not draw the list over it
-      try { D = await api.get('wa.camp_list', fresh ? { fresh: 1 } : undefined); } catch (e) { if (!quiet) el.innerHTML = errBox(e.message); return; }
+      try { D = await api.get('wa.camp_list', fresh ? { fresh: 1, lite: 1 } : { lite: 1 }); if (TPLX) { D.templates = TPLX.templates; D.pieces = TPLX.pieces; D.can_media = TPLX.can_media; } } catch (e) { if (!quiet) el.innerHTML = errBox(e.message); return; }
       if (!el.isConnected) return; if (!quiet || !document.getElementById('cpKeep')) draw();
       if (window.WaCampGo) { const g = window.WaCampGo; window.WaCampGo = null; if (g.mode === 'smart' && window.WaSmart) openSmart(0, g.seg); else wizard(null, g.seg); return; }   // 👥 Customers → people picked there
       clearTimeout(tick); if (D.campaigns.some((c) => c.status === 'running' || c.status === 'scheduled')) tick = setTimeout(async () => { if (!el.isConnected || smart) return; if (!D.engine.cron_ok) { try { await api.post('wa.camp_tick', {}); } catch (e) { } } load(true); }, 20000);
@@ -439,7 +439,12 @@ body.waui .cu-pc{display:flex;align-items:center;gap:10px;padding:9px 0;border-t
     }
 
     // ------------------------------------------------------------------------------------------------------------ the wizard
-    function wizard(c, seg, util) {   // util: the 💸 utility follow-up campaign (only people who qualify, the standard follow-ups, the offer goes free after a reply)   // seg: people picked on the Customers screen ({tag, name, n}) — the audience is exactly their segment tag
+    // the list loads without the message library (slow); the wizard fetches it once, the first time it is opened
+    async function wizard(c, seg, util) {
+      if (!TPLX) { try { TPLX = await api.get('wa.camp_templates'); } catch (e) { toast(e.message, true); return; } }
+      D.templates = TPLX.templates; D.pieces = TPLX.pieces; D.can_media = TPLX.can_media; wizardGo(c, seg, util);
+    }
+    function wizardGo(c, seg, util) {   // util: the 💸 utility follow-up campaign (only people who qualify, the standard follow-ups, the offer goes free after a reply)   // seg: people picked on the Customers screen ({tag, name, n}) — the audience is exactly their segment tag
       const A = c ? clone(c.audience) : (seg ? { src: 'contacts', f: { gtags: [seg.tag] }, fName: seg.name, paste: '' } : {}); A.src = A.src || 'contacts'; A.f = A.f || {}; A.paste = A.paste || '';
       if (A.f.gtag && !(A.f.gtags || []).length) { A.f.gtags = [A.f.gtag]; delete A.f.gtag; } A.f.gtags = A.f.gtags || [];
       const t0 = c ? D.templates.find((x) => x.id === c.tpl_id) : null;
