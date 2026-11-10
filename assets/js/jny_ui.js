@@ -17,7 +17,7 @@
       + '.jt-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:7px 0;border-top:1px solid #f0f2f7}.jt-row.off{opacity:.5}.jt-in{border:1px solid #d5d9e4;border-radius:8px;padding:6px 8px;min-height:34px;font-size:14px;min-width:0}.jt-t{width:64px}.jt-msg{flex:1;min-width:150px}'
       + '.jt-tag{font-size:11px;font-weight:800;border-radius:99px;padding:2px 8px;background:#eef2ff;color:#3730a3}.jt-tag.w{background:#f3e8ff;color:#6b21a8}.jt-tag.a{background:#dcfce7;color:#166534}'
       + '.jt-strip{display:flex;gap:2px;margin:8px 0 2px;overflow-x:auto}.jt-strip i{flex:0 0 5px;height:14px;border-radius:2px;background:#eef0f5}.jt-strip i.a{background:#c4b5fd}.jt-strip i.w{background:#86efac}.jt-strip i.o{background:#fdba74}'
-      + '.jt-pv{flex-basis:100%;font-size:13px}.jt-pv summary{cursor:pointer;color:#5b3fd6;font-weight:700;list-style:none}.jt-pv>div{margin-top:4px;padding:8px 10px;border-radius:10px;background:#f8fafc;border:1px solid #e6e8ef;white-space:pre-wrap;word-break:break-word}.jt-card.off{opacity:.6}.jt-seg button.offb.on{background:#b91c1c}.jt-ban{border-radius:12px;padding:10px 12px;background:#f5f3ff;border:1px solid #ddd6fe}.jt-ban ul{margin:6px 0 0 18px;padding:0}@media (max-width:700px){.jt-card{padding:10px}.jt-t{width:56px}.jt-msg{flex-basis:100%}}';
+      + '.jt-pv{flex-basis:100%;font-size:13px}.jt-pv summary{cursor:pointer;color:#5b3fd6;font-weight:700;list-style:none}.jt-pv>div{margin-top:4px;padding:8px 10px;border-radius:10px;background:#f8fafc;border:1px solid #e6e8ef;white-space:pre-wrap;word-break:break-word}.jt-card.off{opacity:.6}.jt-seg button.offb.on{background:#b91c1c}.jt-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:8px;margin-top:8px}.jt-tile{text-align:left;border:1px solid #e6e8ef;border-left-width:4px;background:#fff;border-radius:12px;padding:7px 9px;min-height:84px;display:flex;flex-direction:column;gap:2px;cursor:pointer;min-width:0;font:inherit;color:inherit}.jt-tile:active{background:#f5f3ff}.jt-tile.a{border-left-color:#86efac}.jt-tile.o{border-left-color:#fdba74}.jt-tile.w{border-left-color:#c4b5fd}.jt-tile.x{opacity:.5}.jt-tile b{font-size:15px;line-height:1.1}.jt-tile .jt-tt{font-size:11px;font-weight:800;color:#3730a3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.jt-tile .jt-ts{font-size:12px;color:#475569;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}.jt-ban{border-radius:12px;padding:10px 12px;background:#f5f3ff;border:1px solid #ddd6fe}.jt-ban ul{margin:6px 0 0 18px;padding:0}@media (max-width:700px){.jt-card{padding:10px}.jt-t{width:56px}.jt-msg{flex-basis:100%}}';
     document.head.appendChild(s);
   }
   const fmtT = (min) => min < 60 ? [Math.round(min), 'min'] : min < 1440 ? [Math.round(min / 6) / 10, 'h'] : [Math.round(min / 144) / 10, 'd'];
@@ -40,10 +40,26 @@
     const modeOf = () => { const a = AP.mode, w = WJ.mode; if (a === 'off' && w === 'off') return 'off'; if (a === 'suggest' && w === 'suggest') return 'suggest'; if (['autotpl', 'auto24'].includes(a) && w === 'auto') return 'auto'; return 'mixed'; };
     const lanes = () => PATHS.filter((p) => p.kind !== 'stop').map((p) => ({ id: 'p:' + p.id, title: p.title, desc: p.desc, path: p }));
     const rowsOf = (L) => L.path.steps.map((s, i) => ({ src: 'ap', i, min: Math.round(s.after_h * 60), kind: s.kind, offer: s.offer, text: s.text, on: true, stat: stat(laneStat(L.path.id, i)) })).sort((a, b) => a.min - b.min);
+    // ▫ a step is a small tile (time, what it is, the first words); tapping it opens a pop-up with everything to change
+    const tileHtml = (r, lid) => { const [v, u] = fmtT(r.min); const key = lid + '|' + r.src + '|' + r.i;
+      const mk = r.src === 'ap' ? (r.kind === 'offer' ? r.offer : '') : r.ref; const m = mk ? (WJ.messages || []).find((x) => x.k === mk) : null; const t = m ? (TPL[m.status] || TPL.none)[0] + ' ' : '';
+      const title = r.src === 'ap' && r.kind !== 'offer' ? '💬 text' : (m ? t + m.label : 'message');
+      const snip = r.src === 'ap' && r.kind !== 'offer' ? (r.text || 'Claude writes it') : (m ? (m.body || m.rule || '') : '') + (r.idea ? ' · ' + r.idea : '');
+      return '<button type="button" class="jt-tile ' + (r.src === 'ap' ? (r.kind === 'offer' ? 'o' : 'a') : 'w') + (r.src === 'wj' && !r.on ? ' x' : '') + '" data-tile="' + esc(key) + '"><b>' + v + ' ' + u + '</b><span class="jt-tt">' + esc(title) + '</span><span class="jt-ts">' + esc(snip) + '</span></button>'; };
+    const tiles = (rows, lid) => rows.length ? '<div class="jt-tiles">' + rows.map((r) => tileHtml(r, lid)).join('') + '</div>' : '<div class="jt-sub" style="padding:8px 0">No step yet.</div>';
+    const rowOf = (key) => { const [lid, src, i] = key.split('|'); if (src === 'ap') { const L = lanes().find((l) => l.id === lid); return L ? rowsOf(L).find((r) => r.i === +i) : null; } return buyRows(lid.slice(2)).find((r) => r.i === +i) || null; };
+    function openStep(key) {
+      const o = sheet('<div class="jt" style="background:#fff;width:100%;max-width:640px;border-radius:18px 18px 0 0;padding:14px;max-height:92vh;overflow:auto"></div>'); const box = o.firstChild; const close = () => o.remove(); o.onclick = (e) => { if (e.target === o) close(); };
+      const lid = key.split('|')[0];
+      const renderPop = () => { const r = rowOf(key); if (!r) { close(); return; } const [v, u] = fmtT(r.min);
+        box.innerHTML = '<div class="jt-h">Step · ' + v + ' ' + u + '<span class="jt-sp"></span><button class="jt-b s p" type="button" data-px>Done</button></div><div class="jt-sub">Change anything here, then press <b>Save changes</b> on the page.</div>' + rowHtml(r, lid, true);
+        box.querySelector('[data-px]').onclick = close; bindRow(box.querySelector('.jt-row'), (why) => { draw(); if (why === 'rm') close(); else renderPop(); }); };
+      renderPop();
+    }
     // 👁 what a "message" step really sends: the owner's rule for the offer and the approved text (blanks like {name} are filled per customer)
-    const pvHtml = (k) => { const m = (WJ.messages || []).find((x) => x.k === k); if (!m) return ''; const t = TPL[m.status] || TPL.none;
-      return '<details class="jt-pv"><summary>👁 See what this sends</summary><div><b>' + esc(m.label) + '</b>' + (m.rule ? '\nRule: ' + esc(m.rule) : '') + '\n\n' + (m.body ? esc(m.body) : 'Claude writes the words for each customer from this rule.') + '\n\nMeta: ' + esc(t[0] + ' ' + t[1]) + '</div></details>'; };
-    function rowHtml(r, lid) {
+    const pvHtml = (k, open) => { const m = (WJ.messages || []).find((x) => x.k === k); if (!m) return ''; const t = TPL[m.status] || TPL.none;
+      return '<details class="jt-pv"' + (open ? ' open' : '') + '><summary>👁 See what this sends</summary><div><b>' + esc(m.label) + '</b>' + (m.rule ? '\nRule: ' + esc(m.rule) : '') + '\n\n' + (m.body ? esc(m.body) : 'Claude writes the words for each customer from this rule.') + '\n\nMeta: ' + esc(t[0] + ' ' + t[1]) + '</div><button class="jt-b s" type="button" data-edit="' + esc(k) + '" style="margin-top:6px">✏ Edit name / rule / text</button></details>'; };
+    function rowHtml(r, lid, open) {
       const [v, u] = fmtT(r.min); const key = lid + '|' + r.src + '|' + r.i;
       let h = '<div class="jt-row" data-k="' + esc(key) + '"><span class="jt-tag ' + (r.src === 'ap' ? 'a' : 'w') + '">' + (r.src === 'ap' ? (r.kind === 'offer' ? 'message' : 'text') : 'after order') + '</span>'
         + '<input class="jt-in jt-t" type="number" min="1" step="any" data-f="v" value="' + v + '"><select class="jt-in" data-f="u"><option value="min"' + (u === 'min' ? ' selected' : '') + '>minutes</option><option value="h"' + (u === 'h' ? ' selected' : '') + '>hours</option><option value="d"' + (u === 'd' ? ' selected' : '') + '>days</option></select>';
@@ -52,7 +68,7 @@
       else h += '<select class="jt-in jt-msg" data-f="ref">' + msgOpts(r.src === 'ap' ? r.offer : r.ref) + '</select>' + (r.src === 'wj' ? '<input class="jt-in" data-f="idea" maxlength="300" placeholder="Extra idea (optional)" value="' + esc(r.idea) + '" style="flex:1;min-width:120px">' : '');
       if (r.src === 'wj') h += '<label style="white-space:nowrap"><input type="checkbox" data-f="on"' + (r.on ? ' checked' : '') + '> On</label>';
       const pk = r.src === 'ap' ? (r.kind === 'offer' ? r.offer : '') : r.ref;
-      return h + '<button class="jt-b s r" type="button" data-rm title="Remove this step">✕</button>' + (pk ? pvHtml(pk) : '') + (r.stat ? '<div style="flex-basis:100%">' + r.stat + '</div>' : '') + '</div>';
+      return h + '<button class="jt-b s r" type="button" data-rm title="Remove this step">✕</button>' + (pk ? pvHtml(pk, open) : '') + (r.stat ? '<div style="flex-basis:100%">' + r.stat + '</div>' : '') + '</div>';
     }
     function strip(rows, max) {
       max = max || 60; const per = max / 60, cells = []; for (let d = 1; d <= 60; d++) cells.push('');
@@ -63,13 +79,13 @@
       const rows = rowsOf(L);
       const on = L.path.on !== false;
       return '<div class="jt-card' + (on ? '' : ' off') + '" data-lane="' + esc(L.id) + '"><div class="jt-h">💡 ' + esc(L.title) + '<span class="jt-sp"></span><span class="jt-seg" title="Turn only this flow on or off (the Off / Preview / Auto switch at the top is for everything)"><button type="button" data-lon="1" class="' + (on ? 'on' : '') + '">On</button><button type="button" data-lon="0" class="offb ' + (on ? '' : 'on') + '">Off</button></span><button class="jt-b s" type="button" data-add>＋ Add a step</button></div><div class="jt-sub">' + esc(L.desc || '') + '</div>'
-        + strip(rows) + (rows.map((r) => rowHtml(r, L.id)).join('') || '<div class="jt-sub" style="padding:8px 0">No step yet.</div>') + '</div>';
+        + strip(rows) + tiles(rows, L.id) + '</div>';
     }
     function buyRows(topic) { return BUYER.map((s, i) => ({ src: 'wj', i, min: s.day * 1440, ref: s.ref, idea: s.idea, on: s.on, topic: s.topic || '', stat: stat(buyStat(s.id)) })).filter((r) => r.topic === topic).sort((a, b) => a.min - b.min); }
     function buyLane(lid, title, sub, topic, open) {
       const rows = buyRows(topic);
       return '<details class="jt-card" data-lane="' + esc(lid) + '"' + (open ? ' open' : '') + '><summary class="jt-h" style="cursor:pointer">' + title + '<span class="jt-tag">' + rows.length + ' steps</span><span class="jt-sp"></span><button class="jt-b s" type="button" data-add>＋ Add a step</button></summary><div class="jt-sub">' + sub + '</div>'
-        + strip(rows, 240) + (rows.map((r) => rowHtml(r, lid)).join('') || '<div class="jt-sub" style="padding:8px 0">No step yet.</div>') + '</details>';
+        + strip(rows, 240) + tiles(rows, lid) + '</details>';
     }
     function orderHtml() {
       const segs = (WJ.segments && WJ.segments.rows) || [];
@@ -139,6 +155,27 @@
       q('#nmGo').onclick = async () => { const label = q('#nmN').value.trim(), rule = q('#nmR').value.trim(); if (!label || !rule) { toast('Give it a name and a rule.', true); return; } q('#nmGo').disabled = true;
         const r = await call(() => api.post('fu.wj_msg_new', { label, rule, body: q('#nmB').value.trim(), offer: q('input[name=nmT]:checked').value === 'offer' })); if (r && r.new_key) { WJ = r; close(r.new_key); } else q('#nmGo').disabled = false; };
     }
+    // ✏ change a message: its name, its rule and its words — for every step that uses it, or as a NEW message that only this step uses
+    function editMsg(k, f, after) {
+      const m = (WJ.messages || []).find((x) => x.k === k); if (!m) return;
+      const uses = PATHS.reduce((n, p) => n + p.steps.filter((x) => x.kind === 'offer' && x.offer === k).length, 0) + BUYER.filter((x) => x.ref === k).length;
+      const o = sheet('<div class="jt" style="background:#fff;width:100%;max-width:560px;border-radius:18px 18px 0 0;padding:16px;max-height:92vh;overflow:auto"><div class="jt-h">✏ ' + esc(m.label) + '</div>'
+        + '<div class="jt-sub">Used in ' + uses + ' step' + (uses === 1 ? '' : 's') + '. Change it for all of them, or save it under a new name for this step only (e.g. “Address given — no reply · Offer 1”).</div>'
+        + '<label class="jt-sub">Name</label><input class="jt-in" id="emN" maxlength="40" style="width:100%" value="' + esc(m.label) + '">'
+        + '<label class="jt-sub">Rule — what Claude writes for each customer</label><textarea class="jt-in" id="emR" style="width:100%;min-height:60px" maxlength="300">' + esc(m.rule || '') + '</textarea>'
+        + '<label class="jt-sub">Message words — keep {{1}} name, {{2}} perfume, {{3}} the offer line once each, in this order (not at the very start or end)</label><textarea class="jt-in" id="emB" style="width:100%;min-height:90px" maxlength="900">' + esc(m.body || '') + '</textarea>'
+        + '<div class="jt-sub">⚠ Changed words go to Meta again; until they are approved this step sends nothing (the rest of the plan goes on).</div>'
+        + '<div class="jt-row" style="border:0"><button class="jt-b p" type="button" id="emAll">Save for all ' + uses + ' step' + (uses === 1 ? '' : 's') + '</button><button class="jt-b" type="button" id="emNew">Save as a new message for this step</button><button class="jt-b" type="button" id="emX">Cancel</button></div></div>');
+      const q = (x) => o.querySelector(x); const close = () => o.remove(); q('#emX').onclick = close; o.onclick = (e) => { if (e.target === o) close(); };
+      const val = () => ({ label: q('#emN').value.trim(), rule: q('#emR').value.trim(), body: q('#emB').value.trim() });
+      q('#emAll').onclick = async () => { const v = val(); if (!v.label || !v.rule) { toast('Give it a name and a rule.', true); return; }
+        if ((WJ.messages || []).some((x) => x.k !== k && x.label.toLowerCase() === v.label.toLowerCase())) { toast('Another message is already called “' + v.label + '” — use another name.', true); return; }
+        q('#emAll').disabled = true; const offers = WJ.messages.map((x) => x.k === k ? { k, label: v.label, rule: v.rule, body: v.body } : { k: x.k, label: x.label, rule: x.rule });
+        const r = await call(() => api.post('fu.ap_offers_save', { offers })); if (r) { close(); await load(true); if (after) after(); } else q('#emAll').disabled = false; };
+      q('#emNew').onclick = async () => { const v = val(); if (!v.label || !v.rule) { toast('Give it a name and a rule.', true); return; }
+        q('#emNew').disabled = true; const r = await call(() => api.post('fu.wj_msg_new', { label: v.label, rule: v.rule, body: v.body, offer: m.icon !== '💬' }));
+        if (r && r.new_key) { WJ = r; if (f && f.st) { if (f.src === 'ap') { f.st.kind = 'offer'; f.st.offer = r.new_key; } else f.st.ref = r.new_key; markDirty(f); } close(); draw(); if (after) after(); } else q('#emNew').disabled = false; };
+    }
     function askTime(done, noAll) {
       const o = sheet('<div class="jt" style="background:#fff;width:100%;max-width:420px;border-radius:18px 18px 0 0;padding:16px"><div class="jt-h">＋ New step — when?</div><div class="jt-sub">' + (noAll ? 'Days counted from the last order (up to 365).' : 'After our last message to this customer. Within 24 hours it is a short text Claude writes; later it is an approved message (you choose which).') + '</div><div class="jt-row" style="border:0"><input class="jt-in jt-t" id="atV" type="number" min="1" value="2"><select class="jt-in" id="atU"><option value="min">minutes</option><option value="h">hours</option><option value="d">days</option></select></div>'
         + (noAll ? '' : '<label class="jt-sub" style="display:block;margin:4px 0"><input type="checkbox" id="atAll"> Add it to <b>every lane</b></label>')
@@ -178,21 +215,23 @@
       $$('[data-lon]').forEach((b) => b.onclick = async (e) => { e.preventDefault(); e.stopPropagation(); if (busy) return; const lid = b.closest('[data-lane]').dataset.lane, p = PATHS.find((x) => 'p:' + x.id === lid), want = b.dataset.lon === '1'; if (!p || (p.on !== false) === want) return;
         busy = true; const r = await call(() => api.post('fu.sit_toggle', { sid: p.id, on: want })); busy = false; if (r) { p.on = want; toast(want ? 'This flow is ON.' : 'This flow is OFF — nothing from it is sent.'); draw(); } });
       $$('[data-add]').forEach((b) => b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); addStep(b.closest('[data-lane]').dataset.lane); });
-      $$('.jt-row[data-k]').forEach((row) => { const f = find(row.dataset.k); if (!f || !f.st) return;
+      $$('[data-tile]').forEach((b) => b.onclick = () => openStep(b.dataset.tile));
+    }
+    function bindRow(row, after) { const f = find(row.dataset.k); if (!f || !f.st) return;
+        row.querySelectorAll('[data-edit]').forEach((b) => b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); editMsg(b.dataset.edit, f, after); });
         row.querySelectorAll('[data-f]').forEach((inp) => {
           const upd = () => { const k = inp.dataset.f;
-            if (k === 'v' || k === 'u') { const m = toMin(row.querySelector('[data-f=v]').value, row.querySelector('[data-f=u]').value); if (!setTime(f, m)) { draw(); return; } }
+            if (k === 'v' || k === 'u') { const m = toMin(row.querySelector('[data-f=v]').value, row.querySelector('[data-f=u]').value); if (!setTime(f, m)) { after(); return; } }
             else if (k === 'text') f.st.text = inp.value;
             else if (k === 'kind') { f.st.kind = inp.value; if (inp.value === 'offer' && !f.st.offer) f.st.offer = (WJ.messages.find((m) => m.k === 'w_miss') || WJ.messages[0] || {}).k || ''; }
             else if (k === 'idea') f.st.idea = inp.value;
             else if (k === 'on') f.st.on = inp.checked;
-            else if (k === 'ref') { if (inp.value === '__new') { newMsg((key) => { if (key) { if (f.src === 'ap') { f.st.kind = 'offer'; f.st.offer = key; } else f.st.ref = key; markDirty(f); } draw(); }); return; } if (f.src === 'ap') { f.st.kind = 'offer'; f.st.offer = inp.value; } else f.st.ref = inp.value; }
+            else if (k === 'ref') { if (inp.value === '__new') { newMsg((key) => { if (key) { if (f.src === 'ap') { f.st.kind = 'offer'; f.st.offer = key; } else f.st.ref = key; markDirty(f); } after(); }); return; } if (f.src === 'ap') { f.st.kind = 'offer'; f.st.offer = inp.value; } else f.st.ref = inp.value; }
             markDirty(f); };
-          const sel = inp.tagName === 'SELECT' || inp.type === 'checkbox'; inp.oninput = sel ? null : upd; inp.onchange = () => { upd(); if (['u', 'ref', 'on', 'kind'].includes(inp.dataset.f)) setTimeout(draw, 0); }; });
+          const sel = inp.tagName === 'SELECT' || inp.type === 'checkbox'; inp.oninput = sel ? null : upd; inp.onchange = () => { upd(); if (['u', 'ref', 'on', 'kind'].includes(inp.dataset.f)) setTimeout(after, 0); }; });
         row.querySelector('[data-rm]').onclick = () => {
           if (f.src === 'ap') { if (f.p.steps.length <= 1) { toast('Keep at least one step in this lane.', true); return; } f.p.steps.splice(f.idx, 1); dirty.ap.add(f.p.id); } else { f.arr.splice(f.idx, 1); dirty.buyer = true; }
-          draw(); }; });
-    }
+          after('rm'); }; }
     load(false);
     return () => { };
   }
