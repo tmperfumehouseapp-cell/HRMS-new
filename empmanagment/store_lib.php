@@ -299,7 +299,7 @@ function st_daily_sync(PDO $pdo): void
 function st_migrate(PDO $pdo): void
 {
     static $ran = false; if ($ran) return; $ran = true;
-    $flag = sys_get_temp_dir() . '/hrms_st_mig_v10';
+    $flag = sys_get_temp_dir() . '/hrms_st_mig_v11';
     if (is_file($flag)) return;
     try {
         foreach (['printed_at' => 'DATETIME NULL', 'print_count' => 'INT NOT NULL DEFAULT 0'] as $c => $def)
@@ -353,7 +353,7 @@ function st_migrate(PDO $pdo): void
             UNIQUE KEY uq_st_bv_code (code), UNIQUE KEY uq_st_bv_phone_year (phone, bday_year)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         if (!$pdo->query("SHOW COLUMNS FROM st_bill_people LIKE 'bday'")->fetch()) $pdo->exec("ALTER TABLE st_bill_people ADD COLUMN bday CHAR(5) NOT NULL DEFAULT ''");      // customer birthday as MM-DD
-        foreach (['source' => "VARCHAR(20) NOT NULL DEFAULT ''", 'source_note' => "VARCHAR(120) NOT NULL DEFAULT ''", 'area' => "VARCHAR(80) NOT NULL DEFAULT ''"] as $c => $def)
+        foreach (['source' => "VARCHAR(20) NOT NULL DEFAULT ''", 'source_note' => "VARCHAR(120) NOT NULL DEFAULT ''", 'area' => "VARCHAR(80) NOT NULL DEFAULT ''", 'helper_emp_id' => 'INT NOT NULL DEFAULT 0', 'helper_emp_name' => "VARCHAR(120) NOT NULL DEFAULT ''"] as $c => $def)
             if (!$pdo->query("SHOW COLUMNS FROM st_bills LIKE '$c'")->fetch()) $pdo->exec("ALTER TABLE st_bills ADD COLUMN $c $def");
         @file_put_contents($flag, '1');
     } catch (Throwable $e) { error_log('st_migrate: ' . $e->getMessage()); }
