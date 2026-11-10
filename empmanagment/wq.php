@@ -1246,6 +1246,7 @@ function wq_tick(PDO $pdo, array $opt = []): array
                 if (microtime(true) < $deadline) { wq_boss_seed($pdo); $r['cq'] = wq_cq_mirror($pdo); }
                 if (microtime(true) < $deadline) $r['campaign_tag'] = wq_window_tag($pdo);
                 if (microtime(true) < $deadline && function_exists('wq_pace_tick')) { try { $r['pace'] = wq_pace_tick($pdo); } catch (Throwable $e) { } }   // ⚡ waiting-customer nudges / admin alerts
+                if (microtime(true) < $deadline && function_exists('wqm_tick')) { try { $r['mgr'] = wqm_tick($pdo); } catch (Throwable $e) { } }   // 🧭 Team manager: Claude looks at the whole team every 10 minutes
                 if (microtime(true) < $deadline && function_exists('wq_rescue_tick')) $r['rescue'] = wq_rescue_tick($pdo, $deadline);   // 🛟 effort-missed queries + rescue bonus
                 if (wq_ts(wq_meta_get($pdo, 'house_at', '')) < wq_now() - 3600) {
                     $pdo->prepare("DELETE FROM wq_guard WHERE at < ?")->execute([wq_dt(wq_now() - 3 * 86400)]); $pdo->prepare("DELETE FROM wq_meta WHERE k LIKE 'typing:%' AND v < ?")->execute([wq_dt(wq_now() - 3600)]); wq_meta_put($pdo, 'house_at', wq_dt());
@@ -1398,7 +1399,11 @@ function wq_needs(PDO $pdo, int $me, bool $waves = true): array
     foreach ((array)$raw['items'] as $x) {
         $own = $me > 0 && (int)$x['emp'] === $me;
         if (!$own && $waves && $me > 0 && (int)($raw['backlog'][$me] ?? 0) > 0) continue;   // answers of theirs are still pending: no new red / orange for them
-        if (!$own && $waves && $me > 0 && ($now - (int)($x['wv'] ?? $x['in'])) < $wmin * 60) { if (!isset($rkT['rank'][$me]) || $rkT['rank'][$me] > $wsz || !empty($rkT['skip'][$me])) continue; }   // first minutes: only people at work who sell well (not absent, not a poor converter); everybody present sees it after that   // first 2 minutes: the best 15 (today's speed mixed with the month's performance) see red and orange chats; everybody sees them after that
+        if (!$own && $waves && $me > 0 && function_exists('wqm_hold') && wqm_hold($pdo, $me)) continue;   // 🧭 the admin approved "no new chats" for this person (only in apply mode)
+        if (!$own && $waves && $me > 0 && ($now - (int)($x['wv'] ?? $x['in'])) < $wmin * 60) {
+            if (function_exists('wqm_mode') && wqm_mode($pdo) === 'apply') { if (wqm_late($pdo, $me) || !isset($rkT['rank'][$me]) || (!wqm_first($pdo, $me) && $rkT['rank'][$me] > $wsz)) continue; }   // 🧭 Team manager decides
+            elseif (!isset($rkT['rank'][$me]) || $rkT['rank'][$me] > $wsz || !empty($rkT['skip'][$me])) continue;
+        }   // first minutes: only people at work who sell well (not absent, not a poor converter); everybody present sees it after that   // first 2 minutes: the best 15 (today's speed mixed with the month's performance) see red and orange chats; everybody sees them after that
         if (!$own && (int)$x['emp'] > 0 && (int)$x['at'] > $now - 180) continue;   // somebody just took it: they get their own 3 minutes
         $o[] = ['phone' => $x['phone'], 'name' => $x['name'], 'level' => $x['level'], 'own' => $own, 'holder' => (int)$x['emp'] > 0 ? wq_name($names, (int)$x['emp']) : '', 'sec' => max(0, $now - (int)$x['in']), 'txt' => $x['txt'], 'why' => $x['why'], 'emp' => (int)$x['emp'], 'key' => md5((int)$x['in'] . '|' . (int)$x['emp'] . '|' . (int)$x['at'])];
     }
