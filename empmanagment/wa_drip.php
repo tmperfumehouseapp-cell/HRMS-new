@@ -27,7 +27,8 @@ function wd_cfg(PDO $pdo): array
     $j = json_decode((string)setting_get($pdo, 'wd_cfg', ''), true); if (!is_array($j)) $j = [];
     $days = []; foreach ((array)($j['days'] ?? []) as $d => $x) { $d = (int)$d; if ($d < 1 || $d > 30 || !is_array($x) || (int)($x['tpl_id'] ?? 0) <= 0) continue; $t = preg_match('/^\d{1,2}:\d{2}$/', (string)($x['time'] ?? '')) ? (string)$x['time'] : '11:00'; $days[$d] = ['tpl_id' => (int)$x['tpl_id'], 'time' => $t, 'number_id' => (int)($x['number_id'] ?? 0)]; }
     ksort($days);
-    return ['on' => !empty($j['on']) ? 1 : 0, 'days' => $days, 'enter_query' => array_key_exists('enter_query', $j) ? (int)!empty($j['enter_query']) : 1, 'enter_campaign' => array_key_exists('enter_campaign', $j) ? (int)!empty($j['enter_campaign']) : 1,
+    $mode = (string)($j['mode'] ?? (!empty($j['on']) ? 'auto' : 'manual')); if (!in_array($mode, ['off', 'manual', 'auto'], true)) $mode = 'manual';
+    return ['mode' => $mode, 'on' => $mode === 'auto' ? 1 : 0, 'days' => $days, 'enter_query' => array_key_exists('enter_query', $j) ? (int)!empty($j['enter_query']) : 1, 'enter_campaign' => array_key_exists('enter_campaign', $j) ? (int)!empty($j['enter_campaign']) : 1,
         'pause_person' => array_key_exists('pause_person', $j) ? (int)!empty($j['pause_person']) : 1, 'stop_on_reply' => !empty($j['stop_on_reply']) ? 1 : 0, 'cap' => max(5, min(300, (int)($j['cap'] ?? 40)))];
 }
 function wd_today(PDO $pdo, int $ts = 0): string { $ts = $ts ?: time(); return function_exists('biz_day_of') ? (string)biz_day_of($pdo, $ts) : date('Y-m-d', $ts); }
@@ -41,15 +42,20 @@ function wd_names(PDO $pdo, array $phones): array
 }
 function wd_name(array $c): string { $n = function_exists('fu_first_name') ? fu_first_name((string)($c['name'] ?? '')) : ''; return $n !== '' ? $n : 'ji'; }
 
-/** Who enters today: new queries and campaign repliers that wrote since yesterday and are not enrolled in the last 30 days. */
-function wd_enroll(PDO $pdo, array $cfg, int $hours = 36): int
+/** Who is in the drip: customers (new queries / campaign repliers) whose FIRST message to us was inside the last N business days (N = the last day you set). Day 0 = the business day (10 AM → 10 AM) of that first message —
+ *  a customer who writes again later keeps the same Day 0; they do not start again. One entry per customer per 30 days. */
+function wd_enroll(PDO $pdo, array $cfg): int
 {
     $src = []; if ($cfg['enter_query']) $src[] = 'query'; if ($cfg['enter_campaign']) $src[] = 'campaign'; if (!$src) return 0;
-    $since = date('Y-m-d H:i:s', time() - $hours * 3600); $n = 0;
-    $have = []; $h = $pdo->prepare("SELECT phone FROM wa_drip_enr WHERE anchor >= ?"); $h->execute([date('Y-m-d', time() - 30 * 86400)]); foreach ($h->fetchAll(PDO::FETCH_COLUMN) as $p0) $have[(string)$p0] = 1;   // (no JOIN / NOT EXISTS across tables: their text collations differ)
-    $q = $pdo->prepare("SELECT c.phone, c.source, c.last_in_at FROM wa_contacts c WHERE c.source IN ('" . implode("','", $src) . "') AND c.last_in_at >= ? AND c.optout = 0 LIMIT 40000"); $q->execute([$since]);
+    $maxDay = $cfg['days'] ? max(array_keys($cfg['days'])) : 7; $today = wd_today($pdo); $oldest = date('Y-m-d', strtotime($today) - $maxDay * 86400); $n = 0;
+    $have = []; $h = $pdo->prepare("SELECT phone FROM wa_drip_enr WHERE anchor >= ?"); $h->execute([date('Y-m-d', strtotime($today) - 31 * 86400)]); foreach ($h->fetchAll(PDO::FETCH_COLUMN) as $p0) $have[(string)$p0] = 1;   // (no JOIN across tables: their text collations differ)
+    $q = $pdo->prepare("SELECT c.phone, c.source FROM wa_contacts c WHERE c.source IN ('" . implode("','", $src) . "') AND c.last_in_at >= ? AND c.optout = 0 LIMIT 60000"); $q->execute([$oldest . ' 00:00:00']);
+    $cand = []; foreach ($q->fetchAll() as $r) if (!isset($have[(string)$r['phone']])) $cand[(string)$r['phone']] = (string)$r['source'];
     $ins = $pdo->prepare("INSERT IGNORE INTO wa_drip_enr (phone, anchor, src, enrolled_at) VALUES (?, ?, ?, ?)");
-    foreach ($q->fetchAll() as $r) { if (isset($have[(string)$r['phone']])) continue; $ins->execute([$r['phone'], wd_today($pdo, (int)strtotime((string)$r['last_in_at'])), (string)$r['source'], date('Y-m-d H:i:s')]); $n += (int)$ins->rowCount(); }
+    foreach (array_chunk(array_keys($cand), 500) as $ch) {
+        $f = $pdo->prepare("SELECT phone, MIN(ts) t FROM wa_messages WHERE dir = 'in' AND phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ") GROUP BY phone"); $f->execute($ch);
+        foreach ($f->fetchAll() as $r) { $anchor = wd_today($pdo, (int)strtotime((string)$r['t'])); if ($anchor < $oldest || $anchor > $today) continue; $ins->execute([$r['phone'], $anchor, $cand[(string)$r['phone']], date('Y-m-d H:i:s')]); $n += (int)$ins->rowCount(); }
+    }
     return $n;
 }
 /** Why this customer must get nothing now ('' = fine). */
@@ -57,7 +63,7 @@ function wd_block(PDO $pdo, array $c, array $cfg, string $anchor): string
 {
     if ((int)($c['optout'] ?? 0) === 1) return 'opted out';
     if ((int)($c['cx_id'] ?? 0) > 0 || (string)($c['tag'] ?? '') === 'complaint') return 'complaint';
-    try { $q = $pdo->prepare("SELECT 1 FROM wa_cust WHERE phone = ? AND n > 0 LIMIT 1"); $q->execute([$c['phone']]); if ($q->fetchColumn()) return 'ordered'; } catch (Throwable $e) { }
+    try { $q = $pdo->prepare("SELECT 1 FROM wa_cust WHERE phone = ? AND n > 0 AND last_order >= ? LIMIT 1"); $q->execute([$c['phone'], $anchor . ' 00:00:00']); if ($q->fetchColumn()) return 'ordered'; } catch (Throwable $e) { }   // an order since they came in (earlier orders do not stop the drip)
     if ($cfg['pause_person']) { try { $q = $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND dir = 'out' AND who = 'emp' AND ts >= ? LIMIT 1"); $q->execute([$c['phone'], date('Y-m-d H:i:s', time() - 12 * 3600)]); if ($q->fetchColumn()) return 'person chatting'; } catch (Throwable $e) { } }
     if ($cfg['stop_on_reply']) { try { $q = $pdo->prepare("SELECT MAX(at) FROM wa_drip_ev WHERE phone = ? AND anchor = ? AND status = 'sent'"); $q->execute([$c['phone'], $anchor]); $last = (string)$q->fetchColumn(); if ($last !== '' && !empty($c['last_in_at']) && strtotime((string)$c['last_in_at']) > strtotime($last)) return 'replied'; } catch (Throwable $e) { } }
     return '';
@@ -76,7 +82,7 @@ function wd_send(PDO $pdo, array $c, array $step): array
 function wd_tick(PDO $pdo, array $opt = []): array
 {
     $o = ['entered' => 0, 'sent' => 0, 'skipped' => 0, 'failed' => 0];
-    if (!wd_tables($pdo)) return $o; $cfg = wd_cfg($pdo); if (!$cfg['on'] || !$cfg['days']) return $o;
+    if (!wd_tables($pdo)) return $o; $cfg = wd_cfg($pdo); if (!$cfg['days']) return $o; if (empty($opt['now']) && $cfg['mode'] !== 'auto') return $o;   // manual mode: only the Send button runs it
     if (empty($opt['now']) && (!function_exists('wa_lock') || !wa_lock($pdo, 'wdrun', 50))) return $o;
     try { $o['entered'] = wd_enroll($pdo, $cfg); } catch (Throwable $e) { }
     $today = wd_today($pdo); $nowMin = !empty($opt['now']) ? 1439 : (int)date('G') * 60 + (int)date('i'); $sent = 0; if (!empty($opt['now'])) $cfg['cap'] = max(1, (int)($opt['cap'] ?? 150));
@@ -124,7 +130,7 @@ if (strpos($__wd, 'wa.drip_') === 0) {
         case 'wa.drip_save': {
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $in = json_input(); $x = (array)($in['cfg'] ?? []);
             $days = []; foreach ((array)($x['days'] ?? []) as $d => $s) if (is_array($s) && (int)($s['tpl_id'] ?? 0) > 0) $days[(int)$d] = ['tpl_id' => (int)$s['tpl_id'], 'time' => (string)($s['time'] ?? '11:00'), 'number_id' => (int)($s['number_id'] ?? 0)];
-            setting_set($pdo, 'wd_cfg', json_encode(['on' => !empty($x['on']) ? 1 : 0, 'days' => $days, 'enter_query' => !empty($x['enter_query']) ? 1 : 0, 'enter_campaign' => !empty($x['enter_campaign']) ? 1 : 0, 'pause_person' => !empty($x['pause_person']) ? 1 : 0, 'stop_on_reply' => !empty($x['stop_on_reply']) ? 1 : 0, 'cap' => (int)($x['cap'] ?? 40)]));
+            setting_set($pdo, 'wd_cfg', json_encode(['mode' => in_array((string)($x['mode'] ?? ''), ['off', 'manual', 'auto'], true) ? (string)$x['mode'] : 'manual', 'on' => (string)($x['mode'] ?? '') === 'auto' ? 1 : 0, 'days' => $days, 'enter_query' => !empty($x['enter_query']) ? 1 : 0, 'enter_campaign' => !empty($x['enter_campaign']) ? 1 : 0, 'pause_person' => !empty($x['pause_person']) ? 1 : 0, 'stop_on_reply' => !empty($x['stop_on_reply']) ? 1 : 0, 'cap' => (int)($x['cap'] ?? 40)]));
             json_response(['ok' => true, 'cfg' => wd_cfg($pdo)]);
         }
         case 'wa.drip_backfill': {   // customers of the last 7 days (queries + campaign repliers) join now, on the day THEY came in (so each one is on the right day)
@@ -154,7 +160,35 @@ if (strpos($__wd, 'wa.drip_') === 0) {
                 foreach (($inb[(string)$r['phone']] ?? []) as $t) if ($t > $at && $t <= $at + 2 * 86400) { $per[$d]['replied']++; $tot['replied']++; break; }
             }
             ksort($per); $days = []; foreach ($per as $d => $x) { $tn = ''; if (isset($cfg['days'][$d]) && function_exists('wa_tpl_row')) { $tr = wa_tpl_row($pdo, (int)$cfg['days'][$d]['tpl_id']); $tn = $tr ? str_replace('_', ' ', (string)$tr['name']) : ''; } $days[] = ['day' => $d, 'tpl' => $tn] + $x; }
-            json_response(['ok' => true, 'on' => $cfg['on'], 'days_set' => count($cfg['days']), 'total' => $tot, 'days' => $days, 'first' => $first ? date('Y-m-d H:i:s', $first) : '', 'last' => $last ? date('Y-m-d H:i:s', $last) : '']);
+            json_response(['ok' => true, 'on' => $cfg['mode'] !== 'off' ? 1 : 0, 'mode' => $cfg['mode'], 'days_set' => count($cfg['days']), 'total' => $tot, 'days' => $days, 'first' => $first ? date('Y-m-d H:i:s', $first) : '', 'last' => $last ? date('Y-m-d H:i:s', $last) : '']);
+        }
+        case 'wa.drip_preview': {   // today's send: who gets which day's message right now, counted by business day (10 AM → 10 AM)
+            $cfg = wd_cfg($pdo); if (!$cfg['days']) json_response(['ok' => true, 'rows' => [], 'total' => ['customers' => 0, 'will' => 0, 'left' => 0, 'cost' => 0], 'today' => wd_today($pdo)]);
+            @set_time_limit(120); $entered = 0; try { $entered = wd_enroll($pdo, $cfg); } catch (Throwable $e) { }
+            $today = wd_today($pdo); $R = function_exists('wab_rates') ? wab_rates($pdo) : ['marketing' => 1.09]; $price = (float)$R['marketing']; $rows = []; $tt = ['customers' => 0, 'will' => 0, 'left' => 0, 'already' => 0];
+            $since12 = date('Y-m-d H:i:s', time() - 12 * 3600);
+            foreach ($cfg['days'] as $d => $step) {
+                $anchor = date('Y-m-d', strtotime($today) - $d * 86400);
+                $q = $pdo->prepare("SELECT phone FROM wa_drip_enr WHERE anchor = ? AND left_why = ''"); $q->execute([$anchor]); $ph = array_map('strval', $q->fetchAll(PDO::FETCH_COLUMN));
+                $done = []; $dq = $pdo->prepare("SELECT phone, status, at FROM wa_drip_ev WHERE anchor = ? AND day = ?"); $dq->execute([$anchor, $d]); $lastAt = ''; foreach ($dq->fetchAll() as $r) { $done[(string)$r['phone']] = (string)$r['status']; if ($r['status'] === 'sent' && (string)$r['at'] > $lastAt) $lastAt = (string)$r['at']; }
+                $left = ['ordered' => 0, 'opted out' => 0, 'complaint' => 0, 'person chatting' => 0]; $will = 0; $already = 0; $info = []; $ord = []; $chat = [];
+                foreach (array_chunk($ph, 600) as $ch) {
+                    $in = implode(',', array_fill(0, count($ch), '?'));
+                    $c = $pdo->prepare("SELECT phone, optout, cx_id, tag FROM wa_contacts WHERE phone IN ($in)"); $c->execute($ch); foreach ($c->fetchAll() as $r) $info[(string)$r['phone']] = $r;
+                    try { $o = $pdo->prepare("SELECT phone FROM wa_cust WHERE n > 0 AND last_order >= ? AND phone IN ($in)"); $o->execute(array_merge([$anchor . ' 00:00:00'], $ch)); foreach ($o->fetchAll(PDO::FETCH_COLUMN) as $x) $ord[(string)$x] = 1; } catch (Throwable $e) { }
+                    if ($cfg['pause_person']) { try { $m = $pdo->prepare("SELECT DISTINCT phone FROM wa_messages WHERE dir = 'out' AND who = 'emp' AND ts >= ? AND phone IN ($in)"); $m->execute(array_merge([$since12], $ch)); foreach ($m->fetchAll(PDO::FETCH_COLUMN) as $x) $chat[(string)$x] = 1; } catch (Throwable $e) { } }
+                }
+                foreach ($ph as $p0) {
+                    if (isset($done[$p0])) { if ($done[$p0] === 'sent') $already++; continue; }
+                    $c = $info[$p0] ?? null; if (!$c) continue;
+                    if ((int)$c['optout'] === 1) $left['opted out']++; elseif ((int)$c['cx_id'] > 0 || (string)$c['tag'] === 'complaint') $left['complaint']++; elseif (isset($ord[$p0])) $left['ordered']++; elseif (isset($chat[$p0])) $left['person chatting']++; else $will++;
+                }
+                $tr = function_exists('wa_tpl_row') ? wa_tpl_row($pdo, (int)$step['tpl_id']) : null; $body = $tr ? trim(preg_replace('/\s+/u', ' ', str_replace(['{{1}}'], ['Rahul'], (string)$tr['body']))) : '';
+                $lf = array_sum($left); $rows[] = ['day' => $d, 'anchor' => $anchor, 'tpl_id' => (int)$step['tpl_id'], 'tpl' => $tr ? str_replace('_', ' ', (string)$tr['name']) : '', 'preview' => mb_substr($body, 0, 90), 'customers' => count($ph), 'left' => $left, 'left_n' => $lf, 'already' => $already, 'will' => $will, 'sent_at' => $lastAt !== '' ? substr($lastAt, 11, 5) : ''];
+                $tt['customers'] += count($ph); $tt['will'] += $will; $tt['left'] += $lf; $tt['already'] += $already;
+            }
+            $tt['cost'] = round($tt['will'] * $price); $tt['price'] = $price;
+            json_response(['ok' => true, 'today' => $today, 'entered' => $entered, 'rows' => $rows, 'total' => $tt, 'mode' => $cfg['mode']]);
         }
         case 'wa.drip_test': {   // send one day's message to a number you type (your own phone)
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $in = json_input(); $k = function_exists('wa_key') ? wa_key($in['phone'] ?? '') : ''; $c = $k !== '' ? wa_contact($pdo, $k) : null;
