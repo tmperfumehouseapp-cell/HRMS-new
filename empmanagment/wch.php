@@ -1979,8 +1979,15 @@ function wch_msg_item(PDO $pdo, string $key, array $d, array $wabas): array
     } elseif ($d['mode'] === 'existing') $status = 'missing';
     $labels = ['written' => $d['mode'] === 'template' ? 'Written - needs a template for the closed window (press Submit)' : 'Written - sent as a normal message inside the 24h window', 'submitted' => 'Template sent to Meta, waiting for approval', 'approved' => 'Template approved', 'rejected' => 'Template rejected by Meta - edit the text and submit again',
         'changed' => 'Text changed after the template was sent - submit again', 'existing' => 'Already exists in the order-update module (reused)', 'missing' => 'Not created yet - Dispatch > Needs attention > Create the 5 templates'];
-    return ['key' => $key, 'title' => $d['title'], 'when' => $d['when'], 'mode' => $d['mode'], 'source' => $d['source'], 'text' => $text, 'default_text' => $d['text'], 'tpl_text' => $ttext, 'default_tpl_text' => $d['tpl_text'], 'photo_url' => (string)($row['photo_url'] ?? ''), 'photo_lib_id' => (int)($row['photo_lib_id'] ?? 0),
-        'edited' => $edited, 'photo_supported' => $d['mode'] !== 'existing' && !in_array($key, wch_msg_no_photo(), true), 'vars' => $d['vars'], 'tpl_vars' => $d['tpl_vars'], 'template' => $tpl, 'status' => $status, 'status_label' => $labels[$status] ?? $status, 'note' => $d['note'], 'automatic' => (bool)$d['trigger']];
+    // 📷 the photo-on-top version of this message at Meta (made automatically when a library photo is chosen) — shown next to the status
+    $ptpl = null; $plabel = '';
+    if (($d['mode'] ?? '') === 'template' && ($d['tpl'] ?? '') !== '' && !in_array($key, wch_msg_no_photo(), true) && (int)($row['photo_lib_id'] ?? 0) + (trim((string)($row['photo_url'] ?? '')) !== '' ? 1 : 0) > 0) {
+        $pid = wch_img_id($pdo, wch_img_name($d)); $ps = $pid && function_exists('wa_tpl_status') ? wa_tpl_status($pdo, $pid, $wabas) : ['status' => 'missing', 'reason' => '']; $pst = (string)$ps['status'];
+        $ptpl = ['name' => wch_img_name($d), 'id' => $pid ?: null, 'status' => $pst, 'reason' => (string)($ps['reason'] ?? '')];
+        $plabel = ' · 📷 Photo version: ' . ($pid <= 0 ? (int)($row['photo_lib_id'] ?? 0) > 0 ? 'will be sent to Meta in a minute' : 'the photo link is being put in the media library, then it goes to Meta' : (in_array($pst, ['approved', 'partial'], true) ? 'approved — this one goes now' : ($pst === 'rejected' ? 'rejected by Meta' . ($ps['reason'] ? ' (' . mb_substr((string)$ps['reason'], 0, 80) . ')' : '') . ' — the plain message keeps going' : 'sent to Meta, waiting for approval — the plain message goes meanwhile')));
+    }
+    return ['photo_template' => $ptpl, 'key' => $key, 'title' => $d['title'], 'when' => $d['when'], 'mode' => $d['mode'], 'source' => $d['source'], 'text' => $text, 'default_text' => $d['text'], 'tpl_text' => $ttext, 'default_tpl_text' => $d['tpl_text'], 'photo_url' => (string)($row['photo_url'] ?? ''), 'photo_lib_id' => (int)($row['photo_lib_id'] ?? 0),
+        'edited' => $edited, 'photo_supported' => $d['mode'] !== 'existing' && !in_array($key, wch_msg_no_photo(), true), 'vars' => $d['vars'], 'tpl_vars' => $d['tpl_vars'], 'template' => $tpl, 'status' => $status, 'status_label' => ($labels[$status] ?? $status) . $plabel, 'note' => $d['note'], 'automatic' => (bool)$d['trigger']];
 }
 function wch_messages(PDO $pdo): array
 {
