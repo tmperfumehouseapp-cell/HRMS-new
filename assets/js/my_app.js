@@ -37,12 +37,27 @@
   let H = { orders: null, com: null, busy: false, t: 0 };
   async function loadHome(force) {
     if (H.busy || (!force && Date.now() - H.t < 25000)) return; H.busy = true;
-    const [c, g, t, pg, rm, fo] = await Promise.allSettled([api.get('my.coach'), api.get('wa.g_me'), api.get('team.me'), api.get('play.gifts'), api.get('ct.remark_mine'), api.get('flash_offer.get')]);
-    H.busy = false; H.t = Date.now(); const C = ok(c), G = ok(g), T = ok(t), P = ok(pg), R = ok(rm), F = ok(fo);
+    const [c, g, t, pg, rm, fo, st] = await Promise.allSettled([api.get('my.coach'), api.get('wa.g_me'), api.get('team.me'), api.get('play.gifts'), api.get('ct.remark_mine'), api.get('flash_offer.get'), api.get('st_my.today')]);
+    H.busy = false; H.t = Date.now(); const C = ok(c), G = ok(g), T = ok(t), P = ok(pg), R = ok(rm), F = ok(fo), ST = ok(st);
+    if (!C && ST && ST.is_store) { drawStoreOnly(ST); return; }
     if (!C) { $('homeBody').innerHTML = '<div class="card"><div class="err">' + esc((c.reason && c.reason.message) || 'Could not load your day.') + '</div><button type="button" class="btn" id="homeRetry">Try again</button></div>'; return; }
-    drawHome(C, G, T, P, R, F);
+    drawHome(C, G, T, P, R, F, ST);
   }
-  function drawHome(C, G, T, P, R, F) {
+  let HD = {};   // what the tiles open in a sheet
+  function sheet(title, html) {
+    const sh = document.createElement('div'); sh.className = 'sheet sm'; sh.innerHTML = '<div class="hd"><span>' + esc(title) + '</span><button type="button" class="btn" data-shut style="min-height:40px">Close</button></div><div class="bd">' + html + '</div>'; document.body.appendChild(sh);
+    sh.addEventListener('click', (e) => { if (e.target.closest('[data-shut]') || e.target === sh) sh.remove(); });
+  }
+  // 🏬 store staff: today's store sales, commission (≈), pay and bills (st_my.today) — moved from the old My Sales page
+  function storeHtml(d) {
+    const p = d.punch, pay = d.pay;
+    return '<div class="card" style="padding:12px 14px"><div class="h3">🏬 Store sales today <span class="' + (p ? 'ok' : 'todo') + '" style="font-size:12px">' + (p ? 'In ' + esc(p.in) + (p.out ? ' · out ' + esc(p.out) : '') : 'Not punched in') + '</span></div><div class="mut" style="margin-bottom:8px">Store day ' + esc(d.day) + ' · a new day starts at ' + esc(d.day_start) + ' AM</div>'
+      + '<div class="tiles" style="margin-bottom:8px"><div class="tl t-g" style="min-height:100px"><div class="b">' + rs(d.sales) + '</div><div class="l">Sales</div><div class="s2">' + esc(d.bills_n) + ' bill' + (d.bills_n === 1 ? '' : 's') + ' · ' + esc(d.ml) + ' ml</div></div><div class="tl t-b" style="min-height:100px"><div class="b">' + rs(d.commission) + '</div><div class="l">My commission (≈)</div><div class="s2">from the price chart</div></div>'
+      + (pay ? '<div class="tl" style="min-height:100px"><div class="b">' + rs(pay.today ? pay.today.amount : 0) + '</div><div class="l">Today\'s pay</div><div class="s2">' + (pay.today ? esc(pay.today.status) : 'no punch yet') + '</div></div><div class="tl" style="min-height:100px"><div class="b">' + rs(pay.net_pay) + '</div><div class="l">Salary this month</div><div class="s2">' + (pay.penalty_total ? '− ' + rs(pay.penalty_total) + ' penalties' : 'no penalties') + '</div></div>' : '') + '</div>'
+      + ((d.bills || []).length ? d.bills.slice(0, 8).map((b) => '<div class="erow"><span><b>' + esc(b.bill_no) + '</b> · ' + esc(b.time) + ' · ' + esc(b.ml) + ' ml' + (b.pct != null ? ' · ' + esc(b.pct) + '%' : '') + '</span><span><b>' + rs(b.total) + '</b> <span class="mut">+' + rs(b.commission) + '</span></span></div>').join('') : '<div class="mut">No store bills yet today.</div>') + '</div>';
+  }
+  function drawStoreOnly(d) { $('hiSub').textContent = 'Your store day'; $('hiStreak').hidden = true; $('homeBody').innerHTML = storeHtml(d); }
+  function drawHome(C, G, T, P, R, F, ST) {
     const m = C.me; const body = $('homeBody');
     if (!m) { body.innerHTML = '<div class="card"><div class="h3">🏠 Home</div><p class="mut" style="margin:0">Your sales numbers will show here as soon as you are set up as a salesperson.</p></div>'; return; }
     const pct = m.pct == null ? 0 : Math.max(0, Math.min(100, +m.pct)), R0 = 44, CIRC = 2 * Math.PI * R0, off = CIRC * (1 - pct / 100);
@@ -60,47 +75,87 @@
     if (q && q.goal_orders != null) Q.push({ ic: '📞', t: 'Query orders', ok: q.need_more === 0, v: q.query_orders + ' / ' + q.goal_orders, h: q.need_more > 0 ? q.need_more + ' more to reach the goal' : 'Goal reached' });
     if (spd != null) Q.push({ ic: '⚡', t: 'Reply within 5 min', ok: spd <= 5, v: spd + ' min', h: 'median today' });
     if (m.ticket > 0 && avgT > 0) Q.push({ ic: '💎', t: 'Ticket above the team average', ok: m.ticket >= avgT, v: rs(m.ticket), h: 'team ' + rs(avgT) });
-    const done = Q.filter((x) => x.ok).length;
-    // leaderboard: top 5 and my rank
-    const lb = (G && G.board && G.board.today) || [], top = lb.slice(0, 5), mei = lb.findIndex((r) => r.me), meRow = mei > -1 ? lb[mei] : null, myRank = mei > -1 ? mei + 1 : (G && G.stats && G.stats.rank) || null;
+    const done = Q.filter((x) => x.ok).length, todo = Q.filter((x) => !x.ok);
+    const lb = (G && G.board && G.board.today) || [], top = lb.slice(0, 5), mei = lb.findIndex((r) => r.me), myRank = mei > -1 ? mei + 1 : (G && G.stats && G.stats.rank) || null;
     const gifts = P && P.gifts || [], rem = (R && R.remarks) || [], fl = ((F && F.running) || [])[0];
     const medals = ((tdy || (T && T.periods && T.periods.month) || {}).medals || []).concat((C.won || []).map((w) => w[0] + ' ' + w[1]));
+    HD.q = '<div>' + Q.map((x) => '<div class="q"><div class="ic">' + x.ic + '</div><div class="m"><b>' + esc(x.t) + '</b>' + (x.h ? '<span>' + esc(x.h) + '</span>' : '') + '</div><span class="' + (x.ok ? 'ok' : 'todo') + '">' + esc(x.v) + (x.ok ? ' ✔' : '') + '</span></div>').join('') + '</div>';
+    const lbRow = (r, i) => '<div class="lb' + (r.me ? ' me' : '') + '"><div class="n">' + (['🥇', '🥈', '🥉'][i] || (i + 1)) + '</div><div class="av">' + esc(String(r.name || '?').charAt(0).toUpperCase()) + '</div><div class="nm">' + esc(r.name) + (r.me ? ' (you)' : '') + '</div><div class="v">' + esc(r.n) + '</div></div>';
+    HD.l = '<div>' + (top.length ? top.map(lbRow).join('') : '<div class="mut">No orders yet today. Be the first! 🚀</div>') + (mei >= 5 ? lbRow(lb[mei], mei) : '') + (mei < 0 && myRank ? '<div class="lb me"><div class="n">' + esc(myRank) + '</div><div class="av">Y</div><div class="nm">Your rank</div><div class="v">' + esc(m.orders) + '</div></div>' : '') + '</div>';
+    HD.m = '<div class="med">' + (medals.length ? medals.map((x) => '<span>' + esc(x) + '</span>').join('') : '<span>Medals appear here as you earn them</span>') + '</div>';
+    const T1 = (cls, tap, ic, big, lab, sub) => '<div class="tl ' + cls + '"' + (tap ? ' data-tile="' + tap + '" role="button" tabindex="0"' : '') + '><div class="ic">' + ic + '</div><div class="b">' + big + '</div><div class="l">' + lab + '</div>' + (sub ? '<div class="s2">' + sub + '</div>' : '') + '</div>';
     body.innerHTML =
       (rem.length ? rem.map((r) => '<div class="rmk"><small>💬 Remark from ' + esc(r.from_name || 'your sales head') + '</small>' + esc(r.body || '') + '<div><button type="button" class="btn" data-seen="' + esc(r.id) + '">Got it</button></div></div>').join('') : '')
-      + (fl ? '<div class="fl">⚡ Flash offer running' + (fl.name ? ': ' + esc(fl.name) : '') + ' · ends ' + esc(String(fl.ends_at || '').slice(11, 16)) + '</div>' : '')
+      + (fl ? '<div class="fl">⚡ Flash offer' + (fl.name ? ': ' + esc(fl.name) : '') + ' · ends ' + esc(String(fl.ends_at || '').slice(11, 16)) + '</div>' : '')
       + '<div class="card" style="padding:12px 14px"><div class="ring"><svg width="86" height="86" viewBox="0 0 104 104" aria-hidden="true"><circle cx="52" cy="52" r="' + R0 + '" fill="none" stroke="#e6e9ee" stroke-width="11"/><circle cx="52" cy="52" r="' + R0 + '" fill="none" stroke="#16a34a" stroke-width="11" stroke-linecap="round" stroke-dasharray="' + CIRC.toFixed(1) + '" stroke-dashoffset="' + off.toFixed(1) + '" transform="rotate(-90 52 52)"/><text x="52" y="60" text-anchor="middle" font-size="26" font-weight="800" fill="currentColor">' + (m.target > 0 ? Math.round(pct) + '%' : '—') + '</text></svg>'
-      + '<div class="t"><b>' + rs(m.sales) + (bet ? ' <span class="up">▲ ahead of yesterday</span>' : '') + '</b><span class="mut">' + (m.target > 0 ? 'Target ' + rs(m.target) : 'No target today') + '</span><div class="bar"><i style="width:' + pct + '%"></i></div>'
-      + '<div style="display:flex;justify-content:space-between;gap:8px;margin-top:8px;font-size:13px"><span>💰 <b style="color:#15803d">' + rs(comNow) + '</b> earned today</span>' + (comUp ? '<span class="up">+' + rs(comUp) + ' just now</span>' : '') + '</div></div></div></div>'
+      + '<div class="t"><b>' + rs(m.sales) + (bet ? ' <span class="up">▲ vs yesterday</span>' : '') + '</b><span class="mut">' + (m.target > 0 ? 'Target ' + rs(m.target) : 'No target today') + '</span><div class="bar"><i style="width:' + pct + '%"></i></div></div></div></div>'
       + '<div class="card next" style="padding:12px 14px"><div style="flex:1;min-width:0"><small>YOUR NEXT STEP</small><b>' + esc(next) + '</b></div><a class="btn w" href="my_chats.html">Chats ▸</a></div>'
-      + '<div class="row3"><div class="tile"><b>' + esc(m.orders) + '</b><span>Orders</span></div><div class="tile"><b>' + (m.ticket > 0 ? rs(m.ticket) : '—') + '</b><span>Ticket</span></div><div class="tile"><b>' + (q && q.conv != null ? q.conv + '%' : '—') + '</b><span>Query → order</span></div></div>'
-      + (Q.length ? '<div class="card" style="padding:12px 14px"><div class="h3">🎯 Today\'s quests <span class="ok">' + done + '/' + Q.length + '</span></div>' + Q.map((x) => '<div class="q"><div class="ic">' + x.ic + '</div><div class="m"><b>' + esc(x.t) + '</b>' + (x.h ? '<span>' + esc(x.h) + '</span>' : '') + '</div><span class="' + (x.ok ? 'ok' : 'todo') + '">' + esc(x.v) + (x.ok ? ' ✔' : '') + '</span></div>').join('') + '</div>' : '')
-      + '<div class="card" style="padding:12px 14px"><div class="h3">🏆 Leaderboard · today <span class="mut">Top 5</span></div>' + (top.length ? top.map((r, i) => '<div class="lb"><div class="n">' + (['🥇', '🥈', '🥉'][i] || (i + 1)) + '</div><div class="av">' + esc(String(r.name || '?').charAt(0).toUpperCase()) + '</div><div class="nm">' + esc(r.name) + (r.me ? ' (you)' : '') + '</div><div class="v">' + esc(r.n) + '</div></div>').join('') : '<div class="mut" style="padding:6px 0">No orders yet today. Be the first! 🚀</div>')
-      + (meRow && mei >= 5 ? '<div class="lb me"><div class="n">' + (mei + 1) + '</div><div class="av" style="background:#bbf7d0;color:#14532d">' + esc(String(meRow.name || 'Y').charAt(0).toUpperCase()) + '</div><div class="nm">You</div><div class="v">' + esc(meRow.n) + '</div></div>' : (!meRow && myRank ? '<div class="lb me"><div class="n">' + esc(myRank) + '</div><div class="av" style="background:#bbf7d0;color:#14532d">Y</div><div class="nm">Your rank</div><div class="v">' + esc(m.orders) + '</div></div>' : '')) + '</div>'
-      + '<div class="card" style="padding:12px 14px;display:flex;align-items:center;gap:12px"><div style="font-size:30px">' + (gifts.length ? '🎁' : '🎮') + '</div><div style="flex:1;min-width:0"><b style="font-size:14px">' + (gifts.length ? 'You have ' + gifts.length + ' mystery gift' + (gifts.length > 1 ? 's' : '') : 'Mystery gift') + '</b><div class="mut">' + (gifts.length ? esc(gifts[0].why || 'Earned by a quality win') : esc((P && P.earn) || 'Earn one with a good order or a streak')) + '</div></div>' + (gifts.length ? '<button type="button" class="btn dk" data-gift="' + esc(gifts[0].id) + '">Open</button>' : '') + '</div>'
+      + '<div class="tiles">'
+      + T1('t-g', '', '💰', rs(comNow), 'Earned today', comUp ? '<span class="up">+' + rs(comUp) + ' just now</span>' : 'commission')
+      + T1('t-b', '', '🧾', esc(m.orders), 'Orders today', (m.ticket > 0 ? rs(m.ticket) + ' ticket' : '') + (q && q.conv != null ? ' · ' + q.conv + '% q→o' : ''))
+      + T1('t-o', 'q', '🎯', done + '/' + Q.length, 'Quests', todo.length ? esc(todo[0].t) + ' · ' + esc(todo[0].v) : 'All done! 🎉')
+      + T1('t-p', 'l', '🏆', myRank ? '#' + esc(myRank) : '—', 'Leaderboard', top.slice(0, 3).map((r, i) => ['🥇', '🥈', '🥉'][i] + ' ' + esc(String(r.name).split(' ')[0]) + ' ' + esc(r.n)).join('<br>') || 'No orders yet')
+      + (gifts.length ? T1('t-y', '', '🎁', gifts.length, 'Mystery gift' + (gifts.length > 1 ? 's' : ''), '<button type="button" class="btn dk sm" data-gift="' + esc(gifts[0].id) + '">Open</button>') : T1('t-y', '', '🎮', '—', 'Mystery gift', esc((P && P.earn) || 'Earn one with a good order')))
+      + T1('t-r', 'm', '🔥', esc(m.streak || 0), 'Day streak', medals.length ? esc(medals.length) + ' medals · tap' : 'keep it going')
+      + '</div>'
+      + (ST && ST.is_store ? storeHtml(ST) : '')
       + (C.tips && C.tips[0] ? '<div class="say">🧭 ' + esc(C.tips[0].title || '') + '</div>' : '')
-      + (medals.length ? '<div class="med" style="margin-bottom:12px">' + medals.slice(0, 8).map((x) => '<span>' + esc(x) + '</span>').join('') + '</div>' : '');
+      + '<div class="card" id="playHost" style="padding:12px 14px"></div>';
+    mountPlay();
+  }
+  // the level / gift / week / team-wins / break-game card (play_card.js, moved over unchanged from the old page)
+  let playLoaded = false;
+  function mountPlay() {
+    const host = $('playHost'); if (!host) return;
+    const go = () => { try { window.PlayCard && PlayCard.mount(host); } catch (e) { host.remove(); } };
+    if (window.PlayCard) { go(); return; } if (playLoaded) return; playLoaded = true;
+    const sc = document.createElement('script'); sc.src = 'assets/js/play_card.js?v=3'; sc.onload = go; sc.onerror = () => { const h = $('playHost'); if (h) h.remove(); }; document.head.appendChild(sc);
   }
   document.addEventListener('click', async (e) => {
     if (e.target.closest('#homeRetry')) { loadHome(true); return; }
+    const tl = e.target.closest('[data-tile]'); if (tl && !e.target.closest('button')) { const k = tl.dataset.tile; sheet(k === 'q' ? '🎯 Today\'s quests' : k === 'l' ? '🏆 Leaderboard · today' : '🏅 My medals', HD[k] || ''); return; }
     const sn = e.target.closest('[data-seen]'); if (sn) { sn.disabled = true; try { await api.post('ct.remark_seen', { id: +sn.dataset.seen }); loadHome(true); } catch (er) { toast(er.message); sn.disabled = false; } return; }
     const gf = e.target.closest('[data-gift]'); if (gf) { gf.disabled = true; try { const r = await api.post('play.gift_open', { id: +gf.dataset.gift }); celebrate(String((r && (r.prize_text || r.text || r.prize)) || 'Gift opened! 🎁')); loadHome(true); } catch (er) { toast(er.message); gf.disabled = false; } return; }
   });
   setInterval(() => { if (!document.hidden && (location.hash || '#home') === '#home') loadHome(true); }, 60000);
 
   // ---------------------------------------------------------------- Earn
-  let E = { busy: false, t: 0 };
+  let E = { busy: false, t: 0, arc: {}, cur: '' };
+  const pctOf = (v, t) => (t > 0 ? Math.round((v / t) * 100) : null);
+  const ST_TXT = (window.MyCommission && MyCommission.ST_TXT) || {};
+  function arcHtml(rows) {
+    const shown = (rows || []).filter((r) => r.n > 0 || r.tg > 0 || r.st);
+    if (!shown.length) return '<div class="mut" style="padding:8px 0">Nothing recorded for this month.</div>';
+    let on = 0, os = 0, ot = 0, hit = 0, days = 0;
+    const tr = shown.map((r) => { on += r.n; os += r.ach; ot += r.tg; const p = pctOf(r.ach, r.tg); if (r.tg > 0) { days++; if (r.ach >= r.tg) hit++; }
+      const lbl = new Date(r.day + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' });
+      return '<div class="ar"><div>' + esc(lbl) + (ST_TXT[r.st] ? ' <span class="mut">· ' + esc(ST_TXT[r.st]) + '</span>' : '') + '</div><div class="num">' + r.n + '</div><div class="num">' + rs(r.ach) + '</div><div class="num">' + (r.tg > 0 ? rs(r.tg) : '—') + '</div><div class="num ' + (p == null ? '' : (p >= 100 ? 'ok' : 'todo')) + '">' + (p == null ? '' : p + '%') + '</div></div>'; }).join('');
+    return '<div class="ar hd"><div>Day</div><div class="num">Orders</div><div class="num">Sales</div><div class="num">Target</div><div></div></div>' + tr + '<div class="ar tot"><div>Total</div><div class="num">' + on + '</div><div class="num">' + rs(os) + '</div><div class="num">' + (ot > 0 ? rs(ot) : '—') + '</div><div></div></div>' + (days ? '<div class="mut" style="margin-top:8px">Target hit on ' + hit + ' of ' + days + ' days.</div>' : '');
+  }
   async function loadEarn() {
     if (E.busy || Date.now() - E.t < 20000) return; E.busy = true; const mo = new Date().toISOString().slice(0, 7);
     const [c, s, p] = await Promise.allSettled([api.get('my.coach'), api.get('salary.detail', { month: mo }), api.get('my_penalties.list', { month: mo })]);
-    E.busy = false; E.t = Date.now(); const C = ok(c), S = ok(s) && ok(s).detail, P = ok(p), m = C && C.me;
-    if (!m && !S && !P) { $('earnBody').innerHTML = '<div class="card"><div class="err">' + esc((c.reason && c.reason.message) || 'Could not load your earnings.') + '</div></div>'; return; }
-    const live = ((P && P.penalties) || []).filter((x) => x.status === 'applied');
+    const C = ok(c), S = ok(s) && ok(s).detail, P = ok(p), m = C && C.me; let CMn = null, cmErr = '';
+    if (C && C.business_day && window.MyCommission) { try { CMn = await MyCommission.month(C.business_day); } catch (e) { cmErr = e.message || 'Could not work out the commission.'; } }
+    E.busy = false; E.t = Date.now();
+    if (!m && !S && !P && !CMn) { $('earnBody').innerHTML = '<div class="card"><div class="err">' + esc((c.reason && c.reason.message) || 'Could not load your earnings.') + '</div></div>'; return; }
+    const live = ((P && P.penalties) || []).filter((x) => x.status === 'applied'); const cur = C && C.business_day ? C.business_day.slice(0, 7) : mo; E.cur = cur;
+    const opts = []; if (C && C.business_day) { const [y, mm] = C.business_day.split('-').map(Number); for (let i = 0; i < 6; i++) { const dt = new Date(y, mm - 1 - i, 1), v = dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0'); opts.push('<option value="' + v + '">' + esc(dt.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })) + '</option>'); } }
+    E.arc[cur] = CMn && CMn.rows;
     $('earnBody').innerHTML =
-      (m ? '<div class="card"><div class="h3">Commission</div><div class="erow"><span>Today</span><b class="big" style="font-size:26px">' + rs(m.com_today) + '</b></div><div class="erow"><span class="mut">Sales today</span><b>' + rs(m.sales) + '</b></div><div class="erow"><span class="mut">Sales this month</span><b>' + rs(m.month && m.month.sales) + '</b></div><div class="erow"><span class="mut">Orders this month</span><b>' + esc((m.month && m.month.orders) || 0) + '</b></div>'
-        + '<p class="mut" style="margin:10px 0 0">This month\'s exact commission, day by day: <a href="my_sales.html?old=1">open the full commission page</a>.</p></div>' : '')
-      + (S ? '<div class="card"><div class="h3">Salary so far <span class="mut">' + esc(mo) + '</span></div><div class="erow"><span>Earned</span><b class="big" style="font-size:26px">' + rs(S.earned) + '</b></div><div class="erow"><span class="mut">Monthly salary</span><b>' + rs(S.monthly_salary) + '</b></div><div class="erow"><span class="mut">Penalties</span><b>' + (S.penalty_total > 0 ? '− ' + rs(S.penalty_total) : '—') + '</b></div><div class="erow"><span class="mut">Net pay</span><b>' + rs(S.net_pay) + '</b></div></div>' : '')
-      + '<div class="card"><div class="h3">Penalties this month <span class="mut">' + (live.length ? '− ' + rs(live.reduce((a, x) => a + (+x.amount || 0), 0)) : 'none') + '</span></div>' + (((P && P.penalties) || []).length ? P.penalties.slice(0, 6).map((x) => '<div class="erow"><span>' + esc(x.title || 'Penalty') + '<div class="mut">' + esc(String(x.penalty_date || '').slice(5)) + (x.status !== 'applied' ? ' · ' + esc(x.status) : '') + '</div></span><b>' + rs(x.amount) + '</b></div>').join('') : '<div class="mut" style="padding:6px 0">No penalties. Keep it up! 💚</div>') + '</div>';
+      '<div class="tiles"><div class="tl t-g"><div class="ic">💰</div><div class="b">' + rs(m ? m.com_today : (CMn && CMn.today && CMn.today.amount)) + '</div><div class="l">Commission today</div><div class="s2">' + esc((CMn && CMn.todayRate) || 'from today\'s orders') + '</div></div>'
+      + '<div class="tl t-b"><div class="ic">📅</div><div class="b">' + (CMn && CMn.month ? rs(CMn.month.amount) : '—') + '</div><div class="l">Commission this month</div><div class="s2">' + esc((CMn && CMn.noRules) ? 'Commission rules not set' : ((CMn && CMn.monthRate) || (cmErr ? 'Could not load' : ''))) + '</div></div>'
+      + '<div class="tl"><div class="ic">🧾</div><div class="b">' + (CMn && CMn.month ? rs(CMn.month.ach) : rs(m && m.month && m.month.sales)) + '</div><div class="l">Sales this month</div><div class="s2">' + esc((CMn && CMn.month ? CMn.month.n : (m && m.month && m.month.orders) || 0)) + ' orders</div></div>'
+      + '<div class="tl"><div class="ic">⚠️</div><div class="b" style="color:' + (live.length ? '#dc2626' : '#15803d') + '">' + (live.length ? '− ' + rs(live.reduce((a, x) => a + (+x.amount || 0), 0)) : '₹0') + '</div><div class="l">Penalties</div><div class="s2">' + (live.length ? live.length + ' this month' : 'none, keep it up 💚') + '</div></div></div>'
+      + (CMn && CMn.note ? '<div class="rmk"><small>Note</small>' + esc(CMn.note) + '</div>' : '') + (cmErr ? '<div class="rmk"><small>Commission</small>' + esc(cmErr) + '</div>' : '') + (CMn && CMn.applicable === false && CMn.why ? '<div class="rmk"><small>Commission</small>' + esc(CMn.why) + '</div>' : '')
+      + (S ? '<div class="card"><div class="h3">Salary so far <span class="mut">' + esc(mo) + '</span></div><div class="erow"><span>Earned</span><b class="big" style="font-size:24px">' + rs(S.earned) + '</b></div><div class="erow"><span class="mut">Monthly salary</span><b>' + rs(S.monthly_salary) + '</b></div><div class="erow"><span class="mut">Net pay after penalties</span><b>' + rs(S.net_pay) + '</b></div></div>' : '')
+      + (opts.length ? '<div class="card"><div class="h3">Day by day <select id="arMonth" class="mo">' + opts.join('') + '</select></div><div id="arBody">' + arcHtml(CMn && CMn.rows) + '</div></div>' : '')
+      + (((P && P.penalties) || []).length ? '<div class="card"><div class="h3">Penalties this month</div>' + P.penalties.slice(0, 6).map((x) => '<div class="erow"><span>' + esc(x.title || 'Penalty') + '<div class="mut">' + esc(String(x.penalty_date || '').slice(5)) + (x.status !== 'applied' ? ' · ' + esc(x.status) : '') + '</div></span><b>' + rs(x.amount) + '</b></div>').join('') + '</div>' : '');
   }
+  document.addEventListener('change', async (e) => {
+    if (e.target.id !== 'arMonth') return; const mo = e.target.value, box = $('arBody'); if (E.arc[mo]) { box.innerHTML = arcHtml(E.arc[mo]); return; }
+    box.innerHTML = '<div class="sk"></div><div class="sk"></div>'; try { E.arc[mo] = await MyCommission.archive(mo); if ($('arMonth') && $('arMonth').value === mo) box.innerHTML = arcHtml(E.arc[mo]); } catch (er) { box.innerHTML = '<div class="err">' + esc(er.message) + '</div>'; }
+  });
 
   // ---------------------------------------------------------------- Prices (pc.get: every chart, the salesperson may read, only Admin / HR change)
   let PC = null, seg = 'perfume', open = -1, basket = [], col = 0, loading = false;
