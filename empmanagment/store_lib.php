@@ -1558,10 +1558,19 @@ if (!function_exists('budget_store_calc')) {
     function st_pool_ids(PDO $pdo): array
     {
         $j = null; try { if (function_exists('setting_get')) $j = json_decode((string)setting_get($pdo, 'store_pool', ''), true); } catch (Throwable $e) {}
-        if (is_array($j)) return array_values(array_unique(array_filter(array_map('intval', $j))));
-        $ids = [];
-        try { foreach ($pdo->query("SELECT employee_id, full_name FROM employees WHERE status != 'ex'")->fetchAll() as $r) { $fn = strtolower((string)strtok(trim((string)$r['full_name']), ' ')); if (in_array($fn, ['neil', 'krish', 'anil'], true)) $ids[] = (int)$r['employee_id']; } } catch (Throwable $e) {}
-        return $ids;
+        $def = [];
+        try { foreach ($pdo->query("SELECT employee_id, full_name FROM employees WHERE status != 'ex'")->fetchAll() as $r) { $fn = strtolower((string)strtok(trim((string)$r['full_name']), ' ')); if (in_array($fn, ['neil', 'krish', 'anil'], true)) $def[] = (int)$r['employee_id']; } } catch (Throwable $e) {}
+        if (is_array($j)) {
+            $ids = array_values(array_unique(array_filter(array_map('intval', $j))));
+            try {      // once: put Neil, Krish and Anil into the one team even if a smaller list was saved before; after this the 'one team' tick in Total Budgeting decides
+                if ($def && function_exists('setting_get') && function_exists('setting_set') && (string)setting_get($pdo, 'store_pool_seed1', '') === '') {
+                    $ids = array_values(array_unique(array_merge($ids, $def)));
+                    setting_set($pdo, 'store_pool', json_encode($ids)); setting_set($pdo, 'store_pool_seed1', '1');
+                }
+            } catch (Throwable $e) {}
+            return $ids;
+        }
+        return $def;
     }
     /** Old POS bills (pos_orders, kept in this database) of the days in the range that have NO bill in the new store POS, shaped like st_bills rows. So the days before the new POS started (e.g. 1–3 November) still count. */
     function budget_oldpos_rows(PDO $pdo, string $from, string $to, array $newDays): array
