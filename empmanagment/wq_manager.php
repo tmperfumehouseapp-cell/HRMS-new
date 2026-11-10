@@ -61,7 +61,61 @@ function wqm_collect(PDO $pdo): array
             'speed_median_min_30d' => isset($mon[$id]['pace']['median']) ? $mon[$id]['pace']['median'] : null,
             'overdue_complaints' => $od[$id] ?? 0, 'pending_answers' => (int)($bk[$id] ?? 0), 'open_chats' => $open[$id] ?? 0];
     }
+    wqm_enrich($pdo, $rows, $mon);
     return $rows;
+}
+
+/** More of what the system already knows about each person (all optional: a missing module just leaves the field empty). */
+function wqm_enrich(PDO $pdo, array &$rows, array $mon): void
+{
+    foreach ($rows as $id => &$r) {
+        $v = $mon[$id]['verdict'] ?? null; $r['pace_verdict'] = is_array($v) ? (string)($v['label'] ?? $v['key'] ?? '') : null;
+        $ls = $mon[$id]['loss'] ?? null; $r['orders_lost_to_slow_replies'] = is_array($ls) ? (int)($ls['orders'] ?? 0) : null;
+        $r['rating_30d'] = null; $r['rating_weak_parts'] = []; $r['benchmark_outcome'] = null; $r['rescue_taken_30d'] = null; $r['rescue_win_pct'] = null;
+        $r['late_replies_today'] = null; $r['late_avg_min_today'] = null; $r['meet_admin_alerts'] = 0; $r['penalties_30d'] = 0;
+        $t = json_decode(wq_meta_get($pdo, 'mgr:tone:' . $id, ''), true); $r['tone_score'] = is_array($t) ? $t['score'] : null; $r['tone_note'] = is_array($t) ? (string)$t['note'] : '';
+    }
+    unset($r);
+    try {   // the daily rating (10 parts, 30 days)
+        if (function_exists('rating_days') && function_exists('rating_period')) {
+            $days = rating_days($pdo, date('Y-m-d', time() - 29 * 86400), date('Y-m-d'));
+            foreach ($rows as $id => &$r) { $rp = rating_period($days, $id); if (is_array($rp)) { $r['rating_30d'] = isset($rp['score']) ? round((float)$rp['score'], 1) : null; $pt = []; foreach ((array)($rp['parts'] ?? []) as $k => $x) if ($x !== null && is_numeric($x)) $pt[$k] = (float)$x; asort($pt); $r['rating_weak_parts'] = array_slice(array_keys($pt), 0, 2); } }
+            unset($r);
+        }
+    } catch (Throwable $e) { }
+    try { if (function_exists('ct_benchmarks')) foreach ((array)(ct_benchmarks($pdo)['rows'] ?? []) as $b) { $i = (int)($b['id'] ?? 0); if (isset($rows[$i])) $rows[$i]['benchmark_outcome'] = $b['outcome'] ?? null; } } catch (Throwable $e) { }
+    try { if (function_exists('wq_rescue_stats')) foreach ((array)(wq_rescue_stats($pdo, 30)['people'] ?? []) as $b) { $i = (int)($b['emp_id'] ?? $b['id'] ?? 0); if (isset($rows[$i])) { $rows[$i]['rescue_taken_30d'] = (int)($b['taken'] ?? 0); $rows[$i]['rescue_win_pct'] = $b['win_pct'] ?? null; } } } catch (Throwable $e) { }
+    try { if (function_exists('wa_late_summary')) foreach ((array)(wa_late_summary($pdo)['today'] ?? []) as $b) { $i = (int)($b['emp'] ?? 0); if (isset($rows[$i])) { $rows[$i]['late_replies_today'] = (int)($b['n'] ?? 0); $rows[$i]['late_avg_min_today'] = $b['avg'] ?? null; } } } catch (Throwable $e) { }
+    try { foreach ($pdo->query("SELECT employee_id, COUNT(*) n FROM ct_alerts WHERE meet_admin = 1 AND status = 'open' GROUP BY employee_id")->fetchAll(PDO::FETCH_ASSOC) as $b) if (isset($rows[(int)$b['employee_id']])) $rows[(int)$b['employee_id']]['meet_admin_alerts'] = (int)$b['n']; } catch (Throwable $e) { }
+    try { foreach ($pdo->query("SELECT employee_id, COUNT(*) n FROM employee_penalties WHERE status = 'applied' AND penalty_date >= '" . date('Y-m-d', time() - 30 * 86400) . "' GROUP BY employee_id")->fetchAll(PDO::FETCH_ASSOC) as $b) if (isset($rows[(int)$b['employee_id']])) $rows[(int)$b['employee_id']]['penalties_30d'] = (int)$b['n']; } catch (Throwable $e) { }
+}
+
+/** 🗣 Tone of the salesperson with customers: Claude reads each person's last replies (with the customer's message before each) in ONE call for the whole team, every 3 hours.
+ *  Phone-number-like digits are masked before anything leaves the server. Stored in wq_meta mgr:tone:<emp> = {score 0-10, note, n, at}. */
+function wqm_tone_refresh(PDO $pdo, array $rows, bool $force = false): int
+{
+    if (!function_exists('convo_ai')) return 0;
+    $last = strtotime(wq_meta_get($pdo, 'mgr:tone_at', '')) ?: 0; if (!$force && $last > time() - 3 * 3600) return 0;
+    wq_meta_put($pdo, 'mgr:tone_at', date('Y-m-d H:i:s'));
+    $mask = function ($t) { return mb_substr(preg_replace('/\d{6,}/', '#', trim((string)$t)), 0, 280); };
+    $team = []; $since = date('Y-m-d H:i:s', time() - 3 * 86400);
+    foreach ($rows as $id => $r) {
+        if ($r['replies_today'] <= 0 && !$r['present']) continue;
+        try {
+            $q = $pdo->prepare("SELECT id, phone, body FROM wa_messages WHERE dir = 'out' AND emp_id = ? AND mtype = 'text' AND CHAR_LENGTH(body) >= 3 AND ts >= ? ORDER BY id DESC LIMIT 10"); $q->execute([$id, $since]); $pairs = [];
+            foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $m) { $c = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' AND id < ? AND body <> '' ORDER BY id DESC LIMIT 1"); $c->execute([$m['phone'], $m['id']]); $cb = (string)$c->fetchColumn(); $pairs[] = ['customer' => $mask($cb), 'salesperson' => $mask($m['body'])]; }
+            if (count($pairs) >= 3) $team[$id] = $pairs;
+        } catch (Throwable $e) { }
+    }
+    if (!$team) return 0;
+    $sys = "You rate the TONE and QUALITY of salespeople's WhatsApp replies for TM Perfume House (online perfume brand, India; messages are in Hinglish / Gujarati / English). For each salesperson you get their latest replies, each with the customer's message just before it. "
+        . "Score 0-10: 10 = warm, polite, helpful, answers the question, guides the customer to the next step; 5 = ordinary / short; 0 = rude, cold, ignoring the question, pushy or careless. Judge only what you see; with little to go on stay near 5. "
+        . "note = ONE short line in English for the admin saying what is good or what to fix (for example 'warm and helpful, but does not suggest a set' or 'very short cold replies'). Never quote a customer's number.";
+    $txt = "SALESPEOPLE (json):\n" . json_encode($team, JSON_UNESCAPED_UNICODE);
+    $schema = ['type' => 'OBJECT', 'properties' => ['people' => ['type' => 'ARRAY', 'items' => ['type' => 'OBJECT', 'properties' => ['emp_id' => ['type' => 'INTEGER'], 'score' => ['type' => 'NUMBER'], 'note' => ['type' => 'STRING']], 'required' => ['emp_id', 'score', 'note']]]], 'required' => ['people']];
+    $f0 = function_exists('ai_feat') ? ai_feat('wq_manager_tone') : ''; [$ok, $v] = convo_ai($sys, [['text' => $txt]], $schema, false, 3000, 'claude'); if (function_exists('ai_feat')) ai_feat($f0);
+    $n = 0; if ($ok && is_array($v)) foreach ((array)($v['people'] ?? []) as $p) { $i = (int)($p['emp_id'] ?? 0); if (!isset($team[$i])) continue; wq_meta_put($pdo, 'mgr:tone:' . $i, json_encode(['score' => max(0, min(10, round((float)$p['score'], 1))), 'note' => mb_substr(trim((string)$p['note']), 0, 200), 'n' => count($team[$i]), 'at' => date('Y-m-d H:i:s')], JSON_UNESCAPED_UNICODE)); $n++; }
+    return $n;
 }
 
 function wqm_schema(): array
@@ -85,14 +139,15 @@ function wqm_base(array $r): array
 function wqm_run(PDO $pdo, bool $force = false): array
 {
     $rows = wqm_collect($pdo); $out = []; $ai = []; $summary = '';
+    try { if (wqm_tone_refresh($pdo, $rows, $force)) $rows = wqm_collect($pdo); } catch (Throwable $e) { error_log('wqm_tone: ' . $e->getMessage()); }   // the tone reading first, so the decision below sees it
     $work = []; foreach ($rows as $id => $r) if ($r['present'] || $r['queries_30d'] > 0) $work[$id] = $r;
     if ($work && function_exists('convo_ai')) {
         try {
-            $sys = "You are the sales team manager of TM Perfume House (online perfume brand, India). For every salesperson below decide how early they should see NEW customer chats that are interested (orange) or ready to pay (red), based on ALL their numbers together: order ratio compared with the team, ticket size (rupees per order) compared with the team, speed, who is at work, complaints, load. "
+            $sys = "You are the sales team manager of TM Perfume House (online perfume brand, India). For every salesperson below decide how early they should see NEW customer chats that are interested (orange) or ready to pay (red), based on ALL their numbers together: order ratio compared with the team, ticket size (rupees per order) compared with the team, speed, who is at work, complaints, load, the system's daily rating (rating_30d out of 10 and its weakest parts), tone_score (0-10, from reading their recent replies) and tone_note, late replies, penalties, rescue results, open meet-admin alerts. "
                 . "level: first = sees them first (good ratio, fast, present); normal; late = sees them only after the first minutes (only if sure_behind is true); hold = no new chats (only if sure_behind is true AND speed and behaviour are also weak; it is only a suggestion for the admin). "
                 . "Never use a fixed number of queries: a person with few queries is NOT behind unless sure_behind is true. If the whole team's ratio is low nobody is behind. Someone who is not present gets level normal. "
                 . "card = ONE short friendly line for the salesperson in simple Gujarati (Gujarati script), no blame, saying the ONE thing to do now (clear overdue complaints; take orders; speed up; if orders are good but ticket_30d is below team_ticket, ask for a bigger basket — sets / combos; or praise and 'take more chats, close orders fast'). summary must also name who has the best ratio and ticket and what the team as a whole should do today. reason = one line in English for the admin with the numbers. "
-                . "meet_admin = true only when ratio, speed AND everything else is weak for a person with enough queries to be sure. summary = 2-3 lines in English for the admin: who improved, who is stuck, who should meet the admin.";
+                . "meet_admin = true only when ratio, speed AND everything else (tone, rating, penalties) is weak for a person with enough queries to be sure. A low tone_score alone is a coaching line ('be warmer, answer the question, suggest the next step'), never a block. summary = 2-3 lines in English for the admin: who improved, who is stuck, who should meet the admin.";
             $txt = "TEAM RATIO " . (reset($work)['team_ratio_pct'] ?? 0) . "% (orders per query, 30 days)\nPEOPLE (json):\n" . json_encode(array_values($work), JSON_UNESCAPED_UNICODE);
             $f0 = function_exists('ai_feat') ? ai_feat('wq_manager') : ''; [$ok, $v] = convo_ai($sys, [['text' => $txt]], wqm_schema(), false, 4000, 'claude'); if (function_exists('ai_feat')) ai_feat($f0);
             if ($ok && is_array($v)) { foreach ((array)($v['people'] ?? []) as $p) if (is_array($p) && isset($work[(int)($p['emp_id'] ?? 0)])) $ai[(int)$p['emp_id']] = $p; $summary = trim(mb_substr((string)($v['summary'] ?? ''), 0, 600)); }
