@@ -1338,14 +1338,18 @@ function wq_needs(PDO $pdo, int $me, bool $waves = true): array
     if (!is_array($raw) || (int)($raw['at'] ?? 0) < $now - 10) {
         $items = [];
         try {
-            $st = $pdo->prepare("SELECT c.phone, c.name, c.assigned_emp, c.assigned_at, c.last_in_at, c.last_out_at, c.hot, c.tag FROM wa_contacts c WHERE c.status = 'open' AND c.optout = 0 AND c.last_in_at IS NOT NULL AND c.last_in_at >= ? AND (c.cx_id IS NULL OR c.cx_id = 0) AND (c.tag IS NULL OR c.tag <> 'complaint')
-                AND NOT EXISTS (SELECT 1 FROM wa_messages h WHERE h.phone = c.phone AND h.dir = 'out' AND h.emp_id > 0 AND h.ts >= c.last_in_at) ORDER BY c.last_in_at DESC LIMIT 150");
+            $st = $pdo->prepare("SELECT c.phone, c.name, c.assigned_emp, c.assigned_at, c.last_in_at, c.last_out_at, c.hot, c.tag, c.seen_msg_id FROM wa_contacts c WHERE c.status = 'open' AND c.optout = 0 AND c.last_in_at IS NOT NULL AND c.last_in_at >= ? AND (c.cx_id IS NULL OR c.cx_id = 0) AND (c.tag IS NULL OR c.tag <> 'complaint')
+                AND NOT EXISTS (SELECT 1 FROM wa_messages h WHERE h.phone = c.phone AND h.dir = 'out' AND (h.emp_id > 0 OR h.who IN ('emp', 'phone')) AND h.ts >= c.last_in_at) ORDER BY c.last_in_at DESC LIMIT 150");
             $st->execute([wq_dt($now - 86400)]); $rows = $st->fetchAll();
-            $phs = array_values(array_map(fn($r) => (string)$r['phone'], $rows)); $last = [];
-            if ($phs) { $q = $pdo->prepare("SELECT m.phone, m.body FROM wa_messages m JOIN (SELECT phone, MAX(id) mid FROM wa_messages WHERE dir = 'in' AND phone IN (" . wq_in($phs) . ") GROUP BY phone) x ON x.mid = m.id"); $q->execute($phs); foreach ($q->fetchAll() as $t) $last[(string)$t['phone']] = (string)$t['body']; }
+            $phs = array_values(array_map(fn($r) => (string)$r['phone'], $rows)); $last = []; $lastId = [];
+            if ($phs) { $q = $pdo->prepare("SELECT m.phone, m.body, m.id FROM wa_messages m JOIN (SELECT phone, MAX(id) mid FROM wa_messages WHERE dir = 'in' AND phone IN (" . wq_in($phs) . ") GROUP BY phone) x ON x.mid = m.id"); $q->execute($phs); foreach ($q->fetchAll() as $t) { $last[(string)$t['phone']] = (string)$t['body']; $lastId[(string)$t['phone']] = (int)$t['id']; } }
+            $ordered = []; try { foreach ($pdo->query("SELECT DISTINCT RIGHT(phone, 10) FROM shop_orders WHERE created_at >= '" . wq_dt($now - 7 * 86400) . "' AND phone <> ''")->fetchAll(PDO::FETCH_COLUMN) as $op) $ordered[(string)$op] = 1; } catch (Throwable $e) { }   // an order in the last 7 days: not a lead any more
+            try { foreach ($pdo->query("SELECT phone FROM wa_order_done WHERE mute_until > NOW()")->fetchAll(PDO::FETCH_COLUMN) as $op) $ordered[substr(preg_replace('/\D/', '', (string)$op), -10)] = 1; } catch (Throwable $e) { }   // "order completed" was pressed in the chat
             $dis = []; if ($phs && wq_need_tables($pdo)) { try { $q = $pdo->prepare("SELECT phone, in_at FROM wq_need_log WHERE dismissed = 1 AND seen_at >= ? AND phone IN (" . wq_in($phs) . ")"); $q->execute(array_merge([wq_dt($now - 86400)], $phs)); foreach ($q->fetchAll() as $t) $dis[(string)$t['phone'] . '|' . wq_ts($t['in_at'])] = 1; } catch (Throwable $e) { } }
             foreach ($rows as $r) {
                 $ph = (string)$r['phone']; $body = (string)($last[$ph] ?? ''); if (isset($dis[$ph . '|' . wq_ts($r['last_in_at'])])) continue;   // somebody marked it "not a real lead"
+                if (isset($ordered[substr(preg_replace('/\D/', '', $ph), -10)])) continue;   // the customer has ordered
+                if ((int)$r['assigned_emp'] > 0 && (int)$r['seen_msg_id'] > 0 && (int)$r['seen_msg_id'] >= (int)($lastId[$ph] ?? PHP_INT_MAX)) continue;   // the person who has the chat has opened it and read the message: it is taken
 
                 $rd = function_exists('wag_read') ? wag_read(['last_in_at' => $r['last_in_at'], 'last_body' => $body, 'last_dir' => 'in'], true, true, (int)$r['hot'] === 1, false, 0, $now) : ['i' => ''];
                 $lv = (string)($rd['i'] ?? ''); if ($lv === '') continue;
@@ -1400,7 +1404,7 @@ function wq_needs_board(PDO $pdo): array
     if (!wq_need_tables($pdo)) return $o; $names = wq_names($pdo);
     try {
         $ord = []; foreach ($pdo->query("SELECT DISTINCT RIGHT(phone, 10) FROM shop_orders WHERE created_at >= DATE_SUB(NOW(), INTERVAL 8 DAY) AND phone <> ''")->fetchAll(PDO::FETCH_COLUMN) as $p) $ord[(string)$p] = 1;
-        $st = $pdo->query("SELECT l.phone, l.level, l.seen_at, l.in_at, l.taken_at, l.taken_by, l.dismissed, c.name, (SELECT MIN(h.ts) FROM wa_messages h WHERE h.phone = l.phone AND h.dir = 'out' AND h.emp_id > 0 AND h.ts >= l.in_at) reply_at FROM wq_need_log l LEFT JOIN wa_contacts c ON c.phone = l.phone WHERE l.seen_at >= DATE_SUB(NOW(), INTERVAL 7 DAY) ORDER BY l.id DESC LIMIT 300");
+        $st = $pdo->query("SELECT l.phone, l.level, l.seen_at, l.in_at, l.taken_at, l.taken_by, l.dismissed, c.name, (SELECT MIN(h.ts) FROM wa_messages h WHERE h.phone = l.phone AND h.dir = 'out' AND (h.emp_id > 0 OR h.who IN ('emp', 'phone')) AND h.ts >= l.in_at) reply_at FROM wq_need_log l LEFT JOIN wa_contacts c ON c.phone = l.phone WHERE l.seen_at >= DATE_SUB(NOW(), INTERVAL 7 DAY) ORDER BY l.id DESC LIMIT 300");
         $n = 0; $cnt = ['red' => ['t' => 0, 'r' => 0], 'orange' => ['t' => 0, 'r' => 0]];
         foreach ($st->fetchAll() as $r) {
             $lv = $r['level'] === 'red' ? 'red' : 'orange'; $S = &$o['sum'][$lv]; $S['n']++; $seen = wq_ts($r['seen_at']);
@@ -1422,7 +1426,7 @@ function wq_need_take(PDO $pdo, string $phone, int $me): array
     if ((int)($c['optout'] ?? 0) === 1) return ['error' => 'This customer opted out — nobody may message them.'];
     if ((int)($c['cx_id'] ?? 0) > 0 || (string)($c['tag'] ?? '') === 'complaint') return ['error' => 'This is a complaint chat — it stays with its person.'];
     $in = wq_ts($c['last_in_at'] ?? ''); if ($in <= 0 || wq_now() - $in > 86400) return ['error' => 'The 24-hour window of this chat has closed.'];
-    $q = $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND dir = 'out' AND emp_id > 0 AND ts >= ? LIMIT 1"); $q->execute([$phone, wq_dt($in)]); if ($q->fetchColumn()) return ['error' => 'A person has already answered this customer.'];
+    $q = $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND dir = 'out' AND (emp_id > 0 OR who IN ('emp', 'phone')) AND ts >= ? LIMIT 1"); $q->execute([$phone, wq_dt($in)]); if ($q->fetchColumn()) return ['error' => 'A person has already answered this customer.'];
     $from = (int)$c['assigned_emp'];
     if ($from > 0 && wq_ts($c['assigned_at'] ?? '') > wq_now() - 120) return ['error' => wq_name(wq_names($pdo), $from) . ' just took this chat — give them 2 minutes.'];
     $mineN = 0; $isRed = false; foreach (wq_needs($pdo, $me, false) as $x) { if (!empty($x['own'])) $mineN++; if ((string)$x['phone'] === $phone && $x['level'] === 'red') $isRed = true; }
