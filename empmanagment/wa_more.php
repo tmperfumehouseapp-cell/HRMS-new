@@ -250,6 +250,7 @@ function wa_tick(PDO $pdo, bool $force = false): array
     try { if (function_exists('wa_ord_tick')) $o['orders'] = wa_ord_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'orders: ' . $e->getMessage()); }   // order-update messages (and the one-time template setup)
     try { if (function_exists('jt_tick') && $force && !defined('WA_IN_WEBHOOK')) $o['tags'] = jt_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'tags: ' . $e->getMessage()); }
     try { if (function_exists('wj_tick') && $force && !defined('WA_IN_WEBHOOK')) $o['journey'] = wj_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'journey: ' . $e->getMessage()); }   // 🗓 60-day Journey: today's messages, the night's topic learning, festival watch
+    try { if (function_exists('wtp_gen_tick') && $force && !defined('WA_IN_WEBHOOK')) wtp_gen_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'topics: ' . $e->getMessage()); }   // 🧭 Claude writes the topic messages one topic at a time and sends them to Meta
     try { if (function_exists('wlr_nightly') && $force && !defined('WA_IN_WEBHOOK')) wlr_nightly($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'learning: ' . $e->getMessage()); }   // 🧠 after 02:00, once a day: lost chats saved, guidebook rewritten from won + lost chats
     setting_set($pdo, 'wa_tick_at', date('Y-m-d H:i:s'));
     return $o;
@@ -580,6 +581,7 @@ require_once __DIR__ . '/wa_bill.php';     // 💰 Billing & spend: what WhatsAp
 require_once __DIR__ . '/wq.php';         // WhatsApp Sales (query types, tags, no-answer flow, board, cut-over adapter): wq.* — BEFORE wa_seg.php
 require_once __DIR__ . '/wq_rescue.php';   // 🛟 Rescue queries: effort-missed queries, a daily rescue team, +2% bonus on won orders (wq.rescue_*) - BEFORE wa_seg.php
 require_once __DIR__ . '/wq_rescue_more.php';   // 🛟 Rescue part 2: ready messages for Meta, AI draft, per-person table, alerts, AI check (wq.rescue_tpl_*, wq.rescue_stats …) - BEFORE wa_seg.php
+require_once __DIR__ . '/wq_topics.php';   // 🧭 follow-up topics, time ladder, Ask Claude for every message (wq.topics*)
 require_once __DIR__ . '/wq_learn.php';   // 🧠 lost chats saved for the guidebook, the nightly study pass from the engine, learning status
 require_once __DIR__ . '/wq_speed.php';   // ⚡ timing of the WhatsApp calls, server health, live switch (wq.speed, wa.g_wait)
 require_once __DIR__ . '/wq_tags.php';   // 🏷 One tag system: registry, automatic tags with why / until, patterns of staff-made tags, Claude's own new tags (wq.tags_*)
@@ -606,7 +608,12 @@ if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.
             }
         }
         // ⚡ one cron at a time: a slow run (Meta, Shopify) is never joined by the next minute's run — they used to pile up and slow every page
-        try { if (!(int)$pdo->query("SELECT GET_LOCK('hrms_wa_cron', 0)")->fetchColumn()) json_response(['ok' => true, 'skipped' => 'the previous cron run is still working']); } catch (Throwable $e) { }
+        try { if (!(int)$pdo->query("SELECT GET_LOCK('hrms_wa_cron', 0)")->fetchColumn()) {
+            // 🛟 watchdog: a run that has not finished for 15+ minutes is stuck (a hung call to Meta / AI never ends by itself and blocked every later run) — its database connection is closed, the lock is free for the next minute
+            $st0 = (int)setting_get($pdo, 'wa_cron_start', '0'); $fin = (int)strtotime((string)setting_get($pdo, 'wa_cron_at', ''));
+            if ($st0 > 0 && $st0 > $fin && time() - $st0 > 900) { try { $cid = (int)$pdo->query("SELECT IS_USED_LOCK('hrms_wa_cron')")->fetchColumn(); if ($cid > 0) { $pdo->exec('KILL ' . $cid); wa_log($pdo, 'engine', false, 'A cron run was stuck for ' . (int)((time() - $st0) / 60) . ' minutes — it was stopped.'); setting_set($pdo, 'wa_cron_start', '0'); } } catch (Throwable $e) { } }
+            json_response(['ok' => true, 'skipped' => 'the previous cron run is still working']); } } catch (Throwable $e) { }
+        setting_set($pdo, 'wa_cron_start', (string)time());
         if ((string)setting_get($pdo, 'wa_idx_v3', '') !== '1') {   // ⚡ every index the chat screens need — also the first set, which was skipped when the cron ran before it (both used the flag wa_idx_v1)
             setting_set($pdo, 'wa_idx_v3', '1'); @set_time_limit(900); ignore_user_abort(true);
             foreach ([['wa_contacts', 'k_status_in', '(status, last_in_at)'], ['wa_contacts', 'k_emp_status_in', '(assigned_emp, status, last_in_at)'], ['wa_contacts', 'k_source', '(source)'],

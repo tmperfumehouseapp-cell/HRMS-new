@@ -377,18 +377,18 @@ function wag_read(array $r, bool $waiting, bool $win, bool $hot, bool $cx, int $
     $in = strtotime((string)$r['last_in_at']) ?: 0; $txt = mb_strtolower(trim((string)$r['last_body'])); $mine = $r['last_dir'] === 'out'; $left = $win ? max(0, (int)floor((86400 - ($now - $in)) / 3600)) : 0;
     $w = $win ? ' · window ' . $left . ' h' : ' · window closed';
     if ($cx) return ['k' => 'cx', 'u' => '⚠ Complaint' . $w, 'd' => 'Complaint team answers this chat'];
-    if ($hot || (!$mine && function_exists('wa_hot_intent') && wa_hot_intent($txt) !== '')) return ['k' => 'pay', 'u' => '💳 Ready to pay now' . $w, 'd' => 'Send the payment link / confirm the order now'];
+    if ($hot || (!$mine && function_exists('wa_hot_intent') && wa_hot_intent($txt) !== '')) return ['k' => 'pay', 'i' => 'red', 'u' => '💳 Ready to pay now' . $w, 'd' => 'Send the payment link / confirm the order now'];
     if (!$waiting) {
         $days = $in ? (int)floor(($now - $in) / 86400) : 0;
         if ($days >= 3) return ['k' => 'cold', 'u' => '❄ Quiet for ' . $days . ' days', 'd' => 'Leave to the Journey plan'];
         return ['k' => 'ask', 'u' => '✓ We replied — waiting for the customer' . $w, 'd' => 'Wait; the plan nudges later'];
     }
     if ($txt === '' || preg_match('/^\[/u', $txt)) return ['k' => 'ask', 'u' => '📎 Sent a photo / voice / file' . $w, 'd' => 'Open it and answer'];
-    if (preg_match('/(\b\d{6}\b|flat|house no|street|road|nagar|society|apartment|address|pin ?code|landmark|pata)/u', $txt)) return ['k' => 'addr', 'u' => '📍 Giving the delivery address' . $w, 'd' => 'Confirm the address and create the order'];
+    if (preg_match('/(\b\d{6}\b|flat|house no|street|road|nagar|society|apartment|address|pin ?code|landmark|pata)/u', $txt)) return ['k' => 'addr', 'i' => 'orange', 'u' => '📍 Giving the delivery address' . $w, 'd' => 'Confirm the address and create the order'];
     if (preg_match('/(kab aayega|where is my|tracking|order status|not received|nahi mila|nahi aaya|delivery kab)/u', $txt)) return ['k' => 'ask', 'u' => '📦 Asking about an order' . $w, 'd' => 'Check the order status and tell them'];
-    if (preg_match('/(discount|less|kam kar|kam hoga|costly|mehang|expensive|best price|last price|offer|cheap|sasta|10 ?%|price kam)/u', $txt)) return ['k' => 'neg', 'u' => '🤝 Negotiating — wants a better price' . $w, 'd' => 'Offer a free sample / best price; do not drop the price fast'];
-    if (preg_match('/(think|family|ask (my|ghar)|baad me|later|sochta|sochti|dekh(ta|ti|unga|ungi)|let me|will tell|batata|batati|kal bataunga)/u', $txt)) return ['k' => 'think', 'u' => '🤔 Thinking / asking family' . $w, 'd' => 'Reply short; the plan nudges later'];
-    if (preg_match('/\?|(price|rate|kitna|kya|kaun|which|how|available|stock|best|longest|lasts?)/u', $txt)) return ['k' => 'ask', 'u' => '❓ Asking about a product' . $w, 'd' => ($orders > 0 ? 'Answer and suggest a repeat pick' : 'Answer and show 2 picks')];
+    if (preg_match('/(discount|less|kam kar|kam hoga|costly|mehang|expensive|best price|last price|offer|cheap|sasta|10 ?%|price kam)/u', $txt)) return ['k' => 'neg', 'i' => 'orange', 'u' => '🤝 Negotiating — wants a better price' . $w, 'd' => 'Offer a free sample / best price; do not drop the price fast'];
+    if (preg_match('/(think|family|ask (my|ghar)|baad me|later|sochta|sochti|dekh(ta|ti|unga|ungi)|let me|will tell|batata|batati|kal bataunga)/u', $txt)) return ['k' => 'think', 'i' => 'orange', 'u' => '🤔 Thinking / asking family' . $w, 'd' => 'Reply short; the plan nudges later'];
+    if (preg_match('/\?|(price|rate|kitna|kya|kaun|which|how|available|stock|best|longest|lasts?)/u', $txt)) return ['k' => 'ask', 'i' => preg_match('/(price|rate|kitna|kimat|ml\b|\bml|offer|available|stock|bottle|\d+\s?(x|pcs|piece)|lena|lunga|chahiye|chaiye|which|best|last|long|perfume|attar|scent|smell|fragrance|gift|recommend|suggest)/u', $txt) ? 'orange' : '', 'u' => '❓ Asking about a product' . $w, 'd' => ($orders > 0 ? 'Answer and suggest a repeat pick' : 'Answer and show 2 picks')];
     return ['k' => 'ask', 'u' => '💬 New message' . $w, 'd' => 'Reply now'];
 }
 /** The 24/7 bot: answers a waiting customer by itself — only from the taught guidebook, only text chats inside the 24-hour window, never a HOT chat. */
@@ -403,6 +403,7 @@ function wag_bot_scan(PDO $pdo, int $max = 4): array
     foreach ($st->fetchAll() as $c) {
         if ($o['sent'] + $o['handoff'] >= $max) break; $key = (string)$c['phone']; $age = $now - strtotime((string)$c['last_in_at']);
         if (!empty($c['cx_id'])) continue;   // the chat is with the Complaint team: the bot never answers it
+        if (function_exists('wq_meta_get') && function_exists('wq_ts') && wq_ts(wq_meta_get($pdo, 'typing:' . $key, '')) > time() - 90) continue;   // a person is typing an answer right now: the bot never talks over them
         if (function_exists('wa_auto_muted') && wa_auto_muted($pdo, $key)) continue;   // ✅ order completed: the bot stays quiet today and tomorrow (a person answers)
         // nobody attends the chat: the bot answers after bot_after (10 s). A salesperson who is present and has the chat (took it over / was given it) gets 2 minutes — silent after that, the bot is on again.
         if ((int)$c['assigned_emp'] > 0) {

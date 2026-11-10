@@ -18518,8 +18518,8 @@ if ($action !== 'login' && $action !== '') { try { require_once __DIR__ . '/stor
 // Campaign heartbeat: while a WhatsApp campaign is running, any request from the HRMS wakes the sending engine (at most every 30 seconds), so campaigns never wait for a cron job or an open Campaigns page.
 if ($action !== 'login' && $action !== '' && strpos((string)$action, 'wa.cron') !== 0 && function_exists('curl_init')) {
     try {
-        $hbAt = (int)setting_get($pdo, 'wa_hb_at', '0');
-        if ($hbAt < time() - 30) {
+        $hbAt = (int)setting_get($pdo, 'wa_hb_at', '0'); $hbCron = (int)strtotime((string)setting_get($pdo, 'wa_cron_at', '1970-01-01 00:00:00'));   // a real cron job that ran in the last 2 minutes does this work: the heartbeat then stays out of the way (less load on the database)
+        if ($hbAt < time() - 30 && $hbCron < time() - 120) {
             $hbRun = false; try { $hbRun = (bool)$pdo->query("SELECT 1 FROM wa_campaigns WHERE status = 'running' LIMIT 1")->fetchColumn(); } catch (Throwable $e) { }
             if ($hbRun) {
                 setting_set($pdo, 'wa_hb_at', (string)time());
