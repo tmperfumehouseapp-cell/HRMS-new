@@ -2474,14 +2474,6 @@
     { k: 'people', t: 'Team performance', tabs: [
       ['team', 'Team', 'team_board.html', 'control_tower'],   // ONE table with everyone and one panel per person (everything in one place)
       ['waq', 'Queues & Pace', 'wa_sales_live.html', 'control_tower'],   // the WhatsApp Sales page: live queries, Team manager (Pace, Attention, Types, Bot vs person), Analytics
-      ['targets', 'Targets', null, null, [
-        ['rupees', 'Rupees', 'targets.html', 'targets'],
-        ['orders', 'Order count', 'order_targets.html', 'order_targets'],
-      ]],
-      ['performance', 'Performance', null, null, [
-        ['month', 'Performance', 'performance.html', 'performance'],
-        ['sheet', 'Day-by-day sheet', 'detailed_report.html', 'detailed_report'],
-      ]],
     ] },
     { k: 'money', t: 'Money', tabs: [
       ['commission', 'Commission', 'commission_new.html', 'commission'],
@@ -2508,7 +2500,7 @@
     ] },
   ];
   // Old links and bookmarks (#people/ordertargets, #learn/doctor ...) still land on the right page.
-  const OLD = { ranking: ['people', 'team', ''], person: ['people', 'team', ''], ordertargets: ['people', 'targets', 'orders'], report: ['people', 'performance', 'sheet'], rules: ['money', 'allrules', ''],
+  const OLD = { ranking: ['people', 'team', ''], person: ['people', 'team', ''], targets: ['people', 'team', ''], performance: ['people', 'team', ''], ordertargets: ['people', 'team', ''], report: ['people', 'team', ''], rules: ['money', 'allrules', ''],
     doctor: ['tools', 'messages', 'doctor'], bench: ['tools', 'messages', 'bench'], library: ['learn', 'library', ''], conv: ['tools', 'conv', ''] };
   // bookmarks from before the Learn & Setup clean-up (#learn/messages, #learn/proof/conv, #learn/photos ...)
   const LEARN_MOVED = { messages: ['tools', 'messages'], backups: ['tools', 'backups'], settings: ['tools', 'settings'], photos: ['learn', 'botdata', 'photos'], products: ['learn', 'botdata', 'products'] };

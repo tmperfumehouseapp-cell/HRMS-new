@@ -19,6 +19,8 @@ table.tb{border-collapse:collapse;width:100%;font-size:13px;white-space:nowrap}
 .chip{display:inline-block;font-size:11px;font-weight:700;border-radius:99px;padding:2px 8px;background:#e5e7eb;color:#374151;margin-left:4px}
 .chip.first{background:#dcfce7;color:#166534}.chip.late{background:#ffedd5;color:#9a3412}.chip.hold{background:#fee2e2;color:#b91c1c}.chip.off{background:#f3f4f6;color:#6b7280}.chip.meet{background:#ede9fe;color:#5b21b6}.chip.md{background:#fef9c3;color:#854d0e}
 .chip.nt{border:1px solid #fca5a5;cursor:pointer;font-family:inherit}.chip.nt:hover{background:#fecaca}.btn.open{padding:4px 12px;font-size:12.5px;font-weight:700;white-space:nowrap}
+.vb{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 12px;border-bottom:1px solid var(--line);padding-bottom:8px}.vb button{border:0;background:#f1f5f9;border-radius:10px;padding:8px 14px;font-weight:700;font-size:13px;cursor:pointer}.vb button.on{background:#111827;color:#fff}
+#tbFrames iframe{width:100%;border:0;display:none;height:calc(100vh - 150px);min-height:520px;background:transparent}#tbFrames iframe.on{display:block}
 .bar{height:6px;border-radius:99px;background:#e5e7eb;min-width:60px;overflow:hidden}.bar i{display:block;height:100%;background:#22c55e}
 .good{color:#166534;font-weight:700}.bad{color:#b91c1c;font-weight:700}
 .dr-bg{position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:50;display:none}.dr-bg.on{display:block}
@@ -39,7 +41,7 @@ table.tb{border-collapse:collapse;width:100%;font-size:13px;white-space:nowrap}
   <div id="sidebar"></div>
   <main class="main">
     <div class="topbar"><div><h1>👥 Team</h1><div style="font-size:12.5px;color:var(--muted);margin-top:3px;max-width:75ch">Everyone in one table. Tap a person for their whole picture: today, queries, speed, tone, complaints, attendance, rating and Claude's note. Pick a period (today, week, month, your own dates): queries, ratio, ticket, speed, rating and attendance follow it; today's target and punch-in always show today. Set a person's target right here.</div></div></div>
-    <div class="content"><div id="tbRoot"><div class="empty">Loading…</div></div></div>
+    <div class="content"><div class="vb" id="vb"></div><div id="tbRoot"><div class="empty">Loading…</div></div><div id="tbFrames"></div></div>
   </main>
 </div>
 <div class="dr-bg" id="drBg"></div><aside class="dr" id="dr" aria-hidden="true"></aside>
@@ -61,6 +63,18 @@ guardPage();
     ['orders_30d', 'Orders', (r) => r.orders_30d], ['queries_30d', 'Queries', (r) => r.queries_30d], ['ratio_pct', 'Ratio', (r) => r.ratio_pct], ['ticket_30d', 'Ticket', (r) => r.ticket_30d],
     ['speed_median_min_30d', 'Speed', (r) => r.speed_median_min_30d], ['tone_score', 'Tone', (r) => r.tone_score], ['overdue_complaints', 'Complaints', (r) => r.overdue_complaints], ['rating_30d', 'Rating', (r) => r.rating_30d], ['level', 'Claude', (r) => r.level]
   ];
+  // ---- the other tools of the old Targets / Performance tabs live here too (their own pages, shown inside Team; the same saved data everywhere — e.g. the day timing is ONE setting shared with Attendance, Orders and Total Budgeting)
+  const VIEWS = [['people', '👥 People'], ['targets', '🎯 Targets & timing', 'targets.html'], ['orders', '🔢 Order count', 'order_targets.html'], ['perf', '⭐ Performance entry', 'performance.html'], ['sheet', '📄 Company day sheet', 'detailed_report.html']];
+  let V = 'people'; const FR = {};
+  (function () { try { const h = String(window.parent.location.hash || '').toLowerCase(); if (/targets\/orders|ordertargets/.test(h)) V = 'orders'; else if (/#people\/targets/.test(h)) V = 'targets'; else if (/#people\/performance\/sheet|#people\/report/.test(h)) V = 'sheet'; else if (/#people\/performance/.test(h)) V = 'perf'; } catch (e) { } })();
+  function showView(k) {
+    V = VIEWS.some((x) => x[0] === k) ? k : 'people'; closeDr();
+    document.getElementById('vb').innerHTML = VIEWS.map((x) => '<button data-view="' + x[0] + '" class="' + (V === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('');
+    root.style.display = V === 'people' ? '' : 'none';
+    const box = document.getElementById('tbFrames');
+    VIEWS.filter((x) => x[2]).forEach((x) => { let f = FR[x[0]]; if (V === x[0] && !f) { f = FR[x[0]] = document.createElement('iframe'); f.src = x[2] + '?in=sales'; f.title = x[1]; box.appendChild(f); } if (f) f.classList.toggle('on', V === x[0]); });
+  }
+  document.addEventListener('click', (e) => { const b = e.target.closest('[data-view]'); if (b) { e.preventDefault(); showView(b.dataset.view); } });
   async function load(fresh) { try { const p = { range: PER.range }; if (PER.range === 'custom') { p.from = PER.from; p.to = PER.to; } if (fresh) p.fresh = 1; D = await api.get('team.board', p); draw(); } catch (e) { root.innerHTML = '<div class="err">' + esc(e.message) + '</div>'; } }
   const lvChip = (r) => r.level ? '<span class="chip ' + esc(r.level) + '">' + esc((D.levels || {})[r.level] || r.level) + '</span>' : '';
   function rowHtml(r) {
@@ -121,7 +135,7 @@ guardPage();
       + '<div class="sec"><h3>📊 Day by day, metric by metric (latest days)</h3>' + metricGrid(r) + '</div>'
       + '<div class="sec"><h3>⚡ Reply speed → orders</h3>' + speedBuckets(r) + '<div style="margin-top:8px"><button class="btn" data-nudge="' + id + '">Nudge to reply faster</button></div></div>'
       + '<div class="sec"><h3>✍️ Remark</h3>' + (r.remarks || []).map((x) => '<div class="card-line">' + esc(x.text) + '<div style="font-size:11px;color:var(--muted)">' + esc(x.by) + ' · ' + esc(String(x.at).slice(5, 16)) + ' · ' + (x.seen ? 'seen' : 'not seen yet') + '</div></div>').join('') + '<textarea id="rmTx" rows="2" style="width:100%;margin-top:8px;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:13px" placeholder="Write a remark — it pops up on their My Sales until they tap Got it"></textarea><button class="btn primary" data-remark="' + id + '" style="margin-top:6px">Send remark</button></div>'
-      + '<div style="font-size:12px;color:var(--muted);margin:8px 0">Set targets: <a href="sales.html#people/targets" target="_top">Targets</a> · rate calls / customer behaviour / queries: <a href="sales.html#people/performance" target="_top">Performance</a> · order-count targets by hour: <a href="sales.html#people/targets/orders" target="_top">Order count</a></div>'
+      + '<div style="font-size:12px;color:var(--muted);margin:8px 0">More tools: <a href="#" data-view="targets">Target rules, day timing, order sync</a> · <a href="#" data-view="perf">Rate calls / customer behaviour, edit queries, add-ons</a> · <a href="#" data-view="orders">Order-count targets by hour</a></div>'
       + '<div class="sec"><h3>🧭 Claude</h3>' + (r.level ? '<div>' + lvChip(r) + (r.meet_admin ? '<span class="chip meet">Meet admin</span>' : '') + (r.manual ? '<span class="chip">by hand</span>' : '') + '</div>' : '<div style="color:var(--muted);font-size:13px">Not decided yet — press “Ask Claude now” above the table.</div>')
         + (r.card ? '<div class="card-line">📣 ' + esc(r.card) + '</div>' : '') + (r.reason ? '<div style="font-size:12px;color:var(--muted);margin-top:6px">Why: ' + esc(r.reason) + '</div>' : '')
         + '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px">' + sel + (hold ? '<button class="btn" data-appr="' + id + '" data-v="' + (r.approved ? 0 : 1) + '">' + (r.approved ? 'Approved — undo' : 'Approve “no new chats”') + '</button>' : '') + '</div></div>'
@@ -163,7 +177,7 @@ guardPage();
     try { await api.post('wq.mgr_set', { emp_id: +t.dataset.set, level: t.value }); const id = openId; await load(); drawer(id); } catch (er) { alert(er.message); } busy = false;
   });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDr(); });
-  load(); setInterval(() => { if (!document.hidden && !openId) load(); }, 120000);
+  showView(V); load(); setInterval(() => { if (!document.hidden && !openId) load(); }, 120000);
 })();
 </script>
 </body>
