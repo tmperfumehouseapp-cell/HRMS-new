@@ -49,7 +49,7 @@ function wa_review_queue(PDO $pdo, int $nowTs, array $cfg, string $sk = ''): arr
     if (empty($cfg['statuses']['review']) || !wr_tables($pdo)) return $res;
     $since = (int)wo_get($pdo, 'wa_review_since', '0'); if ($since <= 0) { $since = $nowTs; wo_put($pdo, 'wa_review_since', (string)$since); }
     if (wo_tpl_for($pdo, 'review') === null) { $res['waiting'] = 1; return $res; }   // the template is not approved yet: nothing is queued
-    $dly = wo_timing($pdo, 'review'); $from = wo_dt(max($since, $nowTs - ($dly + 9) * 86400)); $to = wo_dt($nowTs - $dly * 86400);   // the delay is set in Automation → After delivery
+    $dly = wo_timing($pdo, 'review'); $from = wo_dt(max($since, $nowTs - ($dly + 9) * 86400)); $to = wo_dt($nowTs - $dly * 86400);   // the delay is set in Autobot → After delivery
     $q = $pdo->prepare("SELECT * FROM dp_dsp_parcels WHERE status = 'delivered' AND delivered_at >= ? AND delivered_at <= ? AND phone IS NOT NULL AND phone <> ''$sk ORDER BY delivered_at LIMIT 200");
     $q->execute([$from, $to]);
     foreach ($q->fetchAll() as $p) {
@@ -192,7 +192,7 @@ function wa_review_nudge_queue(PDO $pdo, int $nowTs, array $cfg): array
     $res = ['queued' => 0];
     if (empty($cfg['statuses']['review_nudge']) || !wr_tables($pdo) || wo_tpl_for($pdo, 'review_nudge') === null) return $res;
     $link = wr_clean_link(wr_cfg($pdo)['link']); if ($link === '') return $res;
-    $q = $pdo->prepare("SELECT * FROM wa_review_rating WHERE action = 'judgeme' AND offer = 'offered' AND reward_id = 0 AND reminded_at IS NULL AND at <= ? AND at >= ? LIMIT 100"); $nd = wo_timing($pdo, 'review_nudge'); $q->execute([wo_dt($nowTs - $nd * 86400), wo_dt($nowTs - ($nd + 7) * 86400)]);   // the delay is set in Automation → After delivery
+    $q = $pdo->prepare("SELECT * FROM wa_review_rating WHERE action = 'judgeme' AND offer = 'offered' AND reward_id = 0 AND reminded_at IS NULL AND at <= ? AND at >= ? LIMIT 100"); $nd = wo_timing($pdo, 'review_nudge'); $q->execute([wo_dt($nowTs - $nd * 86400), wo_dt($nowTs - ($nd + 7) * 86400)]);   // the delay is set in Autobot → After delivery
     foreach ($q->fetchAll() as $r) {
         if (wr_blocked_open_case($pdo, (string)$r['phone'], (string)$r['order_name'])) continue;
         $ins = $pdo->prepare("INSERT IGNORE INTO wa_ord_sent (parcel_id, phone, order_name, status, tpl_name, state, created_at, due_at) VALUES (?,?,?,?,?, 'queued', ?, ?)");

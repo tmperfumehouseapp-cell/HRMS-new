@@ -643,6 +643,7 @@ function wa_heat(array $r, array $flags = [], int $lateMin = 5): string
     if (!empty($flags['biz'])) return 'biz';
     if ((int)($r['cx_id'] ?? 0) > 0 || (string)($r['tag'] ?? '') === 'complaint' || !empty($flags['cx'])) return 'cx';
     if ((int)($r['hot'] ?? 0) === 1 || (string)($r['tag'] ?? '') === 'buy' || !empty($flags['hot'])) return 'hot';
+    if (!empty($flags['orange'])) return 'orange';   // 🟠 interested (the bot saw a price / offer question): everyone sees it and picks it up
     $waiting = $in > $o && (int)($r['optout'] ?? 0) === 0 && $in > $now - 86400;
     if ($waiting && $now - $in >= $lateMin * 60) return 'late';
     if ($waiting || ($in && $now - $in < 3 * 3600)) return 'active';
@@ -654,8 +655,8 @@ function wa_heat_flags(PDO $pdo, array $phones): array
 {
     $out = []; $phones = array_values(array_unique(array_filter(array_map('strval', $phones)))); if (!$phones) return $out;
     try {
-        $st = $pdo->prepare("SELECT phone, tag FROM wa_ctags WHERE tag IN ('business_autoreply', 'complaint', 'hot') AND phone IN (" . implode(',', array_fill(0, count($phones), '?')) . ")"); $st->execute($phones);
-        foreach ($st->fetchAll() as $t) $out[(string)$t['phone']][$t['tag'] === 'business_autoreply' ? 'biz' : ($t['tag'] === 'complaint' ? 'cx' : 'hot')] = true;
+        $st = $pdo->prepare("SELECT phone, tag FROM wa_ctags WHERE tag IN ('business_autoreply', 'complaint', 'hot', 'orange') AND phone IN (" . implode(',', array_fill(0, count($phones), '?')) . ")"); $st->execute($phones);
+        foreach ($st->fetchAll() as $t) $out[(string)$t['phone']][$t['tag'] === 'business_autoreply' ? 'biz' : ($t['tag'] === 'complaint' ? 'cx' : ($t['tag'] === 'orange' ? 'orange' : 'hot'))] = true;
     } catch (Throwable $e) { }
     return $out;
 }
@@ -992,6 +993,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo)\./', $__wa)) {
             if (!$ok) { wa_send_claim_drop($pdo, $cid); json_response(['error' => $r], 422); }
             wa_send_claim_done($pdo, $cid, (string)$r);
             if ($__cxFirst) { try { $pdo->prepare("UPDATE cx_cases SET first_reply_at = ?, updated_at = ? WHERE id = ? AND first_reply_at IS NULL")->execute([date('Y-m-d H:i:s'), date('Y-m-d H:i:s'), $__cxFirst]); } catch (Throwable $e) { } }
+            if (empty($in['auto']) && function_exists('wq_tag_drop')) { try { wq_tag_drop($pdo, $key, 'orange'); } catch (Throwable $e) { } }   // a person answered: the orange mark is done
             if (empty($in['auto'])) $pdo->prepare("UPDATE wa_contacts SET state = 'human', status = 'open', closed_at = NULL, remind_at = NULL WHERE phone = ?")->execute([$key]);   // replied → the reminder is done   // a person replied → the bot stays quiet, a closed chat re-opens
             else $pdo->prepare("UPDATE wa_contacts SET status = 'open', closed_at = NULL WHERE phone = ?")->execute([$key]);
             wa_reply_early(['ok' => true, 'wamid' => $r]);   // the phone gets its answer now; the bookkeeping below runs after

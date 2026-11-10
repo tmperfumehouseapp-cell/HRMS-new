@@ -1,6 +1,6 @@
 <?php
 /**
- * wa_journey.php — 🗓 THE 60-DAY JOURNEY (WhatsApp → Automation → 60-day Journey). Admin / HR.
+ * wa_journey.php — 🗓 THE 60-DAY JOURNEY (WhatsApp → Autobot → 60-day Journey). Admin / HR.
  *
  *   ONE plan for every customer for 60 days, on two tracks, with a rolling entry and exit:
  *     · "Didn't order"  — day counted from the customer's LAST message to us. Days 1–10 belong to the Follow-up Autopilot (wa_autopilot.php);

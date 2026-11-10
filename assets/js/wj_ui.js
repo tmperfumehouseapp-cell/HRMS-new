@@ -1,5 +1,5 @@
 /**
- * wj_ui.js — 🗓 THE 60-DAY JOURNEY (WhatsApp → Automation → 60-day Journey). Admin only. Server: wa_journey.php (fu.wj_*).
+ * wj_ui.js — 🗓 THE 60-DAY JOURNEY (WhatsApp → Autobot → 60-day Journey). Admin only. Server: wa_journey.php (fu.wj_*).
  *   Tabs: Journey (two 60-day tracks, edit every day) · Claude (the general brain: talk → questions + exact changes → ▶ Start / ⏹ Stop) · Topics (learned every night)
  *         · Messages & offers (the ONE central registry, shared with Follow-ups) · Festivals (watcher + festival box) · Results (numbers + who gets what now).
  */

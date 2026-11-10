@@ -469,7 +469,7 @@
     draw();
     return () => { const f = re[cur]; if (typeof f === 'function') f(); };
   };
-  // 🧭 Automatic messages live in ONE place each (no second editor here): follow-ups → Automation → Follow-ups · complaints → Complaints → Settings
+  // 🧭 Automatic messages live in ONE place each (no second editor here): follow-ups → Autobot → Follow-ups · complaints → Complaints → Settings
   P.automsgs = (el) => { el.innerHTML = '<div class="wp-card"><h3 style="margin:0 0 6px">Automatic messages</h3><div class="wp-sub" style="margin-bottom:10px">Each automatic message has one home, so there is never a second copy to keep in step.</div>'
       + '<div class="wp-row" style="flex-wrap:wrap;gap:8px"><a class="wp-btn p" href="whatsapp.html#followups" target="_top">🔁 Follow-up &amp; offer messages</a><a class="wp-btn p" href="complaints.html?tab=settings&amp;go=msgs" target="_top">🎫 Complaint messages (photo &amp; words)</a><a class="wp-btn" href="whatsapp.html#orderupd" target="_top">📦 Order update messages</a></div></div>'; };
   P.fumsgs = P.automsgs; P.cxmsgs = P.automsgs;   // old saved tabs open the same page
