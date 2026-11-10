@@ -709,6 +709,7 @@
               </div>
             </div>
             <button class="btn secondary" id="btnToday">Today</button>
+            <button class="btn secondary" id="btnYesterday" type="button" title="Show yesterday's business day">Yesterday</button>
             <button class="btn secondary" id="btnTiming" type="button" title="Set when each business day starts">Day timing</button>
             <button class="btn secondary" id="btnRule" type="button" title="How daily targets are set automatically">Target rule</button>
             <span id="loadingHint" style="display:none; font-size:13px; color:var(--muted); align-self:center;">Loading...</span>
@@ -2917,6 +2918,12 @@
     } finally { btn.disabled = false; }
   });
 
+  document.getElementById('btnYesterday').addEventListener('click', async () => {      // yesterday = the business day before today (follows Day timing)
+    await timingReady; const t = new Date(todayStr() + 'T12:00:00'); t.setDate(t.getDate() - 1);
+    const y = t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0');
+    document.getElementById('dateFrom').value = y; document.getElementById('dateTo').value = y;
+    loadOrders();
+  });
   document.getElementById('btnToday').addEventListener('click', () => {
     document.getElementById('dateFrom').value = todayStr();
     document.getElementById('dateTo').value = todayStr();
