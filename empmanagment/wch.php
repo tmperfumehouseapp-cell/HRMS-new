@@ -1118,11 +1118,31 @@ function wch_send_cta(PDO $pdo, array $c, string $body, string $btn, string $url
 function wch_img_name(array $d): string { return $d['tpl'] !== '' ? $d['tpl'] . '_img' : ''; }
 function wch_img_id(PDO $pdo, string $name): int { try { $q = $pdo->prepare("SELECT id FROM wa_templates WHERE name = ? AND language = 'en'"); $q->execute([$name]); return (int)$q->fetchColumn(); } catch (Throwable $e) { return 0; } }
 /** Messages that are template messages and have a library photo chosen: [key => photo library id]. */
+/** A message whose photo is only a web link (no media-library photo) cannot be a photo-on-top message: the link is downloaded ONCE into the media library and the message then uses that library photo. Returns the library id (0 = could not). */
+function wch_photo_import(PDO $pdo, string $k, string $url): int
+{
+    try {
+        if (!preg_match('#^https://#i', $url) || !function_exists('wa_lib_dir') || !function_exists('curl_init')) return 0;
+        $u = function_exists('wch_img') ? wch_img($url) : $url; $ch = curl_init($u); curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_FOLLOWLOCATION => true, CURLOPT_TIMEOUT => 20, CURLOPT_CONNECTTIMEOUT => 6, CURLOPT_MAXFILESIZE => 5000000]);
+        $raw = curl_exec($ch); $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch); if ($raw === false || $code < 200 || $code >= 300 || strlen((string)$raw) > 5000000) return 0;
+        $gi = @getimagesizefromstring((string)$raw); if (!$gi || !in_array($gi[2], [IMAGETYPE_JPEG, IMAGETYPE_PNG], true)) return 0;
+        $ext = $gi[2] === IMAGETYPE_PNG ? 'png' : 'jpg'; $mime = $gi[2] === IMAGETYPE_PNG ? 'image/png' : 'image/jpeg';
+        $dir = wa_lib_dir(); if (!is_dir($dir) || !is_writable($dir)) return 0; $stored = 'msg_' . preg_replace('/[^a-z0-9_]/i', '', $k) . '_' . date('Ymd_His') . '.' . $ext; if (@file_put_contents($dir . '/' . $stored, $raw) === false) return 0;
+        $pdo->prepare("INSERT INTO wa_media_lib (title, kind, mime, filename, size, path, mids, created_by, created_at) VALUES (?, 'image', ?, ?, ?, ?, '{}', 0, ?)")->execute(['Message photo · ' . $k, $mime, $stored, strlen((string)$raw), $stored, date('Y-m-d H:i:s')]);
+        $id = (int)$pdo->lastInsertId(); if ($id > 0) $pdo->prepare("UPDATE wch_msg SET photo_lib_id = ? WHERE mkey = ?")->execute([$id, $k]); return $id;
+    } catch (Throwable $e) { return 0; }
+}
 function wch_img_cfg(PDO $pdo): array
 {
-    $o = []; foreach (wch_msg_all_defs() as $k => $d) { if (($d['mode'] ?? '') !== 'template' || ($d['tpl'] ?? '') === '' || in_array($k, wch_msg_no_photo(), true)) continue; $r = wch_msg_row($pdo, $k); if ((int)$r['photo_lib_id'] > 0) $o[$k] = (int)$r['photo_lib_id']; }
+    $o = []; foreach (wch_msg_all_defs() as $k => $d) {
+        if (($d['mode'] ?? '') !== 'template' || ($d['tpl'] ?? '') === '' || in_array($k, wch_msg_no_photo(), true)) continue; $r = wch_msg_row($pdo, $k);
+        $lib = (int)$r['photo_lib_id']; if ($lib <= 0 && trim((string)$r['photo_url']) !== '' && (int)wch_get_state($pdo, 'imp_' . $k) < time() - 86400) { wch_put_state($pdo, 'imp_' . $k, (string)time()); $lib = wch_photo_import($pdo, $k, trim((string)$r['photo_url'])); }   // a photo that is only a link: put it in the media library once (tried once a day)
+        if ($lib > 0) $o[$k] = $lib;
+    }
     return $o;
 }
+function wch_get_state(PDO $pdo, string $k): string { try { return (string)setting_get($pdo, 'wch_photo_' . $k, '0'); } catch (Throwable $e) { return '0'; } }
+function wch_put_state(PDO $pdo, string $k, string $v): void { try { setting_set($pdo, 'wch_photo_' . $k, $v); } catch (Throwable $e) { } }
 function wch_img_sig(PDO $pdo): string { try { return md5(json_encode(wch_img_cfg($pdo))); } catch (Throwable $e) { return ''; } }
 /** Makes the photo version of one message (if missing) and sends it to every WhatsApp account that does not have it. The photo itself is taken per send, so a new photo needs no new approval. [ok, text] */
 function wch_img_make(PDO $pdo, string $k): array
