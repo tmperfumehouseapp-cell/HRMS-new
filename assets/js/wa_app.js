@@ -851,7 +851,9 @@
       S.cur = { phone, msgs: [], contact: { phone, name: row.name || (opt && opt.name) || '', window_open: true }, row, sugg: undefined, info: null, last: 0, tmp: 0, files: [], peek: (opt && opt.peek) || '' };
       const v = document.createElement('div'); v.className = 'wx-chat'; R.appendChild(v); drawChatShell(); loadChat();
       if (wide() && S.tab === 'chats' && !['team', 'req', 'rescue', 'cx'].includes(S.filter)) { try { drawList(); } catch (e) { } }
-      try { if (!(history.state && history.state.wxChat)) history.pushState({ wxChat: phone }, ''); } catch (e) { }   // phone Back closes the chat (back to the list), not the app
+      // phone Back closes the chat (back to the list), not the app. A sheet that was just closed (e.g. "Open" in the Pending sheet) is still taking its history entry off (history.back() is asynchronous):
+      // pushing now would be undone by it and Back would leave the app — so the push waits until that step is done.
+      if (S.popSkip) { S.pushAfter = phone; setTimeout(() => pushChatState(), 700); } else pushChatState(phone);
     }
     function drawChatShell() {
       const v = $('.wx-chat'), c = S.cur.contact, r = S.cur.row;
@@ -971,6 +973,9 @@
           const bk = $('#wxLostBk'); if (bk) bk.onclick = () => { if (history.state && history.state.wxChat) history.back(); else closeChat(); }; toast('This chat was given to a colleague.', true); loadList(true);
         }
       }
+    }
+    function pushChatState(ph) {
+      try { ph = ph || S.pushAfter; S.pushAfter = null; if (ph && S.cur && S.cur.phone === ph && !(history.state && history.state.wxChat)) history.pushState({ wxChat: ph }, ''); } catch (e) { }
     }
     function closeChat() { stopRec(true); suggStop(); const phone = S.cur && S.cur.phone; S.cur = null; markSel(); const v = $('.wx-chat'); if (v) v.remove(); loadList(true); if (S.tab === 'history') drawHistory(false); if (S.tab === 'queries' && S.qView && S.qView.refresh) S.qView.refresh(); }
 
@@ -1381,7 +1386,7 @@
     { const wt = new URLSearchParams(location.search).get('tab'); if (wt === 'queries' || wt === 'history' || wt === 'me') setTab(wt); }
     const want = new URLSearchParams(location.search).get('phone'); if (want) setTimeout(() => openChat(String(want).replace(/\D/g, '').slice(-10)), 400);
     window.addEventListener('popstate', () => {
-      if (S.popSkip) { S.popSkip--; return; }   // our own history.back() after ✕ closed a sheet
+      if (S.popSkip) { S.popSkip--; if (!S.popSkip && S.pushAfter) pushChatState(); return; }   // our own history.back() after ✕ closed a sheet (then the chat's own entry is added)
       const tops = R.querySelectorAll('.wx-md'); if (tops.length) { tops[tops.length - 1]._shut ? tops[tops.length - 1]._shut() : tops[tops.length - 1].remove(); return; }
       if (S.cur && !(history.state && history.state.wxChat)) closeChat();
     });
