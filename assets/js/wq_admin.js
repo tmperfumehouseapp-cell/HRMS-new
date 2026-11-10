@@ -39,7 +39,7 @@
     let seq = 0, liveTimer = 0, rsz = 0;
     el.innerHTML = '<div id="wqTabs" class="wq-tabs" role="tablist"></div><div id="wqBody"></div>';
     const tabsEl = el.querySelector('#wqTabs'), body = el.querySelector('#wqBody');
-    const TABS = [['live', 'Live'], ['pace', 'Pace'], ['attention', 'Attention'], ['types', 'Types'], ['compare', 'Bot vs person'], ['analytics', 'Analytics'], ['settings', 'Settings']];
+    const TABS = [['live', 'Live'], ['manager', '🧭 Team manager'], ['pace', 'Pace'], ['attention', 'Attention'], ['types', 'Types'], ['compare', 'Bot vs person'], ['analytics', 'Analytics'], ['settings', 'Settings']];
     const get = (a, p) => U.call(opt, a, p); const post = (a, b) => U.post(opt, a, b);
     const attnCount = () => S.attn ? num(S.attn.count, (S.attn.items || []).length) : 0;
     const when = (...a) => U.when(...a);
@@ -197,6 +197,7 @@
       await loadPace();
       if (my !== seq || !alive() || S.tab !== 'live') return; drawLive();
     }
+    function renderManager() { body.innerHTML = '<div id="wqMgrHost"></div>'; if (window.WaManager) window.WaManager.mount(body.querySelector('#wqMgrHost')); else body.innerHTML = '<div class="wq-card">The Team manager script could not load.</div>'; }
     function renderPace() { body.innerHTML = '<div id="wqPaceHost"></div>'; if (window.WaPace) window.WaPace.mount(body.querySelector('#wqPaceHost'), { days: 7 }); else body.innerHTML = '<div class="wq-card">The pace script could not load. Refresh the page.</div>'; }
     function setSub() {
       if (!opt.subEl) return; const b = S.board; const d = new Date();
@@ -502,6 +503,7 @@
       clearInterval(liveTimer); seq++;
       if (S.tab === 'live') { renderLive(quiet); liveTimer = setInterval(() => { if (!alive()) { clearInterval(liveTimer); return; } if (U.visible() && S.tab === 'live' && !document.querySelector('.wq-ov')) renderLive(true); }, 60000); }
       else if (S.tab === 'pace') renderPace();
+      else if (S.tab === 'manager') renderManager();
       else if (S.tab === 'attention') renderAttention();
       else if (S.tab === 'types') renderTypes();
       else if (S.tab === 'compare') renderCompare();
