@@ -476,7 +476,7 @@
 
 <script src="assets/js/config.js?v=2"></script>
 <script src="assets/js/api.js?v=9"></script>
-<script src="assets/js/layout.js?v=27"></script>
+<script src="assets/js/layout.js?v=28"></script>
 <script>
 
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -2473,7 +2473,6 @@
     ] },
     { k: 'people', t: 'Team performance', tabs: [
       ['team', 'Team', 'team_board.html', 'control_tower'],   // ONE table with everyone and one panel per person (everything in one place)
-      ['waq', 'Queues & Pace', 'wa_sales_live.html', 'control_tower'],   // the WhatsApp Sales page: live queries, Team manager (Pace, Attention, Types, Bot vs person), Analytics
     ] },
     { k: 'money', t: 'Money', tabs: [
       ['commission', 'Commission', 'commission_new.html', 'commission'],
@@ -2521,6 +2520,7 @@
       const tab = r.s === 'budget' ? (r.t === 'leaders' ? 'bt_leaders' : r.t === 'commission' ? (r.k === 'old' ? 'bt_old' : 'bt_commission') : 'bt_total') : (MOVED[r.t] === 'bt_commission' && r.k === 'old' ? 'bt_old' : MOVED[r.t]);
       location.replace('hub.html?w=budget&t=' + tab); r = { s: 'live', t: '', k: '' };
     }
+    if (r.s === 'people' && ((r.t === 'performance' && r.k === 'sheet') || r.t === 'report')) { location.replace('hub.html?w=budget&t=bt_daysheet'); r = { s: 'live', t: '', k: '' }; }   // the company day sheet moved to Total Budgeting
     if (r.s === 'retail') { location.replace('hub.html?w=shops&t=' + (r.t === 'stock' ? 'retail_inventory' : 'retail_shops')); r = { s: 'live', t: '', k: '' }; }   // Shops (wholesale) moved to the side menu
     if (OLD[r.t] && !r.k) r = { s: OLD[r.t][0], t: OLD[r.t][1], k: OLD[r.t][2] };
     if (r.s === 'learn' && r.t === 'proof') r = r.k === 'conv' ? { s: 'tools', t: 'conv', k: '' } : { s: 'learn', t: 'library', k: '' };
