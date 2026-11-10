@@ -51,7 +51,7 @@ function tb_rank(array $out): array
     $ids = array_keys($out); usort($ids, function ($x, $y) use ($out) { return [$out[$y]['orders_30d'], $out[$x]['name']] <=> [$out[$x]['orders_30d'], $out[$y]['name']]; });
     $i = 0; foreach ($ids as $id) { $out[$id]['rank'] = ++$i; $out[$id]['medals'] = []; }
     $best = function (string $k, bool $low, int $minQ) use (&$out) { $bi = 0; $bv = null; foreach ($out as $id => $r) { $v = $r[$k] ?? null; if ($v === null || $r['queries_30d'] < $minQ) continue; if ($bv === null || ($low ? $v < $bv : $v > $bv)) { $bv = $v; $bi = $id; } } return ($bv !== null && $bv > 0) ? $bi : 0; };
-    $mo = $best('orders_30d', false, 1); if ($mo) $out[$mo]['medals'][] = '🥇 Most orders';
+    $mo = $best('orders_30d', false, 1); if ($mo) $out[$mo]['medals'][] = '🥇 Most query orders';
     $ms = $best('speed_median_min_30d', true, 3); if ($ms) $out[$ms]['medals'][] = '⚡ Fastest';
     $mt = $best('ticket_30d', false, 1); if ($mt) $out[$mt]['medals'][] = '💎 Biggest ticket';
     $mr = $best('ratio_pct', false, 3); if ($mr) $out[$mr]['medals'][] = '🎯 Best ratio';
