@@ -788,10 +788,12 @@ function wa_prod_cron(PDO $pdo, array $opt = []): string
     if ((string)wa_prod_cfg($pdo, 'wa_prod_auto', '1') === '0') return 'off';   // the Products tab switch "Refresh every morning"
     $ts = (int)($opt['ts'] ?? time()); $today = date('Y-m-d', $ts);
     $due = date('H:i', $ts) >= '06:30' && (string)wa_prod_cfg($pdo, 'wa_prod_last_sync', '') !== $today && ((int)wa_prod_cfg($pdo, 'wa_prod_try_at', '0') < $ts - 3 * 3600 || !empty($opt['force']));
+    // 📸 once, right after the collage release (owner, 10 Nov): pull every perfume's photos / notes / longevity from Shopify now, without waiting for the next 06:30
+    $once = (string)wa_prod_cfg($pdo, 'wa_prod_once_collage', '') === '' && (int)wa_prod_cfg($pdo, 'wa_prod_try_at', '0') < $ts - 600; if ($once) $due = true;
     $backlog = !$due && (int)wa_prod_cfg($pdo, 'wa_prod_ai_wait', '0') <= $ts && (int)$pdo->query("SELECT COUNT(*) FROM wa_prod")->fetchColumn() > 0 && wa_prod_pending_count($pdo) > 0;
     if (!$due && !$backlog) return 'skip';
     if (!wa_lock($pdo, 'prod_daily', 900)) return 'busy';
-    $run = function () use ($pdo, $due, $opt) { try { @ignore_user_abort(true); @set_time_limit(280); wa_prod_daily($pdo, ['sync_due' => $due, 'nolock' => false] + $opt); } catch (Throwable $e) { error_log('wa_prod_cron: ' . $e->getMessage()); } finally { wa_prod_unlock($pdo, 'prod_daily'); } };
+    $run = function () use ($pdo, $due, $opt, $once) { try { @ignore_user_abort(true); @set_time_limit(280); $rr = wa_prod_daily($pdo, ['sync_due' => $due, 'nolock' => false] + $opt); if ($once && !empty($rr['sync']['ok'])) setting_set($pdo, 'wa_prod_once_collage', date('Y-m-d H:i:s')); } catch (Throwable $e) { error_log('wa_prod_cron: ' . $e->getMessage()); } finally { wa_prod_unlock($pdo, 'prod_daily'); } };
     if (!empty($opt['inline'])) { $run(); return 'ran'; }
     register_shutdown_function(function () use ($run) { if (function_exists('hrms_release')) hrms_release(); elseif (function_exists('fastcgi_finish_request')) @fastcgi_finish_request(); $run(); });
     return 'queued';
@@ -1401,13 +1403,13 @@ function wa_prod_bot_after(PDO $pdo, array $c, string $botText = ''): int
 {
     try {
         if (function_exists('wa_photo_gate') && !wa_photo_gate($pdo)) return 0;   // 🧠 the learning says photos do not help right now
-        $c = wa_contact($pdo, (string)$c['phone']) ?: $c; $a = wa_prod_attached($pdo, $c, ['room' => 5, 'fresh' => true]); $ids = []; $libs = []; $why = [];
+        $c = wa_contact($pdo, (string)$c['phone']) ?: $c; $a = wa_prod_attached($pdo, $c, ['room' => 6, 'fresh' => true]); $ids = []; $libs = []; $why = [];
         foreach ($a['items'] as $it) { if (is_string($it['id']) && strpos($it['id'], 'lib:') === 0) $libs[] = $it['id']; else $ids[] = (int)$it['id']; } foreach ($a['products'] as $p) $why[$p['id']] = (string)$p['why'];
         // 📸 FIXED RULE (owner, 10 Nov): whenever the bot's own words name a perfume of ours, its picture goes with it — even when the customer's message alone did not match the catalogue (e.g. "Azz The Most Desired")
-        if ($botText !== '' && count($ids) < 5) {
+        if ($botText !== '' && count($ids) < 6) {
             $f = ' ' . wa_prod_fold($botText, false) . ' '; $hits = [];
             foreach (wa_prod_all($pdo) as $p) { if ($p['kind'] !== 'perfume') continue; $n = wa_prod_fold((string)$p['name'], false); if (strlen($n) < 5) continue; $pos = strpos($f, ' ' . $n . ' '); if ($pos !== false) $hits[$pos] = $p; }
-            ksort($hits); foreach ($hits as $p) { if (count($ids) >= 5) break; if (!in_array((int)$p['id'], $ids, true)) { $ids[] = (int)$p['id']; $why[(int)$p['id']] = 'I suggested this perfume'; } }
+            ksort($hits); foreach ($hits as $p) { if (count($ids) >= 6) break; if (!in_array((int)$p['id'], $ids, true)) { $ids[] = (int)$p['id']; $why[(int)$p['id']] = 'I suggested this perfume'; } }
         }
         $n = 0;
         if ($ids) $n += function_exists('wa_collage_send') ? wa_collage_send($pdo, $c, $ids, 'bot', 0, $why) : (int)count((wa_prod_send_items($pdo, $c, $ids, 'why', 'bot', 0, ['why' => $why]))['sent'] ?? []);

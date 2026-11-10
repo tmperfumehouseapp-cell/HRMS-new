@@ -42,7 +42,8 @@ function wa_collage_render(array $rows, array $imgs): ?string
     if (!function_exists('imagecreatetruecolor') || !function_exists('imagettftext')) return null;
     $fr = wa_collage_font(false); $fb = wa_collage_font(true); if ($fr === '' || $fb === '') return null;
     $n = count($rows); if ($n < 1) return null; $cols = $n <= 3 ? $n : 3; $rowsN = (int)ceil($n / $cols);
-    $cw = 380; $ch = 600; $head = 64; $W = $cw * $cols; $H = $head + $ch * $rowsN;
+    $cw = $n === 1 ? 520 : 380; $S = $cw - 36; $PH = (int)round($S * 10 / 8);   // the website photos are 8 x 10 (portrait): the picture area is 8 x 10 too, so nothing is cut
+    $ch = 14 + $PH + 210; $head = 64; $W = $cw * $cols; $H = $head + $ch * $rowsN;
     $im = imagecreatetruecolor($W, $H); imageantialias($im, true);
     $bg = imagecolorallocate($im, 250, 247, 242); $ink = imagecolorallocate($im, 33, 33, 38); $mut = imagecolorallocate($im, 100, 100, 110); $gold = imagecolorallocate($im, 150, 108, 40); $line = imagecolorallocate($im, 226, 219, 206); $card = imagecolorallocate($im, 255, 255, 255);
     imagefill($im, 0, 0, $bg);
@@ -50,10 +51,13 @@ function wa_collage_render(array $rows, array $imgs): ?string
     foreach ($rows as $i => $p) {
         $c = $i % $cols; $r = intdiv($i, $cols); $x = $c * $cw; $y = $head + $r * $ch;
         imagefilledrectangle($im, $x + 8, $y + 4, $x + $cw - 8, $y + $ch - 8, $card); imagerectangle($im, $x + 8, $y + 4, $x + $cw - 8, $y + $ch - 8, $line);
-        $ph = $imgs[$p['id']] ?? null; $S = $cw - 36; $px = $x + 18; $py = $y + 14;
-        if ($ph) { $sw = imagesx($ph); $sh = imagesy($ph); $m = min($sw, $sh); imagecopyresampled($im, $ph, $px, $py, (int)(($sw - $m) / 2), (int)(($sh - $m) / 2), $S, $S, $m, $m); }   // centred square crop
-        else { imagefilledrectangle($im, $px, $py, $px + $S - 1, $py + $S - 1, $bg); }
-        $ty = $py + $S + 30; $tw = $cw - 40;
+        $ph = $imgs[$p['id']] ?? null; $px = $x + 18; $py = $y + 14;
+        imagefilledrectangle($im, $px, $py, $px + $S - 1, $py + $PH - 1, $card);
+        if ($ph) {   // the whole photo, scaled to fit the 8 x 10 area (an 8 x 10 photo fills it exactly; any other shape gets bars, never a cut)
+            $sw = imagesx($ph); $sh = imagesy($ph); $k = min($S / $sw, $PH / $sh); $dw = (int)round($sw * $k); $dh = (int)round($sh * $k);
+            imagecopyresampled($im, $ph, $px + (int)(($S - $dw) / 2), $py + (int)(($PH - $dh) / 2), 0, 0, $dw, $dh, $sw, $sh);
+        }
+        $ty = $py + $PH + 30; $tw = $cw - 40;
         foreach (wa_collage_wrap((string)$p['name'], $fb, 17, $tw, 2) as $ln) { imagettftext($im, 17, 0, $px, $ty, $ink, $fb, $ln); $ty += 26; }
         $notes = array_values(array_filter(array_map('trim', (array)$p['notes']))); $ty += 4;
         if ($notes) foreach (wa_collage_wrap('Notes: ' . implode(', ', array_slice($notes, 0, 8)), $fr, 13, $tw, 3) as $ln) { imagettftext($im, 13, 0, $px, $ty, $mut, $fr, $ln); $ty += 20; }
@@ -61,13 +65,13 @@ function wa_collage_render(array $rows, array $imgs): ?string
     }
     ob_start(); imagejpeg($im, null, 84); $d = ob_get_clean(); imagedestroy($im); return $d !== false && $d !== '' ? $d : null;
 }
-function wa_collage_make(PDO $pdo, array $ids, int $max = 5): array
+function wa_collage_make(PDO $pdo, array $ids, int $max = 6): array
 {
     $o = ['ok' => false, 'url' => '', 'names' => [], 'ids' => [], 'error' => ''];
     if (!function_exists('wa_prod_get') || !function_exists('pc_base_url')) { $o['error'] = 'Collage is not available.'; return $o; }
     $rows = []; foreach (wa_prod_get($pdo, array_slice(array_values(array_unique(array_map('intval', $ids))), 0, $max)) as $p) { $p = wa_prod_dec($p); if ((int)$p['active'] === 1 && $p['photos']) $rows[] = $p; }
     if (!$rows) { $o['error'] = 'None of these perfumes has a photo.'; return $o; }
-    $sig = []; foreach ($rows as $p) $sig[] = [$p['id'], $p['name'], $p['notes'], $p['longevity'], $p['photos'][0]]; $key = md5(json_encode($sig, JSON_UNESCAPED_UNICODE) . '|v1');
+    $sig = []; foreach ($rows as $p) $sig[] = [$p['id'], $p['name'], $p['notes'], $p['longevity'], $p['photos'][0]]; $key = md5(json_encode($sig, JSON_UNESCAPED_UNICODE) . '|v2');
     $file = wa_collage_dir() . $key . '.jpg';
     if (!is_file($file)) {
         $imgs = []; foreach ($rows as $p) $imgs[$p['id']] = wa_collage_fetch(function_exists('wa_prod_img_url') ? wa_prod_img_url((string)$p['photos'][0]) . '' : (string)$p['photos'][0]) ?: null;
@@ -78,20 +82,25 @@ function wa_collage_make(PDO $pdo, array $ids, int $max = 5): array
     return ['ok' => true, 'url' => pc_base_url() . '/empmanagment/api.php?action=wa.collage_view&t=' . $key, 'names' => array_column($rows, 'name'), 'ids' => array_column($rows, 'id'), 'error' => ''];
 }
 
-/** Send ONE collage for these perfumes (2–5) — or the single photo when only one is left. Perfumes already sent to this customer in the last 24 h are left out when the bot sends. Returns the number of perfumes shown. */
+/** Send ONE collage for these perfumes (1–6) — or the single photo when only one is left. Perfumes already sent to this customer in the last 24 h are left out when the bot sends. Returns the number of perfumes shown. */
 function wa_collage_send(PDO $pdo, array $c, array $prodIds, string $who, int $empId, array $why = []): int
 {
-    $ids = array_slice(array_values(array_unique(array_filter(array_map('intval', $prodIds)))), 0, 5); if (!$ids) return 0;
+    $ids = array_slice(array_values(array_unique(array_filter(array_map('intval', $prodIds)))), 0, 12); if (!$ids) return 0;   // 6 perfumes = 1 picture · 7 to 12 = 2 pictures
     $phone = (string)$c['phone'];
     if ($who === 'bot') { $recent = wa_prod_recent($pdo, $phone, 24); $ids = array_values(array_filter($ids, fn($i) => empty($recent[$i]))); if (!$ids) return 0; }
-    if (count($ids) === 1 || !wa_collage_enabled($pdo)) { $r = wa_prod_send_items($pdo, $c, $ids, 'why', $who, $empId, ['why' => $why]); return count($r['sent'] ?? []); }
-    $m = wa_collage_make($pdo, $ids, 5);
-    if ($m['ok']) {
-        [$ok, $r] = wa_send_image_link($pdo, $c, $m['url'], mb_substr(implode(' · ', $m['names']), 0, 900), $who, $empId, 0);
-        if ($ok) { foreach ($m['ids'] as $pid) { try { wa_prod_seen_mark($pdo, $phone, (int)$pid, 0, (string)(is_array($r) ? ($r['wamid'] ?? '') : $r)); } catch (Throwable $e) { } } return count($m['ids']); }
-        error_log('wa_collage_send: ' . (is_string($r) ? $r : json_encode($r)));
+    if (!wa_collage_enabled($pdo)) { $r = wa_prod_send_items($pdo, $c, $ids, 'why', $who, $empId, ['why' => $why, 'cap' => 12]); return count($r['sent'] ?? []); }
+    $shown = 0; $chunks = array_chunk($ids, count($ids) > 6 ? (int)ceil(count($ids) / 2) : 6);   // 7–12 perfumes split into two EVEN pictures (e.g. 8 → 4 + 4)
+    foreach ($chunks as $ci => $chunk) {
+        $m = wa_collage_make($pdo, $chunk, 6); $done = false;
+        if ($m['ok']) {
+            [$ok, $r] = wa_send_image_link($pdo, $c, $m['url'], mb_substr(implode(' · ', $m['names']), 0, 900), $who, $empId, 0);
+            if ($ok) { foreach ($m['ids'] as $pid) { try { wa_prod_seen_mark($pdo, $phone, (int)$pid, 0, (string)(is_array($r) ? ($r['wamid'] ?? '') : $r)); } catch (Throwable $e) { } } $shown += count($m['ids']); $done = true; }
+            else error_log('wa_collage_send: ' . (is_string($r) ? $r : json_encode($r)));
+        }
+        if (!$done) { $r = wa_prod_send_items($pdo, $c, $chunk, 'why', $who, $empId, ['why' => $why]); $shown += count($r['sent'] ?? []); }   // the picture could not be made or sent: the separate photos go as before
+        if ($ci < count($chunks) - 1) usleep(400000);
     }
-    $r = wa_prod_send_items($pdo, $c, $ids, 'why', $who, $empId, ['why' => $why]); return count($r['sent'] ?? []);   // the picture could not be made or sent: the separate photos go as before
+    return $shown;
 }
 /** 🧠 Learning gate (owner, 10 Nov): the bot keeps sending photos only while they help. Every 12 h we compare, over the last 14 days, how often customers wrote back within 6 hours after a bot answer WITH photos vs WITHOUT.
  *  WhatsApp does not tell us who "opened" a picture, so a reply is the signal we have. 150+ answers on each side and the photo side 15%+ lower → photos pause (the Products tab note says why); the check keeps running and turns them back on when it recovers.
