@@ -48,7 +48,7 @@ if (strpos($__wpl, 'wa.pl_') === 0) {
             }
             $R = function_exists('wab_rates') ? wab_rates($pdo) : ['marketing' => 1.09, 'utility' => 0.15]; $room = 0; try { $caps = wa_number_caps($pdo, wa_camp_health($pdo)); $room = (int)($caps['_port']['left'] ?? 0); } catch (Throwable $e) { }
             $nums = []; try { foreach ($pdo->query("SELECT id, label FROM wa_numbers ORDER BY id")->fetchAll() as $n) $nums[] = ['id' => (int)$n['id'], 'label' => (string)$n['label']]; } catch (Throwable $e) { }
-            json_response(['ok' => true, 'cfg' => $cfg, 'items' => $items, 'price' => (float)$R['marketing'], 'price_u' => (float)$R['utility'], 'room' => $room, 'numbers' => $nums]);
+            json_response(['ok' => true, 'now' => date('Y-m-d H:i:s'), 'today' => date('Y-m-d'), 'cfg' => $cfg, 'items' => $items, 'price' => (float)$R['marketing'], 'price_u' => (float)$R['utility'], 'room' => $room, 'numbers' => $nums]);
         }
         case 'wa.pl_add': {
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $in = json_input(); $name = mb_substr(trim((string)($in['name'] ?? 'file.csv')), 0, 160); $text = (string)($in['text'] ?? '');
