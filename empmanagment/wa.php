@@ -398,6 +398,7 @@ function cx_can_media(PDO $pdo, array $auth, array $phones): bool
 function wa_cx_lock(PDO $pdo, array $auth, array $c): string
 {
     $id = (int)($c['cx_id'] ?? 0); if ($id <= 0 || wa_is_admin($pdo, $auth)) return '';
+    if ((string)setting_get($pdo, 'wa_cx_lock', '0') !== '1') return '';   // the owner's rule: a salesperson may answer a complaint chat too (set wa_cx_lock = 1 to bring back "one voice")
     try { $q = $pdo->prepare("SELECT id, owner_emp, status FROM cx_cases WHERE id = ?"); $q->execute([$id]); $k = $q->fetch(); } catch (Throwable $e) { return ''; }
     if (!$k || !in_array((string)$k['status'], ['open', 'reopened'], true)) return '';
     if ((int)$k['owner_emp'] > 0 && (int)$k['owner_emp'] === (int)($auth['employee_id'] ?? 0)) return '';
