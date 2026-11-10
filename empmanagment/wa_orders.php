@@ -814,7 +814,7 @@ function wo_cfg(PDO $pdo): array
     foreach (wo_send_defs() as $k => $d) $o[$k] = in_array($k, ['review', 'review_nudge', 'bday_ask', 'birthday', 'dispatch_late', 'care_d2', 'return_d15', 'return_d30'], true) ? !empty($st[$k]) : (!isset($st[$k]) || !empty($st[$k]));   // the rating request stays OFF until Admin switches it on
     return ['on' => wo_get($pdo, 'wa_ord_auto_on', '1') !== '0', 'statuses' => $o];
 }
-/** The messages whose timing the owner can change in Automation (the others go when the courier's status changes). */
+/** The messages whose timing the owner can change in Autobot (the others go when the courier's status changes). */
 function wo_timing_defs(): array
 {
     return ['care_d2' => ['unit' => 'days after the parcel is delivered', 'min' => 1, 'max' => 10, 'def' => 2, 'label' => 'Send the check-in'],
@@ -918,7 +918,7 @@ function wa_ord_autosend(PDO $pdo, ?int $nowTs = null, string $onlyStore = ''): 
     return $res;
 }
 /** 💬 The check-in (2 days), the take-back offer (15 days) and the no-questions return offer (30 days) after a parcel was delivered. ONE of each per order; only parcels delivered after the switch was turned on;
- *  never to a customer with an open complaint / Dispatch case. The days are set in Automation → After delivery. Returns how many were queued. */
+ *  never to a customer with an open complaint / Dispatch case. The days are set in Autobot → After delivery. Returns how many were queued. */
 function wa_ord_after_queue(PDO $pdo, int $nowTs, array $cfg, string $sk, int $go): int
 {
     $n = 0;

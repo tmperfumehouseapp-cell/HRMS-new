@@ -1,6 +1,6 @@
 <?php
 /**
- * wa_autopilot.php — 🔁 FOLLOW-UP AUTOPILOT (one screen: Learn & Setup → Follow-ups, WhatsApp → Automation → Follow-ups, Replies → Follow-up messages).
+ * wa_autopilot.php — 🔁 FOLLOW-UP AUTOPILOT (one screen: Learn & Setup → Follow-ups, WhatsApp → Autobot → Follow-ups, Replies → Follow-up messages).
  * Built ON the follow-up engine (wa_follow.php): the same situations ("paths"), states, limits, stop rules, Suggest / Auto modes. This file adds:
  *   · the 6 PATHS of a customer who did not order (asked the price · got suggestions · price felt high · thinking / family · agreed but did not pay · never answered),
  *     each with 3–4 free follow-ups inside 24 hours (Claude writes each one from the chat) and the OFFERS on day 2 / 4 / 7 / 10 (mega);

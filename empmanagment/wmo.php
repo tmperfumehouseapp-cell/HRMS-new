@@ -215,7 +215,7 @@ function wmo_notify(PDO $pdo, array $r, array $cust): void
     if (function_exists('dp_dsp_sync')) { try { dp_dsp_sync($pdo, time(), true); } catch (Throwable $e) { } }       // the parcel appears in Dispatch now, not in three minutes
     $c = function_exists('wa_contact') ? wa_contact($pdo, $key) : null;
     if ($c) {
-        // the customer gets the ready-made "Order received" message of WhatsApp -> Automation -> Order updates (wa_done_mark sends it); shipped / out for delivery / delivered follow from Dispatch by themselves
+        // the customer gets the ready-made "Order received" message of WhatsApp -> Autobot -> Order updates (wa_done_mark sends it); shipped / out for delivery / delivered follow from Dispatch by themselves
         if (function_exists('wa_done_mark')) { try { wa_done_mark($pdo, $key, (int)$r['assign_emp'], 'manual', (string)$r['order_no']); } catch (Throwable $e) { error_log('wmo done: ' . $e->getMessage()); } }
         if (function_exists('wa_event')) { try { wa_event($pdo, $key, '🧾 Manual order ' . $r['order_no'] . ' confirmed by the customer — ' . wmo_rs((int)$r['total_p']) . ((int)$r['cod_p'] > 0 ? ' (COD ' . wmo_rs((int)$r['cod_p']) . ')' : ' (prepaid)') . ((int)$cust['match'] === 1 ? '' : ' · ⚠ the mobile number written is different from this chat')); } catch (Throwable $e) { } }
         $note = wmo_invoice($pdo, $r, $cust, 0); if (function_exists('wa_event')) { try { wa_event($pdo, $key, '🧾 ' . $note); } catch (Throwable $e) { } }
