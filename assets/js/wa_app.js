@@ -290,8 +290,23 @@
       try { const r = await api.get('wq.req_list'); const n = r.items || [], lt = r.late || []; const key = (a) => JSON.stringify(a.map((x) => x.phone + '|' + (x.mins ?? x.waiting_min)));
         const nk = JSON.stringify((r.needs || []).map((x) => x.phone + x.level + (x.own ? 1 : 0) + Math.floor((x.sec || 0) / 60))); const ch = key(n) !== key(S.req || []) || key(lt) !== key(S.reqLate || []) || nk !== S.needsKey; S.needsKey = nk;
         if (S.req && S.sound !== false && n.some((x) => !S.req.some((y) => y.phone === x.phone))) beepNew();   // 🔔 a new request came in
-        S.req = n; S.reqLate = lt; S.needs = r.needs || []; S.needsHold = +r.needs_hold || 0; S.needsHoldCx = +r.needs_hold_cx || 0; S.holdItems = r.needs_hold_items || []; S.holdAt = Date.now(); S.reqMin = r.late_min || 4; { const rk = JSON.stringify((r.rescue || []).map((x) => x.phone + '|' + x.tier)); if (rk !== S.rescueKey) { S.rescueKey = rk; if (S.tab === 'chats' && S.filter === 'rescue' && (!S.cur || wide())) pend = 1; } S.rescue = r.rescue || []; S.rescueMine = r.rescue_mine || []; S.rescueCfg = r.rescue_cfg || null; S.rescueOn = !!r.rescue_member; }
+        S.req = n; S.reqLate = lt; S.needs = r.needs || []; try { needPop(); } catch (e) { } S.needsHold = +r.needs_hold || 0; S.needsHoldCx = +r.needs_hold_cx || 0; S.holdItems = r.needs_hold_items || []; S.holdAt = Date.now(); S.reqMin = r.late_min || 4; { const rk = JSON.stringify((r.rescue || []).map((x) => x.phone + '|' + x.tier)); if (rk !== S.rescueKey) { S.rescueKey = rk; if (S.tab === 'chats' && S.filter === 'rescue' && (!S.cur || wide())) pend = 1; } S.rescue = r.rescue || []; S.rescueMine = r.rescue_mine || []; S.rescueCfg = r.rescue_cfg || null; S.rescueOn = !!r.rescue_member; }
         if (ch && S.tab === 'chats' && (!S.cur || wide())) { if (held()) pend = 1; else drawList(); } } catch (e) { }
+    }
+    // ⚡ small "Accept" pop-up: a red / orange chat nobody has taken for 45 s. It asks the server every second and goes away by itself the moment somebody accepts (or answers). ✕ closes it for me only.
+    function needPop() {
+      const no = S.popNo || (S.popNo = {}), L = (S.needs || []).filter((x) => !x.own && !x.holder && (x.sec || 0) >= 45 && !no[x.key]);
+      const old = R.querySelector('.wx-np'), x = L[0];
+      const stop = () => { clearInterval(S.npT); S.npT = 0; const e = R.querySelector('.wx-np'); if (e) e.remove(); };
+      if (!x) { if (old) stop(); return; }
+      if (old && old.dataset.p === x.phone) return;
+      stop(); const el = document.createElement('div'); el.className = 'wx-np'; el.dataset.p = x.phone;
+      el.style.cssText = 'position:absolute;left:50%;bottom:calc(100px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:60;max-width:min(92%,380px);background:#0f172a;color:#fff;border-radius:14px;padding:8px 10px;display:flex;align-items:center;gap:8px;box-shadow:0 6px 20px rgba(0,0,0,.3);font-size:13px';
+      el.innerHTML = '<span style="min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (x.level === 'red' ? '🔴 ' : '🟠 ') + esc(x.name || pretty(x.phone)) + ' needs you now</span><button type="button" data-a style="border:0;border-radius:10px;padding:7px 12px;background:#16a34a;color:#fff;font-weight:700;min-height:34px">Accept</button><button type="button" data-x aria-label="Close" style="border:0;background:transparent;color:#cbd5e1;font-size:18px;min-width:32px;min-height:34px">✕</button>';
+      R.appendChild(el); if (S.sound !== false) { try { beepNew(); } catch (e) { } }
+      el.querySelector('[data-x]').onclick = () => { no[x.key] = 1; stop(); };
+      el.querySelector('[data-a]').onclick = async (ev) => { ev.target.disabled = true; ev.target.textContent = '…'; try { await api.post('wq.need_take', { phone: x.phone }); S.needs = (S.needs || []).filter((y) => y.phone !== x.phone); stop(); await loadReq(); openChat(x.phone); } catch (er) { toast(er.message || 'Somebody already took this', true); S.needs = (S.needs || []).filter((y) => y.phone !== x.phone); stop(); loadReq(); } };
+      let busy = 0; S.npT = setInterval(async () => { if (busy || document.hidden) return; busy = 1; try { const d = await api.get('wq.need_ping', { phone: x.phone }); if (!d.available) { S.needs = (S.needs || []).filter((y) => y.phone !== x.phone); if (R.querySelector('.wx-np')) { stop(); toast('✅ This query got accepted'); } else stop(); } } catch (e) { /* try again next second */ } busy = 0; }, 1000);
     }
     // ⚠ my customers' complaint tickets (read-only — the Complaint team handles them): status, who answered last, Claude's line (bd.cx_wa_board)
     async function loadCxB() { try { S.cxB = await api.get('bd.cx_wa_board', { f: 'all' }); } catch (e) { S.cxB = { items: [], err: e.message }; } if (S.tab === 'chats' && S.filter === 'cx' && !S.cur) drawList(); }

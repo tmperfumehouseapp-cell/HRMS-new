@@ -1637,7 +1637,7 @@ function wq_bot_context(PDO $pdo, array $c): string
 // ------------------------------------------------------------------------------------------------------------------ router (pinned at the end of the file; answers at include time like wa_orders.php / wa_seg.php)
 $__wqa = (string)($action ?? ($_GET['action'] ?? ''));
 if (strpos($__wqa, 'wq.') === 0 && in_array($__wqa, ['wq.board', 'wq.mine', 'wq.attention', 'wq.assign', 'wq.on_duty', 'wq.queries', 'wq.query', 'wq.retype', 'wq.tags_for', 'wq.types_state', 'wq.types_next', 'wq.types_answer', 'wq.rules',
-    'wq.compare', 'wq.whatwon', 'wq.whatwon_act', 'wq.summary', 'wq.analytics', 'wq.settings', 'wq.cutover', 'wq.status', 'wq.tick', 'wq.typing', 'wq.grab_list', 'wq.grab', 'wq.grab_board', 'wq.req_list', 'wq.req_take', 'wq.need_take', 'wq.need_peek', 'wq.need_dismiss', 'wq.needs_board'], true)) {
+    'wq.compare', 'wq.whatwon', 'wq.whatwon_act', 'wq.summary', 'wq.analytics', 'wq.settings', 'wq.cutover', 'wq.status', 'wq.tick', 'wq.typing', 'wq.grab_list', 'wq.grab', 'wq.grab_board', 'wq.req_list', 'wq.req_take', 'wq.need_take', 'wq.need_ping', 'wq.need_peek', 'wq.need_dismiss', 'wq.needs_board'], true)) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'; $auth = require_auth(); $me = (int)($auth['employee_id'] ?? 0);
     if (!function_exists('wa_tables') || !wa_tables($pdo)) json_response(['error' => 'WhatsApp storage is not available - check database permissions.'], 500);
     wq_deps($pdo); if (!wq_tables($pdo)) json_response(['error' => 'WhatsApp Sales storage is not available - check database permissions.'], 500);
@@ -1660,6 +1660,11 @@ if (strpos($__wqa, 'wq.') === 0 && in_array($__wqa, ['wq.board', 'wq.mine', 'wq.
             $q = $pdo->prepare("SELECT dir, who, mtype, body, ts FROM wa_messages WHERE phone = ? AND dir IN ('in', 'out') ORDER BY id DESC LIMIT 10"); $q->execute([$k]); $m = [];
             foreach (array_reverse($q->fetchAll(PDO::FETCH_ASSOC)) as $r) { $t = trim((string)$r['body']); if ($t === '') $t = '[' . ((string)$r['mtype'] !== '' ? $r['mtype'] : 'attachment') . ']'; $m[] = ['dir' => (string)$r['dir'], 'who' => (string)$r['who'], 'text' => mb_substr($t, 0, 400), 'ts' => (string)$r['ts']]; }
             json_response(['ok' => true, 'messages' => $m]);
+        }
+        case 'wq.need_ping': {   // ⚡ the small "Accept" pop-up asks this every second: is this chat still waiting in MY list (nobody took it, nobody answered)?
+            $needGet(); $k = $phoneIn(); if ($k === '') json_response(['ok' => true, 'available' => false]); $av = false;
+            foreach (wq_needs($pdo, $me) as $x) if ((string)$x['phone'] === $k && empty($x['own'])) { $av = true; break; }
+            json_response(['ok' => true, 'available' => $av]);
         }
         case 'wq.need_take': { $needPost(); $k = $phoneIn(); if ($k === '') json_response(['error' => 'Chat not found.'], 404); $r = wq_need_take($pdo, $k, $me); if (isset($r['error'])) json_response($r, 409); json_response($r); }
         case 'wq.need_dismiss': { $needPost(); $k = $phoneIn(); if ($k === '') json_response(['error' => 'Chat not found.'], 404); $r = wq_need_dismiss($pdo, $k, $me); if (isset($r['error'])) json_response($r, 409); json_response($r); }
