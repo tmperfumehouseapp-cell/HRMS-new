@@ -484,7 +484,7 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
 <script src="assets/js/wa_cust_ui.js?v=k4"></script>
 <script src="assets/js/wa_kflow_ui.js?v=kf1"></script>
 <script src="assets/js/wj_ui.js?v=wj7"></script>
-<script src="assets/js/jny_ui.js?v=jt8"></script>
+<script src="assets/js/jny_ui.js?v=jt14"></script>
 <script src="assets/js/wq_tags_ui.js?v=tg1"></script>
 <script src="assets/js/wq_speed_ui.js?v=sp5"></script>
 <script src="assets/js/wq_topics_ui.js?v=tp2"></script>
@@ -671,6 +671,7 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
     if (String(k).indexOf('f_') === 0) { const f = ITEMS.find((x) => x.k === k); if (f) { openFeed(f.feed); return; } }
     const m = byKey(k); cur = m.k; const G = GOF[cur]; $('ttl').textContent = G ? G.t : m.t; $('tsub').textContent = m.sub || ''; document.title = (G ? G.t : m.t) + ' — WhatsApp';
     const gt = $('gtabs'); if (G) { try { localStorage.setItem('wa_tab_' + G.k, cur); } catch (e) { } gt.hidden = false; gt.innerHTML = G.tabs.map(([x, l]) => `<button type="button" data-k="${x}" class="${x === cur ? 'on' : ''}">${esc(l)}</button>`).join(''); } else { gt.hidden = true; gt.innerHTML = ''; }
+    try { sessionStorage.setItem('wa_last_sec', cur + '|' + Date.now()); } catch (e) { }   // a refresh (the page sits inside the hub, so the address bar has no #section) comes back to this screen
     if (location.hash !== '#' + cur) { if (!started || noPush) history.replaceState(history.state, '', '#' + cur); else history.pushState({ waSec: cur }, '', '#' + cur); }
     Object.keys(secs).forEach((x) => { secs[x].hidden = x !== cur; });
     if (!secs[cur]) {
@@ -766,7 +767,8 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
 
   // ---------- start
   const first0 = (location.hash || '').replace('#', ''); if (['orderupd', 'afterdel', 'birthdays'].indexOf(first0) >= 0) { try { localStorage.setItem('wa_fu_sub2', first0); } catch (e) { } location.hash = '#followups'; }
-  const first = ALIAS[(location.hash || '').replace('#', '')] || (location.hash || '').replace('#', '');
+  let first = ALIAS[(location.hash || '').replace('#', '')] || (location.hash || '').replace('#', '');
+  if (!first) { try { const sv = String(sessionStorage.getItem('wa_last_sec') || '').split('|'); if (sv[0] && Date.now() - (+sv[1] || 0) < 6 * 3600 * 1000) first = ALIAS[sv[0]] || sv[0]; } catch (e) { } }   // refresh: stay where you were (this tab, last 6 hours)
   if (first.indexOf('f_') === 0 && ITEMS.some((m) => m.k === first)) openFeed(first.slice(2)); else go(ITEMS.some((m) => m.k === first) ? first : 'overview');
   if (cur !== 'overview') { secs.overview = document.createElement('div'); secs.overview.className = 'sec pad'; secs.overview.hidden = true; $('body').appendChild(secs.overview); loadOverview(true); }
   started = true;

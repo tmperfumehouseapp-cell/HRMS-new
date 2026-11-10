@@ -341,6 +341,14 @@ function wag_greet_quick(PDO $pdo, string $text, array $c): ?string
     return trim((string)preg_replace('/[ ]+([!,.?])/', '$1', $b));
 }
 /** Writes the reply for ONE waiting customer in advance (text-type last message, window open, not opted out, no reply stored yet). Skips anything that needs a person. */
+/** 🛑 A chat message the AI already could not answer (a person must answer it) or failed on: not asked again for the same message — handoff: never; a failure: after 10 minutes. */
+function wag_neg_skip(PDO $pdo, string $mk, int $inId): bool
+{
+    if ($inId <= 0 || !function_exists('wq_meta_get')) return false;
+    $v = explode('|', wq_meta_get($pdo, $mk, ''));
+    return count($v) === 2 && (int)$v[0] === $inId && ((int)$v[1] === 0 || (int)$v[1] > time());
+}
+function wag_neg_set(PDO $pdo, string $mk, int $inId, bool $permanent): void { if ($inId > 0 && function_exists('wq_meta_put')) wq_meta_put($pdo, $mk, $inId . '|' . ($permanent ? 0 : time() + 600)); }
 function wag_prebuild(PDO $pdo, string $key): bool
 {
     try {
@@ -353,7 +361,9 @@ function wag_prebuild(PDO $pdo, string $key): bool
         if (wag_sugg_get($pdo, $key)) return true;
         if (function_exists('wa_hot_intent') && wa_hot_intent((string)$m['body']) !== '') return false;   // wants to pay: a person replies
         $gq = wag_greet_quick($pdo, (string)$m['body'], $c); if ($gq !== null && $gq !== '') { wa_sugg_save($pdo, $key, $gq, 'quick', 0); return true; }   // a plain "hi": your own saved greeting, no AI
-        $r = wag_brain_reply($pdo, $c); if (!$r['ok'] || !empty($r['handoff'])) return false;   // "call now" / "a person should handle this" is never pre-written (so it is never auto-sent)
+        $inId = (int)(wa_last_in($pdo, $key)[0] ?? 0); if (wag_neg_skip($pdo, 'pgn:' . $key, $inId)) return false;   // the same message was already tried and a person has to answer it: no second AI call
+        $f0 = ai_feat('wa_presugg'); $r = wag_brain_reply($pdo, $c); ai_feat($f0);
+        if (!$r['ok'] || !empty($r['handoff'])) { wag_neg_set($pdo, 'pgn:' . $key, $inId, !empty($r['ok'])); return false; }   // "call now" / "a person should handle this" is never pre-written (so it is never auto-sent)
         wa_sugg_save($pdo, $key, $r['text'], $r['source'], (int)$r['ver']); return true;
     } catch (Throwable $e) { return false; }
 }
@@ -430,9 +440,11 @@ function wag_bot_scan(PDO $pdo, int $max = 4): array
             }
         }
         $q = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE phone = ? AND dir = 'out' AND who = 'bot' AND ts >= ?"); $q->execute([$key, date('Y-m-d 00:00:00')]); if ((int)$q->fetchColumn() >= $cfg['bot_max_day']) continue;
+        if (wag_neg_skip($pdo, 'bgn:' . $key, (int)$m['id'])) continue;   // already tried for this message
         $__wqc = function_exists('wq_guard') ? wq_guard($pdo, $key, (int)$m['id'], 'reply', 'bot') : true; if (!$__wqc) continue;   // one answer per customer message: bot, holding message or countdown — whoever claims first
-        $r = wag_brain_reply($pdo, $c, '', true); if (!$r['ok']) { if (function_exists('wq_guard_release')) wq_guard_release($pdo, $key, (int)$m['id'], 'reply'); if (stripos((string)$r['why'], 'not been taught') !== false) { wag_log($pdo, 'bot', false, 'The bot has not been taught yet — nothing was sent.'); break; } continue; }
-        if (!empty($r['handoff'])) { if (function_exists('wq_guard_release')) wq_guard_release($pdo, $key, (int)$m['id'], 'reply'); if (function_exists('wa_hot_flag') && wa_hot_flag($pdo, $c, 'bot needs a person')) $o['handoff']++; continue; }
+        $f0 = ai_feat('wa_bot'); $r = wag_brain_reply($pdo, $c, '', true); ai_feat($f0);
+        if (!$r['ok']) { wag_neg_set($pdo, 'bgn:' . $key, (int)$m['id'], false); if (function_exists('wq_guard_release')) wq_guard_release($pdo, $key, (int)$m['id'], 'reply'); if (stripos((string)$r['why'], 'not been taught') !== false) { wag_log($pdo, 'bot', false, 'The bot has not been taught yet — nothing was sent.'); break; } continue; }
+        if (!empty($r['handoff'])) { wag_neg_set($pdo, 'bgn:' . $key, (int)$m['id'], true); if (function_exists('wq_guard_release')) wq_guard_release($pdo, $key, (int)$m['id'], 'reply'); if (function_exists('wa_hot_flag') && wa_hot_flag($pdo, $c, 'bot needs a person')) $o['handoff']++; continue; }
         [$ok, $res] = wa_send_text($pdo, $c, $r['text'], 'bot', 0);
         if ($ok && !empty($r['photo']) && function_exists('pc_photo_url') && function_exists('wa_send_image_link')) { $u = pc_photo_url($pdo); if ($u !== '') { [$pok, $pres] = wa_send_image_link($pdo, $c, $u, '', 'bot', 0); if (!$pok) wag_log($pdo, 'bot', false, $key . ' · price photo · ' . $pres); } }   // the Teach rules said: send the price photo
         if ($ok) { $o['sent']++; wa_event($pdo, $key, '🤖 The bot answered (' . $age . ' s after the customer)'); if (function_exists('wa_sugg_save')) wa_sugg_save($pdo, $key, $r['text'], $r['source'], (int)$r['ver']); if (function_exists('wa_prod_bot_after')) wa_prod_bot_after($pdo, $c); }   // product photos follow the bot's text (max 3, never repeated within 24 h)
@@ -457,7 +469,8 @@ function wag_unans_scan(PDO $pdo): int
     return $n;
 }
 /** Claude gives chats a few short tags (e.g. "likes oud", "gift buyer"). Two chats per tick, only chats with something new. */
-function wag_ai_tag_one(PDO $pdo, array $c): array
+function wag_ai_tag_one(PDO $pdo, array $c): array { $f0 = ai_feat('wa_tag'); try { return wag_ai_tag_one_x($pdo, $c); } finally { ai_feat($f0); } }
+function wag_ai_tag_one_x(PDO $pdo, array $c): array
 {
     if (!function_exists('convo_ai')) return [false, 'The AI is not available.'];
     $key = (string)$c['phone']; $st = $pdo->prepare("SELECT dir, body FROM wa_messages WHERE phone = ? AND dir != 'sys' ORDER BY id DESC LIMIT 30"); $st->execute([$key]); $rows = array_reverse($st->fetchAll()); if (!$rows) return [false, 'No messages yet.'];
@@ -963,7 +976,7 @@ if (strpos($__wg, 'wa.g_') === 0 && strpos($__wg, 'wa.g_flow') !== 0) {
         case 'wa.g_sugg': {   // the suggestion already written for the newest customer message — instant; null = none yet
             $c = $chatOf((string)($_GET['phone'] ?? '')); $s = wag_sugg_get($pdo, (string)$c['phone']);
             if (!empty($c['cx_id'])) json_response(['ok' => true, 'sugg' => null, 'hot' => false, 'auto' => ['on' => false, 'secs' => 20], 'complaint' => (int)$c['cx_id']]);   // with the Complaint team: no suggestion, no auto-send
-            if (!$s && !empty($_GET['make'])) { $r = wag_brain_reply($pdo, $c); if ($r['ok']) { wa_sugg_save($pdo, (string)$c['phone'], $r['text'], $r['source'], (int)$r['ver']); $s = ['text' => $r['text'], 'source' => $r['source'], 'ver' => $r['ver'], 'why' => $r['why'], 'call_now' => !empty($r['handoff'])]; } }
+            if (!$s && !empty($_GET['make'])) { $f0 = ai_feat('wa_sugg'); $r = wag_brain_reply($pdo, $c); ai_feat($f0); if ($r['ok']) { wa_sugg_save($pdo, (string)$c['phone'], $r['text'], $r['source'], (int)$r['ver']); $s = ['text' => $r['text'], 'source' => $r['source'], 'ver' => $r['ver'], 'why' => $r['why'], 'call_now' => !empty($r['handoff'])]; } }
             $__li = wa_last_in($pdo, (string)$c['phone']); json_response(['ok' => true, 'sugg' => $s, 'hot' => !empty($c['hot']) || (function_exists('wa_hot_intent') && wa_hot_intent((string)$__li[1]) !== ''), 'auto' => function_exists('wa_auto_state') ? wa_auto_state($pdo) : ['on' => false, 'secs' => 20]]);
         }
         case 'wa.g_customer': {
