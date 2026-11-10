@@ -20,6 +20,26 @@ html.dk{--bg:#0b141a;--card:#111b21;--ink:#e9edef;--mut:#8696a0;--line:#25343e}
 .h3{font-weight:800;font-size:15px;margin:0 0 8px;display:flex;justify-content:space-between;align-items:center;gap:8px}
 .mut{color:var(--mut);font-size:12.5px}
 .hasbk .app{padding-bottom:calc(160px + env(safe-area-inset-bottom,0px))}
+.top.hm{padding-bottom:54px}.wrap.hm{margin-top:-40px}.top .r{display:flex;align-items:center;justify-content:space-between;gap:8px}.chip{background:rgba(255,255,255,.2);border-radius:99px;padding:6px 10px;font-weight:800;font-size:13px;white-space:nowrap}
+.sk{height:16px;border-radius:8px;margin:10px 0;background:linear-gradient(90deg,#e6e9ee 25%,#f3f5f9 37%,#e6e9ee 63%);background-size:400% 100%;animation:sk 1.2s ease infinite}@keyframes sk{0%{background-position:100% 50%}100%{background-position:0 50%}}
+.ring{display:flex;align-items:center;gap:14px}.ring .t{flex:1;min-width:0}.ring .t>b{display:block;font-size:22px;letter-spacing:-.02em}
+.bar{height:8px;border-radius:99px;background:var(--line);overflow:hidden;margin-top:6px}.bar i{display:block;height:100%;background:linear-gradient(90deg,#22c55e,#16a34a)}
+.up{color:#16a34a;font-weight:800;font-size:12.5px}.dn{color:#dc2626;font-weight:800;font-size:12.5px}
+.next{background:linear-gradient(135deg,#7c3aed,#2563eb);color:#fff;display:flex;align-items:center;gap:12px}.next small{opacity:.85;font-weight:700;letter-spacing:.04em;font-size:11px}.next b{display:block;font-size:14.5px;margin-top:2px}
+.btn.w{background:#fff;color:#4c1d95;border:0;flex:none}.btn.dk{background:#111827;color:#fff;border:0;flex:none}
+.row3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}.tile{background:var(--card);border-radius:16px;padding:10px 6px;text-align:center;box-shadow:0 4px 14px rgba(15,23,42,.06)}.tile b{display:block;font-size:18px}.tile span{font-size:11px;color:var(--mut)}
+.q{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line)}.q:first-of-type{border-top:0}.q .ic{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;font-size:17px;background:#ecfdf5;flex:none}.q .m{flex:1;min-width:0}.q .m b{display:block;font-size:13.5px}.q .m span{font-size:11.5px;color:var(--mut)}.ok{color:#16a34a;font-weight:800;white-space:nowrap}.todo{color:#f97316;font-weight:800;white-space:nowrap}
+.lb{display:flex;align-items:center;gap:10px;padding:6px 0}.lb .n{width:26px;text-align:center;font-weight:800;color:var(--mut)}.lb .av{width:32px;height:32px;border-radius:50%;background:#e0e7ff;display:grid;place-items:center;font-weight:800;color:#3730a3;flex:none;font-size:13px}.lb .nm{flex:1;min-width:0;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.lb .v{font-weight:800}.lb.me{background:#f0fdf4;border-radius:12px;padding:6px 8px;margin-top:4px}html.dk .lb.me{background:#12281a}
+.med{display:flex;gap:8px;flex-wrap:wrap}.med span{background:#fff7ed;color:#9a3412;border-radius:99px;padding:6px 10px;font-weight:800;font-size:12.5px}
+.say{background:#f0fdf4;border-radius:14px;padding:10px 12px;font-size:13.5px;font-weight:600;color:#14532d;margin-bottom:12px}html.dk .say{background:#12281a;color:#bbf7d0}
+.rmk{background:#fffbeb;border:1px solid #fde68a;border-radius:16px;padding:10px 12px;margin-bottom:12px;font-size:13.5px}.rmk small{display:block;color:#92400e;font-weight:800;margin-bottom:2px}.rmk .btn{min-height:40px;margin-top:8px;font-size:13px}
+.fl{background:linear-gradient(135deg,#f59e0b,#ef4444);color:#fff;border-radius:16px;padding:10px 12px;margin-bottom:12px;font-weight:800;font-size:13.5px}
+.erow{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:9px 0;border-top:1px solid var(--line)}.erow:first-of-type{border-top:0}.erow b{font-size:16px}
+.big{font-size:30px;font-weight:800;letter-spacing:-.03em;color:#15803d}
+.fab{position:fixed;right:14px;bottom:calc(84px + env(safe-area-inset-bottom,0px));z-index:18;min-height:52px;padding:0 18px;border-radius:99px;border:0;background:#16a34a;color:#fff;font-weight:800;font-size:14px;box-shadow:0 10px 26px rgba(22,163,74,.45)}
+.sheet{position:fixed;inset:0;background:var(--bg);z-index:40;display:flex;flex-direction:column}.sheet .hd{display:flex;align-items:center;justify-content:space-between;padding:calc(env(safe-area-inset-top,0px) + 10px) 14px 10px;background:var(--card);border-bottom:1px solid var(--line);font-weight:800}.sheet iframe{flex:1;width:100%;border:0}
+.conf{position:fixed;inset:0;pointer-events:none;z-index:60;overflow:hidden}.conf i{position:absolute;top:-30px;font-style:normal;font-size:26px;animation:fall 1.8s ease-in forwards}@keyframes fall{to{transform:translateY(110vh) rotate(360deg);opacity:.2}}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(96px + env(safe-area-inset-bottom,0px));background:#111827;color:#fff;border-radius:14px;padding:10px 16px;font-weight:700;z-index:70;max-width:90vw;text-align:center}
 .s{display:none}.s.on{display:block}
 nav{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);display:flex;justify-content:space-around;padding:6px 4px calc(env(safe-area-inset-bottom,0px) + 6px);max-width:480px;margin:0 auto;z-index:20}
 nav a{flex:1;min-width:0;text-align:center;text-decoration:none;color:var(--mut);font-size:11px;font-weight:700;padding:6px 2px;min-height:48px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
@@ -46,10 +66,10 @@ nav a i{font-style:normal;font-size:21px}nav a.on{color:var(--g)}
 </head>
 <body>
 <div class="app">
-  <section class="s on" id="home"><div class="top"><div class="hi" id="hiName">My Sales</div><div class="sub">Your day, your numbers</div></div>
-    <div class="wrap"><div class="card"><div class="h3">🏠 Home</div><p class="mut" style="margin:0 0 12px">The new Home (target ring, next step, quests, leaderboard) is being built. Until then, open the current pages:</p><a class="btn" href="my_sales.html">Open current My Sales</a></div></div></section>
+  <section class="s on" id="home"><div class="top hm"><div class="r"><div><div class="hi" id="hiName">My Sales</div><div class="sub" id="hiSub">Your day, your numbers</div></div><div class="chip" id="hiStreak" hidden></div></div></div>
+    <div class="wrap hm" id="homeBody"><div class="card"><div class="sk"></div><div class="sk" style="height:70px"></div></div></div></section>
   <section class="s" id="earn"><div class="top"><div class="hi">💰 My earnings</div><div class="sub">Today, this month, salary</div></div>
-    <div class="wrap"><div class="card"><p class="mut" style="margin:0 0 12px">Earnings are being moved here. For now:</p><a class="btn" href="my_sales.html">Open current My Sales</a> <a class="btn" href="my_day.html#records/salary">My salary</a></div></div></section>
+    <div class="wrap" id="earnBody"><div class="card"><div class="sk"></div><div class="sk" style="height:70px"></div></div></div></section>
   <section class="s" id="prices"><div class="top"><div class="hi">🧴 Price chart</div><div class="sub">Same prices as the bot and the cart</div></div>
     <div class="wrap"><input class="search" id="prQ" type="search" placeholder="🔍 Search by ml or pieces" inputmode="search" autocomplete="off"><div class="tabs" id="prSeg"></div><div id="prBody"><div class="empty">Loading…</div></div></div></section>
   <section class="s" id="me"><div class="top"><div class="hi">👤 Me</div><div class="sub">Settings and records</div></div>
@@ -57,7 +77,9 @@ nav a i{font-style:normal;font-size:21px}nav a.on{color:var(--g)}
       <a class="set" href="my_day.html#records/attendance" style="text-decoration:none;color:inherit"><span>🕘 Attendance</span><span>›</span></a>
       <a class="set" href="my_day.html#records/leave" style="text-decoration:none;color:inherit"><span>🌴 Leave</span><span>›</span></a>
       <a class="set" href="my_day.html#records/penalties" style="text-decoration:none;color:inherit"><span>🧾 Penalties</span><span>›</span></a>
-      <a class="set" href="my_day.html#records/agreements" style="text-decoration:none;color:inherit"><span>📄 Agreements</span><span>›</span></a></div></div></section>
+      <a class="set" href="my_day.html#records/agreements" style="text-decoration:none;color:inherit"><span>📄 Agreements</span><span>›</span></a>
+      <a class="set" href="my_sales.html?old=1" style="text-decoration:none;color:inherit"><span>↩ Use the old My Sales page</span><span>›</span></a></div></div></section>
+  <button type="button" class="fab" id="fabAlloc" hidden>➕ Allocate order</button>
   <div class="bk" id="bk" hidden></div>
   <nav>
     <a href="#home" data-s="home"><i>🏠</i>Home</a>
@@ -69,6 +91,6 @@ nav a i{font-style:normal;font-size:21px}nav a.on{color:var(--g)}
 </div>
 <script src="assets/js/config.js?v=4"></script>
 <script src="assets/js/api.js?v=9"></script>
-<script src="assets/js/my_app.js?v=a1"></script>
+<script src="assets/js/my_app.js?v=a2"></script>
 </body>
 </html>
