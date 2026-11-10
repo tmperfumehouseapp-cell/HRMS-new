@@ -992,6 +992,22 @@ function wq_summary_get(PDO $pdo, string $day, bool $rebuild = false): array
     $d = wq_summary_build($pdo, $day); $pdo->prepare("INSERT INTO wq_daily (day, js, built_at) VALUES (?,?,?) ON DUPLICATE KEY UPDATE js = VALUES(js), built_at = VALUES(built_at)")->execute([$day, json_encode($d, JSON_UNESCAPED_UNICODE), wq_dt()]);
     wq_publish_finding($pdo, $d); return $d;
 }
+/** Did each guidebook version help? For every version that went live (log kept by lib_guide_go_live): queries and orders won while it was live, and orders per 100 queries. Read-only numbers, from the same count as the Team page. */
+function wq_guide_effect(PDO $pdo): array
+{
+    $lg = json_decode((string)setting_get($pdo, 'lib_guide_log', '[]'), true); if (!is_array($lg)) $lg = [];
+    $o = ['ok' => true, 'rows' => [], 'note' => $lg ? '' : 'No guidebook has gone live since this report was added. Numbers appear from the next night.'];
+    $now = wq_now();
+    foreach ($lg as $i => $e) {
+        $from = wq_ts((string)($e['at'] ?? '')); if ($from <= 0) continue;
+        $to = isset($lg[$i + 1]) ? wq_ts((string)($lg[$i + 1]['at'] ?? '')) : $now; if ($to <= $from) continue;
+        try { $S = wq_people_stats($pdo, $from, $to); $T = $S['total']; $q = (int)$T['queries']; $w = (int)$T['converted']; }
+        catch (Throwable $x) { continue; }
+        $o['rows'][] = ['version' => (int)($e['v'] ?? 0), 'from' => (string)$e['at'], 'to' => isset($lg[$i + 1]) ? (string)$lg[$i + 1]['at'] : '', 'hours' => (int)round(($to - $from) / 3600), 'queries' => $q, 'won' => $w, 'per100' => $q > 0 ? round($w * 100 / $q, 1) : null, 'enough' => $q >= 100];
+    }
+    $o['rows'] = array_reverse(array_slice($o['rows'], -12));
+    return $o;
+}
 /** The summary as a Daily Summary finding (ck_findings, kind wa_day) so it shows with the other findings and in the Morning section. */
 function wq_publish_finding(PDO $pdo, array $d): void
 {
@@ -1637,7 +1653,7 @@ function wq_bot_context(PDO $pdo, array $c): string
 // ------------------------------------------------------------------------------------------------------------------ router (pinned at the end of the file; answers at include time like wa_orders.php / wa_seg.php)
 $__wqa = (string)($action ?? ($_GET['action'] ?? ''));
 if (strpos($__wqa, 'wq.') === 0 && in_array($__wqa, ['wq.board', 'wq.mine', 'wq.attention', 'wq.assign', 'wq.on_duty', 'wq.queries', 'wq.query', 'wq.retype', 'wq.tags_for', 'wq.types_state', 'wq.types_next', 'wq.types_answer', 'wq.rules',
-    'wq.compare', 'wq.whatwon', 'wq.whatwon_act', 'wq.summary', 'wq.analytics', 'wq.settings', 'wq.cutover', 'wq.status', 'wq.tick', 'wq.typing', 'wq.grab_list', 'wq.grab', 'wq.grab_board', 'wq.req_list', 'wq.req_take', 'wq.need_take', 'wq.need_ping', 'wq.need_peek', 'wq.need_dismiss', 'wq.needs_board'], true)) {
+    'wq.compare', 'wq.whatwon', 'wq.whatwon_act', 'wq.summary', 'wq.analytics', 'wq.settings', 'wq.cutover', 'wq.status', 'wq.tick', 'wq.typing', 'wq.grab_list', 'wq.grab', 'wq.grab_board', 'wq.req_list', 'wq.req_take', 'wq.need_take', 'wq.need_ping', 'wq.guide_effect', 'wq.need_peek', 'wq.need_dismiss', 'wq.needs_board'], true)) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'; $auth = require_auth(); $me = (int)($auth['employee_id'] ?? 0);
     if (!function_exists('wa_tables') || !wa_tables($pdo)) json_response(['error' => 'WhatsApp storage is not available - check database permissions.'], 500);
     wq_deps($pdo); if (!wq_tables($pdo)) json_response(['error' => 'WhatsApp Sales storage is not available - check database permissions.'], 500);
@@ -1661,6 +1677,7 @@ if (strpos($__wqa, 'wq.') === 0 && in_array($__wqa, ['wq.board', 'wq.mine', 'wq.
             foreach (array_reverse($q->fetchAll(PDO::FETCH_ASSOC)) as $r) { $t = trim((string)$r['body']); if ($t === '') $t = '[' . ((string)$r['mtype'] !== '' ? $r['mtype'] : 'attachment') . ']'; $m[] = ['dir' => (string)$r['dir'], 'who' => (string)$r['who'], 'text' => mb_substr($t, 0, 400), 'ts' => (string)$r['ts']]; }
             json_response(['ok' => true, 'messages' => $m]);
         }
+        case 'wq.guide_effect': { $needGet(); $needAdmin(); json_response(wq_guide_effect($pdo)); }
         case 'wq.need_ping': {   // ⚡ the small "Accept" pop-up asks this every second: is this chat still waiting in MY list (nobody took it, nobody answered)?
             $needGet(); $k = $phoneIn(); if ($k === '') json_response(['ok' => true, 'available' => false]); $av = false;
             foreach (wq_needs($pdo, $me) as $x) if ((string)$x['phone'] === $k && empty($x['own'])) { $av = true; break; }

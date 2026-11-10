@@ -9947,6 +9947,7 @@ function lib_guide_change(array $old, array $new): array
 }
 function lib_guide_go_live(PDO $pdo, array $draft, string $who): void
 {
+    try { $lg = json_decode((string)setting_get($pdo, 'lib_guide_log', '[]'), true); if (!is_array($lg)) $lg = []; $lg[] = ['v' => (int)$draft['version'], 'at' => date('Y-m-d H:i:s'), 'by' => mb_substr($who, 0, 40)]; setting_set($pdo, 'lib_guide_log', json_encode(array_slice($lg, -60))); } catch (Throwable $e) { }   // when each guidebook version went live (for the "did it help" numbers)
     $prev = lib_guide_row($pdo, 'live'); $keep = $prev ? (int)$prev['id'] : 0;
     $pdo->exec("UPDATE lib_guide SET status = 'old' WHERE status = 'live'");
     $pdo->prepare("UPDATE lib_guide SET status = 'live', approved_at = NOW(), approved_by = ? WHERE id = ?")->execute([mb_substr($who, 0, 80), (int)$draft['id']]);
