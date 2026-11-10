@@ -47,12 +47,15 @@ function wqm_collect(PDO $pdo): array
     $open = []; try { foreach ($pdo->query("SELECT assigned_emp, COUNT(*) n FROM wa_contacts WHERE status = 'open' AND assigned_emp > 0 GROUP BY assigned_emp")->fetchAll(PDO::FETCH_ASSOC) as $r) $open[(int)$r['assigned_emp']] = (int)$r['n']; } catch (Throwable $e) { }
     $mon = []; $day = []; if (function_exists('wq_pace_get')) { try { foreach ((array)(wq_pace_get($pdo, 30)['people'] ?? []) as $p) $mon[(int)$p['emp_id']] = $p; foreach ((array)(wq_pace_get($pdo, 1)['people'] ?? []) as $p) $day[(int)$p['emp_id']] = $p; } catch (Throwable $e) { } }
     $bk = function_exists('wq_needs_backlog') ? wq_needs_backlog($pdo) : [];
+    $tk = []; $tkRev = 0.0; $tkOrd = 0;   // ticket size = revenue per order of the queries each person held (30 days)
+    try { foreach ($pdo->query("SELECT q.emp_id, SUM(s.orders) o, SUM(s.revenue) r FROM wq_qstat s JOIN wa_queries q ON q.id = s.query_id WHERE s.opened_at >= '" . date('Y-m-d H:i:s', time() - 30 * 86400) . "' AND q.emp_id > 0 AND s.orders > 0 GROUP BY q.emp_id")->fetchAll(PDO::FETCH_ASSOC) as $r) { $tk[(int)$r['emp_id']] = [(int)$r['o'], (float)$r['r']]; $tkOrd += (int)$r['o']; $tkRev += (float)$r['r']; } } catch (Throwable $e) { }
+    $teamTk = $tkOrd > 0 ? round($tkRev / $tkOrd) : null;
     $tq = 0; $to = 0; foreach ($sales as $id) { $oe = $mon[(int)$id]['orders'] ?? null; if ($oe) { $tq += (int)($oe['queries'] ?? 0); $to += (int)($oe['orders'] ?? 0); } }
     $team = $tq > 0 ? $to / $tq : 0.0;
     foreach ($sales as $id) {
         $id = (int)$id; $oe = $mon[$id]['orders'] ?? []; $q = (int)($oe['queries'] ?? 0); $o = (int)($oe['orders'] ?? 0);
         $rows[$id] = ['emp_id' => $id, 'name' => (string)($names[$id] ?? ('#' . $id)), 'present' => !empty($present[$id]), 'answering_min_ago' => $lastAns[$id] ?? null,
-            'queries_30d' => $q, 'orders_30d' => $o, 'ratio_pct' => $q > 0 ? round(100 * $o / $q, 1) : null, 'team_ratio_pct' => round(100 * $team, 1),
+            'queries_30d' => $q, 'orders_30d' => $o, 'ticket_30d' => (isset($tk[$id]) && $tk[$id][0] > 0) ? (int)round($tk[$id][1] / $tk[$id][0]) : null, 'team_ticket' => $teamTk, 'ratio_pct' => $q > 0 ? round(100 * $o / $q, 1) : null, 'team_ratio_pct' => round(100 * $team, 1),
             'sure_behind' => $q > 0 && $team > 0 && wqm_hi($o, $q) < $team,
             'speed_median_min_today' => isset($day[$id]['pace']['median']) ? $day[$id]['pace']['median'] : null, 'replies_today' => (int)($day[$id]['pace']['n'] ?? 0),
             'speed_median_min_30d' => isset($mon[$id]['pace']['median']) ? $mon[$id]['pace']['median'] : null,
@@ -85,10 +88,10 @@ function wqm_run(PDO $pdo, bool $force = false): array
     $work = []; foreach ($rows as $id => $r) if ($r['present'] || $r['queries_30d'] > 0) $work[$id] = $r;
     if ($work && function_exists('convo_ai')) {
         try {
-            $sys = "You are the sales team manager of TM Perfume House (online perfume brand, India). For every salesperson below decide how early they should see NEW customer chats that are interested (orange) or ready to pay (red), based on ALL their numbers together: order ratio compared with the team, speed, who is at work, complaints, load. "
+            $sys = "You are the sales team manager of TM Perfume House (online perfume brand, India). For every salesperson below decide how early they should see NEW customer chats that are interested (orange) or ready to pay (red), based on ALL their numbers together: order ratio compared with the team, ticket size (rupees per order) compared with the team, speed, who is at work, complaints, load. "
                 . "level: first = sees them first (good ratio, fast, present); normal; late = sees them only after the first minutes (only if sure_behind is true); hold = no new chats (only if sure_behind is true AND speed and behaviour are also weak; it is only a suggestion for the admin). "
                 . "Never use a fixed number of queries: a person with few queries is NOT behind unless sure_behind is true. If the whole team's ratio is low nobody is behind. Someone who is not present gets level normal. "
-                . "card = ONE short friendly line for the salesperson in simple Gujarati (Gujarati script), no blame, saying the ONE thing to do now (clear overdue complaints; take orders; speed up; raise ticket size; or praise and 'take more chats, close orders fast'). reason = one line in English for the admin with the numbers. "
+                . "card = ONE short friendly line for the salesperson in simple Gujarati (Gujarati script), no blame, saying the ONE thing to do now (clear overdue complaints; take orders; speed up; if orders are good but ticket_30d is below team_ticket, ask for a bigger basket — sets / combos; or praise and 'take more chats, close orders fast'). summary must also name who has the best ratio and ticket and what the team as a whole should do today. reason = one line in English for the admin with the numbers. "
                 . "meet_admin = true only when ratio, speed AND everything else is weak for a person with enough queries to be sure. summary = 2-3 lines in English for the admin: who improved, who is stuck, who should meet the admin.";
             $txt = "TEAM RATIO " . (reset($work)['team_ratio_pct'] ?? 0) . "% (orders per query, 30 days)\nPEOPLE (json):\n" . json_encode(array_values($work), JSON_UNESCAPED_UNICODE);
             $f0 = function_exists('ai_feat') ? ai_feat('wq_manager') : ''; [$ok, $v] = convo_ai($sys, [['text' => $txt]], wqm_schema(), false, 4000, 'claude'); if (function_exists('ai_feat')) ai_feat($f0);

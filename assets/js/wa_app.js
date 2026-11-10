@@ -155,6 +155,7 @@
     .wx-chat{left:var(--lw);border-left:1px solid var(--line);animation:none}.wx-chat .bk{display:none}.wx::after{content:'💬 Pick a chat on the left';position:absolute;left:var(--lw);right:0;top:45%;text-align:center;color:#94a3b8;font-size:15px;font-weight:600;pointer-events:none}
     .wx-row.sel{background:#e7f8f0}html.wxdk .wx-row.sel{background:#103529}}
   .wx-ch{background:#0f6e7e;color:#fff;border:0;padding:calc(6px + env(safe-area-inset-top)) 8px 6px;gap:8px}.wx-ch .bk{color:#fff;font-size:28px;padding:0 2px 2px}.wx-ch .wx-nm{color:#fff;font-size:16.5px;font-weight:500}.wx-ch .wx-sub{color:rgba(255,255,255,.82);font-size:12px}
+  .wx-mgr{margin:6px 10px 2px;padding:8px 12px;border-radius:12px;font-size:13px;font-weight:600;line-height:1.4;background:#eef6ff;color:#1e3a8a}.wx-mgr-first{background:#dcfce7;color:#166534}.wx-mgr-late{background:#fff1e0;color:#9a3412}.wx-mgr-hold{background:#fee2e2;color:#b91c1c}html.wxdk .wx-mgr{background:#13202e;color:#cfe3ff}html.wxdk .wx-mgr-late{background:#33200d;color:#ffd6a8}
   .wx-row.h-hot{background:#effbf3;box-shadow:inset 3px 0 0 #22c55e}.wx-row.h-orange{background:#fff1e0;box-shadow:inset 3px 0 0 #f97316}.wx-row.h-late{background:#fff8e6;box-shadow:inset 3px 0 0 #f59e0b}.wx-row.h-active{background:#f3f8ff;box-shadow:inset 3px 0 0 #60a5fa}.wx-row.h-slow{background:#f6f7f9;box-shadow:inset 3px 0 0 #c4c9d1}.wx-row.h-cx{background:#f7f4ff;box-shadow:inset 3px 0 0 #a78bfa}.wx-row.h-biz{background:#f1f1f1;box-shadow:inset 3px 0 0 #9ca3af;opacity:.8}
   html.wxdk .wx-row.h-hot{background:#10261a}html.wxdk .wx-row.h-orange{background:#33200d}html.wxdk .wx-row.h-late{background:#2a220e}html.wxdk .wx-row.h-active{background:#0f1e2e}html.wxdk .wx-row.h-slow{background:#1a2026}html.wxdk .wx-row.h-cx{background:#201a33}html.wxdk .wx-row.h-biz{background:#1c1f22}
   .wx-lg{display:flex;gap:9px;flex-wrap:wrap;padding:5px 14px;font-size:11px;color:#667781}.wx-lg i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:3px}
@@ -438,6 +439,12 @@
       <div class="wx-tabs" id="wxTabs"><button data-t="chats"><i>💬</i>Chats</button><button data-t="queries"><i>📋</i>Queries</button><button data-t="history"><i>🕘</i>History</button><button data-t="me"><i>🏆</i>Me</button><button data-home="1" onclick="location.href='my_sales.html'"><i>📈</i>My Sales</button></div>`;
     { const dk = R.querySelector('#wxDk'); if (dk) dk.onclick = themeNext; themeApply(); }
     { const pc = R.querySelector('#wxPace'); if (pc) pc.onclick = () => { const go = () => window.WaPace && window.WaPace.open(); if (window.WaPace) go(); else { const sc = document.createElement('script'); sc.src = 'assets/js/wq_pace_ui.js?v=8'; sc.onload = go; document.head.appendChild(sc); } }; }   // ⚡ my reply pace (own numbers only)
+    // 🧭 Team manager card: one line from Claude for ME (only when the admin has switched the manager to Apply): what to do now — clear complaints, take orders, raise the ticket, or "take more chats"
+    { const paintMgr = async () => { try { const d = await api.get('wq.mgr_get'); let el = R.querySelector('#wxMgr'); const c = d && d.card;
+        if (!c || !c.text) { if (el) el.remove(); return; }
+        if (!el) { el = document.createElement('div'); el.id = 'wxMgr'; const top = R.querySelector('.wx-top'); if (!top) return; top.insertAdjacentElement('afterend', el); }
+        el.className = 'wx-mgr wx-mgr-' + String(c.level || 'normal').replace(/[^a-z]/g, ''); el.textContent = '🧭 ' + c.text; } catch (e) { /* optional */ } };
+      paintMgr(); setInterval(() => { if (!document.hidden) paintMgr(); }, 300000); }
     // ⚡ a small chip beside the title: my typical reply time against the team's (own numbers + the team median; today, or the last 7 days when today has too few replies)
     { const paint = async () => { try { let d = await api.get('wq.pace', { days: 1 }), mp = d.mine && (d.mine.pace || d.mine), tp = d.team && d.team.pace;
         if (!mp || mp.median == null || (mp.n || 0) < 3) { d = await api.get('wq.pace', { days: 7 }); mp = d.mine && (d.mine.pace || d.mine); tp = d.team && d.team.pace; }
