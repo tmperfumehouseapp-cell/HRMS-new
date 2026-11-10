@@ -122,7 +122,7 @@ function fa_perfume_lib(PDO $pdo, string $perf, array $c = []): int
 {
     try {
         if (!function_exists('wa_collage_make') || !function_exists('wa_prod_name_in_text') || !function_exists('wa_lib_dir')) return 0;
-        $hit = trim($perf) !== '' ? wa_prod_name_in_text($pdo, $perf) : null;
+        $hit = null; if (trim($perf) !== '' && function_exists('wa_prod_find_named')) { $hh = wa_prod_find_named($pdo, $perf, 1); $hit = $hh[0] ?? null; } if (!$hit && trim($perf) !== '') $hit = wa_prod_name_in_text($pdo, $perf);   // by our name or by the original perfume it is inspired by
         if (!$hit && !empty($c['phone']) && function_exists('wa_prod_last_asked')) { $nm = wa_prod_last_asked($pdo, (string)$c['phone']); if ($nm !== '') $hit = wa_prod_name_in_text($pdo, $nm); }
         if (!$hit) return 0; $m = wa_collage_make($pdo, [(int)$hit['id']], 1); if (empty($m['ok'])) return 0;
         $key = substr(md5($m['url']), 0, 12); $q = $pdo->prepare("SELECT id FROM wa_media_lib WHERE title = ? LIMIT 1"); $q->execute(['Perfume card · ' . $key . ' · ' . (int)$hit['id']]); $id = (int)$q->fetchColumn(); if ($id > 0) return $id;

@@ -1406,16 +1406,28 @@ function wa_prod_bot_after(PDO $pdo, array $c, string $botText = ''): int
         $c = wa_contact($pdo, (string)$c['phone']) ?: $c; $a = wa_prod_attached($pdo, $c, ['room' => 6, 'fresh' => true]); $ids = []; $libs = []; $why = [];
         foreach ($a['items'] as $it) { if (is_string($it['id']) && strpos($it['id'], 'lib:') === 0) $libs[] = $it['id']; else $ids[] = (int)$it['id']; } foreach ($a['products'] as $p) $why[$p['id']] = (string)$p['why'];
         // 📸 FIXED RULE (owner, 10 Nov): whenever the bot's own words name a perfume of ours, its picture goes with it — even when the customer's message alone did not match the catalogue (e.g. "Azz The Most Desired")
-        if ($botText !== '' && count($ids) < 6) {
-            $f = ' ' . wa_prod_fold($botText, false) . ' '; $hits = [];
-            foreach (wa_prod_all($pdo) as $p) { if ($p['kind'] !== 'perfume') continue; $n = wa_prod_fold((string)$p['name'], false); if (strlen($n) < 5) continue; $pos = strpos($f, ' ' . $n . ' '); if ($pos !== false) $hits[$pos] = $p; }
-            ksort($hits); foreach ($hits as $p) { if (count($ids) >= 6) break; if (!in_array((int)$p['id'], $ids, true)) { $ids[] = (int)$p['id']; $why[(int)$p['id']] = 'I suggested this perfume'; } }
-        }
+        if ($botText !== '' && count($ids) < 6) { foreach (wa_prod_find_named($pdo, $botText, 6) as $p) { if (count($ids) >= 6) break; if (!in_array((int)$p['id'], $ids, true)) { $ids[] = (int)$p['id']; $why[(int)$p['id']] = 'I suggested this perfume'; } } }
         $n = 0;
         if ($ids) $n += function_exists('wa_collage_send') ? wa_collage_send($pdo, $c, $ids, 'bot', 0, $why) : (int)count((wa_prod_send_items($pdo, $c, $ids, 'why', 'bot', 0, ['why' => $why]))['sent'] ?? []);
         if ($libs) { $r = wa_prod_send_items($pdo, $c, $libs, 'why', 'bot', 0, ['why' => $why]); $n += count($r['sent'] ?? []); }
         return $n;
     } catch (Throwable $e) { error_log('wa_prod_bot_after: ' . $e->getMessage()); return 0; }
+}
+/** 🔎 Perfumes of ours that a text talks about — by OUR name, by the original perfume it is inspired by (website spelling, or the real original worked out in Products), in the order they appear.
+ *  Several of ours can be inspired by the same original: then the best seller of them is taken. Used for "the bot / follow-up named a perfume → its picture goes with it". Max $max product rows. */
+function wa_prod_find_named(PDO $pdo, string $text, int $max = 6): array
+{
+    $f = ' ' . wa_prod_fold($text, false) . ' '; $by = []; $hit = [];
+    foreach (wa_prod_all($pdo) as $p) {
+        if ($p['kind'] !== 'perfume') continue; $p = wa_prod_dec($p);
+        foreach ([['n', (string)$p['name']], ['o', (string)($p['original_site'] ?? '')], ['o', (string)($p['original_real'] ?? '')]] as [$kind, $raw]) {
+            $n = wa_prod_fold($raw, false); if (strlen($n) < 5) continue; $pos = strpos($f, ' ' . $n . ' '); if ($pos === false) continue;
+            if ($kind === 'n') { $hit[(int)$p['id']] = [$pos, $p]; }
+            else { $g = $n; if (!isset($by[$g]) || (int)$p['units_sold'] > (int)$by[$g][1]['units_sold']) $by[$g] = [$pos, $p]; }
+        }
+    }
+    foreach ($by as $x) if (!isset($hit[(int)$x[1]['id']])) $hit[(int)$x[1]['id']] = $x;
+    uasort($hit, fn($a, $b) => $a[0] <=> $b[0]); return array_slice(array_map(fn($x) => $x[1], array_values($hit)), 0, $max);
 }
 /** 🤖 Follow-up Autopilot, inside the 24-hour window (owner, 10 Nov: 100% automatic): after the follow-up TEXT went out, the perfumes it talks about — the ones named in the text, else the one the customer last asked about —
  *  follow as ONE picture (photo, notes, longevity). Same learning gate as the bot (photos pause by themselves when they stop helping). Outside the 24-hour window WhatsApp allows only approved templates, so nothing is added there. Returns perfumes shown. */
@@ -1424,9 +1436,7 @@ function wa_prod_follow_after(PDO $pdo, array $c, string $text): int
     try {
         if (function_exists('wa_photo_gate') && !wa_photo_gate($pdo)) return 0; if ((string)setting_get($pdo, 'wa_follow_photos', '1') === '0') return 0;
         if (empty($c['last_in_at']) || strtotime((string)$c['last_in_at']) < time() - 86400) return 0;
-        $f = ' ' . wa_prod_fold($text, false) . ' '; $hits = [];
-        foreach (wa_prod_all($pdo) as $p) { if ($p['kind'] !== 'perfume') continue; $n = wa_prod_fold((string)$p['name'], false); if (strlen($n) < 5) continue; $pos = strpos($f, ' ' . $n . ' '); if ($pos !== false) $hits[$pos] = (int)$p['id']; }
-        ksort($hits); $ids = array_slice(array_values($hits), 0, 6);
+        $ids = array_map(fn($p) => (int)$p['id'], wa_prod_find_named($pdo, $text, 6));
         if (!$ids) { $nm = wa_prod_last_asked($pdo, (string)$c['phone']); if ($nm !== '') { $h = wa_prod_name_in_text($pdo, $nm); if ($h) $ids[] = (int)$h['id']; } }
         return $ids && function_exists('wa_collage_send') ? wa_collage_send($pdo, $c, $ids, 'bot', 0, []) : 0;
     } catch (Throwable $e) { error_log('wa_prod_follow_after: ' . $e->getMessage()); return 0; }
