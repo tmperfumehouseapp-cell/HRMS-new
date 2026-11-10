@@ -17,7 +17,7 @@
       + '.jt-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:7px 0;border-top:1px solid #f0f2f7}.jt-row.off{opacity:.5}.jt-in{border:1px solid #d5d9e4;border-radius:8px;padding:6px 8px;min-height:34px;font-size:14px;min-width:0}.jt-t{width:64px}.jt-msg{flex:1;min-width:150px}'
       + '.jt-tag{font-size:11px;font-weight:800;border-radius:99px;padding:2px 8px;background:#eef2ff;color:#3730a3}.jt-tag.w{background:#f3e8ff;color:#6b21a8}.jt-tag.a{background:#dcfce7;color:#166534}'
       + '.jt-strip{display:flex;gap:2px;margin:8px 0 2px;overflow-x:auto}.jt-strip i{flex:0 0 5px;height:14px;border-radius:2px;background:#eef0f5}.jt-strip i.a{background:#c4b5fd}.jt-strip i.w{background:#86efac}.jt-strip i.o{background:#fdba74}'
-      + '.jt-ban{border-radius:12px;padding:10px 12px;background:#f5f3ff;border:1px solid #ddd6fe}.jt-ban ul{margin:6px 0 0 18px;padding:0}@media (max-width:700px){.jt-card{padding:10px}.jt-t{width:56px}.jt-msg{flex-basis:100%}}';
+      + '.jt-pv{flex-basis:100%;font-size:13px}.jt-pv summary{cursor:pointer;color:#5b3fd6;font-weight:700;list-style:none}.jt-pv>div{margin-top:4px;padding:8px 10px;border-radius:10px;background:#f8fafc;border:1px solid #e6e8ef;white-space:pre-wrap;word-break:break-word}.jt-card.off{opacity:.6}.jt-seg button.offb.on{background:#b91c1c}.jt-ban{border-radius:12px;padding:10px 12px;background:#f5f3ff;border:1px solid #ddd6fe}.jt-ban ul{margin:6px 0 0 18px;padding:0}@media (max-width:700px){.jt-card{padding:10px}.jt-t{width:56px}.jt-msg{flex-basis:100%}}';
     document.head.appendChild(s);
   }
   const fmtT = (min) => min < 60 ? [Math.round(min), 'min'] : min < 1440 ? [Math.round(min / 6) / 10, 'h'] : [Math.round(min / 144) / 10, 'd'];
@@ -40,6 +40,9 @@
     const modeOf = () => { const a = AP.mode, w = WJ.mode; if (a === 'off' && w === 'off') return 'off'; if (a === 'suggest' && w === 'suggest') return 'suggest'; if (['autotpl', 'auto24'].includes(a) && w === 'auto') return 'auto'; return 'mixed'; };
     const lanes = () => PATHS.filter((p) => p.kind !== 'stop').map((p) => ({ id: 'p:' + p.id, title: p.title, desc: p.desc, path: p }));
     const rowsOf = (L) => L.path.steps.map((s, i) => ({ src: 'ap', i, min: Math.round(s.after_h * 60), kind: s.kind, offer: s.offer, text: s.text, on: true, stat: stat(laneStat(L.path.id, i)) })).sort((a, b) => a.min - b.min);
+    // 👁 what a "message" step really sends: the owner's rule for the offer and the approved text (blanks like {name} are filled per customer)
+    const pvHtml = (k) => { const m = (WJ.messages || []).find((x) => x.k === k); if (!m) return ''; const t = TPL[m.status] || TPL.none;
+      return '<details class="jt-pv"><summary>👁 See what this sends</summary><div><b>' + esc(m.label) + '</b>' + (m.rule ? '\nRule: ' + esc(m.rule) : '') + '\n\n' + (m.body ? esc(m.body) : 'Claude writes the words for each customer from this rule.') + '\n\nMeta: ' + esc(t[0] + ' ' + t[1]) + '</div></details>'; };
     function rowHtml(r, lid) {
       const [v, u] = fmtT(r.min); const key = lid + '|' + r.src + '|' + r.i;
       let h = '<div class="jt-row" data-k="' + esc(key) + '"><span class="jt-tag ' + (r.src === 'ap' ? 'a' : 'w') + '">' + (r.src === 'ap' ? (r.kind === 'offer' ? 'message' : 'text') : 'after order') + '</span>'
@@ -48,7 +51,8 @@
       if (r.src === 'ap' && r.kind !== 'offer') h += '<input class="jt-in jt-msg" data-f="text" maxlength="700" placeholder="What Claude should say (idea)" value="' + esc(r.text) + '">';
       else h += '<select class="jt-in jt-msg" data-f="ref">' + msgOpts(r.src === 'ap' ? r.offer : r.ref) + '</select>' + (r.src === 'wj' ? '<input class="jt-in" data-f="idea" maxlength="300" placeholder="Extra idea (optional)" value="' + esc(r.idea) + '" style="flex:1;min-width:120px">' : '');
       if (r.src === 'wj') h += '<label style="white-space:nowrap"><input type="checkbox" data-f="on"' + (r.on ? ' checked' : '') + '> On</label>';
-      return h + '<button class="jt-b s r" type="button" data-rm title="Remove this step">✕</button>' + (r.stat ? '<div style="flex-basis:100%">' + r.stat + '</div>' : '') + '</div>';
+      const pk = r.src === 'ap' ? (r.kind === 'offer' ? r.offer : '') : r.ref;
+      return h + '<button class="jt-b s r" type="button" data-rm title="Remove this step">✕</button>' + (pk ? pvHtml(pk) : '') + (r.stat ? '<div style="flex-basis:100%">' + r.stat + '</div>' : '') + '</div>';
     }
     function strip(rows, max) {
       max = max || 60; const per = max / 60, cells = []; for (let d = 1; d <= 60; d++) cells.push('');
@@ -57,7 +61,8 @@
     }
     function laneHtml(L) {
       const rows = rowsOf(L);
-      return '<div class="jt-card" data-lane="' + esc(L.id) + '"><div class="jt-h">💡 ' + esc(L.title) + '<span class="jt-sp"></span><button class="jt-b s" type="button" data-add>＋ Add a step</button></div><div class="jt-sub">' + esc(L.desc || '') + '</div>'
+      const on = L.path.on !== false;
+      return '<div class="jt-card' + (on ? '' : ' off') + '" data-lane="' + esc(L.id) + '"><div class="jt-h">💡 ' + esc(L.title) + '<span class="jt-sp"></span><span class="jt-seg" title="Turn only this flow on or off (the Off / Preview / Auto switch at the top is for everything)"><button type="button" data-lon="1" class="' + (on ? 'on' : '') + '">On</button><button type="button" data-lon="0" class="offb ' + (on ? '' : 'on') + '">Off</button></span><button class="jt-b s" type="button" data-add>＋ Add a step</button></div><div class="jt-sub">' + esc(L.desc || '') + '</div>'
         + strip(rows) + (rows.map((r) => rowHtml(r, L.id)).join('') || '<div class="jt-sub" style="padding:8px 0">No step yet.</div>') + '</div>';
     }
     function buyRows(topic) { return BUYER.map((s, i) => ({ src: 'wj', i, min: s.day * 1440, ref: s.ref, idea: s.idea, on: s.on, topic: s.topic || '', stat: stat(buyStat(s.id)) })).filter((r) => r.topic === topic).sort((a, b) => a.min - b.min); }
@@ -170,6 +175,8 @@
         try { const q = await api.get('fu.wj_queue'); m.body.innerHTML = '<div class="jt-sub">After an order — who is due now' + (WJ.mode === 'auto' ? '.' : ' (nothing is sent in Preview).') + ' Total ' + q.total + ' · paused ' + q.blocked + ' · waiting for Meta ' + q.waiting_meta + '</div>'
           + (q.rows.length ? q.rows.map((r) => '<div class="jt-row"><b>' + esc(r.name) + ' …' + esc(r.tail) + '</b><span class="jt-tag">day ' + r.day + '</span><span class="jt-msg">' + esc(r.label) + '</span></div>').join('') : '<div class="jt-sub" style="padding:8px 0">Nobody is due right now.</div>') + '<div class="jt-sub" style="margin-top:8px">The lanes above run in the follow-up engine; its drafts and sends are in the Chats screen.</div>'; } catch (e) { m.body.innerHTML = errBox(e.message); } };
       $$('[data-sub]').forEach((a) => a.onclick = (e) => { e.preventDefault(); try { if (a.dataset.sub === 'msgs') location.hash = '#mymsgs'; else { localStorage.setItem('wa_fu_sub2', a.dataset.sub); location.hash = '#followups'; location.reload(); } } catch (x) { /* ignore */ } });
+      $$('[data-lon]').forEach((b) => b.onclick = async (e) => { e.preventDefault(); e.stopPropagation(); if (busy) return; const lid = b.closest('[data-lane]').dataset.lane, p = PATHS.find((x) => 'p:' + x.id === lid), want = b.dataset.lon === '1'; if (!p || (p.on !== false) === want) return;
+        busy = true; const r = await call(() => api.post('fu.sit_toggle', { sid: p.id, on: want })); busy = false; if (r) { p.on = want; toast(want ? 'This flow is ON.' : 'This flow is OFF — nothing from it is sent.'); draw(); } });
       $$('[data-add]').forEach((b) => b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); addStep(b.closest('[data-lane]').dataset.lane); });
       $$('.jt-row[data-k]').forEach((row) => { const f = find(row.dataset.k); if (!f || !f.st) return;
         row.querySelectorAll('[data-f]').forEach((inp) => {
