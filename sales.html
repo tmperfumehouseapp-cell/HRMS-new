@@ -48,7 +48,7 @@
   .ldr .bar{height:5px; border-radius:4px; background:#e5e7eb; margin-top:4px; overflow:hidden;} .ldr .bar i{display:block; height:100%; background:linear-gradient(90deg,#4ade80,#16a34a);}
   .ldr .cv{text-align:right;} .ldr .cv b{display:block; font-size:15px; font-weight:900;} .ldr .cv b.ok{color:#15803d;} .ldr .cv b.warn{color:#b45309;} .ldr .cv small{font-size:11px; color:var(--muted);}
   .ldt{border-radius:10px; padding:8px 11px; margin-top:6px; font-size:12.5px; line-height:1.45; background:#EEF2FF; color:#3730a3;} .ldt.coach{background:#FFF7ED; color:#9a3412;} .ldt b{display:block; font-size:13px;}
-  @media (max-width:640px){ #p-focus, #p-today, #p-alerts, #p-md, #p-rt, #p-pp, #p-qb, #p-bench, #p-set, #tabs{zoom:.8;} }
+  @media (max-width:640px){ #p-focus, #p-today, #p-alerts, #p-md, #p-rt, #p-qb, #p-bench, #p-set, #tabs{zoom:.8;} }
   .lb-nt{padding:0 16px 10px;} .lb-n{display:grid; grid-template-columns:1fr 52px 52px 52px; gap:6px; padding:7px 0; border-bottom:1px solid #f1f5f9; font-size:13px; align-items:center;} .lb-n span:not(:first-child),.lb-n b{text-align:right;} .lb-n.hd{font-size:11px; text-transform:uppercase; color:var(--muted); font-weight:700;} .lb-pr .lb-m.customer{align-self:flex-start; background:#fff; border:1px solid var(--line);}
   .rs-bar{margin:10px 0 6px;} .rs-t{font-size:12px; font-weight:700; margin-bottom:6px;} .rs-chips{display:flex; gap:6px; overflow-x:auto; padding-bottom:4px; -webkit-overflow-scrolling:touch;} .rs-c{flex:0 0 auto; border:1px solid var(--line); background:#fff; border-radius:999px; padding:6px 12px; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap;} .rs-c.on{background:var(--ink); color:#fff; border-color:var(--ink);}
   .rs-n{border:1px solid var(--line); border-radius:10px; padding:7px 10px; font-size:13px; min-width:140px; flex:1;} .rs-v{display:inline-block; margin-top:4px; background:#eef2ff; color:#3730a3; border-radius:8px; padding:2px 8px; font-size:12px;}
@@ -398,7 +398,7 @@
 /* === MOBILE PASS v1 === */
 @media (max-width:640px){
   /* the old zoom:.8 shrank all text below 10px: keep real size, content wraps instead */
-  #p-focus, #p-today, #p-alerts, #p-md, #p-rt, #p-pp, #p-qb, #p-bench, #p-set, #tabs{zoom:1 !important; padding-left:10px; padding-right:10px;}
+  #p-focus, #p-today, #p-alerts, #p-md, #p-rt, #p-qb, #p-bench, #p-set, #tabs{zoom:1 !important; padding-left:10px; padding-right:10px;}
   .ct-tab, .th-sct .btn, .btn.secondary{min-height:40px;}
 }
 @media (max-width:820px){
@@ -438,7 +438,6 @@
         <button class="ct-tab" data-t="md">Message Doctor <span class="n" id="nMd" style="display:none;"></span></button>
         <button class="ct-tab" data-t="qb">🏁 Query Boost</button>
         <button class="ct-tab" data-t="rt">⭐ Ratings</button>
-        <button class="ct-tab" data-t="pp">👤 Person</button>
         <button class="ct-tab" data-t="bench">Benchmarks &amp; Ideas</button>
         <button class="ct-tab" data-t="lib" id="tabLib" style="display:none;">📚 Chat library</button>
         <button class="ct-tab" data-t="conv" id="tabConv" style="display:none;">💬 Conversations</button>
@@ -449,7 +448,6 @@
       <section id="p-alerts" style="display:none;"></section>
       <section id="p-md" style="display:none;"></section>
       <section id="p-rt" style="display:none;"></section>
-      <section id="p-pp" style="display:none;"></section>
       <section id="p-qb" style="display:none;"><div id="qaBanner" class="qa-ban" hidden></div><div id="qbBot"></div><div id="qbTop"></div><div class="gq-sb" id="gqSb"><button type="button" class="of-chip" id="ofGive" onclick="openOff()" style="display:none"></button><input type="search" id="gqSearch" placeholder="🔍 Search person…" autocomplete="off" aria-label="Search person"><span id="gqNo" style="display:none;">No person matches</span></div><div id="qbGive"></div><div id="mvBox"></div></section>
       <section id="p-bench" style="display:none;"></section>
       <section id="p-lib" style="display:none;"></section>
@@ -517,8 +515,7 @@
     const b = e.target.closest('.ct-tab'); if (!b) return;
     tab = b.dataset.t;
     document.querySelectorAll('.ct-tab').forEach(x => x.classList.toggle('on', x === b));
-    ['focus', 'today', 'alerts', 'md', 'qb', 'rt', 'pp', 'bench', 'lib', 'conv', 'set'].forEach(k => $('p-' + k).style.display = (k === tab || (tab === 'today' && k === 'alerts')) ? '' : 'none');      // Alerts now sit under the Blocks on the Live page
-    if (tab === 'pp') loadPerson();
+    ['focus', 'today', 'alerts', 'md', 'qb', 'rt', 'bench', 'lib', 'conv', 'set'].forEach(k => $('p-' + k).style.display = (k === tab || (tab === 'today' && k === 'alerts')) ? '' : 'none');      // Alerts now sit under the Blocks on the Live page
     if (tab === 'today') { loadHist(); if (RC) loadRecon(); loadRemToday(); }
     if (tab === 'focus') loadFocus();
     if (tab === 'qb') loadGive();
@@ -2246,195 +2243,6 @@
 
   $('btnRefresh').onclick = () => { loadTower(true); loadHist(true); if (MD) loadMd(true); if (BM) loadBench(); };
   $('datePick').onchange = () => { loadTower(false); loadHist(); if (tab === 'qb') loadGive(); };
-  // ---------- 👤 PERSON — one salesperson, the last days of every number (People → Person) ----------
-  // Numbers come from the api's cp.days (the same Control Tower snapshot as Live, one row per person per business day).
-  const PP = { cache: {}, id: null, range: 7, sum: 7, mode: 'blocks', month: '', names: {}, goals: {}, today: '', busy: false, err: '' };
-  const ppAddDays = (d, n) => { const t = new Date(d + 'T00:00:00Z'); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); };
-  const ppDow = (d) => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date(d + 'T00:00:00Z').getUTCDay()];
-  const ppSpan = (a, b) => { const o = []; for (let d = a; d <= b; d = ppAddDays(d, 1)) o.push(d); return o; };
-  const ppLate = (r) => r && r.lt != null && r.lt > 0;
-  const ppPre = (r) => r && r.n > 0 ? Math.round(r.pn / r.n * 100) : null;
-  // [key, label, icon, pick(row) → number|null, format, direction (1 higher is better, -1 lower), goal(goals) → colour rule, 'pts' when the change is shown in points]
-  const PPM = [
-    { k: 'sales', l: 'Sales vs target', i: '💰', g: (r) => r.s, f: 'rs', d: 1, col: (v, r) => r.p == null ? null : r.p >= 95 ? 'g' : r.p >= 80 ? 'a' : 'r', sub: (r) => (r.t ? 'target ' + inr(r.t) + ' · ' + Math.round(r.p || 0) + '%' : 'no target set') },
-    { k: 'qo', l: 'Query orders', i: '🎯', g: (r) => r.qo, f: 'n', d: 1, col: (v, r, G) => r.qc == null ? null : r.qc >= G.q_conv ? 'g' : r.qc >= G.q_conv * 0.85 ? 'a' : 'r', sub: (r, G) => r.q + ' queries · converting ' + (r.qc == null ? '—' : Math.round(r.qc) + '%') + ' (goal ' + G.q_conv + '%)' },
-    { k: 'co', l: 'Campaign orders', i: '📣', g: (r) => r.co, f: 'n', d: 1, rel: 1, sub: (r) => r.n + ' orders in all' },
-    { k: 'q', l: 'Queries given', i: '📞', g: (r) => r.q, f: 'n', d: 1, rel: 1, sub: () => '' },
-    { k: 'pre', l: 'Prepaid share', i: '💳', g: ppPre, f: 'pct', d: 1, pts: 1, col: (v, r, G) => v == null ? null : G.prepaid > 0 ? (v >= G.prepaid ? 'g' : v >= G.prepaid * 0.85 ? 'a' : 'r') : null, rel: 1, sub: (r, G) => r.pn + ' of ' + r.n + ' orders' + (G.prepaid > 0 ? ' · goal ' + G.prepaid + '%' : '') },
-    { k: 'tk', l: 'Average ticket', i: '🧾', g: (r) => r.n > 0 ? r.tk : null, f: 'rs', d: 1, rel: 1, sub: () => '' },
-    { k: 'cr', l: 'Order codes', i: '🏷', g: (r) => r.n > 0 ? r.cr : null, f: 'pct', d: 1, pts: 1, col: (v, r, G) => v == null ? null : v >= G.code ? 'g' : v >= G.code * 0.85 ? 'a' : 'r', sub: (r, G) => 'goal ' + G.code + '%' },
-    { k: 'mx', l: 'DG + LG + WH', i: '🟢', g: (r) => r.pcs > 0 ? r.mx : null, f: 'pct', d: 1, pts: 1, col: (v, r, G) => v == null ? null : v >= G.mix ? 'g' : v >= G.mix * 0.92 ? 'a' : 'r', sub: (r, G) => r.pcs + ' pieces · goal ' + G.mix + '%' },
-    { k: 's7', l: '7% orders', i: '💸', g: (r) => r.n > 0 ? r.s7 : null, f: 'n', d: 1, rel: 1, sub: (r) => '7% ' + r.s7 + ' · 6% ' + r.s6 + ' · 2.8% ' + r.s28 + (r.so ? ' · other ' + r.so : '') },
-    { k: 'disc', l: 'Discipline', i: '🕘', g: (r) => r.off ? null : (ppLate(r) ? 0 : 1), f: 'ontime', d: 1, col: (v) => v == null ? null : v ? 'g' : 'r', sub: (r) => r.ar ? 'punched in ' + r.ar + (ppLate(r) ? ' · ' + r.lt + ' min late' : '') : 'no punch-in' },
-    { k: 'rt', l: 'Overall rating', i: '⭐', g: (r) => r.rt, f: 'dec', d: 1, rel: 1, sub: () => 'the daily rating score' },
-  ];
-  const ppFmt = (m, v) => v == null ? '—' : m.f === 'rs' ? inr(v) : m.f === 'pct' ? Math.round(v) + '%' : m.f === 'dec' ? (Math.round(v * 10) / 10) : m.f === 'ontime' ? (v ? 'On time' : 'Late') : m.f === 'missing' ? (v === 0 ? 'All done' : v + ' missing') : String(Math.round(v * 10) / 10);
-  const ppAvgFmt = (m, v) => v == null ? '—' : m.f === 'rs' ? inr(v) : m.f === 'pct' ? Math.round(v) + '%' : m.f === 'ontime' ? Math.round(v * 100) + '% on time' : m.f === 'missing' ? (Math.round(v * 10) / 10) + ' / day' : String(Math.round(v * 10) / 10);
-  const ppRow = (day, id) => (PP.cache[day] && PP.cache[day].rows && PP.cache[day].rows[id]) || null;
-  const ppWorked = (day, id) => { const r = ppRow(day, id); return r && !r.off ? r : null; };
-  const ppAvg = (m, days, id) => { let s = 0, c = 0; days.forEach(d => { const r = ppWorked(d, id); if (!r) return; const v = m.g(r); if (v != null && !isNaN(v)) { s += Number(v); c++; } }); return c ? s / c : null; };
-  const ppColour = (m, v, r, base) => {
-    if (v == null) return 'n';
-    if (m.col) { const c = m.col(v, r, PP.goals); if (c) return c; }
-    if (base == null || base <= 0) return 'g';
-    const x = m.d > 0 ? v / base : base / Math.max(v, 0.0001);
-    return x >= 0.97 ? 'g' : x >= 0.8 ? 'a' : 'r';
-  };
-
-  async function ppEnsure(days) {
-    const need = days.filter(d => d <= PP.today && (!PP.cache[d] || (d === PP.today && Date.now() - PP.cache[d].at > 120000)));
-    const chunks = []; for (let i = 0; i < need.length; i += 10) chunks.push(need.slice(i, i + 10));
-    await Promise.all(chunks.map(async (c) => {
-      const d = await api.get('cp.days', { days: c.join(',') });
-      Object.assign(PP.names, d.names || {}); PP.goals = Object.assign({ mix: 85, code: 65, q_conv: 23, prepaid: 0 }, d.goals || {});
-      c.forEach(day => { PP.cache[day] = { at: Date.now(), rows: (d.days && d.days[day]) || {} }; });
-    }));
-  }
-  const ppDays = (n) => ppSpan(ppAddDays(PP.today, -(n - 1)), PP.today);
-  function ppPeople() {
-    const order = ((T && T.emps_all) || []).map(e => Number(e.id)), seen = new Set(order);
-    Object.keys(PP.names).forEach(k => { if (!seen.has(Number(k))) order.push(Number(k)); });
-    return order.filter(id => PP.names[id] || ((T && T.emps_all) || []).some(e => Number(e.id) === id)).map(id => {
-      const e = ((T && T.emps_all) || []).find(x => Number(x.id) === id);
-      const nm = PP.names[id] || (e && (e.name || e.full_name)) || ('#' + id);
-      return { id, name: nm, pct: e && e.pct != null ? Math.round(e.pct) : null };
-    });
-  }
-  const ppInit = (nm) => nm.split(/\s+/).filter(Boolean).slice(0, 2).map(x => x[0]).join('').toUpperCase();
-
-  async function loadPerson() {
-    const box = $('p-pp');
-    if (!PP.today) box.innerHTML = '<div class="card"><div class="empty">Loading the person view…</div></div>';
-    try {
-      if (!T) await loadTower(false);
-      PP.today = T.today || (T.day) || $('datePick').value;
-      if (!PP.month) PP.month = PP.today.slice(0, 7);
-      await ppEnsure(ppDays(Math.max(PP.range, 14)));
-      PP.err = '';
-      const ppl = ppPeople(); if (!PP.id || !ppl.some(p => p.id === PP.id)) { let last = null; try { last = Number(localStorage.getItem('hrms_pp_id')); } catch (e) {} PP.id = ppl.some(p => p.id === last) ? last : (ppl[0] && ppl[0].id); }
-      if (PP.mode === 'month') await ppEnsure(ppSpan(PP.month + '-01', ppMonthEnd() < PP.today ? ppMonthEnd() : PP.today));
-      if (PP.sum > 0) await ppEnsure(ppDays(PP.sum * 2 > 62 ? 62 : PP.sum * 2));
-    } catch (e) { PP.err = e.message || 'Could not load'; }
-    renderPerson();
-  }
-  const ppMonthEnd = () => { const [y, m] = PP.month.split('-').map(Number); return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10); };
-
-  function ppSwitcher(ppl) {
-    return `<div class="pp-list">${ppl.map(p => `<button type="button" class="pp-pi${p.id === PP.id ? ' on' : ''}" data-id="${p.id}"><span class="av">${esc(ppInit(p.name))}</span><span class="nm">${esc(p.name)}</span>${p.pct == null ? '' : `<small>${p.pct}%</small>`}</button>`).join('')}</div>`;
-  }
-  function ppBlock(m, days, id) {
-    const rows = days.map(d => ppWorked(d, id)), vals = rows.map(r => r ? m.g(r) : null);
-    const worked = days.filter(d => ppWorked(d, id));
-    const lastDay = [...days].reverse().find(d => { const r = ppWorked(d, id); return r && m.g(r) != null; });
-    const last = lastDay ? ppWorked(lastDay, id) : null, v = last ? m.g(last) : null;
-    // change = average of this window vs the same-size window before it
-    const n = days.length, prev = ppSpan(ppAddDays(days[0], -n), ppAddDays(days[0], -1));
-    const a = ppAvg(m, days, id), b = ppAvg(m, prev, id);
-    let dl = '—', dc = 'fl';
-    if (a != null && b != null) {
-      const diff = a - b, rel = b ? diff / Math.abs(b) : 0, good = diff * m.d > 0, flat = Math.abs(rel) < 0.02 || (m.pts && Math.abs(diff) < 1);
-      dc = flat ? 'fl' : good ? 'up' : 'dn';
-      dl = flat ? '▬ same' : (diff > 0 ? '▲ ' : '▼ ') + (m.pts ? Math.abs(Math.round(diff)) + ' pts' : m.f === 'rs' || m.f === 'n' || m.f === 'missing' || m.f === 'ontime' || m.f === 'dec' ? Math.abs(Math.round(rel * 100)) + '%' : Math.abs(Math.round(diff)));
-    }
-    const base = a, nums = vals.filter(x => x != null), mx = Math.max(1, ...nums, m.f === 'ontime' ? 1 : 0);
-    const bars = days.map((d, i) => { const r = rows[i], x = vals[i], c = x == null ? 'n' : ppColour(m, x, r, base), h = x == null ? 4 : Math.max(8, Math.round((m.f === 'missing' ? (mx - x + 1) / (mx + 1) : x / mx) * 100));
-      return `<div class="${c}${d === PP.today ? ' td' : ''}" title="${esc(d + ' · ' + ppFmt(m, x))}"><i style="height:${h}%"></i></div>`; }).join('');
-    const labs = days.map(d => `<span>${n > 10 ? (new Date(d + 'T00:00:00Z').getUTCDate()) : ppDow(d)[0]}</span>`).join('');
-    const subTxt = last ? m.sub(last, PP.goals) : '';
-    return `<div class="pp-m"><div class="t"><span>${m.i} ${m.l}</span><span class="dl ${dc}">${dl}</span></div>
-      <div class="big">${m.f === 'ontime' ? (worked.length ? worked.filter(d => !ppLate(ppRow(d, id))).length + ' / ' + worked.length + ' on time' : '—') : ppFmt(m, v)}${lastDay && lastDay !== PP.today ? `<small> ${ppDow(lastDay)}</small>` : ''}</div>
-      <div class="pp-sp">${bars}</div><div class="pp-dl7">${labs}</div>
-      <div class="s">${esc(subTxt)}</div></div>`;
-  }
-
-  // ---- summary: what got better / what needs work (last N days against the N before) ----
-  function ppSummary(id, N) {
-    const cur = ppDays(N), prev = ppSpan(ppAddDays(cur[0], -N), ppAddDays(cur[0], -1));
-    const rowsCur = cur.filter(d => ppWorked(d, id)).length, rowsPrev = prev.filter(d => ppWorked(d, id)).length;
-    if (!rowsCur) return { empty: 'No working days in the last ' + N + ' days.' };
-    const better = [], worse = [], flat = [];
-    PPM.forEach(m => {
-      const a = ppAvg(m, cur, id), b = ppAvg(m, prev, id); if (a == null) return;
-      if (m.k === 'disc') {
-        const late = cur.filter(d => ppWorked(d, id) && ppLate(ppRow(d, id)));
-        const lateB = prev.filter(d => ppWorked(d, id) && ppLate(ppRow(d, id))).length;
-        if (late.length > lateB) worse.push({ k: m.k, w: 2, t: `Late ${late.length} time${late.length > 1 ? 's' : ''} (${lateB} before) — ${late.slice(-3).map(d => ppDow(d) + ' ' + ppRow(d, id).ar).join(', ')}` });
-        else if (late.length < lateB) better.push({ k: m.k, w: 1, t: `Late only ${late.length} time${late.length === 1 ? '' : 's'} (was ${lateB})` });
-        else if (late.length) worse.push({ k: m.k, w: 1, t: `Still late ${late.length} time${late.length > 1 ? 's' : ''}` });
-        return;
-      }
-      if (b == null) return;
-      const diff = a - b, rel = b ? diff / Math.abs(b) : (diff ? 1 : 0), small = m.pts ? Math.abs(diff) < 2 : Math.abs(rel) < 0.04;
-      const per = m.f === 'n' ? ' a day' : m.f === 'missing' ? ' missing a day' : '';
-      const txt = (lab) => m.f === 'rs' ? `${lab} ${inr(b)} → ${inr(a)} a day` : m.pts ? `${lab} ${Math.round(b)}% → ${Math.round(a)}%` : `${lab} ${ppAvgFmt(m, b).replace(' / day', '')} → ${ppAvgFmt(m, a).replace(' / day', '')}${per}`;
-      if (small) { flat.push(m.l); return; }
-      const good = diff * m.d > 0, w = Math.abs(rel);
-      (good ? better : worse).push({ k: m.k, w, t: txt(m.l) + (m.f === 'rs' && m.k === 'sales' ? ` (${diff > 0 ? '+' : '−'}${Math.abs(Math.round(rel * 100))}%)` : '') });
-    });
-    better.sort((x, y) => y.w - x.w); worse.sort((x, y) => y.w - x.w);
-    const sa = ppAvg(PPM[0], cur, id), sb = ppAvg(PPM[0], prev, id), sd = sa != null && sb ? (sa - sb) / sb : null;
-    const head = sd == null ? 'Not enough earlier days to compare.' : sd > 0.04 ? `Overall: improving. Sales are up ${Math.round(sd * 100)}% on the ${N} days before.` : sd < -0.04 ? `Overall: slipping. Sales are down ${Math.abs(Math.round(sd * 100))}% on the ${N} days before.` : 'Overall: steady. Sales are about the same as the ' + N + ' days before.';
-    const tip = worse.length ? 'Start with: ' + worse[0].t.replace(/ \(.*/, '') + '.' : better.length ? 'Nothing is slipping — keep the same routine.' : '';
-    return { head, better: better.slice(0, 5), worse: worse.slice(0, 5), flat, tip, days: rowsCur, prevDays: rowsPrev };
-  }
-  function ppSummaryHtml(id) {
-    const s = ppSummary(id, PP.sum);
-    const pills = [7, 15, 30].map(n => `<button type="button" class="pp-pill${PP.sum === n ? ' on' : ''}" data-sum="${n}">${n} days</button>`).join('');
-    const body = s.empty ? `<div class="empty">${esc(s.empty)}</div>` : `<div class="pp-verdict">${esc(s.head)}</div>
-      <div class="pp-sum"><div class="col good"><h4>✅ What got better</h4><ul>${s.better.length ? s.better.map(x => `<li>${esc(x.t)}</li>`).join('') : '<li>Nothing clearly better in this period.</li>'}</ul></div>
-      <div class="col bad"><h4>⚠ What needs work</h4><ul>${s.worse.length ? s.worse.map(x => `<li>${esc(x.t)}</li>`).join('') : '<li>Nothing is slipping.</li>'}</ul></div></div>
-      ${s.tip ? `<div class="s" style="margin-top:10px;">${esc(s.tip)}</div>` : ''}${s.flat.length ? `<div class="s">About the same: ${esc(s.flat.join(', '))}.</div>` : ''}${s.prevDays < Math.ceil(PP.sum / 3) ? `<div class="s">Only ${s.prevDays} working day${s.prevDays === 1 ? '' : 's'} in the period before — compare with care.</div>` : ''}`;
-    return `<div class="card"><div class="pp-hd"><h2>📊 Summary</h2><div class="pp-pills">${pills}</div></div>${body}</div>`;
-  }
-
-  // ---- whole month: every number for the person on one screen ----
-  function ppMonthHtml(id, ppl) {
-    const first = PP.month + '-01', last = ppMonthEnd() < PP.today ? ppMonthEnd() : PP.today, days = ppSpan(first, last);
-    const prevM = ppAddDays(first, -1).slice(0, 7), nextM = ppAddDays(ppMonthEnd(), 1).slice(0, 7);
-    const mname = new Date(first + 'T00:00:00Z').toLocaleString('en-IN', { month: 'long', year: 'numeric', timeZone: 'UTC' });
-    const p = ppl.find(x => x.id === id) || { name: '' };
-    const rowsH = PPM.map(m => {
-      const a = ppAvg(m, days, id), cells = days.map(d => { const r = ppWorked(d, id), v = r ? m.g(r) : null; const c = !r ? 'off' : v == null ? 'n' : ppColour(m, v, r, a); const t = v == null ? '' : m.f === 'rs' ? (Math.abs(v) >= 1000 ? Math.round(v / 1000) + 'k' : v) : m.f === 'pct' ? Math.round(v) : m.f === 'ontime' ? (v ? '✓' : '!') : m.f === 'missing' ? (v === 0 ? '✓' : v) : (Math.round(v * 10) / 10);
-        return `<td><div class="cell ${c}" title="${esc(d + ' · ' + ppFmt(m, v))}">${t}</div></td>`; }).join('');
-      return `<tr><td class="l">${m.i} ${m.l}</td>${cells}<td class="avg">${ppAvgFmt(m, a)}</td></tr>`;
-    }).join('');
-    const head = `<tr><th class="l"></th>${days.map(d => `<th class="${ppDow(d) === 'Sun' ? 'sun' : ''}">${Number(d.slice(8))}</th>`).join('')}<th class="avg">Avg</th></tr>`;
-    return `<div class="card"><div class="pp-hd"><button type="button" class="pp-arr" data-m="${prevM}">‹</button><div><h2>${esc(p.name)} — ${esc(mname)}</h2><div class="sub">Each box is one business day (10 AM → 10 AM). Grey = day off.</div></div><button type="button" class="pp-arr" data-m="${nextM}" ${nextM > PP.today.slice(0, 7) ? 'disabled' : ''}>›</button><span style="flex:1"></span><button type="button" class="pp-btn" data-back="1">← Back to blocks</button></div>
-      <div class="pp-chips">${ppl.map(x => `<button type="button" class="pp-pill${x.id === id ? ' on' : ''}" data-id="${x.id}">${esc(x.name)}</button>`).join('')}</div></div>
-      <div class="card pp-hm"><div style="overflow-x:auto;"><table><thead>${head}</thead><tbody>${rowsH}</tbody></table></div>
-      <div class="legend" style="margin-top:10px;"><span><span class="dot" style="background:#bbf7d0"></span>Good</span><span><span class="dot" style="background:#fde68a"></span>Weak</span><span><span class="dot" style="background:#fecaca"></span>Bad</span><span><span class="dot" style="background:#eef0f3"></span>Day off / no data</span></div></div>`;
-  }
-
-  function renderPerson() {
-    const box = $('p-pp'); if (!box) return;
-    if (PP.err) { box.innerHTML = `<div class="card">${/not allowed|admin|403/i.test(PP.err) ? '<div class="empty">The person view is for Admin / HR.</div>' : errHtml({ message: PP.err })}</div>`; return; }
-    const ppl = ppPeople(); if (!ppl.length) { box.innerHTML = '<div class="card"><div class="empty">No salespeople found.</div></div>'; return; }
-    const id = PP.id, p = ppl.find(x => x.id === id) || ppl[0];
-    if (PP.mode === 'month') { box.innerHTML = ppMonthHtml(p.id, ppl) + ppSummaryHtml(p.id); return; }
-    const days = ppDays(PP.range), idx = ppl.findIndex(x => x.id === p.id);
-    const todayR = ppRow(PP.today, p.id), arrive = todayR && todayR.ar ? 'punched in ' + todayR.ar : '';
-    box.innerHTML = `<div class="pp-wrap"><div class="pp-side"><div class="k" style="padding:6px 10px;">People</div>${ppSwitcher(ppl)}</div>
-      <div class="pp-main">
-        <div class="pp-mob card"><div class="pp-hd"><button type="button" class="pp-arr" data-step="-1">‹</button><select class="pp-sel" id="ppSel">${ppl.map(x => `<option value="${x.id}"${x.id === p.id ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select><button type="button" class="pp-arr" data-step="1">›</button></div></div>
-        <div class="card"><div class="pp-hd"><span class="av big">${esc(ppInit(p.name))}</span><div><h2>${esc(p.name)}</h2><div class="sub">${esc(arrive)}${arrive ? ' · ' : ''}${idx + 1} of ${ppl.length}</div></div><span style="flex:1"></span><button type="button" class="pp-btn" data-month="1">📅 Whole month</button></div>
-        <div class="pp-hd" style="margin-top:12px;"><div class="pp-pills">${[7, 15, 30].map(n => `<button type="button" class="pp-pill${PP.range === n ? ' on' : ''}" data-range="${n}">Last ${n} days</button>`).join('')}</div><span class="sub">Each block: latest number, change against the ${PP.range} days before, one bar per day</span></div></div>
-        <div class="pp-mb">${PPM.map(m => ppBlock(m, days, p.id)).join('')}</div>
-        ${ppSummaryHtml(p.id)}
-      </div></div>`;
-  }
-
-  $('p-pp').addEventListener('click', async (e) => {
-    const t = e.target.closest('button'); if (!t || t.disabled) return;
-    const sel = (id) => { PP.id = Number(id); try { localStorage.setItem('hrms_pp_id', String(PP.id)); } catch (x) {} };
-    if (t.dataset.id) { sel(t.dataset.id); renderPerson(); await loadPerson(); }
-    else if (t.dataset.range) { PP.range = Number(t.dataset.range); await loadPerson(); }
-    else if (t.dataset.sum) { PP.sum = Number(t.dataset.sum); await loadPerson(); }
-    else if (t.dataset.month) { PP.mode = 'month'; PP.month = PP.today.slice(0, 7); await loadPerson(); }
-    else if (t.dataset.back) { PP.mode = 'blocks'; await loadPerson(); }
-    else if (t.dataset.m) { PP.month = t.dataset.m; await loadPerson(); }
-    else if (t.dataset.step) { const ppl = ppPeople(), i = ppl.findIndex(x => x.id === PP.id); const n = ppl[(i + Number(t.dataset.step) + ppl.length) % ppl.length]; sel(n.id); await loadPerson(); }
-  });
-  $('p-pp').addEventListener('change', async (e) => { if (e.target.id === 'ppSel') { PP.id = Number(e.target.value); try { localStorage.setItem('hrms_pp_id', String(PP.id)); } catch (x) {} await loadPerson(); } });
 
   // The Sales page above opens a Live tab with ctOpen('today' | 'qb' | 'focus' | 'alerts' | 'rt' | 'md' | 'bench' | 'lib' | 'conv' | 'set'). The first call starts the data loading.
   let CT_ON = false, CT_STARTED = false;
