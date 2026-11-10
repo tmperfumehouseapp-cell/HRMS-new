@@ -205,7 +205,7 @@
   <div id="sidebar"></div>
   <main class="main">
     <div class="topbar">
-      <div><h1 id="pgTitle">Order Targets</h1><div class="sub" id="pgSub" style="margin-top:2px;">Daily order target for selected employees, tracked hour by hour</div></div>
+      <div><h1 id="pgTitle">Order Targets</h1><div class="sub" id="pgSub" style="margin-top:2px;">Daily order target for selected employees. Orders per hour (and how many came from queries or campaigns) fill in by themselves from the allocated orders</div></div>
       <div class="bar-ctl" id="barDay">
         <button type="button" class="btn secondary nav-s" id="btnPrev" title="Previous day">‹</button>
         <input type="date" id="dayInput">
@@ -415,8 +415,8 @@
   const achCell = (r, m) => `<b>${r.achieved}</b>${r.target > 0 ? `<span class="pc">(${m.pct}%)</span>` : ''}`;
   const penCell = (r, m) => r.target > 0 ? `<b>${m.pend}</b><span class="pc">(${m.pp}%)</span>` : '<span class="sub">—</span>';
   const addBtn = (r) => D.open_hours.length
-    ? `<button type="button" class="plus" data-act="add" data-emp="${r.employee_id}">+ Add orders</button>`
-    : `<button type="button" class="plus" disabled title="Hours open as the day starts">+ Add orders</button>`;
+    ? `<span class="mut" title="Orders per hour come from the allocated orders">auto</span>`
+    : `<span class="mut" title="Orders per hour come from the allocated orders">auto</span>`;
 
   const qcStr = (r, k, h) => (r[k] && r[k][h]) ? String(r[k][h]) : '';
   const qcSum = (r, k) => Object.values(r[k] || {}).reduce((a, v) => a + v, 0);
@@ -501,7 +501,7 @@
       D.hours.forEach(x => {
         const now = x === D.now_hour ? ' now' : '';
         h += open.has(x)
-          ? `<td class="hd${now}"><input class="hc" type="number" min="0" max="9999" inputmode="numeric" placeholder="–" value="${r.hours[x] == null ? '' : r.hours[x]}" data-emp="${r.employee_id}" data-h="${x}" aria-label="${esc(r.full_name)} ${hrRange(x)}">${qcTag(r, x)}</td>`
+          ? `<td class="hd${now}"><span class="hc" title="${esc(r.full_name)} ${hrRange(x)}">${r.hours[x] == null ? '–' : r.hours[x]}</span>${qcTag(r, x)}</td>`
           : `<td class="hd${now}"><span class="hc fut" title="${hrLabel(x)} has not started">·</span></td>`;
       });
       h += `<td class="c-ach">${achCell(r, m)}</td><td class="c-pen">${penCell(r, m)}</td>${qcCells(r).replace('class="qc q"', 'class="qc q c-q"').replace('class="qc c"', 'class="qc c c-c"')}</tr>`;

@@ -78,7 +78,7 @@ guardPage();
     ['speed_median_min_30d', 'Reply speed', (r) => r.speed_median_min_30d], ['tone_score', 'Tone', (r) => r.tone_score], ['overdue_complaints', 'Complaints', (r) => r.overdue_complaints], ['level', 'Claude', (r) => r.level]
   ];
   // ---- the other tools of the old Targets / Performance tabs live here too, as panels under the table (their own pages, opened inside this page; the same saved data everywhere — e.g. the day timing is ONE setting shared with Attendance, Orders and Total Budgeting)
-  const TOOLS = [['targets', '🎯 Target rules, day timing & order sync', 'Set the daily-target rule, the day start time, sync orders', 'targets.html'], ['orders', '🔢 Order count, hour by hour', 'Order-count targets and orders typed in per hour', 'order_targets.html'], ['perf', '⭐ Performance entry', 'Rate calls and customer behaviour, edit query counts, add-ons, ticket stars', 'performance.html']];
+  const TOOLS = [['targets', '🎯 Target rules, day timing & order sync', 'Set the daily-target rule, the day start time, sync orders', 'targets.html'], ['orders', '🔢 Order count, hour by hour', 'Order-count targets; orders per hour fill in by themselves from the allocated orders', 'order_targets.html'], ['perf', '⭐ Performance entry', 'Rate calls and customer behaviour (optional manual stars), add-ons, ticket stars. Queries are counted from WhatsApp by themselves', 'performance.html']];
   const TF = {};
   function toolOpen(k, scroll) {
     const el = document.querySelector('.tool[data-k="' + k + '"]'); if (!el) return; const t = TOOLS.find((x) => x[0] === k); const on = !(scroll === true) && el.classList.contains('on');

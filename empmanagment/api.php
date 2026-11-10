@@ -3875,6 +3875,24 @@ function ot_set_target(PDO $pdo, int $emp, string $date, int $target, string $wh
         ->execute([$date, $emp, $target, $who, date('Y-m-d H:i:s')]);
 }
 
+/** Orders per hour of one business day, worked out from the ALLOCATED orders (the same orders Sales → Live and Team count): emp => hour => ['o' => orders, 'q' => from queries, 'c' => from campaigns / community]. Nothing is typed any more. */
+function ot_auto_hours(PDO $pdo, string $date): array
+{
+    static $memo = [];
+    if (isset($memo[$date])) return $memo[$date];
+    $emps = [];
+    try { foreach ($pdo->query("SELECT e.employee_id, e.full_name, e.sales_tag, d.department_name FROM employees e LEFT JOIN departments d ON d.department_id = e.department_id WHERE e.status != 'ex'")->fetchAll() as $e) { if (stripos((string)$e['department_name'], 'sales') === false) continue; $emps[(int)$e['employee_id']] = $e; } } catch (Throwable $e) { return $memo[$date] = []; }
+    $out = [];
+    try { $sale = coach_sales_load($pdo, $emps, $date, $date); } catch (Throwable $e) { return $memo[$date] = []; }
+    foreach ((array)$sale as $k => $list) {
+        $kp = explode('|', (string)$k, 2); if (($kp[0] ?? '') !== $date) continue; $id = (int)($kp[1] ?? 0); if ($id <= 0) continue;
+        foreach ((array)$list as $o) {
+            $h = (int)date('G', (int)($o['ts'] ?? 0)); $t = (string)($o['type'] ?? ''); if (!isset($out[$id][$h])) $out[$id][$h] = ['o' => 0, 'q' => 0, 'c' => 0];
+            $out[$id][$h]['o']++; if ($t === 'query') $out[$id][$h]['q']++; elseif ($t === 'campaign' || $t === 'community') $out[$id][$h]['c']++;
+        }
+    }
+    return $memo[$date] = $out;
+}
 function ot_set_hour(PDO $pdo, int $emp, string $date, int $hour, ?int $orders, string $who, ?int $query = null, ?int $campaign = null): void
 {
     if ($orders === null) {
@@ -28704,6 +28722,11 @@ switch ($action) {
             $at = (string)$r['updated_at'];
             if ($at !== '' && (!isset($last[$id]) || $at > $last[$id])) $last[$id] = $at;
         }
+        // Orders per hour are NOT typed any more: they come from the allocated orders (the numbers Sales → Live counts).
+        $hours = []; $qh = []; $ch = []; $last = []; $extra = [];
+        foreach (ot_auto_hours($pdo, $date) as $aid => $byH) foreach ($byH as $ah => $ax) {
+            $hours[$aid][$ah] = $ax['o']; if ($ax['q'] > 0) $qh[$aid][$ah] = $ax['q']; if ($ax['c'] > 0) $ch[$aid][$ah] = $ax['c']; if ($ah < $s || $ah >= $e) $extra[$ah] = true; $last[$aid] = date('Y-m-d H:i:s');
+        }
         $rows = [];
         foreach (ot_people($pdo, $ids) as $p) {
             $id = (int)$p['employee_id'];
@@ -28772,6 +28795,7 @@ switch ($action) {
             if ((string)$r['updated_at'] > $last) $last = (string)$r['updated_at'];
         }
         // The tracked window, plus any other hour of the day that has numbers (orders can be entered for any hour).
+        $by = []; $last = ''; foreach ((ot_auto_hours($pdo, $today)[$emp] ?? []) as $ah => $ax) { $by[$ah] = ['orders' => $ax['o'], 'q' => $ax['q'], 'c' => $ax['c']]; $last = date('Y-m-d H:i:s'); }   // from the allocated orders, not typed
         $list = range($s, $e - 1);
         foreach (ot_all_hours($s) as $h) if (isset($by[$h]) && !in_array($h, $list, true)) $list[] = $h;
         $hours = []; $ach = 0; $qq = 0; $cc = 0; $nowHour = null;
@@ -28929,6 +28953,7 @@ switch ($action) {
         // cells: [{employee_id, date, hour, orders}] — the orders done IN that hour; blank removes it.
         $auth = require_auth();
         require_role(['Admin', 'HR'], $auth);
+        json_response(['error' => 'Orders per hour are no longer typed: they come from the allocated orders by themselves.'], 410);   // owner's decision: one source (the allocated orders), no double entry
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
         if (!ensure_order_target_tables($pdo)) json_response(['error' => 'Could not create the Order Targets tables.'], 500);
         $cells = json_input()['cells'] ?? [];
