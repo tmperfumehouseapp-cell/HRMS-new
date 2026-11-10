@@ -196,11 +196,12 @@ function wkf_send_node(PDO $pdo, array $c, array $n, int $fid): array
         $ok = true; $err = ''; $txt = trim(wkf_fill((string)($n['text'] ?? ''), $c));
         if ($txt !== '') { $r = wa_send_text($pdo, $c, $txt, 'flow', 0); $ok = (bool)$r[0]; $err = $ok ? '' : (string)$r[1]; }
         $key = (string)$c['phone']; $emp = (int)$c['assigned_emp'];
-        if ($emp <= 0 && function_exists('wa_people')) { foreach (wa_people($pdo, (int)$c['last_number_id']) as $p) { if (!empty($p['present']) && empty($p['full'])) { $emp = (int)$p['emp_id']; break; } } if ($emp > 0) wa_assign_to($pdo, $key, $emp, 0, 'flow'); }
+        $manualOnly = function_exists('wa_manual_assign') && wa_manual_assign($pdo);   // 🙋 owner's rule: a chat the bot / a flow answered stays in Requests (nobody has it) until a person takes it or an admin gives it — a flow never hands it out by itself
+        if ($emp <= 0 && !$manualOnly && function_exists('wa_people')) { foreach (wa_people($pdo, (int)$c['last_number_id']) as $p) { if (!empty($p['present']) && empty($p['full'])) { $emp = (int)$p['emp_id']; break; } } if ($emp > 0) wa_assign_to($pdo, $key, $emp, 0, 'flow'); }
         else $pdo->prepare("UPDATE wa_contacts SET state = 'human', status = 'open', closed_at = NULL WHERE phone = ?")->execute([$key]);
         if (!empty($n['alert'])) { try { $pdo->prepare("UPDATE wa_contacts SET callnow = 1, callnow_at = ? WHERE phone = ? AND callnow NOT IN (1, 2)")->execute([date('Y-m-d H:i:s'), $key]); } catch (Throwable $e) { } }
         if ($emp > 0 && function_exists('ct_push')) { try { ct_push($pdo, [$emp], 'Customer wants a person', ($c['name'] !== '' ? $c['name'] : '+91 ' . $key) . ' asked to talk to someone (key flow).', '/my_chats.html?phone=' . $key, 'wa-kf-' . $key); } catch (Throwable $e) { } }
-        if (function_exists('wa_event')) { try { wa_event($pdo, $key, '🔑 Key flow handed the chat to ' . ($emp > 0 ? (employee_names_by_id($pdo)[$emp] ?? 'a salesperson') : 'the team (nobody free — it waits in Waiting)')); } catch (Throwable $e) { } }
+        if (function_exists('wa_event')) { try { wa_event($pdo, $key, '🔑 Key flow handed the chat to ' . ($emp > 0 ? (employee_names_by_id($pdo)[$emp] ?? 'a salesperson') : ($manualOnly ? 'the team — it stays in Requests until a person takes it' : 'the team (nobody free — it waits in Waiting)'))); } catch (Throwable $e) { } }
         return [$ok, $err];
     }
     if ($ty === 'tag') { $tag = mb_substr(preg_replace('/[^a-z0-9_]+/', '_', mb_strtolower(trim((string)$n['tag']))), 0, 40); if ($tag !== '') { try { $pdo->prepare("INSERT IGNORE INTO wa_ctags (phone, tag, src, at) VALUES (?, ?, 'flow', ?)")->execute([(string)$c['phone'], $tag, date('Y-m-d H:i:s')]); $pdo->prepare("INSERT IGNORE INTO wa_tagidx (phone, tag) VALUES (?, ?)")->execute([(string)$c['phone'], $tag]); } catch (Throwable $e) { } } return [true, '']; }
