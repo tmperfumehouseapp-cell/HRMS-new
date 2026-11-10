@@ -2,7 +2,7 @@
 /**
  * wa_drip.php — 🔁 7-DAY DRIP (Campaigns → "7-Day Drip").
  *   A customer who writes to us first (a new query) or replies to a campaign is enrolled automatically: that day is DAY 0 (the normal chat / bot reply),
- *   the next day is DAY 1 ... up to Day 10. For each day the owner picks one approved pre-made message, the time of day, and the number (or "the number they wrote to").
+ *   the next day is DAY 1 ... up to Day 30. For each day the owner picks one approved pre-made message, the time of day, and the number (or "the number they wrote to").
  *   Each message goes out once, by itself, at that time. A customer who ORDERS, opts out, has a complaint, or whose chat a salesperson is working (last 12 h) gets nothing more that day.
  *   Setting wd_cfg (JSON) · tables wa_drip_enr (who entered, when) and wa_drip_ev (what went out / why not). A customer is enrolled once in 30 days.
  *   Actions: wa.drip_get · wa.drip_save · wa.drip_test · wa.drip_log. The background part (wd_tick) is called by the engine tick in wa_more.php. PHP 7.4 safe.
@@ -24,7 +24,7 @@ function wd_tables(PDO $pdo): bool
 function wd_cfg(PDO $pdo): array
 {
     $j = json_decode((string)setting_get($pdo, 'wd_cfg', ''), true); if (!is_array($j)) $j = [];
-    $days = []; foreach ((array)($j['days'] ?? []) as $d => $x) { $d = (int)$d; if ($d < 1 || $d > 10 || !is_array($x) || (int)($x['tpl_id'] ?? 0) <= 0) continue; $t = preg_match('/^\d{1,2}:\d{2}$/', (string)($x['time'] ?? '')) ? (string)$x['time'] : '11:00'; $days[$d] = ['tpl_id' => (int)$x['tpl_id'], 'time' => $t, 'number_id' => (int)($x['number_id'] ?? 0)]; }
+    $days = []; foreach ((array)($j['days'] ?? []) as $d => $x) { $d = (int)$d; if ($d < 1 || $d > 30 || !is_array($x) || (int)($x['tpl_id'] ?? 0) <= 0) continue; $t = preg_match('/^\d{1,2}:\d{2}$/', (string)($x['time'] ?? '')) ? (string)$x['time'] : '11:00'; $days[$d] = ['tpl_id' => (int)$x['tpl_id'], 'time' => $t, 'number_id' => (int)($x['number_id'] ?? 0)]; }
     ksort($days);
     return ['on' => !empty($j['on']) ? 1 : 0, 'days' => $days, 'enter_query' => array_key_exists('enter_query', $j) ? (int)!empty($j['enter_query']) : 1, 'enter_campaign' => array_key_exists('enter_campaign', $j) ? (int)!empty($j['enter_campaign']) : 1,
         'pause_person' => array_key_exists('pause_person', $j) ? (int)!empty($j['pause_person']) : 1, 'stop_on_reply' => !empty($j['stop_on_reply']) ? 1 : 0, 'cap' => max(5, min(300, (int)($j['cap'] ?? 40)))];
@@ -79,7 +79,7 @@ function wd_tick(PDO $pdo, array $opt = []): array
     if (empty($opt['now']) && (!function_exists('wa_lock') || !wa_lock($pdo, 'wdrun', 50))) return $o;
     try { $o['entered'] = wd_enroll($pdo, $cfg); } catch (Throwable $e) { }
     $today = wd_today($pdo); $nowMin = !empty($opt['now']) ? 1439 : (int)date('G') * 60 + (int)date('i'); $sent = 0; if (!empty($opt['now'])) $cfg['cap'] = max(1, (int)($opt['cap'] ?? 150));
-    $e = $pdo->prepare("SELECT phone, anchor FROM wa_drip_enr WHERE anchor <= ? AND anchor >= ? AND left_why = ''"); $e->execute([$today, date('Y-m-d', strtotime($today) - 10 * 86400)]);
+    $e = $pdo->prepare("SELECT phone, anchor FROM wa_drip_enr WHERE anchor <= ? AND anchor >= ? AND left_why = ''"); $e->execute([$today, date('Y-m-d', strtotime($today) - 31 * 86400)]);
     $ev = $pdo->prepare("INSERT IGNORE INTO wa_drip_ev (phone, anchor, day, tpl_id, number_id, status, why, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
     foreach ($e->fetchAll() as $r) {
         if ($sent >= $cfg['cap']) break;
@@ -128,7 +128,7 @@ if (strpos($__wd, 'wa.drip_') === 0) {
         }
         case 'wa.drip_backfill': {   // customers of the last 7 days (queries + campaign repliers) join now, on the day THEY came in (so each one is on the right day)
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $cfg = wd_cfg($pdo); $n = wd_enroll($pdo, $cfg, 7 * 24 + 6);
-            $today = wd_today($pdo); $due = []; $q = $pdo->prepare("SELECT anchor, COUNT(*) n FROM wa_drip_enr WHERE anchor <= ? AND anchor >= ? AND left_why = '' GROUP BY anchor"); $q->execute([$today, date('Y-m-d', strtotime($today) - 10 * 86400)]);
+            $today = wd_today($pdo); $due = []; $q = $pdo->prepare("SELECT anchor, COUNT(*) n FROM wa_drip_enr WHERE anchor <= ? AND anchor >= ? AND left_why = '' GROUP BY anchor"); $q->execute([$today, date('Y-m-d', strtotime($today) - 31 * 86400)]);
             foreach ($q->fetchAll() as $r) { $d = (int)round((strtotime($today) - strtotime((string)$r['anchor'])) / 86400); $due[$d] = ($due[$d] ?? 0) + (int)$r['n']; }
             json_response(['ok' => true, 'enrolled' => $n, 'by_day' => $due]);
         }

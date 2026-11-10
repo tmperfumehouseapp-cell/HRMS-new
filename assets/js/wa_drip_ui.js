@@ -29,13 +29,15 @@
         <label style="margin-left:10px"><input type="checkbox" id="wdP" ${C.pause_person ? 'checked' : ''}> a salesperson replied in the last 12 hours (skip that day)</label>
         <label style="margin-left:10px"><input type="checkbox" id="wdR" ${C.stop_on_reply ? 'checked' : ''}> customer replied to a drip message (stop)</label></div></div>
       <div style="display:grid;grid-template-columns:70px 1fr 100px 150px 90px;gap:8px;font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase"><div>Day</div><div>Pre-made message</div><div>Send at</div><div>From number</div><div>Sent (7 days)</div></div>
-      <div id="wdRows">${days.map(row).join('')}</div><div id="wdMsg"></div>
+      <div id="wdRows">${days.map(row).join('')}</div><div style="padding:8px 0 2px"><button type="button" class="wp-btn" id="wdAdd" title="Add the next day (up to Day 30)">＋ Add Day ${days[days.length - 1] + 1}</button></div><div id="wdMsg"></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px">
         <div class="wp-note"><b>Results (last 7 days)</b><br>Entered the drip: ${fmt(D.entered)} · today (Day 0): ${fmt(D.in_today)}<br>Left: ordered ${lf('ordered')} · opted out ${lf('opted out')} · complaint ${lf('complaint')} · replied ${lf('replied')}</div>
         <div class="wp-note"><b>Today's log</b>${(D.log || []).length ? (D.log || []).slice(0, 12).map((x) => `<div style="font-size:12px">${esc(x.at)} · Day ${x.day} · ${esc(x.name)} — ${x.status === 'sent' ? '✓ sent' : x.status === 'skipped' ? 'left out (' + esc(x.why) + ')' : '⚠ ' + esc(x.why)}</div>`).join('') : '<div style="font-size:12px;color:#64748b">Nothing has gone today yet.</div>'}</div></div>
       <div class="wp-hint" style="margin-top:8px">Only approved messages with at most one blank (the name) are listed. A customer is enrolled once in 30 days. Messages go out by themselves while the engine runs (about every minute); at most ${C.cap} per round.</div>`;
     const read = () => { C.on = $(m.body, '#wdOn').checked ? 1 : 0; C.enter_query = $(m.body, '#wdQ').checked ? 1 : 0; C.enter_campaign = $(m.body, '#wdC').checked ? 1 : 0; C.pause_person = $(m.body, '#wdP').checked ? 1 : 0; C.stop_on_reply = $(m.body, '#wdR').checked ? 1 : 0; };
-    const redraw = () => { read(); $(m.body, '#wdRows').innerHTML = days.map(row).join(''); bindRows(); };
+    const addBtn = () => { const b = $(m.body, '#wdAdd'); if (!b) return; const nx = days[days.length - 1] + 1; if (nx > 30) { b.disabled = true; b.textContent = 'Day 30 is the last'; return; } b.textContent = '＋ Add Day ' + nx; };
+    $(m.body, '#wdAdd').onclick = () => { const nx = days[days.length - 1] + 1; if (nx > 30) return; days.push(nx); redraw(); addBtn(); const pk = m.body.querySelector('.wd-pk[data-n="' + nx + '"]'); if (pk) { pk.scrollIntoView({ block: 'center' }); pk.click(); } };
+    const redraw = () => { read(); $(m.body, '#wdRows').innerHTML = days.map(row).join(''); bindRows(); addBtn(); };
     function closePick() { const o = m.body.querySelector('.wd-pop'); if (o) o.remove(); }
     function pick(btn) {
       closePick(); const n = +btn.dataset.n; const pop = document.createElement('div'); pop.className = 'wd-pop';
