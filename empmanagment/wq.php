@@ -45,7 +45,7 @@ function wq_log(PDO $pdo, string $info, bool $ok = true): void { if (function_ex
 // ------------------------------------------------------------------------------------------------------------------ settings
 function wq_defaults(): array
 {
-    return ['wq_on' => '1', 'wq_auto_on' => '0', 'wq_hold_sec' => '20', 'wq_esc_min' => '5', 'wq_attr_days' => '7', 'wq_camp_days' => '3', 'wq_min_n' => '30', 'wq_goal_queries' => '23', 'wq_goal_orders' => '', 'wq_goal_reply_min' => '3',
+    return ['wq_on' => '1', 'wq_auto_on' => '0', 'wq_prio_on' => '0', 'wq_hold_sec' => '20', 'wq_esc_min' => '5', 'wq_attr_days' => '7', 'wq_camp_days' => '3', 'wq_min_n' => '30', 'wq_goal_queries' => '23', 'wq_goal_orders' => '', 'wq_goal_reply_min' => '3',
         'wq_hold_text' => "Namaste! Aapka message mil gaya hai, hamari team ka koi member yahin aapko reply karega.\nThank you for writing to TM Perfume House - our team will reply here shortly.",
         'wq_esc_text' => "Aapko wait karna pad raha hai, maaf kijiye. Humne aapka message team ko dobara bhej diya hai.\nSorry to keep you waiting - we have passed your message to our team again.",
         'wq_cutover' => ''];
@@ -69,7 +69,7 @@ function wq_cfg(PDO $pdo): array
     $o = []; foreach (wq_defaults() as $k => $d) { $v = wq_get($pdo, $k, null); $o[$k] = $v === null || ($v === '' && $k !== 'wq_cutover') ? $d : (string)$v; }
     foreach (wq_limits() as $k => [$lo, $hi]) $o[$k] = max($lo, min($hi, (int)$o[$k]));
     $go = trim((string)wq_get($pdo, 'wq_goal_orders', '')); $o['wq_goal_orders'] = ctype_digit($go) && (int)$go > 0 ? min(500, (int)$go) : null;   // empty = no orders bar
-    $o['wq_on'] = (string)$o['wq_on'] === '0' ? 0 : 1; $o['wq_auto_on'] = (string)$o['wq_auto_on'] === '1' ? 1 : 0;
+    $o['wq_on'] = (string)$o['wq_on'] === '0' ? 0 : 1; $o['wq_auto_on'] = (string)$o['wq_auto_on'] === '1' ? 1 : 0; $o['wq_prio_on'] = (string)$o['wq_prio_on'] === '1' ? 1 : 0;
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$o['wq_cutover'])) $o['wq_cutover'] = '';
     return $o;
 }
@@ -1410,7 +1410,8 @@ function wq_needs(PDO $pdo, int $me, bool $waves = true): array
         $o[] = ['phone' => $x['phone'], 'name' => $x['name'], 'level' => $x['level'], 'own' => $own, 'holder' => (int)$x['emp'] > 0 ? wq_name($names, (int)$x['emp']) : '', 'sec' => max(0, $now - (int)$x['in']), 'txt' => $x['txt'], 'why' => $x['why'], 'buyer' => (int)($x['buyer'] ?? 0), 'emp' => (int)$x['emp'], 'pri' => ($x['level'] === 'red' ? 1000 : 0) + (!empty($x['buyer']) ? 300 : 0) + (!empty($x['hot']) ? 150 : 0) + (int)(min(30, max(0, $now - (int)$x['in']) / 60) * 10), 'key' => md5((int)$x['in'] . '|' . (int)$x['emp'] . '|' . (int)$x['at'])];
     }
     // highest priority first: red, then returning customers and customers marked hot, then the longest wait (all in one score, see 'pri')
-    usort($o, fn($a, $b) => $b['pri'] <=> $a['pri'] ?: $b['sec'] <=> $a['sec']);
+    if ((string)wq_get($pdo, 'wq_prio_on', '0') === '1') usort($o, fn($a, $b) => $b['pri'] <=> $a['pri'] ?: $b['sec'] <=> $a['sec']);
+    else usort($o, fn($a, $b) => ($a['level'] === $b['level'] ? 0 : ($a['level'] === 'red' ? -1 : 1)) ?: $b['sec'] <=> $a['sec']);   // switch off: the order as before (red first, then the longest wait)
     return $o;
 }
 /** How many pending answers (chats waiting 4+ minutes, open complaints) each person has — from the last rebuild of the Needs you now list. [emp_id => n] */
@@ -1742,7 +1743,7 @@ if (strpos($__wqa, 'wq.') === 0 && in_array($__wqa, ['wq.board', 'wq.mine', 'wq.
         case 'wq.settings': {
             if ($isPost) {
                 $needAdmin(); $err = [];
-                foreach (['wq_on', 'wq_auto_on'] as $k) if (array_key_exists($k, $in)) wq_put($pdo, $k, !empty($in[$k]) && (string)$in[$k] !== '0' ? '1' : '0');
+                foreach (['wq_on', 'wq_auto_on', 'wq_prio_on'] as $k) if (array_key_exists($k, $in)) wq_put($pdo, $k, !empty($in[$k]) && (string)$in[$k] !== '0' ? '1' : '0');
                 foreach (wq_limits() as $k => [$lo, $hi]) if (array_key_exists($k, $in)) { if (!is_numeric($in[$k]) || (int)$in[$k] < $lo || (int)$in[$k] > $hi) $err[] = $k . ' must be a number from ' . $lo . ' to ' . $hi . '.'; else wq_put($pdo, $k, (string)(int)$in[$k]); }
                 if (array_key_exists('wq_goal_orders', $in)) { $v = $in['wq_goal_orders']; if ($v === null || $v === '') wq_put($pdo, 'wq_goal_orders', ''); elseif (is_numeric($v) && (int)$v >= 1 && (int)$v <= 500) wq_put($pdo, 'wq_goal_orders', (string)(int)$v); else $err[] = 'wq_goal_orders must be empty (no orders bar) or a number from 1 to 500.'; }
                 foreach (['wq_hold_text', 'wq_esc_text'] as $k) if (array_key_exists($k, $in)) { $v = trim((string)$in[$k]); if ($v === '' || mb_strlen($v) > 400) $err[] = $k . ' must be 1 to 400 characters.'; else wq_put($pdo, $k, $v); }
