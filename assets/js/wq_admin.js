@@ -48,16 +48,18 @@
     const when = (...a) => U.when(...a);
 
     // ⚡ quick controls: the three switches that start the new flow, always visible above the tabs (Admin only)
-    const QK = { st: null, mode: null, busy: false };
+    const QK = { st: null, mode: null, busy: false, open: false };
     function drawQuick() {
       if (!QK.st || !QK.st.editable) { quickEl.style.display = 'none'; return; }
       const st = QK.st.settings || {}, on = (k) => String(st[k]) === '1';
       const sw = (k, t) => '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:4px 0"><span style="font-size:13px;font-weight:600">' + t + '</span><button type="button" class="wq-tg" data-qsw="' + k + '" aria-pressed="' + on(k) + '" aria-label="' + t + '"' + (QK.busy ? ' disabled' : '') + '></button></div>';
       const mode = QK.mode || 'suggest';
       quickEl.style.display = '';
-      quickEl.innerHTML = '<div style="font-size:12px;font-weight:800;letter-spacing:.04em;opacity:.7;margin-bottom:2px">QUICK CONTROLS</div>' + sw('wq_prio_on', 'Priority order in Needs you now') + sw('wq_auto_on', 'Automatic holding and second messages')
+      const qsum = 'WhatsApp Sales: priority ' + (on('wq_prio_on') ? 'on' : 'off') + ' · auto ' + (on('wq_auto_on') ? 'on' : 'off') + ' · manager ' + mode;
+      quickEl.innerHTML = '<details id="wqQuickD"' + (QK.open ? ' open' : '') + '><summary style="cursor:pointer;font-size:12.5px;font-weight:700;list-style:none">⚙ ' + qsum + ' ▾</summary>' + sw('wq_prio_on', 'Priority order in Needs you now') + sw('wq_auto_on', 'Automatic holding and second messages')
         + '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:4px 0"><span style="font-size:13px;font-weight:600">Team manager</span><select data-qmode style="min-height:40px;border-radius:10px;padding:0 10px"' + (QK.busy ? ' disabled' : '') + '>' + ['suggest', 'apply', 'off'].map((m) => '<option value="' + m + '"' + (m === mode ? ' selected' : '') + '>' + (m === 'suggest' ? 'Suggest only' : m === 'apply' ? 'Apply' : 'Off') + '</option>').join('') + '</select></div>'
-        + '<div style="font-size:11.5px;opacity:.7">Changes save at once. “Automatic holding” sends messages to customers on its own: read the two texts in Settings first.</div>';
+        + '<div style="font-size:11.5px;opacity:.7">Changes save at once. “Automatic holding” sends messages to customers on its own: read the two texts in Settings first.</div></details>';
+      const dq = quickEl.querySelector('#wqQuickD'); if (dq) dq.addEventListener('toggle', () => { QK.open = dq.open; });
     }
     async function loadQuick() {
       try { QK.st = await get('wq.settings'); } catch (e) { QK.st = null; }
