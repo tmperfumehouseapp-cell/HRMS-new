@@ -1295,14 +1295,16 @@ function wq_grab_list(PDO $pdo, int $me, int $limit = 60): array
 /** 🔴🟠 "Needs you now": every open chat of the team (24-hour window) where the customer is ready to pay (RED) or interested (ORANGE) and NO PERSON has answered their last message — the bot may be chatting, that does not count.
  *  Everybody sees it at once and anybody can take it. A chat somebody just took (assigned_at in the last 2 minutes) leaves the others' list for those 2 minutes; silent after that, it is back for everyone.
  *  Computed at most every 10 seconds for the whole team (kept in one setting), so 15 phones refreshing cost one query. */
-/** 🏅 ONE ranking of the salespeople who are at work now (sales department, punched in within 20 h), mixing today and the whole month: kept 10 minutes. [emp_id => rank 1..n]
- *  score = 35% reply speed today (median minutes, needs 3+ answers) + 15% activity today (answers given, capped at 20) + 30% order conversion of the last 30 days (needs 10+ queries) + 20% number of orders in the last 30 days (against the best at work now). */
+/** 🏅 ONE ranking of the salespeople who are at work now (sales department, punched in within 20 h), mixing today and the whole month: kept 2 minutes. [emp_id => rank 1..n]
+ *  score = 30% ACTIVE RIGHT NOW (answered a customer in the last 10 minutes = full, fading to 0 at 30 minutes) + 20% reply speed today (median minutes, needs 3+ answers) + 10% activity today (answers given, capped at 20)
+ *        + 22% order conversion of the last 30 days (needs 10+ queries) + 18% number of orders in the last 30 days (against the best at work now). */
 function wq_rank_today(PDO $pdo): array
 {
-    $j = json_decode((string)setting_get($pdo, 'wq_rank', ''), true); if (is_array($j) && (int)($j['at'] ?? 0) > time() - 600) return $j;
+    $j = json_decode((string)setting_get($pdo, 'wq_rank', ''), true); if (is_array($j) && (int)($j['at'] ?? 0) > time() - 120) return $j;
     $rank = []; $order = [];
     try {
         $sales = $pdo->query("SELECT e.employee_id, e.full_name FROM employees e LEFT JOIN departments d ON d.department_id = e.department_id WHERE e.status != 'ex' AND d.department_name LIKE '%sales%'")->fetchAll(PDO::FETCH_ASSOC);
+        $lastAns = []; try { foreach ($pdo->query("SELECT emp_id, MAX(ts) t FROM wa_messages WHERE dir = 'out' AND emp_id > 0 AND ts >= '" . date('Y-m-d H:i:s', time() - 1800) . "' GROUP BY emp_id")->fetchAll(PDO::FETCH_ASSOC) as $r0) $lastAns[(int)$r0['emp_id']] = strtotime((string)$r0['t']); } catch (Throwable $e) { }   // who is answering customers right now
         $present = []; foreach ($pdo->query("SELECT DISTINCT employee_id FROM attendance WHERE punch_in IS NOT NULL AND punch_out IS NULL AND punch_in >= '" . date('Y-m-d H:i:s', time() - 20 * 3600) . "'")->fetchAll(PDO::FETCH_COLUMN) as $e) $present[(int)$e] = 1;
         $day = []; $mon = []; if (function_exists('wq_pace_get')) { try { foreach ((array)(wq_pace_get($pdo, 1)['people'] ?? []) as $p) $day[(int)$p['emp_id']] = $p; foreach ((array)(wq_pace_get($pdo, 30)['people'] ?? []) as $p) $mon[(int)$p['emp_id']] = $p; } catch (Throwable $e) { } }
         $maxO = 1; foreach ($mon as $e => $p) if (!empty($present[$e])) $maxO = max($maxO, (int)($p['orders']['orders'] ?? 0));
@@ -1310,7 +1312,8 @@ function wq_rank_today(PDO $pdo): array
         foreach ($sales as $r) { $id = (int)$r['employee_id']; if (empty($present[$id])) continue; $d = $day[$id] ?? null; $m = $mon[$id] ?? null; $oe = $m['orders'] ?? null; $n = $d ? (int)($d['pace']['n'] ?? 0) : 0; $med = $d ? ($d['pace']['median'] ?? null) : null;
             $speed = ($n >= 3 && $med !== null) ? max(0, 30 - (float)$med) / 30 * 100 : 0; $act = min(20, $n) / 20 * 100;
             $conv = ($oe && (int)($oe['queries'] ?? 0) >= 10 && $oe['conversion'] !== null) ? min(40, (float)$oe['conversion']) / 40 * 100 : 0; $ord = $oe ? min(100, 100 * (int)($oe['orders'] ?? 0) / $maxO) : 0;
-            $list[] = ['id' => $id, 'name' => (string)$r['full_name'], 's' => 0.35 * $speed + 0.15 * $act + 0.30 * $conv + 0.20 * $ord]; }
+            $mAgo = isset($lastAns[$id]) ? (time() - $lastAns[$id]) / 60 : 999; $live = $mAgo <= 10 ? 100 : ($mAgo < 30 ? (30 - $mAgo) / 20 * 100 : 0);
+            $list[] = ['id' => $id, 'name' => (string)$r['full_name'], 's' => 0.30 * $live + 0.20 * $speed + 0.10 * $act + 0.22 * $conv + 0.18 * $ord]; }
         usort($list, fn($a, $b) => [$b['s'], $a['name']] <=> [$a['s'], $b['name']]); $i = 0; foreach ($list as $x) { $rank[$x['id']] = ++$i; $order[] = $x['id']; }
     } catch (Throwable $e) { }
     $o = ['at' => time(), 'rank' => $rank, 'order' => $order]; setting_set($pdo, 'wq_rank', json_encode($o)); return $o;
