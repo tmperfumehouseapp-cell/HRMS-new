@@ -27,27 +27,16 @@
   <main class="main">
     <div class="topbar"><h1>Manual order</h1></div>
     <div class="content mo">
-      <p class="hint">For a customer who is not in HRMS (came from outside). Type any phone number and details — the order gets its own order number and counts in your orders like a Shopify order.</p>
+      <p class="hint">For a customer who is not in HRMS (came from outside). Type the customer's number, then fill the same Manual order sheet as in a chat (payment, perfumes, combo). It becomes a normal order and counts for you like a Shopify order.</p>
       <div id="moMsg"></div>
       <form id="moForm" autocomplete="off">
-        <label>Customer phone *</label>
-        <input id="mPhone" type="tel" inputmode="numeric" placeholder="e.g. 9876543210" required>
-        <label>Customer name *</label>
-        <input id="mName" type="text" placeholder="Customer name" required>
-        <div class="row">
-          <div><label>Order amount (₹) *</label><input id="mTotal" type="number" min="0" step="0.01" required></div>
-          <div><label>Items (qty)</label><input id="mItems" type="number" min="1" value="1"></div>
-        </div>
-        <div class="row">
-          <div><label>Payment</label><select id="mPay"><option value="paid">Paid (prepaid)</option><option value="pending">COD / Pending</option></select></div>
-          <div><label>Order came from</label><select id="mType"><option value="query">Query</option><option value="campaign">Campaign</option></select></div>
-        </div>
-        <label>Order date &amp; time</label>
-        <input id="mDate" type="datetime-local">
-        <label>Notes (products, address…)</label>
-        <textarea id="mNotes" rows="3"></textarea>
-        <button class="btn go" id="mSave" type="submit">Create order</button>
+        <label>Customer mobile number *</label>
+        <input id="mPhone" type="tel" inputmode="numeric" placeholder="10-digit number, e.g. 9876543210" required>
+        <label>Customer name</label>
+        <input id="mName" type="text" placeholder="Customer name">
+        <button class="btn go" id="mSave" type="submit">🧾 Open manual order</button>
       </form>
+      <button class="btn go" id="mList" type="button" style="background:#fff;color:#111;border:1px solid var(--line);margin-top:10px">Orders of this customer</button>
     </div>
   </main>
 </div>
@@ -58,26 +47,29 @@
   guardPage();
   renderSidebar('manual_order');
   const $ = (id) => document.getElementById(id);
-  const nowLocal = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); };
-  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  $('mDate').value = nowLocal();
-  $('moForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const b = $('mSave'); b.disabled = true; $('moMsg').innerHTML = '';
+  const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  function loadUi(cb) {
+    if (window.WaManual) return cb();
+    const sc = document.createElement('script'); sc.src = 'assets/js/wmo_ui.js?v=1'; sc.onload = cb; sc.onerror = cb; document.head.appendChild(sc);
+  }
+  async function start(listOnly) {
+    $('moMsg').innerHTML = '';
+    const phone = $('mPhone').value.replace(/\D+/g, '').slice(-10), name = $('mName').value.trim();
+    if (phone.length !== 10) { $('moMsg').innerHTML = '<div class="err">Enter the 10-digit customer mobile number.</div>'; return; }
+    const b = $('mSave'); b.disabled = true;
     try {
-      const d = $('mDate').value;
-      const r = await api.post('manual_orders.save', {
-        phone: $('mPhone').value.trim(), customer_name: $('mName').value.trim(),
-        total: Number($('mTotal').value || 0), items: Number($('mItems').value || 1),
-        payment_status: $('mPay').value, order_type: $('mType').value,
-        order_date: d ? d.replace('T', ' ') + ':00' : '', remarks: $('mNotes').value.trim(),
+      const r = await api.post('wmo.start', { phone, name });
+      loadUi(() => {
+        if (!window.WaManual) { $('moMsg').innerHTML = '<div class="err">Manual order could not load. Refresh the page.</div>'; return; }
+        const o = { phone: r.phone, name: name || r.name || '', api, onDone: () => { $('moMsg').innerHTML = '<div class="ok">✅ Order created. The customer gets the address link; it lands in your orders when they confirm.</div>'; } };
+        if (listOnly) WaManual.orders(o); else WaManual.open(o);
       });
-      $('moMsg').innerHTML = '<div class="ok">✅ Order <b>#' + esc(r.order_no) + '</b> created. It is in your orders.</div>';
-      $('moForm').reset(); $('mItems').value = 1; $('mDate').value = nowLocal();
     } catch (err) {
       $('moMsg').innerHTML = '<div class="err">' + esc(err.message) + '</div>';
     } finally { b.disabled = false; }
-  });
+  }
+  $('moForm').addEventListener('submit', (e) => { e.preventDefault(); start(false); });
+  $('mList').addEventListener('click', () => start(true));
 </script>
 <script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
 </body>
