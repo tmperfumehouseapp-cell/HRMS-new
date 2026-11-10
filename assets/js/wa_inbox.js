@@ -1414,9 +1414,10 @@
       let q = '';
       const pickList = () => {
         const rows = list.filter((t) => !q || (t.name + ' ' + t.body).toLowerCase().includes(q.toLowerCase()));
-        box.innerHTML = `<div class="bk-sh"><h4>Send to ${bkFmt(n)} chat${n === 1 ? '' : 's'}</h4><div class="sub">Choose an approved pre-made message. It goes out from each customer's own WhatsApp number, one by one.</div>
+        box.innerHTML = `<div class="bk-sh"><button type="button" class="wi-btn" id="bkBk0" style="margin-bottom:8px">‹ Back</button><h4>Send to ${bkFmt(n)} chat${n === 1 ? '' : 's'}</h4><div class="sub">Choose an approved pre-made message. It goes out from each customer's own WhatsApp number, one by one.</div>
           <input class="wi-in" id="bkTq" type="search" placeholder="Search messages…" value="${esc(q)}" style="margin-bottom:10px"><div style="max-height:56vh;overflow:auto">${rows.map((t) => `<div class="bk-tpl" data-id="${t.id}"><b>${t.star ? '⭐ ' : ''}${esc(t.name.replace(/_/g, ' '))}</b><span>${esc(t.body)}</span></div>`).join('') || '<div class="wi-empty">No approved message found.</div>'}</div></div>`;
         box.querySelectorAll('.bk-tpl').forEach((el) => { el.onclick = () => compose(list.find((t) => String(t.id) === el.dataset.id)); });
+        if ($('bkBk0')) $('bkBk0').onclick = chooser;
         const qi = $('bkTq'); if (qi) qi.oninput = () => { q = qi.value; const pos = qi.selectionStart; pickList(); const x = $('bkTq'); x.focus(); x.setSelectionRange(pos, pos); };
       };
       const compose = (t) => {
@@ -1459,7 +1460,7 @@
         window.addEventListener('beforeunload', bkLeave); bkPill(); bkUpd();
         const one = async (ph) => {
           const nm = firstName({ name: (S.bulk.info[ph] || {}).name || '' }) || 'ji', v = job.map.map((m) => m.how === 'name' ? nm : m.text.trim());
-          try { await api.post('wa.tpl_send', { phone: ph, id: job.t.id, vars: v, header_var: job.t.header_var ? (job.hmap.how === 'name' ? nm : job.hmap.text.trim()) : '' }); job.ok++; }
+          try { if (job.t.manual) await api.post('wa.send', { phone: ph, text: job.t.text.replace(/\{name\}/gi, nm), cid: 'bk' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8) }); else await api.post('wa.tpl_send', { phone: ph, id: job.t.id, vars: v, header_var: job.t.header_var ? (job.hmap.how === 'name' ? nm : job.hmap.text.trim()) : '' }); job.ok++; }
           catch (e) { job.bad++; job.fails.push({ ph, name: (S.bulk.info[ph] || {}).name || ph, why: e.message || 'failed' }); }
           job.done++; bkUpd();
         };
@@ -1467,7 +1468,32 @@
         Promise.all([worker(), worker(), worker(), worker()]).then(() => { job.running = false; window.removeEventListener('beforeunload', bkLeave); bkUpd(); bkPill(); if ($('bkPb')) bkResult(); });
       };
       bkRetryRun = (tt, mm, hh, ph) => { box = sheet('Sending…'); run(tt, mm, hh, ph); };
-      pickList();
+      const manual = () => {
+        let txt = '';
+        box.innerHTML = `<div class="bk-sh"><button type="button" class="wi-btn" id="bkBack" style="margin-bottom:8px">‹ Back</button><h4>✍️ Manual message</h4><div class="sub">Type your message. It goes to ${bkFmt(n)} chat${n === 1 ? '' : 's'} one by one. Use <b>{name}</b> to put each customer's first name.<br>WhatsApp only allows typed messages to customers who wrote in the last 24 hours — the others are listed as "not sent" so you can send them a template.</div>
+          <textarea class="wi-in" id="bkTx" rows="7" placeholder="Type your message…" style="width:100%;box-sizing:border-box;margin-bottom:8px"></textarea><div id="bkMsg"></div>
+          <label class="bk-safe" style="display:flex;gap:8px;align-items:center;margin:10px 0;font-size:13px;font-weight:700"><input type="checkbox" id="bkSafe" ${S.bulk.safe === false ? '' : 'checked'} style="width:18px;height:18px"> Leave out customers who already ordered <span style="font-weight:600;color:#64748b">(also opted-out and complaint chats)</span></label>
+          <div class="wi-act"><button type="button" class="wi-btn p" id="bkGo">📨 Send to ${bkFmt(n)} chat${n === 1 ? '' : 's'}</button></div></div>`;
+        $('bkBack').onclick = chooser; $('bkTx').focus();
+        $('bkGo').onclick = () => {
+          txt = $('bkTx').value.trim(); if (!txt) { $('bkMsg').innerHTML = '<div class="wi-err">Write a message first.</div>'; return; }
+          S.bulk.safe = $('bkSafe').checked; const all = [...S.bulk.set]; $('bkGo').disabled = true; $('bkMsg').innerHTML = '<div class="wi-note">Checking who already ordered…</div>';
+          api.post('wa.bulk_ordered', { phones: all }).then((r) => {
+            $('bkGo').disabled = false; $('bkMsg').innerHTML = ''; const ord = new Set(r.ordered || []), blk = r.blocked || {}; let go = all.filter((ph) => blk[ph] !== 'optout' && blk[ph] !== 'complaint'); const nBlk = all.length - go.length, nOrd = go.filter((ph) => ord.has(ph)).length;
+            if (S.bulk.safe) go = go.filter((ph) => !ord.has(ph));
+            if (!go.length) { $('bkMsg').innerHTML = '<div class="wi-err">Nobody is left to send to — everyone selected already ordered, opted out or has a complaint.</div>'; return; }
+            const note = (S.bulk.safe ? bkFmt(go.length) + ' will get it · left out: ' + bkFmt(nOrd) + ' already ordered' : '⚠️ ' + bkFmt(nOrd) + ' of ' + bkFmt(go.length) + ' ALREADY ORDERED and will also get this message') + (nBlk ? ' · ' + bkFmt(nBlk) + ' opted out / complaint (always left out)' : '');
+            if (!confirm('Send this typed message now?\n\n' + txt.slice(0, 200) + '\n\n' + note)) return;
+            run({ id: 0, name: 'Manual message', manual: true, text: txt, body: txt }, [], { how: 'name', text: '' }, go);
+          }).catch((e) => { $('bkGo').disabled = false; $('bkMsg').innerHTML = `<div class="wi-err">${esc(e.message)}</div>`; });
+        };
+      };
+      const chooser = () => {
+        box.innerHTML = `<div class="bk-sh"><h4>Send to ${bkFmt(n)} chat${n === 1 ? '' : 's'}</h4><div class="sub">How do you want to send?</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px"><button type="button" class="wi-btn p" id="bkChM" style="padding:22px 10px;font-size:15px;line-height:1.4">✍️ Manual message<br><small style="font-weight:600;opacity:.85">Type it yourself</small></button><button type="button" class="wi-btn" id="bkChT" style="padding:22px 10px;font-size:15px;line-height:1.4">📋 Template<br><small style="font-weight:600;opacity:.7">${list.length} pre-made message${list.length === 1 ? '' : 's'}</small></button></div></div>`;
+        $('bkChM').onclick = manual; $('bkChT').onclick = pickList;
+      };
+      chooser();
     }
 
     try { if (!admin && !window.WaNotices) { const s = document.createElement('script'); s.src = 'assets/js/wa_notices.js?v=3'; document.head.appendChild(s); } } catch (e) { }   // 🔔 "X took over your chat" bar (your own chats only)
