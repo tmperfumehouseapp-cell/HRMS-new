@@ -1386,7 +1386,7 @@ function wq_needs(PDO $pdo, int $me, bool $waves = true): array
         try { $old = []; foreach ($pdo->query("SELECT k, v FROM wq_meta WHERE k LIKE 'bki:%'")->fetchAll() as $r2) $old[(string)$r2['k']] = (string)$r2['v'];   // each person's own list is kept in its own row (not in the shared list every phone reads), and written only when it changed
             foreach ($bki as $e1 => $l1) { $js = json_encode($l1, JSON_UNESCAPED_UNICODE); $k1 = 'bki:' . $e1; if (($old[$k1] ?? null) !== $js) wq_meta_put($pdo, $k1, $js); unset($old[$k1]); }
             foreach ($old as $k1 => $_v) $pdo->prepare("DELETE FROM wq_meta WHERE k = ?")->execute([$k1]); } catch (Throwable $e) { }
-        $raw = ['at' => $now, 'items' => $items, 'backlog' => $bk, 'bk_cx' => $bkc];
+        $raw = ['at' => $now, 'items' => $items, 'backlog' => $bk, 'bk_cx' => $bkc]; try { setting_set($pdo, 'wq_needs', json_encode($raw, JSON_UNESCAPED_UNICODE)); } catch (Throwable $e) { }   // kept for 10 s so every phone shares one rebuild
     }
     $names = wq_names($pdo); $o = []; $rkT = ($waves && $me > 0) ? wq_rank_today($pdo) : ['rank' => []]; [$wsz, $wmin] = wq_wave_cfg($pdo);
     foreach ((array)$raw['items'] as $x) {
@@ -1535,7 +1535,8 @@ function wq_req_list(PDO $pdo, int $me = 0, int $limit = 200): array
     } catch (Throwable $e) { } }
     $lab = wq_req_last($pdo, array_merge(array_column($o, 'phone'), array_column($late, 'phone')));   // 💬 the customer's last message, readable from the list (photo / voice named)
     foreach ($o as &$x) $x['last_in'] = $lab[$x['phone']] ?? ''; unset($x); foreach ($late as &$x) $x['last_in'] = $lab[$x['phone']] ?? ''; unset($x);
-    return ['ok' => true, 'count' => count($o) + count($late), 'items' => $o, 'late' => $late, 'late_min' => wq_late_min($pdo), 'needs' => function_exists('wq_needs') ? wq_needs($pdo, $me) : [], 'needs_hold' => ($me > 0 && function_exists('wq_needs_backlog')) ? (int)(wq_needs_backlog($pdo)[$me] ?? 0) : 0, 'needs_hold_cx' => ($me > 0 && function_exists('wq_needs_backlog_cx')) ? (int)(wq_needs_backlog_cx($pdo)[$me] ?? 0) : 0, 'backlog_min' => (int)(wq_get($pdo, 'wq_backlog_min', null) ?: 5), 'needs_hold_items' => $me > 0 ? wq_needs_backlog_items($pdo, $me) : []];
+    $nd = function_exists('wq_needs') ? wq_needs($pdo, $me) : []; $hi = $me > 0 ? wq_needs_backlog_items($pdo, $me) : [];   // the list is read AFTER the rebuild, and the number is its length, so the box and the list can never disagree
+    return ['ok' => true, 'count' => count($o) + count($late), 'items' => $o, 'late' => $late, 'late_min' => wq_late_min($pdo), 'needs' => $nd, 'needs_hold' => count($hi), 'needs_hold_cx' => count(array_filter($hi, fn($x) => $x['kind'] === 'cx')), 'backlog_min' => (int)(wq_get($pdo, 'wq_backlog_min', null) ?: 5), 'needs_hold_items' => $hi];
 }
 /** The customer's last message per phone, for the Requests list: text (or the caption), else 📷 Photo / 🎤 Voice note / … */
 function wq_req_last(PDO $pdo, array $phs): array
