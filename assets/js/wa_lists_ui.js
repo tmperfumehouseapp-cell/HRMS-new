@@ -242,12 +242,12 @@
       body.onclick = null; body.innerHTML = '<div class="wl-empty">Loading…</div>'; let p;
       try { p = await api.get('wl.preview', { id, phone: o.phone }); } catch (e) { body.innerHTML = `<div class="wl-err">${esc(e.message)}</div>`; return; }
       const cid = 'l' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
-      body.innerHTML = `<div style="font-weight:800;margin-bottom:6px">${esc(p.list.name)}</div><textarea id="wlTx">${esc(p.text)}</textarea><div style="font-size:12px;color:#6b7684;margin:4px 0 8px">You can change the words before sending.</div><div id="wlE"></div>
+      body.innerHTML = `<div style="font-weight:800;margin-bottom:6px">${esc(p.list.name)}</div><textarea id="wlTx">${esc(p.text)}</textarea><div style="font-size:12px;color:#6b7684;margin:4px 0 8px">You can change the words before sending.</div><label style="display:flex;gap:8px;align-items:center;font-size:13px;font-weight:700;margin:0 0 8px"><input type="checkbox" id="wlPh" style="width:18px;height:18px"> 📸 Also send the perfume photos (one picture per 6 perfumes)</label><div id="wlE"></div>
         <div class="wl-row"><button type="button" class="wl-btn" id="wlB">‹ Lists</button><button type="button" class="wl-btn g" id="wlS" style="flex:1;min-height:44px">Send to customer</button></div>`;
       body.querySelector('#wlB').onclick = list;
       body.querySelector('#wlS').onclick = async function () {
         this.disabled = true; this.textContent = 'Sending…';
-        try { await api.post('wl.send', { phone: o.phone, id, text: body.querySelector('#wlTx').value, cid }); toast('List sent ✓'); if (o.close) o.close(); if (o.onSent) o.onSent(); }
+        try { await api.post('wl.send', { phone: o.phone, id, text: body.querySelector('#wlTx').value, cid, photos: body.querySelector('#wlPh').checked ? 1 : 0 }); toast('List sent ✓'); if (o.close) o.close(); if (o.onSent) o.onSent(); }
         catch (e) { body.querySelector('#wlE').innerHTML = `<div class="wl-err">${esc(e.message)}</div>`; this.disabled = false; this.textContent = 'Send to customer'; }
       };
     }
