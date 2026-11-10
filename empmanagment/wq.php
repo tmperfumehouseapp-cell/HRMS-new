@@ -1374,7 +1374,7 @@ function wq_needs(PDO $pdo, int $me, bool $waves = true): array
         $own = $me > 0 && (int)$x['emp'] === $me;
         if (!$own && $me > 0 && ($now - (int)($x['wv'] ?? $x['in'])) < $wmin * 60) { if (isset($rkT['rank'][$me]) && $rkT['rank'][$me] > $wsz) continue; }   // first 2 minutes: the best 15 (today's speed mixed with the month's performance) see red and orange chats; everybody sees them after that
         if (!$own && (int)$x['emp'] > 0 && (int)$x['at'] > $now - 120) continue;   // somebody just took it: they get their own 2 minutes
-        $o[] = ['phone' => $x['phone'], 'name' => $x['name'], 'level' => $x['level'], 'own' => $own, 'holder' => (int)$x['emp'] > 0 ? wq_person($names, (int)$x['emp']) : '', 'sec' => max(0, $now - (int)$x['in']), 'txt' => $x['txt'], 'why' => $x['why'], 'emp' => (int)$x['emp'], 'key' => md5((int)$x['in'] . '|' . (int)$x['emp'] . '|' . (int)$x['at'])];
+        $o[] = ['phone' => $x['phone'], 'name' => $x['name'], 'level' => $x['level'], 'own' => $own, 'holder' => (int)$x['emp'] > 0 ? wq_name($names, (int)$x['emp']) : '', 'sec' => max(0, $now - (int)$x['in']), 'txt' => $x['txt'], 'why' => $x['why'], 'emp' => (int)$x['emp'], 'key' => md5((int)$x['in'] . '|' . (int)$x['emp'] . '|' . (int)$x['at'])];
     }
     usort($o, fn($a, $b) => ($a['level'] === $b['level'] ? 0 : ($a['level'] === 'red' ? -1 : 1)) ?: $b['sec'] <=> $a['sec']);
     return $o;
