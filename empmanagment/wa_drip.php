@@ -30,6 +30,14 @@ function wd_cfg(PDO $pdo): array
         'pause_person' => array_key_exists('pause_person', $j) ? (int)!empty($j['pause_person']) : 1, 'stop_on_reply' => !empty($j['stop_on_reply']) ? 1 : 0, 'cap' => max(5, min(300, (int)($j['cap'] ?? 40)))];
 }
 function wd_today(PDO $pdo, int $ts = 0): string { $ts = $ts ?: time(); return function_exists('biz_day_of') ? (string)biz_day_of($pdo, $ts) : date('Y-m-d', $ts); }
+/** phone => name, looked up by value (never JOINed: wa_contacts and the drip tables have different text collations). */
+function wd_names(PDO $pdo, array $phones): array
+{
+    $o = []; $phones = array_values(array_unique(array_map('strval', $phones))); if (!$phones) return $o;
+    $q = $pdo->prepare("SELECT phone, name FROM wa_contacts WHERE phone IN (" . implode(',', array_fill(0, count($phones), '?')) . ")"); $q->execute($phones);
+    foreach ($q->fetchAll() as $r) $o[(string)$r['phone']] = (string)($r['name'] ?: $r['phone']);
+    return $o;
+}
 function wd_name(array $c): string { $n = function_exists('fu_first_name') ? fu_first_name((string)($c['name'] ?? '')) : ''; return $n !== '' ? $n : 'ji'; }
 
 /** Who enters today: new queries and campaign repliers that wrote since yesterday and are not enrolled in the last 30 days. */
@@ -37,10 +45,10 @@ function wd_enroll(PDO $pdo, array $cfg, int $hours = 36): int
 {
     $src = []; if ($cfg['enter_query']) $src[] = 'query'; if ($cfg['enter_campaign']) $src[] = 'campaign'; if (!$src) return 0;
     $since = date('Y-m-d H:i:s', time() - $hours * 3600); $n = 0;
-    $q = $pdo->prepare("SELECT c.phone, c.source, c.last_in_at FROM wa_contacts c WHERE c.source IN ('" . implode("','", $src) . "') AND c.last_in_at >= ? AND c.optout = 0 AND NOT EXISTS (SELECT 1 FROM wa_drip_enr e WHERE e.phone = c.phone AND e.anchor >= ?) LIMIT 20000");
-    $q->execute([$since, date('Y-m-d', time() - 30 * 86400)]);
+    $have = []; $h = $pdo->prepare("SELECT phone FROM wa_drip_enr WHERE anchor >= ?"); $h->execute([date('Y-m-d', time() - 30 * 86400)]); foreach ($h->fetchAll(PDO::FETCH_COLUMN) as $p0) $have[(string)$p0] = 1;   // (no JOIN / NOT EXISTS across tables: their text collations differ)
+    $q = $pdo->prepare("SELECT c.phone, c.source, c.last_in_at FROM wa_contacts c WHERE c.source IN ('" . implode("','", $src) . "') AND c.last_in_at >= ? AND c.optout = 0 LIMIT 40000"); $q->execute([$since]);
     $ins = $pdo->prepare("INSERT IGNORE INTO wa_drip_enr (phone, anchor, src, enrolled_at) VALUES (?, ?, ?, ?)");
-    foreach ($q->fetchAll() as $r) { $ins->execute([$r['phone'], wd_today($pdo, (int)strtotime((string)$r['last_in_at'])), (string)$r['source'], date('Y-m-d H:i:s')]); $n += (int)$ins->rowCount(); }
+    foreach ($q->fetchAll() as $r) { if (isset($have[(string)$r['phone']])) continue; $ins->execute([$r['phone'], wd_today($pdo, (int)strtotime((string)$r['last_in_at'])), (string)$r['source'], date('Y-m-d H:i:s')]); $n += (int)$ins->rowCount(); }
     return $n;
 }
 /** Why this customer must get nothing now ('' = fine). */
@@ -107,7 +115,8 @@ if (strpos($__wd, 'wa.drip_') === 0) {
             $per = []; $q = $pdo->prepare("SELECT day, status, COUNT(*) n FROM wa_drip_ev WHERE at >= ? GROUP BY day, status"); $q->execute([date('Y-m-d 00:00:00', strtotime($today) - 7 * 86400)]); foreach ($q->fetchAll() as $r) $per[(int)$r['day']][(string)$r['status']] = (int)$r['n'];
             $ent = (int)$pdo->query("SELECT COUNT(*) FROM wa_drip_enr WHERE anchor >= '$from'")->fetchColumn(); $left = []; foreach ($pdo->query("SELECT left_why, COUNT(*) n FROM wa_drip_enr WHERE anchor >= '$from' AND left_why <> '' GROUP BY left_why")->fetchAll() as $r) $left[(string)$r['left_why']] = (int)$r['n'];
             $in0 = (int)$pdo->query("SELECT COUNT(*) FROM wa_drip_enr WHERE anchor = '$today'")->fetchColumn();
-            $log = []; foreach ($pdo->query("SELECT e.phone, e.day, e.tpl_id, e.status, e.why, e.at, c.name FROM wa_drip_ev e LEFT JOIN wa_contacts c ON c.phone = e.phone WHERE e.at >= '" . date('Y-m-d 00:00:00') . "' ORDER BY e.id DESC LIMIT 40")->fetchAll() as $r) $log[] = ['name' => (string)($r['name'] ?: $r['phone']), 'day' => (int)$r['day'], 'tpl_id' => (int)$r['tpl_id'], 'status' => $r['status'], 'why' => $r['why'], 'at' => substr((string)$r['at'], 11, 5)];
+            $log = []; $evr = $pdo->query("SELECT phone, day, tpl_id, status, why, at FROM wa_drip_ev WHERE at >= '" . date('Y-m-d 00:00:00') . "' ORDER BY id DESC LIMIT 40")->fetchAll(); $nm = wd_names($pdo, array_column($evr, 'phone'));
+            foreach ($evr as $r) $log[] = ['name' => $nm[(string)$r['phone']] ?? (string)$r['phone'], 'day' => (int)$r['day'], 'tpl_id' => (int)$r['tpl_id'], 'status' => $r['status'], 'why' => $r['why'], 'at' => substr((string)$r['at'], 11, 5)];
             $nums = []; try { foreach ($pdo->query("SELECT id, label FROM wa_numbers ORDER BY id")->fetchAll() as $n) $nums[] = ['id' => (int)$n['id'], 'label' => (string)$n['label']]; } catch (Throwable $e) { }
             json_response(['ok' => true, 'cfg' => $cfg, 'per_day' => $per, 'entered' => $ent, 'in_today' => $in0, 'left' => $left, 'log' => $log, 'numbers' => $nums]);
         }
@@ -134,7 +143,8 @@ if (strpos($__wd, 'wa.drip_') === 0) {
             $r = wd_send($pdo, $c, $step); if (!$r[0]) json_response(['error' => $r[1]], 422); json_response(['ok' => true]);
         }
         case 'wa.drip_log': {
-            $rows = []; foreach ($pdo->query("SELECT e.phone, e.day, e.status, e.why, e.at, c.name FROM wa_drip_ev e LEFT JOIN wa_contacts c ON c.phone = e.phone ORDER BY e.id DESC LIMIT 200")->fetchAll() as $r) $rows[] = ['name' => (string)($r['name'] ?: $r['phone']), 'phone' => $r['phone'], 'day' => (int)$r['day'], 'status' => $r['status'], 'why' => $r['why'], 'at' => $r['at']];
+            $rows = []; $evr = $pdo->query("SELECT phone, day, status, why, at FROM wa_drip_ev ORDER BY id DESC LIMIT 200")->fetchAll(); $nm = wd_names($pdo, array_column($evr, 'phone'));
+            foreach ($evr as $r) $rows[] = ['name' => $nm[(string)$r['phone']] ?? (string)$r['phone'], 'phone' => $r['phone'], 'day' => (int)$r['day'], 'status' => $r['status'], 'why' => $r['why'], 'at' => $r['at']];
             json_response(['ok' => true, 'rows' => $rows]);
         }
     }
