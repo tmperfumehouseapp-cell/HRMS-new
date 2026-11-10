@@ -824,6 +824,7 @@ function wj_tick(PDO $pdo): array
 // ---------------------------------------------------------------------------------------------------------------------- the screen's actions
 $__wj = (string)($action ?? ($_GET['action'] ?? ''));
 if (strpos($__wj, 'fu.wj_') === 0 || strpos($__wj, 'fu.jn_') === 0) {   // (fu.jn_results / fu.jn_window / fu.jn_day were never reached before: the Results tab said "Unknown WhatsApp action")
+    $__wj = ['fu.wj_jresults' => 'fu.jn_results', 'fu.wj_day' => 'fu.jn_day', 'fu.wj_window' => 'fu.jn_window'][$__wj] ?? $__wj;   // the screens call these three by fu.wj_ names
     $auth = require_auth(); $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     if (!function_exists('fu_tables') || !fu_tables($pdo) || !wj_tables($pdo) || !function_exists('fa_offers')) json_response(['error' => 'Journey storage is not available.'], 500);
     if (function_exists('wa_guard_admin')) wa_guard_admin($pdo, $auth);
