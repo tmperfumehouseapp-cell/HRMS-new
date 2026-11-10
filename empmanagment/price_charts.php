@@ -15,6 +15,7 @@
  *   redrawn by itself whenever a price changes, stored as uploads/pricephoto/<token>.jpg and served without login by pc.photo_view&t=<token> (a random token).
  *   Nothing uploaded by hand is ever sent as a price list (the Photos tab has no price-list section any more). The bot sends this picture whenever a customer asks for the price list.
  *
+ *   The photo for ONE chat is drawn at the level that chat has reached (pc_chat_level: the deepest column already quoted in the chat, never higher than 6.5%).
  *   Actions (pc.*): pc.get · pc.save · pc.suggest · pc.photo_make · pc.photo_view (public)
  */
 if (!function_exists('pc_segs')) {
@@ -268,12 +269,18 @@ function pc_base_url(): string
     $u = defined('APP_URL') ? rtrim((string)APP_URL, '/') : ''; if ($u !== '') return preg_replace('#/empmanagment$#', '', $u);
     return 'https://' . (string)($_SERVER['HTTP_HOST'] ?? 'fourpirates.space');
 }
-/** The public link of the customer price photo ('' when it cannot be drawn: no price chart yet). The photo is ALWAYS drawn here from the Price chart (never uploaded by hand)
- *  and is redrawn by itself the moment a price changes. */
-function pc_photo_url(PDO $pdo): string
+/** The public link of the customer price photo at ONE price level ($pct = the % column, default 6.5), or '' when it cannot be drawn (no price chart yet).
+ *  Always drawn here from the Price chart (never uploaded by hand). One file per distinct set of prices; the file name is an unguessable hash, so a deeper level cannot be found by guessing. */
+function pc_photo_url(PDO $pdo, ?float $pct = null, bool $force = false): string
 {
-    pc_photo_ensure($pdo);
-    $t = preg_replace('/[^a-f0-9]/', '', (string)setting_get($pdo, 'price_photo_token', '')); if ($t === '' || !is_file(pc_photo_dir() . $t . '.jpg')) return '';
+    $pct = $pct ?? pc_photo_pct(); static $memo = [];
+    $secs = pc_photo_sections($pdo, $pct); if (!$secs) return '';
+    $salt = (string)setting_get($pdo, 'price_photo_salt', ''); if ($salt === '') { $salt = bin2hex(random_bytes(16)); setting_set($pdo, 'price_photo_salt', $salt); }
+    $t = md5($salt . '|v3|' . json_encode($secs, JSON_UNESCAPED_UNICODE)); $f = pc_photo_dir() . $t . '.jpg';
+    if ($force || !is_file($f)) {
+        $bin = pc_photo_draw($secs); if ($bin === null || @file_put_contents($f, $bin) === false) return '';
+        foreach ((array)@glob(pc_photo_dir() . '*.jpg') as $old) if ($old !== $f && @filemtime($old) < time() - 14 * 86400) @unlink($old);   // levels nobody asked for in two weeks
+    }
     return pc_base_url() . '/empmanagment/api.php?action=pc.photo_view&t=' . $t;
 }
 
@@ -283,12 +290,12 @@ function pc_photo_pct(): float { return 6.5; }
 /** The perfume sizes on the photo: 50 ml to 500 ml only. */
 function pc_photo_ml_range(): array { return [50.0, 500.0]; }
 /** Index of the 6.5% column of a chart, or null when the chart has no such column. */
-function pc_photo_col(array $C): ?int { foreach ((array)$C['cols'] as $i => $c) if (abs((float)$c - pc_photo_pct()) < 0.001) return (int)$i; return null; }
+function pc_photo_col(array $C, ?float $pct = null): ?int { $pct = $pct ?? pc_photo_pct(); foreach ((array)$C['cols'] as $i => $c) if (abs((float)$c - $pct) < 0.001) return (int)$i; return null; }
 /** What goes on the photo: [[section title, [[label, price], …]], …] — perfume 50–500 ml, shower gel, attar, others, combos; every price from the 6.5% column. */
-function pc_photo_sections(PDO $pdo): array
+function pc_photo_sections(PDO $pdo, ?float $pct = null): array
 {
     $out = []; [$lo, $hi] = pc_photo_ml_range();
-    $price = function (array $C, array $r): float { $i = pc_photo_col($C); return $i === null ? 0.0 : (float)(($r['p'] ?? [])[$i] ?? 0); };
+    $price = function (array $C, array $r) use ($pct): float { $i = pc_photo_col($C, $pct); return $i === null ? 0.0 : (float)(($r['p'] ?? [])[$i] ?? 0); };
     foreach (pc_segs() as $seg => $title) {
         $C = pc_get($pdo, $seg); $rows = [];
         foreach ($C['rows'] as $r) {
@@ -299,7 +306,7 @@ function pc_photo_sections(PDO $pdo): array
         }
         if ($rows) $out[] = [$seg === 'perfume' ? 'Perfume — by total ml' : $title, $rows];
     }
-    $M = pc_mix_get($pdo); $mi = pc_photo_col($M); $rows = [];
+    $M = pc_mix_get($pdo); $mi = pc_photo_col($M, $pct); $rows = [];
     if ($mi !== null) foreach ($M['rows'] as $r) { $v = (float)(($r['p'] ?? [])[$mi] ?? 0); if ($v > 0) $rows[] = [ucfirst(pc_mix_label($r['perf'], $r['gel'], $r['attar'], $r['other'])), $v]; }
     if ($rows) $out[] = ['Combos', $rows];
     return $out;
@@ -330,24 +337,31 @@ function pc_photo_draw(array $secs): ?string
     imagettftext($im, 13, 0, $pad, $H - 28, $faint, $fr, 'Prices in rupees, GST included.');
     ob_start(); imagejpeg($im, null, 90); $b = (string)ob_get_clean(); imagedestroy($im); return $b !== '' ? $b : null;
 }
-/** Draws the photo again when (and only when) a price on it changed. force = draw now. Returns true when a photo exists afterwards. */
-function pc_photo_ensure(PDO $pdo, bool $force = false): bool
+/** 🧠 The price level (the % column) this customer's chat has reached: every rupee amount OUR side wrote in the last 30 days is matched against the price chart
+ *  (perfume, shower gel, attar, others, combos). The deepest column we already quoted wins — a customer is never taken back UP the ladder. No quote yet = the default 6.5%.
+ *  Returns ['pct' => float, 'quoted' => number of our amounts that matched the chart, 'ladder' => [the columns], 'default' => bool]. */
+function pc_chat_level(PDO $pdo, string $phone): array
 {
-    static $done = null; if ($done !== null && !$force) return $done;
-    $secs = pc_photo_sections($pdo); $sig = md5('v2|' . json_encode($secs, JSON_UNESCAPED_UNICODE));
-    $t = preg_replace('/[^a-f0-9]/', '', (string)setting_get($pdo, 'price_photo_token', '')); $have = $t !== '' && is_file(pc_photo_dir() . $t . '.jpg');
-    if (!$force && $have && (string)setting_get($pdo, 'price_photo_sig', '') === $sig) return $done = true;
-    $bin = pc_photo_draw($secs); if ($bin === null) return $done = $have;   // cannot draw (no GD / empty chart): keep what there is
-    $new = bin2hex(random_bytes(16)); if (@file_put_contents(pc_photo_dir() . $new . '.jpg', $bin) === false) return $done = $have;
-    setting_set($pdo, 'price_photo_token', $new); setting_set($pdo, 'price_photo_sig', $sig); if ($t !== '') @unlink(pc_photo_dir() . $t . '.jpg');
-    return $done = true;
+    $def = pc_photo_pct(); $res = ['pct' => $def, 'quoted' => 0, 'ladder' => [], 'default' => true];
+    $key = preg_replace('/\D/', '', $phone); if ($key === '') return $res;
+    try { $q = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'out' AND mtype = 'text' AND ts >= ? ORDER BY id DESC LIMIT 80"); $q->execute([$key, date('Y-m-d H:i:s', time() - 30 * 86400)]); $msgs = $q->fetchAll(PDO::FETCH_COLUMN); }
+    catch (Throwable $e) { return $res; }
+    $amounts = []; foreach ($msgs as $m) if (preg_match_all('/\d{1,3}(?:,\d{2,3})+|\d{3,6}/', (string)$m, $mm)) foreach ($mm[0] as $n) $amounts[(int)str_replace(',', '', $n)] = 1;
+    if (!$amounts) return $res;
+    $charts = []; foreach (pc_segs() as $seg => $_) $charts[] = pc_get($pdo, $seg); $charts[] = pc_mix_get($pdo); $hit = [];
+    foreach ($charts as $C) foreach ((array)$C['rows'] as $r) foreach ((array)($r['p'] ?? []) as $i => $v) if ($v > 0 && isset($amounts[(int)round($v)]) && isset($C['cols'][$i])) { $hit[(string)round((float)$C['cols'][$i], 2)] = (float)$C['cols'][$i]; $res['quoted']++; }
+    if (!$hit) return $res;
+    $res['ladder'] = array_values($hit); sort($res['ladder']); $deep = min($hit);
+    $res['pct'] = $deep < $def ? $deep : $def; $res['default'] = $res['pct'] === $def;
+    return $res;
 }
 /** The STRICT price-photo rule. It is added to every prompt that writes or answers customers (bot reply, guidebook, follow-ups) and cannot be switched off from the Teach board. */
 function pc_photo_rule_text(): string
 {
     $p = rtrim(rtrim(number_format(pc_photo_pct(), 2), '0'), '.');
-    return "PRICE PHOTO RULE (strict, always): when a customer asks for the price list / price chart / rate card, the ONLY picture that may be sent is the price chart picture the system draws by itself from the Price chart (perfume 50–500 ml, shower gel, attar, others and combos, all at the {$p}% column; no % is ever shown). "
-        . "NEVER send, promise or describe a price list picture that was uploaded or made by hand, and never tell the customer a price that is not in that chart. Set price_photo = true for such a request. Moving to a lower column is allowed only by the SELLING RULES, in words, never as a picture.\n";
+    return "PRICE PHOTO RULE (strict, always): when a customer asks for the price list / price chart / rate card, the ONLY picture that may be sent is the price chart picture the system draws by itself from the Price chart (perfume 50–500 ml, shower gel, attar, others and combos; no % is ever shown). "
+        . "It starts at the {$p}% price and follows the chat: it shows the price level this customer was already quoted (the lowest price already said in the chat), never a higher one. "
+        . "NEVER send, promise or describe a price list picture that was uploaded or made by hand, and never tell the customer a price that is not in that chart. Set price_photo = true for such a request. Going to a lower level is allowed only by the SELLING RULES, in words, never as a picture.\n";
 }
 /** Does the customer's message ask for the price list / price chart / rate card? (Gujarati, Hindi and English words, written in English letters or in script.) */
 function pc_price_intent(string $text): bool
@@ -474,7 +488,7 @@ if (strpos($__pc, 'pc.') === 0) {
         }
         case 'pc.photo_make': {   // the customer photo is drawn HERE from the Price chart (6.5% column); nobody uploads or draws it by hand any more
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); if (!$canEdit) json_response(['error' => 'Only Admin / HR can change this.'], 403);
-            if (!pc_photo_ensure($pdo, true)) json_response(['error' => 'The photo could not be drawn: fill the Price chart first (it needs a ' . pc_photo_pct() . '% column) and check that the server has the GD picture library.'], 422);
+            if (pc_photo_url($pdo, null, true) === '') json_response(['error' => 'The photo could not be drawn: fill the Price chart first (it needs a ' . pc_photo_pct() . '% column) and check that the server has the GD picture library.'], 422);
             json_response(['ok' => true, 'url' => pc_photo_url($pdo)]);
         }
         default: json_response(['error' => 'Unknown price chart action.'], 404);

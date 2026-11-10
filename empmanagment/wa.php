@@ -1092,10 +1092,14 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
             $in = json_input(); $key = wa_key($in['phone'] ?? ''); $c = $key !== '' ? wa_contact($pdo, $key) : null; if (!$c) json_response(['error' => 'Chat not found.'], 404);
             if (!wa_can_chat($pdo, $auth, $c)) json_response(['error' => 'This chat is assigned to someone else.'], 403);
-            $u = function_exists('pc_photo_url') ? pc_photo_url($pdo) : ''; if ($u === '') json_response(['error' => 'The price photo cannot be made yet: fill the Price chart (it needs a 6.5% column) on the Price charts page.'], 422);
+            // 💰 the photo is drawn at the price level THIS chat has reached (the deepest column already quoted; 6.5% when nothing was quoted yet)
+            $lv = function_exists('pc_chat_level') ? pc_chat_level($pdo, $key) : ['pct' => 6.5, 'quoted' => 0, 'ladder' => [], 'default' => true];
+            $u = function_exists('pc_photo_url') ? pc_photo_url($pdo, (float)$lv['pct']) : ''; if ($u === '') json_response(['error' => 'The price photo cannot be made yet: fill the Price chart (it needs a ' . rtrim(rtrim(number_format((float)$lv['pct'], 2), '0'), '.') . '% column) on the Price charts page.'], 422);
+            $lvTxt = rtrim(rtrim(number_format((float)$lv['pct'], 2), '0'), '.') . '%'; $why = $lv['default'] ? 'No discount was given in this chat yet, so it is the starting price (' . $lvTxt . ').' : 'This chat has already been quoted down to the ' . $lvTxt . ' price, so the sizes are shown at that price.';
+            if (!empty($in['preview'])) json_response(['ok' => true, 'preview' => true, 'level' => $lvTxt, 'why' => $why, 'url' => $u]);
             if (!function_exists('wa_send_image_link') && is_file(__DIR__ . '/wa_prod.php')) require_once __DIR__ . '/wa_prod.php';
             [$ok, $res] = wa_send_image_link($pdo, $c, $u, '', 'emp', (int)($auth['employee_id'] ?? 0)); if (!$ok) json_response(['error' => (string)$res], 422);
-            json_response(['ok' => true, 'message' => 'Price photo sent.']);
+            json_response(['ok' => true, 'message' => 'Price chart sent (' . $lvTxt . ' price level).']);
         }
         case 'wa.optin': {   // the "Opted in" switch: off = the customer is never messaged (same as the customer sending STOP)
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
