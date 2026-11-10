@@ -116,7 +116,12 @@ function wa_room_why(array $p): string
 function wa_pick_number(PDO $pdo, array $c, array &$ctx): array
 {
     if ($ctx['port_left'] <= 0) return [0, wa_room_why($ctx['port'] ?? [])];
-    $el = array_filter($ctx['nums'], fn($n) => $n['left'] > 0); if (!$el) return [0, 'no number has room right now'];
+    $el = array_filter($ctx['nums'], fn($n) => $n['left'] > 0);
+    if (!$el) {   // say WHICH limit is used up: this hour's speed per number (the usual case — today's room is much bigger) or today's room
+        $hr = array_filter($ctx['nums'], fn($n) => isset($n['hcap']));
+        if ($hr) return [0, 'This hour’s speed is used up on all ' . count($hr) . ' numbers (' . number_format(array_sum(array_column($hr, 'hcap'))) . ' an hour in all) — it carries on by itself next hour. Today’s room is not the limit.'];
+        return [0, 'No number has room today' . (!empty($ctx['nums']) ? ' (' . implode(' · ', array_map(fn($n) => 'used ' . number_format($n['used']) . ' of ' . number_format($n['cap']), $ctx['nums'])) . ')' : ' — none of the numbers can send this message (not connected, switched off for campaigns, or the message is not approved on its WhatsApp account)') . '. It carries on by itself as room frees up.'];
+    }
     $ign = []; $q = $pdo->prepare("SELECT number_id, COUNT(*) AS n FROM wa_messages WHERE phone = ? AND dir = 'out' AND mtype = 'template' AND status <> 'failed' AND ts > ? GROUP BY number_id");   // a message that never arrived cannot have been "ignored"
     $q->execute([$c['phone'], $c['last_in_at'] ?: '1970-01-01 00:00:00']); foreach ($q->fetchAll() as $r) $ign[(int)$r['number_id']] = (int)$r['n'];
     if (!empty($ctx['w'])) {   // the owner's share per number: the number furthest below its share sends next
@@ -595,7 +600,7 @@ function wa_camp_tick(PDO $pdo): array
         foreach (wa_fam_m_alts($pdo, $t) as $alt) foreach ((array)$alt['ok_wabas'] as $wb) if (!isset($by[(string)$wb])) $by[(string)$wb] = $alt;
         $t['by_waba'] = $by; $t['ok_wabas'] = array_map('strval', array_keys($by));   // numeric ids become int keys: back to text
         $ctx = wa_camp_ctx($pdo, $t, (int)$c['switch_after'], array_map('intval', (array)($c['extra']['numbers'] ?? [])));
-        $chr = wa_camp_hour_room($ctx['port'] ?? []); if ($chr !== null) { foreach ($ctx['nums'] as $nid0 => $n0) { $ctx['nums'][$nid0]['left'] = min((int)$n0['left'], $chr[(int)$nid0] ?? 0); if ($ctx['nums'][$nid0]['left'] <= 0) unset($ctx['nums'][$nid0]); } if (!$ctx['nums']) { $ctx['port']['hour_full'] = 1; $ctx['port_left'] = 0; } }   // 📈 each number's own hourly speed
+        $chr = wa_camp_hour_room($ctx['port'] ?? []); if ($chr !== null) { foreach ($ctx['nums'] as $nid0 => $n0) { $ctx['nums'][$nid0]['hcap'] = (int)($ctx['port']['auto']['nums'][$nid0]['cap'] ?? 0); $ctx['nums'][$nid0]['label'] = (string)($ctx['port']['auto']['nums'][$nid0]['label'] ?? ''); $ctx['nums'][$nid0]['left'] = min((int)$n0['left'], $chr[(int)$nid0] ?? 0); if ($ctx['nums'][$nid0]['left'] <= 0) unset($ctx['nums'][$nid0]); } if (!$ctx['nums']) { $ctx['port']['hour_full'] = 1; $ctx['port_left'] = 0; } }   // 📈 each number's own hourly speed
         $sent = 0; $failed = 0; $skipped = 0; $stop = ''; $hard = false; $retryOn = (int)$c['retry'] === 1; $usedPieces = [];
         $mixOn = !empty($c['extra']['mix']) && function_exists('wa_util_mix_on') && wa_util_mix_on($pdo); $plan = null; $env = null;   // offers = marketing only (see wa_util_mix_on)
         if ($mixOn) { $env = wa_mix_env($pdo); $plan = wa_mix_plan($pdo, $c, $ctx['nums'], $rem, null, true, $env); }
