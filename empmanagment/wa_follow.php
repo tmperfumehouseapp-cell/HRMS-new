@@ -455,6 +455,7 @@ function fu_send(PDO $pdo, array $c, array $st, array $sit, string $text, string
     if ($window) {
         [$ok, $r] = wa_send_text($pdo, $c, $text, $who === 'emp' ? 'emp' : 'bot', $empId);
         fu_ev($pdo, $key, (string)$st['sid'], (int)$st['step'], 'free', $ok ? 'sent' : 'failed', $text, 0, $inId, $who);
+        if ($ok && $who !== 'emp' && function_exists('wa_prod_follow_after')) wa_prod_follow_after($pdo, $c, $text);   // 📸 the perfumes this follow-up talks about follow as one picture (automatic)
         if (!$ok) wa_log($pdo, 'followup', false, $key . ' · ' . $r); return [$ok, $ok ? $text : $r];
     }
     if ($mode !== 'autotpl' && $who !== 'emp') return [false, 'The 24-hour window is closed and the mode does not allow templates.'];

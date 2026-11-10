@@ -1417,6 +1417,20 @@ function wa_prod_bot_after(PDO $pdo, array $c, string $botText = ''): int
         return $n;
     } catch (Throwable $e) { error_log('wa_prod_bot_after: ' . $e->getMessage()); return 0; }
 }
+/** 🤖 Follow-up Autopilot, inside the 24-hour window (owner, 10 Nov: 100% automatic): after the follow-up TEXT went out, the perfumes it talks about — the ones named in the text, else the one the customer last asked about —
+ *  follow as ONE picture (photo, notes, longevity). Same learning gate as the bot (photos pause by themselves when they stop helping). Outside the 24-hour window WhatsApp allows only approved templates, so nothing is added there. Returns perfumes shown. */
+function wa_prod_follow_after(PDO $pdo, array $c, string $text): int
+{
+    try {
+        if (function_exists('wa_photo_gate') && !wa_photo_gate($pdo)) return 0; if ((string)setting_get($pdo, 'wa_follow_photos', '1') === '0') return 0;
+        if (empty($c['last_in_at']) || strtotime((string)$c['last_in_at']) < time() - 86400) return 0;
+        $f = ' ' . wa_prod_fold($text, false) . ' '; $hits = [];
+        foreach (wa_prod_all($pdo) as $p) { if ($p['kind'] !== 'perfume') continue; $n = wa_prod_fold((string)$p['name'], false); if (strlen($n) < 5) continue; $pos = strpos($f, ' ' . $n . ' '); if ($pos !== false) $hits[$pos] = (int)$p['id']; }
+        ksort($hits); $ids = array_slice(array_values($hits), 0, 6);
+        if (!$ids) { $nm = wa_prod_last_asked($pdo, (string)$c['phone']); if ($nm !== '') { $h = wa_prod_name_in_text($pdo, $nm); if ($h) $ids[] = (int)$h['id']; } }
+        return $ids && function_exists('wa_collage_send') ? wa_collage_send($pdo, $c, $ids, 'bot', 0, []) : 0;
+    } catch (Throwable $e) { error_log('wa_prod_follow_after: ' . $e->getMessage()); return 0; }
+}
 // ------------------------------------------------------------------------------------------------------------------ status (Products tab)
 /** How many good Photos-tab photos the bot can attach, per section (Products tab note). */
 function wa_prod_lib_counts(PDO $pdo): array
