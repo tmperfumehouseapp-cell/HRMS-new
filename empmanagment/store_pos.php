@@ -1069,6 +1069,7 @@ try {
             require_auth();
             $ids = array_map('intval', $pdo->query("SELECT emp_id FROM st_duty")->fetchAll(PDO::FETCH_COLUMN));
             if (function_exists('pay_day_assign')) foreach ((pay_day_assign($pdo)[st_day()] ?? []) as $dEid => $dG) if ($dG === 'store' && !in_array((int)$dEid, $ids, true)) $ids[] = (int)$dEid;
+            if (function_exists('st_pool_ids')) foreach (st_pool_ids($pdo) as $pEid) if (!in_array((int)$pEid, $ids, true)) $ids[] = (int)$pEid;
             $punch = st_punch_map($pdo, $ids); $rows = [];
             foreach ($ids as $id) {
                 $n = $pdo->prepare("SELECT full_name, employee_code FROM employees WHERE employee_id = ? AND status != 'ex'"); $n->execute([$id]); $e = $n->fetch(); if (!$e) continue;
@@ -1178,6 +1179,7 @@ try {
             require_auth();
             $on = array_map('intval', $pdo->query("SELECT emp_id FROM st_duty")->fetchAll(PDO::FETCH_COLUMN));
             if (function_exists('pay_day_assign')) foreach ((pay_day_assign($pdo)[st_day()] ?? []) as $dEid => $dG) if ($dG === 'store' && !in_array((int)$dEid, $on, true)) $on[] = (int)$dEid;   // moved to the store for today
+            if (function_exists('st_pool_ids')) foreach (st_pool_ids($pdo) as $pEid) if (!in_array((int)$pEid, $on, true)) $on[] = (int)$pEid;   // the one store team (Total Budgeting 'one team' tick): everybody in it can bill, even when one of them is on leave
             $rows = []; $punched = st_punch_map($pdo, $on); $needsPunch = (int)setting_get($pdo, 'st_bill_needs_punch', 0);
             foreach ($pdo->query("SELECT employee_id, full_name FROM employees WHERE status != 'ex' ORDER BY full_name")->fetchAll() as $e) {
                 $rows[] = ['employee_id' => (int)$e['employee_id'], 'name' => (string)$e['full_name'], 'on' => in_array((int)$e['employee_id'], $on, true), 'punched' => !empty($punched[(int)$e['employee_id']])];
