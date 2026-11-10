@@ -37,15 +37,22 @@
     if (!document.getElementById('wqCss2')) { const s = document.createElement('style'); s.id = 'wqCss2'; s.textContent = MORE_CSS; document.head.appendChild(s); }
     const S = { tab: 'live', days: 1, anDays: 30, board: null, boardErr: null, attn: null, attnErr: null, duty: null, types: null, typesErr: null, typesTab: null, an: null, anErr: null, anMetric: 'queries', cmpType: 'all', cmpDays: 7, won: 'new', skipped: [], confirmedUi: false };
     let seq = 0, liveTimer = 0, rsz = 0;
-    el.innerHTML = '<div id="wqTabs" class="wq-tabs" role="tablist"></div><div id="wqBody"></div>';
-    const tabsEl = el.querySelector('#wqTabs'), body = el.querySelector('#wqBody');
-    const TABS = [['live', 'Live'], ['manager', '🧭 Team manager'], ['pace', 'Pace'], ['attention', 'Attention'], ['types', 'Types'], ['compare', 'Bot vs person'], ['analytics', 'Analytics'], ['settings', 'Settings']];
+    el.innerHTML = '<div id="wqTabs" class="wq-tabs" role="tablist"></div><div id="wqSubTabs" class="wq-tabs" role="tablist" style="display:none;margin-top:-4px"></div><div id="wqBody"></div>';
+    const tabsEl = el.querySelector('#wqTabs'), subEl = el.querySelector('#wqSubTabs'), body = el.querySelector('#wqBody');
+    const MGR = [['manager', 'Team'], ['pace', 'Pace'], ['attention', 'Attention'], ['types', 'Types'], ['compare', 'Bot vs person']];
+    const TOP = [['live', 'Live'], ['manager', '🧭 Team manager'], ['analytics', 'Analytics'], ['settings', 'Settings']];
+    const TABS = [['live', 'Live'], ...MGR, ['analytics', 'Analytics'], ['settings', 'Settings']];
     const get = (a, p) => U.call(opt, a, p); const post = (a, b) => U.post(opt, a, b);
     const attnCount = () => S.attn ? num(S.attn.count, (S.attn.items || []).length) : 0;
     const when = (...a) => U.when(...a);
 
     function drawTabs() {
-      tabsEl.innerHTML = TABS.map((t) => '<button type="button" role="tab" aria-selected="' + (S.tab === t[0]) + '" data-t="' + t[0] + '" class="' + (S.tab === t[0] ? 'on' : '') + '">' + t[1] + (t[0] === 'attention' && attnCount() > 0 ? '<b>' + attnCount() + '</b>' : '') + (t[0] === 'types' && S.types && num(S.types.state && S.types.state.pending) > 0 ? '<b style="background:#d97706">' + num(S.types.state.pending) + '</b>' : '') + '</button>').join('');
+      // 🧭 Pace, Attention, Types and Bot vs person now live INSIDE the Team manager tab (a second strip); the top strip is Live · Team manager · Analytics · Settings
+      const btn = (t, on, extra) => '<button type="button" role="tab" aria-selected="' + on + '" data-t="' + t[0] + '" class="' + (on ? 'on' : '') + '">' + t[1] + (extra || '') + '</button>';
+      const badge = (k) => (k === 'attention' && attnCount() > 0 ? '<b>' + attnCount() + '</b>' : '') + (k === 'types' && S.types && num(S.types.state && S.types.state.pending) > 0 ? '<b style="background:#d97706">' + num(S.types.state.pending) + '</b>' : '');
+      const inMgr = MGR.some((t) => t[0] === S.tab);
+      tabsEl.innerHTML = TOP.map((t) => btn(t, t[0] === 'manager' ? inMgr : S.tab === t[0], t[0] === 'manager' ? (attnCount() > 0 || (S.types && num(S.types.state && S.types.state.pending) > 0) ? '<b>' + (attnCount() + num(S.types && S.types.state && S.types.state.pending)) + '</b>' : '') : '')).join('');
+      subEl.style.display = inMgr ? '' : 'none'; subEl.innerHTML = inMgr ? MGR.map((t) => btn(t, S.tab === t[0], badge(t[0]))).join('') : '';
       drawTop();
       if (opt.onBadge) try { opt.onBadge(attnCount()); } catch (e) { /* optional */ }
     }
@@ -61,6 +68,7 @@
       drawTop(); render(false);
     });
     tabsEl.addEventListener('click', (e) => { const b = e.target.closest('[data-t]'); if (b) goto(b.dataset.t); });
+    subEl.addEventListener('click', (e) => { const b = e.target.closest('[data-t]'); if (b) goto(b.dataset.t); });
     function goto(t) {
       if (!TABS.some((x) => x[0] === t)) t = 'live'; S.tab = t; try { history.replaceState(null, '', location.pathname + (t === 'live' ? '' : '?tab=' + t) + (/[?&]in=sales/.test(location.search) ? (t === 'live' ? '?' : '&') + 'in=sales' : '')); } catch (e) { /* iframe */ }
       drawTabs(); render(false);
