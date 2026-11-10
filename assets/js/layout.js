@@ -321,9 +321,8 @@ window.WS = (function () {
   const W = [
     { key: 'home', label: 'Home', icon: 'dashboard', sub: 'What needs you today', tabs: [['dashboard', 'Dashboard', 'dashboard.html', '']] },
     { key: 'sales', label: 'Sales', icon: 'sales', direct: 'sales.html', sub: '', tabs: [] },
-    { key: 'budget', label: 'Budgeting', icon: 'commission', sub: 'Commission, leaders, salaries, fixed expenses and penalties, day by day', tabs: [['bt_total', 'Total Budgeting', 'total_budgeting.html', ''], ['bt_commission', 'Commission', 'commission_new.html', ''], ['bt_leaders', 'Leaders', 'leaders.html', ''], ['bt_helpers', 'Leaders Helper', 'leaders_helper.html', '']] },   // own menu item; the same pages are no longer listed inside Sales
+    { key: 'team', label: 'Team', icon: 'employees', sub: 'Every salesperson in one place: performance, live queries and money (pay and commission: admin only)', tabs: [['wasales', 'Team performance', 'wa_sales_live.html', 'wa'], ['wapace', 'Reply pace', 'pace.html', 'admin'], ['bt_total', 'Money · Total Budgeting', 'total_budgeting.html', ''], ['bt_commission', 'Money · Commission', 'commission_new.html', ''], ['bt_leaders', 'Money · Leaders', 'leaders.html', ''], ['bt_helpers', 'Money · Leaders Helper', 'leaders_helper.html', '']] },   // the old Budgeting and WhatsApp Sales icons are one workspace now (old links w=budget / w=wasales still open it)
     { key: 'whatsapp', label: 'WhatsApp', icon: 'whatsapp', sub: 'Chats, campaigns and groups', tabs: [['whatsapp', 'WhatsApp', 'whatsapp.html', 'wa'], ['whatsapp_groups', 'Groups', 'whatsapp_groups.html', '']] },
-    { key: 'wasales', label: 'WhatsApp Sales', icon: 'wasales', sub: 'Every customer query: who holds it, who is behind, what works', tabs: [['wasales', 'WhatsApp Sales', 'wa_sales_live.html', 'wa'], ['wapace', 'Reply pace', 'pace.html', 'admin']] },
     { key: 'complaints', label: 'Complaints', icon: 'complaints', sub: 'Every customer problem is a ticket — Tracking and Complaint desks', tabs: [['complaints', 'Tickets', 'complaints.html', 'cx'], ['my_complaints', 'My complaints', 'my_complaints.html', 'cxm']] },
     { key: 'inbox', label: 'Inbox', icon: 'inbox', sub: 'Instagram, Facebook, email and reviews — answered in one place', tabs: [['social_inbox', 'Inbox hub', 'social_inbox.html', 'sx']] },
     { key: 'boss', label: 'Boss', icon: 'approvals', sub: 'Tasks, numbers, problems and penalties (people, pay and commission live in Budgeting)', tabs: [['boss_engine', 'Today', 'boss_engine.html', 'boss', 'today'], ['be_sections', 'Sections', 'boss_engine.html', 'boss', 'sections'], ['be_work', 'All work', 'boss_engine.html', 'boss', 'work'], ['staff_progress', 'Staff progress', 'staff_progress.html', 'cxr'], ['be_pens', 'Penalties', 'boss_engine.html', 'boss', 'pens'], ['be_problems', 'Problems', 'boss_engine.html', 'boss', 'problems'], ['boss_questions', 'Questions', 'boss_questions.html', 'boss'], ['dept_hub', 'Workbenches', 'dept_hub.html', 'boss'], ['daily_summary', 'Summary', 'daily_summary.html', 'boss'], ['tracker', 'Daily tracker', 'tracker.html', 'boss'], ['brain', 'Brain', 'brain.html', 'boss'], ['be_setup', 'Setup & health', 'boss_engine.html', 'boss', 'setup'], ['boss_rules', 'Rules in sync', 'boss_rules.html', 'admin']] },
@@ -346,7 +345,8 @@ window.WS = (function () {
     'total_budgeting.html': 'commission', 'commission_new.html': 'commission', 'commission.html': 'commission', 'leaders.html': 'commission',
   };
   const ICON_OF = {};  W.forEach((w) => { ICON_OF[w.key] = w.icon; });
-  const byKey = (k) => W.find((w) => w.key === k);
+  const WSA = { budget: 'team', wasales: 'team' };   // old workspace keys
+  const byKey = (k) => W.find((w) => w.key === (WSA[k] || k));
   const pageOf = (u) => String(u || '').split('#')[0].split('?')[0].split('/').pop();
   function tabByPage(file) {
     for (const w of W) { const t = w.tabs.find((x) => x[2] === file); if (t) return { w, t }; }
@@ -355,7 +355,7 @@ window.WS = (function () {
   // Which workspace does a page key (the word each page passes to renderSidebar) belong to?
   function wsOf(active, SPK) {
     if (!active) return '';
-    if (String(active).indexOf('ws:') === 0) return String(active).slice(3);
+    if (String(active).indexOf('ws:') === 0) { const k0 = String(active).slice(3); return WSA[k0] || k0; }
     if (active === 'whatsapp' || active === 'wa_chats' || active === 'wa_setup') return 'whatsapp';
     if (active === 'sales' || (SPK && SPK.indexOf(active) > -1)) return 'sales';
     for (const w of W) if (w.tabs.some((t) => t[0] === active)) return w.key;
