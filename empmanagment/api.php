@@ -9935,7 +9935,8 @@ function lib_guide_go_live(PDO $pdo, array $draft, string $who): void
 /** Every night (from 02:00, India time) the guidebook is rewritten from the saved chats and the owner's Teach rules, and the new one goes LIVE by itself.
  *  The first time it runs, a draft that is already waiting goes live straight away. A guidebook written from numbers alone (the AI could not be reached) never replaces the live one.
  *  Runs inside the study pass (lib_tick_run: the Hostinger cron "lib.cron", or the hourly call of the Learning page). Returns a short note, or null when nothing was due. */
-function lib_guide_nightly(PDO $pdo, int $budget): ?string
+function lib_guide_nightly(PDO $pdo, int $budget): ?string { $f0 = ai_feat('wa_guide'); try { return lib_guide_nightly_x($pdo, $budget); } finally { ai_feat($f0); } }
+function lib_guide_nightly_x(PDO $pdo, int $budget): ?string
 {
     $today = date('Y-m-d'); $last = setting_get($pdo, 'lib_guide_nightly', ''); $first = ($last === '');
     if (!$first && ($last === $today || (int)date('G') < 2)) return null;
@@ -16430,6 +16431,23 @@ function tmph_budget_usd(): float
     $b = (float)tmph_cfg('TMPH_MONTH_BUDGET_USD', 300);
     return $b > 0 ? max($b, 300.0) : 0.0;
 }
+/** 🏷 The WhatsApp feature that is calling Claude right now ('' = none). Set around a job so its spend is listed under its own name and can have its own daily limit. */
+function ai_feat(string $f): string { $old = (string)($GLOBALS['ai_feature'] ?? ''); if ($f === '') unset($GLOBALS['ai_feature']); else $GLOBALS['ai_feature'] = $f; return $old; }
+/** Daily USD limit of one feature (the owner can change them: define('AI_CAPS', ['wa_bot' => 20, ...]) in config.php; 0 = no limit). A feature that reaches its limit simply waits until tomorrow — the people answer instead. */
+function ai_feature_cap(string $p): float
+{
+    $d = ['wa_presugg' => 6.0, 'wa_sugg' => 6.0, 'wa_bot' => 10.0, 'wa_tag' => 2.0, 'wa_learn' => 8.0, 'wa_topics' => 4.0, 'wa_guide' => 8.0];
+    $c = (array)tmph_cfg('AI_CAPS', []); if (isset($c[$p]) && is_numeric($c[$p])) return (float)$c[$p];
+    return $d[$p] ?? 0.0;
+}
+function ai_feature_cap_hit(string $p): bool
+{
+    $cap = ai_feature_cap($p); if ($cap <= 0) return false;
+    static $memo = []; $now = time(); if (isset($memo[$p]) && $memo[$p][0] > $now - 60) return $memo[$p][1];
+    $hit = false;
+    try { global $pdo; if ($pdo instanceof PDO && ensure_ai_usage_table($pdo)) { $q = $pdo->prepare("SELECT COALESCE(SUM(cost_usd), 0) FROM ai_usage WHERE use_date = ? AND purpose = ?"); $q->execute([date('Y-m-d'), mb_substr($p, 0, 20)]); $hit = (float)$q->fetchColumn() >= $cap; } } catch (Throwable $e) { }
+    $memo[$p] = [$now, $hit]; return $hit;
+}
 function tmph_over_budget(): bool
 {
     $b = tmph_budget_usd();
@@ -16521,7 +16539,8 @@ function tmph_call_claude(string $key, string $model, array $body, bool $stream,
     if (!function_exists('curl_init')) { $res['curl'] = 'cURL is not available on this server.'; return $res; }
     if (tmph_over_budget()) { $res['status'] = 402; $res['detail'] = 'Monthly AI budget (TMPH_MONTH_BUDGET_USD) is used up.'; return $res; }
     $jsonMode = isset($body['generationConfig']['responseSchema']);
-    $purpose = (string)($GLOBALS['tmph_purpose'] ?? 'chat');
+    $purpose = (string)($GLOBALS['ai_feature'] ?? $GLOBALS['tmph_purpose'] ?? 'chat');
+    if (!empty($GLOBALS['ai_feature']) && ai_feature_cap_hit($purpose)) { $res['status'] = 402; $res['detail'] = 'Daily limit of this feature (' . $purpose . ') is reached — it continues tomorrow.'; return $res; }
     $req = tmph_claude_request($model, $body, $stream);
     $usage = ['in' => 0, 'out' => 0];
     $addBlock = function (array $b) use (&$res, $jsonMode, $onText): void {

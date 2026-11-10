@@ -250,8 +250,8 @@ function wa_tick(PDO $pdo, bool $force = false): array
     try { if (function_exists('wa_ord_tick')) $o['orders'] = wa_ord_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'orders: ' . $e->getMessage()); }   // order-update messages (and the one-time template setup)
     try { if (function_exists('jt_tick') && $force && !defined('WA_IN_WEBHOOK')) $o['tags'] = jt_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'tags: ' . $e->getMessage()); }
     try { if (function_exists('wj_tick') && $force && !defined('WA_IN_WEBHOOK')) $o['journey'] = wj_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'journey: ' . $e->getMessage()); }   // 🗓 60-day Journey: today's messages, the night's topic learning, festival watch
-    try { if (function_exists('wtp_gen_tick') && $force && !defined('WA_IN_WEBHOOK')) wtp_gen_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'topics: ' . $e->getMessage()); }   // 🧭 Claude writes the topic messages one topic at a time and sends them to Meta
-    try { if (function_exists('wlr_nightly') && $force && !defined('WA_IN_WEBHOOK')) wlr_nightly($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'learning: ' . $e->getMessage()); }   // 🧠 after 02:00, once a day: lost chats saved, guidebook rewritten from won + lost chats
+    try { if (function_exists('wtp_gen_tick') && $force && !defined('WA_IN_WEBHOOK')) { $f0 = ai_feat('wa_topics'); try { wtp_gen_tick($pdo); } finally { ai_feat($f0); } } } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'topics: ' . $e->getMessage()); }   // 🧭 Claude writes the topic messages one topic at a time and sends them to Meta
+    try { if (function_exists('wlr_nightly') && $force && !defined('WA_IN_WEBHOOK')) { $f0 = ai_feat('wa_learn'); try { wlr_nightly($pdo); } finally { ai_feat($f0); } } } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'learning: ' . $e->getMessage()); }   // 🧠 after 02:00, once a day: lost chats saved, guidebook rewritten from won + lost chats
     setting_set($pdo, 'wa_tick_at', date('Y-m-d H:i:s'));
     return $o;
 }
@@ -668,7 +668,7 @@ if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.
             $in = json_input(); $key = wa_key($in['phone'] ?? ''); $c = $key !== '' ? wa_contact($pdo, $key) : null; if (!$c) json_response(['error' => 'Chat not found.'], 404);
             if (!wa_can_chat($pdo, $auth, $c)) json_response(['error' => 'This chat is assigned to someone else.'], 403);
             if ((int)$c['optout'] === 1) json_response(['error' => 'This customer opted out.'], 422);
-            if (function_exists('wa_suggest_guided')) { wa_learn_tables($pdo); wa_suggest_guided($pdo, $c, $key, $in); }   // answers and exits when an approved guidebook exists; otherwise the generic suggestion below
+            if (function_exists('wa_suggest_guided')) { wa_learn_tables($pdo); $f0 = ai_feat('wa_sugg'); try { wa_suggest_guided($pdo, $c, $key, $in); } finally { ai_feat($f0); } }   // answers and exits when an approved guidebook exists; otherwise the generic suggestion below
             if (!function_exists('convo_ai')) json_response(['error' => 'The AI is not available.'], 502);
             $st = $pdo->prepare("SELECT dir, body, ts, who FROM wa_messages WHERE phone = ? AND dir != 'sys' ORDER BY id DESC LIMIT 25"); $st->execute([$key]); $rows = array_reverse($st->fetchAll());
             $txt = ''; foreach ($rows as $r) $txt .= ($r['dir'] === 'in' ? 'CUSTOMER' : 'SHOP') . ': ' . mb_substr((string)$r['body'], 0, 400) . "\n";
