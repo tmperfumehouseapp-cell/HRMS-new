@@ -156,6 +156,19 @@ function tb_tick(PDO $pdo): array
 }
 
 $__tbA = (string)($action ?? ($_GET['action'] ?? ''));
+if ($__tbA === 'team.me') {   // 🙋 MY summary: only the logged-in salesperson's own numbers (never anybody else's), from the same cached table
+    if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') json_response(['error' => 'Method not allowed.'], 405);
+    $auth = require_auth(); $me = (int)($auth['employee_id'] ?? 0);
+    if ($me <= 0 || !function_exists('wa_tables') || !wa_tables($pdo) || !function_exists('wq_tables') || !wq_tables($pdo)) json_response(['ok' => true, 'none' => true]);
+    $keys = ['queries_30d', 'orders_30d', 'ratio_pct', 'team_ratio_pct', 'ticket_30d', 'team_ticket', 'speed_median_min_30d', 'target_today', 'target_pct_today', 'should_pct_today', 'sales_today', 'rank', 'medals', 'prev_orders', 'prev_ratio_pct', 'prev_ticket', 'present', 'punch_in_today'];
+    $o = ['ok' => true, 'none' => true, 'periods' => []];
+    foreach (['today', 'month'] as $r) {
+        $L = tb_light_cached($pdo, tb_range($pdo, $r, '', ''), false); $mine = null; foreach ($L['rows'] as $x) if ((int)$x['emp_id'] === $me) { $mine = $x; break; }
+        if ($mine) { $o['none'] = false; $row = []; foreach ($keys as $k) $row[$k] = $mine[$k] ?? null; $row['people'] = count($L['rows']); $o['periods'][$r] = $row; }
+    }
+    $m = function_exists('wqm_rec') ? wqm_rec($pdo, $me) : []; $o['card'] = (function_exists('wqm_mode') && wqm_mode($pdo) === 'apply' && !empty($m['card'])) ? ['text' => (string)$m['card'], 'level' => (string)($m['level'] ?? '')] : null;
+    json_response($o);
+}
 if ($__tbA === 'team.board' || $__tbA === 'team.person') {
     if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') json_response(['error' => 'Method not allowed.'], 405);
     $auth = require_auth();

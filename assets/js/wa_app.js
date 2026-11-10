@@ -716,6 +716,21 @@
     }
 
     // ------------------------------------------------------------------ me
+    // 🙋 My summary: today and this month — my own numbers against the team's average (team.me; nobody else's numbers are ever sent)
+    async function msLoad() {
+      const M = $('#wxM'); if (!M) return; let box = $('#wxMs'); if (!box) { box = document.createElement('div'); box.id = 'wxMs'; M.insertBefore(box, M.firstChild); }
+      box.innerHTML = '<div class="wx-card" style="padding:14px"><div class="wx-sk"></div></div>';
+      try {
+        const d = await api.get('team.me'); if (!d || d.none) { box.innerHTML = ''; return; }
+        const f = (x, suf) => x == null ? '—' : x + (suf || ''), arrow = (a, b) => (a == null || b == null || a === b) ? '' : (a > b ? ' <span style="color:#16a34a">▲</span>' : ' <span style="color:#dc2626">▼</span>');
+        const blk = (k, title) => { const p = d.periods[k]; if (!p) return ''; const behind = p.ratio_pct != null && p.team_ratio_pct != null && p.ratio_pct < p.team_ratio_pct;
+          return `<div style="margin-top:10px"><div style="font-weight:800;font-size:13px">${title}${k === 'month' && p.rank ? ` · rank ${p.rank} of ${p.people}` : ''}</div>`
+            + `<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:6px;text-align:center"><div class="wx-pill" style="display:block;padding:6px 2px"><b style="display:block;font-size:15px">${f(p.orders_30d)}${arrow(p.orders_30d, p.prev_orders)}</b><span style="font-size:10.5px">Query orders</span></div><div class="wx-pill" style="display:block;padding:6px 2px"><b style="display:block;font-size:15px;${behind ? 'color:#dc2626' : ''}">${f(p.ratio_pct, p.ratio_pct == null ? '' : '%')}${arrow(p.ratio_pct, p.prev_ratio_pct)}</b><span style="font-size:10.5px">Ratio · team ${f(p.team_ratio_pct, p.team_ratio_pct == null ? '' : '%')}</span></div><div class="wx-pill" style="display:block;padding:6px 2px"><b style="display:block;font-size:15px">${p.ticket_30d == null ? '—' : '₹' + p.ticket_30d}${arrow(p.ticket_30d, p.prev_ticket)}</b><span style="font-size:10.5px">Ticket · team ${p.team_ticket == null ? '—' : '₹' + p.team_ticket}</span></div><div class="wx-pill" style="display:block;padding:6px 2px"><b style="display:block;font-size:15px">${f(p.speed_median_min_30d, p.speed_median_min_30d == null ? '' : ' m')}</b><span style="font-size:10.5px">Reply speed</span></div></div>`
+            + (k === 'today' && p.target_today > 0 ? `<div style="margin-top:8px;font-size:12.5px">🎯 Target ₹${Math.round(p.target_today)} · <b>${f(p.target_pct_today, '%')}</b> done${p.should_pct_today != null ? ' (should be ' + p.should_pct_today + '%)' : ''}</div>` : '') + '</div>'; };
+        const medals = ((d.periods.month || d.periods.today || {}).medals || []);
+        box.innerHTML = `<div class="wx-card" style="padding:14px"><div style="font-weight:900;font-size:15px">🙋 My summary</div>${d.card ? `<div style="margin-top:8px;font-size:13px;font-weight:600">🧭 ${esc(d.card.text)}</div>` : ''}${medals.length ? `<div style="margin-top:8px">${medals.map((m) => `<span class="wx-pill">${esc(m)}</span>`).join(' ')}</div>` : ''}${blk('today', 'Today')}${blk('month', 'This month')}</div>`;
+      } catch (e) { box.innerHTML = ''; }
+    }
     async function drawMe() {
       $('#wxSeg').hidden = true; const M = $('#wxM'); const st = S.stats || {}, tg = S.cfg.target || 5; const pc = Math.min(100, Math.round(100 * (st.orders_today || 0) / tg));
       M.innerHTML = `<div class="wx-card" style="padding:14px"><div style="display:flex;align-items:baseline;gap:8px"><span class="wx-big">${st.orders_today || 0}</span><span style="color:var(--mut);font-weight:700">of ${tg} orders today</span><span style="margin-left:auto;font-weight:800">${money(st.revenue_today)}</span></div><div class="wx-bar2"><i style="width:${pc}%"></i></div>
@@ -726,6 +741,7 @@
       $('#wxSnd').onclick = function () { S.sound = !S.sound; localStorage.setItem('wa_sound', S.sound ? '1' : '0'); this.textContent = S.sound ? 'On 🔊' : 'Off 🔇'; if (S.sound) beepNew(); };
       $('#wxPc').onclick = phoneCheck; $('#wxGd').onclick = () => showGuide(false);
       $('#wxPs').onclick = () => { if (iOS && !standalone) return toast('iPhone: Share → Add to Home Screen first, then open from the icon.', true); pushAction('allow').then(drawMe); };
+      msLoad();
       try { const d = await api.get('wa.g_me'); S.stats = d.stats; S.board = d.board; drawTop(); const lb = $('#wxLb'); if (lb) lb.innerHTML = ['today', 'week'].map((k) => `<div class="wx-h">${k === 'today' ? 'Leaderboard · today' : 'Leaderboard · 7 days'}</div><div class="wx-card">${(d.board[k] || []).map((r, i) => `<div class="wx-lbd ${r.me ? 'me' : ''}"><span class="rk">${['🥇', '🥈', '🥉'][i] || i + 1}</span><span class="n">${esc(r.name)}</span><b>${r.n}</b><span style="color:var(--mut);font-size:12px">${money(r.amount)}</span></div>`).join('') || '<div class="wx-empty" style="padding:14px">No orders yet.</div>'}</div>`).join(''); } catch (e) { }
     }
 
