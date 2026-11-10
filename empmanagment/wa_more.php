@@ -481,9 +481,9 @@ function wa_camp_auto_cap(PDO $pdo, int $tier, array $health): array
     // the number dropped to Medium / Low or 20%+ failed → halves (never below 1,000); else it stays. Ceiling: 90% of Meta's daily limit.
     $max = (int)floor($tier * 0.9); $A = json_decode((string)setting_get($pdo, 'wa_camp_auto', ''), true); if (!is_array($A)) $A = [];
     $caps = is_array($A['caps'] ?? null) ? $A['caps'] : []; $hour = date('Y-m-d H'); $hist = array_values((array)($A['hist'] ?? []));
-    $START = 10000;   // owner (10 Nov 2026): raised from 3,500 — every number starts at 10,000 new people an hour (it still halves if quality drops, doubles after a good hour)
-    $old0 = max($START, (int)($A['cap'] ?? $START));
-    if ((int)($A['start'] ?? 0) < $START) { foreach ($caps as $k => $v) $caps[$k] = max($START, (int)$v); $A['start'] = $START; $A['caps'] = $caps; $A['cap'] = $old0; try { setting_set($pdo, 'wa_camp_auto', json_encode($A)); } catch (Throwable $e) { } }   // once: lift the old 1,000 to 3,500
+    $START = 5000;   // owner (10 Nov 2026): every number runs 5,000 new people an hour, the Medium one too — it does not grow while quality is not High
+    $old0 = (int)($A['start'] ?? 0) === $START ? max($START, (int)($A['cap'] ?? $START)) : $START;
+    if ((int)($A['start'] ?? 0) !== $START) { foreach ($caps as $k => $v) $caps[$k] = $START; $A['start'] = $START; $A['caps'] = $caps; $A['cap'] = $old0; try { setting_set($pdo, 'wa_camp_auto', json_encode($A)); } catch (Throwable $e) { } }   // once: lift the old 1,000 to 3,500
     $hq = []; foreach ($health as $h) $hq[(int)$h['id']] = $h;
     try { foreach ($pdo->query("SELECT id, label, display, camp_ok FROM wa_numbers")->fetchAll() as $n) if (isset($hq[(int)$n['id']])) { $hq[(int)$n['id']]['label'] = (string)$n['label'] !== '' ? (string)$n['label'] : (string)$n['display']; if ((int)$n['camp_ok'] !== 1) unset($hq[(int)$n['id']]); } } catch (Throwable $e) { }
     foreach ($hq as $nid => $h) if (($h['status'] ?? '') !== '' && $h['status'] !== 'CONNECTED') unset($hq[$nid]);   // a number that cannot send (pending at Meta / switched off for campaigns) is not listed
@@ -493,9 +493,9 @@ function wa_camp_auto_cap(PDO $pdo, int $tier, array $health): array
             foreach ($q->fetchAll() as $r) { $nid = (int)$r['number_id']; $st[$nid] = $st[$nid] ?? [0, 0, 0]; $c = (int)$r['c']; $st[$nid][0] += $c; if (in_array($r['status'], ['delivered', 'read'], true)) $st[$nid][1] += $c; if ($r['status'] === 'failed') $st[$nid][2] += $c; } } catch (Throwable $e) { }
         foreach ($hq as $nid => $h) {
             if (($h['status'] ?? '') !== '' && $h['status'] !== 'CONNECTED') continue;
-            $old = max(1000, (int)($caps[$nid] ?? $old0)); $cap = $old; [$n, $del, $fail] = $st[$nid] ?? [0, 0, 0]; $why = 'kept';
-            if (in_array($h['quality'] ?? '', ['YELLOW', 'RED'], true)) { $cap = max(1000, (int)floor($old / 2)); $why = 'quality dropped to ' . ($h['quality'] === 'RED' ? 'Low' : 'Medium') . ' — halved'; }
-            elseif ($n >= 50 && $fail / $n > 0.2) { $cap = max(1000, (int)floor($old / 2)); $why = round($fail * 100 / $n) . '% failed — halved'; }
+            $old = max($START, (int)($caps[$nid] ?? $old0)); $cap = $old; [$n, $del, $fail] = $st[$nid] ?? [0, 0, 0]; $why = 'kept';
+            if (in_array($h['quality'] ?? '', ['YELLOW', 'RED'], true)) { $cap = max($START, (int)floor($old / 2)); $why = 'quality dropped to ' . ($h['quality'] === 'RED' ? 'Low' : 'Medium') . ' — halved'; }
+            elseif ($n >= 50 && $fail / $n > 0.2) { $cap = max($START, (int)floor($old / 2)); $why = round($fail * 100 / $n) . '% failed — halved'; }
             elseif ($n >= $old * 0.5 && $del / max(1, $n) >= 0.8 && $fail / max(1, $n) <= 0.1) { $cap = $old * 2; $why = round($del * 100 / max(1, $n)) . '% delivered — doubled'; }
             elseif ($n < $old * 0.5) $why = $n . ' sent in that hour — kept (it grows after a full good hour)';
             $cap = min($cap, max(1000, $max)); $caps[$nid] = $cap;
