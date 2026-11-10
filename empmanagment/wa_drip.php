@@ -68,12 +68,28 @@ function wd_block(PDO $pdo, array $c, array $cfg, string $anchor): string
     if ($cfg['stop_on_reply']) { try { $q = $pdo->prepare("SELECT MAX(at) FROM wa_drip_ev WHERE phone = ? AND anchor = ? AND status = 'sent'"); $q->execute([$c['phone'], $anchor]); $last = (string)$q->fetchColumn(); if ($last !== '' && !empty($c['last_in_at']) && strtotime((string)$c['last_in_at']) > strtotime($last)) return 'replied'; } catch (Throwable $e) { } }
     return '';
 }
+/** Why not one number can send this message right now, number by number (so "no room" never hides a Meta payment problem or an unapproved message). */
+function wd_why_none(PDO $pdo, array $t): string
+{
+    $out = []; $caps = []; try { $caps = wa_number_caps($pdo, wa_camp_health($pdo)); } catch (Throwable $e) { }
+    try {
+        foreach ($pdo->query("SELECT * FROM wa_numbers ORDER BY id")->fetchAll() as $n) {
+            $id = (int)$n['id']; $lab = (string)($n['label'] !== '' ? $n['label'] : ($n['display'] ?? 'Number ' . $id)); $c = $caps[$id] ?? null; $why = '';
+            if (!in_array(wa_waba_of($n), (array)($t['ok_wabas'] ?? []), true)) $why = 'this message is not approved on its WhatsApp account';
+            else { $pb = (string)setting_get($pdo, 'wa_payblock_' . $id, ''); if ($pb !== '' && strtotime($pb) > time() - 3 * 3600) $why = 'Meta payment problem (it is paused until ' . date('H:i', strtotime($pb) + 3 * 3600) . ')';
+                elseif (!$c) $why = 'not connected / switched off for campaigns'; elseif ((int)$c['left'] <= 0) $why = ((string)($c['why'] ?? '') !== '' ? (string)$c['why'] : 'no room left today'); }
+            if ($why !== '') $out[] = $lab . ': ' . $why;
+        }
+    } catch (Throwable $e) { }
+    return $out ? implode(' · ', $out) : 'no number is available';
+}
 /** Send one drip message. [ok, reason|'']. */
 function wd_send(PDO $pdo, array $c, array $step): array
 {
     $t = function_exists('wa_camp_tpl') ? wa_camp_tpl($pdo, (int)$step['tpl_id'], true, 0) : null; if (!$t) return [false, 'The message is not approved by Meta (or its photo is missing).'];
     $nv = (int)($t['nvars'] ?? 0); if ($nv > 1) return [false, 'This message has ' . $nv . ' blanks — pick one with only a name blank.'];
     $ctx = wa_camp_ctx($pdo, $t, 2); $nid = 0;
+    if (empty($ctx['nums'])) return [false, 'No number has room now (' . wd_why_none($pdo, $t) . ')'];
     if ((int)$step['number_id'] > 0) { if (!isset($ctx['nums'][(int)$step['number_id']])) return [false, 'The chosen number has no room or cannot send this message now.']; $nid = (int)$step['number_id']; }
     else { [$nid, $why] = wa_pick_number($pdo, $c, $ctx); if (!$nid) return [false, 'No number has room now (' . $why . ').']; }
     [$ok, $res] = wa_send_tpl_one($pdo, $c, $t, $ctx['nums'][$nid], $nv ? [wd_name($c)] : [], 'followup');
