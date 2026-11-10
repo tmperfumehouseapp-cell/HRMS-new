@@ -64,11 +64,13 @@ function tb_light(PDO $pdo, array $per): array
     [$from, $to, , , $paceDays] = $per; $today = function_exists('biz_today') ? biz_today($pdo) : date('Y-m-d');
     $rows = function_exists('wqm_collect') ? wqm_collect($pdo, ['light' => true]) : []; $out = [];
     [$qs, $teamRatio, $teamTicket] = tb_queries($pdo, $from, $to);
+    $nd = (int)round((strtotime($to) - strtotime($from)) / 86400) + 1; [$pqs] = tb_queries($pdo, date('Y-m-d', strtotime($from . ' -' . $nd . ' day')), date('Y-m-d', strtotime($from . ' -1 day')));   // the same length just before: for the ▲▼
     $sp = []; try { if (function_exists('wq_pace_get')) foreach ((array)(wq_pace_get($pdo, $paceDays)['people'] ?? []) as $p) $sp[(int)$p['emp_id']] = $p; } catch (Throwable $e) { }
     $tin = tb_today_punch($pdo); $cd = []; try { if (function_exists('coach_day')) $cd = (array)(coach_day($pdo, $today)['emps'] ?? []); } catch (Throwable $e) { }
     foreach ($rows as $id => $r) {
-        $s = $qs[$id] ?? null; $n = $s ? $s['n'] : 0; $won = $s ? $s['won'] : 0; $c = $cd[$id] ?? []; $m = function_exists('wqm_rec') ? wqm_rec($pdo, $id) : [];
+        $s = $qs[$id] ?? null; $n = $s ? $s['n'] : 0; $won = $s ? $s['won'] : 0; $c = $cd[$id] ?? []; $m = function_exists('wqm_rec') ? wqm_rec($pdo, $id) : []; $ps = $pqs[$id] ?? null;
         $out[$id] = [
+            'prev_orders' => $ps ? $ps['won'] : null, 'prev_ratio_pct' => ($ps && $ps['n'] > 0) ? round(100 * $ps['won'] / $ps['n'], 1) : null, 'prev_ticket' => ($ps && $ps['ord'] > 0) ? (int)round($ps['rev'] / $ps['ord']) : null,
             'emp_id' => $id, 'name' => $r['name'], 'present' => $r['present'], 'answering_min_ago' => $r['answering_min_ago'], 'punch_in_today' => $tin[$id][0] ?? '', 'hours_today' => round(($tin[$id][1] ?? 0) / 60, 1),
             'queries_30d' => $n, 'orders_30d' => $won, 'ratio_pct' => $n > 0 ? round(100 * $won / $n, 1) : null, 'team_ratio_pct' => round(100 * $teamRatio, 1), 'team_ticket' => $teamTicket,
             'ticket_30d' => ($s && $s['ord'] > 0) ? (int)round($s['rev'] / $s['ord']) : null, 'sure_behind' => $n > 0 && $teamRatio > 0 && wqm_hi($won, $n) < $teamRatio,
