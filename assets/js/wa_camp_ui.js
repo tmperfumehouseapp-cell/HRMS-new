@@ -455,7 +455,28 @@ body.waui .cu-pc{display:flex;align-items:center;gap:10px;padding:9px 0;border-t
       const isU = !!util || !!(c && c.extra && c.extra.kind === 'util'); const m = modal(c ? 'Edit campaign' : (isU ? '💸 New utility follow-up' : 'New campaign')); m.el.classList.add('cu-wide'); if (!c && window.WaCampReport) { const lb = document.createElement('div'); lb.style.padding = '0 16px'; m.body.parentNode.insertBefore(lb, m.body); WaCampReport.learnBox(lb); }   // 💡 what worked in the last campaigns, before you make the next
       let PN = null, pvT = 0; const grpOn = () => Object.keys(W.A.f || {}).some((k) => (Array.isArray(W.A.f[k]) ? W.A.f[k].length : W.A.f[k] !== '' && W.A.f[k] != null));
       let step = 1, pv = null; const X = { tags: null, sugg: null, hours: null, gal: null, pcs: null, lines: [] };
-      const head = () => `<div class="wp-seg">${['Who', 'What', 'When & retries'].map((l, i) => `<button type="button" class="${step === i + 1 ? 'on' : ''}" ${i + 1 > step ? 'disabled' : ''} data-s="${i + 1}">${i + 1} ${l}</button>`).join('')}</div>`;
+      const typedBar = () => (step === 2 && !W.util ? '<div class="wp-note" style="margin:0 0 10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:space-between"><span><b>✍️ Manual message</b> — type your own message instead of a template (goes only to people who wrote in the last 24 hours).</span><button type="button" class="wp-btn" id="cuTyped">✍️ Write a manual message</button></div>' : '');
+      m.body.addEventListener('click', (ev) => { const b = ev.target.closest && ev.target.closest('#cuTyped'); if (b) typedSend(); });
+      async function typedSend() {
+        const tm = modal('✍️ Manual message'); tm.body.innerHTML = loading;
+        let r; try { r = await api.post('wa.camp_typed_phones', { audience: W.A }); } catch (e) { tm.body.innerHTML = errBox(e.message); return; }
+        const ppl = r.people || [], inw = ppl.filter((x) => x.win);
+        if (!ppl.length) { tm.body.innerHTML = '<div class="wp-note">Nobody is picked yet. Choose who gets it in step 1 first.</div>'; return; }
+        tm.body.innerHTML = `<div class="wp-note"><b>${fmt(ppl.length)}</b> customers picked · <b>${fmt(inw.length)}</b> wrote to you in the last 24 hours and can get a typed message · ${fmt(ppl.length - inw.length)} are outside 24 hours (they need a template, so they are left out here).</div>
+          <textarea class="wp-in" id="tyTx" rows="7" placeholder="Type your message… use {name} for the customer's first name" style="width:100%;box-sizing:border-box;margin:10px 0"></textarea><div id="tyMsg"></div>
+          <button type="button" class="wp-btn p" id="tyGo" ${inw.length ? '' : 'disabled'}>📨 Send to ${fmt(inw.length)} customers</button>`;
+        $(tm.body, '#tyGo').onclick = async () => {
+          const txt = $(tm.body, '#tyTx').value.trim(); if (!txt) { $(tm.body, '#tyMsg').innerHTML = errBox('Write a message first.'); return; }
+          if (!confirm('Send this typed message to ' + fmt(inw.length) + ' customers now?\n\n' + txt.slice(0, 200))) return;
+          let i = 0, ok = 0, bad = 0, stop = false; const tot = inw.length; $(tm.body, '#tyGo').disabled = true;
+          const paint = () => { $(tm.body, '#tyMsg').innerHTML = `<div class="wp-ok">Sending… ${fmt(ok + bad)} of ${fmt(tot)} · ${fmt(ok)} sent · ${fmt(bad)} not sent <button type="button" class="wp-btn" id="tyStop" style="margin-left:8px">Stop</button></div>`; const sb = $(tm.body, '#tyStop'); if (sb) sb.onclick = () => { stop = true; }; };
+          const one = async () => { while (!stop && i < tot) { const p = inw[i++]; const nm = String(p.name || '').trim().split(/\s+/)[0] || 'ji';
+            try { await api.post('wa.send', { phone: p.phone, text: txt.replace(/\{name\}/gi, nm), cid: 'cm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8) }); ok++; } catch (e) { bad++; } paint(); } };
+          paint(); await Promise.all([one(), one(), one(), one()]);
+          $(tm.body, '#tyMsg').innerHTML = `<div class="wp-ok"><b>Done.</b> ${fmt(ok)} sent · ${fmt(bad)} not sent${stop ? ' (stopped)' : ''}.</div>`;
+        };
+      }
+      const head = () => typedBar() + `<div class="wp-seg">${['Who', 'What', 'When & retries'].map((l, i) => `<button type="button" class="${step === i + 1 ? 'on' : ''}" ${i + 1 > step ? 'disabled' : ''} data-s="${i + 1}">${i + 1} ${l}</button>`).join('')}</div>`;
       const bind = () => m.body.querySelectorAll('[data-s]').forEach((b) => { b.onclick = () => { step = +b.dataset.s; go(); }; });
       const go = () => { if (step === 1) draw1(); else if (step === 2) draw2(); else draw3(); m.body.scrollTop = 0; };
       W.util = isU; if (isU) { W.extra.ord_days = W.extra.ord_days || 60; W.mix = false; }

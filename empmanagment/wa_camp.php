@@ -968,6 +968,14 @@ if (in_array($__wk, ['wa.fu_list', 'wa.fu_save', 'wa.fu_del', 'wa.fu_preset', 'w
             $c = wa_camp_row($pdo, (int)($_GET['id'] ?? 0)); if (!$c) json_response(['error' => 'Campaign not found.'], 404);
             $o = wa_camp_public($pdo, $c, true, $cfg); $o['result'] = wa_camp_result($pdo, $c, $cfg, true); $o['mix'] = $o['result']['mix'] ?? $o['mix'] ?? null; json_response(['campaign' => $o, 'engine' => $engine()]);
         }
+        case 'wa.camp_typed_phones': {   // the wizard's "typed message" choice: who is picked, and who of them wrote in the last 24 h (only they can get typed text)
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
+            $in = json_input(); [$send, $st] = wa_camp_audience($pdo, (array)($in['audience'] ?? []), 0); $out = []; $win = date('Y-m-d H:i:s', time() - 86000);
+            $ph = array_column($send, 'phone'); $inw = [];
+            foreach (array_chunk($ph, 1000) as $ch) { $q = $pdo->prepare("SELECT phone FROM wa_contacts WHERE last_in_at >= ? AND phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $q->execute(array_merge([$win], $ch)); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $p0) $inw[(string)$p0] = 1; }
+            foreach ($send as $r) { if (count($out) >= 20000) break; $out[] = ['phone' => (string)$r['phone'], 'name' => (string)$r['name'], 'win' => isset($inw[(string)$r['phone']]) ? 1 : 0]; }
+            json_response(['ok' => true, 'people' => $out, 'total' => count($send), 'stats' => $st]);
+        }
         case 'wa.camp_preview': {
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
             $in = json_input(); $aud = (array)($in['audience'] ?? []); $freq = max(0, min(60, (int)($in['freq_days'] ?? 3))); if (isset($in['push']) && in_array((string)$in['push'], ['careful', 'normal', 'aggressive', 'very'], true)) $freq = wa_camp_push((string)$in['push'])['freq'];
