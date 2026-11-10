@@ -45,9 +45,9 @@ function wq_log(PDO $pdo, string $info, bool $ok = true): void { if (function_ex
 // ------------------------------------------------------------------------------------------------------------------ settings
 function wq_defaults(): array
 {
-    return ['wq_on' => '1', 'wq_auto_on' => '0', 'wq_hold_sec' => '20', 'wq_esc_min' => '5', 'wq_attr_days' => '7', 'wq_camp_days' => '3', 'wq_min_n' => '30', 'wq_goal_queries' => '23', 'wq_goal_orders' => '', 'wq_goal_reply_min' => '3',
-        'wq_hold_text' => "Namaste! Aapka message mil gaya hai, hamari team ka koi member yahin aapko reply karega.\nThank you for writing to TM Perfume House - our team will reply here shortly.",
-        'wq_esc_text' => "Aapko wait karna pad raha hai, maaf kijiye. Humne aapka message team ko dobara bhej diya hai.\nSorry to keep you waiting - we have passed your message to our team again.",
+    return ['wq_on' => '1', 'wq_auto_on' => '0', 'wq_prio_on' => '1', 'wq_hold_sec' => '20', 'wq_esc_min' => '5', 'wq_attr_days' => '7', 'wq_camp_days' => '3', 'wq_min_n' => '30', 'wq_goal_queries' => '23', 'wq_goal_orders' => '', 'wq_goal_reply_min' => '3',
+        'wq_hold_text' => "Namaste! Aapka message mil gaya hai.\nThank you for writing to TM Perfume House.",
+        'wq_esc_text' => "Aapko wait karna pad raha hai, maaf kijiye. Aapka message hum dekh rahe hain.\nSorry to keep you waiting - we are looking at your message.",
         'wq_cutover' => ''];
 }
 function wq_limits(): array { return ['wq_hold_sec' => [5, 600], 'wq_esc_min' => [1, 120], 'wq_attr_days' => [1, 30], 'wq_camp_days' => [1, 30], 'wq_min_n' => [5, 500], 'wq_goal_queries' => [1, 500], 'wq_goal_reply_min' => [1, 120]]; }
@@ -69,7 +69,7 @@ function wq_cfg(PDO $pdo): array
     $o = []; foreach (wq_defaults() as $k => $d) { $v = wq_get($pdo, $k, null); $o[$k] = $v === null || ($v === '' && $k !== 'wq_cutover') ? $d : (string)$v; }
     foreach (wq_limits() as $k => [$lo, $hi]) $o[$k] = max($lo, min($hi, (int)$o[$k]));
     $go = trim((string)wq_get($pdo, 'wq_goal_orders', '')); $o['wq_goal_orders'] = ctype_digit($go) && (int)$go > 0 ? min(500, (int)$go) : null;   // empty = no orders bar
-    $o['wq_on'] = (string)$o['wq_on'] === '0' ? 0 : 1; $o['wq_auto_on'] = (string)$o['wq_auto_on'] === '1' ? 1 : 0;
+    $o['wq_on'] = (string)$o['wq_on'] === '0' ? 0 : 1; $o['wq_auto_on'] = (string)$o['wq_auto_on'] === '1' ? 1 : 0; $o['wq_prio_on'] = (string)$o['wq_prio_on'] === '0' ? 0 : 1;
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$o['wq_cutover'])) $o['wq_cutover'] = '';
     return $o;
 }
@@ -992,6 +992,22 @@ function wq_summary_get(PDO $pdo, string $day, bool $rebuild = false): array
     $d = wq_summary_build($pdo, $day); $pdo->prepare("INSERT INTO wq_daily (day, js, built_at) VALUES (?,?,?) ON DUPLICATE KEY UPDATE js = VALUES(js), built_at = VALUES(built_at)")->execute([$day, json_encode($d, JSON_UNESCAPED_UNICODE), wq_dt()]);
     wq_publish_finding($pdo, $d); return $d;
 }
+/** Did each guidebook version help? For every version that went live (log kept by lib_guide_go_live): queries and orders won while it was live, and orders per 100 queries. Read-only numbers, from the same count as the Team page. */
+function wq_guide_effect(PDO $pdo): array
+{
+    $lg = json_decode((string)setting_get($pdo, 'lib_guide_log', '[]'), true); if (!is_array($lg)) $lg = [];
+    $o = ['ok' => true, 'rows' => [], 'note' => $lg ? '' : 'No guidebook has gone live since this report was added. Numbers appear from the next night.'];
+    $now = wq_now();
+    foreach ($lg as $i => $e) {
+        $from = wq_ts((string)($e['at'] ?? '')); if ($from <= 0) continue;
+        $to = isset($lg[$i + 1]) ? wq_ts((string)($lg[$i + 1]['at'] ?? '')) : $now; if ($to <= $from) continue;
+        try { $S = wq_people_stats($pdo, $from, $to); $T = $S['total']; $q = (int)$T['queries']; $w = (int)$T['converted']; }
+        catch (Throwable $x) { continue; }
+        $o['rows'][] = ['version' => (int)($e['v'] ?? 0), 'from' => (string)$e['at'], 'to' => isset($lg[$i + 1]) ? (string)$lg[$i + 1]['at'] : '', 'hours' => (int)round(($to - $from) / 3600), 'queries' => $q, 'won' => $w, 'per100' => $q > 0 ? round($w * 100 / $q, 1) : null, 'enough' => $q >= 100];
+    }
+    $o['rows'] = array_reverse(array_slice($o['rows'], -12));
+    return $o;
+}
 /** The summary as a Daily Summary finding (ck_findings, kind wa_day) so it shows with the other findings and in the Morning section. */
 function wq_publish_finding(PDO $pdo, array $d): void
 {
@@ -1410,7 +1426,8 @@ function wq_needs(PDO $pdo, int $me, bool $waves = true): array
         $o[] = ['phone' => $x['phone'], 'name' => $x['name'], 'level' => $x['level'], 'own' => $own, 'holder' => (int)$x['emp'] > 0 ? wq_name($names, (int)$x['emp']) : '', 'sec' => max(0, $now - (int)$x['in']), 'txt' => $x['txt'], 'why' => $x['why'], 'buyer' => (int)($x['buyer'] ?? 0), 'emp' => (int)$x['emp'], 'pri' => ($x['level'] === 'red' ? 1000 : 0) + (!empty($x['buyer']) ? 300 : 0) + (!empty($x['hot']) ? 150 : 0) + (int)(min(30, max(0, $now - (int)$x['in']) / 60) * 10), 'key' => md5((int)$x['in'] . '|' . (int)$x['emp'] . '|' . (int)$x['at'])];
     }
     // highest priority first: red, then returning customers and customers marked hot, then the longest wait (all in one score, see 'pri')
-    usort($o, fn($a, $b) => $b['pri'] <=> $a['pri'] ?: $b['sec'] <=> $a['sec']);
+    if ((string)wq_get($pdo, 'wq_prio_on', '1') !== '0') usort($o, fn($a, $b) => $b['pri'] <=> $a['pri'] ?: $b['sec'] <=> $a['sec']);
+    else usort($o, fn($a, $b) => ($a['level'] === $b['level'] ? 0 : ($a['level'] === 'red' ? -1 : 1)) ?: $b['sec'] <=> $a['sec']);   // switch off: the order as before (red first, then the longest wait)
     return $o;
 }
 /** How many pending answers (chats waiting 4+ minutes, open complaints) each person has — from the last rebuild of the Needs you now list. [emp_id => n] */
@@ -1432,12 +1449,12 @@ function wq_urgent_push(PDO $pdo): int
     try {
         $rk = wq_rank_today($pdo); if (empty($rk['order'])) return 0; [$wsz, $wmin] = wq_wave_cfg($pdo);
         foreach (wq_needs($pdo, 0, false) as $x) {
-            if ($x['level'] !== 'red') continue; $ph = (string)$x['phone'];   // RED only: orange (interested) shows in the card, it does not ring phones
+            $isRed = $x['level'] === 'red'; $ph = (string)$x['phone'];   // red AND orange ring phones (the bot keeps the chat going meanwhile); somebody takes it from the list
             $stage = $x['sec'] >= $wmin * 60 ? 2 : 1; $stamp = $x['key'] . '|' . $stage; if (wq_meta_get($pdo, 'urg:' . $ph, '') === $stamp) continue; wq_meta_put($pdo, 'urg:' . $ph, $stamp);
             $bkm = wq_needs_backlog($pdo); $tg = []; foreach ($rk['order'] as $i => $e) { $top = ($i + 1) <= $wsz; if ((int)$e !== (int)$x['emp'] && empty($bkm[(int)$e]) && ($stage === 1 ? $top : !$top)) $tg[] = (int)$e; } if (!$tg) continue;   // first the best 15; after 2 minutes everybody else at work (the holder was already pushed when the chat turned hot)
             $cu = trim((string)$x['name']) !== '' ? (string)$x['name'] : '+91 ' . $ph;
-            ct_push($pdo, $tg, '🔴 Needs you now', $cu . ' wants to buy — nobody has answered yet. Take it.', '/my_chats.html?phone=' . $ph, 'wa-urg-' . $ph); $n++;
-            if ($stage === 1) wa_event($pdo, $ph, '🔴 Ready to pay — shown to the best of today first, then to everybody');
+            ct_push($pdo, $tg, $isRed ? '🔴 Needs you now' : '🟠 Needs you urgently', $cu . ($isRed ? ' wants to buy — nobody has answered yet. Take it.' : ' is interested — take it now.'), '/my_chats.html?phone=' . $ph, 'wa-urg-' . $ph); $n++;
+            if ($stage === 1) wa_event($pdo, $ph, $isRed ? '🔴 Ready to pay — shown to the best of today first, then to everybody' : '🟠 Interested — shown to the best of today first, then to everybody');
         }
         // ⏳ people who are held back by pending answers get ONE short push (at most every 30 minutes) while red / orange chats are waiting for somebody
         $pool = wq_needs($pdo, 0, false); if ($pool) { $bkm = wq_needs_backlog($pdo); $bcx = wq_needs_backlog_cx($pdo);
@@ -1636,7 +1653,7 @@ function wq_bot_context(PDO $pdo, array $c): string
 // ------------------------------------------------------------------------------------------------------------------ router (pinned at the end of the file; answers at include time like wa_orders.php / wa_seg.php)
 $__wqa = (string)($action ?? ($_GET['action'] ?? ''));
 if (strpos($__wqa, 'wq.') === 0 && in_array($__wqa, ['wq.board', 'wq.mine', 'wq.attention', 'wq.assign', 'wq.on_duty', 'wq.queries', 'wq.query', 'wq.retype', 'wq.tags_for', 'wq.types_state', 'wq.types_next', 'wq.types_answer', 'wq.rules',
-    'wq.compare', 'wq.whatwon', 'wq.whatwon_act', 'wq.summary', 'wq.analytics', 'wq.settings', 'wq.cutover', 'wq.status', 'wq.tick', 'wq.typing', 'wq.grab_list', 'wq.grab', 'wq.grab_board', 'wq.req_list', 'wq.req_take', 'wq.need_take', 'wq.need_peek', 'wq.need_dismiss', 'wq.needs_board'], true)) {
+    'wq.compare', 'wq.whatwon', 'wq.whatwon_act', 'wq.summary', 'wq.analytics', 'wq.settings', 'wq.cutover', 'wq.status', 'wq.tick', 'wq.typing', 'wq.grab_list', 'wq.grab', 'wq.grab_board', 'wq.req_list', 'wq.req_take', 'wq.need_take', 'wq.need_ping', 'wq.guide_effect', 'wq.need_peek', 'wq.need_dismiss', 'wq.needs_board'], true)) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'; $auth = require_auth(); $me = (int)($auth['employee_id'] ?? 0);
     if (!function_exists('wa_tables') || !wa_tables($pdo)) json_response(['error' => 'WhatsApp storage is not available - check database permissions.'], 500);
     wq_deps($pdo); if (!wq_tables($pdo)) json_response(['error' => 'WhatsApp Sales storage is not available - check database permissions.'], 500);
@@ -1659,6 +1676,12 @@ if (strpos($__wqa, 'wq.') === 0 && in_array($__wqa, ['wq.board', 'wq.mine', 'wq.
             $q = $pdo->prepare("SELECT dir, who, mtype, body, ts FROM wa_messages WHERE phone = ? AND dir IN ('in', 'out') ORDER BY id DESC LIMIT 10"); $q->execute([$k]); $m = [];
             foreach (array_reverse($q->fetchAll(PDO::FETCH_ASSOC)) as $r) { $t = trim((string)$r['body']); if ($t === '') $t = '[' . ((string)$r['mtype'] !== '' ? $r['mtype'] : 'attachment') . ']'; $m[] = ['dir' => (string)$r['dir'], 'who' => (string)$r['who'], 'text' => mb_substr($t, 0, 400), 'ts' => (string)$r['ts']]; }
             json_response(['ok' => true, 'messages' => $m]);
+        }
+        case 'wq.guide_effect': { $needGet(); $needAdmin(); json_response(wq_guide_effect($pdo)); }
+        case 'wq.need_ping': {   // ⚡ the small "Accept" pop-up asks this every second: is this chat still waiting in MY list (nobody took it, nobody answered)?
+            $needGet(); $k = $phoneIn(); if ($k === '') json_response(['ok' => true, 'available' => false]); $av = false;
+            foreach (wq_needs($pdo, $me) as $x) if ((string)$x['phone'] === $k && empty($x['own'])) { $av = true; break; }
+            json_response(['ok' => true, 'available' => $av]);
         }
         case 'wq.need_take': { $needPost(); $k = $phoneIn(); if ($k === '') json_response(['error' => 'Chat not found.'], 404); $r = wq_need_take($pdo, $k, $me); if (isset($r['error'])) json_response($r, 409); json_response($r); }
         case 'wq.need_dismiss': { $needPost(); $k = $phoneIn(); if ($k === '') json_response(['error' => 'Chat not found.'], 404); $r = wq_need_dismiss($pdo, $k, $me); if (isset($r['error'])) json_response($r, 409); json_response($r); }
@@ -1742,7 +1765,7 @@ if (strpos($__wqa, 'wq.') === 0 && in_array($__wqa, ['wq.board', 'wq.mine', 'wq.
         case 'wq.settings': {
             if ($isPost) {
                 $needAdmin(); $err = [];
-                foreach (['wq_on', 'wq_auto_on'] as $k) if (array_key_exists($k, $in)) wq_put($pdo, $k, !empty($in[$k]) && (string)$in[$k] !== '0' ? '1' : '0');
+                foreach (['wq_on', 'wq_auto_on', 'wq_prio_on'] as $k) if (array_key_exists($k, $in)) wq_put($pdo, $k, !empty($in[$k]) && (string)$in[$k] !== '0' ? '1' : '0');
                 foreach (wq_limits() as $k => [$lo, $hi]) if (array_key_exists($k, $in)) { if (!is_numeric($in[$k]) || (int)$in[$k] < $lo || (int)$in[$k] > $hi) $err[] = $k . ' must be a number from ' . $lo . ' to ' . $hi . '.'; else wq_put($pdo, $k, (string)(int)$in[$k]); }
                 if (array_key_exists('wq_goal_orders', $in)) { $v = $in['wq_goal_orders']; if ($v === null || $v === '') wq_put($pdo, 'wq_goal_orders', ''); elseif (is_numeric($v) && (int)$v >= 1 && (int)$v <= 500) wq_put($pdo, 'wq_goal_orders', (string)(int)$v); else $err[] = 'wq_goal_orders must be empty (no orders bar) or a number from 1 to 500.'; }
                 foreach (['wq_hold_text', 'wq_esc_text'] as $k) if (array_key_exists($k, $in)) { $v = trim((string)$in[$k]); if ($v === '' || mb_strlen($v) > 400) $err[] = $k . ' must be 1 to 400 characters.'; else wq_put($pdo, $k, $v); }

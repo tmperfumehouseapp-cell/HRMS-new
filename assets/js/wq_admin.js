@@ -37,7 +37,8 @@
     if (!document.getElementById('wqCss2')) { const s = document.createElement('style'); s.id = 'wqCss2'; s.textContent = MORE_CSS; document.head.appendChild(s); }
     const S = { tab: 'live', days: 1, anDays: 30, board: null, boardErr: null, attn: null, attnErr: null, duty: null, types: null, typesErr: null, typesTab: null, an: null, anErr: null, anMetric: 'queries', cmpType: 'all', cmpDays: 7, won: 'new', skipped: [], confirmedUi: false };
     let seq = 0, liveTimer = 0, rsz = 0;
-    el.innerHTML = '<div id="wqTabs" class="wq-tabs" role="tablist"></div><div id="wqSubTabs" class="wq-tabs" role="tablist" style="display:none;margin-top:-4px"></div><div id="wqBody"></div>';
+    el.innerHTML = '<div id="wqQuick" class="wq-card" style="display:none;padding:10px 12px;margin-bottom:10px"></div><div id="wqTabs" class="wq-tabs" role="tablist"></div><div id="wqSubTabs" class="wq-tabs" role="tablist" style="display:none;margin-top:-4px"></div><div id="wqBody"></div>';
+    const quickEl = el.querySelector('#wqQuick');
     const tabsEl = el.querySelector('#wqTabs'), subEl = el.querySelector('#wqSubTabs'), body = el.querySelector('#wqBody');
     const MGR = [['pace', 'Pace'], ['attention', 'Attention'], ['types', 'Types'], ['compare', 'Bot vs person']];   // the Team manager's own table moved to Sales → Team performance → Team
     const TOP = [['live', 'Live'], ['pace', 'Pace & queues'], ['analytics', 'Analytics'], ['settings', 'Settings']];
@@ -46,6 +47,36 @@
     const attnCount = () => S.attn ? num(S.attn.count, (S.attn.items || []).length) : 0;
     const when = (...a) => U.when(...a);
 
+    // ⚡ quick controls: the three switches that start the new flow, always visible above the tabs (Admin only)
+    const QK = { st: null, mode: null, busy: false, open: false };
+    function drawQuick() {
+      if (!QK.st || !QK.st.editable) { quickEl.style.display = 'none'; return; }
+      const st = QK.st.settings || {}, on = (k) => String(st[k]) === '1';
+      const sw = (k, t) => '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:4px 0"><span style="font-size:13px;font-weight:600">' + t + '</span><button type="button" class="wq-tg" data-qsw="' + k + '" aria-pressed="' + on(k) + '" aria-label="' + t + '"' + (QK.busy ? ' disabled' : '') + '></button></div>';
+      const mode = QK.mode || 'suggest';
+      quickEl.style.display = '';
+      const qsum = 'WhatsApp Sales: priority ' + (on('wq_prio_on') ? 'on' : 'off') + ' · auto ' + (on('wq_auto_on') ? 'on' : 'off') + ' · manager ' + mode;
+      quickEl.innerHTML = '<details id="wqQuickD"' + (QK.open ? ' open' : '') + '><summary style="cursor:pointer;font-size:12.5px;font-weight:700;list-style:none">⚙ ' + qsum + ' ▾</summary>' + sw('wq_prio_on', 'Priority order in Needs you now') + sw('wq_auto_on', 'Automatic holding and second messages')
+        + '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:4px 0"><span style="font-size:13px;font-weight:600">Team manager</span><select data-qmode style="min-height:40px;border-radius:10px;padding:0 10px"' + (QK.busy ? ' disabled' : '') + '>' + ['suggest', 'apply', 'off'].map((m) => '<option value="' + m + '"' + (m === mode ? ' selected' : '') + '>' + (m === 'suggest' ? 'Suggest only' : m === 'apply' ? 'Apply' : 'Off') + '</option>').join('') + '</select></div>'
+        + '<div style="font-size:11.5px;opacity:.7">Changes save at once. “Automatic holding” sends messages to customers on its own: read the two texts in Settings first.</div></details>';
+      const dq = quickEl.querySelector('#wqQuickD'); if (dq) dq.addEventListener('toggle', () => { QK.open = dq.open; });
+    }
+    async function loadQuick() {
+      try { QK.st = await get('wq.settings'); } catch (e) { QK.st = null; }
+      try { const m = await get('wq.mgr_get'); QK.mode = m && m.mode; } catch (e) { QK.mode = null; }
+      drawQuick();
+    }
+    quickEl.addEventListener('click', async (e) => {
+      const b = e.target.closest('[data-qsw]'); if (!b || QK.busy) return; const k = b.dataset.qsw, to = b.getAttribute('aria-pressed') === 'true' ? 0 : 1;
+      if (k === 'wq_auto_on' && to === 1 && !confirm('Automatic holding and second messages will send messages to customers on their own. Switch it on?')) return;
+      QK.busy = true; drawQuick(); try { QK.st = await post('wq.settings', { [k]: to }); U.toast('Saved'); } catch (x) { U.toast('Could not save: ' + (x.message || '')); } QK.busy = false; drawQuick();
+    });
+    quickEl.addEventListener('change', async (e) => {
+      const m = e.target.closest('[data-qmode]'); if (!m || QK.busy) return; const v = m.value;
+      if (v === 'apply' && !confirm('Apply mode changes who sees new chats first and can hold chats back from some people. Switch it on?')) { drawQuick(); return; }
+      QK.busy = true; drawQuick(); try { await post('wq.mgr_cfg', { mode: v }); QK.mode = v; U.toast('Saved'); } catch (x) { U.toast('Could not save: ' + (x.message || '')); } QK.busy = false; drawQuick();
+    });
+    loadQuick();
     function drawTabs() {
       // 🧭 Pace, Attention, Types and Bot vs person now live INSIDE the Team manager tab (a second strip); the top strip is Live · Team manager · Analytics · Settings
       const btn = (t, on, extra) => '<button type="button" role="tab" aria-selected="' + on + '" data-t="' + t[0] + '" class="' + (on ? 'on' : '') + '">' + t[1] + (extra || '') + '</button>';
@@ -479,7 +510,7 @@
       const sw = (k, t, sub) => '<div class="wq-set"><div class="t">' + t + '<small>' + sub + '</small></div><button type="button" class="wq-tg" data-sw="' + k + '" aria-pressed="' + (String(s[k]) === '1') + '" aria-label="' + esc(t) + '"' + (ed ? '' : ' disabled') + '></button></div>';
       const nf = (k, t, sub) => { const r = L[k] || []; return '<div class="wq-set"><div class="t">' + t + '<small>' + sub + (r.length ? ' (' + r[0] + ' to ' + r[1] + ')' : '') + '</small></div><div class="wq-field" style="min-height:44px"><input type="number" inputmode="numeric" data-f="' + k + '" value="' + (s[k] == null ? '' : esc(s[k])) + '" ' + (r.length ? 'min="' + r[0] + '" max="' + r[1] + '"' : '') + ' aria-label="' + esc(t) + '"' + (ed ? '' : ' disabled') + '></div></div>'; };
       const goalKeys = GOALS.filter((g) => Object.prototype.hasOwnProperty.call(s, g[0]));
-      return '<div class="wq-card"><div class="wq-ch"><h2>Reply flow</h2></div>' + sw('wq_on', 'WhatsApp Sales is on', 'Off = nothing is counted or sent. Screens still open.') + sw('wq_auto_on', 'Automatic holding and second messages', 'While off, nothing is ever sent automatically; queries still appear in Attention needed. Read the two texts below before you switch it on.') + FIELDS.map((f) => nf(f[0], f[1], f[2])).join('') + '</div>'
+      return '<div class="wq-card"><div class="wq-ch"><h2>Reply flow</h2></div>' + sw('wq_on', 'WhatsApp Sales is on', 'Off = nothing is counted or sent. Screens still open.') + sw('wq_auto_on', 'Automatic holding and second messages', 'While off, nothing is ever sent automatically; queries still appear in Attention needed. Read the two texts below before you switch it on.') + sw('wq_prio_on', 'Priority order in Needs you now', 'Off = red first, then the longest wait (as before). On = red first, then returning customers and hot chats, then the longest wait.') + FIELDS.map((f) => nf(f[0], f[1], f[2])).join('') + '</div>'
         + '<div class="wq-card"><div class="wq-ch"><h2>Messages to the customer</h2></div><div class="wq-lb">Holding message</div><textarea class="wq-in" data-f="wq_hold_text" maxlength="400" aria-label="Holding message"' + (ed ? '' : ' disabled') + '>' + esc(s.wq_hold_text || '') + '</textarea><div class="wq-note" style="margin-top:2px">First automatic message. No promises. Up to 400 characters.</div><div class="wq-lb" style="margin-top:12px">Second message (escalation)</div><textarea class="wq-in" data-f="wq_esc_text" maxlength="400" aria-label="Second message"' + (ed ? '' : ' disabled') + '>' + esc(s.wq_esc_text || '') + '</textarea></div>'
         + '<div class="wq-card"><div class="wq-ch"><h2>Goals</h2><span class="wq-sub">Shown as progress bars on each salesperson\'s My WhatsApp card</span></div>' + (goalKeys.length ? goalKeys.map((g) => nf(g[0], g[1], g[2])).join('') : '<div class="wq-note" style="margin:0">Goals are not available on the server yet.</div>') + '</div>'
         + '<div id="wqSetMsg" class="wq-note" hidden></div>' + (ed ? '<button type="button" class="wq-btn pri block" data-setsave style="margin-bottom:14px">Save settings</button>' : '<div class="wq-note">Only an admin can change these.</div>');

@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<title>Tidy Teach questions — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=4">
+<style>
+.td-card{background:#fff;border:1px solid var(--line,#e6e8ec);border-radius:16px;padding:16px;margin-bottom:14px;max-width:760px}
+.td-card h3{margin:0 0 4px;font-size:16px}.td-sub{font-size:13px;color:#6b7280;margin:0 0 12px;line-height:1.5}
+.td-b{border:1px solid var(--line,#e6e8ec);background:#fff;border-radius:10px;padding:10px 14px;font:inherit;font-weight:600;cursor:pointer;min-height:44px}.td-b.go{background:#14161a;color:#fff;border-color:#14161a}
+.td-row{display:flex;gap:8px;flex-wrap:wrap}.td-li{font-size:13px;padding:7px 0;border-bottom:1px solid #f1f3f6;word-break:break-word}.td-li small{color:#6b7280;display:block}
+.td-msg{font-size:14px;font-weight:600;margin:10px 0}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><div><h1>Tidy Teach questions</h1><div class="sub" style="font-size:12.5px;color:var(--muted);margin-top:2px">Remove repeated and no-longer-needed questions from the Teach board</div></div></div>
+    <div class="content">
+      <div class="td-card"><h3>What this does</h3>
+        <p class="td-sub">It only shortens the list of questions the Teach board still asks. What the bot already learned (concepts, rules, limits and every answer you gave) is <b>not touched</b>. It removes questions that repeat another question, keeps at most 3 questions in a topic whose concept is already understood (8 otherwise), and keeps at most 40 questions on the whole board (those with the most evidence). First press <b>Preview</b> to see the list. <b>Apply</b> saves the old board first, so <b>Undo</b> can bring it back.</p>
+        <div class="td-row"><button class="td-b" id="pv">Preview</button><button class="td-b go" id="ap" disabled>Apply</button><button class="td-b" id="un">Undo last tidy</button></div>
+        <div class="td-msg" id="msg"></div><div id="list"></div></div>
+    </div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=4"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=28"></script>
+<script>
+  guardPage();
+  renderSidebar('sales');
+  const $ = (id) => document.getElementById(id), esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const call = async (b) => { $('msg').textContent = 'Working…'; try { return await api.post('teach.board_tidy', b); } catch (e) { $('msg').textContent = e.message || 'Could not do it'; return null; } };
+  $('pv').onclick = async () => {
+    const d = await call({}); if (!d) return; $('ap').disabled = !(d.dropped > 0);
+    $('msg').textContent = d.dropped > 0 ? 'Now ' + d.before + ' open questions → ' + d.after + ' after tidy (' + d.dropped + ' removed).' : 'Nothing to remove: the board is already tidy (' + d.before + ' questions).';
+    $('list').innerHTML = (d.sample || []).map((x) => '<div class="td-li">' + esc(x.q) + '<small>' + esc(x.topic) + ' · ' + esc(x.why) + '</small></div>').join('') + (d.dropped > (d.sample || []).length ? '<div class="td-li"><small>…and ' + (d.dropped - d.sample.length) + ' more.</small></div>' : '');
+  };
+  $('ap').onclick = async () => { if (!confirm('Remove these questions from the Teach board? The old board is saved first, so Undo can bring it back.')) return; const d = await call({ apply: 1 }); if (!d) return; $('ap').disabled = true; $('list').innerHTML = ''; $('msg').textContent = d.applied ? 'Done: ' + d.before + ' → ' + d.after + ' open questions. Use Undo if you want them back.' : 'Nothing changed.'; };
+  $('un').onclick = async () => { if (!confirm('Bring back the Teach board as it was before the last tidy?')) return; const d = await call({ undo: 1 }); if (!d) return; $('ap').disabled = true; $('list').innerHTML = ''; $('msg').textContent = d.undone ? 'Brought back the board saved on ' + (d.saved_at || 'the last tidy') + '.' : 'Nothing changed.'; };
+</script>
+</body>
+</html>
