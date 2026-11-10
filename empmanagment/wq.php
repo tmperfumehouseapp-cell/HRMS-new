@@ -1633,7 +1633,7 @@ function wq_bot_context(PDO $pdo, array $c): string
 // ------------------------------------------------------------------------------------------------------------------ router (pinned at the end of the file; answers at include time like wa_orders.php / wa_seg.php)
 $__wqa = (string)($action ?? ($_GET['action'] ?? ''));
 if (strpos($__wqa, 'wq.') === 0 && in_array($__wqa, ['wq.board', 'wq.mine', 'wq.attention', 'wq.assign', 'wq.on_duty', 'wq.queries', 'wq.query', 'wq.retype', 'wq.tags_for', 'wq.types_state', 'wq.types_next', 'wq.types_answer', 'wq.rules',
-    'wq.compare', 'wq.whatwon', 'wq.whatwon_act', 'wq.summary', 'wq.analytics', 'wq.settings', 'wq.cutover', 'wq.status', 'wq.tick', 'wq.typing', 'wq.grab_list', 'wq.grab', 'wq.grab_board', 'wq.req_list', 'wq.req_take', 'wq.need_take', 'wq.need_dismiss', 'wq.needs_board'], true)) {
+    'wq.compare', 'wq.whatwon', 'wq.whatwon_act', 'wq.summary', 'wq.analytics', 'wq.settings', 'wq.cutover', 'wq.status', 'wq.tick', 'wq.typing', 'wq.grab_list', 'wq.grab', 'wq.grab_board', 'wq.req_list', 'wq.req_take', 'wq.need_take', 'wq.need_peek', 'wq.need_dismiss', 'wq.needs_board'], true)) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'; $auth = require_auth(); $me = (int)($auth['employee_id'] ?? 0);
     if (!function_exists('wa_tables') || !wa_tables($pdo)) json_response(['error' => 'WhatsApp storage is not available - check database permissions.'], 500);
     wq_deps($pdo); if (!wq_tables($pdo)) json_response(['error' => 'WhatsApp Sales storage is not available - check database permissions.'], 500);
@@ -1649,6 +1649,14 @@ if (strpos($__wqa, 'wq.') === 0 && in_array($__wqa, ['wq.board', 'wq.mine', 'wq.
         case 'wq.req_list': { $needGet(); $rl = wq_req_list($pdo, $me); if (!function_exists('wq_rescue_is_member') && is_file(__DIR__ . '/wq_rescue.php')) require_once __DIR__ . '/wq_rescue.php';   /* this router runs while wq.php is being loaded, BEFORE wq_rescue.php: load it now */ if (function_exists('wq_rescue_req_cached') && $me > 0) { try { $rl = array_merge($rl, wq_rescue_req_cached($pdo, $me)); } catch (Throwable $e) { } } json_response($rl); }   // everyone reads the customer's last message here: these chats are with nobody (or nobody answered), so the team decides from the list
         case 'wq.req_take': { $needPost(); $k = $phoneIn(); if ($k === '') json_response(['error' => 'Chat not found.'], 404); $r = wq_req_take($pdo, $k, $me); if (isset($r['error'])) json_response($r, 409); json_response($r); }
         case 'wq.grab_board': { $needGet(); json_response(wq_grab_board($pdo, $days(7))); }
+        case 'wq.need_peek': {   // 👀 the last messages of a chat that is in MY Needs-you-now list, read-only, so a person can see what was said before they take it
+            $needGet(); $k = $phoneIn(); if ($k === '') json_response(['error' => 'Chat not found.'], 404); $okp = false;
+            foreach (wq_needs($pdo, $me) as $x) if ((string)$x['phone'] === $k) { $okp = true; break; }
+            if (!$okp && !$adm) json_response(['error' => 'This chat is not in your list.'], 403);
+            $q = $pdo->prepare("SELECT dir, who, mtype, body, ts FROM wa_messages WHERE phone = ? AND dir IN ('in', 'out') ORDER BY id DESC LIMIT 10"); $q->execute([$k]); $m = [];
+            foreach (array_reverse($q->fetchAll(PDO::FETCH_ASSOC)) as $r) { $t = trim((string)$r['body']); if ($t === '') $t = '[' . ((string)$r['mtype'] !== '' ? $r['mtype'] : 'attachment') . ']'; $m[] = ['dir' => (string)$r['dir'], 'who' => (string)$r['who'], 'text' => mb_substr($t, 0, 400), 'ts' => (string)$r['ts']]; }
+            json_response(['ok' => true, 'messages' => $m]);
+        }
         case 'wq.need_take': { $needPost(); $k = $phoneIn(); if ($k === '') json_response(['error' => 'Chat not found.'], 404); $r = wq_need_take($pdo, $k, $me); if (isset($r['error'])) json_response($r, 409); json_response($r); }
         case 'wq.need_dismiss': { $needPost(); $k = $phoneIn(); if ($k === '') json_response(['error' => 'Chat not found.'], 404); $r = wq_need_dismiss($pdo, $k, $me); if (isset($r['error'])) json_response($r, 409); json_response($r); }
         case 'wq.needs_board': { $needGet(); $needAdmin(); json_response(wq_needs_board($pdo)); }

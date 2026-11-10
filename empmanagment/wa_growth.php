@@ -988,6 +988,9 @@ if (strpos($__wg, 'wa.g_') === 0 && strpos($__wg, 'wa.g_flow') !== 0) {
         case 'wa.g_sugg': {   // the suggestion already written for the newest customer message — instant; null = none yet
             $c = $chatOf((string)($_GET['phone'] ?? '')); $s = wag_sugg_get($pdo, (string)$c['phone']);
             if (!empty($c['cx_id'])) json_response(['ok' => true, 'sugg' => null, 'hot' => false, 'auto' => ['on' => false, 'secs' => 20], 'complaint' => (int)$c['cx_id']]);   // with the Complaint team: no suggestion, no auto-send
+            if (!empty($_GET['after_bot'])) {   // 🤖 the bot has already answered: show the person a NEXT step, never the text the bot just sent
+                try { $__q = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'out' AND who = 'bot' ORDER BY id DESC LIMIT 1"); $__q->execute([(string)$c['phone']]); $__lb = trim((string)$__q->fetchColumn()); if ($s && $__lb !== '' && trim((string)$s['text']) === $__lb) $s = null; } catch (Throwable $e) { }
+            }
             if (!$s && !empty($_GET['make'])) { $f0 = ai_feat('wa_sugg'); $r = wag_brain_reply($pdo, $c); ai_feat($f0); if ($r['ok']) { wa_sugg_save($pdo, (string)$c['phone'], $r['text'], $r['source'], (int)$r['ver']); $s = ['text' => $r['text'], 'source' => $r['source'], 'ver' => $r['ver'], 'why' => $r['why'], 'call_now' => !empty($r['handoff'])]; } }
             $__li = wa_last_in($pdo, (string)$c['phone']); json_response(['ok' => true, 'sugg' => $s, 'hot' => !empty($c['hot']) || (function_exists('wa_hot_intent') && wa_hot_intent((string)$__li[1]) !== ''), 'auto' => function_exists('wa_auto_state') ? wa_auto_state($pdo) : ['on' => false, 'secs' => 20]]);
         }

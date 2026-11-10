@@ -623,7 +623,11 @@
     }
     function openNeed(phone) {
       const x = (S.needs || []).find((y) => y.phone === phone); if (!x) return; const sh = sheet((x.level === 'red' ? '🔴 ' : '🟠 ') + (x.name || pretty(x.phone)));
-      sh.body.innerHTML = `<div style="font-weight:700;margin-top:2px">${esc(x.why || '')}</div>${x.txt ? `<div style="margin-top:6px;background:#f0f2f5;border-radius:12px;padding:9px 11px;white-space:pre-wrap">${esc(x.txt)}</div>` : ''}<div style="margin-top:6px;color:#667781;font-size:12.5px">Waiting ${mmss((x.sec || 0) + ((S.fetched || 0) - (S.reqAt || S.fetched || 0)) / 1000)}${x.holder && !x.own ? ' · ' + esc(x.holder) + ' has the chat' : ''}</div><div style="display:flex;gap:8px;margin-top:12px">${x.level !== 'red' ? '<button class="wx-btn gh" id="wxNdX" style="flex:1">✕ Not a lead</button>' : ''}<button class="wx-btn" id="wxNdG" style="flex:2;min-height:46px;font-weight:800;background:${x.level === 'red' ? '#e11d48' : '#f59e0b'};color:${x.level === 'red' ? '#fff' : '#1c1300'};border:0">${x.own ? 'Reply' : '✋ Take'}</button></div>`;
+      sh.body.innerHTML = `<div style="font-weight:700;margin-top:2px">${esc(x.why || '')}</div>${x.txt ? `<div style="margin-top:6px;background:#f0f2f5;border-radius:12px;padding:9px 11px;white-space:pre-wrap">${esc(x.txt)}</div>` : ''}<div id="wxNdC" style="margin-top:8px;max-height:34vh;overflow:auto"></div><div style="margin-top:6px;color:#667781;font-size:12.5px">Waiting ${mmss((x.sec || 0) + ((S.fetched || 0) - (S.reqAt || S.fetched || 0)) / 1000)}${x.holder && !x.own ? ' · ' + esc(x.holder) + ' has the chat' : ''}</div><div style="display:flex;gap:8px;margin-top:12px">${x.level !== 'red' ? '<button class="wx-btn gh" id="wxNdX" style="flex:1">✕ Not a lead</button>' : ''}<button class="wx-btn" id="wxNdG" style="flex:2;min-height:46px;font-weight:800;background:${x.level === 'red' ? '#e11d48' : '#f59e0b'};color:${x.level === 'red' ? '#fff' : '#1c1300'};border:0">${x.own ? 'Reply' : '✋ Take'}</button></div>`;
+      // 👀 the last messages of the chat (read-only), so you know what was said before you take it
+      (async () => { const box = sh.body.querySelector('#wxNdC'); if (!box) return; box.innerHTML = '<div style="color:#667781;font-size:12.5px">Loading the chat…</div>';
+        try { const d = await api.get('wq.need_peek', { phone }); const L = d.messages || []; if (!L.length) { box.innerHTML = ''; return; }
+          box.innerHTML = L.map((m) => { const mine = m.dir === 'out', who = m.who === 'bot' ? '🤖 Bot' : (mine ? 'We' : 'Customer'); return `<div style="display:flex;${mine ? 'justify-content:flex-end' : ''};margin:3px 0"><div style="max-width:86%;padding:6px 10px;border-radius:12px;font-size:13px;line-height:1.4;white-space:pre-wrap;background:${mine ? '#d9fdd3' : '#f0f2f5'};color:#111"><div style="font-size:10.5px;color:#667781;font-weight:700">${who}</div>${esc(m.text)}</div></div>`; }).join(''); box.scrollTop = box.scrollHeight; } catch (e) { box.innerHTML = ''; } })();
       const gone = () => { S.needs = (S.needs || []).filter((y) => y.phone !== phone); sh.close(); drawList(); };
       const bx = sh.body.querySelector('#wxNdX'); if (bx) bx.onclick = async () => { bx.disabled = true; try { await api.post('wq.need_dismiss', { phone }); gone(); } catch (er) { toast(er.message, true); bx.disabled = false; } };
       sh.body.querySelector('#wxNdG').onclick = async (e) => { if (x.own) { sh.close(); openChat(phone); return; } e.target.disabled = true; e.target.textContent = '…'; try { await api.post('wq.need_take', { phone }); S.needs = (S.needs || []).filter((y) => y.phone !== phone); sh.close(); await loadList(true); openChat(phone); } catch (er) { toast(er.message, true); e.target.disabled = false; e.target.textContent = '✋ Take'; loadReq(); } };
@@ -1045,16 +1049,17 @@
     async function loadSugg(force) {
       const box = $('#wxSug'); if (!box || !S.cur) return; const phone = S.cur.phone; const c = S.cur.contact; const last = S.cur.msgs.filter((m) => m.dir !== 'sys').slice(-1)[0];
       suggStop(); S.cur.sg = null; S.cur.armed = null; drawPp(); drawQk();
-      if (!c.window_open || c.optout || !last || last.dir !== 'in') { box.innerHTML = ''; return; }
+      const afterBot = !!last && last.dir === 'out' && last.who === 'bot';   // 🤖 the bot answered first: the person still gets a suggestion for the NEXT step
+      if (!c.window_open || c.optout || !last || (last.dir !== 'in' && !afterBot)) { box.innerHTML = ''; return; }
       if (S.cur.sugg === undefined || force) box.innerHTML = '<div class="wx-sug"><div class="r"><span class="ic">✨</span><span class="t ld">Writing a reply…</span></div></div>';
       try {
-        const d = await api.get('wa.g_sugg', { phone, make: 1 }); if (!S.cur || S.cur.phone !== phone) return; S.cur.sugg = d.sugg;
-        const nowLast = S.cur.msgs.filter((m) => m.dir !== 'sys' && !m.tmp).slice(-1)[0]; if (!nowLast || nowLast.dir !== 'in' || nowLast.id !== last.id) return;   // the customer wrote again meanwhile: the newer call draws
+        const d = await api.get('wa.g_sugg', afterBot ? { phone, make: 1, after_bot: 1 } : { phone, make: 1 }); if (!S.cur || S.cur.phone !== phone) return; S.cur.sugg = d.sugg;
+        const nowLast = S.cur.msgs.filter((m) => m.dir !== 'sys' && !m.tmp).slice(-1)[0]; if (!nowLast || (nowLast.dir !== 'in' && !afterBot) || nowLast.id !== last.id) return;   // the customer wrote again meanwhile: the newer call draws
         if (!d.sugg) { box.innerHTML = ''; return; }
         let prod = [], flag = ''; try { await new Promise((ok) => prodReady(ok)); if (window.WaProd) { const a = await Promise.race([WaProd.attached(phone), new Promise((z) => setTimeout(() => z(null), 1200))]); if (a) { prod = a.items || a.products || []; flag = a.flag || ''; } } } catch (e) { }   // the photos are known before the countdown starts, so it never jumps
-        if (!S.cur || S.cur.phone !== phone) return; const nl2 = S.cur.msgs.filter((m) => m.dir !== 'sys' && !m.tmp).slice(-1)[0]; if (!nl2 || nl2.dir !== 'in' || nl2.id !== last.id) return;
+        if (!S.cur || S.cur.phone !== phone) return; const nl2 = S.cur.msgs.filter((m) => m.dir !== 'sys' && !m.tmp).slice(-1)[0]; if (!nl2 || (nl2.dir !== 'in' && !afterBot) || nl2.id !== last.id) return;
         const au = d.auto || {}, secs = Math.max(5, Math.min(60, +au.secs || 20)), t = $('#wxTx');
-        const go = !!au.on && !d.sugg.call_now && !d.hot && !document.hidden && !S.auDone[phone + ':' + last.id] && !(t && t.value.trim()) && !c.hot;
+        const go = !afterBot && !!au.on && !d.sugg.call_now && !d.hot && !document.hidden && !S.auDone[phone + ':' + last.id] && !(t && t.value.trim()) && !c.hot;
         const g = S.cur.sg = { text: d.sugg.text, li: last.id, secs, call: !!d.sugg.call_now, counting: go, t0: Date.now(), prod, flag };
         suggDraw(); if (go) g.tm = setTimeout(() => suggAuto(g), secs * 1000);
         scrollEnd(false);
