@@ -22,6 +22,16 @@ table.tb{border-collapse:collapse;width:100%;font-size:13px;white-space:nowrap}
 .vb{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 12px;border-bottom:1px solid var(--line);padding-bottom:8px}.vb button{border:0;background:#f1f5f9;border-radius:10px;padding:8px 14px;font-weight:700;font-size:13px;cursor:pointer}.vb button.on{background:#111827;color:#fff}
 #tbTools{margin-top:16px}.tool{border:1px solid var(--line);border-radius:12px;background:#fff;margin-bottom:10px;overflow:hidden}.tool>button{display:flex;justify-content:space-between;align-items:center;width:100%;border:0;background:#f8fafc;padding:12px 14px;font-weight:700;font-size:14px;cursor:pointer;text-align:left}.tool>button span{font-weight:400;font-size:12px;color:var(--muted)}.tool iframe{width:100%;border:0;display:none;height:calc(100vh - 120px);min-height:560px}.tool.on iframe{display:block}
 .sk{height:14px;border-radius:7px;margin:10px 0;background:linear-gradient(90deg,#eef0f3 25%,#f8fafc 37%,#eef0f3 63%);background-size:400% 100%;animation:sk 1.2s ease infinite}@keyframes sk{0%{background-position:100% 50%}100%{background-position:0 50%}}
+/* phone: one card per person instead of a 14-column table; big tap targets; popup sections fold */
+.cards{display:none;gap:10px}
+.cd{border:1px solid var(--line);border-radius:14px;background:#fff;padding:12px;cursor:pointer}
+.cd .h{display:flex;align-items:center;gap:6px;flex-wrap:wrap}.cd .n{font-weight:800;font-size:15px}
+.cd .g{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:10px;text-align:center}.cd .g div{background:#f8fafc;border-radius:10px;padding:6px 2px}.cd .g b{display:block;font-size:15px}.cd .g span{font-size:10.5px;color:var(--muted)}
+.cd .go{display:block;width:100%;margin-top:10px;min-height:44px;border:1px solid var(--line);border-radius:12px;background:#111827;color:#fff;font-weight:800;font-size:14px}
+.tb td:nth-child(2),.tb th:nth-child(2){position:sticky;left:0;background:#fff;z-index:1;box-shadow:1px 0 0 #eef0f3}.tb th:nth-child(2){background:#f8fafc;z-index:2}
+.sec h3{cursor:pointer}
+@media (max-width:700px){.tb-wrap{display:none}.cards{display:grid}.fl input[type=search]{min-width:0;flex:1 1 100%;font-size:16px}.pb input{font-size:16px}.tb-top .tb-k{flex:1 1 44%}.tool iframe{height:calc(100dvh - 90px);min-height:480px}.dr{padding:14px}.sec.closed>*:not(h3){display:none}.sec h3::after{content:'▾';float:right;color:var(--muted)}.sec.closed h3::after{content:'▸'}}
+@media (pointer:coarse){.btn.open{padding:10px 16px;font-size:14px}.chip.nt{padding:8px 12px;font-size:13px}.pb button,.fl button{min-height:42px}.dr .btn{min-height:42px}.dr select,.dr input{min-height:42px;font-size:16px}}
 .bar{height:6px;border-radius:99px;background:#e5e7eb;min-width:60px;overflow:hidden}.bar i{display:block;height:100%;background:#22c55e}
 .good{color:#166534;font-weight:700}.bad{color:#b91c1c;font-weight:700}
 .dr-bg{position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:50;display:none}.dr-bg.on{display:block}
@@ -89,6 +99,13 @@ guardPage();
       + '<td class="num">' + (r.ticket_30d == null ? '—' : '₹' + esc(r.ticket_30d)) + '</td><td class="num">' + v(r.speed_median_min_30d, r.speed_median_min_30d == null ? '' : ' m') + '</td><td class="num">' + v(r.tone_score) + '</td>'
       + '<td class="num ' + (r.overdue_complaints ? 'bad' : '') + '">' + v(r.overdue_complaints) + '</td><td>' + lvChip(r) + '</td><td><button type="button" class="btn open" data-open="' + r.emp_id + '">Open ▸</button></td></tr>';
   }
+  function cardHtml(r) {
+    const t = r.target_pct_today, sh = r.should_pct_today, none = !(r.target_today > 0);
+    return '<div class="cd" data-open="' + r.emp_id + '"><div class="h"><span class="n">' + esc(r.name) + '</span>' + (r.medals || []).map((m) => '<span class="chip md">' + esc(m.split(' ')[0]) + '</span>').join('') + (r.present ? '<span class="chip first">In ' + esc(r.punch_in_today || '') + '</span>' : '<span class="chip off">Away</span>') + lvChip(r) + (r.meet_admin ? '<span class="chip meet">Meet admin</span>' : '') + '</div>'
+      + (none ? '<div style="margin-top:8px"><button type="button" class="chip hold nt" data-tgopen="' + r.emp_id + '">🎯 No target · set</button></div>' : (t == null ? '' : '<div style="display:flex;gap:8px;align-items:center;margin-top:8px"><div class="bar" style="flex:1"><i style="width:' + Math.max(0, Math.min(100, t)) + '%;background:' + (sh != null && t < sh ? '#f59e0b' : '#22c55e') + '"></i></div><b style="font-size:13px">' + esc(t) + '%</b></div>'))
+      + '<div class="g"><div><b>' + v(r.orders_30d) + '</b><span>Orders</span></div><div><b class="' + (r.sure_behind ? 'bad' : '') + '">' + v(r.ratio_pct, r.ratio_pct == null ? '' : '%') + '</b><span>Ratio</span></div><div><b>' + (r.ticket_30d == null ? '—' : '₹' + esc(r.ticket_30d)) + '</b><span>Ticket</span></div><div><b>' + v(r.speed_median_min_30d, r.speed_median_min_30d == null ? '' : 'm') + '</b><span>Speed</span></div></div>'
+      + (r.overdue_complaints ? '<div class="bad" style="font-size:12.5px;margin-top:8px">⚠ ' + esc(r.overdue_complaints) + ' complaint(s) overdue</div>' : '') + '<button type="button" class="go" data-open="' + r.emp_id + '">Open ▸</button></div>';
+  }
   function draw() {
     const T = D.team || {}, rows = (D.rows || []).slice(), s = COLS.find((c) => c[0] === sort.k) || COLS[0];
     rows.sort((a, b) => { const x = s[2](a), y = s[2](b); if (x == null && y == null) return 0; if (x == null) return 1; if (y == null) return -1; return (x > y ? 1 : x < y ? -1 : 0) * sort.dir; });
@@ -101,7 +118,7 @@ guardPage();
       + '<div class="tb-top"><div class="tb-k"><b>' + v(T.at_work) + ' / ' + v(T.people) + '</b><span>at work now</span></div><div class="tb-k"><b>' + v(T.ratio_pct, '%') + '</b><span>team ratio (' + esc(PL()) + ')</span></div><div class="tb-k"><b>' + (T.ticket == null ? '—' : '₹' + esc(T.ticket)) + '</b><span>team ticket</span></div><div class="tb-k"><b style="font-size:13px">' + esc(D.mode) + '</b><span>Team manager mode</span></div></div>'
       + '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 12px"><label style="font-size:13px">Team manager mode <select id="tbMode"><option value="off">Off</option><option value="suggest">Suggest (only show)</option><option value="apply">Apply (decides who sees new chats, shows each person a card)</option></select></label><button class="btn" id="tbRun">Ask Claude now</button><span style="font-size:12px;color:var(--muted)">Last run: ' + esc(D.ran_at || 'never') + ' · runs by itself every 10 minutes</span></div>'
       + (D.summary ? '<div class="tb-sum">🧠 ' + esc(D.summary) + '</div>' : '')
-      + (rows2.length ? '<div class="tb-wrap"><table class="tb"><thead><tr>' + COLS.map((c) => '<th data-k="' + c[0] + '">' + c[1] + (sort.k === c[0] ? (sort.dir > 0 ? ' ▲' : ' ▼') : '') + '</th>').join('') + '<th style="cursor:default">Details</th></tr></thead><tbody>' + rows2.map(rowHtml).join('') + '</tbody></table></div>' : '<div class="empty">No one matches.</div>');
+      + (rows2.length ? '<div class="tb-wrap"><table class="tb"><thead><tr>' + COLS.map((c) => '<th data-k="' + c[0] + '">' + c[1] + (sort.k === c[0] ? (sort.dir > 0 ? ' ▲' : ' ▼') : '') + '</th>').join('') + '<th style="cursor:default">Details</th></tr></thead><tbody>' + rows2.map(rowHtml).join('') + '</tbody></table></div><div class="cards">' + rows2.map(cardHtml).join('') + '</div>' : '<div class="empty">No one matches.</div>');
     afterDraw();
   }
   const SCORE_COL = (x) => x == null ? '#cbd5e1' : x >= 7 ? '#22c55e' : x >= 5.5 ? '#f59e0b' : '#ef4444';
@@ -153,6 +170,7 @@ guardPage();
         + (r.card ? '<div class="card-line">📣 ' + esc(r.card) + '</div>' : '') + (r.reason ? '<div style="font-size:12px;color:var(--muted);margin-top:6px">Why: ' + esc(r.reason) + '</div>' : '')
         + '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px">' + sel + (hold ? '<button class="btn" data-appr="' + id + '" data-v="' + (r.approved ? 0 : 1) + '">' + (r.approved ? 'Approved — undo' : 'Approve “no new chats”') + '</button>' : '') + '</div></div>'
       + '<div style="font-size:12px;color:var(--muted);margin:8px 0">Pay and commission are in Sales → Money (admin only).</div>';
+    try { if (window.matchMedia('(max-width:700px)').matches) dr.querySelectorAll('.sec').forEach((x, i) => { if (i > 1) x.classList.add('closed'); }); } catch (e) { }
     dr.classList.add('on'); bg.classList.add('on'); dr.setAttribute('aria-hidden', 'false');
   }
   function closeDr() { dr.classList.remove('on'); bg.classList.remove('on'); dr.setAttribute('aria-hidden', 'true'); openId = 0; }
@@ -172,6 +190,7 @@ guardPage();
   bg.addEventListener('click', closeDr);
   dr.addEventListener('click', async (e) => {
     if (e.target.closest('#drX')) { closeDr(); return; }
+    const h3 = e.target.closest('.sec h3'); if (h3) { h3.parentElement.classList.toggle('closed'); return; }
     const tsv = e.target.closest('[data-tgsave]'), tcl = e.target.closest('[data-tgclear]'), tst = e.target.closest('[data-tgstand]');
     if ((tsv || tcl || tst) && !busy) {
       const id = +(tsv || tcl || tst).dataset[tsv ? 'tgsave' : tcl ? 'tgclear' : 'tgstand'], d = document.getElementById('tgD').value, a = document.getElementById('tgA').value, sa = document.getElementById('tgS').value;
