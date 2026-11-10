@@ -529,7 +529,7 @@ function wa_counts(PDO $pdo, bool $adm, int $emp): array
     $wait = "last_in_at IS NOT NULL AND (last_out_at IS NULL OR last_out_at < last_in_at) AND optout = 0 AND status = 'open'";
     if ($emp <= 0) $emp = -1;   // an admin login that is not an employee has no chats of their own
     if (!$adm) return ['mine' => $one("assigned_emp = ? AND status = 'open'", [$emp]), 'closed' => $one("assigned_emp = ? AND status = 'closed'", [$emp]), 'waiting' => $one("assigned_emp = ? AND $wait", [$emp])];
-    return ['mine' => $one("assigned_emp = ? AND status = 'open'", [$emp]), 'unassigned' => $one("assigned_emp = 0 AND status = 'open' AND last_in_at IS NOT NULL"), 'all' => $one("status = 'open' AND last_in_at IS NOT NULL"), 'closed' => $one("status = 'closed' AND last_in_at IS NOT NULL"), 'waiting' => $one($wait)];
+    return ['mine' => $one("assigned_emp = ? AND status = 'open'", [$emp]), 'unassigned' => $one("assigned_emp = 0 AND status = 'open' AND last_in_at IS NOT NULL AND (cx_id IS NULL OR cx_id = 0) AND (tag IS NULL OR tag <> 'complaint') AND NOT EXISTS (SELECT 1 FROM wa_ctags ctx WHERE ctx.phone = wa_contacts.phone AND ctx.tag = 'complaint')"), 'all' => $one("status = 'open' AND last_in_at IS NOT NULL"), 'closed' => $one("status = 'closed' AND last_in_at IS NOT NULL"), 'waiting' => $one($wait)];
 }
 /** Stage B: open chats per feed (query / assigned / community / campaign) — the whole team for an admin, only your own for a salesperson. */
 /** When the bot's rules (Teach by talking / facts) were last changed, so an open WhatsApp inbox can refresh its suggestions on the spot. */
@@ -878,7 +878,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
             elseif ($numFeed) { $w[] = 'c.phone IN (SELECT m0.phone FROM wa_messages m0 WHERE m0.dir = \'in\' AND m0.number_id = ?)'; $p[] = $numFeed; }   // 📱 everybody who ever wrote to this number (since it was deployed), open or closed
             elseif (!$adm) { $w[] = 'c.assigned_emp = ?'; $p[] = $emp; $w[] = $scope === 'closed' ? "c.status = 'closed'" : "c.status = 'open'"; }
             elseif ($scope === 'mine') { $w[] = 'c.assigned_emp = ?'; $p[] = $emp > 0 ? $emp : -1; $w[] = "c.status = 'open'"; }
-            elseif ($scope === 'unassigned') { $w[] = 'c.assigned_emp = 0'; $w[] = "c.status = 'open'"; }
+            elseif ($scope === 'unassigned') { $w[] = 'c.assigned_emp = 0'; $w[] = "c.status = 'open'"; $w[] = "(c.cx_id IS NULL OR c.cx_id = 0) AND (c.tag IS NULL OR c.tag <> 'complaint') AND NOT EXISTS (SELECT 1 FROM wa_ctags ctx WHERE ctx.phone = c.phone AND ctx.tag = 'complaint')"; }   // 🙋 Requests: a complaint chat (ticket, complaint tag or complaint customer-tag) is never a request — it belongs to the Complaints desk
             elseif ($scope === 'closed') $w[] = "c.status = 'closed'";
             elseif ($scope === 'emp') { $ee = (int)($_GET['emp'] ?? 0); if (!empty($_GET['tag'])) { $w[] = '(c.assigned_emp = ? OR c.phone IN (SELECT l.phone FROM wa_assign_log l WHERE l.to_emp = ?))'; $p[] = $ee; $p[] = $ee; } else { $w[] = 'c.assigned_emp = ?'; $p[] = $ee; $w[] = "c.status = 'open'"; } }   // 🏷 tag=1: every chat this person ever had, wherever it is now
             else $w[] = "c.status = 'open'";
