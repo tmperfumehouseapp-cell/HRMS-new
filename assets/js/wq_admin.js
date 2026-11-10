@@ -37,7 +37,8 @@
     if (!document.getElementById('wqCss2')) { const s = document.createElement('style'); s.id = 'wqCss2'; s.textContent = MORE_CSS; document.head.appendChild(s); }
     const S = { tab: 'live', days: 1, anDays: 30, board: null, boardErr: null, attn: null, attnErr: null, duty: null, types: null, typesErr: null, typesTab: null, an: null, anErr: null, anMetric: 'queries', cmpType: 'all', cmpDays: 7, won: 'new', skipped: [], confirmedUi: false };
     let seq = 0, liveTimer = 0, rsz = 0;
-    el.innerHTML = '<div id="wqTabs" class="wq-tabs" role="tablist"></div><div id="wqSubTabs" class="wq-tabs" role="tablist" style="display:none;margin-top:-4px"></div><div id="wqBody"></div>';
+    el.innerHTML = '<div id="wqQuick" class="wq-card" style="display:none;padding:10px 12px;margin-bottom:10px"></div><div id="wqTabs" class="wq-tabs" role="tablist"></div><div id="wqSubTabs" class="wq-tabs" role="tablist" style="display:none;margin-top:-4px"></div><div id="wqBody"></div>';
+    const quickEl = el.querySelector('#wqQuick');
     const tabsEl = el.querySelector('#wqTabs'), subEl = el.querySelector('#wqSubTabs'), body = el.querySelector('#wqBody');
     const MGR = [['pace', 'Pace'], ['attention', 'Attention'], ['types', 'Types'], ['compare', 'Bot vs person']];   // the Team manager's own table moved to Sales → Team performance → Team
     const TOP = [['live', 'Live'], ['pace', 'Pace & queues'], ['analytics', 'Analytics'], ['settings', 'Settings']];
@@ -46,6 +47,34 @@
     const attnCount = () => S.attn ? num(S.attn.count, (S.attn.items || []).length) : 0;
     const when = (...a) => U.when(...a);
 
+    // ⚡ quick controls: the three switches that start the new flow, always visible above the tabs (Admin only)
+    const QK = { st: null, mode: null, busy: false };
+    function drawQuick() {
+      if (!QK.st || !QK.st.editable) { quickEl.style.display = 'none'; return; }
+      const st = QK.st.settings || {}, on = (k) => String(st[k]) === '1';
+      const sw = (k, t) => '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:4px 0"><span style="font-size:13px;font-weight:600">' + t + '</span><button type="button" class="wq-tg" data-qsw="' + k + '" aria-pressed="' + on(k) + '" aria-label="' + t + '"' + (QK.busy ? ' disabled' : '') + '></button></div>';
+      const mode = QK.mode || 'suggest';
+      quickEl.style.display = '';
+      quickEl.innerHTML = '<div style="font-size:12px;font-weight:800;letter-spacing:.04em;opacity:.7;margin-bottom:2px">QUICK CONTROLS</div>' + sw('wq_prio_on', 'Priority order in Needs you now') + sw('wq_auto_on', 'Automatic holding and second messages')
+        + '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:4px 0"><span style="font-size:13px;font-weight:600">Team manager</span><select data-qmode style="min-height:40px;border-radius:10px;padding:0 10px"' + (QK.busy ? ' disabled' : '') + '>' + ['suggest', 'apply', 'off'].map((m) => '<option value="' + m + '"' + (m === mode ? ' selected' : '') + '>' + (m === 'suggest' ? 'Suggest only' : m === 'apply' ? 'Apply' : 'Off') + '</option>').join('') + '</select></div>'
+        + '<div style="font-size:11.5px;opacity:.7">Changes save at once. “Automatic holding” sends messages to customers on its own: read the two texts in Settings first.</div>';
+    }
+    async function loadQuick() {
+      try { QK.st = await get('wq.settings'); } catch (e) { QK.st = null; }
+      try { const m = await get('wq.mgr_get'); QK.mode = m && m.mode; } catch (e) { QK.mode = null; }
+      drawQuick();
+    }
+    quickEl.addEventListener('click', async (e) => {
+      const b = e.target.closest('[data-qsw]'); if (!b || QK.busy) return; const k = b.dataset.qsw, to = b.getAttribute('aria-pressed') === 'true' ? 0 : 1;
+      if (k === 'wq_auto_on' && to === 1 && !confirm('Automatic holding and second messages will send messages to customers on their own. Switch it on?')) return;
+      QK.busy = true; drawQuick(); try { QK.st = await post('wq.settings', { [k]: to }); U.toast('Saved'); } catch (x) { U.toast('Could not save: ' + (x.message || '')); } QK.busy = false; drawQuick();
+    });
+    quickEl.addEventListener('change', async (e) => {
+      const m = e.target.closest('[data-qmode]'); if (!m || QK.busy) return; const v = m.value;
+      if (v === 'apply' && !confirm('Apply mode changes who sees new chats first and can hold chats back from some people. Switch it on?')) { drawQuick(); return; }
+      QK.busy = true; drawQuick(); try { await post('wq.mgr_cfg', { mode: v }); QK.mode = v; U.toast('Saved'); } catch (x) { U.toast('Could not save: ' + (x.message || '')); } QK.busy = false; drawQuick();
+    });
+    loadQuick();
     function drawTabs() {
       // 🧭 Pace, Attention, Types and Bot vs person now live INSIDE the Team manager tab (a second strip); the top strip is Live · Team manager · Analytics · Settings
       const btn = (t, on, extra) => '<button type="button" role="tab" aria-selected="' + on + '" data-t="' + t[0] + '" class="' + (on ? 'on' : '') + '">' + t[1] + (extra || '') + '</button>';
