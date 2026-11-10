@@ -147,6 +147,7 @@ function tb_tick(PDO $pdo): array
     $last = strtotime(wq_meta_get($pdo, 'tb:tick_at', '')) ?: 0; if ($last > time() - 150) return ['skipped' => 'recent'];
     wq_meta_put($pdo, 'tb:tick_at', date('Y-m-d H:i:s')); $n = 0;
     foreach (['today', 'month'] as $r) { try { tb_light_cached($pdo, tb_range($pdo, $r, '', ''), true); $n++; } catch (Throwable $e) { error_log('tb_tick: ' . $e->getMessage()); } }
+    try { tb_full_cached($pdo, tb_range($pdo, 'today', '', ''), true); $n++; } catch (Throwable $e) { error_log('tb_tick full: ' . $e->getMessage()); }   // today's details too, so opening a person is instant
     return ['built' => $n];
 }
 
