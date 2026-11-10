@@ -1295,8 +1295,8 @@ function wq_grab_list(PDO $pdo, int $me, int $limit = 60): array
 /** 🔴🟠 "Needs you now": every open chat of the team (24-hour window) where the customer is ready to pay (RED) or interested (ORANGE) and NO PERSON has answered their last message — the bot may be chatting, that does not count.
  *  Everybody sees it at once and anybody can take it. A chat somebody just took (assigned_at in the last 2 minutes) leaves the others' list for those 2 minutes; silent after that, it is back for everyone.
  *  Computed at most every 10 seconds for the whole team (kept in one setting), so 15 phones refreshing cost one query. */
-/** 🏅 Today's ranking of the salespeople who are at work now (sales department, punched in within 20 h): the best starters and performers first. Kept 10 minutes.
- *  score = 40% reply speed today (median minutes, 0 when fewer than 3 answers) + 40% order conversion of the last 30 days (needs 10+ queries) + 20% activity today (answers given, capped at 20). [emp_id => rank 1..n] */
+/** 🏅 ONE ranking of the salespeople who are at work now (sales department, punched in within 20 h), mixing today and the whole month: kept 10 minutes. [emp_id => rank 1..n]
+ *  score = 35% reply speed today (median minutes, needs 3+ answers) + 15% activity today (answers given, capped at 20) + 30% order conversion of the last 30 days (needs 10+ queries) + 20% number of orders in the last 30 days (against the best at work now). */
 function wq_rank_today(PDO $pdo): array
 {
     $j = json_decode((string)setting_get($pdo, 'wq_rank', ''), true); if (is_array($j) && (int)($j['at'] ?? 0) > time() - 600) return $j;
@@ -1304,20 +1304,22 @@ function wq_rank_today(PDO $pdo): array
     try {
         $sales = $pdo->query("SELECT e.employee_id, e.full_name FROM employees e LEFT JOIN departments d ON d.department_id = e.department_id WHERE e.status != 'ex' AND d.department_name LIKE '%sales%'")->fetchAll(PDO::FETCH_ASSOC);
         $present = []; foreach ($pdo->query("SELECT DISTINCT employee_id FROM attendance WHERE punch_in IS NOT NULL AND punch_out IS NULL AND punch_in >= '" . date('Y-m-d H:i:s', time() - 20 * 3600) . "'")->fetchAll(PDO::FETCH_COLUMN) as $e) $present[(int)$e] = 1;
-        $pace = []; if (function_exists('wq_pace_get')) { try { foreach ((array)(wq_pace_get($pdo, 1)['people'] ?? []) as $p) $pace[(int)$p['emp_id']] = $p; } catch (Throwable $e) { } }
+        $day = []; $mon = []; if (function_exists('wq_pace_get')) { try { foreach ((array)(wq_pace_get($pdo, 1)['people'] ?? []) as $p) $day[(int)$p['emp_id']] = $p; foreach ((array)(wq_pace_get($pdo, 30)['people'] ?? []) as $p) $mon[(int)$p['emp_id']] = $p; } catch (Throwable $e) { } }
+        $maxO = 1; foreach ($mon as $e => $p) if (!empty($present[$e])) $maxO = max($maxO, (int)($p['orders']['orders'] ?? 0));
         $list = [];
-        foreach ($sales as $r) { $id = (int)$r['employee_id']; if (empty($present[$id])) continue; $p = $pace[$id] ?? null; $n = $p ? (int)($p['pace']['n'] ?? 0) : 0; $med = $p ? ($p['pace']['median'] ?? null) : null; $oe = $p['orders'] ?? null;
-            $speed = ($n >= 3 && $med !== null) ? max(0, 30 - (float)$med) / 30 * 100 : 0; $conv = ($oe && (int)($oe['queries'] ?? 0) >= 10 && $oe['conversion'] !== null) ? min(40, (float)$oe['conversion']) / 40 * 100 : 0; $act = min(20, $n) / 20 * 100;
-            $list[] = ['id' => $id, 'name' => (string)$r['full_name'], 's' => 0.4 * $speed + 0.4 * $conv + 0.2 * $act]; }
+        foreach ($sales as $r) { $id = (int)$r['employee_id']; if (empty($present[$id])) continue; $d = $day[$id] ?? null; $m = $mon[$id] ?? null; $oe = $m['orders'] ?? null; $n = $d ? (int)($d['pace']['n'] ?? 0) : 0; $med = $d ? ($d['pace']['median'] ?? null) : null;
+            $speed = ($n >= 3 && $med !== null) ? max(0, 30 - (float)$med) / 30 * 100 : 0; $act = min(20, $n) / 20 * 100;
+            $conv = ($oe && (int)($oe['queries'] ?? 0) >= 10 && $oe['conversion'] !== null) ? min(40, (float)$oe['conversion']) / 40 * 100 : 0; $ord = $oe ? min(100, 100 * (int)($oe['orders'] ?? 0) / $maxO) : 0;
+            $list[] = ['id' => $id, 'name' => (string)$r['full_name'], 's' => 0.35 * $speed + 0.15 * $act + 0.30 * $conv + 0.20 * $ord]; }
         usort($list, fn($a, $b) => [$b['s'], $a['name']] <=> [$a['s'], $b['name']]); $i = 0; foreach ($list as $x) { $rank[$x['id']] = ++$i; $order[] = $x['id']; }
     } catch (Throwable $e) { }
     $o = ['at' => time(), 'rank' => $rank, 'order' => $order]; setting_set($pdo, 'wq_rank', json_encode($o)); return $o;
 }
-/** Waves: how many people see a new red / orange chat at first (default 50, the best of today) and how many minutes before the next group joins (default 2). */
+/** Waves: a new red / orange chat is shown first to the best 15 (default), and to everybody after 2 minutes (default). */
 function wq_wave_cfg(PDO $pdo): array
 {
     $s = wq_get($pdo, 'wq_wave_size', null); $m = wq_get($pdo, 'wq_wave_min', null);
-    return [($s !== null && (int)$s > 0) ? max(1, min(500, (int)$s)) : 50, ($m !== null && (int)$m > 0) ? max(1, min(30, (int)$m)) : 2];
+    return [($s !== null && (int)$s > 0) ? max(1, min(500, (int)$s)) : 15, ($m !== null && (int)$m > 0) ? max(1, min(30, (int)$m)) : 2];
 }
 /** The wave (1, 2, 3 …) of a person: who is in the first group, the next, … ; 0 = not ranked (not at work / not in sales): always sees everything. */
 function wq_wave_of(array $rk, int $emp, int $size): int { return isset($rk['rank'][$emp]) ? (int)ceil($rk['rank'][$emp] / max(1, $size)) : 0; }
@@ -1352,10 +1354,10 @@ function wq_needs(PDO $pdo, int $me, bool $waves = true): array
         } catch (Throwable $e) { }
         $raw = ['at' => $now, 'items' => $items]; setting_set($pdo, 'wq_needs', json_encode($raw, JSON_UNESCAPED_UNICODE));
     }
-    $names = wq_names($pdo); $o = []; $rk = ($waves && $me > 0) ? wq_rank_today($pdo) : ['rank' => []]; [$wsz, $wmin] = wq_wave_cfg($pdo); $myW = ($waves && $me > 0) ? wq_wave_of($rk, $me, $wsz) : 0;
+    $names = wq_names($pdo); $o = []; $rkT = ($waves && $me > 0) ? wq_rank_today($pdo) : ['rank' => []]; [$wsz, $wmin] = wq_wave_cfg($pdo);
     foreach ((array)$raw['items'] as $x) {
         $own = $me > 0 && (int)$x['emp'] === $me;
-        if (!$own && $myW > 1 && ($now - (int)$x['in']) < ($myW - 1) * $wmin * 60) continue;   // waves: the best of today see it first; the next group joins every few minutes
+        if (!$own && $me > 0 && ($now - (int)$x['in']) < $wmin * 60) { if (isset($rkT['rank'][$me]) && $rkT['rank'][$me] > $wsz) continue; }   // first 2 minutes: the best 15 (today's speed mixed with the month's performance) see red and orange chats; everybody sees them after that
         if (!$own && (int)$x['emp'] > 0 && (int)$x['at'] > $now - 120) continue;   // somebody just took it: they get their own 2 minutes
         $o[] = ['phone' => $x['phone'], 'name' => $x['name'], 'level' => $x['level'], 'own' => $own, 'holder' => (int)$x['emp'] > 0 ? wq_person($names, (int)$x['emp']) : '', 'sec' => max(0, $now - (int)$x['in']), 'txt' => $x['txt'], 'why' => $x['why'], 'emp' => (int)$x['emp'], 'key' => md5((int)$x['in'] . '|' . (int)$x['emp'] . '|' . (int)$x['at'])];
     }
@@ -1369,14 +1371,14 @@ function wq_urgent_push(PDO $pdo): int
     $qf = wq_get($pdo, 'wq_push_quiet_from', null); $qt = wq_get($pdo, 'wq_push_quiet_to', null); $qf = $qf === null ? 1 : (int)$qf; $qt = $qt === null ? 10 : (int)$qt; $hr = (int)date('G');
     if ($qf !== $qt && ($qf < $qt ? ($hr >= $qf && $hr < $qt) : ($hr >= $qf || $hr < $qt))) return 0;   // quiet hours (default 01:00-10:00): no phone rings; the card still shows, and anything still waiting is pushed when the quiet hours end
     try {
-        $rk = wq_rank_today($pdo); if (empty($rk['order'])) return 0; [$wsz, $wmin] = wq_wave_cfg($pdo); $maxW = max(1, (int)ceil(count($rk['order']) / $wsz));
+        $rk = wq_rank_today($pdo); if (empty($rk['order'])) return 0; [$wsz, $wmin] = wq_wave_cfg($pdo);
         foreach (wq_needs($pdo, 0, false) as $x) {
             if ($x['level'] !== 'red') continue; $ph = (string)$x['phone'];   // RED only: orange (interested) shows in the card, it does not ring phones
-            $W = min($maxW, (int)floor($x['sec'] / ($wmin * 60)) + 1); $stamp = $x['key'] . '|' . $W; if (wq_meta_get($pdo, 'urg:' . $ph, '') === $stamp) continue; wq_meta_put($pdo, 'urg:' . $ph, $stamp);
-            $tg = []; foreach ($rk['order'] as $e) { if (wq_wave_of($rk, (int)$e, $wsz) === $W && (int)$e !== (int)$x['emp']) $tg[] = (int)$e; } if (!$tg) continue;   // only the group that has just joined; the holder was already pushed when the chat turned hot
+            $stage = $x['sec'] >= $wmin * 60 ? 2 : 1; $stamp = $x['key'] . '|' . $stage; if (wq_meta_get($pdo, 'urg:' . $ph, '') === $stamp) continue; wq_meta_put($pdo, 'urg:' . $ph, $stamp);
+            $tg = []; foreach ($rk['order'] as $i => $e) { $top = ($i + 1) <= $wsz; if ((int)$e !== (int)$x['emp'] && ($stage === 1 ? $top : !$top)) $tg[] = (int)$e; } if (!$tg) continue;   // first the best 15; after 2 minutes everybody else at work (the holder was already pushed when the chat turned hot)
             $cu = trim((string)$x['name']) !== '' ? (string)$x['name'] : '+91 ' . $ph;
             ct_push($pdo, $tg, '🔴 Needs you now', $cu . ' wants to buy — nobody has answered yet. Take it.', '/my_chats.html?phone=' . $ph, 'wa-urg-' . $ph); $n++;
-            if ($W === 1) wa_event($pdo, $ph, '🔴 Ready to pay — shown to the best of today first, then to the next groups');
+            if ($stage === 1) wa_event($pdo, $ph, '🔴 Ready to pay — shown to the best of today first, then to everybody');
         }
     } catch (Throwable $e) { }
     return $n;
