@@ -1095,7 +1095,7 @@ function wa_prod_caption(array $p, string $mode = 'photo', array $opt = []): str
 function wa_prod_lib_defs(): array
 {
     return [
-        'pricelist' => ['Price list', ['retail' => 'Price list', 'bulk' => 'Bulk price list']],
+        // no 'pricelist' here on purpose: the price list picture is drawn by the system from the Price chart (price_charts.php), never taken from an uploaded photo
         'packaging' => ['Packaging', ['box_closed' => 'Our box', 'box_open' => 'Inside the box', 'in_foam' => 'Bottle inside the box', 'outer' => 'Outer parcel']],
         'sizes'     => ['Sizes', ['together' => '30 / 50 / 100 ml together', 'hand' => 'Bottle in hand']],
         'offer'     => ['Offers', ['offer' => 'Current offer', 'combo' => 'Combo offer']],
@@ -1122,7 +1122,6 @@ function wa_prod_lib_intent(PDO $pdo, string $text): array
     if (!$delivery && $packWord && (!$gift || $has('/\b(packing|packaging|packed|unboxing)\b/')) && ($photo || $send || $has('/\b(packing|packaging|unboxing|kaisa|kaisi|kaise|look|dikh\w*)\b/'))) $out[] = ['section' => 'packaging', 'slots' => $has('/\b(open|inside|andar|kholke|unboxing)\b/') ? ['box_open', 'box_closed'] : ['box_closed', 'box_open']];
     $sizeWord = $has('/\b(sizes?|kitna bada|kitni badi|kitne bade|bottle size)\b/'); $mlWord = $has('/\b\d+ ?ml\b/');
     if ($has('/\b(kitna bada|kitni badi|kitne bade)\b/') || ($sizeWord && ($photo || $send || $has('/\b(kya|konsa|kaun|which|available|kitne|options|all|sab)\b/'))) || ($mlWord && $explicit)) $out[] = ['section' => 'sizes', 'slots' => $has('/\b(hand|haath|haat)\b/') ? ['hand', 'together'] : ['together', 'hand']];
-    if ($has('/\b(price ?list|pricelist|rate ?card|ratecard|rate list|price chart|price sheet|rates|catalog\w*|brochure|sabke rate|sab ke rate|all prices|full price list)\b/')) $out[] = ['section' => 'pricelist', 'slots' => $has('/\b(bulk|wholesale|dealer|reseller|thok|distributor)\b/') ? ['bulk', 'retail'] : ['retail']];
     if ($has('/\b(offers?|combos?|deals?|schemes?|sale|promo|promotion)\b/') && !($gift && $has('/\bcombo box\b/'))) $out[] = ['section' => 'offer', 'slots' => $has('/\bcombos?\b/') ? ['combo', 'offer'] : ['offer', 'combo']];
     if ($gift) $out[] = ['section' => 'gift', 'slots' => $has('/\b(byob|build your own)\b/') ? ['byob', 'gift_box'] : ($has('/\b(hamper|hampers|set|giftset)\b/') ? ['hamper', 'gift_box'] : ['gift_box', 'hamper'])];
     if ($has('/\b(candles?|mombatti|mombattiyan)\b/')) $out[] = ['section' => 'candle', 'slots' => ['group', 'single']];
@@ -1338,7 +1337,7 @@ function wa_prod_decide(PDO $pdo, string $phone, string $text, array $opt = []):
     $o = ['ids' => [], 'why' => [], 'lib' => [], 'flag' => '', 'asks_long' => false, 'q' => trim($text), 'lib_intent' => [], 'prod_intent' => false];
     $in = wa_prod_intent($pdo, $text); $lin = wa_prod_lib_intent($pdo, $text); $o['asks_long'] = $in['asks_long']; $o['lib_intent'] = $lin; $yes = $in['yes'];
     // "price list bhejo" / "box ki photo" asks for a picture from the Photos tab, not for a perfume suggestion
-    if ($yes && $lin && !$in['named'] && !preg_match('/\b(perfumes?|attars?|fragrances?|scents?)\b/', wa_prod_fold($text, false)) && array_intersect(array_column($lin, 'section'), ['pricelist', 'packaging', 'sizes', 'delivery', 'store', 'candle'])) $yes = false;
+    if ($yes && $lin && !$in['named'] && !preg_match('/\b(perfumes?|attars?|fragrances?|scents?)\b/', wa_prod_fold($text, false)) && array_intersect(array_column($lin, 'section'), ['packaging', 'sizes', 'delivery', 'store', 'candle'])) $yes = false;
     $o['prod_intent'] = $yes; $recent = $phone !== '' && empty($opt['ignore_recent']) ? wa_prod_recent($pdo, $phone, 24) : [];
     if ($lin) $o['lib'] = wa_prod_lib_pick($pdo, $phone, $lin, $yes ? 2 : 3, $opt);
     $room = (int)($opt['room'] ?? 3) - count($o['lib']);

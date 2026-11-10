@@ -1092,7 +1092,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
             $in = json_input(); $key = wa_key($in['phone'] ?? ''); $c = $key !== '' ? wa_contact($pdo, $key) : null; if (!$c) json_response(['error' => 'Chat not found.'], 404);
             if (!wa_can_chat($pdo, $auth, $c)) json_response(['error' => 'This chat is assigned to someone else.'], 403);
-            $u = function_exists('pc_photo_url') ? pc_photo_url($pdo) : ''; if ($u === '') json_response(['error' => 'No price photo yet. Admin makes it on the Price charts page (Save makes the photo).'], 422);
+            $u = function_exists('pc_photo_url') ? pc_photo_url($pdo) : ''; if ($u === '') json_response(['error' => 'The price photo cannot be made yet: fill the Price chart (it needs a 6.5% column) on the Price charts page.'], 422);
             if (!function_exists('wa_send_image_link') && is_file(__DIR__ . '/wa_prod.php')) require_once __DIR__ . '/wa_prod.php';
             [$ok, $res] = wa_send_image_link($pdo, $c, $u, '', 'emp', (int)($auth['employee_id'] ?? 0)); if (!$ok) json_response(['error' => (string)$res], 422);
             json_response(['ok' => true, 'message' => 'Price photo sent.']);

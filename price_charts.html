@@ -85,7 +85,7 @@
   const cols = () => S.charts.perfume.cols, names = () => S.charts.perfume.names;   // ONE set of % columns for every section
 
   async function load() {
-    try { const d = await api.get('pc.get'); S.charts = d.charts; S.can = !!d.can_edit; S.cust = Number(d.cust_col || 0); S.photo = d.photo_url || ''; S.hist = d.hist || []; draw();
+    try { const d = await api.get('pc.get'); S.charts = d.charts; S.can = !!d.can_edit; S.photo = d.photo_url || ''; S.hist = d.hist || []; draw();
       if (d.unify && d.unify.at) { let seen = ''; try { seen = localStorage.getItem('pc_unify_seen') || ''; } catch (x) {} if (seen !== d.unify.at) { sayLong('✅ ONE price chart now: the 5% column was added to every section (blank where nobody priced it yet: it changes nothing until you do). Where a size was in both charts the commission price was taken' + ((d.unify.added || []).length ? '; ' + d.unify.added.length + ' size' + (d.unify.added.length === 1 ? '' : 's') + ' came in from the commission chart (' + d.unify.added.join(', ') + ' ml)' : '') + ((d.unify.estimated || []).length ? '. Their 3.5% price was estimated between its neighbours, please check: ' + d.unify.estimated.join(', ') + ' ml' : '') + '. The Teach bot has relearned the chart.', false); try { localStorage.setItem('pc_unify_seen', d.unify.at); } catch (x) {} } }
       if (d.auto) { if (d.auto.error) say('Your combo list could not be put in: ' + d.auto.error, true); else say('✅ Your combo list was put in: ' + (d.auto.rows || []).length + ' rows at the 6% column, the other columns filled from your own prices. Press ↩ Undo on a section to take it back.'); } }
     catch (e) { root.innerHTML = '<div class="alert error">' + esc(e.message) + '</div>'; }
@@ -120,9 +120,9 @@
       });
     });
     h += '</tbody></table></div>';
-    h += '<div class="cust"><b>Customer price photo</b><span style="color:var(--muted)">sizes + one column, no % — the bot sends it only when your Teach rules say so</span>'
-      + (S.can ? '<label>Column <select id="custCol">' + C0.map((c, i) => '<option value="' + i + '"' + (i === S.cust ? ' selected' : '') + '>' + pct(c) + '%' + (names()[i] ? ' — ' + esc(names()[i]) : '') + '</option>').join('') + '</select></label><button type="button" class="b" data-a="photo">📷 Make the photo now</button>' : '') + '</div>';
-    h += '<div class="ph">' + (S.photo ? '<img src="' + esc(S.photo) + '&_=' + Date.now() + '" alt="Customer price photo">' : '<div class="note">No customer photo yet. ' + (S.can ? 'It is made each time you save.' : 'Admin makes it here.') + '</div>') + '</div>';
+    h += '<div class="cust"><b>Customer price photo</b><span style="color:var(--muted)">drawn by the system from this chart: perfume 50–500 ml, shower gel, attar, others and combos, all at the 6.5% column, no % on it. It is redrawn by itself when a price changes, and the bot sends it whenever a customer asks for the price list.</span>'
+      + (S.can ? '<button type="button" class="b" data-a="photo">📷 Redraw now</button>' : '') + '</div>';
+    h += '<div class="ph">' + (S.photo ? '<img src="' + esc(S.photo) + '&_=' + Date.now() + '" alt="Customer price photo">' : '<div class="note">The photo cannot be drawn yet — fill the chart with a 6.5% column.</div>') + '</div>';
     root.innerHTML = h;
   }
   const mark = (seg) => { S.dirty[seg] = true; const d = root.querySelector('.dirty'); if (d) d.textContent = 'Not saved yet'; };
@@ -135,10 +135,6 @@
     if (t.dataset.r == null || !t.dataset.seg) return; const r = S.charts[t.dataset.seg].rows[Number(t.dataset.r)];
     if (['ml', 'perf', 'gel', 'attar', 'other'].includes(t.dataset.k)) r[t.dataset.k] = Number(t.value) || 0; else r.p[Number(t.dataset.k)] = Number(t.value) || 0;
     mark(t.dataset.seg);
-  });
-  root.addEventListener('change', async (e) => {
-    if (e.target.id !== 'custCol') return; const col = Number(e.target.value);
-    try { await api.post('pc.cust_col', { col }); S.cust = col; await makePhoto(); say('The customer photo now shows the ' + pct(cols()[col]) + '% column.'); draw(); } catch (er) { say(er.message, true); }
   });
   root.addEventListener('click', async (e) => {
     const b = e.target.closest('[data-a]'); if (!b) return; const a = b.dataset.a, seg = b.dataset.seg, C = seg ? S.charts[seg] : null, blank = () => cols().map(() => 0);
@@ -157,7 +153,7 @@
     }
     if (a === 'undo') { if (Object.values(S.dirty).some(Boolean) && !confirm('You have changes that are not saved — Undo throws them away. Go on?')) return; if (!confirm('Take this section back to the version before its last change?')) return;
       try { const d = await api.post('pc.undo', { seg }); S.dirty = {}; say(d.message || 'Done.'); await load(); } catch (er) { say(er.message, true); } return; }
-    if (a === 'photo') { try { await makePhoto(); say('Customer price photo made.'); draw(); } catch (er) { say(er.message, true); } return; }
+    if (a === 'photo') { try { await makePhoto(); say('Customer price photo redrawn from the chart (6.5% column).'); draw(); } catch (er) { say(er.message, true); } return; }
     if (a === 'save') {
       const todo = SECS.map((x) => x[0]).filter((k) => S.dirty[k]); if (!todo.length) return say('Nothing changed.');
       S.busy = true; draw(); const done = [];
@@ -167,38 +163,14 @@
           S.charts[k] = d.chart; S.dirty[k] = false; done.push(C.label || k);
         }
         say('Saved: ' + done.join(', ') + '. The cart and the bot use it from now on.');
-        try { await makePhoto(); } catch (er) { say('Saved, but the customer photo could not be made: ' + er.message, true); }
+        try { await makePhoto(); } catch (er) { say('Saved, but the customer photo could not be redrawn: ' + er.message, true); }
       } catch (er) { say((done.length ? 'Saved ' + done.join(', ') + ', but: ' : '') + er.message, true); }
       S.busy = false; draw();
     }
   });
 
-  // The customer price photo: every section with rows — size / pieces / combo + the chosen column's price. No % anywhere.
-  async function makePhoto() {
-    const segs = SECS.filter(([k]) => S.charts[k] && S.charts[k].rows.length); if (!segs.length) throw new Error('Fill the chart first.');
-    const W = 1080, pad = 48, rowH = 46, headH = 70, gap = 28; let H = 170;
-    segs.forEach(([k]) => { H += headH + Math.ceil(S.charts[k].rows.length / 2) * rowH + gap; }); H += 60;
-    const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const g = cv.getContext('2d'), F = (w, s) => w + ' ' + s + 'px system-ui, -apple-system, Segoe UI, Arial';
-    g.fillStyle = '#ffffff'; g.fillRect(0, 0, W, H);
-    g.fillStyle = '#111827'; g.font = F(800, 54); g.fillText('TM Perfume House', pad, 86);
-    g.fillStyle = '#6b7280'; g.font = F(500, 28); g.fillText('Price list', pad, 130);
-    let y = 170;
-    segs.forEach(([k, title]) => {
-      const C = S.charts[k], col = Math.min(S.cust, cols().length - 1);
-      g.fillStyle = '#0f6e7e'; g.fillRect(pad, y, W - pad * 2, 52); g.fillStyle = '#fff'; g.font = F(800, 30); g.fillText(title.replace(/^\S+\s/, '') + (k === 'perfume' ? ' — by total ml' : ''), pad + 18, y + 36); y += headH;
-      const half = Math.ceil(C.rows.length / 2), colW = (W - pad * 2) / 2;
-      C.rows.forEach((r, i) => {
-        const cx = pad + (i < half ? 0 : colW), cy = y + (i % half) * rowH, v = Number(r.p[col]) || Number(r.p.find((x) => Number(x) > 0)) || 0;
-        if ((i % half) % 2 === 0) { g.fillStyle = '#f3f4f6'; g.fillRect(cx, cy, colW - 12, rowH); }
-        g.fillStyle = '#111827'; g.font = F(700, k === 'mix' ? 22 : 28);
-        g.fillText(k === 'mix' ? mixLabel(r) : r.ml + (k === 'perfume' ? ' ml' : (Number(r.ml) === 1 ? ' piece' : ' pieces')), cx + 16, cy + 32);
-        g.textAlign = 'right'; g.font = F(700, 28); g.fillText(v > 0 ? '₹' + v.toLocaleString('en-IN') : '—', cx + colW - 28, cy + 32); g.textAlign = 'left';
-      });
-      y += half * rowH + gap;
-    });
-    g.fillStyle = '#9ca3af'; g.font = F(500, 22); g.fillText('Prices in rupees, GST included.', pad, H - 28);
-    const d = await api.post('pc.photo_save', { data: cv.toDataURL('image/jpeg', 0.9).split(',')[1] }); S.photo = d.url || '';
-  }
+  // The customer price photo is drawn by the server from the saved chart (6.5% column, no % on it): this only asks it to redraw and shows the new picture.
+  async function makePhoto() { const d = await api.post('pc.photo_make', {}); S.photo = d.url || ''; }
   load();
 </script>
 <script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>

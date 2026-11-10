@@ -29,7 +29,6 @@ function ph_sections(): array
     return [
         $s('perfume',  'Perfume bottles',   'One clear front photo of every perfume bottle, the label readable. A photo with the box next to it is also fine.', 'perfume', []),
         $s('sizes',    'Sizes',             'The sizes together, so the customer can see how big each one is.', '', [$sl('together', '30 / 50 / 100 ml together'), $sl('hand', 'A bottle in hand')]),
-        $s('pricelist','Price list',        'The latest price list or rate card as an image.', '', [$sl('retail', 'Retail price list'), $sl('bulk', 'Bulk / wholesale price list')]),
         $s('packaging','Packaging',         'How the order reaches the customer.', '', [$sl('box_closed', 'Box closed'), $sl('box_open', 'Box open'), $sl('in_foam', 'Bottle inside the foam / insert'), $sl('outer', 'Outer parcel with sticker')]),
         $s('gel',      'Shower gels',       'One front photo of every shower gel, plus one photo of the full range together.', 'gel', [$sl('group', 'Full range together')]),
         $s('candle',   'Candles',           'The candle range.', '', [$sl('group', 'All candles together'), $sl('single', 'One candle close-up'), $sl('lit', 'A lit candle')]),
