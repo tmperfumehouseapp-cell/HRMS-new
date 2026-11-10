@@ -1315,9 +1315,9 @@ function wq_rank_today(PDO $pdo): array
             $mAgo = isset($lastAns[$id]) ? (time() - $lastAns[$id]) / 60 : 999; $live = $mAgo <= 10 ? 100 : ($mAgo < 30 ? (30 - $mAgo) / 20 * 100 : 0);
             $list[] = ['id' => $id, 'name' => (string)$r['full_name'], 's' => 0.30 * $live + 0.20 * $speed + 0.10 * $act + 0.22 * $conv + 0.18 * $ord]; }
         usort($list, fn($a, $b) => [$b['s'], $a['name']] <=> [$a['s'], $b['name']]); $i = 0; foreach ($list as $x) { $rank[$x['id']] = ++$i; $order[] = $x['id']; }
-        // 🎯 proven sellers first: somebody with 10+ queries in 30 days whose orders are far below the team's (under 40% of the average, or none) is not shown new red / orange chats in the first minutes; they see them after the wave time like everybody else. Newer people (under 10 queries) are on trial and stay in.
-        $cv = []; foreach ($list as $x) { $oe = $mon[$x['id']]['orders'] ?? null; if ($oe && (int)($oe['queries'] ?? 0) >= 10) $cv[$x['id']] = (float)($oe['conversion'] ?? 0); }
-        $avg = $cv ? array_sum($cv) / count($cv) : 0; foreach ($cv as $e1 => $c1) if ($c1 <= 0 || ($avg > 0 && $c1 < 0.4 * $avg)) $skip[$e1] = 1;
+        // 🎯 proven sellers first: somebody with 6+ queries in 30 days whose conversion is more than 5 points below the team average (or has no order) is not shown new red / orange chats in the first minutes; they see them after the wave time like everybody else. Newer people (under 6 queries) are on trial and stay in.
+        $cv = []; foreach ($list as $x) { $oe = $mon[$x['id']]['orders'] ?? null; if ($oe && (int)($oe['queries'] ?? 0) >= 6) $cv[$x['id']] = (float)($oe['conversion'] ?? 0); }
+        $avg = $cv ? array_sum($cv) / count($cv) : 0; foreach ($cv as $e1 => $c1) if ($c1 <= 0 || ($avg > 0 && $c1 < $avg - 5)) $skip[$e1] = 1;   // a few points below the team is fine (up to 5); a ratio needs at least 6 queries, below that the person is on trial
     } catch (Throwable $e) { }
     $o = ['at' => time(), 'rank' => $rank, 'order' => $order, 'skip' => $skip]; setting_set($pdo, 'wq_rank', json_encode($o)); return $o;
 }
