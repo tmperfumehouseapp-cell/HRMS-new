@@ -1246,7 +1246,8 @@ function wq_tick(PDO $pdo, array $opt = []): array
                 if (microtime(true) < $deadline) { wq_boss_seed($pdo); $r['cq'] = wq_cq_mirror($pdo); }
                 if (microtime(true) < $deadline) $r['campaign_tag'] = wq_window_tag($pdo);
                 if (microtime(true) < $deadline && function_exists('wq_pace_tick')) { try { $r['pace'] = wq_pace_tick($pdo); } catch (Throwable $e) { } }   // ⚡ waiting-customer nudges / admin alerts
-                if (microtime(true) < $deadline && function_exists('wqm_tick')) { try { $r['mgr'] = wqm_tick($pdo); } catch (Throwable $e) { } }   // 🧭 Team manager: Claude looks at the whole team every 10 minutes
+                if (microtime(true) < $deadline && function_exists('wqm_tick')) { try { $r['mgr'] = wqm_tick($pdo); } catch (Throwable $e) { } }
+                if (microtime(true) < $deadline && function_exists('tb_tick')) { try { $r['tb'] = tb_tick($pdo); } catch (Throwable $e) { } }   // 👥 keep the Team table ready (today + this month)   // 🧭 Team manager: Claude looks at the whole team every 10 minutes
                 if (microtime(true) < $deadline && function_exists('wq_rescue_tick')) $r['rescue'] = wq_rescue_tick($pdo, $deadline);   // 🛟 effort-missed queries + rescue bonus
                 if (wq_ts(wq_meta_get($pdo, 'house_at', '')) < wq_now() - 3600) {
                     $pdo->prepare("DELETE FROM wq_guard WHERE at < ?")->execute([wq_dt(wq_now() - 3 * 86400)]); $pdo->prepare("DELETE FROM wq_meta WHERE k LIKE 'typing:%' AND v < ?")->execute([wq_dt(wq_now() - 3600)]); wq_meta_put($pdo, 'house_at', wq_dt());
