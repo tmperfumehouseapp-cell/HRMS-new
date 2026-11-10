@@ -49,6 +49,29 @@ if ($__wp === 'wa.plan_get') {
     // audiences: people who wrote lately (the ones who deliver and reply best)
     $aud = ['d7' => 0, 'd30' => 0, 'd90' => 0];
     try { foreach (['d7' => 7, 'd30' => 30, 'd90' => 90] as $k => $d) { $q = $pdo->prepare("SELECT COUNT(*) FROM wa_contacts WHERE optout = 0 AND last_in_at >= ?"); $q->execute([date('Y-m-d H:i:s', time() - $d * 86400)]); $aud[$k] = (int)$q->fetchColumn(); } } catch (Throwable $e) { }
+    @set_time_limit(90);
+    // which message works best: the campaigns of the last 7 days grouped by message (delivered, replied within 2 days) — cached for 10 minutes
+    $best = []; $ck = 'wa_plan_best'; $cached = null; try { $cached = json_decode((string)setting_get($pdo, $ck, ''), true); } catch (Throwable $e) { }
+    if (is_array($cached) && (int)($cached['at'] ?? 0) > time() - 600) $best = (array)$cached['rows'];
+    else {
+        try {
+            $by = [];
+            foreach ($pdo->query("SELECT id, tpl_id FROM wa_campaigns WHERE tpl_id > 0 AND COALESCE(started_at, created_at) >= '" . date('Y-m-d H:i:s', time() - 7 * 86400) . "' ORDER BY id DESC LIMIT 14")->fetchAll() as $c) {
+                $cn = wa_camp_counts($pdo, (int)$c['id']); $dv = wa_camp_delivery($pdo, (int)$c['id']); $t = (int)$c['tpl_id'];
+                if (!isset($by[$t])) $by[$t] = ['sent' => 0, 'delivered' => 0, 'replied' => 0, 'camps' => 0];
+                $by[$t]['sent'] += (int)$cn['sent']; $by[$t]['delivered'] += (int)$dv['delivered']; $by[$t]['replied'] += (int)($dv['replied'] ?? 0); $by[$t]['camps']++;
+            }
+            foreach ($by as $tid => $x) { if ($x['delivered'] < 150) continue; $row = function_exists('wa_tpl_row') ? wa_tpl_row($pdo, (int)$tid) : null; if (!$row) continue;
+                $best[] = ['tpl_id' => (int)$tid, 'name' => str_replace('_', ' ', (string)$row['name']), 'category' => strtolower((string)($row['category'] ?? 'marketing')), 'sent' => $x['sent'], 'delivered' => $x['delivered'], 'delivery_pct' => $x['sent'] > 0 ? round(100 * $x['delivered'] / $x['sent'], 1) : 0, 'reply_pct' => round(100 * $x['replied'] / max(1, $x['delivered']), 1), 'replied' => $x['replied'], 'camps' => $x['camps']]; }
+            usort($best, function ($a, $b) { return $b['reply_pct'] <=> $a['reply_pct']; });
+            setting_set($pdo, $ck, json_encode(['at' => time(), 'rows' => $best]));
+        } catch (Throwable $e) { $best = []; }
+    }
+    $mk = array_values(array_filter($best, fn($x) => $x['category'] !== 'utility')); $ut = array_values(array_filter($best, fn($x) => $x['category'] === 'utility'));
+    // who gets what: the recent people first (they deliver and reply best), the rest from older contacts
+    $pool = 0; try { $pool = (int)$pdo->query("SELECT COUNT(*) FROM wa_contacts WHERE optout = 0")->fetchColumn(); } catch (Throwable $e) { }
+    $recent = (int)$aud['d30']; $sendRecent = (int)min($needSent, $recent); $sendOlder = (int)max(0, min($needSent - $sendRecent, max(0, $pool - $recent)));
+    $reco = ['marketing' => array_slice($mk, 0, 3), 'utility' => array_slice($ut, 0, 2), 'send_recent' => $sendRecent, 'send_older' => $sendOlder, 'short' => (int)max(0, round($needSent) - $sendRecent - $sendOlder), 'older_pool' => max(0, $pool - $recent)];
     $running = 0; try { $running = (int)$pdo->query("SELECT COUNT(*) FROM wa_campaigns WHERE status = 'running'")->fetchColumn(); } catch (Throwable $e) { }
     $adv = [];
     if ($needSent > $room && $room > 0) $adv[] = 'Meta lets you start about ' . number_format($room) . ' more people today, but this budget needs about ' . number_format((int)$needSent) . ' sends at the current delivery rate (' . round($dr * 100) . '%). Raise the delivery rate (recent customers only) or spend the rest tomorrow.';
@@ -58,5 +81,5 @@ if ($__wp === 'wa.plan_get') {
     if (!$adv) $adv[] = 'Looks doable today: start the main campaign now and keep the others paused.';
     json_response(['ok' => true, 'budget' => $budget, 'spent_today' => round($spent), 'left' => round($left), 'price' => round($price, 2), 'charged_share' => round($cf, 2), 'delivery_rate' => round($dr, 3), 'reply_rate' => round($rr, 4), 'based_on' => ['sent' => $sent7, 'delivered' => $dl7],
         'need_delivered' => (int)round($needDel), 'need_sent' => (int)round($needSent), 'expected_replies' => (int)round($needDel * $rr), 'room_today' => $room, 'speed_per_hour' => $speed, 'hours_needed' => round($hoursNeed, 1), 'hours_left_today' => $hoursLeftToday, 'fits' => $fits,
-        'plan' => $plan, 'numbers' => $nums, 'audience' => $aud, 'running' => $running, 'advice' => $adv]);
+        'plan' => $plan, 'numbers' => $nums, 'audience' => $aud, 'running' => $running, 'advice' => $adv, 'reco' => $reco]);
 }

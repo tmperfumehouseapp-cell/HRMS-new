@@ -899,8 +899,7 @@
         : `<span class="badge" style="background:${r.ratio >= 9 ? '#e7f7ee' : (r.ratio >= 6 ? '#fdf3e3' : '#fdecec')}; color:${r.ratio >= 9 ? '#0f7a41' : (r.ratio >= 6 ? '#b45f06' : '#c81e1e')};">${r.ratio}%</span>`;
       return `<tr>
         <td><a href="employee_detail.html?id=${r.employee_id}">${r.full_name}</a><div style="font-size:11.5px; color:var(--muted);">${r.employee_code}</div><div style="margin-top:4px;">${houseBadge(r)}</div></td>
-        <td>${r.queries !== null ? r.queries : '<span style="color:var(--muted);">—</span>'}
-          <button style="background:none; border:none; cursor:pointer; color:var(--accent); font-size:12px; padding:0;" onclick="editDayQueries(${r.employee_id}, '${r.group_key}', ${r.queries === null ? 'null' : r.queries})">✎</button></td>
+        <td>${r.queries !== null ? r.queries : '<span style="color:var(--muted);">—</span>'}</td>
         <td>${r.orders}<div style="font-size:11.5px; color:var(--muted);">${'₹' + Number(r.sales).toLocaleString('en-IN', { maximumFractionDigits: 0 })}${codedNote(r) ? ' · ' + codedNote(r) : ''}</div></td>
         <td>${ratioBadge}</td>
         <td>${addonCell(r)}</td>
@@ -927,7 +926,6 @@
         <div style="display:flex; gap:14px; margin-top:9px; font-size:12px;">
           <span><span style="color:var(--muted);">Query</span>
             ${r.queries !== null ? r.queries : '—'}
-            <button style="background:none; border:none; cursor:pointer; color:var(--accent); font-size:12px; padding:0 0 0 2px;" onclick="editDayQueries(${r.employee_id}, '${r.group_key}', ${r.queries === null ? 'null' : r.queries})">✎</button>
           </span>
           <span><span style="color:var(--muted);">Orders</span> ${r.orders}${codedNote(r) ? ' <span style="font-size:11px;">(' + codedNote(r) + ')</span>' : ''}</span>
           <span><span style="color:var(--muted);">Sales</span> ₹${Number(r.sales).toLocaleString('en-IN', { maximumFractionDigits: 0 })}</span>
