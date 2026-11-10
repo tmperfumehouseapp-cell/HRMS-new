@@ -2352,14 +2352,16 @@
   }
 
   // ⚡ WhatsApp Sales switches on the Live section (Admin only): priority order, automatic holding, Team manager mode
-  const WQ = { st: null, mode: null, busy: false, loaded: false };
+  const WQ = { st: null, mode: null, busy: false, loaded: false, open: false };
   function quickDraw() {
     const el = document.getElementById('wsQuick'); if (!el) return;
     if (!cur || cur.sec.k !== 'live' || !WQ.st || !WQ.st.editable) { el.innerHTML = ''; return; }
     const st = WQ.st.settings || {}, sw = (k, t) => '<label style="display:flex;align-items:center;gap:8px;font-size:13px;min-height:40px"><input type="checkbox" data-wqsw="' + k + '"' + (String(st[k]) === '1' ? ' checked' : '') + (WQ.busy ? ' disabled' : '') + ' style="width:20px;height:20px"> ' + t + '</label>';
     const md = WQ.mode || 'suggest';
-    el.innerHTML = '<div style="display:flex;gap:4px 18px;flex-wrap:wrap;align-items:center;margin:0 0 10px;padding:6px 12px;border:1px solid var(--line,#e5e7eb);border-radius:12px;background:var(--card,#fff)"><b style="font-size:12px;letter-spacing:.04em;opacity:.7">WHATSAPP SALES</b>' + sw('wq_prio_on', 'Priority order in Needs you now') + sw('wq_auto_on', 'Automatic holding and second messages')
-      + '<label style="display:flex;align-items:center;gap:8px;font-size:13px;min-height:40px">Team manager <select data-wqmode style="min-height:36px;border-radius:8px"' + (WQ.busy ? ' disabled' : '') + '>' + [['suggest', 'Suggest only'], ['apply', 'Apply'], ['off', 'Off']].map((m) => '<option value="' + m[0] + '"' + (m[0] === md ? ' selected' : '') + '>' + m[1] + '</option>').join('') + '</select></label></div>';
+    const sum = 'WhatsApp Sales: priority ' + (String(st.wq_prio_on) === '1' ? 'on' : 'off') + ' · auto ' + (String(st.wq_auto_on) === '1' ? 'on' : 'off') + ' · manager ' + md;
+    el.innerHTML = '<details id="wsQuickD"' + (WQ.open ? ' open' : '') + ' style="margin:0 0 10px;border:1px solid var(--line,#e5e7eb);border-radius:12px;background:var(--card,#fff)"><summary style="cursor:pointer;padding:8px 12px;font-size:12.5px;font-weight:700;min-height:20px;list-style:none">⚙ ' + sum + ' ▾</summary><div style="display:flex;gap:4px 18px;flex-wrap:wrap;align-items:center;padding:0 12px 6px">' + sw('wq_prio_on', 'Priority order in Needs you now') + sw('wq_auto_on', 'Automatic holding and second messages')
+      + '<label style="display:flex;align-items:center;gap:8px;font-size:13px;min-height:40px">Team manager <select data-wqmode style="min-height:36px;border-radius:8px"' + (WQ.busy ? ' disabled' : '') + '>' + [['suggest', 'Suggest only'], ['apply', 'Apply'], ['off', 'Off']].map((m) => '<option value="' + m[0] + '"' + (m[0] === md ? ' selected' : '') + '>' + m[1] + '</option>').join('') + '</select></label></div></details>';
+    const d = document.getElementById('wsQuickD'); if (d) d.addEventListener('toggle', () => { WQ.open = d.open; });
   }
   async function quickLoad() {
     if (WQ.loaded) { quickDraw(); return; } WQ.loaded = true;
