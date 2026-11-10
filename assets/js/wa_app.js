@@ -1311,7 +1311,7 @@
     function openLists() {
       if (!S.cur) return; const phone = S.cur.phone;
       const go = () => { const sh = sheet('Lists'); WaLists.sheet(sh.body, { phone, close: sh.close, onSent: () => { if (S.cur && S.cur.phone === phone) pollChat(); } }); };
-      if (window.WaLists) return go(); const sc = document.createElement('script'); sc.src = 'assets/js/wa_lists_ui.js?v=l10'; sc.onload = go; sc.onerror = () => toast('Could not open the lists. Check the internet.', true); document.head.appendChild(sc);
+      if (window.WaLists) return go(); const sc = document.createElement('script'); sc.src = 'assets/js/wa_lists_ui.js?v=l12'; sc.onload = go; sc.onerror = () => toast('Could not open the lists. Check the internet.', true); document.head.appendChild(sc);
     }
     const qkCode = (t) => '/' + (String(t || '').toLowerCase().replace(/[^a-z0-9]+/g, '') || 'reply');   // the title is the shortcut: "Pre Diwali" → /prediwali
     const qkFind = (list, q) => { q = String(q || '').toLowerCase().replace(/[^a-z0-9]+/g, ''); if (!q) return list.slice(0, 12); const sc = (x) => { const c = qkCode(x.title).slice(1); return c.startsWith(q) ? 0 : c.includes(q) ? 1 : String(x.body || '').toLowerCase().replace(/[^a-z0-9]+/g, '').includes(q) ? 2 : 9; }; return list.map((x) => [sc(x), x]).filter((a) => a[0] < 9).sort((a, b) => a[0] - b[0]).map((a) => a[1]).slice(0, 12); };
