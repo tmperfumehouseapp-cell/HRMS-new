@@ -885,7 +885,15 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo)\./', $__wa)) {
             if ($adm && $scope !== 'mine') $w[] = 'c.last_in_at IS NOT NULL';   // people a campaign reached but who never wrote are in Contacts, not in Chats
             if (!$numFeed && $rescueFeed === null && $scope !== 'closed' && trim((string)($_GET['q'] ?? '')) === '') { $w[] = 'COALESCE(c.last_in_at, c.last_out_at) >= ?'; $p[] = date('Y-m-d H:i:s', time() - 90 * 86400); }   // the list sorts only the last 90 days (it sorted every open contact ever); search still finds anyone
             $src = (string)($_GET['src'] ?? '');   // Stage B: feed filter — query | community | campaign | assigned
-            if ($src === 'query') { if (function_exists('wa_ad_backfill')) wa_ad_backfill($pdo); $w[] = "c.source = 'query'"; $w[] = 'c.last_in_at >= ?'; $p[] = wa_bizday_start($pdo); }   // 📢 fresh Meta-ad queries of this business day (10:00 → 10:00); campaign / community have their own feeds
+            if (strpos($src, ',') !== false) {   // several feeds ticked at once (Community + Campaign ...): a chat in ANY of them
+                $or = []; foreach (array_unique(array_map('trim', explode(',', $src))) as $one) {
+                    if ($one === 'query') { $or[] = "(c.source = 'query' AND c.last_in_at >= ?)"; $p[] = wa_bizday_start($pdo); }
+                    elseif ($one === 'community' || $one === 'campaign') { $or[] = 'c.source = ?'; $p[] = $one; }
+                    elseif ($one === 'assigned') $or[] = 'c.assigned_emp > 0';
+                }
+                if ($or) $w[] = '(' . implode(' OR ', $or) . ')';
+            }
+            elseif ($src === 'query') { if (function_exists('wa_ad_backfill')) wa_ad_backfill($pdo); $w[] = "c.source = 'query'"; $w[] = 'c.last_in_at >= ?'; $p[] = wa_bizday_start($pdo); }   // 📢 fresh Meta-ad queries of this business day (10:00 → 10:00); campaign / community have their own feeds
             elseif (in_array($src, ['community', 'campaign'], true)) { $w[] = 'c.source = ?'; $p[] = $src; } elseif ($src === 'assigned') $w[] = 'c.assigned_emp > 0';
             // ☑ Select-chats filters: day of the query · ordered or not · numbers (admin)
             if ($adm) {
