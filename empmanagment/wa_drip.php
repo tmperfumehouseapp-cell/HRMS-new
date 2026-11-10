@@ -95,12 +95,33 @@ function wd_send(PDO $pdo, array $c, array $step): array
     [$ok, $res] = wa_send_tpl_one($pdo, $c, $t, $ctx['nums'][$nid], $nv ? [wd_name($c)] : [], 'followup');
     return $ok ? [true, '', $nid, (string)$res] : [false, (string)$res, $nid];
 }
+/** The "Send today's drip now" job: started by the button, worked through in batches by the page (every few seconds) or the engine tick, so the screen can be closed. */
+function wd_job(PDO $pdo): array { $j = json_decode((string)setting_get($pdo, 'wd_job', ''), true); return is_array($j) ? $j : ['status' => 'none']; }
+function wd_job_put(PDO $pdo, array $j): void { setting_set($pdo, 'wd_job', json_encode($j)); }
+/** One batch of the running job (a lock keeps two callers from sending the same customer). Returns the job. */
+function wd_job_step(PDO $pdo): array
+{
+    $j = wd_job($pdo); if (($j['status'] ?? '') !== 'running') return $j;
+    $got = 0; try { $got = (int)$pdo->query("SELECT GET_LOCK('wd_job', 0)")->fetchColumn(); } catch (Throwable $e) { }
+    if ($got !== 1) return $j;   // another caller is already working on it
+    try {
+        @set_time_limit(100); $j = wd_job($pdo); if (($j['status'] ?? '') !== 'running') return $j;
+        $r = wd_tick($pdo, ['now' => 1, 'cap' => 60, 'job' => 1, 'skip_enrol' => !empty($j['enrolled'])]); $j['enrolled'] = 1;
+        $j['sent'] = (int)($j['sent'] ?? 0) + (int)($r['sent'] ?? 0); $j['skipped'] = (int)($j['skipped'] ?? 0) + (int)($r['skipped'] ?? 0); $j['failed'] = (int)($j['failed'] ?? 0) + (int)($r['failed'] ?? 0); $j['at'] = date('Y-m-d H:i:s');
+        if (!empty($r['why'])) $j['why'] = (string)$r['why'];
+        if (empty($r['more'])) { $j['status'] = !empty($r['why']) ? 'stopped' : 'done'; $j['finished'] = date('Y-m-d H:i:s'); }
+        wd_job_put($pdo, $j);
+    } finally { try { $pdo->query("SELECT RELEASE_LOCK('wd_job')"); } catch (Throwable $e) { } }
+    return $j;
+}
 function wd_tick(PDO $pdo, array $opt = []): array
 {
     $o = ['entered' => 0, 'sent' => 0, 'skipped' => 0, 'failed' => 0];
-    if (!wd_tables($pdo)) return $o; $cfg = wd_cfg($pdo); if (!$cfg['days']) return $o; if (empty($opt['now']) && $cfg['mode'] !== 'auto') return $o;   // manual mode: only the Send button runs it
+    if (!wd_tables($pdo)) return $o; $cfg = wd_cfg($pdo); if (!$cfg['days']) return $o;
+    if (empty($opt['now']) && (wd_job($pdo)['status'] ?? '') === 'running') { wd_job_step($pdo); return $o; }   // a Send-now job is waiting: the engine works on it
+    if (empty($opt['now']) && $cfg['mode'] !== 'auto') return $o;   // manual mode: only the Send button runs it
     if (empty($opt['now']) && (!function_exists('wa_lock') || !wa_lock($pdo, 'wdrun', 50))) return $o;
-    try { $o['entered'] = wd_enroll($pdo, $cfg); } catch (Throwable $e) { }
+    if (empty($opt['skip_enrol'])) { try { $o['entered'] = wd_enroll($pdo, $cfg); } catch (Throwable $e) { } }
     $today = wd_today($pdo); $nowMin = !empty($opt['now']) ? 1439 : (int)date('G') * 60 + (int)date('i'); $sent = 0; if (!empty($opt['now'])) $cfg['cap'] = max(1, (int)($opt['cap'] ?? 150));
     $e = $pdo->prepare("SELECT phone, anchor FROM wa_drip_enr WHERE anchor <= ? AND anchor >= ? AND left_why = ''"); $e->execute([$today, date('Y-m-d', strtotime($today) - 31 * 86400)]);
     $ev = $pdo->prepare("INSERT IGNORE INTO wa_drip_ev (phone, anchor, day, tpl_id, number_id, status, why, at, wamid) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
@@ -177,7 +198,7 @@ if (strpos($__wd, 'wa.drip_') === 0) {
                 foreach (($inb[(string)$r['phone']] ?? []) as $t) if ($t > $at && $t <= $at + 2 * 86400) { $per[$d]['replied']++; $tot['replied']++; break; }
             }
             ksort($per); $days = []; foreach ($per as $d => $x) { $tn = ''; if (isset($cfg['days'][$d]) && function_exists('wa_tpl_row')) { $tr = wa_tpl_row($pdo, (int)$cfg['days'][$d]['tpl_id']); $tn = $tr ? str_replace('_', ' ', (string)$tr['name']) : ''; } $days[] = ['day' => $d, 'tpl' => $tn] + $x; }
-            json_response(['ok' => true, 'on' => $cfg['mode'] !== 'off' ? 1 : 0, 'mode' => $cfg['mode'], 'days_set' => count($cfg['days']), 'total' => $tot, 'days' => $days, 'first' => $first ? date('Y-m-d H:i:s', $first) : '', 'last' => $last ? date('Y-m-d H:i:s', $last) : '']);
+            json_response(['ok' => true, 'job' => wd_job($pdo), 'on' => $cfg['mode'] !== 'off' ? 1 : 0, 'mode' => $cfg['mode'], 'days_set' => count($cfg['days']), 'total' => $tot, 'days' => $days, 'first' => $first ? date('Y-m-d H:i:s', $first) : '', 'last' => $last ? date('Y-m-d H:i:s', $last) : '']);
         }
         case 'wa.drip_preview': {   // today's send: who gets which day's message right now, counted by business day (10 AM → 10 AM)
             $cfg = wd_cfg($pdo); if (!$cfg['days']) json_response(['ok' => true, 'rows' => [], 'total' => ['customers' => 0, 'will' => 0, 'left' => 0, 'cost' => 0], 'today' => wd_today($pdo)]);
@@ -207,6 +228,13 @@ if (strpos($__wd, 'wa.drip_') === 0) {
             $tt['cost'] = round($tt['will'] * $price); $tt['price'] = $price;
             json_response(['ok' => true, 'today' => $today, 'entered' => $entered, 'rows' => $rows, 'total' => $tt, 'mode' => $cfg['mode']]);
         }
+        case 'wa.drip_send': {   // start the job and return at once — the screen can be closed
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $cfg = wd_cfg($pdo); if (!$cfg['days']) json_response(['error' => 'Pick a message for at least one day and Save first.'], 422);
+            $j = wd_job($pdo); if (($j['status'] ?? '') === 'running' && strtotime((string)($j['at'] ?? $j['started'] ?? '')) > time() - 600) json_response(['ok' => true, 'job' => $j, 'already' => 1]);
+            $j = ['status' => 'running', 'started' => date('Y-m-d H:i:s'), 'at' => date('Y-m-d H:i:s'), 'sent' => 0, 'skipped' => 0, 'failed' => 0, 'why' => '']; wd_job_put($pdo, $j); json_response(['ok' => true, 'job' => $j]);
+        }
+        case 'wa.drip_step': { json_response(['ok' => true, 'job' => wd_job_step($pdo)]); }
+        case 'wa.drip_stop': { if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $j = wd_job($pdo); if (($j['status'] ?? '') === 'running') { $j['status'] = 'stopped'; $j['finished'] = date('Y-m-d H:i:s'); $j['why'] = 'You stopped it.'; wd_job_put($pdo, $j); } json_response(['ok' => true, 'job' => $j]); }
         case 'wa.drip_test': {   // send one day's message to a number you type (your own phone)
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $in = json_input(); $k = function_exists('wa_key') ? wa_key($in['phone'] ?? '') : ''; $c = $k !== '' ? wa_contact($pdo, $k) : null;
             if (!$c) json_response(['error' => 'That number is not a chat yet — write to the business number from it first.'], 404);
