@@ -17,7 +17,7 @@
       + '.jt-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:7px 0;border-top:1px solid #f0f2f7}.jt-row.off{opacity:.5}.jt-in{border:1px solid #d5d9e4;border-radius:8px;padding:6px 8px;min-height:34px;font-size:14px;min-width:0}.jt-t{width:64px}.jt-msg{flex:1;min-width:150px}'
       + '.jt-tag{font-size:11px;font-weight:800;border-radius:99px;padding:2px 8px;background:#eef2ff;color:#3730a3}.jt-tag.w{background:#f3e8ff;color:#6b21a8}.jt-tag.a{background:#dcfce7;color:#166534}'
       + '.jt-strip{display:flex;gap:2px;margin:8px 0 2px;overflow-x:auto}.jt-strip i{flex:0 0 5px;height:14px;border-radius:2px;background:#eef0f5}.jt-strip i.a{background:#c4b5fd}.jt-strip i.w{background:#86efac}.jt-strip i.o{background:#fdba74}'
-      + '.jt-pv{flex-basis:100%;font-size:13px}.jt-pv summary{cursor:pointer;color:#5b3fd6;font-weight:700;list-style:none}.jt-pv>div{margin-top:4px;padding:8px 10px;border-radius:10px;background:#f8fafc;border:1px solid #e6e8ef;white-space:pre-wrap;word-break:break-word}.jt-card.off{opacity:.6}.jt-seg button.offb.on{background:#b91c1c}.jt-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:8px;margin-top:8px}.jt-tile{text-align:left;border:1px solid #e6e8ef;border-left-width:4px;background:#fff;border-radius:12px;padding:7px 9px;min-height:84px;display:flex;flex-direction:column;gap:2px;cursor:pointer;min-width:0;font:inherit;color:inherit}.jt-tile:active{background:#f5f3ff}.jt-tile.a{border-left-color:#86efac}.jt-tile.o{border-left-color:#fdba74}.jt-tile.w{border-left-color:#c4b5fd}.jt-tile.x{opacity:.5}.jt-tile b{font-size:15px;line-height:1.1}.jt-tile .jt-tt{font-size:11px;font-weight:800;color:#3730a3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.jt-tile .jt-ts{font-size:12px;color:#475569;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}.jt-ban{border-radius:12px;padding:10px 12px;background:#f5f3ff;border:1px solid #ddd6fe}.jt-ban ul{margin:6px 0 0 18px;padding:0}@media (max-width:700px){.jt-card{padding:10px}.jt-t{width:56px}.jt-msg{flex-basis:100%}}';
+      + '.jt-pv{flex-basis:100%;font-size:13px}.jt-pv summary{cursor:pointer;color:#5b3fd6;font-weight:700;list-style:none}.jt-pv>div{margin-top:4px;padding:8px 10px;border-radius:10px;background:#f8fafc;border:1px solid #e6e8ef;white-space:pre-wrap;word-break:break-word}.jt-card.off{opacity:.6}.jt-seg button.offb.on{background:#b91c1c}.jt-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:8px;margin-top:8px}.jt-tile{text-align:left;border:1px solid #e6e8ef;border-left-width:4px;background:#fff;border-radius:12px;padding:7px 9px;min-height:84px;display:flex;flex-direction:column;gap:2px;cursor:pointer;min-width:0;font:inherit;color:inherit}.jt-tile:active{background:#f5f3ff}.jt-tile.a{border-left-color:#86efac}.jt-tile.o{border-left-color:#fdba74}.jt-tile.w{border-left-color:#c4b5fd}.jt-tile.x{opacity:.5}.jt-tile b{font-size:15px;line-height:1.1}.jt-tile .jt-tt{font-size:11px;font-weight:800;color:#3730a3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.jt-tile .jt-ts{font-size:12px;color:#475569;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}.jt-big{flex-basis:100%;min-height:120px;font-size:15px;line-height:1.45;resize:vertical;font-family:inherit}.jt-bub{border-radius:12px;padding:8px 10px;margin:4px 0;white-space:pre-wrap;word-break:break-word}.jt-bub.y{background:#eef2ff}.jt-bub.c{background:#f0fdf4}.jt-ban{border-radius:12px;padding:10px 12px;background:#f5f3ff;border:1px solid #ddd6fe}.jt-ban ul{margin:6px 0 0 18px;padding:0}@media (max-width:700px){.jt-card{padding:10px}.jt-t{width:56px}.jt-msg{flex-basis:100%}}';
     document.head.appendChild(s);
   }
   const fmtT = (min) => min < 60 ? [Math.round(min), 'min'] : min < 1440 ? [Math.round(min / 6) / 10, 'h'] : [Math.round(min / 144) / 10, 'd'];
@@ -31,7 +31,8 @@
       try { const [a, w] = await Promise.all([api.get('fu.ap_get'), api.get('fu.wj_get')]); AP = a; WJ = w; } catch (e) { el.innerHTML = '<div class="jt">' + errBox(e.message) + '</div>'; return; }
       if (!keep || !dirty.buyer) BUYER = JSON.parse(JSON.stringify(WJ.steps.buyer));
       if (!keep) { PATHS = JSON.parse(JSON.stringify(AP.paths || [])); dirty.ap.clear(); dirty.buyer = false; }
-      draw(); if (!RES) { try { RES = await api.get('fu.jn_results', { days: 30 }); draw(); } catch (e) { RES = { lanes: [], buyer: [], total: {} }; } }
+      draw(); if (!DAY) loadDay();
+      if (!RES) { try { RES = await api.get('fu.jn_results', { days: 30 }); draw(); } catch (e) { RES = { lanes: [], buyer: [], total: {} }; } }
     }
     const stat = (o) => o && o.sent ? '<span class="jt-sub" style="white-space:nowrap" title="last 30 days">📊 sent ' + o.sent + ' · replied ' + o.replied + ' · ordered ' + o.ordered + (o.sales ? ' · ₹' + Math.round(o.sales).toLocaleString('en-IN') : '') + '</span>' : '';
     const laneStat = (sid, i) => RES && (RES.lanes || []).find((x) => x.sid === sid && x.step === i);
@@ -64,7 +65,7 @@
       let h = '<div class="jt-row" data-k="' + esc(key) + '"><span class="jt-tag ' + (r.src === 'ap' ? 'a' : 'w') + '">' + (r.src === 'ap' ? (r.kind === 'offer' ? 'message' : 'text') : 'after order') + '</span>'
         + '<input class="jt-in jt-t" type="number" min="1" step="any" data-f="v" value="' + v + '"><select class="jt-in" data-f="u"><option value="min"' + (u === 'min' ? ' selected' : '') + '>minutes</option><option value="h"' + (u === 'h' ? ' selected' : '') + '>hours</option><option value="d"' + (u === 'd' ? ' selected' : '') + '>days</option></select>';
       if (r.src === 'ap') h += '<select class="jt-in" data-f="kind"><option value="nudge"' + (r.kind !== 'offer' ? ' selected' : '') + '>💬 text</option><option value="offer"' + (r.kind === 'offer' ? ' selected' : '') + '>📨 message</option></select>';
-      if (r.src === 'ap' && r.kind !== 'offer') h += '<input class="jt-in jt-msg" data-f="text" maxlength="700" placeholder="What Claude should say (idea)" value="' + esc(r.text) + '">';
+      if (r.src === 'ap' && r.kind !== 'offer') h += '<textarea class="jt-in jt-msg jt-big" data-f="text" maxlength="700" rows="5" placeholder="What Claude should say (the idea) — write as much as you want">' + esc(r.text) + '</textarea>';
       else h += '<select class="jt-in jt-msg" data-f="ref">' + msgOpts(r.src === 'ap' ? r.offer : r.ref) + '</select>' + (r.src === 'wj' ? '<input class="jt-in" data-f="idea" maxlength="300" placeholder="Extra idea (optional)" value="' + esc(r.idea) + '" style="flex:1;min-width:120px">' : '');
       if (r.src === 'wj') h += '<label style="white-space:nowrap"><input type="checkbox" data-f="on"' + (r.on ? ' checked' : '') + '> On</label>';
       const pk = r.src === 'ap' ? (r.kind === 'offer' ? r.offer : '') : r.ref;
@@ -78,7 +79,7 @@
     function laneHtml(L) {
       const rows = rowsOf(L);
       const on = L.path.on !== false;
-      return '<div class="jt-card' + (on ? '' : ' off') + '" data-lane="' + esc(L.id) + '"><div class="jt-h">💡 ' + esc(L.title) + '<span class="jt-sp"></span><span class="jt-seg" title="Turn only this flow on or off (the Off / Preview / Auto switch at the top is for everything)"><button type="button" data-lon="1" class="' + (on ? 'on' : '') + '">On</button><button type="button" data-lon="0" class="offb ' + (on ? '' : 'on') + '">Off</button></span><button class="jt-b s" type="button" data-add>＋ Add a step</button></div><div class="jt-sub">' + esc(L.desc || '') + '</div>'
+      return '<div class="jt-card' + (on ? '' : ' off') + '" data-lane="' + esc(L.id) + '"><div class="jt-h">💡 ' + esc(L.title) + '<span class="jt-sp"></span><span class="jt-seg" title="Turn only this flow on or off (the Off / Preview / Auto switch at the top is for everything)"><button type="button" data-lon="1" class="' + (on ? 'on' : '') + '">On</button><button type="button" data-lon="0" class="offb ' + (on ? '' : 'on') + '">Off</button></span><button class="jt-b s" type="button" data-claude title="Tell Claude what to change in this whole flow — every step, every message">🧠 Claude</button><button class="jt-b s" type="button" data-add>＋ Add a step</button></div><div class="jt-sub">' + esc(L.desc || '') + '</div>'
         + strip(rows) + tiles(rows, L.id) + '</div>';
     }
     function buyRows(topic) { return BUYER.map((s, i) => ({ src: 'wj', i, min: s.day * 1440, ref: s.ref, idea: s.idea, on: s.on, topic: s.topic || '', stat: stat(buyStat(s.id)) })).filter((r) => r.topic === topic).sort((a, b) => a.min - b.min); }
@@ -119,6 +120,7 @@
         + '<div class="jt-row" style="border:0">' + (RES && RES.total ? '<span class="jt-tag">30 days: sent ' + (RES.total.sent || 0) + '</span><span class="jt-tag">replied ' + (RES.total.replied || 0) + '</span><span class="jt-tag a">orders ' + (RES.total.ordered || 0) + ' · ₹' + Math.round(RES.total.sales || 0).toLocaleString('en-IN') + '</span>' : '<span class="jt-tag">sent today ' + (s.sent_today || 0) + '</span>') + '<span class="jt-sp"></span><button class="jt-b s" type="button" data-queue>👀 Who gets what now</button></div></div>';
       const W = WJ.window || { from: '10:00', to: '02:00' }, C = WJ.cfg || {};
       h += '<div class="jt-card"><div class="jt-row" style="border:0;padding:0"><b>⏰ Messages go between</b><input class="jt-in" type="time" id="jtFrom" value="' + esc(W.from) + '"><span>and</span><input class="jt-in" type="time" id="jtTo" value="' + esc(W.to) + '"><span class="jt-sub">(the next morning is quiet)</span><span class="jt-sp"></span><span class="jt-sub" title="A customer who ignored this many follow-ups in a row stops getting the plan and goes to the Cold group (a tag you can use for campaigns). 0 = never.">❄ cold after</span><input class="jt-in jt-t" type="number" min="0" max="40" id="jtCold" value="' + (W.cold_after == null ? 8 : W.cold_after) + '"><span class="jt-sub">ignored</span><span class="jt-sp"></span><span class="jt-sub">after-order: at most</span><input class="jt-in jt-t" type="number" min="10" id="jtCap" value="' + (C.day_cap || 300) + '"><span class="jt-sub">a day</span><button class="jt-b s" type="button" id="jtWin">Save</button></div></div>';
+      h += dayHtml();
       h += metaCard();
       if (!WJ.unified) h += '<div class="jt-ban">⏳ <b>Setting up the one plan…</b> It is being prepared on the server. <button class="jt-b s" type="button" data-reload>Check again</button></div>';
       else h += '<div class="jt-ban">✅ <b>One engine.</b> Every customer who did not order follows ONE plan for their situation, from the first minutes to day 60; the situation is read again at every new message.</div>';
@@ -178,6 +180,55 @@
         q('#emNew').disabled = true; const r = await call(() => api.post('fu.wj_msg_new', { label: v.label, rule: v.rule, body: v.body, offer: m.icon !== '💬' }));
         if (r && r.new_key) { WJ = r; if (f && f.st) { if (f.src === 'ap') { f.st.kind = 'offer'; f.st.offer = r.new_key; } else f.st.ref = r.new_key; markDirty(f); } close(); draw(); if (after) after(); } else q('#emNew').disabled = false; };
     }
+    // 🧠 talk to Claude about ONE flow: say it (voice or typing) → Claude says what it understood → correct it again → Approve. Nothing changes before Approve.
+    function claudeLane(p) {
+      if (dirty.ap.size || dirty.buyer) { toast('Press “Save changes” first, then ask Claude.', true); return; }
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition; let rec = null, on = false, started = false, pr = null, wait = false;
+      const o = sheet('<div class="jt" style="background:#fff;width:100%;max-width:680px;border-radius:18px 18px 0 0;padding:14px;max-height:92vh;overflow:auto"><div class="jt-h">🧠 Claude — ' + esc(p.title) + '<span class="jt-sp"></span><button class="jt-b s" type="button" id="cxX">Close</button></div>'
+        + '<div class="jt-sub">Tell Claude what you want for this flow, in your own words (Gujarati / Hindi / English). Claude may change <b>every step</b> of it — the time, the words, which offer goes. You can say timing in general (“after about a day, then two days”) — Claude picks the exact times and the messages. Claude tells you what it understood; correct it as many times as you like, then press <b>Approve</b>. Nothing changes before that.</div>'
+        + '<div id="cxLog"></div><textarea class="jt-in jt-big" id="cxT" style="width:100%" placeholder="Say or write what you want…"></textarea>'
+        + '<div class="jt-row" style="border:0"><button class="jt-b" type="button" id="cxMic"' + (SR ? '' : ' hidden') + '>🎤 Start</button><select class="jt-in" id="cxLang"' + (SR ? '' : ' hidden') + '><option value="gu-IN">ગુજરાતી</option><option value="hi-IN">हिन्दी</option><option value="en-IN">English</option></select>' + (SR ? '' : '<span class="jt-sub">Voice is not available in this browser — type it.</span>') + '<span class="jt-sp"></span><button class="jt-b p" type="button" id="cxSend">Send to Claude</button></div>'
+        + '<div id="cxOut"></div></div>');
+      const q = (x) => o.querySelector(x); const stop = () => { on = false; try { if (rec) rec.stop(); } catch (e) { } const m = q('#cxMic'); if (m) m.textContent = '🎤 Start'; };
+      const close = () => { stop(); o.remove(); }; q('#cxX').onclick = close; o.onclick = (e) => { if (e.target === o) close(); };
+      if (SR) q('#cxMic').onclick = () => { if (on) { stop(); return; } rec = new SR(); rec.lang = q('#cxLang').value; rec.continuous = true; rec.interimResults = false;
+        rec.onresult = (e) => { let t = ''; for (let i = e.resultIndex; i < e.results.length; i++) if (e.results[i].isFinal) t += e.results[i][0].transcript + ' '; if (t) { const ta = q('#cxT'); ta.value = (ta.value ? ta.value.replace(/\s*$/, ' ') : '') + t.trim(); } };
+        rec.onend = () => { if (on) { try { rec.start(); } catch (e) { stop(); } } }; rec.onerror = (e) => { if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { toast('Allow the microphone to talk to Claude.', true); stop(); } };
+        try { rec.start(); on = true; q('#cxMic').textContent = '⏹ Stop'; } catch (e) { toast('Could not start the microphone.', true); } };
+      const show = () => { const x = pr || {}; let h = '';
+        (x.turns || []).forEach((t) => { h += '<div class="jt-bub ' + (t.who === 'you' ? 'y' : 'c') + '"><b>' + (t.who === 'you' ? 'You' : 'Claude understood') + '</b>\n' + esc(t.text) + '</div>'; });
+        q('#cxLog').innerHTML = h; let out = '';
+        if ((x.changes || []).length) out += '<div class="jt-ban"><b>What Claude will change</b><ul>' + x.changes.map((c) => '<li>' + esc(c) + '</li>').join('') + '</ul></div>';
+        if ((x.questions || []).length) out += '<div class="jt-ban" style="background:#fffbeb;border-color:#fde68a"><b>Claude asks</b><ul>' + x.questions.map((c) => '<li>' + esc(c) + '</li>').join('') + '</ul><div class="jt-sub">Answer above and press Send again.</div></div>';
+        if ((x.paths || []).length) out += '<div class="jt-row" style="border:0"><button class="jt-b p" type="button" id="cxOk">✅ Approve &amp; apply</button><button class="jt-b r" type="button" id="cxNo">Drop</button><span class="jt-sub">You can still say more above before approving.</span></div>';
+        q('#cxOut').innerHTML = out; q('#cxT').placeholder = started ? 'Correct it or add more…' : 'Say or write what you want…';
+        const ok = q('#cxOk'); if (ok) ok.onclick = async () => { if (wait) return; wait = true; ok.disabled = true; const r = await call(() => api.post('fu.ap_apply', {})); wait = false; if (r) { close(); await load(false); } else ok.disabled = false; };
+        const no = q('#cxNo'); if (no) no.onclick = async () => { await call(() => api.post('fu.ap_apply', { drop: 1 })); pr = null; started = false; show(); }; };
+      q('#cxSend').onclick = async () => { const t = q('#cxT').value.trim(); if (!t) { toast('Say or write something first.', true); return; } if (wait) return; wait = true; stop(); q('#cxSend').disabled = true; q('#cxSend').textContent = 'Claude is reading…';
+        const r = await call(() => started ? api.post('fu.ap_summary', { text: t, more: true }) : api.post('fu.ap_path_teach', { sid: p.id, text: t }));
+        wait = false; q('#cxSend').disabled = false; q('#cxSend').textContent = 'Send to Claude'; if (r && r.proposal) { pr = r.proposal; started = true; q('#cxT').value = ''; show(); } };
+    }
+    // 📅 yesterday (or any day): what went out, who answered, what it cost and brought
+    let DAY = null;
+    const inr = (n) => '₹' + Math.round(Number(n) || 0).toLocaleString('en-IN');
+    function dayHtml() {
+      const y = new Date(Date.now() - 86400000), ds = (DAY && DAY.date) || y.toISOString().slice(0, 10);
+      let h = '<div class="jt-card" id="jtDay"><div class="jt-h">📅 Day summary<span class="jt-sp"></span><input class="jt-in" type="date" id="jtDayD" value="' + esc(ds) + '" max="' + new Date().toISOString().slice(0, 10) + '"></div>';
+      if (!DAY) return h + '<div class="jt-sub">' + loading + '</div></div>';
+      const d = DAY.day || {}, b = DAY.bill || {}, t = b.total || {};
+      h += '<div class="jt-row" style="border:0"><span class="jt-tag a">sent ' + (d.total ? d.total.sent : 0) + '</span><span class="jt-tag">answered ' + (d.total ? d.total.replied : 0) + '</span>'
+        + (t.orders != null ? '<span class="jt-tag a">orders ' + (t.orders || 0) + ' · ' + inr(t.revenue) + '</span>' : '') + (t.cost != null ? '<span class="jt-tag" style="background:#fee2e2;color:#991b1b" title="what Meta charges for the paid (template) follow-up messages">spent ' + inr(t.cost) + '</span>' : '') + '</div>';
+      if (t.sent != null) h += '<div class="jt-sub">Paid messages (templates) that day: ' + (t.sent || 0) + ' · delivered ' + (t.delivered || 0) + ' · read ' + (t.read || 0) + ' · failed ' + (t.failed || 0) + '. Short texts inside 24 hours are free.</div>';
+      const rows = (d.rows || []); h += rows.length ? '<details style="margin-top:6px" open><summary style="cursor:pointer;font-weight:700">What went out (' + rows.length + ')</summary>' + rows.map((r) => '<div class="jt-row"><span class="jt-msg" style="min-width:0">' + esc(r.label) + '</span><span class="jt-tag">sent ' + r.sent + '</span><span class="jt-tag a">answered ' + r.replied + '</span></div>').join('') + '</details>' : '<div class="jt-sub" style="padding:6px 0">Nothing went out that day.</div>';
+      return h + '</div>';
+    }
+    async function loadDay(ds) {
+      DAY = null; const old = el.querySelector('#jtDay'); if (old) old.outerHTML = dayHtml();
+      const y = ds || new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+      const [d, b] = await Promise.all([api.get('fu.jn_day', { d: y }).catch(() => ({})), api.get('wa.bill', { from: y, to: y, by: 'day', src: 'followup' }).catch(() => ({}))]);
+      DAY = { date: y, day: d, bill: b }; const c = el.querySelector('#jtDay'); if (c) { c.outerHTML = dayHtml(); bindDay(); }
+    }
+    function bindDay() { const di = el.querySelector('#jtDayD'); if (di) di.onchange = () => { if (di.value) loadDay(di.value); }; }
     function askTime(done, noAll) {
       const o = sheet('<div class="jt" style="background:#fff;width:100%;max-width:420px;border-radius:18px 18px 0 0;padding:16px"><div class="jt-h">＋ New step — when?</div><div class="jt-sub">' + (noAll ? 'Days counted from the last order (up to 365).' : 'After our last message to this customer. Within 24 hours it is a short text Claude writes; later it is an approved message (you choose which).') + '</div><div class="jt-row" style="border:0"><input class="jt-in jt-t" id="atV" type="number" min="1" value="2"><select class="jt-in" id="atU"><option value="min">minutes</option><option value="h">hours</option><option value="d">days</option></select></div>'
         + (noAll ? '' : '<label class="jt-sub" style="display:block;margin:4px 0"><input type="checkbox" id="atAll"> Add it to <b>every lane</b></label>')
@@ -218,6 +269,8 @@
         busy = true; const r = await call(() => api.post('fu.sit_toggle', { sid: p.id, on: want })); busy = false; if (r) { p.on = want; toast(want ? 'This flow is ON.' : 'This flow is OFF — nothing from it is sent.'); draw(); } });
       $$('[data-add]').forEach((b) => b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); addStep(b.closest('[data-lane]').dataset.lane); });
       $$('[data-tile]').forEach((b) => b.onclick = () => openStep(b.dataset.tile));
+      $$('[data-claude]').forEach((b) => b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); const p = PATHS.find((x) => 'p:' + x.id === b.closest('[data-lane]').dataset.lane); if (p) claudeLane(p); });
+      bindDay();
     }
     function bindRow(row, after) { const f = find(row.dataset.k); if (!f || !f.st) return;
         row.querySelectorAll('[data-edit]').forEach((b) => b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); editMsg(b.dataset.edit, f, after); });

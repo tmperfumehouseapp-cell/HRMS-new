@@ -852,6 +852,29 @@ if (strpos($__wj, 'fu.wj_') === 0) {
         $at = $a['total'] + ['sent' => 0, 'replied' => 0, 'ordered' => 0, 'sales' => 0.0]; json_response(['ok' => true, 'days' => $days, 'lanes' => $a['steps'], 'buyer' => $bs, 'lane_total' => $at, 'buyer_total' => $bt,
             'total' => ['sent' => $at['sent'] + $bt['sent'], 'replied' => $at['replied'] + $bt['replied'], 'ordered' => $at['ordered'] + $bt['ordered'], 'sales' => $at['sales'] + $bt['sales']]]);
     }
+    if ($__wj === 'fu.jn_day') {   // 📅 one day of the Journey (default: yesterday): which messages went out, how many, how many customers answered
+        $d = (string)($_GET['d'] ?? ''); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $d)) $d = date('Y-m-d', strtotime('-1 day'));
+        $t0 = $d . ' 00:00:00'; $t1 = $d . ' 23:59:59'; $G = []; $tot = ['sent' => 0, 'replied' => 0];
+        $when = function ($h) { $h = (float)$h; return $h < 1 ? round($h * 60) . ' min' : ($h < 24 ? round($h * 10) / 10 . ' h' : round($h / 24 * 10) / 10 . ' d'); };
+        try {
+            $P = fu_plans_get($pdo); $S = []; foreach ($P['situations'] as $x) $S[(string)$x['id']] = $x; $O = fa_offers($pdo);
+            $q = $pdo->prepare("SELECT phone, sid, step, sent_at FROM wa_fu_ev WHERE status = 'sent' AND sent_at BETWEEN ? AND ? LIMIT 4000"); $q->execute([$t0, $t1]);
+            foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) {
+                $sit = $S[(string)$r['sid']] ?? null; $st = $sit ? ($sit['steps'][(int)$r['step']] ?? null) : null;
+                $what = $st ? (($st['kind'] ?? '') === 'offer' ? ($O[(string)$st['offer']][0] ?? 'message') : 'text') : 'message';
+                $lab = ($sit ? (string)$sit['title'] : 'Follow-up') . ' · ' . ($st ? $when($st['after_h']) . ' · ' : '') . $what; $k = 'a|' . $r['sid'] . '|' . $r['step'];
+                $G[$k] = $G[$k] ?? ['label' => $lab, 'sent' => 0, 'replied' => 0]; $G[$k]['sent']++; $tot['sent']++;
+                if (function_exists('fu_replied') && fu_replied($pdo, (string)$r['phone'], (string)$r['sent_at'])) { $G[$k]['replied']++; $tot['replied']++; }
+            }
+            $q = $pdo->prepare("SELECT e.track, e.step_id, e.ref, EXISTS(SELECT 1 FROM wa_messages m WHERE m.phone = e.phone AND m.dir = 'in' AND m.ts > e.sent_at AND m.ts <= DATE_ADD(e.sent_at, INTERVAL 2 DAY)) AS rep FROM wa_wj_ev e WHERE e.status = 'sent' AND e.sent_at BETWEEN ? AND ? LIMIT 4000"); $q->execute([$t0, $t1]);
+            foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) {
+                $k = 'b|' . $r['track'] . '|' . $r['step_id']; $G[$k] = $G[$k] ?? ['label' => 'After an order · ' . ($O[(string)$r['ref']][0] ?? (string)$r['ref']), 'sent' => 0, 'replied' => 0]; $G[$k]['sent']++; $tot['sent']++;
+                if ((int)$r['rep']) { $G[$k]['replied']++; $tot['replied']++; }
+            }
+        } catch (Throwable $e) { }
+        $rows = array_values($G); usort($rows, fn($x, $y) => $y['sent'] <=> $x['sent']);
+        json_response(['ok' => true, 'date' => $d, 'rows' => array_slice($rows, 0, 40), 'total' => $tot]);
+    }
     if ($__wj === 'fu.jn_window') {
         if ($isPost) { $p = function ($v) { return preg_match('/^(\d{1,2}):(\d{2})$/', (string)$v, $mm) ? max(0, min(1439, (int)$mm[1] * 60 + (int)$mm[2])) : null; }; $f = $p($in['from'] ?? ''); $t = $p($in['to'] ?? '');
             if ($f === null || $t === null || $f === $t) json_response(['error' => 'Give two different times like 10:00 and 02:00.'], 422); setting_set($pdo, 'jn_window', json_encode(['from' => $f, 'to' => $t])); if (isset($in['cold_after']) && is_numeric($in['cold_after'])) setting_set($pdo, 'jn_cold_after', (string)max(0, min(40, (int)$in['cold_after']))); }
