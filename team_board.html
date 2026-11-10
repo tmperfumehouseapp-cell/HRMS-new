@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<title>Team — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=4">
+<style>
+.tb-top{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 12px}
+.tb-k{border:1px solid var(--line);border-radius:12px;padding:8px 12px;background:#fff;min-width:110px}.tb-k b{display:block;font-size:20px;letter-spacing:-.02em}.tb-k span{font-size:12px;color:var(--muted)}
+.tb-sum{border:1px solid #c7d2fe;border-radius:12px;padding:10px 12px;background:#eef2ff;margin:0 0 12px;font-size:13.5px;line-height:1.55;white-space:pre-wrap}
+.tb-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:#fff}
+table.tb{border-collapse:collapse;width:100%;font-size:13px;white-space:nowrap}
+.tb th{position:sticky;top:0;background:#f8fafc;text-align:left;font-size:11.5px;color:var(--muted);padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--line)}
+.tb td{padding:8px 10px;border-bottom:1px solid #eef0f3}.tb tr.r{cursor:pointer}.tb tr.r:hover{background:#f6f8fb}
+.tb .n{font-weight:700}.tb .num{text-align:right;font-variant-numeric:tabular-nums}
+.chip{display:inline-block;font-size:11px;font-weight:700;border-radius:99px;padding:2px 8px;background:#e5e7eb;color:#374151;margin-left:4px}
+.chip.first{background:#dcfce7;color:#166534}.chip.late{background:#ffedd5;color:#9a3412}.chip.hold{background:#fee2e2;color:#b91c1c}.chip.off{background:#f3f4f6;color:#6b7280}.chip.meet{background:#ede9fe;color:#5b21b6}.chip.md{background:#fef9c3;color:#854d0e}
+.bar{height:6px;border-radius:99px;background:#e5e7eb;min-width:60px;overflow:hidden}.bar i{display:block;height:100%;background:#22c55e}
+.good{color:#166534;font-weight:700}.bad{color:#b91c1c;font-weight:700}
+.dr-bg{position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:50;display:none}.dr-bg.on{display:block}
+.dr{position:fixed;top:0;right:0;bottom:0;width:min(520px,100%);background:#fff;z-index:51;overflow:auto;padding:16px;box-shadow:-8px 0 30px rgba(0,0,0,.2);transform:translateX(105%);transition:transform .2s}.dr.on{transform:none}
+.dr h2{margin:0 0 2px;font-size:20px}.dr .x{position:absolute;top:10px;right:12px;border:0;background:#f1f5f9;border-radius:99px;width:34px;height:34px;font-size:18px;cursor:pointer}
+.sec{border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:10px 0}.sec h3{margin:0 0 6px;font-size:13px}
+.kv{display:grid;grid-template-columns:1fr auto;gap:3px 10px;font-size:13px}.kv span{color:var(--muted)}.kv b{text-align:right}
+.card-line{background:#f1f5f9;border-radius:8px;padding:8px 10px;font-size:13px;margin-top:6px}
+.empty{padding:26px;text-align:center;color:var(--muted)}.err{color:#d9423b;padding:12px}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><div><h1>👥 Team</h1><div style="font-size:12.5px;color:var(--muted);margin-top:3px;max-width:75ch">Everyone in one table. Tap a person for their whole picture: today, queries, speed, tone, complaints, attendance, rating and Claude's note. Queries, ratio, ticket and speed are the last 30 days; target, punch-in and hours are today.</div></div></div>
+    <div class="content"><div id="tbRoot"><div class="empty">Loading…</div></div></div>
+  </main>
+</div>
+<div class="dr-bg" id="drBg"></div><aside class="dr" id="dr" aria-hidden="true"></aside>
+<script src="assets/js/config.js?v=4"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=27"></script>
+<script>
+guardPage();
+(function () {
+  'use strict';
+  renderSidebar('sales');
+  const root = document.getElementById('tbRoot'), dr = document.getElementById('dr'), bg = document.getElementById('drBg');
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const v = (x, suf) => x == null ? '—' : esc(x) + (suf || '');
+  let D = null, sort = { k: 'rank', dir: 1 }, busy = false, openId = 0;
+  const COLS = [
+    ['rank', '#', (r) => r.rank], ['name', 'Name', (r) => r.name.toLowerCase()], ['present', 'Today', (r) => (r.present ? 1 : 0)], ['target_pct_today', 'Target', (r) => r.target_pct_today],
+    ['orders_30d', 'Orders', (r) => r.orders_30d], ['queries_30d', 'Queries', (r) => r.queries_30d], ['ratio_pct', 'Ratio', (r) => r.ratio_pct], ['ticket_30d', 'Ticket', (r) => r.ticket_30d],
+    ['speed_median_min_30d', 'Speed', (r) => r.speed_median_min_30d], ['tone_score', 'Tone', (r) => r.tone_score], ['overdue_complaints', 'Complaints', (r) => r.overdue_complaints], ['rating_30d', 'Rating', (r) => r.rating_30d], ['level', 'Claude', (r) => r.level]
+  ];
+  async function load() { try { D = await api.get('team.board'); draw(); } catch (e) { root.innerHTML = '<div class="err">' + esc(e.message) + '</div>'; } }
+  const lvChip = (r) => r.level ? '<span class="chip ' + esc(r.level) + '">' + esc((D.levels || {})[r.level] || r.level) + '</span>' : '';
+  function rowHtml(r) {
+    const t = r.target_pct_today, sh = r.should_pct_today, pctB = t == null ? '' : '<div class="bar" title="' + esc(t) + '% (should be ' + v(sh) + '%)"><i style="width:' + Math.max(0, Math.min(100, t)) + '%;background:' + (sh != null && t < sh ? '#f59e0b' : '#22c55e') + '"></i></div>';
+    const behind = r.ratio_pct != null && r.team_ratio_pct != null && r.ratio_pct < r.team_ratio_pct;
+    return '<tr class="r" data-id="' + r.emp_id + '"><td class="num">' + r.rank + '</td><td class="n">' + esc(r.name) + (r.medals || []).map((m) => '<span class="chip md" title="' + esc(m) + '">' + esc(m.split(' ')[0]) + '</span>').join('') + (r.meet_admin ? '<span class="chip meet">Meet admin</span>' : '') + '</td>'
+      + '<td>' + (r.present ? '<span class="chip first">In ' + esc(r.punch_in_today || '') + '</span>' : '<span class="chip off">Away</span>') + '</td>'
+      + '<td>' + (t == null ? '—' : '<div style="display:flex;gap:6px;align-items:center">' + pctB + '<span>' + esc(t) + '%</span></div>') + '</td>'
+      + '<td class="num">' + v(r.orders_30d) + '</td><td class="num">' + v(r.queries_30d) + '</td><td class="num ' + (r.sure_behind ? 'bad' : (behind ? '' : (r.ratio_pct != null ? 'good' : ''))) + '">' + v(r.ratio_pct, r.ratio_pct == null ? '' : '%') + '</td>'
+      + '<td class="num">' + (r.ticket_30d == null ? '—' : '₹' + esc(r.ticket_30d)) + '</td><td class="num">' + v(r.speed_median_min_30d, r.speed_median_min_30d == null ? '' : ' m') + '</td><td class="num">' + v(r.tone_score) + '</td>'
+      + '<td class="num ' + (r.overdue_complaints ? 'bad' : '') + '">' + v(r.overdue_complaints) + '</td><td class="num">' + v(r.rating_30d) + '</td><td>' + lvChip(r) + '</td></tr>';
+  }
+  function draw() {
+    const T = D.team || {}, rows = (D.rows || []).slice(), s = COLS.find((c) => c[0] === sort.k) || COLS[0];
+    rows.sort((a, b) => { const x = s[2](a), y = s[2](b); if (x == null && y == null) return 0; if (x == null) return 1; if (y == null) return -1; return (x > y ? 1 : x < y ? -1 : 0) * sort.dir; });
+    root.innerHTML = '<div class="tb-top"><div class="tb-k"><b>' + v(T.at_work) + ' / ' + v(T.people) + '</b><span>at work now</span></div><div class="tb-k"><b>' + v(T.ratio_pct, '%') + '</b><span>team ratio (30 days)</span></div><div class="tb-k"><b>' + (T.ticket == null ? '—' : '₹' + esc(T.ticket)) + '</b><span>team ticket</span></div><div class="tb-k"><b style="font-size:13px">' + esc(D.mode) + '</b><span>Team manager mode</span></div></div>'
+      + (D.summary ? '<div class="tb-sum">🧠 ' + esc(D.summary) + '</div>' : '')
+      + (rows.length ? '<div class="tb-wrap"><table class="tb"><thead><tr>' + COLS.map((c) => '<th data-k="' + c[0] + '">' + c[1] + (sort.k === c[0] ? (sort.dir > 0 ? ' ▲' : ' ▼') : '') + '</th>').join('') + '</tr></thead><tbody>' + rows.map(rowHtml).join('') + '</tbody></table></div>' : '<div class="empty">No salespeople found.</div>');
+  }
+  function drawer(id) {
+    const r = (D.rows || []).find((x) => x.emp_id === id); if (!r) return; openId = id; const L = D.levels || {};
+    const sel = '<select data-set="' + id + '"><option value="auto"' + (!r.manual ? ' selected' : '') + '>Auto (Claude)</option>' + Object.keys(L).map((k) => '<option value="' + k + '"' + (r.manual === k ? ' selected' : '') + '>' + esc(L[k]) + '</option>').join('') + '</select>';
+    const hold = r.auto_level === 'hold' || r.manual === 'hold';
+    const kv = (a) => '<div class="kv">' + a.map((x) => '<span>' + x[0] + '</span><b>' + x[1] + '</b>').join('') + '</div>';
+    dr.innerHTML = '<button class="x" id="drX" aria-label="Close">✕</button><h2>' + esc(r.name) + '</h2><div style="font-size:12.5px;color:var(--muted)">Rank ' + r.rank + ' of ' + (D.rows || []).length + ' by orders (30 days) ' + (r.medals || []).map((m) => '· ' + esc(m)).join(' ') + '</div>'
+      + '<div class="sec"><h3>📅 Today</h3>' + kv([['At work', r.present ? 'Yes · in ' + esc(r.punch_in_today || '') : 'No'], ['Hours today', v(r.hours_today, ' h')], ['Target', r.target_today == null ? '—' : '₹' + esc(Math.round(r.target_today)) + ' · ' + v(r.target_pct_today, '%') + ' (should be ' + v(r.should_pct_today, '%') + ')'], ['Sales today', r.sales_today == null ? '—' : '₹' + esc(Math.round(r.sales_today))], ['Answering', r.answering_min_ago == null ? '—' : esc(r.answering_min_ago) + ' min ago']]) + '</div>'
+      + '<div class="sec"><h3>🧾 Queries & orders (30 days)</h3>' + kv([['Queries', v(r.queries_30d)], ['Orders', v(r.orders_30d)], ['Ratio', v(r.ratio_pct, '%') + ' (team ' + v(r.team_ratio_pct, '%') + ')' + (r.sure_behind ? ' ⚠ clearly behind' : '')], ['Ticket', (r.ticket_30d == null ? '—' : '₹' + esc(r.ticket_30d)) + ' (team ' + (r.team_ticket == null ? '—' : '₹' + esc(r.team_ticket)) + ')'], ['Rescue', r.rescue_taken_30d == null ? '—' : esc(r.rescue_taken_30d) + ' taken · ' + v(r.rescue_win_pct, '%') + ' won']]) + '</div>'
+      + '<div class="sec"><h3>⚡ Speed</h3>' + kv([['Median today', v(r.speed_median_min_today, r.speed_median_min_today == null ? '' : ' min')], ['Median 30 days', v(r.speed_median_min_30d, r.speed_median_min_30d == null ? '' : ' min')], ['Replies today', v(r.replies_today)], ['Late replies today', v(r.late_replies_today)], ['Pace verdict', v(r.pace_verdict)], ['Orders lost to slow replies', v(r.orders_lost_to_slow_replies)]]) + '</div>'
+      + '<div class="sec"><h3>🗣 Behaviour</h3>' + kv([['Tone (Claude, 0–10)', v(r.tone_score)], ['Overdue complaints', v(r.overdue_complaints)], ['Pending answers', v(r.pending_answers)], ['Penalties (30 days)', v(r.penalties_30d)], ['Open chats', v(r.open_chats)]]) + (r.tone_note ? '<div class="card-line">' + esc(r.tone_note) + '</div>' : '') + '</div>'
+      + '<div class="sec"><h3>🕘 Attendance (30 days)</h3>' + kv([['Days worked', v(r.days_30d)], ['Hours', v(r.hours_30d, ' h')], ['Average a day', v(r.avg_hours_day, ' h')], ['Orders per hour', v(r.orders_per_hour)]]) + '</div>'
+      + '<div class="sec"><h3>⭐ Rating</h3>' + kv([['Daily rating (30 days)', v(r.rating_30d, '/10')], ['Weakest parts', esc((r.rating_weak_parts || []).join(', ')) || '—'], ['Benchmark outcome', v(r.benchmark_outcome)], ['Meet-admin alerts', v(r.meet_admin_alerts)]]) + '</div>'
+      + '<div class="sec"><h3>🧭 Claude</h3>' + (r.level ? '<div>' + lvChip(r) + (r.meet_admin ? '<span class="chip meet">Meet admin</span>' : '') + (r.manual ? '<span class="chip">by hand</span>' : '') + '</div>' : '<div style="color:var(--muted);font-size:13px">Not decided yet — ask Claude in Queries &amp; Team manager.</div>')
+        + (r.card ? '<div class="card-line">📣 ' + esc(r.card) + '</div>' : '') + (r.reason ? '<div style="font-size:12px;color:var(--muted);margin-top:6px">Why: ' + esc(r.reason) + '</div>' : '')
+        + '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px">' + sel + (hold ? '<button class="btn" data-appr="' + id + '" data-v="' + (r.approved ? 0 : 1) + '">' + (r.approved ? 'Approved — undo' : 'Approve “no new chats”') + '</button>' : '') + '</div></div>'
+      + '<div style="font-size:12px;color:var(--muted);margin:8px 0">Pay and commission are in Sales → Money (admin only).</div>';
+    dr.classList.add('on'); bg.classList.add('on'); dr.setAttribute('aria-hidden', 'false');
+  }
+  function closeDr() { dr.classList.remove('on'); bg.classList.remove('on'); dr.setAttribute('aria-hidden', 'true'); openId = 0; }
+  root.addEventListener('click', (e) => { const th = e.target.closest('th[data-k]'); if (th) { const k = th.dataset.k; sort = { k, dir: sort.k === k ? -sort.dir : (k === 'name' || k === 'rank' ? 1 : -1) }; draw(); return; } const tr = e.target.closest('tr.r'); if (tr) drawer(+tr.dataset.id); });
+  bg.addEventListener('click', closeDr);
+  dr.addEventListener('click', async (e) => {
+    if (e.target.closest('#drX')) { closeDr(); return; }
+    const b = e.target.closest('[data-appr]'); if (!b || busy) return; busy = true;
+    try { await api.post('wq.mgr_approve', { emp_id: +b.dataset.appr, approve: +b.dataset.v }); const id = openId; await load(); drawer(id); } catch (er) { alert(er.message); } busy = false;
+  });
+  dr.addEventListener('change', async (e) => {
+    const t = e.target; if (!t.dataset.set || busy) return; busy = true;
+    try { await api.post('wq.mgr_set', { emp_id: +t.dataset.set, level: t.value }); const id = openId; await load(); drawer(id); } catch (er) { alert(er.message); } busy = false;
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDr(); });
+  load(); setInterval(() => { if (!document.hidden && !openId) load(); }, 120000);
+})();
+</script>
+</body>
+</html>
