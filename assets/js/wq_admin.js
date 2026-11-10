@@ -39,8 +39,8 @@
     let seq = 0, liveTimer = 0, rsz = 0;
     el.innerHTML = '<div id="wqTabs" class="wq-tabs" role="tablist"></div><div id="wqSubTabs" class="wq-tabs" role="tablist" style="display:none;margin-top:-4px"></div><div id="wqBody"></div>';
     const tabsEl = el.querySelector('#wqTabs'), subEl = el.querySelector('#wqSubTabs'), body = el.querySelector('#wqBody');
-    const MGR = [['manager', 'Team'], ['pace', 'Pace'], ['attention', 'Attention'], ['types', 'Types'], ['compare', 'Bot vs person']];
-    const TOP = [['live', 'Live'], ['manager', '🧭 Team manager'], ['analytics', 'Analytics'], ['settings', 'Settings']];
+    const MGR = [['pace', 'Pace'], ['attention', 'Attention'], ['types', 'Types'], ['compare', 'Bot vs person']];   // the Team manager's own table moved to Sales → Team performance → Team
+    const TOP = [['live', 'Live'], ['pace', 'Pace & queues'], ['analytics', 'Analytics'], ['settings', 'Settings']];
     const TABS = [['live', 'Live'], ...MGR, ['analytics', 'Analytics'], ['settings', 'Settings']];
     const get = (a, p) => U.call(opt, a, p); const post = (a, b) => U.post(opt, a, b);
     const attnCount = () => S.attn ? num(S.attn.count, (S.attn.items || []).length) : 0;
@@ -51,7 +51,7 @@
       const btn = (t, on, extra) => '<button type="button" role="tab" aria-selected="' + on + '" data-t="' + t[0] + '" class="' + (on ? 'on' : '') + '">' + t[1] + (extra || '') + '</button>';
       const badge = (k) => (k === 'attention' && attnCount() > 0 ? '<b>' + attnCount() + '</b>' : '') + (k === 'types' && S.types && num(S.types.state && S.types.state.pending) > 0 ? '<b style="background:#d97706">' + num(S.types.state.pending) + '</b>' : '');
       const inMgr = MGR.some((t) => t[0] === S.tab);
-      tabsEl.innerHTML = TOP.map((t) => btn(t, t[0] === 'manager' ? inMgr : S.tab === t[0], t[0] === 'manager' ? (attnCount() > 0 || (S.types && num(S.types.state && S.types.state.pending) > 0) ? '<b>' + (attnCount() + num(S.types && S.types.state && S.types.state.pending)) + '</b>' : '') : '')).join('');
+      tabsEl.innerHTML = TOP.map((t) => btn(t, t[0] === 'pace' ? inMgr : S.tab === t[0], t[0] === 'pace' ? (attnCount() > 0 || (S.types && num(S.types.state && S.types.state.pending) > 0) ? '<b>' + (attnCount() + num(S.types && S.types.state && S.types.state.pending)) + '</b>' : '') : '')).join('');
       subEl.style.display = inMgr ? '' : 'none'; subEl.innerHTML = inMgr ? MGR.map((t) => btn(t, S.tab === t[0], badge(t[0]))).join('') : '';
       drawTop();
       if (opt.onBadge) try { opt.onBadge(attnCount()); } catch (e) { /* optional */ }
@@ -205,7 +205,6 @@
       await loadPace();
       if (my !== seq || !alive() || S.tab !== 'live') return; drawLive();
     }
-    function renderManager() { body.innerHTML = '<div id="wqMgrHost"></div>'; if (window.WaManager) window.WaManager.mount(body.querySelector('#wqMgrHost')); else body.innerHTML = '<div class="wq-card">The Team manager script could not load.</div>'; }
     function renderPace() { body.innerHTML = '<div id="wqPaceHost"></div>'; if (window.WaPace) window.WaPace.mount(body.querySelector('#wqPaceHost'), { days: 7 }); else body.innerHTML = '<div class="wq-card">The pace script could not load. Refresh the page.</div>'; }
     function setSub() {
       if (!opt.subEl) return; const b = S.board; const d = new Date();
@@ -511,7 +510,6 @@
       clearInterval(liveTimer); seq++;
       if (S.tab === 'live') { renderLive(quiet); liveTimer = setInterval(() => { if (!alive()) { clearInterval(liveTimer); return; } if (U.visible() && S.tab === 'live' && !document.querySelector('.wq-ov')) renderLive(true); }, 60000); }
       else if (S.tab === 'pace') renderPace();
-      else if (S.tab === 'manager') renderManager();
       else if (S.tab === 'attention') renderAttention();
       else if (S.tab === 'types') renderTypes();
       else if (S.tab === 'compare') renderCompare();
