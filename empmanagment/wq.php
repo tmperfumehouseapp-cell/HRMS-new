@@ -1355,6 +1355,7 @@ function wq_needs(PDO $pdo, int $me, bool $waves = true): array
             if ($phs) { $q = $pdo->prepare("SELECT m.phone, m.body, m.id FROM wa_messages m JOIN (SELECT phone, MAX(id) mid FROM wa_messages WHERE dir = 'in' AND phone IN (" . wq_in($phs) . ") GROUP BY phone) x ON x.mid = m.id"); $q->execute($phs); foreach ($q->fetchAll() as $t) { $last[(string)$t['phone']] = (string)$t['body']; $lastId[(string)$t['phone']] = (int)$t['id']; } }
             $ordered = []; try { foreach ($pdo->query("SELECT DISTINCT RIGHT(phone, 10) FROM shop_orders WHERE created_at >= '" . wq_dt($now - 7 * 86400) . "' AND phone <> ''")->fetchAll(PDO::FETCH_COLUMN) as $op) $ordered[(string)$op] = 1; } catch (Throwable $e) { }   // an order in the last 7 days: not a lead any more
             try { foreach ($pdo->query("SELECT phone FROM wa_order_done WHERE mute_until > NOW()")->fetchAll(PDO::FETCH_COLUMN) as $op) $ordered[substr(preg_replace('/\D/', '', (string)$op), -10)] = 1; } catch (Throwable $e) { }   // "order completed" was pressed in the chat
+            $buyer = []; try { foreach ($pdo->query("SELECT DISTINCT RIGHT(phone, 10) FROM shop_orders WHERE created_at >= '" . wq_dt($now - 365 * 86400) . "' AND total > 0 AND phone <> ''")->fetchAll(PDO::FETCH_COLUMN) as $op) $buyer[(string)$op] = 1; } catch (Throwable $e) { }   // bought before: a returning customer is the most likely to buy again
             // ⏱ a customer who showed interest EARLIER (even if the last message is just "ok / thanks") and nobody has answered for 3 minutes turns orange by time
             $intr = []; $cand = []; foreach ($rows as $r0) if ($now - wq_ts($r0['last_in_at']) >= 180) $cand[] = (string)$r0['phone'];
             if ($cand && function_exists('wag_read')) {
@@ -1372,7 +1373,7 @@ function wq_needs(PDO $pdo, int $me, bool $waves = true): array
                 $rd = function_exists('wag_read') ? wag_read(['last_in_at' => $r['last_in_at'], 'last_body' => $body, 'last_dir' => 'in'], true, true, (int)$r['hot'] === 1, false, 0, $now) : ['i' => ''];
                 $lv = (string)($rd['i'] ?? ''); $wv = wq_ts($r['last_in_at']);
                 if ($lv === '') { if (($now - wq_ts($r['last_in_at'])) >= 180 && !empty($intr[$ph])) { $lv = 'orange'; $wv = wq_ts($r['last_in_at']) + 180; $rd['u'] = '⏱ Interested earlier — nobody has answered for ' . (int)floor(($now - wq_ts($r['last_in_at'])) / 60) . ' min'; } else continue; }
-                $items[] = ['phone' => $ph, 'name' => (string)$r['name'], 'level' => $lv, 'emp' => (int)$r['assigned_emp'], 'at' => wq_ts($r['assigned_at'] ?? ''), 'in' => wq_ts($r['last_in_at']), 'wv' => $wv, 'txt' => mb_substr(trim($body), 0, 90), 'why' => (string)($rd['u'] ?? '')];
+                $items[] = ['phone' => $ph, 'name' => (string)$r['name'], 'level' => $lv, 'emp' => (int)$r['assigned_emp'], 'at' => wq_ts($r['assigned_at'] ?? ''), 'in' => wq_ts($r['last_in_at']), 'wv' => $wv, 'txt' => mb_substr(trim($body), 0, 90), 'why' => (string)($rd['u'] ?? ''), 'buyer' => isset($buyer[substr(preg_replace('/\D/', '', $ph), -10)]) ? 1 : 0, 'hot' => (int)$r['hot']];
                 if (count($items) >= 40) break;
             }
             if ($items && wq_need_tables($pdo)) { $ins = $pdo->prepare("INSERT IGNORE INTO wq_need_log (phone, level, seen_at, in_at) VALUES (?, ?, ?, ?)"); foreach ($items as $x) { try { $ins->execute([$x['phone'], $x['level'], wq_dt($now), wq_dt($x['in'])]); } catch (Throwable $e) { } } }   // for the "Bot handoffs" board
@@ -1406,9 +1407,10 @@ function wq_needs(PDO $pdo, int $me, bool $waves = true): array
             elseif (!isset($rkT['rank'][$me]) || $rkT['rank'][$me] > $wsz || !empty($rkT['skip'][$me])) continue;
         }   // first minutes: only people at work who sell well (not absent, not a poor converter); everybody present sees it after that   // first 2 minutes: the best 15 (today's speed mixed with the month's performance) see red and orange chats; everybody sees them after that
         if (!$own && (int)$x['emp'] > 0 && (int)$x['at'] > $now - 180) continue;   // somebody just took it: they get their own 3 minutes
-        $o[] = ['phone' => $x['phone'], 'name' => $x['name'], 'level' => $x['level'], 'own' => $own, 'holder' => (int)$x['emp'] > 0 ? wq_name($names, (int)$x['emp']) : '', 'sec' => max(0, $now - (int)$x['in']), 'txt' => $x['txt'], 'why' => $x['why'], 'emp' => (int)$x['emp'], 'key' => md5((int)$x['in'] . '|' . (int)$x['emp'] . '|' . (int)$x['at'])];
+        $o[] = ['phone' => $x['phone'], 'name' => $x['name'], 'level' => $x['level'], 'own' => $own, 'holder' => (int)$x['emp'] > 0 ? wq_name($names, (int)$x['emp']) : '', 'sec' => max(0, $now - (int)$x['in']), 'txt' => $x['txt'], 'why' => $x['why'], 'buyer' => (int)($x['buyer'] ?? 0), 'emp' => (int)$x['emp'], 'pri' => ($x['level'] === 'red' ? 1000 : 0) + (!empty($x['buyer']) ? 300 : 0) + (!empty($x['hot']) ? 150 : 0) + (int)(min(30, max(0, $now - (int)$x['in']) / 60) * 10), 'key' => md5((int)$x['in'] . '|' . (int)$x['emp'] . '|' . (int)$x['at'])];
     }
-    usort($o, fn($a, $b) => ($a['level'] === $b['level'] ? 0 : ($a['level'] === 'red' ? -1 : 1)) ?: $b['sec'] <=> $a['sec']);
+    // highest priority first: red, then returning customers and customers marked hot, then the longest wait (all in one score, see 'pri')
+    usort($o, fn($a, $b) => $b['pri'] <=> $a['pri'] ?: $b['sec'] <=> $a['sec']);
     return $o;
 }
 /** How many pending answers (chats waiting 4+ minutes, open complaints) each person has — from the last rebuild of the Needs you now list. [emp_id => n] */
