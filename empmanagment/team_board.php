@@ -20,6 +20,11 @@ function tb_build(PDO $pdo): array
         if (function_exists('rating_days')) foreach (rating_days($pdo, date('Y-m-d', time() - 29 * 86400), date('Y-m-d')) as $d => $list) foreach ((array)$list as $e => $x) { $e = (int)$e; if (!isset($daily[$e][$d])) $daily[$e][$d] = ['d' => (string)$d, 'in' => '', 'h' => 0, 'score' => null, 'hit' => null]; $daily[$e][$d]['score'] = isset($x['score']) ? round((float)$x['score'], 1) : null; $daily[$e][$d]['hit'] = !empty($x['has_target']) ? !empty($x['hit']) : null; }
     } catch (Throwable $e) { }
     $cd = []; try { if (function_exists('coach_day') && function_exists('biz_today')) $cd = (array)(coach_day($pdo, biz_today($pdo))['emps'] ?? []); } catch (Throwable $e) { }
+    $rp = []; $rdays = [];   // the 10 rating parts (30-day averages) with notes and the "biggest lift"
+    try { if (function_exists('rating_days') && function_exists('rating_period')) { $rdays = rating_days($pdo, date('Y-m-d', time() - 29 * 86400), date('Y-m-d')); foreach ($rows as $id => $r0) { $x = rating_period($rdays, $id); if (is_array($x)) $rp[$id] = $x; } } } catch (Throwable $e) { }
+    $metrics = []; $mdays = [];   // the metric blocks of the old Person tab (campaign orders, prepaid, codes, mix, discount slabs, late) for the last 7 days
+    try { if (function_exists('cp_day_rows')) { $d0 = function_exists('biz_today') ? biz_today($pdo) : date('Y-m-d'); for ($i = 0; $i < 7; $i++) { $d = date('Y-m-d', strtotime($d0 . ' -' . $i . ' day')); $mdays[] = $d; foreach ((array)cp_day_rows($pdo, $d) as $e => $x) $metrics[(int)$e][$d] = $x; } } } catch (Throwable $e) { }
+    $rem = []; try { foreach ($pdo->query("SELECT employee_id, from_name, src, body, created_at, seen_at FROM ct_remarks WHERE created_at >= '" . date('Y-m-d H:i:s', time() - 14 * 86400) . "' ORDER BY id DESC LIMIT 400")->fetchAll(PDO::FETCH_ASSOC) as $x) { $e = (int)$x['employee_id']; if (count($rem[$e] ?? []) < 3) $rem[$e][] = ['by' => (string)$x['from_name'], 'text' => mb_substr((string)$x['body'], 0, 300), 'at' => (string)$x['created_at'], 'seen' => !empty($x['seen_at'])]; } } catch (Throwable $e) { }
     foreach ($rows as $id => $r) {
         $a = $att[$id] ?? ['days' => 0, 'mins' => 0, 'today_in' => '', 'today_mins' => 0]; $c = $cd[$id] ?? [];
         $hrs = round($a['mins'] / 60, 1); $m = function_exists('wqm_rec') ? wqm_rec($pdo, $id) : [];
@@ -27,6 +32,9 @@ function tb_build(PDO $pdo): array
             'punch_in_today' => $a['today_in'], 'hours_today' => round($a['today_mins'] / 60, 1),
             'target_today' => isset($c['target']) ? (float)$c['target'] : null, 'sales_today' => isset($c['sales']) ? (float)$c['sales'] : null, 'target_pct_today' => $c['pct'] ?? null, 'should_pct_today' => $c['should_pct'] ?? null,
             'level' => (string)($m['level'] ?? ''), 'auto_level' => (string)($m['auto_level'] ?? ''), 'manual' => (string)($m['manual'] ?? ''), 'card' => (string)($m['card'] ?? ''), 'reason' => (string)($m['reason'] ?? ''), 'meet_admin' => !empty($m['meet_admin']), 'approved' => !empty($m['approved']), 'decided_at' => (string)($m['at'] ?? ''),
+            'rating_parts' => isset($rp[$id]) ? ['parts' => $rp[$id]['parts'], 'notes' => $rp[$id]['notes'] ?? [], 'days' => $rp[$id]['days'] ?? 0] : null,
+            'rating_lift' => (function ($x) { if (!is_array($x)) return null; $w = null; foreach ((array)$x['parts'] as $k => $v) if ($v !== null && $k !== 'consistency' && ($w === null || $v < $x['parts'][$w])) $w = $k; return $w && function_exists('rating_fix_text') ? ['part' => $w, 'text' => rating_fix_text($w)] : null; })($rp[$id] ?? null),
+            'metrics' => $metrics[$id] ?? (object)[], 'remarks' => $rem[$id] ?? [],
             'daily' => (function ($l) { krsort($l); return array_values($l); })($daily[$id] ?? []), 'rank' => 0, 'medals' => []];
     }
     // rank by orders (30 days) and medals: most orders, fastest, biggest ticket, best ratio — among people who have the data
@@ -53,5 +61,6 @@ if ($__tbA === 'team.board') {
     else { $rows = tb_build($pdo); wq_meta_put($pdo, 'tb:cache', json_encode(['at' => time(), 'rows' => $rows], JSON_UNESCAPED_UNICODE)); }
     $r0 = $rows ? $rows[0] : [];
     json_response(['ok' => true, 'rows' => $rows, 'team' => ['ratio_pct' => $r0['team_ratio_pct'] ?? null, 'ticket' => $r0['team_ticket'] ?? null, 'people' => count($rows), 'at_work' => count(array_filter($rows, function ($x) { return !empty($x['present']); }))],
+        'rating_labels' => function_exists('rating_parts') ? rating_parts() : (object)[], 'metric_days' => (function_exists('biz_today') ? array_map(function ($i) use ($pdo) { return date('Y-m-d', strtotime(biz_today($pdo) . ' -' . $i . ' day')); }, range(0, 6)) : []),
         'summary' => wq_meta_get($pdo, 'mgr:summary', ''), 'ran_at' => wq_meta_get($pdo, 'mgr:at', ''), 'mode' => function_exists('wqm_mode') ? wqm_mode($pdo) : 'suggest', 'levels' => function_exists('wqm_levels') ? wqm_levels() : []]);
 }
