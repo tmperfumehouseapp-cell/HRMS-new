@@ -251,6 +251,8 @@
 <script>try { if (window.PlayCard) PlayCard.mount(document.getElementById("shPlay")); } catch (e) { /* the card and the game are a bonus */ }</script>
 <script>
   guardPage();
+  // The salesperson's home is the new app (my_app.html: Home, Chats, Earn, Prices, Me). This page stays reachable with ?old=1 (Me → "Use the old My Sales page").
+  if (!/[?&]old=1(&|$)/.test(location.search)) { api.get('me.flags').then(function (f) { if (f && f.is_sales) location.replace('my_app.html'); }).catch(function () { }); }
   renderSidebar('my_sales');
 
   const inr = (v) => '₹' + Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
