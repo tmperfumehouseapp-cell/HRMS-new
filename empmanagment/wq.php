@@ -1345,6 +1345,13 @@ function wq_needs(PDO $pdo, int $me, bool $waves = true): array
             if ($phs) { $q = $pdo->prepare("SELECT m.phone, m.body, m.id FROM wa_messages m JOIN (SELECT phone, MAX(id) mid FROM wa_messages WHERE dir = 'in' AND phone IN (" . wq_in($phs) . ") GROUP BY phone) x ON x.mid = m.id"); $q->execute($phs); foreach ($q->fetchAll() as $t) { $last[(string)$t['phone']] = (string)$t['body']; $lastId[(string)$t['phone']] = (int)$t['id']; } }
             $ordered = []; try { foreach ($pdo->query("SELECT DISTINCT RIGHT(phone, 10) FROM shop_orders WHERE created_at >= '" . wq_dt($now - 7 * 86400) . "' AND phone <> ''")->fetchAll(PDO::FETCH_COLUMN) as $op) $ordered[(string)$op] = 1; } catch (Throwable $e) { }   // an order in the last 7 days: not a lead any more
             try { foreach ($pdo->query("SELECT phone FROM wa_order_done WHERE mute_until > NOW()")->fetchAll(PDO::FETCH_COLUMN) as $op) $ordered[substr(preg_replace('/\D/', '', (string)$op), -10)] = 1; } catch (Throwable $e) { }   // "order completed" was pressed in the chat
+            // ⏱ a customer who showed interest EARLIER (even if the last message is just "ok / thanks") and nobody has answered for 3 minutes turns orange by time
+            $intr = []; $cand = []; foreach ($rows as $r0) if ($now - wq_ts($r0['last_in_at']) >= 180) $cand[] = (string)$r0['phone'];
+            if ($cand && function_exists('wag_read')) {
+                try { $q = $pdo->prepare("SELECT phone, body FROM wa_messages WHERE dir = 'in' AND mtype = 'text' AND body <> '' AND ts >= ? AND phone IN (" . wq_in($cand) . ") ORDER BY id DESC LIMIT 1500"); $q->execute(array_merge([wq_dt($now - 86400)], $cand)); $cn = [];
+                    foreach ($q->fetchAll() as $t) { $pp = (string)$t['phone']; $cn[$pp] = ($cn[$pp] ?? 0) + 1; if ($cn[$pp] > 6 || isset($intr[$pp])) continue; $xr = wag_read(['last_in_at' => wq_dt($now - 60), 'last_body' => (string)$t['body'], 'last_dir' => 'in'], true, true, false, false, 0, $now); if (!empty($xr['i'])) $intr[$pp] = 1; } } catch (Throwable $e) { }
+                try { $q = $pdo->prepare("SELECT DISTINCT phone FROM wa_auto_tags WHERE tag IN ('interested', 'hot', 'considering') AND (until IS NULL OR until > NOW()) AND phone IN (" . wq_in($cand) . ")"); $q->execute($cand); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $pp) $intr[(string)$pp] = 1; } catch (Throwable $e) { }
+            }
             $dis = []; if ($phs && wq_need_tables($pdo)) { try { $q = $pdo->prepare("SELECT phone, in_at FROM wq_need_log WHERE dismissed = 1 AND seen_at >= ? AND phone IN (" . wq_in($phs) . ")"); $q->execute(array_merge([wq_dt($now - 86400)], $phs)); foreach ($q->fetchAll() as $t) $dis[(string)$t['phone'] . '|' . wq_ts($t['in_at'])] = 1; } catch (Throwable $e) { } }
             foreach ($rows as $r) {
                 $ph = (string)$r['phone']; $body = (string)($last[$ph] ?? ''); if (isset($dis[$ph . '|' . wq_ts($r['last_in_at'])])) continue;   // somebody marked it "not a real lead"
@@ -1352,8 +1359,9 @@ function wq_needs(PDO $pdo, int $me, bool $waves = true): array
                 if ((int)$r['assigned_emp'] > 0 && (int)$r['seen_msg_id'] > 0 && (int)$r['seen_msg_id'] >= (int)($lastId[$ph] ?? PHP_INT_MAX)) continue;   // the person who has the chat has opened it and read the message: it is taken
 
                 $rd = function_exists('wag_read') ? wag_read(['last_in_at' => $r['last_in_at'], 'last_body' => $body, 'last_dir' => 'in'], true, true, (int)$r['hot'] === 1, false, 0, $now) : ['i' => ''];
-                $lv = (string)($rd['i'] ?? ''); if ($lv === '') continue;
-                $items[] = ['phone' => $ph, 'name' => (string)$r['name'], 'level' => $lv, 'emp' => (int)$r['assigned_emp'], 'at' => wq_ts($r['assigned_at'] ?? ''), 'in' => wq_ts($r['last_in_at']), 'txt' => mb_substr(trim($body), 0, 90), 'why' => (string)($rd['u'] ?? '')];
+                $lv = (string)($rd['i'] ?? ''); $wv = wq_ts($r['last_in_at']);
+                if ($lv === '') { if (($now - wq_ts($r['last_in_at'])) >= 180 && !empty($intr[$ph])) { $lv = 'orange'; $wv = wq_ts($r['last_in_at']) + 180; $rd['u'] = '⏱ Interested earlier — nobody has answered for ' . (int)floor(($now - wq_ts($r['last_in_at'])) / 60) . ' min'; } else continue; }
+                $items[] = ['phone' => $ph, 'name' => (string)$r['name'], 'level' => $lv, 'emp' => (int)$r['assigned_emp'], 'at' => wq_ts($r['assigned_at'] ?? ''), 'in' => wq_ts($r['last_in_at']), 'wv' => $wv, 'txt' => mb_substr(trim($body), 0, 90), 'why' => (string)($rd['u'] ?? '')];
                 if (count($items) >= 40) break;
             }
             if ($items && wq_need_tables($pdo)) { $ins = $pdo->prepare("INSERT IGNORE INTO wq_need_log (phone, level, seen_at, in_at) VALUES (?, ?, ?, ?)"); foreach ($items as $x) { try { $ins->execute([$x['phone'], $x['level'], wq_dt($now), wq_dt($x['in'])]); } catch (Throwable $e) { } } }   // for the "Bot handoffs" board
@@ -1364,7 +1372,7 @@ function wq_needs(PDO $pdo, int $me, bool $waves = true): array
     $names = wq_names($pdo); $o = []; $rkT = ($waves && $me > 0) ? wq_rank_today($pdo) : ['rank' => []]; [$wsz, $wmin] = wq_wave_cfg($pdo);
     foreach ((array)$raw['items'] as $x) {
         $own = $me > 0 && (int)$x['emp'] === $me;
-        if (!$own && $me > 0 && ($now - (int)$x['in']) < $wmin * 60) { if (isset($rkT['rank'][$me]) && $rkT['rank'][$me] > $wsz) continue; }   // first 2 minutes: the best 15 (today's speed mixed with the month's performance) see red and orange chats; everybody sees them after that
+        if (!$own && $me > 0 && ($now - (int)($x['wv'] ?? $x['in'])) < $wmin * 60) { if (isset($rkT['rank'][$me]) && $rkT['rank'][$me] > $wsz) continue; }   // first 2 minutes: the best 15 (today's speed mixed with the month's performance) see red and orange chats; everybody sees them after that
         if (!$own && (int)$x['emp'] > 0 && (int)$x['at'] > $now - 120) continue;   // somebody just took it: they get their own 2 minutes
         $o[] = ['phone' => $x['phone'], 'name' => $x['name'], 'level' => $x['level'], 'own' => $own, 'holder' => (int)$x['emp'] > 0 ? wq_person($names, (int)$x['emp']) : '', 'sec' => max(0, $now - (int)$x['in']), 'txt' => $x['txt'], 'why' => $x['why'], 'emp' => (int)$x['emp'], 'key' => md5((int)$x['in'] . '|' . (int)$x['emp'] . '|' . (int)$x['at'])];
     }
