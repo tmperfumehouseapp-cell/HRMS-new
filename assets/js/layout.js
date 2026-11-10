@@ -636,7 +636,7 @@ window.WS = (function () {
       visibleTabs(w, ctx).forEach((t) => out.push({ label: t[1], where: w.label, href: 'hub.html?w=' + w.key + '&t=' + t[0], kw: KW[t[0]] || '' }));
     });
     if (!ctx.isAdmin) out.unshift({ label: 'My Day', where: 'Home', href: 'my_day.html', kw: 'punch in out jobs tasks today duties' });
-    if (ctx.isSales) [['My Sales', 'my_sales.html', 'target commission orders rating'], ['My Orders', 'my_orders.html', 'orders allocate'], ['My Chats', 'my_chats.html', 'chat whatsapp customers'], ['My Queries', 'my_chats.html?tab=queries', 'queries whatsapp waiting type meta campaign']].forEach((x) => out.push({ label: x[0], where: 'Sales', href: x[1], kw: x[2] }));
+    if (ctx.isSales) [['My Sales', 'my_sales.html', 'target commission orders rating'], ['My Orders', 'my_orders.html', 'orders allocate'], ['Manual order', 'manual_order.html', 'manual order outside customer new order create'], ['My Chats', 'my_chats.html', 'chat whatsapp customers'], ['My Queries', 'my_chats.html?tab=queries', 'queries whatsapp waiting type meta campaign']].forEach((x) => out.push({ label: x[0], where: 'Sales', href: x[1], kw: x[2] }));
     // My own records (My Day > My records): salary, attendance, leave, penalties, agreements - for anybody who has an employee profile.
     if (ctx.hasEmp) {
       if (ctx.hasSalary) out.push({ label: 'My salary', where: 'My Day · My records', href: 'my_day.html#records/salary', kw: 'salary payslip pay slip wages my pay earned day-wise final pay month' });
@@ -738,7 +738,7 @@ window.WS = (function () {
       } catch (e) { /* search is a convenience */ }
       const btn = [];
       btn.push(['my_day.html', 'My Day', '✅', (bd && bd.my_open) || 0]);   // everybody: the day starts here (punch-in steps, duties, sales)
-      if (f.is_sales) { btn.push(['my_sales.html', 'My Sales', '\u{1F4C8}', 0]); btn.push(['my_orders.html', 'Orders', '\u{1F6CD}', 0]); btn.push(['my_chats.html', 'Chats', '\u{1F4AC}', 0]); btn.push(['my_chats.html?tab=queries', 'Queries', '\u{1F4CB}', 0]); }
+      if (f.is_sales) { btn.push(['my_sales.html', 'My Sales', '\u{1F4C8}', 0]); btn.push(['my_orders.html', 'Orders', '\u{1F6CD}', 0]); btn.push(['manual_order.html', 'Manual', '\u270D\uFE0F', 0]); btn.push(['my_chats.html', 'Chats', '\u{1F4AC}', 0]); btn.push(['my_chats.html?tab=queries', 'Queries', '\u{1F4CB}', 0]); }
       const cxb = await api.get('bd.cx_badge').catch(() => null);   // Complaints: the team opens the board, a salesperson who raised one sees the status
       if (cxb && cxb.team) btn.push(['complaints.html', 'Complaints', '\u26A0\uFE0F', Number(cxb.my_open) || Number(cxb.late) || 0]); else if (cxb && cxb.has_mine) btn.push(['my_complaints.html', 'Complaints', '\u26A0\uFE0F', 0]);
       if (cxb && cxb.mgr) btn.push(['staff_progress.html', 'Staff', '\u{1F4C8}', 0]);   // 📈 Staff progress (complaints boss)
@@ -951,7 +951,7 @@ function renderSidebarCore(active) {
     // Pages every employee may open. Anything else is hidden immediately —
     // before its own script can show admin data — until me.flags confirms
     // the Employee role was granted that module on the Roles page.
-    const EMPLOYEE_PAGES = ['social_inbox', 'attendance', 'leave', 'my_salary', 'my_penalties', 'my_agreements', 'my_sales', 'orders', 'my_chats', 'wasales', 'my_space', 'my_orders', 'my_day', 'boss_engine', 'boss_inbox', 'daily_summary', 'tracker', 'brain', 'office_care', 'boss_questions', 'boss_penalties', 'dept_hub', 'dept_dispatch', 'customers', 'dept_restock', 'dept_shops', 'dept_supplies', 'dept_work', 'dept_fix', 'people_admin' /*bd-arr*/, 'flyers', 'complaints', 'my_complaints'];
+    const EMPLOYEE_PAGES = ['social_inbox', 'attendance', 'leave', 'my_salary', 'my_penalties', 'my_agreements', 'my_sales', 'orders', 'my_chats', 'wasales', 'my_space', 'my_orders', 'manual_order', 'my_day', 'boss_engine', 'boss_inbox', 'daily_summary', 'tracker', 'brain', 'office_care', 'boss_questions', 'boss_penalties', 'dept_hub', 'dept_dispatch', 'customers', 'dept_restock', 'dept_shops', 'dept_supplies', 'dept_work', 'dept_fix', 'people_admin' /*bd-arr*/, 'flyers', 'complaints', 'my_complaints'];
     const needsCheck = !EMPLOYEE_PAGES.includes(active);
     const empOkKey = 'hrms_pok:' + user.username + ':Employee:' + active;
     const empSeenOk = (() => { try { return Date.now() - Number(localStorage.getItem(empOkKey) || 0) < 43200000; } catch (e) { return false; } })();   // already confirmed in the last 12 h: no waiting
@@ -982,7 +982,7 @@ function renderSidebarCore(active) {
       const allowed = ['attendance', 'leave', 'my_salary', 'my_penalties', 'my_agreements', 'my_space'].concat(grantedActives);
       allowed.push('my_day', 'boss_engine', 'boss_inbox', 'daily_summary', 'tracker', 'brain', 'office_care', 'boss_questions', 'boss_penalties', 'dept_hub', 'dept_dispatch', 'dept_restock', 'dept_shops', 'dept_supplies', 'dept_work', 'dept_fix', 'people_admin'); /*bd*/
       allowed.push('flyers', 'complaints', 'my_complaints', 'social_inbox', 'staff_progress');   // staff_progress: the server (bd.staff_report) lets in only the complaints boss / top boss / deputy
-      if (d.is_sales) allowed.push('my_sales', 'orders', 'my_chats', 'wasales', 'my_orders');
+      if (d.is_sales) allowed.push('my_sales', 'orders', 'my_chats', 'wasales', 'my_orders', 'manual_order');
       // Home page after login: sales people open My Sales (their numbers, rating, offer); everyone else opens Attendance. Remembered for index.html.
       try { localStorage.setItem('hrms_home', 'my_day.html'); } catch (e) { /* private mode */ }
       // replace(): the refused page never enters the history, so the back
@@ -1002,7 +1002,8 @@ function renderSidebarCore(active) {
         <a href="my_sales.html" class="${on(['my_sales'])}">My Sales</a>
         <a href="my_chats.html" class="${on(['my_chats'])}">My Chats <span id="chatBadge" style="display:none; background:#e02424; color:#fff; border-radius:10px; padding:1px 7px; font-size:11px; font-weight:700; margin-left:6px;"></span></a>
         <a href="my_chats.html?tab=queries" class="${on(['wasales'])}">My Queries</a>
-        <a href="my_orders.html" class="${on(['orders', 'order_allocation', 'my_orders'])}">Orders</a>`;
+        <a href="my_orders.html" class="${on(['orders', 'order_allocation', 'my_orders'])}">Orders</a>
+        <a href="manual_order.html" class="${on(['manual_order'])}">Manual order</a>`;
         }
         // Admin-side pages granted to the Employee role via Roles page (Orders / Allocation / Punch / Leave already live in the sections above).
         const morePerms = perms.filter(p => !['punch', 'leave'].includes(p) && !(d.is_sales && ['orders', 'allocation'].includes(p)));

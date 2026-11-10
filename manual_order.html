@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Manual order — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=4">
+<style>
+  .mo{max-width:560px;margin:0 auto;padding:6px 14px 40px;}
+  .mo label{display:block;font-size:12.5px;font-weight:700;color:var(--muted);margin:12px 0 4px;}
+  .mo input,.mo select,.mo textarea{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font:inherit;font-size:14px;background:#fff;color:#111;}
+  .mo .row{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .mo .go{margin-top:18px;width:100%;padding:12px;font-size:15px;font-weight:800;}
+  .mo .ok{background:#e7f8ee;border:1px solid #8fd6a8;color:#14532d;border-radius:12px;padding:12px;margin:12px 0;font-size:14px;}
+  .mo .err{background:#fdecec;border:1px solid #f1a5a5;color:#7f1d1d;border-radius:12px;padding:12px;margin:12px 0;font-size:14px;}
+  .mo .hint{font-size:12.5px;color:var(--muted);margin:2px 0 10px;}
+  html[data-theme=dark] .mo input,html[data-theme=dark] .mo select,html[data-theme=dark] .mo textarea{background:#1f2430;color:#eee;border-color:#374151;}
+  @media (max-width:520px){.mo .row{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><h1>Manual order</h1></div>
+    <div class="content mo">
+      <p class="hint">For a customer who is not in HRMS (came from outside). Type any phone number and details — the order gets its own order number and counts in your orders like a Shopify order.</p>
+      <div id="moMsg"></div>
+      <form id="moForm" autocomplete="off">
+        <label>Customer phone *</label>
+        <input id="mPhone" type="tel" inputmode="numeric" placeholder="e.g. 9876543210" required>
+        <label>Customer name *</label>
+        <input id="mName" type="text" placeholder="Customer name" required>
+        <div class="row">
+          <div><label>Order amount (₹) *</label><input id="mTotal" type="number" min="0" step="0.01" required></div>
+          <div><label>Items (qty)</label><input id="mItems" type="number" min="1" value="1"></div>
+        </div>
+        <div class="row">
+          <div><label>Payment</label><select id="mPay"><option value="paid">Paid (prepaid)</option><option value="pending">COD / Pending</option></select></div>
+          <div><label>Order came from</label><select id="mType"><option value="query">Query</option><option value="campaign">Campaign</option></select></div>
+        </div>
+        <label>Order date &amp; time</label>
+        <input id="mDate" type="datetime-local">
+        <label>Notes (products, address…)</label>
+        <textarea id="mNotes" rows="3"></textarea>
+        <button class="btn go" id="mSave" type="submit">Create order</button>
+      </form>
+    </div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=2"></script>
+<script src="assets/js/api.js?v=9"></script>
+<script src="assets/js/layout.js?v=25"></script>
+<script>
+  guardPage();
+  renderSidebar('manual_order');
+  const $ = (id) => document.getElementById(id);
+  const nowLocal = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); };
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  $('mDate').value = nowLocal();
+  $('moForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const b = $('mSave'); b.disabled = true; $('moMsg').innerHTML = '';
+    try {
+      const d = $('mDate').value;
+      const r = await api.post('manual_orders.save', {
+        phone: $('mPhone').value.trim(), customer_name: $('mName').value.trim(),
+        total: Number($('mTotal').value || 0), items: Number($('mItems').value || 1),
+        payment_status: $('mPay').value, order_type: $('mType').value,
+        order_date: d ? d.replace('T', ' ') + ':00' : '', remarks: $('mNotes').value.trim(),
+      });
+      $('moMsg').innerHTML = '<div class="ok">✅ Order <b>#' + esc(r.order_no) + '</b> created. It is in your orders.</div>';
+      $('moForm').reset(); $('mItems').value = 1; $('mDate').value = nowLocal();
+    } catch (err) {
+      $('moMsg').innerHTML = '<div class="err">' + esc(err.message) + '</div>';
+    } finally { b.disabled = false; }
+  });
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>

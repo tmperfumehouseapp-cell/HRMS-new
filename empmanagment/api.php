@@ -476,6 +476,7 @@ function action_permission(string $action): ?string
         'leave_admin.' => 'leave_requests',
         'retail.visit_plan_approve' => 'visit_approval',   // Approve / Reject a shop visit: only roles ticked for it (before the 'retail.' line)
         'retail.' => 'retail',
+        'manual_orders.save' => null,              // a salesperson makes their own manual order (the handler checks the role)
         'manual_orders.' => 'orders',
         'attendance.list' => 'attendance',
         'attendance.set_times' => 'attendance',
@@ -29559,7 +29560,14 @@ switch ($action) {
     // ============== MANUAL ORDERS (counter / WhatsApp orders) ==============
     case 'manual_orders.save': {
         $auth = require_auth();
-        require_role(['Admin', 'HR'], $auth);
+        $isEmpSave = (($auth['role'] ?? '') === 'Employee');
+        if (!$isEmpSave) require_role(['Admin', 'HR'], $auth);
+        // Salesperson-created orders carry the employee + Query/Campaign type so they are theirs.
+        try {
+            foreach (['employee_id' => 'INT NOT NULL DEFAULT 0', 'order_type' => "VARCHAR(10) NOT NULL DEFAULT ''"] as $c => $d) {
+                if (!$pdo->query("SHOW COLUMNS FROM manual_orders LIKE '$c'")->fetch()) $pdo->exec("ALTER TABLE manual_orders ADD COLUMN $c $d");
+            }
+        } catch (PDOException $e) {}
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
         $input = json_input();
 
@@ -29569,9 +29577,12 @@ switch ($action) {
         if ($orderDate === '') $orderDate = date('Y-m-d H:i:s');
 
         $stmt = $pdo->prepare(
-            "INSERT INTO manual_orders (order_no, customer_name, phone, items, total, payment_status, fulfillment_status, order_date, remarks, created_by)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO manual_orders (order_no, customer_name, phone, items, total, payment_status, fulfillment_status, order_date, remarks, created_by, employee_id, order_type)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         );
+        $ot = strtolower(trim((string)($input['order_type'] ?? '')));
+        if (!in_array($ot, ['query', 'campaign'], true)) $ot = '';
+        $empIdSave = $isEmpSave ? (int)($auth['employee_id'] ?? 0) : (int)($input['employee_id'] ?? 0);
         $stmt->execute([
             trim($input['order_no'] ?? '') ?: null,
             $customer,
@@ -29583,6 +29594,8 @@ switch ($action) {
             $orderDate,
             trim($input['remarks'] ?? ''),
             $auth['username'],
+            $empIdSave,
+            $ot,
         ]);
         $newId = (int)$pdo->lastInsertId();
 
@@ -29592,7 +29605,8 @@ switch ($action) {
                 ->execute(['M' . str_pad((string)$newId, 4, '0', STR_PAD_LEFT), $newId]);
         }
 
-        json_response(['message' => 'Order added.', 'manual_order_id' => $newId], 201);
+        $ono = $pdo->prepare("SELECT order_no FROM manual_orders WHERE manual_order_id = ?"); $ono->execute([$newId]);
+        json_response(['message' => 'Order added.', 'manual_order_id' => $newId, 'order_no' => (string)$ono->fetchColumn()], 201);
         break;
     }
 
@@ -29822,14 +29836,20 @@ switch ($action) {
 
         // Manual (counter/WhatsApp) orders from the local DB, unless a
         // specific Shopify store was selected.
-        if ($empScopeId === null && !$lite && $houseFilter === '' && ($storeKey === '' || $storeKey === 'manual')) {
+        if (($empScopeId !== null || (!$lite && $houseFilter === '')) && ($storeKey === '' || $storeKey === 'manual')) {
+            try {
+                foreach (['employee_id' => 'INT NOT NULL DEFAULT 0', 'order_type' => "VARCHAR(10) NOT NULL DEFAULT ''"] as $c => $d) {
+                    if (!$pdo->query("SHOW COLUMNS FROM manual_orders LIKE '$c'")->fetch()) $pdo->exec("ALTER TABLE manual_orders ADD COLUMN $c $d");
+                }
+            } catch (PDOException $e) {}
             $mStmt = $pdo->prepare(
                 "SELECT * FROM manual_orders
-                 WHERE order_date >= ? AND order_date <= ?
+                 WHERE order_date >= ? AND order_date <= ?" . ($empScopeId !== null ? " AND employee_id = " . (int)$empScopeId : "") . "
                  ORDER BY order_date DESC"
             );
             // Same business-day window as Shopify orders (Day timing setting).
             $mStmt->execute(biz_window($pdo, $dateFrom, $dateTo));
+            $mNames = employee_names_by_id($pdo);
             foreach ($mStmt->fetchAll() as $m) {
                 $allOrders[] = [
                     'order_name' => '#' . $m['order_no'],
@@ -29844,7 +29864,10 @@ switch ($action) {
                     'store_key' => 'manual',
                     'store' => 'Manual',
                     'manual_order_id' => (int)$m['manual_order_id'],
-                    'salesman' => '',
+                    'salesman' => !empty($m['employee_id']) ? (string)($mNames[(int)$m['employee_id']] ?? '') : '',
+                    'employee_id' => (int)($m['employee_id'] ?? 0),
+                    'order_type' => (string)($m['order_type'] ?? ''),
+                    'tags' => (string)($m['order_type'] ?? ''),
                     'remarks' => $m['remarks'] ?: '',
                     'created_by' => $m['created_by'] ?: '',
                 ];
