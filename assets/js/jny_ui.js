@@ -143,7 +143,9 @@
       else f.st.day = Math.max(1, Math.min(365, Math.round(min / 1440)));
       return true;
     }
-    const sheet = (html) => { const o = document.createElement('div'); o.style.cssText = 'position:fixed;inset:0;z-index:300;background:#0008;display:flex;align-items:flex-end;justify-content:center'; o.innerHTML = html; document.body.appendChild(o); return o; };
+    const sheet = (html) => { const o = document.createElement('div'); o.style.cssText = 'position:fixed;inset:0;z-index:300;background:#0008;display:flex;align-items:flex-end;justify-content:center'; o.innerHTML = html; document.body.appendChild(o);
+      if (window.innerWidth > 700) { o.style.alignItems = 'center'; o.style.padding = '16px'; if (o.firstElementChild) { o.firstElementChild.style.borderRadius = '18px'; o.firstElementChild.style.maxHeight = '88vh'; } }   // big screen: in the middle, not stuck to the bottom edge
+      return o; };
     function newMsg(done) {
       const o = sheet('<div class="jt" style="background:#fff;width:100%;max-width:560px;border-radius:18px 18px 0 0;padding:16px;max-height:92vh;overflow:auto"><div class="jt-h">➕ New message or offer</div><div class="jt-sub">It is saved in the message library with this name, so you can pick it on any step.</div>'
         + '<input class="jt-in" id="nmN" maxlength="40" placeholder="Name, e.g. Diwali buy 2 get 1"><div style="margin:6px 0"><label><input type="radio" name="nmT" value="msg" checked> 💬 Message (no discount)</label> &nbsp; <label><input type="radio" name="nmT" value="offer"> 🎁 Offer</label></div>'
