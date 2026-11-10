@@ -427,7 +427,7 @@ function wa_mix_decorate(PDO $pdo, array $list): array
 /** May this WhatsApp account take one more template right now? Counts what WE created in the last hour / day and the total at Meta. */
 function wa_tpl_budget(PDO $pdo, string $waba): array
 {
-    wa_mix_tables($pdo); $now = wa_mix_now(); $hc = wa_mix_cfg($pdo, 'wa_tpl_hour_cap', 20); $dc = wa_mix_cfg($pdo, 'wa_tpl_day_cap', 80); $tc = wa_mix_cfg($pdo, 'wa_tpl_total_cap', 200);
+    wa_mix_tables($pdo); $now = wa_mix_now(); $hc = wa_mix_cfg($pdo, 'wa_tpl_hour_cap', 100000); $dc = wa_mix_cfg($pdo, 'wa_tpl_day_cap', 100000); $tc = wa_mix_cfg($pdo, 'wa_tpl_total_cap', 100000);
     $q = $pdo->prepare("SELECT COUNT(*) FROM wa_tpl_subs WHERE waba_id = ? AND at >= ?"); $q->execute([$waba, date('Y-m-d H:i:s', $now - 3600)]); $h = (int)$q->fetchColumn(); $q->execute([$waba, date('Y-m-d H:i:s', $now - 86400)]); $d = (int)$q->fetchColumn();
     $q = $pdo->prepare("SELECT COUNT(*) FROM wa_tpl_waba WHERE waba_id = ? AND meta_id <> ''"); $q->execute([$waba]); $t = (int)$q->fetchColumn();
     $why = $h >= $hc ? 'hourly limit reached (' . $hc . ' templates an hour per account)' : ($d >= $dc ? 'daily limit reached (' . $dc . ' a day per account)' : ($t >= $tc ? 'this WhatsApp account already has ' . $t . ' templates - clean up old rejected versions' : ''));
@@ -463,7 +463,7 @@ function wa_tpl_autosubmit_tick(PDO $pdo, bool $force = false): array
     try { $got = (int)$pdo->query("SELECT GET_LOCK('wa_tpl_auto', 0)")->fetchColumn(); } catch (Throwable $e) { $got = 0; } if ($got !== 1) { $res['skipped'] = 'busy'; return $res; }
     try {
         $last = (int)strtotime((string)setting_get($pdo, 'wa_tpl_auto_at', '')); if (!$force && $last > wa_mix_now() - 50) { $res['skipped'] = 'throttled'; return $res; }
-        setting_set($pdo, 'wa_tpl_auto_at', date('Y-m-d H:i:s', wa_mix_now())); $budget = ['left' => wa_mix_cfg($pdo, 'wa_tpl_tick_max', 8), 'made' => 0]; $now = wa_mix_now();
+        setting_set($pdo, 'wa_tpl_auto_at', date('Y-m-d H:i:s', wa_mix_now())); $budget = ['left' => wa_mix_cfg($pdo, 'wa_tpl_tick_max', 40), 'made' => 0]; $now = wa_mix_now();
         $by = []; foreach ($pdo->query("SELECT * FROM wa_tpl_waba")->fetchAll() as $w) $by[(int)$w['tpl_id']][(string)$w['waba_id']] = $w;
         $rows = $pdo->query("SELECT * FROM wa_templates ORDER BY used DESC, id")->fetchAll();
         // 1 + 2: missing pairs and failed submissions (approved ones first)
