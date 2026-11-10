@@ -1339,7 +1339,7 @@ function wa_prod_decide(PDO $pdo, string $phone, string $text, array $opt = []):
     if ($yes && $lin && !$in['named'] && !preg_match('/\b(perfumes?|attars?|fragrances?|scents?)\b/', wa_prod_fold($text, false)) && array_intersect(array_column($lin, 'section'), ['pricelist', 'packaging', 'sizes', 'delivery', 'store', 'candle'])) $yes = false;
     $o['prod_intent'] = $yes; $recent = $phone !== '' && empty($opt['ignore_recent']) ? wa_prod_recent($pdo, $phone, 24) : [];
     if ($lin) $o['lib'] = wa_prod_lib_pick($pdo, $phone, $lin, $yes ? 2 : 3, $opt);
-    $room = 3 - count($o['lib']);
+    $room = (int)($opt['room'] ?? 3) - count($o['lib']);
     if ($yes && $room > 0) {
         $ex = array_keys($recent); $picks = [];
         if ($in['again']) {
@@ -1371,9 +1371,9 @@ function wa_prod_attached(PDO $pdo, array $c, array $opt = []): array
         $s = $pdo->prepare("SELECT * FROM wa_sugg_prod WHERE phone = ? AND in_id = ?"); $s->execute([$phone, $m['id']]); $row = $s->fetch();
         if ($row) { $ids = (array)json_decode((string)$row['ids_json'], true); $why = (array)json_decode((string)$row['why_json'], true); $o['q'] = (string)$row['q']; $o['flag'] = (string)$row['flag']; return wa_prod_attached_out($pdo, $o, $ids, $why, (array)json_decode((string)($row['lib_json'] ?? ''), true)); }
     }
-    $d = wa_prod_decide($pdo, $phone, (string)$m['body']); $o['asks_long'] = $d['asks_long']; $o['q'] = $d['q']; $libIds = array_map(fn($x) => (int)$x['ph_id'], $d['lib']);
+    $d = wa_prod_decide($pdo, $phone, (string)$m['body'], isset($opt['room']) ? ['room' => (int)$opt['room']] : []); $o['asks_long'] = $d['asks_long']; $o['q'] = $d['q']; $libIds = array_map(fn($x) => (int)$x['ph_id'], $d['lib']);
     if ($d['flag'] !== '' && function_exists('wa_event')) wa_event($pdo, $phone, 'ℹ️ ' . $d['flag']);
-    try { $pdo->prepare("REPLACE INTO wa_sugg_prod (phone, in_id, ids_json, q, why_json, flag, created_at, lib_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")->execute([$phone, $m['id'], json_encode($d['ids']), mb_substr($d['q'], 0, 200), json_encode($d['why'], JSON_UNESCAPED_UNICODE), mb_substr($d['flag'], 0, 160), date('Y-m-d H:i:s'), json_encode($libIds)]); } catch (PDOException $e) { }
+    if (empty($opt['room']) || (int)$opt['room'] <= 3) try { $pdo->prepare("REPLACE INTO wa_sugg_prod (phone, in_id, ids_json, q, why_json, flag, created_at, lib_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")->execute([$phone, $m['id'], json_encode($d['ids']), mb_substr($d['q'], 0, 200), json_encode($d['why'], JSON_UNESCAPED_UNICODE), mb_substr($d['flag'], 0, 160), date('Y-m-d H:i:s'), json_encode($libIds)]); } catch (PDOException $e) { }
     $o['flag'] = $d['flag']; return wa_prod_attached_out($pdo, $o, $d['ids'], $d['why'], $libIds);
 }
 function wa_prod_attached_out(PDO $pdo, array $o, array $ids, array $why, array $libIds = []): array
@@ -1400,16 +1400,19 @@ function wa_prod_try(PDO $pdo, string $customer, string $reply = ''): array
 function wa_prod_bot_after(PDO $pdo, array $c, string $botText = ''): int
 {
     try {
-        $c = wa_contact($pdo, (string)$c['phone']) ?: $c; $a = wa_prod_attached($pdo, $c); $ids = []; $why = [];
-        foreach ($a['items'] as $it) $ids[] = $it['id']; foreach ($a['products'] as $p) $why[$p['id']] = (string)$p['why'];
-        // 📸 FIXED RULE (owner, 10 Nov): whenever the bot's own words name a perfume of ours, its photo goes with it — even when the customer's message alone did not match the catalogue (e.g. "Azz The Most Desired")
-        if ($botText !== '' && count($ids) < 3) {
+        if (function_exists('wa_photo_gate') && !wa_photo_gate($pdo)) return 0;   // 🧠 the learning says photos do not help right now
+        $c = wa_contact($pdo, (string)$c['phone']) ?: $c; $a = wa_prod_attached($pdo, $c, ['room' => 5, 'fresh' => true]); $ids = []; $libs = []; $why = [];
+        foreach ($a['items'] as $it) { if (is_string($it['id']) && strpos($it['id'], 'lib:') === 0) $libs[] = $it['id']; else $ids[] = (int)$it['id']; } foreach ($a['products'] as $p) $why[$p['id']] = (string)$p['why'];
+        // 📸 FIXED RULE (owner, 10 Nov): whenever the bot's own words name a perfume of ours, its picture goes with it — even when the customer's message alone did not match the catalogue (e.g. "Azz The Most Desired")
+        if ($botText !== '' && count($ids) < 5) {
             $f = ' ' . wa_prod_fold($botText, false) . ' '; $hits = [];
             foreach (wa_prod_all($pdo) as $p) { if ($p['kind'] !== 'perfume') continue; $n = wa_prod_fold((string)$p['name'], false); if (strlen($n) < 5) continue; $pos = strpos($f, ' ' . $n . ' '); if ($pos !== false) $hits[$pos] = $p; }
-            ksort($hits); foreach ($hits as $p) { if (count($ids) >= 3) break; if (!in_array((int)$p['id'], array_map('intval', array_filter($ids, 'is_numeric')), true)) { $ids[] = (int)$p['id']; $why[(int)$p['id']] = 'I suggested this perfume'; } }
+            ksort($hits); foreach ($hits as $p) { if (count($ids) >= 5) break; if (!in_array((int)$p['id'], $ids, true)) { $ids[] = (int)$p['id']; $why[(int)$p['id']] = 'I suggested this perfume'; } }
         }
-        if (!$ids) return 0;
-        $r = wa_prod_send_items($pdo, $c, $ids, 'why', 'bot', 0, ['why' => $why]); return count($r['sent'] ?? []);
+        $n = 0;
+        if ($ids) $n += function_exists('wa_collage_send') ? wa_collage_send($pdo, $c, $ids, 'bot', 0, $why) : (int)count((wa_prod_send_items($pdo, $c, $ids, 'why', 'bot', 0, ['why' => $why]))['sent'] ?? []);
+        if ($libs) { $r = wa_prod_send_items($pdo, $c, $libs, 'why', 'bot', 0, ['why' => $why]); $n += count($r['sent'] ?? []); }
+        return $n;
     } catch (Throwable $e) { error_log('wa_prod_bot_after: ' . $e->getMessage()); return 0; }
 }
 // ------------------------------------------------------------------------------------------------------------------ status (Products tab)
