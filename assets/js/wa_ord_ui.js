@@ -563,7 +563,7 @@ window.WaOrd = (function () {
 
   return { _esc: esc, _toast: toast, _err: errMsg, card, badge, birthday, open, send, urgent, link, attention, count, storeForm, settings, _fmt: fmt };
 })();
-// 🎁 the three extra Automation pages: After delivery, Birthdays, Complaints messages
+// 🎁 the three extra Autobot pages: After delivery, Birthdays, Complaints messages
 const LINK = (href, t) => '<a class="wor-b" style="text-decoration:none;display:inline-block;margin:4px 6px 0 0" href="' + href + '" target="_top">' + t + '</a>';
 if (window.WaPanels && WaPanels.add) {
   WaPanels.add('afterdel', (el) => { const s = WaOrd.settings(el, { only: ['care_d2', 'review', 'review_nudge', 'return_d15', 'return_d30'], title: '⭐ After delivery', intro: 'What goes to the customer after the parcel is delivered: a check-in (2 days), a rating request (5 days), a take-back offer (15 days) and a no-questions return offer (30 days). 5-star customers who have not sent their review screenshot get one reminder. Nothing goes to a customer with an open complaint. Ratings, screenshots and gifts are handled in Complaints → ⭐ Reviews.', extra: '<div style="margin-top:10px">' + LINK('complaints.html?tab=reviews', '⭐ Open Reviews (who rated, screenshots, gifts)') + LINK('complaints.html?tab=credit', '🎁 Free perfume gifts') + '</div>' }); return () => s.refresh(); });
@@ -581,6 +581,6 @@ if (window.WaPanels && WaPanels.add) {
     return () => { };
   });
 }
-// 📦 the WhatsApp section's "Order updates" page (Automation → Order updates)
+// 📦 the WhatsApp section's "Order updates" page (Autobot → Order updates)
 if (window.WaPanels && WaPanels.add) WaPanels.add('orderupd', (el) => { const s = WaOrd.settings(el, { only: ['received', 'dispatch_late', 'shipped', 'out_for_delivery', 'delivered', 'failed', 'delayed'] }); return () => s.refresh(); });
 

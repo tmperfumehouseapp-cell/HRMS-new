@@ -109,7 +109,7 @@ function wa_bdayask_queue(PDO $pdo, int $nowTs, array $cfg, string $sk = ''): ar
     if (empty($cfg['statuses']['bday_ask']) || !cbd_tables($pdo)) return $res;
     $since = (int)wo_get($pdo, 'wa_bdayask_since', '0'); if ($since <= 0) { $since = $nowTs; wo_put($pdo, 'wa_bdayask_since', (string)$since); }
     if (wo_tpl_for($pdo, 'bday_ask') === null) return $res;   // the template is not approved yet
-    $q = $pdo->prepare("SELECT * FROM dp_dsp_parcels WHERE created_at >= ? AND created_at <= ? AND phone IS NOT NULL AND phone <> ''$sk ORDER BY id DESC LIMIT 200"); $bm = wo_timing($pdo, 'bday_ask'); $q->execute([wo_dt(max($since, $nowTs - 5 * 86400)), wo_dt($nowTs - $bm * 60)]);   // the delay (default 60 minutes) is set in Automation → Birthdays
+    $q = $pdo->prepare("SELECT * FROM dp_dsp_parcels WHERE created_at >= ? AND created_at <= ? AND phone IS NOT NULL AND phone <> ''$sk ORDER BY id DESC LIMIT 200"); $bm = wo_timing($pdo, 'bday_ask'); $q->execute([wo_dt(max($since, $nowTs - 5 * 86400)), wo_dt($nowTs - $bm * 60)]);   // the delay (default 60 minutes) is set in Autobot → Birthdays
     foreach ($q->fetchAll() as $p) {
         if (in_array(wo_class($p, $nowTs), ['cancelled', 'rto', 'lost', 'damaged'], true)) continue;
         if (function_exists('wo_is_cx_parcel') && wo_is_cx_parcel($pdo, $p)) continue;
