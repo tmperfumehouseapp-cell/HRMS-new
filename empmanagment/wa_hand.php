@@ -137,6 +137,7 @@ if (in_array($__wh, ['wa.accept', 'wa.remind', 'wa.remind_done', 'wa.hand_mark',
             $what = (string)($in['what'] ?? '');
             if ($what === 'paid') {
                 wa_hot_clear($pdo, $key); wa_event($pdo, $key, '✅ Order placed — marked by ' . $who);
+                if (function_exists('wq_need_close')) wq_need_close($pdo, $key);   // the chat leaves the Needs you now card for everyone
             } elseif ($what === 'link') {
                 $pdo->prepare("UPDATE wa_contacts SET pay_at = ?, hot = 0, callnow = IF(callnow IN (1, 2), 9, callnow) WHERE phone = ?")->execute([$now, $key]);
                 wa_event($pdo, $key, '💳 Payment link sent by ' . $who);

@@ -1405,6 +1405,13 @@ function wq_need_dismiss(PDO $pdo, string $phone, int $me): array
     $pdo->prepare("UPDATE wq_need_log SET dismissed = 1 WHERE phone = ? AND in_at = ? AND level = 'orange'")->execute([$phone, wq_dt(wq_ts($c['last_in_at'] ?? ''))]);
     try { setting_set($pdo, 'wq_needs', ''); } catch (Throwable $e) { } return ['ok' => true];
 }
+/** "Order placed" was marked in the chat: whatever is waiting from this customer's latest message (red or orange) leaves the card for everyone. A NEW message of the customer can bring it back. */
+function wq_need_close(PDO $pdo, string $phone): void
+{
+    try { if (!wq_need_tables($pdo)) return; $c = wq_contact($pdo, $phone); if (!$c || empty($c['last_in_at'])) return;
+        $pdo->prepare("INSERT INTO wq_need_log (phone, level, seen_at, in_at, dismissed) VALUES (?, 'orange', ?, ?, 1) ON DUPLICATE KEY UPDATE dismissed = 1")->execute([$phone, wq_dt(wq_now()), wq_dt(wq_ts($c['last_in_at']))]);
+        setting_set($pdo, 'wq_needs', ''); } catch (Throwable $e) { }
+}
 /** Admin board: what came up as red / orange in the last 7 days, who took it, how fast, and whether an order followed. */
 function wq_needs_board(PDO $pdo): array
 {
