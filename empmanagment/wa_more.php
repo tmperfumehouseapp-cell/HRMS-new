@@ -249,6 +249,7 @@ function wa_tick(PDO $pdo, bool $force = false): array
     try { if (function_exists('wch_tick')) $o['wch'] = wch_tick($pdo, ['light' => true]); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'chain cart: ' . $e->getMessage()); }   // chain cart: reminders
     try { if (function_exists('wa_ord_tick')) $o['orders'] = wa_ord_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'orders: ' . $e->getMessage()); }   // order-update messages (and the one-time template setup)
     try { if (function_exists('jt_tick') && $force && !defined('WA_IN_WEBHOOK')) $o['tags'] = jt_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'tags: ' . $e->getMessage()); }
+    try { if (function_exists('wd_tick') && $force && !defined('WA_IN_WEBHOOK')) $o['drip'] = wd_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'drip: ' . $e->getMessage()); }   // 🔁 7-Day Drip
     try { if (function_exists('wj_tick') && $force && !defined('WA_IN_WEBHOOK')) $o['journey'] = wj_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'journey: ' . $e->getMessage()); }   // 🗓 60-day Journey: today's messages, the night's topic learning, festival watch
     try { if (function_exists('wtp_gen_tick') && $force && !defined('WA_IN_WEBHOOK')) { $f0 = ai_feat('wa_topics'); try { wtp_gen_tick($pdo); } finally { ai_feat($f0); } } } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'topics: ' . $e->getMessage()); }   // 🧭 Claude writes the topic messages one topic at a time and sends them to Meta
     try { if (function_exists('wlr_nightly') && $force && !defined('WA_IN_WEBHOOK')) { $f0 = ai_feat('wa_learn'); try { wlr_nightly($pdo); } finally { ai_feat($f0); } } } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'learning: ' . $e->getMessage()); }   // 🧠 after 02:00, once a day: lost chats saved, guidebook rewritten from won + lost chats
@@ -589,6 +590,7 @@ require_once __DIR__ . '/wq_pace.php';   // ⚡ Reply pace of every salesperson:
 require_once __DIR__ . '/wq_manager.php';   // 🧭 Team manager (Autobot): Claude decides who sees new orange / red chats first, from every number together (wq.mgr_*)
 require_once __DIR__ . '/team_board.php';   // 👥 Team board: one row per salesperson with everything in one place (team.board)
 require_once __DIR__ . '/wch.php';        // Chain + perfume cart, GST bill, catalog sync (wch.*) - BEFORE wa_seg.php
+require_once __DIR__ . '/wa_drip.php';   // 🔁 7-Day Drip: a pre-made message per day for new queries / campaign repliers (wa.drip_*) - BEFORE wa_seg.php
 require_once __DIR__ . '/wmo.php';        // 🧾 Manual order from a chat: QR / UPI payment first, customer address link, the order lands in Orders + Dispatch (wmo.*) - BEFORE wa_seg.php
 require_once __DIR__ . '/wa_seg.php';      // customer journey, stage / value filters, Claude context pack, decisions (wa.seg_*, wa.dec_*) — MUST stay the LAST require: its router runs at include time
 
