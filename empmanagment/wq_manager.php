@@ -99,7 +99,7 @@ function wqm_tone_refresh(PDO $pdo, array $rows, bool $force = false): int
     if (!function_exists('convo_ai')) return 0;
     $last = strtotime(wq_meta_get($pdo, 'mgr:tone_at', '')) ?: 0; if (!$force && $last > time() - 3 * 3600) return 0;
     wq_meta_put($pdo, 'mgr:tone_at', date('Y-m-d H:i:s'));
-    $mask = function ($t) { return mb_substr(preg_replace('/\d{6,}/', '#', trim((string)$t)), 0, 280); };
+    $mask = function ($t) { $t = preg_replace('/[\w.+-]+@[\w-]+\.[\w.-]+/u', '#', trim((string)$t)); return mb_substr(preg_replace('/\d{6,}/', '#', $t), 0, 220); };   // no e-mail address and no long number leaves the server
     $team = []; $since = date('Y-m-d H:i:s', time() - 3 * 86400);
     foreach ($rows as $id => $r) {
         if ($r['replies_today'] <= 0 && !$r['present']) continue;
