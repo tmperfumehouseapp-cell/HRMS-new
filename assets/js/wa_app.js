@@ -888,7 +888,7 @@
       v.innerHTML = `<div class="wx-ch"><button class="bk" id="wxBk" aria-label="Back">‹</button><div class="wx-av" style="background:hsl(${hue(c.phone)} 55% 48%);width:34px;height:34px;font-size:12px">${esc(initials(c.name, c.phone))}</div>
         <div class="wx-mid" id="wxCi" style="cursor:pointer"><div class="wx-nm" id="wxCn">${esc(c.name || pretty(c.phone))} ${badgeOf(r)}</div><div class="wx-sub" id="wxCs">${esc(pretty(c.phone))}</div><div id="wxOs"></div></div>
         ${S.me && S.me.team ? `${r.emp && r.emp === S.me.emp_id ? '' : '<button class="wx-ib g" id="wxTk" title="Take this chat for yourself — one tap">✋<small>Take over</small></button>'}<button class="wx-ib" id="wxAs" title="Give this chat to a salesperson">👤<small>Assign</small></button>` : ''}<button class="wx-ib" id="wxPrc" title="Send the price chart (made for this customer's price level)">💰<small>Price chart</small></button><button class="wx-ib g" id="wxFin" title="Finish this chat">✔<small>Done</small></button><button class="wx-ib" id="wxMore" aria-haspopup="dialog" title="More: complaint, report, journey, customer">⋯<small>More</small></button></div>
-        <div id="wxRd"></div><div id="wxLife"></div><div id="wxCxB"></div><div id="wxOdB"></div>${S.cur.peek === 'tag' ? `<div class="wx-banner y" id="wxPkB">🏷 This chat was yours first — now with <b>${esc(((S.chats || []).find((y) => y.phone === S.cur.phone) || {}).emp_name || 'someone else')}</b>. You can read it; only they can reply.</div>` : S.cur.peek ? `<div class="wx-banner b" id="wxPkB">🙋 A ${S.cur.peek === 'grab' ? 'late chat (nobody replied)' : 'new chat — not given to anyone yet'}. Read it, then take it with the button below.</div>` : ''}${S.cur.watch ? `<div class="wx-banner b" id="wxTo" style="display:flex;gap:8px;align-items:center">👀 <span style="flex:1">With <b>${esc(r.emp_name || 'a colleague')}</b> — you are watching.</span>${r.heat === 'cx' ? '<small>Complaint chat</small>' : '<button class="wx-btn" id="wxToB">🔄 Take over</button>'}</div>` : ''}<div class="wx-sw" id="wxNum" hidden></div><div class="wx-msgs" id="wxMs"><div class="wx-sk"></div></div><div class="wx-qm" id="wxQk" hidden></div><div id="wxSug"></div><div id="wxPp"></div><div id="wxFoot"></div>`;
+        <div id="wxRd"></div><div id="wxLife"></div><div id="wxCxB"></div><div id="wxOdB"></div>${S.cur.peek === 'tag' ? `<div class="wx-banner y" id="wxPkB">🏷 This chat was yours first — now with <b>${esc(((S.chats || []).find((y) => y.phone === S.cur.phone) || {}).emp_name || 'someone else')}</b>. You can read it; only they can reply.</div>` : S.cur.peek ? `<div class="wx-banner b" id="wxPkB">🙋 A ${S.cur.peek === 'grab' ? 'late chat (nobody replied)' : 'new chat — not given to anyone yet'}. Read it, then take it with the button below.</div>` : ''}${S.cur.watch ? `<div class="wx-banner b" id="wxTo" style="display:flex;gap:8px;align-items:center">👀 <span style="flex:1">With <b>${esc(r.emp_name || 'a colleague')}</b> — you are watching.</span>${r.heat === 'cx' ? '<small>Complaint chat</small>' : '<button class="wx-btn" id="wxToB">🔄 Take over</button>'}</div>` : ''}<div class="wx-sw" id="wxNum" hidden></div><div class="wx-msgs" id="wxMs"><div class="wx-sk"></div></div><div class="wx-qm" id="wxQk" hidden></div><div id="wxSug"></div><div id="wxPc"></div><div id="wxPp"></div><div id="wxFoot"></div>`;
       $('#wxBk').onclick = () => { if (history.state && history.state.wxChat) history.back(); else closeChat(); }; $('#wxCi').onclick = openCustomer; $('#wxFin').onclick = openFinish; $('#wxMore').onclick = openMore;
       if ($('#wxToB')) $('#wxToB').onclick = takeOver;
       if ($('#wxTk')) $('#wxTk').onclick = function () { this.disabled = true; takeOver().then(() => { const t = $('#wxTk'); if (S.cur && S.cur.row && S.cur.row.emp === (S.me && S.me.emp_id) && t) t.remove(); else if (t) t.disabled = false; }); };   // ✋ manager / admin: one tap, no confirmation
@@ -1064,7 +1064,7 @@
     }
     async function loadSugg(force) {
       const box = $('#wxSug'); if (!box || !S.cur) return; const phone = S.cur.phone; const c = S.cur.contact; const last = S.cur.msgs.filter((m) => m.dir !== 'sys').slice(-1)[0];
-      suggStop(); S.cur.sg = null; S.cur.armed = null; drawPp(); drawQk();
+      suggStop(); S.cur.sg = null; S.cur.armed = null; drawPp(); drawQk(); pcDraw();
       const afterBot = !!last && last.dir === 'out' && last.who === 'bot';   // 🤖 the bot answered first: the person still gets a suggestion for the NEXT step
       if (!c.window_open || c.optout || !last || (last.dir !== 'in' && !afterBot)) { box.innerHTML = ''; return; }
       if (S.cur.sugg === undefined || force) box.innerHTML = '<div class="wx-sug"><div class="r"><span class="ic">✨</span><span class="t ld">Writing a reply…</span></div></div>';
@@ -1148,6 +1148,22 @@
     function openFind() {
       if (!S.cur) return; const c = S.cur.contact;
       prodReady(() => { if (!window.WaProd) { toast('Could not open the perfume list. Refresh the page.', true); return; } WaProd.open({ phone: c.phone, name: (c.name || '').trim() || pretty(c.phone), canSend: !!c.window_open && !c.optout, whyNot: 'The 24-hour window is closed, so a photo cannot be sent now.', onSent: () => { pollChat(); } }); });
+    }
+
+
+    // 💰 Price chart chip: always one small button above the box; it lights up ("asked for the price") when the customer's last message asks for prices. One tap sends the chart at this chat's price level.
+    const PC_RE = /price ?list|pricelist|price ?chart|rate ?card|rate ?list|all prices|sabke rate|sab ke rate|rate bhejo|price bhejo|catalog|brochure|ભાવ|પ્રાઇસ|પ્રાઈસ|કિંમત|भाव|प्राइस|रेट|\bprices?\b|\brates?\b|kimat|bhav|kitne ka|kitna|how much|cost/i;
+    const pcLv = {};
+    async function pcDraw() {
+      const box = document.getElementById('wxPc'); if (!box || !S.cur) return; const phone = S.cur.phone, last = S.cur.msgs.filter((m) => m.dir !== 'sys' && !m.tmp).slice(-1)[0];
+      if (!S.cur.contact.window_open && !S.cur.contact.optout && !S.cur.peek && !S.cur.watch) { box.innerHTML = ''; return; }
+      const asks = !!last && last.dir === 'in' && !!last.body && PC_RE.test(String(last.body));
+      let lv = pcLv[phone]; if (!lv || Date.now() - lv.at > 20000) { try { const v = await api.post('wa.price_photo', { phone, preview: true }); lv = pcLv[phone] = { at: Date.now(), level: v.level, why: v.why }; } catch (e) { lv = pcLv[phone] = { at: Date.now(), level: '', why: e.message || '', bad: true }; } }
+      if (!S.cur || S.cur.phone !== phone) return; const b = document.getElementById('wxPc'); if (!b) return;
+      if (lv.bad) { b.innerHTML = ''; return; }
+      if (!document.getElementById('pcStyle')) { const st = document.createElement('style'); st.id = 'pcStyle'; st.textContent = '.pc-row{display:flex;align-items:center;gap:8px;padding:4px 10px}.pc-row button{border:1px solid #cfd8dc;background:#fff;color:#0f6e7e;border-radius:999px;min-height:32px;padding:0 12px;font-size:12.5px;font-weight:700;cursor:pointer;max-width:100%}.pc-row.hot{background:#ecfdf5}.pc-row.hot button{background:#00a884;color:#fff;border-color:#00a884;min-height:36px}.pc-row span{font-size:12px;color:#065f46;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pc-row button[disabled]{opacity:.6}@media (prefers-color-scheme:dark){.pc-row button{background:#1f2c34;color:#7fd1e0;border-color:#2a3942}.pc-row.hot{background:#0b2a22}.pc-row span{color:#8fe3c3}}'; document.head.appendChild(st); }
+      b.innerHTML = '<div class="pc-row' + (asks ? ' hot' : '') + '"><button type="button" id="wxPcB" title="' + esc(lv.why) + '">💰 ' + (asks ? 'Send price chart' : 'Price chart') + ' · ' + esc(lv.level) + '</button>' + (asks ? '<span>They asked for the price</span>' : '') + '</div>';
+      document.getElementById('wxPcB').onclick = async function () { this.disabled = true; try { const r = await api.post('wa.price_photo', { phone }); delete pcLv[phone]; toast(r.message || 'Price chart sent.'); try { pollChat(); } catch (e) { } } catch (e) { toast(e.message, true); } this.disabled = false; pcDraw(); };
     }
 
     // ---- footer: composer or the 24-hour lock
