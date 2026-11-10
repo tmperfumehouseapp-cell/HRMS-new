@@ -76,11 +76,20 @@
       rows.forEach((r) => { const d = Math.min(60, Math.max(1, Math.ceil(r.min / 1440 / per))); cells[d - 1] = r.src === 'ap' ? (r.kind === 'offer' ? 'o' : 'a') : 'w'; });
       return '<div class="jt-strip">' + cells.map((c, i) => '<i class="' + c + '" title="day ' + Math.round((i + 1) * per) + '"></i>').join('') + '</div><div class="jt-sub" style="display:flex;justify-content:space-between"><span>day 1</span><span>' + Math.round(max / 4) + '</span><span>' + Math.round(max / 2) + '</span><span>' + Math.round(max * 3 / 4) + '</span><span>' + max + '</span></div>';
     }
+    // 💡 Claude's friendly hints about a flow — only advice, nothing is blocked or changed: the timeline you set is what goes
+    function hintsOf(rows) {
+      const h = [], mn = (m) => m < 60 ? Math.round(m) + ' min' : m < 1440 ? Math.round(m / 6) / 10 + ' h' : 'day ' + Math.round(m / 144) / 10, offers = rows.filter((r) => r.kind === 'offer'), cnt = {};
+      for (let i = 1; i < offers.length; i++) if (offers[i].min - offers[i - 1].min < 3 * 1440) { h.push('Two offers close together (' + mn(offers[i - 1].min) + ' and ' + mn(offers[i].min) + ') — customers may feel pushed.'); break; }
+      for (let i = 2; i < rows.length; i++) if (rows[i].min - rows[i - 2].min < 1440) { h.push('Three messages within one day (' + mn(rows[i - 2].min) + ' – ' + mn(rows[i].min) + ') — a customer who does not reply may find it too much.'); break; }
+      for (let i = 1; i < rows.length; i++) if (rows[i].min - rows[i - 1].min < 60) { h.push('Two steps less than an hour apart (' + mn(rows[i - 1].min) + ' and ' + mn(rows[i].min) + ').'); break; }
+      offers.forEach((r) => { cnt[r.offer] = (cnt[r.offer] || 0) + 1; }); Object.keys(cnt).forEach((k) => { if (cnt[k] > 2) { const m = (WJ.messages || []).find((x) => x.k === k); h.push((m ? m.label : 'One offer') + ' is used ' + cnt[k] + ' times in this flow — the same words again and again work less.'); } });
+      return h.slice(0, 3);
+    }
     function laneHtml(L) {
       const rows = rowsOf(L);
       const on = L.path.on !== false;
       return '<div class="jt-card' + (on ? '' : ' off') + '" data-lane="' + esc(L.id) + '"><div class="jt-h">💡 ' + esc(L.title) + '<span class="jt-sp"></span><span class="jt-seg" title="Turn only this flow on or off (the Off / Preview / Auto switch at the top is for everything)"><button type="button" data-lon="1" class="' + (on ? 'on' : '') + '">On</button><button type="button" data-lon="0" class="offb ' + (on ? '' : 'on') + '">Off</button></span><button class="jt-b s" type="button" data-claude title="Tell Claude what to change in this whole flow — every step, every message">🧠 Claude</button><button class="jt-b s" type="button" data-add>＋ Add a step</button></div><div class="jt-sub">' + esc(L.desc || '') + '</div>'
-        + strip(rows) + tiles(rows, L.id) + '</div>';
+        + strip(rows) + tiles(rows, L.id) + (hintsOf(rows).length ? '<div class="jt-sub" style="margin-top:8px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:6px 10px">💡 <b>Claude suggests</b> (only advice — your timeline is what goes)<br>' + hintsOf(rows).map(esc).join('<br>') + '</div>' : '') + '</div>';
     }
     function buyRows(topic) { return BUYER.map((s, i) => ({ src: 'wj', i, min: s.day * 1440, ref: s.ref, idea: s.idea, on: s.on, topic: s.topic || '', stat: stat(buyStat(s.id)) })).filter((r) => r.topic === topic).sort((a, b) => a.min - b.min); }
     function buyLane(lid, title, sub, topic, open) {
