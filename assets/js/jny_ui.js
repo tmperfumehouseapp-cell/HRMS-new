@@ -323,14 +323,22 @@
         + '<div style="display:flex;gap:8px;flex-wrap:wrap">' + tile('Messages sent', T.sent || 0, 'before + after an order') + tile('Replied', T.replied || 0, pc(T.replied, T.sent)) + tile('Orders', T.ordered || 0, 'after a follow-up') + tile('Sales', money(T.sales), 'from those orders') + '</div>';
       h += '<div class="jt-card"><div class="jt-h">Before an order — by lane and step</div>';
       (A.paths || []).filter((p) => p.kind !== 'stop').forEach((p) => { const rows = p.steps.map((s, i) => { const o = (R.lanes || []).find((x) => x.sid === p.id && x.step === i); const t = s.after_h < 1 ? Math.round(s.after_h * 60) + ' min' : s.after_h < 24 ? Math.round(s.after_h * 10) / 10 + ' h' : 'day ' + Math.round(s.after_h / 2.4) / 10;
-          return '<tr><td>' + t + '</td><td>' + esc(s.kind === 'offer' ? '📨 ' + lab(s.offer) : '💬 ' + (s.text || 'text').slice(0, 40)) + hint(o) + '</td>' + cell(o) + '</tr>'; }).join('');
+          return '<tr class="jt-go" data-k="lane" data-sid="' + esc(p.id) + '" data-st="' + i + '" style="cursor:pointer"><td>' + t + '</td><td>' + esc(s.kind === 'offer' ? '📨 ' + lab(s.offer) : '💬 ' + (s.text || 'text').slice(0, 40)) + hint(o) + '</td>' + cell(o) + '</tr>'; }).join('');
         h += '<details style="margin-top:6px"><summary style="cursor:pointer;font-weight:700">' + esc(p.title) + '</summary><div style="overflow-x:auto"><table class="jt-tbl" style="width:100%;border-collapse:collapse;font-size:13px"><tr><th align="left">When</th><th align="left">Step</th><th>Sent</th><th>Replied</th><th>Orders</th><th>Sales</th></tr>' + rows + '</table></div></details>'; });
       h += '</div><div class="jt-card"><div class="jt-h">After an order — by customer type</div>';
       const byT = {}; (W.steps.buyer || []).forEach((s) => { (byT[s.topic || ''] = byT[s.topic || ''] || []).push(s); });
       const tn = (k) => k === '' ? 'Everyone' : ((W.segments.rows || []).find((g) => g.k === k) || {}).title || k;
-      Object.keys(byT).sort().forEach((k) => { const rows = byT[k].map((s) => { const o = (R.buyer || []).find((x) => x.step === s.id); return '<tr><td>day ' + s.day + '</td><td>' + esc(lab(s.ref)) + hint(o) + '</td>' + cell(o) + '</tr>'; }).join('');
+      Object.keys(byT).sort().forEach((k) => { const rows = byT[k].map((s) => { const o = (R.buyer || []).find((x) => x.step === s.id); return '<tr class="jt-go" data-k="buyer" data-st="' + esc(s.id) + '" style="cursor:pointer"><td>day ' + s.day + '</td><td>' + esc(lab(s.ref)) + hint(o) + '</td>' + cell(o) + '</tr>'; }).join('');
         h += '<details style="margin-top:6px"><summary style="cursor:pointer;font-weight:700">' + esc(tn(k)) + '</summary><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><tr><th align="left">When</th><th align="left">Step</th><th>Sent</th><th>Replied</th><th>Orders</th><th>Sales</th></tr>' + rows + '</table></div></details>'; });
-      el.innerHTML = h + '</div></div>'; el.querySelectorAll('[data-d]').forEach((b) => b.onclick = () => { days = +b.dataset.d; el.innerHTML = '<div class="jt"><div class="jt-card">' + loading + '</div></div>'; load(); });
+      h += '<div class="jt-sub" style="margin:6px 4px">👆 Click any step to see which customers got it, the exact message and who replied.</div>';
+      el.innerHTML = h + '</div></div>';
+      el.querySelectorAll('tr.jt-go').forEach((tr) => { tr.onclick = async () => {   // 🔎 who got this step
+        const nx = tr.nextElementSibling; if (nx && nx.classList.contains('jt-who')) { nx.remove(); return; }
+        const row = document.createElement('tr'); row.className = 'jt-who'; row.innerHTML = '<td colspan="6" class="jt-sub">Loading…</td>'; tr.after(row);
+        try { const d = await api.get('fu.wj_step_sent', { kind: tr.dataset.k, sid: tr.dataset.sid || '', step: tr.dataset.st, days });
+          row.innerHTML = '<td colspan="6" style="background:#f8fafc;padding:8px 10px">' + (d.rows.length ? '<div class="jt-sub" style="margin-bottom:4px">' + d.total + ' sent in the last ' + days + ' days' + (d.total > d.rows.length ? ' — newest ' + d.rows.length + ' shown' : '') + '</div>' + d.rows.map((r) => '<div style="padding:4px 0;border-top:1px solid #e5e7eb"><b>' + esc(r.name || r.phone) + '</b> <span class="jt-sub">+91 ' + esc(r.phone.slice(-10)) + ' · ' + esc(String(r.at).slice(5, 16)) + '</span>' + (r.replied ? ' <span class="jt-tag a">replied</span>' : '') + (r.body ? '<div style="color:#374151;white-space:pre-wrap">' + esc(r.body) + '</div>' : '') + '</div>').join('') : 'Nothing sent in this step yet.') + '</td>'; }
+        catch (e) { row.innerHTML = '<td colspan="6">' + errBox(e.message) + '</td>'; } }; });
+      el.querySelectorAll('[data-d]').forEach((b) => b.onclick = () => { days = +b.dataset.d; el.innerHTML = '<div class="jt"><div class="jt-card">' + loading + '</div></div>'; load(); });
     }
     load(); return () => { };
   }

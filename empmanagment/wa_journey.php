@@ -881,6 +881,17 @@ if (strpos($__wj, 'fu.wj_') === 0 || strpos($__wj, 'fu.jn_') === 0) {   // (fu.j
             if ($f === null || $t === null || $f === $t) json_response(['error' => 'Give two different times like 10:00 and 02:00.'], 422); setting_set($pdo, 'jn_window', json_encode(['from' => $f, 'to' => $t])); if (isset($in['cold_after']) && is_numeric($in['cold_after'])) setting_set($pdo, 'jn_cold_after', (string)max(0, min(40, (int)$in['cold_after']))); }
         $w = jn_window($pdo); json_response(['message' => $isPost ? 'Saved ✓ — messages go between ' . wj_hm($w['from']) . ' and ' . wj_hm($w['to']) . '.' : '', 'from' => wj_hm($w['from']), 'to' => wj_hm($w['to'])]);
     }
+    if ($__wj === 'fu.wj_step_sent') {   // 🔎 Results: click a step to see WHICH customers got it, when, the exact words, and whether they wrote back
+        $since = wj_dt(time() - max(1, min(90, (int)($_GET['days'] ?? 30))) * 86400); $kind = (string)($_GET['kind'] ?? 'lane'); $rows = []; $total = 0;
+        try {
+            if ($kind === 'buyer') { $w = "e.status = 'sent' AND e.track = 'buyer' AND e.step_id = ? AND e.sent_at >= ?"; $a = [(string)($_GET['step'] ?? ''), $since]; $from = 'wa_wj_ev e'; }
+            else { $w = "e.status = 'sent' AND e.sid = ? AND e.step = ? AND e.sent_at >= ?"; $a = [(string)($_GET['sid'] ?? ''), (int)($_GET['step'] ?? 0), $since]; $from = 'wa_fu_ev e'; }
+            $q = $pdo->prepare("SELECT COUNT(*) FROM $from WHERE $w"); $q->execute($a); $total = (int)$q->fetchColumn();
+            $q = $pdo->prepare("SELECT e.phone, e.sent_at, e.body, c.name, EXISTS(SELECT 1 FROM wa_messages m WHERE m.phone = e.phone AND m.dir = 'in' AND m.ts > e.sent_at AND m.ts <= DATE_ADD(e.sent_at, INTERVAL 2 DAY)) AS rep FROM $from LEFT JOIN wa_contacts c ON c.phone = e.phone WHERE $w ORDER BY e.sent_at DESC LIMIT 100"); $q->execute($a);
+            foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $rows[] = ['phone' => (string)$r['phone'], 'name' => (string)($r['name'] ?? ''), 'at' => (string)$r['sent_at'], 'body' => mb_substr((string)$r['body'], 0, 400), 'replied' => (int)$r['rep'] === 1];
+        } catch (Throwable $e) { }
+        json_response(['ok' => true, 'total' => $total, 'rows' => $rows]);
+    }
     if ($__wj === 'fu.wj_queue') json_response(['ok' => true] + wj_queue($pdo));
     if ($__wj === 'fu.wj_results') json_response(['ok' => true] + wj_results($pdo, max(1, min(90, (int)($_GET['days'] ?? 30)))));
     if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
