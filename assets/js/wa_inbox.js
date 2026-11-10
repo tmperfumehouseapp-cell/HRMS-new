@@ -484,6 +484,7 @@
     async function streamUrl(id) { const d = await api.get('wa.media_link', { id }); return api.buildUrl('wa.mfile', { id: d.id, e: d.e, s: d.s }); }   // ⚡ a signed link the browser streams (videos start at once, seek works)
     async function mediaUrl(id) {
       if (MEDIA[id]) return MEDIA[id];
+      if (/^link:/.test(id)) { const d = await api.get('wa.img_link', { id }); if (!d || !d.url) throw new Error('This photo is no longer available to open.'); return (MEDIA[id] = d.url); }   // a photo sent by link (collage / product card)
       if (/^prod:/.test(id)) { await new Promise((ok) => prodReady(ok)); const u = window.WaProd ? await WaProd.imgFor(id) : ''; if (!u) throw new Error('Could not load the photo.'); return (MEDIA[id] = u); }   // a product photo sent from "Find a perfume": it lives on the website
       const res = await fetch(api.buildUrl('wa.media', { id }), { headers: { Authorization: 'Bearer ' + api.token() } });
       if (!res.ok) { let m = 'Could not load the file.'; try { m = (await res.json()).error || m; } catch (e) { } throw new Error(m); }
@@ -644,6 +645,12 @@
       };
     }
 
+    // 👁 The price chart is only SHOWN to the salesperson — it is never sent to a customer (owner's rule). One shared viewer.
+    function pcView(v) {
+      const o = document.createElement('div'); o.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.82);display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:14px;overflow:auto';
+      o.innerHTML = '<div style="color:#fff;font-weight:800;font-size:15px;margin-bottom:6px;text-align:center">👁 Price chart · ' + esc(v.level || '') + '</div><div style="background:#fff3cd;color:#7a4b00;border-radius:10px;padding:7px 12px;font-size:13px;font-weight:700;margin-bottom:10px;max-width:520px;text-align:center">Only you can see this. It is NOT sent to the customer.</div><img alt="Price chart" style="max-width:100%;max-height:78vh;border-radius:10px;background:#fff" src="' + esc(v.url) + '"><button type="button" style="margin-top:12px;min-height:42px;padding:0 26px;border:0;border-radius:999px;background:#fff;font-weight:800;font-size:15px;cursor:pointer">Close</button>';
+      o.onclick = (e) => { if (e.target === o || e.target.tagName === 'BUTTON') o.remove(); }; document.body.appendChild(o);
+    }
     // 💰 Price chart chip: always one small button above the box; it lights up ("asked for the price") when the customer's last message asks for prices. One tap sends the chart at this chat's price level.
     const PC_RE = /price ?list|pricelist|price ?chart|rate ?card|rate ?list|all prices|sabke rate|sab ke rate|rate bhejo|price bhejo|catalog|brochure|ભાવ|પ્રાઇસ|પ્રાઈસ|કિંમત|भाव|प्राइस|रेट|\bprices?\b|\brates?\b|kimat|bhav|kitne ka|kitna|how much|cost/i;
     const pcLv = {};
@@ -655,8 +662,8 @@
       if (!S.cur || S.cur.contact.phone !== phone) return; const b = document.getElementById('wiPc'); if (!b) return;
       if (lv.bad) { b.innerHTML = ''; return; }
       if (!document.getElementById('pcStyle')) { const st = document.createElement('style'); st.id = 'pcStyle'; st.textContent = '.pc-row{display:flex;align-items:center;gap:8px;padding:4px 10px}.pc-row button{border:1px solid #cfd8dc;background:#fff;color:#0f6e7e;border-radius:999px;min-height:32px;padding:0 12px;font-size:12.5px;font-weight:700;cursor:pointer;max-width:100%}.pc-row.hot{background:#ecfdf5}.pc-row.hot button{background:#00a884;color:#fff;border-color:#00a884;min-height:36px}.pc-row span{font-size:12px;color:#065f46;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pc-row button[disabled]{opacity:.6}@media (prefers-color-scheme:dark){.pc-row button{background:#1f2c34;color:#7fd1e0;border-color:#2a3942}.pc-row.hot{background:#0b2a22}.pc-row span{color:#8fe3c3}}'; document.head.appendChild(st); }
-      b.innerHTML = '<div class="pc-row' + (asks ? ' hot' : '') + '"><button type="button" id="wiPcB" title="' + esc(lv.why) + '">💰 ' + (asks ? 'Send price chart' : 'Price chart') + ' · ' + esc(lv.level) + '</button>' + (asks ? '<span>They asked for the price</span>' : '') + '</div>';
-      document.getElementById('wiPcB').onclick = async function () { this.disabled = true; try { const r = await api.post('wa.price_photo', { phone }); delete pcLv[phone]; (function (m, bad) { const n = document.getElementById('wiN'); if (n) n.innerHTML = '<div class="wi-note' + (bad ? ' r' : '') + '">' + esc(m) + '</div>'; else alert(m); })(r.message || 'Price chart sent.'); try { pollChat(); } catch (e) { } } catch (e) { (function (m, bad) { const n = document.getElementById('wiN'); if (n) n.innerHTML = '<div class="wi-note' + (bad ? ' r' : '') + '">' + esc(m) + '</div>'; else alert(m); })(e.message, true); } this.disabled = false; pcDraw(); };
+      b.innerHTML = '<div class="pc-row' + (asks ? ' hot' : '') + '"><button type="button" id="wiPcB" title="' + esc(lv.why) + '">👁 View price chart · ' + esc(lv.level) + '</button>' + (asks ? '<span>They asked for the price — view only, not sent</span>' : '') + '</div>';
+      document.getElementById('wiPcB').onclick = async function () { this.disabled = true; try { pcView(await api.post('wa.price_photo', { phone, preview: true })); } catch (e) { alert(e.message); } this.disabled = false; };
     }
 
     setInterval(() => { try { if (S.cur && S.cur.contact && !document.hidden) pcDraw(); } catch (e) { } }, 8000);
@@ -674,7 +681,7 @@
         catch (e) { alert(e.message); this.disabled = false; this.textContent = '🔄 Take over'; }
       };
       $('wiPrc').onclick = async function () { this.disabled = true; const say = (m, bad) => { const n = $('wiN'); if (n) n.innerHTML = '<div class="wi-note' + (bad ? ' r' : '') + '">' + esc(m) + '</div>'; else alert(m); };
-        try { const v = await api.post('wa.price_photo', { phone: S.cur.contact.phone, preview: true }); if (confirm('Send the price chart?\n\nPrice level: ' + v.level + '\n' + v.why)) { const r = await api.post('wa.price_photo', { phone: S.cur.contact.phone }); say(r.message || 'Price chart sent.'); } } catch (e) { say(e.message, true); } this.disabled = false; };
+        try { pcView(await api.post('wa.price_photo', { phone: S.cur.contact.phone, preview: true })); } catch (e) { say(e.message, true); } this.disabled = false; };
       $('wiBack').onclick = () => { if (opts.one) { tellParent({ wa: 'close' }); return; } if (!layerDone('chat', true)) backChat(); };
       const det = () => { root.classList.add('det'); layerOpen('det', () => root.classList.remove('det')); };
       $('wiMore').onclick = det;
