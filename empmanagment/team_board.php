@@ -201,6 +201,21 @@ if ($__tbA === 'team.me') {   // 🙋 MY summary: only the logged-in salesperson
     $m = function_exists('wqm_rec') ? wqm_rec($pdo, $me) : []; $o['card'] = (function_exists('wqm_mode') && wqm_mode($pdo) === 'apply' && !empty($m['card'])) ? ['text' => (string)$m['card'], 'level' => (string)($m['level'] ?? '')] : null;
     json_response($o);
 }
+if ($__tbA === 'team.check') {   // 🩺 self-check (admin): runs every builder of the Team page on its own and says which one fails and how long it takes
+    $auth = require_auth(); if (!function_exists('wa_is_admin') || !wa_is_admin($pdo, $auth)) json_response(['error' => 'Only Admin, HR or the control tower can do this.'], 403);
+    @set_time_limit(120); $today = function_exists('biz_today') ? biz_today($pdo) : date('Y-m-d'); $steps = [];
+    $run = function (string $name, callable $fn) use (&$steps) { $t0 = microtime(true); try { $r = $fn(); $steps[] = ['step' => $name, 'ok' => true, 'ms' => (int)round((microtime(true) - $t0) * 1000), 'note' => is_array($r) ? count($r) . ' rows' : (string)$r]; } catch (Throwable $e) { $steps[] = ['step' => $name, 'ok' => false, 'ms' => (int)round((microtime(true) - $t0) * 1000), 'note' => mb_substr($e->getMessage(), 0, 160)]; } };
+    $run('Team manager signals (light)', function () use ($pdo) { return wqm_collect($pdo, ['light' => true]); });
+    $run('Live day rows (ct_snapshot → cp_day_rows, today)', function () use ($pdo, $today) { return cp_day_rows($pdo, $today); });
+    $run('Targets (coach_day, today)', function () use ($pdo, $today) { return (array)(coach_day($pdo, $today)['emps'] ?? []); });
+    $run('Daily rating (rating_days, 7 days)', function () use ($pdo, $today) { return rating_days($pdo, date('Y-m-d', strtotime($today . ' -6 day')), $today); });
+    $run('Reply pace (wq_pace_get, 7 days)', function () use ($pdo) { return (array)(wq_pace_get($pdo, 7)['people'] ?? []); });
+    $run('Orders per hour from allocated orders (today)', function () use ($pdo, $today) { return ot_auto_hours($pdo, $today); });
+    $run('Team table, today (light)', function () use ($pdo) { return tb_light($pdo, tb_range($pdo, 'today', '', '')); });
+    $run('Team table, this month (light)', function () use ($pdo) { return tb_light($pdo, tb_range($pdo, 'month', '', '')); });
+    $run('Person details, today (full)', function () use ($pdo) { return tb_full($pdo, tb_range($pdo, 'today', '', ''))['rows']; });
+    json_response(['ok' => true, 'today' => $today, 'day_start' => function_exists('day_start_for') ? day_start_for($pdo, $today) : null, 'tick_last' => wq_meta_get($pdo, 'tb:tick_at', ''), 'steps' => $steps, 'all_ok' => !array_filter($steps, function ($x) { return !$x['ok']; })]);
+}
 if ($__tbA === 'team.board' || $__tbA === 'team.person') {
     if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') json_response(['error' => 'Method not allowed.'], 405);
     $auth = require_auth();
