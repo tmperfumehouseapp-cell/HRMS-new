@@ -52,8 +52,8 @@
   function storeHtml(d) {
     const p = d.punch, pay = d.pay;
     return '<div class="card" style="padding:12px 14px"><div class="h3">🏬 Store sales today <span class="' + (p ? 'ok' : 'todo') + '" style="font-size:12px">' + (p ? 'In ' + esc(p.in) + (p.out ? ' · out ' + esc(p.out) : '') : 'Not punched in') + '</span></div><div class="mut" style="margin-bottom:8px">Store day ' + esc(d.day) + ' · a new day starts at ' + esc(d.day_start) + ' AM</div>'
-      + '<div class="tiles" style="margin-bottom:8px"><div class="tl t-g" style="min-height:100px"><div class="b">' + rs(d.sales) + '</div><div class="l">Sales</div><div class="s2">' + esc(d.bills_n) + ' bill' + (d.bills_n === 1 ? '' : 's') + ' · ' + esc(d.ml) + ' ml</div></div><div class="tl t-b" style="min-height:100px"><div class="b">' + rs(d.commission) + '</div><div class="l">My commission (≈)</div><div class="s2">from the price chart</div></div>'
-      + (pay ? '<div class="tl" style="min-height:100px"><div class="b">' + rs(pay.today ? pay.today.amount : 0) + '</div><div class="l">Today\'s pay</div><div class="s2">' + (pay.today ? esc(pay.today.status) : 'no punch yet') + '</div></div><div class="tl" style="min-height:100px"><div class="b">' + rs(pay.net_pay) + '</div><div class="l">Salary this month</div><div class="s2">' + (pay.penalty_total ? '− ' + rs(pay.penalty_total) + ' penalties' : 'no penalties') + '</div></div>' : '') + '</div>'
+      + '<div class="tiles c2" style="margin-bottom:8px"><div class="tl t-g"><div class="b">' + rs(d.sales) + '</div><div class="l">Sales</div><div class="s2">' + esc(d.bills_n) + ' bill' + (d.bills_n === 1 ? '' : 's') + ' · ' + esc(d.ml) + ' ml</div></div><div class="tl t-b"><div class="b">' + rs(d.commission) + '</div><div class="l">My commission (≈)</div><div class="s2">from the price chart</div></div>'
+      + (pay ? '<div class="tl"><div class="b">' + rs(pay.today ? pay.today.amount : 0) + '</div><div class="l">Today\'s pay</div><div class="s2">' + (pay.today ? esc(pay.today.status) : 'no punch yet') + '</div></div><div class="tl"><div class="b">' + rs(pay.net_pay) + '</div><div class="l">Salary this month</div><div class="s2">' + (pay.penalty_total ? '− ' + rs(pay.penalty_total) + ' penalties' : 'no penalties') + '</div></div>' : '') + '</div>'
       + ((d.bills || []).length ? d.bills.slice(0, 8).map((b) => '<div class="erow"><span><b>' + esc(b.bill_no) + '</b> · ' + esc(b.time) + ' · ' + esc(b.ml) + ' ml' + (b.pct != null ? ' · ' + esc(b.pct) + '%' : '') + '</span><span><b>' + rs(b.total) + '</b> <span class="mut">+' + rs(b.commission) + '</span></span></div>').join('') : '<div class="mut">No store bills yet today.</div>') + '</div>';
   }
   function drawStoreOnly(d) { $('hiSub').textContent = 'Your store day'; $('hiStreak').hidden = true; $('homeBody').innerHTML = storeHtml(d); }
@@ -87,7 +87,7 @@
     body.innerHTML =
       (rem.length ? rem.map((r) => '<div class="rmk"><small>💬 Remark from ' + esc(r.from_name || 'your sales head') + '</small>' + esc(r.body || '') + '<div><button type="button" class="btn" data-seen="' + esc(r.id) + '">Got it</button></div></div>').join('') : '')
       + (fl ? '<div class="fl">⚡ Flash offer' + (fl.name ? ': ' + esc(fl.name) : '') + ' · ends ' + esc(String(fl.ends_at || '').slice(11, 16)) + '</div>' : '')
-      + '<div class="card" style="padding:12px 14px"><div class="ring"><svg width="86" height="86" viewBox="0 0 104 104" aria-hidden="true"><circle cx="52" cy="52" r="' + R0 + '" fill="none" stroke="#e6e9ee" stroke-width="11"/><circle cx="52" cy="52" r="' + R0 + '" fill="none" stroke="#16a34a" stroke-width="11" stroke-linecap="round" stroke-dasharray="' + CIRC.toFixed(1) + '" stroke-dashoffset="' + off.toFixed(1) + '" transform="rotate(-90 52 52)"/><text x="52" y="60" text-anchor="middle" font-size="26" font-weight="800" fill="currentColor">' + (m.target > 0 ? Math.round(pct) + '%' : '—') + '</text></svg>'
+      + '<div class="card" style="padding:12px 14px"><div class="ring"><svg width="68" height="68" viewBox="0 0 104 104" aria-hidden="true"><circle cx="52" cy="52" r="' + R0 + '" fill="none" stroke="#e6e9ee" stroke-width="11"/><circle cx="52" cy="52" r="' + R0 + '" fill="none" stroke="#16a34a" stroke-width="11" stroke-linecap="round" stroke-dasharray="' + CIRC.toFixed(1) + '" stroke-dashoffset="' + off.toFixed(1) + '" transform="rotate(-90 52 52)"/><text x="52" y="60" text-anchor="middle" font-size="26" font-weight="800" fill="currentColor">' + (m.target > 0 ? Math.round(pct) + '%' : '—') + '</text></svg>'
       + '<div class="t"><b>' + rs(m.sales) + (bet ? ' <span class="up">▲ vs yesterday</span>' : '') + '</b><span class="mut">' + (m.target > 0 ? 'Target ' + rs(m.target) : 'No target today') + '</span><div class="bar"><i style="width:' + pct + '%"></i></div></div></div></div>'
       + '<div class="card next" style="padding:12px 14px"><div style="flex:1;min-width:0"><small>YOUR NEXT STEP</small><b>' + esc(next) + '</b></div><a class="btn w" href="my_chats.html">Chats ▸</a></div>'
       + '<div class="tiles">'
@@ -100,8 +100,8 @@
       + '</div>'
       + (ST && ST.is_store ? storeHtml(ST) : '')
       + (C.tips && C.tips[0] ? '<div class="say">🧭 ' + esc(C.tips[0].title || '') + '</div>' : '')
-      + '<div class="card" id="playHost" style="padding:12px 14px"></div>';
-    mountPlay();
+      + '<details class="card" id="playBox" style="padding:12px 14px"><summary style="font-weight:800;font-size:15px;cursor:pointer;min-height:32px">🎮 Level · wins · games</summary><div id="playHost" style="margin-top:8px"></div></details>';
+    const pb = $('playBox'); if (pb) pb.addEventListener('toggle', () => { if (pb.open) mountPlay(); });
   }
   // the level / gift / week / team-wins / break-game card (play_card.js, moved over unchanged from the old page)
   let playLoaded = false;
@@ -143,7 +143,7 @@
     const opts = []; if (C && C.business_day) { const [y, mm] = C.business_day.split('-').map(Number); for (let i = 0; i < 6; i++) { const dt = new Date(y, mm - 1 - i, 1), v = dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0'); opts.push('<option value="' + v + '">' + esc(dt.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })) + '</option>'); } }
     E.arc[cur] = CMn && CMn.rows;
     $('earnBody').innerHTML =
-      '<div class="tiles"><div class="tl t-g"><div class="ic">💰</div><div class="b">' + rs(m ? m.com_today : (CMn && CMn.today && CMn.today.amount)) + '</div><div class="l">Commission today</div><div class="s2">' + esc((CMn && CMn.todayRate) || 'from today\'s orders') + '</div></div>'
+      '<div class="tiles c2"><div class="tl t-g"><div class="ic">💰</div><div class="b">' + rs(m ? m.com_today : (CMn && CMn.today && CMn.today.amount)) + '</div><div class="l">Commission today</div><div class="s2">' + esc((CMn && CMn.todayRate) || 'from today\'s orders') + '</div></div>'
       + '<div class="tl t-b"><div class="ic">📅</div><div class="b">' + (CMn && CMn.month ? rs(CMn.month.amount) : '—') + '</div><div class="l">Commission this month</div><div class="s2">' + esc((CMn && CMn.noRules) ? 'Commission rules not set' : ((CMn && CMn.monthRate) || (cmErr ? 'Could not load' : ''))) + '</div></div>'
       + '<div class="tl"><div class="ic">🧾</div><div class="b">' + (CMn && CMn.month ? rs(CMn.month.ach) : rs(m && m.month && m.month.sales)) + '</div><div class="l">Sales this month</div><div class="s2">' + esc((CMn && CMn.month ? CMn.month.n : (m && m.month && m.month.orders) || 0)) + ' orders</div></div>'
       + '<div class="tl"><div class="ic">⚠️</div><div class="b" style="color:' + (live.length ? '#dc2626' : '#15803d') + '">' + (live.length ? '− ' + rs(live.reduce((a, x) => a + (+x.amount || 0), 0)) : '₹0') + '</div><div class="l">Penalties</div><div class="s2">' + (live.length ? live.length + ' this month' : 'none, keep it up 💚') + '</div></div></div>'
