@@ -88,12 +88,12 @@ function wa_camp_ctx(PDO $pdo, array $t, int $switch, array $only = []): array
 {
     if (!function_exists('wa_health_all') && is_file(__DIR__ . '/wa_console.php')) require_once __DIR__ . '/wa_console.php';   // number health lives in wa_console.php (not loaded on every route)
     $health = wa_health_all($pdo, false); $caps = wa_number_caps($pdo, $health); $nums = []; $only = array_map('intval', $only);
-    $st = []; foreach ($health as $h) $st[(int)$h['id']] = (string)($h['status'] ?? '');
+    $st = []; $qm = []; foreach ($health as $h) { $st[(int)$h['id']] = (string)($h['status'] ?? ''); $qm[(int)$h['id']] = (string)($h['quality'] ?? ''); }
     foreach ($pdo->query("SELECT * FROM wa_numbers ORDER BY id")->fetchAll() as $n) {
         $id = (int)$n['id']; $c = $caps[$id] ?? null; if (!$c || $c['left'] <= 0 || !in_array(wa_waba_of($n), $t['ok_wabas'], true)) continue;
         if ($only && !in_array($id, $only, true)) continue;                     // the campaign chose its numbers ("Send from")
         if (($st[$id] ?? '') !== '' && $st[$id] !== 'CONNECTED') continue;      // pending / not connected at Meta: never used
-        $nums[$id] = ['id' => $id, 'phone_id' => (string)$n['phone_id'], 'cap' => $c['cap'], 'used' => $c['used'], 'left' => $c['left']];
+        $nums[$id] = ['id' => $id, 'q' => (string)($qm[$id] ?? ''), 'phone_id' => (string)$n['phone_id'], 'cap' => $c['cap'], 'used' => $c['used'], 'left' => $c['left']];
         if (!empty($t['by_waba'][wa_waba_of($n)])) $nums[$id]['tm'] = $t['by_waba'][wa_waba_of($n)];   // the version of the message approved on this number's WhatsApp account (the first one, or an alternative)
     }
     $p = $caps['_port'] ?? ['left' => 0]; $st = 0.05; try { $sv = setting_get($pdo, 'wa_camp_sticky', ''); if ($sv !== '' && is_numeric($sv)) $st = max(0.0, min(1.0, (float)$sv)); } catch (Throwable $e) { }
@@ -116,7 +116,13 @@ function wa_room_why(array $p): string
 function wa_pick_number(PDO $pdo, array $c, array &$ctx): array
 {
     if ($ctx['port_left'] <= 0) return [0, wa_room_why($ctx['port'] ?? [])];
-    $el = array_filter($ctx['nums'], fn($n) => $n['left'] > 0); if (!$el) return [0, 'no number has room right now'];
+    $el = array_filter($ctx['nums'], fn($n) => $n['left'] > 0);
+    $good = array_filter($el, fn($n) => ($n['q'] ?? '') === 'GREEN'); if ($good && count($good) < count($el)) $el = $good;   // the good (High quality) numbers send first; a Medium number only takes over when every good one has used its hour
+    if (!$el) {   // say WHICH limit is used up: this hour's speed per number (the usual case — today's room is much bigger) or today's room
+        $hr = array_filter($ctx['nums'], fn($n) => isset($n['hcap']));
+        if ($hr) return [0, 'This hour’s speed is used up on all ' . count($hr) . ' numbers (' . number_format(array_sum(array_column($hr, 'hcap'))) . ' an hour in all) — it carries on by itself next hour. Today’s room is not the limit.'];
+        return [0, 'No number has room today' . (!empty($ctx['nums']) ? ' (' . implode(' · ', array_map(fn($n) => 'used ' . number_format($n['used']) . ' of ' . number_format($n['cap']), $ctx['nums'])) . ')' : ' — none of the numbers can send this message (not connected, switched off for campaigns, or the message is not approved on its WhatsApp account)') . '. It carries on by itself as room frees up.'];
+    }
     $ign = []; $q = $pdo->prepare("SELECT number_id, COUNT(*) AS n FROM wa_messages WHERE phone = ? AND dir = 'out' AND mtype = 'template' AND status <> 'failed' AND ts > ? GROUP BY number_id");   // a message that never arrived cannot have been "ignored"
     $q->execute([$c['phone'], $c['last_in_at'] ?: '1970-01-01 00:00:00']); foreach ($q->fetchAll() as $r) $ign[(int)$r['number_id']] = (int)$r['n'];
     if (!empty($ctx['w'])) {   // the owner's share per number: the number furthest below its share sends next
@@ -417,7 +423,12 @@ function wa_camp_delivery(PDO $pdo, int $id): array
 }
 function wa_camp_public(PDO $pdo, array $c, bool $deep = false, ?array $cfg = null): array
 {
-    $cn = wa_camp_counts($pdo, (int)$c['id']); $d = wa_camp_delivery($pdo, (int)$c['id']); $t = null; $lib = null;
+    // ⚡ The list of 40 campaigns used to run ~5 heavy queries per campaign (counts, delivery, the "replied" join on wa_messages) on every open and every 20 s: the Campaigns page sat on "Loading…".
+    // The numbers are now remembered per campaign for a short time (15 s while it is sending, 10 min once it is finished/draft); the 🔄 Refresh button and wa.camp_get (deep) always read them fresh.
+    $cid = (int)$c['id']; $cn = null; $d = null; $ck = 'wa_cpc_' . $cid; $live = in_array((string)$c['status'], ['running', 'scheduled', 'paused'], true);
+    if (!$deep && empty($GLOBALS['__wa_camp_fresh'])) { try { $hit = json_decode((string)setting_get($pdo, $ck, ''), true); if (is_array($hit) && ($hit['st'] ?? '') === (string)$c['status'] && (int)($hit['t'] ?? 0) > time() - ($live ? 15 : 600) && is_array($hit['cn'] ?? null) && is_array($hit['d'] ?? null)) { $cn = $hit['cn']; $d = $hit['d']; } } catch (Throwable $e) { } }
+    if ($cn === null) { $cn = wa_camp_counts($pdo, $cid); $d = wa_camp_delivery($pdo, $cid); if (!$deep) { try { setting_set($pdo, $ck, json_encode(['t' => time(), 'st' => (string)$c['status'], 'cn' => $cn, 'd' => $d])); } catch (Throwable $e) { } } }
+    $t = null; $lib = null;
     if ((int)$c['tpl_id']) { try { $t = wa_tpl_row($pdo, (int)$c['tpl_id']); } catch (Throwable $e) { } }
     if ((int)($c['media_lib_id'] ?? 0) && function_exists('wa_lib_row')) { try { $lib = wa_lib_row($pdo, (int)$c['media_lib_id']); } catch (Throwable $e) { } }
     $o = ['id' => (int)$c['id'], 'name' => $c['name'], 'status' => $c['status'], 'tpl_id' => (int)$c['tpl_id'], 'tpl_name' => $t ? $t['name'] : '', 'tpl_body' => $t ? $t['body'] : '', 'tpl_category' => $t ? $t['category'] : '', 'counts' => $cn + $d, 'rate' => (int)$c['rate'],
@@ -514,7 +525,8 @@ function wa_camp_wait_reason(PDO $pdo, array $c): string
     $nowTs = wa_camp_now();
     if (!wa_camp_in_window($pdo, $nowTs)) return 'Quiet hours — nothing is sent at night. It continues at ' . wa_camp_window($pdo)[0] . ' am by itself.';
     try {
-        $caps = wa_number_caps($pdo, wa_camp_health($pdo)); $port = $caps['_port']; $left = 0; $why = [];
+        static $capsMemo = null; if ($capsMemo === null) $capsMemo = wa_number_caps($pdo, wa_camp_health($pdo));   // once per request: it used to be rebuilt for every running campaign in the list
+        $caps = $capsMemo; $port = $caps['_port']; $left = 0; $why = [];
         foreach ($caps as $k => $x) if ($k !== '_port') { $left += $x['left']; if ($x['left'] <= 0) $why[] = $x['why'] !== '' ? $x['why'] : 'used ' . $x['used'] . ' of ' . $x['cap'] . ' today'; }
         if (!empty($port['auto']['nums']) && max(array_column($port['auto']['nums'], 'left_hour')) <= 0 && ($port['tier'] * 0.9 - $port['used']) > 0) {
             return 'This hour’s speed is used on every number (' . implode(' · ', array_map(fn($n) => $n['label'] . ' ' . number_format($n['used_hour']) . ' of ' . number_format($n['cap']), $port['auto']['nums'])) . '). It continues by itself as the hour rolls on — and each number’s speed doubles after an hour that goes well, up to ' . number_format($port['auto']['max']) . '.';
@@ -589,7 +601,7 @@ function wa_camp_tick(PDO $pdo): array
         foreach (wa_fam_m_alts($pdo, $t) as $alt) foreach ((array)$alt['ok_wabas'] as $wb) if (!isset($by[(string)$wb])) $by[(string)$wb] = $alt;
         $t['by_waba'] = $by; $t['ok_wabas'] = array_map('strval', array_keys($by));   // numeric ids become int keys: back to text
         $ctx = wa_camp_ctx($pdo, $t, (int)$c['switch_after'], array_map('intval', (array)($c['extra']['numbers'] ?? [])));
-        $chr = wa_camp_hour_room($ctx['port'] ?? []); if ($chr !== null) { foreach ($ctx['nums'] as $nid0 => $n0) { $ctx['nums'][$nid0]['left'] = min((int)$n0['left'], $chr[(int)$nid0] ?? 0); if ($ctx['nums'][$nid0]['left'] <= 0) unset($ctx['nums'][$nid0]); } if (!$ctx['nums']) { $ctx['port']['hour_full'] = 1; $ctx['port_left'] = 0; } }   // 📈 each number's own hourly speed
+        $chr = wa_camp_hour_room($ctx['port'] ?? []); if ($chr !== null) { foreach ($ctx['nums'] as $nid0 => $n0) { $ctx['nums'][$nid0]['hcap'] = (int)($ctx['port']['auto']['nums'][$nid0]['cap'] ?? 0); $ctx['nums'][$nid0]['label'] = (string)($ctx['port']['auto']['nums'][$nid0]['label'] ?? ''); $ctx['nums'][$nid0]['left'] = min((int)$n0['left'], $chr[(int)$nid0] ?? 0); if ($ctx['nums'][$nid0]['left'] <= 0) unset($ctx['nums'][$nid0]); } if (!$ctx['nums']) { $ctx['port']['hour_full'] = 1; $ctx['port_left'] = 0; } }   // 📈 each number's own hourly speed
         $sent = 0; $failed = 0; $skipped = 0; $stop = ''; $hard = false; $retryOn = (int)$c['retry'] === 1; $usedPieces = [];
         $mixOn = !empty($c['extra']['mix']) && function_exists('wa_util_mix_on') && wa_util_mix_on($pdo); $plan = null; $env = null;   // offers = marketing only (see wa_util_mix_on)
         if ($mixOn) { $env = wa_mix_env($pdo); $plan = wa_mix_plan($pdo, $c, $ctx['nums'], $rem, null, true, $env); }
@@ -888,7 +900,7 @@ function wa_camp_people_rows(PDO $pdo, array $camp, ?array $tpl, string $f, stri
 
 // ---------------------------------------------------------------------------------------------------------------- router
 $__wk = (string)($action ?? ($_GET['action'] ?? ''));
-if (in_array($__wk, ['wa.fu_list', 'wa.fu_save', 'wa.fu_del', 'wa.fu_preset', 'wa.camp_list', 'wa.camp_get', 'wa.camp_preview', 'wa.camp_save', 'wa.camp_start', 'wa.camp_send_now', 'wa.camp_stop_all', 'wa.camp_pause', 'wa.camp_resume', 'wa.camp_cancel', 'wa.camp_del', 'wa.camp_tick', 'wa.camp_suggest', 'wa.camp_best_time', 'wa.camp_people', 'wa.camp_people_csv', 'wa.camp_thread', 'wa.reports', 'wa.mix_state', 'wa.camp_mix_set'], true) && !($__wk === 'wa.camp_suggest' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST')) {
+if (in_array($__wk, ['wa.fu_list', 'wa.fu_save', 'wa.fu_del', 'wa.fu_preset', 'wa.camp_list', 'wa.camp_templates', 'wa.camp_get', 'wa.camp_preview', 'wa.camp_save', 'wa.camp_start', 'wa.camp_send_now', 'wa.camp_resume_all', 'wa.camp_stop_all', 'wa.camp_pause', 'wa.camp_resume', 'wa.camp_cancel', 'wa.camp_del', 'wa.camp_tick', 'wa.camp_suggest', 'wa.camp_best_time', 'wa.camp_people', 'wa.camp_people_csv', 'wa.camp_thread', 'wa.reports', 'wa.mix_state', 'wa.camp_mix_set'], true) && !($__wk === 'wa.camp_suggest' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST')) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     $auth = require_auth(); wa_guard_admin($pdo, $auth);
     if (!wa_tables($pdo) || !wa_more_tables($pdo) || !function_exists('wa_tpl_tables') || !wa_tpl_tables($pdo)) json_response(['error' => 'WhatsApp storage is not available — check database permissions.'], 500);
@@ -936,6 +948,8 @@ if (in_array($__wk, ['wa.fu_list', 'wa.fu_save', 'wa.fu_del', 'wa.fu_preset', 'w
             $id = (int)(json_input()['id'] ?? 0); $pdo->prepare("DELETE FROM wa_fu_rules WHERE id = ?")->execute([$id]); json_response(['ok' => true]);
         }
         case 'wa.camp_list': {
+            $GLOBALS['__wa_lim_cache_ok'] = empty($_GET['fresh']);   // 30 s memory of the 24-hour room count (not on 🔄 Refresh)
+            if (!empty($_GET['fresh'])) $GLOBALS['__wa_camp_fresh'] = true;   // 🔄 Refresh: read every number again
             $hide = ''; try { $pdo->query("SELECT smart_plan FROM wa_campaigns LIMIT 0"); $hide = 'WHERE smart_plan = 0 '; } catch (PDOException $e) { }   // the campaigns of a Smart plan are shown on the Smart screens
             $rows = $pdo->query("SELECT * FROM wa_campaigns " . $hide . "ORDER BY id DESC LIMIT 40")->fetchAll(); $out = [];
             foreach ($rows as $r) { $r['audience'] = json_decode((string)$r['audience'], true) ?: []; $r['vars'] = json_decode((string)$r['vars'], true) ?: []; $r['extra'] = json_decode((string)($r['extra'] ?? ''), true) ?: []; $out[] = wa_camp_public($pdo, $r, false, $cfg); try { $__o = &$out[count($out) - 1]; if (in_array((string)$r['status'], ['running', 'paused'], true) && (int)($__o['counts']['sent'] ?? 0) + (int)($__o['counts']['held'] ?? 0) === 0) $__o['why'] = wa_camp_wait_reason($pdo, $r); unset($__o); } catch (Throwable $e) { } }
@@ -943,7 +957,12 @@ if (in_array($__wk, ['wa.fu_list', 'wa.fu_save', 'wa.fu_del', 'wa.fu_preset', 'w
             $campOk = []; foreach ($pdo->query("SELECT id, camp_ok, display FROM wa_numbers")->fetchAll() as $r0) $campOk[(int)$r0['id']] = [(int)$r0['camp_ok'] === 1, (string)$r0['display']];
             foreach ($health as $h) { $c = $caps[(int)$h['id']] ?? null; if ($c) $nums[] = ['id' => (int)$h['id'], 'label' => $h['label'], 'display' => (string)($h['display'] ?? ($campOk[(int)$h['id']][1] ?? '')), 'quality' => $h['quality'], 'status' => (string)($h['status'] ?? ''), 'camp_ok' => $campOk[(int)$h['id']][0] ?? false, 'cap' => $c['cap'], 'used' => $c['used'], 'left' => $c['left'], 'why' => $c['why']]; }
             $pc = []; foreach ((function_exists('wa_piece_all') ? wa_piece_all($pdo, true) : []) as $slot => $l) $pc[$slot] = count($l);
-            json_response(['campaigns' => $out, 'templates' => $tplList(true), 'numbers' => $nums, 'portfolio' => $caps['_port'] ?? null, 'engine' => $engine(), 'tags' => WA_TAGS, 'pieces' => $pc, 'window' => wa_camp_window($pdo), 'can_media' => function_exists('wa_tpl_send_components') && function_exists('wa_tpl_sendable')]);
+            $lite = !empty($_GET['lite']);   // ⚡ the list screen does not need the message library (it is the slowest part: one row per message with its per-number matrix); the New-campaign wizard asks for it by itself (wa.camp_templates)
+            json_response(['campaigns' => $out, 'lite' => $lite, 'templates' => $lite ? [] : $tplList(true), 'numbers' => $nums, 'portfolio' => $caps['_port'] ?? null, 'engine' => $engine(), 'tags' => WA_TAGS, 'pieces' => $pc, 'window' => wa_camp_window($pdo), 'can_media' => function_exists('wa_tpl_send_components') && function_exists('wa_tpl_sendable')]);
+        }
+        case 'wa.camp_templates': {
+            $pc = []; foreach ((function_exists('wa_piece_all') ? wa_piece_all($pdo, true) : []) as $slot => $l) $pc[$slot] = count($l);
+            json_response(['templates' => $tplList(true), 'pieces' => $pc, 'can_media' => function_exists('wa_tpl_send_components') && function_exists('wa_tpl_sendable')]);
         }
         case 'wa.camp_get': {
             $c = wa_camp_row($pdo, (int)($_GET['id'] ?? 0)); if (!$c) json_response(['error' => 'Campaign not found.'], 404);
@@ -1084,6 +1103,11 @@ if (in_array($__wk, ['wa.fu_list', 'wa.fu_save', 'wa.fu_del', 'wa.fu_preset', 'w
                 $drop = (int)$pdo->exec("UPDATE wa_camp_items SET status = 'skipped', err = 'Stopped by you' WHERE camp_id IN ($in0) AND status IN ('queued', 'retry')"); }
             wa_log($pdo, 'campaign', true, 'Stop all: ' . count($ids) . ' campaigns stopped, ' . $drop . ' waiting messages dropped');
             json_response(['ok' => true, 'stopped' => count($ids), 'dropped' => $drop]);
+        }
+        case 'wa.camp_resume_all': {   // ▶ the owner starts EVERY paused campaign again (their waiting people are still queued)
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
+            $n = (int)$pdo->exec("UPDATE wa_campaigns SET status = 'running', note = '' WHERE status = 'paused'");
+            wa_log($pdo, 'campaign', true, 'Resume all: ' . $n . ' paused campaigns started again'); json_response(['ok' => true, 'resumed' => $n]);
         }
         case 'wa.camp_pause': case 'wa.camp_resume': case 'wa.camp_cancel': {
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);

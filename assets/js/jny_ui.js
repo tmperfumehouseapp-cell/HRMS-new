@@ -17,8 +17,14 @@
       + '.jt-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:7px 0;border-top:1px solid #f0f2f7}.jt-row.off{opacity:.5}.jt-in{border:1px solid #d5d9e4;border-radius:8px;padding:6px 8px;min-height:34px;font-size:14px;min-width:0}.jt-t{width:64px}.jt-msg{flex:1;min-width:150px}'
       + '.jt-tag{font-size:11px;font-weight:800;border-radius:99px;padding:2px 8px;background:#eef2ff;color:#3730a3}.jt-tag.w{background:#f3e8ff;color:#6b21a8}.jt-tag.a{background:#dcfce7;color:#166534}'
       + '.jt-strip{display:flex;gap:2px;margin:8px 0 2px;overflow-x:auto}.jt-strip i{flex:0 0 5px;height:14px;border-radius:2px;background:#eef0f5}.jt-strip i.a{background:#c4b5fd}.jt-strip i.w{background:#86efac}.jt-strip i.o{background:#fdba74}'
-      + '.jt-pv{flex-basis:100%;font-size:13px}.jt-pv summary{cursor:pointer;color:#5b3fd6;font-weight:700;list-style:none}.jt-pv>div{margin-top:4px;padding:8px 10px;border-radius:10px;background:#f8fafc;border:1px solid #e6e8ef;white-space:pre-wrap;word-break:break-word}.jt-card.off{opacity:.6}.jt-seg button.offb.on{background:#b91c1c}.jt-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:8px;margin-top:8px}.jt-tile{text-align:left;border:1px solid #e6e8ef;border-left-width:4px;background:#fff;border-radius:12px;padding:7px 9px;min-height:84px;display:flex;flex-direction:column;gap:2px;cursor:pointer;min-width:0;font:inherit;color:inherit}.jt-tile:active{background:#f5f3ff}.jt-tile.a{border-left-color:#86efac}.jt-tile.o{border-left-color:#fdba74}.jt-tile.w{border-left-color:#c4b5fd}.jt-tile.x{opacity:.5}.jt-tile b{font-size:15px;line-height:1.1}.jt-tile .jt-tt{font-size:11px;font-weight:800;color:#3730a3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.jt-tile .jt-ts{font-size:12px;color:#475569;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}.jt-ban{border-radius:12px;padding:10px 12px;background:#f5f3ff;border:1px solid #ddd6fe}.jt-ban ul{margin:6px 0 0 18px;padding:0}@media (max-width:700px){.jt-card{padding:10px}.jt-t{width:56px}.jt-msg{flex-basis:100%}}';
+      + '.jt-pv{flex-basis:100%;font-size:13px}.jt-pv summary{cursor:pointer;color:#5b3fd6;font-weight:700;list-style:none}.jt-pv>div{margin-top:4px;padding:8px 10px;border-radius:10px;background:#f8fafc;border:1px solid #e6e8ef;white-space:pre-wrap;word-break:break-word}.jt-card.off{opacity:.6}.jt-seg button.offb.on{background:#b91c1c}.jt-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:8px;margin-top:8px}.jt-tile{text-align:left;border:1px solid #e6e8ef;border-left-width:4px;background:#fff;border-radius:12px;padding:7px 9px;min-height:84px;display:flex;flex-direction:column;gap:2px;cursor:pointer;min-width:0;font:inherit;color:inherit}.jt-tile:active{background:#f5f3ff}.jt-tile.a{border-left-color:#86efac}.jt-tile.o{border-left-color:#fdba74}.jt-tile.w{border-left-color:#c4b5fd}.jt-tile.x{opacity:.5}.jt-tile b{font-size:15px;line-height:1.1}.jt-tile .jt-tt{font-size:11px;font-weight:800;color:#3730a3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.jt-tile .jt-ts{font-size:12px;color:#475569;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}.jt-in[style*="width:100%"]{box-sizing:border-box}.jt-big{flex-basis:100%;min-height:120px;font-size:15px;line-height:1.45;resize:vertical;font-family:inherit}.jt-bub{border-radius:12px;padding:8px 10px;margin:4px 0;white-space:pre-wrap;word-break:break-word}.jt-bub.y{background:#eef2ff}.jt-bub.c{background:#f0fdf4}.jt-ban{border-radius:12px;padding:10px 12px;background:#f5f3ff;border:1px solid #ddd6fe}.jt-ban ul{margin:6px 0 0 18px;padding:0}@media (max-width:700px){.jt-card{padding:10px}.jt-t{width:56px}.jt-msg{flex-basis:100%}}';
     document.head.appendChild(s);
+  }
+  // Journey results: the new action, or (if the server still answers "unknown") the two older ones put together here
+  async function jnResults(days) {
+    try { return await api.get('fu.wj_jresults', { days }); } catch (e1) {
+      try { const [a, w] = await Promise.all([api.get('fu.ap_results', { days }), api.get('fu.wj_results', { days })]); const bs = (w.steps || []).filter((x) => x.track === 'buyer'), bt = { sent: 0, replied: 0, ordered: 0, sales: 0 }; bs.forEach((x) => { Object.keys(bt).forEach((k) => { bt[k] += +x[k] || 0; }); }); const at = Object.assign({ sent: 0, replied: 0, ordered: 0, sales: 0 }, a.total || {});
+        return { ok: true, days, lanes: a.steps || [], buyer: bs, lane_total: at, buyer_total: bt, total: { sent: at.sent + bt.sent, replied: at.replied + bt.replied, ordered: at.ordered + bt.ordered, sales: at.sales + bt.sales } }; } catch (e2) { throw e1; } }
   }
   const fmtT = (min) => min < 60 ? [Math.round(min), 'min'] : min < 1440 ? [Math.round(min / 6) / 10, 'h'] : [Math.round(min / 144) / 10, 'd'];
   const toMin = (v, u) => Math.max(1, Math.round((+v || 0) * (u === 'd' ? 1440 : u === 'h' ? 60 : 1)));
@@ -31,7 +37,8 @@
       try { const [a, w] = await Promise.all([api.get('fu.ap_get'), api.get('fu.wj_get')]); AP = a; WJ = w; } catch (e) { el.innerHTML = '<div class="jt">' + errBox(e.message) + '</div>'; return; }
       if (!keep || !dirty.buyer) BUYER = JSON.parse(JSON.stringify(WJ.steps.buyer));
       if (!keep) { PATHS = JSON.parse(JSON.stringify(AP.paths || [])); dirty.ap.clear(); dirty.buyer = false; }
-      draw(); if (!RES) { try { RES = await api.get('fu.jn_results', { days: 30 }); draw(); } catch (e) { RES = { lanes: [], buyer: [], total: {} }; } }
+      draw(); if (!DAY) loadDay();
+      if (!RES) { try { RES = await jnResults(30); draw(); } catch (e) { RES = { lanes: [], buyer: [], total: {} }; } }
     }
     const stat = (o) => o && o.sent ? '<span class="jt-sub" style="white-space:nowrap" title="last 30 days">📊 sent ' + o.sent + ' · replied ' + o.replied + ' · ordered ' + o.ordered + (o.sales ? ' · ₹' + Math.round(o.sales).toLocaleString('en-IN') : '') + '</span>' : '';
     const laneStat = (sid, i) => RES && (RES.lanes || []).find((x) => x.sid === sid && x.step === i);
@@ -64,7 +71,7 @@
       let h = '<div class="jt-row" data-k="' + esc(key) + '"><span class="jt-tag ' + (r.src === 'ap' ? 'a' : 'w') + '">' + (r.src === 'ap' ? (r.kind === 'offer' ? 'message' : 'text') : 'after order') + '</span>'
         + '<input class="jt-in jt-t" type="number" min="1" step="any" data-f="v" value="' + v + '"><select class="jt-in" data-f="u"><option value="min"' + (u === 'min' ? ' selected' : '') + '>minutes</option><option value="h"' + (u === 'h' ? ' selected' : '') + '>hours</option><option value="d"' + (u === 'd' ? ' selected' : '') + '>days</option></select>';
       if (r.src === 'ap') h += '<select class="jt-in" data-f="kind"><option value="nudge"' + (r.kind !== 'offer' ? ' selected' : '') + '>💬 text</option><option value="offer"' + (r.kind === 'offer' ? ' selected' : '') + '>📨 message</option></select>';
-      if (r.src === 'ap' && r.kind !== 'offer') h += '<input class="jt-in jt-msg" data-f="text" maxlength="700" placeholder="What Claude should say (idea)" value="' + esc(r.text) + '">';
+      if (r.src === 'ap' && r.kind !== 'offer') h += '<textarea class="jt-in jt-msg jt-big" data-f="text" maxlength="700" rows="5" placeholder="What Claude should say (the idea) — write as much as you want">' + esc(r.text) + '</textarea>';
       else h += '<select class="jt-in jt-msg" data-f="ref">' + msgOpts(r.src === 'ap' ? r.offer : r.ref) + '</select>' + (r.src === 'wj' ? '<input class="jt-in" data-f="idea" maxlength="300" placeholder="Extra idea (optional)" value="' + esc(r.idea) + '" style="flex:1;min-width:120px">' : '');
       if (r.src === 'wj') h += '<label style="white-space:nowrap"><input type="checkbox" data-f="on"' + (r.on ? ' checked' : '') + '> On</label>';
       const pk = r.src === 'ap' ? (r.kind === 'offer' ? r.offer : '') : r.ref;
@@ -75,11 +82,20 @@
       rows.forEach((r) => { const d = Math.min(60, Math.max(1, Math.ceil(r.min / 1440 / per))); cells[d - 1] = r.src === 'ap' ? (r.kind === 'offer' ? 'o' : 'a') : 'w'; });
       return '<div class="jt-strip">' + cells.map((c, i) => '<i class="' + c + '" title="day ' + Math.round((i + 1) * per) + '"></i>').join('') + '</div><div class="jt-sub" style="display:flex;justify-content:space-between"><span>day 1</span><span>' + Math.round(max / 4) + '</span><span>' + Math.round(max / 2) + '</span><span>' + Math.round(max * 3 / 4) + '</span><span>' + max + '</span></div>';
     }
+    // 💡 Claude's friendly hints about a flow — only advice, nothing is blocked or changed: the timeline you set is what goes
+    function hintsOf(rows) {
+      const h = [], mn = (m) => m < 60 ? Math.round(m) + ' min' : m < 1440 ? Math.round(m / 6) / 10 + ' h' : 'day ' + Math.round(m / 144) / 10, offers = rows.filter((r) => r.kind === 'offer'), cnt = {};
+      for (let i = 1; i < offers.length; i++) if (offers[i].min - offers[i - 1].min < 3 * 1440) { h.push('Two offers close together (' + mn(offers[i - 1].min) + ' and ' + mn(offers[i].min) + ') — customers may feel pushed.'); break; }
+      for (let i = 2; i < rows.length; i++) if (rows[i].min - rows[i - 2].min < 1440) { h.push('Three messages within one day (' + mn(rows[i - 2].min) + ' – ' + mn(rows[i].min) + ') — a customer who does not reply may find it too much.'); break; }
+      for (let i = 1; i < rows.length; i++) if (rows[i].min - rows[i - 1].min < 60) { h.push('Two steps less than an hour apart (' + mn(rows[i - 1].min) + ' and ' + mn(rows[i].min) + ').'); break; }
+      offers.forEach((r) => { cnt[r.offer] = (cnt[r.offer] || 0) + 1; }); Object.keys(cnt).forEach((k) => { if (cnt[k] > 2) { const m = (WJ.messages || []).find((x) => x.k === k); h.push((m ? m.label : 'One offer') + ' is used ' + cnt[k] + ' times in this flow — the same words again and again work less.'); } });
+      return h.slice(0, 3);
+    }
     function laneHtml(L) {
       const rows = rowsOf(L);
       const on = L.path.on !== false;
-      return '<div class="jt-card' + (on ? '' : ' off') + '" data-lane="' + esc(L.id) + '"><div class="jt-h">💡 ' + esc(L.title) + '<span class="jt-sp"></span><span class="jt-seg" title="Turn only this flow on or off (the Off / Preview / Auto switch at the top is for everything)"><button type="button" data-lon="1" class="' + (on ? 'on' : '') + '">On</button><button type="button" data-lon="0" class="offb ' + (on ? '' : 'on') + '">Off</button></span><button class="jt-b s" type="button" data-add>＋ Add a step</button></div><div class="jt-sub">' + esc(L.desc || '') + '</div>'
-        + strip(rows) + tiles(rows, L.id) + '</div>';
+      return '<div class="jt-card' + (on ? '' : ' off') + '" data-lane="' + esc(L.id) + '"><div class="jt-h">💡 ' + esc(L.title) + '<span class="jt-sp"></span><span class="jt-seg" title="Turn only this flow on or off (the Off / Preview / Auto switch at the top is for everything)"><button type="button" data-lon="1" class="' + (on ? 'on' : '') + '">On</button><button type="button" data-lon="0" class="offb ' + (on ? '' : 'on') + '">Off</button></span><button class="jt-b s" type="button" data-claude title="Tell Claude what to change in this whole flow — every step, every message">🧠 Claude</button><button class="jt-b s" type="button" data-add>＋ Add a step</button></div><div class="jt-sub">' + esc(L.desc || '') + '</div>'
+        + strip(rows) + tiles(rows, L.id) + (hintsOf(rows).length ? '<div class="jt-sub" style="margin-top:8px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:6px 10px">💡 <b>Claude suggests</b> (only advice — your timeline is what goes)<br>' + hintsOf(rows).map(esc).join('<br>') + '</div>' : '') + '</div>';
     }
     function buyRows(topic) { return BUYER.map((s, i) => ({ src: 'wj', i, min: s.day * 1440, ref: s.ref, idea: s.idea, on: s.on, topic: s.topic || '', stat: stat(buyStat(s.id)) })).filter((r) => r.topic === topic).sort((a, b) => a.min - b.min); }
     function buyLane(lid, title, sub, topic, open) {
@@ -119,6 +135,7 @@
         + '<div class="jt-row" style="border:0">' + (RES && RES.total ? '<span class="jt-tag">30 days: sent ' + (RES.total.sent || 0) + '</span><span class="jt-tag">replied ' + (RES.total.replied || 0) + '</span><span class="jt-tag a">orders ' + (RES.total.ordered || 0) + ' · ₹' + Math.round(RES.total.sales || 0).toLocaleString('en-IN') + '</span>' : '<span class="jt-tag">sent today ' + (s.sent_today || 0) + '</span>') + '<span class="jt-sp"></span><button class="jt-b s" type="button" data-queue>👀 Who gets what now</button></div></div>';
       const W = WJ.window || { from: '10:00', to: '02:00' }, C = WJ.cfg || {};
       h += '<div class="jt-card"><div class="jt-row" style="border:0;padding:0"><b>⏰ Messages go between</b><input class="jt-in" type="time" id="jtFrom" value="' + esc(W.from) + '"><span>and</span><input class="jt-in" type="time" id="jtTo" value="' + esc(W.to) + '"><span class="jt-sub">(the next morning is quiet)</span><span class="jt-sp"></span><span class="jt-sub" title="A customer who ignored this many follow-ups in a row stops getting the plan and goes to the Cold group (a tag you can use for campaigns). 0 = never.">❄ cold after</span><input class="jt-in jt-t" type="number" min="0" max="40" id="jtCold" value="' + (W.cold_after == null ? 8 : W.cold_after) + '"><span class="jt-sub">ignored</span><span class="jt-sp"></span><span class="jt-sub">after-order: at most</span><input class="jt-in jt-t" type="number" min="10" id="jtCap" value="' + (C.day_cap || 300) + '"><span class="jt-sub">a day</span><button class="jt-b s" type="button" id="jtWin">Save</button></div></div>';
+      h += dayHtml();
       h += metaCard();
       if (!WJ.unified) h += '<div class="jt-ban">⏳ <b>Setting up the one plan…</b> It is being prepared on the server. <button class="jt-b s" type="button" data-reload>Check again</button></div>';
       else h += '<div class="jt-ban">✅ <b>One engine.</b> Every customer who did not order follows ONE plan for their situation, from the first minutes to day 60; the situation is read again at every new message.</div>';
@@ -143,7 +160,9 @@
       else f.st.day = Math.max(1, Math.min(365, Math.round(min / 1440)));
       return true;
     }
-    const sheet = (html) => { const o = document.createElement('div'); o.style.cssText = 'position:fixed;inset:0;z-index:300;background:#0008;display:flex;align-items:flex-end;justify-content:center'; o.innerHTML = html; document.body.appendChild(o); return o; };
+    const sheet = (html) => { const o = document.createElement('div'); o.style.cssText = 'position:fixed;inset:0;z-index:300;background:#0008;display:flex;align-items:flex-end;justify-content:center'; o.innerHTML = html; document.body.appendChild(o);
+      if (window.innerWidth > 700) { o.style.alignItems = 'center'; o.style.padding = '16px'; if (o.firstElementChild) { o.firstElementChild.style.borderRadius = '18px'; o.firstElementChild.style.maxHeight = '88vh'; } }   // big screen: in the middle, not stuck to the bottom edge
+      return o; };
     function newMsg(done) {
       const o = sheet('<div class="jt" style="background:#fff;width:100%;max-width:560px;border-radius:18px 18px 0 0;padding:16px;max-height:92vh;overflow:auto"><div class="jt-h">➕ New message or offer</div><div class="jt-sub">It is saved in the message library with this name, so you can pick it on any step.</div>'
         + '<input class="jt-in" id="nmN" maxlength="40" placeholder="Name, e.g. Diwali buy 2 get 1"><div style="margin:6px 0"><label><input type="radio" name="nmT" value="msg" checked> 💬 Message (no discount)</label> &nbsp; <label><input type="radio" name="nmT" value="offer"> 🎁 Offer</label></div>'
@@ -176,6 +195,58 @@
         q('#emNew').disabled = true; const r = await call(() => api.post('fu.wj_msg_new', { label: v.label, rule: v.rule, body: v.body, offer: m.icon !== '💬' }));
         if (r && r.new_key) { WJ = r; if (f && f.st) { if (f.src === 'ap') { f.st.kind = 'offer'; f.st.offer = r.new_key; } else f.st.ref = r.new_key; markDirty(f); } close(); draw(); if (after) after(); } else q('#emNew').disabled = false; };
     }
+    // 🧠 talk to Claude about ONE flow: say it (voice or typing) → Claude says what it understood → correct it again → Approve. Nothing changes before Approve.
+    function claudeLane(p) {
+      if (dirty.ap.size || dirty.buyer) { toast('Press “Save changes” first, then ask Claude.', true); return; }
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition; let rec = null, on = false, started = false, pr = null, wait = false;
+      const o = sheet('<div class="jt" style="background:#fff;width:100%;max-width:680px;border-radius:18px 18px 0 0;padding:14px;max-height:92vh;overflow:auto"><div class="jt-h">🧠 Claude — ' + esc(p.title) + '<span class="jt-sp"></span><button class="jt-b s" type="button" id="cxX">Close</button></div>'
+        + '<div class="jt-sub">Tell Claude what you want for this flow, in your own words (Gujarati / Hindi / English). Claude may change <b>every step</b> of it — the time, the words, which offer goes. You can say timing in general (“after about a day, then two days”) — Claude picks the exact times and the messages. Claude tells you what it understood; correct it as many times as you like, then press <b>Approve</b>. Nothing changes before that.</div>'
+        + '<div id="cxLog"></div><div id="cxOut"></div><textarea class="jt-in jt-big" id="cxT" style="width:100%" placeholder="Say or write what you want…"></textarea>'
+        + '<div class="jt-row" style="border:0"><button class="jt-b" type="button" id="cxMic"' + (SR ? '' : ' hidden') + '>🎤 Start</button><select class="jt-in" id="cxLang"' + (SR ? '' : ' hidden') + '><option value="gu-IN">ગુજરાતી</option><option value="hi-IN">हिन्दी</option><option value="en-IN">English</option></select>' + (SR ? '' : '<span class="jt-sub">Voice is not available in this browser — type it.</span>') + '<span class="jt-sp"></span><button class="jt-b p" type="button" id="cxSend">Send to Claude</button></div>'
+        + '<div id="cxAp"></div></div>');
+      const q = (x) => o.querySelector(x); const stop = () => { on = false; try { if (rec) rec.stop(); } catch (e) { } const m = q('#cxMic'); if (m) m.textContent = '🎤 Start'; };
+      const close = () => { stop(); o.remove(); }; q('#cxX').onclick = close; o.onclick = (e) => { if (e.target === o) close(); };
+      if (SR) q('#cxMic').onclick = () => { if (on) { stop(); return; } const ta = q('#cxT'); let base = ta.value ? ta.value.replace(/\s*$/, ' ') : '';
+        const start = () => { rec = new SR(); rec.lang = q('#cxLang').value; rec.continuous = true; rec.interimResults = true;   // words appear while you speak (interim), and are kept when each phrase is final
+          rec.onresult = (e) => { let t = ''; for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript; ta.value = base + t; ta.scrollTop = ta.scrollHeight; };
+          rec.onend = () => { if (on) { base = ta.value.replace(/\s*$/, ' '); try { start(); } catch (e) { stop(); } } };
+          rec.onerror = (e) => { if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { toast('Allow the microphone to talk to Claude.', true); stop(); } };
+          rec.start(); };
+        try { on = true; start(); q('#cxMic').textContent = '⏹ Stop'; } catch (e) { on = false; toast('Could not start the microphone.', true); } };
+      const show = () => { const x = pr || {}; let h = '';
+        (x.turns || []).forEach((t) => { h += '<div class="jt-bub ' + (t.who === 'you' ? 'y' : 'c') + '"><b>' + (t.who === 'you' ? 'You' : 'Claude understood') + '</b>\n' + esc(t.text) + '</div>'; });
+        q('#cxLog').innerHTML = h; let out = '';
+        if ((x.changes || []).length) out += '<div class="jt-ban"><b>What Claude will change</b><ul>' + x.changes.map((c) => '<li>' + esc(c) + '</li>').join('') + '</ul></div>';
+        if ((x.questions || []).length) out += '<div class="jt-ban" style="background:#fffbeb;border-color:#fde68a"><b>Claude asks</b><ul>' + x.questions.map((c) => '<li>' + esc(c) + '</li>').join('') + '</ul><div class="jt-sub">Write your answer in the box below and press Send.</div></div>';
+        q('#cxAp').innerHTML = (x.paths || []).length ? '<div class="jt-row" style="border-top:1px solid #e6e8ef"><button class="jt-b p" type="button" id="cxOk">✅ Approve &amp; apply</button><button class="jt-b r" type="button" id="cxNo">Drop</button><span class="jt-sub">You can still say more in the box above before approving.</span></div>' : '';
+        q('#cxOut').innerHTML = out; q('#cxT').placeholder = started ? 'Correct it or add more…' : 'Say or write what you want…';
+        const ok = q('#cxOk'); if (ok) ok.onclick = async () => { if (wait) return; wait = true; ok.disabled = true; const r = await call(() => api.post('fu.ap_apply', {})); wait = false; if (r) { close(); await load(false); } else ok.disabled = false; };
+        const no = q('#cxNo'); if (no) no.onclick = async () => { await call(() => api.post('fu.ap_apply', { drop: 1 })); pr = null; started = false; show(); }; };
+      q('#cxSend').onclick = async () => { const t = q('#cxT').value.trim(); if (!t) { toast('Say or write something first.', true); return; } if (wait) return; wait = true; stop(); q('#cxSend').disabled = true; q('#cxSend').textContent = 'Claude is reading…';
+        const r = await call(() => started ? api.post('fu.ap_summary', { text: t, more: true }) : api.post('fu.ap_path_teach', { sid: p.id, text: t }));
+        wait = false; q('#cxSend').disabled = false; q('#cxSend').textContent = 'Send to Claude'; if (r && r.proposal) { pr = r.proposal; started = true; q('#cxT').value = ''; show(); try { q('#cxT').focus(); q('#cxT').scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) { } } };
+    }
+    // 📅 yesterday (or any day): what went out, who answered, what it cost and brought
+    let DAY = null;
+    const inr = (n) => '₹' + Math.round(Number(n) || 0).toLocaleString('en-IN');
+    function dayHtml() {
+      const y = new Date(Date.now() - 86400000), ds = (DAY && DAY.date) || y.toISOString().slice(0, 10);
+      let h = '<div class="jt-card" id="jtDay"><div class="jt-h">📅 Day summary<span class="jt-sp"></span><input class="jt-in" type="date" id="jtDayD" value="' + esc(ds) + '" max="' + new Date().toISOString().slice(0, 10) + '"></div>';
+      if (!DAY) return h + '<div class="jt-sub">' + loading + '</div></div>';
+      const d = DAY.day || {}, b = DAY.bill || {}, t = b.total || {};
+      h += '<div class="jt-row" style="border:0"><span class="jt-tag a">sent ' + (d.total ? d.total.sent : 0) + '</span><span class="jt-tag">answered ' + (d.total ? d.total.replied : 0) + '</span>'
+        + (t.orders != null ? '<span class="jt-tag a">orders ' + (t.orders || 0) + ' · ' + inr(t.revenue) + '</span>' : '') + (t.cost != null ? '<span class="jt-tag" style="background:#fee2e2;color:#991b1b" title="what Meta charges for the paid (template) follow-up messages">spent ' + inr(t.cost) + '</span>' : '') + '</div>';
+      if (t.sent != null) h += '<div class="jt-sub">Paid messages (templates) that day: ' + (t.sent || 0) + ' · delivered ' + (t.delivered || 0) + ' · read ' + (t.read || 0) + ' · failed ' + (t.failed || 0) + '. Short texts inside 24 hours are free.</div>';
+      const rows = (d.rows || []); h += rows.length ? '<details style="margin-top:6px" open><summary style="cursor:pointer;font-weight:700">What went out (' + rows.length + ')</summary>' + rows.map((r) => '<div class="jt-row"><span class="jt-msg" style="min-width:0">' + esc(r.label) + '</span><span class="jt-tag">sent ' + r.sent + '</span><span class="jt-tag a">answered ' + r.replied + '</span></div>').join('') + '</details>' : '<div class="jt-sub" style="padding:6px 0">Nothing went out that day.</div>';
+      return h + '</div>';
+    }
+    async function loadDay(ds) {
+      DAY = null; const old = el.querySelector('#jtDay'); if (old) old.outerHTML = dayHtml();
+      const y = ds || new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+      const [d, b] = await Promise.all([api.get('fu.wj_day', { d: y }).catch(() => ({})), api.get('wa.bill', { from: y, to: y, by: 'day', src: 'followup' }).catch(() => ({}))]);
+      DAY = { date: y, day: d, bill: b }; const c = el.querySelector('#jtDay'); if (c) { c.outerHTML = dayHtml(); bindDay(); }
+    }
+    function bindDay() { const di = el.querySelector('#jtDayD'); if (di) di.onchange = () => { if (di.value) loadDay(di.value); }; }
     function askTime(done, noAll) {
       const o = sheet('<div class="jt" style="background:#fff;width:100%;max-width:420px;border-radius:18px 18px 0 0;padding:16px"><div class="jt-h">＋ New step — when?</div><div class="jt-sub">' + (noAll ? 'Days counted from the last order (up to 365).' : 'After our last message to this customer. Within 24 hours it is a short text Claude writes; later it is an approved message (you choose which).') + '</div><div class="jt-row" style="border:0"><input class="jt-in jt-t" id="atV" type="number" min="1" value="2"><select class="jt-in" id="atU"><option value="min">minutes</option><option value="h">hours</option><option value="d">days</option></select></div>'
         + (noAll ? '' : '<label class="jt-sub" style="display:block;margin:4px 0"><input type="checkbox" id="atAll"> Add it to <b>every lane</b></label>')
@@ -204,7 +275,7 @@
       $$('[data-mode]').forEach((b) => b.onclick = async () => { if (busy) return; const m = b.dataset.mode; if (m === 'auto' && !confirm('Auto: messages will go to real customers from now on (earlier missed steps are not caught up). Continue?')) return; busy = true;
         const a = await call(() => api.post('fu.ap_mode', { mode: m === 'auto' ? 'autotpl' : m })); const w = a ? await call(() => api.post('fu.wj_mode', { mode: m })) : null; busy = false; if (a && w) await load(true); });
       const sv = $('#jtSave'); if (sv) sv.onclick = saveAll;
-      const wb = $('#jtWin'); if (wb) wb.onclick = async () => { const a = await call(() => api.post('fu.jn_window', { from: $('#jtFrom').value, to: $('#jtTo').value, cold_after: +$('#jtCold').value })); if (!a) return; if ((+$('#jtCap').value || 0) !== ((WJ.cfg || {}).day_cap || 300)) await call(() => api.post('fu.wj_cfg', { day_cap: +$('#jtCap').value })); await load(true); };
+      const wb = $('#jtWin'); if (wb) wb.onclick = async () => { const a = await call(() => api.post('fu.wj_window', { from: $('#jtFrom').value, to: $('#jtTo').value, cold_after: +$('#jtCold').value })); if (!a) return; if ((+$('#jtCap').value || 0) !== ((WJ.cfg || {}).day_cap || 300)) await call(() => api.post('fu.wj_cfg', { day_cap: +$('#jtCap').value })); await load(true); };
       const rl = $('[data-reload]'); if (rl) rl.onclick = () => load(true);
       const ms = $('[data-metasend]'); if (ms) ms.onclick = async () => { ms.disabled = true; await call(() => api.post('fu.wj_tpl', {})); await load(true); };
       const ins = $('[data-install]'); if (ins) ins.onclick = async () => { ins.disabled = true; await call(() => api.post('fu.ap_install', {})); await load(false); };
@@ -216,6 +287,8 @@
         busy = true; const r = await call(() => api.post('fu.sit_toggle', { sid: p.id, on: want })); busy = false; if (r) { p.on = want; toast(want ? 'This flow is ON.' : 'This flow is OFF — nothing from it is sent.'); draw(); } });
       $$('[data-add]').forEach((b) => b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); addStep(b.closest('[data-lane]').dataset.lane); });
       $$('[data-tile]').forEach((b) => b.onclick = () => openStep(b.dataset.tile));
+      $$('[data-claude]').forEach((b) => b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); const p = PATHS.find((x) => 'p:' + x.id === b.closest('[data-lane]').dataset.lane); if (p) claudeLane(p); });
+      bindDay();
     }
     function bindRow(row, after) { const f = find(row.dataset.k); if (!f || !f.st) return;
         row.querySelectorAll('[data-edit]').forEach((b) => b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); editMsg(b.dataset.edit, f, after); });
@@ -243,21 +316,29 @@
     const cell = (o) => o ? '<td>' + o.sent + '</td><td>' + o.replied + ' <small>' + pc(o.replied, o.sent) + '</small></td><td>' + o.ordered + '</td><td>' + (o.sales ? money(o.sales) : '—') + '</td>' : '<td colspan="4" class="jt-sub">no message yet</td>';
     const hint = (o) => o && o.sent >= 20 && o.replied === 0 ? ' <span class="jt-tag" style="background:#fee2e2;color:#991b1b" title="20 or more sent, nobody replied">nobody answers</span>' : (o && o.sent >= 20 && o.ordered >= 2 ? ' <span class="jt-tag a">works</span>' : '');
     async function load() {
-      let R, A, W; try { [R, A, W] = await Promise.all([api.get('fu.jn_results', { days }), api.get('fu.ap_get'), api.get('fu.wj_get')]); } catch (e) { el.innerHTML = '<div class="jt">' + errBox(e.message) + '</div>'; return; }
+      let R, A, W; try { [R, A, W] = await Promise.all([jnResults(days), api.get('fu.ap_get'), api.get('fu.wj_get')]); } catch (e) { el.innerHTML = '<div class="jt">' + errBox(e.message) + '</div>'; return; }
       const lab = (k) => ((W.messages || []).find((m) => m.k === k) || {}).label || k; const T = R.total || {};
       const tile = (n, v, s) => '<div class="jt-card" style="flex:1 1 130px;padding:10px 12px"><div class="jt-sub">' + n + '</div><div style="font-size:22px;font-weight:800">' + v + '</div><div class="jt-sub">' + s + '</div></div>';
       let h = '<div class="jt"><div class="jt-card"><div class="jt-h">📊 Results<span class="jt-sp"></span><span class="jt-seg">' + [7, 30, 90].map((d) => '<button type="button" data-d="' + d + '" class="' + (days === d ? 'on' : '') + '">' + d + ' days</button>').join('') + '</span></div><div class="jt-sub">An order counts for the last follow-up sent in the 7 days before it. A reply = the customer wrote within 2 days.</div></div>'
         + '<div style="display:flex;gap:8px;flex-wrap:wrap">' + tile('Messages sent', T.sent || 0, 'before + after an order') + tile('Replied', T.replied || 0, pc(T.replied, T.sent)) + tile('Orders', T.ordered || 0, 'after a follow-up') + tile('Sales', money(T.sales), 'from those orders') + '</div>';
       h += '<div class="jt-card"><div class="jt-h">Before an order — by lane and step</div>';
       (A.paths || []).filter((p) => p.kind !== 'stop').forEach((p) => { const rows = p.steps.map((s, i) => { const o = (R.lanes || []).find((x) => x.sid === p.id && x.step === i); const t = s.after_h < 1 ? Math.round(s.after_h * 60) + ' min' : s.after_h < 24 ? Math.round(s.after_h * 10) / 10 + ' h' : 'day ' + Math.round(s.after_h / 2.4) / 10;
-          return '<tr><td>' + t + '</td><td>' + esc(s.kind === 'offer' ? '📨 ' + lab(s.offer) : '💬 ' + (s.text || 'text').slice(0, 40)) + hint(o) + '</td>' + cell(o) + '</tr>'; }).join('');
+          return '<tr class="jt-go" data-k="lane" data-sid="' + esc(p.id) + '" data-st="' + i + '" style="cursor:pointer"><td>' + t + '</td><td>' + esc(s.kind === 'offer' ? '📨 ' + lab(s.offer) : '💬 ' + (s.text || 'text').slice(0, 40)) + hint(o) + '</td>' + cell(o) + '</tr>'; }).join('');
         h += '<details style="margin-top:6px"><summary style="cursor:pointer;font-weight:700">' + esc(p.title) + '</summary><div style="overflow-x:auto"><table class="jt-tbl" style="width:100%;border-collapse:collapse;font-size:13px"><tr><th align="left">When</th><th align="left">Step</th><th>Sent</th><th>Replied</th><th>Orders</th><th>Sales</th></tr>' + rows + '</table></div></details>'; });
       h += '</div><div class="jt-card"><div class="jt-h">After an order — by customer type</div>';
       const byT = {}; (W.steps.buyer || []).forEach((s) => { (byT[s.topic || ''] = byT[s.topic || ''] || []).push(s); });
       const tn = (k) => k === '' ? 'Everyone' : ((W.segments.rows || []).find((g) => g.k === k) || {}).title || k;
-      Object.keys(byT).sort().forEach((k) => { const rows = byT[k].map((s) => { const o = (R.buyer || []).find((x) => x.step === s.id); return '<tr><td>day ' + s.day + '</td><td>' + esc(lab(s.ref)) + hint(o) + '</td>' + cell(o) + '</tr>'; }).join('');
+      Object.keys(byT).sort().forEach((k) => { const rows = byT[k].map((s) => { const o = (R.buyer || []).find((x) => x.step === s.id); return '<tr class="jt-go" data-k="buyer" data-st="' + esc(s.id) + '" style="cursor:pointer"><td>day ' + s.day + '</td><td>' + esc(lab(s.ref)) + hint(o) + '</td>' + cell(o) + '</tr>'; }).join('');
         h += '<details style="margin-top:6px"><summary style="cursor:pointer;font-weight:700">' + esc(tn(k)) + '</summary><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><tr><th align="left">When</th><th align="left">Step</th><th>Sent</th><th>Replied</th><th>Orders</th><th>Sales</th></tr>' + rows + '</table></div></details>'; });
-      el.innerHTML = h + '</div></div>'; el.querySelectorAll('[data-d]').forEach((b) => b.onclick = () => { days = +b.dataset.d; el.innerHTML = '<div class="jt"><div class="jt-card">' + loading + '</div></div>'; load(); });
+      h += '<div class="jt-sub" style="margin:6px 4px">👆 Click any step to see which customers got it, the exact message and who replied.</div>';
+      el.innerHTML = h + '</div></div>';
+      el.querySelectorAll('tr.jt-go').forEach((tr) => { tr.onclick = async () => {   // 🔎 who got this step
+        const nx = tr.nextElementSibling; if (nx && nx.classList.contains('jt-who')) { nx.remove(); return; }
+        const row = document.createElement('tr'); row.className = 'jt-who'; row.innerHTML = '<td colspan="6" class="jt-sub">Loading…</td>'; tr.after(row);
+        try { const d = await api.get('fu.wj_step_sent', { kind: tr.dataset.k, sid: tr.dataset.sid || '', step: tr.dataset.st, days });
+          row.innerHTML = '<td colspan="6" style="background:#f8fafc;padding:8px 10px">' + (d.rows.length ? '<div class="jt-sub" style="margin-bottom:4px">' + d.total + ' sent in the last ' + days + ' days' + (d.total > d.rows.length ? ' — newest ' + d.rows.length + ' shown' : '') + '</div>' + d.rows.map((r) => '<div style="padding:4px 0;border-top:1px solid #e5e7eb"><b>' + esc(r.name || r.phone) + '</b> <span class="jt-sub">+91 ' + esc(r.phone.slice(-10)) + ' · ' + esc(String(r.at).slice(5, 16)) + '</span>' + (r.replied ? ' <span class="jt-tag a">replied</span>' : '') + (r.body ? '<div style="color:#374151;white-space:pre-wrap">' + esc(r.body) + '</div>' : '') + '</div>').join('') : 'Nothing sent in this step yet.') + '</td>'; }
+        catch (e) { row.innerHTML = '<td colspan="6">' + errBox(e.message) + '</td>'; } }; });
+      el.querySelectorAll('[data-d]').forEach((b) => b.onclick = () => { days = +b.dataset.d; el.innerHTML = '<div class="jt"><div class="jt-card">' + loading + '</div></div>'; load(); });
     }
     load(); return () => { };
   }
