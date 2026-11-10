@@ -1257,6 +1257,7 @@ function wa_send_image_link(PDO $pdo, array $c, string $url, string $caption, st
     $wamid = (string)($d['messages'][0]['id'] ?? '');
     if ($code < 200 || $code >= 300 || $wamid === '') { $e = wa_err($d); wa_log($pdo, 'send', false, $c['phone'] . ' · photo link · ' . $e); return [false, $e]; }
     $now = date('Y-m-d H:i:s'); $mid = $prodId > 0 ? 'prod:' . $prodId : 'link:' . substr(md5($url), 0, 12);
+    if ($prodId <= 0) { try { $pdo->exec("CREATE TABLE IF NOT EXISTS wa_img_links (k VARCHAR(20) NOT NULL PRIMARY KEY, url TEXT NOT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"); $pdo->prepare("INSERT IGNORE INTO wa_img_links (k, url) VALUES (?, ?)")->execute([substr($mid, 5), $url]); } catch (Throwable $e) { } }   // so the chat can open this photo later
     $pdo->prepare("INSERT INTO wa_messages (wamid, phone, number_id, dir, mtype, body, media_id, media_mime, status, who, emp_id, ts) VALUES (?, ?, ?, 'out', 'image', ?, ?, 'image/jpeg', 'sent', ?, ?, ?)")
         ->execute([$wamid, $c['phone'], (int)$c['last_number_id'], '📷 Photo' . ($caption !== '' ? ': ' . mb_substr($caption, 0, 300) : ''), $mid, $who === 'bot' ? 'bot' : 'emp', $who === 'bot' ? 0 : $empId, $now]);
     if ($who === 'bot') $pdo->prepare("UPDATE wa_contacts SET last_out_at = ? WHERE phone = ?")->execute([$now, $c['phone']]);

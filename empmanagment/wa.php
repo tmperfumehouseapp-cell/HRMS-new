@@ -1097,9 +1097,8 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
             $u = function_exists('pc_photo_url') ? pc_photo_url($pdo, (float)$lv['pct']) : ''; if ($u === '') json_response(['error' => 'The price photo cannot be made yet: fill the Price chart (it needs a ' . rtrim(rtrim(number_format((float)$lv['pct'], 2), '0'), '.') . '% column) on the Price charts page.'], 422);
             $lvTxt = rtrim(rtrim(number_format((float)$lv['pct'], 2), '0'), '.') . '%'; $why = $lv['default'] ? 'No discount was given in this chat yet, so it is the starting price (' . $lvTxt . ').' : 'This chat has already been quoted down to the ' . $lvTxt . ' price, so the sizes are shown at that price.';
             if (!empty($in['preview'])) json_response(['ok' => true, 'preview' => true, 'level' => $lvTxt, 'why' => $why, 'url' => $u]);
-            if (!function_exists('wa_send_image_link') && is_file(__DIR__ . '/wa_prod.php')) require_once __DIR__ . '/wa_prod.php';
-            [$ok, $res] = wa_send_image_link($pdo, $c, $u, '', 'emp', (int)($auth['employee_id'] ?? 0)); if (!$ok) json_response(['error' => (string)$res], 422);
-            json_response(['ok' => true, 'message' => 'Price chart sent (' . $lvTxt . ' price level).']);
+            // 🔒 owner's rule (10 Nov): the price chart is NEVER sent to a customer — not by a salesperson, not by the bot. The salesperson only SEES it (preview).
+            json_response(['ok' => true, 'preview' => true, 'sent' => false, 'level' => $lvTxt, 'why' => $why, 'url' => $u, 'message' => 'The price chart is only for you to look at — it is never sent to the customer.']);
         }
         case 'wa.optin': {   // the "Opted in" switch: off = the customer is never messaged (same as the customer sending STOP)
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
@@ -1140,6 +1139,11 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
             [$ok, $r] = wa_tag_contact($pdo, $c, !empty($in['force']));
             if (!$ok) json_response(['error' => (string)$r], 502);
             json_response(['ok' => true, 'tag' => $r['tag'], 'tag_label' => WA_TAGS[$r['tag']] ?? '', 'summary' => $r['summary'], 'fresh' => $r['fresh']]);
+        }
+        case 'wa.img_link': {   // the web address of a photo that was sent BY LINK (collage / product card): so the chat can open it
+            $k = preg_replace('/[^a-z0-9:]/i', '', (string)($_GET['id'] ?? '')); $k = preg_replace('/^link:/', '', $k); $u = '';
+            try { $q = $pdo->prepare("SELECT url FROM wa_img_links WHERE k = ?"); $q->execute([$k]); $u = (string)$q->fetchColumn(); } catch (Throwable $e) { }
+            json_response(['ok' => $u !== '', 'url' => $u]);
         }
         case 'wa.media': {
             $id = preg_replace('/[^0-9]/', '', (string)($_GET['id'] ?? '')); if ($id === '') json_response(['error' => 'No media id.'], 422);
