@@ -476,7 +476,7 @@
 
 <script src="assets/js/config.js?v=2"></script>
 <script src="assets/js/api.js?v=9"></script>
-<script src="assets/js/layout.js?v=26"></script>
+<script src="assets/js/layout.js?v=27"></script>
 <script>
 
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -2471,9 +2471,10 @@
       ['codes', 'Codes', 'order_codes.html', 'order_codes'],
       ['sheet', '30-day sheet', 'sales_sheet.html', 'orders'],
     ] },
-    { k: 'people', t: 'Team', tabs: [
+    { k: 'people', t: 'Team performance', tabs: [
       ['ranking', 'Ranking', CT + 'rt', 'control_tower'],
       ['person', 'Person', CT + 'pp', 'control_tower'],
+      ['waq', 'Queries & Team manager', 'wa_sales_live.html', 'control_tower'],   // the WhatsApp Sales page: live queries, Team manager (Pace, Attention, Types, Bot vs person), Analytics
       ['targets', 'Targets', null, null, [
         ['rupees', 'Rupees', 'targets.html', 'targets'],
         ['orders', 'Order count', 'order_targets.html', 'order_targets'],
@@ -2482,15 +2483,12 @@
         ['month', 'Performance', 'performance.html', 'performance'],
         ['sheet', 'Day-by-day sheet', 'detailed_report.html', 'detailed_report'],
       ]],
-      // These three open the Total Budgeting menu item (one page, one place): a 'go:' tab is a link, not a second copy
-      ['budgeting', 'Total Budgeting', 'go:hub.html?w=budget&t=bt_total', 'commission'],
-      ['commission', 'Commission', 'go:hub.html?w=budget&t=bt_commission', 'commission'],
-      ['leaders', 'Leaders', 'go:hub.html?w=budget&t=bt_leaders', 'commission'],
-      ['allrules', 'Commission rules', 'commission_rules.html', 'commission_rules'],   // every commission rule in one page: slab rates, order codes, fixed / panel / rating rules, ML price slab and the Target bonus
     ] },
-    { k: 'retail', t: 'Shops (wholesale)', tabs: [
-      ['shops', 'Shops', 'retail_shops.html', 'retail'],
-      ['stock', 'Stock', 'retail_inventory.html', 'retail'],
+    { k: 'money', t: 'Money', tabs: [
+      ['commission', 'Commission', 'commission_new.html', 'commission'],
+      ['leaders', 'Leaders', 'leaders.html', 'commission'],
+      ['helpers', 'Leaders Helper', 'leaders_helper.html', 'commission'],
+      ['allrules', 'Commission rules', 'commission_rules.html', 'commission_rules'],   // every commission rule in one page: slab rates, order codes, fixed / panel / rating rules, ML price slab and the Target bonus
     ] },
     { k: 'learn', t: 'Learn & Setup', tabs: [
       ['learning', '🧠 Learning & Improvement', 'learning.html', 'control_tower'],
@@ -2511,7 +2509,7 @@
     ] },
   ];
   // Old links and bookmarks (#people/ordertargets, #learn/doctor ...) still land on the right page.
-  const OLD = { ordertargets: ['people', 'targets', 'orders'], report: ['people', 'performance', 'sheet'], rules: ['people', 'allrules', ''],
+  const OLD = { ordertargets: ['people', 'targets', 'orders'], report: ['people', 'performance', 'sheet'], rules: ['money', 'allrules', ''],
     doctor: ['tools', 'messages', 'doctor'], bench: ['tools', 'messages', 'bench'], library: ['learn', 'library', ''], conv: ['tools', 'conv', ''] };
   // bookmarks from before the Learn & Setup clean-up (#learn/messages, #learn/proof/conv, #learn/photos ...)
   const LEARN_MOVED = { messages: ['tools', 'messages'], backups: ['tools', 'backups'], settings: ['tools', 'settings'], photos: ['learn', 'botdata', 'photos'], products: ['learn', 'botdata', 'products'] };
@@ -2532,6 +2530,7 @@
       const tab = r.s === 'budget' ? (r.t === 'leaders' ? 'bt_leaders' : r.t === 'commission' ? (r.k === 'old' ? 'bt_old' : 'bt_commission') : 'bt_total') : (MOVED[r.t] === 'bt_commission' && r.k === 'old' ? 'bt_old' : MOVED[r.t]);
       location.replace('hub.html?w=budget&t=' + tab); r = { s: 'live', t: '', k: '' };
     }
+    if (r.s === 'retail') { location.replace('hub.html?w=shops&t=' + (r.t === 'stock' ? 'retail_inventory' : 'retail_shops')); r = { s: 'live', t: '', k: '' }; }   // Shops (wholesale) moved to the side menu
     if (OLD[r.t] && !r.k) r = { s: OLD[r.t][0], t: OLD[r.t][1], k: OLD[r.t][2] };
     if (r.s === 'learn' && r.t === 'proof') r = r.k === 'conv' ? { s: 'tools', t: 'conv', k: '' } : { s: 'learn', t: 'library', k: '' };
     else if (r.s === 'learn' && LEARN_MOVED[r.t]) { const m = LEARN_MOVED[r.t]; r = { s: m[0], t: m[1], k: m[2] || r.k }; }

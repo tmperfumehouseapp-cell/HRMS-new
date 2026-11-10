@@ -321,7 +321,8 @@ window.WS = (function () {
   const W = [
     { key: 'home', label: 'Home', icon: 'dashboard', sub: 'What needs you today', tabs: [['dashboard', 'Dashboard', 'dashboard.html', '']] },
     { key: 'sales', label: 'Sales', icon: 'sales', direct: 'sales.html', sub: '', tabs: [] },
-    { key: 'team', label: 'Team', icon: 'employees', sub: 'Every salesperson in one place: performance, live queries and money (pay and commission: admin only)', tabs: [['wasales', 'Team performance', 'wa_sales_live.html', 'wa'], ['bt_total', 'Money · Total Budgeting', 'total_budgeting.html', ''], ['bt_commission', 'Money · Commission', 'commission_new.html', ''], ['bt_leaders', 'Money · Leaders', 'leaders.html', ''], ['bt_helpers', 'Money · Leaders Helper', 'leaders_helper.html', '']] },   // the old Budgeting and WhatsApp Sales icons are one workspace now (old links w=budget / w=wasales still open it)
+    { key: 'budget', label: 'Budgeting', icon: 'commission', sub: 'Commission, leaders, salaries, fixed expenses and penalties, day by day', tabs: [['bt_total', 'Total Budgeting', 'total_budgeting.html', ''], ['bt_commission', 'Commission', 'commission_new.html', ''], ['bt_leaders', 'Leaders', 'leaders.html', ''], ['bt_helpers', 'Leaders Helper', 'leaders_helper.html', '']] },   // its own menu item; the same pages are also inside Sales → Money
+    { key: 'shops', label: 'Shop wholesale', icon: 'retail_store', sub: 'Wholesale shops and their stock', tabs: [['retail_shops', 'Shops', 'retail_shops.html', ''], ['retail_inventory', 'Stock', 'retail_inventory.html', '']] },   // moved out of Sales into the side menu
     { key: 'whatsapp', label: 'WhatsApp', icon: 'whatsapp', sub: 'Chats, campaigns and groups', tabs: [['whatsapp', 'WhatsApp', 'whatsapp.html', 'wa'], ['whatsapp_groups', 'Groups', 'whatsapp_groups.html', '']] },
     { key: 'complaints', label: 'Complaints', icon: 'complaints', sub: 'Every customer problem is a ticket — Tracking and Complaint desks', tabs: [['complaints', 'Tickets', 'complaints.html', 'cx'], ['my_complaints', 'My complaints', 'my_complaints.html', 'cxm']] },
     { key: 'inbox', label: 'Inbox', icon: 'inbox', sub: 'Instagram, Facebook, email and reviews — answered in one place', tabs: [['social_inbox', 'Inbox hub', 'social_inbox.html', 'sx']] },
@@ -342,10 +343,10 @@ window.WS = (function () {
     'people.html': 'employees', 'employees.html': 'employees', 'ex_employees.html': 'employees', 'attendance_admin.html': 'attendance', 'leave_requests.html': 'leave_requests', 'salary.html': 'salary',
     'approvals.html': 'approvals', 'documents.html': 'documents', 'agreements.html': 'agreements', 'history.html': 'decline_history', 'users.html': 'users', 'roles.html': 'users', 'changes.html': 'users',
     'inventory.html': 'inventory', 'finance_in.html': 'finance', 'finance_sum.html': 'finance', 'finance_parcels.html': 'finance', 'analytics.html': 'analytics', 'departments.html': 'departments', 'offices.html': 'offices', 'excel_files.html': 'excel_files', 'doc_check.html': 'documents', 'handover.html': 'employees',
-    'total_budgeting.html': 'commission', 'commission_new.html': 'commission', 'commission.html': 'commission', 'leaders.html': 'commission',
+    'retail_shops.html': 'retail', 'retail_inventory.html': 'retail', 'total_budgeting.html': 'commission', 'commission_new.html': 'commission', 'commission.html': 'commission', 'leaders.html': 'commission',
   };
   const ICON_OF = {};  W.forEach((w) => { ICON_OF[w.key] = w.icon; });
-  const WSA = { budget: 'team', wasales: 'team' };   // old workspace keys
+  const WSA = { wasales: 'sales', team: 'sales' };   // old workspace keys: WhatsApp Sales and Team now live inside the Sales page
   const byKey = (k) => W.find((w) => w.key === (WSA[k] || k));
   const pageOf = (u) => String(u || '').split('#')[0].split('?')[0].split('/').pop();
   function tabByPage(file) {
