@@ -13,13 +13,25 @@ if ($__wp === 'wa.plan_get') {
     $auth = require_auth(); if (!wa_is_admin($pdo, $auth)) json_response(['error' => 'Only the owner / admin can use the planner.'], 403);
     $budget = max(1000, min(1000000, (float)($_GET['budget'] ?? 50000)));
     $R = function_exists('wab_rates') ? wab_rates($pdo) : ['marketing' => 1.09]; $price = max(0.05, (float)$R['marketing']);
-    $today = date('Y-m-d'); $week = date('Y-m-d', strtotime('-6 days'));
-    $T = ['sent' => 0, 'delivered' => 0, 'replied' => 0, 'paid_m' => 0, 'cost' => 0]; $spent = 0.0;
-    try { if (function_exists('wab_report')) { $rep = wab_report($pdo, $week, $today, 'day', 'campaign'); $T = array_merge($T, (array)($rep['total'] ?? [])); $t0 = wab_report($pdo, $today, $today, 'day', 'all'); $spent = (float)($t0['total']['cost'] ?? 0); } } catch (Throwable $e) { }
-    $sent7 = (int)$T['sent']; $dl7 = (int)$T['delivered'];
+    $today = date('Y-m-d'); $since = date('Y-m-d H:i:s', time() - 3 * 86400);
+    // light SQL counts only (the Billing report loads every message into memory — too heavy for a 7-day range)
+    $sent7 = 0; $dl7 = 0; $paid7 = 0; $replied = 0; $spent = 0.0;
+    try {
+        $q = $pdo->prepare("SELECT COUNT(*) n, SUM(status IN ('delivered','read')) d, SUM(status IN ('delivered','read') AND bill_cat NOT IN ('utility','authentication','service')) p FROM wa_messages WHERE dir = 'out' AND mtype = 'template' AND who = 'campaign' AND status <> 'failed' AND ts >= ?");
+        $q->execute([$since]); $r = $q->fetch(); $sent7 = (int)$r['n']; $dl7 = (int)$r['d']; $paid7 = (int)$r['p'];
+    } catch (Throwable $e) {
+        try { $q = $pdo->prepare("SELECT COUNT(*) n, SUM(status IN ('delivered','read')) d FROM wa_messages WHERE dir = 'out' AND mtype = 'template' AND who = 'campaign' AND status <> 'failed' AND ts >= ?"); $q->execute([$since]); $r = $q->fetch(); $sent7 = (int)$r['n']; $dl7 = (int)$r['d']; $paid7 = $dl7; } catch (Throwable $e2) { }
+    }
+    try {   // replies: people who got a campaign message in the last 3 days and wrote back after it (compared in PHP, not by a SQL join)
+        $q = $pdo->prepare("SELECT DISTINCT phone FROM wa_messages WHERE dir = 'out' AND mtype = 'template' AND who = 'campaign' AND status IN ('delivered','read') AND ts >= ? LIMIT 80000"); $q->execute([$since]); $got = array_flip($q->fetchAll(PDO::FETCH_COLUMN));
+        $q = $pdo->prepare("SELECT DISTINCT phone FROM wa_messages WHERE dir = 'in' AND ts >= ? LIMIT 120000"); $q->execute([$since]); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $p0) if (isset($got[$p0])) $replied++;
+        $gotN = count($got);
+    } catch (Throwable $e) { $gotN = 0; }
+    try { $q = $pdo->prepare("SELECT SUM(bill_cat NOT IN ('utility','authentication','service')) FROM wa_messages WHERE dir = 'out' AND mtype = 'template' AND status IN ('delivered','read') AND ts >= ?"); $q->execute([date('Y-m-d 00:00:00')]); $spent = (float)$q->fetchColumn() * $price; } catch (Throwable $e) { }   // an estimate: delivered marketing messages today × the rate
     $dr = $sent7 >= 500 ? $dl7 / max(1, $sent7) : 0.55; $dr = max(0.15, min(0.95, $dr));                       // delivery rate (delivered / sent)
-    $rr = $dl7 >= 500 ? (int)$T['replied'] / max(1, $dl7) : 0.03; $rr = max(0.003, min(0.3, $rr));              // reply rate (replies / delivered)
-    $cf = $dl7 >= 500 ? max(0.5, min(1.0, (int)$T['paid_m'] / max(1, $dl7))) : 1.0;                            // share of delivered that Meta charges
+    $rr = ($gotN ?? 0) >= 500 ? $replied / max(1, $gotN) : 0.03; $rr = max(0.003, min(0.3, $rr));              // reply rate (customers who wrote back / customers delivered)
+    $cf = $dl7 >= 500 ? max(0.5, min(1.0, $paid7 / max(1, $dl7))) : 1.0;                                       // share of delivered that Meta charges
+    $T = ['sent' => $sent7, 'delivered' => $dl7];
     $left = max(0, $budget - $spent);
     $needDel = $left / ($price * $cf); $needSent = $needDel / $dr;
     // capacity: Meta's room today + the hourly speed of the numbers that can send
