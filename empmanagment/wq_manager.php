@@ -37,7 +37,7 @@ function wqm_hi(int $o, int $q): float
 }
 
 /** One row per salesperson with everything Claude and the guard rails need. */
-function wqm_collect(PDO $pdo): array
+function wqm_collect(PDO $pdo, array $opt = []): array   // $opt: light = only the cheap signals (the Team table), no_rating = skip the 30-day rating (the caller works out the period's own)
 {
     $rows = []; $names = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : [];
     $sales = $pdo->query("SELECT e.employee_id FROM employees e LEFT JOIN departments d ON d.department_id = e.department_id WHERE e.status != 'ex' AND d.department_name LIKE '%sales%'")->fetchAll(PDO::FETCH_COLUMN);
@@ -61,12 +61,12 @@ function wqm_collect(PDO $pdo): array
             'speed_median_min_30d' => isset($mon[$id]['pace']['median']) ? $mon[$id]['pace']['median'] : null,
             'overdue_complaints' => $od[$id] ?? 0, 'pending_answers' => (int)($bk[$id] ?? 0), 'open_chats' => $open[$id] ?? 0];
     }
-    wqm_enrich($pdo, $rows, $mon);
+    wqm_enrich($pdo, $rows, $mon, $opt);
     return $rows;
 }
 
 /** More of what the system already knows about each person (all optional: a missing module just leaves the field empty). */
-function wqm_enrich(PDO $pdo, array &$rows, array $mon): void
+function wqm_enrich(PDO $pdo, array &$rows, array $mon, array $opt = []): void
 {
     foreach ($rows as $id => &$r) {
         $v = $mon[$id]['verdict'] ?? null; $r['pace_verdict'] = is_array($v) ? (string)($v['label'] ?? $v['key'] ?? '') : null;
@@ -77,8 +77,9 @@ function wqm_enrich(PDO $pdo, array &$rows, array $mon): void
         $t = json_decode(wq_meta_get($pdo, 'mgr:tone:' . $id, ''), true); $r['tone_score'] = is_array($t) ? $t['score'] : null; $r['tone_note'] = is_array($t) ? (string)$t['note'] : '';
     }
     unset($r);
+    if (!empty($opt['light'])) return;   // the Team table needs none of the heavy signals below
     try {   // the daily rating (10 parts, 30 days)
-        if (function_exists('rating_days') && function_exists('rating_period')) {
+        if (function_exists('rating_days') && function_exists('rating_period') && empty($opt['no_rating'])) {
             $days = rating_days($pdo, date('Y-m-d', time() - 29 * 86400), date('Y-m-d'));
             foreach ($rows as $id => &$r) { $rp = rating_period($days, $id); if (is_array($rp)) { $r['rating_30d'] = isset($rp['score']) ? round((float)$rp['score'], 1) : null; $pt = []; foreach ((array)($rp['parts'] ?? []) as $k => $x) if ($x !== null && is_numeric($x)) $pt[$k] = (float)$x; asort($pt); $r['rating_weak_parts'] = array_slice(array_keys($pt), 0, 2); } }
             unset($r);

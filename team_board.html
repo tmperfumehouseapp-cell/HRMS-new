@@ -21,6 +21,7 @@ table.tb{border-collapse:collapse;width:100%;font-size:13px;white-space:nowrap}
 .chip.nt{border:1px solid #fca5a5;cursor:pointer;font-family:inherit}.chip.nt:hover{background:#fecaca}.btn.open{padding:4px 12px;font-size:12.5px;font-weight:700;white-space:nowrap}
 .vb{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 12px;border-bottom:1px solid var(--line);padding-bottom:8px}.vb button{border:0;background:#f1f5f9;border-radius:10px;padding:8px 14px;font-weight:700;font-size:13px;cursor:pointer}.vb button.on{background:#111827;color:#fff}
 #tbTools{margin-top:16px}.tool{border:1px solid var(--line);border-radius:12px;background:#fff;margin-bottom:10px;overflow:hidden}.tool>button{display:flex;justify-content:space-between;align-items:center;width:100%;border:0;background:#f8fafc;padding:12px 14px;font-weight:700;font-size:14px;cursor:pointer;text-align:left}.tool>button span{font-weight:400;font-size:12px;color:var(--muted)}.tool iframe{width:100%;border:0;display:none;height:calc(100vh - 120px);min-height:560px}.tool.on iframe{display:block}
+.sk{height:14px;border-radius:7px;margin:10px 0;background:linear-gradient(90deg,#eef0f3 25%,#f8fafc 37%,#eef0f3 63%);background-size:400% 100%;animation:sk 1.2s ease infinite}@keyframes sk{0%{background-position:100% 50%}100%{background-position:0 50%}}
 .bar{height:6px;border-radius:99px;background:#e5e7eb;min-width:60px;overflow:hidden}.bar i{display:block;height:100%;background:#22c55e}
 .good{color:#166534;font-weight:700}.bad{color:#b91c1c;font-weight:700}
 .dr-bg{position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:50;display:none}.dr-bg.on{display:block}
@@ -41,7 +42,7 @@ table.tb{border-collapse:collapse;width:100%;font-size:13px;white-space:nowrap}
   <div id="sidebar"></div>
   <main class="main">
     <div class="topbar"><div><h1>👥 Team</h1><div style="font-size:12.5px;color:var(--muted);margin-top:3px;max-width:75ch">Everyone in one table. Tap a person for their whole picture: today, queries, speed, tone, complaints, attendance, rating and Claude's note. Pick a period (today, week, month, your own dates): queries, ratio, ticket, speed, rating and attendance follow it; today's target and punch-in always show today. Set a person's target right here.</div></div></div>
-    <div class="content"><div id="tbRoot"><div class="empty">Loading…</div></div><div id="tbTools"></div></div>
+    <div class="content"><div id="tbRoot"><div class="sk" style="height:46px"></div><div class="sk" style="height:46px"></div><div class="sk" style="height:46px"></div><div class="sk" style="height:46px"></div><div class="sk" style="height:46px"></div></div><div id="tbTools"></div></div>
   </main>
 </div>
 <div class="dr-bg" id="drBg"></div><aside class="dr" id="dr" aria-hidden="true"></aside>
@@ -61,7 +62,7 @@ guardPage();
   const COLS = [
     ['rank', '#', (r) => r.rank], ['name', 'Name', (r) => r.name.toLowerCase()], ['present', 'Today', (r) => (r.present ? 1 : 0)], ['target_pct_today', 'Target', (r) => r.target_pct_today],
     ['orders_30d', 'Orders', (r) => r.orders_30d], ['queries_30d', 'Queries', (r) => r.queries_30d], ['ratio_pct', 'Ratio', (r) => r.ratio_pct], ['ticket_30d', 'Ticket', (r) => r.ticket_30d],
-    ['speed_median_min_30d', 'Speed', (r) => r.speed_median_min_30d], ['tone_score', 'Tone', (r) => r.tone_score], ['overdue_complaints', 'Complaints', (r) => r.overdue_complaints], ['rating_30d', 'Rating', (r) => r.rating_30d], ['level', 'Claude', (r) => r.level]
+    ['speed_median_min_30d', 'Speed', (r) => r.speed_median_min_30d], ['tone_score', 'Tone', (r) => r.tone_score], ['overdue_complaints', 'Complaints', (r) => r.overdue_complaints], ['level', 'Claude', (r) => r.level]
   ];
   // ---- the other tools of the old Targets / Performance tabs live here too, as panels under the table (their own pages, opened inside this page; the same saved data everywhere — e.g. the day timing is ONE setting shared with Attendance, Orders and Total Budgeting)
   const TOOLS = [['targets', '🎯 Target rules, day timing & order sync', 'Set the daily-target rule, the day start time, sync orders', 'targets.html'], ['orders', '🔢 Order count, hour by hour', 'Order-count targets and orders typed in per hour', 'order_targets.html'], ['perf', '⭐ Performance entry', 'Rate calls and customer behaviour, edit query counts, add-ons, ticket stars', 'performance.html']];
@@ -86,7 +87,7 @@ guardPage();
       + '<td>' + (!(r.target_today > 0) ? '<span style="color:var(--muted)">—</span>' : t == null ? '—' : '<div style="display:flex;gap:6px;align-items:center">' + pctB + '<span>' + esc(t) + '%</span></div>') + '</td>'
       + '<td class="num">' + v(r.orders_30d) + '</td><td class="num">' + v(r.queries_30d) + '</td><td class="num ' + (r.sure_behind ? 'bad' : (behind ? '' : (r.ratio_pct != null ? 'good' : ''))) + '">' + v(r.ratio_pct, r.ratio_pct == null ? '' : '%') + '</td>'
       + '<td class="num">' + (r.ticket_30d == null ? '—' : '₹' + esc(r.ticket_30d)) + '</td><td class="num">' + v(r.speed_median_min_30d, r.speed_median_min_30d == null ? '' : ' m') + '</td><td class="num">' + v(r.tone_score) + '</td>'
-      + '<td class="num ' + (r.overdue_complaints ? 'bad' : '') + '">' + v(r.overdue_complaints) + '</td><td class="num">' + v(r.rating_30d) + '</td><td>' + lvChip(r) + '</td><td><button type="button" class="btn open" data-open="' + r.emp_id + '">Open ▸</button></td></tr>';
+      + '<td class="num ' + (r.overdue_complaints ? 'bad' : '') + '">' + v(r.overdue_complaints) + '</td><td>' + lvChip(r) + '</td><td><button type="button" class="btn open" data-open="' + r.emp_id + '">Open ▸</button></td></tr>';
   }
   function draw() {
     const T = D.team || {}, rows = (D.rows || []).slice(), s = COLS.find((c) => c[0] === sort.k) || COLS[0];
@@ -95,7 +96,7 @@ guardPage();
     const rows2 = rows.filter((r) => (!FL.q || r.name.toLowerCase().indexOf(FL.q.toLowerCase()) > -1) && (!FL.notarget || need0(r)) && (!FL.atwork || r.present) && (!FL.meet || r.meet_admin));
     const PB = [['today', 'Today'], ['week', 'Last 7 days'], ['month', 'This month'], ['last_month', 'Last month'], ['d30', 'Last 30 days']];
     const noT = (D.rows || []).filter(need0).length;
-    root.innerHTML = '<div class="pb">' + PB.map((b) => '<button data-r="' + b[0] + '" class="' + (PER.range === b[0] ? 'on' : '') + '">' + b[1] + '</button>').join('') + '<span style="margin-left:6px;font-size:12.5px;color:var(--muted)">or</span><input type="date" id="pbF" value="' + esc(PER.from || (D.period && D.period.from) || '') + '"><input type="date" id="pbT" value="' + esc(PER.to || (D.period && D.period.to) || '') + '"><button id="pbGo" class="' + (PER.range === 'custom' ? 'on' : '') + '">Show</button><span style="font-size:12.5px;color:var(--muted);margin-left:6px">Showing: <b>' + esc(PL()) + '</b></span></div>'
+    root.innerHTML = '<div class="pb">' + PB.map((b) => '<button data-r="' + b[0] + '" class="' + (PER.range === b[0] ? 'on' : '') + '">' + b[1] + '</button>').join('') + '<span style="margin-left:6px;font-size:12.5px;color:var(--muted)">or</span><input type="date" id="pbF" value="' + esc(PER.from || (D.period && D.period.from) || '') + '"><input type="date" id="pbT" value="' + esc(PER.to || (D.period && D.period.to) || '') + '"><button id="pbGo" class="' + (PER.range === 'custom' ? 'on' : '') + '">Show</button><span style="font-size:12.5px;color:var(--muted);margin-left:6px">Showing: <b>' + esc(PL()) + '</b> · updated ' + (D.age_s == null ? '' : D.age_s < 60 ? 'just now' : Math.round(D.age_s / 60) + ' min ago') + '</span><button id="tbFresh" title="Rebuild now">↻ Refresh</button></div>'
       + '<div class="fl"><input type="search" id="flQ" placeholder="Search a person" value="' + esc(FL.q) + '"><button data-f="notarget" class="' + (FL.notarget ? 'on' : '') + '">🎯 No target today (' + noT + ')</button><button data-f="atwork" class="' + (FL.atwork ? 'on' : '') + '">At work</button><button data-f="meet" class="' + (FL.meet ? 'on' : '') + '">Meet admin</button></div>'
       + '<div class="tb-top"><div class="tb-k"><b>' + v(T.at_work) + ' / ' + v(T.people) + '</b><span>at work now</span></div><div class="tb-k"><b>' + v(T.ratio_pct, '%') + '</b><span>team ratio (' + esc(PL()) + ')</span></div><div class="tb-k"><b>' + (T.ticket == null ? '—' : '₹' + esc(T.ticket)) + '</b><span>team ticket</span></div><div class="tb-k"><b style="font-size:13px">' + esc(D.mode) + '</b><span>Team manager mode</span></div></div>'
       + '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 12px"><label style="font-size:13px">Team manager mode <select id="tbMode"><option value="off">Off</option><option value="suggest">Suggest (only show)</option><option value="apply">Apply (decides who sees new chats, shows each person a card)</option></select></label><button class="btn" id="tbRun">Ask Claude now</button><span style="font-size:12px;color:var(--muted)">Last run: ' + esc(D.ran_at || 'never') + ' · runs by itself every 10 minutes</span></div>'
@@ -119,8 +120,19 @@ guardPage();
     return '<div class="kv">' + Object.keys(NM).filter((k) => B[k]).map((k) => '<span>' + NM[k] + ' (' + esc(B[k].queries) + ' queries)</span><b>' + (B[k].conversion == null ? '—' : esc(B[k].conversion) + '% ordered') + '</b>').join('') + '</div>' + (r.orders_lost_to_slow_replies ? '<div class="card-line">' + esc(r.orders_lost_to_slow_replies) + ' orders were probably lost to slow replies.</div>' : '');
   }
   function afterDraw() { const m = document.getElementById('tbMode'); if (m) m.value = D.mode; }
-  function drawer(id) {
-    const r = (D.rows || []).find((x) => x.emp_id === id); if (!r) return; openId = id; const L = D.levels || {};
+  async function drawer(id, fresh) {
+    const light = (D.rows || []).find((x) => x.emp_id === id); if (!light) return; openId = id;
+    dr.innerHTML = '<button class="x" id="drX" aria-label="Close">✕</button><h2>' + esc(light.name) + '</h2><div class="sk"></div><div class="sk" style="height:90px"></div><div class="sk" style="height:90px"></div><div class="sk" style="height:90px"></div>';
+    dr.classList.add('on'); bg.classList.add('on'); dr.setAttribute('aria-hidden', 'false');
+    try {
+      const p = { emp: id, range: PER.range }; if (PER.range === 'custom') { p.from = PER.from; p.to = PER.to; } if (fresh) p.fresh = 1;
+      const d = await api.get('team.person', p); if (openId !== id) return;
+      D.rating_labels = d.rating_labels; D.metric_days = d.metric_days; if (d.levels) D.levels = d.levels;
+      drawerRender(Object.assign({}, light, d.row));
+    } catch (e) { if (openId === id) dr.innerHTML = '<button class="x" id="drX" aria-label="Close">✕</button><h2>' + esc(light.name) + '</h2><div class="err">' + esc(e.message) + '</div>'; }
+  }
+  function drawerRender(r) {
+    const id = r.emp_id; openId = id; const L = D.levels || {};
     const sel = '<select data-set="' + id + '"><option value="auto"' + (!r.manual ? ' selected' : '') + '>Auto (Claude)</option>' + Object.keys(L).map((k) => '<option value="' + k + '"' + (r.manual === k ? ' selected' : '') + '>' + esc(L[k]) + '</option>').join('') + '</select>';
     const hold = r.auto_level === 'hold' || r.manual === 'hold';
     const kv = (a) => '<div class="kv">' + a.map((x) => '<span>' + x[0] + '</span><b>' + x[1] + '</b>').join('') + '</div>';
@@ -151,6 +163,7 @@ guardPage();
     const fb = e.target.closest('[data-f]'); if (fb) { FL[fb.dataset.f] = !FL[fb.dataset.f]; draw(); }
   });
   root.addEventListener('input', (e) => { if (e.target.id === 'flQ') { FL.q = e.target.value; const pos = e.target.selectionStart; draw(); const q = document.getElementById('flQ'); if (q) { q.focus(); q.setSelectionRange(pos, pos); } } });
+  root.addEventListener('click', (e) => { if (e.target.closest('#tbFresh')) load(true); });
   root.addEventListener('click', async (e) => { const rb = e.target.closest('#tbRun'); if (!rb || busy) return; busy = true; rb.disabled = true; rb.textContent = 'Claude is reading the team…'; try { await api.post('wq.mgr_run', {}); await load(); } catch (er) { alert(er.message); } busy = false; });
   root.addEventListener('click', (e) => {
     const tg = e.target.closest('[data-tgopen]'); if (tg) { drawer(+tg.dataset.tgopen); setTimeout(() => { const a = document.getElementById('tgA'); if (a) { a.scrollIntoView({ block: 'center' }); a.focus(); } }, 60); return; }
@@ -165,17 +178,17 @@ guardPage();
       if (tsv && (!d || a === '' || +a <= 0)) { alert('Choose the day and write the target.'); return; } if (tst && (sa === '' || +sa <= 0)) { alert('Write the daily target.'); return; }
       busy = true; try {
         if (tsv) await api.post('targets.save_daily', { date: d, employee_id: id, amount: +a }); else if (tcl) await api.post('targets.save_daily', { date: d, employee_id: id, amount: null }); else await api.post('employees.set_daily_target', { employee_id: id, amount: +sa });
-        await load(true); drawer(id);
+        await load(true); drawer(id, true);
       } catch (er) { alert(er.message); } busy = false; return;
     }
     const nb = e.target.closest('[data-nudge]'); if (nb && !busy) { busy = true; nb.disabled = true; try { await api.post('wq.pace_nudge', { emp_id: +nb.dataset.nudge }); nb.textContent = 'Nudge sent ✔'; } catch (er) { alert(er.message); nb.disabled = false; } busy = false; return; }
-    const rb = e.target.closest('[data-remark]'); if (rb && !busy) { const tx = document.getElementById('rmTx'), t = tx ? tx.value.trim() : ''; if (t.length < 3) { alert('Write the remark first.'); return; } busy = true; rb.disabled = true; try { await api.post('ct.remark_send', { employee_id: +rb.dataset.remark, text: t, src: 'rating' }); const id = openId; await load(); drawer(id); } catch (er) { alert(er.message); rb.disabled = false; } busy = false; return; }
+    const rb = e.target.closest('[data-remark]'); if (rb && !busy) { const tx = document.getElementById('rmTx'), t = tx ? tx.value.trim() : ''; if (t.length < 3) { alert('Write the remark first.'); return; } busy = true; rb.disabled = true; try { await api.post('ct.remark_send', { employee_id: +rb.dataset.remark, text: t, src: 'rating' }); const id = openId; await load(); drawer(id, true); } catch (er) { alert(er.message); rb.disabled = false; } busy = false; return; }
     const b = e.target.closest('[data-appr]'); if (!b || busy) return; busy = true;
-    try { await api.post('wq.mgr_approve', { emp_id: +b.dataset.appr, approve: +b.dataset.v }); const id = openId; await load(); drawer(id); } catch (er) { alert(er.message); } busy = false;
+    try { await api.post('wq.mgr_approve', { emp_id: +b.dataset.appr, approve: +b.dataset.v }); const id = openId; await load(); drawer(id, true); } catch (er) { alert(er.message); } busy = false;
   });
   dr.addEventListener('change', async (e) => {
     const t = e.target; if (!t.dataset.set || busy) return; busy = true;
-    try { await api.post('wq.mgr_set', { emp_id: +t.dataset.set, level: t.value }); const id = openId; await load(); drawer(id); } catch (er) { alert(er.message); } busy = false;
+    try { await api.post('wq.mgr_set', { emp_id: +t.dataset.set, level: t.value }); const id = openId; await load(); drawer(id, true); } catch (er) { alert(er.message); } busy = false;
   });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDr(); });
   buildTools(); load(); setInterval(() => { if (!document.hidden && !openId) load(); }, 120000);
