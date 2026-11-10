@@ -102,7 +102,8 @@ function wd_tick(PDO $pdo, array $opt = []): array
         }
         $res = wd_send($pdo, $c, $step);
         if ($res[0]) { $ev->execute([$r['phone'], $r['anchor'], $day, $step['tpl_id'], (int)($res[2] ?? 0), 'sent', '', date('Y-m-d H:i:s'), (string)($res[3] ?? '')]); $o['sent']++; $sent++; }
-        elseif (stripos((string)$res[1], 'room') !== false || stripos((string)$res[1], 'hour') !== false) { break; }   // no room: try again on the next tick, nothing is written
+        elseif (stripos((string)$res[1], 'No number has room') === 0 || stripos((string)$res[1], 'The chosen number has no room') === 0) { $o['why'] = (string)$res[1]; break; }   // OUR 'no room' answer: try again on the next tick, nothing is written
+        elseif (stripos((string)$res[1], 'not approved by Meta') !== false) { $o['why'] = (string)$res[1] . ' (Day ' . $day . ')'; $ev->execute([$r['phone'], $r['anchor'], $day, $step['tpl_id'], 0, 'failed', mb_substr((string)$res[1], 0, 190), date('Y-m-d H:i:s'), '']); $o['failed']++; }
         else { $ev->execute([$r['phone'], $r['anchor'], $day, $step['tpl_id'], (int)($res[2] ?? 0), 'failed', mb_substr((string)$res[1], 0, 190), date('Y-m-d H:i:s'), '']); $o['failed']++; }
     }
     $o['more'] = $sent >= $cfg['cap'] ? 1 : 0; return $o;
