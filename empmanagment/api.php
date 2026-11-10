@@ -21319,6 +21319,7 @@ switch ($action) {
     case 'teach.board_note':
     case 'teach.board_gaps':
     case 'teach.board_guide':
+    case 'teach.board_tidy':
     case 'teach.board_chats':
     case 'teach.board_suggest':
     case 'teach.facts_build':
@@ -21349,6 +21350,39 @@ switch ($action) {
         if ($action === 'teach.board') json_response($pub($B));
         if (!$cronMine && $_SERVER['REQUEST_METHOD'] !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
         $in = $cronMine ? ['force' => false] : json_input();
+        // 🧹 Tidy the open questions (only what is still ASKED; the concept, the rules, the limits and every answer already given are never touched). Preview first (apply = 0), then apply = 1 (the board is saved aside first), or undo = 1.
+        //   • a question that says the same as an earlier one (80 % of the same words) goes   • a topic whose concept the bot already understood keeps at most 3 questions, the rest go   • a topic without a concept keeps at most 8
+        //   • the whole board keeps at most 40 open questions (the ones with the most evidence stay)
+        if ($action === 'teach.board_tidy') {
+            if (!empty($in['undo'])) { $bak = json_decode((string)setting_get($pdo, 'teach_board_bak', ''), true); if (!is_array($bak) || empty($bak['body'])) json_response(['error' => 'There is no saved board to go back to.'], 404); teach_facts_set($pdo, 'ivboard', (string)$bak['body']); json_response(['ok' => true, 'undone' => true, 'saved_at' => (string)($bak['at'] ?? '')]); }
+            $words = function ($q) { $w = preg_split('/[^\p{L}\p{N}]+/u', mb_strtolower((string)$q), -1, PREG_SPLIT_NO_EMPTY); return array_values(array_unique(array_filter($w, fn($x) => mb_strlen($x) > 2))); };
+            $sim = function (array $x, array $y) { if (!$x || !$y) return 0; $i = count(array_intersect($x, $y)); $u = count(array_unique(array_merge($x, $y))); return $u ? $i / $u : 0; };
+            $before = 0; foreach ($B['topics'] as $t0) $before += count((array)($t0['open'] ?? []));
+            $kept = []; $drop = []; $keptW = [];
+            foreach ($B['topics'] as $i => $t) {
+                $open = array_values((array)($t['open'] ?? [])); $sug = (array)($t['sug'] ?? []);
+                $cap = !empty($t['concept']) ? 3 : 8; $n = 0; $new = [];
+                $score = function ($q) use ($sug) { $s0 = $sug[teach_qkey((string)$q)] ?? null; return is_array($s0) ? count((array)($s0['ids'] ?? [])) : 0; };
+                $ord = $open; usort($ord, fn($a, $b) => $score($b) <=> $score($a));   // most evidence first
+                foreach ($ord as $q) {
+                    $w = $words($q); $dup = false; foreach ($keptW as $kw) if ($sim($w, $kw) >= 0.8) { $dup = true; break; }
+                    if ($dup) { $drop[] = ['topic' => (string)($t['title'] ?? ''), 'q' => (string)$q, 'why' => 'same as another question']; continue; }
+                    if ($n >= $cap) { $drop[] = ['topic' => (string)($t['title'] ?? ''), 'q' => (string)$q, 'why' => !empty($t['concept']) ? 'the concept is already understood' : 'too many questions in this topic']; continue; }
+                    $n++; $new[] = $q; $keptW[] = $w;
+                }
+                $kept[$i] = $new;
+            }
+            $all = []; foreach ($kept as $i => $qs) foreach ($qs as $q) { $s0 = ($B['topics'][$i]['sug'] ?? [])[teach_qkey((string)$q)] ?? null; $all[] = [$i, $q, is_array($s0) ? count((array)($s0['ids'] ?? [])) : 0]; }
+            if (count($all) > 40) { usort($all, fn($a, $b) => $b[2] <=> $a[2]); foreach (array_slice($all, 40) as $x) { $drop[] = ['topic' => (string)($B['topics'][$x[0]]['title'] ?? ''), 'q' => (string)$x[1], 'why' => 'board keeps the 40 best-evidenced questions']; $kept[$x[0]] = array_values(array_filter($kept[$x[0]], fn($q) => $q !== $x[1])); } }
+            $after = 0; foreach ($kept as $qs) $after += count($qs);
+            $out = ['ok' => true, 'applied' => false, 'before' => $before, 'after' => $after, 'dropped' => $before - $after, 'sample' => array_slice($drop, 0, 40)];
+            if (!empty($in['apply']) && $before !== $after) {
+                setting_set($pdo, 'teach_board_bak', json_encode(['at' => date('Y-m-d H:i:s'), 'body' => json_encode($B, JSON_UNESCAPED_UNICODE)], JSON_UNESCAPED_UNICODE));
+                foreach ($kept as $i => $qs) $B['topics'][$i]['open'] = array_values($qs);
+                $store($B); $out['applied'] = true;
+            }
+            json_response($out);
+        }
         if ($action === 'teach.board_del') { $tid = (string)($in['tid'] ?? ''); $B['topics'] = array_values(array_filter($B['topics'], fn($t) => $t['id'] !== $tid)); $store($B); json_response(['ok' => true] + $pub($B)); }
         if ($action === 'teach.limits_del' || $action === 'teach.limits_extend') {
             $gid = (string)($in['gid'] ?? ''); $L = teach_limits_get($pdo); $n = 0;
