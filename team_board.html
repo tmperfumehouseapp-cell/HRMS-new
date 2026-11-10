@@ -143,12 +143,14 @@ guardPage();
     return '<div class="kv">' + Object.keys(NM).filter((k) => B[k]).map((k) => '<span>' + NM[k] + ' (' + esc(B[k].queries) + ' queries)</span><b>' + (B[k].conversion == null ? '—' : esc(B[k].conversion) + '% ordered') + '</b>').join('') + '</div>' + (r.orders_lost_to_slow_replies ? '<div class="card-line">' + esc(r.orders_lost_to_slow_replies) + ' orders were probably lost to slow replies.</div>' : '');
   }
   // ⚡ quick controls: the two WhatsApp Sales switches (Admin only), next to the Team manager mode
-  let QS = null, qBusy = false;
+  let QS = null, qBusy = false, QO = false;
   function drawQuick() {
     const el = document.getElementById('tbQuick'); if (!el) return;
     if (!QS || !QS.editable) { el.innerHTML = ''; return; }
     const st = QS.settings || {}, sw = (k, t) => '<label style="display:flex;align-items:center;gap:8px;font-size:13px;min-height:40px"><input type="checkbox" data-qsw="' + k + '"' + (String(st[k]) === '1' ? ' checked' : '') + (qBusy ? ' disabled' : '') + ' style="width:20px;height:20px"> ' + t + '</label>';
-    el.innerHTML = '<div style="display:flex;gap:6px 18px;flex-wrap:wrap;align-items:center;margin:0 0 12px;padding:6px 12px;border:1px solid var(--line,#e5e7eb);border-radius:12px"><b style="font-size:12px;letter-spacing:.04em;opacity:.7">WHATSAPP SALES</b>' + sw('wq_prio_on', 'Priority order in Needs you now') + sw('wq_auto_on', 'Automatic holding and second messages') + '</div>';
+    const sum = 'WhatsApp Sales: priority ' + (String(st.wq_prio_on) === '1' ? 'on' : 'off') + ' · auto ' + (String(st.wq_auto_on) === '1' ? 'on' : 'off');
+    el.innerHTML = '<details id="tbQuickD"' + (QO ? ' open' : '') + ' style="margin:0 0 12px;border:1px solid var(--line,#e5e7eb);border-radius:12px"><summary style="cursor:pointer;padding:8px 12px;font-size:12.5px;font-weight:700;list-style:none">⚙ ' + sum + ' ▾</summary><div style="display:flex;gap:4px 18px;flex-wrap:wrap;align-items:center;padding:0 12px 6px">' + sw('wq_prio_on', 'Priority order in Needs you now') + sw('wq_auto_on', 'Automatic holding and second messages') + '</div></details>';
+    const dd = document.getElementById('tbQuickD'); if (dd) dd.addEventListener('toggle', () => { QO = dd.open; });
   }
   async function loadQuick() { try { QS = await api.get('wq.settings'); } catch (e) { QS = null; } drawQuick(); drawGuide(); }
   root.addEventListener('change', async (e) => {
