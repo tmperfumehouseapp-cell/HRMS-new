@@ -46,8 +46,8 @@ function wq_log(PDO $pdo, string $info, bool $ok = true): void { if (function_ex
 function wq_defaults(): array
 {
     return ['wq_on' => '1', 'wq_auto_on' => '0', 'wq_prio_on' => '1', 'wq_hold_sec' => '20', 'wq_esc_min' => '5', 'wq_attr_days' => '7', 'wq_camp_days' => '3', 'wq_min_n' => '30', 'wq_goal_queries' => '23', 'wq_goal_orders' => '', 'wq_goal_reply_min' => '3',
-        'wq_hold_text' => "Namaste! Aapka message mil gaya hai, hamari team ka koi member yahin aapko reply karega.\nThank you for writing to TM Perfume House - our team will reply here shortly.",
-        'wq_esc_text' => "Aapko wait karna pad raha hai, maaf kijiye. Humne aapka message team ko dobara bhej diya hai.\nSorry to keep you waiting - we have passed your message to our team again.",
+        'wq_hold_text' => "Namaste! Aapka message mil gaya hai.\nThank you for writing to TM Perfume House.",
+        'wq_esc_text' => "Aapko wait karna pad raha hai, maaf kijiye. Aapka message hum dekh rahe hain.\nSorry to keep you waiting - we are looking at your message.",
         'wq_cutover' => ''];
 }
 function wq_limits(): array { return ['wq_hold_sec' => [5, 600], 'wq_esc_min' => [1, 120], 'wq_attr_days' => [1, 30], 'wq_camp_days' => [1, 30], 'wq_min_n' => [5, 500], 'wq_goal_queries' => [1, 500], 'wq_goal_reply_min' => [1, 120]]; }
@@ -1433,12 +1433,12 @@ function wq_urgent_push(PDO $pdo): int
     try {
         $rk = wq_rank_today($pdo); if (empty($rk['order'])) return 0; [$wsz, $wmin] = wq_wave_cfg($pdo);
         foreach (wq_needs($pdo, 0, false) as $x) {
-            if ($x['level'] !== 'red') continue; $ph = (string)$x['phone'];   // RED only: orange (interested) shows in the card, it does not ring phones
+            $isRed = $x['level'] === 'red'; $ph = (string)$x['phone'];   // red AND orange ring phones (the bot keeps the chat going meanwhile); somebody takes it from the list
             $stage = $x['sec'] >= $wmin * 60 ? 2 : 1; $stamp = $x['key'] . '|' . $stage; if (wq_meta_get($pdo, 'urg:' . $ph, '') === $stamp) continue; wq_meta_put($pdo, 'urg:' . $ph, $stamp);
             $bkm = wq_needs_backlog($pdo); $tg = []; foreach ($rk['order'] as $i => $e) { $top = ($i + 1) <= $wsz; if ((int)$e !== (int)$x['emp'] && empty($bkm[(int)$e]) && ($stage === 1 ? $top : !$top)) $tg[] = (int)$e; } if (!$tg) continue;   // first the best 15; after 2 minutes everybody else at work (the holder was already pushed when the chat turned hot)
             $cu = trim((string)$x['name']) !== '' ? (string)$x['name'] : '+91 ' . $ph;
-            ct_push($pdo, $tg, '🔴 Needs you now', $cu . ' wants to buy — nobody has answered yet. Take it.', '/my_chats.html?phone=' . $ph, 'wa-urg-' . $ph); $n++;
-            if ($stage === 1) wa_event($pdo, $ph, '🔴 Ready to pay — shown to the best of today first, then to everybody');
+            ct_push($pdo, $tg, $isRed ? '🔴 Needs you now' : '🟠 Needs you urgently', $cu . ($isRed ? ' wants to buy — nobody has answered yet. Take it.' : ' is interested — take it now.'), '/my_chats.html?phone=' . $ph, 'wa-urg-' . $ph); $n++;
+            if ($stage === 1) wa_event($pdo, $ph, $isRed ? '🔴 Ready to pay — shown to the best of today first, then to everybody' : '🟠 Interested — shown to the best of today first, then to everybody');
         }
         // ⏳ people who are held back by pending answers get ONE short push (at most every 30 minutes) while red / orange chats are waiting for somebody
         $pool = wq_needs($pdo, 0, false); if ($pool) { $bkm = wq_needs_backlog($pdo); $bcx = wq_needs_backlog_cx($pdo);
