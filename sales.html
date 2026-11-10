@@ -424,6 +424,7 @@
       <div class="sl-pills" id="slPills" role="tablist"></div>
       <div class="sl-sub" id="slSub"></div>
       <div class="sl-kids" id="slKids"></div>
+      <div id="wsQuick"></div>
       <div class="sl-host" id="slHost"><div class="sl-load" id="slLoad">Loading…</div></div>
       <div id="ctPane" hidden>
         <div class="ds" id="dayStrip"></div>
@@ -2350,11 +2351,42 @@
     return { sec, tab, kid, src, key: tab[0] + (kid ? ':' + kid[0] : '') };
   }
 
+  // ⚡ WhatsApp Sales switches on the Live section (Admin only): priority order, automatic holding, Team manager mode
+  const WQ = { st: null, mode: null, busy: false, loaded: false };
+  function quickDraw() {
+    const el = document.getElementById('wsQuick'); if (!el) return;
+    if (!cur || cur.sec.k !== 'live' || !WQ.st || !WQ.st.editable) { el.innerHTML = ''; return; }
+    const st = WQ.st.settings || {}, sw = (k, t) => '<label style="display:flex;align-items:center;gap:8px;font-size:13px;min-height:40px"><input type="checkbox" data-wqsw="' + k + '"' + (String(st[k]) === '1' ? ' checked' : '') + (WQ.busy ? ' disabled' : '') + ' style="width:20px;height:20px"> ' + t + '</label>';
+    const md = WQ.mode || 'suggest';
+    el.innerHTML = '<div style="display:flex;gap:4px 18px;flex-wrap:wrap;align-items:center;margin:0 0 10px;padding:6px 12px;border:1px solid var(--line,#e5e7eb);border-radius:12px;background:var(--card,#fff)"><b style="font-size:12px;letter-spacing:.04em;opacity:.7">WHATSAPP SALES</b>' + sw('wq_prio_on', 'Priority order in Needs you now') + sw('wq_auto_on', 'Automatic holding and second messages')
+      + '<label style="display:flex;align-items:center;gap:8px;font-size:13px;min-height:40px">Team manager <select data-wqmode style="min-height:36px;border-radius:8px"' + (WQ.busy ? ' disabled' : '') + '>' + [['suggest', 'Suggest only'], ['apply', 'Apply'], ['off', 'Off']].map((m) => '<option value="' + m[0] + '"' + (m[0] === md ? ' selected' : '') + '>' + m[1] + '</option>').join('') + '</select></label></div>';
+  }
+  async function quickLoad() {
+    if (WQ.loaded) { quickDraw(); return; } WQ.loaded = true;
+    try { WQ.st = await api.get('wq.settings'); } catch (e) { WQ.st = null; }
+    try { const m = await api.get('wq.mgr_get'); WQ.mode = m && m.mode; } catch (e) { WQ.mode = null; }
+    quickDraw();
+  }
+  document.addEventListener('change', async (e) => {
+    const c = e.target.closest && e.target.closest('[data-wqsw]'), m = e.target.closest && e.target.closest('[data-wqmode]'); if ((!c && !m) || WQ.busy) return;
+    try {
+      if (c) {
+        const k = c.dataset.wqsw, to = c.checked ? 1 : 0;
+        if (k === 'wq_auto_on' && to === 1 && !confirm('Automatic holding and second messages will send messages to customers on their own. Switch it on?')) { c.checked = false; return; }
+        WQ.busy = true; WQ.st = await api.post('wq.settings', { [k]: to });
+      } else {
+        if (m.value === 'apply' && !confirm('Apply mode changes who sees new chats first and can hold chats back from some people. Switch it on?')) { quickDraw(); return; }
+        WQ.busy = true; await api.post('wq.mgr_cfg', { mode: m.value }); WQ.mode = m.value;
+      }
+    } catch (er) { alert((er && er.message) || 'Could not save'); }
+    WQ.busy = false; quickDraw();
+  });
   function renderBars() {
     $('slPills').innerHTML = VIS.map(s => `<button type="button" class="sl-pill${cur && cur.sec.k === s.k ? ' on' : ''}" data-s="${s.k}" role="tab">${esc(s.t)}${s.k === 'live' && LIVE_N ? `<span class="n">${LIVE_N}</span>` : ''}</button>`).join('');
     $('slSub').innerHTML = cur ? cur.sec.tabs.map(t => `<button type="button" class="sl-tab${t[0] === cur.tab[0] ? ' on' : ''}" data-t="${t[0]}">${esc(t[1])}</button>`).join('')
       + `<span class="sp"></span><span class="sl-tools">${cur.src.indexOf(CT) === 0 ? '' : `<a id="slOpen" href="${esc(full(cur.src))}" target="_blank" rel="noopener" title="Open this page on its own">↗</a>`}</span>` : '';
     $('slKids').innerHTML = cur && cur.tab[4] && cur.tab[4].length > 1 ? cur.tab[4].map(k => `<button type="button" class="sl-kid${cur.kid && k[0] === cur.kid[0] ? ' on' : ''}" data-k="${k[0]}">${esc(k[1])}</button>`).join('') : '';
+    quickLoad();
   }
 
   let slStarted = false;   // the first tab replaces the entry; each tab opened after it is one Back step
