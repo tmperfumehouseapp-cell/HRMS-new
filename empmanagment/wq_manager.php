@@ -70,6 +70,7 @@ function wqm_enrich(PDO $pdo, array &$rows, array $mon): void
 {
     foreach ($rows as $id => &$r) {
         $v = $mon[$id]['verdict'] ?? null; $r['pace_verdict'] = is_array($v) ? (string)($v['label'] ?? $v['key'] ?? '') : null;
+        $bk = $mon[$id]['orders']['buckets'] ?? null; $r['speed_buckets'] = is_array($bk) ? $bk : null;   // conversion by reply-speed bucket: fast / mid / slow / none
         $ls = $mon[$id]['loss'] ?? null; $r['orders_lost_to_slow_replies'] = is_array($ls) ? (int)($ls['orders'] ?? 0) : null;
         $r['rating_30d'] = null; $r['rating_weak_parts'] = []; $r['benchmark_outcome'] = null; $r['rescue_taken_30d'] = null; $r['rescue_win_pct'] = null;
         $r['late_replies_today'] = null; $r['late_avg_min_today'] = null; $r['meet_admin_alerts'] = 0; $r['penalties_30d'] = 0;
