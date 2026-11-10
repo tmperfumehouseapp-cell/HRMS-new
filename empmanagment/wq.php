@@ -1365,7 +1365,7 @@ function wq_needs(PDO $pdo, int $me, bool $waves = true): array
             foreach ($rows as $r) {
                 $ph = (string)$r['phone']; $body = (string)($last[$ph] ?? ''); if (isset($dis[$ph . '|' . wq_ts($r['last_in_at'])])) continue;   // somebody marked it "not a real lead"
                 if (isset($ordered[substr(preg_replace('/\D/', '', $ph), -10)])) continue;   // the customer has ordered
-                if ((int)$r['assigned_emp'] > 0 && (int)$r['seen_msg_id'] > 0 && (int)$r['seen_msg_id'] >= (int)($lastId[$ph] ?? PHP_INT_MAX)) continue;   // the person who has the chat has opened it and read the message: it is taken
+                if ((int)$r['assigned_emp'] > 0 && (int)$r['seen_msg_id'] > 0 && (int)$r['seen_msg_id'] >= (int)($lastId[$ph] ?? PHP_INT_MAX) && $now - max(wq_ts($r['assigned_at'] ?? ''), wq_ts($r['last_in_at'])) < 180) continue;   // taken and read: theirs for 3 minutes; with no real answer after that it goes back to the list for the others   // the person who has the chat has opened it and read the message: it is taken
 
                 $rd = function_exists('wag_read') ? wag_read(['last_in_at' => $r['last_in_at'], 'last_body' => $body, 'last_dir' => 'in'], true, true, (int)$r['hot'] === 1, false, 0, $now) : ['i' => ''];
                 $lv = (string)($rd['i'] ?? ''); $wv = wq_ts($r['last_in_at']);
@@ -1399,7 +1399,7 @@ function wq_needs(PDO $pdo, int $me, bool $waves = true): array
         $own = $me > 0 && (int)$x['emp'] === $me;
         if (!$own && $waves && $me > 0 && (int)($raw['backlog'][$me] ?? 0) > 0) continue;   // answers of theirs are still pending: no new red / orange for them
         if (!$own && $waves && $me > 0 && ($now - (int)($x['wv'] ?? $x['in'])) < $wmin * 60) { if (!isset($rkT['rank'][$me]) || $rkT['rank'][$me] > $wsz || !empty($rkT['skip'][$me])) continue; }   // first minutes: only people at work who sell well (not absent, not a poor converter); everybody present sees it after that   // first 2 minutes: the best 15 (today's speed mixed with the month's performance) see red and orange chats; everybody sees them after that
-        if (!$own && (int)$x['emp'] > 0 && (int)$x['at'] > $now - 120) continue;   // somebody just took it: they get their own 2 minutes
+        if (!$own && (int)$x['emp'] > 0 && (int)$x['at'] > $now - 180) continue;   // somebody just took it: they get their own 3 minutes
         $o[] = ['phone' => $x['phone'], 'name' => $x['name'], 'level' => $x['level'], 'own' => $own, 'holder' => (int)$x['emp'] > 0 ? wq_name($names, (int)$x['emp']) : '', 'sec' => max(0, $now - (int)$x['in']), 'txt' => $x['txt'], 'why' => $x['why'], 'emp' => (int)$x['emp'], 'key' => md5((int)$x['in'] . '|' . (int)$x['emp'] . '|' . (int)$x['at'])];
     }
     usort($o, fn($a, $b) => ($a['level'] === $b['level'] ? 0 : ($a['level'] === 'red' ? -1 : 1)) ?: $b['sec'] <=> $a['sec']);
@@ -1484,7 +1484,7 @@ function wq_need_take(PDO $pdo, string $phone, int $me): array
     $in = wq_ts($c['last_in_at'] ?? ''); if ($in <= 0 || wq_now() - $in > 86400) return ['error' => 'The 24-hour window of this chat has closed.'];
     $q = $pdo->prepare("SELECT 1 FROM wa_messages h WHERE h.phone = ? AND h.dir = 'out' AND (h.emp_id > 0 OR h.who IN ('emp', 'phone')) AND h.ts >= ? AND (h.mtype IN ('image', 'video', 'audio', 'document', 'template', 'interactive') OR CHAR_LENGTH(TRIM(COALESCE(h.body, ''))) >= 30) LIMIT 1"); $q->execute([$phone, wq_dt($in)]); if ($q->fetchColumn()) return ['error' => 'A person has already answered this customer.'];
     $from = (int)$c['assigned_emp'];
-    if ($from > 0 && wq_ts($c['assigned_at'] ?? '') > wq_now() - 120) return ['error' => wq_name(wq_names($pdo), $from) . ' just took this chat — give them 2 minutes.'];
+    if ($from > 0 && wq_ts($c['assigned_at'] ?? '') > wq_now() - 180) return ['error' => wq_name(wq_names($pdo), $from) . ' just took this chat — give them 3 minutes.'];
     $mineN = 0; $isRed = false; foreach (wq_needs($pdo, $me, false) as $x) { if (!empty($x['own'])) $mineN++; if ((string)$x['phone'] === $phone && $x['level'] === 'red') $isRed = true; }
     $maxN = wq_get($pdo, 'wq_need_max', null); $maxN = ($maxN !== null && (int)$maxN > 0) ? min(50, (int)$maxN) : 6;   // default 6 waiting customers per person (setting wq_need_max)
     if ($mineN >= $maxN && !$isRed) return ['error' => 'You already have ' . $mineN . ' customers waiting for your answer — answer them first, then take another. (A customer who is ready to pay can always be taken.)'];   // the limit holds for ORANGE chats only: an order waiting is never left because someone is full
