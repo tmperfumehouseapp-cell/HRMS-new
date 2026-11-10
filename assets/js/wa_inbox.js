@@ -185,7 +185,7 @@
   @media (min-width:761px){ .wi-sh{align-items:center;} .wi-shb{border-radius:18px; max-height:80vh;} }
   @media (max-width:1100px){ .wi-box,.wi.mine .wi-box{grid-template-columns:300px minmax(0,1fr);} .wi-col.side{display:none;} .wi.det .wi-col.side{display:flex; position:fixed; inset:0; z-index:50; background:#fff;} .wi-more{display:inline-block;} }
   /* live colour of a chat row (wa_heat): very light, with a thin left edge so it reads at a glance */
-  .wi-it.h-hot{background:#effbf3; box-shadow:inset 3px 0 0 #22c55e;} .wi-it.h-late{background:#fff8e6; box-shadow:inset 3px 0 0 #f59e0b;} .wi-it.h-active{background:#f3f8ff; box-shadow:inset 3px 0 0 #60a5fa;}
+  .wi-it.h-hot{background:#effbf3; box-shadow:inset 3px 0 0 #22c55e;} .wi-it.h-orange{background:#fff1e0; box-shadow:inset 3px 0 0 #f97316;} .wi-it.h-late{background:#fff8e6; box-shadow:inset 3px 0 0 #f59e0b;} .wi-it.h-active{background:#f3f8ff; box-shadow:inset 3px 0 0 #60a5fa;}
   .wi-it.h-slow{background:#f6f7f9; box-shadow:inset 3px 0 0 #c4c9d1;} .wi-it.h-cx{background:#f7f4ff; box-shadow:inset 3px 0 0 #a78bfa;} .wi-it.h-biz{background:#f1f1f1; box-shadow:inset 3px 0 0 #9ca3af; opacity:.8;}
   .wi-lg{display:flex; gap:10px; flex-wrap:wrap; padding:6px 12px; font-size:11.5px; color:#6b7684; border-bottom:1px solid #eef0f3;} .wi-lg i{display:inline-block; width:9px; height:9px; border-radius:3px; margin-right:4px; vertical-align:-1px;}
   .wi-p.biz{background:#ececec; color:#4b5563;}

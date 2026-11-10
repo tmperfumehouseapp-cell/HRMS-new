@@ -431,7 +431,7 @@
     const loadK = async () => {
       KP.innerHTML = '<div class="wp-card" style="margin-bottom:10px"><div class="wp-sub">Counting orders from follow-ups…</div></div>';
       const g = async (a, p) => { try { return await api.get(a, p); } catch (e) { return null; } };
-      const [jr, rs] = await Promise.all([g('fu.jn_results', { days: kd }), g('wq.rescue_list', { days: kd, status: 'won' })]);
+      const [jr, rs] = await Promise.all([g('fu.wj_jresults', { days: kd }).then((r) => r || g('fu.jn_results', { days: kd })), g('wq.rescue_list', { days: kd, status: 'won' })]);
       const A = (jr && jr.lane_total) || {}, J = (jr && jr.buyer_total) || {}, ap = jr, wj = jr, R = (rs && rs.summary) || {};
       const tile = (ic, name, n, s, sub) => '<div style="flex:1 1 150px;border:1px solid var(--line,#e6e8ef);border-radius:12px;padding:10px 12px;background:#fff"><div style="font-size:12px;color:#64748b;font-weight:700">' + ic + ' ' + name + '</div><div style="font-size:24px;font-weight:800;letter-spacing:-.02em">' + (n == null ? '—' : n) + ' <span style="font-size:13px;font-weight:700;color:#64748b">orders</span></div><div style="font-size:12.5px;color:#475569">' + (s == null ? '' : inr(s) + ' · ') + sub + '</div></div>';
       KP.innerHTML = '<div class="wp-card" style="margin-bottom:10px"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px"><b style="font-size:15px">🎯 Orders from follow-ups</b><span style="flex:1"></span><button type="button" id="fuKnows" class="wp-btn" title="What Claude reads before it writes a message">🧠 What Claude knows</button>'
@@ -469,7 +469,7 @@
     draw();
     return () => { const f = re[cur]; if (typeof f === 'function') f(); };
   };
-  // 🧭 Automatic messages live in ONE place each (no second editor here): follow-ups → Automation → Follow-ups · complaints → Complaints → Settings
+  // 🧭 Automatic messages live in ONE place each (no second editor here): follow-ups → Autobot → Follow-ups · complaints → Complaints → Settings
   P.automsgs = (el) => { el.innerHTML = '<div class="wp-card"><h3 style="margin:0 0 6px">Automatic messages</h3><div class="wp-sub" style="margin-bottom:10px">Each automatic message has one home, so there is never a second copy to keep in step.</div>'
       + '<div class="wp-row" style="flex-wrap:wrap;gap:8px"><a class="wp-btn p" href="whatsapp.html#followups" target="_top">🔁 Follow-up &amp; offer messages</a><a class="wp-btn p" href="complaints.html?tab=settings&amp;go=msgs" target="_top">🎫 Complaint messages (photo &amp; words)</a><a class="wp-btn" href="whatsapp.html#orderupd" target="_top">📦 Order update messages</a></div></div>'; };
   P.fumsgs = P.automsgs; P.cxmsgs = P.automsgs;   // old saved tabs open the same page

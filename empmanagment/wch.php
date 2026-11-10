@@ -1113,6 +1113,61 @@ function wch_send_cta(PDO $pdo, array $c, string $body, string $btn, string $url
     if ($code >= 200 && $code < 300 && $wamid !== '') { wch_store_out($pdo, $wamid, $c, 'interactive', $body . "\n[" . $btn . ']', '', '', $who, $emp); return [true, $wamid]; }
     return wa_send_text($pdo, $c, $body . "\n" . $url, $who, $emp);
 }
+// ------------------------------------------------------------------------------------------------------------------ photo-on-top (IMAGE header) versions of the cart / order messages
+/** Name of the photo version of a template message: "<template>_img". */
+function wch_img_name(array $d): string { return $d['tpl'] !== '' ? $d['tpl'] . '_img' : ''; }
+function wch_img_id(PDO $pdo, string $name): int { try { $q = $pdo->prepare("SELECT id FROM wa_templates WHERE name = ? AND language = 'en'"); $q->execute([$name]); return (int)$q->fetchColumn(); } catch (Throwable $e) { return 0; } }
+/** Messages that are template messages and have a library photo chosen: [key => photo library id]. */
+/** A message whose photo is only a web link (no media-library photo) cannot be a photo-on-top message: the link is downloaded ONCE into the media library and the message then uses that library photo. Returns the library id (0 = could not). */
+function wch_photo_import(PDO $pdo, string $k, string $url): int
+{
+    try {
+        if (!preg_match('#^https://#i', $url) || !function_exists('wa_lib_dir') || !function_exists('curl_init')) return 0;
+        $u = function_exists('wch_img') ? wch_img($url) : $url; $ch = curl_init($u); curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_FOLLOWLOCATION => true, CURLOPT_TIMEOUT => 20, CURLOPT_CONNECTTIMEOUT => 6, CURLOPT_MAXFILESIZE => 5000000]);
+        $raw = curl_exec($ch); $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); curl_close($ch); if ($raw === false || $code < 200 || $code >= 300 || strlen((string)$raw) > 5000000) return 0;
+        $gi = @getimagesizefromstring((string)$raw); if (!$gi || !in_array($gi[2], [IMAGETYPE_JPEG, IMAGETYPE_PNG], true)) return 0;
+        $ext = $gi[2] === IMAGETYPE_PNG ? 'png' : 'jpg'; $mime = $gi[2] === IMAGETYPE_PNG ? 'image/png' : 'image/jpeg';
+        $dir = wa_lib_dir(); if (!is_dir($dir) || !is_writable($dir)) return 0; $stored = 'msg_' . preg_replace('/[^a-z0-9_]/i', '', $k) . '_' . date('Ymd_His') . '.' . $ext; if (@file_put_contents($dir . '/' . $stored, $raw) === false) return 0;
+        $pdo->prepare("INSERT INTO wa_media_lib (title, kind, mime, filename, size, path, mids, created_by, created_at) VALUES (?, 'image', ?, ?, ?, ?, '{}', 0, ?)")->execute(['Message photo · ' . $k, $mime, $stored, strlen((string)$raw), $stored, date('Y-m-d H:i:s')]);
+        $id = (int)$pdo->lastInsertId(); if ($id > 0) $pdo->prepare("UPDATE wch_msg SET photo_lib_id = ? WHERE mkey = ?")->execute([$id, $k]); return $id;
+    } catch (Throwable $e) { return 0; }
+}
+function wch_img_cfg(PDO $pdo): array
+{
+    $o = []; foreach (wch_msg_all_defs() as $k => $d) {
+        if (($d['mode'] ?? '') !== 'template' || ($d['tpl'] ?? '') === '' || in_array($k, wch_msg_no_photo(), true)) continue; $r = wch_msg_row($pdo, $k);
+        $lib = (int)$r['photo_lib_id']; if ($lib <= 0 && trim((string)$r['photo_url']) !== '' && (int)wch_get_state($pdo, 'imp_' . $k) < time() - 86400) { wch_put_state($pdo, 'imp_' . $k, (string)time()); $lib = wch_photo_import($pdo, $k, trim((string)$r['photo_url'])); }   // a photo that is only a link: put it in the media library once (tried once a day)
+        if ($lib > 0) $o[$k] = $lib;
+    }
+    return $o;
+}
+function wch_get_state(PDO $pdo, string $k): string { try { return (string)setting_get($pdo, 'wch_photo_' . $k, '0'); } catch (Throwable $e) { return '0'; } }
+function wch_put_state(PDO $pdo, string $k, string $v): void { try { setting_set($pdo, 'wch_photo_' . $k, $v); } catch (Throwable $e) { } }
+function wch_img_sig(PDO $pdo): string { try { return md5(json_encode(wch_img_cfg($pdo))); } catch (Throwable $e) { return ''; } }
+/** Makes the photo version of one message (if missing) and sends it to every WhatsApp account that does not have it. The photo itself is taken per send, so a new photo needs no new approval. [ok, text] */
+function wch_img_make(PDO $pdo, string $k): array
+{
+    $d = wch_msg_all_defs()[$k] ?? null; if (!$d || $d['mode'] !== 'template' || $d['tpl'] === '') return [false, 'Not a template message.']; if (in_array($k, wch_msg_no_photo(), true)) return [false, 'This message goes with its own picture, so it gets no photo on top.'];
+    $lib = (int)wch_msg_row($pdo, $k)['photo_lib_id']; if ($lib <= 0) return [false, 'No photo from the media library is chosen.'];
+    if (!function_exists('wa_tpl_tables') || !function_exists('wa_tpl_clean') || !function_exists('wa_tpl_insert') || !function_exists('wa_tpl_create_at') || !wa_tpl_tables($pdo)) return [false, 'The template module is not available.'];
+    $name = wch_img_name($d); $id = wch_img_id($pdo, $name); $exv = wch_msg_examples();
+    if (!$id) {
+        [$body, $names] = wch_tpl_convert(wch_msg_text($pdo, $k, true));
+        [$t, $err] = wa_tpl_clean(['name' => $name, 'language' => 'en', 'category' => 'UTILITY', 'header_format' => 'IMAGE', 'header_lib_id' => $lib, 'body' => $body, 'footer' => 'TM Perfume House', 'buttons' => [], 'examples' => ['body' => array_map(function ($n) use ($exv) { return (string)($exv[$n] ?? 'x'); }, $names), 'labels' => $names], 'folder' => 'Cart and bill']);
+        if ($err === '' && function_exists('wa_tpl_media_check')) $err = wa_tpl_media_check($pdo, $t); if ($err !== '') return [false, $err];
+        $id = wa_tpl_insert($pdo, $t, 0, 'Message about the customer\'s own cart / order / bill with a photo on top (' . $d['title'] . ').', 'Utility message about one cart or order, with a photo.');
+    }
+    $r = wa_tpl_row($pdo, $id); if (!$r) return [false, 'Could not read the saved template.'];
+    $wabas = function_exists('wa_wabas') ? wa_wabas($pdo) : []; if (!$wabas) return [true, 'Saved. It will go to Meta when a WhatsApp Business Account ID is added.'];
+    $have = []; $hq = $pdo->prepare("SELECT waba_id FROM wa_tpl_waba WHERE tpl_id = ?"); $hq->execute([$id]); foreach ($hq->fetchAll() as $h) $have[(string)$h['waba_id']] = 1;
+    $sent = 0; $errs = []; foreach ($wabas as $w) { if (isset($have[$w])) continue; [$ok, $why] = wa_tpl_create_at($pdo, $r, $w); if ($ok) $sent++; else $errs[] = $why; }
+    if ($errs) return [false, (string)$errs[0]]; return [true, $sent ? 'Sent to Meta for approval.' : 'Already at Meta.'];
+}
+function wch_photo_reconcile(PDO $pdo): array
+{
+    $o = []; foreach (wch_img_cfg($pdo) as $k => $lib) { try { [$ok, $m] = wch_img_make($pdo, $k); $o[$k] = ($ok ? 'ok · ' : 'failed · ') . $m; } catch (Throwable $e) { $o[$k] = 'error · ' . $e->getMessage(); } }
+    return $o;
+}
 /** One approved template to the customer, outside the 24h window (same path as the order-update messages). [ok, wamid|error] */
 function wch_send_template(PDO $pdo, array $c, string $key, array $vars): array
 {
@@ -1120,7 +1175,10 @@ function wch_send_template(PDO $pdo, array $c, string $key, array $vars): array
     if (!function_exists('wa_camp_tpl') || !function_exists('wa_camp_ctx') || !function_exists('wa_pick_number') || !function_exists('wa_camp_request')) return [false, 'The template sender is not available.'];
     $r = wch_msg_row($pdo, $key); $id = (int)$r['tpl_id']; if ($id <= 0) { $q = $pdo->prepare("SELECT id FROM wa_templates WHERE name = ? AND language = 'en'"); $q->execute([$d['tpl']]); $id = (int)$q->fetchColumn(); }
     if ($id <= 0) return [false, 'The template "' . $d['tpl'] . '" has not been created yet (Learn & Setup > Messages > Submit).'];
-    $t = wa_camp_tpl($pdo, $id); if (!$t) return [false, 'The template "' . $d['tpl'] . '" is not approved yet.'];
+    $t = wa_camp_tpl($pdo, $id);
+    $lib = in_array($key, wch_msg_no_photo(), true) ? 0 : (int)$r['photo_lib_id'];   // 📸 a photo is chosen: the photo-on-top version goes once Meta approved it; until then the plain template
+    if ($lib > 0) { $iid = wch_img_id($pdo, wch_img_name($d)); $ti = $iid ? wa_camp_tpl($pdo, $iid, true, $lib) : null; if ($ti) $t = $ti; }
+    if (!$t) return [false, 'The template "' . $d['tpl'] . '" is not approved yet.'];
     $vals = []; foreach ($d['tpl_vars'] as $n) $vals[] = trim((string)preg_replace('/\s+/', ' ', (string)($vars[$n] ?? '')));
     $ctx = wa_camp_ctx($pdo, $t, 99); [$nid, $why] = wa_pick_number($pdo, $c, $ctx); if ($nid === 0) return [false, 'No WhatsApp number can send this right now (' . $why . ').'];
     [$ok, $req] = wa_camp_request($pdo, $t, $ctx['nums'][$nid], (string)($c['wa_id'] ?: '91' . $c['phone']), $vals, []); if (!$ok) return [false, (string)$req];
@@ -1921,8 +1979,15 @@ function wch_msg_item(PDO $pdo, string $key, array $d, array $wabas): array
     } elseif ($d['mode'] === 'existing') $status = 'missing';
     $labels = ['written' => $d['mode'] === 'template' ? 'Written - needs a template for the closed window (press Submit)' : 'Written - sent as a normal message inside the 24h window', 'submitted' => 'Template sent to Meta, waiting for approval', 'approved' => 'Template approved', 'rejected' => 'Template rejected by Meta - edit the text and submit again',
         'changed' => 'Text changed after the template was sent - submit again', 'existing' => 'Already exists in the order-update module (reused)', 'missing' => 'Not created yet - Dispatch > Needs attention > Create the 5 templates'];
-    return ['key' => $key, 'title' => $d['title'], 'when' => $d['when'], 'mode' => $d['mode'], 'source' => $d['source'], 'text' => $text, 'default_text' => $d['text'], 'tpl_text' => $ttext, 'default_tpl_text' => $d['tpl_text'], 'photo_url' => (string)($row['photo_url'] ?? ''), 'photo_lib_id' => (int)($row['photo_lib_id'] ?? 0),
-        'edited' => $edited, 'photo_supported' => $d['mode'] !== 'existing' && !in_array($key, wch_msg_no_photo(), true), 'vars' => $d['vars'], 'tpl_vars' => $d['tpl_vars'], 'template' => $tpl, 'status' => $status, 'status_label' => $labels[$status] ?? $status, 'note' => $d['note'], 'automatic' => (bool)$d['trigger']];
+    // 📷 the photo-on-top version of this message at Meta (made automatically when a library photo is chosen) — shown next to the status
+    $ptpl = null; $plabel = '';
+    if (($d['mode'] ?? '') === 'template' && ($d['tpl'] ?? '') !== '' && !in_array($key, wch_msg_no_photo(), true) && (int)($row['photo_lib_id'] ?? 0) + (trim((string)($row['photo_url'] ?? '')) !== '' ? 1 : 0) > 0) {
+        $pid = wch_img_id($pdo, wch_img_name($d)); $ps = $pid && function_exists('wa_tpl_status') ? wa_tpl_status($pdo, $pid, $wabas) : ['status' => 'missing', 'reason' => '']; $pst = (string)$ps['status'];
+        $ptpl = ['name' => wch_img_name($d), 'id' => $pid ?: null, 'status' => $pst, 'reason' => (string)($ps['reason'] ?? '')];
+        $plabel = ' · 📷 Photo version: ' . ($pid <= 0 ? (int)($row['photo_lib_id'] ?? 0) > 0 ? 'will be sent to Meta in a minute' : 'the photo link is being put in the media library, then it goes to Meta' : (in_array($pst, ['approved', 'partial'], true) ? 'approved — this one goes now' : ($pst === 'rejected' ? 'rejected by Meta' . ($ps['reason'] ? ' (' . mb_substr((string)$ps['reason'], 0, 80) . ')' : '') . ' — the plain message keeps going' : 'sent to Meta, waiting for approval — the plain message goes meanwhile')));
+    }
+    return ['photo_template' => $ptpl, 'key' => $key, 'title' => $d['title'], 'when' => $d['when'], 'mode' => $d['mode'], 'source' => $d['source'], 'text' => $text, 'default_text' => $d['text'], 'tpl_text' => $ttext, 'default_tpl_text' => $d['tpl_text'], 'photo_url' => (string)($row['photo_url'] ?? ''), 'photo_lib_id' => (int)($row['photo_lib_id'] ?? 0),
+        'edited' => $edited, 'photo_supported' => $d['mode'] !== 'existing' && !in_array($key, wch_msg_no_photo(), true), 'vars' => $d['vars'], 'tpl_vars' => $d['tpl_vars'], 'template' => $tpl, 'status' => $status, 'status_label' => ($labels[$status] ?? $status) . $plabel, 'note' => $d['note'], 'automatic' => (bool)$d['trigger']];
 }
 function wch_messages(PDO $pdo): array
 {
@@ -1950,6 +2015,7 @@ function wch_message_save(PDO $pdo, string $key, array $in, int $by): array
     if (array_key_exists('photo_lib_id', $in)) $lib = max(0, (int)$in['photo_lib_id']);
     $pdo->prepare("INSERT INTO wch_msg (mkey, text, tpl_text, photo_url, photo_lib_id, updated_by, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE text = VALUES(text), tpl_text = VALUES(tpl_text), photo_url = VALUES(photo_url), photo_lib_id = VALUES(photo_lib_id), updated_by = VALUES(updated_by), updated_at = VALUES(updated_at)")
         ->execute([$key, $text, $tt, $url, $lib, $by, wch_dt()]);
+    if ($lib > 0 && ($d['mode'] ?? '') === 'template') { try { wch_img_make($pdo, $key); } catch (Throwable $e) { } }   // a photo was chosen: its photo-on-top message goes to Meta now
     $wabas = function_exists('wa_wabas') ? wa_wabas($pdo) : []; return [true, wch_msg_item($pdo, $key, $d, $wabas), 200];
 }
 /** Creates the template(s) and sends them to every WhatsApp account (same path as the order-update templates). */

@@ -215,7 +215,7 @@ function wmo_notify(PDO $pdo, array $r, array $cust): void
     if (function_exists('dp_dsp_sync')) { try { dp_dsp_sync($pdo, time(), true); } catch (Throwable $e) { } }       // the parcel appears in Dispatch now, not in three minutes
     $c = function_exists('wa_contact') ? wa_contact($pdo, $key) : null;
     if ($c) {
-        // the customer gets the ready-made "Order received" message of WhatsApp -> Automation -> Order updates (wa_done_mark sends it); shipped / out for delivery / delivered follow from Dispatch by themselves
+        // the customer gets the ready-made "Order received" message of WhatsApp -> Autobot -> Order updates (wa_done_mark sends it); shipped / out for delivery / delivered follow from Dispatch by themselves
         if (function_exists('wa_done_mark')) { try { wa_done_mark($pdo, $key, (int)$r['assign_emp'], 'manual', (string)$r['order_no']); } catch (Throwable $e) { error_log('wmo done: ' . $e->getMessage()); } }
         if (function_exists('wa_event')) { try { wa_event($pdo, $key, '🧾 Manual order ' . $r['order_no'] . ' confirmed by the customer — ' . wmo_rs((int)$r['total_p']) . ((int)$r['cod_p'] > 0 ? ' (COD ' . wmo_rs((int)$r['cod_p']) . ')' : ' (prepaid)') . ((int)$cust['match'] === 1 ? '' : ' · ⚠ the mobile number written is different from this chat')); } catch (Throwable $e) { } }
         $note = wmo_invoice($pdo, $r, $cust, 0); if (function_exists('wa_event')) { try { wa_event($pdo, $key, '🧾 ' . $note); } catch (Throwable $e) { } }
@@ -390,6 +390,22 @@ if (strpos($__wmo, 'wmo.') === 0) {
     $chat = function () use ($pdo, $auth, $in) { $k = wmo_phone10($in['phone'] ?? ''); $c = strlen($k) === 10 && function_exists('wa_contact') ? wa_contact($pdo, $k) : null; if (!$c) json_response(['error' => 'Chat not found.'], 404); if (function_exists('wa_can_chat') && !wa_can_chat($pdo, $auth, $c)) json_response(['error' => 'This chat is assigned to someone else.'], 403); return $c; };
     $mine = function () use ($pdo, $auth, $in) { $q = $pdo->prepare("SELECT * FROM wmo_order WHERE id = ?"); $q->execute([(int)($in['id'] ?? 0)]); $r = $q->fetch(); if (!$r) json_response(['error' => 'Order not found.'], 404); $c = wa_contact($pdo, (string)$r['phone']); if ($c && function_exists('wa_can_chat') && !wa_can_chat($pdo, $auth, $c)) json_response(['error' => 'This chat is assigned to someone else.'], 403); return $r; };
     switch ($__wmo) {
+        case 'wmo.start': {   // sidebar "Manual order": a customer who is not in HRMS yet → make the chat record (held by the salesperson), then the normal manual-order sheet opens on it
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $k = wmo_phone10($in['phone'] ?? '');
+            if (strlen($k) !== 10) json_response(['error' => 'Enter the 10-digit customer mobile number.'], 422);
+            $c = wa_contact($pdo, $k);
+            if (!$c) {
+                $pdo->prepare("INSERT INTO wa_contacts (phone, wa_id, name, first_seen, state, status, source) VALUES (?, ?, ?, ?, 'unassigned', 'open', '')")->execute([$k, '91' . $k, mb_substr(trim((string)($in['name'] ?? '')), 0, 120), date('Y-m-d H:i:s')]);
+                $e = (int)($auth['employee_id'] ?? 0);
+                if ($e > 0) { try { $pdo->prepare("UPDATE wa_contacts SET assigned_emp = ?, state = 'human' WHERE phone = ?")->execute([$e, $k]); } catch (Throwable $ex) { } }
+                $c = wa_contact($pdo, $k);
+            } elseif (function_exists('wa_can_chat') && !wa_can_chat($pdo, $auth, $c)) {
+                $e = (int)($auth['employee_id'] ?? 0);
+                if ((int)($c['assigned_emp'] ?? 0) <= 0 && $e > 0) { try { $pdo->prepare("UPDATE wa_contacts SET assigned_emp = ?, state = 'human' WHERE phone = ?")->execute([$e, $k]); } catch (Throwable $ex) { } }
+                else json_response(['error' => 'This customer is already with another salesperson.'], 403);
+            }
+            json_response(['ok' => true, 'phone' => $k, 'name' => (string)($c['name'] ?? '')]);
+        }
         case 'wmo.shot_read': {
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $mime = strtolower((string)($in['mime'] ?? 'image/jpeg')); $b64 = preg_replace('/^data:[^,]*,/', '', (string)($in['image'] ?? ''));
             if (!in_array($mime, ['image/jpeg', 'image/png', 'image/webp'], true) || $b64 === '' || strlen($b64) > 6000000 || base64_decode($b64, true) === false) json_response(['error' => 'Send a JPG, PNG or WebP screenshot under 4 MB.'], 422);

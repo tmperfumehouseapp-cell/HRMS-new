@@ -738,7 +738,7 @@
     if (S.tab === 'test') scrollChat();
     if (S.tab === 'store') storeMount();
     if (S.tab === 'products' || S.tab === 'billing' || S.tab === 'cmsg') wchMount();
-    if (S.tab === 'fu') { const el = document.getElementById('lxFu'); if (el) el.innerHTML = '<div class="lx-card" style="padding:16px"><h3 style="margin:0 0 6px">🔁 Follow-up Autopilot</h3><div class="sub" style="margin-bottom:12px">The follow-ups, offers, festival box and their messages have one home: WhatsApp → Automation → Follow-ups. What you teach there goes into the same brain as Teach the bot.</div><a class="lx-btn p" href="whatsapp.html#followups" target="_top" style="display:inline-block;text-decoration:none">Open the Follow-up Autopilot</a></div>'; }   // 🔁 one home (no second copy here)
+    if (S.tab === 'fu') { const el = document.getElementById('lxFu'); if (el) el.innerHTML = '<div class="lx-card" style="padding:16px"><h3 style="margin:0 0 6px">🔁 Follow-up Autopilot</h3><div class="sub" style="margin-bottom:12px">The follow-ups, offers, festival box and their messages have one home: WhatsApp → Autobot → Follow-ups. What you teach there goes into the same brain as Teach the bot.</div><a class="lx-btn p" href="whatsapp.html#followups" target="_top" style="display:inline-block;text-decoration:none">Open the Follow-up Autopilot</a></div>'; }   // 🔁 one home (no second copy here)
     if (S.tab === 'lists') { const go = () => { const el = document.getElementById('lxLists'); if (el && window.WaLists) WaLists.manage(el); }; if (window.WaLists) go(); else { const sc = document.createElement('script'); sc.src = 'assets/js/wa_lists_ui.js?v=l10'; sc.onload = go; document.head.appendChild(sc); } }
     setTimeout(sugKick, 50);
   }

@@ -703,14 +703,14 @@ function wa_ord_seed_templates(PDO $pdo, array $opt = []): array
 function wo_photo_cfg(PDO $pdo): array
 {
     $c = json_decode(wo_get($pdo, 'wa_ord_photo', ''), true); $o = []; if (!is_array($c)) return $o;
-    foreach (wo_send_defs() as $k => $d) if ($k !== 'received' && (int)($c[$k] ?? 0) > 0) $o[$k] = (int)$c[$k];
+    foreach (wo_send_defs() as $k => $d) if ((int)($c[$k] ?? 0) > 0) $o[$k] = (int)$c[$k];   // every message may carry a photo on top, the order-received one too (owner, 10 Nov)
     // the same message can also have its photo set in the chat-messages screen (wch_msg): one connected system, so that photo counts here too
-    if (function_exists('wch_msg_row')) foreach (['shipped' => 'order_shipped', 'out_for_delivery' => 'order_ofd', 'delivered' => 'order_delivered', 'delayed' => 'order_delayed', 'failed' => 'delivery_failed'] as $st => $mk) {
+    if (function_exists('wch_msg_row')) foreach (['received' => 'order_confirmed', 'shipped' => 'order_shipped', 'out_for_delivery' => 'order_ofd', 'delivered' => 'order_delivered', 'delayed' => 'order_delayed', 'failed' => 'delivery_failed'] as $st => $mk) {
         if (isset($o[$st])) continue; try { $r = wch_msg_row($pdo, $mk); if ((int)($r['photo_lib_id'] ?? 0) > 0) $o[$st] = (int)$r['photo_lib_id']; } catch (Throwable $e) { }
     }
     return $o;
 }
-function wo_photo_name(string $status): string { $d = wo_send_defs(); return isset($d[$status]) && $status !== 'received' ? $d[$status][0] . '_photo' : ''; }
+function wo_photo_name(string $status): string { $d = wo_send_defs(); return isset($d[$status]) ? $d[$status][0] . '_photo' : ''; }
 /** Makes the photo version of one message (if missing) and sends it to Meta. Returns [ok, text]. */
 function wo_photo_make(PDO $pdo, string $status, int $libId): array
 {
@@ -733,6 +733,32 @@ function wo_photo_make(PDO $pdo, string $status, int $libId): array
     return [true, $sent ? 'Sent to Meta for approval.' : 'Already at Meta.'];
 }
 
+/** 📷 ONCE (owner, 10 Nov: "think about everything and get photo messages approved"): the messages that have NO photo yet get the brand picture that fits them, so every kind of message also exists as a photo-on-top message at Meta.
+ *  Same spirit as the complaint messages: calm, friendly moments get a picture; the annoying ones (delay, failed delivery, late dispatch, payment failed, cancelled) stay plain. A message the owner already gave a photo, or whose photo was
+ *  taken off on purpose before this ran, is never touched. Picture = the Customer Care banner ("care") or the Thank-you image ("thanks") of the complaint module. Returns what was set. */
+function wo_photo_defaults_once(PDO $pdo): array
+{
+    $o = []; if (wo_get($pdo, 'wa_ord_photo_defaulted', '') !== '') return $o;
+    if (!function_exists('cx8_lib_default')) return $o;   // the complaint module (home of the two brand pictures) is not loaded: try again later
+    $care = (int)cx8_lib_default($pdo, 'care'); $thanks = (int)cx8_lib_default($pdo, 'thanks'); if ($care <= 0 || $thanks <= 0) return $o;
+    wo_put($pdo, 'wa_ord_photo_defaulted', wo_dt(wo_now()));
+    $cfg = json_decode(wo_get($pdo, 'wa_ord_photo', ''), true); $cfg = is_array($cfg) ? $cfg : []; $have = function_exists('wo_photo_cfg') ? wo_photo_cfg($pdo) : [];
+    $pick = ['received' => $care, 'shipped' => $care, 'out_for_delivery' => $care, 'delivered' => $thanks, 'care_d2' => $thanks, 'return_d15' => $thanks, 'return_d30' => $thanks, 'review' => $thanks, 'review_nudge' => $thanks, 'bday_ask' => $thanks, 'birthday' => $thanks];
+    foreach (wo_send_defs() as $k => $d) { if (!isset($pick[$k]) || isset($have[$k]) || (int)($cfg[$k] ?? 0) > 0) continue; $cfg[$k] = $pick[$k]; $o[$k] = $pick[$k]; }
+    if ($o) wo_put($pdo, 'wa_ord_photo', json_encode($cfg));
+    // the cart / order messages of the chat-messages screen (same rule): order confirmed, payment pending, packed
+    if (function_exists('wch_msg_row')) foreach (['order_confirmed' => $care, 'payment_pending' => $care, 'order_packed' => $care] as $mk => $lib) {
+        try { $r = wch_msg_row($pdo, $mk); if ((int)$r['photo_lib_id'] <= 0 && trim((string)$r['photo_url']) === '') { $pdo->prepare("INSERT INTO wch_msg (mkey, photo_lib_id, updated_at) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE photo_lib_id = VALUES(photo_lib_id), updated_at = VALUES(updated_at)")->execute([$mk, $lib, wo_dt(wo_now())]); $o['wch:' . $mk] = $lib; } } catch (Throwable $e) { }
+    }
+    if (function_exists('wa_log')) wa_log($pdo, 'orders', true, 'Photo messages: default pictures set for ' . count($o) . ' messages (they go to Meta as photo-on-top messages)');
+    return $o;
+}
+/** 📸 Every photo that is chosen (here or in the chat-messages screen) must exist as a photo-on-top (IMAGE header) message at Meta. Idempotent: wo_photo_make skips what is already made / sent. Returns [name => text]. */
+function wo_photo_reconcile(PDO $pdo): array
+{
+    $o = []; foreach (wo_photo_cfg($pdo) as $st => $lib) { $pn = wo_photo_name($st); if ($pn === '') continue; try { [$ok, $m] = wo_photo_make($pdo, $st, (int)$lib); $o[$pn] = ($ok ? 'ok · ' : 'failed · ') . $m; } catch (Throwable $e) { $o[$pn] = 'error · ' . $e->getMessage(); } }
+    return $o;
+}
 // ------------------------------------------------------------------------------------------------------------------ edited versions of the order-update messages
 // Edit = a NEW template (new words and / or a photo on top) sent to Meta. The live message keeps going out until Meta approves the new one; then it wins by itself.
 // Config "wa_ord_ver": { status: { active: {name, body, lib, since}|null, pending: {name, body, lib, at}|null, history: [ {name, body, lib, since, until} ] } }
@@ -814,7 +840,7 @@ function wo_cfg(PDO $pdo): array
     foreach (wo_send_defs() as $k => $d) $o[$k] = in_array($k, ['review', 'review_nudge', 'bday_ask', 'birthday', 'dispatch_late', 'care_d2', 'return_d15', 'return_d30'], true) ? !empty($st[$k]) : (!isset($st[$k]) || !empty($st[$k]));   // the rating request stays OFF until Admin switches it on
     return ['on' => wo_get($pdo, 'wa_ord_auto_on', '1') !== '0', 'statuses' => $o];
 }
-/** The messages whose timing the owner can change in Automation (the others go when the courier's status changes). */
+/** The messages whose timing the owner can change in Autobot (the others go when the courier's status changes). */
 function wo_timing_defs(): array
 {
     return ['care_d2' => ['unit' => 'days after the parcel is delivered', 'min' => 1, 'max' => 10, 'def' => 2, 'label' => 'Send the check-in'],
@@ -918,7 +944,7 @@ function wa_ord_autosend(PDO $pdo, ?int $nowTs = null, string $onlyStore = ''): 
     return $res;
 }
 /** 💬 The check-in (2 days), the take-back offer (15 days) and the no-questions return offer (30 days) after a parcel was delivered. ONE of each per order; only parcels delivered after the switch was turned on;
- *  never to a customer with an open complaint / Dispatch case. The days are set in Automation → After delivery. Returns how many were queued. */
+ *  never to a customer with an open complaint / Dispatch case. The days are set in Autobot → After delivery. Returns how many were queued. */
 function wa_ord_after_queue(PDO $pdo, int $nowTs, array $cfg, string $sk, int $go): int
 {
     $n = 0;
@@ -1053,6 +1079,13 @@ function wa_ord_tick(PDO $pdo): array
         wo_put($pdo, 'wa_ord_tick_at', wo_dt(wo_now()));
         if (wo_get($pdo, 'wa_ord_seeded', '') === '' && function_exists('wa_wabas') && wa_wabas($pdo)) {   // once: make and submit the five templates (no waiting for the owner)
             wo_put($pdo, 'wa_ord_seeded', wo_dt(wo_now())); $o['seed'] = wa_ord_seed_templates($pdo, ['auto' => true]);
+        }
+        if (function_exists('wa_wabas') && wa_wabas($pdo)) {   // 📸 a photo chosen for any message always becomes a photo-header message at Meta (checked when the choice changes, and again every 6 hours to retry)
+            try { $o['photo_defaults'] = wo_photo_defaults_once($pdo); } catch (Throwable $e) { }
+            $sig = md5(json_encode(wo_photo_cfg($pdo)) . (function_exists('wch_img_sig') ? wch_img_sig($pdo) : '')); $prev = json_decode(wo_get($pdo, 'wa_ord_photo_sig', ''), true); $prev = is_array($prev) ? $prev : [];
+            if (($prev['s'] ?? '') !== $sig || (int)($prev['t'] ?? 0) < wo_now() - 6 * 3600) {
+                wo_put($pdo, 'wa_ord_photo_sig', json_encode(['s' => $sig, 't' => wo_now()])); $o['photo'] = wo_photo_reconcile($pdo); if (function_exists('wch_photo_reconcile')) $o['cart_photo'] = wch_photo_reconcile($pdo);
+            }
         }
         $o['send'] = wa_ord_autosend($pdo);
     } catch (Throwable $e) { if (function_exists('wa_log')) wa_log($pdo, 'orders', false, 'order tick: ' . mb_substr($e->getMessage(), 0, 200)); }

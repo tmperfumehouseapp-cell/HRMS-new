@@ -1,6 +1,6 @@
 <?php
 /**
- * wa_autopilot.php — 🔁 FOLLOW-UP AUTOPILOT (one screen: Learn & Setup → Follow-ups, WhatsApp → Automation → Follow-ups, Replies → Follow-up messages).
+ * wa_autopilot.php — 🔁 FOLLOW-UP AUTOPILOT (one screen: Learn & Setup → Follow-ups, WhatsApp → Autobot → Follow-ups, Replies → Follow-up messages).
  * Built ON the follow-up engine (wa_follow.php): the same situations ("paths"), states, limits, stop rules, Suggest / Auto modes. This file adds:
  *   · the 6 PATHS of a customer who did not order (asked the price · got suggestions · price felt high · thinking / family · agreed but did not pay · never answered),
  *     each with 3–4 free follow-ups inside 24 hours (Claude writes each one from the chat) and the OFFERS on day 2 / 4 / 7 / 10 (mega);
@@ -102,12 +102,46 @@ function fa_tpl_make(PDO $pdo, string $k, int $by = 0): array
     $ok = 0; $bad = []; foreach ((function_exists('wa_wabas') ? wa_wabas($pdo) : []) as $w) { [$s, $why] = wa_tpl_create_at($pdo, $r, $w); if ($s) $ok++; else $bad[] = $why; }
     return $ok ? [true, 'Sent to Meta ✅'] : [false, $bad ? implode(' · ', array_unique($bad)) : 'No WhatsApp account is connected.'];
 }
-/** The approved offer template (newest approved version) or null. */
-function fa_tpl_pick(PDO $pdo, string $k): ?array
+/** The approved offer template or null. $libId = -1: any approved version (is there something to send?) · > 0: the customer's own picture (their perfume) — the newest approved PHOTO version carries it, else the plain text version · 0: plain text versions only.
+ *  (Photo versions used to be skipped here by mistake: wa_camp_tpl refuses a photo-on-top message unless $media is true.) */
+function fa_tpl_pick(PDO $pdo, string $k, int $libId = -1): ?array
 {
     if (!function_exists('wa_camp_tpl')) return null; $names = json_decode((string)setting_get($pdo, 'fa_tplnames_' . $k, '[]'), true); if (!is_array($names)) return null;
-    foreach (array_reverse($names) as $n) { try { $q = $pdo->prepare("SELECT id FROM wa_templates WHERE name = ? AND language = 'en'"); $q->execute([$n]); $id = (int)$q->fetchColumn(); } catch (Throwable $e) { $id = 0; } $t = $id ? wa_camp_tpl($pdo, $id) : null; if ($t) return $t; }
-    return null;
+    $try = function (bool $photo) use ($pdo, $names, $libId) {
+        foreach (array_reverse($names) as $n) { try { $q = $pdo->prepare("SELECT id FROM wa_templates WHERE name = ? AND language = 'en'"); $q->execute([$n]); $id = (int)$q->fetchColumn(); } catch (Throwable $e) { $id = 0; } if (!$id) continue;
+            $r = wa_tpl_row($pdo, $id); $isImg = $r && strtoupper((string)$r['header_format']) === 'IMAGE'; if ($isImg !== $photo) continue;
+            $t = wa_camp_tpl($pdo, $id, $photo, $photo && $libId > 0 ? $libId : 0); if ($t) return $t; }
+        return null;
+    };
+    if ($libId < 0) return $try(false) ?: $try(true);
+    if ($libId > 0) { $t = $try(true); if ($t) return $t; }
+    return $try(false);
+}
+/** 📸 The picture of THIS customer's perfume as a media-library photo (a card with photo, notes, longevity). Made once per perfume and kept. 0 = none (no perfume found, GD missing …). */
+function fa_perfume_lib(PDO $pdo, string $perf, array $c = []): int
+{
+    try {
+        if (!function_exists('wa_collage_make') || !function_exists('wa_prod_name_in_text') || !function_exists('wa_lib_dir')) return 0;
+        $hit = null; if (trim($perf) !== '' && function_exists('wa_prod_find_named')) { $hh = wa_prod_find_named($pdo, $perf, 1); $hit = $hh[0] ?? null; } if (!$hit && trim($perf) !== '') $hit = wa_prod_name_in_text($pdo, $perf);   // by our name or by the original perfume it is inspired by
+        if (!$hit && !empty($c['phone']) && function_exists('wa_prod_last_asked')) { $nm = wa_prod_last_asked($pdo, (string)$c['phone']); if ($nm !== '') $hit = wa_prod_name_in_text($pdo, $nm); }
+        if (!$hit) return 0; $m = wa_collage_make($pdo, [(int)$hit['id']], 1); if (empty($m['ok'])) return 0;
+        $key = substr(md5($m['url']), 0, 12); $q = $pdo->prepare("SELECT id FROM wa_media_lib WHERE title = ? LIMIT 1"); $q->execute(['Perfume card · ' . $key . ' · ' . (int)$hit['id']]); $id = (int)$q->fetchColumn(); if ($id > 0) return $id;
+        parse_str((string)parse_url($m['url'], PHP_URL_QUERY), $qs); $src = wa_collage_dir() . preg_replace('/[^a-f0-9]/', '', (string)($qs['t'] ?? '')) . '.jpg'; if (!is_file($src)) return 0;
+        $dir = wa_lib_dir(); $stored = 'card_' . (int)$hit['id'] . '_' . $key . '.jpg'; if (!is_dir($dir) || !is_writable($dir) || !@copy($src, $dir . '/' . $stored)) return 0;
+        $pdo->prepare("INSERT INTO wa_media_lib (title, kind, mime, filename, size, path, mids, created_by, created_at) VALUES (?, 'image', 'image/jpeg', ?, ?, ?, '{}', 0, ?)")->execute(['Perfume card · ' . $key . ' · ' . (int)$hit['id'], $stored, (int)filesize($dir . '/' . $stored), $stored, date('Y-m-d H:i:s')]);
+        return (int)$pdo->lastInsertId();
+    } catch (Throwable $e) { return 0; }
+}
+/** 📸 ONCE per offer message (owner, 10 Nov): every offer / journey message also exists as a photo-on-top message at Meta. The photo at Meta is a sample; each customer gets the card of THEIR perfume on top when it is sent. */
+function fa_photo_versions_once(PDO $pdo): int
+{
+    if (!function_exists('cx8_lib_default') || !function_exists('fa_tpl_make')) return 0; $lib = (int)cx8_lib_default($pdo, 'thanks'); if ($lib <= 0) return 0; $n = 0;
+    foreach (array_keys(fa_offers($pdo)) as $k) {
+        if ($n >= 2) break; if ((string)setting_get($pdo, 'fa_phv_' . $k, '') !== '') continue; if (fa_tpl_status($pdo, $k) === 'none') continue;   // the plain message is made first (fa_tpl_setup); the photo version follows
+        setting_set($pdo, 'fa_phv_' . $k, date('Y-m-d H:i:s')); if ((int)setting_get($pdo, 'fa_tplphoto_' . $k, '0') <= 0) setting_set($pdo, 'fa_tplphoto_' . $k, (string)$lib);
+        [$ok, $msg] = fa_tpl_make($pdo, $k); if ($ok) $n++; elseif (function_exists('wa_log')) wa_log($pdo, 'followup', false, 'Photo version of offer ' . $k . ': ' . $msg);
+    }
+    return $n;
 }
 function fa_tpl_status(PDO $pdo, string $k): string
 {
@@ -163,6 +197,7 @@ function fa_offer_send(PDO $pdo, array $c, array $st, array $sit, array $step): 
     $k = (string)($step['offer'] ?? 'o1'); $t = fa_tpl_pick($pdo, $k);
     if (!$t) return [false, 'The "' . (fa_offers($pdo)[$k][0] ?? $k) . '" message is not approved by Meta yet — it goes by itself once approved.'];
     [$perf, $line] = fa_offer_fill($pdo, $c, $k); $name = function_exists('fu_first_name') ? fu_first_name((string)($c['name'] ?? '')) : ''; if ($name === '') $name = 'there';
+    $t = fa_tpl_pick($pdo, $k, fa_perfume_lib($pdo, (string)$perf, $c)) ?: $t;   // 📸 the photo version with THIS customer's perfume card on top when there is one
     $ctx = wa_camp_ctx($pdo, $t, 2); [$nid, $why] = wa_pick_number($pdo, $c, $ctx); if (!$nid) return [false, 'No number has room now (' . $why . ').'];
     $vars = array_slice([$name, $perf, $line], 0, (int)$t['nvars']);
     [$ok, $res] = wa_send_tpl_one($pdo, $c, $t, $ctx['nums'][$nid], $vars, 'followup'); $shown = function_exists('cx6_render') ? cx6_render((string)$t['body'], $vars) : (string)$t['body'];
@@ -296,7 +331,7 @@ if (!function_exists('fa_tick')) {
 function fa_tick(PDO $pdo): void
 {
     if ((string)setting_get($pdo, 'fa_installed', '') === '') { try { if (!fu_plans_get($pdo)['situations'] || (string)setting_get($pdo, 'fa_auto_install', '1') === '1') fa_install($pdo); } catch (Throwable $e) { } }   // the Autopilot replaces the old plan once
-    if ((int)setting_get($pdo, 'fa_tpl_at', '0') < time() - 600) { setting_set($pdo, 'fa_tpl_at', (string)time()); try { fa_tpl_setup($pdo); } catch (Throwable $e) { error_log('fa_tpl_setup: ' . $e->getMessage()); } }
+    if ((int)setting_get($pdo, 'fa_tpl_at', '0') < time() - 600) { setting_set($pdo, 'fa_tpl_at', (string)time()); try { fa_photo_versions_once($pdo); } catch (Throwable $e) { error_log('fa_photo_versions_once: ' . $e->getMessage()); } try { fa_tpl_setup($pdo); } catch (Throwable $e) { error_log('fa_tpl_setup: ' . $e->getMessage()); } }
 }
 }
 

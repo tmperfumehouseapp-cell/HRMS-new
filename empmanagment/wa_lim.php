@@ -11,13 +11,18 @@ if (!function_exists('wa_lim_used')) {
 function wa_lim_used(PDO $pdo, string $since): array
 {
     $by = []; $all = [];
+    // ⚡ screens only (the Campaigns list sets the flag): the 24-hour count is a heavy scan of wa_messages, so it is remembered for 30 s. The sender never sets the flag and always counts fresh.
+    $useCache = !empty($GLOBALS['__wa_lim_cache_ok']);
+    if ($useCache) { try { $hit = json_decode((string)setting_get($pdo, 'wa_lim_cache', ''), true); if (is_array($hit) && (int)($hit['t'] ?? 0) > time() - 30 && is_array($hit['by'] ?? null)) return ['by' => array_map('intval', $hit['by']), 'all' => (int)$hit['all']]; } catch (Throwable $e) { } }
     try {
         $q = $pdo->prepare("SELECT m.number_id, m.phone FROM wa_messages m WHERE m.dir = 'out' AND m.mtype = 'template' AND m.status <> 'failed' AND m.ts >= ?
             AND NOT EXISTS (SELECT 1 FROM wa_messages i WHERE i.phone = m.phone AND i.dir = 'in' AND i.ts <= m.ts AND i.ts >= DATE_SUB(m.ts, INTERVAL 24 HOUR))");
         $q->execute([$since]);
         foreach ($q->fetchAll() as $r) { $by[(int)$r['number_id']][(string)$r['phone']] = 1; $all[(string)$r['phone']] = 1; }
     } catch (Throwable $e) { }
-    return ['by' => array_map('count', $by), 'all' => count($all)];
+    $res = ['by' => array_map('count', $by), 'all' => count($all)];
+    if ($useCache) { try { setting_set($pdo, 'wa_lim_cache', json_encode(['t' => time()] + $res)); } catch (Throwable $e) { } }
+    return $res;
 }
 
 }

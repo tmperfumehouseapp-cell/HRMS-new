@@ -267,6 +267,18 @@ function wag_inbox(PDO $pdo, int $emp, bool $all, array $cfg, bool $tag = false,
 
 // ---------------------------------------------------------------------------------------------------------------- the brain (suggestions + the 24/7 bot)
 /** A reply for one chat. Uses the taught guidebook first; $guideOnly = never fall back to a generic AI answer (used by the bot). */
+/** 📣 The campaign messages this customer got in the last 30 days (their full text), so the bot answers a campaign reply from the campaign itself.
+ *  Owner decision: a customer who comes through a campaign gets that campaign's offer and price even after its dates have passed. */
+function wag_campaign_context(PDO $pdo, string $key): string
+{
+    try {
+        $q = $pdo->prepare("SELECT body, ts FROM wa_messages WHERE phone = ? AND dir = 'out' AND who = 'campaign' AND ts >= ? ORDER BY id DESC LIMIT 2"); $q->execute([$key, date('Y-m-d H:i:s', time() - 30 * 86400)]); $rows = $q->fetchAll();
+        if (!$rows) return '';
+        $o = "CAMPAIGN MESSAGES WE SENT THIS CUSTOMER (newest first). If the customer is replying to one, answer from it. Honor its offer and price even if its dates have passed (the owner allows it). If two different offers were sent and it is unclear which one the customer means, ask which one.";
+        foreach ($rows as $i => $r) $o .= "\n[" . ($i + 1) . ' · ' . substr((string)$r['ts'], 0, 10) . '] ' . mb_substr(trim((string)$r['body']), 0, 700);
+        return $o;
+    } catch (Throwable $e) { return ''; }
+}
 function wag_brain_reply(PDO $pdo, array $c, string $avoid = '', bool $guideOnly = false): array
 {
     $key = (string)$c['phone'];
@@ -289,7 +301,7 @@ function wag_brain_reply(PDO $pdo, array $c, string $avoid = '', bool $guideOnly
                 }
                 if ($g) {
                     $body = json_decode((string)$g['body'], true); $msgs = wa_learn_msgs($pdo, $key);
-                    if (is_array($body) && function_exists('wq_bot_context')) { $__qx = wq_bot_context($pdo, $c); if ($__qx !== '') $body['chat_context_do_not_quote'] = $__qx; }   // query type, ad headline, store info, owner decisions (max 2,000 characters)
+                    if (is_array($body)) { $__qx = function_exists('wq_bot_context') ? wq_bot_context($pdo, $c) : ''; $__cc = wag_campaign_context($pdo, $key); if ($__cc !== '') $__qx = trim($__qx . "\n" . $__cc); if ($__qx !== '') $body['chat_context_do_not_quote'] = mb_substr($__qx, 0, 3600); }   // query type, ad headline, store info, owner decisions (max 2,000 characters)
                     if (is_array($body) && $body && $msgs) {
                         if ($avoid !== '') $msgs[] = ['who' => 'bot', 'text' => mb_substr($avoid, 0, 500)];
                         [$ok, $v] = lib_bot_reply($pdo, $body, $msgs);
@@ -447,7 +459,7 @@ function wag_bot_scan(PDO $pdo, int $max = 4): array
         if (!empty($r['handoff'])) { wag_neg_set($pdo, 'bgn:' . $key, (int)$m['id'], true); if (function_exists('wq_guard_release')) wq_guard_release($pdo, $key, (int)$m['id'], 'reply'); if (function_exists('wa_hot_flag') && wa_hot_flag($pdo, $c, 'bot needs a person')) $o['handoff']++; continue; }
         [$ok, $res] = wa_send_text($pdo, $c, $r['text'], 'bot', 0);
         if ($ok && !empty($r['photo']) && function_exists('pc_photo_url') && function_exists('wa_send_image_link')) { $u = pc_photo_url($pdo); if ($u !== '') { [$pok, $pres] = wa_send_image_link($pdo, $c, $u, '', 'bot', 0); if (!$pok) wag_log($pdo, 'bot', false, $key . ' · price photo · ' . $pres); } }   // the Teach rules said: send the price photo
-        if ($ok) { $o['sent']++; wa_event($pdo, $key, '🤖 The bot answered (' . $age . ' s after the customer)'); if (function_exists('wa_sugg_save')) wa_sugg_save($pdo, $key, $r['text'], $r['source'], (int)$r['ver']); if (function_exists('wa_prod_bot_after')) wa_prod_bot_after($pdo, $c); }   // product photos follow the bot's text (max 3, never repeated within 24 h)
+        if ($ok) { $o['sent']++; wa_event($pdo, $key, '🤖 The bot answered (' . $age . ' s after the customer)'); if (function_exists('wq_rescue_price_intent') && function_exists('wq_tag_put') && wq_rescue_price_intent((string)$m['body'])) { wq_tag_put($pdo, $key, 'orange'); wa_event($pdo, $key, '🟠 The customer is interested: everyone can see this chat and pick it up'); } if (function_exists('wa_sugg_save')) wa_sugg_save($pdo, $key, $r['text'], $r['source'], (int)$r['ver']); if (function_exists('wa_prod_bot_after')) wa_prod_bot_after($pdo, $c, (string)$r['text']); }   // product photos follow the bot's text (max 3, never repeated within 24 h)
         else { wag_log($pdo, 'bot', false, $key . ' · ' . $res); if (function_exists('wq_guard_release')) wq_guard_release($pdo, $key, (int)$m['id'], 'reply'); }
     }
     return $o;
@@ -976,6 +988,9 @@ if (strpos($__wg, 'wa.g_') === 0 && strpos($__wg, 'wa.g_flow') !== 0) {
         case 'wa.g_sugg': {   // the suggestion already written for the newest customer message — instant; null = none yet
             $c = $chatOf((string)($_GET['phone'] ?? '')); $s = wag_sugg_get($pdo, (string)$c['phone']);
             if (!empty($c['cx_id'])) json_response(['ok' => true, 'sugg' => null, 'hot' => false, 'auto' => ['on' => false, 'secs' => 20], 'complaint' => (int)$c['cx_id']]);   // with the Complaint team: no suggestion, no auto-send
+            if (!empty($_GET['after_bot'])) {   // 🤖 the bot has already answered: show the person a NEXT step, never the text the bot just sent
+                try { $__q = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'out' AND who = 'bot' ORDER BY id DESC LIMIT 1"); $__q->execute([(string)$c['phone']]); $__lb = trim((string)$__q->fetchColumn()); if ($s && $__lb !== '' && trim((string)$s['text']) === $__lb) $s = null; } catch (Throwable $e) { }
+            }
             if (!$s && !empty($_GET['make'])) { $f0 = ai_feat('wa_sugg'); $r = wag_brain_reply($pdo, $c); ai_feat($f0); if ($r['ok']) { wa_sugg_save($pdo, (string)$c['phone'], $r['text'], $r['source'], (int)$r['ver']); $s = ['text' => $r['text'], 'source' => $r['source'], 'ver' => $r['ver'], 'why' => $r['why'], 'call_now' => !empty($r['handoff'])]; } }
             $__li = wa_last_in($pdo, (string)$c['phone']); json_response(['ok' => true, 'sugg' => $s, 'hot' => !empty($c['hot']) || (function_exists('wa_hot_intent') && wa_hot_intent((string)$__li[1]) !== ''), 'auto' => function_exists('wa_auto_state') ? wa_auto_state($pdo) : ['on' => false, 'secs' => 20]]);
         }

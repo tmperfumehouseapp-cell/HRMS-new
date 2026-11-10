@@ -1,5 +1,5 @@
 /**
- * wa_kflow_ui.js — 🔑 Key flows (WhatsApp → Automation → Key flows). Admin only. Server: wa_kflow.php (wa.kf_*).
+ * wa_kflow_ui.js — 🔑 Key flows (WhatsApp → Autobot → Key flows). Admin only. Server: wa_kflow.php (wa.kf_*).
  *   List: every key flow (priority = order; drag or ⋯ to move), on/off, start texts, numbers (7 days), 🧪 test a message, overlaps, website link + QR.
  *   Canvas (full screen): drag boxes in from the left, connect a button / row / "then" dot to the next box, edit the selected box on the right,
  *   red dot = a problem that keeps the flow off, 💡 = quiet suggestions (count only, never pops up), ▶ test in a phone, On/Off, Save (Ctrl+S).

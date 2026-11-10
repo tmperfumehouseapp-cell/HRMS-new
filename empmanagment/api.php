@@ -16429,7 +16429,7 @@ function tmph_month_spend(): float
 /** The monthly AI budget in USD. The owner decided it is never below 300 (an older, lower number left in config.php is ignored); 0 in config.php = no limit. */
 function tmph_budget_usd(): float
 {
-    $b = (float)tmph_cfg('TMPH_MONTH_BUDGET_USD', 300);
+    $b = (float)tmph_cfg('TMPH_MONTH_BUDGET_USD', 0);   // no default monthly limit any more (owner's decision); a limit exists only if config.php defines TMPH_MONTH_BUDGET_USD
     return $b > 0 ? max($b, 300.0) : 0.0;
 }
 /** 🏷 The WhatsApp feature that is calling Claude right now ('' = none). Set around a job so its spend is listed under its own name and can have its own daily limit. */
@@ -16437,7 +16437,7 @@ function ai_feat(string $f): string { $old = (string)($GLOBALS['ai_feature'] ?? 
 /** Daily USD limit of one feature (the owner can change them: define('AI_CAPS', ['wa_bot' => 20, ...]) in config.php; 0 = no limit). A feature that reaches its limit simply waits until tomorrow — the people answer instead. */
 function ai_feature_cap(string $p): float
 {
-    $d = ['wa_presugg' => 6.0, 'wa_sugg' => 6.0, 'wa_bot' => 10.0, 'wa_tag' => 2.0, 'wa_learn' => 8.0, 'wa_topics' => 4.0, 'wa_guide' => 8.0];
+    $d = [];   // no built-in daily limits any more (owner's decision); a limit only exists if AI_CAPS in config.php names the feature
     $c = (array)tmph_cfg('AI_CAPS', []); if (isset($c[$p]) && is_numeric($c[$p])) return (float)$c[$p];
     return $d[$p] ?? 0.0;
 }
@@ -18514,6 +18514,7 @@ function retail_display_pending(PDO $pdo, string $city): array
 $action = $_GET['action'] ?? '';
 if (is_file(__DIR__ . '/brain.php')) { require_once __DIR__ . '/brain.php'; }
 if (is_file(__DIR__ . '/price_charts.php')) { require_once __DIR__ . '/price_charts.php'; }   // ONE price chart section (perfume / attar / shower gel / others by total ml) for the cart, the bot and commission; answers pc.* itself   // the company brain: ONE Claude door + scopes (company / customer / internal); every module below can use it
+if (is_file(__DIR__ . '/wa_collage.php')) { require_once __DIR__ . '/wa_collage.php'; }   // one picture for 2–5 suggested perfumes (public view: wa.collage_view)
 if (is_file(__DIR__ . '/play.php')) { require_once __DIR__ . '/play.php'; }   // streaks + the Wins feed on the salesperson home; answers play.* itself
 if (strpos((string)$action, 'leader.') === 0) { require __DIR__ . '/leader_pay.php'; }
 if (strpos((string)$action, 'lh.') === 0) { require __DIR__ . '/leader_helper.php'; }   // 👥 Leaders Helper: fixed salary, daily checklist, daily payout
