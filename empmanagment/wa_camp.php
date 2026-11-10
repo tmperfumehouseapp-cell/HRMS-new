@@ -417,7 +417,12 @@ function wa_camp_delivery(PDO $pdo, int $id): array
 }
 function wa_camp_public(PDO $pdo, array $c, bool $deep = false, ?array $cfg = null): array
 {
-    $cn = wa_camp_counts($pdo, (int)$c['id']); $d = wa_camp_delivery($pdo, (int)$c['id']); $t = null; $lib = null;
+    // ⚡ The list of 40 campaigns used to run ~5 heavy queries per campaign (counts, delivery, the "replied" join on wa_messages) on every open and every 20 s: the Campaigns page sat on "Loading…".
+    // The numbers are now remembered per campaign for a short time (15 s while it is sending, 10 min once it is finished/draft); the 🔄 Refresh button and wa.camp_get (deep) always read them fresh.
+    $cid = (int)$c['id']; $cn = null; $d = null; $ck = 'wa_cpc_' . $cid; $live = in_array((string)$c['status'], ['running', 'scheduled', 'paused'], true);
+    if (!$deep && empty($GLOBALS['__wa_camp_fresh'])) { try { $hit = json_decode((string)setting_get($pdo, $ck, ''), true); if (is_array($hit) && ($hit['st'] ?? '') === (string)$c['status'] && (int)($hit['t'] ?? 0) > time() - ($live ? 15 : 600) && is_array($hit['cn'] ?? null) && is_array($hit['d'] ?? null)) { $cn = $hit['cn']; $d = $hit['d']; } } catch (Throwable $e) { } }
+    if ($cn === null) { $cn = wa_camp_counts($pdo, $cid); $d = wa_camp_delivery($pdo, $cid); if (!$deep) { try { setting_set($pdo, $ck, json_encode(['t' => time(), 'st' => (string)$c['status'], 'cn' => $cn, 'd' => $d])); } catch (Throwable $e) { } } }
+    $t = null; $lib = null;
     if ((int)$c['tpl_id']) { try { $t = wa_tpl_row($pdo, (int)$c['tpl_id']); } catch (Throwable $e) { } }
     if ((int)($c['media_lib_id'] ?? 0) && function_exists('wa_lib_row')) { try { $lib = wa_lib_row($pdo, (int)$c['media_lib_id']); } catch (Throwable $e) { } }
     $o = ['id' => (int)$c['id'], 'name' => $c['name'], 'status' => $c['status'], 'tpl_id' => (int)$c['tpl_id'], 'tpl_name' => $t ? $t['name'] : '', 'tpl_body' => $t ? $t['body'] : '', 'tpl_category' => $t ? $t['category'] : '', 'counts' => $cn + $d, 'rate' => (int)$c['rate'],
@@ -514,7 +519,8 @@ function wa_camp_wait_reason(PDO $pdo, array $c): string
     $nowTs = wa_camp_now();
     if (!wa_camp_in_window($pdo, $nowTs)) return 'Quiet hours — nothing is sent at night. It continues at ' . wa_camp_window($pdo)[0] . ' am by itself.';
     try {
-        $caps = wa_number_caps($pdo, wa_camp_health($pdo)); $port = $caps['_port']; $left = 0; $why = [];
+        static $capsMemo = null; if ($capsMemo === null) $capsMemo = wa_number_caps($pdo, wa_camp_health($pdo));   // once per request: it used to be rebuilt for every running campaign in the list
+        $caps = $capsMemo; $port = $caps['_port']; $left = 0; $why = [];
         foreach ($caps as $k => $x) if ($k !== '_port') { $left += $x['left']; if ($x['left'] <= 0) $why[] = $x['why'] !== '' ? $x['why'] : 'used ' . $x['used'] . ' of ' . $x['cap'] . ' today'; }
         if (!empty($port['auto']['nums']) && max(array_column($port['auto']['nums'], 'left_hour')) <= 0 && ($port['tier'] * 0.9 - $port['used']) > 0) {
             return 'This hour’s speed is used on every number (' . implode(' · ', array_map(fn($n) => $n['label'] . ' ' . number_format($n['used_hour']) . ' of ' . number_format($n['cap']), $port['auto']['nums'])) . '). It continues by itself as the hour rolls on — and each number’s speed doubles after an hour that goes well, up to ' . number_format($port['auto']['max']) . '.';
@@ -936,6 +942,7 @@ if (in_array($__wk, ['wa.fu_list', 'wa.fu_save', 'wa.fu_del', 'wa.fu_preset', 'w
             $id = (int)(json_input()['id'] ?? 0); $pdo->prepare("DELETE FROM wa_fu_rules WHERE id = ?")->execute([$id]); json_response(['ok' => true]);
         }
         case 'wa.camp_list': {
+            if (!empty($_GET['fresh'])) $GLOBALS['__wa_camp_fresh'] = true;   // 🔄 Refresh: read every number again
             $hide = ''; try { $pdo->query("SELECT smart_plan FROM wa_campaigns LIMIT 0"); $hide = 'WHERE smart_plan = 0 '; } catch (PDOException $e) { }   // the campaigns of a Smart plan are shown on the Smart screens
             $rows = $pdo->query("SELECT * FROM wa_campaigns " . $hide . "ORDER BY id DESC LIMIT 40")->fetchAll(); $out = [];
             foreach ($rows as $r) { $r['audience'] = json_decode((string)$r['audience'], true) ?: []; $r['vars'] = json_decode((string)$r['vars'], true) ?: []; $r['extra'] = json_decode((string)($r['extra'] ?? ''), true) ?: []; $out[] = wa_camp_public($pdo, $r, false, $cfg); try { $__o = &$out[count($out) - 1]; if (in_array((string)$r['status'], ['running', 'paused'], true) && (int)($__o['counts']['sent'] ?? 0) + (int)($__o['counts']['held'] ?? 0) === 0) $__o['why'] = wa_camp_wait_reason($pdo, $r); unset($__o); } catch (Throwable $e) { } }

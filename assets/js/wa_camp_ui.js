@@ -210,9 +210,9 @@ body.waui .cu-pc{display:flex;align-items:center;gap:10px;padding:9px 0;border-t
   function screen(el, ctx) {
     let D = null, tick = null, smart = null; el.innerHTML = loading;
     const ST = { draft: ['Draft', ''], scheduled: ['Scheduled', 'b'], running: ['Sending', 'ok'], paused: ['Paused', 'warn'], done: ['Finished', 'p'], cancelled: ['Stopped', 'bad'] };
-    async function load(quiet) {
+    async function load(quiet, fresh) {
       if (smart) return;   // the Smart campaign is open in this area: do not draw the list over it
-      try { D = await api.get('wa.camp_list'); } catch (e) { if (!quiet) el.innerHTML = errBox(e.message); return; }
+      try { D = await api.get('wa.camp_list', fresh ? { fresh: 1 } : undefined); } catch (e) { if (!quiet) el.innerHTML = errBox(e.message); return; }
       if (!el.isConnected) return; if (!quiet || !document.getElementById('cpKeep')) draw();
       if (window.WaCampGo) { const g = window.WaCampGo; window.WaCampGo = null; if (g.mode === 'smart' && window.WaSmart) openSmart(0, g.seg); else wizard(null, g.seg); return; }   // 👥 Customers → people picked there
       clearTimeout(tick); if (D.campaigns.some((c) => c.status === 'running' || c.status === 'scheduled')) tick = setTimeout(async () => { if (!el.isConnected || smart) return; if (!D.engine.cron_ok) { try { await api.post('wa.camp_tick', {}); } catch (e) { } } load(true); }, 20000);
@@ -239,7 +239,7 @@ body.waui .cu-pc{display:flex;align-items:center;gap:10px;padding:9px 0;border-t
       el.innerHTML = h + '</div>';
       $(el, '#cStopAll').onclick = async function () { if (!confirm('Stop ALL campaigns now? Every running, scheduled and paused campaign stops and its waiting people are dropped. Already-sent messages are not affected.')) return; this.disabled = true; try { const r = await api.post('wa.camp_stop_all', {}); toast('Stopped ' + r.stopped + ' campaign' + (r.stopped === 1 ? '' : 's') + ' · ' + fmt(r.dropped) + ' waiting messages dropped'); load(); } catch (e) { toast(e.message, true); this.disabled = false; } };
       $(el, '#cSum').onclick = summary;
-      $(el, '#cRef').onclick = async function () { this.disabled = true; this.textContent = '🔄 Refreshing…'; try { await api.post('wa.camp_tick', {}); } catch (e) { } await load(false); };   // reload the list, the speeds and the room, and give the sender one round now
+      $(el, '#cRef').onclick = async function () { this.disabled = true; this.textContent = '🔄 Refreshing…'; try { await api.post('wa.camp_tick', {}); } catch (e) { } await load(false, true); };   // reload the list, the speeds and the room, and give the sender one round now
       $(el, '#cUtil').onclick = () => wizard(null, null, true); $(el, '#cNew').onclick = () => (window.WaSmart ? WaSmart.chooser({ onNormal: () => wizard(null), onSmart: () => openSmart(0) }) : wizard(null)); $(el, '#cPc').onclick = () => pieces();
       if (window.WaSmart && $(el, '#cpPlans')) WaSmart.plansCard($(el, '#cpPlans'), { onOpen: (id) => openSmart(id) });
       el.querySelectorAll('[data-d]').forEach((b) => { b.onclick = () => details(D.campaigns[+b.dataset.d]); });
