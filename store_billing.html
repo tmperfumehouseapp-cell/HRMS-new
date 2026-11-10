@@ -201,6 +201,9 @@
         <label class="sx-f" title="Normally today. Pick another date when the sale belongs to another day (for example the store was open after 3 AM)">Counts for day<input class="sx-in" id="bizDay" type="date"></label>
         <label class="sx-f" title="Always the current time. Billing a sale from earlier today? Change the time.">Sold at <span style="font-weight:600">(now · change if earlier)</span><input class="sx-in" id="soldAt" type="time"></label>
       </div>
+      <div id="empNote" class="sx-mut" style="font-size:12.5px;margin-top:6px"></div>
+      <div id="empAddRow" style="display:none;margin-top:6px"><button type="button" class="lnk" id="empAdd">＋ Add another biller (someone else can bill today)</button>
+        <div id="empPick" class="sx-card" style="display:none;margin-top:8px;padding:10px 12px"><input class="sx-in" id="empQ" type="search" placeholder="Search a name…" autocomplete="off"><div id="empList" style="margin-top:6px;max-height:240px;overflow-y:auto;display:grid;gap:2px"></div><div class="sx-mut" style="font-size:12px;margin-top:6px">Tick a name: that person can bill from now on (untick to remove). Billing and commission go to the person chosen in “Billed by”.</div></div></div>
       <details class="sx-d" style="margin-top:10px"><summary>Discount · payment</summary>
         <div class="sx-r2" style="margin-top:8px"><label class="sx-f">Discount ₹<input class="sx-in" id="disc" type="number" min="0" value="0" inputmode="numeric"></label>
           <label class="sx-f">Payment<select class="sx-in" id="pay"><option value="cash">Cash</option><option value="online">Online / UPI</option><option value="split">Cash + online</option></select></label></div>
@@ -387,7 +390,8 @@
     updatePay();
   }
   $('prices').addEventListener('click', (e) => { const c = e.target.closest('[data-c]'); if (!c) return; pickedCol = +c.dataset.c; renderQuote(); });
-  const total = () => Math.max(0, listPrice() - (+$('disc').value || 0));
+  $('disc').addEventListener('input', () => { if (+$('disc').value < 0) $('disc').value = 0; });      // a discount can never be below 0 (a minus would raise the bill)
+  const total = () => Math.max(0, listPrice() - (Math.max(0, +$('disc').value || 0)));
   const chainShare = (t) => Math.round(t * (chain.split_pct || 50) / 100);
   function chainInfo(t) {          // the split shown to staff; the real split is made again on the server with the same rule
     if (!chain) return '';
@@ -435,7 +439,7 @@
   // ---------- make the bill: saved, the panel resets and stays open for the next customer
   $('btnBill').onclick = async () => {
     $('btnBill').disabled = true;
-    const body = { bday_code: bv ? bv.code : '', source, source_note: source ? $('srcNote').value.trim() : '', area: $('areaIn').value.trim(), codes: cart.map((b) => b.code), gift_codes: cart.filter((b) => b.gift).map((b) => b.code), emp_id: +$('emp').value, people: people.filter((p) => p.name || p.phone || p.declined).map((p) => ({ name: p.name, phone: p.declined ? '' : p.phone, declined: p.declined, reason: p.reason, bday: p.declined ? '' : (p.bday || '') })), order_code: $('ocode').value, sold_time: soldTouched ? ($('soldAt').value || '') : '', biz_date: ($('bizDay').value && $('bizDay').value !== storeToday) ? $('bizDay').value : '', discount: +$('disc').value || 0, pay_mode: $('pay').value, cash_amt: +$('cash').value || 0, online_amt: +$('online').value || 0 };
+    const body = { bday_code: bv ? bv.code : '', source, source_note: source ? $('srcNote').value.trim() : '', area: $('areaIn').value.trim(), codes: cart.map((b) => b.code), gift_codes: cart.filter((b) => b.gift).map((b) => b.code), emp_id: +$('emp').value, people: people.filter((p) => p.name || p.phone || p.declined).map((p) => ({ name: p.name, phone: p.declined ? '' : p.phone, declined: p.declined, reason: p.reason, bday: p.declined ? '' : (p.bday || '') })), order_code: $('ocode').value, sold_time: soldTouched ? ($('soldAt').value || '') : '', biz_date: ($('bizDay').value && $('bizDay').value !== storeToday) ? $('bizDay').value : '', discount: Math.max(0, +$('disc').value || 0), pay_mode: $('pay').value, cash_amt: +$('cash').value || 0, online_amt: +$('online').value || 0 };
     if (chain) body.chain_code = chain.code;
     if (pickedCol !== null) body.price_col = pickedCol; else body.custom_price = +$('customPrice').value || 0;
     try {
@@ -595,6 +599,12 @@
   });
 
   // ---------- who can bill
+  let staffAll = [];
+  // managers: add / remove a biller right from the New bill panel (the same list as "Who can bill" at the bottom)
+  function drawEmpPick() {
+    const q = ($('empQ').value || '').trim().toLowerCase(), L = staffAll.filter((e) => !q || e.name.toLowerCase().includes(q)).sort((a, b) => (b.on - a.on) || a.name.localeCompare(b.name)).slice(0, 60);
+    $('empList').innerHTML = L.length ? L.map((e) => `<label style="display:flex;gap:8px;align-items:center;padding:5px 6px;border-radius:8px;cursor:pointer"><input type="checkbox" data-pe="${e.employee_id}" ${e.on ? 'checked' : ''} style="width:auto"> <span style="flex:1">${esc(e.name)}</span>${e.on ? '<small class="sx-mut">can bill</small>' : ''}</label>`).join('') : '<div class="sx-mut">Nobody matches.</div>';
+  }
   async function loadDuty() {
     const d = await api.get('st_bill.staff'), on = d.employees.filter((e) => e.on && (!+d.needs_punch || e.punched)), away = d.employees.filter((e) => e.on && +d.needs_punch && !e.punched);
     $('emp').title = away.length ? 'Not punched in today: ' + away.map((e) => e.name).join(', ') : '';
@@ -603,9 +613,19 @@
     const u = api.currentUser() || {};
     if (u.employee_id && on.some((e) => e.employee_id === +u.employee_id)) $('emp').value = u.employee_id;
     fillCode();
+    staffAll = d.employees;
+    $('empNote').textContent = !on.length ? (isManager ? 'Nobody can bill right now. Press “＋ Add another biller” and tick a person.' : 'Nobody is on billing duty today. Ask a manager to add a person (Billing → Who can bill).') : (away.length ? away.map((e) => e.name).join(', ') + (away.length === 1 ? ' has' : ' have') + ' not punched in today, so cannot bill. Add another biller if needed.' : '');
+    $('empAddRow').style.display = isManager ? '' : 'none'; if (isManager && !$('empPick').hidden) drawEmpPick();
     if (isManager) { $('duty').innerHTML = d.employees.map((e) => `<label><input type="checkbox" data-e="${e.employee_id}" ${e.on ? 'checked' : ''}> ${esc(e.name)}</label>`).join(''); $('dutyCard').style.display = ''; }
     updatePay();
   }
+  $('empAdd').addEventListener('click', () => { const pk = $('empPick'); pk.style.display = pk.style.display === 'none' ? '' : 'none'; pk.hidden = pk.style.display === 'none'; if (!pk.hidden) { drawEmpPick(); $('empQ').focus(); } });
+  $('empQ').addEventListener('input', drawEmpPick);
+  $('empList').addEventListener('change', async (e) => {
+    const c = e.target.closest('[data-pe]'); if (!c) return; const id = +c.dataset.pe;
+    try { await api.post('st_duty.set', { employee_id: id, on: c.checked ? 1 : 0 }); await loadDuty(); if (c.checked && $('emp').querySelector(`option[value="${id}"]`)) { $('emp').value = id; $('emp').dispatchEvent(new Event('change')); } }
+    catch (err) { alert(err.message); c.checked = !c.checked; }
+  });
   $('duty').addEventListener('change', async (e) => {
     const c = e.target.closest('[data-e]'); if (!c) return;
     try { await api.post('st_duty.set', { employee_id: +c.dataset.e, on: c.checked ? 1 : 0 }); await loadDuty(); } catch (err) { alert(err.message); c.checked = !c.checked; }
