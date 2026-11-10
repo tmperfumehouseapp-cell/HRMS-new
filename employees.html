@@ -334,7 +334,7 @@ Amit Shah	9123456780		web management		"></textarea>
 
   async function loadDepartmentsIntoSelects() {
     const data = await api.get('departments.list');
-    departments = data.departments;
+    departments = (data && data.departments) || [];
     const options = departments.map(d => `<option value="${d.department_id}">${d.department_name}</option>`).join('');
     document.getElementById('department').innerHTML = '<option value="">— Select —</option>' + options;
     document.getElementById('deptFilter').innerHTML = '<option value="">All Departments</option>' + options;

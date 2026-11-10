@@ -63,3 +63,8 @@ FileETag None
     Deny from all
   </IfModule>
 </FilesMatch>
+
+# 5. Compress text files on the way to the browser (the WhatsApp scripts alone are over 1 MB): faster page opens on a phone.
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/css text/plain text/xml application/javascript text/javascript application/x-javascript application/json image/svg+xml
+</IfModule>

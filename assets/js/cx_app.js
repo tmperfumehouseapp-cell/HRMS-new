@@ -203,7 +203,7 @@ window.CX = (function () {
   async function list() {
     body().innerHTML = '<div class="cx-fl"><select class="cx-sel" id="cxSt"><option value="all">All</option><option value="open">Open</option><option value="done">Solved</option></select><input class="cx-in" id="cxLq" placeholder="🔎 Search" style="min-width:240px"></div><div id="cxLs" class="cx-box"></div>';
     const st = $('#cxSt', H), q = $('#cxLq', H); st.value = S.status; q.value = S.q;
-    const load = async () => { S.status = st.value; S.q = q.value; const d = await call(() => api.get('bd.cx_list', { status: S.status, q: S.q }), false); if (!d) return; $('#cxLs', H).innerHTML = d.cases.length ? d.cases.map(row).join('') : '<div class="cx-empty">No complaints found</div>'; $('#cxLs', H).querySelectorAll('.cx-row').forEach((r) => r.onclick = () => openCase(Number(r.dataset.id))); };
+    const load = async () => { S.status = st.value; S.q = q.value; const d = await call(() => api.get('bd.cx_list', { status: S.status, q: S.q }), false); if (!d) return; $('#cxLs', H).innerHTML = (d.cases || []).length ? d.cases.map(row).join('') : '<div class="cx-empty">No complaints found</div>'; $('#cxLs', H).querySelectorAll('.cx-row').forEach((r) => r.onclick = () => openCase(Number(r.dataset.id))); };
     st.onchange = load; q.oninput = () => { clearTimeout(S.lt); S.lt = setTimeout(load, 300); }; load();
   }
   function row(c) {
@@ -213,7 +213,7 @@ window.CX = (function () {
   /* ------------------------------ my complaints ------------------------------ */
   async function mine() {
     const d = await call(() => api.get('bd.cx_mine'), false); if (!d) return;
-    body().innerHTML = d.cases.length ? d.cases.map((c) => {
+    body().innerHTML = (d.cases || []).length ? d.cases.map((c) => {
       const step = c.status === 'resolved' || c.status === 'closed' ? 3 : c.first_reply ? 2 : 1;
       const lab = ['Raised', 'With ' + (c.owner_name || c.desk_label), 'Solved']; const sub = c.status === 'resolved' || c.status === 'closed' ? 'Solved' + (c.res_label ? ': ' + c.res_label : '') : 'On the ' + c.desk_label + ' desk' + (c.late ? ' — late' : '');
       return '<div class="cx-box cx-mine" data-id="' + c.id + '" style="cursor:pointer"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><b>' + c.code + ' · ' + esc(c.name) + '</b>' + uPill(c.urgency) + sPill(c) + '<span style="margin-left:auto;color:var(--mut);font-size:12px">' + esc(c.ago) + ' ago</span></div><div style="margin:4px 0 8px;color:#54656f">' + c.problem_icon + ' ' + esc(c.problem_label) + (c.summary && c.summary !== c.problem_label ? ' — ' + esc(c.summary) : '') + '</div><div style="display:flex;gap:6px">' + [1, 2, 3].map((i) => '<div style="flex:1"><div style="height:6px;border-radius:9px;background:' + (i <= step ? (step === 3 ? '#00a884' : '#f59e0b') : '#e9edef') + '"></div><small style="color:var(--mut)">' + esc(lab[i - 1]) + '</small></div>').join('') + '</div><div style="margin-top:6px;font-size:12.5px;color:#3b4a54">' + esc(sub) + '</div></div>';

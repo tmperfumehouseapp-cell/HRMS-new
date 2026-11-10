@@ -189,7 +189,7 @@
     let dead = false;
     const $ = (s) => el.querySelector(s);
     const dirtyKeys = () => Object.keys(B.vals).filter((k) => String(B.vals[k] == null ? '' : B.vals[k]) !== String(B.base[k] == null ? '' : B.base[k])).concat(B.logoData ? ['logo'] : []).concat(B.rmLogo ? ['logo'] : []);
-    const reqKeys = () => (B.data ? B.data.required.map((r) => r.key) : []);
+    const reqKeys = () => (B.data && B.data.required ? B.data.required.map((r) => r.key) : []);
     const filledLocal = () => reqKeys().filter((k) => NONEMPTY(B.vals[k])).length;
     const missingLocal = () => (B.data ? B.data.required.filter((r) => !NONEMPTY(B.vals[r.key])).map((r) => r.label) : []);
     const notify = (d) => { if (typeof o.onState === 'function' && d) { try { o.onState({ filled: d.filled, total: d.total, complete: d.complete, red_dot: d.red_dot, missing: d.missing || [] }); } catch (e) { } } };
@@ -432,7 +432,7 @@
     }
     function covCard() {
       const c = C.cov; if (!c) return '<div class="wchx-card bad"><h3>Chain price coverage</h3>' + errBox(C.covErr, 'reload') + '</div>';
-      const max = Math.max(1, ...c.slabs.map((s) => s.count)); const empty = c.slabs.filter((s) => s.empty);
+      const max = Math.max(1, ...(c.slabs || []).map((s) => s.count)); const empty = (c.slabs || []).filter((s) => s.empty);
       let h = '<div class="wchx-card"><h3>Chain price coverage ' + (empty.length ? pill('r', empty.length + ' empty slab' + (empty.length === 1 ? '' : 's')) : pill('g', 'every slab covered')) + '</h3><div class="sub" style="margin-bottom:6px">Chains by MRP. Slab step ' + fm(c.step) + ' (setting). ' + num(c.in_stock_chains) + ' of ' + num(c.total_chains) + ' chains are in stock.</div>';
       if (!c.slabs.length) h += '<div class="sub">No slabs to show.</div>';
       h += c.slabs.map((s) => '<div class="wchx-slab ' + (s.empty ? 'empty' : '') + '"><span class="rg">' + fm(s.from) + ' to ' + num(s.to).toLocaleString('en-IN') + '</span><span class="bar"><i style="width:' + Math.round(s.count * 100 / max) + '%"></i></span><span class="ct">' + s.count + '</span></div>').join('');
