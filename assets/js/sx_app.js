@@ -99,7 +99,7 @@ window.SX = (function () {
   async function start(host) {
     H = host; css(); H.className = 'sx'; H.innerHTML = '<div class="sx-empty">Loading…</div>';
     try { B = await api.get('bd.sx_boot'); } catch (e) { H.innerHTML = '<div class="sx-empty">Could not load: ' + esc(e.message) + '</div>'; return; }
-    S.view = (B.conns.length === 0) ? 'connect' : 'inbox';
+    S.view = ((B.conns || []).length === 0) ? 'connect' : 'inbox';
     const qs = new URLSearchParams(location.search); if (qs.get('item')) { S.view = 'inbox'; S.sel = Number(qs.get('item')) || 0; S.f = 'all'; }
     shell(); await go(S.view);
     if (S.sel) openItem(S.sel);

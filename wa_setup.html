@@ -135,8 +135,9 @@ define('WA_VERIFY_TOKEN', 'any-long-random-text-you-choose');</pre>
     let d;
     try { d = await api.get('wa.status', test ? { test: 1 } : {}); }
     catch (e) { $('wsCfg').innerHTML = `<div class="ws-msg err">${esc(e.message)}</div>`; return; }
+    d = d || {}; d.config = d.config || {}; d.log = d.log || [];
     const all = Object.keys(NAMES).every(k => d.config[k]);
-    $('wsCfg').innerHTML = Object.keys(NAMES).map(k => `<div class="ws-row"><span class="ic ${d.config[k] ? 'ok' : 'no'}">${d.config[k] ? '✓' : '✕'}</span><span><b>${NAMES[k][1]}</b><br><small><code>${NAMES[k][0]}</code> ${d.config[k] ? 'is set' : 'is missing in config.php'}</small></span></div>`).join('')
+    $('wsCfg').innerHTML = Object.keys(NAMES).map(k => `<div class="ws-row"><span class="ic ${(d.config || {})[k] ? 'ok' : 'no'}">${d.config[k] ? '✓' : '✕'}</span><span><b>${NAMES[k][1]}</b><br><small><code>${NAMES[k][0]}</code> ${d.config[k] ? 'is set' : 'is missing in config.php'}</small></span></div>`).join('')
       + (all ? '<div class="ws-msg ok">All five values are in config.php.</div>' : '<div class="ws-msg info">Add the missing lines to <b>config.php</b> on Hostinger (see “Step-by-step” below). They are never shown on this page.</div>');
     $('wsUrl').textContent = d.webhook_url;
     const lw = d.last_webhook;

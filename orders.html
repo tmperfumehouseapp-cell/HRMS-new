@@ -2343,6 +2343,7 @@
     const head = `<div class="label"><span class="lbl-full">Team rating</span><span class="lbl-short">Rating</span></div>`;
     if (!d) return `<div class="stat-card rt-card">${head}${rtTabs()}<div class="dtt">Loading… (the first time a month is worked out it can take a few seconds)</div></div>`;
     if (d.error) return `<div class="stat-card rt-card">${head}${rtTabs()}<div class="dtt">Could not load: ${esEsc(d.error)}</div></div>`;
+    if (!d || !d.rows || !d.team) return '';
     const P = d.parts, T = d.team, rows = d.rows.filter((r) => r.score != null);
     if (!rows.length) return `<div class="stat-card rt-card">${head}${rtTabs()}<div class="dtt">No ratings yet for this period.</div></div>`;
     return `<div class="stat-card rt-card">${head}${rtTabs()}

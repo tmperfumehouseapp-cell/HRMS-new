@@ -50,7 +50,7 @@
     draw();
   }
   function draw() {
-    const on = D.people.filter((p) => p.status === 'Working').length;
+    const on = (D.people || []).filter((p) => p.status === 'Working').length;
     let h = '<div class="pa-note">Anyone who opens the Admin panel, and every boss seat, is listed here. Everyone with the switch on can open <b>Boss › Tasks</b>, read what Claude understood, and press Submit and assign. ' + (D.waiting ? '<b>' + D.waiting + ' message' + (D.waiting === 1 ? ' is' : 's are') + ' waiting now.</b>' : 'Nothing is waiting now.') + ' ' + on + ' of ' + D.people.length + ' are working today.</div>';
     h += '<div class="pa-grid">' + D.people.map((p) => {
       const c = p.status === 'Working' ? 'w' : (p.status === 'On leave' ? 'l' : '');
