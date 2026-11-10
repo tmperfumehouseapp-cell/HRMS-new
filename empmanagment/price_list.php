@@ -62,7 +62,7 @@ function pl_clean($in): array
     $d['free'] = ['on' => !empty($f['on']), 'pct' => max(0, min(30, round($num($f['pct'] ?? 0), 2))), 'rs' => max(0, min(5000, (int)round($num($f['rs'] ?? 0)))), 'once' => !isset($f['once']) || !empty($f['once'])];
     if ($d['free']['on'] && $d['free']['pct'] <= 0 && $d['free']['rs'] <= 0) { $d['free']['on'] = false; $warn[] = 'Freedom is ON but both the % and the ₹ are 0, so it is switched off.'; }
     $d['instructions'] = mb_substr(trim((string)($in['instructions'] ?? '')), 0, 3000);
-    $d['photo'] = is_file(pl_dir() . 'photo.jpg');
+    @unlink(pl_dir() . 'photo.jpg'); $d['photo'] = false;   // no uploaded price photo is kept
     return [$d, $warn];
 }
 
@@ -173,28 +173,8 @@ if (strpos($__pl, 'pl.') === 0) {
         case 'pl.get': {
             $P = pl_load($pdo); json_response(['p' => $P]);
         }
-        case 'pl.photo': {
-            $f = pl_dir() . 'photo.jpg'; if (!is_file($f)) json_response(['error' => 'No price photo stored yet.'], 404);
-            json_response(['mime' => 'image/jpeg', 'data' => base64_encode((string)file_get_contents($f))]);
-        }
-        case 'pl.read_photo': {
-            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
-            $in = json_input(); $b64 = preg_replace('/^data:[^,]*,/', '', (string)($in['image'] ?? '')); $bin = base64_decode((string)$b64, true);
-            if ($bin === false || strlen($bin) < 500) json_response(['error' => 'The photo could not be read — pick it again.'], 422);
-            if (strlen($bin) > 9000000) json_response(['error' => 'The photo is too big (max 9 MB).'], 422);
-            $mime = (string)($in['mime'] ?? 'image/jpeg'); if (!preg_match('#^image/(jpeg|png|webp)$#', $mime)) $mime = 'image/jpeg';
-            @file_put_contents(pl_dir() . 'photo.jpg', $bin);
-            $sys = "You read a perfume shop's PRICE CHART photo and copy it into a table. One row per bottle size in ml. Each row has up to three prices in rupees: 'chart' (the highest price, the normal list price), 'offer' (the middle price) and 'lowest' (the lowest price). The photo may label the columns by commission percentages (like 7%, 6%, 2.8%) or by names; the highest-priced column is chart, the next is offer, the lowest is lowest. If the chart has only one or two price columns, put 0 in the missing ones. Copy every number EXACTLY — no rounding, no guessing; if a digit is unreadable put 0 and mention it in notes. Skip rows that are not sizes. 'notes' = one short sentence about anything unclear.";
-            $schema = ['type' => 'OBJECT', 'properties' => [
-                'rows' => ['type' => 'ARRAY', 'items' => ['type' => 'OBJECT', 'properties' => ['ml' => ['type' => 'INTEGER'], 'chart' => ['type' => 'INTEGER'], 'offer' => ['type' => 'INTEGER'], 'lowest' => ['type' => 'INTEGER']], 'required' => ['ml', 'chart', 'offer', 'lowest']]],
-                'notes' => ['type' => 'STRING']], 'required' => ['rows', 'notes']];
-            ignore_user_abort(true);
-            [$ok, $v, $why] = convo_ai($sys, [['text' => 'The price chart photo:'], ['inlineData' => ['mimeType' => $mime, 'data' => base64_encode($bin)]]], $schema, true, 8000);
-            if (!$ok) json_response(['error' => $why ?: 'The AI could not read the photo.'], 502);
-            [$C, $w] = pl_clean(['rows' => (array)($v['rows'] ?? [])]);
-            if (!$C['rows']) json_response(['error' => 'I could not find any size/price rows in this photo. Try a clearer, straighter photo.'], 422);
-            json_response(['ok' => true, 'rows' => $C['rows'], 'notes' => mb_substr((string)($v['notes'] ?? ''), 0, 300), 'warnings' => $w]);
-        }
+        case 'pl.photo':
+        case 'pl.read_photo': { @unlink(pl_dir() . 'photo.jpg'); json_response(['error' => 'Uploaded price photos are not used any more: the system draws the price chart itself from the Price chart page.'], 410); }
         case 'pl.voice': {
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
             $in = json_input(); $b64 = preg_replace('/^data:[^,]*,/', '', (string)($in['audio'] ?? '')); $bin = base64_decode((string)$b64, true);

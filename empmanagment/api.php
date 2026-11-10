@@ -9525,7 +9525,7 @@ function pl_get(PDO $pdo): array
     try {
         $q = $pdo->prepare("SELECT body FROM lib_facts WHERE k = 'pl'"); $q->execute(); $b = $q->fetchColumn();
         if ($b !== false) { $d = json_decode((string)$b, true); if (is_array($d)) $p = pl_clean($d); }
-        $p['photo'] = (bool)$pdo->query("SELECT 1 FROM lib_facts WHERE k = 'plphoto' AND body <> '' LIMIT 1")->fetchColumn();
+        $pdo->exec("DELETE FROM lib_facts WHERE k = 'plphoto'"); $p['photo'] = false;   // no uploaded price photo is kept any more
     } catch (PDOException $e) {}
     return $p;
 }
@@ -21946,44 +21946,10 @@ switch ($action) {
         break;
     }
 
-    case 'pl.photo': {
-        $auth = require_auth(); lib_guard($pdo, $auth);
-        if (!ensure_teach_table($pdo)) json_response(['error' => 'Could not prepare the Teach tables.'], 500);
-        $q = $pdo->prepare("SELECT body FROM lib_facts WHERE k = 'plphoto'"); $q->execute(); $b = json_decode((string)$q->fetchColumn(), true);
-        if (!is_array($b) || empty($b['data'])) json_response(['error' => 'No price photo saved yet.'], 404);
-        json_response(['mime' => (string)($b['mime'] ?? 'image/jpeg'), 'data' => (string)$b['data']]);
-        break;
-    }
-
-    case 'pl.read_photo': {
-        // The AI reads a photo of the price chart. It only FILLS the table — nothing is saved as prices until you press "Yes, got it — save".
-        $auth = require_auth(); lib_guard($pdo, $auth);
-        if ($_SERVER['REQUEST_METHOD'] !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
-        if (!ensure_teach_table($pdo)) json_response(['error' => 'Could not prepare the Teach tables.'], 500);
-        $in = json_input(); $img = (string)($in['image'] ?? ''); $cut = strpos($img, ';base64,');
-        if (strpos($img, 'data:image/') !== 0 || $cut === false) json_response(['error' => 'Send the price photo as a JPG, PNG or WEBP picture.'], 422);
-        $mime = substr($img, 5, $cut - 5); $b64 = preg_replace('/\s+/', '', substr($img, $cut + 8));
-        if (!in_array($mime, ['image/jpeg', 'image/png', 'image/webp'], true)) json_response(['error' => 'Only JPG, PNG or WEBP pictures can be read.'], 422);
-        if (strlen($b64) > 9000000) json_response(['error' => 'The photo is too large — try a smaller picture.'], 413);
-        $sys = "You read a PRICE CHART photo of TM Perfume House (an Indian perfume brand). Each row is a bottle SIZE in ml. For every size there are up to THREE selling prices in rupees: "
-            . "chart = the HIGHEST price (the full price; the column tied to the 7% commission level), offer = the NEXT price down (the 6% level), lowest = the LOWEST price (the 2.8% level, the normal bottom). "
-            . "If the columns are labelled with percentages, the biggest percentage is the highest price; if they have no labels, read them left to right as highest → lowest. If a size has only some of the prices, give 0 for the missing ones. "
-            . "ml = the size as a number (a 1 litre bottle = 1000). Copy every number EXACTLY as printed (remove commas and the ₹ sign). NEVER guess a number that is blurry or cut off: give 0 for it and say so in warnings. "
-            . "notes = one short sentence on what you read (for example '6 sizes, 3 prices each'). warnings = anything the owner must check. Ignore anything that is not the price table.";
-        $sch = ['type' => 'OBJECT', 'properties' => ['rows' => ['type' => 'ARRAY', 'items' => ['type' => 'OBJECT', 'properties' => ['ml' => ['type' => 'NUMBER'], 'chart' => ['type' => 'NUMBER'], 'offer' => ['type' => 'NUMBER'], 'lowest' => ['type' => 'NUMBER']], 'required' => ['ml', 'chart', 'offer', 'lowest']]], 'notes' => ['type' => 'STRING'], 'warnings' => ['type' => 'ARRAY', 'items' => ['type' => 'STRING']]], 'required' => ['rows', 'notes', 'warnings']];
-        ignore_user_abort(true); @set_time_limit(120);
-        [$ok, $v, $why] = convo_ai($sys, [['text' => 'Read this price chart.'], ['inlineData' => ['mimeType' => $mime, 'data' => $b64]]], $sch, false, 3000, 'claude');
-        if (!$ok) json_response(['error' => $why], 502);
-        $rows = pl_clean(['rows' => $v['rows'] ?? []])['rows']; $warn = array_values(array_filter(array_map(fn($x) => mb_substr(trim((string)$x), 0, 300), (array)($v['warnings'] ?? []))));
-        foreach ($rows as $r) {
-            if ($r['offer'] && $r['offer'] > $r['chart']) $warn[] = $r['ml'] . ' ml: the offer price is higher than the chart price — check the photo.';
-            if ($r['lowest'] && $r['offer'] && $r['lowest'] > $r['offer']) $warn[] = $r['ml'] . ' ml: the lowest price is higher than the offer price — check the photo.';
-            if (!$r['offer'] || !$r['lowest']) $warn[] = $r['ml'] . ' ml: a price is missing — type it in the table.';
-        }
-        if (!$rows) $warn[] = 'No sizes could be read — try a clearer, straighter photo.';
-        if (($in['save_photo'] ?? true) !== false) teach_facts_set($pdo, 'plphoto', json_encode(['mime' => $mime, 'data' => $b64]));
-        json_response(['rows' => $rows, 'notes' => mb_substr((string)($v['notes'] ?? ''), 0, 300), 'warnings' => array_values(array_unique($warn))]);
-        break;
+    case 'pl.photo':
+    case 'pl.read_photo': {   // the uploaded price photo is gone for good: the system draws the price chart itself (price_charts.php)
+        try { $pdo->exec("DELETE FROM lib_facts WHERE k = 'plphoto'"); } catch (Throwable $e) { }
+        json_response(['error' => 'Uploaded price photos are not used any more: the system draws the price chart itself from the Price chart page.'], 410);
     }
 
     case 'pl.voice': {
