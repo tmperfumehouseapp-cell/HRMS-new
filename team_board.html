@@ -18,6 +18,7 @@ table.tb{border-collapse:collapse;width:100%;font-size:13px;white-space:nowrap}
 .tb .n{font-weight:700}.tb .num{text-align:right;font-variant-numeric:tabular-nums}
 .chip{display:inline-block;font-size:11px;font-weight:700;border-radius:99px;padding:2px 8px;background:#e5e7eb;color:#374151;margin-left:4px}
 .chip.first{background:#dcfce7;color:#166534}.chip.late{background:#ffedd5;color:#9a3412}.chip.hold{background:#fee2e2;color:#b91c1c}.chip.off{background:#f3f4f6;color:#6b7280}.chip.meet{background:#ede9fe;color:#5b21b6}.chip.md{background:#fef9c3;color:#854d0e}
+.chip.nt{border:1px solid #fca5a5;cursor:pointer;font-family:inherit}.chip.nt:hover{background:#fecaca}.btn.open{padding:4px 12px;font-size:12.5px;font-weight:700;white-space:nowrap}
 .bar{height:6px;border-radius:99px;background:#e5e7eb;min-width:60px;overflow:hidden}.bar i{display:block;height:100%;background:#22c55e}
 .good{color:#166534;font-weight:700}.bad{color:#b91c1c;font-weight:700}
 .dr-bg{position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:50;display:none}.dr-bg.on{display:block}
@@ -65,12 +66,12 @@ guardPage();
   function rowHtml(r) {
     const t = r.target_pct_today, sh = r.should_pct_today, pctB = t == null ? '' : '<div class="bar" title="' + esc(t) + '% (should be ' + v(sh) + '%)"><i style="width:' + Math.max(0, Math.min(100, t)) + '%;background:' + (sh != null && t < sh ? '#f59e0b' : '#22c55e') + '"></i></div>';
     const behind = r.ratio_pct != null && r.team_ratio_pct != null && r.ratio_pct < r.team_ratio_pct;
-    return '<tr class="r" data-id="' + r.emp_id + '"><td class="num">' + r.rank + '</td><td class="n">' + esc(r.name) + (r.medals || []).map((m) => '<span class="chip md" title="' + esc(m) + '">' + esc(m.split(' ')[0]) + '</span>').join('') + (r.meet_admin ? '<span class="chip meet">Meet admin</span>' : '') + '</td>'
+    return '<tr class="r" data-id="' + r.emp_id + '"><td class="num">' + r.rank + '</td><td class="n">' + esc(r.name) + (r.medals || []).map((m) => '<span class="chip md" title="' + esc(m) + '">' + esc(m.split(' ')[0]) + '</span>').join('') + (!(r.target_today > 0) ? ' <button type="button" class="chip hold nt" data-tgopen="' + r.emp_id + '" title="No target today — tap to set it">🎯 No target · set</button>' : '') + (r.meet_admin ? '<span class="chip meet">Meet admin</span>' : '') + '</td>'
       + '<td>' + (r.present ? '<span class="chip first">In ' + esc(r.punch_in_today || '') + '</span>' : '<span class="chip off">Away</span>') + '</td>'
-      + '<td>' + (!(r.target_today > 0) ? '<span class="chip hold">No target</span>' : t == null ? '—' : '<div style="display:flex;gap:6px;align-items:center">' + pctB + '<span>' + esc(t) + '%</span></div>') + '</td>'
+      + '<td>' + (!(r.target_today > 0) ? '<span style="color:var(--muted)">—</span>' : t == null ? '—' : '<div style="display:flex;gap:6px;align-items:center">' + pctB + '<span>' + esc(t) + '%</span></div>') + '</td>'
       + '<td class="num">' + v(r.orders_30d) + '</td><td class="num">' + v(r.queries_30d) + '</td><td class="num ' + (r.sure_behind ? 'bad' : (behind ? '' : (r.ratio_pct != null ? 'good' : ''))) + '">' + v(r.ratio_pct, r.ratio_pct == null ? '' : '%') + '</td>'
       + '<td class="num">' + (r.ticket_30d == null ? '—' : '₹' + esc(r.ticket_30d)) + '</td><td class="num">' + v(r.speed_median_min_30d, r.speed_median_min_30d == null ? '' : ' m') + '</td><td class="num">' + v(r.tone_score) + '</td>'
-      + '<td class="num ' + (r.overdue_complaints ? 'bad' : '') + '">' + v(r.overdue_complaints) + '</td><td class="num">' + v(r.rating_30d) + '</td><td>' + lvChip(r) + '</td></tr>';
+      + '<td class="num ' + (r.overdue_complaints ? 'bad' : '') + '">' + v(r.overdue_complaints) + '</td><td class="num">' + v(r.rating_30d) + '</td><td>' + lvChip(r) + '</td><td><button type="button" class="btn open" data-open="' + r.emp_id + '">Open ▸</button></td></tr>';
   }
   function draw() {
     const T = D.team || {}, rows = (D.rows || []).slice(), s = COLS.find((c) => c[0] === sort.k) || COLS[0];
@@ -84,7 +85,7 @@ guardPage();
       + '<div class="tb-top"><div class="tb-k"><b>' + v(T.at_work) + ' / ' + v(T.people) + '</b><span>at work now</span></div><div class="tb-k"><b>' + v(T.ratio_pct, '%') + '</b><span>team ratio (' + esc(PL()) + ')</span></div><div class="tb-k"><b>' + (T.ticket == null ? '—' : '₹' + esc(T.ticket)) + '</b><span>team ticket</span></div><div class="tb-k"><b style="font-size:13px">' + esc(D.mode) + '</b><span>Team manager mode</span></div></div>'
       + '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:0 0 12px"><label style="font-size:13px">Team manager mode <select id="tbMode"><option value="off">Off</option><option value="suggest">Suggest (only show)</option><option value="apply">Apply (decides who sees new chats, shows each person a card)</option></select></label><button class="btn" id="tbRun">Ask Claude now</button><span style="font-size:12px;color:var(--muted)">Last run: ' + esc(D.ran_at || 'never') + ' · runs by itself every 10 minutes</span></div>'
       + (D.summary ? '<div class="tb-sum">🧠 ' + esc(D.summary) + '</div>' : '')
-      + (rows2.length ? '<div class="tb-wrap"><table class="tb"><thead><tr>' + COLS.map((c) => '<th data-k="' + c[0] + '">' + c[1] + (sort.k === c[0] ? (sort.dir > 0 ? ' ▲' : ' ▼') : '') + '</th>').join('') + '</tr></thead><tbody>' + rows2.map(rowHtml).join('') + '</tbody></table></div>' : '<div class="empty">No one matches.</div>');
+      + (rows2.length ? '<div class="tb-wrap"><table class="tb"><thead><tr>' + COLS.map((c) => '<th data-k="' + c[0] + '">' + c[1] + (sort.k === c[0] ? (sort.dir > 0 ? ' ▲' : ' ▼') : '') + '</th>').join('') + '<th style="cursor:default">Details</th></tr></thead><tbody>' + rows2.map(rowHtml).join('') + '</tbody></table></div>' : '<div class="empty">No one matches.</div>');
     afterDraw();
   }
   const SCORE_COL = (x) => x == null ? '#cbd5e1' : x >= 7 ? '#22c55e' : x >= 5.5 ? '#f59e0b' : '#ef4444';
@@ -136,7 +137,10 @@ guardPage();
   });
   root.addEventListener('input', (e) => { if (e.target.id === 'flQ') { FL.q = e.target.value; const pos = e.target.selectionStart; draw(); const q = document.getElementById('flQ'); if (q) { q.focus(); q.setSelectionRange(pos, pos); } } });
   root.addEventListener('click', async (e) => { const rb = e.target.closest('#tbRun'); if (!rb || busy) return; busy = true; rb.disabled = true; rb.textContent = 'Claude is reading the team…'; try { await api.post('wq.mgr_run', {}); await load(); } catch (er) { alert(er.message); } busy = false; });
-  root.addEventListener('click', (e) => { const th = e.target.closest('th[data-k]'); if (th) { const k = th.dataset.k; sort = { k, dir: sort.k === k ? -sort.dir : (k === 'name' || k === 'rank' ? 1 : -1) }; draw(); return; } const tr = e.target.closest('tr.r'); if (tr) drawer(+tr.dataset.id); });
+  root.addEventListener('click', (e) => {
+    const tg = e.target.closest('[data-tgopen]'); if (tg) { drawer(+tg.dataset.tgopen); setTimeout(() => { const a = document.getElementById('tgA'); if (a) { a.scrollIntoView({ block: 'center' }); a.focus(); } }, 60); return; }
+    const ob = e.target.closest('[data-open]'); if (ob) { drawer(+ob.dataset.open); return; }
+    const th = e.target.closest('th[data-k]'); if (th) { const k = th.dataset.k; sort = { k, dir: sort.k === k ? -sort.dir : (k === 'name' || k === 'rank' ? 1 : -1) }; draw(); return; } const tr = e.target.closest('tr.r'); if (tr) drawer(+tr.dataset.id); });
   bg.addEventListener('click', closeDr);
   dr.addEventListener('click', async (e) => {
     if (e.target.closest('#drX')) { closeDr(); return; }
