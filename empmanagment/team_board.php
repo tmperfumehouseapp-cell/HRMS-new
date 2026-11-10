@@ -11,10 +11,13 @@ if (!function_exists('tb_build')) {
 function tb_build(PDO $pdo): array
 {
     $rows = function_exists('wqm_collect') ? wqm_collect($pdo) : []; $out = [];
-    $att = []; $since = date('Y-m-d H:i:s', time() - 30 * 86400); $todayStart = date('Y-m-d 00:00:00');
+    $att = []; $daily = []; $since = date('Y-m-d H:i:s', time() - 30 * 86400); $todayStart = date('Y-m-d 00:00:00');
     try {
         $q = $pdo->prepare("SELECT employee_id, DATE(punch_in) d, MIN(punch_in) first_in, SUM(LEAST(TIMESTAMPDIFF(MINUTE, punch_in, COALESCE(punch_out, NOW())), 960)) mins FROM attendance WHERE punch_in IS NOT NULL AND punch_in >= ? GROUP BY employee_id, DATE(punch_in)"); $q->execute([$since]);
-        foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) { $e = (int)$r['employee_id']; $a = &$att[$e]; if (!$a) $a = ['days' => 0, 'mins' => 0, 'today_in' => '', 'today_mins' => 0]; $a['days']++; $a['mins'] += max(0, (int)$r['mins']); if ((string)$r['d'] === date('Y-m-d')) { $a['today_in'] = substr((string)$r['first_in'], 11, 5); $a['today_mins'] = max(0, (int)$r['mins']); } unset($a); }
+        foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) { $e = (int)$r['employee_id']; $a = &$att[$e]; if (!$a) $a = ['days' => 0, 'mins' => 0, 'today_in' => '', 'today_mins' => 0]; $a['days']++; $a['mins'] += max(0, (int)$r['mins']); $daily[$e][(string)$r['d']] = ['d' => (string)$r['d'], 'in' => substr((string)$r['first_in'], 11, 5), 'h' => round(max(0, (int)$r['mins']) / 60, 1), 'score' => null, 'hit' => null]; if ((string)$r['d'] === date('Y-m-d')) { $a['today_in'] = substr((string)$r['first_in'], 11, 5); $a['today_mins'] = max(0, (int)$r['mins']); } unset($a); }
+    } catch (Throwable $e) { }
+    try {   // the daily rating (score and "target hit") day by day
+        if (function_exists('rating_days')) foreach (rating_days($pdo, date('Y-m-d', time() - 29 * 86400), date('Y-m-d')) as $d => $list) foreach ((array)$list as $e => $x) { $e = (int)$e; if (!isset($daily[$e][$d])) $daily[$e][$d] = ['d' => (string)$d, 'in' => '', 'h' => 0, 'score' => null, 'hit' => null]; $daily[$e][$d]['score'] = isset($x['score']) ? round((float)$x['score'], 1) : null; $daily[$e][$d]['hit'] = !empty($x['has_target']) ? !empty($x['hit']) : null; }
     } catch (Throwable $e) { }
     $cd = []; try { if (function_exists('coach_day') && function_exists('biz_today')) $cd = (array)(coach_day($pdo, biz_today($pdo))['emps'] ?? []); } catch (Throwable $e) { }
     foreach ($rows as $id => $r) {
@@ -24,7 +27,7 @@ function tb_build(PDO $pdo): array
             'punch_in_today' => $a['today_in'], 'hours_today' => round($a['today_mins'] / 60, 1),
             'target_today' => isset($c['target']) ? (float)$c['target'] : null, 'sales_today' => isset($c['sales']) ? (float)$c['sales'] : null, 'target_pct_today' => $c['pct'] ?? null, 'should_pct_today' => $c['should_pct'] ?? null,
             'level' => (string)($m['level'] ?? ''), 'auto_level' => (string)($m['auto_level'] ?? ''), 'manual' => (string)($m['manual'] ?? ''), 'card' => (string)($m['card'] ?? ''), 'reason' => (string)($m['reason'] ?? ''), 'meet_admin' => !empty($m['meet_admin']), 'approved' => !empty($m['approved']), 'decided_at' => (string)($m['at'] ?? ''),
-            'rank' => 0, 'medals' => []];
+            'daily' => (function ($l) { krsort($l); return array_values($l); })($daily[$id] ?? []), 'rank' => 0, 'medals' => []];
     }
     // rank by orders (30 days) and medals: most orders, fastest, biggest ticket, best ratio — among people who have the data
     $ids = array_keys($out); usort($ids, function ($x, $y) use ($out) { return [$out[$y]['orders_30d'], $out[$x]['name']] <=> [$out[$x]['orders_30d'], $out[$y]['name']]; });
