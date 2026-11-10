@@ -33,8 +33,9 @@
         + (s.present ? '<span class="tm-chip first">At work</span>' : '<span class="tm-chip off">Not at work</span>') + (r.meet_admin ? '<span class="tm-chip meet">Meet admin</span>' : '') + (s.sure_behind ? '<span class="tm-chip late">Clearly behind the team</span>' : '') + '</div>'
         + '<div class="tm-m">Ratio ' + (s.ratio_pct == null ? '—' : s.ratio_pct + '%') + ' (team ' + esc(s.team_ratio_pct) + '%)' + sgn(s.ratio_pct, s.team_ratio_pct) + ' · ' + esc(s.orders_30d) + ' orders / ' + esc(s.queries_30d) + ' queries (30 days)'
         + ' · ticket ' + (s.ticket_30d == null ? '—' : '₹' + esc(s.ticket_30d) + ' (team ₹' + esc(s.team_ticket) + ')' + sgn(s.ticket_30d, s.team_ticket)) + ' · speed today ' + (s.speed_median_min_today == null ? '—' : esc(s.speed_median_min_today) + ' min')
+        + (s.rating_30d == null ? '' : ' · daily rating ' + esc(s.rating_30d) + '/10') + (s.tone_score == null ? '' : ' · tone ' + esc(s.tone_score) + '/10') + (s.penalties_30d ? ' · penalties ' + esc(s.penalties_30d) : '') + (s.late_replies_today ? ' · late replies today ' + esc(s.late_replies_today) : '')
         + ' · overdue complaints ' + esc(s.overdue_complaints) + ' · pending answers ' + esc(s.pending_answers) + ' · open chats ' + esc(s.open_chats) + '</div>'
-        + (r.card ? '<div class="tm-card">📣 ' + esc(r.card) + '</div>' : '') + (r.reason ? '<div class="tm-m">Why: ' + esc(r.reason) + '</div>' : '')
+        + (r.card ? '<div class="tm-card">📣 ' + esc(r.card) + '</div>' : '') + (s.tone_note ? '<div class="tm-m">🗣 Tone: ' + esc(s.tone_note) + '</div>' : '') + (r.reason ? '<div class="tm-m">Why: ' + esc(r.reason) + '</div>' : '')
         + '<div class="tm-act">' + sel + (hold ? '<button type="button" class="wq-btn sm" data-appr="' + r.emp_id + '" data-v="' + (r.approved ? 0 : 1) + '">' + (r.approved ? 'Approved — undo' : 'Approve “no new chats”') + '</button>' : '') + '</div></div>';
     }
     function draw() {
