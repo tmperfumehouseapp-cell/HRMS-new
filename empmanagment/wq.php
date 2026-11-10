@@ -1301,7 +1301,7 @@ function wq_grab_list(PDO $pdo, int $me, int $limit = 60): array
 function wq_rank_today(PDO $pdo): array
 {
     $j = json_decode((string)setting_get($pdo, 'wq_rank', ''), true); if (is_array($j) && (int)($j['at'] ?? 0) > time() - 120) return $j;
-    $rank = []; $order = [];
+    $rank = []; $order = []; $skip = [];
     try {
         $sales = $pdo->query("SELECT e.employee_id, e.full_name FROM employees e LEFT JOIN departments d ON d.department_id = e.department_id WHERE e.status != 'ex' AND d.department_name LIKE '%sales%'")->fetchAll(PDO::FETCH_ASSOC);
         $lastAns = []; try { foreach ($pdo->query("SELECT emp_id, MAX(ts) t FROM wa_messages WHERE dir = 'out' AND emp_id > 0 AND ts >= '" . date('Y-m-d H:i:s', time() - 1800) . "' GROUP BY emp_id")->fetchAll(PDO::FETCH_ASSOC) as $r0) $lastAns[(int)$r0['emp_id']] = strtotime((string)$r0['t']); } catch (Throwable $e) { }   // who is answering customers right now
@@ -1315,14 +1315,17 @@ function wq_rank_today(PDO $pdo): array
             $mAgo = isset($lastAns[$id]) ? (time() - $lastAns[$id]) / 60 : 999; $live = $mAgo <= 10 ? 100 : ($mAgo < 30 ? (30 - $mAgo) / 20 * 100 : 0);
             $list[] = ['id' => $id, 'name' => (string)$r['full_name'], 's' => 0.30 * $live + 0.20 * $speed + 0.10 * $act + 0.22 * $conv + 0.18 * $ord]; }
         usort($list, fn($a, $b) => [$b['s'], $a['name']] <=> [$a['s'], $b['name']]); $i = 0; foreach ($list as $x) { $rank[$x['id']] = ++$i; $order[] = $x['id']; }
+        // 🎯 proven sellers first: somebody with 10+ queries in 30 days whose orders are far below the team's (under 40% of the average, or none) is not shown new red / orange chats in the first minutes; they see them after the wave time like everybody else. Newer people (under 10 queries) are on trial and stay in.
+        $cv = []; foreach ($list as $x) { $oe = $mon[$x['id']]['orders'] ?? null; if ($oe && (int)($oe['queries'] ?? 0) >= 10) $cv[$x['id']] = (float)($oe['conversion'] ?? 0); }
+        $avg = $cv ? array_sum($cv) / count($cv) : 0; foreach ($cv as $e1 => $c1) if ($c1 <= 0 || ($avg > 0 && $c1 < 0.4 * $avg)) $skip[$e1] = 1;
     } catch (Throwable $e) { }
-    $o = ['at' => time(), 'rank' => $rank, 'order' => $order]; setting_set($pdo, 'wq_rank', json_encode($o)); return $o;
+    $o = ['at' => time(), 'rank' => $rank, 'order' => $order, 'skip' => $skip]; setting_set($pdo, 'wq_rank', json_encode($o)); return $o;
 }
 /** Waves: a new red / orange chat is shown first to the best 15 (default), and to everybody after 2 minutes (default). */
 function wq_wave_cfg(PDO $pdo): array
 {
     $s = wq_get($pdo, 'wq_wave_size', null); $m = wq_get($pdo, 'wq_wave_min', null);
-    return [($s !== null && (int)$s > 0) ? max(1, min(500, (int)$s)) : 15, ($m !== null && (int)$m > 0) ? max(1, min(30, (int)$m)) : 2];
+    return [($s !== null && (int)$s > 0) ? max(1, min(500, (int)$s)) : 40, ($m !== null && (int)$m > 0) ? max(1, min(30, (int)$m)) : 2];
 }
 /** The wave (1, 2, 3 …) of a person: who is in the first group, the next, … ; 0 = not ranked (not at work / not in sales): always sees everything. */
 function wq_wave_of(array $rk, int $emp, int $size): int { return isset($rk['rank'][$emp]) ? (int)ceil($rk['rank'][$emp] / max(1, $size)) : 0; }
@@ -1381,6 +1384,8 @@ function wq_needs(PDO $pdo, int $me, bool $waves = true): array
             foreach ($q->fetchAll() as $r1) $pend[(string)$r1['phone']] = ['name' => (string)$r1['name'], 'in' => wq_ts($r1['last_in_at']), 'emps' => [(int)$r1['assigned_emp']], 'cx' => 0]; } catch (Throwable $e) { }
         try { $q = $pdo->prepare("SELECT cc.id cid, cc.phone, cc.owner_emp, cc.raised_by, c.assigned_emp, c.name, c.last_in_at FROM cx_cases cc JOIN wa_contacts c ON c.phone = cc.phone WHERE cc.status IN ('open', 'reopened') AND c.last_in_at >= ? AND c.last_in_at <= ? AND $hum ORDER BY c.last_in_at LIMIT 300"); $q->execute([wq_dt($now - 86400), wq_dt($now - $bkMin * 60)]);
             foreach ($q->fetchAll() as $r1) { $es = []; foreach ([(int)$r1['owner_emp'], (int)$r1['raised_by'], (int)$r1['assigned_emp']] as $e1) if ($e1 > 0) $es[$e1] = $e1; if (!$es) continue; $pend[(string)$r1['phone']] = ['name' => (string)$r1['name'], 'in' => wq_ts($r1['last_in_at']), 'emps' => array_values($es), 'cx' => (int)$r1['cid']]; } } catch (Throwable $e) { }
+        try { $q = $pdo->query("SELECT cc.phone, cc.owner_emp, cc.raised_at FROM cx_cases cc WHERE cc.status IN ('open', 'reopened') AND cc.owner_emp > 0 AND ((cc.due_at IS NOT NULL AND cc.due_at < NOW()) OR (cc.first_reply_at IS NULL AND cc.reply_due IS NOT NULL AND cc.reply_due < NOW())) LIMIT 200");   // ⛔ an OVERDUE complaint also holds back new red / orange chats from its owner
+            foreach ($q->fetchAll() as $r1) { $e1 = (int)$r1['owner_emp']; $ph1 = (string)$r1['phone']; if (isset($pend[$ph1]) && in_array($e1, $pend[$ph1]['emps'], true)) continue; $bk[$e1] = ($bk[$e1] ?? 0) + 1; $bkc[$e1] = ($bkc[$e1] ?? 0) + 1; if (count($bki[$e1] ?? []) < 30) $bki[$e1][] = ['phone' => $ph1, 'name' => '', 'kind' => 'cx', 'in' => wq_ts($r1['raised_at']), 'txt' => 'Complaint is overdue']; } } catch (Throwable $e) { }
         if ($pend) { try { $pp = array_keys($pend); $q = $pdo->prepare("SELECT m.phone, m.body, m.mtype FROM wa_messages m JOIN (SELECT phone, MAX(id) mid FROM wa_messages WHERE dir = 'in' AND phone IN (" . wq_in($pp) . ") GROUP BY phone) x ON x.mid = m.id"); $q->execute($pp);
                 foreach ($q->fetchAll() as $t) { $ph1 = (string)$t['phone']; if (!isset($pend[$ph1])) continue; if (function_exists('wq_pace_trivial') && wq_pace_trivial((string)$t['mtype'], (string)$t['body'])) { unset($pend[$ph1]); continue; } $pend[$ph1]['txt'] = mb_substr(trim((string)$t['body']) !== '' ? trim((string)$t['body']) : '[' . (string)$t['mtype'] . ']', 0, 90); } } catch (Throwable $e) { }
             foreach ($pend as $ph1 => $p1) foreach ($p1['emps'] as $e1) { $bk[$e1] = ($bk[$e1] ?? 0) + 1; if ($p1['cx']) $bkc[$e1] = ($bkc[$e1] ?? 0) + 1; if (count($bki[$e1] ?? []) < 30) $bki[$e1][] = ['phone' => (string)$ph1, 'name' => $p1['name'], 'kind' => $p1['cx'] ? 'cx' : 'chat', 'in' => $p1['in'], 'txt' => (string)($p1['txt'] ?? '')]; } }
@@ -1393,7 +1398,7 @@ function wq_needs(PDO $pdo, int $me, bool $waves = true): array
     foreach ((array)$raw['items'] as $x) {
         $own = $me > 0 && (int)$x['emp'] === $me;
         if (!$own && $waves && $me > 0 && (int)($raw['backlog'][$me] ?? 0) > 0) continue;   // answers of theirs are still pending: no new red / orange for them
-        if (!$own && $me > 0 && ($now - (int)($x['wv'] ?? $x['in'])) < $wmin * 60) { if (isset($rkT['rank'][$me]) && $rkT['rank'][$me] > $wsz) continue; }   // first 2 minutes: the best 15 (today's speed mixed with the month's performance) see red and orange chats; everybody sees them after that
+        if (!$own && $waves && $me > 0 && ($now - (int)($x['wv'] ?? $x['in'])) < $wmin * 60) { if (!isset($rkT['rank'][$me]) || $rkT['rank'][$me] > $wsz || !empty($rkT['skip'][$me])) continue; }   // first minutes: only people at work who sell well (not absent, not a poor converter); everybody present sees it after that   // first 2 minutes: the best 15 (today's speed mixed with the month's performance) see red and orange chats; everybody sees them after that
         if (!$own && (int)$x['emp'] > 0 && (int)$x['at'] > $now - 120) continue;   // somebody just took it: they get their own 2 minutes
         $o[] = ['phone' => $x['phone'], 'name' => $x['name'], 'level' => $x['level'], 'own' => $own, 'holder' => (int)$x['emp'] > 0 ? wq_name($names, (int)$x['emp']) : '', 'sec' => max(0, $now - (int)$x['in']), 'txt' => $x['txt'], 'why' => $x['why'], 'emp' => (int)$x['emp'], 'key' => md5((int)$x['in'] . '|' . (int)$x['emp'] . '|' . (int)$x['at'])];
     }
