@@ -242,6 +242,7 @@
     if (!document.getElementById('wxCss')) { const s = document.createElement('style'); s.id = 'wxCss'; s.textContent = CSS; document.head.appendChild(s); }
     // 📐 fluid + compact: sizes follow the screen width (clamp), chat room tighter
     if (!document.getElementById('wxFluid')) { const s = document.createElement('style'); s.id = 'wxFluid'; s.textContent =
+      '@media(max-width:560px){.wx .wx-top{gap:5px;padding-left:8px;padding-right:8px}.wx .wx-top h1{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:clamp(15px,4.6vw,19px)}.wx .wx-top .wx-sp{width:30px;height:30px;flex:none}.wx .wx-top .wx-sp.wx-pc{width:auto;padding:0 7px;gap:4px;font-size:12px;flex:none}.wx .wx-top .wx-pill{padding:3px 7px;font-size:11px;flex:none}.wx .wx-tmt{display:none}.wx .wx-top #wxDk{width:30px;height:30px;line-height:30px}}@media(max-width:340px){.wx .wx-top{gap:4px;padding-left:6px;padding-right:6px}.wx .wx-top .wx-pill{padding:3px 5px}.wx .wx-top .wx-sp.wx-pc{padding:0 5px}}' +
       '.wx .wx-ch{padding:calc(clamp(3px,1vw,6px) + env(safe-area-inset-top)) clamp(4px,1.6vw,8px) clamp(3px,1vw,6px);gap:clamp(5px,1.8vw,8px)}.wx .wx-ch .wx-av{width:clamp(30px,8.5vw,36px)!important;height:clamp(30px,8.5vw,36px)!important}.wx .wx-ch .wx-nm{font-size:clamp(14px,4vw,16px)}.wx .wx-ch .wx-ic{width:clamp(30px,8.4vw,34px);height:clamp(30px,8.4vw,34px)}'
       + '.wx .wx-b{font-size:clamp(13px,3.7vw,14.2px);line-height:1.28;padding:clamp(4px,1.2vw,6px) clamp(6px,2vw,8px) 3px;margin:1px clamp(6px,2.4vw,10px);max-width:84%}.wx .wx-b small{font-size:clamp(9.5px,2.6vw,11px)}.wx .wx-day{margin:5px auto 3px;padding:2px 9px;font-size:clamp(10.5px,3vw,12px)}.wx .wx-ev{margin:3px auto;padding:2px 9px;font-size:clamp(10.5px,2.9vw,11.5px)}.wx .wx-msgs{padding:3px 0}'
       + '.wx .wx-tools{gap:clamp(3px,1vw,6px);padding:3px clamp(5px,1.6vw,8px) 0}.wx .wx-tl{height:clamp(32px,8.6vw,40px);font-size:clamp(14px,4vw,16px);border-radius:10px}.wx .wx-tl small{font-size:clamp(8.5px,2.4vw,10.5px)}'
@@ -443,7 +444,7 @@
         const el = R.querySelector('#wxPaceT'), b = R.querySelector('#wxPace'); if (!el || !b) return;
         if (!mp || mp.median == null || !tp || tp.median == null) { el.textContent = ''; return; }
         const f = (x) => x < 1 ? '<1m' : (x < 10 ? Math.round(x * 10) / 10 : Math.round(x)) + 'm', me = +mp.median, tm = +tp.median, col = me <= tm ? '#7cffb2' : me <= tm * 1.25 ? '#ffd166' : '#ff8a80';
-        el.innerHTML = '<i style="width:8px;height:8px;border-radius:50%;background:' + col + ';display:inline-block;flex:none"></i>' + f(me) + ' · team ' + f(tm); b.title = 'Your typical reply time ' + f(me) + ' · team ' + f(tm) + ' — tap for details'; } catch (e) { /* no chip */ } };
+        el.innerHTML = '<i style="width:8px;height:8px;border-radius:50%;background:' + col + ';display:inline-block;flex:none"></i>' + f(me) + ' · <span class="wx-tmt">team </span>' + f(tm); b.title = 'Your typical reply time ' + f(me) + ' · team ' + f(tm) + ' — tap for details'; } catch (e) { /* no chip */ } };
       paint(); setInterval(() => { if (!document.hidden) paint(); }, 300000); }
     { const cn = R.querySelector('#wxCxN'); if (cn) cn.onclick = () => { if (!window.CXR) { toast('Refresh the page and try again.', true); return; } CXR.open({ askCustomer: true, source: 'whatsapp', onDone: () => { try { loadCxB(); } catch (e) { } } }); }; }   // ⚠ raise a complaint for ANY number — not the chat that is open
     { const fb = R.querySelector('#wxFb'); if (fb) custFindBar(fb); }
@@ -850,7 +851,9 @@
       S.cur = { phone, msgs: [], contact: { phone, name: row.name || (opt && opt.name) || '', window_open: true }, row, sugg: undefined, info: null, last: 0, tmp: 0, files: [], peek: (opt && opt.peek) || '' };
       const v = document.createElement('div'); v.className = 'wx-chat'; R.appendChild(v); drawChatShell(); loadChat();
       if (wide() && S.tab === 'chats' && !['team', 'req', 'rescue', 'cx'].includes(S.filter)) { try { drawList(); } catch (e) { } }
-      try { if (!(history.state && history.state.wxChat)) history.pushState({ wxChat: phone }, ''); } catch (e) { }   // phone Back closes the chat (back to the list), not the app
+      // phone Back closes the chat (back to the list), not the app. A sheet that was just closed (e.g. "Open" in the Pending sheet) is still taking its history entry off (history.back() is asynchronous):
+      // pushing now would be undone by it and Back would leave the app — so the push waits until that step is done.
+      if (S.popSkip) { S.pushAfter = phone; setTimeout(() => pushChatState(), 700); } else pushChatState(phone);
     }
     function drawChatShell() {
       const v = $('.wx-chat'), c = S.cur.contact, r = S.cur.row;
@@ -970,6 +973,9 @@
           const bk = $('#wxLostBk'); if (bk) bk.onclick = () => { if (history.state && history.state.wxChat) history.back(); else closeChat(); }; toast('This chat was given to a colleague.', true); loadList(true);
         }
       }
+    }
+    function pushChatState(ph) {
+      try { ph = ph || S.pushAfter; S.pushAfter = null; if (ph && S.cur && S.cur.phone === ph && !(history.state && history.state.wxChat)) history.pushState({ wxChat: ph }, ''); } catch (e) { }
     }
     function closeChat() { stopRec(true); suggStop(); const phone = S.cur && S.cur.phone; S.cur = null; markSel(); const v = $('.wx-chat'); if (v) v.remove(); loadList(true); if (S.tab === 'history') drawHistory(false); if (S.tab === 'queries' && S.qView && S.qView.refresh) S.qView.refresh(); }
 
@@ -1380,7 +1386,7 @@
     { const wt = new URLSearchParams(location.search).get('tab'); if (wt === 'queries' || wt === 'history' || wt === 'me') setTab(wt); }
     const want = new URLSearchParams(location.search).get('phone'); if (want) setTimeout(() => openChat(String(want).replace(/\D/g, '').slice(-10)), 400);
     window.addEventListener('popstate', () => {
-      if (S.popSkip) { S.popSkip--; return; }   // our own history.back() after ✕ closed a sheet
+      if (S.popSkip) { S.popSkip--; if (!S.popSkip && S.pushAfter) pushChatState(); return; }   // our own history.back() after ✕ closed a sheet (then the chat's own entry is added)
       const tops = R.querySelectorAll('.wx-md'); if (tops.length) { tops[tops.length - 1]._shut ? tops[tops.length - 1]._shut() : tops[tops.length - 1].remove(); return; }
       if (S.cur && !(history.state && history.state.wxChat)) closeChat();
     });

@@ -200,6 +200,7 @@ function brain_claude_call($system, $user, $max, array $o = []) {
     $GLOBALS['brain_last_error'] = '';
     if (function_exists('brain_ai_stub')) { $r = brain_ai_stub($system, $user, $o); return $r === null ? [false, '', 'stub: no answer'] : [true, is_string($r) ? $r : json_encode($r), '']; }
     $key = brain_key(); if ($key === '') { $GLOBALS['brain_last_error'] = 'Claude is switched off: no Anthropic key in config.php (ANTHROPIC_API_KEY).'; return [false, '', $GLOBALS['brain_last_error']]; }
+    if (!empty($GLOBALS['ai_feature']) && function_exists('ai_feature_cap_hit') && ai_feature_cap_hit((string)$GLOBALS['ai_feature'])) { $GLOBALS['brain_last_error'] = 'Daily limit of this feature is reached — it continues tomorrow.'; return [false, '', $GLOBALS['brain_last_error']]; }
     if (function_exists('tmph_over_budget') && tmph_over_budget()) { $GLOBALS['brain_last_error'] = 'The monthly AI budget is used up.'; return [false, '', $GLOBALS['brain_last_error']]; }
     $model = function_exists('tmph_cfg') ? (string)tmph_cfg('TMPH_MODEL', 'claude-sonnet-5-5') : 'claude-sonnet-5-5'; if (strpos($model, 'claude') !== 0) $model = 'claude-sonnet-5-5';
     if (!empty($o['model']) && strpos((string)$o['model'], 'claude') === 0) $model = (string)$o['model'];   // a job that needs a faster / stronger model
@@ -224,7 +225,7 @@ function brain_claude_call($system, $user, $max, array $o = []) {
         $j = json_decode($out, true);
         if (!is_array($j)) { $last = 'Claude gave an unreadable answer.'; continue; }
         if (isset($j['error'])) { $last = 'Claude said: ' . (string)($j['error']['message'] ?? 'unknown error'); if (stripos($last, 'thinking') !== false) continue; if (stripos($last, 'overloaded') !== false || stripos($last, 'rate') !== false || stripos($last, 'exceed') !== false) { if (function_exists('tmph_mark_busy')) tmph_mark_busy($bg ? 40 : 25); sleep($waits ? array_shift($waits) : 2); continue; } break; }
-        if (function_exists('tmph_usage_add')) { try { $u = (array)($j['usage'] ?? []); tmph_usage_add($model, (int)round((int)($u['input_tokens'] ?? 0) + 1.25 * (int)($u['cache_creation_input_tokens'] ?? 0) + 0.1 * (int)($u['cache_read_input_tokens'] ?? 0)), (int)($u['output_tokens'] ?? 0), (string)($o['purpose'] ?? 'brain')); } catch (Throwable $e) {} }
+        if (function_exists('tmph_usage_add')) { try { $u = (array)($j['usage'] ?? []); tmph_usage_add($model, (int)round((int)($u['input_tokens'] ?? 0) + 1.25 * (int)($u['cache_creation_input_tokens'] ?? 0) + 0.1 * (int)($u['cache_read_input_tokens'] ?? 0)), (int)($u['output_tokens'] ?? 0), (string)($GLOBALS['ai_feature'] ?? ($o['purpose'] ?? 'brain'))); } catch (Throwable $e) {} }
         $txt = ''; foreach ((array)($j['content'] ?? []) as $b) if (($b['type'] ?? '') === 'text' && trim((string)($b['text'] ?? '')) !== '') $txt .= $b['text'];
         if (trim($txt) !== '') return [true, $txt, ''];
         $last = 'the answer was cut off (' . ($j['stop_reason'] ?? 'no reason given') . ')';

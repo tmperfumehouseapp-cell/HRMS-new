@@ -299,7 +299,7 @@ function st_daily_sync(PDO $pdo): void
 function st_migrate(PDO $pdo): void
 {
     static $ran = false; if ($ran) return; $ran = true;
-    $flag = sys_get_temp_dir() . '/hrms_st_mig_v10';
+    $flag = sys_get_temp_dir() . '/hrms_st_mig_v11';
     if (is_file($flag)) return;
     try {
         foreach (['printed_at' => 'DATETIME NULL', 'print_count' => 'INT NOT NULL DEFAULT 0'] as $c => $def)
@@ -353,7 +353,7 @@ function st_migrate(PDO $pdo): void
             UNIQUE KEY uq_st_bv_code (code), UNIQUE KEY uq_st_bv_phone_year (phone, bday_year)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         if (!$pdo->query("SHOW COLUMNS FROM st_bill_people LIKE 'bday'")->fetch()) $pdo->exec("ALTER TABLE st_bill_people ADD COLUMN bday CHAR(5) NOT NULL DEFAULT ''");      // customer birthday as MM-DD
-        foreach (['source' => "VARCHAR(20) NOT NULL DEFAULT ''", 'source_note' => "VARCHAR(120) NOT NULL DEFAULT ''", 'area' => "VARCHAR(80) NOT NULL DEFAULT ''"] as $c => $def)
+        foreach (['source' => "VARCHAR(20) NOT NULL DEFAULT ''", 'source_note' => "VARCHAR(120) NOT NULL DEFAULT ''", 'area' => "VARCHAR(80) NOT NULL DEFAULT ''", 'helper_emp_id' => 'INT NOT NULL DEFAULT 0', 'helper_emp_name' => "VARCHAR(120) NOT NULL DEFAULT ''"] as $c => $def)
             if (!$pdo->query("SHOW COLUMNS FROM st_bills LIKE '$c'")->fetch()) $pdo->exec("ALTER TABLE st_bills ADD COLUMN $c $def");
         @file_put_contents($flag, '1');
     } catch (Throwable $e) { error_log('st_migrate: ' . $e->getMessage()); }
@@ -1558,10 +1558,19 @@ if (!function_exists('budget_store_calc')) {
     function st_pool_ids(PDO $pdo): array
     {
         $j = null; try { if (function_exists('setting_get')) $j = json_decode((string)setting_get($pdo, 'store_pool', ''), true); } catch (Throwable $e) {}
-        if (is_array($j)) return array_values(array_unique(array_filter(array_map('intval', $j))));
-        $ids = [];
-        try { foreach ($pdo->query("SELECT employee_id, full_name FROM employees WHERE status != 'ex'")->fetchAll() as $r) { $fn = strtolower((string)strtok(trim((string)$r['full_name']), ' ')); if (in_array($fn, ['neil', 'krish', 'anil'], true)) $ids[] = (int)$r['employee_id']; } } catch (Throwable $e) {}
-        return $ids;
+        $def = [];
+        try { foreach ($pdo->query("SELECT employee_id, full_name FROM employees WHERE status != 'ex'")->fetchAll() as $r) { $fn = strtolower((string)strtok(trim((string)$r['full_name']), ' ')); if (in_array($fn, ['neil', 'krish', 'anil'], true)) $def[] = (int)$r['employee_id']; } } catch (Throwable $e) {}
+        if (is_array($j)) {
+            $ids = array_values(array_unique(array_filter(array_map('intval', $j))));
+            try {      // once: put Neil, Krish and Anil into the one team even if a smaller list was saved before; after this the 'one team' tick in Total Budgeting decides
+                if ($def && function_exists('setting_get') && function_exists('setting_set') && (string)setting_get($pdo, 'store_pool_seed1', '') === '') {
+                    $ids = array_values(array_unique(array_merge($ids, $def)));
+                    setting_set($pdo, 'store_pool', json_encode($ids)); setting_set($pdo, 'store_pool_seed1', '1');
+                }
+            } catch (Throwable $e) {}
+            return $ids;
+        }
+        return $def;
     }
     /** Old POS bills (pos_orders, kept in this database) of the days in the range that have NO bill in the new store POS, shaped like st_bills rows. So the days before the new POS started (e.g. 1–3 November) still count. */
     function budget_oldpos_rows(PDO $pdo, string $from, string $to, array $newDays): array
