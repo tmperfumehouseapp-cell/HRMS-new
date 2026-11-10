@@ -1383,7 +1383,10 @@ function wq_needs(PDO $pdo, int $me, bool $waves = true): array
         if ($pend) { try { $pp = array_keys($pend); $q = $pdo->prepare("SELECT m.phone, m.body, m.mtype FROM wa_messages m JOIN (SELECT phone, MAX(id) mid FROM wa_messages WHERE dir = 'in' AND phone IN (" . wq_in($pp) . ") GROUP BY phone) x ON x.mid = m.id"); $q->execute($pp);
                 foreach ($q->fetchAll() as $t) { $ph1 = (string)$t['phone']; if (!isset($pend[$ph1])) continue; if (function_exists('wq_pace_trivial') && wq_pace_trivial((string)$t['mtype'], (string)$t['body'])) { unset($pend[$ph1]); continue; } $pend[$ph1]['txt'] = mb_substr(trim((string)$t['body']) !== '' ? trim((string)$t['body']) : '[' . (string)$t['mtype'] . ']', 0, 90); } } catch (Throwable $e) { }
             foreach ($pend as $ph1 => $p1) foreach ($p1['emps'] as $e1) { $bk[$e1] = ($bk[$e1] ?? 0) + 1; if ($p1['cx']) $bkc[$e1] = ($bkc[$e1] ?? 0) + 1; if (count($bki[$e1] ?? []) < 30) $bki[$e1][] = ['phone' => (string)$ph1, 'name' => $p1['name'], 'kind' => $p1['cx'] ? 'cx' : 'chat', 'in' => $p1['in'], 'txt' => (string)($p1['txt'] ?? '')]; } }
-        $raw = ['at' => $now, 'items' => $items, 'backlog' => $bk, 'bk_cx' => $bkc, 'bk_items' => $bki];
+        try { $old = []; foreach ($pdo->query("SELECT k, v FROM wq_meta WHERE k LIKE 'bki:%'")->fetchAll() as $r2) $old[(string)$r2['k']] = (string)$r2['v'];   // each person's own list is kept in its own row (not in the shared list every phone reads), and written only when it changed
+            foreach ($bki as $e1 => $l1) { $js = json_encode($l1, JSON_UNESCAPED_UNICODE); $k1 = 'bki:' . $e1; if (($old[$k1] ?? null) !== $js) wq_meta_put($pdo, $k1, $js); unset($old[$k1]); }
+            foreach ($old as $k1 => $_v) $pdo->prepare("DELETE FROM wq_meta WHERE k = ?")->execute([$k1]); } catch (Throwable $e) { }
+        $raw = ['at' => $now, 'items' => $items, 'backlog' => $bk, 'bk_cx' => $bkc];
     }
     $names = wq_names($pdo); $o = []; $rkT = ($waves && $me > 0) ? wq_rank_today($pdo) : ['rank' => []]; [$wsz, $wmin] = wq_wave_cfg($pdo);
     foreach ((array)$raw['items'] as $x) {
@@ -1400,7 +1403,7 @@ function wq_needs(PDO $pdo, int $me, bool $waves = true): array
 /** The chats / complaints this person still has to answer (their own list only): [{phone, name, kind: chat|cx, sec, txt}], complaints first, then the longest wait. */
 function wq_needs_backlog_items(PDO $pdo, int $me): array
 {
-    $j = json_decode((string)setting_get($pdo, 'wq_needs', ''), true); $l = is_array($j) && is_array($j['bk_items'][$me] ?? null) ? $j['bk_items'][$me] : []; $now = wq_now(); $o = [];
+    $j = json_decode(wq_meta_get($pdo, 'bki:' . $me, ''), true); $l = is_array($j) ? $j : []; $now = wq_now(); $o = [];
     foreach ($l as $x) $o[] = ['phone' => $x['phone'], 'name' => $x['name'], 'kind' => $x['kind'], 'sec' => max(0, $now - (int)$x['in']), 'txt' => $x['txt']];
     usort($o, fn($a, $b) => ($a['kind'] === $b['kind'] ? 0 : ($a['kind'] === 'cx' ? -1 : 1)) ?: $b['sec'] <=> $a['sec']); return $o;
 }
