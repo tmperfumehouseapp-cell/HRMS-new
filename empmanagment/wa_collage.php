@@ -59,6 +59,7 @@ function wa_collage_render(array $rows, array $imgs): ?string
         }
         $ty = $py + $PH + 30; $tw = $cw - 40;
         foreach (wa_collage_wrap((string)$p['name'], $fb, 17, $tw, 2) as $ln) { imagettftext($im, 17, 0, $px, $ty, $ink, $fb, $ln); $ty += 26; }
+        $insp = trim((string)($p['original_site'] ?? '')); if ($insp !== '') { foreach (wa_collage_wrap('Inspired by ' . $insp, $fr, 13, $tw, 1) as $ln) { imagettftext($im, 13, 0, $px, $ty, $gold, $fr, $ln); $ty += 20; } }   // the original perfume it is inspired by (website spelling — the real original stays staff-only)
         $notes = array_values(array_filter(array_map('trim', (array)$p['notes']))); $ty += 4;
         if ($notes) foreach (wa_collage_wrap('Notes: ' . implode(', ', array_slice($notes, 0, 8)), $fr, 13, $tw, 3) as $ln) { imagettftext($im, 13, 0, $px, $ty, $mut, $fr, $ln); $ty += 20; }
         $lg = trim((string)$p['longevity']); if ($lg !== '') imagettftext($im, 14, 0, $px, $y + $ch - 24, $gold, $fb, 'Lasts: ' . mb_substr($lg, 0, 22));
