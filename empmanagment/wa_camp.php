@@ -457,6 +457,7 @@ function wa_camp_audience(PDO $pdo, array $aud, int $freq): array
     $st = ['matched' => 0, 'optout' => 0, 'recent' => 0, 'invalid' => 0, 'send' => 0];
     $recent = []; $q = $pdo->prepare("SELECT DISTINCT phone FROM wa_messages WHERE dir = 'out' AND mtype = 'template' AND who = 'campaign' AND status <> 'failed' AND ts >= ?"); $q->execute([date('Y-m-d H:i:s', wa_camp_now() - max(0, $freq) * 86400)]); foreach ($q->fetchAll() as $r) $recent[(string)$r['phone']] = true;
     // 🚫 "never send the same message twice": people who already got this SAME message in an earlier campaign (it left our side and Meta did not fail it) are left out. On unless the owner switches it off (audience.skip_got = 0).
+    $talkDays = array_key_exists('skip_talking', $aud) ? (int)$aud['skip_talking'] : 3; $talkSince = $talkDays > 0 ? date('Y-m-d H:i:s', wa_camp_now() - min(30, $talkDays) * 86400) : '';   // 💬 on by default: 3 days; skip_talking = 0 switches it off
     $got = []; $gotTpl = (int)($aud['got_tpl'] ?? 0);
     if ($gotTpl > 0 && (!array_key_exists('skip_got', $aud) || !empty($aud['skip_got']))) {
         try {
@@ -468,6 +469,7 @@ function wa_camp_audience(PDO $pdo, array $aud, int $freq): array
     foreach ($matchedIt as $r) {
         $st['matched']++;
         if ($got && isset($got[(string)$r['phone']])) { $st['got'] = ($st['got'] ?? 0) + 1; continue; }
+        if ($talkSince !== '' && !empty($r['last_in_at']) && (string)$r['last_in_at'] >= $talkSince) { $st['talking'] = ($st['talking'] ?? 0) + 1; continue; }   // they are talking to us right now (wrote in the last days): the team answers them, no campaign on top
         if (!wa_valid_phone($r['phone'])) { $st['invalid']++; continue; } if ($r['optout']) { $st['optout']++; continue; } if ($freq > 0 && isset($recent[$r['phone']])) { $st['recent']++; continue; } $send[] = ['phone' => $r['phone'], 'name' => $r['name']];   // only what sending needs — keeps memory small for big audiences
     }
     // 📬 "leave out customers who already got N+ campaign messages in the last D days" (the owner's switch in the campaign screen): Meta holds back people who get many marketing messages
