@@ -235,27 +235,27 @@ function wa_tick(PDO $pdo, bool $force = false): array
 {
     if (!$force && !wa_lock($pdo, 'tick', 8)) return ['skipped' => true];
     if ($force && !defined('WA_IN_WEBHOOK') && (int)date('G') >= 3 && (string)setting_get($pdo, 'pvb_day', '') !== date('Y-m-d') && function_exists('wcr_pvb_run')) { try { wcr_pvb_run($pdo); } catch (Throwable $e) { } }   // person vs bot: once a day, early morning
-    $o = ['assigned' => 0];
+    $o = ['assigned' => 0]; $__late = function (): bool { return !empty($GLOBALS['__wa_dl']) && microtime(true) > (float)$GLOBALS['__wa_dl']; };   // ⏱ the engine run has a time budget: after its deadline the non-essential jobs below wait for the next run
     try { if (function_exists('wa_hot_scan')) $o['hot'] = wa_hot_scan($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'hot chats: ' . $e->getMessage()); }   // a customer who asks to pay is given to a person at once
-    try { if (function_exists('wa_tpl_autosync') && !defined('WA_IN_WEBHOOK')) $o['tpl'] = wa_tpl_autosync($pdo, 1800); } catch (Throwable $e) { }   // waiting templates: ask Meta every 30 min (Meta's webhook may not tell us)
+    if (!$__late()) try { if (function_exists('wa_tpl_autosync') && !defined('WA_IN_WEBHOOK')) $o['tpl'] = wa_tpl_autosync($pdo, 1800); } catch (Throwable $e) { }   // waiting templates: ask Meta every 30 min (Meta's webhook may not tell us)
     try { if (function_exists('wa_late_scan')) $o['late'] = wa_late_scan($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'late replies: ' . $e->getMessage()); }   // ⏰ mark chats waiting 10+ min
-    try { if (function_exists('wa_mcache_prefetch') && !defined('WA_IN_WEBHOOK')) $o['media'] = wa_mcache_prefetch($pdo); } catch (Throwable $e) { }   // ⚡ new customer photos / videos saved on our server before anyone opens them
-    try { if (function_exists('wa_done_scan') && !defined('WA_IN_WEBHOOK')) { $o['done'] = wa_done_scan($pdo); if ((int)date('G') >= 3) wa_done_learn($pdo); } } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'order completed: ' . $e->getMessage()); }   // ✅ Shopify orders → order completed
+    if (!$__late()) try { if (function_exists('wa_mcache_prefetch') && !defined('WA_IN_WEBHOOK')) $o['media'] = wa_mcache_prefetch($pdo); } catch (Throwable $e) { }   // ⚡ new customer photos / videos saved on our server before anyone opens them
+    if (!$__late()) try { if (function_exists('wa_done_scan') && !defined('WA_IN_WEBHOOK')) { $o['done'] = wa_done_scan($pdo); if ((int)date('G') >= 3) wa_done_learn($pdo); } } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'order completed: ' . $e->getMessage()); }   // ✅ Shopify orders → order completed
     try { $o['assigned'] = wa_auto_assign($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'auto-assign: ' . $e->getMessage()); }
-    try { if (!defined('WA_IN_WEBHOOK')) $o['alloc'] = wa_auto_alloc($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'auto-allocate: ' . $e->getMessage()); }   // 🤖 orders → the salesperson of the chat
+    if (!$__late()) try { if (!defined('WA_IN_WEBHOOK')) $o['alloc'] = wa_auto_alloc($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'auto-allocate: ' . $e->getMessage()); }   // 🤖 orders → the salesperson of the chat
     try { wa_callnow_scan($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'call-now: ' . $e->getMessage()); }
-    try { if (function_exists('wq_urgent_push') && !defined('WA_IN_WEBHOOK')) $o['urgent'] = wq_urgent_push($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'urgent: ' . $e->getMessage()); }   // 🔴 nobody answered a ready-to-pay chat in time: everyone present is told at once
-    try { if (function_exists('wa_proof_scan')) { $pr = wa_proof_scan($pdo); $o['proofs'] = $pr['made']; } } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'order proof: ' . $e->getMessage()); }
-    try { if (function_exists('wag_tick')) $o['growth'] = wag_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'growth: ' . $e->getMessage()); }
-    try { if (function_exists('wq_tick')) $o['wq'] = wq_tick($pdo, ['light' => true]); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'whatsapp sales: ' . $e->getMessage()); }   // no-answer flow + typing of new queries
-    try { if (function_exists('wch_tick')) $o['wch'] = wch_tick($pdo, ['light' => true]); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'chain cart: ' . $e->getMessage()); }   // chain cart: reminders
-    try { if (function_exists('wa_ord_tick')) $o['orders'] = wa_ord_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'orders: ' . $e->getMessage()); }   // order-update messages (and the one-time template setup)
-    try { if (function_exists('jt_tick') && $force && !defined('WA_IN_WEBHOOK')) $o['tags'] = jt_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'tags: ' . $e->getMessage()); }
-    try { if (function_exists('wa_numq_refresh') && $force && !defined('WA_IN_WEBHOOK')) { $nq = json_decode((string)setting_get($pdo, 'wa_numq_cache', ''), true); if (!is_array($nq) || (int)($nq['t'] ?? 0) < time() - 600) wa_numq_refresh($pdo); } } catch (Throwable $e) { }   // ⚡ the per-number chip counts are renewed here, not while the chat list loads
-    try { if (function_exists('wd_tick') && $force && !defined('WA_IN_WEBHOOK')) $o['drip'] = wd_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'drip: ' . $e->getMessage()); }   // 🔁 7-Day Drip
-    try { if (function_exists('wj_tick') && $force && !defined('WA_IN_WEBHOOK')) $o['journey'] = wj_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'journey: ' . $e->getMessage()); }   // 🗓 60-day Journey: today's messages, the night's topic learning, festival watch
-    try { if (function_exists('wtp_gen_tick') && $force && !defined('WA_IN_WEBHOOK')) { $f0 = ai_feat('wa_topics'); try { wtp_gen_tick($pdo); } finally { ai_feat($f0); } } } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'topics: ' . $e->getMessage()); }   // 🧭 Claude writes the topic messages one topic at a time and sends them to Meta
-    try { if (function_exists('wlr_nightly') && $force && !defined('WA_IN_WEBHOOK')) { $f0 = ai_feat('wa_learn'); try { wlr_nightly($pdo); } finally { ai_feat($f0); } } } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'learning: ' . $e->getMessage()); }   // 🧠 after 02:00, once a day: lost chats saved, guidebook rewritten from won + lost chats
+    if (!$__late()) try { if (function_exists('wq_urgent_push') && !defined('WA_IN_WEBHOOK')) $o['urgent'] = wq_urgent_push($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'urgent: ' . $e->getMessage()); }   // 🔴 nobody answered a ready-to-pay chat in time: everyone present is told at once
+    if (!$__late()) try { if (function_exists('wa_proof_scan')) { $pr = wa_proof_scan($pdo); $o['proofs'] = $pr['made']; } } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'order proof: ' . $e->getMessage()); }
+    if (!$__late()) try { if (function_exists('wag_tick')) $o['growth'] = wag_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'growth: ' . $e->getMessage()); }
+    if (!$__late()) try { if (function_exists('wq_tick')) $o['wq'] = wq_tick($pdo, ['light' => true]); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'whatsapp sales: ' . $e->getMessage()); }   // no-answer flow + typing of new queries
+    if (!$__late()) try { if (function_exists('wch_tick')) $o['wch'] = wch_tick($pdo, ['light' => true]); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'chain cart: ' . $e->getMessage()); }   // chain cart: reminders
+    if (!$__late()) try { if (function_exists('wa_ord_tick')) $o['orders'] = wa_ord_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'orders: ' . $e->getMessage()); }   // order-update messages (and the one-time template setup)
+    if (!$__late()) try { if (function_exists('jt_tick') && $force && !defined('WA_IN_WEBHOOK')) $o['tags'] = jt_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'tags: ' . $e->getMessage()); }
+    if (!$__late()) try { if (function_exists('wa_numq_refresh') && $force && !defined('WA_IN_WEBHOOK')) { $nq = json_decode((string)setting_get($pdo, 'wa_numq_cache', ''), true); if (!is_array($nq) || (int)($nq['t'] ?? 0) < time() - 600) wa_numq_refresh($pdo); } } catch (Throwable $e) { }   // ⚡ the per-number chip counts are renewed here, not while the chat list loads
+    if (!$__late()) try { if (function_exists('wd_tick') && $force && !defined('WA_IN_WEBHOOK')) $o['drip'] = wd_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'drip: ' . $e->getMessage()); }   // 🔁 7-Day Drip
+    if (!$__late()) try { if (function_exists('wj_tick') && $force && !defined('WA_IN_WEBHOOK')) $o['journey'] = wj_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'journey: ' . $e->getMessage()); }   // 🗓 60-day Journey: today's messages, the night's topic learning, festival watch
+    if (!$__late()) try { if (function_exists('wtp_gen_tick') && $force && !defined('WA_IN_WEBHOOK')) { $f0 = ai_feat('wa_topics'); try { wtp_gen_tick($pdo); } finally { ai_feat($f0); } } } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'topics: ' . $e->getMessage()); }   // 🧭 Claude writes the topic messages one topic at a time and sends them to Meta
+    if (!$__late()) try { if (function_exists('wlr_nightly') && $force && !defined('WA_IN_WEBHOOK')) { $f0 = ai_feat('wa_learn'); try { wlr_nightly($pdo); } finally { ai_feat($f0); } } } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'learning: ' . $e->getMessage()); }   // 🧠 after 02:00, once a day: lost chats saved, guidebook rewritten from won + lost chats
     setting_set($pdo, 'wa_tick_at', date('Y-m-d H:i:s'));
     return $o;
 }
@@ -608,7 +608,7 @@ $__wm = (string)($action ?? ($_GET['action'] ?? ''));
 if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.num_photo', 'wa.num_set', 'wa.team', 'wa.team_save', 'wa.callnow', 'wa.callnow_done', 'wa.suggest', 'wa.contacts', 'wa.contact_import', 'wa.contact_fix', 'wa.cron', 'wa.alloc_why', 'wa.alloc_run'], true)) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     if ($__wm === 'wa.cron') {   // Hostinger cron: no login, a secret key instead
-        ignore_user_abort(true); @set_time_limit(180);   // the caller may hang up (the heartbeat does): the run still finishes
+        ignore_user_abort(true); @set_time_limit(280);   // the caller may hang up (the heartbeat does): the run still finishes
         if (!wa_tables($pdo) || !wa_more_tables($pdo)) json_response(['error' => 'storage'], 500);
         $key = (string)setting_get($pdo, 'wa_cron_key', ''); if ($key === '' || !hash_equals($key, (string)($_GET['key'] ?? ''))) json_response(['error' => 'Wrong key.'], 403);
         // speed indexes, added ONCE by the cron (never inside someone's page request): template counts, the call-now scan, per-customer
@@ -648,9 +648,11 @@ if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.
             $t0 = microtime(true); try { setting_set($pdo, 'wa_cron_step', $k . ' @ ' . date('H:i:s')); } catch (Throwable $e) { }
             try { return $f(); } finally { $__st[$k] = round(microtime(true) - $t0, 1); }
         };
-        $r = ['tick' => $__T('tick', fn() => wa_tick($pdo, true))];
-        try { $r['campaigns'] = $__T('campaigns', fn() => wa_camp_tick($pdo)); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'campaigns: ' . $e->getMessage()); $r['campaigns'] = 'error'; }
+        $GLOBALS['__wa_dl'] = $__t0 + $__BUD;   // the soft deadline for the non-essential jobs inside the tick
+        $r = [];
+        try { $r['campaigns'] = $__T('campaigns', fn() => wa_camp_tick($pdo)); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'campaigns: ' . $e->getMessage()); $r['campaigns'] = 'error'; }   // sending goes FIRST: the tick below took the whole budget and campaigns were skipped
         try { $r['recover'] = $__T('recovery', fn() => wa_rec_tick($pdo)); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'recovery: ' . $e->getMessage()); }   // 🔁 failed messages from another number / an alternative wording, slowly
+        try { $r['tick'] = $__T('tick', fn() => wa_tick($pdo, true)); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'tick: ' . $e->getMessage()); $r['tick'] = 'error'; }
         $__heavy = [
             ['cust_refresh', fn() => wa_cust_refresh($pdo, 600)],   // customer summary + tag index (every 10 minutes)
             ['followups', function () use ($pdo) { return wa_lock($pdo, 'fu', 240) ? wa_fu_scan($pdo) : null; }],
