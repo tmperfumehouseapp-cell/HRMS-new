@@ -1290,7 +1290,7 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.camp_start_now', 'wa.camp_snap', 'wa.cam
             $c0 = wa_cpc_get($pdo, 'camp_list'); json_response(['snap' => $c0 ? $c0['v'] : null, 'age' => $c0 ? $c0['age'] : null]);
         }
         case 'wa.camp_hours': {   // 🕒 the hour grid, only when the card is opened
-            json_response(['hours' => wa_dq_hours($pdo)]);
+            json_response(['hours' => wa_dq_hours($pdo, 900)]);
         }
         case 'wa.dq_worker': {   // ⚙ one more campaign sends at the same time, only while delivery is good (the page asks again and again while it is open)
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);

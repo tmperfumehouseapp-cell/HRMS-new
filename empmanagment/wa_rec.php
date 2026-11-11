@@ -103,7 +103,7 @@ function wa_rec_diag(PDO $pdo): array
 /** One recovery round + a note of what happened (kept for the status line). */
 function wa_rec_tick(PDO $pdo): array
 {
-    $r = wa_rec_tick_run($pdo);
+    $r = wa_rec_tick_run($pdo); wa_dq_precompute($pdo);   // the heavy counts of the hour grid and the message ranking are prepared in the background
     if (($r['note'] ?? '') !== 'busy') {
         try { $last = json_decode((string)setting_get($pdo, 'wa_rec_last', ''), true); $last = is_array($last) ? $last : []; $diag = $last['diag'] ?? null; $dAt = (int)($last['diag_at'] ?? 0);
             if (!$diag || $dAt < time() - 120) { $diag = wa_rec_diag($pdo); $dAt = time(); }
