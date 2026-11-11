@@ -571,9 +571,9 @@
         el.onclick = async () => {
           const id = el.dataset.m, k = el.dataset.k; el.textContent = 'Loading…';
           try {
-            const u = (k === 'vid' || k === 'doc') && !/^prod:/.test(id) && !MEDIA[id] ? await streamUrl(id) : await mediaUrl(id);   // ⚡ videos / documents stream from our server
+            const u = (k === 'vid' || k === 'doc' || k === 'aud') && !/^prod:/.test(id) && !MEDIA[id] ? await streamUrl(id) : await mediaUrl(id);   // ⚡ videos / documents stream from our server
             if (k === 'img') { el.outerHTML = `<img src="${u}" alt="photo">`; box.querySelectorAll('img').forEach((im) => { im.onclick = () => lightbox(im.src); }); }
-            else if (k === 'aud') el.outerHTML = `<audio controls autoplay src="${u}"></audio>`;
+            else if (k === 'aud') { el.outerHTML = `<span class="wi-aud" data-am="${esc(id)}"><audio controls autoplay preload="auto" src="${u}"></audio></span>`; const w = box.querySelector('[data-am="' + id + '"]'), a = w && w.querySelector('audio'); const bad = () => { if (w && w.isConnected && !w.querySelector('.wi-adl')) w.insertAdjacentHTML('beforeend', `<div class="wi-adl" style="font-size:12px;margin-top:4px">⚠ This device cannot play the voice note here. <a href="${u}" download="voice-note.ogg" target="_blank" rel="noopener">⬇ Download</a> · <a href="${u}" target="_blank" rel="noopener">Open</a></div>`); }; if (a) { a.addEventListener('error', bad); const pr = a.play && a.play(); if (pr && pr.catch) pr.catch((e) => { if (e && e.name === 'NotSupportedError') bad(); }); } }
             else if (k === 'vid') { MEDIA[id] = u; el.outerHTML = `<video controls ${el.dataset.auto ? '' : 'autoplay'} playsinline preload="${el.dataset.auto ? 'metadata' : 'auto'}" src="${u}"></video>`; }
             else { const w = window.open(u, '_blank'); if (!w) { const a = document.createElement('a'); a.href = u; a.download = el.dataset.n || 'whatsapp-file'; document.body.appendChild(a); a.click(); a.remove(); } el.textContent = '📄 ' + (el.dataset.n || 'Document') + ' — opened'; }
           } catch (e) { el.textContent = '⚠ ' + e.message; }
