@@ -79,29 +79,35 @@ function wa_cpc_get(PDO $pdo, string $k): ?array
 {
     if (!wa_cpc_table($pdo)) return null; try { $q = $pdo->prepare("SELECT v, at FROM wa_cp_cache WHERE k = ?"); $q->execute([$k]); $r = $q->fetch(); if (!$r) return null; $d = json_decode((string)$r['v'], true); return is_array($d) ? ['v' => $d, 'age' => max(0, time() - (int)strtotime((string)$r['at']))] : null; } catch (Throwable $e) { return null; }
 }
+/** The TOPIC of a message: its folder in the message library when it has one, else its name without the prefix, the version and the date (so "last_10days_followup" and "last_10days_followup_v2" are one topic). */
+function wa_msg_topic(array $t): string
+{
+    $f = trim((string)($t['folder'] ?? '')); if ($f !== '') return mb_substr($f, 0, 40);
+    $n = preg_replace(['/^house_aisensy_/', '/_v\d+$/', '/_\d{4,}$/', '/_\d{2,4}$/'], '', (string)$t['name']); $n = trim(str_replace('_', ' ', (string)$n)); return $n !== '' ? mb_substr($n, 0, 40) : 'Other';
+}
 /** 🏆 Which messages deliver best: every message (pre-made template) used by campaigns in the last N days, ranked by how many of the messages Meta accepted were DELIVERED (also read % and reply %), with
  *  what the best ones have in common (a picture on top, shorter text, an emoji, buttons, a question…) written as plain tips. Messages with fewer than 200 accepted sends are left out. Remembered 10 minutes. */
-function wa_msg_rank(PDO $pdo, int $days = 14): array
+function wa_msg_rank(PDO $pdo, int $days = 14, int $maxAge = 600): array
 {
     $days = max(1, min(60, $days)); $ck = 'msg_rank_' . $days;
-    $hit = wa_cpc_get($pdo, $ck); if ($hit && $hit['age'] < 600) return $hit['v'];
+    $hit = wa_cpc_get($pdo, $ck); if ($hit && $hit['age'] < $maxAge) return $hit['v'];
     $o = ['days' => $days, 'rows' => [], 'tips' => [], 'overall' => ['n' => 0, 'd' => 0.0]];
     try {
         $q = $pdo->prepare("SELECT COALESCE(NULLIF(i.tpl_used, 0), c.tpl_id) AS tid, COUNT(*) AS n, SUM(i.last_status IN ('delivered', 'read')) AS d, SUM(i.last_status = 'read') AS rd,
             SUM(i.err_code = 131049) AS held, SUM(ct.last_in_at IS NOT NULL AND ct.last_in_at > i.sent_at AND ct.last_in_at < DATE_ADD(i.sent_at, INTERVAL 2 DAY)) AS rep
-            FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id LEFT JOIN wa_contacts ct ON ct.phone = i.phone WHERE i.wamid <> '' AND i.sent_at >= ? GROUP BY tid HAVING n >= 200 ORDER BY d / n DESC LIMIT 60");
+            FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id LEFT JOIN wa_contacts ct ON ct.phone = i.phone WHERE i.wamid <> '' AND i.sent_at >= ? GROUP BY tid HAVING n >= 30 ORDER BY d / n DESC LIMIT 200");
         $q->execute([date('Y-m-d H:i:s', time() - $days * 86400)]); $rows = $q->fetchAll();
     } catch (Throwable $e) { return $o; }
-    $tn = []; foreach ($pdo->query("SELECT id, name, version, body, header_format, buttons, category FROM wa_templates")->fetchAll() as $t) $tn[(int)$t['id']] = $t;
+    $tn = []; foreach ($pdo->query("SELECT id, name, version, body, header_format, buttons, category, folder FROM wa_templates")->fetchAll() as $t) $tn[(int)$t['id']] = $t;
     $emoji = '/[\x{1F300}-\x{1FAFF}\x{2600}-\x{27BF}]/u'; $groups = []; $N = 0; $D = 0;
     foreach ($rows as $r) {
         $t = $tn[(int)$r['tid']] ?? null; if (!$t) continue; $n = (int)$r['n']; $d = (int)$r['d']; $body = (string)$t['body']; $len = mb_strlen($body); $hf = strtoupper((string)$t['header_format']); $btn = json_decode((string)$t['buttons'], true); $nb = is_array($btn) ? count($btn) : 0;
         $f = ['header' => in_array($hf, ['IMAGE', 'VIDEO', 'DOCUMENT'], true) ? ['IMAGE' => 'a photo on top', 'VIDEO' => 'a video on top', 'DOCUMENT' => 'a PDF on top'][$hf] : 'text only', 'length' => $len <= 150 ? 'short text (150 letters or less)' : ($len <= 300 ? 'medium text (151–300 letters)' : 'long text (over 300 letters)'),
             'emoji' => preg_match($emoji, $body) ? 'an emoji' : 'no emoji', 'buttons' => $nb > 0 ? 'buttons' : 'no buttons', 'question' => strpos($body, '?') !== false ? 'a question in the text' : 'no question', 'price' => (strpos($body, '₹') !== false || stripos($body, 'rs.') !== false) ? 'a price (₹)' : 'no price'];
-        foreach ($f as $k => $v) { $groups[$k][$v][0] = ($groups[$k][$v][0] ?? 0) + $n; $groups[$k][$v][1] = ($groups[$k][$v][1] ?? 0) + $d; }
-        $N += $n; $D += $d;
+        if ($n >= 200) foreach ($f as $k => $v) { $groups[$k][$v][0] = ($groups[$k][$v][0] ?? 0) + $n; $groups[$k][$v][1] = ($groups[$k][$v][1] ?? 0) + $d; }
+        if ($n >= 200) { $N += $n; $D += $d; }
         $o['rows'][] = ['id' => (int)$t['id'], 'name' => (string)$t['name'], 'ver' => (int)$t['version'], 'n' => $n, 'd' => round($d / $n, 3), 'rd' => round((int)$r['rd'] / $n, 3), 'rep' => round((int)$r['rep'] / $n, 3), 'held' => round((int)$r['held'] / $n, 3),
-            'chars' => $len, 'header' => $f['header'], 'category' => (string)$t['category'], 'body' => mb_substr($body, 0, 900), 'buttons' => $nb, 'features' => array_values($f)];
+            'low' => $n < 200, 'topic' => wa_msg_topic($t), 'chars' => $len, 'header' => $f['header'], 'category' => (string)$t['category'], 'body' => mb_substr($body, 0, 900), 'buttons' => $nb, 'features' => array_values($f)];
     }
     $o['overall'] = ['n' => $N, 'd' => $N ? round($D / $N, 3) : 0.0];
     foreach ($groups as $k => $gs) { $best = null; $worst = null; foreach ($gs as $name => [$n, $d]) { if ($n < 1000) continue; $rt = $d / $n; if ($best === null || $rt > $best[1]) $best = [$name, $rt, $n]; if ($worst === null || $rt < $worst[1]) $worst = [$name, $rt, $n]; }
@@ -173,9 +179,17 @@ function wa_dq_left(PDO $pdo, bool $fresh = false): array
     $memo = ['on' => $cfg['on'], 'cap' => $cfg['hourly'], 'used' => $used, 'exp' => $exp, 'rate' => round($rate, 2), 'state' => $state, 'range' => $range, 'm_live' => round($mLive, 2), 'mult' => round($mult, 2), 'eff_cap' => $effCap, 'learning' => $learning, 'smart' => $cfg['smart'], 'daily' => $cfg['daily'], 'day_used' => $dayUsed, 'day_left' => $dayLeft, 'left' => min($hourLeft, $dayLeft), 'why' => $dayLeft <= 0 ? 'day' : ($hourLeft <= 0 ? 'hour' : '')]; $at = microtime(true); return $memo;
 }
 /** Campaign messages by hour of the day: pushed (accepted by Meta), delivered / read — for the current business day and for the last 7 days together (which hours suit best). Remembered for 60 s. */
-function wa_dq_hours(PDO $pdo): array
+function wa_dq_hours(PDO $pdo, int $maxAge = 900): array
+{   // served from the database cache; the engine rebuilds it in the background every 2 minutes, so the page never waits for the heavy count
+    $hit = wa_cpc_get($pdo, 'dq_hours'); if ($hit && $hit['age'] < $maxAge) return $hit['v'];
+    $o = wa_dq_hours_build($pdo); wa_cpc_put($pdo, 'dq_hours', $o); return $o;
+}
+function wa_dq_precompute(PDO $pdo): void
 {
-    try { $hit = json_decode((string)setting_get($pdo, 'wa_dq_hours', ''), true); if (is_array($hit) && (int)($hit['t'] ?? 0) > time() - 60) return $hit; } catch (Throwable $e) { }
+    try { if ((int)setting_get($pdo, 'wa_dq_pre_at', '0') > time() - 120) return; setting_set($pdo, 'wa_dq_pre_at', (string)time()); wa_dq_hours($pdo, 120); wa_msg_rank($pdo, 14, 300); } catch (Throwable $e) { }
+}
+function wa_dq_hours_build(PDO $pdo): array
+{
     $from = function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 10:00:00'); $to = date('Y-m-d H:i:s', strtotime($from) + 86400);
     $o = ['t' => time(), 'from' => $from, 'to' => $to, 'start_hour' => (int)date('G', strtotime($from)), 'today' => [], 'week' => []];
     $run = function (string $a, string $b) use ($pdo) { $r = []; try { $q = $pdo->prepare("SELECT HOUR(ts) AS h, COUNT(*) AS n, SUM(status IN ('delivered', 'read')) AS d, SUM(status = 'read') AS rd FROM wa_messages WHERE dir = 'out' AND who = 'campaign' AND mtype = 'template' AND ts >= ? AND ts < ? GROUP BY HOUR(ts)"); $q->execute([$a, $b]); foreach ($q->fetchAll() as $x) $r[(int)$x['h']] = [(int)$x['n'], (int)$x['d'], (int)$x['rd']]; } catch (Throwable $e) { } return $r; };
@@ -184,7 +198,6 @@ function wa_dq_hours(PDO $pdo): array
     $cfg2 = wa_dq_cfg($pdo); $sc2 = wa_dq_hour_scores($pdo); [$w0, $w1] = function_exists('wa_camp_window') ? wa_camp_window($pdo) : [0, 24]; $o['plan'] = []; $o['cur'] = (int)date('G'); $o['hourly'] = $cfg2['hourly']; $o['daily'] = $cfg2['daily']; $o['smart'] = $cfg2['smart']; $o['on'] = $cfg2['on'];
     for ($h = 0; $h < 24; $h++) { $in = $h >= $w0 && $h < $w1; $m = ($cfg2['smart'] && empty($sc2['learning'])) ? (float)($sc2['hours'][$h]['mult'] ?? 1.0) : 1.0; $rt = (float)($sc2['hours'][$h]['rate'] ?? 0); if ($rt <= 0) $rt = 0.75; $rt = max(0.3, min(0.95, $rt)); if ($h === $o['cur']) $m *= (float)(wa_dq_left($pdo)['m_live'] ?? 1.0); $d = $in ? (int)round($cfg2['hourly'] * $m) : 0; $o['plan'][$h] = ['d' => $d, 'p' => $d ? (int)ceil($d / $rt) : 0]; }
     $o['today'] = $run($from, $to); $o['week'] = $run(date('Y-m-d H:i:s', time() - 7 * 86400), date('Y-m-d H:i:s', time() + 60));
-    try { setting_set($pdo, 'wa_dq_hours', json_encode($o)); } catch (Throwable $e) { }
     return $o;
 }
 /** The plan card: cap, used, people waiting in the one queue, Meta room. Remembered for 30 s. */
