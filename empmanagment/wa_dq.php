@@ -258,14 +258,15 @@ function wa_dq_left(PDO $pdo, bool $fresh = false): array
         else $rateUsed = max(0.5, $rate);
         try { $from = function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 10:00:00'); $q = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE dir = 'out' AND who IN ('campaign', 'recover') AND mtype = 'template' AND ts >= ?"); $q->execute([$from]); $dayUsed = (int)$q->fetchColumn(); $q = $pdo->prepare("SELECT SUM(status IN ('delivered', 'read')) AS d, SUM(status = 'sent') AS p FROM wa_messages WHERE dir = 'out' AND who IN ('campaign', 'recover') AND mtype = 'template' AND ts >= ?"); $q->execute([$from]); $sr = $q->fetch(); $spend = ((int)$sr['d'] + (int)$sr['p'] * $rate) * $mr; } catch (Throwable $e) { }
     }
-    $effCap = (int)round($cfg['hourly'] * $mult * $mLive);   // the plan's own ratios: this hour's learned score (how well this hour of the day delivers) x the live delivery ratio (1.0-2.0 while delivery is good) $rateUsed = max(0.15, min(0.95, $rateUsed)); $hourLeft = max(0, (int)ceil(($effCap - $exp) / $rateUsed)); $pushCap = (int)round($effCap * $cfg['push_mult']);
+    // the plan's own ratios: this hour's learned score (how well this hour of the day delivers) x the live delivery ratio (1.0-2.0 while delivery is good)
+    $effCap = (int)round($cfg['hourly'] * $mult * $mLive); $rateUsed = max(0.15, min(0.95, $rateUsed)); $hourLeft = max(0, (int)ceil(($effCap - $exp) / $rateUsed)); $pushCap = (int)round($effCap * $cfg['push_mult']);
     // ⚖ EVEN PACE: send what is waiting evenly over the hours left, not in bursts. Target per hour = waiting ÷ hours left (+10 %), never above the cap, never below 1,000;
     // and in any 10 minutes at most a sixth of it (+30 %), so the hour is not sent in its first minutes and then left idle.
     $pace = ['on' => (bool)$cfg['pace'], 'waiting' => 0, 'hours_left' => 0.0, 'target' => 0, 'slice' => 0, 'used10' => 0];
     if ($cfg['on'] && $cfg['pace']) {
         try { $pace['waiting'] = wa_dq_waiting($pdo); $pace['hours_left'] = round(wa_dq_hours_left($pdo), 2);
             $dayLeftP = max(0, $cfg['daily'] - $dayUsed); $pace['day_left'] = $dayLeftP; $pace['amount'] = min($pace['waiting'], $dayLeftP);   // what can still go out today: the queue, but never more than what is left of the day's limit
-            // 🎯 what counts is what META DELIVERS: the hour's number (saved hourly number: +20 % when delivery is good, -33 % when low) is a DELIVERED number. We push as many as it takes to reach it at the live delivery rate
+            // 🎯 what counts is what META DELIVERS: the hour's number (the saved hourly number moved by the plan's own delivery ratios) is a DELIVERED number. We push as many as it takes to reach it at the live delivery rate
             // (5,000 pushed and 2,500 delivered counts as 2,500), within the push guard and never more than is waiting. The speed inside the hour follows the pushes needed, so a small queue finishes early in the hour.
             $needPush = min((int)$pushCap, (int)ceil($effCap / max(0.15, $rateUsed)));
             $pace['target'] = $pace['amount'] > 0 ? max(1, min((int)$effCap, (int)round($pace['amount'] * $rateUsed))) : 0;   // delivered this hour: the hour's number, or what the queue can deliver when smaller
