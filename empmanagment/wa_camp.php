@@ -1108,8 +1108,10 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
             $respCp = ['campaigns' => $out, 'total' => $totalCamps, 'offset' => 0, 'sched' => $schedN, 'fast' => $fastNow, 'rec_status' => wa_rec_status($pdo), 'dq' => wa_dq_status($pdo), 'spend' => wa_camp_spend_today($pdo, !empty($_GET['fresh'])), 'lite' => $lite, 'templates' => $lite ? [] : $tplList(true), 'numbers' => $nums, 'portfolio' => $caps['_port'] ?? null, 'engine' => $engine(), 'tags' => WA_TAGS, 'pieces' => $pc, 'window' => wa_camp_window($pdo), 'can_media' => function_exists('wa_tpl_send_components') && function_exists('wa_tpl_sendable')]; if ($lite) wa_cpc_put($pdo, 'camp_list', $respCp); json_response($respCp);
         }
         case 'wa.camp_templates': {
+            $hit = wa_cpc_get($pdo, 'camp_tpls1'); if ($hit && $hit['age'] < 120 && empty($_GET['fresh'])) json_response($hit['v']);   // the message library is the slowest answer: remembered for 2 minutes, so the New-campaign form opens at once
             $pc = []; foreach ((function_exists('wa_piece_all') ? wa_piece_all($pdo, true) : []) as $slot => $l) $pc[$slot] = count($l);
-            json_response(['templates' => $tplList(true), 'pieces' => $pc, 'can_media' => function_exists('wa_tpl_send_components') && function_exists('wa_tpl_sendable')]);
+            $resp = ['templates' => $tplList(true), 'pieces' => $pc, 'can_media' => function_exists('wa_tpl_send_components') && function_exists('wa_tpl_sendable')]; try { wa_cpc_put($pdo, 'camp_tpls1', $resp); } catch (Throwable $e) { }
+            json_response($resp);
         }
         case 'wa.camp_get': {
             $c = wa_camp_row($pdo, (int)($_GET['id'] ?? 0)); if (!$c) json_response(['error' => 'Campaign not found.'], 404);

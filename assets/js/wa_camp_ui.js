@@ -680,7 +680,7 @@ body.waui .cpc .wp-note{margin:4px 0 !important}
     // the list loads without the message library (slow); the wizard fetches it once, the first time it is opened
     async function wizard(c, seg, util) {
       if (!TPLX) { const lm = modal(c ? 'Edit campaign' : 'New campaign'); lm.body.innerHTML = '<div class="wp-hint" style="padding:14px 4px">Opening… getting your messages ready (the first time takes a few seconds).</div>'; try { TPLX = await (window.__cpTplP || api.get('wa.camp_templates')); if (!TPLX) TPLX = await api.get('wa.camp_templates'); } catch (e) { window.__cpTplP = null; lm.close(); toast(e.message, true); return; } lm.close(); }
-      D.templates = TPLX.templates; D.pieces = TPLX.pieces; D.can_media = TPLX.can_media; wizardGo(c, seg, util);
+      try { D.templates = TPLX.templates; D.pieces = TPLX.pieces; D.can_media = TPLX.can_media; await wizardGo(c, seg, util); } catch (e) { console.error(e); toast('Could not open the form: ' + (e && e.message ? e.message : e), true); }
     }
     function wizardGo(c, seg, util) {   // util: the 💸 utility follow-up campaign (only people who qualify, the standard follow-ups, the offer goes free after a reply)   // seg: people picked on the Customers screen ({tag, name, n}) — the audience is exactly their segment tag
       const A = c ? clone(c.audience) : (seg ? { src: 'contacts', f: { gtags: [seg.tag] }, fName: seg.name, paste: '' } : {}); A.src = A.src || 'contacts'; A.f = A.f || {}; A.paste = A.paste || '';
