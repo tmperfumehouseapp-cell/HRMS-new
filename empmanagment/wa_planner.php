@@ -15,6 +15,7 @@ function wpl_tables(PDO $pdo): bool
     static $ok = null; if ($ok !== null) return $ok;
     try {
         $pdo->exec("CREATE TABLE IF NOT EXISTS wa_pl_item (id INT AUTO_INCREMENT PRIMARY KEY, file_name VARCHAR(160) NOT NULL DEFAULT '', phones MEDIUMTEXT NULL, total_n INT NOT NULL DEFAULT 0, valid_n INT NOT NULL DEFAULT 0, tpl_id INT NOT NULL DEFAULT 0, pos INT NOT NULL DEFAULT 0, camp_id INT NOT NULL DEFAULT 0, status VARCHAR(12) NOT NULL DEFAULT 'draft', start_at DATETIME NULL, created_at DATETIME NULL, KEY k_status (status, pos)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        try { if (!$pdo->query("SHOW COLUMNS FROM wa_pl_item LIKE 'media_lib_id'")->fetch()) $pdo->exec("ALTER TABLE wa_pl_item ADD COLUMN media_lib_id INT NOT NULL DEFAULT 0"); } catch (PDOException $e) { }
         $ok = true;
     } catch (PDOException $e) { $ok = false; }
     return $ok;
@@ -36,18 +37,18 @@ if (strpos($__wpl, 'wa.pl_') === 0) {
     if (!wpl_tables($pdo)) json_response(['error' => 'Planner storage is not available.'], 500);
     switch ($__wpl) {
         case 'wa.pl_get': {
-            $cfg = wpl_cfg($pdo); $rows = $pdo->query("SELECT id, file_name, phones, total_n, valid_n, tpl_id, pos, camp_id, status, start_at FROM wa_pl_item WHERE status IN ('draft','scheduled') ORDER BY (status = 'scheduled'), pos, id")->fetchAll();
+            $cfg = wpl_cfg($pdo); $rows = $pdo->query("SELECT id, file_name, phones, total_n, valid_n, tpl_id, media_lib_id, pos, camp_id, status, start_at FROM wa_pl_item WHERE status IN ('draft','scheduled') ORDER BY (status = 'scheduled'), pos, id")->fetchAll();
             $seen = []; $items = []; $draftIdx = 0;
             foreach ($rows as $r) {
                 $ph = array_values(array_filter(explode("\n", (string)$r['phones']), fn($x) => $x !== '')); $dup = 0; foreach ($ph as $p0) { if (isset($seen[$p0])) $dup++; else $seen[$p0] = 1; }
-                $it = ['id' => (int)$r['id'], 'file' => (string)$r['file_name'], 'total' => (int)$r['total_n'], 'valid' => (int)$r['valid_n'], 'dup' => $dup, 'send' => count($ph) - $dup, 'tpl_id' => (int)$r['tpl_id'], 'status' => (string)$r['status'], 'camp_id' => (int)$r['camp_id']];
+                $it = ['id' => (int)$r['id'], 'file' => (string)$r['file_name'], 'total' => (int)$r['total_n'], 'valid' => (int)$r['valid_n'], 'dup' => $dup, 'send' => count($ph) - $dup, 'tpl_id' => (int)$r['tpl_id'], 'media_id' => (int)$r['media_lib_id'], 'status' => (string)$r['status'], 'camp_id' => (int)$r['camp_id']];
                 if ($r['status'] === 'scheduled') { $it['start_at'] = (string)$r['start_at']; $c = null; if ((int)$r['camp_id'] > 0) { try { $c = wa_camp_row($pdo, (int)$r['camp_id']); } catch (Throwable $e) { } } if ($c) { $cn = wa_camp_counts($pdo, (int)$c['id']); $it['camp_status'] = (string)$c['status']; $it['sent'] = (int)$cn['sent']; $it['failed'] = (int)$cn['failed']; $it['camp_total'] = (int)$cn['total']; } else $it['camp_status'] = 'gone'; }
                 else { $it['start_at'] = wpl_start_of($cfg, $draftIdx); $draftIdx++; }
                 $items[] = $it;
             }
             $R = function_exists('wab_rates') ? wab_rates($pdo) : ['marketing' => 1.09, 'utility' => 0.15]; $room = 0; try { $caps = wa_number_caps($pdo, wa_camp_health($pdo)); $room = (int)($caps['_port']['left'] ?? 0); } catch (Throwable $e) { }
             $nums = []; try { foreach ($pdo->query("SELECT id, label FROM wa_numbers ORDER BY id")->fetchAll() as $n) $nums[] = ['id' => (int)$n['id'], 'label' => (string)$n['label']]; } catch (Throwable $e) { }
-            json_response(['ok' => true, 'cfg' => $cfg, 'items' => $items, 'price' => (float)$R['marketing'], 'price_u' => (float)$R['utility'], 'room' => $room, 'numbers' => $nums]);
+            json_response(['ok' => true, 'now' => date('Y-m-d H:i:s'), 'today' => date('Y-m-d'), 'cfg' => $cfg, 'items' => $items, 'price' => (float)$R['marketing'], 'price_u' => (float)$R['utility'], 'room' => $room, 'numbers' => $nums]);
         }
         case 'wa.pl_add': {
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $in = json_input(); $name = mb_substr(trim((string)($in['name'] ?? 'file.csv')), 0, 160); $text = (string)($in['text'] ?? '');
@@ -59,7 +60,9 @@ if (strpos($__wpl, 'wa.pl_') === 0) {
         }
         case 'wa.pl_update': {
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $in = json_input(); $id = (int)($in['id'] ?? 0);
-            $pdo->prepare("UPDATE wa_pl_item SET tpl_id = ? WHERE id = ? AND status = 'draft'")->execute([max(0, (int)($in['tpl_id'] ?? 0)), $id]); json_response(['ok' => true]);
+            if (array_key_exists('tpl_id', $in)) $pdo->prepare("UPDATE wa_pl_item SET tpl_id = ? WHERE id = ? AND status = 'draft'")->execute([max(0, (int)$in['tpl_id']), $id]);
+            if (array_key_exists('media_lib_id', $in)) $pdo->prepare("UPDATE wa_pl_item SET media_lib_id = ? WHERE id = ? AND status = 'draft'")->execute([max(0, (int)$in['media_lib_id']), $id]);
+            json_response(['ok' => true]);
         }
         case 'wa.pl_cfg': {
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $in = json_input(); $x = (array)($in['cfg'] ?? []);
@@ -74,14 +77,20 @@ if (strpos($__wpl, 'wa.pl_') === 0) {
         case 'wa.pl_del': { if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $in = json_input(); $pdo->prepare("DELETE FROM wa_pl_item WHERE id = ? AND status = 'draft'")->execute([(int)($in['id'] ?? 0)]); json_response(['ok' => true]); }
         case 'wa.pl_prep': {   // what the screen needs to make ONE campaign: its customers (without the ones already in an earlier file) and its start time
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $in = json_input(); $id = (int)($in['id'] ?? 0); $cfg = wpl_cfg($pdo);
-            $rows = $pdo->query("SELECT id, file_name, phones, tpl_id FROM wa_pl_item WHERE status = 'draft' ORDER BY pos, id")->fetchAll(); $seen = []; $idx = 0;
+            $rows = $pdo->query("SELECT id, file_name, phones, tpl_id, media_lib_id FROM wa_pl_item WHERE status = 'draft' ORDER BY pos, id")->fetchAll(); $seen = []; $idx = 0;
+            // customers already given to an EARLIER campaign of the same plan day (scheduled a moment ago) are not given again
+            try { $sq = $pdo->prepare("SELECT phones FROM wa_pl_item WHERE status = 'scheduled' AND start_at IS NOT NULL AND DATE(start_at) = ?"); $sq->execute([$cfg['date']]); foreach ($sq->fetchAll(PDO::FETCH_COLUMN) as $pp) foreach (explode("\n", (string)$pp) as $p0) if ($p0 !== '') $seen[$p0] = 1; } catch (Throwable $e) { }
             foreach ($rows as $r) {
                 $ph = array_values(array_filter(explode("\n", (string)$r['phones']), fn($x) => $x !== '')); $mine = []; foreach ($ph as $p0) if (!isset($seen[$p0])) { $seen[$p0] = 1; $mine[] = $p0; }
                 if ((int)$r['id'] === $id) { if ((int)$r['tpl_id'] <= 0) json_response(['error' => 'Pick a message for ' . $r['file_name'] . ' first.'], 422); if (!$mine) json_response(['error' => $r['file_name'] . ': every customer is already in an earlier file.'], 422);
-                    json_response(['ok' => true, 'name' => preg_replace('/\.csv$/i', '', (string)$r['file_name']) . ' | ' . date('d M', strtotime($cfg['date'])), 'tpl_id' => (int)$r['tpl_id'], 'paste' => implode("\n", $mine), 'n' => count($mine), 'start_at' => wpl_start_of($cfg, $idx), 'number_id' => $cfg['number_id'], 'rate' => $cfg['rate']]); }
+                    json_response(['ok' => true, 'name' => preg_replace('/\.csv$/i', '', (string)$r['file_name']) . ' | ' . date('d M', strtotime($cfg['date'])), 'tpl_id' => (int)$r['tpl_id'], 'media_lib_id' => (int)$r['media_lib_id'], 'paste' => implode("\n", $mine), 'n' => count($mine), 'start_at' => wpl_start_of($cfg, isset($in['index']) ? max(0, (int)$in['index']) : $idx), 'number_id' => $cfg['number_id'], 'rate' => $cfg['rate']]); }
                 $idx++;
             }
             json_response(['error' => 'File not found.'], 404);
+        }
+        case 'wa.pl_restore': {   // a scheduled campaign was cancelled: its file goes back into the plan (with its message), ready to be planned again
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $in = json_input(); $np = (int)$pdo->query("SELECT COALESCE(MAX(pos), 0) + 1 FROM wa_pl_item WHERE status = 'draft'")->fetchColumn();
+            $pdo->prepare("UPDATE wa_pl_item SET status = 'draft', camp_id = 0, start_at = NULL, pos = ? WHERE id = ? AND status = 'scheduled'")->execute([$np, (int)($in['id'] ?? 0)]); json_response(['ok' => true]);
         }
         case 'wa.pl_mark': {
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $in = json_input(); $pdo->prepare("UPDATE wa_pl_item SET status = 'scheduled', camp_id = ?, start_at = ? WHERE id = ?")->execute([(int)($in['camp_id'] ?? 0), (string)($in['start_at'] ?? ''), (int)($in['id'] ?? 0)]); json_response(['ok' => true]);
