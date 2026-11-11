@@ -633,7 +633,7 @@ function wa_camp_tick(PDO $pdo): array
             foreach ($pdo->query("SELECT number_id, COUNT(*) AS n FROM wa_camp_items WHERE camp_id = $id AND status = 'sent' GROUP BY number_id")->fetchAll() as $nr) $ctx['wsent'][(int)$nr['number_id']] = (int)$nr['n']; }
         $resolveM = function (array $tm, array $ct, array $it, int $iid) use ($pdo, $specs, &$usedPieces) { return wa_camp_resolve_vars($pdo, (int)$tm['nvars'], $specs, $ct, (string)($it['name'] ?: $ct['name']), $iid, $usedPieces); };
         while ($sent + $failed + $skipped < $quota && microtime(true) < $cDead && !$stop) {
-            $take = min(60, $quota - ($sent + $failed + $skipped));   // ⚡ 60 people per round trip to Meta (was 40)
+            $take = min(90, $quota - ($sent + $failed + $skipped));   // ⚡ 90 people per round trip to Meta (was 40)
             $pick = $pdo->query("SELECT id, status FROM wa_camp_items WHERE camp_id = $id AND $due ORDER BY id LIMIT $take")->fetchAll(); if (!$pick) break;
             if ($mixOn) {   // per batch (not per person): who can carry the utility version right now - a number whose utility version was just approved joins at once, a re-labelled one drops out at once
                 $plan = wa_mix_plan($pdo, $c, $ctx['nums'], $rem, $plan, false, $env); $ctx['u_nums'] = array_keys(array_filter($plan['per_number'], fn($p) => !empty($p['u']) && (int)$p['share'] > 0));
