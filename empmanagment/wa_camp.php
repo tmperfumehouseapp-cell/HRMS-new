@@ -795,24 +795,28 @@ function wa_camp_result(PDO $pdo, array $c, array $cfg, bool $withMix = false): 
 }
 
 // ---------------------------------------------------------------------------------------------------------------- campaigns: best time, suggestions
-/** 💸 Money spent by campaigns in the CURRENT BUSINESS DAY (the same day the sales side uses: it starts at the day-start time, 10:00 by default, and runs to the next one —
- *  not the last 24 hours). Meta charges when a message is delivered, so: delivered / read campaign messages × the billing rate (marketing, utility…). An estimate from the
- *  rates in Team & routing (the Billing report has Meta's own figure). Remembered for 60 s: it counts a big table. */
+/** 💸 The campaigns' day in one card: the CURRENT BUSINESS DAY (the same day the sales side uses: it starts at the day-start time, 10:00 by default, and runs to the next one — not the
+ *  last 24 hours): campaigns that sent, messages sent / delivered / read / failed, people who wrote back after a campaign message, and the money. Meta charges when a message is
+ *  delivered, so money = delivered / read campaign messages × the billing rate (marketing, utility…) — an estimate (the Billing report has Meta's own figure). Remembered for 60 s. */
 function wa_camp_spend_today(PDO $pdo, bool $fresh = false): array
 {
     $from = function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 10:00:00', date('H') < 10 ? time() - 86400 : time());
-    $to = date('Y-m-d H:i:s', strtotime($from) + 86400);
-    if (!$fresh) { try { $hit = json_decode((string)setting_get($pdo, 'wa_camp_spend', ''), true); if (is_array($hit) && ($hit['from'] ?? '') === $from && (int)($hit['t'] ?? 0) > time() - 60) return $hit; } catch (Throwable $e) { } }
+    $to = date('Y-m-d H:i:s', strtotime($from) + 86400); $now = date('Y-m-d H:i:s');
+    if (!$fresh) { try { $hit = json_decode((string)setting_get($pdo, 'wa_camp_spend2', ''), true); if (is_array($hit) && ($hit['from'] ?? '') === $from && (int)($hit['t'] ?? 0) > time() - 60) return $hit; } catch (Throwable $e) { } }
     $R = function_exists('wab_rates') ? wab_rates($pdo) : ['marketing' => 1.09, 'utility' => 0.15, 'authentication' => 0.15, 'service' => 0.0];
-    $o = ['from' => $from, 'to' => $to, 'sent' => 0, 'delivered' => 0, 'marketing' => 0, 'utility' => 0, 'amount' => 0.0, 'rate' => round((float)$R['marketing'], 2), 't' => time()];
+    $o = ['from' => $from, 'to' => $to, 'campaigns' => 0, 'sent' => 0, 'delivered' => 0, 'read' => 0, 'failed' => 0, 'replied' => 0, 'marketing' => 0, 'utility' => 0, 'amount' => 0.0, 'm_amount' => 0.0, 'u_amount' => 0.0, 'rate' => round((float)$R['marketing'], 2), 'u_rate' => round((float)$R['utility'], 2), 't' => time()];
     try {
-        $q = $pdo->prepare("SELECT COUNT(*) AS n, SUM(status IN ('delivered','read')) AS d, SUM(status IN ('delivered','read') AND bill_cat IN ('utility','authentication')) AS u, SUM(status IN ('delivered','read') AND bill_cat = 'service') AS sv
+        $q = $pdo->prepare("SELECT COUNT(*) AS n, SUM(status IN ('delivered','read')) AS d, SUM(status = 'read') AS rd, SUM(status IN ('delivered','read') AND bill_cat IN ('utility','authentication')) AS u, SUM(status IN ('delivered','read') AND bill_cat = 'service') AS sv
             FROM wa_messages WHERE dir = 'out' AND mtype = 'template' AND who = 'campaign' AND status <> 'failed' AND ts >= ? AND ts < ?");
         $q->execute([$from, $to]); $r = $q->fetch();
-        $o['sent'] = (int)$r['n']; $o['delivered'] = (int)$r['d']; $o['utility'] = (int)$r['u']; $o['marketing'] = max(0, (int)$r['d'] - (int)$r['u'] - (int)$r['sv']);
-        $o['amount'] = round($o['marketing'] * (float)$R['marketing'] + $o['utility'] * (float)$R['utility'], 2);
+        $o['sent'] = (int)$r['n']; $o['delivered'] = (int)$r['d']; $o['read'] = (int)$r['rd']; $o['utility'] = (int)$r['u']; $o['marketing'] = max(0, (int)$r['d'] - (int)$r['u'] - (int)$r['sv']);
+        $o['m_amount'] = round($o['marketing'] * (float)$R['marketing'], 2); $o['u_amount'] = round($o['utility'] * (float)$R['utility'], 2); $o['amount'] = round($o['m_amount'] + $o['u_amount'], 2);
     } catch (Throwable $e) { $o['error'] = 'The billing columns are not ready yet.'; }
-    try { setting_set($pdo, 'wa_camp_spend', json_encode($o)); } catch (Throwable $e) { }
+    try { $q = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE dir = 'out' AND mtype = 'template' AND who = 'campaign' AND status = 'failed' AND ts >= ? AND ts < ?"); $q->execute([$from, $to]); $o['failed'] = (int)$q->fetchColumn(); } catch (Throwable $e) { }
+    try { $q = $pdo->prepare("SELECT COUNT(DISTINCT camp_id) FROM wa_camp_items WHERE status = 'sent' AND sent_at >= ? AND sent_at < ?"); $q->execute([$from, $to]); $o['campaigns'] = (int)$q->fetchColumn(); } catch (Throwable $e) { }
+    try { $q = $pdo->prepare("SELECT COUNT(DISTINCT m.phone) FROM wa_messages m WHERE m.dir = 'out' AND m.mtype = 'template' AND m.who = 'campaign' AND m.status IN ('delivered','read') AND m.ts >= ? AND m.ts < ?
+            AND EXISTS (SELECT 1 FROM wa_messages i WHERE i.phone = m.phone AND i.dir = 'in' AND i.ts > m.ts AND i.ts <= ?)"); $q->execute([$from, $to, $now]); $o['replied'] = (int)$q->fetchColumn(); } catch (Throwable $e) { }
+    try { setting_set($pdo, 'wa_camp_spend2', json_encode($o)); } catch (Throwable $e) { }
     return $o;
 }
 /** Messages customers wrote to us per hour of the day (last 30 days), kept for an hour. Returns ['hist' => [24 numbers], 'total', 'best' => [hours inside the window, best first]]. */
