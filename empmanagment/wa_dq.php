@@ -23,7 +23,7 @@ if (!function_exists('wa_dq_cfg')) {
 function wa_dq_cfg(PDO $pdo): array
 {
     $g = function (string $k, string $d) use ($pdo) { try { $v = setting_get($pdo, $k, $d); return ($v === null || $v === '') ? $d : (string)$v; } catch (Throwable $e) { return $d; } };
-    $base = max(1000, min(1000000, (int)$g('wa_dq_daily', '75000'))); $auto = $g('wa_dq_auto', '1') !== '0'; $dmin = max(1000, (int)$g('wa_dq_daily_min', '40000')); $dmax = max($dmin, $base, (int)$g('wa_dq_daily_max', '90000')); $daily = $base;   // the number the owner saved is never cut down by the automatic ceiling
+    $base = max(1000, min(1000000, (int)$g('wa_dq_daily', '75000'))); $auto = $g('wa_dq_auto', '0') === '1'; $dmin = max(1000, (int)$g('wa_dq_daily_min', '40000')); $dmax = max($dmin, $base, (int)$g('wa_dq_daily_max', '90000')); $daily = $base;   // the number the owner saved is never cut down by the automatic ceiling
     $av0 = (int)$g('wa_dq_daily_auto', '0'); if ($av0 > $dmax) $dmax = min(1000000, $av0);
     if ($auto) { $av = (int)$g('wa_dq_daily_auto', '0'); if ($av > 0) $daily = max($dmin, min($dmax, $av)); }
     return ['on' => $g('wa_dq_on', '1') !== '0', 'hourly' => max(500, min(60000, (int)$g('wa_dq_hourly', '10000'))), 'daily' => $daily, 'base' => $base, 'auto' => $auto, 'dmin' => $dmin, 'dmax' => $dmax, 'smart' => $g('wa_dq_smart', '1') !== '0', 'budget' => max(0, (int)$g('wa_dq_budget', '0')), 'pace' => $g('wa_dq_pace', '1') !== '0', 'good_floor' => max(0.0, min(0.95, (float)$g('wa_dq_good_floor', '0.45'))), 'push_mult' => max(1.0, min(5.0, (float)$g('wa_dq_push_mult', '1.5')))];
