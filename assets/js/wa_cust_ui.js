@@ -249,12 +249,46 @@ html.wxdk .wcs{--ln:#25343e; --gb:#0f2e20; --rb:#3a1515;} html.wxdk .wcs-r,html.
       L.querySelectorAll('.wcs-r').forEach((x) => {
         const p = x.dataset.p; x.querySelector('[data-ck]').onchange = function () { setSel(p, this.checked); x.classList.toggle('sel', this.checked); drawB(); const ap = $(L, '#cxAp'); if (ap) ap.checked = S.rows.every((r) => isSel(r.phone)); };
         const oc = x.querySelector('[data-oc]'); if (oc) oc.onclick = () => ctx.openChat(p);
+        const l1 = x.querySelector('.l1'); if (l1) { l1.style.cursor = 'pointer'; l1.title = 'Open the customer card'; l1.onclick = () => openCard(p); }
         const mo = x.querySelector('[data-mo]'); if (mo) mo.onclick = () => { x.querySelectorAll('[data-mx]').forEach((t) => { t.hidden = false; }); mo.remove(); };
       });
       drawB();
     }
     function setSel(p, on) { if (S.sel.mode === 'all') { if (on) S.sel.except.delete(p); else S.sel.except.add(p); } else { if (on) S.sel.ids.add(p); else S.sel.ids.delete(p); S.sel.mode = S.sel.ids.size ? 'some' : 'none'; } }
     const selPayload = () => (S.sel.mode === 'all' ? { all: 1, cf: cfOut(), q: S.q, except: [...S.sel.except] } : { phones: [...S.sel.ids] });
+    // ---------------------------------------------------------------------------------------------------------- 🪪 the customer card
+    const CARD_CSS = `.cc{font-size:12px}.cc h4{margin:10px 0 4px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;opacity:.65}.cc .hd{display:flex;gap:8px;align-items:flex-start;justify-content:space-between}.cc .hd b{font-size:15px}.cc .ph{opacity:.65;font-size:11.5px}
+      .cc .bt{display:flex;gap:5px;flex-wrap:wrap;margin-top:6px}.cc .bt button{min-height:26px;padding:2px 10px;font-size:11.5px}.cc .g{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px}.cc .g div{background:rgba(128,128,128,.1);border-radius:9px;padding:4px 6px;min-width:0}.cc .g small{display:block;font-size:9.5px;opacity:.7}.cc .g b{font-size:12.5px}
+      .cc .tg{display:flex;flex-wrap:wrap;gap:3px;margin:2px 0 4px;align-items:center}.cc .tg>small{font-size:9.5px;opacity:.6;width:62px;flex:none}.cc .tg span.c{font-size:11px;line-height:1.5;padding:0 8px;border-radius:99px;background:rgba(128,128,128,.14);cursor:pointer}.cc .tg span.c.on{outline:2px solid #2563eb}
+      .cc .why{background:rgba(37,99,235,.09);border-radius:8px;padding:4px 8px;margin:2px 0 4px;font-size:11px}.cc .ln{display:flex;gap:6px;align-items:baseline;border-top:1px solid rgba(128,128,128,.2);padding:3px 0;font-size:11.5px}.cc .ln .d{width:50px;flex:none;opacity:.65;font-size:10.5px}.cc .ln .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.cc .ok{color:#15803d}.cc .bad{color:#c2262b}`;
+    const TAGGRP = [['Behaviour', /^(no_haggle|price_sensitive|quick_decider|slow_decider|replies_to_followups|second_order|third_order_plus|one_time_buyer|lapsed_buyer|premium_buyer|budget_buyer|ignored_fu|returning_enquiry|considering|interested|hot)$/], ['Came from', /^(meta_ad|from_ad|community|campaign|instagram|friend|facebook|query)$|_query$/], ['Buying', /^(bought|repeat|vip|not_ordered|cod_pending|came_back|order_query|order_campaign|premium_)/], ['Time', /^arrive_/], ['Lists', /^(seg_|list_|import_|camp_)/]];
+    async function openCard(phone) {
+      if (!document.getElementById('ccCss')) { const st = document.createElement('style'); st.id = 'ccCss'; st.textContent = CARD_CSS; document.head.appendChild(st); }
+      const m = modal('Customer'); m.body.innerHTML = loading;
+      let d; try { d = await api.get('wa.cust_card', { phone }); } catch (e) { m.body.innerHTML = errBox(e.message); return; }
+      const dtt = (x) => (x ? new Date(String(x).replace(' ', 'T')).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' }) : '—'), inr = (v) => '₹' + fmt(Math.round(v || 0));
+      const SRC = { query: 'Wrote to us first', campaign: 'Replied to a campaign', community: 'From the community', import: 'Imported' }, QT = { meta: 'Meta ad', campaign: 'Campaign', community: 'Community', regenerated: 'Came back', new: 'New', other: 'Other', unclear: 'Not typed', '': 'Query' };
+      const T = d.tags || [], used = new Set();
+      const groups = TAGGRP.map(([g, re]) => { const a = T.filter((t) => !used.has(t.k) && re.test(t.k)); a.forEach((t) => used.add(t.k)); return [g, a]; }); const rest = T.filter((t) => !used.has(t.k)); if (rest.length) groups.push(['Other', rest]);
+      const C = d.campaigns || [], cs = { dl: C.filter((c) => c.status === 'delivered' || c.status === 'read').length, rd: C.filter((c) => c.status === 'read').length, f: C.filter((c) => c.status === 'failed').length, r: C.filter((c) => c.replied).length };
+      let lim = 8;
+      const paint = () => {
+        m.body.innerHTML = `<div class="cc"><div class="hd"><div><b>${esc(d.name || pretty(d.phone))}</b> ${d.name ? `<span class="ph">${esc(pretty(d.phone))}</span>` : ''}<div class="ph">${d.optout ? '<span class="bad">Opted out</span> · ' : ''}${d.assigned ? '👤 ' + esc(d.assigned) + ' · ' : ''}${esc(SRC[d.source] || d.source || '')}</div></div></div>
+          <div class="bt">${d.known && d.last_in_at ? '<button type="button" class="wp-btn s" data-cc="chat">💬 Chat</button>' : ''}<button type="button" class="wp-btn s p" data-cc="camp">📣 Add to campaign</button></div>
+          <h4>Tags <span style="text-transform:none;letter-spacing:0;font-weight:400">tap one to see why</span></h4>${groups.length ? groups.map(([g, a]) => `<div class="tg"><small>${g}</small>${a.map((t) => `<span class="c" data-tk="${esc(t.k)}">${esc(t.t)}</span>`).join('')}</div>`).join('') : '<div class="wcs-note">No tags yet.</div>'}<div id="ccWhy"></div>
+          ${d.orders ? `<h4>Orders</h4><div class="g"><div><small>Orders</small><b>${d.orders.n}</b></div><div><small>Spent</small><b>${inr(d.orders.spent)}</b></div><div><small>Per order</small><b>${inr(d.orders.avg)}</b></div><div><small>${esc(d.orders.tier)}</small><b>${dtt(d.orders.last_order)}</b></div></div>` : '<h4>Orders</h4><div class="wcs-note">No order yet.</div>'}
+          <h4>When &amp; how they came</h4><div class="g"><div><small>First wrote</small><b>${dtt(d.first_seen)}</b></div><div><small>Last wrote</small><b>${dtt(d.last_in_at)}</b></div><div><small>We wrote</small><b>${dtt(d.last_out_at)}</b></div><div><small>Queries</small><b>${(d.queries || []).length}</b></div></div>
+          ${(d.queries || []).length ? (d.queries || []).slice(0, 6).map((q) => `<div class="ln"><span class="d">${dtt(q.at)}</span><span class="t">${esc(QT[q.type] || q.type)} query${q.answered ? '' : ' · <span class="bad">not answered</span>'}</span>${q.orders ? `<span class="ok">🛒 ${q.orders} · ${inr(q.revenue)}</span>` : ''}</div>`).join('') : ''}
+          <h4>Campaigns received <span style="text-transform:none;letter-spacing:0;font-weight:400">${C.length ? C.length + ' · ' + cs.dl + ' delivered · ' + cs.rd + ' read · ' + cs.r + ' replied' + (cs.f ? ' · ' + cs.f + ' failed' : '') : ''}</span></h4>
+          ${C.length ? C.slice(0, lim).map((c) => `<div class="ln"><span class="d">${dtt(c.at)}</span><span class="t" title="${esc(c.name)}">${esc(String(c.name).replace(/^house_aisensy_/, '').replace(/_/g, ' '))}${c.type ? ' · ' + esc(c.type) : ''}</span><span class="${c.status === 'failed' ? 'bad' : 'ok'}">${c.status === 'read' ? '✓✓ read' : c.status === 'delivered' ? '✓ delivered' : c.status === 'failed' ? '✗ failed' : '• sent'}</span>${c.replied ? '<span class="ok">💬</span>' : ''}</div>`).join('') + (C.length > lim ? `<div style="text-align:center;margin-top:5px"><button type="button" class="wp-btn s" data-cc="more">Load more (${C.length - lim})</button></div>` : '') : '<div class="wcs-note">No campaign message yet.</div>'}
+          <div class="wcs-note" style="margin-top:8px">A person who got a message is never sent the same message again, whichever list they are in.</div></div>`;
+        m.body.querySelectorAll('[data-tk]').forEach((x) => { x.onclick = () => { const t = T.find((y) => y.k === x.dataset.tk); m.body.querySelectorAll('[data-tk]').forEach((z) => z.classList.toggle('on', z === x && !x.classList.contains('on'))); $(m.body, '#ccWhy').innerHTML = x.classList.contains('on') && t ? `<div class="why"><b>${esc(t.t)}</b> — ${esc(t.why || 'No reason recorded.')}${t.until ? ' · until ' + esc(dtt(t.until)) : ''}</div>` : ''; }; });
+        const chat = m.body.querySelector('[data-cc="chat"]'); if (chat) chat.onclick = () => { m.close(); ctx.openChat(d.phone); };
+        const more = m.body.querySelector('[data-cc="more"]'); if (more) more.onclick = () => { lim += 15; paint(); };
+        const camp = m.body.querySelector('[data-cc="camp"]'); if (camp) camp.onclick = async () => { camp.disabled = true; try { const r = await api.post('wa.cs_pick', { sel: { phones: [d.phone] } }); window.WaCampGo = { mode: 'normal', seg: r.segment }; m.close(); ctx.go('campaigns'); } catch (e) { toast(e.message, true); camp.disabled = false; } };
+      };
+      paint();
+    }
     // ---------------------------------------------------------------------------------------------------------- action bar
     function drawB() {
       const B = $(el, '#cxB'), n = nSel(); if (!n) { B.innerHTML = ''; return; }

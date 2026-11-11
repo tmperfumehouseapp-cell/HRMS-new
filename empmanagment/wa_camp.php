@@ -994,6 +994,40 @@ function wa_cust_summary(PDO $pdo): array
     wa_cpc_put($pdo, 'cust_sum1', $o); try { setting_set($pdo, $lk, '0'); } catch (Throwable $e) { }
     return $o;
 }
+/** 🪪 One customer's card: who they are, every tag with the reason, orders in short, and every campaign message they got (delivered / read / replied / failed). Indexed lookups by phone only. */
+function wa_cust_card(PDO $pdo, string $phone): array
+{
+    $ph = function_exists('wa_key') ? wa_key($phone) : preg_replace('/\D+/', '', $phone); if ($ph === '') return ['error' => 'Give a phone number.'];
+    $o = ['phone' => $ph, 'known' => false, 'tags' => [], 'campaigns' => [], 'orders' => null];
+    try { $q = $pdo->prepare("SELECT name, first_seen, last_in_at, last_out_at, optout, source, assigned_emp FROM wa_contacts WHERE phone = ?"); $q->execute([$ph]); $c = $q->fetch(PDO::FETCH_ASSOC);
+        if ($c) { $o['known'] = true; $o += ['name' => (string)$c['name'], 'first_seen' => $c['first_seen'], 'last_in_at' => $c['last_in_at'], 'last_out_at' => $c['last_out_at'], 'optout' => (int)$c['optout'] === 1, 'source' => (string)$c['source']];
+            if ((int)$c['assigned_emp'] > 0) { $nm = employee_names_by_id($pdo); $o['assigned'] = $nm[(int)$c['assigned_emp']] ?? ''; } } } catch (Throwable $e) { }
+    try { $q = $pdo->prepare("SELECT n, spent, last_order, ign FROM wa_cust WHERE phone = ?"); $q->execute([$ph]); $u = $q->fetch(PDO::FETCH_ASSOC);
+        if ($u && (int)$u['n'] > 0) { $cu = ['hi' => 3000, 'lo' => 800]; try { if (function_exists('jn_cuts')) { $c0 = jn_cuts($pdo); $cu = ['hi' => (float)$c0['hi'], 'lo' => (float)$c0['lo']]; } } catch (Throwable $e) { }
+            $av = (float)$u['spent'] / max(1, (int)$u['n']); $o['orders'] = ['n' => (int)$u['n'], 'spent' => round((float)$u['spent']), 'avg' => round($av), 'last_order' => $u['last_order'], 'tier' => $av >= $cu['hi'] ? 'Premium' : ($av <= $cu['lo'] ? 'Budget' : 'Standard')]; } } catch (Throwable $e) { }
+    // 🏷 every tag, with the reason where we have one
+    $lab = function_exists('wq_tag_labels') ? wq_tag_labels() : []; $cat = function_exists('wag_tag_catalog') ? wag_tag_catalog() : []; $segs = function_exists('wcs_seg_names') ? wcs_seg_names($pdo) : []; $defs = function_exists('jt_auto_defs') ? jt_auto_defs() : [];
+    $label = fn(string $k) => $segs[$k] ?? ($lab[$k] ?? ($cat[$k] ?? ($defs[$k][0] ?? (function_exists('jt_label') && jt_label($pdo, $k) !== '' ? jt_label($pdo, $k) : ucfirst(str_replace('_', ' ', preg_replace('/^(seg_|import_|list_)/', '', $k)))))));
+    $T = [];
+    try { $q = $pdo->prepare("SELECT tag, why, until, src FROM wa_auto_tags WHERE phone = ? AND (until IS NULL OR until > NOW())"); $q->execute([$ph]); foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $T[(string)$r['tag']] = ['k' => (string)$r['tag'], 't' => $label((string)$r['tag']), 'why' => (string)$r['why'], 'src' => 'auto', 'until' => $r['until']]; } catch (Throwable $e) { }
+    try { $q = $pdo->prepare("SELECT tag, src, at FROM wa_ctags WHERE phone = ?"); $q->execute([$ph]); foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) { $k = (string)$r['tag']; if (!isset($T[$k])) $T[$k] = ['k' => $k, 't' => $label($k), 'why' => ['person' => 'Added by a person', 'claude' => 'Added by Claude', 'import' => 'Came with an Excel upload', 'camp' => 'Was on a campaign list', 'seg' => 'In a saved list', 'list' => 'In a list', 'flow' => 'Set by a flow', 'wq' => 'Set by the query rules', 'auto' => 'Set by the system', 'journey' => 'Set by the follow-up journey', 'bulk' => 'Added from the Customers screen'][(string)$r['src']] ?? '', 'src' => (string)$r['src'], 'until' => null]; } } catch (Throwable $e) { }
+    $o['tags'] = array_values($T);
+    // 📣 campaign messages they got, newest first, with what happened after
+    try {
+        $q = $pdo->prepare("SELECT wamid, status, ts FROM wa_messages WHERE phone = ? AND dir = 'out' AND who = 'campaign' AND mtype = 'template' ORDER BY id DESC LIMIT 60"); $q->execute([$ph]); $M = $q->fetchAll(PDO::FETCH_ASSOC);
+        $in = []; try { $q = $pdo->prepare("SELECT ts FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 400"); $q->execute([$ph]); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $t) $in[] = (int)strtotime((string)$t); } catch (Throwable $e) { }
+        $ids = array_values(array_filter(array_map(fn($m) => (string)$m['wamid'], $M), fn($x) => $x !== '')); $by = [];
+        if ($ids) { $q = $pdo->prepare("SELECT i.wamid, c.id cid, c.name, c.aud_type, c.tpl_id FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id WHERE i.wamid IN (" . implode(',', array_fill(0, count($ids), '?')) . ")"); $q->execute($ids); foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $by[(string)$r['wamid']] = $r; }
+        foreach ($M as $m) { $t = (int)strtotime((string)$m['ts']); $rep = false; foreach ($in as $x) if ($x > $t && $x - $t <= 3 * 86400) { $rep = true; break; } $b = $by[(string)$m['wamid']] ?? null;
+            $o['campaigns'][] = ['at' => (string)$m['ts'], 'name' => $b ? (string)$b['name'] : 'Campaign message', 'type' => $b ? (string)$b['aud_type'] : '', 'status' => in_array((string)$m['status'], ['read', 'delivered', 'failed'], true) ? (string)$m['status'] : 'sent', 'replied' => $rep]; }
+    } catch (Throwable $e) { }
+    // 💬 their queries (every time they started asking), typed the way the live board types them: meta ad / campaign / community / new ..., with what came of each
+    $o['queries'] = [];
+    try { $q = $pdo->prepare("SELECT q.opened_at, COALESCE(t.type, '') type, COALESCE(s.answered, 0) answered, COALESCE(s.orders, 0) orders, COALESCE(s.revenue, 0) revenue FROM wa_queries q LEFT JOIN wq_qtype t ON t.query_id = q.id LEFT JOIN wq_qstat s ON s.query_id = q.id WHERE q.phone = ? ORDER BY q.id DESC LIMIT 12"); $q->execute([$ph]);
+        foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $o['queries'][] = ['at' => (string)$r['opened_at'], 'type' => (string)$r['type'], 'answered' => (int)$r['answered'] === 1, 'orders' => (int)$r['orders'], 'revenue' => round((float)$r['revenue'])]; } catch (Throwable $e) { }
+    $o['camp_n'] = count($o['campaigns']); $o['ok'] = true;
+    return $o;
+}
 function wa_camp_spend_today(PDO $pdo, bool $fresh = false): array
 {
     $from = function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 10:00:00', date('H') < 10 ? time() - 86400 : time());
@@ -1126,7 +1160,7 @@ function wa_camp_people_rows(PDO $pdo, array $camp, ?array $tpl, string $f, stri
 $__wk = (string)($action ?? ($_GET['action'] ?? ''));
 if (in_array($__wk, ['wa.camp_tick', 'wa.camp_fast_tick', 'wa.dq_worker', 'wa.rec_run'], true) && function_exists('wa_overloaded') && wa_overloaded()) json_response(['ok' => true, 'result' => ['skipped' => true, 'busy' => true]]);   // the server is overloaded: this sending round waits a turn (it comes again in seconds), so the HRMS stays reachable
 if (isset($pdo) && $pdo instanceof PDO && strpos($__wk, 'wa.') === 0 && function_exists('wa_kill_stale_counts')) wa_kill_stale_counts($pdo);   // stuck heavy counts are cancelled first, so a jammed database frees itself
-if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_suggest', 'wa.camp_start_now', 'wa.camp_snap', 'wa.camp_days', 'wa.cust_summary', 'wa.camp_hours', 'wa.dq_worker', 'wa.rec_run', 'wa.dq_set', 'wa.rec_report', 'wa.rec_set', 'wa.camp_fast', 'wa.camp_fast_tick', 'wa.fu_list', 'wa.fu_save', 'wa.fu_del', 'wa.fu_preset', 'wa.camp_list', 'wa.camp_templates', 'wa.camp_get', 'wa.camp_preview', 'wa.camp_freq', 'wa.camp_typed_phones', 'wa.camp_save', 'wa.camp_start', 'wa.camp_send_now', 'wa.camp_resume_all', 'wa.camp_stop_all', 'wa.camp_pause', 'wa.camp_resume', 'wa.camp_cancel', 'wa.camp_del', 'wa.camp_tick', 'wa.camp_suggest', 'wa.camp_best_time', 'wa.camp_people', 'wa.camp_people_csv', 'wa.camp_thread', 'wa.reports', 'wa.mix_state', 'wa.camp_mix_set'], true) && !($__wk === 'wa.camp_suggest' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST')) {
+if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_suggest', 'wa.camp_start_now', 'wa.camp_snap', 'wa.camp_days', 'wa.cust_summary', 'wa.cust_card', 'wa.camp_hours', 'wa.dq_worker', 'wa.rec_run', 'wa.dq_set', 'wa.rec_report', 'wa.rec_set', 'wa.camp_fast', 'wa.camp_fast_tick', 'wa.fu_list', 'wa.fu_save', 'wa.fu_del', 'wa.fu_preset', 'wa.camp_list', 'wa.camp_templates', 'wa.camp_get', 'wa.camp_preview', 'wa.camp_freq', 'wa.camp_typed_phones', 'wa.camp_save', 'wa.camp_start', 'wa.camp_send_now', 'wa.camp_resume_all', 'wa.camp_stop_all', 'wa.camp_pause', 'wa.camp_resume', 'wa.camp_cancel', 'wa.camp_del', 'wa.camp_tick', 'wa.camp_suggest', 'wa.camp_best_time', 'wa.camp_people', 'wa.camp_people_csv', 'wa.camp_thread', 'wa.reports', 'wa.mix_state', 'wa.camp_mix_set'], true) && !($__wk === 'wa.camp_suggest' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST')) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     $auth = require_auth(); wa_guard_admin($pdo, $auth);
     if (!wa_tables($pdo) || !wa_more_tables($pdo) || !function_exists('wa_tpl_tables') || !wa_tpl_tables($pdo)) json_response(['error' => 'WhatsApp storage is not available — check database permissions.'], 500);
@@ -1432,6 +1466,7 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
             if (!$n && empty($in['all'])) json_response(['error' => 'It is not a scheduled campaign (or it is a Smart plan, which starts at its own time).'], 422);
             try { wa_camp_tick($pdo); } catch (Throwable $e) { } json_response(['ok' => true, 'started' => $n]);
         }
+        case 'wa.cust_card': { json_response(wa_cust_card($pdo, (string)($_GET['phone'] ?? ''))); }   // 🪪 one customer: tags with reasons, orders in short, campaigns received
         case 'wa.cust_summary': { json_response(['ok' => true] + wa_cust_summary($pdo)); }   // 👥 the customer numbers card (Customers screen + Campaigns)
         case 'wa.camp_days': { json_response(['ok' => true] + wa_camp_days($pdo, (int)($_GET['days'] ?? 14))); }   // 📈 day by day: pushed, delivered, spend, queries, replied, orders, revenue (the live board's "campaign" queries)
         case 'wa.camp_snap': {   // 🗄 the last answer of wa.camp_list, straight from the database cache: the page draws it at once and refreshes behind it
