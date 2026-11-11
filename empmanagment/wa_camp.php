@@ -447,6 +447,12 @@ function wa_camp_audience(PDO $pdo, array $aud, int $freq): array
     if ($src === 'paste') { $ph = wa_paste_phones((string)($aud['paste'] ?? '')); $matchedIt = $ph ? wa_camp_extra_filter(wa_aud_apply(array_values(wa_aud_rows($pdo, 'paste', $ph)), $f), $f) : []; }   // an empty list is an empty audience (never "everybody")
     elseif ($cfBad) $matchedIt = [];
     else $matchedIt = wa_aud_each($pdo, $src, $f);   // one SQL query, streamed 2,000 at a time
+    // ➕ "also add my pasted / Excel numbers": the contacts that match the filters PLUS the pasted numbers, every phone once (the contact's own row wins); the overlap is counted for the screen
+    $plusN = 0; $plusOver = 0; $plusNew = 0;
+    if ($src !== 'paste' && !empty($aud['plus_paste']) && trim((string)($aud['paste'] ?? '')) !== '' && !$cfBad) {
+        $pp = wa_paste_phones((string)$aud['paste']); $plusN = count($pp);
+        if ($pp) { $prow = array_values(wa_aud_rows($pdo, 'paste', $pp)); $base = $matchedIt; $matchedIt = (function () use ($base, $prow, &$plusOver, &$plusNew) { $seen = []; foreach ($base as $r) { $seen[(string)$r['phone']] = 1; yield $r; } foreach ($prow as $r) { if (isset($seen[(string)$r['phone']])) { $plusOver++; continue; } $seen[(string)$r['phone']] = 1; $plusNew++; yield $r; } })(); }
+    }
     $st = ['matched' => 0, 'optout' => 0, 'recent' => 0, 'invalid' => 0, 'send' => 0];
     $recent = []; $q = $pdo->prepare("SELECT DISTINCT phone FROM wa_messages WHERE dir = 'out' AND mtype = 'template' AND who = 'campaign' AND status <> 'failed' AND ts >= ?"); $q->execute([date('Y-m-d H:i:s', wa_camp_now() - max(0, $freq) * 86400)]); foreach ($q->fetchAll() as $r) $recent[(string)$r['phone']] = true;
     $send = [];
@@ -460,6 +466,7 @@ function wa_camp_audience(PDO $pdo, array $aud, int $freq): array
         $xd = max(1, min(60, (int)($xf['days'] ?? 7))); $xm = max(1, min(50, (int)$xf['min'])); $cnt = wa_camp_msg_counts($pdo, array_column($send, 'phone'), $xd); $keep = []; $st['freq'] = 0;
         foreach ($send as $r) { if (($cnt[(string)$r['phone']] ?? 0) >= $xm) { $st['freq']++; continue; } $keep[] = $r; } $send = $keep;
     }
+    if ($plusN) { $st['paste_n'] = $plusN; $st['paste_overlap'] = $plusOver; $st['paste_new'] = $plusNew; }
     $st['send'] = count($send); return [$send, $st];
 }
 function wa_camp_counts(PDO $pdo, int $id): array
