@@ -640,6 +640,7 @@ if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.
         try { if (function_exists('wa_seg_tick')) $r['segments'] = wa_seg_tick($pdo, ['inline' => true]); } catch (Throwable $e) { }
         try { if (function_exists('wcs_tick')) $r['csegs'] = wcs_tick($pdo); } catch (Throwable $e) { }   // live segments take in new matches (hourly)
         try { $r['campaigns'] = wa_camp_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'campaigns: ' . $e->getMessage()); $r['campaigns'] = 'error'; }
+        try { $r['recover'] = wa_rec_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'recovery: ' . $e->getMessage()); }   // 🔁 failed messages from another number / an alternative wording, slowly
         setting_set($pdo, 'wa_cron_at', date('Y-m-d H:i:s')); json_response(['ok' => true] + $r);
     }
     $auth = require_auth();

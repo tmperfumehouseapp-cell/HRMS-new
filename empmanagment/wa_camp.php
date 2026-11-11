@@ -27,7 +27,8 @@
  */
 if (!function_exists('wa_camp_tick')) {
 
-require_once __DIR__ . '/wa_pieces.php';   // the message pieces library (also answers wa.piece_* actions)
+require_once __DIR__ . '/wa_pieces.php';
+require_once __DIR__ . '/wa_rec.php';   // 🔁 recover failed messages from another number / an alternative wording   // the message pieces library (also answers wa.piece_* actions)
 require_once __DIR__ . '/wa_mix.php';      // marketing + utility mix, one panel for all numbers, families, auto-submit
 
 if (!function_exists('wa_http_multi')) {
@@ -861,9 +862,9 @@ function wa_camp_spend_today(PDO $pdo, bool $fresh = false): array
 {
     $from = function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 10:00:00', date('H') < 10 ? time() - 86400 : time());
     $to = date('Y-m-d H:i:s', strtotime($from) + 86400); $now = date('Y-m-d H:i:s');
-    if (!$fresh) { try { $hit = json_decode((string)setting_get($pdo, 'wa_camp_spend2', ''), true); if (is_array($hit) && ($hit['from'] ?? '') === $from && (int)($hit['t'] ?? 0) > time() - 60) return $hit; } catch (Throwable $e) { } }
+    if (!$fresh) { try { $hit = json_decode((string)setting_get($pdo, 'wa_camp_spend3', ''), true); if (is_array($hit) && ($hit['from'] ?? '') === $from && (int)($hit['t'] ?? 0) > time() - 60) return $hit; } catch (Throwable $e) { } }
     $R = function_exists('wab_rates') ? wab_rates($pdo) : ['marketing' => 1.09, 'utility' => 0.15, 'authentication' => 0.15, 'service' => 0.0];
-    $o = ['from' => $from, 'to' => $to, 'campaigns' => 0, 'sent' => 0, 'delivered' => 0, 'read' => 0, 'failed' => 0, 'replied' => 0, 'marketing' => 0, 'utility' => 0, 'amount' => 0.0, 'm_amount' => 0.0, 'u_amount' => 0.0, 'rate' => round((float)$R['marketing'], 2), 'u_rate' => round((float)$R['utility'], 2), 't' => time()];
+    $o = ['from' => $from, 'to' => $to, 'campaigns' => 0, 'sent' => 0, 'delivered' => 0, 'read' => 0, 'failed' => 0, 'replied' => 0, 'retried' => 0, 'recovered' => 0, 'marketing' => 0, 'utility' => 0, 'amount' => 0.0, 'm_amount' => 0.0, 'u_amount' => 0.0, 'rate' => round((float)$R['marketing'], 2), 'u_rate' => round((float)$R['utility'], 2), 't' => time()];
     try {
         $q = $pdo->prepare("SELECT COUNT(*) AS n, SUM(status IN ('delivered','read')) AS d, SUM(status = 'read') AS rd, SUM(status IN ('delivered','read') AND bill_cat IN ('utility','authentication')) AS u, SUM(status IN ('delivered','read') AND bill_cat = 'service') AS sv
             FROM wa_messages WHERE dir = 'out' AND mtype = 'template' AND who = 'campaign' AND status <> 'failed' AND ts >= ? AND ts < ?");
@@ -875,7 +876,8 @@ function wa_camp_spend_today(PDO $pdo, bool $fresh = false): array
     try { $q = $pdo->prepare("SELECT COUNT(DISTINCT camp_id) FROM wa_camp_items WHERE status = 'sent' AND sent_at >= ? AND sent_at < ?"); $q->execute([$from, $to]); $o['campaigns'] = (int)$q->fetchColumn(); } catch (Throwable $e) { }
     try { $q = $pdo->prepare("SELECT COUNT(DISTINCT m.phone) FROM wa_messages m WHERE m.dir = 'out' AND m.mtype = 'template' AND m.who = 'campaign' AND m.status IN ('delivered','read') AND m.ts >= ? AND m.ts < ?
             AND EXISTS (SELECT 1 FROM wa_messages i WHERE i.phone = m.phone AND i.dir = 'in' AND i.ts > m.ts AND i.ts <= ?)"); $q->execute([$from, $to, $now]); $o['replied'] = (int)$q->fetchColumn(); } catch (Throwable $e) { }
-    try { setting_set($pdo, 'wa_camp_spend2', json_encode($o)); } catch (Throwable $e) { }
+    try { $rr = wa_rec_range($pdo, $from, $to); $o['retried'] = $rr['tried']; $o['recovered'] = $rr['recovered']; } catch (Throwable $e) { }
+    try { setting_set($pdo, 'wa_camp_spend3', json_encode($o)); } catch (Throwable $e) { }
     return $o;
 }
 /** Messages customers wrote to us per hour of the day (last 30 days), kept for an hour. Returns ['hist' => [24 numbers], 'total', 'best' => [hours inside the window, best first]]. */
@@ -985,7 +987,7 @@ function wa_camp_people_rows(PDO $pdo, array $camp, ?array $tpl, string $f, stri
 
 // ---------------------------------------------------------------------------------------------------------------- router
 $__wk = (string)($action ?? ($_GET['action'] ?? ''));
-if (in_array($__wk, ['wa.camp_fast', 'wa.camp_fast_tick', 'wa.fu_list', 'wa.fu_save', 'wa.fu_del', 'wa.fu_preset', 'wa.camp_list', 'wa.camp_templates', 'wa.camp_get', 'wa.camp_preview', 'wa.camp_freq', 'wa.camp_typed_phones', 'wa.camp_save', 'wa.camp_start', 'wa.camp_send_now', 'wa.camp_resume_all', 'wa.camp_stop_all', 'wa.camp_pause', 'wa.camp_resume', 'wa.camp_cancel', 'wa.camp_del', 'wa.camp_tick', 'wa.camp_suggest', 'wa.camp_best_time', 'wa.camp_people', 'wa.camp_people_csv', 'wa.camp_thread', 'wa.reports', 'wa.mix_state', 'wa.camp_mix_set'], true) && !($__wk === 'wa.camp_suggest' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST')) {
+if (in_array($__wk, ['wa.rec_report', 'wa.rec_set', 'wa.camp_fast', 'wa.camp_fast_tick', 'wa.fu_list', 'wa.fu_save', 'wa.fu_del', 'wa.fu_preset', 'wa.camp_list', 'wa.camp_templates', 'wa.camp_get', 'wa.camp_preview', 'wa.camp_freq', 'wa.camp_typed_phones', 'wa.camp_save', 'wa.camp_start', 'wa.camp_send_now', 'wa.camp_resume_all', 'wa.camp_stop_all', 'wa.camp_pause', 'wa.camp_resume', 'wa.camp_cancel', 'wa.camp_del', 'wa.camp_tick', 'wa.camp_suggest', 'wa.camp_best_time', 'wa.camp_people', 'wa.camp_people_csv', 'wa.camp_thread', 'wa.reports', 'wa.mix_state', 'wa.camp_mix_set'], true) && !($__wk === 'wa.camp_suggest' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST')) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     $auth = require_auth(); wa_guard_admin($pdo, $auth);
     if (!wa_tables($pdo) || !wa_more_tables($pdo) || !function_exists('wa_tpl_tables') || !wa_tpl_tables($pdo)) json_response(['error' => 'WhatsApp storage is not available — check database permissions.'], 500);
@@ -1039,6 +1041,7 @@ if (in_array($__wk, ['wa.camp_fast', 'wa.camp_fast_tick', 'wa.fu_list', 'wa.fu_s
             $lim = isset($_GET['limit']) ? max(1, min(100, (int)$_GET['limit'])) : 40; $off = max(0, (int)($_GET['offset'] ?? 0));   // ⚡ the screen asks for a few campaigns at a time ("Load more" asks for the next ones)
             $rows = $pdo->query("SELECT * FROM wa_campaigns " . $hide . "ORDER BY id DESC LIMIT " . $lim . " OFFSET " . $off)->fetchAll(); $out = []; $totalCamps = (int)$pdo->query("SELECT COUNT(*) FROM wa_campaigns " . $hide)->fetchColumn();
             foreach ($rows as $r) { $r['audience'] = json_decode((string)$r['audience'], true) ?: []; $r['vars'] = json_decode((string)$r['vars'], true) ?: []; $r['extra'] = json_decode((string)($r['extra'] ?? ''), true) ?: []; $out[] = wa_camp_public($pdo, $r, false, $cfg); try { $__o = &$out[count($out) - 1]; if (in_array((string)$r['status'], ['running', 'paused'], true) && (int)($__o['counts']['sent'] ?? 0) + (int)($__o['counts']['held'] ?? 0) === 0) $__o['why'] = wa_camp_wait_reason($pdo, $r); unset($__o); } catch (Throwable $e) { } }
+            { $recBy = wa_rec_counts($pdo, array_column($out, 'id')); foreach ($out as $k0 => $o0) $out[$k0]['rec'] = $recBy[(int)$o0['id']] ?? ['tried' => 0, 'recovered' => 0]; }   // 🔁 retried / delivered again, per campaign
             if ($off > 0) json_response(['campaigns' => $out, 'total' => $totalCamps, 'offset' => $off]);   // "Load more": only the next campaigns — numbers, limits and the engine are already on the screen
             $health = wa_camp_health($pdo); $caps = wa_number_caps($pdo, $health); $nums = [];
             $campOk = []; foreach ($pdo->query("SELECT id, camp_ok, display FROM wa_numbers")->fetchAll() as $r0) $campOk[(int)$r0['id']] = [(int)$r0['camp_ok'] === 1, (string)$r0['display']];
@@ -1232,6 +1235,14 @@ if (in_array($__wk, ['wa.camp_fast', 'wa.camp_fast_tick', 'wa.fu_list', 'wa.fu_s
             if ($c['status'] !== 'running') json_response(['error' => 'Only a sending campaign can be sent fast.'], 422);
             wa_camp_fast_put($pdo, (int)$c['id'], ['until' => time() + 6 * 3600, 'burst_left' => 100000000, 'at' => time(), 'beat' => 0]); json_response(['ok' => true]);
         }
+        case 'wa.rec_report': {   // 🔁 the Recovery window of one campaign
+            $r = wa_rec_report($pdo, (int)($_GET['id'] ?? 0)); if (isset($r['error'])) json_response($r, 404); json_response($r);
+        }
+        case 'wa.rec_set': {   // 🔁 auto-recover on / off
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $in = json_input();
+            if (isset($in['on'])) setting_set($pdo, 'wa_rec_on', !empty($in['on']) ? '1' : '0'); if (!empty($in['on'])) setting_set($pdo, 'wa_rec_pause_until', '0');
+            json_response(['ok' => true, 'on' => wa_rec_cfg($pdo)['on']]);
+        }
         case 'wa.camp_fast_tick': {   // ⚡ one campaign's Send fast sender: that campaign only, its own lock, beside the running pool (the page calls it again and again while it is open)
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
             $fid = (int)(json_input()['id'] ?? 0); if (!$fid || !isset(wa_camp_fast_all($pdo)[$fid])) json_response(['ok' => true, 'result' => ['skipped' => true, 'why' => 'not on Send fast']]);
@@ -1239,7 +1250,7 @@ if (in_array($__wk, ['wa.camp_fast', 'wa.camp_fast_tick', 'wa.fu_list', 'wa.fu_s
         }
         case 'wa.camp_tick': {   // the Campaigns page calls this every 30 seconds while it is open — a fallback when the cron is not set up yet
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
-            ignore_user_abort(true); $r = wa_camp_tick($pdo); if (wa_lock($pdo, 'fu', 240)) { try { wa_fu_scan($pdo); } catch (Throwable $e) { } } json_response(['ok' => true, 'result' => $r]);
+            ignore_user_abort(true); $r = wa_camp_tick($pdo); try { $r['recover'] = wa_rec_tick($pdo); } catch (Throwable $e) { } if (wa_lock($pdo, 'fu', 240)) { try { wa_fu_scan($pdo); } catch (Throwable $e) { } } json_response(['ok' => true, 'result' => $r]);
         }
         case 'wa.camp_suggest': {
             json_response(wa_camp_suggest($pdo) + ['freq_days' => 2]);
