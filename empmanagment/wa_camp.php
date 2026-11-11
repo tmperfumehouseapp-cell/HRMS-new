@@ -566,7 +566,7 @@ function wa_camp_util_guard(PDO $pdo, array $c): string
 }
 function wa_camp_tick(PDO $pdo): array
 {
-    if (!wa_lock($pdo, 'camp', 45)) return ['skipped' => true];
+    if (!wa_lock($pdo, 'camp', 65)) return ['skipped' => true];   // ⚡ a round now works up to 55 s (was 42 s), so the next one can start 65 s after it began
     $t0 = microtime(true); $nowTs = wa_camp_now(); $now = date('Y-m-d H:i:s', $nowTs); $res = [];
     try { wa_more_tables($pdo); } catch (Throwable $e) { }
     try { wa_health_all($pdo, false); } catch (Throwable $e) { }   // keeps the saved number health fresh in the background, so the Campaign panel never waits for Meta
@@ -581,7 +581,7 @@ function wa_camp_tick(PDO $pdo): array
     // The waiting retries stay in the queue: the moment one is due, the campaign is reopened for it and finishes again.
     try { $pdo->exec("UPDATE wa_campaigns SET status = 'running', finished_at = NULL WHERE status = 'done' AND id IN (SELECT camp_id FROM wa_camp_items WHERE status = 'retry' AND next_try <= '$now')"); } catch (Throwable $e) { }
     $runRows = $pdo->query("SELECT id FROM wa_campaigns WHERE status = 'running' ORDER BY COALESCE(last_tick, '1970-01-01 00:00:00'), id")->fetchAll();   // the campaign that waited longest goes first: an older big campaign can never starve a new one
-    $loopEnd = microtime(true) + 42.0; $nLeft = count($runRows);   // ⚡ this round's 42 s are shared by the campaigns still to go: seconds a campaign did not need (waiting for room, hourly speed used, nothing due) pass to the next ones — before, every campaign got a fixed 42 / N
+    $loopEnd = microtime(true) + 55.0; $nLeft = count($runRows);   // ⚡ this round's 42 s are shared by the campaigns still to go: seconds a campaign did not need (waiting for room, hourly speed used, nothing due) pass to the next ones — before, every campaign got a fixed 42 / N
     foreach ($runRows as $row) {
         $slice = max(5.0, ($loopEnd - microtime(true)) / max(1, $nLeft)); $nLeft--;
         $c = wa_camp_row($pdo, (int)$row['id']); if (!$c) continue; $id = (int)$c['id']; $cDead = microtime(true) + $slice;
@@ -597,7 +597,7 @@ function wa_camp_tick(PDO $pdo): array
         if ($dueN === 0) { $pdo->prepare("UPDATE wa_campaigns SET last_tick = ?, note = '' WHERE id = ?")->execute([$now, $id]); $res[$id] = ['sent' => 0, 'failed' => 0, 'skipped' => 0, 'stop' => '']; continue; }
         $push = wa_camp_push((string)$c['push']); $rate = (int)$c['rate'] * $push['mult']; if ($c['win_end']) { $left = max(1, (strtotime((string)$c['win_end']) - $nowTs) / 60); $rate = (int)ceil($rem / $left); }
         if (!$c['win_end'] && (int)$c['own_hour'] !== 1 && !empty($c['started_at'])) { $tm = (int)setting_get($pdo, 'wa_camp_target_min', '6'); if ($tm > 0) { $leftMin = max(1.0, $tm - ($nowTs - strtotime((string)$c['started_at'])) / 60); $rate = max($rate, (int)ceil($rem / $leftMin)); } }   // "everyone together" campaigns aim to be finished about 6 minutes after the start (setting wa_camp_target_min; 0 = use the slow speed)
-        $el = $c['last_tick'] ? min(5, max(0.5, ($nowTs - strtotime((string)$c['last_tick'])) / 60)) : 1; $quota = min(1500, max(1, (int)ceil($rate * $el)));
+        $el = $c['last_tick'] ? min(5, max(0.5, ($nowTs - strtotime((string)$c['last_tick'])) / 60)) : 1; $quota = min(3000, max(1, (int)ceil($rate * $el)));
         // one panel for all numbers: the message (or an approved alternative version of it) must be approved on a number's WhatsApp account for that number to send
         $by = []; foreach ((array)$t['ok_wabas'] as $wb) $by[(string)$wb] = $t;
         foreach (wa_fam_m_alts($pdo, $t) as $alt) foreach ((array)$alt['ok_wabas'] as $wb) if (!isset($by[(string)$wb])) $by[(string)$wb] = $alt;
