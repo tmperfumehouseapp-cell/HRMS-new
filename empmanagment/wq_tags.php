@@ -180,7 +180,13 @@ function jt_rule_text(array $r): string
 function jt_manual_candidates(PDO $pdo): array
 {
     $skip = array_keys(jt_static_registry()); $o = [];
-    try { $q = $pdo->query("SELECT tag, COUNT(*) n FROM wa_ctags WHERE src IN ('person', 'list') GROUP BY tag HAVING n >= 8 ORDER BY n DESC LIMIT 40");
+    try {
+        // ⚡ counting every staff tag over 1.7 million rows is heavy: remembered for 30 minutes, one counter at a time
+        $ck = json_decode((string)setting_get($pdo, 'jt_manual_cnt', ''), true); $rows = null;
+        if (is_array($ck) && (int)($ck['t'] ?? 0) > time() - 1800 && is_array($ck['r'] ?? null)) $rows = $ck['r'];
+        elseif (is_array($ck) && is_array($ck['r'] ?? null) && (int)setting_get($pdo, 'jt_manual_lk', '0') > time() - 120) $rows = $ck['r'];
+        if ($rows === null) { setting_set($pdo, 'jt_manual_lk', (string)time()); $rows = $pdo->query("SELECT tag, COUNT(*) n FROM wa_ctags WHERE src IN ('person', 'list') GROUP BY tag HAVING n >= 8 ORDER BY n DESC LIMIT 40")->fetchAll(PDO::FETCH_ASSOC); setting_set($pdo, 'jt_manual_cnt', json_encode(['t' => time(), 'r' => $rows])); }
+        $q = new class($rows) { private $r; function __construct($r) { $this->r = $r; } function fetchAll($m = null) { return $this->r; } };
         $have = []; foreach ($pdo->query("SELECT tag, learned_at FROM wq_tag_rule")->fetchAll(PDO::FETCH_ASSOC) as $r) $have[(string)$r['tag']] = (string)$r['learned_at'];
         foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) { $t = (string)$r['tag']; if (in_array($t, $skip, true) || strpos($t, 'import_') === 0) continue; if (!isset($have[$t]) || ($have[$t] !== '' && strtotime($have[$t]) < time() - 14 * 86400)) $o[] = $t; } } catch (Throwable $e) { }
     return $o;
