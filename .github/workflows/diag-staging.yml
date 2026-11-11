@@ -55,6 +55,9 @@ jobs:
           ' "$P"
           echo "=== PHP pool of the site ==="; for f in /etc/php/8.3/fpm/pool.d/*staging*.conf /etc/php/8.3/fpm/pool.d/*.conf; do [ -r "$f" ] && { echo "$f"; grep -E "^(pm|pm\.max_children|pm\.start_servers|pm\.min_spare_servers|pm\.max_spare_servers|pm\.max_requests|request_terminate_timeout)" "$f" | head -8; break; }; done
           echo "=== crontab of this user ==="; crontab -l 2>&1 | head -8 | cut -c1-200; echo "=== engine hits in the access log (wa.cron) ==="; grep -c "action=wa.cron" $HOME/logs/nginx/access.log 2>/dev/null; grep "action=wa.cron" $HOME/logs/nginx/access.log 2>/dev/null | tail -3 | awk '{print $4, $5, $9}'
+          echo "=== php-fpm log (if readable) ==="; tail -n 12 /var/log/php8.3-fpm.log 2>&1 | cut -c1-220
+          echo "=== 502 / 504 / upstream lines (latest 8, with time) ==="; for f in $HOME/logs/nginx/error.log; do [ -r "$f" ] && grep -E "upstream|connect\(\)" "$f" | tail -n 8 | cut -c1-210; done; date
+          echo "=== 5xx answers in the access log (latest 600 lines) ==="; awk '$9 ~ /^50[0-9]$/ {c[$9" "$7]++} END {for (k in c) print c[k], k}' <(tail -n 600 $HOME/logs/nginx/access.log 2>/dev/null) | sort -rn | head -8
           echo "=== last nginx errors of the site ==="; for f in $(ls -t ${P}../logs/nginx/error.log ${P}logs/nginx/error.log $HOME/logs/nginx/error.log 2>/dev/null | head -1); do tail -n 15 "$f" | cut -c1-220; done
           echo "=== webhook hits in the last access-log lines ==="; for f in $(ls -t $HOME/logs/nginx/access.log 2>/dev/null | head -1); do tail -n 2000 "$f" | awk '{print $7}' | sed 's/&_t=.*//' | sort | uniq -c | sort -rn | head -12; done
           REMOTE
