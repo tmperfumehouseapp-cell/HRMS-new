@@ -482,7 +482,7 @@ function wa_camp_auto_cap(PDO $pdo, int $tier, array $health): array
     // the number dropped to Medium / Low or 20%+ failed → halves (never below 1,000); else it stays. Ceiling: 90% of Meta's daily limit.
     $max = (int)floor($tier * 0.9); $A = json_decode((string)setting_get($pdo, 'wa_camp_auto', ''), true); if (!is_array($A)) $A = [];
     $caps = is_array($A['caps'] ?? null) ? $A['caps'] : []; $hour = date('Y-m-d H'); $hist = array_values((array)($A['hist'] ?? []));
-    $START = 10000;   // owner (10 Nov 2026): every number runs 10,000 new people an hour (was 5,000), the Medium one too — it does not grow while quality is not High
+    $START = 9000;   // owner (11 Nov 2026): every number runs 9,000 new people an hour (was 5,000, then 10,000), the Medium one too — it does not grow while quality is not High
     $old0 = (int)($A['start'] ?? 0) === $START ? max($START, (int)($A['cap'] ?? $START)) : $START;
     if ((int)($A['start'] ?? 0) !== $START) { foreach ($caps as $k => $v) $caps[$k] = $START; $A['start'] = $START; $A['caps'] = $caps; $A['cap'] = $old0; try { setting_set($pdo, 'wa_camp_auto', json_encode($A)); } catch (Throwable $e) { } }   // once: lift the old 1,000 to 3,500
     $hq = []; foreach ($health as $h) $hq[(int)$h['id']] = $h;

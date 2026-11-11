@@ -39,7 +39,7 @@ if ($__wp === 'wa.plan_get') {
     try {
         $caps = wa_number_caps($pdo, wa_camp_health($pdo)); $port = $caps['_port'] ?? []; $room = (int)($port['left'] ?? 0);
         foreach ((array)($port['auto']['nums'] ?? []) as $nid => $n) { $nums[] = ['label' => (string)($n['label'] ?? ('Number ' . $nid)), 'speed' => (int)$n['cap'], 'left_hour' => (int)$n['left_hour']]; $speed += (int)$n['cap']; }
-        if (!$nums) foreach ($caps as $k => $c) if ($k !== '_port' && (int)$c['left'] > 0) { $nums[] = ['label' => 'Number ' . $k, 'speed' => 10000, 'left_hour' => 10000]; $speed += 5000; }
+        if (!$nums) foreach ($caps as $k => $c) if ($k !== '_port' && (int)$c['left'] > 0) { $nums[] = ['label' => 'Number ' . $k, 'speed' => 9000, 'left_hour' => 9000]; $speed += 9000; }
     } catch (Throwable $e) { }
     if ($speed <= 0) $speed = 10000;
     $hoursLeftToday = max(1, 23 - (int)date('G')); $hoursNeed = $needSent / $speed;
