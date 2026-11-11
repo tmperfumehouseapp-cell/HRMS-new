@@ -432,7 +432,7 @@ body.waui .cu-pc{display:flex;align-items:center;gap:10px;padding:9px 0;border-t
         $(m.body, '#cuDiag').onclick = () => diagnose(c);
       }
       async function sendNow(phone) {
-        const k = counts || {}; if (!phone && !confirm('Send to all ' + fmt(k.queued || 0) + ' waiting customers now, instead of at their best hour?')) return;
+        const k = counts || {}; 
         try { const d = await api.post('wa.camp_send_now', { id: c.id, phone }); const wn = $(m.body, '#cuNowN'); wn.dataset.sent = '1'; wn.innerHTML = d.wait ? `<div class="wp-note" style="margin:6px 0">⏳ ${d.moved ? fmt(d.moved) + ' moved to now, ' : ''}${fmt(d.due)} are due — <b>but not sending yet:</b> ${esc(d.wait)}</div>` : `<div class="wp-ok">⚡ ${d.moved ? fmt(d.moved) + ' moved to now. ' : ''}${esc(d.note || '')}</div>`; fetchRows(true); }
         catch (e) { toast(e.message, true); }
       }
