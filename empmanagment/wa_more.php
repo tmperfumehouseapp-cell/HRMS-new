@@ -632,17 +632,20 @@ if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.
                 try { $pdo->exec("ALTER TABLE $t ADD INDEX $n $c, ALGORITHM=INPLACE, LOCK=NONE"); } catch (Throwable $e) { try { $pdo->exec("ALTER TABLE $t ADD INDEX $n $c"); } catch (Throwable $e2) { } }
             }
         }
-        $r = ['tick' => wa_tick($pdo, true)];
-        try { wa_cust_refresh($pdo, 600); } catch (Throwable $e) { }   // customer summary + tag index (every 10 minutes)
+        // ⏱ the time of every step is kept (wa_cron_steps) and the step in progress (wa_cron_step), so a slow step can be found
+        $__st = []; $__T = function (string $k, callable $f) use (&$__st, $pdo) { $t0 = microtime(true); try { setting_set($pdo, 'wa_cron_step', $k . ' @ ' . date('H:i:s')); } catch (Throwable $e) { } try { return $f(); } finally { $__st[$k] = round(microtime(true) - $t0, 1); } };
+        $r = ['tick' => $__T('tick', fn() => wa_tick($pdo, true))];
+        try { $__T('cust_refresh', fn() => wa_cust_refresh($pdo, 600)); } catch (Throwable $e) { }   // customer summary + tag index (every 10 minutes)
         if (wa_lock($pdo, 'fu', 240)) { try { $r['followups'] = wa_fu_scan($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'follow-ups: ' . $e->getMessage()); $r['followups'] = 'error'; } }
-        try { $r['fu'] = fu_engine($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'follow-up engine: ' . $e->getMessage()); $r['fu'] = 'error'; }   // the new follow-up plans (does nothing while the mode is Off)
-        try { $r['brain'] = fu_housekeeping($pdo); } catch (Throwable $e) { $r['brain'] = 'error'; }
-        try { if (function_exists('wq_tick')) $r['wq'] = wq_tick($pdo); } catch (Throwable $e) { }   // WhatsApp Sales: backfill, summaries, orders, no-answer flow, daily summary, questions
-        try { if (function_exists('wch_tick')) $r['wch'] = wch_tick($pdo); } catch (Throwable $e) { }   // chain cart: reminders, catalog refresh, payment polling, bills
-        try { if (function_exists('wa_seg_tick')) $r['segments'] = wa_seg_tick($pdo, ['inline' => true]); } catch (Throwable $e) { }
-        try { if (function_exists('wcs_tick')) $r['csegs'] = wcs_tick($pdo); } catch (Throwable $e) { }   // live segments take in new matches (hourly)
-        try { $r['campaigns'] = wa_camp_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'campaigns: ' . $e->getMessage()); $r['campaigns'] = 'error'; }
-        try { $r['recover'] = wa_rec_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'recovery: ' . $e->getMessage()); }   // 🔁 failed messages from another number / an alternative wording, slowly
+        try { $r['fu'] = $__T('fu_engine', fn() => fu_engine($pdo)); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'follow-up engine: ' . $e->getMessage()); $r['fu'] = 'error'; }   // the new follow-up plans (does nothing while the mode is Off)
+        try { $r['brain'] = $__T('housekeeping', fn() => fu_housekeeping($pdo)); } catch (Throwable $e) { $r['brain'] = 'error'; }
+        try { if (function_exists('wq_tick')) $r['wq'] = $__T('wq_tick', fn() => wq_tick($pdo)); } catch (Throwable $e) { }   // WhatsApp Sales: backfill, summaries, orders, no-answer flow, daily summary, questions
+        try { if (function_exists('wch_tick')) $r['wch'] = $__T('wch_tick', fn() => wch_tick($pdo)); } catch (Throwable $e) { }   // chain cart: reminders, catalog refresh, payment polling, bills
+        try { if (function_exists('wa_seg_tick')) $r['segments'] = $__T('seg_tick', fn() => wa_seg_tick($pdo, ['inline' => true])); } catch (Throwable $e) { }
+        try { if (function_exists('wcs_tick')) $r['csegs'] = $__T('cust_segs', fn() => wcs_tick($pdo)); } catch (Throwable $e) { }   // live segments take in new matches (hourly)
+        try { $r['campaigns'] = $__T('campaigns', fn() => wa_camp_tick($pdo)); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'campaigns: ' . $e->getMessage()); $r['campaigns'] = 'error'; }
+        try { $r['recover'] = $__T('recovery', fn() => wa_rec_tick($pdo)); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'recovery: ' . $e->getMessage()); }   // 🔁 failed messages from another number / an alternative wording, slowly
+        try { setting_set($pdo, 'wa_cron_steps', json_encode(['at' => date('Y-m-d H:i:s'), 's' => $__st])); } catch (Throwable $e) { }
         setting_set($pdo, 'wa_cron_at', date('Y-m-d H:i:s')); json_response(['ok' => true] + $r);
     }
     $auth = require_auth();
