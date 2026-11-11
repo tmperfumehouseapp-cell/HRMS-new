@@ -362,34 +362,6 @@ function wa_camp_resolve_vars(PDO $pdo, int $n, array $specs, array $ct, string 
 }
 
 // ---------------------------------------------------------------------------------------------------------------- campaigns
-/** 🏷 The customer list a campaign was made for: a pattern name (Shopify customer, bot customer, …) + the dates they come from. The campaign names itself from them; every pattern ever used is remembered for the dropdown. */
-function wa_aud_name(string $type, ?string $from, ?string $to): string
-{
-    $f = fn($d) => $d ? date('j M', strtotime($d)) : ''; $y = $to ?: $from; $r = $from && $to && $from !== $to ? $f($from) . '–' . $f($to) : $f($from ?: $to);
-    return trim(($type !== '' ? $type : 'Customers') . ($r !== '' ? ' · ' . $r : '') . ($y ? ' ' . date('Y', strtotime($y)) : ''));
-}
-function wa_aud_key(string $t): string { $t = mb_strtolower(trim($t)); $t = preg_replace('/[^\p{L}\p{N}]+/u', ' ', $t); $w = array_filter(explode(' ', $t), 'strlen'); $w = array_map(fn($x) => strlen($x) > 3 ? rtrim($x, 's') : $x, $w); sort($w); return implode(' ', $w); }   // capitals, spacing, plural and word order do not make a new type
-function wa_aud_slug(string $t): string { $s = trim(preg_replace('/[^a-z0-9]+/', '_', strtolower(iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $t) ?: $t)), '_'); return 'seg_' . mb_substr($s !== '' ? $s : substr(md5($t), 0, 8), 0, 34); }
-/** Every customer type: the ones typed in campaigns + the tags already on your chats. Each: ['name', 'n' (people), 'kind' => 'type' | 'tag']. */
-function wa_aud_list(PDO $pdo): array
-{
-    $l = json_decode((string)setting_get($pdo, 'wa_aud_patterns', '[]'), true); $l = is_array($l) ? $l : []; $out = []; $seen = [];
-    $add = function (string $n, string $kind, int $cnt) use (&$out, &$seen) { $k = wa_aud_key($n); if ($k === '' || isset($seen[$k])) return; $seen[$k] = 1; $out[] = ['name' => $n, 'n' => $cnt, 'kind' => $kind]; };
-    try { foreach ($pdo->query("SELECT aud_type, COUNT(*) c FROM wa_campaigns WHERE aud_type <> '' GROUP BY aud_type")->fetchAll() as $r) $cnt[mb_strtolower($r['aud_type'])] = (int)$r['c']; } catch (Throwable $e) { }
-    foreach ($l as $n) $add((string)$n, 'type', 0);
-    try { foreach ($pdo->query("SELECT aud_type FROM wa_campaigns WHERE aud_type <> '' ORDER BY id DESC LIMIT 200")->fetchAll(PDO::FETCH_COLUMN) as $n) $add((string)$n, 'type', 0); } catch (Throwable $e) { }
-    $tg = wa_cpc_get($pdo, 'aud_tags1');   // counting every tag over all chats is heavy: remembered for an hour
-    if (!$tg || $tg['age'] > 3600) { $rows = []; try { foreach ($pdo->query("SELECT /*+ MAX_EXECUTION_TIME(8000) */ tag, COUNT(*) c FROM wa_tagidx WHERE tag NOT LIKE 'camp\\_%' GROUP BY tag ORDER BY c DESC LIMIT 60")->fetchAll() as $r) $rows[] = [(string)$r['tag'], (int)$r['c']]; wa_cpc_put($pdo, 'aud_tags1', $rows); } catch (Throwable $e) { $rows = $tg ? $tg['v'] : []; } } else $rows = $tg['v'];
-    foreach ($rows as [$tn0, $tc0]) $add(str_replace('_', ' ', $tn0), 'tag', $tc0);
-    return array_slice($out, 0, 120);
-}
-function wa_aud_remember(PDO $pdo, string $t): void
-{
-    $l = json_decode((string)setting_get($pdo, 'wa_aud_patterns', '[]'), true); $l = is_array($l) ? $l : []; $k = wa_aud_key($t);
-    $l = array_values(array_filter($l, fn($x) => wa_aud_key((string)$x) !== $k)); array_unshift($l, $t); setting_set($pdo, 'wa_aud_patterns', json_encode(array_slice($l, 0, 80), JSON_UNESCAPED_UNICODE));
-}
-/** The same type already exists under another spelling? → its saved name (so the list never gets duplicates). */
-function wa_aud_canon(PDO $pdo, string $t): string { $k = wa_aud_key($t); foreach (wa_aud_list($pdo) as $x) if (wa_aud_key($x['name']) === $k) return $x['name']; return $t; }
 function wa_camp_row(PDO $pdo, int $id): ?array
 {
     $q = $pdo->prepare("SELECT * FROM wa_campaigns WHERE id = ?"); $q->execute([$id]); $r = $q->fetch(); if (!$r) return null;
@@ -494,7 +466,7 @@ function wa_camp_public(PDO $pdo, array $c, bool $deep = false, ?array $cfg = nu
     if ((int)($c['media_lib_id'] ?? 0) && function_exists('wa_lib_row')) { try { $lib = wa_lib_row($pdo, (int)$c['media_lib_id']); } catch (Throwable $e) { } }
     $o = ['id' => (int)$c['id'], 'name' => $c['name'], 'status' => $c['status'], 'tpl_id' => (int)$c['tpl_id'], 'tpl_name' => $t ? $t['name'] : '', 'tpl_body' => $t ? $t['body'] : '', 'tpl_category' => $t ? $t['category'] : '', 'counts' => $cn + $d, 'rate' => (int)$c['rate'],
         'win_end' => $c['win_end'], 'start_at' => $c['start_at'], 'created_at' => $c['created_at'], 'started_at' => $c['started_at'], 'finished_at' => $c['finished_at'], 'note' => $c['note'], 'freq_days' => (int)$c['freq_days'], 'switch_after' => (int)$c['switch_after'],
-        'audience' => $c['audience'], 'vars' => $c['vars'], 'media_lib_id' => (int)($c['media_lib_id'] ?? 0), 'media_folder' => (string)($c['media_folder'] ?? ''), 'aud_type' => (string)($c['aud_type'] ?? ''), 'aud_from' => (string)($c['aud_from'] ?? ''), 'aud_to' => (string)($c['aud_to'] ?? ''), 'media_title' => $lib ? (string)$lib['title'] : '', 'media_kind' => $lib ? (string)$lib['kind'] : '',
+        'audience' => $c['audience'], 'vars' => $c['vars'], 'media_lib_id' => (int)($c['media_lib_id'] ?? 0), 'media_folder' => (string)($c['media_folder'] ?? ''), 'media_title' => $lib ? (string)$lib['title'] : '', 'media_kind' => $lib ? (string)$lib['kind'] : '',
         'push' => (string)($c['push'] ?? 'normal'), 'retry' => (int)($c['retry'] ?? 1) === 1, 'own_hour' => (int)($c['own_hour'] ?? 0) === 1, 'def_hour' => (int)($c['def_hour'] ?? 19), 'extra' => $c['extra'] ?? []];
     try { $o['mix'] = wa_mix_report($pdo, $c, $cfg ?? ['rate_marketing' => 0, 'rate_utility' => 0], false); } catch (Throwable $e) { $o['mix'] = ['on' => false, 'u_status' => 'none']; }   // light: the twin and its state; the numbers and variant counts come with wa.camp_get
     if ($deep) {
@@ -1044,8 +1016,7 @@ function wa_camp_people_rows(PDO $pdo, array $camp, ?array $tpl, string $f, stri
 
 // ---------------------------------------------------------------------------------------------------------------- router
 $__wk = (string)($action ?? ($_GET['action'] ?? ''));
-if (isset($pdo) && $pdo instanceof PDO && strpos($__wk, 'wa.') === 0 && function_exists('wa_kill_stale_counts')) wa_kill_stale_counts($pdo);   // stuck heavy counts are cancelled first, so a jammed database frees itself
-if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_suggest', 'wa.camp_start_now', 'wa.camp_snap', 'wa.camp_hours', 'wa.dq_worker', 'wa.rec_run', 'wa.dq_set', 'wa.rec_report', 'wa.rec_set', 'wa.camp_fast', 'wa.camp_fast_tick', 'wa.fu_list', 'wa.fu_save', 'wa.fu_del', 'wa.fu_preset', 'wa.camp_list', 'wa.camp_templates', 'wa.camp_get', 'wa.camp_preview', 'wa.camp_freq', 'wa.camp_typed_phones', 'wa.camp_save', 'wa.camp_start', 'wa.camp_send_now', 'wa.camp_resume_all', 'wa.camp_stop_all', 'wa.camp_pause', 'wa.camp_resume', 'wa.camp_cancel', 'wa.camp_del', 'wa.camp_tick', 'wa.camp_suggest', 'wa.camp_best_time', 'wa.camp_people', 'wa.camp_people_csv', 'wa.camp_thread', 'wa.reports', 'wa.mix_state', 'wa.camp_mix_set'], true) && !($__wk === 'wa.camp_suggest' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST')) {
+if (in_array($__wk, ['wa.msg_rank', 'wa.camp_start_now', 'wa.camp_snap', 'wa.camp_hours', 'wa.dq_worker', 'wa.rec_run', 'wa.dq_set', 'wa.rec_report', 'wa.rec_set', 'wa.camp_fast', 'wa.camp_fast_tick', 'wa.fu_list', 'wa.fu_save', 'wa.fu_del', 'wa.fu_preset', 'wa.camp_list', 'wa.camp_templates', 'wa.camp_get', 'wa.camp_preview', 'wa.camp_freq', 'wa.camp_typed_phones', 'wa.camp_save', 'wa.camp_start', 'wa.camp_send_now', 'wa.camp_resume_all', 'wa.camp_stop_all', 'wa.camp_pause', 'wa.camp_resume', 'wa.camp_cancel', 'wa.camp_del', 'wa.camp_tick', 'wa.camp_suggest', 'wa.camp_best_time', 'wa.camp_people', 'wa.camp_people_csv', 'wa.camp_thread', 'wa.reports', 'wa.mix_state', 'wa.camp_mix_set'], true) && !($__wk === 'wa.camp_suggest' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST')) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     $auth = require_auth(); wa_guard_admin($pdo, $auth);
     if (!wa_tables($pdo) || !wa_more_tables($pdo) || !function_exists('wa_tpl_tables') || !wa_tpl_tables($pdo)) json_response(['error' => 'WhatsApp storage is not available — check database permissions.'], 500);
@@ -1111,10 +1082,8 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
             $respCp = ['campaigns' => $out, 'total' => $totalCamps, 'offset' => 0, 'sched' => $schedN, 'fast' => $fastNow, 'rec_status' => wa_rec_status($pdo), 'dq' => wa_dq_status($pdo), 'spend' => wa_camp_spend_today($pdo, !empty($_GET['fresh'])), 'lite' => $lite, 'templates' => $lite ? [] : $tplList(true), 'numbers' => $nums, 'portfolio' => $caps['_port'] ?? null, 'engine' => $engine(), 'tags' => WA_TAGS, 'pieces' => $pc, 'window' => wa_camp_window($pdo), 'can_media' => function_exists('wa_tpl_send_components') && function_exists('wa_tpl_sendable')]; if ($lite) wa_cpc_put($pdo, 'camp_list', $respCp); json_response($respCp);
         }
         case 'wa.camp_templates': {
-            $hit = wa_cpc_get($pdo, 'camp_tpls1'); if ($hit && $hit['age'] < 120 && empty($_GET['fresh'])) json_response($hit['v']);   // the message library is the slowest answer: remembered for 2 minutes, so the New-campaign form opens at once
             $pc = []; foreach ((function_exists('wa_piece_all') ? wa_piece_all($pdo, true) : []) as $slot => $l) $pc[$slot] = count($l);
-            $resp = ['templates' => $tplList(true), 'pieces' => $pc, 'can_media' => function_exists('wa_tpl_send_components') && function_exists('wa_tpl_sendable')]; try { wa_cpc_put($pdo, 'camp_tpls1', $resp); } catch (Throwable $e) { }
-            json_response($resp);
+            json_response(['templates' => $tplList(true), 'pieces' => $pc, 'can_media' => function_exists('wa_tpl_send_components') && function_exists('wa_tpl_sendable')]);
         }
         case 'wa.camp_get': {
             $c = wa_camp_row($pdo, (int)($_GET['id'] ?? 0)); if (!$c) json_response(['error' => 'Campaign not found.'], 404);
@@ -1163,12 +1132,7 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
         }
         case 'wa.camp_save': {
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
-            $in = json_input(); $id = (int)($in['id'] ?? 0); $name = trim(mb_substr((string)($in['name'] ?? ''), 0, 80));
-            $audType = trim(mb_substr(preg_replace('/\s+/u', ' ', (string)($in['aud_type'] ?? '')), 0, 60)); if ($audType !== '') $audType = wa_aud_canon($pdo, $audType);
-            $dOk = fn($v) => preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$v) && strtotime((string)$v) ? (string)$v : null; $audFrom = $dOk($in['aud_from'] ?? ''); $audTo = $dOk($in['aud_to'] ?? '');
-            if ($audFrom && $audTo && $audFrom > $audTo) [$audFrom, $audTo] = [$audTo, $audFrom];
-            if ($name === '' && ($audType !== '' || $audFrom)) $name = mb_substr(wa_aud_name($audType, $audFrom, $audTo), 0, 80);   // the campaign names itself: type + dates
-            if ($name === '') json_response(['error' => 'Give the campaign a name.'], 422);
+            $in = json_input(); $id = (int)($in['id'] ?? 0); $name = trim(mb_substr((string)($in['name'] ?? ''), 0, 80)); if ($name === '') json_response(['error' => 'Give the campaign a name.'], 422);
             $libId = max(0, (int)($in['media_lib_id'] ?? 0)); $isUtilC = (string)($in['kind'] ?? '') === 'util';
             if ($isUtilC) {   // 💸 utility follow-up campaign: the standard follow-up messages; at least one must be approved
                 $pool = function_exists('wa_util_pool_usable') ? wa_util_pool_usable($pdo) : []; if (!$pool) json_response(['error' => 'None of the utility follow-up messages is approved by Meta yet. Press “Create the 6 messages” and wait for approval (minutes to a few hours).'], 422);
@@ -1214,34 +1178,9 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
             $vals = [$name, (int)$t['id'], json_encode($aud, JSON_UNESCAPED_UNICODE), json_encode($vars, JSON_UNESCAPED_UNICODE), $rate, $win, $start, $freq, $sw, $libId, mb_substr($folder, 0, 40), $push, $retry, $own, $defH, json_encode($extra, JSON_UNESCAPED_UNICODE)];
             if ($id > 0) { $pdo->prepare("UPDATE wa_campaigns SET name = ?, tpl_id = ?, audience = ?, vars = ?, rate = ?, win_end = ?, start_at = ?, freq_days = ?, switch_after = ?, media_lib_id = ?, media_folder = ?, push = ?, retry = ?, own_hour = ?, def_hour = ?, extra = ? WHERE id = ?")->execute(array_merge($vals, [$id])); }
             else { $pdo->prepare("INSERT INTO wa_campaigns (name, tpl_id, audience, vars, rate, win_end, start_at, freq_days, switch_after, media_lib_id, media_folder, push, retry, own_hour, def_hour, extra, status, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?)")->execute(array_merge($vals, [$me, date('Y-m-d H:i:s')])); $id = (int)$pdo->lastInsertId(); }
-            try { $pdo->prepare("UPDATE wa_campaigns SET aud_type = ?, aud_from = ?, aud_to = ? WHERE id = ?")->execute([$audType, $audFrom, $audTo, $id]); if ($audType !== '') wa_aud_remember($pdo, $audType); } catch (Throwable $e) { error_log('aud tag: ' . $e->getMessage()); }
-            json_response(['ok' => true, 'id' => $id, 'name' => $name]);
+            json_response(['ok' => true, 'id' => $id]);
         }
-        case 'wa.aud_types': { json_response(['types' => wa_aud_list($pdo)]); }
-        case 'wa.aud_check': {   // the owner typed a new customer type: does it already exist (any spelling)? if not, Claude tidies the name and says what it understood
-            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
-            $txt = trim(mb_substr((string)(json_input()['text'] ?? ''), 0, 200)); if ($txt === '') json_response(['error' => 'Type the customer type first.'], 422);
-            $list = wa_aud_list($pdo); $k = wa_aud_key($txt); foreach ($list as $x) if (wa_aud_key($x['name']) === $k) json_response(['exists' => true, 'name' => $x['name'], 'understood' => 'This type already exists, so no new one is made.']);
-            $names = array_column($list, 'name'); $name = mb_substr($txt, 0, 60); $under = ''; $match = '';
-            if (function_exists('wa_tpl_model')) {
-                $sch = ['type' => 'OBJECT', 'properties' => ['understood' => ['type' => 'STRING'], 'name' => ['type' => 'STRING'], 'same_as' => ['type' => 'STRING']], 'required' => ['understood', 'name', 'same_as']];
-                [$ok, $v] = wa_tpl_model('You help a perfume shop owner group customers. He typed a new customer type (English, Hindi or Gujarati). Say in ONE plain-English sentence how you understood it (understood). Give a short clean name of at most 4 words (name). If it clearly means the SAME group as one of the existing types listed, put that existing name exactly in same_as, otherwise an empty string.', "TYPED: " . $txt . "\nEXISTING TYPES: " . json_encode($names, JSON_UNESCAPED_UNICODE), $sch, 400);
-                if ($ok && is_array($v)) { $under = mb_substr((string)($v['understood'] ?? ''), 0, 300); $nm = trim(mb_substr((string)($v['name'] ?? ''), 0, 60)); if ($nm !== '') $name = $nm; $sa = trim((string)($v['same_as'] ?? '')); foreach ($names as $n0) if ($sa !== '' && wa_aud_key($n0) === wa_aud_key($sa)) $match = $n0; }
-            }
-            if ($match !== '') json_response(['exists' => true, 'name' => $match, 'understood' => ($under !== '' ? $under . ' ' : '') . 'This is the same as the existing type “' . $match . '”.']);
-            foreach ($list as $x) if (wa_aud_key($x['name']) === wa_aud_key($name)) json_response(['exists' => true, 'name' => $x['name'], 'understood' => 'This type already exists, so no new one is made.']);
-            json_response(['exists' => false, 'name' => $name, 'understood' => $under !== '' ? $under : 'A new customer type.']);
-        }
-        case 'wa.aud_suggest': {   // what to do for a customer type, from the last 5 days of own data: best message, best hours, today's room, expected cost and replies
-            $type = trim((string)($_GET['type'] ?? '')); $o = ['type' => $type, 'enough' => false];
-            $rk = wa_msg_rank($pdo, 5, 3600, false, $type); $rows = array_values(array_filter($rk['rows'] ?? [], fn($x) => !$x['low'])); usort($rows, fn($a, $b) => $b['rep'] <=> $a['rep'] ?: $b['d'] <=> $a['d']);
-            if ($type !== '' && !$rows) { $rk = wa_msg_rank($pdo, 5, 3600, false, ''); $rows = array_values(array_filter($rk['rows'] ?? [], fn($x) => !$x['low'])); usort($rows, fn($a, $b) => $b['rep'] <=> $a['rep'] ?: $b['d'] <=> $a['d']); $o['fallback'] = true; } else $o['enough'] = $type === '' ? true : count($rows) > 0;
-            $o['best'] = array_map(fn($x) => ['id' => $x['id'], 'name' => $x['name'], 'n' => $x['n'], 'd' => $x['d'], 'rep' => $x['rep'], 'cost' => $x['cost']], array_slice($rows, 0, 3));
-            $hs = wa_dq_hour_scores($pdo); $hh = []; foreach (($hs['hours'] ?? []) as $h => $x) if (($x['n'] ?? 0) >= 300) $hh[(int)$h] = (float)($x['m'] ?? $x['mult'] ?? 1); arsort($hh); $o['hours'] = array_slice(array_keys($hh), 0, 3); $o['learning'] = !empty($hs['learning']);
-            $st = wa_dq_status($pdo); $o['room'] = ['used' => (int)($st['used'] ?? 0), 'daily' => (int)(wa_dq_cfg($pdo)['daily'] ?? 0), 'hourly' => (int)($st['cap'] ?? 0)]; $o['room']['left'] = max(0, $o['room']['daily'] - $o['room']['used']);
-            $R = function_exists('wab_rates') ? wab_rates($pdo) : ['marketing' => 1.09]; $o['rate'] = (float)$R['marketing']; $d = $rows ? $rows[0]['d'] : 0; $rp = $rows ? $rows[0]['rep'] : 0; $o['rate_d'] = $d; $o['rate_rep'] = $rp;
-            json_response($o);
-        } {   // admin: why is a number at 40%? every state row + latest changes + settings + the plan of one campaign
+        case 'wa.mix_state': {   // admin: why is a number at 40%? every state row + latest changes + settings + the plan of one campaign
             $o = wa_mix_dump($pdo, (int)($_GET['tpl_id'] ?? 0), (int)($_GET['number_id'] ?? 0));
             if ((int)($_GET['camp_id'] ?? 0) > 0) { $c = wa_camp_row($pdo, (int)$_GET['camp_id']); if ($c) $o['campaign'] = wa_mix_report($pdo, $c, $cfg, true); }
             $o['auto'] = function_exists('wa_tpl_auto_status') ? wa_tpl_auto_status($pdo) : null; json_response($o);
@@ -1269,7 +1208,6 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
                 try { foreach ($ch as $r) $ins->execute([(int)$c['id'], $r['phone'], mb_substr((string)$r['name'], 0, 120), $own ? date('Y-m-d H:i:s', wa_camp_send_at($pdo, $base, (int)($hrs[$r['phone']] ?? $c['def_hour']), $r['phone'])) : null]); $pdo->commit(); }
                 catch (Throwable $e) { if ($pdo->inTransaction()) $pdo->rollBack(); throw $e; }
             }
-            if ((string)($c['aud_type'] ?? '') !== '') { try { $tg = wa_aud_slug((string)$c['aud_type']); $pdo->prepare("INSERT IGNORE INTO wa_ctags (phone, tag, src, at) SELECT phone, ?, 'camp', ? FROM wa_camp_items WHERE camp_id = ?")->execute([$tg, $now, (int)$c['id']]); $pdo->prepare("INSERT IGNORE INTO wa_tagidx (phone, tag) SELECT phone, ? FROM wa_camp_items WHERE camp_id = ?")->execute([$tg, (int)$c['id']]); } catch (Throwable $e) { error_log('aud customers tag: ' . $e->getMessage()); } }   // everyone on the list is stored with the customer type
             $pdo->prepare("UPDATE wa_campaigns SET status = ?, started_at = ?, note = '' WHERE id = ?")->execute([$future ? 'scheduled' : 'running', $future ? null : $now, $c['id']]);
             wa_log($pdo, 'campaign', true, '#' . $c['id'] . ' ' . $c['name'] . ' started for ' . count($send) . ' customers.');
             $out = ['ok' => true, 'queued' => count($send), 'status' => $future ? 'scheduled' : 'running'];
@@ -1340,7 +1278,7 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
             setting_set($pdo, 'wa_dq_stat', ''); json_response(['ok' => true, 'dq' => wa_dq_status($pdo)]);
         }
         case 'wa.msg_rank': {   // 🏆 which messages deliver best (and what they have in common)
-            json_response(wa_msg_rank($pdo, (int)($_GET['days'] ?? 14), 86400, false, trim((string)($_GET['seg'] ?? ''))));   // any prepared copy is fine: the engine keeps all three windows fresh
+            json_response(wa_msg_rank($pdo, (int)($_GET['days'] ?? 14), 86400, false));   // any prepared copy is fine: the engine keeps all three windows fresh
         }
         case 'wa.camp_start_now': {   // ▶ start one scheduled campaign (or all of them) now instead of at the scheduled time
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $in = json_input(); $ids = [];
