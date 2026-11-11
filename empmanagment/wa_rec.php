@@ -33,7 +33,7 @@ function wa_rec_tables(PDO $pdo): bool
 function wa_rec_cfg(PDO $pdo): array
 {
     $g = function (string $k, string $d) use ($pdo) { try { $v = setting_get($pdo, $k, $d); return ($v === null || $v === '') ? $d : (string)$v; } catch (Throwable $e) { return $d; } };
-    return ['on' => $g('wa_rec_on', '1') !== '0', 'hourly' => max(10, min(20000, (int)$g('wa_rec_hourly', '5000'))), 'alts' => $g('wa_rec_alts', '1') !== '0', 'pause_until' => (int)$g('wa_rec_pause_until', '0'), 'max_attempts' => 3, 'gap_min' => 60];
+    return ['on' => $g('wa_rec_on', '1') !== '0', 'hourly' => max(10, min(20000, (int)$g('wa_rec_hourly', '5000'))), 'alts' => $g('wa_rec_alts', '1') !== '0', 'pause_until' => (int)$g('wa_rec_pause_until', '0'), 'max_attempts' => 3, 'gap_min' => 60, 'held_on' => $g('wa_rec_held', '1') !== '0', 'held_off_until' => (int)$g('wa_rec_held_off_until', '0')];
 }
 /** 'never' | 'held' | 'tpl' (the message itself has a problem → use an alternative) | 'now' (another number can fix it). */
 function wa_rec_class(int $ec): string
@@ -79,6 +79,14 @@ function wa_rec_alts(PDO $pdo): int
     return $made;
 }
 
+/** How the "held by Meta" people (131049) did when tried from another number: ['n' => tried, 'd' => delivered] over the last 12 hours (receipts have had an hour to arrive). */
+function wa_rec_held_stats(PDO $pdo): array
+{
+    $o = ['n' => 0, 'd' => 0];
+    try { $q = $pdo->prepare("SELECT COUNT(*) AS n, SUM(m.status IN ('delivered', 'read')) AS d FROM wa_rec_log r JOIN wa_camp_items i ON i.id = r.item_id AND i.err_code = 131049 LEFT JOIN wa_messages m ON m.wamid = r.wamid AND r.wamid <> '' WHERE r.ok = 1 AND r.at >= ? AND r.at <= ?");
+        $q->execute([date('Y-m-d H:i:s', time() - 12 * 3600), date('Y-m-d H:i:s', time() - 3600)]); $r = $q->fetch(); $o = ['n' => (int)$r['n'], 'd' => (int)$r['d']]; } catch (Throwable $e) { }
+    return $o;
+}
 /** What is waiting today, by reason (the business day, same window as the card): shown under "Campaigns today" so a 0 always has an explanation. */
 function wa_rec_diag(PDO $pdo): array
 {
@@ -104,7 +112,7 @@ function wa_rec_tick(PDO $pdo): array
 function wa_rec_status(PDO $pdo): array
 {
     $cfg = wa_rec_cfg($pdo); $last = null; try { $l = json_decode((string)setting_get($pdo, 'wa_rec_last', ''), true); if (is_array($l)) $last = $l; } catch (Throwable $e) { }
-    return ['on' => $cfg['on'], 'paused' => $cfg['pause_until'] > time(), 'hourly' => $cfg['hourly'], 'last' => $last, 'now' => time()];
+    return ['on' => $cfg['on'], 'paused' => $cfg['pause_until'] > time(), 'hourly' => $cfg['hourly'], 'held_try' => $cfg['held_on'] && $cfg['held_off_until'] <= time(), 'held_stats' => wa_rec_held_stats($pdo), 'last' => $last, 'now' => time()];
 }
 /** The slow recovery sender. One round (≤ 40 s). Returns counts. */
 function wa_rec_tick_run(PDO $pdo): array
@@ -121,9 +129,14 @@ function wa_rec_tick_run(PDO $pdo): array
         // a round of recovery that mostly fails (Meta receipts) pauses itself for an hour
         $q = $pdo->prepare("SELECT COUNT(*) AS n, SUM(m.status = 'failed') AS f FROM wa_rec_log r JOIN wa_messages m ON m.wamid = r.wamid WHERE r.at >= ? AND r.wamid <> ''"); $q->execute([date('Y-m-d H:i:s', $nowTs - 7200)]); $hr = $q->fetch();
         if ((int)$hr['n'] >= 60 && (int)$hr['f'] / max(1, (int)$hr['n']) >= 0.6) { setting_set($pdo, 'wa_rec_pause_until', (string)($nowTs + 3600)); wa_log($pdo, 'campaign', false, 'Recovery paused for an hour: ' . (int)$hr['f'] . ' of ' . (int)$hr['n'] . ' recovery messages failed'); $res['note'] = 'paused: too many failures'; return $res; }
+        // somebody was delivered again → the campaign's own retry of that person (a day later) must not send it a second time
+        try { $pdo->exec("UPDATE wa_camp_items i JOIN wa_rec_log r ON r.item_id = i.id JOIN wa_messages m ON m.wamid = r.wamid SET i.status = 'skipped' WHERE i.status = 'retry' AND r.ok = 1 AND r.wamid <> '' AND m.status IN ('delivered', 'read')"); } catch (Throwable $e) { }
+        // "held by Meta" (131049) people are tried from another number after 30 minutes — an experiment with a brake: if almost none get delivered, it stops for a day
+        $heldOn = $cfg['held_on'] && $cfg['held_off_until'] <= $nowTs ? 1 : 0;
+        if ($heldOn) { $hs = wa_rec_held_stats($pdo); if ($hs['n'] >= 150 && $hs['d'] / max(1, $hs['n']) < 0.03) { setting_set($pdo, 'wa_rec_held_off_until', (string)($nowTs + 86400)); $heldOn = 0; wa_log($pdo, 'campaign', false, 'Held-by-Meta retries from another number stopped for a day: only ' . $hs['d'] . ' of ' . $hs['n'] . ' were delivered'); } }
         $from = function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 10:00:00');
-        $q = $pdo->prepare("SELECT i.id, i.camp_id, i.phone, i.name, i.number_id, i.vars_json, i.err_code, i.sent_at, c.tpl_id, c.media_lib_id FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id
-            WHERE i.status = 'failed' AND (c.started_at >= ? OR i.sent_at >= ?) AND i.err_code NOT IN (" . wa_rec_never_sql() . ") ORDER BY i.id LIMIT 500"); $q->execute([$from, $from]); $items = $q->fetchAll();
+        $q = $pdo->prepare("SELECT i.id, i.camp_id, i.phone, i.name, i.number_id, i.vars_json, i.err_code, i.status, i.sent_at, c.tpl_id, c.media_lib_id FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id
+            WHERE ((i.status = 'failed' AND i.err_code NOT IN (" . wa_rec_never_sql() . ")) OR ($heldOn AND i.status = 'retry' AND i.err_code = 131049 AND i.sent_at <= '" . date('Y-m-d H:i:s', $nowTs - 1800) . "')) AND (c.started_at >= ? OR i.sent_at >= ?) ORDER BY i.id LIMIT 500"); $q->execute([$from, $from]); $items = $q->fetchAll();
         if (!$items) { $res['note'] = 'nothing to recover'; return $res; }
         $ids = array_map(fn($x) => (int)$x['id'], $items); $in = implode(',', $ids); $att = [];
         foreach ($pdo->query("SELECT item_id, COUNT(*) AS n, MAX(at) AS last, GROUP_CONCAT(number_id) AS nums FROM wa_rec_log WHERE item_id IN ($in) GROUP BY item_id")->fetchAll() as $r) $att[(int)$r['item_id']] = $r;
@@ -135,7 +148,7 @@ function wa_rec_tick_run(PDO $pdo): array
         foreach ($items as $it) {
             if (microtime(true) - $t0 > 38 || $left <= 0) break;
             $ph = (string)$it['phone']; $iid = (int)$it['id']; $a = $att[$iid] ?? null; $n = $a ? (int)$a['n'] : 0;
-            if ($n >= $cfg['max_attempts'] - 1 || isset($recent[$ph]) || isset($seen[$ph]) || isset($got[$ph])) { $res['skipped']++; continue; }
+            if ($n >= ((string)$it['status'] === 'retry' ? 1 : $cfg['max_attempts'] - 1) || isset($recent[$ph]) || isset($seen[$ph]) || isset($got[$ph])) { $res['skipped']++; continue; }
             if ($a && strtotime((string)$a['last']) > $nowTs - $cfg['gap_min'] * 60) { $res['skipped']++; continue; }
             $c = $ct[$ph] ?? null; if (!$c || (int)$c['optout'] === 1 || (!empty($c['last_in_at']) && !empty($it['sent_at']) && strtotime((string)$c['last_in_at']) > strtotime((string)$it['sent_at']))) { $res['skipped']++; continue; }
             $tid = (int)$it['tpl_id']; if (!isset($tplBase[$tid])) $tplBase[$tid] = wa_camp_tpl($pdo, $tid, true, (int)$it['media_lib_id']); $t = $tplBase[$tid]; if (!$t) { $res['skipped']++; continue; }
