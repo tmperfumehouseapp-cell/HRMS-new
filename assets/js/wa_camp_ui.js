@@ -1022,7 +1022,7 @@ body.waui .cpc .wp-note{margin:4px 0 !important}
             <div class="cu-tr">${E.map((x) => { const [a, b] = x.split('|'); return `<div><span>${a}</span><b>${b}</b></div>`; }).join('')}</div><div class="wp-hint">Not retried: opted out · number not on WhatsApp (after the 2nd try) · Meta spam block (the campaign pauses).</div></div>
           <details class="cu-more"><summary>More settings</summary><div class="wp-2" style="margin-top:8px"><div><label class="wp-fl" style="margin-top:0">Base speed (messages a minute)</label><input class="wp-in" id="cuRate" type="number" min="1" max="1500" value="${W.rate}"></div><div><label class="wp-fl" style="margin-top:0">Finish by <small>(optional)</small></label><input class="wp-in" id="cuWin" type="datetime-local" value="${esc(W.win_end)}"></div></div>
             <label class="wp-fl">Switch number after this many ignored messages</label><input class="wp-in" id="cuSw" type="number" min="1" max="5" value="${W.sw}"><div class="wp-hint">If a customer wrote to number X, we keep using X. If a number’s last messages were ignored, another number is used. Someone who ignored every number is skipped.</div></details>
-          <div id="cuSpd"></div><div id="cuPv" style="margin-top:10px"></div>${W.A.src !== 'contacts' ? '<label class="cu-cons"><input type="checkbox" id="cuCons"> These customers agreed to receive WhatsApp messages from us.</label>' : ''}
+          <div id="cuSpd"></div><label class="cu-cons" style="display:flex;gap:8px;align-items:center;margin:8px 0 2px;font-size:12px"><input type="checkbox" id="cuTalk3" ${W.A.skip_talking === 0 ? '' : 'checked'}> 💬 Leave out people chatting with us in the last 3 days</label><div id="cuPv" style="margin-top:10px"></div>${W.A.src !== 'contacts' ? '<label class="cu-cons"><input type="checkbox" id="cuCons"> These customers agreed to receive WhatsApp messages from us.</label>' : ''}
           <div id="cuE"></div><div class="wp-row" style="margin-top:12px"><button type="button" class="wp-btn" id="cuBack">‹ Back</button><button type="button" class="wp-btn" id="cuDraft">Save as draft</button><button type="button" class="wp-btn p" id="cuGo">Start campaign</button></div>`;
         if (window.WaSmart && $(m.body, '#cuSpd')) {   // speed estimate and retries (wa.camp_speed)
           const SP = { careful: 'gentle', normal: 'normal', aggressive: 'fast', very: 'fast' }, BACK = { gentle: 'careful', normal: 'normal', fast: 'aggressive' };
@@ -1036,6 +1036,7 @@ body.waui .cpc .wp-note{margin:4px 0 !important}
         m.body.querySelectorAll('#cuNums [data-num]:not([disabled])').forEach((b) => { b.onclick = () => { read3(); const id = +b.dataset.num, s0 = new Set(W.extra.numbers || []); if (s0.has(id)) s0.delete(id); else s0.add(id); W.extra.numbers = [...s0]; draw3(); }; });
         m.body.querySelectorAll('[data-ow]').forEach((b) => { b.onclick = () => { read3(); W.own = b.dataset.ow === '1'; draw3(); }; });
         $(m.body, '#cuBack').onclick = () => { read3(); step = 2; go(); };
+        { const t3 = $(m.body, '#cuTalk3'); if (t3) t3.onchange = () => { read3(); W.A.skip_talking = t3.checked ? 3 : 0; pv = null; draw3(); }; }
         (async () => { await preview3(); })();
         const save = async (start) => {
           read3(); const b = $(m.body, start ? '#cuGo' : '#cuDraft'); b.disabled = true; const t = tpl();

@@ -161,6 +161,9 @@ function wa_aud_where(string $src, array $f, string $q = ''): array
     if ($nl0) { $in0 = wa_in($nl0); $w[] = "(c.last_number_id IN ($in0) OR EXISTS (SELECT 1 FROM wa_messages mn WHERE mn.phone = $P AND mn.dir = 'in' AND mn.number_id IN ($in0)))"; foreach ($nl0 as $x) $p[] = $x; foreach ($nl0 as $x) $p[] = $x; }
     if (isset($f['emp']) && is_numeric($f['emp']) && (int)$f['emp'] !== 0) { if ((int)$f['emp'] < 0) $w[] = 'COALESCE(c.assigned_emp, 0) = 0'; else { $w[] = 'c.assigned_emp = ?'; $p[] = (int)$f['emp']; } }
     $o = (string)($f['ord'] ?? ''); if ($o === '0') $w[] = 'COALESCE(s.n, 0) = 0'; elseif ($o === '1') $w[] = 's.n = 1'; elseif ($o === '2') $w[] = 's.n = 2'; elseif ($o === '3') $w[] = 's.n >= 3';
+    $tr = (string)($f['tier'] ?? '');   // spend per order: premium = the top quarter of buyers, budget = the bottom quarter (the same cut-offs the after-order timelines use, refreshed daily)
+    if (in_array($tr, ['prem', 'std', 'bud'], true)) { $cu = ['hi' => 3000, 'lo' => 800]; try { if (function_exists('jn_cuts') && isset($GLOBALS['pdo'])) $cu = jn_cuts($GLOBALS['pdo']); } catch (Throwable $e) { }
+        if ($tr === 'prem') { $w[] = 's.n > 0 AND s.spent / s.n >= ?'; $p[] = (float)$cu['hi']; } elseif ($tr === 'bud') { $w[] = 's.n > 0 AND s.spent / s.n <= ?'; $p[] = (float)$cu['lo']; } else { $w[] = 's.n > 0 AND s.spent / s.n > ? AND s.spent / s.n < ?'; $p[] = (float)$cu['lo']; $p[] = (float)$cu['hi']; } }
     $ds = (string)($f['dsl'] ?? '');
     if ($ds === '30') { $w[] = 's.last_order IS NOT NULL AND s.last_order > ?'; $p[] = $d(31); }
     elseif ($ds === '60') { $w[] = 's.last_order IS NOT NULL AND s.last_order <= ? AND s.last_order > ?'; $p[] = $d(31); $p[] = $d(61); }
