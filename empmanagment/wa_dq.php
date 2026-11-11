@@ -168,7 +168,8 @@ function wa_dq_left(PDO $pdo, bool $fresh = false): array
     $pace = ['on' => (bool)$cfg['pace'], 'waiting' => 0, 'hours_left' => 0.0, 'target' => 0, 'slice' => 0, 'used10' => 0];
     if ($cfg['on'] && $cfg['pace']) {
         try { $pace['waiting'] = wa_dq_waiting($pdo); $pace['hours_left'] = round(wa_dq_hours_left($pdo), 2);
-            $target = (int)ceil($pace['waiting'] / max(0.5, $pace['hours_left']) * 1.1); $pace['target'] = max(1000, $target);
+            $dayLeftP = max(0, $cfg['daily'] - $dayUsed); $pace['day_left'] = $dayLeftP; $pace['amount'] = min($pace['waiting'], $dayLeftP);   // what can still go out today: the queue, but never more than what is left of the day's limit
+            $target = (int)ceil($pace['amount'] / max(0.5, $pace['hours_left']) * 1.1); $pace['target'] = max(1000, $target);
             $pushCap = min($pushCap, $pace['target']);
             $pace['slice'] = (int)ceil($pushCap / 6 * 1.3); $q = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE dir = 'out' AND who IN ('campaign', 'recover') AND mtype = 'template' AND ts >= ?"); $q->execute([date('Y-m-d H:i:s', time() - 600)]); $pace['used10'] = (int)$q->fetchColumn();
         } catch (Throwable $e) { $pace['on'] = false; }
