@@ -83,8 +83,22 @@ function wa_camp_health(PDO $pdo): array
     if (!function_exists('wa_health_all') && is_file(__DIR__ . '/wa_console.php')) require_once __DIR__ . '/wa_console.php';   // number health lives in wa_console.php (not loaded on every route)
     return wa_health_all($pdo, false);
 }
+/** Numbers whose campaign messages of the last hour FAIL too often (40%+ of at least 100 — Meta's per-customer refusals like "not on WhatsApp" or the marketing limit are not counted: they say nothing about the number).
+ *  Campaigns leave such a number out while the failures last. Remembered for 60 s. Returns [numberId => failure ratio]. */
+function wa_num_fail_flags(PDO $pdo): array
+{
+    try { $hit = json_decode((string)setting_get($pdo, 'wa_num_fail', ''), true); if (is_array($hit) && (int)($hit['t'] ?? 0) > time() - 60 && is_array($hit['f'] ?? null)) { $o = []; foreach ($hit['f'] as $k => $v) $o[(int)$k] = (float)$v; return $o; } } catch (Throwable $e) { }
+    $f = [];
+    try {
+        $q = $pdo->prepare("SELECT number_id, COUNT(*) AS n, SUM(status = 'failed') AS f FROM wa_messages WHERE dir = 'out' AND who = 'campaign' AND mtype = 'template' AND ts >= ? AND (status <> 'failed' OR err_code NOT IN (131049, 131026, 130472, 131042, 131031)) GROUP BY number_id");
+        $q->execute([date('Y-m-d H:i:s', time() - 3600)]);
+        foreach ($q->fetchAll() as $r) if ((int)$r['n'] >= 100 && (int)$r['f'] / max(1, (int)$r['n']) >= 0.4) $f[(int)$r['number_id']] = round((int)$r['f'] / (int)$r['n'], 3);
+    } catch (Throwable $e) { }
+    try { setting_set($pdo, 'wa_num_fail', json_encode(['t' => time(), 'f' => $f])); } catch (Throwable $e) { }
+    return $f;
+}
 /** The numbers that may send this template right now, with the room each has today. */
-function wa_camp_ctx(PDO $pdo, array $t, int $switch, array $only = [], int $burst = 0): array
+function wa_camp_ctx(PDO $pdo, array $t, int $switch, array $only = [], int $burst = 0, bool $campaign = false): array
 {   // $burst > 0 (⚡ Send fast): our own limits (the hourly speed, the 90% margin, the slow start) are skipped for up to that many people — a number that is off / Low quality / not connected still is not used, and Meta's own limit still decides
     if (!function_exists('wa_health_all') && is_file(__DIR__ . '/wa_console.php')) require_once __DIR__ . '/wa_console.php';   // number health lives in wa_console.php (not loaded on every route)
     $health = wa_health_all($pdo, false); $caps = wa_number_caps($pdo, $health); $nums = []; $only = array_map('intval', $only);
@@ -96,6 +110,7 @@ function wa_camp_ctx(PDO $pdo, array $t, int $switch, array $only = [], int $bur
         $nums[$id] = ['id' => $id, 'q' => (string)($qm[$id] ?? ''), 'phone_id' => (string)$n['phone_id'], 'cap' => $c['cap'], 'used' => $c['used'], 'left' => $c['left']];
         if (!empty($t['by_waba'][wa_waba_of($n)])) $nums[$id]['tm'] = $t['by_waba'][wa_waba_of($n)];   // the version of the message approved on this number's WhatsApp account (the first one, or an alternative)
     }
+    if ($campaign && count($nums) > 1) { foreach (wa_num_fail_flags($pdo) as $fid => $ratio) if (isset($nums[$fid]) && count($nums) > 1) unset($nums[$fid]); }   // a number whose messages mostly FAIL is left out for now (campaigns only) — the others take its people; it comes back by itself when its failures drop
     $p = $caps['_port'] ?? ['left' => 0]; $st = 0.05; try { $sv = setting_get($pdo, 'wa_camp_sticky', ''); if ($sv !== '' && is_numeric($sv)) $st = max(0.0, min(1.0, (float)$sv)); } catch (Throwable $e) { }
     return ['nums' => $nums, 'port_left' => $burst > 0 ? max((int)$p['left'], $burst) : (int)$p['left'], 'port' => $p, 'switch' => max(1, $switch), 'sticky' => $st];
 }
@@ -117,7 +132,7 @@ function wa_pick_number(PDO $pdo, array $c, array &$ctx): array
 {
     if ($ctx['port_left'] <= 0) return [0, wa_room_why($ctx['port'] ?? [])];
     $el = array_filter($ctx['nums'], fn($n) => $n['left'] > 0);
-    $good = array_filter($el, fn($n) => ($n['q'] ?? '') === 'GREEN'); if ($good && count($good) < count($el)) $el = $good;   // the good (High quality) numbers send first; a Medium number only takes over when every good one has used its hour
+    $good = array_filter($el, fn($n) => in_array(($n['q'] ?? ''), ['GREEN', 'YELLOW'], true)); if ($good && count($good) < count($el)) $el = $good;   // owner (11 Nov): High AND Medium quality numbers all send together; only a Low / unknown one is left out when a better one has room
     if (!$el) {   // say WHICH limit is used up: this hour's speed per number (the usual case — today's room is much bigger) or today's room
         $hr = array_filter($ctx['nums'], fn($n) => isset($n['hcap']));
         if ($hr) return [0, 'This hour’s speed is used up on all ' . count($hr) . ' numbers (' . number_format(array_sum(array_column($hr, 'hcap'))) . ' an hour in all) — it carries on by itself next hour. Today’s room is not the limit.'];
@@ -565,31 +580,34 @@ function wa_camp_util_guard(PDO $pdo, array $c): string
     return '';
 }
 /** One sending round. The lock is freed the moment the round ends, so the next round (cron, an open page or ⚡ Send fast) starts at once instead of waiting out the lock. */
-function wa_camp_tick(PDO $pdo): array
+function wa_camp_tick(PDO $pdo, int $only = 0): array   // $only > 0: the ⚡ Send fast worker — it sends THAT campaign only, under its own lock, beside the normal running pool
 {
-    $r = wa_camp_tick_run($pdo);
-    if (empty($r['skipped'])) { try { setting_set($pdo, 'wa_lock_camp', '0'); } catch (Throwable $e) { } }
+    $r = wa_camp_tick_run($pdo, $only);
+    if (empty($r['skipped'])) { try { setting_set($pdo, $only ? 'wa_lock_campfast' : 'wa_lock_camp', '0'); } catch (Throwable $e) { } }
     return $r;
 }
-function wa_camp_tick_run(PDO $pdo): array
+function wa_camp_tick_run(PDO $pdo, int $only = 0): array
 {
-    if (!wa_lock($pdo, 'camp', 65)) return ['skipped' => true];   // ⚡ a round now works up to 55 s (was 42 s), so the next one can start 65 s after it began
+    if (!wa_lock($pdo, $only ? 'campfast' : 'camp', 65)) return ['skipped' => true];   // ⚡ a round now works up to 55 s (was 42 s), so the next one can start 65 s after it began
     $t0 = microtime(true); $nowTs = wa_camp_now(); $now = date('Y-m-d H:i:s', $nowTs); $res = [];
     try { wa_more_tables($pdo); } catch (Throwable $e) { }
-    try { wa_health_all($pdo, false); } catch (Throwable $e) { }   // keeps the saved number health fresh in the background, so the Campaign panel never waits for Meta
+    if (!$only) try { wa_health_all($pdo, false); } catch (Throwable $e) { }   // keeps the saved number health fresh in the background, so the Campaign panel never waits for Meta
     $pdo->prepare("UPDATE wa_camp_items SET status = 'queued' WHERE status = 'sending' AND sent_at < ?")->execute([date('Y-m-d H:i:s', $nowTs - 600)]);   // a run that died while sending
-    $sp = ''; if (function_exists('wsm_tick') || wa_camp_lazy('wsm_tick', 'wa_smart.php')) { try { $res['smart'] = wsm_tick($pdo, $nowTs); if (function_exists('wsm_has_col') && wsm_has_col($pdo)) $sp = ' AND smart_plan = 0'; } catch (Throwable $e) { } }   // Smart plans: their audience is picked on the start day (wa_smart.php), so the generic start below skips them
-    $pdo->prepare("UPDATE wa_campaigns SET status = 'running', started_at = COALESCE(started_at, ?) WHERE status = 'scheduled' AND start_at IS NOT NULL AND start_at <= ?" . $sp)->execute([$now, $now]);
-    try { wa_camp_held_backfill($pdo, $nowTs); } catch (Throwable $e) { }
-    try { wa_camp_rules_backfill($pdo, $nowTs); } catch (Throwable $e) { }
-    try { wa_camp_retry_scan($pdo, $nowTs); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'campaign retries: ' . $e->getMessage()); }
+    $sp = ''; if (!$only && (function_exists('wsm_tick') || wa_camp_lazy('wsm_tick', 'wa_smart.php'))) { try { $res['smart'] = wsm_tick($pdo, $nowTs); if (function_exists('wsm_has_col') && wsm_has_col($pdo)) $sp = ' AND smart_plan = 0'; } catch (Throwable $e) { } }   // Smart plans: their audience is picked on the start day (wa_smart.php), so the generic start below skips them
+    if (!$only) $pdo->prepare("UPDATE wa_campaigns SET status = 'running', started_at = COALESCE(started_at, ?) WHERE status = 'scheduled' AND start_at IS NOT NULL AND start_at <= ?" . $sp)->execute([$now, $now]);
+    if (!$only) try { wa_camp_held_backfill($pdo, $nowTs); } catch (Throwable $e) { }
+    if (!$only) try { wa_camp_rules_backfill($pdo, $nowTs); } catch (Throwable $e) { }
+    if (!$only) try { wa_camp_retry_scan($pdo, $nowTs); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'campaign retries: ' . $e->getMessage()); }
     $inWin = wa_camp_in_window($pdo, $nowTs); $due = "((status = 'queued' AND (send_at IS NULL OR send_at <= '$now')) OR (status = 'retry' AND next_try <= '$now'))";
     // a campaign is FINISHED as soon as everyone has had their first try (owner, 7 Nov: not "Sending" for 3 days while Meta-held people wait for their one extra try).
     // The waiting retries stay in the queue: the moment one is due, the campaign is reopened for it and finishes again.
-    try { $pdo->exec("UPDATE wa_campaigns SET status = 'running', finished_at = NULL WHERE status = 'done' AND id IN (SELECT camp_id FROM wa_camp_items WHERE status = 'retry' AND next_try <= '$now')"); } catch (Throwable $e) { }
-    $runRows = $pdo->query("SELECT id FROM wa_campaigns WHERE status = 'running' ORDER BY COALESCE(last_tick, '1970-01-01 00:00:00'), id")->fetchAll();   // the campaign that waited longest goes first: an older big campaign can never starve a new one
-    $loopEnd = microtime(true) + 55.0; $nLeft = count($runRows);   // ⚡ this round's 42 s are shared by the campaigns still to go: seconds a campaign did not need (waiting for room, hourly speed used, nothing due) pass to the next ones — before, every campaign got a fixed 42 / N
+    if (!$only) try { $pdo->exec("UPDATE wa_campaigns SET status = 'running', finished_at = NULL WHERE status = 'done' AND id IN (SELECT camp_id FROM wa_camp_items WHERE status = 'retry' AND next_try <= '$now')"); } catch (Throwable $e) { }
     $fastId = 0; $fj = null; try { $fj = json_decode((string)setting_get($pdo, 'wa_camp_fast', ''), true); if (is_array($fj) && (int)($fj['until'] ?? 0) > time()) $fastId = (int)$fj['id']; } catch (Throwable $e) { }
+    if ($only && $fastId !== $only) return ['skipped' => true, 'why' => 'no burst'];
+    if ($only) { $fj['beat'] = time(); try { setting_set($pdo, 'wa_camp_fast', json_encode($fj)); } catch (Throwable $e) { } }   // heartbeat: while the Send fast worker is alive the normal pool leaves that campaign alone
+    $fastAlive = $fastId && !$only && (time() - (int)($fj['beat'] ?? 0)) < 120; $whereRun = $only ? ' AND id = ' . (int)$only : ($fastAlive ? ' AND id <> ' . (int)$fastId : '');   // ⚡ Send fast has its OWN sender: it does not take part in the running pool
+        $runRows = $pdo->query("SELECT id FROM wa_campaigns WHERE status = 'running'" . $whereRun . " ORDER BY COALESCE(last_tick, '1970-01-01 00:00:00'), id")->fetchAll();   // the campaign that waited longest goes first: an older big campaign can never starve a new one
+    $loopEnd = microtime(true) + 55.0; $nLeft = count($runRows);   // ⚡ this round's 42 s are shared by the campaigns still to go: seconds a campaign did not need (waiting for room, hourly speed used, nothing due) pass to the next ones — before, every campaign got a fixed 42 / N
     if ($fastId) usort($runRows, fn($x, $y) => ((int)$y['id'] === $fastId) <=> ((int)$x['id'] === $fastId));   // ⚡ Send fast: that campaign goes first
     foreach ($runRows as $row) {
         $slice = max(5.0, ($loopEnd - microtime(true)) / max(1, $nLeft)); $nLeft--;
@@ -613,7 +631,7 @@ function wa_camp_tick_run(PDO $pdo): array
         $by = []; foreach ((array)$t['ok_wabas'] as $wb) $by[(string)$wb] = $t;
         foreach (wa_fam_m_alts($pdo, $t) as $alt) foreach ((array)$alt['ok_wabas'] as $wb) if (!isset($by[(string)$wb])) $by[(string)$wb] = $alt;
         $t['by_waba'] = $by; $t['ok_wabas'] = array_map('strval', array_keys($by));   // numeric ids become int keys: back to text
-        $ctx = wa_camp_ctx($pdo, $t, (int)$c['switch_after'], array_map('intval', (array)($c['extra']['numbers'] ?? [])), $burstLeft);
+        $ctx = wa_camp_ctx($pdo, $t, (int)$c['switch_after'], array_map('intval', (array)($c['extra']['numbers'] ?? [])), $burstLeft, true);
         $chr = $burstLeft > 0 ? null : wa_camp_hour_room($ctx['port'] ?? []); if ($chr !== null) { foreach ($ctx['nums'] as $nid0 => $n0) { $ctx['nums'][$nid0]['hcap'] = (int)($ctx['port']['auto']['nums'][$nid0]['cap'] ?? 0); $ctx['nums'][$nid0]['label'] = (string)($ctx['port']['auto']['nums'][$nid0]['label'] ?? ''); $ctx['nums'][$nid0]['left'] = min((int)$n0['left'], $chr[(int)$nid0] ?? 0); if ($ctx['nums'][$nid0]['left'] <= 0) unset($ctx['nums'][$nid0]); } if (!$ctx['nums']) { $ctx['port']['hour_full'] = 1; $ctx['port_left'] = 0; } }   // 📈 each number's own hourly speed
         $sent = 0; $failed = 0; $skipped = 0; $stop = ''; $hard = false; $retryOn = (int)$c['retry'] === 1; $usedPieces = [];
         $mixOn = !empty($c['extra']['mix']) && function_exists('wa_util_mix_on') && wa_util_mix_on($pdo); $plan = null; $env = null;   // offers = marketing only (see wa_util_mix_on)
@@ -752,7 +770,7 @@ if ($ec === 131042) { try { setting_set($pdo, 'wa_payblock_' . (int)$nid, date('
         $hard = false; $res[$id] = ['sent' => $sent, 'failed' => $failed, 'skipped' => $skipped, 'stop' => $stop];
         if ($plan) $res[$id]['mix'] = ['u_status' => $plan['u_status'], 'target' => $plan['target'], 'achieved' => $plan['achieved'], 'per_number' => array_map(fn($p) => ['share' => $p['share'], 'state' => $p['u_state'], 'u_given' => $p['u_given'], 'elig' => $p['elig']], $plan['per_number'])];
     }
-    if (microtime(true) - $t0 < 30) { try { $res['auto_submit'] = wa_tpl_autosubmit_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'template', false, 'auto-submit: ' . $e->getMessage()); } }   // keeps every message submitted to every WhatsApp account, makes alternatives when there is trouble
+    if (!$only && microtime(true) - $t0 < 30) { try { $res['auto_submit'] = wa_tpl_autosubmit_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'template', false, 'auto-submit: ' . $e->getMessage()); } }   // keeps every message submitted to every WhatsApp account, makes alternatives when there is trouble
     return $res;
 }
 
@@ -938,7 +956,7 @@ function wa_camp_people_rows(PDO $pdo, array $camp, ?array $tpl, string $f, stri
 
 // ---------------------------------------------------------------------------------------------------------------- router
 $__wk = (string)($action ?? ($_GET['action'] ?? ''));
-if (in_array($__wk, ['wa.camp_fast', 'wa.fu_list', 'wa.fu_save', 'wa.fu_del', 'wa.fu_preset', 'wa.camp_list', 'wa.camp_templates', 'wa.camp_get', 'wa.camp_preview', 'wa.camp_typed_phones', 'wa.camp_save', 'wa.camp_start', 'wa.camp_send_now', 'wa.camp_resume_all', 'wa.camp_stop_all', 'wa.camp_pause', 'wa.camp_resume', 'wa.camp_cancel', 'wa.camp_del', 'wa.camp_tick', 'wa.camp_suggest', 'wa.camp_best_time', 'wa.camp_people', 'wa.camp_people_csv', 'wa.camp_thread', 'wa.reports', 'wa.mix_state', 'wa.camp_mix_set'], true) && !($__wk === 'wa.camp_suggest' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST')) {
+if (in_array($__wk, ['wa.camp_fast', 'wa.camp_fast_tick', 'wa.fu_list', 'wa.fu_save', 'wa.fu_del', 'wa.fu_preset', 'wa.camp_list', 'wa.camp_templates', 'wa.camp_get', 'wa.camp_preview', 'wa.camp_typed_phones', 'wa.camp_save', 'wa.camp_start', 'wa.camp_send_now', 'wa.camp_resume_all', 'wa.camp_stop_all', 'wa.camp_pause', 'wa.camp_resume', 'wa.camp_cancel', 'wa.camp_del', 'wa.camp_tick', 'wa.camp_suggest', 'wa.camp_best_time', 'wa.camp_people', 'wa.camp_people_csv', 'wa.camp_thread', 'wa.reports', 'wa.mix_state', 'wa.camp_mix_set'], true) && !($__wk === 'wa.camp_suggest' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST')) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     $auth = require_auth(); wa_guard_admin($pdo, $auth);
     if (!wa_tables($pdo) || !wa_more_tables($pdo) || !function_exists('wa_tpl_tables') || !wa_tpl_tables($pdo)) json_response(['error' => 'WhatsApp storage is not available — check database permissions.'], 500);
@@ -1180,6 +1198,12 @@ if (in_array($__wk, ['wa.camp_fast', 'wa.fu_list', 'wa.fu_save', 'wa.fu_del', 'w
             $cd = (int)setting_get($pdo, 'wa_camp_fast_cd', '0'); if ($cd > time()) json_response(['error' => 'Send fast is resting: it works again in ' . max(1, (int)ceil(($cd - time()) / 60)) . ' minutes.', 'cd_until' => $cd], 429);
             setting_set($pdo, 'wa_camp_fast', json_encode(['id' => (int)$c['id'], 'until' => time() + 3 * 3600, 'burst' => 10000, 'burst_left' => 10000, 'at' => time()]));
             setting_set($pdo, 'wa_camp_fast_cd', (string)(time() + 50 * 60)); json_response(['ok' => true, 'burst' => 10000, 'cd_until' => time() + 50 * 60]);
+        }
+        case 'wa.camp_fast_tick': {   // ⚡ the Send fast sender: that campaign only, its own lock, beside the running pool (the page calls it again and again while it is open)
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
+            $fz = json_decode((string)setting_get($pdo, 'wa_camp_fast', ''), true); $fid = is_array($fz) && (int)($fz['until'] ?? 0) > time() ? (int)$fz['id'] : 0;
+            if (!$fid) json_response(['ok' => true, 'result' => ['skipped' => true, 'why' => 'no burst']]);
+            ignore_user_abort(true); @set_time_limit(120); $r = wa_camp_tick($pdo, $fid); json_response(['ok' => true, 'result' => $r]);
         }
         case 'wa.camp_tick': {   // the Campaigns page calls this every 30 seconds while it is open — a fallback when the cron is not set up yet
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
