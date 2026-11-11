@@ -79,8 +79,35 @@ function wa_rec_alts(PDO $pdo): int
     return $made;
 }
 
-/** The slow recovery sender. One round (≤ 40 s). Returns counts. */
+/** What is waiting today, by reason (the business day, same window as the card): shown under "Campaigns today" so a 0 always has an explanation. */
+function wa_rec_diag(PDO $pdo): array
+{
+    $from = function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 10:00:00'); $o = ['failed_total' => 0, 'never' => 0, 'held' => 0, 'eligible' => 0, 'campaign_retry' => 0];
+    try {
+        $q = $pdo->prepare("SELECT i.status, i.err_code, COUNT(*) AS n FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id WHERE (c.started_at >= ? OR i.sent_at >= ?) AND (i.status IN ('failed', 'retry') OR (i.status = 'sent' AND i.last_status = 'failed')) GROUP BY i.status, i.err_code"); $q->execute([$from, $from]);
+        foreach ($q->fetchAll() as $r) { $n = (int)$r['n']; $cl = wa_rec_class((int)$r['err_code']); $o['failed_total'] += $n;
+            if ($cl === 'never') $o['never'] += $n; elseif ($cl === 'held') $o['held'] += $n; elseif ($r['status'] === 'failed') $o['eligible'] += $n; else $o['campaign_retry'] += $n; }
+    } catch (Throwable $e) { }
+    return $o;
+}
+/** One recovery round + a note of what happened (kept for the status line). */
 function wa_rec_tick(PDO $pdo): array
+{
+    $r = wa_rec_tick_run($pdo);
+    if (($r['note'] ?? '') !== 'busy') {
+        try { $last = json_decode((string)setting_get($pdo, 'wa_rec_last', ''), true); $last = is_array($last) ? $last : []; $diag = $last['diag'] ?? null; $dAt = (int)($last['diag_at'] ?? 0);
+            if (!$diag || $dAt < time() - 120) { $diag = wa_rec_diag($pdo); $dAt = time(); }
+            setting_set($pdo, 'wa_rec_last', json_encode(['at' => time(), 'note' => (string)($r['note'] ?? ''), 'sent' => (int)($r['sent'] ?? 0), 'failed' => (int)($r['failed'] ?? 0), 'skipped' => (int)($r['skipped'] ?? 0), 'diag' => $diag, 'diag_at' => $dAt])); } catch (Throwable $e) { }
+    }
+    return $r;
+}
+function wa_rec_status(PDO $pdo): array
+{
+    $cfg = wa_rec_cfg($pdo); $last = null; try { $l = json_decode((string)setting_get($pdo, 'wa_rec_last', ''), true); if (is_array($l)) $last = $l; } catch (Throwable $e) { }
+    return ['on' => $cfg['on'], 'paused' => $cfg['pause_until'] > time(), 'hourly' => $cfg['hourly'], 'last' => $last, 'now' => time()];
+}
+/** The slow recovery sender. One round (≤ 40 s). Returns counts. */
+function wa_rec_tick_run(PDO $pdo): array
 {
     $res = ['sent' => 0, 'failed' => 0, 'skipped' => 0, 'note' => ''];
     if (!wa_rec_tables($pdo)) { $res['note'] = 'no table'; return $res; }
