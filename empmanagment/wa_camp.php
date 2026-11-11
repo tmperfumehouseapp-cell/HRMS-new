@@ -1254,7 +1254,8 @@ if (in_array($__wk, ['wa.rec_run', 'wa.dq_set', 'wa.rec_report', 'wa.rec_set', '
             if (isset($in['on'])) setting_set($pdo, 'wa_dq_on', !empty($in['on']) ? '1' : '0');
             if (isset($in['hourly'])) setting_set($pdo, 'wa_dq_hourly', (string)max(500, min(60000, (int)$in['hourly'])));
             if (isset($in['smart'])) setting_set($pdo, 'wa_dq_smart', !empty($in['smart']) ? '1' : '0');
-            if (isset($in['daily'])) setting_set($pdo, 'wa_dq_daily', (string)max(1000, min(1000000, (int)$in['daily'])));
+            if (isset($in['daily'])) { $nd = (string)max(1000, min(1000000, (int)$in['daily'])); setting_set($pdo, 'wa_dq_daily', $nd); setting_set($pdo, 'wa_dq_daily_auto', $nd); }   // the number typed is the start / manual value; the auto cap continues from it
+            if (isset($in['auto'])) setting_set($pdo, 'wa_dq_auto', !empty($in['auto']) ? '1' : '0');
             setting_set($pdo, 'wa_dq_stat', ''); json_response(['ok' => true, 'dq' => wa_dq_status($pdo)]);
         }
         case 'wa.rec_run': {   // 🔁 "Run now": one recovery round right away, with what it did
