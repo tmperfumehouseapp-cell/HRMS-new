@@ -315,6 +315,7 @@ body.waui .cpc .wp-note{margin:4px 0 !important}
     const rkBig = (x, lens) => (lens === 'rep' ? rkP1(x.rep) + ' replied' : lens === 'ord' ? (x.roi != null ? x.roi + '× return' : (x.o1k != null ? x.o1k + ' orders/1k' : 'few orders data')) : lens === 'bal' ? (x.score != null ? x.score + '/100' : '—') : rkPc(x.d) + ' delivered');
     function rankHtml(R) {
       const rows = (R.rows || []).filter((x) => !x.low), days = window.__cpRankDays || 14, O = R.overall || {};
+      if (R.pending) return '<div class="wp-hint" style="margin:4px 0">⏳ Preparing the message ranking… it appears by itself (the first time takes a minute or two).</div>';
       if (!rows.length) return `<div class="wp-hint" style="margin:4px 0">Not enough sends yet in the last ${days} days.</div><button type="button" class="wp-btn s" id="rkAll">View all messages</button>`;
       const best = (f, ok) => rows.filter((x) => (ok ? ok(x) : true) && f(x) != null).sort((a, b) => f(b) - f(a))[0], bd = best((x) => x.d), br = best((x) => x.rep), bo = R.orders_ok ? best((x) => x.roi) : null;
       const sq = (l, x, big, bg) => (x ? `<div style="background:${bg}" title="${esc(rkName(x))}"><small>${l}</small><b>${big}</b><i>${esc(rkName(x))}</i></div>` : `<div><small>${l}</small><b>—</b><i>not enough data</i></div>`);
@@ -323,13 +324,14 @@ body.waui .cpc .wp-note{margin:4px 0 !important}
     }
     function openRank() {
       const m = modal('🏆 Messages'); let R = window.__cpRank || { rows: [], tips: [] }, lens = 'del', sort = 'best', view = 'all', cur = null, sg = '';
-      const load = () => api.get('wa.msg_rank', sg ? { days: days(), seg: sg } : { days: days() }), types = () => ((window.__cpRank && window.__cpRank.segs) || []).filter((z) => z.name !== '—');
-      const days = () => window.__cpRankDays || 14, btn = (id, t, on) => `<button type="button" class="wp-btn s" ${id} style="${on ? 'font-weight:700;border-color:#15803d' : ''}">${t}</button>`;
+      const load = () => api.get('wa.msg_rank', Object.assign(sg ? { days: days(), seg: sg } : { days: days() }, tries ? { fresh: 1 } : {})), types = () => ((window.__cpRank && window.__cpRank.segs) || []).filter((z) => z.name !== '—');
+      let tries = 0; const days = () => window.__cpRankDays || 14, btn = (id, t, on) => `<button type="button" class="wp-btn s" ${id} style="${on ? 'font-weight:700;border-color:#15803d' : ''}">${t}</button>`;
       const sorted = (rows) => rkRows({ rows }, lens).sort((a, b) => ((a.low ? 1 : 0) - (b.low ? 1 : 0)) || (sort === 'most' ? b.n - a.n : ((a._v == null) - (b._v == null)) || (sort === 'worst' ? a._v - b._v : b._v - a._v)));
       const tile = (x) => `<div class="fc rk" data-rk="${x.id}" style="background:${x._f == null ? '#f3f4f6' : rkCol(x._f)}"><b style="white-space:normal;line-height:1.2">${esc(rkName(x))}</b><span><strong style="font-size:13px">${rkBig(x, lens)}</strong></span><span style="white-space:normal;line-height:1.25">📤 ${fmt(x.n)} pushed<br>🚚 ${fmt(x.dn)} delivered · ${rkPc(x.d)}<br>💬 ${fmt(x.rep_n)} replied · ${rkP1(x.rep)}</span><i>💰 ${rkRs(x.cost)} spent${x.rep_n ? ' · ' + rkRs(x.cost / x.rep_n) + '/reply' : ''}${x.o1k != null ? ' · 🛒 ' + x.o1k + '/1k' : ''}${x.low ? ' · few sends' : ''}</i></div>`;
       const mk = async (btnEl, purpose) => { btnEl.disabled = true; const t0 = btnEl.textContent; btnEl.textContent = 'Claude is writing…'; try { const r = await api.post('wa.tpl_understand', { purpose }); m.close(); if (window.WaTpl && WaTpl.openForm) WaTpl.openForm({ draft: r.draft }); else toast('The draft is ready — open Pre-made messages to continue'); } catch (e) { toast(e.message, true); btnEl.disabled = false; btnEl.textContent = t0; } };
       const similar = (x, others) => 'Write a NEW marketing message for the perfume shop that is similar to this one, which delivered ' + rkPc(x.d) + ', got ' + rkP1(x.rep) + ' replies' + (x.o1k != null ? ' and ' + x.o1k + ' orders per 1,000 delivered' : '') + ':\n---\n' + x.body + '\n---\nKeep the same tone, length, structure, number of variables and kind of top, but use different words, a different opening line and a fresh angle so it is clearly a different message.' + (others && others.length ? '\nThese variants of the same topic already exist — do NOT copy them:\n' + others.map((o) => '- ' + o.body.slice(0, 160)).join('\n') : '');
       const paint = () => {
+        if (R.pending) { m.body.innerHTML = '<div class="wp-hint" style="padding:10px 2px">⏳ Preparing this ranking… it opens by itself (the first time takes a minute or two).</div>'; if (++tries <= 10) setTimeout(async () => { if (!m.el.isConnected) return; try { R = await load(); if (!sg && !R.pending) window.__cpRank = R; } catch (e) { } paint(); }, 15000); return; }
         if (cur) {
           const x = cur, same = (R.rows || []).filter((r) => r.topic === x.topic && r.id !== x.id), q = (l, v, sub, st) => `<div><small>${l}</small><b style="${st || ''}">${v}</b><i>${sub || ''}</i></div>`;
           m.body.innerHTML = `<div class="wp-row" style="margin-bottom:6px"><button type="button" class="wp-btn s" id="rkBack">← All messages</button></div><b style="font-size:14px">${esc(rkName(x))}</b> <span class="wp-hint" style="margin:0">· topic ${esc(x.topic)}${x.score != null ? ' · balanced ' + x.score + '/100' : ''}</span>
@@ -362,8 +364,9 @@ body.waui .cpc .wp-note{margin:4px 0 !important}
       paint();
     }
     function bindRank() { const b = $(el, '#rkAll'); if (b) b.onclick = openRank; }
-    async function paintRank() { const hb = $(el, '#rkBody'); if (!hb) return; const days = window.__cpRankDays || 14; try { window.__cpRank = await api.get('wa.msg_rank', { days }); window.__cpRankLoaded = days; const hb2 = $(el, '#rkBody'); if (hb2) { hb2.innerHTML = rankHtml(window.__cpRank); bindRank(); }
-        [7, 14, 30].filter((d) => d !== days).forEach((d) => { api.get('wa.msg_rank', { days: d }).catch(() => { }); });   // the other windows are warmed so switching 7 / 14 / 30 days is instant
+    async function paintRank() { const hb = $(el, '#rkBody'); if (!hb) return; const days = window.__cpRankDays || 14; try { window.__cpRank = await api.get('wa.msg_rank', window.__cpRankTry ? { days, fresh: 1 } : { days }); window.__cpRankLoaded = days; const hb2 = $(el, '#rkBody'); if (hb2) { hb2.innerHTML = rankHtml(window.__cpRank); bindRank(); }
+        if (window.__cpRank.pending) { if ((window.__cpRankTry = (window.__cpRankTry || 0) + 1) <= 10) setTimeout(() => { if (el.isConnected) paintRank(); }, 15000); return; }
+        window.__cpRankTry = 0; [7, 14, 30].filter((d) => d !== days).forEach((d) => { api.get('wa.msg_rank', { days: d }).catch(() => { }); });   // the other windows are warmed so switching 7 / 14 / 30 days is instant
         if (window.__cpRank.orders_pending && !window.__cpRankRe) window.__cpRankRe = setTimeout(async () => { window.__cpRankRe = 0; try { window.__cpRank = await api.get('wa.msg_rank', { days, fresh: 1 }); const hb4 = $(el, '#rkBody'); if (hb4 && window.__cpRankLoaded === days) { hb4.innerHTML = rankHtml(window.__cpRank); bindRank(); } } catch (e) { } }, 25000);
       } catch (e) { const hb3 = $(el, '#rkBody'); if (hb3) hb3.innerHTML = errBox(e.message); } }
     function draw() {

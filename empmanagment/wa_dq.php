@@ -94,14 +94,23 @@ function wa_msg_topic(array $t): string
  *  A "balanced" score (0–100) averages the rank of the three lenses (orders count 1.5×). Messages with fewer than 200 sends are listed but not ranked; order figures need 1,000 delivered to count.
  *  Also: what the best ones have in common (photo on top, text length, emoji, buttons, question, price) per lens. Remembered 10 min in the database cache. */
 function wa_msg_rank(PDO $pdo, int $days = 14, int $maxAge = 600, bool $orders = true, string $seg = ''): array
+{   // a page asked ($orders = false): ONE heavy count at a time on the whole server — everybody else gets "preparing…" at once (the counts were piling up on the database)
+    if ($orders) return wa_msg_rank_run($pdo, $days, $maxAge, true, $seg);
+    $r = wa_msg_rank_run($pdo, $days, $maxAge, false, $seg, true); if ($r !== null) return $r;
+    // no copy yet: a page never runs the heavy count itself — it asks the background job for this window and shows "preparing…" (the job runs within a few minutes, the page asks again by itself)
+    try { setting_set($pdo, 'wa_rank_want', json_encode([max(1, min(60, $days)), mb_substr($seg, 0, 60)])); setting_set($pdo, 'wa_dq_rank_at', '0'); setting_set($pdo, 'wa_dq_pre_at', '0'); } catch (Throwable $e) { }
+    return ['days' => max(1, min(60, $days)), 'win' => 3, 'pending' => true, 'orders_pending' => false, 'rows' => [], 'tips' => [], 'overall' => ['n' => 0, 'dn' => 0, 'd' => 0.0, 'cost' => 0, 'ord' => 0, 'rev' => 0, 'roi' => null], 'orders_ok' => false, 'seg' => $seg, 'segs' => []];
+}
+function wa_msg_rank_run(PDO $pdo, int $days, int $maxAge, bool $orders, string $seg, bool $cacheOnly = false): ?array
 {   // $orders = false (the page): never run the heavy order matching — use the last prepared one (the engine prepares it in the background); the answer is cached so the next open is instant
     $days = max(1, min(60, $days)); $win = max(1, min(14, (int)setting_get($pdo, 'wa_attr_days', '3'))); $seg = mb_substr(trim($seg), 0, 60); $ck = 'msg_rank4_' . $days . '_' . $win . ($seg !== '' ? '_' . md5(mb_strtolower($seg)) : '');
     $hit = wa_cpc_get($pdo, $ck); if ($hit && $hit['age'] < $maxAge && ($orders ? empty($hit['v']['orders_pending']) : true)) return $hit['v'];
+    if ($cacheOnly) return $hit ? $hit['v'] : null;   // any copy is fine for a page, however old (the engine refreshes it); none → the caller decides
     $o = ['days' => $days, 'win' => $win, 'orders_pending' => false, 'rows' => [], 'tips' => [], 'overall' => ['n' => 0, 'dn' => 0, 'd' => 0.0, 'cost' => 0, 'ord' => 0, 'rev' => 0, 'roi' => null], 'orders_ok' => false, 'seg' => $seg, 'segs' => []];
     $since = date('Y-m-d H:i:s', time() - $days * 86400);
     foreach (['aud_type' => "VARCHAR(60) NOT NULL DEFAULT ''", 'aud_from' => 'DATE NULL', 'aud_to' => 'DATE NULL'] as $c0 => $d0) { try { $pdo->query("SELECT $c0 FROM wa_campaigns LIMIT 0"); } catch (Throwable $e) { try { $pdo->exec("ALTER TABLE wa_campaigns ADD COLUMN $c0 $d0"); } catch (Throwable $e2) { } } }
     try {
-        $q = $pdo->prepare("SELECT COALESCE(NULLIF(i.tpl_used, 0), c.tpl_id) AS tid, c.aud_type AS sg, COUNT(*) AS n, SUM(i.last_status IN ('delivered', 'read')) AS d, SUM(i.last_status = 'read') AS rd, SUM(i.err_code = 131049) AS held,
+        $q = $pdo->prepare("SELECT /*+ MAX_EXECUTION_TIME(30000) */ COALESCE(NULLIF(i.tpl_used, 0), c.tpl_id) AS tid, c.aud_type AS sg, COUNT(*) AS n, SUM(i.last_status IN ('delivered', 'read')) AS d, SUM(i.last_status = 'read') AS rd, SUM(i.err_code = 131049) AS held,
             SUM(i.last_status IN ('delivered', 'read') AND ct.last_in_at IS NOT NULL AND ct.last_in_at > i.sent_at AND ct.last_in_at < DATE_ADD(i.sent_at, INTERVAL $win DAY)) AS rep
             FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id LEFT JOIN wa_contacts ct ON ct.phone = i.phone WHERE i.wamid <> '' AND i.sent_at >= ?" . ($seg !== '' ? " AND c.aud_type = ?" : '') . " GROUP BY tid, sg");
         $q->execute($seg !== '' ? [$since, $seg] : [$since]); $acc = []; $bys = []; $segN = [];
@@ -249,7 +258,7 @@ function wa_dq_hours(PDO $pdo, int $maxAge = 900): array
 }
 function wa_dq_precompute(PDO $pdo): void
 {
-    try { if ((int)setting_get($pdo, 'wa_dq_pre_at', '0') > time() - 120) return; setting_set($pdo, 'wa_dq_pre_at', (string)time()); wa_dq_hours($pdo, 120); if ((int)setting_get($pdo, 'wa_dq_rank_at', '0') <= time() - 1200) { setting_set($pdo, 'wa_dq_rank_at', (string)time()); $n = (int)setting_get($pdo, 'wa_dq_pre_n', '0'); setting_set($pdo, 'wa_dq_pre_n', (string)($n + 1)); wa_msg_rank($pdo, [14, 7, 14, 30][$n % 4], 1200, true); }   /* the heavy message ranking: one window every 20 minutes (was every 2) */ wa_meta_spend_cached($pdo, true); } catch (Throwable $e) { }
+    try { if ((int)setting_get($pdo, 'wa_dq_pre_at', '0') > time() - 120) return; setting_set($pdo, 'wa_dq_pre_at', (string)time()); wa_dq_hours($pdo, 120); if ((int)setting_get($pdo, 'wa_dq_rank_at', '0') <= time() - 1200) { setting_set($pdo, 'wa_dq_rank_at', (string)time()); $want = json_decode((string)setting_get($pdo, 'wa_rank_want', ''), true); if (is_array($want) && count($want) === 2) { setting_set($pdo, 'wa_rank_want', ''); wa_msg_rank($pdo, (int)$want[0], 1200, true, (string)$want[1]); } else { $n = (int)setting_get($pdo, 'wa_dq_pre_n', '0'); setting_set($pdo, 'wa_dq_pre_n', (string)($n + 1)); wa_msg_rank($pdo, [14, 7, 14, 30][$n % 4], 1200, true); } }   /* the heavy message ranking: one window every 20 minutes (was every 2) */ wa_meta_spend_cached($pdo, true); } catch (Throwable $e) { }
 }
 function wa_dq_hours_build(PDO $pdo): array
 {

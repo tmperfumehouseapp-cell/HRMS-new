@@ -54,7 +54,7 @@ const api = {
   },
   _swrGet(ck) { try { const c = JSON.parse(localStorage.getItem(ck) || 'null'); return c && typeof c.t === 'number' ? c : null; } catch (e) { return null; } },
   _swrPut(ck, d) {
-    try { const j = JSON.stringify({ t: Date.now(), d }); if (j.length > 700000) return; try { localStorage.setItem(ck, j); } catch (q) { this._swrClear(); localStorage.setItem(ck, j); }
+    try { if (d && d.pending) return; const j = JSON.stringify({ t: Date.now(), d }); if (j.length > 700000) return; try { localStorage.setItem(ck, j); } catch (q) { this._swrClear(); localStorage.setItem(ck, j); }
       const idx = JSON.parse(localStorage.getItem('apis:index') || '[]').filter((x) => x !== ck); idx.push(ck); while (idx.length > 40) { try { localStorage.removeItem(idx.shift()); } catch (e) { /* ignore */ } }
       localStorage.setItem('apis:index', JSON.stringify(idx)); } catch (e) { /* storage full or blocked: just no memory */ }
   },
