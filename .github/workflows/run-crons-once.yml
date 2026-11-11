@@ -1,0 +1,32 @@
+# Runs EVERY background job once on the staging VPS (through empmanagment/cron_hit.php / help_cron.php) and shows each answer — to check the CloudPanel cron commands work.
+# Run by hand: Actions → "Run every cron once (staging)" → Run workflow.
+name: Run every cron once (staging)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  once:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+      - name: Run each once
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"; PHP=/usr/bin/php8.3; [ -x $PHP ] || PHP=php
+          echo "php: $PHP"
+          for a in orders.cron mail.cron bd.tick chk.tick dp.tick; do echo "--- $a ---"; timeout 120 $PHP ${P}empmanagment/cron_hit.php $a 2>&1 | cut -c1-300; echo "exit=$?"; done
+          echo "--- help_cron.php ---"; timeout 120 $PHP ${P}empmanagment/help_cron.php 2>&1 | cut -c1-300
+          REMOTE
