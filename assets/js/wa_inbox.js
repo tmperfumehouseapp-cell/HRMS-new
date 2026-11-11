@@ -840,7 +840,7 @@
         setTimeout(() => document.addEventListener('click', function off() { const x = $('wiAm'); if (x) x.remove(); document.removeEventListener('click', off); }), 0);
       };
       ['wiF1', 'wiF2'].forEach((id) => { $(id).onchange = function () { addFiles([...this.files]); this.value = ''; }; });
-      $('wiTx').onpaste = (e) => { const f = [...((e.clipboardData && e.clipboardData.files) || [])]; if (f.length) { e.preventDefault(); addFiles(f); } };   // paste a screenshot / copied photo
+      $('wiTx').onpaste = (e) => { const f = [...((e.clipboardData && e.clipboardData.files) || [])]; if (f.length) { e.preventDefault(); addFiles(f); if (f.every((x) => /^image\//.test(x.type)) && S.files.length) setTimeout(() => { const sb = $('wiSend'); if (sb && !sb.disabled) sb.click(); }, 150); } };   // a pasted photo goes to the customer at once (the text in the box is its caption)   // paste a screenshot / copied photo
       C.ondragover = (e) => { if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) { e.preventDefault(); C.classList.add('wi-drop'); } };
       C.ondragleave = (e) => { if (e.target === C) C.classList.remove('wi-drop'); };
       C.ondrop = (e) => { C.classList.remove('wi-drop'); const f = [...((e.dataTransfer && e.dataTransfer.files) || [])]; if (f.length) { e.preventDefault(); addFiles(f); } };
