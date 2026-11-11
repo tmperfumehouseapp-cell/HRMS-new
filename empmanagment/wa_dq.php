@@ -209,6 +209,21 @@ function wa_dq_left(PDO $pdo, bool $fresh = false): array
     $moneyLeft = $cfg['budget'] > 0 ? max(0.0, $cfg['budget'] - $spend) : null; $moneyPush = $moneyLeft === null ? PHP_INT_MAX : (int)floor($moneyLeft / max(0.01, $mr * max(0.2, $rate)));
     $memo = ['on' => $cfg['on'], 'cap' => $cfg['hourly'], 'used' => $used, 'exp' => $exp, 'rate' => round($rate, 2), 'state' => $state, 'range' => $range, 'm_live' => round($mLive, 2), 'mult' => round($mult, 2), 'eff_cap' => $effCap, 'learning' => $learning, 'smart' => $cfg['smart'], 'daily' => $cfg['daily'], 'day_used' => $dayUsed, 'day_left' => $dayLeft, 'left' => min($hourLeft, $dayLeft, $moneyPush), 'spend' => (int)round($spend), 'budget' => $cfg['budget'], 'push_cap' => $pushCap, 'why' => ($moneyLeft !== null && $moneyLeft <= 0) ? 'money' : ($dayLeft <= 0 ? 'day' : ($hourLeft <= 0 ? 'hour' : ''))]; $at = microtime(true); return $memo;
 }
+/** 🏦 Meta's OWN spend (pricing analytics of every WhatsApp account, by calendar day, all message kinds) from what the engine already fetched (read from the cache only, never waits for Meta; the engine refreshes it hourly),
+ *  and the real price per delivered message yesterday (Meta's ₹ ÷ delivered template messages that day). Returns ['today', 'yday', 'eff', 'at', 'error'] (null = not available). Meta's figures arrive with a delay of a few hours. */
+function wa_meta_spend_cached(PDO $pdo, bool $fetch = false): array
+{
+    $o = ['today' => null, 'yday' => null, 'eff' => null, 'at' => 0, 'error' => ''];
+    if (!function_exists('wab_meta')) return $o;
+    $from = date('Y-m-d', time() - 2 * 86400); $to = date('Y-m-d'); $c = null;
+    if ($fetch) { try { $c = wab_meta($pdo, $from, $to); } catch (Throwable $e) { $c = null; } }
+    else { try { $c = json_decode((string)setting_get($pdo, 'wab_meta_' . md5($from . $to), ''), true); } catch (Throwable $e) { $c = null; } }
+    if (!is_array($c)) return $o;
+    $o['at'] = (int)($c['at'] ?? 0); $o['error'] = (string)($c['error'] ?? ''); $days = (array)($c['days'] ?? []);
+    if ($days) { $o['today'] = (float)($days[$to] ?? 0); $o['yday'] = (float)($days[date('Y-m-d', time() - 86400)] ?? 0);
+        if ($o['yday'] > 0) { try { $q = $pdo->prepare("SELECT SUM(status IN ('delivered', 'read')) FROM wa_messages WHERE dir = 'out' AND mtype = 'template' AND ts >= ? AND ts < ?"); $q->execute([date('Y-m-d 00:00:00', time() - 86400), date('Y-m-d 00:00:00')]); $dl = (int)$q->fetchColumn(); if ($dl >= 1000) $o['eff'] = round($o['yday'] / $dl, 2); } catch (Throwable $e) { } } }
+    return $o;
+}
 /** The plain sentence for why the plan is holding the campaigns right now. */
 function wa_dq_why_text(array $d): string
 {
@@ -225,7 +240,7 @@ function wa_dq_hours(PDO $pdo, int $maxAge = 900): array
 }
 function wa_dq_precompute(PDO $pdo): void
 {
-    try { if ((int)setting_get($pdo, 'wa_dq_pre_at', '0') > time() - 120) return; setting_set($pdo, 'wa_dq_pre_at', (string)time()); wa_dq_hours($pdo, 120); wa_msg_rank($pdo, 14, 300); } catch (Throwable $e) { }
+    try { if ((int)setting_get($pdo, 'wa_dq_pre_at', '0') > time() - 120) return; setting_set($pdo, 'wa_dq_pre_at', (string)time()); wa_dq_hours($pdo, 120); wa_msg_rank($pdo, 14, 300); wa_meta_spend_cached($pdo, true); } catch (Throwable $e) { }
 }
 function wa_dq_hours_build(PDO $pdo): array
 {

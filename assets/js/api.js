@@ -5,6 +5,10 @@
  * Auth is kept in localStorage: you stay logged in across tabs, browser
  * restarts, and days — until you press Log out or the token expires.
  */
+// 📱 Every page that uses this file also registers the HRMS service worker (sw.js): scripts and styles are kept on the phone and answer at once, refreshed behind; pages are always checked with the server;
+// it also carries the punch reminder. (Some pages already registered it themselves — registering twice is harmless.)
+try { if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); }); } catch (e) { /* no service worker: pages load as before */ }
+
 const api = {
   token() { return localStorage.getItem('hrms_token'); },
   setToken(token) { localStorage.setItem('hrms_token', token); },
@@ -38,9 +42,19 @@ const api = {
   // Add a screen with one line:  api.swrAdd('some.read_action', 300)
   _SWR: { 'wa.overview': 300, 'wa.numbers': 300, 'wa.sales_board': 300, 'wa.camp_hours': 300, 'wa.msg_rank': 300 },
   swrAdd(action, seconds) { this._SWR[action] = seconds; },
+  // How long (seconds) an answer of this action may be shown from memory. 0 = never. An explicit entry in _SWR wins; otherwise read-looking actions (list / stats / summary / dashboard / report / overview / board / history …)
+  // get 60 s, and anything about punching, attendance, approvals, pay, chats, inbox, notifications, login, "me", live / poll / tick / badges / counts is NEVER remembered. Switch everything off on a phone:
+  // localStorage.setItem('hrms_swr_off', '1').
+  _swrAge(action) {
+    if (this._SWR[action] !== undefined) return this._SWR[action];
+    try { if (localStorage.getItem('hrms_swr_off') === '1') return 0; } catch (e) { return 0; }
+    if (/(^|[._])(punch|attend|attendance|checkin|checkout|approve|approvals|approval|pay|payment|payments|salary|payroll|chat|chats|inbox|msg|message|messages|notif|notification|login|logout|auth|me|session|token|otp|lock|tick|ping|callnow|g_wait|g_sig|live|poll|badge|count|pulse|flags|ctx|geo|gps|location|status|queue|assign|give|reply)([._]|$)/i.test(action)) return 0;
+    if (/(^|[._])(list|stats|summary|dashboard|report|reports|overview|board|history|leaderboard|targets|get|analytics|kpi|trend|catalog|products|team|people|orders)([._]|$)/i.test(action)) return 60;
+    return 0;
+  },
   _swrGet(ck) { try { const c = JSON.parse(localStorage.getItem(ck) || 'null'); return c && typeof c.t === 'number' ? c : null; } catch (e) { return null; } },
   _swrPut(ck, d) {
-    try { const j = JSON.stringify({ t: Date.now(), d }); if (j.length > 600000) return; localStorage.setItem(ck, j);
+    try { const j = JSON.stringify({ t: Date.now(), d }); if (j.length > 200000) return; try { localStorage.setItem(ck, j); } catch (q) { this._swrClear(); localStorage.setItem(ck, j); }
       const idx = JSON.parse(localStorage.getItem('apis:index') || '[]').filter((x) => x !== ck); idx.push(ck); while (idx.length > 40) { try { localStorage.removeItem(idx.shift()); } catch (e) { /* ignore */ } }
       localStorage.setItem('apis:index', JSON.stringify(idx)); } catch (e) { /* storage full or blocked: just no memory */ }
   },
@@ -69,7 +83,7 @@ const api = {
     if (cacheable) {
       try { const c = JSON.parse(sessionStorage.getItem('apic:' + key) || 'null'); if (c && Date.now() - c.t < 30000) return Promise.resolve(c.d); } catch (e) { /* storage may be blocked */ }
     }
-    const swrAge = this._SWR[action]; let swrKey = null;
+    const swrAge = this._swrAge(action); let swrKey = null;
     if (swrAge && this.token()) {
       swrKey = 'apis:' + key;
       if (!(params && (params.live || params.fresh))) {   // 🔄 buttons that ask for "live" / "fresh" always go to the server

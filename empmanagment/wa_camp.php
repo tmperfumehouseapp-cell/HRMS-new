@@ -905,6 +905,7 @@ function wa_camp_spend_today(PDO $pdo, bool $fresh = false): array
     try { $q = $pdo->prepare("SELECT COUNT(DISTINCT m.phone) FROM wa_messages m WHERE m.dir = 'out' AND m.mtype = 'template' AND m.who = 'campaign' AND m.status IN ('delivered','read') AND m.ts >= ? AND m.ts < ?
             AND EXISTS (SELECT 1 FROM wa_messages i WHERE i.phone = m.phone AND i.dir = 'in' AND i.ts > m.ts AND i.ts <= ?)"); $q->execute([$from, $to, $now]); $o['replied'] = (int)$q->fetchColumn(); } catch (Throwable $e) { }
     try { $rr = wa_rec_range($pdo, $from, $to); $o['retried'] = $rr['tried']; $o['recovered'] = $rr['recovered']; } catch (Throwable $e) { }
+    try { $o['meta'] = wa_meta_spend_cached($pdo); } catch (Throwable $e) { }   // 🏦 Meta's own spend (prepared in the background)
     try { setting_set($pdo, 'wa_camp_spend3', json_encode($o)); } catch (Throwable $e) { }
     return $o;
 }
