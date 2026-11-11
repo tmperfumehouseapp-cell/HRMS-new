@@ -130,7 +130,7 @@ function wa_rec_tick_run(PDO $pdo): array
         $q = $pdo->prepare("SELECT COUNT(*) AS n, SUM(m.status = 'failed') AS f FROM wa_rec_log r JOIN wa_messages m ON m.wamid = r.wamid WHERE r.at >= ? AND r.wamid <> ''"); $q->execute([date('Y-m-d H:i:s', $nowTs - 7200)]); $hr = $q->fetch();
         if ((int)$hr['n'] >= 60 && (int)$hr['f'] / max(1, (int)$hr['n']) >= 0.6) { setting_set($pdo, 'wa_rec_pause_until', (string)($nowTs + 3600)); wa_log($pdo, 'campaign', false, 'Recovery paused for an hour: ' . (int)$hr['f'] . ' of ' . (int)$hr['n'] . ' recovery messages failed'); $res['note'] = 'paused: too many failures'; return $res; }
         // somebody was delivered again → the campaign's own retry of that person (a day later) must not send it a second time
-        try { $pdo->exec("UPDATE wa_camp_items i JOIN wa_rec_log r ON r.item_id = i.id JOIN wa_messages m ON m.wamid = r.wamid SET i.status = 'skipped' WHERE i.status = 'retry' AND r.ok = 1 AND r.wamid <> '' AND m.status IN ('delivered', 'read')"); } catch (Throwable $e) { }
+        try { $pdo->exec("UPDATE wa_camp_items i JOIN wa_rec_log r ON r.item_id = i.id JOIN wa_messages m ON m.wamid = r.wamid SET i.status = 'skipped' WHERE (i.status = 'retry' OR (i.status = 'sent' AND i.last_status = 'failed')) AND r.ok = 1 AND r.wamid <> '' AND m.status IN ('delivered', 'read')"); } catch (Throwable $e) { }
         // "held by Meta" (131049) people are tried from another number after 30 minutes — an experiment with a brake: if almost none get delivered, it stops for a day
         $heldOn = $cfg['held_on'] && $cfg['held_off_until'] <= $nowTs ? 1 : 0;
         if ($heldOn) { $hs = wa_rec_held_stats($pdo); if ($hs['n'] >= 150 && $hs['d'] / max(1, $hs['n']) < 0.03) { setting_set($pdo, 'wa_rec_held_off_until', (string)($nowTs + 86400)); $heldOn = 0; wa_log($pdo, 'campaign', false, 'Held-by-Meta retries from another number stopped for a day: only ' . $hs['d'] . ' of ' . $hs['n'] . ' were delivered'); } }
@@ -138,7 +138,7 @@ function wa_rec_tick_run(PDO $pdo): array
         $cur = max(0, (int)setting_get($pdo, 'wa_rec_cursor', '0')); $lim = 1200; $why = []; $broke = false; $lastId = 0;   // the people looked at move on every round (a person skipped for now is looked at again on the next lap) — before, the same first 500 were looked at every time
         $sk = function (string $k) use (&$res, &$why) { $res['skipped']++; $why[$k] = ($why[$k] ?? 0) + 1; };
         $q = $pdo->prepare("SELECT i.id, i.camp_id, i.phone, i.name, i.number_id, i.vars_json, i.err_code, i.status, i.sent_at, c.tpl_id, c.media_lib_id FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id
-            WHERE ((i.status = 'failed' AND i.err_code NOT IN (" . wa_rec_never_sql() . ")) OR ($heldOn AND i.status = 'retry' AND i.err_code = 131049 AND i.sent_at <= '" . date('Y-m-d H:i:s', $nowTs - 1800) . "')) AND (c.started_at >= ? OR i.sent_at >= ?) AND i.id > " . $cur . " ORDER BY i.id LIMIT " . $lim); $q->execute([$from, $from]); $items = $q->fetchAll();
+            WHERE ((i.status = 'failed' AND i.err_code NOT IN (" . wa_rec_never_sql() . ")) OR ($heldOn AND (i.status = 'retry' OR (i.status = 'sent' AND i.last_status = 'failed')) AND i.err_code = 131049 AND i.sent_at <= '" . date('Y-m-d H:i:s', $nowTs - 1800) . "')) AND (c.started_at >= ? OR i.sent_at >= ?) AND i.id > " . $cur . " ORDER BY i.id LIMIT " . $lim); $q->execute([$from, $from]); $items = $q->fetchAll();
         if (!$items) { if ($cur > 0) setting_set($pdo, 'wa_rec_cursor', '0'); $res['note'] = 'nothing to recover'; return $res; }
         $ids = array_map(fn($x) => (int)$x['id'], $items); $in = implode(',', $ids); $att = [];
         foreach ($pdo->query("SELECT item_id, COUNT(*) AS n, MAX(at) AS last, GROUP_CONCAT(number_id) AS nums FROM wa_rec_log WHERE item_id IN ($in) GROUP BY item_id")->fetchAll() as $r) $att[(int)$r['item_id']] = $r;
@@ -150,7 +150,7 @@ function wa_rec_tick_run(PDO $pdo): array
         foreach ($items as $it) {
             if (microtime(true) - $t0 > 38 || $left <= 0) { $broke = true; break; }
             $ph = (string)$it['phone']; $iid = (int)$it['id']; $lastId = $iid; $a = $att[$iid] ?? null; $n = $a ? (int)$a['n'] : 0;
-            if ($n >= ((string)$it['status'] === 'retry' ? 1 : $cfg['max_attempts'] - 1)) { $sk('all tries used'); continue; }
+            if ($n >= (in_array((string)$it['status'], ['retry', 'sent'], true) ? 1 : $cfg['max_attempts'] - 1)) { $sk('all tries used'); continue; }
             if (isset($recent[$ph]) || isset($seen[$ph])) { $sk('tried in the last hour'); continue; }
             if (isset($got[$ph])) { $sk('delivered another way today'); continue; }
             if ($a && strtotime((string)$a['last']) > $nowTs - $cfg['gap_min'] * 60) { $sk('tried in the last hour'); continue; }
@@ -173,7 +173,7 @@ function wa_rec_tick_run(PDO $pdo): array
         }
         try { setting_set($pdo, 'wa_rec_cursor', (string)(($broke || count($items) >= $lim) ? $lastId : 0)); } catch (Throwable $e) { }
         arsort($why); $res['why'] = array_slice($why, 0, 6, true); $res['looked'] = count($items);
-    } catch (Throwable $e) { wa_log($pdo, 'campaign', false, 'Recovery error: ' . $e->getMessage()); $res['note'] = 'error'; }
+    } catch (Throwable $e) { wa_log($pdo, 'campaign', false, 'Recovery error: ' . $e->getMessage()); $res['note'] = 'error: ' . mb_substr($e->getMessage(), 0, 140); }
     return $res;
 }
 
