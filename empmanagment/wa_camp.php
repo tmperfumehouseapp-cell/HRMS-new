@@ -456,9 +456,18 @@ function wa_camp_audience(PDO $pdo, array $aud, int $freq): array
     }
     $st = ['matched' => 0, 'optout' => 0, 'recent' => 0, 'invalid' => 0, 'send' => 0];
     $recent = []; $q = $pdo->prepare("SELECT DISTINCT phone FROM wa_messages WHERE dir = 'out' AND mtype = 'template' AND who = 'campaign' AND status <> 'failed' AND ts >= ?"); $q->execute([date('Y-m-d H:i:s', wa_camp_now() - max(0, $freq) * 86400)]); foreach ($q->fetchAll() as $r) $recent[(string)$r['phone']] = true;
+    // 🚫 "never send the same message twice": people who already got this SAME message in an earlier campaign (it left our side and Meta did not fail it) are left out. On unless the owner switches it off (audience.skip_got = 0).
+    $got = []; $gotTpl = (int)($aud['got_tpl'] ?? 0);
+    if ($gotTpl > 0 && (!array_key_exists('skip_got', $aud) || !empty($aud['skip_got']))) {
+        try {
+            $ids = $pdo->prepare("SELECT id FROM wa_campaigns WHERE tpl_id = ? AND id <> ? AND status IN ('running', 'done', 'paused', 'scheduled') AND created_at >= ?"); $ids->execute([$gotTpl, (int)($aud['got_cid'] ?? 0), date('Y-m-d H:i:s', time() - 200 * 86400)]); $ids = array_map('intval', $ids->fetchAll(PDO::FETCH_COLUMN));
+            if ($ids) { $gq = $pdo->query("SELECT DISTINCT phone FROM wa_camp_items WHERE camp_id IN (" . implode(',', $ids) . ") AND status = 'sent'"); foreach ($gq->fetchAll(PDO::FETCH_COLUMN) as $ph) $got[(string)$ph] = true; }
+        } catch (Throwable $e) { $got = []; }
+    }
     $send = [];
     foreach ($matchedIt as $r) {
         $st['matched']++;
+        if ($got && isset($got[(string)$r['phone']])) { $st['got'] = ($st['got'] ?? 0) + 1; continue; }
         if (!wa_valid_phone($r['phone'])) { $st['invalid']++; continue; } if ($r['optout']) { $st['optout']++; continue; } if ($freq > 0 && isset($recent[$r['phone']])) { $st['recent']++; continue; } $send[] = ['phone' => $r['phone'], 'name' => $r['name']];   // only what sending needs — keeps memory small for big audiences
     }
     // 📬 "leave out customers who already got N+ campaign messages in the last D days" (the owner's switch in the campaign screen): Meta holds back people who get many marketing messages
@@ -1148,7 +1157,7 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
         case 'wa.camp_preview': {
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
             $in = json_input(); $aud = (array)($in['audience'] ?? []); $freq = max(0, min(60, (int)($in['freq_days'] ?? 3))); if (isset($in['push']) && in_array((string)$in['push'], ['careful', 'normal', 'aggressive', 'very'], true)) $freq = wa_camp_push((string)$in['push'])['freq'];
-            [$send, $st] = wa_camp_audience($pdo, $aud, $freq); $t = (int)($in['tpl_id'] ?? 0) ? wa_camp_tpl($pdo, (int)$in['tpl_id'], true, (int)($in['media_lib_id'] ?? 0)) : null;
+            $aud['got_tpl'] = (int)($in['tpl_id'] ?? 0); [$send, $st] = wa_camp_audience($pdo, $aud, $freq); $t = (int)($in['tpl_id'] ?? 0) ? wa_camp_tpl($pdo, (int)$in['tpl_id'], true, (int)($in['media_lib_id'] ?? 0)) : null;
             $health = wa_camp_health($pdo); $caps = wa_number_caps($pdo, $health); $room = 0; foreach ($caps as $k => $c) if ($k !== '_port') $room += $c['left']; $port = $caps['_port']; $roomNow = min($room, $port['left']);
             $rate = $t && $t['category'] === 'UTILITY' ? $cfg['rate_utility'] : $cfg['rate_marketing']; $warn = [];
             if ($st['send'] > $roomNow) $warn[] = 'Room today is ' . number_format($roomNow) . ' messages (slow start + Meta’s daily limit' . ($port['assumed'] ? ' — Meta did not tell the limit, 250 assumed' : ' of ' . number_format($port['tier'])) . '). The rest continues automatically as room frees up — about ' . max(1, (int)ceil($st['send'] / max(1, $roomNow))) . ' day(s).';
@@ -1271,7 +1280,7 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
             $t = wa_camp_tpl($pdo, (int)$c['tpl_id'], true, (int)$c['media_lib_id']); if (!$t) json_response(['error' => 'The pre-made message is not approved, or its photo / video is missing.'], 422);
             $bad = wa_camp_vars_check($pdo, wa_camp_vars_norm($c['vars'], (int)$t['nvars'])); if ($bad !== '') json_response(['error' => $bad], 422);
             $aud = $c['audience']; if (($aud['src'] ?? 'contacts') !== 'contacts' && empty(json_input()['consent'])) json_response(['error' => 'Tick the box to confirm these customers agreed to receive WhatsApp messages from you.'], 422);
-            [$send, $st] = wa_camp_audience($pdo, $aud, (int)$c['freq_days']); if (!$send) json_response(['error' => 'Nobody is left to message with these filters.'], 422);
+            $aud['got_tpl'] = (int)$c['tpl_id']; $aud['got_cid'] = (int)$c['id']; [$send, $st] = wa_camp_audience($pdo, $aud, (int)$c['freq_days']); if (!$send) json_response(['error' => 'Nobody is left to message with these filters.'], 422);
             ignore_user_abort(true); @set_time_limit(300); $future = $c['start_at'] && strtotime((string)$c['start_at']) > wa_camp_now(); $now = date('Y-m-d H:i:s', wa_camp_now());
             $own = (int)$c['own_hour'] === 1; $base = max(wa_camp_now(), $c['start_at'] ? (int)strtotime((string)$c['start_at']) : 0);   // each person's send time is the next time their usual hour comes round after the start
             $ins = $pdo->prepare("INSERT INTO wa_camp_items (camp_id, phone, name, send_at) VALUES (?, ?, ?, ?)");
