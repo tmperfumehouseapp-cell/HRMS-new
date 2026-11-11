@@ -105,7 +105,7 @@ function wa_rec_tick(PDO $pdo): array
     if (($r['note'] ?? '') !== 'busy') {
         try { $last = json_decode((string)setting_get($pdo, 'wa_rec_last', ''), true); $last = is_array($last) ? $last : []; $diag = $last['diag'] ?? null; $dAt = (int)($last['diag_at'] ?? 0);
             if (!$diag || $dAt < time() - 120) { $diag = wa_rec_diag($pdo); $dAt = time(); }
-            setting_set($pdo, 'wa_rec_last', json_encode(['at' => time(), 'note' => (string)($r['note'] ?? ''), 'sent' => (int)($r['sent'] ?? 0), 'failed' => (int)($r['failed'] ?? 0), 'skipped' => (int)($r['skipped'] ?? 0), 'diag' => $diag, 'diag_at' => $dAt])); } catch (Throwable $e) { }
+            setting_set($pdo, 'wa_rec_last', json_encode(['at' => time(), 'note' => (string)($r['note'] ?? ''), 'sent' => (int)($r['sent'] ?? 0), 'failed' => (int)($r['failed'] ?? 0), 'skipped' => (int)($r['skipped'] ?? 0), 'looked' => (int)($r['looked'] ?? 0), 'why' => $r['why'] ?? [], 'diag' => $diag, 'diag_at' => $dAt])); } catch (Throwable $e) { }
     }
     return $r;
 }
@@ -135,9 +135,11 @@ function wa_rec_tick_run(PDO $pdo): array
         $heldOn = $cfg['held_on'] && $cfg['held_off_until'] <= $nowTs ? 1 : 0;
         if ($heldOn) { $hs = wa_rec_held_stats($pdo); if ($hs['n'] >= 150 && $hs['d'] / max(1, $hs['n']) < 0.03) { setting_set($pdo, 'wa_rec_held_off_until', (string)($nowTs + 86400)); $heldOn = 0; wa_log($pdo, 'campaign', false, 'Held-by-Meta retries from another number stopped for a day: only ' . $hs['d'] . ' of ' . $hs['n'] . ' were delivered'); } }
         $from = function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 10:00:00');
+        $cur = max(0, (int)setting_get($pdo, 'wa_rec_cursor', '0')); $lim = 1200; $why = []; $broke = false; $lastId = 0;   // the people looked at move on every round (a person skipped for now is looked at again on the next lap) — before, the same first 500 were looked at every time
+        $sk = function (string $k) use (&$res, &$why) { $res['skipped']++; $why[$k] = ($why[$k] ?? 0) + 1; };
         $q = $pdo->prepare("SELECT i.id, i.camp_id, i.phone, i.name, i.number_id, i.vars_json, i.err_code, i.status, i.sent_at, c.tpl_id, c.media_lib_id FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id
-            WHERE ((i.status = 'failed' AND i.err_code NOT IN (" . wa_rec_never_sql() . ")) OR ($heldOn AND i.status = 'retry' AND i.err_code = 131049 AND i.sent_at <= '" . date('Y-m-d H:i:s', $nowTs - 1800) . "')) AND (c.started_at >= ? OR i.sent_at >= ?) ORDER BY i.id LIMIT 500"); $q->execute([$from, $from]); $items = $q->fetchAll();
-        if (!$items) { $res['note'] = 'nothing to recover'; return $res; }
+            WHERE ((i.status = 'failed' AND i.err_code NOT IN (" . wa_rec_never_sql() . ")) OR ($heldOn AND i.status = 'retry' AND i.err_code = 131049 AND i.sent_at <= '" . date('Y-m-d H:i:s', $nowTs - 1800) . "')) AND (c.started_at >= ? OR i.sent_at >= ?) AND i.id > " . $cur . " ORDER BY i.id LIMIT " . $lim); $q->execute([$from, $from]); $items = $q->fetchAll();
+        if (!$items) { if ($cur > 0) setting_set($pdo, 'wa_rec_cursor', '0'); $res['note'] = 'nothing to recover'; return $res; }
         $ids = array_map(fn($x) => (int)$x['id'], $items); $in = implode(',', $ids); $att = [];
         foreach ($pdo->query("SELECT item_id, COUNT(*) AS n, MAX(at) AS last, GROUP_CONCAT(number_id) AS nums FROM wa_rec_log WHERE item_id IN ($in) GROUP BY item_id")->fetchAll() as $r) $att[(int)$r['item_id']] = $r;
         $recent = []; $q2 = $pdo->prepare("SELECT DISTINCT phone FROM wa_rec_log WHERE at >= ?"); $q2->execute([date('Y-m-d H:i:s', $nowTs - $cfg['gap_min'] * 60)]); foreach ($q2->fetchAll(PDO::FETCH_COLUMN) as $p) $recent[(string)$p] = 1;
@@ -146,18 +148,20 @@ function wa_rec_tick_run(PDO $pdo): array
         $got = []; $q3 = $pdo->prepare("SELECT DISTINCT phone FROM wa_messages WHERE phone IN ($pin) AND dir = 'out' AND mtype = 'template' AND status IN ('delivered', 'read') AND ts >= ?"); $q3->execute([date('Y-m-d H:i:s', strtotime($from) - 86400)]); foreach ($q3->fetchAll(PDO::FETCH_COLUMN) as $p) $got[(string)$p] = 1;
         $GLOBALS['__wa_lim_cache_ok'] = true; $cache = []; $tplBase = []; $seen = [];
         foreach ($items as $it) {
-            if (microtime(true) - $t0 > 38 || $left <= 0) break;
-            $ph = (string)$it['phone']; $iid = (int)$it['id']; $a = $att[$iid] ?? null; $n = $a ? (int)$a['n'] : 0;
-            if ($n >= ((string)$it['status'] === 'retry' ? 1 : $cfg['max_attempts'] - 1) || isset($recent[$ph]) || isset($seen[$ph]) || isset($got[$ph])) { $res['skipped']++; continue; }
-            if ($a && strtotime((string)$a['last']) > $nowTs - $cfg['gap_min'] * 60) { $res['skipped']++; continue; }
-            $c = $ct[$ph] ?? null; if (!$c || (int)$c['optout'] === 1 || (!empty($c['last_in_at']) && !empty($it['sent_at']) && strtotime((string)$c['last_in_at']) > strtotime((string)$it['sent_at']))) { $res['skipped']++; continue; }
-            $tid = (int)$it['tpl_id']; if (!isset($tplBase[$tid])) $tplBase[$tid] = wa_camp_tpl($pdo, $tid, true, (int)$it['media_lib_id']); $t = $tplBase[$tid]; if (!$t) { $res['skipped']++; continue; }
-            $vars = json_decode((string)$it['vars_json'], true); if (!is_array($vars)) { if ((int)$t['nvars'] > 0) { $res['skipped']++; continue; } $vars = []; }
+            if (microtime(true) - $t0 > 38 || $left <= 0) { $broke = true; break; }
+            $ph = (string)$it['phone']; $iid = (int)$it['id']; $lastId = $iid; $a = $att[$iid] ?? null; $n = $a ? (int)$a['n'] : 0;
+            if ($n >= ((string)$it['status'] === 'retry' ? 1 : $cfg['max_attempts'] - 1)) { $sk('all tries used'); continue; }
+            if (isset($recent[$ph]) || isset($seen[$ph])) { $sk('tried in the last hour'); continue; }
+            if (isset($got[$ph])) { $sk('delivered another way today'); continue; }
+            if ($a && strtotime((string)$a['last']) > $nowTs - $cfg['gap_min'] * 60) { $sk('tried in the last hour'); continue; }
+            $c = $ct[$ph] ?? null; if (!$c) { $sk('no contact record'); continue; } if ((int)$c['optout'] === 1) { $sk('opted out'); continue; } if (!empty($c['last_in_at']) && !empty($it['sent_at']) && strtotime((string)$c['last_in_at']) > strtotime((string)$it['sent_at'])) { $sk('wrote back'); continue; }
+            $tid = (int)$it['tpl_id']; if (!isset($tplBase[$tid])) $tplBase[$tid] = wa_camp_tpl($pdo, $tid, true, (int)$it['media_lib_id']); $t = $tplBase[$tid]; if (!$t) { $sk('message not found'); continue; }
+            $vars = json_decode((string)$it['vars_json'], true); if (!is_array($vars)) { if ((int)$t['nvars'] > 0) { $sk('no saved variables'); continue; } $vars = []; }
             $attempt = $n + 2; $cls = wa_rec_class((int)$it['err_code']); $preferAlt = $attempt >= 3 || $cls === 'tpl'; $altIdx = abs((int)crc32($ph));
             $ck = $tid . '|' . ($preferAlt ? 'a' . ($altIdx % 2) : 'o'); if (!isset($cache[$ck])) { $cache[$ck] = wa_rec_tpl_ctx($pdo, $t, $preferAlt, $altIdx); if (!$cache[$ck][0] && $preferAlt) { $ck = $tid . '|o'; if (!isset($cache[$ck])) $cache[$ck] = wa_rec_tpl_ctx($pdo, $t, false, 0); } }
-            [$tUse, $ctx] = $cache[$ck]; if (!$tUse || !$ctx) { $res['skipped']++; continue; }
+            [$tUse, $ctx] = $cache[$ck]; if (!$tUse || !$ctx) { $sk('message not approved on another account'); continue; }
             $tried = array_map('intval', array_filter(array_merge([(int)$it['number_id']], $a ? explode(',', (string)$a['nums']) : []))); $cand = array_filter($ctx['nums'], fn($x) => $x['left'] > 0 && !in_array((int)$x['id'], $tried, true));
-            if (!$cand || $ctx['port_left'] <= 0) { $res['skipped']++; continue; }   // no other number has room for this person: they wait for the next round
+            if (!$cand || $ctx['port_left'] <= 0) { $sk($ctx['port_left'] <= 0 ? 'Meta room used' : 'no other number with room'); continue; }   // no other number has room for this person: they wait for the next round
             $good = array_filter($cand, fn($x) => in_array(($x['q'] ?? ''), ['GREEN', 'YELLOW'], true)); if ($good) $cand = $good;
             uasort($cand, fn($x, $y) => ($x['used'] / max(1, $x['cap'])) <=> ($y['used'] / max(1, $y['cap']))); $num = reset($cand); $nid = (int)$num['id']; $tSend = $num['tm'] ?? $tUse;
             $seen[$ph] = 1; [$ok, $r, $ec] = wa_send_tpl_one($pdo, ['phone' => $ph, 'wa_id' => (string)($c['wa_id'] ?? '')], $tSend, $num, $vars, 'recover');
@@ -165,8 +169,10 @@ function wa_rec_tick_run(PDO $pdo): array
             $pdo->prepare("INSERT INTO wa_rec_log (camp_id, item_id, phone, attempt, number_id, tpl_id, is_alt, wamid, ok, err_code, err, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
                 ->execute([(int)$it['camp_id'], $iid, $ph, $attempt, $nid, (int)$tSend['id'], $isAlt, $ok ? (string)$r : '', $ok ? 1 : 0, $ok ? 0 : (int)$ec, $ok ? '' : mb_substr((string)$r, 0, 190), $now]);
             $cache[$ck][1]['nums'][$nid]['left']--; $cache[$ck][1]['nums'][$nid]['used']++; $cache[$ck][1]['port_left']--; $left--;
-            if ($ok) $res['sent']++; else { $res['failed']++; if ((int)$ec === 131048) { setting_set($pdo, 'wa_rec_pause_until', (string)($nowTs + 6 * 3600)); wa_log($pdo, 'campaign', false, 'Recovery paused for 6 hours: Meta flagged messages as spam (131048)'); break; } if (in_array((int)$ec, [130429, 131056], true)) break; }
+            if ($ok) $res['sent']++; else { $res['failed']++; if ((int)$ec === 131048) { setting_set($pdo, 'wa_rec_pause_until', (string)($nowTs + 6 * 3600)); wa_log($pdo, 'campaign', false, 'Recovery paused for 6 hours: Meta flagged messages as spam (131048)'); $broke = true; break; } if (in_array((int)$ec, [130429, 131056], true)) { $broke = true; break; } }
         }
+        try { setting_set($pdo, 'wa_rec_cursor', (string)(($broke || count($items) >= $lim) ? $lastId : 0)); } catch (Throwable $e) { }
+        arsort($why); $res['why'] = array_slice($why, 0, 6, true); $res['looked'] = count($items);
     } catch (Throwable $e) { wa_log($pdo, 'campaign', false, 'Recovery error: ' . $e->getMessage()); $res['note'] = 'error'; }
     return $res;
 }
