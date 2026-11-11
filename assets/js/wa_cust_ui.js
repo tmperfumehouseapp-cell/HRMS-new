@@ -91,6 +91,7 @@ html.wxdk .wcs{--ln:#25343e; --gb:#0f2e20; --rb:#3a1515;} html.wxdk .wcs-r,html.
   // tag groups for the picker (keys and labels, Claude tags have spaces)
   const GROUPS = [
     ['seg', '📁 Your segments', (k, x) => x.kind === 'segment' || /^seg_/.test(k)],
+    ['beh', '🧭 Behaviour', (k) => /^(no_haggle|price_sensitive|quick_decider|slow_decider|replies_to_followups|second_order|third_order_plus|one_time_buyer|lapsed_buyer|premium_buyer|budget_buyer)$/.test(k)],
     ['buy', '🛍 Buying', (k) => /^(bought|repeat|vip|not_ordered|cod_pending|came_back)$|premium|buyer|order|deliver|purchase|customer/.test(k)],
     ['prob', '⚠️ Problems', (k) => /complain|issue|fail|broken|wrong|refund|return|damag|missing|not spray|leak|late|delay|bad/.test(k)],
     ['want', '💬 Wants & asks', (k) => /^(wants_buy|price_issue|not_interested)$|want|ask|likes|interest|price|discount|sample|call|offer|scent|perfume|combo|bulk/.test(k)],
