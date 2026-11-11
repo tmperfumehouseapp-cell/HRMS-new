@@ -795,6 +795,26 @@ function wa_camp_result(PDO $pdo, array $c, array $cfg, bool $withMix = false): 
 }
 
 // ---------------------------------------------------------------------------------------------------------------- campaigns: best time, suggestions
+/** 💸 Money spent by campaigns in the CURRENT BUSINESS DAY (the same day the sales side uses: it starts at the day-start time, 10:00 by default, and runs to the next one —
+ *  not the last 24 hours). Meta charges when a message is delivered, so: delivered / read campaign messages × the billing rate (marketing, utility…). An estimate from the
+ *  rates in Team & routing (the Billing report has Meta's own figure). Remembered for 60 s: it counts a big table. */
+function wa_camp_spend_today(PDO $pdo, bool $fresh = false): array
+{
+    $from = function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 10:00:00', date('H') < 10 ? time() - 86400 : time());
+    $to = date('Y-m-d H:i:s', strtotime($from) + 86400);
+    if (!$fresh) { try { $hit = json_decode((string)setting_get($pdo, 'wa_camp_spend', ''), true); if (is_array($hit) && ($hit['from'] ?? '') === $from && (int)($hit['t'] ?? 0) > time() - 60) return $hit; } catch (Throwable $e) { } }
+    $R = function_exists('wab_rates') ? wab_rates($pdo) : ['marketing' => 1.09, 'utility' => 0.15, 'authentication' => 0.15, 'service' => 0.0];
+    $o = ['from' => $from, 'to' => $to, 'sent' => 0, 'delivered' => 0, 'marketing' => 0, 'utility' => 0, 'amount' => 0.0, 'rate' => round((float)$R['marketing'], 2), 't' => time()];
+    try {
+        $q = $pdo->prepare("SELECT COUNT(*) AS n, SUM(status IN ('delivered','read')) AS d, SUM(status IN ('delivered','read') AND bill_cat IN ('utility','authentication')) AS u, SUM(status IN ('delivered','read') AND bill_cat = 'service') AS sv
+            FROM wa_messages WHERE dir = 'out' AND mtype = 'template' AND who = 'campaign' AND status <> 'failed' AND ts >= ? AND ts < ?");
+        $q->execute([$from, $to]); $r = $q->fetch();
+        $o['sent'] = (int)$r['n']; $o['delivered'] = (int)$r['d']; $o['utility'] = (int)$r['u']; $o['marketing'] = max(0, (int)$r['d'] - (int)$r['u'] - (int)$r['sv']);
+        $o['amount'] = round($o['marketing'] * (float)$R['marketing'] + $o['utility'] * (float)$R['utility'], 2);
+    } catch (Throwable $e) { $o['error'] = 'The billing columns are not ready yet.'; }
+    try { setting_set($pdo, 'wa_camp_spend', json_encode($o)); } catch (Throwable $e) { }
+    return $o;
+}
 /** Messages customers wrote to us per hour of the day (last 30 days), kept for an hour. Returns ['hist' => [24 numbers], 'total', 'best' => [hours inside the window, best first]]. */
 function wa_camp_hours(PDO $pdo, bool $fresh = false): array
 {
@@ -960,7 +980,7 @@ if (in_array($__wk, ['wa.fu_list', 'wa.fu_save', 'wa.fu_del', 'wa.fu_preset', 'w
             foreach ($health as $h) { $c = $caps[(int)$h['id']] ?? null; if ($c) $nums[] = ['id' => (int)$h['id'], 'label' => $h['label'], 'display' => (string)($h['display'] ?? ($campOk[(int)$h['id']][1] ?? '')), 'quality' => $h['quality'], 'status' => (string)($h['status'] ?? ''), 'camp_ok' => $campOk[(int)$h['id']][0] ?? false, 'cap' => $c['cap'], 'used' => $c['used'], 'left' => $c['left'], 'why' => $c['why']]; }
             $pc = []; foreach ((function_exists('wa_piece_all') ? wa_piece_all($pdo, true) : []) as $slot => $l) $pc[$slot] = count($l);
             $lite = !empty($_GET['lite']);   // ⚡ the list screen does not need the message library (it is the slowest part: one row per message with its per-number matrix); the New-campaign wizard asks for it by itself (wa.camp_templates)
-            json_response(['campaigns' => $out, 'lite' => $lite, 'templates' => $lite ? [] : $tplList(true), 'numbers' => $nums, 'portfolio' => $caps['_port'] ?? null, 'engine' => $engine(), 'tags' => WA_TAGS, 'pieces' => $pc, 'window' => wa_camp_window($pdo), 'can_media' => function_exists('wa_tpl_send_components') && function_exists('wa_tpl_sendable')]);
+            json_response(['campaigns' => $out, 'spend' => wa_camp_spend_today($pdo, !empty($_GET['fresh'])), 'lite' => $lite, 'templates' => $lite ? [] : $tplList(true), 'numbers' => $nums, 'portfolio' => $caps['_port'] ?? null, 'engine' => $engine(), 'tags' => WA_TAGS, 'pieces' => $pc, 'window' => wa_camp_window($pdo), 'can_media' => function_exists('wa_tpl_send_components') && function_exists('wa_tpl_sendable')]);
         }
         case 'wa.camp_templates': {
             $pc = []; foreach ((function_exists('wa_piece_all') ? wa_piece_all($pdo, true) : []) as $slot => $l) $pc[$slot] = count($l);
