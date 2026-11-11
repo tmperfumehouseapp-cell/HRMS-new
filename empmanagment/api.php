@@ -16130,10 +16130,10 @@ function tmph_cfg(string $name, $default)
 //   define('TMPH_MONTH_BUDGET_USD', 180);               // the HRMS stops calling the AI for the rest of the month past this spend
 function tmph_claude_key(): string
 {
-    $k = getenv('ANTHROPIC_API_KEY');
-    if (!$k && defined('ANTHROPIC_API_KEY')) $k = ANTHROPIC_API_KEY;
+    $k = ''; if (defined('ANTHROPIC_API_KEY')) { $c = trim((string)ANTHROPIC_API_KEY); if ($c !== '' && stripos($c, 'PASTE') === false && stripos($c, 'YOUR_') === false) $k = $c; }   // the key written in config.php wins (so a new key saved there is used at once); a placeholder is ignored
+    if ($k === '') $k = (string)getenv('ANTHROPIC_API_KEY');
     $k = trim((string)$k);
-    return ($k === '' || stripos($k, 'PASTE') !== false) ? '' : $k;
+    return ($k === '' || stripos($k, 'PASTE') !== false || stripos($k, 'YOUR_') !== false) ? '' : $k;
 }
 /** 🚦 Claude busy gate. When Claude answers 429 ("too many requests per minute") the server remembers it for a short time; BACKGROUND jobs (reading old chats,
  *  ticks, scans) then step aside by themselves until it passes, so the LIVE chat replies of the team always get the room. Nothing is switched off: they carry on after. */
