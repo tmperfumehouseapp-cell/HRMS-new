@@ -393,6 +393,15 @@ function wa_camp_extra_filter(array $rows, array $f): array
     return $out;
 }
 /** The people a campaign would message: [rowsToSend, stats]. Opted-out customers and anyone messaged by a campaign in the last N days are left out. */
+/** How many campaign (template) messages each customer got in the last $days days: [phone => n]. */
+function wa_camp_msg_counts(PDO $pdo, array $phones, int $days): array
+{
+    $o = []; $since = date('Y-m-d H:i:s', time() - max(1, $days) * 86400);
+    foreach (array_chunk(array_values(array_unique(array_map('strval', $phones))), 800) as $ch) {
+        try { $q = $pdo->prepare("SELECT phone, COUNT(*) AS n FROM wa_messages WHERE dir = 'out' AND mtype = 'template' AND who = 'campaign' AND status <> 'failed' AND ts >= ? AND phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ") GROUP BY phone"); $q->execute(array_merge([$since], $ch)); foreach ($q->fetchAll() as $r) $o[(string)$r['phone']] = (int)$r['n']; } catch (Throwable $e) { }
+    }
+    return $o;
+}
 function wa_camp_audience(PDO $pdo, array $aud, int $freq): array
 {
     $freq = max(0, (int)setting_get($pdo, 'wa_camp_gap_days', '3'));   // no "already got a campaign lately" rule: the owner sends to whoever they pick (setting wa_camp_gap_days > 0 would bring it back)
@@ -414,6 +423,12 @@ function wa_camp_audience(PDO $pdo, array $aud, int $freq): array
     foreach ($matchedIt as $r) {
         $st['matched']++;
         if (!wa_valid_phone($r['phone'])) { $st['invalid']++; continue; } if ($r['optout']) { $st['optout']++; continue; } if ($freq > 0 && isset($recent[$r['phone']])) { $st['recent']++; continue; } $send[] = ['phone' => $r['phone'], 'name' => $r['name']];   // only what sending needs — keeps memory small for big audiences
+    }
+    // 📬 "leave out customers who already got N+ campaign messages in the last D days" (the owner's switch in the campaign screen): Meta holds back people who get many marketing messages
+    $xf = is_array($aud['xf'] ?? null) ? $aud['xf'] : null;
+    if ($xf && (int)($xf['min'] ?? 0) > 0 && $send) {
+        $xd = max(1, min(60, (int)($xf['days'] ?? 7))); $xm = max(1, min(50, (int)$xf['min'])); $cnt = wa_camp_msg_counts($pdo, array_column($send, 'phone'), $xd); $keep = []; $st['freq'] = 0;
+        foreach ($send as $r) { if (($cnt[(string)$r['phone']] ?? 0) >= $xm) { $st['freq']++; continue; } $keep[] = $r; } $send = $keep;
     }
     $st['send'] = count($send); return [$send, $st];
 }
@@ -970,7 +985,7 @@ function wa_camp_people_rows(PDO $pdo, array $camp, ?array $tpl, string $f, stri
 
 // ---------------------------------------------------------------------------------------------------------------- router
 $__wk = (string)($action ?? ($_GET['action'] ?? ''));
-if (in_array($__wk, ['wa.camp_fast', 'wa.camp_fast_tick', 'wa.fu_list', 'wa.fu_save', 'wa.fu_del', 'wa.fu_preset', 'wa.camp_list', 'wa.camp_templates', 'wa.camp_get', 'wa.camp_preview', 'wa.camp_typed_phones', 'wa.camp_save', 'wa.camp_start', 'wa.camp_send_now', 'wa.camp_resume_all', 'wa.camp_stop_all', 'wa.camp_pause', 'wa.camp_resume', 'wa.camp_cancel', 'wa.camp_del', 'wa.camp_tick', 'wa.camp_suggest', 'wa.camp_best_time', 'wa.camp_people', 'wa.camp_people_csv', 'wa.camp_thread', 'wa.reports', 'wa.mix_state', 'wa.camp_mix_set'], true) && !($__wk === 'wa.camp_suggest' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST')) {
+if (in_array($__wk, ['wa.camp_fast', 'wa.camp_fast_tick', 'wa.fu_list', 'wa.fu_save', 'wa.fu_del', 'wa.fu_preset', 'wa.camp_list', 'wa.camp_templates', 'wa.camp_get', 'wa.camp_preview', 'wa.camp_freq', 'wa.camp_typed_phones', 'wa.camp_save', 'wa.camp_start', 'wa.camp_send_now', 'wa.camp_resume_all', 'wa.camp_stop_all', 'wa.camp_pause', 'wa.camp_resume', 'wa.camp_cancel', 'wa.camp_del', 'wa.camp_tick', 'wa.camp_suggest', 'wa.camp_best_time', 'wa.camp_people', 'wa.camp_people_csv', 'wa.camp_thread', 'wa.reports', 'wa.mix_state', 'wa.camp_mix_set'], true) && !($__wk === 'wa.camp_suggest' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST')) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     $auth = require_auth(); wa_guard_admin($pdo, $auth);
     if (!wa_tables($pdo) || !wa_more_tables($pdo) || !function_exists('wa_tpl_tables') || !wa_tpl_tables($pdo)) json_response(['error' => 'WhatsApp storage is not available — check database permissions.'], 500);
@@ -1048,6 +1063,12 @@ if (in_array($__wk, ['wa.camp_fast', 'wa.camp_fast_tick', 'wa.fu_list', 'wa.fu_s
             foreach (array_chunk($ph, 1000) as $ch) { $q = $pdo->prepare("SELECT phone FROM wa_contacts WHERE last_in_at >= ? AND phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $q->execute(array_merge([$win], $ch)); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $p0) $inw[(string)$p0] = 1; }
             foreach ($send as $r) { if (count($out) >= 20000) break; $out[] = ['phone' => (string)$r['phone'], 'name' => (string)$r['name'], 'win' => isset($inw[(string)$r['phone']]) ? 1 : 0]; }
             json_response(['ok' => true, 'people' => $out, 'total' => count($send), 'stats' => $st]);
+        }
+        case 'wa.camp_freq': {   // how many campaign messages the picked customers already got in the last N days (so the owner can leave the heavily messaged ones out)
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $in = json_input(); $aud = (array)($in['audience'] ?? []); unset($aud['xf']); $days = max(1, min(60, (int)($in['days'] ?? 7)));
+            @set_time_limit(120); [$send, $st] = wa_camp_audience($pdo, $aud, 0); $cnt = wa_camp_msg_counts($pdo, array_column($send, 'phone'), $days); $ge = [1 => 0, 2 => 0, 3 => 0, 4 => 0, 5 => 0]; $dist = [0 => 0, 1 => 0, 2 => 0, 3 => 0, 4 => 0];
+            foreach ($send as $r) { $n = (int)($cnt[(string)$r['phone']] ?? 0); $dist[min(4, $n)]++; for ($k = 1; $k <= 5; $k++) if ($n >= $k) $ge[$k]++; }
+            json_response(['ok' => true, 'total' => count($send), 'days' => $days, 'dist' => $dist, 'ge' => $ge]);
         }
         case 'wa.camp_preview': {
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
