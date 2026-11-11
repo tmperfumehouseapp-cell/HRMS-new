@@ -269,6 +269,19 @@ body.waui .tabs,body.waui .more{display:none;}
 .gtabs button{border:1px solid var(--line,#e4e7ec); background:#fff; color:#3b4a54; border-radius:999px; padding:6px 14px; font-size:13px; font-weight:700; white-space:nowrap; cursor:pointer; min-height:0;}
 .gtabs button.on{background:#111b21; border-color:#111b21; color:#fff;}
 @media (max-width:860px){ .gtabs{padding:6px 10px; background:#fff; border-bottom:1px solid #eef0f3;} .gtabs button{padding:5px 12px; font-size:12.5px;} }
+/* 📱 compact phone sizes (one step smaller everywhere; text boxes stay 16px so the phone does not zoom in when you tap them) */
+@media (max-width:860px){
+  body.waui{font-size:12.5px;line-height:1.4;}
+  body.waui .top h1,body.waui .wp-top h2{font-size:15px;} body.waui .wp-top p,body.waui .muted,body.waui .wp-hint{font-size:11px;}
+  body.waui .card h3,body.waui .wp-cd h3{font-size:13px;margin-bottom:8px;}
+  body.waui .wp-btn{font-size:11.5px;padding:6px 11px;min-height:32px;} body.waui .wp-btn.s{font-size:11px;min-height:28px;padding:4px 9px;}
+  body.waui .wp-kpi b,body.waui .ck .wp-kpi b{font-size:19px;} body.waui .ov-k .n{font-size:23px;} body.waui .wi-kpi b{font-size:16px;}
+  body.waui .wp-fl{font-size:10px;} body.waui .wp-note,body.waui .wp-ok,body.waui .wp-err,body.waui .alert{font-size:11.5px;}
+  body.waui .q .t b,body.waui .num .t b,body.waui .qr .t b,body.waui .li,body.waui .wi-it .n{font-size:12px;} body.waui .q .t span,body.waui .qr .t span{font-size:11px;}
+  body.waui .wp-cd{padding:11px 12px;} body.waui .wp-tb td,body.waui .wp-tb th{font-size:11px;}
+  body.waui .cq small{font-size:8px;} body.waui .fc{font-size:10px;} body.waui .fc b{font-size:11px;} body.waui .wp-seg button{font-size:11.5px;padding:6px 8px;}
+  body.waui .wp-in:not(textarea):not([type=text]):not([type=search]):not([type=number]):not([type=date]):not(select){font-size:13px;}
+}
 </style>
 <style>
   *{box-sizing:border-box;} html,body{height:100%; margin:0;} [hidden]{display:none !important;} body{overflow:hidden; -webkit-font-smoothing:antialiased;}
@@ -496,7 +509,7 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
 <script src="assets/js/wa_growth.js?v=g8"></script>
 <script src="assets/js/wa_prod_ui.js?v=pr4"></script>
 <script src="assets/js/wa_tpl_ui.js?v=t7"></script>
-<script src="assets/js/wa_camp_ui.js?v=c91"></script>
+<script src="assets/js/wa_camp_ui.js?v=c93"></script>
 <script src="assets/js/wa_seg_ui.js?v=1"></script>
 <script src="assets/js/wa_smart_ui.js?v=s4"></script>
 <script>
