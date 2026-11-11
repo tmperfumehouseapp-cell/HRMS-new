@@ -1,4 +1,4 @@
-# Cancels RUNAWAY duplicate database queries on the staging VPS (only the reply-pace scan of wa_messages that has run over 30 s). It cancels the query only; connections, data and everything else stay.
+# Cancels RUNAWAY duplicate database queries on the staging VPS (only read-only SELECT counts that have run over 75 s). It cancels the query only; connections, data and everything else stay.
 # Run by hand: Actions → "Cancel runaway queries (staging)" → Run workflow. Uses the same 4 secrets as the deploy.
 name: Cancel runaway queries (staging)
 
@@ -34,7 +34,8 @@ jobs:
               $me = (int)$d->query("SELECT CONNECTION_ID()")->fetchColumn(); $n = 0;
               foreach ($d->query("SHOW FULL PROCESSLIST")->fetchAll(PDO::FETCH_ASSOC) as $x) {
                 $info = (string)$x["Info"]; if ((int)$x["Id"] === $me || (int)$x["Time"] < 30 || $info === "") continue;
-                if (strpos($info, "FROM wa_messages WHERE ts >=") !== false && strpos($info, "ORDER BY phone, id LIMIT 900000") !== false) { try { $d->exec("KILL QUERY " . (int)$x["Id"]); $n++; } catch (Throwable $e) { } }
+                $sel = stripos(ltrim($info), "SELECT") === 0 && (int)$x["Time"] >= 75;   // only read-only SELECTs that have run over 75 s (heavy reports / counts): cancelling one only means that screen asks again; saves, sends and updates are never touched
+                if ($sel) { try { $d->exec("KILL QUERY " . (int)$x["Id"]); $n++; } catch (Throwable $e) { } }
               }
               echo "cancelled $n runaway queries\n"; sleep(6);
               echo "now " . count($d->query("SHOW FULL PROCESSLIST")->fetchAll()) . " connections, Threads_running = " . $d->query("SHOW GLOBAL STATUS LIKE \"Threads_running\"")->fetch(PDO::FETCH_NUM)[1] . "\n";
