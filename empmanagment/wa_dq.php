@@ -268,10 +268,12 @@ function wa_dq_left(PDO $pdo, bool $fresh = false): array
     if ($cfg['on'] && $cfg['pace']) {
         try { $pace['waiting'] = wa_dq_waiting($pdo); $pace['hours_left'] = round(wa_dq_hours_left($pdo), 2);
             $dayLeftP = max(0, $cfg['daily'] - $dayUsed); $pace['day_left'] = $dayLeftP; $pace['amount'] = min($pace['waiting'], $dayLeftP);   // what can still go out today: the queue, but never more than what is left of the day's limit
-            $target = min((int)$pace['amount'], (int)$effCap);   // the hour's number: the saved hourly number, raised to 18,000-style when delivery is good and cut to 10,000-style when it is low $pace['target'] = $pace['amount'] > 0 ? max(1, $target) : 0;   // the owner's rule: each hour goes out at the HOURLY number you saved (or the whole queue when it is smaller), spread evenly through the hour; never the queue divided by the hours left in the day
-            $capRate = $pushCap;   // the speed is the hour's full allowance (the saved hourly number as the plan adjusts it): a queue of 7,000 on a 15,000 hour is finished in the first half of the hour, not stretched over all of it
-            $pushCap = min($pushCap, $pace['target']);
-            $pace['slice'] = (int)ceil($capRate / 6 * 1.3); $q = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE dir = 'out' AND who IN ('campaign', 'recover') AND mtype = 'template' AND ts >= ?"); $q->execute([date('Y-m-d H:i:s', time() - 600)]); $pace['used10'] = (int)$q->fetchColumn();
+            // 🎯 what counts is what META DELIVERS: the hour's number (saved hourly number: +20 % when delivery is good, -33 % when low) is a DELIVERED number. We push as many as it takes to reach it at the live delivery rate
+            // (5,000 pushed and 2,500 delivered counts as 2,500), within the push guard and never more than is waiting. The speed inside the hour follows the pushes needed, so a small queue finishes early in the hour.
+            $needPush = min((int)$pushCap, (int)ceil($effCap / max(0.15, $rateUsed)));
+            $pace['target'] = $pace['amount'] > 0 ? max(1, min((int)$effCap, (int)round($pace['amount'] * $rateUsed))) : 0;   // delivered this hour: the hour's number, or what the queue can deliver when smaller
+            $pushCap = min((int)$pushCap, max(1, (int)$pace['amount']));   // never push more than is waiting
+            $pace['slice'] = (int)ceil($needPush / 6 * 1.3); $q = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE dir = 'out' AND who IN ('campaign', 'recover') AND mtype = 'template' AND ts >= ?"); $q->execute([date('Y-m-d H:i:s', time() - 600)]); $pace['used10'] = (int)$q->fetchColumn();
         } catch (Throwable $e) { $pace['on'] = false; }
     }
     $hourLeft = max(0, min($hourLeft, $pushCap - $used)); if ($pace['on'] && $pace['slice'] > 0) $hourLeft = max(0, min($hourLeft, $pace['slice'] - $pace['used10'])); $dayLeft = max(0, $cfg['daily'] - $dayUsed);
