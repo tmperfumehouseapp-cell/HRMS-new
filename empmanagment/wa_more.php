@@ -495,7 +495,7 @@ function wa_camp_auto_cap(PDO $pdo, int $tier, array $health): array
         foreach ($hq as $nid => $h) {
             if (($h['status'] ?? '') !== '' && $h['status'] !== 'CONNECTED') continue;
             $old = max($START, (int)($caps[$nid] ?? $old0)); $cap = $old; [$n, $del, $fail] = $st[$nid] ?? [0, 0, 0]; $why = 'kept';
-            if (in_array($h['quality'] ?? '', ['YELLOW', 'RED'], true)) { $cap = max($START, (int)floor($old / 2)); $why = 'quality dropped to ' . ($h['quality'] === 'RED' ? 'Low' : 'Medium') . ' — halved'; }
+            if (($h['quality'] ?? '') === 'RED') { $cap = max($START, (int)floor($old / 2)); $why = 'quality dropped to Low — halved'; }
             elseif ($n >= 50 && $fail / $n > 0.2) { $cap = max($START, (int)floor($old / 2)); $why = round($fail * 100 / $n) . '% failed — halved'; }
             elseif ($n >= $old * 0.5 && $del / max(1, $n) >= 0.8 && $fail / max(1, $n) <= 0.1) { $cap = $old * 2; $why = round($del * 100 / max(1, $n)) . '% delivered — doubled'; }
             elseif ($n < $old * 0.5) $why = $n . ' sent in that hour — kept (it grows after a full good hour)';
@@ -535,7 +535,7 @@ function wa_number_caps(PDO $pdo, array $health): array
         $ramp = $cfg['ramp'] && $tier < 10000;
         $cap = $ramp ? wa_ramp_cap($age) : 1000000; $why = $ramp && $cap < $tier ? 'slow start (day ' . ($age + 1) . ')' : '';
         $cap = min($cap, $tier);
-        if ($h['quality'] === 'YELLOW') { $cap = (int)floor($cap / 2); $why = 'quality is Medium — half speed'; }
+        // owner (11 Nov 2026): a Medium quality number counts as High (no half speed); only Low stops it
         if ($h['quality'] === 'RED') { $cap = 0; $why = 'quality is Low — stopped'; }
         if ($h['status'] !== '' && $h['status'] !== 'CONNECTED') { $cap = 0; $why = 'not connected'; }
         if (empty($camp[$id])) { $cap = 0; $why = 'switched off for campaigns'; }

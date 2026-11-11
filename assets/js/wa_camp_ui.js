@@ -221,8 +221,8 @@ body.waui .cu-pc{display:flex;align-items:center;gap:10px;padding:9px 0;border-t
     async function fastLoop(id) {
       if (window.__cpFast === id) return; window.__cpFast = id; let bad = 0;
       while (el.isConnected && window.__cpFast === id) {
-        try { await api.post('wa.camp_tick', {}); bad = 0; } catch (e) { if (++bad >= 3) break; await new Promise((r) => setTimeout(r, 3000)); }
-        await load(true); const cc = ((D && D.campaigns) || []).find((x) => x.id === id); if (!cc || cc.status !== 'running') break;
+        try { await api.post('wa.camp_fast_tick', {}); bad = 0; } catch (e) { if (++bad >= 3) break; await new Promise((r) => setTimeout(r, 3000)); }
+        await load(true); const cc = ((D && D.campaigns) || []).find((x) => x.id === id); if (!cc || cc.status !== 'running') break; if (!D.fast || D.fast.id !== id) break;
       }
       if (window.__cpFast === id) window.__cpFast = null;
     }
