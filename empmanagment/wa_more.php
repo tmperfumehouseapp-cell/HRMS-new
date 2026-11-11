@@ -623,6 +623,10 @@ if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.
             if ($st0 > 0 && $st0 > $fin && time() - $st0 > 900) { try { $cid = (int)$pdo->query("SELECT IS_USED_LOCK('hrms_wa_cron')")->fetchColumn(); if ($cid > 0) { $pdo->exec('KILL ' . $cid); wa_log($pdo, 'engine', false, 'A cron run was stuck for ' . (int)((time() - $st0) / 60) . ' minutes — it was stopped.'); setting_set($pdo, 'wa_cron_start', '0'); } } catch (Throwable $e) { } }
             json_response(['ok' => true, 'skipped' => 'the previous cron run is still working']); } } catch (Throwable $e) { }
         setting_set($pdo, 'wa_cron_start', (string)time());
+        // 🔓 the engine's own database session only: reading rows (the customer summary's INSERT … SELECT) must not lock them against the tag writes (READ COMMITTED), and a blocked write gives up after 5 s
+        // instead of waiting 50 s each (hundreds of tag writes waiting 50 s each is why a run never finished). Skipped when the binary log is statement based (it needs the default locking).
+        try { $__bf = strtoupper((string)$pdo->query('SELECT @@GLOBAL.binlog_format')->fetchColumn()); if ($__bf !== 'STATEMENT') $pdo->exec("SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED"); } catch (Throwable $e) { }
+        try { $pdo->exec('SET SESSION innodb_lock_wait_timeout = 5'); } catch (Throwable $e) { }
         if ((string)setting_get($pdo, 'wa_idx_v3', '') !== '1') {   // ⚡ every index the chat screens need — also the first set, which was skipped when the cron ran before it (both used the flag wa_idx_v1)
             setting_set($pdo, 'wa_idx_v3', '1'); @set_time_limit(900); ignore_user_abort(true);
             foreach ([['wa_contacts', 'k_status_in', '(status, last_in_at)'], ['wa_contacts', 'k_emp_status_in', '(assigned_emp, status, last_in_at)'], ['wa_contacts', 'k_source', '(source)'],
