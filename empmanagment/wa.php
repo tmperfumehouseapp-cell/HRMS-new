@@ -704,6 +704,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
         $raw = wa_body();
         if (!wa_sig_ok($raw)) { wa_log($pdo, 'webhook', false, 'Rejected: the signature does not match WA_APP_SECRET.'); wa_raw('bad signature', 403); }
         $j = json_decode($raw, true); $n = 0; $st = 0; $__keys = [];
+        if (!headers_sent() && (function_exists('fastcgi_finish_request') || function_exists('litespeed_finish_request'))) { @set_time_limit(120); wa_reply_early(['ok' => true]); $GLOBALS['__wa_early'] = 1; }   // ⚡ answer Meta at once and do the work after: a slow server no longer makes Meta time out and send the same receipts again (the 499 flood)
         try {
             foreach ((array)($j['entry'] ?? []) as $en) foreach ((array)($en['changes'] ?? []) as $ch) {
                 $v = (array)($ch['value'] ?? []); $md = (array)($v['metadata'] ?? []);
@@ -755,6 +756,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
                 try { foreach ($__k as $key) wag_prebuild($pdo, (string)$key); } catch (Throwable $e) { }
             });
         }
+        if (!empty($GLOBALS['__wa_early'])) exit;   // already answered
         wa_raw('ok');   // always 200 once the signature is right, so Meta does not retry forever
     }
 
