@@ -251,7 +251,7 @@ html.wxdk .wcs{--ln:#25343e; --gb:#0f2e20; --rb:#3a1515;} html.wxdk .wcs-r,html.
     // ---------------------------------------------------------------------------------------------------------- action bar
     function drawB() {
       const B = $(el, '#cxB'), n = nSel(); if (!n) { B.innerHTML = ''; return; }
-      B.innerHTML = `<div class="wcs-pad"></div><div class="wcs-bar"><b>✔ ${fmt(n)} selected</b><span class="sp"></span><button type="button" class="p" data-act="camp">📣 <span class="lg">Manual </span>campaign</button><button type="button" data-act="smart">✨ Smart<span class="lg"> campaign</span></button><button type="button" data-act="tag">🏷 Tag</button><button type="button" data-act="seg">📁 Segment</button><button type="button" data-act="csv">⬇ Excel</button><button type="button" class="x" data-act="x" aria-label="Clear selection">✕</button></div>`;
+      B.innerHTML = `<div class="wcs-pad"></div><div class="wcs-bar"><b>✔ ${fmt(n)} selected</b><span class="sp"></span><button type="button" class="p" data-act="camp">📣 <span class="lg">Manual </span>campaign</button><button type="button" data-act="tag">🏷 Tag</button><button type="button" data-act="seg">📁 Segment</button><button type="button" data-act="csv">⬇ Excel</button><button type="button" class="x" data-act="x" aria-label="Clear selection">✕</button></div>`;
       B.querySelectorAll('[data-act]').forEach((b) => { b.onclick = () => act(b.dataset.act, b); });
     }
     async function act(a, b) {
