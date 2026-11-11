@@ -43,7 +43,7 @@ function wa_more_tables(PDO $pdo): bool
             status VARCHAR(8) NOT NULL DEFAULT 'queued', number_id INT NOT NULL DEFAULT 0, wamid VARCHAR(120) NOT NULL DEFAULT '', err VARCHAR(200) NOT NULL DEFAULT '', sent_at DATETIME NULL, KEY k_camp (camp_id, status)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         // columns added by the new campaign engine (own send time, retries, exact wording sent) — each added once, only when missing
         foreach (['media_lib_id' => 'INT NOT NULL DEFAULT 0', 'media_folder' => "VARCHAR(40) NOT NULL DEFAULT ''", 'push' => "VARCHAR(10) NOT NULL DEFAULT 'normal'", 'retry' => 'TINYINT NOT NULL DEFAULT 1',
-                  'own_hour' => 'TINYINT NOT NULL DEFAULT 0', 'def_hour' => 'TINYINT NOT NULL DEFAULT 19', 'extra' => 'TEXT NULL'] as $col => $def) {
+                  'own_hour' => 'TINYINT NOT NULL DEFAULT 0', 'def_hour' => 'TINYINT NOT NULL DEFAULT 19', 'extra' => 'TEXT NULL', 'aud_type' => "VARCHAR(60) NOT NULL DEFAULT ''", 'aud_from' => 'DATE NULL', 'aud_to' => 'DATE NULL'] as $col => $def) {
             try { $pdo->query("SELECT $col FROM wa_campaigns LIMIT 0"); } catch (PDOException $e) { try { $pdo->exec("ALTER TABLE wa_campaigns ADD COLUMN $col $def"); } catch (PDOException $e2) { } }
         }
         foreach (['send_at' => 'DATETIME NULL', 'tries' => 'TINYINT NOT NULL DEFAULT 1', 'next_try' => 'DATETIME NULL', 'err_code' => 'INT NOT NULL DEFAULT 0', 'last_status' => "VARCHAR(12) NOT NULL DEFAULT ''", 'vars_json' => 'TEXT NULL',
