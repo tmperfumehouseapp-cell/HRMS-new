@@ -16453,7 +16453,7 @@ function tmph_month_spend(): float
 function tmph_budget_usd(): float
 {
     $b = (float)tmph_cfg('TMPH_MONTH_BUDGET_USD', 0);   // no default monthly limit any more (owner's decision); a limit exists only if config.php defines TMPH_MONTH_BUDGET_USD
-    return $b > 0 ? max($b, 300.0) : 0.0;
+    return $b > 0 ? max($b, 1000.0) : 0.0;   // 11 Nov: the owner wants the limit never to be hit for now — whatever config.php says (300, 450 ...) counts as at least 1000 until the monthly budget is decided
 }
 /** 🏷 The WhatsApp feature that is calling Claude right now ('' = none). Set around a job so its spend is listed under its own name and can have its own daily limit. */
 function ai_feat(string $f): string { $old = (string)($GLOBALS['ai_feature'] ?? ''); if ($f === '') unset($GLOBALS['ai_feature']); else $GLOBALS['ai_feature'] = $f; return $old; }
