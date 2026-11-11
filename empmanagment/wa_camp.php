@@ -1278,7 +1278,7 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.camp_start_now', 'wa.camp_snap', 'wa.cam
             setting_set($pdo, 'wa_dq_stat', ''); json_response(['ok' => true, 'dq' => wa_dq_status($pdo)]);
         }
         case 'wa.msg_rank': {   // 🏆 which messages deliver best (and what they have in common)
-            json_response(wa_msg_rank($pdo, (int)($_GET['days'] ?? 14)));
+            json_response(wa_msg_rank($pdo, (int)($_GET['days'] ?? 14), 86400, false));   // any prepared copy is fine: the engine keeps all three windows fresh
         }
         case 'wa.camp_start_now': {   // ▶ start one scheduled campaign (or all of them) now instead of at the scheduled time
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $in = json_input(); $ids = [];

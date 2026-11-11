@@ -93,11 +93,11 @@ function wa_msg_topic(array $t): string
  *      money: cost = delivered × your billing rate, return = ₹ ÷ cost, cost per order.
  *  A "balanced" score (0–100) averages the rank of the three lenses (orders count 1.5×). Messages with fewer than 200 sends are listed but not ranked; order figures need 1,000 delivered to count.
  *  Also: what the best ones have in common (photo on top, text length, emoji, buttons, question, price) per lens. Remembered 10 min in the database cache. */
-function wa_msg_rank(PDO $pdo, int $days = 14, int $maxAge = 600): array
-{
+function wa_msg_rank(PDO $pdo, int $days = 14, int $maxAge = 600, bool $orders = true): array
+{   // $orders = false (the page): never run the heavy order matching — use the last prepared one (the engine prepares it in the background); the answer is cached so the next open is instant
     $days = max(1, min(60, $days)); $win = max(1, min(14, (int)setting_get($pdo, 'wa_attr_days', '3'))); $ck = 'msg_rank3_' . $days . '_' . $win;
-    $hit = wa_cpc_get($pdo, $ck); if ($hit && $hit['age'] < $maxAge) return $hit['v'];
-    $o = ['days' => $days, 'win' => $win, 'rows' => [], 'tips' => [], 'overall' => ['n' => 0, 'dn' => 0, 'd' => 0.0, 'cost' => 0, 'ord' => 0, 'rev' => 0, 'roi' => null], 'orders_ok' => false];
+    $hit = wa_cpc_get($pdo, $ck); if ($hit && $hit['age'] < $maxAge && ($orders ? empty($hit['v']['orders_pending']) : true)) return $hit['v'];
+    $o = ['days' => $days, 'win' => $win, 'orders_pending' => false, 'rows' => [], 'tips' => [], 'overall' => ['n' => 0, 'dn' => 0, 'd' => 0.0, 'cost' => 0, 'ord' => 0, 'rev' => 0, 'roi' => null], 'orders_ok' => false];
     $since = date('Y-m-d H:i:s', time() - $days * 86400);
     try {
         $q = $pdo->prepare("SELECT COALESCE(NULLIF(i.tpl_used, 0), c.tpl_id) AS tid, COUNT(*) AS n, SUM(i.last_status IN ('delivered', 'read')) AS d, SUM(i.last_status = 'read') AS rd, SUM(i.err_code = 131049) AS held,
@@ -105,7 +105,9 @@ function wa_msg_rank(PDO $pdo, int $days = 14, int $maxAge = 600): array
             FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id LEFT JOIN wa_contacts ct ON ct.phone = i.phone WHERE i.wamid <> '' AND i.sent_at >= ? GROUP BY tid HAVING n >= 30 ORDER BY d / n DESC LIMIT 200");
         $q->execute([$since]); $rows = $q->fetchAll();
     } catch (Throwable $e) { return $o; }
-    $ord = [];
+    $ord = []; $ock = 'msg_orders_' . $days . '_' . $win; $oc = wa_cpc_get($pdo, $ock);
+    if ($oc && is_array($oc['v']) && ($oc['age'] < 1800 || !$orders)) { foreach ($oc['v'] as $k => $v) $ord[(int)$k] = $v; $o['orders_ok'] = true; }   // the prepared order figures (refreshed at most every 30 minutes)
+    elseif ($orders) {
     try {   // orders → the last campaign message delivered to that phone (within the window) before the order
         $q = $pdo->prepare("SELECT /*+ MAX_EXECUTION_TIME(20000) */ tid, COUNT(*) AS o, SUM(total) AS rev FROM (SELECT o.shopify_id, o.store_key, o.total, COALESCE(NULLIF(i.tpl_used, 0), c.tpl_id) AS tid,
                 ROW_NUMBER() OVER (PARTITION BY o.shopify_id, o.store_key ORDER BY i.sent_at DESC) AS rn
@@ -114,6 +116,9 @@ function wa_msg_rank(PDO $pdo, int $days = 14, int $maxAge = 600): array
             JOIN wa_campaigns c ON c.id = i.camp_id WHERE o.created_at >= ? AND o.financial_status NOT IN ('voided', 'refunded')) t WHERE rn = 1 GROUP BY tid");
         $q->execute([$since]); foreach ($q->fetchAll() as $r) $ord[(int)$r['tid']] = [(int)$r['o'], (float)$r['rev']]; $o['orders_ok'] = true;
     } catch (Throwable $e) { }
+        if ($o['orders_ok']) wa_cpc_put($pdo, $ock, $ord);
+    }
+    if (!$orders && !$o['orders_ok']) $o['orders_pending'] = true;   // not prepared yet: the page shows delivery and replies now and asks again
     $R = function_exists('wab_rates') ? wab_rates($pdo) : ['marketing' => 1.09, 'utility' => 0.15];
     $tn = []; foreach ($pdo->query("SELECT id, name, version, body, header_format, buttons, category, folder FROM wa_templates")->fetchAll() as $t) $tn[(int)$t['id']] = $t;
     $emoji = '/[\x{1F300}-\x{1FAFF}\x{2600}-\x{27BF}]/u'; $groups = []; $T = ['n' => 0, 'dn' => 0, 'cost' => 0.0, 'ord' => 0, 'rev' => 0.0]; $out = [];
@@ -240,7 +245,7 @@ function wa_dq_hours(PDO $pdo, int $maxAge = 900): array
 }
 function wa_dq_precompute(PDO $pdo): void
 {
-    try { if ((int)setting_get($pdo, 'wa_dq_pre_at', '0') > time() - 120) return; setting_set($pdo, 'wa_dq_pre_at', (string)time()); wa_dq_hours($pdo, 120); wa_msg_rank($pdo, 14, 300); wa_meta_spend_cached($pdo, true); } catch (Throwable $e) { }
+    try { if ((int)setting_get($pdo, 'wa_dq_pre_at', '0') > time() - 120) return; setting_set($pdo, 'wa_dq_pre_at', (string)time()); wa_dq_hours($pdo, 120); $n = (int)setting_get($pdo, 'wa_dq_pre_n', '0'); setting_set($pdo, 'wa_dq_pre_n', (string)($n + 1)); wa_msg_rank($pdo, [14, 7, 30][$n % 3], 300, true); wa_meta_spend_cached($pdo, true); } catch (Throwable $e) { }
 }
 function wa_dq_hours_build(PDO $pdo): array
 {
