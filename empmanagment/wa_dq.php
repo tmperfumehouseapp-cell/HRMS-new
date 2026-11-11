@@ -93,21 +93,25 @@ function wa_msg_topic(array $t): string
  *      money: cost = delivered × your billing rate, return = ₹ ÷ cost, cost per order.
  *  A "balanced" score (0–100) averages the rank of the three lenses (orders count 1.5×). Messages with fewer than 200 sends are listed but not ranked; order figures need 1,000 delivered to count.
  *  Also: what the best ones have in common (photo on top, text length, emoji, buttons, question, price) per lens. Remembered 10 min in the database cache. */
-function wa_msg_rank(PDO $pdo, int $days = 14, int $maxAge = 600, bool $orders = true): array
+function wa_msg_rank(PDO $pdo, int $days = 14, int $maxAge = 600, bool $orders = true, string $seg = ''): array
 {   // $orders = false (the page): never run the heavy order matching — use the last prepared one (the engine prepares it in the background); the answer is cached so the next open is instant
-    $days = max(1, min(60, $days)); $win = max(1, min(14, (int)setting_get($pdo, 'wa_attr_days', '3'))); $ck = 'msg_rank3_' . $days . '_' . $win;
+    $days = max(1, min(60, $days)); $win = max(1, min(14, (int)setting_get($pdo, 'wa_attr_days', '3'))); $seg = mb_substr(trim($seg), 0, 60); $ck = 'msg_rank4_' . $days . '_' . $win . ($seg !== '' ? '_' . md5(mb_strtolower($seg)) : '');
     $hit = wa_cpc_get($pdo, $ck); if ($hit && $hit['age'] < $maxAge && ($orders ? empty($hit['v']['orders_pending']) : true)) return $hit['v'];
-    $o = ['days' => $days, 'win' => $win, 'orders_pending' => false, 'rows' => [], 'tips' => [], 'overall' => ['n' => 0, 'dn' => 0, 'd' => 0.0, 'cost' => 0, 'ord' => 0, 'rev' => 0, 'roi' => null], 'orders_ok' => false];
+    $o = ['days' => $days, 'win' => $win, 'orders_pending' => false, 'rows' => [], 'tips' => [], 'overall' => ['n' => 0, 'dn' => 0, 'd' => 0.0, 'cost' => 0, 'ord' => 0, 'rev' => 0, 'roi' => null], 'orders_ok' => false, 'seg' => $seg, 'segs' => []];
     $since = date('Y-m-d H:i:s', time() - $days * 86400);
+    foreach (['aud_type' => "VARCHAR(60) NOT NULL DEFAULT ''", 'aud_from' => 'DATE NULL', 'aud_to' => 'DATE NULL'] as $c0 => $d0) { try { $pdo->query("SELECT $c0 FROM wa_campaigns LIMIT 0"); } catch (Throwable $e) { try { $pdo->exec("ALTER TABLE wa_campaigns ADD COLUMN $c0 $d0"); } catch (Throwable $e2) { } } }
     try {
-        $q = $pdo->prepare("SELECT COALESCE(NULLIF(i.tpl_used, 0), c.tpl_id) AS tid, COUNT(*) AS n, SUM(i.last_status IN ('delivered', 'read')) AS d, SUM(i.last_status = 'read') AS rd, SUM(i.err_code = 131049) AS held,
+        $q = $pdo->prepare("SELECT COALESCE(NULLIF(i.tpl_used, 0), c.tpl_id) AS tid, c.aud_type AS sg, COUNT(*) AS n, SUM(i.last_status IN ('delivered', 'read')) AS d, SUM(i.last_status = 'read') AS rd, SUM(i.err_code = 131049) AS held,
             SUM(i.last_status IN ('delivered', 'read') AND ct.last_in_at IS NOT NULL AND ct.last_in_at > i.sent_at AND ct.last_in_at < DATE_ADD(i.sent_at, INTERVAL $win DAY)) AS rep
-            FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id LEFT JOIN wa_contacts ct ON ct.phone = i.phone WHERE i.wamid <> '' AND i.sent_at >= ? GROUP BY tid HAVING n >= 30 ORDER BY d / n DESC LIMIT 200");
-        $q->execute([$since]); $rows = $q->fetchAll();
+            FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id LEFT JOIN wa_contacts ct ON ct.phone = i.phone WHERE i.wamid <> '' AND i.sent_at >= ?" . ($seg !== '' ? " AND c.aud_type = ?" : '') . " GROUP BY tid, sg");
+        $q->execute($seg !== '' ? [$since, $seg] : [$since]); $acc = []; $bys = []; $segN = [];
+        foreach ($q->fetchAll() as $r0) { $t0 = (int)$r0['tid']; $a0 = &$acc[$t0]; $a0 = $a0 ?? ['tid' => $t0, 'n' => 0, 'd' => 0, 'rd' => 0, 'held' => 0, 'rep' => 0]; foreach (['n', 'd', 'rd', 'held', 'rep'] as $k0) $a0[$k0] += (int)$r0[$k0]; unset($a0);
+            $sg = trim((string)$r0['sg']); $sg = $sg !== '' ? $sg : '—'; $b0 = &$bys[$t0][$sg]; $b0 = $b0 ?? [0, 0, 0]; $b0[0] += (int)$r0['n']; $b0[1] += (int)$r0['d']; $b0[2] += (int)$r0['rep']; unset($b0); $segN[$sg] = ($segN[$sg] ?? 0) + (int)$r0['n']; }
+        $rows = array_values(array_filter($acc, fn($x) => $x['n'] >= 30)); usort($rows, fn($x, $y) => ($y['d'] / $y['n']) <=> ($x['d'] / $x['n'])); $rows = array_slice($rows, 0, 200); arsort($segN); $o['segs'] = array_map(fn($k, $v) => ['name' => $k, 'n' => $v], array_keys($segN), array_values($segN));
     } catch (Throwable $e) { return $o; }
-    $ord = []; $ock = 'msg_orders_' . $days . '_' . $win; $oc = wa_cpc_get($pdo, $ock);
+    $ord = []; $ock = 'msg_orders_' . $days . '_' . $win; $oc = $seg === '' ? wa_cpc_get($pdo, $ock) : null;   // order figures are not split per customer type (yet)
     if ($oc && is_array($oc['v']) && ($oc['age'] < 1800 || !$orders)) { foreach ($oc['v'] as $k => $v) $ord[(int)$k] = $v; $o['orders_ok'] = true; }   // the prepared order figures (refreshed at most every 30 minutes)
-    elseif ($orders) {
+    elseif ($orders && $seg === '') {
     try {   // orders → the last campaign message delivered to that phone (within the window) before the order
         $q = $pdo->prepare("SELECT /*+ MAX_EXECUTION_TIME(20000) */ tid, COUNT(*) AS o, SUM(total) AS rev FROM (SELECT o.shopify_id, o.store_key, o.total, COALESCE(NULLIF(i.tpl_used, 0), c.tpl_id) AS tid,
                 ROW_NUMBER() OVER (PARTITION BY o.shopify_id, o.store_key ORDER BY i.sent_at DESC) AS rn
@@ -118,7 +122,7 @@ function wa_msg_rank(PDO $pdo, int $days = 14, int $maxAge = 600, bool $orders =
     } catch (Throwable $e) { }
         if ($o['orders_ok']) wa_cpc_put($pdo, $ock, $ord);
     }
-    if (!$orders && !$o['orders_ok']) $o['orders_pending'] = true;   // not prepared yet: the page shows delivery and replies now and asks again
+    if (!$orders && !$o['orders_ok'] && $seg === '') $o['orders_pending'] = true;   // not prepared yet: the page shows delivery and replies now and asks again
     $R = function_exists('wab_rates') ? wab_rates($pdo) : ['marketing' => 1.09, 'utility' => 0.15];
     $tn = []; foreach ($pdo->query("SELECT id, name, version, body, header_format, buttons, category, folder FROM wa_templates")->fetchAll() as $t) $tn[(int)$t['id']] = $t;
     $emoji = '/[\x{1F300}-\x{1FAFF}\x{2600}-\x{27BF}]/u'; $groups = []; $T = ['n' => 0, 'dn' => 0, 'cost' => 0.0, 'ord' => 0, 'rev' => 0.0]; $out = [];
@@ -131,7 +135,7 @@ function wa_msg_rank(PDO $pdo, int $days = 14, int $maxAge = 600, bool $orders =
         if ($n >= 200) { foreach ($f as $k => $v) { $g = &$groups[$k][$v]; $g = $g ?? [0, 0, 0, 0, 0.0]; $g[0] += $n; $g[1] += $dn; $g[2] += $rep; $g[3] += $on; $g[4] += $rev; unset($g); } $T['n'] += $n; $T['dn'] += $dn; $T['cost'] += $cost; $T['ord'] += $on; $T['rev'] += $rev; }
         $out[] = ['id' => (int)$t['id'], 'name' => (string)$t['name'], 'ver' => (int)$t['version'], 'n' => $n, 'dn' => $dn, 'd' => round($dn / $n, 3), 'rd' => round((int)$r['rd'] / $n, 3), 'held' => round((int)$r['held'] / $n, 3),
             'rep' => $dn ? round($rep / $dn, 4) : 0, 'rep_n' => $rep, 'ord' => $on, 'rev' => round($rev), 'cost' => round($cost), 'roi' => $cost > 0 && $dn >= 1000 ? round($rev / $cost, 2) : null, 'cpo' => $on ? round($cost / $on) : null,
-            'o1k' => $dn >= 1000 ? round($on * 1000 / $dn, 2) : null, 'low' => $n < 200, 'lowo' => $dn < 1000, 'topic' => wa_msg_topic($t), 'chars' => $len, 'header' => $f['header'], 'category' => (string)$t['category'], 'body' => mb_substr($body, 0, 900), 'buttons' => $nb, 'features' => array_values($f)];
+            'o1k' => $dn >= 1000 ? round($on * 1000 / $dn, 2) : null, 'low' => $n < 200, 'lowo' => $dn < 1000, 'by_seg' => array_map(fn($k, $v) => ['seg' => $k, 'n' => $v[0], 'd' => $v[0] ? round($v[1] / $v[0], 3) : 0, 'dn' => $v[1], 'rep_n' => $v[2], 'rep' => $v[1] ? round($v[2] / $v[1], 4) : 0], array_keys($bys[(int)$r['tid']] ?? []), array_values($bys[(int)$r['tid']] ?? [])), 'topic' => wa_msg_topic($t), 'chars' => $len, 'header' => $f['header'], 'category' => (string)$t['category'], 'body' => mb_substr($body, 0, 900), 'buttons' => $nb, 'features' => array_values($f)];
     }
     // the balanced score: where each message stands among the ranked ones on the three lenses
     $rk = fn(array $vals, $v) => count($vals) > 1 ? count(array_filter($vals, fn($x) => $x < $v)) / (count($vals) - 1) : 0.5;
