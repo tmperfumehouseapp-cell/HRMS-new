@@ -1256,6 +1256,7 @@ if (in_array($__wk, ['wa.dq_worker', 'wa.rec_run', 'wa.dq_set', 'wa.rec_report',
             if (isset($in['hourly'])) setting_set($pdo, 'wa_dq_hourly', (string)max(500, min(60000, (int)$in['hourly'])));
             if (isset($in['smart'])) setting_set($pdo, 'wa_dq_smart', !empty($in['smart']) ? '1' : '0');
             if (isset($in['daily'])) { $nd = (string)max(1000, min(1000000, (int)$in['daily'])); setting_set($pdo, 'wa_dq_daily', $nd); setting_set($pdo, 'wa_dq_daily_auto', $nd); if ((int)$nd > wa_dq_cfg($pdo)['dmax']) setting_set($pdo, 'wa_dq_daily_max', $nd); }   // a number typed above the auto ceiling raises the ceiling (Meta's own limit and our 90% margin still stop sending at their own level)   // the number typed is the start / manual value; the auto cap continues from it
+            if (isset($in['limit_mode'])) { setting_set($pdo, 'wa_limit_mode', (string)$in['limit_mode'] === 'per_number' ? 'per_number' : 'shared'); setting_set($pdo, 'wa_limit_guard_at', '0'); }
             if (isset($in['auto'])) setting_set($pdo, 'wa_dq_auto', !empty($in['auto']) ? '1' : '0');
             setting_set($pdo, 'wa_dq_stat', ''); json_response(['ok' => true, 'dq' => wa_dq_status($pdo)]);
         }
