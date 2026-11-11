@@ -1165,6 +1165,13 @@ function orders_upsert(PDO $pdo, string $storeKey, array $orders): int
 function order_is_repeat_customer(PDO $pdo, string $phone, int $t): bool
 {
     $d = preg_replace('/\D+/', '', $phone) ?? ''; if (strlen($d) < 10) return false; $k = substr($d, -10); $before = date('Y-m-d H:i:s', ($t ?: time()) - 120);
+    // ⚡ this query cannot use an index (the phone is cleaned inside it), so each call reads the whole orders table. A page asks once or twice (fine); the engine asks for hundreds of orders in one run —
+    // after 5 calls in one process the earliest order of every phone is read ONCE (one pass) and the rest is answered from memory. Same answer: "an order of this phone before $before".
+    static $calls = 0, $first = null; $calls++;
+    if ($calls > 5) {
+        if ($first === null) { $first = []; try { foreach ($pdo->query("SELECT RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(phone,' ',''),'-',''),'+',''),'(',''), 10) p, MIN(created_at) f FROM shop_orders WHERE total > 0 AND (tags IS NULL OR tags NOT LIKE '%cancel%') GROUP BY p")->fetchAll(PDO::FETCH_NUM) as $r) $first[(string)$r[0]] = (string)$r[1]; } catch (Throwable $e) { $first = null; } }
+        if (is_array($first)) return isset($first[$k]) && $first[$k] < $before;
+    }
     try { $q = $pdo->prepare("SELECT 1 FROM shop_orders WHERE RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(phone,' ',''),'-',''),'+',''),'(',''), 10) = ? AND created_at < ? AND total > 0 AND (tags IS NULL OR tags NOT LIKE '%cancel%') LIMIT 1"); $q->execute([$k, $before]); return (bool)$q->fetchColumn(); } catch (Throwable $e) { return false; }   // phones are compared without spaces / + / - (a stored '+91 97960 04321' used to miss)
 }
 function order_chat_type(PDO $pdo, array $c, int $t = 0): string
