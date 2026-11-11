@@ -258,16 +258,20 @@ function wa_dq_left(PDO $pdo, bool $fresh = false): array
         else $rateUsed = max(0.5, $rate);
         try { $from = function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 10:00:00'); $q = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE dir = 'out' AND who IN ('campaign', 'recover') AND mtype = 'template' AND ts >= ?"); $q->execute([$from]); $dayUsed = (int)$q->fetchColumn(); $q = $pdo->prepare("SELECT SUM(status IN ('delivered', 'read')) AS d, SUM(status = 'sent') AS p FROM wa_messages WHERE dir = 'out' AND who IN ('campaign', 'recover') AND mtype = 'template' AND ts >= ?"); $q->execute([$from]); $sr = $q->fetch(); $spend = ((int)$sr['d'] + (int)$sr['p'] * $rate) * $mr; } catch (Throwable $e) { }
     }
-    $effCap = (int)round($cfg['hourly'] * $mult * $mLive); $rateUsed = max(0.15, min(0.95, $rateUsed)); $hourLeft = max(0, (int)ceil(($effCap - $exp) / $rateUsed)); $pushCap = (int)round($effCap * $cfg['push_mult']);
+    // 🎚 the hour's number follows how well delivery is going, in the owner's words: good delivery → the saved hourly number goes up by a fifth (15,000 → 18,000); low delivery → it drops by a third (15,000 → 10,000); otherwise it stays.
+    // The learned hour-of-day score may nudge it a little (±10 %), but the result never leaves that range.
+    $sf = $state === 'good' ? 1.2 : ($state === 'low' ? 2 / 3 : 1.0); $hm = $cfg['smart'] ? max(0.9, min(1.1, $mult)) : 1.0; $mult = max(2 / 3, min(1.2, $sf * $hm)); $mLive = 1.0;
+    $effCap = (int)round($cfg['hourly'] * $mult); $rateUsed = max(0.15, min(0.95, $rateUsed)); $hourLeft = max(0, (int)ceil(($effCap - $exp) / $rateUsed)); $pushCap = (int)round($effCap * $cfg['push_mult']);
     // ⚖ EVEN PACE: send what is waiting evenly over the hours left, not in bursts. Target per hour = waiting ÷ hours left (+10 %), never above the cap, never below 1,000;
     // and in any 10 minutes at most a sixth of it (+30 %), so the hour is not sent in its first minutes and then left idle.
     $pace = ['on' => (bool)$cfg['pace'], 'waiting' => 0, 'hours_left' => 0.0, 'target' => 0, 'slice' => 0, 'used10' => 0];
     if ($cfg['on'] && $cfg['pace']) {
         try { $pace['waiting'] = wa_dq_waiting($pdo); $pace['hours_left'] = round(wa_dq_hours_left($pdo), 2);
             $dayLeftP = max(0, $cfg['daily'] - $dayUsed); $pace['day_left'] = $dayLeftP; $pace['amount'] = min($pace['waiting'], $dayLeftP);   // what can still go out today: the queue, but never more than what is left of the day's limit
-            $target = min((int)$pace['amount'], (int)$cfg['hourly']); $pace['target'] = $pace['amount'] > 0 ? max(1, $target) : 0;   // the owner's rule: each hour goes out at the HOURLY number you saved (or the whole queue when it is smaller), spread evenly through the hour; never the queue divided by the hours left in the day
+            $target = min((int)$pace['amount'], (int)$effCap);   // the hour's number: the saved hourly number, raised to 18,000-style when delivery is good and cut to 10,000-style when it is low $pace['target'] = $pace['amount'] > 0 ? max(1, $target) : 0;   // the owner's rule: each hour goes out at the HOURLY number you saved (or the whole queue when it is smaller), spread evenly through the hour; never the queue divided by the hours left in the day
+            $capRate = $pushCap;   // the speed is the hour's full allowance (the saved hourly number as the plan adjusts it): a queue of 7,000 on a 15,000 hour is finished in the first half of the hour, not stretched over all of it
             $pushCap = min($pushCap, $pace['target']);
-            $pace['slice'] = (int)ceil($pushCap / 6 * 1.3); $q = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE dir = 'out' AND who IN ('campaign', 'recover') AND mtype = 'template' AND ts >= ?"); $q->execute([date('Y-m-d H:i:s', time() - 600)]); $pace['used10'] = (int)$q->fetchColumn();
+            $pace['slice'] = (int)ceil($capRate / 6 * 1.3); $q = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE dir = 'out' AND who IN ('campaign', 'recover') AND mtype = 'template' AND ts >= ?"); $q->execute([date('Y-m-d H:i:s', time() - 600)]); $pace['used10'] = (int)$q->fetchColumn();
         } catch (Throwable $e) { $pace['on'] = false; }
     }
     $hourLeft = max(0, min($hourLeft, $pushCap - $used)); if ($pace['on'] && $pace['slice'] > 0) $hourLeft = max(0, min($hourLeft, $pace['slice'] - $pace['used10'])); $dayLeft = max(0, $cfg['daily'] - $dayUsed);
