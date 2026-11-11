@@ -1,0 +1,50 @@
+# READ-ONLY diagnostics of the staging VPS (CloudPanel): load, memory, busiest processes, PHP workers, database activity.
+# Changes nothing. Run it by hand: Actions → "Diagnose staging (read-only)" → Run workflow. Uses the same 4 secrets as the deploy.
+name: Diagnose staging (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+
+      - name: Server state (read-only)
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
+          echo "=== uptime / load ==="; uptime
+          echo "=== cpu cores ==="; nproc
+          echo "=== memory ==="; free -m
+          echo "=== disk ==="; df -h / | tail -2
+          echo "=== top 15 processes by CPU ==="; ps -eo pid,user,pcpu,pmem,etimes,args --sort=-pcpu | cut -c1-170 | head -16
+          echo "=== counts ==="; echo "php-fpm processes: $(ps -e -o args | grep -c '[p]hp-fpm')"; echo "mysqld processes: $(ps -e -o args | grep -c '[m]ysqld')"
+          echo "=== longest running php processes (seconds) ==="; ps -eo etimes,user,args --sort=-etimes | grep '[p]hp' | cut -c1-150 | head -8
+          echo "=== connections ==="; ss -s | head -6
+          echo "=== database activity (SHOW FULL PROCESSLIST, no passwords) ==="
+          php -r '
+            $f = $argv[1] . "empmanagment/config.php"; if (!is_file($f)) { echo "config.php not found\n"; exit; }
+            require $f; try { $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_TIMEOUT => 8]);
+              $r = $d->query("SHOW FULL PROCESSLIST")->fetchAll(PDO::FETCH_ASSOC); echo count($r) . " connections\n";
+              usort($r, fn($a, $b) => (int)$b["Time"] <=> (int)$a["Time"]);
+              foreach (array_slice($r, 0, 25) as $x) echo "id=" . $x["Id"] . " time=" . $x["Time"] . "s state=" . $x["State"] . " | " . substr(preg_replace("/\s+/", " ", (string)$x["Info"]), 0, 170) . "\n";
+              $s = $d->query("SHOW GLOBAL STATUS LIKE \"Threads_running\"")->fetch(PDO::FETCH_NUM); echo "Threads_running = " . $s[1] . "\n";
+            } catch (Throwable $e) { echo "DB: " . $e->getMessage() . "\n"; }
+          ' "$P"
+          echo "=== last nginx errors of the site ==="; for f in $(ls -t ${P}../logs/nginx/error.log ${P}logs/nginx/error.log $HOME/logs/nginx/error.log 2>/dev/null | head -1); do tail -n 15 "$f" | cut -c1-220; done
+          echo "=== webhook hits in the last access-log lines ==="; for f in $(ls -t $HOME/logs/nginx/access.log 2>/dev/null | head -1); do tail -n 2000 "$f" | awk '{print $7}' | sed 's/&_t=.*//' | sort | uniq -c | sort -rn | head -12; done
+          REMOTE
