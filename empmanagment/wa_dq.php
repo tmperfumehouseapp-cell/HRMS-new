@@ -7,6 +7,8 @@
  *  - Within a campaign the people who wrote to us most recently go first (Meta holds messages to people who do not engage).
  *  - A person is not messaged twice: the sender already skips whoever got a campaign message in the last wa_camp_gap_days (default 3), who just bought, or ignored the last 2 campaigns.
  *    A new campaign simply joins the queue (the sender looks at every running campaign every round).
+ *  - 🔁 Recovery messages (failed people sent again from another number, who = 'recover') COUNT in the same hour and day as campaign messages, and they go first: the recovery sender is not held by this cap,
+ *    so campaigns get what is left of the hour / day.
  *  - Meta's own 24-hour room (with our margin) stays the ceiling; the number rules (same number for people who wrote to it, the rest by room, Medium = High) are unchanged.
  *  - 🧠 Hour-aware (wa_dq_smart 1): it LEARNS how well each hour of the day delivers (messages older than 2 hours from the last 14 days, today counted double; a message that was READ counts double — an hour whose people open the message is worth more than one that is only delivered) and scales that hour's allowance:
  *    a good hour gets up to 1.5× the cap, a weak one down to 0.3× (never zero, so every hour keeps being measured). Until 4 hours have 300+ messages of data it stays flat. Score = hour's worth (delivered + read per message pushed) ÷ the overall worth.
@@ -45,10 +47,10 @@ function wa_dq_left(PDO $pdo): array
     if ($cfg['on'] && $cfg['smart']) { $sc = wa_dq_hour_scores($pdo); $learning = !empty($sc['learning']); $mult = (float)($sc['hours'][(int)date('G')]['mult'] ?? 1.0); }   // 🧠 this hour of the day delivers better / worse than average
     if ($cfg['on']) {
         $now = time();
-        try { $q = $pdo->prepare("SELECT COUNT(*) AS n, SUM(status IN ('delivered', 'read')) AS d, SUM(status = 'sent') AS p FROM wa_messages WHERE dir = 'out' AND who = 'campaign' AND mtype = 'template' AND ts >= ?"); $q->execute([date('Y-m-d H:i:s', $now - 3600)]); $r = $q->fetch(); $used = (int)$r['n']; $dH = (int)$r['d']; $pH = (int)$r['p']; } catch (Throwable $e) { $dH = 0; $pH = 0; $used = 0; }
+        try { $q = $pdo->prepare("SELECT COUNT(*) AS n, SUM(status IN ('delivered', 'read')) AS d, SUM(status = 'sent') AS p FROM wa_messages WHERE dir = 'out' AND who IN ('campaign', 'recover') AND mtype = 'template' AND ts >= ?"); $q->execute([date('Y-m-d H:i:s', $now - 3600)]); $r = $q->fetch(); $used = (int)$r['n']; $dH = (int)$r['d']; $pH = (int)$r['p']; } catch (Throwable $e) { $dH = 0; $pH = 0; $used = 0; }
         try { $q = $pdo->prepare("SELECT SUM(status IN ('delivered', 'read')) AS d, SUM(status = 'failed') AS f FROM wa_messages WHERE dir = 'out' AND who = 'campaign' AND mtype = 'template' AND ts >= ? AND ts < ?"); $q->execute([date('Y-m-d H:i:s', $now - 6 * 3600), date('Y-m-d H:i:s', $now - 3600)]); $r = $q->fetch(); $res = (int)$r['d'] + (int)$r['f']; if ($res >= 200) $rate = (int)$r['d'] / $res; } catch (Throwable $e) { }
         $rate = max(0.3, min(0.95, $rate)); $exp = (int)round($dH + $pH * $rate);
-        try { $from = function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 10:00:00'); $q = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE dir = 'out' AND who = 'campaign' AND mtype = 'template' AND ts >= ?"); $q->execute([$from]); $dayUsed = (int)$q->fetchColumn(); } catch (Throwable $e) { }
+        try { $from = function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 10:00:00'); $q = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE dir = 'out' AND who IN ('campaign', 'recover') AND mtype = 'template' AND ts >= ?"); $q->execute([$from]); $dayUsed = (int)$q->fetchColumn(); } catch (Throwable $e) { }
     }
     $effCap = (int)round($cfg['hourly'] * $mult); $hourLeft = max(0, (int)ceil(($effCap - $exp) / $rate)); $dayLeft = max(0, $cfg['daily'] - $dayUsed);
     $memo = ['on' => $cfg['on'], 'cap' => $cfg['hourly'], 'used' => $used, 'exp' => $exp, 'rate' => round($rate, 2), 'mult' => round($mult, 2), 'eff_cap' => $effCap, 'learning' => $learning, 'smart' => $cfg['smart'], 'daily' => $cfg['daily'], 'day_used' => $dayUsed, 'day_left' => $dayLeft, 'left' => min($hourLeft, $dayLeft), 'why' => $dayLeft <= 0 ? 'day' : ($hourLeft <= 0 ? 'hour' : '')]; $at = microtime(true); return $memo;
