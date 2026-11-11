@@ -33,7 +33,7 @@
 <div class="wrap" id="root"><div class="empty">Loading...</div></div>
 <div class="bar" id="bar" style="display:none;"><div class="in"><textarea id="note" placeholder="Note for us (optional)" maxlength="200"></textarea><div class="sum"><span id="cnt">Nothing chosen yet</span><b id="tot"></b></div><button class="go" id="send" disabled>Place my order</button></div></div>
 <script src="assets/js/config.js"></script>
-<script src="assets/js/api.js?v=12"></script>
+<script src="assets/js/api.js?v=9"></script>
 <script>
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const TOKEN = new URLSearchParams(location.search).get('t') || '';
