@@ -8374,6 +8374,7 @@ function convo_ai(string $sys, array $parts, array $schema, bool $media, int $ma
     if (function_exists('brain_gate_sys')) $sys = brain_gate_sys($sys);   // the brain of the ACTIVE scope is added (no scope active = nothing added)
     $gk = convo_gemini_key();
     if ($media && $gk === '') return [false, null, 'Call / video review needs GEMINI_API_KEY in config.php (Admin).', true];
+    if (!$media && tmph_claude_key() !== '' && strtolower((string)tmph_cfg('CONVO_WRITE_AI', 'claude')) !== 'gemini' && tmph_over_budget()) return [false, null, 'The monthly AI budget is used up (raise TMPH_MONTH_BUDGET_USD in config.php, or ask me to raise the default). The AI did not try Google Gemini.', true];   // the owner uses Claude only: never fall back to the old Gemini key (it answered 401 'API key not valid')
     $claudeWhy = '';
     if (!$media && convo_writer() === 'claude') {   // owner's rule: Claude answers every text job when it is set up (Google only for photos / calls, or when there is no Claude key)
         $res = convo_ai_run($sys, $parts, $schema, $maxOut, tmph_claude_key(), tmph_chat_models(), false);
