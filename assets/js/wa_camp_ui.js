@@ -679,7 +679,7 @@ body.waui .cpc .wp-note{margin:4px 0 !important}
     // ------------------------------------------------------------------------------------------------------------ the wizard
     // the list loads without the message library (slow); the wizard fetches it once, the first time it is opened
     async function wizard(c, seg, util) {
-      if (!TPLX) { try { TPLX = await api.get('wa.camp_templates'); } catch (e) { toast(e.message, true); return; } }
+      if (!TPLX) { const lm = modal(c ? 'Edit campaign' : 'New campaign'); lm.body.innerHTML = '<div class="wp-hint" style="padding:14px 4px">Opening… getting your messages ready (the first time takes a few seconds).</div>'; try { TPLX = await (window.__cpTplP || api.get('wa.camp_templates')); if (!TPLX) TPLX = await api.get('wa.camp_templates'); } catch (e) { window.__cpTplP = null; lm.close(); toast(e.message, true); return; } lm.close(); }
       D.templates = TPLX.templates; D.pieces = TPLX.pieces; D.can_media = TPLX.can_media; wizardGo(c, seg, util);
     }
     function wizardGo(c, seg, util) {   // util: the 💸 utility follow-up campaign (only people who qualify, the standard follow-ups, the offer goes free after a reply)   // seg: people picked on the Customers screen ({tag, name, n}) — the audience is exactly their segment tag
@@ -1062,7 +1062,7 @@ body.waui .cpc .wp-note{margin:4px 0 !important}
       }
       draw1();
     }
-    (async () => { try { const sn = await api.get('wa.camp_snap'); if (sn && sn.snap && !D && el.isConnected) { D = sn.snap; draw(); } } catch (e) { } load(false); })(); return () => load(false);   // 🗄 the page opens at once from the database cache and refreshes behind it
+    (async () => { try { const sn = await api.get('wa.camp_snap'); if (sn && sn.snap && !D && el.isConnected) { D = sn.snap; draw(); } } catch (e) { } load(false); setTimeout(() => { if (!TPLX && el.isConnected && !window.__cpTplP) { window.__cpTplP = api.get('wa.camp_templates').then((d) => { TPLX = d; return d; }, () => { window.__cpTplP = null; return null; }); } }, 2500); })(); return () => load(false);   // 🗄 the page opens at once from the database cache and refreshes behind it
   }
   WaPanels.add('campaigns', screen);
 })();
