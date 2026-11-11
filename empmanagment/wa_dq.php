@@ -248,7 +248,7 @@ function wa_dq_left(PDO $pdo, bool $fresh = false): array
     if ($cfg['on'] && $cfg['smart']) { $sc = wa_dq_hour_scores($pdo); $learning = !empty($sc['learning']); $mult = (float)($sc['hours'][(int)date('G')]['mult'] ?? 1.0); }   // 🧠 this hour of the day delivers better / worse than average
     if ($cfg['on']) {
         $now = time(); $dH = 0; $pH = 0;
-        try { $q = $pdo->prepare("SELECT COUNT(*) AS n, SUM(status IN ('delivered', 'read')) AS d, SUM(status = 'sent') AS p FROM wa_messages WHERE dir = 'out' AND who IN ('campaign', 'recover') AND mtype = 'template' AND ts >= ?"); $q->execute([date('Y-m-d H:i:s', $now - 3600)]); $r = $q->fetch(); $used = (int)$r['n']; $dH = (int)$r['d']; $pH = (int)$r['p']; } catch (Throwable $e) { }
+        try { $q = $pdo->prepare("SELECT SUM(status <> 'failed') AS n, SUM(status IN ('delivered', 'read')) AS d, SUM(status = 'sent') AS p FROM wa_messages WHERE dir = 'out' AND who IN ('campaign', 'recover') AND mtype = 'template' AND ts >= ?"); $q->execute([date('Y-m-d H:i:s', $now - 3600)]); $r = $q->fetch(); $used = (int)$r['n']; $dH = (int)$r['d']; $pH = (int)$r['p']; } catch (Throwable $e) { }
         $lv = wa_dq_live($pdo); $rg = wa_dq_range($pdo); if ($lv['rate'] !== null) $rate = (float)$lv['rate'];
         $rate = max(0.15, min(0.95, $rate)); $exp = (int)round($dH + $pH * $rate);
         if ($lv['rate'] !== null && $rg['n'] >= 8 && $rg['p50'] > 0) { $range = $rg; $r0 = (float)$lv['rate'];
@@ -256,7 +256,7 @@ function wa_dq_left(PDO $pdo, bool $fresh = false): array
             elseif ($r0 >= $rg['p25'] || $r0 >= $rg['p50']) { $state = 'ok'; $rateUsed = $r0 >= $rg['p50'] ? $rg['p50'] : $rg['p50'] - ($rg['p50'] - $r0) * 0.5; }
             else { $state = 'low'; $rateUsed = $rg['p50']; } }
         else $rateUsed = max(0.5, $rate);
-        try { $from = function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 10:00:00'); $q = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE dir = 'out' AND who IN ('campaign', 'recover') AND mtype = 'template' AND ts >= ?"); $q->execute([$from]); $dayUsed = (int)$q->fetchColumn(); $q = $pdo->prepare("SELECT SUM(status IN ('delivered', 'read')) AS d, SUM(status = 'sent') AS p FROM wa_messages WHERE dir = 'out' AND who IN ('campaign', 'recover') AND mtype = 'template' AND ts >= ?"); $q->execute([$from]); $sr = $q->fetch(); $spend = ((int)$sr['d'] + (int)$sr['p'] * $rate) * $mr; } catch (Throwable $e) { }
+        try { $from = function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 10:00:00'); $q = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE dir = 'out' AND who IN ('campaign', 'recover') AND mtype = 'template' AND status <> 'failed' AND ts >= ?"); $q->execute([$from]); $dayUsed = (int)$q->fetchColumn(); $q = $pdo->prepare("SELECT SUM(status IN ('delivered', 'read')) AS d, SUM(status = 'sent') AS p FROM wa_messages WHERE dir = 'out' AND who IN ('campaign', 'recover') AND mtype = 'template' AND ts >= ?"); $q->execute([$from]); $sr = $q->fetch(); $spend = ((int)$sr['d'] + (int)$sr['p'] * $rate) * $mr; } catch (Throwable $e) { }
     }
     // the plan's own ratios: this hour's learned score (how well this hour of the day delivers) x the live delivery ratio (1.0-2.0 while delivery is good)
     $effCap = (int)round($cfg['hourly'] * $mult * $mLive); $rateUsed = max(0.15, min(0.95, $rateUsed)); $hourLeft = max(0, (int)ceil(($effCap - $exp) / $rateUsed)); $pushCap = (int)round($effCap * $cfg['push_mult']);
@@ -271,7 +271,7 @@ function wa_dq_left(PDO $pdo, bool $fresh = false): array
             $needPush = min((int)$pushCap, (int)ceil($effCap / max(0.15, $rateUsed)));
             $pace['target'] = $pace['amount'] > 0 ? max(1, min((int)$effCap, (int)round($pace['amount'] * $rateUsed))) : 0;   // delivered this hour: the hour's number, or what the queue can deliver when smaller
             $pushCap = min((int)$pushCap, max(1, (int)$pace['amount']));   // never push more than is waiting
-            $pace['slice'] = (int)ceil($needPush / 6 * 1.3); $q = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE dir = 'out' AND who IN ('campaign', 'recover') AND mtype = 'template' AND ts >= ?"); $q->execute([date('Y-m-d H:i:s', time() - 600)]); $pace['used10'] = (int)$q->fetchColumn();
+            $pace['slice'] = (int)ceil($needPush / 6 * 1.3); $q = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE dir = 'out' AND who IN ('campaign', 'recover') AND mtype = 'template' AND status <> 'failed' AND ts >= ?"); $q->execute([date('Y-m-d H:i:s', time() - 600)]); $pace['used10'] = (int)$q->fetchColumn();
         } catch (Throwable $e) { $pace['on'] = false; }
     }
     $hourLeft = max(0, min($hourLeft, $pushCap - $used)); if ($pace['on'] && $pace['slice'] > 0) $hourLeft = max(0, min($hourLeft, $pace['slice'] - $pace['used10'])); $dayLeft = max(0, $cfg['daily'] - $dayUsed);
