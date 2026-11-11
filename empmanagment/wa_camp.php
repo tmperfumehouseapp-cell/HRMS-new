@@ -378,6 +378,7 @@ function wa_aud_list(PDO $pdo): array
     try { foreach ($pdo->query("SELECT aud_type, COUNT(*) c FROM wa_campaigns WHERE aud_type <> '' GROUP BY aud_type")->fetchAll() as $r) $cnt[mb_strtolower($r['aud_type'])] = (int)$r['c']; } catch (Throwable $e) { }
     foreach ($l as $n) $add((string)$n, 'type', 0);
     try { foreach ($pdo->query("SELECT aud_type FROM wa_campaigns WHERE aud_type <> '' ORDER BY id DESC LIMIT 200")->fetchAll(PDO::FETCH_COLUMN) as $n) $add((string)$n, 'type', 0); } catch (Throwable $e) { }
+    try { foreach ($pdo->query("SELECT name, n FROM wa_csegs WHERE kind IN ('live', 'fixed') ORDER BY n DESC LIMIT 40")->fetchAll() as $r) $add((string)$r['name'], 'segment', (int)$r['n']); } catch (Throwable $e) { }   // saved customer lists (live ones refill every hour)
     $tg = wa_cpc_get($pdo, 'aud_tags1');   // counting every tag over all chats is heavy: remembered for an hour
     if (!$tg || $tg['age'] > 3600) { $rows = []; try { foreach ($pdo->query("SELECT /*+ MAX_EXECUTION_TIME(8000) */ tag, COUNT(*) c FROM wa_tagidx WHERE tag NOT LIKE 'camp\\_%' GROUP BY tag ORDER BY c DESC LIMIT 60")->fetchAll() as $r) $rows[] = [(string)$r['tag'], (int)$r['c']]; wa_cpc_put($pdo, 'aud_tags1', $rows); } catch (Throwable $e) { $rows = $tg ? $tg['v'] : []; } } else $rows = $tg['v'];
     foreach ($rows as [$tn0, $tc0]) $add(str_replace('_', ' ', $tn0), 'tag', $tc0);
