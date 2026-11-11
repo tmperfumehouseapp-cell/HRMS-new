@@ -83,3 +83,45 @@ if ($__wp === 'wa.plan_get') {
         'need_delivered' => (int)round($needDel), 'need_sent' => (int)round($needSent), 'expected_replies' => (int)round($needDel * $rr), 'room_today' => $room, 'speed_per_hour' => $speed, 'hours_needed' => round($hoursNeed, 1), 'hours_left_today' => $hoursLeftToday, 'fits' => $fits,
         'plan' => $plan, 'numbers' => $nums, 'audience' => $aud, 'running' => $running, 'advice' => $adv, 'reco' => $reco]);
 }
+
+
+// ------------------------------------------------------------------------------------------------------------ 💰 orders by message (Campaign summary)
+/** wa.tplo_get — which pre-made MESSAGE (not campaign) brought the orders: today / yesterday / last 7 days.
+ *  Each order is credited to the LAST campaign message (template) its customer got in the 7 days before ordering (the same rule as Billing & spend). Light: orders of the period, then only those customers' campaign sends. */
+if ((string)($action ?? ($_GET['action'] ?? '')) === 'wa.tplo_get') {
+    $auth = require_auth(); if (!wa_is_admin($pdo, $auth)) json_response(['error' => 'Only the owner / admin can see this.'], 403);
+    @set_time_limit(90); $today = function_exists('biz_today') ? biz_today($pdo) : date('Y-m-d');
+    $per = ['today' => [$today, $today], 'yesterday' => [date('Y-m-d', strtotime($today . ' -1 day')), date('Y-m-d', strtotime($today . ' -1 day'))], '7d' => [date('Y-m-d', strtotime($today . ' -6 day')), $today]];
+    $win = []; foreach ($per as $k => $r) $win[$k] = biz_window($pdo, $r[0], $r[1]);
+    $from = $win['7d'][0]; $to = $win['7d'][1]; $ords = [];
+    try { $q = $pdo->prepare("SELECT created_at, phone, total FROM shop_orders WHERE created_at >= ? AND created_at <= ? AND financial_status NOT IN ('voided', 'refunded')"); $q->execute([$from, $to]); $ords = $q->fetchAll(); } catch (Throwable $e) { }
+    $l10 = function ($x) { return substr(preg_replace('/\D/', '', (string)$x), -10); };
+    $phones = []; foreach ($ords as $o) { $p = $l10($o['phone']); if (strlen($p) === 10) $phones[$p] = 1; } $phones = array_keys($phones);
+    $sends = [];   // phone => [[ts, tpl], ...] campaign messages in the 7 days before the window start … window end
+    $sf = date('Y-m-d H:i:s', strtotime($from) - 7 * 86400);
+    foreach (array_chunk($phones, 500) as $ch) {
+        try { $q = $pdo->prepare("SELECT i.phone, i.sent_at, COALESCE(NULLIF(i.tpl_used, 0), c.tpl_id) AS t FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id WHERE i.status = 'sent' AND i.sent_at >= ? AND i.sent_at <= ? AND i.phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $q->execute(array_merge([$sf, $to], $ch));
+            foreach ($q->fetchAll() as $r) $sends[(string)$r['phone']][] = [strtotime((string)$r['sent_at']), (int)$r['t']]; } catch (Throwable $e) { }
+    }
+    $out = []; foreach ($per as $k => $r) $out[$k] = ['orders' => 0, 'revenue' => 0.0, 'no_msg' => 0, 'rows' => []];
+    foreach ($ords as $o) {
+        $ts = strtotime((string)$o['created_at']); $p = $l10($o['phone']); $tpl = 0; $tpl_ts = 0;
+        foreach (($sends[$p] ?? []) as $sd) if ($sd[0] <= $ts && $sd[0] >= $ts - 7 * 86400 && (!$tpl || $sd[0] > $tpl_ts)) { $tpl = $sd[1]; $tpl_ts = $sd[0]; }
+        foreach ($win as $k => $w) if ($o['created_at'] >= $w[0] && $o['created_at'] <= $w[1]) {
+            $out[$k]['orders']++; $out[$k]['revenue'] += (float)$o['total'];
+            if ($tpl) { $x = &$out[$k]['rows'][$tpl]; if (!$x) $x = ['tpl_id' => $tpl, 'orders' => 0, 'revenue' => 0.0]; $x['orders']++; $x['revenue'] += (float)$o['total']; unset($x); } else $out[$k]['no_msg']++;
+        }
+        unset($tpl_ts);
+    }
+    // messages sent in each period (for the orders-per-1,000 figure) and the message names
+    $names = []; $cats = [];
+    foreach ($win as $k => $w) {
+        $sent = []; try { $q = $pdo->prepare("SELECT COALESCE(NULLIF(i.tpl_used, 0), c.tpl_id) AS t, COUNT(*) AS n FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id WHERE i.status = 'sent' AND i.sent_at >= ? AND i.sent_at <= ? GROUP BY t"); $q->execute([$w[0], $w[1]]); foreach ($q->fetchAll() as $r) $sent[(int)$r['t']] = (int)$r['n']; } catch (Throwable $e) { }
+        foreach ($sent as $t => $n) if (!isset($out[$k]['rows'][$t])) $out[$k]['rows'][$t] = ['tpl_id' => $t, 'orders' => 0, 'revenue' => 0.0];
+        foreach ($out[$k]['rows'] as $t => &$row) { $row['sent'] = (int)($sent[(int)$t] ?? 0); if (!isset($names[$t])) { $tr = function_exists('wa_tpl_row') ? wa_tpl_row($pdo, (int)$t) : null; $names[$t] = $tr ? str_replace('_', ' ', (string)$tr['name']) : 'message #' . $t; $cats[$t] = $tr ? strtolower((string)($tr['category'] ?? '')) : ''; }
+            $row['name'] = $names[$t]; $row['category'] = $cats[$t]; $row['revenue'] = round($row['revenue']); $row['per1000'] = $row['sent'] > 0 ? round($row['orders'] * 1000 / $row['sent'], 1) : null; } unset($row);
+        $out[$k]['rows'] = array_values($out[$k]['rows']); usort($out[$k]['rows'], function ($a, $b) { return [$b['orders'], $b['revenue']] <=> [$a['orders'], $a['revenue']]; });
+        $out[$k]['rows'] = array_values(array_filter($out[$k]['rows'], fn($r) => $r['orders'] > 0 || $r['sent'] >= 200)); $out[$k]['revenue'] = round($out[$k]['revenue']);
+    }
+    json_response(['ok' => true, 'periods' => $out, 'labels' => ['today' => date('d M', strtotime($per['today'][0])), 'yesterday' => date('d M', strtotime($per['yesterday'][0])), '7d' => date('d M', strtotime($per['7d'][0])) . ' – ' . date('d M', strtotime($per['7d'][1]))]]);
+}
