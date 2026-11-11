@@ -1281,6 +1281,14 @@
       }
     }
 
+    // 📋 Paste a copied photo / screenshot (Ctrl+V) into the message box: it goes to the customer at once (what is typed in the box becomes its caption)
+    document.addEventListener('paste', (e) => {
+      const t = e.target; if (!t || t.id !== 'wxTx' || !S.cur) return;
+      const files = [...((e.clipboardData && e.clipboardData.files) || [])].filter((f) => /^image\//.test(f.type)); if (!files.length) return;
+      e.preventDefault(); const cap = (t.value || '').trim(); if (cap) { t.value = ''; t.style.height = 'auto'; }
+      toast('Sending the pasted photo…'); sendFiles(files, cap);
+    });
+
     // ---- voice note (MP3 / MP4 only: that is what WhatsApp accepts)
     let REC = null;
     async function startRec() {
