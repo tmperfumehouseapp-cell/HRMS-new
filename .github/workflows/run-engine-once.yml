@@ -1,0 +1,27 @@
+# Runs the WhatsApp engine ONCE on the staging VPS through empmanagment/cron_engine.php and shows the answer — to check that the CloudPanel cron command will work.
+# Run by hand: Actions → "Run the engine once (staging)" → Run workflow.
+name: Run the engine once (staging)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  once:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+      - name: Run once
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" "echo 'path: ${STAGING_PATH}empmanagment/cron_engine.php'; which flock php; flock -n /tmp/wa_engine.lock php ${STAGING_PATH}empmanagment/cron_engine.php; echo exit=\$?" || true
