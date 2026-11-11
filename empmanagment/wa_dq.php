@@ -65,6 +65,20 @@ function wa_dq_hour_scores(PDO $pdo): array
     try { setting_set($pdo, 'wa_dq_scores', json_encode($o)); } catch (Throwable $e) { }
     return $o;
 }
+/** 🗄 A small cache in the database (not in a setting): the Campaigns page keeps its last answer here so it opens pre-filled and refreshes behind it. */
+function wa_cpc_table(PDO $pdo): bool
+{
+    static $ok = null; if ($ok !== null) return $ok;
+    try { $pdo->exec("CREATE TABLE IF NOT EXISTS wa_cp_cache (k VARCHAR(40) NOT NULL PRIMARY KEY, v MEDIUMTEXT NOT NULL, at DATETIME NOT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"); return $ok = true; } catch (Throwable $e) { return $ok = false; }
+}
+function wa_cpc_put(PDO $pdo, string $k, array $v): void
+{
+    if (!wa_cpc_table($pdo)) return; try { $j = json_encode($v, JSON_UNESCAPED_UNICODE); if ($j !== false && strlen($j) < 3000000) $pdo->prepare("REPLACE INTO wa_cp_cache (k, v, at) VALUES (?, ?, ?)")->execute([$k, $j, date('Y-m-d H:i:s')]); } catch (Throwable $e) { }
+}
+function wa_cpc_get(PDO $pdo, string $k): ?array
+{
+    if (!wa_cpc_table($pdo)) return null; try { $q = $pdo->prepare("SELECT v, at FROM wa_cp_cache WHERE k = ?"); $q->execute([$k]); $r = $q->fetch(); if (!$r) return null; $d = json_decode((string)$r['v'], true); return is_array($d) ? ['v' => $d, 'age' => max(0, time() - (int)strtotime((string)$r['at']))] : null; } catch (Throwable $e) { return null; }
+}
 /** The usual RANGE of the hourly delivery rate over the last 7 days (each date+hour with 300+ messages, receipts given 2 hours): p25 / p50 / p75. Judging "good" or "low" against a range, not one number. Remembered for 10 min. */
 function wa_dq_range(PDO $pdo): array
 {
