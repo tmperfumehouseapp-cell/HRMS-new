@@ -258,10 +258,7 @@ function wa_dq_left(PDO $pdo, bool $fresh = false): array
         else $rateUsed = max(0.5, $rate);
         try { $from = function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 10:00:00'); $q = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE dir = 'out' AND who IN ('campaign', 'recover') AND mtype = 'template' AND ts >= ?"); $q->execute([$from]); $dayUsed = (int)$q->fetchColumn(); $q = $pdo->prepare("SELECT SUM(status IN ('delivered', 'read')) AS d, SUM(status = 'sent') AS p FROM wa_messages WHERE dir = 'out' AND who IN ('campaign', 'recover') AND mtype = 'template' AND ts >= ?"); $q->execute([$from]); $sr = $q->fetch(); $spend = ((int)$sr['d'] + (int)$sr['p'] * $rate) * $mr; } catch (Throwable $e) { }
     }
-    // 🎚 the hour's number follows how well delivery is going, in the owner's words: good delivery → the saved hourly number goes up by a fifth (15,000 → 18,000); low delivery → it drops by a third (15,000 → 10,000); otherwise it stays.
-    // The learned hour-of-day score may nudge it a little (±10 %), but the result never leaves that range.
-    $sf = $state === 'good' ? 1.2 : ($state === 'low' ? 2 / 3 : 1.0); $hm = $cfg['smart'] ? max(0.9, min(1.1, $mult)) : 1.0; $mult = max(2 / 3, min(1.2, $sf * $hm)); $mLive = 1.0;
-    $effCap = (int)round($cfg['hourly'] * $mult); $rateUsed = max(0.15, min(0.95, $rateUsed)); $hourLeft = max(0, (int)ceil(($effCap - $exp) / $rateUsed)); $pushCap = (int)round($effCap * $cfg['push_mult']);
+    $effCap = (int)round($cfg['hourly'] * $mult * $mLive);   // the plan's own ratios: this hour's learned score (how well this hour of the day delivers) x the live delivery ratio (1.0-2.0 while delivery is good) $rateUsed = max(0.15, min(0.95, $rateUsed)); $hourLeft = max(0, (int)ceil(($effCap - $exp) / $rateUsed)); $pushCap = (int)round($effCap * $cfg['push_mult']);
     // ⚖ EVEN PACE: send what is waiting evenly over the hours left, not in bursts. Target per hour = waiting ÷ hours left (+10 %), never above the cap, never below 1,000;
     // and in any 10 minutes at most a sixth of it (+30 %), so the hour is not sent in its first minutes and then left idle.
     $pace = ['on' => (bool)$cfg['pace'], 'waiting' => 0, 'hours_left' => 0.0, 'target' => 0, 'slice' => 0, 'used10' => 0];
