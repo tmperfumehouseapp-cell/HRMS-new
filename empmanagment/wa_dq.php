@@ -65,7 +65,7 @@ function wa_dq_hour_scores(PDO $pdo): array
         $q->execute([$today, $today, $today, date('Y-m-d H:i:s', time() - 14 * 86400), date('Y-m-d H:i:s', time() - 7200)]); $sn = 0.0; $sd = 0.0; $rows = [];
         foreach ($q->fetchAll() as $r) { $rows[(int)$r['h']] = $r; if ((int)$r['n'] >= 300) { $sn += (float)$r['wn']; $sd += (float)$r['wd']; $o['measured']++; } }
         $overall = $sn > 0 ? $sd / $sn : 0.0; $o['overall'] = round($overall, 3); $o['learning'] = $o['measured'] < 4 || $overall <= 0;
-        foreach ($rows as $h => $r) { $rate = (float)$r['wn'] > 0 ? (float)$r['wd'] / (float)$r['wn'] : 0.0; $m = (!$o['learning'] && (int)$r['n'] >= 300) ? max(0.3, min(3.0, $rate / $overall)) : 1.0; $o['hours'][$h] = ['n' => (int)$r['n'], 'rate' => round((float)$r['wn'] > 0 ? (float)$r['wdel'] / (float)$r['wn'] : 0.0, 3), 'worth' => round($rate, 3), 'mult' => round($m, 2)]; }
+        foreach ($rows as $h => $r) { $rate = (float)$r['wn'] > 0 ? (float)$r['wd'] / (float)$r['wn'] : 0.0; $m = (!$o['learning'] && (int)$r['n'] >= 300) ? max(0.8, min(1.3, $rate / $overall)) : 1.0; $o['hours'][$h] = ['n' => (int)$r['n'], 'rate' => round((float)$r['wn'] > 0 ? (float)$r['wdel'] / (float)$r['wn'] : 0.0, 3), 'worth' => round($rate, 3), 'mult' => round($m, 2)]; }
     } catch (Throwable $e) { }
     try { setting_set($pdo, 'wa_dq_scores', json_encode($o)); } catch (Throwable $e) { }
     return $o;
