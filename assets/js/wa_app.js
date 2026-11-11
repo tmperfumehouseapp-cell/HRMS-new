@@ -915,9 +915,9 @@
         const rt = e.target.closest('[data-rt]'); if (rt) { const m = S.cur && S.cur.msgs.find((x) => x.cid === rt.dataset.rt); if (m) sendText(m.body, null, false, m); return; }   // Retry: same id, so it can never go twice
         const l = e.target.closest('.wx-ld'); if (!l) return; l.textContent = 'Loading…';
         try {
-          const k = l.dataset.k, u = (k === 'vid' || k === 'doc') && !/^prod:/.test(l.dataset.m) && !MEDIA[l.dataset.m] ? await streamUrl(l.dataset.m) : await mediaUrl(l.dataset.m);
+          const k = l.dataset.k, u = (k === 'vid' || k === 'doc' || k === 'aud') && !/^prod:/.test(l.dataset.m) && !MEDIA[l.dataset.m] ? await streamUrl(l.dataset.m) : await mediaUrl(l.dataset.m);
           if (k === 'img') { l.outerHTML = `<img src="${u}" alt="">`; } else if (k === 'vid') { MEDIA[l.dataset.m] = u; l.outerHTML = `<video controls autoplay playsinline preload="auto" src="${u}"></video>`; }
-          else if (k === 'aud') { l.outerHTML = `<audio controls autoplay src="${u}"></audio>`; transcribe(l.dataset.m); } else { const w = window.open(u, '_blank'); if (!w) { const a = document.createElement('a'); a.href = u; a.download = l.dataset.n || 'file'; a.click(); } l.textContent = '📄 ' + (l.dataset.n || 'Document'); }
+          else if (k === 'aud') { const mid = l.dataset.m; l.outerHTML = `<span class="wx-aud" data-am="${esc(mid)}"><audio controls autoplay preload="auto" src="${u}"></audio></span>`; audioWatch(mid, u); transcribe(mid); } else { const w = window.open(u, '_blank'); if (!w) { const a = document.createElement('a'); a.href = u; a.download = l.dataset.n || 'file'; a.click(); } l.textContent = '📄 ' + (l.dataset.n || 'Document'); }
         } catch (er) { l.textContent = er.message; }
       };
     }
@@ -973,6 +973,13 @@
     function markComplaint() {
       if (!window.CXR) { toast('Complaints are not installed yet. Refresh the page.', true); return; }
       const c = S.cur.contact || {}; CXR.open({ phone: S.cur.phone, name: c.name || '', source: 'whatsapp', onDone: () => { cxBanner(); } });
+    }
+    // 🎤 a voice note this phone/browser cannot play (WhatsApp sends OGG-Opus; older iPhones/Safari refuse it): say so, and give Download + Open instead of a silent dead player
+    function audioWatch(mid, u) {
+      const w = $('[data-am="' + mid + '"]'); const a = w && w.querySelector('audio'); if (!a) return;
+      const bad = () => { if (!w.isConnected || w.querySelector('.wx-adl')) return; w.insertAdjacentHTML('beforeend', `<div class="wx-adl" style="font-size:12.5px;margin-top:4px">⚠ This device cannot play the voice note here. <a href="${u}" download="voice-note.ogg" target="_blank" rel="noopener">⬇ Download</a> · <a href="${u}" target="_blank" rel="noopener">Open</a> — or read the text below.</div>`); };
+      a.addEventListener('error', bad); setTimeout(() => { if (a.readyState === 0 && !a.error && a.networkState === 3) bad(); }, 6000);
+      const pr = a.play && a.play(); if (pr && pr.catch) pr.catch((e) => { if (e && e.name === 'NotSupportedError') bad(); });
     }
     async function transcribe(mid) {
       const box = $('[data-tm="' + mid + '"]'); if (!box) return; box.hidden = false; box.style.cssText = 'font-size:12.5px;color:var(--mut);margin-top:4px'; box.textContent = 'Reading the voice note…';

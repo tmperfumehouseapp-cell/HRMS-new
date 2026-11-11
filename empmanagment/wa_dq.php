@@ -67,6 +67,20 @@ function wa_dq_hour_scores(PDO $pdo): array
     try { setting_set($pdo, 'wa_dq_scores', json_encode($o)); } catch (Throwable $e) { }
     return $o;
 }
+/** 🗄 A small cache in the database (not in a setting): the Campaigns page keeps its last answer here so it opens pre-filled and refreshes behind it. */
+function wa_cpc_table(PDO $pdo): bool
+{
+    static $ok = null; if ($ok !== null) return $ok;
+    try { $pdo->exec("CREATE TABLE IF NOT EXISTS wa_cp_cache (k VARCHAR(40) NOT NULL PRIMARY KEY, v MEDIUMTEXT NOT NULL, at DATETIME NOT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"); return $ok = true; } catch (Throwable $e) { return $ok = false; }
+}
+function wa_cpc_put(PDO $pdo, string $k, array $v): void
+{
+    if (!wa_cpc_table($pdo)) return; try { $j = json_encode($v, JSON_UNESCAPED_UNICODE); if ($j !== false && strlen($j) < 3000000) $pdo->prepare("REPLACE INTO wa_cp_cache (k, v, at) VALUES (?, ?, ?)")->execute([$k, $j, date('Y-m-d H:i:s')]); } catch (Throwable $e) { }
+}
+function wa_cpc_get(PDO $pdo, string $k): ?array
+{
+    if (!wa_cpc_table($pdo)) return null; try { $q = $pdo->prepare("SELECT v, at FROM wa_cp_cache WHERE k = ?"); $q->execute([$k]); $r = $q->fetch(); if (!$r) return null; $d = json_decode((string)$r['v'], true); return is_array($d) ? ['v' => $d, 'age' => max(0, time() - (int)strtotime((string)$r['at']))] : null; } catch (Throwable $e) { return null; }
+}
 /** The usual RANGE of the hourly delivery rate over the last 7 days (each date+hour with 300+ messages, receipts given 2 hours): p25 / p50 / p75. Judging "good" or "low" against a range, not one number. Remembered for 10 min. */
 function wa_dq_range(PDO $pdo): array
 {
@@ -90,6 +104,21 @@ function wa_dq_live(PDO $pdo): array
     try { setting_set($pdo, 'wa_dq_live', json_encode($o)); } catch (Throwable $e) { }
     return $o;
 }
+/** 🛡 Safety net for "Meta limit counted per number": if we are past the SHARED limit's margin and a third of the campaign messages of the last 30 minutes were refused (anything but the per-person refusals),
+ *  Meta is counting one shared pool after all → the mode goes back to 'shared' by itself and says so. Checked at most once a minute. */
+function wa_limit_guard(PDO $pdo): void
+{
+    try {
+        if ((string)setting_get($pdo, 'wa_limit_mode', 'shared') !== 'per_number') return;
+        if ((int)setting_get($pdo, 'wa_limit_guard_at', '0') > time() - 60) return; setting_set($pdo, 'wa_limit_guard_at', (string)time());
+        $q = $pdo->prepare("SELECT COUNT(*) AS n, SUM(status = 'failed' AND err_code NOT IN (131049, 131026, 130472, 131050, 131047, 131021, 131051)) AS f FROM (SELECT status, err_code FROM wa_camp_items WHERE sent_at >= ? ORDER BY sent_at DESC LIMIT 300) t");
+        $q->execute([date('Y-m-d H:i:s', time() - 1800)]); $r = $q->fetch(); $n = (int)$r['n']; $f = (int)$r['f'];
+        $q = $pdo->prepare("SELECT COUNT(DISTINCT phone) FROM wa_messages WHERE dir = 'out' AND mtype = 'template' AND ts >= ?"); $q->execute([date('Y-m-d H:i:s', time() - 86400)]); $day = (int)$q->fetchColumn();
+        if (!function_exists('wa_health_all') && is_file(__DIR__ . '/wa_console.php')) require_once __DIR__ . '/wa_console.php';
+        $tiers = array_filter(array_column(wa_health_all($pdo, false), 'tier'), fn($t) => $t !== null); $shared = (int)floor(($tiers ? (in_array(-1, $tiers, true) ? 1000000 : max($tiers)) : 250) * 0.9);   // the margin of the SHARED limit
+        if ($n >= 100 && $f / max(1, $n) >= 0.33 && $day >= $shared) { setting_set($pdo, 'wa_limit_mode', 'shared'); wa_log($pdo, 'campaign', false, 'Meta limit counting went back to SHARED: ' . $f . ' of the last ' . $n . ' messages were refused after ' . $day . ' people in 24 h'); try { setting_set($pdo, 'wa_dq_stat', ''); } catch (Throwable $e) { } }
+    } catch (Throwable $e) { }
+}
 /** This hour's room (owner, 11 Nov): the hourly cap counts messages Meta DELIVERS. Messages still waiting for their receipt count at today's real delivery rate. The delivery rate is judged against its usual RANGE:
  *   good (at or above the middle of the range) → the hour's target grows with it (×1.0 up to ×2, on top of the hour-of-day score) and the sender is allowed to push more to deliver it;
  *   ok (between the low and the middle) → the normal target, half-compensating pushes;
@@ -99,7 +128,7 @@ function wa_dq_live(PDO $pdo): array
 function wa_dq_left(PDO $pdo, bool $fresh = false): array
 {
     static $memo = null, $at = 0; if (!$fresh && $memo !== null && microtime(true) - $at < 15) return $memo;
-    try { wa_dq_auto_eval($pdo); } catch (Throwable $e) { }
+    try { wa_dq_auto_eval($pdo); wa_limit_guard($pdo); } catch (Throwable $e) { }
     $cfg = wa_dq_cfg($pdo); $used = 0; $dayUsed = 0; $exp = 0; $rate = 0.75; $mult = 1.0; $learning = true; $state = 'unknown'; $mLive = 1.0; $range = ['p25' => 0.0, 'p50' => 0.0, 'p75' => 0.0]; $rateUsed = 0.75;
     if ($cfg['on'] && $cfg['smart']) { $sc = wa_dq_hour_scores($pdo); $learning = !empty($sc['learning']); $mult = (float)($sc['hours'][(int)date('G')]['mult'] ?? 1.0); }   // 🧠 this hour of the day delivers better / worse than average
     if ($cfg['on']) {
@@ -141,7 +170,7 @@ function wa_dq_status(PDO $pdo): array
 {
     $cfg = wa_dq_cfg($pdo);
     try { $hit = json_decode((string)setting_get($pdo, 'wa_dq_stat', ''), true); if (is_array($hit) && (int)($hit['t'] ?? 0) > time() - 30 && ($hit['cap'] ?? 0) === $cfg['hourly'] && ($hit['daily'] ?? 0) === $cfg['daily'] && ($hit['on'] ?? null) === $cfg['on']) return $hit; } catch (Throwable $e) { }
-    $l = wa_dq_left($pdo); $o = ['t' => time(), 'on' => $cfg['on'], 'cap' => $cfg['hourly'], 'used' => $l['used'], 'exp' => $l['exp'], 'rate' => $l['rate'], 'state' => $l['state'], 'range' => $l['range'], 'm_live' => $l['m_live'], 'mult' => $l['mult'], 'eff_cap' => $l['eff_cap'], 'learning' => $l['learning'], 'smart' => $l['smart'], 'left' => $l['left'], 'daily' => $l['daily'], 'day_used' => $l['day_used'], 'why' => $l['why'], 'auto' => $cfg['auto'], 'dmin' => $cfg['dmin'], 'dmax' => $cfg['dmax'], 'base' => $cfg['base'], 'auto_last' => wa_dq_auto_last($pdo), 'people' => 0, 'campaigns' => 0, 'gap_days' => max(0, (int)setting_get($pdo, 'wa_camp_gap_days', '3'))];
+    $l = wa_dq_left($pdo); $o = ['t' => time(), 'on' => $cfg['on'], 'cap' => $cfg['hourly'], 'used' => $l['used'], 'exp' => $l['exp'], 'rate' => $l['rate'], 'state' => $l['state'], 'range' => $l['range'], 'm_live' => $l['m_live'], 'mult' => $l['mult'], 'eff_cap' => $l['eff_cap'], 'learning' => $l['learning'], 'smart' => $l['smart'], 'left' => $l['left'], 'daily' => $l['daily'], 'day_used' => $l['day_used'], 'why' => $l['why'], 'limit_mode' => (string)setting_get($pdo, 'wa_limit_mode', 'shared'), 'early' => (string)setting_get($pdo, 'wa_dq_early', '1') !== '0', 'auto' => $cfg['auto'], 'dmin' => $cfg['dmin'], 'dmax' => $cfg['dmax'], 'base' => $cfg['base'], 'auto_last' => wa_dq_auto_last($pdo), 'people' => 0, 'campaigns' => 0, 'gap_days' => max(0, (int)setting_get($pdo, 'wa_camp_gap_days', '3'))];
     try { $r = $pdo->query("SELECT COUNT(DISTINCT i.phone) AS p, COUNT(DISTINCT i.camp_id) AS c FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id WHERE c.status = 'running' AND i.status IN ('queued', 'retry')")->fetch(); $o['people'] = (int)$r['p']; $o['campaigns'] = (int)$r['c']; } catch (Throwable $e) { }
     try { setting_set($pdo, 'wa_dq_stat', json_encode($o)); } catch (Throwable $e) { }
     return $o;
