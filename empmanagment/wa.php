@@ -561,6 +561,12 @@ function wa_src_counts(PDO $pdo, bool $adm, int $emp): array
     if (function_exists('wq_rescue_chip_count')) { try { $rc = wq_rescue_chip_count($pdo, $emp, $adm); if ($rc !== null) $o['rescue'] = $rc; } catch (Throwable $e) { } }   // 🛟 only people who see the Rescue chip get a number
     return $o;
 }
+/** The heavy count behind the per-number chips (customers who ever wrote to each number). Called by the engine tick, never while a person waits for the chat list. */
+function wa_numq_refresh(PDO $pdo): array
+{
+    $per = []; try { @set_time_limit(120); foreach ($pdo->query("SELECT number_id, COUNT(DISTINCT phone) n FROM wa_messages WHERE dir = 'in' AND number_id > 0 GROUP BY number_id")->fetchAll() as $r) $per[(int)$r['number_id']] = (int)$r['n']; setting_set($pdo, 'wa_numq_cache', json_encode(['t' => time(), 'v' => $per])); } catch (Throwable $e) { }
+    return $per;
+}
 function wa_src_counts_base(PDO $pdo, bool $adm, int $emp): array
 {
     $base = "status = 'open' AND last_in_at IS NOT NULL" . ($adm ? '' : ' AND assigned_emp = ' . ($emp > 0 ? $emp : -1)); $o = [];
@@ -570,9 +576,10 @@ function wa_src_counts_base(PDO $pdo, bool $adm, int $emp): array
         $o['assigned'] = (int)$pdo->query("SELECT COUNT(*) FROM wa_contacts WHERE $base AND assigned_emp > 0")->fetchColumn();
         // 📱 queries of this business day per WhatsApp number (TM Perfume House Main / Second …) — a permanent row of chips beside Query / Assigned / Community / Campaign
         // since the number was deployed: every customer who EVER wrote to the number (all-time, open or closed). Counting them is heavy, so it is cached for 5 minutes.
+        // ⚡ the list must never wait for this count: an OLD value is shown at once (any age); the engine tick (wa_numq_refresh) renews it every 10 minutes. Only the very first time (no value yet) is it counted here.
         $per = []; $cache = json_decode((string)setting_get($pdo, 'wa_numq_cache', ''), true);
-        if (is_array($cache) && (int)($cache['t'] ?? 0) > time() - 300 && is_array($cache['v'] ?? null)) { foreach ($cache['v'] as $k => $v) $per[(int)$k] = (int)$v; }
-        else { foreach ($pdo->query("SELECT number_id, COUNT(DISTINCT phone) n FROM wa_messages WHERE dir = 'in' AND number_id > 0 GROUP BY number_id")->fetchAll() as $r) $per[(int)$r['number_id']] = (int)$r['n']; setting_set($pdo, 'wa_numq_cache', json_encode(['t' => time(), 'v' => $per])); }
+        if (is_array($cache) && is_array($cache['v'] ?? null)) { foreach ($cache['v'] as $k => $v) $per[(int)$k] = (int)$v; }
+        else $per = wa_numq_refresh($pdo);
         $o['nums'] = []; foreach ($pdo->query("SELECT id, label, display FROM wa_numbers ORDER BY id")->fetchAll() as $n) $o['nums'][] = ['id' => (int)$n['id'], 'label' => trim((string)$n['label']) !== '' ? (string)$n['label'] : (string)$n['display'], 'n' => $per[(int)$n['id']] ?? 0];
     } catch (Throwable $e) { }
     return $o;
@@ -929,7 +936,14 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
             $sql = "SELECT c.*, IF(" . $boost . ", 1, 0) AS fresh_agent, (SELECT body FROM wa_messages m WHERE m.phone = c.phone AND m.dir != 'sys' ORDER BY m.id DESC LIMIT 1) AS last_body, (SELECT m2.ts FROM wa_messages m2 WHERE m2.phone = c.phone AND m2.dir != 'sys' ORDER BY m2.id DESC LIMIT 1) AS last_ts,
                     (SELECT COUNT(*) FROM wa_messages u WHERE u.phone = c.phone AND u.dir = 'in' AND u.id > c.seen_msg_id) AS unread
                     FROM wa_contacts c WHERE " . implode(' AND ', $w) . " ORDER BY " . ($ord ? $ord . ', ' : '') . "CASE WHEN (c.last_in_at IS NOT NULL AND (c.last_out_at IS NULL OR c.last_out_at < c.last_in_at) AND c.last_in_at >= '" . date('Y-m-d H:i:s', time() - 86400) . "') OR " . $boostOrd . " THEN 0 ELSE 1 END, GREATEST(COALESCE(c.last_in_at, c.last_out_at, '1970-01-01'), IF(" . $boostOrd . ", c.assigned_at, '1970-01-01')) DESC LIMIT " . (!empty($_GET['ids']) ? 3000 : (isset($flt['today']) || isset($flt['yesterday']) ? 1500 : ($rescueFeed !== null ? 1500 : ($flt || $ord ? 400 : 150))));   // a customer waiting for a reply first; our own sends / campaigns never move a chat
-            $st = $pdo->prepare($sql); $st->execute($p); $rows = $st->fetchAll(); $names = employee_names_by_id($pdo);
+            // ⚡ the three per-chat subqueries (last message, its time, unread) were worked out for EVERY open chat (10,000+) before the sort cut the list to 150-400 — that is why Chats sat on "Loading…" more every day.
+            // The chats are now picked and cut first (inner query), and only those few get the subqueries.
+            $__sqlOld = $sql;
+            if ($rescueFeed === null && preg_match('/^(SELECT c\.\*.*?)\s+FROM wa_contacts c WHERE (.*) ORDER BY (.*?) LIMIT (\d+)$/s', $sql, $__mm)) {
+                $sql = $__mm[1] . " FROM wa_contacts c JOIN (SELECT c.phone AS kp, ROW_NUMBER() OVER (ORDER BY " . $__mm[3] . ") AS rn FROM wa_contacts c WHERE " . $__mm[2] . " ORDER BY " . $__mm[3] . " LIMIT " . $__mm[4] . ") x ON x.kp = c.phone ORDER BY x.rn";
+            }
+            try { $st = $pdo->prepare($sql); $st->execute($p); } catch (Throwable $__e) { if ($__sqlOld === $sql) throw $__e; $st = $pdo->prepare($__sqlOld); $st->execute($p); }   // (a database without window functions: the old statement)
+            $rows = $st->fetchAll(); $names = employee_names_by_id($pdo);
             $fl = wa_heat_flags($pdo, array_column($rows, 'phone')); $lm = function_exists('wa_team_cfg') ? max(1, (int)(wa_team_cfg($pdo)['unans_min'] ?? 5)) : 5;
             if (!empty($_GET['ids'])) json_response(['ids' => array_map(fn($r) => ['phone' => (string)$r['phone'], 'name' => (string)($r['name'] ?? '')], $rows)]);   // ☑ "Select all" in the bulk bar: just the phones of the whole view
             $ot = wa_owner_tags($pdo, array_column($rows, 'phone'));
