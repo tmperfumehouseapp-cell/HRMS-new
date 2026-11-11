@@ -935,6 +935,44 @@ function wa_camp_result(PDO $pdo, array $c, array $cfg, bool $withMix = false): 
 /** 💸 The campaigns' day in one card: the CURRENT BUSINESS DAY (the same day the sales side uses: it starts at the day-start time, 10:00 by default, and runs to the next one — not the
  *  last 24 hours): campaigns that sent, messages sent / delivered / read / failed, people who wrote back after a campaign message, and the money. Meta charges when a message is
  *  delivered, so money = delivered / read campaign messages × the billing rate (marketing, utility…) — an estimate (the Billing report has Meta's own figure). Remembered for 60 s. */
+/** 📈 Campaign days: for each business day — what was pushed and delivered, what it cost, and what came back (queries typed "campaign" on the live board: replied, orders, revenue).
+ *  Remembered for 30 minutes (a day of campaign sends is about 100,000 messages); one request recounts at a time (the others get the last copy); the page never forces a recount. */
+function wa_camp_days(PDO $pdo, int $days): array
+{
+    $days = max(3, min(60, $days)); $ck = 'camp_days_' . $days; $hit = wa_cpc_get($pdo, $ck);
+    if ($hit && $hit['age'] < 1800) return $hit['v'];
+    $lk = 'wa_camp_days_lock'; try { if ($hit && (int)setting_get($pdo, $lk, '0') > time() - 90) return $hit['v']; setting_set($pdo, $lk, (string)time()); } catch (Throwable $e) { }
+    $off = 10; try { if (function_exists('wa_bizday_start')) $off = (int)date('G', strtotime(wa_bizday_start($pdo))); } catch (Throwable $e) { }
+    $R = function_exists('wab_rates') ? wab_rates($pdo) : ['marketing' => 1.09, 'utility' => 0.15];
+    $from = date('Y-m-d 00:00:00', time() - ($days + 1) * 86400); $D = [];
+    $blank = fn() => ['pushed' => 0, 'delivered' => 0, 'read' => 0, 'spend' => 0.0, 'queries' => 0, 'replied' => 0, 'orders' => 0, 'revenue' => 0.0];
+    try {
+        $q = $pdo->prepare("SELECT /*+ MAX_EXECUTION_TIME(12000) */ DATE(DATE_SUB(ts, INTERVAL $off HOUR)) d, COUNT(*) n, SUM(status IN ('delivered','read')) dl, SUM(status = 'read') rd, SUM(status IN ('delivered','read') AND bill_cat IN ('utility','authentication')) u, SUM(status IN ('delivered','read') AND bill_cat = 'service') sv
+            FROM wa_messages WHERE dir = 'out' AND mtype = 'template' AND who = 'campaign' AND status <> 'failed' AND ts >= ? GROUP BY d");
+        $q->execute([$from]);
+        foreach ($q->fetchAll() as $r) { $x = $D[(string)$r['d']] ?? $blank(); $dl = (int)$r['dl']; $u = (int)$r['u']; $mk = max(0, $dl - $u - (int)$r['sv']); $x['pushed'] = (int)$r['n']; $x['delivered'] = $dl; $x['read'] = (int)$r['rd']; $x['spend'] = round($mk * (float)$R['marketing'] + $u * (float)$R['utility'], 2); $D[(string)$r['d']] = $x; }
+    } catch (Throwable $e) { error_log('camp_days msgs: ' . $e->getMessage()); }
+    try {
+        $q = $pdo->prepare("SELECT /*+ MAX_EXECUTION_TIME(12000) */ DATE(DATE_SUB(q.opened_at, INTERVAL $off HOUR)) d, COUNT(*) n, SUM(COALESCE(s.answered, 0)) rp, SUM(COALESCE(s.orders, 0)) o, SUM(COALESCE(s.revenue, 0)) rv
+            FROM wa_queries q JOIN wq_qtype t ON t.query_id = q.id AND t.type = 'campaign' LEFT JOIN wq_qstat s ON s.query_id = q.id WHERE q.opened_at >= ? GROUP BY d");
+        $q->execute([$from]);
+        foreach ($q->fetchAll() as $r) { $x = $D[(string)$r['d']] ?? $blank(); $x['queries'] = (int)$r['n']; $x['replied'] = (int)$r['rp']; $x['orders'] = (int)$r['o']; $x['revenue'] = round((float)$r['rv'], 2); $D[(string)$r['d']] = $x; }
+    } catch (Throwable $e) { error_log('camp_days queries: ' . $e->getMessage()); }
+    krsort($D); $rows = []; $T = $blank();
+    foreach (array_slice($D, 0, $days, true) as $d => $x) {
+        foreach ($T as $k => $_) $T[$k] += $x[$k];
+        $rows[] = ['day' => $d, 'pushed' => $x['pushed'], 'delivered' => $x['delivered'], 'read' => $x['read'], 'spend' => round($x['spend'], 2), 'queries' => $x['queries'], 'replied' => $x['replied'], 'orders' => $x['orders'], 'revenue' => round($x['revenue']),
+            'cpq' => $x['queries'] > 0 ? round($x['spend'] / $x['queries'], 1) : null, 'cpo' => $x['orders'] > 0 ? round($x['spend'] / $x['orders'], 1) : null, 'roas' => $x['spend'] > 0 && $x['revenue'] > 0 ? round($x['revenue'] / $x['spend'], 1) : null];
+    }
+    $best = null; foreach ($rows as $r) if ($r['queries'] >= 3 && ($best === null || $r['revenue'] > $best['revenue'] || ($r['revenue'] === $best['revenue'] && $r['queries'] > $best['queries']))) $best = $r;
+    $lean = null; foreach ($rows as $r) if ($r['queries'] >= 3 && $r['cpq'] !== null && ($lean === null || $r['cpq'] < $lean['cpq'])) $lean = $r;
+    $o = ['days' => $days, 'rows' => $rows, 'total' => ['pushed' => $T['pushed'], 'delivered' => $T['delivered'], 'read' => $T['read'], 'spend' => round($T['spend']), 'queries' => $T['queries'], 'replied' => $T['replied'], 'orders' => $T['orders'], 'revenue' => round($T['revenue']),
+        'cpq' => $T['queries'] > 0 ? round($T['spend'] / $T['queries'], 1) : null, 'cpo' => $T['orders'] > 0 ? round($T['spend'] / $T['orders'], 1) : null, 'roas' => $T['spend'] > 0 && $T['revenue'] > 0 ? round($T['revenue'] / $T['spend'], 1) : null,
+        'delivery' => $T['pushed'] > 0 ? round(100 * $T['delivered'] / $T['pushed']) : null, 'query_rate' => $T['delivered'] > 0 ? round(100 * $T['queries'] / $T['delivered'], 2) : null],
+        'best_day' => $best, 'lean_day' => $lean, 'rate' => round((float)$R['marketing'], 2), 'at' => date('Y-m-d H:i:s')];
+    wa_cpc_put($pdo, $ck, $o); try { setting_set($pdo, $lk, '0'); } catch (Throwable $e) { }
+    return $o;
+}
 function wa_camp_spend_today(PDO $pdo, bool $fresh = false): array
 {
     $from = function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 10:00:00', date('H') < 10 ? time() - 86400 : time());
@@ -1067,7 +1105,7 @@ function wa_camp_people_rows(PDO $pdo, array $camp, ?array $tpl, string $f, stri
 $__wk = (string)($action ?? ($_GET['action'] ?? ''));
 if (in_array($__wk, ['wa.camp_tick', 'wa.camp_fast_tick', 'wa.dq_worker', 'wa.rec_run'], true) && function_exists('wa_overloaded') && wa_overloaded()) json_response(['ok' => true, 'result' => ['skipped' => true, 'busy' => true]]);   // the server is overloaded: this sending round waits a turn (it comes again in seconds), so the HRMS stays reachable
 if (isset($pdo) && $pdo instanceof PDO && strpos($__wk, 'wa.') === 0 && function_exists('wa_kill_stale_counts')) wa_kill_stale_counts($pdo);   // stuck heavy counts are cancelled first, so a jammed database frees itself
-if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_suggest', 'wa.camp_start_now', 'wa.camp_snap', 'wa.camp_hours', 'wa.dq_worker', 'wa.rec_run', 'wa.dq_set', 'wa.rec_report', 'wa.rec_set', 'wa.camp_fast', 'wa.camp_fast_tick', 'wa.fu_list', 'wa.fu_save', 'wa.fu_del', 'wa.fu_preset', 'wa.camp_list', 'wa.camp_templates', 'wa.camp_get', 'wa.camp_preview', 'wa.camp_freq', 'wa.camp_typed_phones', 'wa.camp_save', 'wa.camp_start', 'wa.camp_send_now', 'wa.camp_resume_all', 'wa.camp_stop_all', 'wa.camp_pause', 'wa.camp_resume', 'wa.camp_cancel', 'wa.camp_del', 'wa.camp_tick', 'wa.camp_suggest', 'wa.camp_best_time', 'wa.camp_people', 'wa.camp_people_csv', 'wa.camp_thread', 'wa.reports', 'wa.mix_state', 'wa.camp_mix_set'], true) && !($__wk === 'wa.camp_suggest' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST')) {
+if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_suggest', 'wa.camp_start_now', 'wa.camp_snap', 'wa.camp_days', 'wa.camp_hours', 'wa.dq_worker', 'wa.rec_run', 'wa.dq_set', 'wa.rec_report', 'wa.rec_set', 'wa.camp_fast', 'wa.camp_fast_tick', 'wa.fu_list', 'wa.fu_save', 'wa.fu_del', 'wa.fu_preset', 'wa.camp_list', 'wa.camp_templates', 'wa.camp_get', 'wa.camp_preview', 'wa.camp_freq', 'wa.camp_typed_phones', 'wa.camp_save', 'wa.camp_start', 'wa.camp_send_now', 'wa.camp_resume_all', 'wa.camp_stop_all', 'wa.camp_pause', 'wa.camp_resume', 'wa.camp_cancel', 'wa.camp_del', 'wa.camp_tick', 'wa.camp_suggest', 'wa.camp_best_time', 'wa.camp_people', 'wa.camp_people_csv', 'wa.camp_thread', 'wa.reports', 'wa.mix_state', 'wa.camp_mix_set'], true) && !($__wk === 'wa.camp_suggest' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST')) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     $auth = require_auth(); wa_guard_admin($pdo, $auth);
     if (!wa_tables($pdo) || !wa_more_tables($pdo) || !function_exists('wa_tpl_tables') || !wa_tpl_tables($pdo)) json_response(['error' => 'WhatsApp storage is not available — check database permissions.'], 500);
@@ -1373,6 +1411,7 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
             if (!$n && empty($in['all'])) json_response(['error' => 'It is not a scheduled campaign (or it is a Smart plan, which starts at its own time).'], 422);
             try { wa_camp_tick($pdo); } catch (Throwable $e) { } json_response(['ok' => true, 'started' => $n]);
         }
+        case 'wa.camp_days': { json_response(['ok' => true] + wa_camp_days($pdo, (int)($_GET['days'] ?? 14))); }   // 📈 day by day: pushed, delivered, spend, queries, replied, orders, revenue (the live board's "campaign" queries)
         case 'wa.camp_snap': {   // 🗄 the last answer of wa.camp_list, straight from the database cache: the page draws it at once and refreshes behind it
             $c0 = wa_cpc_get($pdo, 'camp_list'); json_response(['snap' => $c0 ? $c0['v'] : null, 'age' => $c0 ? $c0['age'] : null]);
         }
