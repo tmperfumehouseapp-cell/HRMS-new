@@ -994,6 +994,21 @@ function wa_cust_summary(PDO $pdo): array
     wa_cpc_put($pdo, 'cust_sum1', $o); try { setting_set($pdo, $lk, '0'); } catch (Throwable $e) { }
     return $o;
 }
+/** A tag's readable name (saved list, system label, catalog, auto-tag definition, learned label, or the key tidied up). */
+function wa_tag_label(PDO $pdo, string $k): string
+{
+    static $segs = null, $lab = null, $cat = null, $defs = null; if ($segs === null) { $segs = function_exists('wcs_seg_names') ? wcs_seg_names($pdo) : []; $lab = function_exists('wq_tag_labels') ? wq_tag_labels() : []; $cat = function_exists('wag_tag_catalog') ? wag_tag_catalog() : []; $defs = function_exists('jt_auto_defs') ? jt_auto_defs() : []; }
+    if (isset($segs[$k])) return (string)$segs[$k]; if (isset($lab[$k])) return (string)$lab[$k]; if (isset($cat[$k])) return (string)$cat[$k]; if (isset($defs[$k])) return (string)$defs[$k][0];
+    $j = function_exists('jt_label') ? jt_label($pdo, $k) : ''; return $j !== '' ? $j : ucfirst(str_replace('_', ' ', preg_replace('/^(seg_|import_|list_)/', '', $k)));
+}
+/** Which group a tag belongs to on screens: behaviour / from / buying / time / lists / other. */
+function wa_tag_group_of(string $k): string
+{
+    if (preg_match('/^(no_haggle|price_sensitive|quick_decider|slow_decider|replies_to_followups|second_order|third_order_plus|one_time_buyer|lapsed_buyer|premium_buyer|budget_buyer|ignored_fu|returning_enquiry|considering|interested|hot)$/', $k)) return 'Behaviour';
+    if (preg_match('/^(meta_ad|from_ad|community|campaign|instagram|friend|facebook|query)$|_query$/', $k)) return 'Came from';
+    if (preg_match('/^(bought|repeat|vip|not_ordered|cod_pending|came_back|order_query|order_campaign|premium_)/', $k)) return 'Buying';
+    if (strpos($k, 'arrive_') === 0) return 'Time'; if (preg_match('/^(seg_|list_|import_)/', $k)) return 'Lists'; return 'Other';
+}
 /** 🪪 One customer's card: who they are, every tag with the reason, orders in short, and every campaign message they got (delivered / read / replied / failed). Indexed lookups by phone only. */
 function wa_cust_card(PDO $pdo, string $phone): array
 {
