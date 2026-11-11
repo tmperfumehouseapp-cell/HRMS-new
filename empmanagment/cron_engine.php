@@ -22,5 +22,5 @@ $ctx = stream_context_create(['http' => ['method' => 'GET', 'timeout' => 160, 'i
     'ssl' => ['verify_peer' => false, 'verify_peer_name' => false, 'SNI_enabled' => true, 'peer_name' => $host]]);
 $body = @file_get_contents('https://127.0.0.1/empmanagment/api.php?action=wa.cron&key=' . urlencode($key), false, $ctx);
 $code = 0; foreach (($http_response_header ?? []) as $h) if (preg_match('#^HTTP/\S+\s+(\d+)#', $h, $m)) $code = (int)$m[1];
-echo date('Y-m-d H:i:s') . ' engine ' . ($body === false ? 'no answer' : "HTTP $code") . ' in ' . round(microtime(true) - $t0, 1) . "s\n";
+echo date('Y-m-d H:i:s') . ' engine ' . ($body === false ? 'no answer' : "HTTP $code") . ' in ' . round(microtime(true) - $t0, 1) . 's ' . ($body !== false ? substr(preg_replace('/\s+/', ' ', $body), 0, 200) : '') . "\n";
 exit($body === false || $code >= 400 ? 1 : 0);
