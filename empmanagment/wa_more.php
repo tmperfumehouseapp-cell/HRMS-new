@@ -86,7 +86,9 @@ function wa_team_cfg(PDO $pdo): array
 /** First-reply speed per salesperson over the last N days: the minutes between a customer's message and the first answer. Kept 10 minutes for the usual 30 days. */
 function wa_person_stats(PDO $pdo, int $days = 30): array
 {
-    if ($days === 30) { try { $c = json_decode((string)setting_get($pdo, 'wa_pstats', ''), true); } catch (Throwable $e) { $c = null; } if (is_array($c) && (int)($c['at'] ?? 0) > time() - 600) return $c['d']; }
+    if ($days === 30) { try { $c = json_decode((string)setting_get($pdo, 'wa_pstats', ''), true); } catch (Throwable $e) { $c = null; }
+        if (is_array($c) && (int)($c['at'] ?? 0) > time() - 600) return $c['d'];
+        try { if (is_array($c) && isset($c['d']) && (int)setting_get($pdo, 'wa_pstats_lock', '0') > time() - 120) return $c['d']; setting_set($pdo, 'wa_pstats_lock', (string)time()); } catch (Throwable $e) { } }   // one 30-day recount at a time (ten copies at once were freezing the database): the others use the last copy
     $st = $pdo->prepare("SELECT phone, dir, emp_id, who, ts FROM wa_messages WHERE dir IN ('in','out') AND ts >= ? ORDER BY phone, id LIMIT 400000"); $st->execute([date('Y-m-d H:i:s', time() - $days * 86400)]);
     $pend = []; $res = []; $sent = [];
     foreach ($st->fetchAll() as $m) {
