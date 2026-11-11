@@ -1063,7 +1063,7 @@ body.waui .cpc .wp-note{margin:4px 0 !important}
         const uo = pv.util_ok; if (uo && !W.util && tpl() && tpl().category === 'MARKETING') { const E2 = W.extra || {}, can = uo.ask + uo.order, tot = can + uo.none, p2 = E2.u_off ? 0 : (+E2.u_pct || 0), want = Math.round(s.send * p2 / 100), got = Math.min(want, can);
           box.insertAdjacentHTML('beforeend', `<div class="cu-uv" style="margin-top:8px"><b>💸 Utility / marketing</b><div class="wp-hint" style="margin:2px 0 0">${p2 ? `You chose <b>${p2}% utility</b>. <b>${fmt(can)} of ${fmt(tot)}</b> wrote or ordered in the last 30 days and can get utility → about <b>${fmt(got)} utility · ${fmt(Math.max(0, s.send - got))} marketing</b>.${got < want ? ' (Meta allows utility only for them, so the rest go as marketing.)' : ''}` : '<b>Utility OFF</b> — all marketing.'}</div></div>`); }
         const bn = pv.by_num; if (bn && bn.numbers && bn.numbers.length) box.insertAdjacentHTML('beforeend', `<div class="cu-uv" style="margin-top:8px"><b>📱 Which number sends</b>${bn.numbers.map((n) => `<div class="wp-kv"><span>${esc(n.label)} <small>(they wrote to it)</small></span><b>${fmt(n.n)}</b></div>`).join('')}${bn.switched ? `<div class="wp-kv"><span>Switched to the other number <small>(ignored 2 messages)</small></span><b>${fmt(bn.switched)}</b></div>` : ''}${bn.new ? `<div class="wp-kv"><span>Never wrote to us <small>(shared by room)</small></span><b>${fmt(bn.new)}</b></div>` : ''}</div>`);
-        box.insertAdjacentHTML('beforeend', pv.warnings.map((x) => `<div class="wp-note">${esc(x)}</div>`).join(''));
+        box.insertAdjacentHTML('beforeend', (pv.warnings || []).map((x) => `<div class="wp-note">${esc(x)}</div>`).join(''));
       }
       draw1();
     }
