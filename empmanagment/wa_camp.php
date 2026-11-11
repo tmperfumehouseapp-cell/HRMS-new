@@ -560,7 +560,7 @@ function wa_camp_wait_reason(PDO $pdo, array $c): string
     if (isset(wa_camp_fast_all($pdo)[(int)$c['id']])) return '';   // ⚡ on Send fast: the hourly speed / room messages do not apply to it
     $nowTs = wa_camp_now();
     if (!wa_camp_in_window($pdo, $nowTs)) return 'Quiet hours — nothing is sent at night. It continues at ' . wa_camp_window($pdo)[0] . ' am by itself.';
-    $dqx = wa_dq_left($pdo); if (!empty($dqx['on']) && (int)$dqx['left'] <= 0) return $dqx['why'] === 'day' ? 'Daily plan: today’s ' . number_format((int)$dqx['daily']) . ' campaign messages are used — it continues tomorrow by itself.' : 'Daily plan: this hour’s ' . number_format((int)$dqx['cap']) . ' messages are used by all campaigns together — it continues in the next hour by itself.';
+    $dqx = wa_dq_left($pdo); if (!empty($dqx['on']) && (int)$dqx['left'] <= 0) return wa_dq_why_text($dqx);
     try {
         static $capsMemo = null; if ($capsMemo === null) $capsMemo = wa_number_caps($pdo, wa_camp_health($pdo));   // once per request: it used to be rebuilt for every running campaign in the list
         $caps = $capsMemo; $port = $caps['_port']; $left = 0; $why = [];
@@ -677,7 +677,7 @@ function wa_camp_tick_run(PDO $pdo, int $only = 0): array
         $push = wa_camp_push((string)$c['push']); $rate = (int)$c['rate'] * $push['mult']; if ($c['win_end']) { $left = max(1, (strtotime((string)$c['win_end']) - $nowTs) / 60); $rate = (int)ceil($rem / $left); }
         if (!$c['win_end'] && (int)$c['own_hour'] !== 1 && !empty($c['started_at'])) { $tm = (int)setting_get($pdo, 'wa_camp_target_min', '6'); if ($tm > 0) { $leftMin = max(1.0, $tm - ($nowTs - strtotime((string)$c['started_at'])) / 60); $rate = max($rate, (int)ceil($rem / $leftMin)); } }   // "everyone together" campaigns aim to be finished about 6 minutes after the start (setting wa_camp_target_min; 0 = use the slow speed)
         $el = $c['last_tick'] ? min(5, max(0.5, ($nowTs - strtotime((string)$c['last_tick'])) / 60)) : 1; $quota = min($burstLeft > 0 ? 6000 : 3000, max(1, (int)ceil($rate * $el))); if ($burstLeft > 0) $quota = min($quota, $burstLeft);
-        if ($poolOn && $burstLeft <= 0) { if ($poolLeft <= 0) { $pdo->prepare("UPDATE wa_campaigns SET note = ? WHERE id = ? AND status = 'running'")->execute([($dq['why'] ?? '') === 'day' ? 'Daily plan: today’s ' . number_format((int)$dq['daily']) . ' campaign messages are used — it continues tomorrow.' : 'Daily plan: this hour’s ' . number_format((int)$dq['cap']) . ' messages are used — it continues in the next hour.', $id]); $res[$id] = ['sent' => 0, 'failed' => 0, 'skipped' => 0, 'stop' => 'daily plan']; continue; } $quota = min($quota, $poolLeft); }
+        if ($poolOn && $burstLeft <= 0) { if ($poolLeft <= 0) { $pdo->prepare("UPDATE wa_campaigns SET note = ? WHERE id = ? AND status = 'running'")->execute([wa_dq_why_text($dq), $id]); $res[$id] = ['sent' => 0, 'failed' => 0, 'skipped' => 0, 'stop' => 'daily plan']; continue; } $quota = min($quota, $poolLeft); }
         // one panel for all numbers: the message (or an approved alternative version of it) must be approved on a number's WhatsApp account for that number to send
         $by = []; foreach ((array)$t['ok_wabas'] as $wb) $by[(string)$wb] = $t;
         foreach (wa_fam_m_alts($pdo, $t) as $alt) foreach ((array)$alt['ok_wabas'] as $wb) if (!isset($by[(string)$wb])) $by[(string)$wb] = $alt;
@@ -714,7 +714,7 @@ function wa_camp_tick_run(PDO $pdo, int $only = 0): array
             foreach ($pdo->query("SELECT number_id, COUNT(*) AS n FROM wa_camp_items WHERE camp_id = $id AND status = 'sent' GROUP BY number_id")->fetchAll() as $nr) $ctx['wsent'][(int)$nr['number_id']] = (int)$nr['n']; }
         $resolveM = function (array $tm, array $ct, array $it, int $iid) use ($pdo, $specs, &$usedPieces) { return wa_camp_resolve_vars($pdo, (int)$tm['nvars'], $specs, $ct, (string)($it['name'] ?: $ct['name']), $iid, $usedPieces); };
         while ($sent + $failed + $skipped < $quota && microtime(true) < $cDead && !$stop) {
-            if ($poolOn && $burstLeft <= 0) { $dqF = wa_dq_left($pdo, true); $poolLeft = (int)$dqF['left']; if ($poolLeft <= 0) { $stop = ($dqF['why'] ?? '') === 'day' ? 'Daily plan: today’s campaign messages are used — it continues tomorrow.' : 'Daily plan: this hour’s allowance is used by all campaigns together — it continues in the next hour.'; break; } }   // the cap is counted again before every batch: several senders at once never go over it
+            if ($poolOn && $burstLeft <= 0) { $dqF = wa_dq_left($pdo, true); $poolLeft = (int)$dqF['left']; if ($poolLeft <= 0) { $stop = wa_dq_why_text($dqF); break; } }   // the cap is counted again before every batch: several senders at once never go over it
             $take = min($burstLeft > 0 ? $fastBatch : 90, $quota - ($sent + $failed + $skipped)); if ($poolOn && $burstLeft <= 0) $take = max(1, min($take, $poolLeft));   // ⚡ 90 people per round trip to Meta (was 40)
             $pick = ($poolOn ? $pdo->query("SELECT i.id, i.status FROM wa_camp_items i LEFT JOIN wa_contacts ct ON ct.phone = i.phone WHERE i.camp_id = $id AND $dueI ORDER BY (ct.last_in_at IS NULL), ct.last_in_at DESC, i.id LIMIT $take") : $pdo->query("SELECT id, status FROM wa_camp_items WHERE camp_id = $id AND $due ORDER BY id LIMIT $take"))->fetchAll();   // 📅 the people who wrote to us most recently go first if (!$pick) break;
             if ($mixOn) {   // per batch (not per person): who can carry the utility version right now - a number whose utility version was just approved joins at once, a re-labelled one drops out at once
@@ -1274,6 +1274,7 @@ if (in_array($__wk, ['wa.camp_start_now', 'wa.camp_snap', 'wa.camp_hours', 'wa.d
             if (isset($in['smart'])) setting_set($pdo, 'wa_dq_smart', !empty($in['smart']) ? '1' : '0');
             if (isset($in['daily'])) { $nd = (string)max(1000, min(1000000, (int)$in['daily'])); setting_set($pdo, 'wa_dq_daily', $nd); setting_set($pdo, 'wa_dq_daily_auto', $nd); if ((int)$nd > wa_dq_cfg($pdo)['dmax']) setting_set($pdo, 'wa_dq_daily_max', $nd); }   // a number typed above the auto ceiling raises the ceiling (Meta's own limit and our 90% margin still stop sending at their own level)   // the number typed is the start / manual value; the auto cap continues from it
             if (isset($in['limit_mode'])) { setting_set($pdo, 'wa_limit_mode', (string)$in['limit_mode'] === 'per_number' ? 'per_number' : 'shared'); setting_set($pdo, 'wa_limit_guard_at', '0'); }
+            if (isset($in['budget'])) setting_set($pdo, 'wa_dq_budget', (string)max(0, min(10000000, (int)$in['budget'])));
             if (isset($in['early'])) setting_set($pdo, 'wa_dq_early', !empty($in['early']) ? '1' : '0');
             if (isset($in['auto'])) setting_set($pdo, 'wa_dq_auto', !empty($in['auto']) ? '1' : '0');
             setting_set($pdo, 'wa_dq_stat', ''); json_response(['ok' => true, 'dq' => wa_dq_status($pdo)]);
