@@ -25,7 +25,7 @@ function wpl_cfg(PDO $pdo): array
     $j = json_decode((string)setting_get($pdo, 'wa_pl_cfg', ''), true); if (!is_array($j)) $j = [];
     $date = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($j['date'] ?? '')) ? (string)$j['date'] : date('Y-m-d', time() + 86400); if ($date < date('Y-m-d')) $date = date('Y-m-d', time() + 86400);
     $start = preg_match('/^\d{1,2}:\d{2}$/', (string)($j['start'] ?? '')) ? (string)$j['start'] : '10:00';
-    return ['date' => $date, 'start' => $start, 'gap' => max(1, min(720, (int)($j['gap'] ?? 60))), 'number_id' => (int)($j['number_id'] ?? 0), 'budget' => max(0, (int)($j['budget'] ?? 50000)), 'rate' => max(10, min(1500, (int)($j['rate'] ?? 120)))];
+    return ['date' => $date, 'start' => $start, 'gap' => max(1, min(720, (int)($j['gap'] ?? 60))), 'number_id' => (int)($j['number_id'] ?? 0), 'budget' => max(0, (int)($j['budget'] ?? 50000)), 'rate' => max(10, min(1500, (int)($j['rate'] ?? 120))), 'xf_min' => max(0, min(9, (int)($j['xf_min'] ?? 0))), 'xf_days' => in_array((int)($j['xf_days'] ?? 7), [3, 7, 14, 30], true) ? (int)$j['xf_days'] : 7];
 }
 function wpl_start_of(array $cfg, int $index): string { $t = strtotime($cfg['date'] . ' ' . $cfg['start'] . ':00'); return date('Y-m-d H:i:s', $t + $index * $cfg['gap'] * 60); }
 }
@@ -38,10 +38,11 @@ if (strpos($__wpl, 'wa.pl_') === 0) {
     switch ($__wpl) {
         case 'wa.pl_get': {
             $cfg = wpl_cfg($pdo); $rows = $pdo->query("SELECT id, file_name, phones, total_n, valid_n, tpl_id, media_lib_id, pos, camp_id, status, start_at FROM wa_pl_item WHERE status IN ('draft','scheduled') ORDER BY (status = 'scheduled'), pos, id")->fetchAll();
-            $seen = []; $items = []; $draftIdx = 0;
+            $seen = []; $seenF = []; $items = []; $draftIdx = 0;
             foreach ($rows as $r) {
                 $ph = array_values(array_filter(explode("\n", (string)$r['phones']), fn($x) => $x !== '')); $dup = 0; foreach ($ph as $p0) { if (isset($seen[$p0])) $dup++; else $seen[$p0] = 1; }
-                $it = ['id' => (int)$r['id'], 'file' => (string)$r['file_name'], 'total' => (int)$r['total_n'], 'valid' => (int)$r['valid_n'], 'dup' => $dup, 'send' => count($ph) - $dup, 'tpl_id' => (int)$r['tpl_id'], 'media_id' => (int)$r['media_lib_id'], 'status' => (string)$r['status'], 'camp_id' => (int)$r['camp_id']];
+                $fz = 0; if ($cfg['xf_min'] > 0 && function_exists('wa_camp_msg_counts')) { $mine0 = []; foreach ($ph as $p1) if (!isset($seenF[$p1])) { $seenF[$p1] = 1; $mine0[] = $p1; } $cF = wa_camp_msg_counts($pdo, $mine0, $cfg['xf_days']); foreach ($mine0 as $p1) if (($cF[$p1] ?? 0) >= $cfg['xf_min']) $fz++; }
+                $it = ['id' => (int)$r['id'], 'freq' => $fz, 'file' => (string)$r['file_name'], 'total' => (int)$r['total_n'], 'valid' => (int)$r['valid_n'], 'dup' => $dup, 'send' => count($ph) - $dup - $fz, 'tpl_id' => (int)$r['tpl_id'], 'media_id' => (int)$r['media_lib_id'], 'status' => (string)$r['status'], 'camp_id' => (int)$r['camp_id']];
                 if ($r['status'] === 'scheduled') { $it['start_at'] = (string)$r['start_at']; $c = null; if ((int)$r['camp_id'] > 0) { try { $c = wa_camp_row($pdo, (int)$r['camp_id']); } catch (Throwable $e) { } } if ($c) { $cn = wa_camp_counts($pdo, (int)$c['id']); $it['camp_status'] = (string)$c['status']; $it['sent'] = (int)$cn['sent']; $it['failed'] = (int)$cn['failed']; $it['camp_total'] = (int)$cn['total']; } else $it['camp_status'] = 'gone'; }
                 else { $it['start_at'] = wpl_start_of($cfg, $draftIdx); $draftIdx++; }
                 $items[] = $it;
@@ -66,7 +67,7 @@ if (strpos($__wpl, 'wa.pl_') === 0) {
         }
         case 'wa.pl_cfg': {
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $in = json_input(); $x = (array)($in['cfg'] ?? []);
-            setting_set($pdo, 'wa_pl_cfg', json_encode(['date' => (string)($x['date'] ?? ''), 'start' => (string)($x['start'] ?? '10:00'), 'gap' => (int)($x['gap'] ?? 60), 'number_id' => (int)($x['number_id'] ?? 0), 'budget' => (int)($x['budget'] ?? 0), 'rate' => (int)($x['rate'] ?? 120)])); json_response(['ok' => true, 'cfg' => wpl_cfg($pdo)]);
+            setting_set($pdo, 'wa_pl_cfg', json_encode(['date' => (string)($x['date'] ?? ''), 'start' => (string)($x['start'] ?? '10:00'), 'gap' => (int)($x['gap'] ?? 60), 'number_id' => (int)($x['number_id'] ?? 0), 'budget' => (int)($x['budget'] ?? 0), 'rate' => (int)($x['rate'] ?? 120), 'xf_min' => (int)($x['xf_min'] ?? 0), 'xf_days' => (int)($x['xf_days'] ?? 7)])); json_response(['ok' => true, 'cfg' => wpl_cfg($pdo)]);
         }
         case 'wa.pl_move': {
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $in = json_input(); $id = (int)($in['id'] ?? 0); $dir = (int)($in['dir'] ?? 0) < 0 ? -1 : 1;
@@ -82,6 +83,7 @@ if (strpos($__wpl, 'wa.pl_') === 0) {
             try { $sq = $pdo->prepare("SELECT phones FROM wa_pl_item WHERE status = 'scheduled' AND start_at IS NOT NULL AND DATE(start_at) = ?"); $sq->execute([$cfg['date']]); foreach ($sq->fetchAll(PDO::FETCH_COLUMN) as $pp) foreach (explode("\n", (string)$pp) as $p0) if ($p0 !== '') $seen[$p0] = 1; } catch (Throwable $e) { }
             foreach ($rows as $r) {
                 $ph = array_values(array_filter(explode("\n", (string)$r['phones']), fn($x) => $x !== '')); $mine = []; foreach ($ph as $p0) if (!isset($seen[$p0])) { $seen[$p0] = 1; $mine[] = $p0; }
+                if ((int)$r['id'] === $id && $cfg['xf_min'] > 0 && $mine && function_exists('wa_camp_msg_counts')) { $cF = wa_camp_msg_counts($pdo, $mine, $cfg['xf_days']); $mine = array_values(array_filter($mine, fn($p9) => ($cF[$p9] ?? 0) < $cfg['xf_min'])); }
                 if ((int)$r['id'] === $id) { if ((int)$r['tpl_id'] <= 0) json_response(['error' => 'Pick a message for ' . $r['file_name'] . ' first.'], 422); if (!$mine) json_response(['error' => $r['file_name'] . ': every customer is already in an earlier file.'], 422);
                     json_response(['ok' => true, 'name' => preg_replace('/\.csv$/i', '', (string)$r['file_name']) . ' | ' . date('d M', strtotime($cfg['date'])), 'tpl_id' => (int)$r['tpl_id'], 'media_lib_id' => (int)$r['media_lib_id'], 'paste' => implode("\n", $mine), 'n' => count($mine), 'start_at' => wpl_start_of($cfg, isset($in['index']) ? max(0, (int)$in['index']) : $idx), 'number_id' => $cfg['number_id'], 'rate' => $cfg['rate']]); }
                 $idx++;
