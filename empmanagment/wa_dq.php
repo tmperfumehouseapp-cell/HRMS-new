@@ -249,7 +249,7 @@ function wa_dq_hours(PDO $pdo, int $maxAge = 900): array
 }
 function wa_dq_precompute(PDO $pdo): void
 {
-    try { if ((int)setting_get($pdo, 'wa_dq_pre_at', '0') > time() - 120) return; setting_set($pdo, 'wa_dq_pre_at', (string)time()); wa_dq_hours($pdo, 120); $n = (int)setting_get($pdo, 'wa_dq_pre_n', '0'); setting_set($pdo, 'wa_dq_pre_n', (string)($n + 1)); wa_msg_rank($pdo, [14, 7, 30][$n % 3], 300, true); wa_meta_spend_cached($pdo, true); } catch (Throwable $e) { }
+    try { if ((int)setting_get($pdo, 'wa_dq_pre_at', '0') > time() - 120) return; setting_set($pdo, 'wa_dq_pre_at', (string)time()); wa_dq_hours($pdo, 120); if ((int)setting_get($pdo, 'wa_dq_rank_at', '0') <= time() - 1200) { setting_set($pdo, 'wa_dq_rank_at', (string)time()); $n = (int)setting_get($pdo, 'wa_dq_pre_n', '0'); setting_set($pdo, 'wa_dq_pre_n', (string)($n + 1)); wa_msg_rank($pdo, [14, 7, 14, 30][$n % 4], 1200, true); }   /* the heavy message ranking: one window every 20 minutes (was every 2) */ wa_meta_spend_cached($pdo, true); } catch (Throwable $e) { }
 }
 function wa_dq_hours_build(PDO $pdo): array
 {
