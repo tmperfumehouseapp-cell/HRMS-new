@@ -664,6 +664,7 @@ function wa_camp_tick_run(PDO $pdo, int $only = 0): array
         $ctx = wa_camp_ctx($pdo, $t, (int)$c['switch_after'], array_map('intval', (array)($c['extra']['numbers'] ?? [])), $burstLeft, true);
         $chr = $burstLeft > 0 ? null : wa_camp_hour_room($ctx['port'] ?? []); if ($chr !== null) { foreach ($ctx['nums'] as $nid0 => $n0) { $ctx['nums'][$nid0]['hcap'] = (int)($ctx['port']['auto']['nums'][$nid0]['cap'] ?? 0); $ctx['nums'][$nid0]['label'] = (string)($ctx['port']['auto']['nums'][$nid0]['label'] ?? ''); $ctx['nums'][$nid0]['left'] = min((int)$n0['left'], $chr[(int)$nid0] ?? 0); if ($ctx['nums'][$nid0]['left'] <= 0) unset($ctx['nums'][$nid0]); } if (!$ctx['nums']) { $ctx['port']['hour_full'] = 1; $ctx['port_left'] = 0; } }   // 📈 each number's own hourly speed
         $sent = 0; $failed = 0; $skipped = 0; $stop = ''; $hard = false; $retryOn = (int)$c['retry'] === 1; $usedPieces = [];
+        $fe0 = $fastMap[$id] ?? []; $fastPause = max(0.25, (float)($fe0['pause'] ?? 0.25)); $fastBatch = max(20, min(90, (int)($fe0['batch'] ?? 90)));   // ⚡ Send fast runs ~20% gentler than flat out: a pause of 25% of each batch's time; it slows itself further when Meta starts refusing and speeds back up when it is calm
         $mixOn = !empty($c['extra']['mix']) && function_exists('wa_util_mix_on') && wa_util_mix_on($pdo); $plan = null; $env = null;   // offers = marketing only (see wa_util_mix_on)
         if ($mixOn) { $env = wa_mix_env($pdo); $plan = wa_mix_plan($pdo, $c, $ctx['nums'], $rem, null, true, $env); }
         // the owner's own split for THIS campaign: a utility version + its share (only to people who asked or ordered in the last 30 days), and a share per number
@@ -692,7 +693,7 @@ function wa_camp_tick_run(PDO $pdo, int $only = 0): array
             foreach ($pdo->query("SELECT number_id, COUNT(*) AS n FROM wa_camp_items WHERE camp_id = $id AND status = 'sent' GROUP BY number_id")->fetchAll() as $nr) $ctx['wsent'][(int)$nr['number_id']] = (int)$nr['n']; }
         $resolveM = function (array $tm, array $ct, array $it, int $iid) use ($pdo, $specs, &$usedPieces) { return wa_camp_resolve_vars($pdo, (int)$tm['nvars'], $specs, $ct, (string)($it['name'] ?: $ct['name']), $iid, $usedPieces); };
         while ($sent + $failed + $skipped < $quota && microtime(true) < $cDead && !$stop) {
-            $take = min(90, $quota - ($sent + $failed + $skipped));   // ⚡ 90 people per round trip to Meta (was 40)
+            $take = min($burstLeft > 0 ? $fastBatch : 90, $quota - ($sent + $failed + $skipped));   // ⚡ 90 people per round trip to Meta (was 40)
             $pick = $pdo->query("SELECT id, status FROM wa_camp_items WHERE camp_id = $id AND $due ORDER BY id LIMIT $take")->fetchAll(); if (!$pick) break;
             if ($mixOn) {   // per batch (not per person): who can carry the utility version right now - a number whose utility version was just approved joins at once, a re-labelled one drops out at once
                 $plan = wa_mix_plan($pdo, $c, $ctx['nums'], $rem, $plan, false, $env); $ctx['u_nums'] = array_keys(array_filter($plan['per_number'], fn($p) => !empty($p['u']) && (int)$p['share'] > 0));
@@ -766,7 +767,14 @@ function wa_camp_tick_run(PDO $pdo, int $only = 0): array
                 $ctx['nums'][$nid]['left']--; $ctx['nums'][$nid]['used']++; $ctx['port_left']--; $reqs[] = $req; $batch[] = [$it, $nid, $vars, $attempt, $vj, $variant, $tSent, $tuId];
             }
             if ($reqs) {
-                $out = wa_http_multi($reqs);
+                $bt0 = microtime(true); $out = wa_http_multi($reqs); $bdur = microtime(true) - $bt0;
+                if ($burstLeft > 0) {   // ⚡ steady speed: look at how this batch went (Meta refused / failed to take it), then pause before the next one
+                    $badN = 0; foreach ($batch as $bi => $_b) { [$bc, $bd] = $out[$bi] ?? [0, null]; if (!($bc >= 200 && $bc < 300 && (string)($bd['messages'][0]['id'] ?? '') !== '')) $badN++; }
+                    $ratio = $badN / max(1, count($batch));
+                    if ($ratio >= 0.10) { $fastPause = min(3.0, max(0.5, $fastPause * 2)); $fastBatch = max(20, (int)floor($fastBatch * 0.6)); }
+                    elseif ($ratio <= 0.02) { $fastPause = max(0.25, $fastPause * 0.8); $fastBatch = min(90, $fastBatch + 10); }
+                    usleep((int)(min(6.0, $bdur * $fastPause) * 1000000));
+                }
                 foreach ($batch as $i => [$it, $nid, $vars, $attempt, $vj, $variant, $tSent, $tuId]) {
                     [$code, $d] = $out[$i] ?? [0, null]; $wamid = (string)($d['messages'][0]['id'] ?? ''); $ec = (int)($d['error']['code'] ?? 0);
                     if ($code >= 200 && $code < 300 && $wamid !== '') {
@@ -790,7 +798,7 @@ if ($ec === 131042) { try { setting_set($pdo, 'wa_payblock_' . (int)$nid, date('
             }
         }
         if ($usedPieces) wa_piece_used($pdo, $usedPieces);
-        if ($burstLeft > 0) { $fe = $fastMap[$id]; $fe['burst_left'] = max(0, $burstLeft - $sent); wa_camp_fast_put($pdo, $id, $fe); }   // ⚡ no limit in practice (100 million); it only counts down
+        if ($burstLeft > 0) { $fe = $fastMap[$id]; $fe['burst_left'] = max(0, $burstLeft - $sent); $fe['pause'] = round($fastPause, 2); $fe['batch'] = $fastBatch; wa_camp_fast_put($pdo, $id, $fe); }   // ⚡ no limit in practice (100 million); it only counts down
         if ($plan) wa_mix_save($pdo, $plan);
         $pdo->prepare("UPDATE wa_campaigns SET last_tick = ? WHERE id = ?")->execute([date('Y-m-d H:i:s', $nowTs), $id]);
         if ($stop !== '' && !empty($hard)) wa_camp_pause($pdo, $id, $stop);
