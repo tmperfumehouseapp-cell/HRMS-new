@@ -52,7 +52,9 @@ function wa_dq_auto_eval(PDO $pdo): void
 /** What each hour of the day has delivered lately: [hour => ['n', 'rate', 'mult']] + overall + whether it is still learning. Messages older than 2 hours only (receipts have arrived), last 7 days, today counted double. Remembered for 10 minutes. */
 function wa_dq_hour_scores(PDO $pdo): array
 {
-    try { $hit = json_decode((string)setting_get($pdo, 'wa_dq_scores', ''), true); if (is_array($hit) && (int)($hit['t'] ?? 0) > time() - 600) return $hit; } catch (Throwable $e) { }
+    try { $hit = json_decode((string)setting_get($pdo, 'wa_dq_scores', ''), true); if (is_array($hit) && (int)($hit['t'] ?? 0) > time() - 600) return $hit;
+        if (is_array($hit) && (int)setting_get($pdo, 'wa_dq_scores_lock', '0') > time() - 90) return $hit;   // another request is already recounting: use the last copy (six copies at once were freezing the database)
+        setting_set($pdo, 'wa_dq_scores_lock', (string)time()); } catch (Throwable $e) { }
     $o = ['t' => time(), 'hours' => [], 'overall' => 0.0, 'measured' => 0, 'learning' => true];
     try {
         $today = function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 10:00:00');
