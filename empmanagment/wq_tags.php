@@ -38,6 +38,15 @@ function jt_auto_defs(): array
         'budget_buyer' => ['Budget buyer', 'status', 'Spends per order in the bottom quarter of all buyers.', 'Recomputed daily.', 'Sample and offer steps in the after-order timeline.'],
         'order_query' => ['Order from a query', 'fact', 'The last order came from a customer who wrote to us (a query order).', 'Stays; follows the latest order.', 'Reports: which orders came from queries.'],
         'order_campaign' => ['Order from a campaign', 'fact', 'The last order came after one of our campaigns (a campaign order).', 'Stays; follows the latest order.', 'Reports: which orders came from campaigns.'],
+        'no_haggle' => ['Does not haggle', 'behaviour', 'Ordered, has chatted with us, and never talked about price: no "too costly / last price / discount", no price outcome, no price tag.', 'Goes when they ask for a lower price.', 'Campaigns: offers without a discount, premium and new-arrival messages.'],
+        'price_sensitive' => ['Price sensitive', 'behaviour', 'Asked about price / discount, or a person marked the chat "price too high".', 'Goes after 90 days without more price talk, or when they order twice without it.', 'Campaigns: offer and combo messages.'],
+        'quick_decider' => ['Quick decider', 'behaviour', 'One order, placed within a day of first writing to us.', 'Stays.', 'Campaigns: short messages with a ready link.'],
+        'slow_decider' => ['Slow decider', 'behaviour', 'One order, placed 14 or more days after first writing to us.', 'Stays.', 'Campaigns: gentle reminders and samples.'],
+        'replies_to_followups' => ['Answers follow-ups', 'behaviour', 'Answered one of our follow-up messages within 3 days (last 60 days).', 'Goes after 30 days.', 'Campaigns: a good group for new offers.'],
+        'second_order' => ['Second-time buyer', 'behaviour', 'Exactly 2 orders.', 'Moves to 3+ orders when they order again.', 'Campaigns: the next-order message.'],
+        'third_order_plus' => ['Loyal (3+ orders)', 'behaviour', '3 or more orders.', 'Stays.', 'Campaigns: early access and thank-you messages.'],
+        'one_time_buyer' => ['One-time buyer', 'behaviour', 'Exactly 1 order, more than 90 days ago.', 'Goes when they order again.', 'Campaigns: win-back with a reason to return.'],
+        'lapsed_buyer' => ['Lapsed buyer', 'behaviour', '2 or more orders, the last one more than 120 days ago.', 'Goes when they order again.', 'Campaigns: win-back.'],
         'returning_enquiry' => ['Asking again after ordering', 'intent', 'Ordered before and has written a new enquiry since.', 'Goes 30 days after their last message, or when they order again.', 'Treated as a returning customer in the Journey (new plan, welcome-back tone).'],
     ];
 }
@@ -72,14 +81,15 @@ function jt_features(PDO $pdo, array $phones): array
 {
     $phones = array_values(array_unique(array_map('strval', $phones))); $F = []; if (!$phones) return $F; $now = time(); $K = jt_kw(); $cuts = function_exists('jn_cuts') ? jn_cuts($pdo) : ['hi' => 3000, 'lo' => 800];
     foreach (array_chunk($phones, 300) as $ch) {
-        $in = implode(',', array_fill(0, count($ch), '?')); $cm = []; $cu = []; $oc = []; $qt = []; $fu = []; $msgs = []; $want = [];
-        try { $q = $pdo->prepare("SELECT phone, last_in_at, last_out_at, source, tag, hot FROM wa_contacts WHERE phone IN ($in)"); $q->execute($ch); foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $cm[(string)$r['phone']] = $r; } catch (Throwable $e) { }
+        $in = implode(',', array_fill(0, count($ch), '?')); $cm = []; $cu = []; $oc = []; $qt = []; $fu = []; $msgs = []; $want = []; $pt = [];
+        try { $q = $pdo->prepare("SELECT phone, last_in_at, last_out_at, source, tag, hot, first_seen FROM wa_contacts WHERE phone IN ($in)"); $q->execute($ch); foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $cm[(string)$r['phone']] = $r; } catch (Throwable $e) { }
         try { $q = $pdo->prepare("SELECT phone, n, spent, last_order FROM wa_cust WHERE phone IN ($in)"); $q->execute($ch); foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $cu[(string)$r['phone']] = $r; } catch (Throwable $e) { }
         try { $q = $pdo->prepare("SELECT phone, code FROM wa_outcomes WHERE phone IN ($in) ORDER BY id"); $q->execute($ch); foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $oc[(string)$r['phone']] = (string)$r['code']; } catch (Throwable $e) { }
         try { $q = $pdo->prepare("SELECT phone, type FROM wq_qtype WHERE phone IN ($in) ORDER BY opened_at"); $q->execute($ch); foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $qt[(string)$r['phone']] = (string)$r['type']; } catch (Throwable $e) { }
         try { $q = $pdo->prepare("SELECT phone, sent_at FROM wa_fu_ev WHERE status = 'sent' AND sent_at >= ? AND phone IN ($in)"); $q->execute(array_merge([date('Y-m-d H:i:s', $now - 60 * 86400)], $ch)); foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $fu[(string)$r['phone']][] = strtotime((string)$r['sent_at']); } catch (Throwable $e) { }
         try { $q = $pdo->prepare("SELECT phone, body, ts FROM wa_messages WHERE dir = 'in' AND mtype = 'text' AND ts >= ? AND phone IN ($in) ORDER BY id DESC"); $q->execute(array_merge([date('Y-m-d H:i:s', $now - 14 * 86400)], $ch));
             foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) { $p = (string)$r['phone']; if (count($msgs[$p] ?? []) < 10) $msgs[$p][] = ['t' => mb_strtolower((string)$r['body']), 'ts' => strtotime((string)$r['ts'])]; } } catch (Throwable $e) { }
+        try { $q = $pdo->prepare("SELECT DISTINCT phone FROM wa_ctags WHERE tag = 'price_issue' AND phone IN ($in)"); $q->execute($ch); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $x) $pt[(string)$x] = 1; } catch (Throwable $e) { }   // a person marked the chat "price too high"
         try { $q = $pdo->prepare("SELECT phone, topic FROM wa_wj_topic WHERE phone IN ($in)"); $q->execute($ch); foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $want[(string)$r['phone']] = (string)$r['topic']; } catch (Throwable $e) { }
         foreach ($ch as $p) {
             $c = $cm[$p] ?? null; $u = $cu[$p] ?? null; $in_ = $c && $c['last_in_at'] ? strtotime((string)$c['last_in_at']) : 0; $out_ = $c && $c['last_out_at'] ? strtotime((string)$c['last_out_at']) : 0; $n = $u ? (int)$u['n'] : 0; $sp = $u ? (float)$u['spent'] : 0.0; $lo = $u && $u['last_order'] ? strtotime((string)$u['last_order']) : 0;
@@ -90,7 +100,7 @@ function jt_features(PDO $pdo, array $phones): array
                 'days_since_in' => $in_ ? (int)floor(($now - $in_) / 86400) : 999, 'days_since_order' => $lo ? (int)floor(($now - $lo) / 86400) : 999, 'ignored_fu' => $ign, 'replied_fu' => $rep ? 1 : 0,
                 'chat_tag' => $c ? (string)$c['tag'] : '', 'source' => $c ? (string)$c['source'] : '', 'qtype' => $qt[$p] ?? '', 'outcome' => $oc[$p] ?? '', 'hot' => $c ? (int)$c['hot'] : 0, 'want' => $want[$p] ?? '',
                 'kw_hot' => jt_has($recent3, $K['hot']) ? 1 : 0, 'kw_think' => jt_has($txt, $K['think']) ? 1 : 0, 'kw_price' => jt_has($txt, $K['price']) ? 1 : 0, 'kw_neg' => jt_has($last, $K['neg']) ? 1 : 0, 'msgs_14d' => count($msgs[$p] ?? []),
-                'tier' => $n > 0 ? ($sp / $n >= $cuts['hi'] ? 'prem' : ($sp / $n < $cuts['lo'] ? 'bud' : 'std')) : '', 'comes_back' => $n > 0 && $in_ > $lo + 2 * 86400 ? 1 : 0];
+                'first_seen_ts' => $c && !empty($c['first_seen']) ? (int)strtotime((string)$c['first_seen']) : 0, 'price_talk' => (isset($pt[$p]) || ($oc[$p] ?? '') === 'price' || ($c && (string)$c['tag'] === 'price') || jt_has($txt, $K['price'])) ? 1 : 0, 'tier' => $n > 0 ? ($sp / $n >= $cuts['hi'] ? 'prem' : ($sp / $n < $cuts['lo'] ? 'bud' : 'std')) : '', 'comes_back' => $n > 0 && $in_ > $lo + 2 * 86400 ? 1 : 0];
         }
     }
     return $F;
@@ -114,6 +124,17 @@ function jt_auto_for(array $f): array
         if ($f['tier'] === 'bud') $t['budget_buyer'] = ['spends in the bottom quarter per order (₹' . round($f['avg_order']) . ' avg)', null];
         if ((int)$f['comes_back'] === 1 && $f['days_since_in'] <= 30) $t['returning_enquiry'] = ['ordered before and wrote a new enquiry', $in_ + 30 * 86400];
     }
+    // 🧭 behaviour: how this person buys and answers (worked out from their own history; each tag says why)
+    $n = (int)$f['n']; $chat = $in_ > 0; $dso = (int)$f['days_since_order']; $fs = (int)($f['first_seen_ts'] ?? 0); $lo = (int)$f['last_order_ts'];
+    if ($n === 2) $t['second_order'] = ['2 orders', null];
+    if ($n >= 3) $t['third_order_plus'] = [$n . ' orders', null];
+    if ($n === 1 && $dso > 90 && $dso < 999) $t['one_time_buyer'] = ['1 order, ' . $dso . ' days ago', null];
+    if ($n >= 2 && $dso > 120 && $dso < 999) $t['lapsed_buyer'] = [$n . ' orders, the last ' . $dso . ' days ago', null];
+    if ($n >= 1 && $chat && (int)$f['price_talk'] === 0) $t['no_haggle'] = ['ordered and never talked about price', null];
+    if ((int)$f['price_talk'] === 1 && $chat) $t['price_sensitive'] = ['talked about price / discount', $in_ + 90 * 86400];
+    if ($n === 1 && $chat && $fs > 0 && $lo > $fs && !in_array((string)$f['source'], ['import', 'imported'], true)) { $gap = ($lo - $fs) / 86400;
+        if ($gap <= 1) $t['quick_decider'] = ['ordered within a day of first writing', null]; elseif ($gap >= 14) $t['slow_decider'] = ['ordered ' . (int)floor($gap) . ' days after first writing', null]; }
+    if ((int)$f['replied_fu'] === 1) $t['replies_to_followups'] = ['answered a follow-up within 3 days', time() + 30 * 86400];
     return $t;
 }
 /** Replace one customer's automatic tags (only the managed ones) with the computed set. */
