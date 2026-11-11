@@ -79,6 +79,36 @@ function wa_cpc_get(PDO $pdo, string $k): ?array
 {
     if (!wa_cpc_table($pdo)) return null; try { $q = $pdo->prepare("SELECT v, at FROM wa_cp_cache WHERE k = ?"); $q->execute([$k]); $r = $q->fetch(); if (!$r) return null; $d = json_decode((string)$r['v'], true); return is_array($d) ? ['v' => $d, 'age' => max(0, time() - (int)strtotime((string)$r['at']))] : null; } catch (Throwable $e) { return null; }
 }
+/** 🏆 Which messages deliver best: every message (pre-made template) used by campaigns in the last N days, ranked by how many of the messages Meta accepted were DELIVERED (also read % and reply %), with
+ *  what the best ones have in common (a picture on top, shorter text, an emoji, buttons, a question…) written as plain tips. Messages with fewer than 200 accepted sends are left out. Remembered 10 minutes. */
+function wa_msg_rank(PDO $pdo, int $days = 14): array
+{
+    $days = max(1, min(60, $days)); $ck = 'msg_rank_' . $days;
+    $hit = wa_cpc_get($pdo, $ck); if ($hit && $hit['age'] < 600) return $hit['v'];
+    $o = ['days' => $days, 'rows' => [], 'tips' => [], 'overall' => ['n' => 0, 'd' => 0.0]];
+    try {
+        $q = $pdo->prepare("SELECT COALESCE(NULLIF(i.tpl_used, 0), c.tpl_id) AS tid, COUNT(*) AS n, SUM(i.last_status IN ('delivered', 'read')) AS d, SUM(i.last_status = 'read') AS rd,
+            SUM(i.err_code = 131049) AS held, SUM(ct.last_in_at IS NOT NULL AND ct.last_in_at > i.sent_at AND ct.last_in_at < DATE_ADD(i.sent_at, INTERVAL 2 DAY)) AS rep
+            FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id LEFT JOIN wa_contacts ct ON ct.phone = i.phone WHERE i.wamid <> '' AND i.sent_at >= ? GROUP BY tid HAVING n >= 200 ORDER BY d / n DESC LIMIT 60");
+        $q->execute([date('Y-m-d H:i:s', time() - $days * 86400)]); $rows = $q->fetchAll();
+    } catch (Throwable $e) { return $o; }
+    $tn = []; foreach ($pdo->query("SELECT id, name, version, body, header_format, buttons, category FROM wa_templates")->fetchAll() as $t) $tn[(int)$t['id']] = $t;
+    $emoji = '/[\x{1F300}-\x{1FAFF}\x{2600}-\x{27BF}]/u'; $groups = []; $N = 0; $D = 0;
+    foreach ($rows as $r) {
+        $t = $tn[(int)$r['tid']] ?? null; if (!$t) continue; $n = (int)$r['n']; $d = (int)$r['d']; $body = (string)$t['body']; $len = mb_strlen($body); $hf = strtoupper((string)$t['header_format']); $btn = json_decode((string)$t['buttons'], true); $nb = is_array($btn) ? count($btn) : 0;
+        $f = ['header' => in_array($hf, ['IMAGE', 'VIDEO', 'DOCUMENT'], true) ? ['IMAGE' => 'a photo on top', 'VIDEO' => 'a video on top', 'DOCUMENT' => 'a PDF on top'][$hf] : 'text only', 'length' => $len <= 150 ? 'short text (150 letters or less)' : ($len <= 300 ? 'medium text (151–300 letters)' : 'long text (over 300 letters)'),
+            'emoji' => preg_match($emoji, $body) ? 'an emoji' : 'no emoji', 'buttons' => $nb > 0 ? 'buttons' : 'no buttons', 'question' => strpos($body, '?') !== false ? 'a question in the text' : 'no question', 'price' => (strpos($body, '₹') !== false || stripos($body, 'rs.') !== false) ? 'a price (₹)' : 'no price'];
+        foreach ($f as $k => $v) { $groups[$k][$v][0] = ($groups[$k][$v][0] ?? 0) + $n; $groups[$k][$v][1] = ($groups[$k][$v][1] ?? 0) + $d; }
+        $N += $n; $D += $d;
+        $o['rows'][] = ['id' => (int)$t['id'], 'name' => (string)$t['name'], 'ver' => (int)$t['version'], 'n' => $n, 'd' => round($d / $n, 3), 'rd' => round((int)$r['rd'] / $n, 3), 'rep' => round((int)$r['rep'] / $n, 3), 'held' => round((int)$r['held'] / $n, 3),
+            'chars' => $len, 'header' => $f['header'], 'category' => (string)$t['category'], 'body' => mb_substr($body, 0, 900), 'buttons' => $nb, 'features' => array_values($f)];
+    }
+    $o['overall'] = ['n' => $N, 'd' => $N ? round($D / $N, 3) : 0.0];
+    foreach ($groups as $k => $gs) { $best = null; $worst = null; foreach ($gs as $name => [$n, $d]) { if ($n < 1000) continue; $rt = $d / $n; if ($best === null || $rt > $best[1]) $best = [$name, $rt, $n]; if ($worst === null || $rt < $worst[1]) $worst = [$name, $rt, $n]; }
+        if ($best && $worst && $best[0] !== $worst[0] && $best[1] - $worst[1] >= 0.05) $o['tips'][] = ['diff' => round($best[1] - $worst[1], 3), 'text' => 'With ' . $best[0] . ': ' . round($best[1] * 100) . '% delivered, against ' . round($worst[1] * 100) . '% with ' . $worst[0] . '.']; }
+    usort($o['tips'], fn($a, $b) => $b['diff'] <=> $a['diff']); $o['tips'] = array_slice(array_column($o['tips'], 'text'), 0, 4);
+    wa_cpc_put($pdo, $ck, $o); return $o;
+}
 /** The usual RANGE of the hourly delivery rate over the last 7 days (each date+hour with 300+ messages, receipts given 2 hours): p25 / p50 / p75. Judging "good" or "low" against a range, not one number. Remembered for 10 min. */
 function wa_dq_range(PDO $pdo): array
 {

@@ -36,7 +36,7 @@ const api = {
   // a fresh answer is fetched behind it and becomes the next one. Only the actions listed here (action → how many seconds an answer may be shown), never anything that moves money,
   // attendance, approvals or live chats. A Save / Send (any POST except the engine's own ticks) forgets everything remembered, so a change is never hidden by an old copy.
   // Add a screen with one line:  api.swrAdd('some.read_action', 300)
-  _SWR: { 'wa.overview': 300, 'wa.numbers': 300, 'wa.sales_board': 300, 'wa.camp_hours': 300 },
+  _SWR: { 'wa.overview': 300, 'wa.numbers': 300, 'wa.sales_board': 300, 'wa.camp_hours': 300, 'wa.msg_rank': 300 },
   swrAdd(action, seconds) { this._SWR[action] = seconds; },
   _swrGet(ck) { try { const c = JSON.parse(localStorage.getItem(ck) || 'null'); return c && typeof c.t === 'number' ? c : null; } catch (e) { return null; } },
   _swrPut(ck, d) {
