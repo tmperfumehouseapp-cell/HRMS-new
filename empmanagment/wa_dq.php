@@ -83,6 +83,101 @@ function wa_cpc_get(PDO $pdo, string $k): ?array
 {
     if (!wa_cpc_table($pdo)) return null; try { $q = $pdo->prepare("SELECT v, at FROM wa_cp_cache WHERE k = ?"); $q->execute([$k]); $r = $q->fetch(); if (!$r) return null; $d = json_decode((string)$r['v'], true); return is_array($d) ? ['v' => $d, 'age' => max(0, time() - (int)strtotime((string)$r['at']))] : null; } catch (Throwable $e) { return null; }
 }
+/** The TOPIC of a message: its folder in the message library when it has one, else its name without the prefix, the version and the date (so "last_10days_followup" and "last_10days_followup_v2" are one topic). */
+function wa_msg_topic(array $t): string
+{
+    $f = trim((string)($t['folder'] ?? '')); if ($f !== '') return mb_substr($f, 0, 40);
+    $n = preg_replace(['/^house_aisensy_/', '/_v\d+$/', '/_\d{4,}$/', '/_\d{2,4}$/'], '', (string)$t['name']); $n = trim(str_replace('_', ' ', (string)$n)); return $n !== '' ? mb_substr($n, 0, 40) : 'Other';
+}
+/** 🏆 Which messages work best — through THREE lenses that are always shown together (last N days, campaign messages Meta accepted):
+ *   🚚 delivery — delivered ÷ accepted.   💬 replies — delivered customers who wrote back within the attribution window (wa_attr_days, default 3) ÷ delivered.
+ *   🛒 orders — orders placed in that window after a message was delivered; an order counts for the LAST campaign message delivered to that phone before it (never twice), with its ₹ value (shop_orders.total, not counting voided / refunded);
+ *      money: cost = delivered × your billing rate, return = ₹ ÷ cost, cost per order.
+ *  A "balanced" score (0–100) averages the rank of the three lenses (orders count 1.5×). Messages with fewer than 200 sends are listed but not ranked; order figures need 1,000 delivered to count.
+ *  Also: what the best ones have in common (photo on top, text length, emoji, buttons, question, price) per lens. Remembered 10 min in the database cache. */
+/** 🧹 Cancels heavy counts of the message ranking / order matching that have been running too long (they pile up on the database and freeze every page). Checked at most every 20 s. Only cancels the QUERY (the connection stays). */
+function wa_kill_stale_counts(PDO $pdo): void
+{
+    static $done = false; if ($done) return; $done = true;
+    try {
+        if ((int)setting_get($pdo, 'wa_kill_at', '0') > time() - 20) return; setting_set($pdo, 'wa_kill_at', (string)time());
+        $me = (int)$pdo->query('SELECT CONNECTION_ID()')->fetchColumn();
+        foreach ($pdo->query('SHOW FULL PROCESSLIST')->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            $info = (string)($r['Info'] ?? ''); $t = (int)($r['Time'] ?? 0); $id = (int)($r['Id'] ?? 0); if ($id === $me || $t < 45 || $info === '') continue;
+            if (strpos($info, 'AS sg,') !== false || strpos($info, 'PARTITION BY o.shopify_id') !== false || (strpos($info, "COALESCE(NULLIF(i.tpl_used, 0), c.tpl_id) AS tid") !== false && strpos($info, 'GROUP BY') !== false)) { try { $pdo->exec('KILL QUERY ' . $id); } catch (Throwable $e) { } }
+        }
+    } catch (Throwable $e) { }
+}
+function wa_msg_rank(PDO $pdo, int $days = 14, int $maxAge = 600, bool $orders = true, string $seg = ''): array
+{   // a page asked ($orders = false): ONE heavy count at a time on the whole server — everybody else gets "preparing…" at once (the counts were piling up on the database)
+    if ($orders) return wa_msg_rank_run($pdo, $days, $maxAge, true, $seg);
+    $r = wa_msg_rank_run($pdo, $days, $maxAge, false, $seg, true); if ($r !== null) return $r;
+    // no copy yet: a page never runs the heavy count itself — it asks the background job for this window and shows "preparing…" (the job runs within a few minutes, the page asks again by itself)
+    try { setting_set($pdo, 'wa_rank_want', json_encode([max(1, min(60, $days)), mb_substr($seg, 0, 60)])); setting_set($pdo, 'wa_dq_rank_at', '0'); setting_set($pdo, 'wa_dq_pre_at', '0'); } catch (Throwable $e) { }
+    return ['days' => max(1, min(60, $days)), 'win' => 3, 'pending' => true, 'orders_pending' => false, 'rows' => [], 'tips' => [], 'overall' => ['n' => 0, 'dn' => 0, 'd' => 0.0, 'cost' => 0, 'ord' => 0, 'rev' => 0, 'roi' => null], 'orders_ok' => false, 'seg' => $seg, 'segs' => []];
+}
+function wa_msg_rank_run(PDO $pdo, int $days, int $maxAge, bool $orders, string $seg, bool $cacheOnly = false): ?array
+{   // $orders = false (the page): never run the heavy order matching — use the last prepared one (the engine prepares it in the background); the answer is cached so the next open is instant
+    $days = max(1, min(60, $days)); $win = max(1, min(14, (int)setting_get($pdo, 'wa_attr_days', '3'))); $seg = mb_substr(trim($seg), 0, 60); $ck = 'msg_rank4_' . $days . '_' . $win . ($seg !== '' ? '_' . md5(mb_strtolower($seg)) : '');
+    $hit = wa_cpc_get($pdo, $ck); if ($hit && $hit['age'] < $maxAge && ($orders ? empty($hit['v']['orders_pending']) : true)) return $hit['v'];
+    if ($cacheOnly) return $hit ? $hit['v'] : null;   // any copy is fine for a page, however old (the engine refreshes it); none → the caller decides
+    $o = ['days' => $days, 'win' => $win, 'orders_pending' => false, 'rows' => [], 'tips' => [], 'overall' => ['n' => 0, 'dn' => 0, 'd' => 0.0, 'cost' => 0, 'ord' => 0, 'rev' => 0, 'roi' => null], 'orders_ok' => false, 'seg' => $seg, 'segs' => []];
+    $since = date('Y-m-d H:i:s', time() - $days * 86400);
+    foreach (['aud_type' => "VARCHAR(60) NOT NULL DEFAULT ''", 'aud_from' => 'DATE NULL', 'aud_to' => 'DATE NULL'] as $c0 => $d0) { try { $pdo->query("SELECT $c0 FROM wa_campaigns LIMIT 0"); } catch (Throwable $e) { try { $pdo->exec("ALTER TABLE wa_campaigns ADD COLUMN $c0 $d0"); } catch (Throwable $e2) { } } }
+    try {
+        $q = $pdo->prepare("SELECT /*+ MAX_EXECUTION_TIME(30000) */ COALESCE(NULLIF(i.tpl_used, 0), c.tpl_id) AS tid, c.aud_type AS sg, COUNT(*) AS n, SUM(i.last_status IN ('delivered', 'read')) AS d, SUM(i.last_status = 'read') AS rd, SUM(i.err_code = 131049) AS held,
+            SUM(i.last_status IN ('delivered', 'read') AND ct.last_in_at IS NOT NULL AND ct.last_in_at > i.sent_at AND ct.last_in_at < DATE_ADD(i.sent_at, INTERVAL $win DAY)) AS rep
+            FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id LEFT JOIN wa_contacts ct ON ct.phone = i.phone WHERE i.wamid <> '' AND i.sent_at >= ?" . ($seg !== '' ? " AND c.aud_type = ?" : '') . " GROUP BY tid, sg");
+        $q->execute($seg !== '' ? [$since, $seg] : [$since]); $acc = []; $bys = []; $segN = [];
+        foreach ($q->fetchAll() as $r0) { $t0 = (int)$r0['tid']; $a0 = &$acc[$t0]; $a0 = $a0 ?? ['tid' => $t0, 'n' => 0, 'd' => 0, 'rd' => 0, 'held' => 0, 'rep' => 0]; foreach (['n', 'd', 'rd', 'held', 'rep'] as $k0) $a0[$k0] += (int)$r0[$k0]; unset($a0);
+            $sg = trim((string)$r0['sg']); $sg = $sg !== '' ? $sg : '—'; $b0 = &$bys[$t0][$sg]; $b0 = $b0 ?? [0, 0, 0]; $b0[0] += (int)$r0['n']; $b0[1] += (int)$r0['d']; $b0[2] += (int)$r0['rep']; unset($b0); $segN[$sg] = ($segN[$sg] ?? 0) + (int)$r0['n']; }
+        $rows = array_values(array_filter($acc, fn($x) => $x['n'] >= 30)); usort($rows, fn($x, $y) => ($y['d'] / $y['n']) <=> ($x['d'] / $x['n'])); $rows = array_slice($rows, 0, 200); arsort($segN); $o['segs'] = array_map(fn($k, $v) => ['name' => $k, 'n' => $v], array_keys($segN), array_values($segN));
+    } catch (Throwable $e) { return $o; }
+    $ord = []; $ock = 'msg_orders_' . $days . '_' . $win; $oc = $seg === '' ? wa_cpc_get($pdo, $ock) : null;   // order figures are not split per customer type (yet)
+    if ($oc && is_array($oc['v']) && ($oc['age'] < 1800 || !$orders)) { foreach ($oc['v'] as $k => $v) $ord[(int)$k] = $v; $o['orders_ok'] = true; }   // the prepared order figures (refreshed at most every 30 minutes)
+    elseif ($orders && $seg === '') {
+    try {   // orders → the last campaign message delivered to that phone (within the window) before the order
+        $q = $pdo->prepare("SELECT /*+ MAX_EXECUTION_TIME(20000) */ tid, COUNT(*) AS o, SUM(total) AS rev FROM (SELECT o.shopify_id, o.store_key, o.total, COALESCE(NULLIF(i.tpl_used, 0), c.tpl_id) AS tid,
+                ROW_NUMBER() OVER (PARTITION BY o.shopify_id, o.store_key ORDER BY i.sent_at DESC) AS rn
+            FROM shop_orders o JOIN wa_camp_items i ON i.phone COLLATE utf8mb4_unicode_ci = RIGHT(REGEXP_REPLACE(o.phone, '[^0-9]', ''), 10) COLLATE utf8mb4_unicode_ci
+                AND i.last_status IN ('delivered', 'read') AND i.wamid <> '' AND i.sent_at < o.created_at AND i.sent_at >= DATE_SUB(o.created_at, INTERVAL $win DAY)
+            JOIN wa_campaigns c ON c.id = i.camp_id WHERE o.created_at >= ? AND o.financial_status NOT IN ('voided', 'refunded')) t WHERE rn = 1 GROUP BY tid");
+        $q->execute([$since]); foreach ($q->fetchAll() as $r) $ord[(int)$r['tid']] = [(int)$r['o'], (float)$r['rev']]; $o['orders_ok'] = true;
+    } catch (Throwable $e) { }
+        if ($o['orders_ok']) wa_cpc_put($pdo, $ock, $ord);
+    }
+    if (!$orders && !$o['orders_ok'] && $seg === '') $o['orders_pending'] = true;   // not prepared yet: the page shows delivery and replies now and asks again
+    $R = function_exists('wab_rates') ? wab_rates($pdo) : ['marketing' => 1.09, 'utility' => 0.15];
+    $tn = []; foreach ($pdo->query("SELECT id, name, version, body, header_format, buttons, category, folder FROM wa_templates")->fetchAll() as $t) $tn[(int)$t['id']] = $t;
+    $emoji = '/[\x{1F300}-\x{1FAFF}\x{2600}-\x{27BF}]/u'; $groups = []; $T = ['n' => 0, 'dn' => 0, 'cost' => 0.0, 'ord' => 0, 'rev' => 0.0]; $out = [];
+    foreach ($rows as $r) {
+        $t = $tn[(int)$r['tid']] ?? null; if (!$t) continue; $n = (int)$r['n']; $dn = (int)$r['d']; $rep = (int)$r['rep']; [$on, $rev] = $ord[(int)$r['tid']] ?? [0, 0.0];
+        $body = (string)$t['body']; $len = mb_strlen($body); $hf = strtoupper((string)$t['header_format']); $btn = json_decode((string)$t['buttons'], true); $nb = is_array($btn) ? count($btn) : 0;
+        $rate = strtoupper((string)$t['category']) === 'UTILITY' ? (float)$R['utility'] : (float)$R['marketing']; $cost = $dn * $rate;
+        $f = ['header' => in_array($hf, ['IMAGE', 'VIDEO', 'DOCUMENT'], true) ? ['IMAGE' => 'a photo on top', 'VIDEO' => 'a video on top', 'DOCUMENT' => 'a PDF on top'][$hf] : 'text only', 'length' => $len <= 150 ? 'short text (150 letters or less)' : ($len <= 300 ? 'medium text (151–300 letters)' : 'long text (over 300 letters)'),
+            'emoji' => preg_match($emoji, $body) ? 'an emoji' : 'no emoji', 'buttons' => $nb > 0 ? 'buttons' : 'no buttons', 'question' => strpos($body, '?') !== false ? 'a question in the text' : 'no question', 'price' => (strpos($body, '₹') !== false || stripos($body, 'rs.') !== false) ? 'a price (₹)' : 'no price'];
+        if ($n >= 200) { foreach ($f as $k => $v) { $g = &$groups[$k][$v]; $g = $g ?? [0, 0, 0, 0, 0.0]; $g[0] += $n; $g[1] += $dn; $g[2] += $rep; $g[3] += $on; $g[4] += $rev; unset($g); } $T['n'] += $n; $T['dn'] += $dn; $T['cost'] += $cost; $T['ord'] += $on; $T['rev'] += $rev; }
+        $out[] = ['id' => (int)$t['id'], 'name' => (string)$t['name'], 'ver' => (int)$t['version'], 'n' => $n, 'dn' => $dn, 'd' => round($dn / $n, 3), 'rd' => round((int)$r['rd'] / $n, 3), 'held' => round((int)$r['held'] / $n, 3),
+            'rep' => $dn ? round($rep / $dn, 4) : 0, 'rep_n' => $rep, 'ord' => $on, 'rev' => round($rev), 'cost' => round($cost), 'roi' => $cost > 0 && $dn >= 1000 ? round($rev / $cost, 2) : null, 'cpo' => $on ? round($cost / $on) : null,
+            'o1k' => $dn >= 1000 ? round($on * 1000 / $dn, 2) : null, 'low' => $n < 200, 'lowo' => $dn < 1000, 'by_seg' => array_map(fn($k, $v) => ['seg' => $k, 'n' => $v[0], 'd' => $v[0] ? round($v[1] / $v[0], 3) : 0, 'dn' => $v[1], 'rep_n' => $v[2], 'rep' => $v[1] ? round($v[2] / $v[1], 4) : 0], array_keys($bys[(int)$r['tid']] ?? []), array_values($bys[(int)$r['tid']] ?? [])), 'topic' => wa_msg_topic($t), 'chars' => $len, 'header' => $f['header'], 'category' => (string)$t['category'], 'body' => mb_substr($body, 0, 900), 'buttons' => $nb, 'features' => array_values($f)];
+    }
+    // the balanced score: where each message stands among the ranked ones on the three lenses
+    $rk = fn(array $vals, $v) => count($vals) > 1 ? count(array_filter($vals, fn($x) => $x < $v)) / (count($vals) - 1) : 0.5;
+    $ok = array_filter($out, fn($x) => !$x['low']); $vd = array_column($ok, 'd'); $vr = array_column($ok, 'rep'); $vo = array_filter(array_column($ok, 'o1k'), fn($x) => $x !== null);
+    foreach ($out as &$x) { if ($x['low']) { $x['score'] = null; continue; } $w = 0; $sum = 0; $sum += $rk($vd, $x['d']); $w += 1; $sum += $rk($vr, $x['rep']); $w += 1; if ($o['orders_ok'] && $x['o1k'] !== null && count($vo) > 1) { $sum += 1.5 * $rk(array_values($vo), $x['o1k']); $w += 1.5; } $x['score'] = (int)round($sum / $w * 100); } unset($x);
+    $o['rows'] = $out; $o['overall'] = ['n' => $T['n'], 'dn' => $T['dn'], 'd' => $T['n'] ? round($T['dn'] / $T['n'], 3) : 0.0, 'cost' => round($T['cost']), 'ord' => $T['ord'], 'rev' => round($T['rev']), 'roi' => $T['cost'] > 0 ? round($T['rev'] / $T['cost'], 2) : null];
+    // what the best ones have in common, per lens (only when both sides have enough messages)
+    $tips = [];
+    foreach ($groups as $k => $gs) {
+        $lens = ['d' => [], 'r' => [], 'o' => []]; foreach ($gs as $name => [$n, $dn, $rep, $on, $rev]) { if ($n >= 1000) $lens['d'][$name] = $dn / $n; if ($dn >= 1000) $lens['r'][$name] = $rep / $dn; if ($dn >= 1500 && $on >= 5) $lens['o'][$name] = $on * 1000 / $dn; }
+        foreach (['d' => ['🚚', 0.05, 'abs', fn($v) => round($v * 100) . '% delivered'], 'r' => ['💬', 0.25, 'rel', fn($v) => round($v * 100, 1) . '% of delivered replied'], 'o' => ['🛒', 0.30, 'rel', fn($v) => round($v, 1) . ' orders per 1,000 delivered']] as $lk => [$em, $th, $mode, $fmt]) {
+            $v = $lens[$lk]; if (count($v) < 2) continue; asort($v); $wn = array_key_first($v); $bn = array_key_last($v); $wv = $v[$wn]; $bv = $v[$bn]; $diff = $mode === 'abs' ? $bv - $wv : ($wv > 0 ? ($bv - $wv) / $wv : 1);
+            if ($diff >= $th) $tips[] = ['diff' => $diff, 'text' => $em . ' With ' . $bn . ': ' . $fmt($bv) . ', against ' . $fmt($wv) . ' with ' . $wn . '.'];
+        }
+    }
+    usort($tips, fn($a, $b) => $b['diff'] <=> $a['diff']); $o['tips'] = array_slice(array_column($tips, 'text'), 0, 6);
+    wa_cpc_put($pdo, $ck, $o); return $o;
+}
 /** The usual RANGE of the hourly delivery rate over the last 7 days (each date+hour with 300+ messages, receipts given 2 hours): p25 / p50 / p75. Judging "good" or "low" against a range, not one number. Remembered for 10 min. */
 function wa_dq_range(PDO $pdo): array
 {
@@ -178,6 +273,21 @@ function wa_dq_left(PDO $pdo, bool $fresh = false): array
     $moneyLeft = $cfg['budget'] > 0 ? max(0.0, $cfg['budget'] - $spend) : null; $moneyPush = $moneyLeft === null ? PHP_INT_MAX : (int)floor($moneyLeft / max(0.01, $mr * max(0.2, $rate)));
     $memo = ['pace' => $pace, 'on' => $cfg['on'], 'cap' => $cfg['hourly'], 'used' => $used, 'exp' => $exp, 'rate' => round($rate, 2), 'state' => $state, 'range' => $range, 'm_live' => round($mLive, 2), 'mult' => round($mult, 2), 'eff_cap' => $effCap, 'learning' => $learning, 'smart' => $cfg['smart'], 'daily' => $cfg['daily'], 'day_used' => $dayUsed, 'day_left' => $dayLeft, 'left' => min($hourLeft, $dayLeft, $moneyPush), 'spend' => (int)round($spend), 'budget' => $cfg['budget'], 'push_cap' => $pushCap, 'why' => ($moneyLeft !== null && $moneyLeft <= 0) ? 'money' : ($dayLeft <= 0 ? 'day' : ($hourLeft <= 0 ? 'hour' : ''))]; $at = microtime(true); return $memo;
 }
+/** 🏦 Meta's OWN spend (pricing analytics of every WhatsApp account, by calendar day, all message kinds) from what the engine already fetched (read from the cache only, never waits for Meta; the engine refreshes it hourly),
+ *  and the real price per delivered message yesterday (Meta's ₹ ÷ delivered template messages that day). Returns ['today', 'yday', 'eff', 'at', 'error'] (null = not available). Meta's figures arrive with a delay of a few hours. */
+function wa_meta_spend_cached(PDO $pdo, bool $fetch = false): array
+{
+    $o = ['today' => null, 'yday' => null, 'eff' => null, 'at' => 0, 'error' => ''];
+    if (!function_exists('wab_meta')) return $o;
+    $from = date('Y-m-d', time() - 2 * 86400); $to = date('Y-m-d'); $c = null;
+    if ($fetch) { try { $c = wab_meta($pdo, $from, $to); } catch (Throwable $e) { $c = null; } }
+    else { try { $c = json_decode((string)setting_get($pdo, 'wab_meta_' . md5($from . $to), ''), true); } catch (Throwable $e) { $c = null; } }
+    if (!is_array($c)) return $o;
+    $o['at'] = (int)($c['at'] ?? 0); $o['error'] = (string)($c['error'] ?? ''); $days = (array)($c['days'] ?? []);
+    if ($days) { $o['today'] = (float)($days[$to] ?? 0); $o['yday'] = (float)($days[date('Y-m-d', time() - 86400)] ?? 0);
+        if ($o['yday'] > 0) { try { $q = $pdo->prepare("SELECT SUM(status IN ('delivered', 'read')) FROM wa_messages WHERE dir = 'out' AND mtype = 'template' AND ts >= ? AND ts < ?"); $q->execute([date('Y-m-d 00:00:00', time() - 86400), date('Y-m-d 00:00:00')]); $dl = (int)$q->fetchColumn(); if ($dl >= 1000) $o['eff'] = round($o['yday'] / $dl, 2); } catch (Throwable $e) { } } }
+    return $o;
+}
 /** The plain sentence for why the plan is holding the campaigns right now. */
 function wa_dq_why_text(array $d): string
 {
@@ -187,9 +297,17 @@ function wa_dq_why_text(array $d): string
     return 'Daily plan: this hour’s allowance (about ' . number_format((int)($d['push_cap'] ?? $d['cap'] ?? 0)) . ' pushes) is used by all campaigns together — it continues in the next hour.';
 }
 /** Campaign messages by hour of the day: pushed (accepted by Meta), delivered / read — for the current business day and for the last 7 days together (which hours suit best). Remembered for 60 s. */
-function wa_dq_hours(PDO $pdo): array
+function wa_dq_hours(PDO $pdo, int $maxAge = 900): array
+{   // served from the database cache; the engine rebuilds it in the background every 2 minutes, so the page never waits for the heavy count
+    $hit = wa_cpc_get($pdo, 'dq_hours'); if ($hit && $hit['age'] < $maxAge) return $hit['v'];
+    $o = wa_dq_hours_build($pdo); wa_cpc_put($pdo, 'dq_hours', $o); return $o;
+}
+function wa_dq_precompute(PDO $pdo): void
 {
-    try { $hit = json_decode((string)setting_get($pdo, 'wa_dq_hours', ''), true); if (is_array($hit) && (int)($hit['t'] ?? 0) > time() - 60) return $hit; } catch (Throwable $e) { }
+    try { if ((int)setting_get($pdo, 'wa_dq_pre_at', '0') > time() - 120) return; setting_set($pdo, 'wa_dq_pre_at', (string)time()); wa_dq_hours($pdo, 120); if ((int)setting_get($pdo, 'wa_dq_rank_at', '0') <= time() - 1200) { setting_set($pdo, 'wa_dq_rank_at', (string)time()); $want = json_decode((string)setting_get($pdo, 'wa_rank_want', ''), true); if (is_array($want) && count($want) === 2) { setting_set($pdo, 'wa_rank_want', ''); wa_msg_rank($pdo, (int)$want[0], 1200, true, (string)$want[1]); } else { $n = (int)setting_get($pdo, 'wa_dq_pre_n', '0'); setting_set($pdo, 'wa_dq_pre_n', (string)($n + 1)); wa_msg_rank($pdo, [14, 7, 14, 30][$n % 4], 1200, true); } }   /* the heavy message ranking: one window every 20 minutes (was every 2) */ wa_meta_spend_cached($pdo, true); } catch (Throwable $e) { }
+}
+function wa_dq_hours_build(PDO $pdo): array
+{
     $from = function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 10:00:00'); $to = date('Y-m-d H:i:s', strtotime($from) + 86400);
     $o = ['t' => time(), 'from' => $from, 'to' => $to, 'start_hour' => (int)date('G', strtotime($from)), 'today' => [], 'week' => []];
     $run = function (string $a, string $b) use ($pdo) { $r = []; try { $q = $pdo->prepare("SELECT HOUR(ts) AS h, COUNT(*) AS n, SUM(status IN ('delivered', 'read')) AS d, SUM(status = 'read') AS rd FROM wa_messages WHERE dir = 'out' AND who = 'campaign' AND mtype = 'template' AND ts >= ? AND ts < ? GROUP BY HOUR(ts)"); $q->execute([$a, $b]); foreach ($q->fetchAll() as $x) $r[(int)$x['h']] = [(int)$x['n'], (int)$x['d'], (int)$x['rd']]; } catch (Throwable $e) { } return $r; };
@@ -198,7 +316,6 @@ function wa_dq_hours(PDO $pdo): array
     $cfg2 = wa_dq_cfg($pdo); $sc2 = wa_dq_hour_scores($pdo); [$w0, $w1] = function_exists('wa_camp_window') ? wa_camp_window($pdo) : [0, 24]; $o['plan'] = []; $o['cur'] = (int)date('G'); $o['hourly'] = $cfg2['hourly']; $o['daily'] = $cfg2['daily']; $o['smart'] = $cfg2['smart']; $o['on'] = $cfg2['on'];
     for ($h = 0; $h < 24; $h++) { $in = $h >= $w0 && $h < $w1; $m = ($cfg2['smart'] && empty($sc2['learning'])) ? (float)($sc2['hours'][$h]['mult'] ?? 1.0) : 1.0; $rt = (float)($sc2['hours'][$h]['rate'] ?? 0); if ($rt <= 0) $rt = 0.75; $rt = max(0.3, min(0.95, $rt)); if ($h === $o['cur']) $m *= (float)(wa_dq_left($pdo)['m_live'] ?? 1.0); $d = $in ? (int)round($cfg2['hourly'] * $m) : 0; $o['plan'][$h] = ['d' => $d, 'p' => $d ? (int)ceil($d / $rt) : 0]; }
     $o['today'] = $run($from, $to); $o['week'] = $run(date('Y-m-d H:i:s', time() - 7 * 86400), date('Y-m-d H:i:s', time() + 60));
-    try { setting_set($pdo, 'wa_dq_hours', json_encode($o)); } catch (Throwable $e) { }
     return $o;
 }
 /** The plan card: cap, used, people waiting in the one queue, Meta room. Remembered for 30 s. */
