@@ -286,6 +286,12 @@ function wa_store_in(PDO $pdo, array $m, string $name, int $numberId): string
     } catch (PDOException $e) { /* the same wamid twice (Meta retries) — already stored */ }
     // STOP / unsubscribe words → opt out for every number
     if ($t === 'text' && preg_match('/^\s*(stop|unsubscribe|band karo|band kro|no more)\s*[.!]*\s*$/iu', $body)) $pdo->prepare("UPDATE wa_contacts SET optout = 1 WHERE phone = ?")->execute([$key]);
+    // 🎫 a customer whose complaint was SOLVED writes again (to order, to complain again, anything): the chat goes back into Requests (nobody holds it) so the whole team sees it
+    try { if ($ex && (string)setting_get($pdo, 'cxres_' . $key, '') !== '') {
+        setting_set($pdo, 'cxres_' . $key, '');
+        $open = $pdo->prepare("SELECT 1 FROM cx_cases WHERE phone = ? AND status IN ('open', 'reopened') LIMIT 1"); $open->execute([$key]);
+        if (!$open->fetchColumn()) { $pdo->prepare("UPDATE wa_contacts SET assigned_emp = 0, assigned_at = NULL, state = 'unassigned', status = 'open', closed_at = NULL WHERE phone = ?")->execute([$key]); wa_event($pdo, $key, '↩ The customer wrote again after the complaint was solved — the chat is back in Requests'); }
+    } } catch (Throwable $e) { }
     if (function_exists('wa_source_hook')) wa_source_hook($pdo, $key, $ex ? (string)$ex['last_in_at'] : null, $body, $now);   // community link / reply to a campaign
     if (function_exists('wag_after_in')) wag_after_in($pdo, $key, $m, !$ex, $ref);   // growth engine: ad id, flows that start or continue
     if (function_exists('wq_after_in')) wq_after_in($pdo, $key, $m, !$ex, $ref);   // WhatsApp Sales: type the query (never blocks)
