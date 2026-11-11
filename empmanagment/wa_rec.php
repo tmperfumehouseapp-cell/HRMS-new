@@ -26,7 +26,9 @@ function wa_rec_tables(PDO $pdo): bool
     try {
         $pdo->exec("CREATE TABLE IF NOT EXISTS wa_rec_log (id BIGINT AUTO_INCREMENT PRIMARY KEY, camp_id INT NOT NULL, item_id BIGINT NOT NULL, phone VARCHAR(20) NOT NULL, attempt TINYINT NOT NULL DEFAULT 2,
             number_id INT NOT NULL DEFAULT 0, tpl_id INT NOT NULL DEFAULT 0, is_alt TINYINT NOT NULL DEFAULT 0, wamid VARCHAR(120) NOT NULL DEFAULT '', ok TINYINT NOT NULL DEFAULT 1, err_code INT NOT NULL DEFAULT 0,
-            err VARCHAR(200) NOT NULL DEFAULT '', at DATETIME NOT NULL, KEY k_item (item_id), KEY k_camp (camp_id, at), KEY k_at (at), KEY k_wamid (wamid), KEY k_phone (phone)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+            err VARCHAR(200) NOT NULL DEFAULT '', at DATETIME NOT NULL, KEY k_item (item_id), KEY k_camp (camp_id, at), KEY k_at (at), KEY k_wamid (wamid), KEY k_phone (phone)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+        // the table must use the SAME collation as the rest of the database (wa_messages …): a table made with the server default (utf8mb4_0900_ai_ci) could not be joined to them — error 1267 "Illegal mix of collations", which kept every recovery round from starting
+        try { $c = (string)$pdo->query("SELECT TABLE_COLLATION FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'wa_rec_log'")->fetchColumn(); if ($c !== '' && $c !== 'utf8mb4_unicode_ci') $pdo->exec("ALTER TABLE wa_rec_log CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"); } catch (Throwable $e2) { }
         return $ok = true;
     } catch (Throwable $e) { return $ok = false; }
 }

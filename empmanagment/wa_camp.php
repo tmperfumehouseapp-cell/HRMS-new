@@ -1002,7 +1002,7 @@ function wa_camp_people_rows(PDO $pdo, array $camp, ?array $tpl, string $f, stri
 
 // ---------------------------------------------------------------------------------------------------------------- router
 $__wk = (string)($action ?? ($_GET['action'] ?? ''));
-if (in_array($__wk, ['wa.dq_worker', 'wa.rec_run', 'wa.dq_set', 'wa.rec_report', 'wa.rec_set', 'wa.camp_fast', 'wa.camp_fast_tick', 'wa.fu_list', 'wa.fu_save', 'wa.fu_del', 'wa.fu_preset', 'wa.camp_list', 'wa.camp_templates', 'wa.camp_get', 'wa.camp_preview', 'wa.camp_freq', 'wa.camp_typed_phones', 'wa.camp_save', 'wa.camp_start', 'wa.camp_send_now', 'wa.camp_resume_all', 'wa.camp_stop_all', 'wa.camp_pause', 'wa.camp_resume', 'wa.camp_cancel', 'wa.camp_del', 'wa.camp_tick', 'wa.camp_suggest', 'wa.camp_best_time', 'wa.camp_people', 'wa.camp_people_csv', 'wa.camp_thread', 'wa.reports', 'wa.mix_state', 'wa.camp_mix_set'], true) && !($__wk === 'wa.camp_suggest' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST')) {
+if (in_array($__wk, ['wa.camp_snap', 'wa.camp_hours', 'wa.dq_worker', 'wa.rec_run', 'wa.dq_set', 'wa.rec_report', 'wa.rec_set', 'wa.camp_fast', 'wa.camp_fast_tick', 'wa.fu_list', 'wa.fu_save', 'wa.fu_del', 'wa.fu_preset', 'wa.camp_list', 'wa.camp_templates', 'wa.camp_get', 'wa.camp_preview', 'wa.camp_freq', 'wa.camp_typed_phones', 'wa.camp_save', 'wa.camp_start', 'wa.camp_send_now', 'wa.camp_resume_all', 'wa.camp_stop_all', 'wa.camp_pause', 'wa.camp_resume', 'wa.camp_cancel', 'wa.camp_del', 'wa.camp_tick', 'wa.camp_suggest', 'wa.camp_best_time', 'wa.camp_people', 'wa.camp_people_csv', 'wa.camp_thread', 'wa.reports', 'wa.mix_state', 'wa.camp_mix_set'], true) && !($__wk === 'wa.camp_suggest' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST')) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     $auth = require_auth(); wa_guard_admin($pdo, $auth);
     if (!wa_tables($pdo) || !wa_more_tables($pdo) || !function_exists('wa_tpl_tables') || !wa_tpl_tables($pdo)) json_response(['error' => 'WhatsApp storage is not available — check database permissions.'], 500);
@@ -1064,7 +1064,7 @@ if (in_array($__wk, ['wa.dq_worker', 'wa.rec_run', 'wa.dq_set', 'wa.rec_report',
             $pc = []; foreach ((function_exists('wa_piece_all') ? wa_piece_all($pdo, true) : []) as $slot => $l) $pc[$slot] = count($l);
             $lite = !empty($_GET['lite']);   // ⚡ the list screen does not need the message library (it is the slowest part: one row per message with its per-number matrix); the New-campaign wizard asks for it by itself (wa.camp_templates)
             $fastNow = ['ids' => array_keys(wa_camp_fast_all($pdo)), 'now' => time()];
-            json_response(['campaigns' => $out, 'total' => $totalCamps, 'offset' => 0, 'fast' => $fastNow, 'rec_status' => wa_rec_status($pdo), 'dq' => wa_dq_status($pdo), 'hours' => wa_dq_hours($pdo), 'spend' => wa_camp_spend_today($pdo, !empty($_GET['fresh'])), 'lite' => $lite, 'templates' => $lite ? [] : $tplList(true), 'numbers' => $nums, 'portfolio' => $caps['_port'] ?? null, 'engine' => $engine(), 'tags' => WA_TAGS, 'pieces' => $pc, 'window' => wa_camp_window($pdo), 'can_media' => function_exists('wa_tpl_send_components') && function_exists('wa_tpl_sendable')]);
+            $respCp = ['campaigns' => $out, 'total' => $totalCamps, 'offset' => 0, 'fast' => $fastNow, 'rec_status' => wa_rec_status($pdo), 'dq' => wa_dq_status($pdo), 'spend' => wa_camp_spend_today($pdo, !empty($_GET['fresh'])), 'lite' => $lite, 'templates' => $lite ? [] : $tplList(true), 'numbers' => $nums, 'portfolio' => $caps['_port'] ?? null, 'engine' => $engine(), 'tags' => WA_TAGS, 'pieces' => $pc, 'window' => wa_camp_window($pdo), 'can_media' => function_exists('wa_tpl_send_components') && function_exists('wa_tpl_sendable')]; if ($lite) wa_cpc_put($pdo, 'camp_list', $respCp); json_response($respCp);
         }
         case 'wa.camp_templates': {
             $pc = []; foreach ((function_exists('wa_piece_all') ? wa_piece_all($pdo, true) : []) as $slot => $l) $pc[$slot] = count($l);
@@ -1259,6 +1259,12 @@ if (in_array($__wk, ['wa.dq_worker', 'wa.rec_run', 'wa.dq_set', 'wa.rec_report',
             if (isset($in['limit_mode'])) { setting_set($pdo, 'wa_limit_mode', (string)$in['limit_mode'] === 'per_number' ? 'per_number' : 'shared'); setting_set($pdo, 'wa_limit_guard_at', '0'); }
             if (isset($in['auto'])) setting_set($pdo, 'wa_dq_auto', !empty($in['auto']) ? '1' : '0');
             setting_set($pdo, 'wa_dq_stat', ''); json_response(['ok' => true, 'dq' => wa_dq_status($pdo)]);
+        }
+        case 'wa.camp_snap': {   // 🗄 the last answer of wa.camp_list, straight from the database cache: the page draws it at once and refreshes behind it
+            $c0 = wa_cpc_get($pdo, 'camp_list'); json_response(['snap' => $c0 ? $c0['v'] : null, 'age' => $c0 ? $c0['age'] : null]);
+        }
+        case 'wa.camp_hours': {   // 🕒 the hour grid, only when the card is opened
+            json_response(['hours' => wa_dq_hours($pdo)]);
         }
         case 'wa.dq_worker': {   // ⚙ one more campaign sends at the same time, only while delivery is good (the page asks again and again while it is open)
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
