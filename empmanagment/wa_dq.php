@@ -11,7 +11,7 @@
  *    so campaigns get what is left of the hour / day.
  *  - Meta's own 24-hour room (with our margin) stays the ceiling; the number rules (same number for people who wrote to it, the rest by room, Medium = High) are unchanged.
  *  - 🧠 Hour-aware (wa_dq_smart 1): it LEARNS how well each hour of the day delivers (messages older than 2 hours from the last 14 days, today counted double; a message that was READ counts double — an hour whose people open the message is worth more than one that is only delivered) and scales that hour's allowance:
- *    a good hour gets up to 1.5× the cap, a weak one down to 0.3× (never zero, so every hour keeps being measured). Until 4 hours have 300+ messages of data it stays flat. Score = hour's worth (delivered + read per message pushed) ÷ the overall worth.
+ *    a good hour gets up to 3× the cap, a weak one down to 0.3× (never zero, so every hour keeps being measured). Until 4 hours have 300+ messages of data it stays flat. Score = hour's worth (delivered + read per message pushed) ÷ the overall worth.
  *  - 🤖 Auto day cap (wa_dq_auto 1): once at the start of every business day the plan judges yesterday — did the delivery rate hold up against the 7 days before, and did yesterday really use the cap? Held up and used (90%+) →
  *    the day cap goes UP 5,000 (max wa_dq_daily_max 90,000 = Meta's 90% margin); delivery fell 8+ points → DOWN 5,000 (15+ points → 10,000); otherwise it stays. Never below wa_dq_daily_min 40,000. The number saved on the card is the start / manual value.
  * Settings: wa_dq_on 1 · wa_dq_hourly 10000 · wa_dq_daily 75000 (campaigns per business day: Meta's room is also used by recovery retries, order updates and follow-ups, so campaigns leave about 15,000 of it free).   Route (in wa_camp.php): wa.dq_set POST {on, hourly}
@@ -60,29 +60,58 @@ function wa_dq_hour_scores(PDO $pdo): array
         $q->execute([$today, $today, $today, date('Y-m-d H:i:s', time() - 14 * 86400), date('Y-m-d H:i:s', time() - 7200)]); $sn = 0.0; $sd = 0.0; $rows = [];
         foreach ($q->fetchAll() as $r) { $rows[(int)$r['h']] = $r; if ((int)$r['n'] >= 300) { $sn += (float)$r['wn']; $sd += (float)$r['wd']; $o['measured']++; } }
         $overall = $sn > 0 ? $sd / $sn : 0.0; $o['overall'] = round($overall, 3); $o['learning'] = $o['measured'] < 4 || $overall <= 0;
-        foreach ($rows as $h => $r) { $rate = (float)$r['wn'] > 0 ? (float)$r['wd'] / (float)$r['wn'] : 0.0; $m = (!$o['learning'] && (int)$r['n'] >= 300) ? max(0.3, min(1.5, $rate / $overall)) : 1.0; $o['hours'][$h] = ['n' => (int)$r['n'], 'rate' => round((float)$r['wn'] > 0 ? (float)$r['wdel'] / (float)$r['wn'] : 0.0, 3), 'worth' => round($rate, 3), 'mult' => round($m, 2)]; }
+        foreach ($rows as $h => $r) { $rate = (float)$r['wn'] > 0 ? (float)$r['wd'] / (float)$r['wn'] : 0.0; $m = (!$o['learning'] && (int)$r['n'] >= 300) ? max(0.3, min(3.0, $rate / $overall)) : 1.0; $o['hours'][$h] = ['n' => (int)$r['n'], 'rate' => round((float)$r['wn'] > 0 ? (float)$r['wdel'] / (float)$r['wn'] : 0.0, 3), 'worth' => round($rate, 3), 'mult' => round($m, 2)]; }
     } catch (Throwable $e) { }
     try { setting_set($pdo, 'wa_dq_scores', json_encode($o)); } catch (Throwable $e) { }
     return $o;
 }
-/** This hour's room (owner, 11 Nov): the hourly cap counts messages Meta DELIVERS, not messages we push. Messages sent in the last hour that are still waiting for their receipt count at the recent
- *  delivery rate, so the sender pushes more when Meta delivers fewer (10,000 delivered ≈ 13,000 pushed at 76%). The day cap counts pushes (Meta's own wall counts pushes) and keeps room for retries / order updates.
- *  Returns ['on', 'cap', 'used' (pushed this hour), 'exp' (expected delivered), 'rate', 'daily', 'day_used', 'day_left', 'left' (pushes still allowed), 'why']. Remembered for 15 s. */
-function wa_dq_left(PDO $pdo): array
+/** The usual RANGE of the hourly delivery rate over the last 7 days (each date+hour with 300+ messages, receipts given 2 hours): p25 / p50 / p75. Judging "good" or "low" against a range, not one number. Remembered for 10 min. */
+function wa_dq_range(PDO $pdo): array
 {
-    static $memo = null, $at = 0; if ($memo !== null && microtime(true) - $at < 15) return $memo;
+    try { $hit = json_decode((string)setting_get($pdo, 'wa_dq_range', ''), true); if (is_array($hit) && (int)($hit['t'] ?? 0) > time() - 600) return $hit; } catch (Throwable $e) { }
+    $o = ['t' => time(), 'p25' => 0.0, 'p50' => 0.0, 'p75' => 0.0, 'n' => 0];
+    try { $q = $pdo->prepare("SELECT COUNT(*) AS n, SUM(status IN ('delivered', 'read')) AS d FROM wa_messages WHERE dir = 'out' AND who = 'campaign' AND mtype = 'template' AND ts >= ? AND ts < ? GROUP BY DATE(ts), HOUR(ts) HAVING n >= 300");
+        $q->execute([date('Y-m-d H:i:s', time() - 7 * 86400), date('Y-m-d H:i:s', time() - 7200)]); $r = []; foreach ($q->fetchAll() as $x) $r[] = (int)$x['d'] / max(1, (int)$x['n']); sort($r);
+        if (count($r) >= 8) { $pc = function (float $p) use ($r) { return $r[(int)max(0, min(count($r) - 1, round($p * (count($r) - 1))))]; }; $o = ['t' => time(), 'p25' => round($pc(0.25), 3), 'p50' => round($pc(0.5), 3), 'p75' => round($pc(0.75), 3), 'n' => count($r)]; } } catch (Throwable $e) { }
+    try { setting_set($pdo, 'wa_dq_range', json_encode($o)); } catch (Throwable $e) { }
+    return $o;
+}
+/** The delivery rate RIGHT NOW: the last 4 hours (receipts of the last hour left out), else today so far, else yesterday. Remembered for 60 s. Returns ['rate' (or null), 'from' => 'last 4 h' | 'today' | 'yesterday']. */
+function wa_dq_live(PDO $pdo): array
+{
+    try { $hit = json_decode((string)setting_get($pdo, 'wa_dq_live', ''), true); if (is_array($hit) && (int)($hit['t'] ?? 0) > time() - 60) return $hit; } catch (Throwable $e) { }
+    $f = 'Y-m-d H:i:s'; $now = time(); $today = function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 10:00:00'); $t = strtotime($today); $o = ['t' => $now, 'rate' => null, 'from' => ''];
+    foreach ([['last 4 h', date($f, $now - 4 * 3600), date($f, $now - 3600), 500], ['today', $today, date($f, $now - 3600), 500], ['yesterday', date($f, $t - 86400), $today, 1000]] as [$lab, $a, $b, $min]) {
+        if (strtotime($b) <= strtotime($a)) continue; [$n, $d] = wa_dq_counts($pdo, $a, $b); if ($n >= $min) { $o['rate'] = round($d / $n, 3); $o['from'] = $lab; break; } }
+    try { setting_set($pdo, 'wa_dq_live', json_encode($o)); } catch (Throwable $e) { }
+    return $o;
+}
+/** This hour's room (owner, 11 Nov): the hourly cap counts messages Meta DELIVERS. Messages still waiting for their receipt count at today's real delivery rate. The delivery rate is judged against its usual RANGE:
+ *   good (at or above the middle of the range) → the hour's target grows with it (×1.0 up to ×2, on top of the hour-of-day score) and the sender is allowed to push more to deliver it;
+ *   ok (between the low and the middle) → the normal target, half-compensating pushes;
+ *   low (below the low end of the range) → NO extra pushing: pushes are sized as if delivery were normal, so we do not burn Meta's room on people it will not deliver to.
+ *  The day cap counts pushes (Meta's own wall counts pushes) and keeps room for retries / order updates.
+ *  Returns ['on', 'cap', 'used' (pushed this hour), 'exp' (expected delivered), 'rate', 'state', 'range', 'mult' (hour score), 'm_live', 'eff_cap', 'daily', 'day_used', 'day_left', 'left' (pushes still allowed), 'why']. Remembered for 15 s ($fresh: counted again). */
+function wa_dq_left(PDO $pdo, bool $fresh = false): array
+{
+    static $memo = null, $at = 0; if (!$fresh && $memo !== null && microtime(true) - $at < 15) return $memo;
     try { wa_dq_auto_eval($pdo); } catch (Throwable $e) { }
-    $cfg = wa_dq_cfg($pdo); $used = 0; $dayUsed = 0; $exp = 0; $rate = 0.75; $mult = 1.0; $learning = true;
+    $cfg = wa_dq_cfg($pdo); $used = 0; $dayUsed = 0; $exp = 0; $rate = 0.75; $mult = 1.0; $learning = true; $state = 'unknown'; $mLive = 1.0; $range = ['p25' => 0.0, 'p50' => 0.0, 'p75' => 0.0]; $rateUsed = 0.75;
     if ($cfg['on'] && $cfg['smart']) { $sc = wa_dq_hour_scores($pdo); $learning = !empty($sc['learning']); $mult = (float)($sc['hours'][(int)date('G')]['mult'] ?? 1.0); }   // 🧠 this hour of the day delivers better / worse than average
     if ($cfg['on']) {
-        $now = time();
-        try { $q = $pdo->prepare("SELECT COUNT(*) AS n, SUM(status IN ('delivered', 'read')) AS d, SUM(status = 'sent') AS p FROM wa_messages WHERE dir = 'out' AND who IN ('campaign', 'recover') AND mtype = 'template' AND ts >= ?"); $q->execute([date('Y-m-d H:i:s', $now - 3600)]); $r = $q->fetch(); $used = (int)$r['n']; $dH = (int)$r['d']; $pH = (int)$r['p']; } catch (Throwable $e) { $dH = 0; $pH = 0; $used = 0; }
-        try { $q = $pdo->prepare("SELECT SUM(status IN ('delivered', 'read')) AS d, SUM(status = 'failed') AS f FROM wa_messages WHERE dir = 'out' AND who = 'campaign' AND mtype = 'template' AND ts >= ? AND ts < ?"); $q->execute([date('Y-m-d H:i:s', $now - 6 * 3600), date('Y-m-d H:i:s', $now - 3600)]); $r = $q->fetch(); $res = (int)$r['d'] + (int)$r['f']; if ($res >= 200) $rate = (int)$r['d'] / $res; } catch (Throwable $e) { }
-        $rate = max(0.3, min(0.95, $rate)); $exp = (int)round($dH + $pH * $rate);
+        $now = time(); $dH = 0; $pH = 0;
+        try { $q = $pdo->prepare("SELECT COUNT(*) AS n, SUM(status IN ('delivered', 'read')) AS d, SUM(status = 'sent') AS p FROM wa_messages WHERE dir = 'out' AND who IN ('campaign', 'recover') AND mtype = 'template' AND ts >= ?"); $q->execute([date('Y-m-d H:i:s', $now - 3600)]); $r = $q->fetch(); $used = (int)$r['n']; $dH = (int)$r['d']; $pH = (int)$r['p']; } catch (Throwable $e) { }
+        $lv = wa_dq_live($pdo); $rg = wa_dq_range($pdo); if ($lv['rate'] !== null) $rate = (float)$lv['rate'];
+        $rate = max(0.15, min(0.95, $rate)); $exp = (int)round($dH + $pH * $rate);
+        if ($lv['rate'] !== null && $rg['n'] >= 8 && $rg['p50'] > 0) { $range = $rg; $r0 = (float)$lv['rate'];
+            if ($r0 >= $rg['p50']) { $state = 'good'; $mLive = max(1.0, min(2.0, $r0 / $rg['p50'])); $rateUsed = $r0; }
+            elseif ($r0 >= $rg['p25']) { $state = 'ok'; $rateUsed = $rg['p50'] - ($rg['p50'] - $r0) * 0.5; }
+            else { $state = 'low'; $rateUsed = $rg['p50']; } }
+        else $rateUsed = max(0.5, $rate);
         try { $from = function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 10:00:00'); $q = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE dir = 'out' AND who IN ('campaign', 'recover') AND mtype = 'template' AND ts >= ?"); $q->execute([$from]); $dayUsed = (int)$q->fetchColumn(); } catch (Throwable $e) { }
     }
-    $effCap = (int)round($cfg['hourly'] * $mult); $hourLeft = max(0, (int)ceil(($effCap - $exp) / $rate)); $dayLeft = max(0, $cfg['daily'] - $dayUsed);
-    $memo = ['on' => $cfg['on'], 'cap' => $cfg['hourly'], 'used' => $used, 'exp' => $exp, 'rate' => round($rate, 2), 'mult' => round($mult, 2), 'eff_cap' => $effCap, 'learning' => $learning, 'smart' => $cfg['smart'], 'daily' => $cfg['daily'], 'day_used' => $dayUsed, 'day_left' => $dayLeft, 'left' => min($hourLeft, $dayLeft), 'why' => $dayLeft <= 0 ? 'day' : ($hourLeft <= 0 ? 'hour' : '')]; $at = microtime(true); return $memo;
+    $effCap = (int)round($cfg['hourly'] * $mult * $mLive); $rateUsed = max(0.15, min(0.95, $rateUsed)); $hourLeft = max(0, (int)ceil(($effCap - $exp) / $rateUsed)); $dayLeft = max(0, $cfg['daily'] - $dayUsed);
+    $memo = ['on' => $cfg['on'], 'cap' => $cfg['hourly'], 'used' => $used, 'exp' => $exp, 'rate' => round($rate, 2), 'state' => $state, 'range' => $range, 'm_live' => round($mLive, 2), 'mult' => round($mult, 2), 'eff_cap' => $effCap, 'learning' => $learning, 'smart' => $cfg['smart'], 'daily' => $cfg['daily'], 'day_used' => $dayUsed, 'day_left' => $dayLeft, 'left' => min($hourLeft, $dayLeft), 'why' => $dayLeft <= 0 ? 'day' : ($hourLeft <= 0 ? 'hour' : '')]; $at = microtime(true); return $memo;
 }
 /** Campaign messages by hour of the day: pushed (accepted by Meta), delivered / read — for the current business day and for the last 7 days together (which hours suit best). Remembered for 60 s. */
 function wa_dq_hours(PDO $pdo): array
@@ -94,7 +123,7 @@ function wa_dq_hours(PDO $pdo): array
     $o['mult'] = []; if (wa_dq_cfg($pdo)['smart']) foreach ((wa_dq_hour_scores($pdo)['hours'] ?? []) as $h => $x) $o['mult'][(int)$h] = $x['mult'];
     // the plan for every hour of the day: delivered target (hourly number × the hour's score) and the pushes that takes at that hour's delivery rate; hours outside the sending window get 0
     $cfg2 = wa_dq_cfg($pdo); $sc2 = wa_dq_hour_scores($pdo); [$w0, $w1] = function_exists('wa_camp_window') ? wa_camp_window($pdo) : [0, 24]; $o['plan'] = []; $o['cur'] = (int)date('G'); $o['hourly'] = $cfg2['hourly']; $o['daily'] = $cfg2['daily']; $o['smart'] = $cfg2['smart']; $o['on'] = $cfg2['on'];
-    for ($h = 0; $h < 24; $h++) { $in = $h >= $w0 && $h < $w1; $m = ($cfg2['smart'] && empty($sc2['learning'])) ? (float)($sc2['hours'][$h]['mult'] ?? 1.0) : 1.0; $rt = (float)($sc2['hours'][$h]['rate'] ?? 0); if ($rt <= 0) $rt = 0.75; $rt = max(0.3, min(0.95, $rt)); $d = $in ? (int)round($cfg2['hourly'] * $m) : 0; $o['plan'][$h] = ['d' => $d, 'p' => $d ? (int)ceil($d / $rt) : 0]; }
+    for ($h = 0; $h < 24; $h++) { $in = $h >= $w0 && $h < $w1; $m = ($cfg2['smart'] && empty($sc2['learning'])) ? (float)($sc2['hours'][$h]['mult'] ?? 1.0) : 1.0; $rt = (float)($sc2['hours'][$h]['rate'] ?? 0); if ($rt <= 0) $rt = 0.75; $rt = max(0.3, min(0.95, $rt)); if ($h === $o['cur']) $m *= (float)(wa_dq_left($pdo)['m_live'] ?? 1.0); $d = $in ? (int)round($cfg2['hourly'] * $m) : 0; $o['plan'][$h] = ['d' => $d, 'p' => $d ? (int)ceil($d / $rt) : 0]; }
     $o['today'] = $run($from, $to); $o['week'] = $run(date('Y-m-d H:i:s', time() - 7 * 86400), date('Y-m-d H:i:s', time() + 60));
     try { setting_set($pdo, 'wa_dq_hours', json_encode($o)); } catch (Throwable $e) { }
     return $o;
@@ -108,7 +137,7 @@ function wa_dq_status(PDO $pdo): array
 {
     $cfg = wa_dq_cfg($pdo);
     try { $hit = json_decode((string)setting_get($pdo, 'wa_dq_stat', ''), true); if (is_array($hit) && (int)($hit['t'] ?? 0) > time() - 30 && ($hit['cap'] ?? 0) === $cfg['hourly'] && ($hit['daily'] ?? 0) === $cfg['daily'] && ($hit['on'] ?? null) === $cfg['on']) return $hit; } catch (Throwable $e) { }
-    $l = wa_dq_left($pdo); $o = ['t' => time(), 'on' => $cfg['on'], 'cap' => $cfg['hourly'], 'used' => $l['used'], 'exp' => $l['exp'], 'rate' => $l['rate'], 'mult' => $l['mult'], 'eff_cap' => $l['eff_cap'], 'learning' => $l['learning'], 'smart' => $l['smart'], 'left' => $l['left'], 'daily' => $l['daily'], 'day_used' => $l['day_used'], 'why' => $l['why'], 'auto' => $cfg['auto'], 'dmin' => $cfg['dmin'], 'dmax' => $cfg['dmax'], 'base' => $cfg['base'], 'auto_last' => wa_dq_auto_last($pdo), 'people' => 0, 'campaigns' => 0, 'gap_days' => max(0, (int)setting_get($pdo, 'wa_camp_gap_days', '3'))];
+    $l = wa_dq_left($pdo); $o = ['t' => time(), 'on' => $cfg['on'], 'cap' => $cfg['hourly'], 'used' => $l['used'], 'exp' => $l['exp'], 'rate' => $l['rate'], 'state' => $l['state'], 'range' => $l['range'], 'm_live' => $l['m_live'], 'mult' => $l['mult'], 'eff_cap' => $l['eff_cap'], 'learning' => $l['learning'], 'smart' => $l['smart'], 'left' => $l['left'], 'daily' => $l['daily'], 'day_used' => $l['day_used'], 'why' => $l['why'], 'auto' => $cfg['auto'], 'dmin' => $cfg['dmin'], 'dmax' => $cfg['dmax'], 'base' => $cfg['base'], 'auto_last' => wa_dq_auto_last($pdo), 'people' => 0, 'campaigns' => 0, 'gap_days' => max(0, (int)setting_get($pdo, 'wa_camp_gap_days', '3'))];
     try { $r = $pdo->query("SELECT COUNT(DISTINCT i.phone) AS p, COUNT(DISTINCT i.camp_id) AS c FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id WHERE c.status = 'running' AND i.status IN ('queued', 'retry')")->fetch(); $o['people'] = (int)$r['p']; $o['campaigns'] = (int)$r['c']; } catch (Throwable $e) { }
     try { setting_set($pdo, 'wa_dq_stat', json_encode($o)); } catch (Throwable $e) { }
     return $o;
