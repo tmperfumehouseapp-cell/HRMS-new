@@ -93,6 +93,19 @@ function wa_msg_topic(array $t): string
  *      money: cost = delivered × your billing rate, return = ₹ ÷ cost, cost per order.
  *  A "balanced" score (0–100) averages the rank of the three lenses (orders count 1.5×). Messages with fewer than 200 sends are listed but not ranked; order figures need 1,000 delivered to count.
  *  Also: what the best ones have in common (photo on top, text length, emoji, buttons, question, price) per lens. Remembered 10 min in the database cache. */
+/** 🧹 Cancels heavy counts of the message ranking / order matching that have been running too long (they pile up on the database and freeze every page). Checked at most every 20 s. Only cancels the QUERY (the connection stays). */
+function wa_kill_stale_counts(PDO $pdo): void
+{
+    static $done = false; if ($done) return; $done = true;
+    try {
+        if ((int)setting_get($pdo, 'wa_kill_at', '0') > time() - 20) return; setting_set($pdo, 'wa_kill_at', (string)time());
+        $me = (int)$pdo->query('SELECT CONNECTION_ID()')->fetchColumn();
+        foreach ($pdo->query('SHOW FULL PROCESSLIST')->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            $info = (string)($r['Info'] ?? ''); $t = (int)($r['Time'] ?? 0); $id = (int)($r['Id'] ?? 0); if ($id === $me || $t < 45 || $info === '') continue;
+            if (strpos($info, 'AS sg,') !== false || strpos($info, 'PARTITION BY o.shopify_id') !== false || (strpos($info, "COALESCE(NULLIF(i.tpl_used, 0), c.tpl_id) AS tid") !== false && strpos($info, 'GROUP BY') !== false)) { try { $pdo->exec('KILL QUERY ' . $id); } catch (Throwable $e) { } }
+        }
+    } catch (Throwable $e) { }
+}
 function wa_msg_rank(PDO $pdo, int $days = 14, int $maxAge = 600, bool $orders = true, string $seg = ''): array
 {   // a page asked ($orders = false): ONE heavy count at a time on the whole server — everybody else gets "preparing…" at once (the counts were piling up on the database)
     if ($orders) return wa_msg_rank_run($pdo, $days, $maxAge, true, $seg);
