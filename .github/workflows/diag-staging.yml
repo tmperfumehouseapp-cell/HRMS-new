@@ -43,10 +43,12 @@ jobs:
               usort($r, fn($a, $b) => (int)$b["Time"] <=> (int)$a["Time"]);
               foreach (array_slice($r, 0, 25) as $x) echo "id=" . $x["Id"] . " time=" . $x["Time"] . "s state=" . $x["State"] . " | " . substr(preg_replace("/\s+/", " ", (string)$x["Info"]), 0, 170) . "\n";
               $s = $d->query("SHOW GLOBAL STATUS LIKE \"Threads_running\"")->fetch(PDO::FETCH_NUM); echo "Threads_running = " . $s[1] . "\n";
+              echo "--- engine (cron) ---\n"; foreach ($d->query("SELECT setting_key k, setting_value v FROM hrms_settings WHERE setting_key IN (\"wa_cron_at\", \"wa_cron_tick\")")->fetchAll(PDO::FETCH_ASSOC) as $x) echo $x["k"] . " = " . substr((string)$x["v"], 0, 120) . "\n"; echo "server time now = " . date("Y-m-d H:i:s") . "\n";
               echo "--- biggest tables ---\n"; foreach ($d->query("SELECT table_name t, table_rows r, ROUND(data_length/1048576) dmb, ROUND(index_length/1048576) imb FROM information_schema.tables WHERE table_schema = DATABASE() ORDER BY data_length DESC LIMIT 8")->fetchAll(PDO::FETCH_ASSOC) as $x) echo $x["t"] . " rows~" . $x["r"] . " data=" . $x["dmb"] . "MB idx=" . $x["imb"] . "MB\n";
               foreach (["wa_messages", "wa_camp_items", "wa_contacts"] as $tb) { echo "--- indexes of $tb ---\n"; $ix = []; foreach ($d->query("SHOW INDEX FROM $tb")->fetchAll(PDO::FETCH_ASSOC) as $x) $ix[$x["Key_name"]][] = $x["Column_name"]; foreach ($ix as $k => $c) echo $k . ": " . implode(", ", $c) . "\n"; }
             } catch (Throwable $e) { echo "DB: " . $e->getMessage() . "\n"; }
           ' "$P"
+          echo "=== crontab of this user ==="; crontab -l 2>&1 | head -8 | cut -c1-200; echo "=== engine hits in the access log (wa.cron) ==="; grep -c "action=wa.cron" $HOME/logs/nginx/access.log 2>/dev/null; grep "action=wa.cron" $HOME/logs/nginx/access.log 2>/dev/null | tail -3 | awk '{print $4, $5, $9}'
           echo "=== last nginx errors of the site ==="; for f in $(ls -t ${P}../logs/nginx/error.log ${P}logs/nginx/error.log $HOME/logs/nginx/error.log 2>/dev/null | head -1); do tail -n 15 "$f" | cut -c1-220; done
           echo "=== webhook hits in the last access-log lines ==="; for f in $(ls -t $HOME/logs/nginx/access.log 2>/dev/null | head -1); do tail -n 2000 "$f" | awk '{print $7}' | sed 's/&_t=.*//' | sort | uniq -c | sort -rn | head -12; done
           REMOTE
