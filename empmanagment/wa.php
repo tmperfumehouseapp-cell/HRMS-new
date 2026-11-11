@@ -877,13 +877,16 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
             foreach ($set as [$t, $b]) { if (isset($have[mb_strtolower($t)])) continue; $pdo->prepare("INSERT INTO wa_quick (title, body, sort_order) VALUES (?, ?, ?)")->execute([$t, $b, ++$so]); $n++; }
             json_response(['ok' => true, 'added' => $n, 'total' => count($set)]);
         }
-        case 'wa.hour_counts': {   // how many chats of a feed came in each hour of the current business day (for the ▾ hour picker)
-            $src = (string)($_GET['src'] ?? ''); $adm = wa_is_admin($pdo, $auth) && empty($_GET['mine']); $emp = (int)($auth['employee_id'] ?? 0); $st0 = wa_bizday_start($pdo);
-            $w = ["c.status = 'open'", 'c.last_in_at >= ?']; $p = [$st0]; if (!$adm) { $w[] = 'c.assigned_emp = ?'; $p[] = $emp > 0 ? $emp : -1; }
+        case 'wa.hour_counts': {   // how many chats of a feed came in each hour of a business day (today by default, or ?date=Y-m-d) — for the ▾ hour picker
+            $src = (string)($_GET['src'] ?? ''); $adm = wa_is_admin($pdo, $auth) && empty($_GET['mine']); $emp = (int)($auth['employee_id'] ?? 0);
+            $hd = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($_GET['date'] ?? '')) ? (string)$_GET['date'] : biz_day_of($pdo, time()); $isToday = $hd === biz_day_of($pdo, time()); [$w0, $w1] = biz_window($pdo, $hd, $hd);
+            $hx = $src === 'query' ? "IF(c.source = 'query' AND c.first_seen >= ?, c.first_seen, c.last_in_at)" : 'c.last_in_at';   // a query counts at the hour it CAME, the other feeds at the hour of the last customer message
+            $w = []; $p = []; if ($src === 'query') { $w[] = "$hx >= ?"; $p[] = $w0; $p[] = $w0; $w[] = "$hx <= ?"; $p[] = $w0; $p[] = $w1; } else { $w[] = 'c.last_in_at >= ?'; $p[] = $w0; $w[] = 'c.last_in_at <= ?'; $p[] = $w1; }
+            if (!$adm) { $w[] = 'c.assigned_emp = ?'; $p[] = $emp > 0 ? $emp : -1; }
             if ($src === 'query') $w[] = "c.source = 'query'"; elseif ($src === 'community' || $src === 'campaign') { $w[] = 'c.source = ?'; $p[] = $src; } elseif ($src === 'assigned') $w[] = 'c.assigned_emp > 0';
-            $rows = []; try { $q = $pdo->prepare("SELECT HOUR(c.last_in_at) AS h, COUNT(*) AS n FROM wa_contacts c WHERE " . implode(' AND ', $w) . " GROUP BY HOUR(c.last_in_at)"); $q->execute($p); foreach ($q->fetchAll() as $r) $rows[(int)$r['h']] = (int)$r['n']; } catch (Throwable $e) { }
-            $sh = (int)date('G', strtotime($st0)); $nowH = (int)date('G'); $out = []; for ($i = $sh, $k = 0; $k < 24; $i = ($i + 1) % 24, $k++) { $out[] = ['h' => $i, 'n' => (int)($rows[$i] ?? 0)]; if ($i === $nowH) break; }
-            json_response(['ok' => true, 'start' => $st0, 'rows' => $out]);
+            $rows = []; try { $q = $pdo->prepare("SELECT HOUR($hx) AS h, COUNT(*) AS n FROM wa_contacts c WHERE " . implode(' AND ', $w) . " GROUP BY h"); $q->execute($src === 'query' ? array_merge([$w0], $p) : $p); foreach ($q->fetchAll() as $r) $rows[(int)$r['h']] = (int)$r['n']; } catch (Throwable $e) { }
+            $sh = (int)date('G', strtotime($w0)); $nowH = (int)date('G'); $out = []; for ($i = $sh, $k = 0; $k < 24; $i = ($i + 1) % 24, $k++) { $out[] = ['h' => $i, 'n' => (int)($rows[$i] ?? 0)]; if ($isToday && $i === $nowH) break; }
+            json_response(['ok' => true, 'date' => $hd, 'today' => biz_day_of($pdo, time()), 'rows' => $out]);
         }
         case 'wa.chats': {
             $scope = (string)($_GET['scope'] ?? 'mine'); $q = trim((string)($_GET['q'] ?? '')); $emp = (int)($auth['employee_id'] ?? 0); $adm = wa_is_admin($pdo, $auth) && empty($_GET['mine']);   // mine=1 → the My Chats page: even an admin sees only their own
@@ -908,11 +911,16 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
                 }
                 if ($or) $w[] = '(' . implode(' OR ', $or) . ')';
             }
-            elseif ($src === 'query') { if (function_exists('wa_ad_backfill')) wa_ad_backfill($pdo); $w[] = "c.source = 'query'"; $w[] = 'c.last_in_at >= ?'; $p[] = wa_bizday_start($pdo); }   // 📢 fresh Meta-ad queries of this business day (10:00 → 10:00); campaign / community have their own feeds
+            elseif ($src === 'query') { if (function_exists('wa_ad_backfill')) wa_ad_backfill($pdo); $w[] = "c.source = 'query'"; if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($_GET['hdate'] ?? '')) || (string)($_GET['hrs'] ?? '') === '') { $w[] = 'c.last_in_at >= ?'; $p[] = wa_bizday_start($pdo); } }   // 📢 fresh Meta-ad queries of this business day (10:00 → 10:00); campaign / community have their own feeds
             elseif (in_array($src, ['community', 'campaign'], true)) { $w[] = 'c.source = ?'; $p[] = $src; } elseif ($src === 'assigned') $w[] = 'c.assigned_emp > 0';
             // 🕐 hour filter (the ▾ on the Query / Assigned / Community / Campaign chips): chats whose last customer message came in the picked hours of the CURRENT business day
             $__hrs = array_values(array_unique(array_filter(array_map('intval', explode(',', (string)($_GET['hrs'] ?? ''))), fn($x) => $x >= 0 && $x <= 23)));
-            if ($__hrs && (string)($_GET['hrs'] ?? '') !== '') { $w[] = 'c.last_in_at >= ?'; $p[] = wa_bizday_start($pdo); $w[] = 'HOUR(c.last_in_at) IN (' . implode(',', $__hrs) . ')'; }
+            if ($__hrs && (string)($_GET['hrs'] ?? '') !== '') {
+                $__hd = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($_GET['hdate'] ?? '')) ? (string)$_GET['hdate'] : ''; [$__w0, $__w1] = $__hd !== '' ? biz_window($pdo, $__hd, $__hd) : [wa_bizday_start($pdo), '2999-12-31 23:59:59'];
+                $__hx = (string)($_GET['src'] ?? '') === 'query' ? 'IF(c.source = \'query\' AND c.first_seen >= ?, c.first_seen, c.last_in_at)' : 'c.last_in_at';   // a query counts at the hour it CAME (first message), the other feeds at the hour of the last customer message
+                if ($__hx === 'c.last_in_at') { $w[] = 'c.last_in_at >= ?'; $p[] = $__w0; $w[] = 'c.last_in_at <= ?'; $p[] = $__w1; $w[] = 'HOUR(c.last_in_at) IN (' . implode(',', $__hrs) . ')'; }
+                else { $w[] = 'IF(c.source = \'query\' AND c.first_seen >= ?, c.first_seen, c.last_in_at) >= ?'; $p[] = $__w0; $p[] = $__w0; $w[] = 'IF(c.source = \'query\' AND c.first_seen >= ?, c.first_seen, c.last_in_at) <= ?'; $p[] = $__w0; $p[] = $__w1; $w[] = 'HOUR(IF(c.source = \'query\' AND c.first_seen >= ?, c.first_seen, c.last_in_at)) IN (' . implode(',', $__hrs) . ')'; $p[] = $__w0; }
+            }
             // ☑ Select-chats filters: day of the query · ordered or not · numbers (admin)
             if ($adm) {
                 $bd = (string)($_GET['bd'] ?? ''); $bs = wa_bizday_start($pdo);
