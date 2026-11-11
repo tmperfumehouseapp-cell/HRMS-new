@@ -29,6 +29,12 @@
 if (!function_exists('wa_key')) {
 
 if (!function_exists('wa_raw')) { function wa_raw(string $s, int $code = 200): void { http_response_code($code); header('Content-Type: text/plain; charset=utf-8'); echo $s; exit; } }
+/** 🛡 Is the server far above its normal load (load average over 4× the CPU cores, at least 8)? Then Meta's webhook gets a quick "busy" (Meta keeps the receipt and sends it again later) and the sending requests skip a turn, so they cannot fill every PHP worker and freeze the whole HRMS. Costs no database call. */
+if (!function_exists('wa_overloaded')) { function wa_overloaded(): bool {
+    static $r = null; if ($r !== null) return $r; $r = false;
+    try { if (!function_exists('sys_getloadavg')) return $r; $l = sys_getloadavg(); if (!$l) return $r; $n = 0; $c = @file_get_contents('/proc/cpuinfo'); if ($c !== false) $n = substr_count($c, "\nprocessor"); $n = max(1, $n + (strpos((string)$c, 'processor') === 0 ? 1 : 0)); $r = (float)$l[0] > max(8.0, 4.0 * $n); } catch (Throwable $e) { }
+    return $r;
+} }
 
 /** The customer key: last 10 digits of the phone ("+91 97123 59275", "09712359275", "919712359275" → 9712359275). */
 function wa_key($n): string { $d = preg_replace('/\D+/', '', (string)$n) ?? ''; return strlen($d) > 10 ? substr($d, -10) : $d; }
@@ -692,6 +698,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
 
     // ---- Meta calls this one without a login
     if ($__wa === 'wa.webhook') {
+        if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && wa_overloaded()) { header('Retry-After: 60'); wa_raw('busy', 503); }   // server overloaded: Meta keeps the receipt and sends it again later
         if (!wa_tables($pdo)) wa_raw('storage not ready', 500);
         if (!$isPost) {   // "verify" handshake
             $vt = wa_cfg_val('WA_VERIFY_TOKEN');
