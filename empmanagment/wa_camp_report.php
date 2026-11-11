@@ -61,7 +61,7 @@ function wcr_pct($a, $b) { return $b > 0 ? round(100 * $a / $b, 1) : null; }
 function wcr_report(PDO $pdo, int $id, bool $fresh = false): ?array
 {
     $c = function_exists('wa_camp_row') ? wa_camp_row($pdo, $id) : null; if (!$c) return null;
-    $ck = 'camp_rep_' . $id; $old = $fresh ? null : wcr_get($pdo, $ck); if ($old && (int)($old['at'] ?? 0) > time() - 900) return $old['d'];
+    $ck = 'camp_rep2_' . $id; $old = $fresh ? null : wcr_get($pdo, $ck); if ($old && (int)($old['at'] ?? 0) > time() - 900) return $old['d'];
     $cfg = function_exists('wa_team_cfg') ? wa_team_cfg($pdo) : ['rate_marketing' => 0.88, 'rate_utility' => 0.13];
     $res = function_exists('wa_camp_result') ? wa_camp_result($pdo, $c, $cfg) : [];
     $start = (string)($c['started_at'] ?: $c['created_at']); $end = (string)($c['finished_at'] ?: date('Y-m-d H:i:s'));
@@ -71,7 +71,7 @@ function wcr_report(PDO $pdo, int $id, bool $fresh = false): ?array
     $om = function_exists('wa_order_map') ? wa_order_map($pdo) : null; if ($om && method_exists($om, 'prefetch')) $om->prefetch(array_keys($P));
     foreach ($P as $k => $x) {
         $h = (int)date('G', $x['sent']); $hours[$h] = $hours[$h] ?? ['sent' => 0, 'replied' => 0, 'ordered' => 0]; $hours[$h]['sent']++; if ($x['reply']) $hours[$h]['replied']++; if ($x['order']) $hours[$h]['ordered']++;
-        foreach (array_unique($x['tags']) as $t) { if (strpos($t, 'camp_') === 0) continue; $tags[$t] = $tags[$t] ?? ['n' => 0, 'replied' => 0, 'ordered' => 0]; $tags[$t]['n']++; if ($x['reply']) $tags[$t]['replied']++; if ($x['order']) $tags[$t]['ordered']++; }
+        foreach (array_unique($x['tags']) as $t) { if (strpos($t, 'camp_') === 0) continue; $tags[$t] = $tags[$t] ?? ['n' => 0, 'replied' => 0, 'ordered' => 0, 'dl' => 0, 'rd' => 0]; $tags[$t]['n']++; if ($x['reply']) $tags[$t]['replied']++; if ($x['order']) $tags[$t]['ordered']++; if ($x['delivered'] || $x['read'] || $x['reply']) $tags[$t]['dl']++; if ($x['read'] || $x['reply']) $tags[$t]['rd']++; }
         if ($x['reply']) { $tp = in_array('business_autoreply', $x['tags'], true) ? 'business' : wcr_topic($x['rbody']); $topics[$tp] = ($topics[$tp] ?? 0) + 1; $speed[] = ($x['reply'] - $x['sent']) / 60; }
         if ($x['order']) { $grp['ordered']++; $o = $om ? ($om[$k] ?? null) : null; if ($o && (int)$o['n'] >= 2) $rep++; else $new++; }
         elseif ($x['reply']) $grp['replied_no_order']++; elseif ($x['read']) $grp['read_ignored']++; else $grp['not_read']++;
@@ -79,6 +79,11 @@ function wcr_report(PDO $pdo, int $id, bool $fresh = false): ?array
     ksort($hours); $hl = []; foreach ($hours as $h => $v) $hl[] = ['hour' => $h, 'sent' => $v['sent'], 'reply_pct' => wcr_pct($v['replied'], $v['sent']), 'order_pct' => wcr_pct($v['ordered'], $v['sent'])];
     $tl = []; foreach ($tags as $t => $v) if ($v['n'] >= max(10, (int)round($n * 0.02))) $tl[] = ['tag' => $t, 'n' => $v['n'], 'reply_pct' => wcr_pct($v['replied'], $v['n']), 'order_pct' => wcr_pct($v['ordered'], $v['n'])];
     usort($tl, fn($a, $b) => [$b['order_pct'], $b['reply_pct']] <=> [$a['order_pct'], $a['reply_pct']]); $tl = array_slice($tl, 0, 12);
+    // 🏷 the full breakdown by tag: who the campaign reached by tag, and how each group delivered, read, replied and ordered (against the whole campaign)
+    $repAll = 0; foreach ($P as $x0) if ($x0['reply']) $repAll++; $ovr = wcr_pct($repAll, $n); $tr = [];
+    foreach ($tags as $t => $v) if ($v['n'] >= max(10, (int)round($n * 0.01))) { $rp = wcr_pct($v['replied'], $v['n']);
+        $tr[] = ['tag' => $t, 'label' => function_exists('wa_tag_label') ? wa_tag_label($pdo, $t) : $t, 'group' => function_exists('wa_tag_group_of') ? wa_tag_group_of($t) : 'Other', 'n' => $v['n'], 'share' => wcr_pct($v['n'], $n), 'dl_pct' => wcr_pct($v['dl'], $v['n']), 'rd_pct' => wcr_pct($v['rd'], $v['n']), 'reply_pct' => $rp, 'order_pct' => wcr_pct($v['ordered'], $v['n']), 'ordered' => $v['ordered'], 'lift' => ($ovr && $rp !== null) ? round($rp / $ovr, 2) : null]; }
+    usort($tr, fn($a, $b) => [$b['reply_pct'], $b['n']] <=> [$a['reply_pct'], $a['n']]); $tr = array_slice($tr, 0, 80);
     arsort($topics); $tpl = []; foreach ($topics as $k => $v) $tpl[] = ['kind' => $k, 'label' => $k === 'business' ? '🏢 Business auto-reply' : wcr_topic_label($k), 'n' => $v];
     sort($speed); $med = $speed ? round($speed[(int)floor((count($speed) - 1) / 2)]) : null;
     $sent = (int)($res['sent'] ?? $n); $m = ['read' => wcr_pct($res['read'] ?? 0, $sent), 'reply' => wcr_pct($res['replied'] ?? 0, $sent), 'order' => wcr_pct($res['buyers'] ?? 0, $sent), 'roas' => ($res['cost'] ?? 0) > 0 ? round(($res['revenue'] ?? 0) / $res['cost'], 1) : null];
@@ -93,7 +98,7 @@ function wcr_report(PDO $pdo, int $id, bool $fresh = false): ?array
     }
     $tb = ''; try { $t = wa_tpl_row($pdo, (int)$c['tpl_id']); $tb = $t ? (string)$t['body'] : ''; } catch (Throwable $e) { }
     $d = ['id' => $id, 'name' => (string)$c['name'], 'status' => (string)$c['status'], 'message' => $tb, 'result' => $res, 'rates' => $m, 'age_h' => $ageH, 'ready' => $ready, 'score' => $score, 'parts' => $parts,
-          'hours' => $hl, 'tags' => $tl, 'topics' => $tpl, 'reply_min' => $med, 'buyers_repeat' => $rep, 'buyers_new' => $new, 'groups' => $grp, 'advice' => wcr_get($pdo, 'camp_adv_' . $id)];
+          'hours' => $hl, 'tags' => $tl, 'tag_rows' => $tr, 'overall' => ['people' => $n, 'reply_pct' => $ovr], 'topics' => $tpl, 'reply_min' => $med, 'buyers_repeat' => $rep, 'buyers_new' => $new, 'groups' => $grp, 'advice' => wcr_get($pdo, 'camp_adv_' . $id)];
     wcr_put($pdo, $ck, ['at' => time(), 'd' => $d]);
     return $d;
 }
