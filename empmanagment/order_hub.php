@@ -392,6 +392,8 @@ function ohub_list(PDO $pdo, array $g): array
     if ($q !== '') { $d = preg_replace('/\D+/', '', $q) ?? ''; if (strlen($d) >= 4) { $w[] = "p10 LIKE ?"; $par[] = '%' . substr($d, -10) . '%'; } else { $w[] = "(name LIKE ? OR names LIKE ?)"; $l = '%' . str_replace(['%', '_'], ['\\%', '\\_'], $q) . '%'; $par[] = $l; $par[] = $l; } }
     $flt = (string)($g['flt'] ?? 'all');
     $map = ['vip' => "(spent >= 20000 OR orders_n >= 5)", 'risk' => "(rto_n >= 1 OR cx_n >= 2 OR cx_open > 0)", 'store' => "channel IN ('store','both')", 'online' => "channel IN ('online','both')", 'both' => "channel = 'both'", 'lapsed' => "(orders_n >= 2 AND last_at < (NOW() - INTERVAL 120 DAY))", 'repeat' => "orders_n >= 2", 'new' => "orders_n = 1"];
+    $cuts = ['hi' => 3000.0, 'lo' => 800.0]; try { if (function_exists('jn_cuts')) { $c0 = jn_cuts($pdo); $cuts = ['hi' => (float)$c0['hi'], 'lo' => (float)$c0['lo']]; } } catch (Throwable $e) { }   // the same cut-offs the WhatsApp Customers screen and the after-order timelines use
+    $map += ['o1' => 'orders_n = 1', 'o2' => 'orders_n = 2', 'o3' => 'orders_n >= 3', 'prem' => 'orders_n > 0 AND spent / orders_n >= ' . $cuts['hi'], 'bud' => 'orders_n > 0 AND spent / orders_n <= ' . $cuts['lo'], 'std' => 'orders_n > 0 AND spent / orders_n > ' . $cuts['lo'] . ' AND spent / orders_n < ' . $cuts['hi']];
     if (isset($map[$flt])) $w[] = $map[$flt];
     $sorts = ['spent' => 'spent DESC', 'orders' => 'orders_n DESC, spent DESC', 'last' => 'last_at DESC', 'first' => 'first_at DESC', 'name' => 'name ASC', 'rto' => 'rto_n DESC, cx_n DESC'];
     $ord = $sorts[(string)($g['sort'] ?? 'last')] ?? $sorts['last']; $per = 50; $page = max(1, (int)($g['page'] ?? 1));
@@ -400,7 +402,7 @@ function ohub_list(PDO $pdo, array $g): array
     $st = $pdo->prepare("SELECT * FROM customer_facts WHERE $where ORDER BY $ord LIMIT $per OFFSET " . (($page - 1) * $per)); $st->execute($par); $rows = [];
     foreach ($st->fetchAll() as $r) { $r['flags'] = ohub_flags($r); $r['aov'] = (int)$r['orders_n'] ? round((float)$r['spent'] / (int)$r['orders_n']) : 0; $rows[] = $r; }
     $tot = $pdo->query("SELECT COUNT(*) a, SUM(orders_n >= 2) rep, SUM(channel = 'both') b, SUM(rto_n >= 1 OR cx_n >= 2 OR cx_open > 0) risk, MAX(refreshed_at) at FROM customer_facts")->fetch();
-    return ['ok' => true, 'rows' => $rows, 'count' => (int)$t['c'], 'spent' => (float)$t['s'], 'page' => $page, 'per' => $per, 'totals' => ['people' => (int)$tot['a'], 'repeat' => (int)$tot['rep'], 'both' => (int)$tot['b'], 'risk' => (int)$tot['risk'], 'at' => (string)$tot['at']]];
+    return ['ok' => true, 'rows' => $rows, 'count' => (int)$t['c'], 'spent' => (float)$t['s'], 'page' => $page, 'per' => $per, 'cuts' => $cuts, 'totals' => ['people' => (int)$tot['a'], 'repeat' => (int)$tot['rep'], 'both' => (int)$tot['b'], 'risk' => (int)$tot['risk'], 'at' => (string)$tot['at']]];
 }
 
 /* ============================================================== payment details straight from the gateway ============================================================== */

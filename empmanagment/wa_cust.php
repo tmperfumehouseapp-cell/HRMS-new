@@ -180,7 +180,8 @@ if (strpos($__wcs, 'wa.cs_') === 0) {
             try { foreach ($pdo->query("SELECT assigned_emp AS e, COUNT(*) AS n FROM wa_contacts WHERE assigned_emp > 0 GROUP BY assigned_emp")->fetchAll() as $r) if (isset($names[(int)$r['e']])) $ppl[] = ['emp_id' => (int)$r['e'], 'name' => $names[(int)$r['e']], 'n' => (int)$r['n']]; } catch (Throwable $e) { }
             usort($ppl, function ($a, $b) { return strcmp($a['name'], $b['name']); });
             $segs = array_map('wcs_seg_public', $pdo->query("SELECT * FROM wa_csegs ORDER BY kind = 'pick', created_at DESC LIMIT 200")->fetchAll());
-            json_response(['ok' => true, 'tags' => $tags, 'numbers' => $nums, 'people' => $ppl, 'segments' => $segs]);
+            $cuts = ['hi' => 3000, 'lo' => 800]; try { if (function_exists('jn_cuts')) { $c0 = jn_cuts($pdo); $cuts = ['hi' => (float)$c0['hi'], 'lo' => (float)$c0['lo']]; } } catch (Throwable $e) { }
+            json_response(['ok' => true, 'tags' => $tags, 'cuts' => $cuts, 'numbers' => $nums, 'people' => $ppl, 'segments' => $segs]);
         }
         case 'wa.cs_count': {
             $f = wcs_clean($cfOf($_GET['cf'] ?? '')); $q = mb_substr(trim((string)($_GET['q'] ?? '')), 0, 80);
