@@ -517,6 +517,7 @@ function wa_number_caps(PDO $pdo, array $health): array
 {
     $tier = null; foreach ($health as $h) if ($h['tier'] !== null) { if ($h['tier'] === -1) { $tier = 1000000; break; } $tier = max((int)$tier, (int)$h['tier']); }
     $tierAssumed = $tier === null; if ($tier === null) $tier = 250;
+    $perNum = (string)setting_get($pdo, 'wa_limit_mode', 'shared') === 'per_number'; $sumT = 0;   // 'shared': Meta's limit is ONE pool for the whole business account (the highest number's limit) · 'per_number': every number has its own limit (guarded: see wa_limit_guard)
     $cfg = wa_team_cfg($pdo); $since = date('Y-m-d H:i:s', time() - 86400);
     $lu = wa_lim_used($pdo, $since); $used = $lu['by'];
     // each number's first template send never moves, so it is looked up once and remembered (the full scan of wa_messages took seconds and ran every time the Campaign panel opened)
@@ -537,15 +538,18 @@ function wa_number_caps(PDO $pdo, array $health): array
         // slow start protects a NEW account only: once Meta itself trusts the account (limit 10,000 or more, shared by every number) Meta's own limit is the cap
         $ramp = $cfg['ramp'] && $tier < 10000;
         $cap = $ramp ? wa_ramp_cap($age) : 1000000; $why = $ramp && $cap < $tier ? 'slow start (day ' . ($age + 1) . ')' : '';
-        $cap = min($cap, $tier);
+        $ownT = $tier; if ($perNum) { $ownT = $h['tier'] === null ? $tier : ($h['tier'] === -1 ? 1000000 : (int)$h['tier']); }
+        $cap = min($cap, $perNum ? max(1, (int)floor($ownT * 0.9)) : $tier);
         // owner (11 Nov 2026): a Medium quality number counts as High (no half speed); only Low stops it
         if ($h['quality'] === 'RED') { $cap = 0; $why = 'quality is Low — stopped'; }
         if ($h['status'] !== '' && $h['status'] !== 'CONNECTED') { $cap = 0; $why = 'not connected'; }
         if (empty($camp[$id])) { $cap = 0; $why = 'switched off for campaigns'; }
         try { $pb = (string)setting_get($pdo, 'wa_payblock_' . $id, ''); if ($allBlocked === false && $pb !== '' && strtotime($pb) > time() - 3 * 3600) { $cap = 0; $why = 'payment problem at Meta (131042) — campaigns go through the other number(s) now; tried again after 3 hours'; } } catch (Throwable $e) { }   // owner (9 Nov): when one number has the payment problem, everything moves to the other number by itself
+        if ($cap > 0) $sumT += $ownT;
         $u = $used[$id] ?? 0; $out[$id] = ['cap' => $cap, 'used' => $u, 'left' => max(0, $cap - $u), 'why' => $why, 'age' => $age];
     }
-    $out['_port'] = ['tier' => $tier, 'assumed' => $tierAssumed, 'used' => $port, 'left' => max(0, (int)floor($tier * 0.9) - $port)];
+    $pT = ($perNum && $sumT > 0) ? $sumT : $tier;
+    $out['_port'] = ['tier' => $pT, 'assumed' => $tierAssumed, 'used' => $port, 'left' => max(0, (int)floor($pT * 0.9) - $port), 'mode' => $perNum ? 'per_number' : 'shared'];
     if ($tier >= 10000 && (string)setting_get($pdo, 'wa_camp_auto_on', '1') === '1') {   // trusted account: the owner's growing hourly cap (1,000 an hour → doubles each good hour)
         $au = wa_camp_auto_cap($pdo, $tier, $health); $out['_port']['auto'] = $au;   // this hour's speed is PER NUMBER (applied by the campaign sender only); order updates, tickets and follow-ups never wait for it
     }
