@@ -70,7 +70,9 @@ function wa_dq_hour_scores(PDO $pdo): array
 /** The usual RANGE of the hourly delivery rate over the last 7 days (each date+hour with 300+ messages, receipts given 2 hours): p25 / p50 / p75. Judging "good" or "low" against a range, not one number. Remembered for 10 min. */
 function wa_dq_range(PDO $pdo): array
 {
-    try { $hit = json_decode((string)setting_get($pdo, 'wa_dq_range', ''), true); if (is_array($hit) && (int)($hit['t'] ?? 0) > time() - 600) return $hit; } catch (Throwable $e) { }
+    try { $hit = json_decode((string)setting_get($pdo, 'wa_dq_range', ''), true); if (is_array($hit) && (int)($hit['t'] ?? 0) > time() - 600) return $hit;
+        if (is_array($hit) && (int)setting_get($pdo, 'wa_dq_range_lock', '0') > time() - 90) return $hit;   // another request is already recounting: use the last copy (seven copies at once were freezing the database)
+        setting_set($pdo, 'wa_dq_range_lock', (string)time()); } catch (Throwable $e) { }
     $o = ['t' => time(), 'p25' => 0.0, 'p50' => 0.0, 'p75' => 0.0, 'n' => 0];
     try { $q = $pdo->prepare("SELECT COUNT(*) AS n, SUM(status IN ('delivered', 'read')) AS d FROM wa_messages WHERE dir = 'out' AND who = 'campaign' AND mtype = 'template' AND ts >= ? AND ts < ? GROUP BY DATE(ts), HOUR(ts) HAVING n >= 300");
         $q->execute([date('Y-m-d H:i:s', time() - 7 * 86400), date('Y-m-d H:i:s', time() - 7200)]); $r = []; foreach ($q->fetchAll() as $x) $r[] = (int)$x['d'] / max(1, (int)$x['n']); sort($r);
