@@ -751,10 +751,15 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
   async function loadOverview(quiet, live) {
     if (ovBusy) return; ovBusy = true;
     try {
+      // ⚡ show the Overview as soon as the main numbers arrive; the waiting list and the sales board (slower) fill in a moment later
+      const exP = Promise.all([api.get('wa.chats', { scope: 'all' }).catch(() => null), api.get('wa.sales_board', { days: 7 }).catch(() => null)]);
+      const prevEx = OV && OV.extra;
       OV = await api.get('wa.overview', live ? { live: 1 } : {});
-      const [wc, bd] = await Promise.all([api.get('wa.chats', { scope: 'all' }).catch(() => null), api.get('wa.sales_board', { days: 7 }).catch(() => null)]);
-      OV.extra = { waiting: ((wc && wc.chats) || []).filter((c) => c.waiting && c.status === 'open').sort((x, y) => String(x.last_at).localeCompare(String(y.last_at))), board: bd };
+      if (prevEx) OV.extra = prevEx;
       badge = ((OV.chats || {}).waiting) || 0; srcN = (OV.chats || {}).src || srcN; unN = ((OV.chats || {}).unassigned) || 0; if (cur === 'overview' || !quiet) drawOverview(OV); drawRail(); drawWait();
+      const [wc, bd] = await exP;
+      OV.extra = { waiting: ((wc && wc.chats) || []).filter((c) => c.waiting && c.status === 'open').sort((x, y) => String(x.last_at).localeCompare(String(y.last_at))), board: bd };
+      if (cur === 'overview' || !quiet) drawOverview(OV); drawWait();
     } catch (e) {
       if (!quiet || !OV) secs.overview.innerHTML = `<div class="err">${/denied|permission|403/i.test(e.message) ? 'The WhatsApp console is for Admin. Salespeople open <b>My Chats</b> from their menu.' : esc(e.message)}</div>`;
     } finally { ovBusy = false; }
