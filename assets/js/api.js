@@ -40,7 +40,7 @@ const api = {
   // a fresh answer is fetched behind it and becomes the next one. Only the actions listed here (action → how many seconds an answer may be shown), never anything that moves money,
   // attendance, approvals or live chats. A Save / Send (any POST except the engine's own ticks) forgets everything remembered, so a change is never hidden by an old copy.
   // Add a screen with one line:  api.swrAdd('some.read_action', 300)
-  _SWR: { 'wa.overview': 300, 'wa.numbers': 300, 'wa.sales_board': 300, 'wa.camp_hours': 300, 'wa.msg_rank': 300, 'wa.camp_snap': 3600, 'wa.camp_templates': 300, 'wa.g_tags': 300, 'wa.aud_types': 300, 'wa.camp_suggest': 300, 'wa.aud_suggest': 300, 'wa.camp_list': 90 },   // the WhatsApp screens: remembered on this device (PC and phone) and shown at once, the fresh answer is fetched behind
+  _SWR: { 'wa.overview': 300, 'wa.numbers': 300, 'wa.sales_board': 300, 'wa.camp_hours': 300, 'wa.msg_rank': 300 },
   swrAdd(action, seconds) { this._SWR[action] = seconds; },
   // How long (seconds) an answer of this action may be shown from memory. 0 = never. An explicit entry in _SWR wins; otherwise read-looking actions (list / stats / summary / dashboard / report / overview / board / history …)
   // get 60 s, and anything about punching, attendance, approvals, pay, chats, inbox, notifications, login, "me", live / poll / tick / badges / counts is NEVER remembered. Switch everything off on a phone:
@@ -54,7 +54,7 @@ const api = {
   },
   _swrGet(ck) { try { const c = JSON.parse(localStorage.getItem(ck) || 'null'); return c && typeof c.t === 'number' ? c : null; } catch (e) { return null; } },
   _swrPut(ck, d) {
-    try { if (d && d.pending) return; const j = JSON.stringify({ t: Date.now(), d }); if (j.length > 700000) return; try { localStorage.setItem(ck, j); } catch (q) { this._swrClear(); localStorage.setItem(ck, j); }
+    try { const j = JSON.stringify({ t: Date.now(), d }); if (j.length > 200000) return; try { localStorage.setItem(ck, j); } catch (q) { this._swrClear(); localStorage.setItem(ck, j); }
       const idx = JSON.parse(localStorage.getItem('apis:index') || '[]').filter((x) => x !== ck); idx.push(ck); while (idx.length > 40) { try { localStorage.removeItem(idx.shift()); } catch (e) { /* ignore */ } }
       localStorage.setItem('apis:index', JSON.stringify(idx)); } catch (e) { /* storage full or blocked: just no memory */ }
   },
@@ -77,7 +77,7 @@ const api = {
     return this._get(action, options, params);
   },
   _get(action, options = {}, params = {}) {
-    if ((options.method || 'GET') !== 'GET') return this._request(action, options, params).then((d) => { if (!/(_tick|\.tick|callnow|dq_worker|rescue_scan|ping)$/.test(action) && !/^wa\.(send|assign|transfer|takeover|remind|hand_mark|price_photo|tpl_send|order_done|bulk_ordered|g_guide_seen|subscribe|register|suggest|read|typing|mark_read)$/.test(action)) this._swrClear(); return d; });
+    if ((options.method || 'GET') !== 'GET') return this._request(action, options, params).then((d) => { if (!/(_tick|\.tick|callnow|dq_worker|rescue_scan|ping)$/.test(action)) this._swrClear(); return d; });
     const key = action + '?' + JSON.stringify(params) + '|' + String(this.token() || '').slice(-12);
     const cacheable = /(badge|count|pulse|flags|ctx)$/.test(action);   // me.flags is asked by every page: reuse it for 30 s (the server still checks the role on every real action)
     if (cacheable) {

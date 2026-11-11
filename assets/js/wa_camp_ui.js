@@ -118,7 +118,6 @@ body.waui .cu-pc{display:flex;align-items:center;gap:10px;padding:9px 0;border-t
 .cq.six{grid-template-columns:repeat(6,minmax(0,1fr)) !important} .cq.six.sev{grid-template-columns:repeat(7,minmax(0,1fr)) !important}
 .fcg{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px;margin-top:5px} .fcg.fcg3{grid-template-columns:repeat(3,minmax(0,1fr))} .fc.rk b{white-space:normal;line-height:1.2;max-height:2.5em} .fc{border:1px solid #e5e7eb;border-radius:9px;padding:4px 6px;background:#fff;font-size:10px;line-height:1.25;cursor:pointer;min-width:0} .fc b{display:block;font-size:10.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .fc span{display:block;color:#475569;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .fc i{display:block;font-style:normal;color:#94a3b8;font-size:9px} .fc.on{border-color:#15803d;background:#f0fdf4} .cq.sm{grid-template-columns:repeat(auto-fit,minmax(52px,1fr));gap:3px} .cq.sm>div{padding:3px 4px;border-radius:8px} .cq.sm b{font-size:11px} .cq.sm small{font-size:8.5px} .cq.sm i{font-size:8.5px;min-height:10px}
 .cq small{display:block;font-size:8.5px;color:#667781;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-@media (max-width:860px){.wmx-u,.wmx-u>b,.wmx-twin,.wmx-notice,.wmx-short,.wmx-est,.wmx-hu,.wmx-seg,.wmx-cost,.wmx-auto details{font-size:11px}.wmx-sw label,.wmx-nr .h,.wmx-mix>h4,.wmx-auto h3{font-size:12px}.wmx-learn,.wmx-sw small,.wmx-nr .why,.wmx-lim,.wmx-fl .wp-chip{font-size:10.5px}.wmx-chip,.wmx-pill,.wmx-ver,.wmx-cap{font-size:10px}.cu-wide .wp-note,.cu-wide .wp-hint{font-size:11px}.cu-wide .wp-in{font-size:14px;min-height:34px;padding:5px 9px}.cu-wide .wp-fl{font-size:10px}.cu-wide .wp-seg button{font-size:11.5px;padding:6px 8px}.cu-wide .cu-sec{font-size:13px !important}}
 .cq b{display:block;font-size:12px;font-weight:700;white-space:nowrap}
 .cq i{display:block;font-style:normal;font-size:8px;color:#8a97a0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:9px}
 details>summary{list-style:none} details>summary::-webkit-details-marker{display:none}
@@ -315,7 +314,6 @@ body.waui .cpc .wp-note{margin:4px 0 !important}
     const rkBig = (x, lens) => (lens === 'rep' ? rkP1(x.rep) + ' replied' : lens === 'ord' ? (x.roi != null ? x.roi + '× return' : (x.o1k != null ? x.o1k + ' orders/1k' : 'few orders data')) : lens === 'bal' ? (x.score != null ? x.score + '/100' : '—') : rkPc(x.d) + ' delivered');
     function rankHtml(R) {
       const rows = (R.rows || []).filter((x) => !x.low), days = window.__cpRankDays || 14, O = R.overall || {};
-      if (R.pending) return '<div class="wp-hint" style="margin:4px 0">⏳ Preparing the message ranking… it appears by itself (the first time takes a minute or two).</div>';
       if (!rows.length) return `<div class="wp-hint" style="margin:4px 0">Not enough sends yet in the last ${days} days.</div><button type="button" class="wp-btn s" id="rkAll">View all messages</button>`;
       const best = (f, ok) => rows.filter((x) => (ok ? ok(x) : true) && f(x) != null).sort((a, b) => f(b) - f(a))[0], bd = best((x) => x.d), br = best((x) => x.rep), bo = R.orders_ok ? best((x) => x.roi) : null;
       const sq = (l, x, big, bg) => (x ? `<div style="background:${bg}" title="${esc(rkName(x))}"><small>${l}</small><b>${big}</b><i>${esc(rkName(x))}</i></div>` : `<div><small>${l}</small><b>—</b><i>not enough data</i></div>`);
@@ -323,21 +321,19 @@ body.waui .cpc .wp-note{margin:4px 0 !important}
         <div class="wp-row" style="margin-top:6px;align-items:center"><button type="button" class="wp-btn p s" id="rkAll">View all messages (${rows.length})</button><span class="wp-hint" style="margin:0">${days} days · ${R.win || 3}-day order window</span></div>`;
     }
     function openRank() {
-      const m = modal('🏆 Messages'); let R = window.__cpRank || { rows: [], tips: [] }, lens = 'del', sort = 'best', view = 'all', cur = null, sg = '';
-      const load = () => api.get('wa.msg_rank', Object.assign(sg ? { days: days(), seg: sg } : { days: days() }, tries ? { fresh: 1 } : {})), types = () => ((window.__cpRank && window.__cpRank.segs) || []).filter((z) => z.name !== '—');
-      let tries = 0; const days = () => window.__cpRankDays || 14, btn = (id, t, on) => `<button type="button" class="wp-btn s" ${id} style="${on ? 'font-weight:700;border-color:#15803d' : ''}">${t}</button>`;
+      const m = modal('🏆 Messages'); let R = window.__cpRank || { rows: [], tips: [] }, lens = 'del', sort = 'best', view = 'all', cur = null;
+      const days = () => window.__cpRankDays || 14, btn = (id, t, on) => `<button type="button" class="wp-btn s" ${id} style="${on ? 'font-weight:700;border-color:#15803d' : ''}">${t}</button>`;
       const sorted = (rows) => rkRows({ rows }, lens).sort((a, b) => ((a.low ? 1 : 0) - (b.low ? 1 : 0)) || (sort === 'most' ? b.n - a.n : ((a._v == null) - (b._v == null)) || (sort === 'worst' ? a._v - b._v : b._v - a._v)));
       const tile = (x) => `<div class="fc rk" data-rk="${x.id}" style="background:${x._f == null ? '#f3f4f6' : rkCol(x._f)}"><b style="white-space:normal;line-height:1.2">${esc(rkName(x))}</b><span><strong style="font-size:13px">${rkBig(x, lens)}</strong></span><span style="white-space:normal;line-height:1.25">📤 ${fmt(x.n)} pushed<br>🚚 ${fmt(x.dn)} delivered · ${rkPc(x.d)}<br>💬 ${fmt(x.rep_n)} replied · ${rkP1(x.rep)}</span><i>💰 ${rkRs(x.cost)} spent${x.rep_n ? ' · ' + rkRs(x.cost / x.rep_n) + '/reply' : ''}${x.o1k != null ? ' · 🛒 ' + x.o1k + '/1k' : ''}${x.low ? ' · few sends' : ''}</i></div>`;
       const mk = async (btnEl, purpose) => { btnEl.disabled = true; const t0 = btnEl.textContent; btnEl.textContent = 'Claude is writing…'; try { const r = await api.post('wa.tpl_understand', { purpose }); m.close(); if (window.WaTpl && WaTpl.openForm) WaTpl.openForm({ draft: r.draft }); else toast('The draft is ready — open Pre-made messages to continue'); } catch (e) { toast(e.message, true); btnEl.disabled = false; btnEl.textContent = t0; } };
       const similar = (x, others) => 'Write a NEW marketing message for the perfume shop that is similar to this one, which delivered ' + rkPc(x.d) + ', got ' + rkP1(x.rep) + ' replies' + (x.o1k != null ? ' and ' + x.o1k + ' orders per 1,000 delivered' : '') + ':\n---\n' + x.body + '\n---\nKeep the same tone, length, structure, number of variables and kind of top, but use different words, a different opening line and a fresh angle so it is clearly a different message.' + (others && others.length ? '\nThese variants of the same topic already exist — do NOT copy them:\n' + others.map((o) => '- ' + o.body.slice(0, 160)).join('\n') : '');
       const paint = () => {
-        if (R.pending) { m.body.innerHTML = '<div class="wp-hint" style="padding:10px 2px">⏳ Preparing this ranking… it opens by itself (the first time takes a minute or two).</div>'; if (++tries <= 10) setTimeout(async () => { if (!m.el.isConnected) return; try { R = await load(); if (!sg && !R.pending) window.__cpRank = R; } catch (e) { } paint(); }, 15000); return; }
         if (cur) {
           const x = cur, same = (R.rows || []).filter((r) => r.topic === x.topic && r.id !== x.id), q = (l, v, sub, st) => `<div><small>${l}</small><b style="${st || ''}">${v}</b><i>${sub || ''}</i></div>`;
           m.body.innerHTML = `<div class="wp-row" style="margin-bottom:6px"><button type="button" class="wp-btn s" id="rkBack">← All messages</button></div><b style="font-size:14px">${esc(rkName(x))}</b> <span class="wp-hint" style="margin:0">· topic ${esc(x.topic)}${x.score != null ? ' · balanced ' + x.score + '/100' : ''}</span>
             <div class="wp-hint" style="margin:6px 0 2px"><b>🚚 Delivery</b></div><div class="cq sm">${q('Pushed', fmt(x.n))}${q('Delivered', rkPc(x.d), fmt(x.dn), 'color:#15803d')}${q('Read', rkPc(x.rd))}${q('Held by Meta', rkPc(x.held))}</div>
             <div class="wp-hint" style="margin:6px 0 2px"><b>💬 Replies</b> (within ${R.win || 3} days)</div><div class="cq sm">${q('Replied', fmt(x.rep_n), rkP1(x.rep) + ' of delivered · ' + rkP1(x.n ? x.rep_n / x.n : 0) + ' of pushed', 'color:#15803d')}${q('Price / reply', x.rep_n ? rkRs(x.cost / x.rep_n) : '—', rkRs(x.cost) + ' spent')}</div>
-            ${(x.by_seg || []).filter((z) => z.n >= 50).length > 1 ? `<div class="wp-hint" style="margin:6px 0 2px"><b>🏷 By customer type</b></div><div class="fcg">${x.by_seg.filter((z) => z.n >= 50).sort((a, b) => b.rep - a.rep).map((z) => `<div class="fc" style="background:#f3f4f6"><b style="white-space:normal">${esc(z.seg === '—' ? 'No type' : z.seg)}</b><span style="white-space:normal;line-height:1.25">📤 ${fmt(z.n)} pushed<br>🚚 ${fmt(z.dn)} · ${rkPc(z.d)}<br>💬 ${fmt(z.rep_n)} · ${rkP1(z.rep)}</span></div>`).join('')}</div>` : ''}<div class="wp-hint" style="margin:6px 0 2px"><b>🛒 Orders & money</b></div>${R.orders_ok ? `<div class="cq sm">${q('Orders', fmt(x.ord), x.o1k != null ? x.o1k + ' per 1,000 delivered' : 'few sends')}${q('Revenue', rkRs(x.rev), 'order value')}${q('Cost', rkRs(x.cost), 'delivered × rate')}${q('Return', x.roi != null ? x.roi + '×' : '—', 'revenue ÷ cost', x.roi >= 1 ? 'color:#15803d' : 'color:#c2262b')}${q('Cost / order', x.cpo != null ? rkRs(x.cpo) : '—')}</div>` : '<div class="wp-hint">Order figures are not available yet.</div>'}
+            <div class="wp-hint" style="margin:6px 0 2px"><b>🛒 Orders & money</b></div>${R.orders_ok ? `<div class="cq sm">${q('Orders', fmt(x.ord), x.o1k != null ? x.o1k + ' per 1,000 delivered' : 'few sends')}${q('Revenue', rkRs(x.rev), 'order value')}${q('Cost', rkRs(x.cost), 'delivered × rate')}${q('Return', x.roi != null ? x.roi + '×' : '—', 'revenue ÷ cost', x.roi >= 1 ? 'color:#15803d' : 'color:#c2262b')}${q('Cost / order', x.cpo != null ? rkRs(x.cpo) : '—')}</div>` : '<div class="wp-hint">Order figures are not available yet.</div>'}
             <div class="wp-hint" style="margin:6px 0">${esc(x.header)} · ${fmt(x.chars)} letters · ${x.buttons ? x.buttons + ' button' + (x.buttons === 1 ? '' : 's') : 'no buttons'} · ${esc(x.category || '')}</div><div class="wp-bub" style="white-space:pre-wrap">${esc(x.body)}</div>
             <div class="wp-row" style="margin-top:10px"><button type="button" class="wp-btn p" id="rkMk">✨ Write a similar message</button></div><div class="wp-hint" style="margin:6px 0 0">An order counts once, for the last campaign message delivered to that phone in the ${R.win || 3} days before it. Revenue is the order value (before returns); cost is delivered messages × your billing rate.</div>`;
           $(m.body, '#rkBack').onclick = () => { cur = null; paint(); }; $(m.body, '#rkMk').onclick = function () { mk(this, similar(x, same)); }; return;
@@ -349,24 +345,22 @@ body.waui .cpc .wp-note{margin:4px 0 !important}
             .sort((p, q) => { const kf = (t) => (lens === 'rep' ? t.rep : lens === 'ord' ? (t.roi || 0) : t.d); return sort === 'most' ? q.n - p.n : sort === 'worst' ? kf(p) - kf(q) : kf(q) - kf(p); });
           list = tg.map((t) => `<div style="margin-top:8px"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:6px;flex-wrap:wrap"><b style="font-size:12.5px">📁 ${esc(t.k)}</b><span class="wp-hint" style="margin:0">${t.a.length} message${t.a.length === 1 ? '' : 's'} · ${t.n ? '🚚' + rkPc(t.d) + ' · 💬' + rkP1(t.rep) + ' · 🛒' + (t.roi != null ? Math.round(t.roi * 100) / 100 + '× (' + rkRs(t.rev) + ' from ' + rkRs(t.cost) + ')' : '—') + ' · ' + fmt(t.n) + ' sent' : 'few sends'}</span></div><div class="fcg">${sorted(t.a).map(tile).join('')}</div><div class="wp-row" style="margin-top:4px"><button type="button" class="wp-btn s" data-rkv="${esc(t.k)}">✨ Add another variant to this topic</button></div></div>`).join(''); }
         else list = `<div class="fcg">${sorted(rows).map(tile).join('')}</div>`;
-        m.body.innerHTML = (types().length ? `<div class="wp-hint" style="margin:0 0 2px"><b>🏷 Customer type</b></div><div class="wp-row" style="gap:4px;flex-wrap:wrap;margin-bottom:6px">${btn('data-rkg=""', 'All customers', !sg)}${types().map((z) => btn('data-rkg="' + esc(z.name) + '"', esc(z.name) + ' · ' + fmt(z.n), sg === z.name)).join('')}</div>` : '') + `<div class="wp-row" style="gap:4px;flex-wrap:wrap">${['del', 'rep', 'ord', 'bal'].map((k) => btn('data-rkl="' + k + '"', LENS[k][0], lens === k)).join('')}</div>
+        m.body.innerHTML = `<div class="wp-row" style="gap:4px;flex-wrap:wrap">${['del', 'rep', 'ord', 'bal'].map((k) => btn('data-rkl="' + k + '"', LENS[k][0], lens === k)).join('')}</div>
           <div class="wp-row" style="gap:4px;margin-top:4px;flex-wrap:wrap">${btn('data-rks="best"', '🥇 Best first', sort === 'best')}${btn('data-rks="worst"', '🔻 Worst first', sort === 'worst')}${btn('data-rks="most"', 'Most pushed', sort === 'most')}${btn('data-rkw="all"', 'All messages', view === 'all')}${btn('data-rkw="topic"', 'By topic', view === 'topic')}</div>
           <div class="wp-row" style="gap:4px;margin-top:4px;flex-wrap:wrap">${btn('data-rkd="7"', '7 days', days() === 7)}${btn('data-rkd="14"', '14 days', days() === 14)}${btn('data-rkd="30"', '30 days', days() === 30)}</div>
-          <div class="wp-hint" style="margin:6px 0 2px">${rows.length} messages sent in the last ${days()} days. Every square shows all three: 🚚 delivered · 💬 replied (of delivered) · 🛒 orders per 1,000 delivered, then ₹ from ₹ spent. Grey = fewer than 200 sends.${sg ? ' (🏷 ' + esc(sg) + ' only — order figures are not split by customer type yet.)' : ''}${R.orders_ok ? '' : (sg ? '' : R.orders_pending ? ' (🛒 order figures are being prepared — they appear by themselves.)' : ' (Order figures are not available yet.)')}</div>${tips ? '<div class="wp-hint" style="margin:4px 0 0"><b>💡 What the best ones have in common</b></div>' + tips : ''}${list}`;
+          <div class="wp-hint" style="margin:6px 0 2px">${rows.length} messages sent in the last ${days()} days. Every square shows all three: 🚚 delivered · 💬 replied (of delivered) · 🛒 orders per 1,000 delivered, then ₹ from ₹ spent. Grey = fewer than 200 sends.${R.orders_ok ? '' : (R.orders_pending ? ' (🛒 order figures are being prepared — they appear by themselves.)' : ' (Order figures are not available yet.)')}</div>${tips ? '<div class="wp-hint" style="margin:4px 0 0"><b>💡 What the best ones have in common</b></div>' + tips : ''}${list}`;
         m.body.querySelectorAll('[data-rk]').forEach((b) => { b.onclick = () => { cur = (R.rows || []).find((r) => r.id === +b.dataset.rk); paint(); }; });
         m.body.querySelectorAll('[data-rkl]').forEach((b) => { b.onclick = () => { lens = b.dataset.rkl; paint(); }; });
         m.body.querySelectorAll('[data-rks]').forEach((b) => { b.onclick = () => { sort = b.dataset.rks; paint(); }; });
         m.body.querySelectorAll('[data-rkw]').forEach((b) => { b.onclick = () => { view = b.dataset.rkw; paint(); }; });
-        m.body.querySelectorAll('[data-rkd]').forEach((b) => { b.onclick = async () => { window.__cpRankDays = +b.dataset.rkd; m.body.innerHTML = '<div class="wp-hint">Loading…</div>'; try { R = await load(); if (!sg) { window.__cpRank = R; window.__cpRankLoaded = days(); } } catch (e) { m.body.innerHTML = errBox(e.message); return; } paint(); const hb = $(el, '#rkBody'); if (hb && !sg) { hb.innerHTML = rankHtml(window.__cpRank); bindRank(); } }; });
-        m.body.querySelectorAll('[data-rkg]').forEach((b) => { b.onclick = async () => { sg = b.dataset.rkg; m.body.innerHTML = '<div class="wp-hint">Loading…</div>'; try { R = await load(); if (!sg) window.__cpRank = R; } catch (e) { m.body.innerHTML = errBox(e.message); return; } paint(); }; });
+        m.body.querySelectorAll('[data-rkd]').forEach((b) => { b.onclick = async () => { window.__cpRankDays = +b.dataset.rkd; m.body.innerHTML = '<div class="wp-hint">Loading…</div>'; try { R = window.__cpRank = await api.get('wa.msg_rank', { days: days() }); window.__cpRankLoaded = days(); } catch (e) { m.body.innerHTML = errBox(e.message); return; } paint(); const hb = $(el, '#rkBody'); if (hb) { hb.innerHTML = rankHtml(R); bindRank(); } }; });
         m.body.querySelectorAll('[data-rkv]').forEach((b) => { b.onclick = function () { const a = rows.filter((x) => (x.topic || 'Other') === b.dataset.rkv && !x.low).sort((p, q) => (q.score || 0) - (p.score || 0)); if (!a.length) { toast('This topic has no message with enough sends yet', true); return; } mk(this, similar(a[0], a.slice(1))); }; });
       };
       paint();
     }
     function bindRank() { const b = $(el, '#rkAll'); if (b) b.onclick = openRank; }
-    async function paintRank() { const hb = $(el, '#rkBody'); if (!hb) return; const days = window.__cpRankDays || 14; try { window.__cpRank = await api.get('wa.msg_rank', window.__cpRankTry ? { days, fresh: 1 } : { days }); window.__cpRankLoaded = days; const hb2 = $(el, '#rkBody'); if (hb2) { hb2.innerHTML = rankHtml(window.__cpRank); bindRank(); }
-        if (window.__cpRank.pending) { if ((window.__cpRankTry = (window.__cpRankTry || 0) + 1) <= 10) setTimeout(() => { if (el.isConnected) paintRank(); }, 15000); return; }
-        window.__cpRankTry = 0; [7, 14, 30].filter((d) => d !== days).forEach((d) => { api.get('wa.msg_rank', { days: d }).catch(() => { }); });   // the other windows are warmed so switching 7 / 14 / 30 days is instant
+    async function paintRank() { const hb = $(el, '#rkBody'); if (!hb) return; const days = window.__cpRankDays || 14; try { window.__cpRank = await api.get('wa.msg_rank', { days }); window.__cpRankLoaded = days; const hb2 = $(el, '#rkBody'); if (hb2) { hb2.innerHTML = rankHtml(window.__cpRank); bindRank(); }
+        [7, 14, 30].filter((d) => d !== days).forEach((d) => { api.get('wa.msg_rank', { days: d }).catch(() => { }); });   // the other windows are warmed so switching 7 / 14 / 30 days is instant
         if (window.__cpRank.orders_pending && !window.__cpRankRe) window.__cpRankRe = setTimeout(async () => { window.__cpRankRe = 0; try { window.__cpRank = await api.get('wa.msg_rank', { days, fresh: 1 }); const hb4 = $(el, '#rkBody'); if (hb4 && window.__cpRankLoaded === days) { hb4.innerHTML = rankHtml(window.__cpRank); bindRank(); } } catch (e) { } }, 25000);
       } catch (e) { const hb3 = $(el, '#rkBody'); if (hb3) hb3.innerHTML = errBox(e.message); } }
     function draw() {
@@ -682,8 +676,8 @@ body.waui .cpc .wp-note{margin:4px 0 !important}
     // ------------------------------------------------------------------------------------------------------------ the wizard
     // the list loads without the message library (slow); the wizard fetches it once, the first time it is opened
     async function wizard(c, seg, util) {
-      if (!TPLX) { const lm = modal(c ? 'Edit campaign' : 'New campaign'); lm.body.innerHTML = '<div class="wp-hint" style="padding:14px 4px">Opening… getting your messages ready (the first time takes a few seconds).</div>'; try { TPLX = await (window.__cpTplP || api.get('wa.camp_templates')); if (!TPLX) TPLX = await api.get('wa.camp_templates'); } catch (e) { window.__cpTplP = null; lm.close(); toast(e.message, true); return; } lm.close(); }
-      try { D.templates = TPLX.templates; D.pieces = TPLX.pieces; D.can_media = TPLX.can_media; await wizardGo(c, seg, util); } catch (e) { console.error(e); toast('Could not open the form: ' + (e && e.message ? e.message : e), true); }
+      if (!TPLX) { try { TPLX = await api.get('wa.camp_templates'); } catch (e) { toast(e.message, true); return; } }
+      D.templates = TPLX.templates; D.pieces = TPLX.pieces; D.can_media = TPLX.can_media; wizardGo(c, seg, util);
     }
     function wizardGo(c, seg, util) {   // util: the 💸 utility follow-up campaign (only people who qualify, the standard follow-ups, the offer goes free after a reply)   // seg: people picked on the Customers screen ({tag, name, n}) — the audience is exactly their segment tag
       const A = c ? clone(c.audience) : (seg ? { src: 'contacts', f: { gtags: [seg.tag] }, fName: seg.name, paste: '' } : {}); A.src = A.src || 'contacts'; A.f = A.f || {}; A.paste = A.paste || '';
@@ -691,7 +685,7 @@ body.waui .cpc .wp-note{margin:4px 0 !important}
       const t0 = c ? D.templates.find((x) => x.id === c.tpl_id) : null;
       const W = { id: c ? c.id : 0, name: c ? c.name : (seg ? seg.name.replace(/^Picked /, 'Customers ') : ''), A, media: c && c.media_lib_id ? { id: c.media_lib_id, kind: c.media_kind || 'image', title: c.media_title || '' } : null, mfolder: c ? (c.media_folder || '') : '', tfolder: '', tpl_id: c ? c.tpl_id : 0,
         specs: c && t0 ? normVars(c.vars, t0.vars).map((x) => ({ ...x, sug: false })) : [], extra: c ? clone(c.extra || {}) : {}, push: c ? c.push : 'aggressive', own: c ? !!c.own_hour : false, retry: c ? c.retry !== false : false,
-        start: c && c.start_at ? 'custom' : 'now', start_at: c && c.start_at ? c.start_at.replace(' ', 'T').slice(0, 16) : '', mix: c && c.extra && c.extra.mix !== undefined ? !!c.extra.mix : true, rate: c ? c.rate : 60, win_end: c && c.win_end ? c.win_end.replace(' ', 'T').slice(0, 16) : '', sw: c ? c.switch_after : 2, consent: false, aud: { type: c ? (c.aud_type || '') : (seg ? 'Picked chats' : ''), from: c ? (c.aud_from || '') : '', to: c ? (c.aud_to || '') : '' }, autoName: !c };
+        start: c && c.start_at ? 'custom' : 'now', start_at: c && c.start_at ? c.start_at.replace(' ', 'T').slice(0, 16) : '', mix: c && c.extra && c.extra.mix !== undefined ? !!c.extra.mix : true, rate: c ? c.rate : 60, win_end: c && c.win_end ? c.win_end.replace(' ', 'T').slice(0, 16) : '', sw: c ? c.switch_after : 2, consent: false };
       if (c && c.push === 'normal' && !c.own_hour && !c.retry) { /* an old campaign keeps its old way */ }
       const isU = !!util || !!(c && c.extra && c.extra.kind === 'util'); const m = modal(c ? 'Edit campaign' : (isU ? '💸 New utility follow-up' : 'New campaign')); m.el.classList.add('cu-wide'); if (!c && window.WaCampReport) { const lb = document.createElement('div'); lb.style.padding = '0 16px'; m.body.parentNode.insertBefore(lb, m.body); WaCampReport.learnBox(lb); }   // 💡 what worked in the last campaigns, before you make the next
       let PN = null, pvT = 0; const grpOn = () => Object.keys(W.A.f || {}).some((k) => (Array.isArray(W.A.f[k]) ? W.A.f[k].length : W.A.f[k] !== '' && W.A.f[k] != null));
@@ -728,11 +722,11 @@ body.waui .cpc .wp-note{margin:4px 0 !important}
       // ---------------------------------------------------------------- step 1: who
       async function preview() {
         const box = $(m.body, '#cuPv'); if (!box) return; box.innerHTML = '<div class="wp-hint">Counting…</div>';
-        try { pv = await api.post('wa.camp_preview', auditPayload()); pv.stats = pv.stats || { send: 0, matched: 0 }; pv.sample = pv.sample || []; const s = pv.stats, fr = pushOf()[2];
+        try { pv = await api.post('wa.camp_preview', auditPayload()); const s = pv.stats, fr = pushOf()[2];
           box.innerHTML = `<div class="wp-ok"><b>${fmt(s.send)} customers</b> will get the message.<div class="wp-hint" style="color:inherit;opacity:.85">${fmt(s.matched)} match your filters${s.optout ? ' · ' + fmt(s.optout) + ' opted out (left out)' : ''}${s.recent ? ' · ' + fmt(s.recent) + ' got a campaign message in the last ' + fr + ' days (left out)' : ''}</div>${pv.sample.length ? '<div class="wp-hint" style="color:inherit;opacity:.85">For example: ' + pv.sample.map((x) => esc(x.name || pretty(x.phone))).join(' · ') + ' …</div>' : ''}</div>`
           + (!s.matched && W.A.cfu && W.A.cfu.dk === 'in' && (W.A.cfu.df || W.A.cfu.dt) ? '<div class="wp-note">Nobody matched. Imported customers have never written to you — for them choose the date type <b>“Added / imported / first message”</b> instead of “Last wrote to us”.</div>' : ''); }
         catch (e) { pv = null; box.innerHTML = errBox(e.message); return; }
-        freqPanel(box); sugPaint();
+        freqPanel(box);
       }
       let fqSeq = 0;
       async function freqPanel(box) {   // 📬 how many campaign messages these customers already got lately — and a switch to leave the heavily messaged ones out (Meta holds those back)
@@ -758,7 +752,7 @@ body.waui .cpc .wp-note{margin:4px 0 !important}
       }
       function draw1() {
         const f = W.A.f, tags = X.tags || [], on = new Set(f.gtags || []), fr = pushOf()[2];
-        m.body.innerHTML = head() + `<div class="wp-note" style="margin:0 0 10px"><b>🏷 Which customers are these?</b> <small>(Claude uses this to learn which messages work for which customers)</small><div class="wp-row" style="gap:6px;flex-wrap:wrap;margin-top:6px;align-items:end"><div style="flex:2;min-width:170px"><small>Customer type — pick or type a new one</small><input class="wp-in" id="cuTy" list="cuTyL" maxlength="60" value="${esc(W.aud.type)}" placeholder="e.g. Shopify customer, Shopify bot customer…" autocomplete="off"><datalist id="cuTyL">${(X.types || []).map((t) => `<option value="${esc(t.name)}">${t.n ? fmt(t.n) + ' people' : ''}</option>`).join('')}</datalist></div><div style="flex:1;min-width:120px"><small>From date</small><input class="wp-in" type="date" id="cuTf" value="${esc(W.aud.from)}"></div><div style="flex:1;min-width:120px"><small>To date</small><input class="wp-in" type="date" id="cuTt" value="${esc(W.aud.to)}"></div></div><div id="cuTyMsg" class="wp-hint" style="margin:4px 0 0"></div></div><div id="cuSug"></div><label class="wp-fl" style="margin-top:0">Campaign name <small>(names itself from the type and dates — you can change it)</small></label><input class="wp-in" id="cuN" maxlength="80" value="${esc(W.name)}" placeholder="e.g. Shopify customer · 1–30 Oct 2026">
+        m.body.innerHTML = head() + `<label class="wp-fl" style="margin-top:0">Campaign name</label><input class="wp-in" id="cuN" maxlength="80" value="${esc(W.name)}" placeholder="e.g. Diwali offer — asked price last week">
           <label class="wp-fl">Who gets it</label><div class="wp-seg">${[['contacts', 'Our contacts (chatted + imported)'], ['all', '+ all Shopify customers'], ['paste', 'Paste numbers']].map(([v, l]) => `<button type="button" data-src="${v}" class="${W.A.src === v ? 'on' : ''}">${l}</button>`).join('')}</div>
           ${W.A.src === 'paste' ? `<textarea class="wp-in" id="cuPaste" rows="6" placeholder="One number per line">${esc(W.A.paste)}</textarea>` : `<div id="cuAi"></div>
           ${grpOn() ? `<div class="cu-grp"><span>✨ Starting group: <b>${esc(W.A.fName || 'filters saved with this campaign')}</b></span><button type="button" class="wp-btn s" id="cuGx">✕ Remove</button></div>` : ''}
@@ -776,47 +770,11 @@ body.waui .cpc .wp-note{margin:4px 0 !important}
         if ($(m.body, '#cuWf')) { $(m.body, '#cuWf').oninput = wh; $(m.body, '#cuWt').oninput = wh; wh(); }
         $(m.body, '#cuCnt').onclick = () => { readF(); preview(); };
         $(m.body, '#cuNext').onclick = () => { readF(); if (!W.name.trim()) { $(m.body, '#cuE').innerHTML = errBox('Give the campaign a name.'); return; } step = 2; go(); };
-        audBind();
         clearTimeout(pvT); pvT = setTimeout(preview, pv ? 0 : 300);
         if (W.A.src !== 'paste') {
           if (!PN && !X.tags) api.get('wa.g_tags').then((d) => { X.tags = (d.tags || []).filter((t) => t.all > 0); if (step === 1 && m.el.isConnected) { readF(); draw1(); } }).catch(() => { X.tags = []; });
           if (!X.sugg) api.get('wa.camp_suggest').then((d) => { X.sugg = d.items || []; if (step === 1 && m.el.isConnected) suggDraw(); }).catch(() => { X.sugg = []; }); else suggDraw();
         }
-      }
-      // ---- 🏷 customer type + dates: the campaign names itself, Claude checks a newly typed type, and the last 5 days give the suggestions
-      const audNm = (a) => { const f = (d) => (d ? new Date(d + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : ''), y = a.to || a.from; const r = a.from && a.to && a.from !== a.to ? f(a.from) + '–' + f(a.to) : f(a.from || a.to); return ((a.type || (r ? 'Customers' : '')) + (r ? ' · ' + r : '') + (y ? ' ' + y.slice(0, 4) : '')).trim(); };
-      const audKey = (t) => String(t || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').split(' ').filter(Boolean).map((w) => (w.length > 3 ? w.replace(/s$/, '') : w)).sort().join(' ');
-      let sugD = null, sugT = 0;
-      function sugPaint() {
-        const b = $(m.body, '#cuSug'); if (!b) return; if (!sugD) { b.innerHTML = ''; return; } const d = sugD, hr = (h) => (h % 12 || 12) + (h < 12 ? ' am' : ' pm'), n = pv && pv.stats ? pv.stats.send : 0, top = (d.best || [])[0];
-        const est = n && d.rate_d ? { cost: Math.round(n * d.rate_d * d.rate), rep: Math.round(n * d.rate_d * d.rate_rep) } : null, left = d.room ? d.room.left : 0;
-        b.innerHTML = `<div class="wp-note" style="margin:0 0 10px;background:#f0f9ff"><b>💡 Suggested${W.aud.type ? ' for ' + esc(W.aud.type) : ''}</b> <small>(from the last 5 days of your own data${d.fallback ? ' — this type has too few sends yet, so all customers are used' : ''})</small>
-          <div class="cq sm" style="margin-top:6px">${top ? `<div style="background:#dcfce7"><small>🥇 Best message</small><b style="font-size:12px;white-space:normal">${esc(String(top.name).replace(/^house_aisensy_/, '').replace(/_/g, ' '))}</b><i>${rkPc(top.d)} delivered · ${rkP1(top.rep)} replied</i></div>` : '<div><small>🥇 Best message</small><b>—</b><i>not enough data</i></div>'}
-          <div><small>🕐 Best hours</small><b>${(d.hours || []).length ? d.hours.map(hr).join(', ') : '—'}</b><i>${d.learning ? 'still learning' : 'most delivered'}</i></div>
-          <div><small>📅 Room today</small><b>${fmt(left)}</b><i>of ${fmt(d.room ? d.room.daily : 0)} daily plan</i></div>
-          <div><small>💰 Expected</small><b>${est ? '₹' + fmt(est.cost) : '—'}</b><i>${est ? '~' + fmt(est.rep) + ' replies for ' + fmt(n) + ' people' : 'count people first'}</i></div></div>
-          <div class="wp-hint" style="margin:6px 0 0">${n && left && n > left ? '⚠ ' + fmt(n) + ' people is more than today\'s room (' + fmt(left) + '). Send ' + fmt(left) + ' today and the rest tomorrow morning.' : (n && left ? '✅ Fits in today\'s room.' : '')}${d.hours && d.hours.length && left < 500 ? ' Today is nearly full — schedule for tomorrow at ' + hr(d.hours[0]) + '.' : ''}</div>
-          ${top ? `<button type="button" class="wp-btn s" id="cuSugUse" style="margin-top:6px">Use “${esc(String(top.name).replace(/^house_aisensy_/, '').replace(/_/g, ' '))}” in step 2</button>` : ''}</div>`;
-        const u = $(b, '#cuSugUse'); if (u) u.onclick = () => { const t = D.templates.find((x) => x.id === top.id); if (t) { W.tpl_id = t.id; toast('Message chosen — you can change it in step 2'); } else toast('That message is not available any more', true); };
-      }
-      function sugLoad() { clearTimeout(sugT); sugT = setTimeout(async () => { try { sugD = await api.get('wa.aud_suggest', { type: W.aud.type || '' }); } catch (e) { sugD = null; } if (step === 1 && m.el.isConnected) sugPaint(); }, 250); }
-      function audBind() {
-        const ty = $(m.body, '#cuTy'); if (!ty) return; const msg = $(m.body, '#cuTyMsg'), nm = $(m.body, '#cuN');
-        if (!X.types) api.get('wa.aud_types').then((d) => { X.types = d.types || []; const l = $(m.body, '#cuTyL'); if (l) l.innerHTML = X.types.map((t) => `<option value="${esc(t.name)}">${t.n ? fmt(t.n) + ' people' : ''}</option>`).join(''); }).catch(() => { X.types = []; });
-        const rename = () => { if (W.autoName || !W.name.trim()) { W.autoName = true; W.name = audNm(W.aud); if (nm) nm.value = W.name; } };
-        nm.addEventListener('input', () => { W.autoName = false; });
-        const dates = () => { W.aud.from = $(m.body, '#cuTf').value; W.aud.to = $(m.body, '#cuTt').value; rename(); };
-        $(m.body, '#cuTf').onchange = dates; $(m.body, '#cuTt').onchange = dates;
-        ty.onchange = async () => {
-          const v = ty.value.trim(); W.aud.type = v; msg.textContent = ''; rename(); if (!v) { sugD = null; sugPaint(); return; }
-          const hit = (X.types || []).find((t) => audKey(t.name) === audKey(v)); if (hit) { ty.value = W.aud.type = hit.name; rename(); msg.textContent = '✔ Existing type'; sugLoad(); return; }
-          msg.textContent = '🤖 Claude is checking what you typed…';
-          try { const r = await api.post('wa.aud_check', { text: v }); ty.value = W.aud.type = r.name; rename(); msg.innerHTML = r.exists ? '✔ <b>Already exists</b> — using “' + esc(r.name) + '”. ' + esc(r.understood || '') : '🆕 <b>New type “' + esc(r.name) + '”</b> — ' + esc(r.understood || '') + ' It is saved when you save the campaign and will be in the list next time.'; }
-          catch (e) { msg.textContent = 'Saved as typed.'; }
-          sugLoad();
-        };
-        if (W.autoName && !W.name.trim() && (W.aud.type || W.aud.from)) rename();
-        if (W.aud.type) sugLoad(); else sugPaint();
       }
       function suggDraw() {
         const box = $(m.body, '#cuAi'); if (!box || !X.sugg || !X.sugg.length) return; const best = X.sugg.find((x) => x.kind === 'best') || X.sugg.find((x) => x.kind === 'also'), rest = X.sugg.filter((x) => x !== best);
@@ -1037,7 +995,7 @@ body.waui .cpc .wp-note{margin:4px 0 !important}
         const save = async (start) => {
           read3(); const b = $(m.body, start ? '#cuGo' : '#cuDraft'); b.disabled = true; const t = tpl();
           try {
-            const r = await api.post('wa.camp_save', { kind: W.util ? 'util' : '', id: W.id, name: W.name, aud_type: W.aud.type, aud_from: W.aud.from, aud_to: W.aud.to, tpl_id: W.tpl_id, vars: W.specs.map((s) => ({ src: s.src, val: s.val, slot: s.slot })), audience: W.A, rate: W.rate, win_end: W.win_end, start_at: startAt(), push: W.push, own_hour: W.own, def_hour: 19, retry: W.retry, media_lib_id: W.media ? W.media.id : 0, media_folder: W.mfolder, extra: W.extra, switch_after: W.sw, mix: W.mix, tpl_u: (tpl() && (tpl().twins || []).length) ? tpl().twins[tpl().twins.length - 1].id : 0 }); W.id = r.id;
+            const r = await api.post('wa.camp_save', { kind: W.util ? 'util' : '', id: W.id, name: W.name, tpl_id: W.tpl_id, vars: W.specs.map((s) => ({ src: s.src, val: s.val, slot: s.slot })), audience: W.A, rate: W.rate, win_end: W.win_end, start_at: startAt(), push: W.push, own_hour: W.own, def_hour: 19, retry: W.retry, media_lib_id: W.media ? W.media.id : 0, media_folder: W.mfolder, extra: W.extra, switch_after: W.sw, mix: W.mix, tpl_u: (tpl() && (tpl().twins || []).length) ? tpl().twins[tpl().twins.length - 1].id : 0 }); W.id = r.id;
             if (start) { if (W.A.src !== 'contacts' && !W.consent) throw new Error('Tick the box to confirm these customers agreed to receive WhatsApp messages from you.'); const s = await api.post('wa.camp_start', { id: W.id, consent: W.consent }); toast(s.status === 'scheduled' ? 'Scheduled ✓' : 'Started — ' + fmt(s.queued) + ' customers queued ✓'); } else toast('Draft saved ✓');
             m.close(); load();
           } catch (e) { $(m.body, '#cuE').innerHTML = errBox(e.message); b.disabled = false; if (start && W.id) load(true); }
@@ -1065,7 +1023,7 @@ body.waui .cpc .wp-note{margin:4px 0 !important}
       }
       draw1();
     }
-    (async () => { try { const sn = await api.get('wa.camp_snap'); if (sn && sn.snap && !D && el.isConnected) { D = sn.snap; draw(); } } catch (e) { } load(false); setTimeout(() => { if (!TPLX && el.isConnected && !window.__cpTplP) { window.__cpTplP = api.get('wa.camp_templates').then((d) => { TPLX = d; return d; }, () => { window.__cpTplP = null; return null; }); } }, 2500); })(); return () => load(false);   // 🗄 the page opens at once from the database cache and refreshes behind it
+    (async () => { try { const sn = await api.get('wa.camp_snap'); if (sn && sn.snap && !D && el.isConnected) { D = sn.snap; draw(); } } catch (e) { } load(false); })(); return () => load(false);   // 🗄 the page opens at once from the database cache and refreshes behind it
   }
   WaPanels.add('campaigns', screen);
 })();
