@@ -151,6 +151,7 @@ if ($__wc === 'wa.overview' || $__wc === 'wa.send_media') {
         }
         case 'wa.overview': {
             wa_guard_admin($pdo, $auth);
+            $GLOBALS['__wa_lim_cache_ok'] = empty($_GET['live']);   // ⚡ screen only: the heavy 24-hour count is remembered for 30 s (the campaign sender never sets this)
             $d0 = date('Y-m-d 00:00:00'); $d7 = date('Y-m-d 00:00:00', strtotime('-6 days'));
             $wait = "last_in_at IS NOT NULL AND (last_out_at IS NULL OR last_out_at < last_in_at) AND optout = 0 AND status = 'open'";
             $cnt = function (string $w, array $p = []) use ($pdo) { $q = $pdo->prepare("SELECT COUNT(*) FROM wa_contacts WHERE $w"); $q->execute($p); return (int)$q->fetchColumn(); };
