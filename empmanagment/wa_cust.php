@@ -52,7 +52,7 @@ function wcs_clean($raw): array
     if ($t = wcs_tags($raw['tags_any'] ?? [])) $f['gtags'] = $t;
     if ($t = wcs_tags($raw['tags_all'] ?? [])) $f['tags_all'] = $t;
     if ($t = wcs_tags($raw['tags_not'] ?? [])) $f['tags_not'] = $t;
-    foreach (['st' => ['waiting', 'noreply', 'optout', 'reach'], 'ord' => ['0', '1', '2', '3'], 'dsl' => ['30', '60', '90', '91'], 'src' => ['query', 'campaign', 'community', 'none'], 'wrote' => ['7', '30', 'old']] as $k => $ok)
+    foreach (['st' => ['waiting', 'noreply', 'optout', 'reach'], 'ord' => ['0', '1', '2', '3'], 'tier' => ['prem', 'std', 'bud'], 'dsl' => ['30', '60', '90', '91'], 'src' => ['query', 'campaign', 'community', 'none'], 'wrote' => ['7', '30', 'old']] as $k => $ok)
         if (isset($raw[$k]) && in_array((string)$raw[$k], $ok, true)) $f[$k] = (string)$raw[$k];
     foreach (['ord_min', 'ord_max', 'sp_min', 'sp_max', 'num', 'emp', 'ign'] as $k) if (isset($raw[$k]) && $raw[$k] !== '' && is_numeric($raw[$k])) $f[$k] = (int)$raw[$k];
     if (isset($f['ign']) && $f['ign'] <= 0) unset($f['ign']);
