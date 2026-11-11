@@ -94,7 +94,7 @@ function wq_pace_calc(PDO $pdo, int $days): array
     } catch (Throwable $e) { $cx = []; }
     $inCx = function (string $ph, int $t1, int $t2) use (&$cx): bool { foreach ($cx[substr($ph, -10)] ?? [] as $iv) { if (($t1 >= $iv[0] && $t1 <= $iv[1]) || ($t2 >= $iv[0] && $t2 <= $iv[1])) return true; } return false; };
     $cxSkipped = 0;
-    $st = $pdo->prepare("SELECT phone, dir, who, emp_id, ts, mtype, LEFT(body, 40) FROM wa_messages WHERE ts >= ? AND dir IN ('in','out') ORDER BY phone, id LIMIT 900000");
+    $st = $pdo->prepare("SELECT phone, dir, who, emp_id, ts, mtype, LEFT(body, 40) FROM wa_messages WHERE ts >= ? AND dir IN ('in','out') AND (dir = 'in' OR who IN ('emp','bot','auto','flow')) ORDER BY phone, id LIMIT 900000");   // campaign / system messages we sent never start or stop a reply gap, so they are not read at all (they were millions of rows)
     $st->execute([date('Y-m-d H:i:s', $scanFrom)]);
     $curPhone = null; $pend = 0;
     while (($r = $st->fetch(PDO::FETCH_NUM)) !== false) {
@@ -324,8 +324,20 @@ function wq_pace_get(PDO $pdo, int $days): array
         try { $q = $pdo->prepare("SELECT js, at FROM wq_pace_cache WHERE k = ?"); $q->execute([$k]); $r = $q->fetch();
             if ($r && $r['js'] && strtotime((string)$r['at']) > time() - ($days === 30 ? 600 : 120)) { $j = json_decode((string)$r['js'], true); if (is_array($j)) return $j; } } catch (Throwable $e) { }
     }
-    $d = wq_pace_calc($pdo, $days);
-    if (wq_pace_tables($pdo)) { try { $pdo->prepare("REPLACE INTO wq_pace_cache (k, js, at) VALUES (?,?,?)")->execute([$k, json_encode($d, JSON_UNESCAPED_UNICODE), date('Y-m-d H:i:s')]); } catch (Throwable $e) { } }
+    // only ONE scan at a time (the scan is heavy; every page asking at once used to start its own copy and freeze the server): the others get the last stored copy, however old
+    $lk = 'lock_' . $days; $have = wq_pace_tables($pdo);
+    if ($have) {
+        try { $q = $pdo->prepare("SELECT at FROM wq_pace_cache WHERE k = ?"); $q->execute([$lk]); $l = $q->fetchColumn();
+            if ($l && strtotime((string)$l) > time() - 240) {
+                $q = $pdo->prepare("SELECT js FROM wq_pace_cache WHERE k = ?"); $q->execute([$k]); $js = $q->fetchColumn(); $j = $js ? json_decode((string)$js, true) : null;
+                if (is_array($j)) return $j;
+                throw new RuntimeException('The reply pace is being prepared, try again in a minute.');
+            } } catch (RuntimeException $e) { throw $e; } catch (Throwable $e) { }
+        try { $pdo->prepare("REPLACE INTO wq_pace_cache (k, js, at) VALUES (?,?,?)")->execute([$lk, '', date('Y-m-d H:i:s')]); } catch (Throwable $e) { }
+    }
+    try { $d = wq_pace_calc($pdo, $days); }
+    finally { if ($have) { try { $pdo->prepare("REPLACE INTO wq_pace_cache (k, js, at) VALUES (?,?,?)")->execute([$lk, '', '2000-01-01 00:00:00']); } catch (Throwable $e) { } } }
+    if ($have) { try { $pdo->prepare("REPLACE INTO wq_pace_cache (k, js, at) VALUES (?,?,?)")->execute([$k, json_encode($d, JSON_UNESCAPED_UNICODE), date('Y-m-d H:i:s')]); } catch (Throwable $e) { } }
     return $d;
 }
 /** A salesperson sees their own line, the team median and their own rank - never other people's names or numbers. */
