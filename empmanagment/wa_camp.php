@@ -264,9 +264,8 @@ function wa_camp_now(): int { return defined('WA_CAMP_NOW') ? (int)WA_CAMP_NOW :
 /** The hours in which campaigns may send: [first hour, hour when it stops] — default 0 → 24: any hour, the owner sends whenever they want. Setting wa_camp_window = "8-21" would bring quiet hours back. */
 function wa_camp_window(PDO $pdo): array
 {
-    $o = 0; $c = 24;
-    try { if (preg_match('/^(\d{1,2})\s*-\s*(\d{1,2})$/', trim((string)setting_get($pdo, 'wa_camp_window', '')), $m) && (int)$m[1] < (int)$m[2] && (int)$m[2] <= 24) { $o = (int)$m[1]; $c = (int)$m[2]; } } catch (Throwable $e) { }
-    return [$o, $c];
+    // no time-slot restriction at all (owner, 12 Nov): campaigns may send at any hour of the day or night, so a scheduled 7 am campaign is never held back. The old wa_camp_window setting is ignored.
+    return [0, 24];
 }
 function wa_camp_in_window(PDO $pdo, int $ts): bool { [$o, $c] = wa_camp_window($pdo); $h = (int)date('G', $ts); return $h >= $o && $h < $c; }
 /** The next moment inside the sending window (the same time when it is already inside). */
