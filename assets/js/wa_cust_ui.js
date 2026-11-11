@@ -9,7 +9,7 @@
 (function () {
   'use strict';
   if (window.WaCust) return;
-  const CSS = `.wcs-t{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}.wcs-t>div{background:#fff;border:1px solid #eceef2;border-radius:14px;padding:9px 14px;min-width:120px}.wcs-t .m{background:#14161a;color:#fff;border-color:#14161a}.wcs-t small{display:block;font-size:11.5px;opacity:.75}.wcs-t b{font-size:20px;line-height:1.2}
+  const CSS = `.wcs-t{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:6px}.wcs-t>div{background:#fff;border:1px solid #eceef2;border-radius:9px;padding:3px 8px;min-width:0}.wcs-t .m{background:#14161a;color:#fff;border-color:#14161a}.wcs-t small{display:block;font-size:9.5px;opacity:.75}.wcs-t b{font-size:12.5px;line-height:1.2}
 
 .wcs{--ln:#e3e8ef; --mut:#64748b; --g:#12794a; --gb:#e7f6ee; --r:#b42318; --rb:#fde8e8; display:grid; grid-template-columns:minmax(0,1fr); gap:12px; align-items:start;}
 .wcs > *{min-width:0;}
@@ -34,7 +34,7 @@
 .wcs-views{display:flex; gap:6px; overflow-x:auto; padding-bottom:2px; scrollbar-width:thin;}
 .wcs-views button{flex:none; border:1px solid var(--ln); background:#fff; border-radius:10px; padding:6px 10px; font:inherit; font-size:12.5px; cursor:pointer; white-space:nowrap;}
 .wcs-views button.on{border-color:var(--g); background:var(--gb); color:var(--g); font-weight:700;}
-.wcs-cnt{display:flex; flex-wrap:wrap; align-items:center; gap:8px;} .wcs-cnt b.n{font-size:20px;}
+.wcs-cnt{display:flex; flex-wrap:wrap; align-items:center; gap:8px;} .wcs-cnt b.n{font-size:15px;} .wcs-cnt{font-size:12px} .wcs-lh .wp-btn.s{min-height:24px;font-size:11px;padding:1px 9px} .wcs-lh select.wp-in,.wcs-lh select{min-height:28px;font-size:11.5px;padding:2px 6px}
 .wcs-on{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;}
 .wcs-on span{background:#f1f5f9; border-radius:999px; padding:3px 4px 3px 10px; font-size:12px; display:inline-flex; align-items:center; gap:4px;}
 .wcs-on button{border:0; background:#e2e8f0; border-radius:50%; width:18px; height:18px; font-size:11px; cursor:pointer; line-height:1;}
@@ -42,10 +42,11 @@
 .wcs-lh label{display:inline-flex; align-items:center; gap:6px; font-size:13px; font-weight:600; cursor:pointer;}
 .wcs-lh .sp{flex:1;} .wcs-lh select{width:auto; padding:6px 8px; font-size:12.5px;}
 .wcs input[type=checkbox]{width:18px; height:18px; margin:0; flex:none; accent-color:#12794a;}
-.wcs-r{display:flex; gap:10px; align-items:flex-start; padding:10px 12px; border:1px solid var(--ln); border-radius:12px; background:#fff; margin-bottom:6px;}
-.wcs-r.sel{border-color:#9bd8b4; background:#f6fcf8;} .wcs-r .b{flex:1; min-width:0;} .wcs-r .nm{font-weight:700;} .wcs-r .ph{color:var(--mut); font-size:12.5px;}
-.wcs-r .wp-pill{margin:4px 4px 0 0;} .wcs-r .mo{border:0; background:none; color:#2563eb; font-size:12px; cursor:pointer; padding:0 2px;}
-.wcs-r .ln{font-size:12px; color:var(--mut); margin-top:4px;}
+.wcs-r{display:flex; gap:8px; align-items:center; padding:5px 9px; border:1px solid var(--ln); border-radius:10px; background:#fff; margin-bottom:4px;} .wcs-r input[type=checkbox]{width:15px;height:15px;flex:none;margin:0}
+.wcs-r.sel{border-color:#9bd8b4; background:#f6fcf8;} .wcs-r .b{flex:1; min-width:0;} .wcs-r .nm{font-weight:700;font-size:13px;} .wcs-r .ph{color:var(--mut); font-size:11px;} .wcs-r .l1{line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .wcs-r .l2{line-height:1.2} .wcs-r .oc{min-height:26px;padding:2px 10px;font-size:11px;flex:none}
+.wcs-r .cp{display:inline-block;font-size:10.5px;line-height:1.5;padding:0 7px;border-radius:99px;background:rgba(128,128,128,.14);margin:2px 3px 0 0;white-space:nowrap} .wcs-r .cp[hidden]{display:none} .wcs-r .cp.ok{background:#dcfce7;color:#166534} .wcs-r .cp.b{background:#dbeafe;color:#1e40af} .wcs-r .cp.p{background:#ede9fe;color:#5b21b6} .wcs-r .cp.o{background:#ffedd5;color:#9a3412} .wcs-r .cp.bad{background:#fee2e2;color:#b91c1c} .wcs-r .cp.warn{background:#fef3c7;color:#92400e}
+.wcs-r .wp-pill{margin:4px 4px 0 0;} .wcs-r .mo{border:0; background:none; color:#2563eb; font-size:10.5px; cursor:pointer; padding:0 2px;}
+.wcs-r .ln{font-size:10px; color:var(--mut); margin-left:2px;}
 .wcs-pg{display:flex; flex-wrap:wrap; justify-content:center; gap:4px; margin:12px 0;}
 .wcs-pg button{min-width:34px; border:1px solid var(--ln); background:#fff; border-radius:8px; padding:5px 8px; font:inherit; font-size:13px; cursor:pointer;}
 .wcs-pg button.on{background:#0f172a; color:#fff; border-color:#0f172a;} .wcs-pg button:disabled{opacity:.4; cursor:default;}
@@ -59,7 +60,7 @@
   .wcs-fh{display:flex; align-items:center; justify-content:space-between; gap:8px; width:100%; border:0; background:none; padding:0; font:inherit; font-weight:800; font-size:14px; cursor:pointer;}
   .wcs-f.shut .wcs-fb{display:none;} .wcs-f:not(.shut) .wcs-fh{margin-bottom:10px;}
   .wcs-bar{bottom:calc(66px + env(safe-area-inset-bottom)); gap:5px;} .wcs-bar .lg{display:none;} .wcs-bar .sp{display:none;} .wcs-bar b{width:100%;} .wcs-pad{height:150px;} .wcs-bar button{padding:8px 9px; font-size:12.5px;}
-  .wcs-r{padding:9px 10px;}
+  .wcs-r{padding:5px 8px;}
 }
 html.wxdk .wcs{--ln:#25343e; --gb:#0f2e20; --rb:#3a1515;} html.wxdk .wcs-r,html.wxdk .wcs-dd,html.wxdk .wcs-pre button,html.wxdk .wcs-seg button,html.wxdk .wcs-views button,html.wxdk .wcs-pg button{background:#111b21; color:#e9edef;}
 `;
@@ -219,14 +220,16 @@ html.wxdk .wcs{--ln:#25343e; --gb:#0f2e20; --rb:#3a1515;} html.wxdk .wcs-r,html.
     // ---------------------------------------------------------------------------------------------------------- list
     const isSel = (p) => (S.sel.mode === 'all' ? !S.sel.except.has(p) : S.sel.ids.has(p));
     const nSel = () => (S.sel.mode === 'all' ? Math.max(0, S.total - S.sel.except.size) : S.sel.ids.size);
-    function rowHtml(r) {
-      let h = r.orders === 0 ? '<span class="wp-pill">No order yet</span>' : `<span class="wp-pill ${r.orders >= 3 ? 'p' : (r.orders === 2 ? 'b' : 'ok')}">Ordered ${r.orders}×</span>`;
-      if (r.days != null) h += `<span class="wp-pill">${r.days === 0 ? 'Ordered today' : 'Last order ' + r.days + ' d ago'}</span>`; if (r.spent) h += `<span class="wp-pill ok">${money(r.spent)}</span>`;
-      if (r.orders > 0 && r.spent) { const cu = S.meta.cuts || { hi: 3000, lo: 800 }, av = r.spent / r.orders; h += `<span class="wp-pill ${av >= cu.hi ? 'p' : ''}">${av >= cu.hi ? '💎 Premium' : av <= cu.lo ? 'Budget' : 'Standard'}</span>`; } if (r.optout) h += '<span class="wp-pill bad">Opted out</span>'; if (r.ignored >= 2) h += `<span class="wp-pill warn">Ignored ${r.ignored}</span>`; if (r.assigned_name) h += `<span class="wp-pill">👤 ${esc(r.assigned_name)}</span>`;
-      const tg = r.tags || [], more = tg.length - 3;
-      h += tg.map((t, i) => `<span class="wp-pill ${/_query$/.test(t.k) ? 'o' : /^seg_/.test(t.k) ? 'p' : ''}" ${i >= 3 ? 'data-mx hidden' : ''}>🏷 ${esc(t.t)}</span>`).join('') + (more > 0 ? `<button type="button" class="mo" data-mo>+${more} more</button>` : '');
-      return `<div class="wcs-r ${isSel(r.phone) ? 'sel' : ''}" data-p="${esc(r.phone)}"><input type="checkbox" data-ck ${isSel(r.phone) ? 'checked' : ''} aria-label="Select"><div class="b"><div><span class="nm">${esc(r.name || pretty(r.phone))}</span>${r.name ? ` <span class="ph">${esc(pretty(r.phone))}</span>` : ''}</div><div>${h}</div>
-        <div class="ln">${r.last_in_at ? 'Last wrote ' + esc(when(r.last_in_at)) : 'Has not written to us'}${r.last_number ? ' · via ' + esc(r.last_number) : ''}</div></div>${r.known && r.last_in_at ? '<button type="button" class="wp-btn s" data-oc>Open chat</button>' : ''}</div>`;
+    function rowHtml(r) {   // compact: name + number and the Open chat button on the first line, a few small chips on the second
+      const cp = (c, t, x) => `<span class="cp ${c}" ${x || ''}>${t}</span>`, cu = S.meta.cuts || { hi: 3000, lo: 800 };
+      let h = r.orders === 0 ? cp('', 'No order') : cp(r.orders >= 3 ? 'p' : r.orders === 2 ? 'b' : 'ok', r.orders + '× ' + (r.spent ? money(r.spent) : ''));
+      if (r.orders > 0 && r.spent) { const av = r.spent / r.orders; if (av >= cu.hi) h += cp('p', '💎 Premium'); else if (av <= cu.lo) h += cp('', 'Budget'); }
+      if (r.days != null && r.days <= 120) h += cp('', r.days === 0 ? 'ordered today' : r.days + ' d ago');
+      if (r.optout) h += cp('bad', 'Opted out'); if (r.ignored >= 2) h += cp('warn', 'Ignored ' + r.ignored);
+      if (r.assigned_name) h += cp('', '👤 ' + esc(String(r.assigned_name).split(' ')[0]));
+      const tg = r.tags || [], more = tg.length - 2;
+      h += tg.map((t, i) => cp(/_query$/.test(t.k) ? 'o' : /^seg_/.test(t.k) ? 'p' : '', esc(t.t), i >= 2 ? 'data-mx hidden' : '')).join('') + (more > 0 ? `<button type="button" class="mo" data-mo>+${more}</button>` : '');
+      return `<div class="wcs-r ${isSel(r.phone) ? 'sel' : ''}" data-p="${esc(r.phone)}"><input type="checkbox" data-ck ${isSel(r.phone) ? 'checked' : ''} aria-label="Select"><div class="b"><div class="l1"><span class="nm">${esc(r.name || pretty(r.phone))}</span>${r.name ? ` <span class="ph">${esc(pretty(r.phone))}</span>` : ''}</div><div class="l2">${h}${r.last_in_at ? `<span class="ln">${esc(when(r.last_in_at))}</span>` : ''}</div></div>${r.known && r.last_in_at ? '<button type="button" class="wp-btn s oc" data-oc>Chat</button>' : ''}</div>`;
     }
     function drawL() {
       const L = $(el, '#cxL'); if (!S.rows.length) { L.innerHTML = S.busy ? loading : '<div class="wp-empty">Nobody matches these filters. Try a wider date range or fewer tags.</div>'; drawB(); return; }

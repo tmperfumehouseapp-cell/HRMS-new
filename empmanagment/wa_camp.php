@@ -942,21 +942,23 @@ function wa_camp_days(PDO $pdo, int $days): array
     $days = max(3, min(60, $days)); $ck = 'camp_days_' . $days; $hit = wa_cpc_get($pdo, $ck);
     if ($hit && $hit['age'] < 1800) return $hit['v'];
     $lk = 'wa_camp_days_lock'; try { if ($hit && (int)setting_get($pdo, $lk, '0') > time() - 90) return $hit['v']; setting_set($pdo, $lk, (string)time()); } catch (Throwable $e) { }
-    $off = 10; try { if (function_exists('wa_bizday_start')) $off = (int)date('G', strtotime(wa_bizday_start($pdo))); } catch (Throwable $e) { }
+    // the day boundaries are the LIVE board's: each business day starts when that day's timing says (10 am, or the date's own override), so a campaign day and a live-board day are the same day
+    $bound = []; try { if (function_exists('wq_day_of') && function_exists('wq_day_start') && function_exists('wq_day_add') && function_exists('wq_now')) { $t0 = wq_day_of($pdo, wq_now()); for ($i = 0; $i <= $days; $i++) { $dd = wq_day_add($t0, -$i); $bound[] = [$dd, date('Y-m-d H:i:s', (int)wq_day_start($pdo, $dd))]; } } } catch (Throwable $e) { $bound = []; }
+    $dayX = function (string $col) use ($bound) { if (!$bound) return "DATE(DATE_SUB($col, INTERVAL 10 HOUR))"; $c = 'CASE'; foreach ($bound as [$dd, $st]) $c .= " WHEN $col >= '$st' THEN '$dd'"; return $c . ' END'; };   // dates and times come from our own functions, never from the request
     $R = function_exists('wab_rates') ? wab_rates($pdo) : ['marketing' => 1.09, 'utility' => 0.15];
     $from = date('Y-m-d 00:00:00', time() - ($days + 1) * 86400); $D = [];
     $blank = fn() => ['pushed' => 0, 'delivered' => 0, 'read' => 0, 'spend' => 0.0, 'queries' => 0, 'replied' => 0, 'orders' => 0, 'revenue' => 0.0];
     try {
-        $q = $pdo->prepare("SELECT /*+ MAX_EXECUTION_TIME(12000) */ DATE(DATE_SUB(ts, INTERVAL $off HOUR)) d, COUNT(*) n, SUM(status IN ('delivered','read')) dl, SUM(status = 'read') rd, SUM(status IN ('delivered','read') AND bill_cat IN ('utility','authentication')) u, SUM(status IN ('delivered','read') AND bill_cat = 'service') sv
+        $q = $pdo->prepare("SELECT /*+ MAX_EXECUTION_TIME(12000) */ " . $dayX('ts') . " d, COUNT(*) n, SUM(status IN ('delivered','read')) dl, SUM(status = 'read') rd, SUM(status IN ('delivered','read') AND bill_cat IN ('utility','authentication')) u, SUM(status IN ('delivered','read') AND bill_cat = 'service') sv
             FROM wa_messages WHERE dir = 'out' AND mtype = 'template' AND who = 'campaign' AND status <> 'failed' AND ts >= ? GROUP BY d");
-        $q->execute([$from]);
-        foreach ($q->fetchAll() as $r) { $x = $D[(string)$r['d']] ?? $blank(); $dl = (int)$r['dl']; $u = (int)$r['u']; $mk = max(0, $dl - $u - (int)$r['sv']); $x['pushed'] = (int)$r['n']; $x['delivered'] = $dl; $x['read'] = (int)$r['rd']; $x['spend'] = round($mk * (float)$R['marketing'] + $u * (float)$R['utility'], 2); $D[(string)$r['d']] = $x; }
+        $q->execute([$bound ? $bound[count($bound) - 1][1] : $from]);
+        foreach ($q->fetchAll() as $r) { if ((string)$r['d'] === '') continue; $x = $D[(string)$r['d']] ?? $blank(); $dl = (int)$r['dl']; $u = (int)$r['u']; $mk = max(0, $dl - $u - (int)$r['sv']); $x['pushed'] = (int)$r['n']; $x['delivered'] = $dl; $x['read'] = (int)$r['rd']; $x['spend'] = round($mk * (float)$R['marketing'] + $u * (float)$R['utility'], 2); $D[(string)$r['d']] = $x; }
     } catch (Throwable $e) { error_log('camp_days msgs: ' . $e->getMessage()); }
     try {
-        $q = $pdo->prepare("SELECT /*+ MAX_EXECUTION_TIME(12000) */ DATE(DATE_SUB(q.opened_at, INTERVAL $off HOUR)) d, COUNT(*) n, SUM(COALESCE(s.answered, 0)) rp, SUM(COALESCE(s.orders, 0)) o, SUM(COALESCE(s.revenue, 0)) rv
+        $q = $pdo->prepare("SELECT /*+ MAX_EXECUTION_TIME(12000) */ " . $dayX('q.opened_at') . " d, COUNT(*) n, SUM(COALESCE(s.answered, 0)) rp, SUM(COALESCE(s.orders, 0)) o, SUM(COALESCE(s.revenue, 0)) rv
             FROM wa_queries q JOIN wq_qtype t ON t.query_id = q.id AND t.type = 'campaign' LEFT JOIN wq_qstat s ON s.query_id = q.id WHERE q.opened_at >= ? GROUP BY d");
         $q->execute([$from]);
-        foreach ($q->fetchAll() as $r) { $x = $D[(string)$r['d']] ?? $blank(); $x['queries'] = (int)$r['n']; $x['replied'] = (int)$r['rp']; $x['orders'] = (int)$r['o']; $x['revenue'] = round((float)$r['rv'], 2); $D[(string)$r['d']] = $x; }
+        foreach ($q->fetchAll() as $r) { if ((string)$r['d'] === '') continue; $x = $D[(string)$r['d']] ?? $blank(); $x['queries'] = (int)$r['n']; $x['replied'] = (int)$r['rp']; $x['orders'] = (int)$r['o']; $x['revenue'] = round((float)$r['rv'], 2); $D[(string)$r['d']] = $x; }
     } catch (Throwable $e) { error_log('camp_days queries: ' . $e->getMessage()); }
     krsort($D); $rows = []; $T = $blank();
     foreach (array_slice($D, 0, $days, true) as $d => $x) {
