@@ -271,6 +271,7 @@ function wa_dq_left(PDO $pdo, bool $fresh = false): array
             $needPush = min((int)$pushCap, (int)ceil($effCap / max(0.15, $rateUsed)));
             $pace['target'] = $pace['amount'] > 0 ? max(1, min((int)$effCap, (int)round($pace['amount'] * $rateUsed))) : 0;   // delivered this hour: the hour's number, or what the queue can deliver when smaller
             $pushCap = min((int)$pushCap, max(1, (int)$pace['amount']));   // never push more than is waiting
+            $pace['push_hr'] = (int)$needPush;
             $pace['slice'] = (int)ceil($needPush / 6 * 1.3); $q = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE dir = 'out' AND who IN ('campaign', 'recover') AND mtype = 'template' AND status <> 'failed' AND ts >= ?"); $q->execute([date('Y-m-d H:i:s', time() - 600)]); $pace['used10'] = (int)$q->fetchColumn();
         } catch (Throwable $e) { $pace['on'] = false; }
     }
@@ -328,12 +329,41 @@ function wa_dq_auto_last(PDO $pdo): ?array
 {
     try { $log = json_decode((string)setting_get($pdo, 'wa_dq_auto_log', ''), true); return is_array($log) && $log ? end($log) : null; } catch (Throwable $e) { return null; }
 }
+/** 🏁 When will the queue be finished? Simulates the plan: the pushes per hour it can do now (the plan's own hour number at the live delivery rate), shared evenly by the campaigns that are running, scheduled campaigns joining at their start time,
+ *  and the day number: when it is used up, sending waits for the next business day. Returns ['rate' => pushes an hour, 'running' => time the running ones end, 'all' => time everything incl. scheduled ends, 'camps' => [id => time]]. Remembered for 2 minutes. */
+function wa_dq_eta(PDO $pdo, array $st): array
+{
+    $hit = wa_cpc_get($pdo, 'dq_eta'); if ($hit && $hit['age'] < 120) return $hit['v'];
+    $r = (int)($st['pace']['push_hr'] ?? 0); if ($r <= 0) $r = (int)ceil(((int)($st['eff_cap'] ?? 0)) / max(0.15, (float)($st['rate'] ?? 0.5))); if ($r <= 0) return [];
+    $out = ['rate' => $r, 'running' => null, 'all' => null, 'camps' => []];
+    try {
+        $rows = $pdo->query("SELECT c.id, c.status, c.start_at, COUNT(i.id) rem FROM wa_campaigns c JOIN wa_camp_items i ON i.camp_id = c.id AND i.status IN ('queued', 'retry') WHERE c.status IN ('running', 'scheduled') GROUP BY c.id, c.status, c.start_at ORDER BY c.id")->fetchAll(PDO::FETCH_ASSOC);
+        $now = time(); $active = []; $pend = []; $isRun = [];
+        foreach ($rows as $x) { $id = (int)$x['id']; $rem = (int)$x['rem']; if ($rem <= 0) continue;
+            if ((string)$x['status'] === 'running') { $active[$id] = $rem; $isRun[$id] = true; } else { $pend[] = [$id, $x['start_at'] ? max($now, (int)strtotime((string)$x['start_at'])) : $now, $rem]; } }
+        usort($pend, fn($a, $b) => $a[1] <=> $b[1]);
+        $day = max(1, (int)($st['daily'] ?? 0)); $dayLeft = max(0, (int)($st['day_left'] ?? $day)); $reset = (function_exists('wa_bizday_start') ? (int)strtotime(wa_bizday_start($pdo)) : $now) + 86400; $t = $now; $end = []; $guard = 0;
+        while (($active || $pend) && $guard++ < 4000) {
+            if ($dayLeft <= 0) { $t = max($t, $reset); $dayLeft = $day; $reset += 86400; continue; }
+            while ($pend && $pend[0][1] <= $t) { $p = array_shift($pend); $active[$p[0]] = $p[2]; }
+            if (!$active) { $t = $pend[0][1]; continue; }
+            $n = count($active); $dh = min(min($active) * $n / $r, $dayLeft / $r); if ($pend) $dh = min($dh, max(0.0, ($pend[0][1] - $t) / 3600));
+            if ($dh <= 0) { if ($pend && $pend[0][1] > $t) { $t = $pend[0][1]; } else { $dh = 0.0001; } }
+            $push = $r * $dh; $each = $push / $n; foreach ($active as $id => $rem) { $active[$id] = $rem - $each; } $dayLeft -= $push; $t += (int)round($dh * 3600);
+            foreach ($active as $id => $rem) if ($rem <= 0.5) { $end[$id] = $t; unset($active[$id]); }
+        }
+        foreach ($end as $id => $ts) { $out['camps'][$id] = date('Y-m-d H:i', $ts); }
+        $run = array_filter($end, fn($k) => isset($isRun[$k]), ARRAY_FILTER_USE_KEY); if ($run) $out['running'] = date('Y-m-d H:i', max($run)); if ($end) $out['all'] = date('Y-m-d H:i', max($end));
+    } catch (Throwable $e) { return []; }
+    wa_cpc_put($pdo, 'dq_eta', $out); return $out;
+}
 function wa_dq_status(PDO $pdo): array
 {
     $cfg = wa_dq_cfg($pdo);
     try { $hit = json_decode((string)setting_get($pdo, 'wa_dq_stat', ''), true); if (is_array($hit) && (int)($hit['t'] ?? 0) > time() - 30 && ($hit['cap'] ?? 0) === $cfg['hourly'] && ($hit['daily'] ?? 0) === $cfg['daily'] && ($hit['on'] ?? null) === $cfg['on']) return $hit; } catch (Throwable $e) { }
     $l = wa_dq_left($pdo); $o = ['t' => time(), 'pace' => $l['pace'] ?? null, 'on' => $cfg['on'], 'cap' => $cfg['hourly'], 'used' => $l['used'], 'exp' => $l['exp'], 'rate' => $l['rate'], 'state' => $l['state'], 'range' => $l['range'], 'm_live' => $l['m_live'], 'mult' => $l['mult'], 'eff_cap' => $l['eff_cap'], 'learning' => $l['learning'], 'smart' => $l['smart'], 'left' => $l['left'], 'daily' => $l['daily'], 'day_used' => $l['day_used'], 'why' => $l['why'], 'spend' => $l['spend'], 'budget' => $l['budget'], 'push_cap' => $l['push_cap'], 'limit_mode' => (string)setting_get($pdo, 'wa_limit_mode', 'shared'), 'early' => (string)setting_get($pdo, 'wa_dq_early', '1') !== '0', 'auto' => $cfg['auto'], 'dmin' => $cfg['dmin'], 'dmax' => $cfg['dmax'], 'base' => $cfg['base'], 'auto_last' => wa_dq_auto_last($pdo), 'people' => 0, 'campaigns' => 0, 'gap_days' => max(0, (int)setting_get($pdo, 'wa_camp_gap_days', '3'))];
     try { $r = $pdo->query("SELECT COUNT(DISTINCT i.phone) AS p, COUNT(DISTINCT i.camp_id) AS c FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id WHERE c.status = 'running' AND i.status IN ('queued', 'retry')")->fetch(); $o['people'] = (int)$r['p']; $o['campaigns'] = (int)$r['c']; } catch (Throwable $e) { }
+    try { $o['eta'] = wa_dq_eta($pdo, $o); } catch (Throwable $e) { $o['eta'] = []; }
     try { setting_set($pdo, 'wa_dq_stat', json_encode($o)); } catch (Throwable $e) { }
     return $o;
 }
