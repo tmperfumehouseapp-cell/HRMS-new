@@ -85,34 +85,62 @@ function wa_msg_topic(array $t): string
     $f = trim((string)($t['folder'] ?? '')); if ($f !== '') return mb_substr($f, 0, 40);
     $n = preg_replace(['/^house_aisensy_/', '/_v\d+$/', '/_\d{4,}$/', '/_\d{2,4}$/'], '', (string)$t['name']); $n = trim(str_replace('_', ' ', (string)$n)); return $n !== '' ? mb_substr($n, 0, 40) : 'Other';
 }
-/** 🏆 Which messages deliver best: every message (pre-made template) used by campaigns in the last N days, ranked by how many of the messages Meta accepted were DELIVERED (also read % and reply %), with
- *  what the best ones have in common (a picture on top, shorter text, an emoji, buttons, a question…) written as plain tips. Messages with fewer than 200 accepted sends are left out. Remembered 10 minutes. */
+/** 🏆 Which messages work best — through THREE lenses that are always shown together (last N days, campaign messages Meta accepted):
+ *   🚚 delivery — delivered ÷ accepted.   💬 replies — delivered customers who wrote back within the attribution window (wa_attr_days, default 3) ÷ delivered.
+ *   🛒 orders — orders placed in that window after a message was delivered; an order counts for the LAST campaign message delivered to that phone before it (never twice), with its ₹ value (shop_orders.total, not counting voided / refunded);
+ *      money: cost = delivered × your billing rate, return = ₹ ÷ cost, cost per order.
+ *  A "balanced" score (0–100) averages the rank of the three lenses (orders count 1.5×). Messages with fewer than 200 sends are listed but not ranked; order figures need 1,000 delivered to count.
+ *  Also: what the best ones have in common (photo on top, text length, emoji, buttons, question, price) per lens. Remembered 10 min in the database cache. */
 function wa_msg_rank(PDO $pdo, int $days = 14, int $maxAge = 600): array
 {
-    $days = max(1, min(60, $days)); $ck = 'msg_rank_' . $days;
+    $days = max(1, min(60, $days)); $win = max(1, min(14, (int)setting_get($pdo, 'wa_attr_days', '3'))); $ck = 'msg_rank3_' . $days . '_' . $win;
     $hit = wa_cpc_get($pdo, $ck); if ($hit && $hit['age'] < $maxAge) return $hit['v'];
-    $o = ['days' => $days, 'rows' => [], 'tips' => [], 'overall' => ['n' => 0, 'd' => 0.0]];
+    $o = ['days' => $days, 'win' => $win, 'rows' => [], 'tips' => [], 'overall' => ['n' => 0, 'dn' => 0, 'd' => 0.0, 'cost' => 0, 'ord' => 0, 'rev' => 0, 'roi' => null], 'orders_ok' => false];
+    $since = date('Y-m-d H:i:s', time() - $days * 86400);
     try {
-        $q = $pdo->prepare("SELECT COALESCE(NULLIF(i.tpl_used, 0), c.tpl_id) AS tid, COUNT(*) AS n, SUM(i.last_status IN ('delivered', 'read')) AS d, SUM(i.last_status = 'read') AS rd,
-            SUM(i.err_code = 131049) AS held, SUM(ct.last_in_at IS NOT NULL AND ct.last_in_at > i.sent_at AND ct.last_in_at < DATE_ADD(i.sent_at, INTERVAL 2 DAY)) AS rep
+        $q = $pdo->prepare("SELECT COALESCE(NULLIF(i.tpl_used, 0), c.tpl_id) AS tid, COUNT(*) AS n, SUM(i.last_status IN ('delivered', 'read')) AS d, SUM(i.last_status = 'read') AS rd, SUM(i.err_code = 131049) AS held,
+            SUM(i.last_status IN ('delivered', 'read') AND ct.last_in_at IS NOT NULL AND ct.last_in_at > i.sent_at AND ct.last_in_at < DATE_ADD(i.sent_at, INTERVAL $win DAY)) AS rep
             FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id LEFT JOIN wa_contacts ct ON ct.phone = i.phone WHERE i.wamid <> '' AND i.sent_at >= ? GROUP BY tid HAVING n >= 30 ORDER BY d / n DESC LIMIT 200");
-        $q->execute([date('Y-m-d H:i:s', time() - $days * 86400)]); $rows = $q->fetchAll();
+        $q->execute([$since]); $rows = $q->fetchAll();
     } catch (Throwable $e) { return $o; }
+    $ord = [];
+    try {   // orders → the last campaign message delivered to that phone (within the window) before the order
+        $q = $pdo->prepare("SELECT /*+ MAX_EXECUTION_TIME(20000) */ tid, COUNT(*) AS o, SUM(total) AS rev FROM (SELECT o.shopify_id, o.store_key, o.total, COALESCE(NULLIF(i.tpl_used, 0), c.tpl_id) AS tid,
+                ROW_NUMBER() OVER (PARTITION BY o.shopify_id, o.store_key ORDER BY i.sent_at DESC) AS rn
+            FROM shop_orders o JOIN wa_camp_items i ON i.phone COLLATE utf8mb4_unicode_ci = RIGHT(REGEXP_REPLACE(o.phone, '[^0-9]', ''), 10) COLLATE utf8mb4_unicode_ci
+                AND i.last_status IN ('delivered', 'read') AND i.wamid <> '' AND i.sent_at < o.created_at AND i.sent_at >= DATE_SUB(o.created_at, INTERVAL $win DAY)
+            JOIN wa_campaigns c ON c.id = i.camp_id WHERE o.created_at >= ? AND o.financial_status NOT IN ('voided', 'refunded')) t WHERE rn = 1 GROUP BY tid");
+        $q->execute([$since]); foreach ($q->fetchAll() as $r) $ord[(int)$r['tid']] = [(int)$r['o'], (float)$r['rev']]; $o['orders_ok'] = true;
+    } catch (Throwable $e) { }
+    $R = function_exists('wab_rates') ? wab_rates($pdo) : ['marketing' => 1.09, 'utility' => 0.15];
     $tn = []; foreach ($pdo->query("SELECT id, name, version, body, header_format, buttons, category, folder FROM wa_templates")->fetchAll() as $t) $tn[(int)$t['id']] = $t;
-    $emoji = '/[\x{1F300}-\x{1FAFF}\x{2600}-\x{27BF}]/u'; $groups = []; $N = 0; $D = 0;
+    $emoji = '/[\x{1F300}-\x{1FAFF}\x{2600}-\x{27BF}]/u'; $groups = []; $T = ['n' => 0, 'dn' => 0, 'cost' => 0.0, 'ord' => 0, 'rev' => 0.0]; $out = [];
     foreach ($rows as $r) {
-        $t = $tn[(int)$r['tid']] ?? null; if (!$t) continue; $n = (int)$r['n']; $d = (int)$r['d']; $body = (string)$t['body']; $len = mb_strlen($body); $hf = strtoupper((string)$t['header_format']); $btn = json_decode((string)$t['buttons'], true); $nb = is_array($btn) ? count($btn) : 0;
+        $t = $tn[(int)$r['tid']] ?? null; if (!$t) continue; $n = (int)$r['n']; $dn = (int)$r['d']; $rep = (int)$r['rep']; [$on, $rev] = $ord[(int)$r['tid']] ?? [0, 0.0];
+        $body = (string)$t['body']; $len = mb_strlen($body); $hf = strtoupper((string)$t['header_format']); $btn = json_decode((string)$t['buttons'], true); $nb = is_array($btn) ? count($btn) : 0;
+        $rate = strtoupper((string)$t['category']) === 'UTILITY' ? (float)$R['utility'] : (float)$R['marketing']; $cost = $dn * $rate;
         $f = ['header' => in_array($hf, ['IMAGE', 'VIDEO', 'DOCUMENT'], true) ? ['IMAGE' => 'a photo on top', 'VIDEO' => 'a video on top', 'DOCUMENT' => 'a PDF on top'][$hf] : 'text only', 'length' => $len <= 150 ? 'short text (150 letters or less)' : ($len <= 300 ? 'medium text (151–300 letters)' : 'long text (over 300 letters)'),
             'emoji' => preg_match($emoji, $body) ? 'an emoji' : 'no emoji', 'buttons' => $nb > 0 ? 'buttons' : 'no buttons', 'question' => strpos($body, '?') !== false ? 'a question in the text' : 'no question', 'price' => (strpos($body, '₹') !== false || stripos($body, 'rs.') !== false) ? 'a price (₹)' : 'no price'];
-        if ($n >= 200) foreach ($f as $k => $v) { $groups[$k][$v][0] = ($groups[$k][$v][0] ?? 0) + $n; $groups[$k][$v][1] = ($groups[$k][$v][1] ?? 0) + $d; }
-        if ($n >= 200) { $N += $n; $D += $d; }
-        $o['rows'][] = ['id' => (int)$t['id'], 'name' => (string)$t['name'], 'ver' => (int)$t['version'], 'n' => $n, 'd' => round($d / $n, 3), 'rd' => round((int)$r['rd'] / $n, 3), 'rep' => round((int)$r['rep'] / $n, 3), 'held' => round((int)$r['held'] / $n, 3),
-            'low' => $n < 200, 'topic' => wa_msg_topic($t), 'chars' => $len, 'header' => $f['header'], 'category' => (string)$t['category'], 'body' => mb_substr($body, 0, 900), 'buttons' => $nb, 'features' => array_values($f)];
+        if ($n >= 200) { foreach ($f as $k => $v) { $g = &$groups[$k][$v]; $g = $g ?? [0, 0, 0, 0, 0.0]; $g[0] += $n; $g[1] += $dn; $g[2] += $rep; $g[3] += $on; $g[4] += $rev; unset($g); } $T['n'] += $n; $T['dn'] += $dn; $T['cost'] += $cost; $T['ord'] += $on; $T['rev'] += $rev; }
+        $out[] = ['id' => (int)$t['id'], 'name' => (string)$t['name'], 'ver' => (int)$t['version'], 'n' => $n, 'dn' => $dn, 'd' => round($dn / $n, 3), 'rd' => round((int)$r['rd'] / $n, 3), 'held' => round((int)$r['held'] / $n, 3),
+            'rep' => $dn ? round($rep / $dn, 4) : 0, 'rep_n' => $rep, 'ord' => $on, 'rev' => round($rev), 'cost' => round($cost), 'roi' => $cost > 0 && $dn >= 1000 ? round($rev / $cost, 2) : null, 'cpo' => $on ? round($cost / $on) : null,
+            'o1k' => $dn >= 1000 ? round($on * 1000 / $dn, 2) : null, 'low' => $n < 200, 'lowo' => $dn < 1000, 'topic' => wa_msg_topic($t), 'chars' => $len, 'header' => $f['header'], 'category' => (string)$t['category'], 'body' => mb_substr($body, 0, 900), 'buttons' => $nb, 'features' => array_values($f)];
     }
-    $o['overall'] = ['n' => $N, 'd' => $N ? round($D / $N, 3) : 0.0];
-    foreach ($groups as $k => $gs) { $best = null; $worst = null; foreach ($gs as $name => [$n, $d]) { if ($n < 1000) continue; $rt = $d / $n; if ($best === null || $rt > $best[1]) $best = [$name, $rt, $n]; if ($worst === null || $rt < $worst[1]) $worst = [$name, $rt, $n]; }
-        if ($best && $worst && $best[0] !== $worst[0] && $best[1] - $worst[1] >= 0.05) $o['tips'][] = ['diff' => round($best[1] - $worst[1], 3), 'text' => 'With ' . $best[0] . ': ' . round($best[1] * 100) . '% delivered, against ' . round($worst[1] * 100) . '% with ' . $worst[0] . '.']; }
-    usort($o['tips'], fn($a, $b) => $b['diff'] <=> $a['diff']); $o['tips'] = array_slice(array_column($o['tips'], 'text'), 0, 4);
+    // the balanced score: where each message stands among the ranked ones on the three lenses
+    $rk = fn(array $vals, $v) => count($vals) > 1 ? count(array_filter($vals, fn($x) => $x < $v)) / (count($vals) - 1) : 0.5;
+    $ok = array_filter($out, fn($x) => !$x['low']); $vd = array_column($ok, 'd'); $vr = array_column($ok, 'rep'); $vo = array_filter(array_column($ok, 'o1k'), fn($x) => $x !== null);
+    foreach ($out as &$x) { if ($x['low']) { $x['score'] = null; continue; } $w = 0; $sum = 0; $sum += $rk($vd, $x['d']); $w += 1; $sum += $rk($vr, $x['rep']); $w += 1; if ($o['orders_ok'] && $x['o1k'] !== null && count($vo) > 1) { $sum += 1.5 * $rk(array_values($vo), $x['o1k']); $w += 1.5; } $x['score'] = (int)round($sum / $w * 100); } unset($x);
+    $o['rows'] = $out; $o['overall'] = ['n' => $T['n'], 'dn' => $T['dn'], 'd' => $T['n'] ? round($T['dn'] / $T['n'], 3) : 0.0, 'cost' => round($T['cost']), 'ord' => $T['ord'], 'rev' => round($T['rev']), 'roi' => $T['cost'] > 0 ? round($T['rev'] / $T['cost'], 2) : null];
+    // what the best ones have in common, per lens (only when both sides have enough messages)
+    $tips = [];
+    foreach ($groups as $k => $gs) {
+        $lens = ['d' => [], 'r' => [], 'o' => []]; foreach ($gs as $name => [$n, $dn, $rep, $on, $rev]) { if ($n >= 1000) $lens['d'][$name] = $dn / $n; if ($dn >= 1000) $lens['r'][$name] = $rep / $dn; if ($dn >= 1500 && $on >= 5) $lens['o'][$name] = $on * 1000 / $dn; }
+        foreach (['d' => ['🚚', 0.05, 'abs', fn($v) => round($v * 100) . '% delivered'], 'r' => ['💬', 0.25, 'rel', fn($v) => round($v * 100, 1) . '% of delivered replied'], 'o' => ['🛒', 0.30, 'rel', fn($v) => round($v, 1) . ' orders per 1,000 delivered']] as $lk => [$em, $th, $mode, $fmt]) {
+            $v = $lens[$lk]; if (count($v) < 2) continue; asort($v); $wn = array_key_first($v); $bn = array_key_last($v); $wv = $v[$wn]; $bv = $v[$bn]; $diff = $mode === 'abs' ? $bv - $wv : ($wv > 0 ? ($bv - $wv) / $wv : 1);
+            if ($diff >= $th) $tips[] = ['diff' => $diff, 'text' => $em . ' With ' . $bn . ': ' . $fmt($bv) . ', against ' . $fmt($wv) . ' with ' . $wn . '.'];
+        }
+    }
+    usort($tips, fn($a, $b) => $b['diff'] <=> $a['diff']); $o['tips'] = array_slice(array_column($tips, 'text'), 0, 6);
     wa_cpc_put($pdo, $ck, $o); return $o;
 }
 /** The usual RANGE of the hourly delivery rate over the last 7 days (each date+hour with 300+ messages, receipts given 2 hours): p25 / p50 / p75. Judging "good" or "low" against a range, not one number. Remembered for 10 min. */
