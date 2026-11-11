@@ -182,7 +182,7 @@
     function dutyLine(p) { const st = p.duty ? p.duty.state : (p.on_duty ? 'on' : 'off'); return U.dutyChip(st, p.on_duty) + (st !== 'on' && p.duty && p.duty.why ? '' : ''); }
     function botRow(b) { return b; }
     function liveBoard(d) {
-      const t = d.totals || {}, tb = t.by_type || {}, people = d.people || [], bot = d.bot || null, unas = d.unassigned && num(d.unassigned.queries) > 0 ? d.unassigned : null;
+      const t = d.totals || {}, tb = t.by_type || {}, allPeople = d.people || [], people = allPeople.slice(0, S.liveMax || 8), bot = d.bot || null, unas = d.unassigned && num(d.unassigned.queries) > 0 ? d.unassigned : null;
       const unclear = num(tb.unclear), typedTotal = Math.max(0, num(t.queries) - unclear);
       let h = '<div class="wq-card"><div class="wq-ch"><h2>Team board <span class="wq-sub" style="font-weight:600">' + (S.days === 1 ? 'Today' : 'Last ' + S.days + ' days') + '</span></h2><span class="wq-sub">Each query is counted once. A transfer moves it: -1 from the old holder, +1 to the new one.</span></div>';
       h += '<div class="wq-legend">' + ['meta', 'campaign', 'community', 'regenerated', 'new'].map((k) => '<span class="wq-tp ' + ANCH[k] + '">' + U.tinfo(k).label + '</span>').join('') + '</div>';
@@ -203,11 +203,12 @@
       if (bot) { h += '<div class="wq-pc"><div class="top"><span class="wq-av wq-a8">' + ico('bot') + '</span><span class="nm"><b>Bot only</b><span class="wq-sub">no person joined</span></span></div><div class="wq-cnts">' + cnts(bot) + '</div><div class="wq-kv4"><div><b>' + num(bot.orders) + '</b><small>Orders</small></div><div><b>' + U.pct(bot.conversion, 0) + '</b><small>Conv.</small></div><div><b>' + esc(fmtMin(bot.first_reply_min)) + '</b><small>1st reply</small></div><div><b>-</b><small>Hours</small></div></div></div>'; }
       if (unas) h += '<div class="wq-pc"><div class="top"><span class="wq-av wq-a8">?</span><span class="nm"><b>Not held by a person</b><span class="wq-sub">bot or nobody yet</span></span><span class="wq-chip">' + num(unas.queries) + ' queries</span></div></div>';
       h += '</div>';
+      if (allPeople.length > people.length) h += '<div style="text-align:center;margin:10px 0 2px"><button type="button" class="wq-btn" data-lmore="1" style="padding:8px 18px;font-weight:700">Load more (' + (allPeople.length - people.length) + ' more)</button></div>';
       if (unclear > 0) h += '<div class="wq-note" style="display:flex;gap:8px;align-items:flex-start">' + ico('warn', 's') + '<span>' + unclear + ' ' + (unclear === 1 ? 'query is' : 'queries are') + ' not typed yet. ' + (unclear === 1 ? 'It waits' : 'They wait') + ' on the <a href="#" data-goto="types" style="font-weight:700;color:inherit">Types</a> page for your answer, so the typed total is ' + typedTotal + ' of ' + num(t.queries) + '.</span></div>';
       if (d.team_median && has(d.team_median.first_reply_min)) h += '<div class="wq-note">Team median first reply ' + esc(fmtMin(d.team_median.first_reply_min)) + (has(d.team_median.conversion) ? ', conversion ' + U.pct(d.team_median.conversion, 0) : '') + '.</div>';
       return h + '</div>';
     }
-    body.addEventListener('click', (e) => { const g = e.target.closest('[data-goto]'); if (g) { e.preventDefault(); goto(g.dataset.goto); } });
+    body.addEventListener('click', (e) => { const lm = e.target.closest('[data-lmore]'); if (lm) { e.preventDefault(); S.liveMax = (S.liveMax || 8) + 12; drawLive(); return; } const g = e.target.closest('[data-goto]'); if (g) { e.preventDefault(); goto(g.dataset.goto); } });
     function drawLive() {
       let h = '';
       if (S.board && S.board.on === false) h += '<div class="wq-banner">WhatsApp Sales is switched off on the server (setting wq_on). The numbers below may be old.</div>';
