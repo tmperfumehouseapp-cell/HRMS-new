@@ -176,12 +176,13 @@ html.wxdk .wcs{--ln:#25343e; --gb:#0f2e20; --rb:#3a1515;} html.wxdk .wcs-r,html.
     const keep = () => { try { localStorage.setItem(LS, JSON.stringify({ cf: S.cf, sort: S.sort, per: S.per, view: S.view })); } catch (e) { } };
     // ---------------------------------------------------------------------------------------------------------- shell
     el.innerHTML = `<div class="wp"><div class="wp-top"><div style="flex:1;min-width:200px"><h2>Customers</h2><p>Pick a date range, add tags, and act on the people who match: campaign, tag or save as a segment.</p></div><button type="button" class="wp-btn" id="cxExp">⬇ Download all matching</button><button type="button" class="wp-btn p" id="cxAdd">＋ Add customers</button></div>
-      <div id="cxT" class="wcs-t"></div><div class="wcs"><div class="wp-cd wcs-f ${S.shut ? 'shut' : ''}" id="cxF"></div><div><div class="wp-cd" style="margin-bottom:10px"><div id="cxV"></div><div id="cxC" style="margin-top:10px"></div></div><div id="cxL"></div><div id="cxB"></div></div></div></div>`;
+      <div id="cxT" class="wcs-t"></div><div id="cxS" style="flex-basis:100%"></div><div class="wcs"><div class="wp-cd wcs-f ${S.shut ? 'shut' : ''}" id="cxF"></div><div><div class="wp-cd" style="margin-bottom:10px"><div id="cxV"></div><div id="cxC" style="margin-top:10px"></div></div><div id="cxL"></div><div id="cxB"></div></div></div></div>`;
     (async () => {   // how many customers we have in all (customer_facts: the same numbers as Dispatch -> Customers)
       try { const d = await api.get('wa.cs_totals', {}); const n = (x) => Number(x || 0).toLocaleString('en-IN'); const t = $(el, '#cxT'); if (!t) return;
         t.innerHTML = '<div class="m"><small>👥 Total customers</small><b>' + n(d.people) + '</b></div><div><small>Repeat (2+ orders)</small><b>' + n(d.repeat) + '</b></div><div><small>New in last 30 days</small><b>' + n(d.new30) + '</b></div><div><small>Store + Online</small><b>' + n(d.both) + '</b></div><div><small>With a risk flag</small><b>' + n(d.risk) + '</b></div>' + (d.spent != null ? '<div><small>Their total spend</small><b>₹' + n(d.spent) + '</b></div>' : '');
       } catch (e) { }
     })();
+    summary($(el, '#cxS'));
     $(el, '#cxAdd').onclick = () => opts.addCustomers(() => { loadMeta(); load(); });
     $(el, '#cxExp').onclick = function () { exportCsv({ all: 1, cf: cfOut(), q: S.q, except: [] }, S.total, this); };
     // ---------------------------------------------------------------------------------------------------------- filters (left)
@@ -356,5 +357,18 @@ html.wxdk .wcs{--ln:#25343e; --gb:#0f2e20; --rb:#3a1515;} html.wxdk .wcs-r,html.
     api.get('wa.cs_meta').then((d) => { S.meta = { tags: d.tags || [], numbers: d.numbers || [], people: d.people || [], segments: d.segments || [] }; if (host.isConnected) K.drawF(host); }).catch(() => { });
     return { ui: () => S.cf, out: () => K.cfOut(), count: () => K.nOn(), set(cf) { S.cf = Object.assign(BLANK(), cf || {}); K.drawF(host); } };
   }
-  window.WaCust = { mount, panel, blank: BLANK };
+  // 👥 the small numbers card (wa.cust_summary): how many customers, how many got our messages, failed, replied, ordered, new. Used on Customers and on Campaigns.
+  let SUMD = null, SUMT = 0;
+  function summary(box) {
+    if (!box) return; const fmt = (n) => (n == null ? '…' : Number(n).toLocaleString('en-IN')), pc = (a, b) => (a == null || !b ? '' : Math.round(100 * a / b) + '%');
+    const paint = (d) => { if (!box.isConnected || !d) return; const T = (l, v, sub) => `<div style="background:rgba(128,128,128,.1);border-radius:9px;padding:4px 6px;min-width:0"><small style="display:block;font-size:9.5px;opacity:.7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${l}</small><b style="font-size:13px">${v}</b>${sub ? `<i style="display:block;font-size:9.5px;opacity:.65;font-style:normal">${sub}</i>` : ''}</div>`;
+      box.innerHTML = `<div class="wp-cd" style="padding:8px 9px;margin:0 0 8px"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:6px;margin-bottom:5px"><b style="font-size:12.5px">👥 Customers at a glance</b><span style="font-size:10px;opacity:.6">${String(d.at || '').slice(5, 16)}</span></div>
+        <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px">${T('Customers', fmt(d.total), fmt(d.reach) + ' can be messaged')}${T('Got our message', fmt(d.got), pc(d.got, d.reach) + ' of reachable')}${T('Failed', fmt(d.failed), d.got != null && d.failed != null ? pc(d.failed, d.got + d.failed) + ' of tries' : '')}${T('Replied', fmt(d.replied), pc(d.replied, d.got) + ' of reached')}
+        ${T('Ordered', fmt(d.ordered), pc(d.ordered, d.total) + ' of all')}${T('2+ orders', fmt(d.twice), pc(d.twice, d.ordered) + ' of buyers')}${T('From campaigns', fmt(d.camp_orders), 'ordered after one')}${T('Opted out', fmt(d.optout), '')}
+        ${T('New 7 days', fmt(d.new7), '')}${T('New 30 days', fmt(d.new30), '')}${T('Wrote in 30 d', fmt(d.wrote30), pc(d.wrote30, d.total))}${T('3+ orders', fmt(d.thrice), 'loyal')}</div></div>`; };
+    if (SUMD) paint(SUMD); else box.innerHTML = '<div class="wp-cd" style="padding:8px 9px;margin:0 0 8px"><span class="wp-hint">Counting customers…</span></div>';
+    if (SUMD && Date.now() - SUMT < 300000) return;
+    api.get('wa.cust_summary').then((d) => { SUMD = d; SUMT = Date.now(); paint(d); }).catch(() => { if (!SUMD && box.isConnected) box.innerHTML = ''; });
+  }
+  window.WaCust = { mount, panel, summary, blank: BLANK };
 })();
