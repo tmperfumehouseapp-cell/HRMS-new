@@ -195,7 +195,9 @@ function cx_unlink_chat(PDO $pdo, array $case) {
     // case solved: the complaint mark goes; the chat is still with the same salesperson (it never moved)
     $key = (string)$case['phone']; if ($key === '' || !function_exists('wa_contact')) return;
     $c = wa_contact($pdo, $key); if (!$c || (int)($c['cx_id'] ?? 0) !== (int)$case['id']) return;
-    $pdo->prepare("UPDATE wa_contacts SET cx_id = 0 WHERE phone = ?")->execute([$key]);
+    $pdo->prepare("UPDATE wa_contacts SET cx_id = 0, tag = CASE WHEN tag = 'complaint' THEN '' ELSE tag END WHERE phone = ?")->execute([$key]);
+    try { $pdo->prepare("DELETE FROM wa_ctags WHERE phone = ? AND tag = 'complaint'")->execute([$key]); $pdo->prepare("DELETE FROM wa_tagidx WHERE phone = ? AND tag = 'complaint'")->execute([$key]); } catch (Throwable $e) { }   // solved: the complaint marks go
+    try { setting_set($pdo, 'cxres_' . $key, date('Y-m-d H:i:s')); } catch (Throwable $e) { }   // the NEXT message from this customer brings the chat back into Requests (wa_store_in)
 }
 
 /* ============================== order, parcel, views ============================== */
