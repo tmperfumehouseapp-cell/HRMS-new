@@ -710,11 +710,13 @@ if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.
     wa_guard_admin($pdo, $auth);
     switch ($__wm) {
         case 'wa.numbers': {
+            $GLOBALS['__wa_lim_cache_ok'] = empty($_GET['live']);   // ⚡ screen only: the heavy 24-hour count is remembered for 30 s (the campaign sender never sets this and counts fresh)
             $health = wa_health_all($pdo, !empty($_GET['live'])); $caps = wa_number_caps($pdo, $health); $names = employee_names_by_id($pdo); $week = date('Y-m-d H:i:s', time() - 7 * 86400);
             $rows = $pdo->query("SELECT * FROM wa_numbers ORDER BY id")->fetchAll(); $by = []; foreach ($rows as $r) $by[(int)$r['id']] = $r; $out = [];
             foreach ($health as $h) {
                 $r = $by[(int)$h['id']] ?? null; if (!$r) continue; $id = (int)$r['id'];
-                $q = $pdo->prepare("SELECT SUM(CASE WHEN dir = 'in' THEN 1 ELSE 0 END) AS i, SUM(CASE WHEN dir = 'out' THEN 1 ELSE 0 END) AS o FROM wa_messages WHERE number_id = ? AND ts >= ?"); $q->execute([$id, $week]); $m = $q->fetch();
+                $m = null; $mk = 'wa_num7_' . $id; if (empty($_GET['live'])) { try { $hit = json_decode((string)setting_get($pdo, $mk, ''), true); if (is_array($hit) && (int)($hit['t'] ?? 0) > time() - 120) $m = ['i' => $hit['i'], 'o' => $hit['o']]; } catch (Throwable $e) { } }   // ⚡ the 7-day count of a big table: remembered for 2 minutes
+                if ($m === null) { $q = $pdo->prepare("SELECT SUM(CASE WHEN dir = 'in' THEN 1 ELSE 0 END) AS i, SUM(CASE WHEN dir = 'out' THEN 1 ELSE 0 END) AS o FROM wa_messages WHERE number_id = ? AND ts >= ?"); $q->execute([$id, $week]); $m = $q->fetch(); try { setting_set($pdo, $mk, json_encode(['t' => time(), 'i' => (int)$m['i'], 'o' => (int)$m['o']])); } catch (Throwable $e) { } }
                 $hid = array_values(array_filter(array_map('intval', explode(',', (string)$r['handlers'])))); $c = $caps[$id] ?? ['cap' => 0, 'used' => 0, 'left' => 0, 'why' => '', 'age' => 0];
                 $out[] = ['id' => $id, 'label' => $h['label'], 'raw_label' => (string)$r['label'], 'display' => $h['display'] ?: (string)$r['display'], 'phone_id' => (string)$r['phone_id'], 'waba_id' => wa_waba_of($r), 'verified_name' => $h['verified_name'], 'name_status' => $h['name_status'],
                     'quality' => $h['quality'], 'status' => $h['status'], 'subscribed' => $h['subscribed'], 'error' => $h['error'], 'tier' => $h['tier'], 'level' => $h['level'] ?? 'ok', 'checked_at' => $h['at'] ?? '', 'stale' => !empty($h['stale']),
