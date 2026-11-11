@@ -294,12 +294,15 @@ window.OrderHub = (function () {
   /* ===================================================== the Customers list ===================================================== */
   function customers(el) {
     css(); const S = { q: '', flt: 'all', sort: 'last', page: 1, d: null, t: 0 };
-    const FL = [['all', 'Everyone'], ['vip', '⭐ High value'], ['repeat', 'Repeat'], ['new', 'First-time'], ['both', 'Store + Online'], ['store', 'Store'], ['online', 'Online'], ['risk', '🚩 Risk'], ['lapsed', 'Not ordered for 120 d']];
+    const FL = [['all', 'Everyone'], ['vip', '⭐ High value'], ['repeat', 'Repeat'], ['new', 'First-time'], ['both', 'Store + Online'], ['store', 'Store'], ['online', 'Online'], ['risk', '🚩 Risk'], ['lapsed', 'Not ordered for 120 d'], ['o1', '1st order'], ['o2', '2nd order'], ['o3', '3+ orders'], ['prem', '💎 Premium'], ['std', 'Standard'], ['bud', 'Budget']];
     async function load(quiet) {
       if (!quiet) el.querySelector('[data-rows]').innerHTML = '<tr><td colspan="8"><div class="oh-empty">Loading…</div></td></tr>';
       try { S.d = await api.get('dp.dsp_cust_list', { q: S.q, flt: S.flt, sort: S.sort, page: S.page }); } catch (e) { el.querySelector('[data-rows]').innerHTML = '<tr><td colspan="8"><div class="oh-empty"><b>Cannot open the customers</b>' + esc(errMsg(e)) + '</div></td></tr>'; return; }
       draw();
     }
+    // the buying pattern shown the same way as on the WhatsApp Customers screen: how many orders, and what is spent per order (the same cut-offs)
+    function pat(r) { const n = +r.orders_n || 0; if (!n) return ''; const cu = (S.d && S.d.cuts) || { hi: 3000, lo: 800 }, a = +r.aov || 0; const t = a >= cu.hi ? ['pu', '💎 Premium'] : a <= cu.lo ? ['info', 'Budget'] : ['info', 'Standard'];
+      return '<span class="oh-chip ' + (n >= 3 ? 'pu' : 'info') + '">' + (n >= 3 ? '3+ orders' : n === 2 ? '2nd order' : '1st order') + '</span><span class="oh-chip ' + t[0] + '">' + t[1] + '</span>'; }
     function draw() {
       const d = S.d, T = d.totals || {};
       el.querySelector('[data-tiles]').innerHTML = '<div><small>People</small><b>' + (T.people || 0) + '</b></div><div><small>Repeat customers</small><b>' + (T.repeat || 0) + '</b></div><div><small>Store + Online</small><b>' + (T.both || 0) + '</b></div><div><small>With a risk flag</small><b>' + (T.risk || 0) + '</b></div><div><small>In this list</small><b>' + d.count + '</b></div><div><small>Their total spend</small><b>' + rs(d.spent) + '</b></div>';
@@ -307,7 +310,7 @@ window.OrderHub = (function () {
       el.querySelector('[data-rows]').innerHTML = d.rows.length ? d.rows.map((r, i) => '<tr class="r" data-i="' + i + '"><td class="ohc-nm"><b>' + esc(r.name || 'No name') + '</b><small>' + esc(tel(r.p10)) + '</small></td>'
         + '<td>' + (r.channel === 'both' ? '<span class="oh-chip pu">Store + Online</span>' : r.channel === 'store' ? '<span class="oh-chip info">Store</span>' : r.channel === 'online' ? '<span class="oh-chip info">Online</span>' : '') + '</td>'
         + '<td class="n" data-l="Orders">' + r.orders_n + '</td><td class="n" data-l="Spent"><b>' + rs(r.spent) + '</b></td><td class="n" data-l="Average">' + rs(r.aov) + '</td><td class="n" data-l="Last order">' + esc(fd(r.last_at) || '—') + '</td>'
-        + '<td>' + (r.flags || []).filter((f) => f[0] === 'bad' || f[0] === 'warn' || f[1] === 'High-value customer').map((f) => '<span class="oh-chip ' + esc(f[0]) + '">' + esc(f[1]) + '</span>').join('') + '</td></tr>').join('') : '<tr><td colspan="8"><div class="oh-empty"><b>Nobody matches</b>Try another search or filter.</div></td></tr>';
+        + '<td>' + pat(r) + (r.flags || []).filter((f) => f[0] === 'bad' || f[0] === 'warn' || f[1] === 'High-value customer').map((f) => '<span class="oh-chip ' + esc(f[0]) + '">' + esc(f[1]) + '</span>').join('') + '</td></tr>').join('') : '<tr><td colspan="8"><div class="oh-empty"><b>Nobody matches</b>Try another search or filter.</div></td></tr>';
       const pages = Math.max(1, Math.ceil(d.count / d.per)); el.querySelector('[data-pg]').innerHTML = pages > 1 ? '<button type="button" class="oh-ib sm" data-pp ' + (S.page <= 1 ? 'disabled' : '') + '>←</button> Page ' + S.page + ' of ' + pages + ' <button type="button" class="oh-ib sm" data-pn ' + (S.page >= pages ? 'disabled' : '') + '>→</button>' : '';
     }
     el.innerHTML = '<div class="ohc-tiles" data-tiles></div><div class="ohc-bar"><input data-q placeholder="Search a name or a phone number" inputmode="search" autocomplete="off"><select data-sort><option value="last">Latest order first</option><option value="spent">Biggest spender</option><option value="orders">Most orders</option><option value="first">Newest customer</option><option value="rto">Most problems</option><option value="name">Name A–Z</option></select><button type="button" class="oh-ib sm" data-rb>↻ Rebuild now</button><button type="button" class="oh-ib sm" data-imp title="Read every customer from Shopify (all years): their orders and spend">⬇ Import from Shopify</button></div>'
