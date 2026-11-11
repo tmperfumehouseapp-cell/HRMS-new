@@ -877,6 +877,14 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
             foreach ($set as [$t, $b]) { if (isset($have[mb_strtolower($t)])) continue; $pdo->prepare("INSERT INTO wa_quick (title, body, sort_order) VALUES (?, ?, ?)")->execute([$t, $b, ++$so]); $n++; }
             json_response(['ok' => true, 'added' => $n, 'total' => count($set)]);
         }
+        case 'wa.hour_counts': {   // how many chats of a feed came in each hour of the current business day (for the ▾ hour picker)
+            $src = (string)($_GET['src'] ?? ''); $adm = wa_is_admin($pdo, $auth) && empty($_GET['mine']); $emp = (int)($auth['employee_id'] ?? 0); $st0 = wa_bizday_start($pdo);
+            $w = ["c.status = 'open'", 'c.last_in_at >= ?']; $p = [$st0]; if (!$adm) { $w[] = 'c.assigned_emp = ?'; $p[] = $emp > 0 ? $emp : -1; }
+            if ($src === 'query') $w[] = "c.source = 'query'"; elseif ($src === 'community' || $src === 'campaign') { $w[] = 'c.source = ?'; $p[] = $src; } elseif ($src === 'assigned') $w[] = 'c.assigned_emp > 0';
+            $rows = []; try { $q = $pdo->prepare("SELECT HOUR(c.last_in_at) AS h, COUNT(*) AS n FROM wa_contacts c WHERE " . implode(' AND ', $w) . " GROUP BY HOUR(c.last_in_at)"); $q->execute($p); foreach ($q->fetchAll() as $r) $rows[(int)$r['h']] = (int)$r['n']; } catch (Throwable $e) { }
+            $sh = (int)date('G', strtotime($st0)); $nowH = (int)date('G'); $out = []; for ($i = $sh, $k = 0; $k < 24; $i = ($i + 1) % 24, $k++) { $out[] = ['h' => $i, 'n' => (int)($rows[$i] ?? 0)]; if ($i === $nowH) break; }
+            json_response(['ok' => true, 'start' => $st0, 'rows' => $out]);
+        }
         case 'wa.chats': {
             $scope = (string)($_GET['scope'] ?? 'mine'); $q = trim((string)($_GET['q'] ?? '')); $emp = (int)($auth['employee_id'] ?? 0); $adm = wa_is_admin($pdo, $auth) && empty($_GET['mine']);   // mine=1 → the My Chats page: even an admin sees only their own
             $w = []; $p = []; $srcQ = (string)($_GET['src'] ?? ''); $numFeed = $adm && preg_match('/^num:(\d+)$/', $srcQ, $numM) ? (int)$numM[1] : 0;
@@ -902,6 +910,9 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
             }
             elseif ($src === 'query') { if (function_exists('wa_ad_backfill')) wa_ad_backfill($pdo); $w[] = "c.source = 'query'"; $w[] = 'c.last_in_at >= ?'; $p[] = wa_bizday_start($pdo); }   // 📢 fresh Meta-ad queries of this business day (10:00 → 10:00); campaign / community have their own feeds
             elseif (in_array($src, ['community', 'campaign'], true)) { $w[] = 'c.source = ?'; $p[] = $src; } elseif ($src === 'assigned') $w[] = 'c.assigned_emp > 0';
+            // 🕐 hour filter (the ▾ on the Query / Assigned / Community / Campaign chips): chats whose last customer message came in the picked hours of the CURRENT business day
+            $__hrs = array_values(array_unique(array_filter(array_map('intval', explode(',', (string)($_GET['hrs'] ?? ''))), fn($x) => $x >= 0 && $x <= 23)));
+            if ($__hrs && (string)($_GET['hrs'] ?? '') !== '') { $w[] = 'c.last_in_at >= ?'; $p[] = wa_bizday_start($pdo); $w[] = 'HOUR(c.last_in_at) IN (' . implode(',', $__hrs) . ')'; }
             // ☑ Select-chats filters: day of the query · ordered or not · numbers (admin)
             if ($adm) {
                 $bd = (string)($_GET['bd'] ?? ''); $bs = wa_bizday_start($pdo);
@@ -935,7 +946,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
             $boostOrd = (!$adm || $scope === 'mine') ? $boost : '0';
             $sql = "SELECT c.*, IF(" . $boost . ", 1, 0) AS fresh_agent, (SELECT body FROM wa_messages m WHERE m.phone = c.phone AND m.dir != 'sys' ORDER BY m.id DESC LIMIT 1) AS last_body, (SELECT m2.ts FROM wa_messages m2 WHERE m2.phone = c.phone AND m2.dir != 'sys' ORDER BY m2.id DESC LIMIT 1) AS last_ts,
                     (SELECT COUNT(*) FROM wa_messages u WHERE u.phone = c.phone AND u.dir = 'in' AND u.id > c.seen_msg_id) AS unread
-                    FROM wa_contacts c WHERE " . implode(' AND ', $w) . " ORDER BY " . ($ord ? $ord . ', ' : '') . "CASE WHEN (c.last_in_at IS NOT NULL AND (c.last_out_at IS NULL OR c.last_out_at < c.last_in_at) AND c.last_in_at >= '" . date('Y-m-d H:i:s', time() - 86400) . "') OR " . $boostOrd . " THEN 0 ELSE 1 END, GREATEST(COALESCE(c.last_in_at, c.last_out_at, '1970-01-01'), IF(" . $boostOrd . ", c.assigned_at, '1970-01-01')) DESC LIMIT " . (!empty($_GET['ids']) ? 3000 : (isset($flt['today']) || isset($flt['yesterday']) ? 1500 : ($rescueFeed !== null ? 1500 : ($flt || $ord ? 400 : 150))));   // a customer waiting for a reply first; our own sends / campaigns never move a chat
+                    FROM wa_contacts c WHERE " . implode(' AND ', $w) . " ORDER BY " . ($ord ? $ord . ', ' : '') . "CASE WHEN (c.last_in_at IS NOT NULL AND (c.last_out_at IS NULL OR c.last_out_at < c.last_in_at) AND c.last_in_at >= '" . date('Y-m-d H:i:s', time() - 86400) . "') OR " . $boostOrd . " THEN 0 ELSE 1 END, GREATEST(COALESCE(c.last_in_at, c.last_out_at, '1970-01-01'), IF(" . $boostOrd . ", c.assigned_at, '1970-01-01')) DESC LIMIT " . (!empty($_GET['ids']) ? 3000 : (!empty($_GET['hrs']) ? 1500 : (isset($flt['today']) || isset($flt['yesterday']) ? 1500 : ($rescueFeed !== null ? 1500 : ($flt || $ord ? 400 : 150)))));   // a customer waiting for a reply first; our own sends / campaigns never move a chat
             // ⚡ the three per-chat subqueries (last message, its time, unread) were worked out for EVERY open chat (10,000+) before the sort cut the list to 150-400 — that is why Chats sat on "Loading…" more every day.
             // The chats are now picked and cut first (inner query), and only those few get the subqueries.
             $__sqlOld = $sql;
