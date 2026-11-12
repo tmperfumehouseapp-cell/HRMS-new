@@ -715,8 +715,8 @@ function wa_contact_row(array $r, array $names): array
 $__wa = (string)($action ?? ($_GET['action'] ?? ''));
 if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
-    // 🏪 Auto assign is running: nobody gives, takes, transfers or grabs chats by hand — the open market (Claude) gives every chat. To give one, tell Claude (Sales → Team performance).
-    if (in_array($__wa, ['wa.assign', 'wa.bulk_assign', 'wa.takeover', 'wa.transfer', 'wa.g_reassign', 'wa.g_reassign_all', 'wq.grab', 'wq.rescue_give', 'wq.rescue_take', 'wq.assign'], true) && $isPost && function_exists('setting_get') && (string)setting_get($pdo, 'wqx_mode', 'off') === 'live')
+    // 🏪 Auto assign is running: nobody gives, transfers or grabs chats by hand (TAKE OVER stays open — owner, 12 Nov: someone may still step into a colleague's chat and take it over; the order and commission go to whoever closes it) — the open market (Claude) gives every chat. To give one, tell Claude (Sales → Team performance).
+    if (in_array($__wa, ['wa.assign', 'wa.bulk_assign', 'wa.transfer', 'wa.g_reassign', 'wa.g_reassign_all', 'wq.grab', 'wq.rescue_give', 'wq.rescue_take', 'wq.assign'], true) && $isPost && function_exists('setting_get') && (string)setting_get($pdo, 'wqx_mode', 'off') === 'live')
         json_response(['error' => '🏪 Auto assign is on — chats are given automatically to the best seller. To give a chat to someone, tell Claude in Sales → Team performance.'], 409);
     require_once __DIR__ . '/wa_tpl.php';   // pre-made messages (templates): defines its helpers and answers the wa.tpl_* actions
     require_once __DIR__ . '/wa_console.php';   // the WhatsApp console: wa.overview (counters + number health) and wa.send_media (photo / video / document from a chat)
