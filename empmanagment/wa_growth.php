@@ -367,6 +367,7 @@ function wag_prebuild(PDO $pdo, string $key): bool
         $st = $pdo->prepare("SELECT * FROM wa_contacts WHERE phone = ?"); $st->execute([$key]); $c = $st->fetch(); if (!$c) return false;
         if ((int)$c['optout'] === 1 || (string)$c['status'] !== 'open' || empty($c['last_in_at']) || strtotime((string)$c['last_in_at']) < time() - 86400) return false;
         if (!empty($c['cx_id'])) return false;   // the chat is with the Complaint team: nothing is pre-written or auto-sent for it
+        if (function_exists('wkw_try') && wkw_try($pdo, $key)) return true;   // "100 ML combo" / "20ml" / "50ml" / "offer": the saved Pre-made message goes out at once
         if (!empty($c['last_out_at']) && strtotime((string)$c['last_out_at']) >= strtotime((string)$c['last_in_at'])) return false;   // already answered
         $li = $pdo->prepare("SELECT mtype, body FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1"); $li->execute([$key]); $m = $li->fetch();
         if (!$m || !in_array((string)$m['mtype'], ['text', 'button', 'interactive'], true)) return false;   // photos / voice notes / documents are for a person
