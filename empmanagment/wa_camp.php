@@ -1217,7 +1217,7 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
     $auth = require_auth(); wa_guard_admin($pdo, $auth);
     if (!wa_tables($pdo) || !wa_more_tables($pdo) || !function_exists('wa_tpl_tables') || !wa_tpl_tables($pdo)) json_response(['error' => 'WhatsApp storage is not available — check database permissions.'], 500);
     $me = (int)($auth['employee_id'] ?? 0); $cfg = wa_team_cfg($pdo);
-    $engine = function () use ($pdo) { $c = (string)setting_get($pdo, 'wa_cron_at', ''); return ['cron_at' => $c, 'cron_ok' => $c !== '' && strtotime($c) > time() - 180]; };
+    $engine = function () use ($pdo) { $c = (string)setting_get($pdo, 'wa_cron_at', ''); $sd = (string)setting_get($pdo, 'wa_send_at', ''); $last = max((int)strtotime($c), (int)strtotime($sd)); return ['cron_at' => $c, 'cron_ok' => $last > time() - 900]; };
     $tplList = function (bool $forCamp = false) use ($pdo, $isPost) {   // the approved messages; a campaign may also use messages with a photo / video / PDF on top once the template module can send them
         $wabas = wa_wabas($pdo); $o = []; $media = $forCamp && function_exists('wa_tpl_send_components') && function_exists('wa_tpl_sendable');
         foreach ($pdo->query("SELECT * FROM wa_templates ORDER BY star DESC, used DESC, id DESC")->fetchAll() as $r) { $r['buttons'] = json_decode((string)$r['buttons'], true) ?: []; $r['examples'] = json_decode((string)$r['examples'], true) ?: []; $p = wa_tpl_public($pdo, $r, $wabas);
