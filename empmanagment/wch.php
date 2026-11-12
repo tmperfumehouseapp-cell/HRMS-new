@@ -2272,8 +2272,8 @@ if (strpos($__wca, 'wch.') === 0 && in_array($__wca, ['wch.below_reason', 'wch.s
             $ov = []; foreach ($pdo->query("SELECT pid, title, kind_manual FROM wch_prod WHERE kind_manual <> '' ORDER BY title LIMIT 200")->fetchAll() as $r) $ov[] = ['pid' => (int)$r['pid'], 'title' => $r['title'], 'kind' => $r['kind_manual']];
             $c = wch_counts($pdo); json_response(['ok' => true, 'confirmed' => $m['confirmed'], 'confirmed_at' => $m['confirmed_at'], 'current' => $cur, 'candidates' => $cand, 'counts' => ['chains' => $c['chains'], 'perfumes' => $c['perfumes'], 'other' => $c['other']], 'overrides' => $ov]);
         }
-        case 'wch.search': { $needGet(); $t = microtime(true); $cat = (string)($in['cat'] ?? 'perfume'); $items = wch_search($pdo, (string)($in['q'] ?? ''), $cat === 'chain' ? 'chain' : 'perfume', (int)($in['limit'] ?? 12), !isset($in['in_stock']) || (string)$in['in_stock'] !== '0');
-            json_response(['ok' => true, 'q' => (string)($in['q'] ?? ''), 'cat' => $cat === 'chain' ? 'chain' : 'perfume', 'items' => $items, 'count' => count($items), 'took_ms' => (int)round((microtime(true) - $t) * 1000)]); }
+        case 'wch.search': { $needGet(); $t = microtime(true); $cat = (string)($in['cat'] ?? 'perfume'); $items = wch_search($pdo, (string)($in['q'] ?? ''), $cat === 'chain' ? 'chain' : ($cat === 'other' ? 'other' : 'perfume'), (int)($in['limit'] ?? 12), !isset($in['in_stock']) || (string)$in['in_stock'] !== '0');
+            json_response(['ok' => true, 'q' => (string)($in['q'] ?? ''), 'cat' => $cat === 'chain' ? 'chain' : ($cat === 'other' ? 'other' : 'perfume'), 'items' => $items, 'count' => count($items), 'took_ms' => (int)round((microtime(true) - $t) * 1000)]); }
         case 'wch.coverage': { $needGet(); $needAdmin(); json_response(wch_coverage($pdo, $cfg)); }
         case 'wch.cart_new': {
             $needPost(); $k = $phoneIn(); $c = $k !== '' ? wa_contact($pdo, $k) : null; if (!$c) json_response(['error' => 'Chat not found.'], 404); if (!wa_can_chat($pdo, $auth, $c)) json_response(['error' => 'This chat is assigned to someone else.'], 403);

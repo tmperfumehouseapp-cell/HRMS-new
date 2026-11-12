@@ -111,28 +111,30 @@
   // ------------------------------------------------------------------------------------------------------------------ the new order
   function open(o) {
     o = o || {}; const API = o.api || (typeof api !== 'undefined' ? api : null); if (!API) { alert('Not logged in.'); return; }
-    const S = { pay: 'prepaid', total: '', paid: '', utr: '', shot: null, read: null, reading: false, ml: 0, mlIn: '', combo: null, perf: new Map(), chain: new Map(), busy: false, order: null, seq: { perfume: 0, chain: 0 }, cache: {}, msg: '' };
+    const S = { pay: 'prepaid', total: '', paid: '', utr: '', shot: null, read: null, reading: false, ml: 0, mlIn: '', combo: null, perf: new Map(), chain: new Map(), single: new Map(), otype: o.outside ? 'query' : '', cust: { phone: o.phone || '', name: o.name || '', addr1: '', landmark: '', pin: '', city: '', state: '' }, busy: false, order: null, seq: { perfume: 0, chain: 0, other: 0 }, cache: {}, msg: '' };
     const { bd, ft, top } = shell('Manual order', (o.name || '') + ' · QR / UPI / COD'); top.innerHTML = '<button type="button" class="mo-lk" id="moList">Orders</button>'; top.querySelector('#moList').onclick = () => orders(o);
 
     const needShot = () => S.pay !== 'cod';
     const paidP = () => (S.pay === 'cod' ? 0 : paise(num(S.paid)));
     const totalP = () => (S.pay === 'prepaid' ? paidP() : paise(num(S.total)));
     const sum = (m) => { let t = 0; m.forEach((x) => { t += x.price * x.qty; }); return t; };
+    const hasItems = () => S.perf.size > 0 || S.single.size > 0;
     const mlOf = () => { let t = 0; S.perf.forEach((x) => { t += (x.ml || 0) * x.qty; }); return t; };
     const filled = (ml) => { let n = 0; S.perf.forEach((x) => { if (x.ml === ml) n += x.qty; }); return n; };
     function calc() {
-      const T = totalP(), C = sum(S.chain), L = sum(S.perf), P = T - C, pd = paidP(), cod = Math.max(0, T - pd);
+      const T = totalP(), C = sum(S.chain), SG = sum(S.single), L = sum(S.perf), P = T - C - SG, pd = paidP(), cod = Math.max(0, T - pd);
       let pieces = 0; S.perf.forEach((x) => { pieces += x.qty; });
-      const comboOk = !S.combo || S.combo.every((c) => filled(c.ml) === c.n) && Array.from(S.perf.values()).every((x) => S.combo.some((c) => c.ml === x.ml));
+      const comboOk = !S.perf.size || !S.combo || S.combo.every((c) => filled(c.ml) === c.n) && Array.from(S.perf.values()).every((x) => S.combo.some((c) => c.ml === x.ml));
       const why = !needShot() || S.shot ? '' : 'Upload the payment screenshot.';
-      const ok = T >= 10000 && S.perf.size > 0 && P >= pieces * 1000 && (!needShot() || (S.shot && pd >= 100)) && (S.pay !== 'partial' || (pd >= 100 && pd < T)) && comboOk && !S.reading && !S.busy;
-      return { T, C, L, P, pd, cod, comboOk, ok, why, pieces };
+      const custOk = !o.outside || (S.cust.phone.replace(/\D+/g, '').slice(-10).length === 10); const singlesOk = Array.from(S.single.values()).every((x) => x.price >= 100);
+      const ok = custOk && singlesOk && T >= 10000 && hasItems() && (S.perf.size ? P >= pieces * 1000 : P === 0) && (!needShot() || (S.shot && pd >= 100)) && (S.pay !== 'partial' || (pd >= 100 && pd < T)) && comboOk && !S.reading && !S.busy;
+      return { T, C, SG, L, P, pd, cod, comboOk, ok, why, pieces };
     }
 
     // ---- sections
     function drawAll() {
       const k = calc();
-      bd.innerHTML = '<div class="mo-h">1 · How did the customer pay?</div><div class="mo-seg" id="moPay">'
+      bd.innerHTML = (o.outside ? custHtml() : '') + '<div class="mo-h">1 · How did the customer pay?</div><div class="mo-seg" id="moPay">'
         + [['prepaid', 'Full prepaid<br><small>QR / UPI</small>'], ['partial', 'Part prepaid<br><small>+ COD balance</small>'], ['cod', 'Full COD<br><small>pay on delivery</small>']].map((x) => '<button type="button" data-p="' + x[0] + '" class="' + (S.pay === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</div>'
         + (needShot() ? '<div class="mo-h">Payment screenshot <em>Claude reads the amount</em></div><div class="mo-shot"><label style="cursor:pointer;flex:none"><input type="file" id="moFile" accept="image/*" hidden>' + (S.shot ? '<img alt="" src="' + esc(S.shot.url) + '">' : '<div class="mo-btn" style="display:flex;align-items:center">📷 Upload</div>') + '</label><div class="t" id="moRead">' + readHtml() + '</div></div>' : '')
         + '<div class="mo-h">Amounts</div><div class="mo-r2">'
@@ -143,8 +145,21 @@
         + '<div class="mo-h">2 · How many ML?</div><div class="mo-chips" id="moMl">' + MLS.map((m) => '<button type="button" data-m="' + m + '" class="' + (S.ml === m ? 'on' : '') + '">' + m + ' ml</button>').join('') + '<input class="mo-tx" id="moMlIn" style="width:92px" inputmode="numeric" placeholder="other ml" value="' + esc(S.mlIn) + '"></div>'
         + (S.ml ? '<div class="mo-h">Combo <em>' + S.ml + ' ml</em></div><div class="mo-chips" id="moCombo">' + combos(S.ml).map((c, i) => '<button type="button" data-c="' + i + '" class="' + (S.combo && comboLabel(S.combo) === comboLabel(c) ? 'on' : '') + '">' + esc(comboLabel(c)) + '</button>').join('') + '<button type="button" data-c="any" class="' + (S.combo === null ? 'on' : '') + '">Any mix</button></div>' : '')
         + '<div id="moLines"></div><div class="mo-h">3 · Add perfumes</div><div class="mo-sb"><input id="moQp" type="search" placeholder="Search a perfume…" autocomplete="off"></div><div class="mo-res" id="moRp"></div>'
+        + '<div class="mo-h">Other products <em>shower gel, beard balm, attar … each at its own price</em></div><div id="moSg"></div><div class="mo-sb"><input id="moQo" type="search" placeholder="Search shower gel, beard balm, wax …" autocomplete="off"></div><div class="mo-res" id="moRo"></div>'
         + '<div class="mo-h">Chain <em>optional · billed at full price</em></div><div class="mo-sb"><input id="moQc" type="search" placeholder="Search a chain…" autocomplete="off"></div><div class="mo-res" id="moRc"></div><div id="moMsg" style="margin-top:12px"></div>';
-      bindAll(); drawLines(); drawFoot();
+      bindAll(); drawLines(); drawSingles(); drawFoot();
+    }
+    function custHtml() {
+      const c = S.cust, v = (x) => esc(x || '');
+      return '<div class="mo-h">Customer</div><div class="mo-r2"><div><div class="mo-lab">Mobile number *</div><div class="mo-in"><input id="cuPh" inputmode="numeric" maxlength="14" placeholder="10-digit number" value="' + v(c.phone) + '"></div></div><div><div class="mo-lab">Name</div><div class="mo-in"><input id="cuNm" placeholder="Customer name" value="' + v(c.name) + '"></div></div></div>'
+        + '<div class="mo-lab" style="margin-top:8px">Address <em>optional — the customer checks it on the link</em></div><div class="mo-in"><input id="cuAd" placeholder="House, street, area" value="' + v(c.addr1) + '"></div>'
+        + '<div class="mo-r2" style="margin-top:6px"><div class="mo-in"><input id="cuLm" placeholder="Landmark" value="' + v(c.landmark) + '"></div><div class="mo-in"><input id="cuPin" inputmode="numeric" maxlength="6" placeholder="Pincode" value="' + v(c.pin) + '"></div></div>'
+        + '<div class="mo-r2" style="margin-top:6px"><div class="mo-in"><input id="cuCi" placeholder="City (fills from pincode)" value="' + v(c.city) + '"></div><div class="mo-in"><input id="cuSt" placeholder="State" value="' + v(c.state) + '"></div></div>'
+        + '<div class="mo-h">This order came from</div><div class="mo-seg" id="moOt"><button type="button" data-o="query" class="' + (S.otype === 'query' ? 'on' : '') + '">💬 Query</button><button type="button" data-o="campaign" class="' + (S.otype === 'campaign' ? 'on' : '') + '">📣 Campaign</button></div><div class="mo-lab">It is counted for you automatically.</div>';
+    }
+    function drawSingles() {
+      const el = bd.querySelector('#moSg'); if (!el) return;
+      el.innerHTML = Array.from(S.single.values()).map((x) => '<div class="mo-ln" data-vid="' + x.vid + '"><div class="mid"><div class="nm">' + esc(x.title) + ' <span style="font-size:10px;font-weight:800;background:#fff3d6;color:#8a5a00;border-radius:8px;padding:2px 6px">SINGLE</span></div><small>' + (x.label ? esc(x.label) + ' · ' : '') + 'shop price ' + rs(x.mrp) + ' · line ' + rs(x.price * x.qty) + '</small></div><div class="mo-q"><button type="button" data-sq="-1">−</button><b>' + x.qty + '</b><button type="button" data-sq="1">+</button></div><div class="mo-in" style="width:92px;flex:none"><span>₹</span><input data-sp="1" inputmode="decimal" value="' + esc(String(x.price / 100)) + '"></div></div>').join('');
     }
     function readHtml() {
       if (S.reading) return '<b>🤖 Claude is reading the screenshot…</b>';
@@ -164,7 +179,7 @@
     }
     function drawFoot() {
       const k = calc(); let sm = '';
-      if (k.T && S.perf.size) { const bad = k.P < k.pieces * 1000; sm = '<div class="mo-sum' + (bad ? ' bad' : '') + '"><div class="r big"><span>Perfumes get</span><b>' + (k.P > 0 ? rs(k.P) : '—') + '</b></div><div class="r"><span>Total ' + rs(k.T) + (S.chain.size ? ' − chain ' + rs(k.C) + ' (full price)' : '') + '</span><span>' + (k.pd ? 'paid ' + rs(k.pd) : '') + (k.cod ? ' · COD ' + rs(k.cod) : '') + '</span></div></div>'; }
+      if (k.T && hasItems()) { const bad = S.perf.size ? k.P < k.pieces * 1000 : k.P !== 0; sm = '<div class="mo-sum' + (bad ? ' bad' : '') + '"><div class="r big"><span>' + (S.perf.size ? 'Perfumes get' : 'Products + chain = total?') + '</span><b>' + (S.perf.size ? (k.P > 0 ? rs(k.P) : '—') : (k.P === 0 ? '✓' : 'differs by ' + rs(Math.abs(k.P)))) + '</b></div><div class="r"><span>Total ' + rs(k.T) + (S.chain.size ? ' − chain ' + rs(k.C) + ' (full price)' : '') + (S.single.size ? ' − other products ' + rs(k.SG) : '') + '</span><span>' + (k.pd ? 'paid ' + rs(k.pd) : '') + (k.cod ? ' · COD ' + rs(k.cod) : '') + '</span></div></div>'; }
       const miss = S.combo && !k.comboOk ? '<div class="mo-note">The perfumes must match the combo (' + esc(comboLabel(S.combo)) + ') or choose “Any mix”.</div>' : '';
       ft.innerHTML = sm + miss + '<div id="moFm">' + S.msg + '</div><button type="button" class="mo-go" id="moGo"' + (k.ok ? '' : ' disabled') + '>' + (S.busy ? 'Working…' : 'Create order' + (k.ok ? ' · ' + rs(k.T) : '') + ' and send the link') + '</button>';
       ft.querySelector('#moGo').onclick = make;
@@ -183,7 +198,15 @@
       bd.querySelector('#moMlIn').onchange = (e) => { const v = Math.round(num(e.target.value)); S.mlIn = e.target.value; S.ml = v >= 10 && v <= 2000 ? v : 0; S.combo = S.ml ? (combos(S.ml)[0] || null) : null; drawAll(); };
       const cb = bd.querySelector('#moCombo'); if (cb) cb.onclick = (e) => { const b = e.target.closest('[data-c]'); if (!b) return; S.combo = b.dataset.c === 'any' ? null : combos(S.ml)[+b.dataset.c]; drawAll(); };
       bd.querySelector('#moLines').onclick = (e) => { const b = e.target.closest('[data-q]'); if (!b) return; const row = b.closest('.mo-ln'), m = row.dataset.cat === 'chain' ? S.chain : S.perf, x = m.get(+row.dataset.vid); if (!x) return; x.qty += +b.dataset.q; if (x.qty < 1) m.delete(x.vid); else if (x.qty > (row.dataset.cat === 'chain' ? 5 : 20)) x.qty = (row.dataset.cat === 'chain' ? 5 : 20); drawLines(); drawFoot(); drawComboHint(); };
-      search('perfume', bd.querySelector('#moQp'), bd.querySelector('#moRp')); search('chain', bd.querySelector('#moQc'), bd.querySelector('#moRc'));
+      search('perfume', bd.querySelector('#moQp'), bd.querySelector('#moRp')); search('chain', bd.querySelector('#moQc'), bd.querySelector('#moRc')); search('other', bd.querySelector('#moQo'), bd.querySelector('#moRo'));
+      const sg = bd.querySelector('#moSg'); if (sg) { sg.onclick = (e) => { const b = e.target.closest('[data-sq]'); if (!b) return; const x = S.single.get(+b.closest('.mo-ln').dataset.vid); if (!x) return; x.qty += +b.dataset.sq; if (x.qty < 1) S.single.delete(x.vid); else if (x.qty > 50) x.qty = 50; drawSingles(); drawFoot(); };
+        sg.oninput = (e) => { const i = e.target.closest('[data-sp]'); if (!i) return; const x = S.single.get(+i.closest('.mo-ln').dataset.vid); if (!x) return; const v = i.value.replace(/[^\d.]/g, ''); if (v !== i.value) i.value = v; x.price = paise(num(v)); drawFoot(); const sm = i.closest('.mo-ln').querySelector('small'); if (sm) sm.textContent = (x.label ? x.label + ' · ' : '') + 'shop price ' + rs(x.mrp) + ' · line ' + rs(x.price * x.qty); }; }
+      if (o.outside) {
+        const g = (id) => bd.querySelector('#' + id), bind = (id, k, f) => { const el = g(id); if (el) el.oninput = () => { S.cust[k] = f ? f(el.value) : el.value; drawFoot(); }; };
+        bind('cuPh', 'phone', (v) => v.replace(/[^\d+ ]/g, '')); bind('cuNm', 'name'); bind('cuAd', 'addr1'); bind('cuLm', 'landmark'); bind('cuCi', 'city'); bind('cuSt', 'state');
+        const pn = g('cuPin'); if (pn) pn.oninput = async () => { const v = pn.value.replace(/\D+/g, '').slice(0, 6); if (v !== pn.value) pn.value = v; S.cust.pin = v; if (v.length === 6) { try { const r = await API.get('wmo.pin', { pin: v }); if (r && (r.city || r.state) && S.cust.pin === v) { S.cust.city = r.city || S.cust.city; S.cust.state = r.state || S.cust.state; if (g('cuCi')) g('cuCi').value = S.cust.city; if (g('cuSt')) g('cuSt').value = S.cust.state; } } catch (e) { } } };
+        const ot = g('moOt'); if (ot) ot.onclick = (e) => { const b = e.target.closest('[data-o]'); if (!b) return; S.otype = b.dataset.o; ot.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b)); };
+      }
     }
     const refresh = () => { drawFoot(); };
     const drawComboHint = () => { /* the line header already shows x/y; the search buttons re-check on the next tap */ };
@@ -198,6 +221,7 @@
           + (it.sizes || []).map((s, j) => { const dis = !s.in_stock || (cat === 'perfume' && S.combo && !S.combo.some((c) => c.ml === s.ml)); return '<button type="button" data-j="' + j + '"' + (dis ? ' disabled' : '') + '>' + esc(s.label) + ' · ' + rs(paise(s.price)) + '</button>'; }).join('') + '</div></div></div>').join('');
         res.onclick = (e) => {
           const b = e.target.closest('button[data-j]'); if (!b || b.disabled) return; const it = items[+b.closest('.mo-it').dataset.i], s = it && it.sizes[+b.dataset.j]; if (!s) return;
+          if (cat === 'other') { const ex2 = S.single.get(s.vid); if (ex2) { if (ex2.qty < 50) ex2.qty++; } else S.single.set(s.vid, { vid: s.vid, title: it.short || it.title, label: /^default title$/i.test(s.label || '') ? '' : s.label, mrp: paise(s.price), price: paise(s.price), qty: 1 }); fm(''); drawSingles(); drawFoot(); return; }
           const m = cat === 'chain' ? S.chain : S.perf, ex = m.get(s.vid), max = cat === 'chain' ? 5 : 20;
           if (cat === 'perfume' && S.combo) { const c = S.combo.find((q) => q.ml === s.ml); if (c && filled(s.ml) >= c.n) { fm('The combo has only ' + c.n + ' × ' + c.ml + ' ml. Remove one or choose “Any mix”.', 'bad'); drawFoot(); return; } }
           if (ex) { if (ex.qty < max) ex.qty++; } else m.set(s.vid, { vid: s.vid, title: it.short || it.title, label: s.label, price: paise(s.price), ml: s.ml, qty: 1 });
@@ -212,7 +236,8 @@
       const k = calc(); if (!k.ok || S.busy) return; S.busy = true; drawFoot(); fm('');
       try {
         if (!S.order) {
-          const r = await API.post('wmo.create', { phone: o.phone, pay: S.pay, total: k.T / 100, paid: k.pd / 100, utr: S.utr, ml: mlOf(), lines: Array.from(S.perf.values()).map((x) => ({ vid: x.vid, qty: x.qty })), chains: Array.from(S.chain.values()).map((x) => ({ vid: x.vid, qty: x.qty })), shot: S.shot ? S.shot.b64 : '', shot_mime: S.shot ? S.shot.mime : '', shot_read: S.read && !S.read.error ? S.read : null });
+          if (o.outside) { const st = await API.post('wmo.start', { phone: S.cust.phone, name: S.cust.name }); o.phone = st.phone; o.name = S.cust.name || st.name || ''; }
+          const r = await API.post('wmo.create', { otype: o.outside ? S.otype : '', cust: o.outside ? S.cust : null, singles: Array.from(S.single.values()).map((x) => ({ vid: x.vid, qty: x.qty, price: x.price / 100 })), phone: o.phone, pay: S.pay, total: k.T / 100, paid: k.pd / 100, utr: S.utr, ml: mlOf(), lines: Array.from(S.perf.values()).map((x) => ({ vid: x.vid, qty: x.qty })), chains: Array.from(S.chain.values()).map((x) => ({ vid: x.vid, qty: x.qty })), shot: S.shot ? S.shot.b64 : '', shot_mime: S.shot ? S.shot.mime : '', shot_read: S.read && !S.read.error ? S.read : null });
           S.order = r.order;
         }
         let sent = false, sendErr = '';
