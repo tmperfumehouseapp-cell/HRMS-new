@@ -37,7 +37,7 @@ function wmo_tables(PDO $pdo): bool
             utr VARCHAR(40) NOT NULL DEFAULT '', ml INT NOT NULL DEFAULT 0, lines_json MEDIUMTEXT NULL, shot_mime VARCHAR(20) NOT NULL DEFAULT '', shot_b64 MEDIUMTEXT NULL, shot_json TEXT NULL, src VARCHAR(12) NOT NULL DEFAULT '',
             cust_json TEXT NULL, phone_match TINYINT NOT NULL DEFAULT 1, shop_id BIGINT NULL, note VARCHAR(255) NOT NULL DEFAULT '', created_at DATETIME NOT NULL, sent_at DATETIME NULL, opened_at DATETIME NULL, confirmed_at DATETIME NULL,
             cancelled_at DATETIME NULL, UNIQUE KEY uq_wmo_tok (token), KEY k_wmo_phone (phone, status), KEY k_wmo_utr (utr)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-        foreach (['sr_order_id' => "VARCHAR(24) NOT NULL DEFAULT ''", 'sr_note' => "VARCHAR(255) NOT NULL DEFAULT ''"] as $c => $def) { try { if (!$pdo->query("SHOW COLUMNS FROM wmo_order LIKE '$c'")->fetch()) $pdo->exec("ALTER TABLE wmo_order ADD COLUMN $c $def"); } catch (PDOException $e) { } }      // the Shiprocket order id and the last note
+        foreach (['sr_order_id' => "VARCHAR(24) NOT NULL DEFAULT ''", 'sr_note' => "VARCHAR(255) NOT NULL DEFAULT ''", 'otype' => "VARCHAR(10) NOT NULL DEFAULT ''", 'addr_json' => 'TEXT NULL'] as $c => $def) { try { if (!$pdo->query("SHOW COLUMNS FROM wmo_order LIKE '$c'")->fetch()) $pdo->exec("ALTER TABLE wmo_order ADD COLUMN $c $def"); } catch (PDOException $e) { } }      // the Shiprocket order id and the last note
         return $ok = true;
     } catch (PDOException $e) { error_log('wmo_tables: ' . $e->getMessage()); return $ok = false; }
 }
@@ -72,6 +72,7 @@ function wmo_split(int $totalP, array $weights): array
  *  or our campaign sent in the 7 days before). Falls back to the chat's source saved on the order. */
 function wmo_alloc_type(PDO $pdo, array $r): string
 {
+    if (in_array((string)($r['otype'] ?? ''), ['query', 'campaign'], true)) return (string)$r['otype'];   // the salesperson said where this order came from (the Manual order page)
     if (function_exists('order_chat_type')) {
         try {
             try { $q = $pdo->prepare("SELECT c.phone, c.source, COALESCE(n.camp_tag, 0) AS camp_tag FROM wa_contacts c LEFT JOIN wa_numbers n ON n.id = c.last_number_id WHERE c.phone = ?"); $q->execute([(string)$r['phone']]); }
@@ -96,37 +97,45 @@ function wmo_throttle(string $key, int $max): bool
 
 // ------------------------------------------------------------------------------------------------------------------ the lines and the money
 /** Looks the chosen variants up in the Shopify catalogue copy (wch_var / wch_prod) and splits the money. Returns [lines, perfumeMl, error]. */
-function wmo_lines(PDO $pdo, int $totalP, array $perf, array $chains): array
+function wmo_lines(PDO $pdo, int $totalP, array $perf, array $chains, array $singles = []): array
 {
-    $want = []; foreach ([['perfume', $perf, 20], ['chain', $chains, 5]] as [$kind, $arr, $max]) foreach ($arr as $x) {
+    $want = []; $sPrice = [];
+    foreach ([['perfume', $perf, 20], ['chain', $chains, 5], ['single', $singles, 50]] as [$kind, $arr, $max]) foreach ($arr as $x) {
         if (!is_array($x)) continue; $vid = (int)($x['vid'] ?? 0); $q = (int)($x['qty'] ?? 0); if ($vid <= 0 || $q < 1) continue; $want[$vid] = ['kind' => $kind, 'qty' => min($max, $q)] + ($want[$vid] ?? []);
+        if ($kind === 'single') $sPrice[$vid] = wmo_p($x['price'] ?? 0);
     }
-    if (!$want) return [[], 0, 'Pick at least one perfume.'];
+    if (!$want) return [[], 0, 'Pick at least one product.'];
     try {
         $in = implode(',', array_fill(0, count($want), '?'));
         $st = $pdo->prepare("SELECT v.vid, v.pid, v.sku, v.title vtitle, v.ml, v.price_p, v.avail, p.title, p.short, p.kind FROM wch_var v JOIN wch_prod p ON p.pid = v.pid WHERE v.vid IN ($in)"); $st->execute(array_keys($want)); $rows = $st->fetchAll();
     } catch (Throwable $e) { return [[], 0, 'The product catalogue is not ready. Refresh it once (Sales → WhatsApp → Chain cart) and try again.']; }
     $by = []; foreach ($rows as $r) $by[(int)$r['vid']] = $r;
-    $L = []; $chainP = 0; $ml = 0;
+    $L = []; $chainP = 0; $ml = 0; $singleP = 0;
     foreach ($want as $vid => $w) {
         $r = $by[$vid] ?? null; if (!$r) return [[], 0, 'A product is not in the catalogue any more. Search it again.'];
         if ((int)$r['avail'] !== 1) return [[], 0, trim((string)($r['short'] ?: $r['title'])) . ' is out of stock.'];
+        if ($w['kind'] === 'single') {   // 🧴 shower gel, beard balm, attar … : one product, its OWN price (the shop price unless the salesperson changed it), never shared with the perfumes
+            if ((string)$r['kind'] !== 'other') return [[], 0, trim((string)($r['short'] ?: $r['title'])) . ' is a perfume or chain: add it in the perfume / chain box.'];
+            $up = $sPrice[$vid] ?? 0; if ($up < 100 || $up > 50000000) return [[], 0, 'Type the price of ' . trim((string)($r['short'] ?: $r['title'])) . ' (₹1 to ₹500000).'];
+            $L[] = ['vid' => (int)$vid, 'sku' => (string)$r['sku'], 'pid' => (int)$r['pid'], 'title' => (string)$r['title'], 'short' => (string)($r['short'] ?: $r['title']), 'label' => trim((string)$r['vtitle']) === 'Default Title' ? '' : trim((string)$r['vtitle']), 'ml' => null, 'qty' => (int)$w['qty'], 'mrp_p' => (int)$r['price_p'], 'chain' => false, 'single' => true, 'unit_p' => $up, 'total_p' => $up * (int)$w['qty']]; $singleP += $up * (int)$w['qty']; continue;
+        }
         $isChain = (string)$r['kind'] === 'chain'; if ($isChain !== ($w['kind'] === 'chain')) return [[], 0, 'A chain was picked as a perfume (or the other way round). Search it again.'];
         $mrp = (int)$r['price_p']; $label = $r['ml'] !== null ? (int)$r['ml'] . ' ml' : trim((string)$r['vtitle']);
         $L[] = ['vid' => (int)$vid, 'sku' => (string)$r['sku'], 'pid' => (int)$r['pid'], 'title' => (string)$r['title'], 'short' => (string)($r['short'] ?: $r['title']), 'label' => $label, 'ml' => $r['ml'] === null ? null : (int)$r['ml'], 'qty' => (int)$w['qty'], 'mrp_p' => $mrp, 'chain' => $isChain, 'total_p' => 0];
         if ($isChain) $chainP += $mrp * (int)$w['qty']; elseif ($r['ml'] !== null) $ml += (int)$r['ml'] * (int)$w['qty'];
     }
-    $pi = []; foreach ($L as $i => $l) if (!$l['chain']) $pi[] = $i; if (!$pi) return [[], 0, 'Pick at least one perfume.'];
-    $perfP = $totalP - $chainP; $pieces = 0; foreach ($pi as $i) $pieces += $L[$i]['qty'];
-    if ($perfP < $pieces * 1000) return [[], 0, 'After the chain (' . wmo_rs($chainP) . ' at its full price) too little is left for the perfumes. Raise the total or remove the chain.'];
+    $pi = []; foreach ($L as $i => $l) if (!$l['chain'] && empty($l['single'])) $pi[] = $i;
+    $perfP = $totalP - $chainP - $singleP; $pieces = 0; foreach ($pi as $i) $pieces += $L[$i]['qty'];
+    if (!$pi) { if (!$singleP) return [[], 0, 'Pick at least one perfume or product.']; if ($perfP !== 0) return [[], 0, 'With no perfume, the order total must equal the products' . ($chainP ? ' + chain' : '') . ' (' . wmo_rs($chainP + $singleP) . ').']; }
+    elseif ($perfP < $pieces * 1000) return [[], 0, 'After the chain / other products (' . wmo_rs($chainP + $singleP) . ' at their own prices) too little is left for the perfumes. Raise the total or remove something.'];
     foreach ($L as $i => $l) if ($l['chain']) $L[$i]['total_p'] = $l['mrp_p'] * $l['qty'];
-    $parts = wmo_split($perfP, array_map(fn($i) => max(1, $L[$i]['mrp_p'] * $L[$i]['qty']), $pi)); foreach ($pi as $k => $i) $L[$i]['total_p'] = $parts[$k];
+    if ($pi) { $parts = wmo_split($perfP, array_map(fn($i) => max(1, $L[$i]['mrp_p'] * $L[$i]['qty']), $pi)); foreach ($pi as $k => $i) $L[$i]['total_p'] = $parts[$k]; }
     return [$L, $ml, ''];
 }
 /** Shopify-shaped line items of the order lines (for the ML / colour / chain helpers of the Orders pages). */
 function wmo_line_items(array $L): array
 {
-    $o = []; foreach ($L as $l) $o[] = ['title' => $l['title'], 'name' => $l['title'] . ' - ' . $l['label'], 'variant_title' => $l['label'], 'quantity' => (int)$l['qty'], 'price' => round($l['total_p'] / 100 / max(1, (int)$l['qty']), 2), 'total_discount' => 0, 'sku' => '']; return $o;
+    $o = []; foreach ($L as $l) $o[] = ['title' => $l['title'], 'name' => $l['title'] . ($l['label'] !== '' ? ' - ' . $l['label'] : ''), 'variant_title' => $l['label'], 'quantity' => (int)$l['qty'], 'price' => round($l['total_p'] / 100 / max(1, (int)$l['qty']), 2), 'total_discount' => 0, 'sku' => '']; return $o;
 }
 
 // ------------------------------------------------------------------------------------------------------------------ the payment screenshot
@@ -150,7 +159,7 @@ function wmo_out(PDO $pdo, array $r, bool $full = false): array
 {
     $L = json_decode((string)$r['lines_json'], true) ?: []; $cust = json_decode((string)($r['cust_json'] ?? ''), true) ?: [];
     $o = ['id' => (int)$r['id'], 'order_no' => (string)$r['order_no'], 'status' => (string)$r['status'], 'pay' => (string)$r['pay'], 'total' => $r['total_p'] / 100, 'paid' => $r['paid_p'] / 100, 'cod' => $r['cod_p'] / 100, 'utr' => (string)$r['utr'], 'ml' => (int)$r['ml'],
-        'lines' => array_map(fn($l) => ['short' => $l['short'], 'label' => $l['label'], 'qty' => (int)$l['qty'], 'chain' => !empty($l['chain']), 'total' => $l['total_p'] / 100], $L), 'created_at' => (string)$r['created_at'], 'sent_at' => (string)($r['sent_at'] ?? ''), 'opened_at' => (string)($r['opened_at'] ?? ''), 'confirmed_at' => (string)($r['confirmed_at'] ?? ''),
+        'lines' => array_map(fn($l) => ['short' => $l['short'], 'label' => $l['label'], 'qty' => (int)$l['qty'], 'chain' => !empty($l['chain']), 'single' => !empty($l['single']), 'total' => $l['total_p'] / 100], $L), 'created_at' => (string)$r['created_at'], 'sent_at' => (string)($r['sent_at'] ?? ''), 'opened_at' => (string)($r['opened_at'] ?? ''), 'confirmed_at' => (string)($r['confirmed_at'] ?? ''),
         'link' => $r['status'] === 'cancelled' ? '' : wmo_link((string)$r['token']), 'phone_match' => (int)$r['phone_match'], 'name' => (string)($cust['name'] ?? '')];
     if ($full && $r['status'] === 'confirmed') { $o['ship'] = wmo_ship_text($r['order_no'], $cust, $r); try { $q = $pdo->prepare("SELECT inv_no, sent_at FROM wch_inv WHERE order_name = ? ORDER BY id DESC LIMIT 1"); $q->execute([(string)$r['order_no']]); $iv = $q->fetch(); $o['inv'] = $iv ? ['no' => (string)$iv['inv_no'], 'sent' => !empty($iv['sent_at'])] : null; } catch (Throwable $e) { $o['inv'] = null; } $o['sr'] = ['id' => (string)($r['sr_order_id'] ?? ''), 'note' => (string)($r['sr_note'] ?? '')]; }
     return $o;
@@ -343,6 +352,7 @@ function wmo_form(PDO $pdo): void
     if ($r['status'] === 'cancelled' || strtotime((string)$r['created_at']) < time() - 7 * 86400) wmo_page('Order', '<div class="card"><b>This link has expired.</b><br>Please ask us on WhatsApp for a new one.</div>', 410);
     $err = ''; $v = ['name' => '', 'phone' => '', 'phone2' => '', 'addr1' => '', 'addr2' => '', 'landmark' => '', 'pin' => '', 'city' => '', 'state' => '', 'email' => ''];
     $c0 = function_exists('wa_contact') ? wa_contact($pdo, (string)$r['phone']) : null; $v['phone'] = (string)$r['phone']; $v['name'] = $c0 ? trim((string)($c0['name'] ?? '')) : '';      // the chat's number and name are filled in; the customer can change them
+    $ad0 = json_decode((string)($r['addr_json'] ?? ''), true); if (is_array($ad0)) { if (!empty($ad0['name'])) $v['name'] = (string)$ad0['name']; foreach (['addr1', 'landmark', 'pin', 'city', 'state'] as $k0) if (!empty($ad0[$k0])) $v[$k0] = (string)$ad0[$k0]; }   // typed by the salesperson on the Manual order page: the customer only checks it
     if (empty($r['opened_at'])) $pdo->prepare("UPDATE wmo_order SET opened_at = ? WHERE id = ?")->execute([date('Y-m-d H:i:s'), (int)$r['id']]);
     if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         foreach ($v as $k => $_) $v[$k] = (string)($_POST[$k] ?? '');
@@ -357,7 +367,7 @@ function wmo_form(PDO $pdo): void
             } catch (Throwable $ex) { if ($pdo->inTransaction()) $pdo->rollBack(); error_log('wmo_form: ' . $ex->getMessage()); $err = 'Something went wrong. Please press Done once more.'; }
         } else $err = $er !== '' ? $er : 'Please wait a minute and try again.';
     }
-    $rows = ''; foreach ($L as $l) $rows .= '<div class="ln"><span>' . (int)$l['qty'] . ' × ' . $e($l['short']) . (!empty($l['chain']) ? '' : ' · ' . $e($l['label'])) . '</span></div>';
+    $rows = ''; foreach ($L as $l) $rows .= '<div class="ln"><span>' . (int)$l['qty'] . ' × ' . $e($l['short']) . (!empty($l['chain']) ? '' : ($l['label'] !== '' ? ' · ' . $e($l['label']) : '')) . '</span>' . (!empty($l['single']) ? '<span>' . $e(wmo_rs((int)$l['total_p'])) . '</span>' : '') . '</div>';
     $money = '<div class="ln tot"><span>Order total</span><span>' . $e(wmo_rs((int)$r['total_p'])) . '</span></div>' . ((int)$r['paid_p'] > 0 ? '<div class="ln"><span>Already paid</span><span>' . $e(wmo_rs((int)$r['paid_p'])) . '</span></div>' : '')
         . ((int)$r['cod_p'] > 0 ? '<div class="ln tot"><span>Pay on delivery</span><span>' . $e(wmo_rs((int)$r['cod_p'])) . '</span></div>' : '<div class="ln"><span>Payment</span><span>Fully paid ✅</span></div>');
     $f = function ($n, $lab, $ph = '', $attr = '') use ($v, $e) { return '<label>' . $lab . '</label><input name="' . $n . '" value="' . $e($v[$n]) . '" ' . $attr . ($ph !== '' ? ' placeholder="' . $e($ph) . '"' : '') . '>'; };
@@ -419,12 +429,14 @@ if (strpos($__wmo, 'wmo.') === 0) {
             if ($pay === 'prepaid') $paid = $total; if ($pay === 'partial' && ($paid < 100 || $paid >= $total)) json_response(['error' => 'For a part payment the paid amount must be more than ₹1 and less than the total.'], 422);
             if ($pay !== 'cod' && empty($in['shot'])) json_response(['error' => 'Upload the payment screenshot first.'], 422);
             if ($utr !== '') { $d = $pdo->prepare("SELECT order_no FROM wmo_order WHERE utr = ? AND status <> 'cancelled' LIMIT 1"); $d->execute([$utr]); $dn = $d->fetchColumn(); if ($dn && empty($in['dup_ok'])) json_response(['error' => 'This payment reference (UTR) is already used on order ' . $dn . '. The same payment cannot pay two orders.', 'code' => 'dup', 'order' => $dn], 409); }
-            [$L, $ml, $er] = wmo_lines($pdo, $total, (array)($in['lines'] ?? []), (array)($in['chains'] ?? [])); if ($er !== '') json_response(['error' => $er], 422);
+            [$L, $ml, $er] = wmo_lines($pdo, $total, (array)($in['lines'] ?? []), (array)($in['chains'] ?? []), (array)($in['singles'] ?? [])); if ($er !== '') json_response(['error' => $er], 422);
             $shot = (string)($in['shot'] ?? ''); $smime = strtolower((string)($in['shot_mime'] ?? 'image/jpeg')); $sb = preg_replace('/^data:[^,]*,/', '', $shot); if ($sb !== '' && (strlen($sb) > 3000000 || !in_array($smime, ['image/jpeg', 'image/png', 'image/webp'], true))) $sb = '';
-            $assign = (int)($c['assigned_emp'] ?: $me); $token = bin2hex(random_bytes(16)); $now = date('Y-m-d H:i:s');
+            $otype = in_array((string)($in['otype'] ?? ''), ['query', 'campaign'], true) ? (string)$in['otype'] : ''; $assign = $otype !== '' ? $me : (int)($c['assigned_emp'] ?: $me);   // from the Manual order page: it belongs to the person who makes it $token = bin2hex(random_bytes(16)); $now = date('Y-m-d H:i:s');
             $pdo->prepare("INSERT INTO wmo_order (token, phone, emp_id, assign_emp, status, pay, total_p, paid_p, cod_p, utr, ml, lines_json, shot_mime, shot_b64, shot_json, src, note, created_at) VALUES (?,?,?,?, 'draft', ?,?,?,?,?,?,?,?,?,?,?,?,?)")
                 ->execute([$token, (string)$c['phone'], $me, $assign, $pay, $total, $paid, $total - $paid, $utr, $ml, json_encode($L, JSON_UNESCAPED_UNICODE), $sb !== '' ? $smime : '', $sb !== '' ? $sb : null, wmo_clip(json_encode($in['shot_read'] ?? new stdClass(), JSON_UNESCAPED_UNICODE), 1500), (string)($c['source'] ?? ''), wmo_clip($in['note'] ?? '', 250), $now]);
             $id = (int)$pdo->lastInsertId(); $no = 'WM-' . str_pad((string)$id, 5, '0', STR_PAD_LEFT); $pdo->prepare("UPDATE wmo_order SET order_no = ? WHERE id = ?")->execute([$no, $id]);
+            $cu = is_array($in['cust'] ?? null) ? $in['cust'] : []; $ad = []; foreach (['name' => 60, 'addr1' => 160, 'landmark' => 80, 'pin' => 6, 'city' => 60, 'state' => 60] as $k0 => $n0) $ad[$k0] = wmo_clip($cu[$k0] ?? '', $n0);
+            try { $pdo->prepare("UPDATE wmo_order SET otype = ?, addr_json = ? WHERE id = ?")->execute([$otype, array_filter($ad) ? json_encode($ad, JSON_UNESCAPED_UNICODE) : null, $id]); } catch (Throwable $ex) { }
             $q = $pdo->prepare("SELECT * FROM wmo_order WHERE id = ?"); $q->execute([$id]); json_response(['ok' => true, 'order' => wmo_out($pdo, $q->fetch())]);
         }
         case 'wmo.send': {
