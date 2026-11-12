@@ -1360,6 +1360,7 @@ function wq_need_tables(PDO $pdo): bool
 }
 function wq_needs(PDO $pdo, int $me, bool $waves = true): array
 {
+    if ($waves && function_exists('wqx_mode') && wqx_mode($pdo) === 'live') $waves = false;   // 🏪 the open market gives the chats now (one engine): this list is only the shared backup view, with no waves / holds of its own
     $now = time(); $raw = json_decode((string)setting_get($pdo, 'wq_needs', ''), true);
     if (!is_array($raw) || (int)($raw['at'] ?? 0) < $now - 10) {
         $items = [];

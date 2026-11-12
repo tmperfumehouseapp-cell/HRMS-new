@@ -460,6 +460,23 @@
         if (!el) { el = document.createElement('div'); el.id = 'wxMgr'; const top = R.querySelector('.wx-top'); if (!top) return; top.insertAdjacentElement('afterend', el); }
         el.className = 'wx-mgr wx-mgr-' + String(c.level || 'normal').replace(/[^a-z]/g, ''); el.textContent = '🧭 ' + c.text; } catch (e) { /* optional */ } };
       paintMgr(); setInterval(() => { if (!document.hidden) paintMgr(); }, 300000); }
+    // 🏪 Auto assign (open market) — my status line + ☕ Break button, only while the admin has started it
+    { const paintMkt = async () => { try { const d = await api.get('wq.mkt_me'); let el = R.querySelector('#wxMkt'); const m = d && d.me;
+        if (!d || d.mode !== 'live' || !m) { if (el) el.remove(); return; }
+        if (!el) { el = document.createElement('div'); el.id = 'wxMkt'; const top = R.querySelector('.wx-top'); if (!top) return; top.insertAdjacentElement('afterend', el); }
+        const t = d.on_break ? '☕ બ્રેક પર છો — નવી ક્વેરી નહીં આવે (' + d.break_used + '/' + d.break_max + ' મિનિટ)'
+          : !m.present ? '⏰ પંચ-ઇન કરો (ઓફિસ કે વર્ક ફ્રોમ હોમ) — તો જ ક્વેરી મળશે'
+          : m.held_why === 'complaints' ? '🔴 પહેલા ' + m.overdue_cx + ' ફરિયાદ ઉકેલો, પછી નવી ક્વેરી મળશે'
+          : m.held_why === 'orders' ? '⛔ ક્વેરી બંધ છે — 1 ઓર્ડર પાડો, પછી ક્વેરી ફરી મળશે'
+          : m.full ? '⏳ ' + m.load + ' ચાલુ ચેટ છે — પહેલા જવાબ આપો, પછી નવી ક્વેરી આવશે'
+          : '🚀 ક્વેરી ચાલુ છે — ઝડપથી જવાબ આપો, સેટ / કોમ્બો ઓફર કરો (મોટી ટિકિટ)';
+        el.style.cssText = 'display:flex;gap:8px;align-items:center;justify-content:space-between;font-size:12px;padding:6px 10px;margin:4px 8px;border-radius:10px;background:' + (m.held || !m.present ? '#fef2f2' : d.on_break ? '#f3f4f6' : '#f0fdf4');
+        const left = Math.max(0, (d.break_max || 0) - (d.break_used || 0));
+        el.innerHTML = '<span style="min-width:0"></span>' + (m.present && (d.on_break || left > 0) ? '<button type="button" style="flex:none;border:1px solid #d1d5db;background:#fff;border-radius:99px;padding:5px 10px;font-size:12px;font-weight:700;min-height:32px;cursor:pointer">' + (d.on_break ? '▶ કામ પર પાછા' : '☕ બ્રેક') + '</button>' : '');
+        el.firstChild.textContent = t;
+        const b = el.querySelector('button'); if (b) b.onclick = async () => { b.disabled = true; try { await api.post('wq.mkt_break', { on: d.on_break ? 0 : 1 }); } catch (er) { alert((er && er.message) || 'Could not save'); } paintMkt(); };
+      } catch (e) { /* optional */ } };
+      paintMkt(); setInterval(() => { if (!document.hidden) paintMkt(); }, 60000); }
     // ⚡ a small chip beside the title: my typical reply time against the team's (own numbers + the team median; today, or the last 7 days when today has too few replies)
     { const paint = async () => { try { let d = await api.get('wq.pace', { days: 1 }), mp = d.mine && (d.mine.pace || d.mine), tp = d.team && d.team.pace;
         if (!mp || mp.median == null || (mp.n || 0) < 3) { d = await api.get('wq.pace', { days: 7 }); mp = d.mine && (d.mine.pace || d.mine); tp = d.team && d.team.pace; }

@@ -242,6 +242,7 @@ function wa_tick(PDO $pdo, bool $force = false): array
     if (!$__late()) try { if (function_exists('wa_mcache_prefetch') && !defined('WA_IN_WEBHOOK')) $o['media'] = wa_mcache_prefetch($pdo); } catch (Throwable $e) { }   // ⚡ new customer photos / videos saved on our server before anyone opens them
     if (!$__late()) try { if (function_exists('wa_done_scan') && !defined('WA_IN_WEBHOOK')) { $o['done'] = wa_done_scan($pdo); if ((int)date('G') >= 3) wa_done_learn($pdo); } } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'order completed: ' . $e->getMessage()); }   // ✅ Shopify orders → order completed
     try { $o['assigned'] = wa_auto_assign($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'auto-assign: ' . $e->getMessage()); }
+    try { if (function_exists('wqx_tick')) $o['market'] = wqx_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'open market: ' . $e->getMessage()); }   // 🏪 open-market auto-assign (does nothing while Stopped)
     if (!$__late()) try { if (!defined('WA_IN_WEBHOOK')) $o['alloc'] = wa_auto_alloc($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'auto-allocate: ' . $e->getMessage()); }   // 🤖 orders → the salesperson of the chat
     try { wa_callnow_scan($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'call-now: ' . $e->getMessage()); }
     if (!$__late()) try { if (function_exists('wq_urgent_push') && !defined('WA_IN_WEBHOOK')) $o['urgent'] = wq_urgent_push($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'urgent: ' . $e->getMessage()); }   // 🔴 nobody answered a ready-to-pay chat in time: everyone present is told at once
@@ -597,6 +598,7 @@ require_once __DIR__ . '/wq_speed.php';   // ⚡ timing of the WhatsApp calls, s
 require_once __DIR__ . '/wq_tags.php';   // 🏷 One tag system: registry, automatic tags with why / until, patterns of staff-made tags, Claude's own new tags (wq.tags_*)
 require_once __DIR__ . '/wq_pace.php';   // ⚡ Reply pace of every salesperson: per-message pace, 7-day comparison, after-taking-a-query pace, fast reply vs order closing (wq.pace) - BEFORE wa_seg.php
 require_once __DIR__ . '/wq_manager.php';   // 🧭 Team manager (Autobot): Claude decides who sees new orange / red chats first, from every number together (wq.mgr_*)
+require_once __DIR__ . '/wq_market.php';   // 🏪 Open market auto-assign: every query to the person most likely to sell it now (Sales → Team performance → Auto assign; wq.mkt_*). Off until started.
 require_once __DIR__ . '/team_board.php';   // 👥 Team board: one row per salesperson with everything in one place (team.board)
 require_once __DIR__ . '/wch.php';        // Chain + perfume cart, GST bill, catalog sync (wch.*) - BEFORE wa_seg.php
 require_once __DIR__ . '/wa_planner.php';   // 🗓 Campaign Planner: files + messages planned the day before, started by themselves one after another (wa.pl_*)
