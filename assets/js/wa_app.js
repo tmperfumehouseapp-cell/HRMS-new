@@ -1324,7 +1324,8 @@
     }
     function loadScript(src) { return new Promise((res, rej) => { if (window.lamejs) return res(); const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('Could not load the voice converter (check the internet).')); document.head.appendChild(s); }); }
     async function toMp3(blob) {
-      await loadScript('https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.min.js'); const a = new (window.AudioContext || window.webkitAudioContext)(); const buf = await a.decodeAudioData(await blob.arrayBuffer()); const ch = buf.getChannelData(0), n = ch.length, pcm = new Int16Array(n);
+      try { await loadScript('assets/js/lame.min.js?v=1'); } catch (e1) { await loadScript('https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.min.js'); }   // our own copy first (no internet service needed), the public one only as a spare
+       const a = new (window.AudioContext || window.webkitAudioContext)(); const buf = await a.decodeAudioData(await blob.arrayBuffer()); const ch = buf.getChannelData(0), n = ch.length, pcm = new Int16Array(n);
       for (let i = 0; i < n; i++) { const s = Math.max(-1, Math.min(1, ch[i])); pcm[i] = s < 0 ? s * 0x8000 : s * 0x7FFF; } const enc = new lamejs.Mp3Encoder(1, buf.sampleRate, 64), out = []; for (let i = 0; i < n; i += 1152) { const b = enc.encodeBuffer(pcm.subarray(i, i + 1152)); if (b.length) out.push(new Int8Array(b)); } const e = enc.flush(); if (e.length) out.push(new Int8Array(e)); a.close(); return new Blob(out, { type: 'audio/mpeg' });
     }
 
