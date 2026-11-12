@@ -219,6 +219,10 @@
     .wi-comp{padding:6px 8px calc(8px + env(safe-area-inset-bottom)); gap:6px; flex-wrap:wrap;} .wi-comp textarea{min-height:44px; order:20; flex:1 1 calc(100% - 60px); min-width:0;} .wi-comp #wiSend{order:21;}
     .wi .wi-comp > .wi-btn:not(#wiSend){display:inline-flex; flex-direction:column; align-items:center; justify-content:center; flex:1 1 15%; min-width:0; min-height:44px; padding:3px 2px; font-size:17px; line-height:1.05; border-radius:12px;} .wi .wi-comp > .wi-btn .lb{display:block; font-size:11px; font-weight:700; margin-top:1px; white-space:nowrap;}
     .wi-tab{padding:9px 14px; font-size:13px;} .wi-it{padding:12px 14px;}
+    /* 📐 fit the phone: smaller header buttons, ONE row of composer buttons (Lists too), less height used so the chat has room */
+    .wi-head{padding:5px 8px; gap:4px;} .wi-head .wi-ib{min-width:clamp(38px,11vw,46px); min-height:clamp(34px,9vw,40px); padding:2px 4px; font-size:clamp(14px,4vw,16px); border-radius:10px;} .wi-head .wi-ib .lb{font-size:clamp(9px,2.5vw,10.5px);} .wi-head .wi-asg{min-height:30px; padding:2px 10px; font-size:13px;}
+    .wi-comp{padding:4px 6px calc(6px + env(safe-area-inset-bottom)); gap:4px; flex-wrap:wrap;} .wi .wi-comp > .wi-btn:not(#wiSend){flex:1 1 0; min-height:clamp(34px,9vw,40px); padding:2px 1px; font-size:clamp(14px,4vw,16px); border-radius:10px;} .wi .wi-comp > .wi-btn .lb{font-size:clamp(8px,2.3vw,10px);} .wi-comp textarea{min-height:40px;}
+    #wiPc .pc-row{padding:2px 8px;} #wiPc button{padding:6px 12px; font-size:13px;}
   }`;
 
   function start(opts) {
