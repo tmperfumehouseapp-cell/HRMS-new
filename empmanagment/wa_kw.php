@@ -33,9 +33,57 @@ function wkw_clean(array $in): array
         if (!is_array($r)) continue; $name = mb_substr(trim((string)($r['name'] ?? '')), 0, 60); if ($name === '') continue;
         $id = preg_replace('/[^a-z0-9_]/', '', strtolower((string)($r['id'] ?? ''))); if ($id === '' || isset($seen[$id])) $id = 'r' . substr(md5($name . microtime(true) . count($rules)), 0, 8); $seen[$id] = 1;
         $words = []; foreach ((array)($r['words'] ?? []) as $w) { $w = mb_substr(trim((string)$w), 0, 40); if ($w !== '') $words[] = $w; }
-        $rules[] = ['id' => $id, 'name' => $name, 'on' => !empty($r['on']), 'words' => array_slice(array_values(array_unique($words)), 0, 12), 'text' => mb_substr(trim((string)($r['text'] ?? '')), 0, 1000), 'lib_id' => max(0, (int)($r['lib_id'] ?? 0))];
+        $rules[] = ['id' => $id, 'name' => $name, 'on' => !empty($r['on']), 'words' => array_slice(array_values(array_unique($words)), 0, 12), 'text' => mb_substr(trim((string)($r['text'] ?? '')), 0, 1000), 'lib_id' => max(0, (int)($r['lib_id'] ?? 0)), 'fu' => wkw_fu_clean($r['fu'] ?? [])];
     }
     return ['auto' => !empty($in['auto']), 'rules' => array_slice($rules, 0, 40)];
+}
+/** The follow-ups of a card: if the customer does not answer, after N minutes (since the previous automatic message) this goes. Empty ones are dropped. */
+function wkw_fu_clean($arr): array
+{
+    $o = []; foreach ((array)$arr as $f) { if (!is_array($f)) continue; $t = mb_substr(trim((string)($f['text'] ?? '')), 0, 1000); $l = max(0, (int)($f['lib_id'] ?? 0)); if ($t === '' && $l <= 0) continue; $o[] = ['after_min' => max(5, min(1380, (int)($f['after_min'] ?? 60))), 'text' => $t, 'lib_id' => $l]; }
+    return array_slice($o, 0, 6);
+}
+/** Sends one automatic message (text, or a library photo with the text as its caption). true = sent. */
+function wkw_send(PDO $pdo, array $c, string $text, int $libId, string $replyTo = ''): bool
+{
+    $ok = false; $key = (string)$c['phone'];
+    $nm = trim((string)($c['name'] ?? '')); $fn = preg_split('/\s+/u', $nm)[0] ?? ''; if ($fn === '' || !preg_match('/^\p{L}[\p{L}\p{M}.\'-]*$/u', $fn)) $fn = '';
+    $text = $fn !== '' ? str_ireplace('{name}', $fn, $text) : preg_replace('/[ ]*\{name\}/i', '', $text);
+    if ($libId > 0 && function_exists('wa_lib_row') && function_exists('wa_lib_media_id') && function_exists('wa_send_media')) {   // 📷 the photo (the message is its caption)
+        $row = wa_lib_row($pdo, $libId);
+        if ($row) { $q = $pdo->prepare("SELECT phone_id FROM wa_numbers WHERE id = ?"); $q->execute([(int)$c['last_number_id']]); $pid = (string)$q->fetchColumn(); if ($pid === '') $pid = wa_cfg_val('WA_PHONE_ID');
+            [$mid] = wa_lib_media_id($pdo, $row, $pid);
+            if ($mid !== '') { [$ok] = wa_send_media($pdo, $c, (string)$row['kind'], $mid, (string)$row['mime'], $text, (string)$row['filename'], 0); if ($ok) { try { $pdo->prepare("UPDATE wa_contacts SET state = ? WHERE phone = ?")->execute([(string)$c['state'], $key]); } catch (Throwable $e) { } } } }
+    }
+    if (!$ok && $text !== '') { [$ok] = wa_send_text($pdo, $c, $text, 'bot', 0, $replyTo); }
+    return (bool)$ok;
+}
+function wkw_fu_table(PDO $pdo): bool
+{
+    static $ok = null; if ($ok !== null) return $ok;
+    try { $pdo->exec("CREATE TABLE IF NOT EXISTS wkw_fu (id INT AUTO_INCREMENT PRIMARY KEY, phone VARCHAR(20) NOT NULL, rule_id VARCHAR(20) NOT NULL, in_id INT NOT NULL, step INT NOT NULL DEFAULT 0, last_at DATETIME NOT NULL, started_at DATETIME NOT NULL, done TINYINT NOT NULL DEFAULT 0, UNIQUE KEY u_wkf (phone, in_id), KEY k_wkf (done, last_at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"); return $ok = true; } catch (Throwable $e) { return $ok = false; }
+}
+/** The follow-ups run from the engine tick: for every customer who got an automatic reply and has not answered, the next follow-up goes when its time comes. */
+function wkw_fu_tick(PDO $pdo): int
+{
+    if (!wkw_fu_table($pdo)) return 0; $cfg = wkw_cfg($pdo); $by = []; foreach ($cfg['rules'] as $r) $by[(string)$r['id']] = $r; $n = 0; $now = time();
+    try {
+        $rows = $pdo->query("SELECT * FROM wkw_fu WHERE done = 0 ORDER BY last_at LIMIT 60")->fetchAll();
+        $done = $pdo->prepare("UPDATE wkw_fu SET done = 1 WHERE id = ?"); $adv = $pdo->prepare("UPDATE wkw_fu SET step = ?, last_at = ?, done = ? WHERE id = ?");
+        $ci = $pdo->prepare("SELECT * FROM wa_contacts WHERE phone = ?"); $nin = $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND dir = 'in' AND id > ? LIMIT 1"); $nem = $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND dir = 'out' AND emp_id > 0 AND ts >= ? LIMIT 1");
+        foreach ($rows as $f) {
+            if ($n >= 20) break; $r = $by[(string)$f['rule_id']] ?? null; $fu = $r && !empty($r['on']) ? array_values((array)($r['fu'] ?? [])) : []; $st = (int)$f['step'];
+            if (!$fu || $st >= count($fu)) { $done->execute([(int)$f['id']]); continue; }
+            if (strtotime((string)$f['last_at']) + (int)$fu[$st]['after_min'] * 60 > $now) continue;   // not yet
+            $ci->execute([(string)$f['phone']]); $c = $ci->fetch(); if (!$c) { $done->execute([(int)$f['id']]); continue; }
+            $nin->execute([(string)$f['phone'], (int)$f['in_id']]); $nem->execute([(string)$f['phone'], (string)$f['started_at']]);
+            if ($nin->fetchColumn() || $nem->fetchColumn() || (int)$c['optout'] === 1 || !empty($c['cx_id']) || (int)($c['assigned_emp'] ?? 0) > 0 || (string)$c['status'] !== 'open' || empty($c['last_in_at']) || strtotime((string)$c['last_in_at']) + 86400 - 120 < $now) { $done->execute([(int)$f['id']]); continue; }   // answered / a person took over / complaint / closed / the free 24 h are over: stop
+            if (function_exists('wa_auto_muted') && wa_auto_muted($pdo, (string)$f['phone'])) { $done->execute([(int)$f['id']]); continue; }
+            $ok = wkw_send($pdo, $c, (string)$fu[$st]['text'], (int)$fu[$st]['lib_id']);
+            if ($ok) { $n++; $dk = 'wkf_' . $f['rule_id'] . '_' . date('Y-m-d'); setting_set($pdo, $dk, (string)((int)setting_get($pdo, $dk, '0') + 1)); $adv->execute([$st + 1, date('Y-m-d H:i:s'), $st + 1 >= count($fu) ? 1 : 0, (int)$f['id']]); } else $done->execute([(int)$f['id']]);
+        }
+    } catch (Throwable $e) { }
+    return $n;
 }
 /** The rule a customer message belongs to (or null): the longest matching word wins; only short messages (a button / a few words) count. */
 function wkw_match(array $cfg, string $text): ?array
@@ -58,17 +106,8 @@ function wkw_try(PDO $pdo, string $key, bool $auto = true, string $onlyRule = ''
         $mk = 'wkw_' . $key; if ((string)setting_get($pdo, $mk, '') === (string)$m['id']) return false;
         $text = trim((string)$r['text']); if ($text === '' && (int)$r['lib_id'] <= 0) { setting_set($pdo, $mk, (string)$m['id']); if (function_exists('wa_event')) wa_event($pdo, $key, '⚠ The customer used the button "' . $r['name'] . '" but its message is empty — write it in Campaigns → ⚡ Button replies.'); return false; }
         setting_set($pdo, $mk, (string)$m['id']);
-        $nm = trim((string)($c['name'] ?? '')); $fn = preg_split('/\s+/u', $nm)[0] ?? ''; if ($fn === '' || !preg_match('/^\p{L}[\p{L}\p{M}.\'-]*$/u', $fn)) $fn = '';
-        $text = $fn !== '' ? str_ireplace('{name}', $fn, $text) : preg_replace('/[ ]*\{name\}/i', '', $text);
-        $ok = false;
-        if ((int)$r['lib_id'] > 0 && function_exists('wa_lib_row') && function_exists('wa_lib_media_id') && function_exists('wa_send_media')) {   // 📷 the photo (the message is its caption)
-            $row = wa_lib_row($pdo, (int)$r['lib_id']);
-            if ($row) { $q = $pdo->prepare("SELECT phone_id FROM wa_numbers WHERE id = ?"); $q->execute([(int)$c['last_number_id']]); $pid = (string)$q->fetchColumn(); if ($pid === '') $pid = wa_cfg_val('WA_PHONE_ID');
-                [$mid] = wa_lib_media_id($pdo, $row, $pid);
-                if ($mid !== '') { [$ok] = wa_send_media($pdo, $c, (string)$row['kind'], $mid, (string)$row['mime'], $text, (string)$row['filename'], 0); if ($ok) { try { $pdo->prepare("UPDATE wa_contacts SET state = ? WHERE phone = ?")->execute([(string)$c['state'], $key]); } catch (Throwable $e) { } } } }
-        }
-        if (!$ok && $text !== '') { [$ok] = wa_send_text($pdo, $c, $text, 'bot', 0, (string)($m['wamid'] ?? '')); }
-        if ($ok) { $dk = 'wkn_' . $r['id'] . '_' . date('Y-m-d'); setting_set($pdo, $dk, (string)((int)setting_get($pdo, $dk, '0') + 1)); }
+        $ok = wkw_send($pdo, $c, $text, (int)$r['lib_id'], (string)($m['wamid'] ?? ''));
+        if ($ok) { $dk = 'wkn_' . $r['id'] . '_' . date('Y-m-d'); setting_set($pdo, $dk, (string)((int)setting_get($pdo, $dk, '0') + 1)); if (!empty($r['fu']) && wkw_fu_table($pdo)) { try { $pdo->prepare("INSERT IGNORE INTO wkw_fu (phone, rule_id, in_id, step, last_at, started_at, done) VALUES (?, ?, ?, 0, ?, ?, 0)")->execute([$key, (string)$r['id'], (int)$m['id'], date('Y-m-d H:i:s'), date('Y-m-d H:i:s')]); } catch (Throwable $e) { } } }
         return (bool)$ok;
     } catch (Throwable $e) { return false; }
 }
@@ -100,7 +139,7 @@ if (in_array($__kwa, ['wa.kw_get', 'wa.kw_save', 'wa.kw_waiting'], true)) {
     }
     if ($__kwa === 'wa.kw_get') {
         $cfg = wkw_cfg($pdo); $w = wkw_waiting($pdo); $stats = [];
-        foreach ($cfg['rules'] as $r) { $stats[$r['id']] = ['sent' => (int)setting_get($pdo, 'wkn_' . $r['id'] . '_' . date('Y-m-d'), '0'), 'waiting' => 0]; }
+        foreach ($cfg['rules'] as $r) { $stats[$r['id']] = ['sent' => (int)setting_get($pdo, 'wkn_' . $r['id'] . '_' . date('Y-m-d'), '0'), 'fu' => (int)setting_get($pdo, 'wkf_' . $r['id'] . '_' . date('Y-m-d'), '0'), 'waiting' => 0]; }
         foreach ($w as $rid) if (isset($stats[$rid])) $stats[$rid]['waiting']++;
         json_response(['ok' => true, 'cfg' => $cfg, 'stats' => $stats, 'total_waiting' => count($w)]);
     }
