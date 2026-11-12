@@ -25,3 +25,10 @@ jobs:
           STAGING_PATH: ${{ secrets.STAGING_PATH }}
         run: |
           ssh "$STAGING_USER@$STAGING_HOST" "echo 'path: ${STAGING_PATH}empmanagment/cron_send.php'; which flock php; flock -n /tmp/wa_send.lock php ${STAGING_PATH}empmanagment/cron_send.php; echo exit=\$?" || true
+      - name: Why would cron not run it? (read-only look at the cron setup)
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" "echo \"user: \$(id -un)\"; echo '--- this user crontab (wa lines) ---'; crontab -l 2>&1 | grep -E 'wa_|cron_send|cron_engine' | cut -c1-230; echo '--- lock files ---'; ls -l /tmp/wa_send.lock /tmp/wa_engine.lock 2>&1; echo '--- php binaries ---'; ls -l /usr/bin/php /usr/bin/php8.3 2>&1; /usr/bin/php8.3 -v 2>&1 | head -1; echo '--- run the way cron does (clean environment), showing errors ---'; env -i HOME=\$HOME PATH=/usr/bin:/bin SHELL=/bin/sh flock -n /tmp/wa_send.lock /usr/bin/php8.3 ${STAGING_PATH}empmanagment/cron_send.php; echo exit=\$?" || true
