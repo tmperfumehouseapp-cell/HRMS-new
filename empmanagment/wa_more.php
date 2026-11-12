@@ -579,6 +579,7 @@ require_once __DIR__ . '/wa_done.php';
 require_once __DIR__ . '/wa_cxself.php';   // 🎫 a customer raises a complaint ticket themselves on WhatsApp    // ✅ order completed: one thank-you, then no automatic messages today and tomorrow (wa.order_done)    // ✨ utility versions of a campaign message (wa.tpl_make_utility, wa.tpl_utility_list)
 require_once __DIR__ . '/wa_diag.php';    // 🩺 Diagnose a campaign: why it failed, from the database + Meta live (wa.camp_diagnose)
 require_once __DIR__ . '/wa_origin.php';  // 📍 "Where did you find us?" asked when a new enquiry starts; the answer tags the chat (wa.origin_save)
+require_once __DIR__ . '/wa_kw.php';   // keyword auto-replies: 20 / 50 / 100 ML combo, offer
 require_once __DIR__ . '/wa_greet.php';   // Greetings: decided greeting per customer type + fixed replies, Claude writes from the Teach brain, synced into the Selling rules (wa.greet_*)
 require_once __DIR__ . '/wa_lists.php';   // 📋 Lists: ready perfume lists from live sales (Top 5 winter, Best sellers…), Claude builds and edits them (wl.*)
 require_once __DIR__ . '/wa_cust.php';    // 👥 Customers screen: date range first, tags any / all / not, pages, select all, bulk tag, 📁 segments, picked people for campaigns (wa.cs_*)
