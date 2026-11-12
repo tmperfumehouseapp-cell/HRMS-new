@@ -1198,7 +1198,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
             $key = wa_key(json_input()['phone'] ?? ''); $c = $key !== '' ? wa_contact($pdo, $key) : null; if (!$c) json_response(['error' => 'Chat not found.'], 404);
             if (!wa_can_chat($pdo, $auth, $c)) json_response(['error' => 'This chat is assigned to someone else.'], 403);
             $nm0 = employee_names_by_id($pdo)[(int)($auth['employee_id'] ?? 0)] ?? 'Admin';
-            if ($__wa === 'wa.close' && function_exists('wag_close_guard') && ($why = wag_close_guard($pdo, $auth, $c)) !== '') json_response(['error' => $why, 'need_result' => true], 422);   // every chat ends with a result
+            if ($__wa === 'wa.close' && empty(json_input()['quick']) && function_exists('wag_close_guard') && ($why = wag_close_guard($pdo, $auth, $c)) !== '') json_response(['error' => $why, 'need_result' => true], 422);   // every chat ends with a result
             if ($__wa === 'wa.close') { $pdo->prepare("UPDATE wa_contacts SET status = 'closed', closed_at = ? WHERE phone = ?")->execute([date('Y-m-d H:i:s'), $key]); wa_event($pdo, $key, 'Resolved by ' . $nm0); }
             else { $pdo->prepare("UPDATE wa_contacts SET status = 'open', closed_at = NULL WHERE phone = ?")->execute([$key]); wa_event($pdo, $key, 'Re-opened by ' . $nm0); }
             json_response(['ok' => true]);
