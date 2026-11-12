@@ -37,6 +37,18 @@ if (!function_exists('wa_overloaded')) { function wa_overloaded(): bool {
 } }
 
 /** The customer key: last 10 digits of the phone ("+91 97123 59275", "09712359275", "919712359275" → 9712359275). */
+/** 🚫 People Meta would not deliver to (held for too many marketing messages, not on WhatsApp, stopped marketing, in an experiment): one row per phone with the newest reason, so campaigns can leave them out. */
+function wa_unreach_tables(PDO $pdo): bool
+{
+    static $ok = null; if ($ok !== null) return $ok;
+    try { $pdo->exec("CREATE TABLE IF NOT EXISTS wa_unreach (phone VARCHAR(12) NOT NULL PRIMARY KEY, code INT NOT NULL DEFAULT 0, at DATETIME NOT NULL, KEY k_at (at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"); return $ok = true; } catch (Throwable $e) { return $ok = false; }
+}
+function wa_unreach_note(PDO $pdo, string $phone, int $code): void
+{
+    if ($phone === '' || !in_array($code, [131049, 131048, 131026, 131050, 130472], true)) return;
+    if (!wa_unreach_tables($pdo)) return;
+    try { $pdo->prepare("INSERT INTO wa_unreach (phone, code, at) VALUES (?, ?, NOW()) ON DUPLICATE KEY UPDATE code = VALUES(code), at = NOW()")->execute([$phone, $code]); } catch (Throwable $e) { }
+}
 function wa_key($n): string { $d = preg_replace('/\D+/', '', (string)$n) ?? ''; return strlen($d) > 10 ? substr($d, -10) : $d; }
 if (!function_exists('wa_body')) { function wa_body(): string { return (string)file_get_contents('php://input'); } }
 function wa_cfg_val(string $k): string { if (!defined($k)) return ''; $v = trim((string)constant($k)); return (stripos($v, 'paste-') === 0 || stripos($v, 'any-long-random') === 0) ? '' : $v; }
@@ -730,7 +742,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
                     $q = $pdo->prepare("SELECT status FROM wa_messages WHERE wamid = ?"); $q->execute([$id]); $old = $q->fetchColumn();
                     $e0 = (array)($s['errors'][0] ?? []); $ecode = (int)($e0['code'] ?? 0);   // why a message failed: Meta's first error (code + plain text) — kept on the message and on the campaign person
                     $et = trim((string)($e0['title'] ?? '')); $em = trim((string)($e0['message'] ?? '')); if ($em === '') $em = trim((string)($e0['error_data']['details'] ?? ''));
-                    if ($new === 'failed') wa_fail_raw($pdo, 'status', wa_key($s['recipient_id'] ?? ''), $id, $ecode, $s); $etext = mb_substr($et !== '' && $em !== '' && $et !== $em ? $et . ' — ' . $em : ($em !== '' ? $em : $et), 0, 190);
+                    if ($new === 'failed') wa_fail_raw($pdo, 'status', wa_key($s['recipient_id'] ?? ''), $id, $ecode, $s); if ($new === 'failed') wa_unreach_note($pdo, wa_key($s['recipient_id'] ?? ''), $ecode); $etext = mb_substr($et !== '' && $em !== '' && $et !== $em ? $et . ' — ' . $em : ($em !== '' ? $em : $et), 0, 190);
                     if ($old !== false && wa_status_rank($new) > wa_status_rank((string)$old)) {
                         if ($new === 'failed') { try { $pdo->prepare("UPDATE wa_messages SET status = ?, err = ?, err_code = ? WHERE wamid = ?")->execute([$new, $etext, $ecode, $id]); } catch (PDOException $e) { $pdo->prepare("UPDATE wa_messages SET status = ? WHERE wamid = ?")->execute([$new, $id]); } }
                         else $pdo->prepare("UPDATE wa_messages SET status = ? WHERE wamid = ?")->execute([$new, $id]);
