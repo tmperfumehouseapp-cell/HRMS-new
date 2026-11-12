@@ -23,6 +23,10 @@ These are the owner's standing rules for this HRMS. Follow them everywhere. If a
 - Salary figures are for Admin and HR only.
 - Penalties and punch rules follow the Boss Engine; do not make a second rule for the same thing.
 
+## WhatsApp messages
+- Wherever a message is set up (button replies, follow-ups, drip, planner, campaigns, quick sends), give BOTH ways: a typed message (with an optional photo) AND an approved-template picker. The owner should never have to ask for the template option again.
+- Free typed messages only work inside 24 hours after the customer's last message; a template can go later (Meta charges for it). Say this on the screen.
+
 ## Building (for the build robot)
 - PHP must stay PHP 7.4 safe. Run `php -l` on every PHP file you change and `node --check` on every JS file.
 - Match the existing design (store.css style pages, plain buttons). Phone width must work: 16px side gutter, no sideways page scroll.

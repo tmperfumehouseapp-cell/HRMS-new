@@ -33,19 +33,29 @@ function wkw_clean(array $in): array
         if (!is_array($r)) continue; $name = mb_substr(trim((string)($r['name'] ?? '')), 0, 60); if ($name === '') continue;
         $id = preg_replace('/[^a-z0-9_]/', '', strtolower((string)($r['id'] ?? ''))); if ($id === '' || isset($seen[$id])) $id = 'r' . substr(md5($name . microtime(true) . count($rules)), 0, 8); $seen[$id] = 1;
         $words = []; foreach ((array)($r['words'] ?? []) as $w) { $w = mb_substr(trim((string)$w), 0, 40); if ($w !== '') $words[] = $w; }
-        $rules[] = ['id' => $id, 'name' => $name, 'on' => !empty($r['on']), 'words' => array_slice(array_values(array_unique($words)), 0, 12), 'text' => mb_substr(trim((string)($r['text'] ?? '')), 0, 1000), 'lib_id' => max(0, (int)($r['lib_id'] ?? 0)), 'fu' => wkw_fu_clean($r['fu'] ?? [])];
+        $rules[] = ['id' => $id, 'name' => $name, 'on' => !empty($r['on']), 'words' => array_slice(array_values(array_unique($words)), 0, 12), 'text' => mb_substr(trim((string)($r['text'] ?? '')), 0, 1000), 'lib_id' => max(0, (int)($r['lib_id'] ?? 0)), 'tpl_id' => max(0, (int)($r['tpl_id'] ?? 0)), 'fu' => wkw_fu_clean($r['fu'] ?? [])];
     }
     return ['auto' => !empty($in['auto']), 'rules' => array_slice($rules, 0, 40)];
 }
 /** The follow-ups of a card: if the customer does not answer, after N minutes (since the previous automatic message) this goes. Empty ones are dropped. */
 function wkw_fu_clean($arr): array
 {
-    $o = []; foreach ((array)$arr as $f) { if (!is_array($f)) continue; $t = mb_substr(trim((string)($f['text'] ?? '')), 0, 1000); $l = max(0, (int)($f['lib_id'] ?? 0)); if ($t === '' && $l <= 0) continue; $o[] = ['after_min' => max(5, min(1380, (int)($f['after_min'] ?? 60))), 'text' => $t, 'lib_id' => $l]; }
+    $o = []; foreach ((array)$arr as $f) { if (!is_array($f)) continue; $t = mb_substr(trim((string)($f['text'] ?? '')), 0, 1000); $l = max(0, (int)($f['lib_id'] ?? 0)); $tp = max(0, (int)($f['tpl_id'] ?? 0)); if ($t === '' && $l <= 0 && $tp <= 0) continue; $o[] = ['after_min' => max(5, min($tp > 0 ? 10080 : 1380, (int)($f['after_min'] ?? 60))), 'text' => $t, 'lib_id' => $l, 'tpl_id' => $tp]; }   // a template may go after the free 24 hours (up to 7 days)
     return array_slice($o, 0, 6);
 }
 /** Sends one automatic message (text, or a library photo with the text as its caption). true = sent. */
-function wkw_send(PDO $pdo, array $c, string $text, int $libId, string $replyTo = ''): bool
+/** An approved template (one blank at most = the first name). Works outside the 24 hours too. */
+function wkw_send_tpl(PDO $pdo, array $c, int $tplId, int $libId): bool
 {
+    foreach (['wa_camp_tpl', 'wa_camp_ctx', 'wa_pick_number', 'wa_send_tpl_one'] as $f) if (!function_exists($f)) return false;
+    $t = wa_camp_tpl($pdo, $tplId, true, $libId); if (!$t) return false; $nv = (int)($t['nvars'] ?? 0); if ($nv > 1) return false;
+    $ctx = wa_camp_ctx($pdo, $t, 2); if (empty($ctx['nums'])) return false; [$nid] = wa_pick_number($pdo, $c, $ctx); if (!$nid || !isset($ctx['nums'][$nid])) return false;
+    $nm = trim((string)($c['name'] ?? '')); $fn = preg_split('/\s+/u', $nm)[0] ?? ''; if ($fn === '' || !preg_match('/^\p{L}[\p{L}\p{M}.\'-]*$/u', $fn)) $fn = 'ji';
+    [$ok] = wa_send_tpl_one($pdo, $c, $t, $ctx['nums'][$nid], $nv ? [$fn] : [], 'followup'); return (bool)$ok;
+}
+function wkw_send(PDO $pdo, array $c, string $text, int $libId, string $replyTo = '', int $tplId = 0): bool
+{
+    if ($tplId > 0) return wkw_send_tpl($pdo, $c, $tplId, $libId);
     $ok = false; $key = (string)$c['phone'];
     $nm = trim((string)($c['name'] ?? '')); $fn = preg_split('/\s+/u', $nm)[0] ?? ''; if ($fn === '' || !preg_match('/^\p{L}[\p{L}\p{M}.\'-]*$/u', $fn)) $fn = '';
     $text = $fn !== '' ? str_ireplace('{name}', $fn, $text) : preg_replace('/[ ]*\{name\}/i', '', $text);
@@ -77,9 +87,9 @@ function wkw_fu_tick(PDO $pdo): int
             if (strtotime((string)$f['last_at']) + (int)$fu[$st]['after_min'] * 60 > $now) continue;   // not yet
             $ci->execute([(string)$f['phone']]); $c = $ci->fetch(); if (!$c) { $done->execute([(int)$f['id']]); continue; }
             $nin->execute([(string)$f['phone'], (int)$f['in_id']]); $nem->execute([(string)$f['phone'], (string)$f['started_at']]);
-            if ($nin->fetchColumn() || $nem->fetchColumn() || (int)$c['optout'] === 1 || !empty($c['cx_id']) || (int)($c['assigned_emp'] ?? 0) > 0 || (string)$c['status'] !== 'open' || empty($c['last_in_at']) || strtotime((string)$c['last_in_at']) + 86400 - 120 < $now) { $done->execute([(int)$f['id']]); continue; }   // answered / a person took over / complaint / closed / the free 24 h are over: stop
+            if ($nin->fetchColumn() || $nem->fetchColumn() || (int)$c['optout'] === 1 || !empty($c['cx_id']) || (int)($c['assigned_emp'] ?? 0) > 0 || (string)$c['status'] !== 'open' || empty($c['last_in_at']) || ((int)($fu[$st]['tpl_id'] ?? 0) <= 0 && strtotime((string)$c['last_in_at']) + 86400 - 120 < $now)) { $done->execute([(int)$f['id']]); continue; }   // (a template needs no free window)   // answered / a person took over / complaint / closed / the free 24 h are over: stop
             if (function_exists('wa_auto_muted') && wa_auto_muted($pdo, (string)$f['phone'])) { $done->execute([(int)$f['id']]); continue; }
-            $ok = wkw_send($pdo, $c, (string)$fu[$st]['text'], (int)$fu[$st]['lib_id']);
+            $ok = wkw_send($pdo, $c, (string)$fu[$st]['text'], (int)$fu[$st]['lib_id'], '', (int)($fu[$st]['tpl_id'] ?? 0));
             if ($ok) { $n++; $dk = 'wkf_' . $f['rule_id'] . '_' . date('Y-m-d'); setting_set($pdo, $dk, (string)((int)setting_get($pdo, $dk, '0') + 1)); $adv->execute([$st + 1, date('Y-m-d H:i:s'), $st + 1 >= count($fu) ? 1 : 0, (int)$f['id']]); } else $done->execute([(int)$f['id']]);
         }
     } catch (Throwable $e) { }
@@ -104,9 +114,9 @@ function wkw_try(PDO $pdo, string $key, bool $auto = true, string $onlyRule = ''
         if (!$m || !in_array((string)$m['mtype'], ['text', 'button', 'interactive'], true)) return false;
         $r = wkw_match($cfg, (string)$m['body']); if (!$r || ($onlyRule !== '' && (string)$r['id'] !== $onlyRule)) return false;
         $mk = 'wkw_' . $key; if ((string)setting_get($pdo, $mk, '') === (string)$m['id']) return false;
-        $text = trim((string)$r['text']); if ($text === '' && (int)$r['lib_id'] <= 0) { setting_set($pdo, $mk, (string)$m['id']); if (function_exists('wa_event')) wa_event($pdo, $key, '⚠ The customer used the button "' . $r['name'] . '" but its message is empty — write it in Campaigns → ⚡ Button replies.'); return false; }
+        $text = trim((string)$r['text']); if ($text === '' && (int)$r['lib_id'] <= 0 && (int)($r['tpl_id'] ?? 0) <= 0) { setting_set($pdo, $mk, (string)$m['id']); if (function_exists('wa_event')) wa_event($pdo, $key, '⚠ The customer used the button "' . $r['name'] . '" but its message is empty — write it in Campaigns → ⚡ Button replies.'); return false; }
         setting_set($pdo, $mk, (string)$m['id']);
-        $ok = wkw_send($pdo, $c, $text, (int)$r['lib_id'], (string)($m['wamid'] ?? ''));
+        $ok = wkw_send($pdo, $c, $text, (int)$r['lib_id'], (string)($m['wamid'] ?? ''), (int)($r['tpl_id'] ?? 0));
         if ($ok) { $dk = 'wkn_' . $r['id'] . '_' . date('Y-m-d'); setting_set($pdo, $dk, (string)((int)setting_get($pdo, $dk, '0') + 1)); if (!empty($r['fu']) && wkw_fu_table($pdo)) { try { $pdo->prepare("INSERT IGNORE INTO wkw_fu (phone, rule_id, in_id, step, last_at, started_at, done) VALUES (?, ?, ?, 0, ?, ?, 0)")->execute([$key, (string)$r['id'], (int)$m['id'], date('Y-m-d H:i:s'), date('Y-m-d H:i:s')]); } catch (Throwable $e) { } } }
         return (bool)$ok;
     } catch (Throwable $e) { return false; }
