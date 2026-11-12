@@ -183,7 +183,7 @@ guardPage();
       const st = (p) => { const l = p.live || {}; if (l.break) return '<span class="chip off">☕ break</span>'; if (l.held_why === 'complaints') return '<span class="chip hold">complaints first</span>'; if (l.held_why === 'orders') return '<span class="chip hold">paused · needs 1 order</span>'; if (l.full) return '<span class="chip late">full</span>'; return '<span class="chip first">taking</span>'; };
       el.innerHTML = '<div style="border:2px solid ' + (on ? '#16a34a' : '#e5e7eb') + ';border-radius:16px;background:' + (on ? '#f0fdf4' : '#fff') + ';padding:14px;margin:0 0 14px">'
         + '<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap"><button type="button" id="wqxBtn" ' + (WX.busy ? 'disabled' : '') + ' style="min-height:56px;min-width:230px;border:0;border-radius:14px;font-size:18px;font-weight:900;color:#fff;cursor:pointer;background:' + (on ? '#dc2626' : '#16a34a') + '">' + (on ? '■ Stop auto assign' : '▶ Start auto assign') + '</button>'
-        + '<div style="flex:1;min-width:220px;font-size:13.5px;line-height:1.5"><b>' + (on ? '🟢 Running — every query goes by itself to the best seller who is free. Admin and Sales Heads can still assign by hand.' : '⚪ Stopped — queries are given as before.') + '</b><br><span style="color:var(--muted)">'
+        + '<div style="flex:1;min-width:220px;font-size:13.5px;line-height:1.5"><b>' + (on ? '🟢 Running — every query goes by itself to the best seller who is free. Assign / Take over / Transfer by hand still work.' : '⚪ Stopped — queries are given as before.') + '</b><br><span style="color:var(--muted)">'
         + (on ? 'Today: ' + (T.given || 0) + ' given · ' + (T.moved || 0) + ' moved (no answer in time)' + (T.none ? ' · ' + T.none + ' waited (nobody at work)' : '') + ' · ' + (T.with_bot || 0) + ' with the bot now (a person gets each within 10 min) · ' : '')
         + 'Team ' + (tm.ratio == null ? '—' : tm.ratio + '%') + ' orders per query · ticket ₹' + (tm.ticket || '—') + ' · answer within ~' + (d.timer ? (Math.round(d.timer / 6) / 10) : '—') + ' min (' + esc(d.timer_why || '') + ')</span></div>'
         + '<button type="button" id="wqxMore" style="border:1px solid var(--line);background:#fff;border-radius:10px;padding:8px 12px;font-weight:700;cursor:pointer">' + (WX.open ? 'Hide ▴' : 'Who gets what / why not ▾') + '</button></div>'
@@ -206,7 +206,7 @@ guardPage();
     if (e.target.closest('#wqxMore')) { WX.open = !WX.open; WX.draw(); return; }
     if (!e.target.closest('#wqxBtn') || WX.busy || !WX.d) return;
     const on = WX.d.mode === 'live';
-    if (!on && !confirm('Start auto assign?\n\nEvery new query will go by itself to the best seller who is free. Salespeople can no longer give chats by hand (they can still Take over and hand over their own chats). The admin panel and Sales Heads can still assign as before. The Team manager stops deciding.')) return;
+    if (!on && !confirm('Start auto assign?\n\nEvery new query will go by itself to the best seller who is free. Everyone can still Assign a chat to someone, Take over and hand over chats as before; only bulk assign and grabbing from the waiting list are left to the admin panel and Sales Heads. The Team manager stops deciding.')) return;
     if (on && !confirm('Stop auto assign? Chats will be given as before.')) return;
     WX.busy = true; WX.draw();
     try { await api.post('wq.mkt_mode', { mode: on ? 'off' : 'live' }); } catch (er) { alert((er && er.message) || 'Could not change'); }
