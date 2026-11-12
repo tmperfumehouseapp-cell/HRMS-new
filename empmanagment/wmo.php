@@ -109,7 +109,7 @@ function wmo_lines(PDO $pdo, int $totalP, array $perf, array $chains, array $sin
         $in = implode(',', array_fill(0, count($want), '?'));
         $st = $pdo->prepare("SELECT v.vid, v.pid, v.sku, v.title vtitle, v.ml, v.price_p, v.avail, p.title, p.short, p.kind FROM wch_var v JOIN wch_prod p ON p.pid = v.pid WHERE v.vid IN ($in)"); $st->execute(array_keys($want)); $rows = $st->fetchAll();
     } catch (Throwable $e) { return [[], 0, 'The product catalogue is not ready. Refresh it once (Sales → WhatsApp → Chain cart) and try again.']; }
-    $by = []; foreach ($rows as $r) $by[(int)$r['vid']] = $r;
+    $by = []; foreach ($rows as $r) { if ($r['ml'] === null && function_exists('wch_title_ml10') && ($m10 = wch_title_ml10((string)$r['title'])) !== null) $r['ml'] = $m10; $by[(int)$r['vid']] = $r; }
     $L = []; $chainP = 0; $ml = 0; $singleP = 0;
     foreach ($want as $vid => $w) {
         $r = $by[$vid] ?? null; if (!$r) return [[], 0, 'A product is not in the catalogue any more. Search it again.'];
