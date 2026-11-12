@@ -26,6 +26,8 @@
  * Heavy maths runs in the background at most every 5 minutes (one copy at a time) and is stored; the assigning pass only reads the stored copy.
  *
  * Giving by hand: OFF for everyone while it runs. The admin tells Claude instead (wq.mkt_ask): Claude assigns the chat and keeps the concern as a rule.
+ * Bot first: a new chat goes to a person only when 🔴 ready to pay (after a 45 s open race where anybody may Accept it), 🟠 interested, VIP / returning,
+ * the customer keeps writing (4+), or the bot is silent. Plain chats stay with the bot and use nobody's room.
  * Actions: wq.mkt_ask POST {text} · wq.mkt_hint_del POST {id} · wq.mkt_get (admin board) · wq.mkt_mode POST {mode} · wq.mkt_cfg POST {break_max, explore} · wq.mkt_recalc POST · wq.mkt_me (salesperson)
  *          wq.mkt_break POST {on: 1|0} (salesperson)
  * Tables: wqx_log (every decision), wqx_break (breaks).
@@ -288,9 +290,19 @@ function wqx_last_seller(PDO $pdo, string $phone): int
 {
     try { $q = $pdo->prepare("SELECT q.emp_id FROM wa_queries q JOIN wq_qstat s ON s.query_id = q.id WHERE q.phone = ? AND s.orders > 0 AND q.emp_id > 0 ORDER BY q.id DESC LIMIT 1"); $q->execute([$phone]); return (int)$q->fetchColumn(); } catch (Throwable $e) { return 0; }
 }
+/** The red / orange of the Needs-you-now list (the bot's reading of the customer's words — the SAME colours the screens show). [phone => red|orange] */
+function wqx_need_levels(PDO $pdo): array
+{
+    static $m = null; if ($m !== null) return $m; $m = [];
+    if (function_exists('wq_needs')) { try { foreach (wq_needs($pdo, 0, false) as $x) $m[(string)$x['phone']] = (string)$x['level']; } catch (Throwable $e) { } }
+    return $m;
+}
 /** Heat of a chat: red (ready to pay) | orange (interested) | '' */
 function wqx_heat(PDO $pdo, array $c): string
 {
+    $lv = wqx_need_levels($pdo)[(string)$c['phone']] ?? ''; if ($lv === 'red') return 'red';
+    if ((int)($c['hot'] ?? 0) === 1 || (string)($c['tag'] ?? '') === 'buy') return 'red';
+    if ($lv === 'orange') return 'orange';
     if ((int)($c['hot'] ?? 0) === 1 || (string)($c['tag'] ?? '') === 'buy') return 'red';
     if ((string)($c['tag'] ?? '') === 'price') return 'orange';
     try { $q = $pdo->prepare("SELECT tag FROM wa_ctags WHERE phone = ? AND tag IN ('hot','orange') LIMIT 2"); $q->execute([(string)$c['phone']]); $t = $q->fetchAll(PDO::FETCH_COLUMN); if (in_array('hot', $t, true)) return 'red'; if ($t) return 'orange'; } catch (Throwable $e) { }
@@ -350,23 +362,23 @@ function wqx_log(PDO $pdo, string $phone, string $inAt, string $kind, int $from,
 }
 
 // ------------------------------------------------------------------------------------------------------------------ one line of coaching (WhatsApp and Team performance say the SAME thing)
-/** The ONE most important thing for this person right now, short, in Gujarati. [text, tone: red|amber|green|grey] */
+/** The ONE most important thing for this person right now, short, in English. [text, tone: red|amber|green|grey] */
 function wqx_coach(?array $l = null, ?array $p = null, array $prof = [], bool $onBreak = false, int $brUsed = 0, int $brMax = 60): array
 {
     if (!$l) return ['', 'grey'];
     $tm = (array)($prof['team'] ?? []); $tTk = (int)($tm['ticket'] ?? 0); $tSp = $prof['team_speed'] ?? null;
-    if ($onBreak) return ['☕ બ્રેક પર છો — નવી ક્વેરી નહીં આવે (' . $brUsed . '/' . $brMax . ' મિનિટ)', 'grey'];
-    if (empty($l['present'])) return ['⏰ પંચ-ઇન કરો (ઓફિસ કે વર્ક ફ્રોમ હોમ) — તો જ ક્વેરી અને કમિશન મળશે', 'red'];
-    if ((string)($l['held_why'] ?? '') === 'complaints') return ['🔴 પહેલા ' . (int)$l['overdue_cx'] . ' ફરિયાદ ઉકેલો — પછી નવી ક્વેરી મળશે', 'red'];
-    if ((string)($l['held_why'] ?? '') === 'orders') return ['⛔ ક્વેરી બંધ — તમારો રેશિયો ટીમથી ઓછો. 1 ઓર્ડર પાડો, ક્વેરી ફરી ચાલુ', 'red'];
-    if ((int)($l['lost_today'] ?? 0) > 0) return ['⚠ આજે ' . (int)$l['lost_today'] . ' ચેટ જવાબ ન આપવાથી બીજાને ગઈ — ઓર્ડર-કમિશન એમનું. ચેટ પર રહો', 'red'];
-    if (!empty($l['full'])) return ['⏳ ' . (int)$l['load'] . ' ચાલુ ચેટ — પહેલા જવાબ આપો, પછી નવી ક્વેરી', 'amber'];
-    $sp = $p['speed_today'] ?? null; if ($sp !== null && $tSp !== null && (float)$sp > max(3.0, 1.5 * (float)$tSp)) return ['⚡ જવાબ ઝડપથી આપો — તમે ' . round((float)$sp, 1) . ' મિનિટ, ટીમ ' . round((float)$tSp, 1) . ' મિનિટ', 'amber'];
-    $tk = $p['ticket'] ?? null; if ($tk !== null && $tTk > 0 && (int)($p['orders'] ?? 0) >= 3 && (float)$tk < 0.85 * $tTk) return ['🛍 સેટ / કોમ્બો / મોટી સાઇઝ ઓફર કરો — ટિકિટ ₹' . (int)$tk . ', ટીમ ₹' . $tTk . '. ડિસ્કાઉન્ટ નહીં', 'amber'];
-    if ($l['answered_min_ago'] === null && (int)($l['load'] ?? 0) === 0 && (float)($p['idx'] ?? 1) >= 1.0) return ['🙋 તમે સારું વેચો છો — ક્વેરી આવે કે તરત ઉપાડો', 'green'];
-    if (!empty($p['trial'])) return ['🌱 નવા છો — ઝડપથી જવાબ, સેટ ઓફર કરો; ઓર્ડર પાડશો તો વધુ ક્વેરી', 'green'];
-    if ((float)($p['idx'] ?? 1) >= 1.15) return ['🚀 ટોપ સેલર — વધુ ક્વેરી તમને જ. મોટી ટિકિટ રાખો', 'green'];
-    return ['✅ ક્વેરી ચાલુ — ઝડપથી જવાબ, મોટી ટિકિટ = વધુ ક્વેરી', 'green'];
+    if ($onBreak) return ['☕ On a break — no new queries (' . $brUsed . '/' . $brMax . ' min)', 'grey'];
+    if (empty($l['present'])) return ['⏰ Punch in (office or work from home) — no punch-in, no queries, no commission', 'red'];
+    if ((string)($l['held_why'] ?? '') === 'complaints') return ['🔴 Solve your ' . (int)$l['overdue_cx'] . ' overdue complaint(s) first — then queries come', 'red'];
+    if ((string)($l['held_why'] ?? '') === 'orders') return ['⛔ Queries paused — your ratio is below the team. Close 1 order to restart', 'red'];
+    if ((int)($l['lost_today'] ?? 0) > 0) return ['⚠ ' . (int)$l['lost_today'] . ' chat(s) lost today for no reply — their order & commission went to others. Stay on your chats', 'red'];
+    if (!empty($l['full'])) return ['⏳ ' . (int)$l['load'] . ' live chats — answer them first, then new queries come', 'amber'];
+    $sp = $p['speed_today'] ?? null; if ($sp !== null && $tSp !== null && (float)$sp > max(3.0, 1.5 * (float)$tSp)) return ['⚡ Reply faster — you ' . round((float)$sp, 1) . ' min, team ' . round((float)$tSp, 1) . ' min', 'amber'];
+    $tk = $p['ticket'] ?? null; if ($tk !== null && $tTk > 0 && (int)($p['orders'] ?? 0) >= 3 && (float)$tk < 0.85 * $tTk) return ['🛍 Offer sets / combos / bigger size — your ticket ₹' . (int)$tk . ', team ₹' . $tTk . '. No heavy discounts', 'amber'];
+    if ($l['answered_min_ago'] === null && (int)($l['load'] ?? 0) === 0 && (float)($p['idx'] ?? 1) >= 1.0) return ['🙋 You sell well — open new queries the moment they come', 'green'];
+    if (!empty($p['trial'])) return ['🌱 New here — reply fast, offer sets; orders bring you more queries', 'green'];
+    if ((float)($p['idx'] ?? 1) >= 1.15) return ['🚀 Top seller — more queries come to you. Keep the ticket big', 'green'];
+    return ['✅ Queries on — fast replies + big tickets = more queries', 'green'];
 }
 
 // ------------------------------------------------------------------------------------------------------------------ "tell Claude" — the only way to give a chat by hand
@@ -466,13 +478,32 @@ function wqx_run(PDO $pdo, bool $allowBuild = true): array
             AND c.status = 'open' AND c.optout = 0 AND c.last_in_at >= ? AND (c.last_out_at IS NULL OR c.last_out_at < c.last_in_at OR NOT EXISTS (SELECT 1 FROM wa_messages h WHERE h.phone = c.phone AND $humanSql)) AND $notBiz ORDER BY c.hot DESC, c.last_in_at LIMIT 40");
         $st->execute([wqx_dt($now - 86400 + 600)]);
         // most valuable first, so the best sellers' room goes to them: ready to pay → VIP → returning buyer → interested → the longest wait
-        $todo = []; foreach ($st->fetchAll() as $c) { $h0 = wqx_heat($pdo, $c); $v0 = wqx_vip($pdo, (string)$c['phone'], (int)($prof['vip_line'] ?? 0)); $r0 = !$v0 && wqx_last_seller($pdo, (string)$c['phone']) > 0;
-            $c['_heat'] = $h0; $c['_rank'] = ($h0 === 'red' ? 0 : ($v0 ? 1 : ($r0 ? 2 : ($h0 === 'orange' ? 3 : 4)))); $todo[] = $c; }
+        // 🤖 the BOT talks first. A chat goes to a person when: 🔴 ready to pay (after a short open race — anybody may Accept it first) · 🟠 interested ·
+        //    VIP or returning buyer (at once) · the customer keeps writing (4+ messages with no person) · the bot is silent (did not answer within a minute).
+        $race = 45; $todo = [];
+        $botQ = $pdo->prepare("SELECT MAX(ts) FROM wa_messages WHERE phone = ? AND dir = 'out' AND who IN ('bot','auto','flow') AND ts >= ?");
+        $inQ = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE phone = ? AND dir = 'in' AND ts >= GREATEST(?, COALESCE((SELECT MAX(p.ts) FROM wa_messages p WHERE p.phone = ? AND p.dir = 'out' AND p.emp_id > 0), '1970-01-01'))");   // customer messages since a PERSON last answered
+        foreach ($st->fetchAll() as $c) {
+            $ph = (string)$c['phone']; $age = $now - wqx_ts($c['last_in_at']); $h0 = wqx_heat($pdo, $c); $v0 = wqx_vip($pdo, $ph, (int)($prof['vip_line'] ?? 0)); $r0 = !$v0 && wqx_last_seller($pdo, $ph) > 0;
+            $why0 = '';
+            if ($h0 === 'red') { if ($age < $race) continue; $why0 = '🔴 ready to pay, nobody accepted in ' . $race . ' s'; }
+            elseif ($v0) $why0 = '⭐ VIP';
+            elseif ($r0) $why0 = '🔁 returning buyer';
+            elseif ($h0 === 'orange') $why0 = '🟠 interested';
+            else {
+                $bot = 0; try { $botQ->execute([$ph, wqx_dt($now - 86400)]); $bot = wqx_ts($botQ->fetchColumn()); } catch (Throwable $e) { }
+                $nIn = 0; try { $inQ->execute([$ph, wqx_dt($now - 86400), $ph]); $nIn = (int)$inQ->fetchColumn(); } catch (Throwable $e) { }
+                if ($bot < wqx_ts($c['last_in_at']) && $age >= 60) $why0 = '🤖 the bot did not answer';
+                elseif ($nIn >= 4) $why0 = '💬 customer keeps writing (' . $nIn . ' messages)';
+                else continue;   // the bot is handling it: no person's room is used
+            }
+            $c['_heat'] = $h0; $c['_why'] = $why0; $c['_rank'] = ($h0 === 'red' ? 0 : ($v0 ? 1 : ($r0 ? 2 : ($h0 === 'orange' ? 3 : 4)))); $todo[] = $c;
+        }
         usort($todo, function ($a, $b) { return [$a['_rank'], (string)$a['last_in_at']] <=> [$b['_rank'], (string)$b['last_in_at']]; });
         foreach ($todo as $c) {
             $heat = (string)$c['_heat']; [$to, $kind, $why] = wqx_pick($pdo, $c, $L, $prof, $cfg, 0, $heat);
             if ($to <= 0) { if (!wqx_logged($pdo, (string)$c['phone'], (string)$c['last_in_at'], 'none')) wqx_log($pdo, (string)$c['phone'], (string)$c['last_in_at'], 'none', 0, 0, $why, false, $mode); continue; }
-            $give($c, $to, $kind, ($heat !== '' ? ($heat === 'red' ? '🔴 ' : '🟠 ') : '') . $why, 0); $res['new']++;
+            $give($c, $to, $kind, $c['_why'] . ' → ' . $why, 0); $res['new']++;
         }
         // B) waiting too long with its holder: no proper answer since the customer's last message
         $st = $pdo->prepare("SELECT c.phone, c.name, c.last_in_at, c.assigned_emp, c.assigned_at, c.hot, c.tag FROM wa_contacts c WHERE c.assigned_emp > 0 AND (c.cx_id IS NULL OR c.cx_id = 0) AND (c.tag IS NULL OR c.tag <> 'complaint')
