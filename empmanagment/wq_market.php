@@ -27,7 +27,7 @@
  *
  * Giving by hand: OFF for everyone while it runs. The admin tells Claude instead (wq.mkt_ask): Claude assigns the chat and keeps the concern as a rule.
  * Bot first: a new chat goes to a person only when 🔴 ready to pay (after a 45 s open race where anybody may Accept it), 🟠 interested, VIP / returning,
- * the customer keeps writing (4+), or the bot is silent. Plain chats stay with the bot and use nobody's room.
+ * the customer answers the bot 2-3 times, or the bot is silent. Plain chats stay with the bot and use nobody's room.
  * Actions: wq.mkt_ask POST {text} · wq.mkt_hint_del POST {id} · wq.mkt_get (admin board) · wq.mkt_mode POST {mode} · wq.mkt_cfg POST {break_max, explore} · wq.mkt_recalc POST · wq.mkt_me (salesperson)
  *          wq.mkt_break POST {on: 1|0} (salesperson)
  * Tables: wqx_log (every decision), wqx_break (breaks).
@@ -479,7 +479,7 @@ function wqx_run(PDO $pdo, bool $allowBuild = true): array
         $st->execute([wqx_dt($now - 86400 + 600)]);
         // most valuable first, so the best sellers' room goes to them: ready to pay → VIP → returning buyer → interested → the longest wait
         // 🤖 the BOT talks first. A chat goes to a person when: 🔴 ready to pay (after a short open race — anybody may Accept it first) · 🟠 interested ·
-        //    VIP or returning buyer (at once) · the customer keeps writing (4+ messages with no person) · the bot is silent (did not answer within a minute).
+        //    VIP or returning buyer (at once) · the customer answers the bot 2-3 times (3+ messages, no person yet) · the bot is silent (no answer within a minute).
         $race = 45; $todo = [];
         $botQ = $pdo->prepare("SELECT MAX(ts) FROM wa_messages WHERE phone = ? AND dir = 'out' AND who IN ('bot','auto','flow') AND ts >= ?");
         $inQ = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE phone = ? AND dir = 'in' AND ts >= GREATEST(?, COALESCE((SELECT MAX(p.ts) FROM wa_messages p WHERE p.phone = ? AND p.dir = 'out' AND p.emp_id > 0), '1970-01-01'))");   // customer messages since a PERSON last answered
@@ -494,7 +494,7 @@ function wqx_run(PDO $pdo, bool $allowBuild = true): array
                 $bot = 0; try { $botQ->execute([$ph, wqx_dt($now - 86400)]); $bot = wqx_ts($botQ->fetchColumn()); } catch (Throwable $e) { }
                 $nIn = 0; try { $inQ->execute([$ph, wqx_dt($now - 86400), $ph]); $nIn = (int)$inQ->fetchColumn(); } catch (Throwable $e) { }
                 if ($bot < wqx_ts($c['last_in_at']) && $age >= 60) $why0 = '🤖 the bot did not answer';
-                elseif ($nIn >= 4) $why0 = '💬 customer keeps writing (' . $nIn . ' messages)';
+                elseif ($nIn >= 3 && $bot > 0) $why0 = '💬 customer is talking to the bot (' . $nIn . ' messages) — a person takes over';
                 else continue;   // the bot is handling it: no person's room is used
             }
             $c['_heat'] = $h0; $c['_why'] = $why0; $c['_rank'] = ($h0 === 'red' ? 0 : ($v0 ? 1 : ($r0 ? 2 : ($h0 === 'orange' ? 3 : 4)))); $todo[] = $c;
@@ -525,6 +525,16 @@ function wqx_run(PDO $pdo, bool $allowBuild = true): array
     } catch (Throwable $e) { error_log('wqx_run: ' . $e->getMessage()); $res['error'] = mb_substr($e->getMessage(), 0, 160); }
     finally { try { $pdo->query("SELECT RELEASE_LOCK('wqx_run')"); } catch (Throwable $e) { } }
     return $res;
+}
+/** May this person Accept a 🔴 chat in the open race? Not on a break, not paused, not with overdue complaints, at work. '' = yes, else the reason. */
+function wqx_can_race(PDO $pdo, int $emp): string
+{
+    $prof = wqx_profile($pdo, false); $L = wqx_live($pdo, $prof); $l = $L[$emp] ?? null; if (!$l) return '';   // not in sales: the old rules decide
+    if (!$l['present']) return 'Punch in (office or work from home) to take queries.';
+    if ($l['break']) return 'You are on a break.';
+    if ($l['held_why'] === 'complaints') return 'Solve your overdue complaints first.';
+    if ($l['held_why'] === 'orders') return 'Queries are paused for you — close 1 order first.';
+    return '';
 }
 /** Called from wa_tick (every engine run and from the webhook): the webhook never builds the profile. */
 function wqx_tick(PDO $pdo): array { return wqx_run($pdo, !defined('WA_IN_WEBHOOK')); }
