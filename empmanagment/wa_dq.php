@@ -367,6 +367,14 @@ function wa_dq_stall(PDO $pdo, array $o): ?array
     $eng = max((int)strtotime((string)setting_get($pdo, 'wa_cron_at', '')), (int)strtotime((string)setting_get($pdo, 'wa_send_at', '')));
     return ['idle_min' => $idle, 'people' => (int)$o['people'], 'campaigns' => (int)$o['campaigns'], 'engine_min' => $eng > 0 ? (int)floor((time() - $eng) / 60) : null];
 }
+/** ⏰ Scheduled campaigns that are overdue: their start time passed more than 5 minutes ago and they have not started, which means nothing is running the engine. Returns null when none. */
+function wa_dq_overdue(PDO $pdo): ?array
+{
+    try { $r = $pdo->query("SELECT COUNT(*) n, MIN(start_at) first FROM wa_campaigns WHERE status = 'scheduled' AND start_at IS NOT NULL AND start_at < DATE_SUB(NOW(), INTERVAL 5 MINUTE)")->fetch(PDO::FETCH_ASSOC); } catch (Throwable $e) { return null; }
+    if (!$r || (int)$r['n'] <= 0) return null;
+    $eng = max((int)strtotime((string)setting_get($pdo, 'wa_cron_at', '')), (int)strtotime((string)setting_get($pdo, 'wa_send_at', '')));
+    return ['n' => (int)$r['n'], 'late_min' => max(0, (int)floor((time() - (int)strtotime((string)$r['first'])) / 60)), 'engine_min' => $eng > 0 ? (int)floor((time() - $eng) / 60) : null];
+}
 function wa_dq_status(PDO $pdo): array
 {
     $cfg = wa_dq_cfg($pdo);
@@ -375,6 +383,7 @@ function wa_dq_status(PDO $pdo): array
     try { $r = $pdo->query("SELECT COUNT(DISTINCT i.phone) AS p, COUNT(DISTINCT i.camp_id) AS c FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id WHERE c.status = 'running' AND i.status IN ('queued', 'retry')")->fetch(); $o['people'] = (int)$r['p']; $o['campaigns'] = (int)$r['c']; } catch (Throwable $e) { }
     try { $o['eta'] = wa_dq_eta($pdo, $o); } catch (Throwable $e) { $o['eta'] = []; }
     try { $o['stall'] = wa_dq_stall($pdo, $o); } catch (Throwable $e) { $o['stall'] = null; }
+    try { $o['overdue'] = wa_dq_overdue($pdo); } catch (Throwable $e) { $o['overdue'] = null; }
     try { setting_set($pdo, 'wa_dq_stat', json_encode($o)); } catch (Throwable $e) { }
     return $o;
 }
