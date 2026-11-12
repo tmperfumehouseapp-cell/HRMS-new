@@ -357,6 +357,16 @@ function wa_dq_eta(PDO $pdo, array $st): array
     } catch (Throwable $e) { return []; }
     wa_cpc_put($pdo, 'dq_eta', $out); return $out;
 }
+/** ⚠ A stall: campaigns are waiting, the plan has room (no hour / day / money reason), yet nothing was pushed for 15 minutes or more. Returns null when everything is fine. */
+function wa_dq_stall(PDO $pdo, array $o): ?array
+{
+    if (empty($o['on']) || (string)($o['why'] ?? '') !== '' || (int)($o['campaigns'] ?? 0) <= 0 || (int)($o['people'] ?? 0) <= 0) return null;
+    $last = 0;
+    try { $last = (int)strtotime((string)$pdo->query("SELECT MAX(ts) FROM wa_messages WHERE dir = 'out' AND who IN ('campaign', 'recover') AND mtype = 'template' AND ts >= DATE_SUB(NOW(), INTERVAL 3 HOUR)")->fetchColumn()); } catch (Throwable $e) { return null; }
+    $idle = $last > 0 ? (int)floor((time() - $last) / 60) : 180; if ($idle < 15) return null;
+    $eng = max((int)strtotime((string)setting_get($pdo, 'wa_cron_at', '')), (int)strtotime((string)setting_get($pdo, 'wa_send_at', '')));
+    return ['idle_min' => $idle, 'people' => (int)$o['people'], 'campaigns' => (int)$o['campaigns'], 'engine_min' => $eng > 0 ? (int)floor((time() - $eng) / 60) : null];
+}
 function wa_dq_status(PDO $pdo): array
 {
     $cfg = wa_dq_cfg($pdo);
@@ -364,6 +374,7 @@ function wa_dq_status(PDO $pdo): array
     $l = wa_dq_left($pdo); $o = ['t' => time(), 'pace' => $l['pace'] ?? null, 'on' => $cfg['on'], 'cap' => $cfg['hourly'], 'used' => $l['used'], 'exp' => $l['exp'], 'rate' => $l['rate'], 'state' => $l['state'], 'range' => $l['range'], 'm_live' => $l['m_live'], 'mult' => $l['mult'], 'eff_cap' => $l['eff_cap'], 'learning' => $l['learning'], 'smart' => $l['smart'], 'left' => $l['left'], 'daily' => $l['daily'], 'day_used' => $l['day_used'], 'why' => $l['why'], 'spend' => $l['spend'], 'budget' => $l['budget'], 'push_cap' => $l['push_cap'], 'limit_mode' => (string)setting_get($pdo, 'wa_limit_mode', 'shared'), 'early' => (string)setting_get($pdo, 'wa_dq_early', '1') !== '0', 'auto' => $cfg['auto'], 'dmin' => $cfg['dmin'], 'dmax' => $cfg['dmax'], 'base' => $cfg['base'], 'auto_last' => wa_dq_auto_last($pdo), 'people' => 0, 'campaigns' => 0, 'gap_days' => max(0, (int)setting_get($pdo, 'wa_camp_gap_days', '3'))];
     try { $r = $pdo->query("SELECT COUNT(DISTINCT i.phone) AS p, COUNT(DISTINCT i.camp_id) AS c FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id WHERE c.status = 'running' AND i.status IN ('queued', 'retry')")->fetch(); $o['people'] = (int)$r['p']; $o['campaigns'] = (int)$r['c']; } catch (Throwable $e) { }
     try { $o['eta'] = wa_dq_eta($pdo, $o); } catch (Throwable $e) { $o['eta'] = []; }
+    try { $o['stall'] = wa_dq_stall($pdo, $o); } catch (Throwable $e) { $o['stall'] = null; }
     try { setting_set($pdo, 'wa_dq_stat', json_encode($o)); } catch (Throwable $e) { }
     return $o;
 }
