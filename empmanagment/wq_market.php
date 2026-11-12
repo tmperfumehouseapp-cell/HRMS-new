@@ -27,7 +27,8 @@
  *
  * Giving by hand: OFF for everyone while it runs. The admin tells Claude instead (wq.mkt_ask): Claude assigns the chat and keeps the concern as a rule.
  * Bot first: a new chat goes to a person only when 🔴 ready to pay (after a 45 s open race where anybody may Accept it), 🟠 interested, VIP / returning,
- * the customer answers the bot 2-3 times, or the bot is silent. Plain chats stay with the bot and use nobody's room.
+ * the customer answers the bot 2-3 times, or the bot is silent. Plain chats stay with the bot and use nobody's room — but never forever: after 10 min with the bot only
+ * (wqx_sweep_sec) every chat is shared out evenly for a person's follow-up, so no query is left unassigned (as with manual giving).
  * Actions: wq.mkt_ask POST {text} · wq.mkt_hint_del POST {id} · wq.mkt_get (admin board) · wq.mkt_mode POST {mode} · wq.mkt_cfg POST {break_max, explore} · wq.mkt_recalc POST · wq.mkt_me (salesperson)
  *          wq.mkt_break POST {on: 1|0} (salesperson)
  * Tables: wqx_log (every decision), wqx_break (breaks).
@@ -480,7 +481,7 @@ function wqx_run(PDO $pdo, bool $allowBuild = true): array
         // most valuable first, so the best sellers' room goes to them: ready to pay → VIP → returning buyer → interested → the longest wait
         // 🤖 the BOT talks first. A chat goes to a person when: 🔴 ready to pay (after a short open race — anybody may Accept it first) · 🟠 interested ·
         //    VIP or returning buyer (at once) · the customer answers the bot 2-3 times (3+ messages, no person yet) · the bot is silent (no answer within a minute).
-        $race = 45; $todo = [];
+        $race = 45; $todo = []; $sweep = max(300, min(3600, (int)setting_get($pdo, 'wqx_sweep_sec', '600')));   // 🧹 every query reaches a person: a chat the bot alone has had for 10 min (setting) is given for a follow-up
         $botQ = $pdo->prepare("SELECT MAX(ts) FROM wa_messages WHERE phone = ? AND dir = 'out' AND who IN ('bot','auto','flow') AND ts >= ?");
         $inQ = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE phone = ? AND dir = 'in' AND ts >= GREATEST(?, COALESCE((SELECT MAX(p.ts) FROM wa_messages p WHERE p.phone = ? AND p.dir = 'out' AND p.emp_id > 0), '1970-01-01'))");   // customer messages since a PERSON last answered
         foreach ($st->fetchAll() as $c) {
@@ -494,6 +495,7 @@ function wqx_run(PDO $pdo, bool $allowBuild = true): array
                 $bot = 0; try { $botQ->execute([$ph, wqx_dt($now - 86400)]); $bot = wqx_ts($botQ->fetchColumn()); } catch (Throwable $e) { }
                 $nIn = 0; try { $inQ->execute([$ph, wqx_dt($now - 86400), $ph]); $nIn = (int)$inQ->fetchColumn(); } catch (Throwable $e) { }
                 if ($bot < wqx_ts($c['last_in_at']) && $age >= 60) $why0 = '🤖 the bot did not answer';
+                elseif ($age >= $sweep) { $why0 = '🧹 no query is left: ' . (int)round($age / 60) . ' min with the bot only — a person follows up'; $c['_sweep'] = 1; }
                 elseif ($nIn >= 3 && $bot > 0) $why0 = '💬 customer is talking to the bot (' . $nIn . ' messages) — a person takes over';
                 else continue;   // the bot is handling it: no person's room is used
             }
@@ -501,7 +503,12 @@ function wqx_run(PDO $pdo, bool $allowBuild = true): array
         }
         usort($todo, function ($a, $b) { return [$a['_rank'], (string)$a['last_in_at']] <=> [$b['_rank'], (string)$b['last_in_at']]; });
         foreach ($todo as $c) {
-            $heat = (string)$c['_heat']; [$to, $kind, $why] = wqx_pick($pdo, $c, $L, $prof, $cfg, 0, $heat);
+            $heat = (string)$c['_heat'];
+            if (!empty($c['_sweep'])) {   // cold follow-ups are shared out evenly, so nobody's ratio carries more of them than anybody else's
+                $ok = array_filter($L, function ($p) { return $p['can'] && !$p['held']; }); if (!$ok) $ok = array_filter($L, function ($p) { return $p['can']; });
+                if ($ok) { uasort($ok, function ($x, $y) { return [$x['load'] / max(1, $x['cap']), $y['score']] <=> [$y['load'] / max(1, $y['cap']), $x['score']]; }); $f = reset($ok); [$to, $kind, $why] = [(int)$f['emp_id'], 'sweep', 'shared out evenly → ' . $f['name']]; }
+                else [$to, $kind, $why] = [0, '', 'nobody present (or everyone on a break)'];
+            } else [$to, $kind, $why] = wqx_pick($pdo, $c, $L, $prof, $cfg, 0, $heat);
             if ($to <= 0) { if (!wqx_logged($pdo, (string)$c['phone'], (string)$c['last_in_at'], 'none')) wqx_log($pdo, (string)$c['phone'], (string)$c['last_in_at'], 'none', 0, 0, $why, false, $mode); continue; }
             $give($c, $to, $kind, $c['_why'] . ' → ' . $why, 0); $res['new']++;
         }
@@ -589,7 +596,7 @@ if (in_array($__wqx, ['wq.mkt_get', 'wq.mkt_mode', 'wq.mkt_cfg', 'wq.mkt_recalc'
         $bk = wqx_breaks($pdo); $rows = []; foreach ((array)$prof['people'] as $e => $p) { $e = (int)$e; $cc = wqx_coach($L[$e] ?? null, $p, $prof, isset($bk['open'][$e]), (int)($bk['used'][$e] ?? 0), $cfg['break_max']); $rows[] = $p + ['live' => $L[$e] ?? null, 'coach' => $cc[0], 'tone' => $cc[1]]; }
         usort($rows, function ($a, $b) { return [(int)!empty($b['live']['can']), (float)($b['live']['score'] ?? 0)] <=> [(int)!empty($a['live']['can']), (float)($a['live']['score'] ?? 0)]; });
         $log = []; try { foreach ($pdo->query("SELECT l.*, c.name cname FROM wqx_log l LEFT JOIN wa_contacts c ON c.phone = l.phone ORDER BY l.id DESC LIMIT 150")->fetchAll() as $r) $log[] = ['at' => $r['at'], 'phone' => $r['phone'], 'name' => (string)($r['cname'] ?? ''), 'kind' => $r['kind'], 'from' => (string)($names[(int)$r['from_emp']] ?? ''), 'to' => (string)($names[(int)$r['to_emp']] ?? ''), 'why' => $r['why'], 'applied' => (int)$r['applied'] === 1, 'mode' => $r['mode']]; } catch (Throwable $e) { }
-        $sum = ['given' => 0, 'moved' => 0, 'none' => 0]; try { $q = $pdo->prepare("SELECT kind, COUNT(*) n FROM wqx_log WHERE at >= ? GROUP BY kind"); $q->execute([wqx_dt(wqx_day_start($pdo))]); foreach ($q->fetchAll() as $r) { $k = (string)$r['kind']; if (in_array($k, ['move', 'gone'], true)) $sum['moved'] += (int)$r['n']; elseif ($k === 'none') $sum['none'] += (int)$r['n']; elseif ($k !== 'mode' && $k !== 'error') $sum['given'] += (int)$r['n']; } } catch (Throwable $e) { }
+        $sum = ['given' => 0, 'moved' => 0, 'none' => 0, 'with_bot' => 0]; try { $sum['with_bot'] = (int)$pdo->query("SELECT COUNT(*) FROM wa_contacts WHERE assigned_emp = 0 AND status = 'open' AND optout = 0 AND (cx_id IS NULL OR cx_id = 0) AND last_in_at >= '" . wqx_dt(wqx_now() - 86400) . "'")->fetchColumn(); } catch (Throwable $e) { } try { $q = $pdo->prepare("SELECT kind, COUNT(*) n FROM wqx_log WHERE at >= ? GROUP BY kind"); $q->execute([wqx_dt(wqx_day_start($pdo))]); foreach ($q->fetchAll() as $r) { $k = (string)$r['kind']; if (in_array($k, ['move', 'gone'], true)) $sum['moved'] += (int)$r['n']; elseif ($k === 'none') $sum['none'] += (int)$r['n']; elseif ($k !== 'mode' && $k !== 'error') $sum['given'] += (int)$r['n']; } } catch (Throwable $e) { }
         json_response(['ok' => true, 'mode' => wqx_mode($pdo), 'cfg' => $cfg, 'team' => $prof['team'] ?? [], 'timer' => $prof['timer'] ?? null, 'timer_why' => $prof['timer_why'] ?? '', 'curve' => $prof['curve'] ?? [], 'vip_line' => $prof['vip_line'] ?? 0,
             'built_at' => isset($prof['at']) ? wqx_dt((int)$prof['at']) : null, 'people' => $rows, 'log' => $log, 'today' => $sum, 'rules' => array_map(function ($h) use ($names) { return $h + ['prefer_name' => (string)($names[(int)$h['prefer']] ?? ''), 'avoid_name' => (string)($names[(int)$h['avoid']] ?? '')]; }, wqx_hints($pdo))]);
     }
