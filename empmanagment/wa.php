@@ -351,7 +351,9 @@ function wa_is_admin(PDO $pdo, array $auth): bool { return convo_is_admin($auth)
  *  so nobody has to be set up one by one. Complaint chats are never taken over by a salesperson. Watching = read only; replying needs Take over. */
 function wa_sales_ids(PDO $pdo): array { static $s = null; if ($s !== null) return $s; $s = []; try { $s = array_map('intval', $pdo->query("SELECT e.employee_id FROM employees e LEFT JOIN departments d ON d.department_id = e.department_id WHERE e.status != 'ex' AND d.department_name LIKE '%sales%'")->fetchAll(PDO::FETCH_COLUMN)); } catch (Throwable $e) { } return $s; }
 function wa_to_blocked(PDO $pdo): array { static $b = null; if ($b !== null) return $b; $v = json_decode((string)setting_get($pdo, 'wa_to_block', '[]'), true); return $b = array_values(array_filter(array_map('intval', is_array($v) ? $v : []))); }
-function wa_can_takeover(PDO $pdo, array $auth): bool { if (wa_is_admin($pdo, $auth)) return true; $e = (int)($auth['employee_id'] ?? 0); return $e > 0 && in_array($e, wa_sales_ids($pdo), true) && !in_array($e, wa_to_blocked($pdo), true); }
+function wa_to_only(PDO $pdo): array { static $o = null; if ($o !== null) return $o; $v = json_decode((string)setting_get($pdo, 'wa_to_allow', '[]'), true); return $o = array_values(array_filter(array_map('intval', is_array($v) ? $v : []))); }
+function wa_to_mode(PDO $pdo): string { return (string)setting_get($pdo, 'wa_to_mode', 'all') === 'only' ? 'only' : 'all'; }   // 'all' = everyone in Sales except the blocked · 'only' = just the ticked people (change it any day)
+function wa_can_takeover(PDO $pdo, array $auth): bool { if (wa_is_admin($pdo, $auth)) return true; $e = (int)($auth['employee_id'] ?? 0); if ($e <= 0) return false; if (wa_to_mode($pdo) === 'only') return in_array($e, wa_to_only($pdo), true); return in_array($e, wa_sales_ids($pdo), true) && !in_array($e, wa_to_blocked($pdo), true); }
 function wa_is_manager(PDO $pdo, array $auth): bool { return wa_can_takeover($pdo, $auth); }   // (old name, used by the team list)
 function wa_can_chat(PDO $pdo, array $auth, array $contact): bool
 {
@@ -1144,9 +1146,9 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
         }
         case 'wa.to_get': case 'wa.to_save': {   // who may NOT take over chats (everyone else in Sales may)  [Admin / HR]
             wa_guard_admin($pdo, $auth);
-            if ($__wa === 'wa.to_save') { if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $ids = array_values(array_unique(array_filter(array_map('intval', (array)(json_input()['blocked'] ?? []))))); setting_set($pdo, 'wa_to_block', json_encode($ids)); json_response(['ok' => true, 'blocked' => $ids]); }
+            if ($__wa === 'wa.to_save') { if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $in0 = json_input(); $ids = array_values(array_unique(array_filter(array_map('intval', (array)($in0['blocked'] ?? []))))); $al = array_values(array_unique(array_filter(array_map('intval', (array)($in0['allowed'] ?? []))))); $md = (string)($in0['mode'] ?? 'all') === 'only' ? 'only' : 'all'; setting_set($pdo, 'wa_to_block', json_encode($ids)); setting_set($pdo, 'wa_to_allow', json_encode($al)); setting_set($pdo, 'wa_to_mode', $md); json_response(['ok' => true, 'blocked' => $ids, 'allowed' => $al, 'mode' => $md]); }
             $nm = employee_names_by_id($pdo); $sales = []; foreach (wa_sales_ids($pdo) as $i) $sales[] = ['emp_id' => $i, 'name' => (string)($nm[$i] ?? ('#' . $i))];
-            usort($sales, fn($a, $b) => strcmp($a['name'], $b['name'])); json_response(['blocked' => wa_to_blocked($pdo), 'sales' => $sales]);
+            usort($sales, fn($a, $b) => strcmp($a['name'], $b['name'])); json_response(['blocked' => wa_to_blocked($pdo), 'allowed' => wa_to_only($pdo), 'mode' => wa_to_mode($pdo), 'sales' => $sales]);
         }
         case 'wa.price_photo': {   // 💰 the customer price photo (made on the Price charts page: sizes + one column's price, no %)
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
