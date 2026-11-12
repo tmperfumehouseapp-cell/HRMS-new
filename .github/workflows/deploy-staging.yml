@@ -14,7 +14,23 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # 🛡 nothing is deployed unless these pass: every PHP file and every script parses, the daily plan's key lines really run (a comment must not swallow them), and the queue end-time calculation gives sensible answers
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: PHP files parse
+        run: |
+          bad=0; for f in $(find empmanagment -name '*.php'); do php -l "$f" > /dev/null 2>&1 || { echo "::error file=$f::PHP syntax error"; bad=1; }; done; exit $bad
+      - name: Scripts parse
+        run: |
+          bad=0; for f in assets/js/*.js sw.js; do node --check "$f" > /dev/null 2>&1 || { echo "::error file=$f::JavaScript syntax error"; bad=1; }; done; exit $bad
+      - name: Daily plan guard test
+        run: php tests/guard_test.php
+      - name: Queue end-time test
+        run: php tests/eta_test.php
   staging:
+    needs: check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
