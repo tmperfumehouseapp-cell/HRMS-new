@@ -32,3 +32,10 @@ jobs:
           STAGING_PATH: ${{ secrets.STAGING_PATH }}
         run: |
           ssh "$STAGING_USER@$STAGING_HOST" "echo \"user: \$(id -un)\"; echo '--- this user crontab (wa lines) ---'; crontab -l 2>&1 | grep -E 'wa_|cron_send|cron_engine' | cut -c1-230; echo '--- lock files ---'; ls -l /tmp/wa_send.lock /tmp/wa_engine.lock 2>&1; echo '--- php binaries ---'; ls -l /usr/bin/php /usr/bin/php8.3 2>&1; /usr/bin/php8.3 -v 2>&1 | head -1; echo '--- run the way cron does (clean environment), showing errors ---'; env -i HOME=\$HOME PATH=/usr/bin:/bin SHELL=/bin/sh flock -n /tmp/wa_send.lock /usr/bin/php8.3 ${STAGING_PATH}empmanagment/cron_send.php; echo exit=\$?" || true
+      - name: Look for the cron daemon's own record of the two jobs (read-only)
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" "echo '--- script files ---'; ls -l ${STAGING_PATH}empmanagment/cron_send.php ${STAGING_PATH}empmanagment/cron_engine.php 2>&1; echo '--- the site user crontab (wa lines), if we may read it ---'; (sudo -n -u fourpirates-staging crontab -l 2>&1 || crontab -u fourpirates-staging -l 2>&1) | grep -E 'wa_|cron_send|cron_engine|denied|must be|password' | cut -c1-230; echo '--- cron daemon log (last lines naming the jobs) ---'; (grep -h -E 'cron_send|cron_engine' /var/log/syslog /var/log/cron /var/log/cron.log 2>/dev/null | tail -12 | cut -c1-260) ; (journalctl -u cron --since '20 min ago' --no-pager 2>&1 | grep -E 'cron_send|cron_engine|wa_send|wa_engine' | tail -12 | cut -c1-260); echo '--- end ---'" || true
