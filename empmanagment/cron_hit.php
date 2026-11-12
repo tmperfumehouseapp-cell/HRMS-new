@@ -30,5 +30,18 @@ $ctx = stream_context_create(['http' => ['method' => 'GET', 'timeout' => 300, 'i
     'ssl' => ['verify_peer' => false, 'verify_peer_name' => false, 'SNI_enabled' => true, 'peer_name' => $host]]);
 $body = @file_get_contents('https://127.0.0.1/empmanagment/api.php?action=' . urlencode($action) . '&key=' . urlencode($key), false, $ctx);
 $code = 0; foreach (($http_response_header ?? []) as $h) if (preg_match('#^HTTP/\S+\s+(\d+)#', $h, $m)) $code = (int)$m[1];
+// ⚡ The five jobs below run from lines that are known to work, one per minute between them. Each one also gives the campaigns a SENDING round (wa.cron_send: starts campaigns whose time has come, sends, recovery),
+// so scheduled campaigns start and keep sending even when the dedicated engine / sending cron lines are not firing. The round has its own lock inside the server: two never send at once. Set NO_WA_SEND=1 to switch this off.
+if (in_array($action, ['bd.tick', 'chk.tick', 'dp.tick', 'orders.cron', 'mail.cron'], true) && getenv('NO_WA_SEND') !== '1') {
+    try {
+        $pdo2 = new PDO('mysql:host=' . (defined('DB_HOST') ? DB_HOST : '127.0.0.1') . ';dbname=' . DB_NAME . ';charset=utf8mb4', DB_USER, DB_PASS, [PDO::ATTR_TIMEOUT => 10, PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+        $q2 = $pdo2->prepare('SELECT setting_value FROM hrms_settings WHERE setting_key = ?'); $q2->execute(['wa_cron_key']); $wk = (string)$q2->fetchColumn();
+        if ($wk !== '') {
+            $ctx2 = stream_context_create(['http' => ['method' => 'GET', 'timeout' => 95, 'ignore_errors' => true, 'header' => "Host: $host\r\nUser-Agent: hrms-cron-send\r\n"], 'ssl' => ['verify_peer' => false, 'verify_peer_name' => false, 'SNI_enabled' => true, 'peer_name' => $host]]);
+            $b2 = @file_get_contents('https://127.0.0.1/empmanagment/api.php?action=wa.cron_send&key=' . urlencode($wk), false, $ctx2);
+            echo date('Y-m-d H:i:s') . ' send round ' . ($b2 === false ? 'no answer' : 'done') . "\n";
+        }
+    } catch (Throwable $e) { fwrite(STDERR, 'send round: ' . $e->getMessage() . "\n"); }
+}
 echo date('Y-m-d H:i:s') . " $action " . ($body === false ? 'no answer' : "HTTP $code") . ' in ' . round(microtime(true) - $t0, 1) . 's ' . ($body !== false ? substr(preg_replace('/\s+/', ' ', $body), 0, 200) : '') . "\n";
 exit($body === false || $code >= 400 ? 1 : 0);
