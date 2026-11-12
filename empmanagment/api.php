@@ -12198,7 +12198,8 @@ function shopify_fetch_all(array $targets, array $tokens, string $dateFrom, stri
                     'X-Shopify-Access-Token: ' . $st['token'],
                     'Content-Type: application/json',
                 ],
-                CURLOPT_TIMEOUT => 25,
+                CURLOPT_TIMEOUT => 45,
+                CURLOPT_CONNECTTIMEOUT => 12,
             ]);
             curl_multi_add_handle($mh, $ch);
             $handles[$key] = $ch;
@@ -12210,17 +12211,25 @@ function shopify_fetch_all(array $targets, array $tokens, string $dateFrom, stri
             if ($running) curl_multi_select($mh, 0.1);
         } while ($running && $mrc === CURLM_OK);
 
+        $hid = static function ($h) { return is_object($h) ? spl_object_id($h) : (int)$h; }; $cerrs = [];
+        while ($inf = curl_multi_info_read($mh)) { if (!empty($inf['result'])) $cerrs[$hid($inf['handle'])] = function_exists('curl_strerror') ? curl_strerror((int)$inf['result']) : 'curl error ' . (int)$inf['result']; }   // why a call failed (timeout, DNS, SSL …)
         foreach ($handles as $key => $ch) {
             $st = &$state[$key];
-            $st['url'] = null; // cleared unless a next page is found below
+            $curUrl = $st['url']; $st['url'] = null; // cleared unless a next page is found below
             $resp = curl_multi_getcontent($ch);
             $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
             $headerSize = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+            $cerr = (string)($cerrs[$hid($ch)] ?? curl_error($ch));
             curl_multi_remove_handle($mh, $ch);
             curl_close($ch);
 
+            // a short break in the connection / Shopify busy (429, 5xx): the same page is asked again (up to 3 times) before the page shows an error
+            if (($resp === false || $resp === '' || in_array($status, [429, 502, 503, 504], true)) && (int)($st['tries'] ?? 0) < 3 && $curUrl) {
+                $st['tries'] = (int)($st['tries'] ?? 0) + 1; $st['url'] = $curUrl; $round--; usleep(700000 * $st['tries']);
+                continue;
+            }
             if ($resp === false || $resp === '') {
-                $st['error'] = $st['store']['label'] . ': could not reach Shopify.';
+                $st['error'] = $st['store']['label'] . ': could not reach Shopify' . ($cerr !== '' ? ' (' . mb_substr($cerr, 0, 80) . ')' : '') . '.';
                 continue;
             }
             if ($status === 401 || $status === 403) {
