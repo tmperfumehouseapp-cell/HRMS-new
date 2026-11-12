@@ -25,7 +25,8 @@
  * Present = punched in, or work-from-home mark, or the admin's "working" switch (leave / holiday / week-off / "not working" = away).
  * Heavy maths runs in the background at most every 5 minutes (one copy at a time) and is stored; the assigning pass only reads the stored copy.
  *
- * Actions: wq.mkt_get (admin board) · wq.mkt_mode POST {mode} · wq.mkt_cfg POST {break_max, explore} · wq.mkt_recalc POST · wq.mkt_me (salesperson)
+ * Giving by hand: OFF for everyone while it runs. The admin tells Claude instead (wq.mkt_ask): Claude assigns the chat and keeps the concern as a rule.
+ * Actions: wq.mkt_ask POST {text} · wq.mkt_hint_del POST {id} · wq.mkt_get (admin board) · wq.mkt_mode POST {mode} · wq.mkt_cfg POST {break_max, explore} · wq.mkt_recalc POST · wq.mkt_me (salesperson)
  *          wq.mkt_break POST {on: 1|0} (salesperson)
  * Tables: wqx_log (every decision), wqx_break (breaks).
  */
@@ -236,7 +237,9 @@ function wqx_profile_build(PDO $pdo): array
     $timer = max(60, min(600, $timer));
     // VIP line: a returning customer whose last-year spend is at least 2 × the team ticket
     $vipLine = $teamTicket > 0 ? (int)round(2 * $teamTicket) : 0;
-    $prof = ['at' => $now, 'people' => $out, 'team' => ['n' => $tN, 'orders' => $tO, 'ratio' => $tN > 0 ? round(100 * $teamRatio, 1) : null, 'ticket' => (int)round($teamTicket), 'rpq' => round($tRPQ, 1), 'stable' => $tN >= 60, 'status_chats_left_out' => $skipped],
+    // reply speed today (the pace module's own numbers, kept by it)
+    $tSpeed = null; if (function_exists('wq_pace_get')) { try { $pg = wq_pace_get($pdo, 1); $tSpeed = $pg['team']['pace']['median'] ?? null; foreach ((array)($pg['people'] ?? []) as $pp) { $i = (int)($pp['emp_id'] ?? 0); if (isset($out[$i]) && (int)($pp['pace']['n'] ?? 0) >= 3) $out[$i]['speed_today'] = $pp['pace']['median']; } } catch (Throwable $e) { } }
+    $prof = ['at' => $now, 'people' => $out, 'team_speed' => $tSpeed, 'team' => ['n' => $tN, 'orders' => $tO, 'ratio' => $tN > 0 ? round(100 * $teamRatio, 1) : null, 'ticket' => (int)round($teamTicket), 'rpq' => round($tRPQ, 1), 'stable' => $tN >= 60, 'status_chats_left_out' => $skipped],
         'timer' => $timer, 'timer_why' => $timerWhy, 'curve' => $curve, 'vip_line' => $vipLine];
     wqx_meta_put($pdo, 'wqx:prof', json_encode($prof, JSON_UNESCAPED_UNICODE));
     return $prof;
@@ -261,14 +264,15 @@ function wqx_live(PDO $pdo, array $prof): array
     $pipe = []; try { $q = $pdo->prepare("SELECT assigned_emp e, COUNT(*) n FROM wa_contacts WHERE status = 'open' AND assigned_emp > 0 AND (hot = 1 OR (pay_at IS NOT NULL AND pay_at >= ?)) GROUP BY assigned_emp"); $q->execute([wqx_dt($now - 86400)]); foreach ($q->fetchAll() as $r) $pipe[(int)$r['e']] = (int)$r['n']; } catch (Throwable $e) { }
     $ans = []; try { foreach ($pdo->query("SELECT emp_id, MAX(ts) t FROM wa_messages WHERE dir = 'out' AND emp_id > 0 AND ts >= '" . wqx_dt($now - 1800) . "' GROUP BY emp_id")->fetchAll() as $r) $ans[(int)$r['emp_id']] = (int)round(($now - wqx_ts($r['t'])) / 60); } catch (Throwable $e) { }
     $cx = []; try { foreach ($pdo->query("SELECT owner_emp, COUNT(*) n FROM cx_cases WHERE status IN ('open','reopened') AND owner_emp > 0 AND ((due_at IS NOT NULL AND due_at < NOW()) OR (first_reply_at IS NULL AND reply_due IS NOT NULL AND reply_due < NOW())) GROUP BY owner_emp")->fetchAll() as $r) $cx[(int)$r['owner_emp']] = (int)$r['n']; } catch (Throwable $e) { }   // overdue complaints: solve them first
+    $lost = []; try { $q = $pdo->prepare("SELECT from_emp e, COUNT(*) n FROM wqx_log WHERE kind = 'move' AND applied = 1 AND from_emp > 0 AND at >= ? GROUP BY from_emp"); $q->execute([wqx_dt(wqx_day_start($pdo))]); foreach ($q->fetchAll() as $r) $lost[(int)$r['e']] = (int)$r['n']; } catch (Throwable $e) { }   // chats taken away today for not answering
     foreach ((array)($prof['people'] ?? []) as $e => $p) {
         $e = (int)$e; $on = !empty($present[$e]); $brk = isset($br['open'][$e]);
         $held = !empty($p['sure_behind']) && (int)($p['orders_today'] ?? 0) === 0 && (int)($pipe[$e] ?? 0) === 0;
         $act = isset($ans[$e]) ? ($ans[$e] <= 10 ? 1.0 : 0.85) : 0.7;
         $ld = (int)($load[$e] ?? 0); $cap = max(1, (int)($p['cap'] ?? 6));
-        $score = (float)($p['idx'] ?? 1) * (float)($p['idx_today'] ?? 1) * $act * (1 - 0.5 * min(1.0, $ld / $cap));
+        $score = (float)($p['idx'] ?? 1) * (float)($p['idx_today'] ?? 1) * $act * (1 - 0.5 * min(1.0, $ld / $cap)) * max(0.6, pow(0.9, (int)($lost[$e] ?? 0)));   // every chat lost today for not answering costs 10 % of the place in the queue
         $L[$e] = ['emp_id' => $e, 'name' => (string)($p['name'] ?? ''), 'present' => $on, 'break' => $brk, 'break_used' => (int)($br['used'][$e] ?? 0), 'load' => $ld, 'cap' => $cap, 'full' => $ld >= $cap, 'pipe' => (int)($pipe[$e] ?? 0),
-            'answered_min_ago' => $ans[$e] ?? null, 'held' => $held || !empty($cx[$e]), 'held_why' => !empty($cx[$e]) ? 'complaints' : ($held ? 'orders' : ''), 'overdue_cx' => (int)($cx[$e] ?? 0), 'score' => round($score, 3), 'can' => $on && !$brk];
+            'answered_min_ago' => $ans[$e] ?? null, 'held' => $held || !empty($cx[$e]), 'held_why' => !empty($cx[$e]) ? 'complaints' : ($held ? 'orders' : ''), 'overdue_cx' => (int)($cx[$e] ?? 0), 'lost_today' => (int)($lost[$e] ?? 0), 'score' => round($score, 3), 'can' => $on && !$brk];
     }
     return $L;
 }
@@ -300,9 +304,15 @@ function wqx_pick(PDO $pdo, array $c, array $L, array $prof, array $cfg, int $ex
     $P = (array)($prof['people'] ?? []); $phone = (string)$c['phone'];
     $open = array_filter($el, function ($p) { return !$p['held'] && !$p['full']; });
     $byScore = function (array $a) { uasort($a, function ($x, $y) { return [$y['score'], $x['load']] <=> [$x['score'], $y['load']]; }); return $a; };
+    // the owner's own wishes, told to Claude (a kind of customer → a person, a person who must not get chats …)
+    foreach (wqx_hints_for($pdo, $c) as $h) {
+        if ((int)$h['avoid'] > 0) { unset($open[(int)$h['avoid']]); unset($el[(int)$h['avoid']]); }
+        if ((int)$h['prefer'] > 0 && isset($open[(int)$h['prefer']])) return [(int)$h['prefer'], 'claude', 'owner\'s rule (' . $h['why'] . ') → ' . $open[(int)$h['prefer']]['name']];
+    }
+    if (!$el) return [0, '', 'nobody allowed by the owner\'s rules is at work'];
     if (!$open) {   // nobody has room or everyone is held back: never leave the query — the best present person, held ones last
-        $all = $byScore($el); uasort($all, function ($x, $y) { return [(int)$x['held'], $y['score']] <=> [(int)$y['held'], $x['score']]; }); $f = reset($all);
-        return [(int)$f['emp_id'], 'overflow', 'everyone is full or held — best present person (' . $f['name'] . ') takes it; admins alerted'];
+        $all = $el; uasort($all, function ($x, $y) { return [(int)$x['held'], $x['load'] / max(1, $x['cap']), $y['score']] <=> [(int)$y['held'], $y['load'] / max(1, $y['cap']), $x['score']]; }); $f = reset($all);   // spread the extra load: the least loaded (for their own limit) first
+        return [(int)$f['emp_id'], 'overflow', 'everyone is full or held — ' . $f['name'] . ' has the most room left; admins alerted'];
     }
     // a returning buyer goes back to the person who sold them before
     $ls = wqx_last_seller($pdo, $phone); if ($ls > 0 && isset($open[$ls])) return [$ls, 'returning', 'returning customer → ' . $open[$ls]['name'] . ' sold to them before'];
@@ -339,6 +349,85 @@ function wqx_log(PDO $pdo, string $phone, string $inAt, string $kind, int $from,
     if (mt_rand(1, 400) === 1) { try { $pdo->exec("DELETE FROM wqx_log WHERE at < '" . wqx_dt(wqx_now() - 60 * 86400) . "'"); } catch (Throwable $e) { } }
 }
 
+// ------------------------------------------------------------------------------------------------------------------ one line of coaching (WhatsApp and Team performance say the SAME thing)
+/** The ONE most important thing for this person right now, short, in Gujarati. [text, tone: red|amber|green|grey] */
+function wqx_coach(?array $l = null, ?array $p = null, array $prof = [], bool $onBreak = false, int $brUsed = 0, int $brMax = 60): array
+{
+    if (!$l) return ['', 'grey'];
+    $tm = (array)($prof['team'] ?? []); $tTk = (int)($tm['ticket'] ?? 0); $tSp = $prof['team_speed'] ?? null;
+    if ($onBreak) return ['☕ બ્રેક પર છો — નવી ક્વેરી નહીં આવે (' . $brUsed . '/' . $brMax . ' મિનિટ)', 'grey'];
+    if (empty($l['present'])) return ['⏰ પંચ-ઇન કરો (ઓફિસ કે વર્ક ફ્રોમ હોમ) — તો જ ક્વેરી અને કમિશન મળશે', 'red'];
+    if ((string)($l['held_why'] ?? '') === 'complaints') return ['🔴 પહેલા ' . (int)$l['overdue_cx'] . ' ફરિયાદ ઉકેલો — પછી નવી ક્વેરી મળશે', 'red'];
+    if ((string)($l['held_why'] ?? '') === 'orders') return ['⛔ ક્વેરી બંધ — તમારો રેશિયો ટીમથી ઓછો. 1 ઓર્ડર પાડો, ક્વેરી ફરી ચાલુ', 'red'];
+    if ((int)($l['lost_today'] ?? 0) > 0) return ['⚠ આજે ' . (int)$l['lost_today'] . ' ચેટ જવાબ ન આપવાથી બીજાને ગઈ — ઓર્ડર-કમિશન એમનું. ચેટ પર રહો', 'red'];
+    if (!empty($l['full'])) return ['⏳ ' . (int)$l['load'] . ' ચાલુ ચેટ — પહેલા જવાબ આપો, પછી નવી ક્વેરી', 'amber'];
+    $sp = $p['speed_today'] ?? null; if ($sp !== null && $tSp !== null && (float)$sp > max(3.0, 1.5 * (float)$tSp)) return ['⚡ જવાબ ઝડપથી આપો — તમે ' . round((float)$sp, 1) . ' મિનિટ, ટીમ ' . round((float)$tSp, 1) . ' મિનિટ', 'amber'];
+    $tk = $p['ticket'] ?? null; if ($tk !== null && $tTk > 0 && (int)($p['orders'] ?? 0) >= 3 && (float)$tk < 0.85 * $tTk) return ['🛍 સેટ / કોમ્બો / મોટી સાઇઝ ઓફર કરો — ટિકિટ ₹' . (int)$tk . ', ટીમ ₹' . $tTk . '. ડિસ્કાઉન્ટ નહીં', 'amber'];
+    if ($l['answered_min_ago'] === null && (int)($l['load'] ?? 0) === 0 && (float)($p['idx'] ?? 1) >= 1.0) return ['🙋 તમે સારું વેચો છો — ક્વેરી આવે કે તરત ઉપાડો', 'green'];
+    if (!empty($p['trial'])) return ['🌱 નવા છો — ઝડપથી જવાબ, સેટ ઓફર કરો; ઓર્ડર પાડશો તો વધુ ક્વેરી', 'green'];
+    if ((float)($p['idx'] ?? 1) >= 1.15) return ['🚀 ટોપ સેલર — વધુ ક્વેરી તમને જ. મોટી ટિકિટ રાખો', 'green'];
+    return ['✅ ક્વેરી ચાલુ — ઝડપથી જવાબ, મોટી ટિકિટ = વધુ ક્વેરી', 'green'];
+}
+
+// ------------------------------------------------------------------------------------------------------------------ "tell Claude" — the only way to give a chat by hand
+/** Standing rules Claude made from the admin's words: [{id, kind: all|phone|words, value, prefer, avoid, why, until, by, at}] */
+function wqx_hints(PDO $pdo): array
+{
+    $j = json_decode(wqx_meta($pdo, 'wqx:hints', '[]'), true); if (!is_array($j)) return [];
+    return array_values(array_filter($j, function ($h) { return is_array($h) && wqx_ts($h['until'] ?? '') > wqx_now(); }));
+}
+function wqx_hints_put(PDO $pdo, array $h): void { wqx_meta_put($pdo, 'wqx:hints', json_encode(array_slice(array_values($h), -60), JSON_UNESCAPED_UNICODE)); }
+/** The rules that fit this chat (the customer's number, or words the customer wrote in the last day). */
+function wqx_hints_for(PDO $pdo, array $c): array
+{
+    static $memo = null; if ($memo === null) $memo = wqx_hints($pdo); if (!$memo) return [];
+    $p10 = wqx_p10($c['phone'] ?? ''); $txt = null; $o = [];
+    foreach ($memo as $h) {
+        if ($h['kind'] === 'all') { $o[] = $h; continue; }
+        if ($h['kind'] === 'phone') { if ($p10 !== '' && wqx_p10($h['value']) === $p10) $o[] = $h; continue; }
+        if ($h['kind'] !== 'words') continue;
+        if ($txt === null) { $txt = ''; try { $q = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'in' AND ts >= ? ORDER BY id DESC LIMIT 8"); $q->execute([(string)$c['phone'], wqx_dt(wqx_now() - 86400)]); $txt = mb_strtolower(implode(' ', $q->fetchAll(PDO::FETCH_COLUMN))); } catch (Throwable $e) { } }
+        foreach (preg_split('/\s*,\s*/u', mb_strtolower((string)$h['value'])) as $w) if ($w !== '' && mb_strpos($txt, $w) !== false) { $o[] = $h; break; }
+    }
+    return $o;
+}
+/** The admin writes what they want in plain words ("give 98xxxx to Riya, he is a dealer", "Marathi customers to Sunil", "Karan is in training today, no
+ *  queries to him"). Claude understands the CONCERN behind it and turns it into (a) an assignment now, if one chat is meant, and (b) a standing rule that
+ *  keeps that concern for future chats. Returns ['reply', 'assigned' => [phone, emp], 'rule' => …]. */
+function wqx_ask(PDO $pdo, string $text, int $by): array
+{
+    if (!function_exists('convo_ai')) return ['error' => 'Claude is not available on this server.'];
+    $prof = wqx_profile($pdo, false); $L = wqx_live($pdo, $prof); $ppl = [];
+    foreach ((array)($prof['people'] ?? []) as $e => $p) { $l = $L[(int)$e] ?? []; $ppl[] = ['emp_id' => (int)$e, 'name' => (string)$p['name'], 'at_work' => !empty($l['present']), 'on_break' => !empty($l['break']), 'live_chats' => (int)($l['load'] ?? 0), 'order_ratio_pct' => $p['ratio'], 'ticket_rs' => $p['ticket']]; }
+    $chat = ''; $ph = ''; if (preg_match('/(\d[\d\s\-]{8,}\d)/', $text, $m)) $ph = wqx_p10($m[1]);
+    if ($ph !== '') { try { $q = $pdo->prepare("SELECT dir, body FROM wa_messages WHERE phone = ? ORDER BY id DESC LIMIT 8"); $q->execute([$ph]); foreach (array_reverse($q->fetchAll()) as $r) $chat .= ($r['dir'] === 'in' ? 'CUSTOMER: ' : 'SHOP: ') . mb_substr(preg_replace('/\d{6,}/', '#', (string)$r['body']), 0, 200) . "\n"; } catch (Throwable $e) { } }
+    $sys = "You run the automatic query assignment of TM Perfume House's WhatsApp sales team (perfume shop, India; people write in Gujarati, Hindi, English or a mix). Chats are never given by hand: when the owner wants something, he tells you, and you must understand the CONCERN behind his words, not only the one chat. "
+        . "Return: assign_emp_id = the salesperson to give ONE specific chat to right now (only if he clearly means one chat and names or describes a person; else 0); phone = that chat's 10-digit number or ''. "
+        . "rule = a standing rule that keeps his concern for future chats when his words imply one (a kind of customer, a language, a product, a person who must not get chats today …): kind 'all' (every chat — e.g. a person who must get no chats today, value '*'), 'phone' (this customer always) or 'words' (comma-separated words the CUSTOMER would write, in the scripts they would use, e.g. 'dealer,wholesale,bulk' or 'marathi,मराठी'), prefer_emp_id (or 0), avoid_emp_id (or 0), days (1-30; 1 for 'today'), why (short English). rule.kind = 'none' when no lasting concern. "
+        . "Use only emp_id values from PEOPLE. reply = 1-2 short lines in simple English telling him exactly what you did and what will happen next time.";
+    $schema = ['type' => 'OBJECT', 'properties' => ['assign_emp_id' => ['type' => 'INTEGER'], 'phone' => ['type' => 'STRING'], 'reply' => ['type' => 'STRING'],
+        'rule' => ['type' => 'OBJECT', 'properties' => ['kind' => ['type' => 'STRING', 'enum' => ['none', 'all', 'phone', 'words']], 'value' => ['type' => 'STRING'], 'prefer_emp_id' => ['type' => 'INTEGER'], 'avoid_emp_id' => ['type' => 'INTEGER'], 'days' => ['type' => 'INTEGER'], 'why' => ['type' => 'STRING']], 'required' => ['kind', 'value', 'prefer_emp_id', 'avoid_emp_id', 'days', 'why']]],
+        'required' => ['assign_emp_id', 'phone', 'reply', 'rule']];
+    $txt = "OWNER SAYS: " . mb_substr($text, 0, 800) . "\nPEOPLE: " . json_encode($ppl, JSON_UNESCAPED_UNICODE) . ($chat !== '' ? "\nTHE CHAT (+91 " . $ph . "):\n" . $chat : '');
+    try { [$ok, $v, $why] = convo_ai($sys, [['text' => $txt]], $schema, false, 1200, 'claude'); } catch (Throwable $e) { return ['error' => 'Claude could not answer: ' . $e->getMessage()]; }
+    if (!$ok || !is_array($v)) return ['error' => 'Claude could not answer' . (!empty($why) ? ': ' . $why : '.')];
+    $ids = []; foreach ($ppl as $x) $ids[$x['emp_id']] = $x['name']; $out = ['reply' => trim((string)($v['reply'] ?? ''))];
+    $r = (array)($v['rule'] ?? []); $k = (string)($r['kind'] ?? 'none');
+    if ($k === 'all') $r['value'] = '*';
+    if (in_array($k, ['all', 'phone', 'words'], true) && trim((string)($r['value'] ?? '')) !== '' && (isset($ids[(int)($r['prefer_emp_id'] ?? 0)]) || isset($ids[(int)($r['avoid_emp_id'] ?? 0)]))) {
+        $h = wqx_hints($pdo); $rule = ['id' => substr(md5(microtime() . mt_rand()), 0, 8), 'kind' => $k, 'value' => mb_substr(trim((string)$r['value']), 0, 200), 'prefer' => isset($ids[(int)$r['prefer_emp_id']]) ? (int)$r['prefer_emp_id'] : 0, 'avoid' => isset($ids[(int)$r['avoid_emp_id']]) ? (int)$r['avoid_emp_id'] : 0,
+            'why' => mb_substr(trim((string)($r['why'] ?? '')), 0, 160), 'said' => mb_substr($text, 0, 200), 'until' => wqx_dt(wqx_now() + max(1, min(30, (int)($r['days'] ?? 1))) * 86400), 'by' => $by, 'at' => wqx_dt()];
+        $h[] = $rule; wqx_hints_put($pdo, $h); $out['rule'] = $rule;
+    }
+    $to = (int)($v['assign_emp_id'] ?? 0); $p2 = wqx_p10((string)($v['phone'] ?? '')) ?: $ph;
+    if ($to > 0 && isset($ids[$to]) && $p2 !== '') {
+        $c = null; try { $q = $pdo->prepare("SELECT phone, name, last_in_at, assigned_emp FROM wa_contacts WHERE phone = ?"); $q->execute([$p2]); $c = $q->fetch() ?: null; } catch (Throwable $e) { }
+        if ($c) { wqx_log($pdo, $p2, (string)($c['last_in_at'] ?? ''), 'claude', (int)$c['assigned_emp'], $to, 'told to Claude: ' . mb_substr($text, 0, 200), true, wqx_mode($pdo)); if (function_exists('wa_assign_to')) wa_assign_to($pdo, $p2, $to, $by, 'manual'); $out['assigned'] = ['phone' => $p2, 'to' => $ids[$to]]; }
+        else $out['reply'] .= ' (No chat found for +91 ' . $p2 . '.)';
+    }
+    return $out;
+}
+
 // ------------------------------------------------------------------------------------------------------------------ the pass
 /** One assigning pass: new queries nobody holds, and chats whose holder did not answer in time. Light: reads the stored profile only. */
 function wqx_run(PDO $pdo, bool $allowBuild = true): array
@@ -364,8 +453,12 @@ function wqx_run(PDO $pdo, bool $allowBuild = true): array
             try {
                 wa_assign_to($pdo, (string)$c['phone'], $to, 0, 'auto');
                 if ($from > 0 && function_exists('wa_event')) wa_event($pdo, (string)$c['phone'], '🏪 Open market: ' . ($names[$from] ?? 'the holder') . ' did not answer in time — given to ' . ($names[$to] ?? 'someone'));
-                if ($from > 0 && function_exists('ct_push')) { try { ct_push($pdo, [$from], 'Chat moved', (($c['name'] ?? '') !== '' ? $c['name'] : '+91 ' . $c['phone']) . ' waited without an answer — it went to the next person.', '/my_chats.html', 'wqx-mv-' . $c['phone']); } catch (Throwable $e) { } }
-                if ($kind === 'overflow' && function_exists('ct_push') && function_exists('wq_admin_ids')) { try { ct_push($pdo, wq_admin_ids($pdo), '🏪 Everyone is full', 'A new query went to ' . ($names[$to] ?? 'someone') . ' above their limit. More people may be needed now.', '/sales.html#people/auto', 'wqx-of'); } catch (Throwable $e) { } }
+                if ($from > 0) {   // no mercy, but a clear lesson: who got it, and that the order and the commission are theirs now
+                    $cn = ($c['name'] ?? '') !== '' ? (string)$c['name'] : '+91 ' . $c['phone'];
+                    if (function_exists('wa_notice_add')) { try { wa_notice_add($pdo, $from, $to, (string)$c['phone'], (string)($c['name'] ?? ''), 'moved'); } catch (Throwable $e) { } }
+                    if (function_exists('ct_push')) { try { ct_push($pdo, [$from], '⚠ Chat gone — no reply', $cn . ' got no answer in time and went to ' . ($names[$to] ?? 'someone') . '. The order and commission are theirs now. Stay on your chats.', '/my_chats.html', 'wqx-mv-' . $c['phone']); } catch (Throwable $e) { } }
+                }
+                if ($kind === 'overflow' && function_exists('ct_push') && function_exists('wq_admin_ids') && (int)wqx_meta($pdo, 'wqx:of_at', '0') < wqx_now() - 900 && (wqx_meta_put($pdo, 'wqx:of_at', (string)wqx_now()) || true)) { try { ct_push($pdo, wq_admin_ids($pdo), '🏪 Everyone is full', 'A new query went to ' . ($names[$to] ?? 'someone') . ' above their limit. More people may be needed now.', '/sales.html#people/team', 'wqx-of'); } catch (Throwable $e) { } }   // at most every 15 minutes
             } catch (Throwable $e) { wqx_log($pdo, (string)$c['phone'], (string)($c['last_in_at'] ?? ''), 'error', $from, $to, mb_substr($e->getMessage(), 0, 200), false, $mode); }
         };
         // A) new: nobody holds it, the customer is waiting, inside the 24-hour window
@@ -427,14 +520,15 @@ function wqx_set_mode(PDO $pdo, string $m, int $by): void
 
 // ---------------------------------------------------------------------------------------------------------------- actions
 $__wqx = (string)($action ?? ($_GET['action'] ?? ''));
-if (in_array($__wqx, ['wq.mkt_get', 'wq.mkt_mode', 'wq.mkt_cfg', 'wq.mkt_recalc', 'wq.mkt_me', 'wq.mkt_break'], true)) {
+if (in_array($__wqx, ['wq.mkt_get', 'wq.mkt_mode', 'wq.mkt_cfg', 'wq.mkt_recalc', 'wq.mkt_me', 'wq.mkt_break', 'wq.mkt_ask', 'wq.mkt_hint_del'], true)) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'; $auth = require_auth(); $me = (int)($auth['employee_id'] ?? 0);
     if (!wqx_tables($pdo)) json_response(['error' => 'Storage for Auto assign is not available.'], 500);
     $adm = function_exists('wa_is_admin') ? wa_is_admin($pdo, $auth) : in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true);
     $cfg = wqx_cfg($pdo);
     if ($__wqx === 'wq.mkt_me') {
         $prof = wqx_profile($pdo, false); $L = wqx_live($pdo, $prof); $x = $L[$me] ?? null; $b = wqx_breaks($pdo);
-        json_response(['ok' => true, 'mode' => wqx_mode($pdo), 'on_break' => isset($b['open'][$me]), 'break_used' => (int)($b['used'][$me] ?? 0), 'break_max' => $cfg['break_max'], 'me' => $x]);
+        $cc = wqx_coach($x, $prof['people'][$me] ?? ($prof['people'][(string)$me] ?? null), $prof, isset($b['open'][$me]), (int)($b['used'][$me] ?? 0), $cfg['break_max']);
+        json_response(['ok' => true, 'mode' => wqx_mode($pdo), 'on_break' => isset($b['open'][$me]), 'break_used' => (int)($b['used'][$me] ?? 0), 'break_max' => $cfg['break_max'], 'me' => $x, 'coach' => $cc[0], 'tone' => $cc[1]]);
     }
     if ($__wqx === 'wq.mkt_break') {
         if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); if ($me <= 0) json_response(['error' => 'Only a logged-in employee can take a break.'], 422);
@@ -451,12 +545,12 @@ if (in_array($__wqx, ['wq.mkt_get', 'wq.mkt_mode', 'wq.mkt_cfg', 'wq.mkt_recalc'
         if ($isPost) json_response(['error' => 'Method not allowed.'], 405);
         $prof = wqx_profile($pdo, false); if (empty($prof['people'])) $prof = wqx_profile($pdo, true, true);
         $L = wqx_live($pdo, $prof); $names = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : [];
-        $rows = []; foreach ((array)$prof['people'] as $e => $p) { $rows[] = $p + ['live' => $L[(int)$e] ?? null]; }
+        $bk = wqx_breaks($pdo); $rows = []; foreach ((array)$prof['people'] as $e => $p) { $e = (int)$e; $cc = wqx_coach($L[$e] ?? null, $p, $prof, isset($bk['open'][$e]), (int)($bk['used'][$e] ?? 0), $cfg['break_max']); $rows[] = $p + ['live' => $L[$e] ?? null, 'coach' => $cc[0], 'tone' => $cc[1]]; }
         usort($rows, function ($a, $b) { return [(int)!empty($b['live']['can']), (float)($b['live']['score'] ?? 0)] <=> [(int)!empty($a['live']['can']), (float)($a['live']['score'] ?? 0)]; });
         $log = []; try { foreach ($pdo->query("SELECT l.*, c.name cname FROM wqx_log l LEFT JOIN wa_contacts c ON c.phone = l.phone ORDER BY l.id DESC LIMIT 150")->fetchAll() as $r) $log[] = ['at' => $r['at'], 'phone' => $r['phone'], 'name' => (string)($r['cname'] ?? ''), 'kind' => $r['kind'], 'from' => (string)($names[(int)$r['from_emp']] ?? ''), 'to' => (string)($names[(int)$r['to_emp']] ?? ''), 'why' => $r['why'], 'applied' => (int)$r['applied'] === 1, 'mode' => $r['mode']]; } catch (Throwable $e) { }
         $sum = ['given' => 0, 'moved' => 0, 'none' => 0]; try { $q = $pdo->prepare("SELECT kind, COUNT(*) n FROM wqx_log WHERE at >= ? GROUP BY kind"); $q->execute([wqx_dt(wqx_day_start($pdo))]); foreach ($q->fetchAll() as $r) { $k = (string)$r['kind']; if (in_array($k, ['move', 'gone'], true)) $sum['moved'] += (int)$r['n']; elseif ($k === 'none') $sum['none'] += (int)$r['n']; elseif ($k !== 'mode' && $k !== 'error') $sum['given'] += (int)$r['n']; } } catch (Throwable $e) { }
         json_response(['ok' => true, 'mode' => wqx_mode($pdo), 'cfg' => $cfg, 'team' => $prof['team'] ?? [], 'timer' => $prof['timer'] ?? null, 'timer_why' => $prof['timer_why'] ?? '', 'curve' => $prof['curve'] ?? [], 'vip_line' => $prof['vip_line'] ?? 0,
-            'built_at' => isset($prof['at']) ? wqx_dt((int)$prof['at']) : null, 'people' => $rows, 'log' => $log, 'today' => $sum]);
+            'built_at' => isset($prof['at']) ? wqx_dt((int)$prof['at']) : null, 'people' => $rows, 'log' => $log, 'today' => $sum, 'rules' => array_map(function ($h) use ($names) { return $h + ['prefer_name' => (string)($names[(int)$h['prefer']] ?? ''), 'avoid_name' => (string)($names[(int)$h['avoid']] ?? '')]; }, wqx_hints($pdo))]);
     }
     if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $in = json_input();
     if ($__wqx === 'wq.mkt_mode') { $m = (string)($in['mode'] ?? ''); if (!in_array($m, ['off', 'shadow', 'live'], true)) json_response(['error' => 'Mode must be off, shadow or live.'], 422); wqx_set_mode($pdo, $m, $me); json_response(['ok' => true, 'mode' => wqx_mode($pdo)]); }
@@ -464,5 +558,7 @@ if (in_array($__wqx, ['wq.mkt_get', 'wq.mkt_mode', 'wq.mkt_cfg', 'wq.mkt_recalc'
         foreach (['break_max' => 'wqx_break_max', 'explore' => 'wqx_explore', 'trial' => 'wqx_trial', 'start_cap' => 'wqx_start_cap', 'start_timer' => 'wqx_start_timer'] as $k => $s) if (array_key_exists($k, $in) && is_numeric($in[$k])) setting_set($pdo, $s, (string)(int)$in[$k]);
         json_response(['ok' => true, 'cfg' => wqx_cfg($pdo)]);
     }
+    if ($__wqx === 'wq.mkt_ask') { @set_time_limit(90); $t = trim((string)($in['text'] ?? '')); if ($t === '') json_response(['error' => 'Write what you want Claude to do.'], 422); $r = wqx_ask($pdo, $t, $me); if (isset($r['error'])) json_response($r, 502); json_response(['ok' => true] + $r); }
+    if ($__wqx === 'wq.mkt_hint_del') { $id = (string)($in['id'] ?? ''); wqx_hints_put($pdo, array_filter(wqx_hints($pdo), function ($h) use ($id) { return (string)$h['id'] !== $id; })); json_response(['ok' => true]); }
     if ($__wqx === 'wq.mkt_recalc') { @set_time_limit(120); $p = wqx_profile($pdo, true, true); json_response(['ok' => true, 'people' => count((array)($p['people'] ?? []))]); }
 }
