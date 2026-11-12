@@ -29,6 +29,9 @@
  * Bot first: a new chat goes to a person only when 🔴 ready to pay (after a 45 s open race where anybody may Accept it), 🟠 interested, VIP / returning,
  * the customer answers the bot 2-3 times, or the bot is silent. Plain chats stay with the bot and use nobody's room — but never forever: after 10 min with the bot only
  * (wqx_sweep_sec) every chat is shared out evenly for a person's follow-up, so no query is left unassigned (as with manual giving).
+ * Effort: a cold customer (never wrote again) the salesperson still followed up (2+ proper messages) is left out of their ratio; eager
+ * customers (3+ messages) carry a higher expectation. Follow-ups: who went quiet on whom is in the coach line and pushed every 15 min.
+ * Picking a chat and not answering it = it goes back to the market (🟠) after the timer.
  * Actions: wq.mkt_ask POST {text} · wq.mkt_hint_del POST {id} · wq.mkt_get (admin board) · wq.mkt_mode POST {mode} · wq.mkt_cfg POST {break_max, explore} · wq.mkt_recalc POST · wq.mkt_me (salesperson)
  *          wq.mkt_break POST {on: 1|0} (salesperson)
  * Tables: wqx_log (every decision), wqx_break (breaks).
@@ -114,6 +117,12 @@ function wqx_nudges(PDO $pdo): array
         $e = (int)$e; if (!isset($sales[$e]) || isset($present[$e])) continue;
         if ($due('wqx:n:punch:' . $e, 7200)) { try { ct_push($pdo, [$e], '⏰ Punch in now', 'You are answering customers but you have not punched in (office or work from home). Without a punch-in you get no new queries and your target and commission do not count.', '/attendance.html', 'wqx-punch-' . $e); $sent++; } catch (Throwable $x) { } }
     } } catch (Throwable $e) { }
+    // 📣 aggressive follow-ups: every 15 min each person at work gets the names of the customers who went quiet on them (we answered, no reply 5 min+, no order)
+    try { $q = $pdo->prepare("SELECT c.assigned_emp e, c.name, c.phone FROM wa_contacts c WHERE c.status = 'open' AND c.optout = 0 AND c.assigned_emp > 0 AND (c.cx_id IS NULL OR c.cx_id = 0) AND (c.tag IS NULL OR c.tag NOT IN ('complaint','order_status'))
+            AND c.last_out_at IS NOT NULL AND c.last_out_at > c.last_in_at AND c.last_out_at <= ? AND c.last_in_at >= ? ORDER BY c.last_in_at DESC LIMIT 500"); $q->execute([wqx_dt($now - 300), wqx_dt($now - 20 * 3600)]); $byE = [];
+        foreach ($q->fetchAll() as $r) $byE[(int)$r['e']][] = trim((string)$r['name']) !== '' ? trim((string)$r['name']) : '+91 ' . $r['phone'];
+        foreach ($byE as $e => $ns) { if (!isset($present[$e]) || !$due('wqx:n:fu:' . $e, 900)) continue; try { ct_push($pdo, [$e], '📣 Follow up ' . count($ns) . ' customer' . (count($ns) === 1 ? '' : 's'), implode(', ', array_slice($ns, 0, 6)) . (count($ns) > 6 ? ' +' . (count($ns) - 6) . ' more' : '') . ' went quiet. Send a photo, an offer or a question now.', '/my_chats.html', 'wqx-fu-' . $e); $sent++; } catch (Throwable $x) { } }
+    } catch (Throwable $e) { }
     $tg = wqx_targets($pdo); $miss = [];
     if ($tg) foreach ($present as $e => $_) { if (!isset($sales[$e]) || (float)($tg[$e] ?? 0) > 0) continue; $miss[] = $e;
         if ($due('wqx:n:tg:' . $e, 10800)) { try { ct_push($pdo, [$e], '🎯 No target for today', 'Your target for today is not set. Ask the admin to set it now — without a target your commission is not counted in full.', '/my_app.html', 'wqx-tg-' . $e); $sent++; } catch (Throwable $x) { } } }
@@ -158,7 +167,7 @@ function wqx_profile_build(PDO $pdo): array
     // every query of the last 30 days with its holder, type, result
     $rows = [];
     try {
-        $q = $pdo->prepare("SELECT q.id, q.phone, q.opened_at, q.emp_id, COALESCE(t.type, '') type, COALESCE(s.orders, 0) orders, COALESCE(s.revenue, 0) revenue, s.first_person_min, s.first_order_at
+        $q = $pdo->prepare("SELECT q.id, q.phone, q.opened_at, q.emp_id, COALESCE(t.type, '') type, COALESCE(s.orders, 0) orders, COALESCE(s.revenue, 0) revenue, s.first_person_min, s.first_order_at, COALESCE(s.person_n, 0) person_n
             FROM wa_queries q LEFT JOIN wq_qstat s ON s.query_id = q.id LEFT JOIN wq_qtype t ON t.query_id = q.id WHERE q.opened_at >= ? ORDER BY q.opened_at LIMIT 60000");
         $q->execute([wqx_dt($since)]); $rows = $q->fetchAll();
     } catch (Throwable $e) { error_log('wqx_profile rows: ' . $e->getMessage()); }
@@ -168,19 +177,27 @@ function wqx_profile_build(PDO $pdo): array
     foreach ($rows as $r) { $p = wqx_p10($r['phone']); if ($p !== '') $phones[$p] = 1; }
     if ($phones) { foreach (array_chunk(array_keys($phones), 500) as $ch) { try { $q = $pdo->prepare("SELECT phone, MIN(created_at) f FROM wq_ord WHERE phone IN (" . wqx_in($ch) . ") GROUP BY phone"); $q->execute($ch); foreach ($q->fetchAll() as $r) $firstOrd[(string)$r['phone']] = wqx_ts($r['f']); } catch (Throwable $e) { } } }
 
+    // how eager each customer was: their own messages in the period (per number; most numbers have one query)
+    $inN = [];
+    $raw = []; foreach ($rows as $r) $raw[(string)$r['phone']] = 1;
+    if ($raw) { foreach (array_chunk(array_keys($raw), 400) as $fk) {
+        try { $q = $pdo->prepare("SELECT phone, COUNT(*) n FROM wa_messages WHERE dir = 'in' AND ts >= ? AND phone IN (" . wqx_in($fk) . ") GROUP BY phone"); $q->execute(array_merge([wqx_dt($since)], $fk)); foreach ($q->fetchAll() as $r) $inN[(string)$r['phone']] = (int)$r['n']; } catch (Throwable $e) { } } }
     // recent orders (to spot "where is my parcel" chats: a buyer of the last 15 days who writes again and orders nothing is not a sales query)
     $recent = [];
     if ($phones) { foreach (array_chunk(array_keys($phones), 500) as $ch) { try { $q = $pdo->prepare("SELECT phone, created_at FROM wq_ord WHERE created_at >= ? AND phone IN (" . wqx_in($ch) . ")"); $q->execute(array_merge([wqx_dt($since - 15 * 86400)], $ch)); foreach ($q->fetchAll() as $r) $recent[(string)$r['phone']][] = wqx_ts($r['created_at']); } catch (Throwable $e) { } } }
     // per query: clean result + bucket (type|returning) + load at the moment (the holder's other queries opened in the 45 min before)
-    $Q = []; $byEmpTimes = []; $skipped = 0;
+    $Q = []; $byEmpTimes = []; $skipped = 0; $effort = [];
     foreach ($rows as $r) {
         $p = wqx_p10($r['phone']); $o = wqx_ts($r['opened_at']); $ord = (int)$r['orders']; $rev = (float)$r['revenue'];
         if ($ord === 0 && isset($recent[$p])) { $st0 = false; foreach ($recent[$p] as $t0) if ($t0 < $o && $t0 >= $o - 15 * 86400) { $st0 = true; break; } if ($st0) { $skipped++; continue; } }   // order-status chat: left out of everyone's ratio
         if ($ord > 0 && isset($cx[$p])) foreach ($cx[$p] as $c) if ($c[0] >= $o && $c[0] <= $o + $attr) { $ord = max(0, $ord - 1); $rev = max(0.0, $rev - $c[1]); }
         $type = (string)$r['type']; if ($type === '' || $type === 'unclear') $type = 'other';
         $ret = isset($firstOrd[$p]) && $firstOrd[$p] < $o ? 1 : 0;
-        $e = (int)$r['emp_id'];
-        $Q[] = ['e' => $e, 'o' => $o, 'ord' => $ord > 0 ? 1 : 0, 'rev' => $rev, 'b' => $type . '|' . $ret, 'fp' => $r['first_person_min'] === null ? null : (float)$r['first_person_min'], 'oa' => wqx_ts($r['first_order_at'])];
+        $e = (int)$r['emp_id']; $cin = (int)($inN[(string)$r['phone']] ?? 0); $eager = $cin >= 3 ? 1 : 0;
+        // 💪 effort counts: the customer never wrote again after the first message, no order, but the salesperson tried (2+ proper messages, follow-ups)
+        //    → a cold customer, not the salesperson's fault: left out of their ratio. No effort on a cold customer stays IN (it is theirs).
+        if ($ord === 0 && $cin <= 1 && (int)$r['person_n'] >= 2) { $effort[$e] = ($effort[$e] ?? 0) + 1; continue; }
+        $Q[] = ['e' => $e, 'o' => $o, 'ord' => $ord > 0 ? 1 : 0, 'rev' => $rev, 'b' => $type . '|' . $ret . '|' . $eager, 'fp' => $r['first_person_min'] === null ? null : (float)$r['first_person_min'], 'oa' => wqx_ts($r['first_order_at'])];
         if ($e > 0) $byEmpTimes[$e][] = $o;
     }
     // team per bucket
@@ -223,7 +240,7 @@ function wqx_profile_build(PDO $pdo): array
         $hi = wqx_hi($p['o'], $p['n']);
         $out[$e] = ['emp_id' => $e, 'name' => (string)($names[$e] ?? ('#' . $e)), 'n' => $p['n'], 'orders' => $p['o'], 'rev' => round($p['rev']), 'idx' => round($idx, 3), 'idx7' => $idx7 === null ? null : round($idx7, 3), 'idx_today' => round($idxT, 3),
             'ratio' => $p['n'] > 0 ? round(100 * $p['o'] / $p['n'], 1) : null, 'ticket' => $ticket === null ? null : (int)round($ticket), 'n_today' => $p['nT'], 'orders_today' => $p['oT'],
-            'cap' => $cap, 'cap_why' => $capWhy, 'trial' => $p['n'] < $cfg['trial'], 'rising' => $idx7 !== null && $idx7 >= 1.15 * $idx && $idx7 >= 0.9, 'sure_behind' => $p['n'] >= $cfg['trial'] && $tN >= 60 && $hi < $teamRatio];
+            'cold_tried' => (int)($effort[$e] ?? 0), 'cap' => $cap, 'cap_why' => $capWhy, 'trial' => $p['n'] < $cfg['trial'], 'rising' => $idx7 !== null && $idx7 >= 1.15 * $idx && $idx7 >= 0.9, 'sure_behind' => $p['n'] >= $cfg['trial'] && $tN >= 60 && $hi < $teamRatio];
     }
     // the move-back timer: how the order rate falls with the first person's reply time (60 days, team)
     $tb = [[0, 1], [1, 2], [2, 3], [3, 5], [5, 10], [10, 99999]]; $ts = [];
@@ -267,6 +284,8 @@ function wqx_live(PDO $pdo, array $prof): array
     $pipe = []; try { $q = $pdo->prepare("SELECT assigned_emp e, COUNT(*) n FROM wa_contacts WHERE status = 'open' AND assigned_emp > 0 AND (hot = 1 OR (pay_at IS NOT NULL AND pay_at >= ?)) GROUP BY assigned_emp"); $q->execute([wqx_dt($now - 86400)]); foreach ($q->fetchAll() as $r) $pipe[(int)$r['e']] = (int)$r['n']; } catch (Throwable $e) { }
     $ans = []; try { foreach ($pdo->query("SELECT emp_id, MAX(ts) t FROM wa_messages WHERE dir = 'out' AND emp_id > 0 AND ts >= '" . wqx_dt($now - 1800) . "' GROUP BY emp_id")->fetchAll() as $r) $ans[(int)$r['emp_id']] = (int)round(($now - wqx_ts($r['t'])) / 60); } catch (Throwable $e) { }
     $cx = []; try { foreach ($pdo->query("SELECT owner_emp, COUNT(*) n FROM cx_cases WHERE status IN ('open','reopened') AND owner_emp > 0 AND ((due_at IS NOT NULL AND due_at < NOW()) OR (first_reply_at IS NULL AND reply_due IS NOT NULL AND reply_due < NOW())) GROUP BY owner_emp")->fetchAll() as $r) $cx[(int)$r['owner_emp']] = (int)$r['n']; } catch (Throwable $e) { }   // overdue complaints: solve them first
+    $fu = []; try { $q = $pdo->prepare("SELECT c.assigned_emp e, COUNT(*) n FROM wa_contacts c WHERE c.status = 'open' AND c.optout = 0 AND c.assigned_emp > 0 AND (c.cx_id IS NULL OR c.cx_id = 0) AND (c.tag IS NULL OR c.tag NOT IN ('complaint','order_status'))
+            AND c.last_out_at IS NOT NULL AND c.last_out_at > c.last_in_at AND c.last_out_at <= ? AND c.last_in_at >= ? GROUP BY c.assigned_emp"); $q->execute([wqx_dt($now - 300), wqx_dt($now - 20 * 3600)]); foreach ($q->fetchAll() as $r) $fu[(int)$r['e']] = (int)$r['n']; } catch (Throwable $e) { }   // 📣 we answered, the customer went quiet 5 min+ (inside the window): follow up
     $lost = []; try { $q = $pdo->prepare("SELECT from_emp e, COUNT(*) n FROM wqx_log WHERE kind = 'move' AND applied = 1 AND from_emp > 0 AND at >= ? GROUP BY from_emp"); $q->execute([wqx_dt(wqx_day_start($pdo))]); foreach ($q->fetchAll() as $r) $lost[(int)$r['e']] = (int)$r['n']; } catch (Throwable $e) { }   // chats taken away today for not answering
     foreach ((array)($prof['people'] ?? []) as $e => $p) {
         $e = (int)$e; $on = !empty($present[$e]); $brk = isset($br['open'][$e]);
@@ -275,7 +294,7 @@ function wqx_live(PDO $pdo, array $prof): array
         $ld = (int)($load[$e] ?? 0); $cap = max(1, (int)($p['cap'] ?? 6));
         $score = (float)($p['idx'] ?? 1) * (float)($p['idx_today'] ?? 1) * $act * (1 - 0.5 * min(1.0, $ld / $cap)) * max(0.6, pow(0.9, (int)($lost[$e] ?? 0)));   // every chat lost today for not answering costs 10 % of the place in the queue
         $L[$e] = ['emp_id' => $e, 'name' => (string)($p['name'] ?? ''), 'present' => $on, 'break' => $brk, 'break_used' => (int)($br['used'][$e] ?? 0), 'load' => $ld, 'cap' => $cap, 'full' => $ld >= $cap, 'pipe' => (int)($pipe[$e] ?? 0),
-            'answered_min_ago' => $ans[$e] ?? null, 'held' => $held || !empty($cx[$e]), 'held_why' => !empty($cx[$e]) ? 'complaints' : ($held ? 'orders' : ''), 'overdue_cx' => (int)($cx[$e] ?? 0), 'lost_today' => (int)($lost[$e] ?? 0), 'score' => round($score, 3), 'can' => $on && !$brk];
+            'answered_min_ago' => $ans[$e] ?? null, 'held' => $held || !empty($cx[$e]), 'held_why' => !empty($cx[$e]) ? 'complaints' : ($held ? 'orders' : ''), 'overdue_cx' => (int)($cx[$e] ?? 0), 'lost_today' => (int)($lost[$e] ?? 0), 'followups' => (int)($fu[$e] ?? 0), 'score' => round($score, 3), 'can' => $on && !$brk];
     }
     return $L;
 }
@@ -373,9 +392,11 @@ function wqx_coach(?array $l = null, ?array $p = null, array $prof = [], bool $o
     if ((string)($l['held_why'] ?? '') === 'complaints') return ['🔴 Solve your ' . (int)$l['overdue_cx'] . ' overdue complaint(s) first — then queries come', 'red'];
     if ((string)($l['held_why'] ?? '') === 'orders') return ['⛔ Queries paused — your ratio is below the team. Close 1 order to restart', 'red'];
     if ((int)($l['lost_today'] ?? 0) > 0) return ['⚠ ' . (int)$l['lost_today'] . ' chat(s) lost today for no reply — their order & commission went to others. Stay on your chats', 'red'];
+    if ((int)($l['followups'] ?? 0) >= 3) return ['📣 ' . (int)$l['followups'] . ' customers went quiet — follow up now (photo, offer, question)', 'amber'];
     if (!empty($l['full'])) return ['⏳ ' . (int)$l['load'] . ' live chats — answer them first, then new queries come', 'amber'];
     $sp = $p['speed_today'] ?? null; if ($sp !== null && $tSp !== null && (float)$sp > max(3.0, 1.5 * (float)$tSp)) return ['⚡ Reply faster — you ' . round((float)$sp, 1) . ' min, team ' . round((float)$tSp, 1) . ' min', 'amber'];
     $tk = $p['ticket'] ?? null; if ($tk !== null && $tTk > 0 && (int)($p['orders'] ?? 0) >= 3 && (float)$tk < 0.85 * $tTk) return ['🛍 Offer sets / combos / bigger size — your ticket ₹' . (int)$tk . ', team ₹' . $tTk . '. No heavy discounts', 'amber'];
+    if ((int)($l['followups'] ?? 0) > 0) return ['📣 ' . (int)$l['followups'] . ' customer(s) went quiet — follow up now', 'amber'];
     if ($l['answered_min_ago'] === null && (int)($l['load'] ?? 0) === 0 && (float)($p['idx'] ?? 1) >= 1.0) return ['🙋 You sell well — open new queries the moment they come', 'green'];
     if (!empty($p['trial'])) return ['🌱 New here — reply fast, offer sets; orders bring you more queries', 'green'];
     if ((float)($p['idx'] ?? 1) >= 1.15) return ['🚀 Top seller — more queries come to you. Keep the ticket big', 'green'];
