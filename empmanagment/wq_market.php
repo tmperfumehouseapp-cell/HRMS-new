@@ -16,7 +16,7 @@
  *               or have one on the way. The first queries (trial) are never judged.
  *   rising star a share of plain queries goes to people whose last 7 days beat their month, and to people on trial, so the top does not take everything.
  *   VIP         returning big-spenders go to the best ticket-size seller present. A returning buyer goes back to the person who sold them before.
- *   move-back   a chat with no proper answer from its holder (or a holder who punched out / is on a break) goes back to the market after a timer that is
+ *   move-back   (OFF by default since 12 Nov — setting wqx_move_on) a chat with no proper answer from its holder (or a holder who punched out / is on a break) goes back to the market after a timer that is
  *               learned from how fast the chance of an order drops with waiting; shorter for ready-to-pay, longer when everyone is busy; at most 2 moves.
  *   never left  when nobody has room, the best present person still gets it and the admins get a push.
  *
@@ -533,7 +533,10 @@ function wqx_run(PDO $pdo, bool $allowBuild = true): array
             if ($to <= 0) { if (!wqx_logged($pdo, (string)$c['phone'], (string)$c['last_in_at'], 'none')) wqx_log($pdo, (string)$c['phone'], (string)$c['last_in_at'], 'none', 0, 0, $why, false, $mode); continue; }
             $give($c, $to, $kind, $c['_why'] . ' → ' . $why, 0); $res['new']++;
         }
-        // B) waiting too long with its holder: no proper answer since the customer's last message
+        // B) waiting too long with its holder: no proper answer since the customer's last message.
+        //    OFF by the owner's wish (12 Nov): a chat a salesperson already holds is NEVER taken away by the engine for now — only Requests (nobody holds it)
+        //    are given automatically. Setting wqx_move_on = 1 turns the move-back on again. (A colleague can still Take over by hand.)
+        if ((string)setting_get($pdo, 'wqx_move_on', '0') !== '1') { $res['moves'] = 'off'; return $res; }
         $st = $pdo->prepare("SELECT c.phone, c.name, c.last_in_at, c.assigned_emp, c.assigned_at, c.hot, c.tag FROM wa_contacts c WHERE c.assigned_emp > 0 AND (c.cx_id IS NULL OR c.cx_id = 0) AND (c.tag IS NULL OR c.tag <> 'complaint')
             AND c.status = 'open' AND c.optout = 0 AND c.last_in_at >= ? AND c.last_in_at <= ? AND NOT EXISTS (SELECT 1 FROM wa_messages h WHERE h.phone = c.phone AND $humanSql) AND $notBiz ORDER BY c.last_in_at LIMIT 60");
         $st->execute([wqx_dt($now - 86400 + 600), wqx_dt($now - 30)]);
