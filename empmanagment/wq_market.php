@@ -575,20 +575,25 @@ function wqx_set_mode(PDO $pdo, string $m, int $by): void
 {
     $old = wqx_mode($pdo); if ($m === $old) return;
     if ($m === 'live' && $old !== 'live') {
-        wqx_meta_put($pdo, 'wqx:saved', json_encode(['wa_as_mode' => (string)setting_get($pdo, 'wa_as_mode', ''), 'wa_as_allow' => (string)setting_get($pdo, 'wa_as_allow', '[]'), 'wqm_mode' => (string)setting_get($pdo, 'wqm_mode', 'suggest'), 'wa_manual_assign' => (string)setting_get($pdo, 'wa_manual_assign', '1')]));
+        wqx_meta_put($pdo, 'wqx:saved', json_encode(['wqm_mode' => (string)setting_get($pdo, 'wqm_mode', 'suggest'), 'wa_manual_assign' => (string)setting_get($pdo, 'wa_manual_assign', '1')]));
         setting_set($pdo, 'wa_manual_assign', '1');   // the old routing robots (auto-assign, hot chats, flows) stay quiet: only this engine gives chats
-        setting_set($pdo, 'wa_as_mode', 'only'); setting_set($pdo, 'wa_as_allow', '[]');   // manual giving: admins only (emergency move)
+        // hand-giving rights are NOT changed: the router lets only the admin panel and Sales Heads give chats while this runs (wa_boss_ok in wa.php)
         setting_set($pdo, 'wqm_mode', 'off');   // ONE engine: the Team manager (and its waves) stop deciding while the market runs
     }
     if ($old === 'live' && $m !== 'live') {
         $s = json_decode(wqx_meta($pdo, 'wqx:saved', ''), true);
-        if (is_array($s)) { setting_set($pdo, 'wa_as_mode', (string)($s['wa_as_mode'] ?? '')); setting_set($pdo, 'wa_as_allow', (string)($s['wa_as_allow'] ?? '[]')); setting_set($pdo, 'wqm_mode', (string)($s['wqm_mode'] ?? 'suggest')); setting_set($pdo, 'wa_manual_assign', (string)($s['wa_manual_assign'] ?? '1')); }
+        if (is_array($s)) { if (array_key_exists('wa_as_mode', $s)) { setting_set($pdo, 'wa_as_mode', (string)$s['wa_as_mode']); setting_set($pdo, 'wa_as_allow', (string)($s['wa_as_allow'] ?? '[]')); } setting_set($pdo, 'wqm_mode', (string)($s['wqm_mode'] ?? 'suggest')); setting_set($pdo, 'wa_manual_assign', (string)($s['wa_manual_assign'] ?? '1')); }
     }
     setting_set($pdo, 'wqx_mode', $m);
     wqx_log($pdo, '', '', 'mode', 0, $by, $old . ' → ' . $m, true, $m);
 }
 
 }   // function_exists guard
+
+// one-time repair (12 Nov): an earlier version set "giving chats: admins only" on Start — the owner's own rights come back (Sales Heads give chats again)
+try { if (wqx_mode($pdo) === 'live' && wqx_meta($pdo, 'wqx:as_fixed', '') !== '1') { $sv = json_decode(wqx_meta($pdo, 'wqx:saved', ''), true);
+    if (is_array($sv) && array_key_exists('wa_as_mode', $sv)) { setting_set($pdo, 'wa_as_mode', (string)$sv['wa_as_mode']); setting_set($pdo, 'wa_as_allow', (string)($sv['wa_as_allow'] ?? '[]')); unset($sv['wa_as_mode'], $sv['wa_as_allow']); wqx_meta_put($pdo, 'wqx:saved', json_encode($sv)); }
+    wqx_meta_put($pdo, 'wqx:as_fixed', '1'); } } catch (Throwable $e) { }
 
 // ---------------------------------------------------------------------------------------------------------------- actions
 $__wqx = (string)($action ?? ($_GET['action'] ?? ''));

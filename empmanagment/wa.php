@@ -343,6 +343,13 @@ function wa_sig_ok(string $raw): bool
     return hash_equals('sha256=' . hash_hmac('sha256', $raw, $sec), $h);
 }
 
+/** 🏪 While Auto assign runs, the admin panel (Admin / HR / control tower) and a Sales Head (designation lead / head / manager in a sales department)
+ *  still give, take and move chats freely. Everyone else: only Take over and handing over their own chats. */
+function wa_boss_ok(PDO $pdo, array $auth): bool
+{
+    if (wa_is_admin($pdo, $auth)) return true; $e = (int)($auth['employee_id'] ?? 0); if ($e <= 0 || !function_exists('sales_role_kind')) return false;
+    try { $q = $pdo->prepare("SELECT d.department_name, e.designation FROM employees e LEFT JOIN departments d ON d.department_id = e.department_id WHERE e.employee_id = ?"); $q->execute([$e]); $r = $q->fetch(); return $r && sales_role_kind((string)$r['department_name'], (string)$r['designation']) === 'head'; } catch (Throwable $x) { return false; }
+}
 function wa_guard_admin(PDO $pdo, array $auth): void { if (!convo_is_admin($auth) && !ct_admin_ok($pdo, $auth)) require_role(['Admin', 'HR'], $auth); }
 function wa_is_admin(PDO $pdo, array $auth): bool { return convo_is_admin($auth) || ct_admin_ok($pdo, $auth) || in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true); }
 /** May this login read / write the chat? Admin / HR / control tower: all. A salesperson: only chats assigned to them. */
@@ -716,7 +723,7 @@ $__wa = (string)($action ?? ($_GET['action'] ?? ''));
 if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     // 🏪 Auto assign is running: nobody gives or grabs chats by hand (TAKE OVER and a salesperson's own HAND-OVER / Transfer of a chat they hold stay open — owner, 12 Nov: someone may still step into a colleague's chat and take it over; the order and commission go to whoever closes it) — the open market (Claude) gives every chat. To give one, tell Claude (Sales → Team performance).
-    if (in_array($__wa, ['wa.assign', 'wa.bulk_assign', 'wa.g_reassign', 'wa.g_reassign_all', 'wq.grab', 'wq.rescue_give', 'wq.rescue_take', 'wq.assign'], true) && $isPost && function_exists('setting_get') && (string)setting_get($pdo, 'wqx_mode', 'off') === 'live')
+    if (in_array($__wa, ['wa.assign', 'wa.bulk_assign', 'wa.g_reassign', 'wa.g_reassign_all', 'wq.grab', 'wq.rescue_give', 'wq.rescue_take', 'wq.assign'], true) && $isPost && function_exists('setting_get') && (string)setting_get($pdo, 'wqx_mode', 'off') === 'live' && !wa_boss_ok($pdo, require_auth()))
         json_response(['error' => '🏪 Auto assign is on — chats are given automatically to the best seller. To give a chat to someone, tell Claude in Sales → Team performance.'], 409);
     require_once __DIR__ . '/wa_tpl.php';   // pre-made messages (templates): defines its helpers and answers the wa.tpl_* actions
     require_once __DIR__ . '/wa_console.php';   // the WhatsApp console: wa.overview (counters + number health) and wa.send_media (photo / video / document from a chat)
