@@ -990,7 +990,7 @@
     // 🎤 a voice note this phone/browser cannot play (WhatsApp sends OGG-Opus; older iPhones/Safari refuse it): say so, and give Download + Open instead of a silent dead player
     function audioWatch(mid, u) {
       const w = $('[data-am="' + mid + '"]'); const a = w && w.querySelector('audio'); if (!a) return;
-      const bad = () => { if (!w.isConnected || w.querySelector('.wx-adl')) return; w.insertAdjacentHTML('beforeend', `<div class="wx-adl" style="font-size:12.5px;margin-top:4px">⚠ This device cannot play the voice note here. <a href="${u}" download="voice-note.ogg" target="_blank" rel="noopener">⬇ Download</a> · <a href="${u}" target="_blank" rel="noopener">Open</a> — or read the text below.</div>`); };
+      const bad = () => { if (!w.isConnected || w.querySelector('.wx-adl')) return; clientErr('voice_play', 'cannot play ' + mid, (a.error && a.error.code) || ''); w.insertAdjacentHTML('beforeend', `<div class="wx-adl" style="font-size:12.5px;margin-top:4px">⚠ This device cannot play the voice note here. <a href="${u}" download="voice-note.ogg" target="_blank" rel="noopener">⬇ Download</a> · <a href="${u}" target="_blank" rel="noopener">Open</a> — or read the text below.</div>`); };
       a.addEventListener('error', bad); setTimeout(() => { if (a.readyState === 0 && !a.error && a.networkState === 3) bad(); }, 6000);
       const pr = a.play && a.play(); if (pr && pr.catch) pr.catch((e) => { if (e && e.name === 'NotSupportedError') bad(); });
     }
@@ -1297,7 +1297,7 @@
         const url = isImg || isVid ? URL.createObjectURL(f) : ''; const tmp = { id: 'tmp' + (here() ? ++S.cur.tmp : Date.now()), dir: 'out', mtype: isImg ? 'image' : isVid ? 'video' : isAud ? 'audio' : 'document', body: '', status: 'sending', who: 'emp', ts: (function () { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')} ${String(n.getHours()).padStart(2, '0')}:${String(n.getMinutes()).padStart(2, '0')}:00`; })(), tmp: true, media_id: 'local' + Date.now() };
         if (url) MEDIA[tmp.media_id] = url; if (here()) { S.cur.msgs.push(tmp); $('#wxMs').innerHTML = msgsHtml(); scrollEnd(true); }
         try { const r = await upload(f, phone, isAud ? '' : cap); cap = ''; if (r.media_id && url) MEDIA[r.media_id] = url; if (here()) { S.cur.msgs = S.cur.msgs.filter((m) => m !== tmp); await pollChat(); } }
-        catch (e) { if (here()) { S.cur.msgs = S.cur.msgs.filter((m) => m !== tmp); $('#wxMs').innerHTML = msgsHtml(); } toast(e.message, true); }
+        catch (e) { if (here()) { S.cur.msgs = S.cur.msgs.filter((m) => m !== tmp); $('#wxMs').innerHTML = msgsHtml(); } toast(e.message, true); if (isAud) clientErr('voice_send', e.message, f.type + ' ' + f.size); }
       }
     }
 
@@ -1311,6 +1311,7 @@
 
     // ---- voice note (MP3 / MP4 only: that is what WhatsApp accepts)
     let REC = null;
+    const clientErr = (kind, msg, info) => { try { api.post('wa.client_err', { kind, msg: String(msg || '').slice(0, 200), info: String(info || '').slice(0, 80), ua: (navigator.userAgent || '').replace(/^Mozilla\/5\.0\s*/, '').slice(0, 90) }).catch(() => { }); } catch (e) { } };   // reported to the WhatsApp log: why a voice note failed
     async function startRec() {
       if (S.cur && S.cur.sg && S.cur.sg.counting) { suggStop(); S.auDone[S.cur.phone + ':' + S.cur.sg.li] = 1; suggDraw(); }
       if (!navigator.mediaDevices || !window.MediaRecorder) return toast('This phone cannot record here. Use 📎 Attach → Voice to pick a voice file.', true);
@@ -1320,7 +1321,7 @@
         mr.onstop = async () => { st.getTracks().forEach((t) => t.stop()); const r = REC; REC = null; drawFoot2(); if (!r || r.cancel || !chunks.length) return; await finishRec(new Blob(chunks, { type: r.mt }), r.req); };
         mr.start(); const f = $('#wxFoot'); f.innerHTML = `<div class="wx-bar"><button class="wx-ic" id="wxRx" aria-label="Cancel">🗑</button><div class="wx-rec"><i></i><span id="wxRt">0:00</span></div><button class="wx-ic snd" id="wxRs" aria-label="Send voice note">➤</button></div>`;
         $('#wxRx').onclick = () => stopRec(true); $('#wxRs').onclick = () => stopRec(false); REC.tm = setInterval(() => { const e = $('#wxRt'); if (e && REC) e.textContent = mmss((Date.now() - REC.t0) / 1000); }, 500);
-      } catch (e) { const nm = (e && e.name) || ''; toast(nm === 'NotAllowedError' || nm === 'SecurityError' ? 'Allow the microphone for this app (phone Settings → the browser → Microphone), then try again.' : nm === 'NotFoundError' ? 'No microphone found on this phone.' : nm === 'NotReadableError' ? 'Another app is using the microphone (a call?). Close it and try again.' : 'Could not start recording: ' + (e.message || nm), true); }
+      } catch (e) { const nm = (e && e.name) || ''; clientErr('voice_record', nm + ' ' + ((e && e.message) || ''), ''); toast(nm === 'NotAllowedError' || nm === 'SecurityError' ? 'Allow the microphone for this app (phone Settings → the browser → Microphone), then try again.' : nm === 'NotFoundError' ? 'No microphone found on this phone.' : nm === 'NotReadableError' ? 'Another app is using the microphone (a call?). Close it and try again.' : 'Could not start recording: ' + (e.message || nm), true); }
     }
     function stopRec(cancel) { if (!REC) return; clearInterval(REC.tm); REC.cancel = !!cancel; try { REC.mr.stop(); } catch (e) { } }
     function drawFoot2() { const f = $('#wxFoot'); if (f) { f.innerHTML = ''; if (S.cur) drawFoot(); } }
@@ -1333,7 +1334,7 @@
         else if (/mp4a|aac/.test(ty) && /iPhone|iPad|iPod/.test(navigator.userAgent || '')) file = new File([blob], 'voice.m4a', { type: 'audio/mp4' });   // only an iPhone really records AAC; Android Chrome says "mp4a" for what it asked for but records Opus-in-MP4, which WhatsApp refuses (voice note shows failed) → it goes through the MP3 converter below
         else file = new File([await toMp3(blob)], 'voice.mp3', { type: 'audio/mpeg' });
         await sendFiles([file], '');
-      } catch (e) { toast('Could not prepare the voice note: ' + e.message, true); }
+      } catch (e) { toast('Could not prepare the voice note: ' + e.message, true); clientErr('voice_prepare', e.message, (blob && blob.type) + ' ' + (blob && blob.size)); }
     }
     function loadScript(src) { return new Promise((res, rej) => { if (window.lamejs) return res(); const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('Could not load the voice converter (check the internet).')); document.head.appendChild(s); }); }
     async function toMp3(blob) {

@@ -117,11 +117,16 @@ function wa_send_media(PDO $pdo, array $c, string $kind, string $mediaId, string
 
 // ------------------------------------------------------------------------------------------------------------------------ router
 $__wc = (string)($action ?? ($_GET['action'] ?? ''));
-if ($__wc === 'wa.overview' || $__wc === 'wa.send_media') {
+if ($__wc === 'wa.overview' || $__wc === 'wa.send_media' || $__wc === 'wa.client_err') {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     $auth = require_auth();
     if (!wa_tables($pdo)) json_response(['error' => 'WhatsApp storage is not available — check database permissions.'], 500);
     switch ($__wc) {
+        case 'wa.client_err': {   // the phone / browser tells us why a voice note could not be recorded, sent or played (shown in the WhatsApp log): so the cause is known, not guessed
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $in0 = json_input(); $emp0 = (int)($auth['employee_id'] ?? 0);
+            $kind0 = preg_replace('/[^a-z_]/', '', strtolower((string)($in0['kind'] ?? 'client'))); $msg0 = preg_replace('/\s+/', ' ', (string)($in0['msg'] ?? '')); $ua0 = preg_replace('/\s+/', ' ', (string)($in0['ua'] ?? ''));
+            wa_log($pdo, 'client', false, 'emp ' . $emp0 . ' · ' . mb_substr($kind0, 0, 20) . ' · ' . mb_substr($msg0, 0, 120) . ' · ' . mb_substr((string)($in0['info'] ?? ''), 0, 60) . ' · ' . mb_substr($ua0, 0, 60)); json_response(['ok' => true]);
+        }
         case 'wa.send_media': {
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
             $cl = (int)($_SERVER['CONTENT_LENGTH'] ?? 0); $pm = wa_ini_bytes((string)ini_get('post_max_size'));
