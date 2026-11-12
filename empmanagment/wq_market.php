@@ -32,6 +32,8 @@
  * Effort: a cold customer (never wrote again) the salesperson still followed up (2+ proper messages) is left out of their ratio; eager
  * customers (3+ messages) carry a higher expectation. Follow-ups: who went quiet on whom is in the coach line and pushed every 15 min.
  * Picking a chat and not answering it = it goes back to the market (🟠) after the timer.
+ * Line + gate (12 Nov): people replying to customers in the last 3 min come first (then 10 min, then quiet). A person with a customer waiting
+ * 3+ min (wqx_gate_sec) for their answer, or 2 waiting at once, gets nothing new until they reply — the next person in line gets it.
  * Actions: wq.mkt_ask POST {text} · wq.mkt_hint_del POST {id} · wq.mkt_get (admin board) · wq.mkt_mode POST {mode} · wq.mkt_cfg POST {break_max, explore} · wq.mkt_recalc POST · wq.mkt_me (salesperson)
  *          wq.mkt_break POST {on: 1|0} (salesperson)
  * Tables: wqx_log (every decision), wqx_break (breaks).
@@ -286,15 +288,21 @@ function wqx_live(PDO $pdo, array $prof): array
     $cx = []; try { foreach ($pdo->query("SELECT owner_emp, COUNT(*) n FROM cx_cases WHERE status IN ('open','reopened') AND owner_emp > 0 AND ((due_at IS NOT NULL AND due_at < NOW()) OR (first_reply_at IS NULL AND reply_due IS NOT NULL AND reply_due < NOW())) GROUP BY owner_emp")->fetchAll() as $r) $cx[(int)$r['owner_emp']] = (int)$r['n']; } catch (Throwable $e) { }   // overdue complaints: solve them first
     $fu = []; try { $q = $pdo->prepare("SELECT c.assigned_emp e, COUNT(*) n FROM wa_contacts c WHERE c.status = 'open' AND c.optout = 0 AND c.assigned_emp > 0 AND (c.cx_id IS NULL OR c.cx_id = 0) AND (c.tag IS NULL OR c.tag NOT IN ('complaint','order_status'))
             AND c.last_out_at IS NOT NULL AND c.last_out_at > c.last_in_at AND c.last_out_at <= ? AND c.last_in_at >= ? GROUP BY c.assigned_emp"); $q->execute([wqx_dt($now - 300), wqx_dt($now - 20 * 3600)]); foreach ($q->fetchAll() as $r) $fu[(int)$r['e']] = (int)$r['n']; } catch (Throwable $e) { }   // 📣 we answered, the customer went quiet 5 min+ (inside the window): follow up
+    // ⏸ the gate (owner, 12 Nov): a person with a customer waiting 3+ min for their first proper answer, or 2 customers waiting at all, gets NO new chat until they reply
+    $gateSec = max(60, min(900, (int)setting_get($pdo, 'wqx_gate_sec', '180'))); $un = []; $hs = function_exists('wq_human_sql') ? wq_human_sql('h', 'c', 'last_in_at') : "h.dir = 'out' AND h.emp_id > 0 AND h.ts >= c.last_in_at";
+    try { $q = $pdo->prepare("SELECT c.assigned_emp e, COUNT(*) n, MIN(c.last_in_at) o FROM wa_contacts c WHERE c.status = 'open' AND c.optout = 0 AND c.assigned_emp > 0 AND (c.cx_id IS NULL OR c.cx_id = 0) AND (c.tag IS NULL OR c.tag <> 'complaint')
+            AND c.last_in_at >= ? AND NOT EXISTS (SELECT 1 FROM wa_messages h WHERE h.phone = c.phone AND $hs) GROUP BY c.assigned_emp"); $q->execute([wqx_dt($now - 2 * 3600)]);
+        foreach ($q->fetchAll() as $r) $un[(int)$r['e']] = [(int)$r['n'], $now - wqx_ts($r['o'])]; } catch (Throwable $e) { }
     $lost = []; try { $q = $pdo->prepare("SELECT from_emp e, COUNT(*) n FROM wqx_log WHERE kind = 'move' AND applied = 1 AND from_emp > 0 AND at >= ? GROUP BY from_emp"); $q->execute([wqx_dt(wqx_day_start($pdo))]); foreach ($q->fetchAll() as $r) $lost[(int)$r['e']] = (int)$r['n']; } catch (Throwable $e) { }   // chats taken away today for not answering
     foreach ((array)($prof['people'] ?? []) as $e => $p) {
         $e = (int)$e; $on = !empty($present[$e]); $brk = isset($br['open'][$e]);
         $held = !empty($p['sure_behind']) && (int)($p['orders_today'] ?? 0) === 0 && (int)($pipe[$e] ?? 0) === 0;
-        $act = isset($ans[$e]) ? ($ans[$e] <= 10 ? 1.0 : 0.85) : 0.7;
+        $act = isset($ans[$e]) ? ($ans[$e] <= 3 ? 1.6 : ($ans[$e] <= 10 ? 1.0 : 0.6)) : 0.35;   // replying to customers in the last 3 min = first in line; quiet = last
+        $uw = $un[$e] ?? [0, 0]; $gate = $uw[0] >= 2 || ($uw[0] >= 1 && $uw[1] >= $gateSec);
         $ld = (int)($load[$e] ?? 0); $cap = max(1, (int)($p['cap'] ?? 6));
         $score = (float)($p['idx'] ?? 1) * (float)($p['idx_today'] ?? 1) * $act * (1 - 0.5 * min(1.0, $ld / $cap)) * max(0.6, pow(0.9, (int)($lost[$e] ?? 0)));   // every chat lost today for not answering costs 10 % of the place in the queue
         $L[$e] = ['emp_id' => $e, 'name' => (string)($p['name'] ?? ''), 'present' => $on, 'break' => $brk, 'break_used' => (int)($br['used'][$e] ?? 0), 'load' => $ld, 'cap' => $cap, 'full' => $ld >= $cap, 'pipe' => (int)($pipe[$e] ?? 0),
-            'answered_min_ago' => $ans[$e] ?? null, 'held' => $held || !empty($cx[$e]), 'held_why' => !empty($cx[$e]) ? 'complaints' : ($held ? 'orders' : ''), 'overdue_cx' => (int)($cx[$e] ?? 0), 'lost_today' => (int)($lost[$e] ?? 0), 'followups' => (int)($fu[$e] ?? 0), 'score' => round($score, 3), 'can' => $on && !$brk];
+            'answered_min_ago' => $ans[$e] ?? null, 'waiting' => $uw[0], 'waiting_sec' => $uw[1], 'gate' => $gate, 'held' => $held || !empty($cx[$e]), 'held_why' => !empty($cx[$e]) ? 'complaints' : ($held ? 'orders' : ''), 'overdue_cx' => (int)($cx[$e] ?? 0), 'lost_today' => (int)($lost[$e] ?? 0), 'followups' => (int)($fu[$e] ?? 0), 'score' => round($score, 3), 'can' => $on && !$brk];
     }
     return $L;
 }
@@ -334,7 +342,7 @@ function wqx_pick(PDO $pdo, array $c, array $L, array $prof, array $cfg, int $ex
     $el = array_filter($L, function ($p) use ($except) { return $p['can'] && (int)$p['emp_id'] !== $except; });
     if (!$el) return [0, '', 'nobody present (or everyone on a break)'];
     $P = (array)($prof['people'] ?? []); $phone = (string)$c['phone'];
-    $open = array_filter($el, function ($p) { return !$p['held'] && !$p['full']; });
+    $open = array_filter($el, function ($p) { return !$p['held'] && !$p['full'] && empty($p['gate']); });
     $byScore = function (array $a) { uasort($a, function ($x, $y) { return [$y['score'], $x['load']] <=> [$x['score'], $y['load']]; }); return $a; };
     // the owner's own wishes, told to Claude (a kind of customer → a person, a person who must not get chats …)
     foreach (wqx_hints_for($pdo, $c) as $h) {
@@ -342,8 +350,10 @@ function wqx_pick(PDO $pdo, array $c, array $L, array $prof, array $cfg, int $ex
         if ((int)$h['prefer'] > 0 && isset($open[(int)$h['prefer']])) return [(int)$h['prefer'], 'claude', 'owner\'s rule (' . $h['why'] . ') → ' . $open[(int)$h['prefer']]['name']];
     }
     if (!$el) return [0, '', 'nobody allowed by the owner\'s rules is at work'];
-    if (!$open) {   // nobody has room or everyone is held back: never leave the query — the best present person, held ones last
-        $all = $el; uasort($all, function ($x, $y) { return [(int)$x['held'], $x['load'] / max(1, $x['cap']), $y['score']] <=> [(int)$y['held'], $y['load'] / max(1, $y['cap']), $x['score']]; }); $f = reset($all);   // spread the extra load: the least loaded (for their own limit) first
+    if (!$open) {   // nobody has room or everyone is held back: never leave the query — the best present person, held ones last. A STOPPED person (customer waiting for their reply) never gets one:
+        $el = array_filter($el, function ($p) { return empty($p['gate']); });   // then the chat waits with the bot (🔴 still pops up for everyone) and goes the moment someone replies
+        if (!$el) return [0, '', '⏸ everyone at work has a customer waiting for their reply — this chat waits until someone answers'];
+        $all = $el; uasort($all, function ($x, $y) { return [(int)$x['held'], (int)!empty($x['gate']), $x['load'] / max(1, $x['cap']), $y['score']] <=> [(int)$y['held'], (int)!empty($y['gate']), $y['load'] / max(1, $y['cap']), $x['score']]; }); $f = reset($all);   // spread the extra load: the least loaded (for their own limit) first
         return [(int)$f['emp_id'], 'overflow', 'everyone is full or held — ' . $f['name'] . ' has the most room left; admins alerted'];
     }
     // a returning buyer goes back to the person who sold them before
@@ -391,6 +401,7 @@ function wqx_coach(?array $l = null, ?array $p = null, array $prof = [], bool $o
     if (empty($l['present'])) return ['⏰ Punch in (office or work from home) — no punch-in, no queries, no commission', 'red'];
     if ((string)($l['held_why'] ?? '') === 'complaints') return ['🔴 Solve your ' . (int)$l['overdue_cx'] . ' overdue complaint(s) first — then queries come', 'red'];
     if ((string)($l['held_why'] ?? '') === 'orders') return ['⛔ Queries paused — your ratio is below the team. Close 1 order to restart', 'red'];
+    if (!empty($l['gate'])) return ['⏸ ' . (int)$l['waiting'] . ' customer(s) waiting for your reply — no new queries until you answer', 'red'];
     if ((int)($l['lost_today'] ?? 0) > 0) return ['⚠ ' . (int)$l['lost_today'] . ' chat(s) lost today for no reply — their order & commission went to others. Stay on your chats', 'red'];
     if ((int)($l['followups'] ?? 0) >= 3) return ['📣 ' . (int)$l['followups'] . ' customers went quiet — follow up now (photo, offer, question)', 'amber'];
     if (!empty($l['full'])) return ['⏳ ' . (int)$l['load'] . ' live chats — answer them first, then new queries come', 'amber'];
@@ -482,7 +493,7 @@ function wqx_run(PDO $pdo, bool $allowBuild = true): array
         $give = function (array $c, int $to, string $kind, string $why, int $from) use ($pdo, &$L, $live, $mode, &$res, $names) {
             $in = (string)($c['last_in_at'] ?? ''); if (wqx_logged($pdo, (string)$c['phone'], $in, $kind)) return;
             wqx_log($pdo, (string)$c['phone'], $in, $kind, $from, $to, $why, $live, $mode);
-            if (isset($L[$to])) { $L[$to]['load']++; $L[$to]['full'] = $L[$to]['load'] >= $L[$to]['cap']; $L[$to]['score'] = round($L[$to]['score'] * (1 - 0.5 / max(1, $L[$to]['cap'])), 3); }
+            if (isset($L[$to])) { $L[$to]['waiting'] = (int)($L[$to]['waiting'] ?? 0) + 1; if ($L[$to]['waiting'] >= 2) $L[$to]['gate'] = true; $L[$to]['load']++; $L[$to]['full'] = $L[$to]['load'] >= $L[$to]['cap']; $L[$to]['score'] = round($L[$to]['score'] * (1 - 0.5 / max(1, $L[$to]['cap'])), 3); }
             if (!$live) return;
             try {
                 wa_assign_to($pdo, (string)$c['phone'], $to, 0, 'auto');
@@ -526,11 +537,14 @@ function wqx_run(PDO $pdo, bool $allowBuild = true): array
         foreach ($todo as $c) {
             $heat = (string)$c['_heat'];
             if (!empty($c['_sweep'])) {   // cold follow-ups are shared out evenly, so nobody's ratio carries more of them than anybody else's
-                $ok = array_filter($L, function ($p) { return $p['can'] && !$p['held']; }); if (!$ok) $ok = array_filter($L, function ($p) { return $p['can']; });
+                $skip = []; foreach (wqx_hints_for($pdo, $c) as $h0) if ((int)$h0['avoid'] > 0) $skip[(int)$h0['avoid']] = 1;
+                $ok = array_filter($L, function ($p) use ($skip) { return $p['can'] && !$p['held'] && empty($p['gate']) && !isset($skip[(int)$p['emp_id']]); }); if (!$ok) $ok = array_filter($L, function ($p) use ($skip) { return $p['can'] && empty($p['gate']) && !isset($skip[(int)$p['emp_id']]); });
                 if ($ok) { uasort($ok, function ($x, $y) { return [$x['load'] / max(1, $x['cap']), $y['score']] <=> [$y['load'] / max(1, $y['cap']), $x['score']]; }); $f = reset($ok); [$to, $kind, $why] = [(int)$f['emp_id'], 'sweep', 'shared out evenly → ' . $f['name']]; }
-                else [$to, $kind, $why] = [0, '', 'nobody present (or everyone on a break)'];
+                else [$to, $kind, $why] = [0, '', '⏸ nobody free — everyone at work is on a break or has a customer waiting for their reply'];
             } else [$to, $kind, $why] = wqx_pick($pdo, $c, $L, $prof, $cfg, 0, $heat);
-            if ($to <= 0) { if (!wqx_logged($pdo, (string)$c['phone'], (string)$c['last_in_at'], 'none')) wqx_log($pdo, (string)$c['phone'], (string)$c['last_in_at'], 'none', 0, 0, $why, false, $mode); continue; }
+            if ($to <= 0) { if (!wqx_logged($pdo, (string)$c['phone'], (string)$c['last_in_at'], 'none')) wqx_log($pdo, (string)$c['phone'], (string)$c['last_in_at'], 'none', 0, 0, $why, false, $mode);
+                if ($live && strpos($why, '⏸') === 0 && function_exists('ct_push') && function_exists('wq_admin_ids') && (int)wqx_meta($pdo, 'wqx:busy_at', '0') < $now - 900) { wqx_meta_put($pdo, 'wqx:busy_at', (string)$now); try { ct_push($pdo, wq_admin_ids($pdo), '⏸ Queries waiting', 'Everyone at work has customers waiting for their reply, so new queries are waiting. Ask the team to reply.', '/sales.html#people/team', 'wqx-busy'); } catch (Throwable $e) { } }
+                continue; }
             $give($c, $to, $kind, $c['_why'] . ' → ' . $why, 0); $res['new']++;
         }
         // B) waiting too long with its holder: no proper answer since the customer's last message.
@@ -623,10 +637,10 @@ if (in_array($__wqx, ['wq.mkt_get', 'wq.mkt_mode', 'wq.mkt_cfg', 'wq.mkt_recalc'
         $prof = wqx_profile($pdo, false); if (empty($prof['people'])) $prof = wqx_profile($pdo, true, true);
         $L = wqx_live($pdo, $prof); $names = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : [];
         $bk = wqx_breaks($pdo); $rows = []; $hints = wqx_hints($pdo); $rk = []; $i0 = 0;
-        $order = $L; uasort($order, function ($x, $y) { return $y['score'] <=> $x['score']; }); foreach ($order as $e => $x) if ($x['can'] && !$x['held'] && !$x['full']) $rk[(int)$e] = ++$i0;
+        $order = $L; uasort($order, function ($x, $y) { return $y['score'] <=> $x['score']; }); foreach ($order as $e => $x) if ($x['can'] && !$x['held'] && !$x['full'] && empty($x['gate'])) $rk[(int)$e] = ++$i0;
         foreach ((array)$prof['people'] as $e => $p) { $e = (int)$e; $l = $L[$e] ?? null; $cc = wqx_coach($l, $p, $prof, isset($bk['open'][$e]), (int)($bk['used'][$e] ?? 0), $cfg['break_max']);
             $nogo = ''; foreach ($hints as $h) if ((int)$h['avoid'] === $e && $h['kind'] === 'all') $nogo = 'a rule told to Claude: ' . $h['why'];
-            $why = !$l ? 'not in the list' : (!$l['present'] ? '⛔ not at work — no punch-in today and no work-from-home mark' : ($l['break'] ? '☕ on a break' : ($nogo !== '' ? '⛔ ' . $nogo : ($l['held_why'] === 'complaints' ? '⛔ ' . $l['overdue_cx'] . ' overdue complaint(s) first' : ($l['held_why'] === 'orders' ? '⛔ paused — ratio clearly below the team and no order today (1 order restarts)' : ($l['full'] ? '⏳ full — ' . $l['load'] . ' live chats, own limit ' . $l['cap'] : '✅ gets chats — #' . ($rk[$e] ?? '?') . ' in line (score ' . $l['score'] . ')'))))));
+            $why = !$l ? 'not in the list' : (!$l['present'] ? '⛔ not at work — no punch-in today and no work-from-home mark' : ($l['break'] ? '☕ on a break' : ($nogo !== '' ? '⛔ ' . $nogo : ($l['held_why'] === 'complaints' ? '⛔ ' . $l['overdue_cx'] . ' overdue complaint(s) first' : ($l['held_why'] === 'orders' ? '⛔ paused — ratio clearly below the team and no order today (1 order restarts)' : (!empty($l['gate']) ? '⏸ stopped — ' . (int)$l['waiting'] . ' customer(s) waiting for their reply (' . (int)round($l['waiting_sec'] / 60) . ' min); opens when they answer' : ($l['full'] ? '⏳ full — ' . $l['load'] . ' live chats, own limit ' . $l['cap'] : '✅ gets chats — #' . ($rk[$e] ?? '?') . ' in line (' . ($l['answered_min_ago'] === null ? 'quiet today' : 'replied ' . $l['answered_min_ago'] . ' min ago') . ', score ' . $l['score'] . ')')))))));
             $rows[] = $p + ['live' => $l, 'coach' => $cc[0], 'tone' => $cc[1], 'why_chats' => $why, 'line' => $rk[$e] ?? null]; }
         $outside = []; try { $q = $pdo->prepare("SELECT DISTINCT m.emp_id FROM wa_messages m WHERE m.dir = 'out' AND m.emp_id > 0 AND m.ts >= ?"); $q->execute([wqx_dt(wqx_now() - 3 * 86400)]); $sl = array_flip(wqx_sales($pdo)); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $e) if (!isset($sl[(int)$e])) $outside[] = (string)($names[(int)$e] ?? ('#' . $e)); } catch (Throwable $e) { }
         usort($rows, function ($a, $b) { return [(int)!empty($b['live']['can']), (float)($b['live']['score'] ?? 0)] <=> [(int)!empty($a['live']['can']), (float)($a['live']['score'] ?? 0)]; });
