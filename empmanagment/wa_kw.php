@@ -51,4 +51,36 @@ function wkw_try(PDO $pdo, string $key): bool
     } catch (Throwable $e) { return false; }
 }
 
+/** Chats still waiting whose newest customer message is one of the keywords: [phone => kind]. */
+function wkw_waiting(PDO $pdo, int $max = 600): array
+{
+    $out = [];
+    try {
+        $st = $pdo->prepare("SELECT phone FROM wa_contacts WHERE status = 'open' AND optout = 0 AND (cx_id IS NULL OR cx_id = 0) AND assigned_emp = 0 AND last_in_at >= ? AND (last_out_at IS NULL OR last_out_at < last_in_at) ORDER BY last_in_at DESC LIMIT " . (int)$max);
+        $st->execute([date('Y-m-d H:i:s', time() - 86400 + 600)]);
+        $li = $pdo->prepare("SELECT id, mtype, body FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 1");
+        foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $ph) {
+            $li->execute([$ph]); $m = $li->fetch(); if (!$m || !in_array((string)$m['mtype'], ['text', 'button', 'interactive'], true)) continue;
+            $k = wkw_match((string)$m['body']); if ($k === '' || (string)setting_get($pdo, 'wkw_' . $ph, '') === (string)$m['id']) continue; $out[(string)$ph] = $k;
+        }
+    } catch (Throwable $e) { }
+    return $out;
+}
+
+}
+
+$__kwa = (string)($action ?? ($_GET['action'] ?? ''));
+if ($__kwa === 'wa.kw_backfill') {
+    $auth = require_auth(); if (!function_exists('wa_tables') || !wa_tables($pdo)) json_response(['error' => 'WhatsApp storage is not available.'], 500);
+    if (!(function_exists('wa_is_admin') && wa_is_admin($pdo, $auth))) json_response(['error' => 'Only Admin, HR or the control tower can do this.'], 403);
+    $w = wkw_waiting($pdo); $cnt = ['ml20' => 0, 'ml50' => 0, 'ml100' => 0, 'offer' => 0]; foreach ($w as $k) $cnt[$k]++;
+    $miss = []; foreach ($cnt as $k => $n) if ($n > 0 && wkw_text($pdo, $k) === '') $miss[] = $k === 'offer' ? 'Offer' : strtoupper(substr($k, 2)) . 'ML Combo';
+    if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') json_response(['ok' => true, 'total' => count($w), 'counts' => $cnt, 'missing' => $miss]);
+    if ($miss) json_response(['error' => 'Save these Pre-made messages first: ' . implode(', ', $miss) . '.'], 422);
+    @set_time_limit(120); $sent = 0; $fail = 0; $t0 = microtime(true);
+    foreach ($w as $ph => $k) {
+        if ($sent + $fail >= 20 || microtime(true) - $t0 > 80) break;
+        if (wkw_try($pdo, (string)$ph)) $sent++; else $fail++; usleep(300000);
+    }
+    $left = count(wkw_waiting($pdo)); json_response(['ok' => true, 'sent' => $sent, 'failed' => $fail, 'left' => $left]);
 }
