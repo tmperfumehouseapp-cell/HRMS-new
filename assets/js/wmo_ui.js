@@ -119,6 +119,7 @@
     const totalP = () => (S.pay === 'prepaid' ? paidP() : paise(num(S.total)));
     const sum = (m) => { let t = 0; m.forEach((x) => { t += x.price * x.qty; }); return t; };
     const hasItems = () => S.perf.size > 0 || S.single.size > 0;
+    const addrOk = () => !!o.outside && S.cust.name.trim().length >= 2 && S.cust.addr1.trim().length >= 5 && /^[1-9]\d{5}$/.test(S.cust.pin) && S.cust.city.trim() !== '' && S.cust.state.trim() !== '';   // the salesperson typed the whole address: the order is final at once, no link
     const mlOf = () => { let t = 0; S.perf.forEach((x) => { t += (x.ml || 0) * x.qty; }); return t; };
     const filled = (ml) => { let n = 0; S.perf.forEach((x) => { if (x.ml === ml) n += x.qty; }); return n; };
     function calc() {
@@ -181,7 +182,7 @@
       const k = calc(); let sm = '';
       if (k.T && hasItems()) { const bad = S.perf.size ? k.P < k.pieces * 1000 : k.P !== 0; sm = '<div class="mo-sum' + (bad ? ' bad' : '') + '"><div class="r big"><span>' + (S.perf.size ? 'Perfumes get' : 'Products + chain = total?') + '</span><b>' + (S.perf.size ? (k.P > 0 ? rs(k.P) : '—') : (k.P === 0 ? '✓' : 'differs by ' + rs(Math.abs(k.P)))) + '</b></div><div class="r"><span>Total ' + rs(k.T) + (S.chain.size ? ' − chain ' + rs(k.C) + ' (full price)' : '') + (S.single.size ? ' − other products ' + rs(k.SG) : '') + '</span><span>' + (k.pd ? 'paid ' + rs(k.pd) : '') + (k.cod ? ' · COD ' + rs(k.cod) : '') + '</span></div></div>'; }
       const miss = S.combo && !k.comboOk ? '<div class="mo-note">The perfumes must match the combo (' + esc(comboLabel(S.combo)) + ') or choose “Any mix”.</div>' : '';
-      ft.innerHTML = sm + miss + '<div id="moFm">' + S.msg + '</div><button type="button" class="mo-go" id="moGo"' + (k.ok ? '' : ' disabled') + '>' + (S.busy ? 'Working…' : 'Create order' + (k.ok ? ' · ' + rs(k.T) : '') + ' and send the link') + '</button>';
+      ft.innerHTML = sm + miss + '<div id="moFm">' + S.msg + '</div><button type="button" class="mo-go" id="moGo"' + (k.ok ? '' : ' disabled') + '>' + (S.busy ? 'Working…' : addrOk() ? 'Create the final order' + (k.ok ? ' · ' + rs(k.T) : '') : 'Create order' + (k.ok ? ' · ' + rs(k.T) : '') + ' and send the link') + '</button>';
       ft.querySelector('#moGo').onclick = make;
     }
     const fm = (h, cls) => { S.msg = h ? '<div class="mo-note ' + (cls || '') + '">' + h + '</div>' : ''; const el = ft.querySelector('#moFm'); if (el) el.innerHTML = S.msg; };
@@ -240,11 +241,19 @@
           const r = await API.post('wmo.create', { otype: o.outside ? S.otype : '', cust: o.outside ? S.cust : null, singles: Array.from(S.single.values()).map((x) => ({ vid: x.vid, qty: x.qty, price: x.price / 100 })), phone: o.phone, pay: S.pay, total: k.T / 100, paid: k.pd / 100, utr: S.utr, ml: mlOf(), lines: Array.from(S.perf.values()).map((x) => ({ vid: x.vid, qty: x.qty })), chains: Array.from(S.chain.values()).map((x) => ({ vid: x.vid, qty: x.qty })), shot: S.shot ? S.shot.b64 : '', shot_mime: S.shot ? S.shot.mime : '', shot_read: S.read && !S.read.error ? S.read : null });
           S.order = r.order;
         }
+        if (addrOk()) { const r2 = await API.post('wmo.confirm', { id: S.order.id, cust: S.cust }); S.busy = false; S.order.order_no = r2.order_no || S.order.order_no; doneFinal(); if (o.onDone) { try { o.onDone({ stage: 'confirmed', order: S.order }); } catch (e) { } } return; }
         let sent = false, sendErr = '';
         try { await API.post('wmo.send', { id: S.order.id }); sent = true; } catch (e) { sendErr = errMsg(e); }
         S.busy = false; done(sent, sendErr);
         if (o.onDone) { try { o.onDone({ stage: sent ? 'sent' : 'built', order: S.order }); } catch (e) { } }
       } catch (e) { S.busy = false; drawFoot(); const d = (e && e.data) || {}; fm(esc(errMsg(e)), 'bad'); }
+    }
+    function doneFinal() {
+      const x = S.order;
+      bd.innerHTML = '<div style="text-align:center;font-size:36px">✅</div><h3 style="text-align:center;margin:4px 0 10px">' + esc(x.order_no) + ' · ' + rs(paise(x.total)) + '</h3><div class="mo-note ok">The order is <b>final</b>: it is in Orders, goes to Allocation under your name, and the parcel is in Dispatch. The customer gets the confirmation on WhatsApp.</div>'
+        + x.lines.map((l) => '<div class="mo-ln"><div class="mid"><div class="nm">' + esc(l.short) + '</div><small>' + (l.chain ? 'Chain · full price' : esc(l.label)) + ' × ' + l.qty + '</small></div><div class="mo-amt">' + rs(paise(l.total)) + '</div></div>').join('')
+        + '<div class="mo-sum" style="margin-top:10px"><div class="r"><span>Total</span><b>' + rs(paise(x.total)) + '</b></div>' + (x.paid ? '<div class="r"><span>Paid</span><b>' + rs(paise(x.paid)) + '</b></div>' : '') + (x.cod ? '<div class="r"><span>Pay on delivery</span><b>' + rs(paise(x.cod)) + '</b></div>' : '') + '</div>';
+      ft.innerHTML = '<button type="button" class="mo-go alt" id="moDn">Done</button>'; ft.querySelector('#moDn').onclick = close;
     }
     function done(sent, sendErr) {
       const x = S.order;

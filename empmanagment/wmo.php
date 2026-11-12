@@ -364,7 +364,7 @@ function wmo_form(PDO $pdo): void
                 if ($lk->fetchColumn() === 'confirmed') { $pdo->commit(); wmo_page('Order confirmed', '<div class="card"><div class="ok">✅</div><h1 style="text-align:center">Your order ' . $e($r['order_no']) . ' is confirmed</h1></div>'); }
                 $no = wmo_finalize($pdo, $r, $cl); $pdo->commit();
                 wmo_page('Order confirmed', '<div class="card"><div class="ok">✅</div><h1 style="text-align:center">Thank you, ' . $e(explode(' ', $cl['name'])[0]) . '!</h1><p style="text-align:center">Your order <b>' . $e($no) . '</b> is confirmed.<br>We will message you the tracking details on WhatsApp.</p></div>', 200, function () use ($pdo, $r, $cl) { wmo_notify($pdo, $r, $cl); });
-            } catch (Throwable $ex) { if ($pdo->inTransaction()) $pdo->rollBack(); error_log('wmo_form: ' . $ex->getMessage()); $err = 'Something went wrong. Please press Done once more.'; }
+            } catch (Throwable $ex) { if ($pdo->inTransaction()) $pdo->rollBack(); error_log('wmo_form: ' . $ex->getMessage()); if (function_exists('wa_log')) { try { wa_log($pdo, 'wmo', false, 'Done on ' . $r['order_no'] . ': ' . mb_substr($ex->getMessage(), 0, 300)); } catch (Throwable $e2) { } } $err = 'Something went wrong (' . mb_substr(preg_replace('/\s+/', ' ', $ex->getMessage()), 0, 110) . '). Please press Done once more, or tell us on WhatsApp.'; }
         } else $err = $er !== '' ? $er : 'Please wait a minute and try again.';
     }
     $rows = ''; foreach ($L as $l) $rows .= '<div class="ln"><span>' . (int)$l['qty'] . ' × ' . $e($l['short']) . (!empty($l['chain']) ? '' : ($l['label'] !== '' ? ' · ' . $e($l['label']) : '')) . '</span>' . (!empty($l['single']) ? '<span>' . $e(wmo_rs((int)$l['total_p'])) . '</span>' : '') . '</div>';
@@ -438,6 +438,16 @@ if (strpos($__wmo, 'wmo.') === 0) {
             $cu = is_array($in['cust'] ?? null) ? $in['cust'] : []; $ad = []; foreach (['name' => 60, 'addr1' => 160, 'landmark' => 80, 'pin' => 6, 'city' => 60, 'state' => 60] as $k0 => $n0) $ad[$k0] = wmo_clip($cu[$k0] ?? '', $n0);
             try { $pdo->prepare("UPDATE wmo_order SET otype = ?, addr_json = ? WHERE id = ?")->execute([$otype, array_filter($ad) ? json_encode($ad, JSON_UNESCAPED_UNICODE) : null, $id]); } catch (Throwable $ex) { }
             $q = $pdo->prepare("SELECT * FROM wmo_order WHERE id = ?"); $q->execute([$id]); json_response(['ok' => true, 'order' => wmo_out($pdo, $q->fetch())]);
+        }
+        case 'wmo.confirm': {   // the salesperson typed the customer's address on the Manual order page: the order is FINAL at once (no link) — Orders, Allocation, Dispatch, invoice, confirmation message
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $r = $mine(); if ($r['status'] === 'confirmed') json_response(['ok' => true, 'order_no' => $r['order_no']]); if (!in_array($r['status'], ['draft', 'sent'], true)) json_response(['error' => 'This order is already ' . $r['status'] . '.'], 422);
+            $cu = is_array($in['cust'] ?? null) ? $in['cust'] : []; $f = ['name' => $cu['name'] ?? '', 'phone' => $cu['phone'] ?? $r['phone'], 'phone2' => '', 'addr1' => $cu['addr1'] ?? '', 'addr2' => '', 'landmark' => $cu['landmark'] ?? '', 'pin' => $cu['pin'] ?? '', 'city' => $cu['city'] ?? '', 'state' => $cu['state'] ?? '', 'email' => ''];
+            [$cl, $er] = wmo_check_form($f, (string)$r['phone']); if ($er !== '') json_response(['error' => $er], 422);
+            try { $pdo->beginTransaction(); $lk = $pdo->prepare("SELECT status FROM wmo_order WHERE id = ? FOR UPDATE"); $lk->execute([(int)$r['id']]); if ($lk->fetchColumn() === 'confirmed') { $pdo->commit(); json_response(['ok' => true, 'order_no' => $r['order_no']]); }
+                $no = wmo_finalize($pdo, $r, $cl); if ($pdo->inTransaction()) $pdo->commit(); }
+            catch (Throwable $ex) { if ($pdo->inTransaction()) $pdo->rollBack(); error_log('wmo.confirm: ' . $ex->getMessage()); if (function_exists('wa_log')) { try { wa_log($pdo, 'wmo', false, 'Final order ' . $r['order_no'] . ': ' . mb_substr($ex->getMessage(), 0, 300)); } catch (Throwable $e2) { } } json_response(['error' => 'Could not save the order: ' . mb_substr(preg_replace('/\s+/', ' ', $ex->getMessage()), 0, 160)], 500); }
+            register_shutdown_function(function () use ($pdo, $r, $cl) { if (function_exists('fastcgi_finish_request')) @fastcgi_finish_request(); @ignore_user_abort(true); @set_time_limit(90); try { wmo_notify($pdo, $r, $cl); } catch (Throwable $e) { } });
+            json_response(['ok' => true, 'order_no' => $no]);
         }
         case 'wmo.send': {
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $r = $mine(); if (!in_array($r['status'], ['draft', 'sent'], true)) json_response(['error' => 'This order is already ' . $r['status'] . '.'], 422);
