@@ -605,8 +605,19 @@ require_once __DIR__ . '/wa_seg.php';      // customer journey, stage / value fi
 
 // ---------------------------------------------------------------------------------------------------------------- router
 $__wm = (string)($action ?? ($_GET['action'] ?? ''));
-if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.num_photo', 'wa.num_set', 'wa.team', 'wa.team_save', 'wa.callnow', 'wa.callnow_done', 'wa.suggest', 'wa.contacts', 'wa.contact_import', 'wa.contact_fix', 'wa.cron', 'wa.alloc_why', 'wa.alloc_run'], true)) {
+if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.num_photo', 'wa.num_set', 'wa.team', 'wa.team_save', 'wa.callnow', 'wa.callnow_done', 'wa.suggest', 'wa.contacts', 'wa.contact_import', 'wa.contact_fix', 'wa.cron', 'wa.cron_send', 'wa.alloc_why', 'wa.alloc_run'], true)) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
+    if ($__wm === 'wa.cron_send') {   // ⚡ the SENDING job: only campaigns + recovery, under their own locks, so it runs every minute and never waits behind the heavy engine (wa.cron)
+        ignore_user_abort(true); @set_time_limit(100);
+        if (!wa_tables($pdo) || !wa_more_tables($pdo)) json_response(['error' => 'storage'], 500);
+        $key = (string)setting_get($pdo, 'wa_cron_key', ''); if ($key === '' || !hash_equals($key, (string)($_GET['key'] ?? ''))) json_response(['error' => 'Wrong key.'], 403);
+        try { $pdo->exec('SET SESSION innodb_lock_wait_timeout = 5'); } catch (Throwable $e) { }
+        $r = ['ok' => true];
+        try { $r['campaigns'] = wa_camp_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'send job campaigns: ' . $e->getMessage()); $r['campaigns'] = 'error'; }
+        try { $r['recover'] = wa_rec_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'send job recovery: ' . $e->getMessage()); }
+        try { setting_set($pdo, 'wa_send_at', date('Y-m-d H:i:s')); } catch (Throwable $e) { }
+        json_response($r);
+    }
     if ($__wm === 'wa.cron') {   // Hostinger cron: no login, a secret key instead
         ignore_user_abort(true); @set_time_limit(280);   // the caller may hang up (the heartbeat does): the run still finishes
         if (!wa_tables($pdo) || !wa_more_tables($pdo)) json_response(['error' => 'storage'], 500);
