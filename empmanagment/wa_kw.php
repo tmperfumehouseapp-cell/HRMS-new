@@ -1,7 +1,7 @@
 <?php
 /**
  * wa_kw.php — KEYWORD AUTO-REPLIES. A customer writes "100 ML combo" / "20ml combo" / "50ml" / "offer" → the matching Pre-made message goes out AT ONCE (no AI, no waiting).
- *   100 ML combo → the Pre-made message whose title contains "100" + "combo"   (same for 20 and 50; a size alone, in a short message, also counts)
+ *   100 ML combo → the Pre-made message titled "100ml" (or "100ml combo")   (same for 20 and 50; a size alone, in a short message, also counts)
  *   offer        → the Pre-made titled "Offer" (if none: "Which perfume do you want? Tell me first, after that I will share the best offer for it.")
  * The owner edits the texts in the normal Pre-made list (Quick replies) — nothing else to set up. Skipped when: the chat is with a person (assigned), a complaint, opted out,
  * already answered, outside the 24 h window, or the customer is not writing text. A matching word with no Pre-made saved leaves a note in the chat instead of guessing.
@@ -24,11 +24,13 @@ function wkw_default_offer(): string { return "Which perfume do you want? 😊 T
 function wkw_text(PDO $pdo, string $kind): string
 {
     try { $rows = $pdo->query("SELECT title, body FROM wa_quick ORDER BY sort_order, id")->fetchAll(); } catch (Throwable $e) { return $kind === 'offer' ? wkw_default_offer() : ''; }
+    $plain = null;
     foreach ($rows as $r) {
         $ti = mb_strtolower((string)$r['title']); $ti2 = preg_replace('/\s+/u', '', $ti);
         if ($kind === 'offer') { if (preg_match('/^\W*offer\W*$/u', $ti)) return (string)$r['body']; continue; }
-        $n = substr($kind, 2); if (strpos($ti2, $n . 'ml') !== false && strpos($ti2, 'combo') !== false) return (string)$r['body'];
+        $n = substr($kind, 2); if (preg_match('/(?<!\d)' . $n . 'ml(?!\w)/u', $ti2)) { if (strpos($ti2, 'combo') !== false) return (string)$r['body']; if ($plain === null) $plain = (string)$r['body']; }   // "100ml COMBO" or just "100ml"
     }
+    if ($kind !== 'offer' && $plain !== null) return $plain;
     return $kind === 'offer' ? wkw_default_offer() : '';
 }
 /** Answers the newest customer message of this chat when it is one of the keywords. Returns true when something was sent. */
