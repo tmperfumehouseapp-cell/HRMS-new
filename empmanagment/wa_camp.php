@@ -464,10 +464,13 @@ function wa_camp_audience(PDO $pdo, array $aud, int $freq): array
             if ($ids) { $gq = $pdo->query("SELECT DISTINCT phone FROM wa_camp_items WHERE camp_id IN (" . implode(',', $ids) . ") AND status = 'sent'"); foreach ($gq->fetchAll(PDO::FETCH_COLUMN) as $ph) $got[(string)$ph] = true; }
         } catch (Throwable $e) { $got = []; }
     }
+    [$unCond, $unPar] = (array_key_exists('skip_unreach', $aud) && empty($aud['skip_unreach'])) ? ['', []] : wa_unreach_cond($pdo); $unreach = [];
+    if ($unCond !== '') { try { $uq = $pdo->prepare("SELECT phone FROM wa_unreach WHERE $unCond"); $uq->execute($unPar); foreach ($uq->fetchAll(PDO::FETCH_COLUMN) as $ph0) $unreach[(string)$ph0] = true; } catch (Throwable $e) { $unreach = []; } }
     $send = [];
     foreach ($matchedIt as $r) {
         $st['matched']++;
         if ($got && isset($got[(string)$r['phone']])) { $st['got'] = ($st['got'] ?? 0) + 1; continue; }
+        if ($unreach && isset($unreach[(string)$r['phone']])) { $st['unreach'] = ($st['unreach'] ?? 0) + 1; continue; }
         if ($talkSince !== '' && !empty($r['last_in_at']) && (string)$r['last_in_at'] >= $talkSince) { $st['talking'] = ($st['talking'] ?? 0) + 1; continue; }   // they are talking to us right now (wrote in the last days): the team answers them, no campaign on top
         if (!wa_valid_phone($r['phone'])) { $st['invalid']++; continue; } if ($r['optout']) { $st['optout']++; continue; } if ($freq > 0 && isset($recent[$r['phone']])) { $st['recent']++; continue; } $send[] = ['phone' => $r['phone'], 'name' => $r['name']];   // only what sending needs — keeps memory small for big audiences
     }
@@ -675,6 +678,40 @@ function wa_camp_tick(PDO $pdo, int $only = 0): array   // $only > 0: the ⚡ Se
     if (empty($r['skipped'])) { try { setting_set($pdo, $only ? 'wa_lock_campfast' . $only : 'wa_lock_camp', '0'); } catch (Throwable $e) { } }
     return $r;
 }
+/** The condition (on table wa_unreach) for "do not message this person now": held by Meta in the last N days (default 5), not on WhatsApp / stopped marketing in the last 90 days, in a Meta experiment in the last 7 days. Setting wa_unreach_on = 0 switches it all off. */
+function wa_unreach_cond(PDO $pdo): array
+{
+    if ((string)setting_get($pdo, 'wa_unreach_on', '1') === '0' || !function_exists('wa_unreach_tables') || !wa_unreach_tables($pdo)) return ['', []];
+    $hd = max(1, min(30, (int)setting_get($pdo, 'wa_unreach_days', '5')));
+    return ["((code IN (131049, 131048) AND at >= ?) OR (code IN (131026, 131050) AND at >= ?) OR (code = 130472 AND at >= ?))", [date('Y-m-d H:i:s', time() - $hd * 86400), date('Y-m-d H:i:s', time() - 90 * 86400), date('Y-m-d H:i:s', time() - 7 * 86400)]];
+}
+/** One-time fill of wa_unreach from the campaigns of the last 10 days (6 campaigns per round, one cheap range read each), so the list is useful at once. */
+function wa_unreach_seed(PDO $pdo): void
+{
+    if ((string)setting_get($pdo, 'wa_unreach_seeded', '') === '1' || !function_exists('wa_unreach_tables') || !wa_unreach_tables($pdo)) return;
+    $cur = (int)setting_get($pdo, 'wa_unreach_seed_cur', '0');
+    $q = $pdo->prepare("SELECT id FROM wa_campaigns WHERE created_at >= ? AND id > ? ORDER BY id LIMIT 6"); $q->execute([date('Y-m-d H:i:s', time() - 10 * 86400), $cur]); $ids = $q->fetchAll(PDO::FETCH_COLUMN);
+    if (!$ids) { setting_set($pdo, 'wa_unreach_seeded', '1'); return; }
+    foreach ($ids as $cid) {
+        try { $pdo->prepare("INSERT INTO wa_unreach (phone, code, at) SELECT phone, MAX(err_code), COALESCE(MAX(sent_at), NOW()) FROM wa_camp_items WHERE camp_id = ? AND err_code IN (131049, 131048, 131026, 131050, 130472) GROUP BY phone ON DUPLICATE KEY UPDATE at = GREATEST(at, VALUES(at))")->execute([(int)$cid]); } catch (Throwable $e) { }
+        $cur = max($cur, (int)$cid);
+    }
+    setting_set($pdo, 'wa_unreach_seed_cur', (string)$cur);
+}
+/** Queued people of running and scheduled campaigns whom Meta would not deliver to are skipped now (held ones go to the usual one-more-try later), so no push is wasted on them. At most 5,000 per campaign per round, every 5 minutes. */
+function wa_unreach_skip_queued(PDO $pdo, int $nowTs): int
+{
+    [$cond, $par] = wa_unreach_cond($pdo); if ($cond === '') return 0;
+    if ((int)setting_get($pdo, 'wa_unreach_skip_at', '0') > $nowTs - 300) return 0; setting_set($pdo, 'wa_unreach_skip_at', (string)$nowTs);
+    $n = 0;
+    foreach ($pdo->query("SELECT id FROM wa_campaigns WHERE status IN ('running', 'scheduled') ORDER BY id DESC LIMIT 30")->fetchAll(PDO::FETCH_COLUMN) as $cid) {
+        try {
+            $q = $pdo->prepare("UPDATE wa_camp_items SET status = 'skipped', err = 'Held by Meta recently - it gets one more try later', err_code = 131049 WHERE camp_id = ? AND status = 'queued' AND phone IN (SELECT phone FROM wa_unreach WHERE code IN (131049, 131048) AND at >= ?) LIMIT 5000"); $q->execute([(int)$cid, $par[0]]); $n += $q->rowCount();
+            $q = $pdo->prepare("UPDATE wa_camp_items SET status = 'skipped', err = 'Not on WhatsApp or stopped marketing messages', err_code = 131026 WHERE camp_id = ? AND status = 'queued' AND phone IN (SELECT phone FROM wa_unreach WHERE code IN (131026, 131050) AND at >= ?) LIMIT 5000"); $q->execute([(int)$cid, $par[1]]); $n += $q->rowCount();
+        } catch (Throwable $e) { }
+    }
+    return $n;
+}
 function wa_camp_tick_run(PDO $pdo, int $only = 0): array
 {
     if (!wa_lock($pdo, $only ? 'campfast' . $only : 'camp', 65)) return ['skipped' => true];   // ⚡ a round now works up to 55 s (was 42 s), so the next one can start 65 s after it began
@@ -684,6 +721,8 @@ function wa_camp_tick_run(PDO $pdo, int $only = 0): array
     $pdo->prepare("UPDATE wa_camp_items SET status = 'queued' WHERE status = 'sending' AND sent_at < ?")->execute([date('Y-m-d H:i:s', $nowTs - 600)]);   // a run that died while sending
     $sp = ''; if (!$only && (function_exists('wsm_tick') || wa_camp_lazy('wsm_tick', 'wa_smart.php'))) { try { $res['smart'] = wsm_tick($pdo, $nowTs); if (function_exists('wsm_has_col') && wsm_has_col($pdo)) $sp = ' AND smart_plan = 0'; } catch (Throwable $e) { } }   // Smart plans: their audience is picked on the start day (wa_smart.php), so the generic start below skips them
     if (!$only) $pdo->prepare("UPDATE wa_campaigns SET status = 'running', started_at = COALESCE(started_at, ?) WHERE status = 'scheduled' AND start_at IS NOT NULL AND start_at <= ?" . $sp)->execute([$now, $now]);
+    if (!$only) try { wa_unreach_seed($pdo); } catch (Throwable $e) { }
+    if (!$only) try { wa_unreach_skip_queued($pdo, $nowTs); } catch (Throwable $e) { }
     if (!$only) try { wa_camp_held_backfill($pdo, $nowTs); } catch (Throwable $e) { }
     if (!$only) try { wa_camp_rules_backfill($pdo, $nowTs); } catch (Throwable $e) { }
     if (!$only) try { wa_camp_retry_scan($pdo, $nowTs); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'campaign retries: ' . $e->getMessage()); }
@@ -759,7 +798,8 @@ function wa_camp_tick_run(PDO $pdo, int $only = 0): array
         while ($sent + $failed + $skipped < $quota && microtime(true) < $cDead && !$stop) {
             if ($poolOn && $burstLeft <= 0) { $dqF = wa_dq_left($pdo, true); $poolLeft = (int)$dqF['left']; if ($poolLeft <= 0) { $stop = wa_dq_why_text($dqF); break; } }   // the cap is counted again before every batch: several senders at once never go over it
             $take = min($burstLeft > 0 ? $fastBatch : 90, $quota - ($sent + $failed + $skipped)); if ($poolOn && $burstLeft <= 0) $take = max(1, min($take, $poolLeft));   // ⚡ 90 people per round trip to Meta (was 40)
-            $pick = ($poolOn ? $pdo->query("SELECT i.id, i.status FROM wa_camp_items i LEFT JOIN wa_contacts ct ON ct.phone = i.phone WHERE i.camp_id = $id AND $dueI ORDER BY (ct.last_in_at IS NULL), ct.last_in_at DESC, i.id LIMIT $take") : $pdo->query("SELECT id, status FROM wa_camp_items WHERE camp_id = $id AND $due ORDER BY id LIMIT $take"))->fetchAll();   // 📅 the people who wrote to us most recently go first if (!$pick) break;
+            $pick = ($poolOn ? $pdo->query("SELECT i.id, i.status FROM wa_camp_items i LEFT JOIN wa_contacts ct ON ct.phone = i.phone LEFT JOIN wa_cust cu ON cu.phone = i.phone WHERE i.camp_id = $id AND $dueI ORDER BY CASE WHEN ct.last_in_at IS NULL THEN 3 WHEN ct.last_in_at >= DATE_SUB(NOW(), INTERVAL 30 DAY) THEN 0 WHEN ct.last_in_at >= DATE_SUB(NOW(), INTERVAL 90 DAY) THEN 1 ELSE 2 END, (COALESCE(cu.n, 0) = 0), ct.last_in_at DESC, i.id LIMIT $take") : $pdo->query("SELECT id, status FROM wa_camp_items WHERE camp_id = $id AND $due ORDER BY id LIMIT $take"))->fetchAll();   // 📅 the best people go first: wrote in the last 30 days, then 90 days, then the rest; buyers before non-buyers inside each group, newest chat first
+            if (!$pick) break;
             if ($mixOn) {   // per batch (not per person): who can carry the utility version right now - a number whose utility version was just approved joins at once, a re-labelled one drops out at once
                 $plan = wa_mix_plan($pdo, $c, $ctx['nums'], $rem, $plan, false, $env); $ctx['u_nums'] = array_keys(array_filter($plan['per_number'], fn($p) => !empty($p['u']) && (int)$p['share'] > 0));
             }
@@ -854,6 +894,7 @@ function wa_camp_tick_run(PDO $pdo, int $only = 0): array
 if ($ec === 131042) { try { setting_set($pdo, 'wa_payblock_' . (int)$nid, date('Y-m-d H:i:s')); } catch (Throwable $e9) { } }   // this number: no campaign sends for 3 hours — the other number takes everything
                                                 $stop = $ec === 131042 ? 'Meta says the WhatsApp account has no payment method — add one in Meta Business settings (code 131042).' : 'Meta stopped the sending: ' . $msg; $hard = true; continue;
                     }
+                    wa_unreach_note($pdo, (string)$it['phone'], (int)$ec);
                     [$plan_, $why] = wa_camp_fail_plan($ec, $attempt, $retryOn, (int)($c['extra']['retries'] ?? 3));
                     if ($plan_ === 'pause') { $pdo->prepare("UPDATE wa_camp_items SET status = ?, err = '' WHERE id = ?")->execute([$back, $it['id']]); $stop = $why; $hard = true; continue; }
                     if ($plan_ === 'skip') { $pdo->prepare("UPDATE wa_camp_items SET status = 'skipped', number_id = ?, err = ?, err_code = ?, vars_json = ?, tries = ?, variant = ?, tpl_used = ? WHERE id = ?")->execute([$nid, $why, $ec, $vj, $attempt, $variant, $tuId, $it['id']]); $skipped++; continue; }
