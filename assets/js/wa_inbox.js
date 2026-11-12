@@ -1397,7 +1397,7 @@
     function bkWire(L) {
       const b = $('bkBar'); if (!b) return;
       $('bkOff').onclick = () => bkToggleMode(false); $('bkAll').onclick = bkSelectAll; if ($('bkNone')) $('bkNone').onclick = () => { S.bulk.set.clear(); drawList(); };
-      $('bkSend').onclick = bkSendOpen; $('bkMove').onclick = bkMoveOpen;
+      $('bkSend').onclick = () => { S.bulk.retryNote = ''; bkSendOpen(); }; $('bkMove').onclick = bkMoveOpen;
       b.querySelectorAll('[data-bf]').forEach((x) => { x.onclick = () => { const [k, v] = x.dataset.bf.split(':'); const f = S.bulk.f; if (k === 'bn') { const id = +v, i = f.bn.indexOf(id); if (i >= 0) f.bn.splice(i, 1); else f.bn.push(id); } else f[k] = v; S.bulk.set.clear(); S.bulk.info = {}; loadList(); }; });   // a different filter = a different list: the ticks start again if ($('bkNum')) $('bkNum').onclick = bkNumOpen;
     }
     // ---------- 📱 move many chats to another of our numbers (the Second number has a payment problem → Main)
@@ -1459,7 +1459,7 @@
       box.innerHTML = `<div class="bk-sh" style="text-align:center"><div style="font-size:46px">${j.bad && !j.ok ? '⚠️' : '✅'}</div><h4>${bkFmt(j.ok)} message${j.ok === 1 ? '' : 's'} sent</h4><div class="bk-stats"><div class="bk-stat ok"><b>${bkFmt(j.ok)}</b><small>sent</small></div><div class="bk-stat bad"><b>${bkFmt(j.bad)}</b><small>not sent</small></div>${left ? `<div class="bk-stat"><b>${bkFmt(left)}</b><small>stopped before</small></div>` : ''}</div>
         ${j.bad ? `<div class="bk-fail" style="text-align:left"><b>Why some were not sent</b><br>${Object.keys(why).map((k) => esc(k) + ' — ' + why[k]).join('<br>')}</div>` : ''}<div class="wi-act" style="margin-top:12px">${j.bad && !j.running ? '<button type="button" class="wi-btn" id="bkRetry">Retry the ' + bkFmt(j.bad) + ' not sent</button>' : ''}<button type="button" class="wi-btn p" id="bkDone">Done</button></div></div>`;
       $('bkDone').onclick = () => { closeSheet(); loadList(true); };
-      if ($('bkRetry')) $('bkRetry').onclick = () => { const ph = j.fails.map((f) => f.ph); closeSheet(); S.bkjob = null; bkRetryRun(j.t, j.map, j.hmap, ph); };
+      if ($('bkRetry')) $('bkRetry').onclick = () => { const w24 = j.fails.some((f) => /24-hour|24 hour|window/i.test(f.why || '')); S.bulk.set = new Set(j.fails.map((f) => f.ph)); j.fails.forEach((f) => { S.bulk.info[f.ph] = { name: f.name && f.name !== f.ph ? f.name : '' }; }); S.bulk.retryNote = w24 ? 'The 24-hour window is closed for some of these customers — a typed message cannot reach them. Choose Template to send an approved message to them.' : 'Choose how to send to the ones that were not sent.'; closeSheet(); S.bkjob = null; bkPill(); bkSendOpen(); };   // Retry asks again: typed message or template (after 24 hours only a template can go)
     }
     let bkRetryRun = () => { };
     // ---------- 📨 send one pre-made message to many chats (each customer gets their own first name)
@@ -1511,7 +1511,7 @@
         const job = S.bkjob = { name: t.name.replace(/_/g, ' '), total: phones.length, done: 0, ok: 0, bad: 0, stop: false, running: true, fails: [], idx: 0, phones, t, map, hmap };
         box.innerHTML = `<div class="bk-sh" style="text-align:center"><h4>Sending “${esc(job.name)}”…</h4><div class="sub">It keeps sending in the background — you can minimise this and carry on with your chats.</div><div class="bk-prog"><i id="bkPb"></i></div><div class="bk-stats"><div class="bk-stat"><b id="bkD">0</b><small>of ${bkFmt(job.total)}</small></div><div class="bk-stat ok"><b id="bkO">0</b><small>sent</small></div><div class="bk-stat bad"><b id="bkB">0</b><small>not sent</small></div></div><div class="wi-act"><button type="button" class="wi-btn p" id="bkMin">⬇ Minimise — keep sending</button><button type="button" class="wi-btn" id="bkStop">Stop</button></div></div>`;
         $('bkMin').onclick = () => closeSheet(); $('bkStop').onclick = () => bkJobStop();
-        if (S.bulk.on) bkToggleMode(false);   // the selection is used up: the list is free again
+        S.bulk.retryNote = ''; if (S.bulk.on) bkToggleMode(false); else S.bulk.set.clear();   // the selection is used up: the list is free again
         window.addEventListener('beforeunload', bkLeave); bkPill(); bkUpd();
         const one = async (ph) => {
           const nm = firstName({ name: (S.bulk.info[ph] || {}).name || '' }) || 'ji', v = job.map.map((m) => m.how === 'name' ? nm : m.text.trim());
@@ -1544,7 +1544,7 @@
         };
       };
       const chooser = () => {
-        box.innerHTML = `<div class="bk-sh"><h4>Send to ${bkFmt(n)} chat${n === 1 ? '' : 's'}</h4><div class="sub">How do you want to send?</div>
+        box.innerHTML = `<div class="bk-sh"><h4>Send to ${bkFmt(n)} chat${n === 1 ? '' : 's'}</h4>${S.bulk.retryNote ? `<div class="wi-note" style="margin:8px 0">↻ ${esc(S.bulk.retryNote)}</div>` : ''}<div class="sub">How do you want to send?</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px"><button type="button" class="wi-btn p" id="bkChM" style="padding:22px 10px;font-size:15px;line-height:1.4">✍️ Manual message<br><small style="font-weight:600;opacity:.85">Type it yourself</small></button><button type="button" class="wi-btn" id="bkChT" style="padding:22px 10px;font-size:15px;line-height:1.4">📋 Template<br><small style="font-weight:600;opacity:.7">${list.length} pre-made message${list.length === 1 ? '' : 's'}</small></button></div></div>`;
         $('bkChM').onclick = manual; $('bkChT').onclick = pickList;
       };
