@@ -213,6 +213,8 @@ function wch_gid(string $type, $id): string { return 'gid://shopify/' . $type . 
 function wch_gid_num(string $gid): int { return preg_match('/(\d+)\s*$/', $gid, $m) ? (int)$m[1] : 0; }
 
 // ------------------------------------------------------------------------------------------------------------------ products: normalise one Shopify product (the ONE normaliser for the live read and the tests)
+/** A separate 10 ml product ("… 10ml") has no size option: its name says 10 ml. */
+function wch_title_ml10(string $t): ?int { return preg_match('/(?<![0-9])10\s*ml\b/i', $t) ? 10 : null; }
 function wch_parse_ml(string $title, array $opts): ?int
 {
     foreach ($opts as $o) {
@@ -543,7 +545,8 @@ function wch_search(PDO $pdo, string $q, string $cat, int $limit, bool $inStock)
     $terms = []; $alias = wch_alias_groups($pdo); $stopW = ['de', 'la', 'le', 'du', 'des', 'di', 'da', 'the', 'of', 'by', 'for', 'and', 'a', 'an', 'in'];
     foreach ($groups as $grp) foreach ($grp as $w) { $terms[$w] = true; if (mb_strpos($w, ' ') !== false) foreach (preg_split('/\s+/u', $w) as $x) { if (in_array($x, $stopW, true)) continue; $terms[$x] = true; foreach ($alias as $ws) if (in_array($x, $ws, true)) foreach ($ws as $y) if (mb_strpos($y, ' ') === false) $terms[$y] = true; } }
     $or = []; $args = [$kind]; foreach (array_slice(array_keys($terms), 0, 40) as $w) { $or[] = "p.search_txt LIKE ?"; $args[] = '%' . str_replace(['%', '_'], ['\\%', '\\_'], $w) . '%'; }
-    $sql = "SELECT p.* FROM wch_prod p WHERE p.active = 1 AND p.kind = ? AND (" . implode(' OR ', $or) . ")" . ($inStock ? " AND EXISTS (SELECT 1 FROM wch_var v WHERE v.pid = p.pid AND v.avail = 1)" : '') . " LIMIT 400";
+    $kcond = $kind === 'perfume' ? "(p.kind = ? OR (p.kind = 'other' AND (EXISTS (SELECT 1 FROM wch_var v2 WHERE v2.pid = p.pid AND v2.ml = 10) OR p.title LIKE '%10ml%' OR p.title LIKE '%10 ml%')))" : 'p.kind = ?';   // the separate 10 ml products of the shop count as perfumes here
+    $sql = "SELECT p.* FROM wch_prod p WHERE p.active = 1 AND " . $kcond . " AND (" . implode(' OR ', $or) . ")" . ($inStock ? " AND EXISTS (SELECT 1 FROM wch_var v WHERE v.pid = p.pid AND v.avail = 1)" : '') . " LIMIT 400";
     $st = $pdo->prepare($sql); $st->execute($args); $cand = $st->fetchAll(); if (!$cand) return [];
     // score: every group must be found; the product NAME counts most, then short name / handle, then tags / code
     $scored = [];
@@ -565,7 +568,7 @@ function wch_search(PDO $pdo, string $q, string $cat, int $limit, bool $inStock)
     $pids = array_map(function ($r) { return (int)$r['pid']; }, $rows); $vs = [];
     $vq = $pdo->prepare("SELECT * FROM wch_var WHERE pid IN (" . wch_in($pids) . ") ORDER BY pid, ml IS NULL, ml, pos"); $vq->execute($pids); foreach ($vq->fetchAll() as $v) $vs[(int)$v['pid']][] = $v;
     foreach ($rows as $r) {
-        $sizes = array_map('wch_size_out', $vs[(int)$r['pid']] ?? []); $ph = (string)$r['photo']; if ($ph !== '' && preg_match('#^https://cdn\.shopify\.com/#i', $ph)) $ph .= (strpos($ph, '?') === false ? '?' : '&') . 'width=240';
+        $sizes = array_map('wch_size_out', array_map(function ($v) use ($r) { if ($v['ml'] === null && ($m10 = wch_title_ml10((string)$r['title'])) !== null) $v['ml'] = $m10; return $v; }, $vs[(int)$r['pid']] ?? [])); $ph = (string)$r['photo']; if ($ph !== '' && preg_match('#^https://cdn\.shopify\.com/#i', $ph)) $ph .= (strpos($ph, '?') === false ? '?' : '&') . 'width=240';
         $items[] = ['pid' => (int)$r['pid'], 'title' => (string)$r['title'], 'short' => (string)$r['short'], 'kind' => $kind, 'seg' => wch_seg_of(['kind' => $kind, 'title' => (string)$r['title'], 'ptype' => (string)($r['ptype'] ?? ''), 'tags_txt' => (string)($r['tags_txt'] ?? '')]), 'photo' => $ph, 'url' => (string)$r['url'], 'sizes' => $sizes, 'min_price' => wch_r((int)$r['min_price_p']), 'max_price' => wch_r((int)$r['max_price_p']),
             'in_stock' => (bool)array_filter($sizes, function ($s) { return $s['in_stock']; })];
     }
