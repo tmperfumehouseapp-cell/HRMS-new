@@ -37,11 +37,26 @@ function wmo_tables(PDO $pdo): bool
             utr VARCHAR(40) NOT NULL DEFAULT '', ml INT NOT NULL DEFAULT 0, lines_json MEDIUMTEXT NULL, shot_mime VARCHAR(20) NOT NULL DEFAULT '', shot_b64 MEDIUMTEXT NULL, shot_json TEXT NULL, src VARCHAR(12) NOT NULL DEFAULT '',
             cust_json TEXT NULL, phone_match TINYINT NOT NULL DEFAULT 1, shop_id BIGINT NULL, note VARCHAR(255) NOT NULL DEFAULT '', created_at DATETIME NOT NULL, sent_at DATETIME NULL, opened_at DATETIME NULL, confirmed_at DATETIME NULL,
             cancelled_at DATETIME NULL, UNIQUE KEY uq_wmo_tok (token), KEY k_wmo_phone (phone, status), KEY k_wmo_utr (utr)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-        foreach (['sr_order_id' => "VARCHAR(24) NOT NULL DEFAULT ''", 'sr_note' => "VARCHAR(255) NOT NULL DEFAULT ''", 'otype' => "VARCHAR(10) NOT NULL DEFAULT ''", 'addr_json' => 'TEXT NULL'] as $c => $def) { try { if (!$pdo->query("SHOW COLUMNS FROM wmo_order LIKE '$c'")->fetch()) $pdo->exec("ALTER TABLE wmo_order ADD COLUMN $c $def"); } catch (PDOException $e) { } }      // the Shiprocket order id and the last note
+        foreach (['sr_order_id' => "VARCHAR(24) NOT NULL DEFAULT ''", 'sr_note' => "VARCHAR(255) NOT NULL DEFAULT ''", 'otype' => "VARCHAR(10) NOT NULL DEFAULT ''", 'addr_json' => 'TEXT NULL', 'gateway' => "VARCHAR(24) NOT NULL DEFAULT ''"] as $c => $def) { try { if (!$pdo->query("SHOW COLUMNS FROM wmo_order LIKE '$c'")->fetch()) $pdo->exec("ALTER TABLE wmo_order ADD COLUMN $c $def"); } catch (PDOException $e) { } }      // the Shiprocket order id and the last note
         return $ok = true;
     } catch (PDOException $e) { error_log('wmo_tables: ' . $e->getMessage()); return $ok = false; }
 }
 
+/** ⚖ grams per bottle size (setting wmo_weight, edited on the Manual order sheet → Weights); a size not typed yet is worked out from its ml. */
+function wmo_weights(PDO $pdo): array
+{
+    $j = json_decode((string)setting_get($pdo, 'wmo_weight', ''), true); if (!is_array($j)) $j = [];
+    $sz = []; foreach ((array)($j['sizes'] ?? []) as $k => $v) if (is_numeric($k) && is_numeric($v) && (float)$v >= 0) $sz[(string)(0 + $k)] = (int)round((float)$v);
+    $f = function ($v, $d) { return (is_numeric($v) && (float)$v >= 0) ? (int)round((float)$v) : $d; };
+    return ['sizes' => $sz, 'chain' => $f($j['chain'] ?? null, 40), 'other' => $f($j['other'] ?? null, 100), 'pack' => $f($j['pack'] ?? null, 60)];
+}
+function wmo_line_weight(array $W, array $l): int
+{
+    $q = max(1, (int)($l['qty'] ?? 1)); if (!empty($l['chain'])) return $q * (int)$W['chain'];
+    $ml = (int)($l['ml'] ?? 0); if ($ml <= 0 && preg_match('/(\d+)\s*ml/i', (string)($l['label'] ?? ''), $m)) $ml = (int)$m[1];
+    if ($ml <= 0) return $q * (int)$W['other'];
+    return $q * (isset($W['sizes'][(string)$ml]) ? (int)$W['sizes'][(string)$ml] : (int)round($ml * 1.6 + 55));      // glass + liquid + cap when the size has no typed weight
+}
 // ------------------------------------------------------------------------------------------------------------------ small helpers
 function wmo_p($rupees): int { return (int)round(((float)$rupees) * 100); }
 function wmo_rs(int $p): string { return '₹' . ($p % 100 === 0 ? number_format($p / 100, 0, '.', ',') : number_format($p / 100, 2, '.', ',')); }
@@ -204,6 +219,26 @@ function wmo_dsp_rows(PDO $pdo, string $from, string $to, string $status, string
             'sr' => ['id' => (string)($r['sr_order_id'] ?? ''), 'note' => (string)($r['sr_note'] ?? '')], 'parcel' => $pa ? ['awb' => (string)$pa['tracking_no'], 'courier' => (string)$pa['courier'], 'status' => (string)$pa['status']] : null,
             'link' => in_array($r['status'], ['draft', 'sent'], true) ? wmo_link((string)$r['token']) : ''];
     }
+    // 🧮 weight, tax, payment gateway, commission (the day's figures are cached by the commission engine; at most 8 days are looked up per call so a long export stays light)
+    $W = wmo_weights($pdo); $bset = null; try { if (function_exists('wch_b_get')) $bset = wch_b_get($pdo); } catch (Throwable $e) { $bset = null; }
+    $store = wmo_store_key(); $paidBy = []; $nDays = 0;
+    foreach ($out as $i => &$o) {
+        $L2 = json_decode((string)$rows[$i]['lines_json'], true) ?: []; $wt = 0; $sumP = ['perfume' => 0, 'chain' => 0];
+        foreach ($L2 as $l) { $wt += wmo_line_weight($W, $l); $sumP[!empty($l['chain']) ? 'chain' : 'perfume'] += (int)$l['total_p']; }
+        $o['weight_g'] = $L2 ? $wt + (int)$W['pack'] : 0; $tx = null;
+        if ($bset && function_exists('wch_tax_section')) { $tx = 0; foreach (['perfume' => 'rate_perfume', 'chain' => 'rate_chain'] as $k => $rk) if ($sumP[$k] > 0) { $t = wch_tax_section([$sumP[$k]], (float)$bset[$rk], true); $tx += (int)$t['tax_p']; } $tx = $tx / 100; }
+        $o['tax'] = $tx;
+        $sj = json_decode((string)($rows[$i]['shot_json'] ?? ''), true) ?: [];
+        $o['gateway'] = (string)($rows[$i]['gateway'] ?? ''); $o['pay_app'] = (string)($sj['app'] ?? ''); $o['has_shot'] = (string)($rows[$i]['shot_mime'] ?? '') !== '';
+        $o['commission'] = null; $o['com_why'] = '';
+        if ($rows[$i]['status'] === 'confirmed' && function_exists('cm_paid_day')) {
+            try {
+                $d = function_exists('wq_day_of') ? wq_day_of($pdo, (int)strtotime((string)$rows[$i]['created_at'])) : substr((string)$rows[$i]['created_at'], 0, 10);
+                if (!isset($paidBy[$d])) { if ($nDays < 8) { $paidBy[$d] = cm_paid_day($pdo, $d); $nDays++; } else $paidBy[$d] = null; }
+                $k = $store . ':' . wmo_sid((int)$rows[$i]['id']); $pd = $paidBy[$d]['ord'][$k] ?? null; if ($pd) { $o['commission'] = round((float)$pd[0], 2); $o['com_why'] = (string)$pd[1]; }
+            } catch (Throwable $e) { }
+        }
+    } unset($o);
     return $out;
 }
 // ------------------------------------------------------------------------------------------------------------------ view of one order
@@ -463,6 +498,25 @@ if (strpos($__wmo, 'wmo.') === 0) {
             $page = max(1, (int)($in['page'] ?? 1)); $per = 30; $rows = wmo_dsp_rows($pdo, $from, $to, $status, $pay, $qq, $per, ($page - 1) * $per, $tot, $sum);
             $bill = ['ok' => true, 'missing' => []]; try { if (function_exists('wch_billing_gate')) { $g = wch_billing_gate($pdo); $bill = ['ok' => !empty($g['ok']), 'missing' => array_values(array_slice((array)($g['missing'] ?? []), 0, 8))]; } else $bill = ['ok' => false, 'missing' => ['GST invoice module is not installed']]; } catch (Throwable $e) { }   // why invoices are not made: the GST billing details
             json_response(['ok' => true, 'rows' => $rows, 'total' => $tot, 'page' => $page, 'pages' => max(1, (int)ceil($tot / $per)), 'sum' => $sum, 'from' => $from, 'to' => $to, 'billing' => $bill]);
+        }
+        case 'wmo.weight_get': {   // ⚖ grams per size (Manual order sheet → Weights)
+            if (!wmo_dsp_ok($pdo, $auth)) json_response(['error' => 'Not allowed.'], 403);
+            $sizes = []; try { $sizes = array_map('intval', $pdo->query("SELECT DISTINCT v.ml FROM wch_var v JOIN wch_prod p ON p.pid = v.pid WHERE v.ml IS NOT NULL AND v.ml > 0 AND p.kind NOT IN ('chain','other') ORDER BY v.ml")->fetchAll(PDO::FETCH_COLUMN)); } catch (Throwable $e) { }
+            json_response(['ok' => true, 'weights' => wmo_weights($pdo), 'sizes' => $sizes, 'can_edit' => in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true)]);
+        }
+        case 'wmo.weight_save': {
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
+            if (!in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true)) json_response(['error' => 'Only Admin or HR can change the weights.'], 403);
+            $sz = []; foreach ((array)($in['sizes'] ?? []) as $k => $v) { if (!is_numeric($k) || $v === '' || $v === null) continue; if (!is_numeric($v) || (float)$v < 0 || (float)$v > 20000) json_response(['error' => 'Weights are grams from 0 to 20000.'], 422); $sz[(string)(0 + $k)] = (int)round((float)$v); }
+            $one = function ($v) { return ($v === '' || $v === null || !is_numeric($v)) ? null : max(0, min(20000, (int)round((float)$v))); };
+            setting_set($pdo, 'wmo_weight', json_encode(['sizes' => (object)$sz, 'chain' => $one($in['chain'] ?? null), 'other' => $one($in['other'] ?? null), 'pack' => $one($in['pack'] ?? null)]));
+            json_response(['ok' => true, 'weights' => wmo_weights($pdo)]);
+        }
+        case 'wmo.dsp_gateway': {   // which gateway / QR the money came through (set by Dispatch / Admin)
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
+            if (!wmo_dsp_ok($pdo, $auth)) json_response(['error' => 'Not allowed.'], 403);
+            $g = trim((string)($in['gateway'] ?? '')); if (!in_array($g, ['', 'Razorpay', 'Quick', 'Static QR', 'Dynamic QR', 'HDFC', 'Cash / COD', 'Other'], true)) json_response(['error' => 'Choose one of the listed gateways.'], 422);
+            $pdo->prepare("UPDATE wmo_order SET gateway = ? WHERE id = ?")->execute([$g, (int)($in['id'] ?? 0)]); json_response(['ok' => true, 'gateway' => $g]);
         }
         case 'wmo.cost_get': {   // 💰 purchase cost per size (+ chain, other product) and the perfume sizes in the catalogue
             if (!wmo_dsp_ok($pdo, $auth)) json_response(['error' => 'Not allowed.'], 403);
