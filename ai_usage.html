@@ -23,6 +23,8 @@
   .au-need{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin:10px 0}
   .au-need div{border:1px solid var(--line);border-radius:12px;padding:9px 11px;background:#fff} .au-need small{display:block;color:var(--muted);font-size:12px} .au-need b{font-size:19px}
   .au-need .warn{border-color:#f0b429;background:#fff8e6} .au-need .bad{border-color:#e5484d;background:#fff0f0}
+  .au-run{display:inline-block;white-space:nowrap;font-size:12px;font-weight:700;padding:2px 8px;border-radius:999px} .au-run.a{background:#e7f0ff;color:#1d4fa3} .au-run.p{background:#e9f7ec;color:#1b6b33} .au-run.m{background:#fff3da;color:#8a5a00}
+  .au-noai{margin-top:10px;border:1px solid var(--line);border-radius:12px;padding:9px 11px;background:#fff} .au-noai summary{cursor:pointer}
   .au-in{width:90px;padding:4px 6px;border:1px solid var(--line);border-radius:8px;font:inherit}
   .au-days{display:flex;align-items:flex-end;gap:3px;height:70px;margin:8px 0 2px} .au-days i{flex:1;background:#f58220;border-radius:3px 3px 0 0;min-height:2px;display:block} .au-days i.fc{background:#fbd1a8}
 </style>
@@ -63,6 +65,14 @@
     wa_tag: 'WhatsApp › chat tags', wa_learn: 'WhatsApp › Teach — learning from chats', wa_guide: 'WhatsApp › Teach — guidebook', wa_topics: 'WhatsApp › follow-up topics', wq_manager: 'WhatsApp Sales — manager notes', wq_manager_tone: 'WhatsApp Sales — manager tone',
     'customer:inbox': 'Inbox — customer messages', 'customer:complaints': 'Complaints — customer replies', 'customer:': 'Customer replies (other)', 'internal:whatsapp': 'TMPH assistant — WhatsApp questions', 'internal:finance': 'TMPH assistant — finance questions', 'internal:': 'TMPH assistant (other)',
     footwear: 'Attendance — shoe check at punch-in', idcard: 'Employees — ID card reading', 'products:web_fill': 'Products — website details', 'products:web_origina': 'Products — website details' };
+  // 🤖 how a job runs: 'auto' = by itself in the background (nobody clicks) · 'person' = only when someone presses a button · 'mix' = both
+  const RUNS = { wa_presugg: 'auto', wa_bot: 'auto', wa_tag: 'auto', wa_learn: 'auto', wa_guide: 'auto', wa_topics: 'auto', wq_manager: 'auto', wq_manager_tone: 'auto', footwear: 'auto',
+    wa_sugg: 'person', idcard: 'person', 'products:web_fill': 'person', 'products:web_origina': 'person', 'internal:whatsapp': 'person', 'internal:finance': 'person', 'internal:': 'person', chat: 'mix', 'customer:inbox': 'mix', 'customer:complaints': 'mix', 'customer:': 'mix' };
+  const runOf = (k) => { const r = RUNS[k] || (k.indexOf('internal:') === 0 || k.indexOf('products:') === 0 ? 'person' : 'mix'); return r === 'auto' ? '<span class="au-run a">🤖 Automatic</span>' : r === 'person' ? '<span class="au-run p">👤 When a person asks</span>' : '<span class="au-run m">🤖+👤 Both</span>'; };
+  const NOAI = [['WhatsApp sender', 'Sends the waiting WhatsApp messages', 'Every minute'], ['WhatsApp engine — campaigns', 'Sends campaigns, retries failed messages, shares chats between salespeople', 'Every minute'],
+    ['WhatsApp engine — customer summary & tags', 'Orders, last activity and tags of every customer (for Contacts and audiences)', 'Every 10 minutes'], ['Orders', 'Brings new Shopify orders into the HRMS', 'Every 5 minutes'],
+    ['Mail', 'Checks and sends emails', 'Every 5 minutes'], ['Dispatch', 'Parcel and dispatch updates', 'Every 5 minutes'], ['Checklists', 'Daily checklist reminders', 'Every 5 minutes'], ['Boss dashboard', "Refreshes the owner's numbers", 'Every 5 minutes'], ['Reminders', 'Reminders that are due', 'While a page is open']];
+  const noAiH = () => `<details class="au-noai"><summary><b>⚙️ Automations that use NO AI — cost $0.00</b> (${NOAI.length} jobs)</summary><div class="au-w"><table class="au-t"><thead><tr><th>Automation</th><th>What it does</th><th>How often</th><th>AI cost</th></tr></thead><tbody>${NOAI.map((r) => `<tr><td><b>${esc(r[0])}</b></td><td>${esc(r[1])}</td><td>${esc(r[2])}</td><td>$0.00</td></tr>`).join('')}</tbody></table></div><div class="au-note">These run on the server by themselves (cron jobs). They do not call Claude or Gemini, so they add nothing to the AI bill.</div></details>`;
   const jobWhere = (k) => JOBS[k] || (k.indexOf('wa_') === 0 ? 'WhatsApp — ' + k.slice(3).replace(/_/g, ' ') : k.indexOf('wq_') === 0 ? 'WhatsApp Sales — ' + k.slice(3).replace(/_/g, ' ') : k.indexOf('products:') === 0 ? 'Products — ' + k.slice(9).replace(/_/g, ' ') : k.indexOf('customer:') === 0 ? 'Customer replies — ' + k.slice(9) : k.indexOf('internal:') === 0 ? 'TMPH assistant — ' + k.slice(9) : 'Other AI job');
   const F = document.getElementById('auF'), T2 = document.getElementById('auT'), RB = document.getElementById('auRBody');
   { const p2 = (x) => String(x).padStart(2, '0'), iso = (dt) => dt.getFullYear() + '-' + p2(dt.getMonth() + 1) + '-' + p2(dt.getDate()); T2.value = iso(now); F.value = iso(new Date(now.getFullYear(), now.getMonth(), 1)); }
@@ -76,10 +86,10 @@
     const nDays = Math.round((new Date(d.to) - new Date(d.from)) / 86400000) + 1, used = Math.max(1, +d.days_with_use || 1);
     RB.innerHTML = `<div class="au-need"><div><small>Price for ${esc(d.from)} → ${esc(d.to)} (${nDays} day${nDays > 1 ? 's' : ''})</small><b>${usd(tot.u)}</b><small>${usd(tot.u * (1 + gst / 100))} with ${gst}% tax</small></div>
         <div><small>Average per day (${used} day${used > 1 ? 's' : ''} with AI use)</small><b>${usd(tot.u / used)}</b></div><div><small>AI calls</small><b>${n(tot.c)}</b></div><div><small>Tokens (in + out)</small><b>${mt(tot.i + tot.o)}</b></div></div>
-      <div class="au-w"><table class="au-t"><thead><tr><th>Where the AI is used</th><th>Price</th><th>Share</th><th>Per day</th><th>AI calls</th><th>Tokens in</th><th>Tokens out</th></tr></thead><tbody>
-      ${rows.map((r) => `<tr><td><b>${esc(r.purpose)}</b><br><small>${esc(jobWhere(String(r.purpose)))}</small></td><td>${usd(r.cost_usd)}</td><td>${tot.u > 0 ? Math.round(+r.cost_usd * 100 / tot.u) : 0}%</td><td>${usd(+r.cost_usd / used)}</td><td>${n(r.calls)}</td><td>${mt(r.in_tokens)}</td><td>${mt(r.out_tokens)}</td></tr>`).join('')}
-      <tr class="tot"><td>TOTAL (${rows.length} jobs)</td><td>${usd(tot.u)}</td><td>100%</td><td>${usd(tot.u / used)}</td><td>${n(tot.c)}</td><td>${mt(tot.i)}</td><td>${mt(tot.o)}</td></tr></tbody></table></div>
-      <div class="au-note">US dollars before tax, counted by the HRMS for every AI call. The Claude Console bill can differ a little.</div>`;
+      <div class="au-w"><table class="au-t"><thead><tr><th>Where the AI is used</th><th>How it runs</th><th>Price</th><th>Share</th><th>Per day</th><th>AI calls</th><th>Tokens in</th><th>Tokens out</th></tr></thead><tbody>
+      ${rows.map((r) => `<tr><td><b>${esc(r.purpose)}</b><br><small>${esc(jobWhere(String(r.purpose)))}</small></td><td>${runOf(String(r.purpose))}</td><td>${usd(r.cost_usd)}</td><td>${tot.u > 0 ? Math.round(+r.cost_usd * 100 / tot.u) : 0}%</td><td>${usd(+r.cost_usd / used)}</td><td>${n(r.calls)}</td><td>${mt(r.in_tokens)}</td><td>${mt(r.out_tokens)}</td></tr>`).join('')}
+      <tr class="tot"><td>TOTAL (${rows.length} jobs)</td><td></td><td>${usd(tot.u)}</td><td>100%</td><td>${usd(tot.u / used)}</td><td>${n(tot.c)}</td><td>${mt(tot.i)}</td><td>${mt(tot.o)}</td></tr></tbody></table></div>
+      <div class="au-note">US dollars before tax, counted by the HRMS for every AI call. The Claude Console bill can differ a little.</div>${noAiH()}`;
   }
   document.getElementById('auGo').addEventListener('click', loadRange); loadRange();
   async function load() {
@@ -114,7 +124,7 @@
       let cap = 1000, gst = 18; try { cap = +(localStorage.getItem('au_cap') || 1000); gst = +(localStorage.getItem('au_gst') || 18); } catch (e) { }
       const capLeft = cap > 0 ? Math.max(0, cap - T.mon) : null, need = T.rest, add = capLeft === null ? need : Math.min(need, capLeft), stopIn = (capLeft !== null && T.perDay > 0) ? Math.floor(capLeft / T.perDay) : null;
       const small = list.filter((p) => p.perDay < 0.5 && p.mon < 5), big = list.filter((p) => !small.includes(p));
-      const row = (name, where, p, cls) => `<tr class="${cls || ''}"><td><b>${esc(name)}</b>${where ? '<br><small>' + esc(where) + '</small>' : ''}</td><td>${usd(p.today)}</td><td>${usd(p.l3)}</td><td>${usd(p.perDay)}</td><td>${usd(p.mon)}</td><td>${mt(p.tok)}</td><td>${usd(p.n7)}</td><td>${usd(p.rest)}</td></tr>`;
+      const row = (name, where, p, cls) => `<tr class="${cls || ''}"><td><b>${esc(name)}</b>${where ? '<br><small>' + esc(where) + '</small>' : ''}</td><td>${cls ? '' : runOf(name)}</td><td>${usd(p.today)}</td><td>${usd(p.l3)}</td><td>${usd(p.perDay)}</td><td>${usd(p.mon)}</td><td>${mt(p.tok)}</td><td>${usd(p.n7)}</td><td>${usd(p.rest)}</td></tr>`;
       const S = small.reduce((a, p) => { ['today', 'l3', 'mon', 'tok', 'perDay', 'n7', 'rest'].forEach((f) => a[f] += p[f]); return a; }, { today: 0, l3: 0, mon: 0, tok: 0, perDay: 0, n7: 0, rest: 0 });
       const dayKeys = Object.keys(byDay).sort(), mx = Math.max(T.perDay, ...dayKeys.map((k) => byDay[k].usd), 0.01);
       planH = `<div class="au-plan"><h3>💳 Credits planner</h3><div class="au-note">Where the AI is used and what it costs: today, the last 3 full days, this month, and what the next 7 days and the rest of this month will need <b>if the last 3 days repeat</b> (an estimate, not a promise). All amounts are US dollars before tax.</div>
@@ -125,7 +135,7 @@
           ${capLeft !== null ? ' · left under the limit: <b>' + usd(capLeft) + '</b>' + (need > capLeft ? ' — <b style="color:#c2262b">not enough for the month: at this rate the AI stops in about ' + stopIn + ' day(s)</b>, even with credits added' : ' — enough for this month at this rate') : ''}</div>
         <div class="au-days" title="Cost per day this month; the pale bars are the estimate for the next 7 days">${dayKeys.map((k) => `<i style="height:${Math.max(3, Math.round(byDay[k].usd * 100 / mx))}%" title="${esc(k)}: ${usd(byDay[k].usd)}"></i>`).join('')}${Array.from({ length: Math.min(7, daysLeft) }, () => `<i class="fc" style="height:${Math.max(3, Math.round(T.perDay * 100 / mx))}%" title="estimate: ${usd(T.perDay)}"></i>`).join('')}</div>
         <div class="au-note" style="margin-bottom:8px">Orange = each day so far · pale = the estimate for the coming days</div>
-        <div class="au-w"><table class="au-t"><thead><tr><th>Where the AI is used</th><th>Today</th><th>Last 3 days</th><th>Per day</th><th>This month</th><th>Tokens (month)</th><th>Next 7 days</th><th>Rest of month</th></tr></thead><tbody>
+        <div class="au-w"><table class="au-t"><thead><tr><th>Where the AI is used</th><th>How it runs</th><th>Today</th><th>Last 3 days</th><th>Per day</th><th>This month</th><th>Tokens (month)</th><th>Next 7 days</th><th>Rest of month</th></tr></thead><tbody>
           ${list.map((p) => row(p.k, whereOf(p.k), p)).join('')}${row('TOTAL (' + list.length + ' jobs)', '', T, 'tot')}</tbody></table></div></div>`;
     }
     let h = planH + `<div class="au-k"><div><small>AI calls</small><b>${n(t.calls)}</b></div><div><small>Tokens in</small><b>${mt(t.in)}</b></div><div><small>Tokens out</small><b>${mt(t.out)}</b></div><div><small>Cost (this month)</small><b>${usd(t.usd)}</b></div></div>`;
