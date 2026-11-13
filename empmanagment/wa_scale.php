@@ -38,6 +38,20 @@ function wa_scale_indexes2(PDO $pdo): void
     try { setting_set($pdo, 'wa_idx_v4', date('Y-m-d H:i:s')); } catch (Throwable $e) { }
 }
 
+/** Third set: orders of ONE customer by phone. The lookups compare the phone with spaces / + / - removed (last 10 digits), which no normal index can serve, so every opened chat
+ *  read the whole orders table (wag_orders, the complaint customer name). MySQL 8 can index the expression itself; the queries stay as they are and simply become a direct lookup. Added once, online. */
+function wa_scale_indexes3(PDO $pdo): void
+{
+    static $done = false; if ($done) return; $done = true;
+    try { if ((string)setting_get($pdo, 'wa_idx_v5', '') !== '') return; setting_set($pdo, 'wa_idx_v5', date('Y-m-d H:i:s')); } catch (Throwable $e) { return; }
+    try {
+        $q = $pdo->query("SHOW INDEX FROM shop_orders WHERE Key_name = 'k_ph10'"); if ($q && $q->fetch()) return;
+        $x = "(SUBSTR(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+', ''), '(', ''), ')', ''), -10))";
+        try { $pdo->exec("ALTER TABLE shop_orders ADD INDEX k_ph10 ($x), ALGORITHM=INPLACE, LOCK=NONE"); } catch (Throwable $e) { $pdo->exec("ALTER TABLE shop_orders ADD INDEX k_ph10 ($x)"); }
+        if (function_exists('wag_log')) wag_log($pdo, 'engine', true, 'Orders: phone lookup index added.');
+    } catch (Throwable $e) { if (function_exists('wag_log')) wag_log($pdo, 'engine', false, 'Orders phone index not added: ' . mb_substr($e->getMessage(), 0, 150)); }
+}
+
 if (!defined('WA_CUST_COLS')) define('WA_CUST_COLS', "phone VARCHAR(12) NOT NULL PRIMARY KEY, name VARCHAR(120) NOT NULL DEFAULT '', n INT NOT NULL DEFAULT 0, last_order DATETIME NULL, spent DECIMAL(12,2) NOT NULL DEFAULT 0, ign INT NOT NULL DEFAULT 0, act_at DATETIME NULL, KEY k_last (last_order), KEY k_act (act_at)");
 function wa_cust_tables(PDO $pdo): bool
 {
@@ -56,6 +70,7 @@ function wa_cust_refresh(PDO $pdo, int $maxAge = 600, bool $force = false): bool
 {
     if (!wa_cust_tables($pdo)) return false;
     wa_scale_indexes($pdo); wa_scale_indexes2($pdo);
+    if (!$force && PHP_SAPI !== 'cli' && strpos((string)($_GET['action'] ?? ''), 'wa.cron') === 0) wa_scale_indexes3($pdo);   // only from the engine's own run, never while a person waits for a page
     if (!$force && wa_cust_age($pdo) < $maxAge) return true;
     try { $got = (int)$pdo->query("SELECT GET_LOCK('wa_cust_refresh', 0)")->fetchColumn(); } catch (Throwable $e) { return false; }
     if ($got !== 1) return false;
