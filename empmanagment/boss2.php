@@ -2849,6 +2849,7 @@ function cm_target_why(PDO $pdo, $id, $day, array $marks, array $emp) {
         if ((int)$q->fetchColumn() > 0) return 'a target of ₹0 was typed by hand for this day';
     } catch (Throwable $e) {}
     if (($marks[$day . '|' . $id] ?? '') === 'leave') return 'the day is marked Leave and no target was typed for it';
+    try { if (function_exists('ct_day_targets') && isset(ct_day_targets($pdo, (string)$day)[(int)$id])) return 'the Orders page has no target for this day (not punched in, on leave, or switched to not working)'; } catch (Throwable $e) {}
     try {
         $q = $pdo->prepare("SELECT COUNT(*) FROM targets WHERE month = ? AND employee_id = ? AND manual_target IS NOT NULL"); $q->execute([substr((string)$day, 0, 7), (int)$id]);
         if ((int)$q->fetchColumn() > 0) return 'the month target typed by hand is ₹0';
@@ -2864,9 +2865,13 @@ function cm_day(PDO $pdo, $day, array $ch = null, array $offers = null, array $b
         $marks = day_marks_between($pdo, $day, $day); $targetOf = sales_target_fn($pdo, $emps, $day, $day, $marks);
         $sale = coach_sales_load($pdo, $emps, $day, $day);
     } catch (Throwable $e) { return ['rows' => [], 'error' => 'Could not read the orders: ' . $e->getMessage()]; }
+    // ONE target everywhere: the day's target is the one the Orders / Targets page shows (ct_day_targets: typed by hand, month target, the automatic rule, the ladder,
+    // the profile target; Absent / Leave / not working = 0). It used to come from a simpler rule that does not know the automatic target, so a person with an automatic
+    // ₹25,000 on the Orders page had ₹0 here and got no target bonus. A person the Orders page has no row for keeps the simpler rule.
+    $ordT = []; if (function_exists('ct_day_targets')) { try { $ordT = ct_day_targets($pdo, (string)$day); } catch (Throwable $e) { $ordT = []; } }
     $pre = (float)$ch['prepaid']; $rows = [];
     foreach ($emps as $id => $e) {
-        $list = $sale[$day . '|' . $id] ?? []; $target = (float)$targetOf($id, $day);
+        $list = $sale[$day . '|' . $id] ?? []; $target = isset($ordT[(int)$id]) ? (float)$ordT[(int)$id] : (float)$targetOf($id, $day);
         $n = count($list); $sales = 0.0; $nCode = 0; $noMl = 0; $noPrice = 0; $chartCom = 0.0; $offerCom = 0.0; $xcomTotal = 0.0; $lines = [];
         foreach ($list as $o) { if ($o['code'] !== '') $nCode++; }
         $need = cm_code_need($n, (float)$ch['codepct']); $codeOk = $need > 0 && $nCode >= $need; $nocodeF = (float)$ch['nocode'] / 100;
@@ -2908,7 +2913,7 @@ function cm_paid_day(PDO $pdo, $day) {
     $today = function_exists('biz_today') ? biz_today($pdo) : date('Y-m-d');
     if ($ver === null) {
         $p = [(string)setting_get($pdo, 'cm_chart', ''), (string)setting_get($pdo, 'price_unify_v1', '')];
-        foreach (["SELECT COUNT(*), COALESCE(MAX(updated_at), ''), COALESCE(SUM(enabled), 0) FROM commission_bonus_rules", "SELECT COUNT(*), COALESCE(MAX(id), 0), COALESCE(SUM(active), 0) FROM cm_boosts", "SELECT COUNT(*), COALESCE(MAX(id), 0), COALESCE(SUM(active), 0) FROM cm_offers"] as $q) {
+        foreach (["SELECT COUNT(*), COALESCE(MAX(updated_at), ''), COALESCE(SUM(enabled), 0) FROM commission_bonus_rules", "SELECT COUNT(*), COALESCE(MAX(id), 0), COALESCE(SUM(active), 0) FROM cm_boosts", "SELECT COUNT(*), COALESCE(MAX(id), 0), COALESCE(SUM(active), 0) FROM cm_offers", "SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM daily_targets WHERE target_date >= '" . date('Y-m-d', strtotime('-62 days')) . "'"] as $q) {
             try { $p[] = implode(',', (array)$pdo->query($q)->fetch(PDO::FETCH_NUM)); } catch (Throwable $e) { $p[] = '-'; }
         }
         $ver = substr(md5(implode('|', $p)), 0, 12);
