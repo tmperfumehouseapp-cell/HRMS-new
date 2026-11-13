@@ -105,7 +105,7 @@
   }
 
   // ---- 🔎 tap an order ID: the whole order in a side window
-  const GATES = ['', 'Razorpay', 'Quick', 'Static QR', 'Dynamic QR', 'HDFC', 'Cash / COD', 'Other'];
+  const GATES = ['', 'Razorpay', 'Quick', 'UPI QR', 'Bank transfer', 'Cash / COD'];
   function openOrder(i) {
     const r = ROWS[i]; if (!r) return; const c = r.cust || {}, dr = $('dmDrawer');
     const kv = (k, v, st) => '<div class="kv"><span>' + k + '</span><b' + (st ? ' style="' + st + '"' : '') + '>' + v + '</b></div>';
@@ -117,13 +117,14 @@
       + '<div class="dr-t">Money</div>' + kv('Total', inr(r.total)) + kv('Prepaid (paid)', inr(r.paid), 'color:#0b6b4b') + kv('COD (on delivery)', inr(r.cod)) + kv('Tax included', r.tax == null ? '—' : inr(r.tax))
       + '<div class="dr-t">Payment proof</div>' + kv('UTR', esc(r.utr || '—')) + kv('Customer app', esc(r.pay_app || '—'))
       + '<div class="kv"><span>Gateway / QR</span><span><select id="drGate">' + GATES.map((g) => '<option value="' + esc(g) + '"' + (g === (r.gateway || '') ? ' selected' : '') + '>' + (g || '— choose —') + '</option>').join('') + '</select></span></div>'
-      + '<div style="margin:8px 0">' + (r.has_shot ? '<button class="mini" id="drShot">View the payment screenshot</button>' : '<small>No screenshot saved (a COD order has none).</small>') + '<div id="drShotBox"></div></div>'
+      + (r.proof ? '<div class="kv"><span>Two screenshots</span><b style="color:' + (r.proof.ok ? '#0b6b4b' : '#9a2620') + '">' + (r.proof.ok ? '✅ Verified' : '❌ ' + esc(r.proof.reason)) + '</b></div>' : '')
+      + '<div style="margin:8px 0">' + (r.has_shot ? '<button class="mini" data-shot="1">Customer screenshot</button> ' : '') + (r.has_shot2 ? '<button class="mini" data-shot="2">Receiver screenshot</button>' : '') + (!r.has_shot && !r.has_shot2 ? '<small>No screenshot saved (a COD order has none).</small>' : '') + '<div id="drShotBox"></div></div>'
       + '<div class="dr-t">Commission <small>(same rules as every order: chart, offers, boosts, code limit)</small></div>' + (r.commission == null ? '<div class="kv"><span>Not counted yet</span><b>' + (r.status === 'confirmed' ? 'the Commission page counts it for its day' : '—') + '</b></div>' : kv('Counted', inr(r.commission)) + kv('How', esc(r.com_why || '—'), 'font-weight:600'))
       + '<div class="dr-t">Shipment</div>' + kv('AWB', esc((r.parcel && r.parcel.awb) || 'not booked yet')) + kv('Courier', esc((r.parcel && r.parcel.courier) || '—')) + kv('Status', esc(stName(r)))
       + ((r.invoice && r.invoice.view) ? '<div style="margin-top:8px"><a class="mini" target="_blank" rel="noopener" href="' + esc(r.invoice.view) + '">GST invoice ' + esc(r.invoice.no) + '</a></div>' : '') + '</div></div>';
     $('drX').onclick = () => { dr.hidden = true; };
     $('drGate').onchange = async function () { try { await api.post('wmo.dsp_gateway', { id: r.id, gateway: this.value }); r.gateway = this.value; load(); } catch (e) { alert(e.message); } };
-    const sb = $('drShot'); if (sb) sb.onclick = async () => { sb.disabled = true; try { const res = await fetch(api.buildUrl('wmo.dsp_shot', { id: r.id }), { headers: { Authorization: 'Bearer ' + api.token() } }); if (!res.ok) throw new Error('No screenshot was saved.'); $('drShotBox').innerHTML = '<img alt="payment screenshot" style="max-width:100%;border-radius:10px;margin-top:6px" src="' + URL.createObjectURL(await res.blob()) + '">'; } catch (e) { $('drShotBox').innerHTML = '<div class="err">' + esc(e.message) + '</div>'; } sb.disabled = false; };
+    dr.querySelectorAll('[data-shot]').forEach((sb) => { sb.onclick = async () => { sb.disabled = true; try { const res = await fetch(api.buildUrl('wmo.dsp_shot', { id: r.id, which: sb.dataset.shot }), { headers: { Authorization: 'Bearer ' + api.token() } }); if (!res.ok) throw new Error('No screenshot was saved.'); $('drShotBox').innerHTML = '<img alt="payment screenshot" style="max-width:100%;border-radius:10px;margin-top:6px" src="' + URL.createObjectURL(await res.blob()) + '">'; } catch (e) { $('drShotBox').innerHTML = '<div class="err">' + esc(e.message) + '</div>'; } sb.disabled = false; }; });
   }
   document.addEventListener('click', (e) => { const a = e.target.closest('a.oid'); if (a) { e.preventDefault(); openOrder(+a.dataset.i); } });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') $('dmDrawer').hidden = true; });
