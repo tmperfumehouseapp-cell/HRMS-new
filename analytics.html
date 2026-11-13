@@ -52,7 +52,8 @@
     try { const d = await api.get('analytics.url'); SA_URL = d.url; fr.src = SA_URL; }
     catch (e) { ld.style.display = 'flex'; ld.innerHTML = '<div style="text-align:center;padding:20px"><b>' + String(e.message).replace(/[<>&]/g, '') + '</b><br><span style="font-size:12px">Ask Admin to tick "Analytics" for your role on the Roles page.</span></div>'; }
   }
-  saLoad();
+  // The report is another site inside a frame and takes a few seconds. It starts AFTER this page has finished loading, so the page itself opens at once and shows "Loading the report…".
+  if (document.readyState === 'complete') saLoad(); else window.addEventListener('load', () => setTimeout(saLoad, 0));
   document.getElementById('saReload').onclick = () => { if (!SA_URL) { saLoad(); return; } ld.style.display = 'flex'; fr.src = SA_URL + '&_=' + Date.now(); };
 </script>
 <script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>

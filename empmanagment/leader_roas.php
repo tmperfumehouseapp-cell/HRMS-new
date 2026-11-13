@@ -61,6 +61,7 @@ if (!function_exists('lr_rules')) {
 }
 
 $__lr = (string)($action ?? '');
+if (strpos($__lr, 'lr.') === 0 && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') { foreach ((array)@glob(sys_get_temp_dir() . '/hrms_lr_rep_*.json') as $__f) @unlink($__f); }   // something was saved: the kept report is rebuilt on the next read
 if ($__lr === 'lr.get') {
     $auth = require_auth();
     if (!user_can($auth, 'commission')) json_response(['error' => 'You do not have permission to do this.'], 403);
@@ -72,7 +73,11 @@ if ($__lr === 'lr.get') {
     if ((int)round((strtotime($to) - strtotime($from)) / 86400) + 1 > 93) json_response(['error' => 'Pick at most 93 days.'], 422);
     @set_time_limit(150);
     $R = lr_rules($pdo); $L = $R['leaders'];
-    $rep = report_detail_build($pdo, $from, $to, '', $bearer);
+    // The day-by-day report behind this is heavy (it re-reads the month's orders). It is kept for 90 seconds, so a page that asks again (Total Budgeting, a reload) gets it at once.
+    // fresh=1 (the Leaders page, where the figures are edited) always rebuilds; saving a rule / amount here also clears the kept copy.
+    $cf = sys_get_temp_dir() . '/hrms_lr_rep_' . md5(__DIR__ . '|' . $from . '|' . $to) . '.json'; $rep = null;
+    if (empty($_GET['fresh']) && is_file($cf) && filemtime($cf) > time() - 90) { $rep = json_decode((string)@file_get_contents($cf), true); if (!is_array($rep) || isset($rep['error'])) $rep = null; }
+    if ($rep === null) { $rep = report_detail_build($pdo, $from, $to, '', $bearer); if (!isset($rep['error'])) @file_put_contents($cf, json_encode($rep), LOCK_EX); }
     if (isset($rep['error'])) json_response(['error' => $rep['error']], 502);
     $man = [];
     if (lr_table($pdo)) {

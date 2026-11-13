@@ -334,13 +334,13 @@
   document.querySelectorAll('.fm-chip').forEach((c) => c.onclick = () => { document.querySelectorAll('.fm-chip').forEach((x) => x.classList.remove('on')); c.classList.add('on'); range = +c.dataset.r; loadData(); });
   $('fUser').onchange = () => { loadData(); loadPhotos(true); };
   $('tDots').onchange = $('tSq').onchange = setLayers;
-  async function loadAll() { await loadData(false); await loadAsg(); await loadPhotos(true); loadSug(); }   // one after the other, not all at once
+  async function loadAll() { await loadData(false); await Promise.all([loadAsg(), loadPhotos(true), loadSug()]); }
   (async function () {
     initMap(); tabs();
     try { const u = await api.get('fl.people'); people = u.people; } catch (e) { toast(e.message, 1); }
     people.forEach((x) => pmap[x.id] = x.name);
     $('fUser').insertAdjacentHTML('beforeend', people.map((x) => '<option value="' + x.id + '">' + esc(x.name) + '</option>').join(''));
-    await loadData(true); await loadAsg(); await loadPhotos(true); loadSug();   // map first, then the side lists one after the other (the database refuses too many requests at the same moment)
+    await loadData(true); await Promise.all([loadAsg(), loadPhotos(true), loadSug()]);   // map first, then the three side lists together (the new server handles them at the same time; one after the other took 3 times as long)
   })();
 </script>
 </body>

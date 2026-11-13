@@ -37,6 +37,14 @@
     <div class="content"><div class="bd" id="root"><div class="bd-empty">Loading…</div></div></div>
   </main>
 </div>
+<script>
+  // A photo whose file is missing on the server shows a plain "photo missing" tile instead of the browser's broken-picture icon.
+  document.addEventListener('error', function (e) {
+    var im = e.target; if (!im || im.tagName !== 'IMG' || im.dataset.gone) return; im.dataset.gone = '1';
+    im.alt = 'photo missing'; im.title = 'This photo file is missing on the server'; im.style.opacity = '.35';
+    im.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='60'%3E%3Crect width='80' height='60' fill='%23eef0f3'/%3E%3Ctext x='40' y='35' font-size='20' text-anchor='middle'%3E%F0%9F%93%B7%3C/text%3E%3C/svg%3E";
+  }, true);
+</script>
 <script src="assets/js/config.js?v=4"></script>
 <script src="assets/js/api.js?v=13"></script>
 <script src="assets/js/layout.js?v=30"></script>
