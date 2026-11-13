@@ -1052,7 +1052,7 @@ function wa_camp_ideal_cfg(PDO $pdo): array
 /** 🎯 Ideal vs actual for one business day: the cumulative spend / replies (queries typed Campaign) / Campaign orders at each checkpoint, a status, a plain-words analysis and the day-end projection. Remembered 3 minutes. */
 function wa_camp_ideal(PDO $pdo, string $day): array
 {
-    $ck = 'camp_ideal6_' . $day; $hit = wa_cpc_get($pdo, $ck); if ($hit && $hit['age'] < 180) return $hit['v'];
+    $ck = 'camp_ideal7_' . $day; $hit = wa_cpc_get($pdo, $ck); if ($hit && $hit['age'] < 180) return $hit['v'];
     $cfg = wa_camp_ideal_cfg($pdo); $t0 = null; $t1 = null;
     try { if (function_exists('wq_day_start') && function_exists('wq_day_add')) { $t0 = (int)wq_day_start($pdo, $day); $t1 = (int)wq_day_start($pdo, wq_day_add($day, 1)); } } catch (Throwable $e) { }
     // the ideal day runs 12 noon → 12 noon (setting camp_ideal_start, default 12:00) — not the 10 AM business day of the other boxes
@@ -1089,7 +1089,7 @@ function wa_camp_ideal(PDO $pdo, string $day): array
         $ac = $started ? ['spend' => (int)round($x['spend']), 'replies' => (int)$x['replies'], 'orders' => (int)$x['orders']] : null;
         $hp = null; if ($ac) { $hp = []; foreach (['spend', 'replies', 'orders'] as $k) $hp[$k] = $pct($ac[$k], $ide[$k] * $fr); }
         $ci = $idAt($t + 3600); $cc = $started ? $cum(min($t + 3600, $now)) : null; $cu = ['ideal' => ['orders' => (int)round($ci['orders']), 'replies' => (int)round($ci['replies']), 'spend' => (int)round($ci['spend'])], 'actual' => $cc, 'pct' => null]; if ($cc) { $cmp = $cur ? $idAt($now) : $ci; $cu['pct'] = ['spend' => $pct($cc['spend'], $cmp['spend']), 'replies' => $pct($cc['replies'], $cmp['replies']), 'orders' => $pct($cc['orders'], $cmp['orders'])]; if ($cur) $cu['ideal_now'] = ['spend' => (int)round($cmp['spend']), 'replies' => (int)round($cmp['replies']), 'orders' => (int)round($cmp['orders'])]; }
-        $hourly[] = ['t' => date('H:i', $t), 'cur' => $cur, 'past' => $started, 'ideal' => $ide, 'actual' => $ac, 'pct' => $hp, 'cum' => $cu]; }
+        $hourly[] = ['t' => date('H:i', $t), 'end' => date('Y-m-d H:i:s', $t + 3600), 'upto' => date('Y-m-d H:i:s', min($t + 3600, $now)), 'cur' => $cur, 'past' => $started, 'ideal' => $ide, 'actual' => $ac, 'pct' => $hp, 'cum' => $cu]; }
     // "so far": the actual now against the ideal at this minute (straight line between the checkpoints)
     $nowT = min($now, $t1); $prevT = $t0; $prev = ['spend' => 0, 'replies' => 0, 'orders' => 0]; $so = null;
     foreach ($pts as $p) { if ($nowT <= $p['T']) { $f = ($p['T'] - $prevT) > 0 ? ($nowT - $prevT) / ($p['T'] - $prevT) : 1; $so = []; foreach (['spend', 'replies', 'orders'] as $k) $so[$k] = (int)round($prev[$k] + ($p['ideal'][$k] - $prev[$k]) * $f); break; } $prevT = $p['T']; $prev = $p['ideal']; }
