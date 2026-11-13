@@ -2842,6 +2842,19 @@ function cm_emps(PDO $pdo, $day = null) {
     }
     return $emps;
 }
+/** WHY a person's target is ₹0 on a day (shown next to "Target ₹0" on the Commission page): with no target there is no target bonus and no over-target extra, so the reason must be visible. */
+function cm_target_why(PDO $pdo, $id, $day, array $marks, array $emp) {
+    try {
+        $q = $pdo->prepare("SELECT COUNT(*) FROM daily_targets WHERE target_date = ? AND employee_id = ?"); $q->execute([$day, (int)$id]);
+        if ((int)$q->fetchColumn() > 0) return 'a target of ₹0 was typed by hand for this day';
+    } catch (Throwable $e) {}
+    if (($marks[$day . '|' . $id] ?? '') === 'leave') return 'the day is marked Leave and no target was typed for it';
+    try {
+        $q = $pdo->prepare("SELECT COUNT(*) FROM targets WHERE month = ? AND employee_id = ? AND manual_target IS NOT NULL"); $q->execute([substr((string)$day, 0, 7), (int)$id]);
+        if ((int)$q->fetchColumn() > 0) return 'the month target typed by hand is ₹0';
+    } catch (Throwable $e) {}
+    return 'no target is set for this person (no day target, no month target, and no salary / ladder target)';
+}
 /** one business day: per person target, sales, and the commission by the new rules. Returns ['rows' => [...], 'error' => ''] */
 function cm_day(PDO $pdo, $day, array $ch = null, array $offers = null, array $boosts = null) {
     $ch = $ch ?: cm_chart($pdo); if ($offers === null) $offers = cm_offers($pdo); if ($boosts === null) $boosts = cm_boosts($pdo);
@@ -2879,7 +2892,7 @@ function cm_day(PDO $pdo, $day, array $ch = null, array $offers = null, array $b
         $old = null;
         if (function_exists('coach_day')) { try { $cd = coach_day($pdo, $day, false, true); $old = isset($cd[$id]) ? (float)$cd[$id]['com_today'] : null; } catch (Throwable $e) {} }
         $total = round($chartCom + $offerCom + $extra + $xcomTotal, 2);
-        $rows[] = ['id' => $id, 'name' => trim((string)$e['full_name']), 'target' => round($target), 'sales' => round($sales), 'pct' => $target > 0 ? round($sales / $target * 100, 1) : null, 'orders' => $n,
+        $rows[] = ['id' => $id, 'name' => trim((string)$e['full_name']), 'target' => round($target), 'target_why' => (!($target > 0) && $n > 0) ? cm_target_why($pdo, $id, $day, $marks, $e) : '', 'sales' => round($sales), 'pct' => $target > 0 ? round($sales / $target * 100, 1) : null, 'orders' => $n,
             'codes' => $nCode, 'code_pct' => $n ? round($nCode / $n * 100) : null, 'code_ok' => $codeOk, 'code_need' => $need, 'chart_com' => round($chartCom, 2), 'offer_com' => round($offerCom, 2), 'x_com' => round($xcomTotal, 2),
             'bonus' => $bonus, 'bonus_rule' => $tbName, 'boost' => $bo ? $bo['name'] : '', 'extra' => round($extra, 2), 'total' => $total, 'old' => $old, 'diff' => $old === null ? null : round($total - $old, 2), 'no_ml' => $noMl, 'not_priced' => $noPrice, 'lines' => $lines];
     }
