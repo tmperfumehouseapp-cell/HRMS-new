@@ -918,6 +918,7 @@
         <div class="field"><label for="moHouse">Store (panel) *</label><select id="moHouse"></select></div>
         <div class="field"><label for="moDate">Order date &amp; time</label><input type="datetime-local" id="moDate"></div>
       </div>
+      <div class="field"><label for="moEmp">Sales person (optional) — the orders go straight to this person</label><select id="moEmp"><option value="0">— Not assigned (allocate later) —</option></select></div>
       <div class="field"><label for="moRemarks">Remarks (optional)</label><input type="text" id="moRemarks" maxlength="200" placeholder="e.g. phone orders, shop counter …"></div>
       <div id="moSum" style="background:#f3f7fb;border-radius:10px;padding:8px 12px;font-size:13px;margin:6px 0 4px;color:#334155">Fill the numbers above.</div>
       <div class="actions">
@@ -3142,7 +3143,8 @@
     document.getElementById('moPaidBox').style.display = qe.pay === 'part' ? '' : 'none';
     const cod = qe.pay === 'prepaid' ? 0 : qe.pay === 'cod' ? t : Math.max(0, t - pd), pre = t - cod;
     const hs = document.getElementById('moHouse'); const hn = hs.options[hs.selectedIndex] ? hs.options[hs.selectedIndex].text : '';
-    document.getElementById('moSum').innerHTML = n > 0 && t > 0 ? '<b>' + n + ' ' + (qe.type === 'query' ? 'Query' : 'Campaign') + ' order' + (n === 1 ? '' : 's') + '</b> · ' + qeFmt(t) + ' · ' + hn + '<br>Prepaid ' + qeFmt(pre) + ' · COD ' + qeFmt(cod) + '<br><span style="color:#64748b">They are added to the boxes (Order, Collection, Prepaid / COD, Ticket size) at once.</span>' : 'Fill the numbers above.';
+    const ee = document.getElementById('moEmp'), en = ee && Number(ee.value) > 0 ? ee.options[ee.selectedIndex].text : '';
+    document.getElementById('moSum').innerHTML = n > 0 && t > 0 ? '<b>' + n + ' ' + (qe.type === 'query' ? 'Query' : 'Campaign') + ' order' + (n === 1 ? '' : 's') + '</b> · ' + qeFmt(t) + ' · ' + hn + (en ? ' · 👤 ' + en : '') + '<br>Prepaid ' + qeFmt(pre) + ' · COD ' + qeFmt(cod) + '<br><span style="color:#64748b">They are added to the boxes (Order, Collection, Prepaid / COD, Ticket size) at once.</span>' : 'Fill the numbers above.';
   }
   document.getElementById('btnAddOrder').addEventListener('click', () => {
     document.getElementById('manualOrderForm').reset();
@@ -3153,10 +3155,11 @@
     const hs = document.getElementById('moHouse'); hs.innerHTML = PLATFORMS.map(([k, label]) => `<option value="${k}">${label}</option>`).join('');
     const pick = [...storeSel].map((x) => STORE_HOUSE_MAP[x] || x).find((x) => PLATFORMS.some((p) => p[0] === x)); if (pick) hs.value = pick;
     qeDraw(); orderModal.classList.add('open');
+    const es = document.getElementById('moEmp'); if (es && es.options.length < 2) api.get('manual_orders.sales_people').then((d) => { (d.people || []).forEach((x) => { const o = document.createElement('option'); o.value = x.id; o.textContent = x.name + (x.code ? ' (' + x.code + ')' : ''); es.appendChild(o); }); }).catch(() => { });
   });
   document.getElementById('moType').addEventListener('click', (e) => { const b = e.target.closest('button[data-v]'); if (!b) return; qe.type = b.dataset.v; document.querySelectorAll('#moType button').forEach((x) => x.classList.toggle('on', x === b)); qeDraw(); });
   document.getElementById('moPay').addEventListener('click', (e) => { const b = e.target.closest('button[data-v]'); if (!b) return; qe.pay = b.dataset.v; document.querySelectorAll('#moPay button').forEach((x) => x.classList.toggle('on', x === b)); qeDraw(); });
-  ['moCount', 'moTotal', 'moPaid', 'moHouse'].forEach((id) => document.getElementById(id).addEventListener('input', qeDraw));
+  ['moCount', 'moTotal', 'moPaid', 'moHouse', 'moEmp'].forEach((id) => document.getElementById(id).addEventListener('input', qeDraw));
   document.getElementById('btnOrderCancel').addEventListener('click', () => orderModal.classList.remove('open'));
   orderModal.addEventListener('click', (e) => { if (e.target === orderModal) orderModal.classList.remove('open'); });
 
@@ -3168,7 +3171,7 @@
     btn.disabled = true;
     try {
       const dtLocal = document.getElementById('moDate').value; // yyyy-mm-ddThh:mm
-      const r = await api.post('manual_orders.bulk', { count: n, total: t, order_type: qe.type, pay: qe.pay, paid: Number(document.getElementById('moPaid').value || 0), house: document.getElementById('moHouse').value, order_date: dtLocal ? dtLocal.replace('T', ' ') + ':00' : '', remarks: document.getElementById('moRemarks').value.trim() });
+      const r = await api.post('manual_orders.bulk', { count: n, total: t, order_type: qe.type, pay: qe.pay, paid: Number(document.getElementById('moPaid').value || 0), house: document.getElementById('moHouse').value, employee_id: Number(document.getElementById('moEmp').value || 0), order_date: dtLocal ? dtLocal.replace('T', ' ') + ':00' : '', remarks: document.getElementById('moRemarks').value.trim() });
       orderModal.classList.remove('open');
       showAlert(r.count + ' orders added (' + r.first + (r.count > 1 ? ' – ' + r.last : '') + ').');
       loadOrders();
