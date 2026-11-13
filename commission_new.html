@@ -56,7 +56,7 @@
 <script src="assets/js/config.js?v=4"></script>
 <script src="assets/js/api.js?v=13"></script>
 <script src="assets/js/layout.js?v=32"></script>
-<script src="assets/js/boss_common.js?v=3"></script>
+<script src="assets/js/boss_common.js?v=4"></script>
 <script src="assets/js/b2_common.js?v=t7"></script>
 <script>
   guardPage();
@@ -78,7 +78,24 @@
     $('tabs').innerHTML = [['result', 'Result'], ['pricing', 'Pricing'], ['offers', 'Offers & boosts']].map((t) => '<button type="button" data-t="' + t[0] + '" class="' + (TAB === t[0] ? 'on' : '') + '">' + t[1] + '</button>').join('');
     $('tabs').querySelectorAll('button').forEach((b) => b.onclick = () => { TAB = b.dataset.t; location.hash = TAB; render(); });
   }
-  function render() { tabs(); $('root').innerHTML = ({ result: rResult, pricing: rPricing, offers: rOffers }[TAB] || rResult)(); bind(); if (TAB === 'pricing') loadPcOne(); }
+  // Redrawing replaces everything inside #root. Without care the page collapses for a moment and the browser throws the scroll back to the top (and the day table back to the left).
+  // So on the same tab: hold the height while it is replaced, then put every scroll position back. Switching tab starts at the top as before.
+  let DRAWN = '';
+  function render() {
+    const root = $('root'), same = DRAWN === TAB, se = document.scrollingElement || document.documentElement;
+    const keep = same ? [[se, se.scrollTop, se.scrollLeft]] : [], side = [];
+    if (same) {
+      for (let e = root.parentElement; e && e !== document.body && e !== document.documentElement; e = e.parentElement) if (e.scrollTop || e.scrollLeft) keep.push([e, e.scrollTop, e.scrollLeft]);
+      root.querySelectorAll('.cm-sc').forEach((e, i) => { side[i] = e.scrollLeft; });
+      root.style.minHeight = root.offsetHeight + 'px';
+    } else root.style.minHeight = '';
+    tabs(); root.innerHTML = ({ result: rResult, pricing: rPricing, offers: rOffers }[TAB] || rResult)(); DRAWN = TAB; bind(); if (TAB === 'pricing') loadPcOne();
+    if (same) {
+      root.querySelectorAll('.cm-sc').forEach((e, i) => { if (side[i]) e.scrollLeft = side[i]; });
+      keep.forEach((k) => { k[0].scrollTop = k[1]; k[0].scrollLeft = k[2]; });
+      if (!DDL) root.style.minHeight = '';      // while the day-by-day table is still counting the height stays held; it is let go when the numbers are in
+    }
+  }
 
   /* ---------- RESULT ---------- */
   function rResult() {
