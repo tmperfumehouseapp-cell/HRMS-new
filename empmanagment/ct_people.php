@@ -33,6 +33,7 @@ if (!function_exists('cp_day_rows')) {
     }
 }
 
+if (!empty($GLOBALS['cp_funcs_only'])) return;   // loaded by team_board.php only for cp_day_rows(): stop here (the actions below — and the closing "Unknown action" — are for cp.* calls only)
 $__cp = (string)($action ?? '');
 if ($__cp === 'cp.days') {
     $auth = require_auth();

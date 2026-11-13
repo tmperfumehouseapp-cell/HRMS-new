@@ -477,6 +477,7 @@ function action_permission(string $action): ?string
         'retail.visit_plan_approve' => 'visit_approval',   // Approve / Reject a shop visit: only roles ticked for it (before the 'retail.' line)
         'retail.' => 'retail',
         'manual_orders.save' => null,              // a salesperson makes their own manual order (the handler checks the role)
+        'manual_orders.quick_' => null,            // the quick entries card on the Sales Head's home (the handler checks who)
         'manual_orders.' => 'orders',
         'attendance.list' => 'attendance',
         'attendance.set_times' => 'attendance',
@@ -1861,6 +1862,13 @@ function shop_order_row(PDO $pdo, array $r): array
  * 🧾 Orders made in HRMS itself (WhatsApp Manual order, WM-00001 …) live only in shop_orders — Shopify never has them. A list read live from Shopify
  * (Order allocation for up to 7 days, Targets, Commission …) adds them here, so they are seen everywhere a Shopify order is.
  */
+/** The quick-entry orders ("Add orders": 10 orders, ₹24,500 …) are shown on the home page of ONE person only: the Sales Head Pradip Chauhan (or the employee ids in setting qe_viewers). */
+function qe_viewer_ok(PDO $pdo, array $auth): bool
+{
+    $e = (int)($auth['employee_id'] ?? 0); if ($e <= 0) return false;
+    $ids = json_decode((string)setting_get($pdo, 'qe_viewers', '[]'), true); if (is_array($ids) && in_array($e, array_map('intval', $ids), true)) return true;
+    $nm = employee_names_by_id($pdo)[$e] ?? ''; return (bool)preg_match('/prad[ei]{1,2}p\s*chau?h?an|chau?h?an\s*prad[ei]{1,2}p/iu', (string)$nm);   // Pradip / Pradeep Chauhan
+}
 function orders_add_manual(PDO $pdo, array &$state, string $ws, string $we): void
 {
     try {
@@ -12178,7 +12186,7 @@ function orders_ml_extra(PDO $pdo, array &$orders): void
 
 function shopify_fetch_all(array $targets, array $tokens, string $dateFrom, string $dateTo, int $maxRounds = 8, bool $slim = false, bool $manual = true): array
 {
-    $state = [];
+    $state = []; $sfaT0 = microtime(true);
     $win = biz_window($GLOBALS['pdo'], $dateFrom, $dateTo);
     foreach ($targets as $key => $store) {
         $state[$key] = [
@@ -12215,6 +12223,7 @@ function shopify_fetch_all(array $targets, array $tokens, string $dateFrom, stri
                     'Content-Type: application/json',
                 ],
                 CURLOPT_TIMEOUT => 25,
+                CURLOPT_CONNECTTIMEOUT => 8,
             ]);
             curl_multi_add_handle($mh, $ch);
             $handles[$key] = $ch;
@@ -12226,17 +12235,25 @@ function shopify_fetch_all(array $targets, array $tokens, string $dateFrom, stri
             if ($running) curl_multi_select($mh, 0.1);
         } while ($running && $mrc === CURLM_OK);
 
+        $hid = static function ($h) { return is_object($h) ? spl_object_id($h) : (int)$h; }; $cerrs = [];
+        while ($inf = curl_multi_info_read($mh)) { if (!empty($inf['result'])) $cerrs[$hid($inf['handle'])] = function_exists('curl_strerror') ? curl_strerror((int)$inf['result']) : 'curl error ' . (int)$inf['result']; }   // why a call failed (timeout, DNS, SSL …)
         foreach ($handles as $key => $ch) {
             $st = &$state[$key];
-            $st['url'] = null; // cleared unless a next page is found below
+            $curUrl = $st['url']; $st['url'] = null; // cleared unless a next page is found below
             $resp = curl_multi_getcontent($ch);
             $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
             $headerSize = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+            $cerr = (string)($cerrs[$hid($ch)] ?? curl_error($ch));
             curl_multi_remove_handle($mh, $ch);
             curl_close($ch);
 
+            // a short break in the connection: the same page is asked ONE more time (never more than 12 s in all, so a slow Shopify cannot hold the page and the server's workers)
+            if (($resp === false || $resp === '' || $status === 429) && (int)($st['tries'] ?? 0) < 1 && $curUrl && (microtime(true) - $sfaT0) < 12) {
+                $st['tries'] = (int)($st['tries'] ?? 0) + 1; $st['url'] = $curUrl; $round--; usleep(500000);
+                continue;
+            }
             if ($resp === false || $resp === '') {
-                $st['error'] = $st['store']['label'] . ': could not reach Shopify.';
+                $st['error'] = $st['store']['label'] . ': could not reach Shopify' . ($cerr !== '' ? ' (' . mb_substr($cerr, 0, 80) . ')' : '') . '.';
                 continue;
             }
             if ($status === 401 || $status === 403) {
@@ -29673,6 +29690,13 @@ switch ($action) {
         break;
     }
 
+    case 'manual_orders.sales_people': {   // the people the quick entry can assign the orders to
+        $auth = require_auth(); require_role(['Admin', 'HR'], $auth);
+        $o = []; foreach ($pdo->query("SELECT employee_id, employee_code, full_name FROM employees WHERE status != 'ex' ORDER BY full_name")->fetchAll() as $e) $o[] = ['id' => (int)$e['employee_id'], 'name' => (string)$e['full_name'], 'code' => (string)$e['employee_code']];
+        json_response(['people' => $o]);
+        break;
+    }
+
     case 'manual_orders.bulk': {   // ⚡ quick entry: "10 orders, ₹24,500, Query, prepaid" → 10 order rows (the total split between them) counted at once in the panel's boxes
         $auth = require_auth(); require_role(['Admin', 'HR'], $auth);
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
@@ -29686,23 +29710,65 @@ switch ($action) {
         if ($pay === 'part' && ($paidP < 100 || $paidP >= $totalP)) json_response(['error' => 'For a part payment, the advance must be more than ₹1 and less than the total.'], 422);
         $house = preg_replace('/[^a-z0-9_]/', '', strtolower((string)($input['house'] ?? ''))); if ($house === '' || !isset(house_labels()[$house])) json_response(['error' => 'Choose the store (panel).'], 422);
         $orderDate = trim((string)($input['order_date'] ?? '')); if ($orderDate === '') $orderDate = date('Y-m-d H:i:s'); if (!preg_match('/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2})?$/', $orderDate)) json_response(['error' => 'The date is not valid.'], 422); $orderDate = str_replace('T', ' ', $orderDate); if (strlen($orderDate) === 16) $orderDate .= ':00';
+        $empB = (int)($input['employee_id'] ?? 0); if ($empB > 0) { $eq = $pdo->prepare("SELECT 1 FROM employees WHERE employee_id = ?"); $eq->execute([$empB]); if (!$eq->fetchColumn()) json_response(['error' => 'That sales person was not found.'], 422); }
         $remarks = mb_substr(trim((string)($input['remarks'] ?? '')), 0, 200); $batch = substr(bin2hex(random_bytes(8)), 0, 12);
         $payStatus = $pay === 'prepaid' ? 'paid' : ($pay === 'cod' ? 'cod' : 'partially_paid');
         $base = intdiv($totalP, $n); $paidSoFar = 0; $first = 0; $last = 0;
         $pdo->beginTransaction();
         try {
-            $ins = $pdo->prepare("INSERT INTO manual_orders (order_no, customer_name, phone, items, total, payment_status, fulfillment_status, order_date, remarks, created_by, employee_id, order_type, house, batch, outstanding) VALUES (NULL, ?, '', 1, ?, ?, 'unfulfilled', ?, ?, ?, 0, ?, ?, ?, ?)");
+            $ins = $pdo->prepare("INSERT INTO manual_orders (order_no, customer_name, phone, items, total, payment_status, fulfillment_status, order_date, remarks, created_by, employee_id, order_type, house, batch, outstanding) VALUES (NULL, ?, '', 1, ?, ?, 'unfulfilled', ?, ?, ?, ?, ?, ?, ?, ?)");
             $setNo = $pdo->prepare("UPDATE manual_orders SET order_no = ? WHERE manual_order_id = ?");
             for ($i = 0; $i < $n; $i++) {
                 $amtP = $i === $n - 1 ? $totalP - $base * ($n - 1) : $base;
                 $paidI = $pay === 'part' ? ($i === $n - 1 ? $paidP - $paidSoFar : (int)round($paidP * $amtP / $totalP)) : ($pay === 'prepaid' ? $amtP : 0); $paidSoFar += $pay === 'part' ? $paidI : 0;
                 $out = $pay === 'part' ? max(0, $amtP - $paidI) / 100 : ($pay === 'cod' ? $amtP / 100 : 0);
-                $ins->execute(['Quick entry (' . $n . ' orders)', $amtP / 100, $payStatus, $orderDate, $remarks !== '' ? $remarks : 'Quick entry', $auth['username'], $ot, $house, $batch, $out]);
+                $ins->execute(['Quick entry (' . $n . ' orders)', $amtP / 100, $payStatus, $orderDate, $remarks !== '' ? $remarks : 'Quick entry', $auth['username'], $empB, $ot, $house, $batch, $out]);
                 $id = (int)$pdo->lastInsertId(); $setNo->execute(['M' . str_pad((string)$id, 4, '0', STR_PAD_LEFT), $id]); if ($i === 0) $first = $id; $last = $id;
             }
             $pdo->commit();
         } catch (Throwable $e) { if ($pdo->inTransaction()) $pdo->rollBack(); json_response(['error' => 'Could not save: ' . mb_substr($e->getMessage(), 0, 120)], 500); }
         json_response(['message' => $n . ' orders added.', 'count' => $n, 'total' => $totalP / 100, 'batch' => $batch, 'first' => 'M' . str_pad((string)$first, 4, '0', STR_PAD_LEFT), 'last' => 'M' . str_pad((string)$last, 4, '0', STR_PAD_LEFT)], 201);
+        break;
+    }
+
+    case 'manual_orders.quick_list': {   // 🧾 the quick entries of the last 7 days + today's totals — only for the Sales Head who watches them (Pradip Chauhan)
+        $auth = require_auth(); $card = !empty($_GET['card']); if (!qe_viewer_ok($pdo, $auth) && ($card || !in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true))) json_response(['allowed' => false]);   // the home card: only Pradip; the Remove list on the Orders page: Pradip, Admin and HR
+        try { foreach (['house' => "VARCHAR(12) NOT NULL DEFAULT ''", 'batch' => "VARCHAR(16) NOT NULL DEFAULT ''", 'outstanding' => 'DECIMAL(12,2) NULL'] as $c => $d) { if (!$pdo->query("SHOW COLUMNS FROM manual_orders LIKE '$c'")->fetch()) $pdo->exec("ALTER TABLE manual_orders ADD COLUMN $c $d"); } } catch (PDOException $e) {}
+        $today = biz_today($pdo); [$ts, $te] = biz_window($pdo, $today, $today); $days = $card ? 7 : max(1, min(60, (int)($_GET['days'] ?? 7))); [$ws0] = biz_window($pdo, date('Y-m-d', strtotime($today . ' -' . ($days - 1) . ' days')), $today); if (!$card && !empty($_GET['all'])) $ws0 = '2000-01-01 00:00:00';   // all manual orders till today
+        $st = $pdo->prepare("SELECT manual_order_id, order_no, customer_name, order_date, total, payment_status, order_type, house, batch, outstanding, created_by, remarks FROM manual_orders WHERE " . ($card ? "batch <> '' AND " : '') . "order_date >= ? AND order_date <= ? ORDER BY order_date DESC, manual_order_id DESC LIMIT 1500"); $st->execute([$ws0, $te]);
+        $hl = house_labels(); $by = []; $sum = ['orders' => 0, 'amount' => 0.0, 'query' => 0, 'campaign' => 0, 'query_amt' => 0.0, 'campaign_amt' => 0.0, 'prepaid' => 0.0, 'cod' => 0.0];
+        foreach ($st->fetchAll() as $r) {
+            $amt = (float)$r['total']; $out = $r['outstanding'] !== null ? (float)$r['outstanding'] : ($r['payment_status'] === 'cod' ? $amt : 0.0);
+            $b = (string)$r['batch']; if ($b === '') { $by['i' . $r['manual_order_id']] = ['id' => (int)$r['manual_order_id'], 'batch' => '', 'count' => 1, 'total' => $amt, 'cod' => $out, 'type' => (string)$r['order_type'], 'pay' => (string)$r['payment_status'], 'house' => (string)($hl[$r['house']] ?? $r['house']), 'date' => (string)$r['order_date'], 'by' => (string)$r['created_by'], 'remarks' => (string)$r['remarks'], 'order_no' => (string)$r['order_no'], 'customer' => (string)$r['customer_name']]; continue; }
+            if (!isset($by[$b])) $by[$b] = ['batch' => $b, 'count' => 0, 'total' => 0.0, 'cod' => 0.0, 'type' => (string)$r['order_type'], 'pay' => (string)$r['payment_status'], 'house' => (string)($hl[$r['house']] ?? $r['house']), 'date' => (string)$r['order_date'], 'by' => (string)$r['created_by'], 'remarks' => (string)$r['remarks']];
+            $by[$b]['count']++; $by[$b]['total'] += $amt; $by[$b]['cod'] += $out;
+            if ($r['order_date'] >= $ts && $r['order_date'] <= $te) { $sum['orders']++; $sum['amount'] += $amt; $sum['cod'] += $out; $sum['prepaid'] += $amt - $out; $k = $r['order_type'] === 'campaign' ? 'campaign' : 'query'; $sum[$k]++; $sum[$k . '_amt'] += $amt; }
+        }
+        $entries = array_values($by);
+        if (!$card && !empty($_GET['all'])) {   // 🧾 + the WhatsApp manual orders (WM-xxxxx) of every day: removing one cancels it (it leaves Orders and the boxes; it can be brought back on the Orders page)
+            try {
+                $names = employee_names_by_id($pdo); $wq = $pdo->query("SELECT id, order_no, status, pay, total_p, cod_p, created_at, assign_emp, cust_json, addr_json FROM wmo_order WHERE status <> 'cancelled' ORDER BY id DESC LIMIT 1500");
+                foreach ($wq->fetchAll() as $w) { $cu = json_decode((string)($w['cust_json'] ?? ''), true) ?: json_decode((string)($w['addr_json'] ?? ''), true) ?: [];
+                    $entries[] = ['wm' => (int)$w['id'], 'batch' => '', 'id' => 0, 'count' => 1, 'total' => $w['total_p'] / 100, 'cod' => $w['cod_p'] / 100, 'type' => '', 'pay' => $w['pay'] === 'prepaid' ? 'paid' : ($w['pay'] === 'cod' ? 'cod' : 'partially_paid'), 'house' => 'WhatsApp manual order' . ($w['status'] === 'confirmed' ? '' : ' (' . ($w['status'] === 'cancelled' ? 'cancelled' : 'waiting for address') . ')'), 'date' => (string)$w['created_at'], 'by' => (string)($names[(int)$w['assign_emp']] ?? ''), 'remarks' => '', 'order_no' => (string)$w['order_no'], 'customer' => (string)($cu['name'] ?? '')]; }
+            } catch (Throwable $e) { }
+            usort($entries, fn($a, $b) => strcmp((string)$b['date'], (string)$a['date']));
+        }
+        json_response(['allowed' => true, 'today' => $sum, 'entries' => $entries]);
+        break;
+    }
+
+    case 'manual_orders.quick_delete': {   // 🗑 remove one whole quick entry (every order of it)
+        $auth = require_auth(); if (!qe_viewer_ok($pdo, $auth) && !in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true)) json_response(['error' => 'Not allowed.'], 403);
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
+        $qin = json_input(); $b = preg_replace('/[^a-f0-9]/', '', (string)($qin['batch'] ?? '')); $oid = (int)($qin['id'] ?? 0); $wid = (int)($qin['wm'] ?? 0);
+        if ($wid > 0) {   // a WhatsApp manual order (WM-xxxxx): cancelled — it leaves Orders, the boxes and Dispatch (the same cancel as the Orders page; the order number stays for the record)
+            $q = $pdo->prepare("SELECT id, order_no, status FROM wmo_order WHERE id = ?"); $q->execute([$wid]); $w = $q->fetch(); if (!$w) json_response(['error' => 'Order not found.'], 404);
+            try { if (ensure_order_cancels_table($pdo)) { $sid = (string)(7000000000000000 + $wid); $sq = $pdo->prepare("SELECT store_key FROM shop_orders WHERE shopify_id = ?"); $sq->execute([$sid]); $sk = (string)$sq->fetchColumn(); if ($sk !== '') $pdo->prepare("INSERT INTO order_cancels (source, order_id, order_name, cancelled_by) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE order_name = VALUES(order_name), cancelled_by = VALUES(cancelled_by), cancelled_at = CURRENT_TIMESTAMP")->execute([$sk, $sid, (string)$w['order_no'], (string)($auth['username'] ?? '')]); } } catch (Throwable $e) { error_log('quick_delete wm: ' . $e->getMessage()); }
+            $pdo->prepare("UPDATE wmo_order SET status = 'cancelled', cancelled_at = ? WHERE id = ?")->execute([date('Y-m-d H:i:s'), $wid]); json_response(['message' => 'Removed.', 'deleted' => 1]);
+        }
+        if ($oid > 0) { $st = $pdo->prepare("DELETE FROM manual_orders WHERE manual_order_id = ? AND (batch IS NULL OR batch = '')"); $st->execute([$oid]); json_response(['message' => 'Removed.', 'deleted' => $st->rowCount()]); }
+        if (strlen($b) < 8) json_response(['error' => 'batch or id is required.'], 422);
+        $st = $pdo->prepare("DELETE FROM manual_orders WHERE batch = ?"); $st->execute([$b]); json_response(['message' => 'Removed.', 'deleted' => $st->rowCount()]);
         break;
     }
 
@@ -33627,6 +33693,13 @@ switch ($action) {
         require_role(['Admin'], $auth);
         if (!ensure_ai_usage_table($pdo)) json_response(['error' => 'Usage table not available.'], 500);
         $month = preg_match('/^\d{4}-\d{2}$/', (string)($_GET['month'] ?? '')) ? (string)$_GET['month'] : date('Y-m');
+        $dOk = fn($v) => preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$v) === 1;
+        if ($dOk($_GET['from'] ?? '') && $dOk($_GET['to'] ?? '')) {   // 📅 price for any date range (AI usage page: From / To), at most 400 days
+            $f = (string)$_GET['from']; $t = (string)$_GET['to']; if ($f > $t) [$f, $t] = [$t, $f]; if (strtotime($t) - strtotime($f) > 400 * 86400) json_response(['error' => 'Please choose a range of at most 400 days.'], 422);
+            $q = $pdo->prepare("SELECT purpose, SUM(calls) calls, SUM(in_tokens) in_tokens, SUM(out_tokens) out_tokens, SUM(cost_usd) cost_usd, COUNT(DISTINCT use_date) days FROM ai_usage WHERE use_date >= ? AND use_date <= ? GROUP BY purpose ORDER BY cost_usd DESC"); $q->execute([$f, $t]);
+            $dq = $pdo->prepare("SELECT COUNT(DISTINCT use_date) FROM ai_usage WHERE use_date >= ? AND use_date <= ?"); $dq->execute([$f, $t]);
+            json_response(['from' => $f, 'to' => $t, 'rows' => $q->fetchAll(), 'days_with_use' => (int)$dq->fetchColumn()]);
+        }
         $q = $pdo->prepare("SELECT use_date, model, purpose, calls, in_tokens, out_tokens, cost_usd FROM ai_usage WHERE use_date LIKE ? ORDER BY use_date, model, purpose"); $q->execute([$month . '%']);
         $rows = $q->fetchAll(); $tot = ['calls' => 0, 'in' => 0, 'out' => 0, 'usd' => 0.0]; $byP = [];
         foreach ($rows as $r) { $tot['calls'] += (int)$r['calls']; $tot['in'] += (int)$r['in_tokens']; $tot['out'] += (int)$r['out_tokens']; $tot['usd'] += (float)$r['cost_usd'];

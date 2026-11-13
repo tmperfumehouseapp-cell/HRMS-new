@@ -468,6 +468,16 @@
   a.xmlk{font-weight:800; color:#be123c; text-decoration:underline dotted; text-underline-offset:3px;}
   /* Queries by hour: tap an hour / number → who got them */
   a.qhw{text-decoration:underline dotted; text-underline-offset:3px; cursor:pointer;} .qh .r a.q, .qh .r a.c{font-weight:800; text-align:center; font-size:13px;} .qh .r a.q{color:#0ea5e9;} .qh .r a.c{color:#d97706;} .qh .r span a.qhw{color:inherit;}
+  /* 🎯 Ideal day vs actual box — wide: two columns of the grid on a PC, the full width on a phone, so nothing is cut */
+  .id-card{grid-column:span 2; min-width:0; overflow:hidden;} @media (max-width:760px){ .id-card{grid-column:1 / -1;} }
+  .id-card .idk>div{min-width:0;} .id-card .idtw{overflow-x:auto;} .id-card .idtb{table-layout:fixed;} .id-card .idtb th:nth-child(1),.id-card .idtb td:nth-child(1){width:19%;} .id-card .idtb th:nth-child(n+2),.id-card .idtb td:nth-child(n+2){width:27%;} .id-card .idtw{overflow-x:visible;} .id-card .idtb td{word-break:break-word;}
+  .id-card .idt{font-size:12.5px;margin:2px 0 6px}.id-card .idb{border:1px solid var(--line,#d1d7db);background:var(--card,#fff);color:inherit;border-radius:8px;padding:2px 8px;font-weight:700;cursor:pointer;font-size:11.5px}
+  .id-card .idk{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}.id-card .idk>div{background:var(--soft,#f3f7fb);border-radius:10px;padding:6px 8px}.id-card .idk small{display:block;font-size:10.5px;color:var(--muted);font-weight:700}.id-card .idk b{font-size:15px}.id-card .idk i{display:block;font-size:10.5px;color:var(--muted);font-style:normal}
+.id-card .idl{color:var(--muted);font-size:10.5px}.id-card .idg{display:inline-block;font-size:9px;font-weight:700;text-transform:uppercase;color:#6b7280;margin-right:4px}.id-card .idg.act{color:#0b6b4b}
+.id-card .idtb th small{display:block;font-weight:500;font-size:9px;text-transform:none}.id-card .idtb td,.id-card .idtb th{padding:4px 3px}.id-card .idtb tr.cur{background:rgba(29,78,216,.06)}.id-card .idtb td>div{white-space:normal}
+  .id-card .idc{display:inline-block;margin-left:4px;border-radius:6px;padding:0 5px;font-weight:800;font-size:10.5px}.idc.up{background:#dff3e8;color:#0b6b4b}.idc.ok{background:#e8f0ff;color:#1d4ed8}.idc.mid{background:#fff3d6;color:#8a5a00}.idc.dn{background:#fde8e8;color:#9a2620}
+  .id-card .idtb{width:100%;border-collapse:collapse;font-size:11.5px;margin-top:6px}.id-card .idtb th{font-size:10.5px;color:var(--muted);text-align:right;padding:3px 4px}.id-card .idtb th:first-child,.id-card .idtb td:first-child{text-align:left}.id-card .idtb td{padding:4px;text-align:right;border-top:1px solid var(--line,#edf0f4);vertical-align:top}.id-card .idtb tr.fut{color:var(--muted)}
+  .id-card .idp{background:#eef2ff;border-radius:10px;padding:8px 10px;font-size:12px;margin-top:8px}.id-card .ida{margin:8px 0 0;padding:0;list-style:none;font-size:12px}.id-card .ida li{margin:4px 0;line-height:1.4}.id-card .idn{font-size:10.5px;color:var(--muted);margin-top:8px}.idi{width:100%;box-sizing:border-box;padding:5px 7px;border:1px solid var(--line,#d1d7db);border-radius:8px;font:inherit}
   /* Orders by hour box */
   .oh-card{display:flex; flex-direction:column; container-type:inline-size;}
   .oh-card .oht{font-size:13px; margin:2px 0 8px;} .oh-card .oht b{font-size:17px;}
@@ -714,6 +724,7 @@
             <button class="btn secondary" id="btnRule" type="button" title="How daily targets are set automatically">Target rule</button>
             <span id="loadingHint" style="display:none; font-size:13px; color:var(--muted); align-self:center;">Loading...</span>
             <button class="btn" id="btnAddOrder">+ Add Order</button>
+            <button class="btn" id="btnRemoveManual" type="button" hidden style="background:#fff;color:#b42318;border:1px solid #f3c9c9" title="Remove quick entries / manual orders that were added by mistake">🗑 Remove manual orders</button>
           </div>
         </div>
       </div>
@@ -907,6 +918,7 @@
         <div class="field"><label for="moHouse">Store (panel) *</label><select id="moHouse"></select></div>
         <div class="field"><label for="moDate">Order date &amp; time</label><input type="datetime-local" id="moDate"></div>
       </div>
+      <div class="field"><label for="moEmp">Sales person (optional) — the orders go straight to this person</label><select id="moEmp"><option value="0">— Not assigned (allocate later) —</option></select></div>
       <div class="field"><label for="moRemarks">Remarks (optional)</label><input type="text" id="moRemarks" maxlength="200" placeholder="e.g. phone orders, shop counter …"></div>
       <div id="moSum" style="background:#f3f7fb;border-radius:10px;padding:8px 12px;font-size:13px;margin:6px 0 4px;color:#334155">Fill the numbers above.</div>
       <div class="actions">
@@ -1880,6 +1892,56 @@
     if (ev.target.id === 'ohModal') ohClose();
   });
 
+  // ---------- 🎯 Ideal day vs actual (after Orders by hour): the day's ideal spend / replies / Campaign orders at fixed times against what really happened ----------
+  let IDL = null, IDLday = '', IDLat = 0, IDLbusy = false;
+  const idN = (v) => Number(v || 0).toLocaleString('en-IN'), idR = (v) => '₹' + idN(Math.round(v || 0)), idDay = () => { const f = document.getElementById('dateFrom').value, t = document.getElementById('dateTo').value; return f && f === t ? f : ''; };
+  const idHm = (s) => { const h = Number(String(s).slice(0, 2)); return ((h % 12) || 12) + ':' + String(s).slice(3, 5) + (h < 12 ? ' AM' : ' PM'); };
+  const idChip = (p) => p === null || p === undefined ? '' : `<small class="idc ${p >= 5 ? 'up' : p >= -5 ? 'ok' : p >= -20 ? 'mid' : 'dn'}">${p > 0 ? '+' : ''}${p}%</small>`;
+  function idCardHtml() {
+    if (EMP_VIEW) return '';
+    const body = (IDL && IDLday === idDay()) ? idBody(IDL) : '<div style="padding:10px 0;color:var(--muted);font-size:12.5px">Loading the ideal day…</div>';
+    return `<div class="stat-card id-card" id="idealCard"><div class="label"><span class="lbl-full">🎯 Ideal day vs actual</span><span class="lbl-short">Ideal vs actual</span></div>${body}</div>`;
+  }
+  function idBody(d) {
+    const c = d.cfg || {}, so = d.so_far || {}, a = so.actual || {}, i = so.ideal || {}, dv = so.dev || {};
+    let h = `<div class="idt">Day target: <b>${idR(c.spend)}</b> spend · <b>${idN(c.replies)}</b> replies · <b>${idN(c.orders)}</b> orders ${d.can_edit ? '<button type="button" class="idb" data-ide="1">✎ Edit</button>' : ''}</div>
+      <div class="idk"><div><small>Spend</small><b>${idR(a.spend)}</b><i>ideal ${idR(i.spend)}</i>${idChip(dv.spend)}</div><div><small>Replies</small><b>${idN(a.replies)}</b><i>ideal ${idN(i.replies)}</i>${idChip(dv.replies)}</div><div><small>Orders</small><b>${idN(a.orders)}</b><i>ideal ${idN(i.orders)}</i>${idChip(dv.orders)}</div></div>
+      <div class="idt" style="margin-top:6px">Total orders ÷ replies: <b>${a.ratio != null ? a.ratio + '%' : '—'}</b> <span style="color:var(--muted)">(ideal ${i.ratio != null ? i.ratio + '%' : '—'})</span></div>
+      <div class="idtw"><table class="idtb"><thead><tr><th>By</th><th>Spend<small>spent so far / should be</small></th><th>Replies<small>so far / should be</small></th><th>Total orders<small>all orders by this time / should be</small></th></tr></thead><tbody>`;
+    const K = (n) => { n = Math.round(+n || 0); return n >= 10000 ? '₹' + (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : '₹' + n.toLocaleString('en-IN'); };
+    const cell = (ac, ide, chip, f) => ac == null ? `<div class="idl">${f(ide)}</div>` : `<div><b>${f(ac)}</b><span class="idl"> / ${f(ide)}</span></div>${idChip(chip)}`;
+    const hrEnd = (t) => idHm(String((parseInt(String(t).slice(0, 2), 10) + 1) % 24).padStart(2, '0') + ':00');
+    (d.hourly || []).forEach((p) => { const cu = p.cum || {}, ca = cu.actual, cp = cu.pct || {}, ci = (p.cur && cu.ideal_now) || cu.ideal || {};
+      h += `<tr class="${p.past ? '' : 'fut'}${p.cur ? ' cur' : ''}"><td><b>${hrEnd(p.t)}</b>${p.cur ? '<br><span class="idg act">now</span>' : ''}</td><td>${cell(ca && ca.spend, ci.spend, cp.spend, K)}</td><td>${cell(ca && ca.replies, ci.replies, cp.replies, idN)}</td><td>${cell(ca && ca.orders, ci.orders, cp.orders, idN)}</td></tr>`; });
+    h += '</tbody></table></div>';
+    const pr = d.projection || {}, nd = d.need_per_hour || {};
+    if (pr.orders != null && d.now && d.to && d.now < d.to) h += `<div class="idp">🔮 At this pace the day ends near <b>${idR(pr.spend)}</b> · <b>${idN(pr.replies)}</b> replies · <b>${idN(pr.orders)}</b> orders. To reach ${idN(c.orders)} orders you need about <b>${idN(nd.replies)}</b> replies and <b>${idN(nd.orders)}</b> orders every hour from now.</div>`;
+    h += (d.analysis || []).length ? `<ul class="ida">${d.analysis.map((x) => `<li class="${x.k === 'ok' ? 'ok' : 'wn'}">${x.k === 'ok' ? '✅' : '⚠️'} ${x.text.replace(/</g, '&lt;')}</li>`).join('')}</ul>` : '';
+    return h + `<div class="idn">Replies = queries typed Campaign on the live board · Total orders = every order of the day (Query + Campaign + others, cancelled left out) · Spend = delivered × Meta rate · updated ${String(d.at || '').slice(11, 16)}</div>`;
+  }
+  async function idealLoad(force) {
+    const day = idDay(), box = document.getElementById('idealCard'); if (!box) return;
+    if (!day) { box.style.display = 'none'; return; } box.style.display = '';
+    if (IDL && IDLday === day && !force && Date.now() - IDLat < 150000) return;
+    if (IDLbusy) return; IDLbusy = true;
+    try { const d = await api.get('wa.camp_ideal', { day }); IDL = d; IDLday = day; IDLat = Date.now(); const b = document.getElementById('idealCard'); if (b) b.innerHTML = '<div class="label"><span class="lbl-full">🎯 Ideal day vs actual</span><span class="lbl-short">Ideal vs actual</span></div>' + idBody(d); }
+    catch (e) { const b = document.getElementById('idealCard'); if (b) b.innerHTML = '<div class="label"><span class="lbl-full">🎯 Ideal day vs actual</span></div><div style="color:var(--muted);font-size:12.5px;padding:6px 0">' + String(e.message || '').replace(/</g, '&lt;') + '</div>'; }
+    finally { IDLbusy = false; }
+  }
+  setInterval(() => { if (!document.hidden && IDL) idealLoad(true); }, 180000);
+  document.addEventListener('click', (e) => { if (e.target.closest('[data-ide]')) idealEdit(); });
+  function idealEdit() {
+    const c = (IDL && IDL.cfg) || { spend: 0, replies: 0, orders: 0, rows: [] }, ov = document.createElement('div'); ov.style.cssText = 'position:fixed;inset:0;background:#0008;z-index:300;display:flex;align-items:center;justify-content:center;padding:14px';
+    const row = (r) => `<tr><td><input type="time" value="${r.t}" class="idi" data-k="t"></td><td><input type="number" value="${r.spend}" class="idi" data-k="spend"></td><td><input type="number" value="${r.replies}" class="idi" data-k="replies"></td><td><input type="number" value="${r.orders}" class="idi" data-k="orders"></td><td><button type="button" class="idb" data-rm="1">✕</button></td></tr>`;
+    ov.innerHTML = `<div style="background:var(--card,#fff);color:inherit;border-radius:16px;max-width:620px;width:100%;max-height:90vh;overflow:auto;padding:16px"><h3 style="margin:0 0 4px">✎ Ideal day</h3><div style="font-size:12.5px;color:var(--muted);margin-bottom:8px">Cumulative numbers: how much should be spent / replied / ordered BY each time (the day runs 12 noon → 12 noon).</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px"><label>Day spend ₹<input type="number" id="idS" class="idi" value="${c.spend}"></label><label>Day replies<input type="number" id="idR" class="idi" value="${c.replies}"></label><label>Day orders<input type="number" id="idO" class="idi" value="${c.orders}"></label></div>
+      <table style="width:100%;margin-top:10px;font-size:13px"><thead><tr><th>By time</th><th>Spend ₹</th><th>Replies</th><th>Orders</th><th></th></tr></thead><tbody id="idRows">${(c.rows || []).map(row).join('')}</tbody></table><button type="button" class="idb" id="idAdd" style="margin-top:6px">＋ Add a time</button>
+      <div id="idErr" style="color:#b42318;font-size:12.5px;margin-top:6px"></div><div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px"><button type="button" class="btn secondary" id="idX">Cancel</button><button type="button" class="btn" id="idSv">Save</button></div></div>`;
+    document.body.appendChild(ov); const q = (s) => ov.querySelector(s); q('#idX').onclick = () => ov.remove(); ov.addEventListener('click', (e) => { if (e.target === ov) ov.remove(); });
+    q('#idAdd').onclick = () => q('#idRows').insertAdjacentHTML('beforeend', row({ t: '12:00', spend: 0, replies: 0, orders: 0 })); q('#idRows').addEventListener('click', (e) => { const b = e.target.closest('[data-rm]'); if (b) b.closest('tr').remove(); });
+    q('#idSv').onclick = async () => { const rows = [...ov.querySelectorAll('#idRows tr')].map((tr) => { const g = (k) => tr.querySelector('[data-k="' + k + '"]').value; return { t: g('t'), spend: Number(g('spend')) || 0, replies: Number(g('replies')) || 0, orders: Number(g('orders')) || 0 }; }).filter((r) => r.t);
+      try { await api.post('wa.camp_ideal_save', { spend: Number(q('#idS').value) || 0, replies: Number(q('#idR').value) || 0, orders: Number(q('#idO').value) || 0, rows }); ov.remove(); IDL = null; idealLoad(true); } catch (er) { q('#idErr').textContent = er.message; } };
+  }
   // ---------- Dress to Impress box (after Orders by hour) ----------
   // Every order (allocated or not, cancelled left out) with Dress to Impress bottles in it: all 3 perfumes = a set of 3, any 2 = a set of 2,
   // one = single; quantity 2 of each = 2 sets. Each perfume counts every bottle. o.dti = {ds, cg, cc, o (other items), on}; 0 = none; null = not checked yet.
@@ -2524,6 +2586,7 @@
         return `<div class="stat-card rs-card"><div class="label"><span class="lbl-full">${r ? 'Ad spend &amp; ROAS' : 'DG / LG / WH / Other'}</span><span class="lbl-short">${r ? 'Ad spend &amp; ROAS' : 'DG/LG/WH/Other'}</span></div>${r}${colours}</div>`;
       })()}
       ${ohCardHtml(base)}
+      ${idCardHtml()}
       ${dtiCardHtml()}
       ${cslCardHtml()}
       ${tcoCardHtml()}
@@ -2532,6 +2595,7 @@
       ${pmCardHtml()}
     `;
     grid.style.display = 'grid';
+    idealLoad();
     renderUnallocNote();
   }
   // One line saying how many orders are left out because they are not allocated yet.
@@ -3079,7 +3143,8 @@
     document.getElementById('moPaidBox').style.display = qe.pay === 'part' ? '' : 'none';
     const cod = qe.pay === 'prepaid' ? 0 : qe.pay === 'cod' ? t : Math.max(0, t - pd), pre = t - cod;
     const hs = document.getElementById('moHouse'); const hn = hs.options[hs.selectedIndex] ? hs.options[hs.selectedIndex].text : '';
-    document.getElementById('moSum').innerHTML = n > 0 && t > 0 ? '<b>' + n + ' ' + (qe.type === 'query' ? 'Query' : 'Campaign') + ' order' + (n === 1 ? '' : 's') + '</b> · ' + qeFmt(t) + ' · ' + hn + '<br>Prepaid ' + qeFmt(pre) + ' · COD ' + qeFmt(cod) + '<br><span style="color:#64748b">They are added to the boxes (Order, Collection, Prepaid / COD, Ticket size) at once.</span>' : 'Fill the numbers above.';
+    const ee = document.getElementById('moEmp'), en = ee && Number(ee.value) > 0 ? ee.options[ee.selectedIndex].text : '';
+    document.getElementById('moSum').innerHTML = n > 0 && t > 0 ? '<b>' + n + ' ' + (qe.type === 'query' ? 'Query' : 'Campaign') + ' order' + (n === 1 ? '' : 's') + '</b> · ' + qeFmt(t) + ' · ' + hn + (en ? ' · 👤 ' + en : '') + '<br>Prepaid ' + qeFmt(pre) + ' · COD ' + qeFmt(cod) + '<br><span style="color:#64748b">They are added to the boxes (Order, Collection, Prepaid / COD, Ticket size) at once.</span>' : 'Fill the numbers above.';
   }
   document.getElementById('btnAddOrder').addEventListener('click', () => {
     document.getElementById('manualOrderForm').reset();
@@ -3090,10 +3155,11 @@
     const hs = document.getElementById('moHouse'); hs.innerHTML = PLATFORMS.map(([k, label]) => `<option value="${k}">${label}</option>`).join('');
     const pick = [...storeSel].map((x) => STORE_HOUSE_MAP[x] || x).find((x) => PLATFORMS.some((p) => p[0] === x)); if (pick) hs.value = pick;
     qeDraw(); orderModal.classList.add('open');
+    const es = document.getElementById('moEmp'); if (es && es.options.length < 2) api.get('manual_orders.sales_people').then((d) => { (d.people || []).forEach((x) => { const o = document.createElement('option'); o.value = x.id; o.textContent = x.name + (x.code ? ' (' + x.code + ')' : ''); es.appendChild(o); }); }).catch(() => { });
   });
   document.getElementById('moType').addEventListener('click', (e) => { const b = e.target.closest('button[data-v]'); if (!b) return; qe.type = b.dataset.v; document.querySelectorAll('#moType button').forEach((x) => x.classList.toggle('on', x === b)); qeDraw(); });
   document.getElementById('moPay').addEventListener('click', (e) => { const b = e.target.closest('button[data-v]'); if (!b) return; qe.pay = b.dataset.v; document.querySelectorAll('#moPay button').forEach((x) => x.classList.toggle('on', x === b)); qeDraw(); });
-  ['moCount', 'moTotal', 'moPaid', 'moHouse'].forEach((id) => document.getElementById(id).addEventListener('input', qeDraw));
+  ['moCount', 'moTotal', 'moPaid', 'moHouse', 'moEmp'].forEach((id) => document.getElementById(id).addEventListener('input', qeDraw));
   document.getElementById('btnOrderCancel').addEventListener('click', () => orderModal.classList.remove('open'));
   orderModal.addEventListener('click', (e) => { if (e.target === orderModal) orderModal.classList.remove('open'); });
 
@@ -3105,7 +3171,7 @@
     btn.disabled = true;
     try {
       const dtLocal = document.getElementById('moDate').value; // yyyy-mm-ddThh:mm
-      const r = await api.post('manual_orders.bulk', { count: n, total: t, order_type: qe.type, pay: qe.pay, paid: Number(document.getElementById('moPaid').value || 0), house: document.getElementById('moHouse').value, order_date: dtLocal ? dtLocal.replace('T', ' ') + ':00' : '', remarks: document.getElementById('moRemarks').value.trim() });
+      const r = await api.post('manual_orders.bulk', { count: n, total: t, order_type: qe.type, pay: qe.pay, paid: Number(document.getElementById('moPaid').value || 0), house: document.getElementById('moHouse').value, employee_id: Number(document.getElementById('moEmp').value || 0), order_date: dtLocal ? dtLocal.replace('T', ' ') + ':00' : '', remarks: document.getElementById('moRemarks').value.trim() });
       orderModal.classList.remove('open');
       showAlert(r.count + ' orders added (' + r.first + (r.count > 1 ? ' – ' + r.last : '') + ').');
       loadOrders();
@@ -3115,6 +3181,37 @@
       btn.disabled = false;
     }
   });
+
+  // ---- 🗑 Remove manual orders: the quick entries (and single manual orders) of the last days, each with Remove (Admin / HR and the Sales Head who watches them)
+  (function () {
+    const btn = document.getElementById('btnRemoveManual'); if (!btn) return;
+    const E = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const money = (v) => '₹' + Math.round(Number(v) || 0).toLocaleString('en-IN');
+    const when = (d) => { const x = new Date(String(d).replace(' ', 'T')); return isNaN(x) ? d : x.toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }); };
+    api.get('manual_orders.quick_list', { days: 14 }).then((d) => { if (d && d.allowed) btn.hidden = false; }).catch(() => {});
+    btn.addEventListener('click', async () => {
+      const ov = document.createElement('div'); ov.style.cssText = 'position:fixed;inset:0;background:#0008;z-index:300;display:flex;align-items:center;justify-content:center;padding:14px';
+      ov.innerHTML = '<div style="background:var(--card,#fff);color:inherit;border-radius:16px;max-width:680px;width:100%;max-height:88vh;overflow:auto;padding:16px"><div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0">🗑 Remove manual orders</h3><button type="button" class="btn secondary" id="rmX">Close</button></div><div style="font-size:12.5px;color:var(--muted);margin:4px 0 8px">All manual orders till today (quick entries, single manual orders and WhatsApp manual orders). “Remove” takes the order out of Orders and the boxes — a quick entry is deleted whole, a WhatsApp manual order is cancelled.</div><input id="rmQ" type="search" placeholder="Search: order no / customer / amount …" style="width:100%;box-sizing:border-box;margin:0 0 8px;padding:8px 10px;border:1px solid var(--line,#d1d7db);border-radius:10px"><div id="rmL">Loading…</div></div>';
+      document.body.appendChild(ov); const close = () => ov.remove(); ov.querySelector('#rmX').onclick = close; ov.addEventListener('click', (e) => { if (e.target === ov) close(); });
+      let ALL = [];
+      async function load(force) {
+        const box = ov.querySelector('#rmL');
+        try {
+          if (force || !ALL.length) { const d = await api.get('manual_orders.quick_list', { all: 1 }); ALL = d.entries || []; } const qq = (ov.querySelector('#rmQ').value || '').trim().toLowerCase(); const L = ALL.filter((x) => !qq || [x.order_no, x.customer, x.by, x.house, String(Math.round(x.total))].join(' ').toLowerCase().includes(qq)).slice(0, 300);
+          box.innerHTML = L.length ? L.map((x) => `<div style="display:flex;gap:8px;align-items:center;border-top:1px solid var(--line,#edf0f4);padding:8px 0;font-size:13px"><div style="flex:1;min-width:0">${x.batch ? `<b>${x.count} ${x.type === 'campaign' ? 'Campaign' : 'Query'} order${x.count === 1 ? '' : 's'}</b> · ${money(x.total)} <span style="color:var(--muted)">(quick entry)</span>` : `<b>${E(x.order_no)}</b> · ${E(x.customer || '—')} · ${money(x.total)}`}<br><span style="color:var(--muted);font-size:12px">${E(when(x.date))} · ${x.pay === 'paid' ? 'Prepaid' : x.pay === 'cod' ? 'COD' : E(x.pay)} · ${E(x.house || 'Manual')} · by ${E(x.by)}</span></div><button type="button" class="btn" data-b="${E(x.batch)}" data-i="${x.id || 0}" data-w="${x.wm || 0}" data-n="${x.count}" style="background:#fff;color:#b42318;border:1px solid #f3c9c9">Remove</button></div>`).join('') : '<div style="padding:14px;color:var(--muted)">No manual orders found.</div>';
+        } catch (e) { box.innerHTML = '<div class="alert error">' + E(e.message) + '</div>'; }
+      }
+      ov.addEventListener('click', async (e) => {
+        const b = e.target.closest('[data-n]'); if (!b) return;
+        if (!confirm('Remove ' + (b.dataset.b ? 'these ' + b.dataset.n + ' orders' : 'this order') + '?' + (Number(b.dataset.w) ? '\n\nA WhatsApp manual order is cancelled (it leaves Orders, the boxes and Dispatch).' : ''))) return;
+        b.disabled = true; b.textContent = 'Removing…';
+        try { await api.post('manual_orders.quick_delete', b.dataset.b ? { batch: b.dataset.b } : Number(b.dataset.w) ? { wm: Number(b.dataset.w) } : { id: Number(b.dataset.i) }); showAlert('Removed.'); loadOrders(); } catch (er) { alert(er.message); }
+        load(true);
+      });
+      const qi = ov.querySelector('#rmQ'); let qt = 0; qi.addEventListener('input', () => { clearTimeout(qt); qt = setTimeout(() => load(false), 200); });
+      load(true);
+    });
+  })();
 
   window.deleteManual = async function (id, batch) {
     try {

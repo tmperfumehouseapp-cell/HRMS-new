@@ -59,6 +59,18 @@ function wa_cust_refresh(PDO $pdo, int $maxAge = 600, bool $force = false): bool
     if (!$force && wa_cust_age($pdo) < $maxAge) return true;
     try { $got = (int)$pdo->query("SELECT GET_LOCK('wa_cust_refresh', 0)")->fetchColumn(); } catch (Throwable $e) { return false; }
     if ($got !== 1) return false;
+    $mark = time();   // changes from this moment on belong to the NEXT light update
+    // ⚡ light update: between two full rebuilds (one an hour) only the customers who changed are recomputed — the full rebuild of every customer took ~90 s of each engine round
+    if (!$force && (int)setting_get($pdo, 'wa_cust_full_at', '0') > time() - 3600) {
+        $n = null; $t0 = microtime(true);
+        try { $n = wa_cust_patch($pdo, (int)setting_get($pdo, 'wa_cust_mark', '0')); } catch (Throwable $e) { if (function_exists('wag_log')) wag_log($pdo, 'engine', false, 'Customer light update failed (full rebuild instead): ' . mb_substr($e->getMessage(), 0, 160)); }
+        if ($n !== null) {
+            setting_set($pdo, 'wa_cust_mark', (string)$mark); setting_set($pdo, 'wa_cust_at', date('Y-m-d H:i:s'));
+            if (function_exists('wag_log')) wag_log($pdo, 'engine', true, 'Customer summary: light update of ' . $n . ' customer(s) in ' . round(microtime(true) - $t0, 1) . ' s.');
+            try { $pdo->query("SELECT RELEASE_LOCK('wa_cust_refresh')"); } catch (Throwable $e) { }
+            return true;
+        }
+    }
     try {
         ignore_user_abort(true); @set_time_limit(300); $t0 = microtime(true);
         $cfg = function_exists('wag_cfg') ? wag_cfg($pdo) : ['vip_orders' => 5, 'vip_ltv' => 15000]; $now = date('Y-m-d H:i:s');
@@ -98,13 +110,76 @@ function wa_cust_refresh(PDO $pdo, int $maxAge = 600, bool $force = false): bool
         $pdo->exec("DROP TABLE IF EXISTS wa_cust_old"); $pdo->exec("DROP TABLE IF EXISTS wa_tagidx_old");
         $pdo->exec("RENAME TABLE wa_cust TO wa_cust_old, wa_cust_new TO wa_cust, wa_tagidx TO wa_tagidx_old, wa_tagidx_new TO wa_tagidx");
         $pdo->exec("DROP TABLE IF EXISTS wa_cust_old"); $pdo->exec("DROP TABLE IF EXISTS wa_tagidx_old");
-        setting_set($pdo, 'wa_cust_at', date('Y-m-d H:i:s'));
+        setting_set($pdo, 'wa_cust_at', date('Y-m-d H:i:s')); setting_set($pdo, 'wa_cust_full_at', (string)time()); setting_set($pdo, 'wa_cust_mark', (string)$mark);
         try { if (function_exists('wag_tag_counts')) { setting_set($pdo, 'wa_tag_cache', ''); wag_tag_counts($pdo); } } catch (Throwable $e) { }   // warm the tag-count cache
         if (function_exists('wag_log')) wag_log($pdo, 'engine', true, 'Customer summary rebuilt in ' . round(microtime(true) - $t0, 1) . ' s.');
         $ok = true;
     } catch (Throwable $e) { if (function_exists('wag_log')) wag_log($pdo, 'engine', false, 'Customer summary failed: ' . $e->getMessage()); $ok = false; }
     try { $pdo->query("SELECT RELEASE_LOCK('wa_cust_refresh')"); } catch (Throwable $e) { }
     return $ok;
+}
+/** The phone number of an order as the summary keeps it (last 10 digits). */
+if (!defined('WA_ORD_KEY')) define('WA_ORD_KEY', "SUBSTR(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+', ''), '(', ''), ')', ''), -10)");
+/**
+ * Light update of the customer summary + tag index: only the customers with a new message, order, chat result or automatic tag since $since.
+ * Returns how many customers were updated, or null when a full rebuild is the better choice (never run before / too many changes).
+ * Same rules as the full rebuild in wa_cust_refresh. Not touched here (the hourly full rebuild does them): 'cold' by date alone, 'cod_pending', edits of old orders.
+ */
+function wa_cust_patch(PDO $pdo, int $since): ?int
+{
+    if ($since <= 0 || $since < time() - 7200) return null;
+    $s = date('Y-m-d H:i:s', $since - 120); $sOrd = date('Y-m-d H:i:s', $since - 900);   // orders reach the copy a few minutes after they were placed
+    $cfg = function_exists('wag_cfg') ? wag_cfg($pdo) : ['vip_orders' => 5, 'vip_ltv' => 15000];
+    $coll = ''; try { $q = $pdo->query("SELECT COLLATION_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'wa_contacts' AND COLUMN_NAME = 'phone'"); $cn = (string)$q->fetchColumn(); if (preg_match('/^utf8mb4_[a-z0-9_]+$/', $cn)) $coll = ' COLLATE ' . $cn; } catch (Throwable $e) { }
+    $pdo->exec("DROP TABLE IF EXISTS wa_cust_chg");
+    $pdo->exec("CREATE TABLE wa_cust_chg (phone VARCHAR(12) NOT NULL PRIMARY KEY) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4" . $coll);
+    // who changed
+    $pdo->exec("INSERT IGNORE INTO wa_cust_chg (phone) SELECT phone FROM wa_contacts WHERE last_in_at >= '$s' OR last_out_at >= '$s' OR first_seen >= '$s' OR tagged_at >= '$s'");
+    try { $pdo->exec("INSERT IGNORE INTO wa_cust_chg (phone) SELECT phone FROM wa_outcomes WHERE id > (SELECT COALESCE(MAX(id), 0) - 5000 FROM wa_outcomes) AND at >= '$s'"); } catch (Throwable $e) { }
+    try { $pdo->exec("INSERT IGNORE INTO wa_cust_chg (phone) SELECT phone FROM wa_auto_tags WHERE at >= '$s' OR (until >= '$s' AND until <= NOW())"); } catch (Throwable $e) { }
+    $ordKeys = [];
+    try { foreach ($pdo->query("SELECT DISTINCT " . WA_ORD_KEY . " k FROM shop_orders WHERE created_at >= '$sOrd' AND phone != ''")->fetchAll(PDO::FETCH_COLUMN) as $k) { $k = (string)$k; if (preg_match('/^\d{10}$/', $k)) $ordKeys[$k] = true; } } catch (Throwable $e) { }
+    $ordKeys = array_map('strval', array_keys($ordKeys));
+    foreach (array_chunk($ordKeys, 500) as $ch) $pdo->prepare("INSERT IGNORE INTO wa_cust_chg (phone) VALUES " . implode(',', array_fill(0, count($ch), '(?)')))->execute($ch);
+    $n = (int)$pdo->query("SELECT COUNT(*) FROM wa_cust_chg")->fetchColumn();
+    if ($n > 25000) { $pdo->exec("DROP TABLE IF EXISTS wa_cust_chg"); return null; }
+    if ($n === 0) { $pdo->exec("DROP TABLE IF EXISTS wa_cust_chg"); return 0; }
+    // 1. orders of the customers with a new order (all their orders, not only the new one)
+    foreach (array_chunk($ordKeys, 300) as $ch) {
+        $st = $pdo->prepare("INSERT INTO wa_cust (phone, name, n, last_order, spent)
+            SELECT k, nm, n, last, total FROM (SELECT " . WA_ORD_KEY . " AS k, MAX(customer) AS nm, COUNT(*) AS n, MAX(created_at) AS last, COALESCE(SUM(total), 0) AS total
+            FROM shop_orders WHERE phone IS NOT NULL AND phone != '' AND " . WA_ORD_KEY . " IN (" . implode(',', array_fill(0, count($ch), '?')) . ") GROUP BY k) x
+            ON DUPLICATE KEY UPDATE n = x.n, last_order = x.last, spent = x.total");
+        $st->execute($ch);
+    }
+    // 2. new WhatsApp contacts
+    $pdo->exec("INSERT IGNORE INTO wa_cust (phone, name) SELECT c.phone, c.name FROM wa_contacts c JOIN wa_cust_chg g ON g.phone = c.phone");
+    // 3. template messages that got no answer
+    $pdo->exec("UPDATE wa_cust s JOIN wa_cust_chg g ON g.phone = s.phone LEFT JOIN (SELECT m.phone, COUNT(*) n FROM wa_messages m JOIN wa_cust_chg g2 ON g2.phone = m.phone JOIN wa_contacts c ON c.phone = m.phone WHERE m.dir = 'out' AND m.mtype = 'template' AND (c.last_in_at IS NULL OR m.ts > c.last_in_at) GROUP BY m.phone) x ON x.phone = s.phone SET s.ign = COALESCE(x.n, 0)");
+    // 4. last activity
+    $pdo->exec("UPDATE wa_cust s JOIN wa_cust_chg g ON g.phone = s.phone LEFT JOIN wa_contacts c ON c.phone = s.phone SET s.act_at = NULLIF(GREATEST(COALESCE(c.last_in_at, '1970-01-01'), COALESCE(c.last_out_at, '1970-01-01'), COALESCE(s.last_order, '1970-01-01')), '1970-01-01')");
+    // 5. tags of these customers: the worked-out ones are removed and written again, hand-given and automatic tags are put back
+    $vo = (int)$cfg['vip_orders']; $vl = (int)$cfg['vip_ltv']; $cut30 = date('Y-m-d H:i:s', time() - 30 * 86400);
+    $oc = "COALESCE((SELECT o.code FROM wa_outcomes o WHERE o.phone = c.phone ORDER BY o.id DESC LIMIT 1), '')";
+    $base = "FROM wa_cust_chg g JOIN wa_contacts c ON c.phone = g.phone LEFT JOIN wa_cust s ON s.phone = c.phone";
+    $rules = [
+        'bought' => "COALESCE(s.n,0) >= 1", 'repeat' => "COALESCE(s.n,0) >= 2", 'vip' => "(COALESCE(s.n,0) >= $vo OR COALESCE(s.spent,0) >= $vl)",
+        'not_ordered' => "COALESCE(s.n,0) = 0 AND c.last_in_at IS NOT NULL", 'never_replied' => "c.last_in_at IS NULL AND COALESCE(s.ign,0) >= 1",
+        'cold' => "c.last_in_at IS NOT NULL AND c.last_in_at < '$cut30'", 'from_ad' => "c.source = 'query'", 'came_back' => "c.source = 'campaign'",
+        'wants_buy' => "(c.tag = 'buy' OR $oc = 'later')", 'price_issue' => "(c.tag = 'price' OR $oc = 'price')", 'not_interested' => "($oc = 'no_interest' AND COALESCE(s.n,0) = 0)", 'wrong_number' => "$oc = 'wrong'", 'complaint' => "(c.tag = 'complaint' OR $oc = 'complaint')",
+    ];
+    $names = "'" . implode("','", array_keys($rules)) . "'";
+    $pdo->beginTransaction();
+    try {
+        $pdo->exec("DELETE t FROM wa_tagidx t JOIN wa_cust_chg g ON g.phone = t.phone WHERE t.tag IN ($names)");
+        try { $pdo->exec("DELETE t FROM wa_tagidx t JOIN wa_auto_tags a ON a.phone = t.phone AND a.tag = t.tag WHERE a.until IS NOT NULL AND a.until <= NOW() AND a.until >= '$s'"); } catch (Throwable $e) { }   // automatic tags that ran out
+        foreach ($rules as $tag => $w) $pdo->exec("INSERT IGNORE INTO wa_tagidx (phone, tag) SELECT c.phone, '$tag' $base WHERE $w");
+        try { $pdo->exec("INSERT IGNORE INTO wa_tagidx (phone, tag) SELECT t.phone, t.tag FROM wa_ctags t JOIN wa_cust_chg g ON g.phone = t.phone"); } catch (Throwable $e) { }
+        try { $pdo->exec("INSERT IGNORE INTO wa_tagidx (phone, tag) SELECT t.phone, t.tag FROM wa_auto_tags t JOIN wa_cust_chg g ON g.phone = t.phone WHERE t.until IS NULL OR t.until > NOW()"); } catch (Throwable $e) { }
+        $pdo->commit();
+    } catch (Throwable $e) { try { $pdo->rollBack(); } catch (Throwable $e2) { } throw $e; }
+    $pdo->exec("DROP TABLE IF EXISTS wa_cust_chg");
+    return $n;
 }
 /** A request that needs the summary: builds it right now only if it has never been built; otherwise the cron keeps it fresh. */
 function wa_cust_ready(PDO $pdo): void

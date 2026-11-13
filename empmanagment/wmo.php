@@ -156,6 +156,14 @@ function wmo_read_shot(PDO $pdo, string $b64, string $mime): array
 
 // ------------------------------------------------------------------------------------------------------------------ Dispatch ▸ Manual orders (every manual order, export, invoice / Shiprocket status)
 /** Who may open the Dispatch "Manual orders" list: Admin / HR, the Dispatch and Admin departments, a Sales Head, a Dispatch seat holder, the bosses. */
+/** 💰 Our purchase cost per piece (owner, 13 Nov: the same cost for every perfume of one size): {sizes: {"50": 120, …}, chain: ₹, other: ₹}. Used by the FP export (Buying Price). */
+function wmo_costs(PDO $pdo): array
+{
+    $j = json_decode((string)setting_get($pdo, 'fp_cost', ''), true); if (!is_array($j)) $j = [];
+    $sz = []; foreach ((array)($j['sizes'] ?? []) as $k => $v) if (is_numeric($k) && is_numeric($v) && (float)$v >= 0) $sz[(string)(0 + $k)] = round((float)$v, 2);
+    $f = function ($v) { return (is_numeric($v) && (float)$v >= 0) ? round((float)$v, 2) : null; };
+    return ['sizes' => (object)$sz, 'chain' => $f($j['chain'] ?? null), 'other' => $f($j['other'] ?? null)];
+}
 function wmo_dsp_ok(PDO $pdo, array $auth): bool
 {
     if (in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true)) return true;
@@ -451,10 +459,23 @@ if (strpos($__wmo, 'wmo.') === 0) {
             $from = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($in['from'] ?? '')) ? (string)$in['from'] : biz_today($pdo); $to = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($in['to'] ?? '')) ? (string)$in['to'] : $from; if ($to < $from) $to = $from;
             if ((strtotime($to) - strtotime($from)) > 400 * 86400) json_response(['error' => 'Choose at most 400 days.'], 422);
             $status = (string)($in['status'] ?? ''); $pay = (string)($in['pay'] ?? ''); $qq = (string)($in['q'] ?? ''); $tot = 0; $sum = [];
-            if ($__wmo === 'wmo.dsp_export') { @set_time_limit(120); $rows = wmo_dsp_rows($pdo, $from, $to, $status, $pay, $qq, 5000, 0, $tot, $sum); json_response(['ok' => true, 'rows' => $rows, 'total' => $tot, 'from' => $from, 'to' => $to]); }
+            if ($__wmo === 'wmo.dsp_export') { @set_time_limit(120); $rows = wmo_dsp_rows($pdo, $from, $to, $status, $pay, $qq, 5000, 0, $tot, $sum); json_response(['ok' => true, 'rows' => $rows, 'total' => $tot, 'from' => $from, 'to' => $to, 'costs' => wmo_costs($pdo)]); }
             $page = max(1, (int)($in['page'] ?? 1)); $per = 30; $rows = wmo_dsp_rows($pdo, $from, $to, $status, $pay, $qq, $per, ($page - 1) * $per, $tot, $sum);
             $bill = ['ok' => true, 'missing' => []]; try { if (function_exists('wch_billing_gate')) { $g = wch_billing_gate($pdo); $bill = ['ok' => !empty($g['ok']), 'missing' => array_values(array_slice((array)($g['missing'] ?? []), 0, 8))]; } else $bill = ['ok' => false, 'missing' => ['GST invoice module is not installed']]; } catch (Throwable $e) { }   // why invoices are not made: the GST billing details
             json_response(['ok' => true, 'rows' => $rows, 'total' => $tot, 'page' => $page, 'pages' => max(1, (int)ceil($tot / $per)), 'sum' => $sum, 'from' => $from, 'to' => $to, 'billing' => $bill]);
+        }
+        case 'wmo.cost_get': {   // 💰 purchase cost per size (+ chain, other product) and the perfume sizes in the catalogue
+            if (!wmo_dsp_ok($pdo, $auth)) json_response(['error' => 'Not allowed.'], 403);
+            $sizes = []; try { $sizes = array_map('intval', $pdo->query("SELECT DISTINCT v.ml FROM wch_var v JOIN wch_prod p ON p.pid = v.pid WHERE v.ml IS NOT NULL AND v.ml > 0 AND p.kind NOT IN ('chain','other') ORDER BY v.ml")->fetchAll(PDO::FETCH_COLUMN)); } catch (Throwable $e) { }
+            json_response(['ok' => true, 'costs' => wmo_costs($pdo), 'sizes' => $sizes, 'can_edit' => in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true)]);
+        }
+        case 'wmo.cost_save': {
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
+            if (!in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true)) json_response(['error' => 'Only Admin or HR can change purchase costs.'], 403);
+            $sz = []; foreach ((array)($in['sizes'] ?? []) as $k => $v) { if (!is_numeric($k) || $v === '' || $v === null) continue; if (!is_numeric($v) || (float)$v < 0 || (float)$v > 100000) json_response(['error' => 'Costs must be numbers from 0 to 100000.'], 422); $sz[(string)(0 + $k)] = round((float)$v, 2); }
+            $one = function ($v) { return ($v === '' || $v === null || !is_numeric($v)) ? null : max(0, min(100000, round((float)$v, 2))); };
+            setting_set($pdo, 'fp_cost', json_encode(['sizes' => (object)$sz, 'chain' => $one($in['chain'] ?? null), 'other' => $one($in['other'] ?? null)]));
+            json_response(['ok' => true, 'costs' => wmo_costs($pdo)]);
         }
         case 'wmo.dsp_shot': {   // the payment screenshot of one manual order (Dispatch people / Admin)
             if (!wmo_dsp_ok($pdo, $auth)) json_response(['error' => 'Not allowed.'], 403);
