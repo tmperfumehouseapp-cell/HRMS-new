@@ -2858,21 +2858,24 @@ function cm_day(PDO $pdo, $day, array $ch = null, array $offers = null, array $b
         foreach ($list as $o) { if ($o['code'] !== '') $nCode++; }
         $need = cm_code_need($n, (float)$ch['codepct']); $codeOk = $need > 0 && $nCode >= $need; $nocodeF = (float)$ch['nocode'] / 100;
         foreach ($list as $o) {
+            $ok = preg_replace('/\|/', ':', (string)($o['key'] ?? ''), 1);      // the same order key the pages use: store:id
             $amt = (float)$o['amt']; $sales += $amt;
             $gross = (!empty($o['pre']) && $pre > 0) ? $amt / (1 - $pre / 100) : $amt;           // the prepaid discount is the company's cost
             $f = ($o['code'] !== '' || $codeOk) ? 1.0 : $nocodeF; $ml = $o['ml'] ?? null;
             // shower gel / attar / others / combos are priced on their own price charts (Learn & Setup → Pricing, shared): a combo prices the WHOLE order (its price already includes the perfume),
             // otherwise that part is paid on top of the perfume commission. The code rule applies to it like to every order.
             $xc = (float)($o['xcom'] ?? 0) * $f; $xcomTotal += $xc;
-            if (!empty($o['xall'])) { $lines[] = ['order' => $o['name'], 'ml' => (int)($ml ?: 0), 'price' => round($gross), 'rule' => 'combo', 'pct' => 0, 'code' => $o['code'] !== '', 'com' => round($xc, 2)]; continue; }
+            if (!empty($o['xall'])) { $lines[] = ['order' => $o['name'], 'ml' => (int)($ml ?: 0), 'price' => round($gross), 'rule' => 'combo', 'pct' => 0, 'code' => $o['code'] !== '', 'com' => round($xc, 2), 'key' => $ok]; continue; }
             $of = $ml ? cm_offer_match($offers, $ml, $gross, $day, (float)$ch['window']) : null;
-            if ($of) { $v = $gross * (float)$of['pct'] / 100 * $f; $offerCom += $v; $lines[] = ['order' => $o['name'], 'ml' => (int)$ml, 'price' => round($gross), 'rule' => 'offer #' . $of['id'], 'pct' => (float)$of['pct'], 'code' => $o['code'] !== '', 'com' => round($v, 2)]; continue; }
-            if (!$ml) { if ($xc <= 0) $noMl++; $lines[] = ['order' => $o['name'], 'ml' => 0, 'price' => round($gross), 'rule' => $xc > 0 ? 'gel / attar / others' : 'no ML', 'pct' => 0, 'code' => $o['code'] !== '', 'com' => round($xc, 2)]; continue; }
+            if ($of) { $v = $gross * (float)$of['pct'] / 100 * $f; $offerCom += $v; $lines[] = ['order' => $o['name'], 'ml' => (int)$ml, 'price' => round($gross), 'rule' => 'offer #' . $of['id'], 'pct' => (float)$of['pct'], 'code' => $o['code'] !== '', 'com' => round($v, 2), 'key' => $ok, 'x' => round($xc, 2)]; continue; }
+            if (!$ml) { if ($xc <= 0) $noMl++; $lines[] = ['order' => $o['name'], 'ml' => 0, 'price' => round($gross), 'rule' => $xc > 0 ? 'gel / attar / others' : 'no ML', 'pct' => 0, 'code' => $o['code'] !== '', 'com' => round($xc, 2), 'key' => $ok]; continue; }
             $pc = cm_pct($ch, $ml, $gross);
-            if ($pc === null) { $noPrice++; $lines[] = ['order' => $o['name'], 'ml' => (int)$ml, 'price' => round($gross), 'rule' => 'ML not priced', 'pct' => 0, 'code' => $o['code'] !== '', 'com' => 0]; continue; }
-            $v = $gross * $pc / 100 * $f; $chartCom += $v; $lines[] = ['order' => $o['name'], 'ml' => (int)$ml, 'price' => round($gross), 'rule' => 'chart', 'pct' => $pc, 'code' => $o['code'] !== '', 'com' => round($v, 2)];
+            if ($pc === null) { $noPrice++; $lines[] = ['order' => $o['name'], 'ml' => (int)$ml, 'price' => round($gross), 'rule' => 'ML not priced', 'pct' => 0, 'code' => $o['code'] !== '', 'com' => 0, 'key' => $ok, 'x' => round($xc, 2)]; continue; }
+            $v = $gross * $pc / 100 * $f; $chartCom += $v; $lines[] = ['order' => $o['name'], 'ml' => (int)$ml, 'price' => round($gross), 'rule' => 'chart', 'pct' => $pc, 'code' => $o['code'] !== '', 'com' => round($v, 2), 'key' => $ok, 'x' => round($xc, 2)];
         }
         [$bonus, $tbName, $bo] = cm_bonus_pick($pdo, $ch, $boosts, $id, $day, $sales, $target); $extra = $chartCom * $bonus / 100;
+        // what each order PAYS: its chart commission with the day's extra %, plus its gel / attar / others part. The orders of the day add up to the day's total.
+        foreach ($lines as &$ln) { $ln['paid'] = round(($ln['rule'] === 'chart' ? (float)$ln['com'] * (1 + $bonus / 100) : (float)$ln['com']) + (float)($ln['x'] ?? 0), 2); } unset($ln);
         $old = null;
         if (function_exists('coach_day')) { try { $cd = coach_day($pdo, $day, false, true); $old = isset($cd[$id]) ? (float)$cd[$id]['com_today'] : null; } catch (Throwable $e) {} }
         $total = round($chartCom + $offerCom + $extra + $xcomTotal, 2);
@@ -2882,6 +2885,44 @@ function cm_day(PDO $pdo, $day, array $ch = null, array $offers = null, array $b
     }
     usort($rows, function ($a, $b) { return $b['sales'] <=> $a['sales']; });
     return ['rows' => $rows, 'error' => ''];
+}
+/** ONE figure for every page. What a day PAYS, per person and per order, by the live engine: the same number the Commission page shows. A day with an order the engine
+ *  could not price (no ML, size not in the chart) keeps the old figure for that person (cm_live_pick), and its orders are left to the page's own working.
+ *  Kept for a short while (today / yesterday 2 minutes, older days 30 minutes; a change of the rules is seen at once) so a month does not count 30 days on every page load.
+ *  Returns ['emps' => [id => ['total' => ₹, 'live' => bool]], 'ord' => [order key => [₹, how it was counted]]] */
+function cm_paid_day(PDO $pdo, $day) {
+    static $mem = [], $ver = null; if (isset($mem[$day])) return $mem[$day];
+    $today = function_exists('biz_today') ? biz_today($pdo) : date('Y-m-d');
+    if ($ver === null) {
+        $p = [(string)setting_get($pdo, 'cm_chart', ''), (string)setting_get($pdo, 'price_unify_v1', '')];
+        foreach (["SELECT COUNT(*), COALESCE(MAX(updated_at), ''), COALESCE(SUM(enabled), 0) FROM commission_bonus_rules", "SELECT COUNT(*), COALESCE(MAX(id), 0), COALESCE(SUM(active), 0) FROM cm_boosts", "SELECT COUNT(*), COALESCE(MAX(id), 0), COALESCE(SUM(active), 0) FROM cm_offers"] as $q) {
+            try { $p[] = implode(',', (array)$pdo->query($q)->fetch(PDO::FETCH_NUM)); } catch (Throwable $e) { $p[] = '-'; }
+        }
+        $ver = substr(md5(implode('|', $p)), 0, 12);
+    }
+    $ttl = $day >= date('Y-m-d', strtotime($today . ' -1 day')) ? 120 : 1800;
+    try {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS cm_paid_cache (day DATE NOT NULL PRIMARY KEY, ver VARCHAR(16) NOT NULL, at INT NOT NULL, data MEDIUMTEXT NOT NULL)");
+        $q = $pdo->prepare("SELECT ver, at, data FROM cm_paid_cache WHERE day = ?"); $q->execute([$day]); $c = $q->fetch();
+        if ($c && (string)$c['ver'] === $ver && (int)$c['at'] > time() - $ttl) { $d = json_decode((string)$c['data'], true); if (is_array($d)) return $mem[$day] = $d; }
+    } catch (Throwable $e) {}
+    $r = cm_day($pdo, $day); if (!empty($r['error'])) return ['emps' => [], 'ord' => [], 'error' => $r['error']];
+    $out = ['emps' => [], 'ord' => []];
+    foreach ((array)$r['rows'] as $x) {
+        $gap = (int)$x['no_ml'] + (int)$x['not_priced'] > 0;
+        $out['emps'][(int)$x['id']] = ['total' => round($gap ? (float)($x['old'] ?? $x['total']) : (float)$x['total'], 2), 'live' => !$gap];
+        if ($gap) continue;
+        foreach ((array)$x['lines'] as $l) {
+            if ((string)($l['key'] ?? '') === '') continue;
+            $why = $l['rule'] === 'chart' ? 'Chart ' . $l['pct'] . '%' . ($x['bonus'] > 0 ? ' + ' . ($x['bonus_rule'] !== '' ? $x['bonus_rule'] : ($x['boost'] !== '' ? $x['boost'] : 'over-target extra')) . ' +' . (0 + $x['bonus']) . '%' : '')
+                : (strpos((string)$l['rule'], 'offer') === 0 ? 'Offer ' . $l['pct'] . '%' : ucfirst((string)$l['rule']));
+            if ((float)($l['x'] ?? 0) > 0) $why .= ' + gel / attar / others';
+            if (!$l['code'] && !$x['code_ok'] && (float)$l['com'] > 0) $why .= ' · no code: half';
+            $out['ord'][(string)$l['key']] = [(float)$l['paid'], $why];
+        }
+    }
+    try { $pdo->prepare("REPLACE INTO cm_paid_cache (day, ver, at, data) VALUES (?, ?, ?, ?)")->execute([$day, $ver, time(), json_encode($out)]); } catch (Throwable $e) {}
+    return $mem[$day] = $out;
 }
 /** the last N days with the new rules next to the old figures. Preview only. */
 function cm_recount(PDO $pdo, $days = 10, $end = '') {

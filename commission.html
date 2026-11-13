@@ -1429,7 +1429,8 @@
 
   // ---------- embed mode (used by the Orders page) ----------
   // For the range loaded here, work out each employee's commission per panel (house), and each order's commission, and which rule decided it.
-  function embedResults() {
+  function embedResults(paid) {
+    const PO = (paid && paid.ord) || null;
     const aggs = {}, rows = ROWS.map((r) => agg(r, DAYS)); rows.forEach((a) => { aggs[a.row.key] = a; });
     const emps = {}, ord = {}, TAGN = { panel: 'Panel rule', fixed: 'Fixed commission', mix: 'Order-code mix rule', star: '★ rating rule', code: 'Order-code rule' };
     rows.forEach((a) => {
@@ -1439,12 +1440,15 @@
       a.orders.forEach((o) => {
         let r = comOf(o, aggs);
         if (mf) r = { v: mf.sum > 0.005 ? r.v * mf.amt / mf.sum : (mf.ach > 0 ? mf.amt * o.amt / mf.ach : 0), note: 'manual commission' };
+        const pv = !mf && PO ? PO[o.key] : null;      // the paid figure of this order (live engine)
+        if (pv) r = { v: Number(pv[0]) || 0, note: pv[1] || '', paid: true };
         const hs = o.house || '', full = (c && c.steps && c.rate ? c.rate : 0) * o.amt / 100;
         const byH = emps[id] = emps[id] || {}, E = byH[hs] = byH[hs] || { amt: 0, n: 0, coll: 0, rate: c && c.steps ? c.rate : 0, tags: {} };
         E.amt += r.v; E.n++; E.coll += o.amt;
         let k = '', label = '';
         const gf = gateFn(o, aggs), pr = panelRuleFor(o, gf);
         if (mf) { k = 'code'; label = 'Manual commission'; }
+        else if (pv) { k = 'slab'; label = /\+ .*\+\d/.test(r.note) ? 'Commission chart + target bonus' : 'Commission chart'; }
         else if (pr) { k = 'panel'; label = (pr.label || 'Panel rule') + ' ' + fmtN(pr.pct) + '%'; }
         else if (c && c.fixedPlan) { k = 'fixed'; label = 'Fixed ' + c.fixedPlan.badge; }
         else if (fixedFor(o, gf)) { const fp = fixedFor(o, gf); k = 'fixed'; label = 'Fixed ' + payBadge(fp.mode, fp.per); }
@@ -1462,7 +1466,15 @@
   }
   function embedSend(extra) { try { parent.postMessage(Object.assign({ t: 'comm_res', from: RFROM, to: RTO }, extra), location.origin); } catch (e) { /* no parent */ } }
   let embedTimer = 0;
-  function embedSoon() { clearTimeout(embedTimer); embedTimer = setTimeout(() => { try { embedSend(embedResults()); } catch (e) { embedSend({ error: 'Could not work out the commission (' + e.message + ')' }); } }, 60); }
+  // ONE figure everywhere: what the live engine PAYS (commission.paid = the Commission page's own numbers) replaces this page's own working, order by order,
+  // so Orders → Employee sheet, its popup and the Commission page always agree. If the server cannot give it, this page's own working is sent as before.
+  const PAIDC = {};
+  async function paidGet(from, to) {
+    const k = from + '|' + to, c = PAIDC[k]; if (c && Date.now() - c.at < 60000) return c.d;
+    let d = null; try { const r = await api.get('commission.paid', { from, to }); d = r && r.live ? r : null; } catch (e) { d = null; }
+    PAIDC[k] = { at: Date.now(), d }; return d;
+  }
+  function embedSoon() { clearTimeout(embedTimer); embedTimer = setTimeout(async () => { const f = RFROM, t = RTO; let paid = null; try { paid = await paidGet(f, t); } catch (e) {} if (f !== RFROM || t !== RTO) return; try { embedSend(embedResults(paid)); } catch (e) { embedSend({ error: 'Could not work out the commission (' + e.message + ')' }); } }, 60); }
   if (EMBED) {
     const qs = new URLSearchParams(location.search), f = qs.get('from'), t = qs.get('to'), okD = (v) => /^\d{4}-\d{2}-\d{2}$/.test(v || '');
     if (okD(f) && okD(t) && f <= t) { RFROM = f; RTO = t; }
