@@ -23044,7 +23044,16 @@ switch ($action) {
             $ms->execute([substr($from, 0, 7), $myId]);
             foreach ($ms->fetchAll() as $r) $manual[$r['row_key']] = ['rate' => (float)$r['rate'], 'amount' => (float)$r['amount']];
         }
+        // Target bonus rules (Commission Rules → Target bonus) that are switched on and include this employee: My Sales adds the same day-wise bonus as the Commission page.
+        $bonusRules = [];
+        if (ensure_commission_bonus_table($pdo)) {
+            try { foreach ($pdo->query("SELECT rule_id, label, who, tiers, date_from, date_to, all_sales FROM commission_bonus_rules WHERE enabled = 1 ORDER BY rule_id ASC")->fetchAll() as $br) {
+                if (!(int)($br['all_sales'] ?? 0) && !in_array($myId, array_map('intval', explode(',', (string)$br['who'])), true)) continue;
+                $bonusRules[] = ['rule_id' => (int)$br['rule_id'], 'label' => (string)$br['label'], 'tiers' => json_decode((string)$br['tiers'], true) ?: [], 'date_from' => commission_date_out($br['date_from'] ?? ''), 'date_to' => commission_date_out($br['date_to'] ?? '')];
+            } } catch (PDOException $e2) {}
+        }
         json_response([
+            'bonus' => $bonusRules,
             'manual' => (object)$manual,
             'applicable' => true, 'from' => $from, 'to' => $to, 'today' => $to,
             'rules' => $rules, 'code' => $code, 'shares' => (object)$shares,

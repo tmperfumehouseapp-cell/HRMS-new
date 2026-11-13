@@ -7,7 +7,7 @@
 (function () {
   'use strict';
   const inr = (v) => '₹' + Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
-  const CM = { rules: null, code: { on: false, rules: [], shares: {} }, target: {}, status: {}, idx: {}, ord: [], manual: {}, slab: null, flash: [] };
+  const CM = { rules: null, code: { on: false, rules: [], shares: {} }, target: {}, status: {}, idx: {}, ord: [], manual: {}, slab: null, flash: [], bonus: [] };
   const STORE_TO_GROUP = { tmperfumehouse: 'tmph' };
   const isPre = (fs) => { fs = String(fs || '').toLowerCase(); return fs.indexOf('cod') === -1 && fs.indexOf('pending') === -1; };
   const DEF_START = ['10:00', '10:00', '10:00', '10:00', '10:00', '10:00', '10:00'];
@@ -135,8 +135,26 @@
         amount += s.v - (c ? c.rate * p.eff / 100 + p.flat : 0); slabN++;
       });
     }
-    if (slabN && slabN === n) return { ach, n, target, rate: ach > 0 ? Math.round(amount / ach * 10000) / 100 : 0, amount, rated: true, slab: true };
-    return { ach, n, target, rate: c ? c.rate : 0, amount, rated: !!c || slabN > 0 };
+    // Target bonus (Commission Rules → Target bonus), same as the Commission page: each day stands alone. On a day whose collection reaches that day's target
+    // (or target + X% more), that day's commission is raised by the step's %. Over several days = the sum of each day's own bonus.
+    const bonus = n > 0 && (c || slabN > 0) ? targetBonus(rk, days, amount) : 0;
+    amount += bonus;
+    if (slabN && slabN === n) return { ach, n, target, rate: ach > 0 ? Math.round(amount / ach * 10000) / 100 : 0, amount, rated: true, slab: true, bonus };
+    return { ach, n, target, rate: c ? c.rate : 0, amount, rated: !!c || slabN > 0, bonus };
+  }
+  const bonusIn = (r, d) => (!r.from || d >= r.from) && (!r.to || d <= r.to);
+  function bonusStep(rk, d) {
+    const r = CM.bonus.find((x) => bonusIn(x, d)); if (!r) return null;
+    const x = (CM.idx[rk] || {})[d], t = Number(((CM.target || {})[rk] || {})[d] || 0); if (!x || !(t > 0)) return null;
+    const pct = (x.ach / t - 1) * 100; let hit = null;
+    r.tiers.forEach((s) => { if (s.on && pct + 1e-9 >= s.over && (!hit || s.over > hit.over)) hit = s; });
+    return hit;
+  }
+  function targetBonus(rk, days, amount) {
+    if (!CM.bonus.length) return 0;
+    if (days.length === 1) { const h = bonusStep(rk, days[0]); return h ? amount * h.bonus / 100 : 0; }
+    let b = 0; days.forEach((d) => { if (bonusStep(rk, d)) b += aggRow(rk, [d], false).bonus || 0; });
+    return b;
   }
   function period(days, useManual) {
     const rows = [''].map((rk) => aggRow(rk, days, useManual));
@@ -181,6 +199,7 @@
     CM.rules = cm.rules || [];
     CM.code = { on: !!(cm.code && cm.code.on), rules: (cm.code && cm.code.rules) || [], shares: (cm.shares && !Array.isArray(cm.shares)) ? cm.shares : {} };
     CM.target = cm.target || {}; CM.status = cm.status || {}; CM.manual = (cm.manual && !Array.isArray(cm.manual)) ? cm.manual : {}; CM.slab = cm.ml_slab || null;
+    CM.bonus = (cm.bonus || []).map((r) => ({ label: r.label || 'Target bonus', from: String(r.date_from || ''), to: String(r.date_to || ''), tiers: (r.tiers || []).map((s) => ({ on: !!Number(s.on), over: Number(s.over), bonus: Number(s.bonus) })) }));
     buildOrders(od.orders || [], from, to, dayStart); tagMyCodes();
     const days = dayList(from, to), m = period(days, true), t = period([to]);
     LAST = { cm, orders: od.orders || [], dayStart, from, to };
