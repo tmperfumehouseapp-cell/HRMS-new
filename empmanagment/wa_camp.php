@@ -1639,7 +1639,16 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $in = json_input(); $ids = [];
             if (!empty($in['all'])) { $sp2 = ''; try { $pdo->query("SELECT smart_plan FROM wa_campaigns LIMIT 0"); $sp2 = ' AND smart_plan = 0'; } catch (PDOException $e) { } $ids = array_map('intval', $pdo->query("SELECT id FROM wa_campaigns WHERE status = 'scheduled'" . $sp2 . " ORDER BY start_at, id")->fetchAll(PDO::FETCH_COLUMN)); }
             else $ids = [(int)($in['id'] ?? 0)];
-            $n = 0; foreach ($ids as $cid) if ($cid && wa_camp_start_early($pdo, $cid)) $n++;
+            $n = 0; foreach ($ids as $cid) {
+                if (!$cid) continue; if (wa_camp_start_early($pdo, $cid)) { $n++; continue; }
+                // a Smart-plan campaign starts at its own time — the ▶ Now button picks its people right now instead (the same step the engine does at the start time)
+                try { $c0 = wa_camp_row($pdo, $cid); if ($c0 && $c0['status'] === 'scheduled' && !empty($c0['smart_plan']) && (function_exists('wsm_resolve_campaign') || wa_camp_lazy('wsm_resolve_campaign', 'wa_smart.php'))) {
+                    $has = (int)$pdo->query("SELECT COUNT(*) FROM wa_camp_items WHERE camp_id = " . (int)$cid)->fetchColumn(); $nowS = date('Y-m-d H:i:s', wa_camp_now());
+                    $pdo->prepare("UPDATE wa_campaigns SET start_at = ? WHERE id = ? AND status = 'scheduled'")->execute([$nowS, $cid]);
+                    if ($has > 0) $pdo->prepare("UPDATE wa_campaigns SET status = 'running', started_at = COALESCE(started_at, ?), note = '' WHERE id = ? AND status = 'scheduled'")->execute([$nowS, $cid]);
+                    else { $c0['start_at'] = $nowS; wsm_resolve_campaign($pdo, $c0); }
+                    $n++; } } catch (Throwable $e) { json_response(['error' => 'Could not start it now: ' . mb_substr($e->getMessage(), 0, 160)], 500); }
+            }
             if (!$n && empty($in['all'])) json_response(['error' => 'It is not a scheduled campaign (or it is a Smart plan, which starts at its own time).'], 422);
             try { wa_camp_tick($pdo); } catch (Throwable $e) { } json_response(['ok' => true, 'started' => $n]);
         }
