@@ -33533,6 +33533,27 @@ switch ($action) {
         if (!isset($stores[$storeKey])) json_response(['error' => 'Unknown store.'], 422);
         if (!preg_match('/^\d+$/', (string)$orderId)) json_response(['error' => 'Invalid order id.'], 422);
         $store = $stores[$storeKey];
+        if (strlen((string)$orderId) >= 16 && (int)$orderId >= 7000000000000000) {   // 🧾 a WhatsApp manual order (WM-xxxxx): it is not on Shopify — show what was typed / written by the customer
+            $wid = (int)$orderId - 7000000000000000;
+            try { $wq = $pdo->prepare("SELECT * FROM wmo_order WHERE id = ?"); $wq->execute([$wid]); $w = $wq->fetch(PDO::FETCH_ASSOC); } catch (Throwable $e) { $w = false; }
+            if (!$w) json_response(['error' => 'This manual order was not found.'], 404);
+            if (($auth['role'] ?? '') === 'Employee' && (int)$w['assign_emp'] !== (int)($auth['employee_id'] ?? 0)) json_response(['error' => 'This order is not yours.'], 403);
+            $WL = json_decode((string)$w['lines_json'], true) ?: []; $cu = json_decode((string)($w['cust_json'] ?? ''), true) ?: json_decode((string)($w['addr_json'] ?? ''), true) ?: [];
+            $totalW = $w['total_p'] / 100; $codW = $w['cod_p'] / 100; $paidW = max(0, $totalW - $codW);
+            $addrW = array_values(array_filter([(string)($cu['addr1'] ?? ''), (string)($cu['addr2'] ?? ''), (string)($cu['landmark'] ?? ''), trim((string)($cu['city'] ?? '') . ' ' . (string)($cu['pin'] ?? '')), (string)($cu['state'] ?? '')]));
+            $fsW = $codW <= 0 ? 'paid' : ($paidW > 0 ? 'partially_paid' : 'pending');
+            json_response(['order' => [
+                'order_name' => (string)$w['order_no'], 'store' => $store['label'] . ' (WhatsApp manual order)', 'created_at' => str_replace(' ', 'T', (string)$w['created_at']),
+                'customer' => trim((string)($cu['name'] ?? '')) ?: 'Customer', 'email' => (string)($cu['email'] ?? ''), 'phone' => trim((string)($cu['phone'] ?? '')) ?: (string)$w['phone'],
+                'address' => $addrW,
+                'line_items' => array_map(function ($l) { $q = max(1, (int)($l['qty'] ?? 1)); $t = ((int)($l['total_p'] ?? 0)) / 100; return ['title' => (string)($l['title'] ?? $l['short'] ?? ''), 'variant' => (string)($l['label'] ?? ''), 'quantity' => $q, 'price' => number_format($t / $q, 2, '.', ''), 'total' => number_format($t, 2, '.', '')]; }, $WL),
+                'subtotal' => (string)$totalW, 'discounts' => '0', 'discount_codes' => [], 'shipping' => '0', 'tax' => '0', 'total' => (string)$totalW, 'currency' => 'INR',
+                'financial_status' => $fsW, 'outstanding' => $codW, 'paid' => $paidW > 0 && $codW > 0 ? $paidW : null,
+                'fulfillment_status' => 'unfulfilled', 'gateway' => ((string)$w['utr'] !== '' ? 'UPI / QR · UTR ' . $w['utr'] : ($w['pay'] === 'cod' ? 'COD' : '')), 'note' => (string)($w['note'] ?? ''),
+                'tags' => 'wa-manual', 'tracking' => [],
+                'manual' => ['prepaid' => $paidW, 'cod' => $codW, 'total' => $totalW, 'pay' => (string)$w['pay'], 'status' => (string)$w['status']],
+            ]]);
+        }
         $token = shopify_get_token($storeKey, $store);
         if (is_array($token)) json_response(['error' => $token['error']], 502);
 
