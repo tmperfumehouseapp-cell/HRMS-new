@@ -854,7 +854,7 @@
           ${line('Shipping', fmtMoney(d.shipping, d.currency))}
           ${Number(d.tax) > 0 ? line('Tax', fmtMoney(d.tax, d.currency)) : ''}
           ${line('Total', fmtMoney(d.total, d.currency), 'padding:6px 0; border-top:1px solid var(--line); font-weight:700;')}
-          ${d.financial_status === 'partially_paid' && d.paid != null ? line('Paid', fmtMoney(d.paid, d.currency), 'color:#0f7a41; font-weight:700;') + (d.outstanding != null ? line('To pay (COD)', fmtMoney(d.outstanding, d.currency)) : '') : ''}
+          ${d.manual ? line('Prepaid (paid)', fmtMoney(d.manual.prepaid, d.currency), 'color:#0f7a41; font-weight:700;') + line('COD (to pay on delivery)', fmtMoney(d.manual.cod, d.currency), 'font-weight:700;') : (d.financial_status === 'partially_paid' && d.paid != null ? line('Paid', fmtMoney(d.paid, d.currency), 'color:#0f7a41; font-weight:700;') + (d.outstanding != null ? line('To pay (COD)', fmtMoney(d.outstanding, d.currency)) : '') : '')}
         </div>`;
       const trackingHtml = (d.tracking || []).length
         ? detailRow('Tracking', d.tracking.map(t => (t.url ? `<a href="${esc(t.url)}" target="_blank" rel="noopener">${esc(t.number)}</a>` : esc(t.number)) + (t.company ? ' (' + esc(t.company) + ')' : '')).join('<br>'))
