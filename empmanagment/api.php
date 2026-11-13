@@ -29773,8 +29773,8 @@ switch ($action) {
     case 'manual_orders.bulk': {   // ⚡ quick entry: "10 orders, ₹24,500, Query, prepaid" → 10 order rows (the total split between them) counted at once in the panel's boxes
         $auth = require_auth(); require_role(['Admin', 'HR'], $auth);
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
-        try { foreach (['employee_id' => 'INT NOT NULL DEFAULT 0', 'order_type' => "VARCHAR(10) NOT NULL DEFAULT ''", 'house' => "VARCHAR(12) NOT NULL DEFAULT ''", 'batch' => "VARCHAR(16) NOT NULL DEFAULT ''", 'outstanding' => 'DECIMAL(12,2) NULL'] as $c => $d) { if (!$pdo->query("SHOW COLUMNS FROM manual_orders LIKE '$c'")->fetch()) $pdo->exec("ALTER TABLE manual_orders ADD COLUMN $c $d"); } } catch (PDOException $e) {}
-        $input = json_input(); $n = (int)($input['count'] ?? 0); $totalP = (int)round((float)($input['total'] ?? 0) * 100);
+        try { foreach (['employee_id' => 'INT NOT NULL DEFAULT 0', 'order_type' => "VARCHAR(10) NOT NULL DEFAULT ''", 'house' => "VARCHAR(12) NOT NULL DEFAULT ''", 'batch' => "VARCHAR(16) NOT NULL DEFAULT ''", 'outstanding' => 'DECIMAL(12,2) NULL', 'channel' => "VARCHAR(12) NOT NULL DEFAULT ''"] as $c => $d) { if (!$pdo->query("SHOW COLUMNS FROM manual_orders LIKE '$c'")->fetch()) $pdo->exec("ALTER TABLE manual_orders ADD COLUMN $c $d"); } } catch (PDOException $e) {}
+        $input = json_input(); $n = (int)($input['count'] ?? 0); $chan = strtolower(trim((string)($input['channel'] ?? 'personal'))); $CH = ['personal' => '', 'aisensy' => 'AiSensy', 'myntra' => 'Myntra', 'amazon' => 'Amazon', 'flipkart' => 'Flipkart']; if (!isset($CH[$chan])) json_response(['error' => 'Choose the order type: Personal, AiSensy, Myntra, Amazon or Flipkart.'], 422); $chLabel = $CH[$chan]; $totalP = (int)round((float)($input['total'] ?? 0) * 100);
         if ($n < 1 || $n > 300) json_response(['error' => 'How many orders: a number from 1 to 300.'], 422);
         if ($totalP < $n * 100 || $totalP > 5000000000) json_response(['error' => 'The total amount must be at least ₹1 per order.'], 422);
         $ot = strtolower(trim((string)($input['order_type'] ?? ''))); if (!in_array($ot, ['query', 'campaign'], true)) json_response(['error' => 'Choose Query or Campaign.'], 422);
@@ -29789,18 +29789,18 @@ switch ($action) {
         $base = intdiv($totalP, $n); $paidSoFar = 0; $first = 0; $last = 0;
         $pdo->beginTransaction();
         try {
-            $ins = $pdo->prepare("INSERT INTO manual_orders (order_no, customer_name, phone, items, total, payment_status, fulfillment_status, order_date, remarks, created_by, employee_id, order_type, house, batch, outstanding) VALUES (NULL, ?, '', 1, ?, ?, 'unfulfilled', ?, ?, ?, ?, ?, ?, ?, ?)");
+            $ins = $pdo->prepare("INSERT INTO manual_orders (order_no, customer_name, phone, items, total, payment_status, fulfillment_status, order_date, remarks, created_by, employee_id, order_type, house, batch, outstanding, channel) VALUES (NULL, ?, '', 1, ?, ?, 'unfulfilled', ?, ?, ?, ?, ?, ?, ?, ?, ?)");
             $setNo = $pdo->prepare("UPDATE manual_orders SET order_no = ? WHERE manual_order_id = ?");
             for ($i = 0; $i < $n; $i++) {
                 $amtP = $i === $n - 1 ? $totalP - $base * ($n - 1) : $base;
                 $paidI = $pay === 'part' ? ($i === $n - 1 ? $paidP - $paidSoFar : (int)round($paidP * $amtP / $totalP)) : ($pay === 'prepaid' ? $amtP : 0); $paidSoFar += $pay === 'part' ? $paidI : 0;
                 $out = $pay === 'part' ? max(0, $amtP - $paidI) / 100 : ($pay === 'cod' ? $amtP / 100 : 0);
-                $ins->execute(['Quick entry (' . $n . ' orders)', $amtP / 100, $payStatus, $orderDate, $remarks !== '' ? $remarks : 'Quick entry', $auth['username'], $empB, $ot, $house, $batch, $out]);
-                $id = (int)$pdo->lastInsertId(); $setNo->execute(['M' . str_pad((string)$id, 4, '0', STR_PAD_LEFT), $id]); if ($i === 0) $first = $id; $last = $id;
+                $ins->execute(['Quick entry (' . $n . ' orders)', $amtP / 100, $payStatus, $orderDate, $remarks !== '' ? $remarks : 'Quick entry', $auth['username'], $empB, $ot, $house, $batch, $out, $chLabel]);
+                $id = (int)$pdo->lastInsertId(); $setNo->execute([($chLabel !== '' ? $chLabel . '-' : 'M') . str_pad((string)$id, 4, '0', STR_PAD_LEFT), $id]); if ($i === 0) $first = $id; $last = $id;
             }
             $pdo->commit();
         } catch (Throwable $e) { if ($pdo->inTransaction()) $pdo->rollBack(); json_response(['error' => 'Could not save: ' . mb_substr($e->getMessage(), 0, 120)], 500); }
-        json_response(['message' => $n . ' orders added.', 'count' => $n, 'total' => $totalP / 100, 'batch' => $batch, 'first' => 'M' . str_pad((string)$first, 4, '0', STR_PAD_LEFT), 'last' => 'M' . str_pad((string)$last, 4, '0', STR_PAD_LEFT)], 201);
+        json_response(['message' => $n . ' orders added.', 'count' => $n, 'total' => $totalP / 100, 'batch' => $batch, 'first' => ($chLabel !== '' ? $chLabel . '-' : 'M') . str_pad((string)$first, 4, '0', STR_PAD_LEFT), 'last' => ($chLabel !== '' ? $chLabel . '-' : 'M') . str_pad((string)$last, 4, '0', STR_PAD_LEFT)], 201);
         break;
     }
 
@@ -30081,7 +30081,7 @@ switch ($action) {
         // specific Shopify store was selected.
         if (($empScopeId !== null || (!$lite && $houseFilter === '')) && ($storeKey === '' || $storeKey === 'manual')) {
             try {
-                foreach (['employee_id' => 'INT NOT NULL DEFAULT 0', 'order_type' => "VARCHAR(10) NOT NULL DEFAULT ''", 'house' => "VARCHAR(12) NOT NULL DEFAULT ''", 'batch' => "VARCHAR(16) NOT NULL DEFAULT ''", 'outstanding' => 'DECIMAL(12,2) NULL'] as $c => $d) {
+                foreach (['employee_id' => 'INT NOT NULL DEFAULT 0', 'order_type' => "VARCHAR(10) NOT NULL DEFAULT ''", 'house' => "VARCHAR(12) NOT NULL DEFAULT ''", 'batch' => "VARCHAR(16) NOT NULL DEFAULT ''", 'outstanding' => 'DECIMAL(12,2) NULL', 'channel' => "VARCHAR(12) NOT NULL DEFAULT ''"] as $c => $d) {
                     if (!$pdo->query("SHOW COLUMNS FROM manual_orders LIKE '$c'")->fetch()) $pdo->exec("ALTER TABLE manual_orders ADD COLUMN $c $d");
                 }
             } catch (PDOException $e) {}
@@ -30105,7 +30105,8 @@ switch ($action) {
                     'financial_status' => $m['payment_status'],
                     'fulfillment_status' => $m['fulfillment_status'],
                     'store_key' => 'manual',
-                    'store' => 'Manual',
+                    'store' => ((string)($m['channel'] ?? '') !== '' ? (string)$m['channel'] : 'Manual'),
+                    'channel' => (string)($m['channel'] ?? ''),
                     'manual_order_id' => (int)$m['manual_order_id'],
                     'salesman' => !empty($m['employee_id']) ? (string)($mNames[(int)$m['employee_id']] ?? '') : '',
                     'employee_id' => (int)($m['employee_id'] ?? 0),
@@ -30337,6 +30338,22 @@ switch ($action) {
                 $orders[] = $o;
             }
         }
+        // 🧾 Quick-entry orders (Add orders: Personal / AiSensy / Myntra / Amazon / Flipkart): listed here with the allocation they were saved with
+        try {
+            foreach (['employee_id' => 'INT NOT NULL DEFAULT 0', 'order_type' => "VARCHAR(10) NOT NULL DEFAULT ''", 'house' => "VARCHAR(12) NOT NULL DEFAULT ''", 'batch' => "VARCHAR(16) NOT NULL DEFAULT ''", 'outstanding' => 'DECIMAL(12,2) NULL', 'channel' => "VARCHAR(12) NOT NULL DEFAULT ''"] as $c0 => $d0) { if (!$pdo->query("SHOW COLUMNS FROM manual_orders LIKE '$c0'")->fetch()) $pdo->exec("ALTER TABLE manual_orders ADD COLUMN $c0 $d0"); }
+            $mq = $pdo->prepare("SELECT * FROM manual_orders WHERE order_date >= ? AND order_date <= ? AND batch <> '' ORDER BY order_date DESC LIMIT 1500"); $mq->execute(biz_window($pdo, $dateFrom, $dateTo)); $mmap = []; $mnames = employee_names_by_id($pdo); $hl0 = house_labels();
+            foreach ($mq->fetchAll() as $m) {
+                $mid = (string)$m['manual_order_id']; $ch = (string)($m['channel'] ?? ''); $eid = (int)($m['employee_id'] ?? 0); $hs = (string)($m['house'] ?? '');
+                $o = ['id' => $mid, 'order_name' => '#' . $m['order_no'], 'created_at' => str_replace(' ', 'T', (string)$m['order_date']) . '+05:30', 'customer' => ($ch !== '' ? $ch : 'Quick entry'), 'phone' => '', 'items' => (int)$m['items'], 'total' => $m['total'], 'currency' => 'INR',
+                    'financial_status' => $m['payment_status'], 'fulfillment_status' => $m['fulfillment_status'], 'tags' => (string)($m['order_type'] ?? ''), 'store_key' => 'manual', 'source_label' => ($ch !== '' ? $ch : 'Quick entry'), 'store' => ($ch !== '' ? $ch : 'Quick entry'), 'house' => $hs,
+                    'biz_date' => biz_day_of($pdo, strtotime((string)$m['order_date'])), 'salesman' => $eid ? (string)($mnames[$eid] ?? '') : '', 'employee_id' => $eid, 'employee_from' => $eid ? 'quick entry' : '', 'tag_type' => (string)($m['order_type'] ?? ''), 'custom_store' => 1,
+                    'outstanding' => ($m['outstanding'] !== null ? (float)$m['outstanding'] : null), 'channel' => $ch];
+                if ($eid > 0 && $hs !== '') $mmap['manual|' . $mid] = ['house' => $hs, 'emp' => $eid, 'direct' => 0, 'by' => (string)($m['created_by'] ?? ''), 'at' => (string)$m['order_date'], 'type' => (string)($m['order_type'] ?? '')];
+                apply_allocation($o, 'manual', $mmap); if ($o['allocated_emp']) $o['employee_id'] = $o['allocated_emp'];
+                $o['employee_code'] = $o['employee_id'] ? ($codes[$o['employee_id']] ?? '') : '';
+                $orders[] = $o;
+            }
+        } catch (Throwable $e) { error_log('allocation quick entries: ' . $e->getMessage()); }
         usort($orders, fn($a, $b) => strcmp((string)$b['created_at'], (string)$a['created_at']));
 
         // Per-order "Ticket size convincing" rating (same order_ratings rows
@@ -30596,7 +30613,7 @@ switch ($action) {
         $empId = (int)($in['employee_id'] ?? 0);
         $direct = !empty($in['direct']);      // Direct order: a panel, no employee
         if ($direct) $empId = 0;
-        $known = isset(shopify_stores()[$source]) || $source === 'mysales';
+        $known = isset(shopify_stores()[$source]) || $source === 'mysales' || $source === 'manual';
         if (!$known || $orderId === '') json_response(['error' => 'source and order_id are required.'], 422);
         if ($house !== '' && !isset(house_labels()[$house])) json_response(['error' => 'Unknown panel.'], 422);
         if (!in_array($type, ['', 'query', 'campaign'], true)) json_response(['error' => 'Type must be Query or Campaign.'], 422);
@@ -30607,6 +30624,14 @@ switch ($action) {
             $ex = $pdo->prepare("SELECT 1 FROM order_allocations WHERE source = ? AND order_id = ?");
             $ex->execute([$source, $orderId]);
             if ($ex->fetchColumn()) json_response(['error' => 'This order is already allocated — only Admin or Sales Head can change it.'], 403);
+        }
+        if ($source === 'manual') {   // a quick-entry order: its salesperson / panel / type live on the order itself
+            if (!ctype_digit($orderId)) json_response(['error' => 'Bad order id.'], 422);
+            if ($house === '') { $pdo->prepare("UPDATE manual_orders SET employee_id = 0 WHERE manual_order_id = ?")->execute([(int)$orderId]); json_response(['message' => 'Quick-entry order allocation removed.']); }
+            if (!$direct && $empId <= 0) json_response(['error' => 'Choose an employee.'], 422);
+            $en = ''; if (!$direct) { $chk = $pdo->prepare("SELECT full_name FROM employees WHERE employee_id = ? AND status != 'ex'"); $chk->execute([$empId]); $en = (string)$chk->fetchColumn(); if ($en === '') json_response(['error' => 'Unknown employee.'], 422); }
+            $pdo->prepare("UPDATE manual_orders SET employee_id = ?, house = ?, order_type = ? WHERE manual_order_id = ?")->execute([$empId, $house, $type, (int)$orderId]);
+            json_response(['message' => 'Quick-entry order → ' . ($direct ? 'Direct order' : $en) . ' · ' . house_labels()[$house] . ($type ? ' · ' . ucfirst($type) : '') . '.', 'allocated_by' => (string)($auth['username'] ?? ''), 'allocated_at' => date('Y-m-d H:i:s'), 'employee_name' => $direct ? 'Direct order' : $en, 'direct' => $direct ? 1 : 0]);
         }
         if ($house === '') {
             $pdo->prepare("DELETE FROM order_allocations WHERE source = ? AND order_id = ?")->execute([$source, $orderId]);
