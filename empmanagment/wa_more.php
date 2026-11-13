@@ -253,7 +253,7 @@ function wa_tick(PDO $pdo, bool $force = false): array
     if (!$__late()) try { if (function_exists('wa_ord_tick')) $o['orders'] = wa_ord_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'orders: ' . $e->getMessage()); }   // order-update messages (and the one-time template setup)
     if (!$__late()) try { if (function_exists('jt_tick') && $force && !defined('WA_IN_WEBHOOK')) $o['tags'] = jt_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'tags: ' . $e->getMessage()); }
     if (!$__late()) try { if (function_exists('wa_numq_refresh') && $force && !defined('WA_IN_WEBHOOK')) { $nq = json_decode((string)setting_get($pdo, 'wa_numq_cache', ''), true); if (!is_array($nq) || (int)($nq['t'] ?? 0) < time() - 600) wa_numq_refresh($pdo); } } catch (Throwable $e) { }   // ⚡ the per-number chip counts are renewed here, not while the chat list loads
-    if (!$__late()) try { if (!defined('WA_IN_WEBHOOK') && (int)setting_get($pdo, 'wa_pbf_at', '0') < time() - 120) { setting_set($pdo, 'wa_pbf_at', (string)time()); $o['pbuyer'] = wa_prior_buyer_fix($pdo); } } catch (Throwable $e) { }   // a customer who already ordered is not a New query
+    if (!$__late()) try { if (!defined('WA_IN_WEBHOOK') && (int)setting_get($pdo, 'wa_pbf_at', '0') < time() - 120) { setting_set($pdo, 'wa_pbf_at', (string)time()); $o['pbuyer'] = wa_prior_buyer_fix($pdo); $o['optin'] = wa_optin_again_fix($pdo); } } catch (Throwable $e) { }   // a customer who already ordered is not a New query
     if (!$__late()) try { if (function_exists('wkw_fu_tick') && !defined('WA_IN_WEBHOOK')) $o['kwfu'] = wkw_fu_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'button follow-ups: ' . $e->getMessage()); }   // ↪ Button replies: the follow-up when the customer does not answer
     if (!$__late()) try { if (function_exists('wd_tick') && $force && !defined('WA_IN_WEBHOOK')) $o['drip'] = wd_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'drip: ' . $e->getMessage()); }   // 🔁 7-Day Drip
     if (!$__late()) try { if (function_exists('wj_tick') && $force && !defined('WA_IN_WEBHOOK')) $o['journey'] = wj_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'journey: ' . $e->getMessage()); }   // 🗓 60-day Journey: today's messages, the night's topic learning, festival watch
@@ -315,6 +315,22 @@ function wa_prior_buyer_fix(PDO $pdo): int
         $st = $pdo->prepare("SELECT phone, first_seen FROM wa_contacts WHERE source = 'query' AND last_in_at >= ? ORDER BY last_in_at DESC LIMIT 60"); $st->execute([date('Y-m-d H:i:s', time() - 2 * 86400)]);
         $up = $pdo->prepare("UPDATE wa_contacts SET source = 'campaign' WHERE phone = ? AND source = 'query'");
         foreach ($st->fetchAll() as $r) { $t = strtotime((string)$r['first_seen']) ?: 0; if ($t > 0 && wa_prior_buyer($pdo, (string)$r['phone'], $t)) { $up->execute([(string)$r['phone']]); $n++; } }
+    } catch (Throwable $e) { }
+    return $n;
+}
+/** Chats marked opted-out whose customer wrote AGAIN after saying Stop (before this rule existed): the chat opens again. */
+function wa_optin_again_fix(PDO $pdo): int
+{
+    $n = 0; $stop = '/^\s*(stop|unsubscribe|band karo|band kro|no more)\s*[.!]*\s*$/iu';
+    try {
+        $st = $pdo->prepare("SELECT phone FROM wa_contacts WHERE optout = 1 AND last_in_at >= ? ORDER BY last_in_at DESC LIMIT 40"); $st->execute([date('Y-m-d H:i:s', time() - 3 * 86400)]);
+        $mq = $pdo->prepare("SELECT mtype, body FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 8"); $up = $pdo->prepare("UPDATE wa_contacts SET optout = 0 WHERE phone = ? AND optout = 1");
+        foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $ph) {
+            $mq->execute([$ph]); $rows = $mq->fetchAll(); if (!$rows) continue;
+            $newest = $rows[0]; if (preg_match($stop, (string)$newest['body']) || in_array((string)$newest['mtype'], ['reaction', 'system', 'unsupported'], true)) continue;
+            $hadStop = false; foreach (array_slice($rows, 1) as $r) if (preg_match($stop, (string)$r['body'])) { $hadStop = true; break; }
+            if ($hadStop) { $up->execute([$ph]); $n++; if (function_exists('wa_event')) wa_event($pdo, (string)$ph, '↩ The customer wrote again after Stop — the chat is open again, messages are allowed'); }
+        }
     } catch (Throwable $e) { }
     return $n;
 }

@@ -290,7 +290,7 @@ function wa_store_in(PDO $pdo, array $m, string $name, int $numberId): string
     $key = wa_key($m['from'] ?? ''); if ($key === '') return '';
     $now = wa_ts($m['timestamp'] ?? 0); [$t, $body, $mid, $mime] = wa_parse_msg($m);
     $ref = (array)($m['referral'] ?? []); $refTxt = $ref ? mb_substr(trim((string)($ref['headline'] ?? $ref['body'] ?? $ref['source_url'] ?? '')) ?: 'Meta ad', 0, 200) : '';   // the customer came from a Meta ad → a "Query"
-    $q = $pdo->prepare("SELECT phone, source, last_in_at FROM wa_contacts WHERE phone = ?"); $q->execute([$key]); $ex = $q->fetch();
+    $q = $pdo->prepare("SELECT phone, source, last_in_at, optout FROM wa_contacts WHERE phone = ?"); $q->execute([$key]); $ex = $q->fetch();
     if (!$ex) $pdo->prepare("INSERT INTO wa_contacts (phone, wa_id, name, first_seen, last_in_at, last_number_id, state, status, source, ref_text) VALUES (?, ?, ?, ?, ?, ?, 'bot', 'open', ?, ?)")->execute([$key, (string)($m['from'] ?? ''), mb_substr($name, 0, 120), $now, $now, $numberId, $ref ? 'query' : '', $refTxt]);
     else {
         $pdo->prepare("UPDATE wa_contacts SET wa_id = ?, name = CASE WHEN name = '' THEN ? ELSE name END, last_in_at = ?, last_number_id = ?, status = 'open', closed_at = NULL WHERE phone = ?")->execute([(string)($m['from'] ?? ''), mb_substr($name, 0, 120), $now, $numberId, $key]);   // a closed chat re-opens when the customer writes again
@@ -304,6 +304,9 @@ function wa_store_in(PDO $pdo, array $m, string $name, int $numberId): string
     } catch (PDOException $e) { /* the same wamid twice (Meta retries) — already stored */ }
     // STOP / unsubscribe words → opt out for every number
     if ($t === 'text' && preg_match('/^\s*(stop|unsubscribe|band karo|band kro|no more)\s*[.!]*\s*$/iu', $body)) $pdo->prepare("UPDATE wa_contacts SET optout = 1 WHERE phone = ?")->execute([$key]);
+    elseif ($ex && (int)($ex['optout'] ?? 0) === 1 && !in_array($t, ['reaction', 'system', 'unsupported'], true) && !preg_match('/^\s*(stop|unsubscribe|band karo|band kro|no more)\s*[.!]*\s*$/iu', $body)) {   // owner (13 Nov): a customer who said Stop and then WRITES to us again wants to talk: the conversation starts again
+        $pdo->prepare("UPDATE wa_contacts SET optout = 0 WHERE phone = ?")->execute([$key]); if (function_exists('wa_event')) wa_event($pdo, $key, '↩ The customer wrote again after Stop — the chat is open again, messages are allowed');
+    }
     // 🎫 a customer whose complaint was SOLVED writes again (to order, to complain again, anything): the chat goes back into Requests (nobody holds it) so the whole team sees it
     try { if ($ex && (string)setting_get($pdo, 'cxres_' . $key, '') !== '') {
         setting_set($pdo, 'cxres_' . $key, '');
