@@ -535,7 +535,8 @@ function cx2_repeat_note(PDO $pdo, array $r, $why) {
 }
 /** a new contact (call / WhatsApp / social / store) of a customer who already has a ticket for this problem → it joins that ticket.  Returns the answer array, or null when there is nothing to join. */
 function cx2_join(PDO $pdo, $key, $order, $problem, $src, $kind, $text, $emp, $name = '') {
-    $r = cx2_find_open($pdo, $key, $order); $reopened = false;
+    $r = cx2_find_open($pdo, $key, $order); if (!$r && (string)$order !== '') $r = cx2_find_open($pdo, $key, '');   // owner (13 Nov): ONE open ticket per number — another order of the same customer joins the open ticket, never a second one
+    $reopened = false;
     if (!$r) { $r = cx2_find_recent($pdo, $key, $order); if ($r) { cx2_reopen($pdo, $r, 'the customer contacted us again (' . (cx_sources()[$src] ?? $src) . ')', $emp); $reopened = true; } }
     if (!$r) return null;
     $id = (int)$r['id']; cx2_sources_add($pdo, $id, $src); cx_ev($pdo, $id, $emp, $kind, $text);
@@ -551,6 +552,23 @@ function cx2_after_raise(PDO $pdo, $id, array $in) {
     $pdo->prepare("UPDATE cx_cases SET sources = ?, auto = ? WHERE id = ?")->execute([$r['source'], !empty($in['auto']) ? 1 : 0, (int)$id]);
     cx2_restage($pdo, $id, 0); cx2_flag($pdo, $id, false, true);
     if (function_exists('cx3_on_raise')) { try { cx3_on_raise($pdo, (int)$id, $in); } catch (Throwable $e) { error_log('cx3_on_raise: ' . $e->getMessage()); } }   // 🎫 department, Serious / Basic, owner in turn, "ticket created" message
+}
+/** Owner (13 Nov): no duplicates — a number with more than one OPEN ticket keeps its oldest; the newer ones are merged into it (timeline, files, parcels, credit move over; nothing is sent to the customer). */
+function cx2_dedupe(PDO $pdo, $max = 20) {
+    $n = 0;
+    try {
+        $rows = $pdo->query("SELECT phone, MIN(id) keep_id FROM cx_cases WHERE phone <> '' AND status IN ('open','reopened') GROUP BY phone HAVING COUNT(*) > 1 LIMIT " . (int)$max)->fetchAll();
+        foreach ($rows as $g) {
+            $keep = (int)$g['keep_id']; $q = $pdo->prepare("SELECT id, owner_emp, problem, order_name FROM cx_cases WHERE phone = ? AND id <> ? AND status IN ('open','reopened') ORDER BY id"); $q->execute([(string)$g['phone'], $keep]);
+            foreach ($q->fetchAll() as $d) {
+                $k = cx_row($pdo, $keep); if (!$k || !in_array((string)$k['status'], ['open', 'reopened'], true)) break;
+                if ((int)$k['owner_emp'] === 0 && (int)$d['owner_emp'] > 0) $pdo->prepare("UPDATE cx_cases SET owner_emp = ? WHERE id = ?")->execute([(int)$d['owner_emp'], $keep]);   // the kept ticket is never left without a person
+                $P = cx_problems(); $what = ($P[$d['problem']][0] ?? (string)$d['problem']) . (trim((string)$d['order_name']) !== '' ? ', order ' . $d['order_name'] : '');
+                if (cx2_merge($pdo, $keep, (int)$d['id'], 0)) { cx_ev($pdo, $keep, 0, 'note', 'The merged ticket ' . cx_code($d['id']) . ' was about: ' . $what . '.'); $n++; }
+            }
+        }
+    } catch (Throwable $e) { error_log('cx2_dedupe: ' . $e->getMessage()); }
+    return $n;
 }
 /** two tickets of one customer (a phone number was linked to a social / email complaint) → one ticket */
 function cx2_merge(PDO $pdo, $keepId, $dropId, $emp) {
@@ -699,6 +717,7 @@ function cx2_credit_issue(PDO $pdo, array $role, array $r, array $in, $meName) {
 function cx2_tick(PDO $pdo, $now) {
     $res = ['stage' => 0, 'pen' => 0, 'reopen' => 0, 'auto' => 0, 'flag' => 0, 'back' => 0];
     try { cx5_auto($pdo); } catch (Throwable $e) { }   // 📨 ticket messages: set up with Meta by themselves + the ones that waited for approval
+    if ((int)cx_state_get($pdo, 'dedupe_at', '0') < time() - 600) { cx_state_put($pdo, 'dedupe_at', (string)time()); cx2_dedupe($pdo); }   // one open ticket per number
     cx2_ensure($pdo); $nowS = date('Y-m-d H:i:s', $now); $S = cx2_stages(); $mg = cx_manager_ids($pdo);
     try {
         // 1) the stage of every open ticket (+ the parcel coming back: tracking tells us)
