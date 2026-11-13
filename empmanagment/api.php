@@ -7567,10 +7567,11 @@ function ml_slab_clean(array $in): array
         if (count($p) !== $n) return [null, $ml . ' ml: fill a price in every column.'];
         $lastP = 0.0;
         for ($i = 0; $i < $n; $i++) {
-            if ($p[$i] <= 0) { if (abs($cols[$i] - 5.0) < 0.001) continue; return [null, $ml . ' ml: every price must be more than 0 (only the 5% column may stay blank).']; }
+            if ($p[$i] <= 0) { $p[$i] = 0.0; continue; }      // a blank column is allowed: a size with ONE fixed price has only that column. Commission skips blank columns (at or above the price = that column's %, below the lowest price = the floor)
             if ($lastP > 0 && $p[$i] > $lastP) return [null, $ml . ' ml: prices must go down from left to right (₹' . $lastP . ' → ₹' . $p[$i] . ').'];
             $lastP = $p[$i];
         }
+        if (!($lastP > 0)) return [null, $ml . ' ml: type at least one price, or remove the row.'];
         $rows[] = ['ml' => $ml, 'p' => $p];
     }
     if (!$rows) return [null, 'Add at least one size.'];

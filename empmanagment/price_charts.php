@@ -125,7 +125,8 @@ function pc_save(PDO $pdo, string $seg, array $C, string $by): ?string
     $C['updated_at'] = date('Y-m-d H:i:s'); $C['updated_by'] = $by;
     if ($seg === 'perfume') {
         $cur = json_decode((string)setting_get($pdo, 'ml_slab_chart', ''), true); if (!is_array($cur) || empty($cur['rows'])) $cur = function_exists('ml_slab_default') ? ml_slab_default() : [];
-        foreach ($C['rows'] as $r) foreach ($r['p'] as $i => $v) if ($v <= 0 && abs((float)($C['cols'][$i] ?? 0) - 5.0) > 0.001) return 'Perfume is used for commission: fill every price of every row (only the 5% column may stay blank), or remove the row.';
+        // a size may have ONE fixed price (only one column filled): commission skips the blank columns. A row with no price at all cannot be used.
+        foreach ($C['rows'] as $r) { $any = false; foreach ($r['p'] as $v) if ((float)$v > 0) $any = true; if (!$any) return 'Perfume is used for commission: type at least one price in every row, or remove the row.'; }
         $new = array_merge($cur, ['cols' => $C['cols'], 'names' => $C['names'], 'rows' => $C['rows'], 'floor' => $C['floor'], 'updated_at' => $C['updated_at'], 'updated_by' => $by]);
         if (function_exists('ml_slab_clean')) { [$chk, $err] = ml_slab_clean($new); if ($err) return $err; $new = array_merge($new, $chk, ['updated_at' => $C['updated_at'], 'updated_by' => $by]); }
         setting_set($pdo, 'ml_slab_chart', json_encode($new, JSON_UNESCAPED_UNICODE)); return null;
