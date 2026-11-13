@@ -1052,7 +1052,7 @@ function wa_camp_ideal_cfg(PDO $pdo): array
 /** 🎯 Ideal vs actual for one business day: the cumulative spend / replies (queries typed Campaign) / Campaign orders at each checkpoint, a status, a plain-words analysis and the day-end projection. Remembered 3 minutes. */
 function wa_camp_ideal(PDO $pdo, string $day): array
 {
-    $ck = 'camp_ideal7_' . $day; $hit = wa_cpc_get($pdo, $ck); if ($hit && $hit['age'] < 180) return $hit['v'];
+    $ck = 'camp_ideal8_' . $day; $hit = wa_cpc_get($pdo, $ck); if ($hit && $hit['age'] < 180) return $hit['v'];
     $cfg = wa_camp_ideal_cfg($pdo); $t0 = null; $t1 = null;
     try { if (function_exists('wq_day_start') && function_exists('wq_day_add')) { $t0 = (int)wq_day_start($pdo, $day); $t1 = (int)wq_day_start($pdo, wq_day_add($day, 1)); } } catch (Throwable $e) { }
     // the ideal day runs 12 noon → 12 noon (setting camp_ideal_start, default 12:00) — not the 10 AM business day of the other boxes
@@ -1069,10 +1069,10 @@ function wa_camp_ideal(PDO $pdo, string $day): array
         foreach ($q->fetchAll() as $r) { $h = (int)$r['h']; if (isset($H[$h])) $H[$h]['replies'] = (int)$r['n']; }
     } catch (Throwable $e) { error_log('camp_ideal replies: ' . $e->getMessage()); }
     try {   // Campaign orders: Shopify / WhatsApp manual orders typed Campaign + the quick entries typed Campaign
-        $q = $pdo->prepare("SELECT /*+ MAX_EXECUTION_TIME(12000) */ HOUR(o.created_at) h, COUNT(*) n FROM shop_orders o LEFT JOIN order_allocations al ON al.source = o.store_key AND al.order_id = CAST(o.shopify_id AS CHAR) WHERE o.created_at >= ? AND o.created_at < ? AND o.total > 0 AND (o.tags IS NULL OR o.tags NOT LIKE '%cancel%') GROUP BY h"); $q->execute([$a, $b]);   // ALL orders of the day (Query + Campaign + the rest) — the "Total orders" of the ideal day
+        $q = $pdo->prepare("SELECT /*+ MAX_EXECUTION_TIME(12000) */ HOUR(o.created_at) h, COUNT(*) n FROM shop_orders o LEFT JOIN order_allocations al ON al.source = o.store_key AND al.order_id = CAST(o.shopify_id AS CHAR) WHERE o.created_at >= ? AND o.created_at < ? AND o.total > 0 AND (o.tags IS NULL OR o.tags NOT LIKE '%cancel%') AND COALESCE(NULLIF(al.order_type, ''), CASE WHEN o.tags LIKE '%campaign%' THEN 'campaign' ELSE '' END) = 'campaign' GROUP BY h"); $q->execute([$a, $b]);   // Campaign orders only (the page overlays its own Campaign-orders count)
         foreach ($q->fetchAll() as $r) { $h = (int)$r['h']; if (isset($H[$h])) $H[$h]['orders'] += (int)$r['n']; }
     } catch (Throwable $e) { error_log('camp_ideal orders: ' . $e->getMessage()); }
-    try { $q = $pdo->prepare("SELECT HOUR(order_date) h, COUNT(*) n FROM manual_orders WHERE order_date >= ? AND order_date < ? GROUP BY h"); $q->execute([$a, $b]); foreach ($q->fetchAll() as $r) { $h = (int)$r['h']; if (isset($H[$h])) $H[$h]['orders'] += (int)$r['n']; } } catch (Throwable $e) { }
+    try { $q = $pdo->prepare("SELECT HOUR(order_date) h, COUNT(*) n FROM manual_orders WHERE order_date >= ? AND order_date < ? AND order_type = 'campaign' GROUP BY h"); $q->execute([$a, $b]); foreach ($q->fetchAll() as $r) { $h = (int)$r['h']; if (isset($H[$h])) $H[$h]['orders'] += (int)$r['n']; } } catch (Throwable $e) { }
     $cum = function (int $T) use ($H): array { $s = 0.0; $rp = 0; $od = 0; foreach ($H as $x) { if ($x['t'] + 3600 <= $T) { $s += $x['spend']; $rp += $x['replies']; $od += $x['orders']; } elseif ($x['t'] < $T) { $f = ($T - $x['t']) / 3600; $s += $x['spend'] * $f; $rp += $x['replies'] * $f; $od += $x['orders'] * $f; } } return ['spend' => round($s), 'replies' => (int)round($rp), 'orders' => (int)round($od)]; };
     // checkpoints (absolute times) with the ideal and the actual
     $pts = []; foreach ($cfg['rows'] as $r) { [$hh, $mm] = array_map('intval', explode(':', $r['t'])); $T = strtotime(date('Y-m-d', $t0) . sprintf(' %02d:%02d:00', $hh, $mm)); while ($T <= $t0) $T += 86400; if ($T >= $t1) continue; $pts[] = ['T' => $T, 't' => $r['t'], 'ideal' => ['spend' => $r['spend'], 'replies' => $r['replies'], 'orders' => $r['orders']]]; }
