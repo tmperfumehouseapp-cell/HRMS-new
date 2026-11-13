@@ -23038,13 +23038,16 @@ switch ($action) {
         if ((strtotime($to) - strtotime($from)) > 92 * 86400) json_response(['live' => false, 'why' => 'Pick at most 93 days.']);
         @set_time_limit(280);
         if (!cm_engine_load($pdo)) json_response(['live' => false, 'why' => 'The commission engine file could not be loaded on the server.']);
-        $ord = []; $emps = []; $gaps = []; $last = min($to, biz_today($pdo));
+        $ord = []; $emps = []; $gaps = []; $bonus = []; $last = min($to, biz_today($pdo));
         for ($d = $from; $d <= $last; $d = date('Y-m-d', strtotime($d . ' +1 day'))) {
             $r = cm_paid_day($pdo, $d); if (!empty($r['error'])) json_response(['live' => false, 'why' => $r['error']]);
             foreach ((array)$r['ord'] as $k => $v) $ord[$k] = $v;
-            foreach ((array)$r['emps'] as $id => $e) { $emps[$id] = round(($emps[$id] ?? 0) + (float)$e['total'], 2); if (empty($e['live'])) $gaps[$id][] = $d; }
+            foreach ((array)$r['emps'] as $id => $e) {
+                $emps[$id] = round(($emps[$id] ?? 0) + (float)$e['total'], 2); if (empty($e['live'])) $gaps[$id][] = $d;
+                if ((float)($e['extra'] ?? 0) > 0) { $b = $bonus[$id] ?? ['extra' => 0.0, 'days' => 0, 'min' => null, 'max' => 0.0, 'name' => (string)($e['bonus_name'] ?? '')]; $b['extra'] = round($b['extra'] + (float)$e['extra'], 2); $b['days']++; $p = (float)($e['bonus'] ?? 0); $b['min'] = $b['min'] === null ? $p : min($b['min'], $p); $b['max'] = max($b['max'], $p); $bonus[$id] = $b; }      // the day's extra (target bonus …): one amount on the total, not inside the orders
+            }
         }
-        json_response(['live' => true, 'from' => $from, 'to' => $to, 'ord' => (object)$ord, 'emps' => (object)$emps, 'gaps' => (object)$gaps]);
+        json_response(['live' => true, 'from' => $from, 'to' => $to, 'ord' => (object)$ord, 'emps' => (object)$emps, 'bonus' => (object)$bonus, 'gaps' => (object)$gaps]);
         break;
     }
 

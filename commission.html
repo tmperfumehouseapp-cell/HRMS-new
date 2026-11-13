@@ -1448,7 +1448,7 @@
         let k = '', label = '';
         const gf = gateFn(o, aggs), pr = panelRuleFor(o, gf);
         if (mf) { k = 'code'; label = 'Manual commission'; }
-        else if (pv) { k = 'slab'; label = /\+ .*\+\d/.test(r.note) ? 'Commission chart + target bonus' : 'Commission chart'; }
+        else if (pv) { k = 'slab'; label = 'Commission chart'; }
         else if (pr) { k = 'panel'; label = (pr.label || 'Panel rule') + ' ' + fmtN(pr.pct) + '%'; }
         else if (c && c.fixedPlan) { k = 'fixed'; label = 'Fixed ' + c.fixedPlan.badge; }
         else if (fixedFor(o, gf)) { const fp = fixedFor(o, gf); k = 'fixed'; label = 'Fixed ' + payBadge(fp.mode, fp.per); }
@@ -1461,6 +1461,15 @@
         ord[o.key] = [Math.round(r.v * 100) / 100, r.note || '', k];
       });
     });
+    // The day's extra (Target bonus …) is ONE amount on the person's whole commission, not part of each order: it is shared over the person's rows by their commission
+    // (so every row and the "all panels" total add up) and shown as its own rule line.
+    const PB = (paid && paid.bonus) || {};
+    Object.keys(emps).forEach((id) => { const b = PB[id]; if (!b || !(b.extra > 0)) return;
+      const hs = Object.keys(emps[id]), tot = hs.reduce((a, h) => a + emps[id][h].amt, 0), nAll = hs.reduce((a, h) => a + emps[id][h].n, 0); let left = b.extra;
+      hs.forEach((h, i) => { const E = emps[id][h], part = i === hs.length - 1 ? left : Math.round(b.extra * (tot > 0 ? E.amt / tot : E.n / (nAll || 1)) * 100) / 100; left -= part;
+        if (!(part > 0)) return; E.amt += part; E.bonus = (E.bonus || 0) + part;
+        const l = (b.name || 'Target bonus') + ' +' + fmtN(b.min) + (b.max > b.min ? '–' + fmtN(b.max) : '') + '% on the whole commission' + (b.days > 1 ? ' · ' + b.days + ' days' : '');
+        E.tags['bonus|' + l] = { k: 'slab', l, n: E.n, d: part }; }); });
     Object.keys(emps).forEach((id) => Object.keys(emps[id]).forEach((h) => { const E = emps[id][h]; E.tags = Object.keys(E.tags).map((x) => { const T = E.tags[x]; T.d = Math.round(T.d * 100) / 100; return T; }); E.amt = Math.round(E.amt * 100) / 100; }));
     return { emps, ord };
   }

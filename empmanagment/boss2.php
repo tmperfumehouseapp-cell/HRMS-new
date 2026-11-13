@@ -2891,15 +2891,19 @@ function cm_day(PDO $pdo, $day, array $ch = null, array $offers = null, array $b
             if ($pc === null) { $noPrice++; $lines[] = ['order' => $o['name'], 'ml' => (int)$ml, 'price' => round($gross), 'rule' => 'ML not priced', 'pct' => 0, 'code' => $o['code'] !== '', 'com' => 0, 'key' => $ok, 'x' => round($xc, 2)]; continue; }
             $v = $gross * $pc / 100 * $f; $chartCom += $v; $lines[] = ['order' => $o['name'], 'ml' => (int)$ml, 'price' => round($gross), 'rule' => 'chart', 'pct' => $pc, 'code' => $o['code'] !== '', 'com' => round($v, 2), 'key' => $ok, 'x' => round($xc, 2)];
         }
-        [$bonus, $tbName, $bo] = cm_bonus_pick($pdo, $ch, $boosts, $id, $day, $sales, $target); $extra = $chartCom * $bonus / 100;
-        // what each order PAYS: its chart commission with the day's extra %, plus its gel / attar / others part. The orders of the day add up to the day's total.
-        foreach ($lines as &$ln) { $ln['paid'] = round(($ln['rule'] === 'chart' ? (float)$ln['com'] * (1 + $bonus / 100) : (float)$ln['com']) + (float)($ln['x'] ?? 0), 2); } unset($ln);
+        [$bonus, $tbName, $bo] = cm_bonus_pick($pdo, $ch, $boosts, $id, $day, $sales, $target);
+        // A Target bonus rule raises the day's WHOLE commission (chart + offers + gel / attar / others): final = commission + commission × bonus %, one amount for the day,
+        // not order by order. The normal over-target steps and a boost stay on the chart commission as before.
+        $bonusOn = $tbName !== '' ? 'all' : 'chart';
+        $extra = ($bonusOn === 'all' ? $chartCom + $offerCom + $xcomTotal : $chartCom) * $bonus / 100;
+        // each order's own commission, WITHOUT the day's extra: the extra is one line on the day's total
+        foreach ($lines as &$ln) { $ln['paid'] = round((float)$ln['com'] + (float)($ln['x'] ?? 0), 2); } unset($ln);
         $old = null;
         if (function_exists('coach_day')) { try { $cd = coach_day($pdo, $day, false, true); $old = isset($cd[$id]) ? (float)$cd[$id]['com_today'] : null; } catch (Throwable $e) {} }
         $total = round($chartCom + $offerCom + $extra + $xcomTotal, 2);
         $rows[] = ['id' => $id, 'name' => trim((string)$e['full_name']), 'target' => round($target), 'target_why' => (!($target > 0) && $n > 0) ? cm_target_why($pdo, $id, $day, $marks, $e) : '', 'sales' => round($sales), 'pct' => $target > 0 ? round($sales / $target * 100, 1) : null, 'orders' => $n,
             'codes' => $nCode, 'code_pct' => $n ? round($nCode / $n * 100) : null, 'code_ok' => $codeOk, 'code_need' => $need, 'chart_com' => round($chartCom, 2), 'offer_com' => round($offerCom, 2), 'x_com' => round($xcomTotal, 2),
-            'bonus' => $bonus, 'bonus_rule' => $tbName, 'boost' => $bo ? $bo['name'] : '', 'extra' => round($extra, 2), 'total' => $total, 'old' => $old, 'diff' => $old === null ? null : round($total - $old, 2), 'no_ml' => $noMl, 'not_priced' => $noPrice, 'lines' => $lines];
+            'bonus' => $bonus, 'bonus_rule' => $tbName, 'bonus_on' => $bonusOn, 'boost' => $bo ? $bo['name'] : '', 'extra' => round($extra, 2), 'total' => $total, 'old' => $old, 'diff' => $old === null ? null : round($total - $old, 2), 'no_ml' => $noMl, 'not_priced' => $noPrice, 'lines' => $lines];
     }
     usort($rows, function ($a, $b) { return $b['sales'] <=> $a['sales']; });
     return ['rows' => $rows, 'error' => ''];
@@ -2907,16 +2911,16 @@ function cm_day(PDO $pdo, $day, array $ch = null, array $offers = null, array $b
 /** ONE figure for every page. What a day PAYS, per person and per order, by the live engine: the same number the Commission page shows. A day with an order the engine
  *  could not price (no ML, size not in the chart) shows ₹0 for that order, exactly as on the Commission page.
  *  Kept for a short while (today / yesterday 2 minutes, older days 30 minutes; a change of the rules is seen at once) so a month does not count 30 days on every page load.
- *  Returns ['emps' => [id => ['total' => ₹, 'live' => bool]], 'ord' => [order key => [₹, how it was counted]]] */
+ *  Returns ['emps' => [id => ['total' => ₹ with the day's extra, 'extra' => ₹, 'bonus' => %, 'bonus_name' => '', 'live' => bool]], 'ord' => [order key => [₹ of the order itself, how it was counted]]] */
 function cm_paid_day(PDO $pdo, $day) {
-    static $mem = [], $ver = null; if (isset($mem[$day])) return $mem[$day];
+    static $mem = [], $ver = null; if (isset($mem[$day])) return $mem[$day];      // 'v2' below: the day's extra is one amount on the total (not inside each order)
     $today = function_exists('biz_today') ? biz_today($pdo) : date('Y-m-d');
     if ($ver === null) {
         $p = [(string)setting_get($pdo, 'cm_chart', ''), (string)setting_get($pdo, 'price_unify_v1', '')];
         foreach (["SELECT COUNT(*), COALESCE(MAX(updated_at), ''), COALESCE(SUM(enabled), 0) FROM commission_bonus_rules", "SELECT COUNT(*), COALESCE(MAX(id), 0), COALESCE(SUM(active), 0) FROM cm_boosts", "SELECT COUNT(*), COALESCE(MAX(id), 0), COALESCE(SUM(active), 0) FROM cm_offers", "SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM daily_targets WHERE target_date >= '" . date('Y-m-d', strtotime('-62 days')) . "'"] as $q) {
             try { $p[] = implode(',', (array)$pdo->query($q)->fetch(PDO::FETCH_NUM)); } catch (Throwable $e) { $p[] = '-'; }
         }
-        $ver = substr(md5(implode('|', $p)), 0, 12);
+        $ver = substr(md5('v2|' . implode('|', $p)), 0, 12);
     }
     $ttl = $day >= date('Y-m-d', strtotime($today . ' -1 day')) ? 120 : 1800;
     try {
@@ -2928,10 +2932,11 @@ function cm_paid_day(PDO $pdo, $day) {
     $out = ['emps' => [], 'ord' => []];
     foreach ((array)$r['rows'] as $x) {
         $gap = (int)$x['no_ml'] + (int)$x['not_priced'] > 0;      // an order the chart cannot price pays ₹0 (it is listed under Needs fixing on the Commission page)
-        $out['emps'][(int)$x['id']] = ['total' => round((float)$x['total'], 2), 'live' => !$gap];
+        $bn = (float)$x['bonus'] > 0 ? ($x['bonus_rule'] !== '' ? $x['bonus_rule'] : ($x['boost'] !== '' ? $x['boost'] : 'Over-target extra')) : '';
+        $out['emps'][(int)$x['id']] = ['total' => round((float)$x['total'], 2), 'live' => !$gap, 'extra' => round((float)$x['extra'], 2), 'bonus' => (float)$x['bonus'], 'bonus_name' => $bn];
         foreach ((array)$x['lines'] as $l) {
             if ((string)($l['key'] ?? '') === '') continue;
-            $why = $l['rule'] === 'chart' ? 'Chart ' . $l['pct'] . '%' . ($x['bonus'] > 0 ? ' + ' . ($x['bonus_rule'] !== '' ? $x['bonus_rule'] : ($x['boost'] !== '' ? $x['boost'] : 'over-target extra')) . ' +' . (0 + $x['bonus']) . '%' : '')
+            $why = $l['rule'] === 'chart' ? 'Chart ' . $l['pct'] . '%'
                 : (strpos((string)$l['rule'], 'offer') === 0 ? 'Offer ' . $l['pct'] . '%' : ucfirst((string)$l['rule']));
             if ((float)($l['x'] ?? 0) > 0) $why .= ' + gel / attar / others';
             if (!$l['code'] && !$x['code_ok'] && (float)$l['com'] > 0) $why .= ' · no code: half';
