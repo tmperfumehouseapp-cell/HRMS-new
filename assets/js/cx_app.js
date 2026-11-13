@@ -249,14 +249,16 @@ window.CX = (function () {
   function drawNum(hd) {
     let el = $('#cxNum', H); if (!el) { el = document.createElement('div'); el.id = 'cxNum'; hd.insertAdjacentElement('afterend', el); }
     const w = C.wa_num, v = C.case; if (!w || (!w.in && !w.sent)) { el.style.display = 'none'; el.innerHTML = ''; return; }
-    const nm = (n) => '<b>' + esc(n.label) + '</b>' + (n.display ? ' <span style="font-weight:700">' + esc(n.display) + '</span>' : '');
+    // the phone number first and big (that is what is read out on a call); the number's name small behind it
+    const nm = (n) => '<span style="display:inline-block;background:#fff;border:1px solid #cfd8dc;border-radius:8px;padding:2px 8px;font-weight:800;font-size:14px;letter-spacing:.2px;white-space:nowrap;color:#111">' + esc(n.display || n.label) + '</span>' + (n.display ? ' <span class="cxn-l" style="color:var(--mut);white-space:nowrap">' + esc(n.label) + '</span>' : ' <span style="color:#b42318;white-space:nowrap">phone number not known yet</span>');
     const use = w.sent || w.in, diff = w.in && w.sent && w.in.id !== w.sent.id;
     const say = 'Hello ' + (v.name || '') + ', we have sent you a WhatsApp message about your complaint ' + v.code + ' from our number ' + (use.display || use.label) + '. Please open that chat and reply there (even just "Hi"), so we can help you quickly.';
-    el.style.cssText = 'display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:7px 12px;font-size:12.5px;border-bottom:1px solid var(--line,#e6e8ef);background:' + (diff ? '#fff7e6' : '#f1faf6');
-    el.innerHTML = '<span>📱 ' + (w.sent ? 'Our complaint message went from ' + nm(w.sent) : 'No complaint message has gone yet') + '</span>'
-      + (w.in ? '<span>· Customer last wrote to ' + nm(w.in) + '</span>' : '<span>· The customer has not written to us on WhatsApp</span>')
-      + (diff ? '<span style="color:#9a5b00;font-weight:700">⚠ Different numbers — ask the customer to reply on ' + esc(w.sent.display || w.sent.label) + '</span>' : '')
-      + '<button class="cx-btn gh s" type="button" id="cxNumSay" title="' + esc(say) + '">📋 Copy what to tell the customer</button>';
+    const part = 'display:flex;gap:6px;align-items:center;flex-wrap:wrap';
+    el.style.cssText = 'display:flex;gap:6px 16px;align-items:center;flex-wrap:wrap;padding:7px 12px;font-size:12.5px;line-height:1.5;border-bottom:1px solid var(--line,#e6e8ef);flex:0 0 auto;background:' + (diff ? '#fff7e6' : '#f1faf6');
+    el.innerHTML = '<style>@media(max-width:700px){#cxNum .cxn-l{display:none}#cxNum{gap:4px 10px!important;padding:6px 10px!important}#cxNum #cxNumSay{margin-left:0!important}}</style><div style="' + part + '">📱 ' + (w.sent ? 'We messaged the customer from ' + nm(w.sent) : 'No complaint message has gone yet') + '</div>'
+      + '<div style="' + part + '">' + (w.in ? 'Customer wrote to ' + nm(w.in) : 'The customer has not written to us on WhatsApp') + '</div>'
+      + (diff ? '<div style="color:#9a5b00;font-weight:700">⚠ Different numbers — ask the customer to reply on ' + esc(w.sent.display || w.sent.label) + '</div>' : '')
+      + '<button class="cx-btn gh s" type="button" id="cxNumSay" style="margin-left:auto" title="' + esc(say) + '">📋 Copy what to say</button>';
     $('#cxNumSay', el).onclick = async () => { try { await navigator.clipboard.writeText(say); toast('Copied.'); } catch (e) { window.prompt('Copy this:', say); } };
   }
   function drawHead() {
