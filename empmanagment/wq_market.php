@@ -34,6 +34,8 @@
  * Picking a chat and not answering it = it goes back to the market (🟠) after the timer.
  * Line + gate (12 Nov): people replying to customers in the last 3 min come first (then 10 min, then quiet). A person with a customer waiting
  * 3+ min (wqx_gate_sec) for their answer, or 2 waiting at once, gets nothing new until they reply — the next person in line gets it.
+ * Stop / start a person (admin or Sales Head): wq.mkt_stop POST {emp_id, why, mins (minutes · -1 rest of today · 0 until started), handover} ·
+ * wq.mkt_start POST {emp_id}. Stopped = no new query whatever the score; ends by itself at the chosen time.
  * Actions: wq.mkt_ask POST {text} · wq.mkt_hint_del POST {id} · wq.mkt_get (admin board) · wq.mkt_mode POST {mode} · wq.mkt_cfg POST {break_max, explore} · wq.mkt_recalc POST · wq.mkt_me (salesperson)
  *          wq.mkt_break POST {on: 1|0} (salesperson)
  * Tables: wqx_log (every decision), wqx_break (breaks).
@@ -131,6 +133,15 @@ function wqx_nudges(PDO $pdo): array
     if ($miss && function_exists('wq_admin_ids') && $due('wqx:n:tgadm', 10800)) { try { ct_push($pdo, wq_admin_ids($pdo), '🎯 Set targets', 'Working today with no target: ' . implode(', ', array_map(function ($e) use ($names) { return (string)($names[$e] ?? ('#' . $e)); }, $miss)) . '. Set them in Sales → Team performance.', '/sales.html#people/team', 'wqx-tgadm'); $sent++; } catch (Throwable $x) { } }
     return ['sent' => $sent, 'no_target' => count($miss)];
 }
+/** ⏸ Stopped by the admin / Sales Head (lunch, half day, leave …): [emp => [why, until ts (0 = until started again), by, at]]. Ended stops drop out. */
+function wqx_stops(PDO $pdo): array
+{
+    if (isset($GLOBALS['wqx_stops_memo'])) return $GLOBALS['wqx_stops_memo'];
+    $j = json_decode(wqx_meta($pdo, 'wqx:stops', '{}'), true); $o = [];
+    if (is_array($j)) foreach ($j as $e => $x) { if (!is_array($x)) continue; $u = (int)($x['until'] ?? 0); if ($u === 0 || $u > wqx_now()) $o[(int)$e] = $x; }
+    return $GLOBALS['wqx_stops_memo'] = $o;
+}
+function wqx_stops_put(PDO $pdo, array $o): void { unset($GLOBALS['wqx_stops_memo']); wqx_meta_put($pdo, 'wqx:stops', json_encode((object)$o, JSON_UNESCAPED_UNICODE)); }
 /** Today's start (the business day of the panel when it has one). */
 function wqx_day_start(PDO $pdo): int
 {
@@ -293,16 +304,17 @@ function wqx_live(PDO $pdo, array $prof): array
     try { $q = $pdo->prepare("SELECT c.assigned_emp e, COUNT(*) n, MIN(c.last_in_at) o FROM wa_contacts c WHERE c.status = 'open' AND c.optout = 0 AND c.assigned_emp > 0 AND (c.cx_id IS NULL OR c.cx_id = 0) AND (c.tag IS NULL OR c.tag <> 'complaint')
             AND c.last_in_at >= ? AND NOT EXISTS (SELECT 1 FROM wa_messages h WHERE h.phone = c.phone AND $hs) GROUP BY c.assigned_emp"); $q->execute([wqx_dt($now - 2 * 3600)]);
         foreach ($q->fetchAll() as $r) $un[(int)$r['e']] = [(int)$r['n'], $now - wqx_ts($r['o'])]; } catch (Throwable $e) { }
+    $stops = wqx_stops($pdo);
     $lost = []; try { $q = $pdo->prepare("SELECT from_emp e, COUNT(*) n FROM wqx_log WHERE kind = 'move' AND applied = 1 AND from_emp > 0 AND at >= ? GROUP BY from_emp"); $q->execute([wqx_dt(wqx_day_start($pdo))]); foreach ($q->fetchAll() as $r) $lost[(int)$r['e']] = (int)$r['n']; } catch (Throwable $e) { }   // chats taken away today for not answering
     foreach ((array)($prof['people'] ?? []) as $e => $p) {
-        $e = (int)$e; $on = !empty($present[$e]); $brk = isset($br['open'][$e]);
+        $e = (int)$e; $on = !empty($present[$e]); $brk = isset($br['open'][$e]); $stp = $stops[$e] ?? null;
         $held = !empty($p['sure_behind']) && (int)($p['orders_today'] ?? 0) === 0 && (int)($pipe[$e] ?? 0) === 0;
         $act = isset($ans[$e]) ? ($ans[$e] <= 3 ? 1.6 : ($ans[$e] <= 10 ? 1.0 : 0.6)) : 0.35;   // replying to customers in the last 3 min = first in line; quiet = last
         $uw = $un[$e] ?? [0, 0]; $gate = $uw[0] >= 2 || ($uw[0] >= 1 && $uw[1] >= $gateSec);
         $ld = (int)($load[$e] ?? 0); $cap = max(1, (int)($p['cap'] ?? 6));
         $score = (float)($p['idx'] ?? 1) * (float)($p['idx_today'] ?? 1) * $act * (1 - 0.5 * min(1.0, $ld / $cap)) * max(0.6, pow(0.9, (int)($lost[$e] ?? 0)));   // every chat lost today for not answering costs 10 % of the place in the queue
         $L[$e] = ['emp_id' => $e, 'name' => (string)($p['name'] ?? ''), 'present' => $on, 'break' => $brk, 'break_used' => (int)($br['used'][$e] ?? 0), 'load' => $ld, 'cap' => $cap, 'full' => $ld >= $cap, 'pipe' => (int)($pipe[$e] ?? 0),
-            'answered_min_ago' => $ans[$e] ?? null, 'waiting' => $uw[0], 'waiting_sec' => $uw[1], 'gate' => $gate, 'held' => $held || !empty($cx[$e]), 'held_why' => !empty($cx[$e]) ? 'complaints' : ($held ? 'orders' : ''), 'overdue_cx' => (int)($cx[$e] ?? 0), 'lost_today' => (int)($lost[$e] ?? 0), 'followups' => (int)($fu[$e] ?? 0), 'score' => round($score, 3), 'can' => $on && !$brk];
+            'answered_min_ago' => $ans[$e] ?? null, 'waiting' => $uw[0], 'waiting_sec' => $uw[1], 'gate' => $gate, 'held' => $held || !empty($cx[$e]), 'held_why' => !empty($cx[$e]) ? 'complaints' : ($held ? 'orders' : ''), 'overdue_cx' => (int)($cx[$e] ?? 0), 'lost_today' => (int)($lost[$e] ?? 0), 'followups' => (int)($fu[$e] ?? 0), 'score' => round($score, 3), 'stopped' => $stp ? ['why' => (string)($stp['why'] ?? ''), 'until' => (int)($stp['until'] ?? 0)] : null, 'can' => $on && !$brk && !$stp];
     }
     return $L;
 }
@@ -397,6 +409,7 @@ function wqx_coach(?array $l = null, ?array $p = null, array $prof = [], bool $o
 {
     if (!$l) return ['', 'grey'];
     $tm = (array)($prof['team'] ?? []); $tTk = (int)($tm['ticket'] ?? 0); $tSp = $prof['team_speed'] ?? null;
+    if (!empty($l['stopped'])) { $u = (int)$l['stopped']['until']; return ['⏸ Queries stopped by admin — ' . ($l['stopped']['why'] !== '' ? $l['stopped']['why'] : 'paused') . ($u > 0 ? ' · till ' . date('g:i a', $u) : ''), 'grey']; }
     if ($onBreak) return ['☕ On a break — no new queries (' . $brUsed . '/' . $brMax . ' min)', 'grey'];
     if (empty($l['present'])) return ['⏰ Punch in (office or work from home) — no punch-in, no queries, no commission', 'red'];
     if ((string)($l['held_why'] ?? '') === 'complaints') return ['🔴 Solve your ' . (int)$l['overdue_cx'] . ' overdue complaint(s) first — then queries come', 'red'];
@@ -611,7 +624,7 @@ try { if (wqx_mode($pdo) === 'live' && wqx_meta($pdo, 'wqx:as_fixed', '') !== '1
 
 // ---------------------------------------------------------------------------------------------------------------- actions
 $__wqx = (string)($action ?? ($_GET['action'] ?? ''));
-if (in_array($__wqx, ['wq.mkt_get', 'wq.mkt_mode', 'wq.mkt_cfg', 'wq.mkt_recalc', 'wq.mkt_me', 'wq.mkt_break', 'wq.mkt_ask', 'wq.mkt_hint_del'], true)) {
+if (in_array($__wqx, ['wq.mkt_get', 'wq.mkt_mode', 'wq.mkt_cfg', 'wq.mkt_recalc', 'wq.mkt_me', 'wq.mkt_break', 'wq.mkt_ask', 'wq.mkt_hint_del', 'wq.mkt_stop', 'wq.mkt_start'], true)) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'; $auth = require_auth(); $me = (int)($auth['employee_id'] ?? 0);
     if (!wqx_tables($pdo)) json_response(['error' => 'Storage for Auto assign is not available.'], 500);
     $adm = function_exists('wa_is_admin') ? wa_is_admin($pdo, $auth) : in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true);
@@ -631,7 +644,8 @@ if (in_array($__wqx, ['wq.mkt_get', 'wq.mkt_mode', 'wq.mkt_cfg', 'wq.mkt_recalc'
         } else $pdo->prepare("UPDATE wqx_break SET end_at = ? WHERE emp_id = ? AND end_at IS NULL")->execute([wqx_dt(), $me]);
         json_response(['ok' => true, 'on_break' => $on]);
     }
-    if (!$adm) json_response(['error' => 'Only Admin, HR or the control tower can open Auto assign.'], 403);
+    if (!$adm && function_exists('wa_boss_ok') && wa_boss_ok($pdo, $auth)) $adm = true;   // Sales Heads use the panel too (stop / start people)
+    if (!$adm) json_response(['error' => 'Only Admin, HR, the control tower or a Sales Head can open Auto assign.'], 403);
     if ($__wqx === 'wq.mkt_get') {
         if ($isPost) json_response(['error' => 'Method not allowed.'], 405);
         $prof = wqx_profile($pdo, false); if (empty($prof['people'])) $prof = wqx_profile($pdo, true, true);
@@ -640,12 +654,12 @@ if (in_array($__wqx, ['wq.mkt_get', 'wq.mkt_mode', 'wq.mkt_cfg', 'wq.mkt_recalc'
         $order = $L; uasort($order, function ($x, $y) { return $y['score'] <=> $x['score']; }); foreach ($order as $e => $x) if ($x['can'] && !$x['held'] && !$x['full'] && empty($x['gate'])) $rk[(int)$e] = ++$i0;
         foreach ((array)$prof['people'] as $e => $p) { $e = (int)$e; $l = $L[$e] ?? null; $cc = wqx_coach($l, $p, $prof, isset($bk['open'][$e]), (int)($bk['used'][$e] ?? 0), $cfg['break_max']);
             $nogo = ''; foreach ($hints as $h) if ((int)$h['avoid'] === $e && $h['kind'] === 'all') $nogo = 'a rule told to Claude: ' . $h['why'];
-            $why = !$l ? 'not in the list' : (!$l['present'] ? '⛔ not at work — no punch-in today and no work-from-home mark' : ($l['break'] ? '☕ on a break' : ($nogo !== '' ? '⛔ ' . $nogo : ($l['held_why'] === 'complaints' ? '⛔ ' . $l['overdue_cx'] . ' overdue complaint(s) first' : ($l['held_why'] === 'orders' ? '⛔ paused — ratio clearly below the team and no order today (1 order restarts)' : (!empty($l['gate']) ? '⏸ stopped — ' . (int)$l['waiting'] . ' customer(s) waiting for their reply (' . (int)round($l['waiting_sec'] / 60) . ' min); opens when they answer' : ($l['full'] ? '⏳ full — ' . $l['load'] . ' live chats, own limit ' . $l['cap'] : '✅ gets chats — #' . ($rk[$e] ?? '?') . ' in line (' . ($l['answered_min_ago'] === null ? 'quiet today' : 'replied ' . $l['answered_min_ago'] . ' min ago') . ', score ' . $l['score'] . ')')))))));
+            $why = !$l ? 'not in the list' : (!empty($l['stopped']) ? '⏸ stopped by admin — ' . ($l['stopped']['why'] !== '' ? $l['stopped']['why'] : 'paused') . ((int)$l['stopped']['until'] > 0 ? ' · till ' . date('D g:i a', (int)$l['stopped']['until']) : ' · until started again') : (!$l['present'] ? '⛔ not at work — no punch-in today and no work-from-home mark' : ($l['break'] ? '☕ on a break' : ($nogo !== '' ? '⛔ ' . $nogo : ($l['held_why'] === 'complaints' ? '⛔ ' . $l['overdue_cx'] . ' overdue complaint(s) first' : ($l['held_why'] === 'orders' ? '⛔ paused — ratio clearly below the team and no order today (1 order restarts)' : (!empty($l['gate']) ? '⏸ stopped — ' . (int)$l['waiting'] . ' customer(s) waiting for their reply (' . (int)round($l['waiting_sec'] / 60) . ' min); opens when they answer' : ($l['full'] ? '⏳ full — ' . $l['load'] . ' live chats, own limit ' . $l['cap'] : '✅ gets chats — #' . ($rk[$e] ?? '?') . ' in line (' . ($l['answered_min_ago'] === null ? 'quiet today' : 'replied ' . $l['answered_min_ago'] . ' min ago') . ', score ' . $l['score'] . ')'))))))));
             $rows[] = $p + ['live' => $l, 'coach' => $cc[0], 'tone' => $cc[1], 'why_chats' => $why, 'line' => $rk[$e] ?? null]; }
         $outside = []; try { $q = $pdo->prepare("SELECT DISTINCT m.emp_id FROM wa_messages m WHERE m.dir = 'out' AND m.emp_id > 0 AND m.ts >= ?"); $q->execute([wqx_dt(wqx_now() - 3 * 86400)]); $sl = array_flip(wqx_sales($pdo)); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $e) if (!isset($sl[(int)$e])) $outside[] = (string)($names[(int)$e] ?? ('#' . $e)); } catch (Throwable $e) { }
         usort($rows, function ($a, $b) { return [(int)!empty($b['live']['can']), (float)($b['live']['score'] ?? 0)] <=> [(int)!empty($a['live']['can']), (float)($a['live']['score'] ?? 0)]; });
         $log = []; try { foreach ($pdo->query("SELECT l.*, c.name cname FROM wqx_log l LEFT JOIN wa_contacts c ON c.phone = l.phone ORDER BY l.id DESC LIMIT 150")->fetchAll() as $r) $log[] = ['at' => $r['at'], 'phone' => $r['phone'], 'name' => (string)($r['cname'] ?? ''), 'kind' => $r['kind'], 'from' => (string)($names[(int)$r['from_emp']] ?? ''), 'to' => (string)($names[(int)$r['to_emp']] ?? ''), 'why' => $r['why'], 'applied' => (int)$r['applied'] === 1, 'mode' => $r['mode']]; } catch (Throwable $e) { }
-        $sum = ['given' => 0, 'moved' => 0, 'none' => 0, 'with_bot' => 0]; try { $sum['with_bot'] = (int)$pdo->query("SELECT COUNT(*) FROM wa_contacts WHERE assigned_emp = 0 AND status = 'open' AND optout = 0 AND (cx_id IS NULL OR cx_id = 0) AND last_in_at >= '" . wqx_dt(wqx_now() - 86400) . "'")->fetchColumn(); } catch (Throwable $e) { } try { $q = $pdo->prepare("SELECT kind, COUNT(*) n FROM wqx_log WHERE at >= ? GROUP BY kind"); $q->execute([wqx_dt(wqx_day_start($pdo))]); foreach ($q->fetchAll() as $r) { $k = (string)$r['kind']; if (in_array($k, ['move', 'gone'], true)) $sum['moved'] += (int)$r['n']; elseif ($k === 'none') $sum['none'] += (int)$r['n']; elseif ($k !== 'mode' && $k !== 'error') $sum['given'] += (int)$r['n']; } } catch (Throwable $e) { }
+        $sum = ['given' => 0, 'moved' => 0, 'none' => 0, 'with_bot' => 0]; try { $sum['with_bot'] = (int)$pdo->query("SELECT COUNT(*) FROM wa_contacts WHERE assigned_emp = 0 AND status = 'open' AND optout = 0 AND (cx_id IS NULL OR cx_id = 0) AND last_in_at >= '" . wqx_dt(wqx_now() - 86400) . "'")->fetchColumn(); } catch (Throwable $e) { } try { $q = $pdo->prepare("SELECT kind, COUNT(*) n FROM wqx_log WHERE at >= ? GROUP BY kind"); $q->execute([wqx_dt(wqx_day_start($pdo))]); foreach ($q->fetchAll() as $r) { $k = (string)$r['kind']; if (in_array($k, ['move', 'gone'], true)) $sum['moved'] += (int)$r['n']; elseif ($k === 'none') $sum['none'] += (int)$r['n']; elseif (!in_array($k, ['mode', 'error', 'stop', 'start', 'handover'], true)) $sum['given'] += (int)$r['n']; } } catch (Throwable $e) { }
         json_response(['ok' => true, 'mode' => wqx_mode($pdo), 'cfg' => $cfg, 'team' => $prof['team'] ?? [], 'timer' => $prof['timer'] ?? null, 'timer_why' => $prof['timer_why'] ?? '', 'curve' => $prof['curve'] ?? [], 'vip_line' => $prof['vip_line'] ?? 0,
             'built_at' => isset($prof['at']) ? wqx_dt((int)$prof['at']) : null, 'people' => $rows, 'log' => $log, 'today' => $sum, 'not_sales' => $outside, 'rules' => array_map(function ($h) use ($names) { return $h + ['prefer_name' => (string)($names[(int)$h['prefer']] ?? ''), 'avoid_name' => (string)($names[(int)$h['avoid']] ?? '')]; }, wqx_hints($pdo))]);
     }
@@ -656,6 +670,35 @@ if (in_array($__wqx, ['wq.mkt_get', 'wq.mkt_mode', 'wq.mkt_cfg', 'wq.mkt_recalc'
         json_response(['ok' => true, 'cfg' => wqx_cfg($pdo)]);
     }
     if ($__wqx === 'wq.mkt_ask') { @set_time_limit(90); $t = trim((string)($in['text'] ?? '')); if ($t === '') json_response(['error' => 'Write what you want Claude to do.'], 422); $r = wqx_ask($pdo, $t, $me); if (isset($r['error'])) json_response($r, 502); json_response(['ok' => true] + $r); }
+    if ($__wqx === 'wq.mkt_stop') {   // ⏸ no new queries for this person: reason + how long; optionally hand their waiting customers to the best free person now
+        $e = (int)($in['emp_id'] ?? 0); if ($e <= 0) json_response(['error' => 'Pick a salesperson.'], 422);
+        $mins = (int)($in['mins'] ?? 0); $why = mb_substr(trim((string)($in['why'] ?? '')), 0, 40);
+        $until = $mins > 0 ? wqx_now() + min(24 * 60, $mins) * 60 : ($mins < 0 ? wqx_day_start($pdo) + 86400 : 0);   // -1 = rest of today · 0 = until started again
+        $st = wqx_stops($pdo); $st[$e] = ['why' => $why, 'until' => $until, 'by' => $me, 'at' => wqx_now()]; wqx_stops_put($pdo, $st);
+        $names = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : [];
+        wqx_log($pdo, '', '', 'stop', $me, $e, ($names[$e] ?? '#' . $e) . ' stopped' . ($why !== '' ? ' — ' . $why : '') . ($until > 0 ? ' till ' . wqx_dt($until) : ' until started again'), true, wqx_mode($pdo));
+        $moved = 0;
+        if (!empty($in['handover'])) {   // his customers waiting for a reply go to the best free person, once, now
+            $prof = wqx_profile($pdo, false); $L = wqx_live($pdo, $prof); $cfg = wqx_cfg($pdo); $now = wqx_now();
+            $hs = function_exists('wq_human_sql') ? wq_human_sql('h', 'c', 'last_in_at') : "h.dir = 'out' AND h.emp_id > 0 AND h.ts >= c.last_in_at";
+            $q = $pdo->prepare("SELECT c.phone, c.name, c.last_in_at, c.hot, c.tag, c.assigned_emp FROM wa_contacts c WHERE c.assigned_emp = ? AND c.status = 'open' AND c.optout = 0 AND (c.cx_id IS NULL OR c.cx_id = 0)
+                AND c.last_in_at >= ? AND NOT EXISTS (SELECT 1 FROM wa_messages h WHERE h.phone = c.phone AND $hs) ORDER BY c.last_in_at LIMIT 60"); $q->execute([$e, wqx_dt($now - 86400)]);
+            foreach ($q->fetchAll() as $c) {
+                [$to, $k, $w] = wqx_pick($pdo, $c, $L, $prof, $cfg, $e, wqx_heat($pdo, $c)); if ($to <= 0) continue;
+                try { wa_assign_to($pdo, (string)$c['phone'], $to, $me, 'manual'); wqx_log($pdo, (string)$c['phone'], (string)$c['last_in_at'], 'handover', $e, $to, 'stopped person\'s waiting customer → ' . $w, true, wqx_mode($pdo)); $moved++;
+                    if (isset($L[$to])) { $L[$to]['load']++; $L[$to]['waiting'] = (int)($L[$to]['waiting'] ?? 0) + 1; if ($L[$to]['waiting'] >= 2) $L[$to]['gate'] = true; } } catch (Throwable $x) { }
+            }
+        }
+        if (function_exists('ct_push')) { try { ct_push($pdo, [$e], '⏸ Queries stopped', 'No new queries for now' . ($why !== '' ? ' — ' . $why : '') . ($until > 0 ? ', till ' . date('g:i a', $until) : '') . '.', '/my_chats.html', 'wqx-stop-' . $e); } catch (Throwable $x) { } }
+        json_response(['ok' => true, 'moved' => $moved]);
+    }
+    if ($__wqx === 'wq.mkt_start') {
+        $e = (int)($in['emp_id'] ?? 0); $st = wqx_stops($pdo); unset($st[$e]); wqx_stops_put($pdo, $st);
+        $names = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : [];
+        wqx_log($pdo, '', '', 'start', $me, $e, ($names[$e] ?? '#' . $e) . ' started again', true, wqx_mode($pdo));
+        if (function_exists('ct_push')) { try { ct_push($pdo, [$e], '▶ Queries on', 'Queries are coming to you again.', '/my_chats.html', 'wqx-stop-' . $e); } catch (Throwable $x) { } }
+        json_response(['ok' => true]);
+    }
     if ($__wqx === 'wq.mkt_hint_del') { $id = (string)($in['id'] ?? ''); wqx_hints_put($pdo, array_filter(wqx_hints($pdo), function ($h) use ($id) { return (string)$h['id'] !== $id; })); json_response(['ok' => true]); }
     if ($__wqx === 'wq.mkt_recalc') { @set_time_limit(120); $p = wqx_profile($pdo, true, true); json_response(['ok' => true, 'people' => count((array)($p['people'] ?? []))]); }
 }
