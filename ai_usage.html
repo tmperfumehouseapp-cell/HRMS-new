@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<title>AI usage — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=260929d">
+<style>
+  .au-k{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:0 0 14px}
+  .au-k div{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px}
+  .au-k small{display:block;font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+  .au-k b{font-size:22px}
+  .au-t{width:100%;border-collapse:collapse;font-size:13px}
+  .au-t th,.au-t td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+  .au-t th:first-child,.au-t td:first-child{text-align:left}
+  .au-bar{height:8px;border-radius:99px;background:#f58220;display:inline-block;vertical-align:middle;margin-right:6px}
+  .au-w{overflow-x:auto}
+  .au-plan{border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:16px;background:#fffdf8}
+  .au-plan h3{margin:0 0 4px} .au-note{font-size:12.5px;color:var(--muted);line-height:1.5}
+  .au-t tr.tot td{font-weight:800;border-top:2px solid var(--line)} .au-t td small{color:var(--muted);font-weight:400}
+  .au-need{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin:10px 0}
+  .au-need div{border:1px solid var(--line);border-radius:12px;padding:9px 11px;background:#fff} .au-need small{display:block;color:var(--muted);font-size:12px} .au-need b{font-size:19px}
+  .au-need .warn{border-color:#f0b429;background:#fff8e6} .au-need .bad{border-color:#e5484d;background:#fff0f0}
+  .au-in{width:90px;padding:4px 6px;border:1px solid var(--line);border-radius:8px;font:inherit}
+  .au-days{display:flex;align-items:flex-end;gap:3px;height:70px;margin:8px 0 2px} .au-days i{flex:1;background:#f58220;border-radius:3px 3px 0 0;min-height:2px;display:block} .au-days i.fc{background:#fbd1a8}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><h1>AI usage</h1></div>
+    <div class="content">
+      <div id="alertBox"></div>
+      <div class="card" style="padding:14px">
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px"><b>Month</b><input type="month" id="auM" style="width:auto"><span class="sub" id="auP"></span></div>
+        <div id="auBody"><div class="sub">Loading…</div></div>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=2"></script>
+<script src="assets/js/api.js?v=13"></script>
+<script src="assets/js/layout.js?v=30"></script>
+<script>
+  guardPage();
+  renderSidebar('system_health');
+  // 💸 Which HRMS job uses the AI, day by day (counts kept by the server for every Claude call: ai_usage). Admin only.
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const n = (x) => Number(x || 0).toLocaleString('en-IN'), usd = (x) => '$' + Number(x || 0).toFixed(2), mt = (x) => (Number(x || 0) / 1e6).toFixed(1) + ' M';
+  const M = document.getElementById('auM'), B = document.getElementById('auBody');
+  const now = new Date(); M.value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  async function load() {
+    B.innerHTML = '<div class="sub">Loading…</div>';
+    let d; try { d = await api.get('ai.usage', { month: M.value }); } catch (e) { B.innerHTML = '<div class="alert error">' + esc(e.message) + '</div>'; return; }
+    document.getElementById('auP').textContent = 'AI: ' + (d.provider || '') + ' · monthly budget ' + usd(d.budget_usd) + ' · left ' + usd(d.left_usd);
+    const rows = d.rows || [], byJob = {}, byDay = {};
+    rows.forEach((r) => {
+      const j = byJob[r.purpose] = byJob[r.purpose] || { calls: 0, inT: 0, outT: 0, usd: 0, models: {} };
+      j.calls += +r.calls; j.inT += +r.in_tokens; j.outT += +r.out_tokens; j.usd += +r.cost_usd; j.models[r.model] = 1;
+      const y = byDay[r.use_date] = byDay[r.use_date] || { calls: 0, inT: 0, usd: 0, top: {} };
+      y.calls += +r.calls; y.inT += +r.in_tokens; y.usd += +r.cost_usd; y.top[r.purpose] = (y.top[r.purpose] || 0) + +r.in_tokens;
+    });
+    const jobs = Object.entries(byJob).sort((a, b) => b[1].inT - a[1].inT), max = jobs.length ? jobs[0][1].inT : 1, t = d.total || {};
+    // ---------- 💳 Credits planner: one chart with where the AI is used, today / last 3 days / this month, the next 7 days and what is still needed this month ----------
+    const WHERE = { chat: 'Older AI calls without a label (all pages)', wa_presugg: 'WhatsApp › Chats — replies written in advance for waiting customers', wa_sugg: 'WhatsApp › Chats — a reply when a person asks for one', wa_bot: 'WhatsApp › Autobot — automatic replies',
+      wa_tag: 'WhatsApp › chat tags', wa_learn: 'WhatsApp › Teach — learning from chats', wa_guide: 'WhatsApp › Teach — guidebook', wa_topics: 'WhatsApp › follow-up topics', wq_manager: 'WhatsApp Sales — manager notes', wq_manager_tone: 'WhatsApp Sales — manager tone',
+      'customer:inbox': 'Inbox — customer messages', 'customer:complaints': 'Complaints — customer replies', 'customer:': 'Customer replies (other)', 'internal:whatsapp': 'TMPH assistant — WhatsApp questions', 'internal:finance': 'TMPH assistant — finance questions', 'internal:': 'TMPH assistant (other)',
+      footwear: 'Attendance — shoe check at punch-in', idcard: 'Employees — ID card reading', 'products:web_fill': 'Products — website details', 'products:web_origina': 'Products — website details' };
+    const ymd = (dt) => dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0');
+    const td = new Date(), today = ymd(td), isCur = M.value === today.slice(0, 7);
+    let planH = '';
+    if (isCur && rows.length) {
+      const dayBack = (k) => { const x = new Date(td); x.setDate(x.getDate() - k); return ymd(x); }, last3 = [dayBack(1), dayBack(2), dayBack(3)];
+      const dim = new Date(td.getFullYear(), td.getMonth() + 1, 0).getDate(), daysLeft = dim - td.getDate();   // full days after today
+      const P = {};
+      rows.forEach((r) => { const p = P[r.purpose] = P[r.purpose] || { today: 0, l3: 0, mon: 0, tok: 0, calls: 0 }; const c = +r.cost_usd; p.mon += c; p.tok += +r.in_tokens + +r.out_tokens; p.calls += +r.calls; if (r.use_date === today) p.today += c; if (last3.includes(r.use_date)) p.l3 += c; });
+      const list = Object.entries(P).map(([k, p]) => { const perDay = p.l3 / 3; return Object.assign({ k, perDay, n7: perDay * 7, rest: perDay * daysLeft }, p); }).sort((a, b) => b.perDay - a.perDay || b.mon - a.mon);
+      const T = list.reduce((a, p) => { ['today', 'l3', 'mon', 'tok', 'perDay', 'n7', 'rest'].forEach((f) => a[f] += p[f]); return a; }, { today: 0, l3: 0, mon: 0, tok: 0, perDay: 0, n7: 0, rest: 0 });
+      let cap = 1000, gst = 18; try { cap = +(localStorage.getItem('au_cap') || 1000); gst = +(localStorage.getItem('au_gst') || 18); } catch (e) { }
+      const capLeft = cap > 0 ? Math.max(0, cap - T.mon) : null, need = T.rest, add = capLeft === null ? need : Math.min(need, capLeft), stopIn = (capLeft !== null && T.perDay > 0) ? Math.floor(capLeft / T.perDay) : null;
+      const small = list.filter((p) => p.perDay < 0.5 && p.mon < 5), big = list.filter((p) => !small.includes(p));
+      const row = (name, where, p, cls) => `<tr class="${cls || ''}"><td><b>${esc(name)}</b>${where ? '<br><small>' + esc(where) + '</small>' : ''}</td><td>${usd(p.today)}</td><td>${usd(p.l3)}</td><td>${usd(p.perDay)}</td><td>${usd(p.mon)}</td><td>${mt(p.tok)}</td><td>${usd(p.n7)}</td><td>${usd(p.rest)}</td></tr>`;
+      const S = small.reduce((a, p) => { ['today', 'l3', 'mon', 'tok', 'perDay', 'n7', 'rest'].forEach((f) => a[f] += p[f]); return a; }, { today: 0, l3: 0, mon: 0, tok: 0, perDay: 0, n7: 0, rest: 0 });
+      const dayKeys = Object.keys(byDay).sort(), mx = Math.max(T.perDay, ...dayKeys.map((k) => byDay[k].usd), 0.01);
+      planH = `<div class="au-plan"><h3>💳 Credits planner</h3><div class="au-note">Where the AI is used and what it costs: today, the last 3 full days, this month, and what the next 7 days and the rest of this month will need <b>if the last 3 days repeat</b> (an estimate, not a promise). All amounts are US dollars before tax.</div>
+        <div class="au-need"><div><small>Used this month</small><b>${usd(T.mon)}</b></div><div><small>Per day now (3-day average)</small><b>${usd(T.perDay)}</b></div><div><small>Next 7 days</small><b>${usd(T.n7)}</b></div>
+          <div class="${capLeft !== null && need > capLeft ? 'warn' : ''}"><small>Rest of this month (${daysLeft} days)</small><b>${usd(need)}</b></div>
+          <div class="${capLeft !== null && need > capLeft ? 'bad' : ''}"><small>Credits to add for this month</small><b>${usd(add)}</b><small>${usd(add * (1 + gst / 100))} with ${gst}% tax</small></div></div>
+        <div class="au-note">Console monthly limit $ <input class="au-in" id="auCap" type="number" min="0" step="50" value="${cap}"> (Claude Console › "of $… tier limit"; 0 = none) · tax % <input class="au-in" id="auGst" type="number" min="0" max="40" value="${gst}" style="width:60px">
+          ${capLeft !== null ? ' · left under the limit: <b>' + usd(capLeft) + '</b>' + (need > capLeft ? ' — <b style="color:#c2262b">not enough for the month: at this rate the AI stops in about ' + stopIn + ' day(s)</b>, even with credits added' : ' — enough for this month at this rate') : ''}</div>
+        <div class="au-days" title="Cost per day this month; the pale bars are the estimate for the next 7 days">${dayKeys.map((k) => `<i style="height:${Math.max(3, Math.round(byDay[k].usd * 100 / mx))}%" title="${esc(k)}: ${usd(byDay[k].usd)}"></i>`).join('')}${Array.from({ length: Math.min(7, daysLeft) }, () => `<i class="fc" style="height:${Math.max(3, Math.round(T.perDay * 100 / mx))}%" title="estimate: ${usd(T.perDay)}"></i>`).join('')}</div>
+        <div class="au-note" style="margin-bottom:8px">Orange = each day so far · pale = the estimate for the coming days</div>
+        <div class="au-w"><table class="au-t"><thead><tr><th>Where the AI is used</th><th>Today</th><th>Last 3 days</th><th>Per day</th><th>This month</th><th>Tokens (month)</th><th>Next 7 days</th><th>Rest of month</th></tr></thead><tbody>
+          ${big.map((p) => row(p.k, WHERE[p.k] || '', p)).join('')}${small.length ? row('Everything else', small.length + ' small jobs: ' + small.map((p) => p.k).join(', '), S) : ''}${row('TOTAL', '', T, 'tot')}</tbody></table></div></div>`;
+    }
+    let h = planH + `<div class="au-k"><div><small>AI calls</small><b>${n(t.calls)}</b></div><div><small>Tokens in</small><b>${mt(t.in)}</b></div><div><small>Tokens out</small><b>${mt(t.out)}</b></div><div><small>Cost (this month)</small><b>${usd(t.usd)}</b></div></div>`;
+    h += '<h3 style="margin:6px 0">Which job uses the AI</h3><div class="au-w"><table class="au-t"><thead><tr><th>Job</th><th>Calls</th><th>Tokens in</th><th>Avg in / call</th><th>Tokens out</th><th>Cost</th></tr></thead><tbody>'
+      + (jobs.length ? jobs.map(([k, j]) => `<tr><td><span class="au-bar" style="width:${Math.max(4, Math.round(j.inT * 120 / Math.max(1, max)))}px"></span><b>${esc(k)}</b><br><small class="sub">${esc(Object.keys(j.models).join(', '))}</small></td><td>${n(j.calls)}</td><td>${mt(j.inT)}</td><td>${n(Math.round(j.inT / Math.max(1, j.calls)))}</td><td>${mt(j.outT)}</td><td>${usd(j.usd)}</td></tr>`).join('') : '<tr><td colspan="6">No AI use recorded this month.</td></tr>') + '</tbody></table></div>';
+    const days = Object.entries(byDay).sort((a, b) => b[0].localeCompare(a[0]));
+    h += '<h3 style="margin:16px 0 6px">Day by day</h3><div class="au-w"><table class="au-t"><thead><tr><th>Day</th><th>Calls</th><th>Tokens in</th><th>Cost</th><th>Biggest job</th></tr></thead><tbody>'
+      + days.map(([dt, y]) => { const top = Object.entries(y.top).sort((a, b) => b[1] - a[1])[0]; return `<tr><td>${esc(dt)}</td><td>${n(y.calls)}</td><td>${mt(y.inT)}</td><td>${usd(y.usd)}</td><td>${top ? esc(top[0]) + ' (' + mt(top[1]) + ')' : ''}</td></tr>`; }).join('') + '</tbody></table></div>';
+    B.innerHTML = h;
+    ['auCap', 'auGst'].forEach((id) => { const el = document.getElementById(id); if (el) el.onchange = () => { try { localStorage.setItem(id === 'auCap' ? 'au_cap' : 'au_gst', String(Math.max(0, +el.value || 0))); } catch (e) { } load(); }; });
+  }
+  M.onchange = load; load();
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>
