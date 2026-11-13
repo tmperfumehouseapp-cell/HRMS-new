@@ -48,7 +48,7 @@
   const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   function loadUi(cb) {
     if (window.WaManual) return cb();
-    const sc = document.createElement('script'); sc.src = 'assets/js/wmo_ui.js?v=4'; sc.onload = cb; sc.onerror = cb; document.head.appendChild(sc);
+    const sc = document.createElement('script'); sc.src = 'assets/js/wmo_ui.js?v=5'; sc.onload = cb; sc.onerror = cb; document.head.appendChild(sc);
   }
   async function start(listOnly) {
     $('moMsg').innerHTML = '';
