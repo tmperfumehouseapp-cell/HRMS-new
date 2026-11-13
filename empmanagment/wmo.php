@@ -171,9 +171,22 @@ function wmo_line_items(array $L): array
 }
 
 // ------------------------------------------------------------------------------------------------------------------ the payment screenshot
+/** The order number that still HOLDS this payment reference (UTR / payment ID), or ''. An order cancelled on the Orders / Allocation page or removed from the manual orders no longer holds it, so the same payment can pay a new order. */
+function wmo_ref_used(PDO $pdo, string $ref): string
+{
+    if ($ref === '') return '';
+    try {
+        $q = $pdo->prepare("SELECT id, order_no FROM wmo_order WHERE utr = ? AND status <> 'cancelled' ORDER BY id DESC LIMIT 20"); $q->execute([$ref]); $store = wmo_store_key();
+        foreach ($q->fetchAll() as $r) {
+            $gone = false; try { $c = $pdo->prepare("SELECT 1 FROM order_cancels WHERE source = ? AND order_id = ? LIMIT 1"); $c->execute([$store, (string)wmo_sid((int)$r['id'])]); $gone = (bool)$c->fetchColumn(); } catch (Throwable $e) { }
+            if (!$gone) return (string)$r['order_no'];
+        }
+    } catch (Throwable $e) { }
+    return '';
+}
 function wmo_read_shot(PDO $pdo, string $b64, string $mime, string $side = 'customer'): array
 {
-    $ck = 'wmo_rd3_' . $side . '_' . sha1($b64); if (function_exists('wa_cpc_get') && ($hit = wa_cpc_get($pdo, $ck)) && !empty($hit['v']) && $hit['age'] < 7200) { $o = $hit['v']; $o['dup'] = ''; if (!empty($o['utr']) && wmo_tables($pdo)) { $q = $pdo->prepare("SELECT order_no FROM wmo_order WHERE utr = ? AND status <> 'cancelled' LIMIT 1"); $q->execute([$o['utr']]); $d = $q->fetchColumn(); if ($d) $o['dup'] = (string)$d; } return $o; }
+    $ck = 'wmo_rd3_' . $side . '_' . sha1($b64); if (function_exists('wa_cpc_get') && ($hit = wa_cpc_get($pdo, $ck)) && !empty($hit['v']) && $hit['age'] < 7200) { $o = $hit['v']; $o['dup'] = ''; if (!empty($o['utr']) && wmo_tables($pdo)) $o['dup'] = wmo_ref_used($pdo, (string)$o['utr']); return $o; }
     $sys = "You read a screenshot of a UPI / QR payment (PhonePe, Google Pay, Paytm, a bank app …) that a customer sent to TM Perfume House. The business also receives money under its parent company name \"Fourpirates Ventures LLP\" (also written Fourpirates / Four Pirates), including Razorpay receipts and payment-link receipts that may carry a PAID stamp: these are VALID, never mention them as a wrong receiver. Return JSON: ok = true only if it really is a payment confirmation; amount = the amount paid in rupees as a number (0 if unclear); "
         . "utr = the UPI reference / UTR / transaction id exactly as printed (digits and letters only, empty if none); date = the payment date and time as printed; status = success | failed | pending | unknown; payer = the payer's name if shown; app = the app; note = one short sentence of anything odd "
         . "(edited look, a different date, a receiver that is neither TM Perfume House nor Fourpirates Ventures LLP, amount unclear). Never invent a number. "
@@ -190,7 +203,7 @@ function wmo_read_shot(PDO $pdo, string $b64, string $mime, string $side = 'cust
     $out = ['ok' => !empty($v['ok']), 'amount' => round(max(0, (float)($v['amount'] ?? 0)), 2), 'utr' => mb_substr($utr, 0, 40), 'date' => wmo_clip($v['date'] ?? '', 40), 'status' => in_array(($v['status'] ?? ''), ['success', 'failed', 'pending'], true) ? $v['status'] : 'unknown', 'payer' => wmo_clip($v['payer'] ?? '', 60), 'app' => wmo_clip($v['app'] ?? '', 30), 'note' => wmo_clip($v['note'] ?? '', 200), 'to_us' => !empty($v['to_us']), 'gateway' => wmo_gateway_name((string)($v['gateway'] ?? '')), 'phone' => substr(preg_replace('/\D+/', '', (string)($v['phone'] ?? '')), -10), 'cname' => wmo_clip($v['cname'] ?? '', 60), 'kind' => in_array(($v['kind'] ?? ''), ['upi', 'link', 'card', 'bank'], true) ? $v['kind'] : 'other', 'generic' => !empty($v['generic']) && (string)($v['status'] ?? '') === 'success', 'dup' => ''];
     if ($out['generic']) { $out['ok'] = true; $out['status'] = 'success'; }   // a generic "payment successful" page of the gateway: not a failure, it only carries no amount
     if (function_exists('wa_cpc_put')) { try { wa_cpc_put($pdo, $ck, $out); } catch (Throwable $e) { } }
-    if ($out['utr'] !== '' && wmo_tables($pdo)) { $q = $pdo->prepare("SELECT order_no FROM wmo_order WHERE utr = ? AND status <> 'cancelled' LIMIT 1"); $q->execute([$out['utr']]); $d = $q->fetchColumn(); if ($d) $out['dup'] = (string)$d; }
+    if ($out['utr'] !== '' && wmo_tables($pdo)) $out['dup'] = wmo_ref_used($pdo, $out['utr']);
     return $out;
 }
 
@@ -654,7 +667,7 @@ if (strpos($__wmo, 'wmo.') === 0) {
                 if (abs($proof['amount'] - $paid / 100) > max(1, wmo_proof_cfg($pdo)['tol'])) json_response(['error' => 'The screenshots show ' . wmo_rs((int)round($proof['amount'] * 100)) . ' but the paid amount is ' . wmo_rs($paid) . '. Make them equal.', 'code' => 'amount'], 422);
                 $utr = (string)$proof['utr']; $gate = (string)$proof['gateway'];
             } else $gate = 'Cash / COD';
-            if ($utr !== '') { $d = $pdo->prepare("SELECT order_no FROM wmo_order WHERE utr = ? AND status <> 'cancelled' LIMIT 1"); $d->execute([$utr]); $dn = $d->fetchColumn(); if ($dn && empty($in['dup_ok'])) json_response(['error' => 'This payment reference (UTR) is already used on order ' . $dn . '. The same payment cannot pay two orders.', 'code' => 'dup', 'order' => $dn], 409); }
+            if ($utr !== '') { $dn = wmo_ref_used($pdo, $utr); if ($dn && empty($in['dup_ok'])) json_response(['error' => 'This payment reference (UTR) is already used on order ' . $dn . '. The same payment cannot pay two orders.', 'code' => 'dup', 'order' => $dn], 409); }
             [$L, $ml, $er] = wmo_lines($pdo, $total, (array)($in['lines'] ?? []), (array)($in['chains'] ?? []), (array)($in['singles'] ?? [])); if ($er !== '') json_response(['error' => $er], 422);
             $shot = (string)($in['shot'] ?? ''); $smime = strtolower((string)($in['shot_mime'] ?? 'image/jpeg')); $sb = preg_replace('/^data:[^,]*,/', '', $shot); if ($sb !== '' && (strlen($sb) > 3000000 || !in_array($smime, ['image/jpeg', 'image/png', 'image/webp'], true))) $sb = '';
             $otype = in_array((string)($in['otype'] ?? ''), ['query', 'campaign'], true) ? (string)$in['otype'] : ''; $assign = $otype !== '' ? $me : (int)($c['assigned_emp'] ?: $me); /* from the Manual order page: it belongs to the person who makes it */ $token = bin2hex(random_bytes(16)); $now = date('Y-m-d H:i:s');
