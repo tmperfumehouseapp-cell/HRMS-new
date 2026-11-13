@@ -41,9 +41,11 @@
         <div><label>Payment</label><select id="fPay"><option value="">All</option><option value="prepaid">Prepaid</option><option value="partial">Part prepaid + COD</option><option value="cod">COD</option></select></div>
         <div><label>Search</label><input id="fQ" placeholder="order no / mobile / name / UTR" style="min-width:200px"></div>
         <span style="flex:1"></span>
+        <button class="btn" type="button" id="bCost" style="background:#fff;color:#92400e;border:1px solid #f59e0b" title="Our purchase cost per bottle size — fills Buying Price in the FP export">₹ Purchase costs</button>
         <button class="btn" type="button" id="bXlsx" title="The FP export file (Date, Order No, Order Type, AWB NO, Products, … Transaction Id)">⬇ Export Excel (FP)</button>
         <button class="btn" type="button" id="bCsv" style="background:#fff;color:#0b6b4b;border:1px solid #1aa37a" title="Shopify orders export columns, one row per product">⬇ CSV (Shopify format)</button>
       </div>
+      <div id="dmCost" style="display:none;border:1px solid #f59e0b;background:#fffbeb;border-radius:12px;padding:12px;margin:8px 0"></div>
       <div id="dmSum"></div><div id="dmErr"></div>
       <div class="wrap"><table><thead><tr><th>Order</th><th>Date</th><th>Customer</th><th>Mobile</th><th>Address · Pincode · City / State</th><th>Items</th><th>Total</th><th>Payment</th><th>UTR</th><th>Status</th><th>Invoice</th><th>Shipping</th><th></th></tr></thead><tbody id="dmRows"><tr><td colspan="13">Loading…</td></tr></tbody></table></div>
       <div id="dmPg" style="display:flex;gap:8px;align-items:center;margin:10px 0"></div>
@@ -53,7 +55,7 @@
 <script src="assets/js/config.js?v=2"></script>
 <script src="assets/js/api.js?v=13"></script>
 <script src="assets/js/layout.js?v=32"></script>
-<script src="assets/js/fp_export.js?v=2"></script>
+<script src="assets/js/fp_export.js?v=3"></script>
 <script>
   guardPage();
   renderSidebar('dispatch_manual');
@@ -151,8 +153,22 @@
   function loadXlsx() { return new Promise((ok, no) => { if (window.XLSX) return ok(); const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; s.onload = ok; s.onerror = () => no(new Error('The Excel maker could not be loaded (internet). Use the CSV button — Excel opens it.')); document.head.appendChild(s); }); }
   $('bXlsx').onclick = async function () {
     const d = await fetchAllForExport(this); if (!d) return;
-    try { await loadXlsx(); XLSX.writeFile(FPX.book(XLSX, d.rows), 'FP_Export_' + d.from.split('-').reverse().join('-') + (d.to !== d.from ? '_to_' + d.to.split('-').reverse().join('-') : '') + '.xlsx', { cellDates: true }); }
+    try { await loadXlsx(); XLSX.writeFile(FPX.book(XLSX, d.rows, d.costs), 'FP_Export_' + d.from.split('-').reverse().join('-') + (d.to !== d.from ? '_to_' + d.to.split('-').reverse().join('-') : '') + '.xlsx', { cellDates: true }); }
     catch (e) { alert(e.message); }
+  };
+  // 💰 purchase cost per bottle size (+ chain, other product): fills "Buying Price" in the FP export
+  $('bCost').onclick = async function () {
+    const box = $('dmCost'); if (box.style.display !== 'none') { box.style.display = 'none'; return; }
+    box.style.display = 'block'; box.textContent = 'Loading…';
+    let d; try { d = await api.get('wmo.cost_get'); } catch (e) { box.textContent = e.message; return; }
+    const C = d.costs || {}, S = C.sizes || {}, sizes = Array.from(new Set((d.sizes || []).concat(Object.keys(S).map(Number)))).sort((a, b) => a - b), ed = d.can_edit;
+    const inp = (id, v) => '<input id="' + id + '" inputmode="decimal" value="' + (v == null ? '' : v) + '" ' + (ed ? '' : 'disabled') + ' style="width:90px;min-height:38px;border:1px solid #d1d5db;border-radius:8px;padding:0 8px;text-align:right">';
+    box.innerHTML = '<div style="font-weight:800;margin-bottom:4px">💰 Our purchase cost per piece</div><div style="font-size:12px;color:#6b7280;margin-bottom:8px">The same cost for every perfume of one size. The FP export fills <b>Buying Price</b> = the cost of all pieces in the order (empty if a size has no cost).</div>'
+      + '<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">' + sizes.map((m) => '<label style="display:flex;gap:6px;align-items:center;font-weight:700">' + m + ' ml ₹' + inp('fc_' + m, S[String(m)]) + '</label>').join('')
+      + '<label style="display:flex;gap:6px;align-items:center;font-weight:700">Chain ₹' + inp('fc_chain', C.chain) + '</label><label style="display:flex;gap:6px;align-items:center;font-weight:700">Other product ₹' + inp('fc_other', C.other) + '</label></div>'
+      + (ed ? '<button class="btn" type="button" id="fcSave" style="margin-top:10px">Save costs</button>' : '<div style="font-size:12px;margin-top:8px">Only Admin or HR can change these.</div>');
+    const sv = $('fcSave'); if (sv) sv.onclick = async () => { const sizes2 = {}; sizes.forEach((m) => { const v = $('fc_' + m).value.trim(); if (v !== '') sizes2[m] = v; });
+      sv.disabled = true; try { await api.post('wmo.cost_save', { sizes: sizes2, chain: $('fc_chain').value.trim(), other: $('fc_other').value.trim() }); sv.textContent = 'Saved ✓'; setTimeout(() => { sv.textContent = 'Save costs'; sv.disabled = false; }, 1500); } catch (e) { alert(e.message); sv.disabled = false; } };
   };
   load();
 </script>
