@@ -884,65 +884,34 @@
   </div>
 </div>
 
+<style>
+  .mo-seg{display:flex;gap:6px;flex-wrap:wrap}.mo-seg button{flex:1 1 0;min-width:110px;min-height:42px;border:1.5px solid var(--line,#d1d7db);border-radius:12px;background:#fff;font-weight:700;cursor:pointer;color:inherit}.mo-seg button.on{background:#dff3e8;border-color:#1aa37a;color:#0b6b4b}
+  html[data-theme=dark] .mo-seg button{background:#1f2430}html[data-theme=dark] .mo-seg button.on{background:#12382a}
+</style>
 <div class="modal-overlay" id="orderModal">
   <div class="modal">
-    <h3>Add Manual Order</h3>
+    <h3>Add orders <small style="font-weight:600;color:var(--muted);font-size:12.5px">quick entry — many orders at once</small></h3>
     <div id="orderModalAlert"></div>
-    <form id="manualOrderForm">
+    <form id="manualOrderForm" autocomplete="off">
       <div class="field-grid">
-        <div class="field">
-          <label for="moCustomer">Customer Name *</label>
-          <input type="text" id="moCustomer" required maxlength="150">
-        </div>
-        <div class="field">
-          <label for="moPhone">Mobile</label>
-          <input type="text" id="moPhone" maxlength="30" placeholder="e.g. 9876543210">
-        </div>
+        <div class="field"><label for="moCount">How many orders *</label><input type="number" id="moCount" min="1" max="300" value="1" inputmode="numeric" required></div>
+        <div class="field"><label for="moTotal">Total amount of these orders (₹) *</label><input type="number" id="moTotal" min="0" step="0.01" inputmode="decimal" required></div>
       </div>
+      <div id="moPer" style="font-size:12.5px;color:var(--muted);margin:-2px 0 10px">Ticket size: —</div>
+      <div class="field"><label>They came from *</label>
+        <div class="mo-seg" id="moType"><button type="button" data-v="query" class="on">💬 Query</button><button type="button" data-v="campaign">📣 Campaign</button></div></div>
+      <div class="field"><label>Payment *</label>
+        <div class="mo-seg" id="moPay"><button type="button" data-v="prepaid" class="on">💳 Prepaid (paid)</button><button type="button" data-v="cod">📦 COD (unpaid)</button><button type="button" data-v="part">➗ Part prepaid + COD</button></div></div>
+      <div class="field" id="moPaidBox" style="display:none"><label for="moPaid">Paid in advance (₹) — the rest is COD</label><input type="number" id="moPaid" min="0" step="0.01" inputmode="decimal"></div>
       <div class="field-grid">
-        <div class="field">
-          <label for="moItems">Items</label>
-          <input type="number" id="moItems" min="1" value="1">
-        </div>
-        <div class="field">
-          <label for="moTotal">Total (₹) *</label>
-          <input type="number" id="moTotal" min="0" step="0.01" required>
-        </div>
+        <div class="field"><label for="moHouse">Store (panel) *</label><select id="moHouse"></select></div>
+        <div class="field"><label for="moDate">Order date &amp; time</label><input type="datetime-local" id="moDate"></div>
       </div>
-      <div class="field-grid">
-        <div class="field">
-          <label for="moPayment">Payment</label>
-          <select id="moPayment">
-            <option value="paid">Paid</option>
-            <option value="pending">Pending</option>
-            <option value="cod">COD</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="moFulfillment">Fulfillment</label>
-          <select id="moFulfillment">
-            <option value="unfulfilled">Unfulfilled</option>
-            <option value="fulfilled">Fulfilled</option>
-          </select>
-        </div>
-      </div>
-      <div class="field-grid">
-        <div class="field">
-          <label for="moDate">Order Date &amp; Time</label>
-          <input type="datetime-local" id="moDate">
-        </div>
-        <div class="field">
-          <label for="moOrderNo">Order No (optional)</label>
-          <input type="text" id="moOrderNo" maxlength="50" placeholder="auto: M0001">
-        </div>
-      </div>
-      <div class="field">
-        <label for="moRemarks">Remarks</label>
-        <input type="text" id="moRemarks" maxlength="255">
-      </div>
+      <div class="field"><label for="moRemarks">Remarks (optional)</label><input type="text" id="moRemarks" maxlength="200" placeholder="e.g. phone orders, shop counter …"></div>
+      <div id="moSum" style="background:#f3f7fb;border-radius:10px;padding:8px 12px;font-size:13px;margin:6px 0 4px;color:#334155">Fill the numbers above.</div>
       <div class="actions">
         <button type="button" class="btn secondary" id="btnOrderCancel">Cancel</button>
-        <button type="submit" class="btn" id="btnOrderSave">Save Order</button>
+        <button type="submit" class="btn" id="btnOrderSave">Add orders</button>
       </div>
     </form>
   </div>
@@ -2756,7 +2725,7 @@
 
     const rowHtml = (o) => `
         <tr>
-          <td style="font-weight:600;"><a href="#" onclick="openDetail(${o._i}); return false;">${o.order_name}</a>${o.manual_order_id ? ` <button class="danger-link" title="Delete this manual order" aria-label="Delete order" style="background:none;border:1px solid #f3c9c9;border-radius:6px;cursor:pointer;color:var(--bad-fg);font-size:12px;padding:4px 8px;margin-left:6px;line-height:1;" onclick="deleteManual(${o.manual_order_id})">✕</button>` : ''}</td>
+          <td style="font-weight:600;"><a href="#" onclick="openDetail(${o._i}); return false;">${o.order_name}</a>${o.manual_order_id ? ` <button class="danger-link" title="Delete this manual order" aria-label="Delete order" style="background:none;border:1px solid #f3c9c9;border-radius:6px;cursor:pointer;color:var(--bad-fg);font-size:12px;padding:4px 8px;margin-left:6px;line-height:1;" onclick="deleteManual(${o.manual_order_id}, '${o.batch || ''}')">✕</button>` : ''}</td>
           <td><span style="color:var(--muted);">${o.store}</span></td>
           <td>${o.salesman || '—'}${(o.house_tags || []).length > 1 ? '<div style="font-size:11px; color:#c81e1e;" title="This order has more than one house tag, so it is counted under its store\'s house">⚠ 2 house tags</div>' : ''}</td>
           <td>${ocCell(o)}</td>
@@ -2793,7 +2762,7 @@
             <span class="badge ${o.financial_status === 'paid' ? '' : 'inactive'}">${o.financial_status || '—'}</span>
             <span class="badge ${o.fulfillment_status === 'fulfilled' ? '' : 'inactive'}">${o.fulfillment_status || 'unfulfilled'}</span>
             ${cxBtn(o, true)}
-            ${o.manual_order_id ? `<button class="danger-link" style="background:none;border:1px solid #f3c9c9;border-radius:6px;cursor:pointer;color:var(--bad-fg);font-size:12px;padding:6px 12px;margin-left:auto;line-height:1.3;" onclick="event.stopPropagation(); deleteManual(${o.manual_order_id})">Delete</button>` : ''}
+            ${o.manual_order_id ? `<button class="danger-link" style="background:none;border:1px solid #f3c9c9;border-radius:6px;cursor:pointer;color:var(--bad-fg);font-size:12px;padding:6px 12px;margin-left:auto;line-height:1.3;" onclick="event.stopPropagation(); deleteManual(${o.manual_order_id}, '${o.batch || ''}')">Delete</button>` : ''}
           </div>
         </div>`;
 
@@ -3101,34 +3070,44 @@
     return d.toISOString().slice(0, 16);
   }
 
+  // ---- quick entry: how many orders + total + Query / Campaign + Prepaid / COD → counted at once in the panel's boxes
+  const qe = { type: 'query', pay: 'prepaid' };
+  const qeFmt = (v) => '₹' + Math.round(v).toLocaleString('en-IN');
+  function qeDraw() {
+    const n = Math.round(Number(document.getElementById('moCount').value) || 0), t = Number(document.getElementById('moTotal').value) || 0, pd = Number(document.getElementById('moPaid').value) || 0;
+    document.getElementById('moPer').textContent = n > 0 && t > 0 ? 'Ticket size: ' + qeFmt(t / n) + ' per order' : 'Ticket size: —';
+    document.getElementById('moPaidBox').style.display = qe.pay === 'part' ? '' : 'none';
+    const cod = qe.pay === 'prepaid' ? 0 : qe.pay === 'cod' ? t : Math.max(0, t - pd), pre = t - cod;
+    const hs = document.getElementById('moHouse'); const hn = hs.options[hs.selectedIndex] ? hs.options[hs.selectedIndex].text : '';
+    document.getElementById('moSum').innerHTML = n > 0 && t > 0 ? '<b>' + n + ' ' + (qe.type === 'query' ? 'Query' : 'Campaign') + ' order' + (n === 1 ? '' : 's') + '</b> · ' + qeFmt(t) + ' · ' + hn + '<br>Prepaid ' + qeFmt(pre) + ' · COD ' + qeFmt(cod) + '<br><span style="color:#64748b">They are added to the boxes (Order, Collection, Prepaid / COD, Ticket size) at once.</span>' : 'Fill the numbers above.';
+  }
   document.getElementById('btnAddOrder').addEventListener('click', () => {
     document.getElementById('manualOrderForm').reset();
     document.getElementById('orderModalAlert').innerHTML = '';
     document.getElementById('moDate').value = nowLocal();
-    orderModal.classList.add('open');
+    qe.type = 'query'; qe.pay = 'prepaid';
+    ['moType', 'moPay'].forEach((id) => document.querySelectorAll('#' + id + ' button').forEach((b, i) => b.classList.toggle('on', i === 0)));
+    const hs = document.getElementById('moHouse'); hs.innerHTML = PLATFORMS.map(([k, label]) => `<option value="${k}">${label}</option>`).join('');
+    const pick = [...storeSel].map((x) => STORE_HOUSE_MAP[x] || x).find((x) => PLATFORMS.some((p) => p[0] === x)); if (pick) hs.value = pick;
+    qeDraw(); orderModal.classList.add('open');
   });
+  document.getElementById('moType').addEventListener('click', (e) => { const b = e.target.closest('button[data-v]'); if (!b) return; qe.type = b.dataset.v; document.querySelectorAll('#moType button').forEach((x) => x.classList.toggle('on', x === b)); qeDraw(); });
+  document.getElementById('moPay').addEventListener('click', (e) => { const b = e.target.closest('button[data-v]'); if (!b) return; qe.pay = b.dataset.v; document.querySelectorAll('#moPay button').forEach((x) => x.classList.toggle('on', x === b)); qeDraw(); });
+  ['moCount', 'moTotal', 'moPaid', 'moHouse'].forEach((id) => document.getElementById(id).addEventListener('input', qeDraw));
   document.getElementById('btnOrderCancel').addEventListener('click', () => orderModal.classList.remove('open'));
   orderModal.addEventListener('click', (e) => { if (e.target === orderModal) orderModal.classList.remove('open'); });
 
   document.getElementById('manualOrderForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const btn = document.getElementById('btnOrderSave');
+    const n = Math.round(Number(document.getElementById('moCount').value) || 0), t = Number(document.getElementById('moTotal').value) || 0;
+    if (!confirm('Add ' + n + ' ' + qe.type + ' order' + (n === 1 ? '' : 's') + ' of ' + qeFmt(t) + ' in total (' + (qe.pay === 'prepaid' ? 'prepaid' : qe.pay === 'cod' ? 'COD' : 'part prepaid') + ')?')) return;
     btn.disabled = true;
     try {
       const dtLocal = document.getElementById('moDate').value; // yyyy-mm-ddThh:mm
-      await api.post('manual_orders.save', {
-        customer_name: document.getElementById('moCustomer').value.trim(),
-        phone: document.getElementById('moPhone').value.trim(),
-        items: Number(document.getElementById('moItems').value || 1),
-        total: Number(document.getElementById('moTotal').value || 0),
-        payment_status: document.getElementById('moPayment').value,
-        fulfillment_status: document.getElementById('moFulfillment').value,
-        order_date: dtLocal ? dtLocal.replace('T', ' ') + ':00' : '',
-        order_no: document.getElementById('moOrderNo').value.trim(),
-        remarks: document.getElementById('moRemarks').value.trim(),
-      });
+      const r = await api.post('manual_orders.bulk', { count: n, total: t, order_type: qe.type, pay: qe.pay, paid: Number(document.getElementById('moPaid').value || 0), house: document.getElementById('moHouse').value, order_date: dtLocal ? dtLocal.replace('T', ' ') + ':00' : '', remarks: document.getElementById('moRemarks').value.trim() });
       orderModal.classList.remove('open');
-      showAlert('Order added.');
+      showAlert(r.count + ' orders added (' + r.first + (r.count > 1 ? ' – ' + r.last : '') + ').');
       loadOrders();
     } catch (err) {
       document.getElementById('orderModalAlert').innerHTML = `<div class="alert error">${err.message}</div>`;
@@ -3137,9 +3116,10 @@
     }
   });
 
-  window.deleteManual = async function (id) {
-    if (!confirm('Delete this manual order?')) return;
+  window.deleteManual = async function (id, batch) {
     try {
+      if (batch && confirm('This order is part of a quick entry. Delete ALL the orders of that entry?\n\nOK = delete the whole entry · Cancel = choose again')) { const r = await api.post('manual_orders.delete_batch', { batch }); showAlert((r.deleted || 0) + ' orders deleted.'); loadOrders(); return; }
+      if (!confirm('Delete this manual order?')) return;
       await api.post('manual_orders.delete', { manual_order_id: id });
       showAlert('Order deleted.');
       loadOrders();

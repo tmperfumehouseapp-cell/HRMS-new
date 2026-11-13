@@ -29602,7 +29602,7 @@ switch ($action) {
         if (!$isEmpSave) require_role(['Admin', 'HR'], $auth);
         // Salesperson-created orders carry the employee + Query/Campaign type so they are theirs.
         try {
-            foreach (['employee_id' => 'INT NOT NULL DEFAULT 0', 'order_type' => "VARCHAR(10) NOT NULL DEFAULT ''"] as $c => $d) {
+            foreach (['employee_id' => 'INT NOT NULL DEFAULT 0', 'order_type' => "VARCHAR(10) NOT NULL DEFAULT ''", 'house' => "VARCHAR(12) NOT NULL DEFAULT ''", 'batch' => "VARCHAR(16) NOT NULL DEFAULT ''", 'outstanding' => 'DECIMAL(12,2) NULL'] as $c => $d) {
                 if (!$pdo->query("SHOW COLUMNS FROM manual_orders LIKE '$c'")->fetch()) $pdo->exec("ALTER TABLE manual_orders ADD COLUMN $c $d");
             }
         } catch (PDOException $e) {}
@@ -29645,6 +29645,47 @@ switch ($action) {
 
         $ono = $pdo->prepare("SELECT order_no FROM manual_orders WHERE manual_order_id = ?"); $ono->execute([$newId]);
         json_response(['message' => 'Order added.', 'manual_order_id' => $newId, 'order_no' => (string)$ono->fetchColumn()], 201);
+        break;
+    }
+
+    case 'manual_orders.bulk': {   // ⚡ quick entry: "10 orders, ₹24,500, Query, prepaid" → 10 order rows (the total split between them) counted at once in the panel's boxes
+        $auth = require_auth(); require_role(['Admin', 'HR'], $auth);
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
+        try { foreach (['employee_id' => 'INT NOT NULL DEFAULT 0', 'order_type' => "VARCHAR(10) NOT NULL DEFAULT ''", 'house' => "VARCHAR(12) NOT NULL DEFAULT ''", 'batch' => "VARCHAR(16) NOT NULL DEFAULT ''", 'outstanding' => 'DECIMAL(12,2) NULL'] as $c => $d) { if (!$pdo->query("SHOW COLUMNS FROM manual_orders LIKE '$c'")->fetch()) $pdo->exec("ALTER TABLE manual_orders ADD COLUMN $c $d"); } } catch (PDOException $e) {}
+        $input = json_input(); $n = (int)($input['count'] ?? 0); $totalP = (int)round((float)($input['total'] ?? 0) * 100);
+        if ($n < 1 || $n > 300) json_response(['error' => 'How many orders: a number from 1 to 300.'], 422);
+        if ($totalP < $n * 100 || $totalP > 5000000000) json_response(['error' => 'The total amount must be at least ₹1 per order.'], 422);
+        $ot = strtolower(trim((string)($input['order_type'] ?? ''))); if (!in_array($ot, ['query', 'campaign'], true)) json_response(['error' => 'Choose Query or Campaign.'], 422);
+        $pay = (string)($input['pay'] ?? ''); if (!in_array($pay, ['prepaid', 'cod', 'part'], true)) json_response(['error' => 'Choose Prepaid, COD or Part prepaid.'], 422);
+        $paidP = $pay === 'prepaid' ? $totalP : ($pay === 'cod' ? 0 : (int)round((float)($input['paid'] ?? 0) * 100));
+        if ($pay === 'part' && ($paidP < 100 || $paidP >= $totalP)) json_response(['error' => 'For a part payment, the advance must be more than ₹1 and less than the total.'], 422);
+        $house = preg_replace('/[^a-z0-9_]/', '', strtolower((string)($input['house'] ?? ''))); if ($house === '' || !isset(house_labels()[$house])) json_response(['error' => 'Choose the store (panel).'], 422);
+        $orderDate = trim((string)($input['order_date'] ?? '')); if ($orderDate === '') $orderDate = date('Y-m-d H:i:s'); if (!preg_match('/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2})?$/', $orderDate)) json_response(['error' => 'The date is not valid.'], 422); $orderDate = str_replace('T', ' ', $orderDate); if (strlen($orderDate) === 16) $orderDate .= ':00';
+        $remarks = mb_substr(trim((string)($input['remarks'] ?? '')), 0, 200); $batch = substr(bin2hex(random_bytes(8)), 0, 12);
+        $payStatus = $pay === 'prepaid' ? 'paid' : ($pay === 'cod' ? 'cod' : 'partially_paid');
+        $base = intdiv($totalP, $n); $paidSoFar = 0; $first = 0; $last = 0;
+        $pdo->beginTransaction();
+        try {
+            $ins = $pdo->prepare("INSERT INTO manual_orders (order_no, customer_name, phone, items, total, payment_status, fulfillment_status, order_date, remarks, created_by, employee_id, order_type, house, batch, outstanding) VALUES (NULL, ?, '', 1, ?, ?, 'unfulfilled', ?, ?, ?, 0, ?, ?, ?, ?)");
+            $setNo = $pdo->prepare("UPDATE manual_orders SET order_no = ? WHERE manual_order_id = ?");
+            for ($i = 0; $i < $n; $i++) {
+                $amtP = $i === $n - 1 ? $totalP - $base * ($n - 1) : $base;
+                $paidI = $pay === 'part' ? ($i === $n - 1 ? $paidP - $paidSoFar : (int)round($paidP * $amtP / $totalP)) : ($pay === 'prepaid' ? $amtP : 0); $paidSoFar += $pay === 'part' ? $paidI : 0;
+                $out = $pay === 'part' ? max(0, $amtP - $paidI) / 100 : ($pay === 'cod' ? $amtP / 100 : 0);
+                $ins->execute(['Quick entry (' . $n . ' orders)', $amtP / 100, $payStatus, $orderDate, $remarks !== '' ? $remarks : 'Quick entry', $auth['username'], $ot, $house, $batch, $out]);
+                $id = (int)$pdo->lastInsertId(); $setNo->execute(['M' . str_pad((string)$id, 4, '0', STR_PAD_LEFT), $id]); if ($i === 0) $first = $id; $last = $id;
+            }
+            $pdo->commit();
+        } catch (Throwable $e) { if ($pdo->inTransaction()) $pdo->rollBack(); json_response(['error' => 'Could not save: ' . mb_substr($e->getMessage(), 0, 120)], 500); }
+        json_response(['message' => $n . ' orders added.', 'count' => $n, 'total' => $totalP / 100, 'batch' => $batch, 'first' => 'M' . str_pad((string)$first, 4, '0', STR_PAD_LEFT), 'last' => 'M' . str_pad((string)$last, 4, '0', STR_PAD_LEFT)], 201);
+        break;
+    }
+
+    case 'manual_orders.delete_batch': {   // removes every order of one quick entry
+        $auth = require_auth(); require_role(['Admin', 'HR'], $auth);
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
+        $b = preg_replace('/[^a-f0-9]/', '', (string)(json_input()['batch'] ?? '')); if (strlen($b) < 8) json_response(['error' => 'batch is required.'], 422);
+        $st = $pdo->prepare("DELETE FROM manual_orders WHERE batch = ?"); $st->execute([$b]); json_response(['message' => 'Deleted.', 'deleted' => $st->rowCount()]);
         break;
     }
 
@@ -29876,7 +29917,7 @@ switch ($action) {
         // specific Shopify store was selected.
         if (($empScopeId !== null || (!$lite && $houseFilter === '')) && ($storeKey === '' || $storeKey === 'manual')) {
             try {
-                foreach (['employee_id' => 'INT NOT NULL DEFAULT 0', 'order_type' => "VARCHAR(10) NOT NULL DEFAULT ''"] as $c => $d) {
+                foreach (['employee_id' => 'INT NOT NULL DEFAULT 0', 'order_type' => "VARCHAR(10) NOT NULL DEFAULT ''", 'house' => "VARCHAR(12) NOT NULL DEFAULT ''", 'batch' => "VARCHAR(16) NOT NULL DEFAULT ''", 'outstanding' => 'DECIMAL(12,2) NULL'] as $c => $d) {
                     if (!$pdo->query("SHOW COLUMNS FROM manual_orders LIKE '$c'")->fetch()) $pdo->exec("ALTER TABLE manual_orders ADD COLUMN $c $d");
                 }
             } catch (PDOException $e) {}
@@ -29906,6 +29947,9 @@ switch ($action) {
                     'employee_id' => (int)($m['employee_id'] ?? 0),
                     'order_type' => (string)($m['order_type'] ?? ''),
                     'tags' => (string)($m['order_type'] ?? ''),
+                    'house' => (string)($m['house'] ?? ''),   // a quick entry is counted in this panel's boxes (Query / Campaign / collection)
+                    'outstanding' => (isset($m['outstanding']) && $m['outstanding'] !== null) ? (float)$m['outstanding'] : null,
+                    'batch' => (string)($m['batch'] ?? ''),
                     'remarks' => $m['remarks'] ?: '',
                     'created_by' => $m['created_by'] ?: '',
                 ];
