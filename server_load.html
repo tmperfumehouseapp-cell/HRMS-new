@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<title>Server load — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=4">
+<style>
+  .sl{padding:6px 14px 40px;max-width:1300px;margin:0 auto}
+  .sl .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 12px}
+  .sl select{padding:8px 10px;border:1px solid var(--line);border-radius:10px;font:inherit;font-size:13.5px;background:#fff;color:#111}
+  .sl .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin:0 0 14px}
+  .sl .tile{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 14px}
+  .sl .tile small{display:block;font-size:11.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+  .sl .tile b{display:block;font-size:24px;font-weight:800;margin-top:2px}.sl .tile span{font-size:12px;color:var(--muted)}
+  .sl .tile.bad b{color:#b91c1c}.sl .tile.warn b{color:#b45309}.sl .tile.ok b{color:#0f7a41}
+  .sl .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin:0 0 14px}
+  .sl .card h2{margin:0 0 2px;font-size:16px}.sl .card .sub{font-size:12.5px;color:var(--muted);margin:0 0 10px;line-height:1.45}
+  .sl .adv{border-radius:12px;padding:10px 12px;margin:0 0 8px;font-size:13.5px;line-height:1.45;border:1px solid #e5e7eb;background:#f8fafc}
+  .sl .adv b{display:block}.sl .adv.bad{background:#fdecec;border-color:#f3b6b3}.sl .adv.warn{background:#fff7e6;border-color:#f5d79a}.sl .adv.ok{background:#e7f7ee;border-color:#b7e3c8}.sl .adv.info{background:#eef4ff;border-color:#c5d8fb}
+  .sl .wrap{overflow-x:auto}
+  .sl table{border-collapse:collapse;width:100%;font-size:13px}
+  .sl th{text-align:right;padding:7px 8px;font-size:11.5px;color:#55606e;white-space:nowrap;border-bottom:1px solid var(--line)}
+  .sl td{text-align:right;padding:8px;border-bottom:1px solid #edf0f4;vertical-align:top;white-space:nowrap}
+  .sl th:first-child,.sl td:first-child{text-align:left;white-space:normal;min-width:240px}
+  .sl td small{display:block;color:#64748b;font-size:11.5px;white-space:normal}
+  .sl .meter{display:inline-block;width:110px;height:8px;border-radius:6px;background:#eef1f5;vertical-align:middle;margin-right:6px;overflow:hidden}.sl .meter i{display:block;height:100%;background:#f59e0b}.sl .meter i.hi{background:#dc2626}
+  .sl code{font-size:11.5px;color:#475569;white-space:normal;word-break:break-all}
+  .sl .empty{color:#64748b;font-size:13px;padding:6px 0}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><h1>📊 Server load</h1></div>
+    <div class="content sl">
+      <div class="bar">
+        <button class="btn" type="button" id="bRef">🔄 Refresh</button>
+        <select id="fMins" aria-label="Period"><option value="15">Last 15 minutes</option><option value="60" selected>Last hour</option><option value="180">Last 3 hours</option></select>
+        <span id="slAt" style="font-size:12.5px;color:var(--muted)"></span>
+      </div>
+      <div id="root"><div class="card">Loading…</div></div>
+    </div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=4"></script>
+<script src="assets/js/api.js?v=13"></script>
+<script src="assets/js/layout.js?v=33"></script>
+<script>
+  guardPage();
+  renderSidebar('system_health');
+  const $ = (id) => document.getElementById(id);
+  const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const num = (n) => Number(n || 0).toLocaleString('en-IN');
+  const dur = (ms) => ms >= 1000 ? (Math.round(ms / 100) / 10) + ' s' : ms + ' ms';
+  const secs = (s) => s >= 3600 ? (Math.round(s / 360) / 10) + ' h' : s >= 60 ? Math.round(s / 60) + ' min' : s + ' s';
+  const card = (t, sub, body) => '<div class="card"><h2>' + t + '</h2>' + (sub ? '<p class="sub">' + sub + '</p>' : '') + body + '</div>';
+  const tone = (v, warn, bad) => v == null ? '' : v >= bad ? 'bad' : v >= warn ? 'warn' : 'ok';
+  function draw(d) {
+    $('slAt').textContent = 'Measured at ' + d.now + (d.span_min ? ' · ' + num(d.requests) + ' requests counted over ' + d.span_min + ' min' : '');
+    const loadPct = d.load ? Math.round(d.load[0] / d.cores * 100) : null;
+    let h = '<div class="tiles">'
+      + '<div class="tile ' + tone(d.cpu, 50, 80) + '"><small>CPU right now</small><b>' + (d.cpu == null ? '—' : d.cpu + '%') + '</b><span>of ' + d.cores + ' core' + (d.cores === 1 ? '' : 's') + '</span></div>'
+      + '<div class="tile ' + tone(loadPct, 70, 100) + '"><small>Load (1 / 5 / 15 min)</small><b>' + (d.load ? d.load[0] : '—') + '</b><span>' + (d.load ? d.load[1] + ' · ' + d.load[2] + ' — full is ' + d.cores : '') + '</span></div>'
+      + '<div class="tile ' + (d.mem ? tone(100 - d.mem.free_mb / d.mem.total_mb * 100, 80, 92) : '') + '"><small>Memory free</small><b>' + (d.mem ? num(d.mem.free_mb) + ' MB' : '—') + '</b><span>' + (d.mem ? 'of ' + num(d.mem.total_mb) + ' MB' : '') + '</span></div>'
+      + '<div class="tile"><small>Requests a minute</small><b>' + (d.span_min ? num(Math.round(d.requests / d.span_min)) : '—') + '</b><span>' + (d.php_of_server != null ? 'HRMS pages and jobs = ' + d.php_of_server + '% of the server' : 'just started counting') + '</span></div>'
+      + '</div>';
+    h += card('What to do', 'Worked out from the numbers on this page. The first one matters most.', (d.advice || []).map((a) => '<div class="adv ' + esc(a.lvl) + '"><b>' + esc(a.t) + '</b>' + esc(a.d) + '</div>').join('') || '<div class="empty">Nothing stands out.</div>');
+    h += card('What uses the CPU', 'Every function of the HRMS that ran in this period, the one that cost the most CPU first. "Share" = its part of everything PHP did; "of the server" = its part of the whole server.',
+      (d.actions || []).length ? '<div class="wrap"><table><thead><tr><th>Function</th><th>Share</th><th>Of the server</th><th>Calls</th><th>A minute</th><th>Each takes</th><th>Slowest</th><th>CPU time</th></tr></thead><tbody>'
+        + d.actions.map((r) => '<tr><td><b>' + esc(r.name) + '</b>' + (r.name !== r.action ? ' <code>' + esc(r.action) + '</code>' : '') + (r.why ? '<small>' + esc(r.why) + '</small>' : '') + '</td><td><span class="meter"><i class="' + (r.cpu_share >= 25 ? 'hi' : '') + '" style="width:' + Math.min(100, r.cpu_share) + '%"></i></span><b>' + r.cpu_share + '%</b></td><td>' + r.of_server + '%</td><td>' + num(r.calls) + '</td><td>' + r.per_min + '</td><td>' + dur(r.avg_ms) + '</td><td>' + dur(r.max_ms) + '</td><td>' + secs(Math.round(r.cpu_s)) + '</td></tr>').join('')
+        + '</tbody></table></div>' : '<div class="empty">Nothing counted yet. This page counts every request from the moment it was installed: open it again in 10 to 15 minutes.</div>');
+    h += card('Slowest functions', 'Functions where one call takes long (0.8 seconds or more on average, at least 3 calls). These are what people feel as "loading".',
+      (d.slow || []).length ? '<div class="wrap"><table><thead><tr><th>Function</th><th>Each takes</th><th>Slowest</th><th>Calls</th></tr></thead><tbody>' + d.slow.map((r) => '<tr><td><b>' + esc(r.name) + '</b>' + (r.name !== r.action ? ' <code>' + esc(r.action) + '</code>' : '') + '</td><td><b>' + dur(r.avg_ms) + '</b></td><td>' + dur(r.max_ms) + '</td><td>' + num(r.calls) + '</td></tr>').join('') + '</tbody></table></div>' : '<div class="empty">No slow function in this period.</div>');
+    h += card('Programs on the server right now', 'Which program is using the CPU at this moment.',
+      !d.shell ? '<div class="empty">The server does not let the HRMS read its program list, so this part is not shown.</div>' : ((d.groups || []).length ? '<div class="wrap"><table><thead><tr><th>Program</th><th>Of the server</th></tr></thead><tbody>' + d.groups.map((g) => '<tr><td><b>' + esc(g.name) + '</b></td><td><span class="meter"><i class="' + (g.of_all >= 40 ? 'hi' : '') + '" style="width:' + Math.min(100, g.of_all) + '%"></i></span><b>' + g.of_all + '%</b></td></tr>').join('') + '</tbody></table></div>'
+        + ((d.procs || []).length ? '<p class="sub" style="margin-top:10px">The busiest single processes:</p><div class="wrap"><table><thead><tr><th>Process</th><th>One core</th><th>Running for</th></tr></thead><tbody>' + d.procs.map((p) => '<tr><td><code>' + esc(p.what) + '</code></td><td>' + p.cpu + '%</td><td>' + secs(p.secs) + '</td></tr>').join('') + '</tbody></table></div>' : '') : '<div class="empty">Nothing is using the CPU right now.</div>'));
+    h += card('The database', 'Queries running at this moment, then the kinds of query that have cost the most time since the database was last started.',
+      ((d.db_running || []).length ? '<p class="sub">Running right now:</p><div class="wrap"><table><thead><tr><th>Query</th><th>Running for</th></tr></thead><tbody>' + d.db_running.map((q) => '<tr><td><code>' + esc(q.q) + '</code></td><td><b>' + secs(q.secs) + '</b></td></tr>').join('') + '</tbody></table></div>' : '<div class="empty">No query is running right now.</div>')
+      + ((d.db_top || []).length ? '<p class="sub" style="margin-top:12px">Most expensive kinds of query:</p><div class="wrap"><table><thead><tr><th>Query</th><th>Total time</th><th>Calls</th><th>Rows read</th></tr></thead><tbody>' + d.db_top.map((q) => '<tr><td><code>' + esc(q.q) + '</code></td><td><b>' + secs(q.secs) + '</b></td><td>' + num(q.calls) + '</td><td>' + q.mrows + ' M</td></tr>').join('') + '</tbody></table></div>' : ''));
+    h += card('The WhatsApp engine', 'How long each part of the engine took on its last run (it runs every minute).',
+      (d.engine || []).length ? d.engine.map((e) => '<p class="sub" style="margin-top:6px"><b>' + esc(e.title) + '</b> · last run ' + esc(e.at) + '</p>' + (e.steps.length ? '<div class="wrap"><table><thead><tr><th>Part</th><th>Took</th></tr></thead><tbody>' + e.steps.map((s) => '<tr><td>' + esc(s.step) + '</td><td><b>' + s.secs + ' s</b></td></tr>').join('') + '</tbody></table></div>' : '<div class="empty">Every part took under half a second.</div>')).join('') : '<div class="empty">No engine timings recorded yet.</div>');
+    $('root').innerHTML = h;
+  }
+  async function load() {
+    const b = $('bRef'); b.disabled = true;
+    try { draw(await api.get('sysload.view', { mins: $('fMins').value })); }
+    catch (e) { $('root').innerHTML = '<div class="card"><div class="adv bad"><b>Could not read the server load</b>' + esc(e.message || '') + '</div></div>'; }
+    b.disabled = false;
+  }
+  $('bRef').onclick = load; $('fMins').onchange = load;
+  load();      // no automatic refresh: this page must not add load by itself
+</script>
+</body>
+</html>

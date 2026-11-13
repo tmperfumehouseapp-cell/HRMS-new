@@ -266,9 +266,15 @@ html.wxdk [data-tone]{background:rgba(128,128,128,.12) !important;color:#e9edef}
     const ST = { draft: ['Draft', ''], scheduled: ['Scheduled', 'b'], running: ['Sending', 'ok'], paused: ['Paused', 'warn'], done: ['Finished', 'p'], cancelled: ['Stopped', 'bad'] };
     // ⚡ Send fast: while this page is open, sending rounds follow one another with no pause (each round gives that campaign most of its time)
     async function fastLoop(id) {
-      const R = window.__cpFast = window.__cpFast || {}; if (R[id]) return; R[id] = 1; let bad = 0;
+      const R = window.__cpFast = window.__cpFast || {}; if (R[id]) return; R[id] = 1; let bad = 0, idle = 0;
       while (el.isConnected && R[id]) {
-        try { await api.post('wa.camp_fast_tick', { id }); bad = 0; } catch (e) { if (++bad >= 3) break; await new Promise((r) => setTimeout(r, 3000)); }
+        // A round that sent nothing (another sender holds this campaign, the server said "busy", nothing is due, no room) answers at once. Asking again immediately made this
+        // loop call the server thousands of times a minute and was most of the server's load. Now: straight on only after a round that really sent; otherwise wait, longer each time (4 s → 20 s).
+        let sentN = 0, skip = false;
+        try { const rr = await api.post('wa.camp_fast_tick', { id }), res = (rr && rr.result) || {}; bad = 0; skip = !!res.skipped; Object.keys(res).forEach((k) => { const v = res[k]; if (v && typeof v === 'object') sentN += Number(v.sent) || 0; }); }
+        catch (e) { if (++bad >= 3) break; await new Promise((r) => setTimeout(r, 3000)); continue; }
+        if (sentN > 0 && !skip) { idle = 0; await new Promise((r) => setTimeout(r, 300)); }
+        else { idle = Math.min(idle + 1, 5); await new Promise((r) => setTimeout(r, idle * 4000)); }
         if (!window.__cpFastAt || Date.now() - window.__cpFastAt > 4000) { window.__cpFastAt = Date.now(); await load(true); }   // one list refresh at a time, whatever the number of fast campaigns
         const cc = ((D && D.campaigns) || []).find((x) => x.id === id); if (cc && cc.status !== 'running') break; if (D && D.fast && !(D.fast.ids || []).includes(id)) break;
       }

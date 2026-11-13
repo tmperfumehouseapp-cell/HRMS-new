@@ -67,6 +67,12 @@ date_default_timezone_set('Asia/Kolkata');
 // folder. It is loaded first, so anything it defines wins over the
 // defaults below.
 if (is_file(__DIR__ . '/config.php')) require_once __DIR__ . '/config.php';
+// 📊 Server load (Admin → Server load): every request leaves ONE short line in a temp file when it ends (action, how long it took, how much CPU it used). No database write.
+if (is_file(__DIR__ . '/sys_load.php')) {
+    require_once __DIR__ . '/sys_load.php';
+    $__slT0 = (float)($_SERVER['REQUEST_TIME_FLOAT'] ?? microtime(true)); $__slRu = function_exists('getrusage') ? getrusage() : null;
+    register_shutdown_function(function () use ($__slT0, $__slRu) { sysload_record((string)($_GET['action'] ?? ''), $__slT0, $__slRu ?: null); });
+}
 
 // ---------------- DB credentials ----------------
 // Real values belong in config.php (gitignored). Placeholders here so nothing secret is committed.
@@ -18644,6 +18650,7 @@ if ($action !== 'login' && $action !== '' && strpos((string)$action, 'wa.cron') 
 // Daily copy of everything the bot has learned (Learn & Setup → Backups): when the last copy is older than 24 hours it is made right after the response is sent.
 if ($action !== 'login' && $action !== '') { try { $__lbl = __DIR__ . '/learn_backups/.last'; if (!is_file($__lbl) || filemtime($__lbl) < time() - 86400) { require_once __DIR__ . '/learn_backup.php'; lb_schedule($pdo); } } catch (Throwable $e) {} }
 
+if (strpos((string)$action, 'sysload.') === 0 && function_exists('sysload_route')) { sysload_route($pdo, (string)$action); }          // Admin → Server load: what the server is busy with
 if (strpos((string)$action, 'll.') === 0) { require_once __DIR__ . '/learn_loop.php'; }          // the nightly review loop: log, export, suggestions
 if (strpos((string)$action, 'chg.') === 0) { require_once __DIR__ . '/changes.php'; }          // Request a change: GitHub issue -> Claude Code builds -> Admin approves -> deploy
 if (strpos((string)$action, 'iv.') === 0) { require_once __DIR__ . '/inventory.php'; }       // Smart Inventory: oils, perfumes, orders, dealers, alerts, reports
