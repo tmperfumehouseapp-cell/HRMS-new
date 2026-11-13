@@ -25,15 +25,19 @@ const BD = (() => {
     if (!r.ok) throw new Error('photo');
     return (imgCache[task_id] = URL.createObjectURL(await r.blob()));
   }
+  let lockY = null;      // where the page was when a popup opened
   function modal(html, opts) {
     close();
     const o = document.createElement('div'); o.className = 'bd-ov'; o.id = 'bdModal';
     o.innerHTML = '<div class="bd-modal" role="dialog">' + html + '</div>';
     o.addEventListener('mousedown', (e) => { if (e.target === o && !(opts && opts.sticky)) close(); });
-    document.body.appendChild(o); document.body.style.overflow = 'hidden';
+    // Stop the page behind from scrolling WITHOUT losing its place: body { overflow:hidden } (with html, body { height:100% }) cut the page to one screen, so it jumped to the top
+    // and stayed there after the popup closed. Locking the root element keeps the scroll position; it is put back on close as well, in case a browser still moved it.
+    if (lockY === null) lockY = [window.scrollX, window.scrollY];
+    document.body.appendChild(o); document.documentElement.style.overflow = 'hidden';
     return o.firstChild;
   }
-  function close() { const o = $('bdModal'); if (o) o.remove(); document.body.style.overflow = ''; if (BD.onClose) { const f = BD.onClose; BD.onClose = null; f(); } }
+  function close() { const o = $('bdModal'); if (o) o.remove(); document.documentElement.style.overflow = ''; if (o && lockY) { const y = lockY; lockY = null; if (Math.abs(window.scrollY - y[1]) > 1) window.scrollTo(y[0], y[1]); } if (BD.onClose) { const f = BD.onClose; BD.onClose = null; f(); } }
   function confirm(title, msg, ok, danger) {
     return new Promise((res) => {
       const m = modal('<h3>' + esc(title) + '</h3><p style="font-size:14px;line-height:1.5;color:#4a505c;margin:0">' + esc(msg) + '</p><div class="acts"><button class="bd-btn" id="bdNo">Cancel</button><button class="bd-btn ' + (danger ? 'bad' : 'pri') + '" id="bdYes">' + esc(ok || 'OK') + '</button></div>', { sticky: true });

@@ -208,6 +208,12 @@
     CM.bonus = (cm.bonus || []).map((r) => ({ label: r.label || 'Target bonus', from: String(r.date_from || ''), to: String(r.date_to || ''), tiers: (r.tiers || []).map((s) => ({ on: !!Number(s.on), over: Number(s.over), bonus: Number(s.bonus) })) }));
     buildOrders(od.orders || [], from, to, dayStart); tagMyCodes();
     const days = dayList(from, to), m = period(days, true), t = period([to]);
+    // ONE figure everywhere: when the live engine is on, the month and today are what it PAYS (the Commission page's own numbers), day by day. A commission set by hand for the month still wins.
+    const paid = cm.paid && cm.paid.live ? (cm.paid.days || {}) : null;
+    if (paid) {
+      if (!m.manual) { m.amount = days.reduce((a, d) => a + (Number(paid[d]) || 0), 0); m.rate = m.ach > 0 ? Math.round(m.amount / m.ach * 10000) / 100 : null; m.rated = true; }
+      t.amount = Number(paid[to]) || 0; t.rate = t.ach > 0 ? Math.round(t.amount / t.ach * 10000) / 100 : null; t.rated = true;
+    }
     LAST = { cm, orders: od.orders || [], dayStart, from, to };
     const errs = (od.errors || []).filter(Boolean);
     return { applicable: true, month: m, today: t, monthRate: m.rated ? rateTxt(m.rate, m.manual) : '', todayRate: t.rated ? rateTxt(t.rate) : '', rows: archiveRows(cm, od.orders || [], from, to, dayStart), noRules: !CM.rules.length, note: errs.length ? 'Some orders could not be loaded, so month figures may be incomplete: ' + errs.join(' · ') : '' };

@@ -23020,6 +23020,28 @@ switch ($action) {
         break;
     }
 
+    case 'commission.paid': {
+        // ONE commission figure for every page: what each order and each person is PAID by the live engine (the Commission page's own numbers), for a date range.
+        // Orders → Employee sheet reads it (through the hidden Commission page) so its popup, its totals and the Commission page always agree.
+        $auth = require_auth();
+        if (!in_array($auth['role'] ?? '', ['Admin', 'HR'], true) && !user_can($auth, 'commission')) json_response(['error' => 'You do not have permission to see commission.'], 403);
+        $from = (string)($_GET['from'] ?? ''); $to = (string)($_GET['to'] ?? '');
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $from) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $to) || $to < $from) json_response(['error' => 'from and to must be YYYY-MM-DD.'], 422);
+        if (!cm_is_live($pdo)) json_response(['live' => false]);
+        if ((strtotime($to) - strtotime($from)) > 61 * 86400) json_response(['live' => false, 'why' => 'range too long']);
+        @set_time_limit(240);
+        if (!function_exists('cm_paid_day') && is_file(__DIR__ . '/boss.php')) require_once __DIR__ . '/boss.php';
+        if (!function_exists('cm_paid_day')) json_response(['live' => false]);
+        $ord = []; $emps = []; $gaps = []; $last = min($to, biz_today($pdo));
+        for ($d = $from; $d <= $last; $d = date('Y-m-d', strtotime($d . ' +1 day'))) {
+            $r = cm_paid_day($pdo, $d); if (!empty($r['error'])) json_response(['live' => false, 'why' => $r['error']]);
+            foreach ((array)$r['ord'] as $k => $v) $ord[$k] = $v;
+            foreach ((array)$r['emps'] as $id => $e) { $emps[$id] = round(($emps[$id] ?? 0) + (float)$e['total'], 2); if (empty($e['live'])) $gaps[$id][] = $d; }
+        }
+        json_response(['live' => true, 'from' => $from, 'to' => $to, 'ord' => (object)$ord, 'emps' => (object)$emps, 'gaps' => (object)$gaps]);
+        break;
+    }
+
     case 'my.commission': {
         // The logged-in sales employee's own commission ingredients for this month: the commission rules, the order-code rules,
         // the manual order shares, and THEIR OWN daily targets / attendance. The My Sales page works today's and the month's commission
@@ -23085,7 +23107,20 @@ switch ($action) {
                 $bonusRules[] = ['rule_id' => (int)$br['rule_id'], 'label' => (string)$br['label'], 'tiers' => json_decode((string)$br['tiers'], true) ?: [], 'date_from' => commission_date_out($br['date_from'] ?? ''), 'date_to' => commission_date_out($br['date_to'] ?? '')];
             } } catch (PDOException $e2) {}
         }
+        // What each day PAYS by the live engine (the Commission page's own figure): My Sales shows the sum, so the salesperson and the Admin see the same number.
+        $paid = ['live' => false, 'days' => (object)[]];
+        if ($mq === '' && cm_is_live($pdo)) {
+            try {
+                if (!function_exists('cm_paid_day') && is_file(__DIR__ . '/boss.php')) require_once __DIR__ . '/boss.php';
+                if (function_exists('cm_paid_day')) {
+                    @set_time_limit(240); $pd = []; $okAll = true;
+                    for ($d = $from; $d <= $to; $d = date('Y-m-d', strtotime($d . ' +1 day'))) { $r = cm_paid_day($pdo, $d); if (!empty($r['error'])) { $okAll = false; break; } if (isset($r['emps'][$myId])) $pd[$d] = (float)$r['emps'][$myId]['total']; }
+                    if ($okAll) $paid = ['live' => true, 'days' => (object)$pd];
+                }
+            } catch (Throwable $e2) { error_log('my.commission paid: ' . $e2->getMessage()); }
+        }
         json_response([
+            'paid' => $paid,
             'bonus' => $bonusRules,
             'manual' => (object)$manual,
             'applicable' => true, 'from' => $from, 'to' => $to, 'today' => $to,

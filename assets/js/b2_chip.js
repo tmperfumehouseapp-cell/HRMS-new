@@ -32,7 +32,7 @@
     return new Promise((res, rej) => {
       css('assets/css/boss.css?v=1'); css('assets/css/boss2.css?v=t7');
       const need2 = () => (typeof B2 === 'undefined') ? load('assets/js/b2_common.js?v=t7', (e) => (e instanceof Error ? rej(e) : res())) : res();
-      if (typeof BD === 'undefined') load('assets/js/boss_common.js?v=3', (e) => (e instanceof Error ? rej(e) : need2())); else need2();
+      if (typeof BD === 'undefined') load('assets/js/boss_common.js?v=4', (e) => (e instanceof Error ? rej(e) : need2())); else need2();
     });
   }
 
