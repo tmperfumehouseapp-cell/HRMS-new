@@ -143,11 +143,27 @@
       + (r.target_why ? '<br><b style="color:#b45309">No target bonus: target is ₹0 because ' + esc(r.target_why) + '.</b> Set the day\'s target and the bonus is counted.' : '')
       + '<br>Chart ' + money(r.chart_com) + (r.offer_com ? ' + offers ' + money(r.offer_com) : '') + (r.bonus ? ' + ' + (r.bonus_rule ? esc(r.bonus_rule) : 'over-target extra') + ' +' + r.bonus + '% ' + (r.bonus_on === 'all' ? 'on the whole commission' : 'on the chart commission') + ' = ' + money(r.extra) : '') + ' = <b>' + money(r.total) + '</b>' + (r.boost ? ' · boost: ' + esc(r.boost) : '') + '</div>'
       + (r.lines && r.lines.length ? '<div class="cm-sc"><table class="cm-t"><thead><tr><th>Order</th><th>ML</th><th>Price</th><th>Counted as</th><th>Code</th><th>Commission</th></tr></thead><tbody>'
-        + r.lines.map((l) => { const half = !l.code && !r.code_ok && l.com > 0; return '<tr class="' + (half ? 'half' : '') + '"><td><b>' + esc(l.order || '') + '</b></td><td>' + (l.ml || '—') + '</td><td>₹' + num(l.price) + '</td><td>' + (l.rule === 'chart' ? 'Chart ' + l.pct + '%' : /^offer/.test(l.rule) ? 'Offer ' + l.pct + '%' : '<span style="color:#b45309">' + esc(l.rule) + ' — 0</span>') + '</td><td>' + (l.code ? '✓' : (half ? '✗ <b style="color:#b91c1c">½</b>' : '✗')) + '</td><td><b>' + money(l.com) + '</b></td></tr>'; }).join('')
+        + r.lines.map((l) => { const half = !l.code && !r.code_ok && l.com > 0; return '<tr class="' + (half ? 'half' : '') + '"><td>' + (l.key ? '<a href="#" class="cm-ol" data-ok="' + esc(l.key) + '" data-note="' + esc(l.note || '') + '" title="Open the order details"><b>' + esc(l.order || '') + '</b></a>' : '<b>' + esc(l.order || '') + '</b>') + '</td><td>' + (l.ml || '—') + '</td><td>₹' + num(l.price) + '</td><td>' + (l.rule === 'chart' ? 'Chart ' + l.pct + '%' : /^offer/.test(l.rule) ? 'Offer ' + l.pct + '%' : '<span style="color:#b45309" title="' + esc(l.note || '') + '">' + esc(l.rule) + (l.com > 0 ? '' : ' — 0') + '</span>' + (l.note && !(l.com > 0) ? '<div style="font-size:11.5px;color:#92400e;line-height:1.3;max-width:260px;white-space:normal">' + esc(l.note) + '</div>' : '')) + '</td><td>' + (l.code ? '✓' : (half ? '✗ <b style="color:#b91c1c">½</b>' : '✗')) + '</td><td><b>' + money(l.com) + '</b></td></tr>'; }).join('')
         + '</tbody></table></div>' : '<div class="bd-sub" style="padding:6px 0">No orders this day.</div>') + '</div>';
     m.innerHTML = '<h3>' + (pid && rows[0] ? esc(rows[0].name) + ' · ' : 'Whole team · ') + esc(dl) + '</h3>' + (rows.length ? rows.map(one).join('') : '<div class="bd-empty">No orders this day.</div>')
       + '<div class="cm-note">Prepaid orders are counted at the price before the 2% discount. ½ = no code on the order while the person was below the code limit that day.</div><div style="text-align:right;margin-top:10px"><button class="bd-btn" type="button" id="cmDdX">Close</button></div>';
     const x = m.querySelector('#cmDdX'); if (x) x.onclick = BD.close;
+    // 🔎 click an order number: its details open right under the row (products, discount, total, tags, how it was counted); click again to close
+    m.querySelectorAll('a.cm-ol').forEach((a) => { a.onclick = async (ev) => {
+      ev.preventDefault(); const tr = a.closest('tr'); if (!tr) return; const nx = tr.nextElementSibling;
+      if (nx && nx.classList.contains('cm-od')) { nx.remove(); return; }
+      const row = document.createElement('tr'); row.className = 'cm-od'; row.innerHTML = '<td colspan="6" style="background:#fafafa;white-space:normal;text-align:left"><div class="bd-sub">Loading the order…</div></td>'; tr.after(row);
+      const cell = row.firstChild, ok = String(a.dataset.ok || ''), i = ok.indexOf(':'), note = a.dataset.note || '', rs = (v) => '₹' + num(Math.round(Number(v) || 0));
+      try {
+        const r = await api.get('shopify.order_detail', { store: ok.slice(0, i), id: ok.slice(i + 1) }), d = r.order || {};
+        cell.innerHTML = '<div style="font-size:13px;line-height:1.5"><b>' + esc(d.name || a.textContent) + '</b>' + (d.created_at ? ' · ' + esc(new Date(d.created_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })) : '') + (d.financial_status ? ' · ' + esc(d.financial_status) : '')
+          + '<table class="cm-t" style="margin:6px 0;width:100%"><thead><tr><th style="text-align:left">Product</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead><tbody>'
+          + (d.line_items || []).map((li) => '<tr><td style="text-align:left;white-space:normal">' + esc(li.title || '') + (li.variant ? '<br><small style="color:#6b7280">' + esc(li.variant) + '</small>' : '') + '</td><td>' + esc(li.quantity) + '</td><td>' + rs(li.price) + '</td><td>' + rs(li.total) + '</td></tr>').join('') + '</tbody></table>'
+          + 'Subtotal ' + rs(d.subtotal) + (Number(d.discounts) > 0 ? ' · Discount −' + rs(d.discounts) : '') + (Number(d.shipping) > 0 ? ' · Shipping ' + rs(d.shipping) : '') + ' · <b>Total ' + rs(d.total) + '</b>'
+          + (d.tags ? '<br><span style="color:#6b7280">Tags: ' + esc(Array.isArray(d.tags) ? d.tags.join(', ') : d.tags) + '</span>' : '')
+          + (note ? '<br><b style="color:#92400e">How it was counted: ' + esc(note) + '</b>' : '') + '</div>';
+      } catch (e) { cell.innerHTML = '<div class="cm-need bad">' + esc(e.message || 'Could not load the order.') + (note ? '<br>' + esc(note) : '') + '</div>'; }
+    }; });
   }
   function rcHtml() {
     if (RC.error) return '<div class="cm-need bad">' + esc(RC.error) + '</div>';
