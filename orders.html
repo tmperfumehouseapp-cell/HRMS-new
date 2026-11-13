@@ -1903,7 +1903,12 @@
     return `<div class="stat-card id-card" id="idealCard"><div class="label"><span class="lbl-full">🎯 Ideal day vs actual</span><span class="lbl-short">Ideal vs actual</span></div>${body}</div>`;
   }
   function idBody(d) {
-    const c = d.cfg || {}, so = d.so_far || {}, a = so.actual || {}, i = so.ideal || {}, dv = so.dev || {};
+    // 📦 Total orders = the very same orders the Orders box above counts (this page's own list), cut at each hour
+    const idPc = (a, i) => i > 0 ? Math.round(100 * (a - i) / i) : null;
+    let idList = null; try { idList = scopedOrders().map((o) => String(o.created_at || '').slice(0, 19).replace('T', ' ')); } catch (x) { idList = null; }
+    const idCnt = (upto) => idList ? idList.filter((t) => t >= String(d.from) && t < String(upto)).length : null;
+    const c = d.cfg || {}, so = d.so_far || {}, a = Object.assign({}, so.actual || {}), i = so.ideal || {}, dv = Object.assign({}, so.dev || {});
+    { const n = idCnt(d.now ? String(d.now) : d.to); if (n != null) { a.orders = n; dv.orders = idPc(n, i.orders); a.ratio = a.replies > 0 ? Math.round(1000 * n / a.replies) / 10 : null; } }
     let h = `<div class="idt">Day target: <b>${idR(c.spend)}</b> spend · <b>${idN(c.replies)}</b> replies · <b>${idN(c.orders)}</b> orders ${d.can_edit ? '<button type="button" class="idb" data-ide="1">✎ Edit</button>' : ''}</div>
       <div class="idk"><div><small>Spend</small><b>${idR(a.spend)}</b><i>ideal ${idR(i.spend)}</i>${idChip(dv.spend)}</div><div><small>Replies</small><b>${idN(a.replies)}</b><i>ideal ${idN(i.replies)}</i>${idChip(dv.replies)}</div><div><small>Orders</small><b>${idN(a.orders)}</b><i>ideal ${idN(i.orders)}</i>${idChip(dv.orders)}</div></div>
       <div class="idt" style="margin-top:6px">Total orders ÷ replies: <b>${a.ratio != null ? a.ratio + '%' : '—'}</b> <span style="color:var(--muted)">(ideal ${i.ratio != null ? i.ratio + '%' : '—'})</span></div>
@@ -1911,7 +1916,8 @@
     const K = (n) => { n = Math.round(+n || 0); return n >= 10000 ? '₹' + (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : '₹' + n.toLocaleString('en-IN'); };
     const cell = (ac, ide, chip, f) => ac == null ? `<div class="idl">${f(ide)}</div>` : `<div><b>${f(ac)}</b><span class="idl"> / ${f(ide)}</span></div>${idChip(chip)}`;
     const hrEnd = (t) => idHm(String((parseInt(String(t).slice(0, 2), 10) + 1) % 24).padStart(2, '0') + ':00');
-    (d.hourly || []).forEach((p) => { const cu = p.cum || {}, ca = cu.actual, cp = cu.pct || {}, ci = (p.cur && cu.ideal_now) || cu.ideal || {};
+    (d.hourly || []).forEach((p) => { const cu = p.cum || {}, ca = cu.actual ? Object.assign({}, cu.actual) : null, cp = Object.assign({}, cu.pct || {}), ci = (p.cur && cu.ideal_now) || cu.ideal || {};
+      if (ca) { const n = idCnt(p.upto); if (n != null) { ca.orders = n; cp.orders = idPc(n, ci.orders); } }
       h += `<tr class="${p.past ? '' : 'fut'}${p.cur ? ' cur' : ''}"><td><b>${hrEnd(p.t)}</b>${p.cur ? '<br><span class="idg act">now</span>' : ''}</td><td>${cell(ca && ca.spend, ci.spend, cp.spend, K)}</td><td>${cell(ca && ca.replies, ci.replies, cp.replies, idN)}</td><td>${cell(ca && ca.orders, ci.orders, cp.orders, idN)}</td></tr>`; });
     h += '</tbody></table></div>';
     const pr = d.projection || {}, nd = d.need_per_hour || {};
