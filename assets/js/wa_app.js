@@ -445,7 +445,10 @@
       if (plain) { try { const g = await api.get('wa.g_sig'); if (g && g.sig && g.sig === S.sig) { if (Date.now() - (S.reqAt || 0) > 5000) loadReq(); return; } } catch (e) { } }
       return loadList(true);
     }
-    function loop() { clearInterval(POLL); POLL = setInterval(() => { if (document.hidden) return; beat++; if (S.cur) once('poll', pollChat); if ((!S.cur && S.tab === 'chats') || beat % 2 === 0) once('list', smartList); if (!S.cur && S.tab === 'chats' && S.filter === 'team' && beat % 2 === 0) once('team', loadTeam); }, 5000); }   // ⚡ every 5 s (was 4 s): 20% fewer requests from every salesperson
+    // 💤 a screen nobody has touched for 2 minutes asks the server every 10 s instead of every 5 s (half the requests of every idle screen); the first touch / key / mouse move brings it up to date at once
+    let lastAct = Date.now(); const idleNow = () => Date.now() - lastAct > 120000;
+    ['pointerdown', 'keydown', 'touchstart', 'mousemove', 'wheel'].forEach((ev) => document.addEventListener(ev, () => { const was = idleNow(); lastAct = Date.now(); if (was && !document.hidden) { if (S.cur) once('poll', pollChat); once('list', smartList); } }, { passive: true, capture: true }));
+    function loop() { clearInterval(POLL); POLL = setInterval(() => { if (document.hidden) return; beat++; if (idleNow() && beat % 2) return; if (S.cur) once('poll', pollChat); if ((!S.cur && S.tab === 'chats') || beat % 2 === 0) once('list', smartList); if (!S.cur && S.tab === 'chats' && S.filter === 'team' && beat % 2 === 0) once('team', loadTeam); }, 5000); }   // ⚡ every 5 s (was 4 s): 20% fewer requests from every salesperson
     document.addEventListener('visibilitychange', () => { if (!document.hidden) { if (S.cur) pollChat(); loadList(true); } });
 
     function wide() { return !!(window.matchMedia && matchMedia('(min-width:1000px)').matches); }   // 🖥 PC: list + chat side by side
