@@ -29690,14 +29690,15 @@ switch ($action) {
     }
 
     case 'manual_orders.quick_list': {   // 🧾 the quick entries of the last 7 days + today's totals — only for the Sales Head who watches them (Pradip Chauhan)
-        $auth = require_auth(); if (!qe_viewer_ok($pdo, $auth)) json_response(['allowed' => false]);
+        $auth = require_auth(); $card = !empty($_GET['card']); if (!qe_viewer_ok($pdo, $auth) && ($card || !in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true))) json_response(['allowed' => false]);   // the home card: only Pradip; the Remove list on the Orders page: Pradip, Admin and HR
         try { foreach (['house' => "VARCHAR(12) NOT NULL DEFAULT ''", 'batch' => "VARCHAR(16) NOT NULL DEFAULT ''", 'outstanding' => 'DECIMAL(12,2) NULL'] as $c => $d) { if (!$pdo->query("SHOW COLUMNS FROM manual_orders LIKE '$c'")->fetch()) $pdo->exec("ALTER TABLE manual_orders ADD COLUMN $c $d"); } } catch (PDOException $e) {}
-        $today = biz_today($pdo); [$ts, $te] = biz_window($pdo, $today, $today); [$ws0] = biz_window($pdo, date('Y-m-d', strtotime($today . ' -6 days')), $today);
-        $st = $pdo->prepare("SELECT manual_order_id, order_date, total, payment_status, order_type, house, batch, outstanding, created_by, remarks FROM manual_orders WHERE batch <> '' AND order_date >= ? AND order_date <= ? ORDER BY order_date DESC, manual_order_id DESC"); $st->execute([$ws0, $te]);
+        $today = biz_today($pdo); [$ts, $te] = biz_window($pdo, $today, $today); $days = $card ? 7 : max(1, min(60, (int)($_GET['days'] ?? 7))); [$ws0] = biz_window($pdo, date('Y-m-d', strtotime($today . ' -' . ($days - 1) . ' days')), $today);
+        $st = $pdo->prepare("SELECT manual_order_id, order_no, customer_name, order_date, total, payment_status, order_type, house, batch, outstanding, created_by, remarks FROM manual_orders WHERE " . ($card ? "batch <> '' AND " : '') . "order_date >= ? AND order_date <= ? ORDER BY order_date DESC, manual_order_id DESC"); $st->execute([$ws0, $te]);
         $hl = house_labels(); $by = []; $sum = ['orders' => 0, 'amount' => 0.0, 'query' => 0, 'campaign' => 0, 'query_amt' => 0.0, 'campaign_amt' => 0.0, 'prepaid' => 0.0, 'cod' => 0.0];
         foreach ($st->fetchAll() as $r) {
             $amt = (float)$r['total']; $out = $r['outstanding'] !== null ? (float)$r['outstanding'] : ($r['payment_status'] === 'cod' ? $amt : 0.0);
-            $b = (string)$r['batch']; if (!isset($by[$b])) $by[$b] = ['batch' => $b, 'count' => 0, 'total' => 0.0, 'cod' => 0.0, 'type' => (string)$r['order_type'], 'pay' => (string)$r['payment_status'], 'house' => (string)($hl[$r['house']] ?? $r['house']), 'date' => (string)$r['order_date'], 'by' => (string)$r['created_by'], 'remarks' => (string)$r['remarks']];
+            $b = (string)$r['batch']; if ($b === '') { $by['i' . $r['manual_order_id']] = ['id' => (int)$r['manual_order_id'], 'batch' => '', 'count' => 1, 'total' => $amt, 'cod' => $out, 'type' => (string)$r['order_type'], 'pay' => (string)$r['payment_status'], 'house' => (string)($hl[$r['house']] ?? $r['house']), 'date' => (string)$r['order_date'], 'by' => (string)$r['created_by'], 'remarks' => (string)$r['remarks'], 'order_no' => (string)$r['order_no'], 'customer' => (string)$r['customer_name']]; continue; }
+            if (!isset($by[$b])) $by[$b] = ['batch' => $b, 'count' => 0, 'total' => 0.0, 'cod' => 0.0, 'type' => (string)$r['order_type'], 'pay' => (string)$r['payment_status'], 'house' => (string)($hl[$r['house']] ?? $r['house']), 'date' => (string)$r['order_date'], 'by' => (string)$r['created_by'], 'remarks' => (string)$r['remarks']];
             $by[$b]['count']++; $by[$b]['total'] += $amt; $by[$b]['cod'] += $out;
             if ($r['order_date'] >= $ts && $r['order_date'] <= $te) { $sum['orders']++; $sum['amount'] += $amt; $sum['cod'] += $out; $sum['prepaid'] += $amt - $out; $k = $r['order_type'] === 'campaign' ? 'campaign' : 'query'; $sum[$k]++; $sum[$k . '_amt'] += $amt; }
         }
@@ -29708,7 +29709,9 @@ switch ($action) {
     case 'manual_orders.quick_delete': {   // 🗑 remove one whole quick entry (every order of it)
         $auth = require_auth(); if (!qe_viewer_ok($pdo, $auth) && !in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true)) json_response(['error' => 'Not allowed.'], 403);
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
-        $b = preg_replace('/[^a-f0-9]/', '', (string)(json_input()['batch'] ?? '')); if (strlen($b) < 8) json_response(['error' => 'batch is required.'], 422);
+        $qin = json_input(); $b = preg_replace('/[^a-f0-9]/', '', (string)($qin['batch'] ?? '')); $oid = (int)($qin['id'] ?? 0);
+        if ($oid > 0) { $st = $pdo->prepare("DELETE FROM manual_orders WHERE manual_order_id = ? AND (batch IS NULL OR batch = '')"); $st->execute([$oid]); json_response(['message' => 'Removed.', 'deleted' => $st->rowCount()]); }
+        if (strlen($b) < 8) json_response(['error' => 'batch or id is required.'], 422);
         $st = $pdo->prepare("DELETE FROM manual_orders WHERE batch = ?"); $st->execute([$b]); json_response(['message' => 'Removed.', 'deleted' => $st->rowCount()]);
         break;
     }

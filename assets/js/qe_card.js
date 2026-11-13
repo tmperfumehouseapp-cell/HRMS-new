@@ -6,7 +6,7 @@
   const inr = (v) => '₹' + Math.round(Number(v) || 0).toLocaleString('en-IN');
   const when = (s) => { const d = new Date(String(s).replace(' ', 'T')); return isNaN(d) ? s : d.toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }); };
   async function load() {
-    let d; try { d = await api.get('manual_orders.quick_list'); } catch (e) { return; }
+    let d; try { d = await api.get('manual_orders.quick_list', { card: 1 }); } catch (e) { return; }
     if (!d || !d.allowed) { box.innerHTML = ''; return; }
     const t = d.today || {}, L = d.entries || [];
     box.innerHTML = `<div class="card" style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div style="font-weight:800;font-size:15px">🧾 Quick-entry orders <span style="font-weight:600;color:#64748b;font-size:12px">(added by Admin)</span></div></div>
