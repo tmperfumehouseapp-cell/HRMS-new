@@ -468,7 +468,9 @@
   a.xmlk{font-weight:800; color:#be123c; text-decoration:underline dotted; text-underline-offset:3px;}
   /* Queries by hour: tap an hour / number → who got them */
   a.qhw{text-decoration:underline dotted; text-underline-offset:3px; cursor:pointer;} .qh .r a.q, .qh .r a.c{font-weight:800; text-align:center; font-size:13px;} .qh .r a.q{color:#0ea5e9;} .qh .r a.c{color:#d97706;} .qh .r span a.qhw{color:inherit;}
-  /* 🎯 Ideal day vs actual box */
+  /* 🎯 Ideal day vs actual box — wide: two columns of the grid on a PC, the full width on a phone, so nothing is cut */
+  .id-card{grid-column:span 2; min-width:0; overflow:hidden;} @media (max-width:760px){ .id-card{grid-column:1 / -1;} }
+  .id-card .idk>div{min-width:0;} .id-card .idtw{overflow-x:auto;} .id-card .idtb{table-layout:fixed;} .id-card .idtb th:nth-child(1),.id-card .idtb td:nth-child(1){width:19%;} .id-card .idtb th:nth-child(2),.id-card .idtb td:nth-child(2){width:31%;} .id-card .idtb th:nth-child(3),.id-card .idtb td:nth-child(3),.id-card .idtb th:nth-child(4),.id-card .idtb td:nth-child(4){width:25%;} .id-card .idtb td{word-break:break-word;}
   .id-card .idt{font-size:12.5px;margin:2px 0 6px}.id-card .idb{border:1px solid var(--line,#d1d7db);background:var(--card,#fff);color:inherit;border-radius:8px;padding:2px 8px;font-weight:700;cursor:pointer;font-size:11.5px}
   .id-card .idk{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}.id-card .idk>div{background:var(--soft,#f3f7fb);border-radius:10px;padding:6px 8px}.id-card .idk small{display:block;font-size:10.5px;color:var(--muted);font-weight:700}.id-card .idk b{font-size:15px}.id-card .idk i{display:block;font-size:10.5px;color:var(--muted);font-style:normal}
   .id-card .idc{display:inline-block;margin-left:4px;border-radius:6px;padding:0 5px;font-weight:800;font-size:10.5px}.idc.up{background:#dff3e8;color:#0b6b4b}.idc.ok{background:#e8f0ff;color:#1d4ed8}.idc.mid{background:#fff3d6;color:#8a5a00}.idc.dn{background:#fde8e8;color:#9a2620}
@@ -1902,10 +1904,10 @@
     let h = `<div class="idt">Day target: <b>${idR(c.spend)}</b> spend · <b>${idN(c.replies)}</b> replies · <b>${idN(c.orders)}</b> orders ${d.can_edit ? '<button type="button" class="idb" data-ide="1">✎ Edit</button>' : ''}</div>
       <div class="idk"><div><small>Spend</small><b>${idR(a.spend)}</b><i>ideal ${idR(i.spend)}</i>${idChip(dv.spend)}</div><div><small>Replies</small><b>${idN(a.replies)}</b><i>ideal ${idN(i.replies)}</i>${idChip(dv.replies)}</div><div><small>Orders</small><b>${idN(a.orders)}</b><i>ideal ${idN(i.orders)}</i>${idChip(dv.orders)}</div></div>
       <div class="idt" style="margin-top:6px">Orders ÷ replies: <b>${a.ratio != null ? a.ratio + '%' : '—'}</b> <span style="color:var(--muted)">(ideal ${i.ratio != null ? i.ratio + '%' : '—'})</span></div>
-      <table class="idtb"><thead><tr><th>Time</th><th>Spend<br><small>ideal / actual</small></th><th>Replies</th><th>Orders</th></tr></thead><tbody>`;
+      <div class="idtw"><table class="idtb"><thead><tr><th>Time</th><th>Spend<br><small>ideal / actual</small></th><th>Replies</th><th>Orders</th></tr></thead><tbody>`;
     (d.points || []).forEach((p) => { const ac = p.actual, pc = p.pct || {}, t = p.end ? 'Day end' : idHm(p.t);
       h += `<tr class="${p.past ? '' : 'fut'}"><td><b>${t}</b></td><td>${idR(p.ideal.spend)}<br>${ac ? `<b>${idR(ac.spend)}</b>${idChip(pc.spend)}` : '<span style="color:#9aa4b2">·</span>'}</td><td>${idN(p.ideal.replies)}<br>${ac ? `<b>${idN(ac.replies)}</b>${idChip(pc.replies)}` : '<span style="color:#9aa4b2">·</span>'}</td><td>${idN(p.ideal.orders)}<br>${ac ? `<b>${idN(ac.orders)}</b>${idChip(pc.orders)}` : '<span style="color:#9aa4b2">·</span>'}</td></tr>`; });
-    h += '</tbody></table>';
+    h += '</tbody></table></div>';
     const pr = d.projection || {}, nd = d.need_per_hour || {};
     if (pr.orders != null && d.now && d.to && d.now < d.to) h += `<div class="idp">🔮 At this pace the day ends near <b>${idR(pr.spend)}</b> · <b>${idN(pr.replies)}</b> replies · <b>${idN(pr.orders)}</b> orders. To reach ${idN(c.orders)} orders you need about <b>${idN(nd.replies)}</b> replies and <b>${idN(nd.orders)}</b> orders every hour from now.</div>`;
     h += (d.analysis || []).length ? `<ul class="ida">${d.analysis.map((x) => `<li class="${x.k === 'ok' ? 'ok' : 'wn'}">${x.k === 'ok' ? '✅' : '⚠️'} ${x.text.replace(/</g, '&lt;')}</li>`).join('')}</ul>` : '';
