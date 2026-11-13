@@ -187,6 +187,12 @@ function cx_case_numbers(PDO $pdo, $phone) {
     $out = ['in' => null, 'sent' => null]; if ((string)$phone === '') return $out;
     try {
         $N = []; foreach ($pdo->query("SELECT id, label, display FROM wa_numbers")->fetchAll() as $n) $N[(int)$n['id']] = ['id' => (int)$n['id'], 'label' => trim((string)$n['label']) !== '' ? trim((string)$n['label']) : 'Number ' . $n['id'], 'display' => trim((string)($n['display'] ?? ''))];
+        $hc = []; try { $hc = json_decode((string)setting_get($pdo, 'wa_health', ''), true); } catch (Throwable $e) { } $hc = is_array($hc) ? $hc : [];
+        foreach ($N as $nid => $nn) {   // the phone number itself is what the team reads out: from the list, else from what Meta told us about the number; always shown as +91 98765 43210
+            $dsp = $nn['display'] !== '' ? $nn['display'] : trim((string)($hc[$nid]['display'] ?? '')); $dg = preg_replace('/\D/', '', $dsp);
+            if (strlen($dg) === 12 && substr($dg, 0, 2) === '91') $dsp = '+91 ' . substr($dg, 2, 5) . ' ' . substr($dg, 7); elseif (strlen($dg) === 10) $dsp = '+91 ' . substr($dg, 0, 5) . ' ' . substr($dg, 5);
+            $N[$nid]['display'] = $dsp;
+        }
         $q = $pdo->prepare("SELECT number_id, ts FROM wa_messages WHERE phone = ? AND dir = 'in' AND number_id > 0 ORDER BY id DESC LIMIT 1"); $q->execute([(string)$phone]); $r = $q->fetch();
         if ($r && isset($N[(int)$r['number_id']])) $out['in'] = $N[(int)$r['number_id']] + ['at' => (string)$r['ts']];
         if (!$out['in']) { $q = $pdo->prepare("SELECT last_number_id FROM wa_contacts WHERE phone = ?"); $q->execute([(string)$phone]); $l = (int)$q->fetchColumn(); if ($l > 0 && isset($N[$l])) $out['in'] = $N[$l] + ['at' => '']; }
