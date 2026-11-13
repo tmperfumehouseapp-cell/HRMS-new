@@ -231,7 +231,7 @@ window.CX = (function () {
     C = d; try { history.replaceState(null, '', location.pathname + '?case=' + id); } catch (e) { /* ok */ }
     full(true);
     drawCase(); if (C.can_work && C.case.phone) { await loadThread(true); if (my !== openSeq) return; if (C.case.status === 'open' || C.case.status === 'reopened') loadSugg(); }
-    timer = setInterval(async () => { if (document.hidden || document.querySelector('.cx-ov')) return; const x = await api.get('bd.cx_case', { id }).catch(() => null); if (x && my === openSeq && C && C.case && C.case.id === id) { const keep = C.view; C = x; C.view = keep; drawLeft(); drawHead(); } }, 30000);
+    timer = setInterval(async () => { if (document.hidden || document.querySelector('.cx-ov')) return; const x = await api.get('bd.cx_case', { id }).catch(() => null); if (x && my === openSeq && C && C.case && C.case.id === id) { const keep = C.view, ef = C.embFail; C = x; C.view = keep; C.embFail = ef; drawLeft(); drawHead(); } }, 30000);
     thTimer = setInterval(() => { if (!document.hidden && C && C.can_work && C.case.phone) loadThread(false); }, 8000);
   }
   // 📱 a case on a phone takes the whole screen (the HRMS title and tabs step aside); the ‹ back button gives them back
@@ -251,7 +251,7 @@ window.CX = (function () {
       + '<span style="flex:1"></span>' + (C.can_work ? (isOpen() ? ((!C.is_owner ? '<button class="cx-btn gh s" type="button" id="cxTake">' + (v.owner ? 'Take it' : 'Take it') + '</button>' : '') + '<button class="cx-btn gh s" type="button" id="cxHand">Hand to…</button><button class="cx-btn gh s" type="button" id="cxProm" title="The fix is known but happens on a later day">⏸ Promise a date</button><button class="cx-btn s" type="button" id="cxRes">✔ Mark resolved</button>') : '<button class="cx-btn gh s" type="button" id="cxReo">Reopen</button>') : '');
     $('#cxBk', H).onclick = back; const q = (id, fn) => { const e = $(id, H); if (e) e.onclick = fn; }; q('#cxTake', takeIt); q('#cxHand', handSheet); q('#cxProm', promiseSheet); q('#cxRes', resolveSheet); q('#cxReo', reopenSheet);
   }
-  async function refresh() { if (!C) return; const id = C.case.id, my = openSeq; const x = await api.get('bd.cx_case', { id }).catch(() => null); if (x && my === openSeq && C && C.case.id === id) { const keep = C.view; C = x; C.view = keep; drawHead(); drawLeft(); drawRight(true); } }
+  async function refresh() { if (!C) return; const id = C.case.id, my = openSeq; const x = await api.get('bd.cx_case', { id }).catch(() => null); if (x && my === openSeq && C && C.case.id === id) { const keep = C.view, ef = C.embFail; C = x; C.view = keep; C.embFail = ef; drawHead(); drawLeft(); drawRight(true); } }
   async function takeIt() { const r = await call(() => api.post('bd.cx_assign', { id: C.case.id, emp_id: C.me })); if (r) { await refresh(); loadThread(true); } }
 
   function drawLeft() {

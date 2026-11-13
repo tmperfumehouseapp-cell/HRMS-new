@@ -195,6 +195,8 @@ function cx_unlink_chat(PDO $pdo, array $case) {
     // case solved: the complaint mark goes; the chat is still with the same salesperson (it never moved)
     $key = (string)$case['phone']; if ($key === '' || !function_exists('wa_contact')) return;
     $c = wa_contact($pdo, $key); if (!$c || (int)($c['cx_id'] ?? 0) !== (int)$case['id']) return;
+    try { $o = $pdo->prepare("SELECT id FROM cx_cases WHERE phone = ? AND id <> ? AND status IN ('open','reopened') ORDER BY id DESC LIMIT 1"); $o->execute([$key, (int)$case['id']]); $oid = (int)$o->fetchColumn();
+        if ($oid > 0) { $pdo->prepare("UPDATE wa_contacts SET cx_id = ? WHERE phone = ?")->execute([$oid, $key]); return; } } catch (Throwable $e) { }   // the customer has ANOTHER open ticket: the chat stays a complaint chat, now marked with that one
     $pdo->prepare("UPDATE wa_contacts SET cx_id = 0, tag = CASE WHEN tag = 'complaint' THEN '' ELSE tag END WHERE phone = ?")->execute([$key]);
     try { $pdo->prepare("DELETE FROM wa_ctags WHERE phone = ? AND tag = 'complaint'")->execute([$key]); $pdo->prepare("DELETE FROM wa_tagidx WHERE phone = ? AND tag = 'complaint'")->execute([$key]); } catch (Throwable $e) { }   // solved: the complaint marks go
     try { setting_set($pdo, 'cxres_' . $key, date('Y-m-d H:i:s')); } catch (Throwable $e) { }   // the NEXT message from this customer brings the chat back into Requests (wa_store_in)
@@ -284,6 +286,9 @@ function cx_raise(PDO $pdo, array $auth, array $role, array $in) {
     cx_ev($pdo, $id, $emp, 'raised', cx_name($pdo, $emp) . ' raised the complaint (' . $P[$problem][0] . ', ' . $U[$urg] . ') from ' . $S[$src]);
     if ($summary !== '' && $summary !== $P[$problem][0] && empty($in['quiet_note'])) cx_ev($pdo, $id, $emp, 'note', $summary);
     if ($key !== '') { $n = $pdo->prepare("SELECT COUNT(*) FROM cx_cases WHERE phone = ? AND id <> ? AND raised_at >= ?"); $n->execute([$key, $id, date('Y-m-d', strtotime('-90 days'))]); if ((int)$n->fetchColumn() > 0) cx_ev($pdo, $id, 0, 'alert', 'Repeat complainer: this customer has complained before in the last 90 days.'); }
+    $link = $contact && ($src === 'whatsapp' || (empty($in['quiet']) && $src !== 'oldphone'));   // owner (13 Nov): a ticket raised from a call / IVR / Tracking for a number that already chats with us marks that chat too — ONE chat, Customer Care sees the old messages
+    if ($link && empty($in['auto']) && (int)$contact['assigned_emp'] > 0 && (int)$contact['assigned_emp'] !== $emp) cx_ev($pdo, $id, 0, 'alert', '💬 This customer already has a WhatsApp chat with ' . cx_name($pdo, (int)$contact['assigned_emp']) . ' (sales), who did not raise this complaint. Read the chat on the right to see what was said.');
+    if ($link && $src !== 'whatsapp' && empty($in['auto'])) { cx_link_chat($pdo, $case, $owner, $emp); cx_chat_event($pdo, $key, '⚠ ' . cx_name($pdo, $emp) . ' raised complaint ' . $code . ' (from ' . $S[$src] . ') · the chat stays here; Complaint Care' . ($owner ? ' (' . cx_name($pdo, $owner) . ')' : '') . ' answers the customer about it'); }
     if ($contact && $src === 'whatsapp' && !empty($in['auto'])) cx_link_chat($pdo, $case, $owner, $emp);   // a ticket Claude opened by itself: the chat is marked as a complaint too, so no rule gives it to a salesperson
     if ($contact && $src === 'whatsapp' && empty($in['auto'])) { cx_link_chat($pdo, $case, $owner, $emp); cx_chat_event($pdo, $key, '⚠ ' . cx_name($pdo, $emp) . ' raised complaint ' . $code . ' · the chat stays here; Complaint Care' . ($owner ? ' (' . cx_name($pdo, $owner) . ')' : '') . ' handles the case too'); }
     $who = $owner ? [$owner] : cx_desk_people($pdo, $desk); $who = array_merge($who, cx_manager_ids($pdo));
