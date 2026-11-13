@@ -1519,8 +1519,11 @@ function wq_need_take(PDO $pdo, string $phone, int $me): array
     $from = (int)$c['assigned_emp'];
     if ($from > 0 && wq_ts($c['assigned_at'] ?? '') > wq_now() - 180) return ['error' => wq_name(wq_names($pdo), $from) . ' just took this chat — give them 3 minutes.'];
     $mineN = 0; $isRed = false; foreach (wq_needs($pdo, $me, false) as $x) { if (!empty($x['own'])) $mineN++; if ((string)$x['phone'] === $phone && $x['level'] === 'red') $isRed = true; }
-    if (function_exists('wqx_mode') && wqx_mode($pdo) === 'live' && !$isRed) return ['error' => 'Auto assign gives this chat — only a customer ready to pay can be taken by hand.'];   // 🏪 open race for 🔴 only
-    if (function_exists('wqx_mode') && wqx_mode($pdo) === 'live' && function_exists('wqx_can_race')) { $why = wqx_can_race($pdo, $me); if ($why !== '') return ['error' => $why]; }
+    if (function_exists('wqx_mode') && wqx_mode($pdo) === 'live') {   // 🏪 open market: 🔴 = anybody at work may race for it · 🟠 (and 🔴) = good sellers may pick it from the rounds
+        $why = $isRed && function_exists('wqx_can_race') ? wqx_can_race($pdo, $me) : (function_exists('wqx_can_pick') ? wqx_can_pick($pdo, $me) : '');
+        if ($isRed && $why === '' && function_exists('wqx_can_pick')) { $w2 = wqx_can_pick($pdo, $me); if ($w2 !== '' && strpos($w2, 'Reply to your waiting') === 0) $why = $w2; }
+        if ($why !== '') return ['error' => $why];
+    }
     $maxN = wq_get($pdo, 'wq_need_max', null); $maxN = ($maxN !== null && (int)$maxN > 0) ? min(50, (int)$maxN) : 6;   // default 6 waiting customers per person (setting wq_need_max)
     if ($mineN >= $maxN && !$isRed) return ['error' => 'You already have ' . $mineN . ' customers waiting for your answer — answer them first, then take another. (A customer who is ready to pay can always be taken.)'];   // the limit holds for ORANGE chats only: an order waiting is never left because someone is full
     $u = $pdo->prepare("UPDATE wa_contacts SET assigned_emp = ? WHERE phone = ? AND assigned_emp = ?"); $u->execute([$me, $phone, $from]);

@@ -594,6 +594,19 @@ function wqx_can_race(PDO $pdo, int $emp): string
     if ($l['held_why'] === 'orders') return 'Queries are paused for you — close 1 order first.';
     return '';
 }
+/** May this person PICK 🔴/🟠 chats from the Requests rounds themselves (the open market for good sellers)? Same rules as the race, plus: no customer of
+ *  theirs waiting for a reply (the ⏸ gate), and they sell at least as well as the team for such queries (score index ≥ 1) or are new (trial).
+ *  '' = yes, else the reason. */
+function wqx_can_pick(PDO $pdo, int $emp): string
+{
+    $why = wqx_can_race($pdo, $emp); if ($why !== '') return $why;
+    $prof = wqx_profile($pdo, false); $L = wqx_live($pdo, $prof); $l = $L[$emp] ?? null; if (!$l) return '';
+    if (!empty($l['stopped'])) return 'Queries are stopped for you by the admin.';
+    if (!empty($l['gate'])) return 'Reply to your waiting customer(s) first — then you can pick new ones.';
+    $p = $prof['people'][$emp] ?? ($prof['people'][(string)$emp] ?? []);
+    if ((float)($p['idx'] ?? 1) < 1.0 && empty($p['trial'])) return 'Picking from Requests is for sellers at or above the team average — Auto assign will give you chats.';
+    return '';
+}
 /** Called from wa_tick (every engine run and from the webhook): the webhook never builds the profile. */
 function wqx_tick(PDO $pdo): array { return wqx_run($pdo, !defined('WA_IN_WEBHOOK')); }
 
@@ -632,7 +645,7 @@ if (in_array($__wqx, ['wq.mkt_get', 'wq.mkt_mode', 'wq.mkt_cfg', 'wq.mkt_recalc'
     if ($__wqx === 'wq.mkt_me') {
         $prof = wqx_profile($pdo, false); $L = wqx_live($pdo, $prof); $x = $L[$me] ?? null; $b = wqx_breaks($pdo);
         $cc = wqx_coach($x, $prof['people'][$me] ?? ($prof['people'][(string)$me] ?? null), $prof, isset($b['open'][$me]), (int)($b['used'][$me] ?? 0), $cfg['break_max']);
-        json_response(['ok' => true, 'mode' => wqx_mode($pdo), 'on_break' => isset($b['open'][$me]), 'break_used' => (int)($b['used'][$me] ?? 0), 'break_max' => $cfg['break_max'], 'me' => $x, 'coach' => $cc[0], 'tone' => $cc[1]]);
+        json_response(['ok' => true, 'mode' => wqx_mode($pdo), 'pick' => $x ? wqx_can_pick($pdo, $me) === '' : false, 'on_break' => isset($b['open'][$me]), 'break_used' => (int)($b['used'][$me] ?? 0), 'break_max' => $cfg['break_max'], 'me' => $x, 'coach' => $cc[0], 'tone' => $cc[1]]);
     }
     if ($__wqx === 'wq.mkt_break') {
         if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); if ($me <= 0) json_response(['error' => 'Only a logged-in employee can take a break.'], 422);
