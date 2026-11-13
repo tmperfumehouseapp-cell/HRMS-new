@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Manual orders — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=4">
+<style>
+  .dm{padding:6px 14px 40px;max-width:1500px;margin:0 auto}
+  .dm .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin:0 0 10px}
+  .dm .bar label{display:block;font-size:11.5px;font-weight:700;color:var(--muted);margin:0 0 3px}
+  .dm input,.dm select{padding:8px 10px;border:1px solid var(--line);border-radius:10px;font:inherit;font-size:13.5px;background:#fff;color:#111}
+  .dm .pill{display:inline-block;border-radius:9px;padding:2px 8px;font-weight:800;font-size:11.5px;margin:0 6px 6px 0}
+  .dm .g{background:#dff3e8;color:#0b6b4b}.dm .y{background:#fff3d6;color:#8a5a00}.dm .r{background:#fde8e8;color:#9a2620}.dm .b{background:#e5efff;color:#1d4ed8}
+  .dm .wrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:#fff}
+  .dm table{border-collapse:collapse;width:100%;font-size:12.5px}.dm th{background:#f1f4f8;text-align:left;padding:8px;font-size:11.5px;color:#55606e;white-space:nowrap;position:sticky;top:0}
+  .dm td{padding:8px;border-top:1px solid #edf0f4;vertical-align:top}.dm td small{color:#64748b}
+  .dm .mini{border:1px solid #cfd8e3;border-radius:8px;padding:3px 8px;font-size:11.5px;font-weight:700;background:#fff;cursor:pointer;margin:1px;display:inline-block;color:#111;text-decoration:none}
+  .dm .mini:hover{background:#eef6ff}.dm .err{background:#fdecec;border:1px solid #f1a5a5;color:#7f1d1d;border-radius:10px;padding:10px;margin:8px 0}
+  .dm .ov{position:fixed;inset:0;background:#0008;z-index:200;display:flex;align-items:center;justify-content:center;padding:14px}.dm .md{background:#fff;color:#111;border-radius:16px;max-width:620px;width:100%;max-height:90vh;overflow:auto;padding:16px}
+  .dm .kv{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px dashed #e1e7ee;font-size:13px}.dm .kv b{text-align:right}
+  html[data-theme=dark] .dm input,html[data-theme=dark] .dm select,html[data-theme=dark] .dm .wrap,html[data-theme=dark] .dm .md{background:#1f2430;color:#eee;border-color:#374151}html[data-theme=dark] .dm th{background:#161b26;color:#9aa4b2}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><h1>🧾 Manual orders</h1></div>
+    <div class="content dm">
+      <p style="font-size:13px;color:var(--muted);margin:0 0 10px">Every manual order (WhatsApp Manual order, the Sales person page): customer, address, perfumes, payment, invoice and shipping. Export it like a Shopify export.</p>
+      <div class="bar">
+        <div><label>From</label><input type="date" id="dFrom"></div><div><label>To</label><input type="date" id="dTo"></div>
+        <button class="btn" type="button" id="bToday" style="background:#fff;color:#111;border:1px solid var(--line)">Today</button>
+        <button class="btn" type="button" id="bYest" style="background:#fff;color:#111;border:1px solid var(--line)">Yesterday</button>
+        <div><label>Status</label><select id="fSt"><option value="">All</option><option value="confirmed">Confirmed</option><option value="waiting">Waiting for address</option><option value="cancelled">Cancelled</option></select></div>
+        <div><label>Payment</label><select id="fPay"><option value="">All</option><option value="prepaid">Prepaid</option><option value="partial">Part prepaid + COD</option><option value="cod">COD</option></select></div>
+        <div><label>Search</label><input id="fQ" placeholder="order no / mobile / name / UTR" style="min-width:200px"></div>
+        <span style="flex:1"></span>
+        <button class="btn" type="button" id="bXlsx">⬇ Export Excel</button>
+        <button class="btn" type="button" id="bCsv" style="background:#fff;color:#0b6b4b;border:1px solid #1aa37a">⬇ CSV</button>
+      </div>
+      <div id="dmSum"></div><div id="dmErr"></div>
+      <div class="wrap"><table><thead><tr><th>Order</th><th>Date</th><th>Customer</th><th>Mobile</th><th>Address · Pincode · City / State</th><th>Items</th><th>Total</th><th>Payment</th><th>UTR</th><th>Status</th><th>Invoice</th><th>Shipping</th><th></th></tr></thead><tbody id="dmRows"><tr><td colspan="13">Loading…</td></tr></tbody></table></div>
+      <div id="dmPg" style="display:flex;gap:8px;align-items:center;margin:10px 0"></div>
+    </div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=2"></script>
+<script src="assets/js/api.js?v=13"></script>
+<script src="assets/js/layout.js?v=31"></script>
+<script>
+  guardPage();
+  renderSidebar('dispatch_manual');
+  const $ = (id) => document.getElementById(id);
+  const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const inr = (v) => '₹' + Math.round(Number(v) || 0).toLocaleString('en-IN');
+  const dt = (s) => { if (!s) return ''; const d = new Date(String(s).replace(' ', 'T')); return isNaN(d) ? s : d.toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }); };
+  let page = 1, ROWS = [], LAST = {};
+  const params = () => ({ from: $('dFrom').value, to: $('dTo').value, status: $('fSt').value, pay: $('fPay').value, q: $('fQ').value.trim() });
+  const payTxt = (r) => r.pay === 'prepaid' ? '<span class="pill g">Prepaid</span>' : r.pay === 'cod' ? '<span class="pill y">COD</span>' : '<span class="pill b">Part</span> paid ' + inr(r.paid) + '<br>COD ' + inr(r.cod);
+  const stTxt = (r) => r.status === 'confirmed' ? '<span class="pill g">Confirmed</span>' : r.status === 'cancelled' ? '<span class="pill r">Cancelled</span>' : '<span class="pill y">Waiting for address</span>';
+  const invTxt = (r) => r.status !== 'confirmed' ? '—' : r.invoice ? '<span class="pill g">' + esc(r.invoice.no) + '</span><br>' + (r.invoice.pdf ? '<a class="mini" target="_blank" rel="noopener" href="' + esc(r.invoice.view || r.invoice.pdf) + '">View</a><a class="mini" target="_blank" rel="noopener" href="' + esc(r.invoice.pdf) + '">PDF</a>' : '') + '<button class="mini" data-a="inv" data-i="' + r.id + '">Resend</button>' : '<span class="pill r">Not made</span><br><button class="mini" data-a="inv" data-i="' + r.id + '">Make invoice</button>';
+  const shTxt = (r) => r.status !== 'confirmed' ? '—' : (r.parcel && r.parcel.awb ? '<span class="pill g">AWB ' + esc(r.parcel.awb) + '</span><br><small>' + esc(r.parcel.courier || '') + ' ' + esc(r.parcel.status || '') + '</small>' : r.sr.id ? '<span class="pill b">Shiprocket ✓</span><br><small>' + esc(r.sr.id) + '</small>' : '<span class="pill y">Not created</span><br><button class="mini" data-a="sr" data-i="' + r.id + '">Create</button>');
+  function draw(d) {
+    ROWS = d.rows; const s = d.sum || {}, by = s.by || {};
+    $('dmErr').innerHTML = d.billing && !d.billing.ok ? '<div class="err"><b>GST invoices cannot be made yet</b> — the billing details are incomplete' + (d.billing.missing && d.billing.missing.length ? ': ' + esc(d.billing.missing.join(', ')) : '') + '. Fill them in <b>Learn &amp; Setup → Cart setup → Billing</b>, then press <b>Make invoice</b> on each order.</div>' : '';
+    $('dmSum').innerHTML = '<span class="pill g">Confirmed ' + (by.confirmed || 0) + '</span><span class="pill y">Waiting for address ' + (by.waiting || 0) + '</span><span class="pill r">Cancelled ' + (by.cancelled || 0) + '</span> &nbsp; <b>' + (s.count || 0) + ' shown · Total ' + inr(s.total) + '</b> · Prepaid ' + inr(s.prepaid) + ' · COD ' + inr(s.cod);
+    $('dmRows').innerHTML = d.rows.length ? d.rows.map((r) => `<tr><td><b>${esc(r.order_no)}</b><br><small>${esc(r.emp ? 'by ' + r.emp : '')}${r.type ? ' · ' + esc(r.type) : ''}</small></td><td>${esc(dt(r.created_at))}</td><td>${esc(r.cust.name || '—')}</td><td>${esc(r.cust.phone || r.phone)}${r.cust.phone2 ? '<br><small>' + esc(r.cust.phone2) + '</small>' : ''}</td><td>${r.cust.addr1 ? esc([r.cust.addr1, r.cust.addr2, r.cust.landmark].filter(Boolean).join(', ')) + '<br><b>' + esc(r.cust.pin) + '</b> · ' + esc(r.cust.city) + ' · ' + esc(r.cust.state) : '<i style="color:#8794a3">address not added yet</i>'}</td><td>${r.lines.map((l) => l.qty + ' × ' + esc(l.short) + (l.label ? ' ' + esc(l.label) : '')).join('<br>')}</td><td><b>${inr(r.total)}</b></td><td>${payTxt(r)}</td><td><small>${esc(r.utr)}</small></td><td>${stTxt(r)}</td><td>${invTxt(r)}</td><td>${shTxt(r)}</td><td><button class="mini" data-a="det" data-i="${r.id}">Details</button>${r.link ? '<button class="mini" data-a="lnk" data-i="' + r.id + '">Copy link</button>' : ''}</td></tr>`).join('') : '<tr><td colspan="13" style="padding:20px;text-align:center;color:#64748b">No manual orders for these filters.</td></tr>';
+    $('dmPg').innerHTML = d.pages > 1 ? `<button class="mini" id="pgP" ${d.page <= 1 ? 'disabled' : ''}>‹ Prev</button> Page ${d.page} / ${d.pages} <button class="mini" id="pgN" ${d.page >= d.pages ? 'disabled' : ''}>Next ›</button>` : '';
+    if ($('pgP')) $('pgP').onclick = () => { page--; load(); }; if ($('pgN')) $('pgN').onclick = () => { page++; load(); };
+  }
+  async function load() {
+    $('dmErr').innerHTML = '';
+    try { const d = await api.get('wmo.dsp_list', Object.assign(params(), { page })); if (!$('dFrom').value) { $('dFrom').value = d.from; $('dTo').value = d.to; } LAST = d; draw(d); }
+    catch (e) { $('dmRows').innerHTML = ''; $('dmErr').innerHTML = '<div class="err">' + esc(e.message) + '</div>'; }
+  }
+  const ymd = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  async function bizToday() { const d = await api.get('wmo.dsp_list', { page: 1, per: 1, status: 'x' }); return d.from; }
+  $('bToday').onclick = async () => { const t = await bizToday(); $('dFrom').value = t; $('dTo').value = t; page = 1; load(); };
+  $('bYest').onclick = async () => { const t = new Date((await bizToday()) + 'T12:00:00'); t.setDate(t.getDate() - 1); $('dFrom').value = ymd(t); $('dTo').value = ymd(t); page = 1; load(); };
+  ['dFrom', 'dTo', 'fSt', 'fPay'].forEach((i) => $(i).addEventListener('change', () => { page = 1; load(); }));
+  let tq = 0; $('fQ').addEventListener('input', () => { clearTimeout(tq); tq = setTimeout(() => { page = 1; load(); }, 350); });
+  document.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-a]'); if (!b) return; const r = ROWS.find((x) => x.id === +b.dataset.i); if (!r) return; const a = b.dataset.a;
+    if (a === 'det') return detail(r);
+    if (a === 'lnk') { try { await navigator.clipboard.writeText(r.link); b.textContent = 'Copied ✓'; } catch (er) { prompt('Copy the link:', r.link); } return; }
+    if (a === 'inv' || a === 'sr') { b.disabled = true; const old = b.textContent; b.textContent = 'Working…'; try { const x = await api.post(a === 'inv' ? 'wmo.invoice' : 'wmo.shiprocket', { id: r.id }); alert(x.note || 'Done'); } catch (er) { alert(er.message); } load(); }
+  });
+  function detail(r) {
+    const ov = document.createElement('div'); ov.className = 'dm'; const c = r.cust;
+    ov.innerHTML = `<div class="ov"><div class="md"><div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0">${esc(r.order_no)} · ${inr(r.total)}</h3><button class="mini" id="dmX">✕ Close</button></div><div style="color:#64748b;font-size:12.5px;margin-bottom:6px">${esc(dt(r.created_at))}${r.emp ? ' · by ' + esc(r.emp) : ''}${r.type ? ' · ' + esc(r.type) : ''}</div>
+      <div class="kv"><span>Status</span><b>${stTxt(r)}</b></div><div class="kv"><span>Customer</span><b>${esc(c.name || '—')} · ${esc(c.phone || r.phone)}${c.phone2 ? ' · ' + esc(c.phone2) : ''}${c.email ? ' · ' + esc(c.email) : ''}</b></div>
+      <div class="kv"><span>Address</span><b>${c.addr1 ? esc([c.addr1, c.addr2, c.landmark].filter(Boolean).join(', ')) + ', ' + esc(c.city) + ' ' + esc(c.pin) + ', ' + esc(c.state) : 'not added yet'}</b></div>
+      <div class="kv"><span>Payment</span><b>${r.pay === 'prepaid' ? 'Prepaid ' + inr(r.paid) : r.pay === 'cod' ? 'COD ' + inr(r.cod) : 'Part prepaid ' + inr(r.paid) + ' · COD ' + inr(r.cod)}</b></div>
+      <div class="kv"><span>UTR / screenshot</span><b>${esc(r.utr || '—')}${r.has_shot ? ' · <a href="#" id="dmShot">view</a>' : ''}</b></div>
+      <div style="margin:8px 0"><b>Items</b>${r.lines.map((l) => `<div class="kv"><span>${l.qty} × ${esc(l.title)}${l.label ? ' · ' + esc(l.label) : ''}${l.chain ? ' (chain)' : ''}</span><b>${inr(l.total)}</b></div>`).join('')}</div>
+      <div class="kv"><span>Invoice</span><b>${r.invoice ? esc(r.invoice.no) + (r.invoice.sent_at ? ' · sent' : '') : (r.status === 'confirmed' ? 'not made' : '—')}</b></div><div class="kv"><span>Shiprocket</span><b>${r.sr.id ? esc(r.sr.id) : 'not created'}${r.sr.note ? '<br><small>' + esc(r.sr.note) + '</small>' : ''}</b></div>
+      <div class="kv"><span>Courier / AWB</span><b>${r.parcel && r.parcel.awb ? esc(r.parcel.courier) + ' · ' + esc(r.parcel.awb) + ' · ' + esc(r.parcel.status) : '—'}</b></div>
+      <div style="margin-top:10px"><button class="mini" id="dmCp">Copy shipping text</button></div></div></div>`;
+    document.body.appendChild(ov);
+    ov.querySelector('#dmX').onclick = () => ov.remove(); ov.querySelector('.ov').onclick = (e) => { if (e.target.classList.contains('ov')) ov.remove(); };
+    ov.querySelector('#dmCp').onclick = async (e) => { const t = [c.name, c.phone || r.phone, c.addr1 + (c.addr2 ? ', ' + c.addr2 : '') + (c.landmark ? ', ' + c.landmark : ''), c.city + ' - ' + c.pin, c.state, r.order_no + ' · ' + (r.cod > 0 ? 'COD ' + inr(r.cod) : 'Prepaid')].join('\n'); try { await navigator.clipboard.writeText(t); e.target.textContent = 'Copied ✓'; } catch (er) { prompt('Copy:', t); } };
+    const sh = ov.querySelector('#dmShot'); if (sh) sh.onclick = async (e) => { e.preventDefault(); try { const res = await fetch(api.buildUrl('wmo.dsp_shot', { id: r.id }), { headers: { Authorization: 'Bearer ' + api.token() } }); if (!res.ok) throw new Error('No screenshot.'); window.open(URL.createObjectURL(await res.blob()), '_blank'); } catch (er) { alert(er.message); } };
+  }
+  // ---- export: the Shopify orders export columns, one row per product
+  const COLS = ['Name', 'Email', 'Financial Status', 'Paid at', 'Fulfillment Status', 'Fulfilled at', 'Accepts Marketing', 'Currency', 'Subtotal', 'Shipping', 'Taxes', 'Total', 'Discount Code', 'Discount Amount', 'Shipping Method', 'Created at', 'Lineitem quantity', 'Lineitem name', 'Lineitem price', 'Lineitem compare at price', 'Lineitem sku', 'Lineitem requires shipping', 'Lineitem taxable', 'Lineitem fulfillment status',
+    'Billing Name', 'Billing Street', 'Billing Address1', 'Billing Address2', 'Billing Company', 'Billing City', 'Billing Zip', 'Billing Province', 'Billing Country', 'Billing Phone', 'Shipping Name', 'Shipping Street', 'Shipping Address1', 'Shipping Address2', 'Shipping Company', 'Shipping City', 'Shipping Zip', 'Shipping Province', 'Shipping Country', 'Shipping Phone',
+    'Notes', 'Note Attributes', 'Cancelled at', 'Payment Method', 'Payment Reference', 'Refunded Amount', 'Vendor', 'Outstanding Balance', 'Employee', 'Location', 'Device ID', 'Id', 'Tags', 'Risk Level', 'Source', 'Phone', 'Order Source (Query/Campaign)', 'Order Status', 'Invoice No', 'Courier', 'AWB', 'Shiprocket Order Id'];
+  const iso = (s) => (s ? String(s).replace(' ', 'T') + '+05:30' : '');
+  function sheetRows(rows) {
+    const out = [];
+    rows.forEach((r) => {
+      const c = r.cust, fin = r.status === 'cancelled' ? 'voided' : r.pay === 'prepaid' ? 'paid' : r.pay === 'partial' ? 'partially_paid' : 'pending', pm = r.pay === 'prepaid' ? 'QR / UPI' : r.pay === 'cod' ? 'Cash on Delivery (COD)' : 'QR / UPI + COD';
+      const street = [c.addr1, c.addr2].filter(Boolean).join(', ');
+      r.lines.forEach((l, i) => {
+        const o = {}; COLS.forEach((k) => { o[k] = ''; }); o['Name'] = r.order_no;
+        o['Lineitem quantity'] = l.qty; o['Lineitem name'] = l.title + (l.label ? ' - ' + l.label : ''); o['Lineitem price'] = l.unit; o['Lineitem sku'] = l.sku; o['Lineitem requires shipping'] = 'true'; o['Lineitem taxable'] = 'true'; o['Lineitem fulfillment status'] = 'pending';
+        if (i === 0) {
+          Object.assign(o, { 'Email': c.email, 'Financial Status': fin, 'Paid at': (r.pay !== 'cod' && r.status === 'confirmed') ? iso(r.confirmed_at || r.created_at) : '', 'Fulfillment Status': 'unfulfilled', 'Accepts Marketing': 'no', 'Currency': 'INR', 'Subtotal': r.total, 'Shipping': 0, 'Taxes': 0, 'Total': r.total, 'Shipping Method': 'Manual', 'Created at': iso(r.created_at),
+            'Billing Name': c.name, 'Billing Street': street, 'Billing Address1': c.addr1, 'Billing Address2': [c.addr2, c.landmark].filter(Boolean).join(', '), 'Billing City': c.city, 'Billing Zip': c.pin, 'Billing Province': c.state, 'Billing Country': 'IN', 'Billing Phone': c.phone || r.phone,
+            'Shipping Name': c.name, 'Shipping Street': street, 'Shipping Address1': c.addr1, 'Shipping Address2': [c.addr2, c.landmark].filter(Boolean).join(', '), 'Shipping City': c.city, 'Shipping Zip': c.pin, 'Shipping Province': c.state, 'Shipping Country': 'IN', 'Shipping Phone': c.phone || r.phone,
+            'Notes': r.note, 'Cancelled at': r.status === 'cancelled' ? iso(r.created_at) : '', 'Payment Method': pm, 'Payment Reference': r.utr, 'Outstanding Balance': r.cod, 'Employee': r.emp, 'Id': 7000000000000000 + r.id, 'Tags': ['wa-manual', r.type, r.pay === 'cod' ? 'cod' : 'prepaid'].filter(Boolean).join(', '), 'Source': 'manual', 'Phone': c.phone || r.phone,
+            'Order Source (Query/Campaign)': r.type, 'Order Status': r.status, 'Invoice No': r.invoice ? r.invoice.no : '', 'Courier': r.parcel ? r.parcel.courier : '', 'AWB': r.parcel ? r.parcel.awb : '', 'Shiprocket Order Id': r.sr.id });
+        }
+        out.push(o);
+      });
+    });
+    return out;
+  }
+  async function fetchAllForExport(b) {
+    b.disabled = true; const old = b.textContent; b.textContent = 'Preparing…';
+    try { const d = await api.get('wmo.dsp_export', params()); if (!d.rows.length) { alert('No manual orders for these filters.'); return null; } return d; } catch (e) { alert(e.message); return null; } finally { b.disabled = false; b.textContent = old; }
+  }
+  const stamp = (d) => 'manual_orders_' + d.from + (d.to !== d.from ? '_to_' + d.to : '');
+  $('bCsv').onclick = async function () {
+    const d = await fetchAllForExport(this); if (!d) return; const rows = sheetRows(d.rows), q = (v) => { const s = String(v == null ? '' : v); return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+    const csv = '﻿' + COLS.map(q).join(',') + '\r\n' + rows.map((o) => COLS.map((k) => q(o[k])).join(',')).join('\r\n');
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); a.download = stamp(d) + '.csv'; document.body.appendChild(a); a.click(); a.remove();
+  };
+  function loadXlsx() { return new Promise((ok, no) => { if (window.XLSX) return ok(); const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; s.onload = ok; s.onerror = () => no(new Error('The Excel maker could not be loaded (internet). Use the CSV button — Excel opens it.')); document.head.appendChild(s); }); }
+  $('bXlsx').onclick = async function () {
+    const d = await fetchAllForExport(this); if (!d) return;
+    try { await loadXlsx(); const ws = XLSX.utils.json_to_sheet(sheetRows(d.rows), { header: COLS }); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Manual orders'); XLSX.writeFile(wb, stamp(d) + '.xlsx'); }
+    catch (e) { alert(e.message); }
+  };
+  load();
+</script>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+</body>
+</html>

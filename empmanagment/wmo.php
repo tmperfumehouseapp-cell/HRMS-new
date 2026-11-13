@@ -154,6 +154,50 @@ function wmo_read_shot(PDO $pdo, string $b64, string $mime): array
     return $out;
 }
 
+// ------------------------------------------------------------------------------------------------------------------ Dispatch ▸ Manual orders (every manual order, export, invoice / Shiprocket status)
+/** Who may open the Dispatch "Manual orders" list: Admin / HR, the Dispatch and Admin departments, a Sales Head, a Dispatch seat holder, the bosses. */
+function wmo_dsp_ok(PDO $pdo, array $auth): bool
+{
+    if (in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true)) return true;
+    $e = (int)($auth['employee_id'] ?? 0); if ($e <= 0) return false;
+    try {
+        $q = $pdo->prepare("SELECT d.department_name, e.designation FROM employees e LEFT JOIN departments d ON d.department_id = e.department_id WHERE e.employee_id = ?"); $q->execute([$e]); $r = $q->fetch();
+        if ($r && (preg_match('/dispatch|admin/i', (string)$r['department_name']) || preg_match('/sales\s*head|dispatch/i', (string)$r['designation']))) return true;
+    } catch (Throwable $ex) { }
+    try { if (function_exists('bd_who') && !empty(bd_who($pdo, $auth)['manager'])) return true; } catch (Throwable $ex) { }
+    try { if (function_exists('dp_can_seat') && (dp_can_seat($pdo, $auth, 'dispatch.tracking') || dp_can_seat($pdo, $auth, 'dispatch.lead'))) return true; } catch (Throwable $ex) { }
+    return false;
+}
+/** The manual orders (WM-xxxxx) of a business-day range with everything the Dispatch people and the export need. */
+function wmo_dsp_rows(PDO $pdo, string $from, string $to, string $status, string $pay, string $q, int $limit, int $offset, ?int &$total = null, ?array &$sum = null): array
+{
+    [$ws, $we] = biz_window($pdo, $from, $to); $w = ["created_at >= ?", "created_at <= ?"]; $a = [$ws, $we];
+    $base = $w; $baseA = $a;
+    if ($status === 'confirmed' || $status === 'cancelled') { $w[] = "status = ?"; $a[] = $status; } elseif ($status === 'waiting') $w[] = "status IN ('draft', 'sent')";
+    if (in_array($pay, ['prepaid', 'partial', 'cod'], true)) { $w[] = "pay = ?"; $a[] = $pay; }
+    $q = trim($q); if ($q !== '') { $l = '%' . str_replace(['%', '_'], ['\\%', '\\_'], ltrim($q, '#')) . '%'; $w[] = "(order_no LIKE ? OR phone LIKE ? OR utr LIKE ? OR cust_json LIKE ?)"; array_push($a, $l, $l, $l, $l); }
+    $c = $pdo->prepare("SELECT COUNT(*), COALESCE(SUM(total_p), 0), COALESCE(SUM(paid_p), 0), COALESCE(SUM(cod_p), 0) FROM wmo_order WHERE " . implode(' AND ', $w)); $c->execute($a); $cr = $c->fetch(PDO::FETCH_NUM); $total = (int)$cr[0];
+    $sum = ['total' => $cr[1] / 100, 'prepaid' => $cr[2] / 100, 'cod' => $cr[3] / 100, 'count' => (int)$cr[0]];
+    $cs = $pdo->prepare("SELECT status, COUNT(*) n FROM wmo_order WHERE " . implode(' AND ', $base) . " GROUP BY status"); $cs->execute($baseA); $by = ['confirmed' => 0, 'waiting' => 0, 'cancelled' => 0]; foreach ($cs->fetchAll() as $r0) { $k = $r0['status'] === 'confirmed' ? 'confirmed' : ($r0['status'] === 'cancelled' ? 'cancelled' : 'waiting'); $by[$k] += (int)$r0['n']; } $sum['by'] = $by;
+    $st = $pdo->prepare("SELECT * FROM wmo_order WHERE " . implode(' AND ', $w) . " ORDER BY id DESC" . ($limit > 0 ? " LIMIT " . (int)$limit . " OFFSET " . (int)$offset : "")); $st->execute($a); $rows = $st->fetchAll(); if (!$rows) return [];
+    $names = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : []; $nos = array_map(fn($r) => (string)$r['order_no'], $rows); $in = implode(',', array_fill(0, count($nos), '?'));
+    $inv = []; try { $iq = $pdo->prepare("SELECT id, inv_no, token, sent_at, order_name FROM wch_inv WHERE order_name IN ($in) ORDER BY id"); $iq->execute($nos); foreach ($iq->fetchAll() as $r1) $inv[(string)$r1['order_name']] = $r1; } catch (Throwable $e) { }
+    $par = []; try { $nos2 = array_merge($nos, array_map(fn($x) => '#' . $x, $nos)); $in2 = implode(',', array_fill(0, count($nos2), '?')); $pq = $pdo->prepare("SELECT order_name, tracking_no, courier, status FROM dp_dsp_parcels WHERE order_name IN ($in2)"); $pq->execute($nos2); foreach ($pq->fetchAll() as $r2) $par[ltrim((string)$r2['order_name'], '#')] = $r2; } catch (Throwable $e) { }
+    $out = [];
+    foreach ($rows as $r) {
+        $L = json_decode((string)$r['lines_json'], true) ?: []; $cu = json_decode((string)($r['cust_json'] ?? ''), true) ?: []; $ad = json_decode((string)($r['addr_json'] ?? ''), true) ?: []; $no = (string)$r['order_no'];
+        $conf = $r['status'] === 'confirmed'; $iv = $inv[$no] ?? null; $pa = $par[$no] ?? null;
+        $out[] = ['id' => (int)$r['id'], 'order_no' => $no, 'created_at' => (string)$r['created_at'], 'confirmed_at' => (string)($r['confirmed_at'] ?? ''), 'status' => $conf ? 'confirmed' : ($r['status'] === 'cancelled' ? 'cancelled' : 'waiting'), 'raw_status' => (string)$r['status'],
+            'pay' => (string)$r['pay'], 'total' => $r['total_p'] / 100, 'paid' => $r['paid_p'] / 100, 'cod' => $r['cod_p'] / 100, 'utr' => (string)$r['utr'], 'ml' => (int)$r['ml'], 'type' => (string)($r['otype'] ?? ''), 'src' => (string)($r['src'] ?? ''), 'note' => (string)($r['note'] ?? ''),
+            'emp' => (string)($names[(int)$r['assign_emp']] ?? ''), 'phone' => (string)$r['phone'], 'has_shot' => (string)($r['shot_mime'] ?? '') !== '',
+            'cust' => ['name' => (string)($cu['name'] ?? ($ad['name'] ?? '')), 'phone' => (string)($cu['phone'] ?? $r['phone']), 'phone2' => (string)($cu['phone2'] ?? ''), 'addr1' => (string)($cu['addr1'] ?? ($ad['addr1'] ?? '')), 'addr2' => (string)($cu['addr2'] ?? ''), 'landmark' => (string)($cu['landmark'] ?? ($ad['landmark'] ?? '')), 'pin' => (string)($cu['pin'] ?? ($ad['pin'] ?? '')), 'city' => (string)($cu['city'] ?? ($ad['city'] ?? '')), 'state' => (string)($cu['state'] ?? ($ad['state'] ?? '')), 'email' => (string)($cu['email'] ?? '')],
+            'lines' => array_map(fn($l) => ['short' => (string)$l['short'], 'title' => (string)($l['title'] ?? $l['short']), 'label' => (string)($l['label'] ?? ''), 'sku' => (string)($l['sku'] ?? ''), 'qty' => (int)$l['qty'], 'total' => $l['total_p'] / 100, 'unit' => round($l['total_p'] / 100 / max(1, (int)$l['qty']), 2), 'chain' => !empty($l['chain']), 'single' => !empty($l['single'])], $L),
+            'invoice' => $iv ? ['id' => (int)$iv['id'], 'no' => (string)$iv['inv_no'], 'sent_at' => (string)($iv['sent_at'] ?? ''), 'pdf' => function_exists('wch_pdf_url') ? wch_pdf_url((string)$iv['token']) : '', 'view' => function_exists('wch_view_url') ? wch_view_url((string)$iv['token']) : ''] : null,
+            'sr' => ['id' => (string)($r['sr_order_id'] ?? ''), 'note' => (string)($r['sr_note'] ?? '')], 'parcel' => $pa ? ['awb' => (string)$pa['tracking_no'], 'courier' => (string)$pa['courier'], 'status' => (string)$pa['status']] : null,
+            'link' => in_array($r['status'], ['draft', 'sent'], true) ? wmo_link((string)$r['token']) : ''];
+    }
+    return $out;
+}
 // ------------------------------------------------------------------------------------------------------------------ view of one order
 function wmo_out(PDO $pdo, array $r, bool $full = false): array
 {
@@ -399,8 +443,24 @@ if (strpos($__wmo, 'wmo.') === 0) {
     if (!wmo_on($pdo)) json_response(['error' => 'Manual orders are switched off (setting wmo_on).'], 403);
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'; $in = $isPost ? json_input() : $_GET; $me = (int)($auth['employee_id'] ?? 0);
     $chat = function () use ($pdo, $auth, $in) { $k = wmo_phone10($in['phone'] ?? ''); $c = strlen($k) === 10 && function_exists('wa_contact') ? wa_contact($pdo, $k) : null; if (!$c) json_response(['error' => 'Chat not found.'], 404); if (function_exists('wa_can_chat') && !wa_can_chat($pdo, $auth, $c)) json_response(['error' => 'This chat is assigned to someone else.'], 403); return $c; };
-    $mine = function () use ($pdo, $auth, $in) { $q = $pdo->prepare("SELECT * FROM wmo_order WHERE id = ?"); $q->execute([(int)($in['id'] ?? 0)]); $r = $q->fetch(); if (!$r) json_response(['error' => 'Order not found.'], 404); $c = wa_contact($pdo, (string)$r['phone']); if ($c && function_exists('wa_can_chat') && !wa_can_chat($pdo, $auth, $c)) json_response(['error' => 'This chat is assigned to someone else.'], 403); return $r; };
+    $mine = function () use ($pdo, $auth, $in, $__wmo) { $q = $pdo->prepare("SELECT * FROM wmo_order WHERE id = ?"); $q->execute([(int)($in['id'] ?? 0)]); $r = $q->fetch(); if (!$r) json_response(['error' => 'Order not found.'], 404); $c = wa_contact($pdo, (string)$r['phone']); if ($c && function_exists('wa_can_chat') && !wa_can_chat($pdo, $auth, $c) && !(in_array($__wmo, ['wmo.invoice', 'wmo.shiprocket'], true) && wmo_dsp_ok($pdo, $auth))) json_response(['error' => 'This chat is assigned to someone else.'], 403); return $r; };
     switch ($__wmo) {
+        case 'wmo.dsp_access': { json_response(['ok' => wmo_dsp_ok($pdo, $auth)]); }
+        case 'wmo.dsp_list': case 'wmo.dsp_export': {
+            if (!wmo_dsp_ok($pdo, $auth)) json_response(['error' => 'The manual orders list is for Admin, Dispatch, the Admin department and Sales Heads.'], 403);
+            $from = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($in['from'] ?? '')) ? (string)$in['from'] : biz_today($pdo); $to = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($in['to'] ?? '')) ? (string)$in['to'] : $from; if ($to < $from) $to = $from;
+            if ((strtotime($to) - strtotime($from)) > 400 * 86400) json_response(['error' => 'Choose at most 400 days.'], 422);
+            $status = (string)($in['status'] ?? ''); $pay = (string)($in['pay'] ?? ''); $qq = (string)($in['q'] ?? ''); $tot = 0; $sum = [];
+            if ($__wmo === 'wmo.dsp_export') { @set_time_limit(120); $rows = wmo_dsp_rows($pdo, $from, $to, $status, $pay, $qq, 5000, 0, $tot, $sum); json_response(['ok' => true, 'rows' => $rows, 'total' => $tot, 'from' => $from, 'to' => $to]); }
+            $page = max(1, (int)($in['page'] ?? 1)); $per = 30; $rows = wmo_dsp_rows($pdo, $from, $to, $status, $pay, $qq, $per, ($page - 1) * $per, $tot, $sum);
+            $bill = ['ok' => true, 'missing' => []]; try { if (function_exists('wch_billing_gate')) { $g = wch_billing_gate($pdo); $bill = ['ok' => !empty($g['ok']), 'missing' => array_values(array_slice((array)($g['missing'] ?? []), 0, 8))]; } else $bill = ['ok' => false, 'missing' => ['GST invoice module is not installed']]; } catch (Throwable $e) { }   // why invoices are not made: the GST billing details
+            json_response(['ok' => true, 'rows' => $rows, 'total' => $tot, 'page' => $page, 'pages' => max(1, (int)ceil($tot / $per)), 'sum' => $sum, 'from' => $from, 'to' => $to, 'billing' => $bill]);
+        }
+        case 'wmo.dsp_shot': {   // the payment screenshot of one manual order (Dispatch people / Admin)
+            if (!wmo_dsp_ok($pdo, $auth)) json_response(['error' => 'Not allowed.'], 403);
+            $q = $pdo->prepare("SELECT shot_mime, shot_b64 FROM wmo_order WHERE id = ?"); $q->execute([(int)($in['id'] ?? 0)]); $r = $q->fetch(); if (!$r || (string)$r['shot_b64'] === '') json_response(['error' => 'No payment screenshot was saved for this order.'], 404);
+            while (ob_get_level() > 0) @ob_end_clean(); header('Content-Type: ' . $r['shot_mime']); header('Cache-Control: private, max-age=600'); echo base64_decode((string)$r['shot_b64']); exit;
+        }
         case 'wmo.start': {   // sidebar "Manual order": a customer who is not in HRMS yet → make the chat record (held by the salesperson), then the normal manual-order sheet opens on it
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $k = wmo_phone10($in['phone'] ?? '');
             if (strlen($k) !== 10) json_response(['error' => 'Enter the 10-digit customer mobile number.'], 422);
