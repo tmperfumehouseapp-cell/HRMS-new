@@ -181,6 +181,20 @@ function cx_notify(PDO $pdo, array $emps, $title, $body, $caseId, $exceptEmp = 0
     if ($ids) { try { ct_push($pdo, array_keys($ids), $title, mb_substr($body, 0, 140), '/complaints.html?case=' . (int)$caseId, 'cx-' . (int)$caseId); } catch (Throwable $e) {} }
 }
 
+/** 📱 Owner (13 Nov): on which of OUR WhatsApp numbers is this customer? 'in' = the number the customer last wrote to (a typed reply goes from it),
+ *  'sent' = the number our last approved message went from (ticket created / update / pre-made) — the one to name on a call: "please reply on this number". */
+function cx_case_numbers(PDO $pdo, $phone) {
+    $out = ['in' => null, 'sent' => null]; if ((string)$phone === '') return $out;
+    try {
+        $N = []; foreach ($pdo->query("SELECT id, label, display FROM wa_numbers")->fetchAll() as $n) $N[(int)$n['id']] = ['id' => (int)$n['id'], 'label' => trim((string)$n['label']) !== '' ? trim((string)$n['label']) : 'Number ' . $n['id'], 'display' => trim((string)($n['display'] ?? ''))];
+        $q = $pdo->prepare("SELECT number_id, ts FROM wa_messages WHERE phone = ? AND dir = 'in' AND number_id > 0 ORDER BY id DESC LIMIT 1"); $q->execute([(string)$phone]); $r = $q->fetch();
+        if ($r && isset($N[(int)$r['number_id']])) $out['in'] = $N[(int)$r['number_id']] + ['at' => (string)$r['ts']];
+        if (!$out['in']) { $q = $pdo->prepare("SELECT last_number_id FROM wa_contacts WHERE phone = ?"); $q->execute([(string)$phone]); $l = (int)$q->fetchColumn(); if ($l > 0 && isset($N[$l])) $out['in'] = $N[$l] + ['at' => '']; }
+        $q = $pdo->prepare("SELECT number_id, ts, status FROM wa_messages WHERE phone = ? AND dir = 'out' AND mtype = 'template' AND status <> 'failed' AND number_id > 0 ORDER BY id DESC LIMIT 1"); $q->execute([(string)$phone]); $r = $q->fetch();
+        if ($r && isset($N[(int)$r['number_id']])) $out['sent'] = $N[(int)$r['number_id']] + ['at' => (string)$r['ts'], 'status' => (string)$r['status']];
+    } catch (Throwable $e) { }
+    return $out;
+}
 /* ============================== chat hand-over ============================== */
 function cx_link_chat(PDO $pdo, array $case, $ownerEmp, $byEmp) {
     // The chat STAYS with the salesperson who has it (where the complaint was raised) — it is only marked as a complaint (cx_id) and shows in the
@@ -502,6 +516,7 @@ function cx_dispatch(PDO $pdo, $action, array $auth, array $w, $by, array $in, $
         $ord = cx_orders($pdo, $r['phone']); $limit = (float)cx_cfg($pdo, 'refund_limit');
         $d = ['case' => $v, 'steps' => $pb, 'events' => $team || $role['mgr'] ? $evs : array_values(array_filter($evs, function ($e) { return in_array($e['kind'], ['raised', 'desk', 'resolve'], true); })), 'links' => $links, 'orders' => $ord, 'parcel' => cx_parcel($pdo, $r['order_name'], $r['awb']), 'can_work' => $team, 'mgr' => $role['mgr'], 'me' => $me,
             'is_owner' => $me && (int)$r['owner_emp'] === $me, 'refund_limit' => $limit, 'desks' => array_map(function ($k, $x) { return ['k' => $k, 'label' => $x[0], 'icon' => $x[1]]; }, array_keys(cx_desks()), cx_desks()), 'resolutions' => cx_resolutions(), 'raised_phone' => $r['phone']];
+        if ($team && $r['phone'] !== '') $d['wa_num'] = cx_case_numbers($pdo, (string)$r['phone']);   // 📱 which of our numbers this customer is on (to say on a call: "reply on this number")
         if (function_exists('cx2_case_extra')) $d = array_merge($d, cx2_case_extra($pdo, cx_row($pdo, (int)$r['id']), $role));
         if (function_exists('cx7_case')) $d['progress'] = cx7_case($pdo, cx_row($pdo, (int)$r['id']));   // 📨 progress messages of this ticket
         json_response($d);

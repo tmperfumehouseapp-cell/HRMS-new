@@ -245,8 +245,23 @@ window.CX = (function () {
     drawHead(); drawLeft(); drawRight();
   }
   const isOpen = () => C && (C.case.status === 'open' || C.case.status === 'reopened');
+  // 📱 which of OUR numbers this customer is on — a strip under the ticket header, so the person can say it on a call ("we sent you a message from …, please reply there")
+  function drawNum(hd) {
+    let el = $('#cxNum', H); if (!el) { el = document.createElement('div'); el.id = 'cxNum'; hd.insertAdjacentElement('afterend', el); }
+    const w = C.wa_num, v = C.case; if (!w || (!w.in && !w.sent)) { el.style.display = 'none'; el.innerHTML = ''; return; }
+    const nm = (n) => '<b>' + esc(n.label) + '</b>' + (n.display ? ' <span style="font-weight:700">' + esc(n.display) + '</span>' : '');
+    const use = w.sent || w.in, diff = w.in && w.sent && w.in.id !== w.sent.id;
+    const say = 'Hello ' + (v.name || '') + ', we have sent you a WhatsApp message about your complaint ' + v.code + ' from our number ' + (use.display || use.label) + '. Please open that chat and reply there (even just "Hi"), so we can help you quickly.';
+    el.style.cssText = 'display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:7px 12px;font-size:12.5px;border-bottom:1px solid var(--line,#e6e8ef);background:' + (diff ? '#fff7e6' : '#f1faf6');
+    el.innerHTML = '<span>📱 ' + (w.sent ? 'Our complaint message went from ' + nm(w.sent) : 'No complaint message has gone yet') + '</span>'
+      + (w.in ? '<span>· Customer last wrote to ' + nm(w.in) + '</span>' : '<span>· The customer has not written to us on WhatsApp</span>')
+      + (diff ? '<span style="color:#9a5b00;font-weight:700">⚠ Different numbers — ask the customer to reply on ' + esc(w.sent.display || w.sent.label) + '</span>' : '')
+      + '<button class="cx-btn gh s" type="button" id="cxNumSay" title="' + esc(say) + '">📋 Copy what to tell the customer</button>';
+    $('#cxNumSay', el).onclick = async () => { try { await navigator.clipboard.writeText(say); toast('Copied.'); } catch (e) { window.prompt('Copy this:', say); } };
+  }
   function drawHead() {
     const v = C.case; const hd = $('#cxHd', H); if (!hd) return;
+    drawNum(hd);
     hd.innerHTML = '<button class="bk" type="button" id="cxBk">‹</button><h2>' + v.code + ' · ' + esc(v.name) + '</h2>' + uPill(v.urgency) + (isOpen() && v.time_label ? pill('⏰ ' + v.time_label, v.late ? 'r' : 'g') : pill(STAT[v.status] || v.status, 'g')) + sPill(v)
       + '<span style="flex:1"></span>' + (C.can_work ? (isOpen() ? ((!C.is_owner ? '<button class="cx-btn gh s" type="button" id="cxTake">' + (v.owner ? 'Take it' : 'Take it') + '</button>' : '') + '<button class="cx-btn gh s" type="button" id="cxHand">Hand to…</button><button class="cx-btn gh s" type="button" id="cxProm" title="The fix is known but happens on a later day">⏸ Promise a date</button><button class="cx-btn s" type="button" id="cxRes">✔ Mark resolved</button>') : '<button class="cx-btn gh s" type="button" id="cxReo">Reopen</button>') : '');
     $('#cxBk', H).onclick = back; const q = (id, fn) => { const e = $(id, H); if (e) e.onclick = fn; }; q('#cxTake', takeIt); q('#cxHand', handSheet); q('#cxProm', promiseSheet); q('#cxRes', resolveSheet); q('#cxReo', reopenSheet);
