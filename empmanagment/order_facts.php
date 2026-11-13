@@ -29,6 +29,9 @@ function ofact_ensure(PDO $pdo): bool
             refreshed_at DATETIME NULL,
             PRIMARY KEY (store_key, shopify_id), KEY idx_of_name (order_name), KEY idx_of_okey (okey), KEY idx_of_day (biz_day), KEY idx_of_emp (emp_id), KEY idx_of_ref (pay_ref(60)), KEY idx_of_awb (awb)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        // ⚡ of_refresh joins on shopify_id + store_key, and store_key has a different collation in the two tables, so the primary key (store_key first) could not be used:
+        // every order was compared with every row and one run took 20+ minutes of a full CPU core. An index on the number alone makes it a direct lookup. Added once.
+        try { if (function_exists('setting_get') && (string)setting_get($pdo, 'of_idx_sid', '') !== '1') { $q = $pdo->query("SHOW INDEX FROM order_facts WHERE Key_name = 'idx_of_sid'"); if (!($q && $q->fetch())) $pdo->exec("ALTER TABLE order_facts ADD INDEX idx_of_sid (shopify_id)"); setting_set($pdo, 'of_idx_sid', '1'); } } catch (Throwable $e) { error_log('order_facts index: ' . $e->getMessage()); }
         return $ok = true;
     } catch (Throwable $e) { error_log('order_facts: ' . $e->getMessage()); return $ok = false; }
 }
@@ -60,7 +63,7 @@ function of_refresh(PDO $pdo, int $limit = 400, int $days = 400): int
 {
     if (!ofact_ensure($pdo)) return 0;
     $cut = date('Y-m-d', time() - $days * 86400) . ' 00:00:00';
-    $q = $pdo->prepare("SELECT so.shopify_id, so.store_key, so.order_name, so.created_at, so.total, so.outstanding, so.financial_status, so.tags, so.ml_total, so.customer, so.phone, so.pay_ref
+    $q = $pdo->prepare("SELECT /*+ MAX_EXECUTION_TIME(20000) */ so.shopify_id, so.store_key, so.order_name, so.created_at, so.total, so.outstanding, so.financial_status, so.tags, so.ml_total, so.customer, so.phone, so.pay_ref
         FROM shop_orders so LEFT JOIN order_facts f ON f.shopify_id = so.shopify_id AND f.store_key = so.store_key COLLATE utf8mb4_unicode_ci
         WHERE so.created_at >= ? AND (f.refreshed_at IS NULL OR f.refreshed_at < so.synced_at OR f.refreshed_at < DATE_SUB(NOW(), INTERVAL 30 MINUTE))
         ORDER BY (f.refreshed_at IS NULL) DESC, so.created_at DESC LIMIT " . (int)$limit);
