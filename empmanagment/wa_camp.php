@@ -1052,10 +1052,12 @@ function wa_camp_ideal_cfg(PDO $pdo): array
 /** 🎯 Ideal vs actual for one business day: the cumulative spend / replies (queries typed Campaign) / Campaign orders at each checkpoint, a status, a plain-words analysis and the day-end projection. Remembered 3 minutes. */
 function wa_camp_ideal(PDO $pdo, string $day): array
 {
-    $ck = 'camp_ideal3_' . $day; $hit = wa_cpc_get($pdo, $ck); if ($hit && $hit['age'] < 180) return $hit['v'];
+    $ck = 'camp_ideal4_' . $day; $hit = wa_cpc_get($pdo, $ck); if ($hit && $hit['age'] < 180) return $hit['v'];
     $cfg = wa_camp_ideal_cfg($pdo); $t0 = null; $t1 = null;
     try { if (function_exists('wq_day_start') && function_exists('wq_day_add')) { $t0 = (int)wq_day_start($pdo, $day); $t1 = (int)wq_day_start($pdo, wq_day_add($day, 1)); } } catch (Throwable $e) { }
-    if (!$t0 || $t1 <= $t0) { $t0 = strtotime($day . ' 10:00:00'); $t1 = $t0 + 86400; }
+    // the ideal day runs 12 noon → 12 noon (setting camp_ideal_start, default 12:00) — not the 10 AM business day of the other boxes
+    $st = (string)setting_get($pdo, 'camp_ideal_start', '12:00'); if (!preg_match('/^\d{2}:\d{2}$/', $st)) $st = '12:00';
+    $t0 = strtotime($day . ' ' . $st . ':00'); $t1 = $t0 + 86400; if (time() < $t0 && $day >= date('Y-m-d')) { $t0 -= 86400; $t1 -= 86400; }   // before noon: the day that is still running
     $a = date('Y-m-d H:i:s', $t0); $b = date('Y-m-d H:i:s', $t1); $now = time(); $R = function_exists('wab_rates') ? wab_rates($pdo) : ['marketing' => 1.09, 'utility' => 0.15];
     $H = []; for ($t = $t0; $t < $t1; $t += 3600) $H[(int)date('G', $t)] = ['t' => $t, 'spend' => 0.0, 'sent' => 0, 'replies' => 0, 'orders' => 0];
     try {   // spend (estimate: delivered × rate) and messages, by hour
