@@ -722,7 +722,12 @@ function wa_camp_tick_run(PDO $pdo, int $only = 0): array
     $t0 = microtime(true); $nowTs = wa_camp_now(); $now = date('Y-m-d H:i:s', $nowTs); $res = [];
     try { wa_more_tables($pdo); } catch (Throwable $e) { }
     if (!$only) try { wa_health_all($pdo, false); } catch (Throwable $e) { }   // keeps the saved number health fresh in the background, so the Campaign panel never waits for Meta
-    $pdo->prepare("UPDATE wa_camp_items SET status = 'queued' WHERE status = 'sending' AND sent_at < ?")->execute([date('Y-m-d H:i:s', $nowTs - 600)]);   // a run that died while sending
+    // a run that died while sending: its items go back to the queue. ⚡ One campaign at a time through the (camp_id, status) index — the old single UPDATE had no index to use, read all ~700,000 items,
+    // and every per-campaign worker ran it at the same moment (9 at once seen): they locked each other out ("Lock wait timeout") and burned CPU. The whole-list pass now runs once a minute at most.
+    try {
+        $__ids = $only ? [$only] : (wa_lock($pdo, 'campstuck', 60) ? array_map('intval', $pdo->query("SELECT id FROM wa_campaigns WHERE status IN ('running', 'paused') ORDER BY id DESC LIMIT 200")->fetchAll(PDO::FETCH_COLUMN)) : []);
+        if ($__ids) { $__u = $pdo->prepare("UPDATE wa_camp_items SET status = 'queued' WHERE camp_id = ? AND status = 'sending' AND sent_at < ?"); foreach ($__ids as $__id) { try { $__u->execute([$__id, date('Y-m-d H:i:s', $nowTs - 600)]); } catch (Throwable $e) { } } }
+    } catch (Throwable $e) { }
     $sp = ''; if (!$only && (function_exists('wsm_tick') || wa_camp_lazy('wsm_tick', 'wa_smart.php'))) { try { $res['smart'] = wsm_tick($pdo, $nowTs); if (function_exists('wsm_has_col') && wsm_has_col($pdo)) $sp = ' AND smart_plan = 0'; } catch (Throwable $e) { } }   // Smart plans: their audience is picked on the start day (wa_smart.php), so the generic start below skips them
     if (!$only) $pdo->prepare("UPDATE wa_campaigns SET status = 'running', started_at = COALESCE(started_at, ?) WHERE status = 'scheduled' AND start_at IS NOT NULL AND start_at <= ?" . $sp)->execute([$now, $now]);
     if (!$only) try { wa_unreach_seed($pdo); } catch (Throwable $e) { }
