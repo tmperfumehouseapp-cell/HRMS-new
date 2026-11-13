@@ -40,8 +40,8 @@
         <div><label>Payment</label><select id="fPay"><option value="">All</option><option value="prepaid">Prepaid</option><option value="partial">Part prepaid + COD</option><option value="cod">COD</option></select></div>
         <div><label>Search</label><input id="fQ" placeholder="order no / mobile / name / UTR" style="min-width:200px"></div>
         <span style="flex:1"></span>
-        <button class="btn" type="button" id="bXlsx">⬇ Export Excel</button>
-        <button class="btn" type="button" id="bCsv" style="background:#fff;color:#0b6b4b;border:1px solid #1aa37a">⬇ CSV</button>
+        <button class="btn" type="button" id="bXlsx" title="The FP export file (Date, Order No, Order Type, AWB NO, Products, … Transaction Id)">⬇ Export Excel (FP)</button>
+        <button class="btn" type="button" id="bCsv" style="background:#fff;color:#0b6b4b;border:1px solid #1aa37a" title="Shopify orders export columns, one row per product">⬇ CSV (Shopify format)</button>
       </div>
       <div id="dmSum"></div><div id="dmErr"></div>
       <div class="wrap"><table><thead><tr><th>Order</th><th>Date</th><th>Customer</th><th>Mobile</th><th>Address · Pincode · City / State</th><th>Items</th><th>Total</th><th>Payment</th><th>UTR</th><th>Status</th><th>Invoice</th><th>Shipping</th><th></th></tr></thead><tbody id="dmRows"><tr><td colspan="13">Loading…</td></tr></tbody></table></div>
@@ -52,6 +52,7 @@
 <script src="assets/js/config.js?v=2"></script>
 <script src="assets/js/api.js?v=13"></script>
 <script src="assets/js/layout.js?v=31"></script>
+<script src="assets/js/fp_export.js?v=1"></script>
 <script>
   guardPage();
   renderSidebar('dispatch_manual');
@@ -144,7 +145,7 @@
   function loadXlsx() { return new Promise((ok, no) => { if (window.XLSX) return ok(); const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; s.onload = ok; s.onerror = () => no(new Error('The Excel maker could not be loaded (internet). Use the CSV button — Excel opens it.')); document.head.appendChild(s); }); }
   $('bXlsx').onclick = async function () {
     const d = await fetchAllForExport(this); if (!d) return;
-    try { await loadXlsx(); const ws = XLSX.utils.json_to_sheet(sheetRows(d.rows), { header: COLS }); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Manual orders'); XLSX.writeFile(wb, stamp(d) + '.xlsx'); }
+    try { await loadXlsx(); XLSX.writeFile(FPX.book(XLSX, d.rows), 'FP_Export_' + d.from.split('-').reverse().join('-') + (d.to !== d.from ? '_to_' + d.to.split('-').reverse().join('-') : '') + '.xlsx', { cellDates: true }); }
     catch (e) { alert(e.message); }
   };
   load();
