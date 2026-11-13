@@ -3126,23 +3126,25 @@
     api.get('manual_orders.quick_list', { days: 14 }).then((d) => { if (d && d.allowed) btn.hidden = false; }).catch(() => {});
     btn.addEventListener('click', async () => {
       const ov = document.createElement('div'); ov.style.cssText = 'position:fixed;inset:0;background:#0008;z-index:300;display:flex;align-items:center;justify-content:center;padding:14px';
-      ov.innerHTML = '<div style="background:var(--card,#fff);color:inherit;border-radius:16px;max-width:680px;width:100%;max-height:88vh;overflow:auto;padding:16px"><div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0">🗑 Remove manual orders</h3><button type="button" class="btn secondary" id="rmX">Close</button></div><div style="font-size:12.5px;color:var(--muted);margin:4px 0 8px">Last 14 days. “Remove” deletes the whole entry — its orders disappear from Orders and from the boxes.</div><div id="rmL">Loading…</div></div>';
+      ov.innerHTML = '<div style="background:var(--card,#fff);color:inherit;border-radius:16px;max-width:680px;width:100%;max-height:88vh;overflow:auto;padding:16px"><div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0">🗑 Remove manual orders</h3><button type="button" class="btn secondary" id="rmX">Close</button></div><div style="font-size:12.5px;color:var(--muted);margin:4px 0 8px">All manual orders till today (quick entries, single manual orders and WhatsApp manual orders). “Remove” takes the order out of Orders and the boxes — a quick entry is deleted whole, a WhatsApp manual order is cancelled.</div><input id="rmQ" type="search" placeholder="Search: order no / customer / amount …" style="width:100%;box-sizing:border-box;margin:0 0 8px;padding:8px 10px;border:1px solid var(--line,#d1d7db);border-radius:10px"><div id="rmL">Loading…</div></div>';
       document.body.appendChild(ov); const close = () => ov.remove(); ov.querySelector('#rmX').onclick = close; ov.addEventListener('click', (e) => { if (e.target === ov) close(); });
-      async function load() {
+      let ALL = [];
+      async function load(force) {
         const box = ov.querySelector('#rmL');
         try {
-          const d = await api.get('manual_orders.quick_list', { days: 14 }); const L = (d.entries || []);
-          box.innerHTML = L.length ? L.map((x) => `<div style="display:flex;gap:8px;align-items:center;border-top:1px solid var(--line,#edf0f4);padding:8px 0;font-size:13px"><div style="flex:1;min-width:0">${x.batch ? `<b>${x.count} ${x.type === 'campaign' ? 'Campaign' : 'Query'} order${x.count === 1 ? '' : 's'}</b> · ${money(x.total)} <span style="color:var(--muted)">(quick entry)</span>` : `<b>${E(x.order_no)}</b> · ${E(x.customer)} · ${money(x.total)}`}<br><span style="color:var(--muted);font-size:12px">${E(when(x.date))} · ${x.pay === 'paid' ? 'Prepaid' : x.pay === 'cod' ? 'COD' : E(x.pay)} · ${E(x.house || 'Manual')} · by ${E(x.by)}</span></div><button type="button" class="btn" data-b="${E(x.batch)}" data-i="${x.id || 0}" data-n="${x.count}" style="background:#fff;color:#b42318;border:1px solid #f3c9c9">Remove</button></div>`).join('') : '<div style="padding:14px;color:var(--muted)">No manual orders in the last 14 days.</div>';
+          if (force || !ALL.length) { const d = await api.get('manual_orders.quick_list', { all: 1 }); ALL = d.entries || []; } const qq = (ov.querySelector('#rmQ').value || '').trim().toLowerCase(); const L = ALL.filter((x) => !qq || [x.order_no, x.customer, x.by, x.house, String(Math.round(x.total))].join(' ').toLowerCase().includes(qq)).slice(0, 300);
+          box.innerHTML = L.length ? L.map((x) => `<div style="display:flex;gap:8px;align-items:center;border-top:1px solid var(--line,#edf0f4);padding:8px 0;font-size:13px"><div style="flex:1;min-width:0">${x.batch ? `<b>${x.count} ${x.type === 'campaign' ? 'Campaign' : 'Query'} order${x.count === 1 ? '' : 's'}</b> · ${money(x.total)} <span style="color:var(--muted)">(quick entry)</span>` : `<b>${E(x.order_no)}</b> · ${E(x.customer || '—')} · ${money(x.total)}`}<br><span style="color:var(--muted);font-size:12px">${E(when(x.date))} · ${x.pay === 'paid' ? 'Prepaid' : x.pay === 'cod' ? 'COD' : E(x.pay)} · ${E(x.house || 'Manual')} · by ${E(x.by)}</span></div><button type="button" class="btn" data-b="${E(x.batch)}" data-i="${x.id || 0}" data-w="${x.wm || 0}" data-n="${x.count}" style="background:#fff;color:#b42318;border:1px solid #f3c9c9">Remove</button></div>`).join('') : '<div style="padding:14px;color:var(--muted)">No manual orders found.</div>';
         } catch (e) { box.innerHTML = '<div class="alert error">' + E(e.message) + '</div>'; }
       }
       ov.addEventListener('click', async (e) => {
         const b = e.target.closest('[data-n]'); if (!b) return;
-        if (!confirm('Remove ' + (b.dataset.b ? 'these ' + b.dataset.n + ' orders' : 'this order') + '?')) return;
+        if (!confirm('Remove ' + (b.dataset.b ? 'these ' + b.dataset.n + ' orders' : 'this order') + '?' + (Number(b.dataset.w) ? '\n\nA WhatsApp manual order is cancelled (it leaves Orders, the boxes and Dispatch).' : ''))) return;
         b.disabled = true; b.textContent = 'Removing…';
-        try { await api.post('manual_orders.quick_delete', b.dataset.b ? { batch: b.dataset.b } : { id: Number(b.dataset.i) }); showAlert('Removed.'); loadOrders(); } catch (er) { alert(er.message); }
-        load();
+        try { await api.post('manual_orders.quick_delete', b.dataset.b ? { batch: b.dataset.b } : Number(b.dataset.w) ? { wm: Number(b.dataset.w) } : { id: Number(b.dataset.i) }); showAlert('Removed.'); loadOrders(); } catch (er) { alert(er.message); }
+        load(true);
       });
-      load();
+      const qi = ov.querySelector('#rmQ'); let qt = 0; qi.addEventListener('input', () => { clearTimeout(qt); qt = setTimeout(() => load(false), 200); });
+      load(true);
     });
   })();
 
