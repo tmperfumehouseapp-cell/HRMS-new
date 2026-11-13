@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Manual order sheet — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=4">
+<style>
+  .dm{padding:6px 14px 40px;max-width:1500px;margin:0 auto}
+  .dm .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin:0 0 10px}
+  .dm .bar label{display:block;font-size:11.5px;font-weight:700;color:var(--muted);margin:0 0 3px}
+  .dm input,.dm select{padding:8px 10px;border:1px solid var(--line);border-radius:10px;font:inherit;font-size:13.5px;background:#fff;color:#111}
+  .dm .pill{display:inline-block;border-radius:9px;padding:2px 8px;font-weight:800;font-size:11.5px;margin:0 6px 6px 0}
+  .dm .g{background:#dff3e8;color:#0b6b4b}.dm .y{background:#fff3d6;color:#8a5a00}.dm .r{background:#fde8e8;color:#9a2620}.dm .b{background:#e5efff;color:#1d4ed8}
+  .dm .itc{min-width:200px;max-width:260px}.dm .it{font-size:12px;line-height:1.35}.dm .it small{color:#64748b}.dm .its{font-size:11px;color:#64748b;margin-top:2px;font-weight:700}.dm .more{font-size:11.5px;color:#1d4ed8;cursor:pointer;font-weight:700}.dm .rest{margin-top:2px}
+  .dm .wrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:#fff}
+  .dm table{border-collapse:collapse;width:100%;font-size:12.5px}.dm th{background:#f1f4f8;text-align:left;padding:8px;font-size:11.5px;color:#55606e;white-space:nowrap;position:sticky;top:0}
+  .dm td{padding:8px;border-top:1px solid #edf0f4;vertical-align:top}.dm td small{color:#64748b}
+  .dm .mini{border:1px solid #cfd8e3;border-radius:8px;padding:3px 8px;font-size:11.5px;font-weight:700;background:#fff;cursor:pointer;margin:1px;display:inline-block;color:#111;text-decoration:none}
+  .dm .mini:hover{background:#eef6ff}.dm .err{background:#fdecec;border:1px solid #f1a5a5;color:#7f1d1d;border-radius:10px;padding:10px;margin:8px 0}
+  .dm .ov{position:fixed;inset:0;background:#0008;z-index:200;display:flex;align-items:center;justify-content:center;padding:14px}.dm .md{background:#fff;color:#111;border-radius:16px;max-width:620px;width:100%;max-height:90vh;overflow:auto;padding:16px}
+  .dm .kv{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px dashed #e1e7ee;font-size:13px}.dm .kv b{text-align:right}
+  html[data-theme=dark] .dm input,html[data-theme=dark] .dm select,html[data-theme=dark] .dm .wrap,html[data-theme=dark] .dm .md{background:#1f2430;color:#eee;border-color:#374151}html[data-theme=dark] .dm th{background:#161b26;color:#9aa4b2}
+  .dm td.trk{min-width:150px;background:#fffdf2}.dm td.n{text-align:right;white-space:nowrap}.dm th.n{text-align:right}.dm td.ad{min-width:220px;max-width:320px}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><h1>📋 Manual order sheet</h1></div>
+    <div class="content dm">
+      <p style="font-size:13px;color:var(--muted);margin:0 0 10px">Every manual order in one simple sheet: order, name, tracking ID, perfumes, address, payment, sale amount and status. <b>Export</b> gives the same columns in Excel; the Tracking ID column is left empty for you to fill when the parcel has none yet.</p>
+      <div class="bar">
+        <div><label>From</label><input type="date" id="dFrom"></div><div><label>To</label><input type="date" id="dTo"></div>
+        <button class="btn" type="button" id="bToday" style="background:#fff;color:#111;border:1px solid var(--line)">Today</button>
+        <button class="btn" type="button" id="bYest" style="background:#fff;color:#111;border:1px solid var(--line)">Yesterday</button>
+        <div><label>Status</label><select id="fSt"><option value="">All</option><option value="confirmed">Confirmed</option><option value="waiting">Waiting for address</option><option value="cancelled">Cancelled</option></select></div>
+        <div><label>Payment</label><select id="fPay"><option value="">All</option><option value="prepaid">Prepaid</option><option value="partial">Part prepaid + COD</option><option value="cod">COD</option></select></div>
+        <div><label>Search</label><input id="fQ" placeholder="order no / mobile / name / UTR" style="min-width:200px"></div>
+        <span style="flex:1"></span>
+        <a class="btn" href="dispatch_manual.html" style="background:#fff;color:#111;border:1px solid var(--line);text-decoration:none">Full details page</a>
+        <button class="btn" type="button" id="bXlsx">⬇ Export Excel</button>
+        <button class="btn" type="button" id="bCsv" style="background:#fff;color:#0b6b4b;border:1px solid #1aa37a">⬇ CSV</button>
+      </div>
+      <div id="dmSum"></div><div id="dmErr"></div>
+      <div class="wrap"><table><thead><tr><th>Order ID</th><th>Name</th><th>Tracking ID</th><th>Order items (perfume)</th><th class="n">Total items</th><th>Address</th><th>State</th><th>City</th><th>Pincode</th><th>Society / landmark</th><th>Payment</th><th class="n">Prepaid ₹</th><th class="n">COD ₹</th><th class="n">Sale amount ₹</th><th>Status</th></tr></thead><tbody id="dmRows"><tr><td colspan="15">Loading…</td></tr></tbody></table></div>
+      <div id="dmPg" style="display:flex;gap:8px;align-items:center;margin:10px 0"></div>
+    </div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=2"></script>
+<script src="assets/js/api.js?v=13"></script>
+<script src="assets/js/layout.js?v=33"></script>
+<script>
+  guardPage();
+  renderSidebar('dispatch_manual');
+  const $ = (id) => document.getElementById(id);
+  const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const inr = (v) => '₹' + Math.round(Number(v) || 0).toLocaleString('en-IN');
+  let page = 1;
+  const params = () => ({ from: $('dFrom').value, to: $('dTo').value, status: $('fSt').value, pay: $('fPay').value, q: $('fQ').value.trim() });
+  // perfume names without the shop suffix or the bottle colour: "2 × Oud Royale 50ml"
+  const nm = (t) => String(t || '').replace(/\s+[|｜Il]\s*TMPerfumehouse.*$/i, '').replace(/\s+-\s*(DG|LG|WH)\s*$/i, '').replace(/\s+/g, ' ').trim();
+  const itemList = (r) => (r.lines || []).map((l) => (+l.qty || 1) + ' × ' + nm(l.short || l.title) + (l.label ? ' ' + String(l.label).replace(/\s+/g, '') : ''));
+  // ONE row of the sheet: the same values on the page and in the export, in the same order
+  const HEAD = ['Order ID', 'Name', 'Tracking ID', 'Order items (perfume)', 'Total items', 'Address', 'State', 'City', 'Pincode', 'Society / landmark', 'Payment', 'Prepaid ₹', 'COD ₹', 'Sale amount ₹', 'Status'];
+  function sheetRow(r) {
+    const c = r.cust || {}, cancelled = r.status === 'cancelled';
+    const pay = r.pay === 'prepaid' ? 'Prepaid' : r.pay === 'cod' ? 'COD' : 'Part prepaid + COD';
+    const st = cancelled ? 'Cancelled' : r.status !== 'confirmed' ? 'Waiting for address' : (r.parcel && r.parcel.status ? 'Confirmed · ' + r.parcel.status : 'Confirmed');
+    return [r.order_no, c.name || '', (r.parcel && r.parcel.awb) || '', itemList(r).join(', '), (r.lines || []).reduce((a, l) => a + (+l.qty || 1), 0), c.addr1 || '', c.state || '', c.city || '', c.pin || '',
+      [c.addr2, c.landmark].filter(Boolean).join(', '), pay, Math.round(Number(r.paid) || 0), Math.round(Number(r.cod) || 0), Math.round(Number(r.total) || 0), st];
+  }
+  function draw(d) {
+    const s = d.sum || {}, by = s.by || {};
+    $('dmSum').innerHTML = '<span class="pill g">Confirmed ' + (by.confirmed || 0) + '</span><span class="pill y">Waiting for address ' + (by.waiting || 0) + '</span><span class="pill r">Cancelled ' + (by.cancelled || 0) + '</span> &nbsp; <b>' + (s.count || 0) + ' orders · Sale ' + inr(s.total) + '</b> · Prepaid ' + inr(s.prepaid) + ' · COD ' + inr(s.cod);
+    $('dmRows').innerHTML = d.rows.length ? d.rows.map((r) => { const v = sheetRow(r), items = itemList(r);
+      const stC = r.status === 'confirmed' ? 'g' : r.status === 'cancelled' ? 'r' : 'y', payC = r.pay === 'prepaid' ? 'g' : r.pay === 'cod' ? 'y' : 'b';
+      return `<tr><td style="white-space:nowrap"><b>${esc(v[0])}</b></td><td>${esc(v[1] || '—')}</td><td class="trk">${esc(v[2])}</td><td class="itc">${items.map((t) => '<div class="it">' + esc(t) + '</div>').join('')}</td><td class="n"><b>${v[4]}</b></td><td class="ad">${v[5] ? esc(v[5]) : '<i style="color:#8794a3">not added yet</i>'}</td><td>${esc(v[6])}</td><td>${esc(v[7])}</td><td><b>${esc(v[8])}</b></td><td>${esc(v[9])}</td><td><span class="pill ${payC}">${esc(v[10])}</span></td><td class="n">${v[11] ? inr(v[11]) : '—'}</td><td class="n">${v[12] ? inr(v[12]) : '—'}</td><td class="n"><b>${inr(v[13])}</b></td><td><span class="pill ${stC}">${esc(v[14])}</span></td></tr>`; }).join('')
+      : '<tr><td colspan="15" style="padding:20px;text-align:center;color:#64748b">No manual orders for these filters.</td></tr>';
+    $('dmPg').innerHTML = d.pages > 1 ? `<button class="mini" id="pgP" ${d.page <= 1 ? 'disabled' : ''}>‹ Prev</button> Page ${d.page} / ${d.pages} <button class="mini" id="pgN" ${d.page >= d.pages ? 'disabled' : ''}>Next ›</button>` : '';
+    if ($('pgP')) $('pgP').onclick = () => { page--; load(); }; if ($('pgN')) $('pgN').onclick = () => { page++; load(); };
+  }
+  async function load() {
+    $('dmErr').innerHTML = '';
+    try { const d = await api.get('wmo.dsp_list', Object.assign(params(), { page })); if (!$('dFrom').value) { $('dFrom').value = d.from; $('dTo').value = d.to; } draw(d); }
+    catch (e) { $('dmRows').innerHTML = ''; $('dmErr').innerHTML = '<div class="err">' + esc(e.message) + '</div>'; }
+  }
+  const ymd = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  async function bizToday() { const d = await api.get('wmo.dsp_list', { page: 1, per: 1, status: 'x' }); return d.from; }
+  $('bToday').onclick = async () => { const t = await bizToday(); $('dFrom').value = t; $('dTo').value = t; page = 1; load(); };
+  $('bYest').onclick = async () => { const t = new Date((await bizToday()) + 'T12:00:00'); t.setDate(t.getDate() - 1); $('dFrom').value = ymd(t); $('dTo').value = ymd(t); page = 1; load(); };
+  ['dFrom', 'dTo', 'fSt', 'fPay'].forEach((i) => $(i).addEventListener('change', () => { page = 1; load(); }));
+  let tq = 0; $('fQ').addEventListener('input', () => { clearTimeout(tq); tq = setTimeout(() => { page = 1; load(); }, 350); });
+
+  // ---- export: every order of the chosen dates and filters (not only this page), the same 15 columns
+  async function fetchAll(b) {
+    b.disabled = true; const old = b.textContent; b.textContent = 'Preparing…';
+    try { const d = await api.get('wmo.dsp_export', params()); if (!d.rows.length) { alert('No manual orders for these filters.'); return null; } return d; } catch (e) { alert(e.message); return null; } finally { b.disabled = false; b.textContent = old; }
+  }
+  const stamp = (d) => 'manual_order_sheet_' + d.from + (d.to !== d.from ? '_to_' + d.to : '');
+  const q = (v) => { v = String(v == null ? '' : v); return /[",\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+  function saveCsv(d) {
+    const csv = '﻿' + HEAD.map(q).join(',') + '\r\n' + d.rows.map((r) => sheetRow(r).map(q).join(',')).join('\r\n');
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); a.download = stamp(d) + '.csv'; document.body.appendChild(a); a.click(); a.remove();
+  }
+  $('bCsv').onclick = async function () { const d = await fetchAll(this); if (d) saveCsv(d); };
+  function loadXlsx() { return new Promise((ok, no) => { if (window.XLSX) return ok(); const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; s.onload = ok; s.onerror = () => no(new Error('The Excel library could not be loaded.')); document.head.appendChild(s); }); }
+  $('bXlsx').onclick = async function () {
+    const d = await fetchAll(this); if (!d) return;
+    try {
+      await loadXlsx();
+      const ws = XLSX.utils.aoa_to_sheet([HEAD].concat(d.rows.map(sheetRow)));
+      ws['!cols'] = [12, 22, 22, 46, 10, 40, 16, 16, 10, 28, 20, 11, 11, 14, 22].map((w) => ({ wch: w }));
+      const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Manual orders'); XLSX.writeFile(wb, stamp(d) + '.xlsx');
+    } catch (e) { saveCsv(d); alert('Excel could not be made (' + e.message + '), so the CSV file was saved instead. It opens in Excel.'); }
+  };
+  load();
+</script>
+</body>
+</html>
