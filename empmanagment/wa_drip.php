@@ -121,12 +121,16 @@ function wd_tick(PDO $pdo, array $opt = []): array
     if (empty($opt['now']) && (wd_job($pdo)['status'] ?? '') === 'running') { wd_job_step($pdo); return $o; }   // a Send-now job is waiting: the engine works on it
     if (empty($opt['now']) && $cfg['mode'] !== 'auto') return $o;   // manual mode: only the Send button runs it
     if (empty($opt['now']) && (!function_exists('wa_lock') || !wa_lock($pdo, 'wdrun', 50))) return $o;
-    if (empty($opt['skip_enrol'])) { try { $o['entered'] = wd_enroll($pdo, $cfg); } catch (Throwable $e) { } }
+    // ⚡ enrolment looks at every customer of the last days (up to 60,000) and their first message; the engine did it on every round (about once a minute). Now: at most every 5 minutes from the engine; the Send button still does it at once.
+    $__w0 = microtime(true); $__we = 0.0;
+    if (empty($opt['skip_enrol']) && (!empty($opt['now']) || !function_exists('wa_lock') || wa_lock($pdo, 'wdenrol', 300))) { try { $o['entered'] = wd_enroll($pdo, $cfg); } catch (Throwable $e) { } $__we = microtime(true) - $__w0; }
+    $__wdl = empty($opt['now']) ? min($__w0 + 25, !empty($GLOBALS['__wa_dl']) ? (float)$GLOBALS['__wa_dl'] : $__w0 + 25) : 0;   // the engine round gives the drip at most 25 s (and never past the round's own deadline); the rest waits for the next round
     $today = wd_today($pdo); $nowMin = !empty($opt['now']) ? 1439 : (int)date('G') * 60 + (int)date('i'); $sent = 0; if (!empty($opt['now'])) $cfg['cap'] = max(1, (int)($opt['cap'] ?? 150));
     $e = $pdo->prepare("SELECT phone, anchor FROM wa_drip_enr WHERE anchor <= ? AND anchor >= ? AND left_why = ''"); $e->execute([$today, date('Y-m-d', strtotime($today) - 31 * 86400)]);
     $ev = $pdo->prepare("INSERT IGNORE INTO wa_drip_ev (phone, anchor, day, tpl_id, number_id, status, why, at, wamid) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
     foreach ($e->fetchAll() as $r) {
         if ($sent >= $cfg['cap']) break;
+        if ($__wdl && microtime(true) > $__wdl) { $o['more'] = 1; break; }
         $day = (int)round((strtotime($today) - strtotime((string)$r['anchor'])) / 86400); if (!isset($cfg['days'][$day])) continue; $step = $cfg['days'][$day];
         [$hh, $mm] = array_map('intval', explode(':', $step['time'])); if ($nowMin < $hh * 60 + $mm) continue;   // not time yet
         $d = $pdo->prepare("SELECT status FROM wa_drip_ev WHERE phone = ? AND anchor = ? AND day = ?"); $d->execute([$r['phone'], $r['anchor'], $day]); if ($d->fetchColumn() !== false) continue;   // already done / skipped
@@ -143,7 +147,8 @@ function wd_tick(PDO $pdo, array $opt = []): array
         elseif (stripos((string)$res[1], 'not approved by Meta') !== false) { $o['why'] = (string)$res[1] . ' (Day ' . $day . ')'; $ev->execute([$r['phone'], $r['anchor'], $day, $step['tpl_id'], 0, 'failed', mb_substr((string)$res[1], 0, 190), date('Y-m-d H:i:s'), '']); $o['failed']++; }
         else { $ev->execute([$r['phone'], $r['anchor'], $day, $step['tpl_id'], (int)($res[2] ?? 0), 'failed', mb_substr((string)$res[1], 0, 190), date('Y-m-d H:i:s'), '']); $o['failed']++; }
     }
-    $o['more'] = $sent >= $cfg['cap'] ? 1 : 0; return $o;
+    if (empty($opt['now'])) { try { setting_set($pdo, 'wd_tick_parts', json_encode(['at' => date('Y-m-d H:i:s'), 'enrol_s' => round($__we, 1), 'loop_s' => round(microtime(true) - $__w0 - $__we, 1), 'sent' => $o['sent'], 'skipped' => $o['skipped'], 'failed' => $o['failed']])); } catch (Throwable $e) { } }
+    $o['more'] = ($sent >= $cfg['cap'] || !empty($o['more'])) ? 1 : 0; return $o;
 }
 
 }
