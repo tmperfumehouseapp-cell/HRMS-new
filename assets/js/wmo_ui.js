@@ -111,7 +111,7 @@
   // ------------------------------------------------------------------------------------------------------------------ the new order
   function open(o) {
     o = o || {}; const API = o.api || (typeof api !== 'undefined' ? api : null); if (!API) { alert('Not logged in.'); return; }
-    const S = { pay: 'prepaid', total: '', paid: '', utr: '', shot: null, read: null, reading: false, ml: 0, mlIn: '', combo: null, perf: new Map(), chain: new Map(), single: new Map(), otype: o.outside ? 'query' : '', cust: { phone: o.phone || '', name: o.name || '', addr1: '', landmark: '', pin: '', city: '', state: '' }, busy: false, order: null, seq: { perfume: 0, chain: 0, other: 0 }, cache: {}, msg: '' };
+    const S = { pay: 'prepaid', total: '', paid: '', utr: '', shot: null, read: null, reading: false, shot2: null, proof: null, proofing: false, ml: 0, mlIn: '', combo: null, perf: new Map(), chain: new Map(), single: new Map(), otype: o.outside ? 'query' : '', cust: { phone: o.phone || '', name: o.name || '', addr1: '', landmark: '', pin: '', city: '', state: '' }, busy: false, order: null, seq: { perfume: 0, chain: 0, other: 0 }, cache: {}, msg: '' };
     const { bd, ft, top } = shell('Manual order', (o.name || '') + ' · QR / UPI / COD'); top.innerHTML = '<button type="button" class="mo-lk" id="moList">Orders</button>'; top.querySelector('#moList').onclick = () => orders(o);
 
     const needShot = () => S.pay !== 'cod';
@@ -126,9 +126,10 @@
       const T = totalP(), C = sum(S.chain), SG = sum(S.single), L = sum(S.perf), P = T - C - SG, pd = paidP(), cod = Math.max(0, T - pd);
       let pieces = 0; S.perf.forEach((x) => { pieces += x.qty; });
       const comboOk = !S.perf.size || !S.combo || S.combo.every((c) => filled(c.ml) === c.n) && Array.from(S.perf.values()).every((x) => S.combo.some((c) => c.ml === x.ml));
-      const why = !needShot() || S.shot ? '' : 'Upload the payment screenshot.';
+      const proofOk = !needShot() || (S.shot && S.shot2 && S.proof && S.proof.ok && Math.abs(pd - Math.round((S.proof.amount || 0) * 100)) <= 100);
+      const why = !needShot() ? '' : !S.shot ? "Upload the customer's paid screen." : !S.shot2 ? "Upload the receiver's screen." : S.proofing ? 'Checking the two screenshots…' : !S.proof ? '' : !S.proof.ok ? S.proof.reason : (Math.abs(pd - Math.round((S.proof.amount || 0) * 100)) > 100 ? 'The amount received must equal the screenshots (' + rs(Math.round(S.proof.amount * 100)) + ').' : '');
       const custOk = !o.outside || (S.cust.phone.replace(/\D+/g, '').slice(-10).length === 10); const singlesOk = Array.from(S.single.values()).every((x) => x.price >= 100);
-      const ok = custOk && singlesOk && T >= 10000 && hasItems() && (S.perf.size ? P >= pieces * 1000 : P === 0) && (!needShot() || (S.shot && pd >= 100)) && (S.pay !== 'partial' || (pd >= 100 && pd < T)) && comboOk && !S.reading && !S.busy;
+      const ok = custOk && singlesOk && T >= 10000 && hasItems() && (S.perf.size ? P >= pieces * 1000 : P === 0) && (!needShot() || (proofOk && pd >= 100)) && !S.proofing && (S.pay !== 'partial' || (pd >= 100 && pd < T)) && comboOk && !S.reading && !S.busy;
       return { T, C, SG, L, P, pd, cod, comboOk, ok, why, pieces };
     }
 
@@ -137,7 +138,8 @@
       const k = calc();
       bd.innerHTML = (o.outside ? custHtml() : '') + '<div class="mo-h">1 · How did the customer pay?</div><div class="mo-seg" id="moPay">'
         + [['prepaid', 'Full prepaid<br><small>QR / UPI</small>'], ['partial', 'Part prepaid<br><small>+ COD balance</small>'], ['cod', 'Full COD<br><small>pay on delivery</small>']].map((x) => '<button type="button" data-p="' + x[0] + '" class="' + (S.pay === x[0] ? 'on' : '') + '">' + x[1] + '</button>').join('') + '</div>'
-        + (needShot() ? '<div class="mo-h">Payment screenshot <em>Claude reads the amount</em></div><div class="mo-shot"><label style="cursor:pointer;flex:none"><input type="file" id="moFile" accept="image/*" hidden>' + (S.shot ? '<img alt="" src="' + esc(S.shot.url) + '">' : '<div class="mo-btn" style="display:flex;align-items:center">📷 Upload</div>') + '</label><div class="t" id="moRead">' + readHtml() + '</div></div>' : '')
+        + (needShot() ? '<div class="mo-h">Payment screenshot <em>Claude reads the amount</em></div><div class="mo-shot"><label style="cursor:pointer;flex:none"><input type="file" id="moFile" accept="image/*" hidden>' + (S.shot ? '<img alt="" src="' + esc(S.shot.url) + '">' : '<div class="mo-btn" style="display:flex;align-items:center">📷 Upload</div>') + '</label><div class="t" id="moRead">' + readHtml() + '</div></div>'
+          + '<div class="mo-h">Receiver screenshot <em>where the money arrived: business app, bank, Razorpay or Quick</em></div><div class="mo-shot"><label style="cursor:pointer;flex:none"><input type="file" id="moFile2" accept="image/*" hidden>' + (S.shot2 ? '<img alt="" src="' + esc(S.shot2.url) + '">' : '<div class="mo-btn" style="display:flex;align-items:center">📷 Upload</div>') + '</label><div class="t" id="moProof">' + proofHtml() + '</div></div>' : '')
         + '<div class="mo-h">Amounts</div><div class="mo-r2">'
         + (needShot() ? '<div><div class="mo-lab">Amount received ₹</div><div class="mo-in"><span>₹</span><input id="moPaid" inputmode="decimal" autocomplete="off" placeholder="0" value="' + esc(S.paid) + '"></div></div>' : '')
         + (S.pay === 'prepaid' ? '<div><div class="mo-lab">Order total</div><div class="mo-in"><span>₹</span><input disabled value="' + (k.T ? esc(String(k.T / 100)) : '') + '" style="color:#54656f"></div></div>' : '<div><div class="mo-lab">Agreed order total ₹</div><div class="mo-in"><span>₹</span><input id="moTot" inputmode="decimal" autocomplete="off" placeholder="0" value="' + esc(S.total) + '"></div></div>') + '</div>'
@@ -170,6 +172,20 @@
         + '<div style="color:#667781;font-size:12.5px">' + (r.utr ? 'UTR ' + esc(r.utr) + ' · ' : '') + esc([r.app, r.date, r.payer].filter(Boolean).join(' · ')) + '</div>'
         + (r.dup ? '<div class="mo-note bad" style="margin:6px 0 0">⚠ This UTR is already used on order <b>' + esc(r.dup) + '</b>. One payment cannot pay two orders.</div>' : '') + (!r.ok ? '<div class="mo-note bad" style="margin:6px 0 0">This does not look like a payment screenshot.</div>' : '') + (r.note ? '<div class="mo-note" style="margin:6px 0 0">' + esc(r.note) + '</div>' : '');
     }
+    function proofHtml() {
+      if (S.proofing) return '<b>🤖 Claude is comparing the two screenshots…</b>';
+      if (!S.shot2) return '<div style="color:#667781">Upload the screen from the side that RECEIVED the money. Both screenshots must show the same amount and the same UTR.</div>';
+      const v = S.proof; if (!v) return '<div style="color:#667781">Upload the customer\'s paid screen as well, then the two are compared.</div>';
+      if (v.error) return '<div class="mo-note bad" style="margin:0">' + esc(v.error) + '</div>';
+      return v.ok ? '<div><b>✅ Verified</b> · ' + rs(Math.round((v.amount || 0) * 100)) + ' · UTR ' + esc(v.utr || '') + '</div><div style="color:#667781;font-size:12.5px">Gateway: ' + esc(v.gateway || '') + ' · both screenshots agree</div>'
+        : '<div class="mo-note bad" style="margin:0"><b>❌ The order cannot be made.</b><br>' + esc(v.reason || '') + '</div>';
+    }
+    async function runProof() {
+      if (!S.shot || !S.shot2) return; S.proofing = true; S.proof = null; drawAll();
+      try { const d = await API.post('wmo.proof_check', { image: S.shot.b64, mime: S.shot.mime, image2: S.shot2.b64, mime2: S.shot2.mime }); S.proof = d.verdict || null; if (S.proof && S.proof.ok) { S.paid = String(S.proof.amount); S.utr = S.proof.utr || S.utr; } }
+      catch (e) { S.proof = { ok: false, reason: errMsg(e), error: errMsg(e) }; }
+      S.proofing = false; drawAll();
+    }
     function lineHtml(x, cat) {
       return '<div class="mo-ln" data-vid="' + x.vid + '" data-cat="' + cat + '"><div class="mid"><div class="nm">' + esc(x.title) + '</div><small>' + (x.label ? esc(x.label) + ' · ' : '') + rs(x.price) + (x.qty > 1 ? ' × ' + x.qty : '') + '</small></div><div class="mo-q"><button type="button" data-q="-1">−</button><b>' + x.qty + '</b><button type="button" data-q="1">+</button></div></div>';
     }
@@ -188,11 +204,14 @@
     const fm = (h, cls) => { S.msg = h ? '<div class="mo-note ' + (cls || '') + '">' + h + '</div>' : ''; const el = ft.querySelector('#moFm'); if (el) el.innerHTML = S.msg; };
 
     function bindAll() {
-      bd.querySelector('#moPay').onclick = (e) => { const b = e.target.closest('[data-p]'); if (!b) return; S.pay = b.dataset.p; if (S.pay === 'cod') { S.shot = null; S.read = null; S.paid = ''; } fm(''); drawAll(); };
+      bd.querySelector('#moPay').onclick = (e) => { const b = e.target.closest('[data-p]'); if (!b) return; S.pay = b.dataset.p; if (S.pay === 'cod') { S.shot = null; S.read = null; S.shot2 = null; S.proof = null; S.paid = ''; } fm(''); drawAll(); };
       const f = bd.querySelector('#moFile'); if (f) f.onchange = async () => { const file = f.files && f.files[0]; if (!file) return; S.reading = true; S.read = null; S.shot = null; drawAll();
         try { S.shot = await shrink(file); } catch (e) { S.reading = false; fm(esc(errMsg(e)), 'bad'); drawAll(); return; }
         drawAll(); try { S.read = await API.post('wmo.shot_read', { image: S.shot.b64, mime: S.shot.mime }); if (S.read && S.read.amount && !S.paid) S.paid = String(S.read.amount); if (S.read && S.read.utr) S.utr = S.read.utr; } catch (e) { S.read = { error: errMsg(e) }; }
-        S.reading = false; drawAll(); };
+        S.reading = false; S.proof = null; drawAll(); if (S.shot2) runProof(); };
+      const f2 = bd.querySelector('#moFile2'); if (f2) f2.onchange = async () => { const file = f2.files && f2.files[0]; if (!file) return; S.proof = null;
+        try { S.shot2 = await shrink(file); } catch (e) { fm(esc(errMsg(e)), 'bad'); drawAll(); return; }
+        drawAll(); if (S.shot) runProof(); };
       const pd = bd.querySelector('#moPaid'); if (pd) pd.oninput = () => { const v = pd.value.replace(/[^\d.]/g, ''); if (v !== pd.value) pd.value = v; S.paid = v; refresh(); };
       const tt = bd.querySelector('#moTot'); if (tt) tt.oninput = () => { const v = tt.value.replace(/[^\d.]/g, ''); if (v !== tt.value) tt.value = v; S.total = v; refresh(); };
       bd.querySelector('#moMl').onclick = (e) => { const b = e.target.closest('[data-m]'); if (!b) return; S.ml = +b.dataset.m; S.mlIn = ''; S.combo = combos(S.ml)[0] || null; drawAll(); };
@@ -238,7 +257,7 @@
       try {
         if (!S.order) {
           if (o.outside) { const st = await API.post('wmo.start', { phone: S.cust.phone, name: S.cust.name }); o.phone = st.phone; o.name = S.cust.name || st.name || ''; }
-          const r = await API.post('wmo.create', { otype: o.outside ? S.otype : '', cust: o.outside ? S.cust : null, singles: Array.from(S.single.values()).map((x) => ({ vid: x.vid, qty: x.qty, price: x.price / 100 })), phone: o.phone, pay: S.pay, total: k.T / 100, paid: k.pd / 100, utr: S.utr, ml: mlOf(), lines: Array.from(S.perf.values()).map((x) => ({ vid: x.vid, qty: x.qty })), chains: Array.from(S.chain.values()).map((x) => ({ vid: x.vid, qty: x.qty })), shot: S.shot ? S.shot.b64 : '', shot_mime: S.shot ? S.shot.mime : '', shot_read: S.read && !S.read.error ? S.read : null });
+          const r = await API.post('wmo.create', { otype: o.outside ? S.otype : '', cust: o.outside ? S.cust : null, singles: Array.from(S.single.values()).map((x) => ({ vid: x.vid, qty: x.qty, price: x.price / 100 })), phone: o.phone, pay: S.pay, total: k.T / 100, paid: k.pd / 100, utr: S.utr, ml: mlOf(), lines: Array.from(S.perf.values()).map((x) => ({ vid: x.vid, qty: x.qty })), chains: Array.from(S.chain.values()).map((x) => ({ vid: x.vid, qty: x.qty })), shot: S.shot ? S.shot.b64 : '', shot_mime: S.shot ? S.shot.mime : '', shot2: S.shot2 ? S.shot2.b64 : '', shot2_mime: S.shot2 ? S.shot2.mime : '', shot_read: S.read && !S.read.error ? S.read : null });
           S.order = r.order;
         }
         if (addrOk()) { const r2 = await API.post('wmo.confirm', { id: S.order.id, cust: S.cust }); S.busy = false; S.order.order_no = r2.order_no || S.order.order_no; doneFinal(); if (o.onDone) { try { o.onDone({ stage: 'confirmed', order: S.order }); } catch (e) { } } return; }

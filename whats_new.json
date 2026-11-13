@@ -1,0 +1,22 @@
+{
+  "updated": "2026-11-13",
+  "issues": [
+    {"title": "Hostinger deploy fails", "detail": "The 'Deploy to Hostinger' button cannot connect: the FTP_SERVER secret is empty in GitHub (Settings → Secrets → Actions: FTP_SERVER, FTP_USERNAME, FTP_PASSWORD). The VPS staging deploy works.", "who": "Owner"},
+    {"title": "AWB automation for manual orders", "detail": "Shiprocket order is created with the WM- id; AWB / courier / status coming back into the sheet is not confirmed yet. The AWB column stays empty until it works.", "who": "Claude (pending task)"},
+    {"title": "Scheduled campaigns did not start at their time", "detail": "A Smart-plan campaign scheduled for 4:10 stayed 'Scheduled' at 4:17. The ▶ Now button now starts them, but the engine's once-a-minute round (cron) needs checking.", "who": "Owner + Claude"},
+    {"title": "Payment proof: not tried on real screenshots yet", "detail": "Claude reads the two screenshots on the server. Test one prepaid order with both screenshots and one with mismatching UTRs.", "who": "Owner to test"},
+    {"title": "Commission on manual orders: not verified on live data", "detail": "It is meant to follow the same engine as Shopify orders (chart, offers, boosts, code limit). Check one confirmed WM- order in the sheet (tap the order ID).", "who": "Owner to test"},
+    {"title": "Commission page: per-person total and team commission per day", "detail": "Asked for a Total next to each name, the team commission under each date and a clearer 'Today's sales target' label. A layout mockup is waiting for your 'go ahead'.", "who": "Claude"},
+    {"title": "Voice notes failing daily", "detail": "Waiting for the error text from the WhatsApp log to find the cause.", "who": "Owner"},
+    {"title": "FL code", "detail": "Parked: removed from the export; to be designed later.", "who": "Later"}
+  ],
+  "items": [
+    {"date": "2026-11-13", "title": "Rates & weights page", "detail": "One Admin page for the things that change with dates: the weight of each bottle size (a new version applies from the date you choose, old orders keep their old weights) and the payment proof rules.", "where": "Admin → Rates & weights"},
+    {"date": "2026-11-13", "title": "Payment proof with two screenshots", "detail": "A prepaid or part-prepaid manual order needs the customer's paid screen and the receiver's screen. They must show the same amount and UTR, the money must go to TM Perfume House / Fourpirates Ventures LLP, and the UTR must be new. Otherwise the order is refused with the reason. The gateway (Razorpay, Quick, UPI QR, Bank transfer) is read from the receiver's screen.", "where": "WhatsApp chat → 🧾 Manual order; the sheet shows both screenshots"},
+    {"date": "2026-11-13", "title": "Manual order sheet", "detail": "Tap an order ID to see the customer, the perfumes as they go to Dispatch, weight, total / prepaid / COD / tax, payment proof, commission and how it was counted, shipment. New export: one row per order, every perfume in one cell.", "where": "Dispatch → Manual orders → Manual order sheet (also Sales → Orders → Manual orders)"},
+    {"date": "2026-11-13", "title": "WhatsApp manual order details open correctly", "detail": "Clicking WM-xxxxx on Order Allocation no longer shows the Shopify 404; it shows the perfumes, customer, address, total, prepaid and COD.", "where": "Sales → Allocation → click the order"},
+    {"date": "2026-11-13", "title": "Quick entry: choose the sales person", "detail": "'Add orders' has a Sales person box; the orders are allocated to that person at once.", "where": "Sales → Orders → Add orders"},
+    {"date": "2026-11-13", "title": "Ideal day vs actual (Campaign)", "detail": "Hour-by-hour table from 12 noon to 12 noon: spend, replies and campaign orders so far against the ideal. Hours are shown as running totals.", "where": "Sales → Orders (with one day selected)"},
+    {"date": "2026-11-13", "title": "▶ Now starts Smart-plan campaigns", "detail": "The Now button no longer says 'not a scheduled campaign' for campaigns made by a Smart plan.", "where": "WhatsApp → Campaigns"}
+  ]
+}

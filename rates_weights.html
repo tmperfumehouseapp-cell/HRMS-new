@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>Rates &amp; weights — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=4">
+<style>
+  .rw{padding:6px 14px 40px;max-width:980px;margin:0 auto;display:grid;gap:14px}
+  .rw .cd{background:var(--card,#fff);border:1px solid var(--line,#e5e7eb);border-radius:16px;padding:16px}
+  .rw h2{margin:0 0 4px;font-size:16px}.rw .sb{font-size:12.5px;color:var(--muted,#6b7280);margin:0 0 12px;line-height:1.5}
+  .rw .bar{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px}
+  .rw label{display:block;font-size:11.5px;font-weight:700;color:var(--muted,#6b7280);margin:0 0 3px}
+  .rw input{padding:8px 10px;border:1px solid var(--line,#d1d5db);border-radius:10px;font:inherit;font-size:14px;background:#fff;color:#111;box-sizing:border-box}
+  .rw .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+  .rw .cell{border:1px solid var(--line,#e5e7eb);border-radius:12px;padding:8px 10px;background:#fafbfc}
+  .rw .cell b{display:block;font-size:13px;margin-bottom:4px}.rw .cell input{width:100%}.rw .cell small{color:var(--muted,#6b7280)}
+  .rw .hist{display:grid;gap:6px}.rw .h{display:flex;gap:10px;align-items:center;justify-content:space-between;border:1px solid var(--line,#e5e7eb);border-radius:12px;padding:8px 12px;font-size:13px}
+  .rw .h .cur{background:#dff3e8;color:#0b6b4b;border-radius:8px;padding:1px 8px;font-weight:800;font-size:11px}
+  .rw .mini{border:1px solid #cfd8e3;border-radius:8px;padding:4px 10px;font-size:12px;font-weight:700;background:#fff;cursor:pointer;color:#111}
+  .rw .ok{color:#0b6b4b;font-weight:700;font-size:13px}.rw .er{color:#9a2620;font-weight:700;font-size:13px}
+  html[data-theme=dark] .rw input,html[data-theme=dark] .rw .mini{background:#1f2430;color:#eee;border-color:#374151}html[data-theme=dark] .rw .cell{background:#161b26}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><h1>⚖ Rates &amp; weights</h1></div>
+    <div class="content rw" id="rw"><div class="cd">Loading…</div></div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=2"></script>
+<script src="assets/js/api.js?v=13"></script>
+<script src="assets/js/layout.js?v=34"></script>
+<script>
+  guardPage();
+  renderSidebar('rates_weights');
+  const $ = (id) => document.getElementById(id);
+  const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const fd = (d) => { const t = new Date(String(d) + 'T12:00:00'); return isNaN(t) ? d : t.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }); };
+  let D = null;
+  function sizesOf(w) { const sz = (D.sizes || []).slice(); Object.keys((w && w.sizes) || {}).forEach((k) => { if (!sz.includes(+k)) sz.push(+k); }); return sz.sort((a, b) => a - b); }
+  function draw(load) {
+    const W = load || D.weights || {}, sz = sizesOf(W), ed = D.can_edit, dis = ed ? '' : ' disabled';
+    const cell = (id, label, v, hint) => '<div class="cell"><b>' + label + '</b><input id="' + id + '" type="number" min="0" step="1" inputmode="numeric" value="' + (v == null ? '' : v) + '"' + dis + '>' + (hint ? '<small>' + hint + '</small>' : '') + '</div>';
+    $('rw').innerHTML =
+      '<div class="cd"><h2>Weight of one packed bottle</h2><p class="sb">Type the weight of ONE filled, packed bottle in grams, for each size. An order\'s weight = all its bottles + the box. A new version applies <b>from the date you choose</b>: orders before that date keep their old weights, so a change never rewrites the past. A size left empty is estimated from its ml.</p>'
+      + '<div class="bar"><div><label>Applies from</label><input type="date" id="wFrom" value="' + esc(D.today) + '"' + dis + '></div></div>'
+      + '<div class="grid">' + sz.map((m) => cell('ws_' + m, m + ' ml', (W.sizes || {})[m], 'grams')).join('') + cell('ws_chain', 'Chain', W.chain, 'grams each') + cell('ws_other', 'Other product', W.other, 'grams each') + cell('ws_pack', 'Box / packing', W.pack, 'grams per order') + '</div>'
+      + (ed ? '<div style="margin-top:12px;display:flex;gap:10px;align-items:center"><button class="btn" id="wSave">Save from this date</button><span id="wMsg"></span></div>' : '<div class="sb" style="margin-top:10px">Only Admin or HR can change these.</div>')
+      + '</div>'
+      + '<div class="cd"><h2>Versions</h2><p class="sb">Every saved version with the date it started. Load one into the form above to copy it as a new version.</p><div class="hist">' + ((D.history || []).length ? D.history.map((h, i) => '<div class="h"><span><b>From ' + esc(fd(h.from)) + '</b>' + (h.from <= D.today && (D.history.find((x) => x.from <= D.today) || {}).from === h.from ? ' <span class="cur">in force now</span>' : h.from > D.today ? ' <span class="cur" style="background:#e5efff;color:#1d4ed8">starts later</span>' : '') + '<br><small style="color:var(--muted)">' + esc(Object.keys(h.sizes || {}).length) + ' sizes · chain ' + esc(h.chain) + ' g · box ' + esc(h.pack) + ' g' + (h.by ? ' · by ' + esc(h.by) : '') + '</small></span><button class="mini" data-load="' + i + '">Load into the form</button></div>').join('') : '<div class="sb">No version saved yet — the sizes are estimated from their ml.</div>') + '</div></div>'
+      + '<div class="cd"><h2>Payment proof rules</h2><p class="sb">A prepaid or part-prepaid manual order needs two screenshots (the customer\'s paid screen and the receiver\'s screen). They must show the same amount and the same UTR, the money must have gone to TM Perfume House or Fourpirates Ventures LLP, and the UTR must be new. Two limits can be changed here.</p>'
+      + '<div class="bar"><div><label>Payment must be at most … days old</label><input id="pDays" type="number" min="1" max="60" value="' + esc(D.proof.days) + '"' + dis + '></div><div><label>Amounts may differ by up to ₹</label><input id="pTol" type="number" min="0" max="100" step="0.5" value="' + esc(D.proof.tol) + '"' + dis + '></div>' + (ed ? '<button class="btn" id="pSave">Save rules</button><span id="pMsg"></span>' : '') + '</div>'
+      + '<div class="sb" style="margin:0">Gateways: Razorpay, Quick, UPI QR, Bank transfer, Cash / COD (read from the receiver\'s screenshot).</div></div>'
+      + '<div class="cd"><h2>GST rates <small style="font-weight:500;color:var(--muted)">(from the billing details — change them in Learn &amp; Setup → Cart setup → Billing)</small></h2><div class="bar" style="margin:0;font-size:14px">' + (D.gst ? '<span>Perfumes <b>' + esc(D.gst.perfume) + '%</b></span><span>Chain <b>' + esc(D.gst.chain) + '%</b></span><span style="color:var(--muted);font-size:12.5px">The Tax column of the Manual order sheet is the total GST included in the price, worked out with these.</span>' : '<span style="color:var(--muted)">The GST module is not available on this server.</span>') + '</div></div>';
+    document.querySelectorAll('[data-load]').forEach((b) => { b.onclick = () => { draw(D.history[+b.dataset.load]); window.scrollTo({ top: 0, behavior: 'smooth' }); }; });
+    const ws = $('wSave'); if (ws) ws.onclick = async () => { const sizes = {}; sz.forEach((m) => { sizes[m] = $('ws_' + m).value; }); ws.disabled = true; $('wMsg').className = ''; $('wMsg').textContent = '';
+      try { await api.post('wmo.weight_save', { from: $('wFrom').value, sizes, chain: $('ws_chain').value, other: $('ws_other').value, pack: $('ws_pack').value }); await load(); $('wMsg').className = 'ok'; $('wMsg').textContent = 'Saved ✓'; } catch (e) { $('wMsg').className = 'er'; $('wMsg').textContent = e.message; ws.disabled = false; } };
+    const ps = $('pSave'); if (ps) ps.onclick = async () => { ps.disabled = true; try { await api.post('wmo.proof_cfg_save', { days: $('pDays').value, tol: $('pTol').value }); $('pMsg').className = 'ok'; $('pMsg').textContent = ' Saved ✓'; } catch (e) { $('pMsg').className = 'er'; $('pMsg').textContent = ' ' + e.message; } ps.disabled = false; };
+  }
+  async function load() { try { D = await api.get('wmo.weight_get'); draw(); } catch (e) { $('rw').innerHTML = '<div class="cd er">' + esc(e.message) + '</div>'; } }
+  load();
+</script>
+</body>
+</html>

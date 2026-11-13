@@ -24,6 +24,7 @@
   .dm .ov{position:fixed;inset:0;background:#0008;z-index:200;display:flex;align-items:center;justify-content:center;padding:14px}.dm .md{background:#fff;color:#111;border-radius:16px;max-width:620px;width:100%;max-height:90vh;overflow:auto;padding:16px}
   .dm .kv{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px dashed #e1e7ee;font-size:13px}.dm .kv b{text-align:right}
   html[data-theme=dark] .dm input,html[data-theme=dark] .dm select,html[data-theme=dark] .dm .wrap,html[data-theme=dark] .dm .md{background:#1f2430;color:#eee;border-color:#374151}html[data-theme=dark] .dm th{background:#161b26;color:#9aa4b2}
+  .dr{position:fixed;inset:0;background:#0006;z-index:150;display:flex;justify-content:flex-end}.dr[hidden]{display:none}.dr-in{background:var(--card,#fff);color:inherit;width:min(460px,100%);height:100%;overflow:auto;box-shadow:-8px 0 30px #0003}.dr-h{display:flex;justify-content:space-between;gap:8px;padding:14px 16px;border-bottom:1px solid var(--line,#e5e7eb);position:sticky;top:0;background:inherit}.dr-h h3{margin:0;font-size:17px}.dr-s{font-size:12px;color:#64748b;margin-top:2px}.dr-b{padding:6px 16px 24px}.dr-t{margin:14px 0 4px;font-weight:800;font-size:12.5px;text-transform:uppercase;letter-spacing:.03em;color:#475569}.dr-t small{text-transform:none;font-weight:500;color:#64748b}.dr .kv{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px dashed #e1e7ee;font-size:13px}.dr .kv b{text-align:right}.dr .pill{display:inline-block;border-radius:9px;padding:2px 8px;font-weight:800;font-size:11.5px}.dr .g{background:#dff3e8;color:#0b6b4b}.dr .y{background:#fff3d6;color:#8a5a00}.dr .r{background:#fde8e8;color:#9a2620}.dr .mini{border:1px solid #cfd8e3;border-radius:8px;padding:3px 8px;font-size:11.5px;font-weight:700;background:#fff;cursor:pointer;color:#111;text-decoration:none;display:inline-block}.dr select{padding:5px 8px;border:1px solid #cfd8e3;border-radius:8px;font:inherit;font-size:13px}.dm a.oid{color:#1d4ed8;text-decoration:none}
   .dm td.trk{min-width:150px;background:#fffdf2}.dm td.n{text-align:right;white-space:nowrap}.dm th.n{text-align:right}.dm td.ad{min-width:220px;max-width:320px}
 </style>
 </head>
@@ -33,7 +34,7 @@
   <main class="main">
     <div class="topbar"><h1>📋 Manual order sheet</h1></div>
     <div class="content dm">
-      <p style="font-size:13px;color:var(--muted);margin:0 0 10px">Every manual order in one simple sheet: order, name, tracking ID, perfumes, address, payment, sale amount and status. <b>Export</b> gives the same columns in Excel; the Tracking ID column is left empty for you to fill when the parcel has none yet.</p>
+      <p style="font-size:13px;color:var(--muted);margin:0 0 10px">Every manual order in one sheet. <b>Tap an order ID</b> to see everything about it: the perfumes (as they go to Dispatch), the customer, the money, the payment proof and how its commission was counted. <b>Export</b> gives the same columns in Excel.</p>
       <div class="bar">
         <div><label>From</label><input type="date" id="dFrom"></div><div><label>To</label><input type="date" id="dTo"></div>
         <button class="btn" type="button" id="bToday" style="background:#fff;color:#111;border:1px solid var(--line)">Today</button>
@@ -42,46 +43,58 @@
         <div><label>Payment</label><select id="fPay"><option value="">All</option><option value="prepaid">Prepaid</option><option value="partial">Part prepaid + COD</option><option value="cod">COD</option></select></div>
         <div><label>Search</label><input id="fQ" placeholder="order no / mobile / name / UTR" style="min-width:200px"></div>
         <span style="flex:1"></span>
+        <button class="btn" type="button" id="bWt" style="background:#fff;color:#111;border:1px solid var(--line)">⚖ Weights</button>
         <a class="btn" href="dispatch_manual.html" style="background:#fff;color:#111;border:1px solid var(--line);text-decoration:none">Full details page</a>
         <button class="btn" type="button" id="bXlsx">⬇ Export Excel</button>
         <button class="btn" type="button" id="bCsv" style="background:#fff;color:#0b6b4b;border:1px solid #1aa37a">⬇ CSV</button>
       </div>
       <div id="dmSum"></div><div id="dmErr"></div>
-      <div class="wrap"><table><thead><tr><th>Order ID</th><th>Name</th><th>Tracking ID</th><th>Order items (perfume)</th><th class="n">Total items</th><th>Address</th><th>State</th><th>City</th><th>Pincode</th><th>Society / landmark</th><th>Payment</th><th class="n">Prepaid ₹</th><th class="n">COD ₹</th><th class="n">Sale amount ₹</th><th>Status</th></tr></thead><tbody id="dmRows"><tr><td colspan="15">Loading…</td></tr></tbody></table></div>
+      <div class="wrap"><table><thead><tr><th>Date</th><th>Order ID</th><th>Customer</th><th>Perfumes</th><th class="n">Weight</th><th class="n">Total ₹</th><th>Payment</th><th>Gateway</th><th>Placed by</th><th class="n">Commission</th><th>Status</th></tr></thead><tbody id="dmRows"></tbody></table></div>
       <div id="dmPg" style="display:flex;gap:8px;align-items:center;margin:10px 0"></div>
     </div>
   </main>
 </div>
+<div id="dmDrawer" class="dr" hidden></div>
 <script src="assets/js/config.js?v=2"></script>
 <script src="assets/js/api.js?v=13"></script>
-<script src="assets/js/layout.js?v=33"></script>
+<script src="assets/js/layout.js?v=34"></script>
 <script>
   guardPage();
   renderSidebar('dispatch_manual');
   const $ = (id) => document.getElementById(id);
   const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const inr = (v) => '₹' + Math.round(Number(v) || 0).toLocaleString('en-IN');
-  let page = 1;
+  let page = 1, ROWS = [];
   const params = () => ({ from: $('dFrom').value, to: $('dTo').value, status: $('fSt').value, pay: $('fPay').value, q: $('fQ').value.trim() });
-  // perfume names without the shop suffix or the bottle colour: "2 × Oud Royale 50ml"
+  // perfume names without the shop suffix or the bottle colour
   const nm = (t) => String(t || '').replace(/\s+[|｜Il]\s*TMPerfumehouse.*$/i, '').replace(/\s+-\s*(DG|LG|WH)\s*$/i, '').replace(/\s+/g, ' ').trim();
-  const itemList = (r) => (r.lines || []).map((l) => (+l.qty || 1) + ' × ' + nm(l.short || l.title) + (l.label ? ' ' + String(l.label).replace(/\s+/g, '') : ''));
-  // ONE row of the sheet: the same values on the page and in the export, in the same order
-  const HEAD = ['Order ID', 'Name', 'Tracking ID', 'Order items (perfume)', 'Total items', 'Address', 'State', 'City', 'Pincode', 'Society / landmark', 'Payment', 'Prepaid ₹', 'COD ₹', 'Sale amount ₹', 'Status'];
+  const prod = (l) => nm(l.short || l.title) + (l.label ? ' ' + String(l.label).replace(/\s+/g, ' ').replace(/(\d)\s*ml/i, '$1 ml') : '') + ((+l.qty || 1) > 1 ? ' ×' + (+l.qty) : '');
+  const prodCell = (r) => (r.lines || []).map(prod).join(' / ');
+  const pieces = (r) => (r.lines || []).reduce((a, l) => a + (+l.qty || 1), 0);
+  const payName = (r) => r.pay === 'prepaid' ? 'Prepaid' : r.pay === 'cod' ? 'COD' : 'Part prepaid + COD';
+  const stName = (r) => r.status === 'cancelled' ? 'Cancelled' : r.status !== 'confirmed' ? 'Waiting for address' : (r.parcel && r.parcel.status ? r.parcel.status : 'Confirmed · not booked yet');
+  const dt = (t) => { const d = new Date(String(t || '').replace(' ', 'T')); return isNaN(d) ? String(t || '') : d.toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }); };
+  const grams = (g) => g ? (g >= 1000 ? (g / 1000).toFixed(2).replace(/0$/, '') + ' kg' : g + ' g') : '—';
+
+  // ---- the export: ONE row per order, every perfume in one cell ("Name 20 ml / Name 50 ml ×2"). AWB stays empty until the AWB automation is switched on (pending).
+  const HEAD = ['Date', 'Order ID', 'AWB', 'Name', 'Number', 'Alternative number', 'Products', 'Total products', 'Total weight (g)', 'Address', 'City', 'State', 'Pincode', 'Country', 'Mode', 'Prepaid', 'COD', 'Total', 'Tax', 'Payment gateway', 'UTR', 'Order type', 'Placed by', 'Commission', 'Tracking status'];
   function sheetRow(r) {
-    const c = r.cust || {}, cancelled = r.status === 'cancelled';
-    const pay = r.pay === 'prepaid' ? 'Prepaid' : r.pay === 'cod' ? 'COD' : 'Part prepaid + COD';
-    const st = cancelled ? 'Cancelled' : r.status !== 'confirmed' ? 'Waiting for address' : (r.parcel && r.parcel.status ? 'Confirmed · ' + r.parcel.status : 'Confirmed');
-    return [r.order_no, c.name || '', (r.parcel && r.parcel.awb) || '', itemList(r).join(', '), (r.lines || []).reduce((a, l) => a + (+l.qty || 1), 0), c.addr1 || '', c.state || '', c.city || '', c.pin || '',
-      [c.addr2, c.landmark].filter(Boolean).join(', '), pay, Math.round(Number(r.paid) || 0), Math.round(Number(r.cod) || 0), Math.round(Number(r.total) || 0), st];
+    const c = r.cust || {};
+    return [dt(r.created_at), r.order_no, (r.parcel && r.parcel.awb) || '', c.name || '', c.phone || r.phone || '', c.phone2 || '', prodCell(r), pieces(r), r.weight_g || '', [c.addr1, c.addr2, c.landmark].filter(Boolean).join(', '), c.city || '', c.state || '', c.pin || '', 'India',
+      payName(r), Math.round(Number(r.paid) || 0), Math.round(Number(r.cod) || 0), Math.round(Number(r.total) || 0), r.tax == null ? '' : Math.round(r.tax * 100) / 100, r.gateway || '', r.utr || '', r.type === 'campaign' ? 'Campaign' : r.type === 'query' ? 'Query' : '', r.emp || '', r.commission == null ? '' : Math.round(r.commission), stName(r)];
   }
+
   function draw(d) {
-    const s = d.sum || {}, by = s.by || {};
-    $('dmSum').innerHTML = '<span class="pill g">Confirmed ' + (by.confirmed || 0) + '</span><span class="pill y">Waiting for address ' + (by.waiting || 0) + '</span><span class="pill r">Cancelled ' + (by.cancelled || 0) + '</span> &nbsp; <b>' + (s.count || 0) + ' orders · Sale ' + inr(s.total) + '</b> · Prepaid ' + inr(s.prepaid) + ' · COD ' + inr(s.cod);
-    $('dmRows').innerHTML = d.rows.length ? d.rows.map((r) => { const v = sheetRow(r), items = itemList(r);
-      const stC = r.status === 'confirmed' ? 'g' : r.status === 'cancelled' ? 'r' : 'y', payC = r.pay === 'prepaid' ? 'g' : r.pay === 'cod' ? 'y' : 'b';
-      return `<tr><td style="white-space:nowrap"><b>${esc(v[0])}</b></td><td>${esc(v[1] || '—')}</td><td class="trk">${esc(v[2])}</td><td class="itc">${items.map((t) => '<div class="it">' + esc(t) + '</div>').join('')}</td><td class="n"><b>${v[4]}</b></td><td class="ad">${v[5] ? esc(v[5]) : '<i style="color:#8794a3">not added yet</i>'}</td><td>${esc(v[6])}</td><td>${esc(v[7])}</td><td><b>${esc(v[8])}</b></td><td>${esc(v[9])}</td><td><span class="pill ${payC}">${esc(v[10])}</span></td><td class="n">${v[11] ? inr(v[11]) : '—'}</td><td class="n">${v[12] ? inr(v[12]) : '—'}</td><td class="n"><b>${inr(v[13])}</b></td><td><span class="pill ${stC}">${esc(v[14])}</span></td></tr>`; }).join('')
-      : '<tr><td colspan="15" style="padding:20px;text-align:center;color:#64748b">No manual orders for these filters.</td></tr>';
+    ROWS = d.rows; const s = d.sum || {}, by = s.by || {};
+    $('dmSum').innerHTML = '<span class="pill g">Confirmed ' + (by.confirmed || 0) + '</span><span class="pill y">Waiting for address ' + (by.waiting || 0) + '</span><span class="pill r">Cancelled ' + (by.cancelled || 0) + '</span> &nbsp; <b>' + (s.count || 0) + ' orders · Sale ' + inr(s.total) + '</b> · Prepaid ' + inr(s.prepaid) + ' · COD ' + inr(s.cod)
+      + (d.billing && !d.billing.ok ? '<div class="err" style="margin-top:6px">GST invoices cannot be made yet: ' + esc((d.billing.missing || []).join(', ')) + '.</div>' : '');
+    $('dmRows').innerHTML = d.rows.length ? d.rows.map((r, i) => {
+      const c = r.cust || {}, stC = r.status === 'confirmed' ? 'g' : r.status === 'cancelled' ? 'r' : 'y', payC = r.pay === 'prepaid' ? 'g' : r.pay === 'cod' ? 'y' : 'b';
+      return `<tr data-i="${i}"><td style="white-space:nowrap">${esc(dt(r.created_at))}</td><td style="white-space:nowrap"><a href="#" class="oid" data-i="${i}"><b>${esc(r.order_no)}</b></a><div><span class="pill ${r.type === 'campaign' ? 'y' : 'b'}" style="margin:2px 0 0">${r.type === 'campaign' ? 'Campaign' : r.type === 'query' ? 'Query' : '—'}</span></div></td>`
+        + `<td><b>${esc(c.name || '—')}</b><br><small>${esc(c.phone || r.phone || '')}</small></td><td class="itc"><div class="it">${esc(prodCell(r) || '—')}</div><div class="its">${pieces(r)} pcs</div></td><td class="n">${esc(grams(r.weight_g))}</td><td class="n"><b>${inr(r.total)}</b></td>`
+        + `<td><span class="pill ${payC}">${esc(payName(r))}</span>${(+r.cod > 0 && +r.paid > 0) ? '<br><small>' + inr(r.paid) + ' paid · ' + inr(r.cod) + ' COD</small>' : ''}</td><td>${r.gateway ? '<span class="pill g">' + esc(r.gateway) + '</span>' : (r.pay === 'cod' ? '<small>—</small>' : '<small style="color:#b45309">not set</small>')}</td><td>${esc(r.emp || '—')}</td>`
+        + `<td class="n">${r.commission == null ? '<small>—</small>' : '<b>' + inr(r.commission) + '</b>'}</td><td><span class="pill ${stC}">${esc(stName(r))}</span></td></tr>`; }).join('')
+      : '<tr><td colspan="11" style="padding:20px;text-align:center;color:#64748b">No manual orders for these filters.</td></tr>';
     $('dmPg').innerHTML = d.pages > 1 ? `<button class="mini" id="pgP" ${d.page <= 1 ? 'disabled' : ''}>‹ Prev</button> Page ${d.page} / ${d.pages} <button class="mini" id="pgN" ${d.page >= d.pages ? 'disabled' : ''}>Next ›</button>` : '';
     if ($('pgP')) $('pgP').onclick = () => { page--; load(); }; if ($('pgN')) $('pgN').onclick = () => { page++; load(); };
   }
@@ -90,6 +103,35 @@
     try { const d = await api.get('wmo.dsp_list', Object.assign(params(), { page })); if (!$('dFrom').value) { $('dFrom').value = d.from; $('dTo').value = d.to; } draw(d); }
     catch (e) { $('dmRows').innerHTML = ''; $('dmErr').innerHTML = '<div class="err">' + esc(e.message) + '</div>'; }
   }
+
+  // ---- 🔎 tap an order ID: the whole order in a side window
+  const GATES = ['', 'Razorpay', 'Quick', 'UPI QR', 'Bank transfer', 'Cash / COD'];
+  function openOrder(i) {
+    const r = ROWS[i]; if (!r) return; const c = r.cust || {}, dr = $('dmDrawer');
+    const kv = (k, v, st) => '<div class="kv"><span>' + k + '</span><b' + (st ? ' style="' + st + '"' : '') + '>' + v + '</b></div>';
+    const lines = (r.lines || []).map((l) => '<div class="kv"><span>' + esc(prod(l)) + (l.chain ? ' <small>(chain)</small>' : '') + '</span><b>' + inr(l.total) + '</b></div>').join('');
+    dr.hidden = false;
+    dr.innerHTML = '<div class="dr-in"><div class="dr-h"><div><h3>' + esc(r.order_no) + ' <span class="pill ' + (r.status === 'confirmed' ? 'g' : r.status === 'cancelled' ? 'r' : 'y') + '">' + esc(stName(r)) + '</span></h3><div class="dr-s">' + esc(dt(r.created_at)) + ' · ' + (r.type === 'campaign' ? 'Campaign' : r.type === 'query' ? 'Query' : '—') + ' · placed by ' + esc(r.emp || '—') + '</div></div><button class="mini" id="drX">✕</button></div>'
+      + '<div class="dr-b"><div class="dr-t">Customer</div>' + kv('Name', esc(c.name || '—')) + kv('Mobile', esc(c.phone || r.phone || '') + (c.phone2 ? ' / ' + esc(c.phone2) : '')) + kv('Address', esc([c.addr1, c.addr2, c.landmark, [c.city, c.pin].filter(Boolean).join(' '), c.state].filter(Boolean).join(', ') || '—'), 'max-width:62%')
+      + '<div class="dr-t">Perfumes <small>(this is what goes to Dispatch)</small></div>' + (lines || '<div class="kv"><span>—</span></div>') + kv('Weight', esc(grams(r.weight_g)))
+      + '<div class="dr-t">Money</div>' + kv('Total', inr(r.total)) + kv('Prepaid (paid)', inr(r.paid), 'color:#0b6b4b') + kv('COD (on delivery)', inr(r.cod)) + kv('Tax included', r.tax == null ? '—' : inr(r.tax))
+      + '<div class="dr-t">Payment proof</div>' + kv('UTR', esc(r.utr || '—')) + kv('Customer app', esc(r.pay_app || '—'))
+      + '<div class="kv"><span>Gateway / QR</span><span><select id="drGate">' + GATES.map((g) => '<option value="' + esc(g) + '"' + (g === (r.gateway || '') ? ' selected' : '') + '>' + (g || '— choose —') + '</option>').join('') + '</select></span></div>'
+      + (r.proof ? '<div class="kv"><span>Two screenshots</span><b style="color:' + (r.proof.ok ? '#0b6b4b' : '#9a2620') + '">' + (r.proof.ok ? '✅ Verified' : '❌ ' + esc(r.proof.reason)) + '</b></div>' : '')
+      + '<div style="margin:8px 0">' + (r.has_shot ? '<button class="mini" data-shot="1">Customer screenshot</button> ' : '') + (r.has_shot2 ? '<button class="mini" data-shot="2">Receiver screenshot</button>' : '') + (!r.has_shot && !r.has_shot2 ? '<small>No screenshot saved (a COD order has none).</small>' : '') + '<div id="drShotBox"></div></div>'
+      + '<div class="dr-t">Commission <small>(same rules as every order: chart, offers, boosts, code limit)</small></div>' + (r.commission == null ? '<div class="kv"><span>Not counted yet</span><b>' + (r.status === 'confirmed' ? 'the Commission page counts it for its day' : '—') + '</b></div>' : kv('Counted', inr(r.commission)) + kv('How', esc(r.com_why || '—'), 'font-weight:600'))
+      + '<div class="dr-t">Shipment</div>' + kv('AWB', esc((r.parcel && r.parcel.awb) || 'not booked yet')) + kv('Courier', esc((r.parcel && r.parcel.courier) || '—')) + kv('Status', esc(stName(r)))
+      + ((r.invoice && r.invoice.view) ? '<div style="margin-top:8px"><a class="mini" target="_blank" rel="noopener" href="' + esc(r.invoice.view) + '">GST invoice ' + esc(r.invoice.no) + '</a></div>' : '') + '</div></div>';
+    $('drX').onclick = () => { dr.hidden = true; };
+    $('drGate').onchange = async function () { try { await api.post('wmo.dsp_gateway', { id: r.id, gateway: this.value }); r.gateway = this.value; load(); } catch (e) { alert(e.message); } };
+    dr.querySelectorAll('[data-shot]').forEach((sb) => { sb.onclick = async () => { sb.disabled = true; try { const res = await fetch(api.buildUrl('wmo.dsp_shot', { id: r.id, which: sb.dataset.shot }), { headers: { Authorization: 'Bearer ' + api.token() } }); if (!res.ok) throw new Error('No screenshot was saved.'); $('drShotBox').innerHTML = '<img alt="payment screenshot" style="max-width:100%;border-radius:10px;margin-top:6px" src="' + URL.createObjectURL(await res.blob()) + '">'; } catch (e) { $('drShotBox').innerHTML = '<div class="err">' + esc(e.message) + '</div>'; } sb.disabled = false; }; });
+  }
+  document.addEventListener('click', (e) => { const a = e.target.closest('a.oid'); if (a) { e.preventDefault(); openOrder(+a.dataset.i); } });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') $('dmDrawer').hidden = true; });
+
+  // ---- ⚖ the weights, rates and proof rules live on Admin → Rates & weights
+  $('bWt').textContent = '⚖ Rates & weights'; $('bWt').onclick = () => { location.href = 'rates_weights.html'; };
+
   const ymd = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   async function bizToday() { const d = await api.get('wmo.dsp_list', { page: 1, per: 1, status: 'x' }); return d.from; }
   $('bToday').onclick = async () => { const t = await bizToday(); $('dFrom').value = t; $('dTo').value = t; page = 1; load(); };
@@ -97,7 +139,7 @@
   ['dFrom', 'dTo', 'fSt', 'fPay'].forEach((i) => $(i).addEventListener('change', () => { page = 1; load(); }));
   let tq = 0; $('fQ').addEventListener('input', () => { clearTimeout(tq); tq = setTimeout(() => { page = 1; load(); }, 350); });
 
-  // ---- export: every order of the chosen dates and filters (not only this page), the same 15 columns
+  // ---- export: every order of the chosen dates and filters (not only this page)
   async function fetchAll(b) {
     b.disabled = true; const old = b.textContent; b.textContent = 'Preparing…';
     try { const d = await api.get('wmo.dsp_export', params()); if (!d.rows.length) { alert('No manual orders for these filters.'); return null; } return d; } catch (e) { alert(e.message); return null; } finally { b.disabled = false; b.textContent = old; }
@@ -115,7 +157,7 @@
     try {
       await loadXlsx();
       const ws = XLSX.utils.aoa_to_sheet([HEAD].concat(d.rows.map(sheetRow)));
-      ws['!cols'] = [12, 22, 22, 46, 10, 40, 16, 16, 10, 28, 20, 11, 11, 14, 22].map((w) => ({ wch: w }));
+      ws['!cols'] = [18, 11, 16, 22, 14, 14, 60, 9, 11, 42, 14, 16, 9, 8, 18, 9, 9, 9, 9, 15, 16, 10, 18, 11, 24].map((w) => ({ wch: w }));
       const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Manual orders'); XLSX.writeFile(wb, stamp(d) + '.xlsx');
     } catch (e) { saveCsv(d); alert('Excel could not be made (' + e.message + '), so the CSV file was saved instead. It opens in Excel.'); }
   };
