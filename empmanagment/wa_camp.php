@@ -207,6 +207,10 @@ function wa_log_template_msg(PDO $pdo, string $wamid, string $key, int $numId, s
 /** One template to one customer (used by follow-ups). Returns [ok, wamid|error, errorCode]. */
 function wa_send_tpl_one(PDO $pdo, array $c, array $t, array $num, array $vars, string $who): array
 {
+    if (!in_array(strtolower((string)($t['category'] ?? 'marketing')), ['utility', 'authentication'], true)) {   // 🚫 the customer said Stop to promotions: no marketing template ever goes (they may still chat)
+        $co = (int)($c['camp_optout'] ?? -1); if ($co < 0) { try { $qq = $pdo->prepare("SELECT camp_optout FROM wa_contacts WHERE phone = ?"); $qq->execute([(string)$c['phone']]); $co = (int)$qq->fetchColumn(); } catch (Throwable $e0) { $co = 0; } }
+        if ($co === 1) return [false, 'This customer asked to stop promotional messages.', 0];
+    }
     if (in_array($who, ['flow', 'followup'], true) && function_exists('wa_auto_muted') && wa_auto_muted($pdo, (string)$c['phone'])) return [false, 'Order completed — automatic messages are off until tomorrow night.', 0];
     $to = (string)($c['wa_id'] ?: '91' . $c['phone']);
     if (!in_array(strtoupper((string)($t['header_format'] ?? '')), ['', 'TEXT'], true)) {   // a photo / video / PDF on top needs its own parts
@@ -472,7 +476,7 @@ function wa_camp_audience(PDO $pdo, array $aud, int $freq): array
         if ($got && isset($got[(string)$r['phone']])) { $st['got'] = ($st['got'] ?? 0) + 1; continue; }
         if ($unreach && isset($unreach[(string)$r['phone']])) { $st['unreach'] = ($st['unreach'] ?? 0) + 1; continue; }
         if ($talkSince !== '' && !empty($r['last_in_at']) && (string)$r['last_in_at'] >= $talkSince) { $st['talking'] = ($st['talking'] ?? 0) + 1; continue; }   // they are talking to us right now (wrote in the last days): the team answers them, no campaign on top
-        if (!wa_valid_phone($r['phone'])) { $st['invalid']++; continue; } if ($r['optout']) { $st['optout']++; continue; } if ($freq > 0 && isset($recent[$r['phone']])) { $st['recent']++; continue; } $send[] = ['phone' => $r['phone'], 'name' => $r['name']];   // only what sending needs — keeps memory small for big audiences
+        if (!wa_valid_phone($r['phone'])) { $st['invalid']++; continue; } if ($r['optout'] || !empty($r['camp_optout'])) { $st['optout']++; continue; } if ($freq > 0 && isset($recent[$r['phone']])) { $st['recent']++; continue; } $send[] = ['phone' => $r['phone'], 'name' => $r['name']];   // only what sending needs — keeps memory small for big audiences
     }
     // 📬 "leave out customers who already got N+ campaign messages in the last D days" (the owner's switch in the campaign screen): Meta holds back people who get many marketing messages
     $xf = is_array($aud['xf'] ?? null) ? $aud['xf'] : null;
@@ -819,7 +823,7 @@ function wa_camp_tick_run(PDO $pdo, int $only = 0): array
                 }
                 $gapDays = max(0, (int)setting_get($pdo, 'wa_camp_gap_days', '3'));   // off by default (owner's choice): a customer can get campaigns any day; setting wa_camp_gap_days = 7 brings back "one per 7 days"
                 $q = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE phone = ? AND dir = 'out' AND mtype IN ('template', 'text') AND who = 'campaign' AND status <> 'failed' AND ts >= ?"); $q->execute([$it['phone'], date('Y-m-d H:i:s', $nowTs - max(0, $gapDays) * 86400)]);
-                if ((int)$ct['optout'] === 1) { $pdo->prepare("UPDATE wa_camp_items SET status = 'skipped', err = 'Opted out' WHERE id = ?")->execute([$iid]); $skipped++; continue; }
+                if ((int)$ct['optout'] === 1 || (int)($ct['camp_optout'] ?? 0) === 1) { $pdo->prepare("UPDATE wa_camp_items SET status = 'skipped', err = 'Opted out' WHERE id = ?")->execute([$iid]); $skipped++; continue; }
                 if (!$isRetry && $gapDays > 0 && (int)$q->fetchColumn() > 0) { $pdo->prepare("UPDATE wa_camp_items SET status = 'skipped', err = ? WHERE id = ?")->execute(['Already got a campaign message in the last ' . $gapDays . ' days', $iid]); $skipped++; continue; }
                 // 3. no paid message where it is wasted (setting wa_camp_waste_filters, default on): just bought, ignored the last 2 campaigns, Meta capped them lately
                 if (!$isRetry && (string)setting_get($pdo, 'wa_camp_waste_filters', '1') === '1') { $waste = '';

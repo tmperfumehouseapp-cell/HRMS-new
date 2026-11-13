@@ -79,7 +79,7 @@ function wa_tables(PDO $pdo): bool
         $pdo->exec("CREATE TABLE IF NOT EXISTS wa_assign_log (id INT AUTO_INCREMENT PRIMARY KEY, phone VARCHAR(12) NOT NULL, from_emp INT NOT NULL DEFAULT 0, to_emp INT NOT NULL DEFAULT 0, by_emp INT NOT NULL DEFAULT 0, how VARCHAR(10) NOT NULL DEFAULT 'manual', at DATETIME NULL, KEY k_phone (phone)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         // columns added after the first release — added once, only when missing
         foreach (['tag' => "VARCHAR(20) NOT NULL DEFAULT ''", 'summary' => "VARCHAR(600) NOT NULL DEFAULT ''", 'tagged_at' => 'DATETIME NULL', 'status' => "VARCHAR(8) NOT NULL DEFAULT 'open'",
-                  'closed_at' => 'DATETIME NULL', 'assigned_at' => 'DATETIME NULL', 'ref_text' => "VARCHAR(200) NOT NULL DEFAULT ''", 'seen_msg_id' => 'BIGINT NOT NULL DEFAULT 0'] as $col => $def) {
+                  'closed_at' => 'DATETIME NULL', 'assigned_at' => 'DATETIME NULL', 'ref_text' => "VARCHAR(200) NOT NULL DEFAULT ''", 'seen_msg_id' => 'BIGINT NOT NULL DEFAULT 0', 'camp_optout' => 'TINYINT NOT NULL DEFAULT 0'] as $col => $def) {
             try { $pdo->query("SELECT $col FROM wa_contacts LIMIT 0"); }
             catch (PDOException $e) {
                 $pdo->exec("ALTER TABLE wa_contacts ADD COLUMN $col $def");
@@ -303,9 +303,9 @@ function wa_store_in(PDO $pdo, array $m, string $name, int $numberId): string
         $ctx = (string)($m['context']['id'] ?? ''); if ($ctx !== '') { try { $pdo->prepare("UPDATE wa_messages SET reply_to = ? WHERE wamid = ?")->execute([mb_substr($ctx, 0, 120), (string)($m['id'] ?? '')]); } catch (PDOException $e) { } }   // ↩ swiped reply: remember which message it answers
     } catch (PDOException $e) { /* the same wamid twice (Meta retries) — already stored */ }
     // STOP / unsubscribe words → opt out for every number
-    if ($t === 'text' && preg_match('/^\s*(stop|unsubscribe|band karo|band kro|no more)\s*[.!]*\s*$/iu', $body)) $pdo->prepare("UPDATE wa_contacts SET optout = 1 WHERE phone = ?")->execute([$key]);
+    if ($t === 'text' && preg_match('/^\s*(stop|unsubscribe|band karo|band kro|no more)\s*[.!]*\s*$/iu', $body)) $pdo->prepare("UPDATE wa_contacts SET optout = 1, camp_optout = 1 WHERE phone = ?")->execute([$key]);
     elseif ($ex && (int)($ex['optout'] ?? 0) === 1 && !in_array($t, ['reaction', 'system', 'unsupported'], true) && !preg_match('/^\s*(stop|unsubscribe|band karo|band kro|no more)\s*[.!]*\s*$/iu', $body)) {   // owner (13 Nov): a customer who said Stop and then WRITES to us again wants to talk: the conversation starts again
-        $pdo->prepare("UPDATE wa_contacts SET optout = 0 WHERE phone = ?")->execute([$key]); if (function_exists('wa_event')) wa_event($pdo, $key, '↩ The customer wrote again after Stop — the chat is open again, messages are allowed');
+        $pdo->prepare("UPDATE wa_contacts SET optout = 0, camp_optout = 1 WHERE phone = ?")->execute([$key]); if (function_exists('wa_event')) wa_event($pdo, $key, '↩ The customer wrote again after Stop — you can chat with them again. Campaigns / promotional messages stay OFF for this customer.');
     }
     // 🎫 a customer whose complaint was SOLVED writes again (to order, to complain again, anything): the chat goes back into Requests (nobody holds it) so the whole team sees it
     try { if ($ex && (string)setting_get($pdo, 'cxres_' . $key, '') !== '') {
@@ -1188,7 +1188,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
             $in = json_input(); $key = wa_key($in['phone'] ?? ''); $c = $key !== '' ? wa_contact($pdo, $key) : null; if (!$c) json_response(['error' => 'Chat not found.'], 404);
             if (!wa_can_chat($pdo, $auth, $c)) json_response(['error' => 'This chat is assigned to someone else.'], 403);
-            $out = empty($in['opted_in']) ? 1 : 0; $pdo->prepare("UPDATE wa_contacts SET optout = ? WHERE phone = ?")->execute([$out, $key]);
+            $out = empty($in['opted_in']) ? 1 : 0; $pdo->prepare("UPDATE wa_contacts SET optout = ?, camp_optout = ? WHERE phone = ?")->execute([$out, $out, $key]);
             wa_event($pdo, $key, $out ? 'Marked as opted out — no messages will be sent' : 'Opted back in'); json_response(['ok' => true, 'optout' => $out === 1]);
         }
         case 'wa.assign': {

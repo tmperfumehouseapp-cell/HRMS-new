@@ -49,7 +49,7 @@ function wd_enroll(PDO $pdo, array $cfg): int
     $src = []; if ($cfg['enter_query']) $src[] = 'query'; if ($cfg['enter_campaign']) $src[] = 'campaign'; if (!empty($cfg['enter_community'])) $src[] = 'community'; if (!$src) return 0;
     $maxDay = $cfg['days'] ? max(array_keys($cfg['days'])) : 7; $today = wd_today($pdo); $oldest = date('Y-m-d', strtotime($today) - $maxDay * 86400); $n = 0;
     $have = []; $h = $pdo->prepare("SELECT phone FROM wa_drip_enr WHERE anchor >= ?"); $h->execute([date('Y-m-d', strtotime($today) - 31 * 86400)]); foreach ($h->fetchAll(PDO::FETCH_COLUMN) as $p0) $have[(string)$p0] = 1;   // (no JOIN across tables: their text collations differ)
-    $q = $pdo->prepare("SELECT c.phone, c.source FROM wa_contacts c WHERE c.source IN ('" . implode("','", $src) . "') AND c.last_in_at >= ? AND c.optout = 0 LIMIT 60000"); $q->execute([$oldest . ' 00:00:00']);
+    $q = $pdo->prepare("SELECT c.phone, c.source FROM wa_contacts c WHERE c.source IN ('" . implode("','", $src) . "') AND c.last_in_at >= ? AND c.optout = 0 AND c.camp_optout = 0 LIMIT 60000"); $q->execute([$oldest . ' 00:00:00']);
     $cand = []; foreach ($q->fetchAll() as $r) if (!isset($have[(string)$r['phone']])) $cand[(string)$r['phone']] = (string)$r['source'];
     $ins = $pdo->prepare("INSERT IGNORE INTO wa_drip_enr (phone, anchor, src, enrolled_at) VALUES (?, ?, ?, ?)");
     foreach (array_chunk(array_keys($cand), 500) as $ch) {
@@ -61,7 +61,7 @@ function wd_enroll(PDO $pdo, array $cfg): int
 /** Why this customer must get nothing now ('' = fine). */
 function wd_block(PDO $pdo, array $c, array $cfg, string $anchor): string
 {
-    if ((int)($c['optout'] ?? 0) === 1) return 'opted out';
+    if ((int)($c['optout'] ?? 0) === 1 || (int)($c['camp_optout'] ?? 0) === 1) return 'opted out';
     if ((int)($c['cx_id'] ?? 0) > 0 || (string)($c['tag'] ?? '') === 'complaint') return 'complaint';
     try { $q = $pdo->prepare("SELECT 1 FROM wa_cust WHERE phone = ? AND n > 0 AND last_order >= ? LIMIT 1"); $q->execute([$c['phone'], $anchor . ' 00:00:00']); if ($q->fetchColumn()) return 'ordered'; } catch (Throwable $e) { }   // an order since they came in (earlier orders do not stop the drip)
     if ($cfg['pause_person']) { try { $q = $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND dir = 'out' AND who = 'emp' AND ts >= ? LIMIT 1"); $q->execute([$c['phone'], date('Y-m-d H:i:s', time() - 12 * 3600)]); if ($q->fetchColumn()) return 'person chatting'; } catch (Throwable $e) { } }
