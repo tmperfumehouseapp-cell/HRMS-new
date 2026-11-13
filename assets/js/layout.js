@@ -71,7 +71,7 @@ const LAYOUT_BUILD = '261102.2';   // shown under your name in the sidebar
     try { on = localStorage.getItem('hrms_dark') === '1'; } catch (e) { }
     if (on) de.classList.add('hrms-dk');
     if (!document.getElementById('hrmsDkCss')) { var st = document.createElement('style'); st.id = 'hrmsDkCss';
-      st.textContent = 'html.hrms-dk{filter:invert(.92) hue-rotate(180deg);background:#111;}html.hrms-dk img,html.hrms-dk video,html.hrms-dk canvas,html.hrms-dk iframe,html.hrms-dk [style*="background-image"]{filter:invert(1) hue-rotate(180deg);}'
+      st.textContent = 'html.hrms-dk{filter:invert(.92) hue-rotate(180deg);background:#fff;min-height:100%;}html.hrms-dk body{min-height:100vh;}html.hrms-dk img,html.hrms-dk video,html.hrms-dk canvas,html.hrms-dk iframe,html.hrms-dk [style*="background-image"]{filter:invert(1) hue-rotate(180deg);}'
         + '#hrmsDkBtn{position:fixed;top:10px;right:14px;z-index:2147483000;width:38px;height:38px;border-radius:50%;border:1px solid rgba(0,0,0,.12);background:#fff;color:#14161a;font-size:18px;line-height:1;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.12);padding:0;display:flex;align-items:center;justify-content:center}'
         + '@media (max-width:820px){#hrmsDkBtn{top:9px;right:62px;width:34px;height:34px;font-size:16px}}@media print{#hrmsDkBtn{display:none}}';
       (document.head || de).appendChild(st); }
