@@ -69,6 +69,8 @@
       wa_tag: 'WhatsApp › chat tags', wa_learn: 'WhatsApp › Teach — learning from chats', wa_guide: 'WhatsApp › Teach — guidebook', wa_topics: 'WhatsApp › follow-up topics', wq_manager: 'WhatsApp Sales — manager notes', wq_manager_tone: 'WhatsApp Sales — manager tone',
       'customer:inbox': 'Inbox — customer messages', 'customer:complaints': 'Complaints — customer replies', 'customer:': 'Customer replies (other)', 'internal:whatsapp': 'TMPH assistant — WhatsApp questions', 'internal:finance': 'TMPH assistant — finance questions', 'internal:': 'TMPH assistant (other)',
       footwear: 'Attendance — shoe check at punch-in', idcard: 'Employees — ID card reading', 'products:web_fill': 'Products — website details', 'products:web_origina': 'Products — website details' };
+    // every job gets a line of its own; a job without a written description gets one from its name
+    const whereOf = (k) => WHERE[k] || (k.indexOf('wa_') === 0 ? 'WhatsApp — ' + k.slice(3).replace(/_/g, ' ') : k.indexOf('wq_') === 0 ? 'WhatsApp Sales — ' + k.slice(3).replace(/_/g, ' ') : k.indexOf('products:') === 0 ? 'Products — ' + k.slice(9).replace(/_/g, ' ') : k.indexOf('customer:') === 0 ? 'Customer replies — ' + k.slice(9) : k.indexOf('internal:') === 0 ? 'TMPH assistant — ' + k.slice(9) : 'Other AI job');
     const ymd = (dt) => dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0');
     const td = new Date(), today = ymd(td), isCur = M.value === today.slice(0, 7);
     let planH = '';
@@ -94,7 +96,7 @@
         <div class="au-days" title="Cost per day this month; the pale bars are the estimate for the next 7 days">${dayKeys.map((k) => `<i style="height:${Math.max(3, Math.round(byDay[k].usd * 100 / mx))}%" title="${esc(k)}: ${usd(byDay[k].usd)}"></i>`).join('')}${Array.from({ length: Math.min(7, daysLeft) }, () => `<i class="fc" style="height:${Math.max(3, Math.round(T.perDay * 100 / mx))}%" title="estimate: ${usd(T.perDay)}"></i>`).join('')}</div>
         <div class="au-note" style="margin-bottom:8px">Orange = each day so far · pale = the estimate for the coming days</div>
         <div class="au-w"><table class="au-t"><thead><tr><th>Where the AI is used</th><th>Today</th><th>Last 3 days</th><th>Per day</th><th>This month</th><th>Tokens (month)</th><th>Next 7 days</th><th>Rest of month</th></tr></thead><tbody>
-          ${big.map((p) => row(p.k, WHERE[p.k] || '', p)).join('')}${small.length ? row('Everything else', small.length + ' small jobs: ' + small.map((p) => p.k).join(', '), S) : ''}${row('TOTAL', '', T, 'tot')}</tbody></table></div></div>`;
+          ${list.map((p) => row(p.k, whereOf(p.k), p)).join('')}${row('TOTAL (' + list.length + ' jobs)', '', T, 'tot')}</tbody></table></div></div>`;
     }
     let h = planH + `<div class="au-k"><div><small>AI calls</small><b>${n(t.calls)}</b></div><div><small>Tokens in</small><b>${mt(t.in)}</b></div><div><small>Tokens out</small><b>${mt(t.out)}</b></div><div><small>Cost (this month)</small><b>${usd(t.usd)}</b></div></div>`;
     h += '<h3 style="margin:6px 0">Which job uses the AI</h3><div class="au-w"><table class="au-t"><thead><tr><th>Job</th><th>Calls</th><th>Tokens in</th><th>Avg in / call</th><th>Tokens out</th><th>Cost</th></tr></thead><tbody>'
