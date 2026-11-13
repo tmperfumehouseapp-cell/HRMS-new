@@ -253,7 +253,7 @@ function wa_tick(PDO $pdo, bool $force = false): array
     if (!$__late()) try { if (function_exists('wa_ord_tick')) $o['orders'] = wa_ord_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'orders: ' . $e->getMessage()); }   // order-update messages (and the one-time template setup)
     if (!$__late()) try { if (function_exists('jt_tick') && $force && !defined('WA_IN_WEBHOOK')) $o['tags'] = jt_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'tags: ' . $e->getMessage()); }
     if (!$__late()) try { if (function_exists('wa_numq_refresh') && $force && !defined('WA_IN_WEBHOOK')) { $nq = json_decode((string)setting_get($pdo, 'wa_numq_cache', ''), true); if (!is_array($nq) || (int)($nq['t'] ?? 0) < time() - 600) wa_numq_refresh($pdo); } } catch (Throwable $e) { }   // ⚡ the per-number chip counts are renewed here, not while the chat list loads
-    if (!$__late()) try { if (!defined('WA_IN_WEBHOOK') && (int)setting_get($pdo, 'wa_pbf_at', '0') < time() - 120) { setting_set($pdo, 'wa_pbf_at', (string)time()); $o['pbuyer'] = wa_prior_buyer_fix($pdo); $o['optin'] = wa_optin_again_fix($pdo); } } catch (Throwable $e) { }   // a customer who already ordered is not a New query
+    if (!$__late()) try { if (!defined('WA_IN_WEBHOOK') && (int)setting_get($pdo, 'wa_pbf_at', '0') < time() - 600) { setting_set($pdo, 'wa_pbf_at', (string)time()); $o['pbuyer'] = wa_prior_buyer_fix($pdo); $o['optin'] = wa_optin_again_fix($pdo); } } catch (Throwable $e) { }   // a customer who already ordered is not a New query
     if (!$__late()) try { if (function_exists('wkw_fu_tick') && !defined('WA_IN_WEBHOOK')) $o['kwfu'] = wkw_fu_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'button follow-ups: ' . $e->getMessage()); }   // ↪ Button replies: the follow-up when the customer does not answer
     if (!$__late()) try { if (function_exists('wd_tick') && $force && !defined('WA_IN_WEBHOOK')) $o['drip'] = wd_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'drip: ' . $e->getMessage()); }   // 🔁 7-Day Drip
     if (!$__late()) try { if (function_exists('wj_tick') && $force && !defined('WA_IN_WEBHOOK')) $o['journey'] = wj_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'journey: ' . $e->getMessage()); }   // 🗓 60-day Journey: today's messages, the night's topic learning, festival watch
@@ -306,15 +306,24 @@ function wa_camp_in_live_chat(PDO $pdo, string $key, string $campTs): bool
     try { $q = $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND dir = 'in' AND ts BETWEEN ? AND ? LIMIT 1"); $q->execute([$key, date('Y-m-d H:i:s', $t - 30 * 3600), $campTs]); return (bool)$q->fetchColumn(); } catch (Throwable $e) { return false; }
 }
 /** True when this phone has an order from before $t (a customer who bought already). */
-function wa_prior_buyer(PDO $pdo, string $key, int $t): bool { try { return function_exists('order_is_repeat_customer') && order_is_repeat_customer($pdo, $key, $t); } catch (Throwable $e) { return false; } }
+function wa_prior_buyer(PDO $pdo, string $key, int $t): bool
+{
+    try {
+        if (!function_exists('order_is_repeat_customer')) return false;
+        $k = substr(preg_replace('/\D+/', '', $key), -10); if (strlen($k) < 10) return false;
+        // ⚡ the exact check reads the whole orders table: first the customer list (indexed by phone) — nobody without an order is a repeat buyer, so most chats never reach the slow query
+        try { $q = $pdo->prepare("SELECT n FROM wa_cust WHERE phone = ? LIMIT 1"); $q->execute([$k]); $n = $q->fetchColumn(); if ($n === false || (int)$n <= 0) return false; } catch (Throwable $e) { }
+        return order_is_repeat_customer($pdo, $key, $t);
+    } catch (Throwable $e) { return false; }
+}
 /** Chats typed "New query" in the last 2 days whose customer had ordered BEFORE they first wrote: they become Campaign (a few per engine run). */
 function wa_prior_buyer_fix(PDO $pdo): int
 {
     $n = 0;
     try {
-        $st = $pdo->prepare("SELECT phone, first_seen FROM wa_contacts WHERE source = 'query' AND last_in_at >= ? ORDER BY last_in_at DESC LIMIT 60"); $st->execute([date('Y-m-d H:i:s', time() - 2 * 86400)]);
+        $st = $pdo->prepare("SELECT phone, first_seen FROM wa_contacts WHERE source = 'query' AND last_in_at >= ? ORDER BY last_in_at DESC LIMIT 40"); $st->execute([date('Y-m-d H:i:s', time() - 2 * 86400)]); $t0 = microtime(true);
         $up = $pdo->prepare("UPDATE wa_contacts SET source = 'campaign' WHERE phone = ? AND source = 'query'");
-        foreach ($st->fetchAll() as $r) { $t = strtotime((string)$r['first_seen']) ?: 0; if ($t > 0 && wa_prior_buyer($pdo, (string)$r['phone'], $t)) { $up->execute([(string)$r['phone']]); $n++; } }
+        foreach ($st->fetchAll() as $r) { if (microtime(true) - $t0 > 3) break; $t = strtotime((string)$r['first_seen']) ?: 0; if ($t > 0 && wa_prior_buyer($pdo, (string)$r['phone'], $t)) { $up->execute([(string)$r['phone']]); $n++; } }   // at most 3 seconds per run
     } catch (Throwable $e) { }
     return $n;
 }
