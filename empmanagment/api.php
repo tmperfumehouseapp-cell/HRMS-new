@@ -7889,13 +7889,22 @@ function cm_is_live(PDO $pdo): bool
 {
     static $v = null; if ($v === null) { try { $v = (string)setting_get($pdo, 'cm_live', '1') !== '0'; } catch (Throwable $e) { $v = false; } } return $v;
 }
+/** Loads the commission engine (cm_day, cm_paid_day … in boss2.php, through boss.php). boss.php only loads when $pdo and $action are in scope, so a plain require from inside
+ *  a function returned at once and left the engine missing for that whole request (the live figure then showed on about 1 request in 20). Returns true when the engine is there. */
+function cm_engine_load(PDO $pdo): bool
+{
+    if (function_exists('cm_paid_day')) return true;
+    $action = (string)($GLOBALS['action'] ?? '');
+    try { if (is_file(__DIR__ . '/boss.php')) require_once __DIR__ . '/boss.php'; if (!function_exists('cm_paid_day') && is_file(__DIR__ . '/boss2.php')) require_once __DIR__ . '/boss2.php'; }
+    catch (Throwable $e) { error_log('cm_engine_load: ' . $e->getMessage()); }
+    return function_exists('cm_paid_day');
+}
 /** One person's commission for one day when the new engine is live. No row (retail / store people, or moved to the store that day) = 0, they are paid by their own rule;
- *  a day with orders the new engine could not price (no ML, size not in the chart) keeps the old figure, so nobody is paid less because of a gap in the chart. */
+ *  The figure is the Commission page's own total for that person and day. */
 function cm_live_pick(?array $row, float $old, bool $offline): float
 {
     if ($row === null) return $offline ? 0.0 : $old;
-    if ((int)($row['no_ml'] ?? 0) + (int)($row['not_priced'] ?? 0) > 0) return $old;
-    return (float)($row['total'] ?? 0);
+    return (float)($row['total'] ?? 0);      // ONE figure everywhere: exactly what the Commission page shows (an order it cannot price is listed there under Needs fixing)
 }
 function coach_day(PDO $pdo, string $day, bool $hist = true, bool $raw = false): array
 {
@@ -7942,8 +7951,7 @@ function coach_day(PDO $pdo, string $day, bool $hist = true, bool $raw = false):
     $cmMap = null;      // the new engine is live: its figure is what is paid (see cm_is_live)
     if (!$raw && cm_is_live($pdo)) {
         try {
-            if (!function_exists('cm_day') && is_file(__DIR__ . '/boss.php')) require_once __DIR__ . '/boss.php';
-            if (function_exists('cm_day')) { $cr = cm_day($pdo, $day); if (empty($cr['error'])) { $cmMap = []; foreach ((array)$cr['rows'] as $x) $cmMap[(int)$x['id']] = $x; } }
+            if (cm_engine_load($pdo) && function_exists('cm_day')) { $cr = cm_day($pdo, $day); if (empty($cr['error'])) { $cmMap = []; foreach ((array)$cr['rows'] as $x) $cmMap[(int)$x['id']] = $x; } }
         } catch (Throwable $e) { error_log('coach_day live engine: ' . $e->getMessage()); $cmMap = null; }
     }
     foreach ($emps as $id => $e) {
@@ -23027,11 +23035,9 @@ switch ($action) {
         if (!in_array($auth['role'] ?? '', ['Admin', 'HR'], true) && !user_can($auth, 'commission')) json_response(['error' => 'You do not have permission to see commission.'], 403);
         $from = (string)($_GET['from'] ?? ''); $to = (string)($_GET['to'] ?? '');
         if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $from) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $to) || $to < $from) json_response(['error' => 'from and to must be YYYY-MM-DD.'], 422);
-        if (!cm_is_live($pdo)) json_response(['live' => false]);
-        if ((strtotime($to) - strtotime($from)) > 61 * 86400) json_response(['live' => false, 'why' => 'range too long']);
-        @set_time_limit(240);
-        if (!function_exists('cm_paid_day') && is_file(__DIR__ . '/boss.php')) require_once __DIR__ . '/boss.php';
-        if (!function_exists('cm_paid_day')) json_response(['live' => false]);
+        if ((strtotime($to) - strtotime($from)) > 92 * 86400) json_response(['live' => false, 'why' => 'Pick at most 93 days.']);
+        @set_time_limit(280);
+        if (!cm_engine_load($pdo)) json_response(['live' => false, 'why' => 'The commission engine file could not be loaded on the server.']);
         $ord = []; $emps = []; $gaps = []; $last = min($to, biz_today($pdo));
         for ($d = $from; $d <= $last; $d = date('Y-m-d', strtotime($d . ' +1 day'))) {
             $r = cm_paid_day($pdo, $d); if (!empty($r['error'])) json_response(['live' => false, 'why' => $r['error']]);
@@ -23109,10 +23115,9 @@ switch ($action) {
         }
         // What each day PAYS by the live engine (the Commission page's own figure): My Sales shows the sum, so the salesperson and the Admin see the same number.
         $paid = ['live' => false, 'days' => (object)[]];
-        if ($mq === '' && cm_is_live($pdo)) {
+        if ($mq === '') {
             try {
-                if (!function_exists('cm_paid_day') && is_file(__DIR__ . '/boss.php')) require_once __DIR__ . '/boss.php';
-                if (function_exists('cm_paid_day')) {
+                if (cm_engine_load($pdo)) {
                     @set_time_limit(240); $pd = []; $okAll = true;
                     for ($d = $from; $d <= $to; $d = date('Y-m-d', strtotime($d . ' +1 day'))) { $r = cm_paid_day($pdo, $d); if (!empty($r['error'])) { $okAll = false; break; } if (isset($r['emps'][$myId])) $pd[$d] = (float)$r['emps'][$myId]['total']; }
                     if ($okAll) $paid = ['live' => true, 'days' => (object)$pd];
