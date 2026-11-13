@@ -453,7 +453,8 @@ if (strpos($__wmo, 'wmo.') === 0) {
             $status = (string)($in['status'] ?? ''); $pay = (string)($in['pay'] ?? ''); $qq = (string)($in['q'] ?? ''); $tot = 0; $sum = [];
             if ($__wmo === 'wmo.dsp_export') { @set_time_limit(120); $rows = wmo_dsp_rows($pdo, $from, $to, $status, $pay, $qq, 5000, 0, $tot, $sum); json_response(['ok' => true, 'rows' => $rows, 'total' => $tot, 'from' => $from, 'to' => $to]); }
             $page = max(1, (int)($in['page'] ?? 1)); $per = 30; $rows = wmo_dsp_rows($pdo, $from, $to, $status, $pay, $qq, $per, ($page - 1) * $per, $tot, $sum);
-            json_response(['ok' => true, 'rows' => $rows, 'total' => $tot, 'page' => $page, 'pages' => max(1, (int)ceil($tot / $per)), 'sum' => $sum, 'from' => $from, 'to' => $to]);
+            $bill = ['ok' => true, 'missing' => []]; try { if (function_exists('wch_billing_gate')) { $g = wch_billing_gate($pdo); $bill = ['ok' => !empty($g['ok']), 'missing' => array_values(array_slice((array)($g['missing'] ?? []), 0, 8))]; } else $bill = ['ok' => false, 'missing' => ['GST invoice module is not installed']]; } catch (Throwable $e) { }   // why invoices are not made: the GST billing details
+            json_response(['ok' => true, 'rows' => $rows, 'total' => $tot, 'page' => $page, 'pages' => max(1, (int)ceil($tot / $per)), 'sum' => $sum, 'from' => $from, 'to' => $to, 'billing' => $bill]);
         }
         case 'wmo.dsp_shot': {   // the payment screenshot of one manual order (Dispatch people / Admin)
             if (!wmo_dsp_ok($pdo, $auth)) json_response(['error' => 'Not allowed.'], 403);
