@@ -136,7 +136,7 @@
       });
     }
     // Target bonus (Commission Rules → Target bonus), same as the Commission page: each day stands alone. On a day whose collection reaches that day's target
-    // (or target + X% more), that day's commission is raised by the step's %. Over several days = the sum of each day's own bonus.
+    // (or target + X% more), that day's commission is raised by the step's % — unless the chart's own over-target extra is higher (the higher one counts). Over several days = the sum of each day's own bonus.
     const bonus = n > 0 && (c || slabN > 0) ? targetBonus(rk, days, amount) : 0;
     amount += bonus;
     if (slabN && slabN === n) return { ach, n, target, rate: ach > 0 ? Math.round(amount / ach * 10000) / 100 : 0, amount, rated: true, slab: true, bonus };
@@ -152,7 +152,13 @@
   }
   function targetBonus(rk, days, amount) {
     if (!CM.bonus.length) return 0;
-    if (days.length === 1) { const h = bonusStep(rk, days[0]); return h ? amount * h.bonus / 100 : 0; }
+    if (days.length === 1) {
+      const d = days[0], h = bonusStep(rk, d); if (!h) return 0;
+      // the chart's own over-target extra is already inside `amount`: the HIGHER of the two counts, never both (same as the live engine, cm_bonus_pick)
+      const x = (CM.idx[rk] || {})[d], t = Number(((CM.target || {})[rk] || {})[d] || 0);
+      const sb = window.MLSLAB && MLSLAB.on(CM.slab) ? Number(MLSLAB.bonusFor(CM.slab, (x.ach / t - 1) * 100)) || 0 : 0;
+      return h.bonus > sb ? amount * ((1 + h.bonus / 100) / (1 + sb / 100) - 1) : 0;
+    }
     let b = 0; days.forEach((d) => { if (bonusStep(rk, d)) b += aggRow(rk, [d], false).bonus || 0; });
     return b;
   }

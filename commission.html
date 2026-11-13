@@ -671,10 +671,13 @@
         return hit ? { hit, pct, ach: x.ach, t } : null;
       };
       if (days.length === 1) {
-        const r = ruleOn(days[0]), h = hitOn(r, days[0]), bonus = h ? c.amount * h.hit.bonus / 100 : 0;
+        const r = ruleOn(days[0]), h = hitOn(r, days[0]);
+        // the ML price slab's own over-target extra is already inside c.amount: the HIGHER of the two counts, never both (same as the live engine, cm_bonus_pick)
+        const sb = h && window.MLSLAB && MLSLAB.on(SLAB) ? Number(MLSLAB.bonusFor(SLAB, h.pct)) || 0 : 0;
+        const bonus = h && h.hit.bonus > sb ? c.amount * ((1 + h.hit.bonus / 100) / (1 + sb / 100) - 1) : 0;
         if (bonus > 0.005) {
           c.amount += bonus; c.bonus = { label: r.label, pct: h.hit.bonus, over: h.hit.over, amount: bonus, ach: h.ach, target: h.t, days: 1 };
-          c.steps.push({ label: 'Target bonus', detail: `${r.label}: collection ${inr(h.ach)} vs target ${inr(h.t)} (${h.pct >= 0 ? '+' : ''}${Math.round(h.pct * 10) / 10}%) → ${h.hit.over === 0 ? 'target done' : 'target + ' + fmtN(h.hit.over) + '% more'}: +${fmtN(h.hit.bonus)}% on this day's commission`, value: '+' + inr(bonus) });
+          c.steps.push({ label: 'Target bonus', detail: `${r.label}: collection ${inr(h.ach)} vs target ${inr(h.t)} (${h.pct >= 0 ? '+' : ''}${Math.round(h.pct * 10) / 10}%) → ${h.hit.over === 0 ? 'target done' : 'target + ' + fmtN(h.hit.over) + '% more'}: +${fmtN(h.hit.bonus)}% on this day's commission${sb > 0 ? ' (in place of the chart\'s +' + fmtN(sb) + '%)' : ''}`, value: '+' + inr(bonus) });
         }
       } else {
         let bonus = 0, nd = 0, lo = Infinity, hi = 0; const labels = {};
