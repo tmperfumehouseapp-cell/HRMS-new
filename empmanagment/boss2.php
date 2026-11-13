@@ -2905,7 +2905,7 @@ function cm_day(PDO $pdo, $day, array $ch = null, array $offers = null, array $b
     return ['rows' => $rows, 'error' => ''];
 }
 /** ONE figure for every page. What a day PAYS, per person and per order, by the live engine: the same number the Commission page shows. A day with an order the engine
- *  could not price (no ML, size not in the chart) keeps the old figure for that person (cm_live_pick), and its orders are left to the page's own working.
+ *  could not price (no ML, size not in the chart) shows ₹0 for that order, exactly as on the Commission page.
  *  Kept for a short while (today / yesterday 2 minutes, older days 30 minutes; a change of the rules is seen at once) so a month does not count 30 days on every page load.
  *  Returns ['emps' => [id => ['total' => ₹, 'live' => bool]], 'ord' => [order key => [₹, how it was counted]]] */
 function cm_paid_day(PDO $pdo, $day) {
@@ -2927,9 +2927,8 @@ function cm_paid_day(PDO $pdo, $day) {
     $r = cm_day($pdo, $day); if (!empty($r['error'])) return ['emps' => [], 'ord' => [], 'error' => $r['error']];
     $out = ['emps' => [], 'ord' => []];
     foreach ((array)$r['rows'] as $x) {
-        $gap = (int)$x['no_ml'] + (int)$x['not_priced'] > 0;
-        $out['emps'][(int)$x['id']] = ['total' => round($gap ? (float)($x['old'] ?? $x['total']) : (float)$x['total'], 2), 'live' => !$gap];
-        if ($gap) continue;
+        $gap = (int)$x['no_ml'] + (int)$x['not_priced'] > 0;      // an order the chart cannot price pays ₹0 (it is listed under Needs fixing on the Commission page)
+        $out['emps'][(int)$x['id']] = ['total' => round((float)$x['total'], 2), 'live' => !$gap];
         foreach ((array)$x['lines'] as $l) {
             if ((string)($l['key'] ?? '') === '') continue;
             $why = $l['rule'] === 'chart' ? 'Chart ' . $l['pct'] . '%' . ($x['bonus'] > 0 ? ' + ' . ($x['bonus_rule'] !== '' ? $x['bonus_rule'] : ($x['boost'] !== '' ? $x['boost'] : 'over-target extra')) . ' +' . (0 + $x['bonus']) . '%' : '')

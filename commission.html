@@ -1430,7 +1430,7 @@
   // ---------- embed mode (used by the Orders page) ----------
   // For the range loaded here, work out each employee's commission per panel (house), and each order's commission, and which rule decided it.
   function embedResults(paid) {
-    const PO = (paid && paid.ord) || null;
+    const PO = (paid && paid.ord) || null, PE = (paid && paid.emps) || {};      // PE: the people the Commission page counts in these dates
     const aggs = {}, rows = ROWS.map((r) => agg(r, DAYS)); rows.forEach((a) => { aggs[a.row.key] = a; });
     const emps = {}, ord = {}, TAGN = { panel: 'Panel rule', fixed: 'Fixed commission', mix: 'Order-code mix rule', star: '★ rating rule', code: 'Order-code rule' };
     rows.forEach((a) => {
@@ -1440,10 +1440,10 @@
       a.orders.forEach((o) => {
         let r = comOf(o, aggs);
         if (mf) r = { v: mf.sum > 0.005 ? r.v * mf.amt / mf.sum : (mf.ach > 0 ? mf.amt * o.amt / mf.ach : 0), note: 'manual commission' };
-        const pv = !mf && PO ? PO[o.key] : null;      // the paid figure of this order (live engine)
+        const pv = !mf && PO ? (PO[o.key] || (PE[id] != null ? [0, 'Not counted on the Commission page for this person / day'] : null)) : null;      // the Commission page's figure for this order; an order it does not count pays ₹0 here too
         if (pv) r = { v: Number(pv[0]) || 0, note: pv[1] || '', paid: true };
         const hs = o.house || '', full = (c && c.steps && c.rate ? c.rate : 0) * o.amt / 100;
-        const byH = emps[id] = emps[id] || {}, E = byH[hs] = byH[hs] || { amt: 0, n: 0, coll: 0, rate: c && c.steps ? c.rate : 0, tags: {} };
+        const byH = emps[id] = emps[id] || {}, E = byH[hs] = byH[hs] || { amt: 0, n: 0, coll: 0, rate: PO ? 0 : (c && c.steps ? c.rate : 0), tags: {} };
         E.amt += r.v; E.n++; E.coll += o.amt;
         let k = '', label = '';
         const gf = gateFn(o, aggs), pr = panelRuleFor(o, gf);
@@ -1457,7 +1457,7 @@
         else if (starMul(o)) { k = 'star'; const sm = starMul(o); label = starTxt(o.stars) + ' · ' + (sm.r.label || 'rating rule'); }
         else if (c && c.mix) { k = 'mix'; label = (c.mix.label || 'Code mix rule') + ' · full commission'; }
         else if (Math.abs(r.v - full) > 0.005) { k = 'code'; label = (r.note || '').split(' · ')[0] || TAGN.code; }
-        if (k) { const T = E.tags[k + '|' + label] = E.tags[k + '|' + label] || { k, l: label, n: 0, d: 0 }; T.n++; T.d += r.v - full; }
+        if (k) { const T = E.tags[k + '|' + label] = E.tags[k + '|' + label] || { k, l: label, n: 0, d: 0 }; T.n++; T.d += pv ? 0 : r.v - full; }
         ord[o.key] = [Math.round(r.v * 100) / 100, r.note || '', k];
       });
     });
@@ -1471,10 +1471,13 @@
   const PAIDC = {};
   async function paidGet(from, to) {
     const k = from + '|' + to, c = PAIDC[k]; if (c && Date.now() - c.at < 60000) return c.d;
-    let d = null; try { const r = await api.get('commission.paid', { from, to }); d = r && r.live ? r : null; } catch (e) { d = null; }
-    PAIDC[k] = { at: Date.now(), d }; return d;
+    let d = null; try { const r = await api.get('commission.paid', { from, to }); d = r && r.live ? r : { fail: (r && r.why) || 'the server did not return the commission' }; } catch (e) { d = { fail: e.message || 'could not reach the server' }; }
+    if (!d.fail) PAIDC[k] = { at: Date.now(), d }; return d;
   }
-  function embedSoon() { clearTimeout(embedTimer); embedTimer = setTimeout(async () => { const f = RFROM, t = RTO; let paid = null; try { paid = await paidGet(f, t); } catch (e) {} if (f !== RFROM || t !== RTO) return; try { embedSend(embedResults(paid)); } catch (e) { embedSend({ error: 'Could not work out the commission (' + e.message + ')' }); } }, 60); }
+  function embedSoon() { clearTimeout(embedTimer); embedTimer = setTimeout(async () => { const f = RFROM, t = RTO; let paid = null; try { paid = await paidGet(f, t); } catch (e) { paid = { fail: e.message || 'error' }; } if (f !== RFROM || t !== RTO) return;
+    // never fall back to this page's own (different) working without saying so: the Orders sheet must show the Commission page's figure or the reason it cannot
+    if (!paid || paid.fail) { embedSend({ error: 'Commission could not be loaded from the Commission page (' + ((paid && paid.fail) || 'no answer') + '). Press Refresh.' }); return; }
+    try { embedSend(embedResults(paid)); } catch (e) { embedSend({ error: 'Could not work out the commission (' + e.message + ')' }); } }, 60); }
   if (EMBED) {
     const qs = new URLSearchParams(location.search), f = qs.get('from'), t = qs.get('to'), okD = (v) => /^\d{4}-\d{2}-\d{2}$/.test(v || '');
     if (okD(f) && okD(t) && f <= t) { RFROM = f; RTO = t; }
