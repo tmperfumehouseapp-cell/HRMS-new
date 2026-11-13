@@ -378,7 +378,7 @@ function wa_can_chat(PDO $pdo, array $auth, array $contact): bool
 {
     if (wa_is_admin($pdo, $auth)) return true;
     $e = (int)($auth['employee_id'] ?? 0); if ($e > 0 && (int)$contact['assigned_emp'] === $e) return true;
-    return (int)($contact['cx_id'] ?? 0) > 0 && wa_cx_owner($pdo, $auth, $contact);   // 🎫 the complaint team member who owns this customer's open ticket uses the same chat box (voice notes, photos, "/", pre-made messages)
+    return wa_cx_owner($pdo, $auth, $contact);   // 🎫 the complaint team member who owns this customer's open ticket uses the same chat box (voice notes, photos, "/", pre-made messages)
 }
 /** May READ this chat (the 👥 Team list): its holder, an admin, or anyone allowed to take over. Sending still needs wa_can_chat. */
 function wa_can_watch(PDO $pdo, array $auth, array $contact): bool { return wa_can_chat($pdo, $auth, $contact) || wa_can_takeover($pdo, $auth) || wa_can_assign($pdo, $auth); }
@@ -452,9 +452,10 @@ function wa_cx_lock(PDO $pdo, array $auth, array $c): string
 /** The person who owns this chat's open complaint (the complaint team member) — they may message the customer even though the chat stays with the salesperson. */
 function wa_cx_owner(PDO $pdo, array $auth, array $c): bool
 {
-    $id = (int)($c['cx_id'] ?? 0); $me = (int)($auth['employee_id'] ?? 0); if ($id <= 0 || $me <= 0) return false;
-    try { $q = $pdo->prepare("SELECT owner_emp, status FROM cx_cases WHERE id = ?"); $q->execute([$id]); $k = $q->fetch(); } catch (Throwable $e) { return false; }
-    return $k && (int)$k['owner_emp'] === $me && in_array((string)$k['status'], ['open', 'reopened'], true);
+    $me = (int)($auth['employee_id'] ?? 0); if ($me <= 0 || (string)($c['phone'] ?? '') === '') return false;
+    // owner (13 Nov): the ticket decides, not the mark on the chat — whoever owns an OPEN ticket of this customer's number opens and answers the chat
+    // (a ticket raised from a call / IVR / Tracking never marked the chat, so Customer Care got "This chat is assigned to someone else")
+    try { $q = $pdo->prepare("SELECT 1 FROM cx_cases WHERE phone = ? AND owner_emp = ? AND status IN ('open', 'reopened') LIMIT 1"); $q->execute([(string)$c['phone'], $me]); return (bool)$q->fetchColumn(); } catch (Throwable $e) { return false; }
 }
 function wa_contact(PDO $pdo, string $key): ?array { $q = $pdo->prepare("SELECT * FROM wa_contacts WHERE phone = ?"); $q->execute([$key]); $r = $q->fetch(); return $r ?: null; }
 
