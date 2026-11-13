@@ -2764,6 +2764,44 @@ function cm_boost_save(PDO $pdo, array $in, $by) {
     return [true, 'Boost “' . $name . '” added. It runs ' . $from . ' to ' . $to . ' and closes at 10:00 on ' . date('j M', strtotime($to . ' +1 day')) . '.', 200];
 }
 function cm_boost_stop(PDO $pdo, $id) { cm_boosts($pdo); $pdo->prepare("UPDATE cm_boosts SET active = 0, stopped_at = ? WHERE id = ?")->execute([bd_now(), (int)$id]); return [true, 'Boost stopped. The normal over-target steps apply again.', 200]; }
+/** TARGET BONUS rules (Commission rules → Target bonus): the switched-on ones, oldest first. For the chosen people and dates, a day whose sales reach that day's target
+ *  (or target + X% more) pays the step's extra % on the chart commission. It is compared with the normal over-target steps / a boost: the HIGHEST one counts, never both. */
+function cm_tb_rules(PDO $pdo) {
+    static $r = null; if ($r !== null) return $r; $r = [];
+    try {
+        if (function_exists('ensure_commission_bonus_table') && !ensure_commission_bonus_table($pdo)) return $r;
+        foreach ($pdo->query("SELECT rule_id, label, who, tiers, date_from, date_to, all_sales FROM commission_bonus_rules WHERE enabled = 1 ORDER BY rule_id ASC")->fetchAll() as $x) {
+            $t = []; foreach ((array)(json_decode((string)$x['tiers'], true) ?: []) as $s) if (is_array($s) && !empty($s['on'])) $t[] = [(float)($s['over'] ?? 0), (float)($s['bonus'] ?? 0)];
+            if (!$t) continue; usort($t, function ($a, $b) { return $a[0] <=> $b[0]; });
+            $d = function ($v) { $v = substr((string)$v, 0, 10); return preg_match('/^[1-9]\d{3}-\d{2}-\d{2}$/', $v) ? $v : ''; };
+            $r[] = ['id' => (int)$x['rule_id'], 'label' => trim((string)$x['label']) !== '' ? trim((string)$x['label']) : 'Target bonus', 'all' => (int)($x['all_sales'] ?? 0) === 1,
+                'who' => array_values(array_filter(array_map('intval', explode(',', (string)$x['who'])))), 'from' => $d($x['date_from']), 'to' => $d($x['date_to']), 'tiers' => $t];
+        }
+    } catch (Throwable $e) { $r = []; }
+    return $r;
+}
+function cm_tb_for(array $rules, $empId, $day) {
+    foreach ($rules as $r) {
+        if (($r['from'] !== '' && $day < $r['from']) || ($r['to'] !== '' && $day > $r['to'])) continue;
+        if (!$r['all'] && !in_array((int)$empId, $r['who'], true)) continue;
+        return $r;
+    }
+    return null;
+}
+/** the rule's extra % for one day: the highest step reached; 0 below the target or with no target */
+function cm_tb_bonus(array $rule, $sales, $target) {
+    $sales = (float)$sales; $target = (float)$target; if (!($target > 0) || $sales + 1e-9 < $target) return 0.0;
+    $over = ($sales / $target - 1) * 100; $b = 0.0;
+    foreach ($rule['tiers'] as $t) if ($over + 1e-6 >= $t[0]) $b = max($b, $t[1]);
+    return $b;
+}
+/** the extra % that counts for one person / day: [%, name of the Target bonus rule when it is the one that won ('' = normal steps or boost), boost row or null] */
+function cm_bonus_pick(PDO $pdo, array $ch, array $boosts, $empId, $day, $sales, $target) {
+    $bo = cm_boost_for($boosts, $empId, $day); $bonus = cm_bonus($ch, $sales, $target, $bo); $name = '';
+    $tb = cm_tb_for(cm_tb_rules($pdo), $empId, $day);
+    if ($tb) { $v = cm_tb_bonus($tb, $sales, $target); if ($v > $bonus + 1e-9) { $bonus = $v; $name = $tb['label']; } }
+    return [$bonus, $name, $bo];
+}
 function cm_code_need($n, $pct) { return ($n <= 0 || $pct <= 0) ? 0 : (int)max(1, round($n * $pct / 100)); }
 
 function cm_offers(PDO $pdo, $all = true) {
@@ -2834,13 +2872,13 @@ function cm_day(PDO $pdo, $day, array $ch = null, array $offers = null, array $b
             if ($pc === null) { $noPrice++; $lines[] = ['order' => $o['name'], 'ml' => (int)$ml, 'price' => round($gross), 'rule' => 'ML not priced', 'pct' => 0, 'code' => $o['code'] !== '', 'com' => 0]; continue; }
             $v = $gross * $pc / 100 * $f; $chartCom += $v; $lines[] = ['order' => $o['name'], 'ml' => (int)$ml, 'price' => round($gross), 'rule' => 'chart', 'pct' => $pc, 'code' => $o['code'] !== '', 'com' => round($v, 2)];
         }
-        $bo = cm_boost_for($boosts, $id, $day); $bonus = cm_bonus($ch, $sales, $target, $bo); $extra = $chartCom * $bonus / 100;
+        [$bonus, $tbName, $bo] = cm_bonus_pick($pdo, $ch, $boosts, $id, $day, $sales, $target); $extra = $chartCom * $bonus / 100;
         $old = null;
         if (function_exists('coach_day')) { try { $cd = coach_day($pdo, $day, false, true); $old = isset($cd[$id]) ? (float)$cd[$id]['com_today'] : null; } catch (Throwable $e) {} }
         $total = round($chartCom + $offerCom + $extra + $xcomTotal, 2);
         $rows[] = ['id' => $id, 'name' => trim((string)$e['full_name']), 'target' => round($target), 'sales' => round($sales), 'pct' => $target > 0 ? round($sales / $target * 100, 1) : null, 'orders' => $n,
             'codes' => $nCode, 'code_pct' => $n ? round($nCode / $n * 100) : null, 'code_ok' => $codeOk, 'code_need' => $need, 'chart_com' => round($chartCom, 2), 'offer_com' => round($offerCom, 2), 'x_com' => round($xcomTotal, 2),
-            'bonus' => $bonus, 'boost' => $bo ? $bo['name'] : '', 'extra' => round($extra, 2), 'total' => $total, 'old' => $old, 'diff' => $old === null ? null : round($total - $old, 2), 'no_ml' => $noMl, 'not_priced' => $noPrice, 'lines' => $lines];
+            'bonus' => $bonus, 'bonus_rule' => $tbName, 'boost' => $bo ? $bo['name'] : '', 'extra' => round($extra, 2), 'total' => $total, 'old' => $old, 'diff' => $old === null ? null : round($total - $old, 2), 'no_ml' => $noMl, 'not_priced' => $noPrice, 'lines' => $lines];
     }
     usort($rows, function ($a, $b) { return $b['sales'] <=> $a['sales']; });
     return ['rows' => $rows, 'error' => ''];

@@ -1383,7 +1383,7 @@ function loadCommissionRuleScripts() {
   // The manual rules (order-rating rules, order-code rules, fixed commission) — they used to be on the Commission page.
   add('manualRulesJs', 'assets/js/manual_rules.js?v=261013a');
   // Target bonus rules (commission + commission × a step %, once the target of chosen dates is reached): its own card, under the manual rules.
-  add('bonusRulesJs', 'assets/js/bonus_rules.js?v=1');
+  add('bonusRulesJs', 'assets/js/bonus_rules.js?v=3');
   // The ML price slab chart (order size + price → commission %): its own card, under the other rules.
   add('mlSlabJs', 'assets/js/ml_slab.js?v=261103y');
   add('mlSlabRulesJs', 'assets/js/ml_slab_rules.js?v=261103y');

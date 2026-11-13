@@ -7994,6 +7994,22 @@ function coach_day(PDO $pdo, string $day, bool $hist = true, bool $raw = false):
         if (!empty($chart['on']) && $target > 0) {
             if ($bonusE > 0) $ladder[] = ['sales' => round($target), 'bonus' => $bonusE, 'over' => 0, 'hit' => $sales >= $target];
             foreach (ml_bonus_tiers($chart) as [$o, $v]) $ladder[] = ['sales' => round($target * (1 + $o / 100)), 'bonus' => $v, 'over' => $o, 'hit' => $sales + 1e-6 >= $target * (1 + $o / 100)];
+            // 🎯 The new engine is live and a Target bonus rule (Commission rules → Target bonus) covers this person today: the steps shown are the ones that pay,
+            // at each step the HIGHER of the rule and the normal steps above (same as cm_bonus_pick in boss2.php). Steps that add nothing are left out.
+            if ($cmMap !== null && function_exists('cm_tb_rules') && ($tbR = cm_tb_for(cm_tb_rules($pdo), (int)$id, $day))) {
+                $overs = array_map('floatval', array_column($ladder, 'over')); foreach ($tbR['tiers'] as $tt) $overs[] = (float)$tt[0];
+                $overs = array_values(array_unique($overs)); sort($overs);
+                $nl = []; $prevB = 0.0;
+                foreach ($overs as $o) {
+                    $bv = 0.0;
+                    foreach ($ladder as $lx0) if ((float)$lx0['over'] <= $o + 1e-9) $bv = max($bv, (float)$lx0['bonus']);
+                    foreach ($tbR['tiers'] as $tt) if ((float)$tt[0] <= $o + 1e-9) $bv = max($bv, (float)$tt[1]);
+                    if ($bv <= $prevB + 1e-9) continue;
+                    $prevB = $bv; $nl[] = ['sales' => round($target * (1 + $o / 100)), 'bonus' => $bv, 'over' => $o, 'hit' => $sales + 1e-6 >= $target * (1 + $o / 100)];
+                }
+                $ladder = $nl;
+                foreach ($ladder as $lx0) { if ((float)$lx0['over'] == 0.0) $bonusE = (float)$lx0['bonus']; if ($lx0['hit']) $bonusNow = (float)$lx0['bonus']; }
+            }
             // 💰 In rupees: what the day pays if sales reach each step, at today's own average commission (no-bonus part) + that step's extra %.
             // Only once there is at least one commissioned order today (no orders = no honest rate to project with).
             if ($comBase > 0 && $comAmt > 0) {
@@ -23061,7 +23077,16 @@ switch ($action) {
             $ms->execute([substr($from, 0, 7), $myId]);
             foreach ($ms->fetchAll() as $r) $manual[$r['row_key']] = ['rate' => (float)$r['rate'], 'amount' => (float)$r['amount']];
         }
+        // Target bonus rules (Commission Rules → Target bonus) that are switched on and include this employee: My Sales adds the same day-wise bonus as the Commission page.
+        $bonusRules = [];
+        if (ensure_commission_bonus_table($pdo)) {
+            try { foreach ($pdo->query("SELECT rule_id, label, who, tiers, date_from, date_to, all_sales FROM commission_bonus_rules WHERE enabled = 1 ORDER BY rule_id ASC")->fetchAll() as $br) {
+                if (!(int)($br['all_sales'] ?? 0) && !in_array($myId, array_map('intval', explode(',', (string)$br['who'])), true)) continue;
+                $bonusRules[] = ['rule_id' => (int)$br['rule_id'], 'label' => (string)$br['label'], 'tiers' => json_decode((string)$br['tiers'], true) ?: [], 'date_from' => commission_date_out($br['date_from'] ?? ''), 'date_to' => commission_date_out($br['date_to'] ?? '')];
+            } } catch (PDOException $e2) {}
+        }
         json_response([
+            'bonus' => $bonusRules,
             'manual' => (object)$manual,
             'applicable' => true, 'from' => $from, 'to' => $to, 'today' => $to,
             'rules' => $rules, 'code' => $code, 'shares' => (object)$shares,

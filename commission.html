@@ -658,25 +658,38 @@
         c.steps.push({ label: 'Order set by hand', detail: `${ovs.length} order${ovs.length === 1 ? '' : 's'} pay the amount you set`, value: (dO < 0 ? '−' : '+') + inr(Math.abs(dO)) });
       }
     }
-    // NEW — target bonus (Commission Rules → Target bonus): for the chosen people and dates, once the COLLECTION of those dates reaches the TARGET of those dates
-    // (or target + X% more), the commission is raised by the step's % (final = commission + commission × %). Applied last, so it works on whatever the rules above
-    // paid; a commission set by hand (withManual below) still replaces everything. Nothing happens below the target.
+    // NEW — target bonus (Commission Rules → Target bonus): for the chosen people and dates, EACH DAY stands alone. On a day whose COLLECTION reaches that day's TARGET
+    // (or target + X% more), that day's commission is raised by the step's % (final = commission + commission × %). Applied last, so it works on whatever the rules above
+    // paid; a commission set by hand (withManual below) still replaces everything. A day below its target, or with no target, gets nothing. Two rules on one day: the first one counts.
     if (c && c.steps && n > 0 && NEW.bonus.length) {
-      const key = row.key, byDay = IDX[key] || {};
-      for (const r of NEW.bonus) {
-        if (!r.on || !(r.all || r.who.indexOf(row.emp.employee_id) !== -1) || !days.some((d) => inWin(r, d))) continue;
-        let wa = 0, wt = 0;
-        SPAN.forEach((d) => { if (!inWin(r, d)) return; const x = byDay[d]; if (x) wa += x.ach; wt += targetOf(row, d); });
-        if (!(wt > 0)) continue;
-        const pct = (wa / wt - 1) * 100;
-        let hit = null; r.tiers.forEach((t) => { if (t.on && pct + 1e-9 >= t.over && (!hit || t.over > hit.over)) hit = t; });
-        if (!hit) continue;
-        let da = 0, ia = 0; days.forEach((d) => { const x = byDay[d]; if (x) { da += x.ach; if (inWin(r, d)) ia += x.ach; } });
-        const share = da > 0 ? ia / da : 0, bonus = c.amount * share * hit.bonus / 100;
-        if (!(bonus > 0.005)) continue;
-        c.amount += bonus; c.bonus = { label: r.label, pct: hit.bonus, over: hit.over, amount: bonus, ach: wa, target: wt };
-        c.steps.push({ label: 'Target bonus', detail: `${r.label}: collection ${inr(wa)} vs target ${inr(wt)} (${pct >= 0 ? '+' : ''}${Math.round(pct * 10) / 10}%) → ${hit.over === 0 ? 'target done' : 'target + ' + fmtN(hit.over) + '% more'}: +${fmtN(hit.bonus)}% on the commission${share < 1 ? ' (the part earned inside its dates)' : ''}${((r.from && r.from < FROM) || (r.to && r.to > TO)) ? ' · only the days loaded on this page are counted' : ''}`, value: '+' + inr(bonus) });
-        break;
+      const byDay = IDX[row.key] || {};
+      const ruleOn = (d) => NEW.bonus.find((r) => r.on && (r.all || r.who.indexOf(row.emp.employee_id) !== -1) && inWin(r, d)) || null;
+      const hitOn = (r, d) => {
+        const x = byDay[d], t = targetOf(row, d); if (!r || !x || !(t > 0)) return null;
+        const pct = (x.ach / t - 1) * 100; let hit = null;
+        r.tiers.forEach((s) => { if (s.on && pct + 1e-9 >= s.over && (!hit || s.over > hit.over)) hit = s; });
+        return hit ? { hit, pct, ach: x.ach, t } : null;
+      };
+      if (days.length === 1) {
+        const r = ruleOn(days[0]), h = hitOn(r, days[0]);
+        // the ML price slab's own over-target extra is already inside c.amount: the HIGHER of the two counts, never both (same as the live engine, cm_bonus_pick)
+        const sb = h && window.MLSLAB && MLSLAB.on(SLAB) ? Number(MLSLAB.bonusFor(SLAB, h.pct)) || 0 : 0;
+        const bonus = h && h.hit.bonus > sb ? c.amount * ((1 + h.hit.bonus / 100) / (1 + sb / 100) - 1) : 0;
+        if (bonus > 0.005) {
+          c.amount += bonus; c.bonus = { label: r.label, pct: h.hit.bonus, over: h.hit.over, amount: bonus, ach: h.ach, target: h.t, days: 1 };
+          c.steps.push({ label: 'Target bonus', detail: `${r.label}: collection ${inr(h.ach)} vs target ${inr(h.t)} (${h.pct >= 0 ? '+' : ''}${Math.round(h.pct * 10) / 10}%) → ${h.hit.over === 0 ? 'target done' : 'target + ' + fmtN(h.hit.over) + '% more'}: +${fmtN(h.hit.bonus)}% on this day's commission${sb > 0 ? ' (in place of the chart\'s +' + fmtN(sb) + '%)' : ''}`, value: '+' + inr(bonus) });
+        }
+      } else {
+        let bonus = 0, nd = 0, lo = Infinity, hi = 0; const labels = {};
+        days.forEach((d) => {
+          const r = ruleOn(d); if (!hitOn(r, d)) return;
+          const b = agg(row, [d]).c.bonus; if (!b || !(b.amount > 0.005)) return;      // that day worked out on its own (one day never comes back here)
+          bonus += b.amount; nd++; lo = Math.min(lo, b.pct); hi = Math.max(hi, b.pct); labels[r.label] = 1;
+        });
+        if (bonus > 0.005) {
+          c.amount += bonus; c.bonus = { label: Object.keys(labels).join(', '), pct: hi, amount: bonus, days: nd };
+          c.steps.push({ label: 'Target bonus', detail: `${Object.keys(labels).join(', ')}: ${nd} day${nd === 1 ? '' : 's'} reached the day's target → the commission of ${nd === 1 ? 'that day' : 'each of those days'} raised by +${fmtN(lo)}%${hi > lo ? ' to +' + fmtN(hi) + '%' : ''}`, value: '+' + inr(bonus) });
+        }
       }
     }
     return { gates, pm, row, ach, n, pre, target, ticket, prePct, pending: Math.max(0, target - ach), leave, absent, worked, orders, c: withManual(row, days, c || { rate: 0, amount: 0, steps: null, held: 0 }) };

@@ -1,10 +1,10 @@
 /**
  * Target bonus rules — one card on the Commission Rules page (layout.js loads this file there).
- * For the people you choose and the dates you choose: when a person's COLLECTION in those dates reaches the TARGET of those dates
- * (or the target + X% more), their commission is raised by the step's % → final = commission + commission × %.
+ * For the people you choose and the dates you choose, EACH DAY on its own: on a day when a person's COLLECTION reaches that day's TARGET
+ * (or the target + X% more), that day's commission is raised by the step's % → final = commission + commission × %.
  * Each rule has its own steps (switch a step off to use fewer); the highest step reached wins; below the target nothing changes.
  * Saved through commission_rules.bonus_save / bonus_toggle / bonus_delete, read through commission_rules.manual_list (key "bonus").
- * The Commission page (commission.html, agg()) does the arithmetic.
+ * The Commission page (commission.html, agg()) and the salesperson's own page (my_commission.js, through my.commission key "bonus") do the arithmetic.
  */
 (function () {
   if (window.__bonusRulesLoaded) return;
@@ -63,7 +63,7 @@
   const tierTxt = (t) => (t.over === 0 ? 'Target done' : 'Target + ' + fmtN(t.over) + '%') + ' → +' + fmtN(t.bonus) + '%';
   function render() {
     const today = todayIso();
-    root.innerHTML = '<h3>🎯 Target bonus</h3><p class="rsub">For the people and dates you choose: when a person\'s <b>collection</b> in those dates reaches the <b>target</b> of those dates (or the target plus 30%, 40%, 50%… more), the commission is raised: <b>final = commission + commission × bonus %</b>. You choose how many steps to use. Only the selected people and dates are calculated by this rule; everyone else, and every order outside the dates, keeps the normal commission. A commission set by hand always wins.</p>' +
+    root.innerHTML = '<h3>🎯 Target bonus</h3><p class="rsub">For the people and dates you choose: <b>each day counts on its own</b>. On a day when a person\'s <b>collection</b> reaches <b>that day\'s target</b> (or the target plus 30%, 40%, 50%… more), that day\'s commission is raised: <b>final = commission + commission × bonus %</b>. A day below its target gets no bonus. If the normal over-target steps or a boost give more on that day, the <b>higher one counts</b> (never both). The extra is paid on the chart commission; an order on an offer keeps the offer\'s own %. You choose how many steps to use. Only the selected people and dates are calculated by this rule; everyone else, and every order outside the dates, keeps the normal commission. A commission set by hand always wins.</p>' +
       (D.bonus.length ? D.bonus.map((r) => {
         const s = r.to && r.to < today ? ['c-done', 'finished'] : r.from > today ? ['c-soon', 'starts ' + dShow(r.from)] : ['c-live', 'running'];
         const steps = r.tiers.filter((t) => t.on).sort((a, b) => a.over - b.over).map(tierTxt).join(' · ');
@@ -99,8 +99,8 @@
   }
   function pv() {
     const el = $('btbPv'); if (!el) return;
-    const T = 500000, A = [500000, 650000, 700000, 750000], C = 28000;
-    el.innerHTML = '<b>Check with an example</b> <span style="color:#6b7280">(target ₹5,00,000 · normal commission ₹28,000)</span><div style="margin-top:6px">' + A.map((a) => { const r = calc(T, a, C); return inr(a) + ' (' + (a >= T ? '+' + Math.round((a / T - 1) * 100) + '%' : Math.round(a / T * 100) + '% of target') + ') → ' + (r.hit ? '<b>' + inr(C + r.bonus) + '</b> (+' + fmtN(r.hit.bonus) + '%)' : '<b>' + inr(C) + '</b> (no bonus)'); }).join('<br>') + '</div>';
+    const T = 50000, A = [45000, 50000, 65000, 70000, 75000], C = 2800;
+    el.innerHTML = '<b>Check with an example</b> <span style="color:#6b7280">(one day: target ₹50,000 · normal commission of that day ₹2,800)</span><div style="margin-top:6px">' + A.map((a) => { const r = calc(T, a, C); return inr(a) + ' (' + (a >= T ? '+' + Math.round((a / T - 1) * 100) + '%' : Math.round(a / T * 100) + '% of target') + ') → ' + (r.hit ? '<b>' + inr(C + r.bonus) + '</b> (+' + fmtN(r.hit.bonus) + '%)' : '<b>' + inr(C) + '</b> (no bonus)'); }).join('<br>') + '</div>';
   }
   function open(r) {
     E = r ? { id: r.id, label: r.label, from: r.from, to: r.to, noEnd: !r.to, who: r.who.slice(), all: !!r.all, on: r.on, tiers: r.tiers.map((t) => Object.assign({}, t)) }
