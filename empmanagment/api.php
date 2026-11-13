@@ -7739,7 +7739,11 @@ function coach_sales_load(PDO $pdo, array $emps, string $from, string $to): arra
             // Orders that only carry a salesperson's tag wait in ct_recon() ("waiting for allocation") instead of silently adding to the tower.
             if (!$who || !isset($emps[$who])) continue;
             $ts = strtotime(str_replace('T', ' ', substr((string)$o['created_at'], 0, 19)));
-            $sale[biz_day_of($pdo, $ts) . '|' . $who][] = ['key' => $storeKey . '|' . (string)$o['id'], 'amt' => (float)$o['total'], 'ts' => $ts, 'ml' => $o['ml'] ?? null, 'ml10' => (int)($o['ml10'] ?? 0), 'xcom' => (function () use ($pdo, $o) { $x = order_x_com($pdo, is_array($o['xparts'] ?? null) ? $o['xparts'] : (isset($o['xparts']) ? (array)$o['xparts'] : null), (int)($o['ml'] ?? 0), (float)$o['total']); return (float)$x['x_com']; })(), 'xall' => (function () use ($pdo, $o) { $x = order_x_com($pdo, is_array($o['xparts'] ?? null) ? $o['xparts'] : (isset($o['xparts']) ? (array)$o['xparts'] : null), (int)($o['ml'] ?? 0), (float)$o['total']); return !empty($x['x_all']); })(), 'xnote' => (function () use ($pdo, $o) { $x = order_x_com($pdo, is_array($o['xparts'] ?? null) ? $o['xparts'] : (isset($o['xparts']) ? (array)$o['xparts'] : null), (int)($o['ml'] ?? 0), (float)$o['total']); return (string)$x['x_note']; })(),
+            // gel / attar / others of the order. Orders read from the saved copy (shop_order_row) already carry the worked-out x_com / x_all / x_note and have NO 'xparts' key —
+            // reading only 'xparts' made every such order "no ML, ₹0" here (a 3 shower gel order got no commission). Orders read live from Shopify carry 'xparts'.
+            $__x = array_key_exists('x_com', $o) ? ['x_com' => (float)$o['x_com'], 'x_all' => !empty($o['x_all']), 'x_note' => (string)($o['x_note'] ?? '')]
+                : order_x_com($pdo, is_array($o['xparts'] ?? null) ? $o['xparts'] : (isset($o['xparts']) ? json_decode(json_encode($o['xparts']), true) : null), (int)($o['ml'] ?? 0), (float)$o['total']);
+            $sale[biz_day_of($pdo, $ts) . '|' . $who][] = ['key' => $storeKey . '|' . (string)$o['id'], 'amt' => (float)$o['total'], 'ts' => $ts, 'ml' => $o['ml'] ?? null, 'ml10' => (int)($o['ml10'] ?? 0), 'xcom' => (float)$__x['x_com'], 'xall' => !empty($__x['x_all']), 'xnote' => (string)$__x['x_note'],
                 'pre' => $isPre(strtolower((string)($o['financial_status'] ?? ''))), 'paid' => order_paid_amt((float)$o['total'], (string)($o['financial_status'] ?? ''), $o['outstanding'] ?? null), 'code' => order_code_for($pdo, $storeKey, $o['id'], (string)($o['tags'] ?? '')), 'name' => (string)$o['order_name'],
                 'col' => is_array($o['colors'] ?? null) ? $o['colors'] : null, 'type' => (string)($a['type'] ?? '')];
         }
@@ -12142,8 +12146,10 @@ function order_x_com(?PDO $pdo, $parts, int $perfMl = 0, float $total = 0): arra
         return ['x_amt' => round($total, 2), 'x_com' => $pc === null ? 0.0 : round($total * $pc / 100, 2), 'x_all' => true, 'x_pct' => $pc === null ? null : round($pc, 2),
             'x_note' => $pc === null ? 'Combo price missing: ' . $lab . ' (add it in Learn & Setup → Pricing → Combos; the commission is counted then)' : 'Combo ' . $lab . ' ₹' . round($total) . ' at ' . round($pc, 2) . '%'];
     }
+    // a discount code / automatic discount is not on the product lines, so their money can add up to more than the customer paid: never count more than the order total
+    $__sum = 0.0; foreach ($parts as $p) $__sum += max(0.0, (float)($p['amt'] ?? 0)); $__k = ($total > 0 && $__sum > $total) ? $total / $__sum : 1.0;
     foreach ($parts as $sg => $p) {
-        $amt = round((float)($p['amt'] ?? 0), 2); $pcs = (int)($p['pcs'] ?? 0); if ($amt <= 0) continue; $o['x_amt'] += $amt;
+        $amt = round((float)($p['amt'] ?? 0) * $__k, 2); $pcs = (int)($p['pcs'] ?? 0); if ($amt <= 0) continue; $o['x_amt'] += $amt;
         $pc = ($pdo && function_exists('pc_pct')) ? pc_pct($pdo, (string)$sg, (float)$pcs, $amt) : null; if ($pc !== null) $o['x_com'] += $amt * $pc / 100;
         $n[] = (function_exists('pc_segs') ? (pc_segs()[$sg] ?? $sg) : $sg) . ' ×' . $pcs . ' ₹' . round($amt) . ($pc === null ? ' (no price chart)' : ' at ' . round($pc, 2) . '%');
     }
