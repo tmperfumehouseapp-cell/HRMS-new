@@ -33634,6 +33634,13 @@ switch ($action) {
         require_role(['Admin'], $auth);
         if (!ensure_ai_usage_table($pdo)) json_response(['error' => 'Usage table not available.'], 500);
         $month = preg_match('/^\d{4}-\d{2}$/', (string)($_GET['month'] ?? '')) ? (string)$_GET['month'] : date('Y-m');
+        $dOk = fn($v) => preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$v) === 1;
+        if ($dOk($_GET['from'] ?? '') && $dOk($_GET['to'] ?? '')) {   // 📅 price for any date range (AI usage page: From / To), at most 400 days
+            $f = (string)$_GET['from']; $t = (string)$_GET['to']; if ($f > $t) [$f, $t] = [$t, $f]; if (strtotime($t) - strtotime($f) > 400 * 86400) json_response(['error' => 'Please choose a range of at most 400 days.'], 422);
+            $q = $pdo->prepare("SELECT purpose, SUM(calls) calls, SUM(in_tokens) in_tokens, SUM(out_tokens) out_tokens, SUM(cost_usd) cost_usd, COUNT(DISTINCT use_date) days FROM ai_usage WHERE use_date >= ? AND use_date <= ? GROUP BY purpose ORDER BY cost_usd DESC"); $q->execute([$f, $t]);
+            $dq = $pdo->prepare("SELECT COUNT(DISTINCT use_date) FROM ai_usage WHERE use_date >= ? AND use_date <= ?"); $dq->execute([$f, $t]);
+            json_response(['from' => $f, 'to' => $t, 'rows' => $q->fetchAll(), 'days_with_use' => (int)$dq->fetchColumn()]);
+        }
         $q = $pdo->prepare("SELECT use_date, model, purpose, calls, in_tokens, out_tokens, cost_usd FROM ai_usage WHERE use_date LIKE ? ORDER BY use_date, model, purpose"); $q->execute([$month . '%']);
         $rows = $q->fetchAll(); $tot = ['calls' => 0, 'in' => 0, 'out' => 0, 'usd' => 0.0]; $byP = [];
         foreach ($rows as $r) { $tot['calls'] += (int)$r['calls']; $tot['in'] += (int)$r['in_tokens']; $tot['out'] += (int)$r['out_tokens']; $tot['usd'] += (float)$r['cost_usd'];

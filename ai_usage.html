@@ -36,6 +36,12 @@
       <div id="alertBox"></div>
       <div class="card" style="padding:14px">
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px"><b>Month</b><input type="month" id="auM" style="width:auto"><span class="sub" id="auP"></span></div>
+        <div class="au-plan" id="auRange">
+          <h3>📅 Price for a date range</h3>
+          <div class="au-note">Choose a start date and an end date: the chart shows what every AI job cost in those days.</div>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:8px 0"><label>From <input type="date" id="auF" style="width:auto"></label><label>To <input type="date" id="auT" style="width:auto"></label><button class="btn" id="auGo" type="button">Show price</button></div>
+          <div id="auRBody"></div>
+        </div>
         <div id="auBody"><div class="sub">Loading…</div></div>
       </div>
     </div>
@@ -52,6 +58,30 @@
   const n = (x) => Number(x || 0).toLocaleString('en-IN'), usd = (x) => '$' + Number(x || 0).toFixed(2), mt = (x) => (Number(x || 0) / 1e6).toFixed(1) + ' M';
   const M = document.getElementById('auM'), B = document.getElementById('auBody');
   const now = new Date(); M.value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  // 📅 price for any date range: one line per AI job + total (and the total with tax)
+  const JOBS = { chat: 'Older AI calls without a label (all pages)', wa_presugg: 'WhatsApp › Chats — replies written in advance for waiting customers', wa_sugg: 'WhatsApp › Chats — a reply when a person asks for one', wa_bot: 'WhatsApp › Autobot — automatic replies',
+    wa_tag: 'WhatsApp › chat tags', wa_learn: 'WhatsApp › Teach — learning from chats', wa_guide: 'WhatsApp › Teach — guidebook', wa_topics: 'WhatsApp › follow-up topics', wq_manager: 'WhatsApp Sales — manager notes', wq_manager_tone: 'WhatsApp Sales — manager tone',
+    'customer:inbox': 'Inbox — customer messages', 'customer:complaints': 'Complaints — customer replies', 'customer:': 'Customer replies (other)', 'internal:whatsapp': 'TMPH assistant — WhatsApp questions', 'internal:finance': 'TMPH assistant — finance questions', 'internal:': 'TMPH assistant (other)',
+    footwear: 'Attendance — shoe check at punch-in', idcard: 'Employees — ID card reading', 'products:web_fill': 'Products — website details', 'products:web_origina': 'Products — website details' };
+  const jobWhere = (k) => JOBS[k] || (k.indexOf('wa_') === 0 ? 'WhatsApp — ' + k.slice(3).replace(/_/g, ' ') : k.indexOf('wq_') === 0 ? 'WhatsApp Sales — ' + k.slice(3).replace(/_/g, ' ') : k.indexOf('products:') === 0 ? 'Products — ' + k.slice(9).replace(/_/g, ' ') : k.indexOf('customer:') === 0 ? 'Customer replies — ' + k.slice(9) : k.indexOf('internal:') === 0 ? 'TMPH assistant — ' + k.slice(9) : 'Other AI job');
+  const F = document.getElementById('auF'), T2 = document.getElementById('auT'), RB = document.getElementById('auRBody');
+  { const p2 = (x) => String(x).padStart(2, '0'), iso = (dt) => dt.getFullYear() + '-' + p2(dt.getMonth() + 1) + '-' + p2(dt.getDate()); T2.value = iso(now); F.value = iso(new Date(now.getFullYear(), now.getMonth(), 1)); }
+  async function loadRange() {
+    if (!F.value || !T2.value) { RB.innerHTML = '<div class="alert error">Choose both dates.</div>'; return; }
+    RB.innerHTML = '<div class="sub">Loading…</div>';
+    let d; try { d = await api.get('ai.usage', { from: F.value, to: T2.value }); } catch (e) { RB.innerHTML = '<div class="alert error">' + esc(e.message) + '</div>'; return; }
+    const rows = d.rows || []; if (!rows.length) { RB.innerHTML = '<div class="sub">No AI use recorded from ' + esc(d.from) + ' to ' + esc(d.to) + '.</div>'; return; }
+    let gst = 18; try { gst = +(localStorage.getItem('au_gst') || 18); } catch (e) { }
+    const tot = rows.reduce((a, r) => { a.c += +r.calls; a.i += +r.in_tokens; a.o += +r.out_tokens; a.u += +r.cost_usd; return a; }, { c: 0, i: 0, o: 0, u: 0 });
+    const nDays = Math.round((new Date(d.to) - new Date(d.from)) / 86400000) + 1, used = Math.max(1, +d.days_with_use || 1);
+    RB.innerHTML = `<div class="au-need"><div><small>Price for ${esc(d.from)} → ${esc(d.to)} (${nDays} day${nDays > 1 ? 's' : ''})</small><b>${usd(tot.u)}</b><small>${usd(tot.u * (1 + gst / 100))} with ${gst}% tax</small></div>
+        <div><small>Average per day (${used} day${used > 1 ? 's' : ''} with AI use)</small><b>${usd(tot.u / used)}</b></div><div><small>AI calls</small><b>${n(tot.c)}</b></div><div><small>Tokens (in + out)</small><b>${mt(tot.i + tot.o)}</b></div></div>
+      <div class="au-w"><table class="au-t"><thead><tr><th>Where the AI is used</th><th>Price</th><th>Share</th><th>Per day</th><th>AI calls</th><th>Tokens in</th><th>Tokens out</th></tr></thead><tbody>
+      ${rows.map((r) => `<tr><td><b>${esc(r.purpose)}</b><br><small>${esc(jobWhere(String(r.purpose)))}</small></td><td>${usd(r.cost_usd)}</td><td>${tot.u > 0 ? Math.round(+r.cost_usd * 100 / tot.u) : 0}%</td><td>${usd(+r.cost_usd / used)}</td><td>${n(r.calls)}</td><td>${mt(r.in_tokens)}</td><td>${mt(r.out_tokens)}</td></tr>`).join('')}
+      <tr class="tot"><td>TOTAL (${rows.length} jobs)</td><td>${usd(tot.u)}</td><td>100%</td><td>${usd(tot.u / used)}</td><td>${n(tot.c)}</td><td>${mt(tot.i)}</td><td>${mt(tot.o)}</td></tr></tbody></table></div>
+      <div class="au-note">US dollars before tax, counted by the HRMS for every AI call. The Claude Console bill can differ a little.</div>`;
+  }
+  document.getElementById('auGo').addEventListener('click', loadRange); loadRange();
   async function load() {
     B.innerHTML = '<div class="sub">Loading…</div>';
     let d; try { d = await api.get('ai.usage', { month: M.value }); } catch (e) { B.innerHTML = '<div class="alert error">' + esc(e.message) + '</div>'; return; }
