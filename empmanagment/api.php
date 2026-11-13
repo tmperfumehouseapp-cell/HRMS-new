@@ -1867,7 +1867,7 @@ function qe_viewer_ok(PDO $pdo, array $auth): bool
 {
     $e = (int)($auth['employee_id'] ?? 0); if ($e <= 0) return false;
     $ids = json_decode((string)setting_get($pdo, 'qe_viewers', '[]'), true); if (is_array($ids) && in_array($e, array_map('intval', $ids), true)) return true;
-    $nm = employee_names_by_id($pdo)[$e] ?? ''; return (bool)preg_match('/pradip\s*chauhan|chauhan\s*pradip/iu', (string)$nm);
+    $nm = employee_names_by_id($pdo)[$e] ?? ''; return (bool)preg_match('/prad[ei]{1,2}p\s*chau?h?an|chau?h?an\s*prad[ei]{1,2}p/iu', (string)$nm);   // Pradip / Pradeep Chauhan
 }
 function orders_add_manual(PDO $pdo, array &$state, string $ws, string $we): void
 {
@@ -12170,7 +12170,7 @@ function orders_ml_extra(PDO $pdo, array &$orders): void
 
 function shopify_fetch_all(array $targets, array $tokens, string $dateFrom, string $dateTo, int $maxRounds = 8, bool $slim = false, bool $manual = true): array
 {
-    $state = [];
+    $state = []; $sfaT0 = microtime(true);
     $win = biz_window($GLOBALS['pdo'], $dateFrom, $dateTo);
     foreach ($targets as $key => $store) {
         $state[$key] = [
@@ -12207,6 +12207,7 @@ function shopify_fetch_all(array $targets, array $tokens, string $dateFrom, stri
                     'Content-Type: application/json',
                 ],
                 CURLOPT_TIMEOUT => 25,
+                CURLOPT_CONNECTTIMEOUT => 8,
             ]);
             curl_multi_add_handle($mh, $ch);
             $handles[$key] = $ch;
@@ -12218,17 +12219,25 @@ function shopify_fetch_all(array $targets, array $tokens, string $dateFrom, stri
             if ($running) curl_multi_select($mh, 0.1);
         } while ($running && $mrc === CURLM_OK);
 
+        $hid = static function ($h) { return is_object($h) ? spl_object_id($h) : (int)$h; }; $cerrs = [];
+        while ($inf = curl_multi_info_read($mh)) { if (!empty($inf['result'])) $cerrs[$hid($inf['handle'])] = function_exists('curl_strerror') ? curl_strerror((int)$inf['result']) : 'curl error ' . (int)$inf['result']; }   // why a call failed (timeout, DNS, SSL …)
         foreach ($handles as $key => $ch) {
             $st = &$state[$key];
-            $st['url'] = null; // cleared unless a next page is found below
+            $curUrl = $st['url']; $st['url'] = null; // cleared unless a next page is found below
             $resp = curl_multi_getcontent($ch);
             $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
             $headerSize = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+            $cerr = (string)($cerrs[$hid($ch)] ?? curl_error($ch));
             curl_multi_remove_handle($mh, $ch);
             curl_close($ch);
 
+            // a short break in the connection: the same page is asked ONE more time (never more than 12 s in all, so a slow Shopify cannot hold the page and the server's workers)
+            if (($resp === false || $resp === '' || $status === 429) && (int)($st['tries'] ?? 0) < 1 && $curUrl && (microtime(true) - $sfaT0) < 12) {
+                $st['tries'] = (int)($st['tries'] ?? 0) + 1; $st['url'] = $curUrl; $round--; usleep(500000);
+                continue;
+            }
             if ($resp === false || $resp === '') {
-                $st['error'] = $st['store']['label'] . ': could not reach Shopify.';
+                $st['error'] = $st['store']['label'] . ': could not reach Shopify' . ($cerr !== '' ? ' (' . mb_substr($cerr, 0, 80) . ')' : '') . '.';
                 continue;
             }
             if ($status === 401 || $status === 403) {
