@@ -67,16 +67,19 @@ const LAYOUT_BUILD = '261102.2';   // shown under your name in the sidebar
 (function () {
   try {
     if (/whatsapp|\/wa_|wa_chats|wa_one|my_chats/i.test(location.pathname + location.search)) return;
-    var de = document.documentElement, on = false;
+    var de = document.documentElement, on = false, inFrame = window.self !== window.top, CLS = inFrame ? 'hrms-dkf' : 'hrms-dk';
     try { on = localStorage.getItem('hrms_dark') === '1'; } catch (e) { }
-    if (on) de.classList.add('hrms-dk');
+    if (on) de.classList.add(CLS);
     if (!document.getElementById('hrmsDkCss')) { var st = document.createElement('style'); st.id = 'hrmsDkCss';
-      st.textContent = 'html.hrms-dk{filter:invert(.92) hue-rotate(180deg);background:#fff;min-height:100%;}html.hrms-dk body{min-height:100vh;}html.hrms-dk img,html.hrms-dk video,html.hrms-dk canvas,html.hrms-dk iframe,html.hrms-dk [style*="background-image"]{filter:invert(1) hue-rotate(180deg);}'
+      // The TOP page is inverted once (filter on <html>). A page inside a frame is NOT inverted again — the top page's filter already covers it, so it comes out the same dark as everything else
+      // (before, the frame was inverted twice and showed as a lighter panel). In a frame only the photos / videos are turned back.
+      st.textContent = 'html.hrms-dk{filter:invert(.92) hue-rotate(180deg);background:#fff;min-height:100%;}html.hrms-dk body{min-height:100vh;}'
+        + 'html.hrms-dk img,html.hrms-dk video,html.hrms-dk canvas,html.hrms-dk [style*="background-image"],html.hrms-dkf img,html.hrms-dkf video,html.hrms-dkf canvas,html.hrms-dkf [style*="background-image"]{filter:invert(1) hue-rotate(180deg);}'
         + '#hrmsDkBtn{position:fixed;top:10px;right:14px;z-index:2147483000;width:38px;height:38px;border-radius:50%;border:1px solid rgba(0,0,0,.12);background:#fff;color:#14161a;font-size:18px;line-height:1;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.12);padding:0;display:flex;align-items:center;justify-content:center}'
         + '@media (max-width:820px){#hrmsDkBtn{top:9px;right:62px;width:34px;height:34px;font-size:16px}}@media print{#hrmsDkBtn{display:none}}';
       (document.head || de).appendChild(st); }
-    window.addEventListener('storage', function (e) { if (e.key === 'hrms_dark') de.classList.toggle('hrms-dk', e.newValue === '1'); });
-    if (window.self !== window.top) return;      // the button lives in the top page only; frames follow the saved choice
+    window.addEventListener('storage', function (e) { if (e.key === 'hrms_dark') de.classList.toggle(CLS, e.newValue === '1'); });
+    if (inFrame) return;      // the button lives in the top page only; frames follow the saved choice
     var add = function () {
       if (document.getElementById('hrmsDkBtn') || !document.body) return;
       var b = document.createElement('button'); b.type = 'button'; b.id = 'hrmsDkBtn'; b.title = 'Dark mode'; b.setAttribute('aria-label', 'Dark mode');
@@ -334,7 +337,7 @@ window.WS = (function () {
     { key: 'analytics', label: 'Analytics', icon: 'analytics', sub: 'Store analytics report', tabs: [['analytics', 'Analytics', 'analytics.html', 'an']] },
     { key: 'people', label: 'People', icon: 'employees', hidden: true, sub: 'Old People pages (opened from Boss → People)', tabs: [['employees', 'Employees', 'employees.html', ''], ['people_admin', 'Admin team', 'people_admin.html', 'admin'], ['attendance_admin', 'Attendance', 'attendance_admin.html', ''], ['my_day', 'My Day', 'my_day.html', 'punch'], ['leave_requests', 'Leave', 'leave_requests.html', ''], ['salary', 'Salary', 'salary.html', ''], ['penalties', 'Penalty list', 'penalties.html', ''], ['approvals', 'Approvals', 'approvals.html', ''], ['documents', 'Documents', 'documents.html', ''], ['doc_check', 'Doc Check', 'doc_check.html', ''], ['agreements', 'Agreements', 'agreements.html', ''], ['handover', 'Handover', 'handover.html', ''], ['ex_employees', 'Ex-employees', 'ex_employees.html', ''], ['history', 'Decline history', 'history.html', ''], ['leave', 'My Leave', 'leave.html', 'emp']] },
     { key: 'offices', label: 'Offices', icon: 'departments', sub: 'Cleaning, buying and repairs for every office, checked by Claude first', tabs: [['office_care', 'Offices', 'office_care.html', 'boss'], ['dept_work', 'To buy', 'dept_work.html', 'boss'], ['dept_fix', 'To fix', 'dept_fix.html', 'boss']] },
-    { key: 'admin', label: 'Admin', icon: 'commission_rules', sub: 'Set-up you touch rarely', tabs: [['roles', 'Roles', 'roles.html', ''], ['offices', 'Office Locations', 'offices.html', ''], ['excel_files', 'Excel Files', 'excel_files.html', ''], ['system_health', 'System health', 'system_health.html', 'admin'], ['changes', 'Changes', 'changes.html', 'admin']] },
+    { key: 'admin', label: 'Admin', icon: 'commission_rules', sub: 'Set-up you touch rarely', tabs: [['users', 'Users', 'users.html', 'admin'], ['roles', 'Roles', 'roles.html', ''], ['offices', 'Office Locations', 'offices.html', ''], ['excel_files', 'Excel Files', 'excel_files.html', ''], ['system_health', 'System health', 'system_health.html', 'admin'], ['changes', 'Changes', 'changes.html', 'admin']] },
     { key: 'help', label: 'Help', icon: 'help', sub: 'Live health of the system: database, pages, POS, security', tabs: [['help', 'Help', 'help.html', 'admin']] },
   ];
   // The permission (ticked on the Roles page) that opens each page, for roles that are not Admin.
