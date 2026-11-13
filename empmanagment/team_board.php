@@ -33,7 +33,7 @@ function tb_cp_day(PDO $pdo, string $day, string $today): array
 {
     // ct_people.php is only loaded by api.php for cp.* actions — load its day helper here too (its own action code only runs for cp.days / cp.goal_set),
     // otherwise Team performance saw no target and no sales today for anybody (fixed 13 Nov).
-    if (!function_exists('cp_day_rows') && is_file(__DIR__ . '/ct_people.php')) { try { (function () use ($pdo) { $action = ''; require_once __DIR__ . '/ct_people.php'; })(); } catch (Throwable $e) { } }
+    if (!function_exists('cp_day_rows') && is_file(__DIR__ . '/ct_people.php')) { $GLOBALS['cp_funcs_only'] = true; try { require_once __DIR__ . '/ct_people.php'; } catch (Throwable $e) { } unset($GLOBALS['cp_funcs_only']); }
     if (!function_exists('cp_day_rows')) return [];
     try {
         if ($day === $today) return (array)cp_day_rows($pdo, $day);
