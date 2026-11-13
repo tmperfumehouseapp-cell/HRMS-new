@@ -17,7 +17,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@700&display=swap">
 <style>
   .dayedit{border:none; background:none; color:var(--accent); cursor:pointer; font-size:14px; padding:0 3px; min-height:0; width:auto; vertical-align:middle; line-height:1;}
-  .daypop{position:fixed; z-index:200; width:310px; background:#fff; border:1px solid var(--line); border-radius:12px; box-shadow:0 12px 36px rgba(15,23,42,.22); padding:14px 14px 12px; font-size:13px; text-align:left;}
+  .daypop{position:fixed; z-index:200; width:310px; background:#fff; border:1px solid var(--line); border-radius:12px; box-shadow:0 12px 36px rgba(15,23,42,.22); padding:14px 14px 12px; font-size:13px; text-align:left; max-height:calc(100vh - 20px); overflow-y:auto;}
   .daypop h4{margin:0 0 10px; font-size:14px;} .daypop h4 small{color:var(--muted); font-weight:500;}
   .daypop .op{display:flex; gap:9px; align-items:center; padding:8px 10px; border:1px solid var(--line); border-radius:8px; margin-bottom:6px; cursor:pointer; line-height:1.3;}
   .daypop .op input{width:auto; min-height:0; margin:0;} .daypop .op:has(input:checked){border-color:var(--accent); background:#f3f7ff;}
@@ -245,12 +245,14 @@
     <div class="att-filters">
       <label class="att-search"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
         <input type="text" id="empSearch" placeholder="Search employee..." autocomplete="off"></label>
-      <select id="stFilter" class="att-sel" title="Show: all / present / absent / WFH / leave" aria-label="Filter by all, present, absent, WFH or leave">
+      <select id="stFilter" class="att-sel" title="Show: all / present / absent / WFH / leave / holiday / week off" aria-label="Filter by all, present, absent, WFH, leave, holiday or week off">
         <option value="all">All</option>
         <option value="present">Present</option>
         <option value="absent">Absent</option>
         <option value="wfh">WFH</option>
         <option value="leave">Leave</option>
+        <option value="holiday">Holiday</option>
+        <option value="week_off">Week off</option>
       </select>
       <select id="deptFilter" class="att-sel" title="Show one department only" aria-label="Filter by department">
         <option value="">All departments</option>
@@ -686,6 +688,7 @@
     if (f === 'absent') return !r.punch_in && !r.mark && !Number(r.future);
     if (f === 'wfh') return !r.punch_in && r.mark === 'wfh';
     if (f === 'leave') return !r.punch_in && (r.mark === 'leave' || r.mark === 'half_leave');
+    if (f === 'holiday' || f === 'week_off') return !r.punch_in && r.mark === f;
     return true;
   }
   const matchesStatus = (r) => dayMatches(r, stFilterEl());
@@ -721,7 +724,7 @@
     const status = (r.punch_in
       ? (r.punch_out ? '<span class="badge">Completed</span>' : '<span class="badge" style="background:#e7f7ee; color:#0f7a41;">Working</span>')
       : (mk ? markBadge(r.mark) : '<span class="badge inactive">Absent</span>'))
-      + ` <button type="button" class="dayedit" data-emp="${r.employee_id}" title="Change to Present / WFH / Leave">✎</button>`;
+      + ` <button type="button" class="dayedit" data-emp="${r.employee_id}" title="Change to Present / WFH / Leave / Holiday / Week off">✎</button>`;
     const nm = (r.full_name || '').replace(/'/g, "\\'");
     const photoLinks = [
       r.punch_in_photo ? `<a href="#" onclick="viewPunchPhoto(${r.employee_id}, 'in', '${nm}'); return false;">In</a>` : '',
@@ -840,7 +843,7 @@
           ${field('Punch in', fmtT(r.punch_in) + locLine(r.in_office, r.in_distance_m))}
           ${field('Punch out', fmtT(r.punch_out) + locLine(r.out_office, r.out_distance_m))}
           ${field('Hours', v.hours)}
-          ${field('Status', `<span style="color:${v.statusColor}; font-weight:600;">${v.statusText}</span>${v.lateTag ? ' ' + v.lateTag : ''} <button type="button" class="dayedit" data-emp="${r.employee_id}" title="Change to Present / WFH / Leave">✎</button>`)}
+          ${field('Status', `<span style="color:${v.statusColor}; font-weight:600;">${v.statusText}</span>${v.lateTag ? ' ' + v.lateTag : ''} <button type="button" class="dayedit" data-emp="${r.employee_id}" title="Change to Present / WFH / Leave / Holiday / Week off">✎</button>`)}
           ${field('Shift', `<a href="#" onclick="editShift(${r.employee_id}, '${(r.full_name || '').replace(/'/g, "\\'")}'); return false;" style="font-weight:600; text-decoration:none;">${v.shift}</a> <span style="font-size:11px; color:var(--muted);">${v.shiftSub}</span>`)}
           ${r.checklist ? field('Store tasks', v.checklist) : ''}
           ${(Array.isArray(r.proofs) && r.proofs.length) ? field('Punch-in proofs', v.proofs) : ''}
@@ -1098,7 +1101,7 @@
             status = r.punch_out ? '<span class="badge">Completed</span>' : '<span class="badge" style="background:#e7f7ee; color:#0f7a41;">Working</span>';
             status += Number(r.late_minutes) > 0 ? ` <span class="badge" style="background:#FFF4DB; color:#8a5a00;">Late ${r.late_minutes} m</span>` : ' <span class="badge" style="background:#e7f7ee; color:#0f7a41;">On time</span>';
           } else status = r.mark ? markBadge(r.mark) : (Number(r.future) ? '<span style="color:var(--muted);">—</span>' : '<span class="badge inactive">Absent</span>');
-          status += ` <button type="button" class="dayedit" data-mdate="${r.date}" title="Change to Present / WFH / Leave">✎</button>`;
+          status += ` <button type="button" class="dayedit" data-mdate="${r.date}" title="Change to Present / WFH / Leave / Holiday / Week off">✎</button>`;
           return `<tr${Number(r.future) ? ' style="opacity:.45;"' : ''}><td style="white-space:nowrap;">${label}</td><td>${fmtT(r.punch_in)}</td><td>${fmtT(r.punch_out)}</td><td>${r.hours !== null ? r.hours + ' h' : '—'}</td><td>${status}</td></tr>`;
         }).join('') + '</tbody></table>';
       if (keep) scr.forEach(([el, y]) => { el.scrollTop = y; });
@@ -2293,7 +2296,7 @@
     const sf = stFilterEl();
     const inD = (rgData.employees || []).filter(inDept);
     const list = inD.filter(e => (!q || String(e.full_name).toLowerCase().includes(q) || String(e.employee_code || '').toLowerCase().includes(q))
-      && (sf === 'all' || (sf === 'leave' ? (e.summary.leave || 0) + (e.summary.half_leave || 0) : e.summary[sf]) > 0));
+      && (sf === 'all' || (sf === 'holiday' || sf === 'week_off' ? (e.days || []).some(r => dayMatches(r, sf)) : (sf === 'leave' ? (e.summary.leave || 0) + (e.summary.half_leave || 0) : e.summary[sf]) > 0)));
     // Totals: the whole list, or only the department picked.
     const T = !deptEl() ? (rgData.totals || {}) : inD.reduce((t, e) => { ['present', 'wfh', 'leave', 'half_leave', 'late', 'absent'].forEach((k) => { t[k] = (t[k] || 0) + (Number(e.summary[k]) || 0); }); t.hours = Math.round(((t.hours || 0) + (Number(e.summary.hours) || 0)) * 10) / 10; return t; }, {});
     const chip = (label, val, bg, fg) => `<span style="background:${bg}; color:${fg}; border-radius:8px; padding:6px 10px; font-size:12.5px;"><b>${val}</b> ${label}</span>`;
@@ -2398,8 +2401,8 @@
     }
   }
 
-  // ---- Change a day by hand: Present / WFH / Leave / Half leave / Absent ----
-  // Present stores the punch times typed here; WFH / Leave / Half leave are the
+  // ---- Change a day by hand: Present / WFH / Leave / Half leave / Holiday / Week off / Absent ----
+  // Present stores the punch times typed here; WFH / Leave / Half leave / Holiday / Week off are the
   // day marks the salary calculation already reads. A day has one or the other:
   // choosing a mark removes the punch record (asked first), choosing Present
   // removes the mark.
@@ -2408,14 +2411,14 @@
   function openDayPop(btn, ctx) {
     closeDayPop();
     const hhmm = (t) => t ? String(t).slice(11, 16) : '';
-    const cur = ctx.punch_in ? 'present' : (ctx.mark && ['wfh', 'leave', 'half_leave'].includes(ctx.mark) ? ctx.mark : 'absent');
+    const cur = ctx.punch_in ? 'present' : (ctx.mark && ['wfh', 'leave', 'half_leave', 'holiday', 'week_off'].includes(ctx.mark) ? ctx.mark : 'absent');
     const nice = new Date(ctx.date + 'T00:00:00').toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short' });
     const opt = (v, label, note) => `<label class="op"><input type="radio" name="dpv" value="${v}"><span><b>${label}</b>${note ? '<br><small>' + note + '</small>' : ''}</span></label>`;
     dayPop = document.createElement('div'); dayPop.className = 'daypop';
     dayPop.innerHTML = `<h4>${ctx.name.replace(/</g, '&lt;')} <small>· ${nice}</small></h4>` +
       opt('present', 'Present', ctx.punch_in && !ctx.edited ? 'Now taken from the punch.' : '') +
       `<div class="tin" id="dpTin">Punch in <input type="time" id="dpIn" value="${hhmm(ctx.punch_in) || '10:00'}"> out <input type="time" id="dpOut" value="${hhmm(ctx.punch_out)}"></div>` +
-      opt('wfh', 'WFH') + opt('leave', 'Leave') + opt('half_leave', 'Half leave') + opt('absent', 'Absent', 'No punch, no mark.') +
+      opt('wfh', 'WFH') + opt('leave', 'Leave') + opt('half_leave', 'Half leave') + opt('holiday', 'Holiday', 'Paid day off. No penalty, no target.') + opt('week_off', 'Week off', 'Weekly off day. No penalty, no target.') + opt('absent', 'Absent', 'No punch, no mark.') +
       `<div class="acts"><button type="button" class="btn secondary" data-dp="x">Cancel</button><button type="button" class="btn" data-dp="save">Save</button></div><div class="err" id="dpErr"></div>`;
     document.body.appendChild(dayPop);
     dayPop.querySelector(`input[value="${cur}"]`).checked = true;
@@ -2547,7 +2550,7 @@
     const off = rows.filter(r => !r.punch_in && (r.mark === 'holiday' || r.mark === 'week_off')).length;
     const dn = deptEl() ? ((document.getElementById('deptFilter').selectedOptions[0] || {}).textContent || '') + ' · ' : '';
     document.getElementById('attSummary').textContent =
-      dn + `${present} present` + (wfh ? ` · ${wfh} WFH` : '') + (lv ? ` · ${lv} leave` : '') + ` · ${rows.length - present - wfh - lv - off} absent` + ` · ${dateLabel} · day = ${dayWindowText()}`;
+      dn + `${present} present` + (wfh ? ` · ${wfh} WFH` : '') + (lv ? ` · ${lv} leave` : '') + (off ? ` · ${off} holiday / week off` : '') + ` · ${rows.length - present - wfh - lv - off} absent` + ` · ${dateLabel} · day = ${dayWindowText()}`;
   }
   function liveOk() {
     liveFailed = 0;
