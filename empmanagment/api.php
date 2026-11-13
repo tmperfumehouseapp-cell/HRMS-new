@@ -29665,6 +29665,13 @@ switch ($action) {
         break;
     }
 
+    case 'manual_orders.sales_people': {   // the people the quick entry can assign the orders to
+        $auth = require_auth(); require_role(['Admin', 'HR'], $auth);
+        $o = []; foreach ($pdo->query("SELECT employee_id, employee_code, full_name FROM employees WHERE status != 'ex' ORDER BY full_name")->fetchAll() as $e) $o[] = ['id' => (int)$e['employee_id'], 'name' => (string)$e['full_name'], 'code' => (string)$e['employee_code']];
+        json_response(['people' => $o]);
+        break;
+    }
+
     case 'manual_orders.bulk': {   // ⚡ quick entry: "10 orders, ₹24,500, Query, prepaid" → 10 order rows (the total split between them) counted at once in the panel's boxes
         $auth = require_auth(); require_role(['Admin', 'HR'], $auth);
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
@@ -29678,18 +29685,19 @@ switch ($action) {
         if ($pay === 'part' && ($paidP < 100 || $paidP >= $totalP)) json_response(['error' => 'For a part payment, the advance must be more than ₹1 and less than the total.'], 422);
         $house = preg_replace('/[^a-z0-9_]/', '', strtolower((string)($input['house'] ?? ''))); if ($house === '' || !isset(house_labels()[$house])) json_response(['error' => 'Choose the store (panel).'], 422);
         $orderDate = trim((string)($input['order_date'] ?? '')); if ($orderDate === '') $orderDate = date('Y-m-d H:i:s'); if (!preg_match('/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2})?$/', $orderDate)) json_response(['error' => 'The date is not valid.'], 422); $orderDate = str_replace('T', ' ', $orderDate); if (strlen($orderDate) === 16) $orderDate .= ':00';
+        $empB = (int)($input['employee_id'] ?? 0); if ($empB > 0) { $eq = $pdo->prepare("SELECT 1 FROM employees WHERE employee_id = ?"); $eq->execute([$empB]); if (!$eq->fetchColumn()) json_response(['error' => 'That sales person was not found.'], 422); }
         $remarks = mb_substr(trim((string)($input['remarks'] ?? '')), 0, 200); $batch = substr(bin2hex(random_bytes(8)), 0, 12);
         $payStatus = $pay === 'prepaid' ? 'paid' : ($pay === 'cod' ? 'cod' : 'partially_paid');
         $base = intdiv($totalP, $n); $paidSoFar = 0; $first = 0; $last = 0;
         $pdo->beginTransaction();
         try {
-            $ins = $pdo->prepare("INSERT INTO manual_orders (order_no, customer_name, phone, items, total, payment_status, fulfillment_status, order_date, remarks, created_by, employee_id, order_type, house, batch, outstanding) VALUES (NULL, ?, '', 1, ?, ?, 'unfulfilled', ?, ?, ?, 0, ?, ?, ?, ?)");
+            $ins = $pdo->prepare("INSERT INTO manual_orders (order_no, customer_name, phone, items, total, payment_status, fulfillment_status, order_date, remarks, created_by, employee_id, order_type, house, batch, outstanding) VALUES (NULL, ?, '', 1, ?, ?, 'unfulfilled', ?, ?, ?, ?, ?, ?, ?, ?)");
             $setNo = $pdo->prepare("UPDATE manual_orders SET order_no = ? WHERE manual_order_id = ?");
             for ($i = 0; $i < $n; $i++) {
                 $amtP = $i === $n - 1 ? $totalP - $base * ($n - 1) : $base;
                 $paidI = $pay === 'part' ? ($i === $n - 1 ? $paidP - $paidSoFar : (int)round($paidP * $amtP / $totalP)) : ($pay === 'prepaid' ? $amtP : 0); $paidSoFar += $pay === 'part' ? $paidI : 0;
                 $out = $pay === 'part' ? max(0, $amtP - $paidI) / 100 : ($pay === 'cod' ? $amtP / 100 : 0);
-                $ins->execute(['Quick entry (' . $n . ' orders)', $amtP / 100, $payStatus, $orderDate, $remarks !== '' ? $remarks : 'Quick entry', $auth['username'], $ot, $house, $batch, $out]);
+                $ins->execute(['Quick entry (' . $n . ' orders)', $amtP / 100, $payStatus, $orderDate, $remarks !== '' ? $remarks : 'Quick entry', $auth['username'], $empB, $ot, $house, $batch, $out]);
                 $id = (int)$pdo->lastInsertId(); $setNo->execute(['M' . str_pad((string)$id, 4, '0', STR_PAD_LEFT), $id]); if ($i === 0) $first = $id; $last = $id;
             }
             $pdo->commit();
