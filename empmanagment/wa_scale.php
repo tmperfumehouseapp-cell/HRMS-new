@@ -146,7 +146,7 @@ function wa_aud_where(string $src, array $f, string $q = ''): array
     if ($st === 'waiting') $w[] = "(c.last_in_at IS NOT NULL AND c.last_in_at > COALESCE(c.last_out_at, '1970-01-01') AND c.optout = 0 AND c.status = 'open')";
     if ($st === 'noreply') $w[] = 'c.last_in_at IS NULL';
     if ($st === 'optout') $w[] = 'c.optout = 1';
-    if ($st === 'reach') $w[] = 'COALESCE(c.optout, 0) = 0';   // can be messaged
+    if ($st === 'reach') $w[] = 'COALESCE(c.optout, 0) = 0 AND COALESCE(c.camp_optout, 0) = 0';   // can be messaged
     // the Customers screen (wa_cust.php): all of these tags · none of these tags · last order / got a campaign between two dates · orders / ₹ spent ranges · number · salesperson
     foreach (['tags_all', 'tags_not'] as $k0) { $tl = array_slice(array_values(array_filter(array_map(fn($x) => mb_substr(trim((string)$x), 0, 40), is_array($f[$k0] ?? null) ? $f[$k0] : []), fn($x) => $x !== '')), 0, 30);
         if (!$tl) continue; if ($k0 === 'tags_all') { foreach ($tl as $x) { $w[] = "EXISTS (SELECT 1 FROM wa_tagidx ta WHERE ta.phone = $P AND ta.tag = ?)"; $p[] = $x; } }
@@ -242,7 +242,7 @@ function wa_aud_count(PDO $pdo, string $src, array $f, bool $sendable = false, i
 {
     wa_cust_ready($pdo); [$fq, $p, $P] = wa_aud_where($src, $f, '');
     if ($sendable) {
-        $fq .= (strpos($fq, ' WHERE ') === false ? ' WHERE ' : ' AND ') . "COALESCE(c.optout, 0) = 0";
+        $fq .= (strpos($fq, ' WHERE ') === false ? ' WHERE ' : ' AND ') . "COALESCE(c.optout, 0) = 0 AND COALESCE(c.camp_optout, 0) = 0";
         if ($freq > 0) { $fq .= " AND $P NOT IN (SELECT m.phone FROM wa_messages m WHERE m.dir = 'out' AND m.mtype = 'template' AND m.who = 'campaign' AND m.status <> 'failed' AND m.ts >= ?)"; $p[] = date('Y-m-d H:i:s', time() - $freq * 86400); }
     }
     $c = $pdo->prepare("SELECT COUNT(*) FROM $fq"); $c->execute($p); return (int)$c->fetchColumn();

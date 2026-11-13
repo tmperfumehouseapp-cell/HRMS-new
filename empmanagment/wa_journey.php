@@ -215,7 +215,7 @@ function wj_topics_view(PDO $pdo): array
 function wj_night_start(PDO $pdo, bool $manual = false): array
 {
     $cur = (string)setting_get($pdo, 'wj_topic_cursor', ''); $since = $manual ? wj_dt(time() - 2 * 86400) : ($cur !== '' ? $cur : wj_dt(time() - 7 * 86400));
-    $ph = []; try { $q = $pdo->prepare("SELECT phone FROM wa_contacts WHERE last_in_at >= ? AND optout = 0 ORDER BY last_in_at DESC LIMIT 90"); $q->execute([$since]); $ph = $q->fetchAll(PDO::FETCH_COLUMN); } catch (Throwable $e) { }
+    $ph = []; try { $q = $pdo->prepare("SELECT phone FROM wa_contacts WHERE last_in_at >= ? AND optout = 0 AND camp_optout = 0 ORDER BY last_in_at DESC LIMIT 90"); $q->execute([$since]); $ph = $q->fetchAll(PDO::FETCH_COLUMN); } catch (Throwable $e) { }
     $S = ['day' => date('Y-m-d'), 'stage' => $ph ? 'topics' : 'fest', 'queue' => array_values($ph), 'total' => count($ph), 'started' => date('Y-m-d H:i:s'), 'note' => ''];
     if (!$manual) setting_set($pdo, 'wj_topic_cursor', date('Y-m-d H:i:s')); wj_put($pdo, 'wj_night', $S); return $S;
 }
@@ -283,10 +283,10 @@ function wj_stats(PDO $pdo): array
     $c = wj_json($pdo, 'wj_stats', []); if (($c['t'] ?? 0) > time() - 600) return $c;
     $now = time(); $r = ['t' => $now, 'lead' => 0, 'buyer' => 0, 'joined' => 0, 'leaving' => 0, 'sent_today' => 0, 'sent_7' => 0];
     try {
-        $r['lead'] = (int)$pdo->query("SELECT COUNT(*) FROM wa_contacts c WHERE c.optout = 0 AND c.last_in_at >= '" . wj_dt($now - 60 * 86400) . "' AND NOT EXISTS (SELECT 1 FROM wa_cust u WHERE u.phone = c.phone AND u.n > 0 AND u.last_order >= DATE_SUB(c.last_in_at, INTERVAL 2 DAY))")->fetchColumn();
-        $r['buyer'] = (int)$pdo->query("SELECT COUNT(*) FROM wa_cust u JOIN wa_contacts c ON c.phone = u.phone WHERE u.n > 0 AND c.optout = 0 AND u.last_order >= '" . wj_dt($now - 60 * 86400) . "'")->fetchColumn();
-        $r['joined'] = (int)$pdo->query("SELECT COUNT(*) FROM wa_contacts c WHERE c.optout = 0 AND c.last_in_at >= '" . wj_dt($now - 86400) . "'")->fetchColumn();
-        $r['leaving'] = (int)$pdo->query("SELECT COUNT(*) FROM wa_contacts c WHERE c.optout = 0 AND c.last_in_at < '" . wj_dt($now - 60 * 86400) . "' AND c.last_in_at >= '" . wj_dt($now - 61 * 86400) . "'")->fetchColumn();
+        $r['lead'] = (int)$pdo->query("SELECT COUNT(*) FROM wa_contacts c WHERE c.optout = 0 AND c.camp_optout = 0 AND c.last_in_at >= '" . wj_dt($now - 60 * 86400) . "' AND NOT EXISTS (SELECT 1 FROM wa_cust u WHERE u.phone = c.phone AND u.n > 0 AND u.last_order >= DATE_SUB(c.last_in_at, INTERVAL 2 DAY))")->fetchColumn();
+        $r['buyer'] = (int)$pdo->query("SELECT COUNT(*) FROM wa_cust u JOIN wa_contacts c ON c.phone = u.phone WHERE u.n > 0 AND c.optout = 0 AND c.camp_optout = 0 AND u.last_order >= '" . wj_dt($now - 60 * 86400) . "'")->fetchColumn();
+        $r['joined'] = (int)$pdo->query("SELECT COUNT(*) FROM wa_contacts c WHERE c.optout = 0 AND c.camp_optout = 0 AND c.last_in_at >= '" . wj_dt($now - 86400) . "'")->fetchColumn();
+        $r['leaving'] = (int)$pdo->query("SELECT COUNT(*) FROM wa_contacts c WHERE c.optout = 0 AND c.camp_optout = 0 AND c.last_in_at < '" . wj_dt($now - 60 * 86400) . "' AND c.last_in_at >= '" . wj_dt($now - 61 * 86400) . "'")->fetchColumn();
         $r['sent_today'] = (int)$pdo->query("SELECT COUNT(*) FROM wa_wj_ev WHERE status = 'sent' AND sent_at >= '" . date('Y-m-d 00:00:00') . "'")->fetchColumn();
         $r['sent_7'] = (int)$pdo->query("SELECT COUNT(*) FROM wa_wj_ev WHERE status = 'sent' AND sent_at >= '" . wj_dt($now - 7 * 86400) . "'")->fetchColumn();
     } catch (Throwable $e) { }
@@ -317,7 +317,7 @@ function wj_anchor_refresh(PDO $pdo, int $max = 600): int
 {
     if (!wj_anchor_ready($pdo)) return 0; $n = 0;
     try {
-        $rows = $pdo->query("SELECT phone, last_in_at FROM wa_contacts WHERE optout = 0 AND last_in_at >= DATE_SUB(NOW(), INTERVAL 62 DAY) AND last_out_at IS NOT NULL AND last_out_at >= last_in_at AND (wj_anchor_in IS NULL OR wj_anchor_in <> last_in_at) ORDER BY last_in_at DESC LIMIT " . (int)$max)->fetchAll(PDO::FETCH_ASSOC);
+        $rows = $pdo->query("SELECT phone, last_in_at FROM wa_contacts WHERE optout = 0 AND camp_optout = 0 AND last_in_at >= DATE_SUB(NOW(), INTERVAL 62 DAY) AND last_out_at IS NOT NULL AND last_out_at >= last_in_at AND (wj_anchor_in IS NULL OR wj_anchor_in <> last_in_at) ORDER BY last_in_at DESC LIMIT " . (int)$max)->fetchAll(PDO::FETCH_ASSOC);
         $up = $pdo->prepare("UPDATE wa_contacts SET wj_anchor = ?, wj_anchor_in = ? WHERE phone = ?");
         foreach (array_chunk($rows, 200) as $ch) {
             $ph = array_map(function ($r) { return (string)$r['phone']; }, $ch); $min = min(array_map(function ($r) { return (string)$r['last_in_at']; }, $ch)); $in = implode(',', array_fill(0, count($ph), '?')); $first = [];
@@ -340,8 +340,8 @@ function wj_collect(PDO $pdo, array $plan, array $cfg, int $now, int $limit = 40
         $col = $tk === 'lead' ? $aex : 'u.last_order'; $conds = []; $args = [];
         foreach (array_unique(array_column($steps, 'day')) as $d) { $conds[] = "($col <= ? AND $col > ?)"; $args[] = wj_dt($now - $d * 86400); $args[] = wj_dt($now - ($d + $cfg['grace'] + 1) * 86400); }
         $sql = $tk === 'lead'
-            ? "SELECT c.*, $aex AS anchor_at FROM wa_contacts c WHERE c.optout = 0 AND c.last_in_at IS NOT NULL AND (" . implode(' OR ', $conds) . ") AND NOT EXISTS (SELECT 1 FROM wa_cust u WHERE u.phone = c.phone AND u.n > 0 AND (u.last_order >= DATE_SUB(c.last_in_at, INTERVAL 2 DAY) OR u.last_order >= DATE_SUB(NOW(), INTERVAL 7 DAY))) ORDER BY c.last_in_at LIMIT " . (int)$limit
-            : "SELECT c.*, u.last_order AS anchor_at FROM wa_cust u JOIN wa_contacts c ON c.phone = u.phone WHERE u.n > 0 AND c.optout = 0 AND (" . implode(' OR ', $conds) . ") AND (c.last_in_at IS NULL OR u.last_order >= DATE_SUB(c.last_in_at, INTERVAL 2 DAY)) ORDER BY u.last_order LIMIT " . (int)$limit;
+            ? "SELECT c.*, $aex AS anchor_at FROM wa_contacts c WHERE c.optout = 0 AND c.camp_optout = 0 AND c.last_in_at IS NOT NULL AND (" . implode(' OR ', $conds) . ") AND NOT EXISTS (SELECT 1 FROM wa_cust u WHERE u.phone = c.phone AND u.n > 0 AND (u.last_order >= DATE_SUB(c.last_in_at, INTERVAL 2 DAY) OR u.last_order >= DATE_SUB(NOW(), INTERVAL 7 DAY))) ORDER BY c.last_in_at LIMIT " . (int)$limit
+            : "SELECT c.*, u.last_order AS anchor_at FROM wa_cust u JOIN wa_contacts c ON c.phone = u.phone WHERE u.n > 0 AND c.optout = 0 AND c.camp_optout = 0 AND (" . implode(' OR ', $conds) . ") AND (c.last_in_at IS NULL OR u.last_order >= DATE_SUB(c.last_in_at, INTERVAL 2 DAY)) ORDER BY u.last_order LIMIT " . (int)$limit;
         try { $q = $pdo->prepare($sql); $q->execute($args); $rows = $q->fetchAll(PDO::FETCH_ASSOC); } catch (Throwable $e) { error_log('wj_collect ' . $tk . ': ' . $e->getMessage()); continue; }
         foreach (array_chunk($rows, 300) as $chunk) {
             $ph = array_map(function ($r) { return (string)$r['phone']; }, $chunk); $in = implode(',', array_fill(0, count($ph), '?')); $done = []; $last = []; $top = []; $refSent = []; $offerAt = []; if (function_exists('wq_plan_paused_prefetch')) wq_plan_paused_prefetch($pdo, $ph, $now);

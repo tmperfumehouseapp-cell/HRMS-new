@@ -960,6 +960,7 @@ if (strpos($__wt, 'wa.tpl_') === 0 && $__wt !== 'wa.tpl_diagnose') {   // wa.tpl
             if (!$cxOwn && function_exists('wa_cx_lock') && ($__cx = wa_cx_lock($pdo, $auth, $c)) !== '') json_response(['error' => $__cx, 'complaint' => (int)$c['cx_id']], 423);
             if ((int)$c['optout'] === 1) json_response(['error' => 'This customer opted out — do not message them.'], 422);
             $t = wa_tpl_row($pdo, (int)($in['id'] ?? 0)); if (!$t) json_response(['error' => 'Pre-made message not found.'], 404);
+            if ((int)($c['camp_optout'] ?? 0) === 1 && !in_array(strtolower((string)($t['category'] ?? 'marketing')), ['utility', 'authentication'], true)) json_response(['error' => 'This customer asked to stop promotional messages. Chat with them normally, or send a Utility message.'], 422);
             $vars = array_map(fn($x) => mb_substr(trim((string)$x), 0, 300), (array)($in['vars'] ?? [])); $need = count(wa_tpl_vars((string)$t['body']));
             for ($i = 0; $i < $need; $i++) if (($vars[$i] ?? '') === '') json_response(['error' => 'Fill the variable {{' . ($i + 1) . '}} first.'], 422);
             $hvar = trim((string)($in['header_var'] ?? '')); if ($t['header_format'] === 'TEXT' && wa_tpl_vars((string)$t['header_text']) && $hvar === '') json_response(['error' => 'Fill the heading variable first.'], 422);

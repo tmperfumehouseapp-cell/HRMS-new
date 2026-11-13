@@ -324,12 +324,12 @@ function wa_optin_again_fix(PDO $pdo): int
     $n = 0; $stop = '/^\s*(stop|unsubscribe|band karo|band kro|no more)\s*[.!]*\s*$/iu';
     try {
         $st = $pdo->prepare("SELECT phone FROM wa_contacts WHERE optout = 1 AND last_in_at >= ? ORDER BY last_in_at DESC LIMIT 40"); $st->execute([date('Y-m-d H:i:s', time() - 3 * 86400)]);
-        $mq = $pdo->prepare("SELECT mtype, body FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 8"); $up = $pdo->prepare("UPDATE wa_contacts SET optout = 0 WHERE phone = ? AND optout = 1");
+        $mq = $pdo->prepare("SELECT mtype, body FROM wa_messages WHERE phone = ? AND dir = 'in' ORDER BY id DESC LIMIT 8"); $up = $pdo->prepare("UPDATE wa_contacts SET optout = 0, camp_optout = 1 WHERE phone = ? AND optout = 1");
         foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $ph) {
             $mq->execute([$ph]); $rows = $mq->fetchAll(); if (!$rows) continue;
             $newest = $rows[0]; if (preg_match($stop, (string)$newest['body']) || in_array((string)$newest['mtype'], ['reaction', 'system', 'unsupported'], true)) continue;
             $hadStop = false; foreach (array_slice($rows, 1) as $r) if (preg_match($stop, (string)$r['body'])) { $hadStop = true; break; }
-            if ($hadStop) { $up->execute([$ph]); $n++; if (function_exists('wa_event')) wa_event($pdo, (string)$ph, '↩ The customer wrote again after Stop — the chat is open again, messages are allowed'); }
+            if ($hadStop) { $up->execute([$ph]); $n++; if (function_exists('wa_event')) wa_event($pdo, (string)$ph, '↩ The customer wrote again after Stop — you can chat with them again. Campaigns / promotional messages stay OFF for this customer.'); }
         }
     } catch (Throwable $e) { }
     return $n;
