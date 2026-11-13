@@ -479,8 +479,8 @@ function cx5_send_update(PDO $pdo, array $r, $text) {
     $name = function_exists('wa_first_name') ? wa_first_name((string)($r['cust_name'] ?: ($c['name'] ?? ''))) : 'Sir';
     $body = mb_substr(cx_one_line($text), 0, 700);   // Meta: no new lines inside a variable — the lines stay apart as " • " points, never one long paragraph
     if (function_exists('cx8_send')) { [$ok, $res] = cx8_send($pdo, $c, 'g_update', [$name, cx_code($r['id']), $body]); return $ok ? [true, 'Sent as the approved Complaint update message.'] : [false, $res === 'waits for Meta' ? 'The "Complaint update" message is not approved by Meta yet.' : $res]; }   // 📷 with its photo when one is chosen
-    $ctx = wa_camp_ctx($pdo, $t, 99); $ctx['port_left'] = max(1, (int)$ctx['port_left']); [$nid, $why] = wa_pick_number($pdo, $c, $ctx); if (!$nid) return [false, 'No number can send right now: ' . $why];
-    [$ok, $res] = wa_send_tpl_one($pdo, $c, $t, $ctx['nums'][$nid], [$name, cx_code($r['id']), $body], 'order'); return $ok ? [true, 'Sent as the approved Complaint update message.'] : [false, is_string($res) ? $res : 'Meta did not accept the message.'];
+    if (!function_exists('cx_send_tpl')) return [false, 'The complaint numbers are not available on this page.'];
+    [$ok, $res] = cx_send_tpl($pdo, $c, $t, [$name, cx_code($r['id']), $body]); return $ok ? [true, 'Sent as the approved Complaint update message.'] : [false, is_string($res) ? $res : 'Meta did not accept the message.'];
 }
 /** 🎫 The ticket list for the new Complaints screen: one line per ticket, grouped by day, + the dashboard numbers. */
 function cx3_tickets(PDO $pdo, array $role, array $g) {
@@ -907,6 +907,16 @@ function cx2_dispatch(PDO $pdo, $action, array $auth, array $w, $by, array $in, 
         $lib = []; try { foreach ($pdo->query("SELECT id, title FROM wa_media_lib WHERE kind = 'image' ORDER BY id DESC LIMIT 200")->fetchAll() as $x) $lib[] = ['id' => (int)$x['id'], 'title' => (string)$x['title']]; } catch (Throwable $e) { }
         json_response(['ok' => true, 'items' => cx8_list($pdo), 'lib' => $lib, 'care' => cx8_lib_default($pdo, 'care'), 'thanks' => cx8_lib_default($pdo, 'thanks'), 'made' => $made ?? 0]);
     }
+    case 'bd.cx_nums': {   // 📱 which numbers send the complaint messages, in order: GET list · POST {order: [number id, …]} (Complaint manager / Admin)
+        $needTeam(); cx5_tpl_mod(); if (!function_exists('cx_nums_list')) json_response(['error' => 'Not available.'], 501);
+        if ($isPost) {
+            if (!$role['mgr']) json_response(['error' => 'Only the Complaint manager or Admin can change the numbers.'], 403);
+            $o = []; foreach ((array)($in['order'] ?? []) as $x) { $x = (int)$x; if ($x > 0 && !in_array($x, $o, true)) $o[] = $x; }
+            if (!$o) json_response(['error' => 'Choose at least one number.'], 422);
+            cx_state_put($pdo, 'num_order', implode(',', $o));
+        }
+        json_response(['ok' => true, 'nums' => cx_nums_list($pdo), 'mgr' => $role['mgr']]);
+    }
     case 'bd.cx_tpl_send': {   // 📨 a pre-made message from the complaint ticket (Ask for information, Complaint update, any approved one) — the ticket owner sends it, whoever holds the WhatsApp chat
         $post(); $r = $load(true); $me0 = $me;
         if (!$role['mgr'] && (int)$r['owner_emp'] !== $me0) { if ((int)$r['owner_emp'] === 0 && $me0) { $pdo->prepare("UPDATE cx_cases SET owner_emp = ? WHERE id = ?")->execute([$me0, (int)$r['id']]); $r['owner_emp'] = $me0; cx_ev($pdo, (int)$r['id'], $me0, 'owner', $meName . ' took the complaint by sending a message.'); }
@@ -920,8 +930,8 @@ function cx2_dispatch(PDO $pdo, $action, array $auth, array $w, $by, array $in, 
         $gk = ''; if (function_exists('cx8_general')) foreach (cx8_general() as $k8 => $g8) if (in_array((string)$t['name'], $g8[0], true) || (string)$t['name'] === $g8[1]) $gk = $k8;
         if ($gk !== '' && function_exists('cx8_send')) { [$ok, $res] = cx8_send($pdo, $c, $gk, $vars); if (!$ok && $res === 'waits for Meta') $res = 'This pre-made message is not approved by Meta yet.'; }   // 📷 "We need information" etc. with the photo chosen for it
         else {
-        $ctx = wa_camp_ctx($pdo, $t, 99); $ctx['port_left'] = max(1, (int)$ctx['port_left']); [$nid, $why] = wa_pick_number($pdo, $c, $ctx); if (!$nid) json_response(['error' => 'No number can send right now: ' . $why], 422);
-        [$ok, $res] = wa_send_tpl_one($pdo, $c, $t, $ctx['nums'][$nid], array_slice($vars, 0, (int)$t['nvars']), 'order');
+        if (!function_exists('cx_send_tpl')) json_response(['error' => 'The complaint numbers are not available on this page.'], 501);
+        [$ok, $res] = cx_send_tpl($pdo, $c, $t, array_slice($vars, 0, (int)$t['nvars']));
         }
         if (!$ok) json_response(['error' => is_string($res) ? $res : 'Meta did not accept the message.'], 422);
         if (empty($r['first_reply_at'])) { try { $pdo->prepare("UPDATE cx_cases SET first_reply_at = ? WHERE id = ? AND first_reply_at IS NULL")->execute([date('Y-m-d H:i:s'), (int)$r['id']]); } catch (Throwable $e) { } }

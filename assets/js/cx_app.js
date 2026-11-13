@@ -602,15 +602,32 @@ window.CX = (function () {
       + '<label style="display:flex;gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="st_push"' + (c.push === '1' ? ' checked' : '') + dis + '> Phone notifications for new, late and moved complaints</label><label style="display:flex;gap:8px;align-items:center;margin-top:6px"><input type="checkbox" id="st_teach"' + (c.teach_feed === '1' ? ' checked' : '') + dis + '> Turn solved complaints into lesson drafts for the bot (you approve each one in Reports)</label>' + '</div>';
     if (window.CXM && CXM.ready) h += CXM.settingsBox(c, mg, dis);
     if (mg) h += '<div style="margin-bottom:12px"><button class="cx-btn" type="button" id="stSave">Save settings</button></div>';
+    h += '<div class="cx-box"><h4>📱 Numbers that send the complaint messages</h4><div id="stNums"><div class="cx-empty">Loading…</div></div></div>';
     h += '<div class="cx-box" id="cxMsgsBox"><h4>💬 Messages to the customer — photo &amp; words</h4><div id="stCM"><div class="cx-empty">Loading…</div></div></div>';
     h += '<div class="cx-box"><h4>Quick replies for complaints</h4><div style="color:var(--mut);margin-bottom:8px">Use {name}, {me}, {case}, {order}, {awb} — they are filled in for each customer.</div><div id="stQ"></div></div>';
     body().innerHTML = h;
     body().querySelectorAll('[data-add]').forEach((s) => s.onchange = async () => { if (!s.value) return; const k = s.dataset.add; const cur = (k === 'boss' ? d.boss : d.desks.find((x) => x.k === k).emps).concat([Number(s.value)]); const r = await call(() => api.post('bd.cx_team_save', { desk: k, emps: cur })); if (r) settings(); });
     body().querySelectorAll('[data-rm]').forEach((a) => a.onclick = async (e) => { e.preventDefault(); const [k, id] = a.dataset.rm.split(':'); const cur = (k === 'boss' ? d.boss : d.desks.find((x) => x.k === k).emps).filter((x) => x !== Number(id)); const r = await call(() => api.post('bd.cx_team_save', { desk: k, emps: cur })); if (r) settings(); });
     const sv = $('#stSave', H); if (sv) sv.onclick = async () => { const g = (id) => Number($(id, H).value) || 0; const r = await call(() => api.post('bd.cx_settings_save', Object.assign({ refund_limit: g('#st_refund_limit'), reply_urgent: g('#st_reply_urgent'), reply_high: g('#st_reply_high'), reply_normal: g('#st_reply_normal'), fix_urgent: g('#st_fix_urgent'), fix_high: g('#st_fix_high'), fix_normal: g('#st_fix_normal'), push: $('#st_push', H).checked ? 1 : 0, teach_feed: $('#st_teach', H).checked ? 1 : 0 }, (window.CXM && CXM.ready) ? CXM.settingsVals() : {}))); if (r) settings(); };
-    quickEditor(mg); msgCenter(mg);
+    quickEditor(mg); msgCenter(mg); numsBox();
   }
   // 💬 ONE place for every automatic complaint message: the photo on top + the words + Meta's answer, card by card (complaints_photo.php · bd.cx_msgs · bd.cx_photos)
+  // 📱 the numbers that send every complaint message (ticket created / progress / resolved / pre-made), in order: the first one sends, the next one only if it fails (bd.cx_nums)
+  async function numsBox(d) {
+    const el = $('#stNums', H); if (!el) return; if (!d) d = await api.get('bd.cx_nums').catch(() => null);
+    if (!d || !d.nums) { el.innerHTML = '<div class="cx-empty">Could not load the numbers.</div>'; return; }
+    const n = d.nums.length, dis = d.mgr ? '' : ' disabled';
+    el.innerHTML = '<div style="color:var(--mut);margin-bottom:8px">Every complaint message goes from the number marked 1st. If that number cannot send it, the 2nd in this order tries, then the 3rd. A number set to “Not used” never sends a complaint message. (A typed reply inside the 24 hours still goes from the number the customer wrote to — WhatsApp allows nothing else.)</div>'
+      + '<table class="cx-tbl"><tbody>' + d.nums.map((x) => '<tr><td><b>' + esc(x.label) + '</b>' + (x.display ? ' <span style="color:var(--mut)">' + esc(x.display) + '</span>' : '') + '</td><td><select class="cx-in" data-num="' + x.id + '"' + dis + '><option value="0">Not used</option>' + Array.from({ length: n }, (_, i) => '<option value="' + (i + 1) + '"' + (x.pos === i + 1 ? ' selected' : '') + '>' + (i + 1) + ['st', 'nd', 'rd'][i] + '</option>').join('').replace(/(\d+)undefined/g, '$1th') + '</select></td></tr>').join('') + '</tbody></table>'
+      + (d.mgr ? '<div style="margin-top:10px"><button class="cx-btn" type="button" id="stNumSave">Save the numbers</button></div>' : '');
+    const sv = $('#stNumSave', el); if (!sv) return;
+    sv.onclick = async () => {
+      const rows = Array.from(el.querySelectorAll('select[data-num]')).map((s) => [Number(s.value), Number(s.dataset.num)]).filter((r) => r[0] > 0).sort((a, b) => a[0] - b[0]);
+      if (!rows.length) return toast('Choose at least one number.', true);
+      sv.disabled = true; const r = await call(() => api.post('bd.cx_nums', { order: rows.map((r) => r[1]) })); sv.disabled = false;
+      if (r) { toast('Saved.'); numsBox(r); }
+    };
+  }
   async function msgCenter(mg) {
     const el = $('#stCM', H); if (!el) return; let M, P;
     try { [M, P] = await Promise.all([api.get('bd.cx_msgs'), api.get('bd.cx_photos')]); } catch (e) { el.innerHTML = '<div class="cx-warn">' + esc(e.message) + '</div>'; return; }

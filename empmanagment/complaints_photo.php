@@ -76,16 +76,63 @@ function cx8_pick(PDO $pdo, string $key, string $photoKey = '', bool $noPhoto = 
     return null;
 }
 /** Send one complaint message as an approved template. [ok, shown text | why, template name]. */
+/** 📱 Owner (13 Nov): which of our WhatsApp numbers send the complaint messages, in order. Saved as number ids in cx_state 'num_order';
+ *  until someone saves it: every number by its place in the list, WITHOUT the second one (1st, 3rd, 4th …). */
+function cx_num_order(PDO $pdo): array
+{
+    $all = []; try { foreach ($pdo->query("SELECT id FROM wa_numbers ORDER BY id")->fetchAll() as $n) $all[] = (int)$n['id']; } catch (Throwable $e) { return []; }
+    $sv = trim((string)cx_state_get($pdo, 'num_order', ''));
+    if ($sv !== '') { $o = []; foreach (explode(',', $sv) as $x) { $x = (int)$x; if ($x > 0 && in_array($x, $all, true) && !in_array($x, $o, true)) $o[] = $x; } if ($o) return $o; }
+    if (count($all) >= 2) array_splice($all, 1, 1);
+    return $all;
+}
+/** The complaint numbers that can send THIS approved message, in the owner's order. The campaign rules do not apply here ("use for campaigns", quality, daily room, the 3-hour payment mark):
+ *  only what WhatsApp itself needs — the number is connected and the message is approved on its WhatsApp account. Returns [numbers, why none]. */
+function cx_nums_for(PDO $pdo, array $t): array
+{
+    $st = []; try { if (!function_exists('wa_health_all') && is_file(__DIR__ . '/wa_console.php')) require_once __DIR__ . '/wa_console.php'; if (function_exists('wa_health_all')) foreach (wa_health_all($pdo, false) as $h) $st[(int)$h['id']] = (string)($h['status'] ?? ''); } catch (Throwable $e) { }
+    $out = []; $why = [];
+    foreach (cx_num_order($pdo) as $id) {
+        $n = wa_number_row($pdo, $id); if (!$n || (string)$n['phone_id'] === '') continue; $lab = trim((string)($n['label'] ?: ($n['display'] ?? ''))) ?: 'Number ' . $id;
+        if (!in_array(wa_waba_of($n), (array)($t['ok_wabas'] ?? []), true)) { $why[] = $lab . ': this message is not approved on its WhatsApp account'; continue; }
+        if (($st[$id] ?? '') !== '' && $st[$id] !== 'CONNECTED') { $why[] = $lab . ': not connected at Meta'; continue; }
+        $x = ['id' => $id, 'q' => '', 'phone_id' => (string)$n['phone_id'], 'cap' => 1000000, 'used' => 0, 'left' => 1000000, 'label' => $lab];
+        if (!empty($t['by_waba'][wa_waba_of($n)])) $x['tm'] = $t['by_waba'][wa_waba_of($n)];
+        $out[] = $x;
+    }
+    return [$out, $why ? implode(' · ', $why) : 'no complaint number is chosen (Complaints → Settings)'];
+}
+/** One approved message to one customer from the complaint numbers: the first in the order sends; if that number fails, the next one tries. Returns [ok, wamid | error text]. */
+function cx_send_tpl(PDO $pdo, array $c, array $t, array $vars): array
+{
+    [$nums, $why] = cx_nums_for($pdo, $t); if (!$nums) return [false, 'no number free: ' . $why];
+    $res = ''; $keep = $GLOBALS['wa_tpl_one_retry'] ?? 0;
+    foreach ($nums as $num) {
+        $GLOBALS['wa_tpl_one_retry'] = 1;   // no hidden second try from a number outside the complaint list
+        try { $r = wa_send_tpl_one($pdo, $c, $num['tm'] ?? $t, $num, $vars, 'order'); } catch (Throwable $e) { $r = [false, $e->getMessage(), 0]; }
+        $GLOBALS['wa_tpl_one_retry'] = $keep;
+        if (!empty($r[0])) return [true, (string)$r[1]];
+        $res = (string)$r[1]; $ec = (int)($r[2] ?? 0);
+        if (in_array($ec, [131026, 131049, 130472], true) || strpos($res, 'This customer asked') === 0 || strpos($res, 'HRMS could not build') === 0) break;   // the customer cannot be reached / our own refusal: another number changes nothing
+        error_log('cx_send_tpl: ' . $num['label'] . ' could not send ' . ($t['name'] ?? '') . ' (' . $res . ') - trying the next complaint number');
+    }
+    return [false, $res !== '' ? $res : 'Meta did not accept the message.'];
+}
+/** For Complaints → Settings: every number with its place in the order (0 = not used). */
+function cx_nums_list(PDO $pdo): array
+{
+    $ord = cx_num_order($pdo); $out = [];
+    try { foreach ($pdo->query("SELECT id, label, display FROM wa_numbers ORDER BY id")->fetchAll() as $n) { $p = array_search((int)$n['id'], $ord, true); $out[] = ['id' => (int)$n['id'], 'label' => trim((string)($n['label'] ?: 'Number ' . $n['id'])), 'display' => (string)($n['display'] ?? ''), 'pos' => $p === false ? 0 : $p + 1]; } } catch (Throwable $e) { }
+    return $out;
+}
 function cx8_send(PDO $pdo, array $c, string $key, array $vars, string $photoKey = ''): array
 {
     $t = cx8_pick($pdo, $key, $photoKey); if (!$t) return [false, 'waits for Meta', ''];
-    $ctx = wa_camp_ctx($pdo, $t, 99); $ctx['port_left'] = max(1, (int)$ctx['port_left']);   // a complaint message never waits for the campaign limits
-    [$nid, $why] = wa_pick_number($pdo, $c, $ctx); if (!$nid) return [false, 'no number free: ' . $why, (string)$t['name']];
     $v = array_slice(array_values($vars), 0, (int)$t['nvars']);
-    [$ok, $res] = wa_send_tpl_one($pdo, $c, $t, $ctx['nums'][$nid], $v, 'order');
-    if (!$ok && strtoupper((string)$t['header_format']) === 'IMAGE' && ($t2 = cx8_pick($pdo, $key, $photoKey, true))) {   // the photo could not go (file missing / Meta refused it): the approved text version, never nothing
+    [$ok, $res] = cx_send_tpl($pdo, $c, $t, $v);   // 📱 owner (13 Nov): complaint messages go from the complaint numbers in their fixed order (1st, 3rd, 4th … never the 2nd)
+    if (!$ok && strpos((string)$res, 'no number free') !== 0 && strtoupper((string)$t['header_format']) === 'IMAGE' && ($t2 = cx8_pick($pdo, $key, $photoKey, true))) {   // the photo could not go (file missing / Meta refused it): the approved text version, never nothing
         error_log('cx8: photo version ' . $t['name'] . ' failed (' . $res . '), sending the text version');
-        $t = $t2; $v = array_slice(array_values($vars), 0, (int)$t['nvars']); [$ok, $res] = wa_send_tpl_one($pdo, $c, $t, $ctx['nums'][$nid], $v, 'order');
+        $t = $t2; $v = array_slice(array_values($vars), 0, (int)$t['nvars']); [$ok, $res] = cx_send_tpl($pdo, $c, $t, $v);
     }
     if (!$ok) return [false, (string)$res, (string)$t['name']];
     return [true, cx6_render((string)$t['body'], $v), (string)$t['name'] . (strtoupper((string)$t['header_format']) === 'IMAGE' ? ' + photo' : '')];
