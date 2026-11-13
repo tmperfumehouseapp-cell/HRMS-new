@@ -173,19 +173,22 @@ function wmo_line_items(array $L): array
 // ------------------------------------------------------------------------------------------------------------------ the payment screenshot
 function wmo_read_shot(PDO $pdo, string $b64, string $mime, string $side = 'customer'): array
 {
-    $ck = 'wmo_rd2_' . $side . '_' . sha1($b64); if (function_exists('wa_cpc_get') && ($hit = wa_cpc_get($pdo, $ck)) && !empty($hit['v']) && $hit['age'] < 7200) { $o = $hit['v']; $o['dup'] = ''; if (!empty($o['utr']) && wmo_tables($pdo)) { $q = $pdo->prepare("SELECT order_no FROM wmo_order WHERE utr = ? AND status <> 'cancelled' LIMIT 1"); $q->execute([$o['utr']]); $d = $q->fetchColumn(); if ($d) $o['dup'] = (string)$d; } return $o; }
+    $ck = 'wmo_rd3_' . $side . '_' . sha1($b64); if (function_exists('wa_cpc_get') && ($hit = wa_cpc_get($pdo, $ck)) && !empty($hit['v']) && $hit['age'] < 7200) { $o = $hit['v']; $o['dup'] = ''; if (!empty($o['utr']) && wmo_tables($pdo)) { $q = $pdo->prepare("SELECT order_no FROM wmo_order WHERE utr = ? AND status <> 'cancelled' LIMIT 1"); $q->execute([$o['utr']]); $d = $q->fetchColumn(); if ($d) $o['dup'] = (string)$d; } return $o; }
     $sys = "You read a screenshot of a UPI / QR payment (PhonePe, Google Pay, Paytm, a bank app …) that a customer sent to TM Perfume House. The business also receives money under its parent company name \"Fourpirates Ventures LLP\" (also written Fourpirates / Four Pirates), including Razorpay receipts and payment-link receipts that may carry a PAID stamp: these are VALID, never mention them as a wrong receiver. Return JSON: ok = true only if it really is a payment confirmation; amount = the amount paid in rupees as a number (0 if unclear); "
         . "utr = the UPI reference / UTR / transaction id exactly as printed (digits and letters only, empty if none); date = the payment date and time as printed; status = success | failed | pending | unknown; payer = the payer's name if shown; app = the app; note = one short sentence of anything odd "
         . "(edited look, a different date, a receiver that is neither TM Perfume House nor Fourpirates Ventures LLP, amount unclear). Never invent a number. "
         . "to_us = true when the receiver / merchant shown is TM Perfume House or Fourpirates Ventures LLP (or the screen is our Razorpay / Quick / bank / PhonePe-business receipt), false when it is someone else, false when no receiver is shown. "
         . "gateway = where the money came through, judged from the logo, the wording and the layout: Razorpay (Razorpay logo or a pay_… payment id), Quick (the Quick logo), UPI QR (a UPI collection seen in a UPI app or a business app: PhonePe, Paytm, BHIM, Google Pay), Bank transfer (IMPS / NEFT / RTGS / an account credit), or Other."
+                . " PAYMENT-LINK / CARD payments: when the payment went through a Razorpay or Quick (GoKwik) link or a card, there is no UTR; then utr = the gateway's PAYMENT ID (for example KWIKWH…, pay_…) exactly as printed, kind = link (or card), and phone / cname = the customer's phone and name shown on that screen (digits only for the phone). On a UPI app kind = upi, on a bank screen kind = bank. "
+        . "GENERIC SUCCESS PAGE: a page that only says the payment was successful (for example \"Congratulations! Your payment has been successfully processed\" on pay.gokwik.co or a Razorpay page) with no amount, no reference and no date is NOT a failure: return ok = true, status = success, amount = 0, generic = true, gateway from its logo / domain. "
         . ($side === 'receiver' ? " THIS screenshot is from the RECEIVING side (our business app, bank app / SMS, or the Razorpay / Quick dashboard or receipt), not the customer's paid screen: read the credited amount, the UTR / RRN / bank reference and the status of the credit." : '');
-    $sch = ['type' => 'OBJECT', 'properties' => ['ok' => ['type' => 'BOOLEAN'], 'amount' => ['type' => 'NUMBER'], 'utr' => ['type' => 'STRING'], 'date' => ['type' => 'STRING'], 'status' => ['type' => 'STRING'], 'payer' => ['type' => 'STRING'], 'app' => ['type' => 'STRING'], 'note' => ['type' => 'STRING'], 'to_us' => ['type' => 'BOOLEAN'], 'gateway' => ['type' => 'STRING']], 'required' => ['ok', 'amount', 'utr', 'date', 'status', 'payer', 'app', 'note', 'to_us', 'gateway']];
+    $sch = ['type' => 'OBJECT', 'properties' => ['ok' => ['type' => 'BOOLEAN'], 'amount' => ['type' => 'NUMBER'], 'utr' => ['type' => 'STRING'], 'date' => ['type' => 'STRING'], 'status' => ['type' => 'STRING'], 'payer' => ['type' => 'STRING'], 'app' => ['type' => 'STRING'], 'note' => ['type' => 'STRING'], 'to_us' => ['type' => 'BOOLEAN'], 'gateway' => ['type' => 'STRING'], 'phone' => ['type' => 'STRING'], 'cname' => ['type' => 'STRING'], 'kind' => ['type' => 'STRING'], 'generic' => ['type' => 'BOOLEAN']], 'required' => ['ok', 'amount', 'utr', 'date', 'status', 'payer', 'app', 'note', 'to_us', 'gateway', 'phone', 'cname', 'kind', 'generic']];
     [$ok, $v, $why] = convo_ai($sys, [['text' => 'Read this payment screenshot.'], ['inlineData' => ['mimeType' => $mime, 'data' => $b64]]], $sch, false, 700, 'claude');
     if (!$ok) return ['error' => 'Claude could not read it: ' . mb_substr((string)$why, 0, 160) . ' You can type the amount yourself.'];
     $utr = preg_replace('/[^A-Za-z0-9]/', '', (string)($v['utr'] ?? ''));
     if (empty($v['ok']) && (float)($v['amount'] ?? 0) > 0 && (string)($v['status'] ?? '') === 'success' && preg_match('/four\s*pirates?/i', (string)($v['note'] ?? '') . ' ' . (string)($v['app'] ?? ''))) { $v['ok'] = true; $v['note'] = ''; }   // paid to our parent company (Fourpirates Ventures LLP): valid
-    $out = ['ok' => !empty($v['ok']), 'amount' => round(max(0, (float)($v['amount'] ?? 0)), 2), 'utr' => mb_substr($utr, 0, 40), 'date' => wmo_clip($v['date'] ?? '', 40), 'status' => in_array(($v['status'] ?? ''), ['success', 'failed', 'pending'], true) ? $v['status'] : 'unknown', 'payer' => wmo_clip($v['payer'] ?? '', 60), 'app' => wmo_clip($v['app'] ?? '', 30), 'note' => wmo_clip($v['note'] ?? '', 200), 'to_us' => !empty($v['to_us']), 'gateway' => wmo_gateway_name((string)($v['gateway'] ?? '')), 'dup' => ''];
+    $out = ['ok' => !empty($v['ok']), 'amount' => round(max(0, (float)($v['amount'] ?? 0)), 2), 'utr' => mb_substr($utr, 0, 40), 'date' => wmo_clip($v['date'] ?? '', 40), 'status' => in_array(($v['status'] ?? ''), ['success', 'failed', 'pending'], true) ? $v['status'] : 'unknown', 'payer' => wmo_clip($v['payer'] ?? '', 60), 'app' => wmo_clip($v['app'] ?? '', 30), 'note' => wmo_clip($v['note'] ?? '', 200), 'to_us' => !empty($v['to_us']), 'gateway' => wmo_gateway_name((string)($v['gateway'] ?? '')), 'phone' => substr(preg_replace('/\D+/', '', (string)($v['phone'] ?? '')), -10), 'cname' => wmo_clip($v['cname'] ?? '', 60), 'kind' => in_array(($v['kind'] ?? ''), ['upi', 'link', 'card', 'bank'], true) ? $v['kind'] : 'other', 'generic' => !empty($v['generic']) && (string)($v['status'] ?? '') === 'success', 'dup' => ''];
+    if ($out['generic']) { $out['ok'] = true; $out['status'] = 'success'; }   // a generic "payment successful" page of the gateway: not a failure, it only carries no amount
     if (function_exists('wa_cpc_put')) { try { wa_cpc_put($pdo, $ck, $out); } catch (Throwable $e) { } }
     if ($out['utr'] !== '' && wmo_tables($pdo)) { $q = $pdo->prepare("SELECT order_no FROM wmo_order WHERE utr = ? AND status <> 'cancelled' LIMIT 1"); $q->execute([$out['utr']]); $d = $q->fetchColumn(); if ($d) $out['dup'] = (string)$d; }
     return $out;
@@ -199,21 +202,36 @@ function wmo_gateway_name(string $g): string
     if (strpos($g, 'bank') !== false || strpos($g, 'imps') !== false || strpos($g, 'neft') !== false || strpos($g, 'rtgs') !== false) return 'Bank transfer'; if (strpos($g, 'cash') !== false || strpos($g, 'cod') !== false) return 'Cash / COD'; return 'Other';
 }
 /** ✅ / ❌ The two screenshots (what the customer paid, what we received) must agree. There is no "maybe": the order goes on, or it does not. */
-function wmo_proof_verdict(array $c, array $r, array $cfg = ['days' => 3, 'tol' => 1]): array
+function wmo_proof_verdict(array $c, array $r, array $cfg = ['days' => 3, 'tol' => 1], string $chatPhone = ''): array
 {
     $no = function ($why) { return ['ok' => false, 'reason' => $why, 'amount' => 0, 'utr' => '', 'gateway' => '']; };
     if (!empty($c['error'])) return $no("The customer's screenshot could not be read: " . $c['error']); if (!empty($r['error'])) return $no("The receiver's screenshot could not be read: " . $r['error']);
-    if (empty($c['ok'])) return $no("The customer's screenshot is not a payment confirmation. Upload the paid screen of the customer.");
-    if (empty($r['ok'])) return $no("The receiver's screenshot is not a payment confirmation. Upload the screen where the money arrived (business app, bank, Razorpay or Quick).");
-    if ($c['status'] !== 'success') return $no("The customer's payment is " . ($c['status'] === 'unknown' ? 'not clearly successful' : $c['status']) . '.'); if (in_array($r['status'], ['failed', 'pending'], true)) return $no("The receiver's screen shows the payment as " . $r['status'] . '.');
-    if ($c['amount'] <= 0 || $r['amount'] <= 0) return $no('The amount could not be read on both screenshots.'); if (abs($c['amount'] - $r['amount']) > $cfg['tol']) return $no('The amounts differ: the customer paid ' . wmo_rs((int)round($c['amount'] * 100)) . ', the receiver shows ' . wmo_rs((int)round($r['amount'] * 100)) . '.');
-    if ($c['utr'] === '' || $r['utr'] === '') return $no('The UTR is not readable on the ' . ($c['utr'] === '' ? "customer's" : "receiver's") . ' screenshot. Upload a clearer one.');
-    $a = strtoupper($c['utr']); $b = strtoupper($r['utr']); if ($a !== $b && !(strlen(min($a, $b)) >= 8 && (strpos($a, $b) !== false || strpos($b, $a) !== false))) return $no('The UTRs do not match: customer ' . $c['utr'] . ', receiver ' . $r['utr'] . '.');
-    if (empty($r['to_us'])) return $no('The money did not go to TM Perfume House or Fourpirates Ventures LLP.');
-    foreach ([$c, $r] as $x) { $t = strtotime((string)$x['date']); if ($t && ($t < time() - $cfg['days'] * 86400 || $t > time() + 86400)) return $no('The payment date (' . $x['date'] . ') is not within the last ' . $cfg['days'] . ' days.'); }
-    if ($c['dup'] !== '') return $no('This UTR is already used on order ' . $c['dup'] . '. One payment cannot pay two orders.');
+    $link = in_array($r['gateway'], ['Razorpay', 'Quick'], true) || in_array($r['kind'], ['link', 'card'], true);   // paid through a Razorpay / Quick link or a card: no UTR; the gateway's own screen (payment ID, status, amount, customer) is the proof
+    if (empty($r['ok'])) return $no("The receiver's screenshot is not a payment confirmation. Upload the screen where the money arrived (business app, bank, Razorpay or Quick dashboard).");
+    if (in_array($r['status'], ['failed', 'pending'], true)) return $no("The receiver's screen shows the payment as " . $r['status'] . '.');
+    if (in_array($c['status'], ['failed', 'pending'], true)) return $no("The customer's screen shows the payment as " . $c['status'] . '.');
+    if ($r['amount'] <= 0) return $no("The amount could not be read on the receiver's screenshot.");
+    if ($link) {
+        if ($r['status'] !== 'success') return $no("The gateway screen does not clearly show the payment as successful (Paid / Success).");
+        if ($r['utr'] === '') return $no("The payment ID is not readable on the gateway screenshot. Upload a clearer one.");
+        if (empty($r['to_us'])) return $no('The gateway screen is not of TM Perfume House / Fourpirates Ventures LLP.');
+        if (empty($c['ok'])) return $no("The customer's screenshot is not a payment confirmation. Upload the paid screen the customer got.");
+        if (!$c['generic'] && $c['amount'] > 0 && abs($c['amount'] - $r['amount']) > $cfg['tol']) return $no('The amounts differ: the customer paid ' . wmo_rs((int)round($c['amount'] * 100)) . ', the gateway shows ' . wmo_rs((int)round($r['amount'] * 100)) . '.');
+        $cp = substr(preg_replace('/\D+/', '', $chatPhone), -10); if ($cp !== '' && $r['phone'] !== '' && $cp !== $r['phone']) return $no('This payment was made by ' . $r['phone'] . ($r['cname'] !== '' ? ' (' . $r['cname'] . ')' : '') . ', not by this chat\'s customer (' . $cp . '). Use the chat of the customer who paid.');
+        $utr = $r['utr']; $amt = $r['amount']; $dt = [$r];
+    } else {
+        if (empty($c['ok'])) return $no("The customer's screenshot is not a payment confirmation. Upload the paid screen of the customer.");
+        if ($c['status'] !== 'success') return $no("The customer's payment is " . ($c['status'] === 'unknown' ? 'not clearly successful' : $c['status']) . '.');
+        if ($c['amount'] <= 0 || $r['amount'] <= 0) return $no('The amount could not be read on both screenshots.'); if (abs($c['amount'] - $r['amount']) > $cfg['tol']) return $no('The amounts differ: the customer paid ' . wmo_rs((int)round($c['amount'] * 100)) . ', the receiver shows ' . wmo_rs((int)round($r['amount'] * 100)) . '.');
+        if ($c['utr'] === '' || $r['utr'] === '') return $no('The UTR is not readable on the ' . ($c['utr'] === '' ? "customer's" : "receiver's") . ' screenshot. Upload a clearer one.');
+        $a = strtoupper($c['utr']); $b = strtoupper($r['utr']); if ($a !== $b && !(strlen(min($a, $b)) >= 8 && (strpos($a, $b) !== false || strpos($b, $a) !== false))) return $no('The UTRs do not match: customer ' . $c['utr'] . ', receiver ' . $r['utr'] . '.');
+        if (empty($r['to_us'])) return $no('The money did not go to TM Perfume House or Fourpirates Ventures LLP.');
+        $utr = $c['utr']; $amt = round(($c['amount'] + $r['amount']) / 2, 2); $dt = [$c, $r];
+    }
+    foreach ($dt as $x) { $t = strtotime(preg_replace(['#(\d{1,2})/(\d{1,2})/(\d{4})#', '/\b(IST|UTC|GMT)\b/i'], ['$1-$2-$3', ''], (string)$x['date'])); if ($t && ($t < time() - $cfg['days'] * 86400 || $t > time() + 86400)) return $no('The payment date (' . $x['date'] . ') is not within the last ' . $cfg['days'] . ' days.'); }
+    $dup = $r['dup'] !== '' ? $r['dup'] : $c['dup']; if ($dup !== '') return $no('This ' . ($link ? 'payment ID' : 'UTR') . ' is already used on order ' . $dup . '. One payment cannot pay two orders.');
     $g = $r['gateway'] !== '' && $r['gateway'] !== 'Other' ? $r['gateway'] : ($c['gateway'] !== '' ? $c['gateway'] : ($r['gateway'] ?: 'UPI QR'));
-    return ['ok' => true, 'reason' => 'Both screenshots agree.', 'amount' => round(($c['amount'] + $r['amount']) / 2, 2), 'utr' => $c['utr'], 'gateway' => $g];
+    return ['ok' => true, 'reason' => $link ? 'The gateway screen confirms the payment (payment ID, amount, status, customer).' : 'Both screenshots agree.', 'amount' => $amt, 'utr' => $utr, 'gateway' => $g];
 }
 // ------------------------------------------------------------------------------------------------------------------ Dispatch ▸ Manual orders (every manual order, export, invoice / Shiprocket status)
 /** Who may open the Dispatch "Manual orders" list: Admin / HR, the Dispatch and Admin departments, a Sales Head, a Dispatch seat holder, the bosses. */
@@ -613,7 +631,7 @@ if (strpos($__wmo, 'wmo.') === 0) {
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $im = []; foreach ([['image', 'mime'], ['image2', 'mime2']] as [$ik, $mk]) { $mime = strtolower((string)($in[$mk] ?? 'image/jpeg')); $b64 = preg_replace('/^data:[^,]*,/', '', (string)($in[$ik] ?? ''));
                 if (!in_array($mime, ['image/jpeg', 'image/png', 'image/webp'], true) || $b64 === '' || strlen($b64) > 6000000 || base64_decode($b64, true) === false) json_response(['error' => 'Send both screenshots as JPG, PNG or WebP under 4 MB.'], 422); $im[] = [$b64, $mime]; }
             @set_time_limit(90); $c1 = wmo_read_shot($pdo, $im[0][0], $im[0][1], 'customer'); $r1 = wmo_read_shot($pdo, $im[1][0], $im[1][1], 'receiver');
-            json_response(['ok' => true, 'verdict' => wmo_proof_verdict($c1, $r1, wmo_proof_cfg($pdo)), 'customer' => $c1, 'receiver' => $r1]);
+            json_response(['ok' => true, 'verdict' => wmo_proof_verdict($c1, $r1, wmo_proof_cfg($pdo), (string)($in['phone'] ?? '')), 'customer' => $c1, 'receiver' => $r1]);
         }
         case 'wmo.shot_read': {
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $mime = strtolower((string)($in['mime'] ?? 'image/jpeg')); $b64 = preg_replace('/^data:[^,]*,/', '', (string)($in['image'] ?? ''));
@@ -631,7 +649,7 @@ if (strpos($__wmo, 'wmo.') === 0) {
                 @set_time_limit(90); $m1 = strtolower((string)($in['shot_mime'] ?? 'image/jpeg')); $m2 = strtolower((string)($in['shot2_mime'] ?? 'image/jpeg')); $b1 = preg_replace('/^data:[^,]*,/', '', (string)$in['shot']); $b2 = preg_replace('/^data:[^,]*,/', '', (string)$in['shot2']);
                 foreach ([$m1, $m2] as $mm) if (!in_array($mm, ['image/jpeg', 'image/png', 'image/webp'], true)) json_response(['error' => 'Screenshots must be JPG, PNG or WebP.'], 422);
                 if (strlen($b1) > 6000000 || strlen($b2) > 6000000 || base64_decode($b1, true) === false || base64_decode($b2, true) === false) json_response(['error' => 'Send both screenshots under 4 MB.'], 422);
-                $c1 = wmo_read_shot($pdo, $b1, $m1, 'customer'); $r1 = wmo_read_shot($pdo, $b2, $m2, 'receiver'); $proof = wmo_proof_verdict($c1, $r1, wmo_proof_cfg($pdo));
+                $c1 = wmo_read_shot($pdo, $b1, $m1, 'customer'); $r1 = wmo_read_shot($pdo, $b2, $m2, 'receiver'); $proof = wmo_proof_verdict($c1, $r1, wmo_proof_cfg($pdo), (string)$c['phone']);
                 if (empty($proof['ok']) && !(!empty($in['dup_ok']) && in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true) && $c1['dup'] !== '' && strpos((string)$proof['reason'], 'already used') !== false)) json_response(['error' => 'The order cannot be made: ' . $proof['reason'], 'code' => 'proof', 'proof' => $proof], 422);
                 if (abs($proof['amount'] - $paid / 100) > max(1, wmo_proof_cfg($pdo)['tol'])) json_response(['error' => 'The screenshots show ' . wmo_rs((int)round($proof['amount'] * 100)) . ' but the paid amount is ' . wmo_rs($paid) . '. Make them equal.', 'code' => 'amount'], 422);
                 $utr = (string)$proof['utr']; $gate = (string)$proof['gateway'];

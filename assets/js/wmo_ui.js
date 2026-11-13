@@ -170,7 +170,7 @@
       const r = S.read; if (!r) return '<div style="color:#667781">Type the amount below.</div>'; if (r.error) return '<div class="mo-note bad" style="margin:0">' + esc(r.error) + '</div>';
       return '<div><b>' + (r.status === 'success' ? '✅ Payment successful' : r.status === 'failed' ? '❌ Payment failed' : r.status === 'pending' ? '⏳ Payment pending' : '❔ Status not clear') + '</b>' + (r.amount ? ' · ' + rs(paise(r.amount)) : '') + '</div>'
         + '<div style="color:#667781;font-size:12.5px">' + (r.utr ? 'UTR ' + esc(r.utr) + ' · ' : '') + esc([r.app, r.date, r.payer].filter(Boolean).join(' · ')) + '</div>'
-        + (r.dup ? '<div class="mo-note bad" style="margin:6px 0 0">⚠ This UTR is already used on order <b>' + esc(r.dup) + '</b>. One payment cannot pay two orders.</div>' : '') + (!r.ok ? '<div class="mo-note bad" style="margin:6px 0 0">This does not look like a payment screenshot.</div>' : '') + (r.note ? '<div class="mo-note" style="margin:6px 0 0">' + esc(r.note) + '</div>' : '');
+        + (r.generic ? '<div class="mo-note" style="margin:6px 0 0">The gateway page shows no amount or reference. The receiver\'s screenshot below is the proof.</div>' : '') + (r.dup ? '<div class="mo-note bad" style="margin:6px 0 0">⚠ This UTR is already used on order <b>' + esc(r.dup) + '</b>. One payment cannot pay two orders.</div>' : '') + (!r.ok ? '<div class="mo-note bad" style="margin:6px 0 0">This does not look like a payment screenshot.</div>' : '') + (r.note ? '<div class="mo-note" style="margin:6px 0 0">' + esc(r.note) + '</div>' : '');
     }
     function proofHtml() {
       if (S.proofing) return '<b>🤖 Claude is comparing the two screenshots…</b>';
@@ -182,7 +182,7 @@
     }
     async function runProof() {
       if (!S.shot || !S.shot2) return; S.proofing = true; S.proof = null; drawAll();
-      try { const d = await API.post('wmo.proof_check', { image: S.shot.b64, mime: S.shot.mime, image2: S.shot2.b64, mime2: S.shot2.mime }); S.proof = d.verdict || null; if (S.proof && S.proof.ok) { S.paid = String(S.proof.amount); S.utr = S.proof.utr || S.utr; } }
+      try { const d = await API.post('wmo.proof_check', { phone: o.outside ? S.cust.phone : o.phone, image: S.shot.b64, mime: S.shot.mime, image2: S.shot2.b64, mime2: S.shot2.mime }); S.proof = d.verdict || null; if (S.proof && S.proof.ok) { S.paid = String(S.proof.amount); S.utr = S.proof.utr || S.utr; } }
       catch (e) { S.proof = { ok: false, reason: errMsg(e), error: errMsg(e) }; }
       S.proofing = false; drawAll();
     }
