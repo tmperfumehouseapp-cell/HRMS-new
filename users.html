@@ -115,7 +115,9 @@
   guardPage();
 
   const currentUser = api.currentUser() || {};
-  if (currentUser.role !== 'Admin') {
+  const HR_ONLY = currentUser.role === 'HR';      // HR manages logins too, except Admin logins and the Admin role (the server enforces it)
+  if (HR_ONLY) { const hs = document.createElement('style'); hs.textContent = 'option[value="Admin"]{display:none}'; document.head.appendChild(hs); document.querySelectorAll('option[value="Admin"]').forEach((o) => { o.disabled = true; }); }
+  if (currentUser.role !== 'Admin' && !HR_ONLY) {
     // Non-admin roles may still have this page granted via Roles.
     api.get('me.flags').then((d) => {
       if (!(d.permissions || []).includes('users')) {

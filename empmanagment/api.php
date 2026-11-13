@@ -7347,6 +7347,15 @@ function combo_price_pct(array $ch, int $gel, int $attar, int $perf, float $pric
     return null;
 }
 
+/** The Users page is open to HR, but only an Admin may touch an Admin login or hand out the Admin role: otherwise HR could make itself Admin. True = the caller is not an Admin. */
+/** Who may use the Users page actions: Admin, HR (always — it does not depend on the Roles-page ticks, and it does NOT open the Roles page), and any role ticked 'Users'. */
+function users_page_need(array $auth): void
+{
+    $role = (string)($auth['role'] ?? '');
+    if ($role === 'Admin' || $role === 'HR' || user_can($auth, 'users')) return;
+    json_response(['error' => 'You do not have permission to do this.'], 403);
+}
+function users_hr_only(array $auth): bool { return (string)($auth['role'] ?? '') !== 'Admin'; }
 /** The top of the bonus ladder: the target bonus and every over-target step are cut to bonus_max (50 = at most 50% extra commission), whatever was saved. Same ladder the Commission page and My Sales read. */
 function ml_slab_cap(array $c): array
 {
@@ -18914,7 +18923,7 @@ switch ($action) {
     // ============== USERS (login accounts) ==============
     case 'users.list': {
         $auth = require_auth();
-        require_role(['Admin'], $auth);
+        users_page_need($auth);      // Admin and HR (and a role ticked 'Users'); only an Admin can make, change or remove an Admin login (see users_hr_only)
         $rows = $pdo->query("SELECT user_id, username, role, employee_id FROM users ORDER BY username ASC")->fetchAll();
         json_response(['users' => $rows]);
         break;
@@ -18922,7 +18931,7 @@ switch ($action) {
 
     case 'users.create': {
         $auth = require_auth();
-        require_role(['Admin'], $auth);
+        users_page_need($auth);      // Admin and HR (and a role ticked 'Users'); only an Admin can make, change or remove an Admin login (see users_hr_only)
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
         $input = json_input();
         $username = trim($input['username'] ?? '');
@@ -18948,6 +18957,7 @@ switch ($action) {
         if ($role === 'Employee' && !$employeeId) {
             json_response(['error' => 'An Employee login must be linked to an employee.'], 422);
         }
+        if ($role === 'Admin' && users_hr_only($auth)) json_response(['error' => 'Only an Admin can create an Admin login.'], 403);
 
         if ($taken = existing_login_for_employee($pdo, $employeeId ? (int)$employeeId : null)) {
             json_response(['error' => "This employee already has a login (username \"$taken\")."], 409);
@@ -18971,7 +18981,7 @@ switch ($action) {
 
     case 'roles.list': {
         $auth = require_auth();
-        require_role(['Admin'], $auth);
+        users_page_need($auth);      // Admin and HR (and a role ticked 'Users'); only an Admin can make, change or remove an Admin login (see users_hr_only)
         $rows = [];
         try {
             ensure_roles_known_column($pdo);
@@ -19054,7 +19064,7 @@ switch ($action) {
 
     case 'users.update': {
         $auth = require_auth();
-        require_role(['Admin'], $auth);
+        users_page_need($auth);      // Admin and HR (and a role ticked 'Users'); only an Admin can make, change or remove an Admin login (see users_hr_only)
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
         $input = json_input();
         $userId = (int)($input['user_id'] ?? 0);
@@ -19078,6 +19088,11 @@ switch ($action) {
         $cur->execute([$userId]);
         $curRole = $cur->fetchColumn();
         if (!$curRole) json_response(['error' => 'User not found.'], 404);
+        if (users_hr_only($auth)) {
+            if ($curRole === 'Admin') json_response(['error' => 'Only an Admin can change an Admin login.'], 403);
+            if ($role === 'Admin') json_response(['error' => 'Only an Admin can give the Admin role.'], 403);
+            if ($userId === (int)($auth['user_id'] ?? 0) && $role !== $curRole) json_response(['error' => 'You cannot change the role of your own login.'], 403);
+        }
         if ($taken = existing_login_for_employee($pdo, $employeeId, $userId)) {
             json_response(['error' => "That employee already has a login (username \"$taken\")."], 409);
         }
@@ -19112,7 +19127,7 @@ switch ($action) {
 
     case 'users.delete': {
         $auth = require_auth();
-        require_role(['Admin'], $auth);
+        users_page_need($auth);      // Admin and HR (and a role ticked 'Users'); only an Admin can make, change or remove an Admin login (see users_hr_only)
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
         $input = json_input();
         $id = $input['user_id'] ?? null;
@@ -19120,6 +19135,7 @@ switch ($action) {
         if ((int)$id === (int)$auth['user_id']) {
             json_response(['error' => 'You cannot delete your own account while logged in as it.'], 422);
         }
+        if (users_hr_only($auth)) { $dr = $pdo->prepare("SELECT role FROM users WHERE user_id = ?"); $dr->execute([$id]); if ((string)$dr->fetchColumn() === 'Admin') json_response(['error' => 'Only an Admin can delete an Admin login.'], 403); }
         $stmt = $pdo->prepare("DELETE FROM users WHERE user_id = ?");
         $stmt->execute([$id]);
         json_response(['message' => 'User deleted.']);
