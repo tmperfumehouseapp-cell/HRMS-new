@@ -90,7 +90,7 @@ function cfun_stats(PDO $pdo, string $src = 'all'): array
 {
     $w = $src === 'query' ? " WHERE src = 'query'" : ($src === 'campaign' ? " WHERE src = 'campaign'" : '');
     $q = $pdo->query("SELECT COUNT(*) total, SUM(out_n > 0) messaged, SUM(deliv_n > 0) reached, SUM(replied = 1) replied, SUM(replied = 1 AND out_n = 0) wrote_first, SUM(replied = 0) never_replied,
-        SUM(bucket = 'failed') failed, SUM(bucket = 'delivered') delivered, SUM(bucket = 'pending') pending, SUM(bucket = 'untried') untried, SUM(optout = 1) optout, SUM(orders_n > 0) ordered, SUM(orders_n >= 2) repeat_n,
+        SUM(bucket = 'failed') failed, SUM(out_n > 0 AND deliv_n = 0) not_delivered, SUM(fail_n > 0) any_failed, SUM(out_n > 0 AND fail_n >= out_n) all_failed, SUM(bucket = 'delivered') delivered, SUM(bucket = 'pending') pending, SUM(bucket = 'untried') untried, SUM(optout = 1) optout, SUM(orders_n > 0) ordered, SUM(orders_n >= 2) repeat_n,
         SUM(out_n) m_total, SUM(deliv_n) m_deliv, SUM(sent_n) m_sent, SUM(fail_n) m_fail, SUM(in_n) m_in, SUM(src = 'query') from_query, SUM(src = 'campaign') from_campaign,
         SUM(grp = 'never') g_never, SUM(grp = 'sent') g_sent, SUM(grp = 'failed') g_failed, SUM(grp = 'deliv') g_deliv, SUM(grp = 'replied') g_replied, SUM(grp = 'ord1') g_ord1, SUM(grp = 'ord2') g_ord2 FROM wa_cfun" . $w)->fetch(PDO::FETCH_ASSOC) ?: [];
     $o = []; foreach ($q as $k => $v) $o[$k] = (int)$v; $o['reasons'] = [];
@@ -143,7 +143,7 @@ function cfun_tick(PDO $pdo, bool $force = false, int $budget = 25): array
 function cfun_where(string $k): string
 {
     $m = ['all' => '1=1', 'replied' => 'replied = 1', 'never_replied' => 'replied = 0', 'wrote_first' => 'replied = 1 AND out_n = 0', 'failed' => "bucket = 'failed'", 'delivered' => "bucket = 'delivered'",
-        'pending' => "bucket = 'pending'", 'untried' => "bucket = 'untried'", 'messaged' => 'out_n > 0', 'reached' => 'deliv_n > 0', 'ordered' => 'orders_n > 0', 'repeat_n' => 'orders_n >= 2', 'optout' => 'optout = 1',
+        'pending' => "bucket = 'pending'", 'untried' => "bucket = 'untried'", 'messaged' => 'out_n > 0', 'reached' => 'deliv_n > 0', 'not_delivered' => 'out_n > 0 AND deliv_n = 0', 'any_failed' => 'fail_n > 0', 'all_failed' => 'out_n > 0 AND fail_n >= out_n', 'ordered' => 'orders_n > 0', 'repeat_n' => 'orders_n >= 2', 'optout' => 'optout = 1',
         'g_never' => "grp = 'never'", 'g_sent' => "grp = 'sent'", 'g_failed' => "grp = 'failed'", 'g_deliv' => "grp = 'deliv'", 'g_replied' => "grp = 'replied'", 'g_ord1' => "grp = 'ord1'", 'g_ord2' => "grp = 'ord2'"];
     return $m[$k] ?? '1=1';
 }
