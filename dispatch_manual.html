@@ -164,8 +164,8 @@
   $('fImp').onchange = async function () {
     const f = this.files[0]; this.value = ''; if (!f) return;
     try {
-      await loadXlsx(); const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' }); const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '', raw: false });
-      const pick = (r, re) => { const k = Object.keys(r).find((x) => re.test(x.trim())); return k ? String(r[k]).trim() : ''; };
+      await loadXlsx(); const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' }); const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '', raw: true });   // raw: a 14-digit AWB must stay 19041978669741, not the shown text 1.9042E+13
+      const pick = (r, re) => { const k = Object.keys(r).find((x) => re.test(x.trim())); if (!k) return ''; const v = r[k]; return (typeof v === 'number' ? v.toLocaleString('fullwide', { useGrouping: false, maximumFractionDigits: 0 }) : String(v)).trim(); };
       const list = rows.map((r) => ({ order_no: pick(r, /^order\s*(id|no|number)/i), awb: pick(r, /^(awb|tracking)/i), courier: pick(r, /^courier/i) })).filter((x) => x.order_no);
       if (!list.length) return alert('No rows found. The sheet needs the columns: Order ID, AWB, Courier service.');
       if (!confirm('Add the tracking IDs of ' + list.length + ' orders from "' + f.name + '"?\nOrders that already have a different tracking ID are left alone.')) return;
