@@ -29,6 +29,8 @@ jobs:
         run: php tests/guard_test.php
       - name: Queue end-time test
         run: php tests/eta_test.php
+      - name: Customer funnel rules
+        run: php tests/cfun_test.php
   staging:
     needs: check
     runs-on: ubuntu-latest

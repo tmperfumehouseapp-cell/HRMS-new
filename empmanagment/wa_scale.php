@@ -282,7 +282,7 @@ function wa_aud_where(string $src, array $f, string $q = ''): array
         foreach (['fq' => 'qual', 'fi' => 'intent', 'fb' => 'batch', 'fh' => 'health', 'fv' => 'val'] as $fk => $col) if (!empty($f[$fk]) && is_array($f[$fk])) { $fx[] = "$col IN (" . wa_in($f[$fk]) . ')'; foreach ($f[$fk] as $x) $fp[] = (string)$x; }
         foreach ([['sent', 'last_out'], ['dlv', 'last_deliv'], ['fl', 'last_fail']] as [$pre, $col]) { $a = $dts($pre . '_from', false); $b = $dts($pre . '_to', true); if ($a !== '') { $fx[] = "$col >= ?"; $fp[] = $a; } if ($b !== '') { $fx[] = "$col <= ?"; $fp[] = $b; } }
         if (($f['lby'] ?? '') === 'them') $fx[] = "last_in IS NOT NULL AND last_in > COALESCE(last_out, '1970-01-01')"; elseif (($f['lby'] ?? '') === 'us') $fx[] = "last_out IS NOT NULL AND (last_in IS NULL OR last_out >= last_in)";
-        foreach ([['rin_min', 'in_n >= ?'], ['out_min', 'out_n >= ?'], ['out_max', 'out_n <= ?']] as [$k, $sq]) if (isset($f[$k]) && is_numeric($f[$k])) { $fx[] = $sq; $fp[] = (int)$f[$k]; }
+        foreach ([['rin_min', 'in_n >= ?'], ['out_min', 'out_n >= ?'], ['out_max', 'out_n <= ?'], ['sc_min', 'score >= ?'], ['sc_max', 'score <= ?']] as [$k, $sq]) if (isset($f[$k]) && is_numeric($f[$k])) { $fx[] = $sq; $fp[] = (int)$f[$k]; }
         if ($fx) { $w[] = "$P IN (SELECT fx.phone FROM wa_cfun fx WHERE " . implode(' AND ', $fx) . ")"; foreach ($fp as $x) $p[] = $x; }
     }
     $ig = (int)($f['ign'] ?? 0); if ($ig > 0) { $w[] = 's.ign >= ?'; $p[] = $ig; }

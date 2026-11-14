@@ -60,13 +60,14 @@ function wcs_clean($raw): array
     // 📊 the customer funnel + conversation (wa_cfun): group · counts · import batch · quality · interest · who wrote last · how many messages each way
     $pick = function ($v, array $ok) { return array_values(array_intersect(array_map('strval', is_array($v) ? $v : []), $ok)); };
     if ($t = $pick($raw['fg'] ?? [], ['never', 'sent', 'failed', 'deliv', 'replied', 'ord1', 'ord2'])) $f['fg'] = $t;
-    if ($t = $pick($raw['fc'] ?? [], ['messaged', 'reached', 'not_delivered', 'failed', 'any_failed', 'all_failed', 'replied', 'never_replied', 'wrote_first', 'ordered', 'repeat_n', 'optout', 'named', 'unnamed', 'assigned', 'unassigned', 'imp', 'imp_never', 'imp_deliv', 'imp_nodel'])) $f['fc'] = $t;
+    if ($t = $pick($raw['fc'] ?? [], ['messaged', 'reached', 'not_delivered', 'failed', 'any_failed', 'all_failed', 'replied', 'never_replied', 'wrote_first', 'ordered', 'repeat_n', 'optout', 'named', 'unnamed', 'assigned', 'unassigned', 'imp', 'imp_never', 'imp_deliv', 'imp_nodel', 's_a', 's_b', 's_c', 's_d'])) $f['fc'] = $t;
     if ($t = $pick($raw['fq'] ?? [], ['premium', 'std', 'budget'])) $f['fq'] = $t;
     if ($t = $pick($raw['fh'] ?? [], ['ok', 'held', 'notwa', 'stopped', 'dead', 'optout'])) $f['fh'] = $t;
     if ($t = $pick($raw['fv'] ?? [], ['new', 'one', 'repeat', 'loyal', 'atrisk', 'lapsed'])) $f['fv'] = $t;
     if ($t = $pick($raw['fi'] ?? [], ['hot', 'interested', 'considering', 'not_interested'])) $f['fi'] = $t;
     if (isset($raw['fb']) && is_array($raw['fb'])) { $bl = array_values(array_unique(array_filter(array_map(function ($x) { return preg_replace('/[^a-z0-9_]/', '', strtolower((string)$x)); }, $raw['fb']), function ($x) { return $x !== ''; }))); if ($bl) $f['fb'] = array_slice($bl, 0, 20); }
     if (isset($raw['lby']) && in_array((string)$raw['lby'], ['them', 'us'], true)) $f['lby'] = (string)$raw['lby'];
+    foreach (['sc_min', 'sc_max'] as $k) if (isset($raw[$k]) && $raw[$k] !== '' && is_numeric($raw[$k])) $f[$k] = max(0, min(100, (int)$raw[$k]));
     foreach (['rin_min', 'out_min', 'out_max'] as $k) if (isset($raw[$k]) && $raw[$k] !== '' && is_numeric($raw[$k]) && (int)$raw[$k] >= 0) $f[$k] = (int)$raw[$k];
     return $f;
 }
