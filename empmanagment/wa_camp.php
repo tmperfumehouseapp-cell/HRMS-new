@@ -1136,52 +1136,6 @@ function wa_camp_ideal(PDO $pdo, string $day): array
 }
 /** 👥 The customer numbers in one small card: how many we have, how many got our campaign messages, how many failed, how many ordered, how many are new, how many replied.
  *  Remembered for 6 hours; one request recounts at a time; the one wide count (campaign messages) is time-limited, and shows as "…" when it does not finish. */
-/** 📊 CUSTOMER FUNNEL — one row per person (table wa_funnel, rebuilt in the background by wa_funnel_build) so the screen and the exports are instant.
- *  Every person sits in exactly ONE group, by the furthest step reached: ord2 (2+ orders) → ord1 → replied (wrote to us) → deliv (delivered, no reply) → failed (nothing delivered, a try failed)
- *  → sent (accepted by Meta, not delivered yet) → never (no campaign try). src = query (came by writing to us) / campaign (everyone else). */
-function wa_funnel_cols(): string { return "(phone VARCHAR(12) NOT NULL PRIMARY KEY, name VARCHAR(120) NOT NULL DEFAULT '', src VARCHAR(8) NOT NULL DEFAULT 'campaign', sent INT NOT NULL DEFAULT 0, failed INT NOT NULL DEFAULT 0, deliv TINYINT NOT NULL DEFAULT 0, replied TINYINT NOT NULL DEFAULT 0, orders INT NOT NULL DEFAULT 0, ecode INT NOT NULL DEFAULT 0, last_camp INT NOT NULL DEFAULT 0, first_sent DATETIME NULL, grp VARCHAR(8) NOT NULL DEFAULT 'never', KEY k_grp (grp, src), KEY k_src (src)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"; }
-function wa_funnel_build(PDO $pdo): array
-{
-    @set_time_limit(280); ignore_user_abort(true); $t0 = microtime(true); $o = ['ok' => true];
-    if (!wa_lock($pdo, 'funnel', 600)) return ['ok' => false, 'busy' => true];
-    try {
-        try { wa_cust_tables($pdo); } catch (Throwable $e) { }
-        $pdo->exec("DROP TABLE IF EXISTS wa_funnel_b"); $pdo->exec("CREATE TABLE wa_funnel_b " . wa_funnel_cols());
-        $pdo->exec("INSERT INTO wa_funnel_b (phone, name, src) SELECT phone, name, IF(source = 'query', 'query', 'campaign') FROM wa_contacts");
-        $pdo->exec("INSERT IGNORE INTO wa_funnel_b (phone, name, src) SELECT phone, MAX(name), 'campaign' FROM wa_camp_items GROUP BY phone");   // people only in a campaign list
-        $pdo->exec("UPDATE wa_funnel_b b JOIN (SELECT phone, SUM(status = 'sent') s, SUM(status = 'failed') f, MAX(CASE WHEN status = 'failed' THEN err_code END) ec, MAX(camp_id) lc, MIN(sent_at) fs FROM wa_camp_items GROUP BY phone) a ON a.phone = b.phone
-            SET b.sent = a.s, b.failed = a.f, b.ecode = COALESCE(a.ec, 0), b.last_camp = a.lc, b.first_sent = a.fs");
-        $pdo->exec("UPDATE wa_funnel_b b JOIN (SELECT DISTINCT phone FROM wa_camp_items WHERE status = 'sent' AND last_status IN ('delivered', 'read')) d ON d.phone = b.phone SET b.deliv = 1");
-        try { $pdo->exec("UPDATE wa_funnel_b b JOIN (SELECT DISTINCT i.phone FROM wa_camp_items i JOIN wa_messages m ON m.wamid = i.wamid WHERE i.status = 'sent' AND i.last_status NOT IN ('delivered', 'read', 'failed') AND i.wamid <> '' AND m.status IN ('delivered', 'read')) d ON d.phone = b.phone SET b.deliv = 1"); } catch (Throwable $e) { }   // older sends that never got last_status
-        $pdo->exec("UPDATE wa_funnel_b b JOIN wa_cust c ON c.phone = b.phone SET b.orders = c.n");
-        $pdo->exec("UPDATE wa_funnel_b b JOIN wa_contacts c ON c.phone = b.phone SET b.replied = 1 WHERE c.last_in_at IS NOT NULL AND (b.src = 'query' OR b.first_sent IS NULL OR c.last_in_at > b.first_sent)");   // wrote to us (a query always did; a campaign person after our first message)
-        $pdo->exec("UPDATE wa_funnel_b SET grp = CASE WHEN orders >= 2 THEN 'ord2' WHEN orders = 1 THEN 'ord1' WHEN replied = 1 THEN 'replied' WHEN deliv = 1 THEN 'deliv' WHEN failed > 0 THEN 'failed' WHEN sent > 0 THEN 'sent' ELSE 'never' END");
-        $pdo->exec("DROP TABLE IF EXISTS wa_funnel_old"); try { $pdo->exec("CREATE TABLE IF NOT EXISTS wa_funnel " . wa_funnel_cols()); } catch (Throwable $e) { }
-        $pdo->exec("RENAME TABLE wa_funnel TO wa_funnel_old, wa_funnel_b TO wa_funnel"); $pdo->exec("DROP TABLE IF EXISTS wa_funnel_old");
-        setting_set($pdo, 'wa_funnel_at', date('Y-m-d H:i:s')); $o['secs'] = round(microtime(true) - $t0, 1);
-    } catch (Throwable $e) { $o = ['ok' => false, 'error' => mb_substr($e->getMessage(), 0, 200)]; try { $pdo->exec("DROP TABLE IF EXISTS wa_funnel_b"); } catch (Throwable $e2) { } }
-    try { setting_set($pdo, 'wa_lock_funnel', '0'); } catch (Throwable $e) { }
-    return $o;
-}
-function wa_funnel_reason(int $c): string
-{
-    $m = [131026 => 'Not on WhatsApp / cannot receive', 131049 => 'Held by Meta (limit per customer)', 131048 => 'Held by Meta (spam limit)', 131050 => 'Stopped marketing messages', 130472 => 'In a Meta experiment', 131047 => 'Reply window closed', 131056 => 'Too many messages to this number', 0 => 'Failed (no reason given)'];
-    return $m[$c] ?? ('Other (Meta code ' . $c . ')');
-}
-function wa_funnel_get(PDO $pdo, string $src): array
-{
-    $at = (string)setting_get($pdo, 'wa_funnel_at', ''); $w = $src === 'query' ? " WHERE src = 'query'" : ($src === 'campaign' ? " WHERE src = 'campaign'" : '');
-    $o = ['at' => $at, 'src' => $src, 'groups' => [], 'reasons' => [], 'built' => $at !== ''];
-    if ($at === '') return $o;
-    try {
-        $r = $pdo->query("SELECT COUNT(*), SUM(sent > 0), SUM(deliv), SUM(replied), SUM(orders = 1), SUM(orders >= 2), SUM(src = 'query'), SUM(src = 'campaign') FROM wa_funnel" . $w)->fetch(PDO::FETCH_NUM);
-        $o['f'] = ['total' => (int)$r[0], 'sent' => (int)$r[1], 'deliv' => (int)$r[2], 'replied' => (int)$r[3], 'ord1' => (int)$r[4], 'ord2' => (int)$r[5], 'from_query' => (int)$r[6], 'from_campaign' => (int)$r[7]];
-        foreach ($pdo->query("SELECT grp, COUNT(*) n FROM wa_funnel" . $w . " GROUP BY grp")->fetchAll() as $g) $o['groups'][$g['grp']] = (int)$g['n'];
-        $q = $pdo->query("SELECT ecode, COUNT(*) n FROM wa_funnel" . ($w === '' ? ' WHERE' : $w . ' AND') . " grp = 'failed' GROUP BY ecode ORDER BY n DESC"); $by = [];
-        foreach ($q->fetchAll() as $g) { $lab = wa_funnel_reason((int)$g['ecode']); $by[$lab] = ($by[$lab] ?? 0) + (int)$g['n']; } arsort($by); foreach ($by as $k => $v) $o['reasons'][] = ['text' => $k, 'n' => $v];
-    } catch (Throwable $e) { $o['error'] = 'The funnel table is not ready — press Refresh.'; }
-    return $o;
-}
 /** ONE figure for the customers numbers card (wa.cust_summary). */
 function wa_cust_summary(PDO $pdo): array
 {
@@ -1407,7 +1361,7 @@ if (isset($pdo) && $pdo instanceof PDO && ($__wk === 'wa.camp_ideal' || $__wk ==
         }
     }
 }
-if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_suggest', 'wa.camp_start_now', 'wa.camp_send_skipped', 'wa.camp_snap', 'wa.camp_days', 'wa.camp_hourly', 'wa.cust_summary', 'wa.funnel_get', 'wa.funnel_build', 'wa.funnel_csv', 'wa.cust_card', 'wa.camp_hours', 'wa.dq_worker', 'wa.rec_run', 'wa.dq_set', 'wa.rec_report', 'wa.rec_set', 'wa.camp_fast', 'wa.camp_fast_tick', 'wa.fu_list', 'wa.fu_save', 'wa.fu_del', 'wa.fu_preset', 'wa.camp_list', 'wa.camp_templates', 'wa.camp_get', 'wa.camp_preview', 'wa.camp_freq', 'wa.camp_typed_phones', 'wa.camp_save', 'wa.camp_start', 'wa.camp_send_now', 'wa.camp_resume_all', 'wa.camp_stop_all', 'wa.camp_pause', 'wa.camp_resume', 'wa.camp_cancel', 'wa.camp_del', 'wa.camp_tick', 'wa.camp_suggest', 'wa.camp_best_time', 'wa.camp_people', 'wa.camp_people_csv', 'wa.camp_thread', 'wa.reports', 'wa.mix_state', 'wa.camp_mix_set'], true) && !($__wk === 'wa.camp_suggest' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST')) {
+if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_suggest', 'wa.camp_start_now', 'wa.camp_send_skipped', 'wa.camp_snap', 'wa.camp_days', 'wa.camp_hourly', 'wa.cust_summary', 'wa.cust_card', 'wa.camp_hours', 'wa.dq_worker', 'wa.rec_run', 'wa.dq_set', 'wa.rec_report', 'wa.rec_set', 'wa.camp_fast', 'wa.camp_fast_tick', 'wa.fu_list', 'wa.fu_save', 'wa.fu_del', 'wa.fu_preset', 'wa.camp_list', 'wa.camp_templates', 'wa.camp_get', 'wa.camp_preview', 'wa.camp_freq', 'wa.camp_typed_phones', 'wa.camp_save', 'wa.camp_start', 'wa.camp_send_now', 'wa.camp_resume_all', 'wa.camp_stop_all', 'wa.camp_pause', 'wa.camp_resume', 'wa.camp_cancel', 'wa.camp_del', 'wa.camp_tick', 'wa.camp_suggest', 'wa.camp_best_time', 'wa.camp_people', 'wa.camp_people_csv', 'wa.camp_thread', 'wa.reports', 'wa.mix_state', 'wa.camp_mix_set'], true) && !($__wk === 'wa.camp_suggest' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST')) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     $auth = require_auth(); wa_guard_admin($pdo, $auth);
     if (!wa_tables($pdo) || !wa_more_tables($pdo) || !function_exists('wa_tpl_tables') || !wa_tpl_tables($pdo)) json_response(['error' => 'WhatsApp storage is not available — check database permissions.'], 500);
@@ -1742,29 +1696,6 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
                 json_response(['error' => 'This campaign is ' . ($c1 ? '"' . $c1['status'] . '"' : 'not found') . ', so it cannot be started from here. Open it with Edit & start.'], 422);
             }
             try { wa_camp_tick($pdo); } catch (Throwable $e) { } json_response(['ok' => true, 'started' => $n]);
-        }
-        case 'wa.funnel_get': {   // 📊 Customer funnel numbers (from the prepared table); asks for a rebuild in the background when it is older than 30 minutes
-            $src = in_array((string)($_GET['src'] ?? 'all'), ['all', 'query', 'campaign'], true) ? (string)$_GET['src'] : 'all'; $o = wa_funnel_get($pdo, $src);
-            $o['stale'] = $o['at'] === '' || (time() - (int)strtotime($o['at'])) > 1800; json_response(['ok' => true] + $o);
-        }
-        case 'wa.funnel_build': {   // 🔄 rebuild the funnel table now (a minute or so on a big list)
-            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); json_response(wa_funnel_build($pdo));
-        }
-        case 'wa.funnel_csv': {   // ⬇ one group as a CSV: Name, Mobile, Reason, From, Last campaign, Orders
-            $g = (string)($_GET['grp'] ?? 'failed'); if (!in_array($g, ['all', 'failed', 'sent', 'deliv', 'replied', 'ord1', 'ord2', 'never'], true)) $g = 'failed'; $src = in_array((string)($_GET['src'] ?? 'all'), ['query', 'campaign'], true) ? (string)$_GET['src'] : 'all';
-            $names = ['all' => 'everyone', 'failed' => 'not_reached_failed', 'sent' => 'sent_not_delivered', 'deliv' => 'delivered_no_reply', 'replied' => 'replied_no_order', 'ord1' => 'ordered_once', 'ord2' => 'ordered_2plus', 'never' => 'never_messaged'];
-            $lab = ['failed' => 'Not reached (failed)', 'sent' => 'Sent, not delivered yet', 'deliv' => 'Delivered, no reply', 'replied' => 'Replied, no order', 'ord1' => 'Ordered 1 time', 'ord2' => 'Ordered 2+ times', 'never' => 'Never messaged'];
-            $cn = []; try { foreach ($pdo->query("SELECT id, name FROM wa_campaigns ORDER BY id DESC LIMIT 2000")->fetchAll() as $r) $cn[(int)$r['id']] = (string)$r['name']; } catch (Throwable $e) { }
-            header('Content-Type: text/csv; charset=utf-8'); header('Content-Disposition: attachment; filename="customers_' . $names[$g] . ($src !== 'all' ? '_' . $src : '') . '_' . date('Y-m-d') . '.csv"'); header('Cache-Control: no-store'); @set_time_limit(240);
-            $cell = function ($v) { $v = str_replace(["\r", "\n", "\t"], ' ', (string)$v); if ($v !== '' && strpos('=+-@', $v[0]) !== false) $v = "'" . $v; return '"' . str_replace('"', '""', $v) . '"'; };
-            echo "\xEF\xBB\xBF" . implode(',', array_map($cell, ['Name', 'Mobile', 'Group', 'Reason', 'From', 'Last campaign', 'Orders'])) . "\r\n"; $after = '';
-            while (true) {
-                $w = ['phone > ?']; $par = [$after]; if ($g !== 'all') { $w[] = 'grp = ?'; $par[] = $g; } if ($src !== 'all') { $w[] = 'src = ?'; $par[] = $src; }
-                $q = $pdo->prepare("SELECT phone, name, src, ecode, last_camp, orders, grp FROM wa_funnel WHERE " . implode(' AND ', $w) . " ORDER BY phone LIMIT 3000"); $q->execute($par); $rows = $q->fetchAll(); if (!$rows) break;
-                foreach ($rows as $r) { $after = (string)$r['phone']; echo implode(',', array_map($cell, [$r['name'], $r['phone'], $lab[$r['grp']] ?? $r['grp'], $r['grp'] === 'failed' ? wa_funnel_reason((int)$r['ecode']) : '', $r['src'] === 'query' ? 'Query' : 'Campaign', $r['last_camp'] ? ($cn[(int)$r['last_camp']] ?? ('#' . (int)$r['last_camp'])) : '', (int)$r['orders']])) . "\r\n"; }
-                if (count($rows) < 3000) break;
-            }
-            exit;
         }
         case 'wa.cust_card': { json_response(wa_cust_card($pdo, (string)($_GET['phone'] ?? ''))); }   // 🪪 one customer: tags with reasons, orders in short, campaigns received
         case 'wa.cust_summary': { json_response(['ok' => true] + wa_cust_summary($pdo)); }   // 👥 the customer numbers card (Customers screen + Campaigns)

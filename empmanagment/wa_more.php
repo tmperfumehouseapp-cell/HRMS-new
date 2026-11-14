@@ -644,6 +644,7 @@ require_once __DIR__ . '/wa_kw.php';   // keyword auto-replies: 20 / 50 / 100 ML
 require_once __DIR__ . '/wa_greet.php';   // Greetings: decided greeting per customer type + fixed replies, Claude writes from the Teach brain, synced into the Selling rules (wa.greet_*)
 require_once __DIR__ . '/wa_lists.php';   // 📋 Lists: ready perfume lists from live sales (Top 5 winter, Best sellers…), Claude builds and edits them (wl.*)
 require_once __DIR__ . '/wa_cust.php';    // 👥 Customers screen: date range first, tags any / all / not, pages, select all, bulk tag, 📁 segments, picked people for campaigns (wa.cs_*)
+require_once __DIR__ . '/wa_cfun.php';    // 📊 Customer funnel: one row per number (replied / failed / delivered / untried + orders), hourly job, Excel download (wa.cf_*)
 require_once __DIR__ . '/wa_kflow.php';   // 🔑 Key flows: fixed answers for fixed messages, built on a canvas (wa.kf_*); answers before the old flows, greetings and the bot
 require_once __DIR__ . '/wa_camp_report.php';   // 📊 campaign report card + learnings of all campaigns + person-vs-bot replies that win orders (wa.camp_report, wa.camp_advice, wa.camp_learn, wa.pvb_run)
 require_once __DIR__ . '/wa_late.php';     // ⏰ late replies: every chat that waits 10+ minutes for its salesperson is marked (wa_late)
@@ -735,6 +736,7 @@ if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.
             ['wq_tick', fn() => function_exists('wq_tick') ? wq_tick($pdo) : null],   // WhatsApp Sales: backfill, summaries, orders, no-answer flow, daily summary, questions
             ['wch_tick', fn() => function_exists('wch_tick') ? wch_tick($pdo) : null],   // chain cart: reminders, catalog refresh, payment polling, bills
             ['seg_tick', fn() => function_exists('wa_seg_tick') ? wa_seg_tick($pdo, ['inline' => true]) : null],
+            ['cust_funnel', fn() => function_exists('cfun_tick') ? cfun_tick($pdo) : null],   // 📊 customer funnel numbers (at most once an hour, 25 s budget)
             ['cust_segs', fn() => function_exists('wcs_tick') ? wcs_tick($pdo) : null],   // live segments take in new matches (hourly)
         ];
         $__rot = 0; try { $__rot = (int)setting_get($pdo, 'wa_cron_rot', '0'); setting_set($pdo, 'wa_cron_rot', (string)($__rot + 1)); } catch (Throwable $e) { }
