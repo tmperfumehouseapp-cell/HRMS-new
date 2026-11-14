@@ -1059,6 +1059,62 @@ function wa_camp_hourly(PDO $pdo, string $day): array
     $o = ['day' => $day, 'rows' => $rows, 'total' => ['sent' => $T['sent'], 'delivered' => $T['delivered'], 'spend' => round($T['spend']), 'queries' => $T['queries'], 'cpq' => $T['queries'] > 0 && $T['spend'] > 0 ? round($T['spend'] / $T['queries'], 1) : null], 'best_cpq' => $best, 'rate' => round((float)$R['marketing'], 2), 'from' => $a, 'to' => $b, 'at' => date('Y-m-d H:i:s')];
     wa_cpc_put($pdo, $ck, $o); return $o;
 }
+/** 🧭 IDEAL DAY — QUERY: Shout queries (the +1 / − the team enters on Assign Queries, stored as "scout") and Query orders, hour by hour against an ideal built from the last 30 days.
+ *  Ideal at an hour = the day target × the share of the day that was usually done by that hour (learned from history). Setting query_ideal = {shout, orders, sunday %}. */
+function wa_query_ideal_cfg(PDO $pdo): array
+{
+    $d = ['shout' => 900, 'orders' => 200, 'sunday' => 75]; $j = json_decode((string)setting_get($pdo, 'query_ideal', ''), true);
+    if (is_array($j)) { foreach (['shout', 'orders'] as $k) if (isset($j[$k]) && (int)$j[$k] > 0) $d[$k] = (int)$j[$k]; if (isset($j['sunday']) && (int)$j['sunday'] >= 10 && (int)$j['sunday'] <= 200) $d['sunday'] = (int)$j['sunday']; $d['at'] = (string)($j['at'] ?? ''); $d['by'] = (string)($j['by'] ?? ''); }
+    return $d;
+}
+/** The learned shape: cumulative % of the day done by the END of each of the 24 hours (hour 0 = the day start), for Shout queries and for Query orders. Kept 6 hours. Falls back to the shape found in Nov 2026. */
+function wa_query_shape(PDO $pdo): array
+{
+    $hit = wa_cpc_get($pdo, 'qshape1'); if ($hit && $hit['age'] < 21600) return $hit['v'];
+    $out = ['shout' => [10.6, 21.1, 31.5, 41.8, 50.9, 56.8, 60.9, 64.7, 68.6, 72.6, 77, 81.6, 88.1, 91.6, 95.3, 95.3, 95.3, 96, 96, 96.3, 96.5, 98.7, 99.3, 100], 'orders' => [5.6, 12.6, 20.7, 29.6, 38, 45.3, 51.7, 58.2, 64.4, 70.8, 76.2, 81.9, 86.9, 91.2, 94.2, 95.1, 95.5, 95.7, 95.9, 96, 96.5, 97.3, 98.3, 100], 'days' => 0, 'avg_orders' => 181, 'avg_shout' => 810, 'learned' => false];
+    try {
+        $today = date('Y-m-d'); $from = date('Y-m-d', strtotime('-30 days')); $D = [];
+        $S = function ($day) use ($pdo) { return (int)substr(function_exists('day_start_for') ? day_start_for($pdo, $day) : '10:00', 0, 2); };
+        for ($t = strtotime($from); $t < strtotime($today); $t += 86400) { $k = date('Y-m-d', $t); $D[$k] = ['sc' => array_fill(0, 24, 0), 'qo' => array_fill(0, 24, 0), 'S' => $S($k), 'scT' => 0]; }
+        $q = $pdo->prepare("SELECT query_date, HOUR(created_at) h, SUM(delta) n FROM employee_query_log WHERE kind = 'scout' AND query_date >= ? AND query_date < ? GROUP BY query_date, HOUR(created_at)"); $q->execute([$from, $today]);
+        foreach ($q->fetchAll() as $r) { $k = (string)$r['query_date']; if (isset($D[$k])) $D[$k]['sc'][((int)$r['h'] - $D[$k]['S'] + 24) % 24] += (int)$r['n']; }
+        $q = $pdo->prepare("SELECT query_date, SUM(scout_count) n FROM employee_queries WHERE query_date >= ? AND query_date < ? GROUP BY query_date"); $q->execute([$from, $today]); foreach ($q->fetchAll() as $r) if (isset($D[(string)$r['query_date']])) $D[(string)$r['query_date']]['scT'] = (int)$r['n'];
+        $biz = function ($ts) use ($S) { $k = date('Y-m-d', $ts); if ((int)date('G', $ts) < $S($k)) $k = date('Y-m-d', strtotime($k . ' -1 day')); return $k; };
+        $q = $pdo->prepare("SELECT o.created_at FROM shop_orders o LEFT JOIN order_allocations al ON al.source = o.store_key AND al.order_id = CAST(o.shopify_id AS CHAR) COLLATE utf8mb4_unicode_ci WHERE o.created_at >= ? AND o.total > 0 AND (o.tags IS NULL OR o.tags NOT LIKE '%cancel%') AND COALESCE(NULLIF(al.order_type, ''), CASE WHEN o.tags LIKE '%campaign%' THEN 'campaign' WHEN o.tags LIKE '%query%' THEN 'query' ELSE '' END) = 'query'"); $q->execute([$from . ' 00:00:00']);
+        foreach ($q->fetchAll() as $r) { $ts = strtotime((string)$r['created_at']); $k = $biz($ts); if (isset($D[$k])) $D[$k]['qo'][((int)date('G', $ts) - $D[$k]['S'] + 24) % 24]++; }
+        try { $q = $pdo->prepare("SELECT order_date FROM manual_orders WHERE order_date >= ? AND order_type = 'query'"); $q->execute([$from . ' 00:00:00']); foreach ($q->fetchAll() as $r) { $ts = strtotime((string)$r['order_date']); $k = $biz($ts); if (isset($D[$k])) $D[$k]['qo'][((int)date('G', $ts) - $D[$k]['S'] + 24) % 24]++; } } catch (Throwable $e) { }
+        $avg = function (string $f, callable $ok) use ($D) { $acc = array_fill(0, 24, 0.0); $n = 0; $tot = 0; foreach ($D as $x) { $a = $x[$f]; $sm = array_sum($a); if ($sm <= 0 || !$ok($x)) continue; $c = 0; for ($i = 0; $i < 24; $i++) { $c += $a[$i]; $acc[$i] += $c / $sm; } $n++; $tot += $sm; } return $n >= 5 ? ['cum' => array_map(function ($v) use ($n) { return round(100 * $v / $n, 1); }, $acc), 'n' => $n, 'avg' => (int)round($tot / $n)] : null; };
+        $o = $avg('qo', function ($x) { return true; }); $sh = $avg('sc', function ($x) { return array_sum($x['sc']) > 0 && array_sum($x['sc']) >= 0.7 * max(1, $x['scT']); });
+        if ($o) { $out['orders'] = $o['cum']; $out['avg_orders'] = $o['avg']; $out['days'] = $o['n']; $out['learned'] = true; } if ($sh) { $out['shout'] = $sh['cum']; $out['avg_shout'] = $sh['avg']; $out['learned'] = true; }
+    } catch (Throwable $e) { error_log('query shape: ' . $e->getMessage()); }
+    wa_cpc_put($pdo, 'qshape1', $out); return $out;
+}
+function wa_query_ideal(PDO $pdo, string $day): array
+{
+    $ck = 'qideal1_' . $day; $hit = wa_cpc_get($pdo, $ck); if ($hit && $hit['age'] < 25) return $hit['v'];
+    $cfg = wa_query_ideal_cfg($pdo); $shape = wa_query_shape($pdo); $st = function_exists('day_start_for') ? day_start_for($pdo, $day) : '10:00'; if (!preg_match('/^\d{2}:\d{2}$/', $st)) $st = '10:00';
+    $t0 = strtotime($day . ' ' . $st . ':00'); $t1 = $t0 + 86400; $now = time(); $S = (int)substr($st, 0, 2); $sun = (int)date('w', strtotime($day)) === 0; $f = $sun ? $cfg['sunday'] / 100 : 1.0;
+    $tgt = ['shout' => (int)round($cfg['shout'] * $f), 'orders' => (int)round($cfg['orders'] * $f)];
+    $sc = array_fill(0, 24, 0); $logged = 0;
+    try { $q = $pdo->prepare("SELECT HOUR(created_at) h, SUM(delta) n FROM employee_query_log WHERE kind = 'scout' AND query_date = ? GROUP BY HOUR(created_at)"); $q->execute([$day]); foreach ($q->fetchAll() as $r) { $sc[((int)$r['h'] - $S + 24) % 24] += (int)$r['n']; $logged += (int)$r['n']; } } catch (Throwable $e) { }
+    $earlier = 0; try { $q = $pdo->prepare("SELECT COALESCE(SUM(scout_count), 0) FROM employee_queries WHERE query_date = ?"); $q->execute([$day]); $earlier = max(0, (int)$q->fetchColumn() - $logged); } catch (Throwable $e) { } $sc[0] += $earlier;   // counts entered without a time count from the start of the day
+    $qo = array_fill(0, 24, 0); $a = date('Y-m-d H:i:s', $t0); $b = date('Y-m-d H:i:s', $t1);
+    try { $q = $pdo->prepare("SELECT o.created_at FROM shop_orders o LEFT JOIN order_allocations al ON al.source = o.store_key AND al.order_id = CAST(o.shopify_id AS CHAR) COLLATE utf8mb4_unicode_ci WHERE o.created_at >= ? AND o.created_at < ? AND o.total > 0 AND (o.tags IS NULL OR o.tags NOT LIKE '%cancel%') AND COALESCE(NULLIF(al.order_type, ''), CASE WHEN o.tags LIKE '%campaign%' THEN 'campaign' WHEN o.tags LIKE '%query%' THEN 'query' ELSE '' END) = 'query'"); $q->execute([$a, $b]); foreach ($q->fetchAll() as $r) { $i = (int)floor((strtotime((string)$r['created_at']) - $t0) / 3600); if ($i >= 0 && $i < 24) $qo[$i]++; } } catch (Throwable $e) { error_log('query ideal orders: ' . $e->getMessage()); }
+    try { $q = $pdo->prepare("SELECT order_date FROM manual_orders WHERE order_date >= ? AND order_date < ? AND order_type = 'query'"); $q->execute([$a, $b]); foreach ($q->fetchAll() as $r) { $i = (int)floor((strtotime((string)$r['order_date']) - $t0) / 3600); if ($i >= 0 && $i < 24) $qo[$i]++; } } catch (Throwable $e) { }
+    $idl = function (string $k, float $hrs) use ($shape, $tgt) { $c = $shape[$k]; $i = (int)floor($hrs); $prev = $i > 0 ? (float)$c[$i - 1] : 0.0; $cur = (float)$c[min(23, $i)]; $pct = $hrs >= 24 ? 100.0 : $prev + ($cur - $prev) * ($hrs - $i); return (int)round($tgt[$k] * $pct / 100); };
+    $cs = 0; $co = 0; $hourly = []; $cumS = []; $cumO = [];
+    for ($i = 0; $i < 24; $i++) { $cs += $sc[$i]; $co += $qo[$i]; $cumS[$i] = $cs; $cumO[$i] = $co; }
+    $nowH = max(0, min(24, ($now - $t0) / 3600));
+    for ($i = 0; $i < 24; $i++) { $ts = $t0 + $i * 3600; $past = $ts <= $now; $cur = $past && $now < $ts + 3600; $ref = $cur ? $nowH : $i + 1;
+        $hourly[] = ['t' => date('H:i', $ts), 'upto' => date('Y-m-d H:i:s', min($ts + 3600, $now)), 'past' => $past, 'cur' => $cur, 'ideal' => ['shout' => $idl('shout', $ref), 'orders' => $idl('orders', $ref)], 'actual' => $past ? ['shout' => $cumS[$i], 'orders' => $cumO[$i]] : null]; }
+    $pct = fn($x, $y) => $y > 0 ? (int)round(100 * ($x - $y) / $y) : null; $ci = (int)max(0, min(23, floor($nowH - 1e-9))); $isRun = $now >= $t0 && $now < $t1;
+    $actS = $isRun ? $cumS[$ci] : ($now >= $t1 ? $cumS[23] : 0); $actO = $isRun ? $cumO[$ci] : ($now >= $t1 ? $cumO[23] : 0); $iS = $idl('shout', $isRun ? $nowH : 24); $iO = $idl('orders', $isRun ? $nowH : 24);
+    $o = ['day' => $day, 'from' => $a, 'to' => $b, 'now' => date('Y-m-d H:i:s', $now), 'cfg' => $cfg, 'targets' => $tgt, 'sunday' => $sun, 'hourly' => $hourly,
+        'so_far' => ['actual' => ['shout' => $actS, 'orders' => $actO, 'ratio' => $actS > 0 ? round(100 * $actO / $actS, 1) : null], 'ideal' => ['shout' => $iS, 'orders' => $iO, 'ratio' => $iS > 0 ? round(100 * $iO / $iS, 1) : null], 'dev' => ['shout' => $pct($actS, $iS), 'orders' => $pct($actO, $iO)]],
+        'history' => ['days' => $shape['days'], 'avg_orders' => $shape['avg_orders'], 'avg_shout' => $shape['avg_shout'], 'learned' => $shape['learned']], 'at' => date('Y-m-d H:i:s')];
+    $hrsLeft = max(0.1, ($t1 - min($now, $t1)) / 3600); if ($isRun) { $fS = $iS > 0 ? $actS / $iS : 1; $fO = $iO > 0 ? $actO / $iO : 1; $o['projection'] = ['shout' => (int)round($actS + max(0, $tgt['shout'] - $iS) * $fS), 'orders' => (int)round($actO + max(0, $tgt['orders'] - $iO) * $fO)]; $o['need_per_hour'] = ['shout' => (int)ceil(max(0, $tgt['shout'] - $actS) / $hrsLeft), 'orders' => (int)ceil(max(0, $tgt['orders'] - $actO) / $hrsLeft)]; }
+    wa_cpc_put($pdo, $ck, $o); return $o;
+}
 /** 🎯 The owner's ideal day (cumulative spend / replies / orders at fixed times) — setting camp_ideal. Defaults: day ₹79,018 · 3,400 replies · 170 orders, 5 PM = ₹25,000 / 65 orders. */
 function wa_camp_ideal_cfg(PDO $pdo): array
 {
@@ -1342,12 +1398,23 @@ $__wk = (string)($action ?? ($_GET['action'] ?? ''));
 if (in_array($__wk, ['wa.camp_tick', 'wa.camp_fast_tick', 'wa.dq_worker', 'wa.rec_run'], true) && function_exists('wa_overloaded') && wa_overloaded()) json_response(['ok' => true, 'result' => ['skipped' => true, 'busy' => true]]);   // the server is overloaded: this sending round waits a turn (it comes again in seconds), so the HRMS stays reachable
 if (isset($pdo) && $pdo instanceof PDO && strpos($__wk, 'wa.') === 0 && function_exists('wa_kill_stale_counts')) wa_kill_stale_counts($pdo);   // stuck heavy counts are cancelled first, so a jammed database frees itself
 // 🎯 Ideal day vs actual — on the Orders page: Admin / HR, the Sales Head who watches the quick entries, and every login with the Orders module (editing: Admin / HR and that Sales Head)
-if (isset($pdo) && $pdo instanceof PDO && ($__wk === 'wa.camp_ideal' || $__wk === 'wa.camp_ideal_save')) {
+if (isset($pdo) && $pdo instanceof PDO && ($__wk === 'wa.camp_ideal' || $__wk === 'wa.camp_ideal_save' || $__wk === 'wa.query_ideal' || $__wk === 'wa.query_ideal_save')) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'; $auth = require_auth();
     $okSee = (function_exists('wa_is_admin') && wa_is_admin($pdo, $auth)) || (function_exists('qe_viewer_ok') && qe_viewer_ok($pdo, $auth)) || (function_exists('user_can') && user_can($auth, 'orders'));
     if (!$okSee) json_response(['error' => 'Not allowed.'], 403);
     if (!wa_tables($pdo) || !wa_more_tables($pdo)) json_response(['error' => 'WhatsApp storage is not available — check database permissions.'], 500);
     switch ($__wk) {
+        case 'wa.query_ideal': {   // 🧭 Query ideal day vs actual (?day=YYYY-MM-DD, default today)
+            $dy = (string)($_GET['day'] ?? ''); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $dy)) { try { $dy = function_exists('wq_day_of') && function_exists('wq_now') ? (string)wq_day_of($pdo, wq_now()) : date('Y-m-d'); } catch (Throwable $e) { $dy = date('Y-m-d'); } }
+            json_response(['ok' => true, 'can_edit' => (function_exists('wa_is_admin') && wa_is_admin($pdo, $auth)) || (function_exists('qe_viewer_ok') && qe_viewer_ok($pdo, $auth))] + wa_query_ideal($pdo, $dy));
+        }
+        case 'wa.query_ideal_save': {   // ✎ the day targets (Shout queries, Query orders, Sunday %)
+            if (!((function_exists('wa_is_admin') && wa_is_admin($pdo, $auth)) || (function_exists('qe_viewer_ok') && qe_viewer_ok($pdo, $auth)))) json_response(['error' => 'Only Admin, HR and the Sales Head can change the targets.'], 403);
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $in = json_input(); $sh = (int)($in['shout'] ?? 0); $od = (int)($in['orders'] ?? 0); $sn = (int)($in['sunday'] ?? 75);
+            if ($sh <= 0 || $od <= 0) json_response(['error' => 'The day targets (Shout queries and Query orders) must be more than 0.'], 422); if ($sn < 10 || $sn > 200) json_response(['error' => 'Sunday % must be between 10 and 200.'], 422);
+            setting_set($pdo, 'query_ideal', json_encode(['shout' => $sh, 'orders' => $od, 'sunday' => $sn, 'at' => date('Y-m-d H:i:s'), 'by' => (string)($auth['username'] ?? '')])); try { $pdo->exec("DELETE FROM wa_cp_cache WHERE k LIKE 'qideal1_%'"); } catch (Throwable $e) { }
+            json_response(['ok' => true, 'cfg' => wa_query_ideal_cfg($pdo)]);
+        }
         case 'wa.camp_ideal': {   // 🎯 ideal day vs actual (?day=YYYY-MM-DD, default today)
             $dy = (string)($_GET['day'] ?? ''); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $dy)) { try { $dy = function_exists('wq_day_of') && function_exists('wq_now') ? (string)wq_day_of($pdo, wq_now()) : date('Y-m-d'); } catch (Throwable $e) { $dy = date('Y-m-d'); } }
             json_response(['ok' => true, 'can_edit' => (function_exists('wa_is_admin') && wa_is_admin($pdo, $auth)) || (function_exists('qe_viewer_ok') && qe_viewer_ok($pdo, $auth))] + wa_camp_ideal($pdo, $dy));
