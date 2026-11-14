@@ -909,7 +909,7 @@ if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
             $in = json_input(); if (empty($in['consent'])) json_response(['error' => 'Tick the box to confirm these customers agreed to get WhatsApp messages from you.'], 422);
             // every imported customer gets 'campaign' (we reach them with campaigns) + one tag for this import (so a campaign can pick exactly this file) + the tags typed for everyone + the tags in their own row
-            $batch = 'import_' . strtolower(date('jMy')); $common = array_merge(['campaign', $batch], wa_imp_tags($in['tags'] ?? []));
+            $batch = 'import_' . strtolower(date('jMy')) . '_' . date('Hi');   // one batch per upload (the time makes two uploads on the same day different) $common = array_merge(['campaign', $batch], wa_imp_tags($in['tags'] ?? []));
             $rows = [];
             if (is_array($in['rows'] ?? null)) foreach (array_slice($in['rows'], 0, 20000) as $r) $rows[] = ['phone' => (string)($r['phone'] ?? ''), 'name' => (string)($r['name'] ?? ''), 'tags' => wa_imp_tags($r['tags'] ?? [])];
             else foreach (preg_split('/\r?\n/', (string)($in['text'] ?? '')) as $line) { $line = trim($line); if ($line === '') continue; preg_match_all('/\+?\d[\d\s\-()]{8,}\d/', $line, $m); $ph = $m[0][0] ?? ''; $rows[] = ['phone' => $ph, 'name' => preg_replace('/[\d+()\-,;:|]+/', ' ', str_replace($ph, '', $line)), 'tags' => []]; }
