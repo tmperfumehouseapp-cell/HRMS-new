@@ -18673,6 +18673,7 @@ if ($action !== 'login' && $action !== '' && strpos((string)$action, 'wa.cron') 
 // Daily copy of everything the bot has learned (Learn & Setup → Backups): when the last copy is older than 24 hours it is made right after the response is sent.
 if ($action !== 'login' && $action !== '') { try { $__lbl = __DIR__ . '/learn_backups/.last'; if (!is_file($__lbl) || filemtime($__lbl) < time() - 86400) { require_once __DIR__ . '/learn_backup.php'; lb_schedule($pdo); } } catch (Throwable $e) {} }
 
+if (strpos((string)$action, 'sku.') === 0) { require_once __DIR__ . '/sku_sheet.php'; sku_route($pdo, (string)$action); }          // SKU sheet: the day's orders counted per SKU and size, with an Excel download
 if (strpos((string)$action, 'sysload.') === 0 && function_exists('sysload_route')) { sysload_route($pdo, (string)$action); }          // Admin → Server load: what the server is busy with
 if (strpos((string)$action, 'll.') === 0) { require_once __DIR__ . '/learn_loop.php'; }          // the nightly review loop: log, export, suggestions
 if (strpos((string)$action, 'chg.') === 0) { require_once __DIR__ . '/changes.php'; }          // Request a change: GitHub issue -> Claude Code builds -> Admin approves -> deploy
