@@ -29,6 +29,26 @@
     <div class="content mo">
       <p class="hint">For a customer who is not in HRMS (came from outside). Type the customer's number, then fill the same Manual order sheet as in a chat (payment, perfumes, combo). It becomes a normal order and counts for you like a Shopify order.</p>
       <div id="moMsg"></div>
+      <label style="margin-top:4px">1. What kind of order is it?</label>
+      <div id="moKind" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(104px,1fr));gap:8px">
+        <button type="button" class="btn" data-k="regular">🧾 Regular</button>
+        <button type="button" class="btn" data-k="aisensy" style="background:#fff;color:#111;border:1px solid var(--line)">💬 AiSensy</button>
+        <button type="button" class="btn" data-k="myntra" style="background:#fff;color:#111;border:1px solid var(--line)">🛍 Myntra</button>
+        <button type="button" class="btn" data-k="amazon" style="background:#fff;color:#111;border:1px solid var(--line)">📦 Amazon</button>
+        <button type="button" class="btn" data-k="flipkart" style="background:#fff;color:#111;border:1px solid var(--line)">🛒 Flipkart</button>
+      </div>
+      <p class="hint" id="moKindH" style="margin-top:8px"><b>Regular</b> and <b>AiSensy</b>: pick the perfumes, payment and address (AiSensy is the same order, only tagged AiSensy). <b>Myntra / Amazon / Flipkart</b>: the customer already ordered there, so you only attach the screenshot.</p>
+      <div id="moMp" hidden style="border:1px solid var(--line);border-radius:14px;padding:12px;margin-top:6px;background:#fff">
+        <b id="mpT">Marketplace order</b>
+        <label>Order number shown on the marketplace *</label><input id="mpNo" placeholder="e.g. 408-1234567-1234567" autocomplete="off">
+        <div class="row"><div><label>Order amount (₹) *</label><input id="mpAmt" type="number" inputmode="decimal" min="1" step="1" placeholder="e.g. 1499"></div>
+          <div><label>It came from *</label><select id="mpOt"><option value="query">💬 Query</option><option value="campaign">📣 Campaign</option></select></div></div>
+        <label>Screenshot of the order *</label><input id="mpShot" type="file" accept="image/*">
+        <div id="mpPrev" style="margin-top:8px"></div>
+        <button class="btn go" id="mpSave" type="button">✅ Add this order</button>
+        <p class="hint" style="margin-top:8px">It is counted for you at once. The same marketplace order number cannot be added twice. Admin and the Sales Head can see the screenshot, remove the order or give it to someone else.</p>
+        <div id="mpMine"></div>
+      </div>
       <button class="btn go" id="mNew" type="button">🧾 New manual order</button>
       <p class="hint" style="margin-top:14px">Enter the customer's number, name and address inside the sheet, choose Query or Campaign, then the payment, perfumes, other products and chain. The order is counted for you and goes to Allocation by itself.</p>
       <label>See the manual orders of a customer</label>
@@ -48,7 +68,7 @@
   const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   function loadUi(cb) {
     if (window.WaManual) return cb();
-    const sc = document.createElement('script'); sc.src = 'assets/js/wmo_ui.js?v=6'; sc.onload = cb; sc.onerror = cb; document.head.appendChild(sc);
+    const sc = document.createElement('script'); sc.src = 'assets/js/wmo_ui.js?v=7'; sc.onload = cb; sc.onerror = cb; document.head.appendChild(sc);
   }
   async function start(listOnly) {
     $('moMsg').innerHTML = '';
@@ -66,13 +86,37 @@
       $('moMsg').innerHTML = '<div class="err">' + esc(err.message) + '</div>';
     } finally { b.disabled = false; }
   }
+  let KIND = 'regular';
   function openNew() {
     loadUi(() => {
       if (!window.WaManual) { $('moMsg').innerHTML = '<div class="err">Manual order could not load. Refresh the page.</div>'; return; }
-      WaManual.open({ outside: true, phone: '', name: '', api, onDone: () => { $('moMsg').innerHTML = '<div class="ok">✅ Order created. The customer gets the link to check the address; when they confirm, it lands in your orders (counted for you).</div>'; } });
+      WaManual.open({ outside: true, channel: KIND === 'aisensy' ? 'aisensy' : '', phone: '', name: '', api, onDone: () => { $('moMsg').innerHTML = '<div class="ok">✅ Order created. The customer gets the link to check the address; when they confirm, it lands in your orders (counted for you).</div>'; } });
     });
   }
-  $('mNew').addEventListener('click', openNew); setTimeout(openNew, 250);
+  // ---- 1. the kind of order: Regular / AiSensy open the normal sheet; Myntra / Amazon / Flipkart = screenshot + number + amount
+  const MPN = { myntra: 'Myntra', amazon: 'Amazon', flipkart: 'Flipkart' }; let SHOT = '';
+  function pickKind(k) {
+    KIND = k; document.querySelectorAll('#moKind [data-k]').forEach((b) => { const on = b.dataset.k === k; b.style.background = on ? '' : '#fff'; b.style.color = on ? '' : '#111'; b.style.border = on ? '' : '1px solid var(--line)'; });
+    const mp = !!MPN[k]; $('moMp').hidden = !mp; $('mNew').hidden = mp; $('moMsg').innerHTML = '';
+    if (mp) { $('mpT').textContent = MPN[k] + ' order — attach the screenshot'; mine(); } else { $('mNew').textContent = k === 'aisensy' ? '🧾 New AiSensy order' : '🧾 New manual order'; openNew(); }
+  }
+  document.querySelectorAll('#moKind [data-k]').forEach((b) => b.addEventListener('click', () => pickKind(b.dataset.k)));
+  // the screenshot is made smaller in the browser (longest side 1600 px, JPEG) so it uploads fast on a phone
+  $('mpShot').addEventListener('change', () => { const f = $('mpShot').files[0]; SHOT = ''; $('mpPrev').innerHTML = ''; if (!f) return; const img = new Image(), u = URL.createObjectURL(f);
+    img.onload = () => { const m = Math.min(1, 1600 / Math.max(img.width, img.height)), c = document.createElement('canvas'); c.width = Math.round(img.width * m); c.height = Math.round(img.height * m); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); SHOT = c.toDataURL('image/jpeg', 0.82); URL.revokeObjectURL(u); $('mpPrev').innerHTML = '<img alt="screenshot" style="max-width:100%;max-height:220px;border-radius:10px;border:1px solid var(--line)" src="' + SHOT + '">'; };
+    img.onerror = () => { $('moMsg').innerHTML = '<div class="err">This file is not a picture. Choose the screenshot again.</div>'; }; img.src = u; });
+  $('mpSave').addEventListener('click', async () => {
+    $('moMsg').innerHTML = ''; const no = $('mpNo').value.trim(), amt = parseFloat($('mpAmt').value);
+    if (no.length < 5) { $('moMsg').innerHTML = '<div class="err">Type the order number shown on ' + MPN[KIND] + '.</div>'; return; }
+    if (!(amt >= 1)) { $('moMsg').innerHTML = '<div class="err">Type the order amount.</div>'; return; }
+    if (!SHOT) { $('moMsg').innerHTML = '<div class="err">Attach the screenshot of the order.</div>'; return; }
+    const b = $('mpSave'); b.disabled = true; b.textContent = 'Saving…';
+    try { const r = await api.post('manual_orders.mp_add', { channel: KIND, mp_no: no, amount: amt, order_type: $('mpOt').value, shot: SHOT }); $('moMsg').innerHTML = '<div class="ok">✅ ' + esc(r.message || 'Added.') + '</div>'; $('mpNo').value = ''; $('mpAmt').value = ''; $('mpShot').value = ''; SHOT = ''; $('mpPrev').innerHTML = ''; mine(); window.scrollTo(0, 0); }
+    catch (e) { $('moMsg').innerHTML = '<div class="err">' + esc(e.message) + '</div>'; window.scrollTo(0, 0); }
+    b.disabled = false; b.textContent = '✅ Add this order';
+  });
+  async function mine() { try { const d = await api.get('manual_orders.mp_mine'); const L = d.rows || []; $('mpMine').innerHTML = L.length ? '<label>Your marketplace orders (last 14 days)</label>' + L.map((x) => '<div style="display:flex;justify-content:space-between;gap:8px;border-top:1px solid var(--line);padding:6px 0;font-size:13px"><span><b>#' + esc(x.order_no) + '</b> · ' + esc(x.channel) + ' ' + esc(x.mp_no) + '</span><b>₹' + Math.round(Number(x.total) || 0).toLocaleString('en-IN') + '</b></div>').join('') : ''; } catch (e) { $('mpMine').innerHTML = ''; } }
+  $('mNew').addEventListener('click', openNew);   // the sheet no longer opens by itself: the kind of order is chosen first
   $('mList').addEventListener('click', () => start(true));
 </script>
 <script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>

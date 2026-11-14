@@ -487,6 +487,8 @@ function action_permission(string $action): ?string
         'retail.visit_plan_approve' => 'visit_approval',   // Approve / Reject a shop visit: only roles ticked for it (before the 'retail.' line)
         'retail.' => 'retail',
         'manual_orders.save' => null,              // a salesperson makes their own manual order (the handler checks the role)
+        'manual_orders.mp_' => null,               // a sales person adds / lists their own marketplace orders (the handler checks the login)
+        'manual_orders.shot' => null, 'manual_orders.reassign' => null,   // the handlers check who
         'manual_orders.quick_' => null,            // the quick entries card on the Sales Head's home (the handler checks who)
         'manual_orders.' => 'orders',
         'attendance.list' => 'attendance',
@@ -29823,7 +29825,7 @@ switch ($action) {
     }
 
     case 'manual_orders.sales_people': {   // the people the quick entry can assign the orders to
-        $auth = require_auth(); require_role(['Admin', 'HR'], $auth);
+        $auth = require_auth(); if (!qe_viewer_ok($pdo, $auth)) require_role(['Admin', 'HR'], $auth);   // Admin / HR, and the Sales Head who may move entries
         $o = []; foreach ($pdo->query("SELECT employee_id, employee_code, full_name FROM employees WHERE status != 'ex' ORDER BY full_name")->fetchAll() as $e) $o[] = ['id' => (int)$e['employee_id'], 'name' => (string)$e['full_name'], 'code' => (string)$e['employee_code']];
         json_response(['people' => $o]);
         break;
@@ -29855,24 +29857,25 @@ switch ($action) {
                 $paidI = $pay === 'part' ? ($i === $n - 1 ? $paidP - $paidSoFar : (int)round($paidP * $amtP / $totalP)) : ($pay === 'prepaid' ? $amtP : 0); $paidSoFar += $pay === 'part' ? $paidI : 0;
                 $out = $pay === 'part' ? max(0, $amtP - $paidI) / 100 : ($pay === 'cod' ? $amtP / 100 : 0);
                 $ins->execute(['Quick entry (' . $n . ' orders)', $amtP / 100, $payStatus, $orderDate, $remarks !== '' ? $remarks : 'Quick entry', $auth['username'], $empB, $ot, $house, $batch, $out, $chLabel]);
-                $id = (int)$pdo->lastInsertId(); $setNo->execute([($chLabel !== '' ? $chLabel . '-' : 'M') . str_pad((string)$id, 4, '0', STR_PAD_LEFT), $id]); if ($i === 0) $first = $id; $last = $id;
+                $id = (int)$pdo->lastInsertId(); $setNo->execute(['M' . str_pad((string)$id, 4, '0', STR_PAD_LEFT), $id]);   // one running number for every type; Personal / AiSensy / Myntra / Amazon / Flipkart is the tag (channel column) if ($i === 0) $first = $id; $last = $id;
             }
             $pdo->commit();
         } catch (Throwable $e) { if ($pdo->inTransaction()) $pdo->rollBack(); json_response(['error' => 'Could not save: ' . mb_substr($e->getMessage(), 0, 120)], 500); }
-        json_response(['message' => $n . ' orders added.', 'count' => $n, 'total' => $totalP / 100, 'batch' => $batch, 'first' => ($chLabel !== '' ? $chLabel . '-' : 'M') . str_pad((string)$first, 4, '0', STR_PAD_LEFT), 'last' => ($chLabel !== '' ? $chLabel . '-' : 'M') . str_pad((string)$last, 4, '0', STR_PAD_LEFT)], 201);
+        json_response(['message' => $n . ' orders added.', 'count' => $n, 'total' => $totalP / 100, 'batch' => $batch, 'first' => 'M' . str_pad((string)$first, 4, '0', STR_PAD_LEFT), 'last' => 'M' . str_pad((string)$last, 4, '0', STR_PAD_LEFT)], 201);
         break;
     }
 
     case 'manual_orders.quick_list': {   // 🧾 the quick entries of the last 7 days + today's totals — only for the Sales Head who watches them (Pradip Chauhan)
         $auth = require_auth(); $card = !empty($_GET['card']); if (!qe_viewer_ok($pdo, $auth) && ($card || !in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true))) json_response(['allowed' => false]);   // the home card: only Pradip; the Remove list on the Orders page: Pradip, Admin and HR
-        try { foreach (['house' => "VARCHAR(12) NOT NULL DEFAULT ''", 'batch' => "VARCHAR(16) NOT NULL DEFAULT ''", 'outstanding' => 'DECIMAL(12,2) NULL'] as $c => $d) { if (!$pdo->query("SHOW COLUMNS FROM manual_orders LIKE '$c'")->fetch()) $pdo->exec("ALTER TABLE manual_orders ADD COLUMN $c $d"); } } catch (PDOException $e) {}
+        try { foreach (['house' => "VARCHAR(12) NOT NULL DEFAULT ''", 'batch' => "VARCHAR(16) NOT NULL DEFAULT ''", 'outstanding' => 'DECIMAL(12,2) NULL', 'employee_id' => 'INT NOT NULL DEFAULT 0', 'channel' => "VARCHAR(12) NOT NULL DEFAULT ''", 'mp_no' => "VARCHAR(60) NOT NULL DEFAULT ''", 'shot_mime' => "VARCHAR(40) NOT NULL DEFAULT ''", 'shot_b64' => 'MEDIUMTEXT NULL'] as $c => $d) { if (!$pdo->query("SHOW COLUMNS FROM manual_orders LIKE '$c'")->fetch()) $pdo->exec("ALTER TABLE manual_orders ADD COLUMN $c $d"); } } catch (PDOException $e) {}
         $today = biz_today($pdo); [$ts, $te] = biz_window($pdo, $today, $today); $days = $card ? 7 : max(1, min(60, (int)($_GET['days'] ?? 7))); [$ws0] = biz_window($pdo, date('Y-m-d', strtotime($today . ' -' . ($days - 1) . ' days')), $today); if (!$card && !empty($_GET['all'])) $ws0 = '2000-01-01 00:00:00';   // all manual orders till today
-        $st = $pdo->prepare("SELECT manual_order_id, order_no, customer_name, order_date, total, payment_status, order_type, house, batch, outstanding, created_by, remarks FROM manual_orders WHERE " . ($card ? "batch <> '' AND " : '') . "order_date >= ? AND order_date <= ? ORDER BY order_date DESC, manual_order_id DESC LIMIT 1500"); $st->execute([$ws0, $te]);
+        $st = $pdo->prepare("SELECT manual_order_id, order_no, customer_name, order_date, total, payment_status, order_type, house, batch, outstanding, created_by, remarks, employee_id, channel, mp_no, (shot_mime <> '') AS has_shot FROM manual_orders WHERE " . ($card ? "batch <> '' AND " : '') . "order_date >= ? AND order_date <= ? ORDER BY order_date DESC, manual_order_id DESC LIMIT 1500"); $st->execute([$ws0, $te]);
         $hl = house_labels(); $by = []; $sum = ['orders' => 0, 'amount' => 0.0, 'query' => 0, 'campaign' => 0, 'query_amt' => 0.0, 'campaign_amt' => 0.0, 'prepaid' => 0.0, 'cod' => 0.0];
         foreach ($st->fetchAll() as $r) {
             $amt = (float)$r['total']; $out = $r['outstanding'] !== null ? (float)$r['outstanding'] : ($r['payment_status'] === 'cod' ? $amt : 0.0);
             $b = (string)$r['batch']; if ($b === '') { $by['i' . $r['manual_order_id']] = ['id' => (int)$r['manual_order_id'], 'batch' => '', 'count' => 1, 'total' => $amt, 'cod' => $out, 'type' => (string)$r['order_type'], 'pay' => (string)$r['payment_status'], 'house' => (string)($hl[$r['house']] ?? $r['house']), 'date' => (string)$r['order_date'], 'by' => (string)$r['created_by'], 'remarks' => (string)$r['remarks'], 'order_no' => (string)$r['order_no'], 'customer' => (string)$r['customer_name']]; continue; }
-            if (!isset($by[$b])) $by[$b] = ['batch' => $b, 'count' => 0, 'total' => 0.0, 'cod' => 0.0, 'type' => (string)$r['order_type'], 'pay' => (string)$r['payment_status'], 'house' => (string)($hl[$r['house']] ?? $r['house']), 'date' => (string)$r['order_date'], 'by' => (string)$r['created_by'], 'remarks' => (string)$r['remarks']];
+            if (!isset($by[$b])) $by[$b] = ['batch' => $b, 'count' => 0, 'total' => 0.0, 'cod' => 0.0, 'type' => (string)$r['order_type'], 'pay' => (string)$r['payment_status'], 'house' => (string)($hl[$r['house']] ?? $r['house']), 'date' => (string)$r['order_date'], 'by' => (string)$r['created_by'], 'remarks' => (string)$r['remarks'],
+                'emp_id' => (int)$r['employee_id'], 'emp' => (string)(employee_names_by_id($pdo)[(int)$r['employee_id']] ?? ''), 'channel' => (string)$r['channel'], 'mp_no' => (string)$r['mp_no'], 'shot_id' => !empty($r['has_shot']) ? (int)$r['manual_order_id'] : 0, 'order_no' => (string)$r['order_no']];   // who it counts for, its tag, and the marketplace screenshot
             $by[$b]['count']++; $by[$b]['total'] += $amt; $by[$b]['cod'] += $out;
             if ($r['order_date'] >= $ts && $r['order_date'] <= $te) { $sum['orders']++; $sum['amount'] += $amt; $sum['cod'] += $out; $sum['prepaid'] += $amt - $out; $k = $r['order_type'] === 'campaign' ? 'campaign' : 'query'; $sum[$k]++; $sum[$k . '_amt'] += $amt; }
         }
@@ -29887,6 +29890,47 @@ switch ($action) {
         }
         json_response(['allowed' => true, 'today' => $sum, 'entries' => $entries]);
         break;
+    }
+
+    // 🛍 MARKETPLACE ORDER (Myntra / Amazon / Flipkart) added by the SALES PERSON: the customer already ordered on the marketplace, so there is nothing to pick or ship —
+    //    the screenshot is the proof. It counts for that person at once (no approval); Admin / HR / the Sales Head can delete it or give it to someone else (Orders → Remove manual orders).
+    case 'manual_orders.mp_add': {
+        $auth = require_auth(); $me = (int)($auth['employee_id'] ?? 0); if ($me <= 0) json_response(['error' => 'Only an employee login can add a marketplace order.'], 403);
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
+        try { foreach (['employee_id' => 'INT NOT NULL DEFAULT 0', 'order_type' => "VARCHAR(10) NOT NULL DEFAULT ''", 'house' => "VARCHAR(12) NOT NULL DEFAULT ''", 'batch' => "VARCHAR(16) NOT NULL DEFAULT ''", 'outstanding' => 'DECIMAL(12,2) NULL', 'channel' => "VARCHAR(12) NOT NULL DEFAULT ''", 'mp_no' => "VARCHAR(60) NOT NULL DEFAULT ''", 'shot_mime' => "VARCHAR(40) NOT NULL DEFAULT ''", 'shot_b64' => 'MEDIUMTEXT NULL'] as $c => $d) { if (!$pdo->query("SHOW COLUMNS FROM manual_orders LIKE '$c'")->fetch()) $pdo->exec("ALTER TABLE manual_orders ADD COLUMN $c $d"); } } catch (PDOException $e) {}
+        $in = json_input(); $CH = ['myntra' => 'Myntra', 'amazon' => 'Amazon', 'flipkart' => 'Flipkart']; $chan = strtolower(trim((string)($in['channel'] ?? ''))); if (!isset($CH[$chan])) json_response(['error' => 'Choose Myntra, Amazon or Flipkart.'], 422);
+        $amt = round((float)($in['amount'] ?? 0), 2); if ($amt < 1 || $amt > 500000) json_response(['error' => 'Type the order amount (₹1 to ₹5,00,000).'], 422);
+        $no = strtoupper(preg_replace('/[^A-Za-z0-9\-]/', '', (string)($in['mp_no'] ?? ''))); if (strlen($no) < 5 || strlen($no) > 60) json_response(['error' => 'Type the order number shown on ' . $CH[$chan] . ' (at least 5 letters / digits).'], 422);
+        $ot = strtolower(trim((string)($in['order_type'] ?? 'query'))); if (!in_array($ot, ['query', 'campaign'], true)) $ot = 'query';
+        if (!preg_match('#^data:(image/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=\s]+)$#', (string)($in['shot'] ?? ''), $mm)) json_response(['error' => 'Attach the screenshot of the ' . $CH[$chan] . ' order (JPG, PNG or WebP).'], 422);
+        $b64 = preg_replace('/\s+/', '', $mm[2]); if (strlen($b64) > 4200000 || base64_decode($b64, true) === false) json_response(['error' => 'The screenshot is too big. Send it under 3 MB.'], 422);
+        $dq = $pdo->prepare("SELECT order_no, employee_id FROM manual_orders WHERE channel = ? AND mp_no = ? LIMIT 1"); $dq->execute([$CH[$chan], $no]); $du = $dq->fetch();
+        if ($du) json_response(['error' => 'This ' . $CH[$chan] . ' order number is already added (order #' . $du['order_no'] . (($nm0 = employee_names_by_id($pdo)[(int)$du['employee_id']] ?? '') !== '' ? ', for ' . $nm0 : '') . '). The same order cannot be counted twice.'], 409);
+        $pdo->prepare("INSERT INTO manual_orders (order_no, customer_name, phone, items, total, payment_status, fulfillment_status, order_date, remarks, created_by, employee_id, order_type, house, batch, outstanding, channel, mp_no, shot_mime, shot_b64) VALUES (NULL, ?, '', 1, ?, 'paid', 'fulfilled', ?, ?, ?, ?, ?, '', ?, 0, ?, ?, ?, ?)")
+            ->execute([$CH[$chan] . ' order ' . $no, $amt, date('Y-m-d H:i:s'), mb_substr($CH[$chan] . ' order ' . $no . ' (screenshot attached)' . ((string)($in['remarks'] ?? '') !== '' ? ' · ' . trim((string)$in['remarks']) : ''), 0, 200), (string)$auth['username'], $me, $ot, substr(bin2hex(random_bytes(8)), 0, 12), $CH[$chan], $no, $mm[1], $b64]);
+        $id = (int)$pdo->lastInsertId(); $ono = 'M' . str_pad((string)$id, 4, '0', STR_PAD_LEFT); $pdo->prepare("UPDATE manual_orders SET order_no = ? WHERE manual_order_id = ?")->execute([$ono, $id]);
+        json_response(['ok' => true, 'message' => $CH[$chan] . ' order added: #' . $ono . '. It is counted for you now.', 'order_no' => $ono, 'id' => $id], 201);
+    }
+    case 'manual_orders.mp_mine': {   // the sales person's own marketplace orders of the last 14 days
+        $auth = require_auth(); $me = (int)($auth['employee_id'] ?? 0); $rows = [];
+        try { $q = $pdo->prepare("SELECT manual_order_id id, order_no, channel, mp_no, total, order_date FROM manual_orders WHERE employee_id = ? AND mp_no <> '' AND order_date >= ? ORDER BY manual_order_id DESC LIMIT 60"); $q->execute([$me, date('Y-m-d H:i:s', time() - 14 * 86400)]); $rows = $q->fetchAll(); } catch (Throwable $e) { }
+        json_response(['rows' => $rows]);
+    }
+    case 'manual_orders.shot': {   // the screenshot of one marketplace order: the person who added it, Admin / HR, the Sales Head
+        $auth = require_auth(); $id = (int)($_GET['id'] ?? 0);
+        try { $q = $pdo->prepare("SELECT employee_id, shot_mime, shot_b64 FROM manual_orders WHERE manual_order_id = ?"); $q->execute([$id]); $r = $q->fetch(); } catch (Throwable $e) { $r = null; }
+        if (!$r || (string)($r['shot_b64'] ?? '') === '') json_response(['error' => 'No screenshot was saved for this order.'], 404);
+        if ((int)$r['employee_id'] !== (int)($auth['employee_id'] ?? 0) && !in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true) && !qe_viewer_ok($pdo, $auth)) json_response(['error' => 'Not allowed.'], 403);
+        while (ob_get_level() > 0) @ob_end_clean(); header('Content-Type: ' . $r['shot_mime']); header('Cache-Control: private, max-age=600'); echo base64_decode((string)$r['shot_b64']); exit;
+    }
+    case 'manual_orders.reassign': {   // give a manual order / quick entry to another sales person (Admin / HR / the Sales Head)
+        $auth = require_auth(); if (!qe_viewer_ok($pdo, $auth) && !in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true)) json_response(['error' => 'Not allowed.'], 403);
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
+        $in = json_input(); $b = preg_replace('/[^a-f0-9]/', '', (string)($in['batch'] ?? '')); $emp = (int)($in['employee_id'] ?? 0);
+        if (strlen($b) < 8) json_response(['error' => 'Choose the entry first.'], 422);
+        if ($emp > 0) { $eq = $pdo->prepare("SELECT 1 FROM employees WHERE employee_id = ?"); $eq->execute([$emp]); if (!$eq->fetchColumn()) json_response(['error' => 'That sales person was not found.'], 422); }
+        $st = $pdo->prepare("UPDATE manual_orders SET employee_id = ? WHERE batch = ?"); $st->execute([$emp, $b]);
+        json_response(['ok' => true, 'message' => $emp > 0 ? 'Given to ' . (employee_names_by_id($pdo)[$emp] ?? 'the sales person') . '.' : 'Now with nobody (not assigned).', 'changed' => $st->rowCount()]);
     }
 
     case 'manual_orders.quick_delete': {   // 🗑 remove one whole quick entry (every order of it)

@@ -1159,7 +1159,7 @@
     let moLd = null;
     function moReady(cb) {
       if (window.WaManual) return cb(); if (moLd) { moLd.push(cb); return; } moLd = [cb];
-      const sc = document.createElement('script'); sc.src = 'assets/js/wmo_ui.js?v=6';
+      const sc = document.createElement('script'); sc.src = 'assets/js/wmo_ui.js?v=7';
       sc.onload = () => { const q = moLd || []; moLd = null; q.forEach((f) => f()); }; sc.onerror = () => { const q = moLd || []; moLd = null; q.forEach((f) => f()); }; document.head.appendChild(sc);
     }
     function openManual() {
