@@ -400,27 +400,30 @@ function wmo_notify(PDO $pdo, array $r, array $cust): void
     }
 }
 
+/** "Office Pickup" instead of a tracking ID: the customer collects the parcel at the office */
+function wmo_is_office_pickup(string $t): bool { return (bool)preg_match('/^office[\s_-]*pick[\s_-]*up$/i', trim($t)); }
 /** Saves a tracking ID typed (or imported) for one confirmed manual order and pushes it to the Dispatch parcel. Returns [error text or '', note]. */
 function wmo_apply_tracking(PDO $pdo, array $auth, int $id, string $awb, string $cr): array
 {
-    $awb = trim($awb); $cr = mb_substr(trim($cr), 0, 30);
-    if ($awb !== '' && !preg_match('/^[A-Za-z0-9\-]{5,40}$/', $awb)) return ['The tracking ID must be 5 to 40 letters or numbers.', ''];
+    $awb = trim($awb); $cr = mb_substr(trim($cr), 0, 30); $op = wmo_is_office_pickup($awb) || ($awb === '' && wmo_is_office_pickup($cr));
+    if ($op) { $awb = 'Office Pickup'; $cr = 'Office Pickup'; }
+    elseif ($awb !== '' && !preg_match('/^[A-Za-z0-9\-]{5,40}$/', $awb)) return ['The tracking ID must be 5 to 40 letters or numbers.', ''];
     if ($awb === '') $cr = '';
     $c = $pdo->prepare("SELECT order_no FROM wmo_order WHERE id = ? AND status = 'confirmed'"); $c->execute([$id]); $no = (string)$c->fetchColumn();
     if ($no === '') return ['Only a confirmed order can get a tracking ID.', ''];
     $pdo->prepare("UPDATE wmo_order SET trk_no = ?, trk_courier = ? WHERE id = ?")->execute([$awb, $cr, $id]);
     $note = '';
-    if ($awb !== '') {   // the same order on Dispatch → Parcels and tracking: it leaves "No tracking ID" (Admin approves it there unless the person is Admin, the same rule as the "+ Add tracking ID" button)
+    if ($awb !== '') {   // the same order on Dispatch → Parcels and tracking: it leaves "No tracking ID" (Admin approves it there unless the person is Admin, the same rule as the "+ Add tracking ID" button). Plain SQL: the Dispatch functions are not always loaded in this request.
         try {
-            $pq = $pdo->prepare("SELECT * FROM dp_dsp_parcels WHERE order_name IN (?, ?) AND status = 'placed' LIMIT 1"); $pq->execute([$no, '#' . $no]); $pp = $pq->fetch();
-            if ($pp && function_exists('dp_dsp_valid_track') && dp_dsp_valid_track($awb) && (!function_exists('dp_dsp_track_in_use') || dp_dsp_track_in_use($pdo, $awb, $pp['id']) === '')) {
-                $co = mb_strlen($cr) >= 2 ? $cr : 'Other'; $nowS = date('Y-m-d H:i:s'); $by = (string)($auth['name'] ?? $auth['email'] ?? 'Manual orders'); $adm = function_exists('bd_who') && !empty(bd_who($pdo, $auth)['admin']);
-                $lk = function_exists('dp_dsp_link_for') ? (string)dp_dsp_link_for($pdo, $co, $awb) : '';
-                if ($adm) { $pdo->prepare("UPDATE dp_dsp_parcels SET tracking_no = ?, courier = ?, track_link = ?, status = 'transit', tracked_at = ?, tracked_by = ?, transit_at = ?, pend_track = NULL, manual = 1 WHERE id = ? AND status = 'placed'")->execute([$awb, $co, $lk !== '' ? $lk : null, $nowS, mb_substr($by, 0, 80), $nowS, $pp['id']]); $note = 'Also added on Dispatch: now in transit.'; }
-                else { $pdo->prepare("UPDATE dp_dsp_parcels SET pend_track = ?, pend_courier = ?, pend_link = ?, pend_by = ?, pend_at = ?, manual = 1 WHERE id = ? AND status = 'placed'")->execute([$awb, $co, $lk !== '' ? $lk : null, mb_substr($by, 0, 80), $nowS, $pp['id']]); $note = 'Also sent to Admin on Dispatch for approval.'; }
+            $pq = $pdo->prepare("SELECT id FROM dp_dsp_parcels WHERE order_name IN (?, ?) AND status = 'placed' LIMIT 1"); $pq->execute([$no, '#' . $no]); $pid = (int)$pq->fetchColumn();
+            $used = ''; if ($pid && !$op) { $uq = $pdo->prepare("SELECT order_name FROM dp_dsp_parcels WHERE (tracking_no = ? OR pend_track = ?) AND id != ? LIMIT 1"); $uq->execute([$awb, $awb, $pid]); $used = (string)$uq->fetchColumn(); }
+            if ($pid && $used === '') {
+                $co = mb_strlen($cr) >= 2 ? $cr : 'Other'; $nowS = date('Y-m-d H:i:s'); $by = mb_substr((string)($auth['username'] ?? $auth['name'] ?? $auth['email'] ?? 'Manual orders'), 0, 80);
+                $adm = in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true) || (function_exists('bd_who') && !empty(bd_who($pdo, $auth)['admin']));
+                if ($adm || $op) { $pdo->prepare("UPDATE dp_dsp_parcels SET tracking_no = ?, courier = ?, status = 'transit', tracked_at = ?, tracked_by = ?, transit_at = ?, pend_track = NULL, manual = 1 WHERE id = ? AND status = 'placed'")->execute([$awb, $co, $nowS, $by, $nowS, $pid]); $note = 'Also added on Dispatch: now in transit.'; }
+                else { $pdo->prepare("UPDATE dp_dsp_parcels SET pend_track = ?, pend_courier = ?, pend_by = ?, pend_at = ?, manual = 1 WHERE id = ? AND status = 'placed'")->execute([$awb, $co, $by, $nowS, $pid]); $note = 'Also sent to Admin on Dispatch for approval.'; }
                 if (function_exists('bd_log')) bd_log('dispatch', $no, 'tracking ID ' . $awb . ' (' . $co . ') typed on Manual orders', $by);
-                if (function_exists('dp_dsp_job_refresh')) dp_dsp_job_refresh($pdo, time());
-            }
+            } elseif ($used !== '') $note = 'Not copied to Dispatch: this tracking ID is already on ' . $used . '.';
         } catch (Throwable $e) { error_log('wmo_apply_tracking sync: ' . $e->getMessage()); }
     }
     return ['', $note];
@@ -757,11 +760,12 @@ if (strpos($__wmo, 'wmo.') === 0) {
             foreach ($rows as $x) {
                 $no = strtoupper(trim((string)($x['order_no'] ?? ''))); $awb = trim((string)($x['awb'] ?? '')); $co = trim((string)($x['courier'] ?? ''));
                 if ($no === '') continue;
-                if ($awb === '' || !preg_match('/^[A-Za-z0-9\-]{5,40}$/', $awb)) { $res['skipped'][] = $no . ': no valid AWB' . ($awb !== '' ? ' (' . $awb . ')' : ''); continue; }
+                $op = wmo_is_office_pickup($awb) || ($awb === '' && wmo_is_office_pickup($co)); if ($op) $awb = 'Office Pickup';
+                if (!$op && ($awb === '' || !preg_match('/^[A-Za-z0-9\-]{5,40}$/', $awb))) { $res['skipped'][] = $no . ': no valid AWB' . ($awb !== '' ? ' (' . $awb . ')' : ''); continue; }
                 $q = $pdo->prepare("SELECT id, trk_no FROM wmo_order WHERE order_no = ? AND status = 'confirmed' LIMIT 1"); $q->execute([$no]); $o = $q->fetch();
                 if (!$o) { $res['skipped'][] = $no . ': order not found or not confirmed'; continue; }
                 if (!$ow && trim((string)$o['trk_no']) !== '' && trim((string)$o['trk_no']) !== $awb) { $res['skipped'][] = $no . ': already has ' . $o['trk_no']; continue; }
-                $d = $pdo->prepare("SELECT order_no FROM wmo_order WHERE trk_no = ? AND id <> ? LIMIT 1"); $d->execute([$awb, (int)$o['id']]); if ($d->fetchColumn()) { $res['skipped'][] = $no . ': AWB ' . $awb . ' is already on another order'; continue; }
+                $d = $pdo->prepare("SELECT order_no FROM wmo_order WHERE trk_no = ? AND id <> ? LIMIT 1"); $d->execute([$awb, (int)$o['id']]); if (!$op && $d->fetchColumn()) { $res['skipped'][] = $no . ': AWB ' . $awb . ' is already on another order'; continue; }
                 [$er, $note] = wmo_apply_tracking($pdo, $auth, (int)$o['id'], $awb, $co);
                 if ($er !== '') $res['skipped'][] = $no . ': ' . $er; else $res['added']++;
             }
