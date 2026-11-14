@@ -1461,7 +1461,8 @@ function wq_urgent_push(PDO $pdo): int
             if (microtime(true) - $__t0 > 12) break;
             $isRed = $x['level'] === 'red'; $ph = (string)$x['phone'];   // red AND orange ring phones (the bot keeps the chat going meanwhile); somebody takes it from the list
             $stage = $x['sec'] >= $wmin * 60 ? 2 : 1; $stamp = $x['key'] . '|' . $stage; if (wq_meta_get($pdo, 'urg:' . $ph, '') === $stamp) continue; wq_meta_put($pdo, 'urg:' . $ph, $stamp);
-            $bkm = wq_needs_backlog($pdo); $tg = []; foreach ($rk['order'] as $i => $e) { $top = ($i + 1) <= $wsz; if ((int)$e !== (int)$x['emp'] && empty($bkm[(int)$e]) && ($stage === 1 ? $top : !$top)) $tg[] = (int)$e; } if (!$tg) continue;   // first the best 15; after 2 minutes everybody else at work (the holder was already pushed when the chat turned hot)
+            if (!isset($bkm)) $bkm = wq_needs_backlog($pdo);      // once per round, not once per waiting chat
+            $tg = []; foreach ($rk['order'] as $i => $e) { $top = ($i + 1) <= $wsz; if ((int)$e !== (int)$x['emp'] && empty($bkm[(int)$e]) && ($stage === 1 ? $top : !$top)) $tg[] = (int)$e; } if (!$tg) continue;   // first the best 15; after 2 minutes everybody else at work (the holder was already pushed when the chat turned hot)
             $cu = trim((string)$x['name']) !== '' ? (string)$x['name'] : '+91 ' . $ph;
             ct_push($pdo, $tg, $isRed ? '🔴 Needs you now' : '🟠 Needs you urgently', $cu . ($isRed ? ' wants to buy — nobody has answered yet. Take it.' : ' is interested — take it now.'), '/my_chats.html?phone=' . $ph, 'wa-urg-' . $ph); $n++;
             if ($stage === 1) wa_event($pdo, $ph, $isRed ? '🔴 Ready to pay — shown to the best of today first, then to everybody' : '🟠 Interested — shown to the best of today first, then to everybody');
