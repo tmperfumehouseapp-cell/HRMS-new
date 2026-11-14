@@ -51,6 +51,21 @@ function wa_scale_indexes3(PDO $pdo): void
         if (function_exists('wag_log')) wag_log($pdo, 'engine', true, 'Orders: phone lookup index added.');
     } catch (Throwable $e) { if (function_exists('wag_log')) wag_log($pdo, 'engine', false, 'Orders phone index not added: ' . mb_substr($e->getMessage(), 0, 150)); }
 }
+/** Fourth set: the same phone lookup for the dispatch parcels (the Orders card of a chat read every parcel). Added once, online; wo_find_parcels() switches to the direct lookup only when the index is really there. */
+function wa_scale_indexes4(PDO $pdo): void
+{
+    static $done = false; if ($done) return; $done = true;
+    try { if ((string)setting_get($pdo, 'wo_ph10_parcels', '') === '1') return; if ((int)setting_get($pdo, 'wa_idx_v6_try', '0') > time() - 1800) return; setting_set($pdo, 'wa_idx_v6_try', (string)time()); } catch (Throwable $e) { return; }   // one try per 30 minutes until it is there
+    try {
+        $has = function () use ($pdo) { $q = $pdo->query("SHOW INDEX FROM dp_dsp_parcels WHERE Key_name = 'k_ph10'"); return (bool)($q && $q->fetch()); };
+        if (!$has()) {
+            $x = "(SUBSTR(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+', ''), '(', ''), ')', ''), -10))";
+            try { $pdo->exec("ALTER TABLE dp_dsp_parcels ADD INDEX k_ph10 ($x), ALGORITHM=INPLACE, LOCK=NONE"); } catch (Throwable $e) { $pdo->exec("ALTER TABLE dp_dsp_parcels ADD INDEX k_ph10 ($x)"); }
+            if (function_exists('wag_log')) wag_log($pdo, 'engine', true, 'Parcels: phone lookup index added.');
+        }
+        if ($has()) setting_set($pdo, 'wo_ph10_parcels', '1');
+    } catch (Throwable $e) { if (function_exists('wag_log')) wag_log($pdo, 'engine', false, 'Parcels phone index not added: ' . mb_substr($e->getMessage(), 0, 150)); }
+}
 
 if (!defined('WA_CUST_COLS')) define('WA_CUST_COLS', "phone VARCHAR(12) NOT NULL PRIMARY KEY, name VARCHAR(120) NOT NULL DEFAULT '', n INT NOT NULL DEFAULT 0, last_order DATETIME NULL, spent DECIMAL(12,2) NOT NULL DEFAULT 0, ign INT NOT NULL DEFAULT 0, act_at DATETIME NULL, KEY k_last (last_order), KEY k_act (act_at)");
 function wa_cust_tables(PDO $pdo): bool
@@ -70,7 +85,7 @@ function wa_cust_refresh(PDO $pdo, int $maxAge = 600, bool $force = false): bool
 {
     if (!wa_cust_tables($pdo)) return false;
     wa_scale_indexes($pdo); wa_scale_indexes2($pdo);
-    if (!$force && PHP_SAPI !== 'cli' && strpos((string)($_GET['action'] ?? ''), 'wa.cron') === 0) wa_scale_indexes3($pdo);   // only from the engine's own run, never while a person waits for a page
+    if (!$force && PHP_SAPI !== 'cli' && strpos((string)($_GET['action'] ?? ''), 'wa.cron') === 0) { wa_scale_indexes3($pdo); wa_scale_indexes4($pdo); }   // only from the engine's own run, never while a person waits for a page
     if (!$force && wa_cust_age($pdo) < $maxAge) return true;
     try { $got = (int)$pdo->query("SELECT GET_LOCK('wa_cust_refresh', 0)")->fetchColumn(); } catch (Throwable $e) { return false; }
     if ($got !== 1) return false;
