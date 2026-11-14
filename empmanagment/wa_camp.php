@@ -675,6 +675,16 @@ function wa_camp_start_early(PDO $pdo, int $id): bool
     $pdo->prepare("UPDATE wa_camp_items SET send_at = NULL WHERE camp_id = ? AND status = 'queued' AND send_at IS NOT NULL AND send_at > ?")->execute([$id, $now]);
     return true;
 }
+/** Scheduled campaigns whose start time has come are started here too (throttled to once every 20 s), so they no longer wait for the server cron: any open Campaigns / Planner screen does it. */
+function wa_camp_start_due(PDO $pdo): void
+{
+    try {
+        $nowTs = wa_camp_now(); if ((int)setting_get($pdo, 'wa_due_at', '0') > $nowTs - 20) return; setting_set($pdo, 'wa_due_at', (string)$nowTs); $now = date('Y-m-d H:i:s', $nowTs);
+        if (function_exists('wsm_tick') || wa_camp_lazy('wsm_tick', 'wa_smart.php')) { try { wsm_tick($pdo, $nowTs); } catch (Throwable $e) { } }
+        $sp = ''; try { $pdo->query("SELECT smart_plan FROM wa_campaigns LIMIT 0"); $sp = ' AND smart_plan = 0'; } catch (PDOException $e) { }
+        $pdo->prepare("UPDATE wa_campaigns SET status = 'running', started_at = COALESCE(started_at, ?) WHERE status = 'scheduled' AND start_at IS NOT NULL AND start_at <= ?" . $sp)->execute([$now, $now]);
+    } catch (Throwable $e) { }
+}
 /** One sending round. The lock is freed the moment the round ends, so the next round (cron, an open page or ⚡ Send fast) starts at once instead of waiting out the lock. */
 function wa_camp_tick(PDO $pdo, int $only = 0): array   // $only > 0: the ⚡ Send fast worker — it sends THAT campaign only, under its own lock, beside the normal running pool
 {
@@ -1396,6 +1406,7 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
             $id = (int)(json_input()['id'] ?? 0); $pdo->prepare("DELETE FROM wa_fu_rules WHERE id = ?")->execute([$id]); json_response(['ok' => true]);
         }
         case 'wa.camp_list': {
+            wa_camp_start_due($pdo);
             $GLOBALS['__wa_lim_cache_ok'] = empty($_GET['fresh']);   // 30 s memory of the 24-hour room count (not on 🔄 Refresh)
             if (!empty($_GET['fresh'])) $GLOBALS['__wa_camp_fresh'] = true;   // 🔄 Refresh: read every number again
             $hide = ''; try { $pdo->query("SELECT smart_plan FROM wa_campaigns LIMIT 0"); $hide = 'WHERE smart_plan = 0 '; } catch (PDOException $e) { }   // the campaigns of a Smart plan are shown on the Smart screens
@@ -1675,7 +1686,12 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
                     else { $c0['start_at'] = $nowS; wsm_resolve_campaign($pdo, $c0); }
                     $n++; } } catch (Throwable $e) { json_response(['error' => 'Could not start it now: ' . mb_substr($e->getMessage(), 0, 160)], 500); }
             }
-            if (!$n && empty($in['all'])) json_response(['error' => 'It is not a scheduled campaign (or it is a Smart plan, which starts at its own time).'], 422);
+            if (!$n && empty($in['all'])) {
+                $c1 = null; try { $c1 = wa_camp_row($pdo, (int)($in['id'] ?? 0)); } catch (Throwable $e) { }
+                if ($c1 && in_array($c1['status'], ['running', 'done'], true)) { try { wa_camp_tick($pdo); } catch (Throwable $e) { } json_response(['ok' => true, 'started' => 0, 'already' => true, 'status' => $c1['status']]); }   // it had already started by itself
+                if ($c1 && $c1['status'] === 'paused') { $pdo->prepare("UPDATE wa_campaigns SET status = 'running', note = '' WHERE id = ? AND status = 'paused'")->execute([(int)$c1['id']]); try { wa_camp_tick($pdo); } catch (Throwable $e) { } json_response(['ok' => true, 'started' => 1]); }
+                json_response(['error' => 'This campaign is ' . ($c1 ? '"' . $c1['status'] . '"' : 'not found') . ', so it cannot be started from here. Open it with Edit & start.'], 422);
+            }
             try { wa_camp_tick($pdo); } catch (Throwable $e) { } json_response(['ok' => true, 'started' => $n]);
         }
         case 'wa.cust_card': { json_response(wa_cust_card($pdo, (string)($_GET['phone'] ?? ''))); }   // 🪪 one customer: tags with reasons, orders in short, campaigns received
