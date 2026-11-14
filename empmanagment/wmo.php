@@ -404,12 +404,14 @@ function wmo_notify(PDO $pdo, array $r, array $cust): void
 function wmo_is_office_pickup(string $t): bool { return (bool)preg_match('/^office[\s_-]*pick[\s_-]*up$/i', trim($t)); }
 /**
  * 🔁 Puts the tracking IDs of the manual orders onto their Dispatch parcels (Dispatch → Parcels and tracking), so the order leaves "No tracking ID".
- * Plain SQL, safe to run again and again (it also runs on every Dispatch sync). An Admin-made ID goes straight to In transit; any other person's waits for Admin (the same rule as "+ Add tracking ID").
+ * Plain SQL, safe to run again and again (it also runs on every Dispatch sync). An Admin-made ID becomes "Tracking ID given" (not In transit: the courier has not scanned it yet); any other person's waits for Admin (the same rule as "+ Add tracking ID").
  * Returns ['updated' => n, 'no_parcel' => [order numbers that have no parcel in Dispatch yet]].
  */
 function wmo_dsp_heal(PDO $pdo, string $only = ''): array
 {
     $res = ['updated' => 0, 'no_parcel' => []];
+    // 🩹 parcels this function wrongly put In transit earlier (before any courier scan): back to "Tracking ID given". Parcels Shiprocket has news about are left alone.
+    try { $pdo->exec("UPDATE dp_dsp_parcels SET status = 'tracked', transit_at = NULL WHERE tracked_by = 'Manual orders' AND status = 'transit' AND tracking_no <> 'Office Pickup' AND (sr_status IS NULL OR sr_status = '') AND live_at IS NULL"); } catch (Throwable $e) { error_log('wmo_dsp_heal repair: ' . $e->getMessage()); }
     try {
         wmo_tables($pdo);
         $q = $pdo->prepare("SELECT order_no, trk_no, trk_courier, trk_adm FROM wmo_order WHERE status = 'confirmed' AND trk_no <> ''" . ($only !== '' ? " AND order_no = ?" : "") . " ORDER BY id DESC LIMIT 600"); $q->execute($only !== '' ? [$only] : []);
@@ -420,7 +422,8 @@ function wmo_dsp_heal(PDO $pdo, string $only = ''): array
             $find->execute([$no, '#' . $no]); $p = $find->fetch(); if (!$p) { $res['no_parcel'][] = $no; continue; }
             if ($p['status'] !== 'placed') continue;                                   // already tracked / in transit / delivered: leave it alone
             if (!$op) { $uq = $pdo->prepare("SELECT order_name FROM dp_dsp_parcels WHERE (tracking_no = ? OR pend_track = ?) AND id != ? LIMIT 1"); $uq->execute([$awb, $awb, (int)$p['id']]); if ((string)$uq->fetchColumn() !== '') continue; }
-            if ((int)$o['trk_adm'] === 1 || $op) { $pdo->prepare("UPDATE dp_dsp_parcels SET tracking_no = ?, courier = ?, status = 'transit', tracked_at = ?, tracked_by = 'Manual orders', transit_at = ?, pend_track = NULL, manual = 1 WHERE id = ? AND status = 'placed'")->execute([$awb, $co, $nowS, $nowS, (int)$p['id']]); $res['updated']++; }
+            if ($op) { $pdo->prepare("UPDATE dp_dsp_parcels SET tracking_no = ?, courier = ?, status = 'transit', tracked_at = ?, tracked_by = 'Manual orders', transit_at = ?, pend_track = NULL, manual = 1 WHERE id = ? AND status = 'placed'")->execute([$awb, $co, $nowS, $nowS, (int)$p['id']]); $res['updated']++; }   // office pickup: nothing for a courier to scan
+            elseif ((int)$o['trk_adm'] === 1) { $pdo->prepare("UPDATE dp_dsp_parcels SET tracking_no = ?, courier = ?, status = 'tracked', tracked_at = ?, tracked_by = 'Manual orders', transit_at = NULL, pend_track = NULL, manual = 1 WHERE id = ? AND status = 'placed'")->execute([$awb, $co, $nowS, (int)$p['id']]); $res['updated']++; }   // a tracking ID only: "Tracking ID given" until the courier really scans it (Shiprocket live news moves it on)
             elseif ($p['pend_track'] === null || $p['pend_track'] === '') { $pdo->prepare("UPDATE dp_dsp_parcels SET pend_track = ?, pend_courier = ?, pend_by = 'Manual orders', pend_at = ?, manual = 1 WHERE id = ? AND status = 'placed'")->execute([$awb, $co, $nowS, (int)$p['id']]); $res['updated']++; }
             if (function_exists('bd_log')) { try { bd_log('dispatch', $no, 'tracking ID ' . $awb . ' (' . $co . ') from Manual orders', 'Manual orders'); } catch (Throwable $e) { } }
         }
@@ -439,7 +442,7 @@ function wmo_apply_tracking(PDO $pdo, array $auth, int $id, string $awb, string 
     $adm = in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true) || (function_exists('bd_who') && !empty(bd_who($pdo, $auth)['admin']));
     $pdo->prepare("UPDATE wmo_order SET trk_no = ?, trk_courier = ?, trk_adm = ? WHERE id = ?")->execute([$awb, $cr, $adm ? 1 : 0, $id]);
     $note = '';
-    if ($awb !== '') { $h = wmo_dsp_heal($pdo, $no); $note = $h['updated'] > 0 ? ($adm || $op ? 'Also added on Dispatch: now in transit.' : 'Also sent to Admin on Dispatch for approval.') : (in_array($no, $h['no_parcel'], true) ? 'This order is not in the Dispatch parcel list yet (it is added by the next Dispatch sync, then this tracking ID follows).' : ''); }
+    if ($awb !== '') { $h = wmo_dsp_heal($pdo, $no); $note = $h['updated'] > 0 ? ($op ? 'Also added on Dispatch: Office Pickup.' : ($adm ? 'Also added on Dispatch: Tracking ID given.' : 'Also sent to Admin on Dispatch for approval.')) : (in_array($no, $h['no_parcel'], true) ? 'This order is not in the Dispatch parcel list yet (it is added by the next Dispatch sync, then this tracking ID follows).' : ''); }
     return ['', $note];
 }
 // ------------------------------------------------------------------------------------------------------------------ Shiprocket
