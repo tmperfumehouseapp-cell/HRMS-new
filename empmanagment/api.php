@@ -15226,7 +15226,7 @@ function ensure_addons_table(PDO $pdo): bool
     // re-run on servers where an older version already created the table
     // (and so already wrote the previous flag), which is what otherwise
     // leaves the addon_group column missing and every insert failing.
-    $flag = sys_get_temp_dir() . '/hrms_addons_ok_v2';
+    $flag = sys_get_temp_dir() . '/hrms_addons_ok_v3';
     if (is_file($flag)) return $done = true;
     try {
         $pdo->exec(
@@ -15253,6 +15253,8 @@ function ensure_addons_table(PDO $pdo): bool
         if (!in_array('addon_group', $cols, true)) {
             $pdo->exec("ALTER TABLE employee_addons ADD COLUMN addon_group CHAR(16) NULL");
         }
+        if (!in_array('prepaid_amt', $cols, true)) $pdo->exec("ALTER TABLE employee_addons ADD COLUMN prepaid_amt DECIMAL(12,2) NOT NULL DEFAULT 0");   // how much of the add-on the customer paid in advance
+        if (!in_array('cod_amt', $cols, true)) $pdo->exec("ALTER TABLE employee_addons ADD COLUMN cod_amt DECIMAL(12,2) NOT NULL DEFAULT 0");   // how much is collected on delivery
 
         @file_put_contents($flag, '1');
         return $done = true;
@@ -26488,6 +26490,8 @@ switch ($action) {
         // made-up per-product figure the user never entered.
         $total = round((float)($input['total_price'] ?? 0), 2);
         if ($total <= 0) json_response(['error' => 'Enter the total add-on price.'], 422);
+        $pre = max(0.0, round((float)($input['prepaid_amt'] ?? 0), 2)); $cod = max(0.0, round((float)($input['cod_amt'] ?? 0), 2));
+        if ($pre + $cod > 0 && abs($pre + $cod - $total) > 0.99) json_response(['error' => 'Prepaid + COD must add up to the total add-on price (' . number_format($total) . ').'], 422);
 
         $clean = [];
         foreach ($items as $it) {
@@ -26506,15 +26510,15 @@ switch ($action) {
         $groupId = bin2hex(random_bytes(8));
 
         $ins = $pdo->prepare(
-            "INSERT INTO employee_addons (employee_id, addon_date, group_key, order_name, product_name, size_ml, qty, price, addon_group, created_by)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO employee_addons (employee_id, addon_date, group_key, order_name, product_name, size_ml, qty, price, addon_group, created_by, prepaid_amt, cod_amt)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         );
         $pdo->beginTransaction();
         try {
             foreach ($clean as $i => $c) {
                 $ins->execute([
                     $empId, $date, $groupKey, $orderName, $c['name'], $c['size'] ?: null,
-                    $c['qty'], $i === 0 ? $total : 0, $groupId, $auth['username'],
+                    $c['qty'], $i === 0 ? $total : 0, $groupId, $auth['username'], $i === 0 ? $pre : 0, $i === 0 ? $cod : 0,
                 ]);
             }
             $pdo->commit();
