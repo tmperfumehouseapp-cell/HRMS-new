@@ -38,6 +38,7 @@ if (strpos($__wpl, 'wa.pl_') === 0) {
     if (!wpl_tables($pdo)) json_response(['error' => 'Planner storage is not available.'], 500);
     switch ($__wpl) {
         case 'wa.pl_get': {
+            if (function_exists('wa_camp_start_due')) wa_camp_start_due($pdo);
             $cfg = wpl_cfg($pdo); $rows = $pdo->query("SELECT id, file_name, phones, total_n, valid_n, tpl_id, media_lib_id, pos, camp_id, status, start_at, aud_type, aud_from, aud_to, aud_cf FROM wa_pl_item WHERE status IN ('draft','scheduled') ORDER BY (status = 'scheduled'), pos, id")->fetchAll();
             $seen = []; $seenF = []; $items = []; $draftIdx = 0;
             foreach ($rows as $r) {
