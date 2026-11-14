@@ -1578,7 +1578,8 @@ function wq_req_list(PDO $pdo, int $me = 0, int $limit = 200): array
         $k10 = array_map('strval', array_keys($l10)); sort($k10);
         // ⚡ reads every order; every open Requests list asked for it every few seconds with the same customers: one answer is kept for 40 s
         $has = array_flip(hrms_memo('wq_req_has:' . md5(implode(',', $k10)), 40, function () use ($pdo, $k10) {
-            $q = $pdo->prepare("SELECT DISTINCT RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(phone,' ',''),'-',''),'+',''),'(',''), 10) p FROM shop_orders WHERE RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(phone,' ',''),'-',''),'+',''),'(',''), 10) IN (" . wq_in($k10) . ")"); $q->execute($k10);
+            $x10 = "SUBSTR(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(phone, ' ', ''), '-', ''), '+', ''), '(', ''), ')', ''), -10)";      // written exactly like the index k_ph10, so only these customers' orders are read
+            $q = $pdo->prepare("SELECT DISTINCT $x10 p FROM shop_orders WHERE $x10 IN (" . wq_in($k10) . ")"); $q->execute($k10);
             return array_map('strval', $q->fetchAll(PDO::FETCH_COLUMN)); }));
         $hasOrd = fn($x) => isset($has[substr(preg_replace('/\D/', '', (string)$x['phone']), -10)]);
         $o = array_values(array_filter($o, fn($x) => !$hasOrd($x))); $late = array_values(array_filter($late, fn($x) => !$hasOrd($x)));

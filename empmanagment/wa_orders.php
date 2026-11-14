@@ -159,20 +159,24 @@ function wo_status_text(string $c, array $p): string
 }
 
 // ------------------------------------------------------------------------------------------------------------------ orders of a customer
+/** SQL: the last 10 digits of a phone column. Written EXACTLY like the index k_ph10 (wa_scale.php) on shop_orders and dp_dsp_parcels, so the database jumps straight to one customer's rows instead of reading every order. */
+function wo_ph10(string $col): string { return "SUBSTR(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE($col, ' ', ''), '-', ''), '+', ''), '(', ''), ')', ''), -10)"; }
 function wo_find_parcels(PDO $pdo, string $key, int $limit = 40): array
 {
-    // ⚡ this reads every parcel (the phone is stored in many spellings, so no index helps) and ran about once a second for the open chats: one answer per customer is kept for 45 s
-    return hrms_memo('wo_parcels:' . $key . ':' . $limit, 45, function () use ($pdo, $key, $limit) {
-        $q = $pdo->prepare("SELECT * FROM dp_dsp_parcels WHERE " . wo_sqld('phone') . " LIKE ? ORDER BY created_at DESC LIMIT " . (int)$limit * 2); $q->execute(['%' . $key . '%']); $o = [];
-        foreach ($q->fetchAll() as $r) if (in_array($key, wo_keys_of($r['phone']), true)) { $o[] = $r; if (count($o) >= $limit) break; }
-        return $o; });
+    $pick = function (array $rows) use ($key, $limit) { $o = []; foreach ($rows as $r) if (in_array($key, wo_keys_of($r['phone']), true)) { $o[] = $r; if (count($o) >= $limit) break; } return $o; };
+    if ((string)setting_get($pdo, 'wo_ph10_parcels', '') === '1') {   // ⚡ the index is there: a direct lookup, always fresh
+        $q = $pdo->prepare("SELECT * FROM dp_dsp_parcels WHERE " . wo_ph10('phone') . " = ? ORDER BY created_at DESC LIMIT " . (int)$limit * 2); $q->execute([$key]); return $pick($q->fetchAll());
+    }
+    // until the index is added (the engine does it on its next run): the old read of every parcel, one answer per customer kept for 45 s
+    return hrms_memo('wo_parcels:' . $key . ':' . $limit, 45, function () use ($pdo, $key, $limit, $pick) {
+        $q = $pdo->prepare("SELECT * FROM dp_dsp_parcels WHERE " . wo_sqld('phone') . " LIKE ? ORDER BY created_at DESC LIMIT " . (int)$limit * 2); $q->execute(['%' . $key . '%']); return $pick($q->fetchAll()); });
 }
 function wo_find_shop(PDO $pdo, string $key, int $limit = 40): array
 {
-    return hrms_memo('wo_shop:' . $key . ':' . $limit, 45, function () use ($pdo, $key, $limit) {      // ⚡ as above: every order is read, so one answer per customer is kept for 45 s
-        $q = $pdo->prepare("SELECT * FROM shop_orders WHERE " . wo_sqld('phone') . " LIKE ? ORDER BY created_at DESC LIMIT " . (int)$limit * 2); $q->execute(['%' . $key . '%']); $o = [];
-        foreach ($q->fetchAll() as $r) if (in_array($key, wo_keys_of($r['phone']), true)) { $o[] = $r; if (count($o) >= $limit) break; }
-        return $o; });
+    // ⚡ direct lookup through the index k_ph10 (it was reading all 56,000 orders for every opened chat). If the index were ever missing the answer is the same, only slow.
+    $q = $pdo->prepare("SELECT * FROM shop_orders WHERE " . wo_ph10('phone') . " = ? ORDER BY created_at DESC LIMIT " . (int)$limit * 2); $q->execute([$key]); $o = [];
+    foreach ($q->fetchAll() as $r) if (in_array($key, wo_keys_of($r['phone']), true)) { $o[] = $r; if (count($o) >= $limit) break; }
+    return $o;
 }
 function wo_parcel_by(PDO $pdo, string $store, string $sid, string $name = ''): ?array
 {
