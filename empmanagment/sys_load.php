@@ -155,7 +155,7 @@ function sysload_block(array $blocks, int $start): array
     }
     $names = sysload_names(); $rows = [];
     foreach ($agg as $k => $a) {
-        $nm = $names[$k] ?? null; $job = (bool)preg_match('/(\.tick|\.cron|cron_send|_tick|_worker)$/', $k) || strpos($k, 'wa.cron') === 0;
+        $nm = $names[$k] ?? null; $job = in_array($k, ['wa.cron', 'wa.cron_send', 'bd.tick', 'dp.tick', 'chk.tick', 'orders.cron', 'mail.cron', 'lib.cron', 'reminders.tick'], true);      // only the real server jobs (cron); "wa.camp_fast_tick" and "wa.dq_worker" are open Campaigns pages = people
         $rows[] = ['action' => $k, 'name' => $nm ? $nm[0] : $k, 'why' => $nm ? $nm[1] : '', 'kind' => $job ? 'job' : (strpos($k, 'webhook') !== false ? 'outside' : 'people'),
             'calls' => $a['n'], 'avg_ms' => (int)round($a['wall'] / max(1, $a['n'])), 'max_ms' => $a['max'], 'cpu_s' => round($a['cpu'] / 1000, 1), 'wall_s' => round($a['wall'] / 1000, 1), 'wait_s' => round(max(0, $a['wall'] - $a['cpu']) / 1000, 1),
             'time_share' => $tot['wall'] > 0 ? round(100 * $a['wall'] / $tot['wall'], 1) : 0, 'cpu_share' => $tot['cpu'] > 0 ? round(100 * $a['cpu'] / $tot['cpu'], 1) : 0];
