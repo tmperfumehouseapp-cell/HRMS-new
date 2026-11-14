@@ -22,6 +22,12 @@
   function css() { if (document.getElementById('crCss')) return; const s = document.createElement('style'); s.id = 'crCss'; s.textContent = CSS; document.head.appendChild(s); }
   const GRP = [['ordered', '🛍 Ordered', 'Thank them / ask for a review'], ['replied_no_order', '💬 Replied, did not order', 'Best follow-up audience'], ['read_ignored', '👀 Read, did not reply', 'Try a different message'], ['not_read', '📭 Not read', 'Try another time of day']];
 
+  // 🧭 how each kind of customer (new / one-time / repeat / loyal / at risk / lapsed / never ordered) answered this campaign
+  async function typeResults(m, r) {
+    let d; try { d = await api.get('wa.cf_camp', { id: r.id }); } catch (e) { return; } if (!d || !(d.rows || []).length || !m.body.isConnected) return;
+    const p = (a, b) => (b ? Math.round(1000 * a / b) / 10 + '%' : '—'), best = d.rows.filter((x) => x.n >= 200).sort((a, b) => b.od / b.n - a.od / a.n)[0];
+    m.body.insertAdjacentHTML('beforeend', `<div class="cr-h">🧭 Results by customer type <small style="font-weight:500;opacity:.7">· ${fmt(d.sent)} people who got it</small></div><div class="cr-t" style="grid-template-columns:1fr auto auto auto auto"><span class="hd">Type</span><span class="hd">People</span><span class="hd">Delivered</span><span class="hd">Wrote back</span><span class="hd">Ordered</span>${d.rows.map((x) => `<span>${esc(x.label)}</span><span>${fmt(x.n)}</span><span>${p(x.dl, x.n)}</span><span>${p(x.rp, x.n)}</span><span><b>${p(x.od, x.n)}</b></span>`).join('')}</div>${best ? `<div class="wp-hint" style="margin-top:6px">Best order rate: <b>${esc(best.label)}</b> (${p(best.od, best.n)}). Aim the next campaign there first.</div>` : ''}<div class="wp-hint">“Wrote back” and “Ordered” count what happened after this campaign started.</div>`);
+  }
   async function open(c) {
     css(); const u = U(); const m = u.modal('📊 Report card — ' + c.name); m.el.classList.add('cu-wide'); m.body.innerHTML = '<div class="wp-hint">Reading the results…</div>';
     let r; try { r = (await api.get('wa.camp_report', { id: c.id })).report; } catch (e) { m.body.innerHTML = `<div class="wp-note">${esc(e.message)}</div>`; return; }
@@ -52,6 +58,7 @@
     h += `<div class="cr-h">Ready audiences for a follow-up</div><div class="cr-grp">${GRP.map(([k, l, s]) => `<div><small>${esc(l)}</small><b>${fmt(r.groups[k])}</b><small style="color:#6b7684">${esc(s)}</small><br><button type="button" class="wp-btn s" data-tag="${k}" ${r.groups[k] ? '' : 'disabled'}>Make it a tag</button></div>`).join('')}</div><div class="wp-hint">The tag appears in New campaign → Who within about 10 minutes, so you can send the follow-up to exactly these people.</div>`;
     h += `<div class="cr-adv" id="crAdv">${advHtml(r)}</div>`;
     m.body.innerHTML = h;
+    typeResults(m, r);
     { const box = m.body.querySelector('#crTg'); if (box) { const R = r.tag_rows, G = ['All'].concat([...new Set(R.map((t) => t.group))]); let grp = 'All', sort = 'reply', lim = 8;
         const draw = () => { let L = R.filter((t) => grp === 'All' || t.group === grp); L = L.slice().sort((a, b) => sort === 'order' ? (b.order_pct || 0) - (a.order_pct || 0) : sort === 'size' ? b.n - a.n : (b.reply_pct || 0) - (a.reply_pct || 0));
           const lf = (v) => (v == null ? '' : `<span style="font-weight:800;color:${v >= 1.3 ? '#15803d' : v < 0.7 ? '#c2262b' : '#6b7684'}">×${v}</span>`);
