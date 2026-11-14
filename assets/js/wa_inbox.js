@@ -299,9 +299,13 @@
     }
     function drawKpi() {
       const c = S.counts || {};
-      $('wiK').innerHTML = admin
-        ? `<div class="${c.unassigned ? 'hot' : ''}"><small>Unassigned</small><b>${c.unassigned || 0}</b></div><div class="${c.waiting ? 'hot' : ''}"><small>Waiting for a reply</small><b>${c.waiting || 0}</b></div><div><small>Open chats</small><b>${c.all || 0}</b></div><div><small>Closed</small><b>${c.closed || 0}</b></div>`
-        : `<div><small>My open chats</small><b>${c.mine || 0}</b></div><div class="${c.waiting ? 'hot' : ''}"><small>Waiting for my reply</small><b>${c.waiting || 0}</b></div><div><small>Closed by me</small><b>${c.closed || 0}</b></div>`;
+      // 👆 every counter is a button: it shows exactly the chats it counts (Waiting = the customer wrote last and nobody answered). The one in use is outlined.
+      const K = admin ? [['unassigned', '', 'Unassigned', c.unassigned, 1], ['all', 'waiting', 'Waiting for a reply', c.waiting, 1], ['all', '', 'Open chats', c.all, 0], ['closed', '', 'Closed', c.closed, 0]]
+                      : [['mine', '', 'My open chats', c.mine, 0], ['mine', 'waiting', 'Waiting for my reply', c.waiting, 1], ['closed', '', 'Closed by me', c.closed, 0]];
+      const cur = (sc, fl) => !S.emp && S.scope === sc && (fl ? S.flt.includes(fl) : !S.flt.includes('waiting'));
+      $('wiK').innerHTML = K.map(([sc, fl, l, n, hot]) => `<div role="button" tabindex="0" data-ksc="${sc}" data-kfl="${fl}" title="Show these chats" class="${hot && n ? 'hot' : ''}" style="cursor:pointer;${cur(sc, fl) ? 'outline:2px solid #1aa37a;outline-offset:-1px;' : ''}"><small>${l}</small><b>${n || 0}</b></div>`).join('');
+      $('wiK').querySelectorAll('[data-ksc]').forEach((el) => { const go = () => { S.scope = el.dataset.ksc; S.emp = 0; if ($('wiE')) { $('wiE').value = '0'; try { ebSync(); } catch (e) { } } S.flt = el.dataset.kfl ? [el.dataset.kfl] : S.flt.filter((x) => x !== 'waiting'); try { flLabel(); } catch (e) { } drawKpi(); loadList(); };
+        el.onclick = go; el.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } }; });
     }
     const LC = { new: '#fee2e2;color:#991b1b', waiting: '#ffedd5;color:#9a3412', hot: '#fee2e2;color:#991b1b', rescue: '#ede9fe;color:#5b21b6', bot: '#e0f2fe;color:#075985', ordered: '#dcfce7;color:#166534', complaint: '#f3e8ff;color:#6b21a8', talking: '#dcfce7;color:#166534', replied: '#f1f5f9;color:#334155', quiet: '#f1f5f9;color:#64748b', closed: '#f1f5f9;color:#64748b' };
   // 📍 one customer's own timeline: where they are, what went, what comes next, why something waits (tap the 📍 chip)
@@ -492,7 +496,7 @@
     }
     // ⏷ Filter: the order of the list + show only … (like Quick Engage), applied together
     const SORTS = [['', 'Waiting first (default)'], ['new', 'Newest first'], ['old', 'Oldest first'], ['az', 'Name A → Z'], ['za', 'Name Z → A']];
-    const FLTS = [['noreply', 'Not responded — no salesperson reply'], ['late', 'Waiting too long'], ['unassigned', 'Unassigned'], ['hot', '🔥 Hot — ready to buy'], ['complaint', 'Complaint'], ['today', '📅 Today’s chats'], ['yesterday', '🗓 Yesterday’s chats']];
+    const FLTS = [['waiting', 'Waiting for a reply — the customer wrote last'], ['noreply', 'Not responded — no salesperson reply'], ['late', 'Waiting too long'], ['unassigned', 'Unassigned'], ['hot', '🔥 Hot — ready to buy'], ['complaint', 'Complaint'], ['today', '📅 Today’s chats'], ['yesterday', '🗓 Yesterday’s chats']];
     function flLabel() { const b = $('wiFb'); if (!b) return; const n = S.flt.length + (S.sort ? 1 : 0); b.textContent = '⏷ Filter' + (n ? ' · ' + n : ''); b.classList.toggle('on', n > 0); }
     function flDraw() {
       $('wiFp').innerHTML = '<b class="wi-flh">Sort by</b>' + SORTS.map(([k, l]) => `<label class="wi-flo"><input type="radio" name="wiFs" value="${k}"${S.sort === k ? ' checked' : ''}> ${l}</label>`).join('')

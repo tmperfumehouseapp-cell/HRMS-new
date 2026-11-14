@@ -1041,6 +1041,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
             // 🔽 the Filter menu: show only … (any mix) and the order
             $wBase = $w; $pBase = $p;   // the view without the Filter menu: tab (All open / Closed / …) + chip (Query / Community / …) + person + search — the Not-responded count is for THIS view
             $flt = array_flip(array_filter(explode(',', (string)($_GET['flt'] ?? '')))); $noRep = "(c.last_in_at IS NOT NULL AND c.last_in_at >= '" . date('Y-m-d H:i:s', time() - 86400) . "' AND NOT EXISTS (SELECT 1 FROM wa_messages hm WHERE hm.phone = c.phone AND hm.dir = 'out' AND hm.emp_id > 0 AND hm.ts >= c.last_in_at))";   // 🙅 not responded: the customer wrote (last 24 h) and no SALESPERSON answered after it (a bot / auto message does not count)
+            if (isset($flt['waiting'])) $w[] = "(c.last_in_at IS NOT NULL AND (c.last_out_at IS NULL OR c.last_out_at < c.last_in_at) AND c.optout = 0)";   // ⏳ exactly what the "Waiting for a reply" counter counts: the customer wrote last
             if (isset($flt['noreply'])) $w[] = $noRep;
             if (isset($flt['unassigned'])) $w[] = 'c.assigned_emp = 0';
             if (isset($flt['hot'])) $w[] = 'c.hot = 1';
