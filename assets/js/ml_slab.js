@@ -229,5 +229,19 @@
     return map;
   }
 
-  window.MLSLAB = { bonusFor, tiersOf, codeNeed, tagCodes, rowFor, pctOf, orderCom, forDay, specialsOn, parts, preview, isPre, extraByPrice, activeOn, datesTxt, flashFor, flashCom, on: (c) => !!(c && Number(c.on)) };
+  /**
+   * 🏷 Commission-page OFFER (Commission → Offers & boosts: ML + price ± window → flat %). Same rule as the server (boss2.php cm_offer_match / cm_day):
+   * same total ML, the price BEFORE the prepaid discount within ± window of the offer price, on a day the offer runs; no code → the chart's no-code share (50 = half).
+   * offers = [{ ml, price, pct, from, to, active, stopped }]. Returns a result shaped like orderCom() ({ v, pct, base, steps, ... , offer: true }) or null.
+   */
+  function offerCom(offers, win, chart, o) {
+    const ml = Math.round(Number(o.ml)), day = String(o.day || '').slice(0, 10), amt = Number(o.amt) || 0; if (!(ml > 0) || !day || !(amt > 0) || !offers || !offers.length) return null;
+    const pre = o.pre && chart && Number(chart.prepaid) > 0 ? Number(chart.prepaid) : 0, gross = pre ? amt / (1 - pre / 100) : amt, W = Number(win) || 60;
+    const x = offers.find((f) => Math.round(Number(f.ml)) === ml && (!f.from || day >= f.from) && (!f.to || day <= f.to) && (Number(f.active) || (f.stopped && day <= f.stopped)) && Math.abs(gross - Number(f.price)) <= W + 1e-9);
+    if (!x) return null;
+    const full = !!(o.code || o.codeOk), nc = chart && chart.nocode != null && chart.nocode !== '' ? Number(chart.nocode) : 50, pct = Number(x.pct) * (full ? 1 : nc / 100);
+    return { v: gross * pct / 100, pct: r2(pct), base: r2(Number(x.pct)), steps: ['🏷 offer · ' + ml + ' ml at ' + Math.round(Number(x.price)) + ' (±' + W + ') → ' + r2(Number(x.pct)) + '%' + (full ? '' : ' → no code: ' + r2(pct) + '%')], ml, look: gross, disc: 0, overMax: false, bonus: false, special: null, offer: true };
+  }
+
+  window.MLSLAB = { bonusFor, tiersOf, codeNeed, tagCodes, rowFor, pctOf, orderCom, forDay, specialsOn, parts, preview, isPre, extraByPrice, activeOn, datesTxt, flashFor, flashCom, offerCom, on: (c) => !!(c && Number(c.on)) };
 })();
