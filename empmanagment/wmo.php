@@ -259,6 +259,7 @@ function wmo_costs(PDO $pdo): array
 function wmo_dsp_ok(PDO $pdo, array $auth): bool
 {
     if (in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true)) return true;
+    if (function_exists('user_can') && user_can($auth, 'manual_orders')) return true;      // the 'Manual orders' tick on the Roles page
     $e = (int)($auth['employee_id'] ?? 0); if ($e <= 0) return false;
     try {
         $q = $pdo->prepare("SELECT d.department_name, e.designation FROM employees e LEFT JOIN departments d ON d.department_id = e.department_id WHERE e.employee_id = ?"); $q->execute([$e]); $r = $q->fetch();

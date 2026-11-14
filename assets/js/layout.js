@@ -330,7 +330,7 @@ window.WS = (function () {
     { key: 'complaints', label: 'Complaints', icon: 'complaints', sub: 'Every customer problem is a ticket — Tracking and Complaint desks', tabs: [['complaints', 'Tickets', 'complaints.html', 'cx'], ['my_complaints', 'My complaints', 'my_complaints.html', 'cxm']] },
     { key: 'inbox', label: 'Inbox', icon: 'inbox', sub: 'Instagram, Facebook, email and reviews — answered in one place', tabs: [['social_inbox', 'Inbox hub', 'social_inbox.html', 'sx']] },
     { key: 'boss', label: 'Boss', icon: 'approvals', sub: 'Tasks, numbers, problems and penalties (people, pay and commission live in Budgeting)', tabs: [['boss_engine', 'Today', 'boss_engine.html', 'boss', 'today'], ['be_sections', 'Sections', 'boss_engine.html', 'boss', 'sections'], ['be_work', 'All work', 'boss_engine.html', 'boss', 'work'], ['staff_progress', 'Staff progress', 'staff_progress.html', 'cxr'], ['be_pens', 'Penalties', 'boss_engine.html', 'boss', 'pens'], ['be_problems', 'Problems', 'boss_engine.html', 'boss', 'problems'], ['boss_questions', 'Questions', 'boss_questions.html', 'boss'], ['dept_hub', 'Workbenches', 'dept_hub.html', 'boss'], ['daily_summary', 'Summary', 'daily_summary.html', 'boss'], ['tracker', 'Daily tracker', 'tracker.html', 'boss'], ['brain', 'Brain', 'brain.html', 'boss'], ['be_setup', 'Setup & health', 'boss_engine.html', 'boss', 'setup'], ['boss_rules', 'Rules in sync', 'boss_rules.html', 'admin']] },
-    { key: 'dispatch', label: 'Dispatch', icon: 'dispatch', sub: 'Parcels, tracking numbers and Shiprocket', tabs: [['dept_dispatch', 'Parcels and tracking', 'dept_dispatch.html', 'boss'], ['dispatch_manual', 'Manual orders', 'dispatch_manual.html', 'boss'], ['manual_sheet', 'Manual order sheet', 'manual_sheet.html', 'boss'], ['sku_sheet', 'SKU sheet', 'sku_sheet.html', 'boss'], ['customers', 'Customers', 'customers.html', 'boss'], ['dept_restock', 'Store orders', 'dept_restock.html', 'rsd'], ['dispatch_logins', 'Dispatch logins', 'dispatch_logins.html', 'admin']] },
+    { key: 'dispatch', label: 'Dispatch', icon: 'dispatch', sub: 'Parcels, tracking numbers and Shiprocket', tabs: [['dept_dispatch', 'Parcels and tracking', 'dept_dispatch.html', 'boss'], ['dispatch_manual', 'Manual orders', 'dispatch_manual.html', 'mo'], ['manual_sheet', 'Manual order sheet', 'manual_sheet.html', 'mo'], ['sku_sheet', 'SKU sheet', 'sku_sheet.html', 'sk'], ['customers', 'Customers', 'customers.html', 'boss'], ['dept_restock', 'Store orders', 'dept_restock.html', 'rsd'], ['dispatch_logins', 'Dispatch logins', 'dispatch_logins.html', 'admin']] },
     { key: 'store', label: 'Store', icon: 'retail_store', sub: 'Everything about the Surat store', tabs: [['store_dashboard', 'Dashboard', 'store_dashboard.html', 'rsm'], ['store_billing', 'Billing', 'store_billing.html', 'rs'], ['store_messages', 'Messages', 'store_messages.html', 'rs'], ['store_team', 'Team', 'store_team.html', 'rsm'], ['store_commission', 'Store Commission', 'store_commission.html', 'rsm'], ['store_inventory', 'Inventory', 'store_inventory.html', 'rs'], ['store_cleaning', 'Cleaning & Pantry', 'store_cleaning.html', 'boss'], ['store_contacts', 'Customer follow-up', 'store_contacts.html', 'rsm'], ['flyers', 'Flyers', 'flyers.html', 'fl'], ['flyer_map', 'Flyer Map', 'flyer_map.html', 'flm'], ['store_logins', 'Store logins', 'store_logins.html', 'admin']] },
     { key: 'inventory', label: 'Inventory', icon: 'inventory', sub: 'Oils, perfumes, orders and dealers: what you have, what you need, what will be late', tabs: [['iv_dash', 'Dashboard', 'inventory.html', '', 'dashboard'], ['iv_oils', 'Oil stock', 'inventory.html', '', 'oils'], ['iv_perf', 'Perfumes', 'inventory.html', '', 'perfumes'], ['iv_calc', 'Oil calculator', 'inventory.html', '', 'calc'], ['iv_orders', 'Orders', 'inventory.html', '', 'orders'], ['iv_sup', 'Dealers', 'inventory.html', '', 'dealers'], ['iv_alerts', 'Alerts', 'inventory.html', '', 'alerts'], ['iv_rep', 'Reports', 'inventory.html', '', 'reports']] },
     { key: 'finance', label: 'Finance', icon: 'finance', sub: 'Money in, money out, bank checks', tabs: [['finance_sum', 'Summary', 'finance_sum.html', ''], ['finance_in', 'Incoming', 'finance_in.html', ''], ['finance_parcels', 'Refunds & closed', 'finance_parcels.html', '']] },
@@ -338,7 +338,7 @@ window.WS = (function () {
     { key: 'people', label: 'People', icon: 'employees', hidden: true, sub: 'Old People pages (opened from Boss → People)', tabs: [['employees', 'Employees', 'employees.html', ''], ['people_admin', 'Admin team', 'people_admin.html', 'admin'], ['attendance_admin', 'Attendance', 'attendance_admin.html', ''], ['my_day', 'My Day', 'my_day.html', 'punch'], ['leave_requests', 'Leave', 'leave_requests.html', ''], ['salary', 'Salary', 'salary.html', ''], ['penalties', 'Penalty list', 'penalties.html', ''], ['approvals', 'Approvals', 'approvals.html', ''], ['documents', 'Documents', 'documents.html', ''], ['doc_check', 'Doc Check', 'doc_check.html', ''], ['agreements', 'Agreements', 'agreements.html', ''], ['handover', 'Handover', 'handover.html', ''], ['ex_employees', 'Ex-employees', 'ex_employees.html', ''], ['history', 'Decline history', 'history.html', ''], ['leave', 'My Leave', 'leave.html', 'emp']] },
     { key: 'offices', label: 'Offices', icon: 'departments', sub: 'Cleaning, buying and repairs for every office, checked by Claude first', tabs: [['office_care', 'Offices', 'office_care.html', 'boss'], ['dept_work', 'To buy', 'dept_work.html', 'boss'], ['dept_fix', 'To fix', 'dept_fix.html', 'boss']] },
     { key: 'admin', label: 'Admin', icon: 'commission_rules', sub: 'Set-up you touch rarely', tabs: [['users', 'Users', 'users.html', 'pp'], ['roles', 'Roles', 'roles.html', ''], ['offices', 'Office Locations', 'offices.html', ''], ['excel_files', 'Excel Files', 'excel_files.html', ''], ['system_health', 'System health', 'system_health.html', 'admin'], ['ai_usage', 'AI usage', 'ai_usage.html', 'admin'], ['changes', 'Changes', 'changes.html', 'admin'], ['rates_weights', 'Rates & weights', 'rates_weights.html', 'admin'], ['whats_new', "What's new", 'whats_new.html', 'admin']] },
-    { key: 'help', label: 'Help', icon: 'help', sub: 'Live health of the system: database, pages, POS, security', tabs: [['help', 'Help', 'help.html', 'admin'], ['server_load', 'Server load', 'server_load.html', 'admin']] },      // Server load: CPU, what the database and each function cost, with ready prompts
+    { key: 'help', label: 'Help', icon: 'help', sub: 'Live health of the system: database, pages, POS, security', tabs: [['help', 'Help', 'help.html', 'admin'], ['server_load', 'Server load', 'server_load.html', 'sl']] },      // Server load: CPU, what the database and each function cost, with ready prompts
   ];
   // The permission (ticked on the Roles page) that opens each page, for roles that are not Admin.
   const PERM = {
@@ -397,6 +397,9 @@ window.WS = (function () {
   function tabOk(t, ctx) {
     const need = t[3];
     if (need === 'admin') return ctx.isAdmin;
+    if (need === 'mo') return !!ctx.boss || ctx.perms.indexOf('manual_orders') > -1;   // Manual orders + sheet: a boss, or the 'Manual orders' tick
+    if (need === 'sk') return !!ctx.boss || ctx.perms.indexOf('sku_sheet') > -1 || ctx.perms.indexOf('orders') > -1;   // SKU sheet: a boss, the 'SKU sheet' tick, or the Orders page
+    if (need === 'sl') return ctx.isAdmin || ctx.perms.indexOf('server_load') > -1;   // Server load: Admin, or the 'Server load' tick
     if (need === 'srp') return ctx.isAdmin || ctx.perms.indexOf('store_pos') > -1;   // Store → POS: Admin and roles ticked 'Store · POS only'
     if (need === 'rsd') return ctx.isAdmin || ctx.perms.indexOf('dispatch_restock') > -1;   // Dispatch → Store orders: Admin and the Dispatch role
     if (need === 'wa') return ctx.isAdmin || ctx.role === 'HR' || ctx.perms.indexOf('control_tower') > -1;   // the WhatsApp console: the same people wa.php lets in
@@ -833,6 +836,13 @@ function renderSidebarCore(active) {
   const SALES_PERMS = ['control_tower', 'orders', 'allocation', 'order_codes', 'retail', 'targets', 'order_targets', 'performance', 'detailed_report', 'commission', 'commission_rules'];
   const SALES_PAGE_KEYS = ['control_tower', 'orders', 'order_allocation', 'order_codes', 'retail_shops', 'retail_inventory', 'targets', 'order_targets', 'performance', 'detailed_report', 'commission', 'commission_rules', 'price_charts', 'leaders', 'sales_sheet', 'my_chats'];
   // Each permission can unlock one or more pages.
+  // Pages a role gets by a tick on the Roles page that ALSO stay open by their own rule (the Dispatch department, a boss …): they add a menu link for the ticked role,
+  // but they are not part of the "this page is not for your role" guard below, so the people who already had them are never turned away. The server checks every one.
+  const PAGES_OPEN = {
+    sku_sheet: [['sku_sheet.html', 'SKU sheet', 'sku_sheet']],
+    manual_orders: [['dispatch_manual.html', 'Manual orders (all)', 'dispatch_manual'], ['manual_sheet.html', 'Manual order sheet', 'manual_sheet']],
+    server_load: [['server_load.html', 'Server load', 'server_load']],
+  };
   const PAGES_FOR_PERM = {
     inventory: [['inventory.html', 'Inventory', 'iv_dash']],
     dispatch_restock: [['dept_restock.html', 'Store orders', 'dept_restock']],
@@ -928,7 +938,7 @@ function renderSidebarCore(active) {
       if (inSales) nav.insertAdjacentHTML('beforeend', `<a href="sales.html" class="${active === 'sales' || SALES_PAGE_KEYS.includes(active) ? 'active' : ''}">Sales</a>`);
       perms.forEach((p) => {
         if (SALES_PERMS.includes(p)) return;
-        (PAGES_FOR_PERM[p] || []).forEach((def) => {
+        (PAGES_FOR_PERM[p] || PAGES_OPEN[p] || []).forEach((def) => {
           nav.insertAdjacentHTML('beforeend', `<a href="${def[0]}" class="${active === def[2] ? 'active' : ''}">${def[1]}</a>`);
         });
       });
@@ -955,7 +965,7 @@ function renderSidebarCore(active) {
     // Pages every employee may open. Anything else is hidden immediately —
     // before its own script can show admin data — until me.flags confirms
     // the Employee role was granted that module on the Roles page.
-    const EMPLOYEE_PAGES = ['dispatch_manual', 'social_inbox', 'attendance', 'leave', 'my_salary', 'my_penalties', 'my_agreements', 'my_sales', 'orders', 'my_chats', 'wasales', 'my_space', 'my_orders', 'manual_order', 'my_day', 'boss_engine', 'boss_inbox', 'daily_summary', 'tracker', 'brain', 'office_care', 'boss_questions', 'boss_penalties', 'dept_hub', 'dept_dispatch', 'customers', 'dept_restock', 'dept_shops', 'dept_supplies', 'dept_work', 'dept_fix', 'people_admin' /*bd-arr*/, 'flyers', 'complaints', 'my_complaints'];
+    const EMPLOYEE_PAGES = ['dispatch_manual', 'manual_sheet', 'sku_sheet', 'social_inbox', 'attendance', 'leave', 'my_salary', 'my_penalties', 'my_agreements', 'my_sales', 'orders', 'my_chats', 'wasales', 'my_space', 'my_orders', 'manual_order', 'my_day', 'boss_engine', 'boss_inbox', 'daily_summary', 'tracker', 'brain', 'office_care', 'boss_questions', 'boss_penalties', 'dept_hub', 'dept_dispatch', 'customers', 'dept_restock', 'dept_shops', 'dept_supplies', 'dept_work', 'dept_fix', 'people_admin' /*bd-arr*/, 'flyers', 'complaints', 'my_complaints'];
     const needsCheck = !EMPLOYEE_PAGES.includes(active);
     const empOkKey = 'hrms_pok:' + user.username + ':Employee:' + active;
     const empSeenOk = (() => { try { return Date.now() - Number(localStorage.getItem(empOkKey) || 0) < 43200000; } catch (e) { return false; } })();   // already confirmed in the last 12 h: no waiting
@@ -982,10 +992,10 @@ function renderSidebarCore(active) {
     api.get('me.flags').then((d) => {
       if (syncRole(d)) return;
       const perms = d.permissions || [];
-      const grantedActives = perms.flatMap(p => (PAGES_FOR_PERM[p] || []).map(def => def[2]));
+      const grantedActives = perms.flatMap(p => (PAGES_FOR_PERM[p] || PAGES_OPEN[p] || []).map(def => def[2]));
       const allowed = ['attendance', 'leave', 'my_salary', 'my_penalties', 'my_agreements', 'my_space'].concat(grantedActives);
       allowed.push('my_day', 'boss_engine', 'boss_inbox', 'daily_summary', 'tracker', 'brain', 'office_care', 'boss_questions', 'boss_penalties', 'dept_hub', 'dept_dispatch', 'dept_restock', 'dept_shops', 'dept_supplies', 'dept_work', 'dept_fix', 'people_admin'); /*bd*/
-      allowed.push('flyers', 'complaints', 'my_complaints', 'social_inbox', 'staff_progress', 'dispatch_manual');   // staff_progress: the server (bd.staff_report) lets in only the complaints boss / top boss / deputy
+      allowed.push('flyers', 'complaints', 'my_complaints', 'social_inbox', 'staff_progress', 'dispatch_manual', 'manual_sheet', 'sku_sheet');      // Manual orders and the SKU sheet: the server lets in the Dispatch department, Sales Heads and the ticked roles   // staff_progress: the server (bd.staff_report) lets in only the complaints boss / top boss / deputy
       if (d.is_sales) allowed.push('my_sales', 'orders', 'my_chats', 'wasales', 'my_orders', 'manual_order');
       // Home page after login: sales people open My Sales (their numbers, rating, offer); everyone else opens Attendance. Remembered for index.html.
       try { localStorage.setItem('hrms_home', 'my_day.html'); } catch (e) { /* private mode */ }
@@ -1015,7 +1025,7 @@ function renderSidebarCore(active) {
           links += `
         <div class="nav-label">More</div>`;
           morePerms.forEach((p) => {
-            (PAGES_FOR_PERM[p] || []).forEach((def) => {
+            (PAGES_FOR_PERM[p] || (p === 'server_load' ? PAGES_OPEN[p] : null) || []).forEach((def) => {      // Manual orders and the SKU sheet get their links below (wmo.dsp_access / sku.access), ticked or by department
               links += `
         <a href="${def[0]}" class="${active === def[2] ? 'active' : ''}">${def[1]}</a>`;
             });
@@ -1035,7 +1045,11 @@ function renderSidebarCore(active) {
         api.get('wmo.dsp_access').then((c) => {   // 🧾 Manual orders (all): Dispatch, the Admin department, Sales Heads
           const nav = document.querySelector('.sidebar nav'); if (!nav || !c || !c.ok || document.getElementById('dmNavLink')) return;
           const a4 = document.createElement('a'); a4.id = 'dmNavLink'; a4.href = 'dispatch_manual.html'; a4.className = active === 'dispatch_manual' ? 'active' : ''; a4.textContent = 'Manual orders (all)'; nav.appendChild(a4);
-          if (!document.getElementById('skNavLink')) { const a5 = document.createElement('a'); a5.id = 'skNavLink'; a5.href = 'sku_sheet.html'; a5.className = active === 'sku_sheet' ? 'active' : ''; a5.textContent = 'SKU sheet'; nav.appendChild(a5); }      // 📦 the same people get the SKU sheet
+          if (!document.getElementById('msNavLink')) { const a6 = document.createElement('a'); a6.id = 'msNavLink'; a6.href = 'manual_sheet.html'; a6.className = active === 'manual_sheet' ? 'active' : ''; a6.textContent = 'Manual order sheet'; nav.appendChild(a6); }
+        }).catch(() => {});
+        api.get('sku.access').then((c) => {   // 📦 SKU sheet: the 'SKU sheet' tick on the Roles page, or the Dispatch department / a Sales Head
+          const nav = document.querySelector('.sidebar nav'); if (!nav || !c || !c.ok || document.getElementById('skNavLink')) return;
+          const a5 = document.createElement('a'); a5.id = 'skNavLink'; a5.href = 'sku_sheet.html'; a5.className = active === 'sku_sheet' ? 'active' : ''; a5.textContent = 'SKU sheet'; nav.appendChild(a5);
         }).catch(() => {});
         api.get('bd.cx_badge').then((c) => {   // Complaints: the team gets the board, a salesperson who raised one gets the status page
           const nav = document.querySelector('.sidebar nav'); if (!nav || !c || document.getElementById('cxNavLink')) return;

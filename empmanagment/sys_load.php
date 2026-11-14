@@ -265,7 +265,7 @@ function sysload_view(PDO $pdo, int $mins): array
 function sysload_route(PDO $pdo, string $action): void
 {
     $auth = require_auth();
-    if (($auth['role'] ?? '') !== 'Admin') json_response(['error' => 'Only Admin can see the server load.'], 403);
+    if (($auth['role'] ?? '') !== 'Admin' && !user_can($auth, 'server_load')) json_response(['error' => 'The server load is for Admin and roles ticked "Server load".'], 403);
     if ($action === 'sysload.view') { @set_time_limit(40); json_response(sysload_view($pdo, max(15, min(180, (int)($_GET['mins'] ?? 60))))); }
     json_response(['error' => 'Unknown action.'], 404);
 }

@@ -190,10 +190,11 @@ function sku_sheet(PDO $pdo, string $day): array
 }
 
 /** Who may open the SKU sheet: Admin, HR, a role ticked 'Orders', and the SAME people as the Dispatch "Manual orders" page — everyone whose department is Dispatch (or Admin),
- *  whose designation says Dispatch or Sales Head, the Boss-engine managers, and the holders of a Dispatch seat. So a Dispatch person needs no extra tick. */
+ *  whose designation says Dispatch or Sales Head, the Boss-engine managers, and the holders of a Dispatch seat. So a Dispatch person needs no extra tick.
+ *  Any other role gets it with the 'SKU sheet' tick on the Roles page. */
 function sku_can(PDO $pdo, array $auth): bool
 {
-    if (in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true) || user_can($auth, 'orders')) return true;
+    if (in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true) || user_can($auth, 'sku_sheet') || user_can($auth, 'orders')) return true;      // 'sku_sheet' = the tick on the Roles page
     $e = (int)($auth['employee_id'] ?? 0); if ($e <= 0) return false;
     try {
         $q = $pdo->prepare("SELECT d.department_name, e.designation FROM employees e LEFT JOIN departments d ON d.department_id = e.department_id WHERE e.employee_id = ?"); $q->execute([$e]); $r = $q->fetch();
