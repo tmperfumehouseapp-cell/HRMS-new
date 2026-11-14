@@ -44,6 +44,13 @@ jobs:
             foreach ($d->query("SELECT id, ml, price, pct, from_date, to_date, active, stopped_at, created_at FROM cm_offers ORDER BY id DESC LIMIT 10")->fetchAll(PDO::FETCH_ASSOC) as $r) echo "  #" . $r["id"] . " ml=" . $r["ml"] . " price=" . $r["price"] . " pct=" . $r["pct"] . " from=" . $r["from_date"] . " to=" . ($r["to_date"] ?? "-") . " active=" . $r["active"] . " stopped=" . ($r["stopped_at"] ?? "-") . " created=" . $r["created_at"] . "\n";
             echo "--- hand-fixed commission for this order? ---\n";
             try { foreach ($ords as $x) { $a = $d->prepare("SELECT * FROM cm_fixes WHERE order_key IN (?, ?)"); $a->execute([$x["store_key"] . ":" . $x["shopify_id"], $x["store_key"] . "|" . $x["shopify_id"]]); foreach ($a->fetchAll(PDO::FETCH_ASSOC) as $r) echo "  " . json_encode($r) . "\n"; } } catch (Throwable $e) { echo "  (" . $e->getMessage() . ")\n"; }
+            echo "--- what the live commission engine last worked out for this order (cm_paid_cache) ---\n";
+            foreach ($ords as $x) { $day = substr($x["created_at"], 11, 2) < 10 ? date("Y-m-d", strtotime(substr($x["created_at"], 0, 10) . " -1 day")) : substr($x["created_at"], 0, 10);
+              try { $c = $d->prepare("SELECT ver, FROM_UNIXTIME(at) at, data FROM cm_paid_cache WHERE day = ?"); $c->execute([$day]); $r = $c->fetch(PDO::FETCH_ASSOC);
+                if (!$r) { echo "  no cached result for $day yet\n"; continue; } $j = json_decode($r["data"], true); $k = $x["store_key"] . ":" . $x["shopify_id"];
+                echo "  day $day, cached at " . $r["at"] . "\n  this order: " . (isset($j["ord"][$k]) ? json_encode($j["ord"][$k]) : "NOT in the engine result") . "\n";
+                $near = []; foreach ((array)($j["ord"] ?? []) as $kk => $vv) if (stripos($kk, (string)$x["shopify_id"]) !== false) $near[] = $kk . " => " . json_encode($vv); echo "  keys containing this id: " . ($near ? implode("; ", $near) : "none") . "\n";
+              } catch (Throwable $e) { echo "  (" . $e->getMessage() . ")\n"; } }
             echo "--- commission settings (code rule, window) ---\n";
             foreach ($d->query("SELECT setting_key k, LEFT(setting_value, 400) v FROM hrms_settings WHERE setting_key IN (\"cm_chart\", \"ml_slab_chart\") ")->fetchAll(PDO::FETCH_ASSOC) as $r) { $j = json_decode($r["v"], true); echo "  " . $r["k"] . ": " . (is_array($j) ? json_encode(array_intersect_key($j, array_flip(["on", "codepct", "nocode", "prepaid", "window", "floor", "from", "to", "cap"]))) : substr($r["v"], 0, 200)) . "\n"; }
           ' "$P" "$O"
