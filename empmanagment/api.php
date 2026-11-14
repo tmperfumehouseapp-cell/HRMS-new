@@ -16532,6 +16532,9 @@ function ai_feat(string $f): string { $old = (string)($GLOBALS['ai_feature'] ?? 
 function ai_feature_cap(string $p): float
 {
     $d = [];   // no built-in daily limits any more (owner's decision); a limit only exists if AI_CAPS in config.php names the feature
+    // 🛑 limits typed on the AI usage page (setting ai_caps: {"job": dollars per day}) come first; then AI_CAPS in config.php
+    static $db = null; if ($db === null) { $db = []; try { global $pdo; if ($pdo instanceof PDO) { $j = json_decode((string)setting_get($pdo, 'ai_caps', ''), true); if (is_array($j)) $db = $j; } } catch (Throwable $e) { } }
+    if (isset($db[$p]) && is_numeric($db[$p])) return max(0.0, (float)$db[$p]);
     $c = (array)tmph_cfg('AI_CAPS', []); if (isset($c[$p]) && is_numeric($c[$p])) return (float)$c[$p];
     return $d[$p] ?? 0.0;
 }
@@ -33814,6 +33817,13 @@ switch ($action) {
     }
 
     // ai.usage — Admin: this month's AI spend by day / model / purpose (tokens and USD), the budget and what is left.
+    case 'ai.caps_save': {   // 🛑 AI usage page: daily $ limit per AI job (0 / empty = no limit). A job that reaches its limit waits until tomorrow; people keep working by hand.
+        $auth = require_auth(); require_role(['Admin'], $auth);
+        if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
+        $in = json_input(); $caps = [];
+        foreach ((array)($in['caps'] ?? []) as $k => $v) { $k = mb_substr(trim((string)$k), 0, 20); if ($k === '' || !preg_match('/^[A-Za-z0-9_:.\-]+$/', $k)) continue; $v = round((float)$v, 2); if ($v > 0 && $v <= 5000) $caps[$k] = $v; }
+        setting_set($pdo, 'ai_caps', json_encode($caps)); json_response(['ok' => true, 'caps' => $caps]);
+    }
     case 'ai.usage': {
         $auth = require_auth();
         require_role(['Admin'], $auth);
@@ -33824,7 +33834,8 @@ switch ($action) {
             $f = (string)$_GET['from']; $t = (string)$_GET['to']; if ($f > $t) [$f, $t] = [$t, $f]; if (strtotime($t) - strtotime($f) > 400 * 86400) json_response(['error' => 'Please choose a range of at most 400 days.'], 422);
             $q = $pdo->prepare("SELECT purpose, SUM(calls) calls, SUM(in_tokens) in_tokens, SUM(out_tokens) out_tokens, SUM(cost_usd) cost_usd, COUNT(DISTINCT use_date) days FROM ai_usage WHERE use_date >= ? AND use_date <= ? GROUP BY purpose ORDER BY cost_usd DESC"); $q->execute([$f, $t]);
             $dq = $pdo->prepare("SELECT COUNT(DISTINCT use_date) FROM ai_usage WHERE use_date >= ? AND use_date <= ?"); $dq->execute([$f, $t]);
-            json_response(['from' => $f, 'to' => $t, 'rows' => $q->fetchAll(), 'days_with_use' => (int)$dq->fetchColumn()]);
+            $capJ = json_decode((string)setting_get($pdo, 'ai_caps', ''), true); $tq = $pdo->prepare("SELECT purpose, SUM(cost_usd) c FROM ai_usage WHERE use_date = ? GROUP BY purpose"); $tq->execute([date('Y-m-d')]); $tod = []; foreach ($tq->fetchAll() as $r) $tod[(string)$r['purpose']] = round((float)$r['c'], 2);
+            json_response(['from' => $f, 'to' => $t, 'rows' => $q->fetchAll(), 'days_with_use' => (int)$dq->fetchColumn(), 'caps' => is_array($capJ) ? $capJ : (object)[], 'today' => $tod ?: (object)[]]);
         }
         $q = $pdo->prepare("SELECT use_date, model, purpose, calls, in_tokens, out_tokens, cost_usd FROM ai_usage WHERE use_date LIKE ? ORDER BY use_date, model, purpose"); $q->execute([$month . '%']);
         $rows = $q->fetchAll(); $tot = ['calls' => 0, 'in' => 0, 'out' => 0, 'usd' => 0.0]; $byP = [];
