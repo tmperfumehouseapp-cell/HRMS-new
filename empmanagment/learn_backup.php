@@ -141,6 +141,7 @@ function lb_restore(PDO $pdo, array $d): array
         }
         $up = $pdo->prepare("INSERT INTO hrms_settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)"); $ns = 0;
         foreach ((array)($d['settings'] ?? []) as $k => $v) { if (lb_secret((string)$k)) continue; $up->execute([(string)$k, $v]); $ns++; }
+        if (function_exists('hrms_settings_bump')) hrms_settings_bump();
         $counts['settings'] = $ns;
         $pdo->commit(); $pdo->exec("SET FOREIGN_KEY_CHECKS = 1");
     } catch (Throwable $e) {

@@ -60,7 +60,7 @@ function wq_get(PDO $pdo, string $k, $d = null)
 }
 function wq_put(PDO $pdo, string $k, $v): void
 {
-    try { $pdo->prepare("INSERT INTO hrms_settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)")->execute([$k, (string)$v]); } catch (Throwable $e) { return; }
+    try { $pdo->prepare("INSERT INTO hrms_settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)")->execute([$k, (string)$v]); if (function_exists('hrms_settings_bump')) hrms_settings_bump(); } catch (Throwable $e) { return; }
     $GLOBALS['__wq_set'][$k] = [(string)$v];
 }
 /** All wq settings with defaults and clamps. */

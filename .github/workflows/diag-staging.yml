@@ -85,6 +85,7 @@ jobs:
               foreach (["wa_messages", "wa_camp_items", "wa_contacts"] as $tb) { echo "--- indexes of $tb ---\n"; $ix = []; foreach ($d->query("SHOW INDEX FROM $tb")->fetchAll(PDO::FETCH_ASSOC) as $x) $ix[$x["Key_name"]][] = $x["Column_name"]; foreach ($ix as $k => $c) echo $k . ": " . implode(", ", $c) . "\n"; }
             } catch (Throwable $e) { echo "DB: " . $e->getMessage() . "\n"; }
           ' "$P"
+          echo "=== shared copies kept by the site (settings copy, memo answers) ==="; ls -la --time-style=+%H:%M:%S /tmp/hrms_settings_* 2>&1 | head -4 | cut -c1-140; echo "memo files: $(ls /tmp/hrms_memo_* 2>/dev/null | wc -l)"; echo "settings copy age (s): $(( $(date +%s) - $(stat -c %Y /tmp/hrms_settings_*.snap 2>/dev/null | head -1 || echo 0) ))"
           echo "=== CPU right now (top, 2nd sample) ==="; top -b -n 2 -d 3 | awk '/^top -/ {c++} c==2' | head -14 | cut -c1-150; ls -d $HOME/tmp/hrms_perf /tmp/hrms_perf 2>&1 | head -3
           echo "=== database looks kept by the Server load page: last 90 min, queries seen running most ==="
           php -r '

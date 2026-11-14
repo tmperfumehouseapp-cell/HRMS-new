@@ -43,7 +43,7 @@ function wsg_get(PDO $pdo, string $k, string $d = ''): string
 }
 function wsg_put(PDO $pdo, string $k, string $v): void
 {
-    try { $pdo->prepare("INSERT INTO hrms_settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)")->execute([$k, $v]); } catch (Throwable $e) { }
+    try { $pdo->prepare("INSERT INTO hrms_settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)")->execute([$k, $v]); if (function_exists('hrms_settings_bump')) hrms_settings_bump(); } catch (Throwable $e) { }
 }
 function wsg_json(PDO $pdo, string $k): array { $d = json_decode(wsg_get($pdo, $k, ''), true); return is_array($d) ? $d : []; }
 function wsg_log(PDO $pdo, bool $ok, string $info): void { if (function_exists('wa_log')) { try { wa_log($pdo, 'segments', $ok, $info); } catch (Throwable $e) { } } }

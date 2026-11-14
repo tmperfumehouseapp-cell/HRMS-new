@@ -96,7 +96,7 @@ function wa_tables(PDO $pdo): bool
 function wa_log(PDO $pdo, string $kind, bool $ok, string $info): void
 {
     try { $pdo->prepare("INSERT INTO wa_log (at, kind, ok, info) VALUES (?, ?, ?, ?)")->execute([date('Y-m-d H:i:s'), $kind, $ok ? 1 : 0, mb_substr($info, 0, 300)]);
-          $pdo->exec("DELETE FROM wa_log WHERE id < (SELECT m FROM (SELECT MAX(id) - 300 AS m FROM wa_log) t)"); } catch (PDOException $e) { }
+          if (mt_rand(1, 20) === 1) $pdo->exec("DELETE FROM wa_log WHERE id < (SELECT m FROM (SELECT MAX(id) - 300 AS m FROM wa_log) t)"); } catch (PDOException $e) { }   // ⚡ trimmed on every 20th line (it ran after EVERY line: the log holds about 300–320 lines instead of 300)
 }
 
 /** One HTTP call. Replaceable in tests (defined first by the test harness). Returns [httpCode, decodedJson|null, rawBody]. */
@@ -389,6 +389,46 @@ function wa_store_phone_msg(PDO $pdo, array $m, string $key, int $numberId, stri
     return $key;
 }
 function wa_status_rank(string $s): int { return ['sent' => 1, 'delivered' => 2, 'read' => 3, 'failed' => 4][$s] ?? 0; }
+
+/** One delivery receipt from Meta (sent / delivered / read / failed) for a message we sent. Returns 1 when the message's status moved forward, else 0.
+ *  ⚡ About half of all the calls to this server are receipts like this. A receipt that carries billing info used to cost TWO updates of the same message row (status, then billing);
+ *  now it is ONE. A receipt for a message we do not have no longer tries to save billing info for it. Everything saved is the same as before. */
+function wa_webhook_status(PDO $pdo, array $s): int
+{
+    $new = (string)($s['status'] ?? ''); $id = (string)($s['id'] ?? ''); if ($id === '' || wa_status_rank($new) === 0) return 0;
+    $q = $pdo->prepare("SELECT status FROM wa_messages WHERE wamid = ?"); $q->execute([$id]); $old = $q->fetchColumn(); $moved = 0;
+    $e0 = (array)($s['errors'][0] ?? []); $ecode = (int)($e0['code'] ?? 0);   // why a message failed: Meta's first error (code + plain text) — kept on the message and on the campaign person
+    $et = trim((string)($e0['title'] ?? '')); $em = trim((string)($e0['message'] ?? '')); if ($em === '') $em = trim((string)($e0['error_data']['details'] ?? ''));
+    if ($new === 'failed') wa_fail_raw($pdo, 'status', wa_key($s['recipient_id'] ?? ''), $id, $ecode, $s); if ($new === 'failed') wa_unreach_note($pdo, wa_key($s['recipient_id'] ?? ''), $ecode); $etext = mb_substr($et !== '' && $em !== '' && $et !== $em ? $et . ' — ' . $em : ($em !== '' ? $em : $et), 0, 190);
+    $advance = $old !== false && wa_status_rank($new) > wa_status_rank((string)$old);
+    $bill = null;   // 💰 what Meta bills for this message: its category and whether it is charged (Billing screen)
+    if ($old !== false && !empty($s['pricing']) && is_array($s['pricing'])) {
+        $pc = mb_substr(strtolower((string)($s['pricing']['category'] ?? '')), 0, 16); $pt = strtolower((string)($s['pricing']['type'] ?? ''));
+        $pb = strpos($pt, 'free') === 0 ? 0 : (array_key_exists('billable', $s['pricing']) ? ((bool)$s['pricing']['billable'] ? 1 : 0) : null); $bill = [$pc, $pb];
+    }
+    $done = false;
+    if ($advance && $bill !== null && $new !== 'failed') { try { $pdo->prepare("UPDATE wa_messages SET status = ?, bill_cat = ?, billable = ? WHERE wamid = ?")->execute([$new, $bill[0], $bill[1], $id]); $done = true; $moved = 1; } catch (PDOException $e) { } }   // the usual receipt: one update (if the billing columns are missing, the slow path below makes them)
+    if (!$done) {
+        if ($advance) {
+            if ($new === 'failed') { try { $pdo->prepare("UPDATE wa_messages SET status = ?, err = ?, err_code = ? WHERE wamid = ?")->execute([$new, $etext, $ecode, $id]); } catch (PDOException $e) { $pdo->prepare("UPDATE wa_messages SET status = ? WHERE wamid = ?")->execute([$new, $id]); } }
+            else $pdo->prepare("UPDATE wa_messages SET status = ? WHERE wamid = ?")->execute([$new, $id]);
+            $moved = 1;
+        }
+        if ($bill !== null) {
+            $sqlB = "UPDATE wa_messages SET bill_cat = ?, billable = ? WHERE wamid = ?";
+            try { $pdo->prepare($sqlB)->execute([$bill[0], $bill[1], $id]); }
+            catch (PDOException $e) { try { $pdo->exec("ALTER TABLE wa_messages ADD COLUMN bill_cat VARCHAR(16) NOT NULL DEFAULT ''"); } catch (PDOException $e2) { } try { $pdo->exec("ALTER TABLE wa_messages ADD COLUMN billable TINYINT NULL"); } catch (PDOException $e2) { } try { $pdo->prepare($sqlB)->execute([$bill[0], $bill[1], $id]); } catch (PDOException $e2) { } }
+        }
+    }
+    try {   // campaign people: keep the latest delivery state (and the reason when it failed) on the person, so the retry engine and the "who got what" list can use it
+        if (function_exists('wa_more_tables')) wa_more_tables($pdo);
+        $skip = $new === 'sent' ? "'sent', 'delivered', 'read', 'failed'" : ($new === 'delivered' ? "'delivered', 'read', 'failed'" : ($new === 'read' ? "'read', 'failed'" : "'failed'"));
+        if ($new === 'failed') $pdo->prepare("UPDATE wa_camp_items SET last_status = 'failed', err = ?, err_code = ? WHERE wamid = ? AND last_status <> 'failed'")->execute([$etext !== '' ? $etext : 'Meta could not deliver this message.', $ecode, $id]);
+        else $pdo->prepare("UPDATE wa_camp_items SET last_status = ? WHERE wamid = ? AND last_status NOT IN ($skip)")->execute([$new, $id]);
+    } catch (Throwable $e) { }
+    if ($new === 'failed') wa_log($pdo, 'status', false, wa_key($s['recipient_id'] ?? '') . ' · ' . ((string)($s['errors'][0]['title'] ?? $s['errors'][0]['message'] ?? 'message failed')) . ($ecode ? ' (code ' . $ecode . ')' : ''));
+    return $moved;
+}
 
 function wa_sig_ok(string $raw): bool
 {
@@ -813,32 +853,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
                     foreach ((array)($th['messages'] ?? []) as $m) { $out = wa_key($m['from'] ?? '') !== $ck; if (wa_store_phone_msg($pdo, (array)$m, $ck, $nid, $out ? 'out' : 'in', true) !== '') $n++; } } continue; }
                 $names = []; foreach ((array)($v['contacts'] ?? []) as $ct) $names[wa_key($ct['wa_id'] ?? '')] = (string)($ct['profile']['name'] ?? '');
                 foreach ((array)($v['messages'] ?? []) as $m) { $k = wa_store_in($pdo, (array)$m, $names[wa_key($m['from'] ?? '')] ?? '', $nid); if ($k !== '') { $n++; $__keys[$k] = true; } }
-                foreach ((array)($v['statuses'] ?? []) as $s) {
-                    $new = (string)($s['status'] ?? ''); $id = (string)($s['id'] ?? ''); if ($id === '' || wa_status_rank($new) === 0) continue;
-                    $q = $pdo->prepare("SELECT status FROM wa_messages WHERE wamid = ?"); $q->execute([$id]); $old = $q->fetchColumn();
-                    $e0 = (array)($s['errors'][0] ?? []); $ecode = (int)($e0['code'] ?? 0);   // why a message failed: Meta's first error (code + plain text) — kept on the message and on the campaign person
-                    $et = trim((string)($e0['title'] ?? '')); $em = trim((string)($e0['message'] ?? '')); if ($em === '') $em = trim((string)($e0['error_data']['details'] ?? ''));
-                    if ($new === 'failed') wa_fail_raw($pdo, 'status', wa_key($s['recipient_id'] ?? ''), $id, $ecode, $s); if ($new === 'failed') wa_unreach_note($pdo, wa_key($s['recipient_id'] ?? ''), $ecode); $etext = mb_substr($et !== '' && $em !== '' && $et !== $em ? $et . ' — ' . $em : ($em !== '' ? $em : $et), 0, 190);
-                    if ($old !== false && wa_status_rank($new) > wa_status_rank((string)$old)) {
-                        if ($new === 'failed') { try { $pdo->prepare("UPDATE wa_messages SET status = ?, err = ?, err_code = ? WHERE wamid = ?")->execute([$new, $etext, $ecode, $id]); } catch (PDOException $e) { $pdo->prepare("UPDATE wa_messages SET status = ? WHERE wamid = ?")->execute([$new, $id]); } }
-                        else $pdo->prepare("UPDATE wa_messages SET status = ? WHERE wamid = ?")->execute([$new, $id]);
-                        $st++;
-                    }
-                    if (!empty($s['pricing']) && is_array($s['pricing'])) {   // 💰 what Meta bills for this message: its category and whether it is charged (Billing screen)
-                        $pc = mb_substr(strtolower((string)($s['pricing']['category'] ?? '')), 0, 16); $pt = strtolower((string)($s['pricing']['type'] ?? ''));
-                        $pb = strpos($pt, 'free') === 0 ? 0 : (array_key_exists('billable', $s['pricing']) ? ((bool)$s['pricing']['billable'] ? 1 : 0) : null);
-                        $sqlB = "UPDATE wa_messages SET bill_cat = ?, billable = ? WHERE wamid = ?";
-                        try { $pdo->prepare($sqlB)->execute([$pc, $pb, $id]); }
-                        catch (PDOException $e) { try { $pdo->exec("ALTER TABLE wa_messages ADD COLUMN bill_cat VARCHAR(16) NOT NULL DEFAULT ''"); } catch (PDOException $e2) { } try { $pdo->exec("ALTER TABLE wa_messages ADD COLUMN billable TINYINT NULL"); } catch (PDOException $e2) { } try { $pdo->prepare($sqlB)->execute([$pc, $pb, $id]); } catch (PDOException $e2) { } }
-                    }
-                    try {   // campaign people: keep the latest delivery state (and the reason when it failed) on the person, so the retry engine and the "who got what" list can use it
-                        if (function_exists('wa_more_tables')) wa_more_tables($pdo);
-                        $skip = $new === 'sent' ? "'sent', 'delivered', 'read', 'failed'" : ($new === 'delivered' ? "'delivered', 'read', 'failed'" : ($new === 'read' ? "'read', 'failed'" : "'failed'"));
-                        if ($new === 'failed') $pdo->prepare("UPDATE wa_camp_items SET last_status = 'failed', err = ?, err_code = ? WHERE wamid = ? AND last_status <> 'failed'")->execute([$etext !== '' ? $etext : 'Meta could not deliver this message.', $ecode, $id]);
-                        else $pdo->prepare("UPDATE wa_camp_items SET last_status = ? WHERE wamid = ? AND last_status NOT IN ($skip)")->execute([$new, $id]);
-                    } catch (Throwable $e) { }
-                    if ($new === 'failed') wa_log($pdo, 'status', false, wa_key($s['recipient_id'] ?? '') . ' · ' . ((string)($s['errors'][0]['title'] ?? $s['errors'][0]['message'] ?? 'message failed')) . ($ecode ? ' (code ' . $ecode . ')' : ''));
-                }
+                foreach ((array)($v['statuses'] ?? []) as $s) $st += wa_webhook_status($pdo, (array)$s);   // one delivery receipt (sent / delivered / read / failed) of a message
             }
             if ($n && function_exists('wa_tick')) { try { wa_more_tables($pdo); wa_tick($pdo); } catch (Throwable $e) { } }   // assignment + call-now alerts react right away
             if ($n || $st) wa_log($pdo, 'webhook', true, $n . ' message' . ($n === 1 ? '' : 's') . ', ' . $st . ' status update' . ($st === 1 ? '' : 's'));
