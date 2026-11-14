@@ -1575,8 +1575,11 @@ function wq_req_list(PDO $pdo, int $me = 0, int $limit = 200): array
     $all = array_values(array_unique(array_merge(array_column($o, 'phone'), array_column($late, 'phone'))));
     if ($all) { try {
         $l10 = []; foreach ($all as $ph) $l10[substr(preg_replace('/\D/', '', (string)$ph), -10)] = 1;
-        $q = $pdo->prepare("SELECT DISTINCT RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(phone,' ',''),'-',''),'+',''),'(',''), 10) p FROM shop_orders WHERE RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(phone,' ',''),'-',''),'+',''),'(',''), 10) IN (" . wq_in(array_keys($l10)) . ")"); $q->execute(array_map('strval', array_keys($l10)));
-        $has = array_flip(array_map('strval', $q->fetchAll(PDO::FETCH_COLUMN)));
+        $k10 = array_map('strval', array_keys($l10)); sort($k10);
+        // ⚡ reads every order; every open Requests list asked for it every few seconds with the same customers: one answer is kept for 40 s
+        $has = array_flip(hrms_memo('wq_req_has:' . md5(implode(',', $k10)), 40, function () use ($pdo, $k10) {
+            $q = $pdo->prepare("SELECT DISTINCT RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(phone,' ',''),'-',''),'+',''),'(',''), 10) p FROM shop_orders WHERE RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(phone,' ',''),'-',''),'+',''),'(',''), 10) IN (" . wq_in($k10) . ")"); $q->execute($k10);
+            return array_map('strval', $q->fetchAll(PDO::FETCH_COLUMN)); }));
         $hasOrd = fn($x) => isset($has[substr(preg_replace('/\D/', '', (string)$x['phone']), -10)]);
         $o = array_values(array_filter($o, fn($x) => !$hasOrd($x))); $late = array_values(array_filter($late, fn($x) => !$hasOrd($x)));
     } catch (Throwable $e) { } }

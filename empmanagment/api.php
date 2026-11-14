@@ -2226,6 +2226,20 @@ function hrms_release(): void
     static $done = false; if ($done) return; $done = true; ignore_user_abort(true);
     if (function_exists('litespeed_finish_request')) @litespeed_finish_request(); elseif (function_exists('fastcgi_finish_request')) @fastcgi_finish_request();
 }
+/** ⚡ An answer that is expensive to work out, remembered for $ttl seconds for the WHOLE server (a small file in the temp folder), so 50 open screens do not each run the same heavy
+ *  database query. While one request recounts, the others keep using the last answer. Only for answers that may be a few seconds old; anything that is not JSON-able is not remembered. */
+function hrms_memo(string $key, int $ttl, callable $fn)
+{
+    static $mem = []; if (isset($mem[$key]) && time() - $mem[$key][0] < $ttl) return $mem[$key][1];      // inside one long job the answer also ages
+    $f = rtrim(sys_get_temp_dir(), '/') . '/hrms_memo_' . substr(md5(__DIR__), 0, 6) . '_' . md5($key) . '.json'; $now = time(); $old = null;
+    $raw = @file_get_contents($f);
+    if ($raw !== false && $raw !== '') { $j = json_decode($raw, true); if (is_array($j) && array_key_exists('v', $j)) { $old = $j; if ($now - (int)$j['t'] < $ttl) { $mem[$key] = [(int)$j['t'], $j['v']]; return $j['v']; } if ($now - (int)($j['b'] ?? 0) < 20) return $j['v']; } }   // fresh, or somebody else is recounting right now
+    if ($old !== null) { $old['b'] = $now; @file_put_contents($f, json_encode($old, JSON_INVALID_UTF8_SUBSTITUTE), LOCK_EX); }
+    $v = $fn();
+    $enc = json_encode(['t' => time(), 'v' => $v], JSON_INVALID_UTF8_SUBSTITUTE); if ($enc !== false && strlen($enc) < 2000000) { $tmp = $f . '.' . getmypid(); if (@file_put_contents($tmp, $enc) !== false) { @chmod($tmp, 0600); @rename($tmp, $f); } }      // 0600: an answer can hold customer details
+    if (mt_rand(1, 400) === 1) foreach ((array)@glob(dirname($f) . '/hrms_memo_*') as $g) if ($now - (int)@filemtime($g) > 7200) @unlink($g);
+    $mem[$key] = [time(), $v]; return $v;
+}
 function setting_get(PDO $pdo, string $key, $default = null)
 {
     $cache = &$GLOBALS['__hrms_setting_cache'];   // shared with setting_set(): a value saved in this request is read back as saved (it used to stay the old one until the next request)
@@ -9126,7 +9140,7 @@ function lib_retrieve(PDO $pdo, string $text, int $n = 3, int $exclude = 0): arr
             $q = $pdo->prepare("SELECT u.id, COUNT(*) AS c, MAX(b.upload_id IS NOT NULL) AS star FROM convo_messages m JOIN convo_uploads u ON u.id = m.upload_id LEFT JOIN lib_best b ON b.upload_id = u.id
                 WHERE u.kind = 'order' AND u.status = 'done' AND u.flag_wrong = 0 AND u.id <> ? AND m.src = 'chat' AND m.who = 'customer' AND (" . implode(' OR ', $or) . ")
                 GROUP BY u.id ORDER BY star DESC, c DESC, u.score DESC, u.id DESC LIMIT " . (int)$n);
-            $q->execute($par); $ids = array_map('intval', $q->fetchAll(PDO::FETCH_COLUMN));
+            $ids = hrms_memo('lib_like:' . md5(json_encode([$par, (int)$n])), 300, function () use ($q, $par) { $q->execute($par); return array_map('intval', $q->fetchAll(PDO::FETCH_COLUMN)); });   // ⚡ searches every stored chat line for these words: the same words give the same answer for 5 minutes
         } catch (PDOException $e) { $ids = []; }
     }
     if (count($ids) < $n) foreach (lib_sample_ids($pdo, 'order', $n - count($ids), $exclude) as $i) if (!in_array($i, $ids, true)) $ids[] = $i;
