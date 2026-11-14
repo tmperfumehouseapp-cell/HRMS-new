@@ -1,0 +1,56 @@
+# READ-ONLY customer numbers from the staging VPS: how many unique customers, delivered, failed, replied, ordered, 2+ orders. Prints totals only (no names, no phone numbers).
+# Changes nothing. Run it by hand: Actions → "Customer numbers (read-only)" → Run workflow. Uses the same 4 secrets as the deploy.
+name: Customer numbers (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  numbers:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+
+      - name: Customer numbers (totals only)
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
+          cat > /tmp/cust_numbers.php <<'PHP'
+          <?php
+          $f = $argv[1] . "empmanagment/config.php"; if (!is_file($f)) { echo "config.php not found\n"; exit; }
+          require $f;
+          try { $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_TIMEOUT => 8, PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]); } catch (Throwable $e) { echo "no database: " . $e->getMessage() . "\n"; exit; }
+          $n = function ($sql) use ($d) { try { return number_format((int)$d->query($sql)->fetchColumn()); } catch (Throwable $e) { return "n/a (" . substr($e->getMessage(), 0, 80) . ")"; } };
+          echo "=== the funnel table (wa_cfun) ===\n";
+          echo "rows counted so far: " . $n("SELECT COUNT(*) FROM wa_cfun") . "\n";
+          try { $r = $d->query("SELECT setting_value FROM hrms_settings WHERE setting_key = 'wa_cfun_stats'")->fetchColumn(); $j = json_decode((string)$r, true);
+            if (!$j) echo "no saved numbers yet (the first count has not finished a round)\n"; else { echo "counting still running: " . ($j["walking"] ? "yes" : "no") . " · saved at " . $j["at"] . "\n";
+              foreach (["all", "query", "campaign"] as $s) { $x = $j["by"][$s] ?? null; if (!$x) continue; echo "--- source: $s ---\n";
+                foreach (["total" => "Unique customers (mobile numbers)", "messaged" => "Messaged", "reached" => "Delivered (at least one reached the phone)", "not_delivered" => "Not delivered", "any_failed" => "Had a failed message", "all_failed" => "Every message failed", "failed" => "Failed group (never replied, last 3 failed)", "replied" => "Replied", "never_replied" => "Never replied", "wrote_first" => "Wrote first", "ordered" => "Ordered", "repeat_n" => "Ordered 2+ times", "optout" => "Opted out", "m_total" => "Messages sent", "m_deliv" => "Messages delivered/read", "m_sent" => "Messages sent, not confirmed", "m_fail" => "Messages failed", "m_in" => "Messages received", "g_never" => "Group: never messaged", "g_sent" => "Group: sent not delivered", "g_failed" => "Group: failed", "g_deliv" => "Group: delivered no reply", "g_replied" => "Group: replied no order", "g_ord1" => "Group: ordered once", "g_ord2" => "Group: ordered 2+"] as $k => $l) echo sprintf("%-48s %s\n", $l, number_format((int)($x[$k] ?? 0)));
+                if ($s === "all") foreach (($x["reasons"] ?? []) as $q) echo "  failed because: " . $q["text"] . " = " . number_format($q["n"]) . "\n"; } }
+          } catch (Throwable $e) { echo "saved numbers: " . $e->getMessage() . "\n"; }
+          echo "\n=== straight from the source tables (cross-check, totals only) ===\n";
+          echo "WhatsApp contacts (chats + Excel imports + first messages): " . $n("SELECT COUNT(*) FROM wa_contacts") . "\n";
+          try { foreach ($d->query("SELECT COALESCE(NULLIF(source, ''), '(none)') s, COUNT(*) c FROM wa_contacts GROUP BY s ORDER BY c DESC LIMIT 12")->fetchAll(PDO::FETCH_NUM) as $x) echo "   source " . $x[0] . ": " . number_format($x[1]) . "\n"; } catch (Throwable $e) { }
+          echo "Contacts that ever wrote to us (last_in_at set): " . $n("SELECT COUNT(*) FROM wa_contacts WHERE last_in_at IS NOT NULL") . "\n";
+          echo "Contacts opted out: " . $n("SELECT COUNT(*) FROM wa_contacts WHERE optout = 1") . "\n";
+          echo "Customers with orders (wa_cust): " . $n("SELECT COUNT(*) FROM wa_cust WHERE n > 0") . " · with 2+: " . $n("SELECT COUNT(*) FROM wa_cust WHERE n >= 2") . "\n";
+          echo "Customers in customer_facts (all channels): " . $n("SELECT COUNT(*) FROM customer_facts") . " · with orders: " . $n("SELECT COUNT(*) FROM customer_facts WHERE orders_n > 0") . " · 2+: " . $n("SELECT COUNT(*) FROM customer_facts WHERE orders_n >= 2") . "\n";
+          echo "Numbers in campaign lists (distinct): " . $n("SELECT COUNT(DISTINCT phone) FROM wa_camp_items") . "\n";
+          try { echo "Messages we sent, by status:\n"; foreach ($d->query("SELECT /*+ MAX_EXECUTION_TIME(20000) */ status, COUNT(*) c FROM wa_messages WHERE dir = 'out' GROUP BY status ORDER BY c DESC")->fetchAll(PDO::FETCH_NUM) as $x) echo "   " . $x[0] . ": " . number_format($x[1]) . "\n"; } catch (Throwable $e) { echo "   n/a: " . substr($e->getMessage(), 0, 90) . "\n"; }
+          echo "Messages received from customers: " . $n("SELECT /*+ MAX_EXECUTION_TIME(20000) */ COUNT(*) FROM wa_messages WHERE dir = 'in'") . "\n";
+          PHP
+          php /tmp/cust_numbers.php "$P"; rm -f /tmp/cust_numbers.php
+          REMOTE
