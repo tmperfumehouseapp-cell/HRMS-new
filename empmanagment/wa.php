@@ -285,6 +285,30 @@ function wa_redirect_target(PDO $pdo, int $numberId): int
     } catch (Throwable $e) { return 0; }
 }
 /** Stores one incoming message (one customer = one row, whichever number it came on). Returns the customer key. */
+/** 🤖 Is this text the AUTOMATIC reply of the customer's own business app ("Thank you for contacting …", "We're unavailable right now, but will respond as soon as possible")?
+ *  Short texts only; a person writing "thank you" or a real question never matches. */
+function wa_autoreply_text(string $body): bool
+{
+    $b = trim(preg_replace('/\s+/u', ' ', $body)); if ($b === '' || mb_strlen($b) > 450) return false;
+    if (preg_match('/\?|\b(price|prices|rate|send|chahiye|chahie|chahta|want|need|kitna|kitne|how much|cost|order|pls|please)\b/iu', $b) && !preg_match('/automat(ed|ic)|auto[- ]?reply/iu', $b)) return false;   // a customer asking for something is never an automatic reply
+    foreach (['/^(thank(s| you)?)( you)? for (contacting|reaching out to|messaging|writing to|getting in touch with|your interest in)\b.{0,80}$/iu',
+              '/\b(we\'?re|we’re|we are|i\'?m|i am|am)\s+(currently\s+|presently\s+)?(unavailable|not available|away|closed|out of (the )?office|busy)\b/iu',
+              '/\b(will|shall)\s+(respond|reply|get back to you|revert|contact you)\b.{0,50}\b(as soon as|shortly|soon|within|earliest|asap)\b/iu',
+              '/\bautomat(ed|ic)\s+(message|reply|response)\b|\bauto[- ]?reply\b/iu',
+              '/\b(our|the)\s+(business|working|office|store|shop)\s+hours\b/iu',
+              '/\b(we|our team)\s+(will be|are)\s+(back|available)\b/iu'] as $re) if (preg_match($re, $b)) return true;
+    return false;
+}
+/** an automatic reply only comes right after OUR message (a campaign template…): we wrote in the last 3 hours, and the customer did not really talk to us in the last 24 hours */
+function wa_autoreply_ctx(PDO $pdo, string $key, string $now): bool
+{
+    try {
+        $t = strtotime($now) ?: time(); $o = $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND dir = 'out' AND ts >= ? LIMIT 1"); $o->execute([$key, date('Y-m-d H:i:s', $t - 3 * 3600)]); if (!$o->fetchColumn()) return false;
+        $i = $pdo->prepare("SELECT body, mtype FROM wa_messages WHERE phone = ? AND dir = 'in' AND ts < ? AND ts >= ? ORDER BY id DESC LIMIT 8"); $i->execute([$key, $now, date('Y-m-d H:i:s', $t - 86400)]);
+        foreach ($i->fetchAll() as $r) if ((string)$r['mtype'] !== 'text' || !wa_autoreply_text((string)$r['body'])) return false;
+        return true;
+    } catch (Throwable $e) { return false; }
+}
 function wa_store_in(PDO $pdo, array $m, string $name, int $numberId): string
 {
     $key = wa_key($m['from'] ?? ''); if ($key === '') return '';
@@ -302,6 +326,12 @@ function wa_store_in(PDO $pdo, array $m, string $name, int $numberId): string
             ->execute([(string)($m['id'] ?? ''), $key, $numberId, mb_substr($t, 0, 16), $body, $mid, mb_substr($mime, 0, 60), $now]);
         $ctx = (string)($m['context']['id'] ?? ''); if ($ctx !== '') { try { $pdo->prepare("UPDATE wa_messages SET reply_to = ? WHERE wamid = ?")->execute([mb_substr($ctx, 0, 120), (string)($m['id'] ?? '')]); } catch (PDOException $e) { } }   // ↩ swiped reply: remember which message it answers
     } catch (PDOException $e) { /* the same wamid twice (Meta retries) — already stored */ }
+    // 🤖 the customer's business answered our message by itself (owner, 14 Nov): it is not a request. An unassigned chat is resolved at once; no bot / flow / query typing runs on it.
+    //    When the customer really writes later, the normal rule re-opens the chat and it is back in Requests.
+    if ($t === 'text' && wa_autoreply_text($body) && wa_autoreply_ctx($pdo, $key, $now)) {
+        try { $pdo->prepare("UPDATE wa_contacts SET status = 'closed', closed_at = ? WHERE phone = ? AND assigned_emp = 0")->execute([date('Y-m-d H:i:s'), $key]); } catch (Throwable $e) { }
+        return $key;
+    }
     // STOP / unsubscribe words → opt out for every number
     if ($t === 'text' && preg_match('/^\s*(stop|unsubscribe|band karo|band kro|no more)\s*[.!]*\s*$/iu', $body)) $pdo->prepare("UPDATE wa_contacts SET optout = 1, camp_optout = 1 WHERE phone = ?")->execute([$key]);
     elseif ($ex && (int)($ex['optout'] ?? 0) === 1 && !in_array($t, ['reaction', 'system', 'unsupported'], true) && !preg_match('/^\s*(stop|unsubscribe|band karo|band kro|no more)\s*[.!]*\s*$/iu', $body)) {   // owner (13 Nov): a customer who said Stop and then WRITES to us again wants to talk: the conversation starts again

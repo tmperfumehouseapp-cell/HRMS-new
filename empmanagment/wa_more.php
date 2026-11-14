@@ -254,6 +254,7 @@ function wa_tick(PDO $pdo, bool $force = false): array
     if (!$__late()) try { if (function_exists('wa_ord_tick')) $o['orders'] = wa_ord_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'orders: ' . $e->getMessage()); } $__mk('wa_ord_tick');   // order-update messages (and the one-time template setup)
     if (!$__late()) try { if (function_exists('jt_tick') && $force && !defined('WA_IN_WEBHOOK')) $o['tags'] = jt_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'tags: ' . $e->getMessage()); } $__mk('jt_tick');
     if (!$__late()) try { if (function_exists('wa_numq_refresh') && $force && !defined('WA_IN_WEBHOOK')) { $nq = json_decode((string)setting_get($pdo, 'wa_numq_cache', ''), true); if (!is_array($nq) || (int)($nq['t'] ?? 0) < time() - 600) wa_numq_refresh($pdo); } } catch (Throwable $e) { } $__mk('wa_numq_refresh');   // ⚡ the per-number chip counts are renewed here, not while the chat list loads
+    if (!$__late()) try { if (!defined('WA_IN_WEBHOOK') && (int)setting_get($pdo, 'wa_ar_at', '0') < time() - 300) { setting_set($pdo, 'wa_ar_at', (string)time()); $o['autoreply'] = wa_autoreply_sweep($pdo); } } catch (Throwable $e) { } $__mk('wa_autoreply_sweep');   // 🤖 customers' automatic replies leave Requests
     if (!$__late()) try { if (!defined('WA_IN_WEBHOOK') && (int)setting_get($pdo, 'wa_pbf_at', '0') < time() - 600) { setting_set($pdo, 'wa_pbf_at', (string)time()); $o['pbuyer'] = wa_prior_buyer_fix($pdo); $o['optin'] = wa_optin_again_fix($pdo); } } catch (Throwable $e) { } $__mk('wa_prior_buyer_fix');   // a customer who already ordered is not a New query
     if (!$__late()) try { if (function_exists('wkw_fu_tick') && !defined('WA_IN_WEBHOOK')) $o['kwfu'] = wkw_fu_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'button follow-ups: ' . $e->getMessage()); } $__mk('wkw_fu_tick');   // ↪ Button replies: the follow-up when the customer does not answer
     if (!$__late()) try { if (function_exists('wd_tick') && $force && !defined('WA_IN_WEBHOOK')) $o['drip'] = wd_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'drip: ' . $e->getMessage()); } $__mk('wd_tick');   // 🔁 7-Day Drip
@@ -319,6 +320,22 @@ function wa_prior_buyer(PDO $pdo, string $key, int $t): bool
     } catch (Throwable $e) { return false; }
 }
 /** Chats typed "New query" in the last 2 days whose customer had ordered BEFORE they first wrote: they become Campaign (a few per engine run). */
+/** 🤖 Chats waiting in Requests whose every message since our last one is the customer's AUTOMATIC reply: resolved (they come back when the customer really writes). At most 3 seconds per run. */
+function wa_autoreply_sweep(PDO $pdo): int
+{
+    $n = 0; $t0 = microtime(true);
+    try {
+        $st = $pdo->prepare("SELECT phone, last_out_at FROM wa_contacts WHERE status = 'open' AND assigned_emp = 0 AND optout = 0 AND last_out_at IS NOT NULL AND last_in_at >= ? AND last_out_at <= last_in_at ORDER BY last_in_at DESC LIMIT 200"); $st->execute([date('Y-m-d H:i:s', time() - 3 * 86400)]);
+        $in = $pdo->prepare("SELECT body, mtype FROM wa_messages WHERE phone = ? AND dir = 'in' AND ts > ? ORDER BY id DESC LIMIT 8"); $cl = $pdo->prepare("UPDATE wa_contacts SET status = 'closed', closed_at = ? WHERE phone = ? AND status = 'open' AND assigned_emp = 0");
+        foreach ($st->fetchAll() as $r) {
+            if (microtime(true) - $t0 > 3) break;
+            $in->execute([(string)$r['phone'], (string)$r['last_out_at']]); $rows = $in->fetchAll(); if (!$rows) continue; $all = true;
+            foreach ($rows as $x) if ((string)$x['mtype'] !== 'text' || !wa_autoreply_text((string)$x['body'])) { $all = false; break; }
+            if ($all) { $cl->execute([date('Y-m-d H:i:s'), (string)$r['phone']]); $n++; }
+        }
+    } catch (Throwable $e) { }
+    return $n;
+}
 function wa_prior_buyer_fix(PDO $pdo): int
 {
     $n = 0;
