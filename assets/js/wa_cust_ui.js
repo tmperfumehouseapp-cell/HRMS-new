@@ -184,7 +184,7 @@ html.wxdk .wcs{--ln:#25343e; --gb:#0f2e20; --rb:#3a1515;} html.wxdk .wcs-r,html.
         t.innerHTML = '<div class="m"><small>👥 Total customers</small><b>' + n(d.people) + '</b></div><div><small>Repeat (2+ orders)</small><b>' + n(d.repeat) + '</b></div><div><small>New in last 30 days</small><b>' + n(d.new30) + '</b></div><div><small>Store + Online</small><b>' + n(d.both) + '</b></div><div><small>With a risk flag</small><b>' + n(d.risk) + '</b></div>' + (d.spent != null ? '<div><small>Their total spend</small><b>₹' + n(d.spent) + '</b></div>' : '');
       } catch (e) { }
     })();
-    summary($(el, '#cxS'));
+    { const fb = document.createElement('div'); const sb = $(el, '#cxS'); sb.parentNode.insertBefore(fb, sb); funnel(fb); summary(sb); }   // the funnel is new; the old “at a glance” card stays
     $(el, '#cxAdd').onclick = () => opts.addCustomers(() => { loadMeta(); load(); });
     $(el, '#cxExp').onclick = function () { exportCsv({ all: 1, cf: cfOut(), q: S.q, except: [] }, S.total, this); };
     // ---------------------------------------------------------------------------------------------------------- filters (left)
@@ -363,6 +363,50 @@ html.wxdk .wcs{--ln:#25343e; --gb:#0f2e20; --rb:#3a1515;} html.wxdk .wcs-r,html.
         toast('Downloaded ' + fmt(rows.length) + ' customers');
       } catch (e) { toast(e.message, true); }
       if (btn) { btn.disabled = false; btn.textContent = t; }
+    }
+    // ---------------------------------------------------------------------------------------------------------- 📊 funnel: every number once, one bucket each (wa_cfun.php, refreshed every hour by the engine)
+    const FT = [['all', '👥 All customers', 'total', 'Every number: chats, Excel imports, order-only'], ['untried', '📭 Never messaged', 'untried', 'We never sent them anything'], ['messaged', '📤 Messaged', 'messaged', 'At least one message from us'],
+      ['reached', '✅ Message reached phone', 'reached', 'At least one delivered / read'], ['delivered', '📬 Delivered, no reply', 'delivered', 'Reached, never wrote back'], ['pending', '⏳ Sent, not confirmed', 'pending', 'Sent but no delivery yet'],
+      ['failed', '❌ Failed', 'failed', 'Last 3 messages failed and they never replied'], ['replied', '💬 Replied', 'replied', 'Wrote to us at least once (STOP too)'], ['never_replied', '🔇 Never replied', 'never_replied', 'Never wrote to us'],
+      ['wrote_first', '🆕 Wrote first', 'wrote_first', 'Came to us without a message from us'], ['ordered', '🛍 Ordered', 'ordered', 'Any order ever, every channel'], ['repeat', '🔁 2+ orders', 'repeat_n', 'Repeat buyers'], ['optout', '🚫 Opted out', 'optout', 'Said STOP']];
+    function funnel(box) {
+      if (!box) return; const n = (x) => Number(x || 0).toLocaleString('en-IN'), pc = (a, b) => (b ? Math.round(1000 * a / b) / 10 + '%' : '');
+      const paint = (d) => { if (!box.isConnected) return;
+        const T = (t) => `<button type="button" data-fk="${t[0]}" title="${esc(t[3])} — tap to download" style="text-align:left;border:1px solid #eceef2;background:#fff;border-radius:9px;padding:4px 7px;min-width:0;cursor:pointer;font:inherit;color:inherit"><small style="display:block;font-size:9.5px;opacity:.75;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t[1]}</small><b style="font-size:13px">${n(d[t[2]])}</b> <span style="float:right;font-size:11px;opacity:.55">⬇</span><i style="display:block;font-size:9.5px;opacity:.65;font-style:normal">${t[0] === 'all' ? '' : pc(d[t[2]], d.total) + ' of all'}</i></button>`;
+        box.innerHTML = `<div class="wp-cd" style="padding:8px 9px;margin:0 0 8px"><div style="display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:5px;flex-wrap:wrap"><b style="font-size:12.5px">📊 Customer funnel — every number counted once</b><span style="font-size:10px;opacity:.65">${d.walking ? 'first count still running… · ' : ''}updated ${String(d.at || '').slice(5, 16)} · every hour <button type="button" class="wp-btn s" id="cfRun">↻ Now</button> <button type="button" class="wp-btn s" id="cfDl">⬇ Download Excel</button></span></div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(128px,1fr));gap:4px">${FT.map(T).join('')}</div>
+          <div class="wp-hint" style="margin-top:6px">Messages: <b>${n(d.m_total)}</b> sent · <b>${n(d.m_deliv)}</b> delivered / read · <b>${n(d.m_sent)}</b> sent, not confirmed · <b>${n(d.m_fail)}</b> failed · <b>${n(d.m_in)}</b> received. A customer who replies leaves “failed” for good.</div></div>`;
+        box.querySelectorAll('[data-fk]').forEach((b) => { b.onclick = () => dlModal(b.dataset.fk, d); }); $(box, '#cfDl').onclick = () => dlModal('all', d);
+        $(box, '#cfRun').onclick = async function () { this.disabled = true; this.textContent = '…'; try { const r = await api.post('wa.cf_run', {}); paint(r); toast('Counted again'); } catch (e) { toast(e.message, true); } };
+      };
+      box.innerHTML = '<div class="wp-cd" style="padding:8px 9px;margin:0 0 8px"><span class="wp-hint">Counting customers…</span></div>';
+      api.get('wa.cf_stats', {}).then(paint).catch((e) => { if (box.isConnected) box.innerHTML = ''; });
+    }
+    function dlModal(k0, d) {
+      const m = modal('⬇ Download customers'); let busy = false;
+      m.body.innerHTML = `<label class="wp-fl" style="margin-top:0">Which customers</label><select class="wp-in" id="dlK">${FT.map((t) => `<option value="${t[0]}" ${t[0] === k0 ? 'selected' : ''}>${t[1].replace(/^\S+\s/, '')} (${n0(d[t[2]])})</option>`).join('')}</select>
+        <label class="wp-fl">Rows in each Excel file</label><select class="wp-in" id="dlN"><option value="1000">1,000</option><option value="2000">2,000</option><option value="3000">3,000</option><option value="5000">5,000</option><option value="10000">10,000</option><option value="0">Everyone in one file</option></select>
+        <div class="wp-hint" style="margin:8px 0">One row per phone number: name, status, messages sent / delivered / failed / received, orders, first and last message. If you pick several files, your browser may ask to allow multiple downloads.</div><div id="dlE"></div><div class="wp-row"><button type="button" class="wp-btn p" id="dlGo">Download</button></div>`;
+      function n0(x) { return Number(x || 0).toLocaleString('en-IN'); }
+      const HEAD = ['Phone', 'Name', 'Status', 'Replied', 'Opted out', 'Messages sent', 'Delivered / read', 'Sent, not confirmed', 'Failed', 'Messages received', 'Orders', 'First message from us', 'Last message from us', 'Last message from them'];
+      const LAB = { replied: 'Replied', failed: 'Failed', delivered: 'Delivered, no reply', pending: 'Sent, not confirmed', untried: 'Never messaged' };
+      const safe = (v) => (typeof v === 'string' && /^[=+\-@\t\r]/.test(v) ? "'" + v : v);   // a name that starts with = + - @ must not run as an Excel formula
+      const row = (r) => [r.phone, safe(r.name), LAB[r.bucket] || r.bucket, +r.replied ? 'yes' : '', +r.optout ? 'yes' : '', +r.out_n, +r.deliv_n, +r.sent_n, +r.fail_n, +r.in_n, +r.orders_n, r.first_out || '', r.last_out || '', r.last_in || ''];
+      const save = async (rows, name) => {
+        try { if (!window.ExcelJS) await new Promise((ok, no) => { const s = document.createElement('script'); s.src = 'assets/js/exceljs.min.js'; s.onload = ok; s.onerror = no; document.head.appendChild(s); });
+          const wb = new ExcelJS.Workbook(), ws = wb.addWorksheet('Customers'); ws.addRow(HEAD).font = { bold: true }; rows.forEach((r) => ws.addRow(row(r))); ws.views = [{ state: 'frozen', ySplit: 1 }]; ws.columns.forEach((c, i) => { c.width = [14, 24, 20][i] || 16; });
+          const buf = await wb.xlsx.writeBuffer(); dl(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), name + '.xlsx');
+        } catch (e) { const q = (v) => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"'; dl(new Blob(['﻿' + [HEAD].concat(rows.map(row)).map((r) => r.map(q).join(',')).join('\n')], { type: 'text/csv' }), name + '.csv'); }
+      };
+      const dl = (blob, name) => { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 8000); };
+      $(m.body, '#dlGo').onclick = async function () {
+        if (busy) return; busy = true; const btn = this, k = $(m.body, '#dlK').value, per = +$(m.body, '#dlN').value; let after = '', buf = [], files = 0, got = 0;
+        try {
+          const flush = async (force) => { while (buf.length && (force || (per && buf.length >= per))) { const part = per ? buf.splice(0, per) : buf.splice(0, buf.length); files++; await save(part, 'customers-' + k + '-' + ymd(new Date()) + '-part' + files); await new Promise((r) => setTimeout(r, 400)); if (!per) break; } };
+          for (let i = 0; i < 400; i++) { btn.textContent = 'Preparing… ' + n0(got); const r = await api.get('wa.cf_list', { k, after, lim: 5000 }); buf.push(...r.rows); got += r.rows.length; after = r.last; if (per) await flush(false); if (!r.more) break; }
+          await flush(true); m.close(); toast(got ? 'Downloaded ' + n0(got) + ' customers in ' + files + ' file' + (files === 1 ? '' : 's') : 'Nobody in this group yet.', !got);
+        } catch (e) { $(m.body, '#dlE').innerHTML = errBox(e.message); busy = false; btn.textContent = 'Download'; }
+      };
     }
     // ---------------------------------------------------------------------------------------------------------- data
     function changed(redrawF, keepView) {
