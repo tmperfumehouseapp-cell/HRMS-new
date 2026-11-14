@@ -279,7 +279,7 @@ function wa_aud_where(string $src, array $f, string $q = ''): array
         $fx = []; $fp = []; $dts = function ($k, $end) use ($f) { return isset($f[$k]) && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$f[$k]) ? $f[$k] . ($end ? ' 23:59:59' : ' 00:00:00') : ''; };
         if (!empty($f['fg']) && is_array($f['fg'])) { $fx[] = 'grp IN (' . wa_in($f['fg']) . ')'; foreach ($f['fg'] as $x) $fp[] = (string)$x; }
         foreach ((array)($f['fc'] ?? []) as $k) $fx[] = '(' . cfun_where((string)$k) . ')';
-        foreach (['fq' => 'qual', 'fi' => 'intent', 'fb' => 'batch'] as $fk => $col) if (!empty($f[$fk]) && is_array($f[$fk])) { $fx[] = "$col IN (" . wa_in($f[$fk]) . ')'; foreach ($f[$fk] as $x) $fp[] = (string)$x; }
+        foreach (['fq' => 'qual', 'fi' => 'intent', 'fb' => 'batch', 'fh' => 'health', 'fv' => 'val'] as $fk => $col) if (!empty($f[$fk]) && is_array($f[$fk])) { $fx[] = "$col IN (" . wa_in($f[$fk]) . ')'; foreach ($f[$fk] as $x) $fp[] = (string)$x; }
         foreach ([['sent', 'last_out'], ['dlv', 'last_deliv'], ['fl', 'last_fail']] as [$pre, $col]) { $a = $dts($pre . '_from', false); $b = $dts($pre . '_to', true); if ($a !== '') { $fx[] = "$col >= ?"; $fp[] = $a; } if ($b !== '') { $fx[] = "$col <= ?"; $fp[] = $b; } }
         if (($f['lby'] ?? '') === 'them') $fx[] = "last_in IS NOT NULL AND last_in > COALESCE(last_out, '1970-01-01')"; elseif (($f['lby'] ?? '') === 'us') $fx[] = "last_out IS NOT NULL AND (last_in IS NULL OR last_out >= last_in)";
         foreach ([['rin_min', 'in_n >= ?'], ['out_min', 'out_n >= ?'], ['out_max', 'out_n <= ?']] as [$k, $sq]) if (isset($f[$k]) && is_numeric($f[$k])) { $fx[] = $sq; $fp[] = (int)$f[$k]; }
