@@ -68,6 +68,29 @@ jobs:
           try { foreach ($d->query("SELECT /*+ MAX_EXECUTION_TIME(40000) */ last_status, COUNT(*) c FROM wa_camp_items WHERE status = 'sent' GROUP BY last_status ORDER BY c DESC")->fetchAll(PDO::FETCH_NUM) as $x) echo sprintf("   accepted, then: %-10s %s\n", $x[0] === '' ? '(none)' : $x[0], number_format($x[1])); } catch (Throwable $e) { }
           echo "\n=== replies ===\n";
           echo "Numbers that ever wrote to us (from the message log): " . $n("SELECT /*+ MAX_EXECUTION_TIME(40000) */ COUNT(DISTINCT phone) FROM wa_messages WHERE dir = 'in'") . "\n";
+          echo "\n=== EXCEL-IMPORTED customers: did anything reach them? (imported = saved with the Excel-import marker) ===\n";
+          try { $d->exec("SET SESSION MAX_EXECUTION_TIME=0"); } catch (Throwable $e) { }
+          $t0 = time(); $cur = ""; $tot = 0; $never = 0; $deliv = 0; $nodel = 0; $allfail = 0; $repl = 0; $nodelRepl = 0; $noC = 0; $timeout = false;
+          try {
+            while (true) {
+              $q = $d->prepare("SELECT DISTINCT phone FROM wa_ctags WHERE src = 'import' AND phone > ? ORDER BY phone LIMIT 3000"); $q->execute([$cur]); $ph = $q->fetchAll(PDO::FETCH_COLUMN); if (!$ph) break; $cur = (string)end($ph); $ph = array_map("strval", $ph);
+              $in = implode(",", array_fill(0, count($ph), "?")); $M = []; $R = [];
+              $m = $d->prepare("SELECT phone, COUNT(*) n, SUM(status IN ('delivered','read')) dl, SUM(status = 'failed') f FROM wa_messages WHERE dir = 'out' AND phone IN ($in) GROUP BY phone"); $m->execute($ph); foreach ($m->fetchAll(PDO::FETCH_ASSOC) as $r) $M[(string)$r["phone"]] = $r;
+              $c = $d->prepare("SELECT phone FROM wa_contacts WHERE last_in_at IS NOT NULL AND phone IN ($in)"); $c->execute($ph); foreach ($c->fetchAll(PDO::FETCH_COLUMN) as $x) $R[(string)$x] = 1;
+              foreach ($ph as $p) { $p = (string)$p; $tot++; $x = $M[$p] ?? null; $rep = isset($R[$p]);
+                if ($rep) $repl++;
+                if (!$x) { $never++; continue; }
+                if ((int)$x["dl"] > 0) { $deliv++; continue; }
+                $nodel++; if ($rep) $nodelRepl++; if ((int)$x["f"] >= (int)$x["n"]) $allfail++; }
+              if (time() - $t0 > 170) { $timeout = true; break; }
+            }
+          } catch (Throwable $e) { echo "import check stopped: " . substr($e->getMessage(), 0, 120) . "\n"; }
+          echo "Imported numbers checked: " . number_format($tot) . ($timeout ? "  (stopped after 170 s — partial)" : "") . "\n";
+          echo "  never sent any message: " . number_format($never) . "\n";
+          echo "  at least one message delivered/read: " . number_format($deliv) . "\n";
+          echo "  messages sent but NOT A SINGLE ONE delivered: " . number_format($nodel) . "   (of these, every message failed: " . number_format($allfail) . "; replied anyway: " . number_format($nodelRepl) . ")\n";
+          echo "  imported numbers that ever wrote to us: " . number_format($repl) . "\n";
+          try { echo "Import batches (tag, numbers):\n"; foreach ($d->query("SELECT tag, COUNT(*) c FROM wa_ctags WHERE src = 'import' AND tag LIKE 'import\\_%' GROUP BY tag ORDER BY c DESC LIMIT 15")->fetchAll(PDO::FETCH_NUM) as $x) echo "   " . $x[0] . ": " . number_format($x[1]) . "\n"; } catch (Throwable $e) { }
           PHP
           php /tmp/cust_numbers.php "$P"; rm -f /tmp/cust_numbers.php
           REMOTE
