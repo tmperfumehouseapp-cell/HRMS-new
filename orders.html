@@ -934,7 +934,7 @@
 <script src="assets/js/config.js?v=2"></script>
 <script src="assets/js/api.js?v=13"></script>
 <script src="assets/js/layout.js?v=32"></script>
-<script src="assets/js/ml_slab.js?v=261103y"></script>
+<script src="assets/js/ml_slab.js?v=261114a"></script>
 <script src="assets/js/convo.js?v=261024a"></script>
 <div class="cmo" id="mbOv" hidden><div class="cmd" role="dialog" aria-modal="true" aria-labelledby="mbTtl"><div class="hd"><div><h3 id="mbTtl"></h3><p id="mbSub"></p></div><div class="acts"><button type="button" class="dl" id="mbDl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg>Excel</button><button type="button" class="x" id="mbX" aria-label="Close">✕</button></div></div><div class="bd" id="mbBd"></div></div></div>
 <div class="cmo" id="tmOv" hidden><div class="cmd" role="dialog" aria-modal="true" aria-labelledby="tmTtl" style="width:min(560px,100%);"><div class="hd"><div><h3 id="tmTtl"></h3><p id="tmSub"></p></div><button type="button" class="x" id="tmX" aria-label="Close">✕</button></div><div class="bd" id="tmBd"></div></div></div>
@@ -2650,13 +2650,14 @@
   let ML_CHART = null;
   // The chart for this order's day and salesman (📅 special days from Commission Rules applied).
   const mlDay = (o) => ML_CHART && MLSLAB.forDay ? MLSLAB.forDay(ML_CHART, o.biz_date || '', o.employee_id) : ML_CHART;
-  api.get('ml_slab.get').then((d) => { ML_CHART = d && d.chart ? d.chart : null; if (allOrders.length) try { renderPage(); summaryRefresh(); } catch (e) {} }).catch(() => {});
+  let CM_OFFERS = [], CM_WIN = 60;
+  api.get('ml_slab.get').then((d) => { ML_CHART = d && d.chart ? d.chart : null; CM_OFFERS = (d && d.offers) || []; CM_WIN = d && d.offer_window ? Number(d.offer_window) : 60; if (allOrders.length) try { renderPage(); summaryRefresh(); } catch (e) {} }).catch(() => {});
   function mlInfo(o) {
     const m = window.MLSLAB ? MLSLAB.parts(o) : null;
     const key = (o.store_key || o.source || '') + ':' + o.id;
     const ex = commValid() && COMM.res.ord ? COMM.res.ord[key] : null;      // [₹, note, rule kind] from the Commission page
     const pre = MLSLAB.isPre(o.financial_status);
-    const r = m && m.total && ML_CHART ? MLSLAB.orderCom(MLSLAB.preview(ML_CHART), { ml: m.total, day: o.biz_date || '', emp: o.employee_id, amt: Number(o.total || 0), pre, code: o.code || '' }, null) : null;   // daily target not known here: no bonus / cut (the Commission page has it)
+    const r = m && m.total && ML_CHART ? (MLSLAB.offerCom(CM_OFFERS, CM_WIN, ML_CHART, { ml: m.total, day: o.biz_date || '', amt: Number(o.total || 0), pre, code: o.code || '' }) || MLSLAB.orderCom(MLSLAB.preview(ML_CHART), { ml: m.total, day: o.biz_date || '', emp: o.employee_id, amt: Number(o.total || 0), pre, code: o.code || '' }, null)) : null;   // daily target not known here: no bonus / cut (the Commission page has it)
     let x = m && m.total && ML_CHART ? MLSLAB.extraByPrice(ML_CHART, m.total, Number(o.total || 0), pre) : null;   // extra ML by price
     // Campaign orders (Type = Campaign on Order Allocation): the campaign price is the set price → no extra ML counted.
     if (x && orderTagType(o.tags) === 'campaign') x = Object.assign({}, x, { extra: 0, value: 0, campaign: true });
