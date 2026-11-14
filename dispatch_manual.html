@@ -170,7 +170,7 @@
       if (!list.length) return alert('No rows found. The sheet needs the columns: Order ID, AWB, Courier service.');
       if (!confirm('Add the tracking IDs of ' + list.length + ' orders from "' + f.name + '"?\nOrders that already have a different tracking ID are left alone.')) return;
       const x = await api.post('wmo.import_tracking', { rows: list });
-      alert('Added: ' + x.added + '\nSkipped: ' + x.skipped.length + (x.skipped.length ? '\n\n' + x.skipped.join('\n') : '')); load();
+      alert('Saved on the orders: ' + x.added + '\nUpdated on Dispatch (left "No tracking ID"): ' + (x.dispatch || 0) + ((x.not_in_dispatch || []).length ? '\nNot in the Dispatch list yet (they follow by themselves): ' + x.not_in_dispatch.join(', ') : '') + '\nSkipped: ' + x.skipped.length + (x.skipped.length ? '\n\n' + x.skipped.join('\n') : '')); load();
     } catch (er) { alert(er.message); }
   };
   function loadXlsx() { return new Promise((ok, no) => { if (window.XLSX) return ok(); const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; s.onload = ok; s.onerror = () => no(new Error('The Excel maker could not be loaded (internet). Use the CSV button — Excel opens it.')); document.head.appendChild(s); }); }

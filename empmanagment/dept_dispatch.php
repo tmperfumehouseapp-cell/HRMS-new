@@ -144,6 +144,7 @@ function dp_dsp_sync(PDO $pdo, $now, $force = false) {
         }
     }
     try { $pdo->prepare("DELETE FROM dp_dsp_parcels WHERE created_at < ?")->execute([date('Y-m-d', $now - 100 * 86400)]); } catch (Throwable $e) {}
+    try { if (!function_exists('wmo_dsp_heal') && is_file(__DIR__ . '/wmo.php')) require_once __DIR__ . '/wmo.php'; if (function_exists('wmo_dsp_heal')) wmo_dsp_heal($pdo); } catch (Throwable $e) {}   // tracking IDs typed / imported on the Manual orders page reach their parcel here too
     return [$new, $canc];
 }
 
