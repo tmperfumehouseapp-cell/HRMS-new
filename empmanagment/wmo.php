@@ -217,7 +217,7 @@ function wmo_gateway_name(string $g): string
 /** ✅ / ❌ The two screenshots (what the customer paid, what we received) must agree. There is no "maybe": the order goes on, or it does not. */
 function wmo_proof_verdict(array $c, array $r, array $cfg = ['days' => 3, 'tol' => 1], string $chatPhone = ''): array
 {
-    $no = function ($why) { return ['ok' => false, 'reason' => $why, 'amount' => 0, 'utr' => '', 'gateway' => '']; };
+    $note = ''; $no = function ($why) { return ['ok' => false, 'reason' => $why, 'amount' => 0, 'utr' => '', 'gateway' => '']; };
     if (!empty($c['error'])) return $no("The customer's screenshot could not be read: " . $c['error']); if (!empty($r['error'])) return $no("The receiver's screenshot could not be read: " . $r['error']);
     $link = in_array($r['gateway'], ['Razorpay', 'Quick'], true) || in_array($r['kind'], ['link', 'card'], true);   // paid through a Razorpay / Quick link or a card: no UTR; the gateway's own screen (payment ID, status, amount, customer) is the proof
     if (empty($r['ok'])) return $no("The receiver's screenshot is not a payment confirmation. Upload the screen where the money arrived (business app, bank, Razorpay or Quick dashboard).");
@@ -230,7 +230,7 @@ function wmo_proof_verdict(array $c, array $r, array $cfg = ['days' => 3, 'tol' 
         if (empty($r['to_us'])) return $no('The gateway screen is not of TM Perfume House / Fourpirates Ventures LLP.');
         if (empty($c['ok'])) return $no("The customer's screenshot is not a payment confirmation. Upload the paid screen the customer got.");
         if (!$c['generic'] && $c['amount'] > 0 && abs($c['amount'] - $r['amount']) > $cfg['tol']) return $no('The amounts differ: the customer paid ' . wmo_rs((int)round($c['amount'] * 100)) . ', the gateway shows ' . wmo_rs((int)round($r['amount'] * 100)) . '.');
-        $cp = substr(preg_replace('/\D+/', '', $chatPhone), -10); if ($cp !== '' && $r['phone'] !== '' && $cp !== $r['phone']) return $no('This payment was made by ' . $r['phone'] . ($r['cname'] !== '' ? ' (' . $r['cname'] . ')' : '') . ', not by this chat\'s customer (' . $cp . '). Use the chat of the customer who paid.');
+        $cp = substr(preg_replace('/\D+/', '', $chatPhone), -10); if ($cp !== '' && strlen($r['phone']) >= 10 && $cp !== $r['phone']) $note = 'Paid by another number (' . $r['phone'] . ($r['cname'] !== '' && $r['cname'] !== '<UNKNOWN>' ? ', ' . $r['cname'] : '') . ') than this chat (' . $cp . ') — accepted: the payment itself is verified.';   // a customer often pays from his primary / another number: this is a note, never a refusal
         $utr = $r['utr']; $amt = $r['amount']; $dt = [$r];
     } else {
         if (empty($c['ok'])) return $no("The customer's screenshot is not a payment confirmation. Upload the paid screen of the customer.");
@@ -244,7 +244,7 @@ function wmo_proof_verdict(array $c, array $r, array $cfg = ['days' => 3, 'tol' 
     foreach ($dt as $x) { $t = strtotime(preg_replace(['#(\d{1,2})/(\d{1,2})/(\d{4})#', '/\b(IST|UTC|GMT)\b/i'], ['$1-$2-$3', ''], (string)$x['date'])); if ($t && ($t < time() - $cfg['days'] * 86400 || $t > time() + 86400)) return $no('The payment date (' . $x['date'] . ') is not within the last ' . $cfg['days'] . ' days.'); }
     $dup = $r['dup'] !== '' ? $r['dup'] : $c['dup']; if ($dup !== '') return $no('This ' . ($link ? 'payment ID' : 'UTR') . ' is already used on order ' . $dup . '. One payment cannot pay two orders.');
     $g = $r['gateway'] !== '' && $r['gateway'] !== 'Other' ? $r['gateway'] : ($c['gateway'] !== '' ? $c['gateway'] : ($r['gateway'] ?: 'UPI QR'));
-    return ['ok' => true, 'reason' => $link ? 'The gateway screen confirms the payment (payment ID, amount, status, customer).' : 'Both screenshots agree.', 'amount' => $amt, 'utr' => $utr, 'gateway' => $g];
+    return ['ok' => true, 'reason' => $link ? 'The gateway screen confirms the payment (payment ID, amount, status, customer).' : 'Both screenshots agree.', 'amount' => $amt, 'utr' => $utr, 'gateway' => $g, 'note' => $note];
 }
 // ------------------------------------------------------------------------------------------------------------------ Dispatch ▸ Manual orders (every manual order, export, invoice / Shiprocket status)
 /** Who may open the Dispatch "Manual orders" list: Admin / HR, the Dispatch and Admin departments, a Sales Head, a Dispatch seat holder, the bosses. */
