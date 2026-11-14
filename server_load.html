@@ -82,6 +82,11 @@
       + '<div class="tile ' + (d.mem ? tone(100 - d.mem.free_mb / d.mem.total_mb * 100, 80, 92) : '') + '"><small>Memory free</small><b>' + (d.mem ? num(d.mem.free_mb) + ' MB' : '—') + '</b><span>' + (d.mem ? 'of ' + num(d.mem.total_mb) + ' MB' : '') + '</span></div>'
       + '<div class="tile"><small>Requests a minute</small><b>' + (d.span_min ? num(Math.round(d.requests / d.span_min)) : '—') + '</b><span>' + (d.span_min ? num(d.requests) + ' in ' + d.span_min + ' min' : 'just started counting') + '</span></div>'
       + '</div>';
+    const B = d.blocks || [], done = B.filter((b) => !b.open), pk = done.reduce((m, b) => (!m || b.pct > m.pct ? b : m), null);
+    h += card('CPU · every 5 minutes', 'One line for each 5 minutes on the clock, newest first. This is the same thing the hosting graph draws, so compare a line here with the same time there. ' + (pk ? 'Highest in this period: <b>' + pk.pct + '%</b> at ' + pk.from + '–' + pk.to + '.' : ''),
+      B.length ? '<div class="wrap"><table><thead><tr><th>Time</th><th>CPU used</th><th>Database part</th><th>Taken by the hosting</th></tr></thead><tbody>'
+        + B.map((b) => '<tr><td><b>' + b.from + ' – ' + b.to + '</b>' + (b.open ? ' <small style="display:inline">still running</small>' : '') + '</td><td><span class="meter" style="width:180px"><i class="' + (b.pct >= 80 ? 'hi' : '') + '" style="width:' + Math.min(100, b.pct) + '%;' + (b.pct < 50 ? 'background:#16a34a' : '') + '"></i></span><b>' + b.pct + '%</b></td><td>' + (b.db == null ? '—' : b.db + '%') + '</td><td>' + (b.steal == null ? '—' : b.steal + '%') + '</td></tr>').join('') + '</tbody></table></div>'
+        : '<div class="empty">Counting — the first line appears after about 5 minutes.</div>');
     PR = [d.full_prompt || ''].concat((d.advice || []).map((a) => a.prompt || '')); LAST = d; $('bPrompt').disabled = !PR[0]; if ($('slHint').style.display !== 'none') $('slHint').innerHTML = hintHtml();
     h += card('What to do', 'Worked out from the numbers on this page, the most expensive first. Press <b>Copy prompt</b> on a row and paste it to Claude: it carries the numbers and the query, so Claude can fix exactly that.',
       (d.full_prompt ? '<button type="button" class="cp big" data-cp="0">📋 Copy ONE prompt for everything</button>' : '')

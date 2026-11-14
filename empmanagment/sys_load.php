@@ -118,6 +118,25 @@ function sysload_cpu_sample(): array
 }
 function sysload_cores(): int { $c = @file_get_contents('/proc/cpuinfo'); $n = $c !== false ? preg_match_all('/^processor\s*:/m', $c) : 0; return max(1, (int)$n); }
 
+/** The CPU in 5-minute pieces on the clock (10:00–10:05, 10:05–10:10 …), the way a hosting panel draws its graph. Newest first; the piece still running is marked 'open'. */
+function sysload_blocks(array $snaps, int $mins): array
+{
+    $n = count($snaps); if ($n < 2) return [];
+    $from = $snaps[$n - 1]['t'] - $mins * 60; $first = [];      // the first snapshot of each 5-minute piece
+    foreach ($snaps as $s) { if ($s['t'] < $from - 300) continue; $k = intdiv((int)$s['t'], 300); if (!isset($first[$k])) $first[$k] = $s; }
+    $ks = array_keys($first); $out = []; $last = $snaps[$n - 1];
+    foreach ($ks as $i => $k) {
+        $a = $first[$k]; $open = !isset($ks[$i + 1]); $b = $open ? $last : $first[$ks[$i + 1]];
+        if (!$open && $ks[$i + 1] !== $k + 1) continue;      // a gap: nothing was recorded, so no figure
+        $da = $b['all'] - $a['all']; if ($da <= 0 || $b['t'] - $a['t'] < 45) continue;
+        $ds = isset($a['steal'], $b['steal']) ? (float)$b['steal'] - (float)$a['steal'] : null;
+        $out[] = ['from' => date('H:i', $k * 300), 'to' => date('H:i', $open ? $b['t'] : ($k + 1) * 300), 'open' => $open,
+            'pct' => round(100 * (1 - (($b['idle'] - $a['idle']) + (float)$ds) / $da), 1), 'steal' => $ds === null ? null : round(100 * $ds / $da, 1),
+            'db' => (($a['db'] ?? null) !== null && ($b['db'] ?? null) !== null && $b['db'] >= $a['db']) ? round(100 * ($b['db'] - $a['db']) / $da, 1) : null];
+    }
+    return array_reverse($out);
+}
+
 /** The whole picture for the page. $mins = how far back the request lines are read (15–180). */
 function sysload_view(PDO $pdo, int $mins): array
 {
@@ -138,6 +157,7 @@ function sysload_view(PDO $pdo, int $mins): array
         return ['pct' => round(100 * (1 - (($b['idle'] - $a['idle']) + $ds) / $da), 1), 'steal' => isset($a['steal']) ? round(100 * $ds / $da, 1) : null, 'db' => ($a['db'] !== null && $b['db'] !== null && $b['db'] >= $a['db']) ? round(100 * ($b['db'] - $a['db']) / $da, 1) : null, 'mins' => (int)round(($b['t'] - $a['t']) / 60)];
     };
     $out['avg'] = ['m1' => $avg(1), 'm5' => $avg(5), 'm15' => $avg(15), 'win' => $avg($mins)];
+    $out['blocks'] = sysload_blocks($snaps, $mins);
 
     // the busiest programs right now (needs shell access; many hosts switch it off — then this part is simply left out)
     $procs = []; $groups = [];
