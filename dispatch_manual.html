@@ -44,7 +44,8 @@
         <a class="btn" href="manual_sheet.html" style="background:#fff;color:#111;border:1px solid var(--line);text-decoration:none" title="A simple sheet: order, name, tracking ID, perfumes, address, payment, sale amount, status — with its own Excel export">📋 Order sheet</a>
         <button class="btn" type="button" id="bCost" style="background:#fff;color:#92400e;border:1px solid #f59e0b" title="Our purchase cost per bottle size — fills Buying Price in the FP export">₹ Purchase costs</button>
         <button class="btn" type="button" id="bXlsx" title="The FP export file (Date, Order No, Order Type, AWB NO, Products, … Transaction Id)">⬇ Export Excel (FP)</button>
-        <button class="btn" type="button" id="bCsv" style="background:#fff;color:#0b6b4b;border:1px solid #1aa37a" title="Shopify orders export columns, one row per product">⬇ CSV (Shopify format)</button>
+        <button class="btn" type="button" id="bImp" style="background:#fff;color:#1d4ed8;border:1px solid #1d4ed8" title="Upload the sheet with Order ID, AWB and Courier service: the tracking IDs are added to these orders and to Dispatch">⬆ Import AWB sheet</button><input type="file" id="fImp" accept=".xlsx,.xls,.csv" style="display:none">
+        <button class="btn" type="button" id="bCsv"style="background:#fff;color:#0b6b4b;border:1px solid #1aa37a" title="Shopify orders export columns, one row per product">⬇ CSV (Shopify format)</button>
       </div>
       <div id="dmCost" style="display:none;border:1px solid #f59e0b;background:#fffbeb;border-radius:12px;padding:12px;margin:8px 0"></div>
       <div id="dmSum"></div><div id="dmErr"></div>
@@ -157,6 +158,20 @@
     const d = await fetchAllForExport(this); if (!d) return; const rows = sheetRows(d.rows), q = (v) => { const s = String(v == null ? '' : v); return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
     const csv = '﻿' + COLS.map(q).join(',') + '\r\n' + rows.map((o) => COLS.map((k) => q(o[k])).join(',')).join('\r\n');
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); a.download = stamp(d) + '.csv'; document.body.appendChild(a); a.click(); a.remove();
+  };
+  // ---- import: a sheet with the columns "Order ID", "AWB", "Courier service" (the same sheet this page exports, with AWB and courier filled in)
+  $('bImp').onclick = () => $('fImp').click();
+  $('fImp').onchange = async function () {
+    const f = this.files[0]; this.value = ''; if (!f) return;
+    try {
+      await loadXlsx(); const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' }); const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '', raw: false });
+      const pick = (r, re) => { const k = Object.keys(r).find((x) => re.test(x.trim())); return k ? String(r[k]).trim() : ''; };
+      const list = rows.map((r) => ({ order_no: pick(r, /^order\s*(id|no|number)/i), awb: pick(r, /^(awb|tracking)/i), courier: pick(r, /^courier/i) })).filter((x) => x.order_no);
+      if (!list.length) return alert('No rows found. The sheet needs the columns: Order ID, AWB, Courier service.');
+      if (!confirm('Add the tracking IDs of ' + list.length + ' orders from "' + f.name + '"?\nOrders that already have a different tracking ID are left alone.')) return;
+      const x = await api.post('wmo.import_tracking', { rows: list });
+      alert('Added: ' + x.added + '\nSkipped: ' + x.skipped.length + (x.skipped.length ? '\n\n' + x.skipped.join('\n') : '')); load();
+    } catch (er) { alert(er.message); }
   };
   function loadXlsx() { return new Promise((ok, no) => { if (window.XLSX) return ok(); const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; s.onload = ok; s.onerror = () => no(new Error('The Excel maker could not be loaded (internet). Use the CSV button — Excel opens it.')); document.head.appendChild(s); }); }
   $('bXlsx').onclick = async function () {
