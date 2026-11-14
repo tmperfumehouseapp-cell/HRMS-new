@@ -177,7 +177,7 @@
       if (!S.shot2) return '<div style="color:#667781">Upload the screen from the side that RECEIVED the money. Both screenshots must show the same amount and the same UTR.</div>';
       const v = S.proof; if (!v) return '<div style="color:#667781">Upload the customer\'s paid screen as well, then the two are compared.</div>';
       if (v.error) return '<div class="mo-note bad" style="margin:0">' + esc(v.error) + '</div>';
-      return v.ok ? '<div><b>✅ Verified</b> · ' + rs(Math.round((v.amount || 0) * 100)) + ' · UTR ' + esc(v.utr || '') + '</div><div style="color:#667781;font-size:12.5px">Gateway: ' + esc(v.gateway || '') + ' · both screenshots agree</div>'
+      return v.ok ? '<div><b>✅ Verified</b> · ' + rs(Math.round((v.amount || 0) * 100)) + ' · UTR ' + esc(v.utr || '') + '</div><div style="color:#667781;font-size:12.5px">Gateway: ' + esc(v.gateway || '') + ' · the payment is verified</div>' + (v.note ? '<div class="mo-note" style="margin:6px 0 0">' + esc(v.note) + '</div>' : '')
         : '<div class="mo-note bad" style="margin:0"><b>❌ The order cannot be made.</b><br>' + esc(v.reason || '') + '</div>';
     }
     async function runProof() {
