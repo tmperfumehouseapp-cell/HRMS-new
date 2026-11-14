@@ -1,0 +1,50 @@
+# READ-ONLY: shows why one order was paid the commission % it was (the order, its allocation, the offers set on the Commission page). Changes nothing.
+# Run by hand: Actions → "Diagnose one order's commission (read-only)" → Run workflow → type the order number (for example 70732).
+name: Diagnose one order's commission (read-only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      order:
+        description: 'Order number, for example 70732'
+        required: true
+        default: '70732'
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+      - name: The order and the offers (read-only)
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+          ORDER_NO: ${{ github.event.inputs.order }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" "$ORDER_NO" <<'REMOTE' || true
+          P="$1"; O="$2"
+          php -r '
+            require $argv[1] . "empmanagment/config.php"; $no = preg_replace("/\D/", "", $argv[2]);
+            $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_TIMEOUT => 8]);
+            echo "--- the order (shop_orders) ---\n";
+            $q = $d->prepare("SELECT store_key, shopify_id, order_name, created_at, customer, total, items, financial_status, ml_total, ml10, tags, LEFT(xparts, 300) xp FROM shop_orders WHERE order_name IN (?, ?) ORDER BY created_at DESC LIMIT 3"); $q->execute(["#" . $no, $no]);
+            $ords = $q->fetchAll(PDO::FETCH_ASSOC); foreach ($ords as $x) { foreach ($x as $k => $v) echo "  $k = $v\n"; echo "  ---\n"; }
+            echo "--- allocation ---\n";
+            foreach ($ords as $x) { $a = $d->prepare("SELECT * FROM order_allocations WHERE source = ? AND order_id = ?"); $a->execute([$x["store_key"], (string)$x["shopify_id"]]); foreach ($a->fetchAll(PDO::FETCH_ASSOC) as $r) { foreach ($r as $k => $v) if ($v !== null && $v !== "") echo "  $k = " . substr((string)$v, 0, 80) . "\n"; echo "  ---\n"; } }
+            echo "--- commission offers set (cm_offers) ---\n";
+            foreach ($d->query("SELECT id, ml, price, pct, from_date, to_date, active, stopped_at, created_at FROM cm_offers ORDER BY id DESC LIMIT 10")->fetchAll(PDO::FETCH_ASSOC) as $r) echo "  #" . $r["id"] . " ml=" . $r["ml"] . " price=" . $r["price"] . " pct=" . $r["pct"] . " from=" . $r["from_date"] . " to=" . ($r["to_date"] ?? "-") . " active=" . $r["active"] . " stopped=" . ($r["stopped_at"] ?? "-") . " created=" . $r["created_at"] . "\n";
+            echo "--- hand-fixed commission for this order? ---\n";
+            try { foreach ($ords as $x) { $a = $d->prepare("SELECT * FROM cm_fixes WHERE order_key IN (?, ?)"); $a->execute([$x["store_key"] . ":" . $x["shopify_id"], $x["store_key"] . "|" . $x["shopify_id"]]); foreach ($a->fetchAll(PDO::FETCH_ASSOC) as $r) echo "  " . json_encode($r) . "\n"; } } catch (Throwable $e) { echo "  (" . $e->getMessage() . ")\n"; }
+            echo "--- commission settings (code rule, window) ---\n";
+            foreach ($d->query("SELECT setting_key k, LEFT(setting_value, 400) v FROM hrms_settings WHERE setting_key IN (\"cm_chart\", \"ml_slab_chart\") ")->fetchAll(PDO::FETCH_ASSOC) as $r) { $j = json_decode($r["v"], true); echo "  " . $r["k"] . ": " . (is_array($j) ? json_encode(array_intersect_key($j, array_flip(["on", "codepct", "nocode", "prepaid", "window", "floor", "from", "to", "cap"]))) : substr($r["v"], 0, 200)) . "\n"; }
+          ' "$P" "$O"
+          REMOTE
