@@ -190,7 +190,8 @@ if ($__wc === 'wa.overview' || $__wc === 'wa.send_media' || $__wc === 'wa.client
             }
             if ($tpl['rejected'] > 0) $att[] = ['level' => 'warn', 'text' => $tpl['rejected'] . ' pre-made message' . ($tpl['rejected'] === 1 ? ' was' : 's were') . ' rejected by Meta.', 'go' => 'premade'];
             usort($att, fn($a, $b) => ($a['level'] === 'bad' ? 0 : 1) <=> ($b['level'] === 'bad' ? 0 : 1));
-            json_response(['sources' => $src, 'chats' => $chats, 'numbers' => $numbers, 'limit' => ['tier' => $limit, 'used' => $used], 'templates' => $tpl, 'attention' => $att, 'late' => $late, 'at' => date('Y-m-d H:i:s')]);
+            $hideAtt = ((string)($auth['role'] ?? '') === 'Admin'); if (!$hideAtt && (int)($auth['employee_id'] ?? 0) > 0) { try { $dq = $pdo->prepare("SELECT designation FROM employees WHERE employee_id = ?"); $dq->execute([(int)$auth['employee_id']]); $hideAtt = (bool)preg_match('/sales\s*head/i', (string)$dq->fetchColumn()); } catch (Throwable $e) { } }   // the "Needs your attention" box is not shown to the Admin and the Sales Head (owner, 14 Nov)
+            json_response(['sources' => $src, 'chats' => $chats, 'numbers' => $numbers, 'limit' => ['tier' => $limit, 'used' => $used], 'templates' => $tpl, 'attention' => $hideAtt ? [] : $att, 'late' => $hideAtt ? null : $late, 'hide_attention' => $hideAtt, 'at' => date('Y-m-d H:i:s')]);
         }
     }
 }
