@@ -577,7 +577,8 @@ function wa_number_caps(PDO $pdo, array $health): array
 {
     $tier = null; foreach ($health as $h) if ($h['tier'] !== null) { if ($h['tier'] === -1) { $tier = 1000000; break; } $tier = max((int)$tier, (int)$h['tier']); }
     $tierAssumed = $tier === null; if ($tier === null) $tier = 250;
-    $perNum = (string)setting_get($pdo, 'wa_limit_mode', 'shared') === 'per_number'; $sumT = 0;   // 'shared': Meta's limit is ONE pool for the whole business account (the highest number's limit) · 'per_number': every number has its own limit (guarded: see wa_limit_guard)
+    $perNum = (string)setting_get($pdo, 'wa_limit_mode', 'per_number') === 'per_number';   // (14 Nov: unset now means per number — one shared pool of 90% of the tier blocked every normal campaign while Meta kept accepting messages; the guard in wa_limit_guard() goes back to 'shared' by itself if Meta really refuses)
+    $sumT = 0;   // 'shared': Meta's limit is ONE pool for the whole business account (the highest number's limit) · 'per_number': every number has its own limit (guarded: see wa_limit_guard)
     $cfg = wa_team_cfg($pdo); $since = date('Y-m-d H:i:s', time() - 86400);
     $lu = wa_lim_used($pdo, $since); $used = $lu['by'];
     // each number's first template send never moves, so it is looked up once and remembered (the full scan of wa_messages took seconds and ran every time the Campaign panel opened)

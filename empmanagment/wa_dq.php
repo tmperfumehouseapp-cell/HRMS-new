@@ -207,7 +207,7 @@ function wa_dq_live(PDO $pdo): array
 function wa_limit_guard(PDO $pdo): void
 {
     try {
-        if ((string)setting_get($pdo, 'wa_limit_mode', 'shared') !== 'per_number') return;
+        if ((string)setting_get($pdo, 'wa_limit_mode', 'per_number') !== 'per_number') return;
         if ((int)setting_get($pdo, 'wa_limit_guard_at', '0') > time() - 60) return; setting_set($pdo, 'wa_limit_guard_at', (string)time());
         $q = $pdo->prepare("SELECT COUNT(*) AS n, SUM(status = 'failed' AND err_code NOT IN (131049, 131026, 130472, 131050, 131047, 131021, 131051)) AS f FROM (SELECT status, err_code FROM wa_camp_items WHERE sent_at >= ? ORDER BY sent_at DESC LIMIT 300) t");
         $q->execute([date('Y-m-d H:i:s', time() - 1800)]); $r = $q->fetch(); $n = (int)$r['n']; $f = (int)$r['f'];
@@ -403,7 +403,7 @@ function wa_dq_status(PDO $pdo): array
 {
     $cfg = wa_dq_cfg($pdo);
     try { $hit = json_decode((string)setting_get($pdo, 'wa_dq_stat', ''), true); if (is_array($hit) && (int)($hit['t'] ?? 0) > time() - 30 && ($hit['cap'] ?? 0) === $cfg['hourly'] && ($hit['daily'] ?? 0) === $cfg['daily'] && ($hit['on'] ?? null) === $cfg['on']) return $hit; } catch (Throwable $e) { }
-    $l = wa_dq_left($pdo); $o = ['t' => time(), 'pace' => $l['pace'] ?? null, 'on' => $cfg['on'], 'cap' => $cfg['hourly'], 'used' => $l['used'], 'exp' => $l['exp'], 'rate' => $l['rate'], 'state' => $l['state'], 'range' => $l['range'], 'm_live' => $l['m_live'], 'mult' => $l['mult'], 'eff_cap' => $l['eff_cap'], 'learning' => $l['learning'], 'smart' => $l['smart'], 'left' => $l['left'], 'daily' => $l['daily'], 'day_used' => $l['day_used'], 'why' => $l['why'], 'spend' => $l['spend'], 'budget' => $l['budget'], 'push_cap' => $l['push_cap'], 'limit_mode' => (string)setting_get($pdo, 'wa_limit_mode', 'shared'), 'early' => (string)setting_get($pdo, 'wa_dq_early', '1') !== '0', 'auto' => $cfg['auto'], 'dmin' => $cfg['dmin'], 'dmax' => $cfg['dmax'], 'base' => $cfg['base'], 'auto_last' => wa_dq_auto_last($pdo), 'people' => 0, 'campaigns' => 0, 'gap_days' => max(0, (int)setting_get($pdo, 'wa_camp_gap_days', '3'))];
+    $l = wa_dq_left($pdo); $o = ['t' => time(), 'pace' => $l['pace'] ?? null, 'on' => $cfg['on'], 'cap' => $cfg['hourly'], 'used' => $l['used'], 'exp' => $l['exp'], 'rate' => $l['rate'], 'state' => $l['state'], 'range' => $l['range'], 'm_live' => $l['m_live'], 'mult' => $l['mult'], 'eff_cap' => $l['eff_cap'], 'learning' => $l['learning'], 'smart' => $l['smart'], 'left' => $l['left'], 'daily' => $l['daily'], 'day_used' => $l['day_used'], 'why' => $l['why'], 'spend' => $l['spend'], 'budget' => $l['budget'], 'push_cap' => $l['push_cap'], 'limit_mode' => (string)setting_get($pdo, 'wa_limit_mode', 'per_number'), 'early' => (string)setting_get($pdo, 'wa_dq_early', '1') !== '0', 'auto' => $cfg['auto'], 'dmin' => $cfg['dmin'], 'dmax' => $cfg['dmax'], 'base' => $cfg['base'], 'auto_last' => wa_dq_auto_last($pdo), 'people' => 0, 'campaigns' => 0, 'gap_days' => max(0, (int)setting_get($pdo, 'wa_camp_gap_days', '3'))];
     try { $r = $pdo->query("SELECT COUNT(DISTINCT i.phone) AS p, COUNT(DISTINCT i.camp_id) AS c FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id WHERE c.status = 'running' AND i.status IN ('queued', 'retry')")->fetch(); $o['people'] = (int)$r['p']; $o['campaigns'] = (int)$r['c']; } catch (Throwable $e) { }
     try { $o['eta'] = wa_dq_eta($pdo, $o); } catch (Throwable $e) { $o['eta'] = []; }
     try { $o['stall'] = wa_dq_stall($pdo, $o); } catch (Throwable $e) { $o['stall'] = null; }
