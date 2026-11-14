@@ -1936,7 +1936,7 @@
     catch (e) { const b = document.getElementById('idealCard'); if (b) b.innerHTML = '<div class="label"><span class="lbl-full">🎯 Ideal day vs actual</span></div><div style="color:var(--muted);font-size:12.5px;padding:6px 0">' + String(e.message || '').replace(/</g, '&lt;') + '</div>'; }
     finally { IDLbusy = false; }
   }
-  setInterval(() => { if (!document.hidden && IDL) idealLoad(true); }, 180000);
+  setInterval(() => { if (!document.hidden && IDL) idealLoad(true); }, 40000);
   document.addEventListener('click', (e) => { if (e.target.closest('[data-ide]')) idealEdit(); });
   function idealEdit() {
     const c = (IDL && IDL.cfg) || { spend: 0, replies: 0, orders: 0, rows: [] }, ov = document.createElement('div'); ov.style.cssText = 'position:fixed;inset:0;background:#0008;z-index:300;display:flex;align-items:center;justify-content:center;padding:14px';
