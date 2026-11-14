@@ -165,6 +165,9 @@
       if (nx && nx.classList.contains('cm-od')) { nx.remove(); return; }
       const row = document.createElement('tr'); row.className = 'cm-od'; row.innerHTML = '<td colspan="7" style="background:#fafafa;white-space:normal;text-align:left"><div class="bd-sub">Loading the order…</div></td>'; tr.after(row);
       const cell = row.firstChild, ok = String(a.dataset.ok || ''), i = ok.indexOf(':'), note = a.dataset.note || '', rs = (v) => '₹' + num(Math.round(Number(v) || 0));
+      if (ok.slice(0, i) === 'manual') {   // a manual order / quick entry has no product list in Shopify: say what it is instead of an error
+        cell.innerHTML = '<div style="font-size:13px;line-height:1.5"><b>' + esc(a.textContent) + '</b> is a manual order typed in by hand in <b>Sales → Orders → Add Order</b> (a quick entry). It has only an amount, no product list.'
+          + (note ? '<br><b style="color:#1d4fa3">' + esc(note) + '</b>' : '') + '<br>To pay a commission for it, press <b>✏️ Edit</b> on its line and type the amount.</div>'; return; }
       try {
         const r = await api.get('shopify.order_detail', { store: ok.slice(0, i), id: ok.slice(i + 1) }), d = r.order || {};
         cell.innerHTML = '<div style="font-size:13px;line-height:1.5"><b>' + esc(d.name || a.textContent) + '</b>' + (d.created_at ? ' · ' + esc(new Date(d.created_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })) : '') + (d.financial_status ? ' · ' + esc(d.financial_status) : '')
