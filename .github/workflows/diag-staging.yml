@@ -67,6 +67,15 @@ jobs:
               foreach (["wa_messages", "wa_camp_items", "wa_contacts"] as $tb) { echo "--- indexes of $tb ---\n"; $ix = []; foreach ($d->query("SHOW INDEX FROM $tb")->fetchAll(PDO::FETCH_ASSOC) as $x) $ix[$x["Key_name"]][] = $x["Column_name"]; foreach ($ix as $k => $c) echo $k . ": " . implode(", ", $c) . "\n"; }
             } catch (Throwable $e) { echo "DB: " . $e->getMessage() . "\n"; }
           ' "$P"
+          echo "=== database looks kept by the Server load page: last 90 min, queries seen running most ==="
+          php -r '
+            $n = 0; $looks = 0; $run = 0; $a = [];
+            foreach (["/tmp/hrms_perf", sys_get_temp_dir() . "/hrms_perf"] as $d) { foreach ((array)glob($d . "/ql/*.json") as $f) { if (time() - filemtime($f) > 5400) continue; $j = json_decode((string)file_get_contents($f), true); if (!is_array($j)) continue; $n++; $looks += (int)$j["looks"]; $run += (int)$j["run"];
+              foreach ((array)$j["q"] as $k => $v) { if (!isset($a[$k])) $a[$k] = [0, 0]; $a[$k][0] += (int)$v[0]; $a[$k][1] = max($a[$k][1], (int)$v[1]); } } if ($n) break; }
+            echo "minutes read: $n, looks: $looks, queries running per look: " . ($looks ? round($run / $looks, 2) : 0) . "\n";
+            uasort($a, fn($x, $y) => $y[0] <=> $x[0]); $i = 0;
+            foreach ($a as $k => $v) { echo str_pad((string)round(100 * $v[0] / max(1, $run), 1), 5, " ", STR_PAD_LEFT) . "%  cores " . str_pad((string)round($v[0] / max(1, $looks), 2), 5) . " longest " . str_pad($v[1] . "s", 5) . " " . substr($k, 0, 300) . "\n"; if (++$i >= 30) break; }
+          ' 2>&1 | head -40
           echo "=== PHP pool of the site ==="; for f in /etc/php/8.3/fpm/pool.d/*staging*.conf /etc/php/8.3/fpm/pool.d/*.conf; do [ -r "$f" ] && { echo "$f"; grep -E "^(pm|pm\.max_children|pm\.start_servers|pm\.min_spare_servers|pm\.max_spare_servers|pm\.max_requests|request_terminate_timeout)" "$f" | head -8; break; }; done
           echo "=== BIGGEST single answers (avg over 40 KB, last 150000 requests, lists only: not media/collage) ==="; tail -n 150000 $HOME/logs/nginx/access.log 2>/dev/null | awk '$9==200 {u=$7; sub(/&_t=.*/,"",u); sub(/\?_t=.*/,"",u); a=u; sub(/.*action=/,"",a); sub(/&.*/,"",a); n[a]++; b[a]+=$10; if ($10>m[a]) m[a]=$10} END {for (k in n) if (b[k]/n[k] > 40960 && k !~ /media|collage|voice|photo|file|pdf|download|export/) printf "%8.0f KB avg %9.0f KB max %6d calls  %s\n", b[k]/n[k]/1024, m[k]/1024, n[k], k}' | sort -rn | head -24 | cut -c1-130
           echo "=== heaviest answers: by total data sent (last 20000 requests) ==="; tail -n 20000 $HOME/logs/nginx/access.log 2>/dev/null | awk '{u=$7; sub(/&_t=.*/,"",u); sub(/\?_t=.*/,"",u); sub(/&phone=.*/,"",u); sub(/&id=.*/,"",u); sub(/&days=.*/,"",u); n[u]++; b[u]+=$10} END {for (k in n) printf "%9.1f MB  %6d calls  %8.0f KB avg  %s\n", b[k]/1048576, n[k], b[k]/n[k]/1024, k}' | sort -rn | head -14 | cut -c1-150
