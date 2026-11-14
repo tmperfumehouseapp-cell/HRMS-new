@@ -817,7 +817,8 @@ if (strpos((string)$action, 'dp.dsp_') === 0) {
     case 'dp.dsp_sr_save': {
         if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
         bd_need_admin($auth);
-        $e = trim((string)($in['email'] ?? '')); $p = (string)($in['password'] ?? '');
+        $e = trim((string)($in['email'] ?? '')); $p = trim((string)($in['password'] ?? ''));   // a pasted key often carries a space or a line break at the end: Shiprocket then answers "Invalid email and password combination"
+        $p = preg_replace('/^Bearer\s+/i', '', $p);
         if (!empty($in['remove'])) { dp_put('sr_email', ''); dp_put('sr_pass', ''); dp_put('sr_token', ''); dp_put('sr_last_err', ''); bd_log('dispatch', 'shiprocket', 'Shiprocket login removed', $by); json_response(['ok' => true, 'message' => 'Shiprocket login removed.']); }
         if ($e === '' || strpos($e, '@') === false) json_response(['error' => 'Type the Shiprocket API user email.'], 422);
         if ($p === '' && $e !== (string)dp_get('sr_email', '')) json_response(['error' => 'Type the password too.'], 422);

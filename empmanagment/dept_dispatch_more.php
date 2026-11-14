@@ -13,7 +13,7 @@ if (!defined('DP_DSP_NOID_DAYS')) define('DP_DSP_NOID_DAYS', 10);   // a parcel 
 /* ============================== Shiprocket ============================== */
 function dp_dsp_sr_cfg() {
     $e = trim((string)tmph_cfg('SHIPROCKET_EMAIL', '')); $p = (string)tmph_cfg('SHIPROCKET_PASSWORD', ''); $src = ($e !== '' && $p !== '') ? 'config' : '';
-    if ($src === '') { $e = trim((string)dp_get('sr_email', '')); $p = (string)dp_get('sr_pass', ''); if ($e !== '' && $p !== '') $src = 'page'; }
+    if ($src === '') { $e = trim((string)dp_get('sr_email', '')); $p = trim((string)dp_get('sr_pass', '')); if ($e !== '' && $p !== '') $src = 'page'; }
     return ['email' => $e, 'pass' => $p, 'source' => $src, 'ok' => $src !== '', 'base' => rtrim((string)tmph_cfg('SHIPROCKET_BASE', 'https://apiv2.shiprocket.in'), '/')];
 }
 function dp_dsp_sr_http($method, $url, array $headers, $body = null) {
@@ -28,6 +28,9 @@ function dp_dsp_sr_http($method, $url, array $headers, $body = null) {
 /** returns [token|null, error text] */
 function dp_dsp_sr_token($force = false) {
     $c = dp_dsp_sr_cfg(); if (!$c['ok']) return [null, 'Shiprocket email and password are not saved.'];
+    // 🔑 Shiprocket's newer API users get an "API key" by email instead of a password. When what was saved is itself a ready access token (a JWT: three parts joined by dots, starting "eyJ"),
+    // it is used as it is — there is nothing to log in with, and sending it as a password only gets "Invalid email and password combination".
+    if (preg_match('/^eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+$/', $c['pass'])) return [$c['pass'], ''];
     $tok = (string)dp_get('sr_token', ''); $exp = (int)dp_get('sr_token_exp', '0'); $sig = (string)dp_get('sr_token_for', '');
     if (!$force && $tok !== '' && $exp > time() + 300 && $sig === md5($c['email'] . '|' . $c['pass'])) return [$tok, ''];
     // 🛑 Shiprocket BLOCKS an account after too many wrong logins. A refused login used to be tried again on every sync (every few minutes) and on every page, which is exactly what got the
@@ -39,7 +42,8 @@ function dp_dsp_sr_token($force = false) {
     if ($code === 200 && is_array($j) && !empty($j['token'])) { dp_put('sr_token', $j['token']); dp_put('sr_token_exp', (string)(time() + 8 * 86400)); dp_put('sr_token_for', md5($c['email'] . '|' . $c['pass'])); return [(string)$j['token'], '']; }
     $msg = is_array($j) ? (string)($j['message'] ?? '') : '';
     if ($code === 200 && is_array($j) && !empty($j['token'])) dp_put('sr_login_hold', '');
-    if ($code === 403 || $code === 401 || $code === 422) { $__m = 'Shiprocket refused the email / password' . ($msg !== '' ? ' (' . mb_substr($msg, 0, 120) . ')' : '') . '. Use the API user email and password from Shiprocket, not your normal login.'; dp_put('sr_login_hold', $__sig . '|' . (time() + 1800) . '|' . str_replace('|', '/', $__m)); return [null, $__m]; }
+    if ($code === 403 || $code === 401 || $code === 422) { $__pl = strlen($c['pass']); $__shape = $__pl . ' characters, ' . (preg_match('/^[0-9a-f]+$/i', $c['pass']) ? 'only 0-9 and a-f (looks like an API key, not a typed password)' : (preg_match('/^[A-Za-z0-9]+$/', $c['pass']) ? 'letters and digits' : (strpos($c['pass'], '.') !== false ? 'has dots in it' : 'letters, digits and symbols')));   // the SHAPE of what was saved, never the value: it tells a password from a key
+            $__m = 'Shiprocket refused the email / password' . ($msg !== '' ? ' (' . mb_substr($msg, 0, 120) . ')' : '') . '. Login tried: ' . $c['email'] . ' with a secret of ' . $__shape . '. Use the API user email and password from Shiprocket, not your normal login.'; dp_put('sr_login_hold', $__sig . '|' . (time() + 1800) . '|' . str_replace('|', '/', $__m)); return [null, $__m]; }
     return [null, 'Shiprocket login failed (HTTP ' . $code . ')' . ($msg !== '' ? ': ' . mb_substr($msg, 0, 120) : '') . '.'];
 }
 /** GET on the Shiprocket API. Returns [json|null, error text] */

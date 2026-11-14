@@ -420,8 +420,9 @@ function wmo_sr_http(string $method, string $url, array $headers, $body = null):
 function wmo_sr_token(PDO $pdo, bool $force = false): array
 {
     $e = function_exists('tmph_cfg') ? trim((string)tmph_cfg('SHIPROCKET_EMAIL', '')) : ''; $p = function_exists('tmph_cfg') ? (string)tmph_cfg('SHIPROCKET_PASSWORD', '') : '';
-    if ($e === '' || $p === '') { $e = trim(wmo_sr_kv($pdo, 'sr_email')); $p = wmo_sr_kv($pdo, 'sr_pass'); }
+    if ($e === '' || $p === '') { $e = trim(wmo_sr_kv($pdo, 'sr_email')); $p = trim(wmo_sr_kv($pdo, 'sr_pass')); }
     if ($e === '' || $p === '') return ['', 'Shiprocket email and password are not saved (Dispatch → Parcels and tracking → Shiprocket).'];
+    if (preg_match('/^eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+$/', $p)) return [$p, ''];   // 🔑 the saved "API key" is itself an access token: used as it is (same rule as the Dispatch page)
     $base = rtrim(function_exists('tmph_cfg') ? (string)tmph_cfg('SHIPROCKET_BASE', 'https://apiv2.shiprocket.in') : 'https://apiv2.shiprocket.in', '/');
     $tok = wmo_sr_kv($pdo, 'sr_token'); $exp = (int)wmo_sr_kv($pdo, 'sr_token_exp'); $sig = wmo_sr_kv($pdo, 'sr_token_for');
     if (!$force && $tok !== '' && $exp > time() + 300 && $sig === md5($e . '|' . $p)) return [$tok, ''];
