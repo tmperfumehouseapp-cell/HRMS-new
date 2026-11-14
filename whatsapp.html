@@ -755,6 +755,7 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
       <div class="muted" style="margin:14px 0 0;text-align:center">Updated ${esc((d.at || '').slice(11, 16))} · number health is kept 10 minutes · <a href="#" id="ovRef">refresh</a></div>
       <div class="muted" style="margin:6px 0 0;text-align:center">These counts come only from the new numbers. The AiSensy panels stay exactly as they are.</div>`;
     const oldBar = secs.overview.querySelector(':scope > .wg-cb'); secs.overview.innerHTML = h;
+    if (d.hide_attention) { const c0 = Array.from(secs.overview.children).find((x) => x.classList && x.classList.contains('card') && /Needs your attention/.test(x.textContent || '')); if (c0) c0.remove(); }   // not shown to the Admin and the Sales Head
     if (oldBar) secs.overview.insertBefore(oldBar, secs.overview.firstChild); else if (window.WaGrowth) WaGrowth.claudeBar(secs.overview, 'home', { go, openChat }); if (window.WaGrowth && cur === 'overview') WaGrowth.claudeShow(secs.overview);
     secs.overview.querySelectorAll('[data-go]').forEach((b) => { b.onclick = () => go(b.dataset.go); });
     secs.overview.querySelectorAll('[data-chat]').forEach((b) => { b.onclick = () => openChat(b.dataset.chat); });
