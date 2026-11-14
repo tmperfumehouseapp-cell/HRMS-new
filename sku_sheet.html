@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#111827">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>SKU sheet — HRMS</title>
+<link rel="stylesheet" href="assets/css/style.css?v=4">
+<style>
+  .dm{padding:6px 14px 40px;max-width:1500px;margin:0 auto}
+  .dm .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin:0 0 10px}
+  .dm .bar label{display:block;font-size:11.5px;font-weight:700;color:var(--muted);margin:0 0 3px}
+  .dm input,.dm select{padding:8px 10px;border:1px solid var(--line);border-radius:10px;font:inherit;font-size:13.5px;background:#fff;color:#111}
+  .dm .pill{display:inline-block;border-radius:9px;padding:2px 8px;font-weight:800;font-size:11.5px;margin:0 6px 6px 0}
+  .dm .g{background:#dff3e8;color:#0b6b4b}.dm .y{background:#fff3d6;color:#8a5a00}.dm .r{background:#fde8e8;color:#9a2620}.dm .b{background:#e5efff;color:#1d4ed8}
+  .dm .itc{min-width:200px;max-width:260px}.dm .it{font-size:12px;line-height:1.35}.dm .it small{color:#64748b}.dm .its{font-size:11px;color:#64748b;margin-top:2px;font-weight:700}.dm .more{font-size:11.5px;color:#1d4ed8;cursor:pointer;font-weight:700}.dm .rest{margin-top:2px}
+  .dm .wrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:#fff}
+  .dm table{border-collapse:collapse;width:100%;font-size:12.5px}.dm th{background:#f1f4f8;text-align:left;padding:8px;font-size:11.5px;color:#55606e;white-space:nowrap;position:sticky;top:0}
+  .dm td{padding:8px;border-top:1px solid #edf0f4;vertical-align:top}.dm td small{color:#64748b}
+  .dm .mini{border:1px solid #cfd8e3;border-radius:8px;padding:3px 8px;font-size:11.5px;font-weight:700;background:#fff;cursor:pointer;margin:1px;display:inline-block;color:#111;text-decoration:none}
+  .dm .mini:hover{background:#eef6ff}.dm .err{background:#fdecec;border:1px solid #f1a5a5;color:#7f1d1d;border-radius:10px;padding:10px;margin:8px 0}
+  .dm .ov{position:fixed;inset:0;background:#0008;z-index:200;display:flex;align-items:center;justify-content:center;padding:14px}.dm .md{background:#fff;color:#111;border-radius:16px;max-width:620px;width:100%;max-height:90vh;overflow:auto;padding:16px}
+  .dm .kv{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px dashed #e1e7ee;font-size:13px}.dm .kv b{text-align:right}
+  html[data-theme=dark] .dm input,html[data-theme=dark] .dm select,html[data-theme=dark] .dm .wrap,html[data-theme=dark] .dm .md{background:#1f2430;color:#eee;border-color:#374151}html[data-theme=dark] .dm th{background:#161b26;color:#9aa4b2}
+  .dr{position:fixed;inset:0;background:#0006;z-index:150;display:flex;justify-content:flex-end}.dr[hidden]{display:none}.dr-in{background:var(--card,#fff);color:inherit;width:min(460px,100%);height:100%;overflow:auto;box-shadow:-8px 0 30px #0003}.dr-h{display:flex;justify-content:space-between;gap:8px;padding:14px 16px;border-bottom:1px solid var(--line,#e5e7eb);position:sticky;top:0;background:inherit}.dr-h h3{margin:0;font-size:17px}.dr-s{font-size:12px;color:#64748b;margin-top:2px}.dr-b{padding:6px 16px 24px}.dr-t{margin:14px 0 4px;font-weight:800;font-size:12.5px;text-transform:uppercase;letter-spacing:.03em;color:#475569}.dr-t small{text-transform:none;font-weight:500;color:#64748b}.dr .kv{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px dashed #e1e7ee;font-size:13px}.dr .kv b{text-align:right}.dr .pill{display:inline-block;border-radius:9px;padding:2px 8px;font-weight:800;font-size:11.5px}.dr .g{background:#dff3e8;color:#0b6b4b}.dr .y{background:#fff3d6;color:#8a5a00}.dr .r{background:#fde8e8;color:#9a2620}.dr .mini{border:1px solid #cfd8e3;border-radius:8px;padding:3px 8px;font-size:11.5px;font-weight:700;background:#fff;cursor:pointer;color:#111;text-decoration:none;display:inline-block}.dr select{padding:5px 8px;border:1px solid #cfd8e3;border-radius:8px;font:inherit;font-size:13px}.dm a.oid{color:#1d4ed8;text-decoration:none}
+  .dm td.trk{min-width:150px;background:#fffdf2}.dm td.n{text-align:right;white-space:nowrap}.dm th.n{text-align:right}.dm td.ad{min-width:220px;max-width:320px}
+  .dm .sk th{background:#1F4E78 !important;color:#fff !important;text-transform:none;letter-spacing:0;font-size:12px;text-align:center;white-space:normal;max-width:84px;border:1px solid #bfc5cc;position:static}
+  .dm .sk td{text-align:center;border:1px solid #d9dee4;padding:6px 8px}.dm .sk td.nm{text-align:left;min-width:260px}.dm .sk td.z{color:#c3cad3}
+  .dm .sk tr.tt td{background:#1F2A44;color:#fff;font-weight:800}.dm .sk tr.gt td{background:#9BA232;color:#111;font-weight:800;font-size:14px}
+  .dm .box{border-radius:12px;padding:12px 14px;margin:0 0 12px;font-size:13px;line-height:1.5}.dm .box.bad{background:#fdecec;border:1px solid #f1a5a5;color:#7f1d1d}.dm .box.ok{background:#e7f7ee;border:1px solid #b7e3c8;color:#0b5e3a}.dm .box.info{background:#eef4ff;border:1px solid #c5d8fb;color:#1e3a8a}
+  .dm .box table{font-size:12.5px;margin-top:8px;background:#fff;border-radius:8px}.dm .box th{position:static;background:#fbe3e3 !important;color:#7f1d1d !important}.dm .box td{color:#111}
+</style>
+</head>
+<body>
+<div class="app">
+  <div id="sidebar"></div>
+  <main class="main">
+    <div class="topbar"><h1>📦 SKU sheet</h1></div>
+    <div class="content dm">
+      <p style="font-size:13px;color:var(--muted);margin:0 0 10px">How many of each perfume and size were ordered on one day, read live from the orders (every Shopify order and every manual order of that business day, cancelled ones left out). Combos are opened into their perfumes. <b>Download Excel</b> gives this sheet in your format.</p>
+      <div class="bar">
+        <div><label>Day</label><input type="date" id="dDay"></div>
+        <button class="btn" type="button" id="bToday" style="background:#fff;color:#111;border:1px solid var(--line)">Today</button>
+        <button class="btn" type="button" id="bYest" style="background:#fff;color:#111;border:1px solid var(--line)">Yesterday</button>
+        <button class="btn" type="button" id="bRef" style="background:#fff;color:#111;border:1px solid var(--line)">🔄 Refresh</button>
+        <span style="flex:1"></span>
+        <button class="btn" type="button" id="bUp" style="background:#fff;color:#111;border:1px solid var(--line);display:none" title="Replace the SKU list: an Excel whose first three columns are SKU · original name · shop name">⬆ Upload SKU file</button>
+        <input type="file" id="fUp" accept=".xlsx,.xls,.csv" style="display:none">
+        <button class="btn" type="button" id="bXlsx" style="background:#15803d;border-color:#15803d" disabled>⬇ Download Excel</button>
+      </div>
+      <div id="skTop"></div>
+      <div class="wrap"><table class="sk"><thead id="skHead"></thead><tbody id="skRows"><tr><td style="padding:20px">Reading the orders…</td></tr></tbody></table></div>
+    </div>
+  </main>
+</div>
+<script src="assets/js/config.js?v=2"></script>
+<script src="assets/js/api.js?v=13"></script>
+<script src="assets/js/layout.js?v=34"></script>
+<script>
+  guardPage();
+  renderSidebar('orders');
+  const $ = (id) => document.getElementById(id);
+  const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const num = (n) => Number(n || 0).toLocaleString('en-IN');
+  const dmy = (d) => d.split('-').reverse().join('-');
+  let D = null, seq = 0;
+  try { if (/^(Admin|HR)$/.test(String((api.currentUser() || {}).role || ''))) $('bUp').style.display = ''; } catch (e) { }
+  function draw(d) {
+    D = d; $('bXlsx').disabled = !d.rows.length;
+    // ---- on top: everything that could not be put in the sheet
+    let top = '';
+    (d.errors || []).forEach((e) => { top += '<div class="box bad"><b>Some orders could not be read.</b> ' + esc(e) + ' — the sheet below is NOT complete. Press Refresh.</div>'; });
+    if ((d.unmatched || []).length) top += '<div class="box bad"><b>⚠ ' + num(d.unmatched_pieces) + ' piece' + (d.unmatched_pieces === 1 ? '' : 's') + ' in ' + d.unmatched.length + ' product' + (d.unmatched.length === 1 ? '' : 's') + ' could NOT be put in the sheet.</b> They are not counted below. A product "matches no SKU" when its name is not in the SKU list: add that name in the third column of the SKU file and upload it, or show this list to Claude.'
+      + '<div style="overflow-x:auto"><table><thead><tr><th style="text-align:left">Product as written on the order</th><th>Pieces</th><th style="text-align:left">Why</th><th style="text-align:left">Orders</th></tr></thead><tbody>'
+      + d.unmatched.map((u) => '<tr><td style="text-align:left"><b>' + esc(u.text) + '</b></td><td style="text-align:center">' + u.qty + '</td><td>' + esc(u.why) + '</td><td>' + esc(u.orders.join(', ')) + (u.orders.length >= 12 ? ' …' : '') + '</td></tr>').join('') + '</tbody></table></div></div>';
+    else if (d.rows.length) top += '<div class="box ok"><b>✓ Every product of the day was matched to a SKU.</b></div>';
+    top += '<div class="box info"><b>' + dmy(d.day) + '</b> · ' + num(d.orders) + ' Shopify order' + (d.orders === 1 ? '' : 's') + ' + ' + num(d.manual) + ' manual order' + (d.manual === 1 ? '' : 's') + ' read · ' + num(d.lines) + ' product lines · <b>' + num(d.pieces) + ' pieces</b> in the sheet · ' + d.rows.length + ' SKUs' + (d.cancelled ? ' · ' + d.cancelled + ' cancelled order' + (d.cancelled === 1 ? '' : 's') + ' left out' : '')
+      + ((d.left_out || []).length ? ' · left out on purpose: ' + d.left_out.map((u) => esc(u.text) + ' ×' + u.qty).join(', ') : '') + '</div>';
+    $('skTop').innerHTML = top;
+    $('skHead').innerHTML = '<tr><th>SKU</th><th style="text-align:left;max-width:none">Perfume Name (Original)</th>' + d.cols.map((c) => '<th>' + esc(c) + '</th>').join('') + '<th>Total</th></tr>';
+    $('skRows').innerHTML = d.rows.length ? d.rows.map((r) => '<tr><td><b>' + esc(r.sku) + '</b></td><td class="nm">' + esc(r.name) + '</td>' + r.q.map((v) => '<td class="' + (v ? '' : 'z') + '">' + v + '</td>').join('') + '<td><b>' + r.total + '</b></td></tr>').join('')
+      + '<tr class="tt"><td colspan="2">TOTAL</td>' + d.totals.map((v) => '<td>' + v + '</td>').join('') + '<td>' + d.pieces + '</td></tr><tr class="gt"><td colspan="2" style="background:#1F2A44"></td><td colspan="11">' + num(d.pieces) + '</td></tr>'
+      : '<tr><td colspan="13" style="padding:20px;color:#64748b">No product was counted for this day.</td></tr>';
+  }
+  async function load() {
+    const my = ++seq; $('bRef').disabled = true; $('skRows').innerHTML = '<tr><td colspan="13" style="padding:20px">Reading the orders of the day from Shopify…</td></tr>'; $('skTop').innerHTML = ''; $('bXlsx').disabled = true;
+    try { const d = await api.get('sku.sheet', { day: $('dDay').value }); if (my !== seq) return; if (!$('dDay').value) $('dDay').value = d.day; TODAY = d.today; draw(d); }
+    catch (e) { if (my !== seq) return; $('skRows').innerHTML = ''; $('skTop').innerHTML = '<div class="box bad"><b>The SKU sheet could not be made.</b> ' + esc(e.message) + '</div>'; }
+    $('bRef').disabled = false;
+  }
+  let TODAY = '';
+  const shift = (iso, n) => { const t = new Date(iso + 'T12:00:00'); t.setDate(t.getDate() + n); return t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0'); };
+  $('bToday').onclick = () => { $('dDay').value = TODAY || ''; load(); };
+  $('bYest').onclick = () => { if (TODAY) { $('dDay').value = shift(TODAY, -1); load(); } };
+  $('bRef').onclick = load; $('dDay').onchange = load;
+
+  // ---- Excel in the owner's format: the table twice side by side (A–M and P–AB), dark blue head, TOTAL row, grand total, footer
+  const lib = (src, test) => new Promise((ok, no) => { if (test()) return ok(); const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => no(new Error('A file needed for Excel could not be loaded. Check the internet connection.')); document.head.appendChild(s); });
+  $('bXlsx').onclick = async function () {
+    if (!D || !D.rows.length) return; const b = this, old = b.textContent; b.disabled = true; b.textContent = 'Preparing…';
+    try {
+      await lib('assets/js/exceljs.min.js?v=440', () => !!window.ExcelJS);      // ExcelJS 4.4.0 (MIT), our own copy: no download from the internet
+      const wb = new ExcelJS.Workbook(), ws = wb.addWorksheet('SKU sheet ' + dmy(D.day)), H = ['SKU', 'Perfume Name (Original)'].concat(D.cols, ['Total']), n = D.rows.length, last = n + 1, T = last + 1;
+      const thin = { style: 'thin', color: { argb: 'FFBFBFBF' } }, box = { top: thin, left: thin, bottom: thin, right: thin }, L = (c) => ws.getColumn(c).letter;
+      [1, 16].forEach((c0) => {      // the same table at column A and at column P
+        H.forEach((h, i) => { const c = ws.getCell(1, c0 + i); c.value = h; c.font = { bold: true, color: { argb: 'FFFFFFFF' } }; c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E78' } }; c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }; c.border = box; });
+        D.rows.forEach((r, k) => { const row = k + 2;
+          const a = ws.getCell(row, c0); a.value = /^\d+$/.test(r.sku) ? Number(r.sku) : r.sku; a.alignment = { horizontal: 'center' }; a.border = box;
+          const nm = ws.getCell(row, c0 + 1); nm.value = r.name; nm.alignment = { horizontal: 'left' }; nm.border = box;
+          r.q.forEach((v, i) => { const c = ws.getCell(row, c0 + 2 + i); c.value = v; c.alignment = { horizontal: 'center' }; c.border = box; });
+          const t = ws.getCell(row, c0 + 12); t.value = { formula: 'SUM(' + L(c0 + 2) + row + ':' + L(c0 + 11) + row + ')', result: r.total }; t.alignment = { horizontal: 'center' }; t.border = box; });
+        for (let i = 0; i < 13; i++) { const c = ws.getCell(T, c0 + i); c.font = { bold: true, color: { argb: 'FFFFFFFF' } }; c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F2A44' } }; c.alignment = { horizontal: 'center', vertical: 'middle' }; c.border = box;
+          if (i === 0) c.value = 'TOTAL'; if (i >= 2) c.value = { formula: 'SUM(' + L(c0 + i) + '2:' + L(c0 + i) + last + ')', result: i === 12 ? D.pieces : D.totals[i - 2] }; }
+        ws.mergeCells(T, c0, T + 1, c0 + 1); ws.mergeCells(T + 1, c0 + 2, T + 1, c0 + 12);
+        const g = ws.getCell(T + 1, c0 + 2); g.value = { formula: 'SUM(' + L(c0 + 2) + T + ':' + L(c0 + 11) + T + ')', result: D.pieces }; g.font = { bold: true, size: 12 }; g.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF9BA232' } }; g.alignment = { horizontal: 'center' }; g.border = box;
+        ws.mergeCells(T + 2, c0, T + 2, c0 + 12); const f = ws.getCell(T + 2, c0); f.value = '👑 Made by Mehul 👑'; f.font = { bold: true, size: 12 }; f.alignment = { horizontal: 'right' };
+        ws.getColumn(c0).width = 7.5; ws.getColumn(c0 + 1).width = 42.5; for (let i = 2; i < 13; i++) ws.getColumn(c0 + i).width = 10;
+      });
+      ws.getRow(1).height = 46;
+      if ((D.unmatched || []).length) {      // nothing is lost: what could not be put in the sheet is on its own sheet
+        const w2 = wb.addWorksheet('Not matched'); w2.addRow(['Product as written on the order', 'Pieces', 'Why', 'Orders']).font = { bold: true };
+        D.unmatched.forEach((u) => w2.addRow([u.text, u.qty, u.why, u.orders.join(', ')])); w2.getColumn(1).width = 70; w2.getColumn(2).width = 9; w2.getColumn(3).width = 40; w2.getColumn(4).width = 50;
+      }
+      const buf = await wb.xlsx.writeBuffer(), a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })); a.download = 'sku_sheet_' + D.day + '.xlsx'; document.body.appendChild(a); a.click(); a.remove();
+    } catch (e) { alert('The Excel file could not be made: ' + e.message); }
+    b.disabled = false; b.textContent = old;
+  };
+
+  // ---- replace the SKU list from an Excel / CSV: first three columns = SKU · original name · shop name
+  $('bUp').onclick = () => $('fUp').click();
+  $('fUp').onchange = async function () {
+    const f = this.files[0]; this.value = ''; if (!f) return;
+    try {
+      await lib('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js', () => !!window.XLSX);
+      const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' }), rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '' }).map((r) => [String(r[0]).trim(), String(r[1] || '').trim(), String(r[2] || '').trim()]).filter((r) => r[0] !== '');
+      if (!confirm('Replace the SKU list with the ' + rows.length + ' rows of "' + f.name + '"?\n\nFirst row: ' + rows[0].join(' · '))) return;
+      const r = await api.post('sku.list_save', { rows }); alert(r.message || 'Saved.'); load();
+    } catch (e) { alert(e.message); }
+  };
+  load();
+</script>
+</body>
+</html>
