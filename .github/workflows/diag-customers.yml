@@ -51,6 +51,23 @@ jobs:
           echo "Numbers in campaign lists (distinct): " . $n("SELECT COUNT(DISTINCT phone) FROM wa_camp_items") . "\n";
           try { echo "Messages we sent, by status:\n"; foreach ($d->query("SELECT /*+ MAX_EXECUTION_TIME(20000) */ status, COUNT(*) c FROM wa_messages WHERE dir = 'out' GROUP BY status ORDER BY c DESC")->fetchAll(PDO::FETCH_NUM) as $x) echo "   " . $x[0] . ": " . number_format($x[1]) . "\n"; } catch (Throwable $e) { echo "   n/a: " . substr($e->getMessage(), 0, 90) . "\n"; }
           echo "Messages received from customers: " . $n("SELECT /*+ MAX_EXECUTION_TIME(20000) */ COUNT(*) FROM wa_messages WHERE dir = 'in'") . "\n";
+          echo "\n=== EVERY unique mobile number, counted exactly (contacts + campaign lists + orders) ===\n";
+          $u = "SELECT COUNT(*) FROM (SELECT phone COLLATE utf8mb4_unicode_ci p FROM wa_contacts UNION SELECT phone COLLATE utf8mb4_unicode_ci FROM wa_camp_items UNION SELECT phone COLLATE utf8mb4_unicode_ci FROM wa_cust UNION SELECT p10 COLLATE utf8mb4_unicode_ci FROM customer_facts) x";
+          try { $d->exec("SET SESSION MAX_EXECUTION_TIME=60000"); } catch (Throwable $e) { }
+          echo "Unique mobile numbers in total: " . $n($u) . "\n";
+          echo "  ...of which proper 10-digit Indian mobiles in contacts: " . $n("SELECT COUNT(*) FROM wa_contacts WHERE phone REGEXP '^[6-9][0-9]{9}$'") . " · other shapes: " . $n("SELECT COUNT(*) FROM wa_contacts WHERE phone NOT REGEXP '^[6-9][0-9]{9}$'") . "\n";
+          echo "\n=== names and owners (contacts) ===\n";
+          echo "With a name: " . $n("SELECT COUNT(*) FROM wa_contacts WHERE TRIM(name) <> ''") . " · without a name: " . $n("SELECT COUNT(*) FROM wa_contacts WHERE TRIM(COALESCE(name, '')) = ''") . "\n";
+          echo "Chat given to a staff member (assigned): " . $n("SELECT COUNT(*) FROM wa_contacts WHERE assigned_emp > 0") . " · not assigned: " . $n("SELECT COUNT(*) FROM wa_contacts WHERE assigned_emp = 0") . "\n";
+          echo "Campaign-list numbers with a name: " . $n("SELECT COUNT(DISTINCT phone) FROM wa_camp_items WHERE TRIM(COALESCE(name, '')) <> ''") . "\n";
+          echo "\n=== messages we sent, by kind and status (who sent it) ===\n";
+          try { foreach ($d->query("SELECT /*+ MAX_EXECUTION_TIME(40000) */ who, status, COUNT(*) c FROM wa_messages WHERE dir = 'out' GROUP BY who, status ORDER BY who, c DESC")->fetchAll(PDO::FETCH_NUM) as $x) echo sprintf("   %-12s %-12s %s\n", $x[0], $x[1], number_format($x[2])); } catch (Throwable $e) { echo "   n/a: " . substr($e->getMessage(), 0, 90) . "\n"; }
+          echo "\n=== campaign messages (the campaign lists themselves) ===\n";
+          echo "Rows in all campaign lists: " . $n("SELECT COUNT(*) FROM wa_camp_items") . " · distinct numbers: " . $n("SELECT COUNT(DISTINCT phone) FROM wa_camp_items") . "\n";
+          try { foreach ($d->query("SELECT /*+ MAX_EXECUTION_TIME(40000) */ status, COUNT(*) c, COUNT(DISTINCT phone) p FROM wa_camp_items GROUP BY status ORDER BY c DESC")->fetchAll(PDO::FETCH_NUM) as $x) echo sprintf("   status %-10s messages %-10s numbers %s\n", $x[0], number_format($x[1]), number_format($x[2])); } catch (Throwable $e) { }
+          try { foreach ($d->query("SELECT /*+ MAX_EXECUTION_TIME(40000) */ last_status, COUNT(*) c FROM wa_camp_items WHERE status = 'sent' GROUP BY last_status ORDER BY c DESC")->fetchAll(PDO::FETCH_NUM) as $x) echo sprintf("   accepted, then: %-10s %s\n", $x[0] === '' ? '(none)' : $x[0], number_format($x[1])); } catch (Throwable $e) { }
+          echo "\n=== replies ===\n";
+          echo "Numbers that ever wrote to us (from the message log): " . $n("SELECT /*+ MAX_EXECUTION_TIME(40000) */ COUNT(DISTINCT phone) FROM wa_messages WHERE dir = 'in'") . "\n";
           PHP
           php /tmp/cust_numbers.php "$P"; rm -f /tmp/cust_numbers.php
           REMOTE
