@@ -9868,6 +9868,9 @@ function lib_bot_reply(PDO $pdo, array $guide, array $msgs, int $exclude = 0, bo
     $last = ''; foreach (array_reverse($msgs) as $m) if ($m['who'] === 'customer') { $last = $m['text']; break; }
     $ex = lib_retrieve($pdo, $last, 3, $exclude);
     $judgeOn = setting_get($pdo, 'lib_judge', '1') !== '0';
+    // ⚡ a reply made while a salesperson waits with the chat open (wa_sugg): ONE draft in ONE call (about 2–3 s) instead of three drafts + a second "pick the best" call (5–6 s).
+    // The facts check below still runs on it. Switch on Admin → AI usage (setting ai_sugg_fast, '0' = three drafts again).
+    if ((string)($GLOBALS['ai_feature'] ?? '') === 'wa_sugg' && (string)setting_get($pdo, 'ai_sugg_fast', '1') !== '0') $judgeOn = false;
     $sys = "You are the WhatsApp sales assistant of TM Perfume House, an Indian online perfume brand (Surat). Write the NEXT reply to the customer as our best salesperson would: short WhatsApp style (1–4 lines), warm, in the customer's own language and script "
         . "(Gujarati / Hindi / Hinglish / English). LEARN ONLY from: (1) the approved GUIDEBOOK, (2) OWNER CORRECTIONS and TEACHER LESSONS — follow them before anything else, (3) STORE FACTS — the only source of prices, offers and policies, (4) EXAMPLE CHATS — real winning chats (C = customer, S = our salesperson): copy their way of selling, never their personal details or their old prices. "
         . "NEVER invent prices, discounts, stock, delivery dates or product facts that are in none of these; if the customer needs something you do not know, say you will confirm it and hand over. "
@@ -33827,6 +33830,14 @@ switch ($action) {
     }
 
     // ai.usage — Admin: this month's AI spend by day / model / purpose (tokens and USD), the budget and what is left.
+    case 'ai.switch_save': {   // 💸 AI usage page: the two owner switches (advance replies on / off, fast single-draft suggestions on / off)
+        $auth = require_auth(); require_role(['Admin'], $auth);
+        if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
+        $in = json_input();
+        if (array_key_exists('presugg', $in)) setting_set($pdo, 'ai_presugg', !empty($in['presugg']) ? '1' : '0');
+        if (array_key_exists('fast', $in)) setting_set($pdo, 'ai_sugg_fast', !empty($in['fast']) ? '1' : '0');
+        json_response(['ok' => true, 'presugg' => (string)setting_get($pdo, 'ai_presugg', '0') === '1', 'fast' => (string)setting_get($pdo, 'ai_sugg_fast', '1') !== '0']);
+    }
     case 'ai.caps_save': {   // 🛑 AI usage page: daily $ limit per AI job (0 / empty = no limit). A job that reaches its limit waits until tomorrow; people keep working by hand.
         $auth = require_auth(); require_role(['Admin'], $auth);
         if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
@@ -33845,7 +33856,7 @@ switch ($action) {
             $q = $pdo->prepare("SELECT purpose, SUM(calls) calls, SUM(in_tokens) in_tokens, SUM(out_tokens) out_tokens, SUM(cost_usd) cost_usd, COUNT(DISTINCT use_date) days FROM ai_usage WHERE use_date >= ? AND use_date <= ? GROUP BY purpose ORDER BY cost_usd DESC"); $q->execute([$f, $t]);
             $dq = $pdo->prepare("SELECT COUNT(DISTINCT use_date) FROM ai_usage WHERE use_date >= ? AND use_date <= ?"); $dq->execute([$f, $t]);
             $capJ = json_decode((string)setting_get($pdo, 'ai_caps', ''), true); $tq = $pdo->prepare("SELECT purpose, SUM(cost_usd) c FROM ai_usage WHERE use_date = ? GROUP BY purpose"); $tq->execute([date('Y-m-d')]); $tod = []; foreach ($tq->fetchAll() as $r) $tod[(string)$r['purpose']] = round((float)$r['c'], 2);
-            json_response(['from' => $f, 'to' => $t, 'rows' => $q->fetchAll(), 'days_with_use' => (int)$dq->fetchColumn(), 'caps' => is_array($capJ) ? $capJ : (object)[], 'today' => $tod ?: (object)[]]);
+            json_response(['from' => $f, 'to' => $t, 'rows' => $q->fetchAll(), 'days_with_use' => (int)$dq->fetchColumn(), 'caps' => is_array($capJ) ? $capJ : (object)[], 'today' => $tod ?: (object)[], 'presugg' => (string)setting_get($pdo, 'ai_presugg', '0') === '1', 'fast' => (string)setting_get($pdo, 'ai_sugg_fast', '1') !== '0']);
         }
         $q = $pdo->prepare("SELECT use_date, model, purpose, calls, in_tokens, out_tokens, cost_usd FROM ai_usage WHERE use_date LIKE ? ORDER BY use_date, model, purpose"); $q->execute([$month . '%']);
         $rows = $q->fetchAll(); $tot = ['calls' => 0, 'in' => 0, 'out' => 0, 'usd' => 0.0]; $byP = [];

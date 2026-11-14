@@ -375,6 +375,9 @@ function wag_prebuild(PDO $pdo, string $key): bool
         if (function_exists('wa_hot_intent') && wa_hot_intent((string)$m['body']) !== '') return false;   // wants to pay: a person replies
         $gq = wag_greet_quick($pdo, (string)$m['body'], $c); if ($gq !== null && $gq !== '') { wa_sugg_save($pdo, $key, $gq, 'quick', 0); return true; }   // a plain "hi": your own saved greeting, no AI
         $inId = (int)(wa_last_in($pdo, $key)[0] ?? 0); if (wag_neg_skip($pdo, 'pgn:' . $key, $inId)) return false;   // the same message was already tried and a person has to answer it: no second AI call
+        // 💸 Owner's switch (Admin → AI usage, 14 Nov): advance replies OFF = no AI reply is written when a message arrives (it cost ~$34 a day, most of it for chats nobody opened and for
+        // every extra message of a waiting customer). The reply is written when a salesperson opens the chat instead (wa.g_sugg). Keyword replies and the saved greeting above are untouched.
+        if ((string)setting_get($pdo, 'ai_presugg', '0') !== '1') return false;
         $f0 = ai_feat('wa_presugg'); $r = wag_brain_reply($pdo, $c); ai_feat($f0);
         if (!$r['ok'] || !empty($r['handoff'])) { wag_neg_set($pdo, 'pgn:' . $key, $inId, !empty($r['ok'])); return false; }   // "call now" / "a person should handle this" is never pre-written (so it is never auto-sent)
         wa_sugg_save($pdo, $key, $r['text'], $r['source'], (int)$r['ver']); return true;
