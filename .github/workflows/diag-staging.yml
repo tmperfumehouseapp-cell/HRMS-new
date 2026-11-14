@@ -67,10 +67,11 @@ jobs:
               foreach (["wa_messages", "wa_camp_items", "wa_contacts"] as $tb) { echo "--- indexes of $tb ---\n"; $ix = []; foreach ($d->query("SHOW INDEX FROM $tb")->fetchAll(PDO::FETCH_ASSOC) as $x) $ix[$x["Key_name"]][] = $x["Column_name"]; foreach ($ix as $k => $c) echo $k . ": " . implode(", ", $c) . "\n"; }
             } catch (Throwable $e) { echo "DB: " . $e->getMessage() . "\n"; }
           ' "$P"
+          echo "=== CPU right now (top, 2nd sample) ==="; top -b -n 2 -d 3 | awk '/^top -/ {c++} c==2' | head -14 | cut -c1-150; ls -d $HOME/tmp/hrms_perf /tmp/hrms_perf 2>&1 | head -3
           echo "=== database looks kept by the Server load page: last 90 min, queries seen running most ==="
           php -r '
             $n = 0; $looks = 0; $run = 0; $a = [];
-            foreach (["/tmp/hrms_perf", sys_get_temp_dir() . "/hrms_perf"] as $d) { foreach ((array)glob($d . "/ql/*.json") as $f) { if (time() - filemtime($f) > 5400) continue; $j = json_decode((string)file_get_contents($f), true); if (!is_array($j)) continue; $n++; $looks += (int)$j["looks"]; $run += (int)$j["run"];
+            foreach ([getenv("HOME") . "/tmp/hrms_perf", "/tmp/hrms_perf", sys_get_temp_dir() . "/hrms_perf"] as $d) { foreach ((array)glob($d . "/ql/*.json") as $f) { if (time() - filemtime($f) > 5400) continue; $j = json_decode((string)file_get_contents($f), true); if (!is_array($j)) continue; $n++; $looks += (int)$j["looks"]; $run += (int)$j["run"];
               foreach ((array)$j["q"] as $k => $v) { if (!isset($a[$k])) $a[$k] = [0, 0]; $a[$k][0] += (int)$v[0]; $a[$k][1] = max($a[$k][1], (int)$v[1]); } } if ($n) break; }
             echo "minutes read: $n, looks: $looks, queries running per look: " . ($looks ? round($run / $looks, 2) : 0) . "\n";
             uasort($a, fn($x, $y) => $y[0] <=> $x[0]); $i = 0;
