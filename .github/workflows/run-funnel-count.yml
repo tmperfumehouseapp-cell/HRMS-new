@@ -1,0 +1,36 @@
+# Counts the customer funnel on the staging VPS: people with a FAILED message first, then everybody else, until every mobile number is counted.
+# One process at a time (flock), low priority (nice), a short pause between rounds. After it says done=1 the normal hourly update keeps the numbers current.
+# Run by hand: Actions → "Count the customer funnel (staging)" → Run workflow.
+name: Count the customer funnel (staging)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  count:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n  ServerAliveInterval 30\n' > ~/.ssh/config
+      - name: Count (failed first, then everybody)
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
+          for i in $(seq 1 120); do
+            out=$(flock -n /tmp/wa_funnel.lock nice -n 15 php "${P}empmanagment/cron_funnel.php" 2>&1); echo "round $i: $out" | cut -c1-330
+            echo "$out" | grep -q '"done":1' && { echo "ALL COUNTED"; break; }
+            sleep 8
+          done
+          REMOTE
