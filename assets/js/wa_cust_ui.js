@@ -335,7 +335,7 @@ html.wxdk .wcs{--ln:#25343e; --gb:#0f2e20; --rb:#3a1515;} html.wxdk .wcs-r,html.
     // ---------------------------------------------------------------------------------------------------------- action bar
     function drawB() {
       const B = $(el, '#cxB'), n = nSel(); if (!n) { B.innerHTML = ''; return; }
-      B.innerHTML = `<div class="wcs-pad"></div><div class="wcs-bar"><b>✔ ${fmt(n)} selected</b><span class="sp"></span><button type="button" class="p" data-act="camp">📣 <span class="lg">Manual </span>campaign</button><button type="button" data-act="tag">🏷 Tag</button><button type="button" data-act="seg">📁 Segment</button><button type="button" data-act="csv">⬇ Excel</button><button type="button" class="x" data-act="x" aria-label="Clear selection">✕</button></div>`;
+      B.innerHTML = `<div class="wcs-pad"></div><div class="wcs-bar"><b>✔ ${fmt(n)} selected</b><span class="sp"></span><button type="button" class="p" data-act="camp">📣 Campaign</button><button type="button" data-act="tag">🏷 Tag</button><button type="button" data-act="seg">📁 Segment</button><button type="button" data-act="csv">⬇ Excel</button><button type="button" class="x" data-act="x" aria-label="Clear selection">✕</button></div>`;
       B.querySelectorAll('[data-act]').forEach((b) => { b.onclick = () => act(b.dataset.act, b); });
     }
     async function act(a, b) {
@@ -370,7 +370,7 @@ html.wxdk .wcs{--ln:#25343e; --gb:#0f2e20; --rb:#3a1515;} html.wxdk .wcs-r,html.
           <div style="display:grid;gap:8px;margin:12px 0">
             <label class="wp-cd" style="margin:0;display:flex;gap:10px;cursor:pointer;padding:10px"><input type="radio" name="sgK" value="live" ${kind === 'live' ? 'checked' : ''}><span><b>🔄 Live</b> — everyone matching these filters (${fmt(S.total)} now). New customers who match join by themselves every hour.</span></label>
             <label class="wp-cd" style="margin:0;display:flex;gap:10px;cursor:pointer;padding:10px;${n ? '' : 'opacity:.5'}"><input type="radio" name="sgK" value="fixed" ${kind === 'fixed' ? 'checked' : ''} ${n ? '' : 'disabled'}><span><b>📌 Fixed</b> — exactly the ${fmt(n)} people selected now. Nobody joins or leaves.</span></label></div>
-          <div class="wp-hint" style="margin-bottom:12px">A segment works as a tag: use it in Campaigns, Smart campaigns, Tags &amp; audience and in these filters.</div><div id="sgE"></div>
+          <div class="wp-hint" style="margin-bottom:12px">A segment works as a tag: use it in Campaigns, Tags &amp; audience and in these filters.</div><div id="sgE"></div>
           <div class="wp-row"><button type="button" class="wp-btn p" id="sgGo">Save segment</button></div>`;
         m.body.querySelectorAll('[name=sgK]').forEach((r) => { r.onchange = () => { m._n = $(m.body, '#sgN').value; kind = r.value; draw(); }; });
         $(m.body, '#sgGo').onclick = async function () {

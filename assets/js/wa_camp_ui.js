@@ -1098,9 +1098,9 @@ html.wxdk [data-tone]{background:rgba(128,128,128,.12) !important;color:#e9edef}
       }
       function draw3() {
         const p = pushOf(), E = ['Try 1|at the send time', 'Try 2|+ 3 hours', 'Try 3|next day, their hour'].slice(0, Math.max(1, Math.min(3, +W.extra.retries || 3)));
-        m.body.innerHTML = head() + `<div id="cuAih"></div>
+        m.body.innerHTML = head() + `<div id="cuRv"></div><div id="cuAih"></div>
           <div class="cu-2"><div><div class="cu-sec">How pushy</div><div class="cu-chips">${PUSH.map(([k, l]) => `<button type="button" class="wp-chip ${W.push === k ? 'on' : ''}" data-p="${k}">${l}</button>`).join('')}</div><div class="wp-hint" id="cuPh2">${esc(p[1] === 'A little aggressive' ? 'A little aggressive' : p[1])}: people who got a campaign are free again after ${p[2]} day${p[2] === 1 ? '' : 's'} (Careful: 5, Normal: 3, Very: 1). Speed up to ${Math.min(1500, W.rate * p[3])} a minute.</div></div>
-          <div><div class="cu-sec">Start</div><div class="cu-chips">${[['now', 'Now'], ['today19', 'Today 7 pm'], ['tom11', 'Tomorrow 11 am'], ['custom', 'Pick a time']].filter(([k]) => k !== 'today19' || new Date().getHours() < 19).map(([k, l]) => `<button type="button" class="wp-chip ${W.start === k ? 'on' : ''}" data-st="${k}">${l}</button>`).join('')}</div>${W.start === 'custom' ? `<input class="wp-in" id="cuSa" type="datetime-local" style="margin-top:8px" value="${esc(W.start_at)}">` : ''}</div></div>
+          <div><div class="cu-sec">When to send <small>(Send now or schedule it — same campaign)</small></div><div class="cu-chips">${[['now', '⚡ Send now'], ['today19', '🗓 Today 7 pm'], ['tom11', '🗓 Tomorrow 11 am'], ['custom', '🗓 Pick date & time']].filter(([k]) => k !== 'today19' || new Date().getHours() < 19).map(([k, l]) => `<button type="button" class="wp-chip ${W.start === k ? 'on' : ''}" data-st="${k}">${l}</button>`).join('')}</div>${W.start === 'custom' ? `<input class="wp-in" id="cuSa" type="datetime-local" style="margin-top:8px" value="${esc(W.start_at)}">` : ''}</div></div>
           ${(() => { const NS = (D.numbers || []), can = (n) => n.status === 'CONNECTED' && n.camp_ok, sel0 = (W.extra.numbers && W.extra.numbers.length) ? W.extra.numbers : NS.filter(can).map((n) => n.id);
             W.extra.numbers = sel0.filter((id) => NS.some((n) => n.id === id && can(n)));
             return `<div class="cu-sec">Send from <small>(only connected numbers can be chosen)</small></div><div class="cu-chips" id="cuNums">${NS.map((n) => { const ok = can(n), on = ok && W.extra.numbers.includes(n.id), why = n.status && n.status !== 'CONNECTED' ? (n.status === 'PENDING' ? 'Pending at Meta' : 'Not connected (' + n.status.toLowerCase() + ')') : (!n.camp_ok ? 'Switched off for campaigns' : '');
@@ -1117,7 +1117,7 @@ html.wxdk [data-tone]{background:rgba(128,128,128,.12) !important;color:#e9edef}
           <details class="cu-more"><summary>More settings</summary><div class="wp-2" style="margin-top:8px"><div><label class="wp-fl" style="margin-top:0">Base speed (messages a minute)</label><input class="wp-in" id="cuRate" type="number" min="1" max="1500" value="${W.rate}"></div><div><label class="wp-fl" style="margin-top:0">Finish by <small>(optional)</small></label><input class="wp-in" id="cuWin" type="datetime-local" value="${esc(W.win_end)}"></div></div>
             <label class="wp-fl">Switch number after this many ignored messages</label><input class="wp-in" id="cuSw" type="number" min="1" max="5" value="${W.sw}"><div class="wp-hint">If a customer wrote to number X, we keep using X. If a number’s last messages were ignored, another number is used. Someone who ignored every number is skipped.</div></details>
           <div id="cuSpd"></div><label class="cu-cons" style="display:flex;gap:8px;align-items:center;margin:8px 0 2px;font-size:12px"><input type="checkbox" id="cuTalk3" ${W.A.skip_talking === 0 ? '' : 'checked'}> 💬 Leave out people chatting with us in the last 3 days</label><div id="cuPv" style="margin-top:10px"></div>${W.A.src !== 'contacts' ? '<label class="cu-cons"><input type="checkbox" id="cuCons"> These customers agreed to receive WhatsApp messages from us.</label>' : ''}
-          <div id="cuE"></div><div class="wp-row" style="margin-top:12px"><button type="button" class="wp-btn" id="cuBack">‹ Back</button><button type="button" class="wp-btn" id="cuDraft">Save as draft</button><button type="button" class="wp-btn p" id="cuGo">Start campaign</button></div>`;
+          <div id="cuE"></div><div class="wp-row" style="margin-top:12px"><button type="button" class="wp-btn" id="cuBack">‹ Back</button><button type="button" class="wp-btn" id="cuDraft">Save as draft</button><button type="button" class="wp-btn p" id="cuGo">${W.start === 'now' ? 'Start campaign' : 'Schedule campaign'}</button></div>`;
         if (window.WaSmart && $(m.body, '#cuSpd')) {   // speed estimate and retries (wa.camp_speed)
           const SP = { careful: 'gentle', normal: 'normal', aggressive: 'fast', very: 'fast' }, BACK = { gentle: 'careful', normal: 'normal', fast: 'aggressive' };
           WaSmart.speedBox($(m.body, '#cuSpd'), { speed: SP[W.push] || 'normal', retries: +W.extra.retries || 3, size: () => (pv && pv.stats ? pv.stats.send : (c && c.counts ? c.counts.total : 0)), id: () => (pv && pv.stats ? 0 : (W.id || 0)),
@@ -1131,7 +1131,7 @@ html.wxdk [data-tone]{background:rgba(128,128,128,.12) !important;color:#e9edef}
         m.body.querySelectorAll('[data-ow]').forEach((b) => { b.onclick = () => { read3(); W.own = b.dataset.ow === '1'; draw3(); }; });
         $(m.body, '#cuBack').onclick = () => { read3(); step = 2; go(); };
         { const t3 = $(m.body, '#cuTalk3'); if (t3) t3.onchange = () => { read3(); W.A.skip_talking = t3.checked ? 3 : 0; pv = null; draw3(); }; }
-        (async () => { await preview3(); })();
+        reviewPaint(); (async () => { await preview3(); reviewPaint(); })();
         const save = async (start) => {
           read3(); const b = $(m.body, start ? '#cuGo' : '#cuDraft'); b.disabled = true; const t = tpl();
           try {
@@ -1146,6 +1146,18 @@ html.wxdk [data-tone]{background:rgba(128,128,128,.12) !important;color:#e9edef}
       function read3() {
         const r = $(m.body, '#cuRate'); if (r) W.rate = Math.max(1, Math.min(1500, +r.value || 60)); const w = $(m.body, '#cuWin'); if (w) W.win_end = w.value; const s = $(m.body, '#cuSa'); if (s) W.start_at = s.value; const x = $(m.body, '#cuSw'); if (x) W.sw = Math.max(1, Math.min(5, +x.value || 2));
         const rt = $(m.body, '#cuRt'); if (rt) W.retry = rt.checked; const lf = $(m.body, '#cuLfu'); if (lf) W.extra.leave_fu = lf.checked ? 1 : 0; const bd = $(m.body, '#cuBd'); if (bd) W.extra.bought_days = Math.max(0, Math.min(365, +bd.value || 0)); const gd = $(m.body, '#cuGd'); if (gd) W.extra.gap_days = Math.max(0, Math.min(60, +gd.value || 0)); const ig = $(m.body, '#cuIg'); if (ig) W.extra.skip_ignored = ig.checked ? 1 : 0; const cs = $(m.body, '#cuCons'); if (cs) W.consent = cs.checked;
+      }
+      function reviewPaint() {   // 🧾 the whole campaign on one card: who · message · when · numbers · cost · warnings
+        const b = $(m.body, '#cuRv'); if (!b) return; const s = pv && pv.stats ? pv.stats : null, t = (D.templates || []).find((x) => x.id === W.tpl_id), nums = (W.extra && W.extra.numbers) || [], NSx = D.numbers || [];
+        const when = W.start === 'now' ? '⚡ right now' : W.start === 'today19' ? '🗓 today 7 pm' : W.start === 'tom11' ? '🗓 tomorrow 11 am' : '🗓 ' + esc(String(W.start_at || 'pick a time').replace('T', ' '));
+        const fOn = W.A && W.A.src !== 'paste' && PN ? PN.count() : 0, warn = (pv && pv.warnings) || [];
+        b.innerHTML = `<div class="wp-note" style="margin:0 0 10px;background:#f8fafc;border:1px solid #e2e8f0"><b>🧾 Review</b>
+          <div class="wp-kv"><span>👥 Who</span><b>${s ? fmt(s.send) + ' customers' : 'counting…'}${fOn ? ' · ' + fOn + ' filter' + (fOn === 1 ? '' : 's') : ''}</b></div>
+          <div class="wp-kv"><span>✉ Message</span><b>${t ? esc(String(t.name).replace(/^house_aisensy_/, '').replace(/_/g, ' ')) : '<span style="color:#b42318">not chosen yet</span>'}</b></div>
+          <div class="wp-kv"><span>🕐 When</span><b>${when}${W.own ? ' · each at their best hour' : ''}</b></div>
+          <div class="wp-kv"><span>📱 From</span><b>${nums.length ? nums.map((id) => esc((NSx.find((n) => n.id === id) || { label: '#' + id }).label)).join(', ') : '<span style="color:#b42318">no number chosen</span>'}</b></div>
+          ${pv && pv.cost != null ? `<div class="wp-kv"><span>💰 Estimated cost</span><b>${money(pv.cost)}${pv.room_today != null ? ' · room today ' + fmt(pv.room_today) : ''}</b></div>` : ''}
+          ${warn.length ? `<div class="wp-hint" style="color:#92400e;margin-top:4px">⚠ ${warn.map(esc).join(' · ')}</div>` : ''}</div>`;
       }
       async function preview3() {
         await preview(); const box = $(m.body, '#cuPv'); if (!box || !pv || !pv.stats) return; const s = pv.stats; if (!s) return;
