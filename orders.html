@@ -469,6 +469,15 @@
   /* Queries by hour: tap an hour / number → who got them */
   a.qhw{text-decoration:underline dotted; text-underline-offset:3px; cursor:pointer;} .qh .r a.q, .qh .r a.c{font-weight:800; text-align:center; font-size:13px;} .qh .r a.q{color:#0ea5e9;} .qh .r a.c{color:#d97706;} .qh .r span a.qhw{color:inherit;}
   /* 🎯 Ideal day vs actual box — wide: two columns of the grid on a PC, the full width on a phone, so nothing is cut */
+  /* 📈 Orders through the day — today vs yesterday */
+  .lc-card{grid-column:1 / -1; min-width:0; overflow:hidden;}
+  .lc-top{display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px;} .lc-top .lc-t{font-weight:800; font-size:15px;} .lc-top .lc-sw{margin-left:auto; display:flex; gap:8px; flex-wrap:wrap;}
+  .lc-seg{display:inline-flex; background:rgba(128,128,128,.14); border-radius:10px; padding:3px;} .lc-seg button{border:0; background:transparent; color:inherit; padding:5px 12px; border-radius:8px; font:inherit; font-size:12.5px; font-weight:600; cursor:pointer;} .lc-seg button.on{background:#0f172a; color:#fff;}
+  .lc-kp{display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:8px; margin:6px 0 8px;} .lc-kp>div{border:1px solid rgba(128,128,128,.25); border-radius:11px; padding:7px 11px;} .lc-kp small{display:block; font-size:11px; opacity:.7;} .lc-kp b{font-size:19px;} .lc-kp i{font-style:normal; font-size:11.5px; font-weight:700; margin-left:4px;}
+  .lc-up{color:#15803d;} .lc-dn{color:#b91c1c;}
+  .lc-lg{display:flex; gap:16px; font-size:12px; opacity:.85; margin:2px 0;} .lc-lg span:before{content:''; display:inline-block; width:22px; border-top:3px solid #2563eb; vertical-align:middle; margin-right:6px;} .lc-lg span.y:before{border-top:3px dashed #94a3b8;}
+  .lc-w{position:relative;} .lc-w svg{width:100%; height:auto; display:block; touch-action:pan-y;}
+  .lc-tip{position:absolute; z-index:5; background:#0f172a; color:#e2e8f0; border-radius:10px; padding:9px 12px; font-size:12px; line-height:1.55; pointer-events:none; min-width:230px; box-shadow:0 8px 24px rgba(0,0,0,.25); display:none;} .lc-tip b{color:#fff;} .lc-tip .r{display:flex; justify-content:space-between; gap:14px;} .lc-tip .g{color:#86efac;} .lc-tip .d{color:#fca5a5;} .lc-tip .h{font-size:13px; margin-bottom:3px;}
   .id-card{grid-column:span 2; min-width:0; overflow:hidden;} @media (max-width:760px){ .id-card{grid-column:1 / -1;} }
   .id-card .idk>div{min-width:0;} .id-card .idtw{overflow-x:auto;} .id-card .idtb{table-layout:fixed;} .id-card .idtb th:nth-child(1),.id-card .idtb td:nth-child(1){width:19%;} .id-card .idtb th:nth-child(n+2),.id-card .idtb td:nth-child(n+2){width:27%;} .id-card .idtw{overflow-x:auto;} .id-card .idtb td{word-break:break-word;}
   .id-card .idt{font-size:12.5px;margin:2px 0 6px}.id-card .idb{border:1px solid var(--line,#d1d7db);background:var(--card,#fff);color:inherit;border-radius:8px;padding:2px 8px;font-weight:700;cursor:pointer;font-size:11.5px}
@@ -1894,6 +1903,75 @@
     if (ev.target.id === 'ohModal') ohClose();
   });
 
+  // ---------- 📈 Orders through the day — today vs yesterday (replaces Team coach / Conversation quality / Team rating in this place) ----------
+  // Total orders (or collection) so far at each hour of the business day, today against yesterday. The same orders as the boxes above (allocated, not cancelled, the panel picked);
+  // yesterday comes from ydayOrders (one-day view). Hover / tap a point: everything about that hour.
+  const LC = { type: 'all', metric: 'orders', y: true, M: null };
+  function lcCalc(base) {
+    const df = document.getElementById('dateFrom').value, dt = document.getElementById('dateTo').value; if (EMP_VIEW || !df || df !== dt) return null;
+    ohSetStart(); const S = OH_S, nowD = new Date(), isToday = df === bizDayOf(nowD), nowIdx = isToday ? (nowD.getHours() - S + 24) % 24 : 23, nowFrac = isToday ? nowIdx + nowD.getMinutes() / 60 : 24;
+    const idx = (o) => (new Date(o.created_at).getHours() - S + 24) % 24, okT = (o) => LC.type === 'all' || orderTagType(o.tags) === LC.type;
+    const mk = (list) => { const a = Array.from({ length: 24 }, () => ({ n: 0, amt: 0, q: 0, c: 0 })); list.filter((o) => !o.cancelled && okT(o)).forEach((o) => { const b = a[idx(o)], t = orderTagType(o.tags); b.n++; b.amt += Number(o.total) || 0; if (t === 'query') b.q++; else if (t === 'campaign') b.c++; }); return a; };
+    const T = mk(ohOrders(base)), hasY = !!(ydayFor && ydayFor === df);
+    const Y = hasY ? mk(ydayOrders.filter((o) => (!urlSalesman || o.salesman === urlSalesman) && (!panelPick || panelOf(o) === panelPick) && (!ohPanel || panelOf(o) === ohPanel))) : null;
+    const cum = (a, upto) => { const r = []; let n = 0, amt = 0, q = 0, c = 0; for (let i = 0; i < 24; i++) { n += a[i].n; amt += a[i].amt; q += a[i].q; c += a[i].c; r.push({ n, amt, q, c, hn: a[i].n, hamt: a[i].amt }); } return r; };
+    return { S, isToday, nowIdx, nowFrac, T: cum(T), Y: Y ? cum(Y) : null, hasY };
+  }
+  // yesterday at the SAME MOMENT: for the hour that is running now, the share of that hour already gone (so today is not compared with yesterday's whole hour)
+  function lcY(M, i, key, isNow) {
+    if (!M.Y) return null; const r = M.Y[i]; if (!isNow) return r[key]; const fr = Math.max(0, Math.min(1, M.nowFrac - M.nowIdx));
+    if (key === 'hn' || key === 'hamt') return r[key] * fr; const pv = i > 0 ? M.Y[i - 1][key] : 0; return pv + (r[key] - pv) * fr;
+  }
+  function lcPct(a, b) { return b > 0 ? Math.round(100 * (a - b) / b) : null; }
+  const lcChip = (p) => p == null ? '' : `<i class="${p >= 0 ? 'lc-up' : 'lc-dn'}">${p > 0 ? '+' : ''}${p}%</i>`;
+  const lcHr = (S, i) => { const h = (S + i + 1) % 24; return ((h % 12) || 12) + (h < 12 ? ' AM' : ' PM'); };      // the END of hour i
+  function lcBody() {
+    const M = LC.M; const mt = LC.metric === 'orders' ? 'n' : 'amt', fmt = (v) => LC.metric === 'orders' ? String(Math.round(v)) : fmtMoney(Math.round(v), 'INR');
+    const seg = (key, opts) => `<span class="lc-seg">${opts.map(([k, l]) => `<button type="button" data-lc="${key}:${k}" class="${LC[key] === k ? 'on' : ''}">${l}</button>`).join('')}</span>`;
+    let h = `<div class="lc-top"><span class="lc-t">📈 Orders through the day — today vs yesterday</span><span class="lc-sw">${seg('type', [['all', 'All'], ['query', 'Query'], ['campaign', 'Campaign']])}${seg('metric', [['orders', 'Orders'], ['amt', 'Collection ₹']])}<span class="lc-seg"><button type="button" data-lc="y:toggle" class="${LC.y ? 'on' : ''}">${LC.y ? '✓ ' : ''}Yesterday</button></span></span></div>`;
+    if (!M) return h + '<div class="dtt">Pick one day (From = To) to see the day line.</div>';
+    const upI = Math.min(23, M.nowIdx), t = M.T[upI][mt], yv = M.Y ? lcY(M, upI, mt, M.isToday) : null;
+    h += `<div class="lc-kp"><div><small>Today so far${M.isToday ? '' : ' (whole day)'}</small><b>${fmt(t)}</b></div>${M.Y ? `<div><small>Yesterday, same hour</small><b>${fmt(yv)}</b>${lcChip(lcPct(t, yv))}</div><div><small>Ahead / behind</small><b class="${t - yv >= 0 ? 'lc-up' : 'lc-dn'}">${t - yv >= 0 ? '+' : '−'}${fmt(Math.abs(t - yv))}</b></div><div><small>Yesterday's whole day</small><b>${fmt(M.Y[23][mt])}</b></div>` : '<div><small>Yesterday</small><b>—</b></div>'}</div>`;
+    // chart geometry
+    const W = 1000, Hh = 340, L = 54, R = 56, Tp = 14, B = 34, pw = W - L - R, ph = Hh - Tp - B;
+    const todayPts = []; for (let i = 0; i < 24; i++) { if (M.isToday && i > M.nowIdx) break; todayPts.push([i + 1, M.T[i][mt]]); }
+    if (M.isToday) todayPts[todayPts.length - 1][0] = Math.max(M.nowFrac, 0.05);      // the running hour ends at "now"
+    const yPts = M.Y && LC.y ? M.Y.map((r, i) => [i + 1, r[mt]]) : []; const mx0 = Math.max(1, ...todayPts.map((p) => p[1]), ...yPts.map((p) => p[1])), step = mx0 <= 12 ? 2 : (mx0 <= 60 ? 10 : (mx0 <= 150 ? 25 : (mx0 <= 400 ? 50 : (mx0 <= 1500 ? 250 : (mx0 <= 50000 ? 10000 : 50000))))), mx = Math.ceil(mx0 / step) * step;
+    const X = (x) => L + pw * x / 24, Yv = (v) => Tp + ph * (1 - v / mx), line = (pts) => pts.map((p, i) => (i ? 'L' : 'M') + X(p[0]).toFixed(1) + ' ' + Yv(p[1]).toFixed(1)).join(' ');
+    let g = ''; for (let v = 0; v <= mx; v += step) g += `<line x1="${L}" x2="${W - R}" y1="${Yv(v)}" y2="${Yv(v)}" stroke="currentColor" stroke-opacity=".12" /><text x="${L - 8}" y="${Yv(v) + 4}" text-anchor="end" font-size="11" fill="currentColor" fill-opacity=".6">${LC.metric === 'orders' ? v : (v >= 1000 ? (v / 1000) + 'k' : v)}</text>`;
+    for (let i = 0; i <= 24; i += 2) g += `<text x="${X(i)}" y="${Hh - 12}" text-anchor="middle" font-size="11" fill="currentColor" fill-opacity=".6">${(() => { const hh = (M.S + i) % 24; return ((hh % 12) || 12) + (hh < 12 ? ' AM' : ' PM'); })()}</text>`;
+    if (yPts.length && todayPts.length > 1) { const a = [[0, 0]].concat(todayPts), b = [[0, 0]].concat(yPts.filter((p) => p[0] <= todayPts[todayPts.length - 1][0] + 1)); g += `<path d="${a.map((p, i) => (i ? 'L' : 'M') + X(p[0]).toFixed(1) + ' ' + Yv(p[1]).toFixed(1)).join(' ')} ${b.slice().reverse().map((p) => 'L' + X(p[0]).toFixed(1) + ' ' + Yv(p[1]).toFixed(1)).join(' ')} Z" fill="#2563eb" fill-opacity=".10" />`; }
+    if (yPts.length) g += `<path d="${line([[0, 0]].concat(yPts))}" fill="none" stroke="#94a3b8" stroke-width="2.5" stroke-dasharray="7 5" />`;
+    if (todayPts.length) { g += `<path d="${line([[0, 0]].concat(todayPts))}" fill="none" stroke="#2563eb" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round" />`; todayPts.forEach((p, i) => { g += `<circle cx="${X(p[0]).toFixed(1)}" cy="${Yv(p[1]).toFixed(1)}" r="${i === todayPts.length - 1 ? 6.5 : 3.2}" fill="#2563eb" ${i === todayPts.length - 1 ? 'stroke="#fff" stroke-width="2.5"' : ''} />`; }); const lp = todayPts[todayPts.length - 1]; g += `<text x="${X(lp[0]).toFixed(1)}" y="${(Yv(lp[1]) - 13).toFixed(1)}" text-anchor="middle" font-size="13" font-weight="700" fill="#2563eb">${fmt(lp[1])}</text>`; }
+    if (yPts.length) { const ly = yPts[yPts.length - 1]; g += `<text x="${X(24) + 6}" y="${Yv(ly[1]) + 4}" font-size="12" font-weight="700" fill="#64748b">${fmt(ly[1])}</text>`; }
+    g += '<line id="lcVl" x1="0" x2="0" y1="' + Tp + '" y2="' + (Hh - B) + '" stroke="currentColor" stroke-opacity=".4" stroke-dasharray="3 3" style="display:none" /><circle id="lcDot" r="6" fill="#2563eb" stroke="#fff" stroke-width="2.5" style="display:none" />';
+    h += `<div class="lc-lg"><span>Today</span>${LC.y && M.Y ? '<span class="y">Yesterday</span>' : ''}</div><div class="lc-w" id="lcW"><svg id="lcSvg" viewBox="0 0 ${W} ${Hh}" data-l="${L}" data-pw="${pw}" data-w="${W}" data-mx="${mx}" data-tp="${Tp}" data-ph="${ph}" role="img" aria-label="Orders through the day, today against yesterday">${g}</svg><div class="lc-tip" id="lcTip"></div></div>`;
+    h += `<div class="dtt" style="margin-top:4px">Put the cursor on (or tap) any point of the day: orders and collection so far, this hour alone, ticket size and Query / Campaign — each against yesterday. ${M.Y ? '' : 'Yesterday is still loading… '}Same orders as the Orders by hour box.</div>`;
+    return h;
+  }
+  function lcCardHtml(base) {
+    if (EMP_VIEW) return '';
+    LC.M = lcCalc(base); LC.base = base;
+    return `<div class="stat-card lc-card" id="lcCard">${lcBody()}</div>`;
+  }
+  document.addEventListener('click', (e) => { const b = e.target.closest('[data-lc]'); if (!b) return; const [k, v] = b.dataset.lc.split(':'); if (k === 'y') LC.y = !LC.y; else LC[k] = v; LC.M = lcCalc(LC.base || scopedOrders()); const c = document.getElementById('lcCard'); if (c) c.innerHTML = lcBody(); });
+  function lcMove(e) {
+    const svg = e.target.closest && e.target.closest('#lcSvg'); const tip = document.getElementById('lcTip'); if (!tip) return; if (!svg || !LC.M) { tip.style.display = 'none'; const vl = document.getElementById('lcVl'), dt = document.getElementById('lcDot'); if (vl) vl.style.display = 'none'; if (dt) dt.style.display = 'none'; return; }
+    const M = LC.M, r = svg.getBoundingClientRect(), W = Number(svg.dataset.w), L = Number(svg.dataset.l), pw = Number(svg.dataset.pw), px = ((e.touches ? e.touches[0].clientX : e.clientX) - r.left) * (W / r.width);
+    let i = Math.round((px - L) / pw * 24) - 1; i = Math.max(0, Math.min(M.isToday ? Math.min(23, M.nowIdx) : 23, i));
+    const mt = LC.metric === 'orders' ? 'n' : 'amt', isNowPt = M.isToday && i === M.nowIdx, T = M.T[i], yy = (k) => lcY(M, i, k, isNowPt), has = !!M.Y, fn = (v) => String(Math.round(v)), fm = (v) => fmtMoney(Math.round(v), 'INR');
+    const line = (lab, a, b, fmtv) => `<div class="r"><span>${lab}</span><span><b>${fmtv(a)}</b>${b != null ? ` <span style="opacity:.7">· Y ${fmtv(b)}</span> <span class="${a >= b ? 'g' : 'd'}">${lcPct(a, b) == null ? '' : (lcPct(a, b) > 0 ? '+' : '') + lcPct(a, b) + '%'}</span>` : ''}</span></div>`;
+    tip.innerHTML = `<div class="h"><b>${isNowPt ? 'Now · ' + new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) : 'Till ' + lcHr(M.S, i)}</b></div>`
+      + line('Orders so far', T.n, has ? yy('n') : null, fn) + line('Collection so far', T.amt, has ? yy('amt') : null, fm)
+      + line('This hour (orders)', T.hn, has ? yy('hn') : null, fn) + line('This hour (collection)', T.hamt, has ? yy('hamt') : null, fm)
+      + `<div class="r"><span>Ticket size</span><span><b>${T.n ? fm(T.amt / T.n) : '—'}</b>${has && yy('n') > 0 ? ` <span style="opacity:.7">· Y ${fm(yy('amt') / yy('n'))}</span>` : ''}</span></div>`
+      + `<div class="r"><span>Query / Campaign so far</span><span><b>${T.q} / ${T.c}</b>${has ? ` <span style="opacity:.7">· Y ${Math.round(yy('q'))} / ${Math.round(yy('c'))}</span>` : ''}</span></div>`;
+    tip.style.display = 'block'; const wr = document.getElementById('lcW').getBoundingClientRect(), tx = (e.touches ? e.touches[0].clientX : e.clientX) - wr.left; tip.style.left = Math.max(0, Math.min(wr.width - 250, tx + 14)) + 'px'; tip.style.top = '8px';
+    const vl = document.getElementById('lcVl'), dt = document.getElementById('lcDot'), xx = L + pw * ((isNowPt ? Math.max(M.nowFrac, 0.05) : i + 1)) / 24;
+    if (vl) { vl.setAttribute('x1', xx); vl.setAttribute('x2', xx); vl.style.display = ''; }
+    if (dt) { const mx = Number(svg.dataset.mx), tp = Number(svg.dataset.tp), ph = Number(svg.dataset.ph); dt.setAttribute('cx', xx); dt.setAttribute('cy', tp + ph * (1 - T[mt] / mx)); dt.style.display = ''; }
+  }
+  document.addEventListener('mousemove', lcMove); document.addEventListener('touchstart', lcMove, { passive: true }); document.addEventListener('touchmove', lcMove, { passive: true });
   // ---------- 🎯 Ideal day vs actual (after Orders by hour): the day's ideal spend / replies / Campaign orders at fixed times against what really happened ----------
   let IDL = null, IDLday = '', IDLat = 0, IDLbusy = false;
   const idN = (v) => Number(v || 0).toLocaleString('en-IN'), idR = (v) => '₹' + idN(Math.round(v || 0)), idDay = () => { const f = document.getElementById('dateFrom').value, t = document.getElementById('dateTo').value; return f && f === t ? f : ''; };
@@ -1949,6 +2027,54 @@
     q('#idAdd').onclick = () => q('#idRows').insertAdjacentHTML('beforeend', row({ t: '12:00', spend: 0, replies: 0, orders: 0 })); q('#idRows').addEventListener('click', (e) => { const b = e.target.closest('[data-rm]'); if (b) b.closest('tr').remove(); });
     q('#idSv').onclick = async () => { const rows = [...ov.querySelectorAll('#idRows tr')].map((tr) => { const g = (k) => tr.querySelector('[data-k="' + k + '"]').value; return { t: g('t'), spend: Number(g('spend')) || 0, replies: Number(g('replies')) || 0, orders: Number(g('orders')) || 0 }; }).filter((r) => r.t);
       try { await api.post('wa.camp_ideal_save', { spend: Number(q('#idS').value) || 0, replies: Number(q('#idR').value) || 0, orders: Number(q('#idO').value) || 0, rows }); ov.remove(); IDL = null; idealLoad(true); } catch (er) { q('#idErr').textContent = er.message; } };
+  }
+  // ---------- 🧭 Ideal day vs actual — Query (next to the Campaign one): Shout queries and Query orders hour by hour against an ideal learned from the last 30 days ----------
+  let QDL = null, QDLday = '', QDLat = 0, QDLbusy = false;
+  function qdCardHtml() {
+    if (EMP_VIEW) return '';
+    const body = (QDL && QDLday === idDay()) ? qdBody(QDL) : '<div style="padding:10px 0;color:var(--muted);font-size:12.5px">Loading the Query ideal day…</div>';
+    return `<div class="stat-card id-card" id="queryIdealCard"><div class="label"><span class="lbl-full">🧭 Ideal day vs actual — Query</span><span class="lbl-short">Query ideal</span></div>${body}</div>`;
+  }
+  function qdBody(d) {
+    const idPc = (a, i) => i > 0 ? Math.round(100 * (a - i) / i) : null, far = '9999-12-31 00:00:00';
+    // Query orders = the same orders as the 'Query orders' tab of this page (cancelled left out), counted up to each hour
+    let list = null; try { list = scopedOrders().filter((o) => !o.cancelled && orderTagType(o.tags) === 'query').map((o) => String(o.created_at || '').slice(0, 19).replace('T', ' ')); } catch (x) { list = null; }
+    const cnt = (upto) => list ? list.filter((t) => t >= String(d.from) && t < String(upto)).length : null;
+    const c = d.targets || {}, so = d.so_far || {}, a = Object.assign({}, so.actual || {}), i = so.ideal || {}, dv = Object.assign({}, so.dev || {}), run = (d.hourly || []).some((p) => p.cur);
+    { const n = cnt(run ? far : (d.now ? String(d.now) : d.to)); if (n != null) { a.orders = n; dv.orders = idPc(n, i.orders); a.ratio = a.shout > 0 ? Math.round(1000 * n / a.shout) / 10 : null; } }
+    let h = `<div class="idt">Day target: <b>${idN(c.shout)}</b> Shout queries · <b>${idN(c.orders)}</b> Query orders${d.sunday ? ' <span style="color:var(--muted)">(Sunday: ' + idN(d.cfg.sunday) + '% of ' + idN(d.cfg.shout) + ' / ' + idN(d.cfg.orders) + ')</span>' : ''} ${d.can_edit ? '<button type="button" class="idb" data-qde="1">✎ Edit</button>' : ''}</div>
+      <div class="idk"><div><small>Shout queries</small><b>${idN(a.shout)}</b><i>ideal ${idN(i.shout)}</i>${idChip(dv.shout)}</div><div><small>Query orders</small><b>${idN(a.orders)}</b><i>ideal ${idN(i.orders)}</i>${idChip(dv.orders)}</div><div><small>Orders ÷ Shout queries</small><b>${a.ratio != null ? a.ratio + '%' : '—'}</b><i>ideal ${i.ratio != null ? i.ratio + '%' : '—'}</i></div></div>
+      <div class="idtw"><table class="idtb"><thead><tr><th>Time</th><th>Shout queries<small>queries / ideal</small></th><th>Query orders<small>orders / ideal</small></th></tr></thead><tbody>`;
+    const cell = (ac, ide, chip) => ac == null ? `<div class="idl">${idN(ide)}</div>` : `<div><b>${idN(ac)}</b><span class="idl"> / ${idN(ide)}</span></div>${idChip(chip)}`;
+    const hrEnd = (t) => idHm(String((parseInt(String(t).slice(0, 2), 10) + 1) % 24).padStart(2, '0') + ':00');
+    (d.hourly || []).forEach((p) => { const ac = p.actual ? Object.assign({}, p.actual) : null, ide = p.ideal || {}; let po = ac ? idPc(ac.orders, ide.orders) : null; const ps = ac ? idPc(ac.shout, ide.shout) : null;
+      if (ac) { const n = cnt(p.cur ? far : p.upto); if (n != null) { ac.orders = n; po = idPc(n, ide.orders); } }
+      h += `<tr class="${p.past ? '' : 'fut'}${p.cur ? ' cur' : ''}"><td><b>${hrEnd(p.t)}</b>${p.cur ? '<br><span class="idg act">now</span>' : ''}</td><td>${cell(ac && ac.shout, ide.shout, ps)}</td><td>${cell(ac && ac.orders, ide.orders, po)}</td></tr>`; });
+    h += '</tbody></table></div>';
+    const pr = d.projection || {}, nd = d.need_per_hour || {};
+    if (pr.orders != null && d.now && d.to && d.now < d.to) h += `<div class="idp">🔮 At this pace the day ends near <b>${idN(pr.shout)}</b> Shout queries and <b>${idN(pr.orders)}</b> Query orders. To reach ${idN(c.orders)} orders you need about <b>${idN(nd.shout)}</b> queries and <b>${idN(nd.orders)}</b> orders every hour from now.</div>`;
+    const hs = d.history || {};
+    return h + `<div class="idn">Shout queries = the +1 / − your team enters on Assign Queries · Query orders = the same as the Query orders tab · The ideal line = the day target × the share of the day that was usually done by that hour${hs.learned ? ' (learned from the last ' + (hs.days || 30) + ' days: an average day was ' + idN(hs.avg_orders) + ' Query orders from ' + idN(hs.avg_shout) + ' Shout queries)' : ' (a standard pattern — the last 30 days will replace it once there is enough data)'} · updated ${String(d.at || '').slice(11, 16)}</div>`;
+  }
+  async function queryIdealLoad(force) {
+    const day = idDay(), box = document.getElementById('queryIdealCard'); if (!box) return;
+    if (!day) { box.style.display = 'none'; return; } box.style.display = '';
+    if (QDL && QDLday === day && !force && Date.now() - QDLat < 150000) return;
+    if (QDLbusy) return; QDLbusy = true; const head = '<div class="label"><span class="lbl-full">🧭 Ideal day vs actual — Query</span><span class="lbl-short">Query ideal</span></div>';
+    try { const d = await api.get('wa.query_ideal', { day }); QDL = d; QDLday = day; QDLat = Date.now(); const b = document.getElementById('queryIdealCard'); if (b) b.innerHTML = head + qdBody(d); }
+    catch (e) { const b = document.getElementById('queryIdealCard'); if (b) b.innerHTML = head + '<div style="color:var(--muted);font-size:12.5px;padding:6px 0">' + String(e.message || '').replace(/</g, '&lt;') + '</div>'; }
+    finally { QDLbusy = false; }
+  }
+  setInterval(() => { if (!document.hidden && QDL) queryIdealLoad(true); }, 40000);
+  document.addEventListener('click', (e) => { if (e.target.closest('[data-qde]')) queryIdealEdit(); });
+  function queryIdealEdit() {
+    const c = (QDL && QDL.cfg) || { shout: 900, orders: 200, sunday: 75 }, ov = document.createElement('div'); ov.style.cssText = 'position:fixed;inset:0;background:#0008;z-index:300;display:flex;align-items:center;justify-content:center;padding:14px';
+    ov.innerHTML = `<div style="background:var(--card,#fff);color:inherit;border-radius:16px;max-width:460px;width:100%;padding:16px"><h3 style="margin:0 0 4px">✎ Query ideal day</h3><div style="font-size:12.5px;color:var(--muted);margin-bottom:10px">How many Shout queries and Query orders a good day brings. The hour-by-hour ideal is these numbers × your usual pattern (the day runs 12 noon → 12 noon).</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px"><label>Shout queries / day<input type="number" id="qdS" class="idi" value="${c.shout}"></label><label>Query orders / day<input type="number" id="qdO" class="idi" value="${c.orders}"></label><label>Sunday %<input type="number" id="qdN" class="idi" value="${c.sunday}"></label></div>
+      <div style="font-size:12px;color:var(--muted);margin-top:6px">Sunday % = how much of the day target a Sunday should reach (your Sundays run about 25% lower, so 75).</div>
+      <div id="qdErr" style="color:#b42318;font-size:12.5px;margin-top:6px"></div><div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px"><button type="button" class="btn secondary" id="qdX">Cancel</button><button type="button" class="btn" id="qdSv">Save</button></div></div>`;
+    document.body.appendChild(ov); const q = (s) => ov.querySelector(s); q('#qdX').onclick = () => ov.remove(); ov.addEventListener('click', (e) => { if (e.target === ov) ov.remove(); });
+    q('#qdSv').onclick = async () => { try { await api.post('wa.query_ideal_save', { shout: Number(q('#qdS').value) || 0, orders: Number(q('#qdO').value) || 0, sunday: Number(q('#qdN').value) || 75 }); ov.remove(); QDL = null; queryIdealLoad(true); } catch (er) { q('#qdErr').textContent = er.message; } };
   }
   // ---------- Dress to Impress box (after Orders by hour) ----------
   // Every order (allocated or not, cancelled left out) with Dress to Impress bottles in it: all 3 perfumes = a set of 3, any 2 = a set of 2,
@@ -2595,15 +2721,14 @@
       })()}
       ${ohCardHtml(base)}
       ${idCardHtml()}
+      ${qdCardHtml()}
       ${dtiCardHtml()}
       ${cslCardHtml()}
-      ${tcoCardHtml()}
-      ${cqCardHtml()}
-      ${rtCardHtml()}
+      ${lcCardHtml(base)}
       ${pmCardHtml()}
     `;
     grid.style.display = 'grid';
-    idealLoad();
+    idealLoad(); queryIdealLoad();
     renderUnallocNote();
   }
   // One line saying how many orders are left out because they are not allocated yet.

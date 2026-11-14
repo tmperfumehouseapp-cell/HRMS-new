@@ -42,6 +42,9 @@ function cfun_tables(PDO $pdo): bool
         try { $q = $pdo->query("SHOW INDEX FROM wa_cfun WHERE Key_name = 'k_grp'"); if ($q && !$q->fetch()) $pdo->exec("ALTER TABLE wa_cfun ADD INDEX k_grp (grp, src)"); } catch (Throwable $e) { }
         try { $q = $pdo->query("SHOW INDEX FROM wa_cfun WHERE Key_name = 'k_imp'"); if ($q && !$q->fetch()) $pdo->exec("ALTER TABLE wa_cfun ADD INDEX k_imp (imp, batch)"); } catch (Throwable $e) { }
         try { $pdo->exec("CREATE TABLE IF NOT EXISTS wa_cfun_hist (d DATE NOT NULL PRIMARY KEY, j TEXT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"); } catch (Throwable $e) { }
+        // ⬇ who was already downloaded (so the next download gives different customers): one row per phone + one row per download
+        try { $pdo->exec("CREATE TABLE IF NOT EXISTS wa_cfun_dl (phone VARCHAR(12) NOT NULL PRIMARY KEY, batch INT NOT NULL DEFAULT 0, at DATETIME NULL, times INT NOT NULL DEFAULT 1) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4" . $coll);
+              $pdo->exec("CREATE TABLE IF NOT EXISTS wa_cfun_dlb (id INT AUTO_INCREMENT PRIMARY KEY, at DATETIME NULL, k VARCHAR(30) NOT NULL DEFAULT '', src VARCHAR(8) NOT NULL DEFAULT '', n INT NOT NULL DEFAULT 0) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"); } catch (Throwable $e) { }
         return $ok = true;
     } catch (Throwable $e) { error_log('wa_cfun: ' . $e->getMessage()); return $ok = false; }
 }
@@ -235,7 +238,7 @@ function cfun_where(string $k): string
 {
     $m = ['all' => '1=1', 'replied' => 'replied = 1', 'never_replied' => 'replied = 0', 'wrote_first' => 'replied = 1 AND out_n = 0', 'failed' => "bucket = 'failed'", 'delivered' => "bucket = 'delivered'",
         'pending' => "bucket = 'pending'", 'untried' => "bucket = 'untried'", 'messaged' => 'out_n > 0', 'reached' => 'deliv_n > 0', 'not_delivered' => 'out_n > 0 AND deliv_n = 0', 'any_failed' => 'fail_n > 0', 'all_failed' => 'out_n > 0 AND fail_n >= out_n', 'ordered' => 'orders_n > 0', 'repeat_n' => 'orders_n >= 2', 'optout' => 'optout = 1',
-        'named' => 'named = 1', 'unnamed' => 'named = 0', 'assigned' => 'asg = 1', 'unassigned' => 'asg = 0', 'imp' => 'imp = 1', 'imp_never' => 'imp = 1 AND out_n = 0', 'imp_deliv' => 'imp = 1 AND deliv_n > 0', 'imp_nodel' => 'imp = 1 AND out_n > 0 AND deliv_n = 0',
+        'dl_yes' => 'phone IN (SELECT d.phone FROM wa_cfun_dl d)', 'dl_no' => 'phone NOT IN (SELECT d.phone FROM wa_cfun_dl d)', 'named' => 'named = 1', 'unnamed' => 'named = 0', 'assigned' => 'asg = 1', 'unassigned' => 'asg = 0', 'imp' => 'imp = 1', 'imp_never' => 'imp = 1 AND out_n = 0', 'imp_deliv' => 'imp = 1 AND deliv_n > 0', 'imp_nodel' => 'imp = 1 AND out_n > 0 AND deliv_n = 0',
         's_a' => 'score >= 70', 's_b' => 'score >= 45 AND score < 70', 's_c' => 'score >= 20 AND score < 45', 's_d' => 'score >= 1 AND score < 20', 'h_ok' => "health = 'ok'", 'h_held' => "health = 'held'", 'h_notwa' => "health = 'notwa'", 'h_stopped' => "health = 'stopped'", 'h_dead' => "health = 'dead'", 'h_optout' => "health = 'optout'",
         'v_new' => "val = 'new'", 'v_one' => "val = 'one'", 'v_repeat' => "val = 'repeat'", 'v_loyal' => "val = 'loyal'", 'v_atrisk' => "val = 'atrisk'", 'v_lapsed' => "val = 'lapsed'", 'v_past' => "val = 'past'",
         'q_premium' => "qual = 'premium'", 'q_budget' => "qual = 'budget'", 'q_std' => "qual = 'std'", 'i_hot' => "intent = 'hot'", 'i_interested' => "intent = 'interested'", 'i_considering' => "intent = 'considering'", 'i_not' => "intent = 'not_interested'",
@@ -249,7 +252,8 @@ function cfun_answer(PDO $pdo, string $src): array
     $j = json_decode((string)setting_get($pdo, 'wa_cfun_stats', ''), true);
     if (!is_array($j) || !isset($j['by'])) { cfun_tick($pdo, true, 20); $j = json_decode((string)setting_get($pdo, 'wa_cfun_stats', ''), true); }
     if (!is_array($j) || !isset($j['by'][$src])) return ['total' => 0, 'walking' => 1, 'src' => $src, 'reasons' => []];
-    return $j['by'][$src] + ['walking' => (int)($j['walking'] ?? 0), 'at' => (string)($j['at'] ?? ''), 'numbers' => $j['by']['all']['numbers'] ?? [], 'hist' => $j['by']['all']['hist'] ?? []];
+    $dl = 0; try { $dl = (int)$pdo->query("SELECT COUNT(*) FROM wa_cfun_dl")->fetchColumn(); } catch (Throwable $e) { } $tot = (int)($j['by'][$src]['total'] ?? 0);
+    return $j['by'][$src] + ['dl_yes' => $dl, 'dl_no' => max(0, $tot - $dl), 'walking' => (int)($j['walking'] ?? 0), 'at' => (string)($j['at'] ?? ''), 'numbers' => $j['by']['all']['numbers'] ?? [], 'hist' => $j['by']['all']['hist'] ?? []];
 }
 
 }   // function_exists guard
@@ -304,10 +308,28 @@ if (strpos($__cfa, 'wa.cf_') === 0) {
             $rows = []; foreach ($labels as $k => $l) if (isset($A[(string)$k])) $rows[] = ['k' => (string)$k, 'label' => $l] + $A[(string)$k];
             json_response(['ok' => true, 'rows' => $rows, 'sent' => $seen, 'from' => $t0]);
         }
+        case 'wa.cf_dl_info': {
+            $n = (int)$pdo->query("SELECT COUNT(*) FROM wa_cfun_dl")->fetchColumn(); $b = $pdo->query("SELECT at, k, src, n FROM wa_cfun_dlb ORDER BY id DESC LIMIT 8")->fetchAll(PDO::FETCH_ASSOC); json_response(['ok' => true, 'downloaded' => $n, 'recent' => $b]);
+        }
+        case 'wa.cf_dl_mark': {   // the file was really saved: remember these customers as downloaded
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $in = json_input(); @set_time_limit(60);
+            $ph = array_values(array_unique(array_filter(array_map(function ($x) { return preg_replace('/\D/', '', (string)$x); }, is_array($in['phones'] ?? null) ? array_slice($in['phones'], 0, 10000) : []), function ($x) { return $x !== '' && strlen($x) <= 12; })));
+            if (!$ph) json_response(['ok' => true, 'n' => 0]);
+            $bid = (int)($in['batch'] ?? 0); $now = date('Y-m-d H:i:s');
+            if ($bid <= 0) { $pdo->prepare("INSERT INTO wa_cfun_dlb (at, k, src, n) VALUES (?, ?, ?, 0)")->execute([$now, mb_substr(preg_replace('/[^a-z_0-9]/', '', (string)($in['k'] ?? '')), 0, 30), in_array((string)($in['src'] ?? ''), ['query', 'campaign'], true) ? (string)$in['src'] : 'all']); $bid = (int)$pdo->lastInsertId(); }
+            foreach (array_chunk($ph, 1000) as $ch) { $v = implode(',', array_fill(0, count($ch), '(?, ?, ?, 1)')); $par = []; foreach ($ch as $x) { $par[] = $x; $par[] = $bid; $par[] = $now; }
+                $pdo->prepare("INSERT INTO wa_cfun_dl (phone, batch, at, times) VALUES $v ON DUPLICATE KEY UPDATE batch = VALUES(batch), at = VALUES(at), times = times + 1")->execute($par); }
+            $pdo->prepare("UPDATE wa_cfun_dlb SET n = n + ? WHERE id = ?")->execute([count($ph), $bid]);
+            json_response(['ok' => true, 'n' => count($ph), 'batch' => $bid]);
+        }
+        case 'wa.cf_dl_reset': {   // forget every download (a fresh start)
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $pdo->exec("DELETE FROM wa_cfun_dl"); json_response(['ok' => true]);
+        }
         case 'wa.cf_list': {
             $k = preg_replace('/[^a-z_0-9]/', '', (string)($_GET['k'] ?? 'all')); $after = preg_replace('/\D/', '', (string)($_GET['after'] ?? '')); $lim = max(1, min(5000, (int)($_GET['lim'] ?? 1000)));
             $qs = trim((string)($_GET['q'] ?? '')); $w = cfun_where($k); $p = [];
             if ($src !== 'all') { $w .= ' AND src = ?'; $p[] = $src; }
+            if (!empty($_GET['skipdl'])) $w .= ' AND phone NOT IN (SELECT d.phone FROM wa_cfun_dl d)';   // leave out everybody downloaded before
             $bt = preg_replace('/[^a-z0-9_]/', '', strtolower((string)($_GET['b'] ?? ''))); if ($bt !== '') { $w .= ' AND batch = ?'; $p[] = $bt; }
             $nm = (int)($_GET['n'] ?? 0); if ($nm > 0) { $w .= ' AND num = ?'; $p[] = $nm; }
             if ($qs !== '') { $d = preg_replace('/\D/', '', $qs); if (strlen($d) >= 3) { $w .= ' AND phone LIKE ?'; $p[] = '%' . $d . '%'; } else { $w .= ' AND name LIKE ?'; $p[] = '%' . str_replace(['%', '_'], ['\\%', '\\_'], $qs) . '%'; } }

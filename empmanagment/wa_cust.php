@@ -60,7 +60,7 @@ function wcs_clean($raw): array
     // 📊 the customer funnel + conversation (wa_cfun): group · counts · import batch · quality · interest · who wrote last · how many messages each way
     $pick = function ($v, array $ok) { return array_values(array_intersect(array_map('strval', is_array($v) ? $v : []), $ok)); };
     if ($t = $pick($raw['fg'] ?? [], ['never', 'sent', 'failed', 'deliv', 'replied', 'ord1', 'ord2'])) $f['fg'] = $t;
-    if ($t = $pick($raw['fc'] ?? [], ['messaged', 'reached', 'not_delivered', 'failed', 'any_failed', 'all_failed', 'replied', 'never_replied', 'wrote_first', 'ordered', 'repeat_n', 'optout', 'named', 'unnamed', 'assigned', 'unassigned', 'imp', 'imp_never', 'imp_deliv', 'imp_nodel', 's_a', 's_b', 's_c', 's_d'])) $f['fc'] = $t;
+    if ($t = $pick($raw['fc'] ?? [], ['messaged', 'reached', 'not_delivered', 'failed', 'any_failed', 'all_failed', 'replied', 'never_replied', 'wrote_first', 'ordered', 'repeat_n', 'optout', 'named', 'unnamed', 'assigned', 'unassigned', 'imp', 'imp_never', 'imp_deliv', 'imp_nodel', 's_a', 's_b', 's_c', 's_d', 'dl_yes', 'dl_no'])) $f['fc'] = $t;
     if ($t = $pick($raw['fq'] ?? [], ['premium', 'std', 'budget'])) $f['fq'] = $t;
     if ($t = $pick($raw['fh'] ?? [], ['ok', 'held', 'notwa', 'stopped', 'dead', 'optout'])) $f['fh'] = $t;
     if ($t = $pick($raw['fv'] ?? [], ['new', 'one', 'repeat', 'loyal', 'atrisk', 'lapsed', 'past'])) $f['fv'] = $t;
