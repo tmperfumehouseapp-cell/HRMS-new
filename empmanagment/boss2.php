@@ -2877,7 +2877,9 @@ function cm_day(PDO $pdo, $day, array $ch = null, array $offers = null, array $b
         $list = $sale[$day . '|' . $id] ?? []; $target = isset($ordT[(int)$id]) ? (float)$ordT[(int)$id] : (float)$targetOf($id, $day);
         $n = count($list); $sales = 0.0; $nCode = 0; $noMl = 0; $noPrice = 0; $chartCom = 0.0; $offerCom = 0.0; $xcomTotal = 0.0; $lines = [];
         foreach ($list as $o) { if ($o['code'] !== '') $nCode++; }
-        $need = cm_code_need($n, (float)$ch['codepct']); $codeOk = $need > 0 && $nCode >= $need; $nocodeF = (float)$ch['nocode'] / 100;
+        // manual orders / quick entries cannot carry a code: they count in the sales, but not in "how many orders need a code" (else adding them would push a person below the code limit)
+        $nMan = 0; foreach ($list as $o) { if (strpos((string)($o['key'] ?? ''), 'manual|') === 0) $nMan++; }
+        $need = cm_code_need($n - $nMan, (float)$ch['codepct']); $codeOk = $need > 0 && $nCode >= $need; $nocodeF = (float)$ch['nocode'] / 100;
         foreach ($list as $o) {
             $ok = preg_replace('/\|/', ':', (string)($o['key'] ?? ''), 1);      // the same order key the pages use: store:id
             $amt = (float)$o['amt']; $sales += $amt;
@@ -2905,7 +2907,7 @@ function cm_day(PDO $pdo, $day, array $ch = null, array $offers = null, array $b
         if (function_exists('coach_day')) { try { $cd = coach_day($pdo, $day, false, true); $old = isset($cd[$id]) ? (float)$cd[$id]['com_today'] : null; } catch (Throwable $e) {} }
         $total = round($chartCom + $offerCom + $extra + $xcomTotal, 2);
         $rows[] = ['id' => $id, 'name' => trim((string)$e['full_name']), 'target' => round($target), 'target_why' => (!($target > 0) && $n > 0) ? cm_target_why($pdo, $id, $day, $marks, $e) : '', 'sales' => round($sales), 'pct' => $target > 0 ? round($sales / $target * 100, 1) : null, 'orders' => $n,
-            'codes' => $nCode, 'code_pct' => $n ? round($nCode / $n * 100) : null, 'code_ok' => $codeOk, 'code_need' => $need, 'chart_com' => round($chartCom, 2), 'offer_com' => round($offerCom, 2), 'x_com' => round($xcomTotal, 2),
+            'codes' => $nCode, 'code_orders' => $n - $nMan, 'manual_orders' => $nMan, 'code_pct' => ($n - $nMan) > 0 ? round($nCode / ($n - $nMan) * 100) : null, 'code_ok' => $codeOk, 'code_need' => $need, 'chart_com' => round($chartCom, 2), 'offer_com' => round($offerCom, 2), 'x_com' => round($xcomTotal, 2),
             'bonus' => $bonus, 'bonus_rule' => $tbName, 'bonus_on' => $bonusOn, 'boost' => $bo ? $bo['name'] : '', 'extra' => round($extra, 2), 'total' => $total, 'old' => $old, 'diff' => $old === null ? null : round($total - $old, 2), 'no_ml' => $noMl, 'not_priced' => $noPrice, 'lines' => $lines];
     }
     usort($rows, function ($a, $b) { return $b['sales'] <=> $a['sales']; });

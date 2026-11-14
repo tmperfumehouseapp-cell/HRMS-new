@@ -7775,6 +7775,22 @@ function coach_sales_load(PDO $pdo, array $emps, string $from, string $to): arra
             'pre' => array_key_exists('pre', $o) ? (bool)$o['pre'] : $isPre(strtolower((string)($o['financial_status'] ?? ''))), 'paid' => order_paid_amt((float)$o['total'], (string)($o['financial_status'] ?? ''), $o['outstanding'] ?? null), 'code' => ((string)$o['source'] === 'store' ? (string)($o['code'] ?? '') : order_code_for($pdo, (string)$o['source'], $o['id'])), 'name' => (string)$o['order_name'],
             'col' => null, 'type' => (string)($allocMap[(string)$o['source'] . '|' . (string)$o['id']]['type'] ?? '')];
     }
+    // 🧾 Manual orders and quick entries (Orders → Add Order) that carry a sales person. The Orders page counts them in that person's orders and collection, but they were missing here,
+    // so the Commission page / tower / target % showed fewer orders and less sales than the Orders page for the same day (18 orders ₹39,964 there, 14 orders ₹36,068 here).
+    // Their products are not known (no ML), so they add to the SALES and the target, and the commission chart pays nothing for them.
+    try {
+        $mq = $pdo->prepare("SELECT manual_order_id, order_no, order_date, total, payment_status, outstanding, employee_id, order_type, batch FROM manual_orders WHERE order_date >= ? AND order_date <= ? AND employee_id > 0");
+        $mq->execute(biz_window($pdo, $from, $day));
+        foreach ($mq->fetchAll() as $m) {
+            $mk2 = 'manual|' . (string)$m['manual_order_id']; if (isset($cancel[$mk2])) continue;
+            $a = $allocMap[$mk2] ?? null; if ($a && !empty($a['direct'])) continue;
+            $who = ($a && !empty($a['emp'])) ? (int)$a['emp'] : (int)$m['employee_id']; if (!$who || !isset($emps[$who])) continue;
+            $ts = strtotime((string)$m['order_date']); $fs = strtolower((string)$m['payment_status']);
+            $sale[biz_day_of($pdo, $ts) . '|' . $who][] = ['key' => $mk2, 'amt' => (float)$m['total'], 'ts' => $ts, 'ml' => null, 'ml10' => 0, 'xcom' => 0.0, 'xall' => false,
+                'xnote' => ((string)($m['batch'] ?? '') !== '' ? 'Quick entry' : 'Manual order') . ': the products are not known, so the chart cannot pay it. It counts in the sales and the target.',
+                'pre' => $isPre($fs), 'paid' => order_paid_amt((float)$m['total'], $fs, $m['outstanding'] ?? null), 'code' => '', 'name' => '#' . (string)$m['order_no'], 'col' => null, 'type' => (string)($a['type'] ?? ($m['order_type'] ?? ''))];
+        }
+    } catch (Throwable $e) { error_log('coach_sales_load manual orders: ' . $e->getMessage()); }
     return $memo[$mk] = $sale;
 }
 
