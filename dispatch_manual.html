@@ -69,7 +69,8 @@
   const payTxt = (r) => r.pay === 'prepaid' ? '<span class="pill g">Prepaid</span>' : r.pay === 'cod' ? '<span class="pill y">COD</span>' : '<span class="pill b">Part</span> paid ' + inr(r.paid) + '<br>COD ' + inr(r.cod);
   const stTxt = (r) => r.status === 'confirmed' ? '<span class="pill g">Confirmed</span>' : r.status === 'cancelled' ? '<span class="pill r">Cancelled</span>' : '<span class="pill y">Waiting for address</span>';
   const invTxt = (r) => r.status !== 'confirmed' ? '—' : r.invoice ? '<span class="pill g">' + esc(r.invoice.no) + '</span><br>' + (r.invoice.pdf ? '<a class="mini" target="_blank" rel="noopener" href="' + esc(r.invoice.view || r.invoice.pdf) + '">View</a><a class="mini" target="_blank" rel="noopener" href="' + esc(r.invoice.pdf) + '">PDF</a>' : '') + '<button class="mini" data-a="inv" data-i="' + r.id + '">Resend</button>' : '<span class="pill r">Not made</span><br><button class="mini" data-a="inv" data-i="' + r.id + '">Make invoice</button>';
-  const shTxt = (r) => r.status !== 'confirmed' ? '—' : (r.parcel && r.parcel.awb ? '<span class="pill g">AWB ' + esc(r.parcel.awb) + '</span><br><small>' + esc(r.parcel.courier || '') + ' ' + esc(r.parcel.status || '') + '</small>' : r.sr.id ? '<span class="pill b">Shiprocket ✓</span><br><small>' + esc(r.sr.id) + '</small>' : '<span class="pill y">Not created</span><br><button class="mini" data-a="sr" data-i="' + r.id + '">Create</button>');
+  const trkBtn = (r, t) => '<button class="mini" data-a="trk" data-i="' + r.id + '">' + t + '</button>';
+  const shTxt = (r) => r.status !== 'confirmed' ? '—' : (r.parcel && r.parcel.awb ? '<span class="pill g">AWB ' + esc(r.parcel.awb) + '</span>' + (r.parcel.manual ? ' <span class="pill b">Manual</span>' : '') + '<br><small>' + esc(r.parcel.courier || '') + ' ' + esc(r.parcel.status || '') + '</small><br>' + trkBtn(r, '✎ Edit') : (r.sr.id ? '<span class="pill b">Shiprocket ✓</span><br><small>' + esc(r.sr.id) + '</small><br>' : '<span class="pill y">Not created</span><br><button class="mini" data-a="sr" data-i="' + r.id + '">Create</button>') + trkBtn(r, '+ Tracking ID'));
   // items: short names (no "| TMPerfumehouse", no "- DG / LG" suffix), "50ml", first 3 only, the rest behind "+N more"
   const nm = (t) => String(t || '').replace(/\s+[|｜Il]\s*TMPerfumehouse.*$/i, '').replace(/\s+-\s*(DG|LG|WH)\s*$/i, '').replace(/\s+/g, ' ').trim();
   const itemTxt = (l) => '<div class="it">' + l.qty + '× ' + esc(nm(l.short || l.title)) + (l.label ? ' <small>' + esc(String(l.label).replace(/\s+/g, '')) + '</small>' : '') + '</div>';
@@ -97,6 +98,12 @@
     const b = e.target.closest('[data-a]'); if (!b) return; const r = ROWS.find((x) => x.id === +b.dataset.i); if (!r) return; const a = b.dataset.a;
     if (a === 'more') { const rest = b.nextElementSibling; if (rest) { rest.hidden = !rest.hidden; b.textContent = rest.hidden ? '+ ' + rest.children.length + ' more…' : 'show less'; } return; }
     if (a === 'det') return detail(r);
+    if (a === 'trk') {   // type / fix / remove the tracking ID by hand (empty = remove it; the Dispatch / Shiprocket AWB shows again)
+      const cur = r.parcel && r.parcel.manual ? r.parcel.awb : (r.parcel ? r.parcel.awb : '');
+      const v = prompt('Tracking ID (AWB) for ' + r.order_no + '\n(leave empty to remove the one typed by hand)', cur || ''); if (v === null) return;
+      let cr = ''; if (v.trim() !== '') { cr = prompt('Courier name (optional), e.g. Delhivery, Bluedart, DTDC', r.parcel && r.parcel.courier ? r.parcel.courier : ''); if (cr === null) return; }
+      try { await api.post('wmo.set_tracking', { id: r.id, awb: v.trim(), courier: cr.trim() }); } catch (er) { alert(er.message); } load(); return;
+    }
     if (a === 'lnk') { try { await navigator.clipboard.writeText(r.link); b.textContent = 'Copied ✓'; } catch (er) { prompt('Copy the link:', r.link); } return; }
     if (a === 'inv' || a === 'sr') { b.disabled = true; const old = b.textContent; b.textContent = 'Working…'; try { const x = await api.post(a === 'inv' ? 'wmo.invoice' : 'wmo.shiprocket', { id: r.id }); alert(x.note || 'Done'); } catch (er) { alert(er.message); } load(); }
   });
@@ -109,7 +116,7 @@
       <div class="kv"><span>UTR / screenshot</span><b>${esc(r.utr || '—')}${r.has_shot ? ' · <a href="#" id="dmShot">view</a>' : ''}</b></div>
       <div style="margin:8px 0"><b>Items</b>${r.lines.map((l) => `<div class="kv"><span>${l.qty} × ${esc(l.title)}${l.label ? ' · ' + esc(l.label) : ''}${l.chain ? ' (chain)' : ''}</span><b>${inr(l.total)}</b></div>`).join('')}</div>
       <div class="kv"><span>Invoice</span><b>${r.invoice ? esc(r.invoice.no) + (r.invoice.sent_at ? ' · sent' : '') : (r.status === 'confirmed' ? 'not made' : '—')}</b></div><div class="kv"><span>Shiprocket</span><b>${r.sr.id ? esc(r.sr.id) : 'not created'}${r.sr.note ? '<br><small>' + esc(r.sr.note) + '</small>' : ''}</b></div>
-      <div class="kv"><span>Courier / AWB</span><b>${r.parcel && r.parcel.awb ? esc(r.parcel.courier) + ' · ' + esc(r.parcel.awb) + ' · ' + esc(r.parcel.status) : '—'}</b></div>
+      <div class="kv"><span>Courier / AWB</span><b>${r.parcel && r.parcel.awb ? esc(r.parcel.courier) + ' · ' + esc(r.parcel.awb) + ' · ' + esc(r.parcel.status) + (r.parcel.manual ? ' · typed by hand' : ' · from Dispatch') : '—'}</b></div>
       <div style="margin-top:10px"><button class="mini" id="dmCp">Copy shipping text</button></div></div></div>`;
     document.body.appendChild(ov);
     ov.querySelector('#dmX').onclick = () => ov.remove(); ov.querySelector('.ov').onclick = (e) => { if (e.target.classList.contains('ov')) ov.remove(); };

@@ -37,7 +37,7 @@ function wmo_tables(PDO $pdo): bool
             utr VARCHAR(40) NOT NULL DEFAULT '', ml INT NOT NULL DEFAULT 0, lines_json MEDIUMTEXT NULL, shot_mime VARCHAR(20) NOT NULL DEFAULT '', shot_b64 MEDIUMTEXT NULL, shot_json TEXT NULL, src VARCHAR(12) NOT NULL DEFAULT '',
             cust_json TEXT NULL, phone_match TINYINT NOT NULL DEFAULT 1, shop_id BIGINT NULL, note VARCHAR(255) NOT NULL DEFAULT '', created_at DATETIME NOT NULL, sent_at DATETIME NULL, opened_at DATETIME NULL, confirmed_at DATETIME NULL,
             cancelled_at DATETIME NULL, UNIQUE KEY uq_wmo_tok (token), KEY k_wmo_phone (phone, status), KEY k_wmo_utr (utr)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-        foreach (['channel' => "VARCHAR(12) NOT NULL DEFAULT ''", 'sr_order_id' => "VARCHAR(24) NOT NULL DEFAULT ''", 'sr_note' => "VARCHAR(255) NOT NULL DEFAULT ''", 'otype' => "VARCHAR(10) NOT NULL DEFAULT ''", 'addr_json' => 'TEXT NULL', 'gateway' => "VARCHAR(24) NOT NULL DEFAULT ''", 'shot2_mime' => "VARCHAR(20) NOT NULL DEFAULT ''", 'shot2_b64' => 'MEDIUMTEXT NULL', 'proof_json' => 'TEXT NULL'] as $c => $def) { try { if (!$pdo->query("SHOW COLUMNS FROM wmo_order LIKE '$c'")->fetch()) $pdo->exec("ALTER TABLE wmo_order ADD COLUMN $c $def"); } catch (PDOException $e) { } }      // the Shiprocket order id and the last note
+        foreach (['channel' => "VARCHAR(12) NOT NULL DEFAULT ''", 'sr_order_id' => "VARCHAR(24) NOT NULL DEFAULT ''", 'sr_note' => "VARCHAR(255) NOT NULL DEFAULT ''", 'otype' => "VARCHAR(10) NOT NULL DEFAULT ''", 'addr_json' => 'TEXT NULL', 'gateway' => "VARCHAR(24) NOT NULL DEFAULT ''", 'shot2_mime' => "VARCHAR(20) NOT NULL DEFAULT ''", 'shot2_b64' => 'MEDIUMTEXT NULL', 'proof_json' => 'TEXT NULL', 'trk_no' => "VARCHAR(40) NOT NULL DEFAULT ''", 'trk_courier' => "VARCHAR(30) NOT NULL DEFAULT ''"] as $c => $def) { try { if (!$pdo->query("SHOW COLUMNS FROM wmo_order LIKE '$c'")->fetch()) $pdo->exec("ALTER TABLE wmo_order ADD COLUMN $c $def"); } catch (PDOException $e) { } }      // the Shiprocket order id and the last note
         return $ok = true;
     } catch (PDOException $e) { error_log('wmo_tables: ' . $e->getMessage()); return $ok = false; }
 }
@@ -294,7 +294,9 @@ function wmo_dsp_rows(PDO $pdo, string $from, string $to, string $status, string
             'cust' => ['name' => (string)($cu['name'] ?? ($ad['name'] ?? '')), 'phone' => (string)($cu['phone'] ?? $r['phone']), 'phone2' => (string)($cu['phone2'] ?? ''), 'addr1' => (string)($cu['addr1'] ?? ($ad['addr1'] ?? '')), 'addr2' => (string)($cu['addr2'] ?? ''), 'landmark' => (string)($cu['landmark'] ?? ($ad['landmark'] ?? '')), 'pin' => (string)($cu['pin'] ?? ($ad['pin'] ?? '')), 'city' => (string)($cu['city'] ?? ($ad['city'] ?? '')), 'state' => (string)($cu['state'] ?? ($ad['state'] ?? '')), 'email' => (string)($cu['email'] ?? '')],
             'lines' => array_map(fn($l) => ['short' => (string)$l['short'], 'title' => (string)($l['title'] ?? $l['short']), 'label' => (string)($l['label'] ?? ''), 'sku' => (string)($l['sku'] ?? ''), 'qty' => (int)$l['qty'], 'total' => $l['total_p'] / 100, 'unit' => round($l['total_p'] / 100 / max(1, (int)$l['qty']), 2), 'chain' => !empty($l['chain']), 'single' => !empty($l['single'])], $L),
             'invoice' => $iv ? ['id' => (int)$iv['id'], 'no' => (string)$iv['inv_no'], 'sent_at' => (string)($iv['sent_at'] ?? ''), 'pdf' => function_exists('wch_pdf_url') ? wch_pdf_url((string)$iv['token']) : '', 'view' => function_exists('wch_view_url') ? wch_view_url((string)$iv['token']) : ''] : null,
-            'channel' => (string)($r['channel'] ?? ''), 'sr' => ['id' => (string)($r['sr_order_id'] ?? ''), 'note' => (string)($r['sr_note'] ?? '')], 'parcel' => $pa ? ['awb' => (string)$pa['tracking_no'], 'courier' => (string)$pa['courier'], 'status' => (string)$pa['status']] : null,
+            'channel' => (string)($r['channel'] ?? ''), 'sr' => ['id' => (string)($r['sr_order_id'] ?? ''), 'note' => (string)($r['sr_note'] ?? '')], 'parcel' => (trim((string)($r['trk_no'] ?? '')) !== '')   // a tracking ID typed by hand wins; otherwise the AWB Dispatch / Shiprocket already has for this order
+                ? ['awb' => (string)$r['trk_no'], 'courier' => (string)($r['trk_courier'] ?? '') !== '' ? (string)$r['trk_courier'] : ($pa && (string)$pa['tracking_no'] === (string)$r['trk_no'] ? (string)$pa['courier'] : ''), 'status' => ($pa && (string)$pa['tracking_no'] === (string)$r['trk_no']) ? (string)$pa['status'] : '', 'manual' => true]
+                : ($pa && trim((string)$pa['tracking_no']) !== '' ? ['awb' => (string)$pa['tracking_no'], 'courier' => (string)$pa['courier'], 'status' => (string)$pa['status'], 'manual' => false] : null),
             'link' => in_array($r['status'], ['draft', 'sent'], true) ? wmo_link((string)$r['token']) : ''];
     }
     // 🧮 weight, tax, payment gateway, commission (the day's figures are cached by the commission engine; at most 8 days are looked up per call so a long export stays light)
@@ -715,6 +717,17 @@ if (strpos($__wmo, 'wmo.') === 0) {
         case 'wmo.shiprocket': {
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $r = $mine(); if ($r['status'] !== 'confirmed') json_response(['error' => 'The Shiprocket order is made after the customer confirms.'], 422);
             $cust = json_decode((string)$r['cust_json'], true) ?: []; $note = wmo_shiprocket($pdo, $r, $cust); json_response(['ok' => strpos($note, 'created') !== false || strpos($note, 'already') !== false, 'note' => $note]);
+        }
+        case 'wmo.set_tracking': {   // the tracking ID typed by hand on the Manual orders page (empty = remove it, the Dispatch / Shiprocket AWB shows again)
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
+            if (!wmo_dsp_ok($pdo, $auth)) json_response(['error' => 'Not allowed.'], 403);
+            $awb = trim((string)($in['awb'] ?? '')); $cr = mb_substr(trim((string)($in['courier'] ?? '')), 0, 30);
+            if ($awb !== '' && !preg_match('/^[A-Za-z0-9\-]{5,40}$/', $awb)) json_response(['error' => 'The tracking ID must be 5 to 40 letters or numbers.'], 422);
+            if ($awb === '') $cr = '';
+            $u = $pdo->prepare("UPDATE wmo_order SET trk_no = ?, trk_courier = ? WHERE id = ? AND status = 'confirmed'"); $u->execute([$awb, $cr, (int)($in['id'] ?? 0)]);
+            $c = $pdo->prepare("SELECT COUNT(*) FROM wmo_order WHERE id = ? AND status = 'confirmed'"); $c->execute([(int)($in['id'] ?? 0)]);
+            if (!(int)$c->fetchColumn()) json_response(['error' => 'Only a confirmed order can get a tracking ID.'], 422);
+            json_response(['ok' => true, 'awb' => $awb, 'courier' => $cr]);
         }
         case 'wmo.cancel': {
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $r = $mine(); if ($r['status'] === 'confirmed') json_response(['error' => 'The customer already confirmed this order. Cancel it like any other order.'], 422);
