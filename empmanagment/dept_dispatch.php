@@ -822,7 +822,7 @@ if (strpos((string)$action, 'dp.dsp_') === 0) {
         if ($e === '' || strpos($e, '@') === false) json_response(['error' => 'Type the Shiprocket API user email.'], 422);
         if ($p === '' && $e !== (string)dp_get('sr_email', '')) json_response(['error' => 'Type the password too.'], 422);
         if (mb_strlen($e) > 120 || mb_strlen($p) > 120) json_response(['error' => 'That is too long.'], 422);
-        dp_put('sr_email', $e); if ($p !== '') dp_put('sr_pass', $p); dp_put('sr_token', ''); dp_put('sr_last_err', '');
+        dp_put('sr_email', $e); if ($p !== '') dp_put('sr_pass', $p); dp_put('sr_token', ''); dp_put('sr_last_err', ''); dp_put('sr_login_hold', '');
         bd_log('dispatch', 'shiprocket', 'Shiprocket login saved (' . $e . ')', $by);
         json_response(['ok' => true, 'message' => 'Saved. Press "Test connection".']);
     }

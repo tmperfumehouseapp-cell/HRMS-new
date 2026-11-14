@@ -425,8 +425,12 @@ function wmo_sr_token(PDO $pdo, bool $force = false): array
     $base = rtrim(function_exists('tmph_cfg') ? (string)tmph_cfg('SHIPROCKET_BASE', 'https://apiv2.shiprocket.in') : 'https://apiv2.shiprocket.in', '/');
     $tok = wmo_sr_kv($pdo, 'sr_token'); $exp = (int)wmo_sr_kv($pdo, 'sr_token_exp'); $sig = wmo_sr_kv($pdo, 'sr_token_for');
     if (!$force && $tok !== '' && $exp > time() + 300 && $sig === md5($e . '|' . $p)) return [$tok, ''];
+    // 🛑 the same 30-minute hold as the Dispatch page after a refused login (shared: dp_state sr_login_hold), so a wrong password is never sent again and again (that blocks the Shiprocket account)
+    $__sig = md5($e . '|' . $p); $__bl = explode('|', wmo_sr_kv($pdo, 'sr_login_hold'), 3);
+    if (count($__bl) === 3 && $__bl[0] === $__sig && (int)$__bl[1] > time()) return ['', $__bl[2] . ' The HRMS tries again in ' . max(1, (int)ceil(((int)$__bl[1] - time()) / 60)) . ' min, or at once when the correct API login is saved on the Dispatch page.'];
     [$code, $j, $err] = wmo_sr_http('POST', $base . '/v1/external/auth/login', [], ['email' => $e, 'password' => $p]);
     if ($err !== '') return ['', 'Could not reach Shiprocket: ' . $err];
+    if (in_array($code, [401, 403, 422], true)) wmo_sr_kv($pdo, 'sr_login_hold', $__sig . '|' . (time() + 1800) . '|' . str_replace('|', '/', 'Shiprocket refused the email / password' . (is_array($j) && !empty($j['message']) ? ' (' . mb_substr((string)$j['message'], 0, 120) . ')' : '') . '.'));
     if ($code === 200 && is_array($j) && !empty($j['token'])) { wmo_sr_kv($pdo, 'sr_token', (string)$j['token']); wmo_sr_kv($pdo, 'sr_token_exp', (string)(time() + 8 * 86400)); wmo_sr_kv($pdo, 'sr_token_for', md5($e . '|' . $p)); return [(string)$j['token'], '']; }
     return ['', 'Shiprocket login failed (HTTP ' . $code . ')' . (is_array($j) && !empty($j['message']) ? ': ' . mb_substr((string)$j['message'], 0, 100) : '') . '.'];
 }

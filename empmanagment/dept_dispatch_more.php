@@ -30,11 +30,16 @@ function dp_dsp_sr_token($force = false) {
     $c = dp_dsp_sr_cfg(); if (!$c['ok']) return [null, 'Shiprocket email and password are not saved.'];
     $tok = (string)dp_get('sr_token', ''); $exp = (int)dp_get('sr_token_exp', '0'); $sig = (string)dp_get('sr_token_for', '');
     if (!$force && $tok !== '' && $exp > time() + 300 && $sig === md5($c['email'] . '|' . $c['pass'])) return [$tok, ''];
+    // 🛑 Shiprocket BLOCKS an account after too many wrong logins. A refused login used to be tried again on every sync (every few minutes) and on every page, which is exactly what got the
+    // account blocked. Now a refused login is remembered for 30 minutes for THIS email + password: nothing is sent to Shiprocket until then, or until a new email / password is saved.
+    $__sig = md5($c['email'] . '|' . $c['pass']); $__bl = explode('|', (string)dp_get('sr_login_hold', ''), 3);
+    if (!$force && count($__bl) === 3 && $__bl[0] === $__sig && (int)$__bl[1] > time()) return [null, $__bl[2] . ' The HRMS is not trying again for ' . max(1, (int)ceil(((int)$__bl[1] - time()) / 60)) . ' min, so the account is not blocked again; save the correct API email and password to try at once.'];
     list($code, $j, $err) = dp_dsp_sr_http('POST', $c['base'] . '/v1/external/auth/login', [], ['email' => $c['email'], 'password' => $c['pass']]);
     if ($err !== '') return [null, 'Could not reach Shiprocket: ' . $err];
     if ($code === 200 && is_array($j) && !empty($j['token'])) { dp_put('sr_token', $j['token']); dp_put('sr_token_exp', (string)(time() + 8 * 86400)); dp_put('sr_token_for', md5($c['email'] . '|' . $c['pass'])); return [(string)$j['token'], '']; }
     $msg = is_array($j) ? (string)($j['message'] ?? '') : '';
-    if ($code === 403 || $code === 401 || $code === 422) return [null, 'Shiprocket refused the email / password' . ($msg !== '' ? ' (' . mb_substr($msg, 0, 120) . ')' : '') . '. Use the API user email and password from Shiprocket, not your normal login.'];
+    if ($code === 200 && is_array($j) && !empty($j['token'])) dp_put('sr_login_hold', '');
+    if ($code === 403 || $code === 401 || $code === 422) { $__m = 'Shiprocket refused the email / password' . ($msg !== '' ? ' (' . mb_substr($msg, 0, 120) . ')' : '') . '. Use the API user email and password from Shiprocket, not your normal login.'; dp_put('sr_login_hold', $__sig . '|' . (time() + 1800) . '|' . str_replace('|', '/', $__m)); return [null, $__m]; }
     return [null, 'Shiprocket login failed (HTTP ' . $code . ')' . ($msg !== '' ? ': ' . mb_substr($msg, 0, 120) : '') . '.'];
 }
 /** GET on the Shiprocket API. Returns [json|null, error text] */
