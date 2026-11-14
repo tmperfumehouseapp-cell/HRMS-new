@@ -127,7 +127,8 @@ function wa_room_why(array $p): string
     $max = (int)floor((int)($p['tier'] ?? 0) * 0.9); $au = $p['auto'] ?? null;
     if (!empty($p['hour_full']) && $au && $max - (int)($p['used'] ?? 0) > 0)
         return 'Waiting for the next hour: every number used its hourly speed (' . implode(' · ', array_map(fn($n) => $n['label'] . ' ' . number_format($n['used_hour']) . ' of ' . number_format($n['cap']), $au['nums'])) . '). It carries on by itself.';
-    return 'Waiting for room: Meta lets you message ' . number_format($max) . ' new people in 24 hours' . (!empty($p['assumed']) ? ' (Meta did not tell your limit, 250 assumed)' : '') . ' and ' . number_format((int)($p['used'] ?? 0)) . ' got one already. It carries on by itself as the 24 hours pass.';
+    $scope = ($p['mode'] ?? 'shared') === 'per_number' ? 'all the numbers together' : 'one pool for all numbers';
+    return 'Waiting for room: our safety limit is ' . number_format($max) . ' new people in 24 hours (90% of your Meta limit' . (!empty($p['assumed']) ? ', which Meta did not tell us — 250 assumed' : '') . ', ' . $scope . ') and ' . number_format((int)($p['used'] ?? 0)) . ' got a message already. This is our own safety rule, not a refusal from Meta. It carries on by itself as the 24 hours pass.';
 }
 /** Which number sends to this customer. Returns [numberId, whyNot]. */
 function wa_pick_number(PDO $pdo, array $c, array &$ctx): array
@@ -625,7 +626,7 @@ function wa_camp_wait_reason(PDO $pdo, array $c): string
         if ($port['left'] <= 0 || $left <= 0) {
             $q = $pdo->query("SELECT MIN(ts) FROM wa_messages WHERE dir = 'out' AND mtype = 'template' AND ts >= '" . date('Y-m-d H:i:s', $nowTs - 86400) . "'"); $first = (string)$q->fetchColumn();
             $free = $first !== '' ? strtotime($first) + 86400 : 0;
-            return 'Waiting for room: Meta lets your numbers message only a limited number of new people in 24 hours' . ($port['left'] <= 0 ? ' (' . number_format($port['used']) . ' of about ' . number_format((int)floor($port['tier'] * 0.9)) . ' used)' : '') . ($why ? ' — ' . implode('; ', array_unique($why)) : '') . '. It sends by itself as room frees' . ($free > $nowTs ? ', starting about ' . date('j M, g:i a', $free) : '') . '.';
+            return 'Waiting for room: our safety limit allows only a limited number of new people in 24 hours (90% of your Meta limit — our own rule, not a refusal from Meta)' . ($port['left'] <= 0 ? ' (' . number_format($port['used']) . ' of about ' . number_format((int)floor($port['tier'] * 0.9)) . ' used)' : '') . ($why ? ' — ' . implode('; ', array_unique($why)) : '') . '. It sends by itself as room frees' . ($free > $nowTs ? ', starting about ' . date('j M, g:i a', $free) : '') . '.';
         }
     } catch (Throwable $e) { }
     $n = trim((string)($c['note'] ?? '')); if ($n !== '') return $n;
