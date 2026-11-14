@@ -1646,6 +1646,21 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
         case 'wa.msg_rank': {   // 🏆 which messages deliver best (and what they have in common)
             json_response(wa_msg_rank($pdo, (int)($_GET['days'] ?? 14), 86400, false, trim((string)($_GET['seg'] ?? ''))));   // any prepared copy is fine: the engine keeps all three windows fresh
         }
+        case 'wa.camp_send_skipped': {   // ▶ send NOW to the people the campaign skipped (our own safety rules): bought lately, ignored 2 campaigns, a campaign / follow-up lately …  Opt-outs, a completed order and "ignored every number" stay out.
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $in = json_input(); $cid = (int)($in['id'] ?? 0); $c = $cid ? wa_camp_row($pdo, $cid) : null; if (!$c) json_response(['error' => 'Campaign not found.'], 404);
+            if ($c['status'] === 'cancelled') json_response(['error' => 'This campaign was stopped. Make a new one.'], 422);
+            $w = "camp_id = ? AND status = 'skipped'"; $keep = "COALESCE(err, '') NOT IN ('Opted out', 'Ignored the messages of every number') AND COALESCE(err, '') NOT LIKE 'Just completed an order%'";
+            $q = $pdo->prepare("SELECT COALESCE(NULLIF(err, ''), 'No reason saved') AS e, COUNT(*) AS n FROM wa_camp_items WHERE $w AND $keep GROUP BY e ORDER BY n DESC LIMIT 15"); $q->execute([$cid]); $rs = []; $n = 0; foreach ($q->fetchAll() as $r) { $rs[] = ['text' => mb_substr((string)$r['e'], 0, 90), 'n' => (int)$r['n']]; $n += (int)$r['n']; }
+            $t = $pdo->prepare("SELECT COUNT(*) FROM wa_camp_items WHERE $w"); $t->execute([$cid]); $all = (int)$t->fetchColumn(); $R = function_exists('wab_rates') ? wab_rates($pdo) : ['marketing' => 1.09];
+            if (!empty($in['preview'])) json_response(['ok' => true, 'n' => $n, 'left_out' => max(0, $all - $n), 'reasons' => $rs, 'cost' => (int)round($n * (float)$R['marketing'])]);
+            if ($n <= 0) json_response(['error' => 'Nobody can be sent to: the skipped ones are opt-outs or have a completed order.'], 422);
+            $pdo->prepare("UPDATE wa_camp_items SET status = 'queued', err = '', send_at = NULL WHERE $w AND $keep")->execute([$cid]);
+            $x = (array)($c['extra'] ?? []); $x['gap_days'] = 0; $x['bought_days'] = 0; $x['skip_ignored'] = 0; $x['leave_fu'] = 0; $x['resent_skipped_at'] = date('Y-m-d H:i:s'); $now = date('Y-m-d H:i:s');
+            $pdo->prepare("UPDATE wa_campaigns SET extra = ?, status = 'running', finished_at = NULL, started_at = COALESCE(started_at, ?), note = '' WHERE id = ?")->execute([json_encode($x, JSON_UNESCAPED_UNICODE), $now, $cid]);
+            if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, '#' . $cid . ' sent to the skipped: ' . $n . ' people queued (' . implode(', ', array_map(fn($r) => $r['text'] . ' ' . $r['n'], array_slice($rs, 0, 4))) . ')');
+            try { wa_camp_tick($pdo); } catch (Throwable $e) { }
+            json_response(['ok' => true, 'queued' => $n, 'left_out' => max(0, $all - $n)]);
+        }
         case 'wa.camp_start_now': {   // ▶ start one scheduled campaign (or all of them) now instead of at the scheduled time
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $in = json_input(); $ids = [];
             if (!empty($in['all'])) { $sp2 = ''; try { $pdo->query("SELECT smart_plan FROM wa_campaigns LIMIT 0"); $sp2 = ' AND smart_plan = 0'; } catch (PDOException $e) { } $ids = array_map('intval', $pdo->query("SELECT id FROM wa_campaigns WHERE status = 'scheduled'" . $sp2 . " ORDER BY start_at, id")->fetchAll(PDO::FETCH_COLUMN)); }
