@@ -60,7 +60,7 @@
 <script src="assets/js/layout.js?v=34"></script>
 <script>
   guardPage();
-  renderSidebar('dispatch_manual');      // the same menu key as Manual orders: a Dispatch login may open it
+  renderSidebar('sku_sheet');      // the same menu key as Manual orders: a Dispatch login may open it
   const $ = (id) => document.getElementById(id);
   const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const num = (n) => Number(n || 0).toLocaleString('en-IN');
