@@ -16521,6 +16521,12 @@ function tmph_usage_add(string $model, int $in, int $out, string $purpose = 'cha
         $pdo->prepare("INSERT INTO ai_usage (use_date, model, purpose, calls, in_tokens, out_tokens, cost_usd) VALUES (?, ?, ?, 1, ?, ?, ?)
                        ON DUPLICATE KEY UPDATE calls = calls + 1, in_tokens = in_tokens + VALUES(in_tokens), out_tokens = out_tokens + VALUES(out_tokens), cost_usd = cost_usd + VALUES(cost_usd)")
             ->execute([date('Y-m-d'), mb_substr($model, 0, 60), mb_substr($purpose, 0, 20), $in, $out, round(tmph_claude_cost($model, $in, $out), 6)]);
+        // ⏰ the same count per HOUR (India time), so the AI usage page can show at which hours each job spends (the day table above cannot)
+        try {
+            static $hOk = null; if ($hOk === null) { $pdo->exec("CREATE TABLE IF NOT EXISTS ai_usage_hour (use_date DATE NOT NULL, hr TINYINT NOT NULL, purpose VARCHAR(20) NOT NULL DEFAULT 'chat', calls INT NOT NULL DEFAULT 0, in_tokens BIGINT NOT NULL DEFAULT 0, out_tokens BIGINT NOT NULL DEFAULT 0, cost_usd DECIMAL(12,6) NOT NULL DEFAULT 0, PRIMARY KEY (use_date, hr, purpose))"); $hOk = true; }
+            $pdo->prepare("INSERT INTO ai_usage_hour (use_date, hr, purpose, calls, in_tokens, out_tokens, cost_usd) VALUES (?, ?, ?, 1, ?, ?, ?) ON DUPLICATE KEY UPDATE calls = calls + 1, in_tokens = in_tokens + VALUES(in_tokens), out_tokens = out_tokens + VALUES(out_tokens), cost_usd = cost_usd + VALUES(cost_usd)")
+                ->execute([date('Y-m-d'), (int)date('G'), mb_substr($purpose, 0, 20), $in, $out, round(tmph_claude_cost($model, $in, $out), 6)]);
+        } catch (Throwable $e) {}
     } catch (Throwable $e) {}
 }
 /** This month's AI spend in USD (0 when nothing is recorded). */
@@ -33830,6 +33836,12 @@ switch ($action) {
     }
 
     // ai.usage — Admin: this month's AI spend by day / model / purpose (tokens and USD), the budget and what is left.
+    case 'ai.hours': {   // ⏰ AI usage page: cost per hour of one day (India time), per job
+        $auth = require_auth(); require_role(['Admin'], $auth);
+        $day = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($_GET['day'] ?? '')) ? (string)$_GET['day'] : date('Y-m-d'); $rows = [];
+        try { $q = $pdo->prepare("SELECT hr, purpose, calls, in_tokens, out_tokens, cost_usd FROM ai_usage_hour WHERE use_date = ? ORDER BY hr, cost_usd DESC"); $q->execute([$day]); $rows = $q->fetchAll(); } catch (Throwable $e) { }
+        json_response(['day' => $day, 'rows' => $rows, 'now_hr' => (int)date('G')]);
+    }
     case 'ai.switch_save': {   // 💸 AI usage page: the two owner switches (advance replies on / off, fast single-draft suggestions on / off)
         $auth = require_auth(); require_role(['Admin'], $auth);
         if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') json_response(['error' => 'Method not allowed.'], 405);

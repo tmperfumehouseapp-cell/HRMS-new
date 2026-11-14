@@ -42,6 +42,12 @@
           <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:8px 0"><label>From <input type="date" id="auF" style="width:auto"></label><label>To <input type="date" id="auT" style="width:auto"></label><button class="btn" id="auGo" type="button">Show price</button></div>
           <div id="auRBody"></div>
         </div>
+        <div class="au-plan" id="auHours">
+          <h3>⏰ AI use by hour (India time)</h3>
+          <div class="au-note">Which hour of the day spends the most, and on which job. Counted from 14 Nov 2026 onward (earlier days were only saved per day). The Claude Console chart shows the same thing in UTC: add 5 hours 30 minutes to its times.</div>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:8px 0"><label>Day <input type="date" id="auHD" style="width:auto"></label><button class="btn" id="auHGo" type="button">Show hours</button></div>
+          <div id="auHBody"></div>
+        </div>
         <div id="auBody"><div class="sub">Loading…</div></div>
       </div>
     </div>
@@ -91,6 +97,19 @@
       sv.disabled = true; try { await api.post('ai.caps_save', { caps }); document.getElementById('auCapMsg').innerHTML = '<b style="color:#1b6b33">Saved. The limits work from the next AI call.</b>'; loadRange(); } catch (e) { document.getElementById('auCapMsg').innerHTML = '<b style="color:#c2262b">' + esc(e.message) + '</b>'; } sv.disabled = false; };
   }
   document.getElementById('auGo').addEventListener('click', loadRange); loadRange();
+  // ⏰ by hour: one bar per hour of the day, its cost, calls and the biggest job of that hour
+  const HD = document.getElementById('auHD'), HB = document.getElementById('auHBody'); HD.value = T2.value;
+  async function loadHours() {
+    HB.innerHTML = '<div class="sub">Loading…</div>';
+    let d; try { d = await api.get('ai.hours', { day: HD.value }); } catch (e) { HB.innerHTML = '<div class="alert error">' + esc(e.message) + '</div>'; return; }
+    const H = {}; (d.rows || []).forEach((r) => { const h = H[r.hr] = H[r.hr] || { u: 0, c: 0, jobs: [] }; h.u += +r.cost_usd; h.c += +r.calls; h.jobs.push(r); });
+    const hrs = Object.keys(H).map(Number); if (!hrs.length) { HB.innerHTML = '<div class="sub">No AI use recorded by hour for ' + esc(d.day) + ' yet.</div>'; return; }
+    const mx = Math.max(...hrs.map((h) => H[h].u), 0.0001), tot = hrs.reduce((a, h) => a + H[h].u, 0), lbl = (h) => (h % 12 || 12) + (h < 12 ? ' AM' : ' PM');
+    HB.innerHTML = `<div class="au-w"><table class="au-t"><thead><tr><th>Hour</th><th style="width:40%"></th><th>Cost</th><th>Share of day</th><th>AI calls</th><th>Biggest jobs that hour</th></tr></thead><tbody>
+      ${Array.from({ length: 24 }, (_, h) => h).filter((h) => H[h]).map((h) => `<tr><td style="white-space:nowrap"><b>${lbl(h)}</b></td><td><div style="height:14px;border-radius:4px;background:#f58220;width:${Math.max(2, Math.round(H[h].u * 100 / mx))}%"></div></td><td>${usd(H[h].u)}</td><td>${Math.round(H[h].u * 100 / tot)}%</td><td>${n(H[h].c)}</td><td style="text-align:left;white-space:normal"><small>${H[h].jobs.slice(0, 3).map((j) => esc(j.purpose) + ' ' + usd(j.cost_usd)).join(' · ')}</small></td></tr>`).join('')}
+      <tr class="tot"><td>Day</td><td></td><td>${usd(tot)}</td><td>100%</td><td>${n(hrs.reduce((a, h) => a + H[h].c, 0))}</td><td></td></tr></tbody></table></div>`;
+  }
+  document.getElementById('auHGo').addEventListener('click', loadHours); loadHours();
   async function load() {
     B.innerHTML = '<div class="sub">Loading…</div>';
     let d; try { d = await api.get('ai.usage', { month: M.value }); } catch (e) { B.innerHTML = '<div class="alert error">' + esc(e.message) + '</div>'; return; }
