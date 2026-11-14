@@ -188,7 +188,7 @@
       + '<div><label>Below the limit, an order without a code pays</label><input id="cmNo" value="' + c.nocode + '"></div>'
       + '<div><label>Prepaid discount (company’s cost) %</label><input id="cmPre" value="' + c.prepaid + '"></div></div>'
       + '<div class="cm-note">At or above the code limit every order of that day pays full. Below it, orders without a code pay the share above (50 = half).</div>'
-      + '<h3 style="margin:16px 0 4px;font-size:14px">Over target: extra commission</h3><div class="cm-note">Sales over target by … → extra % on the chart commission. Highest step reached wins. Maximum below.</div>'
+      + '<h3 style="margin:16px 0 4px;font-size:14px">Over target: extra commission</h3><div class="cm-note"><b style="color:#b45309">These steps are switched OFF: they have no dates, so they paid on every day.</b> An over-target bonus is now paid only on the dates of a <b>Target bonus rule</b> or a <b>Boost</b> (each has a starting and ending date). The numbers below are kept only for reference.</div>'
       + '<div class="cm-g" id="cmTiers">' + tiers.map((t, i) => '<div><label>Step ' + (i + 1) + ': over target by % → extra %</label><div style="display:flex;gap:6px"><input data-t="' + i + '" data-s="0" value="' + (t[0] || '') + '" placeholder="over %"><input data-t="' + i + '" data-s="1" value="' + (t[1] || '') + '" placeholder="extra %"></div></div>').join('')
       + '<div><label>Maximum extra %</label><input id="cmMax" value="' + c.bonus_max + '"></div></div>'
       + '<label style="display:flex;gap:8px;align-items:center;margin:16px 0 8px;font-weight:700"><input type="checkbox" id="cmRev"' + (c.reviewed ? ' checked' : '') + '> I checked these prices</label>'

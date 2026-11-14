@@ -2797,7 +2797,10 @@ function cm_tb_bonus(array $rule, $sales, $target) {
 }
 /** the extra % that counts for one person / day: [%, name of the Target bonus rule when it is the one that won ('' = normal steps or boost), boost row or null] */
 function cm_bonus_pick(PDO $pdo, array $ch, array $boosts, $empId, $day, $sales, $target) {
-    $bo = cm_boost_for($boosts, $empId, $day); $bonus = cm_bonus($ch, $sales, $target, $bo); $name = '';
+    // Owner's rule (14 Nov): an over-target bonus is paid ONLY on the dates of a rule that has dates (a Target bonus rule or a Boost). The built-in "over-target extra" steps had no dates,
+    // so they paid on every day (e.g. +50% on 1 Nov while the Target bonus rule ran 8–15 Nov). They are off unless the setting cm_builtin_extra is '1'.
+    $bo = cm_boost_for($boosts, $empId, $day); $name = '';
+    $bonus = ($bo || (string)setting_get($pdo, 'cm_builtin_extra', '0') === '1') ? cm_bonus($ch, $sales, $target, $bo) : 0.0;
     $tb = cm_tb_for(cm_tb_rules($pdo), $empId, $day);
     if ($tb) { $v = cm_tb_bonus($tb, $sales, $target); if ($v > $bonus + 1e-9) { $bonus = $v; $name = $tb['label']; } }
     return [$bonus, $name, $bo];
