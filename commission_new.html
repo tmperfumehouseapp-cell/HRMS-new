@@ -63,7 +63,7 @@
   renderSidebar('boss_engine');
   const { esc, $, toast, inr } = BD;
   const COLS = [7, 6.5, 6, 5, 4, 3];
-  let D = null, TAB = (location.hash || '#result').slice(1), RC = null, OPEN = {}, DD = null, DDN = 7, DDL = false;   // DD: 📅 day by day (sales over commission, per person, per day)
+  let D = null, TAB = (location.hash || '#result').slice(1), RC = null, OPEN = {}, DD = null, DDN = 7, DDL = false, DDM = false;   // DDM: 📆 This month (1st of the month → today)   // DD: 📅 day by day (sales over commission, per person, per day)
   const today = () => new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
   const money = (n) => n == null ? '—' : inr(Math.round(n));
   const num = (n) => n == null ? '—' : Number(n).toLocaleString('en-IN');
@@ -100,8 +100,8 @@
   /* ---------- RESULT ---------- */
   function rResult() {
     const needs = (D.needs || []).map((n) => '<div class="cm-need ' + n.sev + '"><span>' + (n.sev === 'bad' ? '⛔' : n.sev === 'info' ? 'ℹ️' : '⚠️') + '</span><span>' + esc(n.text) + '</span><a href="#' + n.tab + '" data-go="' + n.tab + '">Fix ›</a></div>').join('');
-    let h = card('📅 Day by day', 'Each day: sales on top, commission below — by the same rules (target met +20%, 30% over +30%, 40% over +40%, below the code limit = half).', ddHtml(),
-      '<div class="cm-dd-n">' + [7, 15, 30].map((n) => '<button type="button" data-ddn="' + n + '" class="' + (DDN === n ? 'on' : '') + '">' + n + ' days</button>').join('') + '</div>');
+    let h = card('📅 Day by day', 'Each day: sales on top, commission below — by the same rules (chart, offers, the dated Target bonus rules and Boosts, below the code limit = half). <b>This month</b> = from the 1st until today.', ddHtml(),
+      '<div class="cm-dd-n">' + '<button type="button" data-ddm="1" class="' + (DDM ? 'on' : '') + '" title="From the 1st of this month until today">This month</button>' + [7, 15, 30].map((n) => '<button type="button" data-ddn="' + n + '" class="' + (!DDM && DDN === n ? 'on' : '') + '">' + n + ' days</button>').join('') + '</div>');
     h += card('Needs fixing', 'What Claude found missing or odd. Fix these first.', needs || '<div class="bd-empty" style="padding:14px"><b>Nothing to fix</b>Prices, offers and targets look complete.</div>');
     const rows = (D.result.rows || []);
     const body = '<div class="cm-sc"><table class="cm-t"><thead><tr><th>Person</th><th>Target</th><th>Sales</th><th>%</th><th>Orders</th><th>Codes</th><th>Chart</th><th>Offer</th><th>Extra</th><th>New total</th><th>Old</th><th>Change</th></tr></thead><tbody>'
@@ -117,15 +117,15 @@
   }
   // 📅 one row per salesperson: name · today's target · then yesterday, the day before … (sales on top, commission below); the head shows the team's sales that day
   function ddHtml() {
-    if (!DD) { if (!DDL) { DDL = true; B2.get('bd.b2_cm_recount', { days: DDN + 1 }).then((r) => { DD = r; DDL = false; if (TAB === 'result') render(); }).catch((e) => { DD = { error: e.message || 'Could not count.', people: [] }; DDL = false; if (TAB === 'result') render(); }); } return '<div class="bd-empty" style="padding:14px">Counting ' + DDN + ' days…</div>'; }
+    if (!DD) { if (!DDL) { DDL = true; B2.get('bd.b2_cm_recount', { days: DDN + 1 }).then((r) => { DD = r; DDL = false; if (TAB === 'result') render(); }).catch((e) => { DD = { error: e.message || 'Could not count.', people: [] }; DDL = false; if (TAB === 'result') render(); }); } return '<div class="bd-empty" style="padding:14px">Counting ' + (DDM ? 'this month' : DDN + ' days') + '…</div>'; }
     if (DD.error) return '<div class="cm-need bad">' + esc(DD.error) + '</div>';
-    const td = today(), days = []; for (let i = 1; i <= DDN; i++) days.push(new Date(Date.parse(td + 'T12:00:00Z') - i * 864e5).toISOString().slice(0, 10));
+    const td = today(), days = []; for (let i = DDM ? 0 : 1; i <= DDN; i++) days.push(new Date(Date.parse(td + 'T12:00:00Z') - i * 864e5).toISOString().slice(0, 10));
     const tgtToday = {}; ((D && D.day === td && D.result && D.result.rows) || []).forEach((r) => { tgtToday[r.id] = r.target; });
     const ppl = (DD.people || []).slice(); const by = {}; ppl.forEach((p) => { by[p.id] = {}; (p.perday || []).forEach((x) => { by[p.id][x.day] = x; if (x.day === td && tgtToday[p.id] == null) tgtToday[p.id] = x.target; }); });
     const tot = days.map((d) => ppl.reduce((a, p) => { const x = by[p.id][d]; if (x) { a.s += x.sales || 0; a.c += x.new || 0; } return a; }, { s: 0, c: 0 }));
     const dl = (d) => { const t = new Date(d + 'T12:00:00Z'); return t.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }); };
     ppl.sort((a, b) => (tgtToday[b.id] || 0) - (tgtToday[a.id] || 0) || b.new - a.new);
-    return '<div class="cm-sc cm-dd"><table class="cm-t"><thead><tr><th class="st">Person</th><th class="st2">Today\'s target</th>' + days.map((d, i) => '<th class="ck" data-dd="' + d + '|0" title="Tap: every order of the whole team that day"><span>' + (i === 0 ? 'Yesterday' : esc(dl(d))) + '</span><small>' + money(tot[i].s) + '</small></th>').join('') + '<th>' + DDN + ' days</th></tr></thead><tbody>'
+    return '<div class="cm-sc cm-dd"><table class="cm-t"><thead><tr><th class="st">Person</th><th class="st2">Today\'s target</th>' + days.map((d, i) => '<th class="ck" data-dd="' + d + '|0" title="Tap: every order of the whole team that day"><span>' + (i === 0 ? (DDM ? 'Today so far' : 'Yesterday') : esc(dl(d))) + '</span><small>' + money(tot[i].s) + '</small></th>').join('') + '<th>' + (DDM ? 'This month' : DDN + ' days') + '</th></tr></thead><tbody>'
       + ppl.map((p) => { let ss = 0, cc = 0; const cells = days.map((d) => { const x = by[p.id][d]; if (!x) return '<td class="nd">—</td>'; ss += x.sales || 0; cc += x.new || 0; const met = x.target > 0 && x.sales >= x.target;
           return '<td class="ck ' + (met ? 'met' : (x.target > 0 ? 'miss' : '')) + '" data-dd="' + d + '|' + p.id + '" title="Tap: every order of ' + esc(p.name) + ' on ' + d + ' and how it was counted"><span class="s">' + money(x.sales) + '</span><span class="c">' + money(x.new) + '</span>' + (x.pct == null ? '' : '<span class="p">' + Math.round(x.pct) + '%</span>') + '</td>'; }).join('');
         return '<tr><td class="st"><b>' + esc(p.name) + '</b></td><td class="st2">' + (tgtToday[p.id] ? money(tgtToday[p.id]) : '—') + '</td>' + cells + '<td><span class="s">' + money(ss) + '</span><span class="c"><b>' + money(cc) + '</b></span></td></tr>'; }).join('')
@@ -234,7 +234,8 @@
     document.querySelectorAll('[data-go]').forEach((a) => a.onclick = (e) => { e.preventDefault(); TAB = a.dataset.go; location.hash = TAB; render(); });
     if ($('cmDay')) $('cmDay').onchange = (e) => load(e.target.value);
     document.querySelectorAll('[data-dd]').forEach((c) => c.onclick = () => { const [d, id] = c.dataset.dd.split('|'); openDay(d, Number(id)); });
-    document.querySelectorAll('[data-ddn]').forEach((b) => b.onclick = () => { DDN = Number(b.dataset.ddn); DD = null; render(); });
+    document.querySelectorAll('[data-ddn]').forEach((b) => b.onclick = () => { DDM = false; DDN = Number(b.dataset.ddn); DD = null; render(); });
+    document.querySelectorAll('[data-ddm]').forEach((b) => b.onclick = () => { DDM = true; DDN = Math.max(0, Number(today().slice(8, 10)) - 1); DD = null; render(); });   // 📆 14 Nov → today + the 13 days back to 1 Nov
     if ($('cmRc')) $('cmRc').onclick = async () => { $('cmRc').disabled = true; $('cmRc').textContent = 'Counting…'; try { RC = await B2.get('bd.b2_cm_recount', { days: 10 }); } catch (e) { RC = { error: e.message || 'Could not recount.', people: [] }; } render(); };
     document.querySelectorAll('tr[data-p]').forEach((r) => r.onclick = () => { OPEN[r.dataset.p] = !OPEN[r.dataset.p]; render(); });
     if ($('cmTbl')) {   // the 5% column: every empty cell gets the middle of the 6% and the 4% price (yellow until saved)
