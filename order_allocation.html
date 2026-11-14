@@ -940,14 +940,18 @@
   const addonSum = (o) => adGroups(o).reduce((t, x) => t + x.price, 0);
   // ML column: "180 ml +10 ml extra = 190 ml" and the ML price slab % · ₹ (before the daily-target check — the Commission page
   // caps it at the slab's limit on a day the target is not complete). MySales orders have no product sizes: "—".
-  let ML_CHART = null;
-  api.get('ml_slab.get').then((d) => { ML_CHART = d && d.chart ? d.chart : null; if (ML_CHART && orders && orders.length) try { render(); } catch (e) {} }).catch(() => {});
+  let ML_CHART = null, CM_OFFERS = [], CM_WIN = 60;
+  api.get('ml_slab.get').then((d) => { ML_CHART = d && d.chart ? d.chart : null; CM_OFFERS = (d && d.offers) || []; CM_WIN = d && d.offer_window ? Number(d.offer_window) : 60; if (ML_CHART && orders && orders.length) try { render(); } catch (e) {} }).catch(() => {});
   const MLSLAB_ok = (o) => !!(window.MLSLAB && MLSLAB.parts(o));
   function mlCell(o) {
     const m = window.MLSLAB ? MLSLAB.parts(o) : null;
     if (!m) return '<span class="sub">—</span>';
     const top = `<span class="mlv">${m.base} ml${m.extra ? ` <span class="mlx">+${m.extra} ml free</span> <span class="mlt">= ${m.total} ml</span>` : ''}</span>`;
     if (!ML_CHART || !m.total) return top;
+    // a live Commission-page Offer (same ML, price within the window, on a day it runs) wins over the chart — the same rule the Commission page pays by
+    const day = String(o.biz_date || '').slice(0, 10), gross = Number(o.total || 0) / (MLSLAB.isPre(o.financial_status) && Number(ML_CHART.prepaid) > 0 ? 1 - Number(ML_CHART.prepaid) / 100 : 1);
+    const of = CM_OFFERS.find((x) => Number(x.ml) === Math.round(m.total) && day && (!x.from || day >= x.from) && (!x.to || day <= x.to) && (x.active || (x.stopped && day <= x.stopped)) && Math.abs(gross - Number(x.price)) <= CM_WIN + 1e-9);
+    if (of) return top + `<div><span class="mlp hi" title="${esc('Offer ' + of.ml + ' ml at ' + inr(of.price) + ' (±' + CM_WIN + ') → ' + of.pct + '%')}">${of.pct}% · ${inr(Math.round(Number(o.total || 0) * of.pct / 100))} · offer</span></div>` + mlXLine(o);
     const r = MLSLAB.orderCom(MLSLAB.preview(ML_CHART), { ml: m.total, day: o.biz_date || '', emp: o.employee_id, amt: Number(o.total || 0), pre: MLSLAB.isPre(o.financial_status), code: o.code || '' }, null);      // daily target not known here: chart % only (+ bonus on the Commission page when achieved)
     if (!r) return top + `<div class="mln">${!MLSLAB.activeOn(ML_CHART, o.biz_date) ? 'ML slab not active on this date' : m.total + ' ml not in chart'} · normal commission</div>`;
     const tip = r.steps.join(' · ') + (MLSLAB.on(ML_CHART) ? '' : ' · (ML price slab is OFF — preview only)') + (Number(r.bonusPct) > 0 ? ' · daily target achieved → +' + r.bonusPct + '% bonus on the Commission page' : '') + (r.special ? ' · 📅 special day: ' + r.special.join(', ') : '');
