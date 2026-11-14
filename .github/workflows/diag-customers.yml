@@ -120,6 +120,9 @@ jobs:
           try { foreach ($d->query("SELECT setting_key, LEFT(setting_value, 40) FROM hrms_settings WHERE setting_key IN ('wa_cfun_v','wa_cfun_cur','wa_cfun_curf','wa_cfun_full','wa_cfun_at')")->fetchAll(PDO::FETCH_NUM) as $x) echo "   " . $x[0] . " = " . $x[1] . "\n"; } catch (Throwable $e) { }
           echo "Rows with a score above 0: " . $n("SELECT COUNT(*) FROM wa_cfun WHERE score > 0") . " · rows with a value group: " . $n("SELECT COUNT(*) FROM wa_cfun WHERE val <> ''") . " · tags in wa_auto_tags by source: ";
           try { foreach ($d->query("SELECT src, COUNT(*) FROM wa_auto_tags GROUP BY src")->fetchAll(PDO::FETCH_NUM) as $x) echo $x[0] . "=" . number_format($x[1]) . " "; } catch (Throwable $e) { echo "n/a"; } echo "\n";
+          echo "\n=== campaign extras (follow-ups, alerts) ===\n";
+          echo "Follow-up steps saved: " . $n("SELECT COUNT(*) FROM wa_cx_fu") . " · follow-up log rows: " . $n("SELECT COUNT(*) FROM wa_cx_fu_log") . "\n";
+          try { $v = $d->query("SELECT setting_value FROM hrms_settings WHERE setting_key = 'wa_cx_alerts'")->fetchColumn(); echo "Current alerts: " . ($v === false ? "(not computed yet)" : $v) . "\n"; $v = $d->query("SELECT setting_value FROM hrms_settings WHERE setting_key = 'wa_cx_alert_at'")->fetchColumn(); echo "Alerts last worked out: " . ($v === false ? "never" : $v) . "\n"; } catch (Throwable $e) { echo "n/a\n"; }
           PHP
           php /tmp/cust_numbers.php "$P"; rm -f /tmp/cust_numbers.php
           REMOTE

@@ -2667,6 +2667,7 @@ function cm_chart(PDO $pdo) {
     $d = cm_default_chart($pdo);
     $s = function_exists('setting_get') ? json_decode((string)setting_get($pdo, 'cm_chart', ''), true) : null;
     $c = (!is_array($s) || empty($s['rows'])) ? $d : array_merge($d, $s);      // the commission RULES (code limit, no-code share, prepaid, over-target steps, floor) live here
+    $c['window'] = 60;      // an offer applies to orders within +-60 rupees of its price (a chart saved earlier still carried window = 20 and overrode the default)
     // the PRICES live only in the Price Chart (Learn & Setup → Pricing): once it is unified, the engine reads its columns and rows from there, there is no second price table
     if (function_exists('pc_perfume') && function_exists('setting_get') && (string)setting_get($pdo, 'price_unify_v1', '') === '1') { $pc = pc_perfume($pdo); if (!empty($pc['rows'])) { $c['cols'] = array_map('floatval', $pc['cols']); $c['rows'] = $pc['rows']; } }
     return $c;
@@ -2941,7 +2942,7 @@ function cm_paid_day(PDO $pdo, $day) {
         foreach (["SELECT COUNT(*), COALESCE(MAX(updated_at), ''), COALESCE(SUM(enabled), 0) FROM commission_bonus_rules", "SELECT COUNT(*), COALESCE(MAX(id), 0), COALESCE(SUM(active), 0) FROM cm_boosts", "SELECT COUNT(*), COALESCE(MAX(id), 0), COALESCE(SUM(active), 0) FROM cm_offers", "SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM daily_targets WHERE target_date >= '" . date('Y-m-d', strtotime('-62 days')) . "'"] as $q) {
             try { $p[] = implode(',', (array)$pdo->query($q)->fetch(PDO::FETCH_NUM)); } catch (Throwable $e) { $p[] = '-'; }
         }
-        $ver = substr(md5('v2|' . implode('|', $p)), 0, 12);
+        $ver = substr(md5('v3w60|' . implode('|', $p)), 0, 12);
     }
     $ttl = $day >= date('Y-m-d', strtotime($today . ' -1 day')) ? 120 : 1800;
     try {
