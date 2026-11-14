@@ -161,15 +161,18 @@ function wo_status_text(string $c, array $p): string
 // ------------------------------------------------------------------------------------------------------------------ orders of a customer
 function wo_find_parcels(PDO $pdo, string $key, int $limit = 40): array
 {
-    $q = $pdo->prepare("SELECT * FROM dp_dsp_parcels WHERE " . wo_sqld('phone') . " LIKE ? ORDER BY created_at DESC LIMIT " . (int)$limit * 2); $q->execute(['%' . $key . '%']); $o = [];
-    foreach ($q->fetchAll() as $r) if (in_array($key, wo_keys_of($r['phone']), true)) { $o[] = $r; if (count($o) >= $limit) break; }
-    return $o;
+    // ⚡ this reads every parcel (the phone is stored in many spellings, so no index helps) and ran about once a second for the open chats: one answer per customer is kept for 45 s
+    return hrms_memo('wo_parcels:' . $key . ':' . $limit, 45, function () use ($pdo, $key, $limit) {
+        $q = $pdo->prepare("SELECT * FROM dp_dsp_parcels WHERE " . wo_sqld('phone') . " LIKE ? ORDER BY created_at DESC LIMIT " . (int)$limit * 2); $q->execute(['%' . $key . '%']); $o = [];
+        foreach ($q->fetchAll() as $r) if (in_array($key, wo_keys_of($r['phone']), true)) { $o[] = $r; if (count($o) >= $limit) break; }
+        return $o; });
 }
 function wo_find_shop(PDO $pdo, string $key, int $limit = 40): array
 {
-    $q = $pdo->prepare("SELECT * FROM shop_orders WHERE " . wo_sqld('phone') . " LIKE ? ORDER BY created_at DESC LIMIT " . (int)$limit * 2); $q->execute(['%' . $key . '%']); $o = [];
-    foreach ($q->fetchAll() as $r) if (in_array($key, wo_keys_of($r['phone']), true)) { $o[] = $r; if (count($o) >= $limit) break; }
-    return $o;
+    return hrms_memo('wo_shop:' . $key . ':' . $limit, 45, function () use ($pdo, $key, $limit) {      // ⚡ as above: every order is read, so one answer per customer is kept for 45 s
+        $q = $pdo->prepare("SELECT * FROM shop_orders WHERE " . wo_sqld('phone') . " LIKE ? ORDER BY created_at DESC LIMIT " . (int)$limit * 2); $q->execute(['%' . $key . '%']); $o = [];
+        foreach ($q->fetchAll() as $r) if (in_array($key, wo_keys_of($r['phone']), true)) { $o[] = $r; if (count($o) >= $limit) break; }
+        return $o; });
 }
 function wo_parcel_by(PDO $pdo, string $store, string $sid, string $name = ''): ?array
 {
