@@ -9,7 +9,7 @@
  *   NOTHING is dropped silently: a line, or a perfume inside a combo, that matches no SKU (or has a size the sheet has no column for) is returned in `unmatched`, and the page
  *   shows that list on top.
  *
- *   The SKU list: sku_list.json next to this file (from the owner's Excel), replaced by uploads/sku_list.json when the owner uploads a new file on the page.
+ *   The SKU list: sku_list.php next to this file (from the owner's Excel), replaced by the file the owner uploads on the page (kept in uploads/ under a name that cannot be guessed).
  *   Actions: sku.sheet (GET day) · sku.list (GET) · sku.list_save (POST rows — Admin / HR)
  */
 if (!function_exists('sku_cols')) {
@@ -19,8 +19,15 @@ function sku_cols(): array { return ['10ml', '20ml', '50/60ml', '100ml', 'Shower
 function sku_list(): array
 {
     static $l = null; if ($l !== null) return $l;
-    foreach ([__DIR__ . '/uploads/sku_list.json', __DIR__ . '/sku_list.json'] as $f) { if (is_file($f)) { $j = json_decode((string)file_get_contents($f), true); if (is_array($j) && $j) return $l = $j; } }
+    // an uploaded list is kept under a name nobody can guess (the name is in the settings), so the list cannot be downloaded by its address
+    $up = sku_list_file(); if ($up !== '' && is_file($up)) { $j = json_decode((string)file_get_contents($up), true); if (is_array($j) && $j) return $l = $j; }
+    if (is_file(__DIR__ . '/sku_list.php')) { $j = require __DIR__ . '/sku_list.php'; if (is_array($j) && $j) return $l = $j; }
     return $l = [];
+}
+
+function sku_list_file(): string
+{
+    try { $pdo = $GLOBALS['pdo'] ?? null; $n = ($pdo instanceof PDO && function_exists('setting_get')) ? (string)setting_get($pdo, 'sku_list_file', '') : ''; return preg_match('/^skul_[a-f0-9]{24}\.json$/', $n) ? __DIR__ . '/uploads/' . $n : ''; } catch (Throwable $e) { return ''; }
 }
 
 /** A name with everything that is not the perfume's own name taken out: shop suffix, size, bottle colour, filler words, punctuation. */
@@ -191,7 +198,7 @@ function sku_route(PDO $pdo, string $action): void
         if (!sku_list()) json_response(['error' => 'The SKU list is empty. Upload the SKU file (SKU · original name · shop name) on this page.'], 422);
         @set_time_limit(180); json_response(sku_sheet($pdo, $day) + ['today' => biz_today($pdo)]);
     }
-    if ($action === 'sku.list') json_response(['rows' => sku_list(), 'custom' => is_file(__DIR__ . '/uploads/sku_list.json')]);
+    if ($action === 'sku.list') json_response(['rows' => sku_list(), 'custom' => sku_list_file() !== '']);
     if ($action === 'sku.list_save') {
         if (!in_array($role, ['Admin', 'HR'], true)) json_response(['error' => 'Only Admin / HR can replace the SKU list.'], 403);
         if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
@@ -200,7 +207,9 @@ function sku_route(PDO $pdo, string $action): void
         if (count($rows) < 5) json_response(['error' => 'That file has fewer than 5 SKUs. The first three columns must be: SKU · original name · shop name.'], 422);
         if (count($rows) > 5000) json_response(['error' => 'At most 5,000 SKUs.'], 422);
         $dir = __DIR__ . '/uploads'; if (!is_dir($dir)) @mkdir($dir, 0775, true);
-        if (@file_put_contents($dir . '/sku_list.json', json_encode($rows, JSON_UNESCAPED_UNICODE), LOCK_EX) === false) json_response(['error' => 'The server could not save the file (uploads folder not writable).'], 500);
+        $old = sku_list_file(); $name = 'skul_' . bin2hex(random_bytes(12)) . '.json';
+        if (@file_put_contents($dir . '/' . $name, json_encode($rows, JSON_UNESCAPED_UNICODE), LOCK_EX) === false) json_response(['error' => 'The server could not save the file (uploads folder not writable).'], 500);
+        setting_set($pdo, 'sku_list_file', $name); if ($old !== '' && is_file($old)) @unlink($old);
         json_response(['ok' => true, 'message' => count($rows) . ' SKUs saved.', 'count' => count($rows)]);
     }
     json_response(['error' => 'Unknown action.'], 404);
