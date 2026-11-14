@@ -23,7 +23,7 @@
 .cm-dd .ck{cursor:pointer}.cm-dd td.ck:hover,.cm-dd th.ck:hover{outline:2px solid #6366f1;outline-offset:-2px}
 .cm-dd-p{border:1px solid var(--line);border-radius:14px;padding:10px 12px;margin-bottom:10px}.cm-dd-ph{display:flex;gap:8px;flex-wrap:wrap;align-items:baseline;justify-content:space-between}.cm-dd-ph span{font-size:12.5px;color:#475569}
 .cm-dd-sum{font-size:12.5px;color:#334155;margin:6px 0;line-height:1.5}tr.half td{background:#fff1f2}
-.cm-dd-n{display:flex;gap:6px}.cm-dd-n button{border:1px solid var(--line);background:#fff;border-radius:99px;padding:6px 12px;font:inherit;font-weight:700;font-size:12.5px;cursor:pointer}.cm-dd-n button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.cm-dd-n{display:flex;gap:6px;flex-wrap:wrap;align-items:center}.cm-dd-n button{border:1px solid var(--line);background:#fff;border-radius:99px;padding:6px 12px;font:inherit;font-weight:700;font-size:12.5px;cursor:pointer}.cm-dd-n button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
 .cm-dd{overflow-x:auto}.cm-dd .st{position:sticky;left:0;background:#fff;z-index:1;min-width:140px}.cm-dd .st2{position:sticky;left:140px;background:#fff;z-index:1;border-right:1px solid var(--line)}
 .cm-dd th span{display:block}.cm-dd th small{display:block;font-weight:800;color:#111;text-transform:none;letter-spacing:0;font-size:12px}
 .cm-dd td .s{display:block;color:#475569;font-size:12.5px}.cm-dd td .c{display:block;font-weight:800;color:#111;font-size:13.5px}.cm-dd td .p{display:block;font-size:11px;color:#94a3b8}
@@ -63,7 +63,7 @@
   renderSidebar('boss_engine');
   const { esc, $, toast, inr } = BD;
   const COLS = [7, 6.5, 6, 5, 4, 3];
-  let D = null, TAB = (location.hash || '#result').slice(1), RC = null, OPEN = {}, DD = null, DDN = 7, DDL = false, DDM = false;   // DDM: 📆 This month (1st of the month → today)   // DD: 📅 day by day (sales over commission, per person, per day)
+  let D = null, TAB = (location.hash || '#result').slice(1), RC = null, OPEN = {}, DD = null, DDN = 7, DDL = false, DDM = false, DDQ = '';   // DDM: 📆 This month (1st of the month → today)   // DD: 📅 day by day (sales over commission, per person, per day)
   const today = () => new Date(Date.now() + 5.5 * 3600e3).toISOString().slice(0, 10);
   const money = (n) => n == null ? '—' : inr(Math.round(n));
   const num = (n) => n == null ? '—' : Number(n).toLocaleString('en-IN');
@@ -101,7 +101,7 @@
   function rResult() {
     const needs = (D.needs || []).map((n) => '<div class="cm-need ' + n.sev + '"><span>' + (n.sev === 'bad' ? '⛔' : n.sev === 'info' ? 'ℹ️' : '⚠️') + '</span><span>' + esc(n.text) + '</span><a href="#' + n.tab + '" data-go="' + n.tab + '">Fix ›</a></div>').join('');
     let h = card('📅 Day by day', 'Each day: sales on top, commission below — by the same rules (chart, offers, the dated Target bonus rules and Boosts, below the code limit = half). <b>This month</b> = from the 1st until today.', ddHtml(),
-      '<div class="cm-dd-n">' + '<button type="button" data-ddm="1" class="' + (DDM ? 'on' : '') + '" title="From the 1st of this month until today">This month</button>' + [7, 15, 30].map((n) => '<button type="button" data-ddn="' + n + '" class="' + (!DDM && DDN === n ? 'on' : '') + '">' + n + ' days</button>').join('') + '</div>');
+      '<div class="cm-dd-n">' + '<input type="search" id="cmDdQ" placeholder="🔍 Search employee" autocomplete="off" value="' + esc(DDQ) + '" style="padding:6px 10px;border:1px solid #d5d9e0;border-radius:99px;font:inherit;font-size:13px;min-width:170px;max-width:240px"> ' + '<button type="button" data-ddm="1" class="' + (DDM ? 'on' : '') + '" title="From the 1st of this month until today">This month</button>' + [7, 15, 30].map((n) => '<button type="button" data-ddn="' + n + '" class="' + (!DDM && DDN === n ? 'on' : '') + '">' + n + ' days</button>').join('') + '</div>');
     h += card('Needs fixing', 'What Claude found missing or odd. Fix these first.', needs || '<div class="bd-empty" style="padding:14px"><b>Nothing to fix</b>Prices, offers and targets look complete.</div>');
     const rows = (D.result.rows || []);
     const body = '<div class="cm-sc"><table class="cm-t"><thead><tr><th>Person</th><th>Target</th><th>Sales</th><th>%</th><th>Orders</th><th>Codes</th><th>Chart</th><th>Offer</th><th>Extra</th><th>New total</th><th>Old</th><th>Change</th></tr></thead><tbody>'
@@ -128,7 +128,7 @@
     return '<div class="cm-sc cm-dd"><table class="cm-t"><thead><tr><th class="st">Person</th><th class="st2">Today\'s target</th>' + days.map((d, i) => '<th class="ck" data-dd="' + d + '|0" title="Tap: every order of the whole team that day"><span>' + (i === 0 ? (DDM ? 'Today so far' : 'Yesterday') : esc(dl(d))) + '</span><small>' + money(tot[i].s) + '</small></th>').join('') + '<th>' + (DDM ? 'This month' : DDN + ' days') + '</th></tr></thead><tbody>'
       + ppl.map((p) => { let ss = 0, cc = 0; const cells = days.map((d) => { const x = by[p.id][d]; if (!x) return '<td class="nd">—</td>'; ss += x.sales || 0; cc += x.new || 0; const met = x.target > 0 && x.sales >= x.target;
           return '<td class="ck ' + (met ? 'met' : (x.target > 0 ? 'miss' : '')) + '" data-dd="' + d + '|' + p.id + '" title="Tap: every order of ' + esc(p.name) + ' on ' + d + ' and how it was counted"><span class="s">' + money(x.sales) + '</span><span class="c">' + money(x.new) + '</span>' + (x.pct == null ? '' : '<span class="p">' + Math.round(x.pct) + '%</span>') + '</td>'; }).join('');
-        return '<tr><td class="st"><b>' + esc(p.name) + '</b></td><td class="st2">' + (tgtToday[p.id] ? money(tgtToday[p.id]) : '—') + '</td>' + cells + '<td><span class="s">' + money(ss) + '</span><span class="c"><b>' + money(cc) + '</b></span></td></tr>'; }).join('')
+        return '<tr data-nm="' + esc(String(p.name || '').toLowerCase()) + '"' + (DDQ && String(p.name || '').toLowerCase().indexOf(DDQ.toLowerCase()) < 0 ? ' hidden' : '') + '><td class="st"><b>' + esc(p.name) + '</b></td><td class="st2">' + (tgtToday[p.id] ? money(tgtToday[p.id]) : '—') + '</td>' + cells + '<td><span class="s">' + money(ss) + '</span><span class="c"><b>' + money(cc) + '</b></span></td></tr>'; }).join('')
       + '<tr class="tt"><td class="st"><b>Team</b></td><td class="st2"></td>' + tot.map((t) => '<td><span class="s">' + money(t.s) + '</span><span class="c"><b>' + money(t.c) + '</b></span></td>').join('') + '<td><span class="s">' + money(tot.reduce((a, t) => a + t.s, 0)) + '</span><span class="c"><b>' + money(tot.reduce((a, t) => a + t.c, 0)) + '</b></span></td></tr>'
       + '</tbody></table></div><div class="cm-note">Top number = sales that day · bottom (bold) = commission that day · green = target met, red = target missed · “—” = no orders and no target. Scroll right for older days. <b>Tap a day</b> to see every order and how it was counted (tap a date at the top for the whole team).</div>';
   }
@@ -246,6 +246,7 @@
     if ($('cmDay')) $('cmDay').onchange = (e) => load(e.target.value);
     document.querySelectorAll('[data-dd]').forEach((c) => c.onclick = () => { const [d, id] = c.dataset.dd.split('|'); openDay(d, Number(id)); });
     document.querySelectorAll('[data-ddn]').forEach((b) => b.onclick = () => { DDM = false; DDN = Number(b.dataset.ddn); DD = null; render(); });
+    { const q = document.getElementById('cmDdQ'); if (q) q.oninput = () => { DDQ = q.value.trim(); const w = DDQ.toLowerCase(); let n = 0; document.querySelectorAll('.cm-dd tr[data-nm]').forEach((tr) => { const ok = !w || tr.dataset.nm.indexOf(w) > -1; tr.hidden = !ok; if (ok) n++; }); q.title = n + ' employee' + (n === 1 ? '' : 's') + ' shown'; }; }   // 🔍 type a name: only the matching people stay (the Team line keeps everyone's total)
     document.querySelectorAll('[data-ddm]').forEach((b) => b.onclick = () => { DDM = true; DDN = Math.max(0, Number(today().slice(8, 10)) - 1); DD = null; render(); });   // 📆 14 Nov → today + the 13 days back to 1 Nov
     if ($('cmRc')) $('cmRc').onclick = async () => { $('cmRc').disabled = true; $('cmRc').textContent = 'Counting…'; try { RC = await B2.get('bd.b2_cm_recount', { days: 10 }); } catch (e) { RC = { error: e.message || 'Could not recount.', people: [] }; } render(); };
     document.querySelectorAll('tr[data-p]').forEach((r) => r.onclick = () => { OPEN[r.dataset.p] = !OPEN[r.dataset.p]; render(); });
