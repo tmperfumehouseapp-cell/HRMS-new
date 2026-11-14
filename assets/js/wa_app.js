@@ -1108,10 +1108,12 @@
       if (!c.window_open || c.optout || !last || (last.dir !== 'in' && !afterBot)) { box.innerHTML = ''; return; }
       if (S.cur.sugg === undefined || force) box.innerHTML = '<div class="wx-sug"><div class="r"><span class="ic">✨</span><span class="t ld">Writing a reply…</span></div></div>';
       try {
+        // ⚡ the attached perfume photos are looked up WHILE the reply is being written (they were looked up after it, which held the finished reply back for up to 1.2 s)
+        const prodP = (async () => { try { await new Promise((ok) => prodReady(ok)); if (window.WaProd) return await WaProd.attached(phone); } catch (e) { } return null; })();
         const d = await api.get('wa.g_sugg', afterBot ? { phone, make: 1, after_bot: 1 } : { phone, make: 1 }); if (!S.cur || S.cur.phone !== phone) return; S.cur.sugg = d.sugg;
         const nowLast = S.cur.msgs.filter((m) => m.dir !== 'sys' && !m.tmp).slice(-1)[0]; if (!nowLast || (nowLast.dir !== 'in' && !afterBot) || nowLast.id !== last.id) return;   // the customer wrote again meanwhile: the newer call draws
         if (!d.sugg) { box.innerHTML = ''; return; }
-        let prod = [], flag = ''; try { await new Promise((ok) => prodReady(ok)); if (window.WaProd) { const a = await Promise.race([WaProd.attached(phone), new Promise((z) => setTimeout(() => z(null), 1200))]); if (a) { prod = a.items || a.products || []; flag = a.flag || ''; } } } catch (e) { }   // the photos are known before the countdown starts, so it never jumps
+        let prod = [], flag = ''; try { const a = await Promise.race([prodP, new Promise((z) => setTimeout(() => z(null), 250))]); if (a) { prod = a.items || a.products || []; flag = a.flag || ''; } } catch (e) { }   // the photos are known before the countdown starts, so it never jumps
         if (!S.cur || S.cur.phone !== phone) return; const nl2 = S.cur.msgs.filter((m) => m.dir !== 'sys' && !m.tmp).slice(-1)[0]; if (!nl2 || (nl2.dir !== 'in' && !afterBot) || nl2.id !== last.id) return;
         const au = d.auto || {}, secs = Math.max(5, Math.min(60, +au.secs || 20)), t = $('#wxTx');
         const go = !afterBot && !!au.on && !d.sugg.call_now && !d.hot && !document.hidden && !S.auDone[phone + ':' + last.id] && !(t && t.value.trim()) && !c.hot;

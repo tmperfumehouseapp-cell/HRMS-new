@@ -777,6 +777,7 @@ if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.
             $in = json_input(); $key = wa_key($in['phone'] ?? ''); $c = $key !== '' ? wa_contact($pdo, $key) : null; if (!$c) json_response(['error' => 'Chat not found.'], 404);
             if (!wa_can_chat($pdo, $auth, $c)) json_response(['error' => 'This chat is assigned to someone else.'], 403);
             if ((int)$c['optout'] === 1) json_response(['error' => 'This customer opted out.'], 422);
+            if (function_exists('wa_sugg_ms_add')) { $__sg0 = microtime(true); register_shutdown_function(function () use ($pdo, $__sg0) { wa_sugg_ms_add($pdo, (int)round((microtime(true) - $__sg0) * 1000)); }); }   // ⏱ the PC chat's "write a reply": how long it took (the guided answer exits inside, so it is noted at the end of the request)
             if (function_exists('wa_suggest_guided')) { wa_learn_tables($pdo); $f0 = ai_feat('wa_sugg'); try { wa_suggest_guided($pdo, $c, $key, $in); } finally { ai_feat($f0); } }   // answers and exits when an approved guidebook exists; otherwise the generic suggestion below
             if (!function_exists('convo_ai')) json_response(['error' => 'The AI is not available.'], 502);
             $st = $pdo->prepare("SELECT dir, body, ts, who FROM wa_messages WHERE phone = ? AND dir != 'sys' ORDER BY id DESC LIMIT 25"); $st->execute([$key]); $rows = array_reverse($st->fetchAll());

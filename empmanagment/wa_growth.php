@@ -383,6 +383,11 @@ function wag_prebuild(PDO $pdo, string $key): bool
         wa_sugg_save($pdo, $key, $r['text'], $r['source'], (int)$r['ver']); return true;
     } catch (Throwable $e) { return false; }
 }
+/** ⏱ keeps how long the last 30 suggestions made while a salesperson waited took on the server, in ms (Admin → AI usage shows usual / fastest / slowest). */
+function wa_sugg_ms_add(PDO $pdo, int $ms): void
+{
+    try { if ($ms < 150) return; $j = json_decode((string)setting_get($pdo, 'ai_sugg_ms', ''), true); $a = is_array($j) ? (array)($j['l'] ?? []) : []; $a[] = $ms; setting_set($pdo, 'ai_sugg_ms', json_encode(['at' => date('Y-m-d H:i:s'), 'l' => array_slice($a, -30)])); } catch (Throwable $e) { }   // under 150 ms = no AI call was made (a saved reply)
+}
 /** Writes suggestions in advance for chats a customer is waiting in (engine tick — catches any the webhook missed). */
 function wag_presuggest(PDO $pdo, int $max = 6): int
 {
@@ -995,7 +1000,9 @@ if (strpos($__wg, 'wa.g_') === 0 && strpos($__wg, 'wa.g_flow') !== 0) {
             if (!empty($_GET['after_bot'])) {   // 🤖 the bot has already answered: show the person a NEXT step, never the text the bot just sent
                 try { $__q = $pdo->prepare("SELECT body FROM wa_messages WHERE phone = ? AND dir = 'out' AND who = 'bot' ORDER BY id DESC LIMIT 1"); $__q->execute([(string)$c['phone']]); $__lb = trim((string)$__q->fetchColumn()); if ($s && $__lb !== '' && trim((string)$s['text']) === $__lb) $s = null; } catch (Throwable $e) { }
             }
-            if (!$s && !empty($_GET['make'])) { $f0 = ai_feat('wa_sugg'); $r = wag_brain_reply($pdo, $c); ai_feat($f0); if ($r['ok']) { wa_sugg_save($pdo, (string)$c['phone'], $r['text'], $r['source'], (int)$r['ver']); $s = ['text' => $r['text'], 'source' => $r['source'], 'ver' => $r['ver'], 'why' => $r['why'], 'call_now' => !empty($r['handoff'])]; } }
+            if (!$s && !empty($_GET['make'])) { $__t0 = microtime(true); $f0 = ai_feat('wa_sugg'); $r = wag_brain_reply($pdo, $c); ai_feat($f0);
+                wa_sugg_ms_add($pdo, (int)round((microtime(true) - $__t0) * 1000));   /* ⏱ how long the last 30 on-open suggestions took on the server (shown on Admin → AI usage) */
+                if ($r['ok']) { wa_sugg_save($pdo, (string)$c['phone'], $r['text'], $r['source'], (int)$r['ver']); $s = ['text' => $r['text'], 'source' => $r['source'], 'ver' => $r['ver'], 'why' => $r['why'], 'call_now' => !empty($r['handoff'])]; } }
             $__li = wa_last_in($pdo, (string)$c['phone']); json_response(['ok' => true, 'sugg' => $s, 'hot' => !empty($c['hot']) || (function_exists('wa_hot_intent') && wa_hot_intent((string)$__li[1]) !== ''), 'auto' => function_exists('wa_auto_state') ? wa_auto_state($pdo) : ['on' => false, 'secs' => 20]]);
         }
         case 'wa.g_customer': {
