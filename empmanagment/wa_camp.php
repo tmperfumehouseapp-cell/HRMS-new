@@ -1136,6 +1136,7 @@ function wa_camp_ideal(PDO $pdo, string $day): array
 }
 /** 👥 The customer numbers in one small card: how many we have, how many got our campaign messages, how many failed, how many ordered, how many are new, how many replied.
  *  Remembered for 6 hours; one request recounts at a time; the one wide count (campaign messages) is time-limited, and shows as "…" when it does not finish. */
+/** ONE figure for the customers numbers card (wa.cust_summary). */
 function wa_cust_summary(PDO $pdo): array
 {
     $hit = wa_cpc_get($pdo, 'cust_sum1'); if ($hit && $hit['age'] < 21600) return $hit['v'];
