@@ -1,0 +1,43 @@
+# READ-ONLY: shows why voice notes fail (phone errors reported by the app, Meta errors on voice notes we sent, and whether customers' voice notes download). Changes nothing.
+# Run by hand: Actions → "Diagnose voice notes (read-only)" → Run workflow.
+name: Diagnose voice notes (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+      - name: Voice note state (read-only)
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
+          echo "=== ffmpeg / php limits ==="; which ffmpeg || echo "no ffmpeg"; php -r 'echo "upload_max=" . ini_get("upload_max_filesize") . " post_max=" . ini_get("post_max_size") . "\n";'
+          php -r '
+            require $argv[1] . "empmanagment/config.php";
+            $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_TIMEOUT => 8]);
+            echo "--- app-reported voice errors (wa_log kind=client, last 25) ---\n";
+            foreach ($d->query("SELECT at, info FROM wa_log WHERE kind = \"client\" ORDER BY id DESC LIMIT 25")->fetchAll(PDO::FETCH_ASSOC) as $x) echo $x["at"] . " | " . $x["info"] . "\n";
+            echo "--- log lines that mention audio / voice / media (last 25) ---\n";
+            foreach ($d->query("SELECT at, ok, kind, LEFT(info, 230) i FROM wa_log WHERE (info LIKE \"%audio%\" OR info LIKE \"%voice%\" OR info LIKE \"%media%\") ORDER BY id DESC LIMIT 25")->fetchAll(PDO::FETCH_ASSOC) as $x) echo $x["at"] . " | ok=" . $x["ok"] . " | " . $x["kind"] . " | " . $x["i"] . "\n";
+            echo "--- voice notes WE sent (last 15): status ---\n";
+            foreach ($d->query("SELECT ts, phone, status, media_mime, LEFT(body, 60) b FROM wa_messages WHERE dir = \"out\" AND mtype = \"audio\" ORDER BY id DESC LIMIT 15")->fetchAll(PDO::FETCH_ASSOC) as $x) echo $x["ts"] . " | " . $x["phone"] . " | " . $x["status"] . " | " . $x["media_mime"] . " | " . $x["b"] . "\n";
+            echo "--- voice notes customers sent (last 10) ---\n";
+            foreach ($d->query("SELECT ts, phone, media_mime, media_id FROM wa_messages WHERE dir = \"in\" AND mtype = \"audio\" ORDER BY id DESC LIMIT 10")->fetchAll(PDO::FETCH_ASSOC) as $x) echo $x["ts"] . " | " . $x["phone"] . " | " . $x["media_mime"] . " | " . substr($x["media_id"], 0, 14) . "\n";
+          ' "$P"
+          echo "=== cached media folder ==="; ls -ld "$P"empmanagment/wa_media* "$P"empmanagment/uploads 2>&1 | head -5
+          REMOTE
