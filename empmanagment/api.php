@@ -9903,7 +9903,21 @@ function lib_bot_reply(PDO $pdo, array $guide, array $msgs, int $exclude = 0, bo
     $__bparts = [['text' => "GUIDEBOOK:\n$gtxt\n\nOWNER CORRECTIONS:\n" . ($corr ?: "(none)\n") . $tlT . "\n" . ($factsT !== '' ? $factsT . "\n" : '') . "$exT\nCONVERSATION SO FAR:\n$conv\n$ask" . $photoAsk]];
     $__bmode = function_exists('brain_route_cfg') ? brain_route_cfg($pdo)['customer'] : 'off';   // off | trial | live (set on the Brain page)
     $__bscope = ($__bmode === 'live') ? new BrainScope('customer', 'whatsapp', ['all_customer_facts' => true, 'has_teach' => true]) : null;   // live: the customer brain is in the prompt (and in the judge / rewrite below) until this function ends
+    unset($GLOBALS['ai_xray_usage']);
     [$ok, $v, $why] = convo_ai($sys, $__bparts, $schema, false, $judgeOn ? 2600 : 1500, 'claude');
+    // 🔬 X-ray of the last reply prompt (Admin → AI usage): how big each part is and what Claude counted as full-price / cache-write / cache-read tokens, plus whether the cached part was identical
+    // to the call before (if it changes from call to call, the cache can never be used). Saved at most every 20 s.
+    try {
+        $__xl = (int)setting_get($pdo, 'ai_xray_at', '0');
+        if (time() - $__xl >= 20 && !empty($GLOBALS['ai_xray_usage'])) {
+            setting_set($pdo, 'ai_xray_at', (string)time());
+            $__gs = function_exists('brain_gate_sys') ? brain_gate_sys($sys) : $sys; $__h = substr(md5($__gs), 0, 10); $__gh = substr(md5($gtxt), 0, 10); $__ch = substr(md5($corr), 0, 10);
+            $__pj = json_decode((string)setting_get($pdo, 'ai_xray', ''), true); $__hist = is_array($__pj) ? (array)($__pj['hist'] ?? []) : [];
+            $__hist[] = ['t' => date('H:i:s'), 'f' => (string)($GLOBALS['ai_feature'] ?? ''), 'sys' => $__h, 'g' => $__gh, 'c' => $__ch, 'u' => $GLOBALS['ai_xray_usage']]; $__hist = array_slice($__hist, -12);
+            setting_set($pdo, 'ai_xray', json_encode(['at' => date('Y-m-d H:i:s'), 'chars' => ['instructions' => mb_strlen($sys) - mb_strlen($gtxt) - mb_strlen($corr), 'guidebook' => mb_strlen($gtxt), 'owner_corrections' => mb_strlen($corr), 'brain_added' => mb_strlen($__gs) - mb_strlen($sys),
+                'chat_context' => mb_strlen((string)($guide['chat_context_do_not_quote'] ?? '')), 'lessons' => mb_strlen($tlT), 'store_facts' => mb_strlen($factsT), 'example_chats' => mb_strlen($exT), 'conversation' => mb_strlen($conv)], 'hist' => $__hist], JSON_UNESCAPED_UNICODE));
+        }
+    } catch (Throwable $e) { }
     if (!$ok) return [false, null, $why];
     $raw = $judgeOn ? array_values(array_filter((array)($v['candidates'] ?? []), 'is_array')) : [$v];
     $cands = [];
@@ -16692,7 +16706,7 @@ function tmph_call_claude(string $key, string $model, array $body, bool $stream,
                 if (($b['type'] ?? '') === 'text') { if (($b['text'] ?? '') !== '') $res['parts'][] = ['text' => $b['text']]; }
                 elseif (($b['type'] ?? '') === 'tool_use') { $b['input'] = json_decode((string)($b['_json'] ?? ''), true) ?: []; $addBlock($b); }
                 unset($cur[$i]);
-            } elseif ($type === 'message_start') { $mu = (array)($j['message']['usage'] ?? []); $usage['in'] += (int)round((int)($mu['input_tokens'] ?? 0) + 1.25 * (int)($mu['cache_creation_input_tokens'] ?? 0) + 0.1 * (int)($mu['cache_read_input_tokens'] ?? 0)); }
+            } elseif ($type === 'message_start') { $mu = (array)($j['message']['usage'] ?? []); $GLOBALS['ai_xray_usage'] = ['in' => (int)($mu['input_tokens'] ?? 0), 'cw' => (int)($mu['cache_creation_input_tokens'] ?? 0), 'cr' => (int)($mu['cache_read_input_tokens'] ?? 0)]; $usage['in'] += (int)round((int)($mu['input_tokens'] ?? 0) + 1.25 * (int)($mu['cache_creation_input_tokens'] ?? 0) + 0.1 * (int)($mu['cache_read_input_tokens'] ?? 0)); }
             elseif ($type === 'message_delta') { $usage['out'] = max($usage['out'], (int)($j['usage']['output_tokens'] ?? 0)); if (($j['delta']['stop_reason'] ?? '') === 'refusal') $res['blocked'] = true; }
             elseif ($type === 'error') { $res['detail'] = mb_substr((string)($j['error']['message'] ?? 'stream error'), 0, 300); if ($res['status'] === 200) $res['status'] = 500; }
         };
@@ -16719,6 +16733,7 @@ function tmph_call_claude(string $key, string $model, array $body, bool $stream,
             $j = json_decode($out, true);
             foreach (($j['content'] ?? []) as $b) if (is_array($b)) $addBlock($b);
             if (($j['stop_reason'] ?? '') === 'refusal') $res['blocked'] = true;
+            $GLOBALS['ai_xray_usage'] = ['in' => (int)($j['usage']['input_tokens'] ?? 0), 'cw' => (int)($j['usage']['cache_creation_input_tokens'] ?? 0), 'cr' => (int)($j['usage']['cache_read_input_tokens'] ?? 0)];
             $usage['in'] = (int)round((int)($j['usage']['input_tokens'] ?? 0) + 1.25 * (int)($j['usage']['cache_creation_input_tokens'] ?? 0) + 0.1 * (int)($j['usage']['cache_read_input_tokens'] ?? 0)); $usage['out'] = (int)($j['usage']['output_tokens'] ?? 0);
         } else $errBody = $out;
     }
@@ -33869,7 +33884,7 @@ switch ($action) {
             $q = $pdo->prepare("SELECT purpose, SUM(calls) calls, SUM(in_tokens) in_tokens, SUM(out_tokens) out_tokens, SUM(cost_usd) cost_usd, COUNT(DISTINCT use_date) days FROM ai_usage WHERE use_date >= ? AND use_date <= ? GROUP BY purpose ORDER BY cost_usd DESC"); $q->execute([$f, $t]);
             $dq = $pdo->prepare("SELECT COUNT(DISTINCT use_date) FROM ai_usage WHERE use_date >= ? AND use_date <= ?"); $dq->execute([$f, $t]);
             $capJ = json_decode((string)setting_get($pdo, 'ai_caps', ''), true); $tq = $pdo->prepare("SELECT purpose, SUM(cost_usd) c FROM ai_usage WHERE use_date = ? GROUP BY purpose"); $tq->execute([date('Y-m-d')]); $tod = []; foreach ($tq->fetchAll() as $r) $tod[(string)$r['purpose']] = round((float)$r['c'], 2);
-            json_response(['from' => $f, 'to' => $t, 'rows' => $q->fetchAll(), 'days_with_use' => (int)$dq->fetchColumn(), 'caps' => is_array($capJ) ? $capJ : (object)[], 'today' => $tod ?: (object)[], 'presugg' => (string)setting_get($pdo, 'ai_presugg', '0') === '1', 'fast' => (string)setting_get($pdo, 'ai_sugg_fast', '1') !== '0', 'sugg_ms' => json_decode((string)setting_get($pdo, 'ai_sugg_ms', ''), true) ?: null]);
+            json_response(['from' => $f, 'to' => $t, 'rows' => $q->fetchAll(), 'days_with_use' => (int)$dq->fetchColumn(), 'caps' => is_array($capJ) ? $capJ : (object)[], 'today' => $tod ?: (object)[], 'presugg' => (string)setting_get($pdo, 'ai_presugg', '0') === '1', 'fast' => (string)setting_get($pdo, 'ai_sugg_fast', '1') !== '0', 'sugg_ms' => json_decode((string)setting_get($pdo, 'ai_sugg_ms', ''), true) ?: null, 'xray' => json_decode((string)setting_get($pdo, 'ai_xray', ''), true) ?: null]);
         }
         $q = $pdo->prepare("SELECT use_date, model, purpose, calls, in_tokens, out_tokens, cost_usd FROM ai_usage WHERE use_date LIKE ? ORDER BY use_date, model, purpose"); $q->execute([$month . '%']);
         $rows = $q->fetchAll(); $tot = ['calls' => 0, 'in' => 0, 'out' => 0, 'usd' => 0.0]; $byP = [];
