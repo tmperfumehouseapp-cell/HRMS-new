@@ -31,6 +31,7 @@ jobs:
           for i in $(seq 1 120); do
             out=$(flock -n /tmp/wa_funnel.lock nice -n 15 php "${P}empmanagment/cron_funnel.php" 2>&1); echo "round $i: $out" | cut -c1-330
             echo "$out" | grep -q '"done":1' && { echo "ALL COUNTED"; break; }
+            if echo "$out" | grep -q '"error"'; then errs=$((errs+1)); else errs=0; fi; [ "${errs:-0}" -ge 4 ] && { echo "STOPPED: the same error 4 rounds in a row — see above"; break; }
             sleep 8
           done
           REMOTE

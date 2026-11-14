@@ -12,7 +12,12 @@ $eq('single order, 200 days = lapsed', cfun_value(1, '2026-04-28 10:00:00', $now
 $eq('repeat', cfun_value(2, '2026-10-01 10:00:00', $now), 'repeat');
 $eq('loyal', cfun_value(3, '2026-10-01 10:00:00', $now), 'loyal');
 $eq('repeat gone quiet = at risk', cfun_value(4, '2026-07-01 10:00:00', $now), 'atrisk');
-$eq('no date = lapsed', cfun_value(2, null, $now), 'lapsed');
+$eq('no date = past buyer (not guessed)', cfun_value(2, null, $now), 'past');
+// every value the rules can give must fit the table columns (VARCHAR 8) and every tag key must fit the tag column (VARCHAR 40)
+foreach (['new', 'one', 'repeat', 'loyal', 'atrisk', 'lapsed', 'past'] as $v) if (strlen($v) > 8) { echo "FAIL value $v is longer than the column\n"; $bad++; }
+foreach (['ok', 'optout', 'notwa', 'held', 'stopped', 'dead'] as $v) if (strlen($v) > 8) { echo "FAIL health $v is longer than the column\n"; $bad++; }
+foreach (['hot', 'interested', 'considering', 'not_interested'] as $v) if (strlen($v) > 16) { echo "FAIL intent $v is longer than the column\n"; $bad++; }
+foreach (cfun_tag_keys() as $k) if (strlen($k) > 40) { echo "FAIL tag $k is too long\n"; $bad++; }
 // reach health
 $eq('opted out', cfun_health(1, 'replied', 0), 'optout');
 $eq('not failed = ok', cfun_health(0, 'delivered', 0), 'ok');

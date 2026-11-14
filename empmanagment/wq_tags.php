@@ -53,6 +53,7 @@ function jt_auto_defs(): array
         'value_loyal' => ['Loyal buyer (value)', 'value', '3+ orders, the last within 90 days.', 'Moves on when they go quiet.', 'Campaigns: early access, thank-you.'],
         'value_atrisk' => ['At risk (value)', 'value', 'Ordered before, then quiet for 91–180 days (121–180 for one order).', 'Goes when they order again.', 'Campaigns: win-back before they lapse.'],
         'value_lapsed' => ['Lapsed (value)', 'value', 'Last order more than 180 days ago.', 'Goes when they order again.', 'Campaigns: strong win-back.'],
+        'value_past' => ['Past buyer (date unknown)', 'value', 'Has ordered, but the date of the last order is not known (old store / POS bills).', 'Goes when a dated order arrives.', 'Campaigns: gentle re-introduction.'],
         'reach_held' => ['Held by Meta', 'reach', 'Their last 3 messages failed because Meta limits marketing messages to this customer.', 'Goes when a message is delivered or they reply.', 'Left out of marketing campaigns.'],
         'reach_notwa' => ['Not on WhatsApp', 'reach', 'Their last 3 messages failed: the number is not on WhatsApp.', 'Goes when a message is delivered or they reply.', 'Left out of every campaign.'],
         'reach_stopped' => ['Stopped marketing', 'reach', 'Their last 3 messages failed: they stopped marketing messages.', 'Goes when a message is delivered or they reply.', 'Left out of marketing campaigns.'],

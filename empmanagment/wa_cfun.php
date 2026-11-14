@@ -34,10 +34,11 @@ function cfun_tables(PDO $pdo): bool
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4" . $coll);
         // columns added when the two funnels became one — added once, only when missing
         foreach (['src' => "VARCHAR(8) NOT NULL DEFAULT 'campaign'", 'grp' => "VARCHAR(8) NOT NULL DEFAULT 'never'", 'ecode' => 'INT NOT NULL DEFAULT 0', 'last_camp' => 'INT NOT NULL DEFAULT 0',
-                  'imp' => 'TINYINT NOT NULL DEFAULT 0', 'batch' => "VARCHAR(24) NOT NULL DEFAULT ''", 'qual' => "VARCHAR(8) NOT NULL DEFAULT ''", 'intent' => "VARCHAR(12) NOT NULL DEFAULT ''",
+                  'imp' => 'TINYINT NOT NULL DEFAULT 0', 'batch' => "VARCHAR(24) NOT NULL DEFAULT ''", 'qual' => "VARCHAR(8) NOT NULL DEFAULT ''", 'intent' => "VARCHAR(16) NOT NULL DEFAULT ''",
                   'named' => 'TINYINT NOT NULL DEFAULT 0', 'asg' => 'TINYINT NOT NULL DEFAULT 0', 'num' => 'INT NOT NULL DEFAULT 0', 'last_deliv' => 'DATETIME NULL', 'last_fail' => 'DATETIME NULL', 'health' => "VARCHAR(8) NOT NULL DEFAULT ''", 'val' => "VARCHAR(8) NOT NULL DEFAULT ''", 'score' => 'TINYINT UNSIGNED NOT NULL DEFAULT 0'] as $col => $def) {
             try { $pdo->query("SELECT $col FROM wa_cfun LIMIT 0"); } catch (Throwable $e) { try { $pdo->exec("ALTER TABLE wa_cfun ADD COLUMN $col $def"); } catch (Throwable $e2) { } }
         }
+        try { $len = (int)$pdo->query("SELECT CHARACTER_MAXIMUM_LENGTH FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'wa_cfun' AND COLUMN_NAME = 'intent'")->fetchColumn(); if ($len > 0 && $len < 16) $pdo->exec("ALTER TABLE wa_cfun MODIFY intent VARCHAR(16) NOT NULL DEFAULT ''"); } catch (Throwable $e) { error_log('wa_cfun intent: ' . $e->getMessage()); }   // 'not_interested' is 14 letters: a 12-letter column made every batch with such a customer fail
         try { $q = $pdo->query("SHOW INDEX FROM wa_cfun WHERE Key_name = 'k_grp'"); if ($q && !$q->fetch()) $pdo->exec("ALTER TABLE wa_cfun ADD INDEX k_grp (grp, src)"); } catch (Throwable $e) { }
         try { $q = $pdo->query("SHOW INDEX FROM wa_cfun WHERE Key_name = 'k_imp'"); if ($q && !$q->fetch()) $pdo->exec("ALTER TABLE wa_cfun ADD INDEX k_imp (imp, batch)"); } catch (Throwable $e) { }
         try { $pdo->exec("CREATE TABLE IF NOT EXISTS wa_cfun_hist (d DATE NOT NULL PRIMARY KEY, j TEXT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"); } catch (Throwable $e) { }
@@ -91,14 +92,18 @@ function cfun_calc(PDO $pdo, array $phones): int
         $rows[] = [$p, mb_substr($c['name'], 0, 120), $bucket, $replied, $c['optout'], $c['out_n'], $c['deliv'], $c['sent'], $c['fail'], $c['in_n'], $c['orders'], $c['a'], $c['b'], $c['last_in'] ?: $c['ci'], $now, $c['src'], $grp, $bucket === 'failed' ? $c['ec'] : 0, $c['lc'],
             $c['imp'], $c['batch'], $qual, $c['intent'], trim($c['name']) !== '' ? 1 : 0, $c['asg'], $c['num'], $c['ld'], $c['lf'], $health, $val, $score];
     }
-    $n = 0;
+    $n = 0; $cols = 31; $one = '(' . implode(',', array_fill(0, $cols, '?')) . ')';
+    $head = "INSERT INTO wa_cfun (phone, name, bucket, replied, optout, out_n, deliv_n, sent_n, fail_n, in_n, orders_n, first_out, last_out, last_in, at, src, grp, ecode, last_camp, imp, batch, qual, intent, named, asg, num, last_deliv, last_fail, health, val, score) VALUES ";
+    $tail = " ON DUPLICATE KEY UPDATE name = VALUES(name), bucket = VALUES(bucket), replied = VALUES(replied), optout = VALUES(optout), out_n = VALUES(out_n), deliv_n = VALUES(deliv_n), sent_n = VALUES(sent_n), fail_n = VALUES(fail_n),
+        in_n = VALUES(in_n), orders_n = VALUES(orders_n), first_out = VALUES(first_out), last_out = VALUES(last_out), last_in = VALUES(last_in), at = VALUES(at), src = VALUES(src), grp = VALUES(grp), ecode = VALUES(ecode), last_camp = VALUES(last_camp),
+        imp = VALUES(imp), batch = VALUES(batch), qual = VALUES(qual), intent = VALUES(intent), named = VALUES(named), asg = VALUES(asg), num = VALUES(num), last_deliv = VALUES(last_deliv), last_fail = VALUES(last_fail), health = VALUES(health), val = VALUES(val), score = VALUES(score)";
     foreach (array_chunk($rows, 300) as $ch) {
-        $ph = implode(',', array_fill(0, count($ch), '(' . implode(',', array_fill(0, 31, '?')) . ')')); $par = []; foreach ($ch as $r) foreach ($r as $v) $par[] = $v;
-        $pdo->prepare("INSERT INTO wa_cfun (phone, name, bucket, replied, optout, out_n, deliv_n, sent_n, fail_n, in_n, orders_n, first_out, last_out, last_in, at, src, grp, ecode, last_camp, imp, batch, qual, intent, named, asg, num, last_deliv, last_fail, health, val, score) VALUES $ph
-            ON DUPLICATE KEY UPDATE name = VALUES(name), bucket = VALUES(bucket), replied = VALUES(replied), optout = VALUES(optout), out_n = VALUES(out_n), deliv_n = VALUES(deliv_n), sent_n = VALUES(sent_n), fail_n = VALUES(fail_n),
-            in_n = VALUES(in_n), orders_n = VALUES(orders_n), first_out = VALUES(first_out), last_out = VALUES(last_out), last_in = VALUES(last_in), at = VALUES(at), src = VALUES(src), grp = VALUES(grp), ecode = VALUES(ecode), last_camp = VALUES(last_camp),
-            imp = VALUES(imp), batch = VALUES(batch), qual = VALUES(qual), intent = VALUES(intent), named = VALUES(named), asg = VALUES(asg), num = VALUES(num), last_deliv = VALUES(last_deliv), last_fail = VALUES(last_fail), health = VALUES(health), val = VALUES(val), score = VALUES(score)")->execute($par);
-        $n += count($ch);
+        $par = []; foreach ($ch as $r) foreach ($r as $v) $par[] = $v;
+        try { $pdo->prepare($head . implode(',', array_fill(0, count($ch), $one)) . $tail)->execute($par); $n += count($ch); }
+        catch (Throwable $e) {   // one bad row must never stop the whole count: save the rows one by one and skip only the bad ones
+            $GLOBALS['__cfun_err'] = mb_substr($e->getMessage(), 0, 160);
+            foreach ($ch as $r) { try { $pdo->prepare($head . $one . $tail)->execute($r); $n++; } catch (Throwable $e2) { $GLOBALS['__cfun_bad'] = ($GLOBALS['__cfun_bad'] ?? 0) + 1; unset($T[$r[0]]); } }
+        }
     }
     if ($T) cfun_write_tags($pdo, $T);
     return $n;
@@ -130,7 +135,7 @@ function cfun_stats(PDO $pdo, string $src = 'all'): array
         SUM(out_n) m_total, SUM(deliv_n) m_deliv, SUM(sent_n) m_sent, SUM(fail_n) m_fail, SUM(in_n) m_in, SUM(src = 'query') from_query, SUM(src = 'campaign') from_campaign,
         SUM(named = 1) named, SUM(named = 0) unnamed, SUM(asg = 1) assigned, SUM(asg = 0) unassigned, SUM(imp = 1) imp, SUM(imp = 1 AND out_n = 0) imp_never, SUM(imp = 1 AND deliv_n > 0) imp_deliv, SUM(imp = 1 AND out_n > 0 AND deliv_n = 0) imp_nodel,
         SUM(score >= 70) s_a, SUM(score >= 45 AND score < 70) s_b, SUM(score >= 20 AND score < 45) s_c, SUM(score >= 1 AND score < 20) s_d, SUM(health = 'ok') h_ok, SUM(health = 'held') h_held, SUM(health = 'notwa') h_notwa, SUM(health = 'stopped') h_stopped, SUM(health = 'dead') h_dead, SUM(health = 'optout') h_optout,
-        SUM(val = 'new') v_new, SUM(val = 'one') v_one, SUM(val = 'repeat') v_repeat, SUM(val = 'loyal') v_loyal, SUM(val = 'atrisk') v_atrisk, SUM(val = 'lapsed') v_lapsed, SUM(qual = 'premium') q_premium, SUM(qual = 'budget') q_budget, SUM(qual = 'std') q_std, SUM(intent = 'hot') i_hot, SUM(intent = 'interested') i_interested, SUM(intent = 'considering') i_considering, SUM(intent = 'not_interested') i_not,
+        SUM(val = 'new') v_new, SUM(val = 'one') v_one, SUM(val = 'repeat') v_repeat, SUM(val = 'loyal') v_loyal, SUM(val = 'atrisk') v_atrisk, SUM(val = 'lapsed') v_lapsed, SUM(val = 'past') v_past, SUM(qual = 'premium') q_premium, SUM(qual = 'budget') q_budget, SUM(qual = 'std') q_std, SUM(intent = 'hot') i_hot, SUM(intent = 'interested') i_interested, SUM(intent = 'considering') i_considering, SUM(intent = 'not_interested') i_not,
         SUM(grp = 'never') g_never, SUM(grp = 'sent') g_sent, SUM(grp = 'failed') g_failed, SUM(grp = 'deliv') g_deliv, SUM(grp = 'replied') g_replied, SUM(grp = 'ord1') g_ord1, SUM(grp = 'ord2') g_ord2 FROM wa_cfun" . $w)->fetch(PDO::FETCH_ASSOC) ?: [];
     $o = []; foreach ($q as $k => $v) $o[$k] = (int)$v; $o['reasons'] = [];
     try { $by = []; foreach ($pdo->query("SELECT ecode, COUNT(*) n FROM wa_cfun WHERE bucket = 'failed'" . ($w === '' ? '' : ' AND ' . substr($w, 7)) . " GROUP BY ecode")->fetchAll(PDO::FETCH_ASSOC) as $g) { $l = cfun_reason((int)$g['ecode']); $by[$l] = ($by[$l] ?? 0) + (int)$g['n']; }
@@ -150,7 +155,7 @@ function cfun_tick(PDO $pdo, bool $force = false, int $budget = 25): array
     try {
         @set_time_limit($budget + 20); $since = date('Y-m-d H:i:s', max($last, time() - 7 * 86400) - 600);
         $v = (string)setting_get($pdo, 'wa_cfun_v', '');
-        if ($v !== '7') { setting_set($pdo, 'wa_cfun_curf', ''); setting_set($pdo, 'wa_cfun_cur', ''); setting_set($pdo, 'wa_cfun_v', '7'); }   // v2: new columns (count everybody again once) · v3: people with a failed message are counted FIRST
+        if ($v !== '8') { setting_set($pdo, 'wa_cfun_curf', ''); setting_set($pdo, 'wa_cfun_cur', ''); setting_set($pdo, 'wa_cfun_v', '8'); }   // v2: new columns (count everybody again once) · v3: people with a failed message are counted FIRST
         // 1. the customers the latest messages / orders touched (status changes keep the same message id, so the newest 60 000 messages are looked at again)
         $touch = [];
         try { $mx = (int)$pdo->query("SELECT COALESCE(MAX(id), 0) FROM wa_messages")->fetchColumn(); $q = $pdo->prepare("SELECT DISTINCT phone FROM wa_messages WHERE id > ? LIMIT 30000"); $q->execute([max(0, $mx - 60000)]); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $p) $touch[(string)$p] = 1; } catch (Throwable $e) { }
@@ -195,6 +200,7 @@ function cfun_tick(PDO $pdo, bool $force = false, int $budget = 25): array
         else setting_set($pdo, 'wa_cfun_at', date('Y-m-d H:i:s', time() - 3300 + 240));   // first build: come back in ~4 minutes
     } catch (Throwable $e) { error_log('cfun_tick: ' . $e->getMessage()); $o['error'] = mb_substr($e->getMessage(), 0, 160); }
     try { $pdo->query("SELECT RELEASE_LOCK('wa_cfun')"); } catch (Throwable $e) { }
+    if (!empty($GLOBALS['__cfun_err'])) $o['row_error'] = $GLOBALS['__cfun_err']; if (!empty($GLOBALS['__cfun_bad'])) $o['bad_rows'] = (int)$GLOBALS['__cfun_bad'];
     $o['sec'] = round(microtime(true) - $t0, 1); return $o;
 }
 
@@ -231,7 +237,7 @@ function cfun_where(string $k): string
         'pending' => "bucket = 'pending'", 'untried' => "bucket = 'untried'", 'messaged' => 'out_n > 0', 'reached' => 'deliv_n > 0', 'not_delivered' => 'out_n > 0 AND deliv_n = 0', 'any_failed' => 'fail_n > 0', 'all_failed' => 'out_n > 0 AND fail_n >= out_n', 'ordered' => 'orders_n > 0', 'repeat_n' => 'orders_n >= 2', 'optout' => 'optout = 1',
         'named' => 'named = 1', 'unnamed' => 'named = 0', 'assigned' => 'asg = 1', 'unassigned' => 'asg = 0', 'imp' => 'imp = 1', 'imp_never' => 'imp = 1 AND out_n = 0', 'imp_deliv' => 'imp = 1 AND deliv_n > 0', 'imp_nodel' => 'imp = 1 AND out_n > 0 AND deliv_n = 0',
         's_a' => 'score >= 70', 's_b' => 'score >= 45 AND score < 70', 's_c' => 'score >= 20 AND score < 45', 's_d' => 'score >= 1 AND score < 20', 'h_ok' => "health = 'ok'", 'h_held' => "health = 'held'", 'h_notwa' => "health = 'notwa'", 'h_stopped' => "health = 'stopped'", 'h_dead' => "health = 'dead'", 'h_optout' => "health = 'optout'",
-        'v_new' => "val = 'new'", 'v_one' => "val = 'one'", 'v_repeat' => "val = 'repeat'", 'v_loyal' => "val = 'loyal'", 'v_atrisk' => "val = 'atrisk'", 'v_lapsed' => "val = 'lapsed'",
+        'v_new' => "val = 'new'", 'v_one' => "val = 'one'", 'v_repeat' => "val = 'repeat'", 'v_loyal' => "val = 'loyal'", 'v_atrisk' => "val = 'atrisk'", 'v_lapsed' => "val = 'lapsed'", 'v_past' => "val = 'past'",
         'q_premium' => "qual = 'premium'", 'q_budget' => "qual = 'budget'", 'q_std' => "qual = 'std'", 'i_hot' => "intent = 'hot'", 'i_interested' => "intent = 'interested'", 'i_considering' => "intent = 'considering'", 'i_not' => "intent = 'not_interested'",
         'g_never' => "grp = 'never'", 'g_sent' => "grp = 'sent'", 'g_failed' => "grp = 'failed'", 'g_deliv' => "grp = 'deliv'", 'g_replied' => "grp = 'replied'", 'g_ord1' => "grp = 'ord1'", 'g_ord2' => "grp = 'ord2'"];
     return $m[$k] ?? '1=1';
