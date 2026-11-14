@@ -2859,6 +2859,15 @@ function cm_target_why(PDO $pdo, $id, $day, array $marks, array $emp) {
     } catch (Throwable $e) {}
     return 'no target is set for this person (no day target, no month target, and no salary / ladder target)';
 }
+/** ✏️ Commission typed by hand for ONE order (Commission page → a day → Edit). order key "store:id" => ['amt' => ₹, 'note', 'by', 'at']. A typed amount is final: no code rule, no bonus on it. */
+function cm_fixes(PDO $pdo): array {
+    static $m = null; if ($m !== null) return $m; $m = [];
+    try {
+        $pdo->exec("CREATE TABLE IF NOT EXISTS cm_order_fix (order_key VARCHAR(80) NOT NULL PRIMARY KEY, amount DECIMAL(12,2) NOT NULL, calc DECIMAL(12,2) NULL, day DATE NULL, emp_id INT NOT NULL DEFAULT 0, note VARCHAR(200) NOT NULL DEFAULT '', by_user VARCHAR(80) NOT NULL DEFAULT '', at DATETIME NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+        foreach ($pdo->query("SELECT order_key, amount, note, by_user, at FROM cm_order_fix")->fetchAll() as $r) $m[(string)$r['order_key']] = ['amt' => (float)$r['amount'], 'note' => (string)$r['note'], 'by' => (string)$r['by_user'], 'at' => (string)$r['at']];
+    } catch (Throwable $e) { }
+    return $m;
+}
 /** one business day: per person target, sales, and the commission by the new rules. Returns ['rows' => [...], 'error' => ''] */
 function cm_day(PDO $pdo, $day, array $ch = null, array $offers = null, array $boosts = null) {
     $ch = $ch ?: cm_chart($pdo); if ($offers === null) $offers = cm_offers($pdo); if ($boosts === null) $boosts = cm_boosts($pdo);
@@ -2900,15 +2909,22 @@ function cm_day(PDO $pdo, $day, array $ch = null, array $offers = null, array $b
         // A Target bonus rule raises the day's WHOLE commission (chart + offers + gel / attar / others): final = commission + commission × bonus %, one amount for the day,
         // not order by order. The normal over-target steps and a boost stay on the chart commission as before.
         $bonusOn = $tbName !== '' ? 'all' : 'chart';
+        // ✏️ orders whose commission was typed by hand: the worked-out amount leaves its bucket (so no bonus is counted on it) and the typed amount is added as it is
+        $fixTotal = 0.0; $nFix = 0; $__fx = cm_fixes($pdo);
+        if ($__fx) { foreach ($lines as &$ln) { $fk = (string)($ln['key'] ?? ''); if ($fk === '' || !isset($__fx[$fk])) continue;
+            $calc = (float)$ln['com']; $xx = (float)($ln['x'] ?? 0); $rl = (string)$ln['rule'];
+            if ($rl === 'chart') $chartCom -= $calc; elseif (strpos($rl, 'offer') === 0) $offerCom -= $calc; else $xcomTotal -= $calc;
+            $xcomTotal -= $xx; $ln['calc'] = round($calc + $xx, 2); $ln['com'] = round($__fx[$fk]['amt'], 2); $ln['x'] = 0; $ln['fixed'] = 1; $ln['fix_note'] = $__fx[$fk]['note']; $ln['fix_by'] = $__fx[$fk]['by']; $fixTotal += $__fx[$fk]['amt']; $nFix++; } unset($ln);
+            $chartCom = max(0.0, $chartCom); $offerCom = max(0.0, $offerCom); $xcomTotal = max(0.0, $xcomTotal); }
         $extra = ($bonusOn === 'all' ? $chartCom + $offerCom + $xcomTotal : $chartCom) * $bonus / 100;
         // each order's own commission, WITHOUT the day's extra: the extra is one line on the day's total
         foreach ($lines as &$ln) { $ln['paid'] = round((float)$ln['com'] + (float)($ln['x'] ?? 0), 2); } unset($ln);
         $old = null;
         if (function_exists('coach_day')) { try { $cd = coach_day($pdo, $day, false, true); $old = isset($cd[$id]) ? (float)$cd[$id]['com_today'] : null; } catch (Throwable $e) {} }
-        $total = round($chartCom + $offerCom + $extra + $xcomTotal, 2);
+        $total = round($chartCom + $offerCom + $extra + $xcomTotal + $fixTotal, 2);
         $rows[] = ['id' => $id, 'name' => trim((string)$e['full_name']), 'target' => round($target), 'target_why' => (!($target > 0) && $n > 0) ? cm_target_why($pdo, $id, $day, $marks, $e) : '', 'sales' => round($sales), 'pct' => $target > 0 ? round($sales / $target * 100, 1) : null, 'orders' => $n,
             'codes' => $nCode, 'code_orders' => $n - $nMan, 'manual_orders' => $nMan, 'code_pct' => ($n - $nMan) > 0 ? round($nCode / ($n - $nMan) * 100) : null, 'code_ok' => $codeOk, 'code_need' => $need, 'chart_com' => round($chartCom, 2), 'offer_com' => round($offerCom, 2), 'x_com' => round($xcomTotal, 2),
-            'bonus' => $bonus, 'bonus_rule' => $tbName, 'bonus_on' => $bonusOn, 'boost' => $bo ? $bo['name'] : '', 'extra' => round($extra, 2), 'total' => $total, 'old' => $old, 'diff' => $old === null ? null : round($total - $old, 2), 'no_ml' => $noMl, 'not_priced' => $noPrice, 'lines' => $lines];
+            'bonus' => $bonus, 'bonus_rule' => $tbName, 'bonus_on' => $bonusOn, 'boost' => $bo ? $bo['name'] : '', 'extra' => round($extra, 2), 'total' => $total, 'old' => $old, 'diff' => $old === null ? null : round($total - $old, 2), 'no_ml' => $noMl, 'not_priced' => $noPrice, 'fix_com' => round($fixTotal, 2), 'fix_n' => $nFix, 'lines' => $lines];
     }
     usort($rows, function ($a, $b) { return $b['sales'] <=> $a['sales']; });
     return ['rows' => $rows, 'error' => ''];
@@ -3736,6 +3752,17 @@ function b2_dispatch(PDO $pdo, $action, array $auth, array $w, $by, array $in, $
     case 'bd.b2_strip': { json_response(b2_strip($pdo, $w, (string)($in['page'] ?? $_GET['page'] ?? ''), $me)); }
     case 'bd.b2_tick': { $adm(); json_response(['ok' => true, 'result' => b2_tick($pdo, time(), true)]); }
     /* ----- Commission 2 (preview only; admin) ----- */
+    case 'bd.b2_cm_fix': {   // ✏️ type the commission of ONE order by hand (amount = '' or remove = 1 takes the typed amount away: the rules count it again)
+        $adm(); $post(); cm_fixes($pdo);
+        $key = mb_substr(trim((string)($in['key'] ?? '')), 0, 80); if ($key === '' || !preg_match('/^[A-Za-z0-9_\-]+:[A-Za-z0-9_\-]+$/', $key)) json_response(['error' => 'This order cannot be edited (no order key).'], 422);
+        if (!empty($in['remove']) || trim((string)($in['amount'] ?? '')) === '') { $pdo->prepare("DELETE FROM cm_order_fix WHERE order_key = ?")->execute([$key]); json_response(['ok' => true, 'removed' => true]); }
+        if (!is_numeric($in['amount'])) json_response(['error' => 'Type the commission as a number.'], 422);
+        $amt = round((float)$in['amount'], 2); if ($amt < 0 || $amt > 500000) json_response(['error' => 'The commission must be between ₹0 and ₹5,00,000.'], 422);
+        $day = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($in['day'] ?? '')) ? (string)$in['day'] : null;
+        $pdo->prepare("INSERT INTO cm_order_fix (order_key, amount, calc, day, emp_id, note, by_user, at) VALUES (?,?,?,?,?,?,?,?) ON DUPLICATE KEY UPDATE amount = VALUES(amount), calc = VALUES(calc), day = VALUES(day), emp_id = VALUES(emp_id), note = VALUES(note), by_user = VALUES(by_user), at = VALUES(at)")
+            ->execute([$key, $amt, is_numeric($in['calc'] ?? null) ? round((float)$in['calc'], 2) : null, $day, (int)($in['emp_id'] ?? 0), mb_substr(trim((string)($in['note'] ?? '')), 0, 200), (string)($auth['username'] ?? ''), date('Y-m-d H:i:s')]);
+        json_response(['ok' => true, 'key' => $key, 'amount' => $amt]);
+    }
     case 'bd.b2_cm_view': { $adm(); if (function_exists('price_unify_once')) price_unify_once($pdo); $ch = cm_chart($pdo); $off = cm_offers($pdo); $bo = cm_boosts($pdo); $day = preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)($_GET['day'] ?? '')) ? (string)$_GET['day'] : b2_day();
         $dr = cm_day($pdo, $day, $ch, $off, $bo); $ppl = []; foreach (cm_emps($pdo) as $id => $e) $ppl[] = ['id' => $id, 'name' => trim((string)$e['full_name'])];
         json_response(['unified' => (string)setting_get($pdo, 'price_unify_v1', '') === '1', 'day' => $day, 'chart' => $ch, 'offers' => $off, 'boosts' => $bo, 'people' => $ppl, 'result' => $dr, 'needs' => cm_needs($pdo, $ch, $off, $dr)]); }
