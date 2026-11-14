@@ -91,6 +91,24 @@ jobs:
           echo "  messages sent but NOT A SINGLE ONE delivered: " . number_format($nodel) . "   (of these, every message failed: " . number_format($allfail) . "; replied anyway: " . number_format($nodelRepl) . ")\n";
           echo "  imported numbers that ever wrote to us: " . number_format($repl) . "\n";
           try { echo "Import batches (tag, numbers):\n"; foreach ($d->query("SELECT tag, COUNT(*) c FROM wa_ctags WHERE src = 'import' AND tag LIKE 'import\\_%' GROUP BY tag ORDER BY c DESC LIMIT 15")->fetchAll(PDO::FETCH_NUM) as $x) echo "   " . $x[0] . ": " . number_format($x[1]) . "\n"; } catch (Throwable $e) { }
+          echo "\n=== CONSISTENCY CHECK of the funnel table (every line should say 0) ===\n";
+          echo "Numbers counted so far: " . $n("SELECT COUNT(*) FROM wa_cfun") . "\n";
+          echo "Replied but not in the replied list: " . $n("SELECT COUNT(*) FROM wa_cfun WHERE replied = 1 AND bucket <> 'replied'") . "\n";
+          echo "In the failed list although they replied: " . $n("SELECT COUNT(*) FROM wa_cfun WHERE bucket = 'failed' AND (replied = 1 OR in_n > 0)") . "\n";
+          echo "In the delivered / sent / failed lists with no message sent: " . $n("SELECT COUNT(*) FROM wa_cfun WHERE bucket IN ('delivered','pending','failed') AND out_n = 0") . "\n";
+          echo "In the delivered list but nothing delivered: " . $n("SELECT COUNT(*) FROM wa_cfun WHERE bucket = 'delivered' AND deliv_n = 0") . "\n";
+          $bad1 = 0; $bad2 = 0; $bad3 = 0; $s1 = 0; $s2 = 0;
+          try {
+            $q = $d->query("SELECT phone FROM wa_cfun WHERE replied = 0 ORDER BY RAND() LIMIT 6000"); $ph = array_map("strval", $q->fetchAll(PDO::FETCH_COLUMN)); $s1 = count($ph);
+            foreach (array_chunk($ph, 2000) as $ch) { $in = implode(",", array_fill(0, count($ch), "?"));
+              $c = $d->prepare("SELECT COUNT(*) FROM wa_contacts WHERE last_in_at IS NOT NULL AND phone IN ($in)"); $c->execute($ch); $bad1 += (int)$c->fetchColumn(); }
+            $q = $d->query("SELECT phone FROM wa_cfun WHERE bucket = 'failed' ORDER BY RAND() LIMIT 1500"); $ph = array_map("strval", $q->fetchAll(PDO::FETCH_COLUMN)); $s2 = count($ph);
+            $m = $d->prepare("SELECT status FROM wa_messages WHERE phone = ? AND dir = 'out' ORDER BY id DESC LIMIT 3"); $in1 = $d->prepare("SELECT COUNT(*) FROM wa_messages WHERE phone = ? AND dir = 'in'");
+            foreach ($ph as $p) { $m->execute([$p]); $st = $m->fetchAll(PDO::FETCH_COLUMN); if (!$st || count(array_filter($st, function ($x) { return $x === "failed"; })) !== count($st)) $bad2++; $in1->execute([$p]); if ((int)$in1->fetchColumn() > 0) $bad3++; }
+          } catch (Throwable $e) { echo "sample check stopped: " . substr($e->getMessage(), 0, 100) . "\n"; }
+          echo "Sample of $s1 'not replied' numbers that really did write to us: $bad1\n";
+          echo "Sample of $s2 'failed' numbers whose last 3 messages are NOT all failed: $bad2\n";
+          echo "Sample of $s2 'failed' numbers that actually wrote to us: $bad3\n";
           PHP
           php /tmp/cust_numbers.php "$P"; rm -f /tmp/cust_numbers.php
           REMOTE
