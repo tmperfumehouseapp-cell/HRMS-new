@@ -34,7 +34,9 @@ function sysload_counters(): ?array
         $st = @file_get_contents(dirname($f) . '/stat'); if ($st === false) continue; $r = strrpos($st, ')'); if ($r === false) continue;
         $x = explode(' ', trim(substr($st, $r + 1))); $db = ($db ?? 0) + (float)($x[11] ?? 0) + (float)($x[12] ?? 0);      // utime + stime, in the same ticks as /proc/stat
     }
-    return ['t' => time(), 'all' => array_sum($p), 'idle' => ($p[3] ?? 0) + ($p[4] ?? 0), 'db' => $db];
+    // 'steal' = time this server wanted the CPU but the hosting's machine gave it to another customer. It is NOT this server's own work, and the hosting panel does not count it:
+    // top showed 43.3 us + 4.2 sy + 2.4 si = 49.9% used and 8.3% steal, where the panel said 48% and this page (which had counted steal as work) said 59.5%.
+    return ['t' => time(), 'all' => array_sum(array_slice($p, 0, 8)), 'idle' => ($p[3] ?? 0) + ($p[4] ?? 0), 'steal' => ($p[7] ?? 0), 'db' => $db];
 }
 
 /** The once-a-minute snapshot: one line of CPU counters, and what the database has spent on each kind of query so far (one light read). The page works out "the last N minutes" from two snapshots. */
@@ -109,9 +111,10 @@ function sysload_names(): array
 
 function sysload_cpu_sample(): array
 {
-    $read = function () { $l = @file('/proc/stat'); if (!$l) return null; $p = preg_split('/\s+/', trim($l[0])); array_shift($p); $p = array_map('floatval', $p); return ['idle' => ($p[3] ?? 0) + ($p[4] ?? 0), 'all' => array_sum($p)]; };
+    $read = function () { $l = @file('/proc/stat'); if (!$l) return null; $p = preg_split('/\s+/', trim($l[0])); array_shift($p); $p = array_map('floatval', $p); return ['idle' => ($p[3] ?? 0) + ($p[4] ?? 0), 'steal' => ($p[7] ?? 0), 'all' => array_sum(array_slice($p, 0, 8))]; };
     $a = $read(); if (!$a) return ['pct' => null]; usleep(350000); $b = $read(); if (!$b || $b['all'] <= $a['all']) return ['pct' => null];
-    return ['pct' => round(100 * (1 - ($b['idle'] - $a['idle']) / ($b['all'] - $a['all'])), 1)];
+    $da = $b['all'] - $a['all'];
+    return ['pct' => round(100 * (1 - (($b['idle'] - $a['idle']) + ($b['steal'] - $a['steal'])) / $da), 1), 'steal' => round(100 * ($b['steal'] - $a['steal']) / $da, 1)];
 }
 function sysload_cores(): int { $c = @file_get_contents('/proc/cpuinfo'); $n = $c !== false ? preg_match_all('/^processor\s*:/m', $c) : 0; return max(1, (int)$n); }
 
@@ -121,7 +124,7 @@ function sysload_view(PDO $pdo, int $mins): array
     $cores = sysload_cores(); $now = time(); $from = intdiv($now, 60) - $mins;
     $ld = function_exists('sys_getloadavg') ? @sys_getloadavg() : null;
     $mem = null; $mi = @file_get_contents('/proc/meminfo'); if ($mi !== false && preg_match('/MemTotal:\s+(\d+)/', $mi, $a) && preg_match('/MemAvailable:\s+(\d+)/', $mi, $b)) $mem = ['total_mb' => (int)round($a[1] / 1024), 'free_mb' => (int)round($b[1] / 1024)];
-    $out = ['now' => date('Y-m-d H:i:s'), 'mins' => $mins, 'cores' => $cores, 'cpu' => sysload_cpu_sample()['pct'], 'load' => $ld ? array_map(fn($v) => round((float)$v, 2), $ld) : null, 'mem' => $mem];
+    $out = ['now' => date('Y-m-d H:i:s'), 'mins' => $mins, 'cores' => $cores, 'cpu' => ($__cs = sysload_cpu_sample())['pct'], 'steal_now' => $__cs['steal'] ?? null, 'load' => $ld ? array_map(fn($v) => round((float)$v, 2), $ld) : null, 'mem' => $mem];
 
     // CPU as an AVERAGE (what a hosting panel shows), from the once-a-minute snapshots: the last 1 / 5 / 15 minutes and the period chosen; and the database's own part of it
     $snaps = []; foreach ((array)@file(sysload_dir() . '/cpu.log') as $l) { $j = json_decode((string)$l, true); if (is_array($j) && isset($j['t'], $j['all'])) $snaps[] = $j; }
@@ -131,7 +134,8 @@ function sysload_view(PDO $pdo, int $mins): array
         for ($i = $n - 2; $i >= 0; $i--) { if ($b['t'] - $snaps[$i]['t'] >= $m * 60 - 20) { $a = $snaps[$i]; break; } }
         if ($a === null) { $a = $snaps[0]; if ($b['t'] - $a['t'] < 45) return null; }
         $da = $b['all'] - $a['all']; if ($da <= 0) return null;
-        return ['pct' => round(100 * (1 - ($b['idle'] - $a['idle']) / $da), 1), 'db' => ($a['db'] !== null && $b['db'] !== null && $b['db'] >= $a['db']) ? round(100 * ($b['db'] - $a['db']) / $da, 1) : null, 'mins' => (int)round(($b['t'] - $a['t']) / 60)];
+        $ds = (float)($b['steal'] ?? 0) - (float)($a['steal'] ?? 0); if (!isset($a['steal'])) $ds = 0;      // snapshots saved before steal was recorded
+        return ['pct' => round(100 * (1 - (($b['idle'] - $a['idle']) + $ds) / $da), 1), 'steal' => isset($a['steal']) ? round(100 * $ds / $da, 1) : null, 'db' => ($a['db'] !== null && $b['db'] !== null && $b['db'] >= $a['db']) ? round(100 * ($b['db'] - $a['db']) / $da, 1) : null, 'mins' => (int)round(($b['t'] - $a['t']) / 60)];
     };
     $out['avg'] = ['m1' => $avg(1), 'm5' => $avg(5), 'm15' => $avg(15), 'win' => $avg($mins)];
 
@@ -215,7 +219,9 @@ function sysload_view(PDO $pdo, int $mins): array
     $ctx = 'Repository tmperfumehouseapp-cell/HRMS-new (the HRMS: PHP in empmanagment/, pages in the root). The server has ' . $cores . ' CPU cores; average CPU is ' . ($busy ?? '?') . '%' . ($AW && $AW['db'] !== null ? ', of which the MySQL database is ' . $AW['db'] . '% and the HRMS PHP code about ' . ($out['php_of_server'] ?? '?') . '%' : '') . ' (Admin → Server load, last ' . ($out['span_min'] ?: $mins) . ' minutes).';
     $rule = ' Do not change what any page shows or what is paid or sent; only make it cheaper. Tell me what you changed and how much it should save.';
     if ($busy !== null) $adv[] = ['lvl' => $busy >= 80 ? 'bad' : ($busy >= 50 ? 'warn' : 'ok'), 't' => 'The server is using ' . $busy . '% of its ' . $cores . ' CPU cores' . ($A5 ? ' (average of the last ' . max(1, $A5['mins']) . ' minutes)' : ' right now') . '.',
-        'd' => ($busy >= 80 ? 'This is high: pages will feel slow.' : ($busy >= 50 ? 'Busy but working.' : 'There is room to spare.')) . ' Your hosting panel shows an average too, so compare it with this figure, not with "this second".'];
+        'd' => ($busy >= 80 ? 'This is high: pages will feel slow.' : ($busy >= 50 ? 'Busy but working.' : 'There is room to spare.')) . ' This is the server\'s own work, the same thing your hosting panel shows.'];
+    $stl = $A5['steal'] ?? ($out['steal_now'] ?? null);
+    if ($stl !== null && $stl >= 3) $adv[] = ['lvl' => $stl >= 10 ? 'bad' : 'warn', 't' => 'The hosting is taking ' . $stl . '% of your CPU away ("steal").', 'd' => 'For that share of the time your server wanted to work but the hosting\'s machine was busy with other customers. It makes everything slower and nothing in the HRMS can change it. If it stays above 5%, write to Hostinger support: "My VPS shows ' . $stl . '% CPU steal time in top. Please move it to a less busy host."'];
     if (!$span) $adv[] = ['lvl' => 'info', 't' => 'Measuring has just started.', 'd' => 'This page counts every request from now on. Open it again in 10 to 15 minutes.'];
     if ($AW && $AW['db'] !== null && $AW['pct'] > 0) {
         $rest = max(0, round($AW['pct'] - $AW['db'] - (float)($out['php_of_server'] ?? 0), 1));
