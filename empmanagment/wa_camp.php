@@ -826,14 +826,15 @@ function wa_camp_tick_run(PDO $pdo, int $only = 0): array
                     foreach (['wa_fu_ev', 'wa_wj_ev'] as $fuT) { try { $fq = $pdo->prepare("SELECT 1 FROM $fuT WHERE phone = ? AND status = 'sent' AND sent_at >= ? LIMIT 1"); $fq->execute([(string)$it['phone'], $fuFrom]); if ($fq->fetchColumn()) { $fuHit = true; break; } } catch (Throwable $e) { } }
                     if ($fuHit) { $pdo->prepare("UPDATE wa_camp_items SET status = 'skipped', err = ? WHERE id = ?")->execute(['Got a follow-up in the last day', $iid]); $skipped++; continue; }
                 }
-                $gapDays = max(0, (int)setting_get($pdo, 'wa_camp_gap_days', '3'));   // off by default (owner's choice): a customer can get campaigns any day; setting wa_camp_gap_days = 7 brings back "one per 7 days"
+                $gapDays = max(0, isset($c['extra']['gap_days']) && $c['extra']['gap_days'] !== '' ? (int)$c['extra']['gap_days'] : (int)setting_get($pdo, 'wa_camp_gap_days', '3'));   // this campaign's own number of days between campaigns, else the setting   // off by default (owner's choice): a customer can get campaigns any day; setting wa_camp_gap_days = 7 brings back "one per 7 days"
                 $q = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE phone = ? AND dir = 'out' AND mtype IN ('template', 'text') AND who = 'campaign' AND status <> 'failed' AND ts >= ?"); $q->execute([$it['phone'], date('Y-m-d H:i:s', $nowTs - max(0, $gapDays) * 86400)]);
                 if ((int)$ct['optout'] === 1 || (int)($ct['camp_optout'] ?? 0) === 1) { $pdo->prepare("UPDATE wa_camp_items SET status = 'skipped', err = 'Opted out' WHERE id = ?")->execute([$iid]); $skipped++; continue; }
                 if (!$isRetry && $gapDays > 0 && (int)$q->fetchColumn() > 0) { $pdo->prepare("UPDATE wa_camp_items SET status = 'skipped', err = ? WHERE id = ?")->execute(['Already got a campaign message in the last ' . $gapDays . ' days', $iid]); $skipped++; continue; }
                 // 3. no paid message where it is wasted (setting wa_camp_waste_filters, default on): just bought, ignored the last 2 campaigns, Meta capped them lately
-                if (!$isRetry && (string)setting_get($pdo, 'wa_camp_waste_filters', '1') === '1') { $waste = '';
-                    try { $ob = wa_order_map($pdo)[(string)$it['phone']] ?? null; if ($ob && !empty($ob['last']) && strtotime((string)$ob['last']) > $nowTs - 10 * 86400) $waste = 'Bought in the last 10 days'; } catch (Throwable $e) { }
-                    if ($waste === '') { $lq = $pdo->prepare("SELECT ts FROM wa_messages WHERE phone = ? AND dir = 'out' AND who = 'campaign' AND status IN ('sent', 'delivered', 'read') ORDER BY id DESC LIMIT 2"); $lq->execute([$it['phone']]); $l2 = $lq->fetchAll(PDO::FETCH_COLUMN);
+                $bDays = isset($c['extra']['bought_days']) && $c['extra']['bought_days'] !== '' ? max(0, (int)$c['extra']['bought_days']) : 10; $skIgn = isset($c['extra']['skip_ignored']) ? (int)$c['extra']['skip_ignored'] !== 0 : true; $ownRules = isset($c['extra']['bought_days']) || isset($c['extra']['skip_ignored']);   // 🎛 the campaign's own choices (wizard → Who to leave out) win over the global setting
+                if (!$isRetry && ($ownRules || (string)setting_get($pdo, 'wa_camp_waste_filters', '1') === '1')) { $waste = '';
+                    if ($bDays > 0) { try { $ob = wa_order_map($pdo)[(string)$it['phone']] ?? null; if ($ob && !empty($ob['last']) && strtotime((string)$ob['last']) > $nowTs - $bDays * 86400) $waste = 'Bought in the last ' . $bDays . ' days'; } catch (Throwable $e) { } }
+                    if ($waste === '' && $skIgn) { $lq = $pdo->prepare("SELECT ts FROM wa_messages WHERE phone = ? AND dir = 'out' AND who = 'campaign' AND status IN ('sent', 'delivered', 'read') ORDER BY id DESC LIMIT 2"); $lq->execute([$it['phone']]); $l2 = $lq->fetchAll(PDO::FETCH_COLUMN);
                         if (count($l2) === 2) { $rq = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE phone = ? AND dir = 'in' AND ts > ?"); $rq->execute([$it['phone'], (string)end($l2)]); if ((int)$rq->fetchColumn() === 0) $waste = 'Ignored the last 2 campaigns'; } }
                     // (owner's rule, 5 Nov 2026) no skip for "Meta held them lately": Meta decides that itself, and a held person gets one more try 3 days later
                     // (owner's rule, 5 Nov 2026) business numbers (auto-reply) are NOT skipped any more — they get the campaign like everyone
@@ -1275,6 +1276,11 @@ function wa_camp_people_counts(PDO $pdo, int $id): array
     foreach ($q->fetchAll() as $r) $d[(string)$r['ds']] = (int)$r['n']; $all = array_sum($d);
     return ['all' => $all, 'delivered' => $d['delivered'] + $d['read'] + $d['replied'], 'read' => $d['read'] + $d['replied'], 'replied' => $d['replied'], 'failed' => $d['failed'], 'retry' => $d['retry'], 'skipped' => $d['skipped'], 'queued' => $d['queued'], 'held' => $d['held']];
 }
+/** why people of this campaign were skipped: the reason texts the sender wrote, most common first */
+function wa_camp_skip_reasons(PDO $pdo, int $id): array
+{
+    try { $q = $pdo->prepare("SELECT COALESCE(NULLIF(err, ''), 'No reason saved') AS e, COUNT(*) AS n FROM wa_camp_items WHERE camp_id = ? AND status = 'skipped' GROUP BY e ORDER BY n DESC LIMIT 12"); $q->execute([$id]); $o = []; foreach ($q->fetchAll() as $r) $o[] = ['text' => mb_substr((string)$r['e'], 0, 90), 'n' => (int)$r['n']]; return $o; } catch (Throwable $e) { return []; }
+}
 function wa_camp_people_reasons(PDO $pdo, int $id): array
 {
     $q = $pdo->prepare("SELECT CASE WHEN t.err_code > 0 THEN t.err_code ELSE t.mcode END AS ec, COALESCE(NULLIF(t.err, ''), t.merr) AS et, COUNT(*) AS n FROM (" . wa_camp_ds_sql() . ") t WHERE t.ds IN ('failed', 'retry') GROUP BY ec, et ORDER BY n DESC LIMIT 60"); $q->execute([$id]); $by = [];
@@ -1709,7 +1715,7 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
             $tpl = null; try { $tpl = wa_tpl_row($pdo, (int)$c['tpl_id']); } catch (Throwable $e) { }
             $rows = wa_camp_people_rows($pdo, $c, $tpl, $f, trim((string)($_GET['q'] ?? '')), $page, $per); $more = count($rows) > $per; if ($more) array_pop($rows);
             $o = ['rows' => $rows, 'more' => $more, 'page' => $page, 'f' => $f];
-            if ($page <= 1) { $o['counts'] = wa_camp_people_counts($pdo, (int)$c['id']); $o['reasons'] = wa_camp_people_reasons($pdo, (int)$c['id']); $o['wait'] = $o['counts']['queued'] > 0 ? wa_camp_wait_reason($pdo, $c) : ''; }
+            if ($page <= 1) { $o['counts'] = wa_camp_people_counts($pdo, (int)$c['id']); $o['reasons'] = wa_camp_people_reasons($pdo, (int)$c['id']); $o['skip_reasons'] = wa_camp_skip_reasons($pdo, (int)$c['id']); $o['wait'] = $o['counts']['queued'] > 0 ? wa_camp_wait_reason($pdo, $c) : ''; }
             json_response($o);
         }
         case 'wa.camp_thread': {   // the chat of ONE customer of this campaign: our campaign message, then what happened after it (their reply and ours)
