@@ -1,0 +1,70 @@
+# READ-ONLY research: how Query (Scout) counts and Query orders build up hour by hour through the business day, over the past weeks. Changes nothing.
+# Run by hand: Actions → "Query day pattern (read-only)" → Run workflow.
+name: Query day pattern (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+      - name: Study (read-only)
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
+          cat > /tmp/qpattern.php <<'PHP'
+          <?php
+          require $argv[1] . "empmanagment/config.php";
+          $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_TIMEOUT => 20, PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+          $DAYS = 75; $today = date("Y-m-d"); $from = date("Y-m-d", strtotime("-$DAYS days"));
+          // day start: per weekday (day_timing, default 10:00) + the date overrides (8-16 Nov = 12:00), like day_start_for()
+          $wk = array_fill(0, 7, 10); try { foreach ($d->query("SELECT weekday, start_time FROM day_timing")->fetchAll(PDO::FETCH_ASSOC) as $r) $wk[(int)$r["weekday"]] = (int)substr($r["start_time"], 0, 2); } catch (Throwable $e) { }
+          $ov = []; for ($t = strtotime("2026-11-08"); $t <= strtotime("2026-11-16"); $t += 86400) $ov[date("Y-m-d", $t)] = 12;
+          try { $raw = $d->query("SELECT setting_value FROM hrms_settings WHERE setting_key = \"day_timing_overrides\"")->fetchColumn(); $j = json_decode((string)$raw, true); if (is_array($j)) { $ov = []; foreach ($j as $k => $v) $ov[$k] = (int)substr((string)$v, 0, 2); } } catch (Throwable $e) { }
+          $S = function ($day) use ($wk, $ov) { return $ov[$day] ?? $wk[(int)date("w", strtotime($day))]; };
+          $bizDay = function ($ts) use ($S) { $day = date("Y-m-d", $ts); $h = (int)date("G", $ts); $s = $S($day); if ($h < $s) { $day = date("Y-m-d", strtotime($day . " -1 day")); } return $day; };
+          $idx = function ($ts, $day) use ($S) { return ((int)date("G", $ts) - $S($day) + 24) % 24; };
+          $D = []; for ($t = strtotime($from); $t < strtotime($today); $t += 86400) { $k = date("Y-m-d", $t); $D[$k] = ["S" => $S($k), "sc" => array_fill(0, 24, 0), "scE" => 0, "qo" => array_fill(0, 24, 0), "co" => array_fill(0, 24, 0), "rev" => 0.0]; }
+          // Scout clicks by hour (employee_query_log, kind = scout) + the day total (employee_queries) → what was typed without a time ("earlier")
+          try { $q = $d->prepare("SELECT query_date, HOUR(created_at) h, SUM(delta) n FROM employee_query_log WHERE kind = \"scout\" AND query_date >= ? AND query_date < ? GROUP BY query_date, HOUR(created_at)"); $q->execute([$from, $today]);
+            foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) { $k = $r["query_date"]; if (!isset($D[$k])) continue; $i = ((int)$r["h"] - $D[$k]["S"] + 24) % 24; $D[$k]["sc"][$i] += (int)$r["n"]; } } catch (Throwable $e) { echo "scout log: " . $e->getMessage() . "\n"; }
+          $tot = []; try { $q = $d->prepare("SELECT query_date, SUM(scout_count) n FROM employee_queries WHERE query_date >= ? AND query_date < ? GROUP BY query_date"); $q->execute([$from, $today]); foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $tot[$r["query_date"]] = (int)$r["n"]; } catch (Throwable $e) { echo "scout totals: " . $e->getMessage() . "\n"; }
+          foreach ($D as $k => &$x) { $logged = array_sum($x["sc"]); $x["scT"] = $tot[$k] ?? $logged; $x["scE"] = max(0, $x["scT"] - $logged); $x["logged"] = $logged; } unset($x);
+          // Orders (Shopify copy) by type: allocation type first, else the tag
+          $q = $d->prepare("SELECT o.created_at, o.total, COALESCE(NULLIF(al.order_type, \"\"), CASE WHEN o.tags LIKE \"%campaign%\" THEN \"campaign\" WHEN o.tags LIKE \"%query%\" THEN \"query\" ELSE \"\" END) t FROM shop_orders o LEFT JOIN order_allocations al ON al.source = o.store_key AND al.order_id = CAST(o.shopify_id AS CHAR) WHERE o.created_at >= ? AND o.total > 0 AND (o.tags IS NULL OR o.tags NOT LIKE \"%cancel%\")"); $q->execute([date("Y-m-d", strtotime($from . " -1 day")) . " 00:00:00"]);
+          $type = ["query" => 0, "campaign" => 0, "" => 0];
+          foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) { $ts = strtotime($r["created_at"]); $k = $bizDay($ts); if (!isset($D[$k])) continue; $i = $idx($ts, $k); $t = $r["t"]; $type[$t] = ($type[$t] ?? 0) + 1; if ($t === "query") { $D[$k]["qo"][$i]++; $D[$k]["rev"] += (float)$r["total"]; } elseif ($t === "campaign") $D[$k]["co"][$i]++; }
+          try { $q = $d->prepare("SELECT order_date, order_type FROM manual_orders WHERE order_date >= ?"); $q->execute([$from . " 00:00:00"]); foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) { $ts = strtotime($r["order_date"]); $k = $bizDay($ts); if (!isset($D[$k])) continue; if ($r["order_type"] === "query") $D[$k]["qo"][$idx($ts, $k)]++; elseif ($r["order_type"] === "campaign") $D[$k]["co"][$idx($ts, $k)]++; } } catch (Throwable $e) { }
+          echo "order type counts (all days studied): query=" . $type["query"] . " campaign=" . $type["campaign"] . " untyped=" . ($type[""] ?? 0) . "\n";
+          echo "\n=== per day (day start hour S; Scout = typed/clicked by the team; Query orders = type query) ===\n";
+          echo "date        wd S  scout(logged+earlier)  queryOrd  campOrd  orders/100 scout  query revenue\n";
+          foreach ($D as $k => $x) { $qo = array_sum($x["qo"]); $co = array_sum($x["co"]); echo $k . " " . date("D", strtotime($k)) . " " . str_pad($x["S"], 2) . "  " . str_pad($x["scT"] . " (" . $x["logged"] . "+" . $x["scE"] . ")", 22) . " " . str_pad($qo, 8) . " " . str_pad($co, 8) . " " . str_pad($x["scT"] > 0 ? round(100 * $qo / $x["scT"], 1) : "-", 10) . " " . round($x["rev"]) . "\n"; }
+          // shape: average share of the day reached by each hour, over days with data
+          $shape = function ($field, $from2, $days, $filter) use ($D) { $acc = array_fill(0, 24, 0.0); $n = 0; $tot = 0; foreach ($D as $k => $x) { if ($k < $from2 || !$filter($k, $x)) continue; $a = $x[$field]; $s = array_sum($a); if ($s <= 0) continue; $c = 0; for ($i = 0; $i < 24; $i++) { $c += $a[$i]; $acc[$i] += $c / $s; } $n++; $tot += $s; } if (!$n) return null; return ["n" => $n, "avg_total" => round($tot / $n, 1), "cum" => array_map(function ($v) use ($n) { return round(100 * $v / $n, 1); }, $acc)]; };
+          $show = function ($title, $field, $from2, $filter) use ($shape) { $r = $shape($field, $from2, 0, $filter); echo "\n--- $title ---\n"; if (!$r) { echo "no data\n"; return; } echo "days used: " . $r["n"] . ", average day total: " . $r["avg_total"] . "\ncumulative % of the day done by the END of hour index 0..23 (0 = day start): " . implode(" ", $r["cum"]) . "\n"; };
+          $f30 = date("Y-m-d", strtotime("-30 days")); $f14 = date("Y-m-d", strtotime("-14 days"));
+          $has = function ($k, $x) { return true; };
+          $show("Query orders: last 30 days", "qo", $f30, $has); $show("Query orders: last 14 days", "qo", $f14, $has); $show("Query orders: all days studied", "qo", $from, $has);
+          $show("Scout queries (logged hours only): last 30 days", "sc", $f30, function ($k, $x) { return $x["logged"] > 0 && $x["scE"] <= 0.3 * max(1, $x["scT"]); });
+          $show("Campaign orders (for comparison): last 30 days", "co", $f30, $has);
+          echo "\n--- Query orders per weekday (average day total, last 60 days) ---\n"; $wd = []; foreach ($D as $k => $x) { if ($k < date("Y-m-d", strtotime("-60 days"))) continue; $w = date("D", strtotime($k)); $wd[$w][] = array_sum($x["qo"]); } foreach ($wd as $w => $a) echo $w . ": " . round(array_sum($a) / count($a), 1) . " (" . count($a) . " days)\n";
+          echo "\n--- best 5 and worst 5 days by Query orders (last 30 days, full days) ---\n"; $r2 = []; foreach ($D as $k => $x) if ($k >= $f30) $r2[$k] = array_sum($x["qo"]); arsort($r2); echo "best: "; foreach (array_slice($r2, 0, 5, true) as $k => $v) echo "$k=$v  "; echo "\nworst: "; asort($r2); foreach (array_slice($r2, 0, 5, true) as $k => $v) echo "$k=$v  "; echo "\n";
+          echo "\n--- average query orders added in each hour of the day (last 30 days) ---\n"; $av = array_fill(0, 24, 0.0); $nd = 0; foreach ($D as $k => $x) { if ($k < $f30) continue; $nd++; for ($i = 0; $i < 24; $i++) $av[$i] += $x["qo"][$i]; } echo implode(" ", array_map(function ($v) use ($nd) { return round($v / max(1, $nd), 1); }, $av)) . "\n";
+          echo "--- average scout clicks logged in each hour (last 30 days) ---\n"; $av = array_fill(0, 24, 0.0); $nd = 0; foreach ($D as $k => $x) { if ($k < $f30) continue; $nd++; for ($i = 0; $i < 24; $i++) $av[$i] += $x["sc"][$i]; } echo implode(" ", array_map(function ($v) use ($nd) { return round($v / max(1, $nd), 1); }, $av)) . "\n";
+          PHP
+          php /tmp/qpattern.php "$P"
+          REMOTE
