@@ -108,17 +108,32 @@ function cfun_tick(PDO $pdo, bool $force = false, int $budget = 25): array
     $t0 = microtime(true); $left = function () use ($t0, $budget) { return microtime(true) - $t0 < $budget; }; $o = ['patched' => 0, 'walked' => 0];
     try {
         @set_time_limit($budget + 20); $since = date('Y-m-d H:i:s', max($last, time() - 7 * 86400) - 600);
-        if ((string)setting_get($pdo, 'wa_cfun_v', '') !== '2') { setting_set($pdo, 'wa_cfun_cur', ''); setting_set($pdo, 'wa_cfun_v', '2'); }   // new columns (source / group / reason): count everybody again once
+        $v = (string)setting_get($pdo, 'wa_cfun_v', '');
+        if ($v !== '3') { setting_set($pdo, 'wa_cfun_curf', ''); if ($v !== '2') setting_set($pdo, 'wa_cfun_cur', ''); setting_set($pdo, 'wa_cfun_v', '3'); }   // v2: new columns (count everybody again once) · v3: people with a failed message are counted FIRST
         // 1. the customers the latest messages / orders touched (status changes keep the same message id, so the newest 60 000 messages are looked at again)
         $touch = [];
         try { $mx = (int)$pdo->query("SELECT COALESCE(MAX(id), 0) FROM wa_messages")->fetchColumn(); $q = $pdo->prepare("SELECT DISTINCT phone FROM wa_messages WHERE id > ? LIMIT 30000"); $q->execute([max(0, $mx - 60000)]); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $p) $touch[(string)$p] = 1; } catch (Throwable $e) { }
         foreach ([["SELECT /*+ MAX_EXECUTION_TIME(8000) */ phone FROM wa_contacts WHERE first_seen >= ? LIMIT 20000"], ["SELECT phone FROM wa_contacts WHERE last_in_at >= ? LIMIT 20000"], ["SELECT phone FROM wa_cust WHERE last_order >= ? LIMIT 20000"]] as $s) {
             try { $q = $pdo->prepare($s[0]); $q->execute([$since]); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $p) $touch[(string)$p] = 1; } catch (Throwable $e) { } }
         foreach (array_chunk(array_keys($touch), 1500) as $ch) { if (!$left()) break; $o['patched'] += cfun_calc($pdo, $ch); }
-        // 2. the walk over everybody (a full pass about once a day, or at once while the table is still empty)
+        // 2a. FIRST everybody who has a failed message (one pass), so the failed lists are complete before the rest
+        $curf = (string)setting_get($pdo, 'wa_cfun_curf', '');
+        if ($curf !== 'done') {
+            while ($left()) {
+                $ph = [];
+                foreach (["SELECT DISTINCT phone FROM wa_messages WHERE dir = 'out' AND status = 'failed' AND phone > ? ORDER BY phone LIMIT 1500", "SELECT DISTINCT phone FROM wa_camp_items WHERE status IN ('failed', 'retry') AND phone > ? ORDER BY phone LIMIT 1500"] as $sq) {
+                    try { $q = $pdo->prepare($sq); $q->execute([$curf]); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $x) $ph[(string)$x] = 1; } catch (Throwable $e) { }
+                }
+                $ph = array_map('strval', array_keys($ph)); sort($ph, SORT_STRING); $ph = array_slice($ph, 0, 1500);
+                if (!$ph) { $curf = 'done'; break; }
+                $o['walked'] += cfun_calc($pdo, $ph); $curf = (string)end($ph); usleep(60000);
+            }
+            setting_set($pdo, 'wa_cfun_curf', $curf);
+        }
+        // 2b. the walk over everybody (a full pass about once a day, or at once while the table is still empty)
         $cur = (string)setting_get($pdo, 'wa_cfun_cur', ''); $fullAt = (int)strtotime((string)setting_get($pdo, 'wa_cfun_full', '1970-01-01'));
         if ($cur === 'done' && $fullAt < time() - 20 * 3600) $cur = '';
-        if ($cur !== 'done') {
+        if ($cur !== 'done' && $curf === 'done') {
             while ($left()) {
                 $ph = [];
                 foreach (["SELECT phone FROM wa_contacts WHERE phone > ? ORDER BY phone LIMIT 1500", "SELECT phone FROM wa_cust WHERE phone > ? ORDER BY phone LIMIT 1500", "SELECT phone FROM wa_camp_items WHERE phone > ? GROUP BY phone ORDER BY phone LIMIT 1500"] as $sq) {   // plain reads, merged here: no collation clash
@@ -132,8 +147,9 @@ function cfun_tick(PDO $pdo, bool $force = false, int $budget = 25): array
         }
         // 3. the numbers for the screen (one cached row); while the first walk is not finished this runs again on the next round
         $S = []; foreach (['all', 'query', 'campaign'] as $s) $S[$s] = cfun_stats($pdo, $s);
-        setting_set($pdo, 'wa_cfun_stats', json_encode(['walking' => $cur === 'done' ? 0 : 1, 'at' => date('Y-m-d H:i:s'), 'by' => $S]));
-        if ($cur === 'done') setting_set($pdo, 'wa_cfun_at', date('Y-m-d H:i:s'));
+        $o['done'] = ($cur === 'done' && $curf === 'done') ? 1 : 0; $o['failed_first_done'] = $curf === 'done' ? 1 : 0;
+        setting_set($pdo, 'wa_cfun_stats', json_encode(['walking' => $o['done'] ? 0 : 1, 'failed_first' => $o['failed_first_done'], 'at' => date('Y-m-d H:i:s'), 'by' => $S]));
+        if ($o['done']) setting_set($pdo, 'wa_cfun_at', date('Y-m-d H:i:s'));
         else setting_set($pdo, 'wa_cfun_at', date('Y-m-d H:i:s', time() - 3300 + 240));   // first build: come back in ~4 minutes
     } catch (Throwable $e) { error_log('cfun_tick: ' . $e->getMessage()); $o['error'] = mb_substr($e->getMessage(), 0, 160); }
     try { $pdo->query("SELECT RELEASE_LOCK('wa_cfun')"); } catch (Throwable $e) { }
@@ -159,6 +175,14 @@ function cfun_answer(PDO $pdo, string $src): array
 
 }   // function_exists guard
 
+// ---------------------------------------------------------------------------------------------------------------- one-time / manual counting job (server cron, key instead of a login)
+if ((string)($action ?? ($_GET['action'] ?? '')) === 'wa.cron_funnel') {
+    ignore_user_abort(true); @set_time_limit(150);
+    if (!function_exists('wa_tables') || !wa_tables($pdo) || !cfun_tables($pdo)) json_response(['error' => 'storage'], 500);
+    $__k = (string)setting_get($pdo, 'wa_cron_key', ''); if ($__k === '' || !hash_equals($__k, (string)($_GET['key'] ?? ''))) json_response(['error' => 'Wrong key.'], 403);
+    try { $pdo->exec('SET SESSION innodb_lock_wait_timeout = 5'); } catch (Throwable $e) { }
+    $r = cfun_tick($pdo, true, 100); json_response(['ok' => true] + $r + ['rows' => (int)$pdo->query('SELECT COUNT(*) FROM wa_cfun')->fetchColumn()]);
+}
 // ---------------------------------------------------------------------------------------------------------------- router
 $__cfa = (string)($action ?? ($_GET['action'] ?? ''));
 if (strpos($__cfa, 'wa.cf_') === 0) {

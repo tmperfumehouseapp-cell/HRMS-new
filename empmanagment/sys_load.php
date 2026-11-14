@@ -130,11 +130,50 @@ function sysload_blocks(array $snaps, int $mins): array
         if (!$open && $ks[$i + 1] !== $k + 1) continue;      // a gap: nothing was recorded, so no figure
         $da = $b['all'] - $a['all']; if ($da <= 0 || $b['t'] - $a['t'] < 45) continue;
         $ds = isset($a['steal'], $b['steal']) ? (float)$b['steal'] - (float)$a['steal'] : null;
-        $out[] = ['from' => date('H:i', $k * 300), 'to' => date('H:i', $open ? $b['t'] : ($k + 1) * 300), 'open' => $open,
+        $out[] = ['ts' => $k * 300, 'from' => date('H:i', $k * 300), 'to' => date('H:i', $open ? $b['t'] : ($k + 1) * 300), 'open' => $open,
             'pct' => round(100 * (1 - (($b['idle'] - $a['idle']) + (float)$ds) / $da), 1), 'steal' => $ds === null ? null : round(100 * $ds / $da, 1),
             'db' => (($a['db'] ?? null) !== null && ($b['db'] ?? null) !== null && $b['db'] >= $a['db']) ? round(100 * ($b['db'] - $a['db']) / $da, 1) : null];
     }
     return array_reverse($out);
+}
+
+/** One 5-minute piece of the CPU table opened: which functions of the HRMS ran in it (calls, CPU, waiting for the database), minute by minute, and what the database was seen doing.
+ *  $start = the first second of the piece (a multiple of 300). Reads the same request lines the page already records; the database part is kept for about 3 hours only. */
+function sysload_block(array $blocks, int $start): array
+{
+    $start = intdiv($start, 300) * 300; $end = $start + 300; $m0 = intdiv($start, 60); $m1 = $m0 + 5; $now = time(); $d = sysload_dir();
+    $agg = []; $per = []; for ($m = $m0; $m < $m1; $m++) $per[$m] = ['n' => 0, 'cpu' => 0, 'wall' => 0]; $tot = ['n' => 0, 'wall' => 0, 'cpu' => 0];
+    foreach (array_unique([date('YmdH', $start), date('YmdH', $end - 1)]) as $hf) {
+        $f = $d . '/' . $hf . '.log'; if (!is_file($f)) continue; $h = @fopen($f, 'r'); if (!$h) continue;
+        while (($l = fgets($h)) !== false) {
+            $p = explode("\t", rtrim($l)); if (count($p) < 4) continue; $m = (int)$p[0]; if ($m < $m0 || $m >= $m1) continue;
+            $a = &$agg[$p[1]]; if ($a === null) $a = ['n' => 0, 'wall' => 0, 'cpu' => 0, 'max' => 0];
+            $a['n']++; $a['wall'] += (int)$p[2]; $a['cpu'] += (int)$p[3]; if ((int)$p[2] > $a['max']) $a['max'] = (int)$p[2]; unset($a);
+            $per[$m]['n']++; $per[$m]['cpu'] += (int)$p[3]; $per[$m]['wall'] += (int)$p[2]; $tot['n']++; $tot['wall'] += (int)$p[2]; $tot['cpu'] += (int)$p[3];
+        }
+        fclose($h);
+    }
+    $names = sysload_names(); $rows = [];
+    foreach ($agg as $k => $a) {
+        $nm = $names[$k] ?? null; $job = in_array($k, ['wa.cron', 'wa.cron_send', 'bd.tick', 'dp.tick', 'chk.tick', 'orders.cron', 'mail.cron', 'lib.cron', 'reminders.tick'], true);      // only the real server jobs (cron); "wa.camp_fast_tick" and "wa.dq_worker" are open Campaigns pages = people
+        $rows[] = ['action' => $k, 'name' => $nm ? $nm[0] : $k, 'why' => $nm ? $nm[1] : '', 'kind' => $job ? 'job' : (strpos($k, 'webhook') !== false ? 'outside' : 'people'),
+            'calls' => $a['n'], 'avg_ms' => (int)round($a['wall'] / max(1, $a['n'])), 'max_ms' => $a['max'], 'cpu_s' => round($a['cpu'] / 1000, 1), 'wall_s' => round($a['wall'] / 1000, 1), 'wait_s' => round(max(0, $a['wall'] - $a['cpu']) / 1000, 1),
+            'time_share' => $tot['wall'] > 0 ? round(100 * $a['wall'] / $tot['wall'], 1) : 0, 'cpu_share' => $tot['cpu'] > 0 ? round(100 * $a['cpu'] / $tot['cpu'], 1) : 0];
+    }
+    usort($rows, fn($x, $y) => $y['wall_s'] <=> $x['wall_s']);
+    $mins = []; foreach ($per as $m => $v) $mins[] = ['at' => date('H:i', $m * 60), 'calls' => $v['n'], 'cpu_s' => round($v['cpu'] / 1000, 1), 'wall_s' => round($v['wall'] / 1000, 1)];
+    // the database, as it was LOOKED AT during these minutes
+    $looks = 0; $q = [];
+    foreach ((array)@glob($d . '/ql/*.json') as $f) { $m = (int)basename($f, '.json'); if ($m < $m0 || $m >= $m1) continue; $j = json_decode((string)@file_get_contents($f), true); if (!is_array($j)) continue; $looks += (int)($j['looks'] ?? 0);
+        foreach ((array)($j['q'] ?? []) as $k => $v) { if (!isset($q[$k])) $q[$k] = [0, 0]; $q[$k][0] += (int)$v[0]; if ((int)$v[1] > $q[$k][1]) $q[$k][1] = (int)$v[1]; } }
+    $sum = array_sum(array_column($q, 0)); $dbq = [];
+    foreach ($q as $k => $v) $dbq[] = ['q' => (string)$k, 'seen' => $v[0], 'share' => $sum ? round(100 * $v[0] / $sum, 1) : 0, 'cores' => $looks ? round($v[0] / $looks, 2) : 0, 'max_s' => $v[1]];
+    usort($dbq, fn($x, $y) => $y['seen'] <=> $x['seen']);
+    $b = null; foreach ($blocks as $x) if (($x['ts'] ?? 0) === $start) { $b = $x; break; }
+    $kinds = ['job' => 0.0, 'people' => 0.0, 'outside' => 0.0]; foreach ($rows as $r) $kinds[$r['kind']] += $r['wall_s'];
+    return ['ts' => $start, 'from' => date('H:i', $start), 'to' => date('H:i', $end), 'block' => $b, 'requests' => $tot['n'], 'wall_s' => round($tot['wall'] / 1000, 1), 'cpu_s' => round($tot['cpu'] / 1000, 1),
+        'kinds' => ['job' => round($kinds['job'], 1), 'people' => round($kinds['people'], 1), 'outside' => round($kinds['outside'], 1)], 'actions' => array_slice($rows, 0, 25), 'minutes' => $mins,
+        'db_looks' => $looks, 'db' => array_slice($dbq, 0, 8), 'recorded' => $tot['n'] > 0 || $start > $now - 2 * 86400, 'db_kept' => $start > $now - 190 * 60];
 }
 
 /** The whole picture for the page. $mins = how far back the request lines are read (15–180). */
@@ -287,6 +326,12 @@ function sysload_route(PDO $pdo, string $action): void
     $auth = require_auth();
     if (($auth['role'] ?? '') !== 'Admin' && !user_can($auth, 'server_load')) json_response(['error' => 'The server load is for Admin and roles ticked "Server load".'], 403);
     if ($action === 'sysload.view') { @set_time_limit(40); json_response(sysload_view($pdo, max(15, min(180, (int)($_GET['mins'] ?? 60))))); }
+    if ($action === 'sysload.block') {      // one 5-minute piece of the CPU table opened: what ran in it
+        @set_time_limit(30); $st = (int)($_GET['start'] ?? 0); if ($st <= 0) json_response(['error' => 'Which time?'], 422);
+        $snaps = []; foreach ((array)@file(sysload_dir() . '/cpu.log') as $l) { $j = json_decode((string)$l, true); if (is_array($j) && isset($j['t'], $j['all'])) $snaps[] = $j; }
+        $cur = sysload_counters(); if ($cur) $snaps[] = $cur;
+        json_response(sysload_block(sysload_blocks($snaps, 1440), $st));
+    }
     json_response(['error' => 'Unknown action.'], 404);
 }
 
