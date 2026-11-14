@@ -65,7 +65,7 @@ function sysload_looks(string $d): void
         $me = (int)$pdo->query("SELECT CONNECTION_ID()")->fetchColumn(); $seen = []; $looks = 0; $run = 0;
         for ($i = 0; $i < 25; $i++) {
             foreach ($pdo->query("SHOW FULL PROCESSLIST")->fetchAll(PDO::FETCH_ASSOC) as $x) {
-                if ((int)$x['Id'] === $me || (string)$x['Command'] !== 'Query' || trim((string)$x['Info']) === '') continue;
+                if ((int)$x['Id'] === $me || !in_array((string)$x['Command'], ['Query', 'Execute'], true) || trim((string)$x['Info']) === '') continue;
                 $q = preg_replace('/\s+/', ' ', (string)$x['Info']); $q = preg_replace("/'(?:[^'\\\\]|\\\\.)*'/", '?', $q); $q = preg_replace('/\b\d+(\.\d+)?\b/', 'N', $q); $q = preg_replace('/\((?:\s*[?N]\s*,)+\s*[?N]\s*\)/', '(…)', $q);
                 $k = mb_substr($q, 0, 300); if (!isset($seen[$k])) $seen[$k] = [0, 0]; $seen[$k][0]++; if ((int)$x['Time'] > $seen[$k][1]) $seen[$k][1] = (int)$x['Time']; $run++;
             }
