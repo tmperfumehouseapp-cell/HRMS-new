@@ -46,7 +46,7 @@ function wo_get(PDO $pdo, string $k, string $d = ''): string
 }
 function wo_put(PDO $pdo, string $k, string $v): void
 {
-    try { $pdo->prepare("INSERT INTO hrms_settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)")->execute([$k, $v]); } catch (Throwable $e) { }
+    try { $pdo->prepare("INSERT INTO hrms_settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)")->execute([$k, $v]); if (function_exists('hrms_settings_bump')) hrms_settings_bump(); } catch (Throwable $e) { }
 }
 /** The last 10 digits of a phone number ('' when there are fewer than 10 digits). Handles +91 / 91 / 0 / spaces / dashes and the ".0" a spreadsheet adds. */
 function wo_key($n): string

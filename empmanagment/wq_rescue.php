@@ -76,7 +76,7 @@ function wq_rescue_save_cfg(PDO $pdo, array $in): void
     foreach ($m as $k => $key) {
         if (!array_key_exists($k, $in)) continue; $v = ($k === 'on' || $k === 'hide_long' || $k === 'bot_first') ? (!empty($in[$k]) ? '1' : '0') : (string)(float)$in[$k];
         if ($k === 'days') $v = (string)max(1, min(30, (int)$in[$k])); if ($k === 'wait_h') $v = (string)max(0.5, min(48, (float)$in[$k])); if ($k === 'attempts') $v = (string)max(1, min(30, (int)$in[$k])); if ($k === 'decide_days') $v = (string)max(1, min(30, (int)$in[$k])); if ($k === 'stale_days') $v = (string)max(2, min(60, (int)$in[$k])); if ($k === 'max_open') $v = (string)max(1, min(100, (int)$in[$k])); if ($k === 'view_days') $v = (string)max(1, min(365, (int)$in[$k]));
-        $pdo->prepare("INSERT INTO hrms_settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)")->execute([$key, $v]);
+        $pdo->prepare("INSERT INTO hrms_settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)")->execute([$key, $v]); if (function_exists('hrms_settings_bump')) hrms_settings_bump();
         if (isset($GLOBALS['__wq_set'][$key])) unset($GLOBALS['__wq_set'][$key]);
     }
 }

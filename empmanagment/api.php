@@ -2240,16 +2240,35 @@ function hrms_memo(string $key, int $ttl, callable $fn)
     if (mt_rand(1, 400) === 1) foreach ((array)@glob(dirname($f) . '/hrms_memo_*') as $g) if ($now - (int)@filemtime($g) > 7200) @unlink($g);
     $mem[$key] = [time(), $v]; return $v;
 }
+/** ⚡ The settings notebook (hrms_settings, ~4,600 lines) was read in full by EVERY request — about 80 times a second — though a request needs a handful of lines.
+ *  Now one copy of its small values is kept in a private temp file and shared by all requests:
+ *   - every setting_set() (and every direct write that calls hrms_settings_bump()) makes the copy out of date at once, so a saved value is seen by the next request;
+ *   - whatever happens, a copy is never used for more than 5 seconds;
+ *   - keys that work as LOCKS (their name has "lock" or ends in _lk) are never taken from the copy: they are read straight from the table every time. */
+function hrms_settings_base(): string { static $b = null; return $b ??= rtrim(sys_get_temp_dir(), '/') . '/hrms_settings_' . substr(md5(__DIR__), 0, 8); }
+function hrms_settings_bump(): void { @file_put_contents(hrms_settings_base() . '.gen', hrtime(true) . '-' . mt_rand(), LOCK_EX); }
+function hrms_settings_load(PDO $pdo): array
+{
+    $base = hrms_settings_base(); $g = @file_get_contents($base . '.gen');
+    if ($g === false || $g === '') { $g = hrtime(true) . '-' . mt_rand(); @file_put_contents($base . '.gen', $g, LOCK_EX); }
+    $raw = @file_get_contents($base . '.snap');
+    if ($raw !== false && $raw !== '') { $sn = @unserialize($raw, ['allowed_classes' => false]); if (is_array($sn) && ($sn['g'] ?? null) === $g && time() - (int)($sn['t'] ?? 0) < 5 && is_array($sn['c'] ?? null)) return $sn['c']; }
+    $cache = []; $ok = false;   // the generation $g was read BEFORE the table: a save made meanwhile makes this copy out of date from its first second
+    if (ensure_reminder_tables($pdo)) {
+        // ⚡ small values come in one query; BIG values (day caches, backups, JSON lists — often hundreds of KB) are left out and read only when asked for
+        try { foreach ($pdo->query("SELECT setting_key, IF(LENGTH(setting_value) > 4096, NULL, setting_value) AS v, LENGTH(setting_value) > 4096 AS big FROM hrms_settings")->fetchAll() as $r) $cache[$r['setting_key']] = (int)$r['big'] ? ['__big' => 1] : $r['v']; $ok = true; }
+        catch (PDOException $e) { try { foreach ($pdo->query("SELECT setting_key, setting_value FROM hrms_settings")->fetchAll() as $r) $cache[$r['setting_key']] = $r['setting_value']; } catch (PDOException $e2) {} }
+    }
+    if ($ok) { $tmp = $base . '.snap.' . getmypid(); if (@file_put_contents($tmp, serialize(['g' => $g, 't' => time(), 'c' => $cache])) !== false) { @chmod($tmp, 0600); @rename($tmp, $base . '.snap'); } }
+    return $cache;
+}
 function setting_get(PDO $pdo, string $key, $default = null)
 {
     $cache = &$GLOBALS['__hrms_setting_cache'];   // shared with setting_set(): a value saved in this request is read back as saved (it used to stay the old one until the next request)
-    if ($cache === null) {
-        $cache = [];
-        if (ensure_reminder_tables($pdo)) {
-            // ⚡ small values come in one query; BIG values (day caches, backups, JSON lists — often hundreds of KB) are left out and read only when asked for
-            try { foreach ($pdo->query("SELECT setting_key, IF(LENGTH(setting_value) > 4096, NULL, setting_value) AS v, LENGTH(setting_value) > 4096 AS big FROM hrms_settings")->fetchAll() as $r) $cache[$r['setting_key']] = (int)$r['big'] ? ['__big' => 1] : $r['v']; }
-            catch (PDOException $e) { try { foreach ($pdo->query("SELECT setting_key, setting_value FROM hrms_settings")->fetchAll() as $r) $cache[$r['setting_key']] = $r['setting_value']; } catch (PDOException $e2) {} }
-        }
+    if ($cache === null) $cache = hrms_settings_load($pdo);
+    if (strpos($key, 'lock') !== false || substr($key, -3) === '_lk') {   // a lock: always the table's own current value
+        try { $q = $pdo->prepare("SELECT setting_value FROM hrms_settings WHERE setting_key = ?"); $q->execute([$key]); $v = $q->fetchColumn(); if ($v === false) { unset($cache[$key]); return $default; } return $cache[$key] = $v; } catch (PDOException $e) { }
+        return array_key_exists($key, $cache) ? $cache[$key] : $default;
     }
     if (!array_key_exists($key, $cache)) return $default;
     if (is_array($cache[$key])) { try { $q = $pdo->prepare("SELECT setting_value FROM hrms_settings WHERE setting_key = ?"); $q->execute([$key]); $v = $q->fetchColumn(); $cache[$key] = $v === false ? null : $v; } catch (PDOException $e) { return $default; } if ($cache[$key] === null) return $default; }
@@ -2291,6 +2310,7 @@ function setting_set(PDO $pdo, string $key, $value): void
 {
     ensure_reminder_tables($pdo);
     $pdo->prepare("INSERT INTO hrms_settings (setting_key, setting_value) VALUES (?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)")->execute([$key, $value === null ? null : (string)$value]);
+    hrms_settings_bump();   // the shared copy of the notebook is out of date from this moment
     if (is_array($GLOBALS['__hrms_setting_cache'] ?? null)) $GLOBALS['__hrms_setting_cache'][$key] = $value === null ? null : (string)$value;   // read back as saved in the same request
 }
 
