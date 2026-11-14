@@ -669,12 +669,12 @@ html.wxdk [data-tone]{background:rgba(128,128,128,.12) !important;color:#e9edef}
       drawL(); $(m.body, '#rpBack').onclick = () => { m.close(); details(c); };
     }
     async function people(c) {
-      const m = modal(c.name); m.el.classList.add('cu-wide'); let f = 'all', q = '', page = 1, rows = [], more = false, counts = null, reasons = [], res = null, busy = false, qt = null, wait = '';
+      const m = modal(c.name); m.el.classList.add('cu-wide'); let f = 'all', q = '', page = 1, rows = [], more = false, counts = null, reasons = [], skipR = [], res = null, busy = false, qt = null, wait = '';
       m.body.innerHTML = loading;
       try { res = (await api.get('wa.camp_get', { id: c.id })).campaign.result; } catch (e) { m.body.innerHTML = errBox(e.message); return; }
       async function fetchRows(reset) {
         if (busy) return; busy = true; if (reset) { page = 1; rows = []; }
-        try { const d = await api.get('wa.camp_people', { id: c.id, f, q, page }); rows = rows.concat(d.rows); more = d.more; if (d.counts) { counts = d.counts; reasons = d.reasons || []; wait = d.wait || ''; } } catch (e) { busy = false; $(m.body, '#cuL').innerHTML = errBox(e.message); return; }
+        try { const d = await api.get('wa.camp_people', { id: c.id, f, q, page }); rows = rows.concat(d.rows); more = d.more; if (d.counts) { counts = d.counts; reasons = d.reasons || []; skipR = d.skip_reasons || []; wait = d.wait || ''; } } catch (e) { busy = false; $(m.body, '#cuL').innerHTML = errBox(e.message); return; }
         busy = false; list(); chipsDraw();
       }
       function shell() {
@@ -697,6 +697,7 @@ html.wxdk [data-tone]{background:rgba(128,128,128,.12) !important;color:#e9edef}
         const wn = $(m.body, '#cuNowN'); if (wn && !wn.dataset.sent) wn.innerHTML = wait ? `<div class="wp-note" style="margin:6px 0">⏳ <b>Why they are still waiting:</b> ${esc(wait)}</div>` : '';
         const k = counts || {}; const na = $(m.body, '#cuNowAll'); if (na) { na.hidden = !(k.queued > 0); na.textContent = '⚡ Send all ' + fmt(k.queued || 0) + ' waiting now'; } $(m.body, '#cuCh').innerHTML = Object.keys(ERRS.f).filter((x) => x === 'all' || x === f || (k[x] || 0) > 0).map((x) => `<button type="button" class="wp-chip ${f === x ? 'on' : ''}" data-f="${x}">${ERRS.f[x]} ${fmt(k[x] || 0)}</button>`).join('');
         $(m.body, '#cuCh').querySelectorAll('[data-f]').forEach((b) => { b.onclick = () => { f = b.dataset.f; fetchRows(true); }; });
+        if (f === 'skipped' && skipR.length) { $(m.body, '#cuR').innerHTML = `<div class="wp-hint" style="margin-top:10px"><b>Why they were skipped:</b> ${skipR.map((x) => esc(x.text) + ' <b>' + fmt(x.n) + '</b>').join(' · ')}.<br>These are our own safety rules, not Meta. Change them per campaign in the wizard → <i>Who to leave out</i>.</div>`; return; }
         $(m.body, '#cuR').innerHTML = reasons.length ? `<div class="wp-hint" style="margin-top:10px">Why they failed: ${reasons.map((x) => esc(x.text) + ' ' + fmt(x.n)).join(' · ')}. Replies: within 2 days. Orders: within 7 days.</div>` : '<div class="wp-hint" style="margin-top:10px">Replies: within 2 days of the message. Orders: within 7 days.</div>';
       }
       function list() {
@@ -1083,6 +1084,9 @@ html.wxdk [data-tone]{background:rgba(128,128,128,.12) !important;color:#e9edef}
             ${W.extra.numbers.length >= 2 ? `<div class="wp-hint" style="margin:6px 0 2px">Share per number <small>(how the messages are split between them)</small></div><div class="wp-row" id="cuNw" style="gap:8px">${W.extra.numbers.map((id) => { const n = NS.find((x) => x.id === id) || { label: '#' + id }; const v = (W.extra.num_w || {})[id] != null ? W.extra.num_w[id] : Math.round(100 / W.extra.numbers.length); W.extra.num_w = W.extra.num_w || {}; W.extra.num_w[id] = v; return `<label style="display:flex;align-items:center;gap:4px;font-size:13px">${esc(n.label)} <input class="wp-in" type="number" min="0" max="100" step="5" data-nw="${id}" value="${v}" style="width:70px;padding:4px 6px"> %</label>`; }).join('')}</div>` : ''}`; })()}
           <div class="cu-sec">Send time</div><div class="cu-chips"><button type="button" class="wp-chip ${!W.own ? 'on' : ''}" data-ow="0">⚡ Everyone ${W.start === 'now' ? 'right now' : 'at the start time'}</button><button type="button" class="wp-chip ${W.own ? 'on' : ''}" data-ow="1">🕐 Each person at their best hour</button></div>
           <div class="wp-hint">${W.own ? 'Each customer gets it at the hour they usually write to you — the plan below shows when. Later you can still press ⚡ Send now on the campaign.' : 'Everyone gets it together, starting ' + (W.start === 'now' ? 'now' : 'at the start time') + '.'}</div><div id="cuOwnPlan"></div>
+          <div class="cu-rt"><div class="cu-rh"><b>🎛 Who to leave out</b></div><div class="wp-hint">Our own safety rules. Change them for this campaign only.</div>
+            <div class="wp-2" style="margin-top:6px"><div><label class="wp-fl" style="margin-top:0">Bought in the last … days <small>(0 = send to them too)</small></label><input class="wp-in" id="cuBd" type="number" min="0" max="365" value="${W.extra.bought_days !== undefined && W.extra.bought_days !== '' ? +W.extra.bought_days : 10}"></div><div><label class="wp-fl" style="margin-top:0">Days between two campaigns <small>(0 = no limit)</small></label><input class="wp-in" id="cuGd" type="number" min="0" max="60" value="${W.extra.gap_days !== undefined && W.extra.gap_days !== '' ? +W.extra.gap_days : 3}"></div></div>
+            <div class="cu-rh" style="margin-top:8px"><b>Leave out customers who ignored our last 2 campaigns</b>${sw('cuIg', W.extra.skip_ignored !== 0)}</div></div>
           <div class="cu-rt"><div class="cu-rh"><b>🔁 Leave out customers who got a follow-up in the last day</b>${sw('cuLfu', W.extra.leave_fu !== 0)}</div><div class="wp-hint">A customer the Follow-ups (Autopilot or Journey) messaged in the last 24 hours is skipped in this campaign, so nobody gets two messages in a day. Also, a campaign pauses that customer’s follow-ups for 2 days.</div></div>
           <div class="cu-rt"><div class="cu-rh"><b>🔁 Auto retry if it fails to deliver</b>${sw('cuRt', W.retry)}</div><div class="wp-hint">Same message again, up to <b>${Math.max(1, Math.min(3, +W.extra.retries || 3))} ${(+W.extra.retries || 3) === 1 ? 'try' : 'tries'}</b> in all. Meta charges only when a message is delivered, so a failed try costs nothing.</div>
             <div class="cu-tr">${E.map((x) => { const [a, b] = x.split('|'); return `<div><span>${a}</span><b>${b}</b></div>`; }).join('')}</div><div class="wp-hint">Not retried: opted out · number not on WhatsApp (after the 2nd try) · Meta spam block (the campaign pauses).</div></div>
@@ -1117,7 +1121,7 @@ html.wxdk [data-tone]{background:rgba(128,128,128,.12) !important;color:#e9edef}
       }
       function read3() {
         const r = $(m.body, '#cuRate'); if (r) W.rate = Math.max(1, Math.min(1500, +r.value || 60)); const w = $(m.body, '#cuWin'); if (w) W.win_end = w.value; const s = $(m.body, '#cuSa'); if (s) W.start_at = s.value; const x = $(m.body, '#cuSw'); if (x) W.sw = Math.max(1, Math.min(5, +x.value || 2));
-        const rt = $(m.body, '#cuRt'); if (rt) W.retry = rt.checked; const lf = $(m.body, '#cuLfu'); if (lf) W.extra.leave_fu = lf.checked ? 1 : 0; const cs = $(m.body, '#cuCons'); if (cs) W.consent = cs.checked;
+        const rt = $(m.body, '#cuRt'); if (rt) W.retry = rt.checked; const lf = $(m.body, '#cuLfu'); if (lf) W.extra.leave_fu = lf.checked ? 1 : 0; const bd = $(m.body, '#cuBd'); if (bd) W.extra.bought_days = Math.max(0, Math.min(365, +bd.value || 0)); const gd = $(m.body, '#cuGd'); if (gd) W.extra.gap_days = Math.max(0, Math.min(60, +gd.value || 0)); const ig = $(m.body, '#cuIg'); if (ig) W.extra.skip_ignored = ig.checked ? 1 : 0; const cs = $(m.body, '#cuCons'); if (cs) W.consent = cs.checked;
       }
       async function preview3() {
         await preview(); const box = $(m.body, '#cuPv'); if (!box || !pv || !pv.stats) return; const s = pv.stats; if (!s) return;

@@ -45,6 +45,12 @@
   "items": [
     {
       "date": "2026-11-14",
+      "title": "Campaigns: why people were skipped + who to leave out",
+      "detail": "In a campaign's details, the Skipped tab shows the reasons with counts (bought in the last N days, ignored the last 2 campaigns, got a campaign in the last N days, got a follow-up, opted out …). The wizard has a new 'Who to leave out' box: days since a purchase, days between two campaigns and the ignored-2-campaigns switch, for that campaign only.",
+      "where": "WhatsApp → Campaigns → a campaign → Skipped; New campaign → step with the Send time"
+    },
+    {
+      "date": "2026-11-14",
       "title": "Customers' automatic replies leave Requests",
       "detail": "When a customer's business app answers our message by itself (\"Thank you for contacting …\", \"We're unavailable right now, but will respond as soon as possible\"), that chat is resolved automatically and no bot / flow / query typing runs on it. When the customer really writes later, the chat comes back to Requests. Chats already waiting in Requests that only have such replies are cleaned every 5 minutes.",
       "where": "WhatsApp → Chats → Requests"
