@@ -1167,6 +1167,7 @@ function wa_tag_group_of(string $k): string
     if (preg_match('/^(no_haggle|price_sensitive|quick_decider|slow_decider|replies_to_followups|second_order|third_order_plus|one_time_buyer|lapsed_buyer|premium_buyer|budget_buyer|ignored_fu|returning_enquiry|considering|interested|hot)$/', $k)) return 'Behaviour';
     if (preg_match('/^(meta_ad|from_ad|community|campaign|instagram|friend|facebook|query)$|_query$/', $k)) return 'Came from';
     if (preg_match('/^(bought|repeat|vip|not_ordered|cod_pending|came_back|order_query|order_campaign|premium_)/', $k)) return 'Buying';
+    if (preg_match('/^(value_|reach_|score_)/', $k)) return 'Value & quality';
     if (strpos($k, 'arrive_') === 0) return 'Time'; if (preg_match('/^(seg_|list_|import_)/', $k)) return 'Lists'; return 'Other';
 }
 /** 🪪 One customer's card: who they are, every tag with the reason, orders in short, and every campaign message they got (delivered / read / replied / failed). Indexed lookups by phone only. */

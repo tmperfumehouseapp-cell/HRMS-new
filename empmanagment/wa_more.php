@@ -901,8 +901,9 @@ if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.
             // every stored tag of the customers on this page (imported list tags, campaign, query types, people's and Claude's tags) — one query
             $ph = array_values(array_unique(array_map(fn($r) => (string)$r['phone'], $page))); $tg = [];
             if ($ph) { try { $tq = $pdo->prepare("SELECT phone, tag FROM wa_ctags WHERE phone IN (" . implode(',', array_fill(0, count($ph), '?')) . ") ORDER BY tag"); $tq->execute($ph); foreach ($tq->fetchAll() as $t) $tg[(string)$t['phone']][] = (string)$t['tag']; } catch (Throwable $e) { } }
+            $fxm = []; if ($ph && function_exists('cfun_tables')) { try { $fq = $pdo->prepare("SELECT phone, score, val, health, grp, last_deliv, last_in, last_out, out_n, deliv_n, fail_n, in_n FROM wa_cfun WHERE phone IN (" . implode(',', array_fill(0, count($ph), '?')) . ")"); $fq->execute($ph); foreach ($fq->fetchAll(PDO::FETCH_ASSOC) as $x) $fxm[(string)$x['phone']] = $x; } catch (Throwable $e) { } }   // 📊 the funnel facts of these customers (one indexed read)
             $lab = (function_exists('wq_tag_labels') ? wq_tag_labels() : []) + (function_exists('wcs_seg_names') ? wcs_seg_names($pdo) : []);
-            foreach ($page as &$r) { $r['tags'] = array_map(fn($t) => ['k' => $t, 't' => $lab[$t] ?? (strpos($t, 'import_') === 0 ? 'Imported ' . substr($t, 7) : str_replace('_', ' ', $t))], $tg[(string)$r['phone']] ?? []); } unset($r);
+            foreach ($page as &$r) { $r['fx'] = $fxm[(string)$r['phone']] ?? null; $r['tags'] = array_map(fn($t) => ['k' => $t, 't' => $lab[$t] ?? (strpos($t, 'import_') === 0 ? 'Imported ' . substr($t, 7) : str_replace('_', ' ', $t))], $tg[(string)$r['phone']] ?? []); } unset($r);
             json_response(['contacts' => $page, 'total' => $total, 'all' => $allN]);
         }
         case 'wa.contact_import': {
