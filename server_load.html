@@ -31,6 +31,7 @@
   .sl .empty{color:#64748b;font-size:13px;padding:6px 0}
   .sl .cp{border:1px solid #cfd8e3;border-radius:9px;padding:5px 11px;font:inherit;font-size:12.5px;font-weight:700;background:#fff;color:#111;cursor:pointer;margin-top:7px;min-height:0;width:auto}.sl .cp:hover{background:#eef6ff}.sl .cp.big{background:#111827;color:#fff;border-color:#111827;padding:9px 16px;font-size:13.5px;margin:0 0 10px}
   .sl .adv i{display:block;font-style:normal;font-size:12px;color:#64748b;word-break:break-word}
+  .sl tr.blk{cursor:pointer}.sl tr.blk:hover td{background:#f1f5f9}.sl .bdt table{font-size:12.5px;margin:4px 0}.sl .bdt h3{margin:10px 0 4px;font-size:13.5px}.sl .pill{display:inline-block;padding:1px 8px;border-radius:9px;font-size:11.5px;font-weight:700}.sl .pill.job{background:#e0e7ff;color:#3730a3}.sl .pill.people{background:#dcfce7;color:#166534}.sl .pill.outside{background:#fef3c7;color:#92400e}
 </style>
 </head>
 <body>
@@ -85,7 +86,7 @@
     const B = d.blocks || [], done = B.filter((b) => !b.open), pk = done.reduce((m, b) => (!m || b.pct > m.pct ? b : m), null);
     h += card('CPU · every 5 minutes', 'One line for each 5 minutes on the clock, newest first. This is the same thing the hosting graph draws, so compare a line here with the same time there. ' + (pk ? 'Highest in this period: <b>' + pk.pct + '%</b> at ' + pk.from + '–' + pk.to + '.' : ''),
       B.length ? '<div class="wrap"><table><thead><tr><th>Time</th><th>CPU used</th><th>Database part</th><th>Taken by the hosting</th></tr></thead><tbody>'
-        + B.map((b) => '<tr><td><b>' + b.from + ' – ' + b.to + '</b>' + (b.open ? ' <small style="display:inline">still running</small>' : '') + '</td><td><span class="meter" style="width:180px"><i class="' + (b.pct >= 80 ? 'hi' : '') + '" style="width:' + Math.min(100, b.pct) + '%;' + (b.pct < 50 ? 'background:#16a34a' : '') + '"></i></span><b>' + b.pct + '%</b></td><td>' + (b.db == null ? '—' : b.db + '%') + '</td><td>' + (b.steal == null ? '—' : b.steal + '%') + '</td></tr>').join('') + '</tbody></table></div>'
+        + B.map((b) => '<tr class="blk" data-ts="' + b.ts + '" title="Click to see what ran in this time"><td><b>' + b.from + ' – ' + b.to + '</b> <small style="display:inline;color:#1d4ed8">▸ click: what ran</small>' + (b.open ? ' <small style="display:inline">still running</small>' : '') + '</td><td><span class="meter" style="width:180px"><i class="' + (b.pct >= 80 ? 'hi' : '') + '" style="width:' + Math.min(100, b.pct) + '%;' + (b.pct < 50 ? 'background:#16a34a' : '') + '"></i></span><b>' + b.pct + '%</b></td><td>' + (b.db == null ? '—' : b.db + '%') + '</td><td>' + (b.steal == null ? '—' : b.steal + '%') + '</td></tr><tr class="bdt" data-for="' + b.ts + '" style="display:none"><td colspan="4" style="text-align:left;white-space:normal;background:#f8fafc"></td></tr>').join('') + '</tbody></table></div>'
         : '<div class="empty">Counting — the first line appears after about 5 minutes.</div>');
     PR = [d.full_prompt || ''].concat((d.advice || []).map((a) => a.prompt || '')); LAST = d; $('bPrompt').disabled = !PR[0]; if ($('slHint').style.display !== 'none') $('slHint').innerHTML = hintHtml();
     h += card('What to do', 'Worked out from the numbers on this page, the most expensive first. Press <b>Copy prompt</b> on a row and paste it to Claude: it carries the numbers and the query, so Claude can fix exactly that.',
@@ -112,6 +113,27 @@
       (d.engine || []).length ? d.engine.map((e) => '<p class="sub" style="margin-top:6px"><b>' + esc(e.title) + '</b> · last run ' + esc(e.at) + '</p>' + (e.steps.length ? '<div class="wrap"><table><thead><tr><th>Part</th><th>Took</th></tr></thead><tbody>' + e.steps.map((s) => '<tr><td>' + esc(s.step) + '</td><td><b>' + s.secs + ' s</b></td></tr>').join('') + '</tbody></table></div>' : '<div class="empty">Every part took under half a second.</div>')).join('') : '<div class="empty">No engine timings recorded yet.</div>');
     $('root').innerHTML = h;
   }
+  // 🔎 click a 5-minute line: which functions ran in it, minute by minute, and what the database was doing
+  const KIND = { job: ['Server job', 'job'], people: ['People using pages', 'people'], outside: ['WhatsApp / Shopify calling in', 'outside'] };
+  function blockHtml(r) {
+    if (!r.requests) return '<div class="empty">Nothing was recorded for ' + r.from + '–' + r.to + '. The recorder keeps the last 2 days, and it only counts requests from the moment it was installed.</div>';
+    const K = r.kinds || {}, tot = (K.job || 0) + (K.people || 0) + (K.outside || 0);
+    let h = '<p class="sub" style="margin:4px 0 6px"><b>' + r.from + '–' + r.to + '</b> · the HRMS answered <b>' + num(r.requests) + '</b> requests, ' + r.wall_s + ' s of work in total (' + r.cpu_s + ' s of it its own CPU, the rest waiting for the database or outside services).'
+      + (r.block ? ' The whole server was at <b>' + r.block.pct + '%</b>' + (r.block.db != null ? ', the database part <b>' + r.block.db + '%</b>' : '') + '.' : '') + '</p>';
+    h += '<p class="sub" style="margin:0 0 6px">' + ['job', 'people', 'outside'].map((k) => '<span class="pill ' + k + '">' + KIND[k][0] + '</span> ' + (K[k] || 0) + ' s' + (tot ? ' (' + Math.round(100 * (K[k] || 0) / tot) + '%)' : '')).join(' &nbsp; ') + '</p>';
+    h += '<h3>Which functions ran (most time first)</h3><div class="wrap"><table><thead><tr><th>Function</th><th>Type</th><th>Share of time</th><th>Calls</th><th>Each takes</th><th>Slowest</th><th>Total</th><th>PHP itself</th><th>Waiting</th></tr></thead><tbody>'
+      + (r.actions || []).map((a) => '<tr><td><b>' + esc(a.name) + '</b>' + (a.name !== a.action ? ' <code>' + esc(a.action) + '</code>' : '') + (a.why ? '<small>' + esc(a.why) + '</small>' : '') + '</td><td><span class="pill ' + a.kind + '">' + KIND[a.kind][0] + '</span></td><td><span class="meter"><i class="' + (a.time_share >= 25 ? 'hi' : '') + '" style="width:' + Math.min(100, a.time_share) + '%"></i></span><b>' + a.time_share + '%</b></td><td>' + num(a.calls) + '</td><td>' + dur(a.avg_ms) + '</td><td>' + dur(a.max_ms) + '</td><td>' + a.wall_s + ' s</td><td>' + a.cpu_s + ' s</td><td>' + a.wait_s + ' s</td></tr>').join('') + '</tbody></table></div>';
+    h += '<h3>Minute by minute</h3><div class="wrap"><table><thead><tr><th>Minute</th><th>Requests</th><th>Work</th><th>PHP itself</th></tr></thead><tbody>' + (r.minutes || []).map((m) => '<tr><td>' + m.at + '</td><td>' + num(m.calls) + '</td><td>' + m.wall_s + ' s</td><td>' + m.cpu_s + ' s</td></tr>').join('') + '</tbody></table></div>';
+    h += '<h3>What the database was doing</h3>' + ((r.db || []).length ? '<p class="sub" style="margin:0 0 4px">Looked at ' + num(r.db_looks) + ' times in these minutes.</p><div class="wrap"><table><thead><tr><th>Query</th><th>Share</th><th>CPU cores busy</th><th>Longest seen</th></tr></thead><tbody>' + r.db.map((q) => '<tr><td><code>' + esc(q.q) + '</code></td><td><b>' + q.share + '%</b></td><td>' + q.cores + '</td><td>' + (q.max_s ? q.max_s + ' s' : 'under 1 s') + '</td></tr>').join('') + '</tbody></table></div>'
+      : '<div class="empty">' + (r.db_kept ? 'No database query was caught in these minutes.' : 'The database details are kept for about 3 hours only, so this older time has none.') + '</div>');
+    return h;
+  }
+  document.addEventListener('click', async (e) => {
+    const tr = e.target.closest('tr.blk'); if (!tr) return; const ts = tr.dataset.ts, box = document.querySelector('tr.bdt[data-for="' + ts + '"]'); if (!box) return;
+    if (box.style.display !== 'none') { box.style.display = 'none'; return; }
+    box.style.display = ''; const td = box.firstElementChild; td.innerHTML = '<div class="empty">Reading…</div>';
+    try { td.innerHTML = blockHtml(await api.get('sysload.block', { start: ts })); } catch (er) { td.innerHTML = '<div class="adv bad"><b>Could not read this time</b>' + esc(er.message || '') + '</div>'; }
+  });
   async function load() {
     const b = $('bRef'); b.disabled = true;
     try { draw(await api.get('sysload.view', { mins: $('fMins').value })); }
