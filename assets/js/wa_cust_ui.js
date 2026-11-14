@@ -390,7 +390,8 @@ html.wxdk .wcs{--ln:#25343e; --gb:#0f2e20; --rb:#3a1515;} html.wxdk .wcs-r,html.
       function n0(x) { return Number(x || 0).toLocaleString('en-IN'); }
       const HEAD = ['Phone', 'Name', 'Status', 'Replied', 'Opted out', 'Messages sent', 'Delivered / read', 'Sent, not confirmed', 'Failed', 'Messages received', 'Orders', 'First message from us', 'Last message from us', 'Last message from them'];
       const LAB = { replied: 'Replied', failed: 'Failed', delivered: 'Delivered, no reply', pending: 'Sent, not confirmed', untried: 'Never messaged' };
-      const row = (r) => [r.phone, r.name, LAB[r.bucket] || r.bucket, +r.replied ? 'yes' : '', +r.optout ? 'yes' : '', +r.out_n, +r.deliv_n, +r.sent_n, +r.fail_n, +r.in_n, +r.orders_n, r.first_out || '', r.last_out || '', r.last_in || ''];
+      const safe = (v) => (typeof v === 'string' && /^[=+\-@\t\r]/.test(v) ? "'" + v : v);   // a name that starts with = + - @ must not run as an Excel formula
+      const row = (r) => [r.phone, safe(r.name), LAB[r.bucket] || r.bucket, +r.replied ? 'yes' : '', +r.optout ? 'yes' : '', +r.out_n, +r.deliv_n, +r.sent_n, +r.fail_n, +r.in_n, +r.orders_n, r.first_out || '', r.last_out || '', r.last_in || ''];
       const save = async (rows, name) => {
         try { if (!window.ExcelJS) await new Promise((ok, no) => { const s = document.createElement('script'); s.src = 'assets/js/exceljs.min.js'; s.onload = ok; s.onerror = no; document.head.appendChild(s); });
           const wb = new ExcelJS.Workbook(), ws = wb.addWorksheet('Customers'); ws.addRow(HEAD).font = { bold: true }; rows.forEach((r) => ws.addRow(row(r))); ws.views = [{ state: 'frozen', ySplit: 1 }]; ws.columns.forEach((c, i) => { c.width = [14, 24, 20][i] || 16; });

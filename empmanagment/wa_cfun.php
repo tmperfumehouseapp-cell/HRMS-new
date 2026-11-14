@@ -93,7 +93,7 @@ function cfun_tick(PDO $pdo, bool $force = false, int $budget = 25): array
         // 1. the customers the latest messages / orders touched (status changes keep the same message id, so the newest 60 000 messages are looked at again)
         $touch = [];
         try { $mx = (int)$pdo->query("SELECT COALESCE(MAX(id), 0) FROM wa_messages")->fetchColumn(); $q = $pdo->prepare("SELECT DISTINCT phone FROM wa_messages WHERE id > ? LIMIT 30000"); $q->execute([max(0, $mx - 60000)]); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $p) $touch[(string)$p] = 1; } catch (Throwable $e) { }
-        foreach ([["SELECT phone FROM wa_contacts WHERE first_seen >= ? LIMIT 20000"], ["SELECT phone FROM wa_contacts WHERE last_in_at >= ? LIMIT 20000"], ["SELECT phone FROM wa_cust WHERE last_order >= ? LIMIT 20000"]] as $s) {
+        foreach ([["SELECT /*+ MAX_EXECUTION_TIME(8000) */ phone FROM wa_contacts WHERE first_seen >= ? LIMIT 20000"], ["SELECT phone FROM wa_contacts WHERE last_in_at >= ? LIMIT 20000"], ["SELECT phone FROM wa_cust WHERE last_order >= ? LIMIT 20000"]] as $s) {
             try { $q = $pdo->prepare($s[0]); $q->execute([$since]); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $p) $touch[(string)$p] = 1; } catch (Throwable $e) { } }
         foreach (array_chunk(array_keys($touch), 1500) as $ch) { if (!$left()) break; $o['patched'] += cfun_calc($pdo, $ch); }
         // 2. the walk over everybody (a full pass about once a day, or at once while the table is still empty)
@@ -101,16 +101,20 @@ function cfun_tick(PDO $pdo, bool $force = false, int $budget = 25): array
         if ($cur === 'done' && $fullAt < time() - 20 * 3600) $cur = '';
         if ($cur !== 'done') {
             while ($left()) {
-                $q = $pdo->prepare("SELECT phone FROM (SELECT phone FROM wa_contacts WHERE phone > ? UNION SELECT phone FROM wa_cust WHERE phone > ?) u ORDER BY phone LIMIT 1500"); $q->execute([$cur, $cur]);
-                $ph = $q->fetchAll(PDO::FETCH_COLUMN); if (!$ph) { $cur = 'done'; setting_set($pdo, 'wa_cfun_full', date('Y-m-d H:i:s')); break; }
+                $ph = [];
+                foreach (["SELECT phone FROM wa_contacts WHERE phone > ? ORDER BY phone LIMIT 1500", "SELECT phone FROM wa_cust WHERE phone > ? ORDER BY phone LIMIT 1500"] as $sq) {   // two plain reads, merged here: no collation clash
+                    try { $q = $pdo->prepare($sq); $q->execute([$cur]); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $x) $ph[(string)$x] = 1; } catch (Throwable $e) { }
+                }
+                $ph = array_map('strval', array_keys($ph)); sort($ph, SORT_STRING); $ph = array_slice($ph, 0, 1500);
+                if (!$ph) { $cur = 'done'; setting_set($pdo, 'wa_cfun_full', date('Y-m-d H:i:s')); break; }
                 $o['walked'] += cfun_calc($pdo, $ph); $cur = (string)end($ph); usleep(60000);   // a short breath between chunks keeps the database calm
             }
             setting_set($pdo, 'wa_cfun_cur', $cur);
         }
         // 3. the numbers for the screen (one cached row); while the first walk is not finished this runs again on the next round
         setting_set($pdo, 'wa_cfun_stats', json_encode(cfun_stats($pdo) + ['walking' => $cur === 'done' ? 0 : 1]));
-        if ($cur === 'done' || $force) setting_set($pdo, 'wa_cfun_at', date('Y-m-d H:i:s'));
-        elseif ($o['walked'] > 0) setting_set($pdo, 'wa_cfun_at', date('Y-m-d H:i:s', time() - 3300 + 240));   // first build: come back in ~4 minutes
+        if ($cur === 'done') setting_set($pdo, 'wa_cfun_at', date('Y-m-d H:i:s'));
+        else setting_set($pdo, 'wa_cfun_at', date('Y-m-d H:i:s', time() - 3300 + 240));   // first build: come back in ~4 minutes
     } catch (Throwable $e) { error_log('cfun_tick: ' . $e->getMessage()); $o['error'] = mb_substr($e->getMessage(), 0, 160); }
     try { $pdo->query("SELECT RELEASE_LOCK('wa_cfun')"); } catch (Throwable $e) { }
     $o['sec'] = round(microtime(true) - $t0, 1); return $o;
