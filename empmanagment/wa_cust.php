@@ -47,7 +47,7 @@ function wcs_clean($raw): array
 {
     $f = []; if (!is_array($raw)) return $f;
     $dk = (string)($raw['dk'] ?? 'in'); $df = wcs_date($raw['df'] ?? ''); $dt = wcs_date($raw['dt'] ?? '');
-    $map = ['in' => ['in_from', 'in_to'], 'added' => ['added_from', 'added_to'], 'order' => ['lo_from', 'lo_to'], 'camp' => ['camp_from', 'camp_to']];
+    $map = ['in' => ['in_from', 'in_to'], 'added' => ['added_from', 'added_to'], 'order' => ['lo_from', 'lo_to'], 'camp' => ['camp_from', 'camp_to'], 'sent' => ['sent_from', 'sent_to'], 'deliv' => ['dlv_from', 'dlv_to'], 'fail' => ['fl_from', 'fl_to']];
     if (isset($map[$dk])) { if ($df !== '') $f[$map[$dk][0]] = $df; if ($dt !== '') $f[$map[$dk][1]] = $dt; }
     if ($t = wcs_tags($raw['tags_any'] ?? [])) $f['gtags'] = $t;
     if ($t = wcs_tags($raw['tags_all'] ?? [])) $f['tags_all'] = $t;
@@ -57,6 +57,15 @@ function wcs_clean($raw): array
     foreach (['ord_min', 'ord_max', 'sp_min', 'sp_max', 'num', 'emp', 'ign'] as $k) if (isset($raw[$k]) && $raw[$k] !== '' && is_numeric($raw[$k])) $f[$k] = (int)$raw[$k];
     if (isset($f['ign']) && $f['ign'] <= 0) unset($f['ign']);
     if (isset($raw['nums']) && is_array($raw['nums'])) { $nl = array_values(array_unique(array_filter(array_map('intval', $raw['nums']), fn($x) => $x > 0))); if ($nl) $f['nums'] = array_slice($nl, 0, 20); }   // 📱 customers of these WhatsApp numbers (Main / Second / 3rd / 4th …)
+    // 📊 the customer funnel + conversation (wa_cfun): group · counts · import batch · quality · interest · who wrote last · how many messages each way
+    $pick = function ($v, array $ok) { return array_values(array_intersect(array_map('strval', is_array($v) ? $v : []), $ok)); };
+    if ($t = $pick($raw['fg'] ?? [], ['never', 'sent', 'failed', 'deliv', 'replied', 'ord1', 'ord2'])) $f['fg'] = $t;
+    if ($t = $pick($raw['fc'] ?? [], ['messaged', 'reached', 'not_delivered', 'failed', 'any_failed', 'all_failed', 'replied', 'never_replied', 'wrote_first', 'ordered', 'repeat_n', 'optout', 'named', 'unnamed', 'assigned', 'unassigned', 'imp', 'imp_never', 'imp_deliv', 'imp_nodel'])) $f['fc'] = $t;
+    if ($t = $pick($raw['fq'] ?? [], ['premium', 'std', 'budget'])) $f['fq'] = $t;
+    if ($t = $pick($raw['fi'] ?? [], ['hot', 'interested', 'considering', 'not_interested'])) $f['fi'] = $t;
+    if (isset($raw['fb']) && is_array($raw['fb'])) { $bl = array_values(array_unique(array_filter(array_map(function ($x) { return preg_replace('/[^a-z0-9_]/', '', strtolower((string)$x)); }, $raw['fb']), function ($x) { return $x !== ''; }))); if ($bl) $f['fb'] = array_slice($bl, 0, 20); }
+    if (isset($raw['lby']) && in_array((string)$raw['lby'], ['them', 'us'], true)) $f['lby'] = (string)$raw['lby'];
+    foreach (['rin_min', 'out_min', 'out_max'] as $k) if (isset($raw[$k]) && $raw[$k] !== '' && is_numeric($raw[$k]) && (int)$raw[$k] >= 0) $f[$k] = (int)$raw[$k];
     return $f;
 }
 function wcs_sorts(): array { return ['latest', 'spent', 'orders', 'order_old', 'order_new', 'added', 'name']; }
@@ -181,7 +190,8 @@ if (strpos($__wcs, 'wa.cs_') === 0) {
             usort($ppl, function ($a, $b) { return strcmp($a['name'], $b['name']); });
             $segs = array_map('wcs_seg_public', $pdo->query("SELECT * FROM wa_csegs ORDER BY kind = 'pick', created_at DESC LIMIT 200")->fetchAll());
             $cuts = ['hi' => 3000, 'lo' => 800]; try { if (function_exists('jn_cuts')) { $c0 = jn_cuts($pdo); $cuts = ['hi' => (float)$c0['hi'], 'lo' => (float)$c0['lo']]; } } catch (Throwable $e) { }
-            json_response(['ok' => true, 'tags' => $tags, 'cuts' => $cuts, 'numbers' => $nums, 'people' => $ppl, 'segments' => $segs]);
+            $fun = ['batches' => [], 'walking' => 1]; try { $j = json_decode((string)setting_get($pdo, 'wa_cfun_stats', ''), true); if (is_array($j)) $fun = ['batches' => array_slice($j['by']['all']['batches'] ?? [], 0, 30), 'walking' => (int)($j['walking'] ?? 0), 'total' => (int)($j['by']['all']['total'] ?? 0)]; } catch (Throwable $e) { }
+            json_response(['ok' => true, 'tags' => $tags, 'cuts' => $cuts, 'numbers' => $nums, 'people' => $ppl, 'segments' => $segs, 'funnel' => $fun]);
         }
         case 'wa.cs_count': {
             $f = wcs_clean($cfOf($_GET['cf'] ?? '')); $q = mb_substr(trim((string)($_GET['q'] ?? '')), 0, 80);

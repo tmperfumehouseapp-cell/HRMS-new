@@ -34,7 +34,7 @@ function cfun_tables(PDO $pdo): bool
         // columns added when the two funnels became one — added once, only when missing
         foreach (['src' => "VARCHAR(8) NOT NULL DEFAULT 'campaign'", 'grp' => "VARCHAR(8) NOT NULL DEFAULT 'never'", 'ecode' => 'INT NOT NULL DEFAULT 0', 'last_camp' => 'INT NOT NULL DEFAULT 0',
                   'imp' => 'TINYINT NOT NULL DEFAULT 0', 'batch' => "VARCHAR(24) NOT NULL DEFAULT ''", 'qual' => "VARCHAR(8) NOT NULL DEFAULT ''", 'intent' => "VARCHAR(12) NOT NULL DEFAULT ''",
-                  'named' => 'TINYINT NOT NULL DEFAULT 0', 'asg' => 'TINYINT NOT NULL DEFAULT 0', 'num' => 'INT NOT NULL DEFAULT 0'] as $col => $def) {
+                  'named' => 'TINYINT NOT NULL DEFAULT 0', 'asg' => 'TINYINT NOT NULL DEFAULT 0', 'num' => 'INT NOT NULL DEFAULT 0', 'last_deliv' => 'DATETIME NULL', 'last_fail' => 'DATETIME NULL'] as $col => $def) {
             try { $pdo->query("SELECT $col FROM wa_cfun LIMIT 0"); } catch (Throwable $e) { try { $pdo->exec("ALTER TABLE wa_cfun ADD COLUMN $col $def"); } catch (Throwable $e2) { } }
         }
         try { $q = $pdo->query("SHOW INDEX FROM wa_cfun WHERE Key_name = 'k_grp'"); if ($q && !$q->fetch()) $pdo->exec("ALTER TABLE wa_cfun ADD INDEX k_grp (grp, src)"); } catch (Throwable $e) { }
@@ -59,15 +59,15 @@ function cfun_calc(PDO $pdo, array $phones): int
     $phones = array_values(array_unique(array_filter(array_map('strval', $phones), function ($p) { return $p !== ''; }))); if (!$phones) return 0;
     $in = cfun_in($phones); $C = []; $now = date('Y-m-d H:i:s');
     $get = function (string $sql, array $p) use ($pdo) { try { $q = $pdo->prepare($sql); $q->execute($p); return $q->fetchAll(PDO::FETCH_ASSOC); } catch (Throwable $e) { return []; } };
-    foreach ($phones as $p) $C[(string)$p] = ['name' => '', 'optout' => 0, 'src' => 'campaign', 'out_n' => 0, 'deliv' => 0, 'sent' => 0, 'fail' => 0, 'ec' => 0, 'a' => null, 'b' => null, 'in_n' => 0, 'last_in' => null, 'ci' => null, 'orders' => 0, 'lc' => 0, 'asg' => 0, 'num' => 0, 'imp' => 0, 'batch' => '', 'qual' => '', 'intent' => ''];
+    foreach ($phones as $p) $C[(string)$p] = ['name' => '', 'optout' => 0, 'src' => 'campaign', 'out_n' => 0, 'deliv' => 0, 'sent' => 0, 'fail' => 0, 'ec' => 0, 'a' => null, 'b' => null, 'in_n' => 0, 'last_in' => null, 'ci' => null, 'orders' => 0, 'lc' => 0, 'asg' => 0, 'num' => 0, 'imp' => 0, 'batch' => '', 'qual' => '', 'intent' => '', 'ld' => null, 'lf' => null];
     foreach ($get("SELECT phone, name, optout, last_in_at, source, assigned_emp, last_number_id FROM wa_contacts WHERE phone IN ($in)", $phones) as $r) { $c = &$C[(string)$r['phone']]; $c['name'] = (string)$r['name']; $c['optout'] = (int)$r['optout']; $c['ci'] = $r['last_in_at']; $c['src'] = (string)$r['source'] === 'query' ? 'query' : 'campaign'; $c['asg'] = (int)$r['assigned_emp'] > 0 ? 1 : 0; $c['num'] = (int)$r['last_number_id']; unset($c); }
     foreach ($get("SELECT phone, MAX(tag) b FROM wa_ctags WHERE src = 'import' AND tag LIKE 'import\\_%' AND phone IN ($in) GROUP BY phone", $phones) as $r) { $C[(string)$r['phone']]['imp'] = 1; $C[(string)$r['phone']]['batch'] = mb_substr((string)$r['b'], 0, 24); }
     foreach ($get("SELECT DISTINCT phone FROM wa_ctags WHERE src = 'import' AND phone IN ($in)", $phones) as $r) { $C[(string)$r['phone']]['imp'] = 1; }
     foreach ($get("SELECT phone, tag FROM wa_tagidx WHERE tag IN ('premium_buyer', 'budget_buyer', 'hot', 'interested', 'considering', 'not_interested') AND phone IN ($in)", $phones) as $r) { $k = (string)$r['phone']; $t = (string)$r['tag'];
         if ($t === 'premium_buyer') $C[$k]['qual'] = 'premium'; elseif ($t === 'budget_buyer') $C[$k]['qual'] = 'budget';
         else { $rank = ['hot' => 4, 'interested' => 3, 'considering' => 2, 'not_interested' => 1]; if (($rank[$t] ?? 0) > ($rank[$C[$k]['intent']] ?? 0)) $C[$k]['intent'] = $t; } }
-    foreach ($get("SELECT phone, COUNT(*) n, SUM(status IN ('delivered','read')) d, SUM(status = 'sent') s, SUM(status = 'failed') f, MAX(CASE WHEN status = 'failed' THEN err_code END) ec, MIN(ts) a, MAX(ts) b FROM wa_messages WHERE dir = 'out' AND phone IN ($in) GROUP BY phone", $phones) as $r) {
-        $c = &$C[(string)$r['phone']]; $c['out_n'] = (int)$r['n']; $c['deliv'] = (int)$r['d']; $c['sent'] = (int)$r['s']; $c['fail'] = (int)$r['f']; $c['ec'] = (int)$r['ec']; $c['a'] = $r['a']; $c['b'] = $r['b']; unset($c); }
+    foreach ($get("SELECT phone, COUNT(*) n, SUM(status IN ('delivered','read')) d, SUM(status = 'sent') s, SUM(status = 'failed') f, MAX(CASE WHEN status = 'failed' THEN err_code END) ec, MIN(ts) a, MAX(ts) b, MAX(CASE WHEN status IN ('delivered','read') THEN ts END) ld, MAX(CASE WHEN status = 'failed' THEN ts END) lf FROM wa_messages WHERE dir = 'out' AND phone IN ($in) GROUP BY phone", $phones) as $r) {
+        $c = &$C[(string)$r['phone']]; $c['out_n'] = (int)$r['n']; $c['deliv'] = (int)$r['d']; $c['sent'] = (int)$r['s']; $c['fail'] = (int)$r['f']; $c['ec'] = (int)$r['ec']; $c['a'] = $r['a']; $c['b'] = $r['b']; $c['ld'] = $r['ld']; $c['lf'] = $r['lf']; unset($c); }
     foreach ($get("SELECT phone, COUNT(*) n, MAX(ts) b FROM wa_messages WHERE dir = 'in' AND mtype <> 'system' AND phone IN ($in) GROUP BY phone", $phones) as $r) { $c = &$C[(string)$r['phone']]; $c['in_n'] = (int)$r['n']; $c['last_in'] = $r['b']; unset($c); }
     foreach ($get("SELECT phone, MAX(camp_id) lc FROM wa_camp_items WHERE phone IN ($in) GROUP BY phone", $phones) as $r) { $C[(string)$r['phone']]['lc'] = (int)$r['lc']; }
     // orders: the Shopify copy (wa_cust) and every channel (customer_facts); the bigger number wins, nothing is counted twice
@@ -83,15 +83,15 @@ function cfun_calc(PDO $pdo, array $phones): int
         $grp = $c['orders'] >= 2 ? 'ord2' : ($c['orders'] === 1 ? 'ord1' : ($bucket === 'replied' ? 'replied' : ($bucket === 'delivered' ? 'deliv' : ($bucket === 'failed' ? 'failed' : ($bucket === 'pending' ? 'sent' : 'never')))));
         $qual = $c['qual'] !== '' ? $c['qual'] : ($c['orders'] > 0 ? 'std' : '');   // premium / budget from the automatic tags; any other buyer = standard
         $rows[] = [$p, mb_substr($c['name'], 0, 120), $bucket, $replied, $c['optout'], $c['out_n'], $c['deliv'], $c['sent'], $c['fail'], $c['in_n'], $c['orders'], $c['a'], $c['b'], $c['last_in'] ?: $c['ci'], $now, $c['src'], $grp, $bucket === 'failed' ? $c['ec'] : 0, $c['lc'],
-            $c['imp'], $c['batch'], $qual, $c['intent'], trim($c['name']) !== '' ? 1 : 0, $c['asg'], $c['num']];
+            $c['imp'], $c['batch'], $qual, $c['intent'], trim($c['name']) !== '' ? 1 : 0, $c['asg'], $c['num'], $c['ld'], $c['lf']];
     }
     $n = 0;
     foreach (array_chunk($rows, 300) as $ch) {
-        $ph = implode(',', array_fill(0, count($ch), '(' . implode(',', array_fill(0, 26, '?')) . ')')); $par = []; foreach ($ch as $r) foreach ($r as $v) $par[] = $v;
-        $pdo->prepare("INSERT INTO wa_cfun (phone, name, bucket, replied, optout, out_n, deliv_n, sent_n, fail_n, in_n, orders_n, first_out, last_out, last_in, at, src, grp, ecode, last_camp, imp, batch, qual, intent, named, asg, num) VALUES $ph
+        $ph = implode(',', array_fill(0, count($ch), '(' . implode(',', array_fill(0, 28, '?')) . ')')); $par = []; foreach ($ch as $r) foreach ($r as $v) $par[] = $v;
+        $pdo->prepare("INSERT INTO wa_cfun (phone, name, bucket, replied, optout, out_n, deliv_n, sent_n, fail_n, in_n, orders_n, first_out, last_out, last_in, at, src, grp, ecode, last_camp, imp, batch, qual, intent, named, asg, num, last_deliv, last_fail) VALUES $ph
             ON DUPLICATE KEY UPDATE name = VALUES(name), bucket = VALUES(bucket), replied = VALUES(replied), optout = VALUES(optout), out_n = VALUES(out_n), deliv_n = VALUES(deliv_n), sent_n = VALUES(sent_n), fail_n = VALUES(fail_n),
             in_n = VALUES(in_n), orders_n = VALUES(orders_n), first_out = VALUES(first_out), last_out = VALUES(last_out), last_in = VALUES(last_in), at = VALUES(at), src = VALUES(src), grp = VALUES(grp), ecode = VALUES(ecode), last_camp = VALUES(last_camp),
-            imp = VALUES(imp), batch = VALUES(batch), qual = VALUES(qual), intent = VALUES(intent), named = VALUES(named), asg = VALUES(asg), num = VALUES(num)")->execute($par);
+            imp = VALUES(imp), batch = VALUES(batch), qual = VALUES(qual), intent = VALUES(intent), named = VALUES(named), asg = VALUES(asg), num = VALUES(num), last_deliv = VALUES(last_deliv), last_fail = VALUES(last_fail)")->execute($par);
         $n += count($ch);
     }
     return $n;
@@ -125,7 +125,7 @@ function cfun_tick(PDO $pdo, bool $force = false, int $budget = 25): array
     try {
         @set_time_limit($budget + 20); $since = date('Y-m-d H:i:s', max($last, time() - 7 * 86400) - 600);
         $v = (string)setting_get($pdo, 'wa_cfun_v', '');
-        if ($v !== '4') { setting_set($pdo, 'wa_cfun_curf', ''); setting_set($pdo, 'wa_cfun_cur', ''); setting_set($pdo, 'wa_cfun_v', '4'); }   // v2: new columns (count everybody again once) · v3: people with a failed message are counted FIRST
+        if ($v !== '5') { setting_set($pdo, 'wa_cfun_curf', ''); setting_set($pdo, 'wa_cfun_cur', ''); setting_set($pdo, 'wa_cfun_v', '5'); }   // v2: new columns (count everybody again once) · v3: people with a failed message are counted FIRST
         // 1. the customers the latest messages / orders touched (status changes keep the same message id, so the newest 60 000 messages are looked at again)
         $touch = [];
         try { $mx = (int)$pdo->query("SELECT COALESCE(MAX(id), 0) FROM wa_messages")->fetchColumn(); $q = $pdo->prepare("SELECT DISTINCT phone FROM wa_messages WHERE id > ? LIMIT 30000"); $q->execute([max(0, $mx - 60000)]); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $p) $touch[(string)$p] = 1; } catch (Throwable $e) { }
@@ -251,7 +251,7 @@ if (strpos($__cfa, 'wa.cf_') === 0) {
             if ($qs !== '') { $d = preg_replace('/\D/', '', $qs); if (strlen($d) >= 3) { $w .= ' AND phone LIKE ?'; $p[] = '%' . $d . '%'; } else { $w .= ' AND name LIKE ?'; $p[] = '%' . str_replace(['%', '_'], ['\\%', '\\_'], $qs) . '%'; } }
             $tot = $pdo->prepare("SELECT COUNT(*) FROM wa_cfun WHERE $w"); $tot->execute($p); $total = (int)$tot->fetchColumn();
             $w2 = $w . ($after !== '' ? ' AND phone > ?' : ''); $p2 = $p; if ($after !== '') $p2[] = $after;
-            $q = $pdo->prepare("SELECT phone, name, src, grp, bucket, ecode, last_camp, replied, optout, out_n, deliv_n, sent_n, fail_n, in_n, orders_n, first_out, last_out, last_in, imp, batch, qual, intent, named, asg, num FROM wa_cfun WHERE $w2 ORDER BY phone LIMIT $lim"); $q->execute($p2);
+            $q = $pdo->prepare("SELECT phone, name, src, grp, bucket, ecode, last_camp, replied, optout, out_n, deliv_n, sent_n, fail_n, in_n, orders_n, first_out, last_out, last_in, imp, batch, qual, intent, named, asg, num, last_deliv, last_fail FROM wa_cfun WHERE $w2 ORDER BY phone LIMIT $lim"); $q->execute($p2);
             $rows = $q->fetchAll(PDO::FETCH_ASSOC); $cn = [];
             if ($rows) { try { foreach ($pdo->query("SELECT id, name FROM wa_campaigns ORDER BY id DESC LIMIT 3000")->fetchAll(PDO::FETCH_ASSOC) as $c) $cn[(int)$c['id']] = (string)$c['name']; } catch (Throwable $e) { } }
             foreach ($rows as &$r) { $r['reason'] = $r['bucket'] === 'failed' ? cfun_reason((int)$r['ecode']) : ''; $r['camp'] = (int)$r['last_camp'] > 0 ? ($cn[(int)$r['last_camp']] ?? ('#' . (int)$r['last_camp'])) : ''; unset($r['ecode'], $r['last_camp']); } unset($r);

@@ -274,6 +274,17 @@ function wa_aud_where(string $src, array $f, string $q = ''): array
     elseif ($ds === '60') { $w[] = 's.last_order IS NOT NULL AND s.last_order <= ? AND s.last_order > ?'; $p[] = $d(31); $p[] = $d(61); }
     elseif ($ds === '90') { $w[] = 's.last_order IS NOT NULL AND s.last_order <= ? AND s.last_order > ?'; $p[] = $d(61); $p[] = $d(91); }
     elseif ($ds === '91') { $w[] = 's.last_order IS NOT NULL AND s.last_order <= ?'; $p[] = $d(91); }
+    // 📊 customer funnel + conversation (the table wa_cfun, one row per number): group · counts · import batch · quality · interest · dates of the last message sent / delivered / failed · who wrote last · messages each way
+    if (function_exists('cfun_where')) {
+        $fx = []; $fp = []; $dts = function ($k, $end) use ($f) { return isset($f[$k]) && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$f[$k]) ? $f[$k] . ($end ? ' 23:59:59' : ' 00:00:00') : ''; };
+        if (!empty($f['fg']) && is_array($f['fg'])) { $fx[] = 'grp IN (' . wa_in($f['fg']) . ')'; foreach ($f['fg'] as $x) $fp[] = (string)$x; }
+        foreach ((array)($f['fc'] ?? []) as $k) $fx[] = '(' . cfun_where((string)$k) . ')';
+        foreach (['fq' => 'qual', 'fi' => 'intent', 'fb' => 'batch'] as $fk => $col) if (!empty($f[$fk]) && is_array($f[$fk])) { $fx[] = "$col IN (" . wa_in($f[$fk]) . ')'; foreach ($f[$fk] as $x) $fp[] = (string)$x; }
+        foreach ([['sent', 'last_out'], ['dlv', 'last_deliv'], ['fl', 'last_fail']] as [$pre, $col]) { $a = $dts($pre . '_from', false); $b = $dts($pre . '_to', true); if ($a !== '') { $fx[] = "$col >= ?"; $fp[] = $a; } if ($b !== '') { $fx[] = "$col <= ?"; $fp[] = $b; } }
+        if (($f['lby'] ?? '') === 'them') $fx[] = "last_in IS NOT NULL AND last_in > COALESCE(last_out, '1970-01-01')"; elseif (($f['lby'] ?? '') === 'us') $fx[] = "last_out IS NOT NULL AND (last_in IS NULL OR last_out >= last_in)";
+        foreach ([['rin_min', 'in_n >= ?'], ['out_min', 'out_n >= ?'], ['out_max', 'out_n <= ?']] as [$k, $sq]) if (isset($f[$k]) && is_numeric($f[$k])) { $fx[] = $sq; $fp[] = (int)$f[$k]; }
+        if ($fx) { $w[] = "$P IN (SELECT fx.phone FROM wa_cfun fx WHERE " . implode(' AND ', $fx) . ")"; foreach ($fp as $x) $p[] = $x; }
+    }
     $ig = (int)($f['ign'] ?? 0); if ($ig > 0) { $w[] = 's.ign >= ?'; $p[] = $ig; }
     $gt = (string)($f['gtag'] ?? ''); if ($gt !== '') { $w[] = "EXISTS (SELECT 1 FROM wa_tagidx t WHERE t.phone = $P AND t.tag = ?)"; $p[] = $gt; }
     // several tags, "any of these" (the Campaign screen): a customer with at least one of them
