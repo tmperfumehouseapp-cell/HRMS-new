@@ -727,7 +727,22 @@ if (strpos($__wmo, 'wmo.') === 0) {
             $u = $pdo->prepare("UPDATE wmo_order SET trk_no = ?, trk_courier = ? WHERE id = ? AND status = 'confirmed'"); $u->execute([$awb, $cr, (int)($in['id'] ?? 0)]);
             $c = $pdo->prepare("SELECT COUNT(*) FROM wmo_order WHERE id = ? AND status = 'confirmed'"); $c->execute([(int)($in['id'] ?? 0)]);
             if (!(int)$c->fetchColumn()) json_response(['error' => 'Only a confirmed order can get a tracking ID.'], 422);
-            json_response(['ok' => true, 'awb' => $awb, 'courier' => $cr]);
+            $note = '';
+            if ($awb !== '') {   // 🔁 the same order on Dispatch → Parcels and tracking: it leaves "No tracking ID" (Admin approves it there unless the person is Admin, the same rule as the "+ Add tracking ID" button)
+                try {
+                    $on = $pdo->prepare("SELECT order_no FROM wmo_order WHERE id = ?"); $on->execute([(int)($in['id'] ?? 0)]); $no = (string)$on->fetchColumn();
+                    $pq = $pdo->prepare("SELECT * FROM dp_dsp_parcels WHERE order_name IN (?, ?) AND status = 'placed' LIMIT 1"); $pq->execute([$no, '#' . $no]); $pp = $pq->fetch();
+                    if ($pp && function_exists('dp_dsp_valid_track') && dp_dsp_valid_track($awb) && (!function_exists('dp_dsp_track_in_use') || dp_dsp_track_in_use($pdo, $awb, $pp['id']) === '')) {
+                        $co = mb_strlen($cr) >= 2 ? $cr : 'Other'; $nowS = date('Y-m-d H:i:s'); $by = (string)($auth['name'] ?? $auth['email'] ?? 'Manual orders'); $adm = function_exists('bd_who') && !empty(bd_who($pdo, $auth)['admin']);
+                        $lk = function_exists('dp_dsp_link_for') ? (string)dp_dsp_link_for($pdo, $co, $awb) : '';
+                        if ($adm) { $pdo->prepare("UPDATE dp_dsp_parcels SET tracking_no = ?, courier = ?, track_link = ?, status = 'transit', tracked_at = ?, tracked_by = ?, transit_at = ?, pend_track = NULL, manual = 1 WHERE id = ? AND status = 'placed'")->execute([$awb, $co, $lk !== '' ? $lk : null, $nowS, mb_substr($by, 0, 80), $nowS, $pp['id']]); $note = 'Also added on Dispatch: now in transit.'; }
+                        else { $pdo->prepare("UPDATE dp_dsp_parcels SET pend_track = ?, pend_courier = ?, pend_link = ?, pend_by = ?, pend_at = ?, manual = 1 WHERE id = ? AND status = 'placed'")->execute([$awb, $co, $lk !== '' ? $lk : null, mb_substr($by, 0, 80), $nowS, $pp['id']]); $note = 'Also sent to Admin on Dispatch for approval.'; }
+                        if (function_exists('bd_log')) bd_log('dispatch', $no, 'tracking ID ' . $awb . ' (' . $co . ') typed on Manual orders', $by);
+                        if (function_exists('dp_dsp_job_refresh')) dp_dsp_job_refresh($pdo, time());
+                    }
+                } catch (Throwable $e) { error_log('wmo.set_tracking sync: ' . $e->getMessage()); }
+            }
+            json_response(['ok' => true, 'awb' => $awb, 'courier' => $cr, 'note' => $note]);
         }
         case 'wmo.cancel': {
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $r = $mine(); if ($r['status'] === 'confirmed') json_response(['error' => 'The customer already confirmed this order. Cancel it like any other order.'], 422);

@@ -102,7 +102,7 @@
       const cur = r.parcel && r.parcel.manual ? r.parcel.awb : (r.parcel ? r.parcel.awb : '');
       const v = prompt('Tracking ID (AWB) for ' + r.order_no + '\n(leave empty to remove the one typed by hand)', cur || ''); if (v === null) return;
       let cr = ''; if (v.trim() !== '') { cr = prompt('Courier name (optional), e.g. Delhivery, Bluedart, DTDC', r.parcel && r.parcel.courier ? r.parcel.courier : ''); if (cr === null) return; }
-      try { await api.post('wmo.set_tracking', { id: r.id, awb: v.trim(), courier: cr.trim() }); } catch (er) { alert(er.message); } load(); return;
+      try { const x = await api.post('wmo.set_tracking', { id: r.id, awb: v.trim(), courier: cr.trim() }); if (x.note) alert('Saved. ' + x.note); } catch (er) { alert(er.message); } load(); return;
     }
     if (a === 'lnk') { try { await navigator.clipboard.writeText(r.link); b.textContent = 'Copied ✓'; } catch (er) { prompt('Copy the link:', r.link); } return; }
     if (a === 'inv' || a === 'sr') { b.disabled = true; const old = b.textContent; b.textContent = 'Working…'; try { const x = await api.post(a === 'inv' ? 'wmo.invoice' : 'wmo.shiprocket', { id: r.id }); alert(x.note || 'Done'); } catch (er) { alert(er.message); } load(); }
