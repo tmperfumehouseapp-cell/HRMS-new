@@ -9887,6 +9887,16 @@ function lib_bot_reply(PDO $pdo, array $guide, array $msgs, int $exclude = 0, bo
     $ask = $followup ? "The customer has NOT answered our last message. Write a short follow-up that brings them back (do not repeat our last message; give a reason to reply). stage = followup." : "Write the bot's next reply.";
     if ($situation !== '') $ask = "TEST MODE: pretend the chat so far is in this situation (the earlier messages are not shown): " . $situation . ". Answer the customer's last message as the bot would in exactly that situation. " . $ask;
     if ($judgeOn) $ask .= " Write 3 DIFFERENT candidate replies (for example: one short and direct, one that leads with the benefit or offer, one that asks a single smart question). All three must follow the lessons and the facts.";
+    // 💾 PROMPT CACHING. The guidebook + owner corrections are the same for every customer and are ~3/4 of the whole prompt (≈19,000 tokens a call). They were sent inside the
+    // customer's message, where nothing is cached, so every call paid them in full. They now sit in the system text (which IS cached: a cached read costs a tenth), and only what
+    // belongs to THIS customer stays in the message: the chat context, the lessons / facts picked for the last message, the example chats and the conversation.
+    // The per-customer "chat_context_do_not_quote" was inside the guidebook JSON — it would make every prompt different, so it moves to the message. Setting ai_cache_guide = '0' = the old layout.
+    if ((string)setting_get($pdo, 'ai_cache_guide', '1') !== '0') {
+        $__ctx = (string)($guide['chat_context_do_not_quote'] ?? '');
+        $gtxt = json_encode(array_diff_key($guide, ['owner_corrections' => 1, 'chat_context_do_not_quote' => 1]), JSON_UNESCAPED_UNICODE);
+        $sys .= "\n\nGUIDEBOOK:\n$gtxt\n\nOWNER CORRECTIONS:\n" . ($corr ?: "(none)\n");
+        $__bparts = [['text' => ($__ctx !== '' ? "CHAT CONTEXT of this customer (background for you — never quote it to the customer):\n$__ctx\n\n" : '') . ltrim($tlT . "\n") . ($factsT !== '' ? $factsT . "\n" : '') . "$exT\nCONVERSATION SO FAR:\n$conv\n$ask" . $photoAsk]];
+    } else
     $__bparts = [['text' => "GUIDEBOOK:\n$gtxt\n\nOWNER CORRECTIONS:\n" . ($corr ?: "(none)\n") . $tlT . "\n" . ($factsT !== '' ? $factsT . "\n" : '') . "$exT\nCONVERSATION SO FAR:\n$conv\n$ask" . $photoAsk]];
     $__bmode = function_exists('brain_route_cfg') ? brain_route_cfg($pdo)['customer'] : 'off';   // off | trial | live (set on the Brain page)
     $__bscope = ($__bmode === 'live') ? new BrainScope('customer', 'whatsapp', ['all_customer_facts' => true, 'has_teach' => true]) : null;   // live: the customer brain is in the prompt (and in the judge / rewrite below) until this function ends
