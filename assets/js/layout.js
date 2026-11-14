@@ -1035,6 +1035,7 @@ function renderSidebarCore(active) {
         api.get('wmo.dsp_access').then((c) => {   // 🧾 Manual orders (all): Dispatch, the Admin department, Sales Heads
           const nav = document.querySelector('.sidebar nav'); if (!nav || !c || !c.ok || document.getElementById('dmNavLink')) return;
           const a4 = document.createElement('a'); a4.id = 'dmNavLink'; a4.href = 'dispatch_manual.html'; a4.className = active === 'dispatch_manual' ? 'active' : ''; a4.textContent = 'Manual orders (all)'; nav.appendChild(a4);
+          if (!document.getElementById('skNavLink')) { const a5 = document.createElement('a'); a5.id = 'skNavLink'; a5.href = 'sku_sheet.html'; a5.className = active === 'sku_sheet' ? 'active' : ''; a5.textContent = 'SKU sheet'; nav.appendChild(a5); }      // 📦 the same people get the SKU sheet
         }).catch(() => {});
         api.get('bd.cx_badge').then((c) => {   // Complaints: the team gets the board, a salesperson who raised one gets the status page
           const nav = document.querySelector('.sidebar nav'); if (!nav || !c || document.getElementById('cxNavLink')) return;

@@ -189,10 +189,26 @@ function sku_sheet(PDO $pdo, string $day): array
         'unmatched_pieces' => array_sum(array_map(fn($x) => $x['kind'] !== 'left' ? $x['qty'] : 0, $un)), 'errors' => $errs, 'sku_count' => count(sku_list())];
 }
 
+/** Who may open the SKU sheet: Admin, HR, a role ticked 'Orders', and the SAME people as the Dispatch "Manual orders" page — everyone whose department is Dispatch (or Admin),
+ *  whose designation says Dispatch or Sales Head, the Boss-engine managers, and the holders of a Dispatch seat. So a Dispatch person needs no extra tick. */
+function sku_can(PDO $pdo, array $auth): bool
+{
+    if (in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true) || user_can($auth, 'orders')) return true;
+    $e = (int)($auth['employee_id'] ?? 0); if ($e <= 0) return false;
+    try {
+        $q = $pdo->prepare("SELECT d.department_name, e.designation FROM employees e LEFT JOIN departments d ON d.department_id = e.department_id WHERE e.employee_id = ?"); $q->execute([$e]); $r = $q->fetch();
+        if ($r && (preg_match('/dispatch|admin/i', (string)$r['department_name']) || preg_match('/sales\s*head|dispatch/i', (string)$r['designation']))) return true;
+    } catch (Throwable $ex) { }
+    try { if (function_exists('bd_who') && !empty(bd_who($pdo, $auth)['manager'])) return true; } catch (Throwable $ex) { }
+    try { if (function_exists('dp_can_seat') && (dp_can_seat($pdo, $auth, 'dispatch.tracking') || dp_can_seat($pdo, $auth, 'dispatch.lead'))) return true; } catch (Throwable $ex) { }
+    return false;
+}
+
 function sku_route(PDO $pdo, string $action): void
 {
     $auth = require_auth(); $role = (string)($auth['role'] ?? '');
-    if (!in_array($role, ['Admin', 'HR'], true) && !user_can($auth, 'orders') && !user_can($auth, 'dispatch_manual')) json_response(['error' => 'You do not have permission to see the SKU sheet.'], 403);
+    if ($action === 'sku.access') json_response(['ok' => sku_can($pdo, $auth)]);
+    if (!sku_can($pdo, $auth)) json_response(['error' => 'The SKU sheet is for Admin, HR, Dispatch, the Admin department, Sales Heads and roles with the Orders page.'], 403);
     if ($action === 'sku.sheet') {
         $day = (string)($_GET['day'] ?? ''); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $day)) $day = biz_today($pdo);
         if (!sku_list()) json_response(['error' => 'The SKU list is empty. Upload the SKU file (SKU · original name · shop name) on this page.'], 422);
