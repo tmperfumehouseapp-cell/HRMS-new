@@ -71,7 +71,8 @@ if (is_file(__DIR__ . '/config.php')) require_once __DIR__ . '/config.php';
 if (is_file(__DIR__ . '/sys_load.php')) {
     require_once __DIR__ . '/sys_load.php';
     $__slT0 = (float)($_SERVER['REQUEST_TIME_FLOAT'] ?? microtime(true)); $__slRu = function_exists('getrusage') ? getrusage() : null;
-    register_shutdown_function(function () use ($__slT0, $__slRu) { sysload_record((string)($_GET['action'] ?? ''), $__slT0, $__slRu ?: null); });
+    // registered again from inside the shutdown, so it runs AFTER every other end-of-request job (error answer, phone pushes, lock release): its once-a-minute look at the database must never hold those up
+    register_shutdown_function(function () use ($__slT0, $__slRu) { register_shutdown_function(function () use ($__slT0, $__slRu) { sysload_record((string)($_GET['action'] ?? ''), $__slT0, $__slRu ?: null); }); });
 }
 
 // ---------------- DB credentials ----------------
