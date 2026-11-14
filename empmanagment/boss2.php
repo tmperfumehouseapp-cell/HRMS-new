@@ -2660,7 +2660,7 @@ function b2_first_install(PDO $pdo) {
 function cm_default_chart(PDO $pdo) {
     $rows = [];
     if (function_exists('ml_slab_get')) { try { $o = ml_slab_get($pdo); foreach ((array)($o['rows'] ?? []) as $r) { $p = array_pad(array_map('floatval', (array)$r['p']), 6, 0); $rows[] = ['ml' => (int)$r['ml'], 'p' => [$p[0], $p[1], $p[2], 0, $p[3], $p[5]]]; } } catch (Throwable $e) {} }
-    return ['v' => 1, 'cols' => [7, 6.5, 6, 5, 4, 3], 'rows' => $rows, 'floor' => 2.8, 'codepct' => 70, 'nocode' => 50, 'prepaid' => 2, 'window' => 20,
+    return ['v' => 1, 'cols' => [7, 6.5, 6, 5, 4, 3], 'rows' => $rows, 'floor' => 2.8, 'codepct' => 70, 'nocode' => 50, 'prepaid' => 2, 'window' => 60,
         'tiers' => [[30, 30], [40, 40], [60, 50]], 'bonus_max' => 50, 'reviewed' => 0, 'seeded' => count($rows) ? 1 : 0, 'updated_at' => '', 'updated_by' => ''];
 }
 function cm_chart(PDO $pdo) {
@@ -2688,7 +2688,7 @@ function cm_chart_clean(array $in, array $cur) {
     foreach ((array)($in['tiers'] ?? $cur['tiers'] ?? []) as $t) { $o = (float)($t[0] ?? 0); $x = (float)($t[1] ?? 0); if ($o > 0 && $x > 0) $tiers[] = [$o, $x]; }
     usort($tiers, function ($a, $b) { return $a[0] <=> $b[0]; });
     $c = $cur; $c['rows'] = $rows; $c['floor'] = $n('floor', 0, 10, 2.8); $c['codepct'] = $n('codepct', 0, 100, 70); $c['nocode'] = $n('nocode', 0, 100, 50); $c['prepaid'] = $n('prepaid', 0, 20, 2);
-    $c['bonus_max'] = $n('bonus_max', 1, 100, 50); $c['tiers'] = $tiers ?: [[30, 30], [40, 40], [60, 50]]; $c['window'] = 20; $c['cols'] = [7, 6.5, 6, 5, 4, 3];
+    $c['bonus_max'] = $n('bonus_max', 1, 100, 50); $c['tiers'] = $tiers ?: [[30, 30], [40, 40], [60, 50]]; $c['window'] = 60; $c['cols'] = [7, 6.5, 6, 5, 4, 3];
     return [$c, ''];
 }
 /** the six prices of one ML (a size between two rows is worked out between them) or null when the size is outside the chart */

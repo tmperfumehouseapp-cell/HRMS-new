@@ -24515,7 +24515,8 @@ switch ($action) {
     case 'ml_slab.get': {
         // The ML price slab chart (Commission Rules page editor, Commission page, My Sales). Every logged-in user may read it.
         require_auth();
-        json_response(['chart' => ml_slab_get($pdo)]);
+        $__co = []; try { if (function_exists('cm_offers')) foreach (cm_offers($pdo) as $__o) $__co[] = ['ml' => (int)$__o['ml'], 'price' => (float)$__o['price'], 'pct' => (float)$__o['pct'], 'from' => (string)$__o['from_date'], 'to' => (string)($__o['to_date'] ?? ''), 'active' => !empty($__o['active']) ? 1 : 0, 'stopped' => substr((string)($__o['stopped_at'] ?? ''), 0, 10)]; } catch (Throwable $__e) { }
+        json_response(['chart' => ml_slab_get($pdo), 'offers' => $__co, 'offer_window' => 60]);   // offers = the Commission page's Offers (ML + price +- window), so the order card shows the same % as the Commission page
         break;
     }
     case 'ml_slab.save': {
