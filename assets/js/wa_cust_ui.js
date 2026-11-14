@@ -64,7 +64,7 @@
 }
 html.wxdk .wcs{--ln:#25343e; --gb:#0f2e20; --rb:#3a1515;} html.wxdk .wcs-r,html.wxdk .wcs-dd,html.wxdk .wcs-pre button,html.wxdk .wcs-seg button,html.wxdk .wcs-views button,html.wxdk .wcs-pg button{background:#111b21; color:#e9edef;}
 `;
-  const DK = [['in', 'Last wrote to us'], ['added', 'Added / imported / first message'], ['order', 'Last order'], ['camp', 'Got a campaign']];
+  const DK = [['in', 'Last wrote to us'], ['added', 'Added / imported / first message'], ['order', 'Last order'], ['camp', 'Got a campaign'], ['sent', 'Last message we sent'], ['deliv', 'Last message delivered'], ['fail', 'Last message failed']];
   const PRE = [['', 'Any time'], ['today', 'Today'], ['7', '7 days'], ['30', '30 days'], ['90', '90 days'], ['custom', 'Custom']];
   const ST = [['', 'Everyone'], ['reach', 'Can be messaged'], ['waiting', 'Waiting for our reply'], ['noreply', 'Never wrote to us'], ['optout', 'Opted out']];
   const ORD = [['', 'Any number of orders'], ['0', 'Never ordered'], ['1', 'Ordered 1×'], ['2', 'Ordered 2×'], ['3', 'Ordered 3× or more']];
@@ -73,7 +73,7 @@ html.wxdk .wcs{--ln:#25343e; --gb:#0f2e20; --rb:#3a1515;} html.wxdk .wcs-r,html.
   const IGN = [['', 'Any'], ['2', 'Ignored 2+ of our messages'], ['3', 'Ignored 3+']];
   const SORT = [['latest', 'Latest message'], ['spent', 'Highest ₹ spent'], ['orders', 'Most orders'], ['order_new', 'Newest order'], ['order_old', 'Oldest order'], ['added', 'Newest customer'], ['name', 'Name A–Z']];
   const PER = [25, 50, 100, 200, 500];
-  const BLANK = () => ({ dk: 'in', dp: '', df: '', dt: '', tags: [], nums: [], match: 'any', st: '', ord: '', tier: '', dsl: '', sp_min: '', sp_max: '', num: '', emp: '', src: '', ign: '' });
+  const BLANK = () => ({ dk: 'in', dp: '', df: '', dt: '', tags: [], nums: [], match: 'any', st: '', ord: '', tier: '', dsl: '', sp_min: '', sp_max: '', num: '', emp: '', src: '', ign: '', fg: [], fc: [], fq: [], fi: [], fb: [], lby: '', rin_min: '', out_min: '', out_max: '' });
   const VIEWS = [
     { k: 'new7', t: '🆕 New this week', cf: { dk: 'added', dp: '7' } },
     { k: 'wrote7', t: '💬 Wrote in 7 days', cf: { dk: 'in', dp: '7' } },
@@ -110,12 +110,17 @@ html.wxdk .wcs{--ln:#25343e; --gb:#0f2e20; --rb:#3a1515;} html.wxdk .wcs-r,html.
       const c = S.cf, o = { dk: c.dk, df: c.df, dt: c.dt }; const inc = c.tags.filter((t) => t.m === 'in').map((t) => t.k), out = c.tags.filter((t) => t.m === 'out').map((t) => t.k);
       if ((c.nums || []).length) o.nums = c.nums;
       if (inc.length) o[c.match === 'all' ? 'tags_all' : 'tags_any'] = inc; if (out.length) o.tags_not = out;
-      ['st', 'ord', 'tier', 'dsl', 'sp_min', 'sp_max', 'num', 'emp', 'src', 'ign'].forEach((k) => { if (c[k] !== '' && c[k] != null) o[k] = c[k]; }); return o;
+      ['st', 'ord', 'tier', 'dsl', 'sp_min', 'sp_max', 'num', 'emp', 'src', 'ign', 'lby', 'rin_min', 'out_min', 'out_max'].forEach((k) => { if (c[k] !== '' && c[k] != null) o[k] = c[k]; });
+      ['fg', 'fc', 'fq', 'fi', 'fb'].forEach((k) => { if ((c[k] || []).length) o[k] = c[k]; }); return o;
     }
-    const nOn = () => { const c = S.cf; let n = (c.df || c.dt ? 1 : 0) + c.tags.length + ((c.nums || []).length ? 1 : 0); ['st', 'ord', 'tier', 'dsl', 'num', 'emp', 'src', 'ign'].forEach((k) => { if (c[k] !== '') n++; }); if (c.sp_min !== '' || c.sp_max !== '') n++; return n + (S.q ? 1 : 0); };
+    const nOn = () => { const c = S.cf; let n = (c.df || c.dt ? 1 : 0) + c.tags.length + ((c.nums || []).length ? 1 : 0); ['st', 'ord', 'tier', 'dsl', 'num', 'emp', 'src', 'ign'].forEach((k) => { if (c[k] !== '') n++; }); if (c.sp_min !== '' || c.sp_max !== '') n++; ['fg', 'fc', 'fq', 'fi', 'fb'].forEach((k) => { n += (c[k] || []).length ? 1 : 0; }); ['lby', 'rin_min', 'out_min', 'out_max'].forEach((k) => { if (c[k] !== '' && c[k] != null) n++; }); return n + (S.q ? 1 : 0); };
     const tagLabel = (k) => { const x = S.meta.tags.find((t) => t.k === k); return x ? x.t : String(k).replace(/_/g, ' '); };
     function drawF(F) {
       const c = S.cf; const n = nOn();
+      const FFG = [['never','📭 Never messaged'],['sent','⏳ Sent, not delivered'],['failed','✖ Failed'],['deliv','📩 Delivered, no reply'],['replied','💬 Replied, no order'],['ord1','🛒 Ordered once'],['ord2','🛍 Ordered 2+']], FFC = [['messaged', '📤 Messaged'], ['reached', '✅ Delivered'], ['not_delivered', '📭 Not delivered'], ['failed', '❌ Failed (last 3)'], ['any_failed', '⚠ Had a failed msg'], ['replied', '💬 Replied'], ['never_replied', '🔇 Never replied'], ['wrote_first', '🆕 Wrote first'], ['ordered', '🛍 Ordered'], ['repeat_n', '🔁 2+ orders'], ['named', '🏷 Has a name'], ['unnamed', '❔ No name'], ['assigned', '🧑‍💼 Assigned'], ['unassigned', '📥 Not assigned'], ['imp', '📥 From Excel'], ['imp_nodel', '🚫 Excel, none delivered'], ['optout', '🚫 Opted out']];
+      const FFQ = [['premium', '💎 Premium buyer'], ['std', '🛒 Standard buyer'], ['budget', '🪙 Budget buyer']], FFI = [['hot', '🔥 Ready to pay'], ['interested', '👀 Interested'], ['considering', '🤔 Thinking'], ['not_interested', '🙅 Not interested']];
+      const chips = (key, L) => L.map(([k, l]) => `<button type="button" data-fx="${key}|${esc(k)}" class="${(c[key] || []).includes(k) ? 'on' : ''}">${esc(l)}</button>`).join('');
+      const fnOn = ['fg', 'fc', 'fq', 'fi', 'fb'].reduce((n, k) => n + (c[k] || []).length, 0) + ['lby', 'rin_min', 'out_min', 'out_max'].filter((k) => c[k] !== '' && c[k] != null).length;
       const optsOf = (L, v) => L.map(([k, l]) => `<option value="${esc(k)}" ${String(k) === String(v) ? 'selected' : ''}>${esc(l)}</option>`).join('');
       F.innerHTML = `<button type="button" class="wcs-fh" id="cxFh"><span>⚙️ Filters${n ? ' · ' + n + ' on' : ''}</span><span>${S.shut ? '▾' : '▴'}</span></button><div class="wcs-fb">
         <div class="wcs-sec"><div class="wcs-h">🛍 Buying group <span class="wcs-note" style="margin-left:auto;text-transform:none;letter-spacing:0">how often they ordered · what they spend</span></div><div class="wcs-pre">${[['', '', 'Everyone'], ['ord', '0', 'Never ordered'], ['ord', '1', 'Ordered once'], ['ord', '2', 'Ordered twice'], ['ord', '3', '3+ orders'], ['tier', 'prem', '⭐ Premium'], ['tier', 'std', 'Standard'], ['tier', 'bud', 'Budget']].map(([k, v, l]) => `<button type="button" data-bg="${k}|${v}" class="${k === '' ? (c.ord === '' && c.tier === '' ? 'on' : '') : (c[k] === v ? 'on' : '')}">${l}</button>`).join('')}</div></div>
@@ -129,6 +134,18 @@ html.wxdk .wcs{--ln:#25343e; --gb:#0f2e20; --rb:#3a1515;} html.wxdk .wcs-r,html.
           <div class="wcs-pick"><input class="wp-in" id="cxTq" placeholder="＋ Add a tag — type to search" autocomplete="off"><div id="cxDd"></div></div>
           <div class="wcs-tg">${c.tags.map((t, i) => `<span class="t ${t.m}" data-ti="${i}" title="Tap to switch: include ✅ / leave out 🚫">${t.m === 'in' ? '✅' : '🚫'} ${esc(tagLabel(t.k))}<i data-tx="${i}">✕</i></span>`).join('')}</div>
           ${c.tags.length ? '<div class="wcs-note" style="margin-top:6px">Tap a tag to switch between ✅ include and 🚫 leave out.</div>' : ''}</div>
+        <details class="wcs-sec" ${fnOn ? 'open' : ''}><summary style="cursor:pointer;font-weight:800;font-size:13px">📊 Funnel &amp; conversation${fnOn ? ' · ' + fnOn + ' on' : ''}</summary>
+          <div style="display:grid;gap:9px;margin-top:10px">
+            ${S.meta.funnel && S.meta.funnel.walking ? '<div class="wcs-note">⏳ The funnel is still being counted — these filters only see customers counted so far.</div>' : ''}
+            <div><div class="wcs-note">Furthest step reached (any of)</div><div class="wcs-pre">${chips('fg', FFG)}</div></div>
+            <div><div class="wcs-note">Must also be (all of)</div><div class="wcs-pre">${chips('fc', FFC)}</div></div>
+            <div><div class="wcs-note">Quality (any of)</div><div class="wcs-pre">${chips('fq', FFQ)}</div></div>
+            <div><div class="wcs-note">Interest (any of)</div><div class="wcs-pre">${chips('fi', FFI)}</div></div>
+            ${((S.meta.funnel || {}).batches || []).length ? `<div><div class="wcs-note">Excel import (any of)</div><div class="wcs-pre">${chips('fb', ((S.meta.funnel || {}).batches || []).slice(0, 14).map((b) => [b.b, '📥 ' + String(b.b).replace(/^import_/, '') + ' · ' + b.n]))}</div></div>` : ''}
+            <div class="wcs-2"><label class="wcs-note">Last message was by${sel('cxLby', [['', 'Anyone'], ['them', 'Customer (waiting for us)'], ['us', 'Us (no reply yet)']], c.lby)}</label><label class="wcs-note">Customer wrote at least<input class="wp-in" type="number" min="0" id="cxRin" value="${esc(c.rin_min)}" placeholder="any"> times</label></div>
+            <div class="wcs-2"><label class="wcs-note">We sent at least<input class="wp-in" type="number" min="0" id="cxOmin" value="${esc(c.out_min)}" placeholder="any"></label><label class="wcs-note">…and at most<input class="wp-in" type="number" min="0" id="cxOmax" value="${esc(c.out_max)}" placeholder="any"></label></div>
+            <div class="wcs-note">Dates of the last message sent / delivered / failed are in “📅 Date range” above.</div>
+          </div></details>
         <details class="wcs-sec" ${['st', 'ord', 'dsl', 'sp_min', 'sp_max', 'num', 'emp', 'src', 'ign'].some((k) => c[k] !== '') ? 'open' : ''}><summary style="cursor:pointer;font-weight:800;font-size:13px">More filters</summary>
           <div style="display:grid;gap:8px;margin-top:10px">
             <label class="wcs-note">Who${sel('cxSt', ST, c.st)}</label>
@@ -144,6 +161,9 @@ html.wxdk .wcs{--ln:#25343e; --gb:#0f2e20; --rb:#3a1515;} html.wxdk .wcs-r,html.
       F.querySelectorAll('[data-dp]').forEach((b) => { b.onclick = () => { c.dp = b.dataset.dp; presetDates(); onChange(true); }; });
       $(F, '#cxDf').onchange = function () { c.df = this.value; c.dp = c.df || c.dt ? 'custom' : ''; onChange(true); };
       $(F, '#cxDt').onchange = function () { c.dt = this.value; c.dp = c.df || c.dt ? 'custom' : ''; onChange(true); };
+      F.querySelectorAll('[data-fx]').forEach((b) => { b.onclick = () => { const [k, v] = b.dataset.fx.split('|'); c[k] = c[k] || []; const i = c[k].indexOf(v); if (i >= 0) c[k].splice(i, 1); else c[k].push(v); onChange(true); }; });
+      if ($(F, '#cxLby')) $(F, '#cxLby').onchange = function () { c.lby = this.value; onChange(true); };
+      [['cxRin', 'rin_min'], ['cxOmin', 'out_min'], ['cxOmax', 'out_max']].forEach(([id, k]) => { const e = $(F, '#' + id); if (!e) return; let t = 0; e.oninput = function () { clearTimeout(t); const v = this.value; t = setTimeout(() => { c[k] = v; onChange(); }, 450); }; });
       F.querySelectorAll('[data-mt]').forEach((b) => { b.onclick = () => { c.match = b.dataset.mt; onChange(true); }; });
       F.querySelectorAll('[data-ti]').forEach((x) => { x.onclick = (e) => { const i = +x.dataset.ti; if (e.target.dataset.tx !== undefined) c.tags.splice(i, 1); else c.tags[i].m = c.tags[i].m === 'in' ? 'out' : 'in'; onChange(true); }; });
       F.querySelectorAll('[data-nm]').forEach((b) => { b.onclick = () => { const id = +b.dataset.nm; c.nums = c.nums || []; const i = c.nums.indexOf(id); if (i >= 0) c.nums.splice(i, 1); else c.nums.push(id); onChange(true); }; });
@@ -381,7 +401,7 @@ html.wxdk .wcs{--ln:#25343e; --gb:#0f2e20; --rb:#3a1515;} html.wxdk .wcs-r,html.
       } catch (e) { if (my !== S.seq) return; S.busy = false; $(el, '#cxL').innerHTML = errBox(e.message); return; }
       S.busy = false; drawC(); drawL();
     }
-    async function loadMeta() { try { const d = await api.get('wa.cs_meta'); S.meta = { tags: d.tags || [], numbers: d.numbers || [], people: d.people || [], segments: d.segments || [] }; } catch (e) { } if (el.isConnected) { drawF(); drawV(); drawC(); } }
+    async function loadMeta() { try { const d = await api.get('wa.cs_meta'); S.meta = { tags: d.tags || [], numbers: d.numbers || [], people: d.people || [], segments: d.segments || [], funnel: d.funnel || {} }; } catch (e) { } if (el.isConnected) { drawF(); drawV(); drawC(); } }
     drawF(); drawV(); drawC(); loadMeta(); load();
     return () => { loadMeta(); load(); };
   }
@@ -392,7 +412,7 @@ html.wxdk .wcs{--ln:#25343e; --gb:#0f2e20; --rb:#3a1515;} html.wxdk .wcs-r,html.
     let K = null; const fire = () => { K.drawF(host); if (o.onChange) o.onChange(S.cf, K.cfOut()); };
     K = filterKit(S, U, fire, { search: false }); if (S.cf.dp && S.cf.dp !== 'custom') K.presetDates();
     host.classList.add('wcs-f'); K.drawF(host);
-    api.get('wa.cs_meta').then((d) => { S.meta = { tags: d.tags || [], numbers: d.numbers || [], people: d.people || [], segments: d.segments || [] }; if (host.isConnected) K.drawF(host); }).catch(() => { });
+    api.get('wa.cs_meta').then((d) => { S.meta = { tags: d.tags || [], numbers: d.numbers || [], people: d.people || [], segments: d.segments || [], funnel: d.funnel || {} }; if (host.isConnected) K.drawF(host); }).catch(() => { });
     return { ui: () => S.cf, out: () => K.cfOut(), count: () => K.nOn(), set(cf) { S.cf = Object.assign(BLANK(), cf || {}); K.drawF(host); } };
   }
   // 📊 THE customer funnel (wa_cfun.php): one set of numbers for the Customers → Contacts strip and the popup of the Campaigns card. Compact, phone-friendly, every number downloads.
