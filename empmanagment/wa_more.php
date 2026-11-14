@@ -325,13 +325,12 @@ function wa_autoreply_sweep(PDO $pdo): int
 {
     $n = 0; $t0 = microtime(true);
     try {
-        $st = $pdo->prepare("SELECT phone, last_out_at FROM wa_contacts WHERE status = 'open' AND assigned_emp = 0 AND optout = 0 AND last_out_at IS NOT NULL AND last_in_at >= ? AND last_out_at <= last_in_at ORDER BY last_in_at DESC LIMIT 200"); $st->execute([date('Y-m-d H:i:s', time() - 3 * 86400)]);
-        $in = $pdo->prepare("SELECT body, mtype FROM wa_messages WHERE phone = ? AND dir = 'in' AND ts > ? ORDER BY id DESC LIMIT 8"); $cl = $pdo->prepare("UPDATE wa_contacts SET status = 'closed', closed_at = ? WHERE phone = ? AND status = 'open' AND assigned_emp = 0");
+        $st = $pdo->prepare("SELECT phone, last_out_at FROM wa_contacts WHERE status = 'open' AND assigned_emp = 0 AND optout = 0 AND last_out_at IS NOT NULL AND last_in_at >= ? AND last_out_at <= last_in_at ORDER BY last_in_at DESC LIMIT 250"); $st->execute([date('Y-m-d H:i:s', time() - 3 * 86400)]);
+        $ms = $pdo->prepare("SELECT dir, who, ts, body, mtype FROM wa_messages WHERE phone = ? AND ts >= ? ORDER BY id ASC LIMIT 14"); $cl = $pdo->prepare("UPDATE wa_contacts SET status = 'closed', closed_at = ? WHERE phone = ? AND status = 'open' AND assigned_emp = 0");
         foreach ($st->fetchAll() as $r) {
             if (microtime(true) - $t0 > 3) break;
-            $in->execute([(string)$r['phone'], (string)$r['last_out_at']]); $rows = $in->fetchAll(); if (!$rows) continue; $all = true;
-            foreach ($rows as $x) if ((string)$x['mtype'] !== 'text' || !wa_autoreply_text((string)$x['body'])) { $all = false; break; }
-            if ($all) { $cl->execute([date('Y-m-d H:i:s'), (string)$r['phone']]); $n++; }
+            $ms->execute([(string)$r['phone'], date('Y-m-d H:i:s', (strtotime((string)$r['last_out_at']) ?: 0) - 1)]);
+            if (wa_autoreply_run($ms->fetchAll(PDO::FETCH_ASSOC))) { $cl->execute([date('Y-m-d H:i:s'), (string)$r['phone']]); $n++; }
         }
     } catch (Throwable $e) { }
     return $n;

@@ -296,7 +296,8 @@ function wa_autoreply_text(string $body): bool
               '/\b(will|shall)\s+(respond|reply|get back to you|revert|contact you)\b.{0,50}\b(as soon as|shortly|soon|within|earliest|asap)\b/iu',
               '/\bautomat(ed|ic)\s+(message|reply|response)\b|\bauto[- ]?reply\b/iu',
               '/\b(our|the)\s+(business|working|office|store|shop)\s+hours\b/iu',
-              '/\b(we|our team)\s+(will be|are)\s+(back|available)\b/iu'] as $re) if (preg_match($re, $b)) return true;
+              '/\b(we|our team)\s+(will be|are)\s+(back|available)\b/iu',
+              '/^(welcome to|hello from|hi,? welcome|hey,? welcome|namaste,? welcome)\b/iu'] as $re) if (preg_match($re, $b)) return true;
     return false;
 }
 /** an automatic reply only comes right after OUR message (a campaign template…): we wrote in the last 3 hours, and the customer did not really talk to us in the last 24 hours */
@@ -308,6 +309,24 @@ function wa_autoreply_ctx(PDO $pdo, string $key, string $now): bool
         foreach ($i->fetchAll() as $r) if ((string)$r['mtype'] !== 'text' || !wa_autoreply_text((string)$r['body'])) return false;
         return true;
     } catch (Throwable $e) { return false; }
+}
+/** 🤖 Is this run of messages — OUR campaign message, then only what the customer's phone sent back — an automatic reply?
+ *  $msgs: oldest first, each {dir, who, ts, body, mtype}. True when, after our LAST campaign message, every message is the customer's text and each one either reads like an automatic greeting / away note (and came within 3 hours),
+ *  or came within 12 seconds of our message (25 seconds after the message before it, for the next ones of a burst) and is long enough — a person cannot read our message and type that fast, a business app's greeting arrives at once. */
+function wa_autoreply_run(array $msgs): bool
+{
+    $last = -1; foreach ($msgs as $i => $x) if ((string)$x['dir'] === 'out') $last = $i;
+    if ($last < 0 || (string)$msgs[$last]['who'] !== 'campaign') return false;
+    $prev = strtotime((string)$msgs[$last]['ts']) ?: 0; $t0 = $prev; $n = 0; if ($prev <= 0) return false;
+    foreach (array_slice($msgs, $last + 1) as $x) {
+        if ((string)$x['dir'] !== 'in' || (string)$x['mtype'] !== 'text') return false;
+        $ts = strtotime((string)$x['ts']) ?: 0; $body = trim((string)$x['body']); $n++;
+        if ($ts <= 0 || $ts < $prev) return false;
+        if (wa_autoreply_text($body) && $ts - $t0 <= 10800) { $prev = $ts; continue; }
+        if (mb_strlen($body) >= ($n === 1 ? 30 : 12) && $ts - $prev <= ($n === 1 ? 12 : 25)) { $prev = $ts; continue; }   // the first one: within 12 s and 30+ characters; the next ones of the same burst: within 25 s and 12+ characters
+        return false;
+    }
+    return $n > 0;
 }
 function wa_store_in(PDO $pdo, array $m, string $name, int $numberId): string
 {
@@ -328,7 +347,9 @@ function wa_store_in(PDO $pdo, array $m, string $name, int $numberId): string
     } catch (PDOException $e) { /* the same wamid twice (Meta retries) — already stored */ }
     // 🤖 the customer's business answered our message by itself (owner, 14 Nov): it is not a request. An unassigned chat is resolved at once; no bot / flow / query typing runs on it.
     //    When the customer really writes later, the normal rule re-opens the chat and it is back in Requests.
-    if ($t === 'text' && wa_autoreply_text($body) && wa_autoreply_ctx($pdo, $key, $now)) {
+    $__ar = false;
+    if ($t === 'text') { try { $mq = $pdo->prepare("SELECT dir, who, ts, body, mtype FROM wa_messages WHERE phone = ? AND ts <= ? ORDER BY id DESC LIMIT 10"); $mq->execute([$key, $now]); $__ar = wa_autoreply_run(array_reverse($mq->fetchAll(PDO::FETCH_ASSOC))); } catch (Throwable $e) { $__ar = false; } }
+    if ($__ar) {
         try { $pdo->prepare("UPDATE wa_contacts SET status = 'closed', closed_at = ? WHERE phone = ? AND assigned_emp = 0")->execute([date('Y-m-d H:i:s'), $key]); } catch (Throwable $e) { }
         return $key;
     }
