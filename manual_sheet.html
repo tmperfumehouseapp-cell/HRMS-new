@@ -72,16 +72,17 @@
   const prodCell = (r) => (r.lines || []).map(prod).join(' / ');
   const pieces = (r) => (r.lines || []).reduce((a, l) => a + (+l.qty || 1), 0);
   const payName = (r) => r.pay === 'prepaid' ? 'Prepaid' : r.pay === 'cod' ? 'COD' : 'Part prepaid + COD';
+  const modeName = (r) => r.pay === 'prepaid' ? 'Prepaid' : 'COD';   // the export's Mode column: fully prepaid = Prepaid; COD and part prepaid + COD = COD (the Prepaid / COD money columns still show the split)
   const stName = (r) => r.status === 'cancelled' ? 'Cancelled' : r.status !== 'confirmed' ? 'Waiting for address' : (r.parcel && r.parcel.status ? r.parcel.status : 'Confirmed · not booked yet');
   const dt = (t) => { const d = new Date(String(t || '').replace(' ', 'T')); return isNaN(d) ? String(t || '') : d.toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }); };
   const grams = (g) => g ? (g >= 1000 ? (g / 1000).toFixed(2).replace(/0$/, '') + ' kg' : g + ' g') : '—';
 
   // ---- the export: ONE row per order, every perfume in one cell ("Name 20 ml / Name 50 ml ×2"). AWB stays empty until the AWB automation is switched on (pending).
-  const HEAD = ['Date', 'Order ID', 'AWB', 'Name', 'Number', 'Alternative number', 'Products', 'Total products', 'Total weight (g)', 'Address', 'City', 'State', 'Pincode', 'Country', 'Mode', 'Prepaid', 'COD', 'Total', 'Tax', 'Payment gateway', 'UTR', 'Order type', 'Placed by', 'Commission', 'Tracking status'];
+  const HEAD = ['Date', 'Order ID', 'AWB', 'Courier service', 'Name', 'Number', 'Alternative number', 'Products', 'Total products', 'Total weight (g)', 'Address', 'City', 'State', 'Pincode', 'Country', 'Mode', 'Prepaid', 'COD', 'Total', 'Tax', 'Payment gateway', 'UTR', 'Order type', 'Placed by', 'Commission', 'Tracking status'];
   function sheetRow(r) {
     const c = r.cust || {};
-    return [dt(r.created_at), r.order_no, (r.parcel && r.parcel.awb) || '', c.name || '', c.phone || r.phone || '', c.phone2 || '', prodCell(r), pieces(r), r.weight_g || '', [c.addr1, c.addr2, c.landmark].filter(Boolean).join(', '), c.city || '', c.state || '', c.pin || '', 'India',
-      payName(r), Math.round(Number(r.paid) || 0), Math.round(Number(r.cod) || 0), Math.round(Number(r.total) || 0), r.tax == null ? '' : Math.round(r.tax * 100) / 100, r.gateway || '', r.utr || '', r.type === 'campaign' ? 'Campaign' : r.type === 'query' ? 'Query' : '', r.emp || '', r.commission == null ? '' : Math.round(r.commission), stName(r)];
+    return [dt(r.created_at), r.order_no, (r.parcel && r.parcel.awb) || '', (r.parcel && r.parcel.courier) || '', c.name || '', c.phone || r.phone || '', c.phone2 || '', prodCell(r), pieces(r), r.weight_g || '', [c.addr1, c.addr2, c.landmark].filter(Boolean).join(', '), c.city || '', c.state || '', c.pin || '', 'India',
+      modeName(r), Math.round(Number(r.paid) || 0), Math.round(Number(r.cod) || 0), Math.round(Number(r.total) || 0), r.tax == null ? '' : Math.round(r.tax * 100) / 100, r.gateway || '', r.utr || '', r.type === 'campaign' ? 'Campaign' : r.type === 'query' ? 'Query' : '', r.emp || '', r.commission == null ? '' : Math.round(r.commission), stName(r)];
   }
 
   function draw(d) {
@@ -157,7 +158,7 @@
     try {
       await loadXlsx();
       const ws = XLSX.utils.aoa_to_sheet([HEAD].concat(d.rows.map(sheetRow)));
-      ws['!cols'] = [18, 11, 16, 22, 14, 14, 60, 9, 11, 42, 14, 16, 9, 8, 18, 9, 9, 9, 9, 15, 16, 10, 18, 11, 24].map((w) => ({ wch: w }));
+      ws['!cols'] = [18, 11, 16, 20, 22, 14, 14, 60, 9, 11, 42, 14, 16, 9, 8, 18, 9, 9, 9, 9, 15, 16, 10, 18, 11, 24].map((w) => ({ wch: w }));
       const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Manual orders'); XLSX.writeFile(wb, stamp(d) + '.xlsx');
     } catch (e) { saveCsv(d); alert('Excel could not be made (' + e.message + '), so the CSV file was saved instead. It opens in Excel.'); }
   };
