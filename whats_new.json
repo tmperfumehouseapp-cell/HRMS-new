@@ -45,6 +45,12 @@
   "items": [
     {
       "date": "2026-11-14",
+      "title": "Customers' automatic replies leave Requests",
+      "detail": "When a customer's business app answers our message by itself (\"Thank you for contacting …\", \"We're unavailable right now, but will respond as soon as possible\"), that chat is resolved automatically and no bot / flow / query typing runs on it. When the customer really writes later, the chat comes back to Requests. Chats already waiting in Requests that only have such replies are cleaned every 5 minutes.",
+      "where": "WhatsApp → Chats → Requests"
+    },
+    {
+      "date": "2026-11-14",
       "title": "Quick entry: Order type (Personal / AiSensy / Myntra / Amazon / Flipkart)",
       "detail": "'Add orders' has an Order type above the Sales person. The order ID shows the type (for example Myntra-0123), the orders are counted as before, and they now also appear on the Order Allocation page with the salesperson and panel they were saved with; changing the allocation there updates the order.",
       "where": "Sales → Orders → Add orders; Sales → Allocation"
