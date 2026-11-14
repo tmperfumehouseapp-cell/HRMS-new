@@ -811,7 +811,21 @@ html.wxdk [data-tone]{background:rgba(128,128,128,.12) !important;color:#e9edef}
           box.innerHTML = `<div class="wp-ok"><b>${fmt(s.send)} customers</b> will get the message.<div class="wp-hint" style="color:inherit;opacity:.85">${fmt(s.matched)} match your filters${s.paste_n ? ' · list: ' + fmt(s.paste_n) + ' numbers (' + fmt(s.paste_new) + ' new, ' + fmt(s.paste_overlap) + ' already in the match)' : ''}${s.optout ? ' · ' + fmt(s.optout) + ' opted out (left out)' : ''}${s.got ? ' · ' + fmt(s.got) + ' already got this message (left out)' : ''}${s.talking ? ' · ' + fmt(s.talking) + ' are chatting with us now (left out)' : ''}${s.unreach ? ' · ' + fmt(s.unreach) + ' held / blocked by Meta lately (left out)' : ''}${s.recent ? ' · ' + fmt(s.recent) + ' got a campaign message in the last ' + fr + ' days (left out)' : ''}</div>${pv.sample.length ? '<div class="wp-hint" style="color:inherit;opacity:.85">For example: ' + pv.sample.map((x) => esc(x.name || pretty(x.phone))).join(' · ') + ' …</div>' : ''}</div>`
           + (!s.matched && W.A.cfu && W.A.cfu.dk === 'in' && (W.A.cfu.df || W.A.cfu.dt) ? '<div class="wp-note">Nobody matched. Imported customers have never written to you — for them choose the date type <b>“Added / imported / first message”</b> instead of “Last wrote to us”.</div>' : ''); }
         catch (e) { pv = null; box.innerHTML = errBox(e.message); return; }
-        freqPanel(box); sugPaint();
+        freqPanel(box); sugPaint(); mixPanel(box);
+      }
+      let mxSeq = 0;
+      async function mixPanel(box) {   // 🧭 who exactly is in this audience: furthest step · can a message reach them · customer value (from the customer funnel)
+        if (W.A.src === 'paste') return; let mx = $(m.body, '#cuMx'); if (!mx) { mx = document.createElement('div'); mx.id = 'cuMx'; box.insertAdjacentElement('afterend', mx); } const my = ++mxSeq;
+        if (!pv || !pv.stats || !pv.stats.matched) { mx.innerHTML = ''; return; }
+        let d; try { d = await api.get('wa.cf_preview', { cf: JSON.stringify(W.A.cf || {}), asrc: W.A.src === 'all' ? 'all' : 'contacts' }); } catch (e) { if (my === mxSeq) mx.innerHTML = ''; return; } if (my !== mxSeq || !mx.isConnected) return;
+        if (d.error || !d.counted) { mx.innerHTML = d.error ? `<div class="wp-hint" style="margin-top:8px">${esc(d.error)}</div>` : ''; return; }
+        const row = (L) => L.filter(([k]) => d[k]).map(([k, l]) => `<span style="display:inline-block;background:#f1f5f9;border-radius:99px;padding:1px 8px;margin:2px 3px 0 0;font-size:11.5px">${l} <b>${fmt(d[k])}</b></span>`).join('') || '<span class="wp-hint">—</span>';
+        const bad = (d.h_held || 0) + (d.h_notwa || 0) + (d.h_stopped || 0) + (d.h_dead || 0);
+        mx.innerHTML = `<div class="wp-note" style="margin-top:8px"><b>🧭 Who is in this audience</b> <small>(${fmt(d.counted)} of ${fmt(d.matched)} counted by the customer funnel${d.counted < d.matched ? ' — the rest are still being counted' : ''})</small>
+          <div style="margin-top:4px"><small>Furthest step</small><br>${row([['g_never', '📭 Never messaged'], ['g_sent', '⏳ Sent, not delivered'], ['g_failed', '✖ Failed'], ['g_deliv', '📩 Delivered, no reply'], ['g_replied', '💬 Replied'], ['g_ord1', '🛒 Ordered once'], ['g_ord2', '🛍 Ordered 2+']])}</div>
+          <div style="margin-top:4px"><small>Customer value</small><br>${row([['v_new', '🆕 New'], ['v_one', '1️⃣ One-time'], ['v_repeat', '🔁 Repeat'], ['v_loyal', '⭐ Loyal'], ['v_atrisk', '⚠ At risk'], ['v_lapsed', '💤 Lapsed'], ['v_none', '❔ Never ordered']])}</div>
+          <div style="margin-top:4px"><small>Can a message reach them?</small><br>${row([['h_ok', '✅ Can receive'], ['h_held', '⏸ Held by Meta'], ['h_notwa', '📵 Not on WhatsApp'], ['h_stopped', '🛑 Stopped marketing'], ['h_dead', '💤 Last 3 failed'], ['h_optout', '🚫 Opted out']])}</div>
+          ${bad ? `<div class="wp-hint" style="margin-top:6px;color:#92400e">⚠ ${fmt(bad)} of them have failed lately (not on WhatsApp, held or stopped by Meta). Sending to them wastes money — tap <b>Can a message reach them? → Can receive</b> in the filters to leave them out.</div>` : ''}</div>`;
       }
       let fqSeq = 0;
       async function freqPanel(box) {   // 📬 how many campaign messages these customers already got lately — and a switch to leave the heavily messaged ones out (Meta holds those back)
