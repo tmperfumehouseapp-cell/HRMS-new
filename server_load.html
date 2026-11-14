@@ -42,8 +42,11 @@
       <div class="bar">
         <button class="btn" type="button" id="bRef">🔄 Refresh</button>
         <select id="fMins" aria-label="Period"><option value="15">Last 15 minutes</option><option value="60" selected>Last hour</option><option value="180">Last 3 hours</option></select>
+        <button class="btn" type="button" id="bPrompt" style="background:#111827;border-color:#111827" disabled title="Copies one ready message for Claude with the numbers and the queries of this page. Paste it to Claude to bring the CPU down.">📋 Claude prompt</button>
+        <button class="btn" type="button" id="bHint" style="background:#fff;color:#111;border:1px solid var(--line)" title="What you can do yourself right now, without Claude">💡 Hint</button>
         <span id="slAt" style="font-size:12.5px;color:var(--muted)"></span>
       </div>
+      <div id="slHint" class="card" style="display:none"></div>
       <div id="root"><div class="card">Loading…</div></div>
     </div>
   </main>
@@ -79,7 +82,7 @@
       + '<div class="tile ' + (d.mem ? tone(100 - d.mem.free_mb / d.mem.total_mb * 100, 80, 92) : '') + '"><small>Memory free</small><b>' + (d.mem ? num(d.mem.free_mb) + ' MB' : '—') + '</b><span>' + (d.mem ? 'of ' + num(d.mem.total_mb) + ' MB' : '') + '</span></div>'
       + '<div class="tile"><small>Requests a minute</small><b>' + (d.span_min ? num(Math.round(d.requests / d.span_min)) : '—') + '</b><span>' + (d.span_min ? num(d.requests) + ' in ' + d.span_min + ' min' : 'just started counting') + '</span></div>'
       + '</div>';
-    PR = [d.full_prompt || ''].concat((d.advice || []).map((a) => a.prompt || ''));
+    PR = [d.full_prompt || ''].concat((d.advice || []).map((a) => a.prompt || '')); LAST = d; $('bPrompt').disabled = !PR[0]; if ($('slHint').style.display !== 'none') $('slHint').innerHTML = hintHtml();
     h += card('What to do', 'Worked out from the numbers on this page, the most expensive first. Press <b>Copy prompt</b> on a row and paste it to Claude: it carries the numbers and the query, so Claude can fix exactly that.',
       (d.full_prompt ? '<button type="button" class="cp big" data-cp="0">📋 Copy ONE prompt for everything</button>' : '')
       + ((d.advice || []).map((a, i) => '<div class="adv ' + esc(a.lvl) + '"><b>' + esc(a.t) + '</b>' + (a.prompt ? '<i>' + esc(a.d) + '</i><button type="button" class="cp" data-cp="' + (i + 1) + '">📋 Copy prompt</button>' : esc(a.d)) + '</div>').join('') || '<div class="empty">Nothing stands out.</div>'));
@@ -111,6 +114,31 @@
     b.disabled = false;
   }
   $('bRef').onclick = load; $('fMins').onchange = load;
+  // 📋 Claude prompt (top): the same text as "Copy ONE prompt for everything"
+  $('bPrompt').onclick = async function () {
+    const t = PR[0] || ''; if (!t) return; const b = this, old = b.textContent;
+    try { await navigator.clipboard.writeText(t); b.textContent = '✓ Copied — paste it to Claude'; }
+    catch (e) { const ta = document.createElement('textarea'); ta.value = t; ta.style.cssText = 'position:fixed;left:8px;right:8px;bottom:8px;height:40vh;z-index:9999'; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); b.textContent = '✓ Copied'; ta.remove(); } catch (e2) { b.textContent = 'Select the text below and copy it'; } }
+    setTimeout(() => { b.textContent = old; }, 2500);
+  };
+  // 💡 Hint: what the owner can do right now, the items that fit this moment first
+  let LAST = null;
+  function hintHtml() {
+    const d = LAST || {}, A = d.avg || {}, m5 = A.m5 || A.m1 || null, W = A.win || m5, cpu = m5 ? m5.pct : d.cpu, tips = [];
+    const top = (d.actions || [])[0], camp = (d.actions || []).filter((r) => /^wa\.(camp_fast_tick|camp_tick|dq_worker)$/.test(r.action)).reduce((a, r) => a + r.time_share, 0);
+    const poll = (d.actions || []).filter((r) => r.per_min >= 40 && r.avg_ms < 400).slice(0, 2);
+    if (camp >= 5) tips.push(['Close Campaigns pages nobody is watching.', 'An open Campaigns page keeps asking the server for sending rounds (' + Math.round(camp) + '% of the HRMS time right now). The server sends the campaigns by itself every minute, so a closed page loses nothing.']);
+    if (W && W.db != null && W.db >= 20) tips.push(['The database is ' + W.db + '% of the server: this is where the CPU goes.', 'You cannot fix a slow query yourself. Press "📋 Claude prompt" above and paste it to Claude: it carries the exact queries, so Claude can make them cheaper.']);
+    tips.push(['Do not start many campaigns in the same minute.', 'Every running campaign makes the engine count and send at once. Start them a few minutes apart, or let the Campaign Planner space them.']);
+    if (poll.length) tips.push(['Close chat and list tabs that are not in use.', 'Every open tab asks the server again every few seconds (' + poll.map((r) => r.name + ': ' + r.per_min + ' a minute').join(' · ') + '). Ten forgotten tabs are ten times the load.']);
+    tips.push(['Open the heavy reports in quiet hours.', 'Commission "Day by day" for 30 days, long date ranges on Orders and big exports each keep a CPU core busy for a while. Use 7 days unless you need more.']);
+    const stl = m5 && m5.steal != null ? m5.steal : d.steal_now;
+    if (stl >= 3) tips.push(['Hostinger is taking ' + stl + '% of your CPU away.', 'This is not the HRMS. Write to Hostinger support: "My VPS shows ' + stl + '% CPU steal time in top. Please move it to a less busy host."']);
+    tips.push(['Press Refresh here after each change.', 'The top figure is the average of the last minutes, so give it 5 minutes to show the effect.']);
+    return '<h2>💡 What you can do right now</h2><p class="sub">' + (cpu == null ? '' : 'CPU used is ' + cpu + '% on average. ') + 'The first items fit this moment best.' + (top ? ' The busiest function now: ' + esc(top.name) + ' (' + top.time_share + '% of the time).' : '') + '</p>'
+      + tips.map((t, i) => '<div class="adv ' + (i === 0 ? 'warn' : 'info') + '"><b>' + (i + 1) + '. ' + esc(t[0]) + '</b>' + esc(t[1]) + '</div>').join('');
+  }
+  $('bHint').onclick = () => { const h = $('slHint'); if (h.style.display === 'none') { h.innerHTML = hintHtml(); h.style.display = ''; } else h.style.display = 'none'; };
   load();      // no automatic refresh: this page must not add load by itself
 </script>
 </body>
