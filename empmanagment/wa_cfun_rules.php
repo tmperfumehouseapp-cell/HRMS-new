@@ -10,11 +10,12 @@
  */
 if (!function_exists('cfun_value')) {
 
-/** new = 1 order in the last 30 days · one = 1 order 31–120 days ago · repeat = 2+ orders, last within 90 days · loyal = 3+ orders, last within 90 days · atrisk = quiet 91–180 days (121–180 for a single order) · lapsed = over 180 days · '' = never ordered */
+/** new = 1 order in the last 30 days · one = 1 order 31–120 days ago · repeat = 2+ orders, last within 90 days · loyal = 3+ orders, last within 90 days · atrisk = quiet 91–180 days (121–180 for a single order) · lapsed = over 180 days · past = ordered but the date is unknown · '' = never ordered */
 function cfun_value(int $orders, ?string $lastOrder, int $now): string
 {
     if ($orders <= 0) return '';
-    $ts = $lastOrder ? strtotime($lastOrder) : false; $da = $ts ? (int)floor(($now - $ts) / 86400) : 9999;
+    $ts = $lastOrder ? strtotime($lastOrder) : false; if (!$ts) return 'past';   // ordered, but no order date is known (old store / POS bills): not guessed
+    $da = (int)floor(($now - $ts) / 86400);
     if ($da > 180) return 'lapsed';
     if ($orders === 1) return $da <= 30 ? 'new' : ($da <= 120 ? 'one' : 'atrisk');
     return $da <= 90 ? ($orders >= 3 ? 'loyal' : 'repeat') : 'atrisk';
@@ -47,12 +48,12 @@ function cfun_score(array $x, int $now): array
 function cfun_tier(int $score): string { return $score >= 70 ? 'a' : ($score >= 45 ? 'b' : ($score >= 20 ? 'c' : ($score >= 1 ? 'd' : ''))); }
 
 /** The tag keys this system owns (it deletes / rewrites only these). */
-function cfun_tag_keys(): array { return ['value_new', 'value_one', 'value_repeat', 'value_loyal', 'value_atrisk', 'value_lapsed', 'reach_held', 'reach_notwa', 'reach_stopped', 'reach_dead', 'score_a', 'score_b', 'score_c', 'score_d']; }
+function cfun_tag_keys(): array { return ['value_new', 'value_one', 'value_repeat', 'value_loyal', 'value_atrisk', 'value_lapsed', 'value_past', 'reach_held', 'reach_notwa', 'reach_stopped', 'reach_dead', 'score_a', 'score_b', 'score_c', 'score_d']; }
 
 /** [[tag, reason], …] for one customer. Reach is tagged only when there is a problem (people who can receive are the normal case); score_d..a for every scored customer. */
 function cfun_tags(string $val, string $health, int $score, array $parts, array $x): array
 {
-    $t = []; $V = ['new' => 'ordered once, in the last 30 days', 'one' => 'ordered once, 31–120 days ago', 'repeat' => 'ordered 2+ times, last within 90 days', 'loyal' => 'ordered 3+ times, last within 90 days', 'atrisk' => 'used to order, quiet for 91–180 days', 'lapsed' => 'last order over 180 days ago'];
+    $t = []; $V = ['new' => 'ordered once, in the last 30 days', 'one' => 'ordered once, 31–120 days ago', 'repeat' => 'ordered 2+ times, last within 90 days', 'loyal' => 'ordered 3+ times, last within 90 days', 'atrisk' => 'used to order, quiet for 91–180 days', 'lapsed' => 'last order over 180 days ago', 'past' => 'ordered before; the date of the last order is not known'];
     if ($val !== '') $t[] = ['value_' . $val, ((int)($x['orders'] ?? 0)) . ' order(s): ' . $V[$val] . '.'];
     $H = ['held' => 'Meta is holding our marketing messages to them (limit per customer)', 'notwa' => 'the number is not on WhatsApp', 'stopped' => 'they stopped marketing messages', 'dead' => 'their last 3 messages failed'];
     if (isset($H[$health])) $t[] = ['reach_' . $health, ucfirst($H[$health]) . '.'];
