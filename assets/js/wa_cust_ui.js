@@ -85,12 +85,25 @@ html.wxdk .wcs{--ln:#25343e; --gb:#0f2e20; --rb:#3a1515;} html.wxdk .wcs-r,html.
     { k: 'cod', t: '💰 COD pending', cf: { tags: [{ k: 'cod_pending', m: 'in' }] } },
     { k: 'cx', t: '⚠️ Complaints', cf: { tags: [{ k: 'complaint', m: 'in' }] } },
     { k: 'wait', t: '⏳ Waiting for our reply', cf: { st: 'waiting' } },
+    // 📊 from the customer funnel, value, quality and reach (counted by mobile number)
+    { k: 'hot', t: '🔥 Ready to pay', cf: { fi: ['hot'] } },
+    { k: 'intr', t: '👀 Interested', cf: { fi: ['interested'] } },
+    { k: 'dnr', t: '📩 Delivered lately, no reply', cf: { dk: 'deliv', dp: '30', fg: ['deliv'], fh: ['ok'] } },
+    { k: 'newb', t: '🆕 New buyers — thank them', cf: { fv: ['new'] } },
+    { k: 'loyal', t: '⭐ Loyal buyers', cf: { fv: ['loyal'] } },
+    { k: 'atrisk', t: '⚠ At risk — win back now', cf: { fv: ['atrisk'] }, sort: 'order_old' },
+    { k: 'lapsed', t: '💤 Lapsed buyers', cf: { fv: ['lapsed', 'past'], fh: ['ok'] } },
+    { k: 'scoreA', t: '🏆 Quality A (70+)', cf: { fc: ['s_a'] } },
+    { k: 'ready', t: '✅ Can receive, never ordered, delivered', cf: { fh: ['ok'], fc: ['reached'], ord: '0' } },
+    { k: 'fixnum', t: '📵 Fix these numbers', cf: { fh: ['notwa', 'dead', 'held', 'stopped'] } },
+    { k: 'impnd', t: '📥 Excel import, nothing delivered', cf: { fc: ['imp_nodel'] } },
   ];
   const ymd = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
   const ago = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return ymd(d); };
   // tag groups for the picker (keys and labels, Claude tags have spaces)
   const GROUPS = [
     ['seg', '📁 Your segments', (k, x) => x.kind === 'segment' || /^seg_/.test(k)],
+    ['val', '💎 Value & quality', (k) => /^(value_|reach_|score_)/.test(k)],
     ['beh', '🧭 Behaviour', (k) => /^(no_haggle|price_sensitive|quick_decider|slow_decider|replies_to_followups|second_order|third_order_plus|one_time_buyer|lapsed_buyer|premium_buyer|budget_buyer)$/.test(k)],
     ['buy', '🛍 Buying', (k) => /^(bought|repeat|vip|not_ordered|cod_pending|came_back)$|premium|buyer|order|deliver|purchase|customer/.test(k)],
     ['prob', '⚠️ Problems', (k) => /complain|issue|fail|broken|wrong|refund|return|damag|missing|not spray|leak|late|delay|bad/.test(k)],
@@ -250,6 +263,12 @@ html.wxdk .wcs{--ln:#25343e; --gb:#0f2e20; --rb:#3a1515;} html.wxdk .wcs-r,html.
       let h = r.orders === 0 ? cp('', 'No order') : cp(r.orders >= 3 ? 'p' : r.orders === 2 ? 'b' : 'ok', r.orders + '× ' + (r.spent ? money(r.spent) : ''));
       if (r.orders > 0 && r.spent) { const av = r.spent / r.orders; if (av >= cu.hi) h += cp('p', '💎 Premium'); else if (av <= cu.lo) h += cp('', 'Budget'); }
       if (r.days != null && r.days <= 120) h += cp('', r.days === 0 ? 'ordered today' : r.days + ' d ago');
+      const fx = r.fx; if (fx) {   // 📊 funnel facts: quality score band, customer value, reach problem, last delivered
+        const sc = +fx.score || 0, band = sc >= 70 ? ['ok', 'A'] : sc >= 45 ? ['b', 'B'] : sc >= 20 ? ['o', 'C'] : sc >= 1 ? ['', 'D'] : null, VAL = { new: '🆕 New', one: '1️⃣ One-time', repeat: '🔁 Repeat', loyal: '⭐ Loyal', atrisk: '⚠ At risk', lapsed: '💤 Lapsed', past: '📜 Past buyer' }, HEA = { held: '⏸ Held by Meta', notwa: '📵 Not on WhatsApp', stopped: '🛑 Stopped marketing', dead: '💤 Last 3 failed' };
+        if (band) h += cp(band[0], '🏆 ' + band[1] + ' · ' + sc, 'title="Quality score ' + sc + '/100 — open the customer card to see why"'); if (VAL[fx.val]) h += cp('p', VAL[fx.val]); if (HEA[fx.health]) h += cp('bad', HEA[fx.health]);
+        if (fx.last_deliv) { const dd = Math.max(0, Math.floor((Date.now() - new Date(String(fx.last_deliv).replace(' ', 'T')).getTime()) / 86400000)); h += cp('', '✅ delivered ' + (dd === 0 ? 'today' : dd + ' d ago'), 'title="Last message that reached the phone"'); }
+        else if (+fx.out_n > 0) h += cp('warn', 'nothing delivered yet');
+      }
       if (r.optout) h += cp('bad', 'Opted out'); if (r.ignored >= 2) h += cp('warn', 'Ignored ' + r.ignored);
       if (r.assigned_name) h += cp('', '👤 ' + esc(String(r.assigned_name).split(' ')[0]));
       const tg = r.tags || [], more = tg.length - 2;

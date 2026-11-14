@@ -5,7 +5,7 @@
   'use strict';
   if (!window.WaPanels || !WaPanels.add) return;
   const { esc, toast, errBox, loading } = WaPanels.util;
-  const KIND = { fact: ['📌 Fact', '#e0f2fe', '#075985'], status: ['📊 Status', '#dcfce7', '#166534'], intent: ['🎯 Intent', '#fef3c7', '#92400e'], journey: ['🗓 Journey', '#ede9fe', '#5b21b6'], manual: ['👤 Learned from you', '#f1f5f9', '#334155'], claude: ['🧠 Made by Claude', '#fae8ff', '#86198f'] };
+  const KIND = { fact: ['📌 Fact', '#e0f2fe', '#075985'], status: ['📊 Status', '#dcfce7', '#166534'], intent: ['🎯 Intent', '#fef3c7', '#92400e'], journey: ['🗓 Journey', '#ede9fe', '#5b21b6'], behaviour: ['🧭 Behaviour', '#e0e7ff', '#3730a3'], value: ['💎 Value', '#fce7f3', '#9d174d'], score: ['🏆 Score', '#fef9c3', '#854d0e'], reach: ['📡 Reach', '#ffedd5', '#9a3412'], manual: ['👤 Learned from you', '#f1f5f9', '#334155'], claude: ['🧠 Made by Claude', '#fae8ff', '#86198f'] };
   let CSS = false;
   function css() {
     if (CSS) return; CSS = true; const s = document.createElement('style');
@@ -22,7 +22,7 @@
     async function load() { try { D = await api.get('wq.tags_list'); } catch (e) { el.innerHTML = '<div class="tg">' + errBox(e.message) + '</div>'; return; } draw(); }
     const pill = (k) => { const x = KIND[k] || KIND.fact; return '<span class="tg-pill" style="background:' + x[1] + ';color:' + x[2] + '">' + x[0] + '</span>'; };
     function draw() {
-      const groups = { intent: [], status: [], fact: [], journey: [] }; (D.rows || []).forEach((r) => { (groups[r.kind] || groups.fact).push(r); });
+      const groups = { intent: [], status: [], behaviour: [], value: [], score: [], reach: [], fact: [], journey: [] }; (D.rows || []).forEach((r) => { (groups[r.kind] || groups.fact).push(r); });
       let h = '<div class="tg"><div class="tg-card"><div class="tg-h">🏷 Auto tags<span class="tg-sp"></span><button class="tg-b p s" type="button" id="tgRun">Tag customers now</button><button class="tg-b s" type="button" id="tgDisc">🧠 Let Claude look for new tags</button></div>'
         + '<div class="tg-sub">Every tag has a meaning, a rule and a time it goes away. The system tags customers by itself from what they do — you keep tagging by hand as before; those tags are never changed. When you make a new tag, the system studies <b>why</b> you gave it, writes the rule, checks the rule against your own tagging, and if it matches well it applies the tag to everyone who fits. Claude may also make new tags on its own when it sees a useful pattern; it checks them against the existing ones so two tags never mean the same thing.' + (D.last_run ? ' Last run: ' + esc(D.last_run) + '.' : '') + '</div></div>';
       const man = D.manual || [];
@@ -40,7 +40,7 @@
         });
         h += '</div>';
       }
-      [['intent', '🎯 Intent — what the customer wants now (goes by itself)'], ['status', '📊 Status — what they are'], ['fact', '📌 Facts — how they came'], ['journey', '🗓 Journey']].forEach(([k, t]) => {
+      [['intent', '🎯 Intent — what the customer wants now (goes by itself)'], ['value', '💎 Customer value — how recently and how often they order'], ['score', '🏆 Quality score — 0 to 100: replies, orders, spend, reachable, interested'], ['reach', '📡 Can a message reach them? — only problems are tagged'], ['behaviour', '🧭 Behaviour — how they act'], ['status', '📊 Status — what they are'], ['fact', '📌 Facts — how they came'], ['journey', '🗓 Journey']].forEach(([k, t]) => {
         const rows = groups[k]; if (!rows || !rows.length) return;
         h += '<div class="tg-card"><div class="tg-h">' + t + '</div><div class="tg-grid" style="margin-top:8px">' + rows.map((r) => '<div style="border:1px solid #eef0f5;border-radius:12px;padding:10px"><div style="display:flex;justify-content:space-between;gap:8px"><b>' + esc(r.label) + '</b><span class="tg-n">' + fmt(r.n) + '</span></div>'
           + (r.src === 'auto' ? '<span class="tg-pill" style="background:#dcfce7;color:#166534">🤖 automatic</span>' : '') + '<div class="tg-sub">' + esc(r.rule || '') + '</div><div class="tg-sub">⏱ ' + esc(r.expiry || '') + '</div>' + (r.used ? '<div class="tg-sub">➡ ' + esc(r.used) + '</div>' : '') + '</div>').join('') + '</div></div>';
