@@ -606,6 +606,137 @@ try {
             break;
         }
 
+        // ====================================================== returns, exchanges and bottles sent back to the supplier
+        case 'st_inv.mv_lookup': {          // a scanned bottle: what is it, where is it, and (if sold) who bought it
+            require_auth();
+            $code = st_clean_code($_GET['code'] ?? '');
+            $b = st_find_bottles($pdo, [$code])[$code] ?? null;
+            if (!$b) json_response(['error' => 'Code ' . $code . ' is not one of our barcodes.'], 404);
+            $o = st_bottle_out($b); $sale = null;
+            if (!empty($b['bill_id'])) { $q = $pdo->prepare("SELECT bill_no, biz_date, created_at, customer_name, customer_phone, total, status FROM st_bills WHERE bill_id = ?"); $q->execute([(int)$b['bill_id']]); $sale = $q->fetch() ?: null; }
+            else { $q = $pdo->prepare("SELECT bl.bill_no, bl.biz_date, bl.created_at, bl.customer_name, bl.customer_phone, bl.total, bl.status FROM st_bill_items i JOIN st_bills bl ON bl.bill_id = i.bill_id WHERE i.bottle_id = ? ORDER BY bl.bill_id DESC LIMIT 1"); $q->execute([(int)$b['bottle_id']]); $sale = $q->fetch() ?: null; }
+            json_response(['bottle' => $o, 'sale' => $sale, 'sold_at' => $b['sold_at'], 'stocked_at' => $b['stocked_at']]);
+            break;
+        }
+
+        case 'st_inv.mv_return': {          // a customer brought a bottle back: a RETURN (refund) or an EXCHANGE (a different bottle goes out)
+            $auth = require_auth(); $in = json_input();
+            $mode = ($in['mode'] ?? '') === 'exchange' ? 'exchange' : 'return';
+            $oldCode = st_clean_code($in['old_code'] ?? ''); $newCode = st_clean_code($in['new_code'] ?? '');
+            $reason = mb_substr(trim((string)($in['reason'] ?? '')), 0, 40); $note = mb_substr(trim((string)($in['note'] ?? '')), 0, 255);
+            $resell = !empty($in['resell']) ? 1 : 0; $refund = max(0.0, round((float)($in['refund'] ?? 0), 2)); $diff = round((float)($in['diff'] ?? 0), 2);
+            if ($oldCode === '') json_response(['error' => 'Scan the bottle the customer brought back.'], 400);
+            if ($mode === 'exchange' && $newCode === '') json_response(['error' => 'Scan the new bottle you give in exchange.'], 400);
+            if ($mode === 'exchange' && $newCode === $oldCode) json_response(['error' => 'The bottle given and the bottle taken back are the same code.'], 400);
+            $pdo->beginTransaction();
+            $f = st_find_bottles($pdo, array_filter([$oldCode, $newCode]), true);
+            $old = $f[$oldCode] ?? null; $new = $newCode !== '' ? ($f[$newCode] ?? null) : null;
+            if (!$old) { $pdo->rollBack(); json_response(['error' => 'Code ' . $oldCode . ' is not one of our barcodes.'], 404); }
+            if ($old['status'] !== 'sold') { $pdo->rollBack(); json_response(['error' => $old['title'] . ' ' . $old['ml'] . ' ml (' . $oldCode . ') is ' . ($old['status'] === 'stock' ? 'already in stock — it was never sold' : $old['status']) . ', so it cannot be taken back.'], 409); }
+            if ($mode === 'exchange') {
+                if (!$new) { $pdo->rollBack(); json_response(['error' => 'Code ' . $newCode . ' is not one of our barcodes.'], 404); }
+                if ($new['status'] !== 'stock') { $pdo->rollBack(); json_response(['error' => $new['title'] . ' ' . $new['ml'] . ' ml (' . $newCode . ') is ' . $new['status'] . ', not in stock.'], 409); }
+            }
+            $now = date('Y-m-d H:i:s'); $by = (string)($auth['username'] ?? 'user');
+            $billId = !empty($old['bill_id']) ? (int)$old['bill_id'] : null;
+            if ($resell) $pdo->prepare("UPDATE st_bottles SET status = 'stock', stocked_at = ?, sold_at = NULL, bill_id = NULL WHERE bottle_id = ? AND status = 'sold'")->execute([$now, (int)$old['bottle_id']]);
+            else $pdo->prepare("UPDATE st_bottles SET status = 'damaged' WHERE bottle_id = ? AND status = 'sold'")->execute([(int)$old['bottle_id']]);
+            if ($mode === 'exchange') $pdo->prepare("UPDATE st_bottles SET status = 'sold', sold_at = ?, bill_id = NULL WHERE bottle_id = ? AND status = 'stock'")->execute([$now, (int)$new['bottle_id']]);
+            $pdo->prepare("INSERT INTO st_moves (kind, created_at, by_name, old_bottle_id, new_bottle_id, product_id, ml, reason, note, resell, refund, diff, bill_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)")
+                ->execute([$mode, $now, mb_substr($by, 0, 80), (int)$old['bottle_id'], $new ? (int)$new['bottle_id'] : null, (int)$old['product_id'], (int)$old['ml'], $reason, $note, $resell, $mode === 'return' ? $refund : 0, $mode === 'exchange' ? $diff : 0, $billId]);
+            $pdo->commit();
+            json_response(['ok' => true, 'message' => ($mode === 'exchange' ? 'Exchange saved: ' . $old['title'] . ' ' . $old['ml'] . ' ml taken back, ' . $new['title'] . ' ' . $new['ml'] . ' ml given.' : 'Return saved: ' . $old['title'] . ' ' . $old['ml'] . ' ml taken back' . ($refund > 0 ? ', refund ₹' . number_format($refund) : '') . '.') . ' ' . ($resell ? 'It is back in stock.' : 'It is marked damaged (not for sale).')]);
+            break;
+        }
+
+        case 'st_inv.mv_find': {            // no barcode to scan? find the customer's bill by phone / bill number / name: its sold bottles can be picked from the list
+            require_auth();
+            $q = trim((string)($_GET['q'] ?? '')); $digits = preg_replace('/\D/', '', $q);
+            if (mb_strlen($q) < 3) json_response(['bills' => [], 'hint' => 'Type at least 3 letters or digits.']);
+            $w = []; $args = [];
+            if (strlen($digits) >= 4) { $w[] = "(bl.customer_phone LIKE ? OR EXISTS (SELECT 1 FROM st_bill_people pp WHERE pp.bill_id = bl.bill_id AND pp.phone LIKE ?) OR bl.bill_no LIKE ?)"; array_push($args, '%' . $digits, '%' . $digits, '%' . $digits . '%'); }
+            $w[] = "bl.customer_name LIKE ?"; $args[] = '%' . $q . '%'; $w[] = "bl.bill_no LIKE ?"; $args[] = '%' . $q . '%';
+            $st = $pdo->prepare("SELECT bl.bill_id, bl.bill_no, bl.created_at, bl.customer_name, bl.customer_phone, bl.total FROM st_bills bl WHERE bl.status = 'ok' AND bl.created_at >= DATE_SUB(NOW(), INTERVAL 120 DAY) AND (" . implode(' OR ', $w) . ") ORDER BY bl.bill_id DESC LIMIT 12");
+            $st->execute($args); $bills = $st->fetchAll();
+            $it = $pdo->prepare("SELECT b.code, b.ml, b.kind, b.status, p.title FROM st_bill_items i JOIN st_bottles b ON b.bottle_id = i.bottle_id JOIN st_products p ON p.product_id = b.product_id WHERE i.bill_id = ? AND i.kind IN ('sale','gift') ORDER BY i.item_id");
+            foreach ($bills as &$bl) { $it->execute([(int)$bl['bill_id']]); $bl['bottles'] = $it->fetchAll(); unset($bl['bill_id']); } unset($bl);
+            json_response(['bills' => $bills]);
+            break;
+        }
+
+        case 'st_inv.mv_nobarcode': {       // the barcode is gone and no bill can be found: record the return by perfume + size. If the bottle is good, a NEW barcode is made for it (print, stick, scan it in)
+            $auth = require_auth(); $in = json_input();
+            $pid = (int)($in['product_id'] ?? 0); $ml = (int)($in['ml'] ?? 0);
+            if (!$pid || !in_array($ml, ST_SIZES, true)) json_response(['error' => 'Choose the perfume and its size (' . implode(', ', ST_SIZES) . ' ml).'], 400);
+            $pr = $pdo->prepare("SELECT title FROM st_products WHERE product_id = ?"); $pr->execute([$pid]); $title = (string)$pr->fetchColumn(); if ($title === '') json_response(['error' => 'Perfume not found.'], 404);
+            $reason = mb_substr(trim((string)($in['reason'] ?? '')), 0, 40); $note = mb_substr(trim((string)($in['note'] ?? '')), 0, 255);
+            $resell = !empty($in['resell']) ? 1 : 0; $refund = max(0.0, round((float)($in['refund'] ?? 0), 2));
+            $now = date('Y-m-d H:i:s'); $by = (string)($auth['username'] ?? 'user'); $code = ''; $newId = null;
+            $pdo->beginTransaction();
+            if ($resell) {
+                $batch = 'R' . date('ymd-Hi'); $mfg = date('Y-m-d'); $exp = date('Y-m-d', strtotime('+4 years'));
+                $pdo->prepare("INSERT INTO st_bottles (code, product_id, ml, kind, status, batch, mfg_date, exp_date, created_by, created_at) VALUES (?,?,?,?, 'generated', ?,?,?,?,?)")->execute(['t' . bin2hex(random_bytes(5)), $pid, $ml, 'sale', $batch, $mfg, $exp, (int)($auth['employee_id'] ?? 0) ?: null, $now]);
+                $newId = (int)$pdo->lastInsertId(); $code = (string)(ST_CODE_BASE + $newId);
+                if (ST_CODE_BASE + $newId > 999999) { $pdo->rollBack(); json_response(['error' => 'The 6-digit code range is used up.'], 500); }
+                $pdo->prepare("UPDATE st_bottles SET code = ? WHERE bottle_id = ?")->execute([$code, $newId]);
+            }
+            $pdo->prepare("INSERT INTO st_moves (kind, created_at, by_name, old_bottle_id, new_bottle_id, product_id, ml, reason, note, resell, refund) VALUES ('return',?,?,NULL,?,?,?,?,?,?,?)")
+                ->execute([$now, mb_substr($by, 0, 80), $newId, $pid, $ml, $reason, '[no barcode] ' . $note, $resell, $refund]);
+            $pdo->commit();
+            json_response(['ok' => true, 'code' => $code, 'message' => 'Return saved without a barcode: ' . $title . ' ' . $ml . ' ml' . ($refund > 0 ? ', refund ₹' . number_format($refund) : '') . '. ' . ($resell ? 'A NEW barcode ' . $code . ' was made for it: print its label (Make & print → Earlier batches), stick it, then scan it in to put it back in stock.' : 'It is not for sale again, so nothing is added to the stock.')]);
+            break;
+        }
+
+        case 'st_inv.mv_vendor_out': {      // bottles already scanned into stock but with a problem (sticker, label…): send them back to the supplier — they leave the stock
+            $auth = require_auth(); $in = json_input();
+            $codes = array_values(array_unique(array_filter(array_map('st_clean_code', (array)($in['codes'] ?? [])), 'strlen')));
+            if (!$codes) json_response(['error' => 'Scan at least one bottle.'], 400);
+            if (count($codes) > 300) json_response(['error' => 'At most 300 bottles at a time.'], 400);
+            $vendor = mb_substr(trim((string)($in['vendor'] ?? '')), 0, 60); if ($vendor === '') json_response(['error' => 'Write the supplier name.'], 400);
+            $reason = mb_substr(trim((string)($in['reason'] ?? '')), 0, 40); $note = mb_substr(trim((string)($in['note'] ?? '')), 0, 255);
+            $pdo->beginTransaction();
+            $f = st_find_bottles($pdo, $codes, true); $bad = [];
+            foreach ($codes as $c) { $b = $f[$c] ?? null; if (!$b) $bad[] = $c . ' (not our barcode)'; elseif ($b['status'] !== 'stock' && $b['status'] !== 'generated') $bad[] = $c . ' (' . $b['status'] . ')'; }
+            if ($bad) { $pdo->rollBack(); json_response(['error' => 'These cannot be sent back: ' . implode(', ', array_slice($bad, 0, 6)) . (count($bad) > 6 ? '…' : '') . '. Only bottles in stock (or not yet scanned in) can go back to the supplier.'], 409); }
+            $now = date('Y-m-d H:i:s'); $by = (string)($auth['username'] ?? 'user'); $tag = 'V' . date('ymd-Hi');
+            $up = $pdo->prepare("UPDATE st_bottles SET status = 'vendor' WHERE bottle_id = ? AND status IN ('stock','generated')");
+            $ins = $pdo->prepare("INSERT INTO st_moves (kind, created_at, by_name, old_bottle_id, product_id, ml, reason, note, vendor, vendor_batch) VALUES ('vendor_out',?,?,?,?,?,?,?,?,?)");
+            foreach ($codes as $c) { $b = $f[$c]; $up->execute([(int)$b['bottle_id']]); $ins->execute([$now, mb_substr($by, 0, 80), (int)$b['bottle_id'], (int)$b['product_id'], (int)$b['ml'], $reason, $note, $vendor, $tag]); }
+            $pdo->commit();
+            json_response(['ok' => true, 'count' => count($codes), 'batch' => $tag, 'message' => count($codes) . ' bottle' . (count($codes) === 1 ? '' : 's') . ' sent back to ' . $vendor . '. They are out of the stock now.']);
+            break;
+        }
+
+        case 'st_inv.mv_vendor_back': {     // the supplier sent them back fixed (→ stock again) or they will not come (→ written off)
+            $auth = require_auth(); $in = json_input();
+            $ids = array_values(array_unique(array_filter(array_map('intval', (array)($in['move_ids'] ?? [])))));
+            $how = ($in['action'] ?? '') === 'scrap' ? 'scrap' : 'restock';
+            if (!$ids) json_response(['error' => 'Choose what came back.'], 400);
+            $pdo->beginTransaction(); $n = 0; $now = date('Y-m-d H:i:s');
+            $sel = $pdo->prepare("SELECT * FROM st_moves WHERE move_id = ? AND kind = 'vendor_out' AND closed_at IS NULL FOR UPDATE");
+            foreach ($ids as $id) {
+                $sel->execute([$id]); $m = $sel->fetch(); if (!$m) continue;
+                $u = $pdo->prepare("UPDATE st_bottles SET status = ?, stocked_at = ? WHERE bottle_id = ? AND status = 'vendor'");
+                $u->execute([$how === 'restock' ? 'stock' : 'void', $how === 'restock' ? $now : null, (int)$m['old_bottle_id']]);
+                $pdo->prepare("UPDATE st_moves SET closed_at = ?, closed_how = ? WHERE move_id = ?")->execute([$now, $how, $id]); $n++;
+            }
+            $pdo->commit();
+            json_response(['ok' => true, 'count' => $n, 'message' => $n ? ($n . ' bottle' . ($n === 1 ? '' : 's') . ($how === 'restock' ? ' are back in stock.' : ' written off.')) : 'Nothing to do: they were already closed.']);
+            break;
+        }
+
+        case 'st_inv.mv_list': {            // the whole picture: counts, what is at the supplier now, and the latest moves
+            require_auth();
+            $m = date('Y-m-01'); $d = date('Y-m-d');
+            $cnt = function ($kind, $from) use ($pdo) { $q = $pdo->prepare("SELECT COUNT(*) FROM st_moves WHERE kind = ? AND created_at >= ?"); $q->execute([$kind, $from]); return (int)$q->fetchColumn(); };
+            $atV = $pdo->query("SELECT m.move_id, m.created_at, m.vendor, m.vendor_batch, m.reason, m.note, m.ml, b.code, p.title FROM st_moves m JOIN st_bottles b ON b.bottle_id = m.old_bottle_id JOIN st_products p ON p.product_id = m.product_id WHERE m.kind = 'vendor_out' AND m.closed_at IS NULL ORDER BY m.created_at DESC, m.move_id DESC LIMIT 500")->fetchAll();
+            $rec = $pdo->query("SELECT m.*, b.code, p.title, nb.code AS new_code, np.title AS new_title, nb.ml AS new_ml FROM st_moves m LEFT JOIN st_bottles b ON b.bottle_id = m.old_bottle_id LEFT JOIN st_products p ON p.product_id = m.product_id LEFT JOIN st_bottles nb ON nb.bottle_id = m.new_bottle_id LEFT JOIN st_products np ON np.product_id = nb.product_id ORDER BY m.move_id DESC LIMIT 60")->fetchAll();
+            $dam = (int)$pdo->query("SELECT COUNT(*) FROM st_bottles WHERE status = 'damaged'")->fetchColumn();
+            json_response(['counts' => ['returns_today' => $cnt('return', $d), 'returns_month' => $cnt('return', $m), 'exchanges_today' => $cnt('exchange', $d), 'exchanges_month' => $cnt('exchange', $m), 'at_vendor' => count($atV), 'damaged' => $dam],
+                'at_vendor' => $atV, 'recent' => $rec]);
+            break;
+        }
+
         case 'st_inv.audit': {
             require_auth();
             $codes = array_values(array_unique(array_filter(array_map('st_clean_code', (array)(json_input()['codes'] ?? [])), 'strlen')));
