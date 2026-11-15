@@ -439,7 +439,7 @@ function wa_camp_msg_counts(PDO $pdo, array $phones, int $days): array
 }
 function wa_camp_audience(PDO $pdo, array $aud, int $freq): array
 {
-    $freq = max(0, (int)setting_get($pdo, 'wa_camp_gap_days', '3'));   // no "already got a campaign lately" rule: the owner sends to whoever they pick (setting wa_camp_gap_days > 0 would bring it back)
+    $freq = isset($aud['gap_days']) && $aud['gap_days'] !== '' ? max(0, (int)$aud['gap_days']) : max(0, (int)setting_get($pdo, 'wa_camp_gap_days', '3'));   // the campaign's own "days between campaigns" (the Planner sends 0 = everybody in the file) wins over the setting   // no "already got a campaign lately" rule: the owner sends to whoever they pick (setting wa_camp_gap_days > 0 would bring it back)
     $src = in_array($aud['src'] ?? '', ['contacts', 'all', 'paste'], true) ? $aud['src'] : 'contacts';
     $f = (array)($aud['f'] ?? []); if (!empty($f['gtag']) && empty($f['gtags'])) { $f['gtags'] = [(string)$f['gtag']]; unset($f['gtag']); }   // old campaigns had one tag
     $cfBad = false;
@@ -1588,6 +1588,8 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
                 $extra['numbers'] = $pick;
                 $w = []; foreach ((array)($ex['num_w'] ?? []) as $k => $v) if (in_array((int)$k, $pick, true) && (float)$v > 0) $w[(int)$k] = min(100, round((float)$v, 1)); if (count($w) >= 2) $extra['num_w'] = $w;
             }
+            foreach (['gap_days' => 60, 'bought_days' => 365] as $k0 => $mx0) if (isset($ex[$k0]) && $ex[$k0] !== '') $extra[$k0] = max(0, min($mx0, (int)$ex[$k0]));   // the "Who to leave out" choices of the campaign (0 = send to them too) — the sender reads them
+            foreach (['leave_fu', 'skip_ignored'] as $k0) if (isset($ex[$k0])) $extra[$k0] = (int)$ex[$k0] !== 0 ? 1 : 0;
             if ((int)($ex['u_pct'] ?? 0) > 0 && (!empty($ex['u_tpl']) || !empty($ex['u_auto']))) {   // the owner's utility share for this campaign, 5–80 %: all approved utility versions of the message (u_auto) or one chosen (u_tpl)
                 if (!empty($ex['u_tpl'])) { $ur = wa_diag_row_tpl($pdo, (int)$ex['u_tpl']); if (!$ur || strtoupper((string)$ur['category']) !== 'UTILITY') json_response(['error' => 'The utility version must be a Utility message.'], 422); $extra['u_tpl'] = (int)$ur['id']; }
                 if (!empty($ex['u_auto'])) $extra['u_auto'] = 1; $extra['u_pct'] = max(5, min(100, (int)$ex['u_pct']));   // the owner chooses 5–100 %
