@@ -123,6 +123,8 @@ jobs:
           echo "\n=== campaign extras (follow-ups, alerts) ===\n";
           echo "Follow-up steps saved: " . $n("SELECT COUNT(*) FROM wa_cx_fu") . " · follow-up log rows: " . $n("SELECT COUNT(*) FROM wa_cx_fu_log") . "\n";
           try { $v = $d->query("SELECT setting_value FROM hrms_settings WHERE setting_key = 'wa_cx_alerts'")->fetchColumn(); echo "Current alerts: " . ($v === false ? "(not computed yet)" : $v) . "\n"; $v = $d->query("SELECT setting_value FROM hrms_settings WHERE setting_key = 'wa_cx_alert_at'")->fetchColumn(); echo "Alerts last worked out: " . ($v === false ? "never" : $v) . "\n"; } catch (Throwable $e) { echo "n/a\n"; }
+          echo "\n=== daily plan study ===\n";
+          try { foreach (["wa_cx_roi", "wa_cx_segs"] as $k) { $v = $d->query("SELECT setting_value FROM hrms_settings WHERE setting_key = '$k'")->fetchColumn(); echo $k . ": " . ($v === false ? "(not made yet)" : substr($v, 0, 1500)) . "\n"; } } catch (Throwable $e) { echo "n/a\n"; }
           PHP
           php /tmp/cust_numbers.php "$P"; rm -f /tmp/cust_numbers.php
           REMOTE
