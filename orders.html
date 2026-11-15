@@ -943,6 +943,7 @@
 <script src="assets/js/config.js?v=2"></script>
 <script src="assets/js/api.js?v=13"></script>
 <script src="assets/js/layout.js?v=32"></script>
+<script src="assets/js/side_chat.js?v=1"></script>
 <script src="assets/js/ml_slab.js?v=261114a"></script>
 <script src="assets/js/convo.js?v=261024a"></script>
 <div class="cmo" id="mbOv" hidden><div class="cmd" role="dialog" aria-modal="true" aria-labelledby="mbTtl"><div class="hd"><div><h3 id="mbTtl"></h3><p id="mbSub"></p></div><div class="acts"><button type="button" class="dl" id="mbDl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg>Excel</button><button type="button" class="x" id="mbX" aria-label="Close">✕</button></div></div><div class="bd" id="mbBd"></div></div></div>
@@ -3124,6 +3125,8 @@
   document.getElementById('btnDetailClose').addEventListener('click', closeDetail);
   detailModal.addEventListener('click', (e) => { if (e.target === detailModal) closeDetail(); });
 
+  window.__closeDetail = closeDetail;
+  const chatBtn = (ph) => { const d10 = String(ph || '').replace(/\D/g, '').slice(-10); return d10.length === 10 ? ` <button type="button" class="btn secondary" style="width:auto;padding:3px 10px;font-size:12px;min-height:0;margin-left:8px" onclick="window.__closeDetail && __closeDetail(); SideChat.open('${d10}');">💬 Chat</button>` : ''; };
   function detailRow(label, value) {
     if (!value) return '';
     return `<div style="display:flex; gap:12px; padding:5px 0; font-size:13.5px;">
@@ -3143,7 +3146,7 @@
       body.innerHTML =
         detailRow('Date', new Date(o.created_at).toLocaleString('en-IN', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })) +
         detailRow('Customer', o.customer) +
-        detailRow('Mobile', o.phone) +
+        detailRow('Mobile', esc(o.phone || '') + chatBtn(o.phone)) +
         detailRow('Items', o.items) +
         detailRow('Total', fmtMoney(o.total, o.currency)) +
         detailRow('Payment', o.financial_status) +
@@ -3202,7 +3205,7 @@
       body.innerHTML =
         detailRow('Date', new Date(d.created_at).toLocaleString('en-IN', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })) +
         detailRow('Customer', d.customer) +
-        detailRow('Mobile', d.phone) +
+        detailRow('Mobile', esc(d.phone || '') + chatBtn(d.phone)) +
         detailRow('Email', d.email) +
         detailRow('Address', (d.address || []).join('<br>')) +
         detailRow('Payment', `<span class="badge ${d.financial_status === 'paid' ? '' : 'inactive'}">${d.financial_status || '—'}</span>${d.gateway ? ' via ' + d.gateway : ''}`) +
