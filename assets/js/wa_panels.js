@@ -228,7 +228,7 @@
     const steps = (n) => `<div class="stp"><span class="d ${n >= 1 ? 'on' : ''}">1</span><span class="l">Upload</span><hr><span class="d ${n >= 2 ? 'on' : ''}">2</span><span class="l">Check</span><hr><span class="d ${n >= 3 ? 'on' : ''}">3</span><span class="l">Add</span></div>`;
     const dl = (name, text) => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + text], { type: 'text/csv' })); a.download = name; document.body.appendChild(a); a.click(); a.remove(); };
     function step1(msg) {
-      m.body.innerHTML = steps(1) + `<div class="drop" id="iDrop"><div style="font-size:26px">📄</div>Choose an Excel or CSV file, or drop it here<small>Up to about 10,000 customers. Columns: <b>phone</b> (with or without +91), <b>name</b>, <b>tags</b> (optional, comma-separated). Only the first sheet is read.</small><input type="file" id="iF" accept=".xlsx,.xls,.csv,.txt,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" hidden></div>
+      m.body.innerHTML = steps(1) + `<div class="drop" id="iDrop"><div style="font-size:26px">📄</div>Choose an Excel or CSV file, or drop it here<small>Up to about 100,000 customers (big files are checked and added in parts). Columns: <b>phone</b> (with or without +91), <b>name</b>, <b>tags</b> (optional, comma-separated). Only the first sheet is read.</small><input type="file" id="iF" accept=".xlsx,.xls,.csv,.txt,text/csv,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" hidden></div>
         <div class="wp-row" style="margin:10px 0"><button type="button" class="wp-btn s" id="iSample">Download sample file</button><span class="wp-hint">or</span><button type="button" class="wp-btn s" id="iPaste">Paste numbers instead</button></div><div id="iE">${msg ? errBox(msg) : ''}</div>`;
       const drop = $(m.body, '#iDrop'), f = $(m.body, '#iF');
       drop.onclick = () => f.click(); f.onchange = () => { if (f.files[0]) read(f.files[0]); };
@@ -305,7 +305,7 @@
       function paint() {
         const sel2 = chosen(), left = rows.length - sel2.length;
         m.body.innerHTML = steps(2) + `<div class="wp-hint" style="margin:0 0 8px"><b>${esc(fileName || 'Pasted numbers')}</b> · ${fmt(rows.length)} numbers checked. Nothing is deleted — groups you leave out are simply not added to this campaign list.</div>
-          <div class="wp-ok" style="margin-bottom:8px"><b id="iSel">${fmt(sel2.length)}</b> will be added · <b>${fmt(left)}</b> left out — the suggestion is only a suggestion, you decide for every group</div>
+          <div class="wp-ok" style="margin-bottom:8px"><b id="iSel">${fmt(sel2.length)}</b> will be added · <b>${fmt(left)}</b> left out (saved with a “left_…” tag so you can bring them back) — the suggestion is only a suggestion, you decide for every group</div>
           ${GROUPS.filter((g) => by[g[0]].length).map((g) => { const arr = by[g[0]], kn = arr.filter((r) => scOf(r) >= 0), av = kn.length ? Math.round(kn.reduce((a, r) => a + scOf(r), 0) / kn.length) : -1;
             const on = keepB[g[0]], sug = g[3] === 1 ? 'Keep' : 'Leave out', bt = (k, t) => `<button type="button" data-k="${g[0]}:${k}" style="border:1px solid ${(k === 1) === on ? (k === 1 ? '#16a34a' : '#dc2626') : '#d5dbe3'};background:${(k === 1) === on ? (k === 1 ? '#16a34a' : '#dc2626') : '#fff'};color:${(k === 1) === on ? '#fff' : '#334155'};padding:7px 11px;font-size:13px;font-weight:700;cursor:pointer;border-radius:${k === 1 ? '8px 0 0 8px' : '0 8px 8px 0'}">${t}</button>`;
             return `<div style="padding:9px 4px;border-bottom:1px solid #eef1f5"><div style="display:flex;gap:8px;align-items:center"><b style="flex:1;min-width:0">${g[1]} · ${fmt(arr.length)}${av >= 0 && g[0] !== 'never' ? ' <span class="wp-hint">· avg score ' + av + '</span>' : ''}</b><button type="button" class="wp-btn s" data-d="${g[0]}" title="Download these numbers">⬇</button></div>
@@ -321,11 +321,11 @@
         $(m.body, '#iBack').onclick = () => (R.length ? step2() : pasteStep());
         $(m.body, '#iAsk').onclick = async function () { this.disabled = true; this.textContent = 'Claude is thinking…'; const counts = {}; GROUPS.forEach((g) => { counts[g[0]] = by[g[0]].length; });
           try { const d = await api.post('wa.cf_impadvice', { counts, total: rows.length }); $(m.body, '#iAd').innerHTML = '✨ ' + esc(d.advice).replace(/\n/g, '<br>'); this.remove(); } catch (e) { this.disabled = false; this.textContent = '✨ Ask Claude'; $(m.body, '#iAd').innerHTML = esc(e.message); } };
-        $(m.body, '#iGo').onclick = () => { opt.consent = $(m.body, '#iC2').checked; finish(sel2, opt.consent); };
+        $(m.body, '#iGo').onclick = () => { opt.consent = $(m.body, '#iC2').checked; finish(sel2, opt.consent, rows); };
       }
       paint();
     }
-    function finish(list, consent) { if (!m.body.querySelector('#iGo')) m.body.insertAdjacentHTML('beforeend', '<button type="button" id="iGo" hidden></button><div id="iE"></div>'); send({ rows: list.map(({ phone, name, tags }) => ({ phone, name, tags })), tags: allTags, retry: opt.retry }, consent === true); }
+    function finish(list, consent, all) { if (!m.body.querySelector('#iGo')) m.body.insertAdjacentHTML('beforeend', '<button type="button" id="iGo" hidden></button><div id="iE"></div>'); const inL = new Set(list.map((r) => r.phone)); send({ rows: list.map(({ phone, name, tags }) => ({ phone, name, tags })), left: all ? all.filter((r) => !inL.has(r.phone)).map((r) => r.phone) : [], tags: allTags, retry: opt.retry }, consent === true); }
     function pasteStep() {
       m.body.innerHTML = steps(1) + `<p class="wp-hint" style="margin-top:0">One customer per line — a phone number, with a name if you like. Example: <b>Rakesh Shah +91 98765 43210</b></p><textarea class="wp-in" id="iT" rows="8" placeholder="9876543210&#10;Seema 99887 76655"></textarea>
         <label class="wp-fl" style="margin-top:8px">Tags for everyone <span class="wp-hint">(optional)</span></label><input class="wp-in" id="iAll" placeholder="e.g. diwali_list">
@@ -336,12 +336,18 @@
     }
     async function send(payload, consent) {
       const btn = $(m.body, '#iGo'); btn.disabled = true; btn.textContent = 'Adding…';
-      try { const d = await api.post('wa.contact_import', Object.assign({ consent }, payload));
-        m.body.innerHTML = steps(3) + `<div class="wp-ok"><b>${fmt(d.added)}</b> added · ${fmt(d.already)} already in the list (tags added to them too) · ${fmt(d.invalid)} not valid Indian mobile numbers</div>${d.released ? `<div class="wp-ok" style="margin-top:6px"><b>${fmt(d.released)}</b> were on the “held by Meta” list — released, so a campaign can message them now.</div>` : ''}
+      const dd = new Date(), batch = 'import_' + dd.getDate() + ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'][dd.getMonth()] + String(dd.getFullYear()).slice(2) + '_' + String(dd.getHours()).padStart(2, '0') + String(dd.getMinutes()).padStart(2, '0');
+      const rows = payload.rows || null, left = payload.left || [], T = { added: 0, already: 0, invalid: 0, tagged: 0, released: 0, left: 0, tags: [], batch_tag: batch };
+      const calls = []; if (rows) { for (let i = 0; i < rows.length; i += 3000) calls.push({ rows: rows.slice(i, i + 3000) }); for (let i = 0; i < left.length; i += 5000) calls.push({ rows: [], left: left.slice(i, i + 5000) }); if (!calls.length) calls.push({ rows: [] }); } else calls.push({ text: payload.text });
+      try { for (let i = 0; i < calls.length; i++) { btn.textContent = 'Adding… ' + Math.round(i / calls.length * 100) + '%';
+          const d = await api.post('wa.contact_import', Object.assign({ consent, tags: payload.tags, retry: payload.retry, batch }, calls[i]));
+          ['added', 'already', 'invalid', 'tagged', 'released', 'left'].forEach((k) => { T[k] += d[k] || 0; }); T.tags = d.tags || T.tags; T.batch_tag = d.batch_tag || T.batch_tag; }
+        const d = T;
+        m.body.innerHTML = steps(3) + `<div class="wp-ok"><b>${fmt(d.added)}</b> added · ${fmt(d.already)} already in the list (tags added to them too) · ${fmt(d.invalid)} not valid Indian mobile numbers</div>${d.left ? `<div class="wp-ok" style="margin-top:6px"><b>${fmt(d.left)}</b> left out — saved with the tag <b>left_${esc(String(d.batch_tag).slice(7))}</b>, so you can bring them back later.</div>` : ''}${d.released ? `<div class="wp-ok" style="margin-top:6px"><b>${fmt(d.released)}</b> were on the “held by Meta” list — released, so a campaign can message them now.</div>` : ''}
           <div class="wp-hint" style="margin:8px 0">Tagged: ${(d.tags || []).map((t) => '<b>' + esc(t) + '</b>').join(', ')}. To message exactly these people: <b>Campaigns → New → Who gets it → tag “${esc(d.batch_tag || '')}”</b>. Opted-out customers are left out by the campaign automatically.</div>
           <div class="wp-row"><button type="button" class="wp-btn p" id="iD">Done</button></div>`;
         $(m.body, '#iD').onclick = () => { m.close(); if (done) done(); }; }
-      catch (e) { const bx = $(m.body, '#iE'); if (bx) bx.innerHTML = errBox(e.message); btn.disabled = false; btn.textContent = 'Try again'; }
+      catch (e) { const bx = $(m.body, '#iE'); if (bx) bx.innerHTML = errBox((T.added || T.already ? 'Stopped part-way (' + fmt(T.added + T.already) + ' numbers were already done — adding again is safe). ' : '') + e.message); btn.disabled = false; btn.textContent = 'Try again'; }
     }
     step1();
   };
