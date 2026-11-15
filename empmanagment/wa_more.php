@@ -206,7 +206,7 @@ function wa_camp_unmark(PDO $pdo): array
     $up = $pdo->prepare("UPDATE wa_contacts SET source = 'query' WHERE phone = ? AND source = 'campaign'");
     foreach ($st->fetchAll() as $r) { $k = (string)$r['phone']; if (wa_got_campaign($pdo, $k, (string)$r['li'], 30)) continue;
         $up->execute([$k]); if ($up->rowCount() > 0) { $back++; try { $pdo->prepare("DELETE FROM wa_ctags WHERE phone = ? AND tag = 'campaign' AND src = 'auto'")->execute([$k]); $pdo->prepare("DELETE FROM wa_tagidx WHERE phone = ? AND tag = 'campaign'")->execute([$k]); } catch (Throwable $e) { } } }
-    try { $st = $pdo->prepare("SELECT a.alloc_id, o.phone, o.created_at FROM order_allocations a JOIN shop_orders o ON o.store_key = a.source AND CAST(o.shopify_id AS CHAR) = a.order_id WHERE a.allocated_by = 'auto (WhatsApp)' AND a.order_type = 'campaign' AND o.created_at >= ?"); $st->execute([date('Y-m-d H:i:s', time() - 30 * 86400)]);
+    try { $st = $pdo->prepare("SELECT a.alloc_id, o.phone, o.created_at FROM order_allocations a JOIN shop_orders o ON o.store_key = a.source AND CAST(o.shopify_id AS CHAR) COLLATE utf8mb4_unicode_ci = a.order_id WHERE a.allocated_by = 'auto (WhatsApp)' AND a.order_type = 'campaign' AND o.created_at >= ?"); $st->execute([date('Y-m-d H:i:s', time() - 30 * 86400)]);
         $src = $pdo->prepare("SELECT source FROM wa_contacts WHERE phone = ?"); $fix = $pdo->prepare("UPDATE order_allocations SET order_type = 'query' WHERE alloc_id = ? AND allocated_by = 'auto (WhatsApp)' AND order_type = 'campaign'");
         foreach ($st->fetchAll() as $r) { $d = preg_replace('/\D+/', '', (string)$r['phone']); $k = strlen($d) > 10 ? substr($d, -10) : $d; if (strlen($k) !== 10) continue;
             $src->execute([$k]); if (in_array((string)$src->fetchColumn(), ['campaign', 'community'], true)) continue; if (wa_got_campaign($pdo, $k, (string)$r['created_at'], 30)) continue;
@@ -218,7 +218,7 @@ function wa_camp_unmark(PDO $pdo): array
 function wa_camp_requery(PDO $pdo, int $days = 7): int
 {
     $ids = []; try { $ids = array_map('intval', $pdo->query("SELECT id FROM wa_numbers WHERE camp_tag = 1")->fetchAll(PDO::FETCH_COLUMN)); } catch (Throwable $e) { }
-    try { $st = $pdo->prepare("SELECT a.alloc_id, a.source, a.order_id, o.phone, o.order_name, o.created_at FROM order_allocations a JOIN shop_orders o ON o.store_key = a.source AND CAST(o.shopify_id AS CHAR) = a.order_id
+    try { $st = $pdo->prepare("SELECT a.alloc_id, a.source, a.order_id, o.phone, o.order_name, o.created_at FROM order_allocations a JOIN shop_orders o ON o.store_key = a.source AND CAST(o.shopify_id AS CHAR) COLLATE utf8mb4_unicode_ci = a.order_id
             WHERE a.allocated_by = 'auto (WhatsApp)' AND a.order_type = 'query' AND o.created_at >= ? LIMIT 500"); $st->execute([date('Y-m-d H:i:s', time() - $days * 86400)]); $rows = $st->fetchAll(PDO::FETCH_ASSOC); } catch (Throwable $e) { return 0; }
     if (!$rows) return 0; $since = date('Y-m-d H:i:s', time() - 60 * 86400); $n = 0;
     $src = $pdo->prepare("SELECT source FROM wa_contacts WHERE phone = ?");
