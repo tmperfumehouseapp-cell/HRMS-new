@@ -9157,6 +9157,7 @@ function lib_retrieve(PDO $pdo, string $text, int $n = 3, int $exclude = 0): arr
 {
     $words = []; preg_match_all('/[\p{L}\p{N}]{3,}/u', mb_strtolower($text), $m);
     foreach ($m[0] as $w) if (!isset($words[$w]) && count($words) < 6) $words[$w] = 1;
+    ksort($words, SORT_STRING);   // ⚡ the same words in another order ("price kya hai" / "kya price hai") find the same chats: one stored answer serves both
     $ids = [];
     if ($words) {
         $or = []; $par = [$exclude];
@@ -9165,7 +9166,7 @@ function lib_retrieve(PDO $pdo, string $text, int $n = 3, int $exclude = 0): arr
             $q = $pdo->prepare("SELECT u.id, COUNT(*) AS c, MAX(b.upload_id IS NOT NULL) AS star FROM convo_messages m JOIN convo_uploads u ON u.id = m.upload_id LEFT JOIN lib_best b ON b.upload_id = u.id
                 WHERE u.kind = 'order' AND u.status = 'done' AND u.flag_wrong = 0 AND u.id <> ? AND m.src = 'chat' AND m.who = 'customer' AND (" . implode(' OR ', $or) . ")
                 GROUP BY u.id ORDER BY star DESC, c DESC, u.score DESC, u.id DESC LIMIT " . (int)$n);
-            $ids = hrms_memo('lib_like:' . md5(json_encode([$par, (int)$n])), 300, function () use ($q, $par) { $q->execute($par); return array_map('intval', $q->fetchAll(PDO::FETCH_COLUMN)); });   // ⚡ searches every stored chat line for these words: the same words give the same answer for 5 minutes
+            $ids = hrms_memo('lib_like:' . md5(json_encode([$par, (int)$n])), 1800, function () use ($q, $par) { $q->execute($par); return array_map('intval', $q->fetchAll(PDO::FETCH_COLUMN)); });   // ⚡ searches every stored chat line for these words: the same words give the same answer for 30 minutes (was 5: the library of winning chats changes a few times a day, this search was 4.2% of the database work)
         } catch (PDOException $e) { $ids = []; }
     }
     if (count($ids) < $n) foreach (lib_sample_ids($pdo, 'order', $n - count($ids), $exclude) as $i) if (!in_array($i, $ids, true)) $ids[] = $i;

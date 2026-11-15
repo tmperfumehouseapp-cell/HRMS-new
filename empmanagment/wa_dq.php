@@ -345,7 +345,12 @@ function wa_dq_hours_build(PDO $pdo): array
     // the plan for every hour of the day: delivered target (hourly number × the hour's score) and the pushes that takes at that hour's delivery rate; hours outside the sending window get 0
     $cfg2 = wa_dq_cfg($pdo); $sc2 = wa_dq_hour_scores($pdo); [$w0, $w1] = function_exists('wa_camp_window') ? wa_camp_window($pdo) : [0, 24]; $o['plan'] = []; $o['cur'] = (int)date('G'); $o['hourly'] = $cfg2['hourly']; $o['daily'] = $cfg2['daily']; $o['smart'] = $cfg2['smart']; $o['on'] = $cfg2['on'];
     for ($h = 0; $h < 24; $h++) { $in = $h >= $w0 && $h < $w1; $m = ($cfg2['smart'] && empty($sc2['learning'])) ? (float)($sc2['hours'][$h]['mult'] ?? 1.0) : 1.0; $rt = (float)($sc2['hours'][$h]['rate'] ?? 0); if ($rt <= 0) $rt = 0.75; $rt = max(0.3, min(0.95, $rt)); if ($h === $o['cur']) $m *= (float)(wa_dq_left($pdo)['m_live'] ?? 1.0); $d = $in ? (int)round($cfg2['hourly'] * $m) : 0; $o['plan'][$h] = ['d' => $d, 'p' => $d ? (int)ceil($d / $rt) : 0]; }
-    $o['today'] = $run($from, $to); $o['week'] = $run(date('Y-m-d H:i:s', time() - 7 * 86400), date('Y-m-d H:i:s', time() + 60));
+    // ⚡ Server load (15 Nov): the 7-day picture read a whole week of campaign messages every 2 minutes (runs of up to 7 s, 6.5% of the database work) although only today's part changes.
+    // The week = the days BEFORE today's business day (read once, kept 15 minutes) + today's hours (read every time, as before), added hour by hour.
+    $o['today'] = $run($from, $to);
+    $__old = function () use ($run, $from) { return $run(date('Y-m-d H:i:s', time() - 7 * 86400), $from); };
+    $__wk = function_exists('hrms_memo') ? (array)hrms_memo('wa_dq_week_old:' . $from, 900, $__old) : $__old();
+    $o['week'] = []; foreach ([$__wk, (strtotime($from) <= time() ? $o['today'] : [])] as $__part) foreach ($__part as $h => $x) { $h = (int)$h; $o['week'][$h] = [($o['week'][$h][0] ?? 0) + (int)$x[0], ($o['week'][$h][1] ?? 0) + (int)$x[1], ($o['week'][$h][2] ?? 0) + (int)$x[2]]; }
     return $o;
 }
 /** The plan card: cap, used, people waiting in the one queue, Meta room. Remembered for 30 s. */
