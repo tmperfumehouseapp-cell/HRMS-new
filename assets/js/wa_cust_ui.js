@@ -68,7 +68,7 @@ html.wxdk .wcs{--ln:#25343e; --gb:#0f2e20; --rb:#3a1515;} html.wxdk .wcs-r,html.
   const PRE = [['', 'Any time'], ['today', 'Today'], ['7', '7 days'], ['30', '30 days'], ['90', '90 days'], ['custom', 'Custom']];
   const ST = [['', 'Everyone'], ['reach', 'Can be messaged'], ['waiting', 'Waiting for our reply'], ['noreply', 'Never wrote to us'], ['optout', 'Opted out']];
   const ORD = [['', 'Any number of orders'], ['0', 'Never ordered'], ['1', 'Ordered 1×'], ['2', 'Ordered 2×'], ['3', 'Ordered 3× or more']];
-  const DSL = [['', 'Any time since last order'], ['30', 'Last order within 30 days'], ['60', 'Last order 31–60 days ago'], ['90', 'Last order 61–90 days ago'], ['91', 'Last order over 90 days ago']];
+  const DSL = [['', 'Any time since last order'], ['30', 'Ordered in the last 30 days'], ['60w', 'Ordered in the last 60 days'], ['60', 'Last order 31–60 days ago'], ['60p', 'Last order before 60 days (61+ days ago)'], ['90', 'Last order 61–90 days ago'], ['91', 'Last order over 90 days ago']];
   const SRC = [['', 'Any source'], ['query', 'Query (Meta ad)'], ['campaign', 'Campaign reply'], ['community', 'Community'], ['none', 'No source']];
   const IGN = [['', 'Any'], ['2', 'Ignored 2+ of our messages'], ['3', 'Ignored 3+']];
   const SORT = [['latest', 'Latest message'], ['spent', 'Highest ₹ spent'], ['orders', 'Most orders'], ['order_new', 'Newest order'], ['order_old', 'Oldest order'], ['added', 'Newest customer'], ['name', 'Name A–Z']];
@@ -153,6 +153,7 @@ html.wxdk .wcs{--ln:#25343e; --gb:#0f2e20; --rb:#3a1515;} html.wxdk .wcs-r,html.
             ${S.meta.funnel && S.meta.funnel.walking ? '<div class="wcs-note">⏳ The funnel is still being counted — these filters only see customers counted so far.</div>' : ''}
             <div><div class="wcs-note">Furthest step reached (any of)</div><div class="wcs-pre">${chips('fg', FFG)}</div></div>
             <div><div class="wcs-note">Must also be (all of)</div><div class="wcs-pre">${chips('fc', FFC)}</div></div>
+            <div><div class="wcs-note">🛒 When did they last order?</div>${sel('cxDsl', DSL, c.dsl)}</div>
             <div><div class="wcs-note">Customer value (any of)</div><div class="wcs-pre">${chips('fv', FFV)}</div></div>
             <div><div class="wcs-note">Can a message reach them? (any of)</div><div class="wcs-pre">${chips('fh', FFH)}</div></div>
             <div><div class="wcs-note">Quality (any of)</div><div class="wcs-pre">${chips('fq', FFQ)}</div></div>
@@ -166,7 +167,7 @@ html.wxdk .wcs{--ln:#25343e; --gb:#0f2e20; --rb:#3a1515;} html.wxdk .wcs-r,html.
         <details class="wcs-sec" ${['st', 'ord', 'dsl', 'sp_min', 'sp_max', 'num', 'emp', 'src', 'ign'].some((k) => c[k] !== '') ? 'open' : ''}><summary style="cursor:pointer;font-weight:800;font-size:13px">More filters</summary>
           <div style="display:grid;gap:8px;margin-top:10px">
             <label class="wcs-note">Who${sel('cxSt', ST, c.st)}</label>
-            <div class="wcs-2"><label class="wcs-note">Orders${sel('cxOrd', ORD, c.ord)}</label><label class="wcs-note">Last order${sel('cxDsl', DSL, c.dsl)}</label></div>
+            <div class="wcs-2"><label class="wcs-note">Orders${sel('cxOrd', ORD, c.ord)}</label></div>
             <div class="wcs-2"><label class="wcs-note">₹ spent from<input class="wp-in" type="number" min="0" id="cxSp1" value="${esc(c.sp_min)}" placeholder="0"></label><label class="wcs-note">to<input class="wp-in" type="number" min="0" id="cxSp2" value="${esc(c.sp_max)}" placeholder="any"></label></div>
             <div class="wcs-2"><label class="wcs-note">WhatsApp number${sel('cxNum', [['', 'Any number']].concat(S.meta.numbers.map((x) => [x.id, x.label])), c.num)}</label><label class="wcs-note">Salesperson${sel('cxEmp', [['', 'Anyone'], ['-1', 'Nobody (not given)']].concat(S.meta.people.map((x) => [x.emp_id, x.name])), c.emp)}</label></div>
             <div class="wcs-2"><label class="wcs-note">Came from${sel('cxSrc', SRC, c.src)}</label><label class="wcs-note">Ignored us${sel('cxIgn', IGN, c.ign)}</label></div>
@@ -273,7 +274,7 @@ html.wxdk .wcs{--ln:#25343e; --gb:#0f2e20; --rb:#3a1515;} html.wxdk .wcs-r,html.
       if (r.assigned_name) h += cp('', '👤 ' + esc(String(r.assigned_name).split(' ')[0]));
       const tg = r.tags || [], more = tg.length - 2;
       h += tg.map((t, i) => cp(/_query$/.test(t.k) ? 'o' : /^seg_/.test(t.k) ? 'p' : '', esc(t.t), i >= 2 ? 'data-mx hidden' : '')).join('') + (more > 0 ? `<button type="button" class="mo" data-mo>+${more}</button>` : '');
-      return `<div class="wcs-r ${isSel(r.phone) ? 'sel' : ''}" data-p="${esc(r.phone)}"><input type="checkbox" data-ck ${isSel(r.phone) ? 'checked' : ''} aria-label="Select"><div class="b"><div class="l1"><span class="nm">${esc(r.name || pretty(r.phone))}</span>${r.name ? ` <span class="ph">${esc(pretty(r.phone))}</span>` : ''}</div><div class="l2">${h}${r.last_in_at ? `<span class="ln">${esc(when(r.last_in_at))}</span>` : ''}</div></div>${r.known && r.last_in_at ? '<button type="button" class="wp-btn s oc" data-oc>Chat</button>' : ''}</div>`;
+      return `<div class="wcs-r ${isSel(r.phone) ? 'sel' : ''}" data-p="${esc(r.phone)}"><input type="checkbox" data-ck ${isSel(r.phone) ? 'checked' : ''} aria-label="Select"><div class="b"><div class="l1"><span class="nm">${esc(r.name || pretty(r.phone))}</span>${r.name ? ` <span class="ph">${esc(pretty(r.phone))}</span>` : ''}</div><div class="l2">${h}${r.last_in_at ? `<span class="ln">${esc(when(r.last_in_at))}</span>` : ''}</div></div>${r.known ? '<button type="button" class="wp-btn s oc" data-oc>Chat</button>' : ''}</div>`;
     }
     function drawL() {
       const L = $(el, '#cxL'); if (!S.rows.length) { L.innerHTML = S.busy ? loading : '<div class="wp-empty">Nobody matches these filters. Try a wider date range or fewer tags.</div>'; drawB(); return; }
@@ -317,7 +318,7 @@ html.wxdk .wcs{--ln:#25343e; --gb:#0f2e20; --rb:#3a1515;} html.wxdk .wcs-r,html.
       let lim = 8;
       const paint = () => {
         m.body.innerHTML = `<div class="cc"><div class="hd"><div><b>${esc(d.name || pretty(d.phone))}</b> ${d.name ? `<span class="ph">${esc(pretty(d.phone))}</span>` : ''}<div class="ph">${d.optout ? '<span class="bad">Opted out</span> · ' : ''}${d.assigned ? '👤 ' + esc(d.assigned) + ' · ' : ''}${esc(SRC[d.source] || d.source || '')}</div></div></div>
-          <div class="bt">${d.known && d.last_in_at ? '<button type="button" class="wp-btn s" data-cc="chat">💬 Chat</button>' : ''}<button type="button" class="wp-btn s p" data-cc="camp">📣 Add to campaign</button></div>
+          <div class="bt">${d.known ? '<button type="button" class="wp-btn s" data-cc="chat">💬 Chat</button>' : ''}<button type="button" class="wp-btn s p" data-cc="camp">📣 Add to campaign</button></div>
           <h4>Tags <span style="text-transform:none;letter-spacing:0;font-weight:400">tap one to see why</span></h4>${groups.length ? groups.map(([g, a]) => `<div class="tg"><small>${g}</small>${a.map((t) => `<span class="c" data-tk="${esc(t.k)}">${esc(t.t)}</span>`).join('')}</div>`).join('') : '<div class="wcs-note">No tags yet.</div>'}<div id="ccWhy"></div>
           ${d.orders ? `<h4>Orders</h4><div class="g"><div><small>Orders</small><b>${d.orders.n}</b></div><div><small>Spent</small><b>${inr(d.orders.spent)}</b></div><div><small>Per order</small><b>${inr(d.orders.avg)}</b></div><div><small>${esc(d.orders.tier)}</small><b>${dtt(d.orders.last_order)}</b></div></div>` : '<h4>Orders</h4><div class="wcs-note">No order yet.</div>'}
           <h4>When &amp; how they came</h4><div class="g"><div><small>First wrote</small><b>${dtt(d.first_seen)}</b></div><div><small>Last wrote</small><b>${dtt(d.last_in_at)}</b></div><div><small>We wrote</small><b>${dtt(d.last_out_at)}</b></div><div><small>Queries</small><b>${(d.queries || []).length}</b></div></div>

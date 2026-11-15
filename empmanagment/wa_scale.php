@@ -271,6 +271,8 @@ function wa_aud_where(string $src, array $f, string $q = ''): array
         if ($tr === 'prem') { $w[] = 's.n > 0 AND s.spent / s.n >= ?'; $p[] = (float)$cu['hi']; } elseif ($tr === 'bud') { $w[] = 's.n > 0 AND s.spent / s.n <= ?'; $p[] = (float)$cu['lo']; } else { $w[] = 's.n > 0 AND s.spent / s.n > ? AND s.spent / s.n < ?'; $p[] = (float)$cu['lo']; $p[] = (float)$cu['hi']; } }
     $ds = (string)($f['dsl'] ?? '');
     if ($ds === '30') { $w[] = 's.last_order IS NOT NULL AND s.last_order > ?'; $p[] = $d(31); }
+    elseif ($ds === '60w') { $w[] = 's.last_order IS NOT NULL AND s.last_order > ?'; $p[] = $d(61); }   // ordered within the last 60 days
+    elseif ($ds === '60p') { $w[] = 's.last_order IS NOT NULL AND s.last_order <= ?'; $p[] = $d(61); }   // last order before the last 60 days
     elseif ($ds === '60') { $w[] = 's.last_order IS NOT NULL AND s.last_order <= ? AND s.last_order > ?'; $p[] = $d(31); $p[] = $d(61); }
     elseif ($ds === '90') { $w[] = 's.last_order IS NOT NULL AND s.last_order <= ? AND s.last_order > ?'; $p[] = $d(61); $p[] = $d(91); }
     elseif ($ds === '91') { $w[] = 's.last_order IS NOT NULL AND s.last_order <= ?'; $p[] = $d(91); }

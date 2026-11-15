@@ -184,7 +184,7 @@ function wa_auto_alloc(PDO $pdo): int
         setting_set($pdo, 'camp2_off_v2', '1');
         try { wa_camp_unmark($pdo); } catch (Throwable $e) { error_log('camp2 off: ' . $e->getMessage()); }
     }
-    try { wa_camp_requery($pdo, 7); } catch (Throwable $e) { }
+    try { wa_camp_requery($pdo, 30); } catch (Throwable $e) { }
     return $n;
 }
 /** 📢 Did we really send this customer a campaign (our campaign template, or a sent campaign item) in the $days days before $before? */
@@ -209,7 +209,7 @@ function wa_camp_unmark(PDO $pdo): array
     try { $st = $pdo->prepare("SELECT a.alloc_id, o.phone, o.created_at FROM order_allocations a JOIN shop_orders o ON o.store_key = a.source AND CAST(o.shopify_id AS CHAR) = a.order_id WHERE a.allocated_by = 'auto (WhatsApp)' AND a.order_type = 'campaign' AND o.created_at >= ?"); $st->execute([date('Y-m-d H:i:s', time() - 30 * 86400)]);
         $src = $pdo->prepare("SELECT source FROM wa_contacts WHERE phone = ?"); $fix = $pdo->prepare("UPDATE order_allocations SET order_type = 'query' WHERE alloc_id = ? AND allocated_by = 'auto (WhatsApp)' AND order_type = 'campaign'");
         foreach ($st->fetchAll() as $r) { $d = preg_replace('/\D+/', '', (string)$r['phone']); $k = strlen($d) > 10 ? substr($d, -10) : $d; if (strlen($k) !== 10) continue;
-            $src->execute([$k]); if (in_array((string)$src->fetchColumn(), ['campaign', 'community'], true)) continue; if (wa_got_campaign($pdo, $k, (string)$r['created_at'], 7)) continue;
+            $src->execute([$k]); if (in_array((string)$src->fetchColumn(), ['campaign', 'community'], true)) continue; if (wa_got_campaign($pdo, $k, (string)$r['created_at'], 30)) continue;
             $fix->execute([(int)$r['alloc_id']]); $alloc += $fix->rowCount(); } } catch (Throwable $e) { }
     return ['contacts' => $back, 'orders' => $alloc];
 }
