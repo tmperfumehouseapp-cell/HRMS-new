@@ -292,6 +292,25 @@ if (strpos($__cfa, 'wa.cf_') === 0) {
             } catch (Throwable $e) { $o['error'] = 'Too many to split quickly — narrow the filters.'; }
             json_response($o);
         }
+        case 'wa.cf_impcheck': {   // an Excel file's numbers (max 5,000 a call) → for each: its group + quality score. Read-only; nothing is added.
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
+            @set_time_limit(40); $in = json_input(); $ph = []; foreach (array_slice(is_array($in['phones'] ?? null) ? $in['phones'] : [], 0, 5000) as $x) { $k = (string)$x; if (preg_match('/^[6-9]\d{9}$/', $k)) $ph[$k] = true; } $ph = array_keys($ph);
+            $F = []; $K = []; $now = time(); $out = [];
+            if ($ph) { $q = $pdo->prepare("SELECT /*+ MAX_EXECUTION_TIME(20000) */ phone, grp, health, optout, last_out, score FROM wa_cfun WHERE phone IN (" . cfun_in($ph) . ")"); $q->execute($ph); foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $F[(string)$r['phone']] = $r;
+                $miss = array_values(array_filter($ph, function ($k) use ($F) { return !isset($F[$k]); }));
+                if ($miss) { $q = $pdo->prepare("SELECT phone FROM wa_contacts WHERE phone IN (" . cfun_in($miss) . ")"); $q->execute($miss); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $k) $K[(string)$k] = true; } }
+            foreach ($ph as $k) { $f = $F[$k] ?? null; $out[$k] = [cfun_imp_bucket($f, isset($K[$k]), $now), $f ? (int)$f['score'] : -1]; }
+            json_response(['ok' => true, 'r' => $out]);
+        }
+        case 'wa.cf_impadvice': {   // Claude's short advice on a checked file (counts only — no phone numbers leave the server)
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
+            $in = json_input(); $c = []; foreach ((array)($in['counts'] ?? []) as $k => $v) if (preg_match('/^[a-z0-9]{2,8}$/', (string)$k)) $c[(string)$k] = (int)$v;
+            $sys = "You advise the owner of an Indian perfume shop who sends WhatsApp marketing messages. He checked a new Excel file against his customer list. Groups: new (never seen), never (in the list, never messaged), sent (sent, not confirmed), deliv (delivered, never replied), replied, ord1 (ordered once), ord2 (ordered 2+ times), recent (messaged in the last 5 days), held (Meta limits marketing messages to them), failed (last 3 messages failed), optout, notwa (not on WhatsApp), stopped (stopped marketing messages). "
+                 . "Facts: in the last 30 days almost all campaign orders came from people who had ordered before; people who only got delivered messages and never replied gave almost no orders; new numbers deliver about 44% of the time; Meta holds marketing messages to people who got many lately. Say in plain English, at most 5 short lines, what to send first, what to leave out and what to test first (a 5% test slice of the new numbers). Answer {\"advice\":\"...\"}.";
+            $j = function_exists('brain_ai_json') ? brain_ai_json('internal', 'whatsapp', $sys, json_encode(['counts' => $c, 'total' => (int)($in['total'] ?? 0)]), 600, ['ctx' => false]) : null;
+            if (!is_array($j) || trim((string)($j['advice'] ?? '')) === '') json_response(['error' => 'Claude could not answer right now.'], 502);
+            json_response(['ok' => true, 'advice' => mb_substr(trim((string)$j['advice']), 0, 900)]);
+        }
         case 'wa.cf_camp': {   // one campaign's results by customer value: sent · delivered · wrote after it · ordered after it
             $id = (int)($_GET['id'] ?? 0); if ($id <= 0) json_response(['error' => 'No campaign.'], 422);
             @set_time_limit(60); $st = $pdo->prepare("SELECT MIN(sent_at) FROM wa_camp_items WHERE camp_id = ? AND status = 'sent'"); $st->execute([$id]); $t0 = (string)$st->fetchColumn(); if ($t0 === '') json_response(['ok' => true, 'rows' => [], 'sent' => 0]);

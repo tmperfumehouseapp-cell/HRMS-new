@@ -17,6 +17,14 @@ $eq('no date = past buyer (not guessed)', cfun_value(2, null, $now), 'past');
 foreach (['new', 'one', 'repeat', 'loyal', 'atrisk', 'lapsed', 'past'] as $v) if (strlen($v) > 8) { echo "FAIL value $v is longer than the column\n"; $bad++; }
 foreach (['ok', 'optout', 'notwa', 'held', 'stopped', 'dead'] as $v) if (strlen($v) > 8) { echo "FAIL health $v is longer than the column\n"; $bad++; }
 foreach (['hot', 'interested', 'considering', 'not_interested'] as $v) if (strlen($v) > 16) { echo "FAIL intent $v is longer than the column\n"; $bad++; }
+// import check buckets
+$eq('imp: unknown number is new', cfun_imp_bucket(null, false, $now), 'new'); $eq('imp: in contacts only', cfun_imp_bucket(null, true, $now), 'never');
+$eq('imp: opt-out wins', cfun_imp_bucket(['optout' => 1, 'grp' => 'ord2', 'health' => 'optout'], true, $now), 'optout');
+$eq('imp: not on WhatsApp', cfun_imp_bucket(['grp' => 'failed', 'health' => 'notwa'], true, $now), 'notwa');
+$eq('imp: buyer is never "failed"', cfun_imp_bucket(['grp' => 'ord1', 'health' => 'held'], true, $now), 'ord1');
+$eq('imp: held', cfun_imp_bucket(['grp' => 'failed', 'health' => 'held'], true, $now), 'held'); $eq('imp: dead = failed', cfun_imp_bucket(['grp' => 'failed', 'health' => 'dead'], true, $now), 'failed');
+$eq('imp: messaged 2 days ago', cfun_imp_bucket(['grp' => 'deliv', 'health' => 'ok', 'last_out' => date('Y-m-d H:i:s', $now - 2 * 86400)], true, $now), 'recent');
+$eq('imp: delivered, no reply', cfun_imp_bucket(['grp' => 'deliv', 'health' => 'ok', 'last_out' => date('Y-m-d H:i:s', $now - 20 * 86400)], true, $now), 'deliv');
 foreach (cfun_tag_keys() as $k) if (strlen($k) > 40) { echo "FAIL tag $k is too long\n"; $bad++; }
 // reach health
 $eq('opted out', cfun_health(1, 'replied', 0), 'optout');

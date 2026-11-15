@@ -62,4 +62,20 @@ function cfun_tags(string $val, string $health, int $score, array $parts, array 
     return $t;
 }
 
+
+/** Import check: which group a number from a new Excel file falls in. $f = the wa_cfun row (or null), $known = the number exists in contacts.
+ *  Never reachable: optout · notwa · stopped. Then buyers / replied first (they are never "failed"), then held / failed, then "messaged in the last 5 days", then the furthest step. */
+function cfun_imp_bucket(?array $f, bool $known, int $now): string
+{
+    if (!$f) return $known ? 'never' : 'new';
+    $h = (string)($f['health'] ?? 'ok');
+    if ((int)($f['optout'] ?? 0) === 1 || $h === 'optout') return 'optout';
+    if ($h === 'notwa') return 'notwa'; if ($h === 'stopped') return 'stopped';
+    $g = (string)($f['grp'] ?? 'never');
+    if ($g === 'ord2') return 'ord2'; if ($g === 'ord1') return 'ord1'; if ($g === 'replied') return 'replied';
+    if ($h === 'held') return 'held'; if ($h === 'dead' || $g === 'failed') return 'failed';
+    $lo = !empty($f['last_out']) ? strtotime((string)$f['last_out']) : false; if ($lo && $now - $lo < 5 * 86400) return 'recent';
+    return in_array($g, ['deliv', 'sent'], true) ? $g : 'never';
+}
+
 }
