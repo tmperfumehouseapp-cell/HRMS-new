@@ -299,7 +299,7 @@ function st_daily_sync(PDO $pdo): void
 function st_migrate(PDO $pdo): void
 {
     static $ran = false; if ($ran) return; $ran = true;
-    $flag = sys_get_temp_dir() . '/hrms_st_mig_v11';
+    $flag = sys_get_temp_dir() . '/hrms_st_mig_v12';
     if (is_file($flag)) return;
     try {
         foreach (['printed_at' => 'DATETIME NULL', 'print_count' => 'INT NOT NULL DEFAULT 0'] as $c => $def)
@@ -355,6 +355,14 @@ function st_migrate(PDO $pdo): void
         if (!$pdo->query("SHOW COLUMNS FROM st_bill_people LIKE 'bday'")->fetch()) $pdo->exec("ALTER TABLE st_bill_people ADD COLUMN bday CHAR(5) NOT NULL DEFAULT ''");      // customer birthday as MM-DD
         foreach (['source' => "VARCHAR(20) NOT NULL DEFAULT ''", 'source_note' => "VARCHAR(120) NOT NULL DEFAULT ''", 'area' => "VARCHAR(80) NOT NULL DEFAULT ''", 'helper_emp_id' => 'INT NOT NULL DEFAULT 0', 'helper_emp_name' => "VARCHAR(120) NOT NULL DEFAULT ''"] as $c => $def)
             if (!$pdo->query("SHOW COLUMNS FROM st_bills LIKE '$c'")->fetch()) $pdo->exec("ALTER TABLE st_bills ADD COLUMN $c $def");
+        // returns, exchanges and bottles sent back to the supplier (one row per bottle that moves)
+        $pdo->exec("CREATE TABLE IF NOT EXISTS st_moves (
+            move_id INT AUTO_INCREMENT PRIMARY KEY, kind VARCHAR(12) NOT NULL, created_at DATETIME NOT NULL, by_name VARCHAR(80) NOT NULL DEFAULT '',
+            old_bottle_id INT NULL, new_bottle_id INT NULL, product_id INT NOT NULL DEFAULT 0, ml INT NOT NULL DEFAULT 0,
+            reason VARCHAR(40) NOT NULL DEFAULT '', note VARCHAR(255) NOT NULL DEFAULT '', vendor VARCHAR(60) NOT NULL DEFAULT '', vendor_batch VARCHAR(24) NOT NULL DEFAULT '',
+            resell TINYINT NOT NULL DEFAULT 1, refund DECIMAL(10,2) NOT NULL DEFAULT 0, diff DECIMAL(10,2) NOT NULL DEFAULT 0, bill_id INT NULL, closed_at DATETIME NULL, closed_how VARCHAR(12) NOT NULL DEFAULT '',
+            KEY idx_st_mv_kind (kind, created_at), KEY idx_st_mv_old (old_bottle_id), KEY idx_st_mv_open (kind, closed_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
         @file_put_contents($flag, '1');
     } catch (Throwable $e) { error_log('st_migrate: ' . $e->getMessage()); }
 }
