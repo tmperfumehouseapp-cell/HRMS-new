@@ -17,6 +17,8 @@ $eq('no date = past buyer (not guessed)', cfun_value(2, null, $now), 'past');
 foreach (['new', 'one', 'repeat', 'loyal', 'atrisk', 'lapsed', 'past'] as $v) if (strlen($v) > 8) { echo "FAIL value $v is longer than the column\n"; $bad++; }
 foreach (['ok', 'optout', 'notwa', 'held', 'stopped', 'dead'] as $v) if (strlen($v) > 8) { echo "FAIL health $v is longer than the column\n"; $bad++; }
 foreach (['hot', 'interested', 'considering', 'not_interested'] as $v) if (strlen($v) > 16) { echo "FAIL intent $v is longer than the column\n"; $bad++; }
+// import check: last order
+$eq('imp order: none', cfun_imp_order(0, '', $now), 'none'); $eq('imp order: unknown date', cfun_imp_order(2, '', $now), 'oun'); $eq('imp order: 10 days', cfun_imp_order(1, date('Y-m-d H:i:s', $now - 10 * 86400), $now), 'o30'); $eq('imp order: 45 days', cfun_imp_order(1, date('Y-m-d H:i:s', $now - 45 * 86400), $now), 'o60'); $eq('imp order: 100 days', cfun_imp_order(1, date('Y-m-d H:i:s', $now - 100 * 86400), $now), 'o60p');
 // import check buckets
 $eq('imp: unknown number is new', cfun_imp_bucket(null, false, $now), 'new'); $eq('imp: in contacts only', cfun_imp_bucket(null, true, $now), 'never');
 $eq('imp: opt-out wins', cfun_imp_bucket(['optout' => 1, 'grp' => 'ord2', 'health' => 'optout'], true, $now), 'optout');
