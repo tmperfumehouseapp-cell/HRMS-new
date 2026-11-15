@@ -1,0 +1,63 @@
+# READ-ONLY campaign return analysis of the last 30 days on the staging VPS: messages, delivered, orders after a campaign message, cost per order, by how often a customer was messaged.
+# Prints totals only (no names, no phone numbers). Changes nothing. Run by hand: Actions → "Campaign return (read-only)" → Run workflow.
+name: Campaign return (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  roi:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+      - name: Return of the last 30 days (totals only)
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
+          cat > /tmp/roi.php <<'PHP'
+          <?php
+          $f = $argv[1] . "empmanagment/config.php"; if (!is_file($f)) { echo "config.php not found\n"; exit; }
+          require $f;
+          try { $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_TIMEOUT => 8, PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]); } catch (Throwable $e) { echo "no database: " . $e->getMessage() . "\n"; exit; }
+          $rate = 1.09; $now = time(); $since = date("Y-m-d H:i:s", $now - 30 * 86400); $nf = function ($v) { return number_format((float)$v); };
+          echo "Window: last 30 days (since $since) · assumed price per delivered message: Rs $rate\n";
+          // 1. messages
+          $r = $d->query("SELECT /*+ MAX_EXECUTION_TIME(90000) */ COUNT(*) n, SUM(status IN ('delivered','read')) dl, SUM(status = 'read') rd, SUM(status = 'failed') f, COUNT(DISTINCT phone) ph, COUNT(DISTINCT CASE WHEN status IN ('delivered','read') THEN phone END) phd FROM wa_messages WHERE dir = 'out' AND who = 'campaign' AND ts >= '$since'")->fetch(PDO::FETCH_ASSOC);
+          echo "Campaign messages sent: " . $nf($r["n"]) . " · delivered/read: " . $nf($r["dl"]) . " (" . round(100 * $r["dl"] / max(1, $r["n"]), 1) . "%) · read: " . $nf($r["rd"]) . " · failed: " . $nf($r["f"]) . "\n";
+          echo "Different customers messaged: " . $nf($r["ph"]) . " · of them with at least one delivered: " . $nf($r["phd"]) . "\n";
+          $spend = $r["dl"] * $rate; echo "Estimated spend (delivered x Rs $rate): Rs " . $nf($spend) . "\n";
+          // 2. how often each customer was messaged (delivered messages per customer)
+          echo "\nDelivered campaign messages per customer in 30 days:\n";
+          $B = [];
+          try { foreach ($d->query("SELECT /*+ MAX_EXECUTION_TIME(90000) */ CASE WHEN c = 1 THEN '1' WHEN c = 2 THEN '2' WHEN c = 3 THEN '3' WHEN c <= 5 THEN '4-5' WHEN c <= 8 THEN '6-8' ELSE '9+' END b, COUNT(*) n FROM (SELECT phone, COUNT(*) c FROM wa_messages WHERE dir = 'out' AND who = 'campaign' AND status IN ('delivered','read') AND ts >= '$since' GROUP BY phone) x GROUP BY b ORDER BY b")->fetchAll(PDO::FETCH_NUM) as $x) { $B[$x[0]] = (int)$x[1]; echo "   " . str_pad($x[0] . " message(s)", 16) . $nf($x[1]) . " customers\n"; } } catch (Throwable $e) { echo "   n/a: " . substr($e->getMessage(), 0, 80) . "\n"; }
+          // 3. orders in the window, attributed to the latest delivered campaign message in the 7 days before the order
+          $ord = []; try { foreach ($d->query("SELECT phone, created_at, total FROM shop_orders WHERE created_at >= '$since' AND phone IS NOT NULL AND phone <> ''")->fetchAll(PDO::FETCH_ASSOC) as $o) { $k = substr(preg_replace("/\\D+/", "", (string)$o["phone"]), -10); if (strlen($k) === 10) $ord[] = [$k, (string)$o["created_at"], (float)$o["total"]]; } } catch (Throwable $e) { echo "orders: " . $e->getMessage() . "\n"; }
+          $q = $d->prepare("SELECT MAX(ts) FROM wa_messages WHERE phone = ? AND dir = 'out' AND who = 'campaign' AND status IN ('delivered','read') AND ts <= ? AND ts >= ?");
+          $cn = $d->prepare("SELECT COUNT(*) FROM wa_messages WHERE phone = ? AND dir = 'out' AND who = 'campaign' AND status IN ('delivered','read') AND ts >= ?");
+          $tot = count($ord); $att = 0; $rev = 0.0; $gap = ["0-1 day" => 0, "2-3 days" => 0, "4-7 days" => 0]; $fq = ["1" => 0, "2" => 0, "3" => 0, "4-5" => 0, "6-8" => 0, "9+" => 0]; $seen = [];
+          foreach ($ord as [$k, $at, $t]) { $from = date("Y-m-d H:i:s", strtotime($at) - 7 * 86400); $q->execute([$k, $at, $from]); $m = $q->fetchColumn(); if (!$m) continue;
+            $att++; $rev += $t; $g = (strtotime($at) - strtotime((string)$m)) / 86400; $gap[$g <= 1 ? "0-1 day" : ($g <= 3 ? "2-3 days" : "4-7 days")]++;
+            if (!isset($seen[$k])) { $seen[$k] = 1; $cn->execute([$k, $since]); $c = (int)$cn->fetchColumn(); $fq[$c <= 1 ? "1" : ($c == 2 ? "2" : ($c == 3 ? "3" : ($c <= 5 ? "4-5" : ($c <= 8 ? "6-8" : "9+"))))]++; } }
+          echo "\nOnline (Shopify) orders in the last 30 days: " . $nf($tot) . " · of them within 7 days after a delivered campaign message: " . $nf($att) . " (" . round(100 * $att / max(1, $tot), 1) . "%) · revenue of those: Rs " . $nf($rev) . "\n";
+          echo "Days from the campaign message to the order: " . json_encode($gap) . "\n";
+          echo "Ordering customers by delivered campaign messages they got in 30 days: " . json_encode($fq) . "\n";
+          if ($att > 0) { echo "\nCost per attributed order: Rs " . round($spend / $att) . " · revenue per Rs 1 spent: Rs " . round($rev / max(1, $spend), 2) . " · orders per 1,000 delivered: " . round(1000 * $att / max(1, $r["dl"]), 2) . " · orders per 1,000 customers messaged: " . round(1000 * $att / max(1, $r["phd"]), 2) . "\n"; }
+          // 4. conversion by how often they were messaged
+          if ($B) { echo "\nOrders per 1,000 customers, by how many delivered messages they got:\n"; foreach ($B as $b => $n) echo "   " . str_pad($b, 6) . " message(s): " . round(1000 * ($fq[$b] ?? 0) / max(1, $n), 2) . " orders per 1,000 customers (" . ($fq[$b] ?? 0) . " ordering customers of " . $nf($n) . ")\n"; }
+          // 5. what a typical order is worth overall
+          try { $a = $d->query("SELECT COUNT(*) n, AVG(total) a FROM shop_orders WHERE created_at >= '$since'")->fetch(PDO::FETCH_ASSOC); echo "\nAverage online order value (30 days): Rs " . $nf($a["a"]) . " over " . $nf($a["n"]) . " orders\n"; } catch (Throwable $e) { }
+          PHP
+          php /tmp/roi.php "$P"; rm -f /tmp/roi.php
+          REMOTE
