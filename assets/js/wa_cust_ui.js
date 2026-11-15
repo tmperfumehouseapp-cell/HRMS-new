@@ -14,6 +14,7 @@
 .wcs{--ln:#e3e8ef; --mut:#64748b; --g:#12794a; --gb:#e7f6ee; --r:#b42318; --rb:#fde8e8; display:grid; grid-template-columns:minmax(0,1fr); gap:12px; align-items:start;}
 .wcs > *{min-width:0;}
 @media(min-width:1100px){ .wcs{grid-template-columns:340px minmax(0,1fr);} .wcs-f{position:sticky; top:8px; max-height:calc(100vh - 140px); overflow:auto;} }
+.wcs-f.wcs-emb{position:static !important; max-height:none !important; overflow:visible !important;}   /* the filter inside the New campaign window: no sticky card, so the count below it can never be drawn over it */
 .wcs .wp-cd{margin:0;}
 .wcs-h{font-size:12px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; color:var(--mut); margin:0 0 6px; display:flex; align-items:center; gap:6px;}
 .wcs-sec{padding:12px 0; border-top:1px solid #edf1ee;} .wcs-sec:first-child{border-top:0; padding-top:0;}
@@ -435,7 +436,7 @@ html.wxdk .wcs{--ln:#25343e; --gb:#0f2e20; --rb:#3a1515;} html.wxdk .wcs-r,html.
     const S = { cf: Object.assign(BLANK(), JSON.parse(JSON.stringify(o.cf || {}))), q: '', meta: { tags: [], numbers: [], people: [], segments: [] }, shut: false, dd: '' };
     let K = null; const fire = () => { K.drawF(host); if (o.onChange) o.onChange(S.cf, K.cfOut()); };
     K = filterKit(S, U, fire, { search: false }); if (S.cf.dp && S.cf.dp !== 'custom') K.presetDates();
-    host.classList.add('wcs-f'); K.drawF(host);
+    host.classList.add('wcs-f', 'wcs-emb'); K.drawF(host);
     api.get('wa.cs_meta').then((d) => { S.meta = { tags: d.tags || [], numbers: d.numbers || [], people: d.people || [], segments: d.segments || [], funnel: d.funnel || {} }; if (host.isConnected) K.drawF(host); }).catch(() => { });
     return { ui: () => S.cf, out: () => K.cfOut(), count: () => K.nOn(), set(cf) { S.cf = Object.assign(BLANK(), cf || {}); K.drawF(host); } };
   }
