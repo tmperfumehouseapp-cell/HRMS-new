@@ -917,11 +917,12 @@ if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.
             $in = json_input(); if (empty($in['consent'])) json_response(['error' => 'Tick the box to confirm these customers agreed to get WhatsApp messages from you.'], 422);
             // every imported customer gets 'campaign' (we reach them with campaigns) + one tag for this import (so a campaign can pick exactly this file) + the tags typed for everyone + the tags in their own row
             $batch = 'import_' . strtolower(date('jMy')) . '_' . date('Hi');   // one batch per upload (the time makes two uploads on the same day different)
+            if (preg_match('/^import_[a-z0-9]{4,10}_[0-9]{4}$/', (string)($in['batch'] ?? ''))) $batch = (string)$in['batch'];   // a big file arrives in several calls: they all share the batch name the page made
             $common = array_merge(['campaign', $batch], wa_imp_tags($in['tags'] ?? []));
             $rows = [];
             if (is_array($in['rows'] ?? null)) foreach (array_slice($in['rows'], 0, 20000) as $r) $rows[] = ['phone' => (string)($r['phone'] ?? ''), 'name' => (string)($r['name'] ?? ''), 'tags' => wa_imp_tags($r['tags'] ?? [])];
             else foreach (preg_split('/\r?\n/', (string)($in['text'] ?? '')) as $line) { $line = trim($line); if ($line === '') continue; preg_match_all('/\+?\d[\d\s\-()]{8,}\d/', $line, $m); $ph = $m[0][0] ?? ''; $rows[] = ['phone' => $ph, 'name' => preg_replace('/[\d+()\-,;:|]+/', ' ', str_replace($ph, '', $line)), 'tags' => []]; }
-            $add = 0; $dup = 0; $bad = 0; $tagged = 0; $now = date('Y-m-d H:i:s'); $seen = [];
+            $add = 0; $dup = 0; $bad = 0; $tagged = 0; $now = date('Y-m-d H:i:s'); $seen = []; $leftN = 0;
             $tagQ = $pdo->prepare("INSERT IGNORE INTO wa_ctags (phone, tag, src, at) VALUES (?, ?, 'import', ?)"); $idxQ = null; try { $idxQ = $pdo->prepare("INSERT IGNORE INTO wa_tagidx (phone, tag) VALUES (?, ?)"); } catch (Throwable $e) { }
             foreach ($rows as $r) {
                 $k = wa_imp_phone($r['phone']); if ($k === '') { $bad++; continue; } if (isset($seen[$k])) { $dup++; continue; } $seen[$k] = true;
@@ -931,13 +932,20 @@ if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.
                 foreach (array_unique(array_merge($common, $r['tags'])) as $t) { try { $tagQ->execute([$k, $t, $now]); if ($idxQ) $idxQ->execute([$k, $t]); } catch (Throwable $e) { } }
                 $tagged++;
             }
+            // numbers the owner chose to LEAVE OUT in the check: saved (so they can be brought back in one tap) with the tag left_<file>, but NOT given 'campaign' or the file's tag — a campaign for this file never picks them
+            if (is_array($in['left'] ?? null) && !empty($in['left'])) {
+                $lt = 'left_' . substr($batch, 7); $ls = [];
+                foreach (array_slice($in['left'], 0, 20000) as $x) { $k = wa_imp_phone((string)$x); if ($k === '' || isset($seen[$k]) || isset($ls[$k])) continue; $ls[$k] = true;
+                    try { if (!wa_contact($pdo, $k)) $pdo->prepare("INSERT INTO wa_contacts (phone, wa_id, name, first_seen, state, status, source) VALUES (?, ?, '', ?, 'unassigned', 'open', '')")->execute([$k, '91' . $k, $now]);
+                        $tagQ->execute([$k, $lt, $now]); if ($idxQ) $idxQ->execute([$k, $lt]); $leftN++; } catch (Throwable $e) { } }
+            }
             try { setting_set($pdo, 'wa_tag_cache', ''); } catch (Throwable $e) { }
             // "Try these people again": people Meta held (131049 / 131048 = too many marketing messages lately, 130472 = in a Meta experiment) are marked "do not message now" for a few days,
             // so every campaign skips them. When the owner adds them again on purpose, that mark is removed so a campaign sends to them. People who are not on WhatsApp (131026)
             // or stopped marketing messages (131050) stay left out — they cannot be reached / asked not to be messaged.
             $released = 0;
             if (!empty($in['retry']) && $seen) { try { foreach (array_chunk(array_keys($seen), 1000) as $ch) { $st = $pdo->prepare("DELETE FROM wa_unreach WHERE code IN (131049, 131048, 130472) AND phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $st->execute(array_map('strval', $ch)); $released += $st->rowCount(); } if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'import ' . $batch . ': ' . $released . ' people released from the "held by Meta" list (added again on purpose)'); } catch (Throwable $e) { } }
-            json_response(['ok' => true, 'added' => $add, 'already' => $dup, 'invalid' => $bad, 'tagged' => $tagged, 'released' => $released, 'batch_tag' => $batch, 'tags' => array_values(array_unique($common))]);
+            json_response(['ok' => true, 'added' => $add, 'already' => $dup, 'invalid' => $bad, 'tagged' => $tagged, 'released' => $released, 'left' => $leftN, 'batch_tag' => $batch, 'tags' => array_values(array_unique($common))]);
         }
         case 'wa.contact_fix': {   // rows the import could not read: Claude finds the Indian mobile number + name in each, the server checks every number again
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
