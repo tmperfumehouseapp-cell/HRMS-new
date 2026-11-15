@@ -1187,11 +1187,37 @@ function order_is_repeat_customer(PDO $pdo, string $phone, int $t): bool
     }
     try { $q = $pdo->prepare("SELECT 1 FROM shop_orders WHERE RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(phone,' ',''),'-',''),'+',''),'(',''), 10) = ? AND created_at < ? AND total > 0 AND (tags IS NULL OR tags NOT LIKE '%cancel%') LIMIT 1"); $q->execute([$k, $before]); return (bool)$q->fetchColumn(); } catch (Throwable $e) { return false; }   // phones are compared without spaces / + / - (a stored '+91 97960 04321' used to miss)
 }
+/** 📢 Did we send this customer a campaign (our campaign template, or a sent campaign item) in the $days days before $before? Same check as wa_got_campaign() in wa_more.php, kept here because
+ *  an order is typed from requests where the WhatsApp files are NOT loaded (the Orders / Allocation page): there the old check was skipped and every such order became "Query". */
+function order_got_campaign(PDO $pdo, string $key, string $before, int $days = 30): bool
+{
+    if ($key === '') return false; $from = date('Y-m-d H:i:s', strtotime($before) - $days * 86400);
+    try { $q = $pdo->prepare("SELECT 1 FROM wa_messages WHERE phone = ? AND dir = 'out' AND who = 'campaign' AND ts BETWEEN ? AND ? LIMIT 1"); $q->execute([$key, $from, $before]); if ($q->fetchColumn()) return true; } catch (Throwable $e) { }
+    try { $q = $pdo->prepare("SELECT 1 FROM wa_camp_items WHERE phone = ? AND status = 'sent' AND sent_at BETWEEN ? AND ? LIMIT 1"); $q->execute([$key, $from, $before]); if ($q->fetchColumn()) return true; } catch (Throwable $e) { }
+    return false;
+}
+/** 🔁 The robot's own "Query" allocations of the last $days days are checked again with the current rule; the ones that are really Campaign become Campaign. Allocations made by a person are never changed.
+ *  Run when the Orders / Allocation page loads (at most once every 5 minutes) so it does not wait for the WhatsApp engine. Returns how many were changed. */
+function order_retype_robot(PDO $pdo, int $days = 30): int
+{
+    try { if ((int)setting_get($pdo, 'order_retype_at', '0') > time() - 300) return 0; setting_set($pdo, 'order_retype_at', (string)time()); } catch (Throwable $e) { return 0; }
+    $n = 0;
+    try {
+        $st = $pdo->prepare("SELECT a.alloc_id, o.phone, o.created_at FROM order_allocations a JOIN shop_orders o ON o.store_key = a.source AND CAST(o.shopify_id AS CHAR) COLLATE utf8mb4_unicode_ci = a.order_id WHERE a.allocated_by = 'auto (WhatsApp)' AND a.order_type = 'query' AND o.created_at >= ? LIMIT 400"); $st->execute([date('Y-m-d H:i:s', time() - $days * 86400)]);
+        $src = $pdo->prepare("SELECT source FROM wa_contacts WHERE phone = ?"); $up = $pdo->prepare("UPDATE order_allocations SET order_type = 'campaign' WHERE alloc_id = ? AND order_type = 'query' AND allocated_by = 'auto (WhatsApp)'");
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            $d = preg_replace('/\D+/', '', (string)$r['phone']); $k = strlen($d) > 10 ? substr($d, -10) : $d; if (strlen($k) !== 10) continue;
+            $src->execute([$k]); $sv = (string)$src->fetchColumn();
+            if (order_chat_type($pdo, ['phone' => $k, 'source' => $sv], (int)strtotime((string)$r['created_at'])) === 'campaign') { $up->execute([(int)$r['alloc_id']]); $n += $up->rowCount(); }
+        }
+    } catch (Throwable $e) { error_log('order_retype_robot: ' . $e->getMessage()); }
+    return $n;
+}
 function order_chat_type(PDO $pdo, array $c, int $t = 0): string
 {
     if (order_is_repeat_customer($pdo, (string)($c['phone'] ?? ''), $t)) return 'campaign';   // owner (7 Nov): a customer who ordered before and orders again counts as Campaign
     try { $ph = (string)($c['phone'] ?? ''); if ($ph !== '') { $qq = $pdo->prepare("SELECT type FROM wq_qtype WHERE phone = ? ORDER BY opened_at DESC LIMIT 1"); $qq->execute([$ph]); if ((string)$qq->fetchColumn() === 'campaign') return 'campaign'; } } catch (Throwable $e) { }   // the chat's latest query is typed Campaign (they answered our campaign / came back after 30 h) → the order follows it
-    return (in_array((string)($c['source'] ?? ''), ['campaign', 'community'], true) || (function_exists('wa_got_campaign') && wa_got_campaign($pdo, (string)($c['phone'] ?? ''), date('Y-m-d H:i:s', $t ?: time()), 30))) ? 'campaign' : 'query';
+    return (in_array((string)($c['source'] ?? ''), ['campaign', 'community'], true) || order_got_campaign($pdo, (string)($c['phone'] ?? ''), date('Y-m-d H:i:s', $t ?: time()), 30)) ? 'campaign' : 'query';
 }
 function order_auto_alloc(PDO $pdo, string $sk, array $o)
 {
@@ -30434,6 +30460,7 @@ switch ($action) {
                 if (!empty($st['error'])) continue;
                 foreach ($st['orders'] as $o) { if (isset($map[$key . '|' . (string)$o['id']])) continue; $r = order_auto_alloc($pdo, (string)$key, $o); if (is_array($r)) $map[$key . '|' . (string)$o['id']] = $r + ['direct' => 0]; }
             }
+            try { if (order_retype_robot($pdo, 30) > 0) $map = order_allocations($pdo); } catch (Throwable $e) { }   // the robot's old Query orders that are really Campaign become Campaign; the list is read again with the new types
             foreach ($shopRes as $key => $st) {
                 if ($st['error']) { $errors[] = $st['error']; continue; }
                 foreach ($st['orders'] as $o) {
