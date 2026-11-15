@@ -1,0 +1,60 @@
+# READ-ONLY: what happened to the customers of one Excel import (tags applied? opted out? held by Meta? messaged lately?). Changes nothing.
+# Run by hand: Actions → "Diagnose an import batch (read-only)" → Run workflow → type the batch tag (for example import_15nov26_1356).
+name: Diagnose an import batch (read-only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      batch:
+        description: 'Batch tag, for example import_15nov26_1356'
+        required: true
+        default: 'import_15nov26_1356'
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+      - name: Study (read-only)
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+          BATCH: ${{ github.event.inputs.batch }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" "$BATCH" <<'REMOTE' || true
+          P="$1"; B="$2"
+          cat > /tmp/impbatch.php <<'PHP'
+          <?php
+          require $argv[1] . "empmanagment/config.php"; $b = preg_replace("/[^a-z0-9_]/", "", strtolower($argv[2]));
+          $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_TIMEOUT => 20, PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+          $one = function ($sql, $p = []) use ($d) { try { $q = $d->prepare($sql); $q->execute($p); return $q->fetchAll(PDO::FETCH_NUM); } catch (Throwable $e) { return [["ERR " . $e->getMessage()]]; } };
+          echo "batch tag: $b\n";
+          echo "people with this tag in wa_ctags: " . $one("SELECT COUNT(*) FROM wa_ctags WHERE tag = ?", [$b])[0][0] . "\n";
+          echo "people with this tag in wa_tagidx (what campaign audiences read): " . $one("SELECT COUNT(*) FROM wa_tagidx WHERE tag = ?", [$b])[0][0] . "\n";
+          echo "of them also tagged campaign (tagidx): " . $one("SELECT COUNT(*) FROM wa_tagidx t JOIN wa_tagidx c ON c.phone = t.phone AND c.tag = \"campaign\" WHERE t.tag = ?", [$b])[0][0] . "\n";
+          $base = "FROM wa_tagidx t JOIN wa_contacts c ON c.phone = t.phone COLLATE utf8mb4_unicode_ci WHERE t.tag = ?";
+          echo "opted out: " . $one("SELECT COUNT(*) $base AND c.optout = 1", [$b])[0][0] . "\n";
+          echo "contact source: "; foreach ($one("SELECT c.source, COUNT(*) $base GROUP BY c.source", [$b]) as $r) echo ($r[0] === "" ? "(empty)" : $r[0]) . "=" . $r[1] . "  "; echo "\n";
+          echo "wrote to us in the last 24 h: " . $one("SELECT COUNT(*) $base AND c.last_in_at >= ?", [$b, date("Y-m-d H:i:s", time() - 86400)])[0][0] . "\n";
+          echo "--- held / unreachable per Meta (wa_unreach) ---\n";
+          foreach ($one("SELECT u.code, COUNT(DISTINCT t.phone) FROM wa_tagidx t JOIN wa_unreach u ON u.phone = t.phone COLLATE utf8mb4_unicode_ci WHERE t.tag = ? GROUP BY u.code", [$b]) as $r) echo "  code " . $r[0] . ": " . $r[1] . "\n";
+          echo "--- last campaign try of these people (wa_camp_items) ---\n";
+          foreach ($one("SELECT i.status, COUNT(DISTINCT t.phone) FROM wa_tagidx t JOIN wa_camp_items i ON i.phone = t.phone COLLATE utf8mb4_unicode_ci WHERE t.tag = ? GROUP BY i.status", [$b]) as $r) echo "  " . $r[0] . ": " . $r[1] . "\n";
+          echo "--- skip / fail reasons in the last 10 days (top) ---\n";
+          foreach ($one("SELECT LEFT(i.err, 60) e, COUNT(*) n FROM wa_tagidx t JOIN wa_camp_items i ON i.phone = t.phone COLLATE utf8mb4_unicode_ci WHERE t.tag = ? AND i.status IN (\"skipped\", \"failed\") AND i.sent_at >= ? GROUP BY e ORDER BY n DESC LIMIT 8", [$b, date("Y-m-d H:i:s", time() - 10 * 86400)]) as $r) echo "  " . $r[1] . " x " . $r[0] . "\n";
+          echo "--- sample of 5 people (phone, name, source, optout, tags count) ---\n";
+          foreach ($one("SELECT t.phone, LEFT(c.name, 20), c.source, c.optout, (SELECT COUNT(*) FROM wa_tagidx z WHERE z.phone = t.phone) FROM wa_tagidx t JOIN wa_contacts c ON c.phone = t.phone COLLATE utf8mb4_unicode_ci WHERE t.tag = ? LIMIT 5", [$b]) as $r) echo "  " . implode(" | ", $r) . "\n";
+          echo "--- the other import batches (people count) ---\n";
+          foreach ($one("SELECT tag, COUNT(*) FROM wa_tagidx WHERE tag LIKE \"import\\_%\" GROUP BY tag ORDER BY tag DESC LIMIT 8") as $r) echo "  " . $r[0] . ": " . $r[1] . "\n";
+          PHP
+          php /tmp/impbatch.php "$P" "$B"
+          REMOTE
