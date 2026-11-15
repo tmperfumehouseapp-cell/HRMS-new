@@ -9,6 +9,9 @@
  *        One message is sent with wa_send_tpl_one (the same sender the Autopilot uses): numbers, daily room and Meta limits are respected. Only between 10:00 and 20:00.
  *   3. 🚨 Alerts          wa.cx_alerts  GET   cx_alert_tick (every 5 minutes, from the engine round): delivery falling below the usual rate, a failure spike, Meta holding our messages,
  *        a number with Low quality / not connected, funnel numbers going stale. Shown as a banner on Campaigns; new alerts are also pushed to the Admin / HR phones (once per 3 hours each).
+ *   4. 📋 Daily plan       wa.cx_plan GET {budget, target, rate} · wa.cx_roi_run POST   what to send TODAY for a budget: the customers are split into groups (buyers, engaged, delivered-no-reply, new, blocked), each group's
+ *        delivery rate and orders per 1,000 delivered come from the last 30 days (cx_roi_refresh, once a day), the budget goes to the groups that order best within the safe frequency of each,
+ *        and the answer lists: messages to send, expected delivered / cost / orders, who NOT to send to, how many new numbers to import, and a delivery check of each recent Excel import.
  *   Cheap by design: indexed lookups, small batches, a time budget, one process at a time.
  */
 if (!isset($pdo) || !function_exists('json_response')) { return; }
@@ -135,6 +138,82 @@ function cx_alert_tick(PDO $pdo, bool $force = false): array
     return ['alerts' => count($A)];
 }
 
+// ------------------------------------------------------------------------------------------------------------------------ 4. daily plan
+function cx_seg_labels(): array
+{
+    return ['buyers_active' => ['Active buyers', 'New, repeat and loyal buyers (last order within 90 days)', 12, ['fv' => ['new', 'repeat', 'loyal'], 'fh' => ['ok']]],
+        'engaged' => ['Engaged, not yet bought', 'Wrote to us but never ordered', 8, ['fc' => ['replied'], 'ord' => '0', 'fh' => ['ok']]],
+        'buyers_winback' => ['Win-back buyers', 'One-time, at-risk, lapsed and past buyers', 14, ['fv' => ['one', 'atrisk', 'lapsed', 'past'], 'fh' => ['ok']]],
+        'delivered' => ['Delivered, no reply', 'A message reached them, they have not replied', 21, ['fg' => ['deliv'], 'fh' => ['ok']]],
+        'cold' => ['New / never delivered', 'Never messaged, or sent but nothing delivered yet', 1, ['fg' => ['never', 'sent'], 'fh' => ['ok']]]];
+}
+function cx_seg_of(array $r): string
+{
+    if ((string)$r['health'] !== 'ok' && (string)$r['health'] !== '') return 'blocked';
+    $v = (string)$r['val']; if (in_array($v, ['new', 'repeat', 'loyal'], true)) return 'buyers_active'; if (in_array($v, ['one', 'atrisk', 'lapsed', 'past'], true)) return 'buyers_winback';
+    if ((int)$r['replied'] === 1) return 'engaged'; if ((string)$r['grp'] === 'deliv') return 'delivered'; if (in_array((string)$r['grp'], ['never', 'sent'], true)) return 'cold'; return 'other';
+}
+/** The size and the delivery rate of every group (one pass over the funnel table; kept 10 minutes). */
+function cx_seg_sizes(PDO $pdo): array
+{
+    $c = json_decode((string)setting_get($pdo, 'wa_cx_segs', ''), true); if (is_array($c) && (int)($c['t'] ?? 0) > time() - 600) return $c['v'];
+    $v = [];
+    try { foreach ($pdo->query("SELECT /*+ MAX_EXECUTION_TIME(30000) */ seg, COUNT(*) n, SUM(out_n) o, SUM(deliv_n) d FROM (SELECT CASE WHEN health NOT IN ('ok', '') THEN 'blocked' WHEN val IN ('new', 'repeat', 'loyal') THEN 'buyers_active' WHEN val IN ('one', 'atrisk', 'lapsed', 'past') THEN 'buyers_winback' WHEN replied = 1 THEN 'engaged' WHEN grp = 'deliv' THEN 'delivered' WHEN grp IN ('never', 'sent') THEN 'cold' ELSE 'other' END seg, out_n, deliv_n FROM wa_cfun) x GROUP BY seg")->fetchAll(PDO::FETCH_ASSOC) as $r) $v[(string)$r['seg']] = ['n' => (int)$r['n'], 'o' => (int)$r['o'], 'd' => (int)$r['d']]; } catch (Throwable $e) { }
+    setting_set($pdo, 'wa_cx_segs', json_encode(['t' => time(), 'v' => $v])); return $v;
+}
+/** The 30-day study: for every group, how many customers got a delivered campaign message, how many delivered messages, and how many online orders followed within 7 days. Once a day. */
+function cx_roi_refresh(PDO $pdo, int $budget = 80): array
+{
+    $t0 = microtime(true); $since = date('Y-m-d H:i:s', time() - 30 * 86400); $S = []; $add = function ($k, $f, $n) use (&$S) { if (!isset($S[$k])) $S[$k] = ['cust' => 0, 'deliv' => 0, 'orders' => 0, 'rev' => 0.0]; $S[$k][$f] += $n; };
+    try { if ((int)$pdo->query("SELECT GET_LOCK('wa_cx_roi', 0)")->fetchColumn() !== 1) return ['busy' => 1]; } catch (Throwable $e) { return ['busy' => 1]; }
+    try {
+        @set_time_limit($budget + 30); $get = function ($sql, $p) use ($pdo) { $q = $pdo->prepare($sql); $q->execute($p); return $q->fetchAll(PDO::FETCH_ASSOC); };
+        $rows = $pdo->query("SELECT /*+ MAX_EXECUTION_TIME(60000) */ phone, COUNT(*) c FROM wa_messages WHERE dir = 'out' AND who = 'campaign' AND status IN ('delivered', 'read') AND ts >= '$since' GROUP BY phone")->fetchAll(PDO::FETCH_ASSOC);
+        $segOf = []; foreach (array_chunk($rows, 2500) as $ch) { if (microtime(true) - $t0 > $budget) return ['partial' => 1]; $ph = array_map(function ($r) { return (string)$r['phone']; }, $ch); $in = cfun_in($ph);
+            $m = []; foreach ($get("SELECT phone, health, val, replied, grp FROM wa_cfun WHERE phone IN ($in)", $ph) as $r) $m[(string)$r['phone']] = cx_seg_of($r);
+            foreach ($ch as $r) { $k = $m[(string)$r['phone']] ?? 'other'; $add($k, 'cust', 1); $add($k, 'deliv', (int)$r['c']); } }
+        $ord = $pdo->query("SELECT phone, created_at, total FROM shop_orders WHERE created_at >= '$since' AND phone IS NOT NULL AND phone <> ''")->fetchAll(PDO::FETCH_ASSOC); $q = $pdo->prepare("SELECT MAX(ts) FROM wa_messages WHERE phone = ? AND dir = 'out' AND who = 'campaign' AND status IN ('delivered', 'read') AND ts <= ? AND ts >= ?"); $sq = $pdo->prepare("SELECT phone, health, val, replied, grp FROM wa_cfun WHERE phone = ?"); $att = 0;
+        foreach ($ord as $o) { if (microtime(true) - $t0 > $budget + 20) break; $k = substr(preg_replace('/\D+/', '', (string)$o['phone']), -10); if (strlen($k) !== 10) continue; $at = (string)$o['created_at']; $q->execute([$k, $at, date('Y-m-d H:i:s', strtotime($at) - 7 * 86400)]); if (!$q->fetchColumn()) continue;
+            $sq->execute([$k]); $r = $sq->fetch(PDO::FETCH_ASSOC); $seg = $r ? cx_seg_of($r) : 'other'; $add($seg, 'orders', 1); $add($seg, 'rev', (float)$o['total']); $att++; }
+        $tot = ['deliv' => 0, 'orders' => $att, 'cust' => 0]; foreach ($S as $x) { $tot['deliv'] += $x['deliv']; $tot['cust'] += $x['cust']; }
+        setting_set($pdo, 'wa_cx_roi', json_encode(['at' => date('Y-m-d H:i:s'), 'seg' => $S, 'tot' => $tot, 'orders_all' => count($ord)]));
+        $o = ['ok' => 1, 'sec' => round(microtime(true) - $t0, 1)];
+    } catch (Throwable $e) { error_log('cx_roi_refresh: ' . $e->getMessage()); $o = ['error' => mb_substr($e->getMessage(), 0, 160)]; }
+    try { $pdo->query("SELECT RELEASE_LOCK('wa_cx_roi')"); } catch (Throwable $e) { }
+    return $o;
+}
+function cx_roi_tick(PDO $pdo): array
+{
+    $j = json_decode((string)setting_get($pdo, 'wa_cx_roi', ''), true); $at = is_array($j) ? (int)strtotime((string)($j['at'] ?? '')) : 0; $h = (int)date('G');
+    if ($at > time() - 22 * 3600 || ($at && ($h < 2 || $h > 6))) return ['skipped' => 1];   // once a day, in the quiet hours (the very first study runs at once)
+    return cx_roi_refresh($pdo, 70);
+}
+/** The plan for a budget. */
+function cx_plan(PDO $pdo, float $budget, int $target, float $rate): array
+{
+    $L = cx_seg_labels(); $Z = cx_seg_sizes($pdo); $j = json_decode((string)setting_get($pdo, 'wa_cx_roi', ''), true); $R = is_array($j) ? $j : ['seg' => [], 'tot' => ['deliv' => 0, 'orders' => 0, 'cust' => 0]];
+    $totD = max(1, (int)($R['tot']['deliv'] ?? 0)); $base = (int)($R['tot']['deliv'] ?? 0) > 0 ? 1000 * (int)($R['tot']['orders'] ?? 0) / $totD : 1.6;
+    $D = $budget / max(0.1, $rate); $left = $D; $rows = []; $order = array_keys($L); $conv = [];
+    foreach ($order as $k) { $x = $R['seg'][$k] ?? null; $m = $x && $x['deliv'] >= 3000 && $x['orders'] >= 3; $conv[$k] = ['v' => $m ? 1000 * $x['orders'] / $x['deliv'] : $base, 'src' => $m ? 'measured' : 'assumed', 'deliv' => $x['deliv'] ?? 0, 'orders' => $x['orders'] ?? 0]; }
+    usort($order, function ($a, $b) use ($conv) { return $conv[$b]['v'] <=> $conv[$a]['v']; });
+    foreach ($order as $k) {
+        $z = $Z[$k] ?? ['n' => 0, 'o' => 0, 'd' => 0]; $dr = $z['o'] > 100 ? max(0.2, min(0.95, $z['d'] / $z['o'])) : 0.6; $cad = (int)$L[$k][2];
+        $cap = $k === 'cold' ? min(0.3 * $D, $z['n'] * $dr) : $z['n'] * $dr / $cad;   // delivered messages a day this group can take at its safe frequency
+        $dl = max(0, min($cap, $left)); $left -= $dl;
+        $rows[] = ['k' => $k, 'label' => $L[$k][0], 'about' => $L[$k][1], 'reach' => $z['n'], 'every' => $cad, 'rate' => round($dr, 2), 'cap' => (int)round($cap), 'send' => (int)round($dl / $dr), 'delivered' => (int)round($dl), 'cost' => (int)round($dl * $rate), 'conv' => round($conv[$k]['v'], 2), 'conv_src' => $conv[$k]['src'], 'orders' => round($dl * $conv[$k]['v'] / 1000, 1), 'cf' => $L[$k][3]];
+    }
+    $sumD = 0; $sumO = 0; foreach ($rows as $r) { $sumD += $r['delivered']; $sumO += $r['orders']; }
+    $bl = $Z['blocked'] ?? ['n' => 0, 'o' => 0, 'd' => 0]; $cold = null; foreach ($rows as $r) if ($r['k'] === 'cold') $cold = $r;
+    $o = ['ok' => true, 'budget' => $budget, 'rate' => $rate, 'target' => $target, 'delivered_target' => (int)round($D), 'rows' => $rows, 'delivered' => $sumD, 'cost' => (int)round($sumD * $rate), 'orders' => round($sumO, 1), 'base' => round($base, 2), 'study_at' => (string)($R['at'] ?? ''), 'blocked' => (int)$bl['n']];
+    $o['unspent'] = (int)round(max(0, $budget - $sumD * $rate));
+    if ($o['unspent'] > 1000) $o['short_customers'] = (int)round(($D - $sumD) / 0.7 * 10);   // customers who can receive that would let the whole budget be used at a ten-day rhythm
+    $o['need_budget'] = $sumO > 0 ? (int)round($target / $sumO * $sumD * $rate) : 0;
+    $o['import_per_day'] = $cold ? (int)round($cold['delivered'] / 0.44) : 0;   // 44% of imported numbers got at least one delivered message
+    $o['batches'] = []; $s = json_decode((string)setting_get($pdo, 'wa_cfun_stats', ''), true);
+    foreach (array_slice((array)($s['by']['all']['batches'] ?? []), 0, 8) as $b) { $t = (int)$b['dl'] + (int)$b['nd']; $r = $t > 0 ? $b['dl'] / $t : null; $o['batches'][] = ['b' => $b['b'], 'n' => (int)$b['n'], 'messaged' => $t, 'rate' => $r === null ? null : round($r, 2), 'ok' => $r === null ? null : $r >= 0.35]; }
+    return $o;
+}
+
 }   // function_exists guard
 
 // ---------------------------------------------------------------------------------------------------------------- router
@@ -164,6 +243,11 @@ if (strpos($__cxa, 'wa.cx_') === 0) {
             foreach ($clean as [$d, $tid]) { $n++; $ins->execute([$cid, $n, $d, $tid, date('Y-m-d H:i:s')]); }
             json_response(['ok' => true, 'steps' => $n]);
         }
+        case 'wa.cx_plan': {
+            $b = max(1000, min(5000000, (float)($_GET['budget'] ?? 100000))); $t = max(1, min(5000, (int)($_GET['target'] ?? 200))); $r = max(0.1, min(10, (float)($_GET['rate'] ?? 1.09)));
+            $p = cx_plan($pdo, $b, $t, $r); $p['study_pending'] = !is_array(json_decode((string)setting_get($pdo, 'wa_cx_roi', ''), true)); json_response($p);   // the very first study is done by the engine in the background (about a minute)
+        }
+        case 'wa.cx_roi_run': { ignore_user_abort(true); if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); json_response(['ok' => true] + cx_roi_refresh($pdo, 90)); }
         case 'wa.cx_alerts': {
             cx_alert_tick($pdo); $a = json_decode((string)setting_get($pdo, 'wa_cx_alerts', '[]'), true); json_response(['ok' => true, 'alerts' => is_array($a) ? $a : [], 'at' => (string)setting_get($pdo, 'wa_cx_alert_at', '')]);
         }
