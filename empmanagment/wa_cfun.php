@@ -296,10 +296,11 @@ if (strpos($__cfa, 'wa.cf_') === 0) {
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
             @set_time_limit(40); $in = json_input(); $ph = []; foreach (array_slice(is_array($in['phones'] ?? null) ? $in['phones'] : [], 0, 5000) as $x) { $k = (string)$x; if (preg_match('/^[6-9]\d{9}$/', $k)) $ph[$k] = true; } $ph = array_keys($ph);
             $F = []; $K = []; $now = time(); $out = [];
-            if ($ph) { $q = $pdo->prepare("SELECT /*+ MAX_EXECUTION_TIME(20000) */ phone, grp, health, optout, last_out, score FROM wa_cfun WHERE phone IN (" . cfun_in($ph) . ")"); $q->execute($ph); foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $F[(string)$r['phone']] = $r;
+            if ($ph) { $q = $pdo->prepare("SELECT /*+ MAX_EXECUTION_TIME(20000) */ phone, grp, health, optout, last_out, score, orders_n FROM wa_cfun WHERE phone IN (" . cfun_in($ph) . ")"); $q->execute($ph); foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $F[(string)$r['phone']] = $r;
                 $miss = array_values(array_filter($ph, function ($k) use ($F) { return !isset($F[$k]); }));
                 if ($miss) { $q = $pdo->prepare("SELECT phone FROM wa_contacts WHERE phone IN (" . cfun_in($miss) . ")"); $q->execute($miss); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $k) $K[(string)$k] = true; } }
-            foreach ($ph as $k) { $f = $F[$k] ?? null; $out[$k] = [cfun_imp_bucket($f, isset($K[$k]), $now), $f ? (int)$f['score'] : -1]; }
+            $LO = []; if ($ph) { try { $q = $pdo->prepare("SELECT phone, last_order, n FROM wa_cust WHERE phone IN (" . cfun_in($ph) . ")"); $q->execute($ph); foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $LO[(string)$r['phone']] = $r; } catch (Throwable $e) { } }
+            foreach ($ph as $k) { $f = $F[$k] ?? null; $u = $LO[$k] ?? null; $on = max((int)($f['orders_n'] ?? 0), (int)($u['n'] ?? 0)); $out[$k] = [cfun_imp_bucket($f, isset($K[$k]), $now), $f ? (int)$f['score'] : -1, cfun_imp_order($on, $u ? (string)$u['last_order'] : '', $now)]; }
             json_response(['ok' => true, 'r' => $out]);
         }
         case 'wa.cf_impadvice': {   // Claude's short advice on a checked file (counts only — no phone numbers leave the server)

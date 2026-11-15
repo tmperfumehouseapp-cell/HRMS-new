@@ -63,6 +63,14 @@ function cfun_tags(string $val, string $health, int $score, array $parts, array 
 }
 
 
+/** Import check: when did the number last order? o30 = within 30 days · o60 = 31–60 days ago · o60p = 61+ days ago · oun = ordered, date unknown · none = never ordered. */
+function cfun_imp_order(int $orders, string $lastOrder, int $now): string
+{
+    if ($orders <= 0) return 'none';
+    $ts = $lastOrder !== '' ? strtotime($lastOrder) : false; if (!$ts) return 'oun';
+    $d = (int)floor(($now - $ts) / 86400); return $d <= 30 ? 'o30' : ($d <= 60 ? 'o60' : 'o60p');
+}
+
 /** Import check: which group a number from a new Excel file falls in. $f = the wa_cfun row (or null), $known = the number exists in contacts.
  *  Never reachable: optout · notwa · stopped. Then buyers / replied first (they are never "failed"), then held / failed, then "messaged in the last 5 days", then the furthest step. */
 function cfun_imp_bucket(?array $f, bool $known, int $now): string
