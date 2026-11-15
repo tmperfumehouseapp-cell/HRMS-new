@@ -1290,8 +1290,13 @@ function wq_grab_list(PDO $pdo, int $me, int $limit = 60): array
     $min = wq_late_min($pdo); $um = min($min, wq_urgent_min($pdo)); $now = wq_now(); $names = wq_names($pdo);
     $st = $pdo->prepare("SELECT phone, name, assigned_emp, assigned_at, last_in_at, last_out_at, hot FROM wa_contacts WHERE status = 'open' AND optout = 0 AND last_in_at IS NOT NULL AND last_in_at >= ? AND last_in_at <= ?
         AND (last_out_at IS NULL OR last_out_at < last_in_at) AND (cx_id IS NULL OR cx_id = 0) AND (tag IS NULL OR tag != 'complaint') AND NOT EXISTS (SELECT 1 FROM wa_ctags ctx WHERE ctx.phone = wa_contacts.phone AND ctx.tag = 'complaint') AND NOT EXISTS (SELECT 1 FROM cx_cases cxx WHERE cxx.phone = wa_contacts.phone AND cxx.status IN ('open','reopened')) ORDER BY last_in_at LIMIT " . (int)($limit * 2));
-    try { $st->execute([wq_dt($now - 86400), wq_dt($now - $um * 60)]); $rows = $st->fetchAll(); }
-    catch (Throwable $e) { $st = $pdo->prepare("SELECT phone, name, assigned_emp, assigned_at, last_in_at, last_out_at, hot FROM wa_contacts WHERE status = 'open' AND optout = 0 AND last_in_at IS NOT NULL AND last_in_at >= ? AND last_in_at <= ? AND (last_out_at IS NULL OR last_out_at < last_in_at) ORDER BY last_in_at LIMIT " . (int)($limit * 2)); $st->execute([wq_dt($now - 86400), wq_dt($now - $um * 60)]); $rows = $st->fetchAll(); }
+    // ⚡ Server load (15 Nov): the same list of waiting chats was read from the database for every salesperson's screen every few seconds (5.6% of the database work). The list does not depend on who
+    // asks, so one read serves everybody for 5 s; what each person may see or take is still decided below, per person.
+    $__rd = function () use ($pdo, $st, $now, $um, $limit) {
+        try { $st->execute([wq_dt($now - 86400), wq_dt($now - $um * 60)]); return $st->fetchAll(PDO::FETCH_ASSOC); }
+        catch (Throwable $e) { $st2 = $pdo->prepare("SELECT phone, name, assigned_emp, assigned_at, last_in_at, last_out_at, hot FROM wa_contacts WHERE status = 'open' AND optout = 0 AND last_in_at IS NOT NULL AND last_in_at >= ? AND last_in_at <= ? AND (last_out_at IS NULL OR last_out_at < last_in_at) ORDER BY last_in_at LIMIT " . (int)($limit * 2)); $st2->execute([wq_dt($now - 86400), wq_dt($now - $um * 60)]); return $st2->fetchAll(PDO::FETCH_ASSOC); }
+    };
+    $rows = (function_exists('hrms_memo') && !defined('WQ_NOW')) ? hrms_memo('wq_grab_rows', 5, $__rd) : $__rd();
     // typing marks and last messages for ALL rows in 2 queries (it was 2 queries per row: 120+ per refresh)
     $phs = array_values(array_map(fn($r) => (string)$r['phone'], $rows)); $typing = []; $lastIn = [];
     if ($phs) {
@@ -1362,7 +1367,14 @@ function wq_needs(PDO $pdo, int $me, bool $waves = true): array
 {
     if ($waves && function_exists('wqx_mode') && wqx_mode($pdo) === 'live') $waves = false;   // 🏪 the open market gives the chats now (one engine): this list is only the shared backup view, with no waves / holds of its own
     $now = time(); $raw = json_decode((string)setting_get($pdo, 'wq_needs', ''), true);
+    // ⚡ Server load (15 Nov): when the 10-second copy ran out, EVERY request that arrived in that moment rebuilt it at the same time (dozens of phones → dozens of copies of the heaviest
+    // query of this file, 7.2% of the database work, runs of 2 s). Now one request rebuilds it; the others use the copy they already have (a few seconds older) until the new one is saved.
+    $__nb = false;
     if (!is_array($raw) || (int)($raw['at'] ?? 0) < $now - 10) {
+        try { $__nb = (int)$pdo->query("SELECT GET_LOCK('wq_needs_build', 0)")->fetchColumn() === 1; } catch (Throwable $e) { $__nb = true; }
+        if (!$__nb && !is_array($raw)) { try { $__nb = (int)$pdo->query("SELECT GET_LOCK('wq_needs_build', 4)")->fetchColumn() === 1; } catch (Throwable $e) { $__nb = true; } $r2 = json_decode((string)setting_get($pdo, 'wq_needs', ''), true); if (is_array($r2) && (int)($r2['at'] ?? 0) >= $now - 10) { $raw = $r2; if ($__nb) { try { $pdo->query("SELECT RELEASE_LOCK('wq_needs_build')"); } catch (Throwable $e) { } $__nb = false; } } elseif (!$__nb) $raw = ['at' => $now, 'items' => [], 'backlog' => [], 'bk_cx' => []]; }   // no copy at all (it was just cleared): wait up to 4 s for the one being built
+    }
+    if ($__nb) {
         $items = [];
         try {
             $st = $pdo->prepare("SELECT c.phone, c.name, c.assigned_emp, c.assigned_at, c.last_in_at, c.last_out_at, c.hot, c.tag, c.seen_msg_id FROM wa_contacts c WHERE c.status = 'open' AND c.optout = 0 AND c.last_in_at IS NOT NULL AND c.last_in_at >= ? AND (c.cx_id IS NULL OR c.cx_id = 0) AND (c.tag IS NULL OR c.tag <> 'complaint')
@@ -1420,6 +1432,7 @@ function wq_needs(PDO $pdo, int $me, bool $waves = true): array
             foreach ($bki as $e1 => $l1) { $js = json_encode($l1, JSON_UNESCAPED_UNICODE); $k1 = 'bki:' . $e1; if (($old[$k1] ?? null) !== $js) wq_meta_put($pdo, $k1, $js); unset($old[$k1]); }
             foreach ($old as $k1 => $_v) $pdo->prepare("DELETE FROM wq_meta WHERE k = ?")->execute([$k1]); } catch (Throwable $e) { }
         $raw = ['at' => $now, 'items' => $items, 'backlog' => $bk, 'bk_cx' => $bkc]; try { setting_set($pdo, 'wq_needs', json_encode($raw, JSON_UNESCAPED_UNICODE)); } catch (Throwable $e) { }   // kept for 10 s so every phone shares one rebuild
+        try { $pdo->query("SELECT RELEASE_LOCK('wq_needs_build')"); } catch (Throwable $e) { }
     }
     $names = wq_names($pdo); $o = []; $rkT = ($waves && $me > 0) ? wq_rank_today($pdo) : ['rank' => []]; [$wsz, $wmin] = wq_wave_cfg($pdo);
     foreach ((array)$raw['items'] as $x) {
@@ -1480,14 +1493,14 @@ function wq_need_dismiss(PDO $pdo, string $phone, int $me): array
 {
     if ($me <= 0) return ['error' => 'Only a logged-in employee can do this.']; $c = wq_contact($pdo, $phone); if (!$c || !wq_need_tables($pdo)) return ['error' => 'Chat not found.'];
     $pdo->prepare("UPDATE wq_need_log SET dismissed = 1 WHERE phone = ? AND in_at = ? AND level = 'orange'")->execute([$phone, wq_dt(wq_ts($c['last_in_at'] ?? ''))]);
-    try { setting_set($pdo, 'wq_needs', ''); } catch (Throwable $e) { } return ['ok' => true];
+    try { setting_set($pdo, 'wq_needs', ''); if (function_exists('hrms_memo_drop')) hrms_memo_drop('wq_grab_rows'); } catch (Throwable $e) { } return ['ok' => true];
 }
 /** "Order placed" was marked in the chat: whatever is waiting from this customer's latest message (red or orange) leaves the card for everyone. A NEW message of the customer can bring it back. */
 function wq_need_close(PDO $pdo, string $phone): void
 {
     try { if (!wq_need_tables($pdo)) return; $c = wq_contact($pdo, $phone); if (!$c || empty($c['last_in_at'])) return;
         $pdo->prepare("INSERT INTO wq_need_log (phone, level, seen_at, in_at, dismissed) VALUES (?, 'orange', ?, ?, 1) ON DUPLICATE KEY UPDATE dismissed = 1")->execute([$phone, wq_dt(wq_now()), wq_dt(wq_ts($c['last_in_at']))]);
-        setting_set($pdo, 'wq_needs', ''); } catch (Throwable $e) { }
+        setting_set($pdo, 'wq_needs', ''); if (function_exists('hrms_memo_drop')) hrms_memo_drop('wq_grab_rows'); } catch (Throwable $e) { }
 }
 /** Admin board: what came up as red / orange in the last 7 days, who took it, how fast, and whether an order followed. */
 function wq_needs_board(PDO $pdo): array
@@ -1532,7 +1545,7 @@ function wq_need_take(PDO $pdo, string $phone, int $me): array
     $u = $pdo->prepare("UPDATE wa_contacts SET assigned_emp = ? WHERE phone = ? AND assigned_emp = ?"); $u->execute([$me, $phone, $from]);
     if ($u->rowCount() === 0) return ['error' => 'Somebody else just took this chat.'];
     $pdo->prepare("UPDATE wa_contacts SET assigned_emp = ? WHERE phone = ?")->execute([$from, $phone]);   // put it back for one line: wa_assign_to writes the log, the event and moves the query from $from
-    wa_assign_to($pdo, $phone, $me, $me, 'grab'); try { setting_set($pdo, 'wq_needs', ''); if (wq_need_tables($pdo)) { $lg = $pdo->prepare("UPDATE wq_need_log SET taken_at = ?, taken_by = ? WHERE phone = ? AND in_at = ? AND taken_at IS NULL"); $lg->execute([wq_dt(wq_now()), $me, $phone, wq_dt($in)]); } } catch (Throwable $e) { }
+    wa_assign_to($pdo, $phone, $me, $me, 'grab'); try { setting_set($pdo, 'wq_needs', ''); if (function_exists('hrms_memo_drop')) hrms_memo_drop('wq_grab_rows'); if (wq_need_tables($pdo)) { $lg = $pdo->prepare("UPDATE wq_need_log SET taken_at = ?, taken_by = ? WHERE phone = ? AND in_at = ? AND taken_at IS NULL"); $lg->execute([wq_dt(wq_now()), $me, $phone, wq_dt($in)]); } } catch (Throwable $e) { }
     return ['ok' => true, 'from' => wq_person(wq_names($pdo), $from)];
 }
 /** Take one late chat: checked again at the moment of taking (somebody may have just answered or taken it). */

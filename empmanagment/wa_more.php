@@ -567,7 +567,9 @@ function wa_camp_auto_cap(PDO $pdo, int $tier, array $health): array
         }
         $A = ['caps' => $caps, 'cap' => $old0, 'start' => $START, 'hour' => $hour, 'hist' => array_slice($hist, -48)]; try { setting_set($pdo, 'wa_camp_auto', json_encode($A)); } catch (Throwable $e) { }
     }
-    $usedBy = []; try { $q = $pdo->prepare("SELECT number_id, COUNT(DISTINCT phone) AS n FROM wa_messages WHERE dir = 'out' AND who = 'campaign' AND mtype = 'template' AND status <> 'failed' AND ts >= ? GROUP BY number_id"); $q->execute([date('Y-m-d H:i:s', time() - 3600)]); foreach ($q->fetchAll() as $r) $usedBy[(int)$r['number_id']] = (int)$r['n']; } catch (Throwable $e) { }
+    // ⚡ Server load (15 Nov): "how many customers each number messaged in the last hour" read an hour of campaign messages on every call of every campaign worker (3.4% of the database work). One count serves all for 5 s.
+    $usedBy = []; try { $__ub = function () use ($pdo) { $q = $pdo->prepare("SELECT number_id, COUNT(DISTINCT phone) AS n FROM wa_messages WHERE dir = 'out' AND who = 'campaign' AND mtype = 'template' AND status <> 'failed' AND ts >= ? GROUP BY number_id"); $q->execute([date('Y-m-d H:i:s', time() - 3600)]); return $q->fetchAll(PDO::FETCH_ASSOC); };
+        foreach ((function_exists('hrms_memo') ? hrms_memo('wa_camp_used_hour', 5, $__ub) : $__ub()) as $r) $usedBy[(int)$r['number_id']] = (int)$r['n']; } catch (Throwable $e) { }
     $nums = []; foreach ($hq as $nid => $h) { $cap = min(max(1000, (int)($caps[$nid] ?? $old0)), max(1000, $max)); $u = $usedBy[$nid] ?? 0; $nums[$nid] = ['cap' => $cap, 'used_hour' => $u, 'left_hour' => max(0, $cap - $u), 'label' => (string)($h['label'] ?? ('Number ' . $nid))]; }
     $all = array_sum(array_column($nums, 'cap')); $usedAll = array_sum(array_column($nums, 'used_hour'));
     return ['nums' => $nums, 'cap' => $all, 'used_hour' => $usedAll, 'left_hour' => max(0, $all - $usedAll), 'max' => $max, 'hist' => $hist];
@@ -913,7 +915,8 @@ if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
             $in = json_input(); if (empty($in['consent'])) json_response(['error' => 'Tick the box to confirm these customers agreed to get WhatsApp messages from you.'], 422);
             // every imported customer gets 'campaign' (we reach them with campaigns) + one tag for this import (so a campaign can pick exactly this file) + the tags typed for everyone + the tags in their own row
-            $batch = 'import_' . strtolower(date('jMy')) . '_' . date('Hi');   // one batch per upload (the time makes two uploads on the same day different) $common = array_merge(['campaign', $batch], wa_imp_tags($in['tags'] ?? []));
+            $batch = 'import_' . strtolower(date('jMy')) . '_' . date('Hi');   // one batch per upload (the time makes two uploads on the same day different)
+            $common = array_merge(['campaign', $batch], wa_imp_tags($in['tags'] ?? []));
             $rows = [];
             if (is_array($in['rows'] ?? null)) foreach (array_slice($in['rows'], 0, 20000) as $r) $rows[] = ['phone' => (string)($r['phone'] ?? ''), 'name' => (string)($r['name'] ?? ''), 'tags' => wa_imp_tags($r['tags'] ?? [])];
             else foreach (preg_split('/\r?\n/', (string)($in['text'] ?? '')) as $line) { $line = trim($line); if ($line === '') continue; preg_match_all('/\+?\d[\d\s\-()]{8,}\d/', $line, $m); $ph = $m[0][0] ?? ''; $rows[] = ['phone' => $ph, 'name' => preg_replace('/[\d+()\-,;:|]+/', ' ', str_replace($ph, '', $line)), 'tags' => []]; }
@@ -928,7 +931,12 @@ if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.
                 $tagged++;
             }
             try { setting_set($pdo, 'wa_tag_cache', ''); } catch (Throwable $e) { }
-            json_response(['ok' => true, 'added' => $add, 'already' => $dup, 'invalid' => $bad, 'tagged' => $tagged, 'batch_tag' => $batch, 'tags' => array_values(array_unique($common))]);
+            // "Try these people again": people Meta held (131049 / 131048 = too many marketing messages lately, 130472 = in a Meta experiment) are marked "do not message now" for a few days,
+            // so every campaign skips them. When the owner adds them again on purpose, that mark is removed so a campaign sends to them. People who are not on WhatsApp (131026)
+            // or stopped marketing messages (131050) stay left out — they cannot be reached / asked not to be messaged.
+            $released = 0;
+            if (!empty($in['retry']) && $seen) { try { foreach (array_chunk(array_keys($seen), 1000) as $ch) { $st = $pdo->prepare("DELETE FROM wa_unreach WHERE code IN (131049, 131048, 130472) AND phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $st->execute(array_map('strval', $ch)); $released += $st->rowCount(); } if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'import ' . $batch . ': ' . $released . ' people released from the "held by Meta" list (added again on purpose)'); } catch (Throwable $e) { } }
+            json_response(['ok' => true, 'added' => $add, 'already' => $dup, 'invalid' => $bad, 'tagged' => $tagged, 'released' => $released, 'batch_tag' => $batch, 'tags' => array_values(array_unique($common))]);
         }
         case 'wa.contact_fix': {   // rows the import could not read: Claude finds the Indian mobile number + name in each, the server checks every number again
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);

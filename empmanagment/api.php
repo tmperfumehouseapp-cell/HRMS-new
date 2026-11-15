@@ -2240,6 +2240,11 @@ function hrms_memo(string $key, int $ttl, callable $fn)
     if (mt_rand(1, 400) === 1) foreach ((array)@glob(dirname($f) . '/hrms_memo_*') as $g) if ($now - (int)@filemtime($g) > 7200) @unlink($g);
     $mem[$key] = [time(), $v]; return $v;
 }
+/** Throws one shared hrms_memo() answer away, so the next request counts it afresh (used when something just changed what it holds). */
+function hrms_memo_drop(string $key): void
+{
+    @unlink(rtrim(sys_get_temp_dir(), '/') . '/hrms_memo_' . substr(md5(__DIR__), 0, 6) . '_' . md5($key) . '.json');
+}
 /** ⚡ The settings notebook (hrms_settings, ~4,600 lines) was read in full by EVERY request — about 80 times a second — though a request needs a handful of lines.
  *  Now one copy of its small values is kept in a private temp file and shared by all requests:
  *   - every setting_set() (and every direct write that calls hrms_settings_bump()) makes the copy out of date at once, so a saved value is seen by the next request;

@@ -1195,7 +1195,7 @@ function wa_camp_ideal(PDO $pdo, string $day): array
 /** ONE figure for the customers numbers card (wa.cust_summary). */
 function wa_cust_summary(PDO $pdo): array
 {
-    $hit = wa_cpc_get($pdo, 'cust_sum1'); if ($hit && $hit['age'] < 21600) return $hit['v'];
+    $hit = wa_cpc_get($pdo, 'cust_sum2'); if ($hit && $hit['age'] < 1800) return $hit['v'];
     $lk = 'wa_cust_sum_lock'; try { if ($hit && (int)setting_get($pdo, $lk, '0') > time() - 120) return $hit['v']; setting_set($pdo, $lk, (string)time()); } catch (Throwable $e) { }
     $d = fn(int $n) => date('Y-m-d H:i:s', time() - $n * 86400); $o = ['at' => date('Y-m-d H:i:s')];
     $one = function (string $sql, array $p = []) use ($pdo) { try { $q = $pdo->prepare($sql); $q->execute($p); return $q->fetch(PDO::FETCH_NUM); } catch (Throwable $e) { return null; } };
@@ -1207,7 +1207,15 @@ function wa_cust_summary(PDO $pdo): array
     $o['got'] = $r ? (int)$r[0] : null; $o['failed'] = $r ? (int)$r[1] : null;
     $r = $one("SELECT /*+ MAX_EXECUTION_TIME(8000) */ COUNT(DISTINCT phone) FROM wq_qtype WHERE type = 'campaign'"); $o['replied'] = $r ? (int)$r[0] : null;
     $r = $one("SELECT /*+ MAX_EXECUTION_TIME(8000) */ COUNT(*) FROM wa_tagidx WHERE tag = 'order_campaign'"); $o['camp_orders'] = $r ? (int)$r[0] : null;
-    wa_cpc_put($pdo, 'cust_sum1', $o); try { setting_set($pdo, $lk, '0'); } catch (Throwable $e) { }
+    // 📊 ONE source of truth: when the customer funnel (wa_cfun) has counted everybody, its numbers replace the ones above, so this card, the funnel and the filters always agree
+    // (the old numbers came from the Shopify order copy only — about 50,000 buyers — while the funnel also counts store and old POS bills: about 61,000)
+    try { $j = json_decode((string)setting_get($pdo, 'wa_cfun_stats', ''), true); $f = is_array($j) ? ($j['by']['all'] ?? null) : null;
+        if ($f && empty($j['walking']) && (int)($f['total'] ?? 0) > 0) {
+            $o3 = $one("SELECT /*+ MAX_EXECUTION_TIME(10000) */ SUM(orders_n >= 3) FROM wa_cfun"); $oc = (int)($o['optout'] ?? 0);
+            $o['total'] = (int)$f['total']; $o['optout'] = (int)$f['optout']; $o['reach'] = max(0, (int)$f['total'] - (int)$f['optout']); $o['got'] = (int)$f['reached']; $o['failed'] = (int)$f['failed']; $o['replied'] = (int)$f['replied'];
+            $o['ordered'] = (int)$f['ordered']; $o['twice'] = (int)$f['repeat_n']; if ($o3) $o['thrice'] = (int)$o3[0]; $o['src'] = 'funnel'; $o['funnel_at'] = (string)($j['at'] ?? '');
+        } } catch (Throwable $e) { }
+    wa_cpc_put($pdo, 'cust_sum2', $o); try { setting_set($pdo, $lk, '0'); } catch (Throwable $e) { }
     return $o;
 }
 /** A tag's readable name (saved list, system label, catalog, auto-tag definition, learned label, or the key tidied up). */
