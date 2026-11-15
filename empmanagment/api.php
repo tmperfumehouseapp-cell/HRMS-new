@@ -1191,7 +1191,7 @@ function order_chat_type(PDO $pdo, array $c, int $t = 0): string
 {
     if (order_is_repeat_customer($pdo, (string)($c['phone'] ?? ''), $t)) return 'campaign';   // owner (7 Nov): a customer who ordered before and orders again counts as Campaign
     try { $ph = (string)($c['phone'] ?? ''); if ($ph !== '') { $qq = $pdo->prepare("SELECT type FROM wq_qtype WHERE phone = ? ORDER BY opened_at DESC LIMIT 1"); $qq->execute([$ph]); if ((string)$qq->fetchColumn() === 'campaign') return 'campaign'; } } catch (Throwable $e) { }   // the chat's latest query is typed Campaign (they answered our campaign / came back after 30 h) → the order follows it
-    return (in_array((string)($c['source'] ?? ''), ['campaign', 'community'], true) || (function_exists('wa_got_campaign') && wa_got_campaign($pdo, (string)($c['phone'] ?? ''), date('Y-m-d H:i:s', $t ?: time()), 7))) ? 'campaign' : 'query';
+    return (in_array((string)($c['source'] ?? ''), ['campaign', 'community'], true) || (function_exists('wa_got_campaign') && wa_got_campaign($pdo, (string)($c['phone'] ?? ''), date('Y-m-d H:i:s', $t ?: time()), 30))) ? 'campaign' : 'query';
 }
 function order_auto_alloc(PDO $pdo, string $sk, array $o)
 {
