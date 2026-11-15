@@ -931,7 +931,12 @@ if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.
                 $tagged++;
             }
             try { setting_set($pdo, 'wa_tag_cache', ''); } catch (Throwable $e) { }
-            json_response(['ok' => true, 'added' => $add, 'already' => $dup, 'invalid' => $bad, 'tagged' => $tagged, 'batch_tag' => $batch, 'tags' => array_values(array_unique($common))]);
+            // "Try these people again": people Meta held (131049 / 131048 = too many marketing messages lately, 130472 = in a Meta experiment) are marked "do not message now" for a few days,
+            // so every campaign skips them. When the owner adds them again on purpose, that mark is removed so a campaign sends to them. People who are not on WhatsApp (131026)
+            // or stopped marketing messages (131050) stay left out — they cannot be reached / asked not to be messaged.
+            $released = 0;
+            if (!empty($in['retry']) && $seen) { try { foreach (array_chunk(array_keys($seen), 1000) as $ch) { $st = $pdo->prepare("DELETE FROM wa_unreach WHERE code IN (131049, 131048, 130472) AND phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $st->execute(array_map('strval', $ch)); $released += $st->rowCount(); } if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'import ' . $batch . ': ' . $released . ' people released from the "held by Meta" list (added again on purpose)'); } catch (Throwable $e) { } }
+            json_response(['ok' => true, 'added' => $add, 'already' => $dup, 'invalid' => $bad, 'tagged' => $tagged, 'released' => $released, 'batch_tag' => $batch, 'tags' => array_values(array_unique($common))]);
         }
         case 'wa.contact_fix': {   // rows the import could not read: Claude finds the Indian mobile number + name in each, the server checks every number again
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
