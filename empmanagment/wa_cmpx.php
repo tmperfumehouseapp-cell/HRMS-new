@@ -161,7 +161,17 @@ function cx_seg_sizes(PDO $pdo): array
     try { foreach ($pdo->query("SELECT /*+ MAX_EXECUTION_TIME(30000) */ seg, COUNT(*) n, SUM(out_n) o, SUM(deliv_n) d FROM (SELECT CASE WHEN health NOT IN ('ok', '') THEN 'blocked' WHEN val IN ('new', 'repeat', 'loyal') THEN 'buyers_active' WHEN val IN ('one', 'atrisk', 'lapsed', 'past') THEN 'buyers_winback' WHEN replied = 1 THEN 'engaged' WHEN grp = 'deliv' THEN 'delivered' WHEN grp IN ('never', 'sent') THEN 'cold' ELSE 'other' END seg, out_n, deliv_n FROM wa_cfun) x GROUP BY seg")->fetchAll(PDO::FETCH_ASSOC) as $r) $v[(string)$r['seg']] = ['n' => (int)$r['n'], 'o' => (int)$r['o'], 'd' => (int)$r['d']]; } catch (Throwable $e) { }
     setting_set($pdo, 'wa_cx_segs', json_encode(['t' => time(), 'v' => $v])); return $v;
 }
-/** The 30-day study: for every group, how many customers got a delivered campaign message, how many delivered messages, and how many online orders followed within 7 days. Once a day. */
+/** A customer's group BEFORE the order we are counting (so an order cannot move the customer into the group that "explains" it):
+ *  buyers_active = ordered before (2+ orders, or one order 0–90 days before the window) · buyers_winback = ordered long before, or no known date · engaged = no earlier order, wrote to us · delivered = everybody else. */
+function cx_pre_seg(?array $cf, ?array $cu, string $since): string
+{
+    $n = $cu ? (int)$cu['n'] : 0; $lo = $cu ? (string)$cu['last_order'] : ''; $co = $cf ? (int)$cf['orders_n'] : 0;
+    if ($n >= 2) return 'buyers_active';
+    if ($n === 1 && $lo !== '' && $lo < $since) return $lo >= date('Y-m-d H:i:s', strtotime($since) - 90 * 86400) ? 'buyers_active' : 'buyers_winback';
+    if ($n === 0 && $co >= 1) return 'buyers_winback';
+    return ($cf && (int)$cf['replied'] === 1) ? 'engaged' : 'delivered';
+}
+/** The 30-day study: for every group (as it was BEFORE the order), how many customers got a delivered campaign message, how many delivered messages, and how many online orders followed within 7 days. Once a day. */
 function cx_roi_refresh(PDO $pdo, int $budget = 80): array
 {
     $t0 = microtime(true); $since = date('Y-m-d H:i:s', time() - 30 * 86400); $S = []; $add = function ($k, $f, $n) use (&$S) { if (!isset($S[$k])) $S[$k] = ['cust' => 0, 'deliv' => 0, 'orders' => 0, 'rev' => 0.0]; $S[$k][$f] += $n; };
@@ -169,14 +179,16 @@ function cx_roi_refresh(PDO $pdo, int $budget = 80): array
     try {
         @set_time_limit($budget + 30); $get = function ($sql, $p) use ($pdo) { $q = $pdo->prepare($sql); $q->execute($p); return $q->fetchAll(PDO::FETCH_ASSOC); };
         $rows = $pdo->query("SELECT /*+ MAX_EXECUTION_TIME(60000) */ phone, COUNT(*) c FROM wa_messages WHERE dir = 'out' AND who = 'campaign' AND status IN ('delivered', 'read') AND ts >= '$since' GROUP BY phone")->fetchAll(PDO::FETCH_ASSOC);
-        $segOf = []; foreach (array_chunk($rows, 2500) as $ch) { if (microtime(true) - $t0 > $budget) return ['partial' => 1]; $ph = array_map(function ($r) { return (string)$r['phone']; }, $ch); $in = cfun_in($ph);
-            $m = []; foreach ($get("SELECT phone, health, val, replied, grp FROM wa_cfun WHERE phone IN ($in)", $ph) as $r) $m[(string)$r['phone']] = cx_seg_of($r);
-            foreach ($ch as $r) { $k = $m[(string)$r['phone']] ?? 'other'; $add($k, 'cust', 1); $add($k, 'deliv', (int)$r['c']); } }
-        $ord = $pdo->query("SELECT phone, created_at, total FROM shop_orders WHERE created_at >= '$since' AND phone IS NOT NULL AND phone <> ''")->fetchAll(PDO::FETCH_ASSOC); $q = $pdo->prepare("SELECT MAX(ts) FROM wa_messages WHERE phone = ? AND dir = 'out' AND who = 'campaign' AND status IN ('delivered', 'read') AND ts <= ? AND ts >= ?"); $sq = $pdo->prepare("SELECT phone, health, val, replied, grp FROM wa_cfun WHERE phone = ?"); $att = 0;
-        foreach ($ord as $o) { if (microtime(true) - $t0 > $budget + 20) break; $k = substr(preg_replace('/\D+/', '', (string)$o['phone']), -10); if (strlen($k) !== 10) continue; $at = (string)$o['created_at']; $q->execute([$k, $at, date('Y-m-d H:i:s', strtotime($at) - 7 * 86400)]); if (!$q->fetchColumn()) continue;
-            $sq->execute([$k]); $r = $sq->fetch(PDO::FETCH_ASSOC); $seg = $r ? cx_seg_of($r) : 'other'; $add($seg, 'orders', 1); $add($seg, 'rev', (float)$o['total']); $att++; }
+        foreach (array_chunk($rows, 2500) as $ch) { if (microtime(true) - $t0 > $budget) return ['partial' => 1]; $ph = array_map(function ($r) { return (string)$r['phone']; }, $ch); $in = cfun_in($ph);
+            $F = []; foreach ($get("SELECT phone, replied, orders_n FROM wa_cfun WHERE phone IN ($in)", $ph) as $r) $F[(string)$r['phone']] = $r;
+            $U = []; try { foreach ($get("SELECT phone, n, last_order FROM wa_cust WHERE phone IN ($in)", $ph) as $r) $U[(string)$r['phone']] = $r; } catch (Throwable $e) { }
+            foreach ($ch as $r) { $k = cx_pre_seg($F[(string)$r['phone']] ?? null, $U[(string)$r['phone']] ?? null, $since); $add($k, 'cust', 1); $add($k, 'deliv', (int)$r['c']); } }
+        $ord = $pdo->query("SELECT phone, created_at, total FROM shop_orders WHERE created_at >= '$since' AND phone IS NOT NULL AND phone <> ''")->fetchAll(PDO::FETCH_ASSOC); $q = $pdo->prepare("SELECT MAX(ts) FROM wa_messages WHERE phone = ? AND dir = 'out' AND who = 'campaign' AND status IN ('delivered', 'read') AND ts <= ? AND ts >= ?");
+        $fq = $pdo->prepare("SELECT replied, orders_n FROM wa_cfun WHERE phone = ?"); $uq = $pdo->prepare("SELECT n, last_order FROM wa_cust WHERE phone = ?"); $att = 0; $seen = [];
+        foreach ($ord as $o) { if (microtime(true) - $t0 > $budget + 20) break; $k = substr(preg_replace('/\\D+/', '', (string)$o['phone']), -10); if (strlen($k) !== 10) continue; $at = (string)$o['created_at']; $q->execute([$k, $at, date('Y-m-d H:i:s', strtotime($at) - 7 * 86400)]); if (!$q->fetchColumn()) continue;
+            $fq->execute([$k]); $cf = $fq->fetch(PDO::FETCH_ASSOC) ?: null; $uq->execute([$k]); $cu = $uq->fetch(PDO::FETCH_ASSOC) ?: null; $seg = cx_pre_seg($cf, $cu, $since); $add($seg, 'orders', 1); $add($seg, 'rev', (float)$o['total']); $att++; }
         $tot = ['deliv' => 0, 'orders' => $att, 'cust' => 0]; foreach ($S as $x) { $tot['deliv'] += $x['deliv']; $tot['cust'] += $x['cust']; }
-        setting_set($pdo, 'wa_cx_roi', json_encode(['at' => date('Y-m-d H:i:s'), 'seg' => $S, 'tot' => $tot, 'orders_all' => count($ord)]));
+        setting_set($pdo, 'wa_cx_roi', json_encode(['v' => 2, 'at' => date('Y-m-d H:i:s'), 'seg' => $S, 'tot' => $tot, 'orders_all' => count($ord)]));
         $o = ['ok' => 1, 'sec' => round(microtime(true) - $t0, 1)];
     } catch (Throwable $e) { error_log('cx_roi_refresh: ' . $e->getMessage()); $o = ['error' => mb_substr($e->getMessage(), 0, 160)]; }
     try { $pdo->query("SELECT RELEASE_LOCK('wa_cx_roi')"); } catch (Throwable $e) { }
@@ -185,16 +197,16 @@ function cx_roi_refresh(PDO $pdo, int $budget = 80): array
 function cx_roi_tick(PDO $pdo): array
 {
     $j = json_decode((string)setting_get($pdo, 'wa_cx_roi', ''), true); $at = is_array($j) ? (int)strtotime((string)($j['at'] ?? '')) : 0; $h = (int)date('G');
-    if ($at > time() - 22 * 3600 || ($at && ($h < 2 || $h > 6))) return ['skipped' => 1];   // once a day, in the quiet hours (the very first study runs at once)
+    if ((int)($j['v'] ?? 0) >= 2 && ($at > time() - 22 * 3600 || ($at && ($h < 2 || $h > 6)))) return ['skipped' => 1];   // an old-method study (v1) is redone at once   // once a day, in the quiet hours (the very first study runs at once)
     return cx_roi_refresh($pdo, 70);
 }
 /** The plan for a budget. */
 function cx_plan(PDO $pdo, float $budget, int $target, float $rate): array
 {
-    $L = cx_seg_labels(); $Z = cx_seg_sizes($pdo); $j = json_decode((string)setting_get($pdo, 'wa_cx_roi', ''), true); $R = is_array($j) ? $j : ['seg' => [], 'tot' => ['deliv' => 0, 'orders' => 0, 'cust' => 0]];
+    $L = cx_seg_labels(); $Z = cx_seg_sizes($pdo); $j = json_decode((string)setting_get($pdo, 'wa_cx_roi', ''), true); $R = is_array($j) && (int)($j['v'] ?? 0) >= 2 ? $j : ['seg' => [], 'tot' => ['deliv' => 0, 'orders' => 0, 'cust' => 0]];
     $totD = max(1, (int)($R['tot']['deliv'] ?? 0)); $base = (int)($R['tot']['deliv'] ?? 0) > 0 ? 1000 * (int)($R['tot']['orders'] ?? 0) / $totD : 1.6;
     $D = $budget / max(0.1, $rate); $left = $D; $rows = []; $order = array_keys($L); $conv = [];
-    foreach ($order as $k) { $x = $R['seg'][$k] ?? null; $m = $x && $x['deliv'] >= 3000 && $x['orders'] >= 3; $conv[$k] = ['v' => $m ? 1000 * $x['orders'] / $x['deliv'] : $base, 'src' => $m ? 'measured' : 'assumed', 'deliv' => $x['deliv'] ?? 0, 'orders' => $x['orders'] ?? 0]; }
+    foreach ($order as $k) { $x = $R['seg'][$k === 'cold' ? 'delivered' : $k] ?? null; $m = $x && $x['deliv'] >= 3000 && $x['orders'] >= 3; $conv[$k] = ['v' => $m ? 1000 * $x['orders'] / $x['deliv'] : $base, 'src' => $m ? 'measured' : 'assumed', 'deliv' => $x['deliv'] ?? 0, 'orders' => $x['orders'] ?? 0]; }
     usort($order, function ($a, $b) use ($conv) { return $conv[$b]['v'] <=> $conv[$a]['v']; });
     foreach ($order as $k) {
         $z = $Z[$k] ?? ['n' => 0, 'o' => 0, 'd' => 0]; $dr = $z['o'] > 100 ? max(0.2, min(0.95, $z['d'] / $z['o'])) : 0.6; $cad = (int)$L[$k][2];
@@ -245,7 +257,7 @@ if (strpos($__cxa, 'wa.cx_') === 0) {
         }
         case 'wa.cx_plan': {
             $b = max(1000, min(5000000, (float)($_GET['budget'] ?? 100000))); $t = max(1, min(5000, (int)($_GET['target'] ?? 200))); $r = max(0.1, min(10, (float)($_GET['rate'] ?? 1.09)));
-            $p = cx_plan($pdo, $b, $t, $r); $p['study_pending'] = !is_array(json_decode((string)setting_get($pdo, 'wa_cx_roi', ''), true)); json_response($p);   // the very first study is done by the engine in the background (about a minute)
+            $p = cx_plan($pdo, $b, $t, $r); $jj = json_decode((string)setting_get($pdo, 'wa_cx_roi', ''), true); $p['study_pending'] = !(is_array($jj) && (int)($jj['v'] ?? 0) >= 2); json_response($p);   // the very first study is done by the engine in the background (about a minute)
         }
         case 'wa.cx_roi_run': { ignore_user_abort(true); if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); json_response(['ok' => true] + cx_roi_refresh($pdo, 90)); }
         case 'wa.cx_alerts': {
