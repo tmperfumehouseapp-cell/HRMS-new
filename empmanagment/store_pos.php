@@ -649,6 +649,44 @@ try {
             break;
         }
 
+        case 'st_inv.mv_find': {            // no barcode to scan? find the customer's bill by phone / bill number / name: its sold bottles can be picked from the list
+            require_auth();
+            $q = trim((string)($_GET['q'] ?? '')); $digits = preg_replace('/\D/', '', $q);
+            if (mb_strlen($q) < 3) json_response(['bills' => [], 'hint' => 'Type at least 3 letters or digits.']);
+            $w = []; $args = [];
+            if (strlen($digits) >= 4) { $w[] = "(bl.customer_phone LIKE ? OR EXISTS (SELECT 1 FROM st_bill_people pp WHERE pp.bill_id = bl.bill_id AND pp.phone LIKE ?) OR bl.bill_no LIKE ?)"; array_push($args, '%' . $digits, '%' . $digits, '%' . $digits . '%'); }
+            $w[] = "bl.customer_name LIKE ?"; $args[] = '%' . $q . '%'; $w[] = "bl.bill_no LIKE ?"; $args[] = '%' . $q . '%';
+            $st = $pdo->prepare("SELECT bl.bill_id, bl.bill_no, bl.created_at, bl.customer_name, bl.customer_phone, bl.total FROM st_bills bl WHERE bl.status = 'ok' AND bl.created_at >= DATE_SUB(NOW(), INTERVAL 120 DAY) AND (" . implode(' OR ', $w) . ") ORDER BY bl.bill_id DESC LIMIT 12");
+            $st->execute($args); $bills = $st->fetchAll();
+            $it = $pdo->prepare("SELECT b.code, b.ml, b.kind, b.status, p.title FROM st_bill_items i JOIN st_bottles b ON b.bottle_id = i.bottle_id JOIN st_products p ON p.product_id = b.product_id WHERE i.bill_id = ? AND i.kind IN ('sale','gift') ORDER BY i.item_id");
+            foreach ($bills as &$bl) { $it->execute([(int)$bl['bill_id']]); $bl['bottles'] = $it->fetchAll(); unset($bl['bill_id']); } unset($bl);
+            json_response(['bills' => $bills]);
+            break;
+        }
+
+        case 'st_inv.mv_nobarcode': {       // the barcode is gone and no bill can be found: record the return by perfume + size. If the bottle is good, a NEW barcode is made for it (print, stick, scan it in)
+            $auth = require_auth(); $in = json_input();
+            $pid = (int)($in['product_id'] ?? 0); $ml = (int)($in['ml'] ?? 0);
+            if (!$pid || !in_array($ml, ST_SIZES, true)) json_response(['error' => 'Choose the perfume and its size (' . implode(', ', ST_SIZES) . ' ml).'], 400);
+            $pr = $pdo->prepare("SELECT title FROM st_products WHERE product_id = ?"); $pr->execute([$pid]); $title = (string)$pr->fetchColumn(); if ($title === '') json_response(['error' => 'Perfume not found.'], 404);
+            $reason = mb_substr(trim((string)($in['reason'] ?? '')), 0, 40); $note = mb_substr(trim((string)($in['note'] ?? '')), 0, 255);
+            $resell = !empty($in['resell']) ? 1 : 0; $refund = max(0.0, round((float)($in['refund'] ?? 0), 2));
+            $now = date('Y-m-d H:i:s'); $by = (string)($auth['username'] ?? 'user'); $code = ''; $newId = null;
+            $pdo->beginTransaction();
+            if ($resell) {
+                $batch = 'R' . date('ymd-Hi'); $mfg = date('Y-m-d'); $exp = date('Y-m-d', strtotime('+4 years'));
+                $pdo->prepare("INSERT INTO st_bottles (code, product_id, ml, kind, status, batch, mfg_date, exp_date, created_by, created_at) VALUES (?,?,?,?, 'generated', ?,?,?,?,?)")->execute(['t' . bin2hex(random_bytes(5)), $pid, $ml, 'sale', $batch, $mfg, $exp, (int)($auth['employee_id'] ?? 0) ?: null, $now]);
+                $newId = (int)$pdo->lastInsertId(); $code = (string)(ST_CODE_BASE + $newId);
+                if (ST_CODE_BASE + $newId > 999999) { $pdo->rollBack(); json_response(['error' => 'The 6-digit code range is used up.'], 500); }
+                $pdo->prepare("UPDATE st_bottles SET code = ? WHERE bottle_id = ?")->execute([$code, $newId]);
+            }
+            $pdo->prepare("INSERT INTO st_moves (kind, created_at, by_name, old_bottle_id, new_bottle_id, product_id, ml, reason, note, resell, refund) VALUES ('return',?,?,NULL,?,?,?,?,?,?,?)")
+                ->execute([$now, mb_substr($by, 0, 80), $newId, $pid, $ml, $reason, '[no barcode] ' . $note, $resell, $refund]);
+            $pdo->commit();
+            json_response(['ok' => true, 'code' => $code, 'message' => 'Return saved without a barcode: ' . $title . ' ' . $ml . ' ml' . ($refund > 0 ? ', refund ₹' . number_format($refund) : '') . '. ' . ($resell ? 'A NEW barcode ' . $code . ' was made for it: print its label (Make & print → Earlier batches), stick it, then scan it in to put it back in stock.' : 'It is not for sale again, so nothing is added to the stock.')]);
+            break;
+        }
+
         case 'st_inv.mv_vendor_out': {      // bottles already scanned into stock but with a problem (sticker, label…): send them back to the supplier — they leave the stock
             $auth = require_auth(); $in = json_input();
             $codes = array_values(array_unique(array_filter(array_map('st_clean_code', (array)($in['codes'] ?? [])), 'strlen')));
