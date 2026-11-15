@@ -740,7 +740,8 @@ if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.
             ['wch_tick', fn() => function_exists('wch_tick') ? wch_tick($pdo) : null],   // chain cart: reminders, catalog refresh, payment polling, bills
             ['seg_tick', fn() => function_exists('wa_seg_tick') ? wa_seg_tick($pdo, ['inline' => true]) : null],
             ['cx_alert', fn() => function_exists('cx_alert_tick') ? cx_alert_tick($pdo) : null],   // 🚨 delivery alerts (every 5 minutes at most)
-            ['cx_fu', fn() => function_exists('cx_fu_tick') ? cx_fu_tick($pdo) : null],   // 🔁 no-reply follow-ups of campaigns (10:00–20:00, small batches)
+            ['cx_fu', fn() => function_exists('cx_fu_tick') ? cx_fu_tick($pdo) : null],
+            ['cx_roi', fn() => function_exists('cx_roi_tick') ? cx_roi_tick($pdo) : null],   // 📋 the 30-day study behind the daily plan (once a day, quiet hours)   // 🔁 no-reply follow-ups of campaigns (10:00–20:00, small batches)
             ['cust_funnel', fn() => function_exists('cfun_tick') ? cfun_tick($pdo) : null],   // 📊 customer funnel numbers (at most once an hour, 25 s budget)
             ['cust_segs', fn() => function_exists('wcs_tick') ? wcs_tick($pdo) : null],   // live segments take in new matches (hourly)
         ];
