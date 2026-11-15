@@ -945,6 +945,11 @@ if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.
             // or stopped marketing messages (131050) stay left out — they cannot be reached / asked not to be messaged.
             $released = 0;
             if (!empty($in['retry']) && $seen) { try { foreach (array_chunk(array_keys($seen), 1000) as $ch) { $st = $pdo->prepare("DELETE FROM wa_unreach WHERE code IN (131049, 131048, 130472) AND phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $st->execute(array_map('strval', $ch)); $released += $st->rowCount(); } if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'import ' . $batch . ': ' . $released . ' people released from the "held by Meta" list (added again on purpose)'); } catch (Throwable $e) { } }
+            if (is_array($in['summary'] ?? null)) { try {   // what the owner decided for this file (kept / left out per group) — shown later in the campaign "Who" step
+                $S = $in['summary']; $g = []; foreach ((array)($S['groups'] ?? []) as $k => $v) if (preg_match('/^[a-z0-9]{2,8}$/', (string)$k) && is_array($v)) $g[(string)$k] = [(int)($v[0] ?? 0), (int)($v[1] ?? 0)];
+                $log = json_decode((string)setting_get($pdo, 'wa_imp_log', ''), true); if (!is_array($log)) $log = [];
+                $log[$batch] = ['at' => $now, 'total' => (int)($S['total'] ?? 0), 'kept' => (int)($S['kept'] ?? 0), 'left' => (int)($S['left'] ?? 0), 'groups' => $g]; if (count($log) > 40) $log = array_slice($log, -40, null, true);
+                setting_set($pdo, 'wa_imp_log', json_encode($log)); } catch (Throwable $e) { } }
             json_response(['ok' => true, 'added' => $add, 'already' => $dup, 'invalid' => $bad, 'tagged' => $tagged, 'released' => $released, 'left' => $leftN, 'batch_tag' => $batch, 'tags' => array_values(array_unique($common))]);
         }
         case 'wa.contact_fix': {   // rows the import could not read: Claude finds the Indian mobile number + name in each, the server checks every number again

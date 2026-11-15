@@ -194,6 +194,7 @@ if (strpos($__wcs, 'wa.cs_') === 0) {
             $segs = array_map('wcs_seg_public', $pdo->query("SELECT * FROM wa_csegs ORDER BY kind = 'pick', created_at DESC LIMIT 200")->fetchAll());
             $cuts = ['hi' => 3000, 'lo' => 800]; try { if (function_exists('jn_cuts')) { $c0 = jn_cuts($pdo); $cuts = ['hi' => (float)$c0['hi'], 'lo' => (float)$c0['lo']]; } } catch (Throwable $e) { }
             $fun = ['batches' => [], 'walking' => 1]; try { $j = json_decode((string)setting_get($pdo, 'wa_cfun_stats', ''), true); if (is_array($j)) $fun = ['batches' => array_slice($j['by']['all']['batches'] ?? [], 0, 30), 'walking' => (int)($j['walking'] ?? 0), 'total' => (int)($j['by']['all']['total'] ?? 0)]; } catch (Throwable $e) { }
+            try { $il = json_decode((string)setting_get($pdo, 'wa_imp_log', ''), true); $fun['imports'] = is_array($il) ? $il : new stdClass(); } catch (Throwable $e) { }
             json_response(['ok' => true, 'tags' => $tags, 'cuts' => $cuts, 'numbers' => $nums, 'people' => $ppl, 'segments' => $segs, 'funnel' => $fun]);
         }
         case 'wa.cs_count': {
