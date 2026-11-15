@@ -196,7 +196,7 @@ html.wxdk .wcs{--ln:#25343e; --gb:#0f2e20; --rb:#3a1515;} html.wxdk .wcs-r,html.
       const list = S.meta.tags.filter((t) => !have.has(t.k) && (!q || (t.t + ' ' + t.k).toLowerCase().includes(q)));
       const by = {}; list.forEach((t) => { const k = String(t.k).toLowerCase().replace(/_/g, ' ').replace(/\s+/g, ' '); const g = GROUPS.find((G) => G[2](k.replace(/ /g, '_'), t) || G[2](k, t)); (by[g[0]] = by[g[0]] || []).push(t); });
       let h = GROUPS.filter((G) => by[G[0]]).map((G) => `<div class="g">${G[1]}</div>` + by[G[0]].slice(0, q ? 40 : 25).map((t) => `<button type="button" data-tk="${esc(t.k)}"><span>${esc(t.t)}</span><small>${fmt(t.all)}</small></button>`).join('')).join('');
-      if (!h) h = '<div class="wcs-note" style="padding:10px">No tag like that.</div>';
+      if (!h) h = '<div class="wcs-note" style="padding:10px">No tag like that.</div>' + (/^[a-z0-9_]{3,40}$/i.test(S.dd.trim()) ? `<button type="button" data-tk="${esc(S.dd.trim())}"><span>Use “${esc(S.dd.trim())}” anyway</span></button>` : '');   // a tag typed in full (for example the batch tag an import shows) can always be used
       box.innerHTML = `<div class="wcs-dd">${h}</div>`;
       box.querySelectorAll('[data-tk]').forEach((b) => { b.onmousedown = (e) => e.preventDefault(); b.onclick = () => { S.cf.tags.push({ k: b.dataset.tk, m: 'in' }); S.dd = ''; onChange(true); }; });
       const close = (e) => { if (!e.target.closest || !e.target.closest('.wcs-pick')) { box.innerHTML = ''; document.removeEventListener('pointerdown', close); } }; document.addEventListener('pointerdown', close);
