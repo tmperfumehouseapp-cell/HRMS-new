@@ -567,7 +567,9 @@ function wa_camp_auto_cap(PDO $pdo, int $tier, array $health): array
         }
         $A = ['caps' => $caps, 'cap' => $old0, 'start' => $START, 'hour' => $hour, 'hist' => array_slice($hist, -48)]; try { setting_set($pdo, 'wa_camp_auto', json_encode($A)); } catch (Throwable $e) { }
     }
-    $usedBy = []; try { $q = $pdo->prepare("SELECT number_id, COUNT(DISTINCT phone) AS n FROM wa_messages WHERE dir = 'out' AND who = 'campaign' AND mtype = 'template' AND status <> 'failed' AND ts >= ? GROUP BY number_id"); $q->execute([date('Y-m-d H:i:s', time() - 3600)]); foreach ($q->fetchAll() as $r) $usedBy[(int)$r['number_id']] = (int)$r['n']; } catch (Throwable $e) { }
+    // ⚡ Server load (15 Nov): "how many customers each number messaged in the last hour" read an hour of campaign messages on every call of every campaign worker (3.4% of the database work). One count serves all for 5 s.
+    $usedBy = []; try { $__ub = function () use ($pdo) { $q = $pdo->prepare("SELECT number_id, COUNT(DISTINCT phone) AS n FROM wa_messages WHERE dir = 'out' AND who = 'campaign' AND mtype = 'template' AND status <> 'failed' AND ts >= ? GROUP BY number_id"); $q->execute([date('Y-m-d H:i:s', time() - 3600)]); return $q->fetchAll(PDO::FETCH_ASSOC); };
+        foreach ((function_exists('hrms_memo') ? hrms_memo('wa_camp_used_hour', 5, $__ub) : $__ub()) as $r) $usedBy[(int)$r['number_id']] = (int)$r['n']; } catch (Throwable $e) { }
     $nums = []; foreach ($hq as $nid => $h) { $cap = min(max(1000, (int)($caps[$nid] ?? $old0)), max(1000, $max)); $u = $usedBy[$nid] ?? 0; $nums[$nid] = ['cap' => $cap, 'used_hour' => $u, 'left_hour' => max(0, $cap - $u), 'label' => (string)($h['label'] ?? ('Number ' . $nid))]; }
     $all = array_sum(array_column($nums, 'cap')); $usedAll = array_sum(array_column($nums, 'used_hour'));
     return ['nums' => $nums, 'cap' => $all, 'used_hour' => $usedAll, 'left_hour' => max(0, $all - $usedAll), 'max' => $max, 'hist' => $hist];
