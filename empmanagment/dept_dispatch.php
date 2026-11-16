@@ -840,9 +840,10 @@ if (strpos((string)$action, 'dp.dsp_') === 0) {
         if (!$w['manager']) json_response(['error' => 'Only bosses can do this.'], 403);
         if (!is_file(__DIR__ . '/sr_log.php')) json_response(['rows' => [], 'total' => 0]);
         require_once __DIR__ . '/sr_log.php';
-        $rows = sr_log_rows($pdo, ['errors' => !empty($_GET['errors']), 'q' => (string)($_GET['q'] ?? ''), 'limit' => (int)($_GET['limit'] ?? 200)]);
+        $rows = sr_log_rows($pdo, ['errors' => !empty($_GET['errors']), 'q' => (string)($_GET['q'] ?? ''), 'kind' => (string)($_GET['kind'] ?? ''), 'limit' => (int)($_GET['limit'] ?? 200)]);
         $tot = 0; $bad = 0; try { $c = $pdo->query("SELECT COUNT(*) n, SUM(http < 200 OR http >= 300) b FROM sr_api_log")->fetch(); $tot = (int)$c['n']; $bad = (int)$c['b']; } catch (Throwable $e) { }
-        json_response(['rows' => $rows, 'total' => $tot, 'failed' => $bad, 'server_ip' => (string)($_SERVER['SERVER_ADDR'] ?? ''), 'now' => date('Y-m-d H:i:s'), 'tz' => date_default_timezone_get()]);
+        json_response(['rows' => $rows, 'total' => $tot, 'failed' => $bad, 'server_ip' => (function () { $ip = (string)($_SERVER['SERVER_ADDR'] ?? ''); return ($ip === '' || !filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) ? (string)tmph_cfg('SERVER_PUBLIC_IP', '72.62.78.142') : $ip; })(),   // behind the web proxy the server sees itself as 127.0.0.1: show the public address Shiprocket really sees
+             'now' => date('Y-m-d H:i:s'), 'tz' => date_default_timezone_get()]);
     }
     case 'dp.dsp_sr_sync': {
         if (!$w['manager']) json_response(['error' => 'Only bosses can do this.'], 403);

@@ -37,6 +37,12 @@ if (!function_exists('sr_log_add')) {
         if (!sr_log_table($pdo)) return [];
         $w = ['1=1']; $a = [];
         if (!empty($f['errors'])) $w[] = '(http < 200 OR http >= 300)';
+        $k = (string)($f['kind'] ?? '');   // one kind of request only, so two separate files can be made
+        if ($k === 'login') $w[] = "path LIKE '%/auth/login%'";
+        elseif ($k === 'track') $w[] = "path LIKE '%/courier/track/%'";
+        elseif ($k === 'orders') $w[] = "(method = 'GET' AND path LIKE '%/external/orders%')";
+        elseif ($k === 'send') $w[] = "(method <> 'GET' AND path NOT LIKE '%/auth/login%')";
+        elseif ($k === 'nologin') $w[] = "path NOT LIKE '%/auth/login%'";
         $q = trim((string)($f['q'] ?? '')); if ($q !== '') { $w[] = '(path LIKE ? OR req LIKE ? OR res LIKE ?)'; $a[] = "%$q%"; $a[] = "%$q%"; $a[] = "%$q%"; }
         $lim = max(10, min(2000, (int)($f['limit'] ?? 200)));
         $st = $pdo->prepare("SELECT id, at, method, path, http, ms, src, req, res, err FROM sr_api_log WHERE " . implode(' AND ', $w) . " ORDER BY id DESC LIMIT $lim"); $st->execute($a);
