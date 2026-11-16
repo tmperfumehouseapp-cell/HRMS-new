@@ -119,7 +119,7 @@ function waa_tick(PDO $pdo): array
         foreach ($P as $e => &$p) { if ($p['present'] && $p['m'] === '' && $p['below'] && !$p['ao']) { $st['e'][$e] = array_merge((array)($st['e'][$e] ?? []), ['m' => '', 'ao' => 1, 'ao_at' => $now]); $p['ao'] = 1; [$p['on'], $p['why']] = waa_button($p); $res['switched_off']++; } } unset($p);
         if ($res['switched_off']) waa_state_put($pdo, $st);
         // (2) waiting queries: nobody holds them, the customer wrote in the last 24 h, no person answered yet
-        $since = waa_dt($now - 86400 + 600); $st0 = $pdo->prepare("SELECT id, phone, src, opened_at FROM wa_queries WHERE emp_id = 0 AND src IN ('query', 'campaign') AND opened_at >= ? AND opened_at <= ? ORDER BY id LIMIT 60"); $st0->execute([$since, waa_dt($now - 10)]); $qs = $st0->fetchAll(PDO::FETCH_ASSOC);
+        $since = waa_dt($now - 86400 + 600); $st0 = $pdo->prepare("SELECT id, phone, src, opened_at FROM wa_queries WHERE emp_id = 0 AND src IN ('query', 'campaign') AND opened_at >= ? AND opened_at <= ? ORDER BY id DESC LIMIT 250");   // NEWEST first: the oldest ones are mostly closed / answered / past the 24 h window, and 60 of them used to fill the whole list so nothing newer was ever looked at $st0->execute([$since, waa_dt($now - 10)]); $qs = $st0->fetchAll(PDO::FETCH_ASSOC);
         if ($qs) {
             $phs = array_values(array_unique(array_map(function ($r) { return (string)$r['phone']; }, $qs))); $C = [];
             $cq = $pdo->prepare("SELECT phone, name, assigned_emp, last_in_at, status, optout, cx_id, tag FROM wa_contacts WHERE phone IN (" . implode(',', array_fill(0, count($phs), '?')) . ")"); $cq->execute($phs); foreach ($cq->fetchAll(PDO::FETCH_ASSOC) as $r) $C[(string)$r['phone']] = $r;
@@ -127,6 +127,7 @@ function waa_tick(PDO $pdo): array
             $hq = $pdo->prepare("SELECT 1 FROM wa_contacts c JOIN wa_messages h ON h.phone = c.phone WHERE c.phone = ? AND $humanSql LIMIT 1"); $bq = $pdo->prepare("SELECT 1 FROM wa_ctags WHERE phone = ? AND tag = 'business_autoreply' LIMIT 1");
             $T = waa_tally($pdo); $avgT = (float)$V['avg_target'];
             foreach ($qs as $r) {
+                if ($res['given'] >= 40) break;   // at most 40 a pass (one pass a minute)
                 $ph = (string)$r['phone']; $c = $C[$ph] ?? null; if (!$c || (int)$c['assigned_emp'] > 0 || (string)$c['status'] !== 'open' || (int)$c['optout'] === 1 || (int)($c['cx_id'] ?? 0) > 0 || (string)($c['tag'] ?? '') === 'complaint') continue;
                 if (!$c['last_in_at'] || strtotime((string)$c['last_in_at']) < $now - 86400 + 600) continue;
                 $hq->execute([$ph]); if ($hq->fetchColumn()) continue; $bq->execute([$ph]); if ($bq->fetchColumn()) continue;
