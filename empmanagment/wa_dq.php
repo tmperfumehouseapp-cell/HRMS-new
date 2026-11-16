@@ -31,7 +31,12 @@ function wa_dq_cfg(PDO $pdo): array
 /** Pushed / delivered campaign messages in a time range (for the day-cap judgement). */
 function wa_dq_counts(PDO $pdo, string $a, string $b): array
 {
-    try { $q = $pdo->prepare("SELECT COUNT(*) AS n, SUM(status IN ('delivered', 'read')) AS d FROM wa_messages WHERE dir = 'out' AND who = 'campaign' AND mtype = 'template' AND ts >= ? AND ts < ?"); $q->execute([$a, $b]); $r = $q->fetch(); return [(int)$r['n'], (int)$r['d']]; } catch (Throwable $e) { return [0, 0]; }
+    $run = function () use ($pdo, $a, $b) { $q = $pdo->prepare("SELECT COUNT(*) AS n, SUM(status IN ('delivered', 'read')) AS d FROM wa_messages WHERE dir = 'out' AND who = 'campaign' AND mtype = 'template' AND ts >= ? AND ts < ?"); $q->execute([$a, $b]); $r = $q->fetch(); return [(int)$r['n'], (int)$r['d']]; };
+    try {
+        // ⚡ a period between two whole hours that ended more than an hour ago ("yesterday") hardly changes (periods that start at a moving second are not remembered: they would never be asked twice): counted once per 10 minutes for the whole server instead of on every plan refresh
+        if (function_exists('hrms_memo') && strtotime($b) <= time() - 3600 && substr($a, -5) === '00:00' && substr($b, -5) === '00:00') return array_map('intval', (array)hrms_memo('wa_dq_counts:' . $a . '|' . $b, 600, $run));
+        return $run();
+    } catch (Throwable $e) { return [0, 0]; }
 }
 /** 🤖 Once per business day: raise or lower the day cap from how yesterday delivered. Keeps a short log (shown on the card). */
 function wa_dq_auto_eval(PDO $pdo): void
@@ -315,7 +320,9 @@ function wa_meta_spend_cached(PDO $pdo, bool $fetch = false): array
     if (!is_array($c)) return $o;
     $o['at'] = (int)($c['at'] ?? 0); $o['error'] = (string)($c['error'] ?? ''); $days = (array)($c['days'] ?? []);
     if ($days) { $o['today'] = (float)($days[$to] ?? 0); $o['yday'] = (float)($days[date('Y-m-d', time() - 86400)] ?? 0);
-        if ($o['yday'] > 0) { try { $q = $pdo->prepare("SELECT SUM(status IN ('delivered', 'read')) FROM wa_messages WHERE dir = 'out' AND mtype = 'template' AND ts >= ? AND ts < ?"); $q->execute([date('Y-m-d 00:00:00', time() - 86400), date('Y-m-d 00:00:00')]); $dl = (int)$q->fetchColumn(); if ($dl >= 1000) $o['eff'] = round($o['yday'] / $dl, 2); } catch (Throwable $e) { } } }
+        if ($o['yday'] > 0) { try { $__dl = function () use ($pdo) { $q = $pdo->prepare("SELECT SUM(status IN ('delivered', 'read')) FROM wa_messages WHERE dir = 'out' AND mtype = 'template' AND ts >= ? AND ts < ?"); $q->execute([date('Y-m-d 00:00:00', time() - 86400), date('Y-m-d 00:00:00')]); return (int)$q->fetchColumn(); };
+            $dl = function_exists('hrms_memo') ? (int)hrms_memo('wa_dl_yday:' . date('Y-m-d'), 900, $__dl) : $__dl();   // ⚡ yesterday is a closed day: its delivered count (a scan of a day of messages) is read once per 15 minutes, not on every page / precompute
+            if ($dl >= 1000) $o['eff'] = round($o['yday'] / $dl, 2); } catch (Throwable $e) { } } }
     return $o;
 }
 /** The plain sentence for why the plan is holding the campaigns right now. */

@@ -262,7 +262,7 @@ const DSP = (() => {
           + syncBox(sr, admin)
           + '<div class="bd-sub" style="margin-top:4px">' + (sr.last_at ? 'Last read ' + esc(sr.last_at) + (sr.last_msg ? ' - ' + esc(sr.last_msg) : '') : 'Never read yet.') + (sr.last_err ? ' <b style="color:#d9423b">' + esc(sr.last_err) + '</b>' : '') + '</div>'
           + (admin && sr.source !== 'config' ? '<div class="g"><div><label for="srEmail">1. Type the Shiprocket API user email here</label><input class="dr-in" id="srEmail" type="email" placeholder="Shiprocket API user email" autocomplete="off"></div><div><label for="srPass">2. Type that user\'s password here (not the API key)</label><input class="dr-in" id="srPass" type="password" placeholder="' + (sr.connected ? 'New password (leave empty to keep)' : 'Shiprocket API user password') + '" autocomplete="new-password"></div></div>' : '')
-          + '<div class="dr-row"><button type="button" class="bd-btn sm pri" id="srTest">Test connection</button><button type="button" class="bd-btn sm" id="srSync">Read Shiprocket now</button>' + (admin && sr.source !== 'config' ? '<button type="button" class="bd-btn sm" id="srSave">Save login</button>' + (sr.connected ? '<button type="button" class="bd-btn sm" id="srDel">Remove login</button>' : '') : '') + '<span class="bd-sub" id="srMsg"></span></div>'
+          + '<div class="dr-row"><button type="button" class="bd-btn sm pri" id="srTest">Test connection</button><button type="button" class="bd-btn sm" id="srSync">Read Shiprocket now</button>' + (admin && sr.source !== 'config' ? '<button type="button" class="bd-btn sm" id="srSave">Save login</button>' + (sr.connected ? '<button type="button" class="bd-btn sm" id="srDel">Remove login</button>' : '') : '') + '<button type="button" class="bd-btn sm" id="srLogs" title="Every request the HRMS sent to Shiprocket and what Shiprocket answered: copy it for Shiprocket support">🧾 Shiprocket logs</button><span class="bd-sub" id="srMsg"></span></div>'
           + (!sr.connected ? '<ol><li>In Shiprocket open <b>Settings &rarr; API</b> (on older panels <b>Settings &rarr; Company</b>) and create an <b>API user</b>. Use a different email from your own login.</li><li>Shiprocket emails you the password. Paste the email and password here and press <b>Save login</b>' + (admin ? '' : ' (only Admin / HR can save it)') + '.</li><li>Press <b>Test connection</b>. After that the HRMS reads Shiprocket by itself every 15 minutes.</li></ol><div class="bd-sub" style="margin-top:6px">Or put it in <code>public_html/empmanagment/config.php</code>: <code>define(\'SHIPROCKET_EMAIL\', \'you@example.com\'); define(\'SHIPROCKET_PASSWORD\', \'the-password\');</code></div>' : '')
           + '</div>';
       }
@@ -806,6 +806,7 @@ const DSP = (() => {
         else if (b.id === 'srDel') { if (!(await BD.confirm('Remove the Shiprocket login?', 'Statuses will stop updating by themselves.', 'Remove', true))) return; await api.post('dp.dsp_sr_save', { remove: 1 }); await fixRefresh(); }
         else if (b.id === 'srTest') { b.disabled = true; const te = $('srEmail') ? $('srEmail').value.trim() : '', tp = $('srPass') ? $('srPass').value : ''; if (te || tp) { msg('Saving what you typed…'); const sv = await api.post('dp.dsp_sr_save', { email: te, password: tp }); if (!sv || !sv.ok) { b.disabled = false; msg((sv && (sv.error || sv.message)) || 'Could not save. Type the email and the password, then try again.', true); return; } } msg('Testing…'); const r = await api.post('dp.dsp_sr_test', {}); b.disabled = false; await fixRefresh(); msg(r.message, !r.ok); }
         else if (b.id === 'recGo') { await recAll(b); }
+        else if (b.id === 'srLogs') { srLogs(); }
         else if (b.id === 'srSync') { b.disabled = true; msg('Reading Shiprocket…'); const r = await api.post('dp.dsp_sr_sync', { days: 30 }); b.disabled = false; await load(); msg(r.message, !r.ok); }
       } catch (er) { BD.toast(er.message, true); b.disabled = false; }
     });
@@ -827,6 +828,29 @@ const DSP = (() => {
       if (f && e.target.matches('input')) { e.preventDefault(); const b = f.querySelector('[data-fs]'); if (b) sendForm(f.dataset.form, b); }
     });
 
+    /* ---------- 🧾 Shiprocket logs: what the HRMS asked Shiprocket and what it answered, to copy for Shiprocket support (no passwords / tokens are kept) ---------- */
+    async function srLogs() {
+      const m = BD.modal('<h3>🧾 Shiprocket logs</h3><div class="bd-sub" style="margin-bottom:8px">Every request the HRMS sent to Shiprocket and Shiprocket’s answer, newest first. Kept for 14 days. Passwords and login tokens are never stored (shown as ***).</div>'
+        + '<div class="dr-row" style="gap:6px;flex-wrap:wrap"><label style="font-size:12.5px;display:flex;align-items:center;gap:5px"><input type="checkbox" id="slErr"> Only failed</label><input class="dr-in" id="slQ" type="search" placeholder="Order no., AWB or word" style="flex:1;min-width:150px"><select class="dr-in" id="slK" title="Which kind of request"><option value="r:config">LOG 1 · Connection / configuration (login history, last errors)</option><option value="r:problems">LOG 2 · Parcel status problems (stuck, exception, no AWB)</option><option value="track">LOG 3 · Tracking requests and the answers Shiprocket gave</option><option value="">All requests</option><option value="nologin">Everything except logins</option><option value="orders">Order list reads only</option><option value="send">Manual orders sent to Shiprocket</option><option value="login">Logins only</option></select><select class="dr-in" id="slN"><option value="100">Last 100</option><option value="500">Last 500</option><option value="2000">Last 2000</option></select><button type="button" class="bd-btn sm" id="slGo">Show</button></div>'
+        + '<div class="dr-row" style="gap:6px;margin-top:6px;flex-wrap:wrap"><button type="button" class="bd-btn sm pri" id="slCopy">Copy all for Shiprocket</button><button type="button" class="bd-btn sm" id="slDl">⬇ Download .txt</button><span class="bd-sub" id="slInfo"></span></div>'
+        + '<pre id="slOut" style="margin-top:8px;max-height:52vh;overflow:auto;background:#0f172a;color:#e2e8f0;border-radius:10px;padding:10px;font-size:11.5px;line-height:1.45;white-space:pre-wrap;word-break:break-word">Loading…</pre><div class="dr-row" style="justify-content:flex-end;margin-top:8px"><button type="button" class="bd-btn sm" id="slX">Close</button></div>');
+      m.style.maxWidth = '860px'; m.style.width = '96vw';
+      const q = (id) => m.querySelector('#' + id); let TXT = '';
+      const show = async () => {
+        q('slOut').textContent = 'Loading…';
+        if (q('slK').value.indexOf('r:') === 0) { try { const d = await api.get('dp.dsp_sr_report', { which: q('slK').value.slice(2) }); TXT = d.text; q('slOut').textContent = TXT; q('slInfo').textContent = ''; } catch (er) { q('slOut').textContent = er.message; } return; }
+        try {
+          const d = await api.get('dp.dsp_sr_logs', { errors: q('slErr').checked ? 1 : '', q: q('slQ').value.trim(), kind: q('slK').value, limit: q('slN').value });
+          const head = 'Shiprocket API log from our HRMS (fourpirates.space)\nMade: ' + d.now + ' (' + d.tz + ')' + (d.server_ip ? '\nOur server IP: ' + d.server_ip : '') + '\nAPI base: https://apiv2.shiprocket.in\nKind: ' + q('slK').selectedOptions[0].textContent + '\nRequests shown: ' + d.rows.length + (q('slErr').checked ? ' (only failed)' : '') + '\n';
+          TXT = head + '\n' + (d.rows.length ? d.rows.map((r) => '--------------------------------------------------\n' + r.at + '   ' + r.method + ' ' + r.path + '\nHTTP ' + (r.http || 'no answer') + '   ' + r.ms + ' ms' + (r.src ? '   (' + r.src + ')' : '') + (r.err ? '\nConnection error: ' + r.err : '') + (r.req ? '\nRequest : ' + r.req : '') + '\nResponse: ' + (r.res || '(empty)')).join('\n') : 'No requests recorded yet. Logging started when this feature was added; press "Test connection" or "Read Shiprocket now" and open this again.');
+          q('slOut').textContent = TXT; q('slInfo').textContent = d.total + ' requests kept · ' + d.failed + ' failed';
+        } catch (er) { q('slOut').textContent = er.message; }
+      };
+      q('slGo').onclick = show; q('slErr').onchange = show; q('slK').onchange = show; q('slN').onchange = show; q('slQ').onkeydown = (e) => { if (e.key === 'Enter') show(); }; q('slX').onclick = () => BD.close();
+      q('slCopy').onclick = async () => { try { await navigator.clipboard.writeText(TXT); BD.toast('Copied. Paste it in your email to Shiprocket.'); } catch (er) { const r = document.createRange(); r.selectNodeContents(q('slOut')); const s2 = getSelection(); s2.removeAllRanges(); s2.addRange(r); BD.toast('Selected. Press Ctrl+C to copy.'); } };
+      q('slDl').onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([TXT], { type: 'text/plain;charset=utf-8' })); a.download = 'shiprocket_log_' + (q('slK').value ? q('slK').value.replace('r:', '') + '_' : '') + new Date().toISOString().slice(0, 10) + '.txt'; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500); };
+      show();
+    }
     /* ---------- Download Excel (CSV): the same window, every parcel, all groups ---------- */
     async function csv(btn, onlyG) {
       btn.disabled = true;

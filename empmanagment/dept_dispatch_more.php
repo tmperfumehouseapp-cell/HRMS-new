@@ -21,7 +21,9 @@ function dp_dsp_sr_http($method, $url, array $headers, $body = null) {
     $ch = curl_init($url);
     curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 25, CURLOPT_CONNECTTIMEOUT => 10, CURLOPT_CUSTOMREQUEST => $method, CURLOPT_HTTPHEADER => array_merge(['Content-Type: application/json', 'Accept: application/json'], $headers)]);
     if ($body !== null) curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($body));
+    $__t0 = microtime(true);
     $out = curl_exec($ch); $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE); $err = $out === false ? curl_error($ch) : ''; curl_close($ch);
+    if (is_file(__DIR__ . '/sr_log.php')) { try { require_once __DIR__ . '/sr_log.php'; sr_log_add((string)$method, (string)$url, $body, $code, (string)$err, $out, (int)round((microtime(true) - $__t0) * 1000), 'dispatch'); } catch (Throwable $e) { } }   // 🧾 the Shiprocket log (no passwords / tokens)
     $j = ($out !== false && $out !== '') ? json_decode($out, true) : null;
     return [$code, is_array($j) ? $j : null, $err];
 }
