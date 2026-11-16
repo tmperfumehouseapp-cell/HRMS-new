@@ -778,6 +778,7 @@ if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.
                 foreach ($rq->fetchAll() as $r) $items[] = ['phone' => $r['phone'], 'name' => $r['name'], 'summary' => $r['summary'], 'tel' => '+91' . $r['phone'], 'since_sec' => max(0, time() - (int)strtotime((string)$r['remind_at'])), 'escalated' => false, 'remind' => true];
             } catch (Throwable $e) { }
             wa_reply_early(['items' => $items, 'escalate_min' => wa_team_cfg($pdo)['escalate_min']]);
+            if (function_exists('waa_catchup')) waa_catchup($pdo);   // 🏪 Auto assign: a query nobody could take yet is given within seconds (answered first; at most one pass every 8 s)
             if (!$cronOk) wa_tick($pdo);   // only when the cron is NOT running (a backup) — and AFTER the answer, so the page never waits for it
             exit;
         }
