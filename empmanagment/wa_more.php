@@ -243,6 +243,7 @@ function wa_tick(PDO $pdo, bool $force = false): array
     if (!$__late()) try { if (function_exists('wa_mcache_prefetch') && !defined('WA_IN_WEBHOOK')) $o['media'] = wa_mcache_prefetch($pdo); } catch (Throwable $e) { } $__mk('wa_mcache_prefetch');   // ⚡ new customer photos / videos saved on our server before anyone opens them
     if (!$__late()) try { if (function_exists('wa_done_scan') && !defined('WA_IN_WEBHOOK')) { $o['done'] = wa_done_scan($pdo); if ((int)date('G') >= 3) wa_done_learn($pdo); } } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'order completed: ' . $e->getMessage()); } $__mk('wa_done_scan');   // ✅ Shopify orders → order completed
     try { $o['assigned'] = wa_auto_assign($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'auto-assign: ' . $e->getMessage()); } $__mk('wa_auto_assign');
+    try { if (function_exists('waa_tick') && !defined('WA_IN_WEBHOOK')) $o['auto'] = waa_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'auto assign (new): ' . $e->getMessage()); } $__mk('waa_tick');   // 🏪 new queries → salespeople by the rules
     if (!$__late()) try { if (!defined('WA_IN_WEBHOOK')) $o['alloc'] = wa_auto_alloc($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'auto-allocate: ' . $e->getMessage()); } $__mk('wa_auto_alloc');   // 🤖 orders → the salesperson of the chat
     try { wa_callnow_scan($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'call-now: ' . $e->getMessage()); } $__mk('wa_callnow_scan');
     if (!$__late()) try { if (function_exists('wq_urgent_push') && !defined('WA_IN_WEBHOOK')) $o['urgent'] = wq_urgent_push($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'urgent: ' . $e->getMessage()); } $__mk('wq_urgent_push');   // 🔴 nobody answered a ready-to-pay chat in time: everyone present is told at once
@@ -659,6 +660,7 @@ require_once __DIR__ . '/wq_learn.php';   // 🧠 lost chats saved for the guide
 require_once __DIR__ . '/wq_speed.php';   // ⚡ timing of the WhatsApp calls, server health, live switch (wq.speed, wa.g_wait)
 require_once __DIR__ . '/wq_tags.php';   // 🏷 One tag system: registry, automatic tags with why / until, patterns of staff-made tags, Claude's own new tags (wq.tags_*)
 require_once __DIR__ . '/wq_pace.php';   // ⚡ Reply pace of every salesperson: per-message pace, 7-day comparison, after-taking-a-query pace, fast reply vs order closing (wq.pace) - BEFORE wa_seg.php
+require_once __DIR__ . '/wq_auto.php';   // 🏪 Auto assign (Sales → Team performance): queries go by themselves to punched-in salespeople by the owner's rules (wq.aa_get / wq.aa_set) - rules in wq_auto_rules.php
 require_once __DIR__ . '/wq_manager.php';   // 🧭 Team manager (Autobot): Claude decides who sees new orange / red chats first, from every number together (wq.mgr_*)
 require_once __DIR__ . '/team_board.php';   // 👥 Team board: one row per salesperson with everything in one place (team.board)
 require_once __DIR__ . '/wch.php';        // Chain + perfume cart, GST bill, catalog sync (wch.*) - BEFORE wa_seg.php

@@ -1616,6 +1616,7 @@ function wq_req_take(PDO $pdo, string $phone, int $me): array
     if ((int)($c['optout'] ?? 0) === 1) return ['error' => 'This customer opted out — nobody may message them.'];
     if ((int)($c['cx_id'] ?? 0) > 0 || (string)($c['tag'] ?? '') === 'complaint') return ['error' => 'This is a complaint chat — the complaint team handles it.'];
     if ((int)$c['assigned_emp'] > 0) return ['error' => (wq_name(wq_names($pdo), (int)$c['assigned_emp']) ?: 'Somebody') . ' already has this chat.'];
+    if (function_exists('waa_pick_block')) { $wb = waa_pick_block($pdo, $me); if ($wb !== '') return ['error' => $wb]; }   // 🏪 overnight: a person below the ratio band takes at most 5 from Requests
     $u = $pdo->prepare("UPDATE wa_contacts SET assigned_emp = ? WHERE phone = ? AND (assigned_emp IS NULL OR assigned_emp = 0)"); $u->execute([$me, $phone]);
     if ($u->rowCount() === 0) return ['error' => 'Somebody else just took this chat.'];
     $pdo->prepare("UPDATE wa_contacts SET assigned_emp = 0 WHERE phone = ?")->execute([$phone]);   // back for one line: wa_assign_to writes the log, the event and the query owner
