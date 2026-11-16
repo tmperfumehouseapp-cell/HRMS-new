@@ -834,12 +834,29 @@ html.wxdk [data-tone]{background:rgba(128,128,128,.12) !important;color:#e9edef}
       function auditPayload() { return { kind: W.util ? 'util' : '', ord_days: W.extra.ord_days || 60, mix: W.mix, audience: W.A, tpl_id: W.tpl_id, media_lib_id: W.media ? W.media.id : 0, push: W.push, own_hour: W.own, rate: W.rate, start_at: typeof startAt === 'function' ? startAt() : '' }; }
 
       // ---------------------------------------------------------------- step 1: who
+      // ✅ "Who to leave out": every automatic removal is the owner's choice (tick = leave them out, untick = send to them too). Opted-out / "asked us to stop" people are always left out.
+      function loBox() {
+        const st = (pv && pv.stats) || {}, fr = pushOf()[2], on = (v) => v !== 0 && v !== '0' && v !== false;
+        const row = (id, chk, txt, n) => `<label style="display:flex;gap:8px;align-items:flex-start;margin:6px 0;font-size:13px"><input type="checkbox" id="${id}" ${chk ? 'checked' : ''} style="width:18px;height:18px;margin-top:1px"><span>${txt}${n ? ' <b style="color:#b45309">(' + fmt(n) + ' left out now)</b>' : (chk ? '' : ' <b style="color:#166534">(included)</b>')}</span></label>`;
+        return `<div id="cuLo" class="wp-note" style="margin-top:10px;background:#f8fafc;border:1px solid #e2e8f0;color:#0f172a"><b>✅ Who to leave out</b> <span style="color:#64748b;font-size:12px">— tick = leave them out · untick = send to them too</span>
+          ${row('cuLoUn', on(W.A.skip_unreach), '⛔ Customers <b>Meta held / blocked lately</b> (Meta did not deliver to them)', st.unreach)}
+          ${row('cuLoRc', W.A.gap_days === undefined || +W.A.gap_days > 0, '📬 Customers who <b>got a campaign message in the last ' + fr + ' day' + (fr === 1 ? '' : 's') + '</b>', st.recent)}
+          ${row('cuLoGt', on(W.A.skip_got), '🔁 Customers who <b>already got this same message</b>', st.got)}
+          <div style="font-size:12px;color:#64748b;margin-top:4px">Always left out: customers who opted out or asked us to stop${st.optout ? ' (' + fmt(st.optout) + ' now)' : ''}. “Chatting with us in the last 3 days” is the tick above.</div></div>`;
+      }
+      function bindLo() {
+        const fr = pushOf()[2], again = () => { readF(); pv = null; clearTimeout(pvT); pvT = setTimeout(preview, 300); };
+        const un = $(m.body, '#cuLoUn'); if (un) un.onchange = () => { W.A.skip_unreach = un.checked ? 1 : 0; W.extra.keep_unreach = un.checked ? 0 : 1; again(); };
+        const rc = $(m.body, '#cuLoRc'); if (rc) rc.onchange = () => { W.A.gap_days = rc.checked ? fr : 0; W.extra.gap_days = rc.checked ? fr : 0; again(); };
+        const gt = $(m.body, '#cuLoGt'); if (gt) gt.onchange = () => { W.A.skip_got = gt.checked ? 1 : 0; again(); };
+      }
       async function preview() {
         const box = $(m.body, '#cuPv'); if (!box) return; box.innerHTML = '<div class="wp-hint">Counting…</div>';
         try { pv = await api.post('wa.camp_preview', auditPayload()); pv.stats = pv.stats || { send: 0, matched: 0 }; pv.sample = pv.sample || []; const s = pv.stats, fr = pushOf()[2];
           box.innerHTML = `<div class="wp-ok"><b>${fmt(s.send)} customers</b> will get the message.<div class="wp-hint" style="color:inherit;opacity:.85">${fmt(s.matched)} match your filters${s.paste_n ? ' · list: ' + fmt(s.paste_n) + ' numbers (' + fmt(s.paste_new) + ' new, ' + fmt(s.paste_overlap) + ' already in the match)' : ''}${s.optout ? ' · ' + fmt(s.optout) + ' opted out (left out)' : ''}${s.got ? ' · ' + fmt(s.got) + ' already got this message (left out)' : ''}${s.talking ? ' · ' + fmt(s.talking) + ' are chatting with us now (left out)' : ''}${s.unreach ? ' · ' + fmt(s.unreach) + ' held / blocked by Meta lately (left out)' : ''}${s.recent ? ' · ' + fmt(s.recent) + ' got a campaign message in the last ' + fr + ' days (left out)' : ''}</div>${pv.sample.length ? '<div class="wp-hint" style="color:inherit;opacity:.85">For example: ' + pv.sample.map((x) => esc(x.name || pretty(x.phone))).join(' · ') + ' …</div>' : ''}</div>`
           + (!s.matched && W.A.cfu && W.A.cfu.dk === 'in' && (W.A.cfu.df || W.A.cfu.dt) ? '<div class="wp-note">Nobody matched. Imported customers have never written to you — for them choose the date type <b>“Added / imported / first message”</b> instead of “Last wrote to us”.</div>' : ''); }
         catch (e) { pv = null; box.innerHTML = errBox(e.message); return; }
+        { const lo = $(m.body, '#cuLo'); if (lo && step === 1) { lo.outerHTML = loBox(); bindLo(); } }
         freqPanel(box); sugPaint(); mixPanel(box);
       }
       let mxSeq = 0;
@@ -887,7 +904,7 @@ html.wxdk [data-tone]{background:rgba(128,128,128,.12) !important;color:#e9edef}
           ${grpOn() ? `<div class="cu-grp"><span>✨ Starting group: <b>${esc(W.A.fName || 'filters saved with this campaign')}</b></span><button type="button" class="wp-btn s" id="cuGx">✕ Remove</button></div>` : ''}
           <div class="cu-sec" style="margin-top:12px;font-size:15px">🔎 Who exactly <small>(empty = everyone in “${W.A.src === 'all' ? 'contacts + Shopify' : 'our contacts'}”)</small></div>
           <div id="cuFp" class="cu-fp"></div>
-          <div class="wp-hint" style="margin-top:8px">Left out automatically: opted out · got a campaign in the last ${fr} day${fr === 1 ? '' : 's'} · asked us to stop.</div>`}
+          ${loBox()}`}
           <div id="cuPv" style="margin-top:10px"></div><div id="cuE"></div><div class="wp-row" style="margin-top:12px"><button type="button" class="wp-btn" id="cuCnt">🔄 Count again</button><button type="button" class="wp-btn p" id="cuNext">Next ›</button></div>`;
         PN = null; const fp = $(m.body, '#cuFp');
         if (fp && window.WaCust && WaCust.panel) { PN = WaCust.panel(fp, { cf: W.A.cfu || {}, onChange: (ui, out) => { W.A.cfu = ui; W.A.cf = out; pv = null; clearTimeout(pvT); pvT = setTimeout(preview, 500); } }); }
@@ -900,6 +917,7 @@ html.wxdk [data-tone]{background:rgba(128,128,128,.12) !important;color:#e9edef}
         $(m.body, '#cuCnt').onclick = () => { readF(); preview(); };
         $(m.body, '#cuNext').onclick = () => { readF(); if (!W.name.trim()) { $(m.body, '#cuE').innerHTML = errBox('Give the campaign a name.'); return; } step = 2; go(); };
         audBind();
+        bindLo();
         clearTimeout(pvT); pvT = setTimeout(preview, pv ? 0 : 300);
         if (W.A.src !== 'paste') {
           if (!PN && !X.tags) api.get('wa.g_tags').then((d) => { X.tags = (d.tags || []).filter((t) => t.all > 0); if (step === 1 && m.el.isConnected) { readF(); draw1(); } }).catch(() => { X.tags = []; });
