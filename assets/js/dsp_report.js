@@ -72,7 +72,7 @@ const DSP = (() => {
       '.dr-d small{display:block;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;opacity:.7;} .dr-d b{display:block;font-size:20px;font-weight:800;line-height:1.1;letter-spacing:-.02em;} .dr-d em{display:block;font-style:normal;font-size:11px;font-weight:700;color:#d9423b;min-height:14px;} .dr-d em.pu{color:#5b3fd6;} .dr-d.on em{color:#ffb4ae;} .dr-d .pr{display:block;height:4px;border-radius:3px;background:#e6e9ee;margin-top:4px;overflow:hidden;} .dr-d .pr i{display:block;height:100%;background:#16945a;}',
       '.dr-fx{display:grid;grid-template-columns:1fr 1fr;gap:0 26px;margin-top:6px;} @media(max-width:900px){.dr-fx{grid-template-columns:1fr;}} .dr-fx>div{display:flex;align-items:center;gap:8px;font-size:13px;padding:4px 0;border-top:1px solid #f0f1f4;} .dr-fx .d{width:9px;height:9px;border-radius:50%;flex:none;} .dr-fx span.t{flex:1;min-width:0;} .dr-fx a,.dr-fx button.a{font-weight:800;font-size:12px;color:#c2410c;white-space:nowrap;background:none;border:0;cursor:pointer;font-family:inherit;padding:0;text-decoration:none;}',
       '.dr-pb{display:flex;gap:10px;align-items:flex-start;padding:11px 0;border-top:1px solid #eef0f3;} .dr-pb .d{width:11px;height:11px;border-radius:50%;margin-top:5px;flex:none;} .dr-pb .t{font-weight:800;font-size:14.5px;} .dr-pb .w{font-size:13px;color:#4a505c;margin-top:2px;line-height:1.45;} .dr-pb .f{font-size:13px;margin-top:6px;background:#fff8ea;border-radius:12px;padding:7px 11px;color:#6b4a00;line-height:1.45;} .dr-pb .a{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;}',
-      '.dr-sr{border:1px solid #dfe3e8;border-radius:16px;padding:12px 14px;margin-top:12px;background:#fcfcfd;} .dr-sr.flash{animation:drfl 1.4s;} @keyframes drfl{from{background:#fff3d6}to{background:#fcfcfd}} .dr-sr .g{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px;margin-top:8px;} .dr-sr ol{margin:8px 0 0 18px;padding:0;font-size:13px;line-height:1.55;color:#4a505c;} .dr-sr code{background:#f1f3f6;border-radius:6px;padding:1px 6px;font-size:12px;}',
+      '.dr-sr{border:1px solid #dfe3e8;border-radius:16px;padding:12px 14px;margin-top:12px;background:#fcfcfd;} .dr-sr.flash{animation:drfl 1.4s;} @keyframes drfl{from{background:#fff3d6}to{background:#fcfcfd}} .dr-sr .g{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px;margin-top:8px;}.dr-sr .g label{display:block;font-size:12px;font-weight:700;margin-bottom:3px;}.dr-sr .g .dr-in{width:100%;border:2px solid #1d2a44;background:#fffbe6;min-height:40px;font-size:14px;} .dr-sr ol{margin:8px 0 0 18px;padding:0;font-size:13px;line-height:1.55;color:#4a505c;} .dr-sr code{background:#f1f3f6;border-radius:6px;padding:1px 6px;font-size:12px;}',
       '.dr-cl{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:8px;} .dr-cl td,.dr-cl th{padding:4px 6px;border-bottom:1px solid #eef0f3;text-align:left;} .dr-cl th{font-size:11px;text-transform:uppercase;color:#7a8499;} .dr-cl input[type=text]{width:100%;}',
       '.dr-t tr.dr-pn td{background:#fff;white-space:normal;vertical-align:middle;max-width:none;} .dr-t tr.dr-pn td:first-child{text-align:left;color:#14161a;}',
       '.dr-sug{background:#edf8f2;color:#166534;border-radius:14px;padding:10px 13px;font-size:13px;line-height:1.5;margin:4px 0 12px;}',
@@ -261,7 +261,7 @@ const DSP = (() => {
           + (sr.connected ? '<span class="bd-chip ' + (sr.last_err ? 'bad' : 'ok') + '">' + (sr.last_err ? 'Not working' : 'Connected') + ' · ' + esc(sr.email) + (sr.source === 'config' ? ' (config.php)' : '') + '</span>' : '<span class="bd-chip bad">Not connected</span>') + '</div>'
           + syncBox(sr, admin)
           + '<div class="bd-sub" style="margin-top:4px">' + (sr.last_at ? 'Last read ' + esc(sr.last_at) + (sr.last_msg ? ' - ' + esc(sr.last_msg) : '') : 'Never read yet.') + (sr.last_err ? ' <b style="color:#d9423b">' + esc(sr.last_err) + '</b>' : '') + '</div>'
-          + (admin && sr.source !== 'config' ? '<div class="g"><input class="dr-in" id="srEmail" type="email" placeholder="Shiprocket API user email" autocomplete="off"><input class="dr-in" id="srPass" type="password" placeholder="' + (sr.connected ? 'New password (leave empty to keep)' : 'Shiprocket API user password') + '" autocomplete="new-password"></div>' : '')
+          + (admin && sr.source !== 'config' ? '<div class="g"><div><label for="srEmail">1. Type the Shiprocket API user email here</label><input class="dr-in" id="srEmail" type="email" placeholder="Shiprocket API user email" autocomplete="off"></div><div><label for="srPass">2. Type that user\'s password here (not the API key)</label><input class="dr-in" id="srPass" type="password" placeholder="' + (sr.connected ? 'New password (leave empty to keep)' : 'Shiprocket API user password') + '" autocomplete="new-password"></div></div>' : '')
           + '<div class="dr-row"><button type="button" class="bd-btn sm pri" id="srTest">Test connection</button><button type="button" class="bd-btn sm" id="srSync">Read Shiprocket now</button>' + (admin && sr.source !== 'config' ? '<button type="button" class="bd-btn sm" id="srSave">Save login</button>' + (sr.connected ? '<button type="button" class="bd-btn sm" id="srDel">Remove login</button>' : '') : '') + '<span class="bd-sub" id="srMsg"></span></div>'
           + (!sr.connected ? '<ol><li>In Shiprocket open <b>Settings &rarr; API</b> (on older panels <b>Settings &rarr; Company</b>) and create an <b>API user</b>. Use a different email from your own login.</li><li>Shiprocket emails you the password. Paste the email and password here and press <b>Save login</b>' + (admin ? '' : ' (only Admin / HR can save it)') + '.</li><li>Press <b>Test connection</b>. After that the HRMS reads Shiprocket by itself every 15 minutes.</li></ol><div class="bd-sub" style="margin-top:6px">Or put it in <code>public_html/empmanagment/config.php</code>: <code>define(\'SHIPROCKET_EMAIL\', \'you@example.com\'); define(\'SHIPROCKET_PASSWORD\', \'the-password\');</code></div>' : '')
           + '</div>';
@@ -316,6 +316,7 @@ const DSP = (() => {
       }
       if (g === 3 && R.g3_sr && R.g3_sr.length) x = 'Shiprocket: ' + R.g3_sr.map((r) => String(r.s).toLowerCase() + ' ' + r.n).join(' · ');
       if (g === 9 && isAdmin() && n) x = '<button type="button" class="dr-go" data-apall="1">Approve all ' + n + '</button>';
+      if (n) x += '<button type="button" class="dr-go dk" style="background:#16945a;color:#fff" data-xl="' + g + '" title="Download only this group as an Excel (CSV) file">⬇ Excel</button>';
       return '<tr class="dr-band' + (n ? '' : ' zero') + '" data-band="' + g + '"><td colspan="11" style="border-left:6px solid ' + G[g][1] + (g === 9 ? ';background:#2b1f5c' : '') + '"><span style="display:inline-block;width:14px">' + (n ? (open ? '▾' : '▸') : '') + '</span> ' + (g < 9 ? g + ' · ' : '') + esc(G[g][0]).toUpperCase() + ' &nbsp;<b>' + n + '</b> &nbsp;<span style="font-weight:600;opacity:.7">' + note + '</span>' + (x ? '<span class="x">' + x + '</span>' : '') + '</td></tr>';
     }
     /* live badge: green = news in the last 30 min, amber = within 6 h, grey = older, "Track" = never asked */
@@ -763,6 +764,7 @@ const DSP = (() => {
       if (d.trk) { if (window.OrderHub) { OrderHub.onClose = () => { load(); }; return OrderHub.open({ id: d.trk }); } return openLive(d.trk); }
       if (d.lvinfo) return liveInfo(b);
       if (d.cp) { try { await navigator.clipboard.writeText(d.cp); BD.toast('Copied.'); } catch (er) { BD.toast('Select it and copy by hand.', true); } return; }
+      if (d.xl) return csv(b, +d.xl);   // ⬇ Excel on a group's dark band: only that group
       if (d.band !== undefined) {   // click on a dark band: open / close the group
         const g = +d.band; if (!R.counts['g' + g]) return; if (e.target.closest('button')) return;
         S.open[g] = S.open[g] ? 0 : 1; keep(); return S.open[g] ? load() : (S.q ? load() : (table(), undefined));
@@ -802,7 +804,7 @@ const DSP = (() => {
       try {
         if (b.id === 'srSave') { b.disabled = true; const r = await api.post('dp.dsp_sr_save', { email: $('srEmail').value.trim(), password: $('srPass').value }); msg(r.message); b.disabled = false; await fixRefresh(); }
         else if (b.id === 'srDel') { if (!(await BD.confirm('Remove the Shiprocket login?', 'Statuses will stop updating by themselves.', 'Remove', true))) return; await api.post('dp.dsp_sr_save', { remove: 1 }); await fixRefresh(); }
-        else if (b.id === 'srTest') { b.disabled = true; msg('Testing…'); const r = await api.post('dp.dsp_sr_test', {}); b.disabled = false; await fixRefresh(); msg(r.message, !r.ok); }
+        else if (b.id === 'srTest') { b.disabled = true; const te = $('srEmail') ? $('srEmail').value.trim() : '', tp = $('srPass') ? $('srPass').value : ''; if (te || tp) { msg('Saving what you typed…'); const sv = await api.post('dp.dsp_sr_save', { email: te, password: tp }); if (!sv || !sv.ok) { b.disabled = false; msg((sv && (sv.error || sv.message)) || 'Could not save. Type the email and the password, then try again.', true); return; } } msg('Testing…'); const r = await api.post('dp.dsp_sr_test', {}); b.disabled = false; await fixRefresh(); msg(r.message, !r.ok); }
         else if (b.id === 'recGo') { await recAll(b); }
         else if (b.id === 'srSync') { b.disabled = true; msg('Reading Shiprocket…'); const r = await api.post('dp.dsp_sr_sync', { days: 30 }); b.disabled = false; await load(); msg(r.message, !r.ok); }
       } catch (er) { BD.toast(er.message, true); b.disabled = false; }
@@ -826,7 +828,7 @@ const DSP = (() => {
     });
 
     /* ---------- Download Excel (CSV): the same window, every parcel, all groups ---------- */
-    async function csv(btn) {
+    async function csv(btn, onlyG) {
       btn.disabled = true;
       try {
         const p = win(); delete p.sdays; delete p.sfrom; delete p.sto;
@@ -835,10 +837,11 @@ const DSP = (() => {
         const q = (v) => { v = v == null ? '' : String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
         const SL = { placed: 'No tracking ID', tracked: 'Tracking ID given', transit: 'In transit', delivered: 'Delivered', rto: 'RTO', cancelled: 'Cancelled' };
         x.rows.forEach((r) => { r.status = SL[r.status] || r.status; r.grp_name = r.grp ? ((r.grp < 9 ? r.grp + ' · ' : '') + G[r.grp][0]) : ''; r.u_label = r.u && r.u.today ? r.u.today.label : ''; r.u_note = r.u && r.u.today ? r.u.today.note : ''; r.u_owner = r.u ? r.u.owner : ''; r.u_days = r.u ? r.u.days : ''; });
+        if (onlyG) x.rows = x.rows.filter((r) => +r.grp === onlyG);
         const lines = [cols.map((c) => q(c[0])).join(',')].concat(x.rows.map((r) => cols.map((c) => q(r[c[1]])).join(',')));
         const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' }); const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob); a.download = 'dispatch_' + x.filters.from + '_to_' + x.filters.to + '.csv'; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
-        BD.toast(x.rows.length + ' parcels saved' + (x.total > x.rows.length ? ' (first ' + x.rows.length + ' of ' + x.total + ')' : '') + '.');
+        a.href = URL.createObjectURL(blob); a.download = 'dispatch_' + (onlyG ? G[onlyG][0].toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') + '_' : '') + x.filters.from + '_to_' + x.filters.to + '.csv'; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+        BD.toast(x.rows.length + ' parcels saved' + (onlyG ? ' (' + G[onlyG][0] + ')' : '') + (!onlyG && x.total > x.rows.length ? ' (first ' + x.rows.length + ' of ' + x.total + ')' : '') + '.');
       } catch (er) { BD.toast(er.message, true); }
       btn.disabled = false;
     }
