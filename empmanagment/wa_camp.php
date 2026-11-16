@@ -1116,31 +1116,31 @@ function wa_query_ideal(PDO $pdo, string $day): array
     $hrsLeft = max(0.1, ($t1 - min($now, $t1)) / 3600); if ($isRun) { $fS = $iS > 0 ? $actS / $iS : 1; $fO = $iO > 0 ? $actO / $iO : 1; $o['projection'] = ['shout' => (int)round($actS + max(0, $tgt['shout'] - $iS) * $fS), 'orders' => (int)round($actO + max(0, $tgt['orders'] - $iO) * $fO)]; $o['need_per_hour'] = ['shout' => (int)ceil(max(0, $tgt['shout'] - $actS) / $hrsLeft), 'orders' => (int)ceil(max(0, $tgt['orders'] - $actO) / $hrsLeft)]; }
     wa_cpc_put($pdo, $ck, $o); return $o;
 }
-/** 🌙 Night plan: from 12 AM to the end of the day the real data never gives more than 25–30 Campaign orders, so the ideal after midnight is capped (setting camp_ideal_night_orders, default 28; 0 = off)
- *  and spread the way orders really come at night (most just after midnight, least at 3–7 AM). Replies follow the same orders-per-reply as the rest of the day; spend is left as the owner set it. */
+/** 🎯 Orders plan from ONE number: the owner writes the day's total orders (e.g. 230); the night (12 AM → 10 AM) takes about 30 (setting camp_ideal_night_orders, 0 = off: keep the saved rows)
+ *  and the rest is spread over 10 AM → 12 AM in the owner's own daily shape (slow morning, heavy 3–9 PM, easing after 10 PM). Replies follow the orders (same replies per order as the day total);
+ *  spend keeps the owner's rows. Gives a checkpoint for every hour. */
 function wa_camp_ideal_night(array $cfg, int $night): array
 {
-    if ($night <= 0 || empty($cfg['rows'])) return $cfg;
+    $T = (int)($cfg['orders'] ?? 0); if ($night <= 0 || $T <= $night || empty($cfg['rows'])) return $cfg;
     $hrs = function (string $t): float { [$h, $m] = array_map('intval', explode(':', $t)); return (((($h * 60 + $m) - 600) % 1440 + 1440) % 1440) / 60.0; };   // hours after the 10 AM day start
-    $pts = [[0.0, 0.0, 0.0, 0.0]]; foreach ($cfg['rows'] as $r) { $h = $hrs($r['t']); if ($h <= 0) $h = 24.0; $pts[] = [$h, (float)$r['spend'], (float)$r['replies'], (float)$r['orders']]; } $pts[] = [24.0, (float)$cfg['spend'], (float)$cfg['replies'], (float)$cfg['orders']];
-    usort($pts, fn($x, $y) => $x[0] <=> $y[0]);
-    $at = function (float $h) use ($pts): array { $pv = $pts[0]; foreach ($pts as $q) { if ($h <= $q[0]) { $f = ($q[0] - $pv[0]) > 0 ? ($h - $pv[0]) / ($q[0] - $pv[0]) : 1; return [$pv[1] + ($q[1] - $pv[1]) * $f, $pv[2] + ($q[2] - $pv[2]) * $f, $pv[3] + ($q[3] - $pv[3]) * $f]; } $pv = $q; } return [$pv[1], $pv[2], $pv[3]]; };
-    $mid = $at(14.0); $end = $at(24.0); if ($end[2] - $mid[2] <= $night + 0.5) return $cfg;   // the night is already within the cap
-    $perO = $mid[2] > 0 ? $mid[1] / $mid[2] : 20.0; $w = [6, 4, 3, 2, 2, 2, 2, 2, 2, 3]; $ws = array_sum($w);   // 12 AM … 9 AM (last hour: the morning rush starts)
-    $rows = []; foreach ($cfg['rows'] as $r) { if ($hrs($r['t']) <= 14.0 && $hrs($r['t']) > 0) $rows[] = $r; }
-    $has = false; foreach ($rows as $r) if ($r['t'] === '00:00') $has = true; if (!$has) $rows[] = ['t' => '00:00', 'spend' => (int)round($mid[0]), 'replies' => (int)round($mid[1]), 'orders' => (int)round($mid[2])];
-    $cum = 0;
-    for ($i = 0; $i < 9; $i++) { $cum += $w[$i]; $h = 15.0 + $i; $o = $mid[2] + $night * $cum / $ws; $sp = $at($h)[0];
-        $rows[] = ['t' => sprintf('%02d:00', ($i + 1)), 'spend' => (int)round($sp), 'replies' => (int)round($mid[1] + $night * $perO * $cum / $ws), 'orders' => (int)round($o)]; }
-    usort($rows, fn($x, $y) => $hrs($x['t']) <=> $hrs($y['t']));
-    $cfg['rows'] = $rows; $cfg['orders'] = (int)round($mid[2] + $night); $cfg['replies'] = (int)round($mid[1] + $night * $perO); $cfg['night_orders'] = $night;
+    $pts = [[0.0, 0.0]]; foreach ($cfg['rows'] as $r) { $h = $hrs($r['t']); if ($h <= 0) $h = 24.0; $pts[] = [$h, (float)$r['spend']]; } $pts[] = [24.0, (float)$cfg['spend']]; usort($pts, fn($x, $y) => $x[0] <=> $y[0]);
+    $sp = function (float $h) use ($pts): int { $pv = $pts[0]; foreach ($pts as $q) { if ($h <= $q[0]) { $f = ($q[0] - $pv[0]) > 0 ? ($h - $pv[0]) / ($q[0] - $pv[0]) : 1; return (int)round($pv[1] + ($q[1] - $pv[1]) * $f); } $pv = $q; } return (int)round($pv[1]); };
+    $w = [8, 7, 8, 7, 8, 14, 13, 15, 15, 15, 15, 13, 12, 7];   // 10–11 AM … 11 PM–12 AM
+    $nw = [6, 4, 3, 2, 2, 2, 2, 2, 2, 3];                      // 12–1 AM … 9–10 AM
+    $day = $T - $night; $ws = array_sum($w); $ns = array_sum($nw); $R = (float)$cfg['replies']; $rows = [];
+    for ($i = 0; $i < 24; $i++) {   // checkpoint i = the end of hour i+1 after 10 AM (11:00 … 09:00, then 10:00)
+        $o = $i < 14 ? (int)round($day * array_sum(array_slice($w, 0, $i + 1)) / $ws) : $day + (int)round($night * array_sum(array_slice($nw, 0, $i - 13)) / $ns);
+        $rows[] = ['t' => sprintf('%02d:00', (11 + $i) % 24), 'spend' => $sp((float)($i + 1)), 'replies' => (int)round($R * $o / $T), 'orders' => $o];
+    }
+    array_pop($rows);   // the last checkpoint (10 AM) is the day total
+    $cfg['rows'] = $rows; $cfg['night_orders'] = $night; $cfg['auto'] = true;
     return $cfg;
 }
 /** 🎯 The owner's ideal day (cumulative spend / replies / orders at fixed times) — setting camp_ideal. Defaults: day ₹79,018 · 3,400 replies · 170 orders, 5 PM = ₹25,000 / 65 orders. */
 function wa_camp_ideal_cfg(PDO $pdo): array
 {
     $d = ['spend' => 79018, 'replies' => 3400, 'orders' => 170, 'rows' => [['t' => '15:00', 'spend' => 17000, 'replies' => 800, 'orders' => 38], ['t' => '17:00', 'spend' => 25000, 'replies' => 1200, 'orders' => 65], ['t' => '19:00', 'spend' => 38000, 'replies' => 1850, 'orders' => 95], ['t' => '21:00', 'spend' => 52000, 'replies' => 2450, 'orders' => 125], ['t' => '23:00', 'spend' => 64000, 'replies' => 2950, 'orders' => 150], ['t' => '01:00', 'spend' => 73000, 'replies' => 3250, 'orders' => 164]], 'at' => '', 'by' => ''];
-    $nt = (int)setting_get($pdo, 'camp_ideal_night_orders', '28');
+    $nt = (int)setting_get($pdo, 'camp_ideal_night_orders', '30');
     $j = json_decode((string)setting_get($pdo, 'camp_ideal', ''), true); if (!is_array($j) || empty($j['rows'])) return wa_camp_ideal_night($d, $nt);
     $rows = []; foreach ((array)$j['rows'] as $r) { if (!is_array($r) || !preg_match('/^\d{2}:\d{2}$/', (string)($r['t'] ?? ''))) continue; $rows[] = ['t' => (string)$r['t'], 'spend' => max(0, (int)($r['spend'] ?? 0)), 'replies' => max(0, (int)($r['replies'] ?? 0)), 'orders' => max(0, (int)($r['orders'] ?? 0))]; }
     return wa_camp_ideal_night(['spend' => max(0, (int)($j['spend'] ?? $d['spend'])), 'replies' => max(0, (int)($j['replies'] ?? $d['replies'])), 'orders' => max(0, (int)($j['orders'] ?? $d['orders'])), 'rows' => $rows ?: $d['rows'], 'at' => (string)($j['at'] ?? ''), 'by' => (string)($j['by'] ?? '')], $nt);
