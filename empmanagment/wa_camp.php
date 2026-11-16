@@ -1468,7 +1468,7 @@ if (isset($pdo) && $pdo instanceof PDO && ($__wk === 'wa.camp_ideal' || $__wk ==
         }
     }
 }
-if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_suggest', 'wa.camp_start_now', 'wa.camp_send_skipped', 'wa.camp_snap', 'wa.camp_days', 'wa.camp_hourly', 'wa.cust_summary', 'wa.cust_card', 'wa.camp_hours', 'wa.dq_worker', 'wa.rec_run', 'wa.dq_set', 'wa.rec_report', 'wa.rec_set', 'wa.camp_fast', 'wa.camp_fast_tick', 'wa.fu_list', 'wa.fu_save', 'wa.fu_del', 'wa.fu_preset', 'wa.camp_list', 'wa.camp_templates', 'wa.camp_get', 'wa.camp_preview', 'wa.camp_freq', 'wa.camp_typed_phones', 'wa.camp_save', 'wa.camp_start', 'wa.camp_send_now', 'wa.camp_resume_all', 'wa.camp_stop_all', 'wa.camp_pause', 'wa.camp_resume', 'wa.camp_cancel', 'wa.camp_del', 'wa.camp_tick', 'wa.camp_suggest', 'wa.camp_best_time', 'wa.camp_people', 'wa.camp_people_csv', 'wa.camp_people_phones', 'wa.camp_text_batch', 'wa.camp_thread', 'wa.reports', 'wa.mix_state', 'wa.camp_mix_set'], true) && !($__wk === 'wa.camp_suggest' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST')) {
+if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_suggest', 'wa.camp_start_now', 'wa.camp_send_skipped', 'wa.camp_snap', 'wa.camp_days', 'wa.camp_hourly', 'wa.cust_summary', 'wa.cust_card', 'wa.camp_hours', 'wa.dq_worker', 'wa.rec_run', 'wa.dq_set', 'wa.rec_report', 'wa.rec_set', 'wa.camp_fast', 'wa.camp_fast_tick', 'wa.fu_list', 'wa.fu_save', 'wa.fu_del', 'wa.fu_preset', 'wa.camp_list', 'wa.camp_templates', 'wa.camp_get', 'wa.camp_preview', 'wa.camp_freq', 'wa.camp_typed_phones', 'wa.camp_save', 'wa.camp_start', 'wa.camp_send_now', 'wa.camp_resume_all', 'wa.camp_stop_all', 'wa.camp_pause', 'wa.camp_resume', 'wa.camp_set_tpl', 'wa.camp_cancel', 'wa.camp_del', 'wa.camp_tick', 'wa.camp_suggest', 'wa.camp_best_time', 'wa.camp_people', 'wa.camp_people_csv', 'wa.camp_people_phones', 'wa.camp_text_batch', 'wa.camp_thread', 'wa.reports', 'wa.mix_state', 'wa.camp_mix_set'], true) && !($__wk === 'wa.camp_suggest' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST')) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     $auth = require_auth(); wa_guard_admin($pdo, $auth);
     if (!wa_tables($pdo) || !wa_more_tables($pdo) || !function_exists('wa_tpl_tables') || !wa_tpl_tables($pdo)) json_response(['error' => 'WhatsApp storage is not available — check database permissions.'], 500);
@@ -1740,6 +1740,16 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
             elseif ($__wk === 'wa.camp_resume') { if ($c['status'] !== 'paused') json_response(['error' => 'It is not paused.'], 422); $pdo->prepare("UPDATE wa_campaigns SET status = 'running', note = '' WHERE id = ?")->execute([$c['id']]); }
             else { if (!in_array($c['status'], ['running', 'scheduled', 'paused'], true)) json_response(['error' => 'It cannot be stopped now.'], 422); $pdo->prepare("UPDATE wa_campaigns SET status = 'cancelled', finished_at = ?, note = 'Stopped by you' WHERE id = ?")->execute([date('Y-m-d H:i:s'), $c['id']]); $pdo->prepare("UPDATE wa_camp_items SET status = 'skipped', err = 'Campaign stopped' WHERE camp_id = ? AND status IN ('queued', 'retry')")->execute([$c['id']]); }
             json_response(['ok' => true]);
+        }
+        case 'wa.camp_set_tpl': {   // 🔁 a paused campaign (e.g. Meta paused its message for low quality): pick another approved message and carry on with the people still waiting
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
+            $in = json_input(); $c = wa_camp_row($pdo, (int)($in['id'] ?? 0)); if (!$c) json_response(['error' => 'Campaign not found.'], 404);
+            if ($c['status'] !== 'paused') json_response(['error' => 'Only a paused campaign can change its message.'], 422);
+            $nt = (int)($in['tpl_id'] ?? 0); if ($nt <= 0 || $nt === (int)$c['tpl_id']) json_response(['error' => 'Pick a different message.'], 422);
+            $t = wa_camp_tpl($pdo, $nt, true, (int)$c['media_lib_id']); if (!$t) json_response(['error' => 'That message is not approved by Meta (or needs a photo / video this campaign does not have). Pick another.'], 422);
+            if ((int)($t['nvars'] ?? 0) > 1) json_response(['error' => 'That message has more than one blank — pick one with only a name blank.'], 422);
+            $pdo->prepare("UPDATE wa_campaigns SET tpl_id = ?, status = 'running', note = '' WHERE id = ?")->execute([$nt, $c['id']]);
+            json_response(['ok' => true, 'tpl_name' => (string)($t['name'] ?? '')]);
         }
         case 'wa.camp_del': {
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
