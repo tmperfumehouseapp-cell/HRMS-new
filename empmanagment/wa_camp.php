@@ -1127,11 +1127,12 @@ function wa_camp_ideal_cfg(PDO $pdo): array
 /** 🎯 Ideal vs actual for one business day: the cumulative spend / replies (queries typed Campaign) / Campaign orders at each checkpoint, a status, a plain-words analysis and the day-end projection. Remembered 3 minutes. */
 function wa_camp_ideal(PDO $pdo, string $day): array
 {
-    $ck = 'camp_ideal9_' . $day; $hit = wa_cpc_get($pdo, $ck); if ($hit && $hit['age'] < 25) return $hit['v'];
+    $ck = 'camp_ideal10_' . $day; $hit = wa_cpc_get($pdo, $ck); if ($hit && $hit['age'] < 25) return $hit['v'];
     $cfg = wa_camp_ideal_cfg($pdo); $t0 = null; $t1 = null;
     try { if (function_exists('wq_day_start') && function_exists('wq_day_add')) { $t0 = (int)wq_day_start($pdo, $day); $t1 = (int)wq_day_start($pdo, wq_day_add($day, 1)); } } catch (Throwable $e) { }
     // the ideal day runs 12 noon → 12 noon (setting camp_ideal_start, default 12:00) — not the 10 AM business day of the other boxes
-    $st = (string)setting_get($pdo, 'camp_ideal_start', '12:00'); if (!preg_match('/^\d{2}:\d{2}$/', $st)) $st = '12:00';
+    // owner (16 Nov): the ideal day follows the business day again — it starts at 10 AM (the same day start as every other box), so the Campaign orders here match the count on top
+    $st = function_exists('day_start_for') ? (string)day_start_for($pdo, $day) : '10:00'; if (!preg_match('/^\d{2}:\d{2}$/', $st)) $st = '10:00';
     $t0 = strtotime($day . ' ' . $st . ':00'); $t1 = $t0 + 86400; if (time() < $t0 && $day >= date('Y-m-d')) { $t0 -= 86400; $t1 -= 86400; }   // before noon: the day that is still running
     $a = date('Y-m-d H:i:s', $t0); $b = date('Y-m-d H:i:s', $t1); $now = time(); $R = function_exists('wab_rates') ? wab_rates($pdo) : ['marketing' => 1.09, 'utility' => 0.15];
     $H = []; for ($t = $t0; $t < $t1; $t += 3600) $H[(int)date('G', $t)] = ['t' => $t, 'spend' => 0.0, 'sent' => 0, 'replies' => 0, 'orders' => 0];
@@ -1434,7 +1435,7 @@ if (isset($pdo) && $pdo instanceof PDO && ($__wk === 'wa.camp_ideal' || $__wk ==
             foreach ((array)($in['rows'] ?? []) as $r) { if (!is_array($r) || !preg_match('/^\d{2}:\d{2}$/', (string)($r['t'] ?? ''))) continue; $rows[] = ['t' => (string)$r['t'], 'spend' => max(0, (int)($r['spend'] ?? 0)), 'replies' => max(0, (int)($r['replies'] ?? 0)), 'orders' => max(0, (int)($r['orders'] ?? 0))]; }
             if (!$rows) json_response(['error' => 'Add at least one time.'], 422); $cfg = ['spend' => max(0, (int)($in['spend'] ?? 0)), 'replies' => max(0, (int)($in['replies'] ?? 0)), 'orders' => max(0, (int)($in['orders'] ?? 0)), 'rows' => $rows, 'at' => date('Y-m-d H:i:s'), 'by' => (string)($auth['username'] ?? '')];
             if ($cfg['spend'] <= 0 || $cfg['replies'] <= 0 || $cfg['orders'] <= 0) json_response(['error' => 'The day totals (spend, replies, orders) must be more than 0.'], 422);
-            setting_set($pdo, 'camp_ideal', json_encode($cfg)); try { $pdo->exec("DELETE FROM wa_cp_cache WHERE k LIKE 'camp_ideal_%'"); } catch (Throwable $e) { } json_response(['ok' => true, 'cfg' => wa_camp_ideal_cfg($pdo)]);
+            setting_set($pdo, 'camp_ideal', json_encode($cfg)); try { $pdo->exec("DELETE FROM wa_cp_cache WHERE k LIKE 'camp_ideal%'"); } catch (Throwable $e) { } json_response(['ok' => true, 'cfg' => wa_camp_ideal_cfg($pdo)]);
         }
     }
 }
@@ -1827,6 +1828,8 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
             $f = in_array((string)($_GET['f'] ?? 'all'), ['all', 'delivered', 'read', 'replied', 'failed', 'retry', 'skipped', 'queued', 'sent', 'held'], true) ? (string)($_GET['f'] ?? 'all') : 'all'; $page = max(1, (int)($_GET['page'] ?? 1)); $per = max(10, min(200, (int)($_GET['per'] ?? 50)));
             $tpl = null; try { $tpl = wa_tpl_row($pdo, (int)$c['tpl_id']); } catch (Throwable $e) { }
             $rows = wa_camp_people_rows($pdo, $c, $tpl, $f, trim((string)($_GET['q'] ?? '')), $page, $per); $more = count($rows) > $per; if ($more) array_pop($rows);
+            if ($rows) { try { $wk = array_values(array_unique(array_column($rows, 'phone'))); $wq = $pdo->prepare("SELECT phone, last_in_at, optout FROM wa_contacts WHERE phone IN (" . implode(',', array_fill(0, count($wk), '?')) . ")"); $wq->execute($wk); $wm = []; foreach ($wq->fetchAll() as $w0) $wm[(string)$w0['phone']] = $w0;
+                foreach ($rows as &$r0) { $w0 = $wm[wa_key($r0['phone'])] ?? ($wm[(string)$r0['phone']] ?? null); $r0['win'] = $w0 && !empty($w0['last_in_at']) && strtotime((string)$w0['last_in_at']) >= time() - 86400; $r0['optout'] = $w0 ? (int)$w0['optout'] === 1 : false; } unset($r0); } catch (Throwable $e) { } }   // 🟢 24-hour chat window open (a free text can go) · 🟠 closed (only a Marketing message) — for the tick-box send bar
             $o = ['rows' => $rows, 'more' => $more, 'page' => $page, 'f' => $f];
             if ($page <= 1) { $o['counts'] = wa_camp_people_counts($pdo, (int)$c['id']); $o['reasons'] = wa_camp_people_reasons($pdo, (int)$c['id']); $o['skip_reasons'] = wa_camp_skip_reasons($pdo, (int)$c['id']); $o['wait'] = $o['counts']['queued'] > 0 ? wa_camp_wait_reason($pdo, $c) : ''; }
             json_response($o);
@@ -1841,6 +1844,34 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
             $out = []; foreach ($st->fetchAll() as $m) { $ty = strtolower((string)$m['mtype']); $b = trim((string)$m['body']); $pre = $nm[$ty] ?? ''; $out[] = ['id' => (int)$m['id'], 'ts' => (string)$m['ts'], 'dir' => (string)$m['dir'], 'who' => (string)$m['who'], 'text' => $pre !== '' ? ($b !== '' && !preg_match('/^\[.*\]$/', $b) ? $pre . ' · ' . $b : $pre) : ($b !== '' ? $b : '[' . $ty . ']')]; }
             $nr = $pdo->prepare("SELECT name FROM wa_contacts WHERE phone = ?"); $nr->execute([$ph]);
             json_response(['ok' => true, 'phone' => $ph, 'name' => (string)$nr->fetchColumn(), 'sent_at' => $sa, 'messages' => $out]);
+        }
+        case 'wa.camp_people_phones': {   // 📋 every phone of one list of a campaign (Replied / Read / Failed …) for "Select all": how many have a free 24-hour chat window, how many opted out (those are never included)
+            $c = wa_camp_row($pdo, (int)($_GET['id'] ?? 0)); if (!$c) json_response(['error' => 'Campaign not found.'], 404);
+            $f = in_array((string)($_GET['f'] ?? 'all'), ['all', 'delivered', 'read', 'replied', 'failed', 'retry', 'skipped', 'queued', 'sent', 'held'], true) ? (string)($_GET['f'] ?? 'all') : 'all';
+            @set_time_limit(120); $tpl = null; try { $tpl = wa_tpl_row($pdo, (int)$c['tpl_id']); } catch (Throwable $e) { }
+            $after = 0; $all = []; $q0 = trim((string)($_GET['q'] ?? ''));
+            while (count($all) < 30000) { $rows = wa_camp_people_rows($pdo, $c, $tpl, $f, $q0, 1, 0, $after, 2000); if (!$rows) break; foreach ($rows as $r) { $after = max($after, (int)$r['id']); $all[(string)$r['phone']] = 1; } if (count($rows) < 2000) break; }
+            $ph = array_keys($all); $out = []; $openP = []; $win = 0; $opt = 0; $since = time() - 86400;
+            foreach (array_chunk($ph, 900) as $ch) { $wq = $pdo->prepare("SELECT phone, last_in_at, optout, camp_optout FROM wa_contacts WHERE phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $wq->execute($ch); $m0 = []; foreach ($wq->fetchAll() as $w0) $m0[(string)$w0['phone']] = $w0;
+                foreach ($ch as $p0) { $w0 = $m0[wa_key($p0)] ?? ($m0[$p0] ?? null); if ($w0 && ((int)$w0['optout'] === 1 || (int)($w0['camp_optout'] ?? 0) === 1)) { $opt++; continue; } $out[] = $p0; if ($w0 && !empty($w0['last_in_at']) && strtotime((string)$w0['last_in_at']) >= $since) { $win++; $openP[] = $p0; } } }
+            json_response(['ok' => true, 'phones' => $out, 'open_phones' => $openP, 'total' => count($out), 'win_open' => $win, 'win_closed' => count($out) - $win, 'optout' => $opt]);
+        }
+        case 'wa.camp_text_batch': {   // ✉️ a plain text message to a small batch (the screen sends 25 at a time and shows progress). Only customers whose 24-hour chat window is open get it — the others are counted, nothing is sent, nothing is charged.
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $in = json_input(); $text = trim((string)($in['text'] ?? ''));
+            if ($text === '') json_response(['error' => 'Write the message first.'], 422); if (mb_strlen($text) > 4000) json_response(['error' => 'The message is too long (max 4000 characters).'], 422);
+            $phones = array_slice(array_values(array_unique(array_filter(array_map('wa_key', (array)($in['phones'] ?? []))))), 0, 30); @set_time_limit(120); $emp = (int)($auth['employee_id'] ?? 0);
+            $o = ['sent' => 0, 'closed' => 0, 'optout' => 0, 'failed' => 0, 'err' => ''];
+            foreach ($phones as $ph) {
+                $c = wa_contact($pdo, $ph); if (!$c) { $o['failed']++; continue; }
+                if ((int)$c['optout'] === 1 || (int)($c['camp_optout'] ?? 0) === 1) { $o['optout']++; continue; }
+                if (empty($c['last_in_at']) || strtotime((string)$c['last_in_at']) < time() - 86400) { $o['closed']++; continue; }
+                $nm = trim((string)$c['name']); $first = $nm !== '' ? preg_split('/\s+/u', $nm)[0] : ''; $t = str_replace(['{name}', '{first_name}'], $first !== '' ? $first : 'there', $text);
+                [$ok, $r] = wa_send_text($pdo, $c, $t, 'campaign', $emp);
+                if ($ok) $o['sent']++; else { if (stripos((string)$r, '24-hour') !== false) $o['closed']++; else { $o['failed']++; if ($o['err'] === '') $o['err'] = mb_substr((string)$r, 0, 160); } }
+                usleep(60000);
+            }
+            if (function_exists('wa_log') && $o['sent']) wa_log($pdo, 'campaign', true, 'text to the list: ' . $o['sent'] . ' sent, ' . $o['closed'] . ' window closed');
+            json_response(array_merge(['ok' => true], $o));
         }
         case 'wa.camp_people_csv': {
             $c = wa_camp_row($pdo, (int)($_GET['id'] ?? 0)); if (!$c) json_response(['error' => 'Campaign not found.'], 404);

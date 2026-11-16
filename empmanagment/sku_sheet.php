@@ -110,8 +110,11 @@ function sku_take(array &$grid, array &$bad, string $order, string $title, strin
     if ($qty <= 0) return;
     $full = trim($title . ' ' . $variant);
     if (preg_match('/(?<![a-z0-9])chains?(?![a-z0-9])|necklace|bracelet|pendant/i', $full)) { $bad[] = ['order' => $order, 'text' => $full, 'qty' => $qty, 'why' => 'jewellery: not in the SKU sheet', 'kind' => 'left']; return; }
-    if (preg_match('/^\s*complimentary\b/i', $full)) { $bad[] = ['order' => $order, 'text' => $full, 'qty' => $qty, 'why' => 'free gift: not in the SKU sheet', 'kind' => 'left']; return; }      // "complimentary 10ml": a free sample, its perfume is not written on the order
     $put = function (string $sku, int $col, int $q) use (&$grid) { if (!isset($grid[$sku])) $grid[$sku] = array_fill(0, 10, 0); $grid[$sku][$col] += $q; };
+    if (preg_match('/^\s*complimentary\b/i', $full)) {      // "complimentary 10ml": a free sample — its perfume is not written on the order, so it is counted on its own row "Complimentary (free gift)" in its size column
+        $w0 = ''; $c0 = sku_col($full, $w0); if ($c0 >= 0) { $put('FREE', $c0, $qty); return; }
+        $bad[] = ['order' => $order, 'text' => $full, 'qty' => $qty, 'why' => 'free gift: size not known', 'kind' => 'size']; return;
+    }
     // 1. a single product: the line itself names one SKU
     $props = array_values(array_filter($props, fn($p) => is_array($p) && (string)($p['name'] ?? '') !== '' && (string)$p['name'][0] !== '_'));      // hidden details (names starting with _) are the shop's own bookkeeping
     $sku = sku_match($title, $shopSku); $why = '';
@@ -184,8 +187,8 @@ function sku_sheet(PDO $pdo, string $day): array
         }
     } catch (Throwable $e) { }
     $ix = sku_index(); $rows = [];
-    foreach ($grid as $sku => $q) $rows[] = ['sku' => (string)$sku, 'name' => (string)($ix['name'][$sku] ?? 'Not Found'), 'q' => $q, 'total' => array_sum($q)];
-    usort($rows, function ($a, $b) { $x = ctype_digit($a['sku']) ? (int)$a['sku'] : PHP_INT_MAX; $y = ctype_digit($b['sku']) ? (int)$b['sku'] : PHP_INT_MAX; return $x <=> $y ?: strcmp($a['sku'], $b['sku']); });
+    foreach ($grid as $sku => $q) $rows[] = ['sku' => (string)$sku, 'name' => $sku === 'FREE' ? 'Complimentary (free gift)' : (string)($ix['name'][$sku] ?? 'Not Found'), 'q' => $q, 'total' => array_sum($q)];
+    usort($rows, function ($a, $b) { if (($a['sku'] === 'FREE') !== ($b['sku'] === 'FREE')) return $a['sku'] === 'FREE' ? 1 : -1; $x = ctype_digit($a['sku']) ? (int)$a['sku'] : PHP_INT_MAX; $y = ctype_digit($b['sku']) ? (int)$b['sku'] : PHP_INT_MAX; return $x <=> $y ?: strcmp($a['sku'], $b['sku']); });
     $tot = array_fill(0, 10, 0); foreach ($rows as $r) foreach ($r['q'] as $i => $v) $tot[$i] += $v;
     // the list on top of the page: the same product from many orders is ONE line with its pieces and its orders
     $grp = [];
