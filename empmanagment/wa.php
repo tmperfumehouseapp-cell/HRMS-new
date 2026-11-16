@@ -1008,6 +1008,8 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
             json_response(['ok' => true, 'date' => $hd, 'today' => biz_day_of($pdo, time()), 'rows' => $out]);
         }
         case 'wa.chats': {
+            // one-time clean-up (16 Nov): chats that a pre-made message re-opened into Requests although the customer never replied go back to Closed (History). Only: open, nobody has it, our template was the last thing, the customer's last message is over 24 hours old.
+            try { if (setting_get($pdo, 'wa_tplfix_16nov', '') === '') { setting_set($pdo, 'wa_tplfix_16nov', date('Y-m-d H:i:s')); $pdo->exec("UPDATE wa_contacts c SET c.status = 'closed', c.closed_at = NOW() WHERE c.status = 'open' AND c.assigned_emp = 0 AND c.optout = 0 AND c.last_in_at IS NOT NULL AND c.last_in_at < DATE_SUB(NOW(), INTERVAL 1 DAY) AND c.last_out_at > c.last_in_at AND c.last_out_at >= DATE_SUB(NOW(), INTERVAL 3 DAY) AND EXISTS (SELECT 1 FROM wa_messages m WHERE m.phone = c.phone AND m.dir = 'out' AND m.mtype = 'template' AND m.who = 'emp' AND m.ts = c.last_out_at)"); } } catch (Throwable $e) { }
             $scope = (string)($_GET['scope'] ?? 'mine'); $q = trim((string)($_GET['q'] ?? '')); $emp = (int)($auth['employee_id'] ?? 0); $adm = wa_is_admin($pdo, $auth) && empty($_GET['mine']);   // mine=1 → the My Chats page: even an admin sees only their own
             $w = []; $p = []; $srcQ = (string)($_GET['src'] ?? ''); $numFeed = $adm && preg_match('/^num:(\d+)$/', $srcQ, $numM) ? (int)$numM[1] : 0;
             $rescueFeed = $srcQ === 'rescue' && function_exists('wq_rescue_chat_phones') ? wq_rescue_chat_phones($pdo, $emp, $adm) : null;   // 🛟 the Rescue chip: interested customers nobody followed up
