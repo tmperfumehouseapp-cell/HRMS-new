@@ -120,7 +120,7 @@
   function cfStartDraft() {
     const own = CF.place && CF.place.owner && CF.place.owner.emp_ids && CF.place.owner.emp_ids[0] || 0;
     CF.draft = {
-      photos: [0, 1, 2].map((i) => { const p = CF.photos[i]; return { file: null, url: p && p.has_ref ? cfRef(p.point_id) : '', pointId: p ? p.point_id : 0 }; }),
+      photos: [0, 1, 2, 3, 4].map((i) => { const p = CF.photos[i]; return { file: null, url: p && p.has_ref ? cfRef(p.point_id) : '', pointId: p ? p.point_id : 0 }; }),
       items: CF.items.length ? CF.items.map((i) => ({ id: i.id, name: i.name, unit: i.unit || 'pcs', min: i.min == null ? 0 : i.min })) : CF_DEFAULT.map((x) => Object.assign({}, x)),
       emp: own, time: (CF.place && CF.place.photo_time) || '11:00'
     };
@@ -128,12 +128,12 @@
   function cfDrawForm() {
     const D = CF.draft, empOpt = '<option value="">Choose…</option>' + G.employees.map((e) => '<option value="' + e.id + '"' + (e.id === D.emp ? ' selected' : '') + '>' + esc(e.name) + '</option>').join('');
     let h = '';
-    h += '<div class="bd-card"><div class="bd-h"><h2>1 · Reference photos (3)</h2></div><div class="bd-sub" style="margin:6px 0 10px">Take 3 photos of how the cafeteria should look when it is ready (for example the counter, the shelf and the sink). The person sees them and takes the same photos every day. Tap a box to choose a photo.</div><div class="cf-ph">'
+    h += '<div class="bd-card"><div class="bd-h"><h2>1 · Reference photos (5)</h2></div><div class="bd-sub" style="margin:6px 0 10px">Take up to 5 photos of how the cafeteria should look when it is ready (for example the counter, the shelf, the sink, the coffee machine and the floor). 3 is the minimum that is good; 5 is best. The person sees them and takes the same photos every day. Tap a box to choose a photo.</div><div class="cf-ph">'
       + D.photos.map((p, i) => '<div class="cf-s">' + (p.url ? '<img alt="" src="' + esc(p.url) + '">' : '<span>📷 Photo ' + (i + 1) + '</span>') + '<span class="t">Photo ' + (i + 1) + '</span><input type="file" accept="image/*" data-cfp="' + i + '"></div>').join('') + '</div></div>';
     h += '<div class="bd-card"><div class="bd-h"><h2>2 · What must be there</h2></div><div class="bd-sub" style="margin:6px 0 10px">Add each thing, how it is counted, and the number that <b>must be there at least</b>. Example: <b>Milk · Bag · 4</b> means at least 4 bags must always be there. Coffee can be in grams or kg or packets. Anything below its number goes to the <b>"To bring"</b> list.</div>'
       + D.items.map((x, i) => '<div class="cf-r"><label>Name<input class="bd-in" data-cfn="' + i + '" value="' + esc(x.name) + '" placeholder="e.g. Milk"></label><label>Counted in<select class="bd-in" data-cfu="' + i + '">' + CF_UNITS.map((u) => '<option value="' + u[0] + '"' + (u[0] === x.unit ? ' selected' : '') + '>' + u[1] + '</option>').join('') + '</select></label><label>Must have at least<input class="bd-in" type="number" min="0" step="any" inputmode="decimal" data-cfm="' + i + '" value="' + esc(x.min) + '"></label><button class="bd-btn sm" type="button" data-cfx="' + i + '" aria-label="remove">✕</button></div>').join('')
       + '<button class="bd-btn sm" type="button" id="cfAdd">+ Add a thing</button></div>';
-    h += '<div class="bd-card"><div class="bd-h"><h2>3 · Who fills it every day</h2></div><div class="bd-sub" style="margin:6px 0 10px">This person sees the Cafeteria in <b>My Day</b>, takes the 3 photos, types the counts (milk, coffee, glasses…) and presses Submit.</div><div class="cf-r" style="grid-template-columns:minmax(160px,2fr) minmax(110px,1fr)"><label>Person<select class="bd-in" id="cfEmp">' + empOpt + '</select></label><label>Fill it by<input class="bd-in" type="time" id="cfTime" value="' + esc(D.time) + '"></label></div></div>';
+    h += '<div class="bd-card"><div class="bd-h"><h2>3 · Who fills it every day</h2></div><div class="bd-sub" style="margin:6px 0 10px">This person sees the Cafeteria in <b>My Day</b>, takes the same photos (up to 5), types the counts (milk, coffee, glasses…) and presses Submit.</div><div class="cf-r" style="grid-template-columns:minmax(160px,2fr) minmax(110px,1fr)"><label>Person<select class="bd-in" id="cfEmp">' + empOpt + '</select></label><label>Fill it by<input class="bd-in" type="time" id="cfTime" value="' + esc(D.time) + '"></label></div></div>';
     h += '<div class="bd-card"><button class="bd-btn pri" id="cfSave" type="button"' + (CF.busy ? ' disabled' : '') + '>' + (CF.busy ? 'Saving…' : (CF.place ? 'Save changes' : 'Start the Cafeteria')) + '</button> ' + (CF.place ? '<button class="bd-btn" id="cfCancel" type="button">Cancel</button>' : '') + '</div>';
     return h;
   }
@@ -158,7 +158,7 @@
   function drawCafe() {
     let h = '';
     if (CF.msg) { h += '<div class="bd-card"><div class="bd-sub" style="color:#157a3c;font-weight:700">' + esc(CF.msg) + '</div></div>'; CF.msg = ''; }
-    if (!CF.place || CF.edit) { if (!CF.draft) cfStartDraft(); h += '<div class="bd-card"><div class="bd-h"><h2>' + (CF.place ? 'Edit the Cafeteria' : 'Start the Cafeteria') + '</h2></div><div class="bd-sub" style="margin-top:4px">A small pantry to begin with: 3 photos and a few counted things. We can make it bigger later in the same way.</div></div>' + cfDrawForm(); }
+    if (!CF.place || CF.edit) { if (!CF.draft) cfStartDraft(); h += '<div class="bd-card"><div class="bd-h"><h2>' + (CF.place ? 'Edit the Cafeteria' : 'Start the Cafeteria') + '</h2></div><div class="bd-sub" style="margin-top:4px">A small pantry to begin with: up to 5 photos and a few counted things. We can make it bigger later in the same way.</div></div>' + cfDrawForm(); }
     else h += cfDrawStatus();
     $('root').innerHTML = h;
     const on = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = fn; };
@@ -183,7 +183,7 @@
     if (!items.length) { toast('Add at least one thing to count (for example Milk).', true); return; }
     if (items.some((x) => !(x.min >= 0))) { toast('Type the "must have at least" number for every thing.', true); return; }
     if (!D.emp) { toast('Choose the person who fills it every day.', true); return; }
-    if (!CF.place && !D.photos.some((p) => p.file)) { toast('Add at least one reference photo (3 is best).', true); return; }
+    if (!CF.place && !D.photos.some((p) => p.file)) { toast('Add at least one reference photo (up to 5).', true); return; }
     CF.busy = true; drawCafe();
     try {
       let zid = CF.place ? CF.place.zone_id : 0;
