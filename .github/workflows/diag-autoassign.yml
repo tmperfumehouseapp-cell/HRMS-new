@@ -1,0 +1,59 @@
+# READ-ONLY look at Auto assign on the staging VPS: is the engine switched on for today, is the engine running, and why waiting queries are not being given. Prints counts and flags only (no phone numbers, no names).
+# Changes nothing. Run it by hand: Actions → "Auto assign check (read-only)" → Run workflow.
+name: Auto assign check (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+
+      - name: Auto assign state
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
+          cat > /tmp/aa_check.php <<'PHP'
+          <?php
+          $f = $argv[1] . "empmanagment/config.php"; if (!is_file($f)) { echo "config.php not found\n"; exit; }
+          require $f;
+          try { $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_TIMEOUT => 8, PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]); } catch (Throwable $e) { echo "no database: " . $e->getMessage() . "\n"; exit; }
+          $s = function ($k) use ($d) { try { $q = $d->prepare("SELECT setting_value FROM hrms_settings WHERE setting_key = ?"); $q->execute([$k]); $v = $q->fetchColumn(); return $v === false ? "(not set)" : (string)$v; } catch (Throwable $e) { return "n/a"; } };
+          $n = function ($sql, $p = []) use ($d) { try { $q = $d->prepare($sql); $q->execute($p); return (string)$q->fetchColumn(); } catch (Throwable $e) { return "n/a (" . substr($e->getMessage(), 0, 80) . ")"; } };
+          echo "server time now: " . date("Y-m-d H:i:s") . "\n";
+          echo "=== the switch ===\n";
+          echo "waa_off = " . $s("waa_off") . "   (must be 0 = started)\n";
+          echo "waa_on_day = " . $s("waa_on_day") . "   (must be today's business day)\n";
+          echo "engine last started a pass (waa_run_at) = " . $s("waa_run_at") . " -> " . (ctype_digit($s("waa_run_at")) && (int)$s("waa_run_at") > 0 ? date("Y-m-d H:i:s", (int)$s("waa_run_at")) : "never") . "\n";
+          echo "WhatsApp engine last finished (wa_cron_at) = " . $s("wa_cron_at") . " · last started (wa_cron_start) = " . (ctype_digit($s("wa_cron_start")) ? date("Y-m-d H:i:s", (int)$s("wa_cron_start")) : $s("wa_cron_start")) . "\n";
+          $st = json_decode($s("waa_st"), true); if (is_array($st)) { $m = ["on" => 0, "off" => 0, "ao" => 0]; foreach ((array)($st["e"] ?? []) as $x) { if (($x["m"] ?? "") === "on") $m["on"]++; if (($x["m"] ?? "") === "off") $m["off"]++; if (!empty($x["ao"])) $m["ao"]++; } echo "buttons saved for day " . ($st["day"] ?? "?") . ": admin ON " . $m["on"] . " · admin OFF " . $m["off"] . " · switched off by ratio " . $m["ao"] . "\n"; } else echo "waa_st: " . $s("waa_st") . "\n";
+          echo "\n=== what the engine has given ===\n";
+          echo "given since 10:00 yesterday/today: " . $n("SELECT COUNT(*) FROM waa_log WHERE at >= ?", [date("Y-m-d 10:00:00", strtotime(date("G") >= 10 ? "today" : "yesterday"))]) . " (fresh " . $n("SELECT COUNT(*) FROM waa_log WHERE kind='fresh' AND at >= ?", [date("Y-m-d 10:00:00", strtotime(date("G") >= 10 ? "today" : "yesterday"))]) . ", campaign " . $n("SELECT COUNT(*) FROM waa_log WHERE kind='camp' AND at >= ?", [date("Y-m-d 10:00:00", strtotime(date("G") >= 10 ? "today" : "yesterday"))]) . ")\n";
+          echo "last given at: " . $n("SELECT MAX(at) FROM waa_log") . "\n";
+          echo "\n=== waiting for somebody ===\n";
+          $since = date("Y-m-d H:i:s", time() - 86400 + 600);
+          echo "queries nobody holds (last 24 h): fresh " . $n("SELECT COUNT(*) FROM wa_queries WHERE emp_id = 0 AND src = 'query' AND opened_at >= ?", [$since]) . " · campaign " . $n("SELECT COUNT(*) FROM wa_queries WHERE emp_id = 0 AND src = 'campaign' AND opened_at >= ?", [$since]) . " · other types " . $n("SELECT COUNT(*) FROM wa_queries WHERE emp_id = 0 AND src NOT IN ('query','campaign') AND opened_at >= ?", [$since]) . "\n";
+          echo "contacts nobody holds that wrote in the last 24 h: " . $n("SELECT COUNT(*) FROM wa_contacts WHERE assigned_emp = 0 AND last_in_at >= ?", [$since]) . "\n";
+          echo "  ...of them with NO query row in wa_queries: " . $n("SELECT COUNT(*) FROM wa_contacts c WHERE c.assigned_emp = 0 AND c.last_in_at >= ? AND NOT EXISTS (SELECT 1 FROM wa_queries q WHERE q.phone = c.phone)", [$since]) . "\n";
+          echo "  ...with a query row whose owner is already set: " . $n("SELECT COUNT(*) FROM wa_contacts c WHERE c.assigned_emp = 0 AND c.last_in_at >= ? AND EXISTS (SELECT 1 FROM wa_queries q WHERE q.phone = c.phone AND q.emp_id > 0)", [$since]) . "\n";
+          echo "the 12 newest unheld queries and what blocks them (no numbers):\n";
+          try { foreach ($d->query("SELECT q.src, q.opened_at, c.assigned_emp, c.status, c.optout, c.cx_id, c.tag, c.last_in_at, (SELECT COUNT(*) FROM wa_ctags g WHERE g.phone = q.phone AND g.tag = 'business_autoreply') biz FROM wa_queries q LEFT JOIN wa_contacts c ON c.phone = q.phone WHERE q.emp_id = 0 ORDER BY q.id DESC LIMIT 12")->fetchAll(PDO::FETCH_ASSOC) as $r) echo "  src=" . $r["src"] . " opened " . $r["opened_at"] . " · contact held by " . ($r["assigned_emp"] ?? "?") . " · status " . ($r["status"] ?? "?") . " · optout " . ($r["optout"] ?? "?") . " · complaint " . (($r["cx_id"] > 0 || $r["tag"] === "complaint") ? "yes" : "no") . " · business-autoreply " . ($r["biz"] ? "yes" : "no") . " · last_in " . ($r["last_in_at"] ?? "?") . "\n"; } catch (Throwable $e) { echo "  n/a (" . substr($e->getMessage(), 0, 100) . ")\n"; }
+          echo "\n=== the engine's own log lines about auto assign / errors (newest 15) ===\n";
+          try { foreach ($d->query("SELECT at, kind, ok, info FROM wa_log WHERE info LIKE '%auto assign%' OR info LIKE '%waa%' OR (kind = 'engine' AND ok = 0) ORDER BY id DESC LIMIT 15")->fetchAll(PDO::FETCH_ASSOC) as $r) echo "  " . $r["at"] . " [" . $r["kind"] . "/" . ($r["ok"] ? "ok" : "FAIL") . "] " . substr($r["info"], 0, 200) . "\n"; } catch (Throwable $e) { echo "  n/a\n"; }
+          PHP
+          php /tmp/aa_check.php "$P"; rm -f /tmp/aa_check.php
+          REMOTE
