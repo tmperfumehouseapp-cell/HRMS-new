@@ -3126,6 +3126,7 @@
   detailModal.addEventListener('click', (e) => { if (e.target === detailModal) closeDetail(); });
 
   window.__closeDetail = closeDetail;
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }   // was used by the order popup but never defined on this page: opening any order failed with "esc is not defined"
   const chatBtn = (ph) => { const d10 = String(ph || '').replace(/\D/g, '').slice(-10); return d10.length === 10 ? ` <button type="button" class="btn secondary" style="width:auto;padding:3px 10px;font-size:12px;min-height:0;margin-left:8px" onclick="window.__closeDetail && __closeDetail(); SideChat.open('${d10}');">💬 Chat</button>` : ''; };
   function detailRow(label, value) {
     if (!value) return '';
