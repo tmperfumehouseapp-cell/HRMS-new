@@ -1148,7 +1148,7 @@ function wa_camp_ideal_cfg(PDO $pdo): array
 /** 🎯 Ideal vs actual for one business day: the cumulative spend / replies (queries typed Campaign) / Campaign orders at each checkpoint, a status, a plain-words analysis and the day-end projection. Remembered 3 minutes. */
 function wa_camp_ideal(PDO $pdo, string $day): array
 {
-    $ck = 'camp_ideal12_' . $day; $hit = wa_cpc_get($pdo, $ck); if ($hit && $hit['age'] < 25) return $hit['v'];
+    $ck = 'camp_ideal13_' . $day; $hit = wa_cpc_get($pdo, $ck); if ($hit && $hit['age'] < 25) return $hit['v'];
     $cfg = wa_camp_ideal_cfg($pdo); $t0 = null; $t1 = null;
     try { if (function_exists('wq_day_start') && function_exists('wq_day_add')) { $t0 = (int)wq_day_start($pdo, $day); $t1 = (int)wq_day_start($pdo, wq_day_add($day, 1)); } } catch (Throwable $e) { }
     // the ideal day runs 12 noon → 12 noon (setting camp_ideal_start, default 12:00) — not the 10 AM business day of the other boxes
@@ -1161,6 +1161,14 @@ function wa_camp_ideal(PDO $pdo, string $day): array
         $q = $pdo->prepare("SELECT /*+ MAX_EXECUTION_TIME(12000) */ HOUR(ts) h, COUNT(*) n, SUM(status IN ('delivered','read')) dl, SUM(status IN ('delivered','read') AND bill_cat IN ('utility','authentication')) u, SUM(status IN ('delivered','read') AND bill_cat = 'service') sv FROM wa_messages WHERE dir = 'out' AND mtype = 'template' AND who = 'campaign' AND status <> 'failed' AND ts >= ? AND ts < ? GROUP BY h"); $q->execute([$a, $b]);
         foreach ($q->fetchAll() as $r) { $h = (int)$r['h']; if (!isset($H[$h])) continue; $dl = (int)$r['dl']; $u = (int)$r['u']; $H[$h]['spend'] = max(0, $dl - $u - (int)$r['sv']) * (float)$R['marketing'] + $u * (float)$R['utility']; $H[$h]['dl'] = $dl; $H[$h]['sent'] = (int)$r['n']; }
     } catch (Throwable $e) { error_log('camp_ideal spend: ' . $e->getMessage()); }
+    $dripDl = 0;
+    try {   // 🔁 the 7-Day Drip messages delivered in the same hour (they are sent as follow-ups, not as a campaign): added to Delivered so it is the exact total of campaigns + drip
+        $q = $pdo->prepare("SELECT wamid FROM wa_drip_ev WHERE status = 'sent' AND wamid <> '' AND at >= ? AND at < ?"); $q->execute([date('Y-m-d H:i:s', $t0 - 7200), date('Y-m-d H:i:s', $t1 + 7200)]); $ids = $q->fetchAll(PDO::FETCH_COLUMN);
+        foreach (array_chunk($ids, 800) as $ch) {
+            $q = $pdo->prepare("SELECT HOUR(ts) h, COUNT(*) dl FROM wa_messages WHERE wamid IN (" . implode(',', array_fill(0, count($ch), '?')) . ") AND status IN ('delivered', 'read') AND ts >= ? AND ts < ? GROUP BY h"); $q->execute(array_merge($ch, [$a, $b]));
+            foreach ($q->fetchAll() as $r) { $h = (int)$r['h']; if (!isset($H[$h])) continue; $H[$h]['dl'] += (int)$r['dl']; $dripDl += (int)$r['dl']; }
+        }
+    } catch (Throwable $e) { error_log('camp_ideal drip: ' . $e->getMessage()); }
     try {   // replies = queries typed Campaign on the live board, by the hour they opened
         $q = $pdo->prepare("SELECT /*+ MAX_EXECUTION_TIME(12000) */ HOUR(q.opened_at) h, COUNT(*) n FROM wa_queries q JOIN wq_qtype t ON t.query_id = q.id AND t.type = 'campaign' WHERE q.opened_at >= ? AND q.opened_at < ? GROUP BY h"); $q->execute([$a, $b]);
         foreach ($q->fetchAll() as $r) { $h = (int)$r['h']; if (isset($H[$h])) $H[$h]['replies'] = (int)$r['n']; }
@@ -1210,7 +1218,7 @@ function wa_camp_ideal(PDO $pdo, string $day): array
         if ($hw && $hb && $hw['h'] !== $hb['h']) $an[] = ['k' => 'warn', 'text' => 'Most expensive hour: ' . $hl($hw['h']) . ' — ₹' . $hw['c'] . ' per reply (₹' . number_format($hw['spend']) . ' for ' . $hw['replies'] . ' replies). Cut or change the message in that slot.'];
         try { $wc = (int)$pdo->query("SELECT COUNT(*) FROM wa_contacts WHERE status = 'open' AND optout = 0 AND assigned_emp > 0 AND last_in_at >= '" . date('Y-m-d H:i:s', $now - 6 * 3600) . "' AND last_in_at <= '" . date('Y-m-d H:i:s', $now - 600) . "' AND (last_out_at IS NULL OR last_out_at < last_in_at)")->fetchColumn(); if ($wc > 0) $an[] = ['k' => 'warn', 'text' => $wc . ' chat' . ($wc === 1 ? ' is' : 's are') . ' waiting for a reply for more than 10 minutes — each one is a possible order lost.']; } catch (Throwable $e) { }
     }
-    $o = ['day' => $day, 'cfg' => $cfg, 'points' => $pts, 'hourly' => $hourly, 'so_far' => ['ideal' => $so, 'actual' => $act, 'dev' => $dev], 'projection' => $proj, 'need_per_hour' => $need, 'analysis' => $an, 'hours' => array_map(fn($h, $x) => ['h' => $h, 'spend' => round($x['spend']), 'sent' => $x['sent'], 'replies' => $x['replies'], 'orders' => $x['orders']], array_keys($H), array_values($H)), 'from' => $a, 'to' => $b, 'now' => date('Y-m-d H:i:s', $now), 'at' => date('Y-m-d H:i:s')];
+    $o = ['day' => $day, 'cfg' => $cfg, 'points' => $pts, 'hourly' => $hourly, 'so_far' => ['ideal' => $so, 'actual' => $act, 'dev' => $dev], 'drip_delivered' => $dripDl, 'projection' => $proj, 'need_per_hour' => $need, 'analysis' => $an, 'hours' => array_map(fn($h, $x) => ['h' => $h, 'spend' => round($x['spend']), 'sent' => $x['sent'], 'replies' => $x['replies'], 'orders' => $x['orders']], array_keys($H), array_values($H)), 'from' => $a, 'to' => $b, 'now' => date('Y-m-d H:i:s', $now), 'at' => date('Y-m-d H:i:s')];
     wa_cpc_put($pdo, $ck, $o); return $o;
 }
 /** 👥 The customer numbers in one small card: how many we have, how many got our campaign messages, how many failed, how many ordered, how many are new, how many replied.
