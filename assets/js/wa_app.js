@@ -295,7 +295,7 @@
     }
     // ⚡ small "Accept" pop-up: a red / orange chat nobody has taken for 45 s. It asks the server every second and goes away by itself the moment somebody accepts (or answers). ✕ closes it for me only.
     function needPop() {
-      const no = S.popNo || (S.popNo = {}), L = (S.needs || []).filter((x) => !x.own && !x.holder && !no[x.key] && (S.mkt ? x.level === 'red' : (x.sec || 0) >= 45));   // 🏪 auto assign: only 🔴 ready-to-pay pops up, AT ONCE, for everyone — first Accept wins, it leaves everyone else's screen within a second
+      const no = S.popNo || (S.popNo = {}), L = (S.needs || []).filter((x) => !x.own && !x.holder && !no[x.key] && (x.sec || 0) >= 45);   // 🏪 auto assign: only 🔴 ready-to-pay pops up, AT ONCE, for everyone — first Accept wins, it leaves everyone else's screen within a second
       const old = R.querySelector('.wx-np'), x = L[0];
       const stop = () => { clearInterval(S.npT); S.npT = 0; const e = R.querySelector('.wx-np'); if (e) e.remove(); };
       if (!x) { if (old) stop(); return; }
@@ -463,19 +463,6 @@
         if (!el) { el = document.createElement('div'); el.id = 'wxMgr'; const top = R.querySelector('.wx-top'); if (!top) return; top.insertAdjacentElement('afterend', el); }
         el.className = 'wx-mgr wx-mgr-' + String(c.level || 'normal').replace(/[^a-z]/g, ''); el.textContent = '🧭 ' + c.text; } catch (e) { /* optional */ } };
       paintMgr(); setInterval(() => { if (!document.hidden) paintMgr(); }, 300000); }
-    // 🏪 Auto assign (open market): ONE thin line from the server (the same words Team performance shows) + ☕ break. Tap the line to read it whole.
-    { const TC = { red: ['#fef2f2', '#991b1b'], amber: ['#fffbeb', '#92400e'], green: ['#f0fdf4', '#166534'], grey: ['#f3f4f6', '#374151'] };
-      const paintMkt = async () => { try { const d = await api.get('wq.mkt_me'); let el = R.querySelector('#wxMkt'); const m = d && d.me; const was = !!S.mkt + '|' + !!S.mktPick; S.mkt = !!(d && d.mode === 'live'); S.mktPick = !!(d && d.pick);
-        if (was !== (!!S.mkt + '|' + !!S.mktPick) && S.tab === 'chats' && !S.cur) { try { drawList(); } catch (e) { } }
-        if (!S.mkt || !m || !d.coach) { if (el) el.remove(); return; }
-        if (!el) { el = document.createElement('div'); el.id = 'wxMkt'; const top = R.querySelector('.wx-top'); if (!top) return; top.insertAdjacentElement('afterend', el); }
-        const c = TC[d.tone] || TC.grey, left = Math.max(0, (d.break_max || 0) - (d.break_used || 0)), canB = m.present && (d.on_break || left > 0);
-        el.style.cssText = 'display:flex;gap:6px;align-items:center;margin:2px 8px;padding:0 4px 0 10px;min-height:28px;border-radius:99px;font-size:11.5px;font-weight:700;line-height:1.2;background:' + c[0] + ';color:' + c[1];
-        el.innerHTML = '<span class="t" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer"></span>' + (canB ? '<button type="button" style="flex:none;border:0;background:rgba(255,255,255,.75);color:inherit;border-radius:99px;padding:0 9px;font:inherit;min-height:24px;cursor:pointer">' + (d.on_break ? '▶ કામ' : '☕') + '</button>' : '');
-        const t = el.querySelector('.t'); t.textContent = d.coach; t.title = d.coach; t.onclick = () => { const w = t.style.whiteSpace === 'normal'; t.style.whiteSpace = w ? 'nowrap' : 'normal'; el.style.borderRadius = w ? '99px' : '12px'; };
-        const b = el.querySelector('button'); if (b) b.onclick = async () => { b.disabled = true; try { await api.post('wq.mkt_break', { on: d.on_break ? 0 : 1 }); } catch (er) { alert((er && er.message) || 'Could not save'); } paintMkt(); };
-      } catch (e) { /* optional */ } };
-      paintMkt(); setInterval(() => { if (!document.hidden) paintMkt(); }, 60000); }
     // ⚡ a small chip beside the title: my typical reply time against the team's (own numbers + the team median; today, or the last 7 days when today has too few replies)
     { const paint = async () => { try { let d = await api.get('wq.pace', { days: 1 }), mp = d.mine && (d.mine.pace || d.mine), tp = d.team && d.team.pace;
         if (!mp || mp.median == null || (mp.n || 0) < 3) { d = await api.get('wq.pace', { days: 7 }); mp = d.mine && (d.mine.pace || d.mine); tp = d.team && d.team.pace; }
