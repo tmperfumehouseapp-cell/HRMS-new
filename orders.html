@@ -2004,7 +2004,7 @@
     const pr = d.projection || {}, nd = d.need_per_hour || {};
     if (pr.orders != null && d.now && d.to && d.now < d.to) h += `<div class="idp">🔮 At this pace the day ends near <b>${idR(pr.spend)}</b> · <b>${idN(pr.replies)}</b> replies · <b>${idN(pr.orders)}</b> orders. To reach ${idN(c.orders)} orders you need about <b>${idN(nd.replies)}</b> replies and <b>${idN(nd.orders)}</b> orders every hour from now.</div>`;
     h += (d.analysis || []).length ? `<ul class="ida">${d.analysis.map((x) => `<li class="${x.k === 'ok' ? 'ok' : 'wn'}">${x.k === 'ok' ? '✅' : '⚠️'} ${x.text.replace(/</g, '&lt;')}</li>`).join('')}</ul>` : '';
-    return h + `<div class="idn">Replies = queries typed Campaign on the live board · Orders = Campaign orders only (same as the Campaign orders tab, cancelled left out) · Spend = delivered × Meta rate · Delivered = campaign messages delivered or read (ideal = ideal spend ÷ Meta rate) · updated ${String(d.at || '').slice(11, 16)}</div>`;
+    return h + `<div class="idn">Replies = queries typed Campaign on the live board · Orders = Campaign orders only (same as the Campaign orders tab, cancelled left out) · Spend (campaigns + 7-day drip) = delivered × Meta rate · Delivered = campaign messages delivered or read (ideal = ideal spend ÷ Meta rate) · updated ${String(d.at || '').slice(11, 16)}</div>`;
   }
   async function idealLoad(force) {
     const day = idDay(), box = document.getElementById('idealCard'); if (!box) return;
