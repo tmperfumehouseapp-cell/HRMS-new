@@ -1430,7 +1430,11 @@ function st_bday_run(PDO $pdo, bool $send = true, ?int $now = null): array
     }
     if ($send && $cfg['auto_wa']) {
         foreach ($pdo->query("SELECT * FROM st_bday_vouchers WHERE status = 'active' AND wa_status IN ('pending') AND valid_to >= CURDATE() ORDER BY voucher_id LIMIT 40")->fetchAll() as $v) {
-            if (!isset($online[(string)$v['phone']])) continue;   // a STORE customer: the cashier sends the wish by hand (Store → Birthdays → To send today)
+            if (!isset($online[(string)$v['phone']])) {   // a STORE customer: the shop's own birthday template goes out by itself (nobody has to send it); until Meta approves it the code waits (and the cashier can still send by hand)
+                [$ok, $why] = st_bday_send($pdo, $v);
+                if ($ok) $out['sent']++; elseif (strpos($why, 'not approved') !== false || strpos($why, 'not available') !== false || strpos($why, 'no WhatsApp number') !== false) $out['waiting']++; else $out['failed']++;
+                continue;
+            }
             if (function_exists('wo_tpl_for') && function_exists('wo_cfg') && !empty(wo_cfg($pdo)['statuses']['birthday']) && wo_tpl_for($pdo, 'birthday') !== null) {   // the automatic message (WhatsApp → Order-update messages → Birthday gift)
                 $qi = $pdo->prepare("INSERT IGNORE INTO wa_ord_sent (parcel_id, phone, order_name, status, tpl_name, state, created_at, due_at) VALUES (?,?,?,?,?, 'queued', ?, ?)"); $nw = time();
                 $qi->execute([-(int)$v['voucher_id'], wo_key((string)$v['phone']), (string)$v['code'], 'birthday', wo_send_defs()['birthday'][0], wo_dt($nw), wo_dt(wo_next_open($nw))]);
