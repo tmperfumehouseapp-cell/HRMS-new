@@ -21,6 +21,8 @@ function waa_tables(PDO $pdo): bool
     try { $pdo->exec("CREATE TABLE IF NOT EXISTS waa_log (id BIGINT AUTO_INCREMENT PRIMARY KEY, at DATETIME NOT NULL, phone VARCHAR(12) NOT NULL, emp_id INT NOT NULL, kind VARCHAR(8) NOT NULL, why VARCHAR(160) NOT NULL DEFAULT '', KEY k_at (at, kind, emp_id), KEY k_phone (phone, at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"); return $ok = true; }
     catch (Throwable $e) { error_log('waa_tables: ' . $e->getMessage()); return $ok = false; }
 }
+/** The master switch. OFF until the owner starts it (setting waa_off = 0): the table and the buttons work, but nothing is given out and no overnight limit applies. */
+function waa_engine_on(PDO $pdo): bool { return (string)setting_get($pdo, 'waa_off', '1') === '0'; }
 function waa_dt(int $t): string { return date('Y-m-d H:i:s', $t); }
 function waa_day(PDO $pdo): string { return function_exists('biz_today') ? (string)biz_today($pdo) : date('Y-m-d'); }
 /** Start of the business day (10 am by the panel's day timing). */
@@ -105,7 +107,7 @@ function waa_view(PDO $pdo, bool $fresh = false): array
 function waa_tick(PDO $pdo): array
 {
     if (!waa_tables($pdo)) return ['error' => 'storage'];
-    if ((string)setting_get($pdo, 'waa_off', '0') === '1') return ['off' => 1];
+    if (!waa_engine_on($pdo)) return ['off' => 1];
     $now = time(); if ((int)setting_get($pdo, 'waa_run_at', '0') > $now - 20) return ['skipped' => 'recent'];
     $got = 0; try { $got = (int)$pdo->query("SELECT GET_LOCK('waa_run', 0)")->fetchColumn(); } catch (Throwable $e) { } if ($got !== 1) return ['skipped' => 'busy'];
     $res = ['given' => 0, 'switched_off' => 0];
@@ -150,7 +152,7 @@ function waa_tick(PDO $pdo): array
 function waa_pick_block(PDO $pdo, int $emp): string
 {
     try {
-        if (!waa_night((int)date('G')) || (string)setting_get($pdo, 'waa_off', '0') === '1' || !in_array($emp, waa_sales($pdo), true) || !waa_tables($pdo)) return '';
+        if (!waa_night((int)date('G')) || !waa_engine_on($pdo) || !in_array($emp, waa_sales($pdo), true) || !waa_tables($pdo)) return '';
         $V = waa_view($pdo); $p = $V['people'][$emp] ?? null; if (!$p) return '';
         $below = (bool)($p['below'] || $p['ao']); if (!$below || $p['m'] === 'on') return '';
         $q = $pdo->prepare("SELECT COUNT(*) FROM wa_assign_log WHERE to_emp = ? AND by_emp = ? AND how = 'request' AND at >= ?"); $q->execute([$emp, $emp, date('Y-m-d 00:00:00')]);
@@ -160,12 +162,17 @@ function waa_pick_block(PDO $pdo, int $emp): string
 
 // ---------------------------------------------------------------------------------------------------------------- actions
 $__waa = (string)($action ?? ($_GET['action'] ?? ''));
-if ($__waa === 'wq.aa_get' || $__waa === 'wq.aa_set') {
+if ($__waa === 'wq.aa_get' || $__waa === 'wq.aa_set' || $__waa === 'wq.aa_engine') {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST'; $auth = require_auth(); $me = (int)($auth['employee_id'] ?? 0);
     if (!waa_tables($pdo)) json_response(['error' => 'Storage for Auto assign is not available.'], 500);
     $adm = function_exists('wa_is_admin') ? wa_is_admin($pdo, $auth) : in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true);
     if (!$adm && function_exists('wa_boss_ok') && wa_boss_ok($pdo, $auth)) $adm = true;   // Sales Heads too
     if (!$adm) json_response(['error' => 'Only Admin, HR or a Sales Head can open Auto assign.'], 403);
+    if ($__waa === 'wq.aa_engine') {   // Start / Stop the whole engine
+        if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
+        $in = json_input(); setting_set($pdo, 'waa_off', !empty($in['on']) ? '0' : '1'); setting_set($pdo, 'waa_run_at', '0');
+        if (function_exists('wa_log')) { $nm = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : []; wa_log($pdo, 'engine', true, 'auto assign engine ' . (!empty($in['on']) ? 'STARTED' : 'STOPPED') . ' by ' . ($nm[$me] ?? $me)); }
+    }
     if ($__waa === 'wq.aa_set') {
         if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
         $in = json_input(); $emp = (int)($in['emp_id'] ?? 0); $on = !empty($in['on']);
@@ -178,5 +185,5 @@ if ($__waa === 'wq.aa_get' || $__waa === 'wq.aa_set') {
     foreach ($V['people'] as $e => $p) { $why = ['not_in' => 'Not punched in', 'admin_off' => 'Turned off by Admin / Sales Head', 'admin_on' => 'ON by Admin / Sales Head — no rule applies', 'ratio' => 'Auto OFF: ratio ' . ($p['ratio'] === null ? '–' : $p['ratio'] . '%') . ' is below ' . $V['floor'] . '% · campaign queries only', 'on' => ''][$p['why']] ?? '';
         $rows[] = ['emp_id' => $e, 'name' => $p['name'], 'on' => $p['on'], 'present' => $p['present'], 'why' => $why, 'note' => $p['present'] && $p['why'] === 'on' ? 'Punched in' . ($p['punch'] !== '' ? ' ' . $p['punch'] : '') : '', 'target' => $p['t'], 'q' => $p['q'], 'o' => $p['qo'], 'ratio' => $p['ratio'], 'cq' => $p['cq'], 'co' => $p['co'], 'given_fresh' => (int)($T[$e]['fresh'] ?? 0), 'given_camp' => (int)($T[$e]['camp'] ?? 0), 'slow' => ($p['speed'] && $p['team_speed'] && $p['speed'] > $p['team_speed'] && $p['m'] !== 'on') ? round($p['team_speed'] / $p['speed'], 2) : 1, 'below' => $p['below'] || $p['ao']]; }
     usort($rows, function ($a, $b) { return [$b['present'] ? 1 : 0, $a['name']] <=> [$a['present'] ? 1 : 0, $b['name']]; });
-    json_response(['ok' => true, 'day' => $V['day'], 'team_ratio' => $V['team_ratio'], 'floor' => $V['floor'], 'team_speed' => $V['team_speed'], 'rows' => $rows]);
+    json_response(['ok' => true, 'engine' => waa_engine_on($pdo), 'day' => $V['day'], 'team_ratio' => $V['team_ratio'], 'floor' => $V['floor'], 'team_speed' => $V['team_speed'], 'rows' => $rows]);
 }
