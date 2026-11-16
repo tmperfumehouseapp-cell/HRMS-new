@@ -42,11 +42,21 @@ function cfun_tables(PDO $pdo): bool
         try { $q = $pdo->query("SHOW INDEX FROM wa_cfun WHERE Key_name = 'k_grp'"); if ($q && !$q->fetch()) $pdo->exec("ALTER TABLE wa_cfun ADD INDEX k_grp (grp, src)"); } catch (Throwable $e) { }
         try { $q = $pdo->query("SHOW INDEX FROM wa_cfun WHERE Key_name = 'k_imp'"); if ($q && !$q->fetch()) $pdo->exec("ALTER TABLE wa_cfun ADD INDEX k_imp (imp, batch)"); } catch (Throwable $e) { }
         try { $pdo->exec("CREATE TABLE IF NOT EXISTS wa_cfun_hist (d DATE NOT NULL PRIMARY KEY, j TEXT NULL) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"); } catch (Throwable $e) { }
+        // ⚡ customers whose delivery status / reply just changed (recounted within a minute) · movements between statuses, counted per day
+        try { $pdo->exec("CREATE TABLE IF NOT EXISTS wa_cfun_dirty (phone VARCHAR(12) NOT NULL PRIMARY KEY, at DATETIME NOT NULL, KEY k_at (at)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+              $pdo->exec("CREATE TABLE IF NOT EXISTS wa_cfun_mv (d DATE NOT NULL, k VARCHAR(8) NOT NULL, n INT NOT NULL DEFAULT 0, PRIMARY KEY (d, k)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"); } catch (Throwable $e) { }
         // ⬇ who was already downloaded (so the next download gives different customers): one row per phone + one row per download
         try { $pdo->exec("CREATE TABLE IF NOT EXISTS wa_cfun_dl (phone VARCHAR(12) NOT NULL PRIMARY KEY, batch INT NOT NULL DEFAULT 0, at DATETIME NULL, times INT NOT NULL DEFAULT 1) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4" . $coll);
               $pdo->exec("CREATE TABLE IF NOT EXISTS wa_cfun_dlb (id INT AUTO_INCREMENT PRIMARY KEY, at DATETIME NULL, k VARCHAR(30) NOT NULL DEFAULT '', src VARCHAR(8) NOT NULL DEFAULT '', n INT NOT NULL DEFAULT 0) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"); } catch (Throwable $e) { }
         return $ok = true;
     } catch (Throwable $e) { error_log('wa_cfun: ' . $e->getMessage()); return $ok = false; }
+}
+
+/** One tiny write: this customer's status just changed, recount them in the next minute. Never throws. */
+function cfun_dirty(PDO $pdo, string $phone): void
+{
+    static $q = null, $ok = null; if ($phone === '' || strlen($phone) > 12) return;
+    try { if ($ok === null) $ok = cfun_tables($pdo); if (!$ok) return; if ($q === null) $q = $pdo->prepare("INSERT INTO wa_cfun_dirty (phone, at) VALUES (?, NOW()) ON DUPLICATE KEY UPDATE at = NOW()"); $q->execute([$phone]); } catch (Throwable $e) { }
 }
 
 function cfun_in(array $a): string { return implode(',', array_fill(0, count($a), '?')); }
@@ -78,8 +88,8 @@ function cfun_calc(PDO $pdo, array $phones): int
     // orders: the Shopify copy (wa_cust) and every channel (customer_facts); the bigger number wins, nothing is counted twice
     foreach ($get("SELECT phone, name, n, last_order, spent FROM wa_cust WHERE phone IN ($in)", $phones) as $r) { $c = &$C[(string)$r['phone']]; $c['orders'] = max($c['orders'], (int)$r['n']); $c['sp'] = max($c['sp'], (float)$r['spent']); if ($r['last_order'] && (!$c['lo'] || $r['last_order'] > $c['lo'])) $c['lo'] = $r['last_order']; if ($c['name'] === '') $c['name'] = (string)$r['name']; unset($c); }
     foreach ($get("SELECT p10, name, orders_n, last_at, spent FROM customer_facts WHERE p10 IN ($in)", $phones) as $r) { $k = (string)$r['p10']; if (!isset($C[$k])) continue; $C[$k]['orders'] = max($C[$k]['orders'], (int)$r['orders_n']); $C[$k]['sp'] = max($C[$k]['sp'], (float)$r['spent']); if ($r['last_at'] && (!$C[$k]['lo'] || $r['last_at'] > $C[$k]['lo'])) $C[$k]['lo'] = $r['last_at']; if ($C[$k]['name'] === '') $C[$k]['name'] = (string)$r['name']; }
-    $OLD = []; foreach ($get("SELECT phone, val, health, score FROM wa_cfun WHERE phone IN ($in)", $phones) as $r) $OLD[(string)$r['phone']] = $r;   // what the tags said until now (to rewrite only what changed)
-    $T = []; $nowTs = time(); $rows = [];
+    $OLD = []; foreach ($get("SELECT phone, val, health, score, bucket, out_n, orders_n FROM wa_cfun WHERE phone IN ($in)", $phones) as $r) $OLD[(string)$r['phone']] = $r;   // what the tags said until now (to rewrite only what changed)
+    $T = []; $nowTs = time(); $rows = []; $MV = [];
     foreach ($C as $p => $c) {
         $p = (string)$p; $replied = ($c['in_n'] > 0 || $c['ci'] !== null || $c['optout'] === 1) ? 1 : 0; $last3 = 0;
         if (!$replied && $c['fail'] > 0) {   // only people with a failed message need the "last 3 messages" look-up (an indexed read by phone)
@@ -90,7 +100,8 @@ function cfun_calc(PDO $pdo, array $phones): int
         $val = cfun_value((int)$c['orders'], $c['lo'], $nowTs); $health = cfun_health((int)$c['optout'], $bucket, (int)$c['ec']);
         $qual = $c['qual'] !== '' ? $c['qual'] : ($c['orders'] > 0 ? 'std' : '');   // premium / budget from the automatic tags; any other buyer = standard
         [$score, $parts] = cfun_score(['orders' => $c['orders'], 'spent' => $c['sp'], 'in_n' => $c['in_n'], 'replied' => $replied, 'last_in' => $c['last_in'] ?: $c['ci'], 'last_order' => $c['lo'], 'health' => $health, 'deliv_n' => $c['deliv'], 'intent' => $c['intent']], $nowTs);
-        $o0 = $OLD[$p] ?? null; $newTags = cfun_tags($val, $health, $score, $parts, ['orders' => $c['orders']]);
+        $o0 = $OLD[$p] ?? null; foreach (cfun_moves($o0, ['bucket' => $bucket, 'out_n' => (int)$c['out_n'], 'orders_n' => (int)$c['orders']]) as $mk) $MV[$mk] = ($MV[$mk] ?? 0) + 1;
+        $newTags = cfun_tags($val, $health, $score, $parts, ['orders' => $c['orders']]);
         if ($o0 ? ((string)$o0['val'] !== $val || (string)$o0['health'] !== $health || cfun_tier((int)$o0['score']) !== cfun_tier($score) || abs((int)$o0['score'] - $score) >= 10) : (bool)$newTags) $T[$p] = $newTags;   // tags are rewritten only when something changed
         $rows[] = [$p, mb_substr($c['name'], 0, 120), $bucket, $replied, $c['optout'], $c['out_n'], $c['deliv'], $c['sent'], $c['fail'], $c['in_n'], $c['orders'], $c['a'], $c['b'], $c['last_in'] ?: $c['ci'], $now, $c['src'], $grp, $bucket === 'failed' ? $c['ec'] : 0, $c['lc'],
             $c['imp'], $c['batch'], $qual, $c['intent'], trim($c['name']) !== '' ? 1 : 0, $c['asg'], $c['num'], $c['ld'], $c['lf'], $health, $val, $score];
@@ -109,6 +120,7 @@ function cfun_calc(PDO $pdo, array $phones): int
         }
     }
     if ($T) cfun_write_tags($pdo, $T);
+    if ($MV) { try { $day = date('Y-m-d'); foreach ($MV as $mk => $mn) $pdo->prepare("INSERT INTO wa_cfun_mv (d, k, n) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE n = n + VALUES(n)")->execute([$day, $mk, $mn]); } catch (Throwable $e) { } }   // movements, counted per day (a few numbers, not a row per customer)
     return $n;
 }
 
@@ -205,6 +217,31 @@ function cfun_tick(PDO $pdo, bool $force = false, int $budget = 25): array
     try { $pdo->query("SELECT RELEASE_LOCK('wa_cfun')"); } catch (Throwable $e) { }
     if (!empty($GLOBALS['__cfun_err'])) $o['row_error'] = $GLOBALS['__cfun_err']; if (!empty($GLOBALS['__cfun_bad'])) $o['bad_rows'] = (int)$GLOBALS['__cfun_bad'];
     $o['sec'] = round(microtime(true) - $t0, 1); return $o;
+}
+
+/**
+ * ⚡ Recounts only the customers whose status changed (the dirty list), so a delivered message or a reply moves a customer within about a minute.
+ * Light by design: at most $max customers a pass, in chunks of 400, a $budget-second cap, one copy at a time, at most one pass every $every seconds. The hourly count stays as the safety net.
+ */
+function cfun_fast(PDO $pdo, int $max = 2000, int $budget = 8, int $every = 20): array
+{
+    if (!cfun_tables($pdo)) return ['error' => 'no table'];
+    $now = time(); if ($every > 0 && (int)setting_get($pdo, 'wa_cfun_fast_at', '0') > $now - $every) return ['skipped' => 'recent'];
+    try { if ((int)$pdo->query("SELECT GET_LOCK('wa_cfun_fast', 0)")->fetchColumn() !== 1) return ['busy' => 1]; } catch (Throwable $e) { return ['busy' => 1]; }
+    $o = ['recounted' => 0, 'left' => 0]; $t0 = microtime(true);
+    try {
+        setting_set($pdo, 'wa_cfun_fast_at', (string)$now);
+        $cut = date('Y-m-d H:i:s'); $q = $pdo->prepare("SELECT phone FROM wa_cfun_dirty WHERE at <= ? ORDER BY at LIMIT " . (int)$max); $q->execute([$cut]); $all = array_map('strval', $q->fetchAll(PDO::FETCH_COLUMN));
+        foreach (array_chunk($all, 400) as $ch) {
+            if (microtime(true) - $t0 > $budget) break;
+            $o['recounted'] += cfun_calc($pdo, $ch);
+            $pdo->prepare("DELETE FROM wa_cfun_dirty WHERE at <= ? AND phone IN (" . cfun_in($ch) . ")")->execute(array_merge([$cut], $ch));   // a customer marked again while we worked stays on the list
+        }
+        $o['left'] = (int)$pdo->query("SELECT COUNT(*) FROM wa_cfun_dirty")->fetchColumn();
+        if (mt_rand(1, 200) === 1) $pdo->exec("DELETE FROM wa_cfun_mv WHERE d < '" . date('Y-m-d', time() - 45 * 86400) . "'");
+    } catch (Throwable $e) { error_log('cfun_fast: ' . $e->getMessage()); $o['error'] = mb_substr($e->getMessage(), 0, 160); }
+    try { $pdo->query("SELECT RELEASE_LOCK('wa_cfun_fast')"); } catch (Throwable $e) { }
+    $o['sec'] = round(microtime(true) - $t0, 2); return $o;
 }
 
 /** Messages per WhatsApp number (sent / delivered / failed) and customers per number. The message scan is the heaviest read, so it is redone at most every 6 hours; in between the saved copy is used. */
@@ -345,6 +382,13 @@ if (strpos($__cfa, 'wa.cf_') === 0) {
         case 'wa.cf_dl_reset': {   // forget every download (a fresh start)
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $pdo->exec("DELETE FROM wa_cfun_dl"); json_response(['ok' => true]);
         }
+        case 'wa.cf_moves': {   // movements between statuses, last 10 days: [{d, k: n}]
+            $days = []; for ($i = 0; $i < 10; $i++) $days[] = date('Y-m-d', time() - $i * 86400);
+            $by = []; try { $q = $pdo->prepare("SELECT d, k, n FROM wa_cfun_mv WHERE d >= ?"); $q->execute([end($days)]); foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $by[(string)$r['d']][(string)$r['k']] = (int)$r['n']; } catch (Throwable $e) { }
+            $since = ''; try { $since = (string)$pdo->query("SELECT MIN(d) FROM wa_cfun_mv")->fetchColumn(); } catch (Throwable $e) { }
+            $pend = 0; try { $pend = (int)$pdo->query("SELECT COUNT(*) FROM wa_cfun_dirty")->fetchColumn(); } catch (Throwable $e) { }
+            json_response(['ok' => true, 'days' => $days, 'by' => (object)$by, 'since' => $since, 'pending' => $pend]);
+        }
         case 'wa.cf_list': {
             $k = preg_replace('/[^a-z_0-9]/', '', (string)($_GET['k'] ?? 'all')); $after = preg_replace('/\D/', '', (string)($_GET['after'] ?? '')); $lim = max(1, min(5000, (int)($_GET['lim'] ?? 1000)));
             $qs = trim((string)($_GET['q'] ?? '')); $w = cfun_where($k); $p = [];
@@ -357,9 +401,15 @@ if (strpos($__cfa, 'wa.cf_') === 0) {
             $w2 = $w . ($after !== '' ? ' AND phone > ?' : ''); $p2 = $p; if ($after !== '') $p2[] = $after;
             $q = $pdo->prepare("SELECT phone, name, src, grp, bucket, ecode, last_camp, replied, optout, out_n, deliv_n, sent_n, fail_n, in_n, orders_n, first_out, last_out, last_in, imp, batch, qual, intent, named, asg, num, last_deliv, last_fail, health, val, score FROM wa_cfun WHERE $w2 ORDER BY phone LIMIT $lim"); $q->execute($p2);
             $rows = $q->fetchAll(PDO::FETCH_ASSOC); $cn = [];
+            // 🔄 a list of people who did not get a message (failed / not delivered): recount exactly these customers FIRST, so everybody who was delivered since leaves the list before it is downloaded
+            $lastPre = $rows ? (string)end($rows)['phone'] : ''; $fullPre = count($rows) === $lim;   // the paging cursor follows the page BEFORE the refresh, so removing delivered people never ends the download early
+            if ($rows && in_array($k, ['failed', 'g_failed', 'not_delivered', 'all_failed', 'any_failed', 'h_dead', 'h_held', 'h_notwa', 'h_stopped'], true)) {
+                try { @set_time_limit(60); cfun_fast($pdo, 3000, 6, 0); cfun_calc($pdo, array_map(function ($r) { return (string)$r['phone']; }, $rows));
+                    $tot->execute($p); $total = (int)$tot->fetchColumn(); $q->execute($p2); $rows = $q->fetchAll(PDO::FETCH_ASSOC); } catch (Throwable $e) { error_log('cf_list refresh: ' . $e->getMessage()); }
+            }
             if ($rows) { try { foreach ($pdo->query("SELECT id, name FROM wa_campaigns ORDER BY id DESC LIMIT 3000")->fetchAll(PDO::FETCH_ASSOC) as $c) $cn[(int)$c['id']] = (string)$c['name']; } catch (Throwable $e) { } }
             foreach ($rows as &$r) { $r['reason'] = $r['bucket'] === 'failed' ? cfun_reason((int)$r['ecode']) : ''; $r['camp'] = (int)$r['last_camp'] > 0 ? ($cn[(int)$r['last_camp']] ?? ('#' . (int)$r['last_camp'])) : ''; unset($r['ecode'], $r['last_camp']); } unset($r);
-            json_response(['ok' => true, 'total' => $total, 'rows' => $rows, 'last' => $rows ? (string)end($rows)['phone'] : '', 'more' => count($rows) === $lim]);
+            json_response(['ok' => true, 'total' => $total, 'rows' => $rows, 'last' => $lastPre !== '' ? $lastPre : ($rows ? (string)end($rows)['phone'] : ''), 'more' => $fullPre]);
         }
     }
     json_response(['error' => 'Unknown action.'], 404);
