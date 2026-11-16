@@ -224,7 +224,7 @@ html.wxdk .wcs{--ln:#25343e; --gb:#0f2e20; --rb:#3a1515;} html.wxdk .wcs-r,html.
       } catch (e) { }
     })();
     { const fb = document.createElement('div'); const sb = $(el, '#cxS'); sb.parentNode.insertBefore(fb, sb); funnelBox(fb, false); summary(sb); }   // the funnel is new; the old “at a glance” card stays
-    $(el, '#cxAdd').onclick = () => opts.addCustomers(() => { loadMeta(); load(); });
+    $(el, '#cxAdd').onclick = () => opts.addCustomers(() => { loadMeta(); load(); }, () => ctx.go('campaigns'));
     $(el, '#cxExp').onclick = function () { exportCsv({ all: 1, cf: cfOut(), q: S.q, except: [] }, S.total, this); };
     // ---------------------------------------------------------------------------------------------------------- filters (left)
     // ---------------------------------------------------------------------------------------------------------- views (ready + segments)
