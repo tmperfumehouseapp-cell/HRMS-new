@@ -2256,6 +2256,8 @@
   };
   setInterval(() => { if (CT_ON && !document.hidden && tab === 'today') { loadHist(); loadRecon(); if (!document.activeElement || !/^(rtTxt|rtEmp)$/.test(document.activeElement.id)) loadRemToday(); } }, 60000);      // the Last days panel is live: every minute
   setInterval(() => { if (CT_ON && !document.hidden && $('datePick').value === (T && T.today)) loadTower(false); }, 120000);
+  // 🏪 Give queries (Query · Campaign · Overnight) follows Auto assign: refreshed every 8 s while it is open and nobody is typing in it
+  setInterval(() => { try { const b = $('qbGive'); if (!b || b.offsetParent === null || document.hidden || (document.activeElement && b.contains(document.activeElement))) return; if (CPM) cqLoad(true); else if (NTM) ntLoad(true); else loadGive(); } catch (e) { } }, 8000);
 
 </script>
 <script>
