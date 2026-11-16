@@ -1074,6 +1074,9 @@ function cx2_dispatch(PDO $pdo, $action, array $auth, array $w, $by, array $in, 
         $w = []; $a = []; $ord = ltrim($raw, '#');
         if ($key !== '') { $w[] = 'phone LIKE ?'; $a[] = '%' . $key; }
         $w[] = 'order_name = ?'; $a[] = '#' . $ord; $w[] = 'order_name = ?'; $a[] = $ord; $w[] = 'tracking_no = ?'; $a[] = $raw;
+        $w[] = 'pend_track = ?'; $a[] = $raw;   // a tracking ID typed / imported by a non-admin waits for Admin in "pend_track": it must be findable too
+        // 🧾 a manual order typed loosely: "wm-38", "WM38", "wm 00038" all mean WM-00038
+        $wmNo = ''; if (preg_match('/^\s*#?\s*wm[\s\-]*0*(\d{1,7})\s*$/i', $raw, $__m)) { $wmNo = 'WM-' . str_pad($__m[1], 5, '0', STR_PAD_LEFT); $w[] = 'order_name = ?'; $a[] = $wmNo; $w[] = 'order_name = ?'; $a[] = '#' . $wmNo; }
         $ps = []; try { $st = $pdo->prepare("SELECT * FROM dp_dsp_parcels WHERE " . implode(' OR ', $w) . " ORDER BY id DESC LIMIT 6"); $st->execute($a); $ps = $st->fetchAll(); } catch (Throwable $e) { }
         $out = [];
         foreach ($ps as $p) {
@@ -1084,6 +1087,31 @@ function cx2_dispatch(PDO $pdo, $action, array $auth, array $w, $by, array $in, 
             $out[] = ['order' => (string)$p['order_name'], 'customer' => (string)$p['customer'], 'phone' => (string)$p['phone'], 'awb' => (string)$p['tracking_no'], 'courier' => (string)$p['courier'], 'status' => (string)(($p['sr_status'] ?? '') ?: $p['status']),
                 'etd' => (string)($p['etd'] ?? ''), 'delivered_at' => (string)($p['delivered_at'] ?? ''), 'live_at' => substr((string)($p['live_at'] ?? ''), 0, 16), 'link' => $lk, 'events' => $ev, 'note' => $note, 'created' => substr((string)$p['created_at'], 0, 16)];
         }
+        // 🧾 MANUAL ORDERS (WM-xxxxx). They were not found here at all: this box read only the Dispatch parcels and the Shopify orders, and a manual order's tracking ID lives on the manual order itself
+        // (typed or imported with "Import AWB sheet") — on the parcel it may still wait for Admin, or the parcel may not exist yet. Now the manual orders are searched directly:
+        // by the customer's phone, by the order number (WM-00038, wm-38 …) and by the tracking ID. One already shown as a parcel gets its tracking ID filled in; the others are added.
+        try {
+            $mw = []; $ma = [];
+            if ($key !== '') { $mw[] = 'phone = ?'; $ma[] = $key; $mw[] = 'cust_json LIKE ?'; $ma[] = '%' . $key . '%'; $mw[] = 'addr_json LIKE ?'; $ma[] = '%' . $key . '%'; }   // also the delivery phone typed on the order, when it differs from the chat's number
+            $mw[] = 'order_no = ?'; $ma[] = strtoupper($ord); if ($wmNo !== '') { $mw[] = 'order_no = ?'; $ma[] = $wmNo; }
+            $mw[] = 'trk_no = ?'; $ma[] = $raw;
+            $mq = $pdo->prepare("SELECT id, order_no, phone, status, pay, total_p, cod_p, cust_json, addr_json, trk_no, trk_courier, trk_adm, created_at, confirmed_at FROM wmo_order WHERE " . implode(' OR ', $mw) . " ORDER BY id DESC LIMIT 8"); $mq->execute($ma);
+            foreach ($mq->fetchAll() as $mo) {
+                $no = (string)$mo['order_no']; $awb = trim((string)($mo['trk_no'] ?? '')); $cr = trim((string)($mo['trk_courier'] ?? ''));
+                $hit = -1; foreach ($out as $i => $x) if (ltrim((string)$x['order'], '#') === $no) { $hit = $i; break; }
+                if ($hit >= 0) {   // the parcel is already shown: give it the manual order's tracking ID when the parcel has none yet
+                    if ((string)$out[$hit]['awb'] === '' && $awb !== '') { $out[$hit]['awb'] = $awb; if ((string)$out[$hit]['courier'] === '' && $cr !== '') $out[$hit]['courier'] = $cr;
+                        if ((string)$out[$hit]['link'] === '' && $awb !== 'Office Pickup' && function_exists('dp_dsp_link_for')) { try { $out[$hit]['link'] = (string)dp_dsp_link_for($pdo, $cr, $awb); } catch (Throwable $e) { } }
+                        if ((string)$out[$hit]['note'] === '') $out[$hit]['note'] = (int)$mo['trk_adm'] === 1 ? 'Tracking ID from the manual order.' : 'Tracking ID from the manual order — it waits for Admin approval in Dispatch.'; }
+                    continue;
+                }
+                $cu = json_decode((string)($mo['cust_json'] ?? ''), true) ?: (json_decode((string)($mo['addr_json'] ?? ''), true) ?: []);
+                $stt = (string)$mo['status'] === 'cancelled' ? 'Cancelled' : ((string)$mo['status'] !== 'confirmed' ? 'Waiting for the address' : ($awb === 'Office Pickup' ? 'Office pickup' : ($awb !== '' ? 'Tracking ID given' : 'Confirmed · no tracking ID yet')));
+                $lk = ''; if ($awb !== '' && $awb !== 'Office Pickup' && function_exists('dp_dsp_link_for')) { try { $lk = (string)dp_dsp_link_for($pdo, $cr, $awb); } catch (Throwable $e) { } }
+                $out[] = ['order' => $no, 'customer' => (string)($cu['name'] ?? ''), 'phone' => (string)$mo['phone'], 'awb' => $awb, 'courier' => $cr, 'status' => $stt, 'etd' => '', 'delivered_at' => '', 'live_at' => '', 'link' => $lk, 'events' => [],
+                    'note' => 'Manual order · ' . ('₹' . number_format((int)$mo['total_p'] / 100, 0, '.', ',')) . ((int)$mo['cod_p'] > 0 ? ' · COD ' . ('₹' . number_format((int)$mo['cod_p'] / 100, 0, '.', ',')) : ' · prepaid') . ((string)$mo['status'] === 'confirmed' ? '' : ' · not confirmed yet, so it is not in Dispatch'), 'created' => substr((string)$mo['created_at'], 0, 16), 'manual' => 1];
+            }
+        } catch (Throwable $e) { error_log('cx_track manual orders: ' . $e->getMessage()); }
         $orders = $key !== '' ? cx_orders($pdo, $key) : [];   // Shopify orders of this phone (also the ones not shipped yet)
         $open = $key !== '' ? cx2_find_open($pdo, $key, '') : null;
         json_response(['ok' => true, 'q' => $raw, 'parcels' => $out, 'orders' => $orders, 'open' => $open ? ['id' => (int)$open['id'], 'code' => cx_code($open['id'])] : null]);

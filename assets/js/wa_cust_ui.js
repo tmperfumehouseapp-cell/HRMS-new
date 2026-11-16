@@ -14,6 +14,7 @@
 .wcs{--ln:#e3e8ef; --mut:#64748b; --g:#12794a; --gb:#e7f6ee; --r:#b42318; --rb:#fde8e8; display:grid; grid-template-columns:minmax(0,1fr); gap:12px; align-items:start;}
 .wcs > *{min-width:0;}
 @media(min-width:1100px){ .wcs{grid-template-columns:340px minmax(0,1fr);} .wcs-f{position:sticky; top:8px; max-height:calc(100vh - 140px); overflow:auto;} }
+.wcs-f.wcs-emb{position:static !important; max-height:none !important; overflow:visible !important;}   /* the filter inside the New campaign window: no sticky card, so the count below it can never be drawn over it */
 .wcs .wp-cd{margin:0;}
 .wcs-h{font-size:12px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; color:var(--mut); margin:0 0 6px; display:flex; align-items:center; gap:6px;}
 .wcs-sec{padding:12px 0; border-top:1px solid #edf1ee;} .wcs-sec:first-child{border-top:0; padding-top:0;}
@@ -196,7 +197,7 @@ html.wxdk .wcs{--ln:#25343e; --gb:#0f2e20; --rb:#3a1515;} html.wxdk .wcs-r,html.
       const list = S.meta.tags.filter((t) => !have.has(t.k) && (!q || (t.t + ' ' + t.k).toLowerCase().includes(q)));
       const by = {}; list.forEach((t) => { const k = String(t.k).toLowerCase().replace(/_/g, ' ').replace(/\s+/g, ' '); const g = GROUPS.find((G) => G[2](k.replace(/ /g, '_'), t) || G[2](k, t)); (by[g[0]] = by[g[0]] || []).push(t); });
       let h = GROUPS.filter((G) => by[G[0]]).map((G) => `<div class="g">${G[1]}</div>` + by[G[0]].slice(0, q ? 40 : 25).map((t) => `<button type="button" data-tk="${esc(t.k)}"><span>${esc(t.t)}</span><small>${fmt(t.all)}</small></button>`).join('')).join('');
-      if (!h) h = '<div class="wcs-note" style="padding:10px">No tag like that.</div>';
+      if (!h) h = '<div class="wcs-note" style="padding:10px">No tag like that.</div>' + (/^[a-z0-9_]{3,40}$/i.test(S.dd.trim()) ? `<button type="button" data-tk="${esc(S.dd.trim())}"><span>Use “${esc(S.dd.trim())}” anyway</span></button>` : '');   // a tag typed in full (for example the batch tag an import shows) can always be used
       box.innerHTML = `<div class="wcs-dd">${h}</div>`;
       box.querySelectorAll('[data-tk]').forEach((b) => { b.onmousedown = (e) => e.preventDefault(); b.onclick = () => { S.cf.tags.push({ k: b.dataset.tk, m: 'in' }); S.dd = ''; onChange(true); }; });
       const close = (e) => { if (!e.target.closest || !e.target.closest('.wcs-pick')) { box.innerHTML = ''; document.removeEventListener('pointerdown', close); } }; document.addEventListener('pointerdown', close);
@@ -223,7 +224,7 @@ html.wxdk .wcs{--ln:#25343e; --gb:#0f2e20; --rb:#3a1515;} html.wxdk .wcs-r,html.
       } catch (e) { }
     })();
     { const fb = document.createElement('div'); const sb = $(el, '#cxS'); sb.parentNode.insertBefore(fb, sb); funnelBox(fb, false); summary(sb); }   // the funnel is new; the old “at a glance” card stays
-    $(el, '#cxAdd').onclick = () => opts.addCustomers(() => { loadMeta(); load(); });
+    $(el, '#cxAdd').onclick = () => opts.addCustomers(() => { loadMeta(); load(); }, () => ctx.go('campaigns'));
     $(el, '#cxExp').onclick = function () { exportCsv({ all: 1, cf: cfOut(), q: S.q, except: [] }, S.total, this); };
     // ---------------------------------------------------------------------------------------------------------- filters (left)
     // ---------------------------------------------------------------------------------------------------------- views (ready + segments)
@@ -435,7 +436,7 @@ html.wxdk .wcs{--ln:#25343e; --gb:#0f2e20; --rb:#3a1515;} html.wxdk .wcs-r,html.
     const S = { cf: Object.assign(BLANK(), JSON.parse(JSON.stringify(o.cf || {}))), q: '', meta: { tags: [], numbers: [], people: [], segments: [] }, shut: false, dd: '' };
     let K = null; const fire = () => { K.drawF(host); if (o.onChange) o.onChange(S.cf, K.cfOut()); };
     K = filterKit(S, U, fire, { search: false }); if (S.cf.dp && S.cf.dp !== 'custom') K.presetDates();
-    host.classList.add('wcs-f'); K.drawF(host);
+    host.classList.add('wcs-f', 'wcs-emb'); K.drawF(host);
     api.get('wa.cs_meta').then((d) => { S.meta = { tags: d.tags || [], numbers: d.numbers || [], people: d.people || [], segments: d.segments || [], funnel: d.funnel || {} }; if (host.isConnected) K.drawF(host); }).catch(() => { });
     return { ui: () => S.cf, out: () => K.cfOut(), count: () => K.nOn(), set(cf) { S.cf = Object.assign(BLANK(), cf || {}); K.drawF(host); } };
   }

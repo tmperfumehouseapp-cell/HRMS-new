@@ -516,20 +516,20 @@ window.CX = (function () {
 
   /* ------------------------------ 🔎 track an order: phone / order / AWB → Shopify orders + LIVE Shiprocket status ------------------------------ */
   function trackSheet(q0) {
-    const m = modal('<div class="cx-mh"><b>🔎 Track an order</b><button type="button" class="cx-x" aria-label="Close">✕</button></div><div class="cx-mb"><div class="cx-trk-q"><input class="cx-in" id="tkQ" type="search" inputmode="search" placeholder="Phone, order number (#67533) or tracking number" value="' + esc(q0 || '') + '"><button type="button" class="cx-btn" id="tkGo">Track</button></div><div id="tkOut" class="cx-trk"></div></div>');
+    const m = modal('<div class="cx-mh"><b>🔎 Track an order</b><button type="button" class="cx-x" aria-label="Close">✕</button></div><div class="cx-mb"><div class="cx-trk-q"><input class="cx-in" id="tkQ" type="search" inputmode="search" placeholder="Phone, order number (#67533 or WM-00038) or tracking number" value="' + esc(q0 || '') + '"><button type="button" class="cx-btn" id="tkGo">Track</button></div><div id="tkOut" class="cx-trk"></div></div>');
     m.el.querySelector('.cx-x').onclick = m.close; const inp = m.el.querySelector('#tkQ'), out = m.el.querySelector('#tkOut');
     const run = async () => {
       const q = inp.value.trim(); if (q.length < 4) { out.innerHTML = '<div class="cx-empty">Type at least 4 characters.</div>'; return; }
-      out.innerHTML = '<div class="cx-empty">Asking Shiprocket and Shopify…</div>';
+      out.innerHTML = '<div class="cx-empty">Looking in Dispatch, manual orders and Shopify…</div>';
       const d = await call(() => api.get('bd.cx_track', { q }), false); if (!d) { out.innerHTML = ''; return; }
       let h = d.open ? '<div class="cx-note">This customer has an open complaint <a href="#" data-cs="' + d.open.id + '">' + esc(d.open.code) + '</a>.</div>' : '';
       h += (d.parcels || []).map((p) => '<div class="cx-pc"><div class="h"><b>' + esc(p.order || '—') + '</b><span class="cx-pill ' + (/deliver/i.test(p.status) ? 'g' : /rto|return|fail|ndr|lost|damag/i.test(p.status) ? 'r' : 'b') + '">' + esc(p.status || 'no status') + '</span><span class="sp"></span>' + (p.link ? '<a href="' + esc(p.link) + '" target="_blank" rel="noopener">Tracking link ↗</a>' : '') + '</div>'
         + '<div class="m">' + esc([p.customer, p.phone ? '+91 ' + p.phone : '', p.courier, p.awb ? 'AWB ' + p.awb : 'no tracking number yet', p.etd ? 'expected ' + p.etd : '', p.delivered_at ? 'delivered ' + p.delivered_at.slice(0, 16) : ''].filter(Boolean).join(' · ')) + '</div>'
-        + (p.events.length ? '<ol class="ev">' + p.events.map((e) => '<li><b>' + esc(e.at.slice(5)) + '</b> ' + esc(e.text) + (e.where ? ' <span>· ' + esc(e.where) + '</span>' : '') + '</li>').join('') + '</ol>' : '') + '<div class="m">' + (p.note ? '⚠ ' + esc(p.note) : (p.live_at ? 'Live from Shiprocket · ' + esc(p.live_at) : '')) + '</div></div>').join('');
+        + (p.events.length ? '<ol class="ev">' + p.events.map((e) => '<li><b>' + esc(e.at.slice(5)) + '</b> ' + esc(e.text) + (e.where ? ' <span>· ' + esc(e.where) + '</span>' : '') + '</li>').join('') + '</ol>' : '') + '<div class="m">' + (p.note ? (p.manual ? '🧾 ' : '⚠ ') + esc(p.note) : (p.live_at ? 'Live from Shiprocket · ' + esc(p.live_at) : '')) + '</div></div>').join('');
       const shipped = new Set((d.parcels || []).map((p) => String(p.order).replace('#', '')));
       const rest = (d.orders || []).filter((o) => !shipped.has(String(o.name || '').replace('#', '')));
       if (rest.length) h += '<div class="cx-lbl">Shopify orders not shipped yet</div>' + rest.map((o) => '<div class="cx-pc"><div class="h"><b>' + esc(o.name || '') + '</b>' + (o.total != null ? '<span>' + inr(o.total) + '</span>' : '') + '<span class="sp"></span><span class="cx-pill o">' + esc(o.fulfillment || o.fulfillment_status || 'not shipped') + '</span></div><div class="m">' + esc([o.at || o.created_at || '', o.pay || o.financial_status || ''].filter(Boolean).join(' · ')) + '</div></div>').join('');
-      if (!h) h = '<div class="cx-empty">Nothing found for “' + esc(q) + '”. Check the number, or the order may not be in Shopify / Shiprocket yet.</div>';
+      if (!h) h = '<div class="cx-empty">Nothing found for “' + esc(q) + '”. Check the number, or the order may not be in Shopify, manual orders or Dispatch yet.</div>';
       out.innerHTML = h; out.querySelectorAll('[data-cs]').forEach((a) => { a.onclick = (e) => { e.preventDefault(); m.close(); openCase(+a.dataset.cs); }; });
     };
     m.el.querySelector('#tkGo').onclick = run; inp.onkeydown = (e) => { if (e.key === 'Enter') run(); }; setTimeout(() => inp.focus(), 50); if (q0) run();

@@ -195,7 +195,7 @@
   };
 
   // ---- add customers (Contacts / Customers screen): an Excel / CSV file or pasted lines → check (Claude fixes the rows it can) → add with tags. addCustomers(onDone)
-  function addCustomers(onDone) {
+  function addCustomers(onDone, goCamp) {
   // ---- add customers: an Excel / CSV file (or pasted lines) → check (Claude fixes the rows it can) → add with tags
   const SAMPLE = 'phone,name,tags\n9876543210,Rakesh Shah,"vip, diwali"\n+91 99887 76655,Seema Patel,retail\n';
   function csvRows(text) {
@@ -353,9 +353,10 @@
         const d = T, SM = payload.summary;
         m.body.innerHTML = steps(3) + (SM ? `<div class="wp-ok" style="font-size:15px;line-height:1.6">📥 <b>${fmt(SM.total)}</b> numbers in the file<br>✅ <b>${fmt(SM.kept)}</b> to send<br>⏸ <b>${fmt(SM.left)}</b> left out${SM.left ? ' <button type="button" class="wp-btn s" id="iLd">⬇ Download left-out</button>' : ''}</div><div class="wp-hint" style="margin:6px 0">${GROUPS.filter((g) => SM.groups[g[0]] && (SM.groups[g[0]][0] || SM.groups[g[0]][1])).map((g) => g[1] + ': <b>' + fmt(SM.groups[g[0]][0]) + '</b> to send' + (SM.groups[g[0]][1] ? ', <b>' + fmt(SM.groups[g[0]][1]) + '</b> left out' : '')).join('<br>')}</div>` : '') + `<div class="wp-ok" style="margin-top:6px"><b>${fmt(d.added)}</b> added · ${fmt(d.already)} already in the list (tags added to them too) · ${fmt(d.invalid)} not valid Indian mobile numbers</div>${d.left ? `<div class="wp-ok" style="margin-top:6px"><b>${fmt(d.left)}</b> left out — saved with the tag <b>left_${esc(String(d.batch_tag).slice(7))}</b>, so you can bring them back later.</div>` : ''}${d.released ? `<div class="wp-ok" style="margin-top:6px"><b>${fmt(d.released)}</b> were on the “held by Meta” list — released, so a campaign can message them now.</div>` : ''}
           <div class="wp-hint" style="margin:8px 0">Tagged: ${(d.tags || []).map((t) => '<b>' + esc(t) + '</b>').join(', ')}. To message exactly these people: <b>Campaigns → New → Who gets it → tag “${esc(d.batch_tag || '')}”</b>. Opted-out customers are left out by the campaign automatically.</div>
-          <div class="wp-row"><button type="button" class="wp-btn p" id="iD">Done</button></div>`;
+          <div class="wp-row">${goCamp && (d.added + d.already) > 0 ? `<button type="button" class="wp-btn p" id="iCamp">📣 Send campaign to these ${fmt(SM ? SM.kept : d.added + d.already)}</button>` : ''}<button type="button" class="wp-btn ${goCamp ? '' : 'p'}" id="iD">Done</button></div>`;
         const ld = $(m.body, '#iLd'); if (ld) ld.onclick = () => dl('left-out-numbers.csv', 'phone,name,group\n' + (payload.leftRows || []).map((r) => [r[0], '"' + String(r[1] || '').replace(/"/g, '""') + '"', r[2]].join(',')).join('\n'));
-        $(m.body, '#iD').onclick = () => { m.close(); if (done) done(); }; }
+        $(m.body, '#iD').onclick = () => { m.close(); if (done) done(); };
+        const ic = $(m.body, '#iCamp'); if (ic) ic.onclick = () => { window.WaCampGo = { mode: 'normal', seg: { tag: d.batch_tag, name: 'Import ' + String(d.batch_tag || '').replace(/^import_/, '') + (fileName ? ' · ' + fileName.replace(/\.[a-z0-9]+$/i, '') : ''), n: SM ? SM.kept : d.added + d.already } }; m.close(); if (done) done(); goCamp(); }; }
       catch (e) { const bx = $(m.body, '#iE'); if (bx) bx.innerHTML = errBox((T.added || T.already ? 'Stopped part-way (' + fmt(T.added + T.already) + ' numbers were already done — adding again is safe). ' : '') + e.message); btn.disabled = false; btn.textContent = 'Try again'; }
     }
     step1();

@@ -231,7 +231,7 @@
     const root = $(opts.root || 'wi'); root.className = 'wi ' + (admin ? 'admin' : 'mine') + (opts.one ? ' one' : '');
     const tellParent = (m) => { if (opts.one && window.parent !== window) { try { window.parent.postMessage(Object.assign({ wa: '' }, m), location.origin); } catch (e) { } } };   // wa_one.html: the side panel around this chat
     const st = document.createElement('style'); st.textContent = CSS + '.wi-new{display:inline-block;width:12px;height:12px;border-radius:50%;background:#22c55e;margin-right:6px;vertical-align:-1px;box-shadow:0 0 0 0 rgba(34,197,94,.55);animation:winew 1.6s infinite}@keyframes winew{0%{box-shadow:0 0 0 0 rgba(34,197,94,.55)}70%{box-shadow:0 0 0 8px rgba(34,197,94,0)}100%{box-shadow:0 0 0 0 rgba(34,197,94,0)}}'; document.head.appendChild(st);
-    const tabs = admin ? [['unassigned', '🙋 Requests'], ['all', 'All open'], ['closed', 'Closed']] : [['mine', 'Open'], ['closed', 'Closed']];
+    const tabs = admin ? [['unassigned', '🙋 Requests'], ['all', 'All open'], ['closed', 'Closed'], ['history', '🕘 History']] : [['mine', 'Open'], ['closed', 'Closed'], ['history', '🕘 History']];
     root.innerHTML = `
       <div class="wi-kpi" id="wiK"></div>
       <div class="wi-box">
@@ -248,9 +248,9 @@
     // ---------- list
     function drawTabs() {
       const c = S.counts || {};
-      const n = { unassigned: c.unassigned, all: c.all, mine: c.mine, closed: c.closed };
+      const n = { unassigned: c.unassigned, all: c.all, mine: c.mine, closed: c.closed, history: c.history };
       $('wiT').innerHTML = tabs.map(([k, l]) => `<button type="button" class="wi-tab ${S.scope === k && !S.emp ? 'on' : ''}" data-k="${k}">${l}${n[k] != null ? '<i>' + n[k] + '</i>' : ''}</button>`).join('');
-      $('wiT').querySelectorAll('button').forEach((b) => { b.onclick = () => { S.scope = b.dataset.k; S.emp = 0; if ($('wiE')) { $('wiE').value = '0'; ebSync(); } if (admin && S.src === 'assigned' && S.scope === 'unassigned') { S.src = ''; if (opts.onFeed) { try { opts.onFeed(''); } catch (e) { } } } loadList(); }; });
+      $('wiT').querySelectorAll('button').forEach((b) => { b.onclick = () => { S.scope = b.dataset.k; S.emp = 0; if (!admin && S.bulk.on && S.scope !== 'history') bkToggleMode(false); else if (!admin) drawFeeds(); if ($('wiE')) { $('wiE').value = '0'; ebSync(); } if (admin && S.src === 'assigned' && S.scope === 'unassigned') { S.src = ''; if (opts.onFeed) { try { opts.onFeed(''); } catch (e) { } } } loadList(); }; });
     }
     const FEEDS = admin ? [['', 'All'], ['query', 'Query'], ['assigned', 'Assigned'], ['community', 'Community'], ['campaign', 'Campaign']] : [['', 'All'], ['query', 'Query'], ['community', 'Community'], ['campaign', 'Campaign']];
     function drawFeeds() {
@@ -263,7 +263,7 @@
       $('wiF').querySelectorAll('.wi-hr').forEach((h) => { h.onclick = (ev) => { ev.stopPropagation(); hrPick(h.dataset.hr, h); }; });
       $('wiF').querySelectorAll('.wi-tk').forEach((t) => { t.onclick = (ev) => { ev.stopPropagation(); const k = t.dataset.tk; let set = String(S.src || '').split(',').filter((x) => SIMPLE.includes(x)); set = set.includes(k) ? set.filter((x) => x !== k) : set.concat(k); setFeed(set.join(',')); }; });
       let x = ''; if (AU.allowed) x += `<button type="button" class="wi-chip wi-auc ${AU.on ? 'on' : ''}" id="wiAuT" title="The suggested reply counts down 10 seconds and sends itself unless you press Cancel">⚡ Auto-reply ${AU.on ? 'ON' : 'OFF'}</button>`;
-      if (admin) x += `<button type="button" class="wi-chip ${S.bulk && S.bulk.on ? 'on' : ''}" id="wiBkT" title="Select many chats: send one message to all of them, or move them to another person">☑ Select chats</button>`;
+      if (admin || S.scope === 'history') x += `<button type="button" class="wi-chip ${S.bulk && S.bulk.on ? 'on' : ''}" id="wiBkT" title="Select many chats: send one message to all of them, or move them to another person">☑ Select chats</button>`;
       if (admin) x += `<button type="button" class="wi-chip" id="wiAuM" title="Switch auto-reply on or off for the whole team">${AU.allowed ? '🔓 Team auto-reply: ON' : '🔒 Team auto-reply: OFF'}</button>`;
       if (x) { $('wiF').insertAdjacentHTML('beforeend', x); if ($('wiAuT')) $('wiAuT').onclick = auToggle; if ($('wiBkT')) $('wiBkT').onclick = () => bkToggleMode(); if ($('wiAuM')) $('wiAuM').onclick = auMaster; }
     }
@@ -1390,20 +1390,20 @@
       drawList();
     }
     function bkBarHtml() {
-      if (!S.bulk.on) return ''; const n = bkN(), loaded = S.chats.length, tot = Math.max(loaded, (S.counts && (S.scope === 'unassigned' ? S.counts.unassigned : S.scope === 'closed' ? S.counts.closed : S.counts.all)) || 0);
+      if (!S.bulk.on) return ''; const n = bkN(), loaded = S.chats.length, tot = Math.max(loaded, (S.counts && (S.scope === 'unassigned' ? S.counts.unassigned : S.scope === 'closed' ? S.counts.closed : S.scope === 'history' ? S.counts.history : S.counts.all)) || 0);
       const allSel = loaded > 0 && S.chats.every((c) => S.bulk.set.has(c.phone));
       return `<div class="bk-bar" id="bkBar"><div class="bk-top"><div class="bk-n">${n ? bkFmt(n) + ' selected' : 'Select chats'}<small>${n ? 'Tap a chat to add or remove it' : 'Tap chats, or select everything in this view'}</small></div><button type="button" class="bk-x" id="bkOff">✕ Done</button></div>
         ${admin ? `<div class="bk-fl"><div class="lb">Show only</div><div class="bk-chs">${[['', 'All'], ['today', 'Today’s queries'], ['yesterday', 'Yesterday’s queries'], ['7d', 'Last 7 days'], ['camp', 'Campaign replies']].map(([k, l]) => `<button type="button" data-bf="bd:${k}" class="${(S.bulk.f.bd || '') === k ? 'on' : ''}">${l}</button>`).join('')}</div>
           <div class="lb">Order status</div><div class="bk-chs">${[['no', '🆕 Not ordered yet'], ['yes', '✅ Order done'], ['', 'All']].map(([k, l]) => `<button type="button" data-bf="ob:${k}" class="${(S.bulk.f.ob || '') === k ? 'on' : ''}${k === 'yes' ? ' ex' : ''}">${l}</button>`).join('')}</div>
           <div class="lb">Number</div><div class="bk-chs">${(((S.counts || {}).src || {}).nums || []).map((x) => `<button type="button" data-bf="bn:${x.id}" class="${(S.bulk.f.bn || []).includes(x.id) ? 'on' : ''}">${esc(String(x.label || 'Number ' + x.id))}</button>`).join('')}</div></div>` : ''}
         <div class="bk-row"><button type="button" class="bk-link" id="bkAll">${allSel ? '☑ All ' + bkFmt(loaded) + ' shown are selected' : '☐ Select all in this view'}${tot > loaded ? ' (up to ' + bkFmt(Math.min(3000, tot)) + ')' : ''}</button>${n ? '<button type="button" class="bk-link" id="bkNone" style="margin-left:auto">Clear</button>' : ''}</div>
-        <div class="bk-row"><button type="button" class="bk-b send" id="bkSend" ${n ? '' : 'disabled'}>📨 Send message</button><button type="button" class="bk-b move" id="bkMove" ${n ? '' : 'disabled'}>👤 Transfer</button><button type="button" class="bk-b move" id="bkNum" ${n ? '' : 'disabled'} title="Answer these customers from another of your numbers">📱 Move to number</button></div></div>`;
+        <div class="bk-row"><button type="button" class="bk-b send" id="bkSend" ${n ? '' : 'disabled'}>📨 Send message</button>${admin ? `<button type="button" class="bk-b move" id="bkMove" ${n ? '' : 'disabled'}>👤 Transfer</button><button type="button" class="bk-b move" id="bkNum" ${n ? '' : 'disabled'} title="Answer these customers from another of your numbers">📱 Move to number</button>` : ''}</div></div>`;
     }
     function bkWire(L) {
       const b = $('bkBar'); if (!b) return;
       $('bkOff').onclick = () => bkToggleMode(false); $('bkAll').onclick = bkSelectAll; if ($('bkNone')) $('bkNone').onclick = () => { S.bulk.set.clear(); drawList(); };
-      $('bkSend').onclick = () => { S.bulk.retryNote = ''; bkSendOpen(); }; $('bkMove').onclick = bkMoveOpen;
-      b.querySelectorAll('[data-bf]').forEach((x) => { x.onclick = () => { const [k, v] = x.dataset.bf.split(':'); const f = S.bulk.f; if (k === 'bn') { const id = +v, i = f.bn.indexOf(id); if (i >= 0) f.bn.splice(i, 1); else f.bn.push(id); } else f[k] = v; S.bulk.set.clear(); S.bulk.info = {}; loadList(); }; });   // a different filter = a different list: the ticks start again if ($('bkNum')) $('bkNum').onclick = bkNumOpen;
+      $('bkSend').onclick = () => { S.bulk.retryNote = ''; bkSendOpen(); }; if ($('bkMove')) $('bkMove').onclick = bkMoveOpen;
+      b.querySelectorAll('[data-bf]').forEach((x) => { x.onclick = () => { const [k, v] = x.dataset.bf.split(':'); const f = S.bulk.f; if (k === 'bn') { const id = +v, i = f.bn.indexOf(id); if (i >= 0) f.bn.splice(i, 1); else f.bn.push(id); } else f[k] = v; S.bulk.set.clear(); S.bulk.info = {}; loadList(); }; });   // a different filter = a different list: the ticks start again if ($('bkNum')) if ($('bkNum')) $('bkNum').onclick = bkNumOpen;
     }
     // ---------- 📱 move many chats to another of our numbers (the Second number has a payment problem → Main)
     async function bkNumOpen() {

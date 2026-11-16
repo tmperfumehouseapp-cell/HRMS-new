@@ -31,9 +31,14 @@ function sku_list_file(): string
 }
 
 /** A name with everything that is not the perfume's own name taken out: shop suffix, size, bottle colour, filler words, punctuation. */
+function sku_fold(string $t): string
+{   // accents off, so "Café" = "Cafe", "Lumière" = "Lumiere", "Oudélia" = "Oudelia"
+    if (class_exists('Normalizer')) { $d = Normalizer::normalize($t, Normalizer::FORM_D); if ($d !== false) $t = preg_replace('/\p{Mn}+/u', '', $d); }
+    return strtr($t, ['é' => 'e', 'è' => 'e', 'ê' => 'e', 'ë' => 'e', 'á' => 'a', 'à' => 'a', 'â' => 'a', 'ä' => 'a', 'í' => 'i', 'ì' => 'i', 'î' => 'i', 'ï' => 'i', 'ó' => 'o', 'ò' => 'o', 'ô' => 'o', 'ö' => 'o', 'ú' => 'u', 'ù' => 'u', 'û' => 'u', 'ü' => 'u', 'ç' => 'c', 'ñ' => 'n']);
+}
 function sku_norm(string $t): string
 {
-    $t = mb_strtolower($t);
+    $t = sku_fold(mb_strtolower($t));
     $t = preg_replace('/[|｜].*$/u', ' ', $t);                                         // "… | TMPerfumehouse"
     $t = preg_replace('/\(.*?\)/u', ' ', $t);
     $t = preg_replace('/\d+(\.\d+)?\s*-?\s*(ml|gm|g|pcs|pc)\b/u', ' ', $t);
@@ -50,7 +55,8 @@ function sku_index(): array
     $by = []; $name = []; $ids = [];
     foreach (sku_list() as $r) {
         $sku = (string)($r[0] ?? ''); if ($sku === '') continue; $name[$sku] = (string)($r[1] ?? ''); $ids[mb_strtolower($sku)] = $sku;
-        foreach ([(string)($r[2] ?? ''), (string)($r[1] ?? '')] as $n) { $k = sku_norm($n); if ($k !== '' && !isset($by[$k])) $by[$k] = $sku; }      // the shop / HRMS name wins over the original name
+        $names = preg_split('/\s*[;\r\n]+\s*/u', (string)($r[2] ?? '')) ?: []; $names[] = (string)($r[1] ?? '');      // the third column may hold several shop names: "GUCH ESHA & FLORA ; Guchhi Esha & Flora"
+        foreach ($names as $n) { $k = sku_norm((string)$n); if ($k !== '' && !isset($by[$k])) $by[$k] = $sku; }      // the shop / HRMS names win over the original name
     }
     uksort($by, fn($a, $b) => mb_strlen($b) <=> mb_strlen($a));       // the longest name first: "afn 9 night elixir" before "afn 9 night"
     return $ix = ['by' => $by, 'name' => $name, 'ids' => $ids];
@@ -105,6 +111,10 @@ function sku_take(array &$grid, array &$bad, string $order, string $title, strin
     $full = trim($title . ' ' . $variant);
     if (preg_match('/(?<![a-z0-9])chains?(?![a-z0-9])|necklace|bracelet|pendant/i', $full)) { $bad[] = ['order' => $order, 'text' => $full, 'qty' => $qty, 'why' => 'jewellery: not in the SKU sheet', 'kind' => 'left']; return; }
     $put = function (string $sku, int $col, int $q) use (&$grid) { if (!isset($grid[$sku])) $grid[$sku] = array_fill(0, 10, 0); $grid[$sku][$col] += $q; };
+    if (preg_match('/^\s*complimentary\b/i', $full)) {      // "complimentary 10ml": a free sample — its perfume is not written on the order, so it is counted on its own row "Complimentary (free gift)" in its size column
+        $w0 = ''; $c0 = sku_col($full, $w0); if ($c0 >= 0) { $put('FREE', $c0, $qty); return; }
+        $bad[] = ['order' => $order, 'text' => $full, 'qty' => $qty, 'why' => 'free gift: size not known', 'kind' => 'size']; return;
+    }
     // 1. a single product: the line itself names one SKU
     $props = array_values(array_filter($props, fn($p) => is_array($p) && (string)($p['name'] ?? '') !== '' && (string)$p['name'][0] !== '_'));      // hidden details (names starting with _) are the shop's own bookkeeping
     $sku = sku_match($title, $shopSku); $why = '';
@@ -177,8 +187,8 @@ function sku_sheet(PDO $pdo, string $day): array
         }
     } catch (Throwable $e) { }
     $ix = sku_index(); $rows = [];
-    foreach ($grid as $sku => $q) $rows[] = ['sku' => (string)$sku, 'name' => (string)($ix['name'][$sku] ?? 'Not Found'), 'q' => $q, 'total' => array_sum($q)];
-    usort($rows, function ($a, $b) { $x = ctype_digit($a['sku']) ? (int)$a['sku'] : PHP_INT_MAX; $y = ctype_digit($b['sku']) ? (int)$b['sku'] : PHP_INT_MAX; return $x <=> $y ?: strcmp($a['sku'], $b['sku']); });
+    foreach ($grid as $sku => $q) $rows[] = ['sku' => (string)$sku, 'name' => $sku === 'FREE' ? 'Complimentary (free gift)' : (string)($ix['name'][$sku] ?? 'Not Found'), 'q' => $q, 'total' => array_sum($q)];
+    usort($rows, function ($a, $b) { if (($a['sku'] === 'FREE') !== ($b['sku'] === 'FREE')) return $a['sku'] === 'FREE' ? 1 : -1; $x = ctype_digit($a['sku']) ? (int)$a['sku'] : PHP_INT_MAX; $y = ctype_digit($b['sku']) ? (int)$b['sku'] : PHP_INT_MAX; return $x <=> $y ?: strcmp($a['sku'], $b['sku']); });
     $tot = array_fill(0, 10, 0); foreach ($rows as $r) foreach ($r['q'] as $i => $v) $tot[$i] += $v;
     // the list on top of the page: the same product from many orders is ONE line with its pieces and its orders
     $grp = [];
@@ -220,7 +230,7 @@ function sku_route(PDO $pdo, string $action): void
         if (!in_array($role, ['Admin', 'HR'], true)) json_response(['error' => 'Only Admin / HR can replace the SKU list.'], 403);
         if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
         $rows = []; $seen = [];
-        foreach ((array)(json_input()['rows'] ?? []) as $r) { if (!is_array($r)) continue; $s = trim((string)($r[0] ?? '')); if ($s === '' || isset($seen[mb_strtolower($s)]) || preg_match('/^sku$/i', $s)) continue; $seen[mb_strtolower($s)] = 1; $rows[] = [mb_substr($s, 0, 20), mb_substr(trim((string)($r[1] ?? '')), 0, 160), mb_substr(trim((string)($r[2] ?? '')), 0, 160)]; }
+        foreach ((array)(json_input()['rows'] ?? []) as $r) { if (!is_array($r)) continue; $s = trim((string)($r[0] ?? '')); if ($s === '' || isset($seen[mb_strtolower($s)]) || preg_match('/^sku$/i', $s)) continue; $seen[mb_strtolower($s)] = 1; $rows[] = [mb_substr($s, 0, 20), mb_substr(trim((string)($r[1] ?? '')), 0, 160), mb_substr(trim((string)($r[2] ?? '')), 0, 800)]; }
         if (count($rows) < 5) json_response(['error' => 'That file has fewer than 5 SKUs. The first three columns must be: SKU · original name · shop name.'], 422);
         if (count($rows) > 5000) json_response(['error' => 'At most 5,000 SKUs.'], 422);
         $dir = __DIR__ . '/uploads'; if (!is_dir($dir)) @mkdir($dir, 0775, true);

@@ -19,7 +19,7 @@
       p.innerHTML = '<div class="sch"><b id="scT">Chat</b><span class="sp"></span><button type="button" id="scX" aria-label="Close chat">✕ Close</button></div><iframe id="scI" title="Chat" allow="microphone"></iframe>';
       document.body.appendChild(p); document.getElementById('scX').onclick = close;
     }
-    document.getElementById('scI').src = 'wa_one.html?phone=' + ph; document.getElementById('scT').textContent = '💬 +91 ' + ph; p.dataset.p = ph;
+    document.getElementById('scI').src = 'wa_read.html?phone=' + ph; document.getElementById('scT').textContent = '💬 +91 ' + ph; p.dataset.p = ph;
     document.body.classList.add('sc-on'); if (wide()) document.body.style.marginRight = 'min(520px,48vw)';
   }
   function close() { const p = document.getElementById('scPanel'); if (p) p.remove(); document.body.classList.remove('sc-on'); document.body.style.marginRight = ''; }

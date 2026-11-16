@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chat — HRMS</title>
+<!-- Simple read-only chat: customer name, number and the messages. Nothing else (no reply, follow-up, price chart…). Used by the side chat of Orders / Order Allocation. wa_read.html?phone=9876543210 -->
+<style>
+  *{box-sizing:border-box}html,body{margin:0;height:100%;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:#e9edf0}
+  body{display:flex;flex-direction:column}
+  #hd{padding:10px 14px;background:#fff;border-bottom:1px solid #e2e8f0}
+  #nm{font-weight:800;font-size:16px;color:#0f172a;word-break:break-word}#ph{font-size:14px;color:#475569;margin-top:2px}
+  #ms{flex:1;overflow-y:auto;padding:10px 10px 24px;-webkit-overflow-scrolling:touch}
+  .r{display:flex;margin:4px 0}.r.o{justify-content:flex-end}
+  .b{max-width:82%;padding:7px 10px;border-radius:10px;font-size:14.5px;line-height:1.35;background:#fff;color:#0f172a;word-break:break-word;white-space:pre-wrap;box-shadow:0 1px 1px rgba(0,0,0,.08)}
+  .o .b{background:#d9fdd3}.t{font-size:10.5px;color:#64748b;margin-top:3px;text-align:right}
+  .d{text-align:center;margin:10px 0 4px;font-size:11.5px;color:#475569}.d span{background:#fff;border-radius:99px;padding:2px 10px}
+  .b img{max-width:100%;border-radius:6px;display:block}.ld{color:#2563eb;cursor:pointer;font-weight:600}
+  #more{display:block;margin:6px auto;border:1px solid #cbd5e1;background:#fff;border-radius:99px;padding:5px 14px;font-size:13px;cursor:pointer}
+  #msg{padding:30px;text-align:center;color:#64748b}
+</style>
+</head>
+<body>
+<div id="hd"><div id="nm">Chat</div><div id="ph"></div></div>
+<div id="ms"><div id="msg">Loading…</div></div>
+<script src="assets/js/config.js?v=2"></script>
+<script src="assets/js/api.js?v=13"></script>
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id), esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const phone = (new URLSearchParams(location.search).get('phone') || '').replace(/\D/g, '').slice(-10);
+  $('ph').textContent = phone ? '+91 ' + phone : '';
+  if (!api.token()) { $('msg').textContent = 'Please log in again.'; return; }
+  let msgs = [], more = false, sig = '', MEDIA = {};
+  const dayOf = (ts) => String(ts || '').slice(0, 10), hm = (ts) => { const d = new Date(String(ts).replace(' ', 'T')); return isNaN(d) ? '' : d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }); };
+  const dl = (ts) => { const d = new Date(String(ts).replace(' ', 'T')); return isNaN(d) ? '' : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }); };
+  function body(m) {
+    const t = esc(m.body || '');
+    if (m.media_id) {
+      const k = m.mtype === 'image' || m.mtype === 'sticker' ? 'img' : m.mtype === 'audio' ? 'aud' : m.mtype === 'video' ? 'vid' : 'doc';
+      const u = MEDIA[m.media_id];
+      if (u && k === 'img') return '<img src="' + u + '" alt="photo">' + (t ? '<div>' + t + '</div>' : '');
+      if (u && k === 'aud') return '<audio controls src="' + u + '"></audio>';
+      if (u && k === 'vid') return '<video controls style="max-width:100%" src="' + u + '"></video>';
+      const lab = { img: '📷 Tap to open photo', aud: '🎤 Tap to play voice note', vid: '🎬 Tap to play video', doc: '📄 Tap to open file' }[k];
+      return '<div class="ld" data-m="' + esc(m.media_id) + '">' + lab + '</div>' + (t ? '<div>' + t + '</div>' : '');
+    }
+    return t || '<i>' + esc(m.mtype || 'message') + '</i>';
+  }
+  function draw(keep) {
+    const box = $('ms'), atEnd = box.scrollHeight - box.scrollTop - box.clientHeight < 80; let h = more ? '<button id="more" type="button">Load older messages</button>' : '', last = '';
+    msgs.filter((m) => m.dir !== 'sys').forEach((m) => {
+      const dd = dayOf(m.ts); if (dd !== last) { last = dd; h += '<div class="d"><span>' + esc(dl(m.ts)) + '</span></div>'; }
+      h += '<div class="r ' + (m.dir === 'out' ? 'o' : 'i') + '"><div class="b">' + body(m) + '<div class="t">' + esc(hm(m.ts)) + '</div></div></div>';
+    });
+    box.innerHTML = h || '<div id="msg">No messages yet.</div>'; if (!keep || atEnd) box.scrollTop = box.scrollHeight;
+  }
+  async function load(first) {
+    try {
+      const d = await api.get('wa.chat', { phone, limit: 100, sig: first ? '' : sig }); if (d.same) return;
+      sig = d.sig || ''; msgs = d.messages || []; more = !!d.more;
+      const c = d.contact || {}; $('nm').textContent = c.name || 'Customer'; draw(!first);
+    } catch (e) { if (first) $('ms').innerHTML = '<div id="msg">' + esc(e.message || 'Could not load the chat.') + '</div>'; }
+  }
+  $('ms').addEventListener('click', async (e) => {
+    if (e.target.id === 'more' && msgs.length) {
+      try { const d = await api.get('wa.chat', { phone, limit: 100, before: msgs[0].id }); msgs = (d.messages || []).concat(msgs); more = !!d.more; const box = $('ms'), oh = box.scrollHeight; draw(true); box.scrollTop = box.scrollHeight - oh; } catch (er) { }
+      return;
+    }
+    const el = e.target.closest('.ld'); if (!el) return; const id = el.dataset.m; el.textContent = 'Loading…';
+    try {
+      const res = await fetch(api.buildUrl('wa.media', { id }), { headers: { Authorization: 'Bearer ' + api.token() } });
+      if (!res.ok) throw new Error('Could not load the file.'); const b = await res.blob(); MEDIA[id] = URL.createObjectURL(b);
+      if (!/^(image|audio|video)\//.test(b.type)) { window.open(MEDIA[id], '_blank'); el.textContent = '📄 Opened'; return; } draw(true);
+    } catch (er) { el.textContent = '⚠ ' + (er.message || 'Could not load.'); }
+  });
+  load(true); setInterval(() => load(false), 15000);
+})();
+</script>
+</body>
+</html>
