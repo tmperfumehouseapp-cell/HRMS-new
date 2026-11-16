@@ -51,14 +51,21 @@ function waa_present(PDO $pdo): array
     return $o;
 }
 /** Sales → Live's day rows of today's business day, kept 45 seconds. [emp => [q, qo, cq, co, t, ar, …]] */
-function waa_cp(PDO $pdo, bool $fresh = false): array
+function waa_cp(PDO $pdo, bool $fresh = false, int $maxAge = 45): array
 {
     $day = waa_day($pdo);
-    if (!$fresh) { $j = json_decode((string)setting_get($pdo, 'waa_cp', ''), true); if (is_array($j) && ($j['day'] ?? '') === $day && (int)($j['at'] ?? 0) > time() - 45) return (array)$j['rows']; }
+    if (!$fresh) { $j = json_decode((string)setting_get($pdo, 'waa_cp', ''), true); if (is_array($j) && ($j['day'] ?? '') === $day && (int)($j['at'] ?? 0) > time() - $maxAge) return (array)$j['rows']; }
     if (!function_exists('cp_day_rows') && is_file(__DIR__ . '/ct_people.php')) { $GLOBALS['cp_funcs_only'] = true; try { require_once __DIR__ . '/ct_people.php'; } catch (Throwable $e) { } unset($GLOBALS['cp_funcs_only']); }
     $rows = []; if (function_exists('cp_day_rows')) { try { $rows = (array)cp_day_rows($pdo, $day); } catch (Throwable $e) { error_log('waa_cp: ' . $e->getMessage()); } }
     if ($rows) setting_set($pdo, 'waa_cp', json_encode(['day' => $day, 'at' => time(), 'rows' => $rows]));
     return $rows;
+}
+/** A query was just given: the cached day rows count it at once, so the Team performance table moves without waiting for Live to be recounted. */
+function waa_cp_bump(PDO $pdo, int $emp, bool $camp): void
+{
+    try { $j = json_decode((string)setting_get($pdo, 'waa_cp', ''), true); if (!is_array($j) || empty($j['rows'])) return; $k = $camp ? 'cq' : 'q'; $e = (string)$emp;
+        if (!isset($j['rows'][$e])) $j['rows'][$e] = ['off' => 0, 'n' => 0, 's' => 0, 't' => null, 'qo' => 0, 'co' => 0, 'q' => 0, 'cq' => 0, 'ar' => null]; $j['rows'][$e][$k] = (int)($j['rows'][$e][$k] ?? 0) + 1; $j['rows'][$e]['off'] = 0;
+        setting_set($pdo, 'waa_cp', json_encode($j)); } catch (Throwable $e2) { }
 }
 /** Typical first-reply minutes per person (last 7 days), kept 30 minutes. [emp => minutes] */
 function waa_speed(PDO $pdo): array
@@ -85,9 +92,9 @@ function waa_tally(PDO $pdo): array
 }
 
 /** Everything the table and the engine need, in one place. */
-function waa_view(PDO $pdo, bool $fresh = false): array
+function waa_view(PDO $pdo, bool $fresh = false, int $maxAge = 45): array
 {
-    $cp = waa_cp($pdo, $fresh); $sales = waa_sales($pdo); $pres = waa_present($pdo); $st = waa_state($pdo); $sp = waa_speed($pdo);
+    $cp = waa_cp($pdo, $fresh, $maxAge); $sales = waa_sales($pdo); $pres = waa_present($pdo); $st = waa_state($pdo); $sp = waa_speed($pdo);
     $names = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : [];
     $tq = 0; $tqo = 0; foreach ($sales as $e) { $x = $cp[$e] ?? null; if ($x && empty($x['off'])) { $tq += (int)$x['q']; $tqo += (int)$x['qo']; } }
     $team = $tq > 0 ? $tqo / $tq : 0.0; $teamSpeed = waa_median(array_values(array_filter(array_map(function ($e) use ($sp, $pres) { return isset($pres[$e]) ? ($sp[$e] ?? null) : null; }, $sales))));
@@ -103,53 +110,84 @@ function waa_view(PDO $pdo, bool $fresh = false): array
     return ['day' => $st['day'], 'team_ratio' => round(100 * $team, 1), 'floor' => round(100 * waa_floor($team), 1), 'team_speed' => $teamSpeed, 'avg_target' => $avgT, 'people' => $people, 'state' => $st];
 }
 
-/** One engine pass: (1) the ratio rule switches people off, (2) waiting queries are given out. Light: reads Live's cached rows. */
-function waa_tick(PDO $pdo): array
+/**
+ * Gives ONE waiting query to a person, if it can be given. $r = its wa_queries row, $c = its contact row, $V = waa_view() (people are updated), $T = what the engine gave today.
+ * Skips: already held · not open · opted out / complaint · older than 24 h · a person already answered · another business's auto-reply · nobody eligible. A per-customer lock stops the webhook and the engine pass giving the same chat twice.
+ */
+function waa_give_one(PDO $pdo, array $r, ?array $c, array &$V, array &$T, int $now, array &$dbg): bool
+{
+    $ph = (string)$r['phone'];
+    if (!$c) { $dbg['no_contact']++; return false; } if ((int)$c['assigned_emp'] > 0) { $dbg['held']++; return false; } if ((string)$c['status'] !== 'open') { $dbg['not_open']++; return false; }
+    if ((int)$c['optout'] === 1 || (int)($c['cx_id'] ?? 0) > 0 || (string)($c['tag'] ?? '') === 'complaint') { $dbg['optout_cx']++; return false; }
+    if (!$c['last_in_at'] || strtotime((string)$c['last_in_at']) < $now - 86400 + 600) { $dbg['old']++; return false; }
+    static $hq = null, $bq = null; if ($hq === null) { $humanSql = function_exists('wq_human_sql') ? wq_human_sql('h', 'c', 'last_in_at') : "h.dir = 'out' AND h.emp_id > 0"; $hq = $pdo->prepare("SELECT 1 FROM wa_contacts c JOIN wa_messages h ON h.phone = c.phone WHERE c.phone = ? AND $humanSql LIMIT 1"); $bq = $pdo->prepare("SELECT 1 FROM wa_ctags WHERE phone = ? AND tag = 'business_autoreply' LIMIT 1"); }
+    $hq->execute([$ph]); if ($hq->fetchColumn()) { $dbg['human']++; return false; } $bq->execute([$ph]); if ($bq->fetchColumn()) { $dbg['biz']++; return false; }
+    $camp = (string)$r['src'] === 'campaign'; $cand = []; $avgT = (float)$V['avg_target'];
+    foreach ($V['people'] as $e => $p) {
+        if ($camp) { if (!$p['present'] || $p['m'] === 'off') continue; $w = waa_weight_camp($p); $cnt = (int)($T[$e]['camp'] ?? 0); }
+        else { if (!$p['on']) continue; $w = waa_weight_fresh($p, $avgT); $cnt = max((int)$p['q'], (int)($T[$e]['fresh'] ?? 0)); }
+        $cand[$e] = ['w' => $w, 'cnt' => $cnt];
+    }
+    $to = waa_pick($cand, $camp ? 0 : WAA_MIN_Q); if ($to <= 0) { $dbg['nobody']++; return false; }
+    $lk = 0; try { $lk = (int)$pdo->query("SELECT GET_LOCK(" . $pdo->quote('waa_p_' . $ph) . ", 0)")->fetchColumn(); } catch (Throwable $e) { } if ($lk !== 1) return false;
+    try {
+        $chk = $pdo->prepare("SELECT assigned_emp FROM wa_contacts WHERE phone = ?"); $chk->execute([$ph]); if ((int)$chk->fetchColumn() > 0) { $dbg['held']++; return false; }   // somebody just took it
+        wa_assign_to($pdo, $ph, $to, 0, 'auto');
+        $pdo->prepare("INSERT INTO waa_log (at, phone, emp_id, kind, why) VALUES (?, ?, ?, ?, ?)")->execute([waa_dt($now), $ph, $to, $camp ? 'camp' : 'fresh', mb_substr(($camp ? 'campaign query' : 'fresh query') . ' · weight ' . round($cand[$to]['w']) . ' · so far ' . $cand[$to]['cnt'], 0, 160)]);
+        $T[$to][$camp ? 'camp' : 'fresh'] = (int)($T[$to][$camp ? 'camp' : 'fresh'] ?? 0) + 1; if (!$camp) $V['people'][$to]['q']++; else $V['people'][$to]['cq']++;
+        waa_cp_bump($pdo, $to, $camp); return true;
+    } catch (Throwable $e) { error_log('waa give: ' . $e->getMessage()); $dbg['give_error'] = mb_substr($e->getMessage(), 0, 160); return false; }
+    finally { try { $pdo->query("SELECT RELEASE_LOCK(" . $pdo->quote('waa_p_' . $ph) . ")"); } catch (Throwable $e) { } }
+}
+function waa_dbg0(): array { return ['scanned' => 0, 'no_contact' => 0, 'held' => 0, 'not_open' => 0, 'optout_cx' => 0, 'old' => 0, 'human' => 0, 'biz' => 0, 'nobody' => 0, 'give_error' => '', 'fresh_ok' => 0, 'camp_ok' => 0, 'present' => 0]; }
+
+/** A customer message has just arrived (webhook): give its query right now, so it never waits for the engine. Never throws; reads the cached day rows only. */
+function waa_give_now(PDO $pdo, string $phone): void
+{
+    try {
+        if (!waa_tables($pdo) || !waa_engine_on($pdo)) return; $now = time();
+        $q = $pdo->prepare("SELECT id, phone, src, opened_at, emp_id FROM wa_queries WHERE phone = ? ORDER BY id DESC LIMIT 1"); $q->execute([$phone]); $r = $q->fetch(PDO::FETCH_ASSOC);
+        if (!$r || (int)$r['emp_id'] > 0 || !in_array((string)$r['src'], ['query', 'campaign'], true) || strtotime((string)$r['opened_at']) < $now - 86400 + 600) return;
+        $c = $pdo->prepare("SELECT phone, name, assigned_emp, last_in_at, status, optout, cx_id, tag FROM wa_contacts WHERE phone = ?"); $c->execute([$phone]); $row = $c->fetch(PDO::FETCH_ASSOC) ?: null;
+        $V = waa_view($pdo, false, 900); $T = waa_tally($pdo); $dbg = waa_dbg0();
+        waa_give_one($pdo, $r, $row, $V, $T, $now, $dbg);
+    } catch (Throwable $e) { error_log('waa_give_now: ' . $e->getMessage()); }
+}
+
+/** A pass any page poll can start (answer first, then this): every 8 seconds at most, so a query nobody could take yet is given the moment somebody can. */
+function waa_catchup(PDO $pdo): void { try { waa_tick($pdo, 8, 120); } catch (Throwable $e) { } }
+
+/** One engine pass: (1) the ratio rule switches people off, (2) waiting queries are given out. $every = seconds between passes, $maxAge = how old the cached day rows may be. */
+function waa_tick(PDO $pdo, int $every = 20, int $maxAge = 45): array
 {
     try { if ((int)setting_get($pdo, 'waa_seen_at', '0') < time() - 30) setting_set($pdo, 'waa_seen_at', (string)time()); } catch (Throwable $e) { }   // proof for the check workflow: the engine reached this function
     if (!waa_tables($pdo)) return ['error' => 'storage'];
     if (!waa_engine_on($pdo)) return ['off' => 1];
-    $now = time(); if ((int)setting_get($pdo, 'waa_run_at', '0') > $now - 20) return ['skipped' => 'recent'];
+    $now = time(); if ((int)setting_get($pdo, 'waa_run_at', '0') > $now - $every) return ['skipped' => 'recent'];
     $got = 0; try { $got = (int)$pdo->query("SELECT GET_LOCK('waa_run', 0)")->fetchColumn(); } catch (Throwable $e) { } if ($got !== 1) return ['skipped' => 'busy'];
-    $res = ['given' => 0, 'switched_off' => 0]; $dbg = ['scanned' => 0, 'no_contact' => 0, 'held' => 0, 'not_open' => 0, 'optout_cx' => 0, 'old' => 0, 'human' => 0, 'biz' => 0, 'nobody' => 0, 'give_error' => '', 'fresh_ok' => 0, 'camp_ok' => 0, 'present' => 0];
+    $res = ['given' => 0, 'switched_off' => 0]; $dbg = waa_dbg0();
     try {
         setting_set($pdo, 'waa_run_at', (string)$now);
-        $V = waa_view($pdo); $st = $V['state']; $P = &$V['people'];
+        $V = waa_view($pdo, false, $maxAge); $st = $V['state'];
         // (1) the ratio rule: below the band → OFF by itself, until Admin / Sales Head turn it ON
-        foreach ($P as $e => &$p) { if ($p['present'] && $p['m'] === '' && $p['below'] && !$p['ao']) { $st['e'][$e] = array_merge((array)($st['e'][$e] ?? []), ['m' => '', 'ao' => 1, 'ao_at' => $now]); $p['ao'] = 1; [$p['on'], $p['why']] = waa_button($p); $res['switched_off']++; } } unset($p);
+        foreach ($V['people'] as $e => &$p) { if ($p['present'] && $p['m'] === '' && $p['below'] && !$p['ao']) { $st['e'][$e] = array_merge((array)($st['e'][$e] ?? []), ['m' => '', 'ao' => 1, 'ao_at' => $now]); $p['ao'] = 1; [$p['on'], $p['why']] = waa_button($p); $res['switched_off']++; } } unset($p);
         if ($res['switched_off']) waa_state_put($pdo, $st);
-        // (2) waiting queries: nobody holds them, the customer wrote in the last 24 h, no person answered yet
-        $since = waa_dt($now - 86400 + 600); $st0 = $pdo->prepare("SELECT id, phone, src, opened_at FROM wa_queries WHERE emp_id = 0 AND src IN ('query', 'campaign') AND opened_at >= ? AND opened_at <= ? ORDER BY id DESC LIMIT 250");   // NEWEST first: the oldest ones are mostly closed / answered / past the 24 h window, and 60 of them used to fill the whole list so nothing newer was ever looked at
-        $st0->execute([$since, waa_dt($now - 10)]); $qs = $st0->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($V['people'] as $p0) { if ($p0['present']) $dbg['present']++; if ($p0['on']) $dbg['fresh_ok']++; if ($p0['present'] && $p0['m'] !== 'off') $dbg['camp_ok']++; }
+        // (2) waiting queries: nobody holds them, the customer wrote in the last 24 h, no person answered yet. NEWEST first (the oldest are mostly closed / answered / past the 24 h window).
+        $since = waa_dt($now - 86400 + 600); $st0 = $pdo->prepare("SELECT id, phone, src, opened_at FROM wa_queries WHERE emp_id = 0 AND src IN ('query', 'campaign') AND opened_at >= ? AND opened_at <= ? ORDER BY id DESC LIMIT 250");
+        $st0->execute([$since, waa_dt($now - 2)]); $qs = $st0->fetchAll(PDO::FETCH_ASSOC);
         if ($qs) {
             $phs = array_values(array_unique(array_map(function ($r) { return (string)$r['phone']; }, $qs))); $C = [];
             $cq = $pdo->prepare("SELECT phone, name, assigned_emp, last_in_at, status, optout, cx_id, tag FROM wa_contacts WHERE phone IN (" . implode(',', array_fill(0, count($phs), '?')) . ")"); $cq->execute($phs); foreach ($cq->fetchAll(PDO::FETCH_ASSOC) as $r) $C[(string)$r['phone']] = $r;
-            $humanSql = function_exists('wq_human_sql') ? wq_human_sql('h', 'c', 'last_in_at') : "h.dir = 'out' AND h.emp_id > 0";
-            $hq = $pdo->prepare("SELECT 1 FROM wa_contacts c JOIN wa_messages h ON h.phone = c.phone WHERE c.phone = ? AND $humanSql LIMIT 1"); $bq = $pdo->prepare("SELECT 1 FROM wa_ctags WHERE phone = ? AND tag = 'business_autoreply' LIMIT 1");
-            $T = waa_tally($pdo); $avgT = (float)$V['avg_target'];
-            foreach ($P as $p0) { if ($p0['present']) $dbg['present']++; if ($p0['on']) $dbg['fresh_ok']++; if ($p0['present'] && $p0['m'] !== 'off') $dbg['camp_ok']++; }
+            $T = waa_tally($pdo);
             foreach ($qs as $r) {
-                if ($res['given'] >= 40) break;   // at most 40 a pass (one pass a minute)
-                $dbg['scanned']++; $ph = (string)$r['phone']; $c = $C[$ph] ?? null; if (!$c) { $dbg['no_contact']++; continue; } if ((int)$c['assigned_emp'] > 0) { $dbg['held']++; continue; } if ((string)$c['status'] !== 'open') { $dbg['not_open']++; continue; } if ((int)$c['optout'] === 1 || (int)($c['cx_id'] ?? 0) > 0 || (string)($c['tag'] ?? '') === 'complaint') { $dbg['optout_cx']++; continue; }
-                if (!$c['last_in_at'] || strtotime((string)$c['last_in_at']) < $now - 86400 + 600) { $dbg['old']++; continue; }
-                $hq->execute([$ph]); if ($hq->fetchColumn()) { $dbg['human']++; continue; } $bq->execute([$ph]); if ($bq->fetchColumn()) { $dbg['biz']++; continue; }
-                $camp = (string)$r['src'] === 'campaign'; $cand = [];
-                foreach ($P as $e => $p) {
-                    if ($camp) { if (!$p['present'] || $p['m'] === 'off') continue; $w = waa_weight_camp($p); $cnt = (int)($T[$e]['camp'] ?? 0); }
-                    else { if (!$p['on']) continue; $w = waa_weight_fresh($p, $avgT); $cnt = max((int)$p['q'], (int)($T[$e]['fresh'] ?? 0)); }
-                    $cand[$e] = ['w' => $w, 'cnt' => $cnt];
-                }
-                $to = waa_pick($cand, $camp ? 0 : WAA_MIN_Q); if ($to <= 0) { $dbg['nobody']++; continue; }
-                try {
-                    wa_assign_to($pdo, $ph, $to, 0, 'auto');
-                    $pdo->prepare("INSERT INTO waa_log (at, phone, emp_id, kind, why) VALUES (?, ?, ?, ?, ?)")->execute([waa_dt($now), $ph, $to, $camp ? 'camp' : 'fresh', mb_substr(($camp ? 'campaign query' : 'fresh query') . ' · weight ' . round($cand[$to]['w']) . ' · so far ' . $cand[$to]['cnt'], 0, 160)]);
-                    $T[$to][$camp ? 'camp' : 'fresh'] = (int)($T[$to][$camp ? 'camp' : 'fresh'] ?? 0) + 1; if (!$camp) $P[$to]['q']++; $res['given']++;
-                } catch (Throwable $e) { error_log('waa give: ' . $e->getMessage()); $dbg['give_error'] = mb_substr($e->getMessage(), 0, 160); }
+                if ($res['given'] >= 40) break;   // at most 40 a pass
+                $dbg['scanned']++; if (waa_give_one($pdo, $r, $C[(string)$r['phone']] ?? null, $V, $T, $now, $dbg)) $res['given']++;
             }
         }
     } catch (Throwable $e) { error_log('waa_tick: ' . $e->getMessage()); $res['error'] = mb_substr($e->getMessage(), 0, 160); }
     try { setting_set($pdo, 'waa_last', json_encode(['at' => time(), 'res' => $res, 'dbg' => $dbg])); } catch (Throwable $e) { }   // what the last pass saw (for the check workflow)
-    finally { try { $pdo->query("SELECT RELEASE_LOCK('waa_run')"); } catch (Throwable $e) { } }
+    try { $pdo->query("SELECT RELEASE_LOCK('waa_run')"); } catch (Throwable $e) { }
     return $res;
 }
 
