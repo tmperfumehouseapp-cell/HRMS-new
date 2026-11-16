@@ -836,6 +836,14 @@ if (strpos((string)$action, 'dp.dsp_') === 0) {
         dp_put('sr_last_err', ''); $d = isset($j['data'][0]) && is_array($j['data'][0]) ? dp_dsp_sr_pick($j['data'][0]) : null;
         json_response(['ok' => true, 'message' => 'Connected. ' . ($d ? 'Latest order seen: ' . ($d[0] ?: '?') . ', status ' . ($d[3] ?: '?') . ($d[1] !== '' ? ', AWB ' . $d[1] : ', no AWB yet') . '.' : 'Shiprocket has no orders yet.')]);
     }
+    case 'dp.dsp_sr_logs': {   // 🧾 what the HRMS asked Shiprocket and what Shiprocket answered (to copy for Shiprocket support). No passwords / tokens are stored.
+        if (!$w['manager']) json_response(['error' => 'Only bosses can do this.'], 403);
+        if (!is_file(__DIR__ . '/sr_log.php')) json_response(['rows' => [], 'total' => 0]);
+        require_once __DIR__ . '/sr_log.php';
+        $rows = sr_log_rows($pdo, ['errors' => !empty($_GET['errors']), 'q' => (string)($_GET['q'] ?? ''), 'limit' => (int)($_GET['limit'] ?? 200)]);
+        $tot = 0; $bad = 0; try { $c = $pdo->query("SELECT COUNT(*) n, SUM(http < 200 OR http >= 300) b FROM sr_api_log")->fetch(); $tot = (int)$c['n']; $bad = (int)$c['b']; } catch (Throwable $e) { }
+        json_response(['rows' => $rows, 'total' => $tot, 'failed' => $bad, 'server_ip' => (string)($_SERVER['SERVER_ADDR'] ?? ''), 'now' => date('Y-m-d H:i:s'), 'tz' => date_default_timezone_get()]);
+    }
     case 'dp.dsp_sr_sync': {
         if (!$w['manager']) json_response(['error' => 'Only bosses can do this.'], 403);
         $r = dp_dsp_sr_sync($pdo, max(1, min(90, (int)($in['days'] ?? 30))));
