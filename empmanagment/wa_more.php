@@ -243,6 +243,7 @@ function wa_tick(PDO $pdo, bool $force = false): array
     if (!$__late()) try { if (function_exists('wa_mcache_prefetch') && !defined('WA_IN_WEBHOOK')) $o['media'] = wa_mcache_prefetch($pdo); } catch (Throwable $e) { } $__mk('wa_mcache_prefetch');   // ⚡ new customer photos / videos saved on our server before anyone opens them
     if (!$__late()) try { if (function_exists('wa_done_scan') && !defined('WA_IN_WEBHOOK')) { $o['done'] = wa_done_scan($pdo); if ((int)date('G') >= 3) wa_done_learn($pdo); } } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'order completed: ' . $e->getMessage()); } $__mk('wa_done_scan');   // ✅ Shopify orders → order completed
     try { $o['assigned'] = wa_auto_assign($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'auto-assign: ' . $e->getMessage()); } $__mk('wa_auto_assign');
+    try { if (function_exists('cfun_fast') && !defined('WA_IN_WEBHOOK')) $o['cfun_fast'] = cfun_fast($pdo, 2000, 8, 20); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'funnel fast: ' . $e->getMessage()); }   // ⚡ customers whose status changed are recounted every run
     try { if (function_exists('waa_tick') && !defined('WA_IN_WEBHOOK')) $o['auto'] = waa_tick($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'auto assign (new): ' . $e->getMessage()); } $__mk('waa_tick');   // 🏪 new queries → salespeople by the rules
     if (!$__late()) try { if (!defined('WA_IN_WEBHOOK')) $o['alloc'] = wa_auto_alloc($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'auto-allocate: ' . $e->getMessage()); } $__mk('wa_auto_alloc');   // 🤖 orders → the salesperson of the chat
     try { wa_callnow_scan($pdo); } catch (Throwable $e) { wa_log($pdo, 'engine', false, 'call-now: ' . $e->getMessage()); } $__mk('wa_callnow_scan');
@@ -778,6 +779,7 @@ if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.
                 foreach ($rq->fetchAll() as $r) $items[] = ['phone' => $r['phone'], 'name' => $r['name'], 'summary' => $r['summary'], 'tel' => '+91' . $r['phone'], 'since_sec' => max(0, time() - (int)strtotime((string)$r['remind_at'])), 'escalated' => false, 'remind' => true];
             } catch (Throwable $e) { }
             wa_reply_early(['items' => $items, 'escalate_min' => wa_team_cfg($pdo)['escalate_min']]);
+            if (function_exists('cfun_fast')) { try { cfun_fast($pdo, 1500, 5, 25); } catch (Throwable $e) { } }   // ⚡ the funnel follows delivered messages / replies within seconds while people are online
             if (function_exists('waa_catchup')) waa_catchup($pdo);   // 🏪 Auto assign: a query nobody could take yet is given within seconds (answered first; at most one pass every 8 s)
             if (!$cronOk) wa_tick($pdo);   // only when the cron is NOT running (a backup) — and AFTER the answer, so the page never waits for it
             exit;
