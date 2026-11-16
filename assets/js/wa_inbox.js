@@ -74,6 +74,20 @@
   .wi-kpi div{flex:1; min-width:104px; background:#fff; border:1px solid var(--line,#e4e7ec); border-radius:12px; padding:8px 12px;}
   .wi-kpi small{display:block; font-size:11px; font-weight:700; color:var(--muted,#6b7684); text-transform:uppercase; letter-spacing:.3px;} .wi-kpi b{font-size:19px; font-weight:800;}
   .wi-kpi .hot b{color:#c22;}
+  @media (max-width:760px){ .wi-kpi div{min-width:calc(33.3% - 8px); padding:7px 9px;} .wi-kpi small{font-size:10px; overflow-wrap:anywhere;} }
+  /* 🚨 Not replied: the bar above the list (days · can reply now / past 24 h · who has the chat) */
+  .wi-un-bar{border-bottom:1px solid var(--line,#e4e7ec); background:#fff7ed; padding:8px 10px 9px; font-size:12.5px;}
+  .wi-un-bar .h{display:flex; align-items:center; gap:8px; font-weight:800; font-size:13.5px; color:#9a3412;} .wi-un-bar .h span{flex:1; min-width:0;} .wi-un-bar .h small{display:block; font-weight:600; font-size:11.5px; color:#7c5a3a; margin-top:1px;}
+  .wi-un-bar .xl{border:0; background:#16945a; color:#fff; border-radius:99px; padding:5px 11px; font:inherit; font-size:12px; font-weight:800; cursor:pointer; white-space:nowrap;}
+  .wi-un-bar .lb{font-size:10.5px; font-weight:800; text-transform:uppercase; letter-spacing:.3px; color:#8a6a4a; margin:6px 0 3px;} .wi-un-bar .row .g i{color:#15803d;} .wi-un-bar .row .r i{color:#b91c1c;} .wi-un-bar .row .on i{color:#fed7aa;}
+  .wi-un-bar .row{display:flex; gap:6px; overflow-x:auto; padding-bottom:2px; scrollbar-width:thin; -webkit-overflow-scrolling:touch;}
+  .wi-un-bar .row button{flex:0 0 auto; border:1px solid #e7c9a5; background:#fff; color:#3b2a18; border-radius:99px; padding:6px 11px; font:inherit; font-size:12.5px; font-weight:700; cursor:pointer; white-space:nowrap; min-height:32px;}
+  .wi-un-bar .row button i{font-style:normal; font-weight:800; margin-left:5px; color:#c2410c;} .wi-un-bar .row button.on{background:#9a3412; border-color:#9a3412; color:#fff;} .wi-un-bar .row button.on i{color:#fed7aa;}
+  .wi-un-bar .two{display:grid; grid-template-columns:1fr 1fr; gap:6px;} .wi-un-bar .two button{border:1px solid #e7c9a5; background:#fff; border-radius:12px; padding:7px 9px; font:inherit; text-align:left; cursor:pointer; min-height:46px;}
+  .wi-un-bar .two button b{display:block; font-size:17px; font-weight:800; line-height:1.1;} .wi-un-bar .two button small{font-size:11px; font-weight:700; color:#6b5a48;} .wi-un-bar .two button.on{outline:2px solid #9a3412; outline-offset:-1px; background:#ffedd5;}
+  .wi-un-bar .two .g b{color:#15803d;} .wi-un-bar .two .r b{color:#b91c1c;}
+  .wi-un-bar .dt{display:flex; gap:6px; align-items:center; margin-top:6px; flex-wrap:wrap;} .wi-un-bar .dt input{border:1px solid #e7c9a5; border-radius:10px; padding:5px 8px; font:inherit; font-size:12.5px; min-height:32px;}
+  .wi-unl{display:flex; flex-wrap:wrap; gap:5px; margin-top:4px; font-size:11px; font-weight:700;} .wi-unl span{border-radius:99px; padding:2px 8px; background:#f1f5f9; color:#334155;} .wi-unl .w{background:#ffedd5; color:#9a3412;} .wi-unl .ok{background:#dcfce7; color:#166534;} .wi-unl .no{background:#fee2e2; color:#991b1b;}
   .wi-box{display:grid; grid-template-columns:330px minmax(0,1fr) 310px; height:calc(100vh - 190px); min-height:520px; background:#fff; border:1px solid var(--line,#e4e7ec); border-radius:16px; overflow:hidden;}
   .wi.mine .wi-box{grid-template-columns:330px minmax(0,1fr) 290px;}
   .wi-col{display:flex; flex-direction:column; min-height:0; min-width:0; border-right:1px solid #eef0f3;} .wi-col:last-child{border-right:0;}
@@ -239,6 +253,7 @@
           <div class="wi-tabs" id="wiT"></div>
           <div class="wi-tabs wi-feeds" id="wiF"></div>
           <div class="wi-find"><input id="wiQ" type="search" placeholder="Search name or number…">${admin ? '<select id="wiE" title="Show one person’s chats" hidden><option value="0">Everyone</option></select><div class="wi-ep"><button type="button" id="wiEb" title="Show one person’s chats">Everyone ▾</button><div id="wiEp" class="wi-epp" hidden><input id="wiEq" type="search" placeholder="Search a person…" autocomplete="off"><div id="wiEl"></div></div></div><div class="wi-ep wi-flw"><button type="button" id="wiFb" title="Sort and filter the list">⏷ Filter</button><div id="wiFp" class="wi-epp wi-flp" hidden></div></div>' : ''}</div>
+          <div class="wi-un-bar" id="wiU" hidden></div>
           <div class="wi-list" id="wiL"><div class="wi-empty">Loading…</div></div>
         </div>
         <div class="wi-col chat" id="wiC"><div class="wi-empty" style="margin:auto">Pick a chat on the left.</div></div>
@@ -297,14 +312,47 @@
       if (opts.onFeed) { try { opts.onFeed(S.src); } catch (e) { } }
       loadList();
     }
+    /* ───── 🚨 Not replied: customers who wrote last and nobody answered — any age, also past the 24 hours ───── */
+    S.un = { d: '7', w: '', e: 0, f: '', t: '', st: null, key: '', at: 0, dates: false };
+    const unParams = () => { const u = S.un, o = { ud: u.d }; if (u.d === 'dates' && u.f && u.t) { o.uf = u.f; o.ut = u.t; } if (u.w) o.uw = u.w; if (admin && u.e) o.ue = u.e; return o; };
+    const unWait = (at) => { const m = Math.max(0, Math.floor((Date.now() - new Date(String(at).replace(' ', 'T')).getTime()) / 60000)); return m < 60 ? m + ' min' : m < 2880 ? Math.floor(m / 60) + ' h' : Math.floor(m / 1440) + ' days'; };
+    async function unStats(force) {
+      const u = S.un, k = [u.d, u.f, u.t].join('|');
+      if (!force && u.st && u.key === k && Date.now() - u.at < 60000) return;
+      try { const o = { ud: u.d }; if (u.d === 'dates' && u.f && u.t) { o.uf = u.f; o.ut = u.t; } if (!admin) o.mine = 1; u.st = await api.get('wa.unans_stats', o); u.key = k; u.at = Date.now(); if (S.scope === 'unans') drawUn(true); } catch (e) { }
+    }
+    function drawUn(noFetch) {
+      const B = $('wiU'); if (!B) return; const on = S.scope === 'unans' && !S.emp; B.hidden = !on; if (!on) return;
+      const u = S.un, st = u.st || { ranges: {}, by: [] }, rg = st.ranges || {}, n = (v) => (v == null ? '' : '<i>' + v + '</i>');
+      const D = [['today', 'Today'], ['yest', 'Yesterday'], ['7', '7 days'], ['15', '15 days'], ['20', '20 days'], ['30', '30 days'], ['60', '60 days']];
+      B.innerHTML = `<div class="h"><span>🚨 ${admin ? 'Customers nobody replied to' : 'Customers you never replied to'}<small>They wrote last and got no answer. Tap a chat to reply.</small></span><button type="button" class="xl" id="wiUx">⬇ Excel</button></div>
+        <div class="lb">When did the customer write?</div>
+        <div class="row">${D.map(([k, l]) => `<button type="button" data-ud="${k}" class="${u.d === k ? 'on' : ''}">${l}${n(rg[k])}</button>`).join('')}<button type="button" data-ud="dates" class="${u.d === 'dates' ? 'on' : ''}">📅 Dates…</button></div>
+        ${u.d === 'dates' ? `<div class="dt"><input type="date" id="wiUf" value="${esc(u.f)}"> to <input type="date" id="wiUt" value="${esc(u.t)}"><button type="button" class="xl" id="wiUg" style="background:#9a3412">Show</button></div>` : ''}
+        <div class="lb">Can we still reply?</div>
+        <div class="row"><button type="button" data-uw="" class="${!u.w ? 'on' : ''}">All${n(st.total)}</button><button type="button" data-uw="now" class="g ${u.w === 'now' ? 'on' : ''}" title="The customer wrote in the last 24 hours: a normal reply can go">✅ Can reply now${n(st.now)}</button><button type="button" data-uw="past" class="r ${u.w === 'past' ? 'on' : ''}" title="More than 24 hours ago: WhatsApp allows only an approved template">⏰ Past 24 h · template only${n(st.past)}</button></div>
+        ${admin ? `<div class="lb">Who has the chat?</div><div class="row"><button type="button" data-ue="0" class="${!u.e ? 'on' : ''}">Everyone${n(st.total)}</button>${(st.by || []).map((x) => `<button type="button" data-ue="${x.emp}" class="${u.e === x.emp ? 'on' : ''}">${esc(String(x.name).split(' ')[0] || x.name)}${n(x.n)}</button>`).join('')}</div>` : ''}`;
+      const go = () => { drawUn(true); unStats(); loadList(); };
+      B.querySelectorAll('[data-ud]').forEach((b) => { b.onclick = () => { u.d = b.dataset.ud; u.e = 0; if (u.d === 'dates' && !(u.f && u.t)) { drawUn(true); return; } go(); }; });
+      B.querySelectorAll('[data-uw]').forEach((b) => { b.onclick = () => { u.w = b.dataset.uw; go(); }; });
+      B.querySelectorAll('[data-ue]').forEach((b) => { b.onclick = () => { u.e = +b.dataset.ue; go(); }; });
+      if ($('wiUg')) $('wiUg').onclick = () => { u.f = $('wiUf').value; u.t = $('wiUt').value; if (!u.f || !u.t) { alert('Pick both dates.'); return; } go(); };
+      $('wiUx').onclick = async () => { const b = $('wiUx'); b.disabled = true; b.textContent = 'Making…';
+        try { const o = unParams(); if (!admin) o.mine = 1; const d = await api.get('wa.unans_export', o); const cols = [['Customer', 'name'], ['Number', 'phone'], ['Last message from the customer', 'last_message'], ['Wrote at', 'wrote_at'], ['Waiting', 'waiting'], ['Can reply now?', 'can_reply'], ['Chat is with', 'with'], ['Chat', 'chat']];
+          const q = (v) => { v = v == null ? '' : String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+          const txt = [cols.map((c) => q(c[0])).join(',')].concat((d.rows || []).map((r) => cols.map((c) => q(r[c[1]])).join(','))).join('\r\n');
+          const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['\ufeff' + txt], { type: 'text/csv;charset=utf-8' })); a.download = 'not_replied_' + new Date().toISOString().slice(0, 10) + '.csv'; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+        } catch (e) { alert(e.message); } b.disabled = false; b.textContent = '⬇ Excel'; };
+      if (!noFetch) unStats();
+    }
     function drawKpi() {
       const c = S.counts || {};
       // 👆 every counter is a button: it shows exactly the chats it counts (Waiting = the customer wrote last and nobody answered). The one in use is outlined.
-      const K = admin ? [['unassigned', '', 'Unassigned', c.unassigned, 1], ['all', 'waiting', 'Waiting for a reply', c.waiting, 1], ['all', '', 'Open chats', c.all, 0], ['closed', '', 'Closed', c.closed, 0]]
-                      : [['mine', '', 'My open chats', c.mine, 0], ['mine', 'waiting', 'Waiting for my reply', c.waiting, 1], ['closed', '', 'Closed by me', c.closed, 0]];
+      const K = admin ? [['unassigned', '', 'Unassigned', c.unassigned, 1], ['all', 'waiting', 'Waiting for a reply', c.waiting, 1], ['unans', '', '🚨 Not replied · 7 days', c.unans, 1], ['all', '', 'Open chats', c.all, 0], ['closed', '', 'Closed', c.closed, 0]]
+                      : [['mine', '', 'My open chats', c.mine, 0], ['mine', 'waiting', 'Waiting for my reply', c.waiting, 1], ['unans', '', '🚨 I never replied · 7 days', c.unans, 1], ['closed', '', 'Closed by me', c.closed, 0]];
       const cur = (sc, fl) => !S.emp && S.scope === sc && (fl ? S.flt.includes(fl) : !S.flt.includes('waiting'));
       $('wiK').innerHTML = K.map(([sc, fl, l, n, hot]) => `<div role="button" tabindex="0" data-ksc="${sc}" data-kfl="${fl}" title="Show these chats" class="${hot && n ? 'hot' : ''}" style="cursor:pointer;${cur(sc, fl) ? 'outline:2px solid #1aa37a;outline-offset:-1px;' : ''}"><small>${l}</small><b>${n || 0}</b></div>`).join('');
-      $('wiK').querySelectorAll('[data-ksc]').forEach((el) => { const go = () => { S.scope = el.dataset.ksc; S.emp = 0; if ($('wiE')) { $('wiE').value = '0'; try { ebSync(); } catch (e) { } } S.flt = el.dataset.kfl ? [el.dataset.kfl] : S.flt.filter((x) => x !== 'waiting'); try { flLabel(); } catch (e) { } drawKpi(); loadList(); };
+      $('wiK').querySelectorAll('[data-ksc]').forEach((el) => { const go = () => { S.scope = el.dataset.ksc; S.emp = 0; if ($('wiE')) { $('wiE').value = '0'; try { ebSync(); } catch (e) { } } S.flt = el.dataset.kfl ? [el.dataset.kfl] : S.flt.filter((x) => x !== 'waiting'); if (S.scope === 'unans') { S.flt = []; S.src = ''; S.q = ''; if ($('wiQ')) $('wiQ').value = ''; try { drawFeeds(); } catch (e) { } } try { flLabel(); } catch (e) { } drawKpi(); loadList(); };
         el.onclick = go; el.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } }; });
     }
     const LC = { new: '#fee2e2;color:#991b1b', waiting: '#ffedd5;color:#9a3412', hot: '#fee2e2;color:#991b1b', rescue: '#ede9fe;color:#5b21b6', bot: '#e0f2fe;color:#075985', ordered: '#dcfce7;color:#166534', complaint: '#f3e8ff;color:#6b21a8', talking: '#dcfce7;color:#166534', replied: '#f1f5f9;color:#334155', quiet: '#f1f5f9;color:#64748b', closed: '#f1f5f9;color:#64748b' };
@@ -339,14 +387,14 @@
     function drawList() {
       const L = $('wiL'), rows = AU.on ? S.chats.filter((c) => c.waiting) : S.chats;   // auto-reply shows only chats waiting for a reply: an answered chat leaves the list
       if (AU.on && !rows.length) { L.innerHTML = '<div class="wi-empty">✅ All caught up.<br>A new chat appears here and gets a suggestion by itself.</div>'; return; }
-      if (!S.chats.length) { L.innerHTML = `<div class="wi-empty">${S.q ? 'No chat matches your search.' : (S.src ? 'No chats in this feed' + (S.scope === 'unassigned' ? ' waiting to be assigned.' : ' right now.') : S.scope === 'closed' ? 'No closed chats.' : (admin && S.scope === 'unassigned' ? 'Nothing is waiting to be assigned. 🎉' : (admin ? 'No open chats.' : 'No chats are assigned to you right now.<br>When the admin gives you a chat, it appears here.')))}</div>`; return; }
+      if (!S.chats.length) { L.innerHTML = `<div class="wi-empty">${S.scope === 'unans' && !S.emp && !S.q ? '🎉 Nobody is waiting for a reply in these days.' : S.q ? 'No chat matches your search.' : (S.src ? 'No chats in this feed' + (S.scope === 'unassigned' ? ' waiting to be assigned.' : ' right now.') : S.scope === 'closed' ? 'No closed chats.' : (admin && S.scope === 'unassigned' ? 'Nothing is waiting to be assigned. 🎉' : (admin ? 'No open chats.' : 'No chats are assigned to you right now.<br>When the admin gives you a chat, it appears here.')))}</div>`; return; }
       const gr = admin ? [] : (S.grab || []).slice(0, 4); const grab = gr.length ? `<div style="background:#fff8e1;border-bottom:1px solid #f3e2a9;padding:8px 10px;font-size:12.5px">🙋 <b>${S.grab.length} waiting ${S.grabMin}+ min</b>, nobody answering — take one:${gr.map((x) => `<div style="display:flex;gap:8px;align-items:center;margin-top:5px"><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><b>${esc(x.name || x.phone)}</b> · ${x.waiting_min}m${x.holder && x.holder.name ? ' · with ' + esc(x.holder.name) : ''}</span><button type="button" class="wi-btn" data-grab="${esc(x.phone)}" style="flex:none;padding:3px 10px">Take</button></div>`).join('')}</div>` : '';
       const lg = '<div class="wi-lg" title="Each chat is coloured by what is happening in it right now"><span><i style="background:#22c55e"></i>Hot · ready to buy</span><span><i style="background:#f59e0b"></i>Waiting too long</span><span><i style="background:#60a5fa"></i>Talking now</span><span><i style="background:#c4c9d1"></i>Gone quiet</span><span><i style="background:#a78bfa"></i>Complaint</span><span><i style="background:#9ca3af"></i>🏢 Business</span></div>';
       const en = S.emp && $('wiE') ? (($('wiE').selectedOptions[0] || {}).text || '').replace(/ \(absent\)$/, '') : '', fn = en.split(' ')[0];
       const tgb = admin && S.emp ? `<div class="wi-tgb"><button type="button" data-tg="0" class="${S.empTag ? '' : 'on'}">Now with ${esc(fn)}${S.counts.emp_now != null ? ' (' + S.counts.emp_now + ')' : ''}</button><button type="button" data-tg="1" class="${S.empTag ? 'on' : ''}">🏷 ${esc(fn)}'s tag — all${S.counts.emp_tag != null ? ' (' + S.counts.emp_tag + ')' : ''}</button></div>` : '';
       L.innerHTML = tgb + bkBarHtml() + (admin ? '' : lg) + grab + rows.map((c) => { const un = c.unread && c.phone !== S.sel, bs = S.bulk.on && S.bulk.set.has(c.phone); return `<div class="wi-it ${c.phone === S.sel && !S.bulk.on ? 'sel' : ''} ${bs ? 'bsel' : ''} ${c.waiting ? 'wait' : ''} ${un ? 'unr' : ''} ${c.heat ? 'h-' + c.heat : ''}" data-p="${esc(c.phone)}">${S.bulk.on ? '<span class="wi-ck ' + (bs ? 'on' : '') + '"></span>' : ''}${av(c)}<div class="wi-bd">
           <div class="n"><span>${esc(title(c))}${c.rescue ? ' <b class="wi-rs" style="font-size:10.5px;font-weight:800;border-radius:99px;padding:1px 7px;background:' + ({ act: '#fee2e2', today: '#ffedd5', week: '#fef9c3', long: '#e5e7eb' }[c.rescue.tier] || '#e5e7eb') + ';color:#1f2937" title="Rescue priority">' + esc(c.rescue.label) + '</b>' : ''}</span><span class="t">${!admin && c.fresh_agent ? '<span class="wi-new" title="New for you — it stays until you reply"></span>' : ''}${c.waiting ? '● ' : ''}${esc(stamp(c.last_msg_at || c.last_at))}</span></div>
-          <div class="m2"><span class="m">${esc(c.preview || '')}</span>${un ? `<span class="wi-un">${c.unread > 9 ? '9+' : c.unread}</span>` : ''}</div><div class="pl">${pills(c)}</div></div></div>`; }).join('');
+          <div class="m2"><span class="m">${esc(c.preview || '')}</span>${un ? `<span class="wi-un">${c.unread > 9 ? '9+' : c.unread}</span>` : ''}</div><div class="pl">${pills(c)}</div>${S.scope === 'unans' && !S.emp ? `<div class="wi-unl"><span class="w">⏳ waiting ${unWait(c.last_at)}</span>${admin ? `<span>👤 ${esc(c.assigned_name || 'Nobody')}</span>` : ''}<span class="${c.window_open ? 'ok' : 'no'}">${c.window_open ? '✅ can reply' : '⏰ template only'}</span></div>` : ''}</div></div>`; }).join('');
       L.querySelectorAll('.wi-it').forEach((el) => { el.onclick = () => (S.bulk.on ? bkToggle(el.dataset.p) : openChat(el.dataset.p)); }); bkWire(L);
       L.querySelectorAll('[data-tg]').forEach((b) => { b.onclick = () => { S.empTag = b.dataset.tg === '1'; loadList(); }; });
       L.querySelectorAll('[data-grab]').forEach((b) => { b.onclick = async (e) => { e.stopPropagation(); b.disabled = true; try { await api.post('wq.grab', { phone: b.dataset.grab }); S.grab = (S.grab || []).filter((x) => x.phone !== b.dataset.grab); await loadList(true); openChat(b.dataset.grab); } catch (er) { alert(er.message); loadList(true); } }; });
@@ -475,10 +523,10 @@
       if (opts.one) return;   // one chat only (side panel): no list to load
       if (S.busyList) return; S.busyList = true;
       try {
-        const p = { scope: S.emp ? 'emp' : S.scope, q: S.q }; if (S.src) p.src = S.src; if (S.hrs && S.hrs.length) { p.hrs = S.hrs.join(','); if (S.hdate) p.hdate = S.hdate; } if (S.emp) p.emp = S.emp; if (!admin) p.mine = 1; if (S.emp && S.empTag) p.tag = 1; if (S.sort) p.sort = S.sort; if (S.flt.length) p.flt = S.flt.join(','); if (admin && S.bulk && S.bulk.on) { const f = S.bulk.f || {}; if (f.bd) p.bd = f.bd; if (f.ob) p.ob = f.ob; if ((f.bn || []).length) p.bn = f.bn.join(','); }
+        const p = { scope: S.emp ? 'emp' : S.scope, q: S.q }; if (S.src) p.src = S.src; if (S.hrs && S.hrs.length) { p.hrs = S.hrs.join(','); if (S.hdate) p.hdate = S.hdate; } if (S.emp) p.emp = S.emp; if (!admin) p.mine = 1; if (S.emp && S.empTag) p.tag = 1; if (S.sort) p.sort = S.sort; if (S.flt.length) p.flt = S.flt.join(','); if (S.scope === 'unans' && !S.emp) { Object.assign(p, unParams()); if (!p.sort) p.sort = 'new'; } if (admin && S.bulk && S.bulk.on) { const f = S.bulk.f || {}; if (f.bd) p.bd = f.bd; if (f.ob) p.ob = f.ob; if ((f.bn || []).length) p.bn = f.bn.join(','); }
         const d = await api.get('wa.chats', p); S.chats = d.chats || []; S.counts = d.counts || {};
         if (!admin) try { const g = await api.get('wq.grab_list'); S.grab = (g.items || []).filter((x) => !x.mine); S.grabMin = g.min || 4; } catch (e) { S.grab = []; }
-        auCfg(d.rules && d.rules.auto); rulesCheck(d.rules); drawTabs(); drawFeeds(); drawKpi(); drawList(); if (opts.onCounts) { try { opts.onCounts(S.counts); } catch (e) { } } auNext();
+        auCfg(d.rules && d.rules.auto); rulesCheck(d.rules); drawTabs(); drawFeeds(); drawKpi(); drawUn(); drawList(); if (opts.onCounts) { try { opts.onCounts(S.counts); } catch (e) { } } auNext();
       } catch (e) { if (!quiet) $('wiL').innerHTML = `<div class="wi-empty">${esc(e.message)}</div>`; }
       finally { S.busyList = false; }
     }
