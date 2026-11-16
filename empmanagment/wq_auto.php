@@ -22,7 +22,7 @@ function waa_tables(PDO $pdo): bool
     catch (Throwable $e) { error_log('waa_tables: ' . $e->getMessage()); return $ok = false; }
 }
 /** The master switch. OFF until the owner starts it (setting waa_off = 0): the table and the buttons work, but nothing is given out and no overnight limit applies. */
-function waa_engine_on(PDO $pdo): bool { return (string)setting_get($pdo, 'waa_off', '1') === '0'; }
+function waa_engine_on(PDO $pdo): bool { return (string)setting_get($pdo, 'waa_off', '1') === '0' && (string)setting_get($pdo, 'waa_on_day', '') === waa_day($pdo); }   // started for THIS business day (10 am → 10 am): it must be started again every morning
 function waa_dt(int $t): string { return date('Y-m-d H:i:s', $t); }
 function waa_day(PDO $pdo): string { return function_exists('biz_today') ? (string)biz_today($pdo) : date('Y-m-d'); }
 /** Start of the business day (10 am by the panel's day timing). */
@@ -170,7 +170,7 @@ if ($__waa === 'wq.aa_get' || $__waa === 'wq.aa_set' || $__waa === 'wq.aa_engine
     if (!$adm) json_response(['error' => 'Only Admin, HR or a Sales Head can open Auto assign.'], 403);
     if ($__waa === 'wq.aa_engine') {   // Start / Stop the whole engine
         if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
-        $in = json_input(); setting_set($pdo, 'waa_off', !empty($in['on']) ? '0' : '1'); setting_set($pdo, 'waa_run_at', '0');
+        $in = json_input(); setting_set($pdo, 'waa_off', !empty($in['on']) ? '0' : '1'); setting_set($pdo, 'waa_on_day', !empty($in['on']) ? waa_day($pdo) : ''); setting_set($pdo, 'waa_run_at', '0');
         if (function_exists('wa_log')) { $nm = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : []; wa_log($pdo, 'engine', true, 'auto assign engine ' . (!empty($in['on']) ? 'STARTED' : 'STOPPED') . ' by ' . ($nm[$me] ?? $me)); }
     }
     if ($__waa === 'wq.aa_set') {
