@@ -1159,7 +1159,7 @@ function wa_camp_ideal(PDO $pdo, string $day): array
     $H = []; for ($t = $t0; $t < $t1; $t += 3600) $H[(int)date('G', $t)] = ['t' => $t, 'spend' => 0.0, 'sent' => 0, 'dl' => 0, 'replies' => 0, 'orders' => 0];
     try {   // spend (estimate: delivered × rate) and messages, by hour
         $q = $pdo->prepare("SELECT /*+ MAX_EXECUTION_TIME(12000) */ HOUR(ts) h, COUNT(*) n, SUM(status IN ('delivered','read')) dl, SUM(status IN ('delivered','read') AND bill_cat IN ('utility','authentication')) u, SUM(status IN ('delivered','read') AND bill_cat = 'service') sv FROM wa_messages WHERE dir = 'out' AND mtype = 'template' AND who = 'campaign' AND status <> 'failed' AND ts >= ? AND ts < ? GROUP BY h"); $q->execute([$a, $b]);
-        foreach ($q->fetchAll() as $r) { $h = (int)$r['h']; if (!isset($H[$h])) continue; $dl = (int)$r['dl']; $u = (int)$r['u']; $H[$h]['spend'] = max(0, $dl - $u - (int)$r['sv']) * (float)$R['marketing'] + $u * (float)$R['utility']; $H[$h]['sent'] = (int)$r['n']; }
+        foreach ($q->fetchAll() as $r) { $h = (int)$r['h']; if (!isset($H[$h])) continue; $dl = (int)$r['dl']; $u = (int)$r['u']; $H[$h]['spend'] = max(0, $dl - $u - (int)$r['sv']) * (float)$R['marketing'] + $u * (float)$R['utility']; $H[$h]['dl'] = $dl; $H[$h]['sent'] = (int)$r['n']; }
     } catch (Throwable $e) { error_log('camp_ideal spend: ' . $e->getMessage()); }
     try {   // replies = queries typed Campaign on the live board, by the hour they opened
         $q = $pdo->prepare("SELECT /*+ MAX_EXECUTION_TIME(12000) */ HOUR(q.opened_at) h, COUNT(*) n FROM wa_queries q JOIN wq_qtype t ON t.query_id = q.id AND t.type = 'campaign' WHERE q.opened_at >= ? AND q.opened_at < ? GROUP BY h"); $q->execute([$a, $b]);
