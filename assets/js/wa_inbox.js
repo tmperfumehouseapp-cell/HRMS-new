@@ -313,13 +313,13 @@
       loadList();
     }
     /* ───── 🚨 Not replied: customers who wrote last and nobody answered — any age, also past the 24 hours ───── */
-    S.un = { d: '7', w: '', e: 0, f: '', t: '', st: null, key: '', at: 0, dates: false };
-    const unParams = () => { const u = S.un, o = { ud: u.d }; if (u.d === 'dates' && u.f && u.t) { o.uf = u.f; o.ut = u.t; } if (u.w) o.uw = u.w; if (admin && u.e) o.ue = u.e; return o; };
+    S.un = { d: '7', w: '', e: 0, k: '', f: '', t: '', st: null, key: '', at: 0, dates: false };
+    const unParams = () => { const u = S.un, o = { ud: u.d }; if (u.d === 'dates' && u.f && u.t) { o.uf = u.f; o.ut = u.t; } if (u.w) o.uw = u.w; if (u.k) o.uk = u.k; if (admin && u.e) o.ue = u.e; return o; };
     const unWait = (at) => { const m = Math.max(0, Math.floor((Date.now() - new Date(String(at).replace(' ', 'T')).getTime()) / 60000)); return m < 60 ? m + ' min' : m < 2880 ? Math.floor(m / 60) + ' h' : Math.floor(m / 1440) + ' days'; };
     async function unStats(force) {
-      const u = S.un, k = [u.d, u.f, u.t].join('|');
+      const u = S.un, k = [u.d, u.f, u.t, u.k].join('|');
       if (!force && u.st && u.key === k && Date.now() - u.at < 60000) return;
-      try { const o = { ud: u.d }; if (u.d === 'dates' && u.f && u.t) { o.uf = u.f; o.ut = u.t; } if (!admin) o.mine = 1; u.st = await api.get('wa.unans_stats', o); u.key = k; u.at = Date.now(); if (S.scope === 'unans') drawUn(true); } catch (e) { }
+      try { const o = { ud: u.d }; if (u.d === 'dates' && u.f && u.t) { o.uf = u.f; o.ut = u.t; } if (u.k) o.uk = u.k; if (!admin) o.mine = 1; u.st = await api.get('wa.unans_stats', o); u.key = k; u.at = Date.now(); if (S.scope === 'unans') drawUn(true); } catch (e) { }
     }
     function drawUn(noFetch) {
       const B = $('wiU'); if (!B) return; const on = S.scope === 'unans' && !S.emp; B.hidden = !on; if (!on) return;
@@ -329,16 +329,19 @@
         <div class="lb">When did the customer write?</div>
         <div class="row">${D.map(([k, l]) => `<button type="button" data-ud="${k}" class="${u.d === k ? 'on' : ''}">${l}${n(rg[k])}</button>`).join('')}<button type="button" data-ud="dates" class="${u.d === 'dates' ? 'on' : ''}">📅 Dates…</button></div>
         ${u.d === 'dates' ? `<div class="dt"><input type="date" id="wiUf" value="${esc(u.f)}"> to <input type="date" id="wiUt" value="${esc(u.t)}"><button type="button" class="xl" id="wiUg" style="background:#9a3412">Show</button></div>` : ''}
+        <div class="lb">Which customers?</div>
+        <div class="row"><button type="button" data-uk="" class="${!u.k ? 'on' : ''}">All${n((st.kind || {}).all)}</button><button type="button" data-uk="cx" class="${u.k === 'cx' ? 'on' : ''}" title="Chats with a complaint ticket or the complaint tag">🟣 Complaints${n((st.kind || {}).cx)}</button><button type="button" data-uk="sales" class="${u.k === 'sales' ? 'on' : ''}" title="Everything that is not a complaint">🛍 Sales${n((st.kind || {}).sales)}</button></div>
         <div class="lb">Can we still reply?</div>
         <div class="row"><button type="button" data-uw="" class="${!u.w ? 'on' : ''}">All${n(st.total)}</button><button type="button" data-uw="now" class="g ${u.w === 'now' ? 'on' : ''}" title="The customer wrote in the last 24 hours: a normal reply can go">✅ Can reply now${n(st.now)}</button><button type="button" data-uw="past" class="r ${u.w === 'past' ? 'on' : ''}" title="More than 24 hours ago: WhatsApp allows only an approved template">⏰ Past 24 h · template only${n(st.past)}</button></div>
         ${admin ? `<div class="lb">Who has the chat?</div><div class="row"><button type="button" data-ue="0" class="${!u.e ? 'on' : ''}">Everyone${n(st.total)}</button>${(st.by || []).map((x) => `<button type="button" data-ue="${x.emp}" class="${u.e === x.emp ? 'on' : ''}">${esc(String(x.name).split(' ')[0] || x.name)}${n(x.n)}</button>`).join('')}</div>` : ''}`;
       const go = () => { drawUn(true); unStats(); loadList(); };
       B.querySelectorAll('[data-ud]').forEach((b) => { b.onclick = () => { u.d = b.dataset.ud; u.e = 0; if (u.d === 'dates' && !(u.f && u.t)) { drawUn(true); return; } go(); }; });
       B.querySelectorAll('[data-uw]').forEach((b) => { b.onclick = () => { u.w = b.dataset.uw; go(); }; });
+      B.querySelectorAll('[data-uk]').forEach((b) => { b.onclick = () => { u.k = b.dataset.uk; u.e = 0; go(); }; });
       B.querySelectorAll('[data-ue]').forEach((b) => { b.onclick = () => { u.e = +b.dataset.ue; go(); }; });
       if ($('wiUg')) $('wiUg').onclick = () => { u.f = $('wiUf').value; u.t = $('wiUt').value; if (!u.f || !u.t) { alert('Pick both dates.'); return; } go(); };
       $('wiUx').onclick = async () => { const b = $('wiUx'); b.disabled = true; b.textContent = 'Making…';
-        try { const o = unParams(); if (!admin) o.mine = 1; const d = await api.get('wa.unans_export', o); const cols = [['Customer', 'name'], ['Number', 'phone'], ['Last message from the customer', 'last_message'], ['Wrote at', 'wrote_at'], ['Waiting', 'waiting'], ['Can reply now?', 'can_reply'], ['Chat is with', 'with'], ['Chat', 'chat']];
+        try { const o = unParams(); if (!admin) o.mine = 1; const d = await api.get('wa.unans_export', o); const cols = [['Customer', 'name'], ['Number', 'phone'], ['Last message from the customer', 'last_message'], ['Wrote at', 'wrote_at'], ['Waiting', 'waiting'], ['Can reply now?', 'can_reply'], ['Chat is with', 'with'], ['Chat', 'chat'], ['Kind', 'kind']];
           const q = (v) => { v = v == null ? '' : String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
           const txt = [cols.map((c) => q(c[0])).join(',')].concat((d.rows || []).map((r) => cols.map((c) => q(r[c[1]])).join(','))).join('\r\n');
           const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['\ufeff' + txt], { type: 'text/csv;charset=utf-8' })); a.download = 'not_replied_' + new Date().toISOString().slice(0, 10) + '.csv'; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
@@ -394,7 +397,7 @@
       const tgb = admin && S.emp ? `<div class="wi-tgb"><button type="button" data-tg="0" class="${S.empTag ? '' : 'on'}">Now with ${esc(fn)}${S.counts.emp_now != null ? ' (' + S.counts.emp_now + ')' : ''}</button><button type="button" data-tg="1" class="${S.empTag ? 'on' : ''}">🏷 ${esc(fn)}'s tag — all${S.counts.emp_tag != null ? ' (' + S.counts.emp_tag + ')' : ''}</button></div>` : '';
       L.innerHTML = tgb + bkBarHtml() + (admin ? '' : lg) + grab + rows.map((c) => { const un = c.unread && c.phone !== S.sel, bs = S.bulk.on && S.bulk.set.has(c.phone); return `<div class="wi-it ${c.phone === S.sel && !S.bulk.on ? 'sel' : ''} ${bs ? 'bsel' : ''} ${c.waiting ? 'wait' : ''} ${un ? 'unr' : ''} ${c.heat ? 'h-' + c.heat : ''}" data-p="${esc(c.phone)}">${S.bulk.on ? '<span class="wi-ck ' + (bs ? 'on' : '') + '"></span>' : ''}${av(c)}<div class="wi-bd">
           <div class="n"><span>${esc(title(c))}${c.rescue ? ' <b class="wi-rs" style="font-size:10.5px;font-weight:800;border-radius:99px;padding:1px 7px;background:' + ({ act: '#fee2e2', today: '#ffedd5', week: '#fef9c3', long: '#e5e7eb' }[c.rescue.tier] || '#e5e7eb') + ';color:#1f2937" title="Rescue priority">' + esc(c.rescue.label) + '</b>' : ''}</span><span class="t">${!admin && c.fresh_agent ? '<span class="wi-new" title="New for you — it stays until you reply"></span>' : ''}${c.waiting ? '● ' : ''}${esc(stamp(c.last_msg_at || c.last_at))}</span></div>
-          <div class="m2"><span class="m">${esc(c.preview || '')}</span>${un ? `<span class="wi-un">${c.unread > 9 ? '9+' : c.unread}</span>` : ''}</div><div class="pl">${pills(c)}</div>${S.scope === 'unans' && !S.emp ? `<div class="wi-unl"><span class="w">⏳ waiting ${unWait(c.last_at)}</span>${admin ? `<span>👤 ${esc(c.assigned_name || 'Nobody')}</span>` : ''}<span class="${c.window_open ? 'ok' : 'no'}">${c.window_open ? '✅ can reply' : '⏰ template only'}</span></div>` : ''}</div></div>`; }).join('');
+          <div class="m2"><span class="m">${esc(c.preview || '')}</span>${un ? `<span class="wi-un">${c.unread > 9 ? '9+' : c.unread}</span>` : ''}</div><div class="pl">${pills(c)}</div>${S.scope === 'unans' && !S.emp ? `<div class="wi-unl"><span class="w">⏳ waiting ${unWait(c.last_at)}</span>${c.is_cx ? '<span style="background:#f3e8ff;color:#6b21a8">🟣 Complaint</span>' : ''}${admin ? `<span>👤 ${esc(c.assigned_name || 'Nobody')}</span>` : ''}<span class="${c.window_open ? 'ok' : 'no'}">${c.window_open ? '✅ can reply' : '⏰ template only'}</span></div>` : ''}</div></div>`; }).join('');
       L.querySelectorAll('.wi-it').forEach((el) => { el.onclick = () => (S.bulk.on ? bkToggle(el.dataset.p) : openChat(el.dataset.p)); }); bkWire(L);
       L.querySelectorAll('[data-tg]').forEach((b) => { b.onclick = () => { S.empTag = b.dataset.tg === '1'; loadList(); }; });
       L.querySelectorAll('[data-grab]').forEach((b) => { b.onclick = async (e) => { e.stopPropagation(); b.disabled = true; try { await api.post('wq.grab', { phone: b.dataset.grab }); S.grab = (S.grab || []).filter((x) => x.phone !== b.dataset.grab); await loadList(true); openChat(b.dataset.grab); } catch (er) { alert(er.message); loadList(true); } }; });
