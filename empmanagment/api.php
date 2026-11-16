@@ -1362,7 +1362,7 @@ function day_timing_overrides(PDO $pdo): array
 {
     static $ov = null; if ($ov !== null) return $ov;
     $ov = [];
-    for ($d = strtotime('2026-11-08'); $d <= strtotime('2026-11-16'); $d += 86400) $ov[date('Y-m-d', $d)] = '12:00';
+    for ($d = strtotime('2026-11-08'); $d <= strtotime('2026-11-15'); $d += 86400) $ov[date('Y-m-d', $d)] = '12:00';   // owner (16 Nov): from the 16th every day is 10 AM → next day 10 AM again; the 8–15 Nov days keep their 12 PM start (history stays as it was counted)
     try { $raw = (string)setting_get($pdo, 'day_timing_overrides', ''); if ($raw !== '') { $j = json_decode($raw, true); if (is_array($j)) { $ov = []; foreach ($j as $k => $v) if (preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$k) && preg_match('/^\d{2}:\d{2}$/', (string)$v)) $ov[(string)$k] = (string)$v; } } } catch (Throwable $e) { }
     return $ov;
 }
