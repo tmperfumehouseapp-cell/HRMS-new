@@ -42,6 +42,7 @@ jobs:
           echo "WhatsApp engine last finished (wa_cron_at) = " . $s("wa_cron_at") . " · last started (wa_cron_start) = " . (ctype_digit($s("wa_cron_start")) ? date("Y-m-d H:i:s", (int)$s("wa_cron_start")) : $s("wa_cron_start")) . "\n";
           $st = json_decode($s("waa_st"), true); if (is_array($st)) { $m = ["on" => 0, "off" => 0, "ao" => 0]; foreach ((array)($st["e"] ?? []) as $x) { if (($x["m"] ?? "") === "on") $m["on"]++; if (($x["m"] ?? "") === "off") $m["off"]++; if (!empty($x["ao"])) $m["ao"]++; } echo "buttons saved for day " . ($st["day"] ?? "?") . ": admin ON " . $m["on"] . " · admin OFF " . $m["off"] . " · switched off by ratio " . $m["ao"] . "\n"; } else echo "waa_st: " . $s("waa_st") . "\n";
           echo "waa_tick last reached (waa_seen_at) = " . (ctype_digit($s("waa_seen_at")) ? date("Y-m-d H:i:s", (int)$s("waa_seen_at")) . " (server clock, UTC)" : $s("waa_seen_at")) . "\n";
+          echo "last pass (waa_last): " . $s("waa_last") . "\n";
           echo "engine steps of the last run (seconds, or skipped): " . $s("wa_cron_steps") . "\n";
           echo "engine step now: " . $s("wa_cron_step") . "\n";
           echo "\n=== what the engine has given ===\n";
