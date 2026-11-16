@@ -83,24 +83,49 @@ function dp_dsp_sr_pick(array $o) {
 function dp_dsp_tail($s) { $d = preg_replace('/\D+/', '', (string)$s); return strlen($d) >= 10 ? substr($d, -10) : ''; }
 /** the parcels created between two dates, indexed by order number (and by its digits as a second chance) */
 function dp_dsp_sr_index(PDO $pdo, $fromDate, $toDate) {
+    dp_dsp_sr_cols($pdo);
     $q = $pdo->prepare("SELECT * FROM dp_dsp_parcels WHERE created_at >= ? AND created_at < ?"); $q->execute([$fromDate, $toDate]);
     $ix = ['n' => [], 'd' => []];
     foreach ($q->fetchAll() as $p) { $n = dp_dsp_norm_order($p['order_name']); $ix['n'][$n][] = $p; $d = preg_replace('/\D+/', '', $n); if ($d !== '') $ix['d'][$d][] = $p; }
     return $ix;
 }
+/** 🔁 A REBOOKED parcel. When an AWB is cancelled (the courier did not pick up for days) the team books the parcel again, and Shiprocket then holds a SECOND order for it, named like the first with a
+ *  suffix: "69662-C". The first order stays CANCELED (or frozen at "out for pickup") for ever; the copy carries the new AWB and the real status. Returns the first order's name, or '' when $name is no copy. */
+function dp_dsp_sr_clone_base($name) { $n = dp_dsp_norm_order($name); return preg_match('/^((?:wm-)?\d{3,})[-_ ]?(?:c|r|rb|copy)\d{0,2}$/i', $n, $m) ? strtolower($m[1]) : ''; }
+function dp_dsp_sr_cols(PDO $pdo) { static $ok = false; if ($ok) return; $ok = true; try { $pdo->query("SELECT sr_oid FROM dp_dsp_parcels LIMIT 0"); } catch (Throwable $e) { try { $pdo->exec("ALTER TABLE dp_dsp_parcels ADD COLUMN sr_oid VARCHAR(40) NULL"); } catch (Throwable $e2) { } } }
 /** the ONE parcel a Shiprocket order belongs to, or null. Same number in two stores -> the customer phone decides. */
 function dp_dsp_sr_find(array $ix, array $o, $name) {
     $n = dp_dsp_norm_order($name); $rows = $ix['n'][$n] ?? [];
+    $base = $rows ? '' : dp_dsp_sr_clone_base($name);
+    if (!$rows && $base !== '') $rows = $ix['n'][$base] ?? [];                                   // the copy "69662-C" belongs to the parcel of "69662"
     if (!$rows) { $d = preg_replace('/\D+/', '', $n); if (strlen($d) >= 3 && count($ix['d'][$d] ?? []) === 1) $rows = $ix['d'][$d]; }   // "TM-1042" in Shiprocket, "#1042" here
+    if (!$rows && $base !== '' && isset($GLOBALS['pdo']) && $GLOBALS['pdo'] instanceof PDO) {   // a copy is booked days after the order: the parcel is then outside the days being read, so it is looked up directly
+        try { $q = $GLOBALS['pdo']->prepare("SELECT * FROM dp_dsp_parcels WHERE order_name IN (?, ?) ORDER BY id DESC LIMIT 4"); $q->execute([$base, '#' . $base]); $rows = $q->fetchAll(); } catch (Throwable $e) { $rows = []; }
+    }
     if (count($rows) > 1) { $t = dp_dsp_tail($o['customer_phone'] ?? ($o['billing_phone'] ?? '')); if ($t !== '') { $f = array_values(array_filter($rows, function ($p) use ($t) { return dp_dsp_tail($p['phone'] ?? '') === $t; })); if (count($f) === 1) $rows = $f; } }
     return count($rows) === 1 ? $rows[0] : null;
 }
-/** copy one Shiprocket order (AWB, courier, status) onto its parcel. Returns what changed ('' = nothing). */
+/** copy one Shiprocket order (AWB, courier, status) onto its parcel. Returns what changed ('' = nothing).
+ *  A parcel that was booked again follows its COPY order only: the first order (cancelled, or stuck at "out for pickup") must not write its dead AWB and status back over the live one — that is what
+ *  kept hundreds of rebooked parcels in "Tracking ID given, not in transit" with the status "Canceled" although the courier had long delivered them. */
 function dp_dsp_sr_apply(PDO $pdo, array $p, array $o) {
+    static $owner = [];   // parcel id => the Shiprocket order name it follows (set in this run, before the saved column can be re-read)
     list($name, $awb, $cour, $st) = dp_dsp_sr_pick($o);
+    $me = dp_dsp_norm_order($name); $isCopy = dp_dsp_sr_clone_base($name) !== '' && $me !== dp_dsp_norm_order($p['order_name']);
+    $own = $owner[(int)$p['id']] ?? strtolower((string)($p['sr_oid'] ?? ''));
+    $dead = stripos($st, 'cancel') !== false;
+    if (!$isCopy && $own !== '' && $own !== $me) return '';                 // the parcel follows a copy: the first order is history
+    if ($isCopy && $dead && $own !== '' && $own !== $me) return '';         // a cancelled copy, while another copy is the live one
     $new = dp_dsp_sr_map($st, $awb !== '');
     if ($awb !== '' && !dp_dsp_valid_track($awb)) $awb = '';
-    $did = dp_dsp_apply($pdo, $p, $awb, $cour, $new, 'Shiprocket', false);
+    $take = $isCopy && !$dead && $awb !== '';                                // a live copy with an AWB takes the parcel over
+    if ($take) {
+        $owner[(int)$p['id']] = $me;
+        $chg = $awb !== (string)$p['tracking_no'];
+        try { $pdo->prepare("UPDATE dp_dsp_parcels SET sr_oid = ?" . ($chg ? ", live_at = NULL" : "") . " WHERE id = ?")->execute([mb_substr($me, 0, 40), $p['id']]); } catch (Throwable $e) { }
+        if ($chg && function_exists('bd_log')) { try { bd_log('dispatch', (string)$p['order_name'], 'booked again in Shiprocket as ' . $name . ': AWB ' . ((string)$p['tracking_no'] ?: 'none') . ' -> ' . $awb, 'Shiprocket'); } catch (Throwable $e) { } }
+    }
+    $did = dp_dsp_apply($pdo, $p, $awb, $cour, $new, 'Shiprocket', $take && in_array((string)$p['status'], ['placed', 'tracked', 'cancelled'], true));   // a parcel wrongly parked as cancelled / waiting comes back with the copy's real status
     if ($st !== '' && $st !== (string)($p['sr_status'] ?? '')) { $pdo->prepare("UPDATE dp_dsp_parcels SET sr_status = ?, sr_at = ? WHERE id = ?")->execute([mb_substr($st, 0, 40), bd_now(), $p['id']]); if ($did === '') $did = 'status text'; }
     return $did;
 }
@@ -108,14 +133,15 @@ function dp_dsp_sr_apply(PDO $pdo, array $p, array $o) {
 function dp_dsp_sr_page(PDO $pdo, $from, $to, $page, array $ix, array &$r) {
     list($j, $e) = dp_dsp_sr_get('/v1/external/orders', ['page' => $page, 'per_page' => 100, 'from' => $from, 'to' => $to, 'sort' => 'DESC']);
     if (!$j) return [0, $e, 0];
-    $list = isset($j['data']) && is_array($j['data']) ? $j['data'] : [];
+    $list = isset($j['data']) && is_array($j['data']) ? $j['data'] : []; $miss = [];
     foreach ($list as $o) {
         if (!is_array($o)) continue; $r['seen']++;
         $name = dp_dsp_sr_pick($o)[0]; $p = dp_dsp_sr_find($ix, $o, $name);
-        if (!$p) { $r['unmatched']++; if (count($r['examples']) < 8) $r['examples'][] = $name; continue; }
+        if (!$p) { $r['unmatched']++; if (count($r['examples']) < 8) $r['examples'][] = $name; $miss[] = $name . ' [' . (string)($o['channel_name'] ?? '') . '] ' . (string)($o['status'] ?? ''); continue; }
         $did = dp_dsp_sr_apply($pdo, $p, $o);
         if ($did !== '') $r['updated']++; else $r['same']++;
     }
+    if ($miss) { try { $old = json_decode((string)dp_get('sr_unm_sample', ''), true); $old = is_array($old) ? $old : []; dp_put('sr_unm_sample', json_encode(array_slice(array_values(array_unique(array_merge($miss, $old))), 0, 300), JSON_UNESCAPED_UNICODE)); } catch (Throwable $e) { } }   // which Shiprocket orders match nothing here (name, channel, status): read by the diagnosis
     return [count($list), '', (int)($j['meta']['pagination']['total_pages'] ?? 0)];
 }
 function dp_dsp_sr_blank() { return ['ok' => false, 'seen' => 0, 'updated' => 0, 'same' => 0, 'unmatched' => 0, 'examples' => [], 'error' => '', 'pages' => 0]; }
