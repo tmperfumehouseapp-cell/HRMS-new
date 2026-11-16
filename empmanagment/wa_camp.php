@@ -720,7 +720,8 @@ function wa_unreach_skip_queued(PDO $pdo, int $nowTs): int
     [$cond, $par] = wa_unreach_cond($pdo); if ($cond === '') return 0;
     if ((int)setting_get($pdo, 'wa_unreach_skip_at', '0') > $nowTs - 300) return 0; setting_set($pdo, 'wa_unreach_skip_at', (string)$nowTs);
     $n = 0;
-    foreach ($pdo->query("SELECT id FROM wa_campaigns WHERE status IN ('running', 'scheduled') ORDER BY id DESC LIMIT 30")->fetchAll(PDO::FETCH_COLUMN) as $cid) {
+    foreach ($pdo->query("SELECT id, extra FROM wa_campaigns WHERE status IN ('running', 'scheduled') ORDER BY id DESC LIMIT 30")->fetchAll() as $cr) {
+        $cid = (int)$cr['id']; $ex0 = json_decode((string)($cr['extra'] ?? ''), true); if (is_array($ex0) && !empty($ex0['keep_unreach'])) continue;   // the owner chose "send to them too" for this campaign: nobody is skipped for being held / blocked by Meta
         try {
             $q = $pdo->prepare("UPDATE wa_camp_items SET status = 'skipped', err = 'Held by Meta recently - it gets one more try later', err_code = 131049 WHERE camp_id = ? AND status = 'queued' AND phone IN (SELECT phone FROM wa_unreach WHERE code IN (131049, 131048) AND at >= ?) LIMIT 5000"); $q->execute([(int)$cid, $par[0]]); $n += $q->rowCount();
             $q = $pdo->prepare("UPDATE wa_camp_items SET status = 'skipped', err = 'Not on WhatsApp or stopped marketing messages', err_code = 131026 WHERE camp_id = ? AND status = 'queued' AND phone IN (SELECT phone FROM wa_unreach WHERE code IN (131026, 131050) AND at >= ?) LIMIT 5000"); $q->execute([(int)$cid, $par[1]]); $n += $q->rowCount();
@@ -1589,7 +1590,7 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
                 $w = []; foreach ((array)($ex['num_w'] ?? []) as $k => $v) if (in_array((int)$k, $pick, true) && (float)$v > 0) $w[(int)$k] = min(100, round((float)$v, 1)); if (count($w) >= 2) $extra['num_w'] = $w;
             }
             foreach (['gap_days' => 60, 'bought_days' => 365] as $k0 => $mx0) if (isset($ex[$k0]) && $ex[$k0] !== '') $extra[$k0] = max(0, min($mx0, (int)$ex[$k0]));   // the "Who to leave out" choices of the campaign (0 = send to them too) — the sender reads them
-            foreach (['leave_fu', 'skip_ignored'] as $k0) if (isset($ex[$k0])) $extra[$k0] = (int)$ex[$k0] !== 0 ? 1 : 0;
+            foreach (['leave_fu', 'skip_ignored', 'keep_unreach'] as $k0) if (isset($ex[$k0])) $extra[$k0] = (int)$ex[$k0] !== 0 ? 1 : 0;
             if ((int)($ex['u_pct'] ?? 0) > 0 && (!empty($ex['u_tpl']) || !empty($ex['u_auto']))) {   // the owner's utility share for this campaign, 5–80 %: all approved utility versions of the message (u_auto) or one chosen (u_tpl)
                 if (!empty($ex['u_tpl'])) { $ur = wa_diag_row_tpl($pdo, (int)$ex['u_tpl']); if (!$ur || strtoupper((string)$ur['category']) !== 'UTILITY') json_response(['error' => 'The utility version must be a Utility message.'], 422); $extra['u_tpl'] = (int)$ur['id']; }
                 if (!empty($ex['u_auto'])) $extra['u_auto'] = 1; $extra['u_pct'] = max(5, min(100, (int)$ex['u_pct']));   // the owner chooses 5–100 %
