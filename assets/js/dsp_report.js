@@ -316,6 +316,7 @@ const DSP = (() => {
       }
       if (g === 3 && R.g3_sr && R.g3_sr.length) x = 'Shiprocket: ' + R.g3_sr.map((r) => String(r.s).toLowerCase() + ' ' + r.n).join(' · ');
       if (g === 9 && isAdmin() && n) x = '<button type="button" class="dr-go" data-apall="1">Approve all ' + n + '</button>';
+      if (n) x += '<button type="button" class="dr-go dk" style="background:#16945a;color:#fff" data-xl="' + g + '" title="Download only this group as an Excel (CSV) file">⬇ Excel</button>';
       return '<tr class="dr-band' + (n ? '' : ' zero') + '" data-band="' + g + '"><td colspan="11" style="border-left:6px solid ' + G[g][1] + (g === 9 ? ';background:#2b1f5c' : '') + '"><span style="display:inline-block;width:14px">' + (n ? (open ? '▾' : '▸') : '') + '</span> ' + (g < 9 ? g + ' · ' : '') + esc(G[g][0]).toUpperCase() + ' &nbsp;<b>' + n + '</b> &nbsp;<span style="font-weight:600;opacity:.7">' + note + '</span>' + (x ? '<span class="x">' + x + '</span>' : '') + '</td></tr>';
     }
     /* live badge: green = news in the last 30 min, amber = within 6 h, grey = older, "Track" = never asked */
@@ -763,6 +764,7 @@ const DSP = (() => {
       if (d.trk) { if (window.OrderHub) { OrderHub.onClose = () => { load(); }; return OrderHub.open({ id: d.trk }); } return openLive(d.trk); }
       if (d.lvinfo) return liveInfo(b);
       if (d.cp) { try { await navigator.clipboard.writeText(d.cp); BD.toast('Copied.'); } catch (er) { BD.toast('Select it and copy by hand.', true); } return; }
+      if (d.xl) return csv(b, +d.xl);   // ⬇ Excel on a group's dark band: only that group
       if (d.band !== undefined) {   // click on a dark band: open / close the group
         const g = +d.band; if (!R.counts['g' + g]) return; if (e.target.closest('button')) return;
         S.open[g] = S.open[g] ? 0 : 1; keep(); return S.open[g] ? load() : (S.q ? load() : (table(), undefined));
@@ -826,7 +828,7 @@ const DSP = (() => {
     });
 
     /* ---------- Download Excel (CSV): the same window, every parcel, all groups ---------- */
-    async function csv(btn) {
+    async function csv(btn, onlyG) {
       btn.disabled = true;
       try {
         const p = win(); delete p.sdays; delete p.sfrom; delete p.sto;
@@ -835,10 +837,11 @@ const DSP = (() => {
         const q = (v) => { v = v == null ? '' : String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
         const SL = { placed: 'No tracking ID', tracked: 'Tracking ID given', transit: 'In transit', delivered: 'Delivered', rto: 'RTO', cancelled: 'Cancelled' };
         x.rows.forEach((r) => { r.status = SL[r.status] || r.status; r.grp_name = r.grp ? ((r.grp < 9 ? r.grp + ' · ' : '') + G[r.grp][0]) : ''; r.u_label = r.u && r.u.today ? r.u.today.label : ''; r.u_note = r.u && r.u.today ? r.u.today.note : ''; r.u_owner = r.u ? r.u.owner : ''; r.u_days = r.u ? r.u.days : ''; });
+        if (onlyG) x.rows = x.rows.filter((r) => +r.grp === onlyG);
         const lines = [cols.map((c) => q(c[0])).join(',')].concat(x.rows.map((r) => cols.map((c) => q(r[c[1]])).join(',')));
         const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' }); const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob); a.download = 'dispatch_' + x.filters.from + '_to_' + x.filters.to + '.csv'; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
-        BD.toast(x.rows.length + ' parcels saved' + (x.total > x.rows.length ? ' (first ' + x.rows.length + ' of ' + x.total + ')' : '') + '.');
+        a.href = URL.createObjectURL(blob); a.download = 'dispatch_' + (onlyG ? G[onlyG][0].toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') + '_' : '') + x.filters.from + '_to_' + x.filters.to + '.csv'; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+        BD.toast(x.rows.length + ' parcels saved' + (onlyG ? ' (' + G[onlyG][0] + ')' : '') + (!onlyG && x.total > x.rows.length ? ' (first ' + x.rows.length + ' of ' + x.total + ')' : '') + '.');
       } catch (er) { BD.toast(er.message, true); }
       btn.disabled = false;
     }
