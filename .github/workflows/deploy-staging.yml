@@ -31,6 +31,8 @@ jobs:
         run: php tests/eta_test.php
       - name: Customer funnel rules
         run: php tests/cfun_test.php
+      - name: Auto assign rules
+        run: php tests/waa_test.php
   staging:
     needs: check
     runs-on: ubuntu-latest
