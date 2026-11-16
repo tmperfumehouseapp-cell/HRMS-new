@@ -802,7 +802,7 @@ const DSP = (() => {
       try {
         if (b.id === 'srSave') { b.disabled = true; const r = await api.post('dp.dsp_sr_save', { email: $('srEmail').value.trim(), password: $('srPass').value }); msg(r.message); b.disabled = false; await fixRefresh(); }
         else if (b.id === 'srDel') { if (!(await BD.confirm('Remove the Shiprocket login?', 'Statuses will stop updating by themselves.', 'Remove', true))) return; await api.post('dp.dsp_sr_save', { remove: 1 }); await fixRefresh(); }
-        else if (b.id === 'srTest') { b.disabled = true; msg('Testing…'); const r = await api.post('dp.dsp_sr_test', {}); b.disabled = false; await fixRefresh(); msg(r.message, !r.ok); }
+        else if (b.id === 'srTest') { b.disabled = true; const te = $('srEmail') ? $('srEmail').value.trim() : '', tp = $('srPass') ? $('srPass').value : ''; if (te || tp) { msg('Saving what you typed…'); const sv = await api.post('dp.dsp_sr_save', { email: te, password: tp }); if (!sv || !sv.ok) { b.disabled = false; msg((sv && (sv.error || sv.message)) || 'Could not save. Type the email and the password, then try again.', true); return; } } msg('Testing…'); const r = await api.post('dp.dsp_sr_test', {}); b.disabled = false; await fixRefresh(); msg(r.message, !r.ok); }
         else if (b.id === 'recGo') { await recAll(b); }
         else if (b.id === 'srSync') { b.disabled = true; msg('Reading Shiprocket…'); const r = await api.post('dp.dsp_sr_sync', { days: 30 }); b.disabled = false; await load(); msg(r.message, !r.ok); }
       } catch (er) { BD.toast(er.message, true); b.disabled = false; }
