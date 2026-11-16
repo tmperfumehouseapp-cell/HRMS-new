@@ -2263,7 +2263,7 @@ function hrms_memo(string $key, int $ttl, callable $fn)
     if ($old !== null) { $old['b'] = $now; @file_put_contents($f, json_encode($old, JSON_INVALID_UTF8_SUBSTITUTE), LOCK_EX); }
     $v = $fn();
     $enc = json_encode(['t' => time(), 'v' => $v], JSON_INVALID_UTF8_SUBSTITUTE); if ($enc !== false && strlen($enc) < 2000000) { $tmp = $f . '.' . getmypid(); if (@file_put_contents($tmp, $enc) !== false) { @chmod($tmp, 0600); @rename($tmp, $f); } }      // 0600: an answer can hold customer details
-    if (mt_rand(1, 400) === 1) foreach ((array)@glob(dirname($f) . '/hrms_memo_*') as $g) if ($now - (int)@filemtime($g) > 7200) @unlink($g);
+    if (mt_rand(1, 400) === 1) foreach ((array)@glob(dirname($f) . '/hrms_memo_*') as $g) if ($now - (int)@filemtime($g) > 2400) @unlink($g);
     $mem[$key] = [time(), $v]; return $v;
 }
 /** Throws one shared hrms_memo() answer away, so the next request counts it afresh (used when something just changed what it holds). */
