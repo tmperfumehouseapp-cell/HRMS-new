@@ -68,7 +68,7 @@
         <div class="mini"><div><b id="stockProducts">–</b><span>perfumes</span></div><div><b id="stockTotal">–</b><span>for sale</span></div></div>
       </div><div class="sx-szrow" id="szRow"></div></div>
       <div class="steps" id="steps"><div class="st on" data-s="gen"><i>1</i><span>Make &amp; print<small>choose sizes, make barcodes, print labels</small></span></div><div class="st" data-s="stick"><i>2</i><span>Stick<small>label on each bottle</small></span></div><div class="st" data-s="scan"><i>3</i><span>Scan into inventory<small>scan each bottle: it joins stock</small></span></div></div>
-      <div class="sx-tabs" id="tabs"><button data-t="gen" class="on"><span id="ti1"></span>1 · Make &amp; print</button><button data-t="scan"><span id="ti2"></span>3 · Scan into inventory</button><button data-t="stock"><span id="ti3"></span>Stock</button><button data-t="plan">Order planner</button><button data-t="chain">Chains</button></div>
+      <div class="sx-tabs" id="tabs"><button data-t="gen" class="on"><span id="ti1"></span>1 · Make &amp; print</button><button data-t="scan"><span id="ti2"></span>3 · Scan into inventory</button><button data-t="stock"><span id="ti3"></span>Stock</button><button data-t="plan">Order planner</button><button data-t="chain">Chains</button><button data-t="move">↩ Returns &amp; supplier</button></div>
 
       <!-- MAKE + PRINT (one step: after making, the labels are right there) -->
       <div class="pane on" id="p-gen">
@@ -116,6 +116,62 @@
         <div id="chList" class="sx-mut">Loading…</div>
       </div>
 
+
+      <!-- RETURNS, EXCHANGES and bottles SENT BACK TO THE SUPPLIER -->
+      <div class="pane" id="p-move">
+        <style>
+          #p-move .mvk{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:12px}
+          #p-move .mvk div{background:#fff;border:1px solid var(--sx-line);border-radius:16px;padding:10px 14px}#p-move .mvk span{display:block;font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--sx-mut)}#p-move .mvk b{font-size:24px;display:block;margin:2px 0}#p-move .mvk small{color:var(--sx-mut);font-size:11.5px}
+          #p-move .mvc{display:flex;gap:12px;align-items:flex-start;background:var(--sx-bg,#f4f6f8);border-radius:14px;padding:10px 12px;margin-top:8px;font-size:13.5px}#p-move .mvc b{font-size:14.5px}
+          #p-move .mvc.bad{background:#fdecea;color:#8c1d18}#p-move .mvc.ok{background:#eefaf3}
+          #p-move .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}@media (max-width:640px){#p-move .two{grid-template-columns:1fr}}
+          #p-move .opt{display:flex;gap:8px;flex-wrap:wrap}#p-move .opt label{display:flex;gap:6px;align-items:center;border:1.5px solid var(--sx-line);border-radius:12px;padding:8px 12px;cursor:pointer;font-weight:700;font-size:13px;background:#fff}#p-move .opt label.on{border-color:var(--sx-accent);background:#fff4ec}
+          #p-move .mvr{display:flex;gap:10px;align-items:center;padding:7px 0;border-top:1px solid var(--sx-line);font-size:13px;flex-wrap:wrap}#p-move .mvr:first-child{border-top:0}
+          #p-move .tag{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11.5px;font-weight:800;background:#eef0f3}#p-move .tag.r{background:#e8f1ff;color:#1d4ed8}#p-move .tag.e{background:#f1ebff;color:#6d28d9}#p-move .tag.v{background:#fff4e0;color:#b45309}#p-move .tag.g{background:#e6f4ec;color:#157a3c}#p-move .tag.d{background:#fdecea;color:#b3261e}
+        </style>
+        <div class="mvk" id="mvKpis"></div>
+        <div class="seg" id="mvMode"><button data-mv="return" class="on">↩ Customer return</button><button data-mv="exchange">🔁 Exchange</button><button data-mv="vendor">📦 Send back to supplier</button></div>
+        <div id="mvMsg"></div>
+
+        <div class="sx-card" id="mvRet" style="margin-bottom:14px">
+          <div class="sx-h" id="mvRetTitle">Customer return</div>
+          <div class="sx-mut" style="font-size:12.5px;margin:2px 0 8px" id="mvRetHelp"></div>
+          <label class="sx-f"><span id="mvOldLbl">1) Scan the bottle the customer brought back</span>
+            <div class="sx-scan" style="max-width:520px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 5v14M8 5v14M12 5v14M16 5v14M20 5v14"/></svg><input id="mvOld" inputmode="numeric" autocomplete="off" placeholder="Scan the barcode on the bottle…"></div></label>
+          <div id="mvOldInfo"></div>
+          <div id="mvFindLnkRow" class="sx-mut" style="margin-top:6px;font-size:13px">Barcode missing, torn or not scanning? <a href="#" id="mvFindLnk" style="font-weight:800;color:var(--sx-accent-d)">Find the bottle by the customer’s phone or bill number</a></div>
+          <div id="mvFind" class="sx-card" style="display:none;margin-top:8px;padding:12px 14px"><input class="sx-in" id="mvFq" placeholder="Customer phone, bill number (ST-000123) or name" autocomplete="off"><div id="mvFres" style="margin-top:8px"></div>
+            <div class="sx-mut" style="font-size:12.5px;margin-top:6px" id="mvNbLnkRow">Bill not found (old bill, no phone)? <a href="#" id="mvNbLnk" style="font-weight:800;color:var(--sx-accent-d)">Record the return without a barcode</a></div></div>
+          <div id="mvNb" class="sx-card" style="display:none;margin-top:8px;padding:12px 14px"><b>Return without a barcode</b><div class="sx-mut" style="font-size:12.5px;margin:2px 0 8px">Choose the perfume and the size. If the bottle is good, the system makes a <b>new barcode</b> for it: print the label, stick it, scan it in.</div>
+            <div class="two"><label class="sx-f">Perfume<input class="sx-in" id="mvNbP" list="mvNbPL" placeholder="Type to search…" autocomplete="off"><datalist id="mvNbPL"></datalist></label><label class="sx-f">Size<select class="sx-in" id="mvNbMl"><option value="">Choose…</option><option>10</option><option>20</option><option>50</option><option>100</option></select></label></div></div>
+          <div id="mvNewWrap" style="display:none;margin-top:12px"><label class="sx-f">2) Scan the NEW bottle you give in exchange
+            <div class="sx-scan" style="max-width:520px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 5v14M8 5v14M12 5v14M16 5v14M20 5v14"/></svg><input id="mvNew" inputmode="numeric" autocomplete="off" placeholder="Scan the new bottle…"></div></label>
+            <div id="mvNewInfo"></div></div>
+          <div class="two" style="margin-top:12px">
+            <label class="sx-f">Why?<select class="sx-in" id="mvReason"><option>Customer did not like it</option><option>Wrong perfume given</option><option>Defect: leaking / sprayer</option><option>Defect: sticker / label</option><option>Gift exchange</option><option>Other</option></select></label>
+            <label class="sx-f">Note (optional)<input class="sx-in" id="mvNote" maxlength="200" placeholder="Anything to remember"></label>
+          </div>
+          <div style="margin-top:10px"><div class="sx-f">The bottle that came back is…</div><div class="opt" id="mvCond"><label class="on"><input type="radio" name="mvc" value="1" checked> ✅ Good — put it back in stock</label><label><input type="radio" name="mvc" value="0"> ⚠️ Damaged — do not sell again</label></div></div>
+          <div style="margin-top:10px;max-width:300px"><label class="sx-f" id="mvMoneyLbl">Refund given ₹<input class="sx-in" id="mvMoney" type="number" inputmode="decimal" placeholder="0"></label><div class="sx-mut" style="font-size:12px;margin-top:4px" id="mvMoneyHelp"></div></div>
+          <div style="margin-top:14px"><button class="sx-btn" id="mvSave" disabled>Save return</button><button class="sx-btn" id="mvSaveNb" style="display:none" disabled>Save return without barcode</button></div>
+        </div>
+
+        <div class="sx-card" id="mvVen" style="display:none;margin-bottom:14px">
+          <div class="sx-h">Send bottles back to the supplier</div>
+          <div class="sx-mut" style="font-size:12.5px;margin:2px 0 8px">For bottles that are already in your stock but have a problem (wrong sticker, label, damage…). They leave the stock, and you can see them under “At the supplier” until they come back.</div>
+          <div class="two"><label class="sx-f">Supplier<input class="sx-in" id="mvVendor" maxlength="60" placeholder="Supplier name"></label>
+            <label class="sx-f">Problem<select class="sx-in" id="mvVReason"><option>Sticker problem</option><option>Wrong label</option><option>Damaged bottle</option><option>Leaking</option><option>Wrong perfume</option><option>Other</option></select></label></div>
+          <label class="sx-f" style="margin-top:8px">Note (optional)<input class="sx-in" id="mvVNote" maxlength="200"></label>
+          <label class="sx-f" style="margin-top:10px">Scan each bottle you are sending back
+            <div class="sx-scan" style="max-width:520px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 5v14M8 5v14M12 5v14M16 5v14M20 5v14"/></svg><input id="mvVen1" inputmode="numeric" autocomplete="off" placeholder="Scan a bottle…"></div></label>
+          <div id="mvVenList" style="margin-top:8px"></div>
+          <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap"><button class="sx-btn" id="mvVSend" disabled>Send back</button><button class="sx-btn ghost" id="mvVClear">Clear</button></div>
+        </div>
+
+        <div class="sx-card" id="mvAtV" style="margin-bottom:14px"></div>
+        <div class="sx-card" id="mvLog"></div>
+      </div>
+
       <!-- STOCK -->
       <div class="pane" id="p-plan"><div class="sx-card" id="planCard" style="margin-bottom:14px"></div></div>
       <div class="pane" id="p-stock">
@@ -152,10 +208,151 @@
     document.querySelectorAll('#steps .st').forEach((x) => x.classList.toggle('on', (b.dataset.t === 'scan' && x.dataset.s === 'scan') || (b.dataset.t !== 'scan' && x.dataset.s === 'gen')));
     if (b.dataset.t === 'scan') scanner.focus();
     if (b.dataset.t === 'chain' && (!chData || chDirty)) loadChains();
+    if (b.dataset.t === 'move') { loadMoves(); setTimeout(() => (mvMode === 'vendor' ? $('mvVen1') : $('mvOld')).focus(), 150); }
     if (b.dataset.t === 'plan' && !planBusy) runPlan();      // the planner reads the latest sales and stock every time it is opened (default 600)
     if (b.dataset.t === 'gen' && makeDirty) { makeDirty = false; renderProducts(); }           // scans changed the counts while this tab was hidden
     if (b.dataset.t === 'stock') { if (stockData) { renderStock(); if (stockDirty || Date.now() - stockAt > 45000 || !sug || !ord) loadStock(true); } else loadStock(); }      // show what we have at once, refresh quietly only when something changed
   });
+
+
+  // ================= Returns, exchanges and bottles sent back to the supplier =================
+  let mvMode = 'return', mvOld = null, mvNew = null, mvVen = [], mvData = null;
+  const mvWhen = (t) => { const d = new Date(String(t).replace(' ', 'T')); return isNaN(d) ? '' : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) + ' ' + d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }); };
+  const mvSay = (m, bad) => { $('mvMsg').innerHTML = m ? `<div class="sx-msg ${bad ? 'bad' : 'ok'}" style="margin-bottom:10px">${sxi(bad ? 'xc' : 'ok')}<span>${esc(m)}</span></div>` : ''; if (m && !bad) setTimeout(() => { if ($('mvMsg').textContent.includes(m.slice(0, 20))) $('mvMsg').innerHTML = ''; }, 9000); };
+  const mvStatusTxt = { stock: 'in stock', sold: 'sold', generated: 'label made, not scanned in yet', vendor: 'at the supplier', damaged: 'damaged', void: 'cancelled' };
+  const mvInfo = (l, role) => {
+    const b = l.bottle, name = esc(cleanTitle(b.title)) + ' · ' + b.ml + ' ml' + (b.kind === 'tester' ? ' · tester' : ''), st = mvStatusTxt[b.status] || b.status;
+    let bad = '', extra = '';
+    if (role === 'old') {
+      if (b.status !== 'sold') bad = b.status === 'stock' ? 'This bottle is in your stock — it was never sold, so it cannot be a return.' : 'This bottle is “' + st + '”, so it cannot be taken back as a return.';
+      else if (l.sale) extra = `<div class="sx-mut" style="margin-top:2px">Sold on <b>${esc(l.sale.bill_no)}</b> · ${esc(mvWhen(l.sale.created_at))}${l.sale.customer_name ? ' · ' + esc(l.sale.customer_name) : ''}${l.sale.customer_phone ? ' (+' + esc(l.sale.customer_phone) + ')' : ''} · ${inr(l.sale.total)} for the whole bill</div>`;
+      else extra = '<div class="sx-mut" style="margin-top:2px">Sold (no bill is linked to this bottle).</div>';
+    } else if (b.status !== 'stock') bad = 'This bottle is “' + st + '”, not in stock, so it cannot be given.';
+    return `<div class="mvc ${bad ? 'bad' : 'ok'}"><div style="flex:1"><b>${name}</b> <span class="tag ${bad ? 'd' : 'g'}">${esc(st)}</span><div class="sx-mut" style="font-size:12px">code ${esc(b.code)}</div>${extra}${bad ? '<div style="margin-top:4px"><b>' + esc(bad) + '</b></div>' : ''}</div></div>`;
+  };
+  function mvCanSave() {
+    const okOld = mvOld && mvOld.bottle.status === 'sold', okNew = mvMode === 'return' || (mvNew && mvNew.bottle.status === 'stock');
+    $('mvSave').disabled = !(okOld && okNew);
+  }
+  function mvModeSet(m) {
+    if (typeof mvNbSet === 'function' && mvNbOn) mvNbSet(false);
+    mvMode = m; [...$('mvMode').children].forEach((x) => x.classList.toggle('on', x.dataset.mv === m));
+    $('mvRet').style.display = m === 'vendor' ? 'none' : ''; $('mvVen').style.display = m === 'vendor' ? '' : 'none';
+    if (m !== 'vendor') {
+      const ex = m === 'exchange'; $('mvRetTitle').textContent = ex ? 'Exchange' : 'Customer return';
+      $('mvRetHelp').textContent = ex ? 'The customer gives one bottle back and takes another one. Scan both. The bottle that came back goes to stock (or damaged), and the new one is counted as given out.' : 'The customer brings a bottle back and gets the money back. Scan its barcode: the system finds who bought it and when.';
+      $('mvNewWrap').style.display = ex ? '' : 'none'; $('mvSave').textContent = ex ? 'Save exchange' : 'Save return';
+      $('mvMoneyLbl').firstChild.textContent = ex ? 'Money difference ₹ (+ customer paid more, − gave back)' : 'Refund given ₹';
+      $('mvMoneyHelp').textContent = ex ? 'Leave empty if the two bottles cost the same.' : 'Leave empty if no money was given back (credit note / nothing).';
+      $('mvMoney').value = ''; mvCanSave(); setTimeout(() => $('mvOld').focus(), 50);
+    } else setTimeout(() => $('mvVen1').focus(), 50);
+  }
+  async function mvLookup(code) { const l = await api.get('st_inv.mv_lookup', { code }); return l; }
+  $('mvMode').addEventListener('click', (e) => { const b = e.target.closest('[data-mv]'); if (b) { mvSay(''); mvModeSet(b.dataset.mv); } });
+  const mvEnter = (inp, fn) => inp.addEventListener('keydown', (e) => { if (e.key !== 'Enter' && e.key !== 'Tab') return; const c = inp.value.replace(/\D/g, ''); if (!c) return; e.preventDefault(); inp.value = ''; fn(c); });
+  mvEnter($('mvOld'), async (code) => {
+    try { mvOld = await mvLookup(code); $('mvOldInfo').innerHTML = mvInfo(mvOld, 'old'); beep(mvOld.bottle.status === 'sold'); if (mvMode === 'exchange' && mvOld.bottle.status === 'sold') $('mvNew').focus(); }
+    catch (e) { mvOld = null; $('mvOldInfo').innerHTML = `<div class="mvc bad"><b>${esc(e.message)}</b></div>`; beep(false); }
+    mvCanSave();
+  });
+  mvEnter($('mvNew'), async (code) => {
+    try { mvNew = await mvLookup(code); $('mvNewInfo').innerHTML = mvInfo(mvNew, 'new'); beep(mvNew.bottle.status === 'stock'); }
+    catch (e) { mvNew = null; $('mvNewInfo').innerHTML = `<div class="mvc bad"><b>${esc(e.message)}</b></div>`; beep(false); }
+    mvCanSave();
+  });
+  $('mvCond').addEventListener('change', () => { [...$('mvCond').children].forEach((l) => l.classList.toggle('on', l.querySelector('input').checked)); });
+  $('mvSave').addEventListener('click', async () => {
+    $('mvSave').disabled = true;
+    const resell = document.querySelector('input[name=mvc]:checked').value === '1', money = +$('mvMoney').value || 0;
+    try {
+      const r = await api.post('st_inv.mv_return', { mode: mvMode, old_code: mvOld.bottle.code, new_code: mvNew ? mvNew.bottle.code : '', reason: $('mvReason').value, note: $('mvNote').value.trim(), resell: resell ? 1 : 0, refund: mvMode === 'return' ? money : 0, diff: mvMode === 'exchange' ? money : 0 });
+      mvSay(r.message); mvOld = null; mvNew = null; $('mvOldInfo').innerHTML = ''; $('mvNewInfo').innerHTML = ''; $('mvNote').value = ''; $('mvMoney').value = ''; stockDirty = true; makeDirty = true; loadMoves(); $('mvOld').focus();
+    } catch (e) { mvSay(e.message, true); }
+    mvCanSave();
+  });
+  // ---- send back to the supplier
+  try { $('mvVendor').value = localStorage.getItem('st_vendor') || 'Veros'; } catch (e) { $('mvVendor').value = 'Veros'; }
+  function mvVenDraw() {
+    $('mvVenList').innerHTML = mvVen.length ? mvVen.map((b, i) => `<div class="mvr"><span style="flex:1"><b>${esc(cleanTitle(b.title))}</b> · ${b.ml} ml <span class="sx-mut">· ${esc(b.code)}</span></span><span class="tag ${b.status === 'stock' ? 'g' : ''}">${esc(mvStatusTxt[b.status] || b.status)}</span><button class="x" data-vx="${i}" aria-label="Remove">×</button></div>`).join('') : '<div class="sx-mut" style="font-size:13px">No bottle scanned yet.</div>';
+    $('mvVSend').disabled = !mvVen.length; $('mvVSend').textContent = mvVen.length ? 'Send ' + mvVen.length + ' bottle' + (mvVen.length === 1 ? '' : 's') + ' back' : 'Send back';
+  }
+  mvEnter($('mvVen1'), async (code) => {
+    if (mvVen.some((b) => b.code === code)) { mvSay('Already in the list.', true); beep(false); return; }
+    try {
+      const l = await mvLookup(code), b = l.bottle;
+      if (b.status !== 'stock' && b.status !== 'generated') { mvSay(cleanTitle(b.title) + ' ' + b.ml + ' ml (' + b.code + ') is “' + (mvStatusTxt[b.status] || b.status) + '” — only bottles in your stock can go back to the supplier.', true); beep(false); return; }
+      mvSay(''); mvVen.push(b); beep(true); mvVenDraw();
+    } catch (e) { mvSay(e.message, true); beep(false); }
+  });
+  $('mvVenList').addEventListener('click', (e) => { const x = e.target.closest('[data-vx]'); if (x) { mvVen.splice(+x.dataset.vx, 1); mvVenDraw(); } });
+  $('mvVClear').addEventListener('click', () => { mvVen = []; mvVenDraw(); $('mvVen1').focus(); });
+  $('mvVSend').addEventListener('click', async () => {
+    if (!mvVen.length) return; const v = $('mvVendor').value.trim(); if (!v) { mvSay('Write the supplier name.', true); return; }
+    if (!confirm('Send ' + mvVen.length + ' bottle(s) back to ' + v + '?\n\nThey leave your stock right now.')) return;
+    $('mvVSend').disabled = true;
+    try { const r = await api.post('st_inv.mv_vendor_out', { codes: mvVen.map((b) => b.code), vendor: v, reason: $('mvVReason').value, note: $('mvVNote').value.trim() }); try { localStorage.setItem('st_vendor', v); } catch (e2) { } mvSay(r.message); mvVen = []; mvVenDraw(); stockDirty = true; makeDirty = true; loadMoves(); }
+    catch (e) { mvSay(e.message, true); }
+    mvVenDraw();
+  });
+  // ---- the picture: counts, at the supplier, latest moves
+  const KIND = { return: ['r', '↩ Return'], exchange: ['e', '🔁 Exchange'], vendor_out: ['v', '📦 Sent back'] };
+  async function loadMoves() {
+    try { mvData = await api.get('st_inv.mv_list'); } catch (e) { mvSay(e.message, true); return; }
+    const c = mvData.counts;
+    $('mvKpis').innerHTML = `<div><span>Returns</span><b>${c.returns_today}</b><small>today · ${c.returns_month} this month</small></div><div><span>Exchanges</span><b>${c.exchanges_today}</b><small>today · ${c.exchanges_month} this month</small></div><div><span>At the supplier</span><b>${c.at_vendor}</b><small>bottle${c.at_vendor === 1 ? '' : 's'} waiting to come back</small></div><div><span>Damaged</span><b>${c.damaged}</b><small>not for sale</small></div>`;
+    const groups = {}; mvData.at_vendor.forEach((m) => { (groups[m.vendor_batch || m.created_at] = groups[m.vendor_batch || m.created_at] || []).push(m); });
+    const keys = Object.keys(groups);
+    $('mvAtV').innerHTML = `<div class="sx-h">At the supplier now <small class="sx-mut">${c.at_vendor} bottle${c.at_vendor === 1 ? '' : 's'}</small></div>` + (keys.length ? keys.map((k) => { const L = groups[k], f = L[0];
+      return `<div style="border-top:1px solid var(--sx-line);padding:10px 0"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><b>${esc(f.vendor)}</b><span class="tag v">${esc(f.reason || 'problem')}</span><span class="sx-mut">${esc(mvWhen(f.created_at))} · ${L.length} bottle${L.length === 1 ? '' : 's'}</span><span style="flex:1"></span>
+        <button class="sx-btn" data-vb="${esc(k)}" data-how="restock" style="padding:7px 14px">✓ Came back — put in stock</button><button class="sx-btn ghost" data-vb="${esc(k)}" data-how="scrap" style="padding:7px 14px">✕ Will not come back</button></div>
+        <details style="margin-top:6px"><summary class="sx-mut" style="cursor:pointer;font-size:12.5px">See the ${L.length} bottle${L.length === 1 ? '' : 's'}</summary>${L.map((m) => `<div class="mvr"><span style="flex:1">${esc(cleanTitle(m.title))} · ${m.ml} ml <span class="sx-mut">· ${esc(m.code)}</span></span></div>`).join('')}</details></div>`; }).join('') : '<div class="sx-mut" style="font-size:13px;margin-top:6px">Nothing is at the supplier.</div>');
+    $('mvLog').innerHTML = '<div class="sx-h">Latest moves</div>' + (mvData.recent.length ? mvData.recent.map((m) => {
+      const k = m.kind === 'vendor_out' && m.closed_at ? (m.closed_how === 'restock' ? ['g', '✓ Came back'] : ['d', '✕ Written off']) : (KIND[m.kind] || ['', m.kind]);
+      const det = m.kind === 'exchange' ? `gave <b>${esc(cleanTitle(m.new_title || ''))} ${m.new_ml || ''} ml</b>${+m.diff ? ' · ' + (m.diff > 0 ? '+' : '−') + inr(Math.abs(m.diff)) : ''}` : m.kind === 'return' ? (+m.refund ? 'refund ' + inr(m.refund) : '') : esc(m.vendor);
+      return `<div class="mvr"><span class="sx-mut" style="min-width:104px">${esc(mvWhen(m.created_at))}</span><span class="tag ${k[0]}">${k[1]}</span><span style="flex:1"><b>${esc(cleanTitle(m.title || ''))}</b> · ${m.ml} ml <span class="sx-mut">· ${esc(m.code || '')}</span><div class="sx-mut" style="font-size:12px">${esc(m.reason)}${m.reason && det ? ' · ' : ''}${det}${(m.kind === 'return' || m.kind === 'exchange') ? ' · ' + (+m.resell ? 'back in stock' : 'damaged') : ''}${m.note ? ' · “' + esc(m.note) + '”' : ''}</div></span></div>`; }).join('') : '<div class="sx-mut" style="font-size:13px;margin-top:6px">No returns, exchanges or supplier moves yet.</div>');
+  }
+  $('mvAtV').addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-vb]'); if (!b) return; const L = mvData.at_vendor.filter((m) => (m.vendor_batch || m.created_at) === b.dataset.vb), how = b.dataset.how;
+    if (!confirm(how === 'restock' ? L.length + ' bottle(s) came back from ' + L[0].vendor + '. Put them in stock?' : L.length + ' bottle(s) will not come back. Write them off?')) return;
+    b.disabled = true;
+    try { const r = await api.post('st_inv.mv_vendor_back', { move_ids: L.map((m) => m.move_id), action: how }); mvSay(r.message); stockDirty = true; makeDirty = true; loadMoves(); } catch (er) { mvSay(er.message, true); b.disabled = false; }
+  });
+
+  // ---- no barcode? find the bottle on the customer's bill, or record the return by perfume + size
+  let mvFt = null, mvNbOn = false;
+  function mvNbSet(on) {
+    mvNbOn = on; $('mvNb').style.display = on ? '' : 'none'; $('mvSave').style.display = on ? 'none' : ''; $('mvSaveNb').style.display = on ? '' : 'none';
+    if (on) { $('mvNbPL').innerHTML = (products || []).map((p) => `<option value="${esc(cleanTitle(p.title))}">`).join(''); mvOld = null; $('mvOldInfo').innerHTML = ''; }
+    mvNbCheck();
+  }
+  const mvNbProduct = () => { const v = $('mvNbP').value.trim().toLowerCase(); return (products || []).find((p) => cleanTitle(p.title).toLowerCase() === v) || null; };
+  function mvNbCheck() { $('mvSaveNb').disabled = !(mvNbOn && mvNbProduct() && $('mvNbMl').value); }
+  $('mvNbP').addEventListener('input', mvNbCheck); $('mvNbMl').addEventListener('change', mvNbCheck);
+  $('mvFindLnk').addEventListener('click', (e) => { e.preventDefault(); const f = $('mvFind'); f.style.display = f.style.display === 'none' ? '' : 'none'; $('mvNbLnkRow').style.display = mvMode === 'exchange' ? 'none' : ''; if (f.style.display !== 'none') $('mvFq').focus(); });
+  $('mvNbLnk').addEventListener('click', (e) => { e.preventDefault(); mvNbSet(true); $('mvNbP').focus(); });
+  $('mvFq').addEventListener('input', () => {
+    clearTimeout(mvFt); const q = $('mvFq').value.trim(); if (q.length < 3) { $('mvFres').innerHTML = ''; return; }
+    mvFt = setTimeout(async () => {
+      try {
+        const r = await api.get('st_inv.mv_find', { q }), B = r.bills || [];
+        $('mvFres').innerHTML = B.length ? B.map((bl) => `<div style="border-top:1px solid var(--sx-line);padding:8px 0"><div><b>${esc(bl.bill_no)}</b> · ${esc(mvWhen(bl.created_at))}${bl.customer_name ? ' · ' + esc(bl.customer_name) : ''}${bl.customer_phone ? ' (+' + esc(bl.customer_phone) + ')' : ''} · ${inr(bl.total)}</div>${bl.bottles.map((b) => `<div class="mvr"><span style="flex:1"><b>${esc(cleanTitle(b.title))}</b> · ${b.ml} ml <span class="sx-mut">· ${esc(b.code)}</span></span>${b.status === 'sold' ? `<button class="sx-btn" data-mvpick="${esc(b.code)}" style="padding:6px 14px">This one</button>` : `<span class="tag">${esc(mvStatusTxt[b.status] || b.status)}</span>`}</div>`).join('')}</div>`).join('') : '<div class="sx-mut" style="font-size:13px">No bill found for “' + esc(q) + '”.</div>';
+      } catch (e) { $('mvFres').innerHTML = `<div class="mvc bad"><b>${esc(e.message)}</b></div>`; }
+    }, 300);
+  });
+  $('mvFres').addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-mvpick]'); if (!b) return;
+    try { mvOld = await mvLookup(b.dataset.mvpick); $('mvOldInfo').innerHTML = mvInfo(mvOld, 'old'); $('mvFind').style.display = 'none'; mvNbSet(false); if (mvMode === 'exchange') $('mvNew').focus(); } catch (er) { mvSay(er.message, true); }
+    mvCanSave();
+  });
+  $('mvSaveNb').addEventListener('click', async () => {
+    const pr = mvNbProduct(); if (!pr) return; $('mvSaveNb').disabled = true;
+    try {
+      const r = await api.post('st_inv.mv_nobarcode', { product_id: pr.product_id, ml: +$('mvNbMl').value, reason: $('mvReason').value, note: $('mvNote').value.trim(), resell: document.querySelector('input[name=mvc]:checked').value === '1' ? 1 : 0, refund: +$('mvMoney').value || 0 });
+      mvSay(r.message); $('mvNbP').value = ''; $('mvNbMl').value = ''; $('mvNote').value = ''; $('mvMoney').value = ''; mvNbSet(false); $('mvFind').style.display = 'none'; makeDirty = true; stockDirty = true; loadMoves();
+    } catch (e) { mvSay(e.message, true); }
+    mvNbCheck();
+  });
+  mvModeSet('return'); mvVenDraw();
 
   // ---- make
   const cleanTitle = (t) => String(t || '').replace(/\s*[|｜]\s*TMPerfumehouse.*$/i, '').trim();

@@ -1,0 +1,53 @@
+# READ-ONLY: why was a customer's order typed Query or Campaign? Shows the chat contact, campaign messages sent to them, their query types and their recent orders. Changes nothing.
+# Run by hand: Actions → "Diagnose an order type (read-only)" → Run workflow → type the customer's mobile number.
+name: Diagnose an order type (read-only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      phone:
+        description: 'Customer mobile (10 digits), for example 7869472438'
+        required: true
+        default: '7869472438'
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+      - name: Study (read-only)
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+          PHONE: ${{ github.event.inputs.phone }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" "$PHONE" <<'REMOTE' || true
+          P="$1"; PH="$2"
+          cat > /tmp/ordtype.php <<'PHP'
+          <?php
+          require $argv[1] . "empmanagment/config.php"; $ph = substr(preg_replace("/\D/", "", $argv[2]), -10);
+          $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_TIMEOUT => 20, PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+          $all = function ($sql, $p = []) use ($d) { try { $q = $d->prepare($sql); $q->execute($p); return $q->fetchAll(PDO::FETCH_ASSOC); } catch (Throwable $e) { return [["ERR" => $e->getMessage()]]; } };
+          $show = function ($title, $rows) { echo "--- $title ---\n"; if (!$rows) echo "  (none)\n"; foreach ($rows as $r) echo "  " . json_encode($r, JSON_UNESCAPED_UNICODE) . "\n"; };
+          echo "phone: $ph   now: " . date("Y-m-d H:i:s") . "\n";
+          $show("chat contact", $all("SELECT phone, name, source, first_seen, last_in_at, last_out_at, assigned_emp, last_number_id, LEFT(ref_text, 60) ref_text, ad_id FROM wa_contacts WHERE phone = ?", [$ph]));
+          $show("campaign messages sent to them (last 45 days)", $all("SELECT ts, status, number_id, LEFT(body, 50) b FROM wa_messages WHERE phone = ? AND dir = \"out\" AND who = \"campaign\" AND ts >= ? ORDER BY ts DESC LIMIT 10", [$ph, date("Y-m-d H:i:s", time() - 45 * 86400)]));
+          $show("campaign items sent (wa_camp_items)", $all("SELECT camp_id, status, sent_at, last_status FROM wa_camp_items WHERE phone = ? ORDER BY id DESC LIMIT 8", [$ph]));
+          $show("messages they sent us (last 10)", $all("SELECT ts, number_id, mtype, LEFT(body, 70) b FROM wa_messages WHERE phone = ? AND dir = \"in\" ORDER BY id DESC LIMIT 10", [$ph]));
+          $show("query types (wq_qtype)", $all("SELECT opened_at, type, reason, auto, set_by FROM wq_qtype WHERE phone = ? ORDER BY opened_at DESC LIMIT 6", [$ph]));
+          $show("tags", $all("SELECT tag FROM wa_tagidx WHERE phone = ? LIMIT 30", [$ph]));
+          $show("orders with this number (shop_orders)", $all("SELECT order_name, created_at, total, financial_status, store_key, shopify_id FROM shop_orders WHERE phone LIKE ? ORDER BY created_at DESC LIMIT 6", ["%" . $ph]));
+          $o = $all("SELECT store_key, shopify_id FROM shop_orders WHERE phone LIKE ? ORDER BY created_at DESC LIMIT 6", ["%" . $ph]);
+          foreach ($o as $x) { if (!isset($x["store_key"])) continue; $show("allocation of " . $x["shopify_id"], $all("SELECT order_type, employee_id, allocated_by, allocated_at FROM order_allocations WHERE source = ? AND order_id = ?", [$x["store_key"], (string)$x["shopify_id"]])); $show("why the robot did / did not allocate " . $x["shopify_id"], $all("SELECT why, at FROM wa_auto_alloc_why WHERE source = ? AND order_id = ?", [$x["store_key"], (string)$x["shopify_id"]])); }
+          PHP
+          php /tmp/ordtype.php "$P" "$PH"
+          REMOTE

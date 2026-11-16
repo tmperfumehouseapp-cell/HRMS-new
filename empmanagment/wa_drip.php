@@ -187,7 +187,12 @@ if (strpos($__wd, 'wa.drip_') === 0) {
             @set_time_limit(120); $r = wd_tick($pdo, ['now' => 1, 'cap' => 60]); json_response(['ok' => true] + $r);
         }
         case 'wa.drip_stats': {   // the drip as a campaign: totals + one line per day (sent to Meta, delivered, read, replied, failed, left out)
-            $cfg = wd_cfg($pdo); $since = date('Y-m-d H:i:s', time() - 30 * 86400);
+            $cfg = wd_cfg($pdo);
+            // ⚡ Server load (15 Nov): this 30-day report (every drip message looked up one by one, then every reply of those customers) was worked out again each time the Campaigns
+            // screen refreshed its drip card — about 8 times a minute, the two most expensive database queries of the hour. The numbers are now worked out once and shared for 20 s;
+            // the running "Send now" job (its progress and Stop) is still read fresh on every call.
+            $__calc = function () use ($pdo, $cfg) {
+            $since = date('Y-m-d H:i:s', time() - 30 * 86400);
             $rows = $pdo->prepare("SELECT phone, day, status, why, at, wamid FROM wa_drip_ev WHERE at >= ?"); $rows->execute([$since]); $rows = $rows->fetchAll();
             $ids = []; foreach ($rows as $r) if ($r['status'] === 'sent' && $r['wamid'] !== '') $ids[] = (string)$r['wamid'];
             $st = []; foreach (array_chunk($ids, 800) as $ch) { $q = $pdo->prepare("SELECT wamid, status FROM wa_messages WHERE wamid IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $q->execute($ch); foreach ($q->fetchAll() as $m) $st[(string)$m['wamid']] = (string)$m['status']; }
@@ -203,7 +208,10 @@ if (strpos($__wd, 'wa.drip_') === 0) {
                 foreach (($inb[(string)$r['phone']] ?? []) as $t) if ($t > $at && $t <= $at + 2 * 86400) { $per[$d]['replied']++; $tot['replied']++; break; }
             }
             ksort($per); $days = []; foreach ($per as $d => $x) { $tn = ''; if (isset($cfg['days'][$d]) && function_exists('wa_tpl_row')) { $tr = wa_tpl_row($pdo, (int)$cfg['days'][$d]['tpl_id']); $tn = $tr ? str_replace('_', ' ', (string)$tr['name']) : ''; } $days[] = ['day' => $d, 'tpl' => $tn] + $x; }
-            json_response(['ok' => true, 'job' => wd_job($pdo), 'on' => $cfg['mode'] !== 'off' ? 1 : 0, 'mode' => $cfg['mode'], 'days_set' => count($cfg['days']), 'total' => $tot, 'days' => $days, 'first' => $first ? date('Y-m-d H:i:s', $first) : '', 'last' => $last ? date('Y-m-d H:i:s', $last) : '']);
+            return ['total' => $tot, 'days' => $days, 'first' => $first ? date('Y-m-d H:i:s', $first) : '', 'last' => $last ? date('Y-m-d H:i:s', $last) : ''];
+            };
+            $__st = function_exists('hrms_memo') ? hrms_memo('wd_stats:' . md5(json_encode($cfg['days'])), 20, $__calc) : $__calc();
+            json_response(['ok' => true, 'job' => wd_job($pdo), 'on' => $cfg['mode'] !== 'off' ? 1 : 0, 'mode' => $cfg['mode'], 'days_set' => count($cfg['days']), 'total' => $__st['total'], 'days' => $__st['days'], 'first' => $__st['first'], 'last' => $__st['last']]);
         }
         case 'wa.drip_preview': {   // today's send: who gets which day's message right now, counted by business day (10 AM → 10 AM)
             $cfg = wd_cfg($pdo); if (!$cfg['days']) json_response(['ok' => true, 'rows' => [], 'total' => ['customers' => 0, 'will' => 0, 'left' => 0, 'cost' => 0], 'today' => wd_today($pdo)]);

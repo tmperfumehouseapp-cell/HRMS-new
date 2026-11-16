@@ -66,6 +66,26 @@ function wa_scale_indexes4(PDO $pdo): void
         if ($has()) setting_set($pdo, 'wo_ph10_parcels', '1');
     } catch (Throwable $e) { if (function_exists('wag_log')) wag_log($pdo, 'engine', false, 'Parcels phone index not added: ' . mb_substr($e->getMessage(), 0, 150)); }
 }
+/** Fifth set (14 Nov 2026, measured with EXPLAIN ANALYZE on the live data):
+ *  - convo_messages k_cust (upload_id, src, who): the example-chat search ("similar customer words") read EVERY line of every stored chat (customer and salesperson) to test a LIKE on the text — 321 ms;
+ *    with 'who' in the index only the customer's lines are read (about half). Same rows, same answer.
+ *  - wa_contacts k_wait (status, last_in_at, last_out_at, optout): "how many chats wait for an answer" read 62,000 contact rows one by one (166 ms); with these four columns in the index the count is
+ *    answered from the index alone. Same rows, same answer.
+ *  Added once, online (ALGORITHM=INPLACE, LOCK=NONE); tried again after 30 minutes if it did not work. */
+function wa_scale_indexes5(PDO $pdo): void
+{
+    static $done = false; if ($done) return; $done = true;
+    try { if ((string)setting_get($pdo, 'wa_idx_v7', '') !== '') return; if ((int)setting_get($pdo, 'wa_idx_v7_try', '0') > time() - 1800) return; setting_set($pdo, 'wa_idx_v7_try', (string)time()); } catch (Throwable $e) { return; }
+    $want = [['convo_messages', 'k_cust', '(upload_id, src, who)'], ['wa_contacts', 'k_wait', '(status, last_in_at, last_out_at, optout)']]; $ok = 0;
+    foreach ($want as [$t, $k, $cols]) {
+        try {
+            $q = $pdo->query("SHOW INDEX FROM $t WHERE Key_name = '$k'"); if ($q && $q->fetch()) { $ok++; continue; }
+            try { $pdo->exec("ALTER TABLE $t ADD INDEX $k $cols, ALGORITHM=INPLACE, LOCK=NONE"); } catch (Throwable $e) { $pdo->exec("ALTER TABLE $t ADD INDEX $k $cols"); }
+            $ok++; if (function_exists('wag_log')) wag_log($pdo, 'engine', true, "Index $k added on $t.");
+        } catch (Throwable $e) { if (function_exists('wag_log')) wag_log($pdo, 'engine', false, "Index $k not added on $t: " . mb_substr($e->getMessage(), 0, 150)); }
+    }
+    if ($ok === count($want)) { try { setting_set($pdo, 'wa_idx_v7', date('Y-m-d H:i:s')); } catch (Throwable $e) { } }
+}
 
 if (!defined('WA_CUST_COLS')) define('WA_CUST_COLS', "phone VARCHAR(12) NOT NULL PRIMARY KEY, name VARCHAR(120) NOT NULL DEFAULT '', n INT NOT NULL DEFAULT 0, last_order DATETIME NULL, spent DECIMAL(12,2) NOT NULL DEFAULT 0, ign INT NOT NULL DEFAULT 0, act_at DATETIME NULL, KEY k_last (last_order), KEY k_act (act_at)");
 function wa_cust_tables(PDO $pdo): bool
@@ -85,7 +105,7 @@ function wa_cust_refresh(PDO $pdo, int $maxAge = 600, bool $force = false): bool
 {
     if (!wa_cust_tables($pdo)) return false;
     wa_scale_indexes($pdo); wa_scale_indexes2($pdo);
-    if (!$force && PHP_SAPI !== 'cli' && strpos((string)($_GET['action'] ?? ''), 'wa.cron') === 0) { wa_scale_indexes3($pdo); wa_scale_indexes4($pdo); }   // only from the engine's own run, never while a person waits for a page
+    if (!$force && PHP_SAPI !== 'cli' && strpos((string)($_GET['action'] ?? ''), 'wa.cron') === 0) { wa_scale_indexes3($pdo); wa_scale_indexes4($pdo); wa_scale_indexes5($pdo); }   // only from the engine's own run, never while a person waits for a page
     if (!$force && wa_cust_age($pdo) < $maxAge) return true;
     try { $got = (int)$pdo->query("SELECT GET_LOCK('wa_cust_refresh', 0)")->fetchColumn(); } catch (Throwable $e) { return false; }
     if ($got !== 1) return false;

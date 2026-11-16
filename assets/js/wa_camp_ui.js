@@ -551,7 +551,7 @@ html.wxdk [data-tone]{background:rgba(128,128,128,.12) !important;color:#e9edef}
         }
         run(false);
       })();
-      $(el, '#cPlanner').onclick = () => { const go = () => window.WaPlanner && WaPlanner.open(); if (window.WaPlanner) return go(); const sc = document.createElement('script'); sc.src = 'assets/js/wa_planner_ui.js?v=pn9'; sc.onload = go; sc.onerror = () => toast('Could not open the Campaign Planner. Refresh the page.', true); document.head.appendChild(sc); }; $(el, '#cPlan').onclick = () => { const go = () => window.WaPlan && WaPlan.open(); if (window.WaPlan) return go(); const sc = document.createElement('script'); sc.src = 'assets/js/wa_plan_ui.js?v=p4'; sc.onload = go; sc.onerror = () => toast('Could not open the planner. Refresh the page.', true); document.head.appendChild(sc); }; $(el, '#cDrip').onclick = () => { const go = () => window.WaDrip && WaDrip.open(); if (window.WaDrip) return go(); const sc = document.createElement('script'); sc.src = 'assets/js/wa_drip_ui.js?v=d10'; sc.onload = go; sc.onerror = () => toast('Could not open the 7-Day Drip. Refresh the page.', true); document.head.appendChild(sc); }; $(el, '#cUtil').onclick = () => wizard(null, null, true); $(el, '#cNew').onclick = () => (window.WaSmart ? WaSmart.chooser({ onNormal: () => wizard(null), onSmart: () => openSmart(0) }) : wizard(null)); $(el, '#cPc').onclick = () => pieces();
+      $(el, '#cPlanner').onclick = () => { const go = () => window.WaPlanner && WaPlanner.open(); if (window.WaPlanner) return go(); const sc = document.createElement('script'); sc.src = 'assets/js/wa_planner_ui.js?v=pn10'; sc.onload = go; sc.onerror = () => toast('Could not open the Campaign Planner. Refresh the page.', true); document.head.appendChild(sc); }; $(el, '#cPlan').onclick = () => { const go = () => window.WaPlan && WaPlan.open(); if (window.WaPlan) return go(); const sc = document.createElement('script'); sc.src = 'assets/js/wa_plan_ui.js?v=p4'; sc.onload = go; sc.onerror = () => toast('Could not open the planner. Refresh the page.', true); document.head.appendChild(sc); }; $(el, '#cDrip').onclick = () => { const go = () => window.WaDrip && WaDrip.open(); if (window.WaDrip) return go(); const sc = document.createElement('script'); sc.src = 'assets/js/wa_drip_ui.js?v=d10'; sc.onload = go; sc.onerror = () => toast('Could not open the 7-Day Drip. Refresh the page.', true); document.head.appendChild(sc); }; $(el, '#cUtil').onclick = () => wizard(null, null, true); $(el, '#cNew').onclick = () => (window.WaSmart ? WaSmart.chooser({ onNormal: () => wizard(null), onSmart: () => openSmart(0) }) : wizard(null)); $(el, '#cPc').onclick = () => pieces();
       if (window.WaCust && WaCust.summary) WaCust.summary($(el, '#cpCust'));
       { const TN = [['Daily plan', 'indigo'], ['Campaign days', 'blue'], ['Which hour', 'teal'], ['Best messages', 'purple'], ['Room to send', 'slate'], ['Planner', 'pink']]; el.querySelectorAll('.wp-cd').forEach((c) => { if (c.closest('.cp-hero')) return; const t = (c.textContent || '').trim().slice(0, 40); const m = TN.find(([k]) => t.indexOf(k) >= 0 || t.indexOf('📅 ' + k) >= 0); if (m) c.setAttribute('data-tone', m[1]); }); const pc = el.querySelector('#cPlanCard'); if (pc) pc.setAttribute('data-tone', 'pink'); }
       if (false && window.WaSmart && $(el, '#cpPlans')) WaSmart.plansCard($(el, '#cpPlans'), { onOpen: (id) => openSmart(id) });
@@ -709,6 +709,7 @@ html.wxdk [data-tone]{background:rgba(128,128,128,.12) !important;color:#e9edef}
     }
     async function people(c) {
       const m = modal(c.name); m.el.classList.add('cu-wide'); let f = 'all', q = '', page = 1, rows = [], more = false, counts = null, reasons = [], skipR = [], res = null, busy = false, qt = null, wait = '';
+      const sel = new Set(), openW = new Set(); let selInfo = null, sendMode = 'text', sendTxt = '', sendTpl = 0, tplList = null, sending = false;   // ☑ tick boxes + the send bar (Replied / Read / Failed … → text or Marketing message)
       m.body.innerHTML = loading;
       try { res = (await api.get('wa.camp_get', { id: c.id })).campaign.result; } catch (e) { m.body.innerHTML = errBox(e.message); return; }
       async function fetchRows(reset) {
@@ -720,7 +721,7 @@ html.wxdk [data-tone]{background:rgba(128,128,128,.12) !important;color:#e9edef}
         const k = counts || { all: 0 };
         m.body.innerHTML = `<div class="cu-kp"><div class="wp-kpi"><small>Sent</small><b>${fmt(res.sent)}</b></div><div class="wp-kpi"><small>Delivered</small><b>${fmt(res.delivered)}</b></div><div class="wp-kpi"><small>Read</small><b>${fmt(res.read)}</b></div><div class="wp-kpi" id="cuRep" style="${res.replied ? 'cursor:pointer;outline:2px solid #1a8f5a33' : ''}"><small>Replied ${res.replied ? '›' : ''}</small><b>${fmt(res.replied)}</b></div><div class="wp-kpi"><small>Orders</small><b>${fmt(res.orders)}</b></div><div class="wp-kpi"><small>Failed</small><b style="${res.failed ? 'color:#b42318' : ''}">${fmt(res.failed)}</b></div></div>
           <div class="cu-fl"><div class="cu-chips" id="cuCh"></div><button type="button" class="wp-btn p s" id="cuNowAll" hidden>⚡ Send all waiting now</button><button type="button" class="wp-btn s" id="cuDiag" title="Find out why messages failed — checks the message, the numbers, every Meta error code and the webhook">🩺 Diagnose</button><button type="button" class="wp-btn s" id="cuCsv">⬇ Download list (CSV)</button></div><div id="cuNowN"></div>
-          <input class="wp-in" id="cuQ" type="search" placeholder="Search name or number…" style="margin:8px 0" value="${esc(q)}"><div id="cuL"></div><div id="cuR"></div>`;
+          <input class="wp-in" id="cuQ" type="search" placeholder="Search name or number…" style="margin:8px 0" value="${esc(q)}"><div id="cuSel"></div><div id="cuL"></div><div id="cuR"></div><div id="cuBar"></div>`;
         $(m.body, '#cuQ').oninput = function () { clearTimeout(qt); q = this.value.trim(); qt = setTimeout(() => fetchRows(true), 350); };
         $(m.body, '#cuCsv').onclick = csv;
         const rq = $(m.body, '#cuRep'); if (rq && res.replied) rq.onclick = () => { m.close(); replies(c); };
@@ -743,13 +744,65 @@ html.wxdk [data-tone]{background:rgba(128,128,128,.12) !important;color:#e9edef}
         const box = $(m.body, '#cuL');
         box.innerHTML = rows.length ? rows.map((r, i) => {
           const s = STATUS[r.status] || [r.status, ''], nm = r.name || pretty(r.phone), when2 = r.status === 'retry' && r.next_try ? 'next try ' + when(r.next_try) : (r.status === 'queued' && r.send_at ? 'goes out ' + when(r.send_at) : (r.sent_at ? when(r.sent_at) : ''));
-          return `<div class="cu-pr" data-i="${i}"><div class="wp-av cu-av">${esc((nm.replace(/[^\p{L}\p{N}]/gu, '')[0] || '?').toUpperCase())}</div><div class="cu-pm"><b>${esc(nm)}</b> <span class="cu-ph">${esc(pretty(r.phone))}</span> <span class="wmx-ver ${r.variant === 'U' ? 'u' : ''}">${esc(r.version || 'Marketing')}</span><div class="wp-hint" style="margin:2px 0 0">${esc(r.why || '')}</div>${r.raw ? `<details style="margin-top:2px"><summary class="wp-hint" style="cursor:pointer;margin:0">🔍 Meta’s exact answer</summary><pre style="white-space:pre-wrap;font-size:11px;background:#f6f7f9;border-radius:6px;padding:6px;margin:4px 0 0;max-height:160px;overflow:auto">${esc(r.raw)}</pre></details>` : ''}${r.text ? `<div class="cu-tx" hidden><div class="wp-bub">${esc(r.text)}</div></div>` : ''}</div>
+          if (r.win) openW.add(r.phone); else if (r.win === false) openW.delete(r.phone);
+          return `<div class="cu-pr" data-i="${i}"><input type="checkbox" class="cuCk" data-p="${esc(r.phone)}" ${sel.has(r.phone) ? 'checked' : ''} ${r.optout ? 'disabled title="Opted out — never messaged"' : ''} style="width:19px;height:19px;flex:none;margin:10px 8px 0 0"><div class="wp-av cu-av">${esc((nm.replace(/[^\p{L}\p{N}]/gu, '')[0] || '?').toUpperCase())}</div><div class="cu-pm"><b>${esc(nm)}</b> <span class="cu-ph">${esc(pretty(r.phone))}</span> <span class="wmx-ver ${r.variant === 'U' ? 'u' : ''}">${esc(r.version || 'Marketing')}</span><div class="wp-hint" style="margin:2px 0 0">${esc(r.why || '')}</div><div class="wp-hint" style="margin:2px 0 0;color:${r.optout ? '#b42318' : (r.win ? '#166534' : '#b45309')}">${r.optout ? '⛔ Opted out — never messaged' : (r.win ? '🟢 Chat window open — a free text can go' : '🟠 Chat window closed — only a Marketing message can go')}</div>${r.raw ? `<details style="margin-top:2px"><summary class="wp-hint" style="cursor:pointer;margin:0">🔍 Meta’s exact answer</summary><pre style="white-space:pre-wrap;font-size:11px;background:#f6f7f9;border-radius:6px;padding:6px;margin:4px 0 0;max-height:160px;overflow:auto">${esc(r.raw)}</pre></details>` : ''}${r.text ? `<div class="cu-tx" hidden><div class="wp-bub">${esc(r.text)}</div></div>` : ''}</div>
             <div class="cu-ps"><span class="wp-pill ${s[1]}">${s[0]}</span><span class="cu-w">${esc(when2)}</span><span class="cu-w">${r.tries} of ${r.max_tries}</span>${r.text ? '<button type="button" class="wp-btn s" data-t="1">Message</button>' : ''}${r.status === 'queued' ? '<button type="button" class="wp-btn s" data-now="1" title="Send to this person now">⚡ Now</button>' : ''}<button type="button" class="wp-btn s" data-c="1">Chat</button></div></div>`;
         }).join('') + (more ? '<div class="wp-row" style="justify-content:center;margin-top:10px"><button type="button" class="wp-btn" id="cuMore">Show more</button></div>' : '') : '<div class="wp-empty">Nobody in this list.</div>';
         box.querySelectorAll('[data-c]').forEach((b) => { b.onclick = () => { const p = rows[+b.closest('.cu-pr').dataset.i].phone; m.close(); if (ctx && ctx.openChat) ctx.openChat(p); }; });
         box.querySelectorAll('[data-now]').forEach((b) => { b.onclick = () => { b.disabled = true; sendNow(rows[+b.closest('.cu-pr').dataset.i].phone); }; });
         box.querySelectorAll('[data-t]').forEach((b) => { b.onclick = () => { const t = b.closest('.cu-pr').querySelector('.cu-tx'); t.hidden = !t.hidden; }; });
         const mb = $(box, '#cuMore'); if (mb) mb.onclick = () => { page++; fetchRows(false); };
+        box.querySelectorAll('.cuCk').forEach((x) => { x.onchange = () => { if (x.checked) sel.add(x.dataset.p); else sel.delete(x.dataset.p); selDraw(); }; }); selDraw();
+      }
+      // ---- ☑ select + send bar ----
+      const winN = () => { let n = 0; sel.forEach((p0) => { if (openW.has(p0)) n++; }); return n; };
+      function selDraw() {
+        const k = counts || {}, tot = k[f] != null ? k[f] : (k.all || 0), n = sel.size, bx = $(m.body, '#cuSel'); if (!bx) return;
+        bx.innerHTML = rows.length ? `<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;background:#ecfdf5;border:1px solid #86efac;border-radius:12px;padding:9px 12px;margin:4px 0 8px;font-size:13.5px"><label style="display:flex;gap:8px;align-items:center;font-weight:800"><input type="checkbox" id="cuAll" ${n && n >= Math.max(1, (selInfo ? selInfo.total : 0)) && selInfo ? 'checked' : ''} style="width:19px;height:19px"> Select all ${fmt(tot)} in “${esc(ERRS.f[f] || f)}”</label><a href="#" id="cuPg" style="color:#166534">Only these ${fmt(rows.length)} on screen</a><a href="#" id="cuClr" style="color:#166534">Clear</a><span style="margin-left:auto;color:#166534;font-weight:700" id="cuSelN">${n ? '☑ ' + fmt(n) + ' selected' : ''}</span></div>` : '';
+        const al = $(m.body, '#cuAll'); if (al) al.onchange = async () => { if (!al.checked) { sel.clear(); selInfo = null; list(); return; } al.disabled = true; try { const d = await api.get('wa.camp_people_phones', { id: c.id, f, q }); sel.clear(); d.phones.forEach((x) => sel.add(x)); (d.open_phones || []).forEach((x) => openW.add(x)); selInfo = d; } catch (e) { toast(e.message, true); } list(); };
+        const pg = $(m.body, '#cuPg'); if (pg) pg.onclick = (ev) => { ev.preventDefault(); rows.forEach((r) => { if (!r.optout) sel.add(r.phone); }); list(); };
+        const cl = $(m.body, '#cuClr'); if (cl) cl.onclick = (ev) => { ev.preventDefault(); sel.clear(); selInfo = null; list(); };
+        barDraw();
+      }
+      async function loadTpls() { if (tplList) return; try { const t = await api.get('wa.camp_templates'); tplList = ((t || {}).templates || []).filter((x) => (String(x.body || '').match(/\{\{\s*\d+\s*\}\}/g) || []).length <= 1 && !/^(IMAGE|VIDEO|DOCUMENT)$/.test(String(x.header_format || ''))); } catch (e) { tplList = []; } }
+      function barDraw() {
+        const bar = $(m.body, '#cuBar'); if (!bar) return; const n = sel.size; if (!n) { bar.innerHTML = ''; return; }
+        const w = winN(), cl = n - w;
+        bar.innerHTML = `<div style="position:sticky;bottom:0;background:#0f172a;color:#fff;border-radius:14px;padding:12px 14px;margin-top:10px"><b style="font-size:15px">☑ ${fmt(n)} customers selected</b> <span style="color:#94a3b8;font-size:12.5px">· ${fmt(w)} can get a free text now · ${fmt(cl)} need a Marketing message</span>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;margin-top:10px">
+            <div id="cuMt" style="border:2px solid ${sendMode === 'text' ? '#22c55e' : '#475569'};border-radius:12px;padding:9px 11px;cursor:pointer;font-size:12.5px"><b style="font-size:14px">✉️ Text message (free)</b><br><span style="color:#94a3b8">Normal WhatsApp message — only for customers with an open 24-hour chat window (${fmt(w)}). The others are skipped, nothing is charged.</span>${sendMode === 'text' ? `<textarea id="cuTx" rows="3" class="wp-in" style="margin-top:6px;width:100%" placeholder="Type the message…  ({name} = customer's name)">${esc(sendTxt)}</textarea>` : ''}</div>
+            <div id="cuMm" style="border:2px solid ${sendMode === 'tpl' ? '#22c55e' : '#475569'};border-radius:12px;padding:9px 11px;cursor:pointer;font-size:12.5px"><b style="font-size:14px">📣 Marketing message (paid)</b><br><span style="color:#94a3b8">Approved message — reaches all ${fmt(n)}, even if the window is closed. Meta charges per delivered message.</span>${sendMode === 'tpl' ? `<select id="cuTp" class="wp-in" style="margin-top:6px;width:100%"><option value="0">${tplList ? 'Pick a message…' : 'Loading…'}</option>${(tplList || []).map((t) => `<option value="${t.id}" ${+sendTpl === t.id ? 'selected' : ''}>${esc(String(t.name || '').replace(/_/g, ' '))}</option>`).join('')}</select>` : ''}</div>
+          </div><div id="cuSE" style="margin-top:8px"></div>
+          <div style="margin-top:10px;display:flex;gap:12px;align-items:center;flex-wrap:wrap"><span style="font-size:12.5px;color:#cbd5e1;flex:1;min-width:180px">${sendMode === 'text' ? 'Cost: ₹0 · goes out right now.' : 'Starts at once and shows in Campaigns with its own report card.'} Opted-out customers are never included.</span><button type="button" id="cuSend" class="wp-btn p" ${sending ? 'disabled' : ''} style="font-size:15px;padding:10px 20px">${sending ? 'Sending…' : '▶ Send to ' + fmt(sendMode === 'text' ? w : n)}</button></div></div>`;
+        $(m.body, '#cuMt').onclick = (ev) => { if (ev.target.closest('textarea')) return; sendMode = 'text'; barDraw(); }; $(m.body, '#cuMm').onclick = async (ev) => { if (ev.target.closest('select')) return; sendMode = 'tpl'; barDraw(); if (!tplList) { await loadTpls(); barDraw(); } };
+        const tx = $(m.body, '#cuTx'); if (tx) tx.oninput = () => { sendTxt = tx.value; }; const tp = $(m.body, '#cuTp'); if (tp) tp.onchange = () => { sendTpl = +tp.value; };
+        $(m.body, '#cuSend').onclick = sendGo;
+      }
+      async function sendGo() {
+        const err = (t) => { $(m.body, '#cuSE').innerHTML = `<div class="wp-err" style="background:#fee2e2;color:#7f1d1d;border-radius:8px;padding:7px 10px;font-size:13px">${esc(t)}</div>`; }; if (sending || !sel.size) return;
+        const all = [...sel];
+        if (sendMode === 'text') {
+          const txt = ($(m.body, '#cuTx') || {}).value || sendTxt; sendTxt = txt; if (!txt.trim()) return err('Write the message first.');
+          const ok = all.filter((p0) => openW.has(p0)); if (!ok.length) return err('Nobody in this selection has an open 24-hour chat window — choose a Marketing message instead.');
+          if (!confirm('Send this text to ' + ok.length + ' customers now?' + (all.length - ok.length ? '\n(' + (all.length - ok.length) + ' with a closed window are skipped.)' : ''))) return;
+          sending = true; barDraw(); let sent = 0, closed = 0, failed = 0, lastErr = '';
+          for (let i = 0; i < ok.length; i += 25) {
+            try { const d = await api.post('wa.camp_text_batch', { phones: ok.slice(i, i + 25), text: txt }); sent += d.sent || 0; closed += d.closed || 0; failed += d.failed || 0; if (d.err) lastErr = d.err; } catch (e) { failed += Math.min(25, ok.length - i); lastErr = e.message; }
+            const se = $(m.body, '#cuSE'); if (se) se.innerHTML = `<div class="wp-ok">Sending… ${fmt(Math.min(i + 25, ok.length))} of ${fmt(ok.length)} · sent ${fmt(sent)}</div>`; if (!m.el.isConnected) break;
+          }
+          sending = false; barDraw(); const se = $(m.body, '#cuSE'); if (se) se.innerHTML = `<div class="wp-ok"><b>✅ ${fmt(sent)} text messages sent.</b>${closed ? ' ' + fmt(closed) + ' skipped (window closed).' : ''}${failed ? ' <b style="color:#b42318">' + fmt(failed) + ' failed' + (lastErr ? ': ' + esc(lastErr) : '') + '.</b>' : ''}</div>`;
+        } else {
+          if (!sendTpl) return err('Pick a Marketing message first.'); const t = (tplList || []).find((x) => x.id === +sendTpl); if (!t) return err('Pick a Marketing message first.');
+          if (!confirm('Send “' + String(t.name || '').replace(/_/g, ' ') + '” (Marketing, paid per delivered message) to ' + all.length + ' customers now?')) return;
+          sending = true; barDraw();
+          try {
+            const nv = (String(t.body || '').match(/\{\{\s*\d+\s*\}\}/g) || []).length, nm = (c.name || 'Campaign').slice(0, 60) + ' → ' + (ERRS.f[f] || f) + ' | ' + new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+            const r = await api.post('wa.camp_save', { kind: '', id: 0, name: nm, aud_type: '', aud_from: '', aud_to: '', tpl_id: t.id, vars: Array.from({ length: nv }, () => ({ src: 'name', val: '', slot: '' })), audience: { src: 'paste', f: {}, paste: all.join('\n'), skip_got: 0, skip_talking: 0, skip_unreach: 0, gap_days: 0 }, rate: 120, win_end: '', start_at: '', push: 'aggressive', own_hour: false, def_hour: 19, retry: false, media_lib_id: 0, media_folder: '', extra: { gap_days: 0, bought_days: 0, skip_ignored: 0, leave_fu: 0, keep_unreach: 1 }, switch_after: 2 });
+            const cid = r.id || (r.campaign && r.campaign.id) || 0; if (!cid) throw new Error('The campaign was not created.');
+            await api.post('wa.camp_start', { id: cid, consent: true });
+            sending = false; barDraw(); const se = $(m.body, '#cuSE'); if (se) se.innerHTML = `<div class="wp-ok"><b>✅ Campaign started for ${fmt(all.length)} customers.</b> Find it in Campaigns: “${esc(nm)}”.</div>`;
+          } catch (e) { sending = false; barDraw(); err(e.message || 'Could not start.'); }
+        }
       }
       async function csv() {
         const b = $(m.body, '#cuCsv'); b.disabled = true;
@@ -834,12 +887,29 @@ html.wxdk [data-tone]{background:rgba(128,128,128,.12) !important;color:#e9edef}
       function auditPayload() { return { kind: W.util ? 'util' : '', ord_days: W.extra.ord_days || 60, mix: W.mix, audience: W.A, tpl_id: W.tpl_id, media_lib_id: W.media ? W.media.id : 0, push: W.push, own_hour: W.own, rate: W.rate, start_at: typeof startAt === 'function' ? startAt() : '' }; }
 
       // ---------------------------------------------------------------- step 1: who
+      // ✅ "Who to leave out": every automatic removal is the owner's choice (tick = leave them out, untick = send to them too). Opted-out / "asked us to stop" people are always left out.
+      function loBox() {
+        const st = (pv && pv.stats) || {}, fr = pushOf()[2], on = (v) => v !== 0 && v !== '0' && v !== false;
+        const row = (id, chk, txt, n) => `<label style="display:flex;gap:8px;align-items:flex-start;margin:6px 0;font-size:13px"><input type="checkbox" id="${id}" ${chk ? 'checked' : ''} style="width:18px;height:18px;margin-top:1px"><span>${txt}${n ? ' <b style="color:#b45309">(' + fmt(n) + ' left out now)</b>' : (chk ? '' : ' <b style="color:#166534">(included)</b>')}</span></label>`;
+        return `<div id="cuLo" class="wp-note" style="margin-top:10px;background:#f8fafc;border:1px solid #e2e8f0;color:#0f172a"><b>✅ Who to leave out</b> <span style="color:#64748b;font-size:12px">— tick = leave them out · untick = send to them too</span>
+          ${row('cuLoUn', on(W.A.skip_unreach), '⛔ Customers <b>Meta held / blocked lately</b> (Meta did not deliver to them)', st.unreach)}
+          ${row('cuLoRc', W.A.gap_days === undefined || +W.A.gap_days > 0, '📬 Customers who <b>got a campaign message in the last ' + fr + ' day' + (fr === 1 ? '' : 's') + '</b>', st.recent)}
+          ${row('cuLoGt', on(W.A.skip_got), '🔁 Customers who <b>already got this same message</b>', st.got)}
+          <div style="font-size:12px;color:#64748b;margin-top:4px">Always left out: customers who opted out or asked us to stop${st.optout ? ' (' + fmt(st.optout) + ' now)' : ''}. “Chatting with us in the last 3 days” is the tick above.</div></div>`;
+      }
+      function bindLo() {
+        const fr = pushOf()[2], again = () => { readF(); pv = null; clearTimeout(pvT); pvT = setTimeout(preview, 300); };
+        const un = $(m.body, '#cuLoUn'); if (un) un.onchange = () => { W.A.skip_unreach = un.checked ? 1 : 0; W.extra.keep_unreach = un.checked ? 0 : 1; again(); };
+        const rc = $(m.body, '#cuLoRc'); if (rc) rc.onchange = () => { W.A.gap_days = rc.checked ? fr : 0; W.extra.gap_days = rc.checked ? fr : 0; again(); };
+        const gt = $(m.body, '#cuLoGt'); if (gt) gt.onchange = () => { W.A.skip_got = gt.checked ? 1 : 0; again(); };
+      }
       async function preview() {
         const box = $(m.body, '#cuPv'); if (!box) return; box.innerHTML = '<div class="wp-hint">Counting…</div>';
         try { pv = await api.post('wa.camp_preview', auditPayload()); pv.stats = pv.stats || { send: 0, matched: 0 }; pv.sample = pv.sample || []; const s = pv.stats, fr = pushOf()[2];
           box.innerHTML = `<div class="wp-ok"><b>${fmt(s.send)} customers</b> will get the message.<div class="wp-hint" style="color:inherit;opacity:.85">${fmt(s.matched)} match your filters${s.paste_n ? ' · list: ' + fmt(s.paste_n) + ' numbers (' + fmt(s.paste_new) + ' new, ' + fmt(s.paste_overlap) + ' already in the match)' : ''}${s.optout ? ' · ' + fmt(s.optout) + ' opted out (left out)' : ''}${s.got ? ' · ' + fmt(s.got) + ' already got this message (left out)' : ''}${s.talking ? ' · ' + fmt(s.talking) + ' are chatting with us now (left out)' : ''}${s.unreach ? ' · ' + fmt(s.unreach) + ' held / blocked by Meta lately (left out)' : ''}${s.recent ? ' · ' + fmt(s.recent) + ' got a campaign message in the last ' + fr + ' days (left out)' : ''}</div>${pv.sample.length ? '<div class="wp-hint" style="color:inherit;opacity:.85">For example: ' + pv.sample.map((x) => esc(x.name || pretty(x.phone))).join(' · ') + ' …</div>' : ''}</div>`
           + (!s.matched && W.A.cfu && W.A.cfu.dk === 'in' && (W.A.cfu.df || W.A.cfu.dt) ? '<div class="wp-note">Nobody matched. Imported customers have never written to you — for them choose the date type <b>“Added / imported / first message”</b> instead of “Last wrote to us”.</div>' : ''); }
         catch (e) { pv = null; box.innerHTML = errBox(e.message); return; }
+        { const lo = $(m.body, '#cuLo'); if (lo && step === 1) { lo.outerHTML = loBox(); bindLo(); } }
         freqPanel(box); sugPaint(); mixPanel(box);
       }
       let mxSeq = 0;
@@ -887,7 +957,7 @@ html.wxdk [data-tone]{background:rgba(128,128,128,.12) !important;color:#e9edef}
           ${grpOn() ? `<div class="cu-grp"><span>✨ Starting group: <b>${esc(W.A.fName || 'filters saved with this campaign')}</b></span><button type="button" class="wp-btn s" id="cuGx">✕ Remove</button></div>` : ''}
           <div class="cu-sec" style="margin-top:12px;font-size:15px">🔎 Who exactly <small>(empty = everyone in “${W.A.src === 'all' ? 'contacts + Shopify' : 'our contacts'}”)</small></div>
           <div id="cuFp" class="cu-fp"></div>
-          <div class="wp-hint" style="margin-top:8px">Left out automatically: opted out · got a campaign in the last ${fr} day${fr === 1 ? '' : 's'} · asked us to stop.</div>`}
+          ${loBox()}`}
           <div id="cuPv" style="margin-top:10px"></div><div id="cuE"></div><div class="wp-row" style="margin-top:12px"><button type="button" class="wp-btn" id="cuCnt">🔄 Count again</button><button type="button" class="wp-btn p" id="cuNext">Next ›</button></div>`;
         PN = null; const fp = $(m.body, '#cuFp');
         if (fp && window.WaCust && WaCust.panel) { PN = WaCust.panel(fp, { cf: W.A.cfu || {}, onChange: (ui, out) => { W.A.cfu = ui; W.A.cf = out; pv = null; clearTimeout(pvT); pvT = setTimeout(preview, 500); } }); }
@@ -900,6 +970,7 @@ html.wxdk [data-tone]{background:rgba(128,128,128,.12) !important;color:#e9edef}
         $(m.body, '#cuCnt').onclick = () => { readF(); preview(); };
         $(m.body, '#cuNext').onclick = () => { readF(); if (!W.name.trim()) { $(m.body, '#cuE').innerHTML = errBox('Give the campaign a name.'); return; } step = 2; go(); };
         audBind();
+        bindLo();
         clearTimeout(pvT); pvT = setTimeout(preview, pv ? 0 : 300);
         if (W.A.src !== 'paste') {
           if (!PN && !X.tags) api.get('wa.g_tags').then((d) => { X.tags = (d.tags || []).filter((t) => t.all > 0); if (step === 1 && m.el.isConnected) { readF(); draw1(); } }).catch(() => { X.tags = []; });

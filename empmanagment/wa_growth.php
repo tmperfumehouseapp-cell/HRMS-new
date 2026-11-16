@@ -573,7 +573,7 @@ function wag_chat_info(PDO $pdo, array $c): array
 function wag_tag_counts(PDO $pdo): array
 {
     wa_cust_ready($pdo); $at = (string)setting_get($pdo, 'wa_cust_at', '');
-    try { $c = json_decode((string)setting_get($pdo, 'wa_tag_cache', ''), true); if (is_array($c) && ($c['as_of'] ?? '') === $at && $at !== '') return $c; } catch (Throwable $e) { }   // computed once per refresh
+    try { $c = json_decode((string)setting_get($pdo, 'wa_tag_cache', ''), true); if (is_array($c) && ($c['as_of'] ?? '') === $at && $at !== '' && (int)($c['v'] ?? 0) === 2) return $c; } catch (Throwable $e) { }   // computed once per refresh
     $r = wag_tag_counts_calc($pdo); try { setting_set($pdo, 'wa_tag_cache', json_encode($r)); } catch (Throwable $e) { } return $r;
 }
 function wag_tag_counts_calc(PDO $pdo): array
@@ -588,7 +588,11 @@ function wag_tag_counts_calc(PDO $pdo): array
     if (function_exists('wq_tag_labels')) foreach ($cl as &$x0) { $x0['t'] = wq_tag_labels()[$x0['k']] ?? ((function_exists('jt_label') && ($jl = jt_label($pdo, $x0['k'])) !== '') ? $jl : (strpos($x0['k'], 'import_') === 0 ? 'Imported ' . substr($x0['k'], 7) : $x0['k'])); $x0['kind'] = preg_match('/_query$/', $x0['k']) ? 'query' : (strpos($x0['k'], 'import_') === 0 ? 'import' : $x0['kind']); } unset($x0);
     $sg = function_exists('wcs_seg_names') ? wcs_seg_names($pdo) : []; foreach ($cl as &$x1) if (isset($sg[$x1['k']])) { $x1['t'] = $sg[$x1['k']]; $x1['kind'] = 'segment'; } unset($x1);
     $segs = array_values(array_filter($cl, fn($x) => $x['kind'] === 'segment')); $cl = array_values(array_filter($cl, fn($x) => $x['kind'] !== 'segment'));
-    return ['tags' => array_merge($out, $segs, array_slice($cl, 0, 120)), 'customers' => $tot, 'as_of' => (string)setting_get($pdo, 'wa_cust_at', '')];
+    // the 120 busiest tags only — but every Excel import batch (import_…, left_…) is always listed (newest first), however small: a new import has fewer people than old tags and fell out of the list, so "No tag like that" showed for the very tag the import suggested
+    $isImp = function ($x) { return (bool)preg_match('/^(import|left)_/', (string)$x['k']); };
+    $imp = array_values(array_filter($cl, $isImp)); usort($imp, function ($x, $y) { return strcmp((string)$y['k'], (string)$x['k']); }); $imp = array_slice($imp, 0, 80);
+    $rest = array_values(array_filter($cl, function ($x) use ($isImp) { return !$isImp($x); }));
+    return ['v' => 2, 'tags' => array_merge($out, $segs, $imp, array_slice($rest, 0, 120)), 'customers' => $tot, 'as_of' => (string)setting_get($pdo, 'wa_cust_at', '')];
 }
 
 // ---------------------------------------------------------------------------------------------------------------- fixed message sets (library)
