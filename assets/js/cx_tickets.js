@@ -15,7 +15,7 @@ window.CXT = (function () {
   .tk-bar{display:flex;align-items:center;gap:8px;font-size:13px;margin:3px 0} .tk-bar i{display:block;height:8px;border-radius:9px;background:#93c5fd;min-width:2px} .tk-bar span{min-width:150px;max-width:55%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .tk-bar b{margin-left:auto}
   .tk-f{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:4px 0 10px} .tk-f button{border:1px solid #d6dde6;background:#fff;border-radius:99px;padding:7px 12px;font-weight:700;font-size:13px;min-height:36px;cursor:pointer} .tk-f button.on{background:#111b21;color:#fff;border-color:#111b21}
   .tk-f input,.tk-f select{border:1px solid #d6dde6;border-radius:10px;padding:7px 10px;font-size:14px;min-height:36px;background:#fff} .tk-f input{flex:1;min-width:180px}
-  .tk-day{margin:16px 0 6px;font-weight:800;font-size:14px;color:#0f172a;display:flex;gap:10px;align-items:baseline} .tk-day small{font-weight:600;color:#64748b}
+  .tk-sec{display:flex;gap:10px;align-items:baseline;width:100%;box-sizing:border-box;margin:18px 0 2px;padding:9px 12px;border-radius:10px;font:inherit;font-weight:800;font-size:15px;text-align:left;border:1px solid #e2e8f0}.tk-sec small{font-weight:600;font-size:12px;color:#64748b}.tk-sec.o{background:#eff6ff;border-color:#bfdbfe;color:#1e3a8a}.tk-sec.dn{background:#f0fdf4;border-color:#bbf7d0;color:#14532d;cursor:pointer}.tk-sec.dn i{margin-left:auto;font-style:normal}.tk-day{margin:16px 0 6px;font-weight:800;font-size:14px;color:#0f172a;display:flex;gap:10px;align-items:baseline} .tk-day small{font-weight:600;color:#64748b}
   .tk-l{display:grid;grid-template-columns:86px 58px minmax(150px,1.2fr) minmax(170px,1.4fr) 112px 92px 104px minmax(110px,.8fr) minmax(130px,.9fr);gap:10px;align-items:center;background:#fff;border:1px solid #e3e8ef;border-left:5px solid #cbd5e1;border-radius:12px;padding:11px 12px;margin-bottom:6px;cursor:pointer;font-size:14px}
   .tk-l:hover{box-shadow:0 2px 10px rgba(15,23,42,.08)} .tk-l.s{border-left-color:#dc2626} .tk-l.d{opacity:.72} .tk-l.late{background:#fff7f7}
   .tk-l>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .tk-l .cd{font-family:ui-monospace,Menlo,monospace;font-weight:800;color:#3730a3} .tk-l small{display:block;color:#64748b;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -41,8 +41,9 @@ window.CXT = (function () {
   const ago = (s) => { if (!s) return ''; const m = Math.max(0, Math.round((Date.now() - new Date(String(s).replace(' ', 'T')).getTime()) / 60000)); return m < 60 ? m + ' min ago' : m < 1440 ? Math.floor(m / 60) + ' h ago' : Math.floor(m / 1440) + ' d ago'; };
   function view(el, ctx) {
     if (!document.getElementById('tkCss')) { const st = document.createElement('style'); st.id = 'tkCss'; st.textContent = CSS + CSS2; document.head.appendChild(st); }
-    const S = { days: 14, st: 'all', dept: '', sev: '', src: '', q: '', d: null, who: '', mf: '' };
+    const S = { days: 14, st: 'all', dept: '', sev: '', src: '', q: '', d: null, who: '', mf: '', done: false };
     const ls = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } };
+    S.done = ls('cx_tk_done') === '1';
     async function load() {
       if (!S.d) el.innerHTML = '<div class="tk"><div style="color:#667781;padding:20px">Loading tickets…</div></div>';
       try { S.d = await api.get('bd.cx_tickets', { days: S.days }); } catch (e) { el.innerHTML = '<div class="tk"><div style="color:#b91c1c;padding:20px">Could not load: ' + esc(e.message) + '</div></div>'; return; }
@@ -93,15 +94,24 @@ window.CXT = (function () {
         <div class="tk-f">${chip('dept', '', 'Both departments')}${chip('dept', 'tracking', '📍 Tracking')}${chip('dept', 'complaint', '🛠 Complaint')}<span style="width:8px"></span>${chip('sev', '', 'All')}${chip('sev', 'serious', '🔴 Serious')}${chip('sev', 'basic', '⚪ Basic')}</div>
         <div class="tk-f"><input type="search" id="tkQ" placeholder="🔍 Ticket, name, phone, order or tracking number" value="${esc(S.q)}"><select id="tkSrc"><option value="">Every source</option>${Object.keys(m.src || {}).map((s) => `<option ${S.src === s ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select><select id="tkDays">${[7, 14, 30, 60, 90].map((n) => `<option value="${n}" ${S.days === n ? 'selected' : ''}>Last ${n} days</option>`).join('')}</select><button type="button" id="tkCsv">⬇ Excel</button><button type="button" id="tkR">↻</button></div>`;
       h += `<div class="tk-h"><span>Ticket</span><span>Time</span><span>Customer</span><span>Problem</span><span>Department</span><span>Level</span><span>Status</span><span>Owner</span><span>From</span></div>`;
-      const days = Object.keys(by).sort().reverse();
-      h += days.length ? days.map((dy) => { const it = by[dy], op = it.filter((x) => x.status === 'open' || x.status === 'reopened').length;
+      // owner (16 Nov): the tickets still to work on come first; the solved ones sit below under their own bar (closed until tapped) — one mixed list hid what was still pending
+      const dayBlock = (list) => { const by = {}; list.forEach((x) => { (by[x.day] = by[x.day] || []).push(x); }); const days = Object.keys(by).sort().reverse();
+      return days.map((dy) => { const it = by[dy], op = it.filter((x) => x.status === 'open' || x.status === 'reopened').length;
         return `<div class="tk-day">${esc(dayLabel(dy))}<small>${it.length} ticket${it.length === 1 ? '' : 's'} · ${op} open</small></div>` + it.map((x) => { const done = x.status === 'resolved' || x.status === 'closed';
           return `<div class="tk-l ${x.sev === 'serious' && !done ? 's' : ''} ${done ? 'd' : ''} ${x.late ? 'late' : ''}" data-id="${x.id}" role="button" tabindex="0"><span class="cd">${esc(x.code)}${x.reopen ? ' <small style="color:#b91c1c">🔁 ×' + (x.reopen + 1) + '</small>' : ''}</span><span>${esc(String(x.at).slice(11, 16))}</span>
             <span><b>${esc(x.name)}</b><small>${x.phone ? '+91 ' + esc(x.phone) : ''}${x.order ? ' · ' + esc(x.order) : ''}</small></span><span>${x.icon} ${esc(x.problem)}${x.promise ? ' <em class="tk-pr">⏸ ' + esc(pDay(x.promise)) + '</em>' : ''}${x.missed ? ' <em class="tk-pr r">❌ promise missed</em>' : ''}<small>${esc(x.promise_what ? '⏸ ' + x.promise_what : x.summary)}</small></span>
             <span><span class="tk-p ${x.dept === 'tracking' ? 'trk' : 'cmp'}">${x.dept === 'tracking' ? '📍 Tracking' : '🛠 Complaint'}</span></span><span><span class="tk-p ${x.sev === 'serious' ? 'ser' : 'bas'}">${x.sev === 'serious' ? '🔴 Serious' : '⚪ Basic'}</span></span>
             <span><span class="tk-p ${esc(x.status)}">${STAT[x.status] || esc(x.status)}</span>${x.late ? '<small style="color:#b91c1c;font-weight:700">⏰ no reply yet</small>' : `<small>${done ? 'solved ' + ago(x.resolved_at || x.updated) : 'updated ' + ago(x.updated)}</small>`}</span>
-            <span>${esc(x.owner)}<small>${esc(x.desk)}</small></span><span>${esc(x.src)}</span></div>`; }).join(''); }).join('') : '<div style="padding:30px;text-align:center;color:#64748b">No tickets match. 🎉</div>';
+            <span>${esc(x.owner)}<small>${esc(x.desk)}</small></span><span>${esc(x.src)}</span></div>`; }).join(''); }).join(''); };
+      const isDone = (x) => x.status === 'resolved' || x.status === 'closed';
+      if (!L.length) h += '<div style="padding:30px;text-align:center;color:#64748b">No tickets match. 🎉</div>';
+      else if (S.st === 'all' && S.mf !== 'solved') {
+        const openL = L.filter((x) => !isDone(x)), doneL = L.filter(isDone);
+        h += `<div class="tk-sec o">📂 Still to solve<small>${openL.length} ticket${openL.length === 1 ? '' : 's'}</small></div>` + (openL.length ? dayBlock(openL) : '<div style="padding:18px;text-align:center;color:#64748b">Nothing is waiting here. 🎉</div>');
+        if (doneL.length) h += `<button type="button" class="tk-sec dn" id="tkDone">✅ Solved<small>${doneL.length} ticket${doneL.length === 1 ? '' : 's'} · tap to ${S.done ? 'hide' : 'show'}</small><i>${S.done ? '▴' : '▾'}</i></button>` + (S.done ? dayBlock(doneL) : '');
+      } else h += dayBlock(L);
       el.innerHTML = h + '</div>';
+      { const dn = el.querySelector('#tkDone'); if (dn) dn.onclick = () => { S.done = !S.done; ls('cx_tk_done', S.done ? '1' : '0'); draw(); }; }
       el.querySelectorAll('[data-st],[data-dept],[data-sev]').forEach((b) => { b.onclick = () => { const k = b.dataset.st !== undefined ? 'st' : b.dataset.dept !== undefined ? 'dept' : 'sev'; S[k] = b.dataset[k]; draw(); }; });
       el.querySelectorAll('[data-who]').forEach((b) => { b.onclick = () => { S.who = b.dataset.who; S.mf = ''; ls('cx_who_' + S.d.me, S.who); draw(); }; });
       el.querySelectorAll('[data-mf]').forEach((b) => { b.onclick = (e) => { e.preventDefault(); S.mf = S.mf === b.dataset.mf ? '' : b.dataset.mf; if (S.mf) S.st = 'all'; draw(); }; });
