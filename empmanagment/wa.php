@@ -426,6 +426,7 @@ function wa_webhook_status(PDO $pdo, array $s): int
         if ($new === 'failed') $pdo->prepare("UPDATE wa_camp_items SET last_status = 'failed', err = ?, err_code = ? WHERE wamid = ? AND last_status <> 'failed'")->execute([$etext !== '' ? $etext : 'Meta could not deliver this message.', $ecode, $id]);
         else $pdo->prepare("UPDATE wa_camp_items SET last_status = ? WHERE wamid = ? AND last_status NOT IN ($skip)")->execute([$new, $id]);
     } catch (Throwable $e) { }
+    if ($moved && in_array($new, ['delivered', 'read', 'failed'], true) && function_exists('cfun_dirty')) cfun_dirty($pdo, wa_key($s['recipient_id'] ?? ''));   // ⚡ recount this customer within a minute
     if ($new === 'failed') wa_log($pdo, 'status', false, wa_key($s['recipient_id'] ?? '') . ' · ' . ((string)($s['errors'][0]['title'] ?? $s['errors'][0]['message'] ?? 'message failed')) . ($ecode ? ' (code ' . $ecode . ')' : ''));
     return $moved;
 }

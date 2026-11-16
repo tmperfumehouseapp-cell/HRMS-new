@@ -27,6 +27,18 @@ $eq('imp: buyer is never "failed"', cfun_imp_bucket(['grp' => 'ord1', 'health' =
 $eq('imp: held', cfun_imp_bucket(['grp' => 'failed', 'health' => 'held'], true, $now), 'held'); $eq('imp: dead = failed', cfun_imp_bucket(['grp' => 'failed', 'health' => 'dead'], true, $now), 'failed');
 $eq('imp: messaged 2 days ago', cfun_imp_bucket(['grp' => 'deliv', 'health' => 'ok', 'last_out' => date('Y-m-d H:i:s', $now - 2 * 86400)], true, $now), 'recent');
 $eq('imp: delivered, no reply', cfun_imp_bucket(['grp' => 'deliv', 'health' => 'ok', 'last_out' => date('Y-m-d H:i:s', $now - 20 * 86400)], true, $now), 'deliv');
+// movements
+$mv = function ($o, $n) { return cfun_moves($o, $n); };
+$eq('mv: no old row', $mv(null, ['bucket' => 'delivered', 'out_n' => 1, 'orders_n' => 0]), []);
+$eq('mv: failed -> delivered after a retry', $mv(['bucket' => 'failed', 'out_n' => 3, 'orders_n' => 0], ['bucket' => 'delivered', 'out_n' => 4, 'orders_n' => 0]), ['f>d', 'retry']);
+$eq('mv: failed -> waiting (retry sent)', $mv(['bucket' => 'failed', 'out_n' => 3, 'orders_n' => 0], ['bucket' => 'pending', 'out_n' => 4, 'orders_n' => 0]), ['f>s', 'retry']);
+$eq('mv: delivered -> failed', $mv(['bucket' => 'delivered', 'out_n' => 2, 'orders_n' => 0], ['bucket' => 'failed', 'out_n' => 5, 'orders_n' => 0]), ['d>f']);
+$eq('mv: waiting -> delivered', $mv(['bucket' => 'pending', 'out_n' => 2, 'orders_n' => 0], ['bucket' => 'delivered', 'out_n' => 2, 'orders_n' => 0]), ['s>d']);
+$eq('mv: never messaged -> messaged', $mv(['bucket' => 'untried', 'out_n' => 0, 'orders_n' => 0], ['bucket' => 'pending', 'out_n' => 1, 'orders_n' => 0]), ['u>m']);
+$eq('mv: failed -> replied', $mv(['bucket' => 'failed', 'out_n' => 3, 'orders_n' => 0], ['bucket' => 'replied', 'out_n' => 3, 'orders_n' => 0]), ['x>r']);
+$eq('mv: first order', $mv(['bucket' => 'delivered', 'out_n' => 1, 'orders_n' => 0], ['bucket' => 'delivered', 'out_n' => 1, 'orders_n' => 1]), ['ord']);
+$eq('mv: second order', $mv(['bucket' => 'replied', 'out_n' => 1, 'orders_n' => 1], ['bucket' => 'replied', 'out_n' => 1, 'orders_n' => 2]), ['ord2']);
+$eq('mv: nothing changed', $mv(['bucket' => 'delivered', 'out_n' => 1, 'orders_n' => 1], ['bucket' => 'delivered', 'out_n' => 1, 'orders_n' => 1]), []);
 foreach (cfun_tag_keys() as $k) if (strlen($k) > 40) { echo "FAIL tag $k is too long\n"; $bad++; }
 // reach health
 $eq('opted out', cfun_health(1, 'replied', 0), 'optout');
