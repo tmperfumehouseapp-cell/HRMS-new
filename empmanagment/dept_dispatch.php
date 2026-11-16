@@ -845,6 +845,54 @@ if (strpos((string)$action, 'dp.dsp_') === 0) {
         json_response(['rows' => $rows, 'total' => $tot, 'failed' => $bad, 'server_ip' => (function () { $ip = (string)($_SERVER['SERVER_ADDR'] ?? ''); return ($ip === '' || !filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) ? (string)tmph_cfg('SERVER_PUBLIC_IP', '72.62.78.142') : $ip; })(),   // behind the web proxy the server sees itself as 127.0.0.1: show the public address Shiprocket really sees
              'now' => date('Y-m-d H:i:s'), 'tz' => date_default_timezone_get()]);
     }
+    case 'dp.dsp_sr_report': {   // 🧾 two ready-made text reports for Shiprocket support: "config" = the connection / login history the HRMS remembers, "problems" = every parcel whose Shiprocket status is a problem
+        if (!$w['manager']) json_response(['error' => 'Only bosses can do this.'], 403);
+        $which = (string)($_GET['which'] ?? 'config'); $L = []; $now = date('Y-m-d H:i:s');
+        $ip = (string)tmph_cfg('SERVER_PUBLIC_IP', '72.62.78.142');
+        if ($which === 'config') {
+            $cfg = dp_dsp_sr_cfg(); $sec = (string)($cfg['pass'] ?? ''); $shape = $sec === '' ? 'none saved' : (strlen($sec) . ' characters' . (preg_match('/^[0-9a-f]{32}$/i', $sec) ? ' (looks like an API key, not a password)' : (strpos($sec, 'eyJ') === 0 ? ' (looks like a token)' : ' (a typed password)')));
+            $L[] = 'Shiprocket CONNECTION / CONFIGURATION log from our HRMS (fourpirates.space)'; $L[] = 'Made: ' . $now . ' (' . date_default_timezone_get() . ')'; $L[] = 'Our server IP: ' . $ip; $L[] = 'API base: ' . (string)($cfg['base'] ?? 'https://apiv2.shiprocket.in'); $L[] = 'Login endpoint: POST /v1/external/auth/login';
+            $L[] = ''; $L[] = '== CURRENT SETTINGS =='; $L[] = 'API user email: ' . ((string)($cfg['email'] ?? '') ?: '(none)'); $L[] = 'Password saved: ' . $shape . '  [the value itself is never shown]';
+            $te = (int)dp_get('sr_token_exp', '0'); $L[] = 'Login token: ' . ((string)dp_get('sr_token', '') !== '' ? 'held' . ($te ? ', valid until ' . date('Y-m-d H:i', $te) : '') : 'none');
+            $hold = (int)dp_get('sr_login_hold', '0'); $L[] = 'Login pause after a refusal: ' . ($hold > time() ? 'active until ' . date('Y-m-d H:i', $hold) : 'not active');
+            $L[] = ''; $L[] = '== WHAT THE HRMS REMEMBERS OF THE LAST RUNS ==';
+            $lt = (int)dp_get('sr_last_ts', '0'); $L[] = 'Last order read: ' . ($lt ? date('Y-m-d H:i:s', $lt) : 'never') . ' - ' . ((string)dp_get('sr_last_msg', '') ?: '(no message)');
+            $L[] = 'Last error: ' . ((string)dp_get('sr_last_err', '') ?: '(none)');
+            $rt = (int)dp_get('sr_roll_ts', '0'); $L[] = 'Background read: ' . ($rt ? date('Y-m-d H:i:s', $rt) : 'never') . ' - ' . ((string)dp_get('sr_roll_msg', '') ?: '(no message)') . ((string)dp_get('sr_roll_err', '') !== '' ? ' | error: ' . (string)dp_get('sr_roll_err', '') : '');
+            $rec = json_decode((string)dp_get('rec_last', ''), true); if (is_array($rec)) $L[] = 'Last full fix: ' . json_encode($rec, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            $lv = (string)dp_get('live_last', ''); if ($lv !== '') $L[] = 'Live tracking pass: ' . $lv;
+            $L[] = 'Orders Shiprocket returned that match no order here (last read): ' . ((string)dp_get('sr_last_unmatched', '') ?: '0');
+            $L[] = ''; $L[] = '== HISTORY KEPT BY THE HRMS (logins saved / removed, tracking notes) ==';
+            try { $q = $pdo->query("SELECT at, actor, ref, detail FROM bd_log WHERE kind = 'dispatch' AND (ref = 'shiprocket' OR detail LIKE '%Shiprocket%') ORDER BY at DESC LIMIT 200"); $n = 0; foreach ($q->fetchAll() as $r) { $L[] = $r['at'] . '  ' . $r['actor'] . '  ' . $r['ref'] . '  ' . $r['detail']; $n++; } if (!$n) $L[] = '(nothing recorded)'; } catch (Throwable $e) { $L[] = '(history not available)'; }
+            $L[] = ''; $L[] = '== LOGIN REQUESTS SENT TO SHIPROCKET (recorded since 16 Nov 2026; passwords and tokens hidden) ==';
+            try { require_once __DIR__ . '/sr_log.php'; $rows = sr_log_rows($pdo, ['kind' => 'login', 'limit' => 500]); if (!$rows) $L[] = '(no login request recorded yet - the HRMS logs in again only when its token runs out, about every 10 days, or when "Test connection" is pressed)';
+                foreach ($rows as $r) $L[] = $r['at'] . '  ' . $r['method'] . ' ' . $r['path'] . '  HTTP ' . $r['http'] . '  ' . $r['ms'] . ' ms' . ($r['err'] !== '' ? '  connection error: ' . $r['err'] : '') . "\n   Request : " . $r['req'] . "\n   Response: " . $r['res'];
+                $c = $pdo->query("SELECT COUNT(*) n, SUM(http < 200 OR http >= 300) b, MIN(at) a FROM sr_api_log")->fetch(); $L[] = ''; $L[] = '== ALL REQUESTS SINCE ' . ($c['a'] ?: 'logging began') . ' =='; $L[] = 'Total: ' . (int)$c['n'] . ' - failed (not HTTP 2xx): ' . (int)$c['b'];
+                foreach ($pdo->query("SELECT http, COUNT(*) n FROM sr_api_log GROUP BY http ORDER BY n DESC")->fetchAll() as $r) $L[] = '  HTTP ' . $r['http'] . ': ' . $r['n'];
+            } catch (Throwable $e) { }
+            $L[] = ''; $L[] = 'Note: failures before 16 Nov 2026 (6-16 Nov: "Invalid email and password combination" and "User blocked due to too many failed login attempts") were not recorded request by request; only the last error text above was kept.';
+        } else {
+            $days = max(3, min(60, (int)($_GET['days'] ?? 30))); $from = date('Y-m-d H:i:s', time() - $days * 86400); $cut = date('Y-m-d H:i:s', time() - 48 * 3600);
+            $L[] = 'Shiprocket PARCEL STATUS PROBLEMS from our HRMS (fourpirates.space)'; $L[] = 'Made: ' . $now . ' (' . date_default_timezone_get() . ') - orders of the last ' . $days . ' days'; $L[] = 'Our server IP: ' . $ip; $L[] = '';
+            $groups = [
+                'A. Shiprocket status says there is a problem (pickup exception, undelivered, RTO, misrouted, lost, damaged, delayed)' => ["status NOT IN ('delivered','cancelled') AND sr_status REGEXP 'EXCEPTION|UNDELIVER|RTO|MISROUT|LOST|DAMAG|DELAY|DISPOS|DESTROY|NDR|FAIL'", []],
+                'B. AWB assigned more than 48 hours ago, courier has still not picked the parcel up' => ["status = 'tracked' AND tracking_no <> '' AND tracked_at IS NOT NULL AND tracked_at < ?", [$cut]],
+                'C. Order older than 48 hours, still no AWB' => ["status = 'placed' AND (tracking_no IS NULL OR tracking_no = '') AND created_at < ?", [$cut]],
+                'D. AWB given, but Shiprocket returned no status at all for it' => ["status IN ('tracked','transit') AND tracking_no <> '' AND tracking_no <> 'Office Pickup' AND (sr_status IS NULL OR sr_status = '') AND created_at < ?", [$cut]],
+            ];
+            foreach ($groups as $title => $g) {
+                try {
+                    $q = $pdo->prepare("SELECT id, order_name, tracking_no, courier, status, sr_status, sr_at, created_at, tracked_at, live_at FROM dp_dsp_parcels WHERE created_at >= ? AND " . $g[0] . " ORDER BY created_at DESC LIMIT 800"); $q->execute(array_merge([$from], $g[1])); $rows = $q->fetchAll();
+                    $L[] = '== ' . $title . ' : ' . count($rows) . (count($rows) >= 800 ? '+' : '') . ' =='; $L[] = 'Order | AWB | Courier | Ordered | AWB assigned | Shiprocket status | Status time | Last scan';
+                    $ev = $pdo->prepare("SELECT at, activity, label, location FROM dp_dsp_events WHERE parcel_id = ? ORDER BY at DESC, id DESC LIMIT 1");
+                    foreach ($rows as $i => $r) { $last = ''; if ($i < 300) { try { $ev->execute([(int)$r['id']]); $e = $ev->fetch(); if ($e) $last = substr((string)$e['at'], 0, 16) . ' ' . trim((string)($e['activity'] ?: $e['label'])) . ((string)$e['location'] !== '' ? ' @ ' . $e['location'] : ''); } catch (Throwable $e2) { } }
+                        $L[] = implode(' | ', [(string)$r['order_name'], (string)$r['tracking_no'] ?: '-', (string)$r['courier'] ?: '-', substr((string)$r['created_at'], 0, 16), $r['tracked_at'] ? substr((string)$r['tracked_at'], 0, 16) : '-', (string)($r['sr_status'] ?? '') ?: '-', $r['sr_at'] ? substr((string)$r['sr_at'], 0, 16) : '-', $last ?: '-']); }
+                    $L[] = '';
+                } catch (Throwable $e) { $L[] = '== ' . $title . ' : could not be read (' . $e->getMessage() . ') =='; $L[] = ''; }
+            }
+        }
+        json_response(['text' => implode("\n", $L), 'which' => $which]);
+    }
     case 'dp.dsp_sr_sync': {
         if (!$w['manager']) json_response(['error' => 'Only bosses can do this.'], 403);
         $r = dp_dsp_sr_sync($pdo, max(1, min(90, (int)($in['days'] ?? 30))));
