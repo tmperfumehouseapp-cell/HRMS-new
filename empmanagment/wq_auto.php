@@ -106,6 +106,7 @@ function waa_view(PDO $pdo, bool $fresh = false): array
 /** One engine pass: (1) the ratio rule switches people off, (2) waiting queries are given out. Light: reads Live's cached rows. */
 function waa_tick(PDO $pdo): array
 {
+    try { if ((int)setting_get($pdo, 'waa_seen_at', '0') < time() - 30) setting_set($pdo, 'waa_seen_at', (string)time()); } catch (Throwable $e) { }   // proof for the check workflow: the engine reached this function
     if (!waa_tables($pdo)) return ['error' => 'storage'];
     if (!waa_engine_on($pdo)) return ['off' => 1];
     $now = time(); if ((int)setting_get($pdo, 'waa_run_at', '0') > $now - 20) return ['skipped' => 'recent'];
