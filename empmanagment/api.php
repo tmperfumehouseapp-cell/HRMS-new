@@ -3481,7 +3481,10 @@ function proof_rules_all(PDO $pdo, bool $onlyActive = false, bool $withDeleted =
             if ($onlyActive && !$c['active']) continue;
             $out[] = $c;
         }
-        return $out;
+        // the owner wants the shoes photo FIRST (before Instagram / YouTube ...): shoes requirements move to the top, the rest keep their order
+        $shoes = []; $rest = [];
+        foreach ($out as $c) { if (proof_is_footwear($c)) $shoes[] = $c; else $rest[] = $c; }
+        return array_merge($shoes, $rest);
     } catch (PDOException $e) { return []; }
 }
 
