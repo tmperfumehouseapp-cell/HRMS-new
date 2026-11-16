@@ -67,6 +67,19 @@ function waa_cp_bump(PDO $pdo, int $emp, bool $camp): void
         if (!isset($j['rows'][$e])) $j['rows'][$e] = ['off' => 0, 'n' => 0, 's' => 0, 't' => null, 'qo' => 0, 'co' => 0, 'q' => 0, 'cq' => 0, 'ar' => null]; $j['rows'][$e][$k] = (int)($j['rows'][$e][$k] ?? 0) + 1; $j['rows'][$e]['off'] = 0;
         setting_set($pdo, 'waa_cp', json_encode($j)); } catch (Throwable $e2) { }
 }
+/**
+ * Sales → Live → Give queries keeps typed counts (per person, per hour) until the WhatsApp Sales cut-over date. A query Auto assign gives is written there too, so the Query tab, the hour strip,
+ * the Overnight tab (same hourly log) and the Campaign tab (campaign_queries, kind 'new') all show it without anybody typing. From the cut-over date WhatsApp Sales counts the queries itself, so nothing is written.
+ */
+function waa_typed(PDO $pdo, int $emp, bool $camp): void
+{
+    try {
+        if (!function_exists('qb_apply')) return; $day = waa_day($pdo);
+        if (function_exists('qa_cut')) { $cut = qa_cut($pdo); if ($cut !== '' && $cut <= $day) return; }
+        if ($camp) { if (function_exists('ensure_cq_table') && ensure_cq_table($pdo)) $pdo->prepare("INSERT INTO campaign_queries (employee_id, cq_date, kind, n, updated_at) VALUES (?, ?, 'new', 1, NOW()) ON DUPLICATE KEY UPDATE n = n + 1, updated_at = NOW()")->execute([$emp, $day]); }
+        else qb_apply($pdo, $emp, $day, 1, null);   // stamped with the time it was given: it lands in this clock hour
+    } catch (Throwable $e) { error_log('waa_typed: ' . $e->getMessage()); }
+}
 /** Typical first-reply minutes per person (last 7 days), kept 30 minutes. [emp => minutes] */
 function waa_speed(PDO $pdo): array
 {
@@ -135,7 +148,7 @@ function waa_give_one(PDO $pdo, array $r, ?array $c, array &$V, array &$T, int $
         wa_assign_to($pdo, $ph, $to, 0, 'auto');
         $pdo->prepare("INSERT INTO waa_log (at, phone, emp_id, kind, why) VALUES (?, ?, ?, ?, ?)")->execute([waa_dt($now), $ph, $to, $camp ? 'camp' : 'fresh', mb_substr(($camp ? 'campaign query' : 'fresh query') . ' · weight ' . round($cand[$to]['w']) . ' · so far ' . $cand[$to]['cnt'], 0, 160)]);
         $T[$to][$camp ? 'camp' : 'fresh'] = (int)($T[$to][$camp ? 'camp' : 'fresh'] ?? 0) + 1; if (!$camp) $V['people'][$to]['q']++; else $V['people'][$to]['cq']++;
-        waa_cp_bump($pdo, $to, $camp); return true;
+        waa_cp_bump($pdo, $to, $camp); waa_typed($pdo, $to, $camp); return true;
     } catch (Throwable $e) { error_log('waa give: ' . $e->getMessage()); $dbg['give_error'] = mb_substr($e->getMessage(), 0, 160); return false; }
     finally { try { $pdo->query("SELECT RELEASE_LOCK(" . $pdo->quote('waa_p_' . $ph) . ")"); } catch (Throwable $e) { } }
 }
