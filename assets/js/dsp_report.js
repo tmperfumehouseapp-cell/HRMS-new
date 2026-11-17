@@ -518,6 +518,8 @@ const DSP = (() => {
         const grp = R.groups && R.groups[g]; if (!grp) return;
         const lim = limOf(g), all = grp.rows.slice(0, lim), rows = all.filter(keepRow); hidN += all.length - rows.length;
         b += rows.map(rowHtml).join('');
+        // paid / closed parcels that Finance tucks away: say so inside the group, or the group looks empty although its count is not 0
+        if (all.length > rows.length) b += '<tr class="dr-more"><td colspan="11" style="border-left:3px solid ' + G[g][1] + '">' + (all.length - rows.length) + ' parcel' + (all.length - rows.length === 1 ? ' is' : 's are') + ' tucked away here (paid or closed, older than ' + PKEEP + ' days) · <button type="button" data-fpshow="1">show ' + (all.length - rows.length === 1 ? 'it' : 'them') + '</button></td></tr>';
         if (n > all.length) {
           b += '<tr class="dr-more"><td colspan="11" style="border-left:3px solid ' + G[g][1] + '">' + (n - all.length) + ' more · ' + (all.length < 3000 ? '<button type="button" data-more="' + g + '|100">show 100 more</button><button type="button" data-more="' + g + '|all">show all ' + n + '</button>' : 'showing the first 3000') + ' · sorted oldest first</td></tr>';
         }
