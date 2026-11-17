@@ -661,6 +661,7 @@ require_once __DIR__ . '/wq_learn.php';   // 🧠 lost chats saved for the guide
 require_once __DIR__ . '/wq_speed.php';   // ⚡ timing of the WhatsApp calls, server health, live switch (wq.speed, wa.g_wait)
 require_once __DIR__ . '/wq_tags.php';   // 🏷 One tag system: registry, automatic tags with why / until, patterns of staff-made tags, Claude's own new tags (wq.tags_*)
 require_once __DIR__ . '/wq_pace.php';   // ⚡ Reply pace of every salesperson: per-message pace, 7-day comparison, after-taking-a-query pace, fast reply vs order closing (wq.pace) - BEFORE wa_seg.php
+require_once __DIR__ . '/tk_goal.php';   // 🎯 ticket-size goal: wq.tk_cfg (admin) · wq.tk_me (the salesperson's own chip)
 require_once __DIR__ . '/wq_auto.php';   // 🏪 Auto assign (Sales → Team performance): queries go by themselves to punched-in salespeople by the owner's rules (wq.aa_get / wq.aa_set) - rules in wq_auto_rules.php
 require_once __DIR__ . '/wq_manager.php';   // 🧭 Team manager (Autobot): Claude decides who sees new orange / red chats first, from every number together (wq.mgr_*)
 require_once __DIR__ . '/team_board.php';   // 👥 Team board: one row per salesperson with everything in one place (team.board)

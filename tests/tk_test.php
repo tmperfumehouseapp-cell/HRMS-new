@@ -1,0 +1,10 @@
+<?php
+// Ticket goal rules (pure functions): php tests/tk_test.php
+require __DIR__ . '/../empmanagment/tk_rules.php';
+$bad = 0; $eq = function ($n, $a, $b) use (&$bad) { if ($a !== $b) { echo "FAIL $n: " . json_encode($a) . " != " . json_encode($b) . "\n"; $bad++; } };
+$eq('green at the goal', tk_status(2700, 2700), 'g'); $eq('green above', tk_status(3100, 2700), 'g'); $eq('amber within 10%', tk_status(2430, 2700), 'a'); $eq('red below 90%', tk_status(2429, 2700), 'r'); $eq('no orders yet', tk_status(0, 2700), ''); $eq('no goal', tk_status(2500, 0), '');
+// 3 orders, ₹6,300 (ticket 2,100): the next order must be 4 × 2,700 − 6,300 = 4,500
+$eq('next order needed', tk_need_next(6300, 3, 2700), 4500); $eq('above the goal: the smallest next order that keeps it', tk_need_next(9000, 3, 2700), 1800); $eq('far above: any order keeps it', tk_need_next(12000, 3, 2700), 0); $eq('first order', tk_need_next(0, 0, 2700), 2700); $eq('no goal', tk_need_next(5000, 2, 0), 0);
+$eq('hold: low ticket, 4 orders, 3 waiting', tk_hold(2100, 4, 3, 2300, 4, 3), true); $eq('no hold: only 3 orders', tk_hold(2100, 3, 3, 2300, 4, 3), false);
+$eq('no hold: ticket fine', tk_hold(2400, 5, 6, 2300, 4, 3), false); $eq('no hold: nobody waiting', tk_hold(2100, 5, 2, 2300, 4, 3), false); $eq('no hold: switch value 0', tk_hold(2100, 5, 5, 0, 4, 3), false);
+echo $bad ? "tk test: $bad problem(s)\n" : "tk test: ok\n"; exit($bad ? 1 : 0);

@@ -8035,6 +8035,8 @@ function cm_live_pick(?array $row, float $old, bool $offline): float
 }
 function coach_day(PDO $pdo, string $day, bool $hist = true, bool $raw = false): array
 {
+    if (!function_exists('tk_cfg') && is_file(__DIR__ . '/tk_lib.php')) require_once __DIR__ . '/tk_lib.php';   // 🎯 ticket-size goal (one number for the tips, the tables and My Sales)
+    $tkc = function_exists('tk_cfg') ? tk_cfg($pdo) : null;
     static $memo = [];
     $mk = $day . (int)$hist . ($raw ? 'r' : '');
     if (isset($memo[$mk])) return $memo[$mk];
@@ -8187,6 +8189,7 @@ function coach_day(PDO $pdo, string $day, bool $hist = true, bool $raw = false):
             'gap' => $should !== null ? round($sales - $should, 2) : null,
             'ticket' => $n ? round($sales / $n, 2) : 0.0, 'code' => $nCode, 'nocode' => $nNo, 'nocode_orders' => array_slice($noCodeNames, 0, 5), 'code_lost' => round($lost),
             'code_pct' => $codePct, 'code_need' => $codeNeed, 'code_ok' => $codeOk, 'code_left' => max(0, $codeNeed - $codeHave),
+            'tk_goal' => ($tkc && $tkc['on']) ? (int)$tkc['goal'] : 0, 'tk_pct' => $tkc ? $tkc['pct'] : 0,
             'floor' => $nFloor, 'cod' => $nCod, 'avg_pct' => $comBase > 0 ? round($comAmt / $comBase * 100, 2) : null, 'com_today' => round($com), 'order_com' => $ordCom,
             'last_order' => $last ? date('Y-m-d H:i:s', $last) : null, 'streak' => $stk,
             'best_hour' => $byHour ? max($byHour) : 0, 'yest_same' => round($ySame), 'best_day' => round($best), 'best_day_date' => $bestDay, 'best_orders' => $bestOrd,
@@ -8283,7 +8286,11 @@ function coach_tips(array $m, array $team, float $bonus, float $floor, int $rot 
             'text' => 'Add a code to any ' . ($cl === 1 ? '1 order' : $cl . ' orders') . ' (' . $m['code'] . '/' . $m['code_need'] . ' done) and every order today pays full' . ($m['code_lost'] > 0 ? ' — about ' . $inr($m['code_lost']) . ' more in your pocket 💰' : ' 💰')];
     }
     if ($m['floor'] >= 1 && $floor > 0) $tips[] = ['k' => 'low_price', 'kind' => 'focus', 'icon' => '💰', 'title' => 'Focus: price — ' . $m['floor'] . ' order' . ($m['floor'] === 1 ? '' : 's') . ' ' . rtrim(rtrim(number_format($floor, 1), '0'), '.') . '% પર', 'text' => 'Chart price ની નજીક વેચો — ₹1,810 પર 7%, ₹1,500 પર ફક્ત 2.8%.'];
-    if ($m['orders'] >= 3 && $team['avg_ticket'] > 0 && $m['ticket'] < 0.85 * $team['avg_ticket'])
+    $tkg = (int)($m['tk_goal'] ?? 0); $tkv = (float)($m['clean_ticket'] ?? 0) > 0 ? (float)$m['clean_ticket'] : (float)$m['ticket'];
+    if ($tkg > 0 && function_exists('tk_need_next')) {   // 🎯 the ticket GOAL replaces the old "below the team average" tip: one ticket tip, never two
+        if ($m['orders'] >= 1 && $tkv < $tkg) $tips[] = ['k' => 'ticket_goal', 'kind' => 'focus', 'icon' => '🎯', 'title' => 'Ticket goal ' . $inr($tkg) . ' — તમારો avg ' . $inr($tkv), 'text' => 'આગલો order ' . $inr(tk_need_next((float)$m['sales'], (int)$m['orders'], (float)$tkg)) . ' નો કરો તો ticket ' . $inr($tkg) . ' — combo / 100 ml / 10 ml add કરો.'];
+        elseif ($m['orders'] >= 3 && $tkv >= $tkg) $tips[] = ['k' => 'ticket_goal', 'kind' => 'win', 'icon' => '🎯', 'title' => 'Ticket goal done ✅ ' . $inr($tkv), 'text' => 'ticket bonus માટે આ જ રાખો — દરેક order માં add-on offer કરો.'];
+    } elseif ($m['orders'] >= 3 && $team['avg_ticket'] > 0 && $m['ticket'] < 0.85 * $team['avg_ticket'])
         $tips[] = ['k' => 'ticket', 'kind' => 'focus', 'icon' => '🛍️', 'title' => $topN($m['rank_orders'] ?? 99, $rk['orders'] ?? 0, 10) ? 'Orders superb 👏 — હવે ticket size' : 'Focus: ticket size', 'text' => 'તમારો avg ' . $inr($m['ticket']) . ', team ' . $inr($team['avg_ticket']) . ' — combo / 100 ml / 10 ml add કરો.'];
     if ($m['orders'] >= 3 && $m['cod'] / max(1, $m['orders']) > 0.5) $tips[] = ['k' => 'cod', 'kind' => 'focus', 'icon' => '💳', 'title' => 'Focus: prepaid — ' . $m['orders'] . ' માંથી ' . $m['cod'] . ' COD', 'text' => 'Prepaid કરાવો — RTO ઓછું, order પાક્કો.'];
     // ---- learn (this month's top sellers) ----
@@ -23156,7 +23163,7 @@ switch ($action) {
                 if (isset($x['clean_ticket'])) $m['clean_ticket'] = (int)round((float)$x['clean_ticket']);   // the same ticket rule as the ticket tile   // ONE "where you should be now" on every card: counted from YOUR punch-in (same as the Pace box)
             }
         } catch (Throwable $e) {}
-        json_response(['business_day' => $bizDay, 'qinfo' => $qinfo, 'me' => $m, 'tips' => $tips, 'bonus' => (float)($m['bonus'] ?? $c['bonus']), 'goal' => coach_goal($m), 'won' => $won, 'next' => $nx,
+        json_response(['business_day' => $bizDay, 'tk' => (function_exists('tk_card') ? tk_card($pdo, $m) : null), 'qinfo' => $qinfo, 'me' => $m, 'tips' => $tips, 'bonus' => (float)($m['bonus'] ?? $c['bonus']), 'goal' => coach_goal($m), 'won' => $won, 'next' => $nx,
             'team' => ['people' => $c['team']['people'], 'ahead' => $c['team']['ahead'], 'avg_ticket' => $c['team']['avg_ticket'], 'ranked' => $r]]);
         break;
     }
