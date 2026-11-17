@@ -1620,7 +1620,8 @@
       await loadList();
       if (admin && S.counts && !S.counts.unassigned && S.counts.all) { S.scope = 'all'; await loadList(); }
       const want = new URLSearchParams(location.search).get('phone'); if (want) openChat(String(want).replace(/\D/g, '').slice(-10));
-      setInterval(() => { if (document.hidden || !root.offsetParent) return; loadList(true); refreshChat(); }, 10000);   // only while the Chats screen is on view (another WhatsApp screen = no polling)
+      let __act = Date.now(), __beat = 0; ['pointerdown', 'keydown', 'touchstart', 'mousemove', 'wheel'].forEach((ev) => document.addEventListener(ev, () => { __act = Date.now(); }, { passive: true }));
+      setInterval(() => { if (document.hidden || !root.offsetParent) return; __beat++; if (Date.now() - __act > 120000 ? __beat % 3 : __beat % 2) return; loadList(true); refreshChat(); }, 5000);   // active: every 10 s as before (every 2nd beat); nobody touching the screen for 2 minutes: every 15 s   // only while the Chats screen is on view (another WhatsApp screen = no polling)
       if (!admin) { pollCall(); setInterval(pollCall, 12000); }
       document.addEventListener('visibilitychange', () => { if (document.hidden) { if (AU.run) auStop(false); } else { loadList(true); refreshChat(); auArm(); } });
     })();
