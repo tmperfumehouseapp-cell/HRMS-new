@@ -76,6 +76,8 @@ jobs:
           echo "\n=== utility messages made in the last 24 h: Meta's status and reason ===\n";
           foreach ($all("SELECT w.status, LEFT(w.reason, 110) reason, COUNT(*) n FROM wa_templates t JOIN wa_tpl_waba w ON w.tpl_id = t.id WHERE t.category = 'UTILITY' AND t.created_at >= NOW() - INTERVAL 1 DAY GROUP BY w.status, reason ORDER BY n DESC LIMIT 15") as $r) echo $row($r);
           echo "  utility messages without any Meta row (never sent): "; foreach ($all("SELECT COUNT(*) n FROM wa_templates t WHERE t.category = 'UTILITY' AND t.created_at >= NOW() - INTERVAL 3 DAY AND NOT EXISTS (SELECT 1 FROM wa_tpl_waba w WHERE w.tpl_id = t.id)") as $r) echo $row($r);
+          echo "\n=== FAILED people of the running campaigns: by Meta code, and how many Module B has already given utility ===\n";
+          foreach ($all("SELECT i.err_code, LEFT(i.err, 60) e, COUNT(*) n, SUM(EXISTS (SELECT 1 FROM wa_ru_log l WHERE l.item_id = i.id)) got_utility FROM wa_camp_items i WHERE i.status = 'failed' AND i.camp_id IN (SELECT id FROM wa_campaigns WHERE status = 'running') GROUP BY i.err_code, e ORDER BY n DESC LIMIT 12") as $r) echo $row($r);
           echo "\n=== welcome message (open_welcome) ===\n";
           foreach ($all("SELECT t.id, t.name, t.category, t.created_at, t.relabelled_at, (SELECT GROUP_CONCAT(CONCAT(w.status, ':', LEFT(w.reason, 60)) SEPARATOR ' | ') FROM wa_tpl_waba w WHERE w.tpl_id = t.id) st FROM wa_templates t WHERE t.name LIKE 'tmph\\\\_fu\\\\_open%' OR t.extra LIKE '%open_welcome%'") as $r) echo $row($r);
           foreach ($all("SELECT at, ok, info FROM wa_log WHERE info LIKE '%follow-ups made%' OR info LIKE '%open_welcome%' ORDER BY id DESC LIMIT 6") as $r) echo $row($r);
