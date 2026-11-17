@@ -130,6 +130,8 @@ function wa_util_pool_defs(): array
             'body' => "Hello {{1}}, an update on your enquiry about {{2}}: it is available now. Would you like us to keep it for you?"],
         'ask_size' => ['kind' => 'ask', 'labels' => ['name', 'perfume', 'date'], 'ex' => ['Rahul', 'Dior Sauvage', '28 Oct'], 'buttons' => $qr(['Share the sizes', 'Not now']),
             'body' => "Hi {{1}}, about your enquiry for {{2}} on {{3}}: please tell us the size you need, so we can confirm it for you."],
+        'ask_checked' => ['kind' => 'ask', 'labels' => ['name', 'date'], 'ex' => ['Rahul', '28 Oct'], 'buttons' => $qr(['Yes, I need help', 'Not now']),
+            'body' => "Hi {{1}}, you contacted TM Perfume House on {{2}}. Do you still need any help with your perfume choice? Reply here and we will help you."],
         'ask_pincode' => ['kind' => 'ask', 'labels' => ['name', 'perfume'], 'ex' => ['Rahul', 'Dior Sauvage'], 'buttons' => $qr(['Send my pincode', 'Not now']),
             'body' => "Hi {{1}}, to check the delivery time for {{2}} to your area, please reply with your pincode."],
         'order_check' => ['kind' => 'order', 'labels' => ['name', 'order', 'date'], 'ex' => ['Rahul', '#1234', '28 Oct'], 'buttons' => $qr(['Yes, all good', 'Need help']),
@@ -191,23 +193,27 @@ function wa_util_orders(PDO $pdo, int $days): array
 }
 /** Who qualifies and with which message: an enquiry on WhatsApp in the last 30 days with a perfume we can name → an "ask" message; else an order in the last $ordDays
  *  days → an "order" message; else null (this person gets no utility message). $rot makes the messages take turns. Returns ['t', 'vars', 'kind'] or null. */
-function wa_util_pick(PDO $pdo, array $pool, array $ct, int $ordDays, int $nowTs, int $rot = 0): ?array
+function wa_util_pick(PDO $pdo, array $pool, array $ct, int $ordDays, int $nowTs, int $rot = 0, int $askDays = 30): ?array
 {
     if (!$pool || (int)($ct['optout'] ?? 0) === 1) return null; $phone = (string)$ct['phone']; $name = function_exists('wa_first_name') ? wa_first_name((string)($ct['name'] ?? '')) : 'ji';
     $ask = array_values(array_filter($pool, fn($t) => $t['pool_kind'] === 'ask')); $ord = array_values(array_filter($pool, fn($t) => $t['pool_kind'] === 'order'));
     $in = !empty($ct['last_in_at']) ? (int)strtotime((string)$ct['last_in_at']) : 0; $fill = function (array $t, array $v) { $o = []; foreach (array_slice($t['labels'], 0, $t['nvars']) as $l) { $x = trim((string)($v[$l] ?? '')); if ($x === '') return null; $o[] = mb_substr($x, 0, 60); } return count($o) === (int)$t['nvars'] ? $o : null; };
-    if ($ask && $in >= $nowTs - 30 * 86400) {
+    if ($ask && $in >= $nowTs - max(1, $askDays) * 86400) {
         $p = ''; try { if (function_exists('wa_camp_lazy') ? wa_camp_lazy('wa_prod_last_asked', 'wa_prod.php') : function_exists('wa_prod_last_asked')) $p = (string)wa_prod_last_asked($pdo, $phone); } catch (Throwable $e) { }
         if ($p !== '') { $t = $ask[$rot % count($ask)]; $v = $fill($t, ['name' => $name, 'perfume' => $p, 'date' => date('j M', $in)]); if ($v) return ['t' => $t, 'vars' => $v, 'kind' => 'ask']; }
+        else {   // no perfume on record for this customer: the message that only says they contacted us on that date (true for every customer who wrote to us)
+            $gen = array_values(array_filter($ask, fn($t) => !in_array('perfume', (array)($t['labels'] ?? []), true)));
+            if ($gen) { $t = $gen[$rot % count($gen)]; $v = $fill($t, ['name' => $name, 'date' => date('j M', $in)]); if ($v) return ['t' => $t, 'vars' => $v, 'kind' => 'ask']; }
+        }
     }
     if ($ord && $ordDays > 0) { $o = wa_util_orders($pdo, $ordDays)[$phone] ?? null;
         if ($o && $o['order'] !== '') { $t = $ord[$rot % count($ord)]; $v = $fill($t, ['name' => $name, 'order' => $o['order'], 'date' => date('j M', (int)strtotime($o['at']))]); if ($v) return ['t' => $t, 'vars' => $v, 'kind' => 'order']; } }
     return null;
 }
 /** For the preview: how many of these people qualify (enquiry in 30 days / order in the window) — counted cheaply, the perfume is checked when sending. */
-function wa_util_split(PDO $pdo, array $phones, int $ordDays): array
+function wa_util_split(PDO $pdo, array $phones, int $ordDays, int $askDays = 30): array
 {
-    $o = ['ask' => 0, 'order' => 0, 'none' => 0]; $ord = wa_util_orders($pdo, max(1, $ordDays)); $cut = date('Y-m-d H:i:s', time() - 30 * 86400);
+    $o = ['ask' => 0, 'order' => 0, 'none' => 0]; $ord = wa_util_orders($pdo, max(1, $ordDays)); $cut = date('Y-m-d H:i:s', time() - max(1, $askDays) * 86400);
     foreach (array_chunk($phones, 500) as $ch) { if (!$ch) continue; $q = $pdo->prepare("SELECT phone FROM wa_contacts WHERE phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ") AND optout = 0 AND last_in_at >= ?"); $q->execute(array_merge($ch, [$cut])); $a = array_flip(array_map('strval', $q->fetchAll(PDO::FETCH_COLUMN)));
         foreach ($ch as $p) { if (isset($a[(string)$p])) $o['ask']++; elseif (isset($ord[(string)$p])) $o['order']++; else $o['none']++; } }
     return $o;
