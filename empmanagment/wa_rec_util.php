@@ -232,6 +232,7 @@ function wa_ru_tick(PDO $pdo): array
     if (!function_exists('wa_lock') || !wa_lock($pdo, 'ru', 50)) { $res['note'] = 'busy'; return $res; }
     $t0 = microtime(true); $nowTs = wa_camp_now(); $now = date('Y-m-d H:i:s', $nowTs); $why = [];
     try { $res['made'] = wa_ru_make_tick($pdo)['made']; } catch (Throwable $e) { }   // utility versions of today's campaign messages → Meta
+    $t0 = microtime(true) - 20;   // the making / sending of templates above can take 20+ seconds: it must not eat the time of the sending loop below (it did: every round broke off at the first person and Module B never sent anything)
     try {
         if (!wa_camp_in_window($pdo, $nowTs)) { $res['note'] = 'quiet hours'; return $res; }
         $pool = wa_ru_pool($pdo); $famU = [];   // 1) the utility version(s) of the campaign's OWN message (the owner's words, approved at Meta), 2) the 6 standard follow-ups
@@ -357,7 +358,7 @@ function wa_ru_fam_states(PDO $pdo, array $tplIds): array
             elseif (in_array('APPROVED', $stt, true)) { $k = 'approved'; }
             elseif (array_intersect(['PENDING', 'IN_APPEAL'], $stt)) { $k = 'waiting'; }
             elseif (in_array('ERROR', $stt, true)) { $k = 'error'; $why = $reasonOf(['ERROR']); }
-            elseif (in_array('REJECTED', $stt, true)) { $why = $reasonOf(['REJECTED']); $k = stripos($why, 'Unsupported post request') === 0 ? 'error' : 'rejected'; }
+            elseif (in_array('REJECTED', $stt, true)) { $why = $reasonOf(['REJECTED']); $k = (function_exists('wa_util_is_creation_error') && wa_util_is_creation_error($why)) || stripos($why, 'Unsupported post request') === 0 ? 'error' : 'rejected'; }
             else { $k = 'paused'; $why = $reasonOf(['PAUSED', 'DISABLED', 'FLAGGED']); }
             $o[(int)$r['tid']][$k]++; if (count($o[(int)$r['tid']]['items']) < 8) $o[(int)$r['tid']]['items'][] = ['name' => (string)$r['nm'], 'state' => $k, 'at' => (string)$r['ca'], 'why' => mb_substr($why, 0, 140)];
         }

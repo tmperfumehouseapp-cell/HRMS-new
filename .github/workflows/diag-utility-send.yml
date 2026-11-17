@@ -60,8 +60,14 @@ jobs:
             echo "campaign #" . $c["id"] . " · " . substr($c["name"], 0, 50) . " · " . $c["status"] . " · last tick " . $c["last_tick"] . " · note: " . substr((string)$c["note"], 0, 160) . "\n   utility settings: " . implode(" ", $keep) . "\n";
             $cnt = []; foreach ($all("SELECT status, COUNT(*) n FROM wa_camp_items WHERE camp_id = ? GROUP BY status", [(int)$c["id"]]) as $ci) $cnt[] = $ci["status"] . " " . $ci["n"]; echo "   people by state: " . implode(", ", $cnt) . "\n";
           }
-          echo "\n=== standard follow-up messages (status per account) ===\n";
-          foreach ($all("SELECT t.name, t.category, t.category_now, GROUP_CONCAT(CONCAT(RIGHT(w.waba_id, 4), ':', w.status) SEPARATOR ' ') st FROM wa_templates t LEFT JOIN wa_tpl_waba w ON w.tpl_id = t.id WHERE t.name LIKE 'tmph\\_fu\\_%' GROUP BY t.id") as $r) echo $row($r);
+          echo "\n=== standard follow-up messages: how many per status (not listed one by one) ===\n";
+          foreach ($all("SELECT t.category, w.status, COUNT(*) n FROM wa_templates t JOIN wa_tpl_waba w ON w.tpl_id = t.id WHERE t.name LIKE 'tmph\\_fu\\_%' GROUP BY t.category, w.status") as $r) echo $row($r);
+          echo "\n=== people put back by \"Start as utility\" (marked restart-utility) and what happened to them ===\n";
+          foreach ($all("SELECT camp_id, status, LEFT(err, 70) e, COUNT(*) n FROM wa_camp_items WHERE err = 'restart-utility' OR err IN ('No chosen utility message fits this person', 'Already delivered a message of ours') GROUP BY camp_id, status, e ORDER BY camp_id DESC, n DESC LIMIT 20") as $r) echo $row($r);
+          echo "\n=== the shared sending plan and locks (settings) ===\n";
+          foreach ($all("SELECT setting_key k, LEFT(setting_value, 160) v FROM hrms_settings WHERE setting_key LIKE 'wa_dq%' OR setting_key LIKE 'wa_lock_%' OR setting_key LIKE 'wa_fast%' ORDER BY setting_key LIMIT 40") as $r) echo $row($r);
+          echo "\n=== newest campaign log lines (any kind, 20) ===\n";
+          foreach ($all("SELECT at, kind, ok, info FROM wa_log WHERE kind IN ('campaign', 'engine') ORDER BY id DESC LIMIT 20") as $r) echo "  " . $r["at"] . " [" . $r["kind"] . "/" . ($r["ok"] ? "ok" : "FAIL") . "] " . substr($r["info"], 0, 180) . "\n";
           echo "\n=== utility messages made in the last 24 h: Meta's status and reason ===\n";
           foreach ($all("SELECT w.status, LEFT(w.reason, 110) reason, COUNT(*) n FROM wa_templates t JOIN wa_tpl_waba w ON w.tpl_id = t.id WHERE t.category = 'UTILITY' AND t.created_at >= NOW() - INTERVAL 1 DAY GROUP BY w.status, reason ORDER BY n DESC LIMIT 15") as $r) echo $row($r);
           echo "  utility messages without any Meta row (never sent): "; foreach ($all("SELECT COUNT(*) n FROM wa_templates t WHERE t.category = 'UTILITY' AND t.created_at >= NOW() - INTERVAL 3 DAY AND NOT EXISTS (SELECT 1 FROM wa_tpl_waba w WHERE w.tpl_id = t.id)") as $r) echo $row($r);
