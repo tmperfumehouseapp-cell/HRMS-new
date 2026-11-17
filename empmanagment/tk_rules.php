@@ -27,4 +27,11 @@ function tk_hold(float $ticket, int $orders, int $waiting, float $below, int $mi
     return $below > 0 && $orders >= $minOrders && $ticket > 0 && $ticket < $below && $waiting >= $wait;
 }
 
+
+/** The hold only makes sense when enough people reach the goal: if almost nobody does, every ticket is low and queries must keep going to everybody. $share = the minimum % of the working people that are at the goal. */
+function tk_hold_share_ok(int $achievers, int $people, float $share): bool
+{
+    return $people > 0 && $achievers * 100 >= $share * $people - 1e-9;
+}
+
 }
