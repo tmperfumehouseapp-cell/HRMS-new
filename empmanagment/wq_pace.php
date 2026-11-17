@@ -322,7 +322,7 @@ function wq_pace_get(PDO $pdo, int $days): array
     $k = 'pace_' . $days;
     if (wq_pace_tables($pdo)) {
         try { $q = $pdo->prepare("SELECT js, at FROM wq_pace_cache WHERE k = ?"); $q->execute([$k]); $r = $q->fetch();
-            if ($r && $r['js'] && strtotime((string)$r['at']) > time() - ($days === 30 ? 600 : 120)) { $j = json_decode((string)$r['js'], true); if (is_array($j)) return $j; } } catch (Throwable $e) { }
+            if ($r && $r['js'] && strtotime((string)$r['at']) > time() - ($days === 30 ? 600 : 240)) { $j = json_decode((string)$r['js'], true); if (is_array($j)) return $j; } } catch (Throwable $e) { }
     }
     // only ONE scan at a time (the scan is heavy; every page asking at once used to start its own copy and freeze the server): the others get the last stored copy, however old
     $lk = 'lock_' . $days; $have = wq_pace_tables($pdo);
