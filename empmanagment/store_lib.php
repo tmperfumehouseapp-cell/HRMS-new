@@ -1631,14 +1631,14 @@ if (!function_exists('budget_store_calc')) {
         foreach ($groups as $k => $idx) {
             $n = count($idx); $nCode = 0;
             foreach ($idx as $i) if (trim((string)$rows[$i]['order_code']) !== '') $nCode++;
-            $need = cm_code_need($n, (float)$ch['codepct']); $codeOk = $need > 0 && $nCode >= $need; $nocodeF = (float)$ch['nocode'] / 100;
+            $need = cm_code_need($n, (float)$ch['codepct']); $codeOk = $need > 0 && $nCode >= $need; $nocodeF = 1.0;   // STORE = FLAT commission, the same chart % / offer % as online: NO order-code rule and no "no code = half" reduction (owner's decision)
             foreach ($idx as $i) {
                 $b = $rows[$i]; $day = (string)$b['biz_date']; $gross = (float)$b['total']; $ml = (int)$b['total_ml']; $hasCode = trim((string)$b['order_code']) !== '';
                 $f = ($hasCode || $codeOk) ? 1.0 : $nocodeF; $com = 0.0; $pct = null; $rule = '';
                 $of = $ml ? cm_offer_match($offers, $ml, $gross, $day, (float)$ch['window']) : null;
                 $fl = (!$of && $flashList && $ml) ? flash_offer_pct_for($flashList, $ml, $gross, (int)strtotime((string)$b['created_at'])) : null;
                 if ($of) { $pct = (float)$of['pct']; $rule = 'offer'; $com = $gross * $pct / 100 * $f; }
-                elseif ($fl !== null) { $pct = (float)$fl['pct']; $rule = 'flash offer'; $com = $gross * $pct / 100 * (($hasCode || $codeOk) ? 1.0 : (float)$fl['nocode'] / 100); }
+                elseif ($fl !== null) { $pct = (float)$fl['pct']; $rule = 'flash offer'; $com = $gross * $pct / 100; }
                 elseif (!$ml) { $noMl++; $rule = 'no ML'; }
                 else { $pc = cm_pct($ch, $ml, $gross); if ($pc === null) { $unpriced++; $rule = 'ML not priced'; } else { $pct = (float)$pc; $rule = 'chart'; $com = $gross * $pct / 100 * $f; } }
                 $out[$i] = ['bill_id' => (int)$b['bill_id'], 'bill_no' => (string)$b['bill_no'], 'day' => $day, 'time' => substr((string)$b['created_at'], 11, 5), 'emp_id' => (int)$b['emp_id'],
