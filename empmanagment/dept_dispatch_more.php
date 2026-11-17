@@ -189,7 +189,13 @@ function dp_dsp_link_make($pattern, $track) {
     if ($pattern === '' || $track === '' || strpos($pattern, '{ID}') === false) return '';
     return str_replace('{ID}', rawurlencode($track), $pattern);
 }
-function dp_dsp_link_for(PDO $pdo, $courier, $track) { $m = dp_dsp_courier_map($pdo); return dp_dsp_link_make($m[strtolower(trim((string)$courier))] ?? '', $track); }
+/** the link pattern of a courier. A name that is not in the courier list ("Bluedart brands 500 g Surface", "Xpressbees Surface 2kg" ...) is a Shiprocket service: its AWB opens on the Shiprocket tracking page. */
+function dp_dsp_link_pat(array $m, $courier) {
+    $k = strtolower(trim((string)$courier)); if (isset($m[$k])) return (string)$m[$k];
+    if ($k === '' || $k === 'office pickup' || $k === 'other' || $k === 'normal') return '';
+    return trim((string)($m['shiprocket'] ?? '')) !== '' ? (string)$m['shiprocket'] : 'https://shiprocket.co/tracking/{ID}';
+}
+function dp_dsp_link_for(PDO $pdo, $courier, $track) { $m = dp_dsp_courier_map($pdo); return dp_dsp_link_make(dp_dsp_link_pat($m, $courier), $track); }
 function dp_dsp_link_ok($u) { return (bool)preg_match('~^https?://[^\s<>"\']{4,290}$~i', (string)$u); }
 
 /* ============================== untraceable parcels: one owner, a remark every day, a history ============================== */
@@ -584,7 +590,7 @@ function dp_dsp_rep_row(array $r, $now, array $cm = [], array $un = []) {
     $wait = ($grp === 3 && $r['tracked_at']) ? round(($now - strtotime($r['tracked_at'])) / 3600, 1) : null;
     $late = $late48 ? '48h' : (($wait !== null && $wait >= dp_dsp_pick_hours()) ? 'wait48' : ($late4 ? 'day4' : ''));
     $link = trim((string)($r['track_link'] ?? ''));
-    if ($link === '' && (string)$r['tracking_no'] !== '') $link = dp_dsp_link_make($cm[strtolower((string)$r['courier'])] ?? '', $r['tracking_no']);
+    if ($link === '' && (string)$r['tracking_no'] !== '') $link = dp_dsp_link_make(dp_dsp_link_pat($cm, $r['courier']), $r['tracking_no']);
     $plink = '';
     if ($pend) { $plink = trim((string)($r['pend_link'] ?? '')); if ($plink === '') $plink = dp_dsp_link_make($cm[strtolower((string)$r['pend_courier'])] ?? '', $r['pend_track']); }
     $u = $un[(int)$r['id']] ?? null;
