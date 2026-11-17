@@ -259,6 +259,21 @@ function wa_ru_reset_once(PDO $pdo): void
             $pdo->prepare("UPDATE wa_campaigns SET start_at = ?, note = 'Audience cut to the people reached in the last 30 days after Meta flagged spam — starts at 9:00.' WHERE id IN (517, 518) AND status = 'scheduled'")->execute([$at9]);
             if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, '#517 / #518 now start at ' . $at9);
         } } catch (Throwable $e) { }
+    try { if ((string)setting_get($pdo, 'wa_swap_517_518', '') !== '1' && function_exists('wa_camp_tpl')) {   // owner 18 Nov 2026: #517 / #518 get another approved message (the best delivering ones of the last 14 days: post_diwali_v2 50 %, long_time_no_see_v2 35 %, ml_wise_v2 34 %, ml_wise_v3 29 %), only while they are still scheduled / paused; the people stay the same
+            setting_set($pdo, 'wa_swap_517_518', '1');
+            foreach ([517, 518] as $cid) {
+                $cr = $pdo->query("SELECT id, tpl_id, media_lib_id, status FROM wa_campaigns WHERE id = " . (int)$cid)->fetch(PDO::FETCH_ASSOC);
+                if (!$cr || !in_array($cr['status'], ['scheduled', 'paused'], true)) continue;
+                foreach ([201, 59, 40, 58] as $nt) {
+                    if ($nt === (int)$cr['tpl_id']) continue;
+                    $t = wa_camp_tpl($pdo, $nt, true, (int)$cr['media_lib_id']);
+                    if (!$t || (int)($t['nvars'] ?? 0) > 1) continue;
+                    $pdo->prepare("UPDATE wa_campaigns SET tpl_id = ? WHERE id = ? AND status IN ('scheduled', 'paused')")->execute([$nt, $cid]);
+                    if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, '#' . $cid . ' message changed to ' . (string)($t['name'] ?? $nt) . ' (best delivering approved message)');
+                    break;
+                }
+            }
+        } } catch (Throwable $e) { }
     try { if ((string)setting_get($pdo, 'wa_ru_calm', '') !== '1') { setting_set($pdo, 'wa_ru_hourly', '30000'); setting_set($pdo, 'wa_ru_parallel', '30'); setting_set($pdo, 'wa_ru_calm', '1'); } } catch (Throwable $e) { }   // owner 18 Nov 2026 gave Module B's pace to Claude: about 500 a minute (30,000 an hour, 30 at a time) — at 2,000 a minute a template Meta paused made 1,700 refusals per 5 minutes and Meta flagged the numbers for spam; the brakes (refused / failed 60 %, number rest, 131048 six-hour pause, 132015 template skip) stay
     try { if ((string)setting_get($pdo, 'wa_dq_nolimit', '') !== '1') { foreach (['wa_dq_daily' => '1000000', 'wa_dq_budget' => '0', 'wa_dq_auto' => '0', 'wa_dq_hourly' => '60000', 'wa_dq_pace' => '0', 'wa_dq_daily_auto' => '0', 'wa_dq_stat' => ''] as $k => $v) setting_set($pdo, $k, $v); setting_set($pdo, 'wa_dq_nolimit', '1'); } } catch (Throwable $e) { }   // owner 18 Nov 2026: the shared marketing plan has no day number, no money limit, no even-pace brake and the hour number at its top (60,000); Meta's own limit per number (3,00,000) and a number that is off / Low quality still decide
     try { if ((string)setting_get($pdo, 'wa_ru_held_off2', '') !== '1') { setting_set($pdo, 'wa_ru_pause_until', '0'); setting_set($pdo, 'wa_ru_rest', '{}'); setting_set($pdo, 'wa_ru_brake_since', (string)time()); setting_set($pdo, 'wa_ru_cursor', '0'); setting_set($pdo, 'wa_ru_held_off2', '1'); } } catch (Throwable $e) { }   // owner 17 Nov 2026: the pause caused by the held people's failures is cleared; the failure brake counts only messages sent from now on
