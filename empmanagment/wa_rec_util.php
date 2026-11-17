@@ -256,6 +256,22 @@ function wa_ru_counts(PDO $pdo, array $ids): array
     try { foreach ($pdo->query("SELECT i.camp_id, COUNT(*) AS n, SUM(m.status IN ('delivered', 'read')) AS d FROM wa_camp_items i LEFT JOIN wa_messages m ON m.wamid = i.wamid AND i.wamid <> '' WHERE i.camp_id IN ($in) AND i.variant = 'U' AND i.status = 'sent' GROUP BY i.camp_id")->fetchAll() as $r) { $c = (int)$r['camp_id']; $o[$c] = ($o[$c] ?? $z); $o[$c]['mix_sent'] = (int)$r['n']; $o[$c]['mix_del'] = (int)$r['d']; } } catch (Throwable $e) { }
     return $o;
 }
+/** Where the utility messages are at Meta (made in the last 3 days): approved / waiting / rejected / not sent yet, with the newest ones listed. */
+function wa_ru_approval(PDO $pdo): array
+{
+    $o = ['total' => 0, 'approved' => 0, 'waiting' => 0, 'rejected' => 0, 'draft' => 0, 'list' => [], 'last_make' => (int)setting_get($pdo, 'wa_ru_make_at', '0')];
+    try {
+        $q = $pdo->prepare("SELECT t.id, t.name, t.created_at, t.relabelled_at, GROUP_CONCAT(w.status) AS st FROM wa_templates t LEFT JOIN wa_tpl_waba w ON w.tpl_id = t.id WHERE t.category = 'UTILITY' AND t.created_at >= ? GROUP BY t.id ORDER BY t.id DESC LIMIT 60");
+        $q->execute([date('Y-m-d H:i:s', time() - 3 * 86400)]);
+        foreach ($q->fetchAll() as $r) {
+            $st = array_filter(explode(',', strtoupper((string)$r['st']))); $o['total']++;
+            if (!$st) { $k = 'draft'; } elseif (in_array('APPROVED', $st, true)) { $k = 'approved'; } elseif (in_array('PENDING', $st, true) || in_array('IN_APPEAL', $st, true)) { $k = 'waiting'; } else { $k = 'rejected'; }
+            if (!empty($r['relabelled_at'])) $k = 'rejected';
+            $o[$k]++; if (count($o['list']) < 10) $o['list'][] = ['name' => (string)$r['name'], 'state' => $k, 'at' => (string)$r['created_at']];
+        }
+    } catch (Throwable $e) { }
+    return $o;
+}
 /** For the screen: each number with its utility delivery of the last 3 hours and whether it is resting. */
 function wa_ru_number_view(PDO $pdo): array
 {
@@ -301,7 +317,7 @@ function wa_ru_status(PDO $pdo, string $from = '', string $to = ''): array
             foreach ($q->fetchAll() as $r) { $o['tried'] += (int)$r['n']; $o['delivered'] += (int)$r['d']; $o['failed'] += (int)$r['f']; if (isset($o['by_kind'][(string)$r['kind']])) $o['by_kind'][(string)$r['kind']] = (int)$r['n']; } } catch (Throwable $e) { }
         $o['waiting'] = max(0, $o['tried'] - $o['delivered'] - $o['failed']);
     }
-    return ['on' => $cfg['on'], 'paused' => $cfg['pause_until'] > time(), 'hourly' => $cfg['hourly'], 'wait_min' => $cfg['wait_min'], 'ord_days' => $cfg['ord_days'], 'pool' => count(wa_ru_pool($pdo)), 'fam' => wa_ru_fam_count($pdo), 'pool_made' => count(wa_ru_pool_made($pdo)), 'pool_total' => function_exists('wa_util_pool_defs') ? count(wa_util_pool_defs()) : 6, 'diag' => ($dg = wa_ru_diag($pdo, $cfg['ord_days'])), 'plan' => wa_ru_plan($pdo, $cfg, $dg), 'numbers' => wa_ru_number_view($pdo), 'ask_days' => $cfg['ask_days'], 'make_on' => $cfg['make_on'], 'range' => $o, 'last' => $last, 'now' => time()];
+    return ['on' => $cfg['on'], 'paused' => $cfg['pause_until'] > time(), 'hourly' => $cfg['hourly'], 'wait_min' => $cfg['wait_min'], 'ord_days' => $cfg['ord_days'], 'pool' => count(wa_ru_pool($pdo)), 'fam' => wa_ru_fam_count($pdo), 'pool_made' => count(wa_ru_pool_made($pdo)), 'pool_total' => function_exists('wa_util_pool_defs') ? count(wa_util_pool_defs()) : 6, 'diag' => ($dg = wa_ru_diag($pdo, $cfg['ord_days'])), 'plan' => wa_ru_plan($pdo, $cfg, $dg), 'numbers' => wa_ru_number_view($pdo), 'approval' => wa_ru_approval($pdo), 'ask_days' => $cfg['ask_days'], 'make_on' => $cfg['make_on'], 'range' => $o, 'last' => $last, 'now' => time()];
 }
 
 }   // function_exists guard
