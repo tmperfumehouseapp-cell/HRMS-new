@@ -779,6 +779,10 @@ function wag_history(PDO $pdo, int $emp, bool $adm, array $f, array $cfg): array
     if (!empty($f['noresult'])) $w[] = 'NOT EXISTS (SELECT 1 FROM wa_outcomes o WHERE o.phone = c.phone)';
     $where = implode(' AND ', $w);
     $st = $pdo->prepare("SELECT COUNT(*) FROM wa_contacts c WHERE $where"); $st->execute($p); $total = (int)$st->fetchColumn();
+    if (!empty($f['ids'])) {   // ☑ "Select all": every chat of this view (all pages), phone + name only, up to 50,000
+        $st = $pdo->prepare("SELECT c.phone, c.name FROM wa_contacts c WHERE $where ORDER BY c.last_in_at DESC LIMIT 50000"); $st->execute($p);
+        return ['ids' => array_map(fn($r) => ['phone' => (string)$r['phone'], 'name' => (string)$r['name']], $st->fetchAll()), 'total' => $total, 'chats' => [], 'page' => 0, 'more' => false];
+    }
     $sql = "SELECT c.*, (SELECT body FROM wa_messages m WHERE m.phone = c.phone AND m.dir != 'sys' ORDER BY m.id DESC LIMIT 1) AS last_body,
             (SELECT mtype FROM wa_messages m WHERE m.phone = c.phone AND m.dir != 'sys' ORDER BY m.id DESC LIMIT 1) AS last_type FROM wa_contacts c WHERE $where ORDER BY c.last_in_at DESC LIMIT $lim OFFSET " . ($pg * $lim);
     $st = $pdo->prepare($sql); $st->execute($p); $rows = $st->fetchAll();

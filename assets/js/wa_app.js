@@ -732,11 +732,17 @@
       let t; $('#wxHq').oninput = function () { clearTimeout(t); const v = this.value; t = setTimeout(() => { H.q = v.trim(); loadHist(true); }, 350); }; const hm = $('#wxHm'); if (hm) hm.onclick = () => loadHist(false);
       // ☑ bulk: pick many History chats and send one pre-made message (each customer gets their own first name)
       const bar = document.createElement('div'); bar.style.cssText = 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:0 14px 8px';
-      bar.innerHTML = H.selOn ? `<b style="font-size:13px">${H.sel.size} selected</b><button type="button" class="wx-btn gh" id="wxHsA" style="min-height:38px">Select all ${H.rows.length}</button><button type="button" class="wx-btn" id="wxHsS" style="min-height:38px" ${H.sel.size ? '' : 'disabled'}>📨 Send template</button><button type="button" class="wx-btn gh" id="wxHsX" style="min-height:38px">Cancel</button>` : '<button type="button" class="wx-btn gh" id="wxHsT" style="min-height:38px">☑ Select chats</button>';
+      bar.innerHTML = H.selOn ? `<b style="font-size:13px">${H.sel.size} selected</b><button type="button" class="wx-btn gh" id="wxHsA" style="min-height:38px">${H.total && H.sel.size >= H.total ? 'Unselect all' : 'Select all ' + H.total.toLocaleString('en-IN')}</button><button type="button" class="wx-btn" id="wxHsS" style="min-height:38px" ${H.sel.size ? '' : 'disabled'}>📨 Send template</button><button type="button" class="wx-btn gh" id="wxHsX" style="min-height:38px">Cancel</button>` : '<button type="button" class="wx-btn gh" id="wxHsT" style="min-height:38px">☑ Select chats</button>';
       M.insertBefore(bar, M.firstChild.nextSibling);
       const hb = (id, fn) => { const b = bar.querySelector('#' + id); if (b) b.onclick = fn; };
       hb('wxHsT', () => { H.selOn = true; H.sel.clear(); drawHistory(false); }); hb('wxHsX', () => { H.selOn = false; H.sel.clear(); drawHistory(false); });
-      hb('wxHsA', () => { if (H.rows.every((c) => H.sel.has(c.phone))) H.sel.clear(); else H.rows.forEach((c) => H.sel.add(c.phone)); drawHistory(false); });
+      hb('wxHsA', async function () {   // ☑ ALL chats of this view (every page), not only the loaded ones
+        if (H.sel.size >= H.total && H.total > 0) { H.sel.clear(); H.names = {}; drawHistory(false); return; }
+        this.disabled = true; this.textContent = 'Selecting…';
+        try { const p = { ids: 1, q: H.q }; if (H.f === 'noreply') p.noreply = 1; if (H.f === 'noresult') p.noresult = 1; if (H.emp) p.emp = H.emp; const d = await api.get('wa.g_history', p); H.names = H.names || {}; (d.ids || []).forEach((x) => { H.sel.add(x.phone); H.names[x.phone] = x.name || ''; }); H.total = d.total || H.total; toast('Selected all ' + H.sel.size.toLocaleString('en-IN') + ' chats'); }
+        catch (e) { toast(e.message, true); }
+        drawHistory(false);
+      });
       hb('wxHsS', () => histBulk());
       M.onclick = (e) => { const p = e.target.closest('.wx-row[data-p]'); if (!p) return; if (H.selOn) { const ph = p.dataset.p; if (H.sel.has(ph)) H.sel.delete(ph); else H.sel.add(ph); drawHistory(false); } else openChat(p.dataset.p); };
     }
@@ -752,14 +758,16 @@
         $('#wxBkP').textContent = (t.header_text ? fill(t.header_text, ['Name']) + '\n' : '') + fill(t.body, ['Name']) + (t.footer ? '\n' + t.footer : ''); $('#wxBkB').onclick = list;
         $('#wxBkG').onclick = async function () {
           this.disabled = true; this.textContent = 'Checking…'; let go = phones;
-          try { const r = await api.post('wa.bulk_ordered', { phones }); const ord = new Set(r.ordered || []), blk = r.blocked || {}; go = phones.filter((ph) => blk[ph] !== 'optout' && blk[ph] !== 'complaint'); if ($('#wxBkSafe').checked) go = go.filter((ph) => !ord.has(ph)); }
+          try { const ord = new Set(), blk = {}; for (let i = 0; i < phones.length; i += 2500) { const r = await api.post('wa.bulk_ordered', { phones: phones.slice(i, i + 2500) }); (r.ordered || []).forEach((x) => ord.add(x)); Object.assign(blk, r.blocked || {}); } go = phones.filter((ph) => blk[ph] !== 'optout' && blk[ph] !== 'complaint'); if ($('#wxBkSafe').checked) go = go.filter((ph) => !ord.has(ph)); }
           catch (e) { $('#wxBkE').innerHTML = `<div class="wx-banner y">${esc(e.message)}</div>`; this.disabled = false; this.textContent = '🚀 Send to ' + phones.length; return; }
           if (!go.length) { $('#wxBkE').innerHTML = '<div class="wx-banner y">Nobody is left to send to (all ordered, opted out or have a complaint).</div>'; this.disabled = false; this.textContent = '🚀 Send to ' + phones.length; return; }
           if (!confirm('Send "' + t.name.replace(/_/g, ' ') + '" to ' + go.length + ' customers now?')) { this.disabled = false; this.textContent = '🚀 Send to ' + phones.length; return; }
-          const names = {}; H.rows.forEach((c) => { names[c.phone] = c.name || ''; }); let done = 0, good = 0, bad = 0; const fails = [];
-          sh.body.innerHTML = '<div style="text-align:center;padding:12px"><b id="wxBkN">Sending 0 of ' + go.length + '…</b><div class="wx-sub">Keep this page open until it finishes.</div></div>';
-          for (const ph of go) { const nm = first(names[ph]) || 'ji'; try { await api.post('wa.tpl_send', { phone: ph, id: t.id, vars: (t.vars || 0) ? [nm] : [], header_var: t.header_var ? nm : '' }); good++; } catch (e) { bad++; if (fails.length < 5) fails.push(e.message); } done++; const el = $('#wxBkN'); if (el) el.textContent = 'Sending ' + done + ' of ' + go.length + '…'; }
-          sh.body.innerHTML = `<div style="padding:12px;text-align:center"><div style="font-size:30px">${bad ? '⚠️' : '✅'}</div><b>${good} sent${bad ? ' · ' + bad + ' failed' : ''}</b>${fails.length ? '<div class="wx-sub" style="margin-top:6px">' + fails.map(esc).join('<br>') + '</div>' : ''}<div style="margin-top:12px"><button class="wx-btn" id="wxBkD">Done</button></div></div>`;
+          const names = Object.assign({}, H.names || {}); H.rows.forEach((c) => { names[c.phone] = c.name || ''; }); let done = 0, good = 0, bad = 0; const fails = [];
+          sh.body.innerHTML = '<div style="text-align:center;padding:12px"><b id="wxBkN">Sending 0 of ' + go.length.toLocaleString('en-IN') + '…</b><div style="height:8px;background:#e5e7eb;border-radius:6px;margin:10px 0;overflow:hidden"><i id="wxBkB2" style="display:block;height:100%;width:0;background:#16a34a"></i></div><div class="wx-sub">Keep this page open until it finishes (5 messages go at a time).</div><button class="wx-btn gh" id="wxBkStop" style="margin-top:10px">⏹ Stop</button></div>';
+          let stop = false, idx = 0; $('#wxBkStop').onclick = function () { stop = true; this.disabled = true; this.textContent = 'Stopping…'; }; const leave = (e) => { e.preventDefault(); e.returnValue = ''; }; window.addEventListener('beforeunload', leave);
+          const work = async () => { while (!stop && idx < go.length) { const ph = go[idx++], nm = first(names[ph]) || 'ji'; try { await api.post('wa.tpl_send', { phone: ph, id: t.id, vars: (t.vars || 0) ? [nm] : [], header_var: t.header_var ? nm : '' }); good++; } catch (e) { bad++; if (fails.length < 5) fails.push(e.message); } done++; if (done % 5 === 0 || done === go.length) { const el = $('#wxBkN'), pb = $('#wxBkB2'); if (el) el.textContent = 'Sending ' + done.toLocaleString('en-IN') + ' of ' + go.length.toLocaleString('en-IN') + '…'; if (pb) pb.style.width = Math.round(100 * done / go.length) + '%'; } } };
+          await Promise.all([work(), work(), work(), work(), work()]); window.removeEventListener('beforeunload', leave);
+          sh.body.innerHTML = `<div style="padding:12px;text-align:center"><div style="font-size:30px">${bad ? '⚠️' : '✅'}</div><b>${good.toLocaleString('en-IN')} sent${bad ? ' · ' + bad + ' failed' : ''}${stop ? ' · stopped (' + (go.length - done).toLocaleString('en-IN') + ' not sent)' : ''}</b>${fails.length ? '<div class="wx-sub" style="margin-top:6px">' + fails.map(esc).join('<br>') + '</div>' : ''}<div style="margin-top:12px"><button class="wx-btn" id="wxBkD">Done</button></div></div>`;
           $('#wxBkD').onclick = () => { sh.close(); H.selOn = false; H.sel.clear(); loadHist(true); };
         };
       };
