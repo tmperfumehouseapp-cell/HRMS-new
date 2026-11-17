@@ -471,11 +471,15 @@
         const f = (x) => x < 1 ? '<1m' : (x < 10 ? Math.round(x * 10) / 10 : Math.round(x)) + 'm', me = +mp.median, tm = +tp.median, col = me <= tm ? '#7cffb2' : me <= tm * 1.25 ? '#ffd166' : '#ff8a80';
         el.innerHTML = '<i style="width:8px;height:8px;border-radius:50%;background:' + col + ';display:inline-block;flex:none"></i>' + f(me) + ' · <span class="wx-tmt">team </span>' + f(tm); b.title = 'Your typical reply time ' + f(me) + ' · team ' + f(tm) + ' — tap for details'; } catch (e) { /* no chip */ } };
       paint(); setInterval(() => { if (!document.hidden) paint(); }, 300000); }
+    // 🐢 slow replies: a warning first, then a 45-minute pause of NEW queries (the chats you already have stay yours)
+    const slowBanner = (sl) => { try { let el = document.getElementById('wxSlow'); if (!sl) { if (el) el.remove(); return; } const hold = sl.state === 'hold', msg = hold ? '⏸ New queries are paused for ' + sl.mins + ' more min — answer your waiting customers fast, then they come back.' : '🐢 Reply faster! Customers are waiting. If replies stay slow, your new queries pause for 45 minutes.';
+        if (!el) { el = document.createElement('div'); el.id = 'wxSlow'; el.setAttribute('role', 'alert'); el.style.cssText = 'position:sticky;top:0;z-index:50;padding:8px 12px;font:600 13px/1.35 system-ui,sans-serif;color:#fff;text-align:center'; R.insertBefore(el, R.firstChild); }
+        el.style.background = hold ? '#c0392b' : '#c97a07'; el.textContent = msg; if (!el.dataset.k || el.dataset.k !== sl.state) { el.dataset.k = sl.state; try { toast(msg, true); } catch (e) { } try { if (window.Notification && Notification.permission === 'granted') new Notification('Slow replies', { body: msg }); } catch (e) { } } } catch (e) { } };
     // 🎯 my ticket today against the goal (one small chip, the same number as My Sales; refreshed every 5 minutes)
-    { const paintTk = async () => { try { const d = await api.get('wq.tk_me'), t = d && d.tk, el = R.querySelector('#wxTkT'), b = R.querySelector('#wxTk'); if (!el || !b) return; if (!t || !t.orders) { b.hidden = true; return; } b.hidden = false;
+    { const paintTk = async () => { try { const d = await api.get('wq.tk_me'), t = d && d.tk, el = R.querySelector('#wxTkT'), b = R.querySelector('#wxTk'); slowBanner(d && d.slow); if (!el || !b) return; if (!t || !t.orders) { b.hidden = true; return; } b.hidden = false;
         const col = t.status === 'g' ? '#7cffb2' : t.status === 'a' ? '#ffd166' : '#ff8a80', f = (x) => '₹' + Number(x || 0).toLocaleString('en-IN');
         el.innerHTML = '<i style="width:8px;height:8px;border-radius:50%;background:' + col + ';display:inline-block;flex:none"></i>' + f(t.ticket) + '<span class="wx-tmt"> / ' + f(t.goal) + '</span>'; b.title = 'Ticket today ' + f(t.ticket) + ' · goal ' + f(t.goal) + (t.status === 'g' ? ' ✓' : ' · next order ' + f(t.need_next)); } catch (e) { } };
-      paintTk(); setInterval(() => { if (!document.hidden) paintTk(); }, 300000); }
+      paintTk(); setInterval(() => { if (!document.hidden) paintTk(); }, 90000); }
 
     // 📣 Performance popups: a morning briefing (goes away by itself) and a summary about every 4–5 hours (stays until closed). Each shown once per slot; all numbers come from My Sales (my.coach).
     { const SLOTS = [['m', 0, 'Good morning'], ['a', 14.5, 'Afternoon check'], ['e', 19, 'Evening check']], f = (x) => '₹' + Number(x || 0).toLocaleString('en-IN'), ls = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } };
