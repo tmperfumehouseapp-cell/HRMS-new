@@ -33907,6 +33907,7 @@ switch ($action) {
                 'quantity' => (int)$li['quantity'],
                 'price' => $li['price'],
                 'total' => number_format((float)$li['price'] * (int)$li['quantity'], 2, '.', ''),
+                'props' => array_values(array_filter(array_map(fn($p) => is_array($p) && (string)($p['name'] ?? '') !== '' && (string)$p['name'][0] !== '_' && is_scalar($p['value'] ?? '') && trim((string)($p['value'] ?? '')) !== '' ? ['name' => (string)$p['name'], 'value' => (string)$p['value']] : null, (array)($li['properties'] ?? [])))),   // what the customer picked inside a build-your-own / combo line (hidden details start with _)
             ], $o['line_items'] ?? []),
             'subtotal' => $o['subtotal_price'] ?? '0',
             'discounts' => $o['total_discounts'] ?? '0',

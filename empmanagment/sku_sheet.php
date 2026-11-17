@@ -109,8 +109,9 @@ function sku_take(array &$grid, array &$bad, string $order, string $title, strin
 {
     if ($qty <= 0) return;
     $full = trim($title . ' ' . $variant);
-    if (preg_match('/(?<![a-z0-9])chains?(?![a-z0-9])|necklace|bracelet|pendant/i', $full)) { $bad[] = ['order' => $order, 'text' => $full, 'qty' => $qty, 'why' => 'jewellery: not in the SKU sheet', 'kind' => 'left']; return; }
-    $put = function (string $sku, int $col, int $q) use (&$grid) { if (!isset($grid[$sku])) $grid[$sku] = array_fill(0, 10, 0); $grid[$sku][$col] += $q; };
+    if (preg_match('/(?<![a-z0-9])chain+s?(?![a-z0-9])|necklace|bracelet|pendant|(?<![a-z0-9])(weave|solenne|veyra|lunelle|velora|lunara|elysian|seraphine|aurelia|herring ?bone)(?![a-z0-9])/i', $full)) { $bad[] = ['order' => $order, 'text' => $full, 'qty' => $qty, 'why' => 'jewellery: not in the SKU sheet', 'kind' => 'left']; return; }
+    if (preg_match('/^\s*(tmperfumehouse|tm perfume house)\s*x\s*\d+\s*\(\s*inside:\s*build your own/i', $full)) { $bad[] = ['order' => $order, 'text' => $full, 'qty' => $qty, 'why' => 'build-your-own pack: the perfumes are not named on the order', 'kind' => 'left']; return; }
+    $put = function (string $sku, int $col, int $q) use (&$grid, $order) { if (!isset($grid[$sku])) $grid[$sku] = array_fill(0, 10, 0); $grid[$sku][$col] += $q; $GLOBALS['__sku_ord'][$sku][$col][$order] = ($GLOBALS['__sku_ord'][$sku][$col][$order] ?? 0) + $q; };      // which orders make each number of the sheet
     if (preg_match('/^\s*complimentary\b/i', $full)) {      // "complimentary 10ml": a free sample — its perfume is not written on the order, so it is counted on its own row "Complimentary (free gift)" in its size column
         $w0 = ''; $c0 = sku_col($full, $w0); if ($c0 >= 0) { $put('FREE', $c0, $qty); return; }
         $bad[] = ['order' => $order, 'text' => $full, 'qty' => $qty, 'why' => 'free gift: size not known', 'kind' => 'size']; return;
@@ -130,7 +131,7 @@ function sku_take(array &$grid, array &$bad, string $order, string $title, strin
     if (!$cands) foreach (sku_pieces($full) as $x) $cands[] = [$x, ''];
     $hit = 0; $miss = [];
     foreach ($cands as [$c, $nm]) {
-        $s2 = sku_match($c); if ($s2 === '') { if (sku_norm($c) !== '' && !preg_match('/^\d+$/', sku_norm($c))) $miss[] = $c; continue; }
+        $s2 = sku_match($c); if ($s2 === '') { if (sku_norm($c) !== '' && !preg_match('/^(x\s*)?\d+$/', sku_norm($c))) $miss[] = $c; continue; }
         $w2 = ''; $col = sku_col($c . ' ' . $nm, $w2); if ($col < 0) $col = sku_col($full, $w2);
         if ($col < 0) { $bad[] = ['order' => $order, 'text' => $c . ' (inside: ' . $full . ')', 'qty' => $qty, 'why' => $w2 ?: 'size not known', 'kind' => 'size']; $hit++; continue; }
         $n = 1; if (preg_match('/^\s*(\d{1,2})\s*[x×]\s+/iu', $c, $m)) $n = max(1, (int)$m[1]);
@@ -166,12 +167,12 @@ function sku_shopify_day(PDO $pdo, string $day): array
 /** The whole sheet of one business day. */
 function sku_sheet(PDO $pdo, string $day): array
 {
-    $grid = []; $bad = []; $nOrd = 0; $nCancel = 0; $nLines = 0; $nMan = 0;
+    $grid = []; $bad = []; $nOrd = 0; $nCancel = 0; $nLines = 0; $nMan = 0; $GLOBALS['__sku_ord'] = []; $oid = [];
     [$orders, $errs] = sku_shopify_day($pdo, $day);
     $cancel = function_exists('order_cancels_map') ? order_cancels_map($pdo) : [];
     foreach ($orders as $o) {
         if (!empty($o['cancelled_at']) || isset($cancel[$o['_store'] . '|' . (string)$o['id']])) { $nCancel++; continue; }
-        $nOrd++;
+        $nOrd++; $oid[(string)($o['name'] ?? '')] = [(string)$o['_store'], (string)($o['id'] ?? '')];
         foreach ((array)($o['line_items'] ?? []) as $li) {
             $q = (int)($li['quantity'] ?? 0); if (isset($li['current_quantity'])) $q = min($q, max(0, (int)$li['current_quantity'])); if ($q <= 0) continue;      // a line removed from the order after it was placed
             $nLines++; sku_take($grid, $bad, (string)($o['name'] ?? ''), (string)($li['title'] ?? ''), (string)($li['variant_title'] ?? ''), (string)($li['sku'] ?? ''), $q, (array)($li['properties'] ?? []));
@@ -180,14 +181,14 @@ function sku_sheet(PDO $pdo, string $day): array
     // the manual orders (WM-xxxxx) confirmed on that business day
     try {
         $win = biz_window($pdo, $day, $day);
-        $q = $pdo->prepare("SELECT order_no, lines_json FROM wmo_order WHERE status = 'confirmed' AND COALESCE(confirmed_at, created_at) BETWEEN ? AND ?"); $q->execute([$win[0], $win[1]]);
+        $q = $pdo->prepare("SELECT id, order_no, lines_json FROM wmo_order WHERE status = 'confirmed' AND COALESCE(confirmed_at, created_at) BETWEEN ? AND ?"); $q->execute([$win[0], $win[1]]);
         foreach ($q->fetchAll() as $r) {
-            $nMan++;
+            $nMan++; $oid[(string)$r['order_no']] = [(string)(array_key_first(shopify_stores()) ?? ''), (string)(7000000000000000 + (int)$r['id'])];      // the order popup opens a manual order with its id + 7,000,000,000,000,000
             foreach ((array)(json_decode((string)$r['lines_json'], true) ?: []) as $l) { $nLines++; sku_take($grid, $bad, (string)$r['order_no'], (string)($l['title'] ?? ($l['short'] ?? '')), (string)($l['label'] ?? ''), (string)($l['sku'] ?? ''), max(1, (int)($l['qty'] ?? 1)), []); }
         }
     } catch (Throwable $e) { }
     $ix = sku_index(); $rows = [];
-    foreach ($grid as $sku => $q) $rows[] = ['sku' => (string)$sku, 'name' => $sku === 'FREE' ? 'Complimentary (free gift)' : (string)($ix['name'][$sku] ?? 'Not Found'), 'q' => $q, 'total' => array_sum($q)];
+    foreach ($grid as $sku => $q) $rows[] = ['sku' => (string)$sku, 'name' => $sku === 'FREE' ? 'Complimentary (free gift)' : (string)($ix['name'][$sku] ?? 'Not Found'), 'q' => $q, 'total' => array_sum($q), 'o' => (function ($sk) { $m = []; foreach (($GLOBALS['__sku_ord'][$sk] ?? []) as $c => $L) { $x = []; foreach ($L as $on => $n) $x[] = [(string)$on, (int)$n]; $m[$c] = $x; } return (object)$m; })($sku)];
     usort($rows, function ($a, $b) { if (($a['sku'] === 'FREE') !== ($b['sku'] === 'FREE')) return $a['sku'] === 'FREE' ? 1 : -1; $x = ctype_digit($a['sku']) ? (int)$a['sku'] : PHP_INT_MAX; $y = ctype_digit($b['sku']) ? (int)$b['sku'] : PHP_INT_MAX; return $x <=> $y ?: strcmp($a['sku'], $b['sku']); });
     $tot = array_fill(0, 10, 0); foreach ($rows as $r) foreach ($r['q'] as $i => $v) $tot[$i] += $v;
     // the list on top of the page: the same product from many orders is ONE line with its pieces and its orders
@@ -195,7 +196,7 @@ function sku_sheet(PDO $pdo, string $day): array
     foreach ($bad as $b) { $k = $b['kind'] . '|' . mb_strtolower($b['text']) . '|' . $b['why']; if (!isset($grp[$k])) $grp[$k] = ['text' => $b['text'], 'why' => $b['why'], 'kind' => $b['kind'], 'qty' => 0, 'orders' => []]; $grp[$k]['qty'] += $b['qty']; if (count($grp[$k]['orders']) < 12 && !in_array($b['order'], $grp[$k]['orders'], true)) $grp[$k]['orders'][] = $b['order']; }
     $un = array_values($grp); usort($un, fn($a, $b) => ($a['kind'] === 'left') <=> ($b['kind'] === 'left') ?: $b['qty'] <=> $a['qty']);
     return ['day' => $day, 'cols' => sku_cols(), 'rows' => $rows, 'totals' => $tot, 'pieces' => array_sum($tot), 'orders' => $nOrd, 'manual' => $nMan, 'cancelled' => $nCancel, 'lines' => $nLines,
-        'unmatched' => array_values(array_filter($un, fn($x) => $x['kind'] !== 'left')), 'left_out' => array_values(array_filter($un, fn($x) => $x['kind'] === 'left')),
+        'oid' => (object)$oid, 'unmatched' => array_values(array_filter($un, fn($x) => $x['kind'] !== 'left')), 'left_out' => array_values(array_filter($un, fn($x) => $x['kind'] === 'left')),
         'unmatched_pieces' => array_sum(array_map(fn($x) => $x['kind'] !== 'left' ? $x['qty'] : 0, $un)), 'errors' => $errs, 'sku_count' => count(sku_list())];
 }
 

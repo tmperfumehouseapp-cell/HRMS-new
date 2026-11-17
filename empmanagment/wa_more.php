@@ -365,7 +365,7 @@ function wa_optin_again_fix(PDO $pdo): int
 function wa_source_hook(PDO $pdo, string $key, ?string $prevIn, string $text, string $now): void
 {
     if (function_exists('wa_seg_touch')) { try { wa_seg_touch($pdo, $key, $prevIn, $now); } catch (Throwable $e) { } }
-    if (function_exists('wa_util_offer_reply')) wa_util_offer_reply($pdo, $key);
+    if (function_exists('wa_util_offer_reply')) wa_util_offer_reply($pdo, $key, $text);
     if (function_exists('wa_bday_hook')) { try { if (wa_bday_hook($pdo, $key, $text)) return; } catch (Throwable $e) { error_log('wa_bday: ' . $e->getMessage()); } }   // 🎂 the customer answered our birthday question
     if (function_exists('wa_review_hook')) { try { if (wa_review_hook($pdo, $key, $text)) return; } catch (Throwable $e) { error_log('wa_review: ' . $e->getMessage()); } }   // ⭐ the 1-5 answer to our rating request
     if (function_exists('wa_cxself_hook')) { try { wa_cxself_hook($pdo, $key, $text); } catch (Throwable $e) { error_log('wa_cxself: ' . $e->getMessage()); } }   // 🎫 "complaint" → issue list → description → ticket   // 🎁 a reply to a utility follow-up → the campaign's offer goes free in the open chat
@@ -799,7 +799,7 @@ if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.
             $facts = 'Orders so far: ' . ($o ? $o['n'] . ' (last on ' . substr($o['last'], 0, 10) . ', total Rs ' . $o['total'] . ')' : 'none') . '. ' . ($c['source'] === 'query' ? 'Came from a Meta ad: ' . $c['ref_text'] . '.' : '');
             $qk = ''; foreach ($pdo->query("SELECT title, body FROM wa_quick ORDER BY sort_order, id LIMIT 20")->fetchAll() as $q) $qk .= '- ' . $q['title'] . ': ' . mb_substr(str_replace("\n", ' ', (string)$q['body']), 0, 300) . "\n";
             $avoid = trim(mb_substr((string)($in['avoid'] ?? ''), 0, 500));
-            $sys = "You help a salesperson at a perfume shop (perfumes, attars, shower gel, wax; Surat, India) reply on WhatsApp. Write ONE short reply the salesperson can send now, in the customer's own style — Hinglish (Hindi in English letters) by default, English if the customer writes English, Gujarati if they write Gujarati. Warm, 1–3 short lines, at most one emoji, ask one clear next question. NEVER invent a price, discount, stock, delivery date or link: use only what is in the chat or in the shop's saved quick replies below; if a price is needed and not known, ask which product and size. why = one short plain-English sentence on why this reply. call_now = true only when a phone call would clearly work better (angry customer, big order, long confusing back-and-forth, customer asks to call).";
+            $sys = "You help a salesperson at a perfume shop (perfumes, attars, shower gel, wax; Surat, India) reply on WhatsApp. Write ONE short reply the salesperson can send now, in the customer's own style — Hinglish (Hindi in English letters) by default, English if the customer writes English, Gujarati if they write Gujarati. Warm, 1–3 short lines, at most one emoji, ask one clear next question. NEVER invent a price, discount, stock, delivery date or link: use only what is in the chat or in the shop's saved quick replies below; if a price is needed and not known, ask which product and size. why = one short plain-English sentence on why this reply. call_now = true only when a phone call would clearly work better (angry customer, big order, long confusing back-and-forth, customer asks to call)."; if (function_exists('tk_hint')) $sys .= tk_hint($pdo);   // 🎯 lift the order towards the ticket goal
             $ctx = "CUSTOMER FACTS: " . $facts . "\n\nTHE SHOP'S SAVED QUICK REPLIES (facts you may use):\n" . ($qk !== '' ? $qk : "(none)\n") . "\nTHE CHAT:\n" . $txt . ($avoid !== '' ? "\nDO NOT repeat this earlier suggestion, write a different one:\n" . $avoid . "\n" : '');
             $sch = ['type' => 'OBJECT', 'properties' => ['suggestion' => ['type' => 'STRING'], 'why' => ['type' => 'STRING'], 'call_now' => ['type' => 'BOOLEAN']], 'required' => ['suggestion', 'why', 'call_now']];
             ignore_user_abort(true);
@@ -944,6 +944,13 @@ if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.
                         $tagQ->execute([$k, $lt, $now]); if ($idxQ) $idxQ->execute([$k, $lt]); $leftN++; } catch (Throwable $e) { } }
             }
             try { setting_set($pdo, 'wa_tag_cache', ''); } catch (Throwable $e) { }
+            // 📊 the customer numbers (Customers at a glance, the funnel, the filters) must see the new file within minutes, not hours: every imported number is queued for the funnel recount (cfun_fast does it within a minute),
+            // the saved summary is dropped, and the funnel's totals are made due again in about 5 minutes
+            try {
+                if (function_exists('cfun_dirty')) { foreach (array_keys($seen) as $k9) cfun_dirty($pdo, (string)$k9); if (!empty($ls)) foreach (array_keys($ls) as $k9) cfun_dirty($pdo, (string)$k9); }
+                if (function_exists('wa_cpc_table') && wa_cpc_table($pdo)) $pdo->prepare("DELETE FROM wa_cp_cache WHERE k IN ('cust_sum2')")->execute();
+                setting_set($pdo, 'wa_cfun_at', date('Y-m-d H:i:s', time() - 3300 + 300));
+            } catch (Throwable $e) { }
             // "Try these people again": people Meta held (131049 / 131048 = too many marketing messages lately, 130472 = in a Meta experiment) are marked "do not message now" for a few days,
             // so every campaign skips them. When the owner adds them again on purpose, that mark is removed so a campaign sends to them. People who are not on WhatsApp (131026)
             // or stopped marketing messages (131050) stay left out — they cannot be reached / asked not to be messaged.

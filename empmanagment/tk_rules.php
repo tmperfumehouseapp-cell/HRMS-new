@@ -34,4 +34,11 @@ function tk_hold_share_ok(int $achievers, int $people, float $share): bool
     return $people > 0 && $achievers * 100 >= $share * $people - 1e-9;
 }
 
+
+/** A customer whose average order so far is at or above the goal is a big-order customer: his query goes to a seller who reaches the goal. */
+function tk_is_vip(int $orders, float $spent, float $goal): bool { return $orders >= 1 && $goal > 0 && $spent / $orders >= $goal; }
+
+/** Replies $factor times slower than the team's typical first reply. */
+function tk_slow(?float $own, ?float $team, float $factor = 2.0): bool { return $own !== null && $team !== null && $own > 0 && $team > 0 && $own >= $team * $factor; }
+
 }
