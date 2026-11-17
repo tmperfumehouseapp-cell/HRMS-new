@@ -19,6 +19,11 @@ if (!function_exists('wa_util_make')) {
 /** Words that make Meta call a message marketing — a utility version must not contain them. */
 function wa_util_bad_words(): array { return ['offer', 'discount', 'sale', '% off', 'off on', 'free', 'deal', 'limited time', 'hurry', 'last chance', 'buy now', 'shop now', 'coupon', 'promo', 'diwali offer', 'festive offer', 'save ', 'cashback', 'combo offer', 'best price', 'lowest price']; }
 
+/** Meta's answer when the template could not even be CREATED (a name / language that already exists, an API error): not a review of the wording, so it must not teach the writer anything. */
+function wa_util_is_creation_error(string $why): bool
+{
+    return $why !== '' && (stripos($why, 'Unsupported post request') === 0 || stripos($why, 'already has') !== false || stripos($why, 'already exists') !== false || mb_strpos($why, 'પહેલેથી') !== false || stripos($why, 'content already') !== false);
+}
 /** 🧠 LEARNING FROM META (owner, 17 Nov 2026): every utility message written so far is looked at again — what Meta APPROVED, what it REJECTED or moved to marketing, and the reason it gave.
  *  The writer (Claude) is shown real examples of both and the words that appear in rejected messages but never in approved ones; when more than half of the last decisions are rejections it is told to write much plainer
  *  (STRICT). The learned words are also refused locally before anything goes to Meta. Remembered for 10 minutes. Returns ['appr','rej','rate','strict','bad' => [words],'good' => [..],'badx' => [[body, reason]]]. */
@@ -31,7 +36,7 @@ function wa_util_learn(PDO $pdo, bool $force = false): array
         $q = $pdo->prepare("SELECT t.id, t.body, t.relabelled_at, GROUP_CONCAT(CONCAT(w.status, ':', LEFT(w.reason, 100)) SEPARATOR '|') AS st FROM wa_templates t JOIN wa_tpl_waba w ON w.tpl_id = t.id
             WHERE t.category = 'UTILITY' AND t.name LIKE 'util\\_%' AND t.created_at >= ? GROUP BY t.id, t.body, t.relabelled_at ORDER BY t.id DESC LIMIT 300"); $q->execute([date('Y-m-d H:i:s', time() - 30 * 86400)]);
         foreach ($q->fetchAll() as $r) {
-            $rows = array_filter(explode('|', (string)$r['st'])); $stt = []; $why = ''; foreach ($rows as $x) { $p2 = explode(':', $x, 2); $stt[] = strtoupper($p2[0]); if ($why === '' && in_array(strtoupper($p2[0]), ['REJECTED', 'PAUSED', 'DISABLED'], true)) $why = trim((string)($p2[1] ?? '')); if (strtoupper($p2[0]) === 'REJECTED' && stripos((string)($p2[1] ?? ''), 'Unsupported post request') === 0) { array_pop($stt); $stt[] = 'ERROR'; } }
+            $rows = array_filter(explode('|', (string)$r['st'])); $stt = []; $why = ''; foreach ($rows as $x) { $p2 = explode(':', $x, 2); $stt[] = strtoupper($p2[0]); if ($why === '' && in_array(strtoupper($p2[0]), ['REJECTED', 'PAUSED', 'DISABLED'], true)) $why = trim((string)($p2[1] ?? '')); if (strtoupper($p2[0]) === 'REJECTED' && wa_util_is_creation_error((string)($p2[1] ?? ''))) { array_pop($stt); $stt[] = 'ERROR'; } }
             $body = (string)$r['body'];
             if (!empty($r['relabelled_at'])) { $Rj[] = [$body, 'Meta moved it to marketing']; }
             elseif (in_array('APPROVED', $stt, true)) { $A[] = $body; }
