@@ -131,7 +131,7 @@ function sku_take(array &$grid, array &$bad, string $order, string $title, strin
     if (!$cands) foreach (sku_pieces($full) as $x) $cands[] = [$x, ''];
     $hit = 0; $miss = [];
     foreach ($cands as [$c, $nm]) {
-        $s2 = sku_match($c); if ($s2 === '') { if (sku_norm($c) !== '' && !preg_match('/^\d+$/', sku_norm($c))) $miss[] = $c; continue; }
+        $s2 = sku_match($c); if ($s2 === '') { if (sku_norm($c) !== '' && !preg_match('/^(x\s*)?\d+$/', sku_norm($c))) $miss[] = $c; continue; }
         $w2 = ''; $col = sku_col($c . ' ' . $nm, $w2); if ($col < 0) $col = sku_col($full, $w2);
         if ($col < 0) { $bad[] = ['order' => $order, 'text' => $c . ' (inside: ' . $full . ')', 'qty' => $qty, 'why' => $w2 ?: 'size not known', 'kind' => 'size']; $hit++; continue; }
         $n = 1; if (preg_match('/^\s*(\d{1,2})\s*[x×]\s+/iu', $c, $m)) $n = max(1, (int)$m[1]);
