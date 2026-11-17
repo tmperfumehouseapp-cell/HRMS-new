@@ -1469,10 +1469,13 @@ function wq_urgent_push(PDO $pdo): int
     try {
         $rk = wq_rank_today($pdo); if (empty($rk['order'])) return 0; [$wsz, $wmin] = wq_wave_cfg($pdo);
         $__t0 = microtime(true);   // ⏱ each phone alert is a separate call to the phone's push service; with many chats waiting this part took 75 s and every other engine job was skipped. At most 12 s per round: the chats not reached yet are alerted on the next round (a minute later).
-        foreach (wq_needs($pdo, 0, false) as $x) {
+        $__needs = wq_needs($pdo, 0, false);   // read once for the whole round (the same list is used again below)
+        $__urg = [];   // what was already alerted: ONE query for all waiting chats instead of one per chat
+        if ($__needs) { try { $__ks = array_map(fn($x) => 'urg:' . (string)$x['phone'], $__needs); $__q = $pdo->prepare("SELECT k, v FROM wq_meta WHERE k IN (" . implode(',', array_fill(0, count($__ks), '?')) . ")"); $__q->execute($__ks); foreach ($__q->fetchAll() as $__r) $__urg[(string)$__r['k']] = (string)$__r['v']; } catch (Throwable $e) { $__urg = null; } }
+        foreach ($__needs as $x) {
             if (microtime(true) - $__t0 > 12) break;
             $isRed = $x['level'] === 'red'; $ph = (string)$x['phone'];   // red AND orange ring phones (the bot keeps the chat going meanwhile); somebody takes it from the list
-            $stage = $x['sec'] >= $wmin * 60 ? 2 : 1; $stamp = $x['key'] . '|' . $stage; if (wq_meta_get($pdo, 'urg:' . $ph, '') === $stamp) continue; wq_meta_put($pdo, 'urg:' . $ph, $stamp);
+            $stage = $x['sec'] >= $wmin * 60 ? 2 : 1; $stamp = $x['key'] . '|' . $stage; if (($__urg !== null ? ($__urg['urg:' . $ph] ?? '') : wq_meta_get($pdo, 'urg:' . $ph, '')) === $stamp) continue; wq_meta_put($pdo, 'urg:' . $ph, $stamp);
             if (!isset($bkm)) $bkm = wq_needs_backlog($pdo);      // once per round, not once per waiting chat
             $tg = []; foreach ($rk['order'] as $i => $e) { $top = ($i + 1) <= $wsz; if ((int)$e !== (int)$x['emp'] && empty($bkm[(int)$e]) && ($stage === 1 ? $top : !$top)) $tg[] = (int)$e; } if (!$tg) continue;   // first the best 15; after 2 minutes everybody else at work (the holder was already pushed when the chat turned hot)
             $cu = trim((string)$x['name']) !== '' ? (string)$x['name'] : '+91 ' . $ph;
@@ -1480,7 +1483,7 @@ function wq_urgent_push(PDO $pdo): int
             if ($stage === 1) wa_event($pdo, $ph, $isRed ? '🔴 Ready to pay — shown to the best of today first, then to everybody' : '🟠 Interested — shown to the best of today first, then to everybody');
         }
         // ⏳ people who are held back by pending answers get ONE short push (at most every 30 minutes) while red / orange chats are waiting for somebody
-        $pool = wq_needs($pdo, 0, false); if ($pool) { $bkm = wq_needs_backlog($pdo); $bcx = wq_needs_backlog_cx($pdo);
+        $pool = $__needs; if ($pool) { $bkm = wq_needs_backlog($pdo); $bcx = wq_needs_backlog_cx($pdo);
             foreach ($rk['order'] as $e) { if (microtime(true) - $__t0 > 15) break; $e = (int)$e; $nb = (int)($bkm[$e] ?? 0); if ($nb <= 0) continue; $any = false; foreach ($pool as $x) if ((int)$x['emp'] !== $e) { $any = true; break; } if (!$any) continue;
                 if ((int)wq_meta_get($pdo, 'bkn:' . $e, '0') > time() - 1800) continue; wq_meta_put($pdo, 'bkn:' . $e, (string)time()); $cx = (int)($bcx[$e] ?? 0);
                 ct_push($pdo, [$e], '⏳ Replies pending', 'Your ' . ($nb - $cx) . ' repl' . (($nb - $cx) === 1 ? 'y is' : 'ies are') . ($cx ? ' and ' . $cx . ' complaint repl' . ($cx === 1 ? 'y is' : 'ies are') : '') . ' pending — that is why you are not getting the red and orange chats. Please complete the replies to get them.', '/my_chats.html', 'wa-bk-' . $e); $n++; } }

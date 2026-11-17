@@ -259,7 +259,7 @@
     const EMB = new URLSearchParams(location.search).get('embed') === '1'; if (EMB) { R.classList.add('emb'); document.documentElement.classList.add('wx-emb'); }
     const CXID = EMB ? (Number(new URLSearchParams(location.search).get('cx')) || 0) : 0; if (CXID) R.classList.add('cxm');   // 🎫 inside a complaint ticket: voice + attach + ✨ Replies (Claude's suggestion + the complaint pre-made messages); no sales tools   // 🎫 ONE chat inside another page (the complaint ticket): the same chat box — voice notes, photos, videos, "/" quick replies, pre-made messages — no list
     const S = { tab: 'chats', filter: '', chats: [], counts: {}, stats: {}, cfg: { unans_min: 3, target: 5, sound: true }, me: {}, results: [], mentions: [], reminders: [], fetched: 0, loaded: false,
-      hist: { rows: [], page: 0, more: false, q: '', f: '', total: 0, loading: false }, board: null, cur: null, sound: (localStorage.getItem('wa_sound') || '1') === '1', seen: null, quick: null, tpls: null, gallery: null, push: null };
+      hist: { rows: [], page: 0, more: false, q: '', f: '', total: 0, loading: false, sel: new Set(), selOn: false }, board: null, cur: null, sound: (localStorage.getItem('wa_sound') || '1') === '1', seen: null, quick: null, tpls: null, gallery: null, push: null };
     const $ = (q, r) => (r || R).querySelector(q);
     let audioCtx = null;
 
@@ -448,7 +448,7 @@
     // 💤 a screen nobody has touched for 2 minutes asks the server every 10 s instead of every 5 s (half the requests of every idle screen); the first touch / key / mouse move brings it up to date at once
     let lastAct = Date.now(); const idleNow = () => Date.now() - lastAct > 120000;
     ['pointerdown', 'keydown', 'touchstart', 'mousemove', 'wheel'].forEach((ev) => document.addEventListener(ev, () => { const was = idleNow(); lastAct = Date.now(); if (was && !document.hidden) { if (S.cur) once('poll', pollChat); once('list', smartList); } }, { passive: true, capture: true }));
-    function loop() { clearInterval(POLL); POLL = setInterval(() => { if (document.hidden) return; beat++; if (idleNow() && beat % 2) return; if (S.cur) once('poll', pollChat); if ((!S.cur && S.tab === 'chats') || beat % 2 === 0) once('list', smartList); if (!S.cur && S.tab === 'chats' && S.filter === 'team' && beat % 2 === 0) once('team', loadTeam); }, 5000); }   // ⚡ every 5 s (was 4 s): 20% fewer requests from every salesperson
+    function loop() { clearInterval(POLL); POLL = setInterval(() => { if (document.hidden) return; beat++; const __idle = idleNow(); if (__idle && beat % 3) return; const __ev = __idle || beat % 2 === 0; if (S.cur) once('poll', pollChat); if ((!S.cur && S.tab === 'chats') || __ev) once('list', smartList); if (!S.cur && S.tab === 'chats' && S.filter === 'team' && __ev) once('team', loadTeam); }, 5000); }   // ⚡ every 5 s (was 4 s): 20% fewer requests from every salesperson
     document.addEventListener('visibilitychange', () => { if (!document.hidden) { if (S.cur) pollChat(); loadList(true); } });
 
     function wide() { return !!(window.matchMedia && matchMedia('(min-width:1000px)').matches); }   // 🖥 PC: list + chat side by side
@@ -722,7 +722,7 @@
       $('#wxSeg').innerHTML = [['', 'All'], ['noreply', '😶 Never answered'], ['noresult', 'No result noted']].map(([k, l]) => `<button data-f="${k}" class="${H.f === k ? 'on' : ''}">${l}</button>`).join('');
       $('#wxSeg').onclick = (e) => { const b = e.target.closest('button'); if (b) { H.f = b.dataset.f; loadHist(true); drawHistory(false); } };
       const M = $('#wxM'); if (fresh && !H.rows.length && !H.loading) loadHist(true);
-      const rows = H.rows.map((c) => `<div class="wx-row" data-p="${c.phone}"><div class="wx-av" style="background:hsl(${hue(c.phone)} 40% 55%)">${esc(initials(c.name, c.phone))}</div><div class="wx-mid"><div class="wx-nm">${esc(c.name || pretty(c.phone))}</div><div class="wx-sub">${esc(c.preview)}</div>
+      const rows = H.rows.map((c) => `<div class="wx-row" data-p="${c.phone}">${H.selOn ? `<input type="checkbox" class="wx-hk" ${H.sel.has(c.phone) ? 'checked' : ''} style="width:22px;height:22px;flex:none;margin-right:8px;pointer-events:none">` : ''}<div class="wx-av" style="background:hsl(${hue(c.phone)} 40% 55%)">${esc(initials(c.name, c.phone))}</div><div class="wx-mid"><div class="wx-nm">${esc(c.name || pretty(c.phone))}</div><div class="wx-sub">${esc(c.preview)}</div>
         <div style="margin-top:2px">${c.result ? `<span class="wx-chip g">${c.result_i} ${esc(c.result_t)}</span>` : '<span class="wx-chip m">no result</span>'}${c.unanswered ? '<span class="wx-chip r">never answered</span>' : ''}${c.orders_n ? `<span class="wx-chip p">${c.orders_n} orders</span>` : ''}</div></div><div class="wx-tm">${ago(c.ago_days)}</div></div>`).join('');
       const team = !!(S.me && S.me.team); if (team && !S.tmP) { S.tmP = 1; api.get('wa.people').then((d) => { S.tm = S.tm || { emp: 0, q: '', rows: null, people: null }; S.tm.people = d.people || []; if (S.tab === 'history') drawHistory(false); }).catch(() => { }); }
       const hOpts = team ? '<button type="button" id="wxHe" class="wx-ppb" aria-label="Salesperson" style="margin:0 0 8px;width:100%;min-height:42px;border-radius:12px;font-size:15px;flex:none"><span>' + esc(H.emp === -1 ? 'Nobody (not given)' : ppName((S.tm && S.tm.people) || [], H.emp)) + '</span><i>▾ search</i></button>' : '';
@@ -730,7 +730,49 @@
         (rows ? `<div class="wx-card wx-lst">${rows}</div>` : (H.loading ? '<div class="wx-sk"></div><div class="wx-sk"></div>' : '<div class="wx-empty"><b>🕘</b>Nothing here yet.<br>A chat moves here 24 hours after the customer\'s last message, and comes back when they write again.</div>')) + (H.more ? '<div style="text-align:center;padding:4px 0 12px"><button class="wx-btn gh" id="wxHm">Load more</button></div>' : '');
       const he = $('#wxHe'); if (he) he.onclick = function () { ppOpen(this, (S.tm && S.tm.people) || [], H.emp, [{ emp_id: -1, name: 'Nobody (not given)' }], (id) => { H.emp = id; loadHist(true); drawHistory(false); }); };   // 👤 one person's history
       let t; $('#wxHq').oninput = function () { clearTimeout(t); const v = this.value; t = setTimeout(() => { H.q = v.trim(); loadHist(true); }, 350); }; const hm = $('#wxHm'); if (hm) hm.onclick = () => loadHist(false);
-      M.onclick = (e) => { const p = e.target.closest('.wx-row[data-p]'); if (p) openChat(p.dataset.p); };
+      // ☑ bulk: pick many History chats and send one pre-made message (each customer gets their own first name)
+      const bar = document.createElement('div'); bar.style.cssText = 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:0 14px 8px';
+      bar.innerHTML = H.selOn ? `<b style="font-size:13px">${H.sel.size} selected</b><button type="button" class="wx-btn gh" id="wxHsA" style="min-height:38px">${H.total && H.sel.size >= H.total ? 'Unselect all' : 'Select all ' + H.total.toLocaleString('en-IN')}</button><button type="button" class="wx-btn" id="wxHsS" style="min-height:38px" ${H.sel.size ? '' : 'disabled'}>📨 Send template</button>${team ? `<button type="button" class="wx-btn" id="wxHsC" style="min-height:38px;background:#2563eb" title="Send to ALL History chats of this view as a background campaign">📣 Send as campaign</button>` : ''}<button type="button" class="wx-btn gh" id="wxHsX" style="min-height:38px">Cancel</button>` : '<button type="button" class="wx-btn gh" id="wxHsT" style="min-height:38px">☑ Select chats</button>';
+      M.insertBefore(bar, M.firstChild.nextSibling);
+      const hb = (id, fn) => { const b = bar.querySelector('#' + id); if (b) b.onclick = fn; };
+      hb('wxHsT', () => { H.selOn = true; H.sel.clear(); drawHistory(false); }); hb('wxHsX', () => { H.selOn = false; H.sel.clear(); drawHistory(false); });
+      hb('wxHsA', async function () {   // ☑ ALL chats of this view (every page), not only the loaded ones
+        if (H.sel.size >= H.total && H.total > 0) { H.sel.clear(); H.names = {}; drawHistory(false); return; }
+        this.disabled = true; this.textContent = 'Selecting…';
+        try { const p = { ids: 1, q: H.q }; if (H.f === 'noreply') p.noreply = 1; if (H.f === 'noresult') p.noresult = 1; if (H.emp) p.emp = H.emp; const d = await api.get('wa.g_history', p); H.names = H.names || {}; (d.ids || []).forEach((x) => { H.sel.add(x.phone); H.names[x.phone] = x.name || ''; }); H.total = d.total || H.total; toast('Selected all ' + H.sel.size.toLocaleString('en-IN') + ' chats'); }
+        catch (e) { toast(e.message, true); }
+        drawHistory(false);
+      });
+      hb('wxHsS', () => histBulk());
+      hb('wxHsC', () => { if (H.q && !confirm('The search words are not used in a campaign — it goes to ALL History chats of this person / filter. Continue?')) return; const h = {}; if (H.emp) h.emp = H.emp; if (H.f === 'noreply') h.h_noreply = 1; if (H.f === 'noresult') h.h_noresult = 1; const d = new Date(); try { sessionStorage.setItem('wa_camp_go', JSON.stringify({ mode: 'normal', seg: { hist: h, name: 'History · ' + d.getDate() + ' ' + d.toLocaleString('en-GB', { month: 'short' }), n: H.total } })); } catch (e) { } location.href = 'whatsapp.html#campaigns'; });
+      M.onclick = (e) => { const p = e.target.closest('.wx-row[data-p]'); if (!p) return; if (H.selOn) { const ph = p.dataset.p; if (H.sel.has(ph)) H.sel.delete(ph); else H.sel.add(ph); drawHistory(false); } else openChat(p.dataset.p); };
+    }
+    async function histBulk() {
+      const H = S.hist, phones = [...H.sel]; if (!phones.length) return; const sh = sheet('Send to ' + phones.length + ' chats'); sh.body.innerHTML = '<div class="wx-sk"></div>';
+      try { if (!S.tpls) S.tpls = (await api.get('wa.tpl_list')).templates || []; } catch (e) { sh.body.innerHTML = `<div class="wx-empty">${esc(e.message)}</div>`; return; }
+      const ok = S.tpls.filter((t) => (t.status === 'approved' || t.status === 'partial') && !t.media_header && !t.auto && (t.vars || 0) <= 1).sort((a, b) => (a.category === 'UTILITY' ? 0 : 1) - (b.category === 'UTILITY' ? 0 : 1) || (b.star ? 1 : 0) - (a.star ? 1 : 0));
+      const fill = (t, v) => String(t || '').replace(/\{\{\s*(\d+)\s*\}\}/g, (m, n) => v[+n - 1] || m);
+      const list = () => { sh.title('Send to ' + phones.length + ' chats'); sh.body.innerHTML = '<div class="wx-sub" style="margin-bottom:8px">Choose an approved pre-made message. Each customer gets their own first name. Only messages with just a name blank are listed.</div>' + (ok.length ? ok.map((t, i) => `<div class="wx-row" data-i="${i}"><div class="wx-mid"><div class="wx-nm">${esc(t.name.replace(/_/g, ' '))} <span class="wx-chip ${t.category === 'UTILITY' ? 'g' : 'o'}">${t.category === 'UTILITY' ? 'UTILITY' : 'MARKETING'}</span></div><div class="wx-sub" style="white-space:normal">${esc(t.body)}</div></div></div>`).join('') : '<div class="wx-empty">No approved message found.</div>'); sh.body.onclick = (e) => { const r = e.target.closest('[data-i]'); if (r) pickOne(ok[+r.dataset.i]); }; };
+      const pickOne = (t) => {
+        sh.title(t.name.replace(/_/g, ' ')); sh.body.onclick = null;
+        sh.body.innerHTML = `<div class="wx-bubp" id="wxBkP"></div><label style="display:flex;gap:8px;align-items:center;margin:10px 0;font-size:13px;font-weight:700"><input type="checkbox" id="wxBkSafe" checked style="width:18px;height:18px"> Leave out customers who already ordered</label><div id="wxBkE"></div><div style="display:flex;gap:8px;margin-top:10px"><button class="wx-btn gh" id="wxBkB">‹ Back</button><button class="wx-btn" id="wxBkG" style="flex:1">🚀 Send to ${phones.length}</button></div>`;
+        $('#wxBkP').textContent = (t.header_text ? fill(t.header_text, ['Name']) + '\n' : '') + fill(t.body, ['Name']) + (t.footer ? '\n' + t.footer : ''); $('#wxBkB').onclick = list;
+        $('#wxBkG').onclick = async function () {
+          this.disabled = true; this.textContent = 'Checking…'; let go = phones;
+          try { const ord = new Set(), blk = {}; for (let i = 0; i < phones.length; i += 2500) { const r = await api.post('wa.bulk_ordered', { phones: phones.slice(i, i + 2500) }); (r.ordered || []).forEach((x) => ord.add(x)); Object.assign(blk, r.blocked || {}); } go = phones.filter((ph) => blk[ph] !== 'optout' && blk[ph] !== 'complaint'); if ($('#wxBkSafe').checked) go = go.filter((ph) => !ord.has(ph)); }
+          catch (e) { $('#wxBkE').innerHTML = `<div class="wx-banner y">${esc(e.message)}</div>`; this.disabled = false; this.textContent = '🚀 Send to ' + phones.length; return; }
+          if (!go.length) { $('#wxBkE').innerHTML = '<div class="wx-banner y">Nobody is left to send to (all ordered, opted out or have a complaint).</div>'; this.disabled = false; this.textContent = '🚀 Send to ' + phones.length; return; }
+          if (!confirm('Send "' + t.name.replace(/_/g, ' ') + '" to ' + go.length + ' customers now?')) { this.disabled = false; this.textContent = '🚀 Send to ' + phones.length; return; }
+          const names = Object.assign({}, H.names || {}); H.rows.forEach((c) => { names[c.phone] = c.name || ''; }); let done = 0, good = 0, bad = 0; const fails = [];
+          sh.body.innerHTML = '<div style="text-align:center;padding:12px"><b id="wxBkN">Sending 0 of ' + go.length.toLocaleString('en-IN') + '…</b><div style="height:8px;background:#e5e7eb;border-radius:6px;margin:10px 0;overflow:hidden"><i id="wxBkB2" style="display:block;height:100%;width:0;background:#16a34a"></i></div><div class="wx-sub">Keep this page open until it finishes (5 messages go at a time).</div><button class="wx-btn gh" id="wxBkStop" style="margin-top:10px">⏹ Stop</button></div>';
+          let stop = false, idx = 0; $('#wxBkStop').onclick = function () { stop = true; this.disabled = true; this.textContent = 'Stopping…'; }; const leave = (e) => { e.preventDefault(); e.returnValue = ''; }; window.addEventListener('beforeunload', leave);
+          const work = async () => { while (!stop && idx < go.length) { const ph = go[idx++], nm = first(names[ph]) || 'ji'; try { await api.post('wa.tpl_send', { phone: ph, id: t.id, vars: (t.vars || 0) ? [nm] : [], header_var: t.header_var ? nm : '' }); good++; } catch (e) { bad++; if (fails.length < 5) fails.push(e.message); } done++; if (done % 5 === 0 || done === go.length) { const el = $('#wxBkN'), pb = $('#wxBkB2'); if (el) el.textContent = 'Sending ' + done.toLocaleString('en-IN') + ' of ' + go.length.toLocaleString('en-IN') + '…'; if (pb) pb.style.width = Math.round(100 * done / go.length) + '%'; } } };
+          await Promise.all([work(), work(), work(), work(), work()]); window.removeEventListener('beforeunload', leave);
+          sh.body.innerHTML = `<div style="padding:12px;text-align:center"><div style="font-size:30px">${bad ? '⚠️' : '✅'}</div><b>${good.toLocaleString('en-IN')} sent${bad ? ' · ' + bad + ' failed' : ''}${stop ? ' · stopped (' + (go.length - done).toLocaleString('en-IN') + ' not sent)' : ''}</b>${fails.length ? '<div class="wx-sub" style="margin-top:6px">' + fails.map(esc).join('<br>') + '</div>' : ''}<div style="margin-top:12px"><button class="wx-btn" id="wxBkD">Done</button></div></div>`;
+          $('#wxBkD').onclick = () => { sh.close(); H.selOn = false; H.sel.clear(); loadHist(true); };
+        };
+      };
+      list();
     }
 
     // ------------------------------------------------------------------ me

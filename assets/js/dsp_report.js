@@ -59,6 +59,7 @@ const DSP = (() => {
       '.dr-t tr.dr-band .x{float:right;font-weight:700;opacity:.85;} .dr-t tr.dr-band .x button{margin-left:8px;}',
       '.dr-more td{text-align:center;color:#6b7280;font-weight:700;background:#fafbfc;max-width:none !important;} .dr-more button{border:1px solid #cfd5dd;background:#fff;border-radius:99px;font:inherit;font-size:11px;font-weight:800;padding:0 10px;height:19px;cursor:pointer;margin-left:6px;} .dr-more button:hover{background:#111827;color:#fff;}',
       '.dr-add{border:1px solid #b42318;color:#b42318;background:#fff;border-radius:99px;padding:0 10px;height:19px;font:inherit;font-size:11px;font-weight:800;cursor:pointer;} .dr-add:hover{background:#b42318;color:#fff;}',
+      '.dr-pen{border:1px solid #cfd5dd;background:#fff;color:#374151;border-radius:99px;width:21px;height:19px;padding:0;font:inherit;font-size:11px;line-height:1;cursor:pointer;margin-left:3px;vertical-align:middle;} .dr-pen:hover{background:#111827;color:#fff;border-color:#111827;}',
       '.dr-go{border:0;background:#12a150;color:#fff;border-radius:99px;padding:0 11px;height:21px;font:inherit;font-size:11px;font-weight:800;cursor:pointer;} .dr-go:hover{background:#0d8a43;} .dr-go.dk{background:#111827;} .dr-go[disabled]{opacity:.55;cursor:default;} .dr-no{border:1px solid #cfd5dd;background:#fff;color:#14161a;border-radius:99px;padding:0 9px;height:20px;font:inherit;font-size:11px;font-weight:800;cursor:pointer;}',
       '.dr-sel{height:22px;padding:0 4px;font:inherit;font-size:11.5px;border:1px solid #cfd5dd;border-radius:7px;background:#fff;max-width:130px;} .dr-tx{height:22px;padding:0 7px;font:inherit;font-size:11.5px;border:1px solid #cfd5dd;border-radius:7px;background:#fff;}',
       '.dr-f{display:flex;flex-direction:column;gap:5px;padding:3px 0;} .dr-f .dr-sel{max-width:82px;} .dr-f .l{gap:4px;} .dr-f .l{display:inline-flex;gap:5px;align-items:center;} .dr-f .tn{border:1.5px solid #111827;width:78px;font-family:ui-monospace,Menlo,Consolas,monospace;} .dr-f .lk2{width:160px;font-size:11px;color:#1d4ed8;font-family:ui-monospace,Menlo,Consolas,monospace;}',
@@ -107,6 +108,77 @@ const DSP = (() => {
     document.head.appendChild(s);
   }
 
+
+  /* ---------- 🩺 Diagnose (read-only): what HRMS holds for every parcel, and — when the hand-tracked list is pasted — where HRMS and the real status disagree.
+     Nothing is saved or changed: the report is plain text to copy. diagReport(rows, pasted, info) is a pure function. ---------- */
+  function diagReal(v) {   // one hand-written final status → a real group
+    const t = String(v || '').toLowerCase().replace(/\s+/g, ' ').trim(); if (!t) return 'Blank';
+    if (/cod\s*not/.test(t)) return 'COD not available';
+    if (/cancel|refund/.test(t)) return 'Cancelled / refunded';
+    if (/re-?send|re-?ship|reship|resent/.test(t)) return 'Re-sent';
+    if (/rto|return|undeliver|un-deliver|not deliver|refus|ndr|failed/.test(t)) return 'Not delivered / RTO';
+    if (/out for delivery|\bofd\b/.test(t)) return 'Out for delivery';
+    if (/deliver/.test(t)) return 'Delivered';
+    if (/not pick|no pick|pickup pending|pending pick|out for pick|pickup sched|pick up sched|not ship|manifest|not dispatch|booked|label/.test(t)) return 'Not picked up';
+    if (/transit|shipped|picked|dispatch|in-?scan|reached|arriv|depart|connect|hub/.test(t)) return 'In transit';
+    return 'Other';
+  }
+  const DIAG_OK = { 'Not picked up': [2, 3, 9, 10], 'In transit': [4], 'Out for delivery': [4], 'Delivered': [6, 7], 'Not delivered / RTO': [5, 1], 'Cancelled / refunded': [8], 'COD not available': [8] };
+  const diagKey = (v) => String(v == null ? '' : v).replace(/[\s#]+/g, '').toLowerCase();
+  const diagTrk = (v) => String(v == null ? '' : v).replace(/\s+/g, '').toUpperCase();
+  function diagPaste(txt) {   // rows copied from Excel: Order ID, Tracking ID, Courier, Final status (tabs; commas also work)
+    const out = []; String(txt || '').split(/\r?\n/).forEach((ln) => { if (!ln.trim()) return; const c = ln.indexOf('\t') >= 0 ? ln.split('\t') : ln.split(','); const raw = String(c[0]).split('/')[0]; let o = diagKey(raw); if (!o || /^order/.test(o)) return; const cp = /^((?:wm-)?\d{3,})[-_]?(?:c|r|rb|copy)\d{0,2}$/.exec(o); if (cp) o = cp[1];   // "#69662-C" = the same order booked again: it is matched with #69662
+        out.push({ k: o, copy: !!cp, order: String(c[0]).trim(), trk: diagTrk(c[1]), courier: String(c[2] || '').trim(), st: String(c[3] || '').trim() }); });
+    return out;
+  }
+  function diagReport(rows, pasted, info) {
+    const L = [], now = Date.now(), cnt = (m, k) => { m[k] = (m[k] || 0) + 1; }, top = (m, n) => Object.entries(m).sort((a, b) => b[1] - a[1]).slice(0, n || 99);
+    const hrs = (s) => { const t = s ? new Date(String(s).replace(' ', 'T')).getTime() : NaN; return isNaN(t) ? null : (now - t) / 3600000; };
+    const gname = (g) => g + ' ' + ((G[g] || ['?'])[0]);
+    const pct = (a, b) => b ? (Math.round(1000 * a / b) / 10) + '%' : '-';
+    L.push('=== HRMS DISPATCH DIAGNOSIS (read-only) ==='); L.push('Made: ' + new Date().toString().slice(0, 24) + ' | Window: ' + (info.from || '?') + ' to ' + (info.to || '?') + ' | Parcels read: ' + rows.length + (info.total > rows.length ? ' of ' + info.total + ' (CUT OFF)' : ''));
+    const byG = {}, gSt = {}, gSr = {}, byPre = {}; rows.forEach((r) => { const g = +r.grp || 0; cnt(byG, g); cnt(gSt, g + ' | ' + r.status); cnt(gSr, g + ' | ' + (r.sr_status || '(none)')); cnt(byPre, /^wm-/i.test(r.order) ? 'WM-' : /^#/.test(r.order) ? '#' : 'other'); });
+    L.push(''); L.push('[H1] Parcels per HRMS group'); Object.keys(byG).sort((a, b) => a - b).forEach((g) => L.push('  ' + gname(g) + ': ' + byG[g]));
+    L.push('  order types: ' + top(byPre).map((x) => x[0] + ' ' + x[1]).join(' · '));
+    L.push(''); L.push('[H2] HRMS group | own status (count)'); top(gSt).forEach((x) => L.push('  ' + x[0] + ': ' + x[1]));
+    L.push(''); L.push('[H3] HRMS group | Shiprocket status (top 45)'); top(gSr, 45).forEach((x) => L.push('  ' + x[0] + ': ' + x[1]));
+    const g3 = rows.filter((r) => +r.grp === 3), age = { '0-24 h': 0, '24-48 h': 0, '2-4 d': 0, '4-7 d': 0, '7+ d': 0, 'no time': 0 }, g3c = {}, g3d = {};
+    g3.forEach((r) => { const h = hrs(r.tracked_at || r.created); cnt(age, h === null ? 'no time' : h < 24 ? '0-24 h' : h < 48 ? '24-48 h' : h < 96 ? '2-4 d' : h < 168 ? '4-7 d' : '7+ d'); cnt(g3c, r.courier || '(no courier)'); cnt(g3d, String(r.created || '').slice(0, 10)); });
+    L.push(''); L.push('[H4] Group 3 (tracking ID given, not in transit): ' + g3.length); L.push('  waiting since the tracking ID: ' + Object.entries(age).map((x) => x[0] + ' ' + x[1]).join(' · ')); L.push('  by courier: ' + top(g3c, 8).map((x) => x[0] + ' ' + x[1]).join(' · ')); L.push('  by order date: ' + Object.keys(g3d).sort().map((d) => d.slice(5) + ' ' + g3d[d]).join(' · '));
+    const con = [], ex = {}; const flag = (name, r) => { cnt(ex, name); if (ex[name] <= 5) con.push('  ' + name + ' → ' + r.order + ' | grp ' + r.grp + ' | ' + r.status + ' | SR: ' + (r.sr_status || '-') + ' | ' + (r.courier || '-') + ' ' + (r.tracking_no || '-')); };
+    rows.forEach((r) => { const g = +r.grp, sr = String(r.sr_status || '').toLowerCase();
+      if (g !== 8 && /cancel/.test(sr)) flag('Shiprocket says cancelled, HRMS group is not 8', r);
+      if ((g === 2 || g === 3) && /deliver/.test(sr) && !/undeliver|out for/.test(sr)) flag('Shiprocket says delivered, HRMS still waits for pickup', r);
+      if ((g === 2 || g === 3) && /transit|shipped|picked up|out for delivery/.test(sr)) flag('Shiprocket says moving, HRMS still waits for pickup', r);
+      if (g === 4 && /deliver/.test(sr) && !/undeliver|out for/.test(sr)) flag('Shiprocket says delivered, HRMS says in transit', r);
+      if (g === 4 && /rto|undeliver|return/.test(sr)) flag('Shiprocket says RTO / undelivered, HRMS says in transit', r);
+      if (g === 4 && (hrs(r.transit_at || r.created) || 0) > 240) flag('In transit for more than 10 days', r);
+      if (g >= 3 && g <= 7 && !r.tracking_no) flag('Past group 2 but no tracking number', r);
+      if (g === 3 && !r.sr_status) flag('Group 3 with no Shiprocket status at all (not followed by Shiprocket?)', r);
+      if ((g === 3 || g === 4) && r.tracking_no && !r.courier) flag('Tracking number but no courier name', r); });
+    L.push(''); L.push('[H5] Things that do not agree inside HRMS'); if (!Object.keys(ex).length) L.push('  none found'); top(ex).forEach((x) => L.push('  ' + x[1] + ' × ' + x[0])); if (con.length) { L.push('  examples (up to 5 each):'); con.forEach((x) => L.push(x)); }
+    if (!pasted || !pasted.length) { L.push(''); L.push('[M] No hand-tracked list was pasted, so HRMS was not compared with the real status.'); return L.join('\n'); }
+    const man = {}, dup = {}; pasted.forEach((m) => { if (man[m.k]) cnt(dup, m.k); man[m.k] = m; });
+    const hk = {}; rows.forEach((r) => { hk[diagKey(r.order)] = r; });
+    const stRaw = {}, stGrp = {}; Object.values(man).forEach((m) => { cnt(stRaw, m.st || '(blank)'); cnt(stGrp, diagReal(m.st)); });
+    const matched = rows.filter((r) => man[diagKey(r.order)]), onlyH = rows.length - matched.length, onlyM = Object.keys(man).filter((k) => !hk[k]);
+    L.push(''); L.push('=== COMPARED WITH THE HAND-TRACKED LIST ==='); const nCopy = pasted.filter((m) => m.copy).length; L.push('[M1] Pasted rows: ' + pasted.length + ' | different orders: ' + Object.keys(man).length + ' | repeated order IDs: ' + Object.keys(dup).length + ' | matched with HRMS: ' + matched.length + ' | in HRMS only: ' + onlyH + ' | in the list only: ' + onlyM.length + ' | booked again (-C) in the list: ' + nCopy);
+    { const d = {}; onlyM.forEach((k) => cnt(d, /^wm-/.test(k) ? 'WM-' : 'Shopify')); const hd = {}; rows.filter((r) => !man[diagKey(r.order)]).forEach((r) => cnt(hd, String(r.created || '').slice(0, 10))); L.push('  list only: ' + (top(d).map((x) => x[0] + ' ' + x[1]).join(' · ') || '0') + ' (first: ' + onlyM.slice(0, 8).map((k) => man[k].order).join(', ') + ')'); L.push('  HRMS only, by order date: ' + Object.keys(hd).sort().map((x) => x.slice(5) + ' ' + hd[x]).join(' · ')); }
+    L.push(''); L.push('[M2] Real status → how it was read (count)'); top(stGrp).forEach((x) => L.push('  ' + x[0] + ': ' + x[1]));
+    L.push(''); L.push('[M3] Every different status text in the list (top 60)'); top(stRaw, 60).forEach((x) => L.push('  ' + x[0] + ' → ' + diagReal(x[0] === '(blank)' ? '' : x[0]) + ': ' + x[1]));
+    const cross = {}, perG = {}, pairs = {}, pairEx = {}, wCour = {}, wSr = {}, wDate = {}, trk = { Same: 0, Different: 0, 'Missing in HRMS': 0, 'Missing in list': 0, 'Not a number in list': 0 }; let diffOther = 0; const diffEx = [];
+    matched.forEach((r) => { const m = man[diagKey(r.order)], g = +r.grp, rg = diagReal(m.st), ok = DIAG_OK[rg]; cnt(cross, g + ' → ' + rg); perG[g] = perG[g] || { n: 0, w: 0, u: 0 }; perG[g].n++;
+      if (!ok) perG[g].u++; else if (ok.indexOf(g) < 0) { perG[g].w++; const pk = gname(g) + ' → real: ' + rg; cnt(pairs, pk); (pairEx[pk] = pairEx[pk] || []).length < 8 && pairEx[pk].push(r.order + ' | ' + (r.courier || '-') + ' | HRMS ' + (r.tracking_no || '-') + ' | list ' + (m.trk || '-') + ' | SR: ' + (r.sr_status || '-') + ' | list: ' + m.st); cnt(wCour, r.courier || '(no courier)'); cnt(wSr, r.sr_status || '(none)'); cnt(wDate, String(r.created || '').slice(0, 10)); }
+      const a = diagTrk(r.tracking_no), b = m.trk; if (!b) trk['Missing in list']++; else if (!/\d{6,}/.test(b)) trk['Not a number in list']++; else if (!a) trk['Missing in HRMS']++; else if (a === b) trk.Same++; else { trk.Different++; if (!/blue|delhiv|xpress|ecom|shadow|ekart/i.test(m.courier)) diffOther++; if (diffEx.length < 12) diffEx.push('  ' + r.order + ' | HRMS ' + (r.courier || '-') + ' ' + a + ' | list ' + (m.courier || '-') + ' ' + b + ' | list: ' + m.st); } });
+    L.push(''); L.push('[M4] HRMS group → real status (count)'); Object.keys(cross).sort().forEach((k) => L.push('  ' + k + ': ' + cross[k]));
+    L.push(''); L.push('[M5] Per HRMS group: matched / WRONG / cannot judge'); Object.keys(perG).sort((a, b) => a - b).forEach((g) => L.push('  ' + gname(g) + ': ' + perG[g].n + ' / ' + perG[g].w + ' (' + pct(perG[g].w, perG[g].n) + ') / ' + perG[g].u));
+    const tw = Object.values(perG).reduce((a, x) => a + x.w, 0); L.push('  TOTAL wrong: ' + tw + ' of ' + matched.length + ' matched (' + pct(tw, matched.length) + ')');
+    L.push(''); L.push('[M6] Wrong pairs, biggest first'); if (!tw) L.push('  none'); top(pairs).forEach((x) => L.push('  ' + x[1] + ' × ' + x[0]));
+    L.push(''); L.push('[M7] Wrong rows by courier: ' + (top(wCour, 8).map((x) => x[0] + ' ' + x[1]).join(' · ') || '-')); L.push('     by Shiprocket status: ' + (top(wSr, 12).map((x) => x[0] + ' ' + x[1]).join(' · ') || '-')); L.push('     by order date: ' + (Object.keys(wDate).sort().map((d) => d.slice(5) + ' ' + wDate[d]).join(' · ') || '-'));
+    L.push(''); L.push('[M8] Tracking ID: ' + Object.entries(trk).map((x) => x[0] + ' ' + x[1]).join(' · ') + ' | different AND the list courier is outside Shiprocket: ' + diffOther); diffEx.forEach((x) => L.push(x));
+    L.push(''); L.push('[M9] Examples of the 6 biggest wrong pairs (order | courier | HRMS tracking | list tracking | Shiprocket status | list status)'); top(pairs, 6).forEach((x) => { L.push('  -- ' + x[0]); pairEx[x[0]].forEach((e) => L.push('     ' + e)); });
+    return L.join('\n');
+  }
   function mount(el) {
     css();
     let S = { sdays: 25, from: '', to: '', day: '', store: '', q: '', open: { 1: 1, 2: 1, 9: 1, 3: 1 }, lim: {}, fix: true, details: false, hist: {} };
@@ -149,7 +221,7 @@ const DSP = (() => {
 
     el.innerHTML = '<div id="dsBanner"></div><div id="dsFix"></div><div id="dsStrip"></div>'
       + '<div class="dr-card" id="dsAll"><div class="dr-h"><h2>All parcels</h2><span class="bd-chip" id="dsTot">…</span><span class="sp"></span><span id="dsUnt"></span>'
-      + '<input class="dr-in" type="search" id="dsQ" placeholder="Order, tracking ID, name, phone" autocomplete="off"><button type="button" class="bd-btn sm" data-all="1">Open all</button><button type="button" class="bd-btn sm" data-all="0">Close all</button></div><div class="bd-sub" style="margin:-2px 0 10px">Work from 1 down to 8 · the most urgent group is always on top · click a group to open or close it</div>'
+      + '<input class="dr-in" type="search" id="dsQ" placeholder="Order, tracking ID, name, phone" autocomplete="off"><button type="button" class="bd-btn sm" data-honly="1" id="dsHand" title="Show only the parcels sent by another courier (DTDC, India Post ...). HRMS cannot read their status: open the link, then mark them delivered or returned with the pencil.">✍ Other couriers</button><button type="button" class="bd-btn sm" data-all="1">Open all</button><button type="button" class="bd-btn sm" data-all="0">Close all</button></div><div class="bd-sub" style="margin:-2px 0 10px">Work from 1 down to 8 · the most urgent group is always on top · click a group to open or close it</div>'
       + '<div id="dsTiles"></div><div class="dr-tw" id="dsTw"><div class="bd-empty" style="padding:24px">Loading…</div></div><div id="dsLeg"></div></div><div id="dsPen"></div>';
     $('dsQ').value = S.q;
 
@@ -158,7 +230,7 @@ const DSP = (() => {
       const p = {};
       if (S.day) { p.from = S.day; p.to = S.day; } else if (S.from) { p.from = S.from; p.to = S.to || iso(new Date()); } else p.days = S.sdays;
       if (S.from) { p.sfrom = S.from; p.sto = S.to || iso(new Date()); } else p.sdays = S.sdays;
-      if (S.store) p.store = S.store; if (S.q) p.q = S.q;
+      if (S.store) p.store = S.store; if (S.q) p.q = S.q; if (S.hand) p.hand = 1;
       return Object.assign(p, extra || {});
     }
     const openList = () => (S.q ? [1, 2, 9, 3, 4, 5, 6, 7, 8] : ORDER.filter((g) => S.open[g]));
@@ -206,10 +278,11 @@ const DSP = (() => {
       const tb = document.getElementById('topBtns');
       if (tb && !tb.dataset.dsp) {
         tb.dataset.dsp = '1';
-        tb.innerHTML = '<button class="bd-btn" id="dsCsv" type="button">⬇ Download Excel (CSV)</button> <button class="bd-btn" id="dsSync" type="button" style="display:none">Read new orders now</button> <button class="bd-btn pri" id="dsRec" type="button" style="display:none">Fix everything now</button>';
+        tb.innerHTML = '<button class="bd-btn" id="dsCsv" type="button">⬇ Download Excel (CSV)</button> <button class="bd-btn" id="dsDiag" type="button" title="Read-only: a text report of what HRMS holds for every parcel, compared with your hand-tracked list when you paste it">🩺 Diagnose</button> <button class="bd-btn" id="dsSync" type="button" style="display:none">Read new orders now</button> <button class="bd-btn pri" id="dsRec" type="button" style="display:none">Fix everything now</button>';
         tb.addEventListener('click', async (e) => {
           const b = e.target.closest('button'); if (!b) return;
           if (b.id === 'dsCsv') return csv(b);
+          if (b.id === 'dsDiag') return diagnose();
           if (b.id === 'dsRec') { S.details = true; keep(); fix(); const g = document.getElementById('recGo'); if (g) { g.scrollIntoView({ block: 'center' }); recAll(g); } return; }
           if (b.id === 'dsSync') { b.disabled = true; try { const r = await api.post('dp.dsp_sync', {}); BD.toast(r.message); await load(); } catch (er) { BD.toast(er.message, true); } b.disabled = false; }
         });
@@ -271,7 +344,7 @@ const DSP = (() => {
     }
     function courierBox() {
       const L = CL || R.couriers || [];
-      return '<div class="dr-sr" id="couriers"><div class="dr-h" style="margin:0"><h2 style="font-size:15px">Courier list</h2><span class="bd-sub">What the Tracking person picks from. Put <code>{ID}</code> in the link where the tracking ID goes, so every tracking ID becomes a clickable link.</span></div>'
+      return '<div class="dr-sr" id="couriers"><div class="dr-h" style="margin:0"><h2 style="font-size:15px">Courier list</h2><span class="bd-sub">What the Tracking person picks from. Put <code>{ID}</code> in the link where the tracking ID goes (a link without it just opens the courier\'s tracking page), so every tracking ID becomes a clickable link.</span></div>'
         + '<table class="dr-cl"><thead><tr><th style="width:150px">Courier</th><th>Tracking link, e.g. https://courier.example/track?no={ID}</th><th style="width:60px">In use</th><th style="width:130px"></th></tr></thead><tbody>'
         + L.concat([{ id: 0, name: '', link: '', active: 1 }]).map((c) => '<tr data-cid="' + c.id + '"><td><input class="dr-in sm" type="text" data-cn value="' + esc(c.name) + '" placeholder="' + (c.id ? '' : 'New courier') + '"></td><td><input class="dr-in sm" type="text" data-cl value="' + esc(c.link) + '"></td><td><input type="checkbox" data-ca ' + (c.active ? 'checked' : '') + '></td><td><button type="button" class="bd-btn sm pri" data-csave="' + c.id + '">' + (c.id ? 'Save' : 'Add') + '</button>' + (c.id ? ' <button type="button" class="bd-btn sm bad" data-cdel="' + c.id + '">Remove</button>' : '') + '</td></tr>').join('')
         + '</tbody></table></div>';
@@ -331,7 +404,15 @@ const DSP = (() => {
       if (!tn) return '';
       return '<button type="button" class="dl-tn" data-trk="' + r.id + '" title="Open the Order card: payment, salesperson, commission, complaints, chat and the live journey">' + esc(tn) + '</button>' + (lk ? ' <a class="lk" href="' + esc(lk) + '" target="_blank" rel="noopener" title="Open the courier tracking page">↗</a>' : '') + liveBadge(r);
     }
-    function actionCell(r) {
+    /* ✎ the pencil (Admin): another courier's tracking ID, close an order by hand, mark a hand-tracked parcel delivered / returned */
+    function penBtn(r) {
+      if (!isAdmin()) return '';
+      const g = r.grp;
+      if (!(g === 2 || g === 3 || g === 10 || (g === 8 && r.status === 'cancelled') || ((g === 4 || g === 5) && r.manual && r.status === 'transit'))) return '';
+      return ' <button type="button" class="dr-pen" data-hand="' + r.id + '" title="Edit by hand: write the tracking ID of another courier (DTDC, India Post ...), close the order, or mark it delivered">✎</button>';
+    }
+    function actionCell(r) { return actionCell0(r) + penBtn(r); }
+    function actionCell0(r) {
       const g = r.grp, ca = can();
       if (g === 2 || g === 10) return ca ? '<button type="button" class="dr-add" data-add="' + r.id + '">+ Add tracking ID</button>' : '<span class="bd-sub" style="font-size:11px">waiting for the Tracking person</span>';
       if (g === 9) return isAdmin() ? '<button type="button" class="dr-go" data-ap="' + r.id + '">Approve</button> <button type="button" class="dr-no" data-rj="' + r.id + '">Reject</button>' : '<span class="dr-pill pu">waiting for Admin</span>';
@@ -340,7 +421,7 @@ const DSP = (() => {
         return (ca ? '<button type="button" class="dr-rm" data-rm="' + r.id + '" data-v="1" title="COD money has arrived for this parcel">Money received</button>' : '<span class="bd-sub">pending</span>') + cod;
       }
       if (g === 7) return r.remit_at ? '<button type="button" class="dr-rm on" data-rm="' + r.id + '" data-v="0"' + (ca ? '' : ' disabled') + ' title="Money received · ' + esc(r.remit_by) + ' · ' + esc(fdt(r.remit_at)) + (ca ? ' — click to undo' : '') + '">✓ received</button>' : '<span class="bd-sub" style="font-size:11px">Prepaid</span>';
-      if (g === 8) return r.case_end ? '<span class="bd-sub" style="font-size:11px">untraceable · ' + esc(r.case_end.by) + ' · ' + esc(fdt(r.case_end.at)) + '</span>' : '<span class="bd-sub">—</span>';
+      if (g === 8) return r.case_end ? '<span class="bd-sub" style="font-size:11px">untraceable · ' + esc(r.case_end.by) + ' · ' + esc(fdt(r.case_end.at)) + '</span>' : (r.note ? '<span class="bd-sub" style="font-size:11px">closed by hand · ' + esc(r.note) + '</span>' : (/cancel/i.test(r.sr_status || '') ? '<span class="bd-sub" style="font-size:11px">Shiprocket cancelled</span>' : '<span class="bd-sub">—</span>'));
       return r.sr_status ? '<span class="bd-sub" style="font-size:11px">' + esc(r.sr_status.charAt(0) + r.sr_status.slice(1).toLowerCase()) + '</span>' : '';   // 3, 4, 5
     }
     const fdl = (d) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d || ''); if (!m) return d || ''; const dt = new Date(+m[1], +m[2] - 1, +m[3]); return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][dt.getDay()] + ' ' + (+m[3]) + ' ' + MON[+m[2] - 1]; };
@@ -437,6 +518,8 @@ const DSP = (() => {
         const grp = R.groups && R.groups[g]; if (!grp) return;
         const lim = limOf(g), all = grp.rows.slice(0, lim), rows = all.filter(keepRow); hidN += all.length - rows.length;
         b += rows.map(rowHtml).join('');
+        // paid / closed parcels that Finance tucks away: say so inside the group, or the group looks empty although its count is not 0
+        if (all.length > rows.length) b += '<tr class="dr-more"><td colspan="11" style="border-left:3px solid ' + G[g][1] + '">' + (all.length - rows.length) + ' parcel' + (all.length - rows.length === 1 ? ' is' : 's are') + ' tucked away here (paid or closed, older than ' + PKEEP + ' days) · <button type="button" data-fpshow="1">show ' + (all.length - rows.length === 1 ? 'it' : 'them') + '</button></td></tr>';
         if (n > all.length) {
           b += '<tr class="dr-more"><td colspan="11" style="border-left:3px solid ' + G[g][1] + '">' + (n - all.length) + ' more · ' + (all.length < 3000 ? '<button type="button" data-more="' + g + '|100">show 100 more</button><button type="button" data-more="' + g + '|all">show all ' + n + '</button>' : 'showing the first 3000') + ' · sorted oldest first</td></tr>';
         }
@@ -509,6 +592,7 @@ const DSP = (() => {
 
     function draw() {
       top(); fix(); strip(); tiles(); table(); legend(); pens();
+      const hb = $('dsHand'); if (hb) { hb.style.background = S.hand ? '#111827' : ''; hb.style.color = S.hand ? '#fff' : ''; const hn = (R && R.counts && R.counts.hand_open) || 0; hb.textContent = S.hand ? '✍ Other couriers only · show all' : '✍ Other couriers' + (hn ? ' · ' + hn + ' to check' : ' · nothing to check'); hb.style.borderColor = !S.hand && hn ? '#b45309' : ''; if (!S.hand) hb.style.color = hn ? '#b45309' : ''; }
       if (!firstDone) {
         firstDone = true;
         if (/[?&]focus=noid/.test(location.search)) { S.open[2] = 1; keep(); jump(2); }
@@ -541,6 +625,45 @@ const DSP = (() => {
         + '<span class="l"><span class="bd-sub" style="font-size:11px;font-weight:700">Courier link</span><input class="dr-tx lk2" data-fl placeholder="Tracking page link (optional)" autocomplete="off"><span class="dr-pill ok" data-fa style="display:none">auto-filled</span></span></div>';
       fillLink(ac);
       const t = ac.querySelector('[data-ft]'); if (t) t.focus();
+    }
+    function handForm(id) {
+      const r = findRow(id), tr = el.querySelector('tr.rw[data-id="' + id + '"]'); if (!r || !tr) return;
+      const ac = tr.querySelectorAll('td')[10];
+      const cs = (R.couriers || []).filter((c) => c.active);
+      const pre = r.manual ? cs.find((c) => c.name.toLowerCase() === String(r.courier || '').toLowerCase()) : null;
+      let h = '<div class="dr-f" data-form="' + id + '">';
+      if (r.status !== 'delivered' && r.status !== 'rto') {
+        h += '<span class="l"><select class="dr-sel" data-fc><option value="">Courier ▾</option>' + cs.map((c) => '<option value="' + esc(c.name) + '" data-pat="' + esc(c.link || '') + '"' + (pre && pre.id === c.id ? ' selected' : '') + '>' + esc(c.name) + '</option>').join('') + '</select>'
+          + '<input class="dr-tx tn" data-ft placeholder="Tracking ID" maxlength="40" autocomplete="off" autocapitalize="characters" value="' + (r.manual ? esc(r.tracking_no || '') : '') + '"><button type="button" class="dr-go" data-hs="' + id + '">Save</button><button type="button" class="dr-no" data-fx="' + id + '">✕</button></span>'
+          + '<span class="l"><span class="bd-sub" style="font-size:11px;font-weight:700">Courier link</span><input class="dr-tx lk2" data-fl placeholder="Tracking page link (optional)" autocomplete="off"><span class="dr-pill ok" data-fa style="display:none">auto-filled</span></span>';
+      }
+      if (r.status === 'placed' || r.status === 'tracked') h += '<span class="l"><select class="dr-sel" data-hw style="max-width:150px"><option value="">Or close the order ▾</option><option>Cancelled by CC</option><option>Refunded</option><option>COD not available</option><option>Other</option></select><button type="button" class="dr-no" data-hc="' + id + '">Close order</button></span>';
+      if (r.manual && r.status === 'transit') h += '<span class="l"><button type="button" class="dr-go" data-hm="' + id + '|delivered">Mark delivered</button><button type="button" class="dr-no" data-hm="' + id + '|rto">Mark returned</button></span>';
+      if (r.status === 'cancelled' && r.note && !/cancel/i.test(r.sr_status || '')) h += '<span class="l"><button type="button" class="dr-no" data-hr="' + id + '">Open the order again</button></span>';
+      ac.innerHTML = h + '</div>';
+      if (ac.querySelector('[data-fl]')) fillLink(ac);
+      const t = ac.querySelector('[data-ft]'); if (t) t.focus();
+    }
+    async function handPost(body, btn) {
+      btn.disabled = true;
+      try { const r = await api.post('dp.dsp_hand', body); BD.toast(r.message); await load(); }
+      catch (e) { btn.disabled = false; BD.toast(e.message, true); }
+    }
+    async function handSave(id, btn) {
+      const f = el.querySelector('[data-form="' + id + '"]'); if (!f) return;
+      const tn = f.querySelector('[data-ft]').value.trim(), co = f.querySelector('[data-fc]').value, lk = f.querySelector('[data-fl]').value.trim();
+      if (!co) { f.querySelector('[data-fc]').focus(); return BD.toast('Choose the courier first.', true); }
+      if (!tn) { f.querySelector('[data-ft]').focus(); return BD.toast('Type the tracking ID.', true); }
+      const r = findRow(id);
+      if (r && r.tracking_no && r.tracking_no !== tn && !(await BD.confirm('Replace the tracking ID of ' + r.order + '?', 'Now: ' + r.tracking_no + ' (' + (r.courier || 'no courier') + '). New: ' + tn + ' (' + co + '). The order moves to In transit and Shiprocket will no longer change this ID.', 'Replace'))) return;
+      return handPost({ id: +id, mode: 'track', tracking_no: tn, courier: co, link: lk }, btn);
+    }
+    async function handClose(id, btn) {
+      const f = el.querySelector('[data-form="' + id + '"]'); if (!f) return;
+      const why = f.querySelector('[data-hw]').value; if (!why) { f.querySelector('[data-hw]').focus(); return BD.toast('Choose why the order is closed.', true); }
+      const r = findRow(id);
+      if (!(await BD.confirm('Close ' + (r ? r.order : 'this order') + '?', 'Reason: ' + why + '. It moves to Cancelled and no tracking ID is asked for it any more.', 'Close order', true))) return;
+      return handPost({ id: +id, mode: 'close', reason: why }, btn);
     }
     function fillLink(box) {
       const l = box.querySelector('[data-fl]'); if (!l || l.dataset.touched === '1') return;
@@ -769,6 +892,7 @@ const DSP = (() => {
         const g = +d.band; if (!R.counts['g' + g]) return; if (e.target.closest('button')) return;
         S.open[g] = S.open[g] ? 0 : 1; keep(); return S.open[g] ? load() : (S.q ? load() : (table(), undefined));
       }
+      if (d.honly) { S.hand = !S.hand; if (S.hand) [4, 5, 6, 7].forEach((g) => { S.open[g] = 1; }); keep(); return load(); }
       if (d.all !== undefined) { ORDER.forEach((g) => { S.open[g] = d.all === '1' ? 1 : 0; }); keep(); return load(); }
       if (d.grp) { const g = +d.grp; return jump(g); }
       if (d.sd) { const n = +d.sd; S.sdays = n; S.from = ''; S.to = ''; S.day = ''; keep(); return load(); }
@@ -784,6 +908,11 @@ const DSP = (() => {
       if (d.dn) { const v = d.v === '1'; b.disabled = true; try { const r = await api.post('dp.dsp_done', { ids: [+d.dn], done: v }); const row = findRow(d.dn); if (row) { row.done_at = v ? r.at : ''; row.done_by = v ? r.by : ''; patch(d.dn); } } catch (er) { BD.toast(er.message, true); b.disabled = false; } return; }
       if (d.rm) { const v = d.v === '1'; b.disabled = true; try { await api.post('dp.dsp_remit', { ids: [+d.rm], remit: v }); await load(); } catch (er) { BD.toast(er.message, true); b.disabled = false; } return; }
       if (d.add) return addForm(d.add);
+      if (d.hand) return handForm(d.hand);
+      if (d.hs) return handSave(d.hs, b);
+      if (d.hc) return handClose(d.hc, b);
+      if (d.hm) { const [id, to] = d.hm.split('|'); if (!(await BD.confirm(to === 'rto' ? 'Mark this parcel returned?' : 'Mark this parcel delivered?', 'Do this only after you checked it on the courier\'s tracking page.', to === 'rto' ? 'Returned' : 'Delivered'))) return; return handPost({ id: +id, mode: 'status', to }, b); }
+      if (d.hr) return handPost({ id: +d.hr, mode: 'reopen' }, b);
       if (d.fx) return patch(d.fx);
       if (d.fs) return sendForm(d.fs, b);
       if (d.urec) return recordU(d.urec, b);
@@ -851,6 +980,32 @@ const DSP = (() => {
       q('slDl').onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([TXT], { type: 'text/plain;charset=utf-8' })); a.download = 'shiprocket_log_' + (q('slK').value ? q('slK').value.replace('r:', '') + '_' : '') + new Date().toISOString().slice(0, 10) + '.txt'; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500); };
       show();
     }
+    /* ---------- 🩺 Diagnose: read-only report (see diagReport above) ---------- */
+    function diagnose() {
+      const m = BD.modal('<button type="button" id="dgX" title="Close" aria-label="Close" style="float:right;border:1px solid #cfd5dd;background:#fff;color:#111827;border-radius:99px;width:30px;height:30px;font-size:15px;line-height:1;cursor:pointer;margin:-4px -4px 0 10px">✕</button><h3>🩺 Diagnose the parcels (nothing is changed)</h3>'
+        + '<p style="font-size:13.5px;line-height:1.5;color:#4a505c;margin:0 0 10px">Reads every parcel of the days chosen on this page and writes a text report. To compare with the real courier status, paste your hand-tracked rows below: copy <b>4 columns</b> from Excel in this order — <b>Order ID · Tracking ID · Courier · Final status</b>. Leave it empty for the HRMS side only.</p>'
+        + '<textarea id="dgIn" rows="5" placeholder="#70328&#9;78028674404&#9;Bluedart&#9;DELIVERED" style="width:100%;box-sizing:border-box;font:12px/1.4 ui-monospace,Consolas,monospace;border:1px solid #d5d9e2;border-radius:10px;padding:8px"></textarea>'
+        + '<div class="acts" style="margin-top:10px"><button class="bd-btn pri" id="dgRun" type="button">Run the diagnosis</button><button class="bd-btn" id="dgCopy" type="button" disabled>📋 Copy the report</button><button class="bd-btn" id="dgSave" type="button" disabled>⬇ Save as a file</button><button class="bd-btn" id="dgClose" type="button">Close</button></div>'
+        + '<div id="dgMsg" style="font-size:12.5px;color:#667085;margin:8px 0 6px"></div>'
+        + '<textarea id="dgOut" rows="14" readonly style="width:100%;box-sizing:border-box;font:11.5px/1.45 ui-monospace,Consolas,monospace;border:1px solid #d5d9e2;border-radius:10px;padding:8px;background:#f8fafc;white-space:pre;overflow:auto"></textarea>', { sticky: true });
+      const $m = (id) => m.querySelector('#' + id); m.style.maxWidth = '860px';
+      $m('dgX').onclick = () => BD.close(); $m('dgClose').onclick = () => BD.close();
+      const dgEsc = (e) => { if (e.key === 'Escape') BD.close(); }; document.addEventListener('keydown', dgEsc); BD.onClose = () => document.removeEventListener('keydown', dgEsc);
+      $m('dgRun').onclick = async () => {
+        const b = $m('dgRun'); b.disabled = true; $m('dgMsg').textContent = 'Reading the parcels…';
+        try {
+          const p = win(); delete p.sdays; delete p.sfrom; delete p.sto;
+          const x = await api.get('dp.dsp_report', Object.assign(p, { export: 1, page: 1 }));
+          const pasted = diagPaste($m('dgIn').value);
+          $m('dgOut').value = diagReport(x.rows || [], pasted, { from: x.filters && x.filters.from, to: x.filters && x.filters.to, total: x.total });
+          $m('dgMsg').textContent = (x.rows || []).length + ' parcels read' + (pasted.length ? ', ' + pasted.length + ' pasted rows compared' : ', nothing pasted') + '. Copy the report and send it to Claude.';
+          $m('dgCopy').disabled = false; $m('dgSave').disabled = false;
+        } catch (e) { $m('dgMsg').textContent = 'Could not run: ' + e.message; }
+        b.disabled = false;
+      };
+      $m('dgCopy').onclick = async () => { const t = $m('dgOut'); try { await navigator.clipboard.writeText(t.value); BD.toast('Report copied.'); } catch (e) { t.focus(); t.select(); try { document.execCommand('copy'); BD.toast('Report copied.'); } catch (e2) { BD.toast('Select the text and copy it by hand.', true); } } };
+      $m('dgSave').onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([$m('dgOut').value], { type: 'text/plain;charset=utf-8' })); a.download = 'dispatch_diagnosis.txt'; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500); };
+    }
     /* ---------- Download Excel (CSV): the same window, every parcel, all groups ---------- */
     async function csv(btn, onlyG) {
       btn.disabled = true;
@@ -881,5 +1036,5 @@ const DSP = (() => {
     }, 90000);
     return { reload: load };
   }
-  return { mount };
+  return { mount, _diag: { report: diagReport, paste: diagPaste, real: diagReal } };
 })();

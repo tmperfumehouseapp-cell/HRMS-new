@@ -1448,13 +1448,14 @@
         ${admin ? `<div class="bk-fl"><div class="lb">Show only</div><div class="bk-chs">${[['', 'All'], ['today', 'Today’s queries'], ['yesterday', 'Yesterday’s queries'], ['7d', 'Last 7 days'], ['camp', 'Campaign replies']].map(([k, l]) => `<button type="button" data-bf="bd:${k}" class="${(S.bulk.f.bd || '') === k ? 'on' : ''}">${l}</button>`).join('')}</div>
           <div class="lb">Order status</div><div class="bk-chs">${[['no', '🆕 Not ordered yet'], ['yes', '✅ Order done'], ['', 'All']].map(([k, l]) => `<button type="button" data-bf="ob:${k}" class="${(S.bulk.f.ob || '') === k ? 'on' : ''}${k === 'yes' ? ' ex' : ''}">${l}</button>`).join('')}</div>
           <div class="lb">Number</div><div class="bk-chs">${(((S.counts || {}).src || {}).nums || []).map((x) => `<button type="button" data-bf="bn:${x.id}" class="${(S.bulk.f.bn || []).includes(x.id) ? 'on' : ''}">${esc(String(x.label || 'Number ' + x.id))}</button>`).join('')}</div></div>` : ''}
-        <div class="bk-row"><button type="button" class="bk-link" id="bkAll">${allSel ? '☑ All ' + bkFmt(loaded) + ' shown are selected' : '☐ Select all in this view'}${tot > loaded ? ' (up to ' + bkFmt(Math.min(3000, tot)) + ')' : ''}</button>${n ? '<button type="button" class="bk-link" id="bkNone" style="margin-left:auto">Clear</button>' : ''}</div>
-        <div class="bk-row"><button type="button" class="bk-b send" id="bkSend" ${n ? '' : 'disabled'}>📨 Send message</button>${admin ? `<button type="button" class="bk-b move" id="bkMove" ${n ? '' : 'disabled'}>👤 Transfer</button><button type="button" class="bk-b move" id="bkNum" ${n ? '' : 'disabled'} title="Answer these customers from another of your numbers">📱 Move to number</button>` : ''}</div></div>`;
+        <div class="bk-row"><button type="button" class="bk-link" id="bkAll">${allSel ? '☑ All ' + bkFmt(loaded) + ' shown are selected' : '☐ Select all in this view'}${tot > loaded ? ' (all ' + bkFmt(tot) + ')' : ''}</button>${n ? '<button type="button" class="bk-link" id="bkNone" style="margin-left:auto">Clear</button>' : ''}</div>
+        <div class="bk-row"><button type="button" class="bk-b send" id="bkSend" ${n ? '' : 'disabled'}>📨 Send message</button>${admin && S.scope === 'history' ? '<button type="button" class="bk-b send" id="bkCamp" title="Send an approved message to ALL History chats as a background campaign (safe speed, report)" style="background:#2563eb">📣 Send as campaign</button>' : ''}${admin ? `<button type="button" class="bk-b move" id="bkMove" ${n ? '' : 'disabled'}>👤 Transfer</button><button type="button" class="bk-b move" id="bkNum" ${n ? '' : 'disabled'} title="Answer these customers from another of your numbers">📱 Move to number</button>` : ''}</div></div>`;
     }
     function bkWire(L) {
       const b = $('bkBar'); if (!b) return;
       $('bkOff').onclick = () => bkToggleMode(false); $('bkAll').onclick = bkSelectAll; if ($('bkNone')) $('bkNone').onclick = () => { S.bulk.set.clear(); drawList(); };
       $('bkSend').onclick = () => { S.bulk.retryNote = ''; bkSendOpen(); }; if ($('bkMove')) $('bkMove').onclick = bkMoveOpen;
+      if ($('bkCamp')) $('bkCamp').onclick = () => { const h = {}; if (S.emp) h.emp = S.emp; const d = new Date(); window.WaCampGo = { mode: 'normal', seg: { hist: h, name: 'History · ' + d.getDate() + ' ' + d.toLocaleString('en-GB', { month: 'short' }), n: (S.counts && S.counts.history) || 0 } }; location.hash = '#campaigns'; };
       b.querySelectorAll('[data-bf]').forEach((x) => { x.onclick = () => { const [k, v] = x.dataset.bf.split(':'); const f = S.bulk.f; if (k === 'bn') { const id = +v, i = f.bn.indexOf(id); if (i >= 0) f.bn.splice(i, 1); else f.bn.push(id); } else f[k] = v; S.bulk.set.clear(); S.bulk.info = {}; loadList(); }; });   // a different filter = a different list: the ticks start again if ($('bkNum')) if ($('bkNum')) $('bkNum').onclick = bkNumOpen;
     }
     // ---------- 📱 move many chats to another of our numbers (the Second number has a payment problem → Main)
@@ -1619,7 +1620,8 @@
       await loadList();
       if (admin && S.counts && !S.counts.unassigned && S.counts.all) { S.scope = 'all'; await loadList(); }
       const want = new URLSearchParams(location.search).get('phone'); if (want) openChat(String(want).replace(/\D/g, '').slice(-10));
-      setInterval(() => { if (document.hidden || !root.offsetParent) return; loadList(true); refreshChat(); }, 10000);   // only while the Chats screen is on view (another WhatsApp screen = no polling)
+      let __act = Date.now(), __beat = 0; ['pointerdown', 'keydown', 'touchstart', 'mousemove', 'wheel'].forEach((ev) => document.addEventListener(ev, () => { __act = Date.now(); }, { passive: true }));
+      setInterval(() => { if (document.hidden || !root.offsetParent) return; __beat++; if (Date.now() - __act > 120000 ? __beat % 3 : __beat % 2) return; loadList(true); refreshChat(); }, 5000);   // active: every 10 s as before (every 2nd beat); nobody touching the screen for 2 minutes: every 15 s   // only while the Chats screen is on view (another WhatsApp screen = no polling)
       if (!admin) { pollCall(); setInterval(pollCall, 12000); }
       document.addEventListener('visibilitychange', () => { if (document.hidden) { if (AU.run) auStop(false); } else { loadList(true); refreshChat(); auArm(); } });
     })();

@@ -1083,11 +1083,11 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
             }
             // ☑ Select-chats filters: day of the query · ordered or not · numbers (admin)
             if ($adm) {
-                $bd = (string)($_GET['bd'] ?? ''); $bs = wa_bizday_start($pdo);
-                if ($bd === 'today') { $w[] = "c.source = 'query'"; $w[] = 'c.last_in_at >= ?'; $p[] = $bs; }
-                elseif ($bd === 'yesterday') { $w[] = "c.source = 'query'"; $w[] = 'c.last_in_at >= ?'; $p[] = date('Y-m-d H:i:s', strtotime($bs) - 86400); $w[] = 'c.last_in_at < ?'; $p[] = $bs; }
+                $bd = (string)($_GET['bd'] ?? ''); $bs = wa_bizday_start($pdo); $__srcChip = (string)($_GET['src'] ?? '') !== '';   // a Query / Community / Campaign chip is already on: "Today's / Yesterday's" then means "wrote that business day" inside THAT chip (forcing source = query made Campaign / Community come out empty)
+                if ($bd === 'today') { if (!$__srcChip) $w[] = "c.source = 'query'"; $w[] = 'c.last_in_at >= ?'; $p[] = $bs; }
+                elseif ($bd === 'yesterday') { if (!$__srcChip) $w[] = "c.source = 'query'"; $w[] = 'c.last_in_at >= ?'; $p[] = date('Y-m-d H:i:s', strtotime($bs) - 86400); $w[] = 'c.last_in_at < ?'; $p[] = $bs; }
                 elseif ($bd === '7d') { $w[] = 'c.last_in_at >= ?'; $p[] = date('Y-m-d H:i:s', time() - 7 * 86400); }
-                elseif ($bd === 'camp') { $w[] = "c.source = 'campaign'"; }
+                elseif ($bd === 'camp') { if (!$__srcChip) $w[] = "c.source = 'campaign'"; }
                 $ob = (string)($_GET['ob'] ?? '');
                 if ($ob === 'no') $w[] = "NOT EXISTS (SELECT 1 FROM wa_cust so WHERE so.phone = c.phone AND so.n > 0)";
                 elseif ($ob === 'yes') $w[] = "EXISTS (SELECT 1 FROM wa_cust so WHERE so.phone = c.phone AND so.n > 0)";
@@ -1107,6 +1107,10 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
             // 📅 Today's chats / Yesterday's chats (the customer wrote that calendar day); both ticked = today AND yesterday together
             { $dC = []; $d0 = date('Y-m-d 00:00:00'); $d1 = date('Y-m-d 00:00:00', strtotime('-1 day'));
               if (isset($flt['today'])) $dC[] = "c.last_in_at >= '$d0'"; if (isset($flt['yesterday'])) $dC[] = "(c.last_in_at >= '$d1' AND c.last_in_at < '$d0')"; if ($dC) $w[] = '(' . implode(' OR ', $dC) . ')'; }
+            if (!empty($_GET['ids'])) {   // ☑ "Select all" in the bulk bar: EVERY chat of the view (up to 50,000), phone + name only — no last-message lookups, so it stays fast
+                $st = $pdo->prepare("SELECT c.phone, c.name FROM wa_contacts c WHERE " . implode(' AND ', $w) . " ORDER BY c.last_in_at DESC LIMIT 50000"); $st->execute($p);
+                $__ids = $st->fetchAll(); json_response(['ids' => array_map(fn($r) => ['phone' => (string)$r['phone'], 'name' => (string)($r['name'] ?? '')], $__ids), 'total' => count($__ids)]);
+            }
             $sort = (string)($_GET['sort'] ?? '');
             $ord = ['new' => 'COALESCE(c.last_in_at, c.last_out_at) DESC', 'old' => 'COALESCE(c.last_in_at, c.last_out_at) ASC', 'az' => "(c.name = '') ASC, c.name ASC, c.phone ASC", 'za' => "(c.name = '') ASC, c.name DESC, c.phone DESC"][$sort] ?? null;
             if (!empty($rescueFeed)) { $ord = 'FIELD(c.phone, ' . implode(',', array_fill(0, count($rescueFeed), '?')) . ')'; $p = array_merge($p, $rescueFeed); }   // 🛟 the Rescue chip is listed in priority order (urgency → how hot → time)
@@ -1159,7 +1163,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
             foreach ($msgs as &$m) { $m['id'] = (int)$m['id']; $m['number'] = $nums[(int)$m['number_id']] ?? ''; $m['emp_name'] = $names[(int)$m['emp_id']] ?? ''; } unset($m); wa_add_quotes($pdo, $msgs);
             $emp0 = (int)($auth['employee_id'] ?? 0);
             if (($emp0 > 0 && (int)$c['assigned_emp'] === $emp0) || ((int)$c['assigned_emp'] === 0 && wa_is_admin($pdo, $auth))) {   // the owner of the chat opened it → read ( an admin peeking at someone else's chat does not clear their unread )
-                $pdo->prepare("UPDATE wa_contacts SET seen_msg_id = (SELECT COALESCE(MAX(id), 0) FROM wa_messages WHERE phone = ? AND dir = 'in') WHERE phone = ?")->execute([$key, $key]); $c['unread'] = 0;
+                $sq = $pdo->prepare("SELECT COALESCE(MAX(id), 0) FROM wa_messages WHERE phone = ? AND dir = 'in'"); $sq->execute([$key]); $mx = (int)$sq->fetchColumn(); if ($mx !== (int)$c['seen_msg_id']) $pdo->prepare("UPDATE wa_contacts SET seen_msg_id = ? WHERE phone = ? AND seen_msg_id <> ?")->execute([$mx, $key, $mx]);   // write only when something new was read: the same result, no write lock on every open / poll $c['unread'] = 0;
             } else { $q3 = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE phone = ? AND dir = 'in' AND id > ?"); $q3->execute([$key, (int)$c['seen_msg_id']]); $c['unread'] = (int)$q3->fetchColumn(); }
             $ct = wa_contact_row($c, $names); $ct['numbers_used'] = count(array_unique(array_filter(array_column(array_filter($msgs, fn($m) => $m['dir'] !== 'sys'), 'number_id')))); $ct['last_number'] = $nums[(int)$c['last_number_id']] ?? '';
             $one = function (string $sql) use ($pdo, $key) { $q4 = $pdo->prepare($sql); $q4->execute([$key]); return $q4->fetchColumn(); };
@@ -1253,8 +1257,9 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
         }
         case 'wa.bulk_ordered': {   // ☑ which of these chats already ordered (the bulk-send safety): returns their phones
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
-            if (!wa_is_admin($pdo, $auth)) json_response(['error' => 'Only an admin can bulk send.'], 403);
+            $adm = wa_is_admin($pdo, $auth); $me = (int)($auth['employee_id'] ?? 0); if (!$adm && $me <= 0) json_response(['error' => 'Only an admin can bulk send.'], 403);
             $in = json_input(); $phones = array_slice(array_values(array_unique(array_filter(array_map(fn($p) => wa_key($p), (array)($in['phones'] ?? []))))), 0, 3000); $out = [];
+            if (!$adm) { $own = []; foreach (array_chunk($phones, 400) as $ch) { $q = $pdo->prepare("SELECT phone FROM wa_contacts WHERE assigned_emp = ? AND phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $q->execute(array_merge([$me], $ch)); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $ph) $own[] = (string)$ph; } $phones = $own; }   // a salesperson: only the chats they hold (History bulk send)
             foreach (array_chunk($phones, 400) as $ch) { try { $q = $pdo->prepare("SELECT phone FROM wa_cust WHERE n > 0 AND phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $q->execute($ch); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $ph) $out[(string)$ph] = 1; } catch (Throwable $e) { } }
             $oq = []; foreach (array_chunk($phones, 400) as $ch) { try { $q = $pdo->prepare("SELECT phone, optout, (cx_id > 0 OR tag = 'complaint') AS cx FROM wa_contacts WHERE (optout = 1 OR cx_id > 0 OR tag = 'complaint') AND phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $q->execute($ch); foreach ($q->fetchAll() as $r) $oq[(string)$r['phone']] = ((int)$r['optout'] === 1 ? 'optout' : 'complaint'); } catch (Throwable $e) { } }
             json_response(['ok' => true, 'ordered' => array_keys($out), 'blocked' => $oq]);
