@@ -8,6 +8,7 @@
  *   team.person  GET  admin  ?emp=ID&range=…                                                       → everything of ONE person (rating parts, metric grid, day by day, speed buckets, remarks …)
  * "Query orders" = queries that produced an order (the same rule as the Pace tab). Pay and commission are NOT here (they stay in Money, admin only). PHP 7.4 safe.
  */
+if (!function_exists('tk_cfg') && is_file(__DIR__ . '/tk_lib.php')) { try { require_once __DIR__ . '/tk_lib.php'; } catch (Throwable $e) { } }   // 🎯 the ticket goal (colour of the ticket column)
 if (!function_exists('tb_range')) {
 
 /** The period the admin asked for: [from, to, label, key, pace_days (1 / 7 / 30, the nearest window wq_pace_get knows)]. */
@@ -239,6 +240,6 @@ if ($__tbA === 'team.board' || $__tbA === 'team.person') {
     }
     $L = tb_light_cached($pdo, $per, $force); $rows = $L['rows']; $r0 = $rows ? $rows[0] : [];
     json_response(['ok' => true, 'rows' => $rows, 'period' => $perOut, 'today' => $todayS, 'built_at' => date('Y-m-d H:i:s', $L['at']), 'age_s' => max(0, time() - $L['at']),
-        'team' => ['ratio_pct' => $r0['team_ratio_pct'] ?? null, 'ticket' => $r0['team_ticket'] ?? null, 'people' => count($rows), 'at_work' => count(array_filter($rows, function ($x) { return !empty($x['present']); }))],
+        'team' => ['ticket_goal' => (function_exists('tk_cfg') ? (int)tk_cfg($pdo)['goal'] : 0), 'ratio_pct' => $r0['team_ratio_pct'] ?? null, 'ticket' => $r0['team_ticket'] ?? null, 'people' => count($rows), 'at_work' => count(array_filter($rows, function ($x) { return !empty($x['present']); }))],
         'summary' => wq_meta_get($pdo, 'mgr:summary', ''), 'ran_at' => wq_meta_get($pdo, 'mgr:at', ''), 'mode' => function_exists('wqm_mode') ? wqm_mode($pdo) : 'suggest', 'levels' => function_exists('wqm_levels') ? wqm_levels() : []]);
 }
