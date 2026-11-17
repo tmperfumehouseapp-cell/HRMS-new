@@ -186,7 +186,8 @@ function dp_dsp_couriers(PDO $pdo, $activeOnly = false) {
 function dp_dsp_courier_map(PDO $pdo) { $m = []; foreach (dp_dsp_couriers($pdo) as $c) $m[strtolower($c['name'])] = $c['link']; return $m; }
 function dp_dsp_link_make($pattern, $track) {
     $pattern = trim((string)$pattern); $track = trim((string)$track);
-    if ($pattern === '' || $track === '' || strpos($pattern, '{ID}') === false) return '';
+    if ($pattern === '' || $track === '') return '';
+    if (strpos($pattern, '{ID}') === false) return $pattern;   // a courier whose site has no place for the number (India Post: captcha): the link opens its tracking page
     return str_replace('{ID}', rawurlencode($track), $pattern);
 }
 /** the link pattern of a courier. A name that is not in the courier list ("Bluedart brands 500 g Surface", "Xpressbees Surface 2kg" ...) is a Shiprocket service: its AWB opens on the Shiprocket tracking page. */
