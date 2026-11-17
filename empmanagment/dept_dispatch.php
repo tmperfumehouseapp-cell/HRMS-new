@@ -154,6 +154,7 @@ function dp_dsp_sync(PDO $pdo, $now, $force = false) {
     // the same two rules for parcels the Shiprocket read no longer reaches: a cancelled shipment is "cancelled", a parcel that reached back the seller is a return
     try { $pdo->exec("UPDATE dp_dsp_parcels SET status = 'cancelled' WHERE status IN ('placed','tracked') AND manual = 0 AND pend_track IS NULL AND sr_status LIKE '%cancel%' AND sr_status NOT LIKE '%return%'"); } catch (Throwable $e) {}
     try { $pdo->exec("UPDATE dp_dsp_parcels SET status = 'rto' WHERE status IN ('tracked','transit') AND sr_status LIKE 'reached back%'"); } catch (Throwable $e) {}
+    try { dp_dsp_hand_seed($pdo); } catch (Throwable $e) {}
     try { if (!function_exists('wmo_dsp_heal') && is_file(__DIR__ . '/wmo.php')) require_once __DIR__ . '/wmo.php'; if (function_exists('wmo_dsp_heal')) wmo_dsp_heal($pdo); } catch (Throwable $e) {}   // tracking IDs typed / imported on the Manual orders page reach their parcel here too
     return [$new, $canc];
 }
@@ -228,6 +229,25 @@ function dp_dsp_set_limits(PDO $pdo, $hours, $days, $by = '', $src = 'dispatch',
     $out['text'] = 'Dispatch now uses: ' . implode(' and ', $bits) . '. ' . $out['moved'] . ' open parcel' . ($out['moved'] === 1 ? ' got' : 's got') . ' a new deadline'
         . ($out['forgiven'] ? '; ' . $out['forgiven'] . ' that are late only because of the change will not be fined' : '') . ($out['boss_items'] ? '; ' . $out['boss_items'] . ' Boss task' . ($out['boss_items'] === 1 ? ' was' : 's were') . ' re-worded to match' : '') . '.';
     return $out;
+}
+/** ONE TIME: the four parcels of the team's manual sheet (Nov 2026) that went by another courier get that courier's tracking ID, exactly as the pencil would write it.
+ *  A parcel that already has a hand-written ID, or is delivered / returned, is left alone. Runs once (flag in dp_state). */
+function dp_dsp_hand_seed(PDO $pdo) {
+    if (!function_exists('dp_get') || dp_get('dsp_hand_seed1', '') !== '') return;
+    dp_put('dsp_hand_seed1', date('Y-m-d H:i:s'));
+    $names = []; foreach ($pdo->query("SELECT name FROM dp_dsp_couriers")->fetchAll() as $c) $names[] = (string)$c['name'];
+    $pick = function ($needle, $def) use ($names) { foreach ($names as $n) if (stripos($n, $needle) !== false) return $n; return $def; };
+    $list = [['66600', 'EG164001562IN', $pick('india post', 'India Post')], ['67617', 'SRT51601078', $pick('fessional', 'Professional Couriers')],
+             ['67814', '7D143313099', $pick('dtdc', 'DTDC')], ['67651', '7D143313098', $pick('dtdc', 'DTDC')]];
+    $now = date('Y-m-d H:i:s');
+    foreach ($list as $x) {
+        $rows = dp_dsp_find_by_name($pdo, $x[0]); if (count($rows) !== 1) continue; $p = $rows[0];
+        if ((int)$p['manual'] === 2 || in_array($p['status'], ['delivered', 'rto'], true) || dp_dsp_track_in_use($pdo, $x[1], $p['id']) !== '') continue;
+        $lk = function_exists('dp_dsp_link_for') ? dp_dsp_link_for($pdo, $x[2], $x[1]) : ''; $lk = $lk !== '' ? $lk : null;
+        $pdo->prepare("UPDATE dp_dsp_parcels SET tracking_no = ?, courier = ?, track_link = ?, status = 'transit', tracked_at = COALESCE(tracked_at, ?), tracked_by = COALESCE(NULLIF(tracked_by, ''), 'Manual sheet'), transit_at = COALESCE(transit_at, ?), pend_track = NULL, pend_courier = ?, pend_link = ?, pend_by = 'Manual sheet', pend_at = ?, manual = 2, sr_status = NULL, hand_note = NULL WHERE id = ?")
+            ->execute([$x[1], $x[2], $lk, $now, $now, $x[2], $lk, $now, $p['id']]);
+        if (function_exists('bd_log')) { try { bd_log('dispatch', (string)$p['order_name'], 'tracking ID from the manual sheet: ' . $x[1] . ' (' . $x[2] . ')' . ((string)$p['tracking_no'] !== '' ? ', before: ' . $p['tracking_no'] . ' ' . $p['courier'] : ''), 'Manual sheet'); } catch (Throwable $e) {} }
+    }
 }
 /* ============================== changing a parcel ============================== */
 function dp_dsp_rank($s) { $r = ['placed' => 0, 'tracked' => 1, 'transit' => 2, 'delivered' => 3]; return $r[$s] ?? -1; }
