@@ -267,6 +267,12 @@ function wa_aud_where(string $src, array $f, string $q = ''): array
     // contacts: start from wa_contacts (indexed, newest first) · all: start from the customer summary
     if ($src === 'contacts') { $from = "wa_contacts c LEFT JOIN wa_cust s ON s.phone = c.phone"; $P = 'c.phone'; }
     else { $from = "wa_cust s LEFT JOIN wa_contacts c ON c.phone = s.phone"; $P = 's.phone'; $w[] = "s.phone REGEXP '^[6-9][0-9]{9}$'"; }
+    if (!empty($f['hist'])) {   // 🕘 History chats: the customer's last message is over 24 h old (or the chat is closed) — the same chats the Chats → History screen lists
+        $w[] = "c.last_in_at IS NOT NULL AND (c.status = 'closed' OR c.last_in_at < ?)"; $p[] = $d(1);
+        if (!empty($f['h_noreply'])) $w[] = '(c.last_out_at IS NULL OR c.last_out_at < c.last_in_at)';
+        if (!empty($f['h_noresult'])) $w[] = 'NOT EXISTS (SELECT 1 FROM wa_outcomes ho WHERE ho.phone = c.phone)';
+        if (!empty($f['h_days'])) { $w[] = 'c.last_in_at >= ?'; $p[] = $d(max(1, min(365, (int)$f['h_days']))); }
+    }
     $st = (string)($f['st'] ?? '');
     if ($st === 'waiting') $w[] = "(c.last_in_at IS NOT NULL AND c.last_in_at > COALESCE(c.last_out_at, '1970-01-01') AND c.optout = 0 AND c.status = 'open')";
     if ($st === 'noreply') $w[] = 'c.last_in_at IS NULL';

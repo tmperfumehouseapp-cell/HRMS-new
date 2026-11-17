@@ -732,7 +732,7 @@
       let t; $('#wxHq').oninput = function () { clearTimeout(t); const v = this.value; t = setTimeout(() => { H.q = v.trim(); loadHist(true); }, 350); }; const hm = $('#wxHm'); if (hm) hm.onclick = () => loadHist(false);
       // ☑ bulk: pick many History chats and send one pre-made message (each customer gets their own first name)
       const bar = document.createElement('div'); bar.style.cssText = 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:0 14px 8px';
-      bar.innerHTML = H.selOn ? `<b style="font-size:13px">${H.sel.size} selected</b><button type="button" class="wx-btn gh" id="wxHsA" style="min-height:38px">${H.total && H.sel.size >= H.total ? 'Unselect all' : 'Select all ' + H.total.toLocaleString('en-IN')}</button><button type="button" class="wx-btn" id="wxHsS" style="min-height:38px" ${H.sel.size ? '' : 'disabled'}>📨 Send template</button><button type="button" class="wx-btn gh" id="wxHsX" style="min-height:38px">Cancel</button>` : '<button type="button" class="wx-btn gh" id="wxHsT" style="min-height:38px">☑ Select chats</button>';
+      bar.innerHTML = H.selOn ? `<b style="font-size:13px">${H.sel.size} selected</b><button type="button" class="wx-btn gh" id="wxHsA" style="min-height:38px">${H.total && H.sel.size >= H.total ? 'Unselect all' : 'Select all ' + H.total.toLocaleString('en-IN')}</button><button type="button" class="wx-btn" id="wxHsS" style="min-height:38px" ${H.sel.size ? '' : 'disabled'}>📨 Send template</button>${team ? `<button type="button" class="wx-btn" id="wxHsC" style="min-height:38px;background:#2563eb" title="Send to ALL History chats of this view as a background campaign">📣 Send as campaign</button>` : ''}<button type="button" class="wx-btn gh" id="wxHsX" style="min-height:38px">Cancel</button>` : '<button type="button" class="wx-btn gh" id="wxHsT" style="min-height:38px">☑ Select chats</button>';
       M.insertBefore(bar, M.firstChild.nextSibling);
       const hb = (id, fn) => { const b = bar.querySelector('#' + id); if (b) b.onclick = fn; };
       hb('wxHsT', () => { H.selOn = true; H.sel.clear(); drawHistory(false); }); hb('wxHsX', () => { H.selOn = false; H.sel.clear(); drawHistory(false); });
@@ -744,6 +744,7 @@
         drawHistory(false);
       });
       hb('wxHsS', () => histBulk());
+      hb('wxHsC', () => { if (H.q && !confirm('The search words are not used in a campaign — it goes to ALL History chats of this person / filter. Continue?')) return; const h = {}; if (H.emp) h.emp = H.emp; if (H.f === 'noreply') h.h_noreply = 1; if (H.f === 'noresult') h.h_noresult = 1; const d = new Date(); try { sessionStorage.setItem('wa_camp_go', JSON.stringify({ mode: 'normal', seg: { hist: h, name: 'History · ' + d.getDate() + ' ' + d.toLocaleString('en-GB', { month: 'short' }), n: H.total } })); } catch (e) { } location.href = 'whatsapp.html#campaigns'; });
       M.onclick = (e) => { const p = e.target.closest('.wx-row[data-p]'); if (!p) return; if (H.selOn) { const ph = p.dataset.p; if (H.sel.has(ph)) H.sel.delete(ph); else H.sel.add(ph); drawHistory(false); } else openChat(p.dataset.p); };
     }
     async function histBulk() {
