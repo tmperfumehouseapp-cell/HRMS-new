@@ -220,6 +220,21 @@ if ($__bg === 'budget.bill_assign') {
     budget_audit($pdo, $auth, 'Store bill ' . $brow['bill_no'] . ' now belongs to ' . $nm, $eid);
     json_response(['ok' => true, 'employee_id' => $eid, 'name' => (string)$nm]);
 }
+if ($__bg === 'budget.store_alias') {
+    // Link a name written by hand in the old POS (for example "Krish Champaneri", not matched to anybody) to an employee: all its bills pay that person. employee_id 0 = unlink. Admin only, logged.
+    $auth = require_auth();
+    if (!convo_is_admin($auth)) json_response(['error' => 'Only Admin can link a name to an employee.'], 403);
+    if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
+    if (!function_exists('st_name_alias')) require_once __DIR__ . '/store_lib.php';
+    $in = json_input(); $name = trim((string)($in['name'] ?? '')); $eid = (int)($in['employee_id'] ?? 0); $key = st_name_key($name);
+    if ($key === '') json_response(['error' => 'Which name?'], 422);
+    $nm = ''; if ($eid) { $e = $pdo->prepare("SELECT full_name FROM employees WHERE employee_id = ? AND status != 'ex'"); $e->execute([$eid]); $nm = $e->fetchColumn(); if ($nm === false) json_response(['error' => 'Choose an employee.'], 422); }
+    budget_lock($pdo); $al = st_name_alias($pdo);
+    if ($eid) $al[$key] = $eid; else unset($al[$key]);
+    setting_set($pdo, 'store_name_alias', json_encode($al, JSON_UNESCAPED_UNICODE));
+    budget_audit($pdo, $auth, $eid ? 'Old POS name "' . $name . '" now pays ' . $nm : 'Old POS name "' . $name . '" unlinked', $eid);
+    json_response(['ok' => true, 'name' => $name, 'employee_id' => $eid]);
+}
 if ($__bg === 'budget.engine_set') {
     // Which commission engine pays: the NEW one (live, reads the one Price Chart) or the old one. Admin only, logged. Switching back is one click.
     $auth = require_auth();
