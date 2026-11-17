@@ -124,7 +124,8 @@ function wa_ru_make_tick(PDO $pdo): array
             if ($have >= 2) continue;
             setting_set($pdo, 'wa_ru_made_' . $tid, (string)time());
             $r = wa_util_make($pdo, $tid, 2 - $have, 0, true);   // drafts made AND sent to Meta
-            $n = count($r['made'] ?? []); $o['made'] += $n; if (function_exists('wa_log')) wa_log($pdo, 'template', !isset($r['error']), 'Utility versions for campaign message #' . $tid . ' (auto): ' . (isset($r['error']) ? $r['error'] : $n . ' made and sent to Meta'));
+            $n = count($r['made'] ?? []); $o['made'] += $n; try { setting_set($pdo, 'wa_ru_make_last', json_encode(['at' => time(), 'tpl' => $tid, 'made' => $n, 'error' => isset($r['error']) ? mb_substr((string)$r['error'], 0, 160) : '', 'skipped' => array_slice((array)($r['skipped'] ?? []), 0, 2)], JSON_UNESCAPED_UNICODE)); } catch (Throwable $e9) { }
+            if (function_exists('wa_log')) wa_log($pdo, 'template', !isset($r['error']), 'Utility versions for campaign message #' . $tid . ' (auto): ' . (isset($r['error']) ? $r['error'] : $n . ' made and sent to Meta'));
             break;   // one message per call
         }
     } catch (Throwable $e) { $o['note'] = 'error: ' . mb_substr($e->getMessage(), 0, 120); }
@@ -259,7 +260,7 @@ function wa_ru_counts(PDO $pdo, array $ids): array
 /** Where the utility messages are at Meta (made in the last 3 days): approved / waiting / rejected / not sent yet, with the newest ones listed. */
 function wa_ru_approval(PDO $pdo): array
 {
-    $o = ['total' => 0, 'approved' => 0, 'waiting' => 0, 'rejected' => 0, 'draft' => 0, 'list' => [], 'last_make' => (int)setting_get($pdo, 'wa_ru_make_at', '0')];
+    $o = ['total' => 0, 'approved' => 0, 'waiting' => 0, 'rejected' => 0, 'draft' => 0, 'list' => [], 'last_make' => (int)setting_get($pdo, 'wa_ru_make_at', '0'), 'make_last' => json_decode((string)setting_get($pdo, 'wa_ru_make_last', ''), true)];
     try {
         $q = $pdo->prepare("SELECT t.id, t.name, t.created_at, t.relabelled_at, GROUP_CONCAT(w.status) AS st FROM wa_templates t LEFT JOIN wa_tpl_waba w ON w.tpl_id = t.id WHERE t.category = 'UTILITY' AND t.created_at >= ? GROUP BY t.id ORDER BY t.id DESC LIMIT 60");
         $q->execute([date('Y-m-d H:i:s', time() - 3 * 86400)]);
@@ -268,6 +269,23 @@ function wa_ru_approval(PDO $pdo): array
             if (!$st) { $k = 'draft'; } elseif (in_array('APPROVED', $st, true)) { $k = 'approved'; } elseif (in_array('PENDING', $st, true) || in_array('IN_APPEAL', $st, true)) { $k = 'waiting'; } else { $k = 'rejected'; }
             if (!empty($r['relabelled_at'])) $k = 'rejected';
             $o[$k]++; if (count($o['list']) < 10) $o['list'][] = ['name' => (string)$r['name'], 'state' => $k, 'at' => (string)$r['created_at']];
+        }
+    } catch (Throwable $e) { }
+    return $o;
+}
+/** Per campaign message: where its utility versions are at Meta — [tpl_id => ['approved' => n, 'waiting' => n, 'rejected' => n, 'draft' => n]]. */
+function wa_ru_fam_states(PDO $pdo, array $tplIds): array
+{
+    $ids = array_values(array_unique(array_filter(array_map('intval', $tplIds)))); if (!$ids) return [];
+    $o = []; foreach ($ids as $i) $o[$i] = ['approved' => 0, 'waiting' => 0, 'rejected' => 0, 'draft' => 0];
+    try {
+        $q = $pdo->query("SELECT m.id AS tid, t.id AS uid, t.relabelled_at AS rl, GROUP_CONCAT(w.status) AS st FROM wa_templates m JOIN wa_templates t ON t.category = 'UTILITY' AND t.family_id = COALESCE(NULLIF(m.family_id, 0), m.id)
+            LEFT JOIN wa_tpl_waba w ON w.tpl_id = t.id WHERE m.id IN (" . implode(',', $ids) . ") GROUP BY m.id, t.id, t.relabelled_at");
+        foreach ($q->fetchAll() as $r) {
+            $st = array_filter(explode(',', strtoupper((string)$r['st'])));
+            if (!$st) $k = 'draft'; elseif (in_array('APPROVED', $st, true)) $k = 'approved'; elseif (in_array('PENDING', $st, true) || in_array('IN_APPEAL', $st, true)) $k = 'waiting'; else $k = 'rejected';
+            if (!empty($r['rl'])) $k = 'rejected';
+            $o[(int)$r['tid']][$k]++;
         }
     } catch (Throwable $e) { }
     return $o;
