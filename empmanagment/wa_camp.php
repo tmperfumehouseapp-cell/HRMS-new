@@ -1915,6 +1915,8 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
             if (isset($in['hourly'])) setting_set($pdo, 'wa_ru_hourly', (string)max(10, min(20000, (int)$in['hourly'])));
             if (isset($in['wait_min'])) setting_set($pdo, 'wa_ru_wait_min', (string)max(5, min(1440, (int)$in['wait_min'])));
             if (isset($in['ord_days']) && in_array((int)$in['ord_days'], [30, 60, 90, 120], true)) setting_set($pdo, 'wa_ru_ord_days', (string)(int)$in['ord_days']);
+            if (isset($in['ask_days']) && in_array((int)$in['ask_days'], [30, 60, 90, 120, 180], true)) setting_set($pdo, 'wa_ru_ask_days', (string)(int)$in['ask_days']);
+            if (isset($in['make_on'])) setting_set($pdo, 'wa_ru_make_on', !empty($in['make_on']) ? '1' : '0');
             json_response(['ok' => true, 'status' => wa_ru_status($pdo)]);
         }
         case 'wa.camp_fast_tick': {   // ⚡ one campaign's Send fast sender: that campaign only, its own lock, beside the running pool (the page calls it again and again while it is open)
