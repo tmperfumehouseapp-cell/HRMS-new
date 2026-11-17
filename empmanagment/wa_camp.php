@@ -118,7 +118,13 @@ function wa_camp_ctx(PDO $pdo, array $t, int $switch, array $only = [], int $bur
     }
     if ($campaign && count($nums) > 1) { foreach (wa_num_fail_flags($pdo) as $fid => $ratio) if (isset($nums[$fid]) && count($nums) > 1) unset($nums[$fid]); }   // a number whose messages mostly FAIL is left out for now (campaigns only) — the others take its people; it comes back by itself when its failures drop
     $p = $caps['_port'] ?? ['left' => 0]; $st = 0.05; try { $sv = setting_get($pdo, 'wa_camp_sticky', ''); if ($sv !== '' && is_numeric($sv)) $st = max(0.0, min(1.0, (float)$sv)); } catch (Throwable $e) { }
-    return ['nums' => $nums, 'skip' => $skip, 'port_left' => $burst > 0 ? max((int)$p['left'], $burst) : (int)$p['left'], 'port' => $p, 'switch' => max(1, $switch), 'sticky' => $st];
+    $out = ['nums' => $nums, 'skip' => $skip, 'port_left' => $burst > 0 ? max((int)$p['left'], $burst) : (int)$p['left'], 'port' => $p, 'switch' => max(1, $switch), 'sticky' => $st];
+    // 🛟 the numbers the campaign chose ("Send from") cannot send at all, but another connected number can (message approved there, quality not Low, room left): use it instead of stalling (setting wa_camp_fallback = 0 turns this off)
+    if ($only && !$nums && empty($GLOBALS['__wa_ctx_fb']) && (string)setting_get($pdo, 'wa_camp_fallback', '1') !== '0') {
+        $GLOBALS['__wa_ctx_fb'] = 1; try { $o2 = wa_camp_ctx($pdo, $t, $switch, [], $burst, $campaign); } finally { unset($GLOBALS['__wa_ctx_fb']); }
+        if (!empty($o2['nums'])) { $o2['fallback'] = array_map('intval', array_keys($o2['nums'])); return $o2; }
+    }
+    return $out;
 }
 /** 📈 Campaigns only: each number's room this hour (its own speed minus the campaign people it messaged in the last 60 minutes). Returns [numberId => left] or null (no hourly speed). */
 function wa_camp_hour_room(array $port): ?array
