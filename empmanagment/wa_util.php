@@ -19,11 +19,52 @@ if (!function_exists('wa_util_make')) {
 /** Words that make Meta call a message marketing — a utility version must not contain them. */
 function wa_util_bad_words(): array { return ['offer', 'discount', 'sale', '% off', 'off on', 'free', 'deal', 'limited time', 'hurry', 'last chance', 'buy now', 'shop now', 'coupon', 'promo', 'diwali offer', 'festive offer', 'save ', 'cashback', 'combo offer', 'best price', 'lowest price']; }
 
+/** 🧠 LEARNING FROM META (owner, 17 Nov 2026): every utility message written so far is looked at again — what Meta APPROVED, what it REJECTED or moved to marketing, and the reason it gave.
+ *  The writer (Claude) is shown real examples of both and the words that appear in rejected messages but never in approved ones; when more than half of the last decisions are rejections it is told to write much plainer
+ *  (STRICT). The learned words are also refused locally before anything goes to Meta. Remembered for 10 minutes. Returns ['appr','rej','rate','strict','bad' => [words],'good' => [..],'badx' => [[body, reason]]]. */
+function wa_util_learn(PDO $pdo, bool $force = false): array
+{
+    static $memo = null; if ($memo !== null && !$force) return $memo;
+    $c = json_decode((string)setting_get($pdo, 'wa_util_learn', ''), true); if (!$force && is_array($c) && (int)($c['at'] ?? 0) > time() - 600) { $GLOBALS['__wa_util_learned_bad'] = (array)($c['bad'] ?? []); return $memo = $c; }
+    $o = ['at' => time(), 'appr' => 0, 'rej' => 0, 'rate' => 0, 'strict' => false, 'bad' => [], 'good' => [], 'badx' => []]; $A = []; $Rj = [];
+    try {
+        $q = $pdo->prepare("SELECT t.id, t.body, t.relabelled_at, GROUP_CONCAT(CONCAT(w.status, ':', LEFT(w.reason, 100)) SEPARATOR '|') AS st FROM wa_templates t JOIN wa_tpl_waba w ON w.tpl_id = t.id
+            WHERE t.category = 'UTILITY' AND t.name LIKE 'util\\_%' AND t.created_at >= ? GROUP BY t.id, t.body, t.relabelled_at ORDER BY t.id DESC LIMIT 300"); $q->execute([date('Y-m-d H:i:s', time() - 30 * 86400)]);
+        foreach ($q->fetchAll() as $r) {
+            $rows = array_filter(explode('|', (string)$r['st'])); $stt = []; $why = ''; foreach ($rows as $x) { $p2 = explode(':', $x, 2); $stt[] = strtoupper($p2[0]); if ($why === '' && in_array(strtoupper($p2[0]), ['REJECTED', 'PAUSED', 'DISABLED'], true)) $why = trim((string)($p2[1] ?? '')); }
+            $body = (string)$r['body'];
+            if (!empty($r['relabelled_at'])) { $Rj[] = [$body, 'Meta moved it to marketing']; }
+            elseif (in_array('APPROVED', $stt, true)) { $A[] = $body; }
+            elseif (!array_intersect(['PENDING', 'IN_APPEAL', 'ERROR'], $stt) && in_array('REJECTED', $stt, true)) { $Rj[] = [$body, $why]; }
+        }
+    } catch (Throwable $e) { }
+    $o['appr'] = count($A); $o['rej'] = count($Rj); $dec = $o['appr'] + $o['rej']; $o['rate'] = $dec ? round($o['rej'] / $dec, 2) : 0; $o['strict'] = $dec >= 8 && $o['rate'] >= 0.5;
+    $words = function (string $b): array { $b = mb_strtolower(preg_replace('/\{\{\d+\}\}/', ' ', $b)); preg_match_all('/[\p{L}]{4,}/u', $b, $m); return array_values(array_unique($m[0])); };
+    $df = function (array $docs) use ($words): array { $d = []; foreach ($docs as $b) foreach ($words($b) as $w) $d[$w] = ($d[$w] ?? 0) + 1; return $d; };
+    $dr = $df(array_map(fn($x) => $x[0], $Rj)); $da = $df($A); $stop = ['this', 'that', 'with', 'have', 'your', 'from', 'about', 'please', 'reply', 'here', 'and', 'for', 'you', 'the', 'perfume', 'enquiry', 'size', 'details', 'house', 'thanks', 'kya', 'aap', 'aapka', 'aapke', 'hain', 'hai', 'main', 'tha', 'liye'];
+    $bad = []; if (count($Rj) >= 3) foreach ($dr as $w => $n) if ($n >= 3 && empty($da[$w]) && $n / count($Rj) >= 0.3 && !in_array($w, $stop, true)) $bad[$w] = $n;
+    arsort($bad); $o['bad'] = array_slice(array_keys($bad), 0, 15);
+    $o['good'] = array_map(fn($b) => mb_substr($b, 0, 260), array_slice($A, 0, 4)); $o['badx'] = array_map(fn($x) => [mb_substr($x[0], 0, 260), mb_substr($x[1], 0, 100)], array_slice($Rj, 0, 5));
+    $GLOBALS['__wa_util_learned_bad'] = $o['bad']; try { setting_set($pdo, 'wa_util_learn', json_encode($o, JSON_UNESCAPED_UNICODE)); } catch (Throwable $e) { }
+    return $memo = $o;
+}
+/** The text added to the writer's instructions: what worked, what Meta refused (with its reason), the words to avoid, and STRICT mode when most are refused. */
+function wa_util_learn_text(PDO $pdo): string
+{
+    $L = wa_util_learn($pdo); if (!$L['appr'] && !$L['rej']) return '';
+    $t = "WHAT META DID WITH THE UTILITY MESSAGES WRITTEN SO FAR (last 30 days: " . $L['appr'] . " approved, " . $L['rej'] . " rejected or moved to marketing). Learn from it and CHANGE your pattern when needed.\n";
+    if ($L['good']) { $t .= "APPROVED by Meta as utility — write in this plain style:\n"; foreach ($L['good'] as $i => $b) $t .= ($i + 1) . ') ' . $b . "\n"; }
+    if ($L['badx']) { $t .= "REJECTED / moved to marketing — do NOT write like these:\n"; foreach ($L['badx'] as $i => $x) $t .= ($i + 1) . ') ' . $x[0] . ($x[1] !== '' ? '   [Meta: ' . $x[1] . ']' : '') . "\n"; }
+    if ($L['bad']) $t .= "Words that appear in rejected messages and never in approved ones — do NOT use them: " . implode(', ', $L['bad']) . ".\n";
+    if ($L['strict']) $t .= "STRICT MODE: more than half of the recent messages were refused. Write MUCH plainer: at most two short sentences, no emojis, no exclamation marks, no sales tone, no 'ready / available / best / special / new'; only confirm what the customer did (their enquiry about {{2}}) and ask ONE neutral question about what they need next. Change the wording and structure completely from the rejected examples.\n";
+    return $t . "\n";
+}
+
 /** Why a utility body cannot be used ('' = fine): Meta's marketing words, or the variables are not right. */
 function wa_util_check(string $body): string
 {
     $body = trim($body); if ($body === '') return 'The message is empty.';
-    $low = mb_strtolower($body); $bad = array_values(array_filter(wa_util_bad_words(), fn($w) => mb_strpos($low, $w) !== false));
+    $low = mb_strtolower($body); $bad = array_values(array_filter(array_merge(wa_util_bad_words(), (array)($GLOBALS['__wa_util_learned_bad'] ?? [])), fn($w) => $w !== '' && mb_strpos($low, $w) !== false));   // + the words learned from Meta's rejections (wa_util_learn)
     if ($bad) return 'Meta would call it marketing because of: ' . implode(', ', $bad) . '.';
     preg_match_all('/\{\{(\d+)\}\}/', $body, $vm); $vars = array_map('intval', $vm[1]);
     if (!in_array(1, $vars, true) || !in_array(2, $vars, true)) return 'It must use {{1}} (customer name) and {{2}} (the perfume).';
@@ -62,6 +103,7 @@ function wa_util_make(PDO $pdo, int $tplId, int $n, int $by, bool $send = false)
          . "Language: " . ($lang === 'en' ? 'English, like the owner\'s message' : 'the language code ' . $lang) . ". Keep about the same length as the owner's message (max 550 characters), end with one simple question. "
          . "Make the " . $n . " versions close to the owner's message, each with a small difference. name = lowercase_with_underscores, max 40 letters, starting with util_. "
          . ($les !== '' ? "The owner corrected earlier versions — follow how the owner writes:\n" . $les : '')
+         . wa_util_learn_text($pdo)
          . "Answer {\"messages\":[{\"name\":\"util_...\",\"body\":\"...\"}]}.";
     $user = "The owner's marketing message:\n" . (string)$m['body'];
     $j = function_exists('brain_ai_json') ? brain_ai_json('internal', 'whatsapp', $sys, $user, 3000, ['ctx' => false]) : null;
