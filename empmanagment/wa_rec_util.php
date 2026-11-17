@@ -46,7 +46,7 @@ function wa_ru_tables(PDO $pdo): bool
 function wa_ru_cfg(PDO $pdo): array
 {
     $g = function (string $k, string $d) use ($pdo) { try { $v = setting_get($pdo, $k, $d); return ($v === null || $v === '') ? $d : (string)$v; } catch (Throwable $e) { return $d; } };
-    return ['on' => $g('wa_ru_on', '1') !== '0', 'hourly' => max(10, min(20000, (int)$g('wa_ru_hourly', '3600'))), 'wait_min' => max(5, min(1440, (int)$g('wa_ru_wait_min', '10'))),
+    return ['on' => $g('wa_ru_on', '1') !== '0', 'hourly' => max(10, min(1000000, (int)$g('wa_ru_hourly', '1000000'))), 'wait_min' => max(5, min(1440, (int)$g('wa_ru_wait_min', '10'))),
             'ord_days' => in_array((int)$g('wa_ru_ord_days', '180'), [30, 60, 90, 120, 180], true) ? (int)$g('wa_ru_ord_days', '180') : 180, 'pause_until' => (int)$g('wa_ru_pause_until', '0'),
             'ask_days' => in_array((int)$g('wa_ru_ask_days', '90'), [30, 60, 90, 120, 180], true) ? (int)$g('wa_ru_ask_days', '90') : 90, 'make_on' => $g('wa_ru_make_on', '1') !== '0'];
 }
@@ -62,7 +62,7 @@ function wa_ru_tpl_ctx(PDO $pdo, array $t): array
 {
     $ok = array_map('strval', (array)($t['ok_wabas'] ?? [])); if (!$ok) return [null, null];
     $by = []; foreach ($ok as $wb) $by[$wb] = $t; $base = $t; $base['by_waba'] = $by; $base['ok_wabas'] = $ok;
-    return [$base, wa_camp_ctx($pdo, $base, 99, [], 0, true)];
+    return [$base, wa_camp_ctx($pdo, $base, 99, [], 1000000, true)];
 }
 /** The utility module (wa_util.php) is loaded by the engine, but not on every route (the campaign routes did not have it, so "Start as utility" showed no messages). Loaded from here, inside a function that has $pdo. */
 function wa_ru_load_util(PDO $pdo): void
@@ -140,6 +140,7 @@ function wa_ru_make_tick(PDO $pdo): array
     // 0c) one-time: the people left out as "No chosen utility message fits this person" only because a chosen message wrote its variable as "Name" (capital N) are put back, 20,000 at a time
     try { if ((string)setting_get($pdo, 'wa_ru_ord180', '') !== '1') { setting_set($pdo, 'wa_ru_ord_days', '180'); setting_set($pdo, 'wa_ru_ord180', '1'); } } catch (Throwable $e) { }   // owner 17 Nov 2026: order window 180 days (one time)
     try { if ((string)setting_get($pdo, 'wa_ru_hourly60', '') !== '1') { setting_set($pdo, 'wa_ru_hourly', '3600'); setting_set($pdo, 'wa_ru_hourly60', '1'); } } catch (Throwable $e) { }   // owner 17 Nov 2026: Module B 60 a minute = 3,600 an hour (it was 1,500 an hour)
+    try { if ((string)setting_get($pdo, 'wa_ru_nolimit', '') !== '1') { setting_set($pdo, 'wa_ru_hourly', '1000000'); setting_set($pdo, 'wa_u_per_min', '100000'); setting_set($pdo, 'wa_ru_pause_until', '0'); setting_set($pdo, 'wa_ru_rest', '{}'); setting_set($pdo, 'wa_ru_cursor', '0'); setting_set($pdo, 'wa_ru_on', '1'); setting_set($pdo, 'wa_ru_nolimit', '1'); } } catch (Throwable $e) { }   // owner 17 Nov 2026: no own speed / hourly / number limits for utility (Meta's own limit still decides), and start again from the beginning: pause and rest cleared, cursor back to 0
     try { if ((string)setting_get($pdo, 'wa_ru_perm60', '') !== '1') { setting_set($pdo, 'wa_u_per_min', '60'); setting_set($pdo, 'wa_ru_perm60', '1'); } } catch (Throwable $e) { }   // owner 17 Nov 2026: utility limit 60 a minute (one time)
     try { if ((string)setting_get($pdo, 'wa_ru_fit_fix', '') !== '1') { $n7 = (int)$pdo->exec("UPDATE wa_camp_items SET status = 'queued', variant = 'R', err = '' WHERE status = 'skipped' AND err = 'No chosen utility message fits this person' LIMIT 20000");
             if ($n7 > 0) { $pdo->exec("UPDATE wa_campaigns SET status = 'running', finished_at = NULL, note = 'Started again with utility — people put back after a fix.' WHERE status = 'done' AND extra LIKE '%u_restart%' AND id IN (SELECT camp_id FROM wa_camp_items WHERE status = 'queued' AND variant = 'R')"); if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility: ' . $n7 . ' people put back (they were left out only because a chosen message wrote its variable as \"Name\")'); }
@@ -260,7 +261,7 @@ function wa_ru_tick(PDO $pdo): array
         // somebody got the utility message → the campaign's own retry of that person must not send a second one
         try { $pdo->exec("UPDATE wa_camp_items i JOIN wa_ru_log r ON r.item_id = i.id JOIN wa_messages m ON m.wamid = r.wamid SET i.status = 'skipped' WHERE (i.status = 'retry' OR (i.status = 'sent' AND i.last_status = 'failed')) AND r.ok = 1 AND r.wamid <> '' AND m.status IN ('delivered', 'read')"); } catch (Throwable $e) { }
         $from = function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 10:00:00');
-        $cursor = (int)setting_get($pdo, 'wa_ru_cursor', '0'); $lim = 600; $recOn = function_exists('wa_rec_cfg') ? !empty(wa_rec_cfg($pdo)['on']) : false; $recTries = function_exists('wa_rec_cfg') ? max(1, (int)wa_rec_cfg($pdo)['max_attempts'] - 1) : 2;
+        $cursor = (int)setting_get($pdo, 'wa_ru_cursor', '0'); $lim = 2000; $recOn = function_exists('wa_rec_cfg') ? !empty(wa_rec_cfg($pdo)['on']) : false; $recTries = function_exists('wa_rec_cfg') ? max(1, (int)wa_rec_cfg($pdo)['max_attempts'] - 1) : 2;
         $mo = implode(',', WA_RU_MARKETING_ONLY);
         // 💸 marketing FIRST (owner, 17 Nov 2026): a person whose marketing message FAILED gets utility the same day (after the short wait / recovery); only draft / scheduled campaigns are skipped. Held people still waiting for their extra marketing try (status retry) are left alone until that try has been made
         $dn = $pdo->prepare("SELECT c.id FROM wa_campaigns c WHERE COALESCE(c.started_at, c.created_at) >= ? AND c.status NOT IN ('draft', 'scheduled')"); $dn->execute([date('Y-m-d H:i:s', $nowTs - 4 * 86400)]);
