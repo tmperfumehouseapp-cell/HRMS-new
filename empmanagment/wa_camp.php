@@ -812,7 +812,7 @@ function wa_camp_tick_run(PDO $pdo, int $only = 0): array
         // if Meta moves it to marketing, utility fails (the 4% rule) or it cannot be sent, the person / the whole campaign goes on as marketing. Setting wa_u_first = 0 switches it off; the owner's own "utility off" wins.
         $uPool = []; $uFirst = !$mixOn && !$isUtil && (string)setting_get($pdo, 'wa_u_first', '1') !== '0' && empty($c['extra']['u_off']) && empty($c['extra']['u_off_owner']) && strtoupper((string)($t['category'] ?? 'MARKETING')) === 'MARKETING';
         $uAsk = function_exists('wa_ru_cfg') ? (int)wa_ru_cfg($pdo)['ask_days'] : 30; $uShift = max(0, $uAsk - (function_exists('wa_mix_cfg') ? (int)wa_mix_cfg($pdo, 'wa_mix_days', 30) : 30)) * 86400;
-        $uOnly = (int)($c['extra']['u_only'] ?? 0);
+        $uOnly = 0; $uSetIds = array_values(array_filter(array_map('intval', (array)($c['extra']['u_set'] ?? ((int)($c['extra']['u_only'] ?? 0) ? [(int)$c['extra']['u_only']] : [])))));
         if ($uFirst) { $uPct = 100; $c['extra']['u_auto'] = 1; }
         if ($isUtil) {   // 💸 utility follow-up campaign: only people who qualify get a message, the 6 standard follow-ups take turns
             $gw = wa_camp_util_guard($pdo, $c);
@@ -828,7 +828,13 @@ function wa_camp_tick_run(PDO $pdo, int $only = 0): array
                 if ($uRow && strtoupper((string)$uRow['category']) === 'UTILITY' && strtoupper((string)($uRow['category_now'] ?? '')) !== 'MARKETING' && empty($uRow['relabelled_at'])) { $u1 = wa_camp_tpl($pdo, (int)$uRow['id'], true, 0); if ($u1) { if (!is_array($u1['examples'] ?? null)) $u1['examples'] = json_decode((string)($uRow['examples'] ?? ''), true) ?: []; $uTs[(int)$u1['id']] = $u1; } } }
             if ($uPct > 0 && !empty($c['extra']['u_auto']) && function_exists('wa_util_usable')) foreach (wa_util_usable($pdo, (int)$c['tpl_id']) as $u1) $uTs[(int)$u1['id']] = $u1;
             $uTs = array_values($uTs); $uT = $uTs[0] ?? null; if ($uFirst && function_exists('wa_util_pool_usable')) { try { $uPool = wa_util_pool_usable($pdo); } catch (Throwable $e) { $uPool = []; } }
-            if ($uFirst && $uOnly > 0) { $uTs = array_values(array_filter($uTs, fn($u0) => (int)$u0['id'] === $uOnly)); $uPool = []; $uT = $uTs[0] ?? null; }   // the owner chose ONE utility message for this campaign
+            if ($uFirst && $uSetIds) {   // the owner chose one or more utility messages for this campaign: only these; every person gets the one that fits their data (order → order message, enquiry → perfume / date message, otherwise a name-only one)
+                $uTs = []; $uPool = [];
+                foreach ($uSetIds as $sid) { $tt = wa_camp_tpl($pdo, $sid, true, 0); $rw = function_exists('wa_tpl_row') ? wa_tpl_row($pdo, $sid) : null; if (!$tt || !$rw || !empty($rw['relabelled_at']) || strtoupper((string)($rw['category_now'] ?? '')) === 'MARKETING') continue;
+                    $exs = is_array($rw['examples'] ?? null) ? $rw['examples'] : (json_decode((string)($rw['examples'] ?? ''), true) ?: []); $lab = array_map('strval', (array)($exs['labels'] ?? [])); if (!$lab && (int)$tt['nvars'] === 1) $lab = ['name'];
+                    $tt['labels'] = $lab; $tt['pool_kind'] = in_array('order', array_map('strtolower', $lab), true) ? 'order' : ((count($lab) <= 1) ? 'open' : 'ask'); $uPool[] = $tt; }
+                $uT = $uPool[0] ?? null;
+            }
             if ($uPct > 0 && !$uT && !$uPool) $pdo->prepare("UPDATE wa_campaigns SET note = ? WHERE id = ? AND status = 'running'")->execute(['No utility version is approved yet (or Meta moved them to marketing) — sending the marketing message to everyone until one is approved.', $id]);
             else { foreach ($pdo->query("SELECT variant, COUNT(*) AS n FROM wa_camp_items WHERE camp_id = $id AND status = 'sent' GROUP BY variant")->fetchAll() as $vr) { $allCnt += (int)$vr['n']; if ($vr['variant'] === 'U') $uCnt += (int)$vr['n']; }
                 foreach ($pdo->query("SELECT id, waba_id FROM wa_numbers")->fetchAll() as $nr) $wabaOf[(int)$nr['id']] = wa_waba_of($nr); }
@@ -1935,13 +1941,28 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
             $never = implode(',', array_diff(defined('WA_REC_NEVER') ? WA_REC_NEVER : [0], defined('WA_RU_MARKETING_ONLY') ? WA_RU_MARKETING_ONLY : []));
             $w = "camp_id = ? AND ((status = 'failed' AND err_code NOT IN ($never)) OR (status = 'skipped' AND err_code = 131049) OR (status IN ('retry') AND err_code IN (131049, 131050)))";
             $q = $pdo->prepare("SELECT COUNT(*) FROM wa_camp_items WHERE $w"); $q->execute([$cid]); $n = (int)$q->fetchColumn();
-            if (!empty($in['preview'])) json_response(['ok' => true, 'n' => $n, 'approved' => $okU, 'items' => (function () use ($pdo, $c) { try { if (function_exists('wa_tpl_tables')) wa_tpl_tables($pdo); return function_exists('wa_util_list') ? wa_util_list($pdo, (int)$c['tpl_id']) : []; } catch (Throwable $e) { return []; } })()]);   // every utility message we have, with its state at Meta: the owner picks one
+            if (!empty($in['preview'])) {
+                $items = []; try { if (function_exists('wa_tpl_tables')) wa_tpl_tables($pdo); $items = function_exists('wa_util_list') ? wa_util_list($pdo, (int)$c['tpl_id']) : []; } catch (Throwable $e) { $items = []; }
+                try {   // 🎯 how many of THESE people each message fits (an order message needs an order …): the owner sees "suitable / not suitable" before choosing
+                    $cq = $pdo->prepare("SELECT DISTINCT phone FROM wa_camp_items WHERE $w LIMIT 6000"); $cq->execute([$cid]); $phs = array_map('strval', $cq->fetchAll(PDO::FETCH_COLUMN)); $tot = count($phs); $rc = wa_ru_cfg($pdo);
+                    $sp = ($phs && function_exists('wa_util_split')) ? wa_util_split($pdo, $phs, (int)$rc['ord_days'], (int)$rc['ask_days']) : ['ask' => 0, 'order' => 0, 'none' => 0]; $best = -1;
+                    foreach ($items as $k => $x) { $row = function_exists('wa_tpl_row') ? wa_tpl_row($pdo, (int)$x['id']) : null; $ex = $row ? (is_array($row['examples'] ?? null) ? $row['examples'] : json_decode((string)($row['examples'] ?? ''), true)) : []; $lab = is_array($ex) ? (array)($ex['labels'] ?? []) : [];
+                        $fit = wa_ru_fit($lab, count(array_unique($x['vars'] ?? [])), $sp, $tot, !empty($x['mine'])); $items[$k]['fit'] = $fit; $labl = array_map('strtolower', array_map('strval', $lab)); $items[$k]['kind'] = in_array('order', $labl, true) ? 'order' : (in_array('perfume', $labl, true) ? 'perfume' : (in_array('date', $labl, true) ? 'date' : 'open')); $items[$k]['fit_of'] = $tot; $items[$k]['fit_pct'] = $tot ? (int)round($fit * 100 / $tot) : 0;
+                        if (in_array((string)$x['status'], ['approved', 'partial'], true) && empty($x['relabelled']) && $fit > $best) $best = $fit; }
+                    $bestBy = [];   // the suggestion: the best approved message of each kind (order · perfume · date · name only) — together every person gets the one that fits their data
+                    foreach ($items as $k => $x) { if (!in_array((string)$x['status'], ['approved', 'partial'], true) || !empty($x['relabelled'])) continue; $kind = (int)$items[$k]['fit'] >= $tot ? 'open' : ($items[$k]['kind'] ?? 'ask'); if (!isset($bestBy[$kind]) || (int)$items[$k]['fit'] > (int)$items[$bestBy[$kind]]['fit']) $bestBy[$kind] = $k; }
+                    $sugIds = []; foreach ($bestBy as $kd => $k) if ((int)$items[$k]['fit'] > 0) $sugIds[] = (int)$items[$k]['id'];
+                    $covers = isset($bestBy['open']) ? $tot : min($tot, (int)($sp['ask'] ?? 0) + (int)($sp['order'] ?? 0)); $suggest = count($sugIds) >= 2 ? ['ids' => $sugIds, 'covers' => $tot ? (int)round($covers * 100 / $tot) : 0] : null;
+                    foreach ($items as $k => $x) $items[$k]['best'] = $best > 0 && (int)$items[$k]['fit'] === $best && in_array((string)$x['status'], ['approved', 'partial'], true) && empty($x['relabelled']);
+                } catch (Throwable $e) { }
+                json_response(['ok' => true, 'n' => $n, 'approved' => $okU, 'items' => $items, 'suggest' => $suggest ?? null]);
+            }
             if ($okU === 0) json_response(['error' => 'No utility message is approved by Meta yet — make one first (✨ Make utility now) and wait for approval.'], 422);
-            $pick = (int)($in['tpl'] ?? 0); $pickRow = null;
-            if ($pick > 0) { $tp0 = function_exists('wa_camp_tpl') ? wa_camp_tpl($pdo, $pick, true, 0) : null; $pickRow = function_exists('wa_tpl_row') ? wa_tpl_row($pdo, $pick) : null;
-                if (!$tp0 || !$pickRow || strtoupper((string)$pickRow['category']) !== 'UTILITY' || !empty($pickRow['relabelled_at']) || strtoupper((string)($pickRow['category_now'] ?? '')) === 'MARKETING') json_response(['error' => 'That utility message is not approved by Meta (or Meta moved it to marketing). Pick an approved one.'], 422); }
+            $picks = array_values(array_unique(array_filter(array_map('intval', array_merge((array)($in['tpls'] ?? []), [(int)($in['tpl'] ?? 0)]))))); $pick = $picks ? $picks[0] : 0;
+            foreach ($picks as $pid) { $tp0 = function_exists('wa_camp_tpl') ? wa_camp_tpl($pdo, $pid, true, 0) : null; $pickRow = function_exists('wa_tpl_row') ? wa_tpl_row($pdo, $pid) : null;
+                if (!$tp0 || !$pickRow || strtoupper((string)$pickRow['category']) !== 'UTILITY' || !empty($pickRow['relabelled_at']) || strtoupper((string)($pickRow['category_now'] ?? '')) === 'MARKETING') json_response(['error' => 'One of the chosen utility messages is not approved by Meta (or Meta moved it to marketing). Pick approved ones.'], 422); }
             if ($n <= 0) json_response(['error' => 'Nobody to start again: no failed or Meta-held people that utility could still reach.'], 422);
-            $ex = is_array($c['extra'] ?? null) ? $c['extra'] : []; unset($ex['u_off'], $ex['u_off_owner'], $ex['u_only']); if ($pick > 0) { $ex['u_tpl'] = $pick; $ex['u_only'] = $pick; $ex['u_pct'] = 100; $ex['u_auto'] = 1; }   // a chosen message is the ONLY utility message this campaign sends
+            $ex = is_array($c['extra'] ?? null) ? $c['extra'] : []; unset($ex['u_off'], $ex['u_off_owner'], $ex['u_only'], $ex['u_set']); if ($picks) { $ex['u_tpl'] = $pick; $ex['u_set'] = array_slice($picks, 0, 6); $ex['u_pct'] = 100; $ex['u_auto'] = 1; }   // the chosen message(s) are the ONLY utility messages this campaign sends: each person gets the one that fits their data
             $pdo->prepare("UPDATE wa_campaigns SET extra = ? WHERE id = ?")->execute([json_encode($ex, JSON_UNESCAPED_UNICODE), $cid]);
             $pdo->prepare("UPDATE wa_camp_items SET status = 'queued', err = '', err_code = 0, send_at = NULL, next_try = NULL WHERE $w")->execute([$cid]);
             $pdo->prepare("UPDATE wa_campaigns SET status = 'running', finished_at = NULL, note = 'Started again with utility for the people whose message failed.' WHERE id = ? AND status IN ('done', 'paused', 'running')")->execute([$cid]);
