@@ -61,7 +61,7 @@ jobs:
             $cnt = []; foreach ($all("SELECT status, COUNT(*) n FROM wa_camp_items WHERE camp_id = ? GROUP BY status", [(int)$c["id"]]) as $ci) $cnt[] = $ci["status"] . " " . $ci["n"]; echo "   people by state: " . implode(", ", $cnt) . "\n";
           }
           echo "\n=== standard follow-up messages: how many per status (not listed one by one) ===\n";
-          foreach ($all("SELECT t.category, w.status, COUNT(*) n FROM wa_templates t JOIN wa_tpl_waba w ON w.tpl_id = t.id WHERE t.name LIKE 'tmph\\_fu\\_%' GROUP BY t.category, w.status") as $r) echo $row($r);
+          foreach ($all("SELECT t.name, t.category, w.status, LEFT(w.reason, 80) reason, COUNT(*) n FROM wa_templates t JOIN wa_tpl_waba w ON w.tpl_id = t.id WHERE t.name LIKE 'tmph\\_fu\\_%' GROUP BY t.name, t.category, w.status, reason ORDER BY t.name") as $r) echo $row($r);
           echo "\n=== people put back by \"Start as utility\" (marked restart-utility) and what happened to them ===\n";
           foreach ($all("SELECT camp_id, status, LEFT(err, 70) e, COUNT(*) n FROM wa_camp_items WHERE variant = 'R' OR err IN ('No chosen utility message fits this person', 'Already delivered a message of ours') GROUP BY camp_id, status, e ORDER BY camp_id DESC, n DESC LIMIT 20") as $r) echo $row($r);
           echo "\n=== why the people of campaigns started again as utility were left out (skipped reasons) ===\n";
