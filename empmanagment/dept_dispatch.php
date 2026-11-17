@@ -154,6 +154,7 @@ function dp_dsp_sync(PDO $pdo, $now, $force = false) {
     // the same two rules for parcels the Shiprocket read no longer reaches: a cancelled shipment is "cancelled", a parcel that reached back the seller is a return
     try { $pdo->exec("UPDATE dp_dsp_parcels SET status = 'cancelled' WHERE status IN ('placed','tracked') AND manual = 0 AND pend_track IS NULL AND sr_status LIKE '%cancel%' AND sr_status NOT LIKE '%return%'"); } catch (Throwable $e) {}
     try { $pdo->exec("UPDATE dp_dsp_parcels SET status = 'rto' WHERE status IN ('tracked','transit') AND sr_status LIKE 'reached back%'"); } catch (Throwable $e) {}
+    try { dp_dsp_courier_seed($pdo); } catch (Throwable $e) {}
     try { dp_dsp_hand_seed($pdo); } catch (Throwable $e) {}
     try { if (!function_exists('wmo_dsp_heal') && is_file(__DIR__ . '/wmo.php')) require_once __DIR__ . '/wmo.php'; if (function_exists('wmo_dsp_heal')) wmo_dsp_heal($pdo); } catch (Throwable $e) {}   // tracking IDs typed / imported on the Manual orders page reach their parcel here too
     return [$new, $canc];
@@ -229,6 +230,20 @@ function dp_dsp_set_limits(PDO $pdo, $hours, $days, $by = '', $src = 'dispatch',
     $out['text'] = 'Dispatch now uses: ' . implode(' and ', $bits) . '. ' . $out['moved'] . ' open parcel' . ($out['moved'] === 1 ? ' got' : 's got') . ' a new deadline'
         . ($out['forgiven'] ? '; ' . $out['forgiven'] . ' that are late only because of the change will not be fined' : '') . ($out['boss_items'] ? '; ' . $out['boss_items'] . ' Boss task' . ($out['boss_items'] === 1 ? ' was' : 's were') . ' re-worded to match' : '') . '.';
     return $out;
+}
+/** ONE TIME: the courier list gets the tracking pages that were still blank (a link somebody already typed is never changed), and Mahavir is added when it is missing. */
+function dp_dsp_courier_seed(PDO $pdo) {
+    if (!function_exists('dp_get') || dp_get('dsp_courier_seed1', '') !== '') return;
+    dp_put('dsp_courier_seed1', date('Y-m-d H:i:s'));
+    $rows = $pdo->query("SELECT id, name, link FROM dp_dsp_couriers")->fetchAll();
+    $want = [['india post', 'India Post', 'https://www.indiapost.gov.in/_layouts/15/dop.portal.tracking/trackconsignment.aspx'],
+             ['mahavir', 'Mahavir', 'http://shreemahavircourier.com/'],
+             ['bluedart', 'Bluedart', 'https://shiprocket.co/tracking/{ID}']];   // every Bluedart parcel is booked through Shiprocket
+    foreach ($want as $x) {
+        $hit = null; foreach ($rows as $r) if (stripos((string)$r['name'], $x[0]) !== false) { $hit = $r; break; }
+        if ($hit) { if (trim((string)$hit['link']) === '') $pdo->prepare("UPDATE dp_dsp_couriers SET link = ? WHERE id = ?")->execute([$x[2], $hit['id']]); }
+        else $pdo->prepare("INSERT INTO dp_dsp_couriers (name, link, active, sort_no) VALUES (?,?,1,?)")->execute([$x[1], $x[2], 50 + count($rows)]);
+    }
 }
 /** ONE TIME: the four parcels of the team's manual sheet (Nov 2026) that went by another courier get that courier's tracking ID, exactly as the pencil would write it.
  *  A parcel that already has a hand-written ID, or is delivered / returned, is left alone. Runs once (flag in dp_state). */
