@@ -259,6 +259,9 @@ function wa_dq_win_counts(PDO $pdo, string $key, string $from, int $ttl): array
     if (isset($mem[$key]) && $now - $mem[$key]['at'] < $ttl) $c = $mem[$key];
     if ($c === null) { $j = json_decode((string)@file_get_contents($file), true); if (is_array($j) && isset($j['at'], $j['from'], $j['n']) && $now - (int)$j['at'] < $ttl && ($key !== 'day' || $j['from'] === $from)) $c = $j; }
     $cond = "dir = 'out' AND who IN ('campaign', 'recover') AND mtype = 'template'";
+    // 💸 utility messages are NOT part of the daily plan (owner, 17 Nov 2026): they cost ₹0.15 and deliver ~90%, so they run in their own way (slow, High / Medium numbers only) and never use up the marketing allowance
+    $cond .= " AND NOT EXISTS (SELECT 1 FROM wa_camp_items ui WHERE ui.wamid = wa_messages.wamid AND ui.variant = 'U')";
+    try { if (function_exists('wa_ru_tables') && wa_ru_tables($pdo)) $cond .= " AND NOT EXISTS (SELECT 1 FROM wa_ru_log ul WHERE ul.wamid = wa_messages.wamid)"; } catch (Throwable $e) { }
     if ($c === null) {
         $till = date('Y-m-d H:i:s', $now);
         $q = $pdo->prepare("SELECT SUM(status <> 'failed') AS n, SUM(status IN ('delivered', 'read')) AS d, SUM(status = 'sent') AS p FROM wa_messages WHERE $cond AND ts >= ? AND ts < ?"); $q->execute([$from, $till]); $r = $q->fetch();
