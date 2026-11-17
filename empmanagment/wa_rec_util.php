@@ -111,7 +111,7 @@ function wa_ru_plan(PDO $pdo, array $cfg, array $diag): array
     return ['left' => $left, 'per_hour' => $per, 'eta' => $left > 0 ? date('Y-m-d H:i', $t + ($t === $now ? 3600 : 0)) : null, 'hours' => $left > 0 ? (int)ceil($left / $per) : 0];
 }
 /** 🛠 Utility versions of EVERY marketing message are made and sent to Meta for approval by themselves (owner, 17 Nov 2026):
- *  - a marketing message that was just made gets its utility versions at once (newest first, today's campaigns first); then every older marketing message that has fewer than wa_ru_make_n (6) is filled up, a few per minute, until all are done;
+ *  - a marketing message that was just made gets its utility versions at once (newest first, today's campaigns first); then every older marketing message that has fewer than wa_ru_make_n (10) is filled up, a few per minute, until all are done;
  *  - each one is made AND sent to Meta in the same step; a draft that did not go through is sent again every minute (a Meta limit pauses it for 30 minutes) — nothing stays "not sent";
  *  - one round = at most 3 messages / about 25 seconds (each is a Claude call); a message whose try failed is left for 30 minutes;
  *  - the standard follow-ups (+ the welcome one) are made once if any is missing. */
@@ -140,7 +140,7 @@ function wa_ru_make_tick(PDO $pdo): array
             setting_set($pdo, 'wa_ru_pool_at', (string)$now);
             if (count(wa_ru_pool_made($pdo)) < count(wa_util_pool_defs())) { $r = wa_util_pool_make($pdo, 0); $o['made'] += count($r['made'] ?? []); if (!empty($r['made'])) return $o; }
         }
-        $want = max(2, min(8, (int)setting_get($pdo, 'wa_ru_make_n', '6'))); $from = function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 10:00:00');
+        $want = max(2, min(12, (int)setting_get($pdo, 'wa_ru_make_n', '10'))); $from = function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 10:00:00');
         $fail = json_decode((string)setting_get($pdo, 'wa_ru_fail', ''), true); $fail = is_array($fail) ? array_filter($fail, fn($t) => (int)$t > $now - 1800) : [];
         $q = $pdo->prepare("SELECT t.id, (SELECT COUNT(*) FROM wa_templates u WHERE u.category = 'UTILITY' AND u.relabelled_at IS NULL AND u.family_id = COALESCE(NULLIF(t.family_id, 0), t.id)) AS have,
               (SELECT COUNT(*) FROM wa_campaigns c WHERE c.tpl_id = t.id AND COALESCE(c.started_at, c.created_at) >= ?) AS today
@@ -164,7 +164,7 @@ function wa_ru_make_tick(PDO $pdo): array
 function wa_ru_backfill_counts(PDO $pdo): array
 {
     $c = json_decode((string)setting_get($pdo, 'wa_ru_bf', ''), true); if (is_array($c) && (int)($c['at'] ?? 0) > time() - 120) return $c;
-    $want = max(2, min(8, (int)setting_get($pdo, 'wa_ru_make_n', '6'))); $o = ['done' => 0, 'total' => 0, 'want' => $want, 'at' => time()];
+    $want = max(2, min(12, (int)setting_get($pdo, 'wa_ru_make_n', '10'))); $o = ['done' => 0, 'total' => 0, 'want' => $want, 'at' => time()];
     try {
         $q = $pdo->prepare("SELECT COUNT(*) AS n, SUM(x.have >= ?) AS d FROM (SELECT (SELECT COUNT(*) FROM wa_templates u WHERE u.category = 'UTILITY' AND u.relabelled_at IS NULL AND u.family_id = COALESCE(NULLIF(t.family_id, 0), t.id)) AS have FROM wa_templates t
             WHERE t.category = 'MARKETING' AND (t.family_id IS NULL OR t.family_id = 0 OR t.family_id = t.id) AND (t.extra IS NULL OR (t.extra NOT LIKE '%utility_for%' AND t.extra NOT LIKE '%\"alt_of\"%'))
