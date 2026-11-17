@@ -1,0 +1,51 @@
+# READ-ONLY look at why a campaign cannot send: its message (template) approval per WhatsApp account, the numbers it may send from, and number quality. Counts and labels only (no phone numbers, no customer data).
+# Changes nothing. Run it by hand: Actions → "Campaign send check (read-only)" → Run workflow.
+name: Campaign send check (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+
+      - name: Campaign send state
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
+          cat > /tmp/cs_check.php <<'PHP'
+          <?php
+          $f = $argv[1] . "empmanagment/config.php"; if (!is_file($f)) { echo "config.php not found\n"; exit; }
+          require $f;
+          try { $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_TIMEOUT => 8, PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]); } catch (Throwable $e) { echo "no database: " . $e->getMessage() . "\n"; exit; }
+          $all = function ($sql, $p = []) use ($d) { try { $q = $d->prepare($sql); $q->execute($p); return $q->fetchAll(PDO::FETCH_ASSOC); } catch (Throwable $e) { echo "  (n/a: " . substr($e->getMessage(), 0, 90) . ")\n"; return []; } };
+          $s = function ($k) use ($d) { try { $q = $d->prepare("SELECT setting_value FROM hrms_settings WHERE setting_key = ?"); $q->execute([$k]); $v = $q->fetchColumn(); return $v === false ? "" : (string)$v; } catch (Throwable $e) { return ""; } };
+          echo "=== WhatsApp numbers (labels only) ===\n";
+          $health = json_decode($s("wa_health"), true); if (!is_array($health)) $health = [];
+          foreach ($all("SELECT id, label, waba_id FROM wa_numbers ORDER BY id") as $n) { $h = $health[(int)$n["id"]] ?? []; echo "  #" . $n["id"] . " " . ($n["label"] !== "" ? $n["label"] : "(no label)") . " · account " . substr($n["waba_id"], -4) . " · status " . ($h["status"] ?? "?") . " · quality " . ($h["quality"] ?? "?") . " · limit " . ($h["limit"] ?? ($h["tier"] ?? "?")) . "\n"; }
+          echo "\n=== the newest campaigns that are sending / stuck ===\n";
+          foreach ($all("SELECT id, name, tpl_id, status, rate, note, vars, started_at, last_tick FROM wa_campaigns WHERE status IN ('sending','running','paused','scheduled') ORDER BY id DESC LIMIT 4") as $c) {
+            echo "campaign #" . $c["id"] . " · " . $c["name"] . " · status " . $c["status"] . " · rate " . $c["rate"] . "/h · last tick " . $c["last_tick"] . " · note: " . $c["note"] . "\n";
+            $v = json_decode((string)$c["vars"], true); if (is_array($v)) { $keep = []; foreach ($v as $k => $x) if (preg_match('/num|from|send|switch|only/i', (string)$k)) $keep[$k] = $x; echo "   send-from settings: " . json_encode($keep) . "\n"; }
+            $t = $all("SELECT id, name, category, language FROM wa_templates WHERE id = ?", [(int)$c["tpl_id"]]); if ($t) echo "   message (template): " . $t[0]["name"] . " · " . $t[0]["category"] . " · " . $t[0]["language"] . "\n";
+            foreach ($all("SELECT waba_id, status, quality, reason FROM wa_tpl_waba WHERE tpl_id = ?", [(int)$c["tpl_id"]]) as $w) echo "   approval on account …" . substr($w["waba_id"], -4) . ": " . $w["status"] . (isset($w["quality"]) && $w["quality"] !== "" ? " · quality " . $w["quality"] : "") . (isset($w["reason"]) && $w["reason"] !== "" ? " · " . substr($w["reason"], 0, 120) : "") . "\n";
+          }
+          echo "\n=== approved messages with a similar name (possible replacements) ===\n";
+          foreach ($all("SELECT t.id, t.name, w.status, COUNT(*) n FROM wa_templates t JOIN wa_tpl_waba w ON w.tpl_id = t.id WHERE t.name LIKE '%inqu%' OR t.name LIKE '%enqu%' OR t.name LIKE '%perfume%' GROUP BY t.id, t.name, w.status ORDER BY t.id DESC LIMIT 14") as $r) echo "  #" . $r["id"] . " " . $r["name"] . " · " . $r["status"] . " on " . $r["n"] . " account(s)\n";
+          PHP
+          php /tmp/cs_check.php "$P"; rm -f /tmp/cs_check.php
+          REMOTE
