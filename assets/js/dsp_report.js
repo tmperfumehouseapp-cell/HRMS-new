@@ -592,7 +592,7 @@ const DSP = (() => {
 
     function draw() {
       top(); fix(); strip(); tiles(); table(); legend(); pens();
-      const hb = $('dsHand'); if (hb) { hb.style.background = S.hand ? '#111827' : ''; hb.style.color = S.hand ? '#fff' : ''; hb.textContent = S.hand ? '✍ Other couriers only · show all' : '✍ Other couriers'; }
+      const hb = $('dsHand'); if (hb) { hb.style.background = S.hand ? '#111827' : ''; hb.style.color = S.hand ? '#fff' : ''; const hn = (R && R.counts && R.counts.hand_open) || 0; hb.textContent = S.hand ? '✍ Other couriers only · show all' : '✍ Other couriers' + (hn ? ' · ' + hn + ' to check' : ' · nothing to check'); hb.style.borderColor = !S.hand && hn ? '#b45309' : ''; if (!S.hand) hb.style.color = hn ? '#b45309' : ''; }
       if (!firstDone) {
         firstDone = true;
         if (/[?&]focus=noid/.test(location.search)) { S.open[2] = 1; keep(); jump(2); }

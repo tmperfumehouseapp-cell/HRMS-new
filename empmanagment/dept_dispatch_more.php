@@ -654,6 +654,8 @@ function dp_dsp_report(PDO $pdo, array $g, $now) {
     } catch (Throwable $e) {}
     $counts['avg_track_h'] = $c['avg_min'] === null ? null : round((float)$c['avg_min'] / 60, 1);
     $counts['in48_pct'] = $counts['has_track'] ? (int)round(100 * $counts['in48'] / $counts['has_track']) : null;
+    // parcels sent by another courier that are still on the way: nobody but a person can check these (whatever dates are shown)
+    try { $counts['hand_open'] = (int)$pdo->query("SELECT COUNT(*) FROM dp_dsp_parcels WHERE manual != 0 AND status = 'transit'")->fetchColumn(); } catch (Throwable $e) { $counts['hand_open'] = 0; }
     // per day of the chosen range (kept for Claude's chat context)
     $st = $pdo->prepare("SELECT DATE($col) d, $sums FROM dp_dsp_parcels WHERE $where GROUP BY DATE($col) ORDER BY d DESC LIMIT 100");
     $st->execute(array_merge([$nowS, $nowS], $par)); $days = [];
