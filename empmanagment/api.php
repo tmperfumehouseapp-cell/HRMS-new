@@ -504,6 +504,7 @@ function action_permission(string $action): ?string
         'photocat.admin' => 'attendance',         // photo categories: admin list / save / delete / viewer
         'proofs.rule' => 'attendance',            // punch-in proofs: requirements (list / add / edit / delete)
         'proofs.day' => 'attendance',             // punch-in proofs: one employee's screenshots
+        'proofs.new_post' => 'attendance',        // punch-in proofs: weekly proof - a new post is up
         'proofs.redo' => 'attendance',            // punch-in proofs: ask for a re-upload
         'attendance.photo' => 'attendance',
         'attendance.attempts' => 'attendance',
@@ -3393,6 +3394,10 @@ function ensure_proof_tables(PDO $pdo): bool
         // ID card: enrolled once (live photo), then checked every day before Punch In — the AI compares today's card with the enrolled one.
         try { $pdo->exec("ALTER TABLE punch_proof_rules ADD COLUMN daily_check TINYINT NOT NULL DEFAULT 0"); } catch (PDOException $e) {}
         try { $pdo->exec("ALTER TABLE punch_proofs ADD COLUMN ai_note VARCHAR(160) NOT NULL DEFAULT ''"); } catch (PDOException $e) {}
+        // WEEKLY proof (Reddit: one post a week): one accepted screenshot stays valid until the admin presses "New post is up"; post_hint = words of the post Claude must see.
+        try { $pdo->exec("ALTER TABLE punch_proof_rules ADD COLUMN weekly TINYINT NOT NULL DEFAULT 0"); } catch (PDOException $e) {}
+        try { $pdo->exec("ALTER TABLE punch_proof_rules ADD COLUMN cycle_start DATETIME NULL"); } catch (PDOException $e) {}
+        try { $pdo->exec("ALTER TABLE punch_proof_rules ADD COLUMN post_hint VARCHAR(200) NOT NULL DEFAULT ''"); } catch (PDOException $e) {}
         try { $pdo->exec("CREATE INDEX idx_proofs_day ON punch_proofs (employee_id, work_date)"); } catch (PDOException $e) {}
         try { $pdo->exec("CREATE INDEX idx_proofs_hash ON punch_proofs (file_hash)"); } catch (PDOException $e) {}
         // The two ready-made requirements, created once (for everyone). Deleting them later never brings them back.
@@ -3461,6 +3466,9 @@ function proof_rule_clean(array $r): array
         'daily_check' => (int)($r['daily_check'] ?? 0) === 1 ? 1 : 0,                     // enrolled ID card: also checked every day before Punch In
         'ask_enrolled' => (int)($r['ask_enrolled'] ?? 1) === 1 ? 1 : 0,                 // once-proof: also asked (at next Punch In) of people already enrolled
         'except_ids' => proof_ints($r['except_ids'] ?? ''),                             // never asked of these people
+        'weekly' => (int)($r['weekly'] ?? 0) === 1 ? 1 : 0,                             // one accepted screenshot counts every day until the next "New post"
+        'cycle_start' => (string)($r['cycle_start'] ?? ''),                             // proofs uploaded before this moment do not count (the previous post)
+        'post_hint' => (string)($r['post_hint'] ?? ''),                                 // words of the current post: Claude looks for them in the screenshot
         'scope_all' => (int)$r['scope_all'] === 1 ? 1 : 0,
         'department_ids' => proof_ints($r['department_ids']),
         'employee_ids' => proof_ints($r['employee_ids']),
@@ -3642,8 +3650,17 @@ function proof_state(PDO $pdo, int $empId, string $date, ?array $rules = null, b
         $ok = array_values(array_filter($all, fn($p) => $p['status'] === 'ok'));
         $rej = array_values(array_filter($all, fn($p) => $p['status'] !== 'ok'));
         $isDone = count($ok) >= $r['shots_required'];
+        $carried = '';
+        if (!$isDone && !empty($r['weekly']) && ($r['stage'] ?? 'punch') === 'punch') {   // weekly: an accepted screenshot of the CURRENT post (any earlier day) still counts
+            try {
+                $cw = $pdo->prepare("SELECT COUNT(*), MAX(work_date) FROM punch_proofs WHERE employee_id = ? AND rule_id = ? AND status = 'ok' AND uploaded_at >= ? AND work_date < ?");
+                $cw->execute([$empId, (int)$r['rule_id'], ($r['cycle_start'] ?? '') !== '' ? $r['cycle_start'] : '2000-01-01 00:00:00', $date]);
+                [$cn, $cd] = $cw->fetch(PDO::FETCH_NUM);
+                if ((int)$cn >= $r['shots_required']) { $isDone = true; $carried = (string)$cd; }
+            } catch (PDOException $e) { }
+        }
         $isRedo = !$isDone && $rej ? 1 : 0;
-        $items[] = $r + [
+        $items[] = $r + ['carried_from' => $carried] + [
             'have' => count($ok),
             'done' => $isDone ? 1 : 0,
             'link' => $ok ? (string)end($ok)['link'] : '',
@@ -28852,6 +28869,12 @@ switch ($action) {
         if ($stage !== 'enroll' || $capture !== 'idcard') $daily = 0;
         $askEnr = array_key_exists('ask_enrolled', $in) ? (!empty($in['ask_enrolled']) ? 1 : 0) : (int)($old['ask_enrolled'] ?? 1);
         $except = array_key_exists('except_ids', $in) ? proof_ints($in['except_ids']) : proof_ints($old['except_ids'] ?? '');
+        $o1 = []; if ($id) { $o1q = $pdo->prepare("SELECT weekly, cycle_start, post_hint FROM punch_proof_rules WHERE rule_id = ?"); $o1q->execute([$id]); $o1 = $o1q->fetch() ?: []; }
+        $weekly = array_key_exists('weekly', $in) ? (!empty($in['weekly']) ? 1 : 0) : (int)($o1['weekly'] ?? 0);
+        $postHint = array_key_exists('post_hint', $in) ? trim(preg_replace('/\s+/u', ' ', (string)$in['post_hint'])) : (string)($o1['post_hint'] ?? '');
+        if (mb_strlen($postHint) > 190) json_response(['error' => 'The post words are too long (max 190 characters).'], 422);
+        if ($stage !== 'punch') $weekly = 0;
+        $cycle = (string)($o1['cycle_start'] ?? ''); if ($weekly && $cycle === '') $cycle = date('Y-m-d H:i:s'); if (!$weekly) $cycle = '';
         if ($title === '') json_response(['error' => 'Give the requirement a name.'], 422);
         if (mb_strlen($title) > 120) json_response(['error' => 'The name is too long (max 120 characters).'], 422);
         if (mb_strlen($instr) > 500) json_response(['error' => 'The wording is too long (max 500 characters).'], 422);
@@ -28870,7 +28893,28 @@ switch ($action) {
                 ->execute([$kind, $title, $instr, $hintTop, $hintBot, $shots, $link, $target, $all, implode(',', $deps), implode(',', $emps), $active, $stage, $capture, $askEnr, implode(',', $except), $daily, $next, date('Y-m-d H:i:s')]);
             $id = (int)$pdo->lastInsertId();
         }
+        $pdo->prepare("UPDATE punch_proof_rules SET weekly = ?, cycle_start = ?, post_hint = ? WHERE rule_id = ?")->execute([$weekly, $cycle !== '' ? $cycle : null, $postHint, $id]);
         json_response(['message' => 'Saved.', 'rule_id' => $id, 'target_url' => $target, 'hint_top' => $hintTop, 'hint_bottom' => $hintBot, 'stage' => $stage]);
+        break;
+    }
+
+    case 'proofs.new_post': {
+        // "New post is up": the previous week's screenshots stop counting; everyone must comment on the NEW post (Claude checks it shows the post words).
+        $auth = require_auth();
+        require_role(['Admin', 'HR'], $auth);
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') json_response(['error' => 'Method not allowed.'], 405);
+        if (!ensure_proof_tables($pdo)) json_response(['error' => 'Could not create the proof tables.'], 500);
+        $in = json_input();
+        $id = (int)($in['rule_id'] ?? 0);
+        $q = $pdo->prepare("SELECT * FROM punch_proof_rules WHERE rule_id = ? AND deleted = 0"); $q->execute([$id]); $rule = $q->fetch();
+        if (!$rule) json_response(['error' => 'That requirement no longer exists.'], 404);
+        if ((int)$rule['weekly'] !== 1) json_response(['error' => 'Switch on "Weekly" for this requirement first.'], 422);
+        $hint = trim(preg_replace('/\s+/u', ' ', (string)($in['post_hint'] ?? '')));
+        if (mb_strlen($hint) > 190) json_response(['error' => 'The post words are too long (max 190 characters).'], 422);
+        $target = (string)$rule['target_url'];
+        if (trim((string)($in['target_url'] ?? '')) !== '') { [$t, $terr] = proof_target_parse((string)$rule['kind'], (string)$in['target_url']); if ($terr !== '') json_response(['error' => $terr], 422); $target = $t; }
+        $pdo->prepare("UPDATE punch_proof_rules SET cycle_start = ?, post_hint = ?, target_url = ? WHERE rule_id = ?")->execute([date('Y-m-d H:i:s'), $hint !== '' ? $hint : (string)$rule['post_hint'], $target, $id]);
+        json_response(['message' => 'New post set. Everyone now has to comment on it and upload a fresh screenshot.', 'rule_id' => $id]);
         break;
     }
 
