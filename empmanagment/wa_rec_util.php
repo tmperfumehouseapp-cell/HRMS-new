@@ -7,7 +7,7 @@
  *  - A person whose MARKETING campaign message failed gets one of the approved utility follow-up messages (the same pool the Utility campaign uses: wa_util_pick),
  *    but ONLY if they qualify for utility — they asked about a perfume on WhatsApp in the last 30 days, or ordered inside the order window (Meta's rule for utility).
  *    Everyone else is left alone ("no enquiry / order").
- *  - Which failures: 131049 (Meta held it: this customer got too many marketing messages) and 131050 (the customer stopped marketing messages) are marketing-only blocks,
+ *  - Which failures: 131049 (Meta held it: this customer got too many marketing messages), 131050 (the customer stopped marketing messages) and 130472 (Meta marketing experiment holdback) are marketing-only blocks,
  *    utility is not subject to them → tried after wa_ru_wait_min (default 10) minutes. Any other failure that another number / wording could fix goes to utility only AFTER
  *    Module A's recovery (wa_rec) used its tries on that person. NEVER: not on WhatsApp, own number, test group, spam flag, a wrong request.
  *  - Never to: opted out, wrote back since, delivered another way today, already got a utility follow-up for this item, already got one in the last 24 hours (any item),
@@ -25,7 +25,7 @@
 if (!function_exists('wa_ru_tick')) {
 
 /** Failures only marketing suffers from: utility is not held or blocked by them. */
-if (!defined('WA_RU_MARKETING_ONLY')) { define('WA_RU_MARKETING_ONLY', [131049, 131050]); }
+if (!defined('WA_RU_MARKETING_ONLY')) { define('WA_RU_MARKETING_ONLY', [131049, 131050, 130472]); }
 
 function wa_ru_tables(PDO $pdo): bool
 {
