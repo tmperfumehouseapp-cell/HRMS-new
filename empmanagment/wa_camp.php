@@ -1935,7 +1935,18 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
             $never = implode(',', array_diff(defined('WA_REC_NEVER') ? WA_REC_NEVER : [0], defined('WA_RU_MARKETING_ONLY') ? WA_RU_MARKETING_ONLY : []));
             $w = "camp_id = ? AND ((status = 'failed' AND err_code NOT IN ($never)) OR (status = 'skipped' AND err_code = 131049) OR (status IN ('retry') AND err_code IN (131049, 131050)))";
             $q = $pdo->prepare("SELECT COUNT(*) FROM wa_camp_items WHERE $w"); $q->execute([$cid]); $n = (int)$q->fetchColumn();
-            if (!empty($in['preview'])) json_response(['ok' => true, 'n' => $n, 'approved' => $okU, 'items' => (function () use ($pdo, $c) { try { if (function_exists('wa_tpl_tables')) wa_tpl_tables($pdo); return function_exists('wa_util_list') ? wa_util_list($pdo, (int)$c['tpl_id']) : []; } catch (Throwable $e) { return []; } })()]);   // every utility message we have, with its state at Meta: the owner picks one
+            if (!empty($in['preview'])) {
+                $items = []; try { if (function_exists('wa_tpl_tables')) wa_tpl_tables($pdo); $items = function_exists('wa_util_list') ? wa_util_list($pdo, (int)$c['tpl_id']) : []; } catch (Throwable $e) { $items = []; }
+                try {   // 🎯 how many of THESE people each message fits (an order message needs an order …): the owner sees "suitable / not suitable" before choosing
+                    $cq = $pdo->prepare("SELECT DISTINCT phone FROM wa_camp_items WHERE $w LIMIT 6000"); $cq->execute([$cid]); $phs = array_map('strval', $cq->fetchAll(PDO::FETCH_COLUMN)); $tot = count($phs); $rc = wa_ru_cfg($pdo);
+                    $sp = ($phs && function_exists('wa_util_split')) ? wa_util_split($pdo, $phs, (int)$rc['ord_days'], (int)$rc['ask_days']) : ['ask' => 0, 'order' => 0, 'none' => 0]; $best = -1;
+                    foreach ($items as $k => $x) { $row = function_exists('wa_tpl_row') ? wa_tpl_row($pdo, (int)$x['id']) : null; $ex = $row ? (is_array($row['examples'] ?? null) ? $row['examples'] : json_decode((string)($row['examples'] ?? ''), true)) : []; $lab = is_array($ex) ? (array)($ex['labels'] ?? []) : [];
+                        $fit = wa_ru_fit($lab, count(array_unique($x['vars'] ?? [])), $sp, $tot, !empty($x['mine'])); $items[$k]['fit'] = $fit; $items[$k]['fit_of'] = $tot; $items[$k]['fit_pct'] = $tot ? (int)round($fit * 100 / $tot) : 0;
+                        if (in_array((string)$x['status'], ['approved', 'partial'], true) && empty($x['relabelled']) && $fit > $best) $best = $fit; }
+                    foreach ($items as $k => $x) $items[$k]['best'] = $best > 0 && (int)$items[$k]['fit'] === $best && in_array((string)$x['status'], ['approved', 'partial'], true) && empty($x['relabelled']);
+                } catch (Throwable $e) { }
+                json_response(['ok' => true, 'n' => $n, 'approved' => $okU, 'items' => $items]);
+            }
             if ($okU === 0) json_response(['error' => 'No utility message is approved by Meta yet — make one first (✨ Make utility now) and wait for approval.'], 422);
             $pick = (int)($in['tpl'] ?? 0); $pickRow = null;
             if ($pick > 0) { $tp0 = function_exists('wa_camp_tpl') ? wa_camp_tpl($pdo, $pick, true, 0) : null; $pickRow = function_exists('wa_tpl_row') ? wa_tpl_row($pdo, $pick) : null;

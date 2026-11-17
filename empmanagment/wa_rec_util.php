@@ -298,6 +298,17 @@ function wa_ru_fam_states(PDO $pdo, array $tplIds): array
     } catch (Throwable $e) { }
     return $o;
 }
+/** How many of the people a utility message could really be sent to (its variables must be true for them): an order message needs an order, a perfume message an enquiry, a name-only message fits everybody.
+ *  $sp = wa_util_split() of the people: ask / order / none. $mine = a version of the campaign's own message (it may use an enquiry OR an order). */
+function wa_ru_fit(array $labels, int $nvars, array $sp, int $tot, bool $mine): int
+{
+    $labels = array_map('strtolower', array_map('strval', $labels)); $ask = (int)($sp['ask'] ?? 0); $ord = (int)($sp['order'] ?? 0);
+    if ($nvars <= 0 || ($nvars === 1 && (!$labels || $labels === ['name']))) return $tot;   // only the name (or nothing): everybody
+    if (in_array('order', $labels, true)) return $ord;
+    if (in_array('perfume', $labels, true)) return $mine ? $ask + $ord : $ask;
+    if (in_array('date', $labels, true)) return $ask;
+    return $mine ? $ask + $ord : $ask;
+}
 /** For the screen: each number with its utility delivery of the last 3 hours and whether it is resting. */
 function wa_ru_number_view(PDO $pdo): array
 {
