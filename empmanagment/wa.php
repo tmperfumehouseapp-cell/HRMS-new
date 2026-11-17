@@ -1220,7 +1220,14 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
                 if ($ts >= $f && $ts < $t) { $tot++; $open = $ts >= $now - 86400; if ($open) $nowN++; if (!isset($by[$e])) $by[$e] = [0, 0]; $by[$e][0]++; if ($open) $by[$e][1]++; } }
             $names = employee_names_by_id($pdo); $list = [];
             if ($adm) { foreach ($by as $e => $v) $list[] = ['emp' => $e === 0 ? -1 : $e, 'name' => $e === 0 ? 'Nobody' : ($names[$e] ?? ('#' . $e)), 'n' => $v[0], 'now' => $v[1]]; usort($list, fn($a, $b) => $b['n'] <=> $a['n']); }
-            json_response(['ranges' => $rg, 'total' => $tot, 'now' => $nowN, 'past' => $tot - $nowN, 'by' => $list, 'admin' => $adm, 'kind' => ['all' => $allN, 'cx' => $cxN, 'sales' => $allN - $cxN]]);
+            $cxby = [];   // 🟣 one count per complaint RESOLVER (the person who took the complaint), for the chosen days — Admin only
+            if ($adm && $cxN > 0) { try {
+                [$uc, $up] = wa_unans_cond(date('Y-m-d H:i:s', $f), date('Y-m-d H:i:s', $t));
+                $qq = $pdo->prepare("SELECT /*+ MAX_EXECUTION_TIME(15000) */ k.owner_emp e, COUNT(DISTINCT c.phone) n FROM wa_contacts c JOIN cx_cases k ON k.phone = c.phone AND k.status IN ('open','reopened') WHERE " . $uc . " GROUP BY k.owner_emp"); $qq->execute($up);
+                foreach ($qq->fetchAll(PDO::FETCH_NUM) as $x) $cxby[] = ['emp' => (int)$x[0] === 0 ? -1 : (int)$x[0], 'name' => (int)$x[0] === 0 ? 'Nobody took it' : ($names[(int)$x[0]] ?? ('#' . (int)$x[0])), 'n' => (int)$x[1]];
+                usort($cxby, fn($a, $b) => $b['n'] <=> $a['n']);
+            } catch (Throwable $e) { $cxby = []; } }
+            json_response(['ranges' => $rg, 'total' => $tot, 'now' => $nowN, 'past' => $tot - $nowN, 'by' => $list, 'cxby' => $cxby, 'admin' => $adm, 'kind' => ['all' => $allN, 'cx' => $cxN, 'sales' => $allN - $cxN]]);
         }
         case 'wa.unans_export': {   // ⬇ the same list for Excel (up to 5,000 customers): name, number, last message, since when, who has the chat
             $emp = (int)($auth['employee_id'] ?? 0); $adm = wa_is_admin($pdo, $auth) && empty($_GET['mine']);
@@ -1228,10 +1235,16 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
             $uw = (string)($_GET['uw'] ?? ''); if ($uw === 'now') { $w[] = 'c.last_in_at >= ?'; $p[] = date('Y-m-d H:i:s', time() - 86400); } elseif ($uw === 'past') { $w[] = 'c.last_in_at < ?'; $p[] = date('Y-m-d H:i:s', time() - 86400); }
                 $uk = (string)($_GET['uk'] ?? ''); if ($uk === 'cx') $w[] = wa_unans_cx_sql(); elseif ($uk === 'sales') $w[] = 'NOT ' . wa_unans_cx_sql();   // 🟣 complaints only / everything else
             if (!$adm) { $w[] = 'c.assigned_emp = ?'; $p[] = $emp > 0 ? $emp : -1; } else { $ue = (int)($_GET['ue'] ?? 0); if ($ue > 0) { $w[] = 'c.assigned_emp = ?'; $p[] = $ue; } elseif ($ue === -1) $w[] = 'c.assigned_emp = 0'; }
-            $q = $pdo->prepare("SELECT /*+ MAX_EXECUTION_TIME(25000) */ c.phone, c.name, c.assigned_emp, c.last_in_at, c.status, IF(" . wa_unans_cx_sql() . ", 1, 0) is_cx, (SELECT lm.body FROM wa_messages lm WHERE lm.phone = c.phone AND lm.dir = 'in' ORDER BY lm.id DESC LIMIT 1) body FROM wa_contacts c WHERE " . implode(' AND ', $w) . " ORDER BY c.last_in_at DESC LIMIT " . (($__lim = (int)($_GET['limit'] ?? 0)) > 0 ? min(1000, $__lim) : 5000)); $q->execute($p);
+            // 🟣 complaint resolver: the person who took the open complaint of this customer (the chat itself stays with the salesperson)
+            $cxOpen = "k.phone = c.phone AND k.status IN ('open','reopened')";
+            $ur = (int)($_GET['ur'] ?? 0); if ($ur !== 0) { $w[] = "EXISTS (SELECT 1 FROM cx_cases k WHERE " . $cxOpen . " AND k.owner_emp = ?)"; $p[] = $ur > 0 ? $ur : 0; }
+            $sqlBase = "SELECT /*+ MAX_EXECUTION_TIME(25000) */ c.phone, c.name, c.assigned_emp, c.last_in_at, c.status, IF(" . wa_unans_cx_sql() . ", 1, 0) is_cx, %s (SELECT lm.body FROM wa_messages lm WHERE lm.phone = c.phone AND lm.dir = 'in' ORDER BY lm.id DESC LIMIT 1) body FROM wa_contacts c WHERE " . implode(' AND ', $w) . " ORDER BY c.last_in_at DESC LIMIT " . (($__lim = (int)($_GET['limit'] ?? 0)) > 0 ? min(1000, $__lim) : 5000);
+            try { $q = $pdo->prepare(sprintf($sqlBase, "(SELECT k.owner_emp FROM cx_cases k WHERE " . $cxOpen . " ORDER BY k.id DESC LIMIT 1) cx_owner, (SELECT k.id FROM cx_cases k WHERE " . $cxOpen . " ORDER BY k.id DESC LIMIT 1) cx_case,")); $q->execute($p); }
+            catch (Throwable $e) { $q = $pdo->prepare(sprintf($sqlBase, "NULL cx_owner, NULL cx_case,")); $q->execute($p); }
             $names = employee_names_by_id($pdo); $out = [];
             foreach ($q->fetchAll() as $r) { $ts = strtotime((string)$r['last_in_at']); $h = (int)floor((time() - $ts) / 3600);
-                $out[] = ['name' => (string)$r['name'], 'phone' => (string)$r['phone'], 'last_message' => mb_substr(preg_replace('/\s+/', ' ', (string)$r['body']), 0, 300), 'wrote_at' => (string)$r['last_in_at'], 'waiting' => $h >= 48 ? floor($h / 24) . ' days' : $h . ' hours', 'can_reply' => $ts >= time() - 86400 ? 'Yes - normal reply' : 'No - template only', 'with' => (int)$r['assigned_emp'] ? ($names[(int)$r['assigned_emp']] ?? '') : 'Nobody', 'chat' => (string)$r['status'], 'kind' => (int)$r['is_cx'] === 1 ? 'Complaint' : 'Sales']; }
+                $out[] = ['name' => (string)$r['name'], 'phone' => (string)$r['phone'], 'last_message' => mb_substr(preg_replace('/\s+/', ' ', (string)$r['body']), 0, 300), 'wrote_at' => (string)$r['last_in_at'], 'waiting' => $h >= 48 ? floor($h / 24) . ' days' : $h . ' hours', 'can_reply' => $ts >= time() - 86400 ? 'Yes - normal reply' : 'No - template only', 'with' => (int)$r['assigned_emp'] ? ($names[(int)$r['assigned_emp']] ?? '') : 'Nobody', 'chat' => (string)$r['status'], 'kind' => (int)$r['is_cx'] === 1 ? 'Complaint' : 'Sales',
+                    'cx_by' => (int)$r['is_cx'] !== 1 ? '' : ($r['cx_case'] === null ? '' : ((int)$r['cx_owner'] > 0 ? ($names[(int)$r['cx_owner']] ?? ('#' . (int)$r['cx_owner'])) : 'Nobody took it'))]; }
             json_response(['rows' => $out]);
         }
         case 'wa.people': {   // salespeople with today's presence + open chats; the first "best" one is the recommendation (a salesperson gets the short list for "Transfer to")

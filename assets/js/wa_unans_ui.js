@@ -41,10 +41,10 @@
     opt = opt || {};
     if (!document.getElementById('unCss')) { const st = document.createElement('style'); st.id = 'unCss'; st.textContent = CSS; document.head.appendChild(st); }
     el.classList.add('pad');
-    const U = { d: '7', k: '', w: '', e: 0, f: '', t: '', st: null, rows: [], busy: false, admin: false };
+    const U = { d: '7', k: '', w: '', e: 0, r: 0, f: '', t: '', st: null, rows: [], busy: false, admin: false };
     el.innerHTML = '<div class="un"><div class="un-h"><div class="t"><h2 id="unT">🚨 Customers nobody replied to</h2><p>The customer wrote last and got no answer — from a person or from the bot. A campaign or a reminder does not count as an answer. Tap a customer to open the chat and reply.</p></div><button type="button" class="un-xl" id="unX">⬇ Download Excel</button></div><div class="un-f" id="unF"></div><div class="un-sum" id="unS"></div><div class="un-l" id="unL"><div class="un-e">Loading…</div></div></div>';
     const q = (id) => el.querySelector('#' + id);
-    const params = (lim) => { const o = { ud: U.d }; if (U.d === 'dates' && U.f && U.t) { o.uf = U.f; o.ut = U.t; } if (U.k) o.uk = U.k; if (U.w) o.uw = U.w; if (U.e) o.ue = U.e; if (lim) o.limit = lim; return o; };
+    const params = (lim) => { const o = { ud: U.d }; if (U.d === 'dates' && U.f && U.t) { o.uf = U.f; o.ut = U.t; } if (U.k) o.uk = U.k; if (U.w) o.uw = U.w; if (U.e) o.ue = U.e; if (U.r) o.ur = U.r; if (lim) o.limit = lim; return o; };
     const n = (v) => (v == null ? '' : '<i>' + v + '</i>');
     function drawF() {
       const st = U.st || { ranges: {}, kind: {}, by: [] }, rg = st.ranges || {}, kd = st.kind || {};
@@ -54,11 +54,13 @@
         ${U.d === 'dates' ? `<div class="dt"><input type="date" id="unDf" value="${esc(U.f)}"> to <input type="date" id="unDt" value="${esc(U.t)}"><button type="button" id="unDg" class="on">Show</button></div>` : ''}
         <div class="lb">Which customers?</div><div class="row"><button type="button" data-k="" class="${!U.k ? 'on' : ''}">All${n(kd.all)}</button><button type="button" data-k="cx" class="${U.k === 'cx' ? 'on' : ''}">🟣 Complaints${n(kd.cx)}</button><button type="button" data-k="sales" class="${U.k === 'sales' ? 'on' : ''}">🛍 Sales${n(kd.sales)}</button></div>
         <div class="lb">Can we still reply?</div><div class="row"><button type="button" data-w="" class="${!U.w ? 'on' : ''}">All${n(st.total)}</button><button type="button" data-w="now" class="g ${U.w === 'now' ? 'on' : ''}">✅ Can reply now (inside 24 hours)${n(st.now)}</button><button type="button" data-w="past" class="r ${U.w === 'past' ? 'on' : ''}">⏰ Past 24 hours — template only${n(st.past)}</button></div>
+        ${U.admin && (st.cxby || []).length ? `<div class="lb">🟣 Complaint taken by (who must answer it)</div><div class="row"><button type="button" data-r="0" class="${!U.r ? 'on' : ''}">Everyone</button>${st.cxby.map((x) => `<button type="button" data-r="${x.emp}" class="${U.r === x.emp ? 'on' : ''}">${esc(x.name)}${n(x.n)}</button>`).join('')}</div>` : ''}
         ${U.admin ? `<div class="lb">Who has the chat?</div><div class="row"><button type="button" data-e="0" class="${!U.e ? 'on' : ''}">Everyone${n(st.total)}</button>${(st.by || []).map((x) => `<button type="button" data-e="${x.emp}" class="${U.e === x.emp ? 'on' : ''}">${esc(x.name)}${n(x.n)}</button>`).join('')}</div>` : ''}`;
       const F = q('unF');
-      F.querySelectorAll('[data-d]').forEach((b) => { b.onclick = () => { U.d = b.dataset.d; U.e = 0; if (U.d === 'dates' && !(U.f && U.t)) { drawF(); return; } load(); }; });
-      F.querySelectorAll('[data-k]').forEach((b) => { b.onclick = () => { U.k = b.dataset.k; U.e = 0; load(); }; });
+      F.querySelectorAll('[data-d]').forEach((b) => { b.onclick = () => { U.d = b.dataset.d; U.e = 0; U.r = 0; if (U.d === 'dates' && !(U.f && U.t)) { drawF(); return; } load(); }; });
+      F.querySelectorAll('[data-k]').forEach((b) => { b.onclick = () => { U.k = b.dataset.k; U.e = 0; U.r = 0; load(); }; });
       F.querySelectorAll('[data-w]').forEach((b) => { b.onclick = () => { U.w = b.dataset.w; load(); }; });
+      F.querySelectorAll('[data-r]').forEach((b) => { b.onclick = () => { U.r = +b.dataset.r; load(); }; });
       F.querySelectorAll('[data-e]').forEach((b) => { b.onclick = () => { U.e = +b.dataset.e; load(); }; });
       if (q('unDg')) q('unDg').onclick = () => { U.f = q('unDf').value; U.t = q('unDt').value; if (!U.f || !U.t) { alert('Pick both dates.'); return; } load(); };
     }
@@ -70,7 +72,7 @@
         <div class="nm"><b>${esc(r.name || '+91 ' + r.phone)}</b><small>+91 ${esc(r.phone)}</small>${r.kind === 'Complaint' ? '<br><span class="un-p cx">🟣 Complaint</span>' : ''}</div>
         <div class="ms">${esc(r.last_message || '(photo / voice / file)')}</div>
         <div class="wt"><span class="un-p w">⏳ ${esc(r.waiting)}</span></div>
-        <div class="who"><span class="k">Chat is with: </span>${r.with === 'Nobody' ? '<span class="un-p nb">Nobody</span>' : '👤 ' + esc(r.with)}</div>
+        <div class="who"><span class="k">Chat is with: </span>${r.with === 'Nobody' ? '<span class="un-p nb">Nobody</span>' : '👤 ' + esc(r.with)}${r.cx_by ? '<br><span class="un-p cx" title="The person who took this complaint and must answer the customer">🟣 Complaint: ' + (r.cx_by === 'Nobody took it' ? 'nobody took it' : esc(r.cx_by)) + '</span>' : ''}</div>
         <div class="cr"><span class="un-p ${r.can_reply.indexOf('Yes') === 0 ? 'ok' : 'no'}">${r.can_reply.indexOf('Yes') === 0 ? '✅ Reply now' : '⏰ Template only'}</span></div>
         <button type="button" class="go">Open chat ›</button></div>`).join('');
       L.querySelectorAll('.un-r').forEach((x) => { x.onclick = () => { if (opt.openChat) opt.openChat(x.dataset.p); }; });
@@ -85,7 +87,7 @@
       U.busy = false;
     }
     q('unX').onclick = async () => { const b = q('unX'); b.disabled = true; b.textContent = 'Making…';
-      try { const d = await api.get('wa.unans_export', params(0)); const cols = [['Customer', 'name'], ['Number', 'phone'], ['Kind', 'kind'], ['Last message from the customer', 'last_message'], ['Wrote at', 'wrote_at'], ['Waiting', 'waiting'], ['Can reply now?', 'can_reply'], ['Chat is with', 'with'], ['Chat', 'chat']];
+      try { const d = await api.get('wa.unans_export', params(0)); const cols = [['Customer', 'name'], ['Number', 'phone'], ['Kind', 'kind'], ['Last message from the customer', 'last_message'], ['Wrote at', 'wrote_at'], ['Waiting', 'waiting'], ['Can reply now?', 'can_reply'], ['Chat is with', 'with'], ['Complaint taken by', 'cx_by'], ['Chat', 'chat']];
         const c = (v) => { v = v == null ? '' : String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
         const txt = [cols.map((x) => c(x[0])).join(',')].concat((d.rows || []).map((r) => cols.map((x) => c(r[x[1]])).join(','))).join('\r\n');
         const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + txt], { type: 'text/csv;charset=utf-8' })); a.download = 'not_replied_' + new Date().toISOString().slice(0, 10) + '.csv'; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);

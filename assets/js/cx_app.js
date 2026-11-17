@@ -194,7 +194,7 @@ window.CX = (function () {
   }
   function card(c) {
     const tag = [sPill(c)]; if (c.order_name) tag.push(pill('#' + String(c.order_name).replace(/^#/, '')));
-    if (c.waiting) tag.push(pill('Waiting customer')); else if (c.status === 'open' && !c.first_reply) tag.push(pill('Not answered', 'r'));
+    if (c.waiting) tag.push(pill('Waiting customer')); else if (c.status === 'open' && !c.first_reply) tag.push(pill('Not answered' + (c.owner_name ? ' · ' + c.owner_name : ' · nobody took it'), 'r'));
     if (c.stage && c.stage !== 'new' && c.stage !== 'done' && c.stage_label) tag.push(pill(c.stage_icon + ' ' + c.stage_label, c.stage_late ? 'r' : 'b')); if (c.repeat) tag.push(pill('Repeat ×' + (c.repeat + 1), 'o')); if (c.status === 'reopened') tag.push(pill('Reopened', 'o')); if (c.refund_amt && c.desk === 'refund') tag.push(pill(inr(c.refund_amt) + (c.refund_ok ? '' : ' · needs OK'), c.refund_ok ? 'g' : 'o'));
     return '<div class="cx-card ' + c.urgency + '" data-id="' + c.id + '"><div class="r1"><span>' + c.code + '</span>' + uPill(c.urgency) + '<span class="tm' + (c.late ? ' late' : '') + '">' + (c.late ? '⏰ ' : '') + esc(c.time_label) + '</span></div><div class="nm">' + esc(c.name) + '</div><div class="tx">' + c.problem_icon + ' ' + esc(c.problem_label) + (c.summary && c.summary !== c.problem_label ? ' — ' + esc(c.summary.length > 60 ? c.summary.slice(0, 59) + '…' : c.summary) : '') + '</div><div class="r3">' + tag.join('') + (c.owner ? '<span class="cx-av" style="background:' + col(c.owner) + '" title="' + esc(c.owner_name) + '">' + ini(c.owner_name) + '</span>' : '<span class="cx-av" style="background:#aab4bb" title="Nobody yet">?</span>') + '</div></div>';
   }
