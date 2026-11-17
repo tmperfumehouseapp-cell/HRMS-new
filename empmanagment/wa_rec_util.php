@@ -243,9 +243,14 @@ function wa_ru_global_usable(PDO $pdo, int $limit = 12): array
     $memo = $o; return array_slice($o, 0, $limit);
 }
 /** One round (≤ 40 s) of the utility follow-up for failed marketing messages. */
+/** One-time resets that must run even while Module B is paused (they were inside the making round, which is never reached while paused: the pause could not be cleared). */
+function wa_ru_reset_once(PDO $pdo): void
+{
+    try { if ((string)setting_get($pdo, 'wa_ru_held_off2', '') !== '1') { setting_set($pdo, 'wa_ru_pause_until', '0'); setting_set($pdo, 'wa_ru_rest', '{}'); setting_set($pdo, 'wa_ru_brake_since', (string)time()); setting_set($pdo, 'wa_ru_cursor', '0'); setting_set($pdo, 'wa_ru_held_off2', '1'); } } catch (Throwable $e) { }   // owner 17 Nov 2026: the pause caused by the held people's failures is cleared; the failure brake counts only messages sent from now on
+}
 function wa_ru_tick(PDO $pdo): array
 {
-    wa_ru_load_util($pdo);
+    wa_ru_load_util($pdo); wa_ru_reset_once($pdo);
     $res = ['sent' => 0, 'failed' => 0, 'skipped' => 0, 'looked' => 0, 'note' => '', 'why' => []];
     if (!wa_ru_tables($pdo)) { $res['note'] = 'no table'; return $res; }
     $cfg = wa_ru_cfg($pdo); if (!$cfg['on']) { $res['note'] = 'off'; return $res; } if ($cfg['pause_until'] > time()) { $res['note'] = 'paused after a Meta warning'; return $res; }
