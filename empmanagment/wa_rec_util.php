@@ -18,7 +18,7 @@
  *  - ROUTE (known before sending): people the campaign skipped because Meta had already held / stopped marketing to them are NOT dropped: the same utility follow-up goes to them (if they asked / ordered recently).
  *  - Brakes: quiet hours, an hourly pool, a pause for an hour when 60%+ of the utility messages fail, 6 hours when Meta flags spam (131048).
  *  - Nothing is sent until at least one utility follow-up message is approved at Meta (Utility campaign → make the 6 follow-ups).
- * Settings: wa_ru_on 1 · wa_ru_hourly 1500 (calm) · wa_ru_wait_min 10 · wa_ru_ord_days 60 · wa_ru_ask_days 90 (asked / wrote to us within N days) · wa_ru_make_on 1 (make + send utility versions to Meta by itself) · wa_ru_pause_until (set by itself) · wa_ru_cursor (set by itself)
+ * Settings: wa_ru_on 1 · wa_ru_hourly 1500 (calm) · wa_ru_wait_min 10 · wa_ru_ord_days 180 · wa_ru_ask_days 90 (asked / wrote to us within N days) · wa_ru_make_on 1 (make + send utility versions to Meta by itself) · wa_ru_pause_until (set by itself) · wa_ru_cursor (set by itself)
  * Routes (wa_camp.php): wa.ru_status GET · wa.ru_run POST · wa.ru_set POST {on, hourly?, wait_min?, ord_days?}
  * PHP 7.4 safe.
  */
@@ -47,7 +47,7 @@ function wa_ru_cfg(PDO $pdo): array
 {
     $g = function (string $k, string $d) use ($pdo) { try { $v = setting_get($pdo, $k, $d); return ($v === null || $v === '') ? $d : (string)$v; } catch (Throwable $e) { return $d; } };
     return ['on' => $g('wa_ru_on', '1') !== '0', 'hourly' => max(10, min(20000, (int)$g('wa_ru_hourly', '1500'))), 'wait_min' => max(5, min(1440, (int)$g('wa_ru_wait_min', '10'))),
-            'ord_days' => in_array((int)$g('wa_ru_ord_days', '60'), [30, 60, 90, 120], true) ? (int)$g('wa_ru_ord_days', '60') : 60, 'pause_until' => (int)$g('wa_ru_pause_until', '0'),
+            'ord_days' => in_array((int)$g('wa_ru_ord_days', '180'), [30, 60, 90, 120, 180], true) ? (int)$g('wa_ru_ord_days', '180') : 180, 'pause_until' => (int)$g('wa_ru_pause_until', '0'),
             'ask_days' => in_array((int)$g('wa_ru_ask_days', '90'), [30, 60, 90, 120, 180], true) ? (int)$g('wa_ru_ask_days', '90') : 90, 'make_on' => $g('wa_ru_make_on', '1') !== '0'];
 }
 /** Can utility fix this failure? 'now' = marketing-only block · 'after_rec' = a generic failure, utility only once Module A used its tries · 'never'. */
@@ -138,6 +138,7 @@ function wa_ru_make_tick(PDO $pdo): array
     // 0b) the "put back" marker moved from the err column (overwritten when a batch is taken) to the variant 'R': move the people already put back, 20,000 at a time
     try { if ((string)setting_get($pdo, 'wa_ru_marker_fix', '') !== '1') { $n8 = (int)$pdo->exec("UPDATE wa_camp_items SET variant = 'R', err = '' WHERE (err = 'restart-utility' OR (status = 'sending' AND camp_id IN (SELECT id FROM wa_campaigns WHERE extra LIKE '%u_restart%'))) AND COALESCE(variant, 'M') <> 'U' LIMIT 20000"); if ($n8 === 0) setting_set($pdo, 'wa_ru_marker_fix', '1'); } } catch (Throwable $e) { }
     // 0c) one-time: the people left out as "No chosen utility message fits this person" only because a chosen message wrote its variable as "Name" (capital N) are put back, 20,000 at a time
+    try { if ((string)setting_get($pdo, 'wa_ru_ord180', '') !== '1') { setting_set($pdo, 'wa_ru_ord_days', '180'); setting_set($pdo, 'wa_ru_ord180', '1'); } } catch (Throwable $e) { }   // owner 17 Nov 2026: order window 180 days (one time)
     try { if ((string)setting_get($pdo, 'wa_ru_perm60', '') !== '1') { setting_set($pdo, 'wa_u_per_min', '60'); setting_set($pdo, 'wa_ru_perm60', '1'); } } catch (Throwable $e) { }   // owner 17 Nov 2026: utility limit 60 a minute (one time)
     try { if ((string)setting_get($pdo, 'wa_ru_fit_fix', '') !== '1') { $n7 = (int)$pdo->exec("UPDATE wa_camp_items SET status = 'queued', variant = 'R', err = '' WHERE status = 'skipped' AND err = 'No chosen utility message fits this person' LIMIT 20000");
             if ($n7 > 0) { $pdo->exec("UPDATE wa_campaigns SET status = 'running', finished_at = NULL, note = 'Started again with utility — people put back after a fix.' WHERE status = 'done' AND extra LIKE '%u_restart%' AND id IN (SELECT camp_id FROM wa_camp_items WHERE status = 'queued' AND variant = 'R')"); if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility: ' . $n7 . ' people put back (they were left out only because a chosen message wrote its variable as \"Name\")'); }
