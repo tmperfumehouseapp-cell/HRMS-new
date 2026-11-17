@@ -808,6 +808,12 @@ function wa_camp_tick_run(PDO $pdo, int $only = 0): array
         // the owner's own split for THIS campaign: a utility version + its share (only to people who asked or ordered in the last 30 days), and a share per number
         $uT = null; $uPct = max(0, min(100, (int)($c['extra']['u_pct'] ?? 0))); $uCnt = 0; $allCnt = 0; $wabaOf = [];
         $uTs = []; $isUtil = ($c['extra']['kind'] ?? '') === 'util'; $ordDays = max(0, min(365, (int)($c['extra']['ord_days'] ?? 60)));
+        // 💸 UTILITY FIRST (owner, 17 Nov 2026): every marketing campaign starts with a utility message for everybody it can (the campaign message's own utility version, the standard follow-ups, the welcome message for the rest);
+        // if Meta moves it to marketing, utility fails (the 4% rule) or it cannot be sent, the person / the whole campaign goes on as marketing. Setting wa_u_first = 0 switches it off; the owner's own "utility off" wins.
+        $uPool = []; $uFirst = !$mixOn && !$isUtil && (string)setting_get($pdo, 'wa_u_first', '1') !== '0' && empty($c['extra']['u_off']) && empty($c['extra']['u_off_owner']) && strtoupper((string)($t['category'] ?? 'MARKETING')) === 'MARKETING';
+        $uAsk = function_exists('wa_ru_cfg') ? (int)wa_ru_cfg($pdo)['ask_days'] : 30; $uShift = max(0, $uAsk - (function_exists('wa_mix_cfg') ? (int)wa_mix_cfg($pdo, 'wa_mix_days', 30) : 30)) * 86400;
+        $uOnly = (int)($c['extra']['u_only'] ?? 0);
+        if ($uFirst) { $uPct = 100; $c['extra']['u_auto'] = 1; }
         if ($isUtil) {   // 💸 utility follow-up campaign: only people who qualify get a message, the 6 standard follow-ups take turns
             $gw = wa_camp_util_guard($pdo, $c);
             if ($gw !== '') { wa_camp_pause($pdo, $id, 'Utility safety rule — ' . $gw); $res[$id] = ['sent' => 0, 'failed' => 0, 'skipped' => 0, 'stop' => 'utility safety rule']; continue; }
@@ -821,8 +827,9 @@ function wa_camp_tick_run(PDO $pdo, int $only = 0): array
             if ($uPct > 0 && (int)($c['extra']['u_tpl'] ?? 0) > 0) { $uRow = wa_diag_row_tpl($pdo, (int)$c['extra']['u_tpl']);
                 if ($uRow && strtoupper((string)$uRow['category']) === 'UTILITY' && strtoupper((string)($uRow['category_now'] ?? '')) !== 'MARKETING' && empty($uRow['relabelled_at'])) { $u1 = wa_camp_tpl($pdo, (int)$uRow['id'], true, 0); if ($u1) { if (!is_array($u1['examples'] ?? null)) $u1['examples'] = json_decode((string)($uRow['examples'] ?? ''), true) ?: []; $uTs[(int)$u1['id']] = $u1; } } }
             if ($uPct > 0 && !empty($c['extra']['u_auto']) && function_exists('wa_util_usable')) foreach (wa_util_usable($pdo, (int)$c['tpl_id']) as $u1) $uTs[(int)$u1['id']] = $u1;
-            $uTs = array_values($uTs); $uT = $uTs[0] ?? null;
-            if ($uPct > 0 && !$uT) $pdo->prepare("UPDATE wa_campaigns SET note = ? WHERE id = ? AND status = 'running'")->execute(['No utility version is approved yet (or Meta moved them to marketing) — sending the marketing message to everyone until one is approved.', $id]);
+            $uTs = array_values($uTs); $uT = $uTs[0] ?? null; if ($uFirst && function_exists('wa_util_pool_usable')) { try { $uPool = wa_util_pool_usable($pdo); } catch (Throwable $e) { $uPool = []; } }
+            if ($uFirst && $uOnly > 0) { $uTs = array_values(array_filter($uTs, fn($u0) => (int)$u0['id'] === $uOnly)); $uPool = []; $uT = $uTs[0] ?? null; }   // the owner chose ONE utility message for this campaign
+            if ($uPct > 0 && !$uT && !$uPool) $pdo->prepare("UPDATE wa_campaigns SET note = ? WHERE id = ? AND status = 'running'")->execute(['No utility version is approved yet (or Meta moved them to marketing) — sending the marketing message to everyone until one is approved.', $id]);
             else { foreach ($pdo->query("SELECT variant, COUNT(*) AS n FROM wa_camp_items WHERE camp_id = $id AND status = 'sent' GROUP BY variant")->fetchAll() as $vr) { $allCnt += (int)$vr['n']; if ($vr['variant'] === 'U') $uCnt += (int)$vr['n']; }
                 foreach ($pdo->query("SELECT id, waba_id FROM wa_numbers")->fetchAll() as $nr) $wabaOf[(int)$nr['id']] = wa_waba_of($nr); }
         }
@@ -881,6 +888,13 @@ function wa_camp_tick_run(PDO $pdo, int $only = 0): array
                     if (!$pk && !$isRetry) { $uRot = ($uRot ?? 0) + 1; $okU = array_values(array_filter($uTs, fn($u0) => in_array((string)($wabaOf[$nid] ?? ''), array_map('strval', (array)$u0['ok_wabas']), true))); $pk = $okU ? wa_util_pick($pdo, $okU, $ct, $ordDays, $nowTs, $uRot) : null; }
                     if (!$pk) { $pdo->prepare("UPDATE wa_camp_items SET status = 'skipped', err = ? WHERE id = ?")->execute([$isRetry ? 'The utility message is no longer usable' : 'Not for utility: no enquiry in the last 30 days and no order in the last ' . $ordDays . ' days', $iid]); $skipped++; continue; }
                     $variant = 'U'; $tSent = $pk['t']; $vars = $pk['vars'];
+                } elseif ($uFirst && !$isRetry && ($uTs || $uPool)) {   // 💸 utility first: this person's FIRST message is a utility one if any can be built for them; otherwise (and on every retry) they get the marketing message
+                    if ($om === null) { try { $om = wa_order_map($pdo)[(string)$it['phone']] ?? null; } catch (Throwable $e) { } }
+                    $uRot = ($uRot ?? 0) + 1; $wb = (string)($wabaOf[$nid] ?? ''); $ctU = ['phone' => (string)$it['phone'], 'name' => (string)($ct['name'] ?? $it['name'] ?? ''), 'optout' => 0, 'last_in_at' => $ct['last_in_at'] ?? null];
+                    $okF = array_values(array_filter($uTs, fn($u0) => in_array($wb, array_map('strval', (array)$u0['ok_wabas']), true)));
+                    if ($uOnly > 0 && $okF && (int)$okF[0]['nvars'] === 1) { $variant = 'U'; $tSent = $okF[0]; $vars = [function_exists('wa_first_name') ? wa_first_name((string)($ct['name'] ?? $it['name'] ?? '')) : 'ji']; }   // a chosen welcome-type message (only the name) goes to everybody
+                    elseif ($okF && function_exists('wa_mix_cheap_ok') && wa_mix_cheap_ok($pdo, $ct, $om, $nowTs - $uShift)) { $uv = wa_mix_u_vars($pdo, $okF[$uRot % count($okF)], $ct, $om, $nowTs - $uShift); if (is_array($uv)) { $variant = 'U'; $tSent = $okF[$uRot % count($okF)]; $vars = $uv; } }
+                    if ($variant !== 'U' && $uPool) { $okP = array_values(array_filter($uPool, fn($u0) => in_array($wb, array_map('strval', (array)$u0['ok_wabas']), true))); $pk0 = $okP ? wa_util_pick($pdo, $okP, $ctU, $ordDays, $nowTs, $uRot, $uAsk, true) : null; if ($pk0) { $variant = 'U'; $tSent = $pk0['t']; $vars = $pk0['vars']; } }
                 } elseif ($uT && !$isRetry && $uCnt < ($allCnt + 1) * $uPct / 100 && ($uOk = array_values(array_filter($uTs, fn($u0) => in_array((string)($wabaOf[$nid] ?? ''), array_map('strval', (array)$u0['ok_wabas']), true))))) {   // below the utility share: this person gets a utility version (they take turns) if it is allowed for them
                     if ($om === null) { try { $om = wa_order_map($pdo)[(string)$it['phone']] ?? null; } catch (Throwable $e) { } }
                     $uRot = ($uRot ?? 0) + 1; $uPick = $uOk[$uRot % count($uOk)];
@@ -1500,7 +1514,7 @@ if (isset($pdo) && $pdo instanceof PDO && ($__wk === 'wa.camp_ideal' || $__wk ==
         }
     }
 }
-if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_suggest', 'wa.camp_start_now', 'wa.camp_send_skipped', 'wa.camp_snap', 'wa.camp_days', 'wa.camp_hourly', 'wa.cust_summary', 'wa.cust_card', 'wa.camp_hours', 'wa.dq_worker', 'wa.rec_run', 'wa.dq_set', 'wa.rec_report', 'wa.rec_set', 'wa.ru_status', 'wa.ru_run', 'wa.ru_set', 'wa.camp_fast', 'wa.camp_fast_tick', 'wa.fu_list', 'wa.fu_save', 'wa.fu_del', 'wa.fu_preset', 'wa.camp_list', 'wa.camp_templates', 'wa.camp_get', 'wa.camp_preview', 'wa.camp_freq', 'wa.camp_typed_phones', 'wa.camp_save', 'wa.camp_start', 'wa.camp_send_now', 'wa.camp_resume_all', 'wa.camp_stop_all', 'wa.camp_query_counts', 'wa.camp_pause', 'wa.camp_resume', 'wa.camp_set_tpl', 'wa.camp_cancel', 'wa.camp_del', 'wa.camp_tick', 'wa.camp_suggest', 'wa.camp_best_time', 'wa.camp_people', 'wa.camp_people_csv', 'wa.camp_people_phones', 'wa.camp_text_batch', 'wa.camp_thread', 'wa.reports', 'wa.mix_state', 'wa.camp_mix_set'], true) && !($__wk === 'wa.camp_suggest' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST')) {
+if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_suggest', 'wa.camp_start_now', 'wa.camp_send_skipped', 'wa.camp_snap', 'wa.camp_days', 'wa.camp_hourly', 'wa.cust_summary', 'wa.cust_card', 'wa.camp_hours', 'wa.dq_worker', 'wa.rec_run', 'wa.dq_set', 'wa.rec_report', 'wa.rec_set', 'wa.ru_status', 'wa.ru_run', 'wa.ru_set', 'wa.ru_make', 'wa.ru_restart', 'wa.camp_fast', 'wa.camp_fast_tick', 'wa.fu_list', 'wa.fu_save', 'wa.fu_del', 'wa.fu_preset', 'wa.camp_list', 'wa.camp_templates', 'wa.camp_get', 'wa.camp_preview', 'wa.camp_freq', 'wa.camp_typed_phones', 'wa.camp_save', 'wa.camp_start', 'wa.camp_send_now', 'wa.camp_resume_all', 'wa.camp_stop_all', 'wa.camp_query_counts', 'wa.camp_pause', 'wa.camp_resume', 'wa.camp_set_tpl', 'wa.camp_cancel', 'wa.camp_del', 'wa.camp_tick', 'wa.camp_suggest', 'wa.camp_best_time', 'wa.camp_people', 'wa.camp_people_csv', 'wa.camp_people_phones', 'wa.camp_text_batch', 'wa.camp_thread', 'wa.reports', 'wa.mix_state', 'wa.camp_mix_set'], true) && !($__wk === 'wa.camp_suggest' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST')) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     $auth = require_auth(); wa_guard_admin($pdo, $auth);
     if (!wa_tables($pdo) || !wa_more_tables($pdo) || !function_exists('wa_tpl_tables') || !wa_tpl_tables($pdo)) json_response(['error' => 'WhatsApp storage is not available — check database permissions.'], 500);
@@ -1555,7 +1569,8 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
             $lim = isset($_GET['limit']) ? max(1, min(100, (int)$_GET['limit'])) : 40; $off = max(0, (int)($_GET['offset'] ?? 0));   // ⚡ the screen asks for a few campaigns at a time ("Load more" asks for the next ones)
             $rows = $pdo->query("SELECT * FROM wa_campaigns " . $hide . "ORDER BY id DESC LIMIT " . $lim . " OFFSET " . $off)->fetchAll(); $out = []; $totalCamps = (int)$pdo->query("SELECT COUNT(*) FROM wa_campaigns " . $hide)->fetchColumn();
             foreach ($rows as $r) { $r['audience'] = json_decode((string)$r['audience'], true) ?: []; $r['vars'] = json_decode((string)$r['vars'], true) ?: []; $r['extra'] = json_decode((string)($r['extra'] ?? ''), true) ?: []; $out[] = wa_camp_public($pdo, $r, false, $cfg); try { $__o = &$out[count($out) - 1]; if (in_array((string)$r['status'], ['running', 'paused'], true) && (int)($__o['counts']['sent'] ?? 0) + (int)($__o['counts']['held'] ?? 0) === 0) $__o['why'] = wa_camp_wait_reason($pdo, $r); unset($__o); } catch (Throwable $e) { } }
-            { $recBy = wa_rec_counts($pdo, array_column($out, 'id')); foreach ($out as $k0 => $o0) $out[$k0]['rec'] = $recBy[(int)$o0['id']] ?? ['tried' => 0, 'recovered' => 0]; }   // 🔁 retried / delivered again, per campaign
+            { $recBy = wa_rec_counts($pdo, array_column($out, 'id')); foreach ($out as $k0 => $o0) $out[$k0]['rec'] = $recBy[(int)$o0['id']] ?? ['tried' => 0, 'recovered' => 0]; }
+            { $ruBy = function_exists('wa_ru_counts') ? wa_ru_counts($pdo, array_column($out, 'id')) : []; foreach ($out as $k0 => $o0) $out[$k0]['ru'] = $ruBy[(int)$o0['id']] ?? ['ru_sent' => 0, 'ru_del' => 0, 'ru_fail' => 0, 'mix_sent' => 0, 'mix_del' => 0]; $fam = function_exists('wa_ru_fam_states') ? wa_ru_fam_states($pdo, array_column($out, 'tpl_id')) : []; foreach ($out as $k0 => $o0) $out[$k0]['ru']['fam'] = $fam[(int)($o0['tpl_id'] ?? 0)] ?? null; }   // 💸 utility sent / delivered per campaign, for the colour line   // 🔁 retried / delivered again, per campaign
             if ($off > 0) json_response(['campaigns' => $out, 'total' => $totalCamps, 'offset' => $off]);   // "Load more": only the next campaigns — numbers, limits and the engine are already on the screen
             $health = wa_camp_health($pdo); $caps = wa_number_caps($pdo, $health); $nums = [];
             $campOk = []; foreach ($pdo->query("SELECT id, camp_ok, display FROM wa_numbers")->fetchAll() as $r0) $campOk[(int)$r0['id']] = [(int)$r0['camp_ok'] === 1, (string)$r0['display']];
@@ -1564,7 +1579,7 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
             $lite = !empty($_GET['lite']);   // ⚡ the list screen does not need the message library (it is the slowest part: one row per message with its per-number matrix); the New-campaign wizard asks for it by itself (wa.camp_templates)
             $fastNow = ['ids' => array_keys(wa_camp_fast_all($pdo)), 'now' => time()];
             $schedN = 0; try { $schedN = (int)$pdo->query("SELECT COUNT(*) FROM wa_campaigns WHERE status = 'scheduled'" . ($hide !== '' ? ' AND smart_plan = 0' : ''))->fetchColumn(); } catch (Throwable $e) { }
-            $respCp = ['campaigns' => $out, 'total' => $totalCamps, 'offset' => 0, 'sched' => $schedN, 'fast' => $fastNow, 'rec_status' => wa_rec_status($pdo), 'dq' => wa_dq_status($pdo), 'spend' => wa_camp_spend_today($pdo, !empty($_GET['fresh'])), 'lite' => $lite, 'templates' => $lite ? [] : $tplList(true), 'numbers' => $nums, 'portfolio' => $caps['_port'] ?? null, 'engine' => $engine(), 'tags' => WA_TAGS, 'pieces' => $pc, 'window' => wa_camp_window($pdo), 'can_media' => function_exists('wa_tpl_send_components') && function_exists('wa_tpl_sendable')]; if ($lite) wa_cpc_put($pdo, 'camp_list', $respCp); json_response($respCp);
+            $respCp = ['campaigns' => $out, 'total' => $totalCamps, 'offset' => 0, 'sched' => $schedN, 'fast' => $fastNow, 'rec_status' => wa_rec_status($pdo), 'ru_status' => (function () use ($pdo) { try { return wa_ru_status($pdo); } catch (Throwable $e) { return null; } })(), 'dq' => wa_dq_status($pdo), 'spend' => wa_camp_spend_today($pdo, !empty($_GET['fresh'])), 'lite' => $lite, 'templates' => $lite ? [] : $tplList(true), 'numbers' => $nums, 'portfolio' => $caps['_port'] ?? null, 'engine' => $engine(), 'tags' => WA_TAGS, 'pieces' => $pc, 'window' => wa_camp_window($pdo), 'can_media' => function_exists('wa_tpl_send_components') && function_exists('wa_tpl_sendable')]; if ($lite) wa_cpc_put($pdo, 'camp_list', $respCp); json_response($respCp);
         }
         case 'wa.camp_templates': {
             $hit = wa_cpc_get($pdo, 'camp_tpls1'); if ($hit && $hit['age'] < 120 && empty($_GET['fresh'])) json_response($hit['v']);   // the message library is the slowest answer: remembered for 2 minutes, so the New-campaign form opens at once
@@ -1867,7 +1882,11 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
             try { wa_camp_tick($pdo); } catch (Throwable $e) { } json_response(['ok' => true, 'started' => $n]);
         }
         case 'wa.cust_card': { json_response(wa_cust_card($pdo, (string)($_GET['phone'] ?? ''))); }   // 🪪 one customer: tags with reasons, orders in short, campaigns received
-        case 'wa.cust_summary': { json_response(['ok' => true] + wa_cust_summary($pdo)); }   // 👥 the customer numbers card (Customers screen + Campaigns)
+        case 'wa.cust_summary': {
+            if (!empty($_GET['fresh'])) {   // ↻ "count again now": newly added customers are recounted first (funnel), the saved summary is dropped
+                try { @set_time_limit(60); if (function_exists('cfun_fast')) cfun_fast($pdo, 3000, 15, 0); if (function_exists('cfun_tick')) { setting_set($pdo, 'wa_cfun_at', '1970-01-01 00:00:00'); cfun_tick($pdo, true, 20); } if (function_exists('wa_cpc_table') && wa_cpc_table($pdo)) $pdo->prepare("DELETE FROM wa_cp_cache WHERE k = 'cust_sum2'")->execute(); } catch (Throwable $e) { }
+            }
+            json_response(['ok' => true] + wa_cust_summary($pdo)); }   // 👥 the customer numbers card (Customers screen + Campaigns)
         case 'wa.camp_hourly': {   // ⏱ spend and queries hour by hour for one business day (?day=YYYY-MM-DD, default today)
             $dy = (string)($_GET['day'] ?? ''); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $dy)) { try { $dy = function_exists('wq_day_of') && function_exists('wq_now') ? (string)wq_day_of($pdo, wq_now()) : date('Y-m-d'); } catch (Throwable $e) { $dy = date('Y-m-d'); } }
             json_response(['ok' => true] + wa_camp_hourly($pdo, $dy));
@@ -1897,6 +1916,35 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
             if (isset($in['on'])) setting_set($pdo, 'wa_rec_on', !empty($in['on']) ? '1' : '0'); if (!empty($in['on'])) setting_set($pdo, 'wa_rec_pause_until', '0');
             json_response(['ok' => true, 'on' => wa_rec_cfg($pdo)['on']]);
         }
+        case 'wa.ru_make': {   // ✨ no utility message for this campaign yet: make it now (2 versions of its own message) and send it to Meta for approval
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $in = json_input(); $c = wa_camp_row($pdo, (int)($in['id'] ?? 0)); if (!$c) json_response(['error' => 'Campaign not found.'], 404);
+            if (!function_exists('wa_util_make')) json_response(['error' => 'The utility module is not loaded.'], 500); @set_time_limit(120);
+            $r = wa_util_make($pdo, (int)$c['tpl_id'], 2, (int)($auth['employee_id'] ?? 0), true);
+            if (isset($r['error'])) json_response($r, 502);
+            try { setting_set($pdo, 'wa_ru_made_' . (int)$c['tpl_id'], (string)time()); setting_set($pdo, 'wa_ru_fam', ''); } catch (Throwable $e) { }
+            if (function_exists('wa_log')) wa_log($pdo, 'template', true, 'Utility versions for campaign #' . (int)$c['id'] . ' made by hand: ' . count($r['made'] ?? []) . ' sent to Meta');
+            json_response(['ok' => true, 'made' => count($r['made'] ?? []), 'skipped' => $r['skipped'] ?? []]);
+        }
+        case 'wa.ru_restart': {   // 🔁 start again WITH utility: the people whose message failed (or Meta held) go back in the queue; utility goes first because an approved utility message exists
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $in = json_input(); $cid = (int)($in['id'] ?? 0); $c = $cid ? wa_camp_row($pdo, $cid) : null; if (!$c) json_response(['error' => 'Campaign not found.'], 404);
+            if ($c['status'] === 'cancelled') json_response(['error' => 'This campaign was stopped. Make a new one.'], 422);
+            $okU = 0; try { if (function_exists('wa_util_usable')) $okU += count(wa_util_usable($pdo, (int)$c['tpl_id'])); if (function_exists('wa_util_pool_usable')) $okU += count(wa_util_pool_usable($pdo)); } catch (Throwable $e) { }
+            $never = implode(',', array_diff(defined('WA_REC_NEVER') ? WA_REC_NEVER : [0], defined('WA_RU_MARKETING_ONLY') ? WA_RU_MARKETING_ONLY : []));
+            $w = "camp_id = ? AND ((status = 'failed' AND err_code NOT IN ($never)) OR (status = 'skipped' AND err_code = 131049) OR (status IN ('retry') AND err_code IN (131049, 131050)))";
+            $q = $pdo->prepare("SELECT COUNT(*) FROM wa_camp_items WHERE $w"); $q->execute([$cid]); $n = (int)$q->fetchColumn();
+            if (!empty($in['preview'])) json_response(['ok' => true, 'n' => $n, 'approved' => $okU, 'items' => function_exists('wa_util_list') ? wa_util_list($pdo, (int)$c['tpl_id']) : []]);   // every utility message we have, with its state at Meta: the owner picks one
+            if ($okU === 0) json_response(['error' => 'No utility message is approved by Meta yet — make one first (✨ Make utility now) and wait for approval.'], 422);
+            $pick = (int)($in['tpl'] ?? 0); $pickRow = null;
+            if ($pick > 0) { $tp0 = function_exists('wa_camp_tpl') ? wa_camp_tpl($pdo, $pick, true, 0) : null; $pickRow = function_exists('wa_tpl_row') ? wa_tpl_row($pdo, $pick) : null;
+                if (!$tp0 || !$pickRow || strtoupper((string)$pickRow['category']) !== 'UTILITY' || !empty($pickRow['relabelled_at']) || strtoupper((string)($pickRow['category_now'] ?? '')) === 'MARKETING') json_response(['error' => 'That utility message is not approved by Meta (or Meta moved it to marketing). Pick an approved one.'], 422); }
+            if ($n <= 0) json_response(['error' => 'Nobody to start again: no failed or Meta-held people that utility could still reach.'], 422);
+            $ex = is_array($c['extra'] ?? null) ? $c['extra'] : []; unset($ex['u_off'], $ex['u_off_owner'], $ex['u_only']); if ($pick > 0) { $ex['u_tpl'] = $pick; $ex['u_only'] = $pick; $ex['u_pct'] = 100; $ex['u_auto'] = 1; }   // a chosen message is the ONLY utility message this campaign sends
+            $pdo->prepare("UPDATE wa_campaigns SET extra = ? WHERE id = ?")->execute([json_encode($ex, JSON_UNESCAPED_UNICODE), $cid]);
+            $pdo->prepare("UPDATE wa_camp_items SET status = 'queued', err = '', err_code = 0, send_at = NULL, next_try = NULL WHERE $w")->execute([$cid]);
+            $pdo->prepare("UPDATE wa_campaigns SET status = 'running', finished_at = NULL, note = 'Started again with utility for the people whose message failed.' WHERE id = ? AND status IN ('done', 'paused', 'running')")->execute([$cid]);
+            if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, '#' . $cid . ' started again with utility: ' . $n . ' people');
+            json_response(['ok' => true, 'n' => $n]);
+        }
         case 'wa.ru_status': {   // 💸 Module B: failed marketing → utility follow-up
             json_response(['ok' => true, 'status' => wa_ru_status($pdo)]);
         }
@@ -1910,6 +1958,8 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
             if (isset($in['hourly'])) setting_set($pdo, 'wa_ru_hourly', (string)max(10, min(20000, (int)$in['hourly'])));
             if (isset($in['wait_min'])) setting_set($pdo, 'wa_ru_wait_min', (string)max(5, min(1440, (int)$in['wait_min'])));
             if (isset($in['ord_days']) && in_array((int)$in['ord_days'], [30, 60, 90, 120], true)) setting_set($pdo, 'wa_ru_ord_days', (string)(int)$in['ord_days']);
+            if (isset($in['ask_days']) && in_array((int)$in['ask_days'], [30, 60, 90, 120, 180], true)) setting_set($pdo, 'wa_ru_ask_days', (string)(int)$in['ask_days']);
+            if (isset($in['make_on'])) setting_set($pdo, 'wa_ru_make_on', !empty($in['make_on']) ? '1' : '0');
             json_response(['ok' => true, 'status' => wa_ru_status($pdo)]);
         }
         case 'wa.camp_fast_tick': {   // ⚡ one campaign's Send fast sender: that campaign only, its own lock, beside the running pool (the page calls it again and again while it is open)

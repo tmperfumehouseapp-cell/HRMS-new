@@ -130,6 +130,10 @@ function wa_util_pool_defs(): array
             'body' => "Hello {{1}}, an update on your enquiry about {{2}}: it is available now. Would you like us to keep it for you?"],
         'ask_size' => ['kind' => 'ask', 'labels' => ['name', 'perfume', 'date'], 'ex' => ['Rahul', 'Dior Sauvage', '28 Oct'], 'buttons' => $qr(['Share the sizes', 'Not now']),
             'body' => "Hi {{1}}, about your enquiry for {{2}} on {{3}}: please tell us the size you need, so we can confirm it for you."],
+        'ask_checked' => ['kind' => 'ask', 'labels' => ['name', 'date'], 'ex' => ['Rahul', '28 Oct'], 'buttons' => $qr(['Yes, I need help', 'Not now']),
+            'body' => "Hi {{1}}, you contacted TM Perfume House on {{2}}. Do you still need any help with your perfume choice? Reply here and we will help you."],
+        'open_welcome' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Yes, please', 'Not now']),
+            'body' => "Hi {{1}}, thank you for being a TM Perfume House customer. Would you like us to share news about our perfumes and help you with your next choice? Tap a button to reply."],
         'ask_pincode' => ['kind' => 'ask', 'labels' => ['name', 'perfume'], 'ex' => ['Rahul', 'Dior Sauvage'], 'buttons' => $qr(['Send my pincode', 'Not now']),
             'body' => "Hi {{1}}, to check the delivery time for {{2}} to your area, please reply with your pincode."],
         'order_check' => ['kind' => 'order', 'labels' => ['name', 'order', 'date'], 'ex' => ['Rahul', '#1234', '28 Oct'], 'buttons' => $qr(['Yes, all good', 'Need help']),
@@ -191,36 +195,54 @@ function wa_util_orders(PDO $pdo, int $days): array
 }
 /** Who qualifies and with which message: an enquiry on WhatsApp in the last 30 days with a perfume we can name → an "ask" message; else an order in the last $ordDays
  *  days → an "order" message; else null (this person gets no utility message). $rot makes the messages take turns. Returns ['t', 'vars', 'kind'] or null. */
-function wa_util_pick(PDO $pdo, array $pool, array $ct, int $ordDays, int $nowTs, int $rot = 0): ?array
+function wa_util_pick(PDO $pdo, array $pool, array $ct, int $ordDays, int $nowTs, int $rot = 0, int $askDays = 30, bool $anyone = false): ?array
 {
     if (!$pool || (int)($ct['optout'] ?? 0) === 1) return null; $phone = (string)$ct['phone']; $name = function_exists('wa_first_name') ? wa_first_name((string)($ct['name'] ?? '')) : 'ji';
     $ask = array_values(array_filter($pool, fn($t) => $t['pool_kind'] === 'ask')); $ord = array_values(array_filter($pool, fn($t) => $t['pool_kind'] === 'order'));
     $in = !empty($ct['last_in_at']) ? (int)strtotime((string)$ct['last_in_at']) : 0; $fill = function (array $t, array $v) { $o = []; foreach (array_slice($t['labels'], 0, $t['nvars']) as $l) { $x = trim((string)($v[$l] ?? '')); if ($x === '') return null; $o[] = mb_substr($x, 0, 60); } return count($o) === (int)$t['nvars'] ? $o : null; };
-    if ($ask && $in >= $nowTs - 30 * 86400) {
+    if ($ask && $in >= $nowTs - max(1, $askDays) * 86400) {
         $p = ''; try { if (function_exists('wa_camp_lazy') ? wa_camp_lazy('wa_prod_last_asked', 'wa_prod.php') : function_exists('wa_prod_last_asked')) $p = (string)wa_prod_last_asked($pdo, $phone); } catch (Throwable $e) { }
         if ($p !== '') { $t = $ask[$rot % count($ask)]; $v = $fill($t, ['name' => $name, 'perfume' => $p, 'date' => date('j M', $in)]); if ($v) return ['t' => $t, 'vars' => $v, 'kind' => 'ask']; }
+        else {   // no perfume on record for this customer: the message that only says they contacted us on that date (true for every customer who wrote to us)
+            $gen = array_values(array_filter($ask, fn($t) => !in_array('perfume', (array)($t['labels'] ?? []), true)));
+            if ($gen) { $t = $gen[$rot % count($gen)]; $v = $fill($t, ['name' => $name, 'date' => date('j M', $in)]); if ($v) return ['t' => $t, 'vars' => $v, 'kind' => 'ask']; }
+        }
     }
     if ($ord && $ordDays > 0) { $o = wa_util_orders($pdo, $ordDays)[$phone] ?? null;
         if ($o && $o['order'] !== '') { $t = $ord[$rot % count($ord)]; $v = $fill($t, ['name' => $name, 'order' => $o['order'], 'date' => date('j M', (int)strtotime($o['at']))]); if ($v) return ['t' => $t, 'vars' => $v, 'kind' => 'order']; } }
+    if ($anyone) {   // 💸 utility first (owner, 17 Nov 2026): a customer with no enquiry / order on record (an old customer, an imported list) still gets the short welcome message
+        $open = array_values(array_filter($pool, fn($t) => $t['pool_kind'] === 'open'));
+        if ($open) { $t = $open[$rot % count($open)]; $v = $fill($t, ['name' => $name]); if ($v) return ['t' => $t, 'vars' => $v, 'kind' => 'open']; }
+    }
     return null;
 }
 /** For the preview: how many of these people qualify (enquiry in 30 days / order in the window) — counted cheaply, the perfume is checked when sending. */
-function wa_util_split(PDO $pdo, array $phones, int $ordDays): array
+function wa_util_split(PDO $pdo, array $phones, int $ordDays, int $askDays = 30): array
 {
-    $o = ['ask' => 0, 'order' => 0, 'none' => 0]; $ord = wa_util_orders($pdo, max(1, $ordDays)); $cut = date('Y-m-d H:i:s', time() - 30 * 86400);
+    $o = ['ask' => 0, 'order' => 0, 'none' => 0]; $ord = wa_util_orders($pdo, max(1, $ordDays)); $cut = date('Y-m-d H:i:s', time() - max(1, $askDays) * 86400);
     foreach (array_chunk($phones, 500) as $ch) { if (!$ch) continue; $q = $pdo->prepare("SELECT phone FROM wa_contacts WHERE phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ") AND optout = 0 AND last_in_at >= ?"); $q->execute(array_merge($ch, [$cut])); $a = array_flip(array_map('strval', $q->fetchAll(PDO::FETCH_COLUMN)));
         foreach ($ch as $p) { if (isset($a[(string)$p])) $o['ask']++; elseif (isset($ord[(string)$p])) $o['order']++; else $o['none']++; } }
     return $o;
 }
 /** 🎁 The offer goes FREE after a reply: a customer who answers a utility follow-up (sent in the last 48 h) gets the campaign's offer text once, as a normal chat message. */
-function wa_util_offer_reply(PDO $pdo, string $key): void
+function wa_util_offer_reply(PDO $pdo, string $key, string $text = ''): void
 {
     try {
-        $q = $pdo->prepare("SELECT i.camp_id, c.extra FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id WHERE i.phone = ? AND i.variant = 'U' AND i.status = 'sent' AND i.sent_at >= ? ORDER BY i.id DESC LIMIT 1"); $q->execute([$key, date('Y-m-d H:i:s', time() - 48 * 3600)]); $r = $q->fetch(); if (!$r) return;
-        $x = json_decode((string)$r['extra'], true); $offer = is_array($x) ? trim((string)($x['offer'] ?? '')) : ''; if ($offer === '' || ($x['kind'] ?? '') !== 'util') return;
+        if ($text !== '' && preg_match('/^\s*(not now|no\b|nope|stop|unsubscribe|don.?t|nahi|nahin|नहीं|ના)/iu', $text)) return;   // "Not now" / "No" / "Stop": no offer
+        $q = $pdo->prepare("SELECT i.id AS iid, i.name AS iname, i.camp_id, c.extra, c.tpl_id, c.media_lib_id, c.vars FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id WHERE i.phone = ? AND i.variant = 'U' AND i.status = 'sent' AND i.sent_at >= ? ORDER BY i.id DESC LIMIT 1"); $q->execute([$key, date('Y-m-d H:i:s', time() - 48 * 3600)]); $r = $q->fetch(); if (!$r) return;
+        $x = json_decode((string)$r['extra'], true); $x = is_array($x) ? $x : []; $isUtilC = ($x['kind'] ?? '') === 'util'; $offer = trim((string)($x['offer'] ?? ''));
+        if ($isUtilC && $offer === '') return;
+        if (!$isUtilC && (string)setting_get($pdo, 'wa_u_first', '1') === '0') return;   // utility first is switched off: nothing is sent by itself
         $pdo->exec("CREATE TABLE IF NOT EXISTS wa_util_offer (camp_id INT NOT NULL, phone VARCHAR(12) NOT NULL, at DATETIME NULL, PRIMARY KEY (camp_id, phone)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-        $ins = $pdo->prepare("INSERT IGNORE INTO wa_util_offer (camp_id, phone, at) VALUES (?, ?, ?)"); $ins->execute([(int)$r['camp_id'], $key, date('Y-m-d H:i:s')]); if ($ins->rowCount() === 0) return;   // once per person per campaign
         $ct = function_exists('wa_contact') ? wa_contact($pdo, $key) : null; if (!$ct || (int)($ct['optout'] ?? 0) === 1 || !function_exists('wa_send_text')) return;
+        if (!$isUtilC) {   // 🎁 utility first (owner, 17 Nov 2026): the customer answered the utility message → the campaign's OWN marketing message goes now as a free chat message (the 24-hour window is open)
+            $dl = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE phone = ? AND dir = 'out' AND who = 'campaign' AND mtype = 'text' AND ts >= ?"); $dl->execute([$key, date('Y-m-d H:i:s', time() - 24 * 3600)]); if ((int)$dl->fetchColumn() > 0) return;   // an offer already went in the last day
+            if (!function_exists('wa_camp_tpl') || !function_exists('wa_camp_vars_norm') || !function_exists('wa_camp_resolve_vars') || !function_exists('wa_tpl_shown')) return;
+            $t = wa_camp_tpl($pdo, (int)$r['tpl_id'], true, (int)$r['media_lib_id']); if (!$t) return;
+            $specs = wa_camp_vars_norm(json_decode((string)$r['vars'], true), (int)$t['nvars']); $used = []; $vars = wa_camp_resolve_vars($pdo, (int)$t['nvars'], $specs, $ct, (string)($r['iname'] ?: ($ct['name'] ?? '')), (int)$r['iid'], $used);
+            $offer = wa_tpl_shown($t, $vars); if (trim($offer) === '') return;
+        }
+        $ins = $pdo->prepare("INSERT IGNORE INTO wa_util_offer (camp_id, phone, at) VALUES (?, ?, ?)"); $ins->execute([(int)$r['camp_id'], $key, date('Y-m-d H:i:s')]); if ($ins->rowCount() === 0) return;   // once per person per campaign
         $name = function_exists('wa_first_name') ? wa_first_name((string)($ct['name'] ?? '')) : ''; wa_send_text($pdo, $ct, str_replace(['{name}', '{{name}}'], $name, $offer), 'campaign', 0);
     } catch (Throwable $e) { error_log('wa_util_offer_reply: ' . $e->getMessage()); }
 }

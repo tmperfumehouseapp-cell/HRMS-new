@@ -109,7 +109,8 @@ function sku_take(array &$grid, array &$bad, string $order, string $title, strin
 {
     if ($qty <= 0) return;
     $full = trim($title . ' ' . $variant);
-    if (preg_match('/(?<![a-z0-9])chains?(?![a-z0-9])|necklace|bracelet|pendant/i', $full)) { $bad[] = ['order' => $order, 'text' => $full, 'qty' => $qty, 'why' => 'jewellery: not in the SKU sheet', 'kind' => 'left']; return; }
+    if (preg_match('/(?<![a-z0-9])chain+s?(?![a-z0-9])|necklace|bracelet|pendant|(?<![a-z0-9])(weave|solenne|veyra|lunelle|velora|lunara|elysian|seraphine|aurelia|herring ?bone)(?![a-z0-9])/i', $full)) { $bad[] = ['order' => $order, 'text' => $full, 'qty' => $qty, 'why' => 'jewellery: not in the SKU sheet', 'kind' => 'left']; return; }
+    if (preg_match('/^\s*(tmperfumehouse|tm perfume house)\s*x\s*\d+\s*\(\s*inside:\s*build your own/i', $full)) { $bad[] = ['order' => $order, 'text' => $full, 'qty' => $qty, 'why' => 'build-your-own pack: the perfumes are not named on the order', 'kind' => 'left']; return; }
     $put = function (string $sku, int $col, int $q) use (&$grid) { if (!isset($grid[$sku])) $grid[$sku] = array_fill(0, 10, 0); $grid[$sku][$col] += $q; };
     if (preg_match('/^\s*complimentary\b/i', $full)) {      // "complimentary 10ml": a free sample — its perfume is not written on the order, so it is counted on its own row "Complimentary (free gift)" in its size column
         $w0 = ''; $c0 = sku_col($full, $w0); if ($c0 >= 0) { $put('FREE', $c0, $qty); return; }
@@ -130,7 +131,7 @@ function sku_take(array &$grid, array &$bad, string $order, string $title, strin
     if (!$cands) foreach (sku_pieces($full) as $x) $cands[] = [$x, ''];
     $hit = 0; $miss = [];
     foreach ($cands as [$c, $nm]) {
-        $s2 = sku_match($c); if ($s2 === '') { if (sku_norm($c) !== '' && !preg_match('/^\d+$/', sku_norm($c))) $miss[] = $c; continue; }
+        $s2 = sku_match($c); if ($s2 === '') { if (sku_norm($c) !== '' && !preg_match('/^(x\s*)?\d+$/', sku_norm($c))) $miss[] = $c; continue; }
         $w2 = ''; $col = sku_col($c . ' ' . $nm, $w2); if ($col < 0) $col = sku_col($full, $w2);
         if ($col < 0) { $bad[] = ['order' => $order, 'text' => $c . ' (inside: ' . $full . ')', 'qty' => $qty, 'why' => $w2 ?: 'size not known', 'kind' => 'size']; $hit++; continue; }
         $n = 1; if (preg_match('/^\s*(\d{1,2})\s*[x×]\s+/iu', $c, $m)) $n = max(1, (int)$m[1]);
