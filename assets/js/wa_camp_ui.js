@@ -478,6 +478,9 @@ html.wxdk [data-tone]{background:rgba(128,128,128,.12) !important;color:#e9edef}
           <div class="wp-hint">${win[0] === 0 && win[1] >= 24 ? 'Campaigns can send at any hour, day or night.' : 'Campaigns never send between ' + H(win[1]) + ' and ' + H(win[0]) + '.'}</div></div>`;
       h += '<div class="wp-cd" id="cDripCard" style="display:none"></div>';
       h += '<div class="wp-cd" id="cPlanCard" style="display:none"></div>';
+      // 📞 a very small strip right after the alerts: how many numbers, each one's health (colour) and how many messages it can still send today, and the total left
+      h += (() => { const ns = nums || []; if (!ns.length) return ''; const col = (q) => (q === 'GREEN' ? '#16a34a' : q === 'RED' ? '#dc2626' : q === 'YELLOW' ? '#f5c542' : '#9ca3af'), lab = (q) => (q === 'GREEN' ? 'High' : q === 'RED' ? 'Low — stopped' : q === 'YELLOW' ? 'Medium' : 'New'), tot = ns.reduce((a, n) => a + (n.quality === 'RED' ? 0 : (n.left || 0)), 0);
+        return '<div id="cpNum" class="wp-hint" style="margin:0 0 8px;padding:5px 9px;border:1px solid #e5e7eb;border-radius:9px;font-size:11.5px;line-height:1.7">📞 <b>' + ns.length + ' numbers</b> · ' + ns.map((n) => '<span style="white-space:nowrap" title="' + esc((n.label || '') + ' — quality ' + lab(n.quality) + ' — ' + fmt(n.left || 0) + ' of ' + fmt(n.cap || 0) + ' left today') + '"><span style="color:' + col(n.quality) + ';font-size:13px">●</span> ' + esc(String(n.label || '').replace(/^T?H?M?\s*perfumehouse\s*/i, '').slice(0, 14)) + ' <b>' + kk(n.quality === 'RED' ? 0 : (n.left || 0)) + '</b></span>').join(' · ') + ' · ✉ <b>' + kk(tot) + '</b> left today</div>'; })();
       const OPEN_DT = window.__cpOpenDt = window.__cpOpenDt || new Set();   // which campaign cards have their ▾ Details open (kept while the list redraws)
       const cardHtml = (c, i) => {
         let __dA = '', __dB = '';   // the long explanations are kept for the ▾ Details box
@@ -509,7 +512,7 @@ html.wxdk [data-tone]{background:rgba(128,128,128,.12) !important;color:#e9edef}
       if (fin.length) hl += finHtml(fin, cardHtml);
       if (D.total > D.campaigns.length) hl += `<div class="wp-row" style="justify-content:center;margin:10px 0"><button type="button" class="wp-btn" id="cMore">Load more campaigns (${fmt(D.total - D.campaigns.length)} more)</button></div>`;
       el.innerHTML = h + '<div id="cpList">' + hl + '</div></div>';
-      // 🧹 compact page (owner, 18 Nov 2026) — the order the owner chose: 1 alerts (one line) · 2 today's plan (one line) · 3 best messages · 4 today's numbers (sent / delivered / failed / spent) · 5 Campaigns title + buttons · 6 the campaigns (SENDING first, Finished tiles below) · 7 everything else in one collapsed box
+      // 🧹 compact page (owner, 18 Nov 2026) — the order the owner chose: 1 alerts (one line) · 1b numbers strip · 2 today's plan (one line) · 3 best messages · 4 today's numbers (sent / delivered / failed / spent) · 5 Campaigns title + buttons · 6 the campaigns (SENDING first, Finished tiles below) · 7 everything else in one collapsed box
       try {
         const root = $(el, '#cpKeep'); if (root) {
           const arrange = () => {
@@ -517,7 +520,7 @@ html.wxdk [data-tone]{background:rgba(128,128,128,.12) !important;color:#e9edef}
             const best = (() => { const r = root.querySelector('#rkBody'); let n = r; while (n && n.parentElement !== root) n = n.parentElement; return n; })();
             const pl = q('#cpPl'); if (pl && !pl.querySelector(':scope > details[data-cmp]')) { const d = document.createElement('details'); const ex = (pl.textContent.match(/Expected\s+[\d,]+\s+orders\s+for\s+₹[\d,]+/) || [''])[0]; const sm = document.createElement('summary'); sm.style.cssText = 'cursor:pointer;font-weight:700;font-size:13px'; sm.textContent = '📋 Today’s plan' + (ex ? ' — ' + ex : '') + ' ▾'; d.appendChild(sm); while (pl.firstChild) d.appendChild(pl.firstChild); d.dataset.cmp = '1'; pl.appendChild(d); try { d.open = localStorage.getItem('cpPlanOpen') === '1'; } catch (e0) { } d.addEventListener('toggle', () => { try { localStorage.setItem('cpPlanOpen', d.open ? '1' : '0'); } catch (e1) { } }); }
             let box = q('#cpPanels'); if (!box) { box = document.createElement('details'); box.id = 'cpPanels'; box.className = 'wp-cd'; box.style.cssText = 'margin:8px 0'; const sm = document.createElement('summary'); sm.style.cssText = 'cursor:pointer;font-weight:700;font-size:13px'; sm.textContent = '⚙ More: daily plan, hours, room per number, drip, planner and totals ▾'; box.appendChild(sm); try { box.open = localStorage.getItem('cpPanelsOpen') === '1'; } catch (e0) { } box.addEventListener('toggle', () => { try { localStorage.setItem('cpPanelsOpen', box.open ? '1' : '0'); } catch (e1) { } }); }
-            const first = [q('#cpAl'), pl, best, q('.cp-hero'), q('.wp-top'), q('#cpList')].filter(Boolean);
+            const first = [q('#cpAl'), q('#cpNum'), pl, best, q('.cp-hero'), q('.wp-top'), q('#cpList')].filter(Boolean);
             const rest = [...root.children].filter((n) => !first.includes(n) && n !== box);
             rest.forEach((n) => box.appendChild(n));
             const want = [...first, box]; const have = [...root.children];
