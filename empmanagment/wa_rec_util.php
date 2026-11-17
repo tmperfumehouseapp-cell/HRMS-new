@@ -356,6 +356,32 @@ function wa_ru_fam_states(PDO $pdo, array $tplIds): array
     } catch (Throwable $e) { }
     return $o;
 }
+/** How many of the people a utility message could really be sent to (its variables must be true for them): an order message needs an order, a perfume message an enquiry, a name-only message fits everybody.
+ *  $sp = wa_util_split() of the people: ask / order / none. $mine = a version of the campaign's own message (it may use an enquiry OR an order). */
+function wa_ru_fit(array $labels, int $nvars, array $sp, int $tot, bool $mine): int
+{
+    $labels = array_map('strtolower', array_map('strval', $labels)); $ask = (int)($sp['ask'] ?? 0); $ord = (int)($sp['order'] ?? 0);
+    if ($nvars <= 0 || ($nvars === 1 && (!$labels || $labels === ['name']))) return $tot;   // only the name (or nothing): everybody
+    if (in_array('order', $labels, true)) return $ord;
+    if (in_array('perfume', $labels, true)) return $mine ? $ask + $ord : $ask;
+    if (in_array('date', $labels, true)) return $ask;
+    return $mine ? $ask + $ord : $ask;
+}
+/** Campaigns started again "as utility": what happened since — waiting, utility sent / delivered, left out because no chosen message fits. [camp_id => [...]] */
+function wa_ru_restart_stats(PDO $pdo, array $ids): array
+{
+    $ids = array_values(array_filter(array_map('intval', $ids))); if (!$ids) return []; $o = [];
+    try {
+        foreach ($pdo->query("SELECT id, extra FROM wa_campaigns WHERE id IN (" . implode(',', $ids) . ") AND extra LIKE '%u_restart%'")->fetchAll() as $r) {
+            $x = json_decode((string)$r['extra'], true); $rs = is_array($x) ? ($x['u_restart'] ?? null) : null; if (!is_array($rs) || empty($rs['at'])) continue; $cid = (int)$r['id']; $at = (string)$rs['at'];
+            $q = $pdo->prepare("SELECT SUM(status IN ('queued', 'sending')) AS w, SUM(variant = 'U' AND status = 'sent' AND sent_at >= ?) AS us, SUM(COALESCE(variant, 'M') <> 'U' AND status = 'sent' AND sent_at >= ? AND tries <= 1 AND 0) AS ms, SUM(status = 'skipped' AND err IN ('No chosen utility message fits this person', 'Already delivered a message of ours')) AS k, SUM(status = 'failed' AND variant = 'U' AND sent_at >= ?) AS uf FROM wa_camp_items WHERE camp_id = ?");
+            $q->execute([$at, $at, $at, $cid]); $a = $q->fetch();
+            $d = $pdo->prepare("SELECT COUNT(*) FROM wa_camp_items i JOIN wa_messages m ON m.wamid = i.wamid AND i.wamid <> '' WHERE i.camp_id = ? AND i.variant = 'U' AND i.sent_at >= ? AND m.status IN ('delivered', 'read')"); $d->execute([$cid, $at]);
+            $o[$cid] = ['at' => $at, 'n' => (int)($rs['n'] ?? 0), 'waiting' => (int)$a['w'], 'u_sent' => (int)$a['us'], 'u_del' => (int)$d->fetchColumn(), 'left_out' => (int)$a['k']];
+        }
+    } catch (Throwable $e) { }
+    return $o;
+}
 /** For the screen: each number with its utility delivery of the last 3 hours and whether it is resting. */
 function wa_ru_number_view(PDO $pdo): array
 {
