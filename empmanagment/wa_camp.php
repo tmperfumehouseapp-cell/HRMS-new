@@ -118,7 +118,13 @@ function wa_camp_ctx(PDO $pdo, array $t, int $switch, array $only = [], int $bur
     }
     if ($campaign && count($nums) > 1) { foreach (wa_num_fail_flags($pdo) as $fid => $ratio) if (isset($nums[$fid]) && count($nums) > 1) unset($nums[$fid]); }   // a number whose messages mostly FAIL is left out for now (campaigns only) — the others take its people; it comes back by itself when its failures drop
     $p = $caps['_port'] ?? ['left' => 0]; $st = 0.05; try { $sv = setting_get($pdo, 'wa_camp_sticky', ''); if ($sv !== '' && is_numeric($sv)) $st = max(0.0, min(1.0, (float)$sv)); } catch (Throwable $e) { }
-    return ['nums' => $nums, 'skip' => $skip, 'port_left' => $burst > 0 ? max((int)$p['left'], $burst) : (int)$p['left'], 'port' => $p, 'switch' => max(1, $switch), 'sticky' => $st];
+    $out = ['nums' => $nums, 'skip' => $skip, 'port_left' => $burst > 0 ? max((int)$p['left'], $burst) : (int)$p['left'], 'port' => $p, 'switch' => max(1, $switch), 'sticky' => $st];
+    // 🛟 the numbers the campaign chose ("Send from") cannot send at all, but another connected number can (message approved there, quality not Low, room left): use it instead of stalling (setting wa_camp_fallback = 0 turns this off)
+    if ($only && !$nums && empty($GLOBALS['__wa_ctx_fb']) && (string)setting_get($pdo, 'wa_camp_fallback', '1') !== '0') {
+        $GLOBALS['__wa_ctx_fb'] = 1; try { $o2 = wa_camp_ctx($pdo, $t, $switch, [], $burst, $campaign); } finally { unset($GLOBALS['__wa_ctx_fb']); }
+        if (!empty($o2['nums'])) { $o2['fallback'] = array_map('intval', array_keys($o2['nums'])); return $o2; }
+    }
+    return $out;
 }
 /** 📈 Campaigns only: each number's room this hour (its own speed minus the campaign people it messaged in the last 60 minutes). Returns [numberId => left] or null (no hourly speed). */
 function wa_camp_hour_room(array $port): ?array
@@ -501,6 +507,7 @@ function wa_camp_counts(PDO $pdo, int $id): array
     try { $afN = (int)hrms_memo('camp_af:' . $id, 60, function () use ($pdo, $id) { $fq = $pdo->prepare("SELECT COUNT(*) FROM wa_camp_items i LEFT JOIN wa_messages m ON m.wamid = i.wamid AND i.wamid <> '' WHERE i.camp_id = ? AND i.status = 'sent' AND (i.last_status = 'failed' OR m.status = 'failed')"); $fq->execute([$id]); return (int)$fq->fetchColumn(); });   // ⚡ joins every sent message of the campaign; the Campaigns list asked for it for 24 campaigns every few seconds: kept for 60 s
         $af = min($afN, (int)$o['sent']); $o['sent'] -= $af; $o['failed'] += $af; $o['accepted_failed'] = $af; } catch (Throwable $e) { }
     $o['total'] = array_sum(array_filter($o, fn($k) => $k !== 'accepted_failed', ARRAY_FILTER_USE_KEY));
+    $o['skip_top'] = []; if ((int)$o['skipped'] > 0) { try { $sq2 = $pdo->prepare("SELECT err_code, SUBSTRING(err, 1, 110) AS e, COUNT(*) AS n FROM wa_camp_items WHERE camp_id = ? AND status = 'skipped' GROUP BY err_code, SUBSTRING(err, 1, 110) ORDER BY n DESC LIMIT 6"); $sq2->execute([$id]); foreach ($sq2->fetchAll() as $r2) $o['skip_top'][] = ['code' => (int)$r2['err_code'], 'text' => trim((string)$r2['e']) !== '' ? (string)$r2['e'] : '', 'n' => (int)$r2['n']]; } catch (Throwable $e2) { } }   // ⏭ why people were skipped (the commonest reasons)
     $o['fail_top'] = []; if ((int)$o['failed'] > 0) { try { $fq2 = $pdo->prepare("SELECT err_code, SUBSTRING(err, 1, 90) AS e, COUNT(*) AS n FROM wa_camp_items WHERE camp_id = ? AND status = 'failed' GROUP BY err_code, SUBSTRING(err, 1, 90) ORDER BY n DESC LIMIT 2"); $fq2->execute([$id]); foreach ($fq2->fetchAll() as $r2) $o['fail_top'][] = ['code' => (int)$r2['err_code'], 'text' => (string)$r2['e'], 'n' => (int)$r2['n']]; } catch (Throwable $e2) { } }   // the two commonest reasons a message failed, so the card says WHY at a glance
     // 🛑 held by Meta (131049: the customer got too many marketing messages from businesses — Meta's decision, not charged): part of "skipped", shown on its own
     $o['held'] = 0; $o['held_r'] = 0; try { $q = $pdo->prepare("SELECT status, COUNT(*) AS n FROM wa_camp_items WHERE camp_id = ? AND status IN ('skipped', 'retry') AND err_code = 131049 GROUP BY status"); $q->execute([$id]); foreach ($q->fetchAll() as $r) { $o['held'] += (int)$r['n']; if ($r['status'] === 'retry') $o['held_r'] = (int)$r['n']; } } catch (Throwable $e) { }
@@ -1768,7 +1775,7 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
         case 'wa.camp_set_tpl': {   // 🔁 a paused campaign (e.g. Meta paused its message for low quality): pick another approved message and carry on with the people still waiting
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
             $in = json_input(); $c = wa_camp_row($pdo, (int)($in['id'] ?? 0)); if (!$c) json_response(['error' => 'Campaign not found.'], 404);
-            if ($c['status'] !== 'paused') json_response(['error' => 'Only a paused campaign can change its message.'], 422);
+            if (!in_array($c['status'], ['paused', 'running'], true)) json_response(['error' => 'Only a running or paused campaign can change its message.'], 422);
             $nt = (int)($in['tpl_id'] ?? 0); if ($nt <= 0 || $nt === (int)$c['tpl_id']) json_response(['error' => 'Pick a different message.'], 422);
             $t = wa_camp_tpl($pdo, $nt, true, (int)$c['media_lib_id']); if (!$t) json_response(['error' => 'That message is not approved by Meta (or needs a photo / video this campaign does not have). Pick another.'], 422);
             if ((int)($t['nvars'] ?? 0) > 1) json_response(['error' => 'That message has more than one blank — pick one with only a name blank.'], 422);
