@@ -84,7 +84,7 @@ function sku_col(string $text, ?string &$why = null): int
     if (preg_match('/\battar\b|\bittar\b|essential ?oil|roll[- ]?on|\boud oil\b/u', $t)) return 7;
     if (preg_match('/\bsoap\b/u', $t)) return 8;
     if (preg_match('/\bcar\b.*(perfume|freshener|fragrance)|car ?perfume/u', $t)) return 9;
-    if (preg_match('/(?<![0-9.])(\d{1,4})\s*-?\s*ml(?![a-z])/u', $t, $m)) { $ml = (int)$m[1]; if ($ml === 10) return 0; if ($ml === 20) return 1; if ($ml === 50 || $ml === 60) return 2; if ($ml === 100) return 3; $why = $ml . ' ml has no column in the sheet'; return -1; }
+    if (preg_match('/(?<![0-9.])(\d{1,4})\s*-?\s*ml(?![a-z])/u', $t, $m) || preg_match('/(?<![0-9.])(10|20|50|60|100)\s*m(?![a-z0-9])/u', $t, $m)) { $ml = (int)$m[1]; if ($ml === 10) return 0; if ($ml === 20) return 1; if ($ml === 50 || $ml === 60) return 2; if ($ml === 100) return 3; $why = $ml . ' ml has no column in the sheet'; return -1; }   // "50m" (the l forgotten) counts as 50 ml
     $why = 'no size found'; return -1;
 }
 

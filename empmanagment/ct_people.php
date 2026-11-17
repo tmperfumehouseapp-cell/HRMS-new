@@ -22,7 +22,7 @@ if (!function_exists('cp_day_rows')) {
             $out[(int)$id] = [
                 'off' => $off ? 1 : 0, 'n' => $n, 's' => (int)round((float)($e['sales'] ?? 0)), 't' => ($e['target'] ?? null) !== null ? (int)round((float)$e['target']) : null,
                 'p' => ($e['pct'] ?? null) !== null ? (float)$e['pct'] : null, 'qo' => (int)($e['qo'] ?? 0), 'co' => (int)($e['co'] ?? 0), 'q' => $q, 'cq' => (int)($e['cq'] ?? 0),
-                'qc' => ($e['conv'] ?? null) !== null ? (float)$e['conv'] : null, 'tk' => (int)round((float)($e['ticket'] ?? 0)),
+                'qc' => ($e['conv'] ?? null) !== null ? (float)$e['conv'] : null, 'tk' => (int)round((float)($e['ticket'] ?? 0)), 'ctk' => (int)round((float)($e['clean_ticket'] ?? 0)),
                 'cr' => ($e['code_rate'] ?? null) !== null ? (int)$e['code_rate'] : null, 'mx' => ($mix['pct'] ?? null) !== null ? (float)$mix['pct'] : null, 'pcs' => (int)($mix['pieces'] ?? 0),
                 'pn' => (int)($pre['n'] ?? 0), 'pa' => (int)($pre['amt'] ?? 0),
                 's7' => (int)$sq[0] + (int)$sc[0], 's6' => (int)$sq[1] + (int)$sc[1], 's28' => (int)$sq[2] + (int)$sc[2], 'so' => (int)$sq[3] + (int)$sc[3],

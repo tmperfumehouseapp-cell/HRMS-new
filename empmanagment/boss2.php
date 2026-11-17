@@ -2871,6 +2871,7 @@ function cm_fixes(PDO $pdo): array {
 }
 /** one business day: per person target, sales, and the commission by the new rules. Returns ['rows' => [...], 'error' => ''] */
 function cm_day(PDO $pdo, $day, array $ch = null, array $offers = null, array $boosts = null) {
+    if (!function_exists('tk_cfg') && is_file(__DIR__ . '/tk_lib.php')) { try { require_once __DIR__ . '/tk_lib.php'; } catch (Throwable $e) { } }   // 🎯 ticket bonus settings
     $ch = $ch ?: cm_chart($pdo); if ($offers === null) $offers = cm_offers($pdo); if ($boosts === null) $boosts = cm_boosts($pdo);
     foreach (['coach_sales_load', 'sales_target_fn', 'day_marks_between'] as $f) if (!function_exists($f)) return ['rows' => [], 'error' => 'The HRMS order functions were not found (' . $f . ').'];
     try {
@@ -2920,14 +2921,23 @@ function cm_day(PDO $pdo, $day, array $ch = null, array $offers = null, array $b
             $xcomTotal -= $xx; $ln['calc'] = round($calc + $xx, 2); $ln['com'] = round($__fx[$fk]['amt'], 2); $ln['x'] = 0; $ln['fixed'] = 1; $ln['fix_note'] = $__fx[$fk]['note']; $ln['fix_by'] = $__fx[$fk]['by']; $fixTotal += $__fx[$fk]['amt']; $nFix++; } unset($ln);
             $chartCom = max(0.0, $chartCom); $offerCom = max(0.0, $offerCom); $xcomTotal = max(0.0, $xcomTotal); }
         $extra = ($bonusOn === 'all' ? $chartCom + $offerCom + $xcomTotal : $chartCom) * $bonus / 100;
+        // 🎯 TICKET BONUS (owner, 17 Nov): a day whose CLEAN ticket (the Control Tower's: orders above the big-order limit left out) reaches the ticket goal pays +tk_bonus_pct % of the day's whole commission,
+        // on top of (separate from) the target bonus. Needs tk_min_orders orders; switch tk_pay. Flat extra on the total, like the Target bonus rule.
+        $tkPct = 0.0; $tkVal = 0.0; $tkc = function_exists('tk_cfg') ? tk_cfg($pdo) : null;
+        if ($tkc && $tkc['on'] && $tkc['pay'] && $tkc['goal'] > 0 && $n >= $tkc['min']) {
+            $big = function_exists('ct_cfg') ? (float)(ct_cfg($pdo)['big_order'] ?? 0) : 0.0; $cs = 0.0; $cn = 0;
+            foreach ($list as $o2) { $a = (float)$o2['amt']; if ($big > 0 && $a > $big) continue; $cs += $a; $cn++; }
+            $tkVal = $cn ? $cs / $cn : 0.0; if ($tkVal >= $tkc['goal']) $tkPct = (float)$tkc['pct'];
+        }
+        $tkExtra = $tkPct > 0 ? ($chartCom + $offerCom + $xcomTotal) * $tkPct / 100 : 0.0;
         // each order's own commission, WITHOUT the day's extra: the extra is one line on the day's total
         foreach ($lines as &$ln) { $ln['paid'] = round((float)$ln['com'] + (float)($ln['x'] ?? 0), 2); } unset($ln);
         $old = null;
         if (function_exists('coach_day')) { try { $cd = coach_day($pdo, $day, false, true); $old = isset($cd[$id]) ? (float)$cd[$id]['com_today'] : null; } catch (Throwable $e) {} }
-        $total = round($chartCom + $offerCom + $extra + $xcomTotal + $fixTotal, 2);
+        $total = round($chartCom + $offerCom + $extra + $tkExtra + $xcomTotal + $fixTotal, 2);
         $rows[] = ['id' => $id, 'name' => trim((string)$e['full_name']), 'target' => round($target), 'target_why' => (!($target > 0) && $n > 0) ? cm_target_why($pdo, $id, $day, $marks, $e) : '', 'sales' => round($sales), 'pct' => $target > 0 ? round($sales / $target * 100, 1) : null, 'orders' => $n,
             'codes' => $nCode, 'code_orders' => $n - $nMan, 'manual_orders' => $nMan, 'code_pct' => ($n - $nMan) > 0 ? round($nCode / ($n - $nMan) * 100) : null, 'code_ok' => $codeOk, 'code_need' => $need, 'chart_com' => round($chartCom, 2), 'offer_com' => round($offerCom, 2), 'x_com' => round($xcomTotal, 2),
-            'bonus' => $bonus, 'bonus_rule' => $tbName, 'bonus_on' => $bonusOn, 'boost' => $bo ? $bo['name'] : '', 'extra' => round($extra, 2), 'total' => $total, 'old' => $old, 'diff' => $old === null ? null : round($total - $old, 2), 'no_ml' => $noMl, 'not_priced' => $noPrice, 'fix_com' => round($fixTotal, 2), 'fix_n' => $nFix, 'lines' => $lines];
+            'tk_pct' => $tkPct, 'tk_extra' => round($tkExtra, 2), 'tk_ticket' => round($tkVal), 'bonus' => $bonus, 'bonus_rule' => $tbName, 'bonus_on' => $bonusOn, 'boost' => $bo ? $bo['name'] : '', 'extra' => round($extra, 2), 'total' => $total, 'old' => $old, 'diff' => $old === null ? null : round($total - $old, 2), 'no_ml' => $noMl, 'not_priced' => $noPrice, 'fix_com' => round($fixTotal, 2), 'fix_n' => $nFix, 'lines' => $lines];
     }
     usort($rows, function ($a, $b) { return $b['sales'] <=> $a['sales']; });
     return ['rows' => $rows, 'error' => ''];
@@ -2940,7 +2950,7 @@ function cm_paid_day(PDO $pdo, $day) {
     static $mem = [], $ver = null; if (isset($mem[$day])) return $mem[$day];      // 'v2' below: the day's extra is one amount on the total (not inside each order)
     $today = function_exists('biz_today') ? biz_today($pdo) : date('Y-m-d');
     if ($ver === null) {
-        $p = [(string)setting_get($pdo, 'cm_chart', ''), (string)setting_get($pdo, 'price_unify_v1', '')];
+        $p = [(string)setting_get($pdo, 'cm_chart', ''), (string)setting_get($pdo, 'price_unify_v1', ''), 'tk:' . (string)setting_get($pdo, 'tk_pay', '') . (string)setting_get($pdo, 'tk_goal', '') . (string)setting_get($pdo, 'tk_bonus_pct', '') . (string)setting_get($pdo, 'tk_min_orders', '')];   // a change of the ticket-bonus settings is seen at once
         foreach (["SELECT COUNT(*), COALESCE(MAX(updated_at), ''), COALESCE(SUM(enabled), 0) FROM commission_bonus_rules", "SELECT COUNT(*), COALESCE(MAX(id), 0), COALESCE(SUM(active), 0) FROM cm_boosts", "SELECT COUNT(*), COALESCE(MAX(id), 0), COALESCE(SUM(active), 0) FROM cm_offers", "SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM daily_targets WHERE target_date >= '" . date('Y-m-d', strtotime('-62 days')) . "'"] as $q) {
             try { $p[] = implode(',', (array)$pdo->query($q)->fetch(PDO::FETCH_NUM)); } catch (Throwable $e) { $p[] = '-'; }
         }
@@ -2957,7 +2967,8 @@ function cm_paid_day(PDO $pdo, $day) {
     foreach ((array)$r['rows'] as $x) {
         $gap = (int)$x['no_ml'] + (int)$x['not_priced'] > 0;      // an order the chart cannot price pays ₹0 (it is listed under Needs fixing on the Commission page)
         $bn = (float)$x['bonus'] > 0 ? ($x['bonus_rule'] !== '' ? $x['bonus_rule'] : ($x['boost'] !== '' ? $x['boost'] : 'Over-target extra')) : '';
-        $out['emps'][(int)$x['id']] = ['total' => round((float)$x['total'], 2), 'live' => !$gap, 'extra' => round((float)$x['extra'], 2), 'bonus' => (float)$x['bonus'], 'bonus_name' => $bn];
+        $tkp = (float)($x['tk_pct'] ?? 0); if ($tkp > 0) $bn = ($bn !== '' ? $bn . ' + ' : '') . 'Ticket bonus';
+        $out['emps'][(int)$x['id']] = ['total' => round((float)$x['total'], 2), 'live' => !$gap, 'extra' => round((float)$x['extra'] + (float)($x['tk_extra'] ?? 0), 2), 'bonus' => (float)$x['bonus'] + $tkp, 'bonus_name' => $bn];
         foreach ((array)$x['lines'] as $l) {
             if ((string)($l['key'] ?? '') === '') continue;
             $why = $l['rule'] === 'chart' ? 'Chart ' . $l['pct'] . '%'

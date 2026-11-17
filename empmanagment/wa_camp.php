@@ -30,6 +30,7 @@ if (!function_exists('wa_camp_tick')) {
 require_once __DIR__ . '/wa_pieces.php';
 require_once __DIR__ . '/wa_dq.php';   // 📅 one queue for all campaigns: shared hourly / daily cap
 require_once __DIR__ . '/wa_rec.php';   // 🔁 recover failed messages from another number / an alternative wording   // the message pieces library (also answers wa.piece_* actions)
+require_once __DIR__ . '/wa_rec_util.php';   // 💸 Module B: failed marketing → utility follow-up
 require_once __DIR__ . '/wa_mix.php';      // marketing + utility mix, one panel for all numbers, families, auto-submit
 
 if (!function_exists('wa_http_multi')) {
@@ -118,7 +119,13 @@ function wa_camp_ctx(PDO $pdo, array $t, int $switch, array $only = [], int $bur
     }
     if ($campaign && count($nums) > 1) { foreach (wa_num_fail_flags($pdo) as $fid => $ratio) if (isset($nums[$fid]) && count($nums) > 1) unset($nums[$fid]); }   // a number whose messages mostly FAIL is left out for now (campaigns only) — the others take its people; it comes back by itself when its failures drop
     $p = $caps['_port'] ?? ['left' => 0]; $st = 0.05; try { $sv = setting_get($pdo, 'wa_camp_sticky', ''); if ($sv !== '' && is_numeric($sv)) $st = max(0.0, min(1.0, (float)$sv)); } catch (Throwable $e) { }
-    return ['nums' => $nums, 'skip' => $skip, 'port_left' => $burst > 0 ? max((int)$p['left'], $burst) : (int)$p['left'], 'port' => $p, 'switch' => max(1, $switch), 'sticky' => $st];
+    $out = ['nums' => $nums, 'skip' => $skip, 'port_left' => $burst > 0 ? max((int)$p['left'], $burst) : (int)$p['left'], 'port' => $p, 'switch' => max(1, $switch), 'sticky' => $st];
+    // 🛟 the numbers the campaign chose ("Send from") cannot send at all, but another connected number can (message approved there, quality not Low, room left): use it instead of stalling (setting wa_camp_fallback = 0 turns this off)
+    if ($only && !$nums && empty($GLOBALS['__wa_ctx_fb']) && (string)setting_get($pdo, 'wa_camp_fallback', '1') !== '0') {
+        $GLOBALS['__wa_ctx_fb'] = 1; try { $o2 = wa_camp_ctx($pdo, $t, $switch, [], $burst, $campaign); } finally { unset($GLOBALS['__wa_ctx_fb']); }
+        if (!empty($o2['nums'])) { $o2['fallback'] = array_map('intval', array_keys($o2['nums'])); return $o2; }
+    }
+    return $out;
 }
 /** 📈 Campaigns only: each number's room this hour (its own speed minus the campaign people it messaged in the last 60 minutes). Returns [numberId => left] or null (no hourly speed). */
 function wa_camp_hour_room(array $port): ?array
@@ -1459,7 +1466,7 @@ function wa_camp_people_rows(PDO $pdo, array $camp, ?array $tpl, string $f, stri
 
 // ---------------------------------------------------------------------------------------------------------------- router
 $__wk = (string)($action ?? ($_GET['action'] ?? ''));
-if (in_array($__wk, ['wa.camp_tick', 'wa.camp_fast_tick', 'wa.dq_worker', 'wa.rec_run'], true) && function_exists('wa_overloaded') && wa_overloaded()) json_response(['ok' => true, 'result' => ['skipped' => true, 'busy' => true]]);   // the server is overloaded: this sending round waits a turn (it comes again in seconds), so the HRMS stays reachable
+if (in_array($__wk, ['wa.camp_tick', 'wa.camp_fast_tick', 'wa.dq_worker', 'wa.rec_run', 'wa.ru_run'], true) && function_exists('wa_overloaded') && wa_overloaded()) json_response(['ok' => true, 'result' => ['skipped' => true, 'busy' => true]]);   // the server is overloaded: this sending round waits a turn (it comes again in seconds), so the HRMS stays reachable
 if (isset($pdo) && $pdo instanceof PDO && strpos($__wk, 'wa.') === 0 && function_exists('wa_kill_stale_counts')) wa_kill_stale_counts($pdo);   // stuck heavy counts are cancelled first, so a jammed database frees itself
 // 🎯 Ideal day vs actual — on the Orders page: Admin / HR, the Sales Head who watches the quick entries, and every login with the Orders module (editing: Admin / HR and that Sales Head)
 if (isset($pdo) && $pdo instanceof PDO && ($__wk === 'wa.camp_ideal' || $__wk === 'wa.camp_ideal_save' || $__wk === 'wa.query_ideal' || $__wk === 'wa.query_ideal_save')) {
@@ -1493,7 +1500,7 @@ if (isset($pdo) && $pdo instanceof PDO && ($__wk === 'wa.camp_ideal' || $__wk ==
         }
     }
 }
-if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_suggest', 'wa.camp_start_now', 'wa.camp_send_skipped', 'wa.camp_snap', 'wa.camp_days', 'wa.camp_hourly', 'wa.cust_summary', 'wa.cust_card', 'wa.camp_hours', 'wa.dq_worker', 'wa.rec_run', 'wa.dq_set', 'wa.rec_report', 'wa.rec_set', 'wa.camp_fast', 'wa.camp_fast_tick', 'wa.fu_list', 'wa.fu_save', 'wa.fu_del', 'wa.fu_preset', 'wa.camp_list', 'wa.camp_templates', 'wa.camp_get', 'wa.camp_preview', 'wa.camp_freq', 'wa.camp_typed_phones', 'wa.camp_save', 'wa.camp_start', 'wa.camp_send_now', 'wa.camp_resume_all', 'wa.camp_stop_all', 'wa.camp_pause', 'wa.camp_resume', 'wa.camp_set_tpl', 'wa.camp_cancel', 'wa.camp_del', 'wa.camp_tick', 'wa.camp_suggest', 'wa.camp_best_time', 'wa.camp_people', 'wa.camp_people_csv', 'wa.camp_people_phones', 'wa.camp_text_batch', 'wa.camp_thread', 'wa.reports', 'wa.mix_state', 'wa.camp_mix_set'], true) && !($__wk === 'wa.camp_suggest' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST')) {
+if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_suggest', 'wa.camp_start_now', 'wa.camp_send_skipped', 'wa.camp_snap', 'wa.camp_days', 'wa.camp_hourly', 'wa.cust_summary', 'wa.cust_card', 'wa.camp_hours', 'wa.dq_worker', 'wa.rec_run', 'wa.dq_set', 'wa.rec_report', 'wa.rec_set', 'wa.ru_status', 'wa.ru_run', 'wa.ru_set', 'wa.camp_fast', 'wa.camp_fast_tick', 'wa.fu_list', 'wa.fu_save', 'wa.fu_del', 'wa.fu_preset', 'wa.camp_list', 'wa.camp_templates', 'wa.camp_get', 'wa.camp_preview', 'wa.camp_freq', 'wa.camp_typed_phones', 'wa.camp_save', 'wa.camp_start', 'wa.camp_send_now', 'wa.camp_resume_all', 'wa.camp_stop_all', 'wa.camp_pause', 'wa.camp_resume', 'wa.camp_set_tpl', 'wa.camp_cancel', 'wa.camp_del', 'wa.camp_tick', 'wa.camp_suggest', 'wa.camp_best_time', 'wa.camp_people', 'wa.camp_people_csv', 'wa.camp_people_phones', 'wa.camp_text_batch', 'wa.camp_thread', 'wa.reports', 'wa.mix_state', 'wa.camp_mix_set'], true) && !($__wk === 'wa.camp_suggest' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST')) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     $auth = require_auth(); wa_guard_admin($pdo, $auth);
     if (!wa_tables($pdo) || !wa_more_tables($pdo) || !function_exists('wa_tpl_tables') || !wa_tpl_tables($pdo)) json_response(['error' => 'WhatsApp storage is not available — check database permissions.'], 500);
@@ -1769,7 +1776,7 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
         case 'wa.camp_set_tpl': {   // 🔁 a paused campaign (e.g. Meta paused its message for low quality): pick another approved message and carry on with the people still waiting
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
             $in = json_input(); $c = wa_camp_row($pdo, (int)($in['id'] ?? 0)); if (!$c) json_response(['error' => 'Campaign not found.'], 404);
-            if ($c['status'] !== 'paused') json_response(['error' => 'Only a paused campaign can change its message.'], 422);
+            if (!in_array($c['status'], ['paused', 'running'], true)) json_response(['error' => 'Only a running or paused campaign can change its message.'], 422);
             $nt = (int)($in['tpl_id'] ?? 0); if ($nt <= 0 || $nt === (int)$c['tpl_id']) json_response(['error' => 'Pick a different message.'], 422);
             $t = wa_camp_tpl($pdo, $nt, true, (int)$c['media_lib_id']); if (!$t) json_response(['error' => 'That message is not approved by Meta (or needs a photo / video this campaign does not have). Pick another.'], 422);
             if ((int)($t['nvars'] ?? 0) > 1) json_response(['error' => 'That message has more than one blank — pick one with only a name blank.'], 422);
@@ -1871,6 +1878,21 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $in = json_input();
             if (isset($in['on'])) setting_set($pdo, 'wa_rec_on', !empty($in['on']) ? '1' : '0'); if (!empty($in['on'])) setting_set($pdo, 'wa_rec_pause_until', '0');
             json_response(['ok' => true, 'on' => wa_rec_cfg($pdo)['on']]);
+        }
+        case 'wa.ru_status': {   // 💸 Module B: failed marketing → utility follow-up
+            json_response(['ok' => true, 'status' => wa_ru_status($pdo)]);
+        }
+        case 'wa.ru_run': {   // 💸 "Run now"
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); ignore_user_abort(true); @set_time_limit(90);
+            setting_set($pdo, 'wa_lock_ru', '0'); $r = wa_ru_tick($pdo); json_response(['ok' => true, 'result' => $r, 'status' => wa_ru_status($pdo)]);
+        }
+        case 'wa.ru_set': {   // 💸 on / off and the knobs
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $in = json_input();
+            if (isset($in['on'])) { setting_set($pdo, 'wa_ru_on', !empty($in['on']) ? '1' : '0'); if (!empty($in['on'])) setting_set($pdo, 'wa_ru_pause_until', '0'); }
+            if (isset($in['hourly'])) setting_set($pdo, 'wa_ru_hourly', (string)max(10, min(20000, (int)$in['hourly'])));
+            if (isset($in['wait_min'])) setting_set($pdo, 'wa_ru_wait_min', (string)max(5, min(1440, (int)$in['wait_min'])));
+            if (isset($in['ord_days']) && in_array((int)$in['ord_days'], [30, 60, 90, 120], true)) setting_set($pdo, 'wa_ru_ord_days', (string)(int)$in['ord_days']);
+            json_response(['ok' => true, 'status' => wa_ru_status($pdo)]);
         }
         case 'wa.camp_fast_tick': {   // ⚡ one campaign's Send fast sender: that campaign only, its own lock, beside the running pool (the page calls it again and again while it is open)
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);

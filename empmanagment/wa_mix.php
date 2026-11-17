@@ -565,13 +565,16 @@ function wa_fam_scan(PDO $pdo, array &$budget): int
     $all = $pdo->query("SELECT * FROM wa_templates ORDER BY id")->fetchAll(); $rows = []; foreach ($all as $r) { $r['ex'] = wa_mix_extra($r); $r['ver'] = (int)$r['version'] ?: (int)($r['ex']['utility_v'] ?? 1); $r['twin_of'] = (int)($r['ex']['utility_of'] ?? 0); $rows[(int)$r['id']] = $r; }
     $busyNums = []; try { $q = $pdo->query("SELECT DISTINCT i.number_id, COALESCE(NULLIF(i.tpl_used, 0), c.tpl_id) AS tid FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id WHERE i.status = 'sent' AND i.sent_at >= '" . date('Y-m-d H:i:s', wa_mix_now() - 3 * 86400) . "'");
         $env = wa_mix_env($pdo); foreach ($q->fetchAll() as $r) { $h = $env['health'][(int)$r['number_id']] ?? null; if ($h && in_array(strtoupper((string)$h['quality']), ['YELLOW', 'RED'], true)) $busyNums[(int)$r['tid']] = 'the number ' . wa_mix_numlabel($env, (int)$r['number_id']) . ' is at ' . wa_mix_q_name((string)$h['quality']) . ' quality'; } } catch (PDOException $e) { }
+    // 🛟 a plain UTILITY message that a campaign uses gets a MARKETING alternative too when Meta pauses it (setting wa_fam_util_alt, on by default): the sender then uses the alternative on the accounts where the first one is paused
+    $utilAlt = wa_mix_cfg($pdo, 'wa_fam_util_alt', 1) == 1; $campTpl = [];
+    if ($utilAlt) { try { foreach ($pdo->query("SELECT DISTINCT tpl_id FROM wa_campaigns WHERE created_at >= '" . date('Y-m-d H:i:s', wa_mix_now() - 30 * 86400) . "'")->fetchAll(PDO::FETCH_COLUMN) as $x) $campTpl[(int)$x] = true; } catch (Throwable $e) { } }
     // latest version of every line: marketing line per family (twin_of = 0), utility line per marketing message
-    $lines = []; foreach ($rows as $r) { if ($r['twin_of'] > 0) $k = 'U' . $r['twin_of']; else { if (in_array(strtoupper((string)$r['category']), ['UTILITY'], true) && (int)$r['family_id'] === 0 && (int)$r['version'] <= 1) continue; $k = 'M' . wa_fam_root($r); } $lines[$k][] = $r; }
+    $lines = []; foreach ($rows as $r) { if ($r['twin_of'] > 0) $k = 'U' . $r['twin_of']; else { if (in_array(strtoupper((string)$r['category']), ['UTILITY'], true) && (int)$r['family_id'] === 0 && (int)$r['version'] <= 1 && !isset($campTpl[(int)$r['id']])) continue; $k = 'M' . wa_fam_root($r); } $lines[$k][] = $r; }
     foreach ($lines as $k => $members) {
         usort($members, fn($a, $b) => $a['ver'] <=> $b['ver'] ?: (int)$a['id'] <=> (int)$b['id']); $L = end($members); $id = (int)$L['id']; $have = $by[$id] ?? [];
         if (!$have || (string)$L['source'] === '' ) continue; $why = wa_fam_trouble($L, $have) ?: ($busyNums[$id] ?? ''); if ($why === '') continue;
         if ($k[0] === 'U' && !wa_util_mix_on($pdo)) continue;                                              // no new utility versions of offers
-        if ($k[0] === 'M' && strtoupper((string)$L['category']) !== 'MARKETING') continue;                 // order updates and other plain utility messages: only shown, not rewritten
+        if ($k[0] === 'M' && strtoupper((string)$L['category']) !== 'MARKETING' && !isset($campTpl[wa_fam_root($L)])) continue;                 // order updates and other plain utility messages: only shown, not rewritten — unless a campaign uses it
         if (count($members) >= $max) { if (empty($L['ex']['fam_stop'])) { wa_mix_extra_set($pdo, $id, ['fam_stop' => ['at' => date('Y-m-d H:i:s', wa_mix_now()), 'why' => $why]]); wa_log($pdo, 'template', false, $L['name'] . ': ' . $why . ' - already ' . count($members) . ' versions, needs a human to rewrite'); } continue; }
         if ($budget['left'] < max(1, count($wabas))) continue;
         $ver = (int)$L['ver'] + 1;
