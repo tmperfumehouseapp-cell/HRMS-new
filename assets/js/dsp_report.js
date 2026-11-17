@@ -221,7 +221,7 @@ const DSP = (() => {
 
     el.innerHTML = '<div id="dsBanner"></div><div id="dsFix"></div><div id="dsStrip"></div>'
       + '<div class="dr-card" id="dsAll"><div class="dr-h"><h2>All parcels</h2><span class="bd-chip" id="dsTot">…</span><span class="sp"></span><span id="dsUnt"></span>'
-      + '<input class="dr-in" type="search" id="dsQ" placeholder="Order, tracking ID, name, phone" autocomplete="off"><button type="button" class="bd-btn sm" data-all="1">Open all</button><button type="button" class="bd-btn sm" data-all="0">Close all</button></div><div class="bd-sub" style="margin:-2px 0 10px">Work from 1 down to 8 · the most urgent group is always on top · click a group to open or close it</div>'
+      + '<input class="dr-in" type="search" id="dsQ" placeholder="Order, tracking ID, name, phone" autocomplete="off"><button type="button" class="bd-btn sm" data-honly="1" id="dsHand" title="Show only the parcels sent by another courier (DTDC, India Post ...). HRMS cannot read their status: open the link, then mark them delivered or returned with the pencil.">✍ Other couriers</button><button type="button" class="bd-btn sm" data-all="1">Open all</button><button type="button" class="bd-btn sm" data-all="0">Close all</button></div><div class="bd-sub" style="margin:-2px 0 10px">Work from 1 down to 8 · the most urgent group is always on top · click a group to open or close it</div>'
       + '<div id="dsTiles"></div><div class="dr-tw" id="dsTw"><div class="bd-empty" style="padding:24px">Loading…</div></div><div id="dsLeg"></div></div><div id="dsPen"></div>';
     $('dsQ').value = S.q;
 
@@ -230,7 +230,7 @@ const DSP = (() => {
       const p = {};
       if (S.day) { p.from = S.day; p.to = S.day; } else if (S.from) { p.from = S.from; p.to = S.to || iso(new Date()); } else p.days = S.sdays;
       if (S.from) { p.sfrom = S.from; p.sto = S.to || iso(new Date()); } else p.sdays = S.sdays;
-      if (S.store) p.store = S.store; if (S.q) p.q = S.q;
+      if (S.store) p.store = S.store; if (S.q) p.q = S.q; if (S.hand) p.hand = 1;
       return Object.assign(p, extra || {});
     }
     const openList = () => (S.q ? [1, 2, 9, 3, 4, 5, 6, 7, 8] : ORDER.filter((g) => S.open[g]));
@@ -590,6 +590,7 @@ const DSP = (() => {
 
     function draw() {
       top(); fix(); strip(); tiles(); table(); legend(); pens();
+      const hb = $('dsHand'); if (hb) { hb.style.background = S.hand ? '#111827' : ''; hb.style.color = S.hand ? '#fff' : ''; hb.textContent = S.hand ? '✍ Other couriers only · show all' : '✍ Other couriers'; }
       if (!firstDone) {
         firstDone = true;
         if (/[?&]focus=noid/.test(location.search)) { S.open[2] = 1; keep(); jump(2); }
@@ -889,6 +890,7 @@ const DSP = (() => {
         const g = +d.band; if (!R.counts['g' + g]) return; if (e.target.closest('button')) return;
         S.open[g] = S.open[g] ? 0 : 1; keep(); return S.open[g] ? load() : (S.q ? load() : (table(), undefined));
       }
+      if (d.honly) { S.hand = !S.hand; if (S.hand) [4, 5, 6, 7].forEach((g) => { S.open[g] = 1; }); keep(); return load(); }
       if (d.all !== undefined) { ORDER.forEach((g) => { S.open[g] = d.all === '1' ? 1 : 0; }); keep(); return load(); }
       if (d.grp) { const g = +d.grp; return jump(g); }
       if (d.sd) { const n = +d.sd; S.sdays = n; S.from = ''; S.to = ''; S.day = ''; keep(); return load(); }
