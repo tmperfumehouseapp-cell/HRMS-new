@@ -225,14 +225,24 @@ function wa_util_split(PDO $pdo, array $phones, int $ordDays, int $askDays = 30)
     return $o;
 }
 /** 🎁 The offer goes FREE after a reply: a customer who answers a utility follow-up (sent in the last 48 h) gets the campaign's offer text once, as a normal chat message. */
-function wa_util_offer_reply(PDO $pdo, string $key): void
+function wa_util_offer_reply(PDO $pdo, string $key, string $text = ''): void
 {
     try {
-        $q = $pdo->prepare("SELECT i.camp_id, c.extra FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id WHERE i.phone = ? AND i.variant = 'U' AND i.status = 'sent' AND i.sent_at >= ? ORDER BY i.id DESC LIMIT 1"); $q->execute([$key, date('Y-m-d H:i:s', time() - 48 * 3600)]); $r = $q->fetch(); if (!$r) return;
-        $x = json_decode((string)$r['extra'], true); $offer = is_array($x) ? trim((string)($x['offer'] ?? '')) : ''; if ($offer === '' || ($x['kind'] ?? '') !== 'util') return;
+        if ($text !== '' && preg_match('/^\s*(not now|no\b|nope|stop|unsubscribe|don.?t|nahi|nahin|नहीं|ના)/iu', $text)) return;   // "Not now" / "No" / "Stop": no offer
+        $q = $pdo->prepare("SELECT i.id AS iid, i.name AS iname, i.camp_id, c.extra, c.tpl_id, c.media_lib_id, c.vars FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id WHERE i.phone = ? AND i.variant = 'U' AND i.status = 'sent' AND i.sent_at >= ? ORDER BY i.id DESC LIMIT 1"); $q->execute([$key, date('Y-m-d H:i:s', time() - 48 * 3600)]); $r = $q->fetch(); if (!$r) return;
+        $x = json_decode((string)$r['extra'], true); $x = is_array($x) ? $x : []; $isUtilC = ($x['kind'] ?? '') === 'util'; $offer = trim((string)($x['offer'] ?? ''));
+        if ($isUtilC && $offer === '') return;
+        if (!$isUtilC && (string)setting_get($pdo, 'wa_u_first', '1') === '0') return;   // utility first is switched off: nothing is sent by itself
         $pdo->exec("CREATE TABLE IF NOT EXISTS wa_util_offer (camp_id INT NOT NULL, phone VARCHAR(12) NOT NULL, at DATETIME NULL, PRIMARY KEY (camp_id, phone)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-        $ins = $pdo->prepare("INSERT IGNORE INTO wa_util_offer (camp_id, phone, at) VALUES (?, ?, ?)"); $ins->execute([(int)$r['camp_id'], $key, date('Y-m-d H:i:s')]); if ($ins->rowCount() === 0) return;   // once per person per campaign
         $ct = function_exists('wa_contact') ? wa_contact($pdo, $key) : null; if (!$ct || (int)($ct['optout'] ?? 0) === 1 || !function_exists('wa_send_text')) return;
+        if (!$isUtilC) {   // 🎁 utility first (owner, 17 Nov 2026): the customer answered the utility message → the campaign's OWN marketing message goes now as a free chat message (the 24-hour window is open)
+            $dl = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE phone = ? AND dir = 'out' AND who = 'campaign' AND mtype = 'text' AND ts >= ?"); $dl->execute([$key, date('Y-m-d H:i:s', time() - 24 * 3600)]); if ((int)$dl->fetchColumn() > 0) return;   // an offer already went in the last day
+            if (!function_exists('wa_camp_tpl') || !function_exists('wa_camp_vars_norm') || !function_exists('wa_camp_resolve_vars') || !function_exists('wa_tpl_shown')) return;
+            $t = wa_camp_tpl($pdo, (int)$r['tpl_id'], true, (int)$r['media_lib_id']); if (!$t) return;
+            $specs = wa_camp_vars_norm(json_decode((string)$r['vars'], true), (int)$t['nvars']); $used = []; $vars = wa_camp_resolve_vars($pdo, (int)$t['nvars'], $specs, $ct, (string)($r['iname'] ?: ($ct['name'] ?? '')), (int)$r['iid'], $used);
+            $offer = wa_tpl_shown($t, $vars); if (trim($offer) === '') return;
+        }
+        $ins = $pdo->prepare("INSERT IGNORE INTO wa_util_offer (camp_id, phone, at) VALUES (?, ?, ?)"); $ins->execute([(int)$r['camp_id'], $key, date('Y-m-d H:i:s')]); if ($ins->rowCount() === 0) return;   // once per person per campaign
         $name = function_exists('wa_first_name') ? wa_first_name((string)($ct['name'] ?? '')) : ''; wa_send_text($pdo, $ct, str_replace(['{name}', '{{name}}'], $name, $offer), 'campaign', 0);
     } catch (Throwable $e) { error_log('wa_util_offer_reply: ' . $e->getMessage()); }
 }
