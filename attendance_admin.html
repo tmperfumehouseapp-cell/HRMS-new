@@ -535,6 +535,13 @@
       </div>
       <div class="pfa-sum" id="pfeSum"></div>
     </div>
+    <div class="field" id="pfeWeeklyBox"><label>Weekly post <span style="font-weight:500; color:var(--muted);">(for example Reddit: one post a week)</span></label>
+      <label style="text-transform:none; letter-spacing:normal; color:var(--text, #111827); display:flex; align-items:flex-start; gap:10px; padding:10px 12px; border:1px solid #bfdbfe; border-radius:9px; background:#eff6ff; font-size:13px; font-weight:600; cursor:pointer;">
+        <span class="pfa-tg" style="margin-top:2px;"><input type="checkbox" id="pfeWeekly"><i></i></span>
+        <span>Ask only ONCE per post <span style="display:block; font-weight:400; font-size:11.5px; color:var(--muted); line-height:1.45;">The employee uploads one comment screenshot. It stays valid every day until you press <b>"🆕 New post is up"</b> on this requirement. Then everyone has to comment on the new post and upload a fresh screenshot (Claude checks it).</span></span>
+      </label>
+      <input type="text" id="pfeHint" maxlength="190" autocomplete="off" placeholder="Words of this week's post (title / topic) so Claude can check it — optional" style="margin-top:8px;">
+    </div>
     <div class="field"><label>Not required for <span style="font-weight:500; color:var(--muted);">(optional)</span></label>
       <div class="pfa-chips" id="pfeExChips"></div>
       <input type="text" id="pfeExSearch" placeholder="Search an employee who does NOT need this…" autocomplete="off" style="margin-top:8px;">
@@ -813,7 +820,7 @@
   function attRowHtml(r) {
     const v = prep(r);
     return `<tr>
-        <td><a href="#" onclick="viewMonth(${r.employee_id}, '${(r.full_name || '').replace(/'/g, "\\'")}'); return false;" title="Open full month">${r.full_name}</a> <span class="badge">${r.employee_code}</span>${Number(r.is_store) ? ' <span class="badge" style="background:#EEF2FF; color:#3730a3;">Store</span>' : ''}${v.dupTag}</td>
+        <td><a href="#" onclick="viewMonth(${r.employee_id}, '${(r.full_name || '').replace(/'/g, "\\'")}'); return false;" title="Open full month">${r.full_name}</a> <span class="badge">${r.employee_code}</span>${deptTag(r)}${Number(r.is_store) ? ' <span class="badge" style="background:#EEF2FF; color:#3730a3;">Store</span>' : ''}${v.dupTag}</td>
         <td><a href="#" onclick="editShift(${r.employee_id}, '${(r.full_name || '').replace(/'/g, "\\'")}'); return false;" style="font-weight:600; text-decoration:none;">${v.shift}</a><div style="font-size:11px; color:var(--muted);">${v.shiftSub}</div></td>
         <td>${fmtT(r.punch_in)}${locLine(r.in_office, r.in_distance_m)}</td>
         <td>${fmtT(r.punch_out)}${locLine(r.out_office, r.out_distance_m)}</td>
@@ -831,12 +838,15 @@
     `<div><div style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.03em;">${label}</div>
       <div style="font-size:13px; margin-top:1px;">${value}</div></div>`;
 
+  // The employee's department, small, next to the name (names come from the department filter list)
+  const DEPT_NAMES = {};
+  const deptTag = (r) => { const n = DEPT_NAMES[Number(r.department_id)]; return n ? ` <span style="font-size:10.5px; font-weight:600; color:#0f766e; background:#ecfdf5; border-radius:6px; padding:1px 6px; margin-left:4px; white-space:nowrap;">${attr(n)}</span>` : ''; };
   function attCardHtml(r) {
     const v = prep(r);
     return `<div style="background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:11px 13px; margin-bottom:8px;">
         <div style="font-size:13px; font-weight:600;">
           <a href="#" onclick="viewMonth(${r.employee_id}, '${(r.full_name || '').replace(/'/g, "\\'")}'); return false;" title="Open full month">${r.full_name}</a>
-          <span style="font-size:11px; color:var(--muted); font-weight:400; margin-left:4px;">${r.employee_code}</span>
+          <span style="font-size:11px; color:var(--muted); font-weight:400; margin-left:4px;">${r.employee_code}</span>${deptTag(r)}
           ${v.dupTag}
         </div>
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:9px;">
@@ -1249,11 +1259,12 @@
       const needs = r.capture === 'idcard' ? 'Live ID card photo' + (Number(r.daily_check) === 1 ? ' · enroll + daily check' : '') : `${r.shots_required} screenshot${r.shots_required === 1 ? '' : 's'}${Number(r.link_required) ? ' + link' : ''}`;
       return `<div class="pfa-rule${Number(r.active) ? '' : ' pfa-off'}">
         ${pfTile(r)}
-        <div class="nm"><b>${attr(r.title)}</b>${r.stage === 'enroll' ? ' <span class="pfa-chip dep" style="margin-left:6px;">Once · at Enroll</span>' : ''}${r.capture === 'idcard' ? ' <span class="pfa-chip" style="margin-left:4px;">🪪 Live ID card</span>' : ''}${Number(r.daily_check) === 1 ? ' <span class="pfa-chip" style="margin-left:4px; background:#fffbeb; color:#92400e;">Checked every day</span>' : ''}${(r.except_ids || []).length ? ` <span class="pfa-chip more" style="margin-left:4px;" title="${attr(r.except_ids.map(pfEmpName).join(', '))}">Not for ${r.except_ids.length}</span>` : ''}<span>${attr(r.instruction || 'No wording set.')}</span>${r.target_url ? `<a class="pfa-rlink" href="${attr(r.target_url)}" target="_blank" rel="noopener noreferrer">🔗 ${attr(String(r.target_url).replace(/^https?:\/\/(www\.)?/i, '').replace(/\/$/, ''))}</a>` : ''}</div>
+        <div class="nm"><b>${attr(r.title)}</b>${Number(r.weekly) === 1 ? ' <span class="pfa-chip" style="margin-left:6px; background:#eff6ff; color:#1d4ed8;">Weekly · one post</span>' : ''}${r.stage === 'enroll' ? ' <span class="pfa-chip dep" style="margin-left:6px;">Once · at Enroll</span>' : ''}${r.capture === 'idcard' ? ' <span class="pfa-chip" style="margin-left:4px;">🪪 Live ID card</span>' : ''}${Number(r.daily_check) === 1 ? ' <span class="pfa-chip" style="margin-left:4px; background:#fffbeb; color:#92400e;">Checked every day</span>' : ''}${(r.except_ids || []).length ? ` <span class="pfa-chip more" style="margin-left:4px;" title="${attr(r.except_ids.map(pfEmpName).join(', '))}">Not for ${r.except_ids.length}</span>` : ''}<span>${attr(r.instruction || 'No wording set.')}</span>${r.target_url ? `<a class="pfa-rlink" href="${attr(r.target_url)}" target="_blank" rel="noopener noreferrer">🔗 ${attr(String(r.target_url).replace(/^https?:\/\/(www\.)?/i, '').replace(/\/$/, ''))}</a>` : ''}</div>
         <div class="sc"><div class="pfa-chips">${chips}</div><div class="pfa-cnt">${kind} · ${r.applies_count} employee${r.applies_count === 1 ? '' : 's'}</div></div>
         <div class="nd">${needs}</div>
         <div class="ac">
           <label class="pfa-tg" title="${Number(r.active) ? 'On' : 'Off'}"><input type="checkbox" ${Number(r.active) ? 'checked' : ''} onchange="pfaToggle(${r.rule_id}, this.checked, this)" aria-label="Requirement on or off"><i></i></label>
+          ${Number(r.weekly) === 1 ? `<button type="button" class="pfa-lnk" style="font-weight:700;" onclick="pfaNewPost(${r.rule_id})" title="Last week's screenshots stop counting; everyone comments on the new post">🆕 New post is up</button>` : ''}
           <button type="button" class="pfa-lnk" onclick="pfaEditRule(${r.rule_id})">Edit</button>
         </div>
       </div>`;
@@ -1265,6 +1276,13 @@
       scope_all: r.scope_all, department_ids: r.department_ids, employee_ids: r.employee_ids, active: r.active, stage: r.stage === 'enroll' ? 'enroll' : 'punch',
       capture: r.capture === 'idcard' ? 'idcard' : 'upload', daily_check: Number(r.daily_check) === 1 ? 1 : 0, ask_enrolled: Number(r.ask_enrolled) === 0 ? 0 : 1, except_ids: r.except_ids || [] }, over || {});
   }
+  window.pfaNewPost = async function (id) {
+    const r = PF.rules.find(x => Number(x.rule_id) === Number(id)); if (!r) return;
+    const hint = window.prompt('A NEW post is up for "' + r.title + '".\nEveryone will have to comment on it and upload a fresh screenshot.\n\nWords of the new post (title / topic) so Claude can check — optional:', r.post_hint || '');
+    if (hint === null) return;
+    try { const d = await api.post('proofs.new_post', { rule_id: id, post_hint: hint.trim() }); pfRulesAlert(''); await pfaLoad(); load(); alert(d.message); }
+    catch (err) { pfRulesAlert(err.message); }
+  };
   window.pfaToggle = async function (id, on, box) {
     const r = PF.rules.find(x => Number(x.rule_id) === Number(id));
     if (!r) return;
@@ -1385,6 +1403,7 @@
     document.getElementById('pfeText').value = r ? r.instruction : '';
     document.getElementById('pfeShots').value = r ? r.shots_required : 1;
     document.getElementById('pfeHintTop').value = r ? (r.hint_top || '') : '';
+    document.getElementById('pfeWeekly').checked = !!(r && Number(r.weekly) === 1); document.getElementById('pfeHint').value = r ? (r.post_hint || '') : '';
     document.getElementById('pfeHintBot').value = r ? (r.hint_bottom || '') : '';
     document.getElementById('pfeUrl').value = r ? (r.target_url || '') : '';
     pfeUrlCheck(false);
@@ -1500,6 +1519,7 @@
       const d = await api.post('proofs.rule_save', {
         rule_id: pfEd.rule_id, kind: pfEd.kind, title, target_url: ur.empty ? '' : document.getElementById('pfeUrl').value.trim(), instruction: document.getElementById('pfeText').value.trim(),
         hint_top: document.getElementById('pfeHintTop').value.trim(), hint_bottom: document.getElementById('pfeHintBot').value.trim(),
+        weekly: document.getElementById('pfeWeekly').checked ? 1 : 0, post_hint: document.getElementById('pfeHint').value.trim(),
         shots_required: Math.max(1, Math.min(10, Number(document.getElementById('pfeShots').value) || 1)), link_required: pfEd.link,
         stage: pfEd.stage, scope_all: pfEd.all ? 1 : 0, department_ids: pfEd.all ? [] : [...pfEd.deps], employee_ids: pfEd.all ? [] : [...pfEd.emps],
         capture: pfEd.capture, daily_check: (pfEd.stage === 'enroll' && pfEd.capture === 'idcard' && pfEd.daily) ? 1 : 0, ask_enrolled: pfEd.askEnr ? 1 : 0, except_ids: [...pfEd.except],
@@ -2607,8 +2627,10 @@
     try {
       await new Promise((r) => setTimeout(r, 900));   // after the first list is shown
       const d = await api.get('departments.list');
+      (d.departments || []).forEach((x) => { DEPT_NAMES[Number(x.department_id)] = x.department_name; });
       sel.innerHTML = '<option value="">All departments</option>' + (d.departments || []).map((x) => `<option value="${x.department_id}">${attr(x.department_name)}</option>`).join('') + '<option value="none">No department</option>';
-      if (saved && [...sel.options].some((o) => o.value === saved)) { sel.value = saved; if (rangeMode()) renderRange(); else { updateSummary(); renderTable(); } }
+      if (saved && [...sel.options].some((o) => o.value === saved)) sel.value = saved;
+      if (rangeMode()) renderRange(); else { updateSummary(); renderTable(); }
     } catch (e) { sel.style.display = 'none'; }
     sel.addEventListener('change', () => {
       try { localStorage.setItem('hrms_att_dept', sel.value); } catch (e) {}

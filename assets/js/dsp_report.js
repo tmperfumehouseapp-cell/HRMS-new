@@ -107,6 +107,76 @@ const DSP = (() => {
     document.head.appendChild(s);
   }
 
+
+  /* ---------- 🩺 Diagnose (read-only): what HRMS holds for every parcel, and — when the hand-tracked list is pasted — where HRMS and the real status disagree.
+     Nothing is saved or changed: the report is plain text to copy. diagReport(rows, pasted, info) is a pure function. ---------- */
+  function diagReal(v) {   // one hand-written final status → a real group
+    const t = String(v || '').toLowerCase().replace(/\s+/g, ' ').trim(); if (!t) return 'Blank';
+    if (/cod\s*not/.test(t)) return 'COD not available';
+    if (/cancel|refund/.test(t)) return 'Cancelled / refunded';
+    if (/re-?send|re-?ship|reship|resent/.test(t)) return 'Re-sent';
+    if (/rto|return|undeliver|un-deliver|not deliver|refus|ndr|failed/.test(t)) return 'Not delivered / RTO';
+    if (/out for delivery|\bofd\b/.test(t)) return 'Out for delivery';
+    if (/deliver/.test(t)) return 'Delivered';
+    if (/not pick|no pick|pickup pending|pending pick|out for pick|pickup sched|pick up sched|not ship|manifest|not dispatch|booked|label/.test(t)) return 'Not picked up';
+    if (/transit|shipped|picked|dispatch|in-?scan|reached|arriv|depart|connect|hub/.test(t)) return 'In transit';
+    return 'Other';
+  }
+  const DIAG_OK = { 'Not picked up': [2, 3, 9, 10], 'In transit': [4], 'Out for delivery': [4], 'Delivered': [6, 7], 'Not delivered / RTO': [5, 1], 'Cancelled / refunded': [8], 'COD not available': [8] };
+  const diagKey = (v) => String(v == null ? '' : v).replace(/[\s#]+/g, '').toLowerCase();
+  const diagTrk = (v) => String(v == null ? '' : v).replace(/\s+/g, '').toUpperCase();
+  function diagPaste(txt) {   // rows copied from Excel: Order ID, Tracking ID, Courier, Final status (tabs; commas also work)
+    const out = []; String(txt || '').split(/\r?\n/).forEach((ln) => { if (!ln.trim()) return; const c = ln.indexOf('\t') >= 0 ? ln.split('\t') : ln.split(','); const o = diagKey(c[0]); if (!o || /^order/.test(o)) return; out.push({ k: o, order: String(c[0]).trim(), trk: diagTrk(c[1]), courier: String(c[2] || '').trim(), st: String(c[3] || '').trim() }); });
+    return out;
+  }
+  function diagReport(rows, pasted, info) {
+    const L = [], now = Date.now(), cnt = (m, k) => { m[k] = (m[k] || 0) + 1; }, top = (m, n) => Object.entries(m).sort((a, b) => b[1] - a[1]).slice(0, n || 99);
+    const hrs = (s) => { const t = s ? new Date(String(s).replace(' ', 'T')).getTime() : NaN; return isNaN(t) ? null : (now - t) / 3600000; };
+    const gname = (g) => g + ' ' + ((G[g] || ['?'])[0]);
+    const pct = (a, b) => b ? (Math.round(1000 * a / b) / 10) + '%' : '-';
+    L.push('=== HRMS DISPATCH DIAGNOSIS (read-only) ==='); L.push('Made: ' + new Date().toString().slice(0, 24) + ' | Window: ' + (info.from || '?') + ' to ' + (info.to || '?') + ' | Parcels read: ' + rows.length + (info.total > rows.length ? ' of ' + info.total + ' (CUT OFF)' : ''));
+    const byG = {}, gSt = {}, gSr = {}, byPre = {}; rows.forEach((r) => { const g = +r.grp || 0; cnt(byG, g); cnt(gSt, g + ' | ' + r.status); cnt(gSr, g + ' | ' + (r.sr_status || '(none)')); cnt(byPre, /^wm-/i.test(r.order) ? 'WM-' : /^#/.test(r.order) ? '#' : 'other'); });
+    L.push(''); L.push('[H1] Parcels per HRMS group'); Object.keys(byG).sort((a, b) => a - b).forEach((g) => L.push('  ' + gname(g) + ': ' + byG[g]));
+    L.push('  order types: ' + top(byPre).map((x) => x[0] + ' ' + x[1]).join(' · '));
+    L.push(''); L.push('[H2] HRMS group | own status (count)'); top(gSt).forEach((x) => L.push('  ' + x[0] + ': ' + x[1]));
+    L.push(''); L.push('[H3] HRMS group | Shiprocket status (top 45)'); top(gSr, 45).forEach((x) => L.push('  ' + x[0] + ': ' + x[1]));
+    const g3 = rows.filter((r) => +r.grp === 3), age = { '0-24 h': 0, '24-48 h': 0, '2-4 d': 0, '4-7 d': 0, '7+ d': 0, 'no time': 0 }, g3c = {}, g3d = {};
+    g3.forEach((r) => { const h = hrs(r.tracked_at || r.created); cnt(age, h === null ? 'no time' : h < 24 ? '0-24 h' : h < 48 ? '24-48 h' : h < 96 ? '2-4 d' : h < 168 ? '4-7 d' : '7+ d'); cnt(g3c, r.courier || '(no courier)'); cnt(g3d, String(r.created || '').slice(0, 10)); });
+    L.push(''); L.push('[H4] Group 3 (tracking ID given, not in transit): ' + g3.length); L.push('  waiting since the tracking ID: ' + Object.entries(age).map((x) => x[0] + ' ' + x[1]).join(' · ')); L.push('  by courier: ' + top(g3c, 8).map((x) => x[0] + ' ' + x[1]).join(' · ')); L.push('  by order date: ' + Object.keys(g3d).sort().map((d) => d.slice(5) + ' ' + g3d[d]).join(' · '));
+    const con = [], ex = {}; const flag = (name, r) => { cnt(ex, name); if (ex[name] <= 5) con.push('  ' + name + ' → ' + r.order + ' | grp ' + r.grp + ' | ' + r.status + ' | SR: ' + (r.sr_status || '-') + ' | ' + (r.courier || '-') + ' ' + (r.tracking_no || '-')); };
+    rows.forEach((r) => { const g = +r.grp, sr = String(r.sr_status || '').toLowerCase();
+      if (g !== 8 && /cancel/.test(sr)) flag('Shiprocket says cancelled, HRMS group is not 8', r);
+      if ((g === 2 || g === 3) && /deliver/.test(sr) && !/undeliver|out for/.test(sr)) flag('Shiprocket says delivered, HRMS still waits for pickup', r);
+      if ((g === 2 || g === 3) && /transit|shipped|picked up|out for delivery/.test(sr)) flag('Shiprocket says moving, HRMS still waits for pickup', r);
+      if (g === 4 && /deliver/.test(sr) && !/undeliver|out for/.test(sr)) flag('Shiprocket says delivered, HRMS says in transit', r);
+      if (g === 4 && /rto|undeliver|return/.test(sr)) flag('Shiprocket says RTO / undelivered, HRMS says in transit', r);
+      if (g === 4 && (hrs(r.transit_at || r.created) || 0) > 240) flag('In transit for more than 10 days', r);
+      if (g >= 3 && g <= 7 && !r.tracking_no) flag('Past group 2 but no tracking number', r);
+      if (g === 3 && !r.sr_status) flag('Group 3 with no Shiprocket status at all (not followed by Shiprocket?)', r);
+      if ((g === 3 || g === 4) && r.tracking_no && !r.courier) flag('Tracking number but no courier name', r); });
+    L.push(''); L.push('[H5] Things that do not agree inside HRMS'); if (!Object.keys(ex).length) L.push('  none found'); top(ex).forEach((x) => L.push('  ' + x[1] + ' × ' + x[0])); if (con.length) { L.push('  examples (up to 5 each):'); con.forEach((x) => L.push(x)); }
+    if (!pasted || !pasted.length) { L.push(''); L.push('[M] No hand-tracked list was pasted, so HRMS was not compared with the real status.'); return L.join('\n'); }
+    const man = {}, dup = {}; pasted.forEach((m) => { if (man[m.k]) cnt(dup, m.k); man[m.k] = m; });
+    const hk = {}; rows.forEach((r) => { hk[diagKey(r.order)] = r; });
+    const stRaw = {}, stGrp = {}; Object.values(man).forEach((m) => { cnt(stRaw, m.st || '(blank)'); cnt(stGrp, diagReal(m.st)); });
+    const matched = rows.filter((r) => man[diagKey(r.order)]), onlyH = rows.length - matched.length, onlyM = Object.keys(man).filter((k) => !hk[k]);
+    L.push(''); L.push('=== COMPARED WITH THE HAND-TRACKED LIST ==='); L.push('[M1] Pasted rows: ' + pasted.length + ' | different orders: ' + Object.keys(man).length + ' | repeated order IDs: ' + Object.keys(dup).length + ' | matched with HRMS: ' + matched.length + ' | in HRMS only: ' + onlyH + ' | in the list only: ' + onlyM.length);
+    { const d = {}; onlyM.forEach((k) => cnt(d, /^wm-/.test(k) ? 'WM-' : 'Shopify')); const hd = {}; rows.filter((r) => !man[diagKey(r.order)]).forEach((r) => cnt(hd, String(r.created || '').slice(0, 10))); L.push('  list only: ' + (top(d).map((x) => x[0] + ' ' + x[1]).join(' · ') || '0') + ' (first: ' + onlyM.slice(0, 8).map((k) => man[k].order).join(', ') + ')'); L.push('  HRMS only, by order date: ' + Object.keys(hd).sort().map((x) => x.slice(5) + ' ' + hd[x]).join(' · ')); }
+    L.push(''); L.push('[M2] Real status → how it was read (count)'); top(stGrp).forEach((x) => L.push('  ' + x[0] + ': ' + x[1]));
+    L.push(''); L.push('[M3] Every different status text in the list (top 60)'); top(stRaw, 60).forEach((x) => L.push('  ' + x[0] + ' → ' + diagReal(x[0] === '(blank)' ? '' : x[0]) + ': ' + x[1]));
+    const cross = {}, perG = {}, pairs = {}, pairEx = {}, wCour = {}, wSr = {}, wDate = {}, trk = { Same: 0, Different: 0, 'Missing in HRMS': 0, 'Missing in list': 0, 'Not a number in list': 0 }; let diffOther = 0; const diffEx = [];
+    matched.forEach((r) => { const m = man[diagKey(r.order)], g = +r.grp, rg = diagReal(m.st), ok = DIAG_OK[rg]; cnt(cross, g + ' → ' + rg); perG[g] = perG[g] || { n: 0, w: 0, u: 0 }; perG[g].n++;
+      if (!ok) perG[g].u++; else if (ok.indexOf(g) < 0) { perG[g].w++; const pk = gname(g) + ' → real: ' + rg; cnt(pairs, pk); (pairEx[pk] = pairEx[pk] || []).length < 8 && pairEx[pk].push(r.order + ' | ' + (r.courier || '-') + ' | HRMS ' + (r.tracking_no || '-') + ' | list ' + (m.trk || '-') + ' | SR: ' + (r.sr_status || '-') + ' | list: ' + m.st); cnt(wCour, r.courier || '(no courier)'); cnt(wSr, r.sr_status || '(none)'); cnt(wDate, String(r.created || '').slice(0, 10)); }
+      const a = diagTrk(r.tracking_no), b = m.trk; if (!b) trk['Missing in list']++; else if (!/\d{6,}/.test(b)) trk['Not a number in list']++; else if (!a) trk['Missing in HRMS']++; else if (a === b) trk.Same++; else { trk.Different++; if (!/blue|delhiv|xpress|ecom|shadow|ekart/i.test(m.courier)) diffOther++; if (diffEx.length < 12) diffEx.push('  ' + r.order + ' | HRMS ' + (r.courier || '-') + ' ' + a + ' | list ' + (m.courier || '-') + ' ' + b + ' | list: ' + m.st); } });
+    L.push(''); L.push('[M4] HRMS group → real status (count)'); Object.keys(cross).sort().forEach((k) => L.push('  ' + k + ': ' + cross[k]));
+    L.push(''); L.push('[M5] Per HRMS group: matched / WRONG / cannot judge'); Object.keys(perG).sort((a, b) => a - b).forEach((g) => L.push('  ' + gname(g) + ': ' + perG[g].n + ' / ' + perG[g].w + ' (' + pct(perG[g].w, perG[g].n) + ') / ' + perG[g].u));
+    const tw = Object.values(perG).reduce((a, x) => a + x.w, 0); L.push('  TOTAL wrong: ' + tw + ' of ' + matched.length + ' matched (' + pct(tw, matched.length) + ')');
+    L.push(''); L.push('[M6] Wrong pairs, biggest first'); if (!tw) L.push('  none'); top(pairs).forEach((x) => L.push('  ' + x[1] + ' × ' + x[0]));
+    L.push(''); L.push('[M7] Wrong rows by courier: ' + (top(wCour, 8).map((x) => x[0] + ' ' + x[1]).join(' · ') || '-')); L.push('     by Shiprocket status: ' + (top(wSr, 12).map((x) => x[0] + ' ' + x[1]).join(' · ') || '-')); L.push('     by order date: ' + (Object.keys(wDate).sort().map((d) => d.slice(5) + ' ' + wDate[d]).join(' · ') || '-'));
+    L.push(''); L.push('[M8] Tracking ID: ' + Object.entries(trk).map((x) => x[0] + ' ' + x[1]).join(' · ') + ' | different AND the list courier is outside Shiprocket: ' + diffOther); diffEx.forEach((x) => L.push(x));
+    L.push(''); L.push('[M9] Examples of the 6 biggest wrong pairs (order | courier | HRMS tracking | list tracking | Shiprocket status | list status)'); top(pairs, 6).forEach((x) => { L.push('  -- ' + x[0]); pairEx[x[0]].forEach((e) => L.push('     ' + e)); });
+    return L.join('\n');
+  }
   function mount(el) {
     css();
     let S = { sdays: 25, from: '', to: '', day: '', store: '', q: '', open: { 1: 1, 2: 1, 9: 1, 3: 1 }, lim: {}, fix: true, details: false, hist: {} };
@@ -206,10 +276,11 @@ const DSP = (() => {
       const tb = document.getElementById('topBtns');
       if (tb && !tb.dataset.dsp) {
         tb.dataset.dsp = '1';
-        tb.innerHTML = '<button class="bd-btn" id="dsCsv" type="button">⬇ Download Excel (CSV)</button> <button class="bd-btn" id="dsSync" type="button" style="display:none">Read new orders now</button> <button class="bd-btn pri" id="dsRec" type="button" style="display:none">Fix everything now</button>';
+        tb.innerHTML = '<button class="bd-btn" id="dsCsv" type="button">⬇ Download Excel (CSV)</button> <button class="bd-btn" id="dsDiag" type="button" title="Read-only: a text report of what HRMS holds for every parcel, compared with your hand-tracked list when you paste it">🩺 Diagnose</button> <button class="bd-btn" id="dsSync" type="button" style="display:none">Read new orders now</button> <button class="bd-btn pri" id="dsRec" type="button" style="display:none">Fix everything now</button>';
         tb.addEventListener('click', async (e) => {
           const b = e.target.closest('button'); if (!b) return;
           if (b.id === 'dsCsv') return csv(b);
+          if (b.id === 'dsDiag') return diagnose();
           if (b.id === 'dsRec') { S.details = true; keep(); fix(); const g = document.getElementById('recGo'); if (g) { g.scrollIntoView({ block: 'center' }); recAll(g); } return; }
           if (b.id === 'dsSync') { b.disabled = true; try { const r = await api.post('dp.dsp_sync', {}); BD.toast(r.message); await load(); } catch (er) { BD.toast(er.message, true); } b.disabled = false; }
         });
@@ -851,6 +922,30 @@ const DSP = (() => {
       q('slDl').onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([TXT], { type: 'text/plain;charset=utf-8' })); a.download = 'shiprocket_log_' + (q('slK').value ? q('slK').value.replace('r:', '') + '_' : '') + new Date().toISOString().slice(0, 10) + '.txt'; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500); };
       show();
     }
+    /* ---------- 🩺 Diagnose: read-only report (see diagReport above) ---------- */
+    function diagnose() {
+      const m = BD.modal('<h3>🩺 Diagnose the parcels (nothing is changed)</h3>'
+        + '<p style="font-size:13.5px;line-height:1.5;color:#4a505c;margin:0 0 10px">Reads every parcel of the days chosen on this page and writes a text report. To compare with the real courier status, paste your hand-tracked rows below: copy <b>4 columns</b> from Excel in this order — <b>Order ID · Tracking ID · Courier · Final status</b>. Leave it empty for the HRMS side only.</p>'
+        + '<textarea id="dgIn" rows="5" placeholder="#70328&#9;78028674404&#9;Bluedart&#9;DELIVERED" style="width:100%;box-sizing:border-box;font:12px/1.4 ui-monospace,Consolas,monospace;border:1px solid #d5d9e2;border-radius:10px;padding:8px"></textarea>'
+        + '<div class="acts" style="margin-top:10px"><button class="bd-btn pri" id="dgRun" type="button">Run the diagnosis</button><button class="bd-btn" id="dgCopy" type="button" disabled>📋 Copy the report</button><button class="bd-btn" id="dgSave" type="button" disabled>⬇ Save as a file</button></div>'
+        + '<div id="dgMsg" style="font-size:12.5px;color:#667085;margin:8px 0 6px"></div>'
+        + '<textarea id="dgOut" rows="14" readonly style="width:100%;box-sizing:border-box;font:11.5px/1.45 ui-monospace,Consolas,monospace;border:1px solid #d5d9e2;border-radius:10px;padding:8px;background:#f8fafc;white-space:pre;overflow:auto"></textarea>', { sticky: true });
+      const $m = (id) => m.querySelector('#' + id); m.style.maxWidth = '860px';
+      $m('dgRun').onclick = async () => {
+        const b = $m('dgRun'); b.disabled = true; $m('dgMsg').textContent = 'Reading the parcels…';
+        try {
+          const p = win(); delete p.sdays; delete p.sfrom; delete p.sto;
+          const x = await api.get('dp.dsp_report', Object.assign(p, { export: 1, page: 1 }));
+          const pasted = diagPaste($m('dgIn').value);
+          $m('dgOut').value = diagReport(x.rows || [], pasted, { from: x.filters && x.filters.from, to: x.filters && x.filters.to, total: x.total });
+          $m('dgMsg').textContent = (x.rows || []).length + ' parcels read' + (pasted.length ? ', ' + pasted.length + ' pasted rows compared' : ', nothing pasted') + '. Copy the report and send it to Claude.';
+          $m('dgCopy').disabled = false; $m('dgSave').disabled = false;
+        } catch (e) { $m('dgMsg').textContent = 'Could not run: ' + e.message; }
+        b.disabled = false;
+      };
+      $m('dgCopy').onclick = async () => { const t = $m('dgOut'); try { await navigator.clipboard.writeText(t.value); BD.toast('Report copied.'); } catch (e) { t.focus(); t.select(); try { document.execCommand('copy'); BD.toast('Report copied.'); } catch (e2) { BD.toast('Select the text and copy it by hand.', true); } } };
+      $m('dgSave').onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([$m('dgOut').value], { type: 'text/plain;charset=utf-8' })); a.download = 'dispatch_diagnosis.txt'; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500); };
+    }
     /* ---------- Download Excel (CSV): the same window, every parcel, all groups ---------- */
     async function csv(btn, onlyG) {
       btn.disabled = true;
@@ -881,5 +976,5 @@ const DSP = (() => {
     }, 90000);
     return { reload: load };
   }
-  return { mount };
+  return { mount, _diag: { report: diagReport, paste: diagPaste, real: diagReal } };
 })();
