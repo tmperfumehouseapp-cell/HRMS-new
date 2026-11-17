@@ -7,7 +7,7 @@
  *  - A person whose MARKETING campaign message failed gets one of the approved utility follow-up messages (the same pool the Utility campaign uses: wa_util_pick),
  *    but ONLY if they qualify for utility — they asked about a perfume on WhatsApp in the last 30 days, or ordered inside the order window (Meta's rule for utility).
  *    Everyone else is left alone ("no enquiry / order").
- *  - Which failures: 131049 (Meta held it: this customer got too many marketing messages) and 131050 (the customer stopped marketing messages) are marketing-only blocks,
+ *  - Which failures: 131049 (Meta held it: this customer got too many marketing messages), 131050 (the customer stopped marketing messages) and 130472 (Meta marketing experiment holdback) are marketing-only blocks,
  *    utility is not subject to them → tried after wa_ru_wait_min (default 10) minutes. Any other failure that another number / wording could fix goes to utility only AFTER
  *    Module A's recovery (wa_rec) used its tries on that person. NEVER: not on WhatsApp, own number, test group, spam flag, a wrong request.
  *  - Never to: opted out, wrote back since, delivered another way today, already got a utility follow-up for this item, already got one in the last 24 hours (any item),
@@ -18,14 +18,14 @@
  *  - ROUTE (known before sending): people the campaign skipped because Meta had already held / stopped marketing to them are NOT dropped: the same utility follow-up goes to them (if they asked / ordered recently).
  *  - Brakes: quiet hours, an hourly pool, a pause for an hour when 60%+ of the utility messages fail, 6 hours when Meta flags spam (131048).
  *  - Nothing is sent until at least one utility follow-up message is approved at Meta (Utility campaign → make the 6 follow-ups).
- * Settings: wa_ru_on 1 · wa_ru_hourly 1500 (calm) · wa_ru_wait_min 10 · wa_ru_ord_days 60 · wa_ru_ask_days 90 (asked / wrote to us within N days) · wa_ru_make_on 1 (make + send utility versions to Meta by itself) · wa_ru_pause_until (set by itself) · wa_ru_cursor (set by itself)
+ * Settings: wa_ru_on 1 · wa_ru_hourly 1500 (calm) · wa_ru_wait_min 10 · wa_ru_ord_days 180 · wa_ru_ask_days 90 (asked / wrote to us within N days) · wa_ru_make_on 1 (make + send utility versions to Meta by itself) · wa_ru_pause_until (set by itself) · wa_ru_cursor (set by itself)
  * Routes (wa_camp.php): wa.ru_status GET · wa.ru_run POST · wa.ru_set POST {on, hourly?, wait_min?, ord_days?}
  * PHP 7.4 safe.
  */
 if (!function_exists('wa_ru_tick')) {
 
 /** Failures only marketing suffers from: utility is not held or blocked by them. */
-if (!defined('WA_RU_MARKETING_ONLY')) { define('WA_RU_MARKETING_ONLY', [131049, 131050]); }
+if (!defined('WA_RU_MARKETING_ONLY')) { define('WA_RU_MARKETING_ONLY', [131049, 131050, 130472]); }
 
 function wa_ru_tables(PDO $pdo): bool
 {
@@ -47,7 +47,7 @@ function wa_ru_cfg(PDO $pdo): array
 {
     $g = function (string $k, string $d) use ($pdo) { try { $v = setting_get($pdo, $k, $d); return ($v === null || $v === '') ? $d : (string)$v; } catch (Throwable $e) { return $d; } };
     return ['on' => $g('wa_ru_on', '1') !== '0', 'hourly' => max(10, min(20000, (int)$g('wa_ru_hourly', '1500'))), 'wait_min' => max(5, min(1440, (int)$g('wa_ru_wait_min', '10'))),
-            'ord_days' => in_array((int)$g('wa_ru_ord_days', '60'), [30, 60, 90, 120], true) ? (int)$g('wa_ru_ord_days', '60') : 60, 'pause_until' => (int)$g('wa_ru_pause_until', '0'),
+            'ord_days' => in_array((int)$g('wa_ru_ord_days', '180'), [30, 60, 90, 120, 180], true) ? (int)$g('wa_ru_ord_days', '180') : 180, 'pause_until' => (int)$g('wa_ru_pause_until', '0'),
             'ask_days' => in_array((int)$g('wa_ru_ask_days', '90'), [30, 60, 90, 120, 180], true) ? (int)$g('wa_ru_ask_days', '90') : 90, 'make_on' => $g('wa_ru_make_on', '1') !== '0'];
 }
 /** Can utility fix this failure? 'now' = marketing-only block · 'after_rec' = a generic failure, utility only once Module A used its tries · 'never'. */
@@ -74,7 +74,9 @@ function wa_ru_pool(PDO $pdo): array
 {
     wa_ru_load_util($pdo);
     if (!function_exists('wa_util_pool_usable') && is_file(__DIR__ . '/wa_util.php')) { try { require_once __DIR__ . '/wa_util.php'; } catch (Throwable $e) { } }
-    return function_exists('wa_util_pool_usable') ? wa_util_pool_usable($pdo) : [];
+    $u = function_exists('wa_util_pool_usable') ? wa_util_pool_usable($pdo) : [];
+    if (function_exists('wa_util_pool_fallback')) { try { foreach (wa_util_pool_fallback($pdo) as $f) $u[] = $f; } catch (Throwable $e) { } }   // the welcome message Meta moved to marketing still goes as a last resort (owner's rule)
+    return $u;
 }
 
 /** The utility follow-up messages that exist in HRMS (made, maybe still waiting for Meta). */
@@ -110,6 +112,14 @@ function wa_ru_plan(PDO $pdo, array $cfg, array $diag): array
     while ($need > 0 && $guard++ < 24 * 14) { if (function_exists('wa_camp_in_window') && wa_camp_in_window($pdo, $t)) $need -= $per; if ($need <= 0) break; $t += 3600; }
     return ['left' => $left, 'per_hour' => $per, 'eta' => $left > 0 ? date('Y-m-d H:i', $t + ($t === $now ? 3600 : 0)) : null, 'hours' => $left > 0 ? (int)ceil($left / $per) : 0];
 }
+/** The marketing messages that get utility versions: originals (not versions / alternatives), approved by Meta or made in the last 14 days and not rejected. One `?` = the 14-day date. */
+function wa_ru_mkt_where(): string
+{
+    return "t.category = 'MARKETING' AND (t.family_id IS NULL OR t.family_id = 0 OR t.family_id = t.id) AND (t.extra IS NULL OR (t.extra NOT LIKE '%utility_for%' AND t.extra NOT LIKE '%\\\"alt_of\\\"%'))
+      AND (EXISTS (SELECT 1 FROM wa_tpl_waba w WHERE w.tpl_id = t.id AND w.status = 'APPROVED') OR (t.created_at >= ? AND NOT EXISTS (SELECT 1 FROM wa_tpl_waba w2 WHERE w2.tpl_id = t.id AND w2.status = 'REJECTED')))";
+}
+/** How many utility versions every marketing message should have (setting wa_ru_make_n, 2-12, default 10) — one place for the sender, the maker and the screens. */
+function wa_ru_want(PDO $pdo): int { return max(2, min(12, (int)setting_get($pdo, 'wa_ru_make_n', '10'))); }
 /** 🛠 Utility versions of EVERY marketing message are made and sent to Meta for approval by themselves (owner, 17 Nov 2026):
  *  - a marketing message that was just made gets its utility versions at once (newest first, today's campaigns first); then every older marketing message that has fewer than wa_ru_make_n (10) is filled up, a few per minute, until all are done;
  *  - each one is made AND sent to Meta in the same step; a draft that did not go through is sent again every minute (a Meta limit pauses it for 30 minutes) — nothing stays "not sent";
@@ -125,6 +135,14 @@ function wa_ru_make_tick(PDO $pdo): array
             if ($real) { $in = implode(',', array_map(fn($w) => $pdo->quote($w), $real)); $n9 = $pdo->exec("DELETE w FROM wa_tpl_waba w JOIN wa_templates t ON t.id = w.tpl_id WHERE t.category = 'UTILITY' AND w.status = 'REJECTED' AND w.reason LIKE 'Unsupported post request%' AND w.waba_id NOT IN ($in)");
                 foreach (['wa_util_learn', 'wa_ru_fail', 'wa_ru_bf', 'wa_ru_fam', 'wa_ru_submit_pause'] as $k9) setting_set($pdo, $k9, '');
                 setting_set($pdo, 'wa_ru_waba_fix', '2'); if (function_exists('wa_log')) wa_log($pdo, 'template', true, 'Utility repair: ' . (int)$n9 . ' wrong "rejected" rows (accounts that do not exist) removed — those messages are now sent to Meta'); } } } catch (Throwable $e) { }
+    // 0b) the "put back" marker moved from the err column (overwritten when a batch is taken) to the variant 'R': move the people already put back, 20,000 at a time
+    try { if ((string)setting_get($pdo, 'wa_ru_marker_fix', '') !== '1') { $n8 = (int)$pdo->exec("UPDATE wa_camp_items SET variant = 'R', err = '' WHERE (err = 'restart-utility' OR (status = 'sending' AND camp_id IN (SELECT id FROM wa_campaigns WHERE extra LIKE '%u_restart%'))) AND COALESCE(variant, 'M') <> 'U' LIMIT 20000"); if ($n8 === 0) setting_set($pdo, 'wa_ru_marker_fix', '1'); } } catch (Throwable $e) { }
+    // 0c) one-time: the people left out as "No chosen utility message fits this person" only because a chosen message wrote its variable as "Name" (capital N) are put back, 20,000 at a time
+    try { if ((string)setting_get($pdo, 'wa_ru_ord180', '') !== '1') { setting_set($pdo, 'wa_ru_ord_days', '180'); setting_set($pdo, 'wa_ru_ord180', '1'); } } catch (Throwable $e) { }   // owner 17 Nov 2026: order window 180 days (one time)
+    try { if ((string)setting_get($pdo, 'wa_ru_perm60', '') !== '1') { setting_set($pdo, 'wa_u_per_min', '60'); setting_set($pdo, 'wa_ru_perm60', '1'); } } catch (Throwable $e) { }   // owner 17 Nov 2026: utility limit 60 a minute (one time)
+    try { if ((string)setting_get($pdo, 'wa_ru_fit_fix', '') !== '1') { $n7 = (int)$pdo->exec("UPDATE wa_camp_items SET status = 'queued', variant = 'R', err = '' WHERE status = 'skipped' AND err = 'No chosen utility message fits this person' LIMIT 20000");
+            if ($n7 > 0) { $pdo->exec("UPDATE wa_campaigns SET status = 'running', finished_at = NULL, note = 'Started again with utility — people put back after a fix.' WHERE status = 'done' AND extra LIKE '%u_restart%' AND id IN (SELECT camp_id FROM wa_camp_items WHERE status = 'queued' AND variant = 'R')"); if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility: ' . $n7 . ' people put back (they were left out only because a chosen message wrote its variable as \"Name\")'); }
+            else setting_set($pdo, 'wa_ru_fit_fix', '1'); } } catch (Throwable $e) { }
     // 1) utility messages that exist but are not at Meta yet: sent now, 8 per round (every minute)
     try {
         if (function_exists('wa_util_submit') && (int)setting_get($pdo, 'wa_ru_submit_pause', '0') < $now && (int)setting_get($pdo, 'wa_ru_draft_at', '0') < $now - 50) {
@@ -141,16 +159,15 @@ function wa_ru_make_tick(PDO $pdo): array
     // 2) make the missing utility versions of the marketing messages (newest / today's first)
     if (!function_exists('wa_lock') || !wa_lock($pdo, 'rumake', 55)) { $o['note'] = 'recent'; return $o; }
     try {
-        if (function_exists('wa_util_pool_make') && function_exists('wa_util_pool_defs') && (int)setting_get($pdo, 'wa_ru_pool_at', '0') < $now - 6 * 3600) {
+        if (function_exists('wa_util_pool_make') && function_exists('wa_util_pool_defs') && (int)setting_get($pdo, 'wa_ru_pool_at', '0') < $now - 600) {   // a missing standard follow-up (e.g. the welcome message) is made within 10 minutes, not 6 hours; a complete set costs one count query
             setting_set($pdo, 'wa_ru_pool_at', (string)$now);
             if (count(wa_ru_pool_made($pdo)) < count(wa_util_pool_defs())) { $r = wa_util_pool_make($pdo, 0); $o['made'] += count($r['made'] ?? []); if (!empty($r['made'])) return $o; }
         }
-        $want = max(2, min(12, (int)setting_get($pdo, 'wa_ru_make_n', '10'))); $from = function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 10:00:00');
+        $want = wa_ru_want($pdo); $from = function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 10:00:00');
         $fail = json_decode((string)setting_get($pdo, 'wa_ru_fail', ''), true); $fail = is_array($fail) ? array_filter($fail, fn($t) => (int)$t > $now - 1800) : [];
         $q = $pdo->prepare("SELECT t.id, (SELECT COUNT(*) FROM wa_templates u WHERE u.category = 'UTILITY' AND u.relabelled_at IS NULL AND u.family_id = COALESCE(NULLIF(t.family_id, 0), t.id) AND (NOT EXISTS (SELECT 1 FROM wa_tpl_waba x WHERE x.tpl_id = u.id) OR EXISTS (SELECT 1 FROM wa_tpl_waba x2 WHERE x2.tpl_id = u.id AND x2.status IN ('APPROVED', 'PENDING', 'IN_APPEAL', 'ERROR')))) AS have, (SELECT COUNT(*) FROM wa_templates u2 WHERE u2.category = 'UTILITY' AND u2.family_id = COALESCE(NULLIF(t.family_id, 0), t.id)) AS total_made,
               (SELECT COUNT(*) FROM wa_campaigns c WHERE c.tpl_id = t.id AND COALESCE(c.started_at, c.created_at) >= ?) AS today
-            FROM wa_templates t WHERE t.category = 'MARKETING' AND (t.family_id IS NULL OR t.family_id = 0 OR t.family_id = t.id) AND (t.extra IS NULL OR (t.extra NOT LIKE '%utility_for%' AND t.extra NOT LIKE '%\"alt_of\"%'))
-              AND (EXISTS (SELECT 1 FROM wa_tpl_waba w WHERE w.tpl_id = t.id AND w.status = 'APPROVED') OR (t.created_at >= ? AND NOT EXISTS (SELECT 1 FROM wa_tpl_waba w2 WHERE w2.tpl_id = t.id AND w2.status = 'REJECTED')))
+            FROM wa_templates t WHERE " . wa_ru_mkt_where() . "
             HAVING have < ? AND total_made < ? ORDER BY today DESC, t.id DESC LIMIT 12");   // rejected / moved / paused versions do not count: they are replaced by new ones, but never more than twice the target in all (Meta's template allowance)
         $q->execute([$from, date('Y-m-d H:i:s', $now - 14 * 86400), $want, $want * 2]);
         foreach ($q->fetchAll() as $r) {
@@ -169,11 +186,10 @@ function wa_ru_make_tick(PDO $pdo): array
 function wa_ru_backfill_counts(PDO $pdo): array
 {
     $c = json_decode((string)setting_get($pdo, 'wa_ru_bf', ''), true); if (is_array($c) && (int)($c['at'] ?? 0) > time() - 120) return $c;
-    $want = max(2, min(12, (int)setting_get($pdo, 'wa_ru_make_n', '10'))); $o = ['done' => 0, 'total' => 0, 'want' => $want, 'at' => time()];
+    $want = wa_ru_want($pdo); $o = ['done' => 0, 'total' => 0, 'want' => $want, 'at' => time()];
     try {
         $q = $pdo->prepare("SELECT COUNT(*) AS n, SUM(x.have >= ? OR x.total_made >= ?) AS d FROM (SELECT (SELECT COUNT(*) FROM wa_templates u WHERE u.category = 'UTILITY' AND u.relabelled_at IS NULL AND u.family_id = COALESCE(NULLIF(t.family_id, 0), t.id) AND (NOT EXISTS (SELECT 1 FROM wa_tpl_waba x WHERE x.tpl_id = u.id) OR EXISTS (SELECT 1 FROM wa_tpl_waba x2 WHERE x2.tpl_id = u.id AND x2.status IN ('APPROVED', 'PENDING', 'IN_APPEAL', 'ERROR')))) AS have, (SELECT COUNT(*) FROM wa_templates u2 WHERE u2.category = 'UTILITY' AND u2.family_id = COALESCE(NULLIF(t.family_id, 0), t.id)) AS total_made FROM wa_templates t
-            WHERE t.category = 'MARKETING' AND (t.family_id IS NULL OR t.family_id = 0 OR t.family_id = t.id) AND (t.extra IS NULL OR (t.extra NOT LIKE '%utility_for%' AND t.extra NOT LIKE '%\"alt_of\"%'))
-              AND (EXISTS (SELECT 1 FROM wa_tpl_waba w WHERE w.tpl_id = t.id AND w.status = 'APPROVED') OR (t.created_at >= ? AND NOT EXISTS (SELECT 1 FROM wa_tpl_waba w2 WHERE w2.tpl_id = t.id AND w2.status = 'REJECTED')))) x");
+            WHERE " . wa_ru_mkt_where() . ") x");
         $q->execute([$want, $want * 2, date('Y-m-d H:i:s', time() - 14 * 86400)]); $r = $q->fetch(); $o['total'] = (int)$r['n']; $o['done'] = (int)$r['d'];
     } catch (Throwable $e) { }
     try { setting_set($pdo, 'wa_ru_bf', json_encode($o)); } catch (Throwable $e) { }
@@ -232,6 +248,7 @@ function wa_ru_tick(PDO $pdo): array
     if (!function_exists('wa_lock') || !wa_lock($pdo, 'ru', 50)) { $res['note'] = 'busy'; return $res; }
     $t0 = microtime(true); $nowTs = wa_camp_now(); $now = date('Y-m-d H:i:s', $nowTs); $why = [];
     try { $res['made'] = wa_ru_make_tick($pdo)['made']; } catch (Throwable $e) { }   // utility versions of today's campaign messages → Meta
+    $t0 = microtime(true) - 20;   // the making / sending of templates above can take 20+ seconds: it must not eat the time of the sending loop below (it did: every round broke off at the first person and Module B never sent anything)
     try {
         if (!wa_camp_in_window($pdo, $nowTs)) { $res['note'] = 'quiet hours'; return $res; }
         $pool = wa_ru_pool($pdo); $famU = [];   // 1) the utility version(s) of the campaign's OWN message (the owner's words, approved at Meta), 2) the 6 standard follow-ups
@@ -244,8 +261,12 @@ function wa_ru_tick(PDO $pdo): array
         $from = function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 10:00:00');
         $cursor = (int)setting_get($pdo, 'wa_ru_cursor', '0'); $lim = 600; $recOn = function_exists('wa_rec_cfg') ? !empty(wa_rec_cfg($pdo)['on']) : false; $recTries = function_exists('wa_rec_cfg') ? max(1, (int)wa_rec_cfg($pdo)['max_attempts'] - 1) : 2;
         $mo = implode(',', WA_RU_MARKETING_ONLY);
+        // 💸 marketing FIRST (owner, 17 Nov 2026): a campaign's failed people get utility once nobody of that campaign is left queued / sending. Held people still waiting for their extra marketing try (status retry) are left alone until that try has been made
+        $dn = $pdo->prepare("SELECT c.id FROM wa_campaigns c WHERE COALESCE(c.started_at, c.created_at) >= ? AND c.status NOT IN ('draft', 'scheduled') AND NOT EXISTS (SELECT 1 FROM wa_camp_items q WHERE q.camp_id = c.id AND q.status IN ('queued', 'sending') AND COALESCE(q.variant, 'M') <> 'R')"); $dn->execute([date('Y-m-d H:i:s', $nowTs - 4 * 86400)]);
+        $doneIds = array_map('intval', $dn->fetchAll(PDO::FETCH_COLUMN)); if (!$doneIds) { $res['note'] = 'marketing is still running in every campaign — utility follows when it is finished'; return $res; }
+        $doneIn = implode(',', $doneIds);
         $q = $pdo->prepare("SELECT i.id, i.camp_id, c.tpl_id AS ctpl, i.phone, i.name, i.err_code, i.status, i.sent_at FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id
-            WHERE (i.status = 'failed' OR ((i.status = 'retry' OR (i.status = 'sent' AND i.last_status = 'failed')) AND i.err_code IN ($mo)) OR " . wa_ru_known_sql() . ") AND COALESCE(i.variant, 'M') <> 'U' AND COALESCE(c.extra, '') NOT LIKE '%\"kind\":\"util\"%'
+            WHERE (i.status = 'failed' OR (i.status = 'sent' AND i.last_status = 'failed' AND i.err_code IN ($mo)) OR " . wa_ru_known_sql() . ") AND i.camp_id IN ($doneIn) AND COALESCE(i.variant, 'M') <> 'U' AND COALESCE(c.extra, '') NOT LIKE '%\"kind\":\"util\"%'
               AND (c.started_at >= ? OR i.sent_at >= ? OR (i.status = 'skipped' AND COALESCE(c.started_at, c.created_at) >= '" . date('Y-m-d H:i:s', $nowTs - 3 * 86400) . "')) AND i.id > ? AND NOT EXISTS (SELECT 1 FROM wa_ru_log l WHERE l.item_id = i.id) ORDER BY i.id LIMIT " . $lim);
         try { $q->execute([$from, $from, $cursor]); $items = $q->fetchAll(); }
         catch (Throwable $e1) {   // e.g. error 1267 (collations): the round still runs, without the people skipped before sending
@@ -327,7 +348,7 @@ function wa_ru_counts(PDO $pdo, array $ids): array
 /** Where the utility messages are at Meta (made in the last 3 days): approved / waiting / rejected / not sent yet, with the newest ones listed. */
 function wa_ru_approval(PDO $pdo): array
 {
-    $o = ['total' => 0, 'approved' => 0, 'waiting' => 0, 'error' => 0, 'rejected' => 0, 'draft' => 0, 'list' => [], 'last_make' => (int)setting_get($pdo, 'wa_ru_draft_at', '0'), 'backfill' => wa_ru_backfill_counts($pdo), 'learn' => (function () use ($pdo) { wa_ru_load_util($pdo); if (!function_exists('wa_util_learn')) return null; $l = wa_util_learn($pdo); return ['appr' => $l['appr'], 'rej' => $l['rej'], 'rate' => $l['rate'], 'strict' => $l['strict'], 'bad' => $l['bad']]; })(), 'make_last' => json_decode((string)setting_get($pdo, 'wa_ru_make_last', ''), true)];
+    $o = ['total' => 0, 'approved' => 0, 'waiting' => 0, 'error' => 0, 'rejected' => 0, 'draft' => 0, 'list' => [], 'last_make' => (int)setting_get($pdo, 'wa_ru_draft_at', '0'), 'backfill' => wa_ru_backfill_counts($pdo), 'eta' => wa_ru_eta($pdo), 'learn' => (function () use ($pdo) { wa_ru_load_util($pdo); if (!function_exists('wa_util_learn')) return null; $l = wa_util_learn($pdo); return ['appr' => $l['appr'], 'rej' => $l['rej'], 'rate' => $l['rate'], 'strict' => $l['strict'], 'bad' => $l['bad']]; })(), 'make_last' => json_decode((string)setting_get($pdo, 'wa_ru_make_last', ''), true)];
     try {
         $q = $pdo->prepare("SELECT t.id, t.name, t.created_at, t.relabelled_at, GROUP_CONCAT(w.status) AS st FROM wa_templates t LEFT JOIN wa_tpl_waba w ON w.tpl_id = t.id WHERE t.category = 'UTILITY' AND t.created_at >= ? GROUP BY t.id ORDER BY t.id DESC LIMIT 60");
         $q->execute([date('Y-m-d H:i:s', time() - 3 * 86400)]);
@@ -357,7 +378,7 @@ function wa_ru_fam_states(PDO $pdo, array $tplIds): array
             elseif (in_array('APPROVED', $stt, true)) { $k = 'approved'; }
             elseif (array_intersect(['PENDING', 'IN_APPEAL'], $stt)) { $k = 'waiting'; }
             elseif (in_array('ERROR', $stt, true)) { $k = 'error'; $why = $reasonOf(['ERROR']); }
-            elseif (in_array('REJECTED', $stt, true)) { $why = $reasonOf(['REJECTED']); $k = stripos($why, 'Unsupported post request') === 0 ? 'error' : 'rejected'; }
+            elseif (in_array('REJECTED', $stt, true)) { $why = $reasonOf(['REJECTED']); $k = (function_exists('wa_util_is_creation_error') && wa_util_is_creation_error($why)) || stripos($why, 'Unsupported post request') === 0 ? 'error' : 'rejected'; }
             else { $k = 'paused'; $why = $reasonOf(['PAUSED', 'DISABLED', 'FLAGGED']); }
             $o[(int)$r['tid']][$k]++; if (count($o[(int)$r['tid']]['items']) < 8) $o[(int)$r['tid']]['items'][] = ['name' => (string)$r['nm'], 'state' => $k, 'at' => (string)$r['ca'], 'why' => mb_substr($why, 0, 140)];
         }
@@ -388,6 +409,20 @@ function wa_ru_restart_stats(PDO $pdo, array $ids): array
             $o[$cid] = ['at' => $at, 'n' => (int)($rs['n'] ?? 0), 'waiting' => (int)$a['w'], 'u_sent' => (int)$a['us'], 'u_del' => (int)$d->fetchColumn(), 'left_out' => (int)$a['k']];
         }
     } catch (Throwable $e) { }
+    return $o;
+}
+/** ⏱ How long Meta really takes to approve a utility message in THIS account: made → approved, over the utility messages of the last 14 days that were approved (minutes). Remembered for 5 minutes.
+ *  Returns ['n' => how many measured, 'median' => minutes, 'p90' => minutes, 'fast' => % approved within 10 minutes]; n < 5 means "not enough data yet". */
+function wa_ru_eta(PDO $pdo): array
+{
+    $c = json_decode((string)setting_get($pdo, 'wa_ru_eta', ''), true); if (is_array($c) && (int)($c['at'] ?? 0) > time() - 300) return $c;
+    $o = ['n' => 0, 'median' => null, 'p90' => null, 'fast' => null, 'at' => time()]; $m = [];
+    try {
+        $q = $pdo->prepare("SELECT TIMESTAMPDIFF(MINUTE, t.created_at, MIN(w.updated_at)) AS m FROM wa_templates t JOIN wa_tpl_waba w ON w.tpl_id = t.id AND w.status = 'APPROVED' WHERE t.category = 'UTILITY' AND t.created_at >= ? GROUP BY t.id HAVING m BETWEEN 0 AND 2880");
+        $q->execute([date('Y-m-d H:i:s', time() - 14 * 86400)]); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $v) $m[] = (int)$v;
+    } catch (Throwable $e) { }
+    if ($m) { sort($m); $n = count($m); $o['n'] = $n; $o['median'] = $m[(int)floor(($n - 1) * 0.5)]; $o['p90'] = $m[(int)floor(($n - 1) * 0.9)]; $o['fast'] = (int)round(100 * count(array_filter($m, fn($x) => $x <= 10)) / $n); }
+    try { setting_set($pdo, 'wa_ru_eta', json_encode($o)); } catch (Throwable $e) { }
     return $o;
 }
 /** For the screen: each number with its utility delivery of the last 3 hours and whether it is resting. */

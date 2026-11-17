@@ -19,6 +19,11 @@ if (!function_exists('wa_util_make')) {
 /** Words that make Meta call a message marketing — a utility version must not contain them. */
 function wa_util_bad_words(): array { return ['offer', 'discount', 'sale', '% off', 'off on', 'free', 'deal', 'limited time', 'hurry', 'last chance', 'buy now', 'shop now', 'coupon', 'promo', 'diwali offer', 'festive offer', 'save ', 'cashback', 'combo offer', 'best price', 'lowest price']; }
 
+/** Meta's answer when the template could not even be CREATED (a name / language that already exists, an API error): not a review of the wording, so it must not teach the writer anything. */
+function wa_util_is_creation_error(string $why): bool
+{
+    return $why !== '' && (stripos($why, 'Unsupported post request') === 0 || stripos($why, 'already has') !== false || stripos($why, 'already exists') !== false || mb_strpos($why, 'પહેલેથી') !== false || stripos($why, 'content already') !== false);
+}
 /** 🧠 LEARNING FROM META (owner, 17 Nov 2026): every utility message written so far is looked at again — what Meta APPROVED, what it REJECTED or moved to marketing, and the reason it gave.
  *  The writer (Claude) is shown real examples of both and the words that appear in rejected messages but never in approved ones; when more than half of the last decisions are rejections it is told to write much plainer
  *  (STRICT). The learned words are also refused locally before anything goes to Meta. Remembered for 10 minutes. Returns ['appr','rej','rate','strict','bad' => [words],'good' => [..],'badx' => [[body, reason]]]. */
@@ -31,7 +36,7 @@ function wa_util_learn(PDO $pdo, bool $force = false): array
         $q = $pdo->prepare("SELECT t.id, t.body, t.relabelled_at, GROUP_CONCAT(CONCAT(w.status, ':', LEFT(w.reason, 100)) SEPARATOR '|') AS st FROM wa_templates t JOIN wa_tpl_waba w ON w.tpl_id = t.id
             WHERE t.category = 'UTILITY' AND t.name LIKE 'util\\_%' AND t.created_at >= ? GROUP BY t.id, t.body, t.relabelled_at ORDER BY t.id DESC LIMIT 300"); $q->execute([date('Y-m-d H:i:s', time() - 30 * 86400)]);
         foreach ($q->fetchAll() as $r) {
-            $rows = array_filter(explode('|', (string)$r['st'])); $stt = []; $why = ''; foreach ($rows as $x) { $p2 = explode(':', $x, 2); $stt[] = strtoupper($p2[0]); if ($why === '' && in_array(strtoupper($p2[0]), ['REJECTED', 'PAUSED', 'DISABLED'], true)) $why = trim((string)($p2[1] ?? '')); if (strtoupper($p2[0]) === 'REJECTED' && stripos((string)($p2[1] ?? ''), 'Unsupported post request') === 0) { array_pop($stt); $stt[] = 'ERROR'; } }
+            $rows = array_filter(explode('|', (string)$r['st'])); $stt = []; $why = ''; foreach ($rows as $x) { $p2 = explode(':', $x, 2); $stt[] = strtoupper($p2[0]); if ($why === '' && in_array(strtoupper($p2[0]), ['REJECTED', 'PAUSED', 'DISABLED'], true)) $why = trim((string)($p2[1] ?? '')); if (strtoupper($p2[0]) === 'REJECTED' && wa_util_is_creation_error((string)($p2[1] ?? ''))) { array_pop($stt); $stt[] = 'ERROR'; } }
             $body = (string)$r['body'];
             if (!empty($r['relabelled_at'])) { $Rj[] = [$body, 'Meta moved it to marketing']; }
             elseif (in_array('APPROVED', $stt, true)) { $A[] = $body; }
@@ -69,7 +74,7 @@ function wa_util_check(string $body): string
     preg_match_all('/\{\{(\d+)\}\}/', $body, $vm); $vars = array_map('intval', $vm[1]);
     if (!in_array(1, $vars, true) || !in_array(2, $vars, true)) return 'It must use {{1}} (customer name) and {{2}} (the perfume).';
     if (max($vars ?: [0]) > 3) return 'Only {{1}} name, {{2}} perfume and {{3}} date can be used.';
-    if (preg_match('/^\s*\{\{|\{\{\d\}\}\s*$/', $body) || preg_match('/\}\}\s*\{\{/', $body)) return 'A variable cannot be at the very start or end, or next to another variable.';
+    if (preg_match('/^\s*\{\{|\{\{\d\}\}\s*$/', $body) || preg_match('/\}\}\s*\{\{/', $body) || preg_match('/\{\{\d+\}\}[^\p{L}\p{N}{]*$/u', $body) || preg_match('/^[^\p{L}\p{N}{]*\{\{\d+\}\}/u', $body)) return 'A variable cannot be at the very start or end, or next to another variable.';
     return '';
 }
 /** The owner's edits of utility versions (before → after): Claude follows them next time. */
@@ -227,6 +232,14 @@ function wa_util_pool_usable(PDO $pdo): array
         $x = json_decode((string)($r['examples'] ?? ''), true); $t['labels'] = is_array($x) ? array_map('strval', (array)($x['labels'] ?? [])) : []; $t['pool_kind'] = $r['pool_kind']; $o[] = $t; }
     return $o;
 }
+/** 💬 Last resort for Module B (owner, 17 Nov 2026: "if utility is not possible, marketing goes"): the welcome message that Meta moved to MARKETING is still approved and still sendable — it goes to the failed / held people no utility message fits.
+ *  Only the 'open' (name-only) pool kind; the other pool messages are never sent once they are relabelled. */
+function wa_util_pool_fallback(PDO $pdo): array
+{
+    $o = []; foreach (wa_util_pool_rows($pdo) as $k => $r) { if (($r['pool_kind'] ?? '') !== 'open') continue; if (empty($r['relabelled_at']) && strtoupper((string)($r['category_now'] ?? '')) !== 'MARKETING') continue;
+        $t = wa_camp_tpl($pdo, (int)$r['id'], true, 0); if (!$t) continue; $x = json_decode((string)($r['examples'] ?? ''), true); $t['labels'] = is_array($x) ? array_map('strval', (array)($x['labels'] ?? [])) : []; $t['pool_kind'] = 'open'; $t['as_marketing'] = true; $o[] = $t; }
+    return $o;
+}
 /** phone10 → ['order' => '#1234', 'at' => 'Y-m-d H:i:s'] — the latest Shopify order of everyone who ordered in the last $days days (one read per run). */
 function wa_util_orders(PDO $pdo, int $days): array
 {
@@ -241,7 +254,7 @@ function wa_util_pick(PDO $pdo, array $pool, array $ct, int $ordDays, int $nowTs
 {
     if (!$pool || (int)($ct['optout'] ?? 0) === 1) return null; $phone = (string)$ct['phone']; $name = function_exists('wa_first_name') ? wa_first_name((string)($ct['name'] ?? '')) : 'ji';
     $ask = array_values(array_filter($pool, fn($t) => $t['pool_kind'] === 'ask')); $ord = array_values(array_filter($pool, fn($t) => $t['pool_kind'] === 'order'));
-    $in = !empty($ct['last_in_at']) ? (int)strtotime((string)$ct['last_in_at']) : 0; $fill = function (array $t, array $v) { $o = []; foreach (array_slice($t['labels'], 0, $t['nvars']) as $l) { $x = trim((string)($v[$l] ?? '')); if ($x === '') return null; $o[] = mb_substr($x, 0, 60); } return count($o) === (int)$t['nvars'] ? $o : null; };
+    $in = !empty($ct['last_in_at']) ? (int)strtotime((string)$ct['last_in_at']) : 0; $fill = function (array $t, array $v) { $o = []; foreach (array_slice($t['labels'], 0, $t['nvars']) as $l) { $x = trim((string)($v[strtolower((string)$l)] ?? '')); if ($x === '') return null; $o[] = mb_substr($x, 0, 60); } return count($o) === (int)$t['nvars'] ? $o : null; };
     if ($ask && $in >= $nowTs - max(1, $askDays) * 86400) {
         $p = ''; try { if (function_exists('wa_camp_lazy') ? wa_camp_lazy('wa_prod_last_asked', 'wa_prod.php') : function_exists('wa_prod_last_asked')) $p = (string)wa_prod_last_asked($pdo, $phone); } catch (Throwable $e) { }
         if ($p !== '') { $t = $ask[$rot % count($ask)]; $v = $fill($t, ['name' => $name, 'perfume' => $p, 'date' => date('j M', $in)]); if ($v) return ['t' => $t, 'vars' => $v, 'kind' => 'ask']; }
@@ -307,7 +320,7 @@ function wa_util_list(PDO $pdo, int $tplId, bool $onlyMine = false): array
             foreach (wa_util_numbers($pdo) as $n) $per[] = ['label' => $n['label'], 'status' => $ws[$n['waba']] ?? 'not sent']; }
         $draft = $mine && !array_filter($per, fn($p) => $p['status'] !== 'not sent');
         $xx = json_decode((string)($r['extra'] ?? ''), true); $srcId = is_array($xx) ? (int)($xx['utility_for'] ?? 0) : 0;
-        $o[] = ['id' => (int)$r['id'], 'name' => (string)$r['name'], 'body' => (string)$r['body'], 'status' => $draft ? 'draft' : $status, 'draft' => $draft, 'relabelled' => strtoupper((string)($r['category_now'] ?? '')) === 'MARKETING' || !empty($r['relabelled_at']), 'mine' => $mine, 'vars' => $vars, 'per' => $per, 'labels' => $lab, 'source' => $srcName[$srcId] ?? ''];
+        $o[] = ['id' => (int)$r['id'], 'name' => (string)$r['name'], 'body' => (string)$r['body'], 'status' => $draft ? 'draft' : $status, 'draft' => $draft, 'relabelled' => strtoupper((string)($r['category_now'] ?? '')) === 'MARKETING' || !empty($r['relabelled_at']), 'mine' => $mine, 'vars' => $vars, 'per' => $per, 'labels' => $lab, 'source' => $srcName[$srcId] ?? '', 'at' => (string)($r['created_at'] ?? '')];
     }
     usort($o, fn($a, $b) => [$b['mine'], $b['status'] === 'approved'] <=> [$a['mine'], $a['status'] === 'approved']);
     return $o;
