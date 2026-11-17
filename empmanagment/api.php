@@ -12288,6 +12288,7 @@ function order_line_seg(string $t): string
     if (preg_match('/\battar|\bittar|\boud oil|\broll[- ]?on\b/u', $t)) return 'attar';
     if (preg_match('/shower ?gel|body ?wash|\bgel\b/u', $t)) return 'gel';
     if (preg_match('/\bwax\b/u', $t)) return 'other';
+    if (preg_match('/\bcar[- ]?kit\b/u', $t)) return 'carkit';      // 🚗 a car kit: its own flat % (setting carkit_pct, default 6), not the ML chart
     return 'perfume';
 }
 /** The non-perfume part of an order (from order_ml_total's parts): its money and its commission, each segment on its own price chart (pieces). */
@@ -12307,8 +12308,10 @@ function order_x_com(?PDO $pdo, $parts, int $perfMl = 0, float $total = 0): arra
     $__sum = 0.0; foreach ($parts as $p) $__sum += max(0.0, (float)($p['amt'] ?? 0)); $__k = ($total > 0 && $__sum > $total) ? $total / $__sum : 1.0;
     foreach ($parts as $sg => $p) {
         $amt = round((float)($p['amt'] ?? 0) * $__k, 2); $pcs = (int)($p['pcs'] ?? 0); if ($amt <= 0) continue; $o['x_amt'] += $amt;
-        $pc = ($pdo && function_exists('pc_pct')) ? pc_pct($pdo, (string)$sg, (float)$pcs, $amt) : null; if ($pc !== null) $o['x_com'] += $amt * $pc / 100;
-        $n[] = (function_exists('pc_segs') ? (pc_segs()[$sg] ?? $sg) : $sg) . ' ×' . $pcs . ' ₹' . round($amt) . ($pc === null ? ' (no price chart)' : ' at ' . round($pc, 2) . '%');
+        if ((string)$sg === 'carkit') { $pc = 6.0; try { if ($pdo && function_exists('setting_get')) { $cv = trim((string)setting_get($pdo, 'carkit_pct', '6')); if ($cv !== '' && is_numeric($cv)) $pc = max(0.0, min(50.0, (float)$cv)); } } catch (Throwable $e) { } }
+        else $pc = ($pdo && function_exists('pc_pct')) ? pc_pct($pdo, (string)$sg, (float)$pcs, $amt) : null;
+        if ($pc !== null) $o['x_com'] += $amt * $pc / 100;
+        $n[] = ((string)$sg === 'carkit' ? 'Car kit' : (function_exists('pc_segs') ? (pc_segs()[$sg] ?? $sg) : $sg)) . ' ×' . $pcs . ' ₹' . round($amt) . ($pc === null ? ' (no price chart)' : ' at ' . round($pc, 2) . '%');
     }
     $o['x_com'] = round($o['x_com'], 2); $o['x_note'] = implode(' · ', $n); return $o;
 }
