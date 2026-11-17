@@ -7,4 +7,6 @@ $eq('green at the goal', tk_status(2700, 2700), 'g'); $eq('green above', tk_stat
 $eq('next order needed', tk_need_next(6300, 3, 2700), 4500); $eq('above the goal: the smallest next order that keeps it', tk_need_next(9000, 3, 2700), 1800); $eq('far above: any order keeps it', tk_need_next(12000, 3, 2700), 0); $eq('first order', tk_need_next(0, 0, 2700), 2700); $eq('no goal', tk_need_next(5000, 2, 0), 0);
 $eq('hold: low ticket, 4 orders, 3 waiting', tk_hold(2100, 4, 3, 2300, 4, 3), true); $eq('no hold: only 3 orders', tk_hold(2100, 3, 3, 2300, 4, 3), false);
 $eq('no hold: ticket fine', tk_hold(2400, 5, 6, 2300, 4, 3), false); $eq('no hold: nobody waiting', tk_hold(2100, 5, 2, 2300, 4, 3), false); $eq('no hold: switch value 0', tk_hold(2100, 5, 5, 0, 4, 3), false);
+// the hold needs company: 30% of the people at the goal
+$eq('share: 3 of 10 = 30%', tk_hold_share_ok(3, 10, 30), true); $eq('share: 2 of 10 is too few', tk_hold_share_ok(2, 10, 30), false); $eq('share: nobody working', tk_hold_share_ok(0, 0, 30), false); $eq('share: everybody low = no hold', tk_hold_share_ok(0, 12, 30), false);
 echo $bad ? "tk test: $bad problem(s)\n" : "tk test: ok\n"; exit($bad ? 1 : 0);
