@@ -18,6 +18,11 @@
 .wcs .wp-cd{margin:0;}
 .wcs-h{font-size:12px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; color:var(--mut); margin:0 0 6px; display:flex; align-items:center; gap:6px;}
 .wcs-sec{padding:12px 0; border-top:1px solid #edf1ee;} .wcs-sec:first-child{border-top:0; padding-top:0;}
+.wcs-acc{border:1px solid #e3e8e5; border-radius:12px; padding:0; margin:8px 0; overflow:hidden;} .wcs-acc:first-child{border-top:1px solid #e3e8e5; padding-top:0;}
+.wcs-acc>summary{list-style:none; cursor:pointer; display:flex; align-items:center; gap:10px; padding:11px 13px; margin:0; font-size:13px; text-transform:none; letter-spacing:0; color:var(--ink,#1d2330);}
+.wcs-acc>summary::-webkit-details-marker{display:none} .wcs-acc>summary:after{content:'▾'; color:#8a94a6; margin-left:4px;} .wcs-acc[open]>summary:after{content:'▴';}
+.wcs-acc[open]>summary{background:#e9f6ee;} .wcs-acc>*:not(summary){margin-left:13px; margin-right:13px;} .wcs-acc>*:last-child{margin-bottom:13px;} .wcs-acc[open]>summary+*{margin-top:10px;}
+.wcs-sum{margin-left:auto; font-weight:500; font-size:12px; color:#6b7385; text-align:right; max-width:60%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;} .wcs-sum.on{color:#15803d; font-weight:700;}
 .wcs-pre{display:flex; flex-wrap:wrap; gap:6px; margin:6px 0;}
 .wcs-pre button,.wcs-seg button{border:1px solid var(--ln); background:#fff; border-radius:999px; padding:5px 11px; font:inherit; font-size:12.5px; cursor:pointer; color:#1f2937;}
 .wcs-pre button.on,.wcs-seg button.on{background:#0f172a; color:#fff; border-color:#0f172a;}
@@ -137,19 +142,25 @@ html.wxdk .wcs{--ln:#25343e; --gb:#0f2e20; --rb:#3a1515;} html.wxdk .wcs-r,html.
       const chips = (key, L) => L.map(([k, l]) => `<button type="button" data-fx="${key}|${esc(k)}" class="${(c[key] || []).includes(k) ? 'on' : ''}">${esc(l)}</button>`).join('');
       const fnOn = ['fg', 'fc', 'fq', 'fi', 'fb', 'fh', 'fv'].reduce((n, k) => n + (c[k] || []).length, 0) + ['lby', 'rin_min', 'out_min', 'out_max', 'sc_min', 'sc_max'].filter((k) => c[k] !== '' && c[k] != null).length;
       const optsOf = (L, v) => L.map(([k, l]) => `<option value="${esc(k)}" ${String(k) === String(v) ? 'selected' : ''}>${esc(l)}</option>`).join('');
+      S.open = S.open || {}; const op = (k) => (S.open[k] ? 'open' : '');   // every filter group starts closed; what you open stays open while you work
+      const bgTxt = c.ord !== '' ? ({ '0': 'Never ordered', '1': 'Ordered once', '2': 'Ordered twice', '3': '3+ orders' })[c.ord] || 'Everyone' : c.tier !== '' ? ({ prem: '⭐ Premium', std: 'Standard', bud: 'Budget' })[c.tier] || 'Everyone' : 'Everyone';
+      const dtTxt = c.df || c.dt ? (c.df || '…') + ' → ' + (c.dt || '…') : 'Any time';
+      const nmTxt = (c.nums || []).length ? (c.nums || []).map((id) => { const x = (S.meta.numbers || []).find((y) => +y.id === +id); return x ? String(x.label || x.display || id) : id; }).join(', ') : 'all numbers';
+      const tgTxt = c.tags.length ? c.tags.length + ' tag' + (c.tags.length > 1 ? 's' : '') : 'none';
+      const mfOn = ['st', 'ord', 'dsl', 'sp_min', 'sp_max', 'num', 'emp', 'src', 'ign'].filter((k) => c[k] !== '' && c[k] != null).length;
       F.innerHTML = `<button type="button" class="wcs-fh" id="cxFh"><span>⚙️ Filters${n ? ' · ' + n + ' on' : ''}</span><span>${S.shut ? '▾' : '▴'}</span></button><div class="wcs-fb">
-        <div class="wcs-sec"><div class="wcs-h">🛍 Buying group <span class="wcs-note" style="margin-left:auto;text-transform:none;letter-spacing:0">how often they ordered · what they spend</span></div><div class="wcs-pre">${[['', '', 'Everyone'], ['ord', '0', 'Never ordered'], ['ord', '1', 'Ordered once'], ['ord', '2', 'Ordered twice'], ['ord', '3', '3+ orders'], ['tier', 'prem', '⭐ Premium'], ['tier', 'std', 'Standard'], ['tier', 'bud', 'Budget']].map(([k, v, l]) => `<button type="button" data-bg="${k}|${v}" class="${k === '' ? (c.ord === '' && c.tier === '' ? 'on' : '') : (c[k] === v ? 'on' : '')}">${l}</button>`).join('')}</div></div>
-        <div class="wcs-sec"><div class="wcs-h">📅 Date range</div><select class="wp-in" id="cxDk">${optsOf(DK, c.dk)}</select>
+        <details class="wcs-sec wcs-acc" data-sec="bg" ${op('bg')}><summary class="wcs-h"><span>🛍 Buying group</span><span class="wcs-sum ${bgTxt !== 'Everyone' ? 'on' : ''}">${esc(bgTxt)}</span></summary><div class="wcs-pre">${[['', '', 'Everyone'], ['ord', '0', 'Never ordered'], ['ord', '1', 'Ordered once'], ['ord', '2', 'Ordered twice'], ['ord', '3', '3+ orders'], ['tier', 'prem', '⭐ Premium'], ['tier', 'std', 'Standard'], ['tier', 'bud', 'Budget']].map(([k, v, l]) => `<button type="button" data-bg="${k}|${v}" class="${k === '' ? (c.ord === '' && c.tier === '' ? 'on' : '') : (c[k] === v ? 'on' : '')}">${l}</button>`).join('')}</div></details>
+        <details class="wcs-sec wcs-acc" data-sec="dt" ${op('dt')}><summary class="wcs-h"><span>📅 Date range</span><span class="wcs-sum ${c.df || c.dt ? 'on' : ''}">${esc(dtTxt)}</span></summary><select class="wp-in" id="cxDk">${optsOf(DK, c.dk)}</select>
           <div class="wcs-pre">${PRE.map(([k, l]) => `<button type="button" data-dp="${k}" class="${c.dp === k ? 'on' : ''}">${l}</button>`).join('')}</div>
-          <div class="wcs-2"><label class="wcs-note">From<input class="wp-in" type="date" id="cxDf" value="${esc(c.df)}"></label><label class="wcs-note">To<input class="wp-in" type="date" id="cxDt" value="${esc(c.dt)}"></label></div></div>
-        <div class="wcs-sec"><div class="wcs-h">📱 Number <span class="wcs-note" style="margin-left:auto;text-transform:none;letter-spacing:0">customers who wrote on…</span></div>
+          <div class="wcs-2"><label class="wcs-note">From<input class="wp-in" type="date" id="cxDf" value="${esc(c.df)}"></label><label class="wcs-note">To<input class="wp-in" type="date" id="cxDt" value="${esc(c.dt)}"></label></div></details>
+        <details class="wcs-sec wcs-acc" data-sec="nm" ${op('nm')}><summary class="wcs-h"><span>📱 Number</span><span class="wcs-sum ${(c.nums || []).length ? 'on' : ''}">${esc(nmTxt)}</span></summary><div class="wcs-note" style="margin-bottom:6px">customers who wrote on…</div>
           <div class="wcs-pre">${(S.meta.numbers || []).map((x) => `<button type="button" data-nm="${x.id}" class="${(c.nums || []).includes(x.id) ? 'on' : ''}">${esc(String(x.label || x.display || 'Number ' + x.id))}</button>`).join('') || '<span class="wcs-note">No numbers found.</span>'}</div>
-          ${(c.nums || []).length ? '<div class="wcs-note" style="margin-top:6px">Tap a number again to remove it. Everyone who wrote on the picked number(s) is included.</div>' : ''}</div>
-        <div class="wcs-sec"><div class="wcs-h">🏷 Tags ${c.tags.filter((t) => t.m === 'in').length > 1 ? `<span class="wcs-seg" style="margin-left:auto;text-transform:none;letter-spacing:0">${[['any', 'Any of'], ['all', 'All of']].map(([k, l]) => `<button type="button" data-mt="${k}" class="${c.match === k ? 'on' : ''}">${l}</button>`).join('')}</span>` : ''}</div>
+          ${(c.nums || []).length ? '<div class="wcs-note" style="margin-top:6px">Tap a number again to remove it. Everyone who wrote on the picked number(s) is included.</div>' : ''}</details>
+        <details class="wcs-sec wcs-acc" data-sec="tg" ${op('tg')}><summary class="wcs-h"><span>🏷 Tags</span><span class="wcs-sum ${c.tags.length ? 'on' : ''}">${esc(tgTxt)}</span></summary>${c.tags.filter((t) => t.m === 'in').length > 1 ? `<span class="wcs-seg" style="margin:0 0 6px;display:block;text-transform:none;letter-spacing:0">${[['any', 'Any of'], ['all', 'All of']].map(([k, l]) => `<button type="button" data-mt="${k}" class="${c.match === k ? 'on' : ''}">${l}</button>`).join('')}</span>` : ''}
           <div class="wcs-pick"><input class="wp-in" id="cxTq" placeholder="＋ Add a tag — type to search" autocomplete="off"><div id="cxDd"></div></div>
           <div class="wcs-tg">${c.tags.map((t, i) => `<span class="t ${t.m}" data-ti="${i}" title="Tap to switch: include ✅ / leave out 🚫">${t.m === 'in' ? '✅' : '🚫'} ${esc(tagLabel(t.k))}<i data-tx="${i}">✕</i></span>`).join('')}</div>
-          ${c.tags.length ? '<div class="wcs-note" style="margin-top:6px">Tap a tag to switch between ✅ include and 🚫 leave out.</div>' : ''}</div>
-        <details class="wcs-sec" ${fnOn ? 'open' : ''}><summary style="cursor:pointer;font-weight:800;font-size:13px">📊 Funnel &amp; conversation${fnOn ? ' · ' + fnOn + ' on' : ''}</summary>
+          ${c.tags.length ? '<div class="wcs-note" style="margin-top:6px">Tap a tag to switch between ✅ include and 🚫 leave out.</div>' : ''}</details>
+        <details class="wcs-sec wcs-acc" data-sec="fn" ${op('fn')}><summary class="wcs-h"><span>📊 Funnel &amp; conversation</span><span class="wcs-sum ${fnOn ? 'on' : ''}">${fnOn ? fnOn + ' on' : 'none'}</span></summary>
           <div style="display:grid;gap:9px;margin-top:10px">
             ${S.meta.funnel && S.meta.funnel.walking ? '<div class="wcs-note">⏳ The funnel is still being counted — these filters only see customers counted so far.</div>' : ''}
             <div><div class="wcs-note">Furthest step reached (any of)</div><div class="wcs-pre">${chips('fg', FFG)}</div></div>
@@ -165,7 +176,7 @@ html.wxdk .wcs{--ln:#25343e; --gb:#0f2e20; --rb:#3a1515;} html.wxdk .wcs-r,html.
             <div class="wcs-2"><label class="wcs-note">We sent at least<input class="wp-in" type="number" min="0" id="cxOmin" value="${esc(c.out_min)}" placeholder="any"></label><label class="wcs-note">…and at most<input class="wp-in" type="number" min="0" id="cxOmax" value="${esc(c.out_max)}" placeholder="any"></label></div>
             <div class="wcs-note">Dates of the last message sent / delivered / failed are in “📅 Date range” above.</div>
           </div></details>
-        <details class="wcs-sec" ${['st', 'ord', 'dsl', 'sp_min', 'sp_max', 'num', 'emp', 'src', 'ign'].some((k) => c[k] !== '') ? 'open' : ''}><summary style="cursor:pointer;font-weight:800;font-size:13px">More filters</summary>
+        <details class="wcs-sec wcs-acc" data-sec="mf" ${op('mf')}><summary class="wcs-h"><span>⚙️ More filters</span><span class="wcs-sum ${mfOn ? 'on' : ''}">${mfOn ? mfOn + ' on' : 'none'}</span></summary>
           <div style="display:grid;gap:8px;margin-top:10px">
             <label class="wcs-note">Who${sel('cxSt', ST, c.st)}</label>
             <div class="wcs-2"><label class="wcs-note">Orders${sel('cxOrd', ORD, c.ord)}</label></div>
@@ -175,6 +186,7 @@ html.wxdk .wcs{--ln:#25343e; --gb:#0f2e20; --rb:#3a1515;} html.wxdk .wcs-r,html.
           </div></details>
         ${o.search ? `<div class="wcs-sec"><div class="wcs-h">🔎 Search</div><input class="wp-in" id="cxQ" type="search" placeholder="Name or number…" value="${esc(S.q)}"></div>` : ''}</div>`;
       $(F, '#cxFh').onclick = () => { S.shut = !S.shut; F.classList.toggle('shut', S.shut); drawF(F); };
+      F.querySelectorAll('details[data-sec]').forEach((d) => d.addEventListener('toggle', () => { S.open[d.dataset.sec] = d.open; }));   // remember which groups you opened
       $(F, '#cxDk').onchange = function () { c.dk = this.value; onChange(); };
       F.querySelectorAll('[data-bg]').forEach((b) => { b.onclick = () => { const [k, v] = b.dataset.bg.split('|'); if (!k) { c.ord = ''; c.tier = ''; } else c[k] = c[k] === v ? '' : v; onChange(true); }; });
       F.querySelectorAll('[data-dp]').forEach((b) => { b.onclick = () => { c.dp = b.dataset.dp; presetDates(); onChange(true); }; });

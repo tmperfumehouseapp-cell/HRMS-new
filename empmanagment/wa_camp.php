@@ -1500,7 +1500,7 @@ if (isset($pdo) && $pdo instanceof PDO && ($__wk === 'wa.camp_ideal' || $__wk ==
         }
     }
 }
-if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_suggest', 'wa.camp_start_now', 'wa.camp_send_skipped', 'wa.camp_snap', 'wa.camp_days', 'wa.camp_hourly', 'wa.cust_summary', 'wa.cust_card', 'wa.camp_hours', 'wa.dq_worker', 'wa.rec_run', 'wa.dq_set', 'wa.rec_report', 'wa.rec_set', 'wa.ru_status', 'wa.ru_run', 'wa.ru_set', 'wa.camp_fast', 'wa.camp_fast_tick', 'wa.fu_list', 'wa.fu_save', 'wa.fu_del', 'wa.fu_preset', 'wa.camp_list', 'wa.camp_templates', 'wa.camp_get', 'wa.camp_preview', 'wa.camp_freq', 'wa.camp_typed_phones', 'wa.camp_save', 'wa.camp_start', 'wa.camp_send_now', 'wa.camp_resume_all', 'wa.camp_stop_all', 'wa.camp_pause', 'wa.camp_resume', 'wa.camp_set_tpl', 'wa.camp_cancel', 'wa.camp_del', 'wa.camp_tick', 'wa.camp_suggest', 'wa.camp_best_time', 'wa.camp_people', 'wa.camp_people_csv', 'wa.camp_people_phones', 'wa.camp_text_batch', 'wa.camp_thread', 'wa.reports', 'wa.mix_state', 'wa.camp_mix_set'], true) && !($__wk === 'wa.camp_suggest' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST')) {
+if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_suggest', 'wa.camp_start_now', 'wa.camp_send_skipped', 'wa.camp_snap', 'wa.camp_days', 'wa.camp_hourly', 'wa.cust_summary', 'wa.cust_card', 'wa.camp_hours', 'wa.dq_worker', 'wa.rec_run', 'wa.dq_set', 'wa.rec_report', 'wa.rec_set', 'wa.ru_status', 'wa.ru_run', 'wa.ru_set', 'wa.camp_fast', 'wa.camp_fast_tick', 'wa.fu_list', 'wa.fu_save', 'wa.fu_del', 'wa.fu_preset', 'wa.camp_list', 'wa.camp_templates', 'wa.camp_get', 'wa.camp_preview', 'wa.camp_freq', 'wa.camp_typed_phones', 'wa.camp_save', 'wa.camp_start', 'wa.camp_send_now', 'wa.camp_resume_all', 'wa.camp_stop_all', 'wa.camp_query_counts', 'wa.camp_pause', 'wa.camp_resume', 'wa.camp_set_tpl', 'wa.camp_cancel', 'wa.camp_del', 'wa.camp_tick', 'wa.camp_suggest', 'wa.camp_best_time', 'wa.camp_people', 'wa.camp_people_csv', 'wa.camp_people_phones', 'wa.camp_text_batch', 'wa.camp_thread', 'wa.reports', 'wa.mix_state', 'wa.camp_mix_set'], true) && !($__wk === 'wa.camp_suggest' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST')) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     $auth = require_auth(); wa_guard_admin($pdo, $auth);
     if (!wa_tables($pdo) || !wa_more_tables($pdo) || !function_exists('wa_tpl_tables') || !wa_tpl_tables($pdo)) json_response(['error' => 'WhatsApp storage is not available — check database permissions.'], 500);
@@ -1773,6 +1773,24 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
             elseif ($__wk === 'wa.camp_resume') { if ($c['status'] !== 'paused') json_response(['error' => 'It is not paused.'], 422); $pdo->prepare("UPDATE wa_campaigns SET status = 'running', note = '' WHERE id = ?")->execute([$c['id']]); }
             else { if (!in_array($c['status'], ['running', 'scheduled', 'paused'], true)) json_response(['error' => 'It cannot be stopped now.'], 422); $pdo->prepare("UPDATE wa_campaigns SET status = 'cancelled', finished_at = ?, note = 'Stopped by you' WHERE id = ?")->execute([date('Y-m-d H:i:s'), $c['id']]); $pdo->prepare("UPDATE wa_camp_items SET status = 'skipped', err = 'Campaign stopped' WHERE camp_id = ? AND status IN ('queued', 'retry')")->execute([$c['id']]); }
             json_response(['ok' => true]);
+        }
+        case 'wa.camp_query_counts': {   // 🎯 the New campaign "Queries" filter: for a date range, how many customers sent a query of each type (Meta ad / Campaign / Community / New …), and the same per business day
+            $ok = fn($v) => preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$v) && strtotime((string)$v);
+            $from = $ok($_GET['from'] ?? '') ? (string)$_GET['from'] : date('Y-m-d', strtotime('-6 day')); $to = $ok($_GET['to'] ?? '') ? (string)$_GET['to'] : date('Y-m-d'); if ($to < $from) [$from, $to] = [$to, $from];
+            if ((strtotime($to) - strtotime($from)) / 86400 > 61) $from = date('Y-m-d', strtotime($to . ' -61 day'));
+            $win = function (string $d) use ($pdo) { $a = null; $b = null; try { if (function_exists('wq_day_start') && function_exists('wq_day_add')) { $a = (int)wq_day_start($pdo, $d); $b = (int)wq_day_start($pdo, wq_day_add($d, 1)); } } catch (Throwable $e) { } if (!$a || $b <= $a) { $a = strtotime($d . ' 10:00:00'); $b = $a + 86400; } return [date('Y-m-d H:i:s', $a), date('Y-m-d H:i:s', $b)]; };
+            $names = ['meta' => 'Meta ads', 'campaign' => 'Campaign', 'community' => 'Community', 'new' => 'New', 'regenerated' => 'Came back', 'other' => 'Other']; $types = []; foreach ($names as $k => $l) $types[$k] = ['k' => $k, 'label' => $l, 'n' => 0];
+            $days = []; $res = ['from' => $from, 'to' => $to];
+            try {
+                [$a0, $b0] = [$win($from)[0], $win($to)[1]];
+                $q = $pdo->prepare("SELECT qy.type t, COUNT(DISTINCT qq.phone) n FROM wa_queries qq JOIN wq_qtype qy ON qy.query_id = qq.id WHERE qq.opened_at >= ? AND qq.opened_at < ? GROUP BY qy.type"); $q->execute([$a0, $b0]);
+                foreach ($q->fetchAll() as $r) { $k = (string)$r['t']; if (isset($types[$k])) $types[$k]['n'] = (int)$r['n']; }
+                for ($d = $from; $d <= $to; $d = date('Y-m-d', strtotime($d . ' +1 day'))) {
+                    [$a, $b] = $win($d); $q = $pdo->prepare("SELECT qy.type t, COUNT(DISTINCT qq.phone) n FROM wa_queries qq JOIN wq_qtype qy ON qy.query_id = qq.id WHERE qq.opened_at >= ? AND qq.opened_at < ? GROUP BY qy.type"); $q->execute([$a, $b]);
+                    $by = []; foreach ($q->fetchAll() as $r) $by[(string)$r['t']] = (int)$r['n']; $days[] = ['d' => $d, 'by' => $by];
+                }
+            } catch (Throwable $e) { $res['error'] = 'The queries are not ready yet.'; }
+            $res['types'] = array_values($types); $res['days'] = $days; json_response($res);
         }
         case 'wa.camp_set_tpl': {   // 🔁 a paused campaign (e.g. Meta paused its message for low quality): pick another approved message and carry on with the people still waiting
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);

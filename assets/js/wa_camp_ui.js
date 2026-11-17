@@ -878,7 +878,7 @@ html.wxdk [data-tone]{background:rgba(128,128,128,.12) !important;color:#e9edef}
         start: c && c.start_at ? 'custom' : 'now', start_at: c && c.start_at ? c.start_at.replace(' ', 'T').slice(0, 16) : '', mix: c && c.extra && c.extra.mix !== undefined ? !!c.extra.mix : true, rate: c ? c.rate : 60, win_end: c && c.win_end ? c.win_end.replace(' ', 'T').slice(0, 16) : '', sw: c ? c.switch_after : 2, consent: false, aud: { type: c ? (c.aud_type || '') : (seg ? 'Picked chats' : ''), from: c ? (c.aud_from || '') : '', to: c ? (c.aud_to || '') : '' }, autoName: !c };
       if (c && c.push === 'normal' && !c.own_hour && !c.retry) { /* an old campaign keeps its old way */ }
       const isU = !!util || !!(c && c.extra && c.extra.kind === 'util'); const m = modal(c ? 'Edit campaign' : (isU ? '💸 New utility follow-up' : 'New campaign')); m.el.classList.add('cu-wide'); if (!c && window.WaCampReport) { const lb = document.createElement('div'); lb.style.padding = '0 16px'; m.body.parentNode.insertBefore(lb, m.body); WaCampReport.learnBox(lb); }   // 💡 what worked in the last campaigns, before you make the next
-      let PN = null, pvT = 0; const grpOn = () => Object.keys(W.A.f || {}).some((k) => (Array.isArray(W.A.f[k]) ? W.A.f[k].length : W.A.f[k] !== '' && W.A.f[k] != null));
+      let PN = null, pvT = 0; const grpOn = () => Object.keys(W.A.f || {}).some((k) => !/^q_/.test(k) && (Array.isArray(W.A.f[k]) ? W.A.f[k].length : W.A.f[k] !== '' && W.A.f[k] != null));   // the 🎯 Queries choices have their own panel (q_*)
       let step = 1, pv = null; const X = { tags: null, sugg: null, hours: null, gal: null, pcs: null, lines: [], testTo: (() => { try { return localStorage.getItem('wcs_test_to') || ''; } catch (e) { return ''; } })() };
       const typedBar = () => (step === 2 && !W.util ? '<div class="wp-note" style="margin:0 0 10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:space-between"><span><b>✍️ Manual message</b> — type your own message instead of a template (goes only to people who wrote in the last 24 hours).</span><button type="button" class="wp-btn" id="cuTyped">✍️ Write a manual message</button></div>' : '');
       m.body.addEventListener('click', (ev) => { const b = ev.target.closest && ev.target.closest('#cuTyped'); if (b) typedSend(); });
@@ -914,13 +914,15 @@ html.wxdk [data-tone]{background:rgba(128,128,128,.12) !important;color:#e9edef}
       function loBox() {
         const st = (pv && pv.stats) || {}, fr = pushOf()[2], on = (v) => v !== 0 && v !== '0' && v !== false;
         const row = (id, chk, txt, n) => `<label style="display:flex;gap:8px;align-items:flex-start;margin:6px 0;font-size:13px"><input type="checkbox" id="${id}" ${chk ? 'checked' : ''} style="width:18px;height:18px;margin-top:1px"><span>${txt}${n ? ' <b style="color:#b45309">(' + fmt(n) + ' left out now)</b>' : (chk ? '' : ' <b style="color:#166534">(included)</b>')}</span></label>`;
-        return `<div id="cuLo" class="wp-note" style="margin-top:10px;background:#f8fafc;border:1px solid #e2e8f0;color:#0f172a"><b>✅ Who to leave out</b> <span style="color:#64748b;font-size:12px">— tick = leave them out · untick = send to them too</span>
+        const loN = [on(W.A.skip_unreach), W.A.gap_days === undefined || +W.A.gap_days > 0, on(W.A.skip_got)].filter(Boolean).length, loOut = (st.unreach || 0) + (st.recent || 0) + (st.got || 0);
+        return `<details id="cuLo" class="wcs-sec wcs-acc" ${W.loOpen ? 'open' : ''}><summary class="wcs-h"><span>🚫 Who to leave out</span><span class="wcs-sum on">${loN} ticked${loOut ? ' · ' + fmt(loOut) + ' left out' : ''}</span></summary><div class="wp-note" style="margin:0 0 4px;background:#f8fafc;border:1px solid #e2e8f0;color:#0f172a"><span style="color:#64748b;font-size:12px">tick = leave them out · untick = send to them too</span>
           ${row('cuLoUn', on(W.A.skip_unreach), '⛔ Customers <b>Meta held / blocked lately</b> (Meta did not deliver to them)', st.unreach)}
           ${row('cuLoRc', W.A.gap_days === undefined || +W.A.gap_days > 0, '📬 Customers who <b>got a campaign message in the last ' + fr + ' day' + (fr === 1 ? '' : 's') + '</b>', st.recent)}
           ${row('cuLoGt', on(W.A.skip_got), '🔁 Customers who <b>already got this same message</b>', st.got)}
-          <div style="font-size:12px;color:#64748b;margin-top:4px">Always left out: customers who opted out or asked us to stop${st.optout ? ' (' + fmt(st.optout) + ' now)' : ''}. “Chatting with us in the last 3 days” is the tick above.</div></div>`;
+          <div style="font-size:12px;color:#64748b;margin-top:4px">Always left out: customers who opted out or asked us to stop${st.optout ? ' (' + fmt(st.optout) + ' now)' : ''}. “Chatting with us in the last 3 days” is the tick above.</div></div></details>`;
       }
       function bindLo() {
+        { const lb = $(m.body, '#cuLo'); if (lb) lb.addEventListener('toggle', () => { W.loOpen = lb.open; }); }
         const fr = pushOf()[2], again = () => { readF(); pv = null; clearTimeout(pvT); pvT = setTimeout(preview, 300); };
         const un = $(m.body, '#cuLoUn'); if (un) un.onchange = () => { W.A.skip_unreach = un.checked ? 1 : 0; W.extra.keep_unreach = un.checked ? 0 : 1; again(); };
         const rc = $(m.body, '#cuLoRc'); if (rc) rc.onchange = () => { W.A.gap_days = rc.checked ? fr : 0; W.extra.gap_days = rc.checked ? fr : 0; again(); };
@@ -971,6 +973,35 @@ html.wxdk [data-tone]{background:rgba(128,128,128,.12) !important;color:#e9edef}
           [['in_from', '#cuIf'], ['in_to', '#cuIt'], ['added_from', '#cuAf'], ['added_to', '#cuAt']].forEach(([k, id]) => { const v = g(id); if (v) f[k] = v; });
           const a = g('#cuWf'), b = g('#cuWt'); if (a !== '' && a !== null) f.wrote_from = Math.max(0, +a || 0); if (b !== '' && b !== null) f.wrote_to = Math.max(0, +b || 0); if (!f.gtags.length) delete f.gtags; W.A.f = f; }
       }
+      // 🎯 Queries: who sent a query (Meta ad / Campaign / Community / New …) in a date range — counts per type and per business day, tick the days you want
+      const QL = { meta: '📢 Meta ads', campaign: '📣 Campaign', community: '👥 Community', new: '🆕 New', regenerated: '↩️ Came back', other: 'Other' };
+      const ymd = (d) => { const z = new Date(d.getTime() - d.getTimezoneOffset() * 60000); return z.toISOString().slice(0, 10); };
+      function qState() { const f = W.A.f; if (!W.qUi) W.qUi = { from: f.q_from || ymd(new Date(Date.now() - 6 * 86400000)), to: f.q_to || ymd(new Date()), data: null, loading: false, open: !!(f.q_types && f.q_types.length) }; return W.qUi; }
+      function qSummary() { const f = W.A.f, U = qState(), t = (f.q_types || []).map((k) => (QL[k] || k).replace(/^\S+\s/, '')).join(' + '); if (!t) return 'any query'; const n = f.q_days && f.q_days.length ? f.q_days.length + ' day' + (f.q_days.length > 1 ? 's' : '') : (U.from + ' → ' + U.to); return t + ' · ' + n; }
+      function queriesPanel() {
+        const f = W.A.f, U = qState(), D = U.data, sel = new Set(f.q_types || []), tkd = f.q_days && f.q_days.length ? new Set(f.q_days) : null;
+        const chips = D ? (D.types || []).filter((x) => x.n > 0 || sel.has(x.k)).map((x) => `<button type="button" class="wp-chip ${sel.has(x.k) ? 'on' : ''}" data-qt="${x.k}" style="padding:7px 11px;text-align:left">${QL[x.k] || esc(x.label)}<b style="display:block;font-size:16px">${fmt(x.n)}</b></button>`).join('') : '<span class="wp-hint">' + (U.loading ? 'Counting…' : 'Open to count') + '</span>';
+        const days = D && sel.size ? `<div class="wp-hint" style="margin:8px 0 4px">Tick the days you want (counts are for the types you picked):</div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(78px,1fr));gap:6px">${(D.days || []).map((d) => { const n = [...sel].reduce((a, k) => a + ((d.by || {})[k] || 0), 0), on = !tkd || tkd.has(d.d); return `<button type="button" data-qd="${d.d}" class="wp-chip ${on ? 'on' : ''}" style="padding:6px 4px;text-align:center;font-size:12px">${esc(new Date(d.d + 'T00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }))}<b style="display:block;font-size:14px">${fmt(n)}</b>${on ? '☑' : '☐'}</button>`; }).join('')}</div>` : '';
+        return `<details id="cuQ" class="wcs-sec wcs-acc" ${U.open ? 'open' : ''} style="border:1px dashed #2563eb"><summary class="wcs-h"><span>🎯 Queries — where did they come from?</span><span class="wcs-sum ${sel.size ? 'on' : ''}">${esc(qSummary())}</span></summary>
+          <div class="wp-row" style="gap:6px;flex-wrap:wrap;align-items:center"><span class="wp-hint" style="margin:0">Query came:</span>${[['0', 'Today'], ['6', '7 days'], ['29', '30 days']].map(([k, l]) => `<button type="button" class="wp-chip" data-qp="${k}">${l}</button>`).join('')}<input type="date" class="wp-in" id="cuQf" value="${esc(U.from)}" style="width:auto;min-height:34px"> → <input type="date" class="wp-in" id="cuQt" value="${esc(U.to)}" style="width:auto;min-height:34px"></div>
+          <div class="wp-hint" style="margin:8px 0 2px">Type of query — number of customers in these dates (none picked = this filter is off):</div><div class="wp-row" style="gap:8px;flex-wrap:wrap">${chips}</div>${days}</details>`;
+      }
+      async function qLoad() {
+        const U = qState(); if (U.loading) return; U.loading = true;
+        try { U.data = await api.get('wa.camp_query_counts', { from: U.from, to: U.to }); } catch (e) { U.data = { types: [], days: [], error: e.message }; }
+        U.loading = false; const box = $(m.body, '#cuQ'); if (box && step === 1) { box.outerHTML = queriesPanel(); qBind(); }
+      }
+      function qApply() { const f = W.A.f, U = qState(); if (f.q_types && f.q_types.length) { f.q_from = U.from; f.q_to = U.to; } else { delete f.q_from; delete f.q_to; delete f.q_days; } pv = null; clearTimeout(pvT); pvT = setTimeout(preview, 400); }
+      function qBind() {
+        const box = $(m.body, '#cuQ'); if (!box) return; const f = W.A.f, U = qState();
+        box.addEventListener('toggle', () => { U.open = box.open; if (box.open && !U.data && !U.loading) qLoad(); });
+        const redraw = () => { box.outerHTML = queriesPanel(); qBind(); };
+        box.querySelectorAll('[data-qt]').forEach((b) => { b.onclick = () => { const k = b.dataset.qt, a = new Set(f.q_types || []); if (a.has(k)) a.delete(k); else a.add(k); f.q_types = [...a]; if (!f.q_types.length) delete f.q_types; qApply(); redraw(); }; });
+        box.querySelectorAll('[data-qd]').forEach((b) => { b.onclick = () => { const all = ((U.data || {}).days || []).map((d) => d.d), cur = new Set(f.q_days && f.q_days.length ? f.q_days : all); if (cur.has(b.dataset.qd)) cur.delete(b.dataset.qd); else cur.add(b.dataset.qd); f.q_days = all.filter((d) => cur.has(d)); if (f.q_days.length === all.length) delete f.q_days; qApply(); redraw(); }; });
+        box.querySelectorAll('[data-qp]').forEach((b) => { b.onclick = () => { U.to = ymd(new Date()); U.from = ymd(new Date(Date.now() - (+b.dataset.qp) * 86400000)); delete f.q_days; U.data = null; qApply(); redraw(); qLoad(); }; });
+        const dt = (id, k) => { const i = $(box, id); if (i) i.onchange = () => { if (i.value) { U[k] = i.value; delete f.q_days; U.data = null; qApply(); redraw(); qLoad(); } }; }; dt('#cuQf', 'from'); dt('#cuQt', 'to');
+        if (U.open && !U.data && !U.loading) qLoad();
+      }
       function histPanel() {   // 🕘 History chats: whose chats, and which ones
         const f = W.A.f, ppl = X.people || [];
         if (!X.people && !X.peopleP) { X.peopleP = 1; api.get('wa.people').then((d) => { X.people = d.people || []; if (step === 1 && m.el.isConnected) { readF(); draw1(); } }).catch(() => { X.people = []; }); }
@@ -988,9 +1019,10 @@ html.wxdk [data-tone]{background:rgba(128,128,128,.12) !important;color:#e9edef}
           <label class="cu-cons" style="display:flex;gap:8px;align-items:center;margin:8px 0 4px;font-size:12px"><input type="checkbox" id="cuPlus" ${W.A.plus_paste ? 'checked' : ''}> ➕ Also add numbers from an Excel / list (every number once)</label><label class="cu-cons" style="display:flex;gap:8px;align-items:center;margin:2px 0 4px;font-size:12px"><input type="checkbox" id="cuTalk" ${W.A.skip_talking === 0 ? '' : 'checked'}> 💬 Leave out people chatting with us in the last 3 days</label>${W.A.plus_paste ? `<textarea class="wp-in" id="cuPaste" rows="4" style="font-size:12px" placeholder="Paste numbers, one per line (copy the Excel column)">${esc(W.A.paste)}</textarea>` : ''}
           ${grpOn() ? `<div class="cu-grp"><span>✨ Starting group: <b>${esc(W.A.fName || 'filters saved with this campaign')}</b></span><button type="button" class="wp-btn s" id="cuGx">✕ Remove</button></div>` : ''}
           <div class="cu-sec" style="margin-top:12px;font-size:15px">🔎 Who exactly <small>(empty = everyone in “${W.A.src === 'all' ? 'contacts + Shopify' : 'our contacts'}”)</small></div>
-          <div id="cuFp" class="cu-fp"></div>
+          <div id="cuQw">${W.A.src === 'paste' ? '' : queriesPanel()}</div><div id="cuFp" class="cu-fp"></div>
           ${loBox()}`}
           <div id="cuPv" style="margin-top:10px"></div><div id="cuE"></div><div class="wp-row" style="margin-top:12px"><button type="button" class="wp-btn" id="cuCnt">🔄 Count again</button><button type="button" class="wp-btn p" id="cuNext">Next ›</button></div>`;
+        if ($(m.body, '#cuQ')) qBind();
         PN = null; const fp = $(m.body, '#cuFp');
         if (fp && window.WaCust && WaCust.panel) { PN = WaCust.panel(fp, { cf: W.A.cfu || {}, onChange: (ui, out) => { W.A.cfu = ui; W.A.cf = out; pv = null; clearTimeout(pvT); pvT = setTimeout(preview, 500); } }); }
         const gx = $(m.body, '#cuGx'); if (gx) gx.onclick = () => { readF(); W.A.f = {}; W.A.fName = ''; pv = null; draw1(); };

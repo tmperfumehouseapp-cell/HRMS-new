@@ -282,6 +282,19 @@ function wa_aud_where(string $src, array $f, string $q = ''): array
     // contacts: start from wa_contacts (indexed, newest first) · all: start from the customer summary
     if ($src === 'contacts') { $from = "wa_contacts c LEFT JOIN wa_cust s ON s.phone = c.phone"; $P = 'c.phone'; }
     else { $from = "wa_cust s LEFT JOIN wa_contacts c ON c.phone = s.phone"; $P = 's.phone'; $w[] = "s.phone REGEXP '^[6-9][0-9]{9}$'"; }
+    if (!empty($f['q_types']) && is_array($f['q_types'])) {   // 🎯 Queries: customers who sent a query of these types (Meta ad / Campaign / Community / New …) on the picked business days
+        $qt = array_values(array_unique(array_filter(array_map('strval', $f['q_types']), fn($x) => preg_match('/^[a-z]{2,12}$/', $x) === 1)));
+        if ($qt) {
+            $dayWin = function (string $d) { $a = null; $b = null; try { if (function_exists('wq_day_start') && function_exists('wq_day_add')) { $a = (int)wq_day_start($GLOBALS['pdo'], $d); $b = (int)wq_day_start($GLOBALS['pdo'], wq_day_add($d, 1)); } } catch (Throwable $e) { } if (!$a || $b <= $a) { $a = strtotime($d . ' 10:00:00'); $b = $a + 86400; } return [date('Y-m-d H:i:s', $a), date('Y-m-d H:i:s', $b)]; };
+            $ok = fn($v) => is_string($v) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $v) === 1 && strtotime($v);
+            $wins = [];
+            if (is_array($f['q_days'] ?? null) && $f['q_days']) { foreach (array_slice($f['q_days'], 0, 93) as $qd) if ($ok($qd)) $wins[] = $dayWin($qd); }
+            elseif ($ok($f['q_from'] ?? '') || $ok($f['q_to'] ?? '')) { $a = $ok($f['q_from'] ?? '') ? $dayWin((string)$f['q_from'])[0] : '1970-01-01 00:00:00'; $b = $ok($f['q_to'] ?? '') ? $dayWin((string)$f['q_to'])[1] : '2999-12-31 00:00:00'; $wins[] = [$a, $b]; }
+            $sq = "EXISTS (SELECT 1 FROM wa_queries qq JOIN wq_qtype qy ON qy.query_id = qq.id WHERE qq.phone = $P AND qy.type IN (" . wa_in($qt) . ")"; foreach ($qt as $x) $p[] = $x;
+            if ($wins) { $or = []; foreach ($wins as [$a, $b]) { $or[] = '(qq.opened_at >= ? AND qq.opened_at < ?)'; $p[] = $a; $p[] = $b; } $sq .= ' AND (' . implode(' OR ', $or) . ')'; }
+            $w[] = $sq . ')';
+        }
+    }
     if (!empty($f['hist'])) {   // 🕘 History chats: the customer's last message is over 24 h old (or the chat is closed) — the same chats the Chats → History screen lists
         $w[] = "c.last_in_at IS NOT NULL AND (c.status = 'closed' OR c.last_in_at < ?)"; $p[] = $d(1);
         if (!empty($f['h_noreply'])) $w[] = '(c.last_out_at IS NULL OR c.last_out_at < c.last_in_at)';
