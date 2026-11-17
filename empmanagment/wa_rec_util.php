@@ -120,6 +120,11 @@ function wa_ru_make_tick(PDO $pdo): array
     $o = ['made' => 0, 'note' => '']; wa_ru_load_util($pdo);
     if (!wa_ru_cfg($pdo)['make_on'] || !function_exists('wa_util_make') || !function_exists('wa_tpl_row')) { $o['note'] = 'off'; return $o; }
     $t0 = microtime(true); $now = time();
+    // 0) one-time repair: the old submit used the wrong account ids and wrote "REJECTED — Unsupported post request" rows for accounts that do not exist; remove them so those messages are sent to Meta for real
+    try { if ((string)setting_get($pdo, 'wa_ru_waba_fix', '') !== '2') { $real = array_map('strval', function_exists('wa_wabas') ? wa_wabas($pdo) : []);
+            if ($real) { $in = implode(',', array_map(fn($w) => $pdo->quote($w), $real)); $n9 = $pdo->exec("DELETE w FROM wa_tpl_waba w JOIN wa_templates t ON t.id = w.tpl_id WHERE t.category = 'UTILITY' AND w.status = 'REJECTED' AND w.reason LIKE 'Unsupported post request%' AND w.waba_id NOT IN ($in)");
+                foreach (['wa_util_learn', 'wa_ru_fail', 'wa_ru_bf', 'wa_ru_fam', 'wa_ru_submit_pause'] as $k9) setting_set($pdo, $k9, '');
+                setting_set($pdo, 'wa_ru_waba_fix', '2'); if (function_exists('wa_log')) wa_log($pdo, 'template', true, 'Utility repair: ' . (int)$n9 . ' wrong "rejected" rows (accounts that do not exist) removed — those messages are now sent to Meta'); } } } catch (Throwable $e) { }
     // 1) utility messages that exist but are not at Meta yet: sent now, 8 per round (every minute)
     try {
         if (function_exists('wa_util_submit') && (int)setting_get($pdo, 'wa_ru_submit_pause', '0') < $now && (int)setting_get($pdo, 'wa_ru_draft_at', '0') < $now - 50) {
@@ -242,7 +247,10 @@ function wa_ru_tick(PDO $pdo): array
         $q = $pdo->prepare("SELECT i.id, i.camp_id, c.tpl_id AS ctpl, i.phone, i.name, i.err_code, i.status, i.sent_at FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id
             WHERE (i.status = 'failed' OR ((i.status = 'retry' OR (i.status = 'sent' AND i.last_status = 'failed')) AND i.err_code IN ($mo)) OR " . wa_ru_known_sql() . ") AND COALESCE(i.variant, 'M') <> 'U' AND COALESCE(c.extra, '') NOT LIKE '%\"kind\":\"util\"%'
               AND (c.started_at >= ? OR i.sent_at >= ? OR (i.status = 'skipped' AND COALESCE(c.started_at, c.created_at) >= '" . date('Y-m-d H:i:s', $nowTs - 3 * 86400) . "')) AND i.id > ? AND NOT EXISTS (SELECT 1 FROM wa_ru_log l WHERE l.item_id = i.id) ORDER BY i.id LIMIT " . $lim);
-        $q->execute([$from, $from, $cursor]); $items = $q->fetchAll();
+        try { $q->execute([$from, $from, $cursor]); $items = $q->fetchAll(); }
+        catch (Throwable $e1) {   // e.g. error 1267 (collations): the round still runs, without the people skipped before sending
+            wa_log($pdo, 'campaign', false, 'Utility follow-up: the list query failed (' . mb_substr($e1->getMessage(), 0, 120) . ') — running without the "skipped before sending" group');
+            $q = $pdo->prepare(str_replace(wa_ru_known_sql(), '0', $q->queryString)); $q->execute([$from, $from, $cursor]); $items = $q->fetchAll(); }
         if (!$items) { if ($cursor > 0) setting_set($pdo, 'wa_ru_cursor', '0'); $rt = wa_ru_retry_tick($pdo, $nowTs, $left, $t0); $res['sent'] += $rt['sent']; $res['failed'] += $rt['failed']; $res['note'] = 'nothing new to follow up' . ($rt['sent'] + $rt['failed'] ? ' · retried ' . ($rt['sent'] + $rt['failed']) . ' from another number' : ''); return $res; }
         foreach (array_unique(array_map(fn($x) => (int)$x['ctpl'], $items)) as $tp) { try { $famU[$tp] = function_exists('wa_util_usable') ? wa_util_usable($pdo, $tp) : []; } catch (Throwable $e) { $famU[$tp] = []; } }
         if (!array_filter($famU) && (string)setting_get($pdo, 'wa_u_reuse', '1') !== '0') { $gl = wa_ru_global_usable($pdo, 12); if ($gl) foreach ($famU as $tp0 => $_v) if (!$_v) $famU[$tp0] = $gl; }   // ♻ versions made for other marketing messages
@@ -305,7 +313,7 @@ function wa_ru_tick(PDO $pdo): array
 /** ROUTE: people the campaign already KNEW Meta would hold or block for marketing (held in the last days / stopped marketing) are skipped before sending: they get the utility follow-up instead of nothing. */
 function wa_ru_known_sql(): string
 {
-    return "(i.status = 'skipped' AND (i.err_code = 131049 OR (i.err_code = 131026 AND EXISTS (SELECT 1 FROM wa_unreach u WHERE u.phone = i.phone AND u.code = 131050) AND NOT EXISTS (SELECT 1 FROM wa_unreach u2 WHERE u2.phone = i.phone AND u2.code = 131026))))";
+    return "(i.status = 'skipped' AND (i.err_code = 131049 OR (i.err_code = 131026 AND EXISTS (SELECT 1 FROM wa_unreach u WHERE u.phone COLLATE utf8mb4_unicode_ci = i.phone COLLATE utf8mb4_unicode_ci AND u.code = 131050) AND NOT EXISTS (SELECT 1 FROM wa_unreach u2 WHERE u2.phone COLLATE utf8mb4_unicode_ci = i.phone COLLATE utf8mb4_unicode_ci AND u2.code = 131026))))";
 }
 /** Per campaign, for the colour line: utility sent by Module B, utility delivered (Module B + the campaign's own utility share). */
 function wa_ru_counts(PDO $pdo, array $ids): array
@@ -349,7 +357,7 @@ function wa_ru_fam_states(PDO $pdo, array $tplIds): array
             elseif (in_array('APPROVED', $stt, true)) { $k = 'approved'; }
             elseif (array_intersect(['PENDING', 'IN_APPEAL'], $stt)) { $k = 'waiting'; }
             elseif (in_array('ERROR', $stt, true)) { $k = 'error'; $why = $reasonOf(['ERROR']); }
-            elseif (in_array('REJECTED', $stt, true)) { $k = 'rejected'; $why = $reasonOf(['REJECTED']); }
+            elseif (in_array('REJECTED', $stt, true)) { $why = $reasonOf(['REJECTED']); $k = stripos($why, 'Unsupported post request') === 0 ? 'error' : 'rejected'; }
             else { $k = 'paused'; $why = $reasonOf(['PAUSED', 'DISABLED', 'FLAGGED']); }
             $o[(int)$r['tid']][$k]++; if (count($o[(int)$r['tid']]['items']) < 8) $o[(int)$r['tid']]['items'][] = ['name' => (string)$r['nm'], 'state' => $k, 'at' => (string)$r['ca'], 'why' => mb_substr($why, 0, 140)];
         }
