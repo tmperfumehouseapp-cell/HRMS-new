@@ -31,7 +31,7 @@ function wa_util_learn(PDO $pdo, bool $force = false): array
         $q = $pdo->prepare("SELECT t.id, t.body, t.relabelled_at, GROUP_CONCAT(CONCAT(w.status, ':', LEFT(w.reason, 100)) SEPARATOR '|') AS st FROM wa_templates t JOIN wa_tpl_waba w ON w.tpl_id = t.id
             WHERE t.category = 'UTILITY' AND t.name LIKE 'util\\_%' AND t.created_at >= ? GROUP BY t.id, t.body, t.relabelled_at ORDER BY t.id DESC LIMIT 300"); $q->execute([date('Y-m-d H:i:s', time() - 30 * 86400)]);
         foreach ($q->fetchAll() as $r) {
-            $rows = array_filter(explode('|', (string)$r['st'])); $stt = []; $why = ''; foreach ($rows as $x) { $p2 = explode(':', $x, 2); $stt[] = strtoupper($p2[0]); if ($why === '' && in_array(strtoupper($p2[0]), ['REJECTED', 'PAUSED', 'DISABLED'], true)) $why = trim((string)($p2[1] ?? '')); }
+            $rows = array_filter(explode('|', (string)$r['st'])); $stt = []; $why = ''; foreach ($rows as $x) { $p2 = explode(':', $x, 2); $stt[] = strtoupper($p2[0]); if ($why === '' && in_array(strtoupper($p2[0]), ['REJECTED', 'PAUSED', 'DISABLED'], true)) $why = trim((string)($p2[1] ?? '')); if (strtoupper($p2[0]) === 'REJECTED' && stripos((string)($p2[1] ?? ''), 'Unsupported post request') === 0) { array_pop($stt); $stt[] = 'ERROR'; } }
             $body = (string)$r['body'];
             if (!empty($r['relabelled_at'])) { $Rj[] = [$body, 'Meta moved it to marketing']; }
             elseif (in_array('APPROVED', $stt, true)) { $A[] = $body; }
@@ -83,7 +83,7 @@ function wa_util_lesson_add(PDO $pdo, string $before, string $after): void
 function wa_util_submit(PDO $pdo, int $id): array
 {
     $row = wa_tpl_row($pdo, $id); if (!$row || strtoupper((string)$row['category']) !== 'UTILITY') return ['error' => 'Utility version not found.'];
-    $wabas = function_exists('wa_wabas') ? array_keys(wa_wabas($pdo)) : []; if (!$wabas) return ['error' => 'No WhatsApp account is set up.'];
+    $wabas = function_exists('wa_wabas') ? array_values(wa_wabas($pdo)) : [];   // wa_wabas() already returns the account ids (a list) — array_keys() made them 0,1,2,3 and every submit went to accounts that do not exist if (!$wabas) return ['error' => 'No WhatsApp account is set up.'];
     $budget = ['left' => count($wabas)]; $subs = [];
     foreach ($wabas as $wb) { [$ok, $note] = function_exists('wa_tpl_try_create') ? wa_tpl_try_create($pdo, $row, (string)$wb, $budget) : wa_tpl_create_at($pdo, $row, (string)$wb); $subs[] = ['waba' => (string)$wb, 'ok' => (bool)$ok, 'note' => is_string($note) ? $note : '']; }
     return ['ok' => true, 'submitted' => $subs];
