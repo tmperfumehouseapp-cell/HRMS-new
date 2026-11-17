@@ -10,11 +10,11 @@
 <link rel="stylesheet" href="assets/css/style.css?v=260928b">
 <link rel="stylesheet" href="assets/css/store.css?v=6">
 <style>
-  .tm{display:grid;grid-template-columns:minmax(150px,1.3fr) 130px repeat(4,minmax(80px,1fr));gap:8px;align-items:center;padding:9px 4px;border-top:1px solid var(--sx-line);font-size:13px}
-  .tm.head{border-top:0;font-size:11px;font-weight:800;color:var(--sx-mut);letter-spacing:.05em;text-transform:uppercase}
-  .tm .nm b{display:block}.tm .nm small{color:var(--sx-mut)}.tm .r{text-align:right}.tm .r small{display:block;color:var(--sx-mut);font-size:11px}
+  .tmr{display:grid;grid-template-columns:minmax(150px,1.3fr) 130px repeat(4,minmax(80px,1fr));gap:8px;align-items:center;padding:9px 4px;border-top:1px solid var(--sx-line);font-size:13px}
+  .tmr.head{border-top:0;font-size:11px;font-weight:800;color:var(--sx-mut);letter-spacing:.05em;text-transform:uppercase}
+  .tmr .nm b{display:block}.tmr .nm small{color:var(--sx-mut)}.tmr .r{text-align:right}.tmr .r small{display:block;color:var(--sx-mut);font-size:11px}
   .pn{display:inline-flex;gap:5px;align-items:center;padding:3px 10px;border-radius:999px;font-size:11.5px;font-weight:800;background:#eef0f3;color:#6b7280}.pn.in{background:var(--sx-aqua-t);color:#0d7a55}.pn.no{background:#fdecea;color:#b42318}
-  @media (max-width:900px){.tm{grid-template-columns:1fr 1fr 1fr}.tm.head{display:none}.tm .nm{grid-column:1/-1}.tm .pc{grid-column:1/-1}}
+  @media (max-width:900px){.tmr{grid-template-columns:1fr 1fr 1fr}.tmr.head{display:none}.tmr .nm{grid-column:1/-1}.tmr .pc{grid-column:1/-1}}
   .tg{display:flex;gap:8px;align-items:flex-start;font-size:13px;margin:6px 0}.tg input{margin-top:3px}.tg small{display:block;color:var(--sx-mut)}
   .lk{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.lk a{text-decoration:none}
 </style>
@@ -48,8 +48,8 @@
         <div class="sx-kpi orange"><div class="ic">${sxi('ticket')}</div><div class="tx"><div class="lb">Commission today (≈)</div><b>${inr(T.commission)}</b><small>price chart estimate</small></div></div>
       </div>
       <div class="sx-card"><h3>${sxi('user')} People who bill <small>the list comes from Billing → “Who can bill”</small></h3>
-        <div class="tm head"><span>Person</span><span>Punch</span><span class="r">Sales today</span><span class="r">Commission ≈</span><span class="r">Pay today</span><span class="r">Month net pay</span></div>
-        ${D.people.length ? D.people.map((p) => { const pay = p.pay; return `<div class="tm"><span class="nm"><b>${esc(p.name)}</b><small>${esc(p.rule || 'no punch rule set')}</small></span>
+        <div class="tmr head"><span>Person</span><span>Punch</span><span class="r">Sales today</span><span class="r">Commission ≈</span><span class="r">Pay today</span><span class="r">Month net pay</span></div>
+        ${D.people.length ? D.people.map((p) => { const pay = p.pay; return `<div class="tmr"><span class="nm"><b>${esc(p.name)}</b><small>${esc(p.rule || 'no punch rule set')}</small></span>
           <span class="pc">${p.punch ? `<span class="pn in">In ${esc(p.punch.in)}${p.punch.out ? ' · out ' + esc(p.punch.out) : ''}</span>` : '<span class="pn no">Not in</span>'}</span>
           <span class="r"><b>${inr(p.sales)}</b><small>${p.bills_n} bill${p.bills_n === 1 ? '' : 's'} · ${p.ml} ml</small></span>
           <span class="r"><b>${inr(p.commission)}</b></span>
