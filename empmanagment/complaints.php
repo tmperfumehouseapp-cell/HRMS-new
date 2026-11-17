@@ -534,7 +534,7 @@ function cx_dispatch(PDO $pdo, $action, array $auth, array $w, $by, array $in, $
         $st = $pdo->prepare("SELECT id, dir, mtype, body, media_id, media_mime, status, who, emp_id, ts FROM wa_messages WHERE phone = ? ORDER BY id DESC LIMIT 200"); $st->execute([$key]); $msgs = array_reverse($st->fetchAll());
         $names = cx_names($pdo); foreach ($msgs as &$m) { $m['id'] = (int)$m['id']; $m['emp_name'] = $names[(int)$m['emp_id']] ?? ''; } unset($m);
         $chatOwner = (int)$c['assigned_emp']; $canChat = $role['mgr'] || ($me && (int)$r['owner_emp'] === $me);
-        if ($canChat && $me && (int)$r['owner_emp'] === $me) $pdo->prepare("UPDATE wa_contacts SET seen_msg_id = (SELECT COALESCE(MAX(id), 0) FROM wa_messages WHERE phone = ? AND dir = 'in') WHERE phone = ?")->execute([$key, $key]);
+        if ($canChat && $me && (int)$r['owner_emp'] === $me) $sq = $pdo->prepare("SELECT COALESCE(MAX(id), 0) FROM wa_messages WHERE phone = ? AND dir = 'in'"); $sq->execute([$key]); $mx = (int)$sq->fetchColumn(); if ($mx !== (int)$c['seen_msg_id']) $pdo->prepare("UPDATE wa_contacts SET seen_msg_id = ? WHERE phone = ? AND seen_msg_id <> ?")->execute([$mx, $key, $mx]);   // write only when something new was read: the same result, no write lock on every open / poll
         $open24 = !empty($c['last_in_at']) && strtotime((string)$c['last_in_at']) >= time() - 86400;
         json_response(['chat' => true, 'messages' => $msgs, 'window_open' => $open24, 'optout' => (int)$c['optout'] === 1, 'can_chat' => $canChat, 'chat_with' => cx_name($pdo, $chatOwner), 'phone' => $key, 'wa_ok' => $role['mgr'] || ($chatOwner === $me)]);
     }
