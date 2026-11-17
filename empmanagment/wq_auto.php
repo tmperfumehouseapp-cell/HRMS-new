@@ -122,9 +122,12 @@ function waa_view(PDO $pdo, bool $fresh = false, int $maxAge = 45): array
         $tkv = (int)(($x['ctk'] ?? 0) > 0 ? $x['ctk'] : ($x['tk'] ?? 0)); $no = (int)($x['n'] ?? 0); $p['ticket'] = $tkv; $p['orders'] = $no;
         $rel = ($tc['on'] && $tc['goal'] > 0 && $tkv >= $tc['goal'] && $no >= $tc['min']) ? $tc['relief'] / 100 : 0.0;   // a ticket at the goal gets a little room on the ratio (bigger bundles can mean fewer orders)
         $p['below'] = waa_below($q, $qo, $team - $rel) ? 1 : 0; $p['tier'] = waa_tier($q, $qo, $team); $p['waiting'] = (int)($wt[$e] ?? 0);
-        $p['tkhold'] = ($tc['on'] && $tc['hold'] && tk_hold((float)$tkv, $no, $p['waiting'], $tc['hold_below'], $tc['hold_orders'], $tc['hold_wait'])) ? 1 : 0;   // OFF unless the admin switches it on [$on, $why] = waa_button($p); $p['on'] = $on; $p['why'] = $why;
+        $p['tkcand'] = ($tc['on'] && $tc['hold'] && tk_hold((float)$tkv, $no, $p['waiting'], $tc['hold_below'], $tc['hold_orders'], $tc['hold_wait'])) ? 1 : 0; $p['tkhold'] = 0;   // decided below, once we know how many people reach the goal [$on, $why] = waa_button($p); $p['on'] = $on; $p['why'] = $why;
         $people[$e] = $p;
     }
+    // 🎯 the hold needs company: only when at least tk_hold_share % of the people at work reach the ticket goal (if everybody's ticket is low, queries keep going to everybody)
+    $wk = array_filter($people, function ($p) use ($tc) { return $p['present'] && $p['orders'] >= $tc['min']; }); $ach = count(array_filter($wk, function ($p) use ($tc) { return $tc['goal'] > 0 && $p['ticket'] >= $tc['goal']; }));
+    if ($tc['on'] && $tc['hold'] && tk_hold_share_ok($ach, count($wk), $tc['hold_share'])) foreach ($people as $e => &$p) { if (!empty($p['tkcand'])) $p['tkhold'] = 1; } unset($p);
     return ['day' => $st['day'], 'team_ratio' => round(100 * $team, 1), 'floor' => round(100 * waa_floor($team), 1), 'team_speed' => $teamSpeed, 'avg_target' => $avgT, 'people' => $people, 'state' => $st];
 }
 
