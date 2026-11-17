@@ -261,10 +261,12 @@ function wa_ru_tick(PDO $pdo): array
     $t0 = microtime(true) - 8;   // the making / sending of templates above can take 20+ seconds: it must not eat the time of the sending loop below (it did: every round broke off at the first person and Module B never sent anything)
     try {
         if (!wa_camp_in_window($pdo, $nowTs)) { $res['note'] = 'quiet hours'; return $res; }
-        $pool = wa_ru_pool($pdo); $famU = [];   // 1) the utility version(s) of the campaign's OWN message (the owner's words, approved at Meta), 2) the 6 standard follow-ups
+        $tpp = json_decode((string)setting_get($pdo, 'wa_ru_tpl_pause', ''), true); $tpp = is_array($tpp) ? array_filter($tpp, fn($u) => (int)$u > $nowTs) : [];   // templates Meta paused for low quality (132015): not used again for 6 hours
+        $notPaused = fn(array $L) => array_values(array_filter($L, fn($t0) => !isset($tpp[(int)($t0['id'] ?? 0)])));
+        $pool = $notPaused(wa_ru_pool($pdo)); $famU = [];   // 1) the utility version(s) of the campaign's OWN message (the owner's words, approved at Meta), 2) the 6 standard follow-ups
         $q = $pdo->prepare("SELECT COUNT(*) FROM wa_ru_log WHERE at >= ?"); $q->execute([date('Y-m-d H:i:s', $nowTs - 3600)]); $left = min($cfg['hourly'] - (int)$q->fetchColumn(), max(20, (int)ceil($cfg['hourly'] / 45))); if ($left <= 0) { $res['note'] = 'this hour\'s pool is used'; return $res; }   // calm: about 1/45 of the hour's pool per round, never a burst
         // a round that mostly fails pauses itself for an hour
-        $q = $pdo->prepare("SELECT COUNT(*) AS n, SUM(m.status = 'failed') AS f FROM wa_ru_log r JOIN wa_messages m ON m.wamid = r.wamid WHERE r.at >= ? AND r.wamid <> ''"); $q->execute([date('Y-m-d H:i:s', max($nowTs - 7200, (int)setting_get($pdo, 'wa_ru_brake_since', '0')))]); $hr = $q->fetch();   // only messages sent after the last reset count
+        $q = $pdo->prepare("SELECT COUNT(*) AS n, SUM(r.ok = 0 OR m.status = 'failed') AS f FROM wa_ru_log r LEFT JOIN wa_messages m ON m.wamid = r.wamid AND r.wamid <> '' WHERE r.at >= ?"); $q->execute([date('Y-m-d H:i:s', max($nowTs - 7200, (int)setting_get($pdo, 'wa_ru_brake_since', '0')))]); $hr = $q->fetch();   // only messages sent after the last reset count
         if ((int)$hr['n'] >= 60 && (int)$hr['f'] / max(1, (int)$hr['n']) >= 0.6) { setting_set($pdo, 'wa_ru_pause_until', (string)($nowTs + 3600)); wa_log($pdo, 'campaign', false, 'Utility follow-up paused for an hour: ' . (int)$hr['f'] . ' of ' . (int)$hr['n'] . ' failed'); $res['note'] = 'paused: too many failures'; return $res; }
         // somebody got the utility message → the campaign's own retry of that person must not send a second one
         try { $pdo->exec("UPDATE wa_camp_items i JOIN wa_ru_log r ON r.item_id = i.id JOIN wa_messages m ON m.wamid = r.wamid SET i.status = 'skipped' WHERE (i.status = 'retry' OR (i.status = 'sent' AND i.last_status = 'failed')) AND r.ok = 1 AND r.wamid <> '' AND m.status IN ('delivered', 'read')"); } catch (Throwable $e) { }
@@ -283,8 +285,8 @@ function wa_ru_tick(PDO $pdo): array
             wa_log($pdo, 'campaign', false, 'Utility follow-up: the list query failed (' . mb_substr($e1->getMessage(), 0, 120) . ') — running without the "skipped before sending" group');
             $q = $pdo->prepare(str_replace(wa_ru_known_sql(), '0', $q->queryString)); $q->execute([$from, $from, $cursor]); $items = $q->fetchAll(); }
         if (!$items) { if ($cursor > 0) setting_set($pdo, 'wa_ru_cursor', '0'); $rt = wa_ru_retry_tick($pdo, $nowTs, $left, $t0); $res['sent'] += $rt['sent']; $res['failed'] += $rt['failed']; $res['note'] = 'nothing new to follow up' . ($rt['sent'] + $rt['failed'] ? ' · retried ' . ($rt['sent'] + $rt['failed']) . ' from another number' : ''); return $res; }
-        foreach (array_unique(array_map(fn($x) => (int)$x['ctpl'], $items)) as $tp) { try { $famU[$tp] = function_exists('wa_util_usable') ? wa_util_usable($pdo, $tp) : []; } catch (Throwable $e) { $famU[$tp] = []; } }
-        if (!array_filter($famU) && (string)setting_get($pdo, 'wa_u_reuse', '1') !== '0') { $gl = wa_ru_global_usable($pdo, 12); if ($gl) foreach ($famU as $tp0 => $_v) if (!$_v) $famU[$tp0] = $gl; }   // ♻ versions made for other marketing messages
+        foreach (array_unique(array_map(fn($x) => (int)$x['ctpl'], $items)) as $tp) { try { $famU[$tp] = function_exists('wa_util_usable') ? $notPaused(wa_util_usable($pdo, $tp)) : []; } catch (Throwable $e) { $famU[$tp] = []; } }
+        if (!array_filter($famU) && (string)setting_get($pdo, 'wa_u_reuse', '1') !== '0') { $gl = $notPaused(wa_ru_global_usable($pdo, 12)); if ($gl) foreach ($famU as $tp0 => $_v) if (!$_v) $famU[$tp0] = $gl; }   // ♻ versions made for other marketing messages
         if (!$pool && !array_filter($famU)) { $res['note'] = 'no approved utility message yet (waiting for Meta)'; return $res; }
         $res['looked'] = count($items); $in = implode(',', array_map(fn($x) => (int)$x['id'], $items));
         $phones = array_values(array_unique(array_map(fn($x) => (string)$x['phone'], $items))); $pin = implode(',', array_map(fn($p) => $pdo->quote($p), $phones));
@@ -313,7 +315,8 @@ function wa_ru_tick(PDO $pdo): array
                     ->execute([(int)$j['it']['camp_id'], (int)$j['it']['id'], (string)$j['c']['phone'], $j['kind'], (int)$j['nid'], (int)$j['t']['id'], $ok ? (string)$rr : '', $ok ? 1 : 0, $ok ? 0 : (int)$ecs, (int)$j['ec'], $ok ? '' : mb_substr((string)$rr, 0, 190), $now, json_encode($j['vars'], JSON_UNESCAPED_UNICODE)]); } catch (Throwable $e) { }
                 if ($ok) $res['sent']++; else { $res['failed']++;
                     if ((int)$ecs === 131048) { setting_set($pdo, 'wa_ru_pause_until', (string)($nowTs + 6 * 3600)); wa_log($pdo, 'campaign', false, 'Utility follow-up paused for 6 hours: Meta flagged messages as spam (131048)'); $stop = true; }
-                    if (in_array((int)$ecs, [130429, 131056], true)) $stop = true; } }
+                    if (in_array((int)$ecs, [130429, 131056], true)) $stop = true;
+                    if ((int)$ecs === 132015) { try { $pp = json_decode((string)setting_get($pdo, 'wa_ru_tpl_pause', ''), true); $pp = is_array($pp) ? $pp : []; $pp[(int)$j['pid']] = $nowTs + 6 * 3600; setting_set($pdo, 'wa_ru_tpl_pause', json_encode($pp)); } catch (Throwable $e) { } } } }
             $batch = []; return $stop;
         };
         foreach ($items as $it) {
@@ -347,7 +350,7 @@ function wa_ru_tick(PDO $pdo): array
             if (!$cand) { $sk('no High / Medium quality number with room'); continue; }
             uasort($cand, fn($x, $y) => ($x['used'] / max(1, $x['cap'])) <=> ($y['used'] / max(1, $y['cap']))); $num = reset($cand); $nid = (int)$num['id']; $tSend = $num['tm'] ?? $tUse;
             $seen[$ph] = 1; $ctx['nums'][$nid]['left']--; $ctx['nums'][$nid]['used']++; $ctx['port_left']--; $cache[$tid][1] = $ctx; $left--;
-            $batch[] = ['c' => ['phone' => $ph, 'wa_id' => (string)($c['wa_id'] ?? ''), 'camp_optout' => (int)($c['camp_optout'] ?? 0)], 't' => $tSend, 'num' => $num, 'vars' => $pk['vars'], 'kind' => (string)$pk['kind'], 'nid' => $nid, 'it' => $it, 'ec' => $ec];
+            $batch[] = ['c' => ['phone' => $ph, 'wa_id' => (string)($c['wa_id'] ?? ''), 'camp_optout' => (int)($c['camp_optout'] ?? 0)], 't' => $tSend, 'num' => $num, 'vars' => $pk['vars'], 'kind' => (string)$pk['kind'], 'nid' => $nid, 'it' => $it, 'ec' => $ec, 'pid' => (int)$pk['t']['id']];
             if (count($batch) >= $bsz && $flush()) { $broke = true; break; }   // 40 messages go out at the same time (curl_multi), the answers are processed together
         }
         if ($batch && $flush()) $broke = true;   // the last, shorter batch
