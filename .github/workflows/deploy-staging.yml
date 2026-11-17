@@ -27,6 +27,8 @@ jobs:
           bad=0; for f in assets/js/*.js sw.js; do node --check "$f" > /dev/null 2>&1 || { echo "::error file=$f::JavaScript syntax error"; bad=1; }; done; exit $bad
       - name: Daily plan guard test
         run: php tests/guard_test.php
+      - name: Utility functions are all defined
+        run: php tests/ru_funcs_test.php
       - name: Queue end-time test
         run: php tests/eta_test.php
       - name: Customer funnel rules
