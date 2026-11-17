@@ -838,7 +838,7 @@ function wa_camp_tick_run(PDO $pdo, int $only = 0): array
                 $uTs = []; $uPool = [];
                 if (!empty($c['extra']['u_set_fam']) && function_exists('wa_util_usable')) { try { foreach (wa_util_usable($pdo, (int)$c['tpl_id']) as $fu) if (!in_array((int)$fu['id'], $uSetIds, true)) $uSetIds[] = (int)$fu['id']; } catch (Throwable $e) { } }   // this message's own versions join by themselves as soon as Meta approves them
                 foreach ($uSetIds as $sid) { $tt = wa_camp_tpl($pdo, $sid, true, 0); $rw = function_exists('wa_tpl_row') ? wa_tpl_row($pdo, $sid) : null; if (!$tt || !$rw || !empty($rw['relabelled_at']) || strtoupper((string)($rw['category_now'] ?? '')) === 'MARKETING') continue;
-                    $exs = is_array($rw['examples'] ?? null) ? $rw['examples'] : (json_decode((string)($rw['examples'] ?? ''), true) ?: []); $lab = array_map('strval', (array)($exs['labels'] ?? [])); if (!$lab && (int)$tt['nvars'] === 1) $lab = ['name'];
+                    $exs = is_array($rw['examples'] ?? null) ? $rw['examples'] : (json_decode((string)($rw['examples'] ?? ''), true) ?: []); $lab = array_map(fn($z) => strtolower((string)$z), (array)($exs['labels'] ?? [])); if (!$lab && (int)$tt['nvars'] === 1) $lab = ['name'];
                     $tt['labels'] = $lab; $tt['pool_kind'] = in_array('order', array_map('strtolower', $lab), true) ? 'order' : ((count($lab) <= 1) ? 'open' : 'ask'); $uPool[] = $tt; }
                 $uT = $uPool[0] ?? null;
             }
@@ -856,7 +856,7 @@ function wa_camp_tick_run(PDO $pdo, int $only = 0): array
                 if ($poolLeft <= 0) {   // 💸 the marketing allowance is used: the people put back by "Start as utility" still go (utility only — utility is outside the daily plan); everybody else waits
                     $rq = $uFirst ? (int)$pdo->query("SELECT COUNT(*) FROM wa_camp_items WHERE camp_id = $id AND status = 'queued' AND variant = 'R'")->fetchColumn() : 0;
                     if ($rq > 0) {   // utility has its OWN limit: wa_u_per_min messages a minute (default 40), counted over all campaigns; the marketing allowance is not touched
-                        $perMin = max(5, min(600, (int)setting_get($pdo, 'wa_u_per_min', '40'))); $usedMin = (int)$pdo->query("SELECT COUNT(*) FROM wa_camp_items WHERE variant = 'U' AND status = 'sent' AND sent_at >= '" . date('Y-m-d H:i:s', $nowTs - 60) . "'")->fetchColumn(); $room = $perMin - $usedMin;
+                        $perMin = max(5, min(600, (int)setting_get($pdo, 'wa_u_per_min', '50'))); $usedMin = (int)$pdo->query("SELECT COUNT(*) FROM wa_camp_items WHERE variant = 'U' AND status = 'sent' AND sent_at >= '" . date('Y-m-d H:i:s', $nowTs - 60) . "'")->fetchColumn(); $room = $perMin - $usedMin;
                         if ($room > 0) { $ucond = " AND i.variant = 'R'"; $poolLeft = min(100, $room); } else { $stop = 'Utility: the limit of ' . $perMin . ' a minute is reached — it continues in a moment.'; break; } }
                     else { $stop = wa_dq_why_text($dqF); break; } } }   // the cap is counted again before every batch: several senders at once never go over it
             $take = min($burstLeft > 0 ? $fastBatch : 90, $quota - ($sent + $failed + $skipped)); if ($poolOn && $burstLeft <= 0) $take = max(1, min($take, $poolLeft));   // ⚡ 90 people per round trip to Meta (was 40)
