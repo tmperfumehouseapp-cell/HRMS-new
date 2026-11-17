@@ -1083,11 +1083,11 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
             }
             // ☑ Select-chats filters: day of the query · ordered or not · numbers (admin)
             if ($adm) {
-                $bd = (string)($_GET['bd'] ?? ''); $bs = wa_bizday_start($pdo);
-                if ($bd === 'today') { $w[] = "c.source = 'query'"; $w[] = 'c.last_in_at >= ?'; $p[] = $bs; }
-                elseif ($bd === 'yesterday') { $w[] = "c.source = 'query'"; $w[] = 'c.last_in_at >= ?'; $p[] = date('Y-m-d H:i:s', strtotime($bs) - 86400); $w[] = 'c.last_in_at < ?'; $p[] = $bs; }
+                $bd = (string)($_GET['bd'] ?? ''); $bs = wa_bizday_start($pdo); $__srcChip = (string)($_GET['src'] ?? '') !== '';   // a Query / Community / Campaign chip is already on: "Today's / Yesterday's" then means "wrote that business day" inside THAT chip (forcing source = query made Campaign / Community come out empty)
+                if ($bd === 'today') { if (!$__srcChip) $w[] = "c.source = 'query'"; $w[] = 'c.last_in_at >= ?'; $p[] = $bs; }
+                elseif ($bd === 'yesterday') { if (!$__srcChip) $w[] = "c.source = 'query'"; $w[] = 'c.last_in_at >= ?'; $p[] = date('Y-m-d H:i:s', strtotime($bs) - 86400); $w[] = 'c.last_in_at < ?'; $p[] = $bs; }
                 elseif ($bd === '7d') { $w[] = 'c.last_in_at >= ?'; $p[] = date('Y-m-d H:i:s', time() - 7 * 86400); }
-                elseif ($bd === 'camp') { $w[] = "c.source = 'campaign'"; }
+                elseif ($bd === 'camp') { if (!$__srcChip) $w[] = "c.source = 'campaign'"; }
                 $ob = (string)($_GET['ob'] ?? '');
                 if ($ob === 'no') $w[] = "NOT EXISTS (SELECT 1 FROM wa_cust so WHERE so.phone = c.phone AND so.n > 0)";
                 elseif ($ob === 'yes') $w[] = "EXISTS (SELECT 1 FROM wa_cust so WHERE so.phone = c.phone AND so.n > 0)";
@@ -1107,6 +1107,10 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
             // 📅 Today's chats / Yesterday's chats (the customer wrote that calendar day); both ticked = today AND yesterday together
             { $dC = []; $d0 = date('Y-m-d 00:00:00'); $d1 = date('Y-m-d 00:00:00', strtotime('-1 day'));
               if (isset($flt['today'])) $dC[] = "c.last_in_at >= '$d0'"; if (isset($flt['yesterday'])) $dC[] = "(c.last_in_at >= '$d1' AND c.last_in_at < '$d0')"; if ($dC) $w[] = '(' . implode(' OR ', $dC) . ')'; }
+            if (!empty($_GET['ids'])) {   // ☑ "Select all" in the bulk bar: EVERY chat of the view (up to 50,000), phone + name only — no last-message lookups, so it stays fast
+                $st = $pdo->prepare("SELECT c.phone, c.name FROM wa_contacts c WHERE " . implode(' AND ', $w) . " ORDER BY c.last_in_at DESC LIMIT 50000"); $st->execute($p);
+                $__ids = $st->fetchAll(); json_response(['ids' => array_map(fn($r) => ['phone' => (string)$r['phone'], 'name' => (string)($r['name'] ?? '')], $__ids), 'total' => count($__ids)]);
+            }
             $sort = (string)($_GET['sort'] ?? '');
             $ord = ['new' => 'COALESCE(c.last_in_at, c.last_out_at) DESC', 'old' => 'COALESCE(c.last_in_at, c.last_out_at) ASC', 'az' => "(c.name = '') ASC, c.name ASC, c.phone ASC", 'za' => "(c.name = '') ASC, c.name DESC, c.phone DESC"][$sort] ?? null;
             if (!empty($rescueFeed)) { $ord = 'FIELD(c.phone, ' . implode(',', array_fill(0, count($rescueFeed), '?')) . ')'; $p = array_merge($p, $rescueFeed); }   // 🛟 the Rescue chip is listed in priority order (urgency → how hot → time)
