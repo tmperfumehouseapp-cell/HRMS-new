@@ -395,6 +395,9 @@
 <script src="assets/js/side_chat.js?v=2"></script>
 <script src="assets/js/ml_slab.js?v=261116a"></script>
 <script>window.FO_SIZE = 'slim'; if (window.HRMS_EMBED) window.FO_HIDE = true;</script>
+<script src="assets/js/wmo_edit.js?v=1"></script>
+<script>function wmUpdate(no) { if (window.WmoEdit) WmoEdit.open(no, { onSaved: function () { try { if (typeof load === "function") load(); else location.reload(); } catch (e) { location.reload(); } } }); }</script>
+<style>.wm-upd{display:inline-block;margin-left:6px;border:1px solid #16a34a;background:#f0fdf4;color:#166534;border-radius:99px;padding:3px 9px;font:inherit;font-size:11.5px;font-weight:800;cursor:pointer;white-space:nowrap;vertical-align:1px}.wm-upd:hover{background:#dcfce7}</style>
 <script src="assets/js/flash_offer.js?v=261103a"></script>
 <script>
   guardPage();
@@ -752,7 +755,7 @@
       ? `<button type="button" class="cx-btn undo" onclick="cancelOrder('${k}', false, this)">↶ Undo</button><div class="sub">cancelled${o.cancelled.by ? ' by ' + esc(o.cancelled.by) : ''}</div>`
       : `<button type="button" class="cx-btn" onclick="cancelOrder('${k}', true, this)">✕ Cancel</button>`);
     return `<tr class="${o.cancelled ? 'row-cx' : (o.allocated ? 'row-done' : '')}" data-k="${k}">
-      <td><a href="#" class="ord-link" onclick="openDetail('${k}'); return false;" title="Open order details"><b>${esc(o.order_name)}</b></a><div class="sub">${fmtT(o.created_at)} <span class="src">${esc(o.source_label || o.store_src || o.store)}</span></div></td>
+      <td><a href="#" class="ord-link" onclick="openDetail('${k}'); return false;" title="Open order details"><b>${esc(o.order_name)}</b></a>${/^#?WM-\d+/i.test(String(o.order_name || '')) ? `<button type="button" class="wm-upd" onclick="wmUpdate('${esc(String(o.order_name).replace(/^#/, ''))}')" title="Remove or add perfumes in this manual order (until a tracking ID is given)">✏️ Update</button>` : ''}<div class="sub">${fmtT(o.created_at)} <span class="src">${esc(o.source_label || o.store_src || o.store)}</span></div></td>
       <td>${o.cancelled ? (o.code ? `<span class="code-tag">${esc(o.code)}</span>` : '<span class="sub">—</span>') : o.code_locked ? `<input type="text" class="code-in locked" data-k="${k}" value="${esc(o.code || '')}" placeholder="Locked" disabled title="Locked — the time allowed for adding a code after allocation has passed. Ask Admin / HR."><span class="code-lk" title="Locked — ask Admin / HR">🔒</span>` : `<input type="text" class="code-in" data-k="${k}" maxlength="40" value="${esc(o.code || '')}" placeholder="Ex:-Og12345" autocomplete="off" spellcheck="false">`}</td>
       <td>${empCell}${botWhy(o)}</td>
       <td>${esc(o.customer || 'Guest')}<div class="sub">${o.phone ? `<a href="#" title="Open this customer's chat beside the list" onclick="SideChat.open('${String(o.phone).replace(/\D/g, '').slice(-10)}'); return false;" style="color:inherit;text-decoration:underline dotted">${esc(o.phone)} 💬</a>` : ''}</div>${phoneBox(o)}</td>
