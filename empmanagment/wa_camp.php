@@ -808,6 +808,11 @@ function wa_camp_tick_run(PDO $pdo, int $only = 0): array
         // the owner's own split for THIS campaign: a utility version + its share (only to people who asked or ordered in the last 30 days), and a share per number
         $uT = null; $uPct = max(0, min(100, (int)($c['extra']['u_pct'] ?? 0))); $uCnt = 0; $allCnt = 0; $wabaOf = [];
         $uTs = []; $isUtil = ($c['extra']['kind'] ?? '') === 'util'; $ordDays = max(0, min(365, (int)($c['extra']['ord_days'] ?? 60)));
+        // 💸 UTILITY FIRST (owner, 17 Nov 2026): every marketing campaign starts with a utility message for everybody it can (the campaign message's own utility version, the standard follow-ups, the welcome message for the rest);
+        // if Meta moves it to marketing, utility fails (the 4% rule) or it cannot be sent, the person / the whole campaign goes on as marketing. Setting wa_u_first = 0 switches it off; the owner's own "utility off" wins.
+        $uPool = []; $uFirst = !$mixOn && !$isUtil && (string)setting_get($pdo, 'wa_u_first', '1') !== '0' && empty($c['extra']['u_off']) && empty($c['extra']['u_off_owner']) && strtoupper((string)($t['category'] ?? 'MARKETING')) === 'MARKETING';
+        $uAsk = function_exists('wa_ru_cfg') ? (int)wa_ru_cfg($pdo)['ask_days'] : 30; $uShift = max(0, $uAsk - (function_exists('wa_mix_cfg') ? (int)wa_mix_cfg($pdo, 'wa_mix_days', 30) : 30)) * 86400;
+        if ($uFirst) { $uPct = 100; $c['extra']['u_auto'] = 1; }
         if ($isUtil) {   // 💸 utility follow-up campaign: only people who qualify get a message, the 6 standard follow-ups take turns
             $gw = wa_camp_util_guard($pdo, $c);
             if ($gw !== '') { wa_camp_pause($pdo, $id, 'Utility safety rule — ' . $gw); $res[$id] = ['sent' => 0, 'failed' => 0, 'skipped' => 0, 'stop' => 'utility safety rule']; continue; }
@@ -821,8 +826,8 @@ function wa_camp_tick_run(PDO $pdo, int $only = 0): array
             if ($uPct > 0 && (int)($c['extra']['u_tpl'] ?? 0) > 0) { $uRow = wa_diag_row_tpl($pdo, (int)$c['extra']['u_tpl']);
                 if ($uRow && strtoupper((string)$uRow['category']) === 'UTILITY' && strtoupper((string)($uRow['category_now'] ?? '')) !== 'MARKETING' && empty($uRow['relabelled_at'])) { $u1 = wa_camp_tpl($pdo, (int)$uRow['id'], true, 0); if ($u1) { if (!is_array($u1['examples'] ?? null)) $u1['examples'] = json_decode((string)($uRow['examples'] ?? ''), true) ?: []; $uTs[(int)$u1['id']] = $u1; } } }
             if ($uPct > 0 && !empty($c['extra']['u_auto']) && function_exists('wa_util_usable')) foreach (wa_util_usable($pdo, (int)$c['tpl_id']) as $u1) $uTs[(int)$u1['id']] = $u1;
-            $uTs = array_values($uTs); $uT = $uTs[0] ?? null;
-            if ($uPct > 0 && !$uT) $pdo->prepare("UPDATE wa_campaigns SET note = ? WHERE id = ? AND status = 'running'")->execute(['No utility version is approved yet (or Meta moved them to marketing) — sending the marketing message to everyone until one is approved.', $id]);
+            $uTs = array_values($uTs); $uT = $uTs[0] ?? null; if ($uFirst && function_exists('wa_util_pool_usable')) { try { $uPool = wa_util_pool_usable($pdo); } catch (Throwable $e) { $uPool = []; } }
+            if ($uPct > 0 && !$uT && !$uPool) $pdo->prepare("UPDATE wa_campaigns SET note = ? WHERE id = ? AND status = 'running'")->execute(['No utility version is approved yet (or Meta moved them to marketing) — sending the marketing message to everyone until one is approved.', $id]);
             else { foreach ($pdo->query("SELECT variant, COUNT(*) AS n FROM wa_camp_items WHERE camp_id = $id AND status = 'sent' GROUP BY variant")->fetchAll() as $vr) { $allCnt += (int)$vr['n']; if ($vr['variant'] === 'U') $uCnt += (int)$vr['n']; }
                 foreach ($pdo->query("SELECT id, waba_id FROM wa_numbers")->fetchAll() as $nr) $wabaOf[(int)$nr['id']] = wa_waba_of($nr); }
         }
@@ -881,6 +886,12 @@ function wa_camp_tick_run(PDO $pdo, int $only = 0): array
                     if (!$pk && !$isRetry) { $uRot = ($uRot ?? 0) + 1; $okU = array_values(array_filter($uTs, fn($u0) => in_array((string)($wabaOf[$nid] ?? ''), array_map('strval', (array)$u0['ok_wabas']), true))); $pk = $okU ? wa_util_pick($pdo, $okU, $ct, $ordDays, $nowTs, $uRot) : null; }
                     if (!$pk) { $pdo->prepare("UPDATE wa_camp_items SET status = 'skipped', err = ? WHERE id = ?")->execute([$isRetry ? 'The utility message is no longer usable' : 'Not for utility: no enquiry in the last 30 days and no order in the last ' . $ordDays . ' days', $iid]); $skipped++; continue; }
                     $variant = 'U'; $tSent = $pk['t']; $vars = $pk['vars'];
+                } elseif ($uFirst && !$isRetry && ($uTs || $uPool)) {   // 💸 utility first: this person's FIRST message is a utility one if any can be built for them; otherwise (and on every retry) they get the marketing message
+                    if ($om === null) { try { $om = wa_order_map($pdo)[(string)$it['phone']] ?? null; } catch (Throwable $e) { } }
+                    $uRot = ($uRot ?? 0) + 1; $wb = (string)($wabaOf[$nid] ?? ''); $ctU = ['phone' => (string)$it['phone'], 'name' => (string)($ct['name'] ?? $it['name'] ?? ''), 'optout' => 0, 'last_in_at' => $ct['last_in_at'] ?? null];
+                    $okF = array_values(array_filter($uTs, fn($u0) => in_array($wb, array_map('strval', (array)$u0['ok_wabas']), true)));
+                    if ($okF && function_exists('wa_mix_cheap_ok') && wa_mix_cheap_ok($pdo, $ct, $om, $nowTs - $uShift)) { $uv = wa_mix_u_vars($pdo, $okF[$uRot % count($okF)], $ct, $om, $nowTs - $uShift); if (is_array($uv)) { $variant = 'U'; $tSent = $okF[$uRot % count($okF)]; $vars = $uv; } }
+                    if ($variant !== 'U' && $uPool) { $okP = array_values(array_filter($uPool, fn($u0) => in_array($wb, array_map('strval', (array)$u0['ok_wabas']), true))); $pk0 = $okP ? wa_util_pick($pdo, $okP, $ctU, $ordDays, $nowTs, $uRot, $uAsk, true) : null; if ($pk0) { $variant = 'U'; $tSent = $pk0['t']; $vars = $pk0['vars']; } }
                 } elseif ($uT && !$isRetry && $uCnt < ($allCnt + 1) * $uPct / 100 && ($uOk = array_values(array_filter($uTs, fn($u0) => in_array((string)($wabaOf[$nid] ?? ''), array_map('strval', (array)$u0['ok_wabas']), true))))) {   // below the utility share: this person gets a utility version (they take turns) if it is allowed for them
                     if ($om === null) { try { $om = wa_order_map($pdo)[(string)$it['phone']] ?? null; } catch (Throwable $e) { } }
                     $uRot = ($uRot ?? 0) + 1; $uPick = $uOk[$uRot % count($uOk)];
