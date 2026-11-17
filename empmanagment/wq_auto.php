@@ -145,7 +145,7 @@ function waa_give_one(PDO $pdo, array $r, ?array $c, array &$V, array &$T, int $
     if (!$c['last_in_at'] || strtotime((string)$c['last_in_at']) < $now - 86400 + 600) { $dbg['old']++; return false; }
     static $hq = null, $bq = null; if ($hq === null) { $humanSql = function_exists('wq_human_sql') ? wq_human_sql('h', 'c', 'last_in_at') : "h.dir = 'out' AND h.emp_id > 0"; $hq = $pdo->prepare("SELECT 1 FROM wa_contacts c JOIN wa_messages h ON h.phone = c.phone WHERE c.phone = ? AND $humanSql LIMIT 1"); $bq = $pdo->prepare("SELECT 1 FROM wa_ctags WHERE phone = ? AND tag = 'business_autoreply' LIMIT 1"); }
     $hq->execute([$ph]); if ($hq->fetchColumn()) { $dbg['human']++; return false; } $bq->execute([$ph]); if ($bq->fetchColumn()) { $dbg['biz']++; return false; }
-    $camp = (string)$r['src'] === 'campaign'; $cand = []; $avgT = (float)$V['avg_target'];
+    $camp = in_array((string)$r['src'], ['campaign', 'community'], true); $cand = [];   // a Community query is given like a Campaign query (owner, 17 Nov) $avgT = (float)$V['avg_target'];
     $vip = false; try { $tkc = tk_cfg($pdo); if ($tkc['on'] && $tkc['goal'] > 0) $vip = waa_is_vip($pdo, $ph, (float)$tkc['goal']); } catch (Throwable $e) { }   // big-order customer → a seller who reaches the ticket goal
     foreach ($V['people'] as $e => $p) {
         if ($camp) { if (!$p['present'] || $p['m'] === 'off') continue; $w = waa_weight_camp($p); $cnt = (int)($T[$e]['camp'] ?? 0); }
@@ -180,7 +180,7 @@ function waa_give_now(PDO $pdo, string $phone): void
     try {
         if (!waa_tables($pdo) || !waa_engine_on($pdo)) return; $now = time();
         $q = $pdo->prepare("SELECT id, phone, src, opened_at, emp_id FROM wa_queries WHERE phone = ? ORDER BY id DESC LIMIT 1"); $q->execute([$phone]); $r = $q->fetch(PDO::FETCH_ASSOC);
-        if (!$r || (int)$r['emp_id'] > 0 || !in_array((string)$r['src'], ['query', 'campaign', ''], true) || strtotime((string)$r['opened_at']) < $now - 86400 + 600) return;
+        if (!$r || (int)$r['emp_id'] > 0 || !in_array((string)$r['src'], ['query', 'campaign', 'community', ''], true) || strtotime((string)$r['opened_at']) < $now - 86400 + 600) return;
         $c = $pdo->prepare("SELECT phone, name, assigned_emp, last_in_at, status, optout, cx_id, tag FROM wa_contacts WHERE phone = ?"); $c->execute([$phone]); $row = $c->fetch(PDO::FETCH_ASSOC) ?: null;
         $V = waa_view($pdo, false, 900); $T = waa_tally($pdo); $dbg = waa_dbg0();
         waa_give_one($pdo, $r, $row, $V, $T, $now, $dbg);
@@ -211,7 +211,7 @@ function waa_tick(PDO $pdo, int $every = 20, int $maxAge = 45): array
         if ($res['switched_off'] || $chg) waa_state_put($pdo, $st);
         foreach ($V['people'] as $p0) { if ($p0['present']) $dbg['present']++; if ($p0['on']) $dbg['fresh_ok']++; if ($p0['present'] && $p0['m'] !== 'off') $dbg['camp_ok']++; }
         // (2) waiting queries: nobody holds them, the customer wrote in the last 24 h, no person answered yet. NEWEST first (the oldest are mostly closed / answered / past the 24 h window).
-        $since = waa_dt($now - 86400 + 600); $st0 = $pdo->prepare("SELECT id, phone, src, opened_at FROM wa_queries WHERE emp_id = 0 AND src IN ('query', 'campaign', '') AND opened_at >= ? AND opened_at <= ? ORDER BY id DESC LIMIT 250");
+        $since = waa_dt($now - 86400 + 600); $st0 = $pdo->prepare("SELECT id, phone, src, opened_at FROM wa_queries WHERE emp_id = 0 AND src IN ('query', 'campaign', 'community', '') AND opened_at >= ? AND opened_at <= ? ORDER BY id DESC LIMIT 250");
         $st0->execute([$since, waa_dt($now - 2)]); $qs = $st0->fetchAll(PDO::FETCH_ASSOC);
         if ($qs) {
             $phs = array_values(array_unique(array_map(function ($r) { return (string)$r['phone']; }, $qs))); $C = [];
