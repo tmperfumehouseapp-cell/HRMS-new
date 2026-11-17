@@ -14,6 +14,7 @@
  *    items whose failed message was itself a utility one (variant U).
  *  - One utility message per item. Every attempt is written to wa_ru_log (who, which number, which message, when). "Recovered" only ever means Meta said delivered / read.
  *  - When the utility message is delivered, the campaign's own later retry of that person is cancelled (no double message).
+ *  - ROUTE (known before sending): people the campaign skipped because Meta had already held / stopped marketing to them are NOT dropped: the same utility follow-up goes to them (if they asked / ordered recently).
  *  - Brakes: quiet hours, an hourly pool, a pause for an hour when 60%+ of the utility messages fail, 6 hours when Meta flags spam (131048).
  *  - Nothing is sent until at least one utility follow-up message is approved at Meta (Utility campaign → make the 6 follow-ups).
  * Settings: wa_ru_on 1 · wa_ru_hourly 3000 · wa_ru_wait_min 45 · wa_ru_ord_days 60 · wa_ru_pause_until (set by itself) · wa_ru_cursor (set by itself)
@@ -90,8 +91,8 @@ function wa_ru_tick(PDO $pdo): array
         $cursor = (int)setting_get($pdo, 'wa_ru_cursor', '0'); $lim = 600; $recOn = function_exists('wa_rec_cfg') ? !empty(wa_rec_cfg($pdo)['on']) : false; $recTries = function_exists('wa_rec_cfg') ? max(1, (int)wa_rec_cfg($pdo)['max_attempts'] - 1) : 2;
         $mo = implode(',', WA_RU_MARKETING_ONLY);
         $q = $pdo->prepare("SELECT i.id, i.camp_id, i.phone, i.name, i.err_code, i.status, i.sent_at FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id
-            WHERE (i.status = 'failed' OR ((i.status = 'retry' OR (i.status = 'sent' AND i.last_status = 'failed')) AND i.err_code IN ($mo))) AND COALESCE(i.variant, 'M') <> 'U' AND COALESCE(c.extra, '') NOT LIKE '%\"kind\":\"util\"%'
-              AND (c.started_at >= ? OR i.sent_at >= ?) AND i.id > ? AND NOT EXISTS (SELECT 1 FROM wa_ru_log l WHERE l.item_id = i.id) ORDER BY i.id LIMIT " . $lim);
+            WHERE (i.status = 'failed' OR ((i.status = 'retry' OR (i.status = 'sent' AND i.last_status = 'failed')) AND i.err_code IN ($mo)) OR " . wa_ru_known_sql() . ") AND COALESCE(i.variant, 'M') <> 'U' AND COALESCE(c.extra, '') NOT LIKE '%\"kind\":\"util\"%'
+              AND (c.started_at >= ? OR i.sent_at >= ? OR (i.status = 'skipped' AND COALESCE(c.started_at, c.created_at) >= '" . date('Y-m-d H:i:s', $nowTs - 3 * 86400) . "')) AND i.id > ? AND NOT EXISTS (SELECT 1 FROM wa_ru_log l WHERE l.item_id = i.id) ORDER BY i.id LIMIT " . $lim);
         $q->execute([$from, $from, $cursor]); $items = $q->fetchAll();
         if (!$items) { if ($cursor > 0) setting_set($pdo, 'wa_ru_cursor', '0'); $res['note'] = 'nothing to follow up'; return $res; }
         $res['looked'] = count($items); $in = implode(',', array_map(fn($x) => (int)$x['id'], $items));
@@ -104,7 +105,8 @@ function wa_ru_tick(PDO $pdo): array
         $sk = function (string $k) use (&$res, &$why) { $res['skipped']++; $why[$k] = ($why[$k] ?? 0) + 1; };
         foreach ($items as $it) {
             if (microtime(true) - $t0 > 38 || $left <= 0) { $broke = true; break; }
-            $ph = (string)$it['phone']; $iid = (int)$it['id']; $lastId = $iid; $ec = (int)$it['err_code']; $cls = wa_ru_class($ec);
+            $ph = (string)$it['phone']; $iid = (int)$it['id']; $lastId = $iid; $ec = (int)$it['err_code']; if ((string)$it['status'] === 'skipped' && $ec === 131026) $ec = 131050;   // skipped before sending because Meta had already stopped marketing to them (the skip text says 131026)
+            $cls = wa_ru_class($ec);
             if ($cls === 'never') { $sk('Meta will not deliver this one'); continue; }
             if (isset($recent[$ph]) || isset($seen[$ph])) { $sk('already got a utility message in the last 24 hours'); continue; }
             if (isset($got[$ph])) { $sk('delivered another way today'); continue; }
@@ -142,6 +144,20 @@ function wa_ru_tick(PDO $pdo): array
     return $res;
 }
 
+/** ROUTE: people the campaign already KNEW Meta would hold or block for marketing (held in the last days / stopped marketing) are skipped before sending: they get the utility follow-up instead of nothing. */
+function wa_ru_known_sql(): string
+{
+    return "(i.status = 'skipped' AND (i.err_code = 131049 OR (i.err_code = 131026 AND EXISTS (SELECT 1 FROM wa_unreach u WHERE u.phone = i.phone AND u.code = 131050) AND NOT EXISTS (SELECT 1 FROM wa_unreach u2 WHERE u2.phone = i.phone AND u2.code = 131026))))";
+}
+/** Per campaign, for the colour line: utility sent by Module B, utility delivered (Module B + the campaign's own utility share). */
+function wa_ru_counts(PDO $pdo, array $ids): array
+{
+    $ids = array_values(array_filter(array_map('intval', $ids))); if (!$ids || !wa_ru_tables($pdo)) return [];
+    $in = implode(',', $ids); $o = []; $z = ['ru_sent' => 0, 'ru_del' => 0, 'ru_fail' => 0, 'mix_sent' => 0, 'mix_del' => 0];
+    try { foreach ($pdo->query("SELECT r.camp_id, COUNT(*) AS n, SUM(m.status IN ('delivered', 'read')) AS d, SUM(r.ok = 0 OR m.status = 'failed') AS f FROM wa_ru_log r LEFT JOIN wa_messages m ON m.wamid = r.wamid AND r.wamid <> '' WHERE r.camp_id IN ($in) GROUP BY r.camp_id")->fetchAll() as $r) $o[(int)$r['camp_id']] = ['ru_sent' => (int)$r['n'], 'ru_del' => (int)$r['d'], 'ru_fail' => (int)$r['f']] + $z; } catch (Throwable $e) { }
+    try { foreach ($pdo->query("SELECT i.camp_id, COUNT(*) AS n, SUM(m.status IN ('delivered', 'read')) AS d FROM wa_camp_items i LEFT JOIN wa_messages m ON m.wamid = i.wamid AND i.wamid <> '' WHERE i.camp_id IN ($in) AND i.variant = 'U' AND i.status = 'sent' GROUP BY i.camp_id")->fetchAll() as $r) { $c = (int)$r['camp_id']; $o[$c] = ($o[$c] ?? $z); $o[$c]['mix_sent'] = (int)$r['n']; $o[$c]['mix_del'] = (int)$r['d']; } } catch (Throwable $e) { }
+    return $o;
+}
 /** What is waiting today (the business day), by reason — remembered for 2 minutes. */
 function wa_ru_diag(PDO $pdo, int $ordDays): array
 {
@@ -149,7 +165,7 @@ function wa_ru_diag(PDO $pdo, int $ordDays): array
     $from = function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 10:00:00');
     $o = ['failed_total' => 0, 'never' => 0, 'now' => 0, 'after_rec' => 0, 'util_ok' => 0, 'util_no' => 0, 'done' => 0, 'from' => $from, 'at' => time()];
     try {
-        $q = $pdo->prepare("SELECT i.err_code, COUNT(*) AS n FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id WHERE (c.started_at >= ? OR i.sent_at >= ?) AND COALESCE(i.variant, 'M') <> 'U' AND (i.status = 'failed' OR (i.status IN ('retry', 'sent') AND i.last_status = 'failed')) GROUP BY i.err_code"); $q->execute([$from, $from]);
+        $q = $pdo->prepare("SELECT i.err_code, COUNT(*) AS n FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id WHERE (c.started_at >= ? OR i.sent_at >= ?) AND COALESCE(i.variant, 'M') <> 'U' AND (i.status = 'failed' OR (i.status IN ('retry', 'sent') AND i.last_status = 'failed') OR " . wa_ru_known_sql() . ") GROUP BY i.err_code"); $q->execute([$from, $from]);
         foreach ($q->fetchAll() as $r) { $n = (int)$r['n']; $o['failed_total'] += $n; $cl = wa_ru_class((int)$r['err_code']); if ($cl === 'never') $o['never'] += $n; elseif ($cl === 'now') $o['now'] += $n; else $o['after_rec'] += $n; }
         if (wa_ru_tables($pdo)) { $q = $pdo->prepare("SELECT COUNT(*) FROM wa_ru_log WHERE at >= ?"); $q->execute([$from]); $o['done'] = (int)$q->fetchColumn(); }
         $q = $pdo->prepare("SELECT DISTINCT i.phone FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id WHERE (c.started_at >= ? OR i.sent_at >= ?) AND COALESCE(i.variant, 'M') <> 'U' AND (i.status = 'failed' OR (i.status IN ('retry', 'sent') AND i.last_status = 'failed')) AND i.err_code NOT IN (" . (function_exists('wa_rec_never_sql') ? implode(',', array_diff(WA_REC_NEVER, WA_RU_MARKETING_ONLY)) : '0') . ") LIMIT 6000"); $q->execute([$from, $from]);
