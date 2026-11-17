@@ -476,6 +476,24 @@
         const col = t.status === 'g' ? '#7cffb2' : t.status === 'a' ? '#ffd166' : '#ff8a80', f = (x) => '₹' + Number(x || 0).toLocaleString('en-IN');
         el.innerHTML = '<i style="width:8px;height:8px;border-radius:50%;background:' + col + ';display:inline-block;flex:none"></i>' + f(t.ticket) + '<span class="wx-tmt"> / ' + f(t.goal) + '</span>'; b.title = 'Ticket today ' + f(t.ticket) + ' · goal ' + f(t.goal) + (t.status === 'g' ? ' ✓' : ' · next order ' + f(t.need_next)); } catch (e) { } };
       paintTk(); setInterval(() => { if (!document.hidden) paintTk(); }, 300000); }
+
+    // 📣 Performance popups: a morning briefing (goes away by itself) and a summary about every 4–5 hours (stays until closed). Each shown once per slot; all numbers come from My Sales (my.coach).
+    { const SLOTS = [['m', 0, 'Good morning'], ['a', 14.5, 'Afternoon check'], ['e', 19, 'Evening check']], f = (x) => '₹' + Number(x || 0).toLocaleString('en-IN'), ls = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } };
+      const popup = (slot, d) => { const m = d.me || {}, t = d.tk || {}, qi = d.qinfo || {}, tm = d.team || {}, rows = [], pct = m.target > 0 ? Math.round(100 * (m.sales || 0) / m.target) : null;
+        rows.push(['🧾 Orders', (m.orders || 0)], ['💰 Sales', f(m.sales) + (pct != null ? ' · ' + pct + '% of ' + f(m.target) : '')]);
+        if (t && t.goal) rows.push(['🎯 Ticket', f(t.ticket) + ' / goal ' + f(t.goal) + (t.status === 'g' ? ' ✓' : t.need_next ? ' · next order ' + f(t.need_next) : '')]);
+        if (qi && qi.queries != null) rows.push(['💬 Queries', qi.queries + ' given · ' + (qi.query_orders || 0) + ' orders' + (qi.conv != null ? ' (' + qi.conv + '%)' : '') + (qi.need_more > 0 ? ' · ' + qi.need_more + ' more order' + (qi.need_more > 1 ? 's' : '') + ' for the goal' : '')]);
+        if (qi && qi.median != null) rows.push(['⚡ Reply speed', (+qi.median < 1 ? '<1' : Math.round(+qi.median * 10) / 10) + ' min typical']);
+        if (t && t.pct) rows.push(['🏅 Ticket bonus', t.hit ? '+' + t.pct + '% earned' : 'worth +' + t.pct + '% when your ticket reaches the goal']);
+        const tip = (d.tips || [])[0], tipT = tip ? (tip.text || tip.msg || tip.title || (Array.isArray(tip) ? tip[1] : '')) : '';
+        const el = document.createElement('div'); el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', 'Performance summary');
+        el.style.cssText = 'position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:99999;width:min(94vw,380px);background:#1b2540;color:#fff;border-radius:16px;padding:14px 16px;box-shadow:0 10px 30px rgba(0,0,0,.35);font:14px/1.4 system-ui,sans-serif';
+        el.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b style="font-size:16px">' + esc(slot[2]) + (S.me && S.me.name ? ', ' + esc(String(S.me.name).split(' ')[0]) : '') + '</b><button type="button" aria-label="Close" style="background:rgba(255,255,255,.15);color:#fff;border:0;border-radius:99px;width:30px;height:30px;font-size:16px;cursor:pointer">✕</button></div><div style="margin-top:8px;display:grid;gap:5px">' + rows.map((r) => '<div style="display:flex;justify-content:space-between;gap:10px"><span style="opacity:.85">' + r[0] + '</span><b style="text-align:right">' + esc(r[1]) + '</b></div>').join('') + '</div>' + (tipT ? '<div style="margin-top:9px;background:rgba(124,255,178,.15);border-radius:10px;padding:7px 9px;font-size:13px">💡 ' + esc(String(tipT).slice(0, 160)) + '</div>' : '');
+        const close = () => { try { el.remove(); } catch (e) { } }; el.querySelector('button').onclick = close; document.body.appendChild(el); if (slot[0] === 'm') setTimeout(close, 15000); };
+      const check = async () => { try { if (document.hidden) return; const now = new Date(), h = now.getHours() + now.getMinutes() / 60, biz = (h < 10 ? new Date(now - 864e5) : now).toISOString().slice(0, 10); let pick = null;
+          for (const sl of SLOTS) { const due = sl[0] === 'm' ? h >= 10 || h < 3 : h >= sl[1]; if (due && !ls('wxPop_' + biz + sl[0])) pick = sl; }
+          if (!pick) return; const d = await api.get('my.coach'); if (!d || !d.me) return; SLOTS.forEach((sl) => { if (sl[1] <= pick[1] && !ls('wxPop_' + biz + sl[0])) ls('wxPop_' + biz + sl[0], '1'); }); popup(pick, d); } catch (e) { } };
+      setTimeout(check, 4000); setInterval(check, 600000); }
     { const cn = R.querySelector('#wxCxN'); if (cn) cn.onclick = () => { if (!window.CXR) { toast('Refresh the page and try again.', true); return; } CXR.open({ askCustomer: true, source: 'whatsapp', onDone: () => { try { loadCxB(); } catch (e) { } } }); }; }   // ⚠ raise a complaint for ANY number — not the chat that is open
     { const fb = R.querySelector('#wxFb'); if (fb) custFindBar(fb); }
     // the open chat stays marked in the list on the left (PC), whichever list is drawn (Chats, Team, Requests, History)
