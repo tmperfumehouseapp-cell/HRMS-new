@@ -8,7 +8,7 @@
  *    but ONLY if they qualify for utility — they asked about a perfume on WhatsApp in the last 30 days, or ordered inside the order window (Meta's rule for utility).
  *    Everyone else is left alone ("no enquiry / order").
  *  - Which failures: 131049 (Meta held it: this customer got too many marketing messages) and 131050 (the customer stopped marketing messages) are marketing-only blocks,
- *    utility is not subject to them → tried after wa_ru_wait_min (default 45) minutes. Any other failure that another number / wording could fix goes to utility only AFTER
+ *    utility is not subject to them → tried after wa_ru_wait_min (default 10) minutes. Any other failure that another number / wording could fix goes to utility only AFTER
  *    Module A's recovery (wa_rec) used its tries on that person. NEVER: not on WhatsApp, own number, test group, spam flag, a wrong request.
  *  - Never to: opted out, wrote back since, delivered another way today, already got a utility follow-up for this item, already got one in the last 24 hours (any item),
  *    items whose failed message was itself a utility one (variant U).
@@ -39,7 +39,7 @@ function wa_ru_tables(PDO $pdo): bool
 function wa_ru_cfg(PDO $pdo): array
 {
     $g = function (string $k, string $d) use ($pdo) { try { $v = setting_get($pdo, $k, $d); return ($v === null || $v === '') ? $d : (string)$v; } catch (Throwable $e) { return $d; } };
-    return ['on' => $g('wa_ru_on', '1') !== '0', 'hourly' => max(10, min(20000, (int)$g('wa_ru_hourly', '3000'))), 'wait_min' => max(5, min(1440, (int)$g('wa_ru_wait_min', '45'))),
+    return ['on' => $g('wa_ru_on', '1') !== '0', 'hourly' => max(10, min(20000, (int)$g('wa_ru_hourly', '3000'))), 'wait_min' => max(5, min(1440, (int)$g('wa_ru_wait_min', '10'))),
             'ord_days' => in_array((int)$g('wa_ru_ord_days', '60'), [30, 60, 90, 120], true) ? (int)$g('wa_ru_ord_days', '60') : 60, 'pause_until' => (int)$g('wa_ru_pause_until', '0')];
 }
 /** Can utility fix this failure? 'now' = marketing-only block · 'after_rec' = a generic failure, utility only once Module A used its tries · 'never'. */
@@ -115,7 +115,8 @@ function wa_ru_tick(PDO $pdo): array
             $tid = (int)$pk['t']['id']; if (!array_key_exists($tid, $cache)) $cache[$tid] = wa_ru_tpl_ctx($pdo, $pk['t']);
             [$tUse, $ctx] = $cache[$tid]; if (!$tUse || !$ctx) { $sk('utility message not approved on a number with room'); continue; }
             $cand = array_filter($ctx['nums'], fn($x) => $x['left'] > 0); if (!$cand || $ctx['port_left'] <= 0) { $sk('no number with room'); continue; }
-            $good = array_filter($cand, fn($x) => in_array(($x['q'] ?? ''), ['GREEN', 'YELLOW'], true)); if ($good) $cand = $good;
+            $hi = array_filter($cand, fn($x) => ($x['q'] ?? '') === 'GREEN'); $md = array_filter($cand, fn($x) => ($x['q'] ?? '') === 'YELLOW');   // best delivery first: High (green) quality numbers, then Medium; a Low / unknown number never sends these
+            $cand = $hi ?: $md; if (!$cand) { $sk('no High / Medium quality number with room'); continue; }
             uasort($cand, fn($x, $y) => ($x['used'] / max(1, $x['cap'])) <=> ($y['used'] / max(1, $y['cap']))); $num = reset($cand); $nid = (int)$num['id']; $tSend = $num['tm'] ?? $tUse;
             $seen[$ph] = 1; [$ok, $rr, $ecs] = wa_send_tpl_one($pdo, ['phone' => $ph, 'wa_id' => (string)($c['wa_id'] ?? ''), 'camp_optout' => (int)($c['camp_optout'] ?? 0)], $tSend, $num, $pk['vars'], 'recover');
             try { $pdo->prepare("INSERT IGNORE INTO wa_ru_log (camp_id, item_id, phone, kind, number_id, tpl_id, wamid, ok, err_code, first_code, err, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
