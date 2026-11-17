@@ -203,6 +203,20 @@ function wa_ru_retry_tick(PDO $pdo, int $nowTs, int &$left, float $t0): array
     return $o;
 }
 
+/** ♻ Approved utility versions made for ANY marketing message (the newest $limit that no campaign has used up): they say "thanks for asking about {{perfume}} …" without an offer, so they fit any campaign.
+ *  Same shape as wa_util_usable() (approved on a WhatsApp account, examples with the variable labels). Remembered for the request. */
+function wa_ru_global_usable(PDO $pdo, int $limit = 12): array
+{
+    static $memo = null; if ($memo !== null) return array_slice($memo, 0, $limit);
+    wa_ru_load_util($pdo); $o = [];
+    try {
+        $q = $pdo->query("SELECT t.id, t.examples FROM wa_templates t WHERE t.category = 'UTILITY' AND t.name LIKE 'util\\_%' AND t.relabelled_at IS NULL AND (t.category_now IS NULL OR t.category_now = '' OR t.category_now <> 'MARKETING')
+            AND EXISTS (SELECT 1 FROM wa_tpl_waba w WHERE w.tpl_id = t.id AND w.status = 'APPROVED') ORDER BY t.id DESC LIMIT 40");
+        foreach ($q->fetchAll() as $r) { if (count($o) >= 12) break; $t = function_exists('wa_camp_tpl') ? wa_camp_tpl($pdo, (int)$r['id'], true, 0) : null; if (!$t || empty($t['ok_wabas'])) continue;
+            if (!is_array($t['examples'] ?? null)) $t['examples'] = json_decode((string)($r['examples'] ?? ''), true) ?: []; $o[] = $t; }
+    } catch (Throwable $e) { }
+    $memo = $o; return array_slice($o, 0, $limit);
+}
 /** One round (≤ 40 s) of the utility follow-up for failed marketing messages. */
 function wa_ru_tick(PDO $pdo): array
 {
@@ -231,6 +245,7 @@ function wa_ru_tick(PDO $pdo): array
         $q->execute([$from, $from, $cursor]); $items = $q->fetchAll();
         if (!$items) { if ($cursor > 0) setting_set($pdo, 'wa_ru_cursor', '0'); $rt = wa_ru_retry_tick($pdo, $nowTs, $left, $t0); $res['sent'] += $rt['sent']; $res['failed'] += $rt['failed']; $res['note'] = 'nothing new to follow up' . ($rt['sent'] + $rt['failed'] ? ' · retried ' . ($rt['sent'] + $rt['failed']) . ' from another number' : ''); return $res; }
         foreach (array_unique(array_map(fn($x) => (int)$x['ctpl'], $items)) as $tp) { try { $famU[$tp] = function_exists('wa_util_usable') ? wa_util_usable($pdo, $tp) : []; } catch (Throwable $e) { $famU[$tp] = []; } }
+        if (!array_filter($famU) && (string)setting_get($pdo, 'wa_u_reuse', '1') !== '0') { $gl = wa_ru_global_usable($pdo, 12); if ($gl) foreach ($famU as $tp0 => $_v) if (!$_v) $famU[$tp0] = $gl; }   // ♻ versions made for other marketing messages
         if (!$pool && !array_filter($famU)) { $res['note'] = 'no approved utility message yet (waiting for Meta)'; return $res; }
         $res['looked'] = count($items); $in = implode(',', array_map(fn($x) => (int)$x['id'], $items));
         $phones = array_values(array_unique(array_map(fn($x) => (string)$x['phone'], $items))); $pin = implode(',', array_map(fn($p) => $pdo->quote($p), $phones));

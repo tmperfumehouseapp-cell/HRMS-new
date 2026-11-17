@@ -247,20 +247,25 @@ function wa_util_offer_reply(PDO $pdo, string $key, string $text = ''): void
     } catch (Throwable $e) { error_log('wa_util_offer_reply: ' . $e->getMessage()); }
 }
 /** The utility messages a campaign can use: this message's family first, then any approved utility message. */
-function wa_util_list(PDO $pdo, int $tplId): array
+function wa_util_list(PDO $pdo, int $tplId, bool $onlyMine = false): array
 {
     $m = function_exists('wa_tpl_row') ? wa_tpl_row($pdo, $tplId) : null; $fam = $m ? (int)($m['family_id'] ?: $m['id']) : 0; $wabas = function_exists('wa_wabas') ? wa_wabas($pdo) : [];
-    $o = [];
-    foreach ($pdo->query("SELECT * FROM wa_templates WHERE category = 'UTILITY' ORDER BY id DESC LIMIT 300")->fetchAll() as $r) {
-        $st = function_exists('wa_tpl_status') ? wa_tpl_status($pdo, (int)$r['id'], $wabas) : ['status' => '?']; $status = is_array($st) ? (string)($st['status'] ?? '?') : (string)$st;
+    $o = []; $famQ = $fam > 0 ? $fam : -1;
+    // this message's own utility versions (any state) + EVERY approved utility message of every other marketing message (they can be used for any campaign): the newest 1,200
+    $sql = "SELECT t.* FROM wa_templates t WHERE t.category = 'UTILITY' AND (t.family_id = ?" . ($onlyMine ? ")" : " OR (t.relabelled_at IS NULL AND EXISTS (SELECT 1 FROM wa_tpl_waba w WHERE w.tpl_id = t.id AND w.status = 'APPROVED'))) ") . " ORDER BY (t.family_id = ?) DESC, t.id DESC LIMIT 1200";
+    $q = $pdo->prepare($sql); $q->execute([$famQ, $famQ]); $rows = $q->fetchAll(); $srcIds = [];
+    foreach ($rows as $r) { $x = json_decode((string)($r['extra'] ?? ''), true); if (is_array($x) && !empty($x['utility_for'])) $srcIds[(int)$x['utility_for']] = 1; }
+    $srcName = []; if ($srcIds) { try { foreach ($pdo->query("SELECT id, name FROM wa_templates WHERE id IN (" . implode(',', array_map('intval', array_keys($srcIds))) . ")")->fetchAll() as $z) $srcName[(int)$z['id']] = (string)$z['name']; } catch (Throwable $e) { } }
+    foreach ($rows as $r) {
         $mine = $fam > 0 && (int)($r['family_id'] ?? 0) === $fam;
-        if (!$mine && !in_array($status, ['approved', 'partial'], true)) continue;
+        if ($mine) { $st = function_exists('wa_tpl_status') ? wa_tpl_status($pdo, (int)$r['id'], $wabas) : ['status' => '?']; $status = is_array($st) ? (string)($st['status'] ?? '?') : (string)$st; } else $status = 'approved';
         $ex = json_decode((string)($r['examples'] ?? ''), true); $lab = is_array($ex) ? array_map('strval', (array)($ex['labels'] ?? [])) : []; preg_match_all('/\{\{(\d+)\}\}/', (string)$r['body'], $vm);
         $vars = []; foreach (array_unique(array_map('intval', $vm[1])) as $vi) $vars[] = ['n' => $vi, 'what' => ['name' => 'customer name', 'perfume' => 'perfume they asked about / ordered', 'date' => 'date they asked / ordered'][$lab[$vi - 1] ?? ''] ?? ($lab[$vi - 1] ?? '')];
-        $per = []; if ($mine) { $ws = []; $q = $pdo->prepare("SELECT waba_id, status FROM wa_tpl_waba WHERE tpl_id = ?"); $q->execute([(int)$r['id']]); foreach ($q->fetchAll() as $w) $ws[(string)$w['waba_id']] = strtolower((string)$w['status']);
+        $per = []; if ($mine) { $ws = []; $q2 = $pdo->prepare("SELECT waba_id, status FROM wa_tpl_waba WHERE tpl_id = ?"); $q2->execute([(int)$r['id']]); foreach ($q2->fetchAll() as $w) $ws[(string)$w['waba_id']] = strtolower((string)$w['status']);
             foreach (wa_util_numbers($pdo) as $n) $per[] = ['label' => $n['label'], 'status' => $ws[$n['waba']] ?? 'not sent']; }
         $draft = $mine && !array_filter($per, fn($p) => $p['status'] !== 'not sent');
-        $o[] = ['id' => (int)$r['id'], 'name' => (string)$r['name'], 'body' => (string)$r['body'], 'status' => $draft ? 'draft' : $status, 'draft' => $draft, 'relabelled' => strtoupper((string)($r['category_now'] ?? '')) === 'MARKETING' || !empty($r['relabelled_at']), 'mine' => $mine, 'vars' => $vars, 'per' => $per];
+        $xx = json_decode((string)($r['extra'] ?? ''), true); $srcId = is_array($xx) ? (int)($xx['utility_for'] ?? 0) : 0;
+        $o[] = ['id' => (int)$r['id'], 'name' => (string)$r['name'], 'body' => (string)$r['body'], 'status' => $draft ? 'draft' : $status, 'draft' => $draft, 'relabelled' => strtoupper((string)($r['category_now'] ?? '')) === 'MARKETING' || !empty($r['relabelled_at']), 'mine' => $mine, 'vars' => $vars, 'per' => $per, 'labels' => $lab, 'source' => $srcName[$srcId] ?? ''];
     }
     usort($o, fn($a, $b) => [$b['mine'], $b['status'] === 'approved'] <=> [$a['mine'], $a['status'] === 'approved']);
     return $o;
@@ -274,7 +279,7 @@ if (in_array($__wut, ['wa.tpl_make_utility', 'wa.tpl_utility_list', 'wa.util_poo
     if (!function_exists('wa_tables') || !wa_tables($pdo)) json_response(['error' => 'WhatsApp storage is not available.'], 500);
     if (function_exists('wa_guard_admin')) wa_guard_admin($pdo, $auth);
     if (function_exists('wa_tpl_tables')) wa_tpl_tables($pdo);
-    if ($__wut === 'wa.tpl_utility_list') json_response(['ok' => true, 'items' => wa_util_list($pdo, (int)($_GET['tpl_id'] ?? 0))]);
+    if ($__wut === 'wa.tpl_utility_list') json_response(['ok' => true, 'items' => wa_util_list($pdo, (int)($_GET['tpl_id'] ?? 0), !empty($_GET['mine']))]);
     if ($__wut === 'wa.util_pool') json_response(['ok' => true, 'items' => wa_util_pool_view($pdo)]);
     if ($__wut === 'wa.util_pool_make') { if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') json_response(['error' => 'Method not allowed.'], 405); wa_util_pool_make($pdo, (int)($auth['employee_id'] ?? 0)); json_response(['ok' => true, 'items' => wa_util_pool_view($pdo)]); }
     if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') json_response(['error' => 'Method not allowed.'], 405);

@@ -355,7 +355,7 @@
     const AUT = { approved: ['✅', '#15803d', 'approved by Meta'], waiting: ['⏳', '#b45309', 'sent to Meta — waiting for approval'], queued: ['⏳', '#b45309', 'queued — goes to Meta by itself within a minute'], rejected: ['❌', '#b91c1c', 'rejected / moved to marketing by Meta'] };
     async function renderAutoUt() {
       const box = $(m.body, '#wtAutoUt'); if (!box) return; if (!D.id || D.category !== 'MARKETING') { box.innerHTML = ''; return; }
-      let r; try { r = await api.get('wa.tpl_utility_list', { tpl_id: D.id }); } catch (e) { box.innerHTML = ''; return; }
+      let r; try { r = await api.get('wa.tpl_utility_list', { tpl_id: D.id, mine: 1 }); } catch (e) { box.innerHTML = ''; return; }
       const mine = (r.items || []).filter((x) => x.mine), st = (x) => (x.relabelled || ['rejected', 'disabled'].includes(x.status)) ? 'rejected' : (['approved', 'partial'].includes(x.status) ? 'approved' : (x.draft ? 'queued' : 'waiting')), n = { approved: 0, waiting: 0, queued: 0, rejected: 0 };
       mine.forEach((x) => { n[st(x)]++; }); const target = 10, ok = n.approved, made = mine.length, sug = ok >= 3 ? ['#15803d', '✅ ' + ok + ' utility versions are approved — this message is ready to start as utility (campaign card → Start as utility; the 💡 suggestion picks the best mix).'] : made >= target ? ['#b45309', '⏳ All ' + made + ' are made and at Meta — waiting for approval. They are used by themselves as soon as they are approved.'] : ['#b45309', '⏳ ' + made + ' of ' + target + ' made — the rest are made and sent to Meta by themselves (a few every minute).'];
       box.innerHTML = `<div class="wt-ut"><h4>💸 Utility versions — made and sent to Meta automatically <span class="wp-pill ${ok ? 'ok' : 'b'}">${made} made</span></h4>
