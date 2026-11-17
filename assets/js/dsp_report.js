@@ -59,6 +59,7 @@ const DSP = (() => {
       '.dr-t tr.dr-band .x{float:right;font-weight:700;opacity:.85;} .dr-t tr.dr-band .x button{margin-left:8px;}',
       '.dr-more td{text-align:center;color:#6b7280;font-weight:700;background:#fafbfc;max-width:none !important;} .dr-more button{border:1px solid #cfd5dd;background:#fff;border-radius:99px;font:inherit;font-size:11px;font-weight:800;padding:0 10px;height:19px;cursor:pointer;margin-left:6px;} .dr-more button:hover{background:#111827;color:#fff;}',
       '.dr-add{border:1px solid #b42318;color:#b42318;background:#fff;border-radius:99px;padding:0 10px;height:19px;font:inherit;font-size:11px;font-weight:800;cursor:pointer;} .dr-add:hover{background:#b42318;color:#fff;}',
+      '.dr-pen{border:1px solid #cfd5dd;background:#fff;color:#374151;border-radius:99px;width:21px;height:19px;padding:0;font:inherit;font-size:11px;line-height:1;cursor:pointer;margin-left:3px;vertical-align:middle;} .dr-pen:hover{background:#111827;color:#fff;border-color:#111827;}',
       '.dr-go{border:0;background:#12a150;color:#fff;border-radius:99px;padding:0 11px;height:21px;font:inherit;font-size:11px;font-weight:800;cursor:pointer;} .dr-go:hover{background:#0d8a43;} .dr-go.dk{background:#111827;} .dr-go[disabled]{opacity:.55;cursor:default;} .dr-no{border:1px solid #cfd5dd;background:#fff;color:#14161a;border-radius:99px;padding:0 9px;height:20px;font:inherit;font-size:11px;font-weight:800;cursor:pointer;}',
       '.dr-sel{height:22px;padding:0 4px;font:inherit;font-size:11.5px;border:1px solid #cfd5dd;border-radius:7px;background:#fff;max-width:130px;} .dr-tx{height:22px;padding:0 7px;font:inherit;font-size:11.5px;border:1px solid #cfd5dd;border-radius:7px;background:#fff;}',
       '.dr-f{display:flex;flex-direction:column;gap:5px;padding:3px 0;} .dr-f .dr-sel{max-width:82px;} .dr-f .l{gap:4px;} .dr-f .l{display:inline-flex;gap:5px;align-items:center;} .dr-f .tn{border:1.5px solid #111827;width:78px;font-family:ui-monospace,Menlo,Consolas,monospace;} .dr-f .lk2{width:160px;font-size:11px;color:#1d4ed8;font-family:ui-monospace,Menlo,Consolas,monospace;}',
@@ -403,7 +404,15 @@ const DSP = (() => {
       if (!tn) return '';
       return '<button type="button" class="dl-tn" data-trk="' + r.id + '" title="Open the Order card: payment, salesperson, commission, complaints, chat and the live journey">' + esc(tn) + '</button>' + (lk ? ' <a class="lk" href="' + esc(lk) + '" target="_blank" rel="noopener" title="Open the courier tracking page">↗</a>' : '') + liveBadge(r);
     }
-    function actionCell(r) {
+    /* ✎ the pencil (Admin): another courier's tracking ID, close an order by hand, mark a hand-tracked parcel delivered / returned */
+    function penBtn(r) {
+      if (!isAdmin()) return '';
+      const g = r.grp;
+      if (!(g === 2 || g === 3 || g === 10 || (g === 8 && r.status === 'cancelled') || ((g === 4 || g === 5) && r.manual && r.status === 'transit'))) return '';
+      return ' <button type="button" class="dr-pen" data-hand="' + r.id + '" title="Edit by hand: write the tracking ID of another courier (DTDC, India Post ...), close the order, or mark it delivered">✎</button>';
+    }
+    function actionCell(r) { return actionCell0(r) + penBtn(r); }
+    function actionCell0(r) {
       const g = r.grp, ca = can();
       if (g === 2 || g === 10) return ca ? '<button type="button" class="dr-add" data-add="' + r.id + '">+ Add tracking ID</button>' : '<span class="bd-sub" style="font-size:11px">waiting for the Tracking person</span>';
       if (g === 9) return isAdmin() ? '<button type="button" class="dr-go" data-ap="' + r.id + '">Approve</button> <button type="button" class="dr-no" data-rj="' + r.id + '">Reject</button>' : '<span class="dr-pill pu">waiting for Admin</span>';
@@ -412,7 +421,7 @@ const DSP = (() => {
         return (ca ? '<button type="button" class="dr-rm" data-rm="' + r.id + '" data-v="1" title="COD money has arrived for this parcel">Money received</button>' : '<span class="bd-sub">pending</span>') + cod;
       }
       if (g === 7) return r.remit_at ? '<button type="button" class="dr-rm on" data-rm="' + r.id + '" data-v="0"' + (ca ? '' : ' disabled') + ' title="Money received · ' + esc(r.remit_by) + ' · ' + esc(fdt(r.remit_at)) + (ca ? ' — click to undo' : '') + '">✓ received</button>' : '<span class="bd-sub" style="font-size:11px">Prepaid</span>';
-      if (g === 8) return r.case_end ? '<span class="bd-sub" style="font-size:11px">untraceable · ' + esc(r.case_end.by) + ' · ' + esc(fdt(r.case_end.at)) + '</span>' : '<span class="bd-sub">—</span>';
+      if (g === 8) return r.case_end ? '<span class="bd-sub" style="font-size:11px">untraceable · ' + esc(r.case_end.by) + ' · ' + esc(fdt(r.case_end.at)) + '</span>' : (r.note ? '<span class="bd-sub" style="font-size:11px">closed by hand · ' + esc(r.note) + '</span>' : (/cancel/i.test(r.sr_status || '') ? '<span class="bd-sub" style="font-size:11px">Shiprocket cancelled</span>' : '<span class="bd-sub">—</span>'));
       return r.sr_status ? '<span class="bd-sub" style="font-size:11px">' + esc(r.sr_status.charAt(0) + r.sr_status.slice(1).toLowerCase()) + '</span>' : '';   // 3, 4, 5
     }
     const fdl = (d) => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d || ''); if (!m) return d || ''; const dt = new Date(+m[1], +m[2] - 1, +m[3]); return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][dt.getDay()] + ' ' + (+m[3]) + ' ' + MON[+m[2] - 1]; };
@@ -613,6 +622,45 @@ const DSP = (() => {
         + '<span class="l"><span class="bd-sub" style="font-size:11px;font-weight:700">Courier link</span><input class="dr-tx lk2" data-fl placeholder="Tracking page link (optional)" autocomplete="off"><span class="dr-pill ok" data-fa style="display:none">auto-filled</span></span></div>';
       fillLink(ac);
       const t = ac.querySelector('[data-ft]'); if (t) t.focus();
+    }
+    function handForm(id) {
+      const r = findRow(id), tr = el.querySelector('tr.rw[data-id="' + id + '"]'); if (!r || !tr) return;
+      const ac = tr.querySelectorAll('td')[10];
+      const cs = (R.couriers || []).filter((c) => c.active);
+      const pre = r.manual ? cs.find((c) => c.name.toLowerCase() === String(r.courier || '').toLowerCase()) : null;
+      let h = '<div class="dr-f" data-form="' + id + '">';
+      if (r.status !== 'delivered' && r.status !== 'rto') {
+        h += '<span class="l"><select class="dr-sel" data-fc><option value="">Courier ▾</option>' + cs.map((c) => '<option value="' + esc(c.name) + '" data-pat="' + esc(c.link || '') + '"' + (pre && pre.id === c.id ? ' selected' : '') + '>' + esc(c.name) + '</option>').join('') + '</select>'
+          + '<input class="dr-tx tn" data-ft placeholder="Tracking ID" maxlength="40" autocomplete="off" autocapitalize="characters" value="' + (r.manual ? esc(r.tracking_no || '') : '') + '"><button type="button" class="dr-go" data-hs="' + id + '">Save</button><button type="button" class="dr-no" data-fx="' + id + '">✕</button></span>'
+          + '<span class="l"><span class="bd-sub" style="font-size:11px;font-weight:700">Courier link</span><input class="dr-tx lk2" data-fl placeholder="Tracking page link (optional)" autocomplete="off"><span class="dr-pill ok" data-fa style="display:none">auto-filled</span></span>';
+      }
+      if (r.status === 'placed' || r.status === 'tracked') h += '<span class="l"><select class="dr-sel" data-hw style="max-width:150px"><option value="">Or close the order ▾</option><option>Cancelled by CC</option><option>Refunded</option><option>COD not available</option><option>Other</option></select><button type="button" class="dr-no" data-hc="' + id + '">Close order</button></span>';
+      if (r.manual && r.status === 'transit') h += '<span class="l"><button type="button" class="dr-go" data-hm="' + id + '|delivered">Mark delivered</button><button type="button" class="dr-no" data-hm="' + id + '|rto">Mark returned</button></span>';
+      if (r.status === 'cancelled' && r.note && !/cancel/i.test(r.sr_status || '')) h += '<span class="l"><button type="button" class="dr-no" data-hr="' + id + '">Open the order again</button></span>';
+      ac.innerHTML = h + '</div>';
+      if (ac.querySelector('[data-fl]')) fillLink(ac);
+      const t = ac.querySelector('[data-ft]'); if (t) t.focus();
+    }
+    async function handPost(body, btn) {
+      btn.disabled = true;
+      try { const r = await api.post('dp.dsp_hand', body); BD.toast(r.message); await load(); }
+      catch (e) { btn.disabled = false; BD.toast(e.message, true); }
+    }
+    async function handSave(id, btn) {
+      const f = el.querySelector('[data-form="' + id + '"]'); if (!f) return;
+      const tn = f.querySelector('[data-ft]').value.trim(), co = f.querySelector('[data-fc]').value, lk = f.querySelector('[data-fl]').value.trim();
+      if (!co) { f.querySelector('[data-fc]').focus(); return BD.toast('Choose the courier first.', true); }
+      if (!tn) { f.querySelector('[data-ft]').focus(); return BD.toast('Type the tracking ID.', true); }
+      const r = findRow(id);
+      if (r && r.tracking_no && r.tracking_no !== tn && !(await BD.confirm('Replace the tracking ID of ' + r.order + '?', 'Now: ' + r.tracking_no + ' (' + (r.courier || 'no courier') + '). New: ' + tn + ' (' + co + '). The order moves to In transit and Shiprocket will no longer change this ID.', 'Replace'))) return;
+      return handPost({ id: +id, mode: 'track', tracking_no: tn, courier: co, link: lk }, btn);
+    }
+    async function handClose(id, btn) {
+      const f = el.querySelector('[data-form="' + id + '"]'); if (!f) return;
+      const why = f.querySelector('[data-hw]').value; if (!why) { f.querySelector('[data-hw]').focus(); return BD.toast('Choose why the order is closed.', true); }
+      const r = findRow(id);
+      if (!(await BD.confirm('Close ' + (r ? r.order : 'this order') + '?', 'Reason: ' + why + '. It moves to Cancelled and no tracking ID is asked for it any more.', 'Close order', true))) return;
+      return handPost({ id: +id, mode: 'close', reason: why }, btn);
     }
     function fillLink(box) {
       const l = box.querySelector('[data-fl]'); if (!l || l.dataset.touched === '1') return;
@@ -856,6 +904,11 @@ const DSP = (() => {
       if (d.dn) { const v = d.v === '1'; b.disabled = true; try { const r = await api.post('dp.dsp_done', { ids: [+d.dn], done: v }); const row = findRow(d.dn); if (row) { row.done_at = v ? r.at : ''; row.done_by = v ? r.by : ''; patch(d.dn); } } catch (er) { BD.toast(er.message, true); b.disabled = false; } return; }
       if (d.rm) { const v = d.v === '1'; b.disabled = true; try { await api.post('dp.dsp_remit', { ids: [+d.rm], remit: v }); await load(); } catch (er) { BD.toast(er.message, true); b.disabled = false; } return; }
       if (d.add) return addForm(d.add);
+      if (d.hand) return handForm(d.hand);
+      if (d.hs) return handSave(d.hs, b);
+      if (d.hc) return handClose(d.hc, b);
+      if (d.hm) { const [id, to] = d.hm.split('|'); if (!(await BD.confirm(to === 'rto' ? 'Mark this parcel returned?' : 'Mark this parcel delivered?', 'Do this only after you checked it on the courier\'s tracking page.', to === 'rto' ? 'Returned' : 'Delivered'))) return; return handPost({ id: +id, mode: 'status', to }, b); }
+      if (d.hr) return handPost({ id: +d.hr, mode: 'reopen' }, b);
       if (d.fx) return patch(d.fx);
       if (d.fs) return sendForm(d.fs, b);
       if (d.urec) return recordU(d.urec, b);
