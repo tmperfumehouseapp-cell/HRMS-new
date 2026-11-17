@@ -513,15 +513,16 @@ html.wxdk [data-tone]{background:rgba(128,128,128,.12) !important;color:#e9edef}
       if (fin.length) hl += finHtml(fin, cardHtml);
       if (D.total > D.campaigns.length) hl += `<div class="wp-row" style="justify-content:center;margin:10px 0"><button type="button" class="wp-btn" id="cMore">Load more campaigns (${fmt(D.total - D.campaigns.length)} more)</button></div>`;
       el.innerHTML = h + '<div id="cpList">' + hl + '</div></div>';
-      // 🧹 compact page (owner, 18 Nov 2026) — the order the owner chose: 1 alerts (one line) · 1b numbers strip · 2 today's plan (one line) · 3 best messages · 4 today's numbers (sent / delivered / failed / spent) · 5 Campaigns title + buttons · 6 the campaigns (SENDING first, Finished tiles below) · 7 everything else in one collapsed box
+      // 🧹 compact page (owner, 18 Nov 2026) — the order the owner chose: 1 alerts (one line) · 1b numbers strip · 2 today's plan (one line) · 3 best messages · 3b hour by hour · 4 today's numbers (sent / delivered / failed / spent) · 5 Campaigns title + buttons · 6 the campaigns (SENDING first, Finished tiles below) · 7 everything else in one collapsed box
       try {
         const root = $(el, '#cpKeep'); if (root) {
           const arrange = () => {
             const q = (sel) => root.querySelector(':scope > ' + sel);
             const best = (() => { const r = root.querySelector('#rkBody'); let n = r; while (n && n.parentElement !== root) n = n.parentElement; return n; })();
+            const hours = (() => { const r = root.querySelector('#hrBody'); let n = r; while (n && n.parentElement !== root) n = n.parentElement; return n; })();   // 🕒 Which hour suits best: hour by hour, right after Best messages
             const pl = q('#cpPl'); if (pl && !pl.querySelector(':scope > details[data-cmp]')) { const d = document.createElement('details'); const ex = (pl.textContent.match(/Expected\s+[\d,]+\s+orders\s+for\s+₹[\d,]+/) || [''])[0]; const sm = document.createElement('summary'); sm.style.cssText = 'cursor:pointer;font-weight:700;font-size:13px'; sm.textContent = '📋 Today’s plan' + (ex ? ' — ' + ex : '') + ' ▾'; d.appendChild(sm); while (pl.firstChild) d.appendChild(pl.firstChild); d.dataset.cmp = '1'; pl.appendChild(d); try { d.open = localStorage.getItem('cpPlanOpen') === '1'; } catch (e0) { } d.addEventListener('toggle', () => { try { localStorage.setItem('cpPlanOpen', d.open ? '1' : '0'); } catch (e1) { } }); }
             let box = q('#cpPanels'); if (!box) { box = document.createElement('details'); box.id = 'cpPanels'; box.className = 'wp-cd'; box.style.cssText = 'margin:8px 0'; const sm = document.createElement('summary'); sm.style.cssText = 'cursor:pointer;font-weight:700;font-size:13px'; sm.textContent = '⚙ More: daily plan, hours, room per number, drip, planner and totals ▾'; box.appendChild(sm); try { box.open = localStorage.getItem('cpPanelsOpen') === '1'; } catch (e0) { } box.addEventListener('toggle', () => { try { localStorage.setItem('cpPanelsOpen', box.open ? '1' : '0'); } catch (e1) { } }); }
-            const first = [q('#cpAl'), q('#cpNum'), pl, best, q('.cp-hero'), q('.wp-top'), q('#cpList')].filter(Boolean);
+            const first = [q('#cpAl'), q('#cpNum'), pl, best, hours, q('.cp-hero'), q('.wp-top'), q('#cpList')].filter(Boolean);
             const rest = [...root.children].filter((n) => !first.includes(n) && n !== box);
             rest.forEach((n) => box.appendChild(n));
             const want = [...first, box]; const have = [...root.children];
