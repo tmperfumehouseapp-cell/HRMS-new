@@ -428,7 +428,7 @@ function dp_dsp_rep_filters(array $g) {
     if ($from < date('Y-m-d', strtotime($today . ' -' . (DP_DSP_WIN + 40) . ' days'))) $from = date('Y-m-d', strtotime($today . ' -' . (DP_DSP_WIN + 40) . ' days'));
     $hm = function ($v, $d) { $v = trim((string)$v); return preg_match('/^([01]?\d|2[0-3]):[0-5]\d$/', $v) ? str_pad($v, 5, '0', STR_PAD_LEFT) : $d; };
     return ['by' => $by, 'from' => $from, 'to' => $to, 'tfrom' => $hm($g['tfrom'] ?? '', ''), 'tto' => $hm($g['tto'] ?? '', ''),
-        'store' => preg_replace('/[^A-Za-z0-9_\-]/', '', (string)($g['store'] ?? '')), 'q' => trim((string)($g['q'] ?? ''))];
+        'store' => preg_replace('/[^A-Za-z0-9_\-]/', '', (string)($g['store'] ?? '')), 'q' => trim((string)($g['q'] ?? '')), 'hand' => !empty($g['hand'])];
 }
 /** The "Done" tick on a parcel (who checked it, when). The two columns are added the first time they are needed. */
 function dp_dsp_done_col(PDO $pdo) {
@@ -490,6 +490,7 @@ function dp_dsp_rep_where(array $f, array &$par) {
         if ($a <= $b) { $w[] = "TIME($col) BETWEEN ? AND ?"; $par[] = $a; $par[] = $b; } else { $w[] = "(TIME($col) >= ? OR TIME($col) <= ?)"; $par[] = $a; $par[] = $b; }
     }
     if ($f['store'] !== '') { $w[] = "store_key = ?"; $par[] = $f['store']; }
+    if (!empty($f['hand'])) $w[] = "manual != 0";   // only parcels sent by another courier (tracking ID written by hand): Shiprocket cannot update these
     if ($f['q'] !== '') { $l = '%' . str_replace(['%', '_'], ['\\%', '\\_'], ltrim($f['q'], '#')) . '%'; $w[] = "(order_name LIKE ? OR tracking_no LIKE ? OR customer LIKE ? OR phone LIKE ? OR pend_track LIKE ?)"; array_push($par, $l, $l, $l, $l, $l); }
     return implode(' AND ', $w);
 }
