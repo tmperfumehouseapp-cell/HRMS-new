@@ -22,7 +22,9 @@ if ($__tkA === 'wq.tk_cfg') {
         if (isset($in['goal'])) setting_set($pdo, 'tk_goal', (string)max(0, min(50000, (int)$in['goal'])));
         if (isset($in['hold'])) setting_set($pdo, 'tk_hold', !empty($in['hold']) ? '1' : '0');
         if (isset($in['pct'])) setting_set($pdo, 'tk_bonus_pct', (string)max(0, min(50, (float)$in['pct'])));
+        if (isset($in['offer'])) setting_set($pdo, 'tk_offer', mb_substr(trim((string)$in['offer']), 0, 300));
+        if (isset($in['cust'])) setting_set($pdo, 'tk_cust_goal', mb_substr(trim((string)$in['cust']), 0, 300));
         if (isset($in['pay'])) setting_set($pdo, 'tk_pay', !empty($in['pay']) ? '1' : '0');
     }
-    $c = tk_cfg($pdo); json_response(['ok' => true, 'goal' => (int)$c['goal'], 'hold' => $c['hold'], 'pct' => $c['pct']]);
+    $c = tk_cfg($pdo); json_response(['ok' => true, 'goal' => (int)$c['goal'], 'hold' => $c['hold'], 'pct' => $c['pct'], 'offer' => $c['offer'], 'cust' => $c['cust']]);
 }

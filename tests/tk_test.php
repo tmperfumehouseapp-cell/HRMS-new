@@ -9,4 +9,7 @@ $eq('hold: low ticket, 4 orders, 3 waiting', tk_hold(2100, 4, 3, 2300, 4, 3), tr
 $eq('no hold: ticket fine', tk_hold(2400, 5, 6, 2300, 4, 3), false); $eq('no hold: nobody waiting', tk_hold(2100, 5, 2, 2300, 4, 3), false); $eq('no hold: switch value 0', tk_hold(2100, 5, 5, 0, 4, 3), false);
 // the hold needs company: 30% of the people at the goal
 $eq('share: 3 of 10 = 30%', tk_hold_share_ok(3, 10, 30), true); $eq('share: 2 of 10 is too few', tk_hold_share_ok(2, 10, 30), false); $eq('share: nobody working', tk_hold_share_ok(0, 0, 30), false); $eq('share: everybody low = no hold', tk_hold_share_ok(0, 12, 30), false);
+// big-order customers and slow repliers
+$eq('vip: avg 3000 >= 2700', tk_is_vip(2, 6000, 2700), true); $eq('vip: avg 1800 no', tk_is_vip(3, 5400, 2700), false); $eq('vip: no orders', tk_is_vip(0, 0, 2700), false); $eq('vip: goal off', tk_is_vip(2, 6000, 0), false);
+$eq('slow: 2x', tk_slow(10, 5), true); $eq('slow: 1.5x no', tk_slow(7.5, 5), false); $eq('slow: unknown', tk_slow(null, 5), false);
 echo $bad ? "tk test: $bad problem(s)\n" : "tk test: ok\n"; exit($bad ? 1 : 0);
