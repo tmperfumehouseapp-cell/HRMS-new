@@ -523,7 +523,7 @@ function wmo_shiprocket(PDO $pdo, array $r, array $cust): string
     } catch (Throwable $e) { error_log('wmo_shiprocket: ' . $e->getMessage()); return 'Shiprocket order not made: ' . mb_substr($e->getMessage(), 0, 120); }
 }
 /* ───────────── ✏️ UPDATE ORDER: the salesperson removes / adds perfumes in a manual order (same total, same payment) ─────────────
- * Allowed until a tracking ID is given: after that the box is packed. Who: the person who made / holds the order, Admin, HR, the Sales Head. */
+ * Allowed until a tracking ID is given: after that the box is packed. Who: every salesperson (any employee login), Admin, HR. */
 /** '' when the order may still be changed, else the reason in plain words */
 function wmo_edit_lock(PDO $pdo, array $r): string
 {
@@ -536,10 +536,8 @@ function wmo_edit_lock(PDO $pdo, array $r): string
 }
 function wmo_edit_can(PDO $pdo, array $auth, array $r): bool
 {
-    if (in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true)) return true; $me = (int)($auth['employee_id'] ?? 0); if ($me <= 0) return false;
-    if ((int)$r['emp_id'] === $me || (int)$r['assign_emp'] === $me) return true;
-    try { $q = $pdo->prepare("SELECT employee_id FROM order_allocations WHERE source = ? AND order_id = ?"); $q->execute([wmo_store_key(), (string)wmo_sid((int)$r['id'])]); if ((int)$q->fetchColumn() === $me) return true; } catch (Throwable $e) { }   // the order was allocated to this person
-    return function_exists('qe_viewer_ok') && qe_viewer_ok($pdo, $auth);   // the Sales Head
+    // 17 Nov, the owner's rule: EVERY salesperson may update any manual order (not only the one who made it, not only the Sales Head). Who changed what is kept in the order's history.
+    return in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true) || (int)($auth['employee_id'] ?? 0) > 0;
 }
 /** "2 × Azz Most Desired 50 ml, 1 × Lunelle Chain" */
 function wmo_lines_text(array $L): string { return implode(', ', array_map(fn($l) => (int)$l['qty'] . ' × ' . trim($l['short'] . (!empty($l['chain']) ? '' : ' ' . $l['label'])), $L)); }
@@ -832,7 +830,7 @@ if (strpos($__wmo, 'wmo.') === 0) {
         }
         case 'wmo.edit_get': {   // ✏️ the order as the Update sheet needs it: its perfumes / chains / other products with their catalogue ids, and whether it may still be changed
             $q = $pdo->prepare("SELECT * FROM wmo_order WHERE " . (!empty($in['id']) ? "id = ?" : "order_no = ?") . " LIMIT 1"); $q->execute([!empty($in['id']) ? (int)$in['id'] : strtoupper(ltrim(trim((string)($in['order_no'] ?? '')), '#'))]); $r = $q->fetch();
-            if (!$r) json_response(['error' => 'Manual order not found.'], 404); if (!wmo_edit_can($pdo, $auth, $r)) json_response(['error' => 'Only the salesperson of this order, the Sales Head or Admin can change it.'], 403);
+            if (!$r) json_response(['error' => 'Manual order not found.'], 404); if (!wmo_edit_can($pdo, $auth, $r)) json_response(['error' => 'Log in with your own employee login to change an order.'], 403);
             $L = json_decode((string)$r['lines_json'], true) ?: []; $cu = json_decode((string)($r['cust_json'] ?? ''), true) ?: [];
             $ed = json_decode((string)($r['edits_json'] ?? ''), true) ?: [];
             json_response(['ok' => true, 'id' => (int)$r['id'], 'order_no' => (string)$r['order_no'], 'status' => (string)$r['status'], 'name' => (string)($cu['name'] ?? ''), 'phone' => (string)$r['phone'], 'pay' => (string)$r['pay'], 'total' => $r['total_p'] / 100, 'paid' => $r['paid_p'] / 100, 'cod' => $r['cod_p'] / 100, 'lock' => wmo_edit_lock($pdo, $r),
@@ -842,7 +840,7 @@ if (strpos($__wmo, 'wmo.') === 0) {
         case 'wmo.update': {   // ✏️ save the changed perfumes. The total, the payment and the address stay exactly as they are; Orders, ML, commission, the SKU sheet and Dispatch follow the new perfumes.
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
             $q = $pdo->prepare("SELECT * FROM wmo_order WHERE id = ?"); $q->execute([(int)($in['id'] ?? 0)]); $r = $q->fetch(); if (!$r) json_response(['error' => 'Manual order not found.'], 404);
-            if (!wmo_edit_can($pdo, $auth, $r)) json_response(['error' => 'Only the salesperson of this order, the Sales Head or Admin can change it.'], 403);
+            if (!wmo_edit_can($pdo, $auth, $r)) json_response(['error' => 'Log in with your own employee login to change an order.'], 403);
             $lk = wmo_edit_lock($pdo, $r); if ($lk !== '') json_response(['error' => $lk, 'code' => 'locked'], 422);
             $old = json_decode((string)$r['lines_json'], true) ?: [];
             [$L, $ml, $er] = wmo_lines($pdo, (int)$r['total_p'], (array)($in['lines'] ?? []), (array)($in['chains'] ?? []), (array)($in['singles'] ?? []), array_map(fn($l) => (int)$l['vid'], $old)); if ($er !== '') json_response(['error' => $er], 422);
