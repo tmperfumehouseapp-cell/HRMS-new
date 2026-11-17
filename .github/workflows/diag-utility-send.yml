@@ -1,0 +1,72 @@
+# READ-ONLY look at why the utility messages (Module B + "utility first" in campaigns) stopped moving or keep failing: the settings and the last round of Module B, what was sent / delivered / failed per hour and per number,
+# the failure reasons, the numbers' quality, the state of the running campaigns, the approval state and Meta's rejection reasons of the utility messages. Counts and labels only (no phone numbers, no customer names).
+# Changes nothing. Run it by hand: Actions → "Utility send check (read-only)" → Run workflow.
+name: Utility send check (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+
+      - name: Utility send state
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
+          cat > /tmp/us_check.php <<'PHP'
+          <?php
+          $f = $argv[1] . "empmanagment/config.php"; if (!is_file($f)) { echo "config.php not found\n"; exit; }
+          require $f;
+          try { $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_TIMEOUT => 8, PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]); } catch (Throwable $e) { echo "no database: " . $e->getMessage() . "\n"; exit; }
+          $all = function ($sql, $p = []) use ($d) { try { $q = $d->prepare($sql); $q->execute($p); return $q->fetchAll(PDO::FETCH_ASSOC); } catch (Throwable $e) { echo "  (n/a: " . substr($e->getMessage(), 0, 140) . ")\n"; return []; } };
+          $s = function ($k) use ($d) { try { $q = $d->prepare("SELECT setting_value FROM hrms_settings WHERE setting_key = ?"); $q->execute([$k]); $v = $q->fetchColumn(); return $v === false ? "" : (string)$v; } catch (Throwable $e) { return ""; } };
+          $row = function ($r) { $o = []; foreach ($r as $k => $v) $o[] = $k . "=" . $v; return "  " . implode(" · ", $o) . "\n"; };
+          echo "server time now: " . date("Y-m-d H:i:s") . "\n";
+          echo "\n=== settings (Module B and utility first) ===\n";
+          foreach (["wa_ru_on", "wa_ru_pause_until", "wa_ru_hourly", "wa_ru_cursor", "wa_ru_submit_pause", "wa_ru_rest", "wa_u_first", "wa_u_reuse", "wa_ru_make_n", "wa_ru_last", "wa_ru_make_last", "wa_send_at", "wa_lock_ru", "wa_lock_rumake", "wa_lock_rec"] as $k) echo "  " . $k . " = " . substr($s($k), 0, 500) . "\n";
+          echo "  (pause_until / lock values are unix times; now = " . time() . ")\n";
+          echo "\n=== Module B: what it sent in the last 8 hours (per hour and number) ===\n";
+          foreach ($all("SELECT DATE_FORMAT(r.at, '%m-%d %H:00') h, r.number_id nid, r.attempt att, COUNT(*) sent, SUM(r.ok = 1) accepted, SUM(m.status IN ('delivered', 'read')) delivered, SUM(r.ok = 0 OR m.status = 'failed') failed FROM wa_ru_log r LEFT JOIN wa_messages m ON m.wamid = r.wamid AND r.wamid <> '' WHERE r.at >= NOW() - INTERVAL 8 HOUR GROUP BY h, r.number_id, r.attempt ORDER BY h DESC, r.number_id") as $r) echo $row($r);
+          echo "  Module B failures by code:\n";
+          foreach ($all("SELECT err_code, LEFT(err, 90) e, COUNT(*) n FROM wa_ru_log WHERE ok = 0 AND at >= NOW() - INTERVAL 8 HOUR GROUP BY err_code, e ORDER BY n DESC LIMIT 10") as $r) echo $row($r);
+          echo "  newest Module B send: "; foreach ($all("SELECT MAX(at) last_at, COUNT(*) total FROM wa_ru_log") as $r) echo $row($r);
+          echo "\n=== utility inside campaigns (variant U): per hour, last 8 hours ===\n";
+          foreach ($all("SELECT DATE_FORMAT(i.sent_at, '%m-%d %H:00') h, COUNT(*) sent, SUM(m.status IN ('delivered', 'read')) delivered, SUM(m.status = 'failed') failed FROM wa_camp_items i LEFT JOIN wa_messages m ON m.wamid = i.wamid AND i.wamid <> '' WHERE i.variant = 'U' AND i.status = 'sent' AND i.sent_at >= NOW() - INTERVAL 8 HOUR GROUP BY h ORDER BY h DESC") as $r) echo $row($r);
+          echo "  utility items by state (all time, newest campaigns):\n";
+          foreach ($all("SELECT i.camp_id, i.status, i.err_code, LEFT(i.err, 70) e, COUNT(*) n FROM wa_camp_items i WHERE i.variant = 'U' AND i.camp_id >= (SELECT MAX(id) - 12 FROM wa_campaigns) AND i.status <> 'sent' GROUP BY i.camp_id, i.status, i.err_code, e ORDER BY n DESC LIMIT 14") as $r) echo $row($r);
+          echo "  which utility messages were sent from campaigns (8 h):\n";
+          foreach ($all("SELECT t.name, t.category, COUNT(*) sent, SUM(m.status IN ('delivered', 'read')) delivered FROM wa_camp_items i JOIN wa_templates t ON t.id = i.tpl_used LEFT JOIN wa_messages m ON m.wamid = i.wamid AND i.wamid <> '' WHERE i.variant = 'U' AND i.sent_at >= NOW() - INTERVAL 8 HOUR GROUP BY t.id ORDER BY sent DESC LIMIT 10") as $r) echo $row($r);
+          echo "\n=== numbers (labels and quality only) ===\n";
+          $health = json_decode($s("wa_health"), true); if (!is_array($health)) $health = [];
+          foreach ($all("SELECT id, label, waba_id FROM wa_numbers ORDER BY id") as $n) { $h = $health[(int)$n["id"]] ?? []; echo "  #" . $n["id"] . " " . ($n["label"] !== "" ? $n["label"] : "(no label)") . " · account …" . substr((string)$n["waba_id"], -4) . " · status " . ($h["status"] ?? "?") . " · quality " . ($h["quality"] ?? "?") . "\n"; }
+          echo "\n=== the campaigns that are sending / paused ===\n";
+          foreach ($all("SELECT id, name, status, note, last_tick, extra FROM wa_campaigns WHERE status IN ('running', 'paused', 'scheduled') ORDER BY id DESC LIMIT 8") as $c) {
+            $x = json_decode((string)$c["extra"], true); $keep = []; if (is_array($x)) foreach (["u_pct", "u_off", "u_off_owner", "u_set", "u_only", "u_tpl", "u_auto", "u_restart", "kind"] as $k) if (isset($x[$k])) $keep[] = $k . "=" . json_encode($x[$k]);
+            echo "campaign #" . $c["id"] . " · " . substr($c["name"], 0, 50) . " · " . $c["status"] . " · last tick " . $c["last_tick"] . " · note: " . substr((string)$c["note"], 0, 160) . "\n   utility settings: " . implode(" ", $keep) . "\n";
+            $cnt = []; foreach ($all("SELECT status, COUNT(*) n FROM wa_camp_items WHERE camp_id = ? GROUP BY status", [(int)$c["id"]]) as $ci) $cnt[] = $ci["status"] . " " . $ci["n"]; echo "   people by state: " . implode(", ", $cnt) . "\n";
+          }
+          echo "\n=== standard follow-up messages (status per account) ===\n";
+          foreach ($all("SELECT t.name, t.category, t.category_now, GROUP_CONCAT(CONCAT(RIGHT(w.waba_id, 4), ':', w.status) SEPARATOR ' ') st FROM wa_templates t LEFT JOIN wa_tpl_waba w ON w.tpl_id = t.id WHERE t.name LIKE 'tmph\\_fu\\_%' GROUP BY t.id") as $r) echo $row($r);
+          echo "\n=== utility messages made in the last 24 h: Meta's status and reason ===\n";
+          foreach ($all("SELECT w.status, LEFT(w.reason, 110) reason, COUNT(*) n FROM wa_templates t JOIN wa_tpl_waba w ON w.tpl_id = t.id WHERE t.category = 'UTILITY' AND t.created_at >= NOW() - INTERVAL 1 DAY GROUP BY w.status, reason ORDER BY n DESC LIMIT 15") as $r) echo $row($r);
+          echo "  utility messages without any Meta row (never sent): "; foreach ($all("SELECT COUNT(*) n FROM wa_templates t WHERE t.category = 'UTILITY' AND t.created_at >= NOW() - INTERVAL 3 DAY AND NOT EXISTS (SELECT 1 FROM wa_tpl_waba w WHERE w.tpl_id = t.id)") as $r) echo $row($r);
+          echo "\n=== log lines about utility (newest 25) ===\n";
+          foreach ($all("SELECT at, kind, ok, info FROM wa_log WHERE info LIKE '%tility%' ORDER BY id DESC LIMIT 25") as $r) echo "  " . $r["at"] . " [" . $r["kind"] . "/" . ($r["ok"] ? "ok" : "FAIL") . "] " . substr($r["info"], 0, 200) . "\n";
+          PHP
+          php /tmp/us_check.php "$P"; rm -f /tmp/us_check.php
+          REMOTE
