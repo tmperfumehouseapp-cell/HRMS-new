@@ -104,17 +104,21 @@ function wa_camp_ctx(PDO $pdo, array $t, int $switch, array $only = [], int $bur
 {   // $burst > 0 (⚡ Send fast): our own limits (the hourly speed, the 90% margin, the slow start) are skipped for up to that many people — a number that is off / Low quality / not connected still is not used, and Meta's own limit still decides
     if (!function_exists('wa_health_all') && is_file(__DIR__ . '/wa_console.php')) require_once __DIR__ . '/wa_console.php';   // number health lives in wa_console.php (not loaded on every route)
     $health = wa_health_all($pdo, false); $caps = wa_number_caps($pdo, $health); $nums = []; $only = array_map('intval', $only);
-    $st = []; $qm = []; foreach ($health as $h) { $st[(int)$h['id']] = (string)($h['status'] ?? ''); $qm[(int)$h['id']] = (string)($h['quality'] ?? ''); }
+    $skip = []; $st = []; $qm = []; foreach ($health as $h) { $st[(int)$h['id']] = (string)($h['status'] ?? ''); $qm[(int)$h['id']] = (string)($h['quality'] ?? ''); }
     foreach ($pdo->query("SELECT * FROM wa_numbers ORDER BY id")->fetchAll() as $n) {
-        $id = (int)$n['id']; $c = $caps[$id] ?? null; if (!$c || ($burst > 0 ? (int)$c['cap'] <= 0 : $c['left'] <= 0) || !in_array(wa_waba_of($n), $t['ok_wabas'], true)) continue; if ($burst > 0) $c['left'] = max((int)$c['left'], $burst);
-        if ($only && !in_array($id, $only, true)) continue;                     // the campaign chose its numbers ("Send from")
-        if (($st[$id] ?? '') !== '' && $st[$id] !== 'CONNECTED') continue;      // pending / not connected at Meta: never used
+        $id = (int)$n['id']; $c = $caps[$id] ?? null; $lb = trim((string)($n['label'] ?? '')) !== '' ? trim((string)$n['label']) : (trim((string)($n['display'] ?? '')) !== '' ? trim((string)$n['display']) : '#' . $id);
+        if (!$c) { $skip[] = $lb . ': no limit information'; continue; }
+        if ($burst > 0 ? (int)$c['cap'] <= 0 : $c['left'] <= 0) { $skip[] = $lb . ': ' . (trim((string)($c['why'] ?? '')) !== '' ? $c['why'] : 'no room (' . number_format((int)$c['used']) . ' of ' . number_format((int)$c['cap']) . ' used in 24h)'); continue; }
+        if (!in_array(wa_waba_of($n), $t['ok_wabas'], true)) { $skip[] = $lb . ': message not approved on its WhatsApp account (paused by Meta?)'; continue; }
+        if ($burst > 0) $c['left'] = max((int)$c['left'], $burst);
+        if ($only && !in_array($id, $only, true)) { $skip[] = $lb . ': not chosen in this campaign\'s "Send from"'; continue; }                     // the campaign chose its numbers ("Send from")
+        if (($st[$id] ?? '') !== '' && $st[$id] !== 'CONNECTED') { $skip[] = $lb . ': not connected at Meta (' . $st[$id] . ')'; continue; }      // pending / not connected at Meta: never used
         $nums[$id] = ['id' => $id, 'q' => (string)($qm[$id] ?? ''), 'phone_id' => (string)$n['phone_id'], 'cap' => $c['cap'], 'used' => $c['used'], 'left' => $c['left']];
         if (!empty($t['by_waba'][wa_waba_of($n)])) $nums[$id]['tm'] = $t['by_waba'][wa_waba_of($n)];   // the version of the message approved on this number's WhatsApp account (the first one, or an alternative)
     }
     if ($campaign && count($nums) > 1) { foreach (wa_num_fail_flags($pdo) as $fid => $ratio) if (isset($nums[$fid]) && count($nums) > 1) unset($nums[$fid]); }   // a number whose messages mostly FAIL is left out for now (campaigns only) — the others take its people; it comes back by itself when its failures drop
     $p = $caps['_port'] ?? ['left' => 0]; $st = 0.05; try { $sv = setting_get($pdo, 'wa_camp_sticky', ''); if ($sv !== '' && is_numeric($sv)) $st = max(0.0, min(1.0, (float)$sv)); } catch (Throwable $e) { }
-    return ['nums' => $nums, 'port_left' => $burst > 0 ? max((int)$p['left'], $burst) : (int)$p['left'], 'port' => $p, 'switch' => max(1, $switch), 'sticky' => $st];
+    return ['nums' => $nums, 'skip' => $skip, 'port_left' => $burst > 0 ? max((int)$p['left'], $burst) : (int)$p['left'], 'port' => $p, 'switch' => max(1, $switch), 'sticky' => $st];
 }
 /** 📈 Campaigns only: each number's room this hour (its own speed minus the campaign people it messaged in the last 60 minutes). Returns [numberId => left] or null (no hourly speed). */
 function wa_camp_hour_room(array $port): ?array
@@ -139,7 +143,8 @@ function wa_pick_number(PDO $pdo, array $c, array &$ctx): array
     if (!$el) {   // say WHICH limit is used up: this hour's speed per number (the usual case — today's room is much bigger) or today's room
         $hr = array_filter($ctx['nums'], fn($n) => isset($n['hcap']));
         if ($hr) return [0, 'This hour’s speed is used up on all ' . count($hr) . ' numbers (' . number_format(array_sum(array_column($hr, 'hcap'))) . ' an hour in all) — it carries on by itself next hour. Today’s room is not the limit.'];
-        return [0, 'No number has room today' . (!empty($ctx['nums']) ? ' (' . implode(' · ', array_map(fn($n) => 'used ' . number_format($n['used']) . ' of ' . number_format($n['cap']), $ctx['nums'])) . ')' : ' — none of the numbers can send this message (not connected, switched off for campaigns, or the message is not approved on its WhatsApp account)') . '. It carries on by itself as room frees up.'];
+        if (empty($ctx['nums']) && !empty($ctx['skip'])) return [0, 'No number can send: ' . implode(' · ', $ctx['skip']) . '.'];   // the reason of EACH number, first (the card keeps only the first 200 letters)
+        return [0, 'No number has room today' . (!empty($ctx['nums']) ? ' (' . implode(' · ', array_map(fn($n) => 'used ' . number_format($n['used']) . ' of ' . number_format($n['cap']), $ctx['nums'])) . ')' : ' — none of the numbers can send this message: ' . (!empty($ctx['skip']) ? implode(' · ', $ctx['skip']) : '(not connected, switched off for campaigns, or the message is not approved on its WhatsApp account)')) . '. It carries on by itself as room frees up.'];
     }
     $ign = []; $q = $pdo->prepare("SELECT number_id, COUNT(*) AS n FROM wa_messages WHERE phone = ? AND dir = 'out' AND mtype = 'template' AND status <> 'failed' AND ts > ? GROUP BY number_id");   // a message that never arrived cannot have been "ignored"
     $q->execute([$c['phone'], $c['last_in_at'] ?: '1970-01-01 00:00:00']); foreach ($q->fetchAll() as $r) $ign[(int)$r['number_id']] = (int)$r['n'];
