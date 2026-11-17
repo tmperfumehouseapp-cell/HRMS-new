@@ -709,7 +709,6 @@ if (strpos((string)$action, 'dp.dsp_') === 0) {
         $name = trim((string)($in['name'] ?? '')); $link = trim((string)($in['link'] ?? ''));
         if (mb_strlen($name) < 2 || mb_strlen($name) > 40) json_response(['error' => 'Give the courier a name (2 to 40 letters).'], 422);
         if ($link !== '') {
-            if (strpos($link, '{ID}') === false) json_response(['error' => 'Put {ID} in the link where the tracking ID goes, for example https://courier.example/track?no={ID}'], 422);
             if (!dp_dsp_link_ok(str_replace('{ID}', 'X123', $link))) json_response(['error' => 'The link must start with http:// or https://'], 422);
         }
         $active = array_key_exists('active', $in) ? (empty($in['active']) ? 0 : 1) : 1;

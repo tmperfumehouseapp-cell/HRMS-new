@@ -344,7 +344,7 @@ const DSP = (() => {
     }
     function courierBox() {
       const L = CL || R.couriers || [];
-      return '<div class="dr-sr" id="couriers"><div class="dr-h" style="margin:0"><h2 style="font-size:15px">Courier list</h2><span class="bd-sub">What the Tracking person picks from. Put <code>{ID}</code> in the link where the tracking ID goes, so every tracking ID becomes a clickable link.</span></div>'
+      return '<div class="dr-sr" id="couriers"><div class="dr-h" style="margin:0"><h2 style="font-size:15px">Courier list</h2><span class="bd-sub">What the Tracking person picks from. Put <code>{ID}</code> in the link where the tracking ID goes (a link without it just opens the courier\'s tracking page), so every tracking ID becomes a clickable link.</span></div>'
         + '<table class="dr-cl"><thead><tr><th style="width:150px">Courier</th><th>Tracking link, e.g. https://courier.example/track?no={ID}</th><th style="width:60px">In use</th><th style="width:130px"></th></tr></thead><tbody>'
         + L.concat([{ id: 0, name: '', link: '', active: 1 }]).map((c) => '<tr data-cid="' + c.id + '"><td><input class="dr-in sm" type="text" data-cn value="' + esc(c.name) + '" placeholder="' + (c.id ? '' : 'New courier') + '"></td><td><input class="dr-in sm" type="text" data-cl value="' + esc(c.link) + '"></td><td><input type="checkbox" data-ca ' + (c.active ? 'checked' : '') + '></td><td><button type="button" class="bd-btn sm pri" data-csave="' + c.id + '">' + (c.id ? 'Save' : 'Add') + '</button>' + (c.id ? ' <button type="button" class="bd-btn sm bad" data-cdel="' + c.id + '">Remove</button>' : '') + '</td></tr>').join('')
         + '</tbody></table></div>';
