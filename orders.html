@@ -944,7 +944,10 @@
 <script src="assets/js/api.js?v=13"></script>
 <script src="assets/js/layout.js?v=32"></script>
 <script src="assets/js/side_chat.js?v=2"></script>
-<script src="assets/js/ml_slab.js?v=261114a"></script>
+<script src="assets/js/ml_slab.js?v=261116a"></script>
+<script src="assets/js/wmo_edit.js?v=1"></script>
+<script>function wmUpdate(no) { if (window.WmoEdit) WmoEdit.open(no, { onSaved: function () { location.reload(); } }); }</script>
+<style>.wm-upd{display:inline-block;margin-left:6px;border:1px solid #16a34a;background:#f0fdf4;color:#166534;border-radius:99px;padding:3px 9px;font:inherit;font-size:11.5px;font-weight:800;cursor:pointer;white-space:nowrap;vertical-align:1px}.wm-upd:hover{background:#dcfce7}</style>
 <script src="assets/js/convo.js?v=261024a"></script>
 <div class="cmo" id="mbOv" hidden><div class="cmd" role="dialog" aria-modal="true" aria-labelledby="mbTtl"><div class="hd"><div><h3 id="mbTtl"></h3><p id="mbSub"></p></div><div class="acts"><button type="button" class="dl" id="mbDl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg>Excel</button><button type="button" class="x" id="mbX" aria-label="Close">✕</button></div></div><div class="bd" id="mbBd"></div></div></div>
 <div class="cmo" id="tmOv" hidden><div class="cmd" role="dialog" aria-modal="true" aria-labelledby="tmTtl" style="width:min(560px,100%);"><div class="hd"><div><h3 id="tmTtl"></h3><p id="tmSub"></p></div><button type="button" class="x" id="tmX" aria-label="Close">✕</button></div><div class="bd" id="tmBd"></div></div></div>
@@ -1991,7 +1994,7 @@
     const c = d.cfg || {}, so = d.so_far || {}, a = Object.assign({}, so.actual || {}), i = so.ideal || {}, dv = Object.assign({}, so.dev || {});
     { const n = idCnt((d.hourly || []).some((p) => p.cur) ? '9999-12-31 00:00:00' : (d.now ? String(d.now) : d.to)); if (n != null) { a.orders = n; dv.orders = idPc(n, i.orders); a.ratio = a.replies > 0 ? Math.round(1000 * n / a.replies) / 10 : null; } }
     let h = `<div class="idt">Day target: <b>${idR(c.spend)}</b> spend · <b>${idN(c.replies)}</b> replies · <b>${idN(c.orders)}</b> orders ${d.can_edit ? '<button type="button" class="idb" data-ide="1">✎ Edit</button>' : ''}</div>
-      <div class="idk"><div><small>Spend</small><b>${idR(a.spend)}</b><i>ideal ${idR(i.spend)}</i>${idChip(dv.spend)}</div><div><small>Delivered (campaign msgs)</small><b>${idN(a.delivered)}</b><i>ideal ${idN(i.delivered)}</i>${idChip(dv.delivered)}</div><div><small>Replies</small><b>${idN(a.replies)}</b><i>ideal ${idN(i.replies)}</i>${idChip(dv.replies)}</div><div><small>Campaign orders</small><b>${idN(a.orders)}</b><i>ideal ${idN(i.orders)}</i>${idChip(dv.orders)}</div></div>
+      <div class="idk"><div><small>Spend</small><b>${idR(a.spend)}</b><i>ideal ${idR(i.spend)}</i>${idChip(dv.spend)}</div><div><small>Delivered (campaigns + 7-day drip)</small><b>${idN(a.delivered)}</b><i>ideal ${idN(i.delivered)}</i>${d.drip_delivered ? `<i>incl. ${idN(d.drip_delivered)} from 7-day drip</i>` : ''}${idChip(dv.delivered)}</div><div><small>Replies</small><b>${idN(a.replies)}</b><i>ideal ${idN(i.replies)}</i>${idChip(dv.replies)}</div><div><small>Campaign orders</small><b>${idN(a.orders)}</b><i>ideal ${idN(i.orders)}</i>${idChip(dv.orders)}</div></div>
       <div class="idt" style="margin-top:6px">Campaign orders ÷ replies: <b>${a.ratio != null ? a.ratio + '%' : '—'}</b> <span style="color:var(--muted)">(ideal ${i.ratio != null ? i.ratio + '%' : '—'})</span></div>
       <div class="idtw"><table class="idtb"><thead><tr><th>Time</th><th>Spend<small>spent / ideal</small></th><th>Delivered<small>total delivered / ideal</small></th><th>Replies<small>replies / ideal</small></th><th>Campaign orders<small>total campaign orders / ideal</small></th></tr></thead><tbody>`;
     const K = (n) => { n = Math.round(+n || 0); return n >= 10000 ? '₹' + (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : '₹' + n.toLocaleString('en-IN'); };
@@ -2004,7 +2007,7 @@
     const pr = d.projection || {}, nd = d.need_per_hour || {};
     if (pr.orders != null && d.now && d.to && d.now < d.to) h += `<div class="idp">🔮 At this pace the day ends near <b>${idR(pr.spend)}</b> · <b>${idN(pr.replies)}</b> replies · <b>${idN(pr.orders)}</b> orders. To reach ${idN(c.orders)} orders you need about <b>${idN(nd.replies)}</b> replies and <b>${idN(nd.orders)}</b> orders every hour from now.</div>`;
     h += (d.analysis || []).length ? `<ul class="ida">${d.analysis.map((x) => `<li class="${x.k === 'ok' ? 'ok' : 'wn'}">${x.k === 'ok' ? '✅' : '⚠️'} ${x.text.replace(/</g, '&lt;')}</li>`).join('')}</ul>` : '';
-    return h + `<div class="idn">Replies = queries typed Campaign on the live board · Orders = Campaign orders only (same as the Campaign orders tab, cancelled left out) · Spend = delivered × Meta rate · Delivered = campaign messages delivered or read (ideal = ideal spend ÷ Meta rate) · updated ${String(d.at || '').slice(11, 16)}</div>`;
+    return h + `<div class="idn">Replies = queries typed Campaign on the live board · Orders = Campaign orders only (same as the Campaign orders tab, cancelled left out) · Spend (campaigns + 7-day drip) = delivered × Meta rate · Delivered = campaign messages delivered or read (ideal = ideal spend ÷ Meta rate) · updated ${String(d.at || '').slice(11, 16)}</div>`;
   }
   async function idealLoad(force) {
     const day = idDay(), box = document.getElementById('idealCard'); if (!box) return;
@@ -2783,7 +2786,7 @@
     const key = (o.store_key || o.source || '') + ':' + o.id;
     const ex = commValid() && COMM.res.ord ? COMM.res.ord[key] : null;      // [₹, note, rule kind] from the Commission page
     const pre = MLSLAB.isPre(o.financial_status);
-    const r = m && m.total && ML_CHART ? (MLSLAB.offerCom(CM_OFFERS, CM_WIN, ML_CHART, { ml: m.total, day: o.biz_date || '', amt: Number(o.total || 0), pre, code: o.code || '' }) || MLSLAB.orderCom(MLSLAB.preview(ML_CHART), { ml: m.total, day: o.biz_date || '', emp: o.employee_id, amt: Number(o.total || 0), pre, code: o.code || '' }, null)) : null;   // daily target not known here: no bonus / cut (the Commission page has it)
+    const r = m && m.total && ML_CHART ? (MLSLAB.offerCom(CM_OFFERS, CM_WIN, ML_CHART, { ml: m.total, extra: m.extra, day: o.biz_date || '', amt: Number(o.total || 0), pre, code: o.code || '' }) || MLSLAB.orderCom(MLSLAB.preview(ML_CHART), { ml: m.total, day: o.biz_date || '', emp: o.employee_id, amt: Number(o.total || 0), pre, code: o.code || '' }, null)) : null;   // daily target not known here: no bonus / cut (the Commission page has it)
     let x = m && m.total && ML_CHART ? MLSLAB.extraByPrice(ML_CHART, m.total, Number(o.total || 0), pre) : null;   // extra ML by price
     // Campaign orders (Type = Campaign on Order Allocation): the campaign price is the set price → no extra ML counted.
     if (x && orderTagType(o.tags) === 'campaign') x = Object.assign({}, x, { extra: 0, value: 0, campaign: true });
@@ -2924,7 +2927,7 @@
 
     const rowHtml = (o) => `
         <tr>
-          <td style="font-weight:600;"><a href="#" onclick="openDetail(${o._i}); return false;">${o.order_name}</a>${o.manual_order_id ? ` <button class="danger-link" title="Delete this manual order" aria-label="Delete order" style="background:none;border:1px solid #f3c9c9;border-radius:6px;cursor:pointer;color:var(--bad-fg);font-size:12px;padding:4px 8px;margin-left:6px;line-height:1;" onclick="deleteManual(${o.manual_order_id}, '${o.batch || ''}')">✕</button>` : ''}</td>
+          <td style="font-weight:600;"><a href="#" onclick="openDetail(${o._i}); return false;">${o.order_name}</a>${/^#?WM-\d+/i.test(String(o.order_name || '')) ? ` <button type="button" class="wm-upd" onclick="wmUpdate('${String(o.order_name).replace(/^#/, '').replace(/[^A-Za-z0-9-]/g, '')}')" title="Remove or add perfumes in this manual order (until a tracking ID is given)">✏️ Update</button>` : ''}${o.manual_order_id ? ` <button class="danger-link" title="Delete this manual order" aria-label="Delete order" style="background:none;border:1px solid #f3c9c9;border-radius:6px;cursor:pointer;color:var(--bad-fg);font-size:12px;padding:4px 8px;margin-left:6px;line-height:1;" onclick="deleteManual(${o.manual_order_id}, '${o.batch || ''}')">✕</button>` : ''}</td>
           <td><span style="color:var(--muted);">${o.store}</span></td>
           <td>${o.salesman || '—'}${(o.house_tags || []).length > 1 ? '<div style="font-size:11px; color:#c81e1e;" title="This order has more than one house tag, so it is counted under its store\'s house">⚠ 2 house tags</div>' : ''}</td>
           <td>${ocCell(o)}</td>

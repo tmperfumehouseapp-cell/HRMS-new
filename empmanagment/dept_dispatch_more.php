@@ -65,6 +65,8 @@ function dp_dsp_sr_get($path, array $params) {
 /** Shiprocket order status -> our status. "Ready to ship" / "pickup scheduled" are NOT dispatched yet. */
 function dp_dsp_sr_map($s, $hasAwb) {
     $s = strtolower(trim((string)$s)); if ($s === '') return $hasAwb ? 'tracked' : 'placed';
+    if (strpos($s, 'return cancel') !== false) return 'delivered';   // a return that was asked for after delivery and then called off: the customer has the parcel
+    if (strpos($s, 'reached back') !== false) return 'rto';          // "Reached back at seller city": the parcel came back, it is a return
     if (strpos($s, 'cancel') !== false) return 'cancelled';
     if (strpos($s, 'rto') !== false || strpos($s, 'return') !== false) return 'rto';
     if (strpos($s, 'deliver') !== false && strpos($s, 'out for') === false && strpos($s, 'undeliver') === false && strpos($s, 'not deliver') === false) return 'delivered';
@@ -119,14 +121,20 @@ function dp_dsp_sr_apply(PDO $pdo, array $p, array $o) {
     $new = dp_dsp_sr_map($st, $awb !== '');
     if ($awb !== '' && !dp_dsp_valid_track($awb)) $awb = '';
     $take = $isCopy && !$dead && $awb !== '';                                // a live copy with an AWB takes the parcel over
+    if (!empty($p['manual']) && $dead) return '';                            // sent by another courier (ID written by hand): Shiprocket's cancelled shipment says nothing about it
+    if ((int)($p['manual'] ?? 0) === 2 && !$take) return '';                 // the pencil ID stays until the parcel is booked again in Shiprocket
     if ($take) {
         $owner[(int)$p['id']] = $me;
         $chg = $awb !== (string)$p['tracking_no'];
         try { $pdo->prepare("UPDATE dp_dsp_parcels SET sr_oid = ?" . ($chg ? ", live_at = NULL" : "") . " WHERE id = ?")->execute([mb_substr($me, 0, 40), $p['id']]); } catch (Throwable $e) { }
         if ($chg && function_exists('bd_log')) { try { bd_log('dispatch', (string)$p['order_name'], 'booked again in Shiprocket as ' . $name . ': AWB ' . ((string)$p['tracking_no'] ?: 'none') . ' -> ' . $awb, 'Shiprocket'); } catch (Throwable $e) { } }
     }
-    $did = dp_dsp_apply($pdo, $p, $awb, $cour, $new, 'Shiprocket', $take && in_array((string)$p['status'], ['placed', 'tracked', 'cancelled'], true));   // a parcel wrongly parked as cancelled / waiting comes back with the copy's real status
+    $did = dp_dsp_apply($pdo, $p, $awb, $cour, $new, 'Shiprocket', $take && in_array((string)$p['status'], ['placed', 'tracked', 'cancelled'], true), true);   // a parcel wrongly parked as cancelled / waiting comes back with the copy's real status
     if ($st !== '' && $st !== (string)($p['sr_status'] ?? '')) { $pdo->prepare("UPDATE dp_dsp_parcels SET sr_status = ?, sr_at = ? WHERE id = ?")->execute([mb_substr($st, 0, 40), bd_now(), $p['id']]); if ($did === '') $did = 'status text'; }
+    if ((string)($p['customer'] ?? '') === '' && (string)($p['phone'] ?? '') === '') {   // a parcel that came without the customer (orders taken from the manual sheet): Shiprocket knows the name and phone
+        $cn = trim((string)($o['customer_name'] ?? '')); $cp = trim((string)($o['customer_phone'] ?? ''));
+        if ($cn !== '' || $cp !== '') { try { $pdo->prepare("UPDATE dp_dsp_parcels SET customer = ?, phone = ? WHERE id = ? AND COALESCE(customer, '') = '' AND COALESCE(phone, '') = ''")->execute([mb_substr($cn, 0, 120), mb_substr($cp, 0, 40), $p['id']]); } catch (Throwable $e) { } }
+    }
     return $did;
 }
 /** read ONE page of Shiprocket orders for a date window and apply it. Returns [orders on the page, error, total pages]. $r counts seen / updated / same / unmatched. */
@@ -182,10 +190,17 @@ function dp_dsp_couriers(PDO $pdo, $activeOnly = false) {
 function dp_dsp_courier_map(PDO $pdo) { $m = []; foreach (dp_dsp_couriers($pdo) as $c) $m[strtolower($c['name'])] = $c['link']; return $m; }
 function dp_dsp_link_make($pattern, $track) {
     $pattern = trim((string)$pattern); $track = trim((string)$track);
-    if ($pattern === '' || $track === '' || strpos($pattern, '{ID}') === false) return '';
+    if ($pattern === '' || $track === '') return '';
+    if (strpos($pattern, '{ID}') === false) return $pattern;   // a courier whose site has no place for the number (India Post: captcha): the link opens its tracking page
     return str_replace('{ID}', rawurlencode($track), $pattern);
 }
-function dp_dsp_link_for(PDO $pdo, $courier, $track) { $m = dp_dsp_courier_map($pdo); return dp_dsp_link_make($m[strtolower(trim((string)$courier))] ?? '', $track); }
+/** the link pattern of a courier. A name that is not in the courier list ("Bluedart brands 500 g Surface", "Xpressbees Surface 2kg" ...) is a Shiprocket service: its AWB opens on the Shiprocket tracking page. */
+function dp_dsp_link_pat(array $m, $courier) {
+    $k = strtolower(trim((string)$courier)); if (isset($m[$k])) return (string)$m[$k];
+    if ($k === '' || $k === 'office pickup' || $k === 'other' || $k === 'normal') return '';
+    return trim((string)($m['shiprocket'] ?? '')) !== '' ? (string)$m['shiprocket'] : 'https://shiprocket.co/tracking/{ID}';
+}
+function dp_dsp_link_for(PDO $pdo, $courier, $track) { $m = dp_dsp_courier_map($pdo); return dp_dsp_link_make(dp_dsp_link_pat($m, $courier), $track); }
 function dp_dsp_link_ok($u) { return (bool)preg_match('~^https?://[^\s<>"\']{4,290}$~i', (string)$u); }
 
 /* ============================== untraceable parcels: one owner, a remark every day, a history ============================== */
@@ -417,7 +432,7 @@ function dp_dsp_rep_filters(array $g) {
     if ($from < date('Y-m-d', strtotime($today . ' -' . (DP_DSP_WIN + 40) . ' days'))) $from = date('Y-m-d', strtotime($today . ' -' . (DP_DSP_WIN + 40) . ' days'));
     $hm = function ($v, $d) { $v = trim((string)$v); return preg_match('/^([01]?\d|2[0-3]):[0-5]\d$/', $v) ? str_pad($v, 5, '0', STR_PAD_LEFT) : $d; };
     return ['by' => $by, 'from' => $from, 'to' => $to, 'tfrom' => $hm($g['tfrom'] ?? '', ''), 'tto' => $hm($g['tto'] ?? '', ''),
-        'store' => preg_replace('/[^A-Za-z0-9_\-]/', '', (string)($g['store'] ?? '')), 'q' => trim((string)($g['q'] ?? ''))];
+        'store' => preg_replace('/[^A-Za-z0-9_\-]/', '', (string)($g['store'] ?? '')), 'q' => trim((string)($g['q'] ?? '')), 'hand' => !empty($g['hand'])];
 }
 /** The "Done" tick on a parcel (who checked it, when). The two columns are added the first time they are needed. */
 function dp_dsp_done_col(PDO $pdo) {
@@ -479,6 +494,7 @@ function dp_dsp_rep_where(array $f, array &$par) {
         if ($a <= $b) { $w[] = "TIME($col) BETWEEN ? AND ?"; $par[] = $a; $par[] = $b; } else { $w[] = "(TIME($col) >= ? OR TIME($col) <= ?)"; $par[] = $a; $par[] = $b; }
     }
     if ($f['store'] !== '') { $w[] = "store_key = ?"; $par[] = $f['store']; }
+    if (!empty($f['hand'])) $w[] = "manual != 0";   // only parcels sent by another courier (tracking ID written by hand): Shiprocket cannot update these
     if ($f['q'] !== '') { $l = '%' . str_replace(['%', '_'], ['\\%', '\\_'], ltrim($f['q'], '#')) . '%'; $w[] = "(order_name LIKE ? OR tracking_no LIKE ? OR customer LIKE ? OR phone LIKE ? OR pend_track LIKE ?)"; array_push($par, $l, $l, $l, $l, $l); }
     return implode(' AND ', $w);
 }
@@ -580,7 +596,7 @@ function dp_dsp_rep_row(array $r, $now, array $cm = [], array $un = []) {
     $wait = ($grp === 3 && $r['tracked_at']) ? round(($now - strtotime($r['tracked_at'])) / 3600, 1) : null;
     $late = $late48 ? '48h' : (($wait !== null && $wait >= dp_dsp_pick_hours()) ? 'wait48' : ($late4 ? 'day4' : ''));
     $link = trim((string)($r['track_link'] ?? ''));
-    if ($link === '' && (string)$r['tracking_no'] !== '') $link = dp_dsp_link_make($cm[strtolower((string)$r['courier'])] ?? '', $r['tracking_no']);
+    if ($link === '' && (string)$r['tracking_no'] !== '') $link = dp_dsp_link_make(dp_dsp_link_pat($cm, $r['courier']), $r['tracking_no']);
     $plink = '';
     if ($pend) { $plink = trim((string)($r['pend_link'] ?? '')); if ($plink === '') $plink = dp_dsp_link_make($cm[strtolower((string)$r['pend_courier'])] ?? '', $r['pend_track']); }
     $u = $un[(int)$r['id']] ?? null;
@@ -594,7 +610,7 @@ function dp_dsp_rep_row(array $r, $now, array $cm = [], array $un = []) {
         'grp' => $grp, 'cod' => (!isset($r['cod_out']) || $r['cod_out'] === null) ? null : (float)$r['cod_out'], 'remit_at' => !empty($r['remit_at']) ? substr((string)$r['remit_at'], 0, 16) : '', 'remit_by' => (string)($r['remit_by'] ?? ''),
         'age_h' => $open ? round(($now - $c) / 3600, 1) : null, 'track_h' => $r['tracked_at'] ? round((strtotime($r['tracked_at']) - $c) / 3600, 1) : null, 'wait_h' => $wait,
         'kwik' => (string)($r['pay_ref'] ?? ''),
-        'late' => $late, 'link' => $link, 'manual' => !empty($r['manual']) ? 1 : 0,
+        'late' => $late, 'link' => $link, 'manual' => !empty($r['manual']) ? 1 : 0, 'note' => (string)($r['hand_note'] ?? ''),
         'added_by' => !empty($r['manual']) ? (string)($r['pend_by'] ?? '') : '', 'added_at' => (!empty($r['manual']) && !empty($r['pend_at'])) ? substr((string)$r['pend_at'], 0, 16) : '',
         'pend' => $pend ? ['track' => (string)$r['pend_track'], 'courier' => (string)$r['pend_courier'], 'link' => $plink, 'by' => (string)$r['pend_by'], 'at' => substr((string)$r['pend_at'], 0, 16)] : null,
         'u' => $u];
@@ -638,6 +654,8 @@ function dp_dsp_report(PDO $pdo, array $g, $now) {
     } catch (Throwable $e) {}
     $counts['avg_track_h'] = $c['avg_min'] === null ? null : round((float)$c['avg_min'] / 60, 1);
     $counts['in48_pct'] = $counts['has_track'] ? (int)round(100 * $counts['in48'] / $counts['has_track']) : null;
+    // parcels sent by another courier that are still on the way: nobody but a person can check these (whatever dates are shown)
+    try { $counts['hand_open'] = (int)$pdo->query("SELECT COUNT(*) FROM dp_dsp_parcels WHERE manual != 0 AND status = 'transit'")->fetchColumn(); } catch (Throwable $e) { $counts['hand_open'] = 0; }
     // per day of the chosen range (kept for Claude's chat context)
     $st = $pdo->prepare("SELECT DATE($col) d, $sums FROM dp_dsp_parcels WHERE $where GROUP BY DATE($col) ORDER BY d DESC LIMIT 100");
     $st->execute(array_merge([$nowS, $nowS], $par)); $days = [];

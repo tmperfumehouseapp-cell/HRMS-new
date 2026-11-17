@@ -104,17 +104,21 @@ function wa_camp_ctx(PDO $pdo, array $t, int $switch, array $only = [], int $bur
 {   // $burst > 0 (⚡ Send fast): our own limits (the hourly speed, the 90% margin, the slow start) are skipped for up to that many people — a number that is off / Low quality / not connected still is not used, and Meta's own limit still decides
     if (!function_exists('wa_health_all') && is_file(__DIR__ . '/wa_console.php')) require_once __DIR__ . '/wa_console.php';   // number health lives in wa_console.php (not loaded on every route)
     $health = wa_health_all($pdo, false); $caps = wa_number_caps($pdo, $health); $nums = []; $only = array_map('intval', $only);
-    $st = []; $qm = []; foreach ($health as $h) { $st[(int)$h['id']] = (string)($h['status'] ?? ''); $qm[(int)$h['id']] = (string)($h['quality'] ?? ''); }
+    $skip = []; $st = []; $qm = []; foreach ($health as $h) { $st[(int)$h['id']] = (string)($h['status'] ?? ''); $qm[(int)$h['id']] = (string)($h['quality'] ?? ''); }
     foreach ($pdo->query("SELECT * FROM wa_numbers ORDER BY id")->fetchAll() as $n) {
-        $id = (int)$n['id']; $c = $caps[$id] ?? null; if (!$c || ($burst > 0 ? (int)$c['cap'] <= 0 : $c['left'] <= 0) || !in_array(wa_waba_of($n), $t['ok_wabas'], true)) continue; if ($burst > 0) $c['left'] = max((int)$c['left'], $burst);
-        if ($only && !in_array($id, $only, true)) continue;                     // the campaign chose its numbers ("Send from")
-        if (($st[$id] ?? '') !== '' && $st[$id] !== 'CONNECTED') continue;      // pending / not connected at Meta: never used
+        $id = (int)$n['id']; $c = $caps[$id] ?? null; $lb = trim((string)($n['label'] ?? '')) !== '' ? trim((string)$n['label']) : (trim((string)($n['display'] ?? '')) !== '' ? trim((string)$n['display']) : '#' . $id);
+        if (!$c) { $skip[] = $lb . ': no limit information'; continue; }
+        if ($burst > 0 ? (int)$c['cap'] <= 0 : $c['left'] <= 0) { $skip[] = $lb . ': ' . (trim((string)($c['why'] ?? '')) !== '' ? $c['why'] : 'no room (' . number_format((int)$c['used']) . ' of ' . number_format((int)$c['cap']) . ' used in 24h)'); continue; }
+        if (!in_array(wa_waba_of($n), $t['ok_wabas'], true)) { $skip[] = $lb . ': message not approved on its WhatsApp account (paused by Meta?)'; continue; }
+        if ($burst > 0) $c['left'] = max((int)$c['left'], $burst);
+        if ($only && !in_array($id, $only, true)) { $skip[] = $lb . ': not chosen in this campaign\'s "Send from"'; continue; }                     // the campaign chose its numbers ("Send from")
+        if (($st[$id] ?? '') !== '' && $st[$id] !== 'CONNECTED') { $skip[] = $lb . ': not connected at Meta (' . $st[$id] . ')'; continue; }      // pending / not connected at Meta: never used
         $nums[$id] = ['id' => $id, 'q' => (string)($qm[$id] ?? ''), 'phone_id' => (string)$n['phone_id'], 'cap' => $c['cap'], 'used' => $c['used'], 'left' => $c['left']];
         if (!empty($t['by_waba'][wa_waba_of($n)])) $nums[$id]['tm'] = $t['by_waba'][wa_waba_of($n)];   // the version of the message approved on this number's WhatsApp account (the first one, or an alternative)
     }
     if ($campaign && count($nums) > 1) { foreach (wa_num_fail_flags($pdo) as $fid => $ratio) if (isset($nums[$fid]) && count($nums) > 1) unset($nums[$fid]); }   // a number whose messages mostly FAIL is left out for now (campaigns only) — the others take its people; it comes back by itself when its failures drop
     $p = $caps['_port'] ?? ['left' => 0]; $st = 0.05; try { $sv = setting_get($pdo, 'wa_camp_sticky', ''); if ($sv !== '' && is_numeric($sv)) $st = max(0.0, min(1.0, (float)$sv)); } catch (Throwable $e) { }
-    return ['nums' => $nums, 'port_left' => $burst > 0 ? max((int)$p['left'], $burst) : (int)$p['left'], 'port' => $p, 'switch' => max(1, $switch), 'sticky' => $st];
+    return ['nums' => $nums, 'skip' => $skip, 'port_left' => $burst > 0 ? max((int)$p['left'], $burst) : (int)$p['left'], 'port' => $p, 'switch' => max(1, $switch), 'sticky' => $st];
 }
 /** 📈 Campaigns only: each number's room this hour (its own speed minus the campaign people it messaged in the last 60 minutes). Returns [numberId => left] or null (no hourly speed). */
 function wa_camp_hour_room(array $port): ?array
@@ -139,7 +143,8 @@ function wa_pick_number(PDO $pdo, array $c, array &$ctx): array
     if (!$el) {   // say WHICH limit is used up: this hour's speed per number (the usual case — today's room is much bigger) or today's room
         $hr = array_filter($ctx['nums'], fn($n) => isset($n['hcap']));
         if ($hr) return [0, 'This hour’s speed is used up on all ' . count($hr) . ' numbers (' . number_format(array_sum(array_column($hr, 'hcap'))) . ' an hour in all) — it carries on by itself next hour. Today’s room is not the limit.'];
-        return [0, 'No number has room today' . (!empty($ctx['nums']) ? ' (' . implode(' · ', array_map(fn($n) => 'used ' . number_format($n['used']) . ' of ' . number_format($n['cap']), $ctx['nums'])) . ')' : ' — none of the numbers can send this message (not connected, switched off for campaigns, or the message is not approved on its WhatsApp account)') . '. It carries on by itself as room frees up.'];
+        if (empty($ctx['nums']) && !empty($ctx['skip'])) return [0, 'No number can send: ' . implode(' · ', $ctx['skip']) . '.'];   // the reason of EACH number, first (the card keeps only the first 200 letters)
+        return [0, 'No number has room today' . (!empty($ctx['nums']) ? ' (' . implode(' · ', array_map(fn($n) => 'used ' . number_format($n['used']) . ' of ' . number_format($n['cap']), $ctx['nums'])) . ')' : ' — none of the numbers can send this message: ' . (!empty($ctx['skip']) ? implode(' · ', $ctx['skip']) : '(not connected, switched off for campaigns, or the message is not approved on its WhatsApp account)')) . '. It carries on by itself as room frees up.'];
     }
     $ign = []; $q = $pdo->prepare("SELECT number_id, COUNT(*) AS n FROM wa_messages WHERE phone = ? AND dir = 'out' AND mtype = 'template' AND status <> 'failed' AND ts > ? GROUP BY number_id");   // a message that never arrived cannot have been "ignored"
     $q->execute([$c['phone'], $c['last_in_at'] ?: '1970-01-01 00:00:00']); foreach ($q->fetchAll() as $r) $ign[(int)$r['number_id']] = (int)$r['n'];
@@ -1148,7 +1153,7 @@ function wa_camp_ideal_cfg(PDO $pdo): array
 /** 🎯 Ideal vs actual for one business day: the cumulative spend / replies (queries typed Campaign) / Campaign orders at each checkpoint, a status, a plain-words analysis and the day-end projection. Remembered 3 minutes. */
 function wa_camp_ideal(PDO $pdo, string $day): array
 {
-    $ck = 'camp_ideal12_' . $day; $hit = wa_cpc_get($pdo, $ck); if ($hit && $hit['age'] < 25) return $hit['v'];
+    $ck = 'camp_ideal13_' . $day; $hit = wa_cpc_get($pdo, $ck); if ($hit && $hit['age'] < 25) return $hit['v'];
     $cfg = wa_camp_ideal_cfg($pdo); $t0 = null; $t1 = null;
     try { if (function_exists('wq_day_start') && function_exists('wq_day_add')) { $t0 = (int)wq_day_start($pdo, $day); $t1 = (int)wq_day_start($pdo, wq_day_add($day, 1)); } } catch (Throwable $e) { }
     // the ideal day runs 12 noon → 12 noon (setting camp_ideal_start, default 12:00) — not the 10 AM business day of the other boxes
@@ -1161,6 +1166,14 @@ function wa_camp_ideal(PDO $pdo, string $day): array
         $q = $pdo->prepare("SELECT /*+ MAX_EXECUTION_TIME(12000) */ HOUR(ts) h, COUNT(*) n, SUM(status IN ('delivered','read')) dl, SUM(status IN ('delivered','read') AND bill_cat IN ('utility','authentication')) u, SUM(status IN ('delivered','read') AND bill_cat = 'service') sv FROM wa_messages WHERE dir = 'out' AND mtype = 'template' AND who = 'campaign' AND status <> 'failed' AND ts >= ? AND ts < ? GROUP BY h"); $q->execute([$a, $b]);
         foreach ($q->fetchAll() as $r) { $h = (int)$r['h']; if (!isset($H[$h])) continue; $dl = (int)$r['dl']; $u = (int)$r['u']; $H[$h]['spend'] = max(0, $dl - $u - (int)$r['sv']) * (float)$R['marketing'] + $u * (float)$R['utility']; $H[$h]['dl'] = $dl; $H[$h]['sent'] = (int)$r['n']; }
     } catch (Throwable $e) { error_log('camp_ideal spend: ' . $e->getMessage()); }
+    $dripDl = 0;
+    try {   // 🔁 the 7-Day Drip messages delivered in the same hour (they are sent as follow-ups, not as a campaign): added to Delivered and Spend so it is the exact total of campaigns + drip
+        $q = $pdo->prepare("SELECT wamid FROM wa_drip_ev WHERE status = 'sent' AND wamid <> '' AND at >= ? AND at < ?"); $q->execute([date('Y-m-d H:i:s', $t0 - 7200), date('Y-m-d H:i:s', $t1 + 7200)]); $ids = $q->fetchAll(PDO::FETCH_COLUMN);
+        foreach (array_chunk($ids, 800) as $ch) {
+            $q = $pdo->prepare("SELECT HOUR(ts) h, COUNT(*) dl, SUM(bill_cat IN ('utility','authentication')) u, SUM(bill_cat = 'service') sv FROM wa_messages WHERE wamid IN (" . implode(',', array_fill(0, count($ch), '?')) . ") AND status IN ('delivered', 'read') AND ts >= ? AND ts < ? GROUP BY h"); $q->execute(array_merge($ch, [$a, $b]));
+            foreach ($q->fetchAll() as $r) { $h = (int)$r['h']; if (!isset($H[$h])) continue; $H[$h]['dl'] += (int)$r['dl']; $dripDl += (int)$r['dl']; $u = (int)$r['u']; $H[$h]['spend'] += max(0, (int)$r['dl'] - $u - (int)$r['sv']) * (float)$R['marketing'] + $u * (float)$R['utility']; }
+        }
+    } catch (Throwable $e) { error_log('camp_ideal drip: ' . $e->getMessage()); }
     try {   // replies = queries typed Campaign on the live board, by the hour they opened
         $q = $pdo->prepare("SELECT /*+ MAX_EXECUTION_TIME(12000) */ HOUR(q.opened_at) h, COUNT(*) n FROM wa_queries q JOIN wq_qtype t ON t.query_id = q.id AND t.type = 'campaign' WHERE q.opened_at >= ? AND q.opened_at < ? GROUP BY h"); $q->execute([$a, $b]);
         foreach ($q->fetchAll() as $r) { $h = (int)$r['h']; if (isset($H[$h])) $H[$h]['replies'] = (int)$r['n']; }
@@ -1210,7 +1223,7 @@ function wa_camp_ideal(PDO $pdo, string $day): array
         if ($hw && $hb && $hw['h'] !== $hb['h']) $an[] = ['k' => 'warn', 'text' => 'Most expensive hour: ' . $hl($hw['h']) . ' — ₹' . $hw['c'] . ' per reply (₹' . number_format($hw['spend']) . ' for ' . $hw['replies'] . ' replies). Cut or change the message in that slot.'];
         try { $wc = (int)$pdo->query("SELECT COUNT(*) FROM wa_contacts WHERE status = 'open' AND optout = 0 AND assigned_emp > 0 AND last_in_at >= '" . date('Y-m-d H:i:s', $now - 6 * 3600) . "' AND last_in_at <= '" . date('Y-m-d H:i:s', $now - 600) . "' AND (last_out_at IS NULL OR last_out_at < last_in_at)")->fetchColumn(); if ($wc > 0) $an[] = ['k' => 'warn', 'text' => $wc . ' chat' . ($wc === 1 ? ' is' : 's are') . ' waiting for a reply for more than 10 minutes — each one is a possible order lost.']; } catch (Throwable $e) { }
     }
-    $o = ['day' => $day, 'cfg' => $cfg, 'points' => $pts, 'hourly' => $hourly, 'so_far' => ['ideal' => $so, 'actual' => $act, 'dev' => $dev], 'projection' => $proj, 'need_per_hour' => $need, 'analysis' => $an, 'hours' => array_map(fn($h, $x) => ['h' => $h, 'spend' => round($x['spend']), 'sent' => $x['sent'], 'replies' => $x['replies'], 'orders' => $x['orders']], array_keys($H), array_values($H)), 'from' => $a, 'to' => $b, 'now' => date('Y-m-d H:i:s', $now), 'at' => date('Y-m-d H:i:s')];
+    $o = ['day' => $day, 'cfg' => $cfg, 'points' => $pts, 'hourly' => $hourly, 'so_far' => ['ideal' => $so, 'actual' => $act, 'dev' => $dev], 'drip_delivered' => $dripDl, 'projection' => $proj, 'need_per_hour' => $need, 'analysis' => $an, 'hours' => array_map(fn($h, $x) => ['h' => $h, 'spend' => round($x['spend']), 'sent' => $x['sent'], 'replies' => $x['replies'], 'orders' => $x['orders']], array_keys($H), array_values($H)), 'from' => $a, 'to' => $b, 'now' => date('Y-m-d H:i:s', $now), 'at' => date('Y-m-d H:i:s')];
     wa_cpc_put($pdo, $ck, $o); return $o;
 }
 /** 👥 The customer numbers in one small card: how many we have, how many got our campaign messages, how many failed, how many ordered, how many are new, how many replied.
@@ -1295,7 +1308,7 @@ function wa_camp_spend_today(PDO $pdo, bool $fresh = false): array
 {
     $from = function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 10:00:00', date('H') < 10 ? time() - 86400 : time());
     $to = date('Y-m-d H:i:s', strtotime($from) + 86400); $now = date('Y-m-d H:i:s');
-    if (!$fresh) { try { $hit = json_decode((string)setting_get($pdo, 'wa_camp_spend3', ''), true); if (is_array($hit) && ($hit['from'] ?? '') === $from && (int)($hit['t'] ?? 0) > time() - 60) return $hit; } catch (Throwable $e) { } }
+    if (!$fresh) { try { $hit = json_decode((string)setting_get($pdo, 'wa_camp_spend4', ''), true); if (is_array($hit) && ($hit['from'] ?? '') === $from && (int)($hit['t'] ?? 0) > time() - 60) return $hit; } catch (Throwable $e) { } }
     $R = function_exists('wab_rates') ? wab_rates($pdo) : ['marketing' => 1.09, 'utility' => 0.15, 'authentication' => 0.15, 'service' => 0.0];
     $o = ['from' => $from, 'to' => $to, 'campaigns' => 0, 'sent' => 0, 'delivered' => 0, 'read' => 0, 'failed' => 0, 'replied' => 0, 'retried' => 0, 'recovered' => 0, 'marketing' => 0, 'utility' => 0, 'amount' => 0.0, 'm_amount' => 0.0, 'u_amount' => 0.0, 'rate' => round((float)$R['marketing'], 2), 'u_rate' => round((float)$R['utility'], 2), 't' => time()];
     try {
@@ -1307,11 +1320,30 @@ function wa_camp_spend_today(PDO $pdo, bool $fresh = false): array
     } catch (Throwable $e) { $o['error'] = 'The billing columns are not ready yet.'; }
     try { $q = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE dir = 'out' AND mtype = 'template' AND who = 'campaign' AND status = 'failed' AND ts >= ? AND ts < ?"); $q->execute([$from, $to]); $o['failed'] = (int)$q->fetchColumn(); } catch (Throwable $e) { }
     try { $q = $pdo->prepare("SELECT COUNT(DISTINCT camp_id) FROM wa_camp_items WHERE status = 'sent' AND sent_at >= ? AND sent_at < ?"); $q->execute([$from, $to]); $o['campaigns'] = (int)$q->fetchColumn(); } catch (Throwable $e) { }
+    // 🔁 the 7-Day Drip messages of the same day are added to Sent / Delivered / Read / Failed / Replied / Spent (the drip goes out as follow-ups, so it is not in the campaign rows above); o['drip'] keeps its own share
+    try {
+        $dq = $pdo->prepare("SELECT wamid FROM wa_drip_ev WHERE status = 'sent' AND wamid <> '' AND at >= ? AND at < ?"); $dq->execute([date('Y-m-d H:i:s', strtotime($from) - 7200), date('Y-m-d H:i:s', strtotime($to) + 7200)]); $dids = $dq->fetchAll(PDO::FETCH_COLUMN);
+        $dr = ['sent' => 0, 'delivered' => 0, 'read' => 0, 'failed' => 0, 'replied' => 0, 'utility' => 0, 'service' => 0]; $dph = [];
+        foreach (array_chunk($dids, 800) as $ch) {
+            $mq = $pdo->prepare("SELECT status, bill_cat, phone, ts FROM wa_messages WHERE wamid IN (" . implode(',', array_fill(0, count($ch), '?')) . ") AND ts >= ? AND ts < ?"); $mq->execute(array_merge($ch, [$from, $to]));
+            foreach ($mq->fetchAll() as $m) {
+                if ($m['status'] === 'failed') { $dr['failed']++; continue; } $dr['sent']++;
+                if ($m['status'] === 'delivered' || $m['status'] === 'read') { $dr['delivered']++; if (in_array($m['bill_cat'], ['utility', 'authentication'], true)) $dr['utility']++; elseif ($m['bill_cat'] === 'service') $dr['service']++; $ph = (string)$m['phone']; if (!isset($dph[$ph]) || $m['ts'] < $dph[$ph]) $dph[$ph] = (string)$m['ts']; }
+                if ($m['status'] === 'read') $dr['read']++;
+            }
+        }
+        foreach (array_chunk(array_keys($dph), 800) as $ch) {
+            $iq = $pdo->prepare("SELECT phone, MAX(ts) t FROM wa_messages WHERE dir = 'in' AND ts >= ? AND ts <= ? AND phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ") GROUP BY phone"); $iq->execute(array_merge([$from, $now], $ch));
+            foreach ($iq->fetchAll() as $r) if ((string)$r['t'] > $dph[(string)$r['phone']]) $dr['replied']++;
+        }
+        $o['sent'] += $dr['sent']; $o['delivered'] += $dr['delivered']; $o['read'] += $dr['read']; $o['failed'] += $dr['failed']; $o['replied'] += $dr['replied']; $o['utility'] += $dr['utility']; $o['marketing'] += max(0, $dr['delivered'] - $dr['utility'] - $dr['service']);
+        $o['m_amount'] = round($o['marketing'] * (float)$R['marketing'], 2); $o['u_amount'] = round($o['utility'] * (float)$R['utility'], 2); $o['amount'] = round($o['m_amount'] + $o['u_amount'], 2); $o['drip'] = $dr;
+    } catch (Throwable $e) { error_log('camp_spend drip: ' . $e->getMessage()); }
     try { $q = $pdo->prepare("SELECT COUNT(DISTINCT m.phone) FROM wa_messages m WHERE m.dir = 'out' AND m.mtype = 'template' AND m.who = 'campaign' AND m.status IN ('delivered','read') AND m.ts >= ? AND m.ts < ?
             AND EXISTS (SELECT 1 FROM wa_messages i WHERE i.phone = m.phone AND i.dir = 'in' AND i.ts > m.ts AND i.ts <= ?)"); $q->execute([$from, $to, $now]); $o['replied'] = (int)$q->fetchColumn(); } catch (Throwable $e) { }
     try { $rr = wa_rec_range($pdo, $from, $to); $o['retried'] = $rr['tried']; $o['recovered'] = $rr['recovered']; } catch (Throwable $e) { }
     try { $o['meta'] = wa_meta_spend_cached($pdo); } catch (Throwable $e) { }   // 🏦 Meta's own spend (prepared in the background)
-    try { setting_set($pdo, 'wa_camp_spend3', json_encode($o)); } catch (Throwable $e) { }
+    try { setting_set($pdo, 'wa_camp_spend4', json_encode($o)); } catch (Throwable $e) { }
     return $o;
 }
 /** Messages customers wrote to us per hour of the day (last 30 days), kept for an hour. Returns ['hist' => [24 numbers], 'total', 'best' => [hours inside the window, best first]]. */
@@ -1460,7 +1492,7 @@ if (isset($pdo) && $pdo instanceof PDO && ($__wk === 'wa.camp_ideal' || $__wk ==
         }
     }
 }
-if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_suggest', 'wa.camp_start_now', 'wa.camp_send_skipped', 'wa.camp_snap', 'wa.camp_days', 'wa.camp_hourly', 'wa.cust_summary', 'wa.cust_card', 'wa.camp_hours', 'wa.dq_worker', 'wa.rec_run', 'wa.dq_set', 'wa.rec_report', 'wa.rec_set', 'wa.camp_fast', 'wa.camp_fast_tick', 'wa.fu_list', 'wa.fu_save', 'wa.fu_del', 'wa.fu_preset', 'wa.camp_list', 'wa.camp_templates', 'wa.camp_get', 'wa.camp_preview', 'wa.camp_freq', 'wa.camp_typed_phones', 'wa.camp_save', 'wa.camp_start', 'wa.camp_send_now', 'wa.camp_resume_all', 'wa.camp_stop_all', 'wa.camp_pause', 'wa.camp_resume', 'wa.camp_cancel', 'wa.camp_del', 'wa.camp_tick', 'wa.camp_suggest', 'wa.camp_best_time', 'wa.camp_people', 'wa.camp_people_csv', 'wa.camp_people_phones', 'wa.camp_text_batch', 'wa.camp_thread', 'wa.reports', 'wa.mix_state', 'wa.camp_mix_set'], true) && !($__wk === 'wa.camp_suggest' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST')) {
+if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_suggest', 'wa.camp_start_now', 'wa.camp_send_skipped', 'wa.camp_snap', 'wa.camp_days', 'wa.camp_hourly', 'wa.cust_summary', 'wa.cust_card', 'wa.camp_hours', 'wa.dq_worker', 'wa.rec_run', 'wa.dq_set', 'wa.rec_report', 'wa.rec_set', 'wa.camp_fast', 'wa.camp_fast_tick', 'wa.fu_list', 'wa.fu_save', 'wa.fu_del', 'wa.fu_preset', 'wa.camp_list', 'wa.camp_templates', 'wa.camp_get', 'wa.camp_preview', 'wa.camp_freq', 'wa.camp_typed_phones', 'wa.camp_save', 'wa.camp_start', 'wa.camp_send_now', 'wa.camp_resume_all', 'wa.camp_stop_all', 'wa.camp_pause', 'wa.camp_resume', 'wa.camp_set_tpl', 'wa.camp_cancel', 'wa.camp_del', 'wa.camp_tick', 'wa.camp_suggest', 'wa.camp_best_time', 'wa.camp_people', 'wa.camp_people_csv', 'wa.camp_people_phones', 'wa.camp_text_batch', 'wa.camp_thread', 'wa.reports', 'wa.mix_state', 'wa.camp_mix_set'], true) && !($__wk === 'wa.camp_suggest' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST')) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     $auth = require_auth(); wa_guard_admin($pdo, $auth);
     if (!wa_tables($pdo) || !wa_more_tables($pdo) || !function_exists('wa_tpl_tables') || !wa_tpl_tables($pdo)) json_response(['error' => 'WhatsApp storage is not available — check database permissions.'], 500);
@@ -1732,6 +1764,16 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
             elseif ($__wk === 'wa.camp_resume') { if ($c['status'] !== 'paused') json_response(['error' => 'It is not paused.'], 422); $pdo->prepare("UPDATE wa_campaigns SET status = 'running', note = '' WHERE id = ?")->execute([$c['id']]); }
             else { if (!in_array($c['status'], ['running', 'scheduled', 'paused'], true)) json_response(['error' => 'It cannot be stopped now.'], 422); $pdo->prepare("UPDATE wa_campaigns SET status = 'cancelled', finished_at = ?, note = 'Stopped by you' WHERE id = ?")->execute([date('Y-m-d H:i:s'), $c['id']]); $pdo->prepare("UPDATE wa_camp_items SET status = 'skipped', err = 'Campaign stopped' WHERE camp_id = ? AND status IN ('queued', 'retry')")->execute([$c['id']]); }
             json_response(['ok' => true]);
+        }
+        case 'wa.camp_set_tpl': {   // 🔁 a paused campaign (e.g. Meta paused its message for low quality): pick another approved message and carry on with the people still waiting
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
+            $in = json_input(); $c = wa_camp_row($pdo, (int)($in['id'] ?? 0)); if (!$c) json_response(['error' => 'Campaign not found.'], 404);
+            if ($c['status'] !== 'paused') json_response(['error' => 'Only a paused campaign can change its message.'], 422);
+            $nt = (int)($in['tpl_id'] ?? 0); if ($nt <= 0 || $nt === (int)$c['tpl_id']) json_response(['error' => 'Pick a different message.'], 422);
+            $t = wa_camp_tpl($pdo, $nt, true, (int)$c['media_lib_id']); if (!$t) json_response(['error' => 'That message is not approved by Meta (or needs a photo / video this campaign does not have). Pick another.'], 422);
+            if ((int)($t['nvars'] ?? 0) > 1) json_response(['error' => 'That message has more than one blank — pick one with only a name blank.'], 422);
+            $pdo->prepare("UPDATE wa_campaigns SET tpl_id = ?, status = 'running', note = '' WHERE id = ?")->execute([$nt, $c['id']]);
+            json_response(['ok' => true, 'tpl_name' => (string)($t['name'] ?? '')]);
         }
         case 'wa.camp_del': {
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);

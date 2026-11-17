@@ -72,6 +72,21 @@ function wa_scale_indexes4(PDO $pdo): void
  *  - wa_contacts k_wait (status, last_in_at, last_out_at, optout): "how many chats wait for an answer" read 62,000 contact rows one by one (166 ms); with these four columns in the index the count is
  *    answered from the index alone. Same rows, same answer.
  *  Added once, online (ALGORITHM=INPLACE, LOCK=NONE); tried again after 30 minutes if it did not work. */
+/** 6th set: the reminder list of a person (every chat-list refresh), and the tag counts (covering: no wide row read). Added once, from the engine only. */
+function wa_scale_indexes6(PDO $pdo): void
+{
+    static $done = false; if ($done) return; $done = true;
+    try { if ((string)setting_get($pdo, 'wa_idx_v8', '') !== '') return; if ((int)setting_get($pdo, 'wa_idx_v8_try', '0') > time() - 1800) return; setting_set($pdo, 'wa_idx_v8_try', (string)time()); } catch (Throwable $e) { return; }
+    $want = [['wa_contacts', 'k_rem', '(assigned_emp, remind_at)'], ['wa_contacts', 'k_ph_opt', '(phone, optout)'], ['wa_cust', 'k_ph_act', '(phone, act_at)']]; $ok = 0;
+    foreach ($want as [$t, $k, $cols]) {
+        try {
+            $q = $pdo->query("SHOW INDEX FROM $t WHERE Key_name = '$k'"); if ($q && $q->fetch()) { $ok++; continue; }
+            try { $pdo->exec("ALTER TABLE $t ADD INDEX $k $cols, ALGORITHM=INPLACE, LOCK=NONE"); } catch (Throwable $e) { $pdo->exec("ALTER TABLE $t ADD INDEX $k $cols"); }
+            $ok++; if (function_exists('wag_log')) wag_log($pdo, 'engine', true, "Index $k added on $t.");
+        } catch (Throwable $e) { if (function_exists('wag_log')) wag_log($pdo, 'engine', false, "Index $k not added on $t: " . mb_substr($e->getMessage(), 0, 150)); }
+    }
+    if ($ok === count($want)) { try { setting_set($pdo, 'wa_idx_v8', date('Y-m-d H:i:s')); } catch (Throwable $e) { } }
+}
 function wa_scale_indexes5(PDO $pdo): void
 {
     static $done = false; if ($done) return; $done = true;
@@ -105,7 +120,7 @@ function wa_cust_refresh(PDO $pdo, int $maxAge = 600, bool $force = false): bool
 {
     if (!wa_cust_tables($pdo)) return false;
     wa_scale_indexes($pdo); wa_scale_indexes2($pdo);
-    if (!$force && PHP_SAPI !== 'cli' && strpos((string)($_GET['action'] ?? ''), 'wa.cron') === 0) { wa_scale_indexes3($pdo); wa_scale_indexes4($pdo); wa_scale_indexes5($pdo); }   // only from the engine's own run, never while a person waits for a page
+    if (!$force && PHP_SAPI !== 'cli' && strpos((string)($_GET['action'] ?? ''), 'wa.cron') === 0) { wa_scale_indexes3($pdo); wa_scale_indexes4($pdo); wa_scale_indexes5($pdo); wa_scale_indexes6($pdo); }   // only from the engine's own run, never while a person waits for a page
     if (!$force && wa_cust_age($pdo) < $maxAge) return true;
     try { $got = (int)$pdo->query("SELECT GET_LOCK('wa_cust_refresh', 0)")->fetchColumn(); } catch (Throwable $e) { return false; }
     if ($got !== 1) return false;
@@ -267,6 +282,12 @@ function wa_aud_where(string $src, array $f, string $q = ''): array
     // contacts: start from wa_contacts (indexed, newest first) · all: start from the customer summary
     if ($src === 'contacts') { $from = "wa_contacts c LEFT JOIN wa_cust s ON s.phone = c.phone"; $P = 'c.phone'; }
     else { $from = "wa_cust s LEFT JOIN wa_contacts c ON c.phone = s.phone"; $P = 's.phone'; $w[] = "s.phone REGEXP '^[6-9][0-9]{9}$'"; }
+    if (!empty($f['hist'])) {   // 🕘 History chats: the customer's last message is over 24 h old (or the chat is closed) — the same chats the Chats → History screen lists
+        $w[] = "c.last_in_at IS NOT NULL AND (c.status = 'closed' OR c.last_in_at < ?)"; $p[] = $d(1);
+        if (!empty($f['h_noreply'])) $w[] = '(c.last_out_at IS NULL OR c.last_out_at < c.last_in_at)';
+        if (!empty($f['h_noresult'])) $w[] = 'NOT EXISTS (SELECT 1 FROM wa_outcomes ho WHERE ho.phone = c.phone)';
+        if (!empty($f['h_days'])) { $w[] = 'c.last_in_at >= ?'; $p[] = $d(max(1, min(365, (int)$f['h_days']))); }
+    }
     $st = (string)($f['st'] ?? '');
     if ($st === 'waiting') $w[] = "(c.last_in_at IS NOT NULL AND c.last_in_at > COALESCE(c.last_out_at, '1970-01-01') AND c.optout = 0 AND c.status = 'open')";
     if ($st === 'noreply') $w[] = 'c.last_in_at IS NULL';

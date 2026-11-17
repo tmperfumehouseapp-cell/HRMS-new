@@ -492,7 +492,8 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
 <script src="assets/js/api.js?v=13"></script>
 <script src="assets/js/wa_icons.js?v=i1"></script>
 <script src="assets/js/cx_raise.js?v=cx9"></script>
-<script src="assets/js/wa_inbox.js?v=wa72"></script>
+<script src="assets/js/wa_inbox.js?v=wa77"></script>
+<script src="assets/js/wa_unans_ui.js?v=1"></script>
 <script src="assets/js/wa_panels.js?v=wa49"></script>
 <script src="assets/js/wa_cust_ui.js?v=k30"></script>
 <script src="assets/js/wa_kflow_ui.js?v=kf1"></script>
@@ -509,7 +510,7 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
 <script src="assets/js/wa_growth.js?v=g8"></script>
 <script src="assets/js/wa_prod_ui.js?v=pr4"></script>
 <script src="assets/js/wa_tpl_ui.js?v=t7"></script>
-<script src="assets/js/wa_camp_ui.js?v=c166"></script>
+<script src="assets/js/wa_camp_ui.js?v=c169"></script>
 <script src="assets/js/wa_insights_ui.js?v=i2"></script>
 <script src="assets/js/wa_seg_ui.js?v=1"></script>
 <script src="assets/js/wa_smart_ui.js?v=s4"></script>
@@ -550,6 +551,7 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
     { g: 'INBOX' }, { k: 'overview', t: 'Overview', ic: 'home', mode: 'native', sub: 'How the numbers, chats and team are doing right now' },
     { k: 'chats', t: 'Chats', ic: 'chat', mode: 'native', badge: true, sub: 'Every number, one customer list' },
     { k: 'signals', t: 'Signals', ic: 'flame', mode: 'native', sub: 'Customers waiting too long — give them to someone free. Answering bot.' },
+    { k: 'unans', t: 'Not replied', ic: 'flame', mode: 'native', sub: 'Customers who wrote last and got no answer — today, yesterday, up to 60 days · complaints · who has the chat' },
     { k: 'grab', t: 'Late replies', ic: 'flame', mode: 'native', sub: 'Customers waiting longer than the alert minutes (Signals & bot) — anyone free can take one · who takes the most' },
     { k: 'sgive', t: 'Give queries', ic: 'team', mode: 'native', badge2: 'unassigned', sub: 'Customers nobody has taken yet — give them out' },
     { g: 'QUERIES' },
@@ -595,7 +597,7 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
   // ONE simpler menu (13 instead of 30): screens that do the same job sit together as tabs under one item. Every old screen key still works
   // (#sgive, #premade, #team… open their tab), nothing was removed.
   const GROUPS = [
-    { k: 'waiting', t: 'Waiting', ic: 'flame', badge2: 'unassigned', sub: 'Customers nobody has taken · waiting too long · the answering bot', tabs: [['sgive', 'Not taken'], ['grab', 'Late replies'], ['handoffs', 'Bot handoffs'], ['signals', 'Signals & bot']] },
+    { k: 'waiting', t: 'Waiting', ic: 'flame', badge2: 'unassigned', sub: 'Customers nobody has taken · waiting too long · the answering bot', tabs: [['sgive', 'Not taken'], ['unans', '🚨 Not replied'], ['grab', 'Late replies'], ['handoffs', 'Bot handoffs'], ['signals', 'Signals & bot']] },
     { k: 'results', t: 'Queries & reports', ic: 'trend', sub: 'Queries per person, replies, what WhatsApp costs and past chats', tabs: [['queries', 'Queries'], ['reports', 'Reports'], ['billing', 'Billing & spend'], ['history', 'History']] },
     { k: 'customers', t: 'Customers', ic: 'users', sub: 'Every customer, tags and audiences, and the ads that bring them', tabs: [['contacts', 'Contacts'], ['tags', 'Tags & audience'], ['autotags', 'Auto tags'], ['ads', 'Ads']] },
     { k: 'templates', t: 'Messages', ic: 'tpl', sub: 'The message library: Meta-approved messages, the builder, one per situation, every automatic message in one list, and the complaint messages', tabs: [['mymsgs', 'Plan messages'], ['premade', 'Pre-made'], ['fixedb', 'Fixed & builder'], ['allmsgs', 'Where each message lives'], ['cxmsgs', 'Complaint messages']] },
@@ -692,7 +694,8 @@ body.waui .dkb{border:1px solid var(--line);background:#fff;border-radius:999px;
     if (!secs[cur]) {
       const d = document.createElement('div'); d.className = 'sec'; secs[cur] = d; $('body').appendChild(d);
       if (m.mode === 'native' && cur === 'overview') { d.classList.add('pad'); d.innerHTML = '<div class="muted">Loading…</div>'; loadOverview(false); }
-      else if (m.mode === 'native' && cur === 'chats') { d.classList.add('fill'); d.innerHTML = '<div id="wi"></div>'; if (!inboxStarted) { inboxStarted = true; WaInbox.start({ mode: 'admin', root: 'wi', onFeed: (k) => { feedNow = k || ''; const m = ITEMS.find((x) => x.feed === feedNow); if (cur === 'chats') { $('ttl').textContent = m ? m.t : 'Chats'; } drawRail(); }, onCounts: (c) => { srcN = (c && c.src) || srcN; unN = (c && c.unassigned != null) ? c.unassigned : unN; drawRail(); } }); } }
+      else if (m.mode === 'native' && cur === 'chats') { d.classList.add('fill'); d.innerHTML = '<div id="wi"></div>'; if (!inboxStarted) { inboxStarted = true; WaInbox.start({ mode: 'admin', root: 'wi', onUnans: () => go('unans'), onFeed: (k) => { feedNow = k || ''; const m = ITEMS.find((x) => x.feed === feedNow); if (cur === 'chats') { $('ttl').textContent = m ? m.t : 'Chats'; } drawRail(); }, onCounts: (c) => { srcN = (c && c.src) || srcN; unN = (c && c.unassigned != null) ? c.unassigned : unN; drawRail(); } }); } }
+      else if (m.mode === 'native' && cur === 'unans' && window.WaUnans) { reload[cur] = WaUnans.mount(d, { openChat }); }
       else if (m.mode === 'frame') { d.classList.add('frame'); d.innerHTML = '<iframe allow="camera; microphone; geolocation; clipboard-read; clipboard-write; fullscreen" title="' + esc(m.t) + '" src="' + esc(m.src) + '"></iframe>'; }
       else if (m.mode === 'native' && window.WaPanels && WaPanels.has(cur)) { reload[cur] = WaPanels.mount(cur, d, { go, openChat, closeSide }); if (window.WaGrowth) WaGrowth.claudeBar(d, cur, { go, openChat }); }
       else { d.classList.add('pad'); d.innerHTML = '<div class="err">This screen could not load. Refresh the page.</div>'; }

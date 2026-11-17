@@ -74,7 +74,7 @@ if (is_file(__DIR__ . '/order_hub.php')) require_once __DIR__ . '/order_hub.php'
 function dp_dsp_ensure(PDO $pdo) {
     static $done = false; if ($done) return; $done = true;
     $flag = sys_get_temp_dir() . '/hrms_dp_dsp_v4_' . substr(md5(__DIR__), 0, 8);
-    if (is_file($flag)) { try { $pdo->query("SELECT pend_track, pend_courier, pend_link, pend_by, pend_at, track_link, manual, job_at, t_man, t_g3, t_un FROM dp_dsp_parcels LIMIT 0"); $pdo->query("SELECT 1 FROM dp_dsp_couriers LIMIT 0"); $pdo->query("SELECT for_date, by_emp FROM dp_dsp_untr LIMIT 0"); $pdo->query("SELECT 1 FROM dp_dsp_untr_case LIMIT 0"); $pdo->query("SELECT 1 FROM dp_dsp_untr_miss LIMIT 0"); $pdo->query("SELECT 1 FROM dp_dsp_untr_day LIMIT 0"); return; } catch (Throwable $e) {} }
+    if (is_file($flag)) { try { $pdo->query("SELECT pend_track, pend_courier, pend_link, pend_by, pend_at, track_link, manual, job_at, t_man, t_g3, t_un, hand_note FROM dp_dsp_parcels LIMIT 0"); $pdo->query("SELECT 1 FROM dp_dsp_couriers LIMIT 0"); $pdo->query("SELECT for_date, by_emp FROM dp_dsp_untr LIMIT 0"); $pdo->query("SELECT 1 FROM dp_dsp_untr_case LIMIT 0"); $pdo->query("SELECT 1 FROM dp_dsp_untr_miss LIMIT 0"); $pdo->query("SELECT 1 FROM dp_dsp_untr_day LIMIT 0"); return; } catch (Throwable $e) {} }
     $pdo->exec("CREATE TABLE IF NOT EXISTS dp_dsp_parcels (
         id INT AUTO_INCREMENT PRIMARY KEY, store_key VARCHAR(20) NOT NULL, shopify_id BIGINT NOT NULL, order_name VARCHAR(40) NOT NULL DEFAULT '',
         created_at DATETIME NOT NULL, customer VARCHAR(120) NULL, phone VARCHAR(40) NULL,
@@ -93,7 +93,9 @@ function dp_dsp_ensure(PDO $pdo) {
               "ALTER TABLE dp_dsp_parcels ADD COLUMN pend_by VARCHAR(80) NULL", "ALTER TABLE dp_dsp_parcels ADD COLUMN pend_at DATETIME NULL", "ALTER TABLE dp_dsp_parcels ADD COLUMN track_link VARCHAR(300) NULL",
               "ALTER TABLE dp_dsp_parcels ADD COLUMN manual TINYINT NOT NULL DEFAULT 0", "ALTER TABLE dp_dsp_parcels ADD COLUMN job_at DATETIME NULL",
               "ALTER TABLE dp_dsp_parcels ADD COLUMN t_man TINYINT NOT NULL DEFAULT 0", "ALTER TABLE dp_dsp_parcels ADD COLUMN t_g3 TINYINT NOT NULL DEFAULT 0", "ALTER TABLE dp_dsp_parcels ADD COLUMN t_un TINYINT NOT NULL DEFAULT 0",
-              "ALTER TABLE dp_dsp_parcels ADD INDEX idx_dsp_pend (pend_at)"] as $__a) { try { $pdo->exec($__a); } catch (Throwable $e) {} }
+              "ALTER TABLE dp_dsp_parcels ADD INDEX idx_dsp_pend (pend_at)",
+              // v5: why an order was closed by hand ("Cancelled by CC", "Refunded"); manual = 2 marks a tracking ID of another courier written with the pencil (Shiprocket must not overwrite it)
+              "ALTER TABLE dp_dsp_parcels ADD COLUMN hand_note VARCHAR(60) NULL"] as $__a) { try { $pdo->exec($__a); } catch (Throwable $e) {} }
     $pdo->exec("CREATE TABLE IF NOT EXISTS dp_dsp_couriers (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(40) NOT NULL, link VARCHAR(300) NULL, active TINYINT NOT NULL DEFAULT 1, sort_no INT NOT NULL DEFAULT 0, UNIQUE KEY uq_courier (name)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     $pdo->exec("CREATE TABLE IF NOT EXISTS dp_dsp_untr (id INT AUTO_INCREMENT PRIMARY KEY, parcel_id INT NOT NULL, action VARCHAR(20) NOT NULL, note VARCHAR(300) NULL, check_date DATE NULL, by_user VARCHAR(80) NULL, created_at DATETIME NOT NULL, INDEX (parcel_id)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
     // v4: a remark every day on every untraceable parcel (one row per remark, with the day it is for), who is responsible for each parcel, the days that were closed at 6 PM
@@ -126,7 +128,7 @@ function dp_dsp_sync(PDO $pdo, $now, $force = false) {
     $cId = []; $cName = [];
     try { $q = $pdo->query("SELECT order_id, order_name FROM order_cancels WHERE cancelled_at >= '" . date('Y-m-d', $now - 40 * 86400) . "'"); foreach ($q->fetchAll() as $r) { $cId[(string)$r['order_id']] = 1; if ($r['order_name'] !== '') $cName[dp_dsp_norm_order($r['order_name'])] = 1; } } catch (Throwable $e) {}
     $have = [];
-    foreach ($pdo->query("SELECT id, store_key, shopify_id, status, tracking_no FROM dp_dsp_parcels WHERE created_at >= '" . $from . "'")->fetchAll() as $r) $have[$r['store_key'] . '|' . $r['shopify_id']] = $r;
+    foreach ($pdo->query("SELECT id, store_key, shopify_id, status, tracking_no, sr_status, manual, hand_note FROM dp_dsp_parcels WHERE created_at >= '" . $from . "'")->fetchAll() as $r) $have[$r['store_key'] . '|' . $r['shopify_id']] = $r;
     $ins = $pdo->prepare("INSERT IGNORE INTO dp_dsp_parcels (store_key, shopify_id, order_name, created_at, customer, phone, status, due48, due4, shop_fulfil, synced_at, t48, t4, warn36, warn44, warn_d3, warn_d4a, warn_d4b) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
     $new = 0; $canc = 0; $nowS = date('Y-m-d H:i:s', $now);
     foreach ($orders as $o) {
@@ -139,11 +141,31 @@ function dp_dsp_sync(PDO $pdo, $now, $force = false) {
             if ($ins->rowCount()) { $new++; if ($isCanc) $canc++; }
         } else {
             $r = $have[$k];
-            if ($isCanc && !in_array($r['status'], ['cancelled', 'delivered', 'rto'], true)) { $pdo->prepare("UPDATE dp_dsp_parcels SET status = 'cancelled' WHERE id = ?")->execute([$r['id']]); $canc++; }
-            elseif (!$isCanc && $r['status'] === 'cancelled') { $pdo->prepare("UPDATE dp_dsp_parcels SET status = ? WHERE id = ?")->execute([$r['tracking_no'] ? 'tracked' : 'placed', $r['id']]); }
+            $srS = strtolower((string)($r['sr_status'] ?? ''));
+            $srDead = strpos($srS, 'cancel') !== false && strpos($srS, 'return') === false;                                                  // Shiprocket itself cancelled the shipment
+            $srMoving = $srS !== '' && function_exists('dp_dsp_sr_map') && in_array(dp_dsp_sr_map($srS, true), ['transit', 'delivered', 'rto'], true);   // the courier really has the parcel
+            // a parcel the courier is carrying (or one sent by another courier, written by hand) stays what it is although the order was cancelled in Shopify
+            if ($isCanc && (in_array($r['status'], ['placed', 'tracked'], true) || ($r['status'] === 'transit' && !$srMoving && empty($r['manual'])))) { $pdo->prepare("UPDATE dp_dsp_parcels SET status = 'cancelled' WHERE id = ?")->execute([$r['id']]); $canc++; }
+            // a parcel is NOT brought back to the waiting lists when Shiprocket cancelled its shipment or when it was closed by hand
+            elseif (!$isCanc && $r['status'] === 'cancelled' && !$srDead && (string)($r['hand_note'] ?? '') === '') { $pdo->prepare("UPDATE dp_dsp_parcels SET status = ? WHERE id = ?")->execute([$r['tracking_no'] ? 'tracked' : 'placed', $r['id']]); }
         }
     }
     try { $pdo->prepare("DELETE FROM dp_dsp_parcels WHERE created_at < ?")->execute([date('Y-m-d', $now - 100 * 86400)]); } catch (Throwable $e) {}
+    // the same two rules for parcels the Shiprocket read no longer reaches: a cancelled shipment is "cancelled", a parcel that reached back the seller is a return
+    try { $pdo->exec("UPDATE dp_dsp_parcels SET status = 'cancelled' WHERE status IN ('placed','tracked') AND manual = 0 AND pend_track IS NULL AND sr_status LIKE '%cancel%' AND sr_status NOT LIKE '%return%'"); } catch (Throwable $e) {}
+    try { $pdo->exec("UPDATE dp_dsp_parcels SET status = 'rto' WHERE status IN ('tracked','transit') AND sr_status LIKE 'reached back%'"); } catch (Throwable $e) {}
+    try { dp_dsp_courier_seed($pdo); } catch (Throwable $e) {}
+    // the DTDC link that was first suggested (tracking.dtdc.com) does not exist: the courier list and the parcels that saved it get DTDC's own tracking page (one time)
+    try {
+        if (function_exists('dp_get') && dp_get('dsp_dtdc_fix1', '') === '') {
+            dp_put('dsp_dtdc_fix1', date('Y-m-d H:i:s', $now));
+            $pdo->exec("UPDATE dp_dsp_couriers SET link = 'https://www.dtdc.com/track' WHERE link LIKE 'https://tracking.dtdc.com/%'");
+            $pdo->exec("UPDATE dp_dsp_parcels SET track_link = NULL WHERE track_link LIKE 'https://tracking.dtdc.com/%'");
+            $pdo->exec("UPDATE dp_dsp_parcels SET pend_link = NULL WHERE pend_link LIKE 'https://tracking.dtdc.com/%'");
+        }
+    } catch (Throwable $e) {}
+    try { dp_dsp_hand_seed($pdo); } catch (Throwable $e) {}
+    try { dp_dsp_panel_seed($pdo, $now); } catch (Throwable $e) {}
     try { if (!function_exists('wmo_dsp_heal') && is_file(__DIR__ . '/wmo.php')) require_once __DIR__ . '/wmo.php'; if (function_exists('wmo_dsp_heal')) wmo_dsp_heal($pdo); } catch (Throwable $e) {}   // tracking IDs typed / imported on the Manual orders page reach their parcel here too
     return [$new, $canc];
 }
@@ -219,16 +241,80 @@ function dp_dsp_set_limits(PDO $pdo, $hours, $days, $by = '', $src = 'dispatch',
         . ($out['forgiven'] ? '; ' . $out['forgiven'] . ' that are late only because of the change will not be fined' : '') . ($out['boss_items'] ? '; ' . $out['boss_items'] . ' Boss task' . ($out['boss_items'] === 1 ? ' was' : 's were') . ' re-worded to match' : '') . '.';
     return $out;
 }
+/** ONE TIME: the courier list gets the tracking pages that were still blank (a link somebody already typed is never changed), and Mahavir is added when it is missing. */
+function dp_dsp_courier_seed(PDO $pdo) {
+    if (!function_exists('dp_get') || dp_get('dsp_courier_seed1', '') !== '') return;
+    dp_put('dsp_courier_seed1', date('Y-m-d H:i:s'));
+    $rows = $pdo->query("SELECT id, name, link FROM dp_dsp_couriers")->fetchAll();
+    $want = [['india post', 'India Post', 'https://www.indiapost.gov.in/_layouts/15/dop.portal.tracking/trackconsignment.aspx'],
+             ['mahavir', 'Mahavir', 'http://shreemahavircourier.com/'],
+             ['bluedart', 'Bluedart', 'https://shiprocket.co/tracking/{ID}']];   // every Bluedart parcel is booked through Shiprocket
+    foreach ($want as $x) {
+        $hit = null; foreach ($rows as $r) if (stripos((string)$r['name'], $x[0]) !== false) { $hit = $r; break; }
+        if ($hit) { if (trim((string)$hit['link']) === '') $pdo->prepare("UPDATE dp_dsp_couriers SET link = ? WHERE id = ?")->execute([$x[2], $hit['id']]); }
+        else $pdo->prepare("INSERT INTO dp_dsp_couriers (name, link, active, sort_no) VALUES (?,?,1,?)")->execute([$x[1], $x[2], 50 + count($rows)]);
+    }
+}
+/** ONE TIME: the white-panel orders of the team's manual sheet (1-15 Nov 2026) that HRMS did not hold become parcels, with the tracking ID, courier and status of the sheet.
+ *  From then on the Shiprocket read finds them by order number and keeps the status current. They are history: never warned, never fined. An order number that already has a parcel is skipped.
+ *  Also: the three office-pickup WM orders the sheet shows as collected are marked delivered. Runs once (flag in dp_state). */
+function dp_dsp_panel_seed(PDO $pdo, $now) {
+    if (!function_exists('dp_get') || dp_get('dsp_panel_seed1', '') !== '') return;
+    $file = __DIR__ . '/dsp_seed_panel.php'; if (!is_file($file)) return;
+    dp_put('dsp_panel_seed1', date('Y-m-d H:i:s', $now));
+    $rows = require $file; if (!is_array($rows)) return;
+    if (function_exists('dp_dsp_sr_cols')) dp_dsp_sr_cols($pdo);
+    $nowS = date('Y-m-d H:i:s', $now); $n = 0;
+    $ins = $pdo->prepare("INSERT IGNORE INTO dp_dsp_parcels (store_key, shopify_id, order_name, created_at, customer, phone, status, due48, due4, shop_fulfil, synced_at, t48, t4, warn36, warn44, warn_d3, warn_d4a, warn_d4b) VALUES ('manual',?,?,?,'','',?,?,?,'',?,2,2,1,1,1,1,1)");
+    foreach ($rows as $x) {
+        list($name, $sid, $created, $trk, $cour, $st, $deliv, $copy, $note, $man) = $x;
+        if (dp_dsp_find_by_name($pdo, $name)) continue;
+        if ($trk !== '' && $trk !== 'Office Pickup' && dp_dsp_track_in_use($pdo, $trk, 0) !== '') continue;
+        $c = strtotime($created); if (!$c) continue;
+        $ins->execute([$sid, $name, $created, $st, date('Y-m-d H:i:s', dp_dsp_due48($c)), date('Y-m-d H:i:s', dp_dsp_due4($c)), $nowS]);
+        if (!$ins->rowCount()) continue;
+        $id = (int)$pdo->lastInsertId(); $n++;
+        $moved = in_array($st, ['transit', 'delivered', 'rto'], true);
+        $pdo->prepare("UPDATE dp_dsp_parcels SET tracking_no = ?, courier = ?, tracked_at = ?, tracked_by = 'Manual sheet', transit_at = ?, delivered_at = ?, manual = ?, hand_note = ?, t_man = 1, t_g3 = 1, t_un = 1 WHERE id = ?")
+            ->execute([$trk, $cour, $trk !== '' ? $created : null, $moved ? $created : null, $deliv !== '' ? $deliv : ($st === 'delivered' ? $created : null), (int)$man, $note !== '' ? $note : null, $id]);
+        if ($copy !== '') { try { $pdo->prepare("UPDATE dp_dsp_parcels SET sr_oid = ? WHERE id = ?")->execute([$copy, $id]); } catch (Throwable $e) {} }
+    }
+    $pdo->exec("UPDATE dp_dsp_parcels SET status = 'delivered', delivered_at = COALESCE(delivered_at, '$nowS') WHERE order_name IN ('WM-00032','WM-00010','WM-00008') AND status = 'transit' AND tracking_no = 'Office Pickup'");
+    if (function_exists('bd_log')) { try { bd_log('dispatch', 'Manual sheet', $n . ' white-panel orders of the manual sheet added as parcels', 'Manual sheet'); } catch (Throwable $e) {} }
+}
+/** ONE TIME: the four parcels of the team's manual sheet (Nov 2026) that went by another courier get that courier's tracking ID, exactly as the pencil would write it.
+ *  A parcel that already has a hand-written ID, or is delivered / returned, is left alone. Runs once (flag in dp_state). */
+function dp_dsp_hand_seed(PDO $pdo) {
+    if (!function_exists('dp_get') || dp_get('dsp_hand_seed1', '') !== '') return;
+    dp_put('dsp_hand_seed1', date('Y-m-d H:i:s'));
+    $names = []; foreach ($pdo->query("SELECT name FROM dp_dsp_couriers")->fetchAll() as $c) $names[] = (string)$c['name'];
+    $pick = function ($needle, $def) use ($names) { foreach ($names as $n) if (stripos($n, $needle) !== false) return $n; return $def; };
+    $list = [['66600', 'EG164001562IN', $pick('india post', 'India Post')], ['67617', 'SRT51601078', $pick('fessional', 'Professional Couriers')],
+             ['67814', '7D143313099', $pick('dtdc', 'DTDC')], ['67651', '7D143313098', $pick('dtdc', 'DTDC')]];
+    $now = date('Y-m-d H:i:s');
+    foreach ($list as $x) {
+        $rows = dp_dsp_find_by_name($pdo, $x[0]); if (count($rows) !== 1) continue; $p = $rows[0];
+        if ((int)$p['manual'] === 2 || in_array($p['status'], ['delivered', 'rto'], true) || dp_dsp_track_in_use($pdo, $x[1], $p['id']) !== '') continue;
+        $lk = function_exists('dp_dsp_link_for') ? dp_dsp_link_for($pdo, $x[2], $x[1]) : ''; $lk = $lk !== '' ? $lk : null;
+        $pdo->prepare("UPDATE dp_dsp_parcels SET tracking_no = ?, courier = ?, track_link = ?, status = 'transit', tracked_at = COALESCE(tracked_at, ?), tracked_by = COALESCE(NULLIF(tracked_by, ''), 'Manual sheet'), transit_at = COALESCE(transit_at, ?), pend_track = NULL, pend_courier = ?, pend_link = ?, pend_by = 'Manual sheet', pend_at = ?, manual = 2, sr_status = NULL, hand_note = NULL WHERE id = ?")
+            ->execute([$x[1], $x[2], $lk, $now, $now, $x[2], $lk, $now, $p['id']]);
+        if (function_exists('bd_log')) { try { bd_log('dispatch', (string)$p['order_name'], 'tracking ID from the manual sheet: ' . $x[1] . ' (' . $x[2] . ')' . ((string)$p['tracking_no'] !== '' ? ', before: ' . $p['tracking_no'] . ' ' . $p['courier'] : ''), 'Manual sheet'); } catch (Throwable $e) {} }
+    }
+}
 /* ============================== changing a parcel ============================== */
 function dp_dsp_rank($s) { $r = ['placed' => 0, 'tracked' => 1, 'transit' => 2, 'delivered' => 3]; return $r[$s] ?? -1; }
-/** set tracking / courier / status. $allowDown lets a manager correct a status downwards. Returns a short word of what changed ('' = nothing). */
-function dp_dsp_apply(PDO $pdo, array $p, $track, $courier, $status, $by, $allowDown = false) {
+/** set tracking / courier / status. $allowDown lets a manager correct a status downwards. $revive (the Shiprocket order read only) lets a parcel parked as cancelled come back when Shiprocket
+ *  says the courier is carrying it, or when a shipment Shiprocket had cancelled is live again with an AWB. Returns a short word of what changed ('' = nothing). */
+function dp_dsp_apply(PDO $pdo, array $p, $track, $courier, $status, $by, $allowDown = false, $revive = false) {
     $set = []; $par = []; $now = bd_now(); $did = [];
     $track = trim((string)$track);
     if ($track !== '' && $track !== (string)$p['tracking_no']) { $set[] = 'tracking_no = ?'; $par[] = $track; $did[] = 'tracking'; if (!empty($p['pend_track'])) { $set[] = 'pend_track = NULL'; } if (!$p['tracked_at']) { $set[] = 'tracked_at = ?'; $par[] = $now; $set[] = 'tracked_by = ?'; $par[] = mb_substr($by, 0, 80); } }
     if ($courier !== '' && $courier !== null && $courier !== (string)$p['courier']) { $set[] = 'courier = ?'; $par[] = mb_substr(trim((string)$courier), 0, 40); }
     $cur = $p['status']; $new = $cur;
-    if (in_array($cur, ['rto', 'cancelled'], true) && !$allowDown) $status = '';
+    if (in_array($cur, ['rto', 'cancelled'], true) && !$allowDown) {
+        $back = $revive && $cur === 'cancelled' && (in_array($status, ['transit', 'delivered'], true) || ($status === 'tracked' && $track !== '' && stripos((string)($p['sr_status'] ?? ''), 'cancel') !== false));
+        if (!$back) $status = '';
+    }
     $hasTrack = $track !== '' || (string)$p['tracking_no'] !== '';
     if ($status === 'rto' && $cur !== 'rto') $new = 'rto';
     elseif ($status === 'cancelled') $new = 'cancelled';
@@ -695,7 +781,6 @@ if (strpos((string)$action, 'dp.dsp_') === 0) {
         $name = trim((string)($in['name'] ?? '')); $link = trim((string)($in['link'] ?? ''));
         if (mb_strlen($name) < 2 || mb_strlen($name) > 40) json_response(['error' => 'Give the courier a name (2 to 40 letters).'], 422);
         if ($link !== '') {
-            if (strpos($link, '{ID}') === false) json_response(['error' => 'Put {ID} in the link where the tracking ID goes, for example https://courier.example/track?no={ID}'], 422);
             if (!dp_dsp_link_ok(str_replace('{ID}', 'X123', $link))) json_response(['error' => 'The link must start with http:// or https://'], 422);
         }
         $active = array_key_exists('active', $in) ? (empty($in['active']) ? 0 : 1) : 1;
@@ -734,6 +819,46 @@ if (strpos((string)$action, 'dp.dsp_') === 0) {
         }
         $job = dp_dsp_job_refresh($pdo, $now);
         json_response(['ok' => true, 'approved' => $isAdm, 'message' => $msg, 'job' => $job]);
+    }
+    /* ---------- ✎ the pencil (Admin): another courier's tracking ID on any open parcel, close an order by hand, mark a hand-tracked parcel delivered / returned ---------- */
+    case 'dp.dsp_hand': {
+        if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
+        bd_need_admin($auth);
+        $st = $pdo->prepare("SELECT * FROM dp_dsp_parcels WHERE id = ?"); $st->execute([(int)($in['id'] ?? 0)]); $p = $st->fetch(); if (!$p) json_response(['error' => 'Parcel not found.'], 404);
+        $mode = (string)($in['mode'] ?? ''); $nowS = date('Y-m-d H:i:s', $now); $who = mb_substr($by, 0, 80); $on = (string)$p['order_name'];
+        if ($mode === 'track') {
+            if (in_array($p['status'], ['delivered', 'rto'], true)) json_response(['error' => 'This order is already ' . ($p['status'] === 'rto' ? 'returned' : 'delivered') . '.'], 409);
+            $t = trim((string)($in['tracking_no'] ?? '')); if ($t === '') json_response(['error' => 'Type the tracking ID.'], 422);
+            if (!dp_dsp_valid_track($t)) json_response(['error' => 'That does not look like a tracking ID (4 to 40 letters or digits, no spaces).'], 422);
+            $used = dp_dsp_track_in_use($pdo, $t, $p['id']); if ($used !== '') json_response(['error' => 'This tracking ID is already on order ' . $used . '.'], 409);
+            $courier = trim((string)($in['courier'] ?? '')); if (mb_strlen($courier) < 2) json_response(['error' => 'Choose the courier.'], 422); $courier = mb_substr($courier, 0, 40);
+            $link = trim((string)($in['link'] ?? ''));
+            if ($link === '') $link = dp_dsp_link_for($pdo, $courier, $t); elseif (!dp_dsp_link_ok($link)) json_response(['error' => 'The courier link must start with http:// or https://'], 422);
+            $lk = $link !== '' ? $link : null;
+            $pdo->prepare("UPDATE dp_dsp_parcels SET tracking_no = ?, courier = ?, track_link = ?, status = 'transit', tracked_at = COALESCE(tracked_at, ?), tracked_by = COALESCE(NULLIF(tracked_by, ''), ?), transit_at = COALESCE(transit_at, ?), pend_track = NULL, pend_courier = ?, pend_link = ?, pend_by = ?, pend_at = ?, manual = 2, sr_status = NULL, hand_note = NULL WHERE id = ?")
+                ->execute([$t, $courier, $lk, $nowS, $who, $nowS, $courier, $lk, $who, $nowS, $p['id']]);
+            try { $pdo->prepare("UPDATE dp_dsp_parcels SET live_at = NULL WHERE id = ?")->execute([$p['id']]); } catch (Throwable $e) {}
+            bd_log('dispatch', $on, 'tracking ID written by hand: ' . $t . ' (' . $courier . ')' . ((string)$p['tracking_no'] !== '' ? ', before: ' . $p['tracking_no'] . ' ' . $p['courier'] : '') . ', was ' . $p['status'], $by);
+            $msg = 'Saved. ' . $on . ' is now in transit with ' . $courier . ' ' . $t . '.';
+        } elseif ($mode === 'close') {
+            $why = (string)($in['reason'] ?? ''); if (!in_array($why, ['Cancelled by CC', 'Refunded', 'COD not available', 'Other'], true)) json_response(['error' => 'Choose the reason.'], 422);
+            if (!in_array($p['status'], ['placed', 'tracked'], true)) json_response(['error' => 'Only an order that is still waiting can be closed. This one is ' . ($p['status'] === 'transit' ? 'with the courier' : $p['status']) . '.'], 409);
+            $pdo->prepare("UPDATE dp_dsp_parcels SET status = 'cancelled', hand_note = ?, pend_track = NULL WHERE id = ? AND status IN ('placed','tracked')")->execute([$why, $p['id']]);
+            bd_log('dispatch', $on, 'closed by hand: ' . $why, $by); $msg = $on . ' is closed (' . $why . '). It moved to Cancelled.';
+        } elseif ($mode === 'reopen') {
+            if ($p['status'] !== 'cancelled' || (string)($p['hand_note'] ?? '') === '') json_response(['error' => 'Only an order that was closed by hand can be opened again.'], 409);
+            if (stripos((string)($p['sr_status'] ?? ''), 'cancel') !== false) json_response(['error' => 'Shiprocket cancelled this shipment. Write the new tracking ID with the pencil instead.'], 409);
+            $pdo->prepare("UPDATE dp_dsp_parcels SET status = ?, hand_note = NULL WHERE id = ? AND status = 'cancelled'")->execute([(string)$p['tracking_no'] !== '' ? 'tracked' : 'placed', $p['id']]);
+            bd_log('dispatch', $on, 'opened again (was closed by hand: ' . $p['hand_note'] . ')', $by); $msg = $on . ' is open again.';
+        } elseif ($mode === 'status') {
+            $to = (string)($in['to'] ?? ''); if (!in_array($to, ['delivered', 'rto'], true)) json_response(['error' => 'Choose delivered or returned.'], 422);
+            if (empty($p['manual']) || $p['status'] !== 'transit') json_response(['error' => 'Only a parcel sent by another courier (tracking ID written by hand) that is in transit can be marked here. Shiprocket parcels update by themselves.'], 409);
+            if ($to === 'delivered') $pdo->prepare("UPDATE dp_dsp_parcels SET status = 'delivered', delivered_at = COALESCE(delivered_at, ?) WHERE id = ? AND status = 'transit'")->execute([$nowS, $p['id']]);
+            else $pdo->prepare("UPDATE dp_dsp_parcels SET status = 'rto' WHERE id = ? AND status = 'transit'")->execute([$p['id']]);
+            bd_log('dispatch', $on, 'marked ' . ($to === 'rto' ? 'returned' : 'delivered') . ' by hand (' . $p['courier'] . ' ' . $p['tracking_no'] . ')', $by); $msg = $on . ' is marked ' . ($to === 'rto' ? 'returned.' : 'delivered.');
+        } else json_response(['error' => 'Unknown action.'], 422);
+        $job = dp_dsp_job_refresh($pdo, $now);
+        json_response(['ok' => true, 'message' => $msg, 'job' => $job]);
     }
     case 'dp.dsp_manual_decide': {
         if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);

@@ -46,8 +46,10 @@
         <button class="btn" type="button" id="bXlsx" title="The FP export file (Date, Order No, Order Type, AWB NO, Products, … Transaction Id)">⬇ Export Excel (FP)</button>
         <button class="btn" type="button" id="bImp" style="background:#fff;color:#1d4ed8;border:1px solid #1d4ed8" title="Upload the sheet with Order ID, AWB and Courier service: the tracking IDs are added to these orders and to Dispatch">⬆ Import AWB sheet</button><input type="file" id="fImp" accept=".xlsx,.xls,.csv" style="display:none">
         <button class="btn" type="button" id="bCsv"style="background:#fff;color:#0b6b4b;border:1px solid #1aa37a" title="Shopify orders export columns, one row per product">⬇ CSV (Shopify format)</button>
+        <button class="btn" type="button" id="bPush" style="display:none;background:#fff;color:#4338ca;border:1px solid #6366f1" title="Send the confirmed manual orders to the dispatch panel by itself, at a set time (through n8n)">⚙ Auto-send to Dispatch</button>
       </div>
       <div id="dmCost" style="display:none;border:1px solid #f59e0b;background:#fffbeb;border-radius:12px;padding:12px;margin:8px 0"></div>
+      <div id="dmPush" style="display:none;border:1px solid #6366f1;background:#f5f5ff;border-radius:12px;padding:12px;margin:8px 0"></div>
       <div id="dmSum"></div><div id="dmErr"></div>
       <div class="wrap"><table><thead><tr><th>Order</th><th>Date</th><th>Customer</th><th>Mobile</th><th>Address · Pincode · City / State</th><th>Items</th><th>Total</th><th>Payment</th><th>UTR</th><th>Status</th><th>Invoice</th><th>Shipping</th><th></th></tr></thead><tbody id="dmRows"><tr><td colspan="13">Loading…</td></tr></tbody></table></div>
       <div id="dmPg" style="display:flex;gap:8px;align-items:center;margin:10px 0"></div>
@@ -193,6 +195,43 @@
     const sv = $('fcSave'); if (sv) sv.onclick = async () => { const sizes2 = {}; sizes.forEach((m) => { const v = $('fc_' + m).value.trim(); if (v !== '') sizes2[m] = v; });
       sv.disabled = true; try { await api.post('wmo.cost_save', { sizes: sizes2, chain: $('fc_chain').value.trim(), other: $('fc_other').value.trim() }); sv.textContent = 'Saved ✓'; setTimeout(() => { sv.textContent = 'Save costs'; sv.disabled = false; }, 1500); } catch (e) { alert(e.message); sv.disabled = false; } };
   };
+  // ---- ⚙ automatic send of the confirmed manual orders to the dispatch panel (n8n webhook) — Admin / HR only
+  (function () {
+    let u = {}; try { u = JSON.parse(localStorage.getItem('hrms_user') || '{}'); } catch (e) { }
+    if (['Admin', 'HR'].indexOf(u.role) < 0) return;
+    const bP = $('bPush'), box = $('dmPush'); bP.style.display = '';
+    let V = null;
+    const row = (t, b) => '<label style="display:block;font-size:12px;color:var(--muted);font-weight:700;margin:8px 0 3px">' + t + '</label>' + b;
+    function drawPush() {
+      const c = V.cfg, lg = (V.log || []).slice(0, 8);
+      box.innerHTML = '<div style="font-weight:800;font-size:15px">⚙ Send HRMS orders to the dispatch panel by itself</div>'
+        + '<div style="font-size:12.5px;color:var(--muted);margin:3px 0 4px">At the set time, the <b>confirmed</b> manual orders (today and yesterday) that were not sent yet go to your n8n webhook as the same CSV as the button on the left. Each order is sent once.</div>'
+        + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:0 14px">'
+        + '<div style="grid-column:1/-1"><label style="font-weight:700;font-size:13.5px"><input type="checkbox" id="pOn"' + (c.on ? ' checked' : '') + '> Send automatically every day</label></div>'
+        + '<div>' + row('Time of day', '<input type="time" id="pTime" value="' + esc(c.time) + '" style="width:100%">') + '</div>'
+        + '<div style="grid-column:span 2">' + row('n8n webhook address (https://…/webhook/…)', '<input id="pUrl" value="' + esc(c.url) + '" placeholder="https://your-n8n.example.com/webhook/upload-hrms-orders" style="width:100%">') + '</div>'
+        + '<div>' + row('Secret header name', '<input id="pHdr" value="' + esc(c.header) + '" style="width:100%">') + '</div>'
+        + '<div>' + row('Secret value ' + (c.has_token ? '(saved — leave empty to keep it)' : '(optional but advised)'), '<input id="pTok" type="password" autocomplete="off" placeholder="' + (c.has_token ? '••••••••' : '') + '" style="width:100%">') + '</div></div>'
+        + '<div class="bar" style="margin-top:10px"><button class="btn" type="button" id="pSave">Save</button>'
+        + '<button class="btn" type="button" id="pTest" style="background:#fff;color:#4338ca;border:1px solid #6366f1" title="Sends ONE new order, to see that it lands in the dispatch panel">Test with 1 order</button>'
+        + '<button class="btn" type="button" id="pNow" style="background:#fff;color:#0b6b4b;border:1px solid #1aa37a" title="Sends every confirmed order of today and yesterday that was not sent yet">Send all new orders now</button>'
+        + '<span style="font-size:12px;color:var(--muted)">Sent so far: <b>' + (V.sent_total || 0) + '</b> orders' + (V.state && V.state.done ? ' · last automatic send: ' + esc(V.state.done) : '') + '</span><span id="pMsg" style="font-size:12.5px;font-weight:700"></span></div>'
+        + '<div style="margin-top:12px;border-top:1px solid #d9d9f5;padding-top:8px"><b style="font-size:13px">Key for n8n (when n8n pulls the orders by itself)</b> <span id="pKeyState" style="font-size:12.5px;color:var(--muted)">' + (c.feed_key_set ? '— a key is set' : '— no key yet') + '</span> <button class="btn" type="button" id="pKey" style="background:#fff;color:#4338ca;border:1px solid #6366f1;margin-left:6px">' + (c.feed_key_set ? 'Create a new key' : 'Create key') + '</button><div id="pKeyBox" style="margin-top:6px"></div></div>'
+        + (lg.length ? '<table style="margin-top:8px;font-size:12.5px"><thead><tr><th>When</th><th>How</th><th>Orders</th><th>Rows</th><th>Answer</th></tr></thead><tbody>' + lg.map((e) => '<tr><td>' + esc(e.at) + '</td><td>' + esc({ auto: 'by time', now: 'button', test: 'test' }[e.mode] || e.mode) + '</td><td>' + (e.orders || 0) + '</td><td>' + (e.lines || 0) + '</td><td>' + (e.ok ? '✅ ' : '❌ ') + esc(e.http ? e.http + ' · ' : '') + esc(e.msg || '') + '</td></tr>').join('') + '</tbody></table>' : '');
+      const msg = (t, ok) => { const m = $('pMsg'); m.textContent = t; m.style.color = ok ? '#0f7a41' : '#b91c1c'; };
+      $('pSave').onclick = async function () { this.disabled = true; try { V = await api.post('dpx.save', { on: $('pOn').checked, url: $('pUrl').value.trim(), header: $('pHdr').value.trim(), token: $('pTok').value, time: $('pTime').value }); drawPush(); $('pMsg').textContent = 'Saved.'; $('pMsg').style.color = '#0f7a41'; } catch (e) { msg(e.message, false); this.disabled = false; } };
+      const run = (mode) => async function () { if (mode === 'now' && !confirm('Send every confirmed order of today and yesterday that was not sent yet?')) return; this.disabled = true; msg('Sending…', true); try { const r = await api.post('dpx.run', { mode }); V = r; const x = r.result || {}; drawPush(); msg((x.ok ? '✅ ' : '❌ ') + (x.orders ? x.orders + ' order(s), ' + x.lines + ' row(s). ' : '') + (x.msg || ''), !!x.ok); } catch (e) { msg(e.message, false); this.disabled = false; } };
+      $('pTest').onclick = run('test'); $('pNow').onclick = run('now');
+      $('pKey').onclick = async function () {
+        if (V.cfg.feed_key_set && !confirm('Make a new key? The old key stops working: put the new one in n8n.')) return;
+        this.disabled = true;
+        try { const r = await api.post('dpx.key_new', {}); V = r; $('pKeyState').textContent = '— a key is set'; this.textContent = 'Create a new key'; this.disabled = false;
+          $('pKeyBox').innerHTML = '<div style="font-size:12.5px;margin-bottom:4px">Copy it now — it is shown only once. In n8n: Header Auth credential → Name <b>X-API-Key</b> → Value = this key.</div><input id="pKeyVal" readonly value="' + esc(r.key) + '" style="width:min(420px,100%);font-family:monospace"> <button class="btn" type="button" id="pKeyCp" style="background:#fff;color:#111;border:1px solid var(--line)">Copy</button>';
+          $('pKeyCp').onclick = async () => { try { await navigator.clipboard.writeText(r.key); $('pKeyCp').textContent = 'Copied ✓'; } catch (e) { $('pKeyVal').select(); } }; }
+        catch (e) { msg(e.message, false); this.disabled = false; } };
+    }
+    bP.onclick = async function () { if (box.style.display !== 'none') { box.style.display = 'none'; return; } box.style.display = ''; box.innerHTML = 'Loading…'; try { V = await api.get('dpx.get'); drawPush(); } catch (e) { box.innerHTML = '<span style="color:#b91c1c">' + esc(e.message) + '</span>'; } };
+  })();
   load();
 </script>
 <script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
