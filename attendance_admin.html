@@ -820,7 +820,7 @@
   function attRowHtml(r) {
     const v = prep(r);
     return `<tr>
-        <td><a href="#" onclick="viewMonth(${r.employee_id}, '${(r.full_name || '').replace(/'/g, "\\'")}'); return false;" title="Open full month">${r.full_name}</a> <span class="badge">${r.employee_code}</span>${Number(r.is_store) ? ' <span class="badge" style="background:#EEF2FF; color:#3730a3;">Store</span>' : ''}${v.dupTag}</td>
+        <td><a href="#" onclick="viewMonth(${r.employee_id}, '${(r.full_name || '').replace(/'/g, "\\'")}'); return false;" title="Open full month">${r.full_name}</a> <span class="badge">${r.employee_code}</span>${deptTag(r)}${Number(r.is_store) ? ' <span class="badge" style="background:#EEF2FF; color:#3730a3;">Store</span>' : ''}${v.dupTag}</td>
         <td><a href="#" onclick="editShift(${r.employee_id}, '${(r.full_name || '').replace(/'/g, "\\'")}'); return false;" style="font-weight:600; text-decoration:none;">${v.shift}</a><div style="font-size:11px; color:var(--muted);">${v.shiftSub}</div></td>
         <td>${fmtT(r.punch_in)}${locLine(r.in_office, r.in_distance_m)}</td>
         <td>${fmtT(r.punch_out)}${locLine(r.out_office, r.out_distance_m)}</td>
@@ -838,12 +838,15 @@
     `<div><div style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.03em;">${label}</div>
       <div style="font-size:13px; margin-top:1px;">${value}</div></div>`;
 
+  // The employee's department, small, next to the name (names come from the department filter list)
+  const DEPT_NAMES = {};
+  const deptTag = (r) => { const n = DEPT_NAMES[Number(r.department_id)]; return n ? ` <span style="font-size:10.5px; font-weight:600; color:#0f766e; background:#ecfdf5; border-radius:6px; padding:1px 6px; margin-left:4px; white-space:nowrap;">${attr(n)}</span>` : ''; };
   function attCardHtml(r) {
     const v = prep(r);
     return `<div style="background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:11px 13px; margin-bottom:8px;">
         <div style="font-size:13px; font-weight:600;">
           <a href="#" onclick="viewMonth(${r.employee_id}, '${(r.full_name || '').replace(/'/g, "\\'")}'); return false;" title="Open full month">${r.full_name}</a>
-          <span style="font-size:11px; color:var(--muted); font-weight:400; margin-left:4px;">${r.employee_code}</span>
+          <span style="font-size:11px; color:var(--muted); font-weight:400; margin-left:4px;">${r.employee_code}</span>${deptTag(r)}
           ${v.dupTag}
         </div>
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:9px;">
@@ -2624,8 +2627,10 @@
     try {
       await new Promise((r) => setTimeout(r, 900));   // after the first list is shown
       const d = await api.get('departments.list');
+      (d.departments || []).forEach((x) => { DEPT_NAMES[Number(x.department_id)] = x.department_name; });
       sel.innerHTML = '<option value="">All departments</option>' + (d.departments || []).map((x) => `<option value="${x.department_id}">${attr(x.department_name)}</option>`).join('') + '<option value="none">No department</option>';
-      if (saved && [...sel.options].some((o) => o.value === saved)) { sel.value = saved; if (rangeMode()) renderRange(); else { updateSummary(); renderTable(); } }
+      if (saved && [...sel.options].some((o) => o.value === saved)) sel.value = saved;
+      if (rangeMode()) renderRange(); else { updateSummary(); renderTable(); }
     } catch (e) { sel.style.display = 'none'; }
     sel.addEventListener('change', () => {
       try { localStorage.setItem('hrms_att_dept', sel.value); } catch (e) {}
