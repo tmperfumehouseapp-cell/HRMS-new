@@ -992,7 +992,7 @@
       const phone = S.cur.phone;
       try {
         const d = await api.get('wa.chat', { phone, limit: 40 }); if (!S.cur || S.cur.phone !== phone) return; S.cur.contact = d.contact; try { const lf = $('#wxLife'), L = d.contact && d.contact.life; S.cur.life = L ? String(L.label || '') : ''; if (lf) lf.innerHTML = ''; readLines(); } catch (e) { } S.cur.msgs = d.messages; S.cur.moreOld = !!d.more; S.cur.last = Math.max(0, ...d.messages.map((m) => m.id)); S.cur.row = Object.assign({}, S.cur.row, { name: d.contact.name });
-        const c = d.contact; $('#wxCn').innerHTML = esc(c.name || pretty(c.phone)) + ' ' + badgeOf(S.cur.row); $('#wxMs').innerHTML = msgsHtml(); scrollEnd(true); { const mb = $('#wxMs'); mb.onscroll = () => { if (mb.scrollTop < 60) loadOlder(); }; mb.onclick = (e) => { if (e.target.closest('#wxOld')) loadOlder(); }; } drawFoot(); loadSugg(false); loadInfo();
+        const c = d.contact; $('#wxCn').innerHTML = esc(c.name || pretty(c.phone)) + ' ' + badgeOf(S.cur.row); $('#wxMs').innerHTML = msgsHtml(); scrollEnd(true); { const mb = $('#wxMs'); mb.onscroll = () => { if (mb.scrollTop < 60) loadOlder(); }; if (!mb.dataset.oldBound) { mb.dataset.oldBound = '1'; mb.addEventListener('click', (e) => { if (e.target.closest('#wxOld')) loadOlder(); }); } }   // addEventListener: the tap handler of this box (voice note, document, retry) is its .onclick and must not be replaced drawFoot(); loadSugg(false); loadInfo();
         autoMedia(S.cur.msgs);
       } catch (e) { toast(e.message, true); closeChat(); }
     }
