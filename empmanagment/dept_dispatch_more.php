@@ -65,6 +65,8 @@ function dp_dsp_sr_get($path, array $params) {
 /** Shiprocket order status -> our status. "Ready to ship" / "pickup scheduled" are NOT dispatched yet. */
 function dp_dsp_sr_map($s, $hasAwb) {
     $s = strtolower(trim((string)$s)); if ($s === '') return $hasAwb ? 'tracked' : 'placed';
+    if (strpos($s, 'return cancel') !== false) return 'delivered';   // a return that was asked for after delivery and then called off: the customer has the parcel
+    if (strpos($s, 'reached back') !== false) return 'rto';          // "Reached back at seller city": the parcel came back, it is a return
     if (strpos($s, 'cancel') !== false) return 'cancelled';
     if (strpos($s, 'rto') !== false || strpos($s, 'return') !== false) return 'rto';
     if (strpos($s, 'deliver') !== false && strpos($s, 'out for') === false && strpos($s, 'undeliver') === false && strpos($s, 'not deliver') === false) return 'delivered';
@@ -119,13 +121,15 @@ function dp_dsp_sr_apply(PDO $pdo, array $p, array $o) {
     $new = dp_dsp_sr_map($st, $awb !== '');
     if ($awb !== '' && !dp_dsp_valid_track($awb)) $awb = '';
     $take = $isCopy && !$dead && $awb !== '';                                // a live copy with an AWB takes the parcel over
+    if (!empty($p['manual']) && $dead) return '';                            // sent by another courier (ID written by hand): Shiprocket's cancelled shipment says nothing about it
+    if ((int)($p['manual'] ?? 0) === 2 && !$take) return '';                 // the pencil ID stays until the parcel is booked again in Shiprocket
     if ($take) {
         $owner[(int)$p['id']] = $me;
         $chg = $awb !== (string)$p['tracking_no'];
         try { $pdo->prepare("UPDATE dp_dsp_parcels SET sr_oid = ?" . ($chg ? ", live_at = NULL" : "") . " WHERE id = ?")->execute([mb_substr($me, 0, 40), $p['id']]); } catch (Throwable $e) { }
         if ($chg && function_exists('bd_log')) { try { bd_log('dispatch', (string)$p['order_name'], 'booked again in Shiprocket as ' . $name . ': AWB ' . ((string)$p['tracking_no'] ?: 'none') . ' -> ' . $awb, 'Shiprocket'); } catch (Throwable $e) { } }
     }
-    $did = dp_dsp_apply($pdo, $p, $awb, $cour, $new, 'Shiprocket', $take && in_array((string)$p['status'], ['placed', 'tracked', 'cancelled'], true));   // a parcel wrongly parked as cancelled / waiting comes back with the copy's real status
+    $did = dp_dsp_apply($pdo, $p, $awb, $cour, $new, 'Shiprocket', $take && in_array((string)$p['status'], ['placed', 'tracked', 'cancelled'], true), true);   // a parcel wrongly parked as cancelled / waiting comes back with the copy's real status
     if ($st !== '' && $st !== (string)($p['sr_status'] ?? '')) { $pdo->prepare("UPDATE dp_dsp_parcels SET sr_status = ?, sr_at = ? WHERE id = ?")->execute([mb_substr($st, 0, 40), bd_now(), $p['id']]); if ($did === '') $did = 'status text'; }
     return $did;
 }
@@ -594,7 +598,7 @@ function dp_dsp_rep_row(array $r, $now, array $cm = [], array $un = []) {
         'grp' => $grp, 'cod' => (!isset($r['cod_out']) || $r['cod_out'] === null) ? null : (float)$r['cod_out'], 'remit_at' => !empty($r['remit_at']) ? substr((string)$r['remit_at'], 0, 16) : '', 'remit_by' => (string)($r['remit_by'] ?? ''),
         'age_h' => $open ? round(($now - $c) / 3600, 1) : null, 'track_h' => $r['tracked_at'] ? round((strtotime($r['tracked_at']) - $c) / 3600, 1) : null, 'wait_h' => $wait,
         'kwik' => (string)($r['pay_ref'] ?? ''),
-        'late' => $late, 'link' => $link, 'manual' => !empty($r['manual']) ? 1 : 0,
+        'late' => $late, 'link' => $link, 'manual' => !empty($r['manual']) ? 1 : 0, 'note' => (string)($r['hand_note'] ?? ''),
         'added_by' => !empty($r['manual']) ? (string)($r['pend_by'] ?? '') : '', 'added_at' => (!empty($r['manual']) && !empty($r['pend_at'])) ? substr((string)$r['pend_at'], 0, 16) : '',
         'pend' => $pend ? ['track' => (string)$r['pend_track'], 'courier' => (string)$r['pend_courier'], 'link' => $plink, 'by' => (string)$r['pend_by'], 'at' => substr((string)$r['pend_at'], 0, 16)] : null,
         'u' => $u];
