@@ -116,20 +116,23 @@ function wa_ru_make_tick(PDO $pdo): array
 {
     $o = ['made' => 0, 'note' => ''];
     if (!wa_ru_cfg($pdo)['make_on'] || !function_exists('wa_util_make') || !function_exists('wa_tpl_row')) { $o['note'] = 'off'; return $o; }
-    if ((int)setting_get($pdo, 'wa_ru_make_at', '0') > time() - 240) { $o['note'] = 'recent'; return $o; } setting_set($pdo, 'wa_ru_make_at', (string)time());
     try {
-        if (function_exists('wa_util_pool_make') && function_exists('wa_util_pool_defs') && (int)setting_get($pdo, 'wa_ru_pool_at', '0') < time() - 6 * 3600) {
-            setting_set($pdo, 'wa_ru_pool_at', (string)time());
-            if (count(wa_ru_pool_made($pdo)) < count(wa_util_pool_defs())) { $r = wa_util_pool_make($pdo, 0); $o['made'] += count($r['made'] ?? []); if (!empty($r['made'])) return $o; }
-        }
-        // 📤 utility drafts that exist but were never sent to Meta (made by hand earlier, or the send did not go through): sent now, 3 per round
-        if (function_exists('wa_util_submit')) {
-            $dq = $pdo->prepare("SELECT t.id, t.name FROM wa_templates t WHERE t.category = 'UTILITY' AND t.name LIKE 'util\\_%' AND t.created_at >= ? AND t.relabelled_at IS NULL AND NOT EXISTS (SELECT 1 FROM wa_tpl_waba w WHERE w.tpl_id = t.id) ORDER BY t.id DESC LIMIT 3"); $dq->execute([date('Y-m-d H:i:s', time() - 3 * 86400)]); $drafts = $dq->fetchAll();
+        // 📤 utility drafts that exist but were never sent to Meta (made by hand earlier, or the send did not go through): sent now, 5 per round, every minute
+        if (function_exists('wa_util_submit') && (int)setting_get($pdo, 'wa_ru_draft_at', '0') < time() - 60) {
+            setting_set($pdo, 'wa_ru_draft_at', (string)time());
+            $dq = $pdo->prepare("SELECT t.id, t.name FROM wa_templates t WHERE t.category = 'UTILITY' AND t.name LIKE 'util\\_%' AND t.created_at >= ? AND t.relabelled_at IS NULL AND NOT EXISTS (SELECT 1 FROM wa_tpl_waba w WHERE w.tpl_id = t.id) ORDER BY t.id DESC LIMIT 5"); $dq->execute([date('Y-m-d H:i:s', time() - 3 * 86400)]); $drafts = $dq->fetchAll();
             if ($drafts) { $sent = 0; $err = '';
                 foreach ($drafts as $d) { $r = wa_util_submit($pdo, (int)$d['id']); if (isset($r['error'])) { $err = (string)$r['error']; continue; } $okAny = false; foreach ((array)($r['submitted'] ?? []) as $x) { if (!empty($x['ok'])) $okAny = true; elseif ($err === '' && !empty($x['note'])) $err = (string)$x['note']; } if ($okAny) $sent++; }
                 $o['made'] += $sent; try { setting_set($pdo, 'wa_ru_make_last', json_encode(['at' => time(), 'tpl' => 0, 'made' => $sent, 'error' => $sent ? '' : mb_substr($err, 0, 160), 'skipped' => []], JSON_UNESCAPED_UNICODE)); } catch (Throwable $e9) { }
                 if (function_exists('wa_log')) wa_log($pdo, 'template', $sent > 0, 'Utility drafts sent to Meta by themselves: ' . $sent . ' of ' . count($drafts) . ($err !== '' && !$sent ? ' — ' . $err : ''));
                 return $o; }
+        }
+    } catch (Throwable $e) { }
+    if ((int)setting_get($pdo, 'wa_ru_make_at', '0') > time() - 240) { $o['note'] = 'recent'; return $o; } setting_set($pdo, 'wa_ru_make_at', (string)time());
+    try {
+        if (function_exists('wa_util_pool_make') && function_exists('wa_util_pool_defs') && (int)setting_get($pdo, 'wa_ru_pool_at', '0') < time() - 6 * 3600) {
+            setting_set($pdo, 'wa_ru_pool_at', (string)time());
+            if (count(wa_ru_pool_made($pdo)) < count(wa_util_pool_defs())) { $r = wa_util_pool_make($pdo, 0); $o['made'] += count($r['made'] ?? []); if (!empty($r['made'])) return $o; }
         }
         $from = function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 10:00:00');
         $q = $pdo->prepare("SELECT DISTINCT tpl_id FROM wa_campaigns WHERE COALESCE(started_at, created_at) >= ? AND tpl_id > 0 AND COALESCE(extra, '') NOT LIKE '%\"kind\":\"util\"%' ORDER BY tpl_id DESC LIMIT 40"); $q->execute([$from]);
@@ -317,6 +320,21 @@ function wa_ru_fit(array $labels, int $nvars, array $sp, int $tot, bool $mine): 
     if (in_array('perfume', $labels, true)) return $mine ? $ask + $ord : $ask;
     if (in_array('date', $labels, true)) return $ask;
     return $mine ? $ask + $ord : $ask;
+}
+/** Campaigns started again "as utility": what happened since — waiting, utility sent / delivered, left out because no chosen message fits. [camp_id => [...]] */
+function wa_ru_restart_stats(PDO $pdo, array $ids): array
+{
+    $ids = array_values(array_filter(array_map('intval', $ids))); if (!$ids) return []; $o = [];
+    try {
+        foreach ($pdo->query("SELECT id, extra FROM wa_campaigns WHERE id IN (" . implode(',', $ids) . ") AND extra LIKE '%u_restart%'")->fetchAll() as $r) {
+            $x = json_decode((string)$r['extra'], true); $rs = is_array($x) ? ($x['u_restart'] ?? null) : null; if (!is_array($rs) || empty($rs['at'])) continue; $cid = (int)$r['id']; $at = (string)$rs['at'];
+            $q = $pdo->prepare("SELECT SUM(status IN ('queued', 'sending')) AS w, SUM(variant = 'U' AND status = 'sent' AND sent_at >= ?) AS us, SUM(COALESCE(variant, 'M') <> 'U' AND status = 'sent' AND sent_at >= ? AND tries <= 1 AND 0) AS ms, SUM(status = 'skipped' AND err = 'No chosen utility message fits this person') AS k, SUM(status = 'failed' AND variant = 'U' AND sent_at >= ?) AS uf FROM wa_camp_items WHERE camp_id = ?");
+            $q->execute([$at, $at, $at, $cid]); $a = $q->fetch();
+            $d = $pdo->prepare("SELECT COUNT(*) FROM wa_camp_items i JOIN wa_messages m ON m.wamid = i.wamid AND i.wamid <> '' WHERE i.camp_id = ? AND i.variant = 'U' AND i.sent_at >= ? AND m.status IN ('delivered', 'read')"); $d->execute([$cid, $at]);
+            $o[$cid] = ['at' => $at, 'n' => (int)($rs['n'] ?? 0), 'waiting' => (int)$a['w'], 'u_sent' => (int)$a['us'], 'u_del' => (int)$d->fetchColumn(), 'left_out' => (int)$a['k']];
+        }
+    } catch (Throwable $e) { }
+    return $o;
 }
 /** For the screen: each number with its utility delivery of the last 3 hours and whether it is resting. */
 function wa_ru_number_view(PDO $pdo): array
