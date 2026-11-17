@@ -170,7 +170,7 @@ function wmo_noname_lines(array $nn, array $ck): array
 {
     $L = []; $ml = 0; $sum = 0;
     foreach ($nn as $x) {
-        if (!is_array($x)) continue; $m = (int)($x['ml'] ?? 0); $q = (int)($x['qty'] ?? 0); if ($q < 1) continue; $q = min(50, $q);
+        if (!is_array($x)) continue; $m = (int)($x['ml'] ?? 0); $q = (int)($x['qty'] ?? 0); if ($q < 1) continue; $q = min(500, $q);
         if (!in_array($m, [20, 50, 100], true)) return [[], 0, 'No Name comes in 20, 50 or 100 ml.', 0];
         $pr = wmo_p($x['price'] ?? 0); if ($pr < 5000 || $pr > 5000000) return [[], 0, 'Type the price of one No name ' . $m . ' ml (₹50 to ₹50000).', 0];
         $L[] = ['vid' => -$m, 'sku' => 'NONAME-' . $m, 'pid' => 0, 'title' => 'No name ' . $m . ' ml', 'short' => 'No name', 'label' => $m . ' ml', 'ml' => $m, 'qty' => $q, 'mrp_p' => $pr, 'chain' => false, 'noname' => true, 'unit_p' => $pr, 'total_p' => $pr * $q];
@@ -178,7 +178,7 @@ function wmo_noname_lines(array $nn, array $ck): array
     }
     $cq = (int)($ck['qty'] ?? 0);
     if ($cq > 0) {
-        $cq = min(50, $cq); $pr = wmo_p($ck['price'] ?? 0); if ($pr < 5000 || $pr > 5000000) return [[], 0, 'Type the price of one Car kit (₹50 to ₹50000).', 0];
+        $cq = min(500, $cq); $pr = wmo_p($ck['price'] ?? 0); if ($pr < 5000 || $pr > 5000000) return [[], 0, 'Type the price of one Car kit (₹50 to ₹50000).', 0];
         $L[] = ['vid' => -1, 'sku' => 'CARKIT', 'pid' => 0, 'title' => 'Car kit', 'short' => 'Car kit', 'label' => '', 'ml' => null, 'qty' => $cq, 'mrp_p' => $pr, 'chain' => false, 'single' => true, 'carkit' => true, 'unit_p' => $pr, 'total_p' => $pr * $cq]; $sum += $pr * $cq;
     }
     if (!$L) return [[], 0, 'Add at least one No Name or Car kit piece.', 0];

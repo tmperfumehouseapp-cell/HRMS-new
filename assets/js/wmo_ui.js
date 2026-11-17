@@ -136,7 +136,8 @@
       const comboOk = !S.perf.size || !S.combo || S.combo.every((c) => filled(c.ml) === c.n) && Array.from(S.perf.values()).every((x) => S.combo.some((c) => c.ml === x.ml));
       const proofOk = !needShot() || (S.shot && S.shot2 && S.proof && S.proof.ok && Math.abs(pd - Math.round((S.proof.amount || 0) * 100)) <= 100);
       const why = !needShot() ? '' : !S.shot ? "Upload the customer's paid screen." : !S.shot2 ? "Upload the receiver's screen." : S.proofing ? 'Checking the two screenshots…' : !S.proof ? '' : !S.proof.ok ? S.proof.reason : (Math.abs(pd - Math.round((S.proof.amount || 0) * 100)) > 100 ? 'The amount received must equal the screenshots (' + rs(Math.round(S.proof.amount * 100)) + ').' : '');
-      const nnWhy = NN && S.pay !== 'cod' && pd > 0 && T > 0 && Math.abs(pd - T) > 100 ? 'The amount received (' + rs(pd) + ') must equal the total of the lines (' + rs(T) + ').' : '';
+      const nnAct = NN ? [20, 50, 100].map((m) => S.nn[m]).concat([S.ck]).filter((x) => x.q > 0) : [];
+      const nnWhy = NN && S.pay !== 'cod' && pd > 0 && T > 0 && Math.abs(pd - T) > 100 ? 'The customer paid ' + rs(pd) + ' but the lines add up to ' + rs(T) + ' (price of ONE piece × quantity). Change the price or the quantity so the lines add up to ' + rs(pd) + (nnAct.length === 1 && nnAct[0].q > 0 && pd % nnAct[0].q === 0 ? ' — for ' + nnAct[0].q + ' pieces that is ' + rs(pd / nnAct[0].q) + ' each' : '') + '.' : '';
       const custOk = !o.outside || (S.cust.phone.replace(/\D+/g, '').slice(-10).length === 10); const singlesOk = Array.from(S.single.values()).every((x) => x.price >= 100);
       const ok = custOk && singlesOk && T >= 10000 && hasItems() && (NN ? (S.pay === 'cod' || Math.abs(pd - T) <= 100) : (S.perf.size ? P >= pieces * 1000 : P === 0)) && (!needShot() || (proofOk && pd >= 100)) && !S.proofing && (S.pay !== 'partial' || (pd >= 100 && pd < T)) && comboOk && !S.reading && !S.busy;
       return { T, C, SG, L, P, pd, cod, comboOk, ok, why: why || nnWhy, pieces };
@@ -162,8 +163,8 @@
       bindAll(); drawLines(); drawSingles(); drawFoot();
     }
     function nnHtml() {
-      const row = (key, ttl, sub, q, pr) => '<div class="mo-ln" data-nn="' + key + '"><div class="mid"><div class="nm">' + ttl + '</div><small>' + sub + '</small></div><div class="mo-in" style="width:96px;flex:none"><span>₹</span><input data-np inputmode="decimal" autocomplete="off" placeholder="price" value="' + (pr ? esc(String(pr / 100)) : '') + '"></div><div class="mo-q"><button type="button" data-nq="-1">−</button><b>' + q + '</b><button type="button" data-nq="1">+</button></div></div>';
-      return '<div class="mo-h">2 · What was sold? <em>type the price of ONE piece and the quantity</em></div><div id="moNn">' + [20, 50, 100].map((m) => row(m, '🏷 No name ' + m + ' ml', 'one bottle · commission by ML', S.nn[m].q, S.nn[m].p)).join('')
+      const row = (key, ttl, sub, q, pr) => '<div class="mo-ln" data-nn="' + key + '"><div class="mid"><div class="nm">' + ttl + '</div><small>' + sub + '</small><small data-nl style="display:block;color:#12794a;font-weight:700">' + (q && pr ? rs(pr) + ' × ' + q + ' = ' + rs(pr * q) : '') + '</small></div><div class="mo-in" style="width:128px;flex:none"><span>₹</span><input data-np inputmode="decimal" autocomplete="off" placeholder="1 piece" value="' + (pr ? esc(String(pr / 100)) : '') + '"></div><div class="mo-q"><button type="button" data-nq="-1">−</button><input data-nqi inputmode="numeric" value="' + q + '" style="width:46px;text-align:center;border:1px solid #d6dbe0;border-radius:8px;padding:4px 2px;font-weight:700"><button type="button" data-nq="1">+</button></div></div>';
+      return '<div class="mo-h">2 · What was sold? <em>type the price of ONE piece and the quantity (you can type the number)</em></div><div id="moNn">' + [20, 50, 100].map((m) => row(m, '🏷 No name ' + m + ' ml', 'one bottle · commission by ML', S.nn[m].q, S.nn[m].p)).join('')
         + '<div class="mo-h" style="margin-top:12px">Car kit <em>🚗 commission is a flat 6% of its price</em></div>' + row('ck', '🚗 Car kit', 'one piece · flat 6%', S.ck.q, S.ck.p) + '</div><div id="moMsg" style="margin-top:12px"></div>';
     }
     function custHtml() {
@@ -231,8 +232,12 @@
       const tt = bd.querySelector('#moTot'); if (tt) tt.oninput = () => { const v = tt.value.replace(/[^\d.]/g, ''); if (v !== tt.value) tt.value = v; S.total = v; refresh(); };
       if (NN) {   // 🏷 No Name: + / − and the price of each line
         const nb = bd.querySelector('#moNn'); const get = (el) => { const k = el.closest('[data-nn]').dataset.nn; return k === 'ck' ? S.ck : S.nn[+k]; };
-        nb.onclick = (e) => { const bt = e.target.closest('[data-nq]'); if (!bt) return; const x = get(bt); x.q = Math.max(0, Math.min(50, x.q + +bt.dataset.nq)); bt.closest('.mo-ln').querySelector('.mo-q b').textContent = x.q; fm(''); drawAllKeep(); };
-        nb.oninput = (e) => { const i = e.target.closest('[data-np]'); if (!i) return; const v = i.value.replace(/[^\d.]/g, ''); if (v !== i.value) i.value = v; get(i).p = paise(num(v)); drawAllKeep(); };
+        const sub = (row) => { const k = row.dataset.nn, x = k === 'ck' ? S.ck : S.nn[+k], el = row.querySelector('[data-nl]'); if (el) el.textContent = x.q && x.p ? rs(x.p) + ' × ' + x.q + ' = ' + rs(x.p * x.q) : ''; };
+        nb.onclick = (e) => { const bt = e.target.closest('[data-nq]'); if (!bt) return; const x = get(bt), row = bt.closest('.mo-ln'); x.q = Math.max(0, Math.min(500, x.q + +bt.dataset.nq)); row.querySelector('[data-nqi]').value = x.q; sub(row); fm(''); drawAllKeep(); };
+        nb.oninput = (e) => {
+          const qi = e.target.closest('[data-nqi]'); if (qi) { const v = qi.value.replace(/\D+/g, '').slice(0, 3); if (v !== qi.value) qi.value = v; const x = get(qi); x.q = Math.min(500, +v || 0); sub(qi.closest('.mo-ln')); drawAllKeep(); return; }
+          const i = e.target.closest('[data-np]'); if (!i) return; const v = i.value.replace(/[^\d.]/g, ''); if (v !== i.value) i.value = v; get(i).p = paise(num(v)); sub(i.closest('.mo-ln')); drawAllKeep();
+        };
       } else {
       bd.querySelector('#moMl').onclick = (e) => { const b = e.target.closest('[data-m]'); if (!b) return; S.ml = +b.dataset.m; S.mlIn = ''; S.combo = combos(S.ml)[0] || null; drawAll(); };
       bd.querySelector('#moMlIn').onchange = (e) => { const v = Math.round(num(e.target.value)); S.mlIn = e.target.value; S.ml = v >= 10 && v <= 2000 ? v : 0; S.combo = S.ml ? (combos(S.ml)[0] || null) : null; drawAll(); };
