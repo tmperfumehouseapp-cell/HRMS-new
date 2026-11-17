@@ -64,8 +64,15 @@ function wa_ru_tpl_ctx(PDO $pdo, array $t): array
     $by = []; foreach ($ok as $wb) $by[$wb] = $t; $base = $t; $base['by_waba'] = $by; $base['ok_wabas'] = $ok;
     return [$base, wa_camp_ctx($pdo, $base, 99, [], 0, true)];
 }
+/** The utility module (wa_util.php) is loaded by the engine, but not on every route (the campaign routes did not have it, so "Start as utility" showed no messages). Loaded from here, inside a function that has $pdo. */
+function wa_ru_load_util(PDO $pdo): void
+{
+    if (function_exists('wa_util_list') || !is_file(__DIR__ . '/wa_util.php')) return;
+    try { require_once __DIR__ . '/wa_util.php'; } catch (Throwable $e) { }
+}
 function wa_ru_pool(PDO $pdo): array
 {
+    wa_ru_load_util($pdo);
     if (!function_exists('wa_util_pool_usable') && is_file(__DIR__ . '/wa_util.php')) { try { require_once __DIR__ . '/wa_util.php'; } catch (Throwable $e) { } }
     return function_exists('wa_util_pool_usable') ? wa_util_pool_usable($pdo) : [];
 }
@@ -276,6 +283,7 @@ function wa_ru_approval(PDO $pdo): array
 /** Per campaign message: where its utility versions are at Meta — [tpl_id => ['approved' => n, 'waiting' => n, 'rejected' => n, 'draft' => n]]. */
 function wa_ru_fam_states(PDO $pdo, array $tplIds): array
 {
+    wa_ru_load_util($pdo);
     $ids = array_values(array_unique(array_filter(array_map('intval', $tplIds)))); if (!$ids) return [];
     $o = []; foreach ($ids as $i) $o[$i] = ['approved' => 0, 'waiting' => 0, 'rejected' => 0, 'draft' => 0];
     try {
@@ -300,6 +308,7 @@ function wa_ru_number_view(PDO $pdo): array
 /** Approved utility versions of the messages used by today's campaigns (remembered for 2 minutes). */
 function wa_ru_fam_count(PDO $pdo): int
 {
+    wa_ru_load_util($pdo);
     $c = json_decode((string)setting_get($pdo, 'wa_ru_fam', ''), true); if (is_array($c) && (int)($c['at'] ?? 0) > time() - 120) return (int)$c['n'];
     $n = 0; $from = function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 10:00:00');
     try { $q = $pdo->prepare("SELECT DISTINCT tpl_id FROM wa_campaigns WHERE COALESCE(started_at, created_at) >= ? LIMIT 30"); $q->execute([$from]);

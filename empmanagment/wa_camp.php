@@ -1918,7 +1918,7 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
         }
         case 'wa.ru_make': {   // ✨ no utility message for this campaign yet: make it now (2 versions of its own message) and send it to Meta for approval
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $in = json_input(); $c = wa_camp_row($pdo, (int)($in['id'] ?? 0)); if (!$c) json_response(['error' => 'Campaign not found.'], 404);
-            if (!function_exists('wa_util_make')) json_response(['error' => 'The utility module is not loaded.'], 500); @set_time_limit(120);
+            wa_ru_load_util($pdo); if (!function_exists('wa_util_make')) json_response(['error' => 'The utility module is not loaded.'], 500); @set_time_limit(120);
             $r = wa_util_make($pdo, (int)$c['tpl_id'], 2, (int)($auth['employee_id'] ?? 0), true);
             if (isset($r['error'])) json_response($r, 502);
             try { setting_set($pdo, 'wa_ru_made_' . (int)$c['tpl_id'], (string)time()); setting_set($pdo, 'wa_ru_fam', ''); } catch (Throwable $e) { }
@@ -1928,11 +1928,11 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
         case 'wa.ru_restart': {   // 🔁 start again WITH utility: the people whose message failed (or Meta held) go back in the queue; utility goes first because an approved utility message exists
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $in = json_input(); $cid = (int)($in['id'] ?? 0); $c = $cid ? wa_camp_row($pdo, $cid) : null; if (!$c) json_response(['error' => 'Campaign not found.'], 404);
             if ($c['status'] === 'cancelled') json_response(['error' => 'This campaign was stopped. Make a new one.'], 422);
-            $okU = 0; try { if (function_exists('wa_util_usable')) $okU += count(wa_util_usable($pdo, (int)$c['tpl_id'])); if (function_exists('wa_util_pool_usable')) $okU += count(wa_util_pool_usable($pdo)); } catch (Throwable $e) { }
+            wa_ru_load_util($pdo); $okU = 0; try { if (function_exists('wa_util_usable')) $okU += count(wa_util_usable($pdo, (int)$c['tpl_id'])); if (function_exists('wa_util_pool_usable')) $okU += count(wa_util_pool_usable($pdo)); } catch (Throwable $e) { }
             $never = implode(',', array_diff(defined('WA_REC_NEVER') ? WA_REC_NEVER : [0], defined('WA_RU_MARKETING_ONLY') ? WA_RU_MARKETING_ONLY : []));
             $w = "camp_id = ? AND ((status = 'failed' AND err_code NOT IN ($never)) OR (status = 'skipped' AND err_code = 131049) OR (status IN ('retry') AND err_code IN (131049, 131050)))";
             $q = $pdo->prepare("SELECT COUNT(*) FROM wa_camp_items WHERE $w"); $q->execute([$cid]); $n = (int)$q->fetchColumn();
-            if (!empty($in['preview'])) json_response(['ok' => true, 'n' => $n, 'approved' => $okU, 'items' => function_exists('wa_util_list') ? wa_util_list($pdo, (int)$c['tpl_id']) : []]);   // every utility message we have, with its state at Meta: the owner picks one
+            if (!empty($in['preview'])) json_response(['ok' => true, 'n' => $n, 'approved' => $okU, 'items' => (function () use ($pdo, $c) { try { if (function_exists('wa_tpl_tables')) wa_tpl_tables($pdo); return function_exists('wa_util_list') ? wa_util_list($pdo, (int)$c['tpl_id']) : []; } catch (Throwable $e) { return []; } })()]);   // every utility message we have, with its state at Meta: the owner picks one
             if ($okU === 0) json_response(['error' => 'No utility message is approved by Meta yet — make one first (✨ Make utility now) and wait for approval.'], 422);
             $pick = (int)($in['tpl'] ?? 0); $pickRow = null;
             if ($pick > 0) { $tp0 = function_exists('wa_camp_tpl') ? wa_camp_tpl($pdo, $pick, true, 0) : null; $pickRow = function_exists('wa_tpl_row') ? wa_tpl_row($pdo, $pick) : null;
