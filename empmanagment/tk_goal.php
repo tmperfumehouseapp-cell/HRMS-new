@@ -10,7 +10,7 @@ require_once __DIR__ . '/tk_lib.php';
 $__tkA = (string)($action ?? ($_GET['action'] ?? ''));
 if ($__tkA === 'wq.tk_me') {   // the salesperson's own ticket for the WhatsApp panel chip: reads the cached day rows only (cheap)
     $auth = require_auth(); $me = (int)($auth['employee_id'] ?? 0); $card = null;
-    try { if ($me > 0 && function_exists('waa_cp')) { $r = (array)(waa_cp($pdo)[$me] ?? []); if ($r) $card = tk_card($pdo, ['orders' => (int)($r['n'] ?? 0), 'sales' => (float)($r['s'] ?? 0), 'clean_ticket' => (float)($r['ctk'] ?? 0), 'ticket' => (float)($r['tk'] ?? 0), 'com_today' => 0]); } } catch (Throwable $e) { }
+    try { if ($me > 0 && function_exists('waa_cp')) { $r = (array)(waa_cp($pdo)[$me] ?? []); $card = tk_card($pdo, ['orders' => (int)($r['n'] ?? 0), 'sales' => (float)($r['s'] ?? 0), 'clean_ticket' => (float)($r['ctk'] ?? 0), 'ticket' => (float)($r['tk'] ?? 0), 'com_today' => 0]); } } catch (Throwable $e) { }
     $slow = null; try { if ($me > 0 && function_exists('waa_state')) { $x = (array)(waa_state($pdo)['e'][$me] ?? []); if ((int)($x['sh'] ?? 0) > time()) $slow = ['state' => 'hold', 'until' => (int)$x['sh'], 'mins' => (int)ceil(((int)$x['sh'] - time()) / 60)];
         elseif ((int)($x['sw'] ?? 0) > 0 && (int)($x['sw']) > time() - 3600) $slow = ['state' => 'warn', 'since' => (int)$x['sw']]; } } catch (Throwable $e) { }
     json_response(['ok' => true, 'tk' => $card, 'slow' => $slow]);
