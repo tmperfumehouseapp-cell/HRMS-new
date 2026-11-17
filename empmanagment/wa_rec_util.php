@@ -110,6 +110,14 @@ function wa_ru_plan(PDO $pdo, array $cfg, array $diag): array
     while ($need > 0 && $guard++ < 24 * 14) { if (function_exists('wa_camp_in_window') && wa_camp_in_window($pdo, $t)) $need -= $per; if ($need <= 0) break; $t += 3600; }
     return ['left' => $left, 'per_hour' => $per, 'eta' => $left > 0 ? date('Y-m-d H:i', $t + ($t === $now ? 3600 : 0)) : null, 'hours' => $left > 0 ? (int)ceil($left / $per) : 0];
 }
+/** The marketing messages that get utility versions: originals (not versions / alternatives), approved by Meta or made in the last 14 days and not rejected. One `?` = the 14-day date. */
+function wa_ru_mkt_where(): string
+{
+    return "t.category = 'MARKETING' AND (t.family_id IS NULL OR t.family_id = 0 OR t.family_id = t.id) AND (t.extra IS NULL OR (t.extra NOT LIKE '%utility_for%' AND t.extra NOT LIKE '%\\\"alt_of\\\"%'))
+      AND (EXISTS (SELECT 1 FROM wa_tpl_waba w WHERE w.tpl_id = t.id AND w.status = 'APPROVED') OR (t.created_at >= ? AND NOT EXISTS (SELECT 1 FROM wa_tpl_waba w2 WHERE w2.tpl_id = t.id AND w2.status = 'REJECTED')))";
+}
+/** How many utility versions every marketing message should have (setting wa_ru_make_n, 2-12, default 10) — one place for the sender, the maker and the screens. */
+function wa_ru_want(PDO $pdo): int { return max(2, min(12, (int)setting_get($pdo, 'wa_ru_make_n', '10'))); }
 /** 🛠 Utility versions of EVERY marketing message are made and sent to Meta for approval by themselves (owner, 17 Nov 2026):
  *  - a marketing message that was just made gets its utility versions at once (newest first, today's campaigns first); then every older marketing message that has fewer than wa_ru_make_n (10) is filled up, a few per minute, until all are done;
  *  - each one is made AND sent to Meta in the same step; a draft that did not go through is sent again every minute (a Meta limit pauses it for 30 minutes) — nothing stays "not sent";
@@ -151,12 +159,11 @@ function wa_ru_make_tick(PDO $pdo): array
             setting_set($pdo, 'wa_ru_pool_at', (string)$now);
             if (count(wa_ru_pool_made($pdo)) < count(wa_util_pool_defs())) { $r = wa_util_pool_make($pdo, 0); $o['made'] += count($r['made'] ?? []); if (!empty($r['made'])) return $o; }
         }
-        $want = max(2, min(12, (int)setting_get($pdo, 'wa_ru_make_n', '10'))); $from = function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 10:00:00');
+        $want = wa_ru_want($pdo); $from = function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 10:00:00');
         $fail = json_decode((string)setting_get($pdo, 'wa_ru_fail', ''), true); $fail = is_array($fail) ? array_filter($fail, fn($t) => (int)$t > $now - 1800) : [];
         $q = $pdo->prepare("SELECT t.id, (SELECT COUNT(*) FROM wa_templates u WHERE u.category = 'UTILITY' AND u.relabelled_at IS NULL AND u.family_id = COALESCE(NULLIF(t.family_id, 0), t.id) AND (NOT EXISTS (SELECT 1 FROM wa_tpl_waba x WHERE x.tpl_id = u.id) OR EXISTS (SELECT 1 FROM wa_tpl_waba x2 WHERE x2.tpl_id = u.id AND x2.status IN ('APPROVED', 'PENDING', 'IN_APPEAL', 'ERROR')))) AS have, (SELECT COUNT(*) FROM wa_templates u2 WHERE u2.category = 'UTILITY' AND u2.family_id = COALESCE(NULLIF(t.family_id, 0), t.id)) AS total_made,
               (SELECT COUNT(*) FROM wa_campaigns c WHERE c.tpl_id = t.id AND COALESCE(c.started_at, c.created_at) >= ?) AS today
-            FROM wa_templates t WHERE t.category = 'MARKETING' AND (t.family_id IS NULL OR t.family_id = 0 OR t.family_id = t.id) AND (t.extra IS NULL OR (t.extra NOT LIKE '%utility_for%' AND t.extra NOT LIKE '%\"alt_of\"%'))
-              AND (EXISTS (SELECT 1 FROM wa_tpl_waba w WHERE w.tpl_id = t.id AND w.status = 'APPROVED') OR (t.created_at >= ? AND NOT EXISTS (SELECT 1 FROM wa_tpl_waba w2 WHERE w2.tpl_id = t.id AND w2.status = 'REJECTED')))
+            FROM wa_templates t WHERE " . wa_ru_mkt_where() . "
             HAVING have < ? AND total_made < ? ORDER BY today DESC, t.id DESC LIMIT 12");   // rejected / moved / paused versions do not count: they are replaced by new ones, but never more than twice the target in all (Meta's template allowance)
         $q->execute([$from, date('Y-m-d H:i:s', $now - 14 * 86400), $want, $want * 2]);
         foreach ($q->fetchAll() as $r) {
@@ -175,11 +182,10 @@ function wa_ru_make_tick(PDO $pdo): array
 function wa_ru_backfill_counts(PDO $pdo): array
 {
     $c = json_decode((string)setting_get($pdo, 'wa_ru_bf', ''), true); if (is_array($c) && (int)($c['at'] ?? 0) > time() - 120) return $c;
-    $want = max(2, min(12, (int)setting_get($pdo, 'wa_ru_make_n', '10'))); $o = ['done' => 0, 'total' => 0, 'want' => $want, 'at' => time()];
+    $want = wa_ru_want($pdo); $o = ['done' => 0, 'total' => 0, 'want' => $want, 'at' => time()];
     try {
         $q = $pdo->prepare("SELECT COUNT(*) AS n, SUM(x.have >= ? OR x.total_made >= ?) AS d FROM (SELECT (SELECT COUNT(*) FROM wa_templates u WHERE u.category = 'UTILITY' AND u.relabelled_at IS NULL AND u.family_id = COALESCE(NULLIF(t.family_id, 0), t.id) AND (NOT EXISTS (SELECT 1 FROM wa_tpl_waba x WHERE x.tpl_id = u.id) OR EXISTS (SELECT 1 FROM wa_tpl_waba x2 WHERE x2.tpl_id = u.id AND x2.status IN ('APPROVED', 'PENDING', 'IN_APPEAL', 'ERROR')))) AS have, (SELECT COUNT(*) FROM wa_templates u2 WHERE u2.category = 'UTILITY' AND u2.family_id = COALESCE(NULLIF(t.family_id, 0), t.id)) AS total_made FROM wa_templates t
-            WHERE t.category = 'MARKETING' AND (t.family_id IS NULL OR t.family_id = 0 OR t.family_id = t.id) AND (t.extra IS NULL OR (t.extra NOT LIKE '%utility_for%' AND t.extra NOT LIKE '%\"alt_of\"%'))
-              AND (EXISTS (SELECT 1 FROM wa_tpl_waba w WHERE w.tpl_id = t.id AND w.status = 'APPROVED') OR (t.created_at >= ? AND NOT EXISTS (SELECT 1 FROM wa_tpl_waba w2 WHERE w2.tpl_id = t.id AND w2.status = 'REJECTED')))) x");
+            WHERE " . wa_ru_mkt_where() . ") x");
         $q->execute([$want, $want * 2, date('Y-m-d H:i:s', time() - 14 * 86400)]); $r = $q->fetch(); $o['total'] = (int)$r['n']; $o['done'] = (int)$r['d'];
     } catch (Throwable $e) { }
     try { setting_set($pdo, 'wa_ru_bf', json_encode($o)); } catch (Throwable $e) { }
