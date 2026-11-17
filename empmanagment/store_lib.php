@@ -1590,6 +1590,13 @@ if (!function_exists('budget_store_calc')) {
         return $def;
     }
     /** Old POS bills (pos_orders, kept in this database) of the days in the range that have NO bill in the new store POS, shaped like st_bills rows. So the days before the new POS started (e.g. 1–3 November) still count. */
+    /** Names written by hand in the old POS ("Krish Champaneri") that the owner linked to an employee (Total Budgeting → Store → "not matched" → Link to). lower-case name => employee_id */
+    function st_name_alias(PDO $pdo): array
+    {
+        $j = null; try { if (function_exists('setting_get')) $j = json_decode((string)setting_get($pdo, 'store_name_alias', ''), true); } catch (Throwable $e) { }
+        return is_array($j) ? array_map('intval', $j) : [];
+    }
+    function st_name_key(string $n): string { return strtolower(trim(preg_replace('/\s+/', ' ', $n))); }
     function budget_oldpos_rows(PDO $pdo, string $from, string $to, array $newDays): array
     {
         $h = function_exists('st_day_hour') ? st_day_hour() : 3; $dd = "DATE(DATE_SUB(o.created_at, INTERVAL $h HOUR))";
@@ -1603,12 +1610,14 @@ if (!function_exists('budget_store_calc')) {
             $qi = $pdo->prepare("SELECT oi.order_id, oi.variant_title vt, oi.title t, oi.qty q FROM pos_order_items oi JOIN pos_orders o ON o.id = oi.order_id WHERE o.created_at >= ? AND o.created_at < ?");
             $qi->execute([$lo, $hi]);
             foreach ($qi->fetchAll() as $r) { if (preg_match('/(\d+)\s*ml/i', (string)$r['vt'], $m) || preg_match('/(\d+)\s*ml/i', (string)$r['t'], $m)) $ml[(int)$r['order_id']] = ($ml[(int)$r['order_id']] ?? 0) + (int)$m[1] * (int)$r['q']; }
+            $alias = st_name_alias($pdo);
             $emps = $pdo->query("SELECT employee_id, full_name FROM employees WHERE status != 'ex'")->fetchAll(); $byFull = []; $byFirst = [];
             foreach ($emps as $e) { $fn = strtolower(trim(preg_replace('/\s+/', ' ', (string)$e['full_name']))); $byFull[$fn] = $e; $f1 = (string)strtok($fn, ' '); $byFirst[$f1][] = $e; }
             foreach ($ord as $o) {
                 if (isset($newDays[(string)$o['d']])) continue;
                 $nm = trim((string)$o['billed_by']); $k = strtolower(trim(preg_replace('/\s+/', ' ', $nm))); $e = $byFull[$k] ?? null;
                 if (!$e) { $f1 = (string)strtok($k, ' '); if (isset($byFirst[$f1]) && count($byFirst[$f1]) === 1) $e = $byFirst[$f1][0]; }
+                if (!$e && $k !== '' && isset($alias[$k])) { foreach ($emps as $ee) if ((int)$ee['employee_id'] === (int)$alias[$k]) { $e = $ee; break; } }   // the owner linked this written name
                 $rows[] = ['bill_id' => -(int)$o['id'], 'bill_no' => 'POS-' . (int)$o['id'], 'biz_date' => (string)$o['d'], 'created_at' => (string)$o['created_at'], 'emp_id' => $e ? (int)$e['employee_id'] : 0,
                     'emp_name' => $e ? (string)$e['full_name'] : ($nm !== '' ? $nm : 'Old POS'), 'order_code' => $hasCode ? (string)($o['order_code'] ?? '') : '', 'total_ml' => (int)($ml[(int)$o['id']] ?? 0), 'total' => (float)$o['total'], 'real_id' => $e ? (int)$e['employee_id'] : null, 'src' => 'old_pos'];
             }
