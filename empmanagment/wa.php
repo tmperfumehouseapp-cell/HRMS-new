@@ -1253,8 +1253,9 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
         }
         case 'wa.bulk_ordered': {   // ☑ which of these chats already ordered (the bulk-send safety): returns their phones
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
-            if (!wa_is_admin($pdo, $auth)) json_response(['error' => 'Only an admin can bulk send.'], 403);
+            $adm = wa_is_admin($pdo, $auth); $me = (int)($auth['employee_id'] ?? 0); if (!$adm && $me <= 0) json_response(['error' => 'Only an admin can bulk send.'], 403);
             $in = json_input(); $phones = array_slice(array_values(array_unique(array_filter(array_map(fn($p) => wa_key($p), (array)($in['phones'] ?? []))))), 0, 3000); $out = [];
+            if (!$adm) { $own = []; foreach (array_chunk($phones, 400) as $ch) { $q = $pdo->prepare("SELECT phone FROM wa_contacts WHERE assigned_emp = ? AND phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $q->execute(array_merge([$me], $ch)); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $ph) $own[] = (string)$ph; } $phones = $own; }   // a salesperson: only the chats they hold (History bulk send)
             foreach (array_chunk($phones, 400) as $ch) { try { $q = $pdo->prepare("SELECT phone FROM wa_cust WHERE n > 0 AND phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $q->execute($ch); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $ph) $out[(string)$ph] = 1; } catch (Throwable $e) { } }
             $oq = []; foreach (array_chunk($phones, 400) as $ch) { try { $q = $pdo->prepare("SELECT phone, optout, (cx_id > 0 OR tag = 'complaint') AS cx FROM wa_contacts WHERE (optout = 1 OR cx_id > 0 OR tag = 'complaint') AND phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $q->execute($ch); foreach ($q->fetchAll() as $r) $oq[(string)$r['phone']] = ((int)$r['optout'] === 1 ? 'optout' : 'complaint'); } catch (Throwable $e) { } }
             json_response(['ok' => true, 'ordered' => array_keys($out), 'blocked' => $oq]);
