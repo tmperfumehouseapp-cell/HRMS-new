@@ -126,7 +126,8 @@ const DSP = (() => {
   const diagKey = (v) => String(v == null ? '' : v).replace(/[\s#]+/g, '').toLowerCase();
   const diagTrk = (v) => String(v == null ? '' : v).replace(/\s+/g, '').toUpperCase();
   function diagPaste(txt) {   // rows copied from Excel: Order ID, Tracking ID, Courier, Final status (tabs; commas also work)
-    const out = []; String(txt || '').split(/\r?\n/).forEach((ln) => { if (!ln.trim()) return; const c = ln.indexOf('\t') >= 0 ? ln.split('\t') : ln.split(','); const o = diagKey(c[0]); if (!o || /^order/.test(o)) return; out.push({ k: o, order: String(c[0]).trim(), trk: diagTrk(c[1]), courier: String(c[2] || '').trim(), st: String(c[3] || '').trim() }); });
+    const out = []; String(txt || '').split(/\r?\n/).forEach((ln) => { if (!ln.trim()) return; const c = ln.indexOf('\t') >= 0 ? ln.split('\t') : ln.split(','); const raw = String(c[0]).split('/')[0]; let o = diagKey(raw); if (!o || /^order/.test(o)) return; const cp = /^((?:wm-)?\d{3,})[-_]?(?:c|r|rb|copy)\d{0,2}$/.exec(o); if (cp) o = cp[1];   // "#69662-C" = the same order booked again: it is matched with #69662
+        out.push({ k: o, copy: !!cp, order: String(c[0]).trim(), trk: diagTrk(c[1]), courier: String(c[2] || '').trim(), st: String(c[3] || '').trim() }); });
     return out;
   }
   function diagReport(rows, pasted, info) {
@@ -160,7 +161,7 @@ const DSP = (() => {
     const hk = {}; rows.forEach((r) => { hk[diagKey(r.order)] = r; });
     const stRaw = {}, stGrp = {}; Object.values(man).forEach((m) => { cnt(stRaw, m.st || '(blank)'); cnt(stGrp, diagReal(m.st)); });
     const matched = rows.filter((r) => man[diagKey(r.order)]), onlyH = rows.length - matched.length, onlyM = Object.keys(man).filter((k) => !hk[k]);
-    L.push(''); L.push('=== COMPARED WITH THE HAND-TRACKED LIST ==='); L.push('[M1] Pasted rows: ' + pasted.length + ' | different orders: ' + Object.keys(man).length + ' | repeated order IDs: ' + Object.keys(dup).length + ' | matched with HRMS: ' + matched.length + ' | in HRMS only: ' + onlyH + ' | in the list only: ' + onlyM.length);
+    L.push(''); L.push('=== COMPARED WITH THE HAND-TRACKED LIST ==='); const nCopy = pasted.filter((m) => m.copy).length; L.push('[M1] Pasted rows: ' + pasted.length + ' | different orders: ' + Object.keys(man).length + ' | repeated order IDs: ' + Object.keys(dup).length + ' | matched with HRMS: ' + matched.length + ' | in HRMS only: ' + onlyH + ' | in the list only: ' + onlyM.length + ' | booked again (-C) in the list: ' + nCopy);
     { const d = {}; onlyM.forEach((k) => cnt(d, /^wm-/.test(k) ? 'WM-' : 'Shopify')); const hd = {}; rows.filter((r) => !man[diagKey(r.order)]).forEach((r) => cnt(hd, String(r.created || '').slice(0, 10))); L.push('  list only: ' + (top(d).map((x) => x[0] + ' ' + x[1]).join(' · ') || '0') + ' (first: ' + onlyM.slice(0, 8).map((k) => man[k].order).join(', ') + ')'); L.push('  HRMS only, by order date: ' + Object.keys(hd).sort().map((x) => x.slice(5) + ' ' + hd[x]).join(' · ')); }
     L.push(''); L.push('[M2] Real status → how it was read (count)'); top(stGrp).forEach((x) => L.push('  ' + x[0] + ': ' + x[1]));
     L.push(''); L.push('[M3] Every different status text in the list (top 60)'); top(stRaw, 60).forEach((x) => L.push('  ' + x[0] + ' → ' + diagReal(x[0] === '(blank)' ? '' : x[0]) + ': ' + x[1]));
