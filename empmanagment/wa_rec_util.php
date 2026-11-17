@@ -46,7 +46,7 @@ function wa_ru_tables(PDO $pdo): bool
 function wa_ru_cfg(PDO $pdo): array
 {
     $g = function (string $k, string $d) use ($pdo) { try { $v = setting_get($pdo, $k, $d); return ($v === null || $v === '') ? $d : (string)$v; } catch (Throwable $e) { return $d; } };
-    return ['on' => $g('wa_ru_on', '1') !== '0', 'hourly' => max(10, min(20000, (int)$g('wa_ru_hourly', '1500'))), 'wait_min' => max(5, min(1440, (int)$g('wa_ru_wait_min', '10'))),
+    return ['on' => $g('wa_ru_on', '1') !== '0', 'hourly' => max(10, min(20000, (int)$g('wa_ru_hourly', '3600'))), 'wait_min' => max(5, min(1440, (int)$g('wa_ru_wait_min', '10'))),
             'ord_days' => in_array((int)$g('wa_ru_ord_days', '180'), [30, 60, 90, 120, 180], true) ? (int)$g('wa_ru_ord_days', '180') : 180, 'pause_until' => (int)$g('wa_ru_pause_until', '0'),
             'ask_days' => in_array((int)$g('wa_ru_ask_days', '90'), [30, 60, 90, 120, 180], true) ? (int)$g('wa_ru_ask_days', '90') : 90, 'make_on' => $g('wa_ru_make_on', '1') !== '0'];
 }
@@ -139,6 +139,7 @@ function wa_ru_make_tick(PDO $pdo): array
     try { if ((string)setting_get($pdo, 'wa_ru_marker_fix', '') !== '1') { $n8 = (int)$pdo->exec("UPDATE wa_camp_items SET variant = 'R', err = '' WHERE (err = 'restart-utility' OR (status = 'sending' AND camp_id IN (SELECT id FROM wa_campaigns WHERE extra LIKE '%u_restart%'))) AND COALESCE(variant, 'M') <> 'U' LIMIT 20000"); if ($n8 === 0) setting_set($pdo, 'wa_ru_marker_fix', '1'); } } catch (Throwable $e) { }
     // 0c) one-time: the people left out as "No chosen utility message fits this person" only because a chosen message wrote its variable as "Name" (capital N) are put back, 20,000 at a time
     try { if ((string)setting_get($pdo, 'wa_ru_ord180', '') !== '1') { setting_set($pdo, 'wa_ru_ord_days', '180'); setting_set($pdo, 'wa_ru_ord180', '1'); } } catch (Throwable $e) { }   // owner 17 Nov 2026: order window 180 days (one time)
+    try { if ((string)setting_get($pdo, 'wa_ru_hourly60', '') !== '1') { setting_set($pdo, 'wa_ru_hourly', '3600'); setting_set($pdo, 'wa_ru_hourly60', '1'); } } catch (Throwable $e) { }   // owner 17 Nov 2026: Module B 60 a minute = 3,600 an hour (it was 1,500 an hour)
     try { if ((string)setting_get($pdo, 'wa_ru_perm60', '') !== '1') { setting_set($pdo, 'wa_u_per_min', '60'); setting_set($pdo, 'wa_ru_perm60', '1'); } } catch (Throwable $e) { }   // owner 17 Nov 2026: utility limit 60 a minute (one time)
     try { if ((string)setting_get($pdo, 'wa_ru_fit_fix', '') !== '1') { $n7 = (int)$pdo->exec("UPDATE wa_camp_items SET status = 'queued', variant = 'R', err = '' WHERE status = 'skipped' AND err = 'No chosen utility message fits this person' LIMIT 20000");
             if ($n7 > 0) { $pdo->exec("UPDATE wa_campaigns SET status = 'running', finished_at = NULL, note = 'Started again with utility — people put back after a fix.' WHERE status = 'done' AND extra LIKE '%u_restart%' AND id IN (SELECT camp_id FROM wa_camp_items WHERE status = 'queued' AND variant = 'R')"); if (function_exists('wa_log')) wa_log($pdo, 'campaign', true, 'Utility: ' . $n7 . ' people put back (they were left out only because a chosen message wrote its variable as \"Name\")'); }
