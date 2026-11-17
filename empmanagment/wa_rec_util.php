@@ -261,9 +261,9 @@ function wa_ru_tick(PDO $pdo): array
         $from = function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 10:00:00');
         $cursor = (int)setting_get($pdo, 'wa_ru_cursor', '0'); $lim = 600; $recOn = function_exists('wa_rec_cfg') ? !empty(wa_rec_cfg($pdo)['on']) : false; $recTries = function_exists('wa_rec_cfg') ? max(1, (int)wa_rec_cfg($pdo)['max_attempts'] - 1) : 2;
         $mo = implode(',', WA_RU_MARKETING_ONLY);
-        // 💸 marketing FIRST (owner, 17 Nov 2026): a campaign's failed people get utility once nobody of that campaign is left queued / sending. Held people still waiting for their extra marketing try (status retry) are left alone until that try has been made
-        $dn = $pdo->prepare("SELECT c.id FROM wa_campaigns c WHERE COALESCE(c.started_at, c.created_at) >= ? AND c.status NOT IN ('draft', 'scheduled') AND NOT EXISTS (SELECT 1 FROM wa_camp_items q WHERE q.camp_id = c.id AND q.status IN ('queued', 'sending') AND COALESCE(q.variant, 'M') <> 'R')"); $dn->execute([date('Y-m-d H:i:s', $nowTs - 4 * 86400)]);
-        $doneIds = array_map('intval', $dn->fetchAll(PDO::FETCH_COLUMN)); if (!$doneIds) { $res['note'] = 'marketing is still running in every campaign — utility follows when it is finished'; return $res; }
+        // 💸 marketing FIRST (owner, 17 Nov 2026): a person whose marketing message FAILED gets utility the same day (after the short wait / recovery); only draft / scheduled campaigns are skipped. Held people still waiting for their extra marketing try (status retry) are left alone until that try has been made
+        $dn = $pdo->prepare("SELECT c.id FROM wa_campaigns c WHERE COALESCE(c.started_at, c.created_at) >= ? AND c.status NOT IN ('draft', 'scheduled')"); $dn->execute([date('Y-m-d H:i:s', $nowTs - 4 * 86400)]);
+        $doneIds = array_map('intval', $dn->fetchAll(PDO::FETCH_COLUMN)); if (!$doneIds) { $res['note'] = 'no campaign in the last 4 days'; return $res; }
         $doneIn = implode(',', $doneIds);
         $q = $pdo->prepare("SELECT i.id, i.camp_id, c.tpl_id AS ctpl, i.phone, i.name, i.err_code, i.status, i.sent_at FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id
             WHERE (i.status = 'failed' OR (i.status = 'sent' AND i.last_status = 'failed' AND i.err_code IN ($mo)) OR " . wa_ru_known_sql() . ") AND i.camp_id IN ($doneIn) AND COALESCE(i.variant, 'M') <> 'U' AND COALESCE(c.extra, '') NOT LIKE '%\"kind\":\"util\"%'
@@ -340,8 +340,9 @@ function wa_ru_known_sql(): string
 function wa_ru_counts(PDO $pdo, array $ids): array
 {
     $ids = array_values(array_filter(array_map('intval', $ids))); if (!$ids || !wa_ru_tables($pdo)) return [];
-    $in = implode(',', $ids); $o = []; $z = ['ru_sent' => 0, 'ru_del' => 0, 'ru_fail' => 0, 'mix_sent' => 0, 'mix_del' => 0];
+    $in = implode(',', $ids); $o = []; $z = ['ru_sent' => 0, 'ru_del' => 0, 'ru_fail' => 0, 'mix_sent' => 0, 'mix_del' => 0, 'ru_replied' => 0];
     try { foreach ($pdo->query("SELECT r.camp_id, COUNT(*) AS n, SUM(m.status IN ('delivered', 'read')) AS d, SUM(r.ok = 0 OR m.status = 'failed') AS f FROM wa_ru_log r LEFT JOIN wa_messages m ON m.wamid = r.wamid AND r.wamid <> '' WHERE r.camp_id IN ($in) GROUP BY r.camp_id")->fetchAll() as $r) $o[(int)$r['camp_id']] = ['ru_sent' => (int)$r['n'], 'ru_del' => (int)$r['d'], 'ru_fail' => (int)$r['f']] + $z; } catch (Throwable $e) { }
+    try { foreach ($pdo->query("SELECT l.camp_id, COUNT(DISTINCT l.phone) AS n FROM wa_ru_log l JOIN wa_messages m ON m.phone COLLATE utf8mb4_unicode_ci = l.phone COLLATE utf8mb4_unicode_ci AND m.dir = 'in' AND m.ts > l.at AND m.ts <= DATE_ADD(l.at, INTERVAL 2 DAY) WHERE l.camp_id IN ($in) AND l.ok = 1 GROUP BY l.camp_id")->fetchAll() as $r) { $c = (int)$r['camp_id']; $o[$c] = ($o[$c] ?? $z); $o[$c]['ru_replied'] = (int)$r['n']; } } catch (Throwable $e) { }   // 💬 people who wrote back within 2 days of the Module B utility message (counted from the utility, not from the marketing)
     try { foreach ($pdo->query("SELECT i.camp_id, COUNT(*) AS n, SUM(m.status IN ('delivered', 'read')) AS d FROM wa_camp_items i LEFT JOIN wa_messages m ON m.wamid = i.wamid AND i.wamid <> '' WHERE i.camp_id IN ($in) AND i.variant = 'U' AND i.status = 'sent' GROUP BY i.camp_id")->fetchAll() as $r) { $c = (int)$r['camp_id']; $o[$c] = ($o[$c] ?? $z); $o[$c]['mix_sent'] = (int)$r['n']; $o[$c]['mix_del'] = (int)$r['d']; } } catch (Throwable $e) { }
     return $o;
 }
