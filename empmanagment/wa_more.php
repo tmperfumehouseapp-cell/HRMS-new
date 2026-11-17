@@ -944,6 +944,13 @@ if (in_array($__wm, ['wa.numbers', 'wa.num_profile', 'wa.num_profile_save', 'wa.
                         $tagQ->execute([$k, $lt, $now]); if ($idxQ) $idxQ->execute([$k, $lt]); $leftN++; } catch (Throwable $e) { } }
             }
             try { setting_set($pdo, 'wa_tag_cache', ''); } catch (Throwable $e) { }
+            // 📊 the customer numbers (Customers at a glance, the funnel, the filters) must see the new file within minutes, not hours: every imported number is queued for the funnel recount (cfun_fast does it within a minute),
+            // the saved summary is dropped, and the funnel's totals are made due again in about 5 minutes
+            try {
+                if (function_exists('cfun_dirty')) { foreach (array_keys($seen) as $k9) cfun_dirty($pdo, (string)$k9); if (!empty($ls)) foreach (array_keys($ls) as $k9) cfun_dirty($pdo, (string)$k9); }
+                if (function_exists('wa_cpc_table') && wa_cpc_table($pdo)) $pdo->prepare("DELETE FROM wa_cp_cache WHERE k IN ('cust_sum2')")->execute();
+                setting_set($pdo, 'wa_cfun_at', date('Y-m-d H:i:s', time() - 3300 + 300));
+            } catch (Throwable $e) { }
             // "Try these people again": people Meta held (131049 / 131048 = too many marketing messages lately, 130472 = in a Meta experiment) are marked "do not message now" for a few days,
             // so every campaign skips them. When the owner adds them again on purpose, that mark is removed so a campaign sends to them. People who are not on WhatsApp (131026)
             // or stopped marketing messages (131050) stay left out — they cannot be reached / asked not to be messaged.

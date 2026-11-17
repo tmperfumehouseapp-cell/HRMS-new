@@ -231,6 +231,11 @@ function cfun_fast(PDO $pdo, int $max = 2000, int $budget = 8, int $every = 20):
     $o = ['recounted' => 0, 'left' => 0]; $t0 = microtime(true);
     try {
         setting_set($pdo, 'wa_cfun_fast_at', (string)$now);
+        // 🩹 customers added without the funnel being told (an Excel imported before this fix, a contact made another way): every 30 minutes the newest 3,000 contacts the funnel does not know yet are queued for a recount
+        if ((int)setting_get($pdo, 'wa_cfun_missing_at', '0') < $now - 1800) {
+            setting_set($pdo, 'wa_cfun_missing_at', (string)$now);
+            try { $pdo->exec("INSERT INTO wa_cfun_dirty (phone, at) SELECT /*+ MAX_EXECUTION_TIME(8000) */ c.phone, NOW() FROM wa_contacts c LEFT JOIN wa_cfun f ON f.phone = c.phone WHERE f.phone IS NULL ORDER BY c.first_seen DESC LIMIT 3000 ON DUPLICATE KEY UPDATE at = NOW()"); } catch (Throwable $e) { }
+        }
         $cut = date('Y-m-d H:i:s'); $q = $pdo->prepare("SELECT phone FROM wa_cfun_dirty WHERE at <= ? ORDER BY at LIMIT " . (int)$max); $q->execute([$cut]); $all = array_map('strval', $q->fetchAll(PDO::FETCH_COLUMN));
         foreach (array_chunk($all, 400) as $ch) {
             if (microtime(true) - $t0 > $budget) break;
