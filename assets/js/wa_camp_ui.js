@@ -509,18 +509,23 @@ html.wxdk [data-tone]{background:rgba(128,128,128,.12) !important;color:#e9edef}
       if (fin.length) hl += finHtml(fin, cardHtml);
       if (D.total > D.campaigns.length) hl += `<div class="wp-row" style="justify-content:center;margin:10px 0"><button type="button" class="wp-btn" id="cMore">Load more campaigns (${fmt(D.total - D.campaigns.length)} more)</button></div>`;
       el.innerHTML = h + '<div id="cpList">' + hl + '</div></div>';
-      // 🧹 compact page (owner, 18 Nov 2026): the SENDING campaigns come first, right under the buttons; today's numbers, the plans, the hour grid, best messages, room, drip and planner are one collapsed box below them
+      // 🧹 compact page (owner, 18 Nov 2026) — the order the owner chose: 1 alerts (one line) · 2 today's plan (one line) · 3 best messages · 4 today's numbers (sent / delivered / failed / spent) · 5 Campaigns title + buttons · 6 the campaigns (SENDING first, Finished tiles below) · 7 everything else in one collapsed box
       try {
-        const root = $(el, '#cpKeep'), list = $(el, '#cpList'), top = root && root.querySelector('.wp-top');
-        if (root && list && top) {
-          const rest = []; for (let n = top.nextElementSibling; n; n = n.nextElementSibling) if (n !== list) rest.push(n);
-          top.after(list);
-          const box = document.createElement('details'); box.id = 'cpPanels'; box.className = 'wp-cd'; box.style.cssText = 'margin:8px 0';
-          const spx = D.spend, sum = spx ? 'Today: sent ' + fmt(spx.sent) + ' · delivered ' + fmt(spx.delivered) + ' · failed ' + fmt(spx.failed) + ' · ₹' + fmt(Math.round(spx.amount || 0)) : 'Today, plans and analysis';
-          const sm = document.createElement('summary'); sm.style.cssText = 'cursor:pointer;font-weight:700;font-size:13px'; sm.textContent = '📊 ' + sum + '  — tap for the plan, hours, messages and settings ▾'; box.appendChild(sm);
-          rest.forEach((x) => box.appendChild(x)); list.after(box);
-          try { box.open = localStorage.getItem('cpPanelsOpen') === '1'; } catch (e0) { }
-          box.addEventListener('toggle', () => { try { localStorage.setItem('cpPanelsOpen', box.open ? '1' : '0'); } catch (e1) { } });
+        const root = $(el, '#cpKeep'); if (root) {
+          const arrange = () => {
+            const q = (sel) => root.querySelector(':scope > ' + sel);
+            const best = (() => { const r = root.querySelector('#rkBody'); let n = r; while (n && n.parentElement !== root) n = n.parentElement; return n; })();
+            const pl = q('#cpPl'); if (pl && !pl.querySelector(':scope > details[data-cmp]')) { const d = document.createElement('details'); const ex = (pl.textContent.match(/Expected\s+[\d,]+\s+orders\s+for\s+₹[\d,]+/) || [''])[0]; const sm = document.createElement('summary'); sm.style.cssText = 'cursor:pointer;font-weight:700;font-size:13px'; sm.textContent = '📋 Today’s plan' + (ex ? ' — ' + ex : '') + ' ▾'; d.appendChild(sm); while (pl.firstChild) d.appendChild(pl.firstChild); d.dataset.cmp = '1'; pl.appendChild(d); try { d.open = localStorage.getItem('cpPlanOpen') === '1'; } catch (e0) { } d.addEventListener('toggle', () => { try { localStorage.setItem('cpPlanOpen', d.open ? '1' : '0'); } catch (e1) { } }); }
+            let box = q('#cpPanels'); if (!box) { box = document.createElement('details'); box.id = 'cpPanels'; box.className = 'wp-cd'; box.style.cssText = 'margin:8px 0'; const sm = document.createElement('summary'); sm.style.cssText = 'cursor:pointer;font-weight:700;font-size:13px'; sm.textContent = '⚙ More: daily plan, hours, room per number, drip, planner and totals ▾'; box.appendChild(sm); try { box.open = localStorage.getItem('cpPanelsOpen') === '1'; } catch (e0) { } box.addEventListener('toggle', () => { try { localStorage.setItem('cpPanelsOpen', box.open ? '1' : '0'); } catch (e1) { } }); }
+            const first = [q('#cpAl'), pl, best, q('.cp-hero'), q('.wp-top'), q('#cpList')].filter(Boolean);
+            const rest = [...root.children].filter((n) => !first.includes(n) && n !== box);
+            rest.forEach((n) => box.appendChild(n));
+            const want = [...first, box]; const have = [...root.children];
+            if (want.length === have.length && want.every((n, i) => n === have[i])) return;
+            want.forEach((n) => root.appendChild(n));
+          };
+          arrange();
+          const mo = new MutationObserver(() => { if (!el.isConnected) { mo.disconnect(); return; } arrange(); }); mo.observe(root, { childList: true, subtree: true });   // the alerts and today's plan arrive a moment later: they are put in their place too
         }
       } catch (e) { }
       const paintDrip = async () => { try { const d = await api.get('wa.drip_stats'); const box = $(el, '#cDripCard'); if (!box || (!d.days_set && !d.total.sent && !d.total.skipped)) return; const k = d.total, pc = (a, b) => (b > 0 && a > 0 ? ` <span style="opacity:.75">(${Math.round(a * 100 / b)}%)</span>` : '');
