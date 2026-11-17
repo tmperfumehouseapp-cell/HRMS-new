@@ -164,6 +164,26 @@ function wmo_lines(PDO $pdo, int $totalP, array $perf, array $chains, array $sin
     if ($pi) { $parts = wmo_split($perfP, array_map(fn($i) => max(1, $L[$i]['mrp_p'] * $L[$i]['qty']), $pi)); foreach ($pi as $k => $i) $L[$i]['total_p'] = $parts[$k]; }
     return [$L, $ml, ''];
 }
+/** 🏷 No Name order (owner, 17 Nov): no catalogue product is picked. "No name 20 / 50 / 100 ml" lines (a price and a quantity each: they count in the order's ML, so the ML commission chart pays them) and an optional 🚗 Car kit line
+ *  (a price and a quantity: paid a flat % of its price, default 6, setting carkit_pct). Returns [lines, ml, error, total in paise]. */
+function wmo_noname_lines(array $nn, array $ck): array
+{
+    $L = []; $ml = 0; $sum = 0;
+    foreach ($nn as $x) {
+        if (!is_array($x)) continue; $m = (int)($x['ml'] ?? 0); $q = (int)($x['qty'] ?? 0); if ($q < 1) continue; $q = min(50, $q);
+        if (!in_array($m, [20, 50, 100], true)) return [[], 0, 'No Name comes in 20, 50 or 100 ml.', 0];
+        $pr = wmo_p($x['price'] ?? 0); if ($pr < 5000 || $pr > 5000000) return [[], 0, 'Type the price of one No name ' . $m . ' ml (₹50 to ₹50000).', 0];
+        $L[] = ['vid' => -$m, 'sku' => 'NONAME-' . $m, 'pid' => 0, 'title' => 'No name ' . $m . ' ml', 'short' => 'No name', 'label' => $m . ' ml', 'ml' => $m, 'qty' => $q, 'mrp_p' => $pr, 'chain' => false, 'noname' => true, 'unit_p' => $pr, 'total_p' => $pr * $q];
+        $ml += $m * $q; $sum += $pr * $q;
+    }
+    $cq = (int)($ck['qty'] ?? 0);
+    if ($cq > 0) {
+        $cq = min(50, $cq); $pr = wmo_p($ck['price'] ?? 0); if ($pr < 5000 || $pr > 5000000) return [[], 0, 'Type the price of one Car kit (₹50 to ₹50000).', 0];
+        $L[] = ['vid' => -1, 'sku' => 'CARKIT', 'pid' => 0, 'title' => 'Car kit', 'short' => 'Car kit', 'label' => '', 'ml' => null, 'qty' => $cq, 'mrp_p' => $pr, 'chain' => false, 'single' => true, 'carkit' => true, 'unit_p' => $pr, 'total_p' => $pr * $cq]; $sum += $pr * $cq;
+    }
+    if (!$L) return [[], 0, 'Add at least one No Name or Car kit piece.', 0];
+    return [$L, $ml, '', $sum];
+}
 /** Shopify-shaped line items of the order lines (for the ML / colour / chain helpers of the Orders pages). */
 function wmo_line_items(array $L): array
 {
@@ -761,7 +781,10 @@ if (strpos($__wmo, 'wmo.') === 0) {
                 $utr = (string)$proof['utr']; $gate = (string)$proof['gateway'];
             } else $gate = 'Cash / COD';
             if ($utr !== '') { $dn = wmo_ref_used($pdo, $utr); if ($dn && empty($in['dup_ok'])) json_response(['error' => 'This payment reference (UTR) is already used on order ' . $dn . '. The same payment cannot pay two orders.', 'code' => 'dup', 'order' => $dn], 409); }
-            [$L, $ml, $er] = wmo_lines($pdo, $total, (array)($in['lines'] ?? []), (array)($in['chains'] ?? []), (array)($in['singles'] ?? [])); if ($er !== '') json_response(['error' => $er], 422);
+            if ((string)($in['kind'] ?? '') === 'noname') {   // 🏷 No Name / 🚗 Car kit: the lines come from the sizes and prices typed, the total must be exactly their sum
+                [$L, $ml, $er, $sumP] = wmo_noname_lines((array)($in['nn'] ?? []), (array)($in['ck'] ?? [])); if ($er !== '') json_response(['error' => $er], 422);
+                if ($sumP !== $total) json_response(['error' => 'The total ' . wmo_rs($total) . ' must be the sum of the lines (' . wmo_rs($sumP) . ').'], 422);
+            } else { [$L, $ml, $er] = wmo_lines($pdo, $total, (array)($in['lines'] ?? []), (array)($in['chains'] ?? []), (array)($in['singles'] ?? [])); if ($er !== '') json_response(['error' => $er], 422); }
             $shot = (string)($in['shot'] ?? ''); $smime = strtolower((string)($in['shot_mime'] ?? 'image/jpeg')); $sb = preg_replace('/^data:[^,]*,/', '', $shot); if ($sb !== '' && (strlen($sb) > 3000000 || !in_array($smime, ['image/jpeg', 'image/png', 'image/webp'], true))) $sb = '';
             $otype = in_array((string)($in['otype'] ?? ''), ['query', 'campaign'], true) ? (string)$in['otype'] : ''; $assign = $otype !== '' ? $me : (int)($c['assigned_emp'] ?: $me); /* from the Manual order page: it belongs to the person who makes it */ $token = bin2hex(random_bytes(16)); $now = date('Y-m-d H:i:s');
             $pdo->prepare("INSERT INTO wmo_order (token, phone, emp_id, assign_emp, status, pay, total_p, paid_p, cod_p, utr, ml, lines_json, shot_mime, shot_b64, shot_json, src, note, created_at) VALUES (?,?,?,?, 'draft', ?,?,?,?,?,?,?,?,?,?,?,?,?)")
