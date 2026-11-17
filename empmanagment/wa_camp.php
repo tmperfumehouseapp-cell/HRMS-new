@@ -1308,7 +1308,7 @@ function wa_camp_spend_today(PDO $pdo, bool $fresh = false): array
 {
     $from = function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 10:00:00', date('H') < 10 ? time() - 86400 : time());
     $to = date('Y-m-d H:i:s', strtotime($from) + 86400); $now = date('Y-m-d H:i:s');
-    if (!$fresh) { try { $hit = json_decode((string)setting_get($pdo, 'wa_camp_spend3', ''), true); if (is_array($hit) && ($hit['from'] ?? '') === $from && (int)($hit['t'] ?? 0) > time() - 60) return $hit; } catch (Throwable $e) { } }
+    if (!$fresh) { try { $hit = json_decode((string)setting_get($pdo, 'wa_camp_spend4', ''), true); if (is_array($hit) && ($hit['from'] ?? '') === $from && (int)($hit['t'] ?? 0) > time() - 60) return $hit; } catch (Throwable $e) { } }
     $R = function_exists('wab_rates') ? wab_rates($pdo) : ['marketing' => 1.09, 'utility' => 0.15, 'authentication' => 0.15, 'service' => 0.0];
     $o = ['from' => $from, 'to' => $to, 'campaigns' => 0, 'sent' => 0, 'delivered' => 0, 'read' => 0, 'failed' => 0, 'replied' => 0, 'retried' => 0, 'recovered' => 0, 'marketing' => 0, 'utility' => 0, 'amount' => 0.0, 'm_amount' => 0.0, 'u_amount' => 0.0, 'rate' => round((float)$R['marketing'], 2), 'u_rate' => round((float)$R['utility'], 2), 't' => time()];
     try {
@@ -1320,11 +1320,30 @@ function wa_camp_spend_today(PDO $pdo, bool $fresh = false): array
     } catch (Throwable $e) { $o['error'] = 'The billing columns are not ready yet.'; }
     try { $q = $pdo->prepare("SELECT COUNT(*) FROM wa_messages WHERE dir = 'out' AND mtype = 'template' AND who = 'campaign' AND status = 'failed' AND ts >= ? AND ts < ?"); $q->execute([$from, $to]); $o['failed'] = (int)$q->fetchColumn(); } catch (Throwable $e) { }
     try { $q = $pdo->prepare("SELECT COUNT(DISTINCT camp_id) FROM wa_camp_items WHERE status = 'sent' AND sent_at >= ? AND sent_at < ?"); $q->execute([$from, $to]); $o['campaigns'] = (int)$q->fetchColumn(); } catch (Throwable $e) { }
+    // 🔁 the 7-Day Drip messages of the same day are added to Sent / Delivered / Read / Failed / Replied / Spent (the drip goes out as follow-ups, so it is not in the campaign rows above); o['drip'] keeps its own share
+    try {
+        $dq = $pdo->prepare("SELECT wamid FROM wa_drip_ev WHERE status = 'sent' AND wamid <> '' AND at >= ? AND at < ?"); $dq->execute([date('Y-m-d H:i:s', strtotime($from) - 7200), date('Y-m-d H:i:s', strtotime($to) + 7200)]); $dids = $dq->fetchAll(PDO::FETCH_COLUMN);
+        $dr = ['sent' => 0, 'delivered' => 0, 'read' => 0, 'failed' => 0, 'replied' => 0, 'utility' => 0, 'service' => 0]; $dph = [];
+        foreach (array_chunk($dids, 800) as $ch) {
+            $mq = $pdo->prepare("SELECT status, bill_cat, phone, ts FROM wa_messages WHERE wamid IN (" . implode(',', array_fill(0, count($ch), '?')) . ") AND ts >= ? AND ts < ?"); $mq->execute(array_merge($ch, [$from, $to]));
+            foreach ($mq->fetchAll() as $m) {
+                if ($m['status'] === 'failed') { $dr['failed']++; continue; } $dr['sent']++;
+                if ($m['status'] === 'delivered' || $m['status'] === 'read') { $dr['delivered']++; if (in_array($m['bill_cat'], ['utility', 'authentication'], true)) $dr['utility']++; elseif ($m['bill_cat'] === 'service') $dr['service']++; $ph = (string)$m['phone']; if (!isset($dph[$ph]) || $m['ts'] < $dph[$ph]) $dph[$ph] = (string)$m['ts']; }
+                if ($m['status'] === 'read') $dr['read']++;
+            }
+        }
+        foreach (array_chunk(array_keys($dph), 800) as $ch) {
+            $iq = $pdo->prepare("SELECT phone, MAX(ts) t FROM wa_messages WHERE dir = 'in' AND ts >= ? AND ts <= ? AND phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ") GROUP BY phone"); $iq->execute(array_merge([$from, $now], $ch));
+            foreach ($iq->fetchAll() as $r) if ((string)$r['t'] > $dph[(string)$r['phone']]) $dr['replied']++;
+        }
+        $o['sent'] += $dr['sent']; $o['delivered'] += $dr['delivered']; $o['read'] += $dr['read']; $o['failed'] += $dr['failed']; $o['replied'] += $dr['replied']; $o['utility'] += $dr['utility']; $o['marketing'] += max(0, $dr['delivered'] - $dr['utility'] - $dr['service']);
+        $o['m_amount'] = round($o['marketing'] * (float)$R['marketing'], 2); $o['u_amount'] = round($o['utility'] * (float)$R['utility'], 2); $o['amount'] = round($o['m_amount'] + $o['u_amount'], 2); $o['drip'] = $dr;
+    } catch (Throwable $e) { error_log('camp_spend drip: ' . $e->getMessage()); }
     try { $q = $pdo->prepare("SELECT COUNT(DISTINCT m.phone) FROM wa_messages m WHERE m.dir = 'out' AND m.mtype = 'template' AND m.who = 'campaign' AND m.status IN ('delivered','read') AND m.ts >= ? AND m.ts < ?
             AND EXISTS (SELECT 1 FROM wa_messages i WHERE i.phone = m.phone AND i.dir = 'in' AND i.ts > m.ts AND i.ts <= ?)"); $q->execute([$from, $to, $now]); $o['replied'] = (int)$q->fetchColumn(); } catch (Throwable $e) { }
     try { $rr = wa_rec_range($pdo, $from, $to); $o['retried'] = $rr['tried']; $o['recovered'] = $rr['recovered']; } catch (Throwable $e) { }
     try { $o['meta'] = wa_meta_spend_cached($pdo); } catch (Throwable $e) { }   // 🏦 Meta's own spend (prepared in the background)
-    try { setting_set($pdo, 'wa_camp_spend3', json_encode($o)); } catch (Throwable $e) { }
+    try { setting_set($pdo, 'wa_camp_spend4', json_encode($o)); } catch (Throwable $e) { }
     return $o;
 }
 /** Messages customers wrote to us per hour of the day (last 30 days), kept for an hour. Returns ['hist' => [24 numbers], 'total', 'best' => [hours inside the window, best first]]. */
