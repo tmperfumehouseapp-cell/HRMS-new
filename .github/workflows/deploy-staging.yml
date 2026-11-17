@@ -33,6 +33,8 @@ jobs:
         run: php tests/cfun_test.php
       - name: Auto assign rules
         run: php tests/waa_test.php
+      - name: Ticket goal rules
+        run: php tests/tk_test.php
   staging:
     needs: check
     runs-on: ubuntu-latest

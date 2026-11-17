@@ -64,7 +64,7 @@
     const should = m.should_pct, ahead = should != null && m.pct != null && m.pct >= should, y = +m.yest_same || 0, bet = y > 0 && m.sales > y;
     const q = C.qinfo, tdy = T && T.periods && T.periods.today, spd = tdy && tdy.speed_median_min_30d, avgT = C.team && C.team.avg_ticket;
     // a new order since the last look: sound, vibration and confetti
-    if (H.orders != null && m.orders > H.orders) celebrate('New order! ' + m.orders + ' today 🎉'); H.orders = m.orders;
+    if (H.orders != null && m.orders > H.orders) celebrate('New order! ' + m.orders + ' today 🎉' + (C.tk && C.tk.orders >= 1 ? ' · ticket ' + rs(C.tk.ticket) + (C.tk.status === 'g' ? ' ✓' : ' · next ' + rs(C.tk.need_next)) : '')); H.orders = m.orders;
     const comNow = +m.com_today || 0, comUp = (H.com != null && comNow > H.com) ? comNow - H.com : 0; H.com = comNow;
     $('hiSub').textContent = m.target > 0 ? (m.sales >= m.target ? 'Target done! Every extra order is a bonus 🏆' : ahead ? 'You are ahead of pace today' : 'Keep going, you can catch up') : 'No target set for today';
     if (m.streak > 0) { $('hiStreak').hidden = false; $('hiStreak').textContent = '🔥 ' + m.streak; } else $('hiStreak').hidden = true;
@@ -74,7 +74,9 @@
     if (m.code_pct != null) Q.push({ ic: '🔑', t: 'Order codes', ok: !!m.code_ok, v: m.code_pct + '%', h: m.code_ok ? 'Goal reached' : (m.code_left > 0 ? m.code_left + ' more with a code' : '') });
     if (q && q.goal_orders != null) Q.push({ ic: '📞', t: 'Query orders', ok: q.need_more === 0, v: q.query_orders + ' / ' + q.goal_orders, h: q.need_more > 0 ? q.need_more + ' more to reach the goal' : 'Goal reached' });
     if (spd != null) Q.push({ ic: '⚡', t: 'Reply within 5 min', ok: spd <= 5, v: spd + ' min', h: 'median today' });
-    if (m.ticket > 0 && avgT > 0) Q.push({ ic: '💎', t: 'Ticket above the team average', ok: m.ticket >= avgT, v: rs(m.ticket), h: 'team ' + rs(avgT) });
+    const tk = C.tk;   // 🎯 the ticket goal (replaces the old "above the team average" quest: one ticket quest)
+    if (tk && tk.orders >= 1) Q.push({ ic: '🎯', t: 'Ticket goal ' + rs(tk.goal), ok: tk.status === 'g' && tk.orders >= tk.min, v: rs(tk.ticket), h: tk.status === 'g' ? (tk.orders >= tk.min ? 'Goal reached' : tk.min + '+ orders needed') : 'next order ' + rs(tk.need_next) });
+    else if (!tk && m.ticket > 0 && avgT > 0) Q.push({ ic: '💎', t: 'Ticket above the team average', ok: m.ticket >= avgT, v: rs(m.ticket), h: 'team ' + rs(avgT) });
     const done = Q.filter((x) => x.ok).length, todo = Q.filter((x) => !x.ok);
     const lb = (G && G.board && G.board.today) || [], top = lb.slice(0, 5), mei = lb.findIndex((r) => r.me), myRank = mei > -1 ? mei + 1 : (G && G.stats && G.stats.rank) || null;
     const gifts = P && P.gifts || [], rem = (R && R.remarks) || [], fl = ((F && F.running) || [])[0];
@@ -92,7 +94,7 @@
       + '<div class="card next" style="padding:12px 14px"><div style="flex:1;min-width:0"><small>YOUR NEXT STEP</small><b>' + esc(next) + '</b></div><a class="btn w" href="my_chats.html">Chats ▸</a></div>'
       + '<div class="tiles">'
       + T1('t-g', '', '💰', rs(comNow), 'Earned today', comUp ? '<span class="up">+' + rs(comUp) + ' just now</span>' : 'commission')
-      + T1('t-b', '', '🧾', esc(m.orders), 'Orders today', (m.ticket > 0 ? rs(m.ticket) + ' ticket' : '') + (q && q.conv != null ? ' · ' + q.conv + '% q→o' : ''))
+      + T1('t-b', '', '🧾', esc(m.orders), 'Orders today', (m.ticket > 0 ? rs(m.ticket) + ' ticket' : '') + (q && q.conv != null ? ' · ' + q.conv + '% q→o' : '') + (tk && tk.orders >= 1 ? '<br><span style="font-weight:800;color:' + (tk.status === 'g' ? '#14804a' : tk.status === 'a' ? '#b86e00' : '#c0392b') + '">🎯 ' + rs(tk.goal) + (tk.status === 'g' ? ' ✓' : ' · next ' + rs(tk.need_next)) + '</span>' + (tk.pct > 0 ? ' <small>bonus +' + tk.pct + '% ≈ ' + rs(tk.bonus_est) + '</small>' : '') : ''))
       + T1('t-o', 'q', '🎯', done + '/' + Q.length, 'Quests', todo.length ? esc(todo[0].t) + ' · ' + esc(todo[0].v) : 'All done! 🎉')
       + T1('t-p', 'l', '🏆', myRank ? '#' + esc(myRank) : '—', 'Leaderboard', top.slice(0, 3).map((r, i) => ['🥇', '🥈', '🥉'][i] + ' ' + esc(String(r.name).split(' ')[0]) + ' ' + esc(r.n)).join('<br>') || 'No orders yet')
       + (gifts.length ? T1('t-y', '', '🎁', gifts.length, 'Mystery gift' + (gifts.length > 1 ? 's' : ''), '<button type="button" class="btn dk sm" data-gift="' + esc(gifts[0].id) + '">Open</button>') : T1('t-y', '', '🎮', '—', 'Mystery gift', esc((P && P.earn) || 'Earn one with a good order')))
