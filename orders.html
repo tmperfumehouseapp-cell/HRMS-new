@@ -945,6 +945,9 @@
 <script src="assets/js/layout.js?v=32"></script>
 <script src="assets/js/side_chat.js?v=2"></script>
 <script src="assets/js/ml_slab.js?v=261116a"></script>
+<script src="assets/js/wmo_edit.js?v=1"></script>
+<script>function wmUpdate(no) { if (window.WmoEdit) WmoEdit.open(no, { onSaved: function () { location.reload(); } }); }</script>
+<style>.wm-upd{display:inline-block;margin-left:6px;border:1px solid #16a34a;background:#f0fdf4;color:#166534;border-radius:99px;padding:3px 9px;font:inherit;font-size:11.5px;font-weight:800;cursor:pointer;white-space:nowrap;vertical-align:1px}.wm-upd:hover{background:#dcfce7}</style>
 <script src="assets/js/convo.js?v=261024a"></script>
 <div class="cmo" id="mbOv" hidden><div class="cmd" role="dialog" aria-modal="true" aria-labelledby="mbTtl"><div class="hd"><div><h3 id="mbTtl"></h3><p id="mbSub"></p></div><div class="acts"><button type="button" class="dl" id="mbDl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg>Excel</button><button type="button" class="x" id="mbX" aria-label="Close">✕</button></div></div><div class="bd" id="mbBd"></div></div></div>
 <div class="cmo" id="tmOv" hidden><div class="cmd" role="dialog" aria-modal="true" aria-labelledby="tmTtl" style="width:min(560px,100%);"><div class="hd"><div><h3 id="tmTtl"></h3><p id="tmSub"></p></div><button type="button" class="x" id="tmX" aria-label="Close">✕</button></div><div class="bd" id="tmBd"></div></div></div>
@@ -2924,7 +2927,7 @@
 
     const rowHtml = (o) => `
         <tr>
-          <td style="font-weight:600;"><a href="#" onclick="openDetail(${o._i}); return false;">${o.order_name}</a>${o.manual_order_id ? ` <button class="danger-link" title="Delete this manual order" aria-label="Delete order" style="background:none;border:1px solid #f3c9c9;border-radius:6px;cursor:pointer;color:var(--bad-fg);font-size:12px;padding:4px 8px;margin-left:6px;line-height:1;" onclick="deleteManual(${o.manual_order_id}, '${o.batch || ''}')">✕</button>` : ''}</td>
+          <td style="font-weight:600;"><a href="#" onclick="openDetail(${o._i}); return false;">${o.order_name}</a>${/^#?WM-\d+/i.test(String(o.order_name || '')) ? ` <button type="button" class="wm-upd" onclick="wmUpdate('${String(o.order_name).replace(/^#/, '').replace(/[^A-Za-z0-9-]/g, '')}')" title="Remove or add perfumes in this manual order (until a tracking ID is given)">✏️ Update</button>` : ''}${o.manual_order_id ? ` <button class="danger-link" title="Delete this manual order" aria-label="Delete order" style="background:none;border:1px solid #f3c9c9;border-radius:6px;cursor:pointer;color:var(--bad-fg);font-size:12px;padding:4px 8px;margin-left:6px;line-height:1;" onclick="deleteManual(${o.manual_order_id}, '${o.batch || ''}')">✕</button>` : ''}</td>
           <td><span style="color:var(--muted);">${o.store}</span></td>
           <td>${o.salesman || '—'}${(o.house_tags || []).length > 1 ? '<div style="font-size:11px; color:#c81e1e;" title="This order has more than one house tag, so it is counted under its store\'s house">⚠ 2 house tags</div>' : ''}</td>
           <td>${ocCell(o)}</td>

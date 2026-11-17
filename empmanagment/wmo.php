@@ -37,7 +37,7 @@ function wmo_tables(PDO $pdo): bool
             utr VARCHAR(40) NOT NULL DEFAULT '', ml INT NOT NULL DEFAULT 0, lines_json MEDIUMTEXT NULL, shot_mime VARCHAR(20) NOT NULL DEFAULT '', shot_b64 MEDIUMTEXT NULL, shot_json TEXT NULL, src VARCHAR(12) NOT NULL DEFAULT '',
             cust_json TEXT NULL, phone_match TINYINT NOT NULL DEFAULT 1, shop_id BIGINT NULL, note VARCHAR(255) NOT NULL DEFAULT '', created_at DATETIME NOT NULL, sent_at DATETIME NULL, opened_at DATETIME NULL, confirmed_at DATETIME NULL,
             cancelled_at DATETIME NULL, UNIQUE KEY uq_wmo_tok (token), KEY k_wmo_phone (phone, status), KEY k_wmo_utr (utr)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
-        foreach (['channel' => "VARCHAR(12) NOT NULL DEFAULT ''", 'sr_order_id' => "VARCHAR(24) NOT NULL DEFAULT ''", 'sr_note' => "VARCHAR(255) NOT NULL DEFAULT ''", 'otype' => "VARCHAR(10) NOT NULL DEFAULT ''", 'addr_json' => 'TEXT NULL', 'gateway' => "VARCHAR(24) NOT NULL DEFAULT ''", 'shot2_mime' => "VARCHAR(20) NOT NULL DEFAULT ''", 'shot2_b64' => 'MEDIUMTEXT NULL', 'proof_json' => 'TEXT NULL', 'trk_no' => "VARCHAR(40) NOT NULL DEFAULT ''", 'trk_courier' => "VARCHAR(30) NOT NULL DEFAULT ''", 'trk_adm' => 'TINYINT NOT NULL DEFAULT 0'] as $c => $def) { try { if (!$pdo->query("SHOW COLUMNS FROM wmo_order LIKE '$c'")->fetch()) $pdo->exec("ALTER TABLE wmo_order ADD COLUMN $c $def"); } catch (PDOException $e) { } }      // the Shiprocket order id and the last note
+        foreach (['channel' => "VARCHAR(12) NOT NULL DEFAULT ''", 'sr_order_id' => "VARCHAR(24) NOT NULL DEFAULT ''", 'sr_note' => "VARCHAR(255) NOT NULL DEFAULT ''", 'otype' => "VARCHAR(10) NOT NULL DEFAULT ''", 'addr_json' => 'TEXT NULL', 'gateway' => "VARCHAR(24) NOT NULL DEFAULT ''", 'shot2_mime' => "VARCHAR(20) NOT NULL DEFAULT ''", 'shot2_b64' => 'MEDIUMTEXT NULL', 'proof_json' => 'TEXT NULL', 'trk_no' => "VARCHAR(40) NOT NULL DEFAULT ''", 'trk_courier' => "VARCHAR(30) NOT NULL DEFAULT ''", 'trk_adm' => 'TINYINT NOT NULL DEFAULT 0', 'edits_json' => 'TEXT NULL'] as $c => $def) { try { if (!$pdo->query("SHOW COLUMNS FROM wmo_order LIKE '$c'")->fetch()) $pdo->exec("ALTER TABLE wmo_order ADD COLUMN $c $def"); } catch (PDOException $e) { } }      // the Shiprocket order id and the last note
         return $ok = true;
     } catch (PDOException $e) { error_log('wmo_tables: ' . $e->getMessage()); return $ok = false; }
 }
@@ -129,7 +129,7 @@ function wmo_throttle(string $key, int $max): bool
 
 // ------------------------------------------------------------------------------------------------------------------ the lines and the money
 /** Looks the chosen variants up in the Shopify catalogue copy (wch_var / wch_prod) and splits the money. Returns [lines, perfumeMl, error]. */
-function wmo_lines(PDO $pdo, int $totalP, array $perf, array $chains, array $singles = []): array
+function wmo_lines(PDO $pdo, int $totalP, array $perf, array $chains, array $singles = [], array $keep = []): array   // $keep: product ids already in the order (Update order): they stay even when they went out of stock since
 {
     $want = []; $sPrice = [];
     foreach ([['perfume', $perf, 20], ['chain', $chains, 5], ['single', $singles, 50]] as [$kind, $arr, $max]) foreach ($arr as $x) {
@@ -145,7 +145,7 @@ function wmo_lines(PDO $pdo, int $totalP, array $perf, array $chains, array $sin
     $L = []; $chainP = 0; $ml = 0; $singleP = 0;
     foreach ($want as $vid => $w) {
         $r = $by[$vid] ?? null; if (!$r) return [[], 0, 'A product is not in the catalogue any more. Search it again.'];
-        if ((int)$r['avail'] !== 1) return [[], 0, trim((string)($r['short'] ?: $r['title'])) . ' is out of stock.'];
+        if ((int)$r['avail'] !== 1 && !in_array((int)$vid, $keep, true)) return [[], 0, trim((string)($r['short'] ?: $r['title'])) . ' is out of stock.'];
         if ($w['kind'] === 'single') {   // 🧴 shower gel, beard balm, attar … : one product, its OWN price (the shop price unless the salesperson changed it), never shared with the perfumes
             if ((string)$r['kind'] !== 'other') return [[], 0, trim((string)($r['short'] ?: $r['title'])) . ' is a perfume or chain: add it in the perfume / chain box.'];
             $up = $sPrice[$vid] ?? 0; if ($up < 100 || $up > 50000000) return [[], 0, 'Type the price of ' . trim((string)($r['short'] ?: $r['title'])) . ' (₹1 to ₹500000).'];
@@ -493,6 +493,19 @@ function wmo_sr_pickup(PDO $pdo, string $tok, string $base): string
     $name = trim((string)($pick['pickup_location'] ?? '')); if ($name !== '') setting_set($pdo, 'wmo_sr_pickup', $name); return $name;
 }
 /** Creates the order in Shiprocket (once). Returns a short note; never throws. */
+/** the order as Shiprocket wants it (products, address, COD / prepaid, weight) — used when the order is made and when its perfumes are changed */
+function wmo_sr_body(PDO $pdo, array $r, array $cust, string $pick): array
+{
+    $L = json_decode((string)$r['lines_json'], true) ?: []; $items = []; $pieces = 0;
+    foreach ($L as $l) { $q = max(1, (int)$l['qty']); $pieces += $q; $items[] = ['name' => mb_substr(trim($l['short'] . (!empty($l['chain']) ? '' : ' ' . $l['label'])), 0, 100), 'sku' => (string)(($l['sku'] ?? '') !== '' ? $l['sku'] : 'WM' . (int)$l['vid']), 'units' => $q, 'selling_price' => round($l['total_p'] / 100 / $q, 2), 'discount' => '', 'tax' => '', 'hsn' => '']; }
+    $parts = preg_split('/\s+/', trim((string)$cust['name']), 2); $cod = (int)$r['cod_p'] > 0;
+    $w = (float)setting_get($pdo, 'wmo_sr_weight', '0.5'); $w = max($w, round(0.12 * $pieces, 2));      // kg: at least the setting, about 120 g a bottle
+    $body = ['order_id' => (string)$r['order_no'], 'order_date' => date('Y-m-d H:i'), 'pickup_location' => $pick, 'comment' => 'Manual order from WhatsApp', 'billing_customer_name' => (string)$parts[0], 'billing_last_name' => (string)($parts[1] ?? ''),
+        'billing_address' => (string)$cust['addr1'], 'billing_address_2' => trim((string)$cust['addr2'] . ($cust['landmark'] !== '' ? ', ' . $cust['landmark'] : ''), ', '), 'billing_city' => (string)$cust['city'], 'billing_pincode' => (string)$cust['pin'], 'billing_state' => (string)$cust['state'], 'billing_country' => 'India',
+        'billing_email' => (string)($cust['email'] !== '' ? $cust['email'] : 'noemail@tmperfumehouse.com'), 'billing_phone' => (string)$cust['phone'], 'shipping_is_billing' => true, 'order_items' => $items, 'payment_method' => $cod ? 'COD' : 'Prepaid',
+        'sub_total' => round(($cod ? $r['cod_p'] : $r['total_p']) / 100, 2), 'length' => (float)setting_get($pdo, 'wmo_sr_length', '15'), 'breadth' => (float)setting_get($pdo, 'wmo_sr_breadth', '12'), 'height' => (float)setting_get($pdo, 'wmo_sr_height', '8'), 'weight' => $w];
+    return $body;
+}
 function wmo_shiprocket(PDO $pdo, array $r, array $cust): string
 {
     try {
@@ -500,14 +513,7 @@ function wmo_shiprocket(PDO $pdo, array $r, array $cust): string
         [$tok, $er] = wmo_sr_token($pdo); if ($tok === '') return 'Shiprocket order not made: ' . $er;
         $base = rtrim(function_exists('tmph_cfg') ? (string)tmph_cfg('SHIPROCKET_BASE', 'https://apiv2.shiprocket.in') : 'https://apiv2.shiprocket.in', '/');
         $pick = wmo_sr_pickup($pdo, $tok, $base); if ($pick === '') return 'Shiprocket order not made: no pickup address found (add one in Shiprocket, or set wmo_sr_pickup).';
-        $L = json_decode((string)$r['lines_json'], true) ?: []; $items = []; $pieces = 0;
-        foreach ($L as $l) { $q = max(1, (int)$l['qty']); $pieces += $q; $items[] = ['name' => mb_substr(trim($l['short'] . (!empty($l['chain']) ? '' : ' ' . $l['label'])), 0, 100), 'sku' => (string)(($l['sku'] ?? '') !== '' ? $l['sku'] : 'WM' . (int)$l['vid']), 'units' => $q, 'selling_price' => round($l['total_p'] / 100 / $q, 2), 'discount' => '', 'tax' => '', 'hsn' => '']; }
-        $parts = preg_split('/\s+/', trim((string)$cust['name']), 2); $cod = (int)$r['cod_p'] > 0;
-        $w = (float)setting_get($pdo, 'wmo_sr_weight', '0.5'); $w = max($w, round(0.12 * $pieces, 2));      // kg: at least the setting, about 120 g a bottle
-        $body = ['order_id' => (string)$r['order_no'], 'order_date' => date('Y-m-d H:i'), 'pickup_location' => $pick, 'comment' => 'Manual order from WhatsApp', 'billing_customer_name' => (string)$parts[0], 'billing_last_name' => (string)($parts[1] ?? ''),
-            'billing_address' => (string)$cust['addr1'], 'billing_address_2' => trim((string)$cust['addr2'] . ($cust['landmark'] !== '' ? ', ' . $cust['landmark'] : ''), ', '), 'billing_city' => (string)$cust['city'], 'billing_pincode' => (string)$cust['pin'], 'billing_state' => (string)$cust['state'], 'billing_country' => 'India',
-            'billing_email' => (string)($cust['email'] !== '' ? $cust['email'] : 'noemail@tmperfumehouse.com'), 'billing_phone' => (string)$cust['phone'], 'shipping_is_billing' => true, 'order_items' => $items, 'payment_method' => $cod ? 'COD' : 'Prepaid',
-            'sub_total' => round(($cod ? $r['cod_p'] : $r['total_p']) / 100, 2), 'length' => (float)setting_get($pdo, 'wmo_sr_length', '15'), 'breadth' => (float)setting_get($pdo, 'wmo_sr_breadth', '12'), 'height' => (float)setting_get($pdo, 'wmo_sr_height', '8'), 'weight' => $w];
+        $body = wmo_sr_body($pdo, $r, $cust, $pick);
         $res = null; for ($try = 0; $try < 2; $try++) { [$code, $j, $err] = wmo_sr_http('POST', $base . '/v1/external/orders/create/adhoc', ['Authorization: Bearer ' . $tok], $body); if ($code === 401 && $try === 0) { [$tok, $er] = wmo_sr_token($pdo, true); if ($tok === '') return 'Shiprocket order not made: ' . $er; continue; } $res = [$code, $j, $err]; break; }
         [$code, $j, $err] = $res ?: [0, null, 'no answer']; if ($err !== '') return 'Shiprocket order not made: ' . $err;
         $sid = is_array($j) ? (string)($j['order_id'] ?? '') : ''; if (($code === 200 || $code === 201) && $sid !== '') {
@@ -515,6 +521,40 @@ function wmo_shiprocket(PDO $pdo, array $r, array $cust): string
         $msg = is_array($j) ? (string)($j['message'] ?? '') : ''; if (is_array($j) && !empty($j['errors'])) $msg .= ' ' . mb_substr(json_encode($j['errors'], JSON_UNESCAPED_UNICODE), 0, 160);
         $note = 'Shiprocket refused it (HTTP ' . $code . ')' . ($msg !== '' ? ': ' . mb_substr(trim($msg), 0, 200) : '') . '.'; $pdo->prepare("UPDATE wmo_order SET sr_note = ? WHERE id = ?")->execute([mb_substr($note, 0, 250), (int)$r['id']]); return 'Shiprocket order not made: ' . $note;
     } catch (Throwable $e) { error_log('wmo_shiprocket: ' . $e->getMessage()); return 'Shiprocket order not made: ' . mb_substr($e->getMessage(), 0, 120); }
+}
+/* ───────────── ✏️ UPDATE ORDER: the salesperson removes / adds perfumes in a manual order (same total, same payment) ─────────────
+ * Allowed until a tracking ID is given: after that the box is packed. Who: the person who made / holds the order, Admin, HR, the Sales Head. */
+/** '' when the order may still be changed, else the reason in plain words */
+function wmo_edit_lock(PDO $pdo, array $r): string
+{
+    if ((string)$r['status'] === 'cancelled') return 'This order is cancelled.';
+    if (trim((string)($r['trk_no'] ?? '')) !== '') return 'A tracking ID is already given (' . $r['trk_no'] . '): the parcel is packed, so the perfumes cannot be changed here. Ask Dispatch.';
+    try { $q = $pdo->prepare("SELECT status, tracking_no, pend_track FROM dp_dsp_parcels WHERE order_name IN (?, ?) ORDER BY id DESC LIMIT 1"); $q->execute([(string)$r['order_no'], '#' . $r['order_no']]); $p = $q->fetch();
+        if ($p && (trim((string)$p['tracking_no']) !== '' || trim((string)($p['pend_track'] ?? '')) !== '' || (string)$p['status'] !== 'placed')) return 'Dispatch has already given this parcel a tracking ID' . (trim((string)$p['tracking_no']) !== '' ? ' (' . $p['tracking_no'] . ')' : '') . ': the perfumes cannot be changed here. Ask Dispatch.';
+    } catch (Throwable $e) { }
+    return '';
+}
+function wmo_edit_can(PDO $pdo, array $auth, array $r): bool
+{
+    if (in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true)) return true; $me = (int)($auth['employee_id'] ?? 0); if ($me <= 0) return false;
+    if ((int)$r['emp_id'] === $me || (int)$r['assign_emp'] === $me) return true;
+    try { $q = $pdo->prepare("SELECT employee_id FROM order_allocations WHERE source = ? AND order_id = ?"); $q->execute([wmo_store_key(), (string)wmo_sid((int)$r['id'])]); if ((int)$q->fetchColumn() === $me) return true; } catch (Throwable $e) { }   // the order was allocated to this person
+    return function_exists('qe_viewer_ok') && qe_viewer_ok($pdo, $auth);   // the Sales Head
+}
+/** "2 × Azz Most Desired 50 ml, 1 × Lunelle Chain" */
+function wmo_lines_text(array $L): string { return implode(', ', array_map(fn($l) => (int)$l['qty'] . ' × ' . trim($l['short'] . (!empty($l['chain']) ? '' : ' ' . $l['label'])), $L)); }
+/** Tell Shiprocket the new products of an order it already has. Returns a short note; never throws. */
+function wmo_sr_update(PDO $pdo, array $r, array $cust): string
+{
+    try {
+        [$tok, $er] = wmo_sr_token($pdo); if ($tok === '') return 'Shiprocket was NOT updated (' . $er . '): change the products of ' . $r['order_no'] . ' in the Shiprocket panel.';
+        $base = rtrim(function_exists('tmph_cfg') ? (string)tmph_cfg('SHIPROCKET_BASE', 'https://apiv2.shiprocket.in') : 'https://apiv2.shiprocket.in', '/');
+        $pick = wmo_sr_pickup($pdo, $tok, $base); if ($pick === '') return 'Shiprocket was NOT updated (no pickup address): change the products of ' . $r['order_no'] . ' in the Shiprocket panel.';
+        [$code, $j, $err] = wmo_sr_http('POST', $base . '/v1/external/orders/update/adhoc', ['Authorization: Bearer ' . $tok], wmo_sr_body($pdo, $r, $cust, $pick));
+        if (($code === 200 || $code === 201) && $err === '' && !(is_array($j) && !empty($j['errors']))) { $pdo->prepare("UPDATE wmo_order SET sr_note = ? WHERE id = ?")->execute(['Products updated in Shiprocket ' . date('j M, g:i A'), (int)$r['id']]); return 'Shiprocket order updated with the new products.'; }
+        $msg = $err !== '' ? $err : (is_array($j) ? trim((string)($j['message'] ?? '') . ' ' . (!empty($j['errors']) ? mb_substr(json_encode($j['errors'], JSON_UNESCAPED_UNICODE), 0, 140) : '')) : '');
+        $note = 'Shiprocket still has the OLD products (HTTP ' . $code . ($msg !== '' ? ': ' . mb_substr($msg, 0, 160) : '') . '): change ' . $r['order_no'] . ' in the Shiprocket panel.'; $pdo->prepare("UPDATE wmo_order SET sr_note = ? WHERE id = ?")->execute([mb_substr($note, 0, 250), (int)$r['id']]); return $note;
+    } catch (Throwable $e) { error_log('wmo_sr_update: ' . $e->getMessage()); return 'Shiprocket was NOT updated: change the products of ' . $r['order_no'] . ' in the Shiprocket panel.'; }
 }
 /** The GST invoice of a confirmed manual order: made by the billing module of the chain cart (wch.php, with the GST details of Learn & Setup -> Cart setup -> Billing) and sent to the customer on WhatsApp.
  *  The module makes invoices from a cart, so a finished cart row is written for the order. Returns a short note; never throws. */
@@ -789,6 +829,42 @@ if (strpos($__wmo, 'wmo.') === 0) {
                 if ($er !== '') $res['skipped'][] = $no . ': ' . $er; else { $res['added']++; if (strpos($note, 'Also') === 0) $res['dsp']++; elseif (strpos($note, 'not in the Dispatch') !== false) $res['nodsp'][] = $no; }
             }
             json_response(['ok' => true, 'added' => $res['added'], 'skipped' => $res['skipped'], 'dispatch' => (int)($res['dsp'] ?? 0), 'not_in_dispatch' => $res['nodsp'] ?? []]);
+        }
+        case 'wmo.edit_get': {   // ✏️ the order as the Update sheet needs it: its perfumes / chains / other products with their catalogue ids, and whether it may still be changed
+            $q = $pdo->prepare("SELECT * FROM wmo_order WHERE " . (!empty($in['id']) ? "id = ?" : "order_no = ?") . " LIMIT 1"); $q->execute([!empty($in['id']) ? (int)$in['id'] : strtoupper(ltrim(trim((string)($in['order_no'] ?? '')), '#'))]); $r = $q->fetch();
+            if (!$r) json_response(['error' => 'Manual order not found.'], 404); if (!wmo_edit_can($pdo, $auth, $r)) json_response(['error' => 'Only the salesperson of this order, the Sales Head or Admin can change it.'], 403);
+            $L = json_decode((string)$r['lines_json'], true) ?: []; $cu = json_decode((string)($r['cust_json'] ?? ''), true) ?: [];
+            $ed = json_decode((string)($r['edits_json'] ?? ''), true) ?: [];
+            json_response(['ok' => true, 'id' => (int)$r['id'], 'order_no' => (string)$r['order_no'], 'status' => (string)$r['status'], 'name' => (string)($cu['name'] ?? ''), 'phone' => (string)$r['phone'], 'pay' => (string)$r['pay'], 'total' => $r['total_p'] / 100, 'paid' => $r['paid_p'] / 100, 'cod' => $r['cod_p'] / 100, 'lock' => wmo_edit_lock($pdo, $r),
+                'lines' => array_map(fn($l) => ['vid' => (int)$l['vid'], 'title' => (string)$l['short'], 'label' => (string)$l['label'], 'ml' => $l['ml'] === null ? null : (int)$l['ml'], 'qty' => (int)$l['qty'], 'price' => !empty($l['single']) ? (int)($l['unit_p'] ?? 0) / 100 : (int)$l['mrp_p'] / 100, 'kind' => !empty($l['single']) ? 'single' : (!empty($l['chain']) ? 'chain' : 'perfume')], $L),
+                'edits' => array_map(fn($e) => ['at' => (string)($e['at'] ?? ''), 'by' => (string)($e['by'] ?? ''), 'from' => (string)($e['from'] ?? ''), 'to' => (string)($e['to'] ?? ''), 'why' => (string)($e['why'] ?? '')], array_slice($ed, -5))]);
+        }
+        case 'wmo.update': {   // ✏️ save the changed perfumes. The total, the payment and the address stay exactly as they are; Orders, ML, commission, the SKU sheet and Dispatch follow the new perfumes.
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
+            $q = $pdo->prepare("SELECT * FROM wmo_order WHERE id = ?"); $q->execute([(int)($in['id'] ?? 0)]); $r = $q->fetch(); if (!$r) json_response(['error' => 'Manual order not found.'], 404);
+            if (!wmo_edit_can($pdo, $auth, $r)) json_response(['error' => 'Only the salesperson of this order, the Sales Head or Admin can change it.'], 403);
+            $lk = wmo_edit_lock($pdo, $r); if ($lk !== '') json_response(['error' => $lk, 'code' => 'locked'], 422);
+            $old = json_decode((string)$r['lines_json'], true) ?: [];
+            [$L, $ml, $er] = wmo_lines($pdo, (int)$r['total_p'], (array)($in['lines'] ?? []), (array)($in['chains'] ?? []), (array)($in['singles'] ?? []), array_map(fn($l) => (int)$l['vid'], $old)); if ($er !== '') json_response(['error' => $er], 422);
+            $from = wmo_lines_text($old); $to = wmo_lines_text($L);
+            if ($from === $to) json_response(['ok' => true, 'same' => true, 'message' => 'Nothing was changed.']);
+            $who = ''; try { $who = $me > 0 && function_exists('employee_names_by_id') ? (string)(employee_names_by_id($pdo)[$me] ?? '') : ''; } catch (Throwable $e) { } if ($who === '') $who = (string)($auth['username'] ?? 'Someone'); $now = date('Y-m-d H:i:s'); $why = wmo_clip($in['why'] ?? '', 160);
+            $ed = json_decode((string)($r['edits_json'] ?? ''), true) ?: []; $ed[] = ['at' => $now, 'by' => $who, 'emp' => $me, 'from' => mb_substr($from, 0, 400), 'to' => mb_substr($to, 0, 400), 'why' => $why]; $ed = array_slice($ed, -15);
+            $pdo->prepare("UPDATE wmo_order SET lines_json = ?, ml = ?, edits_json = ? WHERE id = ?")->execute([json_encode($L, JSON_UNESCAPED_UNICODE), $ml, json_encode($ed, JSON_UNESCAPED_UNICODE), (int)$r['id']]);
+            $r['lines_json'] = json_encode($L, JSON_UNESCAPED_UNICODE); $r['ml'] = $ml; $notes = [];
+            if ((string)$r['status'] === 'confirmed') {
+                try {   // the order's row on the Orders pages: pieces, ML, colours, chain / other parts (commission is worked out from these). Payment, tags, status and the date are NOT touched.
+                    $li = wmo_line_items($L); $mlt = order_ml_total($li); $dti = order_dti($li) ?: 0; $col = order_product_colors($li);
+                    $pdo->prepare("UPDATE shop_orders SET items = ?, ml_total = ?, ml10 = ?, dti = ?, colors = ?, xparts = ?, synced_at = NOW() WHERE shopify_id = ? AND store_key = ?")
+                        ->execute([count($li), (int)$mlt['ml'], (int)$mlt['ml10'], $dti ? json_encode($dti, JSON_UNESCAPED_UNICODE) : '', json_encode(['dg' => (int)$col['dg'], 'lg' => (int)$col['lg'], 'wh' => (int)$col['wh'], 'other' => (int)$col['other']]), json_encode($mlt['parts'] ?: (object)[], JSON_UNESCAPED_UNICODE), wmo_sid((int)$r['id']), wmo_store_key()]);
+                } catch (Throwable $e) { error_log('wmo.update orders row: ' . $e->getMessage()); $notes[] = 'The Orders page could not be refreshed: ' . mb_substr($e->getMessage(), 0, 100); }
+                try { $pdo->prepare("UPDATE wch_cart SET lines_json = ?, ml = ?, updated_at = ? WHERE order_name = ? AND (inv_id IS NULL OR inv_id = 0)")->execute([json_encode(array_map(fn($l) => ['vid' => (int)$l['vid'], 'qty' => (int)$l['qty']], $L)), $ml, $now, (string)$r['order_no']]); } catch (Throwable $e) { }
+                try { $iq = $pdo->prepare("SELECT inv_no FROM wch_inv WHERE order_name = ? ORDER BY id DESC LIMIT 1"); $iq->execute([(string)$r['order_no']]); $ino = (string)$iq->fetchColumn(); if ($ino !== '') $notes[] = 'GST invoice ' . $ino . ' was made BEFORE this change and still lists the old perfumes (the total is the same). Tell Accounts if a corrected invoice is needed.'; } catch (Throwable $e) { }
+                if (trim((string)($r['sr_order_id'] ?? '')) !== '') { $cu = json_decode((string)($r['cust_json'] ?? ''), true) ?: []; foreach (['name', 'addr1', 'addr2', 'landmark', 'city', 'pin', 'state', 'email', 'phone'] as $k0) if (!isset($cu[$k0])) $cu[$k0] = ''; $notes[] = wmo_sr_update($pdo, $r, $cu); }
+            }
+            if (function_exists('wa_event')) { try { wa_event($pdo, (string)$r['phone'], '✏️ Manual order ' . $r['order_no'] . ' changed by ' . $who . ' — was: ' . mb_substr($from, 0, 110) . ' → now: ' . mb_substr($to, 0, 110)); } catch (Throwable $e) { } }
+            if (function_exists('bd_log')) { try { bd_log('order', (string)$r['order_no'], 'perfumes changed: ' . mb_substr($from, 0, 170) . ' -> ' . mb_substr($to, 0, 170), $who); } catch (Throwable $e) { } }
+            json_response(['ok' => true, 'order_no' => (string)$r['order_no'], 'ml' => $ml, 'from' => $from, 'to' => $to, 'notes' => array_values(array_filter($notes)), 'message' => $r['order_no'] . ' updated.']);
         }
         case 'wmo.cancel': {
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $r = $mine(); if ($r['status'] === 'confirmed') json_response(['error' => 'The customer already confirmed this order. Cancel it like any other order.'], 422);
