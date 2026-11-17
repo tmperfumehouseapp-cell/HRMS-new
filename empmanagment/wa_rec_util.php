@@ -125,6 +125,8 @@ function wa_ru_make_tick(PDO $pdo): array
             if ($real) { $in = implode(',', array_map(fn($w) => $pdo->quote($w), $real)); $n9 = $pdo->exec("DELETE w FROM wa_tpl_waba w JOIN wa_templates t ON t.id = w.tpl_id WHERE t.category = 'UTILITY' AND w.status = 'REJECTED' AND w.reason LIKE 'Unsupported post request%' AND w.waba_id NOT IN ($in)");
                 foreach (['wa_util_learn', 'wa_ru_fail', 'wa_ru_bf', 'wa_ru_fam', 'wa_ru_submit_pause'] as $k9) setting_set($pdo, $k9, '');
                 setting_set($pdo, 'wa_ru_waba_fix', '2'); if (function_exists('wa_log')) wa_log($pdo, 'template', true, 'Utility repair: ' . (int)$n9 . ' wrong "rejected" rows (accounts that do not exist) removed — those messages are now sent to Meta'); } } } catch (Throwable $e) { }
+    // 0b) the "put back" marker moved from the err column (overwritten when a batch is taken) to the variant 'R': move the people already put back, 20,000 at a time
+    try { if ((string)setting_get($pdo, 'wa_ru_marker_fix', '') !== '1') { $n8 = (int)$pdo->exec("UPDATE wa_camp_items SET variant = 'R', err = '' WHERE (err = 'restart-utility' OR (status = 'sending' AND camp_id IN (SELECT id FROM wa_campaigns WHERE extra LIKE '%u_restart%'))) AND COALESCE(variant, 'M') <> 'U' LIMIT 20000"); if ($n8 === 0) setting_set($pdo, 'wa_ru_marker_fix', '1'); } } catch (Throwable $e) { }
     // 1) utility messages that exist but are not at Meta yet: sent now, 8 per round (every minute)
     try {
         if (function_exists('wa_util_submit') && (int)setting_get($pdo, 'wa_ru_submit_pause', '0') < $now && (int)setting_get($pdo, 'wa_ru_draft_at', '0') < $now - 50) {

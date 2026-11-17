@@ -63,7 +63,7 @@ jobs:
           echo "\n=== standard follow-up messages: how many per status (not listed one by one) ===\n";
           foreach ($all("SELECT t.category, w.status, COUNT(*) n FROM wa_templates t JOIN wa_tpl_waba w ON w.tpl_id = t.id WHERE t.name LIKE 'tmph\\_fu\\_%' GROUP BY t.category, w.status") as $r) echo $row($r);
           echo "\n=== people put back by \"Start as utility\" (marked restart-utility) and what happened to them ===\n";
-          foreach ($all("SELECT camp_id, status, LEFT(err, 70) e, COUNT(*) n FROM wa_camp_items WHERE err = 'restart-utility' OR err IN ('No chosen utility message fits this person', 'Already delivered a message of ours') GROUP BY camp_id, status, e ORDER BY camp_id DESC, n DESC LIMIT 20") as $r) echo $row($r);
+          foreach ($all("SELECT camp_id, status, LEFT(err, 70) e, COUNT(*) n FROM wa_camp_items WHERE variant = 'R' OR err IN ('No chosen utility message fits this person', 'Already delivered a message of ours') GROUP BY camp_id, status, e ORDER BY camp_id DESC, n DESC LIMIT 20") as $r) echo $row($r);
           echo "\n=== the shared sending plan and locks (settings) ===\n";
           foreach ($all("SELECT setting_key k, LEFT(setting_value, 160) v FROM hrms_settings WHERE setting_key LIKE 'wa_dq%' OR setting_key LIKE 'wa_lock_%' OR setting_key LIKE 'wa_fast%' ORDER BY setting_key LIMIT 40") as $r) echo $row($r);
           echo "\n=== newest campaign log lines (any kind, 20) ===\n";
