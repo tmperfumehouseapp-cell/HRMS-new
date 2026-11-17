@@ -518,6 +518,8 @@ const DSP = (() => {
         const grp = R.groups && R.groups[g]; if (!grp) return;
         const lim = limOf(g), all = grp.rows.slice(0, lim), rows = all.filter(keepRow); hidN += all.length - rows.length;
         b += rows.map(rowHtml).join('');
+        // paid / closed parcels that Finance tucks away: say so inside the group, or the group looks empty although its count is not 0
+        if (all.length > rows.length) b += '<tr class="dr-more"><td colspan="11" style="border-left:3px solid ' + G[g][1] + '">' + (all.length - rows.length) + ' parcel' + (all.length - rows.length === 1 ? ' is' : 's are') + ' tucked away here (paid or closed, older than ' + PKEEP + ' days) · <button type="button" data-fpshow="1">show ' + (all.length - rows.length === 1 ? 'it' : 'them') + '</button></td></tr>';
         if (n > all.length) {
           b += '<tr class="dr-more"><td colspan="11" style="border-left:3px solid ' + G[g][1] + '">' + (n - all.length) + ' more · ' + (all.length < 3000 ? '<button type="button" data-more="' + g + '|100">show 100 more</button><button type="button" data-more="' + g + '|all">show all ' + n + '</button>' : 'showing the first 3000') + ' · sorted oldest first</td></tr>';
         }
@@ -590,7 +592,7 @@ const DSP = (() => {
 
     function draw() {
       top(); fix(); strip(); tiles(); table(); legend(); pens();
-      const hb = $('dsHand'); if (hb) { hb.style.background = S.hand ? '#111827' : ''; hb.style.color = S.hand ? '#fff' : ''; hb.textContent = S.hand ? '✍ Other couriers only · show all' : '✍ Other couriers'; }
+      const hb = $('dsHand'); if (hb) { hb.style.background = S.hand ? '#111827' : ''; hb.style.color = S.hand ? '#fff' : ''; const hn = (R && R.counts && R.counts.hand_open) || 0; hb.textContent = S.hand ? '✍ Other couriers only · show all' : '✍ Other couriers' + (hn ? ' · ' + hn + ' to check' : ' · nothing to check'); hb.style.borderColor = !S.hand && hn ? '#b45309' : ''; if (!S.hand) hb.style.color = hn ? '#b45309' : ''; }
       if (!firstDone) {
         firstDone = true;
         if (/[?&]focus=noid/.test(location.search)) { S.open[2] = 1; keep(); jump(2); }
@@ -980,13 +982,15 @@ const DSP = (() => {
     }
     /* ---------- 🩺 Diagnose: read-only report (see diagReport above) ---------- */
     function diagnose() {
-      const m = BD.modal('<h3>🩺 Diagnose the parcels (nothing is changed)</h3>'
+      const m = BD.modal('<button type="button" id="dgX" title="Close" aria-label="Close" style="float:right;border:1px solid #cfd5dd;background:#fff;color:#111827;border-radius:99px;width:30px;height:30px;font-size:15px;line-height:1;cursor:pointer;margin:-4px -4px 0 10px">✕</button><h3>🩺 Diagnose the parcels (nothing is changed)</h3>'
         + '<p style="font-size:13.5px;line-height:1.5;color:#4a505c;margin:0 0 10px">Reads every parcel of the days chosen on this page and writes a text report. To compare with the real courier status, paste your hand-tracked rows below: copy <b>4 columns</b> from Excel in this order — <b>Order ID · Tracking ID · Courier · Final status</b>. Leave it empty for the HRMS side only.</p>'
         + '<textarea id="dgIn" rows="5" placeholder="#70328&#9;78028674404&#9;Bluedart&#9;DELIVERED" style="width:100%;box-sizing:border-box;font:12px/1.4 ui-monospace,Consolas,monospace;border:1px solid #d5d9e2;border-radius:10px;padding:8px"></textarea>'
-        + '<div class="acts" style="margin-top:10px"><button class="bd-btn pri" id="dgRun" type="button">Run the diagnosis</button><button class="bd-btn" id="dgCopy" type="button" disabled>📋 Copy the report</button><button class="bd-btn" id="dgSave" type="button" disabled>⬇ Save as a file</button></div>'
+        + '<div class="acts" style="margin-top:10px"><button class="bd-btn pri" id="dgRun" type="button">Run the diagnosis</button><button class="bd-btn" id="dgCopy" type="button" disabled>📋 Copy the report</button><button class="bd-btn" id="dgSave" type="button" disabled>⬇ Save as a file</button><button class="bd-btn" id="dgClose" type="button">Close</button></div>'
         + '<div id="dgMsg" style="font-size:12.5px;color:#667085;margin:8px 0 6px"></div>'
         + '<textarea id="dgOut" rows="14" readonly style="width:100%;box-sizing:border-box;font:11.5px/1.45 ui-monospace,Consolas,monospace;border:1px solid #d5d9e2;border-radius:10px;padding:8px;background:#f8fafc;white-space:pre;overflow:auto"></textarea>', { sticky: true });
       const $m = (id) => m.querySelector('#' + id); m.style.maxWidth = '860px';
+      $m('dgX').onclick = () => BD.close(); $m('dgClose').onclick = () => BD.close();
+      const dgEsc = (e) => { if (e.key === 'Escape') BD.close(); }; document.addEventListener('keydown', dgEsc); BD.onClose = () => document.removeEventListener('keydown', dgEsc);
       $m('dgRun').onclick = async () => {
         const b = $m('dgRun'); b.disabled = true; $m('dgMsg').textContent = 'Reading the parcels…';
         try {

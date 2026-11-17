@@ -112,12 +112,13 @@ function waa_view(PDO $pdo, bool $fresh = false, int $maxAge = 45): array
     $tq = 0; $tqo = 0; foreach ($sales as $e) { $x = $cp[$e] ?? null; if ($x && empty($x['off'])) { $tq += (int)$x['q']; $tqo += (int)$x['qo']; } }
     $team = $tq > 0 ? $tqo / $tq : 0.0; $teamSpeed = waa_median(array_values(array_filter(array_map(function ($e) use ($sp, $pres) { return isset($pres[$e]) ? ($sp[$e] ?? null) : null; }, $sales))));
     $tg = []; foreach ($sales as $e) if (isset($pres[$e]) && (float)($cp[$e]['t'] ?? 0) > 0) $tg[] = (float)$cp[$e]['t']; $avgT = $tg ? array_sum($tg) / count($tg) : 0.0;
+    $wt = []; try { if ($sales) { $wq = $pdo->prepare("SELECT assigned_emp, COUNT(*) c FROM wa_contacts WHERE assigned_emp IN (" . implode(',', array_map('intval', $sales)) . ") AND status = 'open' AND last_in_at >= ? AND (last_out_at IS NULL OR last_out_at < last_in_at) GROUP BY assigned_emp"); $wq->execute([waa_dt(time() - 86400)]); foreach ($wq->fetchAll(PDO::FETCH_ASSOC) as $r) $wt[(int)$r['assigned_emp']] = (int)$r['c']; } } catch (Throwable $e) { }   // customers each person still has to answer (a green person with 10+ waiting is skipped for the next query)
     $people = [];
     foreach ($sales as $e) {
         $x = $cp[$e] ?? []; $s = $st['e'][$e] ?? $st['e'][(string)$e] ?? []; $q = (int)($x['q'] ?? 0); $qo = (int)($x['qo'] ?? 0);
         $p = ['emp_id' => $e, 'name' => (string)($names[$e] ?? ('#' . $e)), 'present' => isset($pres[$e]), 'm' => (string)($s['m'] ?? ''), 'ao' => !empty($s['ao']) ? 1 : 0, 't' => (float)($x['t'] ?? 0), 'q' => $q, 'qo' => $qo, 'cq' => (int)($x['cq'] ?? 0), 'co' => (int)($x['co'] ?? 0),
               'ratio' => $q > 0 ? round(100 * $qo / $q, 1) : null, 'punch' => isset($x['ar']) && $x['ar'] !== null ? (string)$x['ar'] : '', 'speed' => $sp[$e] ?? null, 'team_speed' => $teamSpeed];
-        $p['below'] = waa_below($q, $qo, $team) ? 1 : 0; [$on, $why] = waa_button($p); $p['on'] = $on; $p['why'] = $why;
+        $p['below'] = waa_below($q, $qo, $team) ? 1 : 0; $p['tier'] = waa_tier($q, $qo, $team); $p['waiting'] = (int)($wt[$e] ?? 0); [$on, $why] = waa_button($p); $p['on'] = $on; $p['why'] = $why;
         $people[$e] = $p;
     }
     return ['day' => $st['day'], 'team_ratio' => round(100 * $team, 1), 'floor' => round(100 * waa_floor($team), 1), 'team_speed' => $teamSpeed, 'avg_target' => $avgT, 'people' => $people, 'state' => $st];
@@ -139,9 +140,9 @@ function waa_give_one(PDO $pdo, array $r, ?array $c, array &$V, array &$T, int $
     foreach ($V['people'] as $e => $p) {
         if ($camp) { if (!$p['present'] || $p['m'] === 'off') continue; $w = waa_weight_camp($p); $cnt = (int)($T[$e]['camp'] ?? 0); }
         else { if (!$p['on']) continue; $w = waa_weight_fresh($p, $avgT); $cnt = max((int)$p['q'], (int)($T[$e]['fresh'] ?? 0)); }
-        $cand[$e] = ['w' => $w, 'cnt' => $cnt];
+        $cand[$e] = ['w' => $w, 'cnt' => $cnt, 'tier' => (int)$p['tier'], 'full' => (int)$p['waiting'] >= WAA_MAX_WAIT];
     }
-    $to = waa_pick($cand, $camp ? 0 : WAA_MIN_Q); if ($to <= 0) { $dbg['nobody']++; return false; }
+    $to = $camp ? waa_pick($cand, 0) : waa_pick_tiers($cand, WAA_MIN_Q); if ($to <= 0) { $dbg['nobody']++; return false; }
     $lk = 0; try { $lk = (int)$pdo->query("SELECT GET_LOCK(" . $pdo->quote('waa_p_' . $ph) . ", 0)")->fetchColumn(); } catch (Throwable $e) { } if ($lk !== 1) return false;
     try {
         $chk = $pdo->prepare("SELECT assigned_emp FROM wa_contacts WHERE phone = ?"); $chk->execute([$ph]); if ((int)$chk->fetchColumn() > 0) { $dbg['held']++; return false; }   // somebody just took it
@@ -160,7 +161,7 @@ function waa_give_now(PDO $pdo, string $phone): void
     try {
         if (!waa_tables($pdo) || !waa_engine_on($pdo)) return; $now = time();
         $q = $pdo->prepare("SELECT id, phone, src, opened_at, emp_id FROM wa_queries WHERE phone = ? ORDER BY id DESC LIMIT 1"); $q->execute([$phone]); $r = $q->fetch(PDO::FETCH_ASSOC);
-        if (!$r || (int)$r['emp_id'] > 0 || !in_array((string)$r['src'], ['query', 'campaign'], true) || strtotime((string)$r['opened_at']) < $now - 86400 + 600) return;
+        if (!$r || (int)$r['emp_id'] > 0 || !in_array((string)$r['src'], ['query', 'campaign', ''], true) || strtotime((string)$r['opened_at']) < $now - 86400 + 600) return;
         $c = $pdo->prepare("SELECT phone, name, assigned_emp, last_in_at, status, optout, cx_id, tag FROM wa_contacts WHERE phone = ?"); $c->execute([$phone]); $row = $c->fetch(PDO::FETCH_ASSOC) ?: null;
         $V = waa_view($pdo, false, 900); $T = waa_tally($pdo); $dbg = waa_dbg0();
         waa_give_one($pdo, $r, $row, $V, $T, $now, $dbg);
@@ -187,7 +188,7 @@ function waa_tick(PDO $pdo, int $every = 20, int $maxAge = 45): array
         if ($res['switched_off']) waa_state_put($pdo, $st);
         foreach ($V['people'] as $p0) { if ($p0['present']) $dbg['present']++; if ($p0['on']) $dbg['fresh_ok']++; if ($p0['present'] && $p0['m'] !== 'off') $dbg['camp_ok']++; }
         // (2) waiting queries: nobody holds them, the customer wrote in the last 24 h, no person answered yet. NEWEST first (the oldest are mostly closed / answered / past the 24 h window).
-        $since = waa_dt($now - 86400 + 600); $st0 = $pdo->prepare("SELECT id, phone, src, opened_at FROM wa_queries WHERE emp_id = 0 AND src IN ('query', 'campaign') AND opened_at >= ? AND opened_at <= ? ORDER BY id DESC LIMIT 250");
+        $since = waa_dt($now - 86400 + 600); $st0 = $pdo->prepare("SELECT id, phone, src, opened_at FROM wa_queries WHERE emp_id = 0 AND src IN ('query', 'campaign', '') AND opened_at >= ? AND opened_at <= ? ORDER BY id DESC LIMIT 250");
         $st0->execute([$since, waa_dt($now - 2)]); $qs = $st0->fetchAll(PDO::FETCH_ASSOC);
         if ($qs) {
             $phs = array_values(array_unique(array_map(function ($r) { return (string)$r['phone']; }, $qs))); $C = [];

@@ -155,6 +155,15 @@ function dp_dsp_sync(PDO $pdo, $now, $force = false) {
     try { $pdo->exec("UPDATE dp_dsp_parcels SET status = 'cancelled' WHERE status IN ('placed','tracked') AND manual = 0 AND pend_track IS NULL AND sr_status LIKE '%cancel%' AND sr_status NOT LIKE '%return%'"); } catch (Throwable $e) {}
     try { $pdo->exec("UPDATE dp_dsp_parcels SET status = 'rto' WHERE status IN ('tracked','transit') AND sr_status LIKE 'reached back%'"); } catch (Throwable $e) {}
     try { dp_dsp_courier_seed($pdo); } catch (Throwable $e) {}
+    // the DTDC link that was first suggested (tracking.dtdc.com) does not exist: the courier list and the parcels that saved it get DTDC's own tracking page (one time)
+    try {
+        if (function_exists('dp_get') && dp_get('dsp_dtdc_fix1', '') === '') {
+            dp_put('dsp_dtdc_fix1', date('Y-m-d H:i:s', $now));
+            $pdo->exec("UPDATE dp_dsp_couriers SET link = 'https://www.dtdc.com/track' WHERE link LIKE 'https://tracking.dtdc.com/%'");
+            $pdo->exec("UPDATE dp_dsp_parcels SET track_link = NULL WHERE track_link LIKE 'https://tracking.dtdc.com/%'");
+            $pdo->exec("UPDATE dp_dsp_parcels SET pend_link = NULL WHERE pend_link LIKE 'https://tracking.dtdc.com/%'");
+        }
+    } catch (Throwable $e) {}
     try { dp_dsp_hand_seed($pdo); } catch (Throwable $e) {}
     try { dp_dsp_panel_seed($pdo, $now); } catch (Throwable $e) {}
     try { if (!function_exists('wmo_dsp_heal') && is_file(__DIR__ . '/wmo.php')) require_once __DIR__ . '/wmo.php'; if (function_exists('wmo_dsp_heal')) wmo_dsp_heal($pdo); } catch (Throwable $e) {}   // tracking IDs typed / imported on the Manual orders page reach their parcel here too
