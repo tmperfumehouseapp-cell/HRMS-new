@@ -784,7 +784,7 @@ function wa_tpl_utility_build(array $t, int $strict = 0): array
 
 // ------------------------------------------------------------------------------------------------------------------------ router
 $__wt = (string)($action ?? ($_GET['action'] ?? ''));
-if (strpos($__wt, 'wa.tpl_') === 0 && $__wt !== 'wa.tpl_diagnose') {   // wa.tpl_diagnose is answered by wa_diag.php (loaded later)
+if (strpos($__wt, 'wa.tpl_') === 0 && !in_array($__wt, ['wa.tpl_diagnose', 'wa.tpl_make_utility', 'wa.tpl_utility_list'], true)) {   // these three are answered by wa_diag.php / wa_util.php (loaded later)   // wa.tpl_diagnose is answered by wa_diag.php (loaded later)
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     $auth = require_auth();
     if (!wa_tables($pdo) || !wa_tpl_tables($pdo)) json_response(['error' => 'WhatsApp storage is not available — check database permissions.'], 500);

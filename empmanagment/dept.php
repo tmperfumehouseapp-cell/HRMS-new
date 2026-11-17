@@ -386,7 +386,8 @@ function dp_rej_add(PDO $pdo, $empId, $ruleId) {
 function dp_proof_screen_check(PDO $pdo, $empId, array $item, $absPath) {
     try { dp_ensure($pdo); } catch (Throwable $e) { return ''; }
     $kind = (string)($item['kind'] ?? 'custom');
-    if (!in_array($kind, ['instagram', 'youtube'], true)) return '';
+    $weekly = !empty($item['weekly']); $postHint = trim((string)($item['post_hint'] ?? ''));
+    if (!in_array($kind, ['instagram', 'youtube'], true) && !$weekly) return '';
     $h = function_exists('bd_ahash') ? bd_ahash($absPath) : null;
     $f = (function_exists('bd_fhash') && dp_fhash_ready($pdo)) ? bd_fhash($absPath) : null;
     $ruleId = (int)($item['rule_id'] ?? 0);
@@ -407,17 +408,19 @@ function dp_proof_screen_check(PDO $pdo, $empId, array $item, $absPath) {
         $img = bd_b64_small($absPath);
         if ($img) {
             $name = bd_emp_name($pdo, $empId);
-            $sys = "You check a screenshot an employee sends as proof that he/she commented on our company's " . ($kind === 'instagram' ? 'Instagram reel' : 'YouTube video') . ". "
-                . "Say comment_visible=true if the screenshot shows the " . ($kind === 'instagram' ? 'reel' : 'video') . "'s comments and at least one comment is visible. "
-                . "IMPORTANT: you cannot know the employee's own " . ($kind === 'instagram' ? 'Instagram' : 'YouTube') . " user name. It is a handle that is different from the name we give you, so NEVER reject because the name of a commenter does not match the employee's name, and never ask for it. "
-                . "Say wrong_app=true only if it is clearly not " . ($kind === 'instagram' ? 'Instagram' : 'YouTube') . ". "
+            $plat = ($kind === 'instagram' ? 'Instagram' : ($kind === 'youtube' ? 'YouTube' : (trim((string)($item['title'] ?? '')) ?: 'the app')));
+            $sys = "You check a screenshot an employee sends as proof that he/she commented on our company's " . ($kind === 'instagram' ? 'Instagram reel' : ($kind === 'youtube' ? 'YouTube video' : 'post (' . $plat . ')')) . ". "
+                . "Say comment_visible=true if the screenshot shows the " . ($kind === 'instagram' ? 'reel' : ($kind === 'youtube' ? 'video' : 'post')) . "'s comments and at least one comment is visible. "
+                . "IMPORTANT: you cannot know the employee's own " . $plat . " user name. It is a handle that is different from the name we give you, so NEVER reject because the name of a commenter does not match the employee's name, and never ask for it. "
+                . "Say wrong_app=true only if it is clearly not " . $plat . ". "
                 . "Say edited=true only if it clearly looks edited (cropped to hide the date or user names, pasted text, or a photo of another screen with signs of fakery). "
+                . ($weekly && $postHint !== '' ? "This is the WEEKLY post. The current post is: \"" . $postHint . "\". Say wrong_post=true ONLY if the screenshot clearly shows a DIFFERENT post (another title or topic, or an old post). If the post title is not visible, do NOT say wrong_post. " : '')
                 . "Give ONE short plain sentence 'reason' telling the employee what to fix. Be fair and lenient: normal screenshots pass.";
-            $schema = ['type' => 'OBJECT', 'properties' => ['comment_visible' => ['type' => 'BOOLEAN'], 'wrong_app' => ['type' => 'BOOLEAN'], 'edited' => ['type' => 'BOOLEAN'], 'reason' => ['type' => 'STRING']], 'required' => ['comment_visible', 'wrong_app', 'edited']];
+            $schema = ['type' => 'OBJECT', 'properties' => ['wrong_post' => ['type' => 'BOOLEAN'], 'comment_visible' => ['type' => 'BOOLEAN'], 'wrong_app' => ['type' => 'BOOLEAN'], 'edited' => ['type' => 'BOOLEAN'], 'reason' => ['type' => 'STRING']], 'required' => ['comment_visible', 'wrong_app', 'edited']];
             try { $r = convo_ai($sys, [['text' => 'Employee: ' . $name . '. Screenshot:'], ['inlineData' => ['mimeType' => 'image/jpeg', 'data' => $img]]], $schema, false, 400); } catch (Throwable $e) { $r = null; }
             if (is_array($r) && !empty($r[0]) && is_array($r[1])) {
                 $v = $r[1];
-                if (!empty($v['wrong_app']) || empty($v['comment_visible']) || !empty($v['edited'])) $why = trim((string)($v['reason'] ?? '')) ?: 'Claude could not see your comment in this screenshot. Take a new one that shows your comment.';
+                if (!empty($v['wrong_app']) || empty($v['comment_visible']) || !empty($v['edited']) || ($weekly && $postHint !== '' && !empty($v['wrong_post']))) $why = trim((string)($v['reason'] ?? '')) ?: 'Claude could not see your comment in this screenshot. Take a new one that shows your comment.';
             }
         }
     }
