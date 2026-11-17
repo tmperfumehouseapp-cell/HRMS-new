@@ -161,7 +161,7 @@ function waa_give_now(PDO $pdo, string $phone): void
     try {
         if (!waa_tables($pdo) || !waa_engine_on($pdo)) return; $now = time();
         $q = $pdo->prepare("SELECT id, phone, src, opened_at, emp_id FROM wa_queries WHERE phone = ? ORDER BY id DESC LIMIT 1"); $q->execute([$phone]); $r = $q->fetch(PDO::FETCH_ASSOC);
-        if (!$r || (int)$r['emp_id'] > 0 || !in_array((string)$r['src'], ['query', 'campaign'], true) || strtotime((string)$r['opened_at']) < $now - 86400 + 600) return;
+        if (!$r || (int)$r['emp_id'] > 0 || !in_array((string)$r['src'], ['query', 'campaign', ''], true) || strtotime((string)$r['opened_at']) < $now - 86400 + 600) return;
         $c = $pdo->prepare("SELECT phone, name, assigned_emp, last_in_at, status, optout, cx_id, tag FROM wa_contacts WHERE phone = ?"); $c->execute([$phone]); $row = $c->fetch(PDO::FETCH_ASSOC) ?: null;
         $V = waa_view($pdo, false, 900); $T = waa_tally($pdo); $dbg = waa_dbg0();
         waa_give_one($pdo, $r, $row, $V, $T, $now, $dbg);
@@ -188,7 +188,7 @@ function waa_tick(PDO $pdo, int $every = 20, int $maxAge = 45): array
         if ($res['switched_off']) waa_state_put($pdo, $st);
         foreach ($V['people'] as $p0) { if ($p0['present']) $dbg['present']++; if ($p0['on']) $dbg['fresh_ok']++; if ($p0['present'] && $p0['m'] !== 'off') $dbg['camp_ok']++; }
         // (2) waiting queries: nobody holds them, the customer wrote in the last 24 h, no person answered yet. NEWEST first (the oldest are mostly closed / answered / past the 24 h window).
-        $since = waa_dt($now - 86400 + 600); $st0 = $pdo->prepare("SELECT id, phone, src, opened_at FROM wa_queries WHERE emp_id = 0 AND src IN ('query', 'campaign') AND opened_at >= ? AND opened_at <= ? ORDER BY id DESC LIMIT 250");
+        $since = waa_dt($now - 86400 + 600); $st0 = $pdo->prepare("SELECT id, phone, src, opened_at FROM wa_queries WHERE emp_id = 0 AND src IN ('query', 'campaign', '') AND opened_at >= ? AND opened_at <= ? ORDER BY id DESC LIMIT 250");
         $st0->execute([$since, waa_dt($now - 2)]); $qs = $st0->fetchAll(PDO::FETCH_ASSOC);
         if ($qs) {
             $phs = array_values(array_unique(array_map(function ($r) { return (string)$r['phone']; }, $qs))); $C = [];
