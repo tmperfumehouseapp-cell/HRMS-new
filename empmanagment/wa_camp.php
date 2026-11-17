@@ -850,7 +850,10 @@ function wa_camp_tick_run(PDO $pdo, int $only = 0): array
             if ($poolOn && $burstLeft <= 0) { $dqF = wa_dq_left($pdo, true); $poolLeft = (int)$dqF['left'];
                 if ($poolLeft <= 0) {   // 💸 the marketing allowance is used: the people put back by "Start as utility" still go (utility only — utility is outside the daily plan); everybody else waits
                     $rq = $uFirst ? (int)$pdo->query("SELECT COUNT(*) FROM wa_camp_items WHERE camp_id = $id AND status = 'queued' AND err = 'restart-utility'")->fetchColumn() : 0;
-                    if ($rq > 0) { $ucond = " AND i.err = 'restart-utility'"; $poolLeft = 100; } else { $stop = wa_dq_why_text($dqF); break; } } }   // the cap is counted again before every batch: several senders at once never go over it
+                    if ($rq > 0) {   // utility has its OWN limit: wa_u_per_min messages a minute (default 40), counted over all campaigns; the marketing allowance is not touched
+                        $perMin = max(5, min(600, (int)setting_get($pdo, 'wa_u_per_min', '40'))); $usedMin = (int)$pdo->query("SELECT COUNT(*) FROM wa_camp_items WHERE variant = 'U' AND status = 'sent' AND sent_at >= '" . date('Y-m-d H:i:s', $nowTs - 60) . "'")->fetchColumn(); $room = $perMin - $usedMin;
+                        if ($room > 0) { $ucond = " AND i.err = 'restart-utility'"; $poolLeft = min(100, $room); } else { $stop = 'Utility: the limit of ' . $perMin . ' a minute is reached — it continues in a moment.'; break; } }
+                    else { $stop = wa_dq_why_text($dqF); break; } } }   // the cap is counted again before every batch: several senders at once never go over it
             $take = min($burstLeft > 0 ? $fastBatch : 90, $quota - ($sent + $failed + $skipped)); if ($poolOn && $burstLeft <= 0) $take = max(1, min($take, $poolLeft));   // ⚡ 90 people per round trip to Meta (was 40)
             $pick = ($poolOn ? $pdo->query("SELECT i.id, i.status FROM wa_camp_items i LEFT JOIN wa_contacts ct ON ct.phone = i.phone LEFT JOIN wa_cust cu ON cu.phone = i.phone WHERE i.camp_id = $id AND $dueI$ucond ORDER BY CASE WHEN ct.last_in_at IS NULL THEN 3 WHEN ct.last_in_at >= DATE_SUB(NOW(), INTERVAL 30 DAY) THEN 0 WHEN ct.last_in_at >= DATE_SUB(NOW(), INTERVAL 90 DAY) THEN 1 ELSE 2 END, (COALESCE(cu.n, 0) = 0), ct.last_in_at DESC, i.id LIMIT $take") : $pdo->query("SELECT id, status FROM wa_camp_items WHERE camp_id = $id AND $due ORDER BY id LIMIT $take"))->fetchAll();   // 📅 the best people go first: wrote in the last 30 days, then 90 days, then the rest; buyers before non-buyers inside each group, newest chat first
             if (!$pick) break;
@@ -2010,6 +2013,7 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
             if (isset($in['ask_days']) && in_array((int)$in['ask_days'], [30, 60, 90, 120, 180], true)) setting_set($pdo, 'wa_ru_ask_days', (string)(int)$in['ask_days']);
             if (isset($in['make_on'])) setting_set($pdo, 'wa_ru_make_on', !empty($in['make_on']) ? '1' : '0');
             if (isset($in['make_n'])) setting_set($pdo, 'wa_ru_make_n', (string)max(2, min(12, (int)$in['make_n'])));
+            if (isset($in['u_per_min'])) setting_set($pdo, 'wa_u_per_min', (string)max(5, min(600, (int)$in['u_per_min'])));
             json_response(['ok' => true, 'status' => wa_ru_status($pdo)]);
         }
         case 'wa.camp_fast_tick': {   // ⚡ one campaign's Send fast sender: that campaign only, its own lock, beside the running pool (the page calls it again and again while it is open)
