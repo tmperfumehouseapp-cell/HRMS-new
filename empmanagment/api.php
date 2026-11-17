@@ -3338,7 +3338,7 @@ function ensure_proof_tables(PDO $pdo): bool
 {
     static $done = null;
     if ($done !== null) return $done;
-    $flag = sys_get_temp_dir() . '/hrms_punch_proofs_ok_v9';
+    $flag = sys_get_temp_dir() . '/hrms_punch_proofs_ok_v10';
     if (is_file($flag)) return $done = true;
     try {
         $pdo->exec(
