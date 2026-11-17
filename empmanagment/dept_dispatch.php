@@ -156,6 +156,7 @@ function dp_dsp_sync(PDO $pdo, $now, $force = false) {
     try { $pdo->exec("UPDATE dp_dsp_parcels SET status = 'rto' WHERE status IN ('tracked','transit') AND sr_status LIKE 'reached back%'"); } catch (Throwable $e) {}
     try { dp_dsp_courier_seed($pdo); } catch (Throwable $e) {}
     try { dp_dsp_hand_seed($pdo); } catch (Throwable $e) {}
+    try { dp_dsp_panel_seed($pdo, $now); } catch (Throwable $e) {}
     try { if (!function_exists('wmo_dsp_heal') && is_file(__DIR__ . '/wmo.php')) require_once __DIR__ . '/wmo.php'; if (function_exists('wmo_dsp_heal')) wmo_dsp_heal($pdo); } catch (Throwable $e) {}   // tracking IDs typed / imported on the Manual orders page reach their parcel here too
     return [$new, $canc];
 }
@@ -244,6 +245,33 @@ function dp_dsp_courier_seed(PDO $pdo) {
         if ($hit) { if (trim((string)$hit['link']) === '') $pdo->prepare("UPDATE dp_dsp_couriers SET link = ? WHERE id = ?")->execute([$x[2], $hit['id']]); }
         else $pdo->prepare("INSERT INTO dp_dsp_couriers (name, link, active, sort_no) VALUES (?,?,1,?)")->execute([$x[1], $x[2], 50 + count($rows)]);
     }
+}
+/** ONE TIME: the white-panel orders of the team's manual sheet (1-15 Nov 2026) that HRMS did not hold become parcels, with the tracking ID, courier and status of the sheet.
+ *  From then on the Shiprocket read finds them by order number and keeps the status current. They are history: never warned, never fined. An order number that already has a parcel is skipped.
+ *  Also: the three office-pickup WM orders the sheet shows as collected are marked delivered. Runs once (flag in dp_state). */
+function dp_dsp_panel_seed(PDO $pdo, $now) {
+    if (!function_exists('dp_get') || dp_get('dsp_panel_seed1', '') !== '') return;
+    $file = __DIR__ . '/dsp_seed_panel.php'; if (!is_file($file)) return;
+    dp_put('dsp_panel_seed1', date('Y-m-d H:i:s', $now));
+    $rows = require $file; if (!is_array($rows)) return;
+    if (function_exists('dp_dsp_sr_cols')) dp_dsp_sr_cols($pdo);
+    $nowS = date('Y-m-d H:i:s', $now); $n = 0;
+    $ins = $pdo->prepare("INSERT IGNORE INTO dp_dsp_parcels (store_key, shopify_id, order_name, created_at, customer, phone, status, due48, due4, shop_fulfil, synced_at, t48, t4, warn36, warn44, warn_d3, warn_d4a, warn_d4b) VALUES ('manual',?,?,?,'','',?,?,?,'',?,2,2,1,1,1,1,1)");
+    foreach ($rows as $x) {
+        list($name, $sid, $created, $trk, $cour, $st, $deliv, $copy, $note, $man) = $x;
+        if (dp_dsp_find_by_name($pdo, $name)) continue;
+        if ($trk !== '' && $trk !== 'Office Pickup' && dp_dsp_track_in_use($pdo, $trk, 0) !== '') continue;
+        $c = strtotime($created); if (!$c) continue;
+        $ins->execute([$sid, $name, $created, $st, date('Y-m-d H:i:s', dp_dsp_due48($c)), date('Y-m-d H:i:s', dp_dsp_due4($c)), $nowS]);
+        if (!$ins->rowCount()) continue;
+        $id = (int)$pdo->lastInsertId(); $n++;
+        $moved = in_array($st, ['transit', 'delivered', 'rto'], true);
+        $pdo->prepare("UPDATE dp_dsp_parcels SET tracking_no = ?, courier = ?, tracked_at = ?, tracked_by = 'Manual sheet', transit_at = ?, delivered_at = ?, manual = ?, hand_note = ?, t_man = 1, t_g3 = 1, t_un = 1 WHERE id = ?")
+            ->execute([$trk, $cour, $trk !== '' ? $created : null, $moved ? $created : null, $deliv !== '' ? $deliv : ($st === 'delivered' ? $created : null), (int)$man, $note !== '' ? $note : null, $id]);
+        if ($copy !== '') { try { $pdo->prepare("UPDATE dp_dsp_parcels SET sr_oid = ? WHERE id = ?")->execute([$copy, $id]); } catch (Throwable $e) {} }
+    }
+    $pdo->exec("UPDATE dp_dsp_parcels SET status = 'delivered', delivered_at = COALESCE(delivered_at, '$nowS') WHERE order_name IN ('WM-00032','WM-00010','WM-00008') AND status = 'transit' AND tracking_no = 'Office Pickup'");
+    if (function_exists('bd_log')) { try { bd_log('dispatch', 'Manual sheet', $n . ' white-panel orders of the manual sheet added as parcels', 'Manual sheet'); } catch (Throwable $e) {} }
 }
 /** ONE TIME: the four parcels of the team's manual sheet (Nov 2026) that went by another courier get that courier's tracking ID, exactly as the pencil would write it.
  *  A parcel that already has a hand-written ID, or is delivered / returned, is left alone. Runs once (flag in dp_state). */

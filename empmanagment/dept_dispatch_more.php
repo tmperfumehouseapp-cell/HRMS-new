@@ -131,6 +131,10 @@ function dp_dsp_sr_apply(PDO $pdo, array $p, array $o) {
     }
     $did = dp_dsp_apply($pdo, $p, $awb, $cour, $new, 'Shiprocket', $take && in_array((string)$p['status'], ['placed', 'tracked', 'cancelled'], true), true);   // a parcel wrongly parked as cancelled / waiting comes back with the copy's real status
     if ($st !== '' && $st !== (string)($p['sr_status'] ?? '')) { $pdo->prepare("UPDATE dp_dsp_parcels SET sr_status = ?, sr_at = ? WHERE id = ?")->execute([mb_substr($st, 0, 40), bd_now(), $p['id']]); if ($did === '') $did = 'status text'; }
+    if ((string)($p['customer'] ?? '') === '' && (string)($p['phone'] ?? '') === '') {   // a parcel that came without the customer (orders taken from the manual sheet): Shiprocket knows the name and phone
+        $cn = trim((string)($o['customer_name'] ?? '')); $cp = trim((string)($o['customer_phone'] ?? ''));
+        if ($cn !== '' || $cp !== '') { try { $pdo->prepare("UPDATE dp_dsp_parcels SET customer = ?, phone = ? WHERE id = ? AND COALESCE(customer, '') = '' AND COALESCE(phone, '') = ''")->execute([mb_substr($cn, 0, 120), mb_substr($cp, 0, 40), $p['id']]); } catch (Throwable $e) { } }
+    }
     return $did;
 }
 /** read ONE page of Shiprocket orders for a date window and apply it. Returns [orders on the page, error, total pages]. $r counts seen / updated / same / unmatched. */
