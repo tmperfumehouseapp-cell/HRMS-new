@@ -110,11 +110,11 @@ function wa_ru_plan(PDO $pdo, array $cfg, array $diag): array
     while ($need > 0 && $guard++ < 24 * 14) { if (function_exists('wa_camp_in_window') && wa_camp_in_window($pdo, $t)) $need -= $per; if ($need <= 0) break; $t += 3600; }
     return ['left' => $left, 'per_hour' => $per, 'eta' => $left > 0 ? date('Y-m-d H:i', $t + ($t === $now ? 3600 : 0)) : null, 'hours' => $left > 0 ? (int)ceil($left / $per) : 0];
 }
-/** 🛠 Utility versions for the messages of today's campaigns are made and sent to Meta for approval by themselves (owner, 17 Nov 2026): one message per call (each is a Claude call), 2 versions each,
+/** 🛠 Utility versions for the messages of today's campaigns are made and sent to Meta for approval by themselves (owner, 17 Nov 2026): one message per call (each is a Claude call), 4 versions each (wa_ru_make_n 2-6),
  *  never twice for the same message within 6 hours; the 6 standard follow-ups (+ the "you contacted us on …" one) are made once if any is missing. */
 function wa_ru_make_tick(PDO $pdo): array
 {
-    $o = ['made' => 0, 'note' => ''];
+    $o = ['made' => 0, 'note' => '']; wa_ru_load_util($pdo);
     if (!wa_ru_cfg($pdo)['make_on'] || !function_exists('wa_util_make') || !function_exists('wa_tpl_row')) { $o['note'] = 'off'; return $o; }
     try {
         // 📤 utility drafts that exist but were never sent to Meta (made by hand earlier, or the send did not go through): sent now, 5 per round, every minute
@@ -140,9 +140,9 @@ function wa_ru_make_tick(PDO $pdo): array
             $tid = (int)$tid; $row = wa_tpl_row($pdo, $tid); if (!$row || strtoupper((string)$row['category']) !== 'MARKETING') continue;
             if ((int)setting_get($pdo, 'wa_ru_made_' . $tid, '0') > time() - 6 * 3600) continue;
             $fam = (int)($row['family_id'] ?: $row['id']); $c = $pdo->prepare("SELECT COUNT(*) FROM wa_templates WHERE category = 'UTILITY' AND family_id = ? AND relabelled_at IS NULL"); $c->execute([$fam]); $have = (int)$c->fetchColumn();
-            if ($have >= 2) continue;
+            $want = max(2, min(6, (int)setting_get($pdo, 'wa_ru_make_n', '4'))); if ($have >= $want) continue;   // how many utility versions each campaign message gets (default 4, setting wa_ru_make_n 2-6)
             setting_set($pdo, 'wa_ru_made_' . $tid, (string)time());
-            $r = wa_util_make($pdo, $tid, 2 - $have, 0, true);   // drafts made AND sent to Meta
+            $r = wa_util_make($pdo, $tid, $want - $have, 0, true);   // drafts made AND sent to Meta
             $n = count($r['made'] ?? []); $o['made'] += $n; try { setting_set($pdo, 'wa_ru_make_last', json_encode(['at' => time(), 'tpl' => $tid, 'made' => $n, 'error' => isset($r['error']) ? mb_substr((string)$r['error'], 0, 160) : '', 'skipped' => array_slice((array)($r['skipped'] ?? []), 0, 2)], JSON_UNESCAPED_UNICODE)); } catch (Throwable $e9) { }
             if (function_exists('wa_log')) wa_log($pdo, 'template', !isset($r['error']), 'Utility versions for campaign message #' . $tid . ' (auto): ' . (isset($r['error']) ? $r['error'] : $n . ' made and sent to Meta'));
             break;   // one message per call
@@ -182,6 +182,7 @@ function wa_ru_retry_tick(PDO $pdo, int $nowTs, int &$left, float $t0): array
 /** One round (≤ 40 s) of the utility follow-up for failed marketing messages. */
 function wa_ru_tick(PDO $pdo): array
 {
+    wa_ru_load_util($pdo);
     $res = ['sent' => 0, 'failed' => 0, 'skipped' => 0, 'looked' => 0, 'note' => '', 'why' => []];
     if (!wa_ru_tables($pdo)) { $res['note'] = 'no table'; return $res; }
     $cfg = wa_ru_cfg($pdo); if (!$cfg['on']) { $res['note'] = 'off'; return $res; } if ($cfg['pause_until'] > time()) { $res['note'] = 'paused after a Meta warning'; return $res; }
@@ -297,15 +298,15 @@ function wa_ru_fam_states(PDO $pdo, array $tplIds): array
 {
     wa_ru_load_util($pdo);
     $ids = array_values(array_unique(array_filter(array_map('intval', $tplIds)))); if (!$ids) return [];
-    $o = []; foreach ($ids as $i) $o[$i] = ['approved' => 0, 'waiting' => 0, 'rejected' => 0, 'draft' => 0];
+    $o = []; foreach ($ids as $i) $o[$i] = ['approved' => 0, 'waiting' => 0, 'rejected' => 0, 'draft' => 0, 'items' => []];
     try {
-        $q = $pdo->query("SELECT m.id AS tid, t.id AS uid, t.relabelled_at AS rl, GROUP_CONCAT(w.status) AS st FROM wa_templates m JOIN wa_templates t ON t.category = 'UTILITY' AND t.family_id = COALESCE(NULLIF(m.family_id, 0), m.id)
-            LEFT JOIN wa_tpl_waba w ON w.tpl_id = t.id WHERE m.id IN (" . implode(',', $ids) . ") GROUP BY m.id, t.id, t.relabelled_at");
+        $q = $pdo->query("SELECT m.id AS tid, t.id AS uid, t.name AS nm, t.created_at AS ca, t.relabelled_at AS rl, GROUP_CONCAT(w.status) AS st FROM wa_templates m JOIN wa_templates t ON t.category = 'UTILITY' AND t.family_id = COALESCE(NULLIF(m.family_id, 0), m.id)
+            LEFT JOIN wa_tpl_waba w ON w.tpl_id = t.id WHERE m.id IN (" . implode(',', $ids) . ") GROUP BY m.id, t.id, t.name, t.created_at, t.relabelled_at ORDER BY t.id DESC");
         foreach ($q->fetchAll() as $r) {
             $st = array_filter(explode(',', strtoupper((string)$r['st'])));
             if (!$st) $k = 'draft'; elseif (in_array('APPROVED', $st, true)) $k = 'approved'; elseif (in_array('PENDING', $st, true) || in_array('IN_APPEAL', $st, true)) $k = 'waiting'; else $k = 'rejected';
             if (!empty($r['rl'])) $k = 'rejected';
-            $o[(int)$r['tid']][$k]++;
+            $o[(int)$r['tid']][$k]++; if (count($o[(int)$r['tid']]['items']) < 8) $o[(int)$r['tid']]['items'][] = ['name' => (string)$r['nm'], 'state' => $k, 'at' => (string)$r['ca']];
         }
     } catch (Throwable $e) { }
     return $o;
