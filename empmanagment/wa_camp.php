@@ -855,8 +855,8 @@ function wa_camp_tick_run(PDO $pdo, int $only = 0): array
             if ($poolOn && $burstLeft <= 0) { $dqF = wa_dq_left($pdo, true); $poolLeft = (int)$dqF['left'];
                 if ($poolLeft <= 0) {   // 💸 the marketing allowance is used: the people put back by "Start as utility" still go (utility only — utility is outside the daily plan); everybody else waits
                     $rq = $uFirst ? (int)$pdo->query("SELECT COUNT(*) FROM wa_camp_items WHERE camp_id = $id AND status = 'queued' AND variant = 'R'")->fetchColumn() : 0;
-                    if ($rq > 0) {   // utility has its OWN limit: wa_u_per_min messages a minute (default 40), counted over all campaigns; the marketing allowance is not touched
-                        $perMin = max(5, min(600, (int)setting_get($pdo, 'wa_u_per_min', '50'))); $usedMin = (int)$pdo->query("SELECT COUNT(*) FROM wa_camp_items WHERE variant = 'U' AND status = 'sent' AND sent_at >= '" . date('Y-m-d H:i:s', $nowTs - 60) . "'")->fetchColumn(); $room = $perMin - $usedMin;
+                    if ($rq > 0) {   // utility has its OWN limit: wa_u_per_min messages a minute (default 60), counted over all campaigns; the marketing allowance is not touched
+                        $perMin = max(5, min(600, (int)setting_get($pdo, 'wa_u_per_min', '60'))); $usedMin = (int)$pdo->query("SELECT COUNT(*) FROM wa_camp_items WHERE variant = 'U' AND status = 'sent' AND sent_at >= '" . date('Y-m-d H:i:s', $nowTs - 60) . "'")->fetchColumn(); $room = $perMin - $usedMin;
                         if ($room > 0) { $ucond = " AND i.variant = 'R'"; $poolLeft = min(100, $room); } else { $stop = 'Utility: the limit of ' . $perMin . ' a minute is reached — it continues in a moment.'; break; } }
                     else { $stop = wa_dq_why_text($dqF); break; } } }   // the cap is counted again before every batch: several senders at once never go over it
             $take = min($burstLeft > 0 ? $fastBatch : 90, $quota - ($sent + $failed + $skipped)); if ($poolOn && $burstLeft <= 0) $take = max(1, min($take, $poolLeft));   // ⚡ 90 people per round trip to Meta (was 40)
@@ -1948,16 +1948,16 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
             try { $q = $pdo->prepare("SELECT t.id, t.relabelled_at, GROUP_CONCAT(w.status) AS st FROM wa_templates t LEFT JOIN wa_tpl_waba w ON w.tpl_id = t.id WHERE t.category = 'UTILITY' AND t.created_at >= ? GROUP BY t.id, t.relabelled_at"); $q->execute([$from]);
                 foreach ($q->fetchAll() as $r) { $st = array_filter(explode(',', strtoupper((string)$r['st']))); $t['made']++;
                     if (!empty($r['relabelled_at'])) $k = 'rejected'; elseif (!$st) $k = 'queued'; elseif (in_array('APPROVED', $st, true)) $k = 'approved'; elseif (array_intersect(['PENDING', 'IN_APPEAL'], $st)) $k = 'waiting'; elseif (in_array('ERROR', $st, true)) $k = 'error'; else $k = 'rejected'; $t[$k]++; } } catch (Throwable $e) { }
-            json_response(['ok' => true, 'eta' => wa_ru_eta($pdo), 'learn' => $L, 'today' => $t, 'backfill' => function_exists('wa_ru_backfill_counts') ? wa_ru_backfill_counts($pdo) : null, 'make_n' => max(2, min(12, (int)setting_get($pdo, 'wa_ru_make_n', '10')))]);
+            json_response(['ok' => true, 'eta' => wa_ru_eta($pdo), 'learn' => $L, 'today' => $t, 'backfill' => function_exists('wa_ru_backfill_counts') ? wa_ru_backfill_counts($pdo) : null, 'make_n' => wa_ru_want($pdo)]);
         }
         case 'wa.ru_msg': {   // 💸 how many utility versions one marketing message has, and where each is at Meta (shown when a message is opened)
             wa_ru_load_util($pdo); $tid = (int)($_GET['tpl_id'] ?? 0); $f = $tid ? (wa_ru_fam_states($pdo, [$tid])[$tid] ?? null) : null;
-            json_response(['ok' => true, 'eta' => wa_ru_eta($pdo), 'fam' => $f, 'want' => max(2, min(12, (int)setting_get($pdo, 'wa_ru_make_n', '10')))]);
+            json_response(['ok' => true, 'eta' => wa_ru_eta($pdo), 'fam' => $f, 'want' => wa_ru_want($pdo)]);
         }
         case 'wa.ru_make': {   // ✨ no utility message for this campaign yet: make it now (2 versions of its own message) and send it to Meta for approval
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $in = json_input(); $c = wa_camp_row($pdo, (int)($in['id'] ?? 0)); if (!$c) json_response(['error' => 'Campaign not found.'], 404);
             wa_ru_load_util($pdo); if (!function_exists('wa_util_make')) json_response(['error' => 'The utility module is not loaded.'], 500); @set_time_limit(120);
-            $r = wa_util_make($pdo, (int)$c['tpl_id'], max(2, min(6, (int)setting_get($pdo, 'wa_ru_make_n', '10'))), (int)($auth['employee_id'] ?? 0), true);
+            $r = wa_util_make($pdo, (int)$c['tpl_id'], min(6, wa_ru_want($pdo)), (int)($auth['employee_id'] ?? 0), true);
             if (isset($r['error'])) json_response($r, 502);
             try { setting_set($pdo, 'wa_ru_made_' . (int)$c['tpl_id'], (string)time()); setting_set($pdo, 'wa_ru_fam', ''); } catch (Throwable $e) { }
             if (function_exists('wa_log')) wa_log($pdo, 'template', true, 'Utility versions for campaign #' . (int)$c['id'] . ' made by hand: ' . count($r['made'] ?? []) . ' sent to Meta');
