@@ -10,7 +10,7 @@
  *   waa_pick          who gets the next query (everybody reaches the minimum first, then the fairest share)
  *   waa_night / waa_night_block   overnight (12 am – 10 am): a person below the band takes at most 5 from Requests
  */
-if (!defined('WAA_BAND')) { define('WAA_BAND', 0.05); define('WAA_MIN_Q', 6); define('WAA_NIGHT_MAX', 5); }   // allowed: average down to 5 points below · 6 fresh queries before the ratio is judged · 5 overnight picks from Requests
+if (!defined('WAA_BAND')) { define('WAA_BAND', 0.05); define('WAA_MIN_Q', 6); define('WAA_NIGHT_MAX', 5); define('WAA_MAX_WAIT', 10); }   // allowed: average down to 5 points below · 6 fresh queries before the ratio is judged · 5 overnight picks from Requests
 if (!function_exists('waa_below')) {
 
 
@@ -70,6 +70,32 @@ function waa_pick(array $c, int $min = 0): int
     $best = 0; $bs = null;
     foreach ($pool as $e => $x) { $s = ((int)$x['cnt'] + 1) / max(0.0001, (float)$x['w']); if ($bs === null || $s < $bs - 1e-12 || (abs($s - $bs) <= 1e-12 && (int)$e < $best)) { $bs = $s; $best = (int)$e; } }
     return $best;
+}
+
+/**
+ * Who gets the next FRESH query, in order: tier 1 = GREEN (judged after 6 queries, ratio at or above the team average) · tier 2 = inside the allowed band, and people not judged yet (fewer than 6 queries).
+ * Below the band (red) is switched off for fresh queries and never reaches this list. Returns 1, 2 or 3 (3 = red).
+ */
+function waa_tier(int $q, int $qo, float $team): int
+{
+    if ($q < WAA_MIN_Q || $team <= 0) return 2;
+    $r = $qo / $q; if ($r >= $team - 1e-9) return 1;
+    return $r < waa_floor($team) - 1e-9 ? 3 : 2;
+}
+
+/**
+ * $c = [emp => ['w', 'cnt', 'tier', 'full']]. The first tier that has somebody who is not full (WAA_MAX_WAIT customers already waiting for an answer) wins; inside a tier the fairest share goes first
+ * (tier 2 first brings everybody to the minimum of 6). When everybody is full the query is still given (a query nobody takes dies), by the same order.
+ */
+function waa_pick_tiers(array $c, int $min = WAA_MIN_Q): int
+{
+    foreach ([false, true] as $ignoreFull) {
+        foreach ([1, 2] as $t) {
+            $g = array_filter($c, function ($x) use ($t, $ignoreFull) { return (int)($x['tier'] ?? 2) === $t && ($ignoreFull || empty($x['full'])); });
+            if ($g) return waa_pick($g, $t === 2 ? $min : 0);
+        }
+    }
+    return 0;
 }
 
 function waa_night(int $hour): bool { return $hour >= 0 && $hour < 10; }
