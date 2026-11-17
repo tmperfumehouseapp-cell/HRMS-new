@@ -132,6 +132,8 @@ function wa_util_pool_defs(): array
             'body' => "Hi {{1}}, about your enquiry for {{2}} on {{3}}: please tell us the size you need, so we can confirm it for you."],
         'ask_checked' => ['kind' => 'ask', 'labels' => ['name', 'date'], 'ex' => ['Rahul', '28 Oct'], 'buttons' => $qr(['Yes, I need help', 'Not now']),
             'body' => "Hi {{1}}, you contacted TM Perfume House on {{2}}. Do you still need any help with your perfume choice? Reply here and we will help you."],
+        'open_welcome' => ['kind' => 'open', 'labels' => ['name'], 'ex' => ['Rahul'], 'buttons' => $qr(['Yes, please', 'Not now']),
+            'body' => "Hi {{1}}, thank you for being a TM Perfume House customer. Would you like us to share news about our perfumes and help you with your next choice? Tap a button to reply."],
         'ask_pincode' => ['kind' => 'ask', 'labels' => ['name', 'perfume'], 'ex' => ['Rahul', 'Dior Sauvage'], 'buttons' => $qr(['Send my pincode', 'Not now']),
             'body' => "Hi {{1}}, to check the delivery time for {{2}} to your area, please reply with your pincode."],
         'order_check' => ['kind' => 'order', 'labels' => ['name', 'order', 'date'], 'ex' => ['Rahul', '#1234', '28 Oct'], 'buttons' => $qr(['Yes, all good', 'Need help']),
@@ -193,7 +195,7 @@ function wa_util_orders(PDO $pdo, int $days): array
 }
 /** Who qualifies and with which message: an enquiry on WhatsApp in the last 30 days with a perfume we can name → an "ask" message; else an order in the last $ordDays
  *  days → an "order" message; else null (this person gets no utility message). $rot makes the messages take turns. Returns ['t', 'vars', 'kind'] or null. */
-function wa_util_pick(PDO $pdo, array $pool, array $ct, int $ordDays, int $nowTs, int $rot = 0, int $askDays = 30): ?array
+function wa_util_pick(PDO $pdo, array $pool, array $ct, int $ordDays, int $nowTs, int $rot = 0, int $askDays = 30, bool $anyone = false): ?array
 {
     if (!$pool || (int)($ct['optout'] ?? 0) === 1) return null; $phone = (string)$ct['phone']; $name = function_exists('wa_first_name') ? wa_first_name((string)($ct['name'] ?? '')) : 'ji';
     $ask = array_values(array_filter($pool, fn($t) => $t['pool_kind'] === 'ask')); $ord = array_values(array_filter($pool, fn($t) => $t['pool_kind'] === 'order'));
@@ -208,6 +210,10 @@ function wa_util_pick(PDO $pdo, array $pool, array $ct, int $ordDays, int $nowTs
     }
     if ($ord && $ordDays > 0) { $o = wa_util_orders($pdo, $ordDays)[$phone] ?? null;
         if ($o && $o['order'] !== '') { $t = $ord[$rot % count($ord)]; $v = $fill($t, ['name' => $name, 'order' => $o['order'], 'date' => date('j M', (int)strtotime($o['at']))]); if ($v) return ['t' => $t, 'vars' => $v, 'kind' => 'order']; } }
+    if ($anyone) {   // 💸 utility first (owner, 17 Nov 2026): a customer with no enquiry / order on record (an old customer, an imported list) still gets the short welcome message
+        $open = array_values(array_filter($pool, fn($t) => $t['pool_kind'] === 'open'));
+        if ($open) { $t = $open[$rot % count($open)]; $v = $fill($t, ['name' => $name]); if ($v) return ['t' => $t, 'vars' => $v, 'kind' => 'open']; }
+    }
     return null;
 }
 /** For the preview: how many of these people qualify (enquiry in 30 days / order in the window) — counted cheaply, the perfume is checked when sending. */

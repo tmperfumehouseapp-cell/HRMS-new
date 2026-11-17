@@ -216,8 +216,8 @@ function wa_ru_tick(PDO $pdo): array
                 $om = null; try { $om = wa_order_map($pdo)[$ph] ?? null; } catch (Throwable $e) { }
                 if (wa_mix_cheap_ok($pdo, $ctm, $om, $nowTs - $shift)) { $fl = array_values($famU[(int)$it['ctpl']]); for ($fi = 0; $fi < count($fl); $fi++) { $u0 = $fl[($rot + $fi) % count($fl)]; $uv = wa_mix_u_vars($pdo, $u0, $ctm, $om, $nowTs - $shift); if (is_array($uv) && count($uv) >= count(wa_tpl_vars((string)$u0['body']))) { $pk = ['t' => $u0, 'vars' => $uv, 'kind' => 'fam']; break; } } }   // the asked / ordered window is the owner's (30 / 60 / 90 days …), the words stay true: the real dates are shown
             }
-            if (!$pk && $pool) $pk = wa_util_pick($pdo, $pool, $ctm, $cfg['ord_days'], $nowTs, $rot, $cfg['ask_days']);   // 2) the standard follow-ups
-            if (!$pk) { $sk('not for utility: no enquiry in the last ' . $cfg['ask_days'] . ' days and no order in the last ' . $cfg['ord_days'] . ' days'); continue; }
+            if (!$pk && $pool) $pk = wa_util_pick($pdo, $pool, $ctm, $cfg['ord_days'], $nowTs, $rot, $cfg['ask_days'], true);   // 2) the standard follow-ups
+            if (!$pk) { $sk('no approved utility message fits this person yet'); continue; }
             $tid = (int)$pk['t']['id']; if (!array_key_exists($tid, $cache)) $cache[$tid] = wa_ru_tpl_ctx($pdo, $pk['t']);
             [$tUse, $ctx] = $cache[$tid]; if (!$tUse || !$ctx) { $sk('utility message not approved on a number with room'); continue; }
             $cand = array_filter($ctx['nums'], fn($x) => $x['left'] > 0 && empty($numSt[(int)$x['id']]['rest_until'])); if (!$cand || $ctx['port_left'] <= 0) { $sk(array_filter($numSt, fn($z) => !empty($z['rest_until'])) ? 'numbers resting (delivery stalled)' : 'no number with room'); continue; }
@@ -285,7 +285,7 @@ function wa_ru_diag(PDO $pdo, int $ordDays): array
         if (wa_ru_tables($pdo)) { $q = $pdo->prepare("SELECT COUNT(*) FROM wa_ru_log WHERE at >= ?"); $q->execute([$from]); $o['done'] = (int)$q->fetchColumn(); }
         $q = $pdo->prepare("SELECT DISTINCT i.phone FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id WHERE (c.started_at >= ? OR i.sent_at >= ?) AND COALESCE(i.variant, 'M') <> 'U' AND (i.status = 'failed' OR (i.status IN ('retry', 'sent') AND i.last_status = 'failed')) AND i.err_code NOT IN (" . (function_exists('wa_rec_never_sql') ? implode(',', array_diff(WA_REC_NEVER, WA_RU_MARKETING_ONLY)) : '0') . ") LIMIT 6000"); $q->execute([$from, $from]);
         $ph = array_map('strval', $q->fetchAll(PDO::FETCH_COLUMN));
-        if ($ph && function_exists('wa_util_split')) { $sp = wa_util_split($pdo, $ph, $ordDays, (int)wa_ru_cfg($pdo)['ask_days']); $o['util_ok'] = (int)$sp['ask'] + (int)$sp['order']; $o['util_no'] = (int)$sp['none']; }
+        if ($ph && function_exists('wa_util_split')) { $sp = wa_util_split($pdo, $ph, $ordDays, (int)wa_ru_cfg($pdo)['ask_days']); $o['util_ok'] = (int)$sp['ask'] + (int)$sp['order'] + (int)$sp['none']; $o['util_no'] = 0; }
     } catch (Throwable $e) { }
     try { setting_set($pdo, 'wa_ru_diag', json_encode($o)); } catch (Throwable $e) { }
     return $o;
