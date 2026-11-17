@@ -232,6 +232,14 @@ function wa_util_pool_usable(PDO $pdo): array
         $x = json_decode((string)($r['examples'] ?? ''), true); $t['labels'] = is_array($x) ? array_map('strval', (array)($x['labels'] ?? [])) : []; $t['pool_kind'] = $r['pool_kind']; $o[] = $t; }
     return $o;
 }
+/** 💬 Last resort for Module B (owner, 17 Nov 2026: "if utility is not possible, marketing goes"): the welcome message that Meta moved to MARKETING is still approved and still sendable — it goes to the failed / held people no utility message fits.
+ *  Only the 'open' (name-only) pool kind; the other pool messages are never sent once they are relabelled. */
+function wa_util_pool_fallback(PDO $pdo): array
+{
+    $o = []; foreach (wa_util_pool_rows($pdo) as $k => $r) { if (($r['pool_kind'] ?? '') !== 'open') continue; if (empty($r['relabelled_at']) && strtoupper((string)($r['category_now'] ?? '')) !== 'MARKETING') continue;
+        $t = wa_camp_tpl($pdo, (int)$r['id'], true, 0); if (!$t) continue; $x = json_decode((string)($r['examples'] ?? ''), true); $t['labels'] = is_array($x) ? array_map('strval', (array)($x['labels'] ?? [])) : []; $t['pool_kind'] = 'open'; $t['as_marketing'] = true; $o[] = $t; }
+    return $o;
+}
 /** phone10 → ['order' => '#1234', 'at' => 'Y-m-d H:i:s'] — the latest Shopify order of everyone who ordered in the last $days days (one read per run). */
 function wa_util_orders(PDO $pdo, int $days): array
 {

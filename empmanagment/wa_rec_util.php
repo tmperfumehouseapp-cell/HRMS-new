@@ -74,7 +74,9 @@ function wa_ru_pool(PDO $pdo): array
 {
     wa_ru_load_util($pdo);
     if (!function_exists('wa_util_pool_usable') && is_file(__DIR__ . '/wa_util.php')) { try { require_once __DIR__ . '/wa_util.php'; } catch (Throwable $e) { } }
-    return function_exists('wa_util_pool_usable') ? wa_util_pool_usable($pdo) : [];
+    $u = function_exists('wa_util_pool_usable') ? wa_util_pool_usable($pdo) : [];
+    if (function_exists('wa_util_pool_fallback')) { try { foreach (wa_util_pool_fallback($pdo) as $f) $u[] = $f; } catch (Throwable $e) { } }   // the welcome message Meta moved to marketing still goes as a last resort (owner's rule)
+    return $u;
 }
 
 /** The utility follow-up messages that exist in HRMS (made, maybe still waiting for Meta). */
