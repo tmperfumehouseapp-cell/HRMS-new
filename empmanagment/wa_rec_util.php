@@ -246,6 +246,7 @@ function wa_ru_global_usable(PDO $pdo, int $limit = 12): array
 /** One-time resets that must run even while Module B is paused (they were inside the making round, which is never reached while paused: the pause could not be cleared). */
 function wa_ru_reset_once(PDO $pdo): void
 {
+    try { if ((string)setting_get($pdo, 'wa_dq_nolimit', '') !== '1') { foreach (['wa_dq_daily' => '1000000', 'wa_dq_budget' => '0', 'wa_dq_auto' => '0', 'wa_dq_hourly' => '60000', 'wa_dq_pace' => '0', 'wa_dq_daily_auto' => '0', 'wa_dq_stat' => ''] as $k => $v) setting_set($pdo, $k, $v); setting_set($pdo, 'wa_dq_nolimit', '1'); } } catch (Throwable $e) { }   // owner 18 Nov 2026: the shared marketing plan has no day number, no money limit, no even-pace brake and the hour number at its top (60,000); Meta's own limit per number (3,00,000) and a number that is off / Low quality still decide
     try { if ((string)setting_get($pdo, 'wa_ru_held_off2', '') !== '1') { setting_set($pdo, 'wa_ru_pause_until', '0'); setting_set($pdo, 'wa_ru_rest', '{}'); setting_set($pdo, 'wa_ru_brake_since', (string)time()); setting_set($pdo, 'wa_ru_cursor', '0'); setting_set($pdo, 'wa_ru_held_off2', '1'); } } catch (Throwable $e) { }   // owner 17 Nov 2026: the pause caused by the held people's failures is cleared; the failure brake counts only messages sent from now on
 }
 function wa_ru_tick(PDO $pdo): array
