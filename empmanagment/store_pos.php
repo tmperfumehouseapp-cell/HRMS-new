@@ -100,6 +100,11 @@ function st_find_bottles(PDO $pdo, array $codes, bool $lock = false): array
 }
 
 /** Price in every chart column for the TOTAL ml + the commission % each column pays (the same chart the online sales use). */
+/** Loads the commission engine and makes its tables BEFORE a bill's transaction starts: a CREATE TABLE inside a transaction silently commits it ("There is no active transaction" at commit). */
+function st_engine_warm(PDO $pdo): void
+{
+    try { if (function_exists('budget_engine_ready') && budget_engine_ready()) { cm_offers($pdo); cm_chart($pdo); } } catch (Throwable $e) { error_log('st_engine_warm: ' . $e->getMessage()); }
+}
 /** FIXED-PRICE perfumes (for example the OG perfumes): "title contains <text>, <ml> ml = ₹<price>". Saved in the setting st_fixed_prices as a list of {text, ml, price}. */
 function st_fixed_rules(PDO $pdo): array
 {
@@ -862,6 +867,7 @@ try {
 
             $chainCode = st_clean_code($in['chain_code'] ?? '');
             if ($chainCode !== '') { $gate = st_chain_gate($pdo); if ($gate !== '') json_response(['error' => $gate], 409); }      // never sell a chain we cannot give a GST invoice for
+            st_engine_warm($pdo);
             $pdo->beginTransaction();
             $found = st_find_bottles($pdo, (array)($in['codes'] ?? []), true);
             $want = array_values(array_unique(array_filter(array_map('st_clean_code', (array)($in['codes'] ?? [])), 'strlen')));
