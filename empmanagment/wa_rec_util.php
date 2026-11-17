@@ -250,7 +250,7 @@ function wa_ru_tick(PDO $pdo): array
     if (!function_exists('wa_lock') || !wa_lock($pdo, 'ru', 50)) { $res['note'] = 'busy'; return $res; }
     $t0 = microtime(true); $nowTs = wa_camp_now(); $now = date('Y-m-d H:i:s', $nowTs); $why = [];
     try { $res['made'] = wa_ru_make_tick($pdo)['made']; } catch (Throwable $e) { }   // utility versions of today's campaign messages → Meta
-    $t0 = microtime(true) - 20;   // the making / sending of templates above can take 20+ seconds: it must not eat the time of the sending loop below (it did: every round broke off at the first person and Module B never sent anything)
+    $t0 = microtime(true) - 8;   // the making / sending of templates above can take 20+ seconds: it must not eat the time of the sending loop below (it did: every round broke off at the first person and Module B never sent anything)
     try {
         if (!wa_camp_in_window($pdo, $nowTs)) { $res['note'] = 'quiet hours'; return $res; }
         $pool = wa_ru_pool($pdo); $famU = [];   // 1) the utility version(s) of the campaign's OWN message (the owner's words, approved at Meta), 2) the 6 standard follow-ups
@@ -286,6 +286,28 @@ function wa_ru_tick(PDO $pdo): array
         $rec = []; if (function_exists('wa_rec_tables') && wa_rec_tables($pdo)) { foreach ($pdo->query("SELECT item_id, COUNT(*) AS n, MAX(at) AS last FROM wa_rec_log WHERE item_id IN ($in) GROUP BY item_id")->fetchAll() as $r) $rec[(int)$r['item_id']] = $r; }
         $cache = []; $seen = []; $rot = 0; $lastId = $cursor; $broke = false; $numSt = wa_ru_numbers($pdo, $nowTs); $mixDays = function_exists('wa_mix_cfg') ? (int)wa_mix_cfg($pdo, 'wa_mix_days', 30) : 30; $shift = max(0, $cfg['ask_days'] - $mixDays) * 86400;
         $sk = function (string $k) use (&$res, &$why) { $res['skipped']++; $why[$k] = ($why[$k] ?? 0) + 1; };
+        $batch = []; $bsz = max(5, min(100, (int)setting_get($pdo, 'wa_ru_parallel', '40')));
+        // 🚀 sends a batch of Module B messages at the same time (the old way: one after the other, about 1 a second = 17 a minute). Returns true when the round must stop (Meta flagged spam / throughput limit).
+        $flush = function () use (&$batch, &$res, $pdo, $now, $nowTs): bool {
+            $stop = false; $reqs = []; $out = [];
+            foreach ($batch as $k => $j) {
+                $t = $j['t']; $hf = strtoupper((string)($t['header_format'] ?? ''));
+                $mk = !in_array(strtolower((string)($t['category'] ?? 'marketing')), ['utility', 'authentication'], true);   // the welcome message that Meta moved to marketing: never to a customer who said Stop to promotions
+                if ($mk && (int)$j['c']['camp_optout'] === 1) { $out[$k] = [false, 'This customer asked to stop promotional messages.', 0]; continue; }
+                if (!in_array($hf, ['', 'TEXT'], true) || !function_exists('wa_http_multi') || !function_exists('wa_tpl_request')) { $out[$k] = wa_send_tpl_one($pdo, $j['c'], $t, $j['num'], $j['vars'], 'recover'); continue; }   // photo / video / PDF on top: the old one-by-one way
+                $rq = wa_tpl_request($t, $j['num'], (string)($j['c']['wa_id'] ?: '91' . $j['c']['phone']), $j['vars']); $reqs[$k] = ['path' => $rq['path'], 'json' => $rq['json']];
+            }
+            if ($reqs) { $ans = wa_http_multi(array_values($reqs)); $ks = array_keys($reqs); foreach ($ks as $n => $k) { [$code, $d] = $ans[$n] ?? [0, ['error' => ['message' => 'No answer from Meta.']]]; $j = $batch[$k]; $wamid = (string)(is_array($d) ? ($d['messages'][0]['id'] ?? '') : '');
+                if ($code < 200 || $code >= 300 || $wamid === '') { $out[$k] = [false, wa_err(is_array($d) ? $d : null), (int)(is_array($d) ? ($d['error']['code'] ?? 0) : 0)]; }
+                else { try { wa_log_template_msg($pdo, $wamid, (string)$j['c']['phone'], (int)$j['nid'], wa_tpl_shown($j['t'], $j['vars']), 'recover'); } catch (Throwable $e) { } $out[$k] = [true, $wamid, 0]; } } }
+            foreach ($batch as $k => $j) { [$ok, $rr, $ecs] = $out[$k] ?? [false, 'No answer.', 0];
+                try { $pdo->prepare("INSERT IGNORE INTO wa_ru_log (camp_id, item_id, phone, kind, number_id, tpl_id, wamid, ok, err_code, first_code, err, at, attempt, vars_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)")
+                    ->execute([(int)$j['it']['camp_id'], (int)$j['it']['id'], (string)$j['c']['phone'], $j['kind'], (int)$j['nid'], (int)$j['t']['id'], $ok ? (string)$rr : '', $ok ? 1 : 0, $ok ? 0 : (int)$ecs, (int)$j['ec'], $ok ? '' : mb_substr((string)$rr, 0, 190), $now, json_encode($j['vars'], JSON_UNESCAPED_UNICODE)]); } catch (Throwable $e) { }
+                if ($ok) $res['sent']++; else { $res['failed']++;
+                    if ((int)$ecs === 131048) { setting_set($pdo, 'wa_ru_pause_until', (string)($nowTs + 6 * 3600)); wa_log($pdo, 'campaign', false, 'Utility follow-up paused for 6 hours: Meta flagged messages as spam (131048)'); $stop = true; }
+                    if (in_array((int)$ecs, [130429, 131056], true)) $stop = true; } }
+            $batch = []; return $stop;
+        };
         foreach ($items as $it) {
             if (microtime(true) - $t0 > 38 || $left <= 0) { $broke = true; break; }
             $ph = (string)$it['phone']; $iid = (int)$it['id']; $lastId = $iid; $ec = (int)$it['err_code']; if ((string)$it['status'] === 'skipped' && $ec === 131026) $ec = 131050;   // skipped before sending because Meta had already stopped marketing to them (the skip text says 131026)
@@ -316,14 +338,11 @@ function wa_ru_tick(PDO $pdo): array
             $own = (int)($c['last_number_id'] ?? 0); $cand = ($own > 0 && (isset($hi[$own]) || isset($md[$own]))) ? [$own => ($hi[$own] ?? $md[$own])] : ($hi ?: $md);   // the number this customer already chats with (if it is High / Medium and has room) keeps the conversation in one place; else the best High number, then Medium
             if (!$cand) { $sk('no High / Medium quality number with room'); continue; }
             uasort($cand, fn($x, $y) => ($x['used'] / max(1, $x['cap'])) <=> ($y['used'] / max(1, $y['cap']))); $num = reset($cand); $nid = (int)$num['id']; $tSend = $num['tm'] ?? $tUse;
-            $seen[$ph] = 1; [$ok, $rr, $ecs] = wa_send_tpl_one($pdo, ['phone' => $ph, 'wa_id' => (string)($c['wa_id'] ?? ''), 'camp_optout' => (int)($c['camp_optout'] ?? 0)], $tSend, $num, $pk['vars'], 'recover');
-            try { $pdo->prepare("INSERT IGNORE INTO wa_ru_log (camp_id, item_id, phone, kind, number_id, tpl_id, wamid, ok, err_code, first_code, err, at, attempt, vars_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)")
-                ->execute([(int)$it['camp_id'], $iid, $ph, (string)$pk['kind'], $nid, (int)$tSend['id'], $ok ? (string)$rr : '', $ok ? 1 : 0, $ok ? 0 : (int)$ecs, $ec, $ok ? '' : mb_substr((string)$rr, 0, 190), $now, json_encode($pk['vars'], JSON_UNESCAPED_UNICODE)]); } catch (Throwable $e) { }
-            $ctx['nums'][$nid]['left']--; $ctx['nums'][$nid]['used']++; $ctx['port_left']--; $cache[$tid][1] = $ctx; $left--;
-            if ($ok) $res['sent']++; else { $res['failed']++;
-                if ((int)$ecs === 131048) { setting_set($pdo, 'wa_ru_pause_until', (string)($nowTs + 6 * 3600)); wa_log($pdo, 'campaign', false, 'Utility follow-up paused for 6 hours: Meta flagged messages as spam (131048)'); $broke = true; break; }
-                if (in_array((int)$ecs, [130429, 131056], true)) { $broke = true; break; } }
+            $seen[$ph] = 1; $ctx['nums'][$nid]['left']--; $ctx['nums'][$nid]['used']++; $ctx['port_left']--; $cache[$tid][1] = $ctx; $left--;
+            $batch[] = ['c' => ['phone' => $ph, 'wa_id' => (string)($c['wa_id'] ?? ''), 'camp_optout' => (int)($c['camp_optout'] ?? 0)], 't' => $tSend, 'num' => $num, 'vars' => $pk['vars'], 'kind' => (string)$pk['kind'], 'nid' => $nid, 'it' => $it, 'ec' => $ec];
+            if (count($batch) >= $bsz && $flush()) { $broke = true; break; }   // 40 messages go out at the same time (curl_multi), the answers are processed together
         }
+        if ($batch && $flush()) $broke = true;   // the last, shorter batch
         $rt = wa_ru_retry_tick($pdo, $nowTs, $left, $t0); $res['sent'] += $rt['sent']; $res['failed'] += $rt['failed']; $res['retried'] = $rt['sent'] + $rt['failed'];   // failed ones: one more try from another number
         setting_set($pdo, 'wa_ru_cursor', (string)(count($items) >= $lim || $broke ? $lastId : 0));   // a lap that read the whole list starts again from the first person
         arsort($why); $res['why'] = array_slice($why, 0, 6, true);
