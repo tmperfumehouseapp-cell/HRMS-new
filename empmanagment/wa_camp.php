@@ -1775,7 +1775,7 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
         case 'wa.camp_set_tpl': {   // 🔁 a paused campaign (e.g. Meta paused its message for low quality): pick another approved message and carry on with the people still waiting
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
             $in = json_input(); $c = wa_camp_row($pdo, (int)($in['id'] ?? 0)); if (!$c) json_response(['error' => 'Campaign not found.'], 404);
-            if ($c['status'] !== 'paused') json_response(['error' => 'Only a paused campaign can change its message.'], 422);
+            if (!in_array($c['status'], ['paused', 'running'], true)) json_response(['error' => 'Only a running or paused campaign can change its message.'], 422);
             $nt = (int)($in['tpl_id'] ?? 0); if ($nt <= 0 || $nt === (int)$c['tpl_id']) json_response(['error' => 'Pick a different message.'], 422);
             $t = wa_camp_tpl($pdo, $nt, true, (int)$c['media_lib_id']); if (!$t) json_response(['error' => 'That message is not approved by Meta (or needs a photo / video this campaign does not have). Pick another.'], 422);
             if ((int)($t['nvars'] ?? 0) > 1) json_response(['error' => 'That message has more than one blank — pick one with only a name blank.'], 422);
