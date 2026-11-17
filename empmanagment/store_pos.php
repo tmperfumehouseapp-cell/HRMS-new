@@ -100,8 +100,40 @@ function st_find_bottles(PDO $pdo, array $codes, bool $lock = false): array
 }
 
 /** Price in every chart column for the TOTAL ml + the commission % each column pays (the same chart the online sales use). */
-function st_quote(PDO $pdo, int $totalMl, int $empId): array
+/** Loads the commission engine and makes its tables BEFORE a bill's transaction starts: a CREATE TABLE inside a transaction silently commits it ("There is no active transaction" at commit). */
+function st_engine_warm(PDO $pdo): void
 {
+    try { if (function_exists('budget_engine_ready') && budget_engine_ready()) { cm_offers($pdo); cm_chart($pdo); } } catch (Throwable $e) { error_log('st_engine_warm: ' . $e->getMessage()); }
+}
+/** FIXED-PRICE perfumes (for example the OG perfumes): "title contains <text>, <ml> ml = ₹<price>". Saved in the setting st_fixed_prices as a list of {text, ml, price}. */
+function st_fixed_rules(PDO $pdo): array
+{
+    $j = null; try { $j = json_decode((string)setting_get($pdo, 'st_fixed_prices', ''), true); } catch (Throwable $e) { }
+    $out = []; foreach ((array)$j as $r) { $t = trim((string)($r['text'] ?? '')); $ml = (int)($r['ml'] ?? 0); $pr = (float)($r['price'] ?? 0); if ($t !== '' && $ml > 0 && $pr > 0) $out[] = ['text' => $t, 'ml' => $ml, 'price' => round($pr, 2)]; }
+    return $out;
+}
+/** The fixed price of one bottle (a sale bottle whose title has the rule's text and whose size is the rule's ml), or null. */
+function st_fixed_price_of(array $bottle, array $rules): ?float
+{
+    if (($bottle['kind'] ?? 'sale') !== 'sale') return null;
+    foreach ($rules as $r) if ((int)$bottle['ml'] === $r['ml'] && mb_stripos((string)($bottle['title'] ?? ''), $r['text']) !== false) return (float)$r['price'];
+    return null;
+}
+/** Price options for the bottles scanned so far. Fixed-price bottles add their own price; the rest of the ml is priced from the chart as always. */
+function st_quote(PDO $pdo, int $totalMl, int $empId, array $bottles = []): array
+{
+    $rules = $bottles ? st_fixed_rules($pdo) : [];
+    if ($rules) {
+        $fixSum = 0.0; $fixMl = 0; $names = [];
+        foreach ($bottles as $b) { $fp = st_fixed_price_of($b, $rules); if ($fp !== null) { $fixSum += $fp; $fixMl += (int)$b['ml']; $names[(string)($b['title'] ?? '')] = 1; } }
+        if ($fixMl > 0) {
+            $chart = ml_slab_for(ml_slab_get($pdo), st_day(), $empId); $rest = $totalMl - $fixMl; $cols = [];
+            $pctOf = function (float $price) use ($chart, $totalMl) { $pc = !empty($chart['on']) ? coach_slab_pct($chart, $totalMl, $price, false) : null; return $pc === null ? null : round($pc, 2); };
+            if ($rest <= 0) $cols[] = ['col' => 0, 'price' => round($fixSum, 2), 'pct' => $pctOf($fixSum), 'label' => 'Fixed price', 'fixed' => true];
+            else { $q0 = st_quote($pdo, $rest, $empId); foreach ($q0['columns'] as $i => $c) { if (!empty($c['offer'])) continue; $pr = round($fixSum + (float)$c['price'], 2); $cols[] = ['col' => count($cols), 'price' => $pr, 'pct' => $pctOf($pr), 'label' => (string)($c['label'] ?? '')]; } }
+            if ($cols) return ['total_ml' => $totalMl, 'in_chart' => true, 'columns' => $cols, 'chart_on' => !empty($chart['on']), 'flash' => null, 'fixed_names' => array_keys($names)];
+        }
+    }
     $day = st_day();
     $chart = ml_slab_for(ml_slab_get($pdo), $day, $empId);
     $prices = st_chart_prices($chart, $totalMl);
@@ -786,7 +818,7 @@ try {
             }
             if ($b['status'] !== 'stock') json_response(['error' => ($b['status'] === 'sold' ? 'Already SOLD' : ($b['status'] === 'generated' ? 'Not in stock yet — scan it into inventory first' : 'Not available (' . $b['status'] . ')')) . ': ' . $b['title'] . ' ' . $b['ml'] . ' ml'], 409);
             $t = st_totals($found);
-            json_response(['bottle' => st_bottle_out($b), 'quote' => array_merge($t, st_quote($pdo, $t['total_ml'], (int)($in['emp_id'] ?? 0)))]);
+            json_response(['bottle' => st_bottle_out($b), 'quote' => array_merge($t, st_quote($pdo, $t['total_ml'], (int)($in['emp_id'] ?? 0), array_values($found)))]);
             break;
         }
 
@@ -797,7 +829,7 @@ try {
             $giftWant = array_values(array_unique(array_filter(array_map('st_clean_code', (array)($in['gift_codes'] ?? [])), 'strlen')));
             foreach ($giftWant as $gc) { if (isset($found[$gc])) $found[$gc]['kind'] = 'gift'; }
             $t = st_totals($found);
-            json_response(array_merge($t, st_quote($pdo, $t['total_ml'], (int)($in['emp_id'] ?? 0))));
+            json_response(array_merge($t, st_quote($pdo, $t['total_ml'], (int)($in['emp_id'] ?? 0), array_values($found))));
             break;
         }
 
@@ -835,6 +867,7 @@ try {
 
             $chainCode = st_clean_code($in['chain_code'] ?? '');
             if ($chainCode !== '') { $gate = st_chain_gate($pdo); if ($gate !== '') json_response(['error' => $gate], 409); }      // never sell a chain we cannot give a GST invoice for
+            st_engine_warm($pdo);
             $pdo->beginTransaction();
             $found = st_find_bottles($pdo, (array)($in['codes'] ?? []), true);
             $want = array_values(array_unique(array_filter(array_map('st_clean_code', (array)($in['codes'] ?? [])), 'strlen')));
@@ -870,7 +903,7 @@ try {
             if ($t['sale_bottles'] < 1) { $pdo->rollBack(); json_response(['error' => 'A bill needs at least one bottle for sale (testers alone cannot be billed).'], 400); }
 
             // PRICE: from the chart by TOTAL ml. The cashier picks a chart column; a manager may type a price instead.
-            $q = st_quote($pdo, $t['total_ml'], $empId);
+            $q = st_quote($pdo, $t['total_ml'], $empId, array_values($found));
             $col = isset($in['price_col']) && $in['price_col'] !== '' && $in['price_col'] !== null ? (int)$in['price_col'] : null;
             $list = 0.0;
             if ($col !== null && isset($q['columns'][$col])) $list = (float)$q['columns'][$col]['price'];
@@ -1223,6 +1256,17 @@ try {
             break;
         }
 
+        case 'st_fix.list': {            // fixed-price perfumes (title text + ml = price), Store manager
+            require_auth(); json_response(['rules' => st_fixed_rules($pdo)]); break;
+        }
+        case 'st_fix.save': {            // the whole list at once
+            $auth = require_auth(); $in = json_input(); $rows = [];
+            foreach ((array)($in['rules'] ?? []) as $r) { $t = trim((string)($r['text'] ?? '')); $ml = (int)($r['ml'] ?? 0); $pr = (float)($r['price'] ?? 0);
+                if ($t === '' && !$ml && !$pr) continue; if ($t === '' || $ml < 1 || $ml > 5000 || $pr <= 0) json_response(['error' => 'Each line needs the perfume name (a part of it), the ml and the price.'], 422);
+                $rows[] = ['text' => mb_substr($t, 0, 80), 'ml' => $ml, 'price' => round($pr, 2)]; }
+            if (count($rows) > 60) json_response(['error' => 'At most 60 lines.'], 422);
+            setting_set($pdo, 'st_fixed_prices', json_encode($rows, JSON_UNESCAPED_UNICODE)); json_response(['ok' => true, 'rules' => $rows]); break;
+        }
         case 'st_price.card': {           // the price chart + every offer running now + the commission rules, read-only, for the Store pages (same figures as Learning → Pricing and Commission Rules)
             $auth = require_auth(); $out = ['cols' => [], 'rows' => [], 'offers' => [], 'flash' => [], 'live' => true];
             if (budget_engine_ready()) {
@@ -1231,7 +1275,7 @@ try {
                 try { $out['live'] = cm_is_live($pdo); if (!$out['live']) foreach (flash_offer_running(flash_offer_list_get($pdo)) as $x) $out['flash'][] = ['pct' => (float)$x['pct'], 'ends_at' => (string)$x['ends_at'], 'sizes' => array_values(array_map(fn($i) => (int)($i['ml'] ?? 0), (array)($x['items'] ?? [])))]; } catch (Throwable $e) { }
             }
             try { $ids = st_pool_ids($pdo); if ($ids) { $in = implode(',', array_map('intval', $ids)); $out['team'] = array_map(fn($r) => (string)$r['full_name'], $pdo->query("SELECT full_name FROM employees WHERE employee_id IN ($in) AND status != 'ex' ORDER BY full_name")->fetchAll()); } } catch (Throwable $e) { }
-            $out['can_edit'] = in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true) || user_can($auth, 'commission');
+            $out['can_edit'] = in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true) || user_can($auth, 'commission'); $out['fixed'] = st_fixed_rules($pdo);
             json_response($out);
             break;
         }

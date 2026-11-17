@@ -2809,8 +2809,9 @@ function cm_bonus_pick(PDO $pdo, array $ch, array $boosts, $empId, $day, $sales,
 function cm_code_need($n, $pct) { return ($n <= 0 || $pct <= 0) ? 0 : (int)max(1, round($n * $pct / 100)); }
 
 function cm_offers(PDO $pdo, $all = true) {
-    $pdo->exec("CREATE TABLE IF NOT EXISTS cm_offers (id INT AUTO_INCREMENT PRIMARY KEY, ml INT NOT NULL, price DECIMAL(10,2) NOT NULL, pct DECIMAL(5,2) NOT NULL, from_date DATE NOT NULL, to_date DATE NULL,
-        active TINYINT NOT NULL DEFAULT 1, note VARCHAR(120) NULL, created_by VARCHAR(80) NULL, created_at DATETIME NOT NULL, stopped_at DATETIME NULL, INDEX (ml, active))");
+    static $made = false;   // the CREATE TABLE is DDL: in MySQL it silently COMMITS an open transaction, so it runs once per request (and before a bill's transaction starts, see st_engine_warm)
+    if (!$made) { $made = true; $pdo->exec("CREATE TABLE IF NOT EXISTS cm_offers (id INT AUTO_INCREMENT PRIMARY KEY, ml INT NOT NULL, price DECIMAL(10,2) NOT NULL, pct DECIMAL(5,2) NOT NULL, from_date DATE NOT NULL, to_date DATE NULL,
+        active TINYINT NOT NULL DEFAULT 1, note VARCHAR(120) NULL, created_by VARCHAR(80) NULL, created_at DATETIME NOT NULL, stopped_at DATETIME NULL, INDEX (ml, active))"); }
     $rows = $pdo->query("SELECT * FROM cm_offers ORDER BY id DESC LIMIT 300")->fetchAll();
     return $rows;
 }
