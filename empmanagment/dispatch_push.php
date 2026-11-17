@@ -10,7 +10,7 @@
  *
  * Settings (Admin only, on Dispatch → Manual orders): on / off, the n8n webhook address (https), the name and value of the secret header, the time of day.
  * Actions: dpx.get · dpx.save · dpx.run {mode: test|now} · dpx.log   Called every 5 minutes by dpx_tick() from the orders.cron job.
- * dpx.feed = the same CSV for n8n to PULL (schedule inside n8n), protected by the HRMS API key. PHP 7.4 safe.
+ * dpx.feed = the same CSV for n8n to PULL (schedule inside n8n), protected by a key made on the HRMS screen (dpx.key_new) or the API_KEY of config.php. PHP 7.4 safe.
  */
 if (!function_exists('dpx_cols')) {
 
@@ -160,7 +160,10 @@ function dpx_tick(PDO $pdo): void
 function dpx_feed(PDO $pdo): void
 {
     $key = (string)($_SERVER['HTTP_X_API_KEY'] ?? ''); if ($key === '') $key = (string)($_GET['key'] ?? '');
-    if (!defined('API_KEY') || (string)API_KEY === '' || $key === '' || !hash_equals((string)API_KEY, $key)) json_response(['error' => 'Forbidden.'], 403);
+    $okKey = false;      // the key made on the HRMS screen (only its hash is kept), or the API_KEY of config.php
+    if ($key !== '') { $h = (string)setting_get($pdo, 'dpx_feed_key', ''); if ($h !== '' && hash_equals($h, hash('sha256', $key))) $okKey = true; }
+    if (!$okKey && $key !== '' && defined('API_KEY') && (string)API_KEY !== '' && hash_equals((string)API_KEY, $key)) $okKey = true;
+    if (!$okKey) json_response(['error' => 'Forbidden.'], 403);
     @set_time_limit(120);
     if (!function_exists('wmo_dsp_rows') && is_file(__DIR__ . '/wmo.php')) require_once __DIR__ . '/wmo.php';
     if (!function_exists('wmo_dsp_rows')) json_response(['error' => 'The manual orders module is not available.'], 500);
@@ -180,10 +183,13 @@ function dpx_route(PDO $pdo, string $action): void
     $in = json_input(); $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     $view = function () use ($pdo) {
         $c = dpx_cfg($pdo); $st = json_decode((string)setting_get($pdo, 'dpx_state', ''), true); $log = json_decode((string)setting_get($pdo, 'dpx_log', ''), true);
-        return ['ok' => true, 'cfg' => ['on' => $c['on'], 'url' => $c['url'], 'header' => $c['header'], 'time' => $c['time'], 'has_token' => $c['token'] !== ''], 'state' => is_array($st) ? $st : new stdClass(), 'log' => is_array($log) ? $log : [], 'sent_total' => (function () use ($pdo) { try { dpx_tables($pdo); return (int)$pdo->query("SELECT COUNT(*) FROM dpx_sent")->fetchColumn(); } catch (Throwable $e) { return 0; } })()];
+        return ['ok' => true, 'cfg' => ['on' => $c['on'], 'url' => $c['url'], 'header' => $c['header'], 'time' => $c['time'], 'has_token' => $c['token'] !== '', 'feed_key_set' => (string)setting_get($pdo, 'dpx_feed_key', '') !== ''], 'state' => is_array($st) ? $st : new stdClass(), 'log' => is_array($log) ? $log : [], 'sent_total' => (function () use ($pdo) { try { dpx_tables($pdo); return (int)$pdo->query("SELECT COUNT(*) FROM dpx_sent")->fetchColumn(); } catch (Throwable $e) { return 0; } })()];
     };
     if ($action === 'dpx.get' || $action === 'dpx.log') json_response($view());
     if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
+    if ($action === 'dpx.key_new') {      // a new key for n8n to pull with: shown ONCE (only its hash is kept); an older key stops working
+        $k = bin2hex(random_bytes(20)); setting_set($pdo, 'dpx_feed_key', hash('sha256', $k)); json_response(['ok' => true, 'key' => $k] + $view());
+    }
     if ($action === 'dpx.save') {
         $c = dpx_cfg($pdo); $url = trim((string)($in['url'] ?? $c['url'])); $on = !empty($in['on']);
         if ($url !== '' || $on) { $bad = dpx_url_problem($url); if ($bad !== '') json_response(['error' => $bad], 422); }
