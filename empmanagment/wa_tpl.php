@@ -966,8 +966,12 @@ if (strpos($__wt, 'wa.tpl_') === 0 && !in_array($__wt, ['wa.tpl_diagnose', 'wa.t
             $hvar = trim((string)($in['header_var'] ?? '')); if ($t['header_format'] === 'TEXT' && wa_tpl_vars((string)$t['header_text']) && $hvar === '') json_response(['error' => 'Fill the heading variable first.'], 422);
             if (!wa_tpl_sendable($t, $pdo)) json_response(['error' => wa_tpl_media_kind((string)$t['header_format']) !== '' ? 'This message has a ' . ['IMAGE' => 'photo', 'VIDEO' => 'video', 'DOCUMENT' => 'PDF'][$t['header_format']] . ' on top, but none is chosen yet. An admin must pick it in Pre-made messages.' : 'This kind of message cannot be sent from a chat yet.'], 422);
             // the number: the one the customer last used — if it has no approval for this message, any number that has
-            $nums = $pdo->query("SELECT id, phone_id, waba_id FROM wa_numbers ORDER BY id")->fetchAll(); $ok = []; $q = $pdo->prepare("SELECT status FROM wa_tpl_waba WHERE tpl_id = ? AND waba_id = ?");
-            foreach ($nums as $nn) { $w = wa_waba_of($nn); $q->execute([$t['id'], $w]); if (strtoupper((string)$q->fetchColumn()) === 'APPROVED') $ok[(int)$nn['id']] = $nn; }
+            // ⚡ which numbers have this message approved: the same answer for every customer of a bulk send → looked up once per 20 seconds, not 3-4 queries per message
+            $ok = hrms_memo('tpl_ok:' . (int)$t['id'], 20, function () use ($pdo, $t) {
+                $nums = $pdo->query("SELECT id, phone_id, waba_id FROM wa_numbers ORDER BY id")->fetchAll(); $ok = []; $q = $pdo->prepare("SELECT status FROM wa_tpl_waba WHERE tpl_id = ? AND waba_id = ?");
+                foreach ($nums as $nn) { $w = wa_waba_of($nn); $q->execute([$t['id'], $w]); if (strtoupper((string)$q->fetchColumn()) === 'APPROVED') $ok[(int)$nn['id']] = $nn; }
+                return $ok;
+            });
             if (!$ok) json_response(['error' => 'Meta has not approved this message yet.'], 422);
             $use = $ok[(int)$c['last_number_id']] ?? reset($ok);
             $xin = is_array($in['extra'] ?? null) ? $in['extra'] : []; $extra = [];
