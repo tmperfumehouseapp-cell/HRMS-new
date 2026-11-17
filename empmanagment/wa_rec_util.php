@@ -156,7 +156,7 @@ function wa_ru_make_tick(PDO $pdo): array
     // 2) make the missing utility versions of the marketing messages (newest / today's first)
     if (!function_exists('wa_lock') || !wa_lock($pdo, 'rumake', 55)) { $o['note'] = 'recent'; return $o; }
     try {
-        if (function_exists('wa_util_pool_make') && function_exists('wa_util_pool_defs') && (int)setting_get($pdo, 'wa_ru_pool_at', '0') < $now - 6 * 3600) {
+        if (function_exists('wa_util_pool_make') && function_exists('wa_util_pool_defs') && (int)setting_get($pdo, 'wa_ru_pool_at', '0') < $now - 600) {   // a missing standard follow-up (e.g. the welcome message) is made within 10 minutes, not 6 hours; a complete set costs one count query
             setting_set($pdo, 'wa_ru_pool_at', (string)$now);
             if (count(wa_ru_pool_made($pdo)) < count(wa_util_pool_defs())) { $r = wa_util_pool_make($pdo, 0); $o['made'] += count($r['made'] ?? []); if (!empty($r['made'])) return $o; }
         }

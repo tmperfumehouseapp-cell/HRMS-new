@@ -76,6 +76,9 @@ jobs:
           echo "\n=== utility messages made in the last 24 h: Meta's status and reason ===\n";
           foreach ($all("SELECT w.status, LEFT(w.reason, 110) reason, COUNT(*) n FROM wa_templates t JOIN wa_tpl_waba w ON w.tpl_id = t.id WHERE t.category = 'UTILITY' AND t.created_at >= NOW() - INTERVAL 1 DAY GROUP BY w.status, reason ORDER BY n DESC LIMIT 15") as $r) echo $row($r);
           echo "  utility messages without any Meta row (never sent): "; foreach ($all("SELECT COUNT(*) n FROM wa_templates t WHERE t.category = 'UTILITY' AND t.created_at >= NOW() - INTERVAL 3 DAY AND NOT EXISTS (SELECT 1 FROM wa_tpl_waba w WHERE w.tpl_id = t.id)") as $r) echo $row($r);
+          echo "\n=== welcome message (open_welcome) ===\n";
+          foreach ($all("SELECT t.id, t.name, t.category, t.created_at, t.relabelled_at, (SELECT GROUP_CONCAT(CONCAT(w.status, ':', LEFT(w.reason, 60)) SEPARATOR ' | ') FROM wa_tpl_waba w WHERE w.tpl_id = t.id) st FROM wa_templates t WHERE t.name LIKE 'tmph\\\\_fu\\\\_open%' OR t.extra LIKE '%open_welcome%'") as $r) echo $row($r);
+          foreach ($all("SELECT at, ok, info FROM wa_log WHERE info LIKE '%follow-ups made%' OR info LIKE '%open_welcome%' ORDER BY id DESC LIMIT 6") as $r) echo $row($r);
           echo "\n=== log lines about utility (newest 25) ===\n";
           foreach ($all("SELECT at, kind, ok, info FROM wa_log WHERE info LIKE '%tility%' ORDER BY id DESC LIMIT 25") as $r) echo "  " . $r["at"] . " [" . $r["kind"] . "/" . ($r["ok"] ? "ok" : "FAIL") . "] " . substr($r["info"], 0, 200) . "\n";
           PHP
