@@ -61,7 +61,7 @@ jobs:
             $cnt = []; foreach ($all("SELECT status, COUNT(*) n FROM wa_camp_items WHERE camp_id = ? GROUP BY status", [(int)$c["id"]]) as $ci) $cnt[] = $ci["status"] . " " . $ci["n"]; echo "   people by state: " . implode(", ", $cnt) . "\n";
           }
           echo "\n=== standard follow-up messages: how many per status (not listed one by one) ===\n";
-          foreach ($all("SELECT t.category, w.status, COUNT(*) n FROM wa_templates t JOIN wa_tpl_waba w ON w.tpl_id = t.id WHERE t.name LIKE 'tmph\\_fu\\_%' GROUP BY t.category, w.status") as $r) echo $row($r);
+          foreach ($all("SELECT t.name, t.category, w.status, LEFT(w.reason, 80) reason, COUNT(*) n FROM wa_templates t JOIN wa_tpl_waba w ON w.tpl_id = t.id WHERE t.name LIKE 'tmph\\_fu\\_%' GROUP BY t.name, t.category, w.status, reason ORDER BY t.name") as $r) echo $row($r);
           echo "\n=== people put back by \"Start as utility\" (marked restart-utility) and what happened to them ===\n";
           foreach ($all("SELECT camp_id, status, LEFT(err, 70) e, COUNT(*) n FROM wa_camp_items WHERE variant = 'R' OR err IN ('No chosen utility message fits this person', 'Already delivered a message of ours') GROUP BY camp_id, status, e ORDER BY camp_id DESC, n DESC LIMIT 20") as $r) echo $row($r);
           echo "\n=== why the people of campaigns started again as utility were left out (skipped reasons) ===\n";
@@ -76,6 +76,9 @@ jobs:
           echo "\n=== utility messages made in the last 24 h: Meta's status and reason ===\n";
           foreach ($all("SELECT w.status, LEFT(w.reason, 110) reason, COUNT(*) n FROM wa_templates t JOIN wa_tpl_waba w ON w.tpl_id = t.id WHERE t.category = 'UTILITY' AND t.created_at >= NOW() - INTERVAL 1 DAY GROUP BY w.status, reason ORDER BY n DESC LIMIT 15") as $r) echo $row($r);
           echo "  utility messages without any Meta row (never sent): "; foreach ($all("SELECT COUNT(*) n FROM wa_templates t WHERE t.category = 'UTILITY' AND t.created_at >= NOW() - INTERVAL 3 DAY AND NOT EXISTS (SELECT 1 FROM wa_tpl_waba w WHERE w.tpl_id = t.id)") as $r) echo $row($r);
+          echo "\n=== welcome message (open_welcome) ===\n";
+          foreach ($all("SELECT t.id, t.name, t.category, t.created_at, t.relabelled_at, (SELECT GROUP_CONCAT(CONCAT(w.status, ':', LEFT(w.reason, 60)) SEPARATOR ' | ') FROM wa_tpl_waba w WHERE w.tpl_id = t.id) st FROM wa_templates t WHERE t.name LIKE 'tmph\\\\_fu\\\\_open%' OR t.extra LIKE '%open_welcome%'") as $r) echo $row($r);
+          foreach ($all("SELECT at, ok, info FROM wa_log WHERE info LIKE '%follow-ups made%' OR info LIKE '%open_welcome%' ORDER BY id DESC LIMIT 6") as $r) echo $row($r);
           echo "\n=== log lines about utility (newest 25) ===\n";
           foreach ($all("SELECT at, kind, ok, info FROM wa_log WHERE info LIKE '%tility%' ORDER BY id DESC LIMIT 25") as $r) echo "  " . $r["at"] . " [" . $r["kind"] . "/" . ($r["ok"] ? "ok" : "FAIL") . "] " . substr($r["info"], 0, 200) . "\n";
           PHP
