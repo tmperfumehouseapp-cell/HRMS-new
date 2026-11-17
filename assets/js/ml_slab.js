@@ -235,6 +235,8 @@
    * offers = [{ ml, price, pct, from, to, active, stopped }]. Returns a result shaped like orderCom() ({ v, pct, base, steps, ... , offer: true }) or null.
    */
   function offerCom(offers, win, chart, o) {
+    // free 10 ml pieces (120 ml + 10 ml free = 130): if the whole size has no offer, try the size that was bought (same as the server)
+    if (o && Number(o.extra) > 0 && !o._b) { const r0 = offerCom(offers, win, chart, Object.assign({}, o, { _b: 1 })); if (r0) return r0; return offerCom(offers, win, chart, Object.assign({}, o, { ml: Number(o.ml) - Number(o.extra), _b: 1 })); }
     const ml = Math.round(Number(o.ml)), day = String(o.day || '').slice(0, 10), amt = Number(o.amt) || 0; if (!(ml > 0) || !day || !(amt > 0) || !offers || !offers.length) return null;
     const pre = o.pre && chart && Number(chart.prepaid) > 0 ? Number(chart.prepaid) : 0, gross = pre ? amt / (1 - pre / 100) : amt, W = Number(win) || 60;
     const x = offers.find((f) => Math.round(Number(f.ml)) === ml && (!f.from || day >= f.from) && (!f.to || day <= f.to) && (Number(f.active) || (f.stopped && day <= f.stopped)) && Math.abs(gross - Number(f.price)) <= W + 1e-9);

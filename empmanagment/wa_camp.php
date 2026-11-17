@@ -104,17 +104,21 @@ function wa_camp_ctx(PDO $pdo, array $t, int $switch, array $only = [], int $bur
 {   // $burst > 0 (⚡ Send fast): our own limits (the hourly speed, the 90% margin, the slow start) are skipped for up to that many people — a number that is off / Low quality / not connected still is not used, and Meta's own limit still decides
     if (!function_exists('wa_health_all') && is_file(__DIR__ . '/wa_console.php')) require_once __DIR__ . '/wa_console.php';   // number health lives in wa_console.php (not loaded on every route)
     $health = wa_health_all($pdo, false); $caps = wa_number_caps($pdo, $health); $nums = []; $only = array_map('intval', $only);
-    $st = []; $qm = []; foreach ($health as $h) { $st[(int)$h['id']] = (string)($h['status'] ?? ''); $qm[(int)$h['id']] = (string)($h['quality'] ?? ''); }
+    $skip = []; $st = []; $qm = []; foreach ($health as $h) { $st[(int)$h['id']] = (string)($h['status'] ?? ''); $qm[(int)$h['id']] = (string)($h['quality'] ?? ''); }
     foreach ($pdo->query("SELECT * FROM wa_numbers ORDER BY id")->fetchAll() as $n) {
-        $id = (int)$n['id']; $c = $caps[$id] ?? null; if (!$c || ($burst > 0 ? (int)$c['cap'] <= 0 : $c['left'] <= 0) || !in_array(wa_waba_of($n), $t['ok_wabas'], true)) continue; if ($burst > 0) $c['left'] = max((int)$c['left'], $burst);
-        if ($only && !in_array($id, $only, true)) continue;                     // the campaign chose its numbers ("Send from")
-        if (($st[$id] ?? '') !== '' && $st[$id] !== 'CONNECTED') continue;      // pending / not connected at Meta: never used
+        $id = (int)$n['id']; $c = $caps[$id] ?? null; $lb = trim((string)($n['label'] ?? '')) !== '' ? trim((string)$n['label']) : (trim((string)($n['display'] ?? '')) !== '' ? trim((string)$n['display']) : '#' . $id);
+        if (!$c) { $skip[] = $lb . ': no limit information'; continue; }
+        if ($burst > 0 ? (int)$c['cap'] <= 0 : $c['left'] <= 0) { $skip[] = $lb . ': ' . (trim((string)($c['why'] ?? '')) !== '' ? $c['why'] : 'no room (' . number_format((int)$c['used']) . ' of ' . number_format((int)$c['cap']) . ' used in 24h)'); continue; }
+        if (!in_array(wa_waba_of($n), $t['ok_wabas'], true)) { $skip[] = $lb . ': message not approved on its WhatsApp account (paused by Meta?)'; continue; }
+        if ($burst > 0) $c['left'] = max((int)$c['left'], $burst);
+        if ($only && !in_array($id, $only, true)) { $skip[] = $lb . ': not chosen in this campaign\'s "Send from"'; continue; }                     // the campaign chose its numbers ("Send from")
+        if (($st[$id] ?? '') !== '' && $st[$id] !== 'CONNECTED') { $skip[] = $lb . ': not connected at Meta (' . $st[$id] . ')'; continue; }      // pending / not connected at Meta: never used
         $nums[$id] = ['id' => $id, 'q' => (string)($qm[$id] ?? ''), 'phone_id' => (string)$n['phone_id'], 'cap' => $c['cap'], 'used' => $c['used'], 'left' => $c['left']];
         if (!empty($t['by_waba'][wa_waba_of($n)])) $nums[$id]['tm'] = $t['by_waba'][wa_waba_of($n)];   // the version of the message approved on this number's WhatsApp account (the first one, or an alternative)
     }
     if ($campaign && count($nums) > 1) { foreach (wa_num_fail_flags($pdo) as $fid => $ratio) if (isset($nums[$fid]) && count($nums) > 1) unset($nums[$fid]); }   // a number whose messages mostly FAIL is left out for now (campaigns only) — the others take its people; it comes back by itself when its failures drop
     $p = $caps['_port'] ?? ['left' => 0]; $st = 0.05; try { $sv = setting_get($pdo, 'wa_camp_sticky', ''); if ($sv !== '' && is_numeric($sv)) $st = max(0.0, min(1.0, (float)$sv)); } catch (Throwable $e) { }
-    return ['nums' => $nums, 'port_left' => $burst > 0 ? max((int)$p['left'], $burst) : (int)$p['left'], 'port' => $p, 'switch' => max(1, $switch), 'sticky' => $st];
+    return ['nums' => $nums, 'skip' => $skip, 'port_left' => $burst > 0 ? max((int)$p['left'], $burst) : (int)$p['left'], 'port' => $p, 'switch' => max(1, $switch), 'sticky' => $st];
 }
 /** 📈 Campaigns only: each number's room this hour (its own speed minus the campaign people it messaged in the last 60 minutes). Returns [numberId => left] or null (no hourly speed). */
 function wa_camp_hour_room(array $port): ?array
@@ -139,7 +143,8 @@ function wa_pick_number(PDO $pdo, array $c, array &$ctx): array
     if (!$el) {   // say WHICH limit is used up: this hour's speed per number (the usual case — today's room is much bigger) or today's room
         $hr = array_filter($ctx['nums'], fn($n) => isset($n['hcap']));
         if ($hr) return [0, 'This hour’s speed is used up on all ' . count($hr) . ' numbers (' . number_format(array_sum(array_column($hr, 'hcap'))) . ' an hour in all) — it carries on by itself next hour. Today’s room is not the limit.'];
-        return [0, 'No number has room today' . (!empty($ctx['nums']) ? ' (' . implode(' · ', array_map(fn($n) => 'used ' . number_format($n['used']) . ' of ' . number_format($n['cap']), $ctx['nums'])) . ')' : ' — none of the numbers can send this message (not connected, switched off for campaigns, or the message is not approved on its WhatsApp account)') . '. It carries on by itself as room frees up.'];
+        if (empty($ctx['nums']) && !empty($ctx['skip'])) return [0, 'No number can send: ' . implode(' · ', $ctx['skip']) . '.'];   // the reason of EACH number, first (the card keeps only the first 200 letters)
+        return [0, 'No number has room today' . (!empty($ctx['nums']) ? ' (' . implode(' · ', array_map(fn($n) => 'used ' . number_format($n['used']) . ' of ' . number_format($n['cap']), $ctx['nums'])) . ')' : ' — none of the numbers can send this message: ' . (!empty($ctx['skip']) ? implode(' · ', $ctx['skip']) : '(not connected, switched off for campaigns, or the message is not approved on its WhatsApp account)')) . '. It carries on by itself as room frees up.'];
     }
     $ign = []; $q = $pdo->prepare("SELECT number_id, COUNT(*) AS n FROM wa_messages WHERE phone = ? AND dir = 'out' AND mtype = 'template' AND status <> 'failed' AND ts > ? GROUP BY number_id");   // a message that never arrived cannot have been "ignored"
     $q->execute([$c['phone'], $c['last_in_at'] ?: '1970-01-01 00:00:00']); foreach ($q->fetchAll() as $r) $ign[(int)$r['number_id']] = (int)$r['n'];
@@ -1047,7 +1052,7 @@ function wa_camp_hourly(PDO $pdo, string $day): array
     try {
         $q = $pdo->prepare("SELECT /*+ MAX_EXECUTION_TIME(12000) */ HOUR(ts) h, COUNT(*) n, SUM(status IN ('delivered','read')) dl, SUM(status = 'read') rd, SUM(status IN ('delivered','read') AND bill_cat IN ('utility','authentication')) u, SUM(status IN ('delivered','read') AND bill_cat = 'service') sv
             FROM wa_messages WHERE dir = 'out' AND mtype = 'template' AND who = 'campaign' AND status <> 'failed' AND ts >= ? AND ts < ? GROUP BY h"); $q->execute([$a, $b]);
-        foreach ($q->fetchAll() as $r) { $h = (int)$r['h']; if (!isset($H[$h])) continue; $dl = (int)$r['dl']; $u = (int)$r['u']; $mk = max(0, $dl - $u - (int)$r['sv']); $H[$h]['sent'] = (int)$r['n']; $H[$h]['delivered'] = $dl; $H[$h]['read'] = (int)$r['rd']; $H[$h]['spend'] = round($mk * (float)$R['marketing'] + $u * (float)$R['utility'], 2); }
+        foreach ($q->fetchAll() as $r) { $h = (int)$r['h']; if (!isset($H[$h])) continue; $dl = (int)$r['dl']; $u = (int)$r['u']; $mk = max(0, $dl - $u - (int)$r['sv']); $H[$h]['sent'] = (int)$r['n']; $H[$h]['dl'] = $dl; $H[$h]['delivered'] = $dl; $H[$h]['read'] = (int)$r['rd']; $H[$h]['spend'] = round($mk * (float)$R['marketing'] + $u * (float)$R['utility'], 2); }
     } catch (Throwable $e) { error_log('camp_hourly msgs: ' . $e->getMessage()); }
     $cn = []; try { foreach ($pdo->query("SELECT id, name FROM wa_campaigns ORDER BY id DESC LIMIT 400")->fetchAll() as $r) $cn[(int)$r['id']] = (string)$r['name']; } catch (Throwable $e) { }
     try {
@@ -1148,7 +1153,7 @@ function wa_camp_ideal_cfg(PDO $pdo): array
 /** 🎯 Ideal vs actual for one business day: the cumulative spend / replies (queries typed Campaign) / Campaign orders at each checkpoint, a status, a plain-words analysis and the day-end projection. Remembered 3 minutes. */
 function wa_camp_ideal(PDO $pdo, string $day): array
 {
-    $ck = 'camp_ideal11_' . $day; $hit = wa_cpc_get($pdo, $ck); if ($hit && $hit['age'] < 25) return $hit['v'];
+    $ck = 'camp_ideal13_' . $day; $hit = wa_cpc_get($pdo, $ck); if ($hit && $hit['age'] < 25) return $hit['v'];
     $cfg = wa_camp_ideal_cfg($pdo); $t0 = null; $t1 = null;
     try { if (function_exists('wq_day_start') && function_exists('wq_day_add')) { $t0 = (int)wq_day_start($pdo, $day); $t1 = (int)wq_day_start($pdo, wq_day_add($day, 1)); } } catch (Throwable $e) { }
     // the ideal day runs 12 noon → 12 noon (setting camp_ideal_start, default 12:00) — not the 10 AM business day of the other boxes
@@ -1156,11 +1161,19 @@ function wa_camp_ideal(PDO $pdo, string $day): array
     $st = function_exists('day_start_for') ? (string)day_start_for($pdo, $day) : '10:00'; if (!preg_match('/^\d{2}:\d{2}$/', $st)) $st = '10:00';
     $t0 = strtotime($day . ' ' . $st . ':00'); $t1 = $t0 + 86400; if (time() < $t0 && $day >= date('Y-m-d')) { $t0 -= 86400; $t1 -= 86400; }   // before noon: the day that is still running
     $a = date('Y-m-d H:i:s', $t0); $b = date('Y-m-d H:i:s', $t1); $now = time(); $R = function_exists('wab_rates') ? wab_rates($pdo) : ['marketing' => 1.09, 'utility' => 0.15];
-    $H = []; for ($t = $t0; $t < $t1; $t += 3600) $H[(int)date('G', $t)] = ['t' => $t, 'spend' => 0.0, 'sent' => 0, 'replies' => 0, 'orders' => 0];
+    $H = []; for ($t = $t0; $t < $t1; $t += 3600) $H[(int)date('G', $t)] = ['t' => $t, 'spend' => 0.0, 'sent' => 0, 'dl' => 0, 'replies' => 0, 'orders' => 0];
     try {   // spend (estimate: delivered × rate) and messages, by hour
         $q = $pdo->prepare("SELECT /*+ MAX_EXECUTION_TIME(12000) */ HOUR(ts) h, COUNT(*) n, SUM(status IN ('delivered','read')) dl, SUM(status IN ('delivered','read') AND bill_cat IN ('utility','authentication')) u, SUM(status IN ('delivered','read') AND bill_cat = 'service') sv FROM wa_messages WHERE dir = 'out' AND mtype = 'template' AND who = 'campaign' AND status <> 'failed' AND ts >= ? AND ts < ? GROUP BY h"); $q->execute([$a, $b]);
-        foreach ($q->fetchAll() as $r) { $h = (int)$r['h']; if (!isset($H[$h])) continue; $dl = (int)$r['dl']; $u = (int)$r['u']; $H[$h]['spend'] = max(0, $dl - $u - (int)$r['sv']) * (float)$R['marketing'] + $u * (float)$R['utility']; $H[$h]['sent'] = (int)$r['n']; }
+        foreach ($q->fetchAll() as $r) { $h = (int)$r['h']; if (!isset($H[$h])) continue; $dl = (int)$r['dl']; $u = (int)$r['u']; $H[$h]['spend'] = max(0, $dl - $u - (int)$r['sv']) * (float)$R['marketing'] + $u * (float)$R['utility']; $H[$h]['dl'] = $dl; $H[$h]['sent'] = (int)$r['n']; }
     } catch (Throwable $e) { error_log('camp_ideal spend: ' . $e->getMessage()); }
+    $dripDl = 0;
+    try {   // 🔁 the 7-Day Drip messages delivered in the same hour (they are sent as follow-ups, not as a campaign): added to Delivered and Spend so it is the exact total of campaigns + drip
+        $q = $pdo->prepare("SELECT wamid FROM wa_drip_ev WHERE status = 'sent' AND wamid <> '' AND at >= ? AND at < ?"); $q->execute([date('Y-m-d H:i:s', $t0 - 7200), date('Y-m-d H:i:s', $t1 + 7200)]); $ids = $q->fetchAll(PDO::FETCH_COLUMN);
+        foreach (array_chunk($ids, 800) as $ch) {
+            $q = $pdo->prepare("SELECT HOUR(ts) h, COUNT(*) dl, SUM(bill_cat IN ('utility','authentication')) u, SUM(bill_cat = 'service') sv FROM wa_messages WHERE wamid IN (" . implode(',', array_fill(0, count($ch), '?')) . ") AND status IN ('delivered', 'read') AND ts >= ? AND ts < ? GROUP BY h"); $q->execute(array_merge($ch, [$a, $b]));
+            foreach ($q->fetchAll() as $r) { $h = (int)$r['h']; if (!isset($H[$h])) continue; $H[$h]['dl'] += (int)$r['dl']; $dripDl += (int)$r['dl']; $u = (int)$r['u']; $H[$h]['spend'] += max(0, (int)$r['dl'] - $u - (int)$r['sv']) * (float)$R['marketing'] + $u * (float)$R['utility']; }
+        }
+    } catch (Throwable $e) { error_log('camp_ideal drip: ' . $e->getMessage()); }
     try {   // replies = queries typed Campaign on the live board, by the hour they opened
         $q = $pdo->prepare("SELECT /*+ MAX_EXECUTION_TIME(12000) */ HOUR(q.opened_at) h, COUNT(*) n FROM wa_queries q JOIN wq_qtype t ON t.query_id = q.id AND t.type = 'campaign' WHERE q.opened_at >= ? AND q.opened_at < ? GROUP BY h"); $q->execute([$a, $b]);
         foreach ($q->fetchAll() as $r) { $h = (int)$r['h']; if (isset($H[$h])) $H[$h]['replies'] = (int)$r['n']; }
@@ -1170,30 +1183,30 @@ function wa_camp_ideal(PDO $pdo, string $day): array
         foreach ($q->fetchAll() as $r) { $h = (int)$r['h']; if (isset($H[$h])) $H[$h]['orders'] += (int)$r['n']; }
     } catch (Throwable $e) { error_log('camp_ideal orders: ' . $e->getMessage()); }
     try { $q = $pdo->prepare("SELECT HOUR(order_date) h, COUNT(*) n FROM manual_orders WHERE order_date >= ? AND order_date < ? AND order_type = 'campaign' GROUP BY h"); $q->execute([$a, $b]); foreach ($q->fetchAll() as $r) { $h = (int)$r['h']; if (isset($H[$h])) $H[$h]['orders'] += (int)$r['n']; } } catch (Throwable $e) { }
-    $cum = function (int $T) use ($H): array { $s = 0.0; $rp = 0; $od = 0; foreach ($H as $x) { if ($x['t'] + 3600 <= $T) { $s += $x['spend']; $rp += $x['replies']; $od += $x['orders']; } elseif ($x['t'] < $T) { $f = ($T >= $now - 120) ? 1.0 : ($T - $x['t']) / 3600; $s += $x['spend'] * $f; $rp += $x['replies'] * $f; $od += $x['orders'] * $f; } } return ['spend' => round($s), 'replies' => (int)round($rp), 'orders' => (int)round($od)]; };
+    $cum = function (int $T) use ($H): array { $s = 0.0; $rp = 0; $od = 0; $dv = 0.0; foreach ($H as $x) { if ($x['t'] + 3600 <= $T) { $dv += $x['dl']; $s += $x['spend']; $rp += $x['replies']; $od += $x['orders']; } elseif ($x['t'] < $T) { $f = ($T >= $now - 120) ? 1.0 : ($T - $x['t']) / 3600; $dv += $x['dl'] * $f; $s += $x['spend'] * $f; $rp += $x['replies'] * $f; $od += $x['orders'] * $f; } } return ['spend' => round($s), 'delivered' => (int)round($dv), 'replies' => (int)round($rp), 'orders' => (int)round($od)]; };
     // checkpoints (absolute times) with the ideal and the actual
-    $pts = []; foreach ($cfg['rows'] as $r) { [$hh, $mm] = array_map('intval', explode(':', $r['t'])); $T = strtotime(date('Y-m-d', $t0) . sprintf(' %02d:%02d:00', $hh, $mm)); while ($T <= $t0) $T += 86400; if ($T >= $t1) continue; $pts[] = ['T' => $T, 't' => $r['t'], 'ideal' => ['spend' => $r['spend'], 'replies' => $r['replies'], 'orders' => $r['orders']]]; }
-    usort($pts, fn($x, $y) => $x['T'] <=> $y['T']); $pts[] = ['T' => $t1, 't' => date('H:i', $t1), 'ideal' => ['spend' => $cfg['spend'], 'replies' => $cfg['replies'], 'orders' => $cfg['orders']], 'end' => true];
+    $pts = []; foreach ($cfg['rows'] as $r) { [$hh, $mm] = array_map('intval', explode(':', $r['t'])); $T = strtotime(date('Y-m-d', $t0) . sprintf(' %02d:%02d:00', $hh, $mm)); while ($T <= $t0) $T += 86400; if ($T >= $t1) continue; $pts[] = ['T' => $T, 't' => $r['t'], 'ideal' => ['spend' => $r['spend'], 'delivered' => (int)round($r['spend'] / max(0.01, (float)$R['marketing'])), 'replies' => $r['replies'], 'orders' => $r['orders']]]; }
+    usort($pts, fn($x, $y) => $x['T'] <=> $y['T']); $pts[] = ['T' => $t1, 't' => date('H:i', $t1), 'ideal' => ['spend' => $cfg['spend'], 'delivered' => (int)round($cfg['spend'] / max(0.01, (float)$R['marketing'])), 'replies' => $cfg['replies'], 'orders' => $cfg['orders']], 'end' => true];
     $pct = fn($act, $ide) => $ide > 0 ? round(100 * ($act - $ide) / $ide) : null; $stat = function ($p) { return $p === null ? '' : ($p >= 5 ? 'ahead' : ($p >= -5 ? 'on' : ($p >= -20 ? 'slight' : 'behind'))); };
     foreach ($pts as &$p) { $p['past'] = $p['T'] <= $now; $p['actual'] = ($p['past'] || $p['T'] <= $now + 60) ? $cum(min($p['T'], $now)) : null;
         if ($p['actual']) { $p['actual']['ratio'] = $p['actual']['replies'] > 0 ? round(100 * $p['actual']['orders'] / $p['actual']['replies'], 1) : null; $p['pct'] = ['spend' => $pct($p['actual']['spend'], $p['ideal']['spend']), 'replies' => $pct($p['actual']['replies'], $p['ideal']['replies']), 'orders' => $pct($p['actual']['orders'], $p['ideal']['orders'])]; $p['status'] = $stat($p['pct']['orders'] ?? null) ?: $stat($p['pct']['replies'] ?? null); }
         $p['ideal']['ratio'] = $p['ideal']['replies'] > 0 ? round(100 * $p['ideal']['orders'] / $p['ideal']['replies'], 1) : null; } unset($p);
     // ⏱ hour by hour: the ideal of that hour (straight line between the checkpoints) against what really happened in it
-    $idAt = function (int $T) use ($pts, $t0): array { $pt = $t0; $pv = ['spend' => 0, 'replies' => 0, 'orders' => 0]; foreach ($pts as $q) { if ($T <= $q['T']) { $f = ($q['T'] - $pt) > 0 ? ($T - $pt) / ($q['T'] - $pt) : 1; $r = []; foreach (['spend', 'replies', 'orders'] as $k) $r[$k] = $pv[$k] + ($q['ideal'][$k] - $pv[$k]) * $f; return $r; } $pt = $q['T']; $pv = $q['ideal']; } return $pv; };
+    $idAt = function (int $T) use ($pts, $t0): array { $pt = $t0; $pv = ['spend' => 0, 'delivered' => 0, 'replies' => 0, 'orders' => 0]; foreach ($pts as $q) { if ($T <= $q['T']) { $f = ($q['T'] - $pt) > 0 ? ($T - $pt) / ($q['T'] - $pt) : 1; $r = []; foreach (['spend', 'delivered', 'replies', 'orders'] as $k) $r[$k] = $pv[$k] + ($q['ideal'][$k] - $pv[$k]) * $f; return $r; } $pt = $q['T']; $pv = $q['ideal']; } return $pv; };
     $hourly = [];
-    for ($t = $t0; $t < $t1; $t += 3600) { $x = $H[(int)date('G', $t)] ?? ['spend' => 0, 'replies' => 0, 'orders' => 0]; $i0 = $idAt($t); $i1 = $idAt($t + 3600); $started = $t <= $now; $cur = $started && $now < $t + 3600; $fr = $cur ? max(0.05, ($now - $t) / 3600) : 1;
-        $ide = ['spend' => (int)round($i1['spend'] - $i0['spend']), 'replies' => (int)round($i1['replies'] - $i0['replies']), 'orders' => (int)round($i1['orders'] - $i0['orders'])];
-        $ac = $started ? ['spend' => (int)round($x['spend']), 'replies' => (int)$x['replies'], 'orders' => (int)$x['orders']] : null;
-        $hp = null; if ($ac) { $hp = []; foreach (['spend', 'replies', 'orders'] as $k) $hp[$k] = $pct($ac[$k], $ide[$k] * $fr); }
-        $ci = $idAt($t + 3600); $cc = $started ? $cum(min($t + 3600, $now)) : null; $cu = ['ideal' => ['orders' => (int)round($ci['orders']), 'replies' => (int)round($ci['replies']), 'spend' => (int)round($ci['spend'])], 'actual' => $cc, 'pct' => null]; if ($cc) { $cmp = $cur ? $idAt($now) : $ci; $cu['pct'] = ['spend' => $pct($cc['spend'], $cmp['spend']), 'replies' => $pct($cc['replies'], $cmp['replies']), 'orders' => $pct($cc['orders'], $cmp['orders'])]; if ($cur) $cu['ideal_now'] = ['spend' => (int)round($cmp['spend']), 'replies' => (int)round($cmp['replies']), 'orders' => (int)round($cmp['orders'])]; }
+    for ($t = $t0; $t < $t1; $t += 3600) { $x = $H[(int)date('G', $t)] ?? ['spend' => 0, 'dl' => 0, 'replies' => 0, 'orders' => 0]; $i0 = $idAt($t); $i1 = $idAt($t + 3600); $started = $t <= $now; $cur = $started && $now < $t + 3600; $fr = $cur ? max(0.05, ($now - $t) / 3600) : 1;
+        $ide = ['spend' => (int)round($i1['spend'] - $i0['spend']), 'delivered' => (int)round($i1['delivered'] - $i0['delivered']), 'replies' => (int)round($i1['replies'] - $i0['replies']), 'orders' => (int)round($i1['orders'] - $i0['orders'])];
+        $ac = $started ? ['spend' => (int)round($x['spend']), 'delivered' => (int)$x['dl'], 'replies' => (int)$x['replies'], 'orders' => (int)$x['orders']] : null;
+        $hp = null; if ($ac) { $hp = []; foreach (['spend', 'delivered', 'replies', 'orders'] as $k) $hp[$k] = $pct($ac[$k], $ide[$k] * $fr); }
+        $ci = $idAt($t + 3600); $cc = $started ? $cum(min($t + 3600, $now)) : null; $cu = ['ideal' => ['delivered' => (int)round($ci['delivered']), 'orders' => (int)round($ci['orders']), 'replies' => (int)round($ci['replies']), 'spend' => (int)round($ci['spend'])], 'actual' => $cc, 'pct' => null]; if ($cc) { $cmp = $cur ? $idAt($now) : $ci; $cu['pct'] = ['spend' => $pct($cc['spend'], $cmp['spend']), 'delivered' => $pct($cc['delivered'], $cmp['delivered']), 'replies' => $pct($cc['replies'], $cmp['replies']), 'orders' => $pct($cc['orders'], $cmp['orders'])]; if ($cur) $cu['ideal_now'] = ['spend' => (int)round($cmp['spend']), 'delivered' => (int)round($cmp['delivered']), 'replies' => (int)round($cmp['replies']), 'orders' => (int)round($cmp['orders'])]; }
         $hourly[] = ['t' => date('H:i', $t), 'end' => date('Y-m-d H:i:s', $t + 3600), 'upto' => date('Y-m-d H:i:s', min($t + 3600, $now)), 'cur' => $cur, 'past' => $started, 'ideal' => $ide, 'actual' => $ac, 'pct' => $hp, 'cum' => $cu]; }
     // "so far": the actual now against the ideal at this minute (straight line between the checkpoints)
-    $nowT = min($now, $t1); $prevT = $t0; $prev = ['spend' => 0, 'replies' => 0, 'orders' => 0]; $so = null;
-    foreach ($pts as $p) { if ($nowT <= $p['T']) { $f = ($p['T'] - $prevT) > 0 ? ($nowT - $prevT) / ($p['T'] - $prevT) : 1; $so = []; foreach (['spend', 'replies', 'orders'] as $k) $so[$k] = (int)round($prev[$k] + ($p['ideal'][$k] - $prev[$k]) * $f); break; } $prevT = $p['T']; $prev = $p['ideal']; }
+    $nowT = min($now, $t1); $prevT = $t0; $prev = ['spend' => 0, 'delivered' => 0, 'replies' => 0, 'orders' => 0]; $so = null;
+    foreach ($pts as $p) { if ($nowT <= $p['T']) { $f = ($p['T'] - $prevT) > 0 ? ($nowT - $prevT) / ($p['T'] - $prevT) : 1; $so = []; foreach (['spend', 'delivered', 'replies', 'orders'] as $k) $so[$k] = (int)round($prev[$k] + ($p['ideal'][$k] - $prev[$k]) * $f); break; } $prevT = $p['T']; $prev = $p['ideal']; }
     if ($so === null) $so = $prev; $act = $cum($nowT); $act['ratio'] = $act['replies'] > 0 ? round(100 * $act['orders'] / $act['replies'], 1) : null; $so['ratio'] = $so['replies'] > 0 ? round(100 * $so['orders'] / $so['replies'], 1) : null;
-    $dev = ['spend' => $pct($act['spend'], $so['spend']), 'replies' => $pct($act['replies'], $so['replies']), 'orders' => $pct($act['orders'], $so['orders'])];
+    $dev = ['spend' => $pct($act['spend'], $so['spend']), 'delivered' => $pct($act['delivered'], $so['delivered']), 'replies' => $pct($act['replies'], $so['replies']), 'orders' => $pct($act['orders'], $so['orders'])];
     // 🔮 the day end at the current pace: what is done + what is still to come at the ideal pace × (done / ideal so far)
-    $proj = []; foreach (['spend', 'replies', 'orders'] as $k) { $f = $so[$k] > 0 ? $act[$k] / $so[$k] : 1; $left = max(0, $cfg[$k] - $so[$k]); $proj[$k] = (int)round($act[$k] + $left * $f); }
+    $proj = []; foreach (['spend', 'delivered', 'replies', 'orders'] as $k) { $f = $so[$k] > 0 ? $act[$k] / $so[$k] : 1; $left = max(0, $cfg[$k] - $so[$k]); $proj[$k] = (int)round($act[$k] + $left * $f); }
     $hrsLeft = max(0.1, ($t1 - $nowT) / 3600); $need = ['replies' => (int)ceil(max(0, $cfg['replies'] - $act['replies']) / $hrsLeft), 'orders' => (int)ceil(max(0, $cfg['orders'] - $act['orders']) / $hrsLeft)];
     // 🔎 plain words
     $hb = null; $hw = null; foreach ($H as $h => $x) { if ($x['spend'] >= 1000 && $x['replies'] >= 3) { $c = $x['spend'] / $x['replies']; if ($hb === null || $c < $hb['c']) $hb = ['h' => $h, 'c' => round($c, 1), 'spend' => round($x['spend']), 'replies' => $x['replies']]; if ($hw === null || $c > $hw['c']) $hw = ['h' => $h, 'c' => round($c, 1), 'spend' => round($x['spend']), 'replies' => $x['replies']]; } }
@@ -1210,7 +1223,7 @@ function wa_camp_ideal(PDO $pdo, string $day): array
         if ($hw && $hb && $hw['h'] !== $hb['h']) $an[] = ['k' => 'warn', 'text' => 'Most expensive hour: ' . $hl($hw['h']) . ' — ₹' . $hw['c'] . ' per reply (₹' . number_format($hw['spend']) . ' for ' . $hw['replies'] . ' replies). Cut or change the message in that slot.'];
         try { $wc = (int)$pdo->query("SELECT COUNT(*) FROM wa_contacts WHERE status = 'open' AND optout = 0 AND assigned_emp > 0 AND last_in_at >= '" . date('Y-m-d H:i:s', $now - 6 * 3600) . "' AND last_in_at <= '" . date('Y-m-d H:i:s', $now - 600) . "' AND (last_out_at IS NULL OR last_out_at < last_in_at)")->fetchColumn(); if ($wc > 0) $an[] = ['k' => 'warn', 'text' => $wc . ' chat' . ($wc === 1 ? ' is' : 's are') . ' waiting for a reply for more than 10 minutes — each one is a possible order lost.']; } catch (Throwable $e) { }
     }
-    $o = ['day' => $day, 'cfg' => $cfg, 'points' => $pts, 'hourly' => $hourly, 'so_far' => ['ideal' => $so, 'actual' => $act, 'dev' => $dev], 'projection' => $proj, 'need_per_hour' => $need, 'analysis' => $an, 'hours' => array_map(fn($h, $x) => ['h' => $h, 'spend' => round($x['spend']), 'sent' => $x['sent'], 'replies' => $x['replies'], 'orders' => $x['orders']], array_keys($H), array_values($H)), 'from' => $a, 'to' => $b, 'now' => date('Y-m-d H:i:s', $now), 'at' => date('Y-m-d H:i:s')];
+    $o = ['day' => $day, 'cfg' => $cfg, 'points' => $pts, 'hourly' => $hourly, 'so_far' => ['ideal' => $so, 'actual' => $act, 'dev' => $dev], 'drip_delivered' => $dripDl, 'projection' => $proj, 'need_per_hour' => $need, 'analysis' => $an, 'hours' => array_map(fn($h, $x) => ['h' => $h, 'spend' => round($x['spend']), 'sent' => $x['sent'], 'replies' => $x['replies'], 'orders' => $x['orders']], array_keys($H), array_values($H)), 'from' => $a, 'to' => $b, 'now' => date('Y-m-d H:i:s', $now), 'at' => date('Y-m-d H:i:s')];
     wa_cpc_put($pdo, $ck, $o); return $o;
 }
 /** 👥 The customer numbers in one small card: how many we have, how many got our campaign messages, how many failed, how many ordered, how many are new, how many replied.
@@ -1460,7 +1473,7 @@ if (isset($pdo) && $pdo instanceof PDO && ($__wk === 'wa.camp_ideal' || $__wk ==
         }
     }
 }
-if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_suggest', 'wa.camp_start_now', 'wa.camp_send_skipped', 'wa.camp_snap', 'wa.camp_days', 'wa.camp_hourly', 'wa.cust_summary', 'wa.cust_card', 'wa.camp_hours', 'wa.dq_worker', 'wa.rec_run', 'wa.dq_set', 'wa.rec_report', 'wa.rec_set', 'wa.camp_fast', 'wa.camp_fast_tick', 'wa.fu_list', 'wa.fu_save', 'wa.fu_del', 'wa.fu_preset', 'wa.camp_list', 'wa.camp_templates', 'wa.camp_get', 'wa.camp_preview', 'wa.camp_freq', 'wa.camp_typed_phones', 'wa.camp_save', 'wa.camp_start', 'wa.camp_send_now', 'wa.camp_resume_all', 'wa.camp_stop_all', 'wa.camp_pause', 'wa.camp_resume', 'wa.camp_cancel', 'wa.camp_del', 'wa.camp_tick', 'wa.camp_suggest', 'wa.camp_best_time', 'wa.camp_people', 'wa.camp_people_csv', 'wa.camp_people_phones', 'wa.camp_text_batch', 'wa.camp_thread', 'wa.reports', 'wa.mix_state', 'wa.camp_mix_set'], true) && !($__wk === 'wa.camp_suggest' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST')) {
+if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_suggest', 'wa.camp_start_now', 'wa.camp_send_skipped', 'wa.camp_snap', 'wa.camp_days', 'wa.camp_hourly', 'wa.cust_summary', 'wa.cust_card', 'wa.camp_hours', 'wa.dq_worker', 'wa.rec_run', 'wa.dq_set', 'wa.rec_report', 'wa.rec_set', 'wa.camp_fast', 'wa.camp_fast_tick', 'wa.fu_list', 'wa.fu_save', 'wa.fu_del', 'wa.fu_preset', 'wa.camp_list', 'wa.camp_templates', 'wa.camp_get', 'wa.camp_preview', 'wa.camp_freq', 'wa.camp_typed_phones', 'wa.camp_save', 'wa.camp_start', 'wa.camp_send_now', 'wa.camp_resume_all', 'wa.camp_stop_all', 'wa.camp_pause', 'wa.camp_resume', 'wa.camp_set_tpl', 'wa.camp_cancel', 'wa.camp_del', 'wa.camp_tick', 'wa.camp_suggest', 'wa.camp_best_time', 'wa.camp_people', 'wa.camp_people_csv', 'wa.camp_people_phones', 'wa.camp_text_batch', 'wa.camp_thread', 'wa.reports', 'wa.mix_state', 'wa.camp_mix_set'], true) && !($__wk === 'wa.camp_suggest' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST')) {
     $isPost = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
     $auth = require_auth(); wa_guard_admin($pdo, $auth);
     if (!wa_tables($pdo) || !wa_more_tables($pdo) || !function_exists('wa_tpl_tables') || !wa_tpl_tables($pdo)) json_response(['error' => 'WhatsApp storage is not available — check database permissions.'], 500);
@@ -1732,6 +1745,16 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
             elseif ($__wk === 'wa.camp_resume') { if ($c['status'] !== 'paused') json_response(['error' => 'It is not paused.'], 422); $pdo->prepare("UPDATE wa_campaigns SET status = 'running', note = '' WHERE id = ?")->execute([$c['id']]); }
             else { if (!in_array($c['status'], ['running', 'scheduled', 'paused'], true)) json_response(['error' => 'It cannot be stopped now.'], 422); $pdo->prepare("UPDATE wa_campaigns SET status = 'cancelled', finished_at = ?, note = 'Stopped by you' WHERE id = ?")->execute([date('Y-m-d H:i:s'), $c['id']]); $pdo->prepare("UPDATE wa_camp_items SET status = 'skipped', err = 'Campaign stopped' WHERE camp_id = ? AND status IN ('queued', 'retry')")->execute([$c['id']]); }
             json_response(['ok' => true]);
+        }
+        case 'wa.camp_set_tpl': {   // 🔁 a paused campaign (e.g. Meta paused its message for low quality): pick another approved message and carry on with the people still waiting
+            if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);
+            $in = json_input(); $c = wa_camp_row($pdo, (int)($in['id'] ?? 0)); if (!$c) json_response(['error' => 'Campaign not found.'], 404);
+            if ($c['status'] !== 'paused') json_response(['error' => 'Only a paused campaign can change its message.'], 422);
+            $nt = (int)($in['tpl_id'] ?? 0); if ($nt <= 0 || $nt === (int)$c['tpl_id']) json_response(['error' => 'Pick a different message.'], 422);
+            $t = wa_camp_tpl($pdo, $nt, true, (int)$c['media_lib_id']); if (!$t) json_response(['error' => 'That message is not approved by Meta (or needs a photo / video this campaign does not have). Pick another.'], 422);
+            if ((int)($t['nvars'] ?? 0) > 1) json_response(['error' => 'That message has more than one blank — pick one with only a name blank.'], 422);
+            $pdo->prepare("UPDATE wa_campaigns SET tpl_id = ?, status = 'running', note = '' WHERE id = ?")->execute([$nt, $c['id']]);
+            json_response(['ok' => true, 'tpl_name' => (string)($t['name'] ?? '')]);
         }
         case 'wa.camp_del': {
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405);

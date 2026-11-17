@@ -18797,7 +18797,8 @@ if ($action !== 'login' && $action !== '' && strpos((string)$action, 'wa.cron') 
 // Daily copy of everything the bot has learned (Learn & Setup → Backups): when the last copy is older than 24 hours it is made right after the response is sent.
 if ($action !== 'login' && $action !== '') { try { $__lbl = __DIR__ . '/learn_backups/.last'; if (!is_file($__lbl) || filemtime($__lbl) < time() - 86400) { require_once __DIR__ . '/learn_backup.php'; lb_schedule($pdo); } } catch (Throwable $e) {} }
 
-if (strpos((string)$action, 'sku.') === 0) { require_once __DIR__ . '/sku_sheet.php'; sku_route($pdo, (string)$action); }          // SKU sheet: the day's orders counted per SKU and size, with an Excel download
+if (strpos((string)$action, 'sku.') === 0) { require_once __DIR__ . '/sku_sheet.php'; sku_route($pdo, (string)$action); }
+if (strpos((string)$action, 'dpx.') === 0) { require_once __DIR__ . '/dispatch_push.php'; if ($action === 'dpx.feed') dpx_feed($pdo); dpx_route($pdo, (string)$action); }          // automatic send of the HRMS (manual) orders to the dispatch panel through n8n, at a set time (Admin / HR)          // SKU sheet: the day's orders counted per SKU and size, with an Excel download
 if (strpos((string)$action, 'sysload.') === 0 && function_exists('sysload_route')) { sysload_route($pdo, (string)$action); }          // Admin → Server load: what the server is busy with
 if (strpos((string)$action, 'll.') === 0) { require_once __DIR__ . '/learn_loop.php'; }          // the nightly review loop: log, export, suggestions
 if (strpos((string)$action, 'chg.') === 0) { require_once __DIR__ . '/changes.php'; }          // Request a change: GitHub issue -> Claude Code builds -> Admin approves -> deploy
@@ -23845,6 +23846,7 @@ switch ($action) {
         $errs = []; $bizToday = biz_today($pdo); $n = 0;
         try { $n = orders_sync_range($pdo, date('Y-m-d', strtotime($bizToday . ' -1 day')), $bizToday, 12, $errs); @file_put_contents(sys_get_temp_dir() . '/hrms_orders_last_sync.txt', (string)time()); }
         catch (Throwable $e) { $errs[] = $e->getMessage(); }
+        try { require_once __DIR__ . '/dispatch_push.php'; dpx_tick($pdo); } catch (Throwable $e) { }      // the set time of day: send the new HRMS orders to the dispatch panel (does nothing unless an admin switched it on)
         flock($lk, LOCK_UN); fclose($lk);
         json_response(['ok' => !$errs, 'synced' => $n, 'day' => $bizToday, 'errors' => array_slice(array_map(fn($x) => mb_substr((string)$x, 0, 160), $errs), 0, 3)]);
         break;
@@ -24605,7 +24607,7 @@ switch ($action) {
     case 'ml_slab.get': {
         // The ML price slab chart (Commission Rules page editor, Commission page, My Sales). Every logged-in user may read it.
         require_auth();
-        $__co = []; try { if (function_exists('cm_offers')) foreach (cm_offers($pdo) as $__o) $__co[] = ['ml' => (int)$__o['ml'], 'price' => (float)$__o['price'], 'pct' => (float)$__o['pct'], 'from' => (string)$__o['from_date'], 'to' => (string)($__o['to_date'] ?? ''), 'active' => !empty($__o['active']) ? 1 : 0, 'stopped' => substr((string)($__o['stopped_at'] ?? ''), 0, 10)]; } catch (Throwable $__e) { }
+        $__co = []; try { if (!function_exists('cm_offers') && function_exists('cm_engine_load')) cm_engine_load($pdo); if (function_exists('cm_offers')) foreach (cm_offers($pdo) as $__o) $__co[] = ['ml' => (int)$__o['ml'], 'price' => (float)$__o['price'], 'pct' => (float)$__o['pct'], 'from' => (string)$__o['from_date'], 'to' => (string)($__o['to_date'] ?? ''), 'active' => !empty($__o['active']) ? 1 : 0, 'stopped' => substr((string)($__o['stopped_at'] ?? ''), 0, 10)]; } catch (Throwable $__e) { }
         json_response(['chart' => ml_slab_get($pdo), 'offers' => $__co, 'offer_window' => 60]);   // offers = the Commission page's Offers (ML + price +- window), so the order card shows the same % as the Commission page
         break;
     }

@@ -1,0 +1,52 @@
+# READ-ONLY: why do orders in an offer's price window not get the offer commission? Lists the offers set, then every order of the last 3 business days whose
+# amount is near an offer price, with its ML and what the commission engine paid it (from cm_paid_cache). Changes nothing.
+name: Diagnose offers not applied (read-only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/staging_key && chmod 600 ~/.ssh/staging_key
+          ssh-keyscan -T 15 -H "$STAGING_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host *\n  IdentityFile ~/.ssh/staging_key\n  IdentitiesOnly yes\n  BatchMode yes\n  ConnectTimeout 20\n' > ~/.ssh/config
+      - name: Offers and nearby orders (read-only)
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_USER: ${{ secrets.STAGING_USER }}
+          STAGING_PATH: ${{ secrets.STAGING_PATH }}
+        run: |
+          ssh "$STAGING_USER@$STAGING_HOST" 'bash -s' "$STAGING_PATH" <<'REMOTE' || true
+          P="$1"
+          php -r '
+            require $argv[1] . "empmanagment/config.php";
+            $d = new PDO("mysql:host=" . (defined("DB_HOST") ? DB_HOST : "127.0.0.1") . ";dbname=" . DB_NAME . ";charset=utf8mb4", DB_USER, DB_PASS, [PDO::ATTR_TIMEOUT => 8]);
+            echo "--- offers (cm_offers) ---\n";
+            $of = $d->query("SELECT id, ml, price, pct, from_date, to_date, active, stopped_at FROM cm_offers ORDER BY id DESC LIMIT 30")->fetchAll(PDO::FETCH_ASSOC);
+            foreach ($of as $r) echo "  #" . $r["id"] . " ml=" . $r["ml"] . " price=" . $r["price"] . " pct=" . $r["pct"] . " from=" . $r["from_date"] . " to=" . $r["to_date"] . " active=" . $r["active"] . " stopped=" . $r["stopped_at"] . "\n";
+            $days = []; for ($i = 0; $i < 3; $i++) $days[] = date("Y-m-d", strtotime("-$i day"));
+            echo "--- orders within 130 of an offer price, last 3 days (price = total, and total/0.98 for prepaid) ---\n";
+            $q = $d->prepare("SELECT store_key, shopify_id, order_name, created_at, total, ml_total, ml10, financial_status FROM shop_orders WHERE created_at >= ? ORDER BY created_at DESC");
+            $q->execute([date("Y-m-d 00:00:00", strtotime("-3 day"))]); $cache = [];
+            $n = 0;
+            foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $x) {
+              $near = []; foreach ($of as $o) { foreach ([(float)$x["total"], (float)$x["total"] / 0.98] as $g) if (abs($g - (float)$o["price"]) <= 130) $near[$o["id"]] = $o; }
+              if (!$near) continue;
+              $day = substr($x["created_at"], 11, 2) < 10 ? date("Y-m-d", strtotime(substr($x["created_at"], 0, 10) . " -1 day")) : substr($x["created_at"], 0, 10);
+              if (!isset($cache[$day])) { try { $c = $d->prepare("SELECT data FROM cm_paid_cache WHERE day = ?"); $c->execute([$day]); $cache[$day] = json_decode((string)$c->fetchColumn(), true) ?: []; } catch (Throwable $e) { $cache[$day] = []; } }
+              $k = $x["store_key"] . ":" . $x["shopify_id"]; $paid = $cache[$day]["ord"][$k] ?? null;
+              $o0 = reset($near);
+              echo "  " . $x["order_name"] . " " . $x["created_at"] . " total=" . $x["total"] . " ml_total=" . $x["ml_total"] . " ml10=" . $x["ml10"] . " " . $x["financial_status"] . " | near offer ml=" . $o0["ml"] . " price=" . $o0["price"] . " | engine: " . ($paid ? json_encode($paid) : "not in cache") . "\n";
+              if (++$n >= 80) break;
+            }
+            echo "  ($n orders listed)\n";
+          ' "$P"
+          REMOTE

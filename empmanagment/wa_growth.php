@@ -554,7 +554,9 @@ function wag_after_in(PDO $pdo, string $key, array $m, bool $isNew, array $ref):
         if ($ref) { $ad = mb_substr((string)($ref['source_id'] ?? $ref['ctwa_clid'] ?? ''), 0, 40); $head = mb_substr(trim((string)($ref['headline'] ?? $ref['body'] ?? $ref['source_url'] ?? '')), 0, 200);
             $pdo->prepare("UPDATE wa_contacts SET ad_id = IF(ad_id = '', ?, ad_id), ad_head = IF(ad_head = '', ?, ad_head) WHERE phone = ?")->execute([$ad, $head, $key]); }
         if (!$ref && wag_biz_autoreply($pdo, $key, $m)) return;   // another business's WhatsApp auto-reply to our campaign: not a customer query
+        if (function_exists('cfun_dirty')) cfun_dirty($pdo, $key);   // ⚡ a customer wrote: recount them within a minute (Replied)
         wag_q_touch($pdo, $key, !empty($ref));
+        if (function_exists('waa_give_now')) waa_give_now($pdo, $key);   // 🏪 Auto assign: the new query is given to a person right now (within seconds), not at the next engine pass
         if (function_exists('wkf_on_in') && wkf_on_in($pdo, $key, $m, $isNew, $ref)) return;   // 🔑 a key flow answered (button tap or start text): the old flows stay quiet
         if (function_exists('wag_flow_on_in')) wag_flow_on_in($pdo, $key, $m, $isNew, $ref);
     } catch (Throwable $e) { wag_log($pdo, 'engine', false, 'after-in: ' . $e->getMessage()); }

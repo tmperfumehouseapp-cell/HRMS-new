@@ -86,4 +86,26 @@ function cfun_imp_bucket(?array $f, bool $known, int $now): string
     return in_array($g, ['deliv', 'sent'], true) ? $g : 'never';
 }
 
+
+/**
+ * Movement between funnel statuses for ONE customer, from the saved row ($o) to the new count ($n): bucket (untried · pending · delivered · failed · replied), out_n, orders_n.
+ *   f>d Failed → Delivered · f>s Failed → sent, waiting (a retry went out) · d>f Delivered → Failed · s>d waiting → Delivered · s>f waiting → Failed · u>m first message sent
+ *   x>r moved into Replied · retry = a failed customer was messaged again · ord = became a buyer · ord2 = became a 2+ buyer.  No saved row yet = no movement.
+ */
+function cfun_moves(?array $o, array $n): array
+{
+    if (!$o) return [];
+    $m = []; $ob = (string)$o['bucket']; $nb = (string)$n['bucket'];
+    if ($ob !== $nb) {
+        $map = ['failed>delivered' => 'f>d', 'failed>pending' => 'f>s', 'delivered>failed' => 'd>f', 'pending>delivered' => 's>d', 'pending>failed' => 's>f'];
+        if (isset($map[$ob . '>' . $nb])) $m[] = $map[$ob . '>' . $nb];
+        elseif ($ob === 'untried' && $nb !== 'untried' && $nb !== 'replied') $m[] = 'u>m';
+        if ($nb === 'replied') $m[] = 'x>r';
+    }
+    if ($ob === 'failed' && (int)$n['out_n'] > (int)$o['out_n']) $m[] = 'retry';
+    if ((int)$o['orders_n'] <= 0 && (int)$n['orders_n'] > 0) $m[] = 'ord';
+    if ((int)$o['orders_n'] < 2 && (int)$n['orders_n'] >= 2) $m[] = 'ord2';
+    return $m;
+}
+
 }
