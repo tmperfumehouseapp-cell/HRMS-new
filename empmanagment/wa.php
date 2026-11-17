@@ -759,7 +759,8 @@ function wa_assign_to(PDO $pdo, string $key, int $emp, int $by, string $how): vo
     if (function_exists('wq_after_assign')) wq_after_assign($pdo, $key, (int)$c['assigned_emp'], $emp, $by, $how);   // WhatsApp Sales: clears Attention needed
     if (function_exists('wa_callnow_open')) wa_callnow_open($pdo, $key, $emp, $by);   // the "call this customer now" alert
     // 🔔 someone took this chat from its holder (take over / grab): the holder sees a small notice at the top of THEIR WhatsApp (only theirs)
-    if ($emp > 0 && (int)$c['assigned_emp'] > 0 && (int)$c['assigned_emp'] !== $emp && $by === $emp && in_array($how, ['takeover', 'grab'], true)) wa_notice_add($pdo, (int)$c['assigned_emp'], $emp, $key, (string)($c['name'] ?? ''), $how);
+    if ($emp > 0 && (int)$c['assigned_emp'] > 0 && (int)$c['assigned_emp'] !== $emp && $by === $emp && in_array($how, ['takeover', 'grab'], true)) { wa_notice_add($pdo, (int)$c['assigned_emp'], $emp, $key, (string)($c['name'] ?? ''), $how);
+        if (function_exists('ct_push')) { try { ct_push($pdo, [(int)$c['assigned_emp']], 'Chat taken over', ($nm[$emp] ?? 'A colleague') . ' took over ' . (trim((string)($c['name'] ?? '')) !== '' ? $c['name'] : '+91 ' . $key) . '\'s chat. You can no longer reply to it.', '/my_chats.html', 'wa-lost-' . $key); } catch (Throwable $e) { } } }   // 📲 and a phone notification to the person who lost it (works even when the app is closed)
     wa_event($pdo, $key, $emp <= 0 ? 'Taken off ' . ($from ?: 'the team') . ' by ' . $who : ($how === 'transfer' ? $from . ' transferred this chat to ' . $to : ($from !== '' ? 'Moved from ' . $from . ' to ' . $to . ' by ' . $who : 'Given to ' . $to . ' by ' . $who)));
     if ($emp > 0 && $emp !== $by && function_exists('ct_push')) { try { ct_push($pdo, [$emp], 'New WhatsApp chat', trim(($c['name'] !== '' ? $c['name'] : '+91 ' . $key) . ' was given to you.'), '/my_chats.html?phone=' . $key, 'wa-' . $key); } catch (Throwable $e) { } }
 }
