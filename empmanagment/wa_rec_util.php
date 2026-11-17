@@ -304,14 +304,13 @@ function wa_ru_counts(PDO $pdo, array $ids): array
 /** Where the utility messages are at Meta (made in the last 3 days): approved / waiting / rejected / not sent yet, with the newest ones listed. */
 function wa_ru_approval(PDO $pdo): array
 {
-    $o = ['total' => 0, 'approved' => 0, 'waiting' => 0, 'rejected' => 0, 'draft' => 0, 'list' => [], 'last_make' => (int)setting_get($pdo, 'wa_ru_draft_at', '0'), 'backfill' => wa_ru_backfill_counts($pdo), 'make_last' => json_decode((string)setting_get($pdo, 'wa_ru_make_last', ''), true)];
+    $o = ['total' => 0, 'approved' => 0, 'waiting' => 0, 'error' => 0, 'rejected' => 0, 'draft' => 0, 'list' => [], 'last_make' => (int)setting_get($pdo, 'wa_ru_draft_at', '0'), 'backfill' => wa_ru_backfill_counts($pdo), 'make_last' => json_decode((string)setting_get($pdo, 'wa_ru_make_last', ''), true)];
     try {
         $q = $pdo->prepare("SELECT t.id, t.name, t.created_at, t.relabelled_at, GROUP_CONCAT(w.status) AS st FROM wa_templates t LEFT JOIN wa_tpl_waba w ON w.tpl_id = t.id WHERE t.category = 'UTILITY' AND t.created_at >= ? GROUP BY t.id ORDER BY t.id DESC LIMIT 60");
         $q->execute([date('Y-m-d H:i:s', time() - 3 * 86400)]);
         foreach ($q->fetchAll() as $r) {
             $st = array_filter(explode(',', strtoupper((string)$r['st']))); $o['total']++;
-            if (!$st) { $k = 'draft'; } elseif (in_array('APPROVED', $st, true)) { $k = 'approved'; } elseif (in_array('PENDING', $st, true) || in_array('IN_APPEAL', $st, true)) { $k = 'waiting'; } else { $k = 'rejected'; }
-            if (!empty($r['relabelled_at'])) $k = 'rejected';
+            if (!empty($r['relabelled_at'])) $k = 'rejected'; elseif (!$st) $k = 'draft'; elseif (in_array('APPROVED', $st, true)) $k = 'approved'; elseif (array_intersect(['PENDING', 'IN_APPEAL'], $st)) $k = 'waiting'; elseif (in_array('ERROR', $st, true)) $k = 'error'; else $k = 'rejected';
             $o[$k]++; if (count($o['list']) < 10) $o['list'][] = ['name' => (string)$r['name'], 'state' => $k, 'at' => (string)$r['created_at']];
         }
     } catch (Throwable $e) { }
@@ -322,41 +321,22 @@ function wa_ru_fam_states(PDO $pdo, array $tplIds): array
 {
     wa_ru_load_util($pdo);
     $ids = array_values(array_unique(array_filter(array_map('intval', $tplIds)))); if (!$ids) return [];
-    $o = []; foreach ($ids as $i) $o[$i] = ['approved' => 0, 'waiting' => 0, 'rejected' => 0, 'draft' => 0, 'items' => []];
+    $o = []; foreach ($ids as $i) $o[$i] = ['approved' => 0, 'waiting' => 0, 'error' => 0, 'rejected' => 0, 'moved' => 0, 'paused' => 0, 'draft' => 0, 'items' => []];
     try {
-        $q = $pdo->query("SELECT m.id AS tid, t.id AS uid, t.name AS nm, t.created_at AS ca, t.relabelled_at AS rl, GROUP_CONCAT(w.status) AS st FROM wa_templates m JOIN wa_templates t ON t.category = 'UTILITY' AND t.family_id = COALESCE(NULLIF(m.family_id, 0), m.id)
+        $q = $pdo->query("SELECT m.id AS tid, t.id AS uid, t.name AS nm, t.created_at AS ca, t.relabelled_at AS rl, GROUP_CONCAT(CONCAT(w.status, ':', LEFT(w.reason, 140)) SEPARATOR '|') AS st FROM wa_templates m JOIN wa_templates t ON t.category = 'UTILITY' AND t.family_id = COALESCE(NULLIF(m.family_id, 0), m.id)
             LEFT JOIN wa_tpl_waba w ON w.tpl_id = t.id WHERE m.id IN (" . implode(',', $ids) . ") GROUP BY m.id, t.id, t.name, t.created_at, t.relabelled_at ORDER BY t.id DESC");
         foreach ($q->fetchAll() as $r) {
-            $st = array_filter(explode(',', strtoupper((string)$r['st'])));
-            if (!$st) $k = 'draft'; elseif (in_array('APPROVED', $st, true)) $k = 'approved'; elseif (in_array('PENDING', $st, true) || in_array('IN_APPEAL', $st, true)) $k = 'waiting'; else $k = 'rejected';
-            if (!empty($r['rl'])) $k = 'rejected';
-            $o[(int)$r['tid']][$k]++; if (count($o[(int)$r['tid']]['items']) < 8) $o[(int)$r['tid']]['items'][] = ['name' => (string)$r['nm'], 'state' => $k, 'at' => (string)$r['ca']];
-        }
-    } catch (Throwable $e) { }
-    return $o;
-}
-/** How many of the people a utility message could really be sent to (its variables must be true for them): an order message needs an order, a perfume message an enquiry, a name-only message fits everybody.
- *  $sp = wa_util_split() of the people: ask / order / none. $mine = a version of the campaign's own message (it may use an enquiry OR an order). */
-function wa_ru_fit(array $labels, int $nvars, array $sp, int $tot, bool $mine): int
-{
-    $labels = array_map('strtolower', array_map('strval', $labels)); $ask = (int)($sp['ask'] ?? 0); $ord = (int)($sp['order'] ?? 0);
-    if ($nvars <= 0 || ($nvars === 1 && (!$labels || $labels === ['name']))) return $tot;   // only the name (or nothing): everybody
-    if (in_array('order', $labels, true)) return $ord;
-    if (in_array('perfume', $labels, true)) return $mine ? $ask + $ord : $ask;
-    if (in_array('date', $labels, true)) return $ask;
-    return $mine ? $ask + $ord : $ask;
-}
-/** Campaigns started again "as utility": what happened since — waiting, utility sent / delivered, left out because no chosen message fits. [camp_id => [...]] */
-function wa_ru_restart_stats(PDO $pdo, array $ids): array
-{
-    $ids = array_values(array_filter(array_map('intval', $ids))); if (!$ids) return []; $o = [];
-    try {
-        foreach ($pdo->query("SELECT id, extra FROM wa_campaigns WHERE id IN (" . implode(',', $ids) . ") AND extra LIKE '%u_restart%'")->fetchAll() as $r) {
-            $x = json_decode((string)$r['extra'], true); $rs = is_array($x) ? ($x['u_restart'] ?? null) : null; if (!is_array($rs) || empty($rs['at'])) continue; $cid = (int)$r['id']; $at = (string)$rs['at'];
-            $q = $pdo->prepare("SELECT SUM(status IN ('queued', 'sending')) AS w, SUM(variant = 'U' AND status = 'sent' AND sent_at >= ?) AS us, SUM(COALESCE(variant, 'M') <> 'U' AND status = 'sent' AND sent_at >= ? AND tries <= 1 AND 0) AS ms, SUM(status = 'skipped' AND err IN ('No chosen utility message fits this person', 'Already delivered a message of ours')) AS k, SUM(status = 'failed' AND variant = 'U' AND sent_at >= ?) AS uf FROM wa_camp_items WHERE camp_id = ?");
-            $q->execute([$at, $at, $at, $cid]); $a = $q->fetch();
-            $d = $pdo->prepare("SELECT COUNT(*) FROM wa_camp_items i JOIN wa_messages m ON m.wamid = i.wamid AND i.wamid <> '' WHERE i.camp_id = ? AND i.variant = 'U' AND i.sent_at >= ? AND m.status IN ('delivered', 'read')"); $d->execute([$cid, $at]);
-            $o[$cid] = ['at' => $at, 'n' => (int)($rs['n'] ?? 0), 'waiting' => (int)$a['w'], 'u_sent' => (int)$a['us'], 'u_del' => (int)$d->fetchColumn(), 'left_out' => (int)$a['k']];
+            $rows = array_filter(explode('|', (string)$r['st'])); $stt = []; $why = '';
+            foreach ($rows as $x) { $p2 = explode(':', $x, 2); $stt[] = strtoupper($p2[0]); }
+            $reasonOf = function (array $want) use ($rows) { foreach ($rows as $x) { $p2 = explode(':', $x, 2); if (in_array(strtoupper($p2[0]), $want, true) && trim((string)($p2[1] ?? '')) !== '') return trim((string)$p2[1]); } return ''; };
+            if (!empty($r['rl'])) { $k = 'moved'; }
+            elseif (!$stt) { $k = 'draft'; }
+            elseif (in_array('APPROVED', $stt, true)) { $k = 'approved'; }
+            elseif (array_intersect(['PENDING', 'IN_APPEAL'], $stt)) { $k = 'waiting'; }
+            elseif (in_array('ERROR', $stt, true)) { $k = 'error'; $why = $reasonOf(['ERROR']); }
+            elseif (in_array('REJECTED', $stt, true)) { $k = 'rejected'; $why = $reasonOf(['REJECTED']); }
+            else { $k = 'paused'; $why = $reasonOf(['PAUSED', 'DISABLED', 'FLAGGED']); }
+            $o[(int)$r['tid']][$k]++; if (count($o[(int)$r['tid']]['items']) < 8) $o[(int)$r['tid']]['items'][] = ['name' => (string)$r['nm'], 'state' => $k, 'at' => (string)$r['ca'], 'why' => mb_substr($why, 0, 140)];
         }
     } catch (Throwable $e) { }
     return $o;
