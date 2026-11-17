@@ -1097,7 +1097,9 @@
         autoMedia(fresh);
       } catch (e) {
         if (/assigned to someone else|not found/i.test(e.message || '') && S.cur && S.cur.phone === phone && !S.cur.lost) {   // a colleague took this chat (late-reply pick-up / transfer): say so, stop typing into it
-          S.cur.lost = true; const f = $('#wxFoot'); if (f) f.innerHTML = '<div class="wx-banner y" style="margin:8px">🔒 This chat was given to a colleague. You can no longer reply here. <button class="wx-btn gh" id="wxLostBk" style="margin-left:6px">Back to chats</button></div>';
+          S.cur.lost = true; const f = $('#wxFoot'); if (f) f.innerHTML = '<div class="wx-banner y" style="margin:8px">🔒 <span id="wxLostWho">This chat was given to a colleague.</span> You can no longer reply here. <button class="wx-btn gh" id="wxLostBk" style="margin-left:6px">Back to chats</button></div>';
+          { const ms = $('#wxMs'); if (ms && !$('#wxLostTop')) { const tp = document.createElement('div'); tp.id = 'wxLostTop'; tp.className = 'wx-banner y'; tp.style.cssText = 'margin:6px 8px;font-weight:700;position:sticky;top:0;z-index:5'; tp.textContent = '🔔 This chat was taken over by a colleague.'; ms.parentNode.insertBefore(tp, ms); }   // 🔔 a popup at the top of THIS chat: who took it
+            api.get('wa.notices').then((d) => { const n = ((d && d.notices) || []).find((x) => x.phone === phone); if (n) { const w = $('#wxLostWho'), tp = $('#wxLostTop'); if (w) w.textContent = n.by + ' took over this chat.'; if (tp) tp.textContent = '🔔 ' + n.by + ' took over this chat.'; } }).catch(() => { }); }
           const bk = $('#wxLostBk'); if (bk) bk.onclick = () => { if (history.state && history.state.wxChat) history.back(); else closeChat(); }; toast('This chat was given to a colleague.', true); loadList(true);
         }
       }
