@@ -9,7 +9,8 @@
  *   An order is remembered as sent (table dpx_sent) when the webhook answers 2xx, so it is never sent twice.
  *
  * Settings (Admin only, on Dispatch → Manual orders): on / off, the n8n webhook address (https), the name and value of the secret header, the time of day.
- * Actions: dpx.get · dpx.save · dpx.run {mode: test|now} · dpx.log   Called every 5 minutes by dpx_tick() from the orders.cron job. PHP 7.4 safe.
+ * Actions: dpx.get · dpx.save · dpx.run {mode: test|now} · dpx.log   Called every 5 minutes by dpx_tick() from the orders.cron job.
+ * dpx.feed = the same CSV for n8n to PULL (schedule inside n8n), protected by the HRMS API key. PHP 7.4 safe.
  */
 if (!function_exists('dpx_cols')) {
 
@@ -152,6 +153,25 @@ function dpx_tick(PDO $pdo): void
         $r = dpx_run($pdo, 'auto'); dpx_log_add($pdo, $r);
         if (!empty($r['ok'])) { $st['done'] = $day; setting_set($pdo, 'dpx_state', json_encode($st)); }
     } catch (Throwable $e) { }
+}
+
+/** For n8n to PULL (no login; the API key of the HRMS, in the header X-API-Key or ?key=): the confirmed manual orders as the n8n CSV. Default = yesterday and today (business days), so an order made after the last run is
+ *  taken by the next one. Nothing is marked as sent here: the n8n insert skips an order that is already in the dispatch table (its unique key), so asking twice is harmless. */
+function dpx_feed(PDO $pdo): void
+{
+    $key = (string)($_SERVER['HTTP_X_API_KEY'] ?? ''); if ($key === '') $key = (string)($_GET['key'] ?? '');
+    if (!defined('API_KEY') || (string)API_KEY === '' || $key === '' || !hash_equals((string)API_KEY, $key)) json_response(['error' => 'Forbidden.'], 403);
+    @set_time_limit(120);
+    if (!function_exists('wmo_dsp_rows') && is_file(__DIR__ . '/wmo.php')) require_once __DIR__ . '/wmo.php';
+    if (!function_exists('wmo_dsp_rows')) json_response(['error' => 'The manual orders module is not available.'], 500);
+    $d = fn($v) => preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$v) ? (string)$v : '';
+    $to = $d($_GET['to'] ?? '') ?: biz_today($pdo); $from = $d($_GET['from'] ?? '') ?: date('Y-m-d', strtotime($to . ' -1 day')); if ($from > $to) $from = $to;
+    if ((strtotime($to) - strtotime($from)) > 31 * 86400) json_response(['error' => 'Ask for at most 31 days.'], 422);
+    $tot = 0; $sum = []; $orders = wmo_dsp_rows($pdo, $from, $to, 'confirmed', '', '', 5000, 0, $tot, $sum);
+    $orders = array_values(array_filter($orders, fn($o) => !empty($o['lines'])));
+    $csv = dpx_csv(dpx_sheet_rows($orders, true), true);
+    header('Content-Type: text/csv; charset=utf-8'); header('Content-Disposition: attachment; filename="hrms_orders_' . $to . '.csv"'); header('Cache-Control: no-store');
+    echo $csv; exit;
 }
 
 function dpx_route(PDO $pdo, string $action): void
