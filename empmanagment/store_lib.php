@@ -1563,7 +1563,12 @@ if (!function_exists('budget_store_calc')) {
     /** the online commission engine (boss.php → boss2.php cm_*) is loaded and ready */
     function budget_engine_ready(): bool
     {
-        try { if (!function_exists('cm_chart') && is_file(__DIR__ . '/boss.php')) require_once __DIR__ . '/boss.php'; } catch (Throwable $e) { error_log('commission engine: ' . $e->getMessage()); }
+        // boss.php only loads when $pdo and $action are in scope (it returns at once otherwise - and a plain require from inside a function left the engine missing for the whole request,
+        // so the Store commission card showed no offers / no price chart / 0%). Put both in scope here, like cm_engine_load() in api.php does.
+        if (!function_exists('cm_chart')) {
+            $pdo = $GLOBALS['pdo'] ?? null; $action = (string)($GLOBALS['action'] ?? '');
+            try { if ($pdo && is_file(__DIR__ . '/boss.php')) require_once __DIR__ . '/boss.php'; if (!function_exists('cm_chart') && is_file(__DIR__ . '/boss2.php')) require_once __DIR__ . '/boss2.php'; } catch (Throwable $e) { error_log('commission engine: ' . $e->getMessage()); }
+        }
         return function_exists('cm_chart') && function_exists('cm_pct') && function_exists('cm_offers') && function_exists('cm_offer_match') && function_exists('cm_code_need');
     }
     /** The people whose store bills count as ONE team for the order-code rule (default: Neil, Krish and Anil). Saved by Total Budgeting → Store; anybody else who bills is counted alone. */
