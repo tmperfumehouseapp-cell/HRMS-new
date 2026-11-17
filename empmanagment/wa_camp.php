@@ -1936,11 +1936,11 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
             try { $q = $pdo->prepare("SELECT t.id, t.relabelled_at, GROUP_CONCAT(w.status) AS st FROM wa_templates t LEFT JOIN wa_tpl_waba w ON w.tpl_id = t.id WHERE t.category = 'UTILITY' AND t.created_at >= ? GROUP BY t.id, t.relabelled_at"); $q->execute([$from]);
                 foreach ($q->fetchAll() as $r) { $st = array_filter(explode(',', strtoupper((string)$r['st']))); $t['made']++;
                     if (!empty($r['relabelled_at'])) $k = 'rejected'; elseif (!$st) $k = 'queued'; elseif (in_array('APPROVED', $st, true)) $k = 'approved'; elseif (array_intersect(['PENDING', 'IN_APPEAL'], $st)) $k = 'waiting'; elseif (in_array('ERROR', $st, true)) $k = 'error'; else $k = 'rejected'; $t[$k]++; } } catch (Throwable $e) { }
-            json_response(['ok' => true, 'learn' => $L, 'today' => $t, 'backfill' => function_exists('wa_ru_backfill_counts') ? wa_ru_backfill_counts($pdo) : null, 'make_n' => max(2, min(12, (int)setting_get($pdo, 'wa_ru_make_n', '10')))]);
+            json_response(['ok' => true, 'eta' => wa_ru_eta($pdo), 'learn' => $L, 'today' => $t, 'backfill' => function_exists('wa_ru_backfill_counts') ? wa_ru_backfill_counts($pdo) : null, 'make_n' => max(2, min(12, (int)setting_get($pdo, 'wa_ru_make_n', '10')))]);
         }
         case 'wa.ru_msg': {   // 💸 how many utility versions one marketing message has, and where each is at Meta (shown when a message is opened)
             wa_ru_load_util($pdo); $tid = (int)($_GET['tpl_id'] ?? 0); $f = $tid ? (wa_ru_fam_states($pdo, [$tid])[$tid] ?? null) : null;
-            json_response(['ok' => true, 'fam' => $f, 'want' => max(2, min(12, (int)setting_get($pdo, 'wa_ru_make_n', '10')))]);
+            json_response(['ok' => true, 'eta' => wa_ru_eta($pdo), 'fam' => $f, 'want' => max(2, min(12, (int)setting_get($pdo, 'wa_ru_make_n', '10')))]);
         }
         case 'wa.ru_make': {   // ✨ no utility message for this campaign yet: make it now (2 versions of its own message) and send it to Meta for approval
             if (!$isPost) json_response(['error' => 'Method not allowed.'], 405); $in = json_input(); $c = wa_camp_row($pdo, (int)($in['id'] ?? 0)); if (!$c) json_response(['error' => 'Campaign not found.'], 404);
@@ -1975,7 +1975,7 @@ if (in_array($__wk, ['wa.msg_rank', 'wa.aud_types', 'wa.aud_check', 'wa.aud_sugg
                     $covers = isset($bestBy['open']) ? $tot : min($tot, (int)($sp['ask'] ?? 0) + (int)($sp['order'] ?? 0)); $suggest = count($sugIds) >= 2 ? ['ids' => $sugIds, 'covers' => $tot ? (int)round($covers * 100 / $tot) : 0] : null;
                     foreach ($items as $k => $x) $items[$k]['best'] = $best > 0 && (int)$items[$k]['fit'] === $best && in_array((string)$x['status'], ['approved', 'partial'], true) && empty($x['relabelled']);
                 } catch (Throwable $e) { }
-                json_response(['ok' => true, 'n' => $n, 'approved' => $okU, 'items' => $items, 'suggest' => $suggest ?? null]);
+                json_response(['ok' => true, 'n' => $n, 'approved' => $okU, 'items' => $items, 'suggest' => $suggest ?? null, 'eta' => wa_ru_eta($pdo)]);
             }
             if ($okU === 0) json_response(['error' => 'No utility message is approved by Meta yet — make one first (✨ Make utility now) and wait for approval.'], 422);
             $picks = array_values(array_unique(array_filter(array_map('intval', array_merge((array)($in['tpls'] ?? []), [(int)($in['tpl'] ?? 0)]))))); $pick = $picks ? $picks[0] : 0;

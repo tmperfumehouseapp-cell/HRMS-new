@@ -327,7 +327,7 @@ function wa_ru_counts(PDO $pdo, array $ids): array
 /** Where the utility messages are at Meta (made in the last 3 days): approved / waiting / rejected / not sent yet, with the newest ones listed. */
 function wa_ru_approval(PDO $pdo): array
 {
-    $o = ['total' => 0, 'approved' => 0, 'waiting' => 0, 'error' => 0, 'rejected' => 0, 'draft' => 0, 'list' => [], 'last_make' => (int)setting_get($pdo, 'wa_ru_draft_at', '0'), 'backfill' => wa_ru_backfill_counts($pdo), 'learn' => (function () use ($pdo) { wa_ru_load_util($pdo); if (!function_exists('wa_util_learn')) return null; $l = wa_util_learn($pdo); return ['appr' => $l['appr'], 'rej' => $l['rej'], 'rate' => $l['rate'], 'strict' => $l['strict'], 'bad' => $l['bad']]; })(), 'make_last' => json_decode((string)setting_get($pdo, 'wa_ru_make_last', ''), true)];
+    $o = ['total' => 0, 'approved' => 0, 'waiting' => 0, 'error' => 0, 'rejected' => 0, 'draft' => 0, 'list' => [], 'last_make' => (int)setting_get($pdo, 'wa_ru_draft_at', '0'), 'backfill' => wa_ru_backfill_counts($pdo), 'eta' => wa_ru_eta($pdo), 'learn' => (function () use ($pdo) { wa_ru_load_util($pdo); if (!function_exists('wa_util_learn')) return null; $l = wa_util_learn($pdo); return ['appr' => $l['appr'], 'rej' => $l['rej'], 'rate' => $l['rate'], 'strict' => $l['strict'], 'bad' => $l['bad']]; })(), 'make_last' => json_decode((string)setting_get($pdo, 'wa_ru_make_last', ''), true)];
     try {
         $q = $pdo->prepare("SELECT t.id, t.name, t.created_at, t.relabelled_at, GROUP_CONCAT(w.status) AS st FROM wa_templates t LEFT JOIN wa_tpl_waba w ON w.tpl_id = t.id WHERE t.category = 'UTILITY' AND t.created_at >= ? GROUP BY t.id ORDER BY t.id DESC LIMIT 60");
         $q->execute([date('Y-m-d H:i:s', time() - 3 * 86400)]);
@@ -388,6 +388,20 @@ function wa_ru_restart_stats(PDO $pdo, array $ids): array
             $o[$cid] = ['at' => $at, 'n' => (int)($rs['n'] ?? 0), 'waiting' => (int)$a['w'], 'u_sent' => (int)$a['us'], 'u_del' => (int)$d->fetchColumn(), 'left_out' => (int)$a['k']];
         }
     } catch (Throwable $e) { }
+    return $o;
+}
+/** ⏱ How long Meta really takes to approve a utility message in THIS account: made → approved, over the utility messages of the last 14 days that were approved (minutes). Remembered for 5 minutes.
+ *  Returns ['n' => how many measured, 'median' => minutes, 'p90' => minutes, 'fast' => % approved within 10 minutes]; n < 5 means "not enough data yet". */
+function wa_ru_eta(PDO $pdo): array
+{
+    $c = json_decode((string)setting_get($pdo, 'wa_ru_eta', ''), true); if (is_array($c) && (int)($c['at'] ?? 0) > time() - 300) return $c;
+    $o = ['n' => 0, 'median' => null, 'p90' => null, 'fast' => null, 'at' => time()]; $m = [];
+    try {
+        $q = $pdo->prepare("SELECT TIMESTAMPDIFF(MINUTE, t.created_at, MIN(w.updated_at)) AS m FROM wa_templates t JOIN wa_tpl_waba w ON w.tpl_id = t.id AND w.status = 'APPROVED' WHERE t.category = 'UTILITY' AND t.created_at >= ? GROUP BY t.id HAVING m BETWEEN 0 AND 2880");
+        $q->execute([date('Y-m-d H:i:s', time() - 14 * 86400)]); foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $v) $m[] = (int)$v;
+    } catch (Throwable $e) { }
+    if ($m) { sort($m); $n = count($m); $o['n'] = $n; $o['median'] = $m[(int)floor(($n - 1) * 0.5)]; $o['p90'] = $m[(int)floor(($n - 1) * 0.9)]; $o['fast'] = (int)round(100 * count(array_filter($m, fn($x) => $x <= 10)) / $n); }
+    try { setting_set($pdo, 'wa_ru_eta', json_encode($o)); } catch (Throwable $e) { }
     return $o;
 }
 /** For the screen: each number with its utility delivery of the last 3 hours and whether it is resting. */
