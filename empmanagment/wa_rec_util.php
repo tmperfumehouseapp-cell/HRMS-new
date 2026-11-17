@@ -62,6 +62,13 @@ function wa_ru_pool(PDO $pdo): array
     return function_exists('wa_util_pool_usable') ? wa_util_pool_usable($pdo) : [];
 }
 
+/** The utility follow-up messages that exist in HRMS (made, maybe still waiting for Meta). */
+function wa_ru_pool_made(PDO $pdo): array
+{
+    if (!function_exists('wa_util_pool_rows') && is_file(__DIR__ . '/wa_util.php')) { try { require_once __DIR__ . '/wa_util.php'; } catch (Throwable $e) { } }
+    try { return function_exists('wa_util_pool_rows') ? wa_util_pool_rows($pdo) : []; } catch (Throwable $e) { return []; }
+}
+
 /** One round (≤ 40 s) of the utility follow-up for failed marketing messages. */
 function wa_ru_tick(PDO $pdo): array
 {
@@ -135,6 +142,23 @@ function wa_ru_tick(PDO $pdo): array
     return $res;
 }
 
+/** What is waiting today (the business day), by reason — remembered for 2 minutes. */
+function wa_ru_diag(PDO $pdo, int $ordDays): array
+{
+    $c = json_decode((string)setting_get($pdo, 'wa_ru_diag', ''), true); if (is_array($c) && (int)($c['at'] ?? 0) > time() - 120) return $c;
+    $from = function_exists('wa_bizday_start') ? wa_bizday_start($pdo) : date('Y-m-d 10:00:00');
+    $o = ['failed_total' => 0, 'never' => 0, 'now' => 0, 'after_rec' => 0, 'util_ok' => 0, 'util_no' => 0, 'done' => 0, 'from' => $from, 'at' => time()];
+    try {
+        $q = $pdo->prepare("SELECT i.err_code, COUNT(*) AS n FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id WHERE (c.started_at >= ? OR i.sent_at >= ?) AND COALESCE(i.variant, 'M') <> 'U' AND (i.status = 'failed' OR (i.status IN ('retry', 'sent') AND i.last_status = 'failed')) GROUP BY i.err_code"); $q->execute([$from, $from]);
+        foreach ($q->fetchAll() as $r) { $n = (int)$r['n']; $o['failed_total'] += $n; $cl = wa_ru_class((int)$r['err_code']); if ($cl === 'never') $o['never'] += $n; elseif ($cl === 'now') $o['now'] += $n; else $o['after_rec'] += $n; }
+        if (wa_ru_tables($pdo)) { $q = $pdo->prepare("SELECT COUNT(*) FROM wa_ru_log WHERE at >= ?"); $q->execute([$from]); $o['done'] = (int)$q->fetchColumn(); }
+        $q = $pdo->prepare("SELECT DISTINCT i.phone FROM wa_camp_items i JOIN wa_campaigns c ON c.id = i.camp_id WHERE (c.started_at >= ? OR i.sent_at >= ?) AND COALESCE(i.variant, 'M') <> 'U' AND (i.status = 'failed' OR (i.status IN ('retry', 'sent') AND i.last_status = 'failed')) AND i.err_code NOT IN (" . (function_exists('wa_rec_never_sql') ? implode(',', array_diff(WA_REC_NEVER, WA_RU_MARKETING_ONLY)) : '0') . ") LIMIT 6000"); $q->execute([$from, $from]);
+        $ph = array_map('strval', $q->fetchAll(PDO::FETCH_COLUMN));
+        if ($ph && function_exists('wa_util_split')) { $sp = wa_util_split($pdo, $ph, $ordDays); $o['util_ok'] = (int)$sp['ask'] + (int)$sp['order']; $o['util_no'] = (int)$sp['none']; }
+    } catch (Throwable $e) { }
+    try { setting_set($pdo, 'wa_ru_diag', json_encode($o)); } catch (Throwable $e) { }
+    return $o;
+}
 /** Everything the status line / card shows: settings, the last round, and how it did in a time range (default: the business day). */
 function wa_ru_status(PDO $pdo, string $from = '', string $to = ''): array
 {
@@ -146,7 +170,7 @@ function wa_ru_status(PDO $pdo, string $from = '', string $to = ''): array
             foreach ($q->fetchAll() as $r) { $o['tried'] += (int)$r['n']; $o['delivered'] += (int)$r['d']; $o['failed'] += (int)$r['f']; if (isset($o['by_kind'][(string)$r['kind']])) $o['by_kind'][(string)$r['kind']] = (int)$r['n']; } } catch (Throwable $e) { }
         $o['waiting'] = max(0, $o['tried'] - $o['delivered'] - $o['failed']);
     }
-    return ['on' => $cfg['on'], 'paused' => $cfg['pause_until'] > time(), 'hourly' => $cfg['hourly'], 'wait_min' => $cfg['wait_min'], 'ord_days' => $cfg['ord_days'], 'pool' => count(wa_ru_pool($pdo)), 'range' => $o, 'last' => $last, 'now' => time()];
+    return ['on' => $cfg['on'], 'paused' => $cfg['pause_until'] > time(), 'hourly' => $cfg['hourly'], 'wait_min' => $cfg['wait_min'], 'ord_days' => $cfg['ord_days'], 'pool' => count(wa_ru_pool($pdo)), 'pool_made' => count(wa_ru_pool_made($pdo)), 'pool_total' => function_exists('wa_util_pool_defs') ? count(wa_util_pool_defs()) : 6, 'diag' => wa_ru_diag($pdo, $cfg['ord_days']), 'range' => $o, 'last' => $last, 'now' => time()];
 }
 
 }   // function_exists guard
