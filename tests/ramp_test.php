@@ -33,4 +33,13 @@ $S['wa_ru_hourly'] = '400'; wa_ru_ramp_back($pdo, 'spam'); ok($S['wa_ru_hourly']
 $S['wa_ru_ramp_base'] = '200'; $S['wa_ru_hourly'] = '300'; wa_ru_ramp_back($pdo, 'fail'); ok($S['wa_ru_hourly'] === '200', 'ladder: failure at 300 restarts at 200');
 $S['wa_ru_hourly'] = '250'; wa_ru_ramp_back($pdo, 'fail'); ok($S['wa_ru_hourly'] === '200', 'ladder: failure at 250 restarts at 200');
 $S['wa_ru_hourly'] = '300'; wa_ru_ramp_back($pdo, 'spam'); ok($S['wa_ru_hourly'] === '200', 'ladder: spam flag restarts at the floor 200');
+// 10) small steps: +20 every 20 minutes up to 400, drop 100 after a failure, floor 200
+$S = ['wa_ru_hourly' => '200', 'wa_ru_ramp_base' => '200', 'wa_ru_ramp_step' => '20', 'wa_ru_ramp_every' => '1200', 'wa_ru_ramp_max' => '400', 'wa_ru_ramp_drop' => '100', 'wa_ru_ramp_at' => (string)(time() - 1300)];
+$pdo->exec("DELETE FROM wa_ru_log"); $pdo->exec("DELETE FROM wa_messages"); fill($pdo, 50, 0, 18);   // 50 messages 18 minutes old (sent after the last change, receipts in), all good
+wa_ru_ramp($pdo, ['hourly' => 200]); ok($S['wa_ru_hourly'] === '220', 'small step: 200 -> 220 after 20 good minutes (got ' . $S['wa_ru_hourly'] . ')');
+$S['wa_ru_ramp_chk'] = '0'; wa_ru_ramp($pdo, ['hourly' => 220]); ok($S['wa_ru_hourly'] === '220', 'small step: no second step before 20 minutes pass');
+$S['wa_ru_ramp_at'] = (string)(time() - 1300); $S['wa_ru_ramp_chk'] = '0'; $pdo->exec("DELETE FROM wa_ru_log"); fill($pdo, 3, 0, 18); wa_ru_ramp($pdo, ['hourly' => 220]); ok($S['wa_ru_hourly'] === '220', 'small step: no growth when the limit is not used');
+$S['wa_ru_hourly'] = '400'; $S['wa_ru_ramp_at'] = (string)(time() - 1300); $S['wa_ru_ramp_chk'] = '0'; $pdo->exec("DELETE FROM wa_ru_log"); fill($pdo, 150, 0, 18); wa_ru_ramp($pdo, ['hourly' => 400]); ok($S['wa_ru_hourly'] === '400', 'small step: ceiling 400');
+$S['wa_ru_hourly'] = '400'; $S['wa_ru_pause_until'] = '0'; wa_ru_ramp_back($pdo, 'fail'); ok($S['wa_ru_hourly'] === '300', 'failure at 400 restarts at 300');
+$S['wa_ru_hourly'] = '240'; wa_ru_ramp_back($pdo, 'fail'); ok($S['wa_ru_hourly'] === '200', 'failure at 240 restarts at the floor 200');
 echo "ramp ok\n";
