@@ -313,7 +313,7 @@ function fa_results(PDO $pdo, int $days): array
     $byPhone = []; foreach ($rows as $r) $byPhone[(string)$r['phone']][] = $r;
     $orders = [];
     if ($byPhone) { try { $ph = array_keys($byPhone); $in = implode(',', array_fill(0, count($ph), '?'));
-        $q = $pdo->prepare("SELECT RIGHT(REGEXP_REPLACE(phone, '[^0-9]', ''), 10) p, created_at, total FROM shop_orders WHERE created_at >= ? AND RIGHT(REGEXP_REPLACE(phone, '[^0-9]', ''), 10) IN ($in)"); $q->execute(array_merge([$since], $ph));
+        $q = $pdo->prepare("SELECT RIGHT(REGEXP_REPLACE(phone, '[^0-9]', ''), 10) p, created_at, total FROM shop_orders WHERE COALESCE(tags, '') NOT LIKE '%wa-rx%' AND created_at >= ? AND RIGHT(REGEXP_REPLACE(phone, '[^0-9]', ''), 10) IN ($in)"); $q->execute(array_merge([$since], $ph));
         foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $o) $orders[(string)$o['p']][] = $o; } catch (Throwable $e) { } }
     $S = []; $tot = ['sent' => 0, 'replied' => 0, 'ordered' => 0, 'sales' => 0.0, 'tpl' => 0];
     foreach ($rows as $r) { $k = $r['sid'] . '|' . $r['step']; $S[$k] = $S[$k] ?? ['sid' => $r['sid'], 'step' => (int)$r['step'], 'sent' => 0, 'replied' => 0, 'ordered' => 0, 'sales' => 0.0]; $S[$k]['sent']++; $tot['sent']++; if ($r['channel'] === 'tpl') $tot['tpl']++;
