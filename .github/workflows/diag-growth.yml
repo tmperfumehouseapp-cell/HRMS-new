@@ -107,6 +107,26 @@ jobs:
             } catch (Throwable $e) { echo "  tracker n/a (" . substr($e->getMessage(), 0, 140) . ")\n"; }
             echo "\nLEARNING LOG (newest 8, counts only):\n";
             try { foreach ($d->query("SELECT at, kind, orders_read, add_tries, add_won, big_tries, big_won, people_behind, guide_use FROM grow_learn_log ORDER BY id DESC LIMIT 8")->fetchAll(PDO::FETCH_ASSOC) as $x) echo "  " . $x["at"] . " " . $x["kind"] . ": read " . $x["orders_read"] . " · add-on taken/offered " . $x["add_won"] . "/" . $x["add_tries"] . " · bigger " . $x["big_won"] . "/" . $x["big_tries"] . " · people behind " . $x["people_behind"] . ($x["guide_use"] !== "" ? " · guidebook: " . $x["guide_use"] : "") . "\n"; } catch (Throwable $e) { echo "  learning log: " . substr($e->getMessage(), 0, 100) . "\n"; }
+            echo "\nTICKET SIZE IMPACT (average order value in rupees; orders given to a salesperson, cancelled left out; database time = IST):\n";
+            try {
+              $dbnow = strtotime((string)$d->query("SELECT NOW()")->fetchColumn()); $cc = "COLLATE utf8mb4_unicode_ci";
+              $tk = function ($t0, $t1) use ($d, $cc) { $q = $d->prepare("SELECT COUNT(*) n, ROUND(SUM(o.total)) s FROM shop_orders o JOIN order_allocations a ON a.source = o.store_key AND a.order_id $cc = CAST(o.shopify_id AS CHAR) $cc WHERE a.employee_id > 0 AND o.total > 0 AND (o.tags IS NULL OR o.tags NOT LIKE '%cancel%') AND o.created_at >= ? AND o.created_at < ?"); $q->execute([date("Y-m-d H:i:s", $t0), date("Y-m-d H:i:s", $t1)]); $r = $q->fetch(PDO::FETCH_NUM); return [(int)$r[0], (float)$r[1]]; };
+              $fmt = function ($r) { return $r[0] > 0 ? $r[0] . " orders · average ₹" . number_format(round($r[1] / $r[0])) : "no orders"; };
+              $avg = function ($r) { return $r[0] > 0 ? $r[1] / $r[0] : null; };
+              $diff = function ($now, $base) { return ($now === null || $base === null || $base <= 0) ? "n/a" : (($now >= $base ? "+" : "−") . "₹" . number_format(round(abs($now - $base))) . " (" . ($now >= $base ? "+" : "−") . round(abs(100 * ($now - $base) / $base), 1) . "%)"); };
+              $dayStart = strtotime(date("Y-m-d", $dbnow - 10 * 3600) . " 10:00:00");
+              $win = ["last 30 min" => [$dbnow - 1800, $dbnow + 1], "previous 30 min" => [$dbnow - 3600, $dbnow - 1800], "last 60 min" => [$dbnow - 3600, $dbnow + 1], "today since day start (10:00)" => [$dayStart, $dbnow + 1]];
+              $res = []; foreach ($win as $lab => [$t0, $t1]) { $res[$lab] = $tk($t0, $t1); echo "  $lab: " . $fmt($res[$lab]) . "\n"; }
+              $yd = $tk($dayStart - 86400, $dbnow - 86400 + 1); echo "  same window yesterday: " . $fmt($yd) . "\n";
+              $n7 = 0; $s7 = 0.0; for ($k = 1; $k <= 7; $k++) { $r = $tk($dayStart - $k * 86400, $dbnow - $k * 86400 + 1); $n7 += $r[0]; $s7 += $r[1]; } $b7 = [$n7, $s7]; echo "  same window, average of the previous 7 days: " . $fmt($b7) . "\n";
+              echo "  DIFFERENCE today vs yesterday (same window): " . $diff($avg($res["today since day start (10:00)"]), $avg($yd)) . " · vs previous 7 days: " . $diff($avg($res["today since day start (10:00)"]), $avg($b7)) . "\n";
+              echo "  DIFFERENCE last 60 min vs the same hour yesterday: " . $diff($avg($res["last 60 min"]), $avg($tk($dbnow - 86400 - 3600, $dbnow - 86400 + 1))) . "\n";
+              $live = strtotime("2026-11-18 23:10:00"); $a1 = $tk($live, $dbnow + 1); $b1 = [0, 0.0]; for ($k = 1; $k <= 7; $k++) { $r = $tk($live - $k * 86400, $dbnow - $k * 86400 + 1); $b1[0] += $r[0]; $b1[1] += $r[1]; }
+              echo "  since the new card and chips went live (18 Nov 23:10): " . $fmt($a1) . " · vs the same clock window of the previous 7 days: " . $fmt($b1) . " → " . $diff($avg($a1), $avg($b1)) . "\n";
+              $A3 = "(CASE WHEN r.worked = 1 OR r.tried = 1 OR r.tries >= 1 THEN 1 ELSE 0 END)"; $B3 = "(CASE WHEN r.sz_worked = 1 OR r.sz_tried = 1 OR r.sz_tries >= 1 THEN 1 ELSE 0 END)";
+              $q = $d->prepare("SELECT ($A3 + $B3) g, COUNT(*) n, ROUND(AVG(o.total)) a FROM order_rate_auto r JOIN shop_orders o ON o.store_key $cc = SUBSTRING_INDEX(r.order_key, ':', 1) $cc AND o.shopify_id = CAST(SUBSTRING_INDEX(r.order_key, ':', -1) AS UNSIGNED) WHERE r.sz_ok = 3 AND r.rating IS NOT NULL AND o.total > 0 AND o.created_at >= ? GROUP BY g ORDER BY g"); $q->execute([date("Y-m-d H:i:s", $dayStart)]);
+              $names = [0 => "no proper offer in either lane", 1 => "one lane offered", 2 => "both lanes offered"]; echo "  today, average order value by effort (a link between the two, not proof of cause): "; foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $x) echo $names[(int)$x["g"]] . " = " . $x["n"] . " orders · ₹" . number_format((int)$x["a"]) . " | "; echo "\n";
+            } catch (Throwable $e) { echo "  ticket impact n/a (" . substr($e->getMessage(), 0, 160) . ")\n"; }
             $on = isset($argv[2]) ? preg_replace("/\D/", "", $argv[2]) : "";
             if ($on !== "") { $q = $d->prepare("SELECT order_name, rating, tried, worked, tries, weak, refused, sz_tried, sz_worked, sz_tries, sz_weak, sz_refused, sz_ok, asked, offered, reason, tip, sz_tip FROM order_rate_auto WHERE REPLACE(order_name, '#', '') = ? LIMIT 3"); $q->execute([$on]);
               $rows = $q->fetchAll(PDO::FETCH_ASSOC); echo "\nORDER " . $on . ": " . count($rows) . " row(s)\n";
