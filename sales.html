@@ -536,7 +536,7 @@
     const b = e.target.closest('.ct-tab'); if (!b) return;
     tab = b.dataset.t;
     document.querySelectorAll('.ct-tab').forEach(x => x.classList.toggle('on', x === b));
-    ['focus', 'today', 'alerts', 'md', 'qb', 'rt', 'bench', 'lib', 'conv', 'set'].forEach(k => $('p-' + k).style.display = (k === tab || (tab === 'today' && k === 'alerts')) ? '' : 'none');      // Alerts now sit under the Blocks on the Live page
+    ['focus', 'today', 'alerts', 'md', 'qb', 'rt', 'bench', 'lib', 'conv', 'set'].forEach(k => $('p-' + k).style.display = (k === tab) ? '' : 'none');      // Alerts now sit under the Blocks on the Live page
     if (tab === 'today') { loadHist(); if (RC) loadRecon(); loadRemToday(); }
     if (tab === 'focus') loadFocus();
     if (tab === 'qb') loadGive();
@@ -1115,14 +1115,7 @@
         <div class="bk-lg"><span>><span><i class="h"></i>hit</span><span><i class="g"></i>on track</span><span><i class="a"></i>close</span><span><i class="r"></i>behind</span><span><i class="n"></i>no target</span></div></div>`;
     const bkFoot = `<div class="bk-foot"><span><b>Q</b> query orders · ratio</span><span><b>C</b> campaign orders</span><span><b>T</b> ticket (₹k)</span><span><b>K</b> codes %</span><span><b>●</b> on time</span><span><b>⚡</b> typical (median) time to reply</span><span><b>⏳</b> customers waiting now · longest wait · tap to see who</span><span><b>🧾</b> average time to close an order (7d = last 7 days, when none today)</span><span><b>🏃</b> behind target = % of target done ÷ % he should have done by now · bar tick = where he should be now</span><span>Number on a block = open alerts · tap a block for details, remark and resolve</span></div>
       <div class="bk-side"><span>🎯 Targets · assigned <b>${inr(tgSum)}</b> · collected <b>${inr(tgAch)}</b>${tgSum ? ' (' + Math.round(tgAch / tgSum * 100) + '%)' : ''} · <b>${tgHit}</b> of ${esT.length} at target</span></div>`;
-    $('p-today').innerHTML = `<div class="bk">${bkHead}${wfhBlocks && blocks ? '<div class="bk-h">In office</div>' : ''}<div class="bk-grid">${blocks || (wfhBlocks ? '' : '<div class="empty">No sales team data for this day.</div>')}</div>${wfhBlocks ? `<div class="bk-h">🏠 Work from home <em>${wfhN}</em></div><div class="bk-grid">${wfhBlocks}</div>` : ''}${bkFoot}
-      <details class="bk-d"><summary>📋 Person-wise table <small>(collection per person)</small></summary>${people}</details>
-      <details class="bk-d"><summary>🔔 Needs attention <small>(${open.length})</small></summary>${alerts}</details>
-      <details class="bk-d"><summary>🕐 Hour by hour &amp; last days</summary><div id="histBox"></div></details>
-      <details class="bk-d"><summary>✍️ Remarks sent</summary><div id="remToday"></div></details>
-      <details class="bk-d"><summary>🧮 Check the numbers</summary><div id="reconBox"></div></details>
-      <details class="bk-d"><summary>📊 Full numbers <small>(old tiles)</small></summary><div class="cl-top">${coll}${tiles}</div></details></div>`;
-    renderHist(); renderRecon(); loadRemToday();
+    $('p-today').innerHTML = `<div class="bk">${bkHead}${wfhBlocks && blocks ? '<div class="bk-h">In office</div>' : ''}<div class="bk-grid">${blocks || (wfhBlocks ? '' : '<div class="empty">No sales team data for this day.</div>')}</div>${wfhBlocks ? `<div class="bk-h">🏠 Work from home <em>${wfhN}</em></div><div class="bk-grid">${wfhBlocks}</div>` : ''}${bkFoot}</div>`;
   }
 
   // ---------- Today blocks: filter + tap pop-up (details, remark, resolve with a comment) ----------
