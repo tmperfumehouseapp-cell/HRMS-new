@@ -45,6 +45,7 @@ if ($__tkA === 'wq.ad_me') {   // ➕ the salesperson's OWN add-on effort today 
     if (!$ideas['big']) $ideas['big'][] = '50ml ki jagah 100ml le lo, per ml sasta padega';
     if (!$ideas['add']) $ideas['add'][] = '4 ki jagah 5 perfume le lo, 5th pe ₹100 off';
     $out['ideas'] = $ideas;
+    try { if (function_exists('grow_learn_tick')) grow_learn_tick($pdo); } catch (Throwable $e) { }   // the learning pulse (throttled to once per 15 minutes) also starts from the salespeople's own refresh
     try { $cl = wq_coach_levels($pdo); $out['coach'] = $cl[$me] ?? ['level' => 0, 'h1' => [0, 0], 'h2' => [0, 0]]; } catch (Throwable $e) { $out['coach'] = ['level' => 0, 'h1' => [0, 0], 'h2' => [0, 0]]; }
     json_response($out);
 }
@@ -163,6 +164,7 @@ function wq_grow_check(PDO $pdo, array $auth, string $phone, array $in, int $tot
 if ($__tkA === 'wq.grow_learn') {   // Admin / HR: the learning feed (every 15 minutes a pulse, every hour a digest) and what went to the guidebook
     $auth = require_auth(); $adm = function_exists('wa_is_admin') ? wa_is_admin($pdo, $auth) : in_array((string)($auth['role'] ?? ''), ['Admin', 'HR'], true);
     if (!$adm) json_response(['error' => 'Only Admin or HR can see the learning feed.'], 403);
+    try { if (function_exists('grow_learn_tick')) grow_learn_tick($pdo); } catch (Throwable $e) { }   // the 15-minute pulse also starts from here (the engine step may not run every minute); it is throttled by its own 15-minute clock
     $rows = [];
     try { if (function_exists('grow_learn_ready') && grow_learn_ready($pdo)) { foreach ($pdo->query("SELECT at, kind, orders_read, add_tries, add_won, big_tries, big_won, plays, people_behind, guide_use FROM grow_learn_log ORDER BY id DESC LIMIT 24")->fetchAll(PDO::FETCH_ASSOC) as $r) { $r['plays'] = json_decode((string)$r['plays'], true) ?: ['add' => [], 'big' => []]; $rows[] = $r; } } } catch (Throwable $e) { }
     json_response(['ok' => true, 'rows' => $rows, 'guide_note' => (string)setting_get($pdo, 'lib_guide_nightly_note', ''), 'server_time' => date('H:i')]);
