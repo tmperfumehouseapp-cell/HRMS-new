@@ -1237,6 +1237,7 @@ if (preg_match('/^(wa|fu|learn|wq|wch|wl|wmo|team)\./', $__wa)) {
             if (!wa_can_chat($pdo, $auth, $c)) json_response(['error' => 'This chat is assigned to someone else.'], 403);
             if (($__cx = wa_cx_lock($pdo, $auth, $c)) !== '') json_response(['error' => $__cx, 'complaint' => (int)$c['cx_id']], 423);
             if ($text === '') json_response(['error' => 'Write a message first.'], 422); if (mb_strlen($text) > 4000) json_response(['error' => 'The message is too long (max 4000 characters).'], 422);
+            if (empty($in['auto']) && function_exists('wq_grow_is_pay_link') && wq_grow_is_pay_link($pdo, $text)) { $__gg = wq_grow_check($pdo, $auth, $key, $in); if ($__gg['gate'] !== '') json_response(['error' => $__gg['error'], 'grow_gate' => $__gg['gate'], 'grow_missing' => $__gg['missing'], 'grow_ideas' => $__gg['ideas'] ?? null], 409); }   // 🔗 payment link: both efforts first (warning, later strict) — wq_grow_check in tk_goal.php
             // never twice: the same tap arriving again (slow network, double tap, a retry) or the same text to the same customer within 20 seconds → answered with the first send, nothing goes out
             $cid = preg_replace('/[^A-Za-z0-9_-]/', '', (string)($in['cid'] ?? '')); $dup = wa_send_dup($pdo, $key, $text, $cid);
             if ($dup !== null) json_response(['ok' => true, 'wamid' => $dup, 'duplicate' => true]);

@@ -1330,16 +1330,16 @@ function ora_apply(PDO $pdo, string $key, array $r): bool
 function ora_tick(PDO $pdo): int
 {
     $mode = ora_mode($pdo); if ($mode === 'off' || !function_exists('convo_ai')) return 0;
-    try { if ((int)setting_get($pdo, 'ora_at', '0') > time() - 170) return 0; setting_set($pdo, 'ora_at', (string)time()); if (!ora_tables($pdo) || !ensure_order_allocations_table($pdo)) return 0; } catch (Throwable $e) { return 0; }
+    try { if ((int)setting_get($pdo, 'ora_at', '0') > time() - 60) return 0; setting_set($pdo, 'ora_at', (string)time()); if (!ora_tables($pdo) || !ensure_order_allocations_table($pdo)) return 0; } catch (Throwable $e) { return 0; }
     $n = 0; $cc = 'COLLATE utf8mb4_unicode_ci';
     try {
         $st = $pdo->prepare("SELECT o.store_key, o.shopify_id, o.order_name, o.created_at, o.phone, o.total, o.ml_total, a.employee_id, a.house FROM shop_orders o JOIN order_allocations a ON a.source = o.store_key AND a.order_id $cc = CAST(o.shopify_id AS CHAR) $cc
             WHERE o.created_at >= ? AND o.created_at <= ? AND a.employee_id > 0 AND o.total > 0 AND (o.tags IS NULL OR o.tags NOT LIKE '%cancel%')
               AND NOT EXISTS (SELECT 1 FROM order_rate_auto r WHERE r.order_key $cc = CONCAT(o.store_key, ':', o.shopify_id) $cc AND r.sz_ok = 3)
-            ORDER BY o.created_at DESC LIMIT 5");   // every order is read (also one a person rated): the add-on effort needs it; ora_apply never overwrites a person's stars
+            ORDER BY o.created_at DESC LIMIT 8");   // every order is read (also one a person rated): the add-on effort needs it; ora_apply never overwrites a person's stars
         $st->execute([date('Y-m-d H:i:s', time() - 30 * 86400), date('Y-m-d H:i:s', time() - 600)]);
         $t0 = time(); foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $o) {
-            if (time() - $t0 > 25) break;   // the engine step must stay short
+            if (time() - $t0 > 28) break;   // the engine step must stay short
             $key = $o['store_key'] . ':' . $o['shopify_id']; $r = ora_rate_one($pdo, $o); if (!empty($r['retry'])) continue;   // an AI hiccup: try again next time
             $day = date('Y-m-d', strtotime((string)$o['created_at']) - 10 * 3600);
             ora_store($pdo, $key, $o, $r, $day);
