@@ -945,6 +945,7 @@
 <script src="assets/js/layout.js?v=32"></script>
 <script src="assets/js/side_chat.js?v=2"></script>
 <script src="assets/js/ml_slab.js?v=261116a"></script>
+<script src="assets/js/addon_view.js?v=1"></script>
 <script src="assets/js/wmo_edit.js?v=1"></script>
 <script>function wmUpdate(no) { if (window.WmoEdit) WmoEdit.open(no, { onSaved: function () { location.reload(); } }); }</script>
 <style>.wm-upd{display:inline-block;margin-left:6px;border:1px solid #16a34a;background:#f0fdf4;color:#166534;border-radius:99px;padding:3px 9px;font:inherit;font-size:11.5px;font-weight:800;cursor:pointer;white-space:nowrap;vertical-align:1px}.wm-upd:hover{background:#dcfce7}</style>
@@ -1857,7 +1858,7 @@
     const tm = (t) => new Date(t).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
     document.getElementById('ohTitle').textContent = (k === 'night' ? 'Overnight · ' + ohNightLbl() : ohHr(Number(k))) + (t === 'query' ? ' · Query' : t === 'campaign' ? ' · Campaign' : '') + (ohPanel ? ' · ' + (PANEL_NAME[ohPanel] || ohPanel) : '');
     document.getElementById('ohSub').textContent = base.length + ' order' + (base.length === 1 ? '' : 's') + ' · ' + fmtMoney(base.reduce((a, o) => a + (Number(o.total) || 0), 0), 'INR') + ' · tap an order number to open it';
-    document.getElementById('ohBody').innerHTML = base.length ? `<div style="overflow-x:auto;"><table class="no-stack ohtab"><thead><tr><th>Order</th><th>Time</th><th>Salesman</th><th>Code</th><th style="text-align:right;">Amount</th></tr></thead><tbody>${base.map(o => `<tr><td><a href="#" data-ohi="${o._i}" style="font-weight:800;">${esEsc(o.order_name)}</a>${ohPanel ? '' : `<div style="font-size:11px; color:var(--muted);">${esEsc(PANEL_NAME[panelOf(o)] || '')}</div>`}</td><td style="white-space:nowrap;">${tm(o.created_at)}</td><td>${esEsc(o.salesman || '—')}</td><td>${o.code ? `<span class="ocd">${esEsc(o.code)}</span>` : '<span class="ocd no">no code</span>'}</td><td style="text-align:right; font-weight:700; white-space:nowrap;">${fmtMoney(o.total, o.currency)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">No orders.</p>';
+    document.getElementById('ohBody').innerHTML = base.length ? `<div style="overflow-x:auto;"><table class="no-stack ohtab"><thead><tr><th>Order</th><th>Time</th><th>Salesman</th><th>Code</th><th style="text-align:right;">Amount</th></tr></thead><tbody>${base.map(o => `<tr><td><a href="#" data-ohi="${o._i}" style="font-weight:800;">${esEsc(o.order_name)}</a>${AddonView.tag(o)}${ohPanel ? '' : `<div style="font-size:11px; color:var(--muted);">${esEsc(PANEL_NAME[panelOf(o)] || '')}</div>`}</td><td style="white-space:nowrap;">${tm(o.created_at)}</td><td>${esEsc(o.salesman || '—')}</td><td>${o.code ? `<span class="ocd">${esEsc(o.code)}</span>` : '<span class="ocd no">no code</span>'}</td><td style="text-align:right; font-weight:700; white-space:nowrap;">${fmtMoney(o.total, o.currency)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">No orders.</p>';
     ohPush();
   }
   document.getElementById('summaryGrid').addEventListener('click', (ev) => {
@@ -2934,8 +2935,8 @@
           <td>${new Date(o.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</td>
           <td>${o.customer}</td>
           <td style="white-space:nowrap;">${o.phone || '—'}</td>
-          <td>${o.items}</td>
-          <td style="font-weight:600;">${fmtMoney(o.total, o.currency)}</td>
+          <td>${o.items}${AddonView.block(o)}</td>
+          <td style="font-weight:600;">${fmtMoney(o.total, o.currency)}${AddonView.has(o) ? `<div style="font-size:11px;color:#5b2bbd;font-weight:700;" title="Order amount + add-on">+ ${fmtMoney(o.addon_total, o.currency)} add-on = ${fmtMoney(AddonView.total(o), o.currency)}</div>` : ''}</td>
           ${mlCells(o)}
           <td><span class="badge ${o.financial_status === 'paid' ? '' : 'inactive'}">${o.financial_status || '—'}</span></td>
           <td><span class="badge ${o.fulfillment_status === 'fulfilled' ? '' : 'inactive'}">${o.fulfillment_status || 'unfulfilled'}</span></td>
@@ -3152,6 +3153,7 @@
         detailRow('Customer', o.customer) +
         detailRow('Mobile', esc(o.phone || '') + chatBtn(o.phone)) +
         detailRow('Items', o.items) +
+        (AddonView.has(o) ? detailRow('Add-on', AddonView.block(o)) + detailRow('Total with add-on', '<b>' + fmtMoney(AddonView.total(o), o.currency) + '</b>') : '') +
         detailRow('Total', fmtMoney(o.total, o.currency)) +
         detailRow('Payment', o.financial_status) +
         detailRow('Fulfillment', o.fulfillment_status) +
@@ -3219,6 +3221,7 @@
         detailRow('Tags', d.tags) +
         detailRow('Counted under', isCounted(o) ? houseReason(o, d.tags) : 'Not counted — not allocated yet (Order Allocation page)') +
         itemsHtml +
+        (AddonView.has(o) ? `<div style="margin:6px 0 10px;"><div style="font-size:11.5px; color:var(--muted); font-weight:700; text-transform:uppercase;">Add-on sold on this order</div>${AddonView.block(o)}<div style="text-align:right; font-weight:700; margin-top:6px;">Total with add-on: ${fmtMoney(AddonView.total(o), o.currency)}</div></div>` : '') +
         totalsHtml;
       odRemarkInit(o);
     } catch (err) {
@@ -4434,9 +4437,9 @@
     }
 
     // ---- order rows
-    const ORD_HEAD = ['Order', 'Business day', 'Date & time', 'Store', 'Panel', 'Salesman', 'Code', 'Type', 'Status', 'Amount', 'Payment', 'Rating (★ of 5)', 'Commission ₹', 'Commission rule'];
-    const ORD_FMT = [0, 0, 0, 0, 0, 0, 0, 0, 0, money, 0, stars, '#,##0.00', 0];
-    const ORD_W = [14, 13, 17, 20, 18, 22, 12, 11, 14, 12, 14, 13, 13, 80];
+    const ORD_HEAD = ['Order', 'Business day', 'Date & time', 'Store', 'Panel', 'Salesman', 'Code', 'Type', 'Status', 'Amount', 'Payment', 'Rating (★ of 5)', 'Commission ₹', 'Commission rule', 'Add-on products', 'Add-on ₹', 'Total with add-on ₹'];
+    const ORD_FMT = [0, 0, 0, 0, 0, 0, 0, 0, 0, money, 0, stars, '#,##0.00', 0, 0, money, money];
+    const ORD_W = [14, 13, 17, 20, 18, 22, 12, 11, 14, 12, 14, 13, 13, 80, 40, 11, 14];
     function ordSheet(list) {
       const aoa = [ORD_HEAD], rows = list.slice().sort((a, b) => String(a.created_at) < String(b.created_at) ? -1 : 1);
       let sum = 0, cs = 0, hasC = false;
@@ -4446,9 +4449,9 @@
         sum += amt; if (cm) { cs += cm[0]; hasC = true; }
         aoa.push([o.order_name || '', ok ? bizDayOf(d) : '', ok ? ymdOf(d) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) : '', o.store || '', PANEL_NAME[panelOf(o)] || '', o.salesman || '', o.code || '',
           ty === 'query' ? 'Query' : (ty === 'campaign' ? 'Campaign' : 'Other'), o.cancelled ? 'Cancelled' : (isCounted(o) ? 'Counted' : 'Not allocated'), rd(amt), o.financial_status || '',
-          o.ticket_rating == null ? '' : rd(Number(o.ticket_rating) / 2), cm ? cm[0] : '', cm ? cm[1] : '']);
+          o.ticket_rating == null ? '' : rd(Number(o.ticket_rating) / 2), cm ? cm[0] : '', cm ? cm[1] : ''].concat(AddonView.cols(o)));
       });
-      if (rows.length) aoa.push(['TOTAL', '', '', '', '', '', '', '', rows.length + ' orders', rd(sum), '', '', hasC ? rd(cs) : '', '']);
+      if (rows.length) aoa.push(['TOTAL', '', '', '', '', '', '', '', rows.length + ' orders', rd(sum), '', '', hasC ? rd(cs) : '', '', '', rd(rows.reduce((t, o) => t + (Number(o.addon_total) || 0), 0)), rd(sum + rows.reduce((t, o) => t + (Number(o.addon_total) || 0), 0))]);
       return { aoa, fmt: ORD_FMT, w: ORD_W, bold: rows.length ? [aoa.length - 1] : [], filter: rows.length > 0 };
     }
     const ordersFor = (tab, panel) => allOrders.filter(o => (!panel || panelOf(o) === panel) && TAB_TEST[tab](o) && panelAllowed(panelOf(o)));

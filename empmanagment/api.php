@@ -15314,6 +15314,49 @@ function existing_login_for_employee(PDO $pdo, ?int $employeeId, int $exceptUser
     return $u === false ? null : (string)$u;
 }
 
+/** Attaches the add-ons sold onto each order to its row, so every page and every export that lists orders can show them.
+ *  Adds to each row: 'addons' = [{items:[{product_name,size_ml,qty}], price, pre, cod, has_proof, addon_group, addon_id}], 'addon_total' (sum of the add-on prices),
+ *  'addon_text' (one line: "Oud 12 ML, Musk 50 ML x2 = Rs 1,450"). Matched on the order name without "#". $nameKey = the row's order-name field. */
+function addons_attach(PDO $pdo, array &$rows, string $nameKey = 'order_name'): void
+{
+    $norm = function ($n) { return strtolower(trim(ltrim(trim((string)$n), '#'))); };
+    $names = [];
+    foreach ($rows as $r) { $k = $norm($r[$nameKey] ?? ''); if ($k !== '') $names[$k] = true; }
+    foreach ($rows as &$r0) { $r0['addons'] = []; $r0['addon_total'] = 0; $r0['addon_text'] = ''; } unset($r0);
+    if (!$names) return;
+    $by = [];
+    try {
+        if (!ensure_addons_table($pdo)) return;
+        $all = array_keys($names);
+        foreach (array_chunk($all, 400) as $chunk) {
+            $ph = []; $par = [];
+            foreach ($chunk as $k) { $ph[] = '?'; $par[] = $k; $ph[] = '?'; $par[] = '#' . $k; }
+            $st = $pdo->prepare("SELECT addon_id, order_name, addon_group, product_name, size_ml, qty, price, prepaid_amt, cod_amt, proof_path FROM employee_addons WHERE LOWER(order_name) IN (" . implode(',', $ph) . ") ORDER BY addon_id");
+            $st->execute($par);
+            foreach ($st->fetchAll() as $a) {
+                $o = $norm($a['order_name']); $g = (string)($a['addon_group'] ?: 'single-' . $a['addon_id']);
+                if (!isset($by[$o][$g])) $by[$o][$g] = ['addon_group' => $g, 'addon_id' => (int)$a['addon_id'], 'items' => [], 'price' => 0.0, 'pre' => 0.0, 'cod' => 0.0, 'has_proof' => false];
+                $by[$o][$g]['items'][] = ['product_name' => (string)$a['product_name'], 'size_ml' => (string)$a['size_ml'], 'qty' => (int)$a['qty']];
+                $by[$o][$g]['price'] += (float)$a['price']; $by[$o][$g]['pre'] += (float)$a['prepaid_amt']; $by[$o][$g]['cod'] += (float)$a['cod_amt'];
+                if ((string)$a['proof_path'] !== '') $by[$o][$g]['has_proof'] = true;
+            }
+        }
+    } catch (Throwable $e) { return; }
+    foreach ($rows as &$r) {
+        $k = $norm($r[$nameKey] ?? ''); if ($k === '' || empty($by[$k])) continue;
+        $groups = array_values($by[$k]); $tot = 0.0; $txt = [];
+        foreach ($groups as $g) {
+            $tot += $g['price'];
+            $its = array_map(function ($i) { return trim($i['product_name'] . ($i['size_ml'] !== '' ? ' ' . $i['size_ml'] . (stripos($i['size_ml'], 'ml') === false ? ' ML' : '') : '') . ($i['qty'] > 1 ? ' x' . $i['qty'] : '')); }, $g['items']);
+            $pay = [];
+            if ($g['pre'] > 0) $pay[] = 'PREPAID Rs ' . number_format($g['pre']);
+            if ($g['cod'] > 0) $pay[] = 'COLLECT Rs ' . number_format($g['cod']) . ' on delivery';
+            $txt[] = implode(', ', $its) . ' = Rs ' . number_format($g['price']) . ($pay ? ' [' . implode('; ', $pay) . ']' : '');
+        }
+        $r['addons'] = $groups; $r['addon_total'] = round($tot, 2); $r['addon_text'] = implode(' | ', $txt);
+    } unset($r);
+}
+
 function ensure_addons_table(PDO $pdo): bool
 {
     static $done = null;
@@ -30492,6 +30535,7 @@ switch ($action) {
                 exit;
             }
         }
+        addons_attach($pdo, $allOrders, 'order_name');   // the add-ons sold onto each order travel with it to every page and export
         json_response(['orders' => $allOrders, 'errors' => $errors, 'scope' => $scopeInfo]);
         break;
     }
