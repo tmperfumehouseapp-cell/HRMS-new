@@ -117,6 +117,8 @@ function wq_grow_log(PDO $pdo, int $emp, string $phone, string $mode, string $de
 function wq_grow_breaker(PDO $pdo): array
 {
     if (!wq_grow_ready($pdo)) return [false, 0, 0];
+    $offFrom = (string)setting_get($pdo, 'grow_breaker_off_from', '2026-11-19'); if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $offFrom)) $offFrom = '2026-11-19';
+    if ((function_exists('biz_today') ? biz_today($pdo) : date('Y-m-d')) >= $offFrom) return [false, 0, 0];   // the owner switched the brake off from this business day (default: from the day the strict rule starts)
     try { $pct = max(10, min(90, (int)setting_get($pdo, 'grow_breaker_pct', '40')));
         $q = $pdo->prepare("SELECT SUM(decision IN ('blocked', 'warn_shown')) b, SUM(decision = 'passed') p FROM grow_gate_log WHERE at >= ?"); $q->execute([date('Y-m-d H:i:s', time() - 7200)]); $r = $q->fetch(PDO::FETCH_ASSOC); $b = (int)($r['b'] ?? 0); $p = (int)($r['p'] ?? 0); $n = $b + $p;
         $share = $n > 0 ? (int)round($b * 100 / $n) : 0; return [$n >= 10 && $share > $pct, $share, $n]; } catch (Throwable $e) { return [false, 0, 0]; }
@@ -145,9 +147,10 @@ if ($__tkA === 'wq.grow_cfg') {   // Admin / HR: the rule's switch (off / warn /
     if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') { $in = json_input();
         if (isset($in['mode']) && in_array((string)$in['mode'], ['off', 'warn', 'lock', 'auto'], true)) setting_set($pdo, 'grow_gate_mode', (string)$in['mode']);
         if (isset($in['from']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string)$in['from'])) setting_set($pdo, 'grow_lock_from', (string)$in['from']);
+        if (isset($in['breaker_on'])) setting_set($pdo, 'grow_breaker_off_from', !empty($in['breaker_on']) ? '2099-01-01' : (function_exists('biz_today') ? biz_today($pdo) : date('Y-m-d')));
         if (isset($in['breaker_pct'])) setting_set($pdo, 'grow_breaker_pct', (string)max(10, min(90, (int)$in['breaker_pct']))); }
     [$__ba, $__bs, $__bn] = wq_grow_breaker($pdo);
-    $out = wq_grow_cfg($pdo) + ['breaker' => ['active' => $__ba, 'share' => $__bs, 'attempts' => $__bn, 'limit' => max(10, min(90, (int)setting_get($pdo, 'grow_breaker_pct', '40')))], 'today_counts' => ['blocked' => 0, 'warn_shown' => 0, 'warned_sent' => 0, 'waived' => 0, 'passed' => 0], 'waivers' => []];
+    $out = wq_grow_cfg($pdo) + ['breaker' => ['on' => (string)setting_get($pdo, 'grow_breaker_off_from', '2026-11-19') > (function_exists('biz_today') ? biz_today($pdo) : date('Y-m-d')), 'off_from' => (string)setting_get($pdo, 'grow_breaker_off_from', '2026-11-19'), 'active' => $__ba, 'share' => $__bs, 'attempts' => $__bn, 'limit' => max(10, min(90, (int)setting_get($pdo, 'grow_breaker_pct', '40')))], 'today_counts' => ['blocked' => 0, 'warn_shown' => 0, 'warned_sent' => 0, 'waived' => 0, 'passed' => 0], 'waivers' => []];
     try { if (wq_grow_ready($pdo)) { $q = $pdo->prepare("SELECT decision, COUNT(*) n FROM grow_gate_log WHERE day = ? GROUP BY decision"); $q->execute([$out['today']]); foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $out['today_counts'][(string)$r['decision']] = (int)$r['n'];
         $nm = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : []; $w = $pdo->prepare("SELECT emp, at, reason FROM grow_gate_log WHERE day = ? AND decision = 'waived' ORDER BY id DESC LIMIT 20"); $w->execute([$out['today']]);
         foreach ($w->fetchAll(PDO::FETCH_ASSOC) as $r) $out['waivers'][] = ['emp' => $nm[(int)$r['emp']] ?? ('#' . $r['emp']), 'at' => substr((string)$r['at'], 11, 5), 'reason' => (string)$r['reason']]; } } catch (Throwable $e) { }
