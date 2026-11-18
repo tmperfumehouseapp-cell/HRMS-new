@@ -820,6 +820,19 @@
     const cls = n[3] >= n[0] + n[1] ? 'g' : n[0] > n[3] ? 'r' : 'a';
     return ['➕ ' + n[3] + '🟢 ' + n[2] + '🟡 ' + n[1] + '🟠 ' + n[0] + '🔴' + (x.stars != null ? ' ★' + x.stars : ''), cls + ' ef', 'Add-on effort on ' + tot + ' orders read from the chat: ' + n[3] + ' tried and the customer took it · ' + n[2] + ' tried hard, not taken · ' + n[1] + ' little effort · ' + n[0] + ' no effort' + (x.stars != null ? ' · average add-on stars ' + x.stars + ' of 5' : '') + (x.addon_rs ? ' · add-on ₹ ' + Math.round(x.addon_rs).toLocaleString('en-IN') : '')];
   }
+  // ➕ one person's earlier days (opened on tap, never loaded by itself): 7 days · 30 days · everything read so far
+  window.effHist = async (id, days, el) => {
+    const box = el.querySelector('.ef-hb'); box.innerHTML = '<div class="sub">Loading…</div>';
+    try {
+      const d = await api.get('ct.effort_hist', { emp: id, days }), n = d.tot, all = n[0] + n[1] + n[2] + n[3];
+      const btn = (v, t) => `<button type="button" class="${days === v ? 'on' : ''}" style="font:inherit;font-size:11px;font-weight:700;border:1px solid #d9dce3;background:${days === v ? '#111827' : '#fff'};color:${days === v ? '#fff' : '#444'};border-radius:99px;padding:3px 10px;margin-right:4px;cursor:pointer" onclick="effHist(${id},${v},this.closest('details'))">${t}</button>`;
+      const cells = (a) => `<span class="ef4" style="display:inline-flex;gap:2px;min-width:150px"><i class="w${a[3] ? '' : ' z'}">${a[3]}</i><i class="h${a[2] ? '' : ' z'}">${a[2]}</i><i class="l${a[1] ? '' : ' z'}">${a[1]}</i><i class="r${a[0] ? '' : ' z'}">${a[0]}</i></span>`;
+      box.innerHTML = `<div>${btn(7, '7 days')}${btn(30, '30 days')}${btn(0, 'Everything')}</div>
+        <div class="sub" style="margin:6px 0">${all ? '<b>' + all + '</b> orders read' + (d.since ? ' since ' + esc(d.since) : '') + (d.stars != null ? ' · average ★' + d.stars : '') + (d.addon_rs ? ' · add-on ' + inr(d.addon_rs) : '') : 'Nothing read from the chat for this period yet.'} <span style="opacity:.7">(🟢 took · 🟡 tried hard · 🟠 little · 🔴 none)</span></div>
+        ${all ? `<style>.ef-hb .ef4 i{flex:1;text-align:center;font-style:normal;font-size:12px;font-weight:800;color:#fff;border-radius:5px;padding:2px 0}.ef-hb .ef4 i.w{background:#16a34a}.ef-hb .ef4 i.h{background:#d97706}.ef-hb .ef4 i.l{background:#ea580c}.ef-hb .ef4 i.r{background:#dc2626}.ef-hb .ef4 i.z{opacity:.28}</style>
+        <table><tr><td><b>Total</b></td><td>${cells(n)}</td><td>${all}</td></tr>${d.rows.map(r => `<tr><td>${esc(r.day.slice(5))}</td><td>${cells(r.n)}</td><td>${r.n[0] + r.n[1] + r.n[2] + r.n[3]}${r.addon_rs ? ' <small>' + inr(r.addon_rs) + '</small>' : ''}</td></tr>`).join('')}</table>` : ''}`;
+    } catch (e) { box.innerHTML = '<div class="sub">Could not load: ' + esc(e.message || e) + '</div>'; }
+  };
   // 4 side-by-side cells at the bottom of a person's block: his orders split by add-on effort — won · heavy not taken · little · none (sum = his orders; grey ⏳ = not read from the chat yet)
   function effRow(e) {
     const x = effOf(e.id), tot = Number(e.orders || 0); if (!tot && !x) return '';
@@ -1173,6 +1186,7 @@
       ${row('Codes', e.code_rate == null ? '—' : Math.round(e.code_rate) + '%' + (e.code_left > 0 ? ' <small>' + e.code_left + ' more</small>' : ''))}
       ${row('Commission', inr(e.com || 0) + (e.com_night != null ? ' <small>→ ~' + inr(e.com_night) + ' by night</small>' : ''))}
       ${row('Rating', '<span id="bkRate">…</span>')}
+      <details class="ef-d" ontoggle="if(this.open)effHist(${id},7,this)"><summary>➕ Add-on effort · earlier days</summary><div class="ef-hb" style="padding:6px 0">…</div></details>
       ${bkLadder(e)}
       <div id="bkRem">${remBox(id, first)}</div>
       <div class="bk-al">${bkAlHtml(id)}</div>

@@ -1308,7 +1308,7 @@ function ora_apply(PDO $pdo, string $key, array $r): bool
         $c = $pdo->prepare("SELECT 1 FROM order_ratings WHERE order_key = ? AND ticket_by = 'Claude (auto)'"); $c->execute([$key]); return (bool)$c->fetchColumn();
     } catch (Throwable $e) { error_log('ora_apply: ' . $e->getMessage()); return false; }
 }
-/** Engine step (every ~3 min): rates up to 5 new allocated orders of the last 3 days; in 'apply' mode also applies waiting suggestions. Returns how many orders were rated. */
+/** Engine step (every ~3 min): rates up to 5 new allocated orders of the last 30 days (newest first, so today is always read before the older ones); in 'apply' mode also applies waiting suggestions. Returns how many orders were rated. */
 function ora_tick(PDO $pdo): int
 {
     $mode = ora_mode($pdo); if ($mode === 'off' || !function_exists('convo_ai')) return 0;
@@ -1319,7 +1319,7 @@ function ora_tick(PDO $pdo): int
             WHERE o.created_at >= ? AND o.created_at <= ? AND a.employee_id > 0 AND o.total > 0 AND (o.tags IS NULL OR o.tags NOT LIKE '%cancel%')
               AND NOT EXISTS (SELECT 1 FROM order_rate_auto r WHERE r.order_key $cc = CONCAT(o.store_key, ':', o.shopify_id) $cc)
             ORDER BY o.created_at DESC LIMIT 5");   // every order is read (also one a person rated): the add-on effort needs it; ora_apply never overwrites a person's stars
-        $st->execute([date('Y-m-d H:i:s', time() - 3 * 86400), date('Y-m-d H:i:s', time() - 600)]);
+        $st->execute([date('Y-m-d H:i:s', time() - 30 * 86400), date('Y-m-d H:i:s', time() - 600)]);
         $t0 = time(); foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $o) {
             if (time() - $t0 > 25) break;   // the engine step must stay short
             $key = $o['store_key'] . ':' . $o['shopify_id']; $r = ora_rate_one($pdo, $o); if (!empty($r['retry'])) continue;   // an AI hiccup: try again next time
@@ -22627,6 +22627,29 @@ switch ($action) {
         } unset($m);
         foreach ($E as $id => &$e) { $e['stars'] = $e['rated'] ? round($e['stars'] / $e['rated'], 1) : null; $e['addon_rs'] = round($e['addon_rs']); } unset($e);
         $out['emps'] = $E ?: new stdClass(); $out['team'] = $team; $out['missed'] = $miss; $out['tips'] = $tips; $out['measured'] = array_sum($team);
+        json_response($out);
+        break;
+    }
+
+    case 'ct.effort_hist': {
+        // ➕ Add-on effort history of ONE salesperson (?emp=) over ?days= (7 / 30 / 0 = everything read so far): per day + total. Admin / HR / resolvers.
+        $auth = require_auth();
+        if (!ct_admin_ok($pdo, $auth)) json_response(['error' => 'The Control Tower is for Admin / HR.'], 403);
+        $emp = (int)($_GET['emp'] ?? 0); $days = max(0, min(366, (int)($_GET['days'] ?? 7)));
+        $today = biz_today($pdo); $from = $days > 0 ? date('Y-m-d', strtotime($today . ' -' . ($days - 1) . ' day')) : '2000-01-01';
+        $out = ['emp' => $emp, 'days' => $days, 'rows' => [], 'tot' => [0, 0, 0, 0], 'stars' => null, 'addon_rs' => 0, 'since' => null];
+        if ($emp <= 0 || !ora_tables($pdo)) json_response($out);
+        $q = $pdo->prepare("SELECT order_name, day, rating, tried, worked, tries FROM order_rate_auto WHERE employee_id = ? AND day >= ? AND day <= ? AND rating IS NOT NULL ORDER BY day DESC LIMIT 3000");
+        $q->execute([$emp, $from, $today]); $rows = $q->fetchAll(PDO::FETCH_ASSOC);
+        try { addons_attach($pdo, $rows, 'order_name'); } catch (Throwable $e) { foreach ($rows as &$r0) { $r0['addon_total'] = 0; } unset($r0); }
+        $D = []; $tot = [0, 0, 0, 0]; $st = 0.0; $ad = 0.0;
+        foreach ($rows as $r) {
+            $d = (string)$r['day']; $lv = ora_effort((int)$r['tried'], (int)$r['worked'], (int)$r['tries']);
+            if (!isset($D[$d])) $D[$d] = ['day' => $d, 'n' => [0, 0, 0, 0], 'addon_rs' => 0];
+            $D[$d]['n'][$lv]++; $tot[$lv]++; $st += (float)$r['rating'] / 2; $D[$d]['addon_rs'] += (float)($r['addon_total'] ?? 0); $ad += (float)($r['addon_total'] ?? 0);
+        }
+        foreach ($D as &$x) $x['addon_rs'] = round($x['addon_rs']); unset($x);
+        $n = array_sum($tot); $out['rows'] = array_values($D); $out['tot'] = $tot; $out['stars'] = $n ? round($st / $n, 1) : null; $out['addon_rs'] = round($ad); $out['since'] = $D ? min(array_keys($D)) : null;
         json_response($out);
         break;
     }
