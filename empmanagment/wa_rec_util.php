@@ -346,6 +346,15 @@ function wa_ru_lane_order(array $items, array $ct, array $ever, array $ordMap, i
     }
     return array_merge($mix, $C);
 }
+/** 🎯 owner 19 Nov 2026 (night): the hourly number (240 …) means DELIVERED messages, not messages sent. When only some of the messages arrive (the share that was delivered or read among those 15–75 minutes old), more are sent so that about `hourly` arrive: e.g. 240 delivered at a delivered share of 80% = 300 sent. Never more than 1.5 times the number (the share counts at least 67%), absolute 600 an hour; with fewer than 30 messages to judge by it stays 1 : 1. The failure brakes are unchanged. */
+function wa_ru_send_cap(PDO $pdo, int $hourly, int $nowTs): int
+{
+    $cap = $hourly;
+    try { $q = $pdo->prepare("SELECT COUNT(*) AS n, SUM(m.status IN ('delivered', 'read')) AS d FROM wa_ru_log r LEFT JOIN wa_messages m ON m.wamid = r.wamid AND r.wamid <> '' WHERE r.at >= ? AND r.at <= ?");
+        $q->execute([date('Y-m-d H:i:s', $nowTs - 4500), date('Y-m-d H:i:s', $nowTs - 900)]); $r = $q->fetch(); $n = (int)$r['n'];
+        if ($n >= 30) { $rate = max(0.67, min(1.0, (int)$r['d'] / $n)); $cap = (int)ceil($hourly / $rate); } } catch (Throwable $e) { }
+    return max($hourly, min($cap, 600));
+}
 function wa_ru_tick(PDO $pdo): array
 {
     wa_ru_load_util($pdo); wa_ru_reset_once($pdo);
@@ -366,9 +375,9 @@ function wa_ru_tick(PDO $pdo): array
         $tpp = json_decode((string)setting_get($pdo, 'wa_ru_tpl_pause', ''), true); $tpp = is_array($tpp) ? array_filter($tpp, fn($u) => (int)$u > $nowTs) : [];   // templates Meta paused for low quality (132015): not used again for 6 hours
         $notPaused = fn(array $L) => array_values(array_filter($L, fn($t0) => !isset($tpp[(int)($t0['id'] ?? 0)])));
         $pool = $notPaused(wa_ru_pool($pdo)); $famU = [];   // 1) the utility version(s) of the campaign's OWN message (the owner's words, approved at Meta), 2) the 6 standard follow-ups
-        $q = $pdo->prepare("SELECT COUNT(*) FROM wa_ru_log WHERE at >= ?"); $q->execute([date('Y-m-d H:i:s', $nowTs - 3600)]); $left = min($cfg['hourly'] - (int)$q->fetchColumn(), max(20, (int)ceil($cfg['hourly'] / 45))); if ($left <= 0) { $res['note'] = 'this hour\'s pool is used'; return $res; }
+        $q = $pdo->prepare("SELECT COUNT(*) FROM wa_ru_log WHERE at >= ?"); $q->execute([date('Y-m-d H:i:s', $nowTs - 3600)]); $sendCap = wa_ru_send_cap($pdo, (int)$cfg['hourly'], $nowTs); $left = min($sendCap - (int)$q->fetchColumn(), max(20, (int)ceil($sendCap / 45))); if ($left <= 0) { $res['note'] = 'this hour\'s pool is used'; return $res; }
         // owner 18 Nov 2026: spread the hour evenly: in any 2 minutes at most 1/30 of the hour's pool (100 an hour = 4 every 2 minutes), not a burst
-        try { $q = $pdo->prepare("SELECT COUNT(*) FROM wa_ru_log WHERE at >= ?"); $q->execute([date('Y-m-d H:i:s', $nowTs - 120)]); $left = min($left, max(0, (int)ceil($cfg['hourly'] / 30) - (int)$q->fetchColumn())); if ($left <= 0) { $res['note'] = 'spread evenly: this 2-minute slot is used'; return $res; } } catch (Throwable $e7) { }   // calm: about 1/45 of the hour's pool per round, never a burst
+        try { $q = $pdo->prepare("SELECT COUNT(*) FROM wa_ru_log WHERE at >= ?"); $q->execute([date('Y-m-d H:i:s', $nowTs - 120)]); $left = min($left, max(0, (int)ceil($sendCap / 30) - (int)$q->fetchColumn())); if ($left <= 0) { $res['note'] = 'spread evenly: this 2-minute slot is used'; return $res; } } catch (Throwable $e7) { }   // calm: about 1/45 of the hour's pool per round, never a burst
         // a round that mostly fails pauses itself for an hour
         $q = $pdo->prepare("SELECT COUNT(*) AS n, SUM(r.ok = 0 OR m.status = 'failed') AS f FROM wa_ru_log r LEFT JOIN wa_messages m ON m.wamid = r.wamid AND r.wamid <> '' WHERE r.at >= ?"); $q->execute([date('Y-m-d H:i:s', max($nowTs - 7200, (int)setting_get($pdo, 'wa_ru_brake_since', '0')))]); $hr = $q->fetch();   // only messages sent after the last reset count
         if ((int)$hr['n'] >= 60 && (int)$hr['f'] / max(1, (int)$hr['n']) >= 0.6) { setting_set($pdo, 'wa_ru_pause_until', (string)($nowTs + 3600)); wa_log($pdo, 'campaign', false, 'Utility follow-up paused for an hour: ' . (int)$hr['f'] . ' of ' . (int)$hr['n'] . ' failed'); $res['note'] = 'paused: too many failures'; return $res; }
