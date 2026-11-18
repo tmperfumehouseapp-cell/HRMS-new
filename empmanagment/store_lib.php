@@ -1596,6 +1596,12 @@ if (!function_exists('budget_store_calc')) {
         $j = null; try { if (function_exists('setting_get')) $j = json_decode((string)setting_get($pdo, 'store_name_alias', ''), true); } catch (Throwable $e) { }
         return is_array($j) ? array_map('intval', $j) : [];
     }
+    /** The flat commission % of a store bill whose total ml is above the biggest size of the price chart (setting st_big_flat_pct, default 6). */
+    function st_big_flat_pct(PDO $pdo): float
+    {
+        $v = null; try { $v = function_exists('setting_get') ? setting_get($pdo, 'st_big_flat_pct', null) : null; } catch (Throwable $e) { }
+        return is_numeric($v) && (float)$v >= 0 && (float)$v <= 30 ? (float)$v : 6.0;
+    }
     function st_name_key(string $n): string { return strtolower(trim(preg_replace('/\s+/', ' ', $n))); }
     function budget_oldpos_rows(PDO $pdo, string $from, string $to, array $newDays): array
     {
@@ -1649,7 +1655,14 @@ if (!function_exists('budget_store_calc')) {
                 if ($of) { $pct = (float)$of['pct']; $rule = 'offer'; $com = $gross * $pct / 100 * $f; }
                 elseif ($fl !== null) { $pct = (float)$fl['pct']; $rule = 'flash offer'; $com = $gross * $pct / 100; }
                 elseif (!$ml) { $noMl++; $rule = 'no ML'; }
-                else { $pc = cm_pct($ch, $ml, $gross); if ($pc === null) { $unpriced++; $rule = 'ML not priced'; } else { $pct = (float)$pc; $rule = 'chart'; $com = $gross * $pct / 100 * $f; } }
+                else {
+                    $pc = cm_pct($ch, $ml, $gross);
+                    if ($pc === null) {
+                        $maxMl = 0; foreach ((array)($ch['rows'] ?? []) as $cr) $maxMl = max($maxMl, (float)$cr['ml']);
+                        if ($maxMl > 0 && $ml > $maxMl) { $pct = st_big_flat_pct($pdo); $rule = 'flat'; $com = $gross * $pct / 100; }      // a bill BIGGER than the last size of the price chart pays a flat % (default 6), not 0
+                        else { $unpriced++; $rule = 'ML not priced'; }
+                    } else { $pct = (float)$pc; $rule = 'chart'; $com = $gross * $pct / 100 * $f; }
+                }
                 $out[$i] = ['bill_id' => (int)$b['bill_id'], 'bill_no' => (string)$b['bill_no'], 'day' => $day, 'time' => substr((string)$b['created_at'], 11, 5), 'emp_id' => (int)$b['emp_id'],
                     'employee_id' => $b['real_id'] ? (int)$b['emp_id'] : 0, 'name' => (string)$b['emp_name'], 'code' => $hasCode, 'total' => $gross, 'ml' => $ml,
                     'pct' => $pct, 'rule' => $rule, 'reduced' => $f < 1.0, 'com' => round($com, 2), 'pooled' => isset($pool[(int)$b['emp_id']]), 'src' => (string)($b['src'] ?? 'new_pos')];
