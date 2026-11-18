@@ -58,14 +58,23 @@ if ($__tkA === 'wq.grow_notes') {   // Admin / HR: the owner's to-do list — wh
     $out = ['ok' => true, 'open' => [], 'done' => [], 'resolved' => 0];
     try { if (wq_nt_ready($pdo)) {
         $day = function_exists('biz_today') ? biz_today($pdo) : date('Y-m-d'); $now = date('Y-m-d H:i:s'); $nm = function_exists('employee_names_by_id') ? employee_names_by_id($pdo) : [];
-        $ins = $pdo->prepare("INSERT IGNORE INTO grow_note (nkey, day, kind, emp, text, created_at) VALUES (?, ?, ?, ?, ?, ?)");
-        $cl = wq_coach_levels($pdo);
-        foreach ($cl as $e => $v) { $lv = (int)($v['level'] ?? 0); if ($lv < 1) continue; $h1 = $v['h1'] ?? [0, 0];
-            $ins->execute(['coach:' . $e . ':' . $day . ':' . $lv, $day, 'coach', (int)$e, ($lv === 2 ? '🔴 2 ghante se lagatar: ' : '💡 Pichhle ghante: ') . (int)$h1[0] . ' orders me se ' . (int)$h1[1] . ' me bada size aur add-on dono ka offer nahi hua. Isse call karke baat karo.', $now]); }
-        // behind-notes close by themselves once the person is back in line (the owner sees it as "auto")
-        $pdo->prepare("UPDATE grow_note SET status = 'resolved', resolved_at = ?, remark = 'auto: ab peeche nahi' WHERE kind = 'coach' AND status = 'open' AND day = ? AND emp NOT IN (" . ($cl ? implode(',', array_map('intval', array_keys(array_filter($cl, function ($v) { return (int)($v['level'] ?? 0) >= 1; })))) ?: '0' : '0') . ")")->execute([$now, $day]);
+        // raise a note for (kind, emp): one open note at a time; after it was resolved (by the owner or by itself) a NEW one comes back if the same problem shows again at least 30 minutes later — counted ("aaj N-vi baar") so repeats are visible
+        $raise = function (string $kind, int $e, string $text) use ($pdo, $day, $now): void {
+            $o = $pdo->prepare("SELECT id FROM grow_note WHERE day = ? AND kind = ? AND emp = ? AND status = 'open' LIMIT 1"); $o->execute([$day, $kind, $e]); $oid = (int)$o->fetchColumn();
+            if ($oid > 0) return;
+            $c = $pdo->prepare("SELECT COUNT(*), MAX(COALESCE(resolved_at, created_at)) FROM grow_note WHERE day = ? AND kind = ? AND emp = ?"); $c->execute([$day, $kind, $e]); $r = $c->fetch(PDO::FETCH_NUM); $n = (int)$r[0];
+            if ($n > 0 && strtotime((string)$r[1]) > time() - 1800) return;
+            $d = $pdo->prepare("SELECT COUNT(DISTINCT day) FROM grow_note WHERE kind = ? AND emp = ? AND day >= ? AND day < ?"); $d->execute([$kind, $e, date('Y-m-d', strtotime($day . ' -6 day')), $day]); $days = (int)$d->fetchColumn();
+            $pre = ($n > 0 ? '🔁 Aaj ' . ($n + 1) . '-vi baar. ' : '') . ($days >= 2 ? '📅 Pichhle 7 din me ' . $days . ' din aisa hua — roz ki aadat lag rahi hai. ' : '');
+            $pdo->prepare("INSERT IGNORE INTO grow_note (nkey, day, kind, emp, text, created_at) VALUES (?, ?, ?, ?, ?, ?)")->execute([$kind . ':' . $e . ':' . $day . ':' . ($n + 1), $day, $kind, $e, mb_substr($pre . $text, 0, 300), $now]);
+        };
+        $cl = wq_coach_levels($pdo); $behind = [];
+        foreach ($cl as $e => $v) { $lv = (int)($v['level'] ?? 0); if ($lv < 1) continue; $behind[] = (int)$e; $h1 = $v['h1'] ?? [0, 0];
+            $raise('coach', (int)$e, ($lv === 2 ? '🔴 2 ghante se lagatar: ' : '💡 Pichhle ghante: ') . (int)$h1[0] . ' orders me se ' . (int)$h1[1] . ' me bada size aur add-on dono ka offer nahi hua. Isse call karke baat karo.'); }
+        // a behind-note closes by itself once the person is back in line (shown as "auto")
+        $pdo->prepare("UPDATE grow_note SET status = 'resolved', resolved_at = ?, remark = 'auto: ab peeche nahi' WHERE kind = 'coach' AND status = 'open' AND day = ? AND emp NOT IN (" . ($behind ? implode(',', $behind) : '0') . ")")->execute([$now, $day]);
         if (wq_cb_ready($pdo)) { $q = $pdo->prepare("SELECT emp, COUNT(*) n FROM grow_callback WHERE day = ? AND status = 'open' AND created_at < ? GROUP BY emp HAVING n >= 3"); $q->execute([$day, date('Y-m-d H:i:s', time() - 3600)]);
-            foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $ins->execute(['cb:' . (int)$r['emp'] . ':' . $day, $day, 'callback', (int)$r['emp'], '📞 ' . (int)$r['n'] . ' call-backs ek ghante se zyada se pending hain. Isse bolo ki customers ko call kare.', $now]); }
+            foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $raise('callback', (int)$r['emp'], '📞 ' . (int)$r['n'] . ' call-backs ek ghante se zyada se pending hain. Isse bolo ki customers ko call kare.'); }
         $q = $pdo->prepare("SELECT id, kind, emp, text, created_at FROM grow_note WHERE day = ? AND status = 'open' ORDER BY id DESC LIMIT 60"); $q->execute([$day]);
         foreach ($q->fetchAll(PDO::FETCH_ASSOC) as $r) $out['open'][] = ['id' => (int)$r['id'], 'kind' => (string)$r['kind'], 'emp' => $nm[(int)$r['emp']] ?? ('#' . $r['emp']), 'text' => (string)$r['text'], 'at' => substr((string)$r['created_at'], 11, 5)];
         $c = $pdo->prepare("SELECT kind, emp, text, created_at, resolved_at, resolved_by, remark FROM grow_note WHERE day = ? AND status = 'resolved' ORDER BY resolved_at DESC LIMIT 60"); $c->execute([$day]);
