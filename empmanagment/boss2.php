@@ -2999,6 +2999,9 @@ function cm_recount(PDO $pdo, $days = 10, $end = '') {
     }
     $o = array_values(array_filter($by, function ($x) { return $x['days'] > 0; }));
     foreach ($o as &$x) { $x['new'] = round($x['new'], 2); $x['old'] = $x['old_known'] ? round($x['old'], 2) : null; $x['diff'] = $x['old'] === null ? null : round($x['new'] - $x['old'], 2); } unset($x);
+    // 💰 each person's monthly salary (the people table is listed highest salary first, owner 18 Nov); basic salary when no monthly salary is set
+    $sal = []; try { foreach ($pdo->query("SELECT employee_id, monthly_salary, basic_salary FROM employees")->fetchAll() as $e) $sal[(int)$e['employee_id']] = (float)$e['monthly_salary'] > 0 ? (float)$e['monthly_salary'] : (float)$e['basic_salary']; } catch (Throwable $e) { }
+    foreach ($o as &$x) $x['salary'] = round($sal[(int)$x['id']] ?? 0, 2); unset($x);
     usort($o, function ($a, $b) { return $b['new'] <=> $a['new']; });
     return ['people' => $o, 'error' => $err, 'days' => $days, 'from' => date('Y-m-d', strtotime($today . ' -' . ($days - 1) . ' day')), 'to' => $today];
 }
