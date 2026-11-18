@@ -198,20 +198,21 @@ if (strpos($__wd, 'wa.drip_') === 0) {
             $st = []; foreach (array_chunk($ids, 800) as $ch) { $q = $pdo->prepare("SELECT wamid, status FROM wa_messages WHERE wamid IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $q->execute($ch); foreach ($q->fetchAll() as $m) $st[(string)$m['wamid']] = (string)$m['status']; }
             $phones = array_values(array_unique(array_column(array_filter($rows, fn($r) => $r['status'] === 'sent'), 'phone'))); $inb = [];
             foreach (array_chunk($phones, 800) as $ch) { $q = $pdo->prepare("SELECT phone, ts FROM wa_messages WHERE dir = 'in' AND ts >= ? AND phone IN (" . implode(',', array_fill(0, count($ch), '?')) . ")"); $q->execute(array_merge([$since], $ch)); foreach ($q->fetchAll() as $m) $inb[(string)$m['phone']][] = strtotime((string)$m['ts']); }
-            $blank = ['sent' => 0, 'delivered' => 0, 'read' => 0, 'replied' => 0, 'failed' => 0, 'skipped' => 0]; $tot = $blank; $per = []; $first = null; $last = null;
+            $blank = ['sent' => 0, 'delivered' => 0, 'read' => 0, 'replied' => 0, 'failed' => 0, 'skipped' => 0]; $tot = $blank; $td = $blank; $dsT = strtotime(date('Y-m-d 10:00:00')); if ($dsT > time()) $dsT -= 86400; $per = []; $first = null; $last = null;   // $td = TODAY (business day 10 AM → 10 AM)
             foreach ($rows as $r) {
                 $d = (int)$r['day']; if (!isset($per[$d])) $per[$d] = $blank; $at = strtotime((string)$r['at']); $first = $first === null ? $at : min($first, $at); $last = $last === null ? $at : max($last, $at);
-                if ($r['status'] === 'skipped') { $per[$d]['skipped']++; $tot['skipped']++; continue; }
-                if ($r['status'] === 'failed') { $per[$d]['failed']++; $tot['failed']++; continue; }
-                $ms = $st[(string)$r['wamid']] ?? 'sent'; if ($ms === 'failed') { $per[$d]['failed']++; $tot['failed']++; continue; }
-                $per[$d]['sent']++; $tot['sent']++; if ($ms === 'delivered' || $ms === 'read') { $per[$d]['delivered']++; $tot['delivered']++; } if ($ms === 'read') { $per[$d]['read']++; $tot['read']++; }
+                $isT = $at >= $dsT;
+                if ($r['status'] === 'skipped') { $per[$d]['skipped']++; $tot['skipped']++; if ($isT) $td['skipped']++; continue; }
+                if ($r['status'] === 'failed') { $per[$d]['failed']++; $tot['failed']++; if ($isT) $td['failed']++; continue; }
+                $ms = $st[(string)$r['wamid']] ?? 'sent'; if ($ms === 'failed') { $per[$d]['failed']++; $tot['failed']++; if ($isT) $td['failed']++; continue; }
+                $per[$d]['sent']++; $tot['sent']++; if ($isT) $td['sent']++; if ($ms === 'delivered' || $ms === 'read') { $per[$d]['delivered']++; $tot['delivered']++; if ($isT) $td['delivered']++; } if ($ms === 'read') { $per[$d]['read']++; $tot['read']++; if ($isT) $td['read']++; }
                 foreach (($inb[(string)$r['phone']] ?? []) as $t) if ($t > $at && $t <= $at + 2 * 86400) { $per[$d]['replied']++; $tot['replied']++; break; }
             }
             ksort($per); $days = []; foreach ($per as $d => $x) { $tn = ''; if (isset($cfg['days'][$d]) && function_exists('wa_tpl_row')) { $tr = wa_tpl_row($pdo, (int)$cfg['days'][$d]['tpl_id']); $tn = $tr ? str_replace('_', ' ', (string)$tr['name']) : ''; } $days[] = ['day' => $d, 'tpl' => $tn] + $x; }
-            return ['total' => $tot, 'days' => $days, 'first' => $first ? date('Y-m-d H:i:s', $first) : '', 'last' => $last ? date('Y-m-d H:i:s', $last) : ''];
+            return ['total' => $tot, 'today' => $td, 'days' => $days, 'first' => $first ? date('Y-m-d H:i:s', $first) : '', 'last' => $last ? date('Y-m-d H:i:s', $last) : ''];
             };
             $__st = function_exists('hrms_memo') ? hrms_memo('wd_stats:' . md5(json_encode($cfg['days'])), 20, $__calc) : $__calc();
-            json_response(['ok' => true, 'job' => wd_job($pdo), 'on' => $cfg['mode'] !== 'off' ? 1 : 0, 'mode' => $cfg['mode'], 'days_set' => count($cfg['days']), 'total' => $__st['total'], 'days' => $__st['days'], 'first' => $__st['first'], 'last' => $__st['last']]);
+            json_response(['ok' => true, 'job' => wd_job($pdo), 'on' => $cfg['mode'] !== 'off' ? 1 : 0, 'mode' => $cfg['mode'], 'days_set' => count($cfg['days']), 'total' => $__st['total'], 'today' => $__st['today'] ?? null, 'days' => $__st['days'], 'first' => $__st['first'], 'last' => $__st['last']]);
         }
         case 'wa.drip_preview': {   // today's send: who gets which day's message right now, counted by business day (10 AM → 10 AM)
             $cfg = wd_cfg($pdo); if (!$cfg['days']) json_response(['ok' => true, 'rows' => [], 'total' => ['customers' => 0, 'will' => 0, 'left' => 0, 'cost' => 0], 'today' => wd_today($pdo)]);
