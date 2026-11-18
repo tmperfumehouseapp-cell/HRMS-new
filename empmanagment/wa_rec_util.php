@@ -318,7 +318,10 @@ function wa_ru_tick(PDO $pdo): array
     wa_ru_load_util($pdo); wa_ru_reset_once($pdo);
     $res = ['sent' => 0, 'failed' => 0, 'skipped' => 0, 'looked' => 0, 'note' => '', 'why' => []];
     if (!wa_ru_tables($pdo)) { $res['note'] = 'no table'; return $res; }
-    $cfg = wa_ru_cfg($pdo); if (!$cfg['on']) { $res['note'] = 'off'; return $res; } if ($cfg['pause_until'] > time()) { $res['note'] = 'paused after a Meta warning'; return $res; }
+    $cfg = wa_ru_cfg($pdo); if (!$cfg['on']) { $res['note'] = 'off'; return $res; } if ($cfg['pause_until'] > time()) {
+        // the 4-hour stop only holds back SENDING to customers: the standard follow-up messages that are missing (e.g. the new welcome / experience / request ones) are still made and sent to Meta for approval, so they are ready when sending restarts (owner, 18 Nov 2026)
+        try { if (function_exists('wa_util_pool_make') && function_exists('wa_util_pool_defs') && (int)setting_get($pdo, 'wa_ru_pool_at', '0') < time() - 600) { setting_set($pdo, 'wa_ru_pool_at', (string)time()); if (count(wa_ru_pool_made($pdo)) < count(wa_util_pool_defs())) { $mk = wa_util_pool_make($pdo, 0); $res['made'] = count($mk['made'] ?? []); } } } catch (Throwable $e) { }
+        $res['note'] = 'paused after a Meta warning'; return $res; }
     wa_ru_ramp($pdo, $cfg);   // grows / shrinks the hourly number (checked at most once in 10 minutes)
     if (!function_exists('wa_lock') || !wa_lock($pdo, 'ru', 50)) { $res['note'] = 'busy'; return $res; }
     $t0 = microtime(true); $nowTs = wa_camp_now(); $now = date('Y-m-d H:i:s', $nowTs); $why = [];
