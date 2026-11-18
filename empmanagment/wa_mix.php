@@ -573,6 +573,7 @@ function wa_fam_scan(PDO $pdo, array &$budget): int
     $lines = []; foreach ($rows as $r) { if ($r['twin_of'] > 0) $k = 'U' . $r['twin_of']; else { if (in_array(strtoupper((string)$r['category']), ['UTILITY'], true) && (int)$r['family_id'] === 0 && (int)$r['version'] <= 1 && !isset($campTpl[(int)$r['id']])) continue; $k = 'M' . wa_fam_root($r); } $lines[$k][] = $r; }
     foreach ($lines as $k => $members) {
         usort($members, fn($a, $b) => $a['ver'] <=> $b['ver'] ?: (int)$a['id'] <=> (int)$b['id']); $L = end($members); $id = (int)$L['id']; $have = $by[$id] ?? [];
+        foreach ($members as $m0) if (!empty($m0['ex']['util_pool'])) continue 2;   // owner 18 Nov 2026 (night): a standard utility follow-up (pool) that Meta moved to marketing or paused is NOT rewritten / re-sent to Meta by itself — new ones only when the owner asks
         if (!$have || (string)$L['source'] === '' ) continue; $why = wa_fam_trouble($L, $have) ?: ($busyNums[$id] ?? ''); if ($why === '') continue;
         if ($k[0] === 'U' && !wa_util_mix_on($pdo)) continue;                                              // no new utility versions of offers
         if ($k[0] === 'M' && strtoupper((string)$L['category']) !== 'MARKETING' && !isset($campTpl[wa_fam_root($L)])) continue;                 // order updates and other plain utility messages: only shown, not rewritten — unless a campaign uses it
