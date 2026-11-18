@@ -1220,21 +1220,44 @@ function order_chat_type(PDO $pdo, array $c, int $t = 0): string
     try { $ph = (string)($c['phone'] ?? ''); if ($ph !== '') { $qq = $pdo->prepare("SELECT type FROM wq_qtype WHERE phone = ? ORDER BY opened_at DESC LIMIT 1"); $qq->execute([$ph]); if ((string)$qq->fetchColumn() === 'campaign') return 'campaign'; } } catch (Throwable $e) { }   // the chat's latest query is typed Campaign (they answered our campaign / came back after 30 h) → the order follows it
     return (in_array((string)($c['source'] ?? ''), ['campaign', 'community'], true) || order_got_campaign($pdo, (string)($c['phone'] ?? ''), date('Y-m-d H:i:s', $t ?: time()), 30)) ? 'campaign' : 'query';
 }
+/** 🧴 Owner (18 Nov): every order of THIS MONTH that has a shower gel belongs to TM Shower Gel. Orders that were left under TM Perfume House (no allocation, or an allocation to TM Perfume House) move to
+ *  TM Shower Gel; the salesperson, the type and who allocated it are NOT touched. An order with no allocation first gets the normal automatic allocation (the chat's salesperson, Query / Campaign — checked over the
+ *  whole month); when that cannot be done it only gets the panel (no employee), so every page counts it as a shower gel order. Runs every 10 minutes from the WhatsApp engine; an order already right is not touched again. Returns how many were changed. */
+function order_gel_fix(PDO $pdo): int
+{
+    try { if ((int)setting_get($pdo, 'gel_fix_at', '0') > time() - 600) return 0; setting_set($pdo, 'gel_fix_at', (string)time()); if (!ensure_order_allocations_table($pdo)) return 0; } catch (Throwable $e) { return 0; }
+    $n = 0;
+    try {
+        $st = $pdo->prepare("SELECT o.shopify_id AS id, o.store_key, o.order_name, o.created_at, o.phone, o.total, o.tags, o.xparts, a.alloc_id, a.house AS ah FROM shop_orders o LEFT JOIN order_allocations a ON a.source = o.store_key AND a.order_id = CAST(o.shopify_id AS CHAR)
+            WHERE o.created_at >= ? AND o.store_key = 'tmperfumehouse' AND o.xparts LIKE '%gel%' AND (a.alloc_id IS NULL OR a.house = 'tmph') AND (o.tags IS NULL OR o.tags NOT LIKE '%cancel%') ORDER BY o.created_at LIMIT 400");
+        $st->execute([date('Y-m-01 00:00:00')]);
+        $up = $pdo->prepare("UPDATE order_allocations SET house = 'tmsg' WHERE alloc_id = ? AND house = 'tmph'");
+        $ins = $pdo->prepare("INSERT IGNORE INTO order_allocations (source, order_id, house, order_type, employee_id, is_direct, allocated_by) VALUES (?, ?, 'tmsg', '', 0, 0, 'auto (shower gel)')");
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $o) {
+            if (!order_has_gel($pdo, (string)$o['store_key'], $o)) continue;
+            if ($o['alloc_id'] !== null) { $up->execute([(int)$o['alloc_id']]); $n += $up->rowCount(); continue; }
+            $r = ''; try { $r = order_auto_alloc($pdo, (string)$o['store_key'], $o, 40); } catch (Throwable $e) { }
+            if (is_array($r)) { $n++; continue; }
+            $ins->execute([(string)$o['store_key'], (string)$o['id']]); $n += $ins->rowCount();
+        }
+    } catch (Throwable $e) { error_log('order_gel_fix: ' . $e->getMessage()); }
+    return $n;
+}
 /** 🧴 Is there at least one shower gel in this order? Reads the order's own gel/attar/other parts (xparts); an order read from the saved copy has no 'xparts' key, so it is looked up in shop_orders. */
 function order_has_gel(PDO $pdo, string $sk, array $o): bool
 {
-    $xp = $o['xparts'] ?? null; if (is_object($xp)) $xp = json_decode(json_encode($xp), true);
+    $xp = $o['xparts'] ?? null; if (is_object($xp)) $xp = json_decode(json_encode($xp), true); elseif (is_string($xp) && $xp !== '') $xp = json_decode($xp, true);
     if (!is_array($xp)) {
         $xp = null; $id = (string)($o['id'] ?? $o['shopify_id'] ?? '');
         if ($id !== '') { try { $q = $pdo->prepare("SELECT xparts FROM shop_orders WHERE store_key = ? AND shopify_id = ? LIMIT 1"); $q->execute([$sk, $id]); $j = json_decode((string)$q->fetchColumn(), true); if (is_array($j)) $xp = $j; } catch (Throwable $e) { } }
     }
     return is_array($xp) && (int)($xp['gel']['pcs'] ?? 0) > 0;
 }
-function order_auto_alloc(PDO $pdo, string $sk, array $o)
+function order_auto_alloc(PDO $pdo, string $sk, array $o, int $maxDays = 2)
 {
     static $ready = null, $q = [];
     $oid = (string)($o['id'] ?? $o['shopify_id'] ?? ''); if ($oid === '' || $sk === '' || $sk === 'mysales' || strpos($sk, 'mysales') === 0) return '';
-    $t = strtotime((string)($o['created_at'] ?? '')); if (!$t || $t < time() - 2 * 86400) return '';   // only new orders (the last 2 days)
+    $t = strtotime((string)($o['created_at'] ?? '')); if (!$t || $t < time() - $maxDays * 86400) return '';   // only new orders (the last 2 days; the shower-gel clean-up asks for the whole month)
     if ($ready === null) {
         $ready = false;
         try {
